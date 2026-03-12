@@ -98,7 +98,7 @@ Boot default is now true; clears on first valid SBUS frame only.
 ```
 
 ```
-feat(hw)!: confirm UART2 GPIO pins from PCB trace — update config.h
+feat(hw)!: confirm UART1 hoverboard pins from PCB trace — update config.h
 
 BREAKING CHANGE: PIN_HOVERBOARD_TX and PIN_HOVERBOARD_RX now have confirmed
 values from Phase 0 PCB trace. TBD placeholder values are removed.

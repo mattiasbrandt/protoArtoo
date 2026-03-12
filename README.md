@@ -164,7 +164,7 @@ Changes from upstream:
 ```
 RC Transmitter ──SBUS──→  [protoArtoo — Artoo Controller PCB]  ←──WiFi── Phone browser
                                 │                    │
-                           UART2 (115200)        UART1 (9600)
+                           UART1 (115200)        UART2 (9600)
                                 │                    │ bidirectional
                                 ↓                 slip ring
                          Hoverboard              [AstroPixelsPlus — dome]
@@ -270,9 +270,9 @@ protoArtoo communicates with is built on this foundation. The Reeltwo library's
 Marcduino command handling and its clean peripheral abstraction made it straightforward
 to implement the bidirectional body link in the dome fork.
 
-**[bolderflight](https://github.com/bolderflight)** —
-[sbus](https://github.com/bolderflight/sbus). The RMT-mode SBUS decoder that enables
-two independent SBUS receivers on the ESP32 without consuming any hardware UARTs.
+**Arduino ESP32 core** —
+the RMT support in the Arduino ESP32 core made it possible to implement the
+in-repo SBUS decoder without consuming a hardware UART.
 
 ---
 
