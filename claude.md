@@ -23,7 +23,7 @@ These rules define how an AI coding agent should plan, execute, verify, communic
 - **Target:** Artoo Controller PCB — ESP32 (WROOM-32 or D1 Mini, unconfirmed)
 - **Framework:** Arduino on ESP32 via PlatformIO (`espressif32@5.2.0`)
 - **Architecture:** FreeRTOS tasks split across dual cores (Core 0: WiFi/web; Core 1: real-time control)
-- **Drive:** Hoverboard motors via Gen2.x 8-byte UART frames at 50 Hz (115200 baud, ESP32 UART2 → GD32F130 UART3)
+- **Drive:** Hoverboard motors via Gen2.x 8-byte UART frames at 50 Hz (115200 baud, ESP32 UART1 / PCB S1)
 - **RC input:** Dual SBUS receivers via RMT peripheral (GPIO 15 = drive, GPIO 13 = dome spin)
 - **Audio:** DY-SV5W module (default) via UART 9600 TX-only — body is the **sole audio source** for the entire droid
 - **Dome link:** Bidirectional Marcduino serial (9600 baud) over slip ring to `mattiasbrandt/AstroPixelsPlus`
@@ -318,7 +318,7 @@ If anything unexpected happens (test failures, build errors, behavior regression
 - Pinned library versions in `platformio.ini` — no `^` or `~` ranges.
 - **No Reeltwo on the body.** It belongs in the dome only.
 - Prefer Arduino standard libraries (`Preferences`, `LittleFS`, `ArduinoOTA`) over third-party alternatives.
-- Current approved dependencies: `ESPAsyncWebServer@3.5.1`, `AsyncTCP@3.3.2`, `ArduinoJson`, `bolderflight/sbus`, `ESP32Servo`.
+- Current approved dependencies: `ESPAsyncWebServer@3.6.0`, `AsyncTCP@3.3.2`, `ArduinoJson`, `ESP32Servo`.
 
 ### 5. Security and Privacy
 - Never introduce WiFi credentials into committed code — use `src/secrets.h` (gitignored).
@@ -350,9 +350,9 @@ If anything unexpected happens (test failures, build errors, behavior regression
 
 ### 8. Hardware Interaction Rules
 - **GPIO pins**: Only use values from `include/config.h`. If a pin is `TBD`, leave it as `TBD` — it must cause a compile error, not a silent wrong-pin bug.
-- **UART writes**: Only the owning task writes to each UART (DriveTask → UART2, DomeLinkTask → UART1, AudioTask → SoftSerial). No other task touches them.
+- **UART writes**: Only the owning task writes to each UART (DriveTask → UART1, DomeLinkTask → UART2, AudioTask → SoftSerial). No other task touches them.
 - **PWM**: LEDC channels 0–2 assigned in `config.h`. Servos at 50 Hz.
-- **Boot sequence**: Follow the exact order in `tasks/goal.md` Section 7.6. Hoverboard UART before WiFi. Zero frames immediately after UART2 init.
+- **Boot sequence**: Follow the exact order in `tasks/goal.md` Section 7.6. Hoverboard UART before WiFi. Zero frames immediately after UART1 init.
 
 ### 9. AsyncWebServer Rules
 - `initAsyncWeb()` only from WiFi event callback — never directly in `setup()`.
