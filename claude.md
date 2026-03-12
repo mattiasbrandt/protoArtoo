@@ -389,6 +389,7 @@ Every commit uses the format:
 - Code that doesn't compile
 - A `//TODO` that disables safety logic
 - Messages like `"fix stuff"`, `"wip"`, `"update"`
+- Co-authored-by trailers, attribution footers, or additional author identities unless the user explicitly requested them for that specific commit
 
 ### Branch Strategy
 - `main` — always releasable; tagged at every version
