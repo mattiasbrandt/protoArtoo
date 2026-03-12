@@ -1,0 +1,19 @@
+{
+  // Recommended extensions for protoArtoo development.
+  // VS Code will prompt to install these when opening the workspace.
+  "recommendations": [
+    // --- Required ---
+    "platformio.platformio-ide", // PlatformIO — build, upload, monitor, test
+    "ms-vscode.cpptools", // C/C++ IntelliSense, debugging, browsing
+    // --- Formatting & linting ---
+    "xaver.clang-format", // clang-format integration (uses .clang-format at root)
+    "ms-vscode.cpptools-extension-pack", // C/C++ extension pack (themes, linting)
+    // --- Web UI (data/ folder) ---
+    "esbenp.prettier-vscode", // HTML/JS/CSS formatting for LittleFS web assets
+    // --- Quality of life ---
+    "ms-vscode.vscode-serial-monitor", // Serial monitor (alternative to pio device monitor)
+    "jeff-hykin.better-cpp-syntax", // Improved C++ syntax highlighting
+    "streetsidesoftware.code-spell-checker" // Catch typos in comments and strings
+  ],
+  "unwantedRecommendations": []
+}

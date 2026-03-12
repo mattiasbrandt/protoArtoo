@@ -1,0 +1,71 @@
+# PlatformIO Core
+.pio
+.pioenvs
+.piolibdeps
+.piolib
+.pio-build/
+
+# Arduino/ESP32 build artifacts
+*.elf
+*.bin
+*.hex
+*.uf2
+*.o
+*.a
+*.d
+build/
+
+# Libraries and dependencies (if not managed by PIO)
+lib/
+deps/
+libraries/
+
+
+# General temp and backup files
+*~
+*.tmp
+*.bak
+*.swp
+.DS_Store
+Thumbs.db
+*.log
+
+# LLM agent temp files, tasks, and todos
+*.agent
+agent_*
+llm_*
+tasks/
+todos/
+todo.md
+task.md
+*.todo
+*.task
+*.tmp.llm
+.sisyphus/
+
+# Python/virtualenv (if using scripts or tools)
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+*.egg
+venv/
+.env
+
+# Editor/IDE specifics
+.idea/
+*.iml
+.vscode/c_cpp_properties.json
+.vscode/launch.json
+.vscode/ipch/
+.vscode/*.code-workspace
+
+# Secrets — WiFi credentials, never commit
+src/secrets.h
+
+# Misc
+node_modules/  # If any JS tools are involved
+package-lock.json

@@ -1,0 +1,112 @@
+{
+    // =========================================================================
+    // protoArtoo — VS Code workspace settings
+    //
+    // Shared project settings committed to the repo. Personal overrides
+    // (font size, theme, keybindings) belong in User Settings, not here.
+    // =========================================================================
+
+    // --- C/C++ formatting (clang-format) ------------------------------------
+    "editor.defaultFormatter": "xaver.clang-format",
+    "editor.formatOnSave": true,
+    "editor.rulers": [100],
+    "editor.tabSize": 4,
+    "editor.insertSpaces": true,
+    "editor.detectIndentation": false,
+
+    // clang-format uses .clang-format at repo root automatically
+    "clang-format.style": "file",
+
+    // --- C/C++ language settings --------------------------------------------
+    "[cpp]": {
+        "editor.defaultFormatter": "xaver.clang-format",
+        "editor.formatOnSave": true,
+        "editor.tabSize": 4
+    },
+    "[c]": {
+        "editor.defaultFormatter": "xaver.clang-format",
+        "editor.formatOnSave": true,
+        "editor.tabSize": 4
+    },
+
+    // --- Web UI assets (data/ folder) — HTML/JS/CSS -------------------------
+    "[html]": {
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "editor.formatOnSave": true,
+        "editor.tabSize": 2
+    },
+    "[javascript]": {
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "editor.formatOnSave": true,
+        "editor.tabSize": 2
+    },
+    "[css]": {
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "editor.formatOnSave": true,
+        "editor.tabSize": 2
+    },
+
+    // --- JSON / Markdown ----------------------------------------------------
+    "[json]": {
+        "editor.tabSize": 2
+    },
+    "[jsonc]": {
+        "editor.tabSize": 2
+    },
+    "[markdown]": {
+        "editor.wordWrap": "on",
+        "editor.rulers": [80]
+    },
+
+    // --- File associations --------------------------------------------------
+    "files.associations": {
+        "*.h": "cpp",
+        "*.ino": "cpp",
+        "secrets.h": "cpp"
+    },
+
+    // --- File hygiene -------------------------------------------------------
+    "files.trimTrailingWhitespace": true,
+    "files.insertFinalNewline": true,
+    "files.trimFinalNewlines": true,
+
+    // Exclude build artifacts and generated files from search/explorer
+    "files.exclude": {
+        "**/.pio": true,
+        "**/.git": true,
+        "**/node_modules": true
+    },
+    "search.exclude": {
+        "**/.pio": true,
+        "**/node_modules": true,
+        "**/*.map": true
+    },
+
+    // --- PlatformIO ---------------------------------------------------------
+    // PlatformIO manages its own IntelliSense via c_cpp_properties.json.
+    // If you see squiggles on ESP32/Arduino headers, run:
+    //   PlatformIO: Rebuild IntelliSense Index (Ctrl+Shift+P)
+    "C_Cpp.default.configurationProvider": "platformio.platformio-ide",
+
+    // --- Spell checker (project dictionary) ---------------------------------
+    "cSpell.words": [
+        "protoArtoo",
+        "AstroPixels",
+        "Marcduino",
+        "hoverboard",
+        "astromech",
+        "SBUS",
+        "LEDC",
+        "TWDT",
+        "NVS",
+        "estop",
+        "failsafe",
+        "portMUX",
+        "FreeRTOS",
+        "softserial",
+        "baudrate"
+    ],
+
+    // --- Terminal defaults ---------------------------------------------------
+    "terminal.integrated.defaultProfile.linux": "zsh"
+}
