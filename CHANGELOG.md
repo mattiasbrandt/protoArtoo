@@ -13,6 +13,29 @@ Every semantic version release belongs here:
 - minor releases for new backwards-compatible features
 - major releases for breaking changes
 
+## [0.2.0] - 2026-03-13
+
+### Added
+- Bench-tested Phase 2 web stack with LittleFS-served `Home`, `Setup`, `WiFi`, `Firmware`, and `Serial` pages
+- Expanded HTTP API with config, WiFi, serial, health, logs, manual-command, reboot, and OTA firmware upload endpoints
+- Dashboard health surfaces including heap status, WiFi quality, movement status, live log console, and manual command controls
+- Explicit browser-control mode for web drive commands when SBUS is unavailable
+- NVS-backed config persistence for web-configurable settings, surviving reboot
+- OTA firmware upload flow and browser-triggered reboot support on the bench controller
+- Native test coverage for web/API helper parsing, log buffer behavior, and JSON formatter helpers
+
+### Changed
+- Switched the Phase 2 bench controller board definition to `wemos_d1_mini32` with a reliable upload workflow at `115200`
+- Added leveled USB debug logging with clearer boot health, WiFi bring-up, and web-server bring-up output
+- Refined the multi-page UI toward a more coherent operator-facing control panel with less internal planning language
+- Moved visible planning/status source-of-truth files into `tasks/`
+
+### Fixed
+- Corrected API/static route ordering so `/api/*` requests are no longer intercepted by the LittleFS static handler
+- Fixed estop-clear route behavior on the live board
+- Fixed dashboard hydration issues caused by removed `Live Feed` dependencies in the page script
+- Fixed malformed status payload metadata used by firmware version/uptime footer rendering
+
 ## [0.1.0] - 2026-03-12
 
 ### Added
