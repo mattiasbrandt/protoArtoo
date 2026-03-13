@@ -34,7 +34,7 @@ Thumbs.db
 *.agent
 agent_*
 llm_*
-tasks/
+/tasks/
 todos/
 todo.md
 task.md
