@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>protoArtoo</title>
+    <link rel="stylesheet" href="/style.css">
+  </head>
+  <body>
+    <div class="topbar">
+      <div>
+        <h1>protoArtoo</h1>
+        <div class="subtitle">Body controller dashboard</div>
+      </div>
+    </div>
+
+    <nav>
+      <a href="/" class="active">Home</a>
+      <a href="/setup.html">Setup</a>
+      <a href="/serial.html">Serial</a>
+    </nav>
+
+    <div class="card">
+      <h3>Health Dashboard</h3>
+      <div class="health-grid" id="health-grid">
+        <div class="health-item"><div class="indicator" id="h-estop"></div><span>Estop</span></div>
+        <div class="health-item"><div class="indicator" id="h-sbus"></div><span>SBUS</span></div>
+        <div class="health-item"><div class="indicator" id="h-web"></div><span>Web Control</span></div>
+        <div class="health-item"><div class="indicator" id="h-wifi"></div><span>WiFi Client</span></div>
+        <div class="health-item"><div class="indicator" id="h-fs"></div><span>LittleFS</span></div>
+        <div class="health-item"><div class="indicator" id="h-heap"></div><span>Heap</span></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Movement Status</h3>
+      <div class="status-grid">
+        <div class="status-item"><dt>Estop</dt><dd id="estop-state">--</dd></div>
+        <div class="status-item"><dt>Web control</dt><dd id="web-control-state">--</dd></div>
+        <div class="status-item"><dt>Failsafe source</dt><dd id="failsafe-source">--</dd></div>
+        <div class="status-item"><dt>Drive output</dt><dd id="drive-output">--</dd></div>
+        <div class="status-item"><dt>Speed limit</dt><dd id="speed-limit">--</dd></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Safety Controls</h3>
+      <div class="button-row">
+        <button id="estop-button" class="btn danger" type="button">Latch Estop</button>
+        <button id="clear-estop-button" class="btn" type="button">Clear Estop</button>
+        <button id="enable-web-control-button" class="btn accent" type="button">Enable Web Control</button>
+        <button id="disable-web-control-button" class="btn" type="button">Disable Web Control</button>
+      </div>
+      <div id="control-feedback" class="feedback">No command sent yet.</div>
+    </div>
+
+    <div class="card">
+      <h3>Drive Controls</h3>
+      <div class="desc">Hold to drive, release to send stop. The existing web timeout remains the safety backstop.</div>
+      <div class="drive-grid" style="margin-top:10px;">
+        <button class="btn" data-drive-speed="260" data-drive-steer="0" type="button">Forward</button>
+        <button class="btn" data-drive-speed="0" data-drive-steer="-220" type="button">Left</button>
+        <button class="btn accent" data-drive-speed="0" data-drive-steer="0" type="button">Stop</button>
+        <button class="btn" data-drive-speed="0" data-drive-steer="220" type="button">Right</button>
+        <button class="btn" data-drive-speed="-260" data-drive-steer="0" type="button">Reverse</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Live Log Console</h3>
+      <div class="log-wrap">
+        <pre id="log-console" class="log-console">Loading logs…</pre>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Manual Command</h3>
+      <div class="desc">Supported commands: <code>estop</code>, <code>clear_estop</code>, <code>enable_web_control</code>, <code>disable_web_control</code>, <code>reboot</code>.</div>
+      <div class="form-grid" style="margin-top:12px;">
+        <input id="manual-cmd" class="file-input" type="text" placeholder="Enter command...">
+        <div class="button-row">
+          <button id="manual-send" class="btn accent" type="button">Send Command</button>
+        </div>
+      </div>
+      <div id="manual-feedback" class="feedback" style="margin-top:12px;">No manual command sent yet.</div>
+    </div>
+
+    <div class="status-bar" id="conn-status">
+      <div><span class="dot yellow"></span>Dashboard online</div>
+      <div class="status-subline" id="fw-meta">Loading firmware info…</div>
+      <div class="status-subline" id="health-summary">Loading health…</div>
+    </div>
+
+    <script src="/app.js"></script>
+    <script src="/footer.js"></script>
+  </body>
+</html>
