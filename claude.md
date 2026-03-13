@@ -122,6 +122,12 @@ pio run -e protoArtoo -t uploadfs  # upload LittleFS web assets
   - `pio test -e native` passes for all logic tests
   - `pio check` has no high/medium findings
   - On-device verification for hardware-touching changes
+- For every feature, test, and finding, explicitly classify verification as one of:
+  - `bench-valid` — can be verified with the ESP32 alone over USB/WiFi
+  - `hardware-required` — needs the Artoo PCB/peripherals connected and powered
+  - `partial` — bench checks are useful, but final verification needs full hardware
+- Never present bench-only verification as equivalent to full hardware validation.
+- When hardware is disconnected or unpowered, explicitly state what the current setup does and does not prove.
 - For failsafe changes: test all 5 layers independently and document which were exercised.
 - Compare behavior baseline vs changed behavior when relevant.
 - Ask: "Would a staff engineer approve this diff and the verification story? Would they trust this to not injure someone?"
@@ -170,19 +176,22 @@ pio run -e protoArtoo -t uploadfs  # upload LittleFS web assets
   - file paths, command names, error messages, GPIO numbers, and what changed.
 - Avoid dumping large logs; summarize and point to where evidence lives.
 
-### 2. Ask Questions to Reduce Ambiguity
-- **Always use interactive multi-choice selection** when facing uncertain details, context gaps, or design decisions. Present options as a structured pick-list (lettered or numbered with clear labels) so the user can reply with a single choice — do not dump a flat list of open questions and wait for free-form answers.
+### 2. Reduce Ambiguity via Intent Disambiguation
+- **Always employ intent disambiguation through interactive multi-choice clarification questions** when encountering uncertain details, context gaps, or design decisions. Present options as a structured, numbered or lettered list with concise labels, descriptions, tradeoffs, and a recommended default (marked as such). This allows the user to respond with a single selection (e.g., "A" or "2")—avoid scattering multiple open-ended questions or requiring free-form elaboration.
 - Format example:
-  ```
+
   How should CH8-at-zero behave?
-    A) Speed-limit dial only (default — simplest) ← recommended
-    B) Binary mode-lock (Stationary vs Drive mode)
-    C) Disable CH8 entirely — always full speed range
-  ```
-- Batch related choices into **one** multi-choice exchange; don't ask one then come back for another.
-- For minor/inferable details: state the assumption and proceed rather than asking.
-- For non-trivial decisions: always offer concrete options **with tradeoffs and a recommended default** — never pose bare open-ended questions.
-- For hardware questions (e.g., "which GPIO for this peripheral?"): **never guess** — ask or flag as TBD.
+
+  A) Speed-limit dial only (default—simplest implementation, minimal code changes; recommended for quick setup)
+
+  B) Binary mode-lock (Stationary vs. Drive mode—adds flexibility but increases complexity and potential bugs)
+
+  C) Disable CH8 entirely (always full speed range—removes feature but ensures reliability; use if hardware constraints apply)
+
+- Consolidate related ambiguities into a **single multi-choice query** for efficiency; do not fragment into sequential follow-ups.
+- For minor or easily inferable details: explicitly state your assumption and proceed without querying.
+- For non-trivial decisions: provide 3-5 concrete, mutually exclusive options with brief pros/cons—never use vague, open-ended prompts like "What do you mean?" or "Tell me more."
+- For hardware-specific queries (e.g., "Which GPIO for this peripheral?"): **never assume or guess**—either pose a multi-choice list of viable options or flag as "TBD pending user input."
 
 ### 3. State Assumptions and Constraints
 - If you inferred requirements, list them briefly.

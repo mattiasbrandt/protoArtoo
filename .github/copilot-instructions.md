@@ -152,19 +152,22 @@ When generating failsafe-related code, always check against the 5-layer model:
 
 ---
 
-## Clarifying Uncertainty
+## Clarifying Uncertainty via Intent Disambiguation
+- **Always employ intent disambiguation through interactive multi-choice clarification questions** when facing ambiguous requirements, context gaps, or design decisions. Present options as a structured, numbered or lettered list with concise labels, descriptions, tradeoffs, and a recommended default (marked as such). This allows the user to respond with a single selection (e.g., "A" or "2")—avoid scattering multiple open-ended questions or requiring free-form elaboration.
+- Format example:
 
-When facing ambiguous requirements, context gaps, or design decisions, **always present an interactive multi-choice selection** — never dump a flat list of open questions.
+  Which audio driver should this task target?
 
-Format choices as a structured pick-list with a recommended default:
-```
-Which audio driver should this task target?
-  A) DY-SV5W (default — matches current hardware) ← recommended
-  B) DFPlayer Mini
-  C) Abstract AudioDriver only — no concrete impl
-```
+  A) DY-SV5W (default—matches current hardware, easy integration with minimal changes; recommended for compatibility)
 
-Batch related questions into one exchange. For minor details, state an assumption and proceed.
+  B) DFPlayer Mini (supports more audio formats but requires additional wiring and library setup; good for advanced features)
+
+  C) Abstract AudioDriver only (no concrete implementation—provides flexibility for future drivers but delays immediate functionality; use if prototyping)
+
+- Consolidate related ambiguities into a **single multi-choice query** for efficiency; do not fragment into sequential follow-ups.
+- For minor or easily inferable details: explicitly state your assumption and proceed without querying.
+- For non-trivial decisions: provide 3-5 concrete, mutually exclusive options with brief pros/cons—never use vague, open-ended prompts like "What do you mean?" or "Tell me more."
+- For hardware-specific queries (e.g., "Which GPIO for this peripheral?"): **never assume or guess**—either pose a multi-choice list of viable options or flag as "TBD pending user input."
 
 ---
 
