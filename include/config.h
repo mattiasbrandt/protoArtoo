@@ -91,3 +91,17 @@
 // -----------------------------------------------------------------------------
 #define WIFI_AP_SSID "protoArtoo"
 #define WIFI_AP_IP "192.168.4.1"
+#define PA_FIRMWARE_VERSION "v0.1.0-phase2-dev"
+
+// -----------------------------------------------------------------------------
+#define PA_LOG_LEVEL_ERROR 1
+#define PA_LOG_LEVEL_INFO 2
+#define PA_LOG_LEVEL_DEBUG 3
+
+#ifndef PA_LOG_LEVEL
+// PA_LOG_LEVEL controls USB debug serial verbosity on UART0.
+// - PA_LOG_LEVEL_ERROR: faults only (watchdog resets, mount failures, etc.)
+// - PA_LOG_LEVEL_INFO: normal boot health and service bring-up
+// - PA_LOG_LEVEL_DEBUG: verbose development logging, including lower-priority events
+#define PA_LOG_LEVEL PA_LOG_LEVEL_DEBUG
+#endif
