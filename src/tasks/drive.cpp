@@ -52,22 +52,19 @@ void driveTask(void* pvParameters) {
         // Read current state under mutex
         int16_t speed;
         int16_t steer;
+        int16_t maxOut;
         bool failsafeActive;
-        uint32_t lastCmdMs;
-        uint32_t webTimeoutMs;
+        uint32_t nowMs;
 
+        nowMs = millis();
         taskENTER_CRITICAL(&robotStateMux);
         speed = robotState.driveSpeed;
         steer = robotState.driveSteer;
         failsafeActive = robotState.estop || robotState.sbusSignalLost || robotState.sbusHwFailsafe;
-        lastCmdMs = robotState.lastDriveCommandMs;
-        webTimeoutMs = robotState.cfg_webDriveTimeoutMs;
-        taskEXIT_CRITICAL(&robotStateMux);
+        maxOut = robotState.cfg_speedLimitMax;
 
-        // Layer 3: Web API drive timeout
-        // If last command was from web and it's expired, zero drive and latch failsafe.
-        taskENTER_CRITICAL(&robotStateMux);
-        if (robotState.lastDriveSource == SRC_WEB_API && (millis() - lastCmdMs) > webTimeoutMs) {
+        if (robotState.lastDriveSource == SRC_WEB_API &&
+            (uint32_t)(nowMs - robotState.lastDriveCommandMs) > robotState.cfg_webDriveTimeoutMs) {
             robotState.webDriveExpired = true;
             robotState.failsafeSource = FS_WEB_TIMEOUT;
             robotState.driveSpeed = 0;
@@ -79,8 +76,6 @@ void driveTask(void* pvParameters) {
         taskEXIT_CRITICAL(&robotStateMux);
 
         // Apply SPEED_LIMIT_MAX cap unconditionally — never exceed hardware limit.
-        // cfg_speedLimitMax is int16_t — read is effectively atomic on 32-bit ARM.
-        int16_t maxOut = robotState.cfg_speedLimitMax;
         speed = constrain(speed, (int16_t)(-maxOut), maxOut);
         steer = constrain(steer, (int16_t)(-maxOut), maxOut);
 

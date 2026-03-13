@@ -112,7 +112,7 @@ void sbusInputTask(void* pvParameters) {
         taskEXIT_CRITICAL(&robotStateMux);
 
         bool watchdogFired = false;
-        if ((millis() - lastSbus1) > timeoutMs) {
+        if ((uint32_t)(millis() - lastSbus1) > timeoutMs) {
             taskENTER_CRITICAL(&robotStateMux);
             if (!robotState.sbusSignalLost) {
                 robotState.sbusSignalLost = true;
@@ -128,10 +128,9 @@ void sbusInputTask(void* pvParameters) {
             }
         }
 
-        // SBUS #2 (dome spin, GPIO PIN_SBUS2_RX) — dome channel processing
-        // deferred to Phase 3. sbus_dome is initialized and receiving but
-        // domeTargetSpeed is not updated until DomeLinkTask plumbing is in place.
-        // sbus_dome.read() is intentionally not called to avoid stale RMT buffers.
+        if (sbus_dome.read()) {
+            (void)sbus_dome.data();
+        }
 
         // ~200 Hz poll rate — SBUS frames arrive at 100 Hz; poll twice per frame
         vTaskDelay(pdMS_TO_TICKS(5));

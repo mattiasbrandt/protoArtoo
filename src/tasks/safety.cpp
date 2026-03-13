@@ -15,13 +15,14 @@
 
 #include <Arduino.h>
 #include <esp_heap_caps.h>
+
 #include "robot_state.h"
 
 static const char* TAG = "SafetyMonitor";
 
 // Track previous values to detect transitions
 static uint32_t lastFailsafeCount = 0;
-static bool     lastDomeConnected = false;
+static bool lastDomeConnected = false;
 
 // -----------------------------------------------------------------------------
 // safetyMonitorTask()
@@ -36,35 +37,33 @@ void safetyMonitorTask(void* pvParameters) {
     while (true) {
         // Read state snapshot under mutex
         taskENTER_CRITICAL(&robotStateMux);
-        uint32_t fsCount     = robotState.failsafeTriggerCount;
-        bool     estop       = robotState.estop;
-        bool     sbusLost    = robotState.sbusSignalLost;
-        bool     sbusHw      = robotState.sbusHwFailsafe;
-        uint32_t domeLastMs  = robotState.domeLastSeenMs;
+        uint32_t fsCount = robotState.failsafeTriggerCount;
+        bool estop = robotState.estop;
+        bool sbusLost = robotState.sbusSignalLost;
+        bool sbusHw = robotState.sbusHwFailsafe;
+        uint32_t domeLastMs = robotState.domeLastSeenMs;
         FailsafeSource fsSrc = robotState.failsafeSource;
         taskEXIT_CRITICAL(&robotStateMux);
 
         // Log new failsafe triggers
         if (fsCount > lastFailsafeCount) {
             Serial.printf("[%s] failsafe triggered — count:%lu source:%d estop:%d sbus:%d hw:%d\n",
-                          TAG, (unsigned long)fsCount, (int)fsSrc,
-                          (int)estop, (int)sbusLost, (int)sbusHw);
+                          TAG, (unsigned long)fsCount, (int)fsSrc, (int)estop, (int)sbusLost,
+                          (int)sbusHw);
             lastFailsafeCount = fsCount;
         }
 
         // Log dome connection state transitions
-        bool domeNowConnected = (millis() - domeLastMs) < 3000 && domeLastMs > 0;
+        bool domeNowConnected = (millis() - domeLastMs) < 5000 && domeLastMs > 0;
         if (domeNowConnected != lastDomeConnected) {
-            Serial.printf("[%s] dome link %s\n", TAG,
-                          domeNowConnected ? "CONNECTED" : "LOST");
+            Serial.printf("[%s] dome link %s\n", TAG, domeNowConnected ? "CONNECTED" : "LOST");
             lastDomeConnected = domeNowConnected;
         }
 
         // Warn if free heap is low
-        uint32_t freeHeap = esp_get_free_heap_size();
+        uint32_t freeHeap = ESP.getFreeHeap();
         if (freeHeap < 20480) {  // 20 KB threshold
-            Serial.printf("[%s] WARNING low heap: %lu bytes free\n",
-                          TAG, (unsigned long)freeHeap);
+            Serial.printf("[%s] WARNING low heap: %lu bytes free\n", TAG, (unsigned long)freeHeap);
         }
 
         vTaskDelay(pdMS_TO_TICKS(100));  // 10 Hz
