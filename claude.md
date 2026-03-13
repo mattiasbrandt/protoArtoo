@@ -83,6 +83,8 @@ pio run -e protoArtoo -t uploadfs  # upload LittleFS web assets
 - If anything goes sideways or new information invalidates the plan: **stop immediately**, update the plan, then continue — do not keep pushing.
 - Write a crisp spec first when requirements are ambiguous (inputs/outputs, edge cases, success criteria).
 - For hardware-touching changes: specify which GPIO, UART, or peripheral is affected and confirm the pin is traced/confirmed before writing code.
+- **Authoritative plan files live in `tasks/`**. Use `tasks/status.md`, `tasks/phase*-tasks.md`, and `tasks/goal.md` as the planning source of truth for this repository.
+- Treat `.sisyphus/plans/` as internal agent scratch/history only — do not rely on it as the authoritative project plan when repo-local `tasks/` files exist.
 
 ### 2. Subagent Strategy (Default Tool for Complexity)
 - Subagents are the **default choice** for exploration, research, and parallel analysis — not a last resort.
@@ -123,10 +125,10 @@ pio run -e protoArtoo -t uploadfs  # upload LittleFS web assets
   - `pio check` has no high/medium findings
   - On-device verification for hardware-touching changes
 - For every feature, test, and finding, explicitly classify verification as one of:
-  - `bench-valid` — can be verified with the ESP32 alone over USB/WiFi
-  - `hardware-required` — needs the Artoo PCB/peripherals connected and powered
-  - `partial` — bench checks are useful, but final verification needs full hardware
-- Never present bench-only verification as equivalent to full hardware validation.
+  - `bench-tested` — can be verified with the ESP32 alone over USB/WiFi at the current bench stage
+  - `full-hardware-required` — needs the Artoo PCB/peripherals connected and powered
+  - `partial` — bench-stage checks are useful, but final verification still needs full hardware
+- Never present bench-stage verification as equivalent to full hardware validation.
 - When hardware is disconnected or unpowered, explicitly state what the current setup does and does not prove.
 - For failsafe changes: test all 5 layers independently and document which were exercised.
 - Compare behavior baseline vs changed behavior when relevant.

@@ -71,6 +71,12 @@ Gate verbose per-frame logging behind build flags:
 
 ## Architecture Awareness
 
+### Planning Source of Truth
+
+- The authoritative project plans live in `tasks/`.
+- Use `tasks/status.md`, `tasks/phase2-tasks.md`, `tasks/phase3-tasks.md`, `tasks/phase4-tasks.md`, `tasks/phase5-tasks.md`, and `tasks/goal.md` as the planning baseline.
+- Do **not** treat `.sisyphus/plans/` as the source of truth for this repository when equivalent plan files exist in `tasks/`.
+
 ### FreeRTOS Task Model
 
 | Core | Tasks | Purpose |
