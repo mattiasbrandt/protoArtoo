@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Firmware - protoArtoo</title>
+    <link rel="stylesheet" href="/style.css">
+  </head>
+  <body>
+    <div class="topbar">
+      <div>
+        <h1>Firmware</h1>
+        <div class="subtitle">Firmware update and reboot controls</div>
+      </div>
+    </div>
+
+    <nav>
+      <a href="/">Home</a>
+      <a href="/setup.html">Setup</a>
+      <a href="/wifi.html">WiFi</a>
+      <a href="/firmware.html" class="active">Firmware</a>
+      <a href="/serial.html">Serial</a>
+    </nav>
+
+    <div class="card">
+      <h3>Upload Firmware</h3>
+      <div class="desc">Select a <code>.bin</code> firmware file to flash over the air.</div>
+      <div class="desc" style="margin-top:8px;">This updates firmware only. LittleFS web asset changes still require <code>uploadfs</code>.</div>
+      <div class="form-grid" style="margin-top:12px;">
+        <input id="fw-file" class="file-input" type="file" accept=".bin">
+        <div id="fw-progress" class="fw-progress" style="display:none;">
+          <div class="fw-progress-track">
+            <div id="fw-bar" class="fw-progress-bar"></div>
+          </div>
+          <div id="fw-status" class="fw-progress-status">Uploading...</div>
+        </div>
+        <button id="upload-fw-button" class="btn accent" type="button">Upload and Flash</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>System</h3>
+      <div class="button-row">
+        <button id="reboot-button" class="btn" type="button">Reboot Controller</button>
+      </div>
+      <div id="fw-feedback" class="feedback" style="margin-top:12px;">No firmware action yet.</div>
+    </div>
+
+    <div class="status-bar">
+      <div><span class="dot green"></span>Firmware page connected to OTA and reboot endpoints.</div>
+      <div class="status-subline" id="fw-meta">Loading firmware info…</div>
+    </div>
+
+    <script src="/firmware.js"></script>
+    <script src="/footer.js"></script>
+  </body>
+</html>
