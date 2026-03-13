@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Setup - protoArtoo</title>
+    <link rel="stylesheet" href="/style.css">
+  </head>
+  <body>
+    <div class="topbar">
+      <div>
+        <h1>Setup</h1>
+        <div class="subtitle">Controller configuration and system setup</div>
+      </div>
+    </div>
+
+    <nav>
+      <a href="/">Home</a>
+      <a href="/setup.html" class="active">Setup</a>
+      <a href="/serial.html">Serial</a>
+    </nav>
+
+    <div class="card">
+      <h3>Runtime Configuration</h3>
+      <div class="desc">These settings are bench-valid: they update the flashed controller over HTTP and persist through reboot.</div>
+      <form id="config-form" class="form-grid" style="margin-top:12px;">
+        <label class="field">
+          <span>Speed limit max</span>
+          <input id="speed-limit-max" name="speedLimitMax" type="number" min="0" max="600" step="1">
+        </label>
+
+        <label class="field">
+          <span>Web drive timeout (ms)</span>
+          <input id="web-drive-timeout" name="webDriveTimeoutMs" type="number" min="100" max="5000" step="50">
+        </label>
+
+        <label class="field field-checkbox">
+          <input id="ch8-mode-lock" name="ch8ModeLock" type="checkbox">
+          <span>CH8 mode lock</span>
+        </label>
+
+        <div class="button-row">
+          <button class="btn accent" type="submit">Save Config</button>
+          <button id="reload-config-button" class="btn" type="button">Reload</button>
+        </div>
+      </form>
+      <div id="config-feedback" class="feedback" style="margin-top:12px;">Loading config…</div>
+    </div>
+
+    <div class="card">
+      <h3>Configuration Areas</h3>
+      <div class="link-stack" style="margin-top:10px;">
+        <a href="/serial.html" class="btn link-btn">Serial Communication</a>
+        <div class="desc">Hoverboard, dome, and body-link serial configuration surfaces will land here.</div>
+
+        <a href="/wifi.html" class="btn link-btn">WiFi Configuration</a>
+        <div class="desc">View live access point and WiFi client status for the flashed controller.</div>
+
+        <a href="/firmware.html" class="btn link-btn">Firmware Update</a>
+        <div class="desc">Open the current firmware update surface and status notes for bench testing.</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Current Scope</h3>
+      <ul class="feature-list">
+        <li>Config writes are persisted to NVS and survive reboot</li>
+        <li>Changes apply to the flashed controller immediately</li>
+        <li>Some downstream behavior still depends on full hardware integration</li>
+      </ul>
+    </div>
+
+    <div class="status-bar">
+      <div><span class="dot green"></span>Setup page connected to <code>/api/config</code></div>
+      <div class="status-subline" id="fw-meta">Loading firmware info…</div>
+    </div>
+
+    <script src="/setup.js"></script>
+    <script src="/footer.js"></script>
+  </body>
+</html>
