@@ -1,5 +1,9 @@
 # protoArtoo
 
+<p align="center">
+  <img src="data/r2d2body.svg" alt="protoArtoo logo" width="96" height="96">
+</p>
+
 **Open-source ESP32 body controller firmware for hoverboard-driven MK4 astromech droids.**
 
 > An alternative firmware to the firmware shipped on the [Artoo Controller PCB](https://artoo.uk)
@@ -19,11 +23,13 @@ tested, and designed to be understood and extended by the wider droid-building c
 ### What it controls
 
 - **Drive** — hoverboard motors via custom hoverboard firmware and serial UART3 communication
-- **RC input** — dual SBUS receivers: one for drive, one for dome spin
+- **RC input** — three selectable modes: Standard PWM (6-channel), Single SBUS, or Dual SBUS receivers
 - **Audio** — DY-SV5W sound module (default); abstract `AudioDriver` interface for alternatives
 - **Servo arms** — 2× MG996R utility arm servos via LEDC PWM
+- **AUX outputs** — 3× configurable outputs (ARM3-5) supporting MG996R servo, MG90S servo, RGB LED, or disabled
 - **Dome motor** — ESC signal via LEDC PWM (tested: ISDT ESC70)
 - **Dome link** — bidirectional Marcduino serial to AstroPixelsPlus over slip ring
+- **Operation mode** — Driving (full movement) or Stationary (performance mode) via web UI or RC
 
 ### What makes it different from a classic MarcDuino build
 
@@ -39,23 +45,25 @@ tested, and designed to be understood and extended by the wider droid-building c
 | Firmware | Closed-source vendor | **Fully open source** |
 
 See [`docs/topology.md`](./docs/topology.md) for the full architectural comparison.
+For project terms and abbreviations, see [`docs/terminology.md`](./docs/terminology.md).
 
 ---
 
-## Hardware requirements
+## Core Hardware
 
-| Component | Notes |
-|---|---|
-| Artoo Controller PCB v1.1 | ESP32 D1 Mini module |
-| Hoverboard with custom firmware | https://github.com/EFeru/hoverboard-firmware-hack-FOC or https://github.com/RoboDurden/Hoverboard-Firmware-Hack-Gen2.x |
-| 2× SBUS RC receivers | One drive, one dome spin (tested: HOTRC 650) |
-| DY-SV5W audio module | Default driver; DFPlayer Mini also supported |
-| 2× hobby servos | Utility arms (tested: MG996R) |
-| Dome motor ESC | Standard RC ESC, 50 Hz PWM (tested: ISDT ESC70) |
-| Slip ring (12-conductor) | Body↔dome bidirectional serial + power |
-| mattiasbrandt/AstroPixelsPlus | Dome controller — fork of reeltwo/AstroPixelsPlus |
+**Required:**
+- **Artoo Controller PCB v1.1** — ESP32 D1 Mini-based body controller ([artoo.uk](https://artoo.uk))
+- **Hoverboard** with custom firmware — drive motors via UART serial  
+  Compatible: [EFeru FOC](https://github.com/EFeru/hoverboard-firmware-hack-FOC) (STM32) or [RoboDurden Gen2.x](https://github.com/RoboDurden/Hoverboard-Firmware-Hack-Gen2.x-GD32) (GD32)
 
-See [`docs/pin_map.md`](./docs/pin_map.md) for confirmed GPIO assignments (populated in Phase 0).
+**Tested / Supported:**
+- **RC receivers:** Dual SBUS, Single SBUS, or 6-channel PWM (tested: HOTRC 650)
+- **Audio:** DY-SV5W (default), DFPlayer Mini via `AudioDriver` interface
+- **Servos:** MG996R/MG90S utility arms + 3× configurable AUX outputs
+- **Dome motor:** Standard 50 Hz RC ESC (tested: ISDT ESC70)
+- **Dome controller:** [AstroPixelsPlus fork](https://github.com/mattiasbrandt/AstroPixelsPlus) with bidirectional body link
+
+GPIO assignments and wiring details: [`docs/pin_map.md`](./docs/pin_map.md)
 
 ---
 
@@ -84,6 +92,7 @@ protoArtoo/
 └── docs/
     ├── pin_map.md             # GPIO assignments (filled in Phase 0)
     ├── api.md                 # REST API reference
+     ├── terminology.md         # Project glossary (RobotState, NVS, SBUS, etc.)
     └── topology.md            # Classic MarcDuino vs protoArtoo architecture
 ```
 
@@ -163,23 +172,74 @@ Changes from upstream:
 
 ```
 RC Transmitter ──SBUS──→  [protoArtoo — Artoo Controller PCB]  ←──WiFi── Phone browser
-                                │                    │
-                           UART1 (115200)        UART2 (9600)
-                                │                    │ bidirectional
-                                ↓                 slip ring
-                         Hoverboard              [AstroPixelsPlus — dome]
-                                                  • NeoPixel dome lights
-                                                  • Panel servos
-                                                  • Holoprojectors
-                                                  • Logic displays
-                          ↑
-                     UART (9600)
-                    DY-SV5W audio module
-                    (body = sole audio source)
+                                 │                    │
+                            UART1 (115200)        UART2 (9600)
+                                 │                    │ bidirectional
+                                 ↓                 serial link
+                          Hoverboard              [AstroPixelsPlus — dome]
+                                                   • NeoPixel dome lights
+                                                   • Panel servos
+                                                   • Holoprojectors
+                                                   • Logic displays
+                           ↑
+                      UART (9600)
+                     DY-SV5W audio module
+                     (body = sole audio source)
 ```
 
-All Marcduino-compatible commands flow over the bidirectional slip ring link.
+All Marcduino-compatible commands flow over the bidirectional serial link.
 The dome has no local sound module. The body is the sole audio authority.
+
+---
+
+## Key Features
+
+**Modular API Architecture**
+API routes organized into focused modules (`api_estop.cpp`, `api_drive.cpp`, `api_config.cpp`,
+`api_status.cpp`, `api_system.cpp`) replacing the original monolithic structure.
+
+**Operator-Quality Web Interface**
+Web UI formally signed off by project manager (2026-03-15). Operator-facing copy with no
+developer/planning language, component-scoped logging, and responsive design.
+
+**Three RC Input Modes**
+Runtime-selectable: Standard PWM (6-channel), Single SBUS, or Dual SBUS. All modes
+support full channel remapping via web UI without firmware rebuild.
+
+**Configurable AUX Outputs**
+Three AUX channels (ARM3-5) independently configurable as MG996R servo, MG90S servo,
+RGB LED strip, or disabled. Type selection auto-applies safe calibration defaults.
+
+**Operation Mode & Mood Selector**
+- Driving ↔ Stationary modes via dedicated `/api/mode` endpoint
+- Four mood profiles (Quiet, Mid-Awake, Full-Awake, Awake+) coordinating body audio
+  and dome visuals over bidirectional link
+
+**Safety-First Architecture**
+- Five independent failsafe layers from hardware through application
+- Latching estop requiring explicit clear — never auto-resets
+- Component-scoped logging with source tracing (`[SERVO] [WEB] Arm1 opened`) for full auditability
+
+**Bidirectional Dome Link**
+- Full-duplex serial over slip ring (body ↔ dome, not just body → dome)
+- Dome can trigger body actions (sounds, arm sequences) — coordinated cross-controller sequences
+- Heartbeat protocol with connection state tracking (Connected / Lost / Not seen)
+
+**Universal Browser Control**
+- Works on any phone/tablet/laptop — no app installation required
+- WiFi AP mode for field use + STA mode for home network
+- Real-time dashboard with live logs, health indicators, and manual command interface
+
+**Hardware Flexibility**
+- Abstract `AudioDriver` interface — swap audio modules without code changes
+- Component type system — AUX outputs configurable per-channel (servo types or RGB)
+- Runtime RC mode selection — PWM, Single SBUS, or Dual SBUS without rebuild
+
+**Modern Development Practices**
+- 315+ native unit tests covering LEDC math, dome math, SBUS protocol, Marcduino helpers
+- PlatformIO build system with static analysis (`pio check`)
+- FreeRTOS core isolation: Core 0 (network/web), Core 1 (real-time control)
+- Modular architecture with focused API route modules
 
 ---
 
@@ -188,8 +248,8 @@ The dome has no local sound module. The body is the sole audio authority.
 This firmware controls a 20 kg wheeled robot. The failsafe system has five
 independent layers:
 
-1. **SBUS receiver hardware failsafe** — receiver firmware, ~100 ms
-2. **SBUS software watchdog** — 200 ms timeout in SBUSInputTask
+1. **RC receiver hardware failsafe** — receiver firmware, ~100 ms
+2. **RC software watchdog** — 200 ms timeout in RC input task (all modes: PWM, SBUS)
 3. **Web API drive timeout** — 500 ms; client must re-send to keep driving
 4. **ESP32 Task Watchdog Timer** — 3 s reset; post-reset boot sets estop=true
 5. **Hoverboard own UART timeout** — ~500 ms, independent of ESP32
@@ -248,37 +308,55 @@ If you are building a droid and considering the Artoo Controller PCB:
 
 ---
 
-### Firmware and libraries
+### Firmware
 
-**[EFeru](https://github.com/EFeru)** —
-[hoverboard-firmware-hack-FOC](https://github.com/EFeru/hoverboard-firmware-hack-FOC).
-The original open-source custom hoverboard firmware that introduced the 8-byte UART
-serial protocol used by protoArtoo's drive system. Supports FOC (Field Oriented Control)
-on older-generation hoverboard mainboards based on STM32.
+**Hoverboard Firmware**
 
-**[RoboDurden](https://github.com/RoboDurden)** —
-[Hoverboard-Firmware-Hack-Gen2.x-GD32](https://github.com/RoboDurden/Hoverboard-Firmware-Hack-Gen2.x-GD32).
-A port of the EFeru firmware for newer Gen2.x hoverboard mainboards based on GD32F130.
+| Project | MCU | Description |
+|---------|-----|-------------|
+| [EFeru/hoverboard-firmware-hack-FOC](https://github.com/EFeru/hoverboard-firmware-hack-FOC) | STM32 | Original open-source hoverboard firmware with FOC (Field Oriented Control). Introduced the 8-byte UART protocol used by protoArtoo. |
+| [RoboDurden/Hoverboard-Firmware-Hack-Gen2.x-GD32](https://github.com/RoboDurden/Hoverboard-Firmware-Hack-Gen2.x-GD32) | GD32F130 | Port for newer Gen2.x hoverboard mainboards. Compatible protocol. |
 
-Uses the same 8-byte UART serial protocol, making both firmwares compatible with
-protoArtoo's drive system — which one you need depends on your hoverboard generation.
+**Dome Controller**
 
-**[reeltwo](https://github.com/reeltwo)** —
-[AstroPixelsPlus](https://github.com/reeltwo/AstroPixelsPlus) and the
-[Reeltwo library](https://github.com/reeltwo/Reeltwo). The dome controller that
-protoArtoo communicates with is built on this foundation. The Reeltwo library's
-Marcduino command handling and its clean peripheral abstraction made it straightforward
-to implement the bidirectional body link in the dome fork.
+| Project | Description |
+|---------|-------------|
+| [reeltwo/AstroPixelsPlus](https://github.com/reeltwo/AstroPixelsPlus) | Base dome controller firmware. Uses Reeltwo library for Marcduino command handling. |
+| [mattiasbrandt/AstroPixelsPlus](https://github.com/mattiasbrandt/AstroPixelsPlus) | Fork with bidirectional body link support (heartbeat protocol, body command dispatch). |
 
-**Arduino ESP32 core** —
-the RMT support in the Arduino ESP32 core made it possible to implement the
-in-repo SBUS decoder without consuming a hardware UART.
+### Libraries
+
+**External Dependencies (via PlatformIO)**
+
+| Library | Version | Purpose |
+|---------|---------|---------|
+| [ESPAsyncWebServer](https://github.com/ESP32Async/ESPAsyncWebServer) | 3.6.0 | Asynchronous HTTP/WebSocket server for web UI and REST API |
+| [AsyncTCP](https://github.com/ESP32Async/AsyncTCP) | 3.3.2 | Async TCP library for ESP32 (required by ESPAsyncWebServer) |
+| [ArduinoJson](https://github.com/bblanchon/ArduinoJson) | 7.4.3 | JSON serialization/deserialization for API payloads |
+
+**ESP32 Arduino Core (Built-in)**
+
+| Component | Purpose |
+|-----------|---------|
+| `Preferences` | NVS (Non-Volatile Storage) for configuration persistence |
+| `LittleFS` | Flash filesystem for web UI assets |
+| `WiFi` | WiFi AP + STA mode support |
+| `LEDC` | PWM generation for servos and ESC |
+| `RMT` | Remote Control peripheral for SBUS decoding (no hardware UART consumed) |
+| `FreeRTOS` | Task scheduling with core isolation (Core 0: network/web, Core 1: real-time control) |
 
 ---
 
 ### Community
 
-The broader **[astromech building community](https://astromech.net/)** — the
-collective open knowledge around MarcDuino, SHADOW, panel wiring, dome mechanics,
-and the MK4 print files is what makes personal droid builds possible at all. This
-firmware is intended as a contribution back to that community.
+**[Mr Baddeley](https://www.patreon.com/c/mrbaddeley)** — Creator of the
+3D-printable MK4 astromech droid design. His print files, assembly guides, and
+ongoing refinement work have made R2-D2 replica building accessible to thousands
+of makers worldwide. The [Mr Baddeley Facebook Community](https://www.facebook.com/groups/MrBaddeley/)
+is the primary hub for builders sharing progress, troubleshooting, and celebrating
+their droids.
+
+**[astromech.net](https://astromech.net/)** — The broader astromech building
+community. The collective open knowledge around MarcDuino, SHADOW, panel wiring,
+dome mechanics, and electronics is what makes personal droid builds possible.
+This firmware is intended as a contribution back to that community.
