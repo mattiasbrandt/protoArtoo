@@ -6,9 +6,9 @@
 
 **Open-source ESP32 body controller firmware for hoverboard-driven MK4 astromech droids.**
 
-> An alternative firmware to the firmware shipped on the [Artoo Controller PCB](https://artoo.uk)
-> that is fully owned, auditable, and extensible — same hardware, completely
-> transparent code.
+> An open-source firmware alternative for the [Artoo Controller PCB](https://artoo.uk).
+> Written from scratch with full transparency and community extensibility in mind —
+> leveraging the same excellent hardware with openly auditable code.
 
 ---
 
@@ -39,10 +39,10 @@ tested, and designed to be understood and extended by the wider droid-building c
 | Dome controller | ATmega328P | AstroPixelsPlus ESP32 |
 | Body→dome serial | TX only (one direction) | **Full-duplex bidirectional** |
 | Sound location | Dome | **Body** — sole audio source |
-| Drive | Sabertooth / JAW motors | Hoverboard via Gen2.x UART |
-| RC input | PS2 via SHADOW Android app | SBUS receivers + phone browser |
+| Drive | Sabertooth / JAW motors | Hoverboard (custom firmware) |
+| RC input | PS2 via SHADOW Android app | RC receivers (PWM/SBUS) + any web browser |
 | Board count | 2–3 MarcDuino PCBs | 2 ESP32 boards only |
-| Firmware | Closed-source vendor | **Fully open source** |
+| Firmware | Open source (ATmega328P) | **Open source (ESP32)** |
 
 See [`docs/topology.md`](./docs/topology.md) for the full architectural comparison.
 For project terms and abbreviations, see [`docs/terminology.md`](./docs/terminology.md).
@@ -295,13 +295,12 @@ MIT — see [LICENSE](./LICENSE)
 ### Hardware — Artoo Controller PCB
 
 **[Steve](https://www.artoo.uk/)** designed the Artoo Controller PCB that protoArtoo
-runs on. The board is a genuinely clever piece of hardware engineering: an ESP32
-module with dedicated headers for dual SBUS receivers, servo outputs, audio module
-serial, dome serial, and hoverboard UART — all in a compact form factor designed
-specifically for MK4 astromech droid body electronics. The thoughtful layout, connector
-choices, and peripheral routing on this PCB made the task of writing an alternative
-firmware significantly easier than starting from scratch hardware. Steve's work on
-the hardware side deserves full credit and recognition.
+runs on. The board provides a practical, purpose-built platform for MK4 astromech
+droid body electronics: an ESP32 module with dedicated headers for RC receivers,
+servo outputs, audio module, dome serial, and hoverboard UART — all in a compact
+form factor. This ready-made hardware foundation made it possible to focus on
+firmware development rather than board design. Steve's work on the hardware side
+deserves full credit and recognition.
 
 If you are building a droid and considering the Artoo Controller PCB:
 👉 **[artoo.uk](https://www.artoo.uk/)**
