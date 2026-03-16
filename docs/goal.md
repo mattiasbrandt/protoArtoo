@@ -937,8 +937,14 @@ These visual sequences are handled in AstroPixelsPlus by `QuietModeReset`,
 
 `robotState.activeMood` tracks the current mood (`uint8_t`, values 10/11/13/14 matching
 `:SE1x` command index, 0 = unset). It is written under `portMUX` whenever a mood
-command is applied, and read by the status API and dashboard poll. It is NVS-backed
-(`NVS key: last_mood`) so the droid restores the previous mood on boot.
+command is applied, and exposed in `/api/status` for dashboard poll. It is NVS-backed
+(`NVS key: last_mood`, default 0/unset).
+
+**Boot restoration:** on startup, the last mood is read from NVS and the audio
+component is applied to AudioTask (resume or stop chatter). The dome TX path is
+**not** used during boot — the dome link is not yet established and sending
+`:SE1x` to a silent UART would be wasted. Dome visual state will follow the
+next user-initiated mood change after the link comes up.
 
 #### Sleep / Wake Integration
 
@@ -2365,22 +2371,38 @@ GitHub Releases are created from every tag with the relevant CHANGELOG section a
 
 #### Branch strategy
 
+protoArtoo uses a phase-oriented branch model. See `tasks/dev-workflow-change-spec.md`
+for the full specification.
+
 ```
-main            — always releasable; tagged at every version
-│
-├── dev         — integration branch; phase work merges here first
-│   │
-│   ├── feature/phase1-drive-task
-│   ├── feature/phase1-sbus-input
-│   ├── fix/sbus-timeout-edge-case
-│   └── docs/pin-map-phase0
+main
+└── phase/v0.4.0        ← active phase branch (all work lands here)
+    ├── (feat/fix/docs/chore commits)
+    └── ...
+
+exp/<topic>            ← disposable experiments; never merged to main
 ```
 
-Rules:
-- `main` only receives merges from `dev` when the milestone condition is met and tests pass
-- `dev` receives feature/fix branches via pull request — even as a solo project, PRs create a review checkpoint and a clean git history
-- Direct commits to `main` forbidden except `docs:` and `chore:` with no code changes
-- Feature branches named `feature/<phase>-<what>`, fix branches `fix/<what>`, doc branches `docs/<what>`
+Branch model:
+
+| Branch | Purpose |
+|---|---|
+| `main` | Stable, released state only; tagged at every version |
+| `phase/vX.Y.Z` | All work for the active phase (e.g. `phase/v0.4.0`) |
+| `exp/<topic>` | Disposable experiments; never merged directly to `main` |
+
+`dev`, `feature/<phase>-<what>`, and `fix/<what>` branches are retired as of Phase v0.4.0.
+
+Commit scope format (required for all commits in a phase branch):
+
+```
+type(phase:vX.Y.Z/T<NN>): summary
+```
+
+- `T<NN>` is the zero-padded task number from the phase plan (`T01`, `T02`, ...)
+- `T00` = scaffolding / admin commits not tied to a specific task
+- Never commit directly to `main`
+- Phase → `main` merges require PM approval; non-fast-forward merge preserves commit-level traceability
 
 ---
 
@@ -2535,6 +2557,7 @@ POST /upload/filesystem    → OTA filesystem flash (U_SPIFFS/LittleFS, multipar
     "rx2_last_frame_ms": 0,
     "rx2_hw_failsafe": false
   },
+  "active_mood": 0,
   "battery_mv": 0,
   "wifi_ap_clients": 0,
   "wifi_sta_connected": false,
