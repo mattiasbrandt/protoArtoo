@@ -12,8 +12,8 @@
 //   ignores/delegates unsupported prefixes by topology design.
 //
 // Contract sources:
-// - tasks/goal.md (body-vs-dome ownership and routing)
-// - tasks/marcduino_commands.md (command reference inventory)
+// - docs/goal.md (body-vs-dome ownership and routing)
+// - docs/marcduino_commands.md (command reference inventory)
 //
 // Testing strategy:
 // - Pure mapping/conversion helpers are split into marcduino_helpers.h and

@@ -26,7 +26,7 @@ assumption briefly.
 
 - Planning baseline: `tasks/status.md`, `tasks/phase0-tasks.md`,
   `tasks/phase1-tasks.md`, `tasks/phase2-tasks.md`, `tasks/phase3-tasks.md`,
-  `tasks/phase4-tasks.md`, `tasks/phase5-tasks.md`, `tasks/goal.md`
+  `tasks/phase4-tasks.md`, `tasks/phase5-tasks.md`, `docs/goal.md`
 - Phase 3 RC diagnostics/mapping contract: `tasks/rc_diagnostics_contract.md`
 - Hardware truth: `docs/pin_map.md`, `include/config.h`
 - Shared state truth: `include/robot_state.h`

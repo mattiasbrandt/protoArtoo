@@ -9,7 +9,7 @@
 // - This is a body-side custom parser by intent (no Reeltwo parser dependency
 //   on the body firmware).
 // - It implements the protoArtoo subset and routing contract documented in
-//   tasks/goal.md and tasks/marcduino_commands.md.
+//   docs/goal.md and docs/marcduino_commands.md.
 // =============================================================================
 #pragma once
 

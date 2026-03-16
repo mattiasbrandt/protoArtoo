@@ -8,7 +8,7 @@
 
 """
 Planned functionality:
-- Parse the canonical Marcduino command table from tasks/goal.md
+- Parse the canonical Marcduino command table from docs/goal.md
 - Compare against implemented command handlers in src/
 - Report missing, extra, or misrouted commands
 """

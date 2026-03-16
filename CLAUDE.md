@@ -115,7 +115,7 @@ pio check                       # static analysis (cppcheck)
 - If anything goes sideways or new information invalidates the plan: **stop immediately**, update the plan, then continue — do not keep pushing.
 - Write a crisp spec first when requirements are ambiguous (inputs/outputs, edge cases, success criteria).
 - For hardware-touching changes: specify which GPIO, UART, or peripheral is affected and confirm the pin is traced/confirmed before writing code.
-- **Authoritative plan files live in `tasks/`**. Use `tasks/status.md`, `tasks/phase*-tasks.md`, and `tasks/goal.md` as the planning source of truth for this repository.
+- **Authoritative plan files live in `tasks/`**. Use `tasks/status.md`, `tasks/phase*-tasks.md`, and `docs/goal.md` as the planning source of truth for this repository.
 - Also consult phase-specific companion contracts/specs when present
   (for example `tasks/rc_diagnostics_contract.md` for Phase 3 RC diagnostics/mapping).
 - Treat `.sisyphus/plans/` as internal agent scratch/history only — do not rely on it as the authoritative project plan when repo-local `tasks/` files exist.
@@ -198,7 +198,7 @@ are defined in `AGENTS.md` § "Execution Model". Follow those rules as-is.
 1. **Plan First**
    - Write a checklist to `tasks/todo.md` for any non-trivial work.
    - Include "Verify" tasks explicitly (`pio run`, `pio test -e native`, `pio check`, on-device test).
-  - Keep instruction/doc updates aligned with current `tasks/goal.md` +
+  - Keep instruction/doc updates aligned with current `docs/goal.md` +
     `tasks/phase*-tasks.md` wording and constraints.
 2. **Verify Plan**
    - Add acceptance criteria (what must be true when done).
@@ -278,7 +278,7 @@ are defined in `AGENTS.md` § "Execution Model". Follow those rules as-is.
 ### 1. Read Before Write
 - Before editing:
   - locate the authoritative source of truth (existing module/pattern/tests).
-  - Check `tasks/goal.md` for the canonical specification of the feature.
+  - Check `docs/goal.md` for the canonical specification of the feature.
 - Prefer small, local reads (targeted files) over scanning the whole repo.
 
 ### 2. Keep a Working Memory
@@ -287,7 +287,7 @@ are defined in `AGENTS.md` § "Execution Model". Follow those rules as-is.
 - When context gets large:
   - compress into a brief summary and discard raw noise.
 - Key reference files to consult:
-  - `tasks/goal.md` — full firmware plan and protocol specs
+  - `docs/goal.md` — full firmware specification and protocol specs
   - `tasks/body_dome_serial_link_spec.md` — dome link protocol details
   - `tasks/body_dome_serial_link_astropixel_implementation.md` — dome fork implementation notes
   - `include/config.h` — GPIO assignments (source of truth for pin numbers)
@@ -365,7 +365,7 @@ If anything unexpected happens (test failures, build errors, behavior regression
 ## Engineering Best Practices (protoArtoo Edition)
 
 ### 1. API / Interface Discipline
-- REST API endpoints follow the canonical definitions in `tasks/goal.md` Section 9.
+- REST API endpoints follow the canonical definitions in `docs/goal.md` Section 9.
 - All drive commands go through `setDriveCommand()` with `CommandSource` tagging, never written directly to `RobotState`.
 - All audio routes through `AudioTask` queue regardless of source (RC, web API, dome serial `$` RX).
 - Dome TX commands go through `domeTxQueue`, never written directly to the UART.
@@ -429,7 +429,7 @@ If anything unexpected happens (test failures, build errors, behavior regression
 - **GPIO pins**: Only use values from `include/config.h`. If a pin is `TBD`, leave it as `TBD` — it must cause a compile error, not a silent wrong-pin bug.
 - **UART writes**: Only the owning task writes to each UART (DriveTask → UART1, DomeLinkTask → UART2, AudioTask → Serial2 pins for DY-SV5W). No other task touches them.
 - **PWM**: LEDC channels 0–2 assigned in `config.h`. Servos at 50 Hz.
-- **Boot sequence**: Follow the exact order in `tasks/goal.md` Section 7.6. Hoverboard UART before WiFi. Zero frames immediately after UART1 init.
+- **Boot sequence**: Follow the exact order in `docs/goal.md` Section 7.6. Hoverboard UART before WiFi. Zero frames immediately after UART1 init.
 
 ### 9. AsyncWebServer Rules
 - `initAsyncWeb()` only from WiFi event callback — never directly in `setup()`.
@@ -449,7 +449,7 @@ If anything unexpected happens (test failures, build errors, behavior regression
 
 ### 11. RC Mapping + UX Rules
 - Maintain default mapping intent parity between `single_sbus` and `standard_pwm`
-  as defined in `tasks/goal.md` Section 6.5 and `tasks/phase3-tasks.md`.
+  as defined in `docs/goal.md` Section 6.5 and `tasks/phase3-tasks.md`.
 - Preserve `dual_sbus` split default: receiver #1 drive/speed-limit, receiver #2 dome;
   remaining receiver #2 channels configurable.
 - All remap/calibration flows must be editable from webpage and persisted in NVS.
@@ -513,7 +513,7 @@ Claude-specific additions:
 ### Plan Template (Paste into `tasks/todo.md`)
 - [ ] Restate goal + acceptance criteria
 - [ ] Locate existing implementation / patterns
-- [ ] Check `tasks/goal.md` for canonical spec of the feature
+- [ ] Check `docs/goal.md` for canonical spec of the feature
 - [ ] Design: minimal approach + key decisions
 - [ ] Confirm GPIO pins are traced/confirmed (not TBD) if hardware-touching
 - [ ] Implement smallest safe slice

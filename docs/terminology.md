@@ -101,7 +101,7 @@ In this repo, "Marcduino command" usually means:
 
 Where it appears:
 
-- Protocol/planning docs: `tasks/goal.md`, `tasks/marcduino_commands.md`
+- Protocol/planning docs: `docs/goal.md`, `docs/marcduino_commands.md`
 - Body parser code: `src/drivers/marcduino_rx.cpp`
 - Shared constants/helpers: `include/marcduino.h`, `include/marcduino_helpers.h`
 
