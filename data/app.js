@@ -1,302 +1,215 @@
+// =============================================================================
+// app.js
+//
+// Home dashboard controller — system health indicators, component status grid,
+// and live log console. Polls /api/status every 2 seconds.
+// Drive controls and dome controls live in drive.js and dome.js respectively.
+// =============================================================================
 (() => {
-  const estop = document.getElementById("estop-state");
-  const webControl = document.getElementById("web-control-state");
-  const failsafe = document.getElementById("failsafe-source");
-  const drive = document.getElementById("drive-output");
-  const speedLimit = document.getElementById("speed-limit");
-  const pollState = document.getElementById("poll-state");
-  const pollTime = document.getElementById("poll-time");
-  const estopButton = document.getElementById("estop-button");
-  const clearEstopButton = document.getElementById("clear-estop-button");
-  const enableWebControlButton = document.getElementById("enable-web-control-button");
-  const disableWebControlButton = document.getElementById("disable-web-control-button");
-  const controlFeedback = document.getElementById("control-feedback");
   const healthSummary = document.getElementById("health-summary");
   const logConsole = document.getElementById("log-console");
-  const manualInput = document.getElementById("manual-cmd");
-  const manualSend = document.getElementById("manual-send");
-  const manualFeedback = document.getElementById("manual-feedback");
-  const driveButtons = document.querySelectorAll("[data-drive-speed]");
-  let holdTimer = null;
-  let pollTimer = null;
+  const componentStatusCard = document.getElementById("component-status-card");
+  const componentStatusGrid = document.getElementById("component-status-grid");
 
-  if (
-    !estop ||
-    !webControl ||
-    !failsafe ||
-    !drive ||
-    !speedLimit ||
-    !estopButton ||
-    !clearEstopButton ||
-    !enableWebControlButton ||
-    !disableWebControlButton ||
-    !controlFeedback ||
-    !healthSummary ||
-    !logConsole ||
-    !manualInput ||
-    !manualSend ||
-    !manualFeedback
-  ) {
-    return;
-  }
+  // Per-component labels: [stateKey, emoji, humanLabel]
+  const COMPONENT_LABELS = [
+    ["arm1",         "🦾", "Left Arm"],
+    ["arm2",         "🦾", "Right Arm"],
+    ["aux1",         "🦾", "Aux Servo 1"],
+    ["aux2",         "🦾", "Aux Servo 2"],
+    ["aux3",         "🦾", "Aux Servo 3"],
+    ["dome",         "🔄", "Dome Motor"],
+    ["rcCh1",        "🕹️", "RC Channel 1"],
+    ["rcCh2",        "🕹️", "RC Channel 2"],
+    ["rcCh3",        "🕹️", "RC Channel 3"],
+    ["rcCh4",        "🕹️", "RC Channel 4"],
+    ["rcCh5",        "🕹️", "RC Channel 5"],
+    ["rcCh6",        "🕹️", "RC Channel 6"],
+    ["s1Hoverboard", "🔌", "Hoverboard Drive"],
+    ["s2Sound",      "🔊", "Sound Module"],
+    ["s3DomeCtrl",   "🔌", "Dome Controller"],
+  ];
 
   const setIndicator = (id, state) => {
     const el = document.getElementById(id);
-    if (!el) {
-      return;
-    }
+    if (!el) return;
     el.className = `indicator ${state}`;
   };
 
-  const renderHealth = async () => {
+  const renderHealth = (payload) => {
+    setIndicator("h-sbus",  payload.sbusSignalLost || payload.sbusHwFailsafe ? "fail" : "ok");
+    setIndicator("h-wifi",  (payload.wifiConnected || payload.wifiClientConnected) ? "ok" : "warn");
+    setIndicator("h-fs",    payload.littleFsReady ? "ok" : "fail");
+    setIndicator("h-heap",  payload.heapFree > 120000 ? "ok" : payload.heapFree > 80000 ? "warn" : "fail");
+
+    if (!healthSummary) return;
+
+    const heapFreeKb = Math.round(payload.heapFree / 1024);
+    const heapMinKb  = Math.round(payload.heapMin  / 1024);
+
+    let heapLabel = "✅ Healthy"; let heapColor = "var(--success)";
+    if (heapFreeKb < 80)  { heapLabel = "❌ Critical"; heapColor = "var(--danger)"; }
+    else if (heapFreeKb < 120) { heapLabel = "⚠️ Low"; heapColor = "var(--warning)"; }
+
+    let heapMinLabel = "✅ Good"; let heapMinColor = "var(--success)";
+    if (heapMinKb < 64)  { heapMinLabel = "❌ Critical"; heapMinColor = "var(--danger)"; }
+    else if (heapMinKb < 96) { heapMinLabel = "⚠️ Watch"; heapMinColor = "var(--warning)"; }
+
+    let wifiQuality = "❌ Unknown"; let wifiColor = "var(--danger)";
+    if ((payload.wifiConnected || payload.wifiClientConnected) && payload.wifiRssi !== 0) {
+      if      (payload.wifiRssi >= -67) { wifiQuality = `✅ Excellent (${payload.wifiRssi} dBm)`; wifiColor = "var(--success)"; }
+      else if (payload.wifiRssi >= -75) { wifiQuality = `✅ Good (${payload.wifiRssi} dBm)`;      wifiColor = "var(--success)"; }
+      else if (payload.wifiRssi >= -85) { wifiQuality = `⚠️ Fair (${payload.wifiRssi} dBm)`;  wifiColor = "var(--warning)"; }
+      else                              { wifiQuality = `❌ Poor (${payload.wifiRssi} dBm)`;       wifiColor = "var(--danger)"; }
+    }
+
+    healthSummary.innerHTML =
+      `Memory: <span style="color:${heapColor};font-weight:700">${heapFreeKb} KB ${heapLabel}</span><br>` +
+      `Memory Min: <span style="color:${heapMinColor};font-weight:700">${heapMinKb} KB ${heapMinLabel}</span><br>` +
+      `WiFi: <span style="color:${wifiColor};font-weight:700">${wifiQuality}</span>`;
+  };
+
+  const renderComponentStatus = (payload) => {
+    if (!componentStatusCard || !componentStatusGrid) return;
+
+    const active = COMPONENT_LABELS.filter(([key]) => key in payload);
+    if (active.length === 0) {
+      componentStatusCard.classList.add("hidden");
+      componentStatusGrid.innerHTML = "";
+      return;
+    }
+
+    componentStatusCard.classList.remove("hidden");
+    componentStatusGrid.innerHTML = active.map(([key, icon, label]) => {
+      const entry = payload[key];
+      let state  = entry ? "enabled" : "disabled";
+      let detail = entry ? "✅ Enabled"  : "⏸️ Disabled";
+      if (entry && typeof entry === "object") {
+        state  = entry.state  || "enabled";
+        detail = entry.detail || "✅ Enabled";
+      }
+      return `
+        <div class="status-item">
+          <dt>${icon} ${label}</dt>
+          <dd>${state.replace(/_/g, " ")}</dd>
+          <div class="desc mt-6">${detail}</div>
+        </div>`;
+    }).join("");
+  };
+
+  const poll = async () => {
     try {
       const response = await fetch("/api/status", { cache: "no-store" });
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const payload = await response.json();
-      setIndicator("h-estop", payload.estop ? "warn" : "ok");
-      setIndicator("h-sbus", payload.sbusSignalLost || payload.sbusHwFailsafe ? "fail" : "ok");
-      setIndicator("h-web", payload.webControlEnabled ? "ok" : "warn");
-      setIndicator("h-wifi", payload.wifiConnected ? "ok" : "warn");
-      setIndicator("h-fs", payload.littleFsReady ? "ok" : "fail");
-      setIndicator("h-heap", payload.heapFree > 120000 ? "ok" : payload.heapFree > 80000 ? "warn" : "fail");
-
-      const heapFreeKb = Math.round(payload.heapFree / 1024);
-      const heapMinKb = Math.round(payload.heapMin / 1024);
-
-      let heapLabel = "Healthy";
-      let heapColor = "var(--success)";
-      if (heapFreeKb < 80) {
-        heapLabel = "Critical";
-        heapColor = "var(--danger)";
-      } else if (heapFreeKb < 120) {
-        heapLabel = "Low";
-        heapColor = "var(--warning)";
-      }
-
-      let heapMinLabel = "Good";
-      let heapMinColor = "var(--success)";
-      if (heapMinKb < 64) {
-        heapMinLabel = "Critical";
-        heapMinColor = "var(--danger)";
-      } else if (heapMinKb < 96) {
-        heapMinLabel = "Watch";
-        heapMinColor = "var(--warning)";
-      }
-
-      let wifiQuality = "Unknown";
-      let wifiColor = "var(--danger)";
-      if (payload.wifiClientConnected && payload.wifiRssi !== 0) {
-        if (payload.wifiRssi >= -67) {
-          wifiQuality = `Excellent (${payload.wifiRssi} dBm)`;
-          wifiColor = "var(--success)";
-        } else if (payload.wifiRssi >= -75) {
-          wifiQuality = `Good (${payload.wifiRssi} dBm)`;
-          wifiColor = "var(--success)";
-        } else if (payload.wifiRssi >= -85) {
-          wifiQuality = `Fair (${payload.wifiRssi} dBm)`;
-          wifiColor = "var(--warning)";
-        } else {
-          wifiQuality = `Poor (${payload.wifiRssi} dBm)`;
-          wifiColor = "var(--danger)";
-        }
-      }
-
-      healthSummary.innerHTML = `Heap: <span style="color:${heapColor};font-weight:700">${heapFreeKb} KB (${heapLabel})</span><br>Heap min: <span style="color:${heapMinColor};font-weight:700">${heapMinKb} KB (${heapMinLabel})</span><br>WiFi quality: <span style="color:${wifiColor};font-weight:700">${wifiQuality}</span>`;
-    } catch (_error) {
-      healthSummary.textContent = "Failed to load health";
-    }
+      renderHealth(payload);
+      renderComponentStatus(payload);
+      renderOpMode(payload);
+      renderMoodDomeNote(payload);
+    } catch (_error) {}
   };
 
-  const loadLogs = async () => {
-    try {
-      const response = await fetch("/api/logs", { cache: "no-store" });
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
+  poll();
+  window.setInterval(poll, 2000);
+
+  // ---- Live Log Console (SSE push) ----
+  // Backfill and live lines arrive via event:log on /api/events.
+  // GET /api/logs is preserved for curl/diagnostics but not used by this page.
+  const logPaused = document.getElementById("log-paused");
+
+  function appendLogLine(text) {
+    if (!logConsole) return;
+    // Trim oldest lines when buffer exceeds 250 to keep the DOM light.
+    const raw = logConsole.textContent;
+    if (raw.length > 0 && raw !== "Waiting for logs…") {
+      const lines = raw.split("\n");
+      if (lines.length > 250) {
+        logConsole.textContent = lines.slice(lines.length - 200).join("\n") + "\n";
       }
-      logConsole.textContent = await response.text();
+    } else {
+      logConsole.textContent = "";
+    }
+    logConsole.textContent += text + "\n";
+    // Auto-scroll unless the user has scrolled up.
+    const threshold = 50;
+    const atBottom =
+      logConsole.scrollTop + logConsole.clientHeight >= logConsole.scrollHeight - threshold;
+    if (atBottom) {
       logConsole.scrollTop = logConsole.scrollHeight;
-    } catch (_error) {
-      logConsole.textContent = "Failed to load logs";
+      if (logPaused) logPaused.classList.remove("visible");
+    } else {
+      if (logPaused) logPaused.classList.add("visible");
     }
-  };
+  }
 
-  const sendManualCommand = async () => {
-    const command = manualInput.value.trim();
-    if (!command) {
-      manualFeedback.textContent = "Enter a command first.";
-      return;
-    }
-
-    manualFeedback.textContent = `Sending ${command}...`;
-    try {
-      const body = new URLSearchParams({ command });
-      const response = await fetch("/api/manual-command", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
-        },
-        body,
-      });
-
-      if (!response.ok) {
-        const errorBody = await response.json().catch(() => null);
-        throw new Error(errorBody?.error || `HTTP ${response.status}`);
-      }
-
-      manualFeedback.textContent = `Sent ${command} at ${new Date().toLocaleTimeString()}`;
-      manualInput.value = "";
-      refresh();
-      renderHealth();
-      loadLogs();
-    } catch (error) {
-      manualFeedback.textContent = error instanceof Error ? error.message : "Command failed";
-    }
-  };
-
-  const renderStatus = (payload) => {
-    estop.textContent = payload.estop ? "Latched" : "Clear";
-    webControl.textContent = payload.webControlEnabled ? "Enabled" : "Disabled";
-    failsafe.textContent = String(payload.failsafeSource);
-    drive.textContent = `${payload.driveSpeed} / ${payload.driveSteer}`;
-    speedLimit.textContent = Number(payload.speedLimitScale).toFixed(3);
-    if (pollState) {
-      pollState.innerHTML = "Polling <code>GET /api/status</code>";
-    }
-    if (pollTime) {
-      pollTime.textContent = `Last update ${new Date().toLocaleTimeString()}`;
-    }
-  };
-
-  const renderError = () => {
-    if (pollState) {
-      pollState.innerHTML = "Falling back to <code>GET /api/status</code>";
-    }
-  };
-
-  const postCommand = async (path, label) => {
-    controlFeedback.textContent = `${label}...`;
-
-    try {
-      const response = await fetch(path, { method: "POST" });
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-
-      controlFeedback.textContent = `${label} sent at ${new Date().toLocaleTimeString()}`;
-    } catch (_error) {
-      controlFeedback.textContent = `${label} failed`;
-    }
-  };
-
-  const postDriveCommand = async (speed, steer) => {
-    controlFeedback.textContent = `Drive ${speed}/${steer}...`;
-
-    try {
-      const body = new URLSearchParams({
-        speed: String(speed),
-        steer: String(steer),
-      });
-      const response = await fetch("/api/drive", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
-        },
-        body,
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-
-      controlFeedback.textContent = `Drive ${speed}/${steer} sent at ${new Date().toLocaleTimeString()}`;
-    } catch (_error) {
-      controlFeedback.textContent = `Drive ${speed}/${steer} failed`;
-    }
-  };
-
-  const stopHoldLoop = () => {
-    if (holdTimer !== null) {
-      window.clearInterval(holdTimer);
-      holdTimer = null;
-    }
-  };
-
-  const startHoldLoop = (speed, steer) => {
-    stopHoldLoop();
-    postDriveCommand(speed, steer);
-    holdTimer = window.setInterval(() => {
-      postDriveCommand(speed, steer);
-    }, 150);
-  };
-
-  const startPolling = () => {
-    if (pollTimer !== null) {
-      return;
-    }
-
-    refresh();
-    pollTimer = window.setInterval(refresh, 1000);
-  };
-
-  const refresh = async () => {
-    try {
-      const response = await fetch("/api/status", { cache: "no-store" });
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-
-      renderStatus(await response.json());
-      renderHealth();
-    } catch (_error) {
-      renderError();
-    }
-  };
-
-  estopButton.addEventListener("click", () => {
-    postCommand("/api/estop", "Estop latch");
+  // Resume auto-scroll when the user scrolls back to the bottom.
+  logConsole?.addEventListener("scroll", () => {
+    const threshold = 50;
+    const atBottom =
+      logConsole.scrollTop + logConsole.clientHeight >= logConsole.scrollHeight - threshold;
+    if (atBottom && logPaused) logPaused.classList.remove("visible");
   });
 
-  clearEstopButton.addEventListener("click", () => {
-    postCommand("/api/estop/clear", "Estop clear");
+  if (typeof EventSource !== "undefined" && logConsole) {
+    const logSource = new EventSource("/api/events");
+    logSource.addEventListener("log", (e) => appendLogLine(e.data));
+  }
+
+  // ---- Operation Mode ----
+  const opmodeDrive      = document.getElementById("opmode-drive");
+  const opmodeStationary = document.getElementById("opmode-stationary");
+
+  function renderOpMode(payload) {
+    if (!opmodeDrive || !opmodeStationary) return;
+    const isStationary = !!payload.stationary;
+    opmodeDrive.classList.toggle("active", !isStationary);
+    opmodeStationary.classList.toggle("active", isStationary);
+  }
+
+  const sendManualCommand = async (cmd) => {
+    const body = new URLSearchParams();
+    body.set("command", cmd);
+    try {
+      await fetch("/api/manual-command", { method: "POST", body });
+    } catch (_e) {}
+  };
+
+  const setMode = async (mode) => {
+    const body = new URLSearchParams();
+    body.set("mode", mode);
+    try {
+      await fetch("/api/mode", { method: "POST", body });
+    } catch (_e) {}
+  };
+
+  opmodeDrive?.addEventListener("click", () => {
+    opmodeDrive.classList.add("active");
+    opmodeStationary.classList.remove("active");
+    setMode("driving");
+  });
+  opmodeStationary?.addEventListener("click", () => {
+    opmodeStationary.classList.add("active");
+    opmodeDrive.classList.remove("active");
+    setMode("stationary");
   });
 
-  enableWebControlButton.addEventListener("click", () => {
-    postCommand("/api/web-control/enable", "Web control enable");
-  });
+  // ---- Mood Selector ----
+  const moodDomeNote = document.getElementById("mood-dome-note");
 
-  disableWebControlButton.addEventListener("click", () => {
-    postCommand("/api/web-control/disable", "Web control disable");
-  });
+  function renderMoodDomeNote(payload) {
+    if (!moodDomeNote) return;
+    const domeConnected = !!payload.domeConnected;
+    moodDomeNote.classList.toggle("visible", !domeConnected);
+  }
 
-  driveButtons.forEach((button) => {
-    const speed = button.dataset.driveSpeed;
-    const steer = button.dataset.driveSteer;
-    const release = () => {
-      stopHoldLoop();
-      postDriveCommand(0, 0);
-    };
-
-    button.addEventListener("pointerdown", () => {
-      startHoldLoop(speed, steer);
+  document.querySelectorAll(".mood-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const cmd = btn.dataset.cmd;
+      if (!cmd) return;
+      // Optimistic active state — mark clicked button active
+      document.querySelectorAll(".mood-btn").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      sendManualCommand(cmd);
     });
-
-    button.addEventListener("pointerup", release);
-    button.addEventListener("pointerleave", release);
-    button.addEventListener("pointercancel", release);
   });
-
-  manualSend.addEventListener("click", sendManualCommand);
-  manualInput.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") {
-      sendManualCommand();
-    }
-  });
-
-  loadLogs();
-  startPolling();
 })();
