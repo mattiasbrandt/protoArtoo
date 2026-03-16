@@ -24,6 +24,8 @@ enum ManualCommand : uint8_t {
     MC_ENABLE_WEB_CONTROL,
     MC_DISABLE_WEB_CONTROL,
     MC_REBOOT,
+    MC_STATIONARY_MODE,
+    MC_DRIVING_MODE,
 };
 
 // -----------------------------------------------------------------------------
@@ -98,10 +100,11 @@ void formatConfigJson(char* buf, size_t bufSize, int16_t speedLimitMax, uint32_t
 //         staEnabled   — true if STA mode is active
 //         staConnected — true if STA is connected to upstream AP
 //         staIp        — STA IP address string (empty string if not connected)
+//         wifiRssi     — WiFi signal strength in dBm (0 if not connected)
 // thread-safe: yes (pure function, no globals)
 // -----------------------------------------------------------------------------
 void formatWifiJson(char* buf, size_t bufSize, const char* apSsid, const char* apIp,
-                    bool staEnabled, bool staConnected, const char* staIp);
+                    bool staEnabled, bool staConnected, const char* staIp, long wifiRssi);
 
 // -----------------------------------------------------------------------------
 // formatSerialJson()

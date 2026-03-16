@@ -1,0 +1,190 @@
+// =============================================================================
+// src/web/api_drive.cpp
+//
+// Drive and web control API endpoints
+//   POST /api/drive                   — browser drive command (timeout-protected)
+//   POST /api/web-control/enable      — enable browser control
+//   POST /api/web-control/disable     — disable browser control
+// =============================================================================
+
+#include "api_drive.h"
+
+#include <Arduino.h>
+#include <ESPAsyncWebServer.h>
+
+#include "api_helpers.h"
+#include "config.h"
+#include "logging.h"
+#include "robot_state.h"
+#include "web_server.h"
+
+// External declaration for saveConfigToNvs
+extern bool saveConfigToNvs();
+
+static const char* TAG = "WebServer";
+
+bool executeManualCommand(const String& raw) {
+    String command = raw;
+    command.trim();
+    command.toLowerCase();
+
+    ManualCommand cmd = resolveManualCommand(command.c_str());
+
+    switch (cmd) {
+        case MC_ESTOP:
+            taskENTER_CRITICAL(&robotStateMux);
+            robotState.estop = true;
+            robotState.failsafeSource = FS_ESTOP_CMD;
+            robotState.failsafeTriggerCount++;
+            taskEXIT_CRITICAL(&robotStateMux);
+            return true;
+
+        case MC_CLEAR_ESTOP:
+            taskENTER_CRITICAL(&robotStateMux);
+            robotState.estop = false;
+            if (robotState.failsafeSource == FS_ESTOP_CMD) {
+                robotState.failsafeSource = FS_NONE;
+            }
+            taskEXIT_CRITICAL(&robotStateMux);
+            return true;
+
+        case MC_ENABLE_WEB_CONTROL:
+            taskENTER_CRITICAL(&robotStateMux);
+            robotState.webControlEnabled = true;
+            taskEXIT_CRITICAL(&robotStateMux);
+            return true;
+
+        case MC_DISABLE_WEB_CONTROL:
+            taskENTER_CRITICAL(&robotStateMux);
+            robotState.webControlEnabled = false;
+            taskEXIT_CRITICAL(&robotStateMux);
+            setDriveCommand(0, 0, SRC_INTERNAL);
+            return true;
+
+        case MC_REBOOT:
+            requestSystemRestart(500);
+            return true;
+
+        case MC_STATIONARY_MODE:
+            taskENTER_CRITICAL(&robotStateMux);
+            robotState.stationary = true;
+            robotState.cfg_stationary = true;
+            taskEXIT_CRITICAL(&robotStateMux);
+            saveConfigToNvs();
+            return true;
+
+        case MC_DRIVING_MODE:
+            taskENTER_CRITICAL(&robotStateMux);
+            robotState.stationary = false;
+            robotState.cfg_stationary = false;
+            taskEXIT_CRITICAL(&robotStateMux);
+            saveConfigToNvs();
+            return true;
+
+        case MC_UNKNOWN:
+        default:
+            return false;
+    }
+}
+
+void registerDriveRoutes(AsyncWebServer& server) {
+    server.on("/api/mode", HTTP_POST, [](AsyncWebServerRequest* req) {
+        const AsyncWebParameter* modeParam = req->getParam("mode", true);
+        if (modeParam == nullptr) {
+            req->send(400, "application/json",
+                      "{\"ok\":false,\"error\":\"missing mode parameter\"}");
+            return;
+        }
+
+        String mode = modeParam->value();
+        mode.toLowerCase();
+
+        if (mode == "stationary") {
+            taskENTER_CRITICAL(&robotStateMux);
+            robotState.stationary = true;
+            robotState.cfg_stationary = true;
+            taskEXIT_CRITICAL(&robotStateMux);
+            saveConfigToNvs();
+            PA_LOG_INFO(TAG, "[WEB] Mode set to stationary");
+            req->send(200, "application/json", "{\"ok\":true}");
+        } else if (mode == "driving") {
+            taskENTER_CRITICAL(&robotStateMux);
+            robotState.stationary = false;
+            robotState.cfg_stationary = false;
+            taskEXIT_CRITICAL(&robotStateMux);
+            saveConfigToNvs();
+            PA_LOG_INFO(TAG, "[WEB] Mode set to driving");
+        } else {
+            req->send(400, "application/json",
+                      "{\"ok\":false,\"error\":\"invalid mode - use 'stationary' or 'driving'\"}");
+        }
+    });
+
+    server.on("/api/web-control/enable", HTTP_POST, [](AsyncWebServerRequest* req) {
+        taskENTER_CRITICAL(&robotStateMux);
+        robotState.webControlEnabled = true;
+        taskEXIT_CRITICAL(&robotStateMux);
+        PA_LOG_INFO(TAG, "[WEB] POST /api/web-control/enable - browser control enabled");
+        req->send(200, "application/json", "{\"ok\":true}");
+    });
+
+    server.on("/api/web-control/disable", HTTP_POST, [](AsyncWebServerRequest* req) {
+        taskENTER_CRITICAL(&robotStateMux);
+        robotState.webControlEnabled = false;
+        taskEXIT_CRITICAL(&robotStateMux);
+        setDriveCommand(0, 0, SRC_INTERNAL);
+        PA_LOG_INFO(TAG, "[WEB] POST /api/web-control/disable - browser control disabled");
+        req->send(200, "application/json", "{\"ok\":true}");
+    });
+
+    server.on("/api/drive", HTTP_POST, [](AsyncWebServerRequest* req) {
+        const AsyncWebParameter* speedParam = req->getParam("speed", true);
+        const AsyncWebParameter* steerParam = req->getParam("steer", true);
+
+        if (speedParam == nullptr || steerParam == nullptr) {
+            req->send(400, "application/json",
+                      "{\"ok\":false,\"error\":\"missing speed or steer\"}");
+            return;
+        }
+
+        int16_t speed = 0;
+        int16_t steer = 0;
+        if (!parseDriveValue(speedParam->value().c_str(), &speed) ||
+            !parseDriveValue(steerParam->value().c_str(), &steer)) {
+            req->send(400, "application/json",
+                      "{\"ok\":false,\"error\":\"speed and steer must be integers\"}");
+            return;
+        }
+
+        bool blocked;
+        bool sbusHealthy;
+        int16_t maxOut;
+
+        taskENTER_CRITICAL(&robotStateMux);
+        sbusHealthy = !robotState.sbusSignalLost && !robotState.sbusHwFailsafe;
+        blocked = robotState.estop || robotState.stationary ||
+                  (!sbusHealthy && !robotState.webControlEnabled);
+        maxOut = robotState.cfg_speedLimitMax;
+        taskEXIT_CRITICAL(&robotStateMux);
+
+        if (blocked) {
+            PA_LOG_WARN(TAG, "[WEB] POST /api/drive - rejected: blocked by safety state");
+            req->send(409, "application/json",
+                      "{\"ok\":false,\"error\":\"drive blocked by safety state\"}");
+            return;
+        }
+
+        int16_t clampedSpeed = constrain(speed, (int)-maxOut, (int)maxOut);
+        int16_t clampedSteer = constrain(steer, (int)-maxOut, (int)maxOut);
+        setDriveCommand(clampedSpeed, clampedSteer, SRC_WEB_API);
+
+        taskENTER_CRITICAL(&robotStateMux);
+        robotState.webDriveExpired = false;
+        if (robotState.failsafeSource == FS_WEB_TIMEOUT) {
+            robotState.failsafeSource = FS_NONE;
+        }
+        taskEXIT_CRITICAL(&robotStateMux);
+
+        req->send(200, "application/json", "{\"ok\":true}");
+    });
+}

@@ -8,6 +8,8 @@
 #include "api_helpers.h"
 
 #include <cerrno>
+#include <climits>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -21,6 +23,10 @@ bool parseDriveValue(const char* raw, int16_t* out) {
     char* end = nullptr;
     long value = strtol(raw, &end, 10);
     if (errno != 0 || end == raw || *end != '\0') {
+        return false;
+    }
+
+    if (value < INT16_MIN || value > INT16_MAX) {
         return false;
     }
 
@@ -87,6 +93,12 @@ ManualCommand resolveManualCommand(const char* command) {
     if (strcmp(command, "reboot") == 0) {
         return MC_REBOOT;
     }
+    if (strcmp(command, "#st") == 0) {
+        return MC_STATIONARY_MODE;
+    }
+    if (strcmp(command, "#sm") == 0) {
+        return MC_DRIVING_MODE;
+    }
 
     return MC_UNKNOWN;
 }
@@ -98,11 +110,12 @@ void formatConfigJson(char* buf, size_t bufSize, int16_t speedLimitMax, uint32_t
 }
 
 void formatWifiJson(char* buf, size_t bufSize, const char* apSsid, const char* apIp,
-                    bool staEnabled, bool staConnected, const char* staIp) {
+                    bool staEnabled, bool staConnected, const char* staIp, long wifiRssi) {
     snprintf(buf, bufSize,
              "{\"apSsid\":\"%s\",\"apIp\":\"%s\",\"staEnabled\":%s,\"staConnected\":%s,\"staIp\":"
-             "\"%s\"}",
-             apSsid, apIp, staEnabled ? "true" : "false", staConnected ? "true" : "false", staIp);
+             "\"%s\",\"wifiRssi\":%ld}",
+             apSsid, apIp, staEnabled ? "true" : "false", staConnected ? "true" : "false", staIp,
+             wifiRssi);
 }
 
 void formatSerialJson(char* buf, size_t bufSize, bool domeLinkActive, unsigned long domeHbRx,
