@@ -138,42 +138,60 @@ These will not be accepted in a pull request.
 
 ## Branch strategy
 
+protoArtoo uses a phase-oriented branch model. See `tasks/dev-workflow-change-spec.md`
+for the full specification.
+
 ```
-main            — always releasable; tagged at every version
-│
-└── dev         — integration branch; all work merges here first
-    │
-    ├── feature/phase1-drive-task
-    ├── feature/phase1-sbus-input
-    ├── fix/sbus-boot-default-safety
-    └── docs/pin-map-phase0-results
+main
+└── phase/v0.4.0        ← active phase branch (all work lands here)
+    ├── (feat commits)
+    └── (fix/docs/chore commits)
+
+exp/<topic>            ← disposable experiments (never merged to main)
 ```
 
 ### Branch naming
 
-| Prefix | When to use |
+| Branch | Purpose |
 |---|---|
-| `feature/<phase>-<what>` | New functionality tied to a phase |
-| `fix/<what>` | Bug fix or safety correction |
-| `docs/<what>` | Documentation only — no code change |
-| `refactor/<what>` | Code restructure, no behaviour change |
-| `chore/<what>` | Build, deps, tooling |
+| `main` | Stable, released state only. Tagged at every version. |
+| `phase/vX.Y.Z` | All work for the active development phase. |
+| `exp/<topic>` | Exploratory or speculative work. Start here if you\'re not sure where your contribution fits. |
 
-### Rules
+`dev`, `feature/<phase>-<what>`, and `fix/<what>` branches are retired.
 
-- `main` only receives merges from `dev` when the milestone condition is fully met
-  and all tests pass. See `CHANGELOG.md` for per-version milestone conditions.
-- `dev` receives feature/fix branches via pull request — even as a single-author
-  project, PRs provide a review checkpoint, a diff to review, and a clean history.
-- Direct commits to `main` are forbidden except `docs:` and `chore:` with no
-  code changes.
-- Feature branches are deleted after merge.
+### Rules for contributors
+
+- Fork the repository and create your branch from the active `phase/vX.Y.Z` branch, not from `main`.
+- `main` is protected and only updated at phase completion via a PM-approved merge — pull requests directly targeting `main` will not be accepted during active development.
+- If you are unsure which phase branch is active, check `tasks/status.md` or open an issue to ask.
+- After your work is merged, your branch will be deleted.
+
+### Commit scope for external contributors
+
+All commits must use the Conventional Commits format. The scope should include
+the active phase. If your contribution is not tied to a specific phase plan task,
+use `T00`:
+
+```
+type(phase:vX.Y.Z/T00): summary
+```
+
+Examples:
+```
+fix(phase:v0.4.0/T00): correct typo in README
+docs(phase:v0.4.0/T00): add DFPlayer Mini to supported audio module list
+feat(phase:v0.4.0/T00): add example config for single-SBUS wiring
+```
+
+If your contribution directly addresses a specific task in the phase plan,
+you are welcome to use the task number (e.g. `T03`).
 
 ---
 
 ## Pull request checklist
 
-Before opening a PR from your branch to `dev`, confirm all items:
+Before opening a PR from your branch to the active `phase/vX.Y.Z` branch, confirm all items:
 
 **Builds**
 - [ ] `pio run -e protoArtoo` completes with no errors and no warnings

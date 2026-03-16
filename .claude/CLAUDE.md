@@ -483,15 +483,32 @@ Every commit uses the format:
 - Co-authored-by trailers, attribution footers, or additional author identities unless the user explicitly requested them for that specific commit
 
 ### Branch Strategy
-- `main` — always releasable; tagged at every version
-- `dev` — integration branch; phase work merges here first
-- Feature branches: `feature/<phase>-<what>`
-- Fix branches: `fix/<what>`
+
+- `main` — stable, released state only; updated at phase completion via PM-approved non-fast-forward merge
+- `phase/vX.Y.Z` — all work for the active phase (e.g. `phase/v0.4.0`); one active phase at a time
+- `exp/<topic>` — disposable experiments; never merged directly to `main`
+- `dev`, `feature/<phase>-<what>`, and `fix/<what>` branches are retired as of Phase v0.4.0
+
+Commit scope format (required for all commits in a phase branch):
+
+```
+type(phase:vX.Y.Z/T<NN>): summary
+```
+
+- `T<NN>` matches the task number in the phase plan (zero-padded: `T01`, `T02`, ...)
+- `T00` = phase scaffolding / admin commits
+- Slice notation: `type(phase:vX.Y.Z/T<NN>/slice:a): summary`
+- Example: `feat(phase:v0.4.0/T03): add AudioTask queue and DY-SV5W driver`
+
+See `tasks/dev-workflow-change-spec.md` for the full workflow specification.
 
 ### Semantic Versioning
-- `PATCH`: bug fix / safety correction
-- `MINOR`: new working feature
-- `MAJOR`: breaking change (GPIO pin change, API break, NVS key rename)
+
+Aligned with [Conventional Commits](https://www.conventionalcommits.org) and [SemVer](https://semver.org):
+
+- `PATCH` (x.x.+1): `fix` commits — bug fix / safety correction
+- `MINOR` (x.+1.0): `feat` commits — new working feature
+- `MAJOR` (+1.0.0): `feat!` / `BREAKING CHANGE:` — GPIO pin change, API break, NVS key rename
 
 ---
 

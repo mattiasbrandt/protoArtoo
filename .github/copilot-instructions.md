@@ -277,3 +277,31 @@ See `AGENTS.md` § "Verification and Reporting" for the full checklist.
 
 When in doubt, consult `AGENTS.md` for canonical rules, `CLAUDE.md` for
 detailed workflow guidelines, and `tasks/goal.md` for the firmware specification.
+
+---
+
+## Git Workflow
+
+All development from Phase v0.4.0 onward follows the phase-branch model.
+See `tasks/dev-workflow-change-spec.md` for the full specification.
+
+### Branch model
+
+| Branch | Purpose |
+|---|---|
+| `main` | Stable, released state only. Updated at phase completion via PM-approved merge. |
+| `phase/vX.Y.Z` | All work for the active phase. One active phase at a time. |
+| `exp/<topic>` | Disposable experiments. Never merged to `main`. |
+
+`dev`, `feature/<phase>-<what>`, and `fix/<what>` branches are retired.
+
+### Commit scope format
+
+```
+type(phase:vX.Y.Z/T<NN>): summary
+```
+
+- `T<NN>` = zero-padded task number from the phase plan (`T01`, `T02`, ...)
+- `T00` = scaffolding / admin commits not tied to a specific task
+- Slice: `type(phase:vX.Y.Z/T<NN>/slice:a): summary`
+- Never commit directly to `main`

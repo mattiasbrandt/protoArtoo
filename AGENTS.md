@@ -153,3 +153,46 @@ planning/status docs.
 - LSP/lint fixes (for example `forEach` callback return style or symbol
   redeclaration warnings) must be resolved by changing the flagged code, not by
   deleting nearby comments.
+
+## Git Workflow
+
+All development from Phase v0.4.0 onward follows the phase-branch model
+defined in `tasks/dev-workflow-change-spec.md`. The canonical rules:
+
+### Branch model
+
+| Branch | Purpose |
+|---|---|
+| `main` | Stable, released state only. Updated at phase completion via PM-approved non-fast-forward merge. |
+| `phase/vX.Y.Z` | All work for the active phase (e.g. `phase/v0.4.0`). One active phase at a time. |
+| `exp/<topic>` | Disposable experiments. Never merged directly to `main`. |
+
+`dev`, `feature/<phase>-<what>`, and `fix/<what>` branches are retired as of Phase v0.4.0.
+
+### Commit scope format (required)
+
+All commits within a phase branch must use:
+
+```
+type(phase:vX.Y.Z/T<NN>): summary
+```
+
+- `T<NN>` is the zero-padded task number from the phase plan (`T01`, `T02`, ...)
+- `T00` = phase scaffolding or admin commits not tied to a specific task
+- `type` follows [Conventional Commits](https://www.conventionalcommits.org): `feat`, `fix`, `docs`, `refactor`, `chore`, `test`, `style`, `perf`
+- Slice notation: `type(phase:vX.Y.Z/T<NN>/slice:a): summary`
+
+Examples:
+```
+feat(phase:v0.4.0/T01): implement AudioDriver interface and DY-SV5W driver
+fix(phase:v0.4.0/T02): correct dome UART baud rate assignment
+docs(phase:v0.4.0/T00): update AGENTS.md with phase-branch workflow
+```
+
+### Invariants
+
+- Never commit directly to `main`
+- Always identify the active phase branch before making changes
+- One active phase at a time — do not begin a new phase until the current one merges to `main`
+- Phase branch merges to `main` require PM approval; merge method is non-fast-forward
+- Ad-hoc incidental improvements are permitted commits without plan amendment; formal scope additions require PM approval
