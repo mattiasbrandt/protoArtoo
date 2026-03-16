@@ -136,40 +136,64 @@ void test_copy_small_buffer_truncates() {
     TEST_ASSERT_EQUAL_CHAR('\0', out[n]);
 }
 
-// --- formatConfigJson ---
+// --- totalWritten ---
+
+void test_totalWritten_starts_at_zero() {
+    TEST_ASSERT_EQUAL_UINT32(0, buf.totalWritten);
+}
+
+void test_totalWritten_increments_on_each_append() {
+    logBufferAppend(&buf, "a");
+    TEST_ASSERT_EQUAL_UINT32(1, buf.totalWritten);
+    logBufferAppend(&buf, "b");
+    TEST_ASSERT_EQUAL_UINT32(2, buf.totalWritten);
+    logBufferAppend(&buf, "c");
+    TEST_ASSERT_EQUAL_UINT32(3, buf.totalWritten);
+}
+
+void test_totalWritten_exceeds_capacity_on_wraparound() {
+    for (size_t i = 0; i < LOG_BUFFER_LINES + 5; ++i) {
+        logBufferAppend(&buf, "x");
+    }
+    TEST_ASSERT_EQUAL_UINT32(LOG_BUFFER_LINES + 5, buf.totalWritten);
+    // count is still capped at capacity
+    TEST_ASSERT_EQUAL_size_t(LOG_BUFFER_LINES, buf.count);
+}
+
+// --- formatConfigJson (drive-settings slice only; full config coverage is in test_json_formatters) ---
 
 void test_formatConfigJson_contains_speedLimitMax() {
-    char out[128];
+    char out[512];
     formatConfigJson(out, sizeof(out), 400, 500, false);
     TEST_ASSERT_NOT_NULL(strstr(out, "\"speedLimitMax\":400"));
 }
 
 void test_formatConfigJson_contains_webDriveTimeoutMs() {
-    char out[128];
+    char out[512];
     formatConfigJson(out, sizeof(out), 400, 500, false);
     TEST_ASSERT_NOT_NULL(strstr(out, "\"webDriveTimeoutMs\":500"));
 }
 
 void test_formatConfigJson_ch8ModeLock_false() {
-    char out[128];
+    char out[512];
     formatConfigJson(out, sizeof(out), 400, 500, false);
     TEST_ASSERT_NOT_NULL(strstr(out, "\"ch8ModeLock\":false"));
 }
 
 void test_formatConfigJson_ch8ModeLock_true() {
-    char out[128];
+    char out[512];
     formatConfigJson(out, sizeof(out), 400, 500, true);
     TEST_ASSERT_NOT_NULL(strstr(out, "\"ch8ModeLock\":true"));
 }
 
 void test_formatConfigJson_zero_speed_limit() {
-    char out[128];
+    char out[512];
     formatConfigJson(out, sizeof(out), 0, 100, false);
     TEST_ASSERT_NOT_NULL(strstr(out, "\"speedLimitMax\":0"));
 }
 
 void test_formatConfigJson_is_valid_json_object() {
-    char out[128];
+    char out[512];
     formatConfigJson(out, sizeof(out), 600, 1000, true);
     TEST_ASSERT_EQUAL_CHAR('{', out[0]);
     TEST_ASSERT_EQUAL_CHAR('}', out[strlen(out) - 1]);
@@ -177,6 +201,10 @@ void test_formatConfigJson_is_valid_json_object() {
 
 int main() {
     UNITY_BEGIN();
+
+    RUN_TEST(test_totalWritten_starts_at_zero);
+    RUN_TEST(test_totalWritten_increments_on_each_append);
+    RUN_TEST(test_totalWritten_exceeds_capacity_on_wraparound);
 
     RUN_TEST(test_empty_buffer_copy_returns_empty);
     RUN_TEST(test_single_append_copy_contains_line);

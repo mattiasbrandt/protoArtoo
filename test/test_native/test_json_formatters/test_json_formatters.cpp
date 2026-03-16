@@ -17,56 +17,62 @@ void tearDown() {
 // --- formatWifiJson() tests ---
 
 void test_formatWifiJson_contains_apSsid() {
-    char out[160];
-    formatWifiJson(out, sizeof(out), "protoArtoo", "192.168.4.1", false, false, "");
+    char out[192];
+    formatWifiJson(out, sizeof(out), "protoArtoo", "192.168.4.1", false, false, "", 0);
     TEST_ASSERT_NOT_NULL(strstr(out, "\"apSsid\":\"protoArtoo\""));
 }
 
 void test_formatWifiJson_contains_apIp() {
-    char out[160];
-    formatWifiJson(out, sizeof(out), "protoArtoo", "192.168.4.1", false, false, "");
+    char out[192];
+    formatWifiJson(out, sizeof(out), "protoArtoo", "192.168.4.1", false, false, "", 0);
     TEST_ASSERT_NOT_NULL(strstr(out, "\"apIp\":\"192.168.4.1\""));
 }
 
 void test_formatWifiJson_staEnabled_true() {
-    char out[160];
-    formatWifiJson(out, sizeof(out), "protoArtoo", "192.168.4.1", true, false, "");
+    char out[192];
+    formatWifiJson(out, sizeof(out), "protoArtoo", "192.168.4.1", true, false, "", 0);
     TEST_ASSERT_NOT_NULL(strstr(out, "\"staEnabled\":true"));
 }
 
 void test_formatWifiJson_staEnabled_false() {
-    char out[160];
-    formatWifiJson(out, sizeof(out), "protoArtoo", "192.168.4.1", false, false, "");
+    char out[192];
+    formatWifiJson(out, sizeof(out), "protoArtoo", "192.168.4.1", false, false, "", 0);
     TEST_ASSERT_NOT_NULL(strstr(out, "\"staEnabled\":false"));
 }
 
 void test_formatWifiJson_staConnected_true() {
-    char out[160];
-    formatWifiJson(out, sizeof(out), "protoArtoo", "192.168.4.1", true, true, "10.0.0.42");
+    char out[192];
+    formatWifiJson(out, sizeof(out), "protoArtoo", "192.168.4.1", true, true, "10.0.0.42", -65);
     TEST_ASSERT_NOT_NULL(strstr(out, "\"staConnected\":true"));
 }
 
 void test_formatWifiJson_staConnected_false() {
-    char out[160];
-    formatWifiJson(out, sizeof(out), "protoArtoo", "192.168.4.1", false, false, "");
+    char out[192];
+    formatWifiJson(out, sizeof(out), "protoArtoo", "192.168.4.1", false, false, "", 0);
     TEST_ASSERT_NOT_NULL(strstr(out, "\"staConnected\":false"));
 }
 
 void test_formatWifiJson_staIp_present_when_connected() {
-    char out[160];
-    formatWifiJson(out, sizeof(out), "protoArtoo", "192.168.4.1", true, true, "10.0.0.42");
+    char out[192];
+    formatWifiJson(out, sizeof(out), "protoArtoo", "192.168.4.1", true, true, "10.0.0.42", -65);
     TEST_ASSERT_NOT_NULL(strstr(out, "\"staIp\":\"10.0.0.42\""));
 }
 
 void test_formatWifiJson_staIp_empty_when_disconnected() {
-    char out[160];
-    formatWifiJson(out, sizeof(out), "protoArtoo", "192.168.4.1", false, false, "");
+    char out[192];
+    formatWifiJson(out, sizeof(out), "protoArtoo", "192.168.4.1", false, false, "", 0);
     TEST_ASSERT_NOT_NULL(strstr(out, "\"staIp\":\"\""));
 }
 
+void test_formatWifiJson_wifiRssi_present() {
+    char out[192];
+    formatWifiJson(out, sizeof(out), "protoArtoo", "192.168.4.1", true, true, "10.0.0.42", -72);
+    TEST_ASSERT_NOT_NULL(strstr(out, "\"wifiRssi\":-72"));
+}
+
 void test_formatWifiJson_is_valid_json_object() {
-    char out[160];
-    formatWifiJson(out, sizeof(out), "protoArtoo", "192.168.4.1", false, false, "");
+    char out[192];
+    formatWifiJson(out, sizeof(out), "protoArtoo", "192.168.4.1", false, false, "", 0);
     TEST_ASSERT_EQUAL_CHAR('{', out[0]);
     TEST_ASSERT_EQUAL_CHAR('}', out[strlen(out) - 1]);
 }
