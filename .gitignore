@@ -43,6 +43,12 @@ task.md
 *.tmp.llm
 .sisyphus/
 
+# Agent instruction files (environment-specific)
+AGENTS.md
+CLAUDE.md
+.claude/
+.clangd
+
 # Python/virtualenv (if using scripts or tools)
 __pycache__/
 *.pyc
@@ -62,6 +68,9 @@ venv/
 .vscode/launch.json
 .vscode/ipch/
 .vscode/*.code-workspace
+
+# PlatformIO compilation database (auto-generated, env-specific)
+compile_commands.json
 
 # Secrets — WiFi credentials, never commit
 src/secrets.h

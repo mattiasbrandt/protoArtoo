@@ -6,42 +6,36 @@
     // (font size, theme, keybindings) belong in User Settings, not here.
     // =========================================================================
 
-    // --- C/C++ formatting (clang-format) ------------------------------------
-    "editor.defaultFormatter": "xaver.clang-format",
+    // --- C/C++ formatting -----------------------------------------------
+    "editor.defaultFormatter": "ms-vscode.cpptools",
     "editor.formatOnSave": true,
     "editor.rulers": [100],
     "editor.tabSize": 4,
     "editor.insertSpaces": true,
     "editor.detectIndentation": false,
 
-    // clang-format uses .clang-format at repo root automatically
-    "clang-format.style": "file",
-
     // --- C/C++ language settings --------------------------------------------
     "[cpp]": {
-        "editor.defaultFormatter": "xaver.clang-format",
+        "editor.defaultFormatter": "ms-vscode.cpptools",
         "editor.formatOnSave": true,
         "editor.tabSize": 4
     },
     "[c]": {
-        "editor.defaultFormatter": "xaver.clang-format",
+        "editor.defaultFormatter": "ms-vscode.cpptools",
         "editor.formatOnSave": true,
         "editor.tabSize": 4
     },
 
     // --- Web UI assets (data/ folder) — HTML/JS/CSS -------------------------
     "[html]": {
-        "editor.defaultFormatter": "esbenp.prettier-vscode",
         "editor.formatOnSave": true,
         "editor.tabSize": 2
     },
     "[javascript]": {
-        "editor.defaultFormatter": "esbenp.prettier-vscode",
         "editor.formatOnSave": true,
         "editor.tabSize": 2
     },
     "[css]": {
-        "editor.defaultFormatter": "esbenp.prettier-vscode",
         "editor.formatOnSave": true,
         "editor.tabSize": 2
     },
@@ -87,6 +81,18 @@
     // If you see squiggles on ESP32/Arduino headers, run:
     //   PlatformIO: Rebuild IntelliSense Index (Ctrl+Shift+P)
     "C_Cpp.default.configurationProvider": "platformio.platformio-ide",
+
+    // Ignore compile_commands.json — the Xtensa cross-compiler flags in it
+    // confuse the built-in clang IntelliSense engine. PlatformIO's own
+    // c_cpp_properties.json (configurationProvider above) is the correct source.
+    "C_Cpp.default.compileCommands": "",
+
+    // The MS C/C++ IntelliSense engine cannot resolve Xtensa cross-compiled
+    // ESP32 code correctly (missing machine/endian.h, HardwareSerial type
+    // errors, etc.). These are all false positives — pio run compiles cleanly.
+    // Disable error squiggles; keep navigation and autocomplete.
+    "C_Cpp.intelliSenseEngine": "Tag Parser",
+    "C_Cpp.errorSquiggles": "disabled",
 
     // --- Spell checker (project dictionary) ---------------------------------
     "cSpell.words": [
