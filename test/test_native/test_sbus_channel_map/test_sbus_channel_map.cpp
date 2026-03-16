@@ -5,10 +5,13 @@
 // Tests: CH8 scale mapping, speed/steer mapping, edge values.
 // =============================================================================
 #include <unity.h>
+
 #include "sbus_math.h"
 
-void setUp() {}
-void tearDown() {}
+void setUp() {
+}
+void tearDown() {
+}
 
 // --- mapSbusToScale() tests ---
 
@@ -68,6 +71,35 @@ void test_speed_clamps_above_max() {
     TEST_ASSERT_EQUAL_INT16(1000, speed);
 }
 
+// --- mapSbusToFloat() tests ---
+
+void test_float_at_minimum() {
+    float val = mapSbusToFloat(SBUS_MIN);
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, -1.0f, val);
+}
+
+void test_float_at_maximum() {
+    float val = mapSbusToFloat(SBUS_MAX);
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 1.0f, val);
+}
+
+void test_float_at_center() {
+    // Center should map to ~0.0
+    int16_t center = (int16_t)((SBUS_MIN + SBUS_MAX) / 2);
+    float val = mapSbusToFloat(center);
+    TEST_ASSERT_FLOAT_WITHIN(0.02f, 0.0f, val);
+}
+
+void test_float_clamps_below_min() {
+    float val = mapSbusToFloat((int16_t)(SBUS_MIN - 100));
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, -1.0f, val);
+}
+
+void test_float_clamps_above_max() {
+    float val = mapSbusToFloat((int16_t)(SBUS_MAX + 100));
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.0f, val);
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_scale_at_minimum);
@@ -80,5 +112,10 @@ int main() {
     RUN_TEST(test_speed_at_center);
     RUN_TEST(test_speed_clamps_below_min);
     RUN_TEST(test_speed_clamps_above_max);
+    RUN_TEST(test_float_at_minimum);
+    RUN_TEST(test_float_at_maximum);
+    RUN_TEST(test_float_at_center);
+    RUN_TEST(test_float_clamps_below_min);
+    RUN_TEST(test_float_clamps_above_max);
     return UNITY_END();
 }
