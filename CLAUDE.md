@@ -1,4 +1,4 @@
-# AI Coding Agent Guidelines — protoArtoo (claude.md)
+# AI Coding Agent Guidelines — protoArtoo (CLAUDE.md)
 
 > Adapter file for Claude-oriented workflows.
 > Canonical cross-agent instructions live in `AGENTS.md` at repository root.
@@ -288,8 +288,8 @@ are defined in `AGENTS.md` § "Execution Model". Follow those rules as-is.
   - compress into a brief summary and discard raw noise.
 - Key reference files to consult:
   - `tasks/goal.md` — full firmware plan and protocol specs
-  - `body_dome_serial_link_spec.md` — dome link protocol details
-  - `body_dome_serial_link_astropixel_implementation.md` — dome fork implementation notes
+  - `tasks/body_dome_serial_link_spec.md` — dome link protocol details
+  - `tasks/body_dome_serial_link_astropixel_implementation.md` — dome fork implementation notes
   - `include/config.h` — GPIO assignments (source of truth for pin numbers)
   - `include/robot_state.h` — shared state struct (source of truth for all state fields)
 

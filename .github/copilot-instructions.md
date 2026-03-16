@@ -5,7 +5,7 @@
 > If a rule here conflicts with `AGENTS.md`, follow `AGENTS.md` unless the user explicitly overrides.
 
 > Guidelines for AI code completion in the protoArtoo ESP32 body controller firmware.
-> Read `claude.md` for the full agent guidelines. This file is the concise,
+> Read `CLAUDE.md` for the full agent guidelines. This file is the concise,
 > code-generation-focused companion.
 
 ---
@@ -275,5 +275,5 @@ int main() {
 
 See `AGENTS.md` § "Verification and Reporting" for the full checklist.
 
-When in doubt, consult `AGENTS.md` for canonical rules, `claude.md` for
+When in doubt, consult `AGENTS.md` for canonical rules, `CLAUDE.md` for
 detailed workflow guidelines, and `tasks/goal.md` for the firmware specification.

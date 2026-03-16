@@ -13,23 +13,55 @@ Every semantic version release belongs here:
 - minor releases for new backwards-compatible features
 - major releases for breaking changes
 
-## [0.3.0] - 2026-03-14
+## [0.3.0] - 2026-03-16
 
 ### Added
-- Phase 3 servo arm control via `ServoTask` with LEDC PWM on ARM1 (GPIO 23) and ARM2 (GPIO 5)
-- Phase 3 dome rotation ESC control via `DomeTask` with 50Hz PWM on DOME (GPIO 25)
-- Auto-arm sequence for dome ESC (2s neutral at boot)
-- Command queue system (`servoCmdQueue`, `domeCmdQueue`) for inter-task communication
-- Marcduino RX parser (`:OP`, `:CL`, `:MV`, `:SE30-:SE36`) for dome→body commands
-- SBUS2 integration for dome spin control (receiver #2 on GPIO 13)
-- Extended NVS config for servo open/close positions and dome speed limits
-- LEDC PWM driver foundation with 50Hz, 500-2500µs servo / 1000-2000µs ESC ranges
-- Native test coverage for new SBUS float mapping and PWM duty cycle calculations
+- **ServoTask** for ARM1/ARM2 utility arms via LEDC PWM at 50 Hz
+- **ServoComponentType** enum (NONE/MG996R/MG90S/RGB) with per-type calibration defaults
+- **DomeTask** for dome motor ESC control (tested: ISDT ESC70) via LEDC PWM
+- **RC diagnostics surface** with live channel visualization and SSE streaming
+- **Three RC input modes**: `standard_pwm`, `single_sbus`, `dual_sbus` (runtime selectable)
+- **Modular API architecture**: split into focused route handlers (api_config, api_drive, api_estop, api_rc, api_servo, api_status, api_system)
+- **New web pages**: drive.html, dome.html, servo.html, rc.html, firmware.html
+- **Dashboard operation mode** card: Driving ⇔ Stationary toggle via `/api/mode`
+- **Dashboard mood selector** card: Quiet, Mid-Awake, Full-Awake, Awake+ buttons
+- **CH17/CH18 digital channel decoding** from SBUS flags byte
+- **SBUS flag parsing helpers** (`sbus_flags.h`, `sbus_unpack.h`)
+- **Marcduino RX parser** (`:OP`, `:CL`, `:MV`, `:SE30-:SE36`) for dome→body commands
+- **RC channel binding model**: backbone bindings (fixed role) and trigger bindings (configurable action)
+- **NVS-backed RC calibration**: min/center/max/deadband/reverse per channel
+- **Version extraction script** (`extract_version.py`): inject PA_VERSION from CHANGELOG at build
+- **Project favicon** (`r2d2body-favicon.png`) on all HTML pages
+- **Artoo Controller PCB photo** on setup page for reference
+- **Terminology glossary** (`docs/terminology.md`)
+- **336 native unit tests** covering LEDC math, dome math, servo helpers, SBUS flags, RC diagnostics, Marcduino helpers
 
 ### Changed
-- Extended `RobotState` with arm/dome state fields and config values
-- Updated task initialization to create servo/dome tasks on Core 1
-- Firmware version string updated to reflect Phase 3 development
+- Extended `RobotState` with servo, dome, and RC diagnostics fields
+- Reduced API handler buffer sizes for memory optimization (heap 135KB free, 127KB min)
+- Updated task initialization to create ServoTask and DomeTask on Core 1
+- Refactored web_server.cpp into modular API route files
+- Updated docs/api.md with new servo, dome, RC endpoints
+- Updated docs/pin_map.md with servo/dome GPIO assignments
+- Updated docs/failsafe.md with 5-layer safety model
+
+### Fixed
+- **SBUS flag bit positions**: `lost_frame` corrected to bit 2 (0x04), `failsafe` to bit 3 (0x08)
+- **TWDT crash**: removed SSE onConnect log sync loop causing watchdog timeout
+- **Memory optimization**: consolidated API buffers, reduced SSE body sizes
+- **Button underline CSS**: exclude buttons from `[title]` selector
+- **Live logs SSE**: restored log streaming via `copyNewLogLinesSince()`
+- **OTA environment**: removed duplicate `lib_deps` override in `protoArtoo_ota`
+
+### Hardware Validated
+- Dual SBUS live data confirmed on real hardware
+- Arm servos respond via SBUS CH4/CH5 triggers
+- RC diagnostics page working with real transmitter input
+
+### Deferred
+- Dome ESC response validation (requires full wiring harness)
+- SBUS Layer 1/2 failsafe deliberate tests
+- Full hoverboard drive path validation
 
 ## [0.2.0] - 2026-03-13
 

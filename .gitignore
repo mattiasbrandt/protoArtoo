@@ -43,9 +43,7 @@ task.md
 *.tmp.llm
 .sisyphus/
 
-# Agent instruction files (environment-specific)
-AGENTS.md
-CLAUDE.md
+# Agent working directories (environment-specific)
 .claude/
 .clangd
 
