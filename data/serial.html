@@ -3,75 +3,102 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Serial - protoArtoo</title>
     <link rel="stylesheet" href="/style.css">
+    <link rel="icon" type="image/png" href="/r2d2body-favicon.png">
   </head>
   <body>
     <div class="topbar">
       <div>
-        <h1>Serial</h1>
-        <div class="subtitle">Board serial ports and traced transport assignments</div>
+        <h1>🔌 Serial Ports</h1>
+        <div class="subtitle">Serial connection status and diagnostics</div>
       </div>
     </div>
 
     <nav>
-      <a href="/">Home</a>
-      <a href="/setup.html">Setup</a>
-      <a href="/serial.html" class="active">Serial</a>
+      <a href="/">🏠 Home</a>
+      <a href="/drive.html">🏎️ Drive</a>
+      <a href="/dome.html">🔄 Dome</a>
+      <a href="/servo.html">🦾 Servos</a>
+      <a href="/setup.html">⚙️ Setup</a>
+      <a href="/rc.html">🕹️ RC</a>
+      <a href="/serial.html" class="active">🔌 Serial</a>
+      <a href="/wifi.html">📶 WiFi</a>
+      <a href="/firmware.html">💾 Firmware</a>
     </nav>
 
+    <!-- Page Purpose -->
     <div class="card">
-      <h3>PCB Serial Legend</h3>
-      <ul class="feature-list">
-        <li><span class="mono">S0</span> - ESP debug</li>
-        <li><span class="mono">S1</span> - Hoverboard</li>
-        <li><span class="mono">S2</span> - Sound</li>
-        <li><span class="mono">S3</span> - Dome Control</li>
+      <h3>🔌 About Serial Ports</h3>
+      <div class="desc">Check this page when troubleshooting serial connections. The Connection Status section shows whether each port is active. If a port shows as down, verify its enable toggle in Setup and check the wiring at the labelled PCB header. S0 (USB debug) is always active and requires no configuration.</div>
+    </div>
+    <div class="card">
+      <h3>🔌 Serial Port Overview</h3>
+      <div class="desc">Hardware serial connections on the Artoo Controller PCB.</div>
+      <ul class="feature-list mt-12">
+        <li><strong>S0</strong> - USB Debug (always active)</li>
+        <li><strong>S1</strong> - Hoverboard Drive Motors</li>
+        <li><strong>S2</strong> - Sound Module (DY-SV5W)</li>
+        <li><strong>S3</strong> - Dome Controller Link</li>
       </ul>
     </div>
 
+    <!-- Live Connection Status -->
     <div class="card">
-      <h3>Transport Map</h3>
-      <ul class="feature-list">
-        <li><span class="mono">S0 / UART0</span> - USB debug on GPIO 1 TX / GPIO 3 RX at 115200</li>
-        <li><span class="mono">S1 / UART1</span> - Hoverboard drive link on GPIO 16 TX / GPIO 17 RX at 115200</li>
-        <li><span class="mono">S2 / Sound</span> - Audio transport on GPIO 26 TX / GPIO 35 RX at 9600</li>
-        <li><span class="mono">S3 / UART2</span> - Dome Control link on GPIO 33 TX / GPIO 34 RX at 9600</li>
-        <li><span class="mono">CH1 / CH2</span> - SBUS inputs on GPIO 15 / GPIO 13 via RMT, not serial UARTs</li>
-      </ul>
-    </div>
-
-    <div class="card">
-      <h3>Current Phase Reality</h3>
-      <ul class="feature-list" style="margin-top:10px;">
-        <li>USB debug on <span class="mono">S0</span> is active now and used for firmware logs.</li>
-        <li>Hoverboard transport on <span class="mono">S1</span> is implemented in firmware, but full hardware behavior needs the Artoo PCB + hoverboard chain connected.</li>
-        <li>Sound transport on <span class="mono">S2</span> is electrically defined, but full audio behavior belongs to later-phase hardware work.</li>
-        <li>Dome Control on <span class="mono">S3</span> is the traced body-dome serial path, but full heartbeat/command behavior belongs to later phases.</li>
-      </ul>
-    </div>
-
-    <div class="card">
-      <h3>Live Transport Status</h3>
-      <div class="status-grid" id="live-transport"></div>
-      <div class="button-row" style="margin-top:12px;">
-        <button id="reload-serial-button" class="btn" type="button">Reload Transport Status</button>
+      <h3>📊 Connection Status</h3>
+      <div class="desc">Real-time status of serial connections.</div>
+      <div class="status-grid mt-16" id="live-transport">
+        <div class="status-item">
+          <dt>🔌 S1 - Hoverboard</dt>
+          <dd id="s1-status">Checking...</dd>
+          <div class="desc mt-6">Drive motor controller</div>
+        </div>
+        <div class="status-item">
+          <dt>🔊 S2 - Sound</dt>
+          <dd id="s2-status">Checking...</dd>
+          <div class="desc mt-6">Audio module</div>
+        </div>
+        <div class="status-item">
+          <dt>🔄 S3 - Dome Link</dt>
+          <dd id="s3-status">Checking...</dd>
+          <div class="desc mt-6">Dome controller serial</div>
+        </div>
       </div>
-      <div id="serial-feedback" class="feedback" style="margin-top:12px;">Loading live transport status…</div>
+      <div class="button-row mt-16">
+        <button id="reload-serial-button" class="btn" type="button">🔄 Refresh Status</button>
+      </div>
+      <div id="serial-feedback" class="feedback mt-12">Loading connection status...</div>
     </div>
 
+    <!-- Serial Details -->
     <div class="card">
-      <h3>Known Facts from Pin Map</h3>
-      <ul class="feature-list">
-        <li>Earlier assumptions that <span class="mono">S3</span> was hoverboard were wrong; traced PCB legend confirms <span class="mono">S1 = Hoverboard</span>.</li>
-        <li><span class="mono">GPIO 34</span> and <span class="mono">GPIO 35</span> are input-only, so they are valid RX pins but cannot be repurposed as TX outputs.</li>
-        <li><span class="mono">S2 RX</span> exists physically, so future audio drivers may use module responses if needed.</li>
-      </ul>
+      <h3>ℹ️ Port Details</h3>
+      <div class="status-grid mt-12">
+        <div class="status-item">
+          <dt title="GPIO 1 (TX) / 3 (RX) — 115200 baud — Always active">S0 — USB Debug</dt>
+          <dd>Always active</dd>
+          <div class="desc mt-6">Firmware log output over USB</div>
+        </div>
+        <div class="status-item">
+          <dt title="GPIO 16 (TX) / 17 (RX) — UART1 — 115200 baud">S1 — Hoverboard Drive</dt>
+          <dd>Drive motor controller</dd>
+          <div class="desc mt-6">Serial command link to hoverboard</div>
+        </div>
+        <div class="status-item">
+          <dt title="GPIO 26 (TX) / 35 (RX) — 9600 baud">S2 — Sound Module</dt>
+          <dd>Audio module</dd>
+          <div class="desc mt-6">Sound playback commands</div>
+        </div>
+        <div class="status-item">
+          <dt title="GPIO 33 (TX) / 34 (RX) — UART2 — 9600 baud">S3 — Dome Controller</dt>
+          <dd>Dome serial link</dd>
+          <div class="desc mt-6">Bidirectional link to dome controller</div>
+        </div>
+      </div>
     </div>
 
     <div class="status-bar">
-      <div><span class="dot green"></span>Serial page reflects traced hardware assignments from <code>docs/pin_map.md</code></div>
-      <div class="status-subline" id="fw-meta">Loading firmware info…</div>
+      <div><span class="dot green"></span>Serial page connected</div>
+      <div class="status-subline" id="fw-meta">Loading firmware info...</div>
     </div>
 
     <script src="/serial.js"></script>

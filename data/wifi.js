@@ -1,43 +1,78 @@
+// =============================================================================
+// wifi.js
+//
+// WiFi page — shows the active connection mode contextually.
+// If WiFi client (STA) is connected, the STA card is primary.
+// The Access Point card is always shown but de-emphasised when STA is active.
+// =============================================================================
 (() => {
-  const wifiApSsid = document.getElementById("wifi-ap-ssid");
-  const wifiApIp = document.getElementById("wifi-ap-ip");
-  const wifiStaEnabled = document.getElementById("wifi-sta-enabled");
-  const wifiStaConnected = document.getElementById("wifi-sta-connected");
-  const wifiStaIp = document.getElementById("wifi-sta-ip");
-  const reloadWifiButton = document.getElementById("reload-wifi-button");
-  const wifiFeedback = document.getElementById("wifi-feedback");
+  const reloadButton   = document.getElementById("reload-wifi-button");
+  const feedback       = document.getElementById("wifi-feedback");
+  const staCard        = document.getElementById("wifi-sta-card");
+  const apCard         = document.getElementById("wifi-ap-card");
+  const apDesc         = document.getElementById("wifi-ap-desc");
+  const apSsid         = document.getElementById("wifi-ap-ssid");
+  const apIp           = document.getElementById("wifi-ap-ip");
+  const staConnected   = document.getElementById("wifi-sta-connected");
+  const staIp          = document.getElementById("wifi-sta-ip");
+  const wifiSignal     = document.getElementById("wifi-signal");
+  const wifiRssi       = document.getElementById("wifi-rssi");
 
-  if (!wifiApSsid || !wifiApIp || !wifiStaEnabled || !wifiStaConnected || !wifiStaIp || !reloadWifiButton || !wifiFeedback) {
-    return;
-  }
-
-  const renderWifi = (payload) => {
-    wifiApSsid.textContent = payload.apSsid || "--";
-    wifiApIp.textContent = payload.apIp || "--";
-    wifiStaEnabled.textContent = payload.staEnabled ? "Yes" : "No";
-    wifiStaConnected.textContent = payload.staConnected ? "Connected" : "Disconnected";
-    wifiStaIp.textContent = payload.staIp || "--";
-    wifiFeedback.textContent = `Loaded at ${new Date().toLocaleTimeString()}`;
+  const signalLabel = (rssi) => {
+    if (!rssi || rssi === 0) return "--";
+    if (rssi >= -67) return `✅ Excellent (${rssi} dBm)`;
+    if (rssi >= -75) return `✅ Good (${rssi} dBm)`;
+    if (rssi >= -85) return `⚠️ Fair (${rssi} dBm)`;
+    return `❌ Poor (${rssi} dBm)`;
   };
 
-  const loadWifi = async () => {
-    wifiFeedback.textContent = "Loading WiFi status…";
+  const render = (data) => {
+    const staActive = data.staEnabled && data.staConnected;
 
-    try {
-      const response = await fetch("/api/wifi", { cache: "no-store" });
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
+    // STA (WiFi client) card — only shown when connected
+    if (staCard) {
+      if (staActive) {
+        staCard.classList.remove("hidden");
+      } else {
+        staCard.classList.add("hidden");
       }
+    }
+    if (staConnected) staConnected.textContent = data.staConnected ? "✅ Connected" : "⏸️ Not connected";
+    if (staIp)        staIp.textContent        = data.staIp || "--";
+    if (wifiSignal)   wifiSignal.textContent   = signalLabel(data.wifiRssi);
+    if (wifiRssi)     wifiRssi.textContent     = data.wifiRssi || "--";
 
-      renderWifi(await response.json());
-    } catch (_error) {
-      wifiFeedback.textContent = "Failed to load WiFi status";
+    // AP card — always present; tone down its description when STA is active
+    if (apSsid) apSsid.textContent = data.apSsid || "--";
+    if (apIp)   apIp.textContent   = data.apIp   || "--";
+    if (apDesc) {
+      apDesc.textContent = staActive
+        ? "The controller access point is also active as a fallback."
+        : "Connect to this network to reach the controller.";
     }
   };
 
-  reloadWifiButton.addEventListener("click", () => {
-    loadWifi();
-  });
+  const loadWifiStatus = async () => {
+    if (feedback) {
+      feedback.textContent = "Loading WiFi status...";
+      feedback.className = "feedback";
+    }
+    try {
+      const response = await fetch("/api/wifi", { cache: "no-store" });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      render(await response.json());
+      if (feedback) {
+        feedback.textContent = `Updated at ${new Date().toLocaleTimeString()}`;
+        feedback.className = "feedback success";
+      }
+    } catch (error) {
+      if (feedback) {
+        feedback.textContent = error instanceof Error ? error.message : "Failed to load WiFi status";
+        feedback.className = "feedback error";
+      }
+    }
+  };
 
-  loadWifi();
+  if (reloadButton) reloadButton.addEventListener("click", loadWifiStatus);
+  loadWifiStatus();
 })();

@@ -3,58 +3,74 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>WiFi - protoArtoo</title>
     <link rel="stylesheet" href="/style.css">
+    <link rel="icon" type="image/png" href="/r2d2body-favicon.png">
   </head>
   <body>
     <div class="topbar">
       <div>
-        <h1>WiFi</h1>
-        <div class="subtitle">Access point and WiFi client status for the flashed controller</div>
+        <h1>📶 WiFi</h1>
+        <div class="subtitle">Wireless network status</div>
       </div>
     </div>
 
     <nav>
-      <a href="/">Home</a>
-      <a href="/setup.html">Setup</a>
-      <a href="/wifi.html" class="active">WiFi</a>
-      <a href="/firmware.html">Firmware</a>
-      <a href="/serial.html">Serial</a>
+      <a href="/">🏠 Home</a>
+      <a href="/drive.html">🏎️ Drive</a>
+      <a href="/dome.html">🔄 Dome</a>
+      <a href="/servo.html">🦾 Servos</a>
+      <a href="/setup.html">⚙️ Setup</a>
+      <a href="/rc.html">🕹️ RC</a>
+      <a href="/serial.html">🔌 Serial</a>
+      <a href="/wifi.html" class="active">📶 WiFi</a>
+      <a href="/firmware.html">💾 Firmware</a>
     </nav>
 
-    <div class="card">
-      <h3>WiFi Status</h3>
-      <div class="status-grid">
+    <!-- Active connection — shown based on what mode is running -->
+    <div class="card" id="wifi-sta-card" class="hidden">
+      <h3>🌐 WiFi Client</h3>
+      <div class="desc">The controller is connected to your WiFi network.</div>
+      <div class="status-grid mt-16">
         <div class="status-item">
-          <dt>Access Point</dt>
-          <dd id="wifi-ap-ssid">--</dd>
-          <div class="list-note">IP: <span id="wifi-ap-ip">--</span></div>
-        </div>
-        <div class="status-item">
-          <dt>WiFi Client</dt>
+          <dt>Status</dt>
           <dd id="wifi-sta-connected">--</dd>
-          <div class="list-note">Enabled: <span id="wifi-sta-enabled">--</span></div>
-          <div class="list-note">IP: <span id="wifi-sta-ip">--</span></div>
+        </div>
+        <div class="status-item">
+          <dt>IP Address</dt>
+          <dd id="wifi-sta-ip">--</dd>
+        </div>
+        <div class="status-item">
+          <dt>📶 Signal</dt>
+          <dd id="wifi-signal">--</dd>
+          <div class="desc mt-6">RSSI: <span id="wifi-rssi">--</span> dBm</div>
         </div>
       </div>
-      <div class="button-row" style="margin-top:12px;">
-        <button id="reload-wifi-button" class="btn" type="button">Reload WiFi Status</button>
-      </div>
-      <div id="wifi-feedback" class="feedback" style="margin-top:12px;">Loading WiFi status…</div>
     </div>
 
-    <div class="card">
-      <h3>Current Configuration Model</h3>
-      <ul class="feature-list">
-        <li>Access point and WiFi client credentials currently come from <code>src/secrets.h</code>.</li>
-        <li>Runtime WiFi state is bench-valid and visible here over the live API.</li>
-        <li>Editing WiFi credentials from the browser is still deferred until a later, safer slice.</li>
-      </ul>
+    <!-- Access Point — always active; primary when no STA client -->
+    <div class="card" id="wifi-ap-card">
+      <h3>📡 Access Point</h3>
+      <div class="desc" id="wifi-ap-desc">Connect to this network to reach the controller.</div>
+      <div class="status-grid mt-16">
+        <div class="status-item">
+          <dt>Network Name</dt>
+          <dd id="wifi-ap-ssid">--</dd>
+        </div>
+        <div class="status-item">
+          <dt>IP Address</dt>
+          <dd id="wifi-ap-ip">--</dd>
+        </div>
+      </div>
     </div>
+
+    <div class="button-row">
+      <button id="reload-wifi-button" class="btn" type="button">🔄 Refresh</button>
+    </div>
+    <div id="wifi-feedback" class="feedback mt-12">Loading WiFi status...</div>
 
     <div class="status-bar">
-      <div><span class="dot green"></span>WiFi page connected to <code>/api/wifi</code></div>
-      <div class="status-subline" id="fw-meta">Loading firmware info…</div>
+      <div><span class="dot green"></span>WiFi page connected</div>
+      <div class="status-subline" id="fw-meta">Loading firmware info...</div>
     </div>
 
     <script src="/wifi.js"></script>
