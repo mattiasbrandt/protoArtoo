@@ -10,40 +10,18 @@
 #include <cstdint>
 
 #include "config.h"
-
-#define PA_LOG_ERROR(tag, fmt, ...)                                         \
-    do {                                                                    \
-        if (PA_LOG_LEVEL >= PA_LOG_LEVEL_ERROR) {                           \
-            char _pa_log_buf[192];                                          \
-            snprintf(_pa_log_buf, sizeof(_pa_log_buf), fmt, ##__VA_ARGS__); \
-            paLogLine(tag, _pa_log_buf);                                    \
-        }                                                                   \
-    } while (0)
-
-#define PA_LOG_INFO(tag, fmt, ...)                                          \
-    do {                                                                    \
-        if (PA_LOG_LEVEL >= PA_LOG_LEVEL_INFO) {                            \
-            char _pa_log_buf[192];                                          \
-            snprintf(_pa_log_buf, sizeof(_pa_log_buf), fmt, ##__VA_ARGS__); \
-            paLogLine(tag, _pa_log_buf);                                    \
-        }                                                                   \
-    } while (0)
-
-#define PA_LOG_DEBUG(tag, fmt, ...)                                         \
-    do {                                                                    \
-        if (PA_LOG_LEVEL >= PA_LOG_LEVEL_DEBUG) {                           \
-            char _pa_log_buf[192];                                          \
-            snprintf(_pa_log_buf, sizeof(_pa_log_buf), fmt, ##__VA_ARGS__); \
-            paLogLine(tag, _pa_log_buf);                                    \
-        }                                                                   \
-    } while (0)
+#include "log_buffer.h"
+#include "logging.h"
 
 class AsyncWebServer;
 
 void buildStatusJson(char* buffer, size_t bufferSize);
-void paLogLine(const char* tag, const char* message);
+bool buildRcDiagnosticsJson(char* buffer, size_t bufferSize);
 size_t copyRecentLogs(char* buffer, size_t bufferSize);
+uint32_t copyNewLogLinesSince(uint32_t lastSent, char out[][LOG_LINE_MAX], size_t maxLines,
+                              size_t* linesCopied);
+size_t getLogBufferCount();
+bool copyLogLineAt(size_t idx, char* out, size_t outSize);
 bool webLittleFsMounted();
 void requestSystemRestart(uint32_t delayMs);
 void webServerInit();
-void webRegisterRoutes(AsyncWebServer& server);

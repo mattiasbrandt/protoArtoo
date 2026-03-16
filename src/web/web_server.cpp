@@ -4,18 +4,161 @@
 // WiFi and AsyncWebServer bootstrap for protoArtoo.
 // =============================================================================
 
-#include "web_server.h"
+#include "../../include/web_server.h"
 
 #include <Arduino.h>
+#include <ArduinoOTA.h>
 #include <ESPAsyncWebServer.h>
 #include <LittleFS.h>
 #include <WiFi.h>
+#include <stddef.h>
+#include <stdio.h>
 
-#include "config.h"
-#include "robot_state.h"
+#include "../../include/api_config.h"
+#include "../../include/api_drive.h"
+#include "../../include/api_estop.h"
+#include "../../include/api_rc.h"
+#include "../../include/api_servo.h"
+#include "../../include/api_status.h"
+#include "../../include/api_system.h"
+#include "../../include/config.h"
+#include "../../include/rc_diagnostics.h"
+#include "../../include/robot_state.h"
 
 #if __has_include("secrets.h")
 #include "secrets.h"
+#endif
+
+#ifndef ARDUINO
+class String {
+   public:
+    const char* c_str() const {
+        return "";
+    }
+};
+
+class IPAddress {
+   public:
+    String toString() const {
+        return String();
+    }
+};
+
+using wl_status_t = int;
+using WiFiEvent_t = int;
+
+static const wl_status_t WL_CONNECTED = 3;
+static const int WIFI_AP = 1;
+static const int WIFI_AP_STA = 2;
+static const WiFiEvent_t ARDUINO_EVENT_WIFI_AP_START = 0;
+static const WiFiEvent_t ARDUINO_EVENT_WIFI_STA_START = 1;
+static const WiFiEvent_t ARDUINO_EVENT_WIFI_STA_GOT_IP = 2;
+static const WiFiEvent_t ARDUINO_EVENT_WIFI_STA_DISCONNECTED = 3;
+
+class AsyncEventSourceClient {
+   public:
+    void send(const char*, const char*, unsigned long) {
+    }
+};
+
+class AsyncEventSource {
+   public:
+    explicit AsyncEventSource(const char*) {
+    }
+
+    template <typename Callback>
+    void onConnect(Callback) {
+    }
+
+    size_t count() const {
+        return 0;
+    }
+    void send(const char*, const char*, unsigned long) {
+    }
+};
+
+class AsyncStaticWebHandler {
+   public:
+    AsyncStaticWebHandler& setDefaultFile(const char*) {
+        return *this;
+    }
+};
+
+class AsyncWebServer {
+   public:
+    explicit AsyncWebServer(int) {
+    }
+    void addHandler(AsyncEventSource*) {
+    }
+    template <typename FsType>
+    AsyncStaticWebHandler& serveStatic(const char*, FsType&, const char*) {
+        static AsyncStaticWebHandler handler;
+        return handler;
+    }
+    void begin() {
+    }
+};
+
+class LittleFSClass {
+   public:
+    bool begin(bool) {
+        return false;
+    }
+};
+
+class WiFiClass {
+   public:
+    wl_status_t status() const {
+        return 0;
+    }
+    long RSSI() const {
+        return 0;
+    }
+    IPAddress softAPIP() const {
+        return IPAddress();
+    }
+    IPAddress localIP() const {
+        return IPAddress();
+    }
+    int getMode() const {
+        return WIFI_AP;
+    }
+    void onEvent(void (*)(WiFiEvent_t)) {
+    }
+    void mode(int) {
+    }
+    void softAP(const char*, const char* = nullptr) {
+    }
+    void begin(const char*, const char*) {
+    }
+};
+
+class ESPClass {
+   public:
+    unsigned long getFreeHeap() const {
+        return 0;
+    }
+    unsigned long getMinFreeHeap() const {
+        return 0;
+    }
+};
+
+static WiFiClass WiFi;
+static LittleFSClass LittleFS;
+static ESPClass ESP;
+
+inline unsigned long millis() {
+    return 0;
+}
+inline unsigned long pdMS_TO_TICKS(unsigned long ms) {
+    return ms;
+}
+inline void vTaskDelay(unsigned long) {
+}
+inline int xTaskCreatePinnedToCore(void (*)(void*), const char*, unsigned int, void*, unsigned int,
+                                   void*, int) {
+    return 0;
+}
 #endif
 
 static const char* TAG = "WebServer";
@@ -25,8 +168,110 @@ static bool littleFsReady = false;
 static bool routesRegistered = false;
 static bool serverStarted = false;
 static bool eventTaskStarted = false;
+static bool apFallbackMode = false;
+static bool otaTaskStarted = false;
 
 namespace {
+
+const char* rcInputModeLabel(RcInputMode mode) {
+    switch (mode) {
+        case RC_INPUT_STANDARD_PWM:
+            return "standard_pwm";
+        case RC_INPUT_SINGLE_SBUS:
+            return "single_sbus";
+        case RC_INPUT_DUAL_SBUS:
+        default:
+            return "dual_sbus";
+    }
+}
+
+struct RcActionBindingSpec {
+    const char* name;
+    RcBindingConfig binding;
+};
+
+bool rcSourceEnabledForMode(RcBindingSource source, RcInputMode mode, bool enableRcCh1,
+                            bool enableRcCh2, bool anyPwmEnabled) {
+    switch (source) {
+        case RC_BINDING_PWM:
+            return mode == RC_INPUT_STANDARD_PWM && anyPwmEnabled;
+        case RC_BINDING_SBUS1:
+            return mode != RC_INPUT_STANDARD_PWM && enableRcCh1;
+        case RC_BINDING_SBUS2:
+            return mode == RC_INPUT_DUAL_SBUS && enableRcCh2;
+        case RC_BINDING_NONE:
+        default:
+            return false;
+    }
+}
+
+void loadModeBindingSpecs(RcInputMode mode,
+                          RcActionBindingSpec specs[RC_DIAGNOSTICS_CHANNEL_CAPACITY]) {
+    const char* names[RC_DIAGNOSTICS_CHANNEL_CAPACITY] = {
+        "driveSpeed", "driveSteer", "driveLimit", "domeSpeed", "arm1", "arm2", "sound"};
+    for (size_t i = 0; i < RC_DIAGNOSTICS_CHANNEL_CAPACITY; ++i) {
+        specs[i].name = names[i];
+    }
+
+    taskENTER_CRITICAL(&robotStateMux);
+    if (mode == RC_INPUT_STANDARD_PWM) {
+        specs[0].binding = robotState.cfg_rc_pwm_drive_speed;
+        specs[1].binding = robotState.cfg_rc_pwm_drive_steer;
+        specs[2].binding = robotState.cfg_rc_pwm_drive_limit;
+        specs[3].binding = robotState.cfg_rc_pwm_dome_speed;
+        specs[4].binding = robotState.cfg_rc_pwm_arm1;
+        specs[5].binding = robotState.cfg_rc_pwm_arm2;
+        specs[6].binding = robotState.cfg_rc_pwm_sound;
+    } else {
+        specs[0].binding = robotState.cfg_rc_sbus_drive_speed;
+        specs[1].binding = robotState.cfg_rc_sbus_drive_steer;
+        specs[2].binding = robotState.cfg_rc_sbus_drive_limit;
+        specs[3].binding = robotState.cfg_rc_sbus_dome_speed;
+        specs[4].binding = robotState.cfg_rc_sbus_arm1;
+        specs[5].binding = robotState.cfg_rc_sbus_arm2;
+        specs[6].binding = robotState.cfg_rc_sbus_sound;
+    }
+    taskEXIT_CRITICAL(&robotStateMux);
+}
+
+uint32_t rcSourceAgeMs(uint32_t nowMs, uint32_t lastSeenMs) {
+    if (lastSeenMs == 0) {
+        return 0;
+    }
+    return nowMs - lastSeenMs;
+}
+
+bool appendJsonChunk(char*& pos, size_t& remaining, const char* chunk) {
+    if (remaining == 0) {
+        return false;
+    }
+
+    int n = snprintf(pos, remaining, "%s", chunk);
+    if (n <= 0 || n >= (int)remaining) {
+        return false;
+    }
+
+    pos += n;
+    remaining -= (size_t)n;
+    return true;
+}
+
+bool appendPeripheralStatus(char*& pos, size_t& remaining, const char* key, const char* state,
+                            const char* detail) {
+    if (remaining == 0) {
+        return false;
+    }
+
+    int n = snprintf(pos, remaining, ",\"%s\":{\"state\":\"%s\",\"detail\":\"%s\"}", key, state,
+                     detail);
+    if (n <= 0 || n >= (int)remaining) {
+        return false;
+    }
+
+    pos += n;
+    remaining -= (size_t)n;
+    return true;
+}
 
 bool hasStaConfig() {
 #if __has_include("secrets.h")
@@ -66,12 +311,14 @@ void buildStatusJson(char* buffer, size_t bufferSize) {
     bool estop;
     bool webControlEnabled;
     bool sbusSignalLost;
+    bool sbus2SignalLost;
     bool sbusHwFailsafe;
     bool webDriveExpired;
     bool wifiClientConnected;
     int failsafeSource;
     int driveSpeed;
     int driveSteer;
+    float domeTargetSpeed;
     float speedLimitScale;
     bool stationary;
     unsigned long failsafeCount;
@@ -79,39 +326,375 @@ void buildStatusJson(char* buffer, size_t bufferSize) {
     unsigned long heapFree;
     unsigned long heapMin;
     long wifiRssi;
+    bool enableArm1, enableArm2, enableAux1, enableAux2, enableAux3, enableDome;
+    bool enableRcCh1, enableRcCh2, enableRcCh3, enableRcCh4, enableRcCh5, enableRcCh6;
+    bool enableS1Hoverboard, enableS2Sound, enableS3DomeCtrl;
+    RcInputMode rcInputMode;
+    uint16_t arm1TargetUs;
+    uint16_t arm2TargetUs;
+    uint32_t lastSbus1Ms;
+    uint32_t lastSbus2Ms;
+    uint32_t sbus1LostFrameCount;
+    uint32_t domeHbRx;
+    uint32_t bodyHbTx;
+    uint32_t domeLastSeenMs;
 
     taskENTER_CRITICAL(&robotStateMux);
     estop = robotState.estop;
     webControlEnabled = robotState.webControlEnabled;
     sbusSignalLost = robotState.sbusSignalLost;
+    sbus2SignalLost = robotState.sbus2SignalLost;
     sbusHwFailsafe = robotState.sbusHwFailsafe;
     webDriveExpired = robotState.webDriveExpired;
     wifiClientConnected = WiFi.status() == WL_CONNECTED;
     failsafeSource = (int)robotState.failsafeSource;
     driveSpeed = robotState.driveSpeed;
     driveSteer = robotState.driveSteer;
+    domeTargetSpeed = robotState.domeTargetSpeed;
     speedLimitScale = robotState.speedLimitScale;
     stationary = robotState.stationary;
     failsafeCount = robotState.failsafeTriggerCount;
+    arm1TargetUs = robotState.arm1TargetUs;
+    arm2TargetUs = robotState.arm2TargetUs;
+    lastSbus1Ms = robotState.lastSbus1Ms;
+    lastSbus2Ms = robotState.lastSbus2Ms;
+    sbus1LostFrameCount = robotState.sbus1LostFrameCount;
+    domeHbRx = robotState.domeHbRx;
+    bodyHbTx = robotState.bodyHbTx;
+    domeLastSeenMs = robotState.domeLastSeenMs;
+    enableArm1 = robotState.cfg_enable_arm1;
+    enableArm2 = robotState.cfg_enable_arm2;
+    enableAux1 = robotState.cfg_enable_aux1;
+    enableAux2 = robotState.cfg_enable_aux2;
+    enableAux3 = robotState.cfg_enable_aux3;
+    enableDome = robotState.cfg_enable_dome;
+    enableRcCh1 = robotState.cfg_enable_rc_ch1;
+    enableRcCh2 = robotState.cfg_enable_rc_ch2;
+    enableRcCh3 = robotState.cfg_enable_rc_ch3;
+    enableRcCh4 = robotState.cfg_enable_rc_ch4;
+    enableRcCh5 = robotState.cfg_enable_rc_ch5;
+    enableRcCh6 = robotState.cfg_enable_rc_ch6;
+    rcInputMode = robotState.cfg_rc_input_mode;
+    enableS1Hoverboard = robotState.cfg_enable_s1_hoverboard;
+    enableS2Sound = robotState.cfg_enable_s2_sound;
+    enableS3DomeCtrl = robotState.cfg_enable_s3_dome_ctrl;
     taskEXIT_CRITICAL(&robotStateMux);
     uptimeMs = millis();
     heapFree = ESP.getFreeHeap();
     heapMin = ESP.getMinFreeHeap();
     wifiRssi = wifiClientConnected ? WiFi.RSSI() : 0;
 
-    snprintf(buffer, bufferSize,
-             "{\"estop\":%s,\"webControlEnabled\":%s,\"sbusSignalLost\":%s,\"sbusHwFailsafe\":%s,"
-             "\"webDriveExpired\":%s,\"failsafeSource\":%d,\"driveSpeed\":%d,"
-             "\"driveSteer\":%d,\"speedLimitScale\":%.3f,\"stationary\":%s,"
-             "\"failsafeCount\":%lu,\"uptimeMs\":%lu,\"firmwareVersion\":\"%s\","
-             "\"heapFree\":%lu,\"heapMin\":%lu,\"wifiRssi\":%ld,\"wifiClientConnected\":%s,"
-             "\"littleFsReady\":%s}",
-             estop ? "true" : "false", webControlEnabled ? "true" : "false",
-             sbusSignalLost ? "true" : "false", sbusHwFailsafe ? "true" : "false",
-             webDriveExpired ? "true" : "false", failsafeSource, driveSpeed, driveSteer,
-             (double)speedLimitScale, stationary ? "true" : "false", failsafeCount, uptimeMs,
-             PA_FIRMWARE_VERSION, heapFree, heapMin, wifiRssi,
-             wifiClientConnected ? "true" : "false", littleFsReady ? "true" : "false");
+    // Build the fixed system-health fields first.
+    int written = snprintf(
+        buffer, bufferSize,
+        "{\"estop\":%s,\"webControlEnabled\":%s,\"sbusSignalLost\":%s,\"sbusHwFailsafe\":%s,"
+        "\"webDriveExpired\":%s,\"failsafeSource\":%d,\"driveSpeed\":%d,"
+        "\"driveSteer\":%d,\"speedLimitScale\":%.3f,\"stationary\":%s,"
+        "\"failsafeCount\":%lu,\"uptimeMs\":%lu,\"firmwareVersion\":\"%s\","
+        "\"heapFree\":%lu,\"heapMin\":%lu,\"wifiRssi\":%ld,\"wifiConnected\":%s,"
+        "\"wifiClientConnected\":%s,"
+        "\"littleFsReady\":%s",
+        estop ? "true" : "false", webControlEnabled ? "true" : "false",
+        sbusSignalLost ? "true" : "false", sbusHwFailsafe ? "true" : "false",
+        webDriveExpired ? "true" : "false", failsafeSource, driveSpeed, driveSteer,
+        (double)speedLimitScale, stationary ? "true" : "false", failsafeCount, uptimeMs,
+        PA_FIRMWARE_VERSION, heapFree, heapMin, wifiRssi, wifiClientConnected ? "true" : "false",
+        wifiClientConnected ? "true" : "false", littleFsReady ? "true" : "false");
+
+    // Conditionally append enabled-component keys — disabled components are absent,
+    // not emitted as false placeholders (Phase 3 status/dashboard contract).
+    if (written > 0 && written < (int)bufferSize - 1) {
+        char* pos = buffer + written;
+        size_t remaining = bufferSize - (size_t)written;
+        char detail[96];
+
+        if (enableArm1) {
+            snprintf(detail, sizeof(detail), "Target %u us", (unsigned)arm1TargetUs);
+            appendPeripheralStatus(pos, remaining, "arm1", "ready", detail);
+        }
+        if (enableArm2) {
+            snprintf(detail, sizeof(detail), "Target %u us", (unsigned)arm2TargetUs);
+            appendPeripheralStatus(pos, remaining, "arm2", "ready", detail);
+        }
+        if (enableAux1) {
+            appendPeripheralStatus(pos, remaining, "aux1", "ready", "Servo channel enabled");
+        }
+        if (enableAux2) {
+            appendPeripheralStatus(pos, remaining, "aux2", "ready", "Servo channel enabled");
+        }
+        if (enableAux3) {
+            appendPeripheralStatus(pos, remaining, "aux3", "ready", "Servo channel enabled");
+        }
+        if (enableDome) {
+            if (domeTargetSpeed > 0.001f || domeTargetSpeed < -0.001f) {
+                snprintf(detail, sizeof(detail), "Target %.0f%%",
+                         (double)(domeTargetSpeed * 100.0f));
+                appendPeripheralStatus(pos, remaining, "dome", "spinning", detail);
+            } else {
+                appendPeripheralStatus(pos, remaining, "dome", "idle", "Target 0%");
+            }
+        }
+        if (enableRcCh1) {
+            if (rcInputMode == RC_INPUT_STANDARD_PWM) {
+                appendPeripheralStatus(
+                    pos, remaining, "rcCh1", "ready",
+                    "Standard PWM input enabled; routing configurable via /api/config");
+            } else if (lastSbus1Ms == 0) {
+                appendPeripheralStatus(pos, remaining, "rcCh1", "not_seen",
+                                       "Drive SBUS input waiting for first frame");
+            } else if (sbusSignalLost) {
+                snprintf(detail, sizeof(detail),
+                         "Drive SBUS lost, last %lu ms ago, lost frames %lu",
+                         uptimeMs - lastSbus1Ms, (unsigned long)sbus1LostFrameCount);
+                appendPeripheralStatus(pos, remaining, "rcCh1", "signal_lost", detail);
+            } else {
+                snprintf(detail, sizeof(detail),
+                         "Drive SBUS active, last %lu ms ago, lost frames %lu",
+                         uptimeMs - lastSbus1Ms, (unsigned long)sbus1LostFrameCount);
+                appendPeripheralStatus(pos, remaining, "rcCh1", "active", detail);
+            }
+        }
+        if (enableRcCh2) {
+            if (rcInputMode == RC_INPUT_STANDARD_PWM) {
+                appendPeripheralStatus(
+                    pos, remaining, "rcCh2", "ready",
+                    "Standard PWM input enabled; routing configurable via /api/config");
+            } else if (rcInputMode == RC_INPUT_SINGLE_SBUS) {
+                appendPeripheralStatus(
+                    pos, remaining, "rcCh2", "standby",
+                    "Reserved for SBUS2 in dual_sbus mode; inactive in single_sbus mode");
+            } else if (lastSbus2Ms == 0) {
+                appendPeripheralStatus(pos, remaining, "rcCh2", "not_seen",
+                                       "Dome SBUS input waiting for first frame");
+            } else if (sbus2SignalLost) {
+                snprintf(detail, sizeof(detail), "Dome SBUS lost, last %lu ms ago",
+                         uptimeMs - lastSbus2Ms);
+                appendPeripheralStatus(pos, remaining, "rcCh2", "signal_lost", detail);
+            } else {
+                snprintf(detail, sizeof(detail), "Dome SBUS active, last %lu ms ago",
+                         uptimeMs - lastSbus2Ms);
+                appendPeripheralStatus(pos, remaining, "rcCh2", "active", detail);
+            }
+        }
+        if (enableRcCh3) {
+            snprintf(detail, sizeof(detail),
+                     "CH3 enabled; %s routing is configurable via /api/config",
+                     rcInputModeLabel(rcInputMode));
+            appendPeripheralStatus(pos, remaining, "rcCh3",
+                                   rcInputMode == RC_INPUT_STANDARD_PWM ? "ready" : "standby",
+                                   detail);
+        }
+        if (enableRcCh4) {
+            snprintf(detail, sizeof(detail),
+                     "CH4 enabled; %s routing is configurable via /api/config",
+                     rcInputModeLabel(rcInputMode));
+            appendPeripheralStatus(pos, remaining, "rcCh4",
+                                   rcInputMode == RC_INPUT_STANDARD_PWM ? "ready" : "standby",
+                                   detail);
+        }
+        if (enableRcCh5) {
+            snprintf(detail, sizeof(detail),
+                     "CH5 enabled; %s routing is configurable via /api/config",
+                     rcInputModeLabel(rcInputMode));
+            appendPeripheralStatus(pos, remaining, "rcCh5",
+                                   rcInputMode == RC_INPUT_STANDARD_PWM ? "ready" : "standby",
+                                   detail);
+        }
+        if (enableRcCh6) {
+            snprintf(detail, sizeof(detail),
+                     "CH6 enabled; %s routing is configurable via /api/config",
+                     rcInputModeLabel(rcInputMode));
+            appendPeripheralStatus(pos, remaining, "rcCh6",
+                                   rcInputMode == RC_INPUT_STANDARD_PWM ? "ready" : "standby",
+                                   detail);
+        }
+        if (enableS1Hoverboard) {
+            if (driveSpeed != 0 || driveSteer != 0) {
+                snprintf(detail, sizeof(detail), "Command %d/%d", driveSpeed, driveSteer);
+                appendPeripheralStatus(pos, remaining, "s1Hoverboard", "commanding", detail);
+            } else {
+                appendPeripheralStatus(pos, remaining, "s1Hoverboard", "idle",
+                                       "No drive command requested");
+            }
+        }
+        if (enableS2Sound) {
+            appendPeripheralStatus(pos, remaining, "s2Sound", "idle",
+                                   "Configured, live playback telemetry unavailable");
+        }
+        if (enableS3DomeCtrl) {
+            if (domeLastSeenMs == 0) {
+                snprintf(detail, sizeof(detail), "Heartbeat tx %lu, no dome heartbeat seen yet",
+                         (unsigned long)bodyHbTx);
+                appendPeripheralStatus(pos, remaining, "s3DomeCtrl", "not_seen", detail);
+            } else if ((uptimeMs - domeLastSeenMs) < 5000UL) {
+                snprintf(detail, sizeof(detail), "Heartbeat rx %lu / tx %lu, last %lu ms ago",
+                         (unsigned long)domeHbRx, (unsigned long)bodyHbTx,
+                         uptimeMs - domeLastSeenMs);
+                appendPeripheralStatus(pos, remaining, "s3DomeCtrl", "connected", detail);
+            } else {
+                snprintf(detail, sizeof(detail), "Heartbeat rx %lu / tx %lu, last %lu ms ago",
+                         (unsigned long)domeHbRx, (unsigned long)bodyHbTx,
+                         uptimeMs - domeLastSeenMs);
+                appendPeripheralStatus(pos, remaining, "s3DomeCtrl", "lost", detail);
+            }
+        }
+
+        appendJsonChunk(pos, remaining, "}");
+    }
+}
+
+bool buildRcDiagnosticsJson(char* buffer, size_t bufferSize) {
+    uint32_t nowMs = millis();
+    RcInputMode rcInputMode;
+    uint32_t timeoutMs;
+    bool enableRcCh1, enableRcCh2, enableRcCh3, enableRcCh4, enableRcCh5, enableRcCh6;
+    bool sbusSignalLost, sbus2SignalLost, sbusHwFailsafe, sbus2HwFailsafe;
+    uint32_t lastPwmMs, lastSbus1Ms, lastSbus2Ms;
+    uint32_t sbus1LostFrameCount, sbus2LostFrameCount;
+    uint16_t pwmPulseUs[6];
+    bool pwmPulseValid[6];
+    uint16_t sbus1Raw[16];
+    uint16_t sbus2Raw[16];
+    bool sbus1Digital[2];
+    bool sbus2Digital[2];
+
+    taskENTER_CRITICAL(&robotStateMux);
+    rcInputMode = robotState.cfg_rc_input_mode;
+    timeoutMs = robotState.cfg_sbusTimeoutMs;
+    enableRcCh1 = robotState.cfg_enable_rc_ch1;
+    enableRcCh2 = robotState.cfg_enable_rc_ch2;
+    enableRcCh3 = robotState.cfg_enable_rc_ch3;
+    enableRcCh4 = robotState.cfg_enable_rc_ch4;
+    enableRcCh5 = robotState.cfg_enable_rc_ch5;
+    enableRcCh6 = robotState.cfg_enable_rc_ch6;
+    sbusSignalLost = robotState.sbusSignalLost;
+    sbus2SignalLost = robotState.sbus2SignalLost;
+    sbusHwFailsafe = robotState.sbusHwFailsafe;
+    sbus2HwFailsafe = robotState.sbus2HwFailsafe;
+    lastPwmMs = robotState.lastPwmMs;
+    lastSbus1Ms = robotState.lastSbus1Ms;
+    lastSbus2Ms = robotState.lastSbus2Ms;
+    sbus1LostFrameCount = robotState.sbus1LostFrameCount;
+    sbus2LostFrameCount = robotState.sbus2LostFrameCount;
+    for (int i = 0; i < 6; ++i) {
+        pwmPulseUs[i] = robotState.rcPwmPulseUs[i];
+        pwmPulseValid[i] = robotState.rcPwmPulseValid[i];
+    }
+    for (int i = 0; i < 16; ++i) {
+        sbus1Raw[i] = robotState.rcSbus1Raw[i];
+        sbus2Raw[i] = robotState.rcSbus2Raw[i];
+    }
+    sbus1Digital[0] = robotState.rcSbus1Digital[0];
+    sbus1Digital[1] = robotState.rcSbus1Digital[1];
+    sbus2Digital[0] = robotState.rcSbus2Digital[0];
+    sbus2Digital[1] = robotState.rcSbus2Digital[1];
+    taskEXIT_CRITICAL(&robotStateMux);
+
+    bool anyPwmEnabled =
+        enableRcCh1 || enableRcCh2 || enableRcCh3 || enableRcCh4 || enableRcCh5 || enableRcCh6;
+    RcDiagnosticsSnapshot snapshot = {};
+    snapshot.mode = rcInputModeLabel(rcInputMode);
+    snapshot.updatedMs = lastPwmMs;
+    if (lastSbus1Ms > snapshot.updatedMs) {
+        snapshot.updatedMs = lastSbus1Ms;
+    }
+    if (lastSbus2Ms > snapshot.updatedMs) {
+        snapshot.updatedMs = lastSbus2Ms;
+    }
+
+    snapshot.sources[0] = {"sbus1",
+                           rcSourceEnabledForMode(RC_BINDING_SBUS1, rcInputMode, enableRcCh1,
+                                                  enableRcCh2, anyPwmEnabled),
+                           false,
+                           rcSourceAgeMs(nowMs, lastSbus1Ms),
+                           sbus1LostFrameCount,
+                           sbusHwFailsafe};
+    snapshot.sources[1] = {"sbus2",
+                           rcSourceEnabledForMode(RC_BINDING_SBUS2, rcInputMode, enableRcCh1,
+                                                  enableRcCh2, anyPwmEnabled),
+                           false,
+                           rcSourceAgeMs(nowMs, lastSbus2Ms),
+                           sbus2LostFrameCount,
+                           sbus2HwFailsafe};
+    snapshot.sources[2] = {
+        "pwm",
+        rcSourceEnabledForMode(RC_BINDING_PWM, rcInputMode, enableRcCh1, enableRcCh2, anyPwmEnabled),
+        false,
+        rcSourceAgeMs(nowMs, lastPwmMs),
+        0,
+        false};
+    snapshot.sourceCount = RC_DIAGNOSTICS_SOURCE_CAPACITY;
+
+    snapshot.sources[0].linked = snapshot.sources[0].enabled && lastSbus1Ms > 0 &&
+                                 !sbusSignalLost && snapshot.sources[0].ageMs <= timeoutMs;
+    snapshot.sources[1].linked = snapshot.sources[1].enabled && lastSbus2Ms > 0 &&
+                                 !sbus2SignalLost && snapshot.sources[1].ageMs <= timeoutMs;
+    snapshot.sources[2].linked =
+        snapshot.sources[2].enabled && lastPwmMs > 0 && snapshot.sources[2].ageMs <= timeoutMs;
+
+    RcActionBindingSpec specs[RC_DIAGNOSTICS_CHANNEL_CAPACITY] = {};
+    loadModeBindingSpecs(rcInputMode, specs);
+
+    for (size_t i = 0; i < RC_DIAGNOSTICS_CHANNEL_CAPACITY; ++i) {
+        snapshot.mappingChannels[snapshot.mappingCount].name = specs[i].name;
+        snapshot.mappingChannels[snapshot.mappingCount].binding = specs[i].binding;
+        snapshot.mappingCount++;
+
+        const RcBindingConfig& binding = specs[i].binding;
+        const char* sourceName = rcDiagnosticsSourceName(binding.source);
+        bool sourceEnabled = rcSourceEnabledForMode(binding.source, rcInputMode, enableRcCh1,
+                                                    enableRcCh2, anyPwmEnabled);
+
+        if (rcBindingSupportsAnalog(binding)) {
+            int raw = 0;
+            bool hasValue = false;
+            if (binding.source == RC_BINDING_PWM && binding.channel >= 1 && binding.channel <= 6) {
+                raw = pwmPulseUs[binding.channel - 1];
+                hasValue = sourceEnabled && pwmPulseValid[binding.channel - 1];
+            } else if (binding.source == RC_BINDING_SBUS1 && binding.channel >= 1 &&
+                       binding.channel <= 16) {
+                raw = sbus1Raw[binding.channel - 1];
+                hasValue = sourceEnabled && lastSbus1Ms > 0;
+            } else if (binding.source == RC_BINDING_SBUS2 && binding.channel >= 1 &&
+                       binding.channel <= 16) {
+                raw = sbus2Raw[binding.channel - 1];
+                hasValue = sourceEnabled && lastSbus2Ms > 0;
+            }
+
+            bool inDeadband = false;
+            float mapped = hasValue ? applyRcAnalogCalibration(raw, binding, &inDeadband) : 0.0f;
+            RcDiagnosticsAnalogChannel& channel = snapshot.analogChannels[snapshot.analogCount++];
+            channel.id = (uint8_t)snapshot.analogCount;
+            channel.name = specs[i].name;
+            channel.activeSource = sourceName;
+            channel.bindingChannel = binding.channel;
+            channel.raw = hasValue ? raw : 0;
+            channel.rawUs = hasValue ? rcDiagnosticsRawToPulseUs(raw, binding) : 1500;
+            channel.normalized = hasValue ? rcDiagnosticsNormalizeRaw(raw, binding) : 0.0f;
+            channel.mapped = mapped;
+            channel.inDeadband = hasValue ? inDeadband : false;
+            channel.reverse = binding.reverse;
+        } else if (rcBindingIsDigital(binding)) {
+            bool pressed = false;
+            bool hasValue = false;
+            if (binding.source == RC_BINDING_SBUS1) {
+                pressed = sbus1Digital[binding.channel == 18 ? 1 : 0];
+                hasValue = sourceEnabled && lastSbus1Ms > 0;
+            } else if (binding.source == RC_BINDING_SBUS2) {
+                pressed = sbus2Digital[binding.channel == 18 ? 1 : 0];
+                hasValue = sourceEnabled && lastSbus2Ms > 0;
+            }
+
+            RcDiagnosticsDigitalChannel& channel =
+                snapshot.digitalChannels[snapshot.digitalCount++];
+            channel.name = specs[i].name;
+            channel.activeSource = sourceName;
+            channel.bindingChannel = binding.channel;
+            channel.pressed = hasValue ? pressed : false;
+        }
+    }
+
+    return formatRcDiagnosticsJson(buffer, bufferSize, snapshot);
 }
 
 bool webLittleFsMounted() {
@@ -119,12 +702,27 @@ bool webLittleFsMounted() {
 }
 
 void eventStreamTask(void*) {
-    char body[384];
+    static char statusBody[768];
+    static char rcBody[2048];
+    static uint32_t lastLogSent = 0;
+    static char logLines[8][LOG_LINE_MAX];
 
     for (;;) {
         if (serverStarted && events.count() > 0) {
-            buildStatusJson(body, sizeof(body));
-            events.send(body, "status", millis());
+            uint32_t nowMs = millis();
+
+            buildStatusJson(statusBody, sizeof(statusBody));
+            events.send(statusBody, "status", nowMs);
+
+            if (buildRcDiagnosticsJson(rcBody, sizeof(rcBody))) {
+                events.send(rcBody, "rc", nowMs);
+            }
+
+            size_t linesCopied = 0;
+            lastLogSent = copyNewLogLinesSince(lastLogSent, logLines, 8, &linesCopied);
+            for (size_t i = 0; i < linesCopied; ++i) {
+                events.send(logLines[i], "log", nowMs);
+            }
         }
 
         vTaskDelay(pdMS_TO_TICKS(1000));
@@ -138,13 +736,24 @@ void startHttpServerOnce() {
 
     if (!routesRegistered) {
         events.onConnect([](AsyncEventSourceClient* client) {
-            char body[384];
-            buildStatusJson(body, sizeof(body));
-            client->send(body, "status", millis());
+            static char statusBody[768];
+            static char rcBody[2048];
+            uint32_t nowMs = millis();
+            buildStatusJson(statusBody, sizeof(statusBody));
+            client->send(statusBody, "status", nowMs);
+            if (buildRcDiagnosticsJson(rcBody, sizeof(rcBody))) {
+                client->send(rcBody, "rc", nowMs);
+            }
         });
         server.addHandler(&events);
 
-        webRegisterRoutes(server);
+        registerEstopRoutes(server);
+        registerDriveRoutes(server);
+        registerConfigRoutes(server);
+        registerRcRoutes(server);
+        registerServoRoutes(server);
+        registerStatusRoutes(server);
+        registerSystemRoutes(server);
 
         if (littleFsReady) {
             server.serveStatic("/", LittleFS, "/").setDefaultFile("index.html");
@@ -156,13 +765,47 @@ void startHttpServerOnce() {
     server.begin();
     serverStarted = true;
     PA_LOG_INFO(TAG, "HTTP server started on port 80");
+
+    // Start OTA task in background — MUST NOT block WiFi event handler (causes TWDT)
+    if (!otaTaskStarted) {
+        xTaskCreatePinnedToCore(
+            [](void*) {
+                // Delay OTA init to let WiFi event handler complete first
+                vTaskDelay(pdMS_TO_TICKS(500));
+
+                ArduinoOTA.setHostname("protoArtoo");
+                ArduinoOTA.onStart([]() {
+                    const char* type =
+                        (ArduinoOTA.getCommand() == U_FLASH) ? "firmware" : "filesystem";
+                    PA_LOG_INFO(TAG, "ArduinoOTA start: %s", type);
+                });
+                ArduinoOTA.onEnd([]() { PA_LOG_INFO(TAG, "ArduinoOTA complete"); });
+                ArduinoOTA.onError([](ota_error_t error) {
+                    PA_LOG_ERROR(TAG, "ArduinoOTA error: %d", (int)error);
+                });
+                ArduinoOTA.begin();
+                PA_LOG_INFO(TAG, "ArduinoOTA ready on port 3232");
+
+                for (;;) {
+                    ArduinoOTA.handle();
+                    vTaskDelay(pdMS_TO_TICKS(10));
+                }
+            },
+            "ArduinoOTA", 4096, nullptr, 1, nullptr, 0);
+        otaTaskStarted = true;
+    }
 }
 
 void handleWiFiEvent(WiFiEvent_t event) {
     switch (event) {
         case ARDUINO_EVENT_WIFI_AP_START:
-            PA_LOG_INFO(TAG, "AP started - SSID: %s  IP: %s", WIFI_AP_SSID,
-                        WiFi.softAPIP().toString().c_str());
+            if (apFallbackMode) {
+                PA_LOG_INFO(TAG, "AP fallback started - SSID: %s  IP: %s", WIFI_AP_SSID,
+                            WiFi.softAPIP().toString().c_str());
+            } else {
+                PA_LOG_INFO(TAG, "AP started - SSID: %s  IP: %s", WIFI_AP_SSID,
+                            WiFi.softAPIP().toString().c_str());
+            }
             startHttpServerOnce();
             break;
         case ARDUINO_EVENT_WIFI_STA_START:
@@ -196,16 +839,18 @@ void webServerInit() {
     WiFi.onEvent(handleWiFiEvent);
 
     if (!eventTaskStarted) {
-        xTaskCreatePinnedToCore(eventStreamTask, "WebEvents", 4096, nullptr, 1, nullptr, 0);
+        xTaskCreatePinnedToCore(eventStreamTask, "WebEvents", 8192, nullptr, 1, nullptr, 0);
         eventTaskStarted = true;
     }
 
     if (hasStaConfig()) {
+        apFallbackMode = true;
         WiFi.mode(WIFI_AP_STA);
         WiFi.softAP(WIFI_AP_SSID, apPassword());
         WiFi.begin(staSsid(), staPassword());
-        PA_LOG_INFO(TAG, "WiFi bootstrap: AP+WiFi client enabled");
+        PA_LOG_INFO(TAG, "WiFi bootstrap: AP+WiFi client enabled (AP as fallback)");
     } else {
+        apFallbackMode = false;
         WiFi.mode(WIFI_AP);
         WiFi.softAP(WIFI_AP_SSID);
         PA_LOG_INFO(TAG, "WiFi bootstrap: AP-only mode");

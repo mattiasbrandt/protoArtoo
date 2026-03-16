@@ -17,6 +17,7 @@ void logBufferAppend(LogBuffer* buf, const char* line) {
     if (buf->count < LOG_BUFFER_LINES) {
         buf->count++;
     }
+    buf->totalWritten++;
 }
 
 size_t logBufferCopy(const LogBuffer* buf, char* out, size_t outSize) {

@@ -24,8 +24,9 @@ static constexpr size_t LOG_BUFFER_LINES = 64;
 // -----------------------------------------------------------------------------
 struct LogBuffer {
     char lines[LOG_BUFFER_LINES][LOG_LINE_MAX];
-    size_t count;  // number of valid entries (0..LOG_BUFFER_LINES)
-    size_t head;   // index where the NEXT write will go (wraps)
+    size_t count;           // number of valid entries (0..LOG_BUFFER_LINES)
+    size_t head;            // index where the NEXT write will go (wraps)
+    uint32_t totalWritten;  // monotonically increasing count of all appends ever
 };
 
 // -----------------------------------------------------------------------------
