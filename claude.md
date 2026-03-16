@@ -1,5 +1,9 @@
 # AI Coding Agent Guidelines — protoArtoo (claude.md)
 
+> Adapter file for Claude-oriented workflows.
+> Canonical cross-agent instructions live in `AGENTS.md` at repository root.
+> If a rule here conflicts with `AGENTS.md`, follow `AGENTS.md` unless the user explicitly overrides.
+
 These rules define how an AI coding agent should plan, execute, verify, communicate, and recover when working on **protoArtoo** — an ESP32 body controller firmware for hoverboard-driven MK4 astromech droids. Optimize for correctness, minimalism, and developer experience.
 
 > **This is safety-critical firmware.** protoArtoo controls a 20 kg wheeled robot with hoverboard motors. A bug in drive, failsafe, or SBUS handling can cause physical injury or property damage. Every code change must be evaluated through a safety lens first.
@@ -24,7 +28,12 @@ These rules define how an AI coding agent should plan, execute, verify, communic
 - **Framework:** Arduino on ESP32 via PlatformIO (`espressif32@5.2.0`)
 - **Architecture:** FreeRTOS tasks split across dual cores (Core 0: WiFi/web; Core 1: real-time control)
 - **Drive:** Hoverboard motors via Gen2.x 8-byte UART frames at 50 Hz (115200 baud, ESP32 UART1 / PCB S1)
-- **RC input:** Dual SBUS receivers via RMT peripheral (GPIO 15 = drive, GPIO 13 = dome spin)
+- **RC input:** Runtime-selectable receiver modes:
+  - `standard_pwm` (CH1-CH6 PWM)
+  - `single_sbus` (SBUS on GPIO 15)
+  - `dual_sbus` (SBUS on GPIO 15 + GPIO 13)
+- **RC mapping:** All mode-specific bindings/calibration are NVS-backed and
+  must be configurable from the webpage (Setup + RC diagnostics surfaces)
 - **Audio:** DY-SV5W module (default) via UART 9600 TX-only — body is the **sole audio source** for the entire droid
 - **Dome link:** Bidirectional Marcduino serial (9600 baud) over slip ring to `mattiasbrandt/AstroPixelsPlus`
 - **Web:** ESPAsyncWebServer with LittleFS-served UI, REST API, SSE live updates
@@ -40,13 +49,8 @@ These rules define how an AI coding agent should plan, execute, verify, communic
 
 ### Critical Safety Invariants
 
-These must never be violated by any code change:
-
-1. **Zero-frame rule**: `DriveTask` sends `speed=0, steer=0` frames continuously — never goes silent. Silence means the hoverboard coasts on last command for ~500 ms.
-2. **SPEED_LIMIT_MAX cap**: Applied unconditionally in `DriveTask` before every frame, regardless of command source. Currently 600 (of 1000 max).
-3. **SBUS boot default**: `sbusSignalLost = true` on boot — clears only on first valid SBUS frame. Prevents web API driving before RC is confirmed present.
-4. **Estop is latching**: `estop = true` requires explicit `POST /api/estop/clear` — never auto-clears.
-5. **TWDT reboot → estop**: If `esp_reset_reason() == ESP_RST_TASK_WDT`, set `estop=true` before anything else.
+See `AGENTS.md` § "Safety Invariants" for the canonical 6-rule list.
+All rules apply unconditionally to every code change in this repository.
 
 ---
 
@@ -57,20 +61,48 @@ These must never be violated by any code change:
 - The system has `SUDO_ASKPASS` configured with a GUI askpass helper.
 
 ### ESP32 Upload and Monitoring
-- Default USB upload port: `/dev/ttyUSB0` — never use `/dev/ttyS0`.
-- Flash: `pio run -e protoArtoo --target upload --upload-port /dev/ttyUSB0`
-- OTA: `pio run -e protoArtoo --target upload --upload-port 192.168.4.1`
-- Monitor: `pio device monitor` (115200 baud)
-- Upload filesystem: `pio run -e protoArtoo --target uploadfs`
+
+> ⚠️ **Seated-PCB USB upload fails.** When the ESP32 is seated in the Artoo
+> Controller PCB, the SBUS receiver on GPIO 15 (`PIN_SBUS1_RX`, a strapping pin)
+> can prevent the bootloader from entering download mode. **USB upload only works
+> with the ESP32 removed from the PCB socket.** Use OTA for all normal in-PCB flashing.
+> Full write-up: `tasks/lessons.md`, `docs/pin_map.md`.
+
+- Default USB upload port (ESP32 unseated): `/dev/ttyUSB0` — never use `/dev/ttyS0`.
+- USB flash: `pio run -e protoArtoo --target upload --upload-port /dev/ttyUSB0`
+- **OTA firmware (preferred in-PCB path):** `pio run -e protoArtoo_ota --target upload`
+- **OTA filesystem:** `pio run -e protoArtoo_ota --target uploadfs`
+- `protoArtoo_ota` defaults to `upload_port = 10.0.0.22` (STA client IP); override with `--upload-port <ip>`
+- Do **not** use `192.168.4.1` (AP IP) as the default OTA target
+- ArduinoOTA starts on Core 0 when WiFi comes up (port 3232)
+- Web UI OTA: firmware via `POST /upload/firmware`, filesystem via `POST /upload/filesystem` (`/firmware.html`)
+
+**Serial monitor — always use `scripts/serial_monitor.py`, never craft ad-hoc pyserial snippets.**
+- The script holds DTR/RTS low so connecting does NOT reset the ESP32.
+- Output goes to stdout; status/errors go to stderr. Exit code 1 on failure.
+```bash
+# Capture 10s (default), print to stdout:
+python3 scripts/serial_monitor.py
+
+# Capture longer on a specific port:
+python3 scripts/serial_monitor.py --port /dev/ttyUSB1 --duration 30
+
+# Wait for a known boot message, then exit (preferred for verification tasks):
+python3 scripts/serial_monitor.py --until "setup complete" --timeout 20
+
+# Stream continuously (human monitoring only — not for agents):
+python3 scripts/serial_monitor.py --stream
+```
 
 ### Build Commands (Quick Reference)
 ```bash
 pio run -e protoArtoo           # compile firmware
-pio run -e protoArtoo -t upload # flash via USB (/dev/ttyUSB0)
+pio run -e protoArtoo -t upload # USB flash (ESP32 unseated from PCB, /dev/ttyUSB0)
+pio run -e protoArtoo_ota -t upload    # OTA firmware (in-PCB, 10.0.0.22)
+pio run -e protoArtoo_ota -t uploadfs  # OTA filesystem/LittleFS (in-PCB, 10.0.0.22)
 pio test -e native              # fast logic tests (no hardware)
 pio test -e protoArtoo          # on-device tests (requires ESP32)
 pio check                       # static analysis (cppcheck)
-pio run -e protoArtoo -t uploadfs  # upload LittleFS web assets
 ```
 
 ---
@@ -84,6 +116,8 @@ pio run -e protoArtoo -t uploadfs  # upload LittleFS web assets
 - Write a crisp spec first when requirements are ambiguous (inputs/outputs, edge cases, success criteria).
 - For hardware-touching changes: specify which GPIO, UART, or peripheral is affected and confirm the pin is traced/confirmed before writing code.
 - **Authoritative plan files live in `tasks/`**. Use `tasks/status.md`, `tasks/phase*-tasks.md`, and `tasks/goal.md` as the planning source of truth for this repository.
+- Also consult phase-specific companion contracts/specs when present
+  (for example `tasks/rc_diagnostics_contract.md` for Phase 3 RC diagnostics/mapping).
 - Treat `.sisyphus/plans/` as internal agent scratch/history only — do not rely on it as the authoritative project plan when repo-local `tasks/` files exist.
 
 ### 2. Subagent Strategy (Default Tool for Complexity)
@@ -105,6 +139,15 @@ pio run -e protoArtoo -t uploadfs  # upload LittleFS web assets
 - When feasible, keep changes behind:
   - build flags (`-DPA_ENABLE_*`), NVS config switches, or safe defaults.
 - For drive/failsafe changes: verify on hardware with transmitter before marking done.
+- Follow the stage labels used in phase plans and status updates:
+  - `bench-tested`
+  - `partial`
+  - `full-hardware-required`
+- If full-hardware checks are deferred, record blockers and explicit closure steps
+  in planning/status docs.
+
+Sections 3.1–3.4 (task packets, trust-but-verify, parallelization, working memory)
+are defined in `AGENTS.md` § "Execution Model". Follow those rules as-is.
 
 ### 4. Self-Improvement Loop
 - After any user correction or a discovered mistake:
@@ -155,6 +198,8 @@ pio run -e protoArtoo -t uploadfs  # upload LittleFS web assets
 1. **Plan First**
    - Write a checklist to `tasks/todo.md` for any non-trivial work.
    - Include "Verify" tasks explicitly (`pio run`, `pio test -e native`, `pio check`, on-device test).
+  - Keep instruction/doc updates aligned with current `tasks/goal.md` +
+    `tasks/phase*-tasks.md` wording and constraints.
 2. **Verify Plan**
    - Add acceptance criteria (what must be true when done).
    - For safety-impacting tasks: check in with the user before starting implementation. Confirm scope, approach, and any risky assumptions before writing code.
@@ -165,6 +210,8 @@ pio run -e protoArtoo -t uploadfs  # upload LittleFS web assets
    - Hardware discoveries (GPIO traces, UART behavior, voltage levels) go in `docs/pin_map.md`.
 5. **Document Results**
    - Add a short "Results" section: what changed, where, how verified.
+  - If verification is not full-hardware, mark result as bench/partial and
+    note remaining hardware-required checks.
 6. **Capture Lessons**
    - Update `tasks/lessons.md` after corrections or postmortems.
 
@@ -213,6 +260,17 @@ pio run -e protoArtoo -t uploadfs  # upload LittleFS web assets
 - Do provide a high-level summary at the end of each major implementation step:
   - what was done, what changed, and what comes next.
 
+### 6. Web/UI Wording Discipline
+- Operator-facing UI copy must avoid internal planning language (phase names,
+  roadmap/TODO terminology, internal implementation notes).
+- Prefer clear device-state and control language consistent with `tasks/phase2-tasks.md`
+  and `tasks/phase5-tasks.md`.
+
+### 7. Non-Blocking Interaction Style
+- Prefer progress-through-action over repeated planning chatter.
+- Ask questions only when the answer changes architecture, safety, or acceptance criteria.
+- When blocked, ask one focused multi-choice question with a recommended default.
+
 ---
 
 ## Context Management Strategies (Don't Drown the Session)
@@ -240,6 +298,12 @@ pio run -e protoArtoo -t uploadfs  # upload LittleFS web assets
 - Follow the project's commenting standard (3-level depth: block purpose → design rationale → implementation detail).
 - Every `.cpp` and `.h` file gets a file header comment.
 - Every non-trivial function gets a function header comment.
+- Preserve useful existing comments by default. Do not remove comments just to
+  reduce verbosity or make diffs smaller.
+- Only remove/update comments when they are factually incorrect, stale after
+  code changes, or superseded by clearer nearby documentation.
+- When fixing LSP/lint warnings, change the specific semantic code the warning
+  points to; do not remove nearby comments as a workaround.
 - Leave code easier to read than you found it.
 
 ### 4. Control Scope Creep
@@ -247,6 +311,8 @@ pio run -e protoArtoo -t uploadfs  # upload LittleFS web assets
   - fix only what is necessary for correctness/safety.
   - log follow-ups as TODOs/issues rather than expanding the current task.
 - Respect the phased roadmap — do not pull Phase 4 work into Phase 2.
+- Extend existing setup/config/status/dashboard surfaces instead of adding
+  parallel pages for the same control domain.
 
 ---
 
@@ -361,7 +427,7 @@ If anything unexpected happens (test failures, build errors, behavior regression
 
 ### 8. Hardware Interaction Rules
 - **GPIO pins**: Only use values from `include/config.h`. If a pin is `TBD`, leave it as `TBD` — it must cause a compile error, not a silent wrong-pin bug.
-- **UART writes**: Only the owning task writes to each UART (DriveTask → UART1, DomeLinkTask → UART2, AudioTask → SoftSerial). No other task touches them.
+- **UART writes**: Only the owning task writes to each UART (DriveTask → UART1, DomeLinkTask → UART2, AudioTask → Serial2 pins for DY-SV5W). No other task touches them.
 - **PWM**: LEDC channels 0–2 assigned in `config.h`. Servos at 50 Hz.
 - **Boot sequence**: Follow the exact order in `tasks/goal.md` Section 7.6. Hoverboard UART before WiFi. Zero frames immediately after UART1 init.
 
@@ -371,6 +437,8 @@ If anything unexpected happens (test failures, build errors, behavior regression
 - Use `ArduinoJson` for all JSON serialization/deserialization — no manual string building.
 - LittleFS for web UI assets in `data/` directory.
 - SSE for real-time dashboard updates — do not poll `/api/status` from the browser.
+- For Phase 3 RC diagnostics/mapping work, align payloads and update cadence with
+  `tasks/rc_diagnostics_contract.md` (`GET /api/rc` + `event: rc`).
 
 ### 10. Audio Module Rules
 - `AudioDriver` is an abstract interface — code against the interface, not the DY-SV5W implementation details.
@@ -378,6 +446,18 @@ If anything unexpected happens (test failures, build errors, behavior regression
 - `$S` = play random track from configured range (`cfg_sndRandMin`–`cfg_sndRandMax`).
 - DY-SV5W command frame: `AA 02 [hi] [lo] AB` — these are raw bytes, not ASCII.
 - Volume range 0–30 matches hardware native range.
+
+### 11. RC Mapping + UX Rules
+- Maintain default mapping intent parity between `single_sbus` and `standard_pwm`
+  as defined in `tasks/goal.md` Section 6.5 and `tasks/phase3-tasks.md`.
+- Preserve `dual_sbus` split default: receiver #1 drive/speed-limit, receiver #2 dome;
+  remaining receiver #2 channels configurable.
+- All remap/calibration flows must be editable from webpage and persisted in NVS.
+- Mapping editor UX must stay modern/responsive and provide:
+  - source badges (`PWM`, `SBUS#1`, `SBUS#2`)
+  - inline validation feedback
+  - live raw/normalized/mapped preview
+  - explicit apply/save success/error feedback
 
 ---
 
@@ -417,16 +497,14 @@ Every commit uses the format:
 
 ## Definition of Done (DoD)
 
-A task is done when:
-- Behavior matches acceptance criteria.
-- `pio run -e protoArtoo` compiles cleanly with `-Werror`.
-- `pio test -e native` passes for all affected logic tests.
-- `pio check` has no high/medium findings.
-- On-device tests pass for hardware-touching changes.
-- Safety invariants are preserved (zero-frame rule, SPEED_LIMIT_MAX cap, estop latching, SBUS boot default).
-- The code follows existing conventions (commenting standard, `portMUX`, queue patterns, TAG logging).
-- A short verification story exists: "what changed + how we know it works."
+See `AGENTS.md` § "Verification and Reporting" for the core DoD checklist
+(build, test, static analysis, verification classification).
+
+Claude-specific additions:
 - For failsafe changes: state which of the 5 layers were tested and how.
+- The code follows existing conventions (commenting standard, `portMUX`, queue patterns, TAG logging).
+- Ask: "Would a staff engineer approve this diff and the verification story?
+  Would they trust this to not injure someone?"
 
 ---
 

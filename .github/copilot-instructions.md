@@ -1,5 +1,9 @@
 # Copilot Instructions — protoArtoo
 
+> Adapter file for GitHub Copilot.
+> Canonical cross-agent instructions live in `AGENTS.md` at repository root.
+> If a rule here conflicts with `AGENTS.md`, follow `AGENTS.md` unless the user explicitly overrides.
+
 > Guidelines for AI code completion in the protoArtoo ESP32 body controller firmware.
 > Read `claude.md` for the full agent guidelines. This file is the concise,
 > code-generation-focused companion.
@@ -52,6 +56,16 @@ Inline comments explain *why*, not *what*:
 esp_task_wdt_reset();
 ```
 
+Comment preservation rule:
+- Keep useful existing comments by default (file headers, function headers,
+    safety notes, protocol notes, rationale comments).
+- Do not remove comments simply to make code shorter or "cleaner".
+- Only remove or rewrite comments when they are factually wrong, stale after a
+    code change, or replaced by clearer equivalent documentation nearby.
+- LSP/lint fixes (for example `forEach` callback return style or symbol
+    redeclaration warnings) should be resolved by changing the flagged code, not
+    by deleting nearby comments.
+
 ### Error/Debug Logging
 
 Use TAG-prefixed `Serial.printf()`:
@@ -71,11 +85,15 @@ Gate verbose per-frame logging behind build flags:
 
 ## Architecture Awareness
 
-### Planning Source of Truth
+### Planning, Execution, and Verification Model
 
-- The authoritative project plans live in `tasks/`.
-- Use `tasks/status.md`, `tasks/phase2-tasks.md`, `tasks/phase3-tasks.md`, `tasks/phase4-tasks.md`, `tasks/phase5-tasks.md`, and `tasks/goal.md` as the planning baseline.
-- Do **not** treat `.sisyphus/plans/` as the source of truth for this repository when equivalent plan files exist in `tasks/`.
+See `AGENTS.md` for canonical rules on:
+- Source of truth files and planning baseline
+- Execution model (task packets, thin slices, trust-but-verify)
+- Parallelization rules (independent vs sequential)
+- Working memory and evidence tracking
+- Clarification policy (multi-choice, non-blocking)
+- Verification classification (`bench-tested`, `partial`, `full-hardware-required`)
 
 ### FreeRTOS Task Model
 
@@ -95,9 +113,9 @@ Gate verbose per-frame logging behind build flags:
 | UART | Owner Task | Target | Baud |
 |------|-----------|--------|------|
 | UART0 | — | USB debug (Serial) | 115200 |
-| UART1 | DomeLinkTask | AstroPixelsPlus (dome, via slip ring) | 9600 |
-| SoftSerial | AudioTask | DY-SV5W audio module (TX-only) | 9600 |
-| UART2 | DriveTask | Hoverboard GD32F130 (Gen2.x frames) | 115200 |
+| UART1 | DriveTask | Hoverboard GD32F130 (Gen2.x frames) | 115200 |
+| Serial2 pins | AudioTask | DY-SV5W audio module (TX primary, RX optional) | 9600 |
+| UART2 | DomeLinkTask | AstroPixelsPlus (dome, via slip ring) | 9600 |
 
 Only the owning task writes to a given UART. No exceptions.
 
@@ -125,16 +143,16 @@ When generating code that handles dome→body serial RX:
 - Send at 50 Hz continuously. Never go silent — always send zero frames when stopped.
 - `SPEED_LIMIT_MAX` (default 600) is the absolute cap applied in DriveTask before every frame.
 
+### RC Input Modes + Mapping Contract
+
+See `AGENTS.md` § "Runtime Contracts" for canonical RC mode definitions,
+default mapping intent parity, and mapping UX requirements.
+
 ---
 
 ## Safety Rules (Never Violate)
 
-1. **Zero-frame rule**: DriveTask always sends frames, even `speed=0, steer=0`. Silence = hoverboard coasts.
-2. **SPEED_LIMIT_MAX cap**: Applied unconditionally in DriveTask, regardless of command source.
-3. **SBUS boot default**: `sbusSignalLost = true` — prevents driving before RC is confirmed.
-4. **Estop is latching**: Requires explicit `POST /api/estop/clear`. Never auto-clears.
-5. **TWDT reboot → estop**: Watchdog-triggered reset sets `estop = true` on next boot.
-6. **No `portMAX_DELAY` in control loops**: A blocked real-time task is a safety incident.
+See `AGENTS.md` § "Safety Invariants" for the canonical 6-rule list.
 
 When generating failsafe-related code, always check against the 5-layer model:
 1. SBUS receiver hardware failsafe
@@ -151,29 +169,12 @@ When generating failsafe-related code, always check against the 5-layer model:
 - Queue-based inter-task messaging with `CommandSource` tagging.
 - Static buffer line parsers with bounds-checked writes and overflow discard.
 - REST API handlers that validate/constrain all input, post to queues, never touch hardware directly.
+- Web mapping/diagnostics surfaces that align with existing setup/status architecture
+    and use SSE for live RC state where appropriate.
 - Unity test cases in `test/test_native/` for all pure-logic functions.
 - `constrain()` on every external input before use.
 - TAG-prefixed debug logging.
 - File and function header comments per the project standard.
-
----
-
-## Clarifying Uncertainty via Intent Disambiguation
-- **Always employ intent disambiguation through interactive multi-choice clarification questions** when facing ambiguous requirements, context gaps, or design decisions. Present options as a structured, numbered or lettered list with concise labels, descriptions, tradeoffs, and a recommended default (marked as such). This allows the user to respond with a single selection (e.g., "A" or "2")—avoid scattering multiple open-ended questions or requiring free-form elaboration.
-- Format example:
-
-  Which audio driver should this task target?
-
-  A) DY-SV5W (default—matches current hardware, easy integration with minimal changes; recommended for compatibility)
-
-  B) DFPlayer Mini (supports more audio formats but requires additional wiring and library setup; good for advanced features)
-
-  C) Abstract AudioDriver only (no concrete implementation—provides flexibility for future drivers but delays immediate functionality; use if prototyping)
-
-- Consolidate related ambiguities into a **single multi-choice query** for efficiency; do not fragment into sequential follow-ups.
-- For minor or easily inferable details: explicitly state your assumption and proceed without querying.
-- For non-trivial decisions: provide 3-5 concrete, mutually exclusive options with brief pros/cons—never use vague, open-ended prompts like "What do you mean?" or "Tell me more."
-- For hardware-specific queries (e.g., "Which GPIO for this peripheral?"): **never assume or guess**—either pose a multi-choice list of viable options or flag as "TBD pending user input."
 
 ---
 
@@ -190,7 +191,19 @@ When generating failsafe-related code, always check against the 5-layer model:
 - **No unnecessary dependencies** — check approved list in `platformio.ini` first.
 - **No ADC2 reads when WiFi is active** — use ADC1 (GPIO 32–39) only.
 - **No `ArduinoOTA.handle()` on Core 1** — OTA runs on Core 0.
+- **Seated-PCB USB upload fails** — GPIO 15 (`PIN_SBUS1_RX`) is a strapping pin;
+    when the ESP32 is seated in the Artoo Controller PCB with a SBUS receiver attached,
+    the receiver can prevent the bootloader from entering download mode — USB upload
+    silently fails or times out. Unseat the ESP32 → USB flash → reseat.
+    Full write-up: `tasks/lessons.md`, `docs/pin_map.md`.
+- **OTA standard paths:** `pio run -e protoArtoo_ota --target upload` (firmware) and
+    `pio run -e protoArtoo_ota --target uploadfs` (filesystem). Default IP: `10.0.0.22`
+    (STA client IP — do **not** use the AP IP `192.168.4.1`). Web UI OTA also available
+    via `POST /upload/firmware` and `POST /upload/filesystem` on `/firmware.html`.
 - **No async web server initialization outside WiFi event callback**.
+- **No parallel setup/config/debug pages** for features that belong in existing
+    Setup/status/dashboard surfaces.
+- **No internal phase language in operator UI copy**.
 
 ---
 
@@ -260,11 +273,7 @@ int main() {
 
 ## Verification Reminders
 
-Before considering any change complete:
-1. `pio run -e protoArtoo` — compiles with `-Werror`
-2. `pio test -e native` — all logic tests pass
-3. `pio check` — no high/medium static analysis findings
-4. Safety invariants preserved (see Safety Rules above)
-5. Conventional commit message with correct scope
+See `AGENTS.md` § "Verification and Reporting" for the full checklist.
 
-When in doubt, consult `claude.md` for the full decision framework and `tasks/goal.md` for the canonical firmware specification.
+When in doubt, consult `AGENTS.md` for canonical rules, `claude.md` for
+detailed workflow guidelines, and `tasks/goal.md` for the firmware specification.
