@@ -164,7 +164,7 @@ exp/<topic>            ← disposable experiments (never merged to main)
 
 - Fork the repository and create your branch from the active `phase/vX.Y.Z` branch, not from `main`.
 - `main` is protected and only updated at phase completion via a PM-approved merge — pull requests directly targeting `main` will not be accepted during active development.
-- If you are unsure which phase branch is active, check `tasks/status.md` or open an issue to ask.
+- If you are unsure which phase branch is active, check `docs/status.md` or open an issue to ask.
 - After your work is merged, your branch will be deleted.
 
 ### Commit scope for external contributors

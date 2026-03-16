@@ -115,7 +115,7 @@ pio check                       # static analysis (cppcheck)
 - If anything goes sideways or new information invalidates the plan: **stop immediately**, update the plan, then continue — do not keep pushing.
 - Write a crisp spec first when requirements are ambiguous (inputs/outputs, edge cases, success criteria).
 - For hardware-touching changes: specify which GPIO, UART, or peripheral is affected and confirm the pin is traced/confirmed before writing code.
-- **Authoritative plan files live in `tasks/`**. Use `tasks/status.md`, `tasks/phase*-tasks.md`, and `docs/goal.md` as the planning source of truth for this repository.
+- **Authoritative plan files live in `tasks/` and `docs/`**. Use `docs/status.md`, `tasks/phase*-tasks.md`, and `docs/goal.md` as the planning source of truth for this repository.
 - Also consult phase-specific companion contracts/specs when present
   (for example `tasks/rc_diagnostics_contract.md` for Phase 3 RC diagnostics/mapping).
 - Treat `.sisyphus/plans/` as internal agent scratch/history only — do not rely on it as the authoritative project plan when repo-local `tasks/` files exist.
