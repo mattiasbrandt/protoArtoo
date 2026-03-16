@@ -1827,7 +1827,7 @@ upload_protocol = esptool
 ; upload_port     = 10.0.0.22            ; STA client IP (not AP 192.168.4.1)
 
 ; Partition table with OTA support (2 OTA slots + NVS + SPIFFS/LittleFS)
-board_build.partitions = partitions_ota.csv
+board_build.partitions = partitions/partitions_ota.csv
 ; Ref: https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-guides/
 ;      partition-tables.html
 

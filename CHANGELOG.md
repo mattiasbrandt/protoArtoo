@@ -30,7 +30,7 @@ Every semantic version release belongs here:
 - **Marcduino RX parser** (`:OP`, `:CL`, `:MV`, `:SE30-:SE36`) for dome→body commands
 - **RC channel binding model**: backbone bindings (fixed role) and trigger bindings (configurable action)
 - **NVS-backed RC calibration**: min/center/max/deadband/reverse per channel
-- **Version extraction script** (`extract_version.py`): inject PA_VERSION from CHANGELOG at build
+- **Version extraction script** (`tools/extract_version.py`): inject PA_VERSION from CHANGELOG at build
 - **Project favicon** (`r2d2body-favicon.png`) on all HTML pages
 - **Artoo Controller PCB photo** on setup page for reference
 - **Terminology glossary** (`docs/terminology.md`)
