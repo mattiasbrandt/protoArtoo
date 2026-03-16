@@ -9,7 +9,7 @@ workflows.
 
 1. Explicit user request in chat
 2. Nearest `AGENTS.md` in directory tree
-3. Tool-specific adapter files (`CLAUDE.md`, `.github/copilot-instructions.md`)
+3. Tool-specific adapter files (`.claude/CLAUDE.md`, `.github/copilot-instructions.md`)
 4. Other project docs
 
 If instructions conflict, follow the highest-precedence source and document the

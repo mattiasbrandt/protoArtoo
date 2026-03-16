@@ -48,7 +48,7 @@
 
 ## 1. Context & Motivation
 
-The Artoo Controller board from artoo.uk is a custom PCB (v1.1) built around an **ESP32 D1 Mini** module (confirmed from board photo — see `tasks/artoo_board_v1.1.png`). The vendor's website describes the platform as "open-source" but the ESP32 firmware binary is distributed without source. Since all peripherals are standard (UART, PWM, SBUS), protoArtoo is a complete firmware replacement written from scratch — fully owned, auditable, and extensible.
+The Artoo Controller board from artoo.uk is a custom PCB (v1.1) built around an **ESP32 D1 Mini** module (confirmed from board photo — see `docs/images/artoo_board_v1.1.png`). The vendor's website describes the platform as "open-source" but the ESP32 firmware binary is distributed without source. Since all peripherals are standard (UART, PWM, SBUS), protoArtoo is a complete firmware replacement written from scratch — fully owned, auditable, and extensible.
 
 ### System Architecture
 
@@ -252,7 +252,7 @@ See `body_dome_serial_link_spec.md` for all code.
 ### 4.1 Main Controller
 
 - **MCU chip:** ESP32 (Xtensa LX6 dual-core, 240 MHz, 4 MB flash, 520 KB SRAM)
-- **Module type:** ESP32 D1 Mini — confirmed from Artoo Controller PCB v1.1 board photo (`tasks/artoo_board_v1.1.png`) and the artoo.uk product listing. The D1 Mini uses the standard ESP32-WROOM-32 chip internally; GPIO pinout and firmware are identical to a bare WROOM module.
+- **Module type:** ESP32 D1 Mini — confirmed from Artoo Controller PCB v1.1 board photo (`docs/images/artoo_board_v1.1.png`) and the artoo.uk product listing. The D1 Mini uses the standard ESP32-WROOM-32 chip internally; GPIO pinout and firmware are identical to a bare WROOM module.
 - **WiFi:** Simultaneous AP + STA
 - **Board fix:** Overheating trace cut on tested unit — permanent, board stable. May not apply to all units.
 

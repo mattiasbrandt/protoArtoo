@@ -44,7 +44,8 @@ task.md
 .sisyphus/
 
 # Agent working directories (environment-specific)
-.claude/
+.claude/*
+!.claude/CLAUDE.md
 .clangd
 
 # Python/virtualenv (if using scripts or tools)
