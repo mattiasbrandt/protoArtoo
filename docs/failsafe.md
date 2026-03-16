@@ -15,6 +15,9 @@ link failure must all converge on zero drive output.
 This is the fastest RC-side safety path. If the receiver itself detects radio
 loss, protoArtoo immediately zeros drive output on the next decoded frame.
 
+The Phase 3 diagnostics surfaces also report the current SBUS hardware-failsafe
+bit per source in `GET /api/rc` and `event: rc`.
+
 ## Layer 2 - SBUS software watchdog
 
 - Source: body firmware timeout
@@ -25,6 +28,14 @@ loss, protoArtoo immediately zeros drive output on the next decoded frame.
 
 This protects against missing frames, unplugged receivers, and decode failures
 even if the RC receiver does not assert its own failsafe flag.
+
+`lost_frame` is tracked separately from the software watchdog:
+
+- consecutive or intermittent lost-frame events increment the per-source
+  diagnostics counters (`lostFrames` in `GET /api/rc`)
+- a single `lost_frame` bit does not, by itself, trigger a drive failsafe
+- the actual failsafe transition still depends on the watchdog timeout or the
+  receiver-reported hardware failsafe bit
 
 ## Layer 3 - Web drive command timeout
 
@@ -74,7 +85,7 @@ This prevents accidental restart after a serious safety event.
 
 Phase 1 boots with conservative defaults:
 
-- `sbusSignalLost = true` until valid drive SBUS traffic is seen
+- `sbusSignalLost = true` on boot; SBUS modes clear it after valid drive-receiver traffic is seen
 - watchdog-reset reboot sets `estop = true`
 - `cfg_speedLimitMax`, `cfg_sbusTimeoutMs`, and `cfg_webDriveTimeoutMs` are
   loaded into `RobotState` before tasks start
@@ -82,7 +93,10 @@ Phase 1 boots with conservative defaults:
 ## Phase 1 notes
 
 - Drive SBUS: GPIO 15 via the custom RMT decoder
-- Dome SBUS: GPIO 13 RMT initialized, dome processing deferred to a later phase
+- Dome SBUS: GPIO 13 via the custom RMT decoder when `dual_sbus` mode is selected
+- Standard PWM: CH1-CH6 can be used directly when `standard_pwm` mode is selected
+- SBUS digital channels CH17 and CH18 are captured for diagnostics/mapping and can
+  be bound to trigger-style actions through the persisted RC mapping profile
 - Hoverboard: UART1 on GPIO 16/17
 - `SafetyMonitorTask` is observer-only; it logs failsafe transitions but does
   not command the motors directly

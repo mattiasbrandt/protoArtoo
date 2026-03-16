@@ -97,31 +97,87 @@ All confirmed assignments to date. Items still pending Task 0.2 are marked TBD.
 |------|---------------|----------|------------|--------|
 | 1 | S0 TX | USB debug TX | UART0 | ✅ Confirmed |
 | 3 | S0 RX | USB debug RX | UART0 | ✅ Confirmed |
-| 5 | ARM2 | Utility arm servo #2 | LEDC PWM | ✅ Confirmed |
-| 13 | CH2 | SBUS receiver #2 (dome) | RMT | ✅ Confirmed |
+| 5 | ARM2 | Utility arm servo #2 — Bottom / Right arm | LEDC PWM | ✅ Confirmed |
+| 13 | CH2 | SBUS receiver #2 (dome spin) | RMT | ✅ Confirmed |
 | 15 | CH1 | SBUS receiver #1 (drive) | RMT | ✅ Confirmed |
 | 16 | S1 TX | Hoverboard TX | UART1 | ✅ Traced |
 | 17 | S1 RX | Hoverboard RX | UART1 | ✅ Traced |
-| 18 | ARM4 | Spare servo output | LEDC PWM | ✅ Traced |
-| 23 | ARM1 | Utility arm servo #1 | LEDC PWM | ✅ Confirmed |
-| 25 | DOME | Dome motor ESC | LEDC PWM | ✅ Confirmed |
+| 18 | ARM4 | Spare servo output (AUX2) | LEDC PWM | ✅ Traced |
+| 23 | ARM1 | Utility arm servo #1 — Top / Left arm | LEDC PWM | ✅ Confirmed |
+| 25 | DOME | Dome rotation ESC (artoo.uk: "Dome Servo") | LEDC PWM | ✅ Confirmed |
 | 26 | S2 TX | Audio module TX | SoftSerial | ✅ Traced |
 | 33 | S3 TX | Dome serial TX | UART2 | ✅ Traced |
 | 34 | S3 RX | Dome serial RX | UART2 | ✅ Traced |
 | 35 | S2 RX | Audio module RX | SoftSerial | ✅ Traced |
-| 19 | ARM3 | Spare servo output | LEDC PWM | ✅ Traced |
-| 32 | ARM5 | Spare servo output | LEDC PWM | ✅ Traced |
+| 19 | ARM3 | Spare servo output (AUX1) | LEDC PWM | ✅ Traced |
+| 32 | ARM5 | Spare servo output (AUX3) | LEDC PWM | ✅ Traced |
 | 22 | I2C (C) | I2C SCL | I2C | ✅ Traced |
 | 21 | I2C (D) | I2C SDA | I2C | ✅ Traced |
 
-### Spare GPIOs (CH headers, available for future use)
+### RC Receiver Wiring Modes
 
-| GPIO | PCB Header | Original Function | Notes |
-|------|------------|-------------------|-------|
-| 2 | CH3 | RC PWM input | Spare — also ESP32 strapping pin |
-| 4 | CH4 | RC PWM input | Spare |
-| 12 | CH5 | RC PWM input | Spare — also ESP32 strapping pin |
-| 27 | CH6 | RC PWM input | Spare |
+The six CH headers (CH1–CH6) support three mutually exclusive receiver types
+(per artoo.uk manual):
+
+| Mode           | Wiring                              | Channels available |
+|----------------|-------------------------------------|--------------------|
+| Standard PWM   | CH1–CH6 → GPIO 15,13,2,4,12,27     | 6 (one per pin)    |
+| Single SBUS    | SBUS → CH1 (GPIO 15)               | 6                  |
+| Dual SBUS      | SBUS1 → CH1 (GPIO 15), SBUS2 → CH2 (GPIO 13) | 12       |
+
+protoArtoo supports all three receiver modes shown above:
+
+- `standard_pwm` reads CH1-CH6 directly as six PWM inputs
+- `single_sbus` uses CH1 / GPIO 15 as the drive SBUS receiver
+- `dual_sbus` uses CH1 / GPIO 15 for drive SBUS and CH2 / GPIO 13 for dome SBUS
+
+> ⚠️ **GPIO 15 strapping pin — USB upload caveat:**
+> GPIO 15 is an ESP32 strapping pin (`MTDO`). When the ESP32 is seated in the
+> Artoo PCB with a SBUS receiver connected to CH1/GPIO 15, the receiver can drive
+> this pin during the esptool reset-into-bootloader sequence and prevent the
+> bootloader from entering download mode. USB upload will fail or time out.
+>
+> **Workaround for initial flash:** unseat the ESP32 from the PCB socket, flash
+> via USB, then reseat.
+> **Standard in-PCB flash path:** use OTA (`--upload-port 192.168.4.1`) once the
+> firmware is running. OTA bypasses bootloader entry entirely.
+> See `tasks/lessons.md` for the full write-up.
+
+In SBUS modes, CH3-CH6 (GPIO 2, 4, 12, 27) are idle PWM-capable inputs that become active again
+when `standard_pwm` mode is selected:
+
+| GPIO | PCB Header | RC PWM function   | Notes                                  |
+|------|------------|-------------------|----------------------------------------|
+| 2    | CH3        | Standard PWM CH3  | Available in `standard_pwm`; unused in SBUS modes; strapping pin |
+| 4    | CH4        | Standard PWM CH4  | Available in `standard_pwm`; unused in SBUS modes |
+| 12   | CH5        | Standard PWM CH5  | Available in `standard_pwm`; unused in SBUS modes; strapping pin |
+| 27   | CH6        | Standard PWM CH6  | Available in `standard_pwm`; unused in SBUS modes |
+
+### Current persisted RC binding defaults (Phase 3 backend)
+
+The RC mapping profile is persisted in NVS and exposed through `/api/config`,
+`/api/rc`, and the Setup-page RC Mapping surface. The current firmware defaults are:
+
+| Runtime profile | Action | Default binding | Notes |
+|-----------------|--------|-----------------|-------|
+| `standard_pwm` | Drive speed | `pwm:1:1000:1500:2000:0:0` | CH1 |
+| `standard_pwm` | Drive steer | `pwm:2:1000:1500:2000:0:0` | CH2 |
+| `standard_pwm` | Drive limit | `none:0:1000:1500:2000:0:0` | No CH8-equivalent default in PWM mode |
+| `standard_pwm` | Dome speed | `pwm:3:1000:1500:2000:0:0` | CH3 |
+| `standard_pwm` | ARM1 trigger | `pwm:4:1000:1500:2000:0:0` | CH4 |
+| `standard_pwm` | ARM2 trigger | `pwm:5:1000:1500:2000:0:0` | CH5 |
+| `standard_pwm` | Sound trigger | `pwm:6:1000:1500:2000:0:0` | CH6 |
+| `single_sbus` / `dual_sbus` | Drive speed | `sbus1:1:172:992:1811:0:0` | SBUS #1 CH1 |
+| `single_sbus` / `dual_sbus` | Drive steer | `sbus1:2:172:992:1811:0:0` | SBUS #1 CH2 |
+| `single_sbus` / `dual_sbus` | Drive limit | `sbus1:8:172:992:1811:0:0` | SBUS #1 CH8 |
+| `single_sbus` / `dual_sbus` | Dome speed | `sbus2:1:172:992:1811:0:0` | Active in `dual_sbus`; inactive in `single_sbus` until remapped |
+| `single_sbus` / `dual_sbus` | ARM1 trigger | `sbus2:2:172:992:1811:0:0` | Active in `dual_sbus`; can be remapped |
+| `single_sbus` / `dual_sbus` | ARM2 trigger | `sbus2:3:172:992:1811:0:0` | Active in `dual_sbus`; can be remapped |
+| `single_sbus` / `dual_sbus` | Sound trigger | `none:0:1000:1500:2000:0:0` | Disabled by default |
+
+SBUS channels `17` and `18` are also valid persisted binding channels for digital
+trigger actions. When a binding targets `17` or `18`, `/api/rc` reports it in the
+`digital` object instead of the analog `channels` array.
 
 ### Battery Monitoring
 
@@ -147,6 +203,22 @@ by continuity trace against the physical board before using these values.
 The continuity trace in this document was performed on a v1.2 board. The results apply
 to v1.1 as well — the only change between revisions was the corrected trace.
 
+### Confirmed against artoo.uk Hardware Reference
+
+The artoo.uk manual hardware reference table lists the following assignments, all of
+which match our PCB trace:
+
+| artoo.uk label     | GPIO(s) | artoo.uk description    | protoArtoo label |
+|--------------------|---------|-------------------------|------------------|
+| Arm 1 (Top)        | 23      | Left utility arm        | ARM1             |
+| Arm 2 (Bottom)     | 5       | Right utility arm       | ARM2             |
+| Dome Servo         | 25      | Dome rotation control   | DOME (ESC)       |
+| Motor Controller   | 16, 17  | Hoverboard serial       | S1 Hoverboard    |
+
+Note: the artoo.uk manual calls GPIO 25 "Dome Servo" but the signal drives an ESC
+(ISDT ESC70) for a brushless motor, not a servo. The label is a naming convention
+from the original artoo.uk firmware; protoArtoo uses "Dome rotation ESC" for clarity.
+
 ### Deviations from artoo.uk Manual
 
 | Item | artoo.uk Manual | PCB v1.1/v1.2 Actual | Resolution |
@@ -154,5 +226,6 @@ to v1.1 as well — the only change between revisions was the corrected trace.
 | Hoverboard serial | S3 / GPIO 16+17 | **S1** / GPIO 16+17 | PCB legend says S1 = Hoverboard (GPIOs match manual) |
 | Dome serial | (not specified) | **S3** / GPIO 33+34 | PCB legend says S3 = Dome Control |
 | Audio serial | TX-only assumed | TX (26) + RX (35) | RX available but optional |
+| GPIO 25 label | "Dome Servo" | Dome rotation ESC | Signal drives ISDT ESC70 brushless motor ESC, not a servo |
 
 If you have a different PCB revision and find different assignments, please open an issue.

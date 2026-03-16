@@ -11,6 +11,9 @@ This document covers:
 - Code standards summary
 - What never goes in a commit
 
+For project-specific terms and abbreviations (for example `RobotState`, NVS,
+Marcduino, SBUS, AP/STA), see `docs/terminology.md`.
+
 ---
 
 ## Commit message format — Conventional Commits

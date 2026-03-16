@@ -13,6 +13,24 @@ Every semantic version release belongs here:
 - minor releases for new backwards-compatible features
 - major releases for breaking changes
 
+## [0.3.0] - 2026-03-14
+
+### Added
+- Phase 3 servo arm control via `ServoTask` with LEDC PWM on ARM1 (GPIO 23) and ARM2 (GPIO 5)
+- Phase 3 dome rotation ESC control via `DomeTask` with 50Hz PWM on DOME (GPIO 25)
+- Auto-arm sequence for dome ESC (2s neutral at boot)
+- Command queue system (`servoCmdQueue`, `domeCmdQueue`) for inter-task communication
+- Marcduino RX parser (`:OP`, `:CL`, `:MV`, `:SE30-:SE36`) for dome→body commands
+- SBUS2 integration for dome spin control (receiver #2 on GPIO 13)
+- Extended NVS config for servo open/close positions and dome speed limits
+- LEDC PWM driver foundation with 50Hz, 500-2500µs servo / 1000-2000µs ESC ranges
+- Native test coverage for new SBUS float mapping and PWM duty cycle calculations
+
+### Changed
+- Extended `RobotState` with arm/dome state fields and config values
+- Updated task initialization to create servo/dome tasks on Core 1
+- Firmware version string updated to reflect Phase 3 development
+
 ## [0.2.0] - 2026-03-13
 
 ### Added
