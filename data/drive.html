@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Drive - protoArtoo</title>
+    <link rel="stylesheet" href="/style.css">
+    <link rel="icon" type="image/png" href="/r2d2body-favicon.png">
+  </head>
+  <body>
+    <div class="topbar">
+      <div>
+        <h1>🏎️ Drive</h1>
+        <div class="subtitle">Motor controls and safety</div>
+      </div>
+    </div>
+
+    <nav>
+      <a href="/">🏠 Home</a>
+      <a href="/drive.html" class="active">🏎️ Drive</a>
+      <a href="/dome.html">🔄 Dome</a>
+      <a href="/servo.html">🦾 Servos</a>
+      <a href="/setup.html">⚙️ Setup</a>
+      <a href="/rc.html">🕹️ RC</a>
+      <a href="/serial.html">🔌 Serial</a>
+      <a href="/wifi.html">📶 WiFi</a>
+      <a href="/firmware.html">💾 Firmware</a>
+    </nav>
+
+    <!-- Safety Controls - ALWAYS FIRST -->
+    <div class="card danger">
+      <h3>🛑 Safety Controls</h3>
+      <div class="button-row">
+        <button id="estop-button" class="btn danger" type="button" aria-label="Emergency Stop">
+          🛑 Latch Estop
+        </button>
+        <button id="clear-estop-button" class="btn" type="button" aria-label="Clear Emergency Stop">
+          🟢 Clear Estop
+        </button>
+        <button id="enable-web-control-button" class="btn accent" type="button" aria-label="Enable Web Control">
+          ✓ Enable Web Control
+        </button>
+        <button id="disable-web-control-button" class="btn" type="button" aria-label="Disable Web Control">
+          ✕ Disable Web Control
+        </button>
+      </div>
+      <div id="control-feedback" class="feedback mt-12">No command sent yet.</div>
+    </div>
+
+    <!-- Movement Status -->
+    <div class="card">
+      <h3>🚗 Movement Status</h3>
+      <div class="status-grid">
+        <div class="status-item">
+          <dt>Estop State</dt>
+          <dd id="estop-state">--</dd>
+        </div>
+        <div class="status-item">
+          <dt>Web Control</dt>
+          <dd id="web-control-state">--</dd>
+        </div>
+        <div class="status-item">
+          <dt>Failsafe Source</dt>
+          <dd id="failsafe-source">--</dd>
+        </div>
+        <div class="status-item">
+          <dt>Drive Output</dt>
+          <dd id="drive-output">--</dd>
+        </div>
+        <div class="status-item">
+          <dt>Speed Limit Scale</dt>
+          <dd id="speed-limit">--</dd>
+        </div>
+      </div>
+    </div>
+
+    <!-- Drive Controls - D-Pad Grid Layout -->
+    <div class="card">
+      <h3>🎮 Drive Controls</h3>
+      <div class="desc">Hold to drive, release to stop. Commands time out after 500 ms for safety.</div>
+      <div class="dpad-grid mt-16">
+        <button class="btn dpad-btn" data-drive-speed="260" data-drive-steer="0"
+          type="button" aria-label="Drive Forward">⬆️</button>
+        <button class="btn dpad-btn" data-drive-speed="0" data-drive-steer="-220"
+          type="button" aria-label="Steer Left">⬅️</button>
+        <button class="btn dpad-btn stop" data-drive-speed="0" data-drive-steer="0"
+          type="button" aria-label="Stop">⏹️</button>
+        <button class="btn dpad-btn" data-drive-speed="0" data-drive-steer="220"
+          type="button" aria-label="Steer Right">➡️</button>
+        <button class="btn dpad-btn" data-drive-speed="-260" data-drive-steer="0"
+          type="button" aria-label="Drive Reverse">⬇️</button>
+      </div>
+    </div>
+
+    <!-- Drive Settings -->
+    <div class="card">
+      <h3>⚙️ Drive Settings</h3>
+      <div class="desc">Speed limits, web control timeout, and CH8 binding. Settings take effect immediately and survive reboot.</div>
+      <form id="config-form" class="form-grid mt-16">
+        <label class="field">
+          <span>Maximum Speed Limit</span>
+          <input id="speed-limit-max" name="speedLimitMax" type="number" min="0" max="600" step="1"
+            title="Maximum speed value sent to the hoverboard controller (0–600). Lower values make the droid slower and safer.">
+        </label>
+        <label class="field">
+          <span>Web Control Timeout (ms)</span>
+          <input id="web-drive-timeout" name="webDriveTimeoutMs" type="number" min="100" max="5000" step="50"
+            title="Web drive commands expire after this many milliseconds. The droid stops if no new command arrives within this window.">
+        </label>
+        <label class="field field-checkbox"
+          title="When enabled, CH8 on your transmitter scales the speed limit from 0% to 100% of the maximum.">
+          <input id="ch8-mode-lock" name="ch8ModeLock" type="checkbox">
+          <span>Enable CH8 Speed Limit Control</span>
+        </label>
+        <div class="button-row">
+          <button id="reload-config-button" class="btn" type="button">🔄 Reload</button>
+        </div>
+      </form>
+      <div id="config-feedback" class="feedback mt-12">Loading settings...</div>
+    </div>
+
+    <div class="status-bar">
+      <div><span class="dot green"></span>Drive page connected</div>
+      <div class="status-subline" id="fw-meta">Loading firmware info...</div>
+    </div>
+
+    <script src="/drive.js"></script>
+    <script src="/footer.js"></script>
+  </body>
+</html>

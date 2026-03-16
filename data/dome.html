@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="/style.css">
+    <link rel="icon" type="image/png" href="/r2d2body-favicon.png">
+  </head>
+  <body>
+    <div class="topbar">
+      <div>
+        <h1>🔄 Dome</h1>
+        <div class="subtitle">Dome rotation control and motor settings</div>
+      </div>
+    </div>
+
+    <nav>
+      <a href="/">🏠 Home</a>
+      <a href="/drive.html">🏎️ Drive</a>
+      <a href="/dome.html" class="active">🔄 Dome</a>
+      <a href="/servo.html">🦾 Servos</a>
+      <a href="/setup.html">⚙️ Setup</a>
+      <a href="/rc.html">🕹️ RC</a>
+      <a href="/serial.html">🔌 Serial</a>
+      <a href="/wifi.html">📶 WiFi</a>
+      <a href="/firmware.html">💾 Firmware</a>
+    </nav>
+
+    <!-- Dome Rotation Control -->
+    <div class="card">
+      <h3>🔄 Dome Rotation</h3>
+      <div class="desc">Drag the slider to rotate the dome. Releasing returns to stop automatically.</div>
+      <div class="slider-container mt-16">
+        <input id="dome-slider" type="range" min="-100" max="100" value="0"
+          aria-label="Dome rotation speed">
+        <div class="slider-labels">
+          <span>Reverse</span>
+          <span>Stop</span>
+          <span>Forward</span>
+        </div>
+      </div>
+      <div class="slider-value" id="dome-speed-display">0%</div>
+      <div id="dome-feedback" class="feedback mt-12">Dome ready.</div>
+    </div>
+
+    <!-- Dome Motor Settings -->
+    <div class="card">
+      <h3>⚙️ Dome Motor Settings</h3>
+      <div class="desc">Configure the dome rotation ESC pulse width range.</div>
+      <div class="info-note mt-12">
+        <strong>Note:</strong> ESC calibration, PWM frequency, and voltage cutoff are configured
+        via the ISD Go mobile app over Bluetooth. These settings only adjust the pulse width range.
+      </div>
+      <form id="esc-form" class="form-grid mt-16">
+        <label class="field">
+          <span>Neutral Pulse (µs)</span>
+          <input id="dome-neutral" name="domeNeutralUs" type="number" min="1000" max="2000" step="1"
+            title="ESC neutral/stop pulse width in microseconds">
+        </label>
+        <label class="field">
+          <span>Minimum Pulse (µs)</span>
+          <input id="dome-min-pulse" name="domeMinPulseUs" type="number" min="1000" max="2000" step="1"
+            title="ESC full-reverse pulse width in microseconds">
+        </label>
+        <label class="field">
+          <span>Maximum Pulse (µs)</span>
+          <input id="dome-max-pulse" name="domeMaxPulseUs" type="number" min="1000" max="2000" step="1"
+            title="ESC full-forward pulse width in microseconds">
+        </label>
+        <label class="field">
+          <span>Speed Limit (%)</span>
+          <input id="dome-speed-limit" name="domeSpeedLimitPct" type="number" min="0" max="100" step="1"
+            title="Maximum dome rotation speed as a percentage of the full ESC range">
+        </label>
+        <div class="button-row">
+          <button id="reload-esc-button" class="btn" type="button">🔄 Reload</button>
+        </div>
+      </form>
+      <div id="esc-feedback" class="feedback mt-12">Loading motor settings...</div>
+    </div>
+
+    <div class="status-bar">
+      <div><span class="dot green"></span>Dome page connected</div>
+      <div class="status-subline" id="fw-meta">Loading firmware info...</div>
+    </div>
+
+    <script src="/dome.js"></script>
+    <script src="/footer.js"></script>
+  </body>
+</html>

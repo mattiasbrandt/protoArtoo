@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>RC Control - protoArtoo</title>
+    <link rel="stylesheet" href="/style.css">
+    <link rel="icon" type="image/png" href="/r2d2body-favicon.png">
+  </head>
+  <body>
+    <div class="topbar">
+      <div>
+        <h1>🕹️ RC Control</h1>
+        <div class="subtitle">Remote control diagnostics and channel mapping</div>
+      </div>
+    </div>
+
+    <nav>
+      <a href="/">🏠 Home</a>
+      <a href="/drive.html">🏎️ Drive</a>
+      <a href="/dome.html">🔄 Dome</a>
+      <a href="/servo.html">🦾 Servos</a>
+      <a href="/setup.html">⚙️ Setup</a>
+      <a href="/rc.html" class="active">🕹️ RC</a>
+      <a href="/serial.html">🔌 Serial</a>
+      <a href="/wifi.html">📶 WiFi</a>
+      <a href="/firmware.html">💾 Firmware</a>
+    </nav>
+
+    <!-- Receiver Type (shown first: this choice defines everything else on this page) -->
+    <div class="card">
+      <h3>📡 Receiver Type</h3>
+      <div class="desc">Select how your RC receiver connects to the controller. This setting determines which bindings and calibration values apply.</div>
+
+      <div class="rc-mode-grid mt-16">
+        <div class="rc-mode-card" data-mode="standard_pwm" tabindex="0" role="button" aria-pressed="false">
+          <div class="rc-mode-icon">🎮</div>
+          <div class="rc-mode-title">Standard PWM</div>
+          <div class="rc-mode-desc">6 individual PWM channels from a standard RC receiver</div>
+        </div>
+        <div class="rc-mode-card" data-mode="single_sbus" tabindex="0" role="button" aria-pressed="false">
+          <div class="rc-mode-icon">📻</div>
+          <div class="rc-mode-title">Single SBUS</div>
+          <div class="rc-mode-desc">One SBUS receiver on CH1 (up to 18 channels)</div>
+        </div>
+        <div class="rc-mode-card" data-mode="dual_sbus" tabindex="0" role="button" aria-pressed="false">
+          <div class="rc-mode-icon">📡</div>
+          <div class="rc-mode-title">Dual SBUS</div>
+          <div class="rc-mode-desc">Two SBUS receivers — receiver #1 for drive, receiver #2 for dome and aux</div>
+        </div>
+      </div>
+
+      <input type="hidden" id="rc-input-mode" value="standard_pwm">
+
+      <div id="rc-mode-feedback" class="feedback mt-12">Loading receiver type...</div>
+      
+      <div class="mt-16">
+        <button id="rc-reset-defaults" class="btn" type="button">↺ Reset to Defaults</button>
+      </div>
+    </div>
+
+    <!-- Binding Summary Table -->
+    <div class="card">
+      <h3>📋 Binding Summary</h3>
+      <div class="desc">Overview of all channel bindings. Click any row to edit.</div>
+      
+      <table class="rc-summary-table mt-16">
+        <thead>
+          <tr>
+            <th>Slot</th>
+            <th>Action</th>
+            <th>Source</th>
+            <th>CH</th>
+            <th>Live</th>
+          </tr>
+        </thead>
+        <tbody id="rc-summary-body">
+          <tr><td colspan="5">Loading bindings...</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Three-panel Editor -->
+    <div class="card">
+      <div class="rc-mapper-grid">
+        <!-- Slot List (left sidebar) -->
+        <div class="rc-slot-list">
+          <div id="rc-slot-items">
+          </div>
+        </div>
+        
+        <!-- Live Preview Panel (center) -->
+        <div class="rc-live-preview">
+          <div id="rc-live-preview-content">
+            <div class="desc">Select a channel from the list to see live data.</div>
+          </div>
+          
+          <!-- Source Health Summary -->
+          <div class="mt-20">
+            <h4>📡 Source Health</h4>
+            <div id="rc-preview-source-health" class="rc-source-grid mt-12"></div>
+          </div>
+        </div>
+        
+        <!-- Editor Panel (right) -->
+        <div class="rc-editor-panel">
+          <div id="rc-editor-content">
+            <div class="desc">Select a channel from the list to edit its mapping.</div>
+          </div>
+          
+          <!-- Save Controls -->
+          <div class="button-row rc-editor-actions mt-20">
+            <button id="rc-editor-apply" class="btn accent" type="button" disabled>Apply & Save</button>
+            <button id="rc-editor-revert" class="btn" type="button" disabled>Revert</button>
+          </div>
+          
+          <div id="rc-editor-feedback" class="feedback mt-12"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="status-bar">
+      <div><span class="dot green"></span>RC page connected</div>
+      <div class="status-subline" id="fw-meta">Loading firmware info...</div>
+    </div>
+
+    <script src="/rc.js"></script>
+    <script src="/footer.js"></script>
+  </body>
+</html>

@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="/style.css">
+    <link rel="icon" type="image/png" href="/r2d2body-favicon.png">
+  </head>
+  <body>
+    <div class="topbar">
+      <div>
+        <h1>🦾 Servos</h1>
+        <div class="subtitle">Arm and auxiliary servo controls and calibration</div>
+      </div>
+    </div>
+
+    <nav>
+      <a href="/">🏠 Home</a>
+      <a href="/drive.html">🏎️ Drive</a>
+      <a href="/dome.html">🔄 Dome</a>
+      <a href="/servo.html" class="active">🦾 Servos</a>
+      <a href="/setup.html">⚙️ Setup</a>
+      <a href="/rc.html">🕹️ RC</a>
+      <a href="/serial.html">🔌 Serial</a>
+      <a href="/wifi.html">📶 WiFi</a>
+      <a href="/firmware.html">💾 Firmware</a>
+    </nav>
+
+    <!-- Arm Controls (ARM1 / ARM2 only) -->
+    <div class="card hidden" id="arm-controls-card">
+      <h3>🎮 Arm Controls</h3>
+      <div class="desc">Open, close, or stop each utility arm. Commands are sent immediately.</div>
+      <div id="arm-controls-container" class="mt-12"></div>
+      <div id="arm-feedback" class="feedback mt-12">No command sent yet.</div>
+    </div>
+
+    <!-- No arms enabled notice -->
+    <div class="card" id="no-arms-card">
+      <h3>🦾 No Arms Enabled</h3>
+      <div class="desc">No utility arm servos are currently enabled. Go to
+        <a href="/setup.html">Setup</a> and enable Left Arm Servo and/or Right Arm Servo to use
+        arm controls.</div>
+    </div>
+
+    <!-- AUX Outputs (AUX1 / AUX2 / AUX3) -->
+    <div class="card hidden" id="aux-controls-card">
+      <h3>🔌 AUX Outputs</h3>
+      <div class="desc">Controls for enabled auxiliary outputs. Servo outputs support open, close,
+        and stop. RGB LED strips show a placeholder — output control coming soon.</div>
+      <div id="aux-controls-container" class="mt-12"></div>
+      <div id="aux-feedback" class="feedback mt-12">No command sent yet.</div>
+    </div>
+
+    <!-- Servo Calibration (ARM1 / ARM2 / AUX servo channels) -->
+    <div class="card hidden" id="servo-calib-card">
+      <h3>⚙️ Servo Calibration</h3>
+      <div class="desc">
+        Set the open and close pulse widths (µs) for each servo output. MG996R standard range is
+        1000–2000 µs; MG90S micro servo range is 500–2500 µs. Use the test buttons to move the
+        servo live while adjusting, then save when the position is correct.
+      </div>
+
+      <form id="calib-form" class="mt-16">
+
+        <!-- ARM1 calibration (shown only when ARM1 enabled) -->
+        <div class="hidden" id="arm1-calib-section">
+          <div class="section-label">Left Arm — ARM1 (GPIO 23)</div>
+          <div class="form-grid">
+            <label class="field">
+              <span>Open position (µs)</span>
+              <input id="arm1-open-us" name="arm1OpenUs" type="number" min="500" max="2500" step="10"
+                title="Pulse width sent to ARM1 when commanded to open. MG996R: 2000 µs, MG90S: 2500 µs.">
+            </label>
+            <label class="field">
+              <span>Close position (µs)</span>
+              <input id="arm1-close-us" name="arm1CloseUs" type="number" min="500" max="2500" step="10"
+                title="Pulse width sent to ARM1 when commanded to close. MG996R: 1000 µs, MG90S: 500 µs.">
+            </label>
+          </div>
+          <div class="field mt-8">
+            <span>Test position (µs)</span>
+            <div class="button-row mt-4">
+              <input id="arm1-test-us" type="number" min="500" max="2500" step="10" value="1500"
+                title="Move the servo to this pulse width immediately without saving."
+                class="input-narrow">
+              <button class="btn" type="button" id="arm1-test-btn" title="Send test position to ARM1">
+                ▶ Test ARM1
+              </button>
+              <button class="btn" type="button" id="arm1-open-test-btn">▶ Test Open</button>
+              <button class="btn" type="button" id="arm1-close-test-btn">▶ Test Close</button>
+            </div>
+          </div>
+          <div class="section-divider"></div>
+        </div>
+
+        <!-- ARM2 calibration (shown only when ARM2 enabled) -->
+        <div class="hidden" id="arm2-calib-section">
+          <div class="section-label">Right Arm — ARM2 (GPIO 5)</div>
+          <div class="form-grid">
+            <label class="field">
+              <span>Open position (µs)</span>
+              <input id="arm2-open-us" name="arm2OpenUs" type="number" min="500" max="2500" step="10"
+                title="Pulse width sent to ARM2 when commanded to open. MG996R: 2000 µs, MG90S: 2500 µs.">
+            </label>
+            <label class="field">
+              <span>Close position (µs)</span>
+              <input id="arm2-close-us" name="arm2CloseUs" type="number" min="500" max="2500" step="10"
+                title="Pulse width sent to ARM2 when commanded to close. MG996R: 1000 µs, MG90S: 500 µs.">
+            </label>
+          </div>
+          <div class="field mt-8">
+            <span>Test position (µs)</span>
+            <div class="button-row mt-4">
+              <input id="arm2-test-us" type="number" min="500" max="2500" step="10" value="1500"
+                title="Move the servo to this pulse width immediately without saving."
+                class="input-narrow">
+              <button class="btn" type="button" id="arm2-test-btn" title="Send test position to ARM2">
+                ▶ Test ARM2
+              </button>
+              <button class="btn" type="button" id="arm2-open-test-btn">▶ Test Open</button>
+              <button class="btn" type="button" id="arm2-close-test-btn">▶ Test Close</button>
+            </div>
+          </div>
+          <div class="section-divider"></div>
+        </div>
+
+        <!-- AUX1 calibration (shown only when AUX1 enabled and type is a servo) -->
+        <div class="hidden" id="aux1-calib-section">
+          <div class="section-label">AUX Output 1 — AUX1 (GPIO 19)</div>
+          <div class="form-grid">
+            <label class="field">
+              <span>Open position (µs)</span>
+              <input id="aux1-open-us" name="aux1OpenUs" type="number" min="500" max="2500" step="10"
+                title="Pulse width sent to AUX1 when commanded to open.">
+            </label>
+            <label class="field">
+              <span>Close position (µs)</span>
+              <input id="aux1-close-us" name="aux1CloseUs" type="number" min="500" max="2500" step="10"
+                title="Pulse width sent to AUX1 when commanded to close.">
+            </label>
+          </div>
+          <div class="field mt-8">
+            <span>Test position (µs)</span>
+            <div class="button-row mt-4">
+              <input id="aux1-test-us" type="number" min="500" max="2500" step="10" value="1500"
+                title="Move the servo to this pulse width immediately without saving."
+                class="input-narrow">
+              <button class="btn" type="button" id="aux1-test-btn">▶ Test AUX1</button>
+              <button class="btn" type="button" id="aux1-open-test-btn">▶ Test Open</button>
+              <button class="btn" type="button" id="aux1-close-test-btn">▶ Test Close</button>
+            </div>
+          </div>
+          <div class="section-divider"></div>
+        </div>
+
+        <!-- AUX2 calibration (shown only when AUX2 enabled and type is a servo) -->
+        <div class="hidden" id="aux2-calib-section">
+          <div class="section-label">AUX Output 2 — AUX2 (GPIO 18)</div>
+          <div class="form-grid">
+            <label class="field">
+              <span>Open position (µs)</span>
+              <input id="aux2-open-us" name="aux2OpenUs" type="number" min="500" max="2500" step="10"
+                title="Pulse width sent to AUX2 when commanded to open.">
+            </label>
+            <label class="field">
+              <span>Close position (µs)</span>
+              <input id="aux2-close-us" name="aux2CloseUs" type="number" min="500" max="2500" step="10"
+                title="Pulse width sent to AUX2 when commanded to close.">
+            </label>
+          </div>
+          <div class="field mt-8">
+            <span>Test position (µs)</span>
+            <div class="button-row mt-4">
+              <input id="aux2-test-us" type="number" min="500" max="2500" step="10" value="1500"
+                title="Move the servo to this pulse width immediately without saving."
+                class="input-narrow">
+              <button class="btn" type="button" id="aux2-test-btn">▶ Test AUX2</button>
+              <button class="btn" type="button" id="aux2-open-test-btn">▶ Test Open</button>
+              <button class="btn" type="button" id="aux2-close-test-btn">▶ Test Close</button>
+            </div>
+          </div>
+          <div class="section-divider"></div>
+        </div>
+
+        <!-- AUX3 calibration (shown only when AUX3 enabled and type is a servo) -->
+        <div class="hidden" id="aux3-calib-section">
+          <div class="section-label">AUX Output 3 — AUX3 (GPIO 32)</div>
+          <div class="form-grid">
+            <label class="field">
+              <span>Open position (µs)</span>
+              <input id="aux3-open-us" name="aux3OpenUs" type="number" min="500" max="2500" step="10"
+                title="Pulse width sent to AUX3 when commanded to open.">
+            </label>
+            <label class="field">
+              <span>Close position (µs)</span>
+              <input id="aux3-close-us" name="aux3CloseUs" type="number" min="500" max="2500" step="10"
+                title="Pulse width sent to AUX3 when commanded to close.">
+            </label>
+          </div>
+          <div class="field mt-8">
+            <span>Test position (µs)</span>
+            <div class="button-row mt-4">
+              <input id="aux3-test-us" type="number" min="500" max="2500" step="10" value="1500"
+                title="Move the servo to this pulse width immediately without saving."
+                class="input-narrow">
+              <button class="btn" type="button" id="aux3-test-btn">▶ Test AUX3</button>
+              <button class="btn" type="button" id="aux3-open-test-btn">▶ Test Open</button>
+              <button class="btn" type="button" id="aux3-close-test-btn">▶ Test Close</button>
+            </div>
+          </div>
+          <div class="section-divider"></div>
+        </div>
+
+        <div class="button-row mt-8">
+          <button class="btn" type="button" id="reload-calib-btn">🔄 Reload</button>
+        </div>
+      </form>
+      <div id="calib-feedback" class="feedback mt-12">Loading calibration...</div>
+    </div>
+
+    <div class="status-bar">
+      <div><span class="dot green"></span>Servos page connected</div>
+      <div class="status-subline" id="fw-meta">Loading firmware info...</div>
+    </div>
+
+    <script src="/servo.js"></script>
+    <script src="/footer.js"></script>
+  </body>
+</html>

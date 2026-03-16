@@ -69,6 +69,57 @@
     xhr.send(formData);
   };
 
+  // Filesystem upload
+  const fsFile = document.getElementById("fs-file");
+  const uploadFsButton = document.getElementById("upload-fs-button");
+  const fsProgressWrap = document.getElementById("fs-progress");
+  const fsProgressBar = document.getElementById("fs-bar");
+  const fsProgressStatus = document.getElementById("fs-status");
+
+  const uploadFilesystem = () => {
+    const file = fsFile && fsFile.files && fsFile.files[0];
+    if (!file) {
+      feedback.textContent = "Select a filesystem .bin file first.";
+      return;
+    }
+
+    if (fsProgressWrap) fsProgressWrap.style.display = "block";
+    if (fsProgressBar) fsProgressBar.style.width = "0%";
+    if (fsProgressStatus) fsProgressStatus.textContent = "Uploading...";
+    feedback.textContent = `Uploading filesystem ${file.name}...`;
+
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "/upload/filesystem");
+
+    xhr.upload.onprogress = (event) => {
+      if (!event.lengthComputable) return;
+      const pct = Math.min(99, Math.round((event.loaded / event.total) * 100));
+      if (fsProgressBar) fsProgressBar.style.width = `${pct}%`;
+      if (fsProgressStatus) fsProgressStatus.textContent = `Uploading... ${pct}%`;
+    };
+
+    xhr.onload = () => {
+      if (xhr.status === 200) {
+        if (fsProgressBar) fsProgressBar.style.width = "100%";
+        if (fsProgressStatus) fsProgressStatus.textContent = "Upload complete. Waiting for reboot...";
+        feedback.textContent = "Filesystem uploaded. Controller should reboot shortly.";
+      } else {
+        if (fsProgressStatus) fsProgressStatus.textContent = "Upload failed";
+        feedback.textContent = xhr.responseText || `Filesystem upload failed (HTTP ${xhr.status}).`;
+      }
+    };
+
+    xhr.onerror = () => {
+      if (fsProgressStatus) fsProgressStatus.textContent = "Upload failed";
+      feedback.textContent = "Filesystem upload error.";
+    };
+
+    const formData = new FormData();
+    formData.append("filesystem", file, file.name);
+    xhr.send(formData);
+  };
+
   uploadButton.addEventListener("click", uploadFirmware);
   rebootButton.addEventListener("click", postReboot);
+  if (uploadFsButton) uploadFsButton.addEventListener("click", uploadFilesystem);
 })();

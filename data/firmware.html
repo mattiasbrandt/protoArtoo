@@ -3,52 +3,89 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Firmware - protoArtoo</title>
     <link rel="stylesheet" href="/style.css">
+    <link rel="icon" type="image/png" href="/r2d2body-favicon.png">
   </head>
   <body>
     <div class="topbar">
       <div>
-        <h1>Firmware</h1>
-        <div class="subtitle">Firmware update and reboot controls</div>
+        <h1>💾 Firmware</h1>
+        <div class="subtitle">Update and system controls</div>
       </div>
     </div>
 
     <nav>
-      <a href="/">Home</a>
-      <a href="/setup.html">Setup</a>
-      <a href="/wifi.html">WiFi</a>
-      <a href="/firmware.html" class="active">Firmware</a>
-      <a href="/serial.html">Serial</a>
+      <a href="/">🏠 Home</a>
+      <a href="/drive.html">🏎️ Drive</a>
+      <a href="/dome.html">🔄 Dome</a>
+      <a href="/servo.html">🦾 Servos</a>
+      <a href="/setup.html">⚙️ Setup</a>
+      <a href="/rc.html">🕹️ RC</a>
+      <a href="/serial.html">🔌 Serial</a>
+      <a href="/wifi.html">📶 WiFi</a>
+      <a href="/firmware.html" class="active">💾 Firmware</a>
     </nav>
 
     <div class="card">
-      <h3>Upload Firmware</h3>
-      <div class="desc">Select a <code>.bin</code> firmware file to flash over the air.</div>
-      <div class="desc" style="margin-top:8px;">This updates firmware only. LittleFS web asset changes still require <code>uploadfs</code>.</div>
-      <div class="form-grid" style="margin-top:12px;">
-        <input id="fw-file" class="file-input" type="file" accept=".bin">
-        <div id="fw-progress" class="fw-progress" style="display:none;">
+      <h3>⬆️ Firmware Update</h3>
+      <div class="desc">Upload a new firmware binary (<code>.bin</code>) compiled from source.</div>
+      <div class="desc mt-8 text-warning">
+        ⚠️ Warning: Keep power connected during the update. Do not refresh this page while updating.
+      </div>
+      <div class="form-grid mt-16">
+        <label class="field">
+          <span>Firmware File</span>
+          <input id="fw-file" class="file-input" type="file" accept=".bin" aria-label="Select firmware file">
+        </label>
+        <div id="fw-progress" class="fw-progress hidden">
           <div class="fw-progress-track">
             <div id="fw-bar" class="fw-progress-bar"></div>
           </div>
           <div id="fw-status" class="fw-progress-status">Uploading...</div>
         </div>
-        <button id="upload-fw-button" class="btn accent" type="button">Upload and Flash</button>
+        <div class="button-row">
+          <button id="upload-fw-button" class="btn accent" type="button">📤 Upload and Flash</button>
+        </div>
+        <div class="desc mt-8">Select a <code>.bin</code> firmware file, then click Upload and Flash. Keep power connected during the update. The controller reboots automatically when done — reconnect after it restarts.</div>
       </div>
     </div>
 
     <div class="card">
-      <h3>System</h3>
-      <div class="button-row">
-        <button id="reboot-button" class="btn" type="button">Reboot Controller</button>
+      <h3>�️ Filesystem Update</h3>
+      <div class="desc">Upload a new filesystem image (<code>.bin</code>) to update the web UI and assets.</div>
+      <div class="desc mt-8 text-warning">
+        ⚠️ Warning: Keep power connected during the update. Do not refresh this page while updating.
       </div>
-      <div id="fw-feedback" class="feedback" style="margin-top:12px;">No firmware action yet.</div>
+      <div class="form-grid mt-16">
+        <label class="field">
+          <span>Filesystem Image</span>
+          <input id="fs-file" class="file-input" type="file" accept=".bin" aria-label="Select filesystem image file">
+        </label>
+        <div id="fs-progress" class="fw-progress hidden">
+          <div class="fw-progress-track">
+            <div id="fs-bar" class="fw-progress-bar"></div>
+          </div>
+          <div id="fs-status" class="fw-progress-status">Uploading...</div>
+        </div>
+        <div class="button-row">
+          <button id="upload-fs-button" class="btn accent" type="button">📤 Upload Filesystem</button>
+        </div>
+        <div class="desc mt-8">Build with <code>pio run -e protoArtoo --target buildfs</code>, then select the <code>.bin</code> from <code>.pio/build/protoArtoo/littlefs.bin</code>. The controller reboots automatically when done.</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>�🔄 System Controls</h3>
+      <div class="button-row">
+        <button id="reboot-button" class="btn danger" type="button">🔄 Reboot Controller</button>
+      </div>
+      <div id="fw-feedback" class="feedback mt-12">No action taken yet.</div>
+      <div class="desc mt-12">Use Reboot if the controller stops responding. All settings are retained across reboots.</div>
     </div>
 
     <div class="status-bar">
-      <div><span class="dot green"></span>Firmware page connected to OTA and reboot endpoints.</div>
-      <div class="status-subline" id="fw-meta">Loading firmware info…</div>
+      <div><span class="dot green"></span>Firmware page connected</div>
+      <div class="status-subline" id="fw-meta">Loading firmware info...</div>
     </div>
 
     <script src="/firmware.js"></script>
