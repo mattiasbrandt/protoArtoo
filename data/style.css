@@ -250,6 +250,12 @@ nav a.active {
   box-shadow: 0 0 6px var(--warning);
 }
 
+.indicator.off {
+  background: var(--text-dim);
+  box-shadow: none;
+  opacity: 0.4;
+}
+
 .status-item dt {
   color: var(--text-dim);
   font-size: 0.85rem;

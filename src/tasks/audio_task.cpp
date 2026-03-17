@@ -182,69 +182,90 @@ static void dispatchAction(const AudioAction& action, uint8_t& vol, bool& random
 
 // -----------------------------------------------------------------------------
 // audioTask()
+//
+// Unified single-loop design — audioEnabled is read at the top of every
+// iteration so the task responds immediately to enable/disable changes from
+// the Setup page without requiring a reboot.
+//
+// Disabled state: drains the queue silently, clears randomMode, never touches
+// the audio GPIO. The driver is re-initialized on the first iteration after
+// being enabled.
 // -----------------------------------------------------------------------------
 void audioTask(void* pvParameters) {
     (void)pvParameters;
 
-    // Read boot config under mutex
-    uint8_t bootVol;
-    bool audioEnabled;
-    taskENTER_CRITICAL(&robotStateMux);
-    bootVol      = robotState.cfg_audioVolume;  // 0–30, already clamped at load
-    audioEnabled = robotState.cfg_enable_s2_sound;
-    taskEXIT_CRITICAL(&robotStateMux);
-
-    if (!audioEnabled) {
-        PA_LOG_INFO(TAG, "audio disabled (en_s2=false) — task idle");
-        // Drain queue silently so senders do not stall; never touch hardware.
-        AudioCommand cmd{};
-        for (;;) {
-            xQueueReceive(audioCmdQueue, &cmd, pdMS_TO_TICKS(5000));
-        }
-    }
-
-    // Initialise driver hardware
-    driver->begin();
-    driver->setVolume(bootVol);
-    PA_LOG_INFO(TAG, "started — driver PA_AUDIO_DRIVER=%d vol=%u", PA_AUDIO_DRIVER,
-                (unsigned)bootVol);
-
-    uint8_t  currentVol  = bootVol;
-    bool     randomMode  = false;
-    uint32_t lastRandMs  = 0;
+    bool driverInitialized = false;  // becomes true on first enable
+    bool randomMode        = false;
+    uint32_t lastRandMs    = 0;
+    uint8_t currentVol     = 20;     // updated from config on first enable
 
     // Named tracks: use compile-time defaults for T02.
     // T07 will populate these from NVS-backed robotState fields.
     const AudioNamedTracks named{};
 
     AudioCommand cmd{};
+
     for (;;) {
-        // Block up to 500 ms so the random playback timer can fire
-        // even when the command queue is idle.
-        const TickType_t waitTicks = pdMS_TO_TICKS(500);
-        if (xQueueReceive(audioCmdQueue, &cmd, waitTicks) == pdTRUE) {
-            // Re-read audio enabled flag in case it changed via web API
-            taskENTER_CRITICAL(&robotStateMux);
-            audioEnabled = robotState.cfg_enable_s2_sound;
-            taskEXIT_CRITICAL(&robotStateMux);
+        // ----------------------------------------------------------------
+        // Read enabled state fresh every iteration.
+        // The user can toggle S2 Sound in the Setup page at any time;
+        // we must not require a reboot for the change to take effect.
+        // ----------------------------------------------------------------
+        bool audioEnabled;
+        taskENTER_CRITICAL(&robotStateMux);
+        audioEnabled = robotState.cfg_enable_s2_sound;
+        taskEXIT_CRITICAL(&robotStateMux);
 
-            if (!audioEnabled) {
-                continue;  // drop commands while disabled
+        if (!audioEnabled) {
+            // Disabled: drain any queued commands silently, clear runtime state.
+            // randomMode must be cleared here — if it stays true, the random
+            // timer would fire the moment audio is re-enabled.
+            if (randomMode) {
+                randomMode = false;
+                taskENTER_CRITICAL(&robotStateMux);
+                robotState.audioActive = false;
+                taskEXIT_CRITICAL(&robotStateMux);
+                PA_LOG_INFO(TAG, "audio disabled — random mode cleared");
             }
+            xQueueReceive(audioCmdQueue, &cmd, pdMS_TO_TICKS(500));
+            continue;
+        }
 
+        // ----------------------------------------------------------------
+        // Enabled: initialise driver on first enable.
+        // Covers both the boot case (enabled from the start) and the
+        // runtime case (user enables audio after boot via Setup page).
+        // driver->begin() is safe to call once; it configures GPIO only.
+        // ----------------------------------------------------------------
+        if (!driverInitialized) {
+            taskENTER_CRITICAL(&robotStateMux);
+            currentVol = robotState.cfg_audioVolume;
+            taskEXIT_CRITICAL(&robotStateMux);
+            driver->begin();
+            driver->setVolume(currentVol);
+            driverInitialized = true;
+            PA_LOG_INFO(TAG, "audio driver init — PA_AUDIO_DRIVER=%d vol=%u",
+                        PA_AUDIO_DRIVER, (unsigned)currentVol);
+        }
+
+        // ----------------------------------------------------------------
+        // Process one command from the queue (500 ms timeout so the random
+        // timer below can fire even when the queue is idle).
+        // ----------------------------------------------------------------
+        if (xQueueReceive(audioCmdQueue, &cmd, pdMS_TO_TICKS(500)) == pdTRUE) {
             switch (cmd.type) {
                 case AUDIO_CMD_DOLLAR: {
                     bool wasRandom = randomMode;
                     AudioAction action = parseAudioDollar(cmd.dollar, named);
                     dispatchAction(action, currentVol, randomMode);
-                    // If random mode just turned on, reset the timer so the
-                    // first random track fires after a full interval, not
-                    // immediately (lastRandMs was 0 or stale before this).
+                    // Reset timer when random mode first turns on so the
+                    // first track fires after a full interval, not immediately.
                     if (randomMode && !wasRandom) {
                         lastRandMs = millis();
                     }
                     break;
                 }
+
                 case AUDIO_CMD_PLAY_TRACK:
                     driver->playTrack(cmd.track);
                     taskENTER_CRITICAL(&robotStateMux);
@@ -272,12 +293,16 @@ void audioTask(void* pvParameters) {
             }
         }
 
-        // Random playback timer — fire a random track at the configured interval
-        if (randomMode && audioEnabled) {
+        // ----------------------------------------------------------------
+        // Random playback timer.
+        // randomMode is only true when audio is enabled and a $R command
+        // was received. audioEnabled is guaranteed true here (we continued
+        // at the top of the loop if it was false).
+        // ----------------------------------------------------------------
+        if (randomMode) {
             uint32_t now = millis();
             if ((uint32_t)(now - lastRandMs) >= AUDIO_RAND_INTERVAL_MS) {
                 lastRandMs = now;
-                // Uniform random in [AUDIO_RAND_TRACK_MIN, AUDIO_RAND_TRACK_MAX].
                 // esp_random() uses the ESP32 hardware RNG — no seeding needed.
                 uint32_t range = AUDIO_RAND_TRACK_MAX - AUDIO_RAND_TRACK_MIN + 1;
                 uint16_t track = (uint16_t)(AUDIO_RAND_TRACK_MIN + (esp_random() % range));
