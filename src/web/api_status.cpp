@@ -100,7 +100,9 @@ void registerStatusRoutes(AsyncWebServer& server) {
     // complex and unnecessary for this infrequent debug endpoint.
     static portMUX_TYPE logsMux = portMUX_INITIALIZER_UNLOCKED;
     server.on("/api/logs", HTTP_GET, [](AsyncWebServerRequest* req) {
-        static char body[4096];
+        // Buffer sized to match ring capacity: LOG_BUFFER_LINES * LOG_LINE_MAX + 1.
+        // Was 4096 static (always allocated); now sized to actual ring content max.
+        static char body[LOG_BUFFER_LINES * LOG_LINE_MAX + 1];
         taskENTER_CRITICAL(&logsMux);
         copyRecentLogs(body, sizeof(body) - 1);
         taskEXIT_CRITICAL(&logsMux);

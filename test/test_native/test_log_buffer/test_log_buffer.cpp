@@ -88,18 +88,23 @@ void test_wrap_around_oldest_overwritten() {
 
 void test_wrap_around_order_preserved() {
     char line[32];
-    for (size_t i = 0; i < LOG_BUFFER_LINES + 3; ++i) {
+    const size_t total = LOG_BUFFER_LINES + 3;
+    for (size_t i = 0; i < total; ++i) {
         snprintf(line, sizeof(line), "L%zu", i);
         logBufferAppend(&buf, line);
     }
     char out[LOG_BUFFER_LINES * LOG_LINE_MAX];
     logBufferCopy(&buf, out, sizeof(out));
 
-    const char* p3 = strstr(out, "L3");
-    const char* plast = strstr(out, "L66");
-    TEST_ASSERT_NOT_NULL(p3);
-    TEST_ASSERT_NOT_NULL(plast);
-    TEST_ASSERT_LESS_THAN(plast - out, p3 - out);
+    // After overflow: oldest visible is L3, newest is L(total-1)
+    char oldest[16], newest[16];
+    snprintf(oldest, sizeof(oldest), "L%zu", total - LOG_BUFFER_LINES);  // first still in ring
+    snprintf(newest, sizeof(newest), "L%zu", total - 1);                 // last written
+    const char* p_oldest = strstr(out, oldest);
+    const char* p_newest = strstr(out, newest);
+    TEST_ASSERT_NOT_NULL(p_oldest);
+    TEST_ASSERT_NOT_NULL(p_newest);
+    TEST_ASSERT_LESS_THAN(p_newest - out, p_oldest - out);
 }
 
 void test_long_line_truncated_to_max() {

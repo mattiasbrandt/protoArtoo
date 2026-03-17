@@ -416,7 +416,8 @@ bool buildConfigJson(char* buffer, size_t bufferSize) {
 }  // namespace
 
 void registerConfigRoutes(AsyncWebServer& server) {
-    static char configJsonBuf[4096];
+    // Actual config JSON is ~1.7 KB; 2048 gives safe headroom. Was 4096 (wasted 2 KB BSS).
+    static char configJsonBuf[2048];
 
     server.on("/api/config", HTTP_GET, [](AsyncWebServerRequest* req) {
         if (!buildConfigJson(configJsonBuf, sizeof(configJsonBuf))) {

@@ -28,41 +28,43 @@ extern bool saveConfigToNvs();
 static const char* TAG = "WebServer";
 
 bool executeManualCommand(const String& raw) {
-    String command = raw;
-    command.trim();
-
-    // Marcduino commands are case-sensitive — must be routed BEFORE toLowerCase().
-    if (command.length() > 0) {
-        char prefix = command[0];
-
-        // $ — audio commands: route to AudioTask
-        if (prefix == '$') {
-            return audioQueueDollar(command.c_str(), SRC_WEB_API);
-        }
-
-        // : and # — body-processed Marcduino: servo sequences, panel cmds, config
-        if (prefix == ':' || prefix == '#') {
-            // Mood commands (:SE10/11/13/14) are not valid body sequences so
-            // parseMarcduinoCommand() would silently discard them. Intercept first.
-            uint8_t moodId = moodIdFromSeCommand(command.c_str());
-            if (moodId != 0) {
-                applyMood(moodId);
-                return true;
-            }
-            parseMarcduinoCommand(command.c_str());
-            return true;  // always accept — body handles or discards per routing table
-        }
-
-        // * @ % & ! — dome-bound Marcduino: forward to dome TX queue
-        // These are dome-only prefixes; the body discards them from dome RX,
-        // but from the web UI the operator may want to send them to the dome.
-        if (prefix == '*' || prefix == '@' || prefix == '%' ||
-            prefix == '&' || prefix == '!') {
-            domeQueueTx(command.c_str());
-            return true;
-        }
+    if (raw.length() == 0) {
+        return false;
     }
 
+    // Marcduino commands are case-sensitive — route them directly on raw
+    // WITHOUT copying or case-folding. Only the keyword commands below need
+    // toLowerCase(), and we defer that copy until we actually need it.
+    const char prefix = raw[0];
+
+    // $ — audio commands: route to AudioTask
+    if (prefix == '$') {
+        return audioQueueDollar(raw.c_str(), SRC_WEB_API);
+    }
+
+    // : and # — body-processed Marcduino: servo sequences, panel cmds, config
+    if (prefix == ':' || prefix == '#') {
+        // Mood commands (:SE10/11/13/14) are not valid body sequences so
+        // parseMarcduinoCommand() would silently discard them. Intercept first.
+        uint8_t moodId = moodIdFromSeCommand(raw.c_str());
+        if (moodId != 0) {
+            applyMood(moodId);
+            return true;
+        }
+        parseMarcduinoCommand(raw.c_str());
+        return true;  // always accept — body handles or discards per routing table
+    }
+
+    // * @ % & ! — dome-bound Marcduino: forward to dome TX queue
+    if (prefix == '*' || prefix == '@' || prefix == '%' ||
+        prefix == '&' || prefix == '!') {
+        domeQueueTx(raw.c_str());
+        return true;
+    }
+
+    // Keyword commands (estop, reboot, etc.) — case-insensitive.
+    // Only allocate the lowercase copy here, not for every Marcduino command.
+    String command = raw;
     command.toLowerCase();
     ManualCommand cmd = resolveManualCommand(command.c_str());
 

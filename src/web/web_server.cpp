@@ -735,27 +735,34 @@ bool webLittleFsMounted() {
     return littleFsReady;
 }
 
-void eventStreamTask(void*) {
-    static char statusBody[1024];
-    static char rcBody[2048];
-    static uint32_t lastLogSent = 0;
-    static char logLines[8][LOG_LINE_MAX];
+// Shared SSE JSON buffers — file-scope so both eventStreamTask and the
+// onConnect handler use the same allocation rather than each having their own.
+// eventStreamTask runs at 1 Hz on Core 0; onConnect fires on the AsyncTCP
+// task also on Core 0. They cannot run truly concurrently on the same core,
+// so sharing these buffers is safe without additional locking.
+// Combined saving vs previous approach (two sets of statics): 3 KB BSS.
+static char s_sseStatusBody[1024];
+static char s_sseRcBody[2048];
+static uint32_t s_lastLogSent = 0;
+static char s_sseLogLines[8][LOG_LINE_MAX];
 
+void eventStreamTask(void*) {
     for (;;) {
         if (serverStarted && events.count() > 0) {
             uint32_t nowMs = millis();
 
-            buildStatusJson(statusBody, sizeof(statusBody));
-            events.send(statusBody, "status", nowMs);
+            buildStatusJson(s_sseStatusBody, sizeof(s_sseStatusBody));
+            events.send(s_sseStatusBody, "status", nowMs);
 
-            if (buildRcDiagnosticsJson(rcBody, sizeof(rcBody))) {
-                events.send(rcBody, "rc", nowMs);
+            if (buildRcDiagnosticsJson(s_sseRcBody, sizeof(s_sseRcBody))) {
+                events.send(s_sseRcBody, "rc", nowMs);
             }
 
             size_t linesCopied = 0;
-            lastLogSent = copyNewLogLinesSince(lastLogSent, logLines, 8, &linesCopied);
+            s_lastLogSent = copyNewLogLinesSince(s_lastLogSent, s_sseLogLines, 8,
+                                                  &linesCopied);
             for (size_t i = 0; i < linesCopied; ++i) {
-                events.send(logLines[i], "log", nowMs);
+                events.send(s_sseLogLines[i], "log", nowMs);
             }
         }
 
@@ -770,13 +777,12 @@ void startHttpServerOnce() {
 
     if (!routesRegistered) {
         events.onConnect([](AsyncEventSourceClient* client) {
-            static char statusBody[1024];
-            static char rcBody[2048];
+            // Reuse the shared SSE buffers — same Core 0, no concurrency risk.
             uint32_t nowMs = millis();
-            buildStatusJson(statusBody, sizeof(statusBody));
-            client->send(statusBody, "status", nowMs);
-            if (buildRcDiagnosticsJson(rcBody, sizeof(rcBody))) {
-                client->send(rcBody, "rc", nowMs);
+            buildStatusJson(s_sseStatusBody, sizeof(s_sseStatusBody));
+            client->send(s_sseStatusBody, "status", nowMs);
+            if (buildRcDiagnosticsJson(s_sseRcBody, sizeof(s_sseRcBody))) {
+                client->send(s_sseRcBody, "rc", nowMs);
             }
         });
         server.addHandler(&events);
@@ -874,7 +880,9 @@ void webServerInit() {
     WiFi.onEvent(handleWiFiEvent);
 
     if (!eventTaskStarted) {
-        xTaskCreatePinnedToCore(eventStreamTask, "WebEvents", 8192, nullptr, 1, nullptr, 0);
+        // 4096 bytes is sufficient: all large buffers are file-scope statics,
+        // not stack-allocated inside the task. Reduced from 8192 (saves 4 KB heap).
+        xTaskCreatePinnedToCore(eventStreamTask, "WebEvents", 4096, nullptr, 1, nullptr, 0);
         eventTaskStarted = true;
     }
 

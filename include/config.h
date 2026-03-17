@@ -118,10 +118,13 @@ constexpr uint8_t PA_LOG_LEVEL_ERROR = 1;
 constexpr uint8_t PA_LOG_LEVEL_INFO = 2;
 constexpr uint8_t PA_LOG_LEVEL_DEBUG = 3;
 
-#ifndef PA_LOG_LEVEL
 // PA_LOG_LEVEL controls USB debug serial verbosity on UART0.
-// - PA_LOG_LEVEL_ERROR: faults only (watchdog resets, mount failures, etc.)
-// - PA_LOG_LEVEL_INFO: normal boot health and service bring-up
-// - PA_LOG_LEVEL_DEBUG: verbose development logging, including lower-priority events
-constexpr uint8_t PA_LOG_LEVEL = PA_LOG_LEVEL_DEBUG;
+// - PA_LOG_LEVEL_ERROR (1): faults only (watchdog resets, mount failures, etc.)
+// - PA_LOG_LEVEL_INFO  (2): normal boot health and service bring-up
+// - PA_LOG_LEVEL_DEBUG (3): verbose development logging, including lower-priority events
+// Set via -DPA_LOG_LEVEL=N in platformio.ini build_flags. Defaults to DEBUG if unset.
+#ifndef PA_LOG_LEVEL
+#  define PA_LOG_LEVEL 3
 #endif
+// C++ typed alias for use in runtime comparisons (e.g. PA_LOG_LEVEL >= PA_LOG_LEVEL_INFO)
+static constexpr uint8_t PA_LOG_LEVEL_VAL = PA_LOG_LEVEL;
