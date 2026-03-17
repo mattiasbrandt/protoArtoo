@@ -47,6 +47,7 @@ void registerAudioRoutes(AsyncWebServer& server) {
     server.on("/api/audio/tracks", HTTP_GET, [](AsyncWebServerRequest* req) {
         uint16_t scream, faint, leia, cantinaS, swTheme, impMarch, cantinaL, startup;
         uint16_t randMin, randMax;
+        uint8_t volume;
         taskENTER_CRITICAL(&robotStateMux);
         scream    = robotState.cfg_snd_scream;
         faint     = robotState.cfg_snd_faint;
@@ -58,6 +59,7 @@ void registerAudioRoutes(AsyncWebServer& server) {
         startup   = robotState.cfg_snd_startup;
         randMin   = robotState.cfg_snd_rand_min;
         randMax   = robotState.cfg_snd_rand_max;
+        volume    = robotState.cfg_audioVolume;
         taskEXIT_CRITICAL(&robotStateMux);
 
         // Stack-allocated — not static. Static local buffers in async handlers
@@ -67,9 +69,9 @@ void registerAudioRoutes(AsyncWebServer& server) {
                  "{\"scream\":%u,\"faint\":%u,\"leia\":%u,"
                  "\"cantina_s\":%u,\"sw_theme\":%u,\"imp_march\":%u,"
                  "\"cantina_l\":%u,\"startup\":%u,"
-                 "\"rand_min\":%u,\"rand_max\":%u}",
+                 "\"rand_min\":%u,\"rand_max\":%u,\"volume\":%u}",
                  scream, faint, leia, cantinaS, swTheme, impMarch,
-                 cantinaL, startup, randMin, randMax);
+                 cantinaL, startup, randMin, randMax, volume);
         req->send(200, "application/json", body);
     });
 
@@ -207,8 +209,23 @@ void registerAudioRoutes(AsyncWebServer& server) {
                           "{\"ok\":false,\"error\":\"level must be 0–30\"}");
                 return;
             }
+
+            // Apply immediately in AudioTask runtime
             audioQueueSetVolume((uint8_t)level, SRC_WEB_API);
-            PA_LOG_INFO(TAG, "[AUDIO] POST /api/audio volume level=%d", level);
+
+            // Persist as the new default volume so it survives reboot
+            taskENTER_CRITICAL(&robotStateMux);
+            robotState.cfg_audioVolume = (uint8_t)level;
+            taskEXIT_CRITICAL(&robotStateMux);
+            bool saved = saveConfigToNvs();
+
+            PA_LOG_INFO(TAG, "[AUDIO] POST /api/audio volume level=%d saved=%s", level,
+                        saved ? "true" : "false");
+            if (!saved) {
+                req->send(500, "application/json",
+                          "{\"ok\":false,\"error\":\"volume applied but NVS save failed\"}");
+                return;
+            }
             req->send(200, "application/json", "{\"ok\":true}");
             return;
         }

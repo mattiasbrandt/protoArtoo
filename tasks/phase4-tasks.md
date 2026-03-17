@@ -186,16 +186,50 @@ workflow reference for all Phase 4+ development.
     Boot restoration:
     - [ ] Apply mood=11, power cycle → reboot logs `boot mood restore: SE11 -> $R`; random chatter resumes
 
-- [x] T10 — Full-hardware validation pass (or formal deferral)
+- [ ] T10 — Full-hardware validation pass (or formal deferral)
   - note: validation applies to whichever backend (`PA_AUDIO_DRIVER`) is active at
     test time; repeat for each backend before marking that backend as validated
-  - **Formal deferral record (2026-03-17):**
-    - Blocker: audio module (DY-SV5W or CHIRP) not yet physically connected to bench ESP32
-    - Blocker: dome serial link requires AstroPixelsPlus board and slip ring wiring
-    - Closure steps: wire audio module to GPIO 26 (TX) on PCB S2 header; load SD card
-      with test tracks; connect dome board; run T09 hardware checklist above
-    - All bench-testable paths are verified (see T01–T08 bench-tested entries in status.md)
-    - This deferral does not block T15 (CHIRP driver implementation)
+  - **Status update (2026-03-17): reopened as in-progress after on-droid DY-SV5W bring-up**
+  - **What was validated on hardware:**
+    - DY-SV5W is physically wired and powered; UART mode switch confirmed (CON3=ON, CON2/CON1=OFF)
+    - TX/RX loopback on S2 (GPIO26↔GPIO35) confirmed ESP32 UART path and frame emission
+    - Audible output was achieved on real hardware after wiring/protocol recovery
+  - **Operator-reported regressions found during sound-page testing:**
+    1. Volume level appeared to reset to default
+    2. Named sounds / direct track play behaved randomly or inconsistently
+    3. Play/stop behaviour became variant-dependent (including delayed or silent playback in some test builds)
+  - **Confirmed fixes during troubleshooting:**
+    - `POST /api/audio` volume now persists to NVS (`cfg_audioVolume` + `saveConfigToNvs()`)
+    - `GET /api/audio/tracks` now includes `volume`
+    - `data/sound.js` now hydrates the slider from persisted `volume` (UI no longer falsely shows 20 after reboot)
+  - **Protocol/code experiments performed (all hardware-tested, no final sign-off):**
+    - Frame dialect trials:
+      - end-marker (`AA ... AB`) only
+      - checksum (`AA ... CRC`) only
+      - dual-wrapper compatibility send (both back-to-back)
+    - Command-set trials:
+      - legacy/variant opcodes (`play:0x0D/0x06`, `stop:0x03/0x02`, `volume:0x0A/0x13`, `select:0x11/0x10`)
+      - DYPlayer/Padawan/BetterDuino-derived opcodes (`play:0x07`, `stop:0x04`, `volume:0x13`)
+    - Init-sequence trials:
+      - with and without explicit device-select
+      - with EQ-normal command (BetterDuino-style)
+    - Transport trials:
+      - hardware UART2 remap on S2 pins retained
+      - soft-UART and mixed variants were tested earlier and superseded
+  - **External references reviewed during root-cause analysis:**
+    - `docs/sound_playback.md`
+    - BetterDuino `MDuinoSound.cpp` (`MDuinoSoundDYPlayer`)
+    - AstroPixelsPlus `MarcduinoSound.h`
+    - Padawan360 DY-SV5W sketch + bundled `dyplayer-main` library (`DYPlayer.cpp`)
+  - **Current unresolved blocker:**
+    - Deterministic track mapping is not yet stable across repeated trigger tests on this module/firmware variant
+    - Some trial builds produced random chirps, delayed starts, or silent play attempts
+  - **Closure checklist (required before T10 can be checked complete):**
+    - [ ] Lock one verified command/frame dialect for this exact module revision
+    - [ ] Verify direct track play determinism (same track request -> same audible file, 10/10 repeats)
+    - [ ] Verify named sound determinism (`$S/$F/$L/$c/$C/$W/$M/$B`)
+    - [ ] Verify stop semantics (stop does not trigger/resume playback)
+    - [ ] Re-run T09 hardware checklist items and record final `bench-tested` status
 
 - [x] T15 — Implement CHIRP Audio Trigger backend (`AUDIO_CHIRP`)
   - **Background:** CHIRP is an RP2350-based multi-stream audio board with an

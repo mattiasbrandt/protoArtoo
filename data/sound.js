@@ -161,6 +161,10 @@
       const randMax = document.getElementById("rand-max");
       if (randMin && data.rand_min !== undefined) randMin.value = data.rand_min;
       if (randMax && data.rand_max !== undefined) randMax.value = data.rand_max;
+
+      // Persisted default volume
+      const volSlider = document.getElementById("vol-slider");
+      if (volSlider && data.volume !== undefined) volSlider.value = data.volume;
     } catch (_e) {}
   };
 
