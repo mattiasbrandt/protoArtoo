@@ -77,21 +77,21 @@ All rules apply unconditionally to every code change in this repository.
 - ArduinoOTA starts on Core 0 when WiFi comes up (port 3232)
 - Web UI OTA: firmware via `POST /upload/firmware`, filesystem via `POST /upload/filesystem` (`/firmware.html`)
 
-**Serial monitor — always use `scripts/serial_monitor.py`, never craft ad-hoc pyserial snippets.**
+**Serial monitor — always use `tools/serial_monitor.py`, never craft ad-hoc pyserial snippets.**
 - The script holds DTR/RTS low so connecting does NOT reset the ESP32.
 - Output goes to stdout; status/errors go to stderr. Exit code 1 on failure.
 ```bash
 # Capture 10s (default), print to stdout:
-python3 scripts/serial_monitor.py
+python3 tools/serial_monitor.py
 
 # Capture longer on a specific port:
-python3 scripts/serial_monitor.py --port /dev/ttyUSB1 --duration 30
+python3 tools/serial_monitor.py --port /dev/ttyUSB1 --duration 30
 
 # Wait for a known boot message, then exit (preferred for verification tasks):
-python3 scripts/serial_monitor.py --until "setup complete" --timeout 20
+python3 tools/serial_monitor.py --until "init complete" --timeout 20
 
 # Stream continuously (human monitoring only — not for agents):
-python3 scripts/serial_monitor.py --stream
+python3 tools/serial_monitor.py --stream
 ```
 
 ### Build Commands (Quick Reference)
