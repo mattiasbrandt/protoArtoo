@@ -169,6 +169,20 @@ struct RobotState {
     bool cfg_ch8ModeLock;            // Default: false
     uint8_t cfg_audioVolume;         // Default: 20 (0-30)
 
+    // NVS-backed named sound track indices (mirror AudioNamedTracks defaults).
+    // NVS keys: snd_scream, snd_faint, snd_leia, snd_cantina_s, snd_sw,
+    //           snd_march, snd_cantina_l, snd_startup, snd_rand_min, snd_rand_max
+    uint16_t cfg_snd_scream;     // $S  default 126
+    uint16_t cfg_snd_faint;      // $F  default 128
+    uint16_t cfg_snd_leia;       // $L  default 151
+    uint16_t cfg_snd_cantina_s;  // $c  default 176
+    uint16_t cfg_snd_sw_theme;   // $W  default 177
+    uint16_t cfg_snd_imp_march;  // $M  default 178
+    uint16_t cfg_snd_cantina_l;  // $C  default 180
+    uint16_t cfg_snd_startup;    // $B  default 255
+    uint16_t cfg_snd_rand_min;   // random pool start  default 1
+    uint16_t cfg_snd_rand_max;   // random pool end    default 100
+
     // Servo config
     uint16_t cfg_arm1_open_us;
     uint16_t cfg_arm1_close_us;

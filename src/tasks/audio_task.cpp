@@ -199,9 +199,10 @@ void audioTask(void* pvParameters) {
     uint32_t lastRandMs    = 0;
     uint8_t currentVol     = 20;     // updated from config on first enable
 
-    // Named tracks: use compile-time defaults for T02.
-    // T07 will populate these from NVS-backed robotState fields.
-    const AudioNamedTracks named{};
+    // Named tracks populated from NVS-backed robotState fields.
+    // Updated at runtime via POST /api/audio/tracks.
+    // Refreshed on each enable cycle so changes take effect without reboot.
+    AudioNamedTracks named{};
 
     AudioCommand cmd{};
 
@@ -239,7 +240,15 @@ void audioTask(void* pvParameters) {
         // ----------------------------------------------------------------
         if (!driverInitialized) {
             taskENTER_CRITICAL(&robotStateMux);
-            currentVol = robotState.cfg_audioVolume;
+            currentVol      = robotState.cfg_audioVolume;
+            named.scream    = robotState.cfg_snd_scream;
+            named.faint     = robotState.cfg_snd_faint;
+            named.leia      = robotState.cfg_snd_leia;
+            named.cantina_s = robotState.cfg_snd_cantina_s;
+            named.sw_theme  = robotState.cfg_snd_sw_theme;
+            named.imp_march = robotState.cfg_snd_imp_march;
+            named.cantina_l = robotState.cfg_snd_cantina_l;
+            named.startup   = robotState.cfg_snd_startup;
             taskEXIT_CRITICAL(&robotStateMux);
             driver->begin();
             driver->setVolume(currentVol);
@@ -303,9 +312,15 @@ void audioTask(void* pvParameters) {
             uint32_t now = millis();
             if ((uint32_t)(now - lastRandMs) >= AUDIO_RAND_INTERVAL_MS) {
                 lastRandMs = now;
+                // Read random pool bounds from NVS-backed config (may change at runtime).
+                taskENTER_CRITICAL(&robotStateMux);
+                uint16_t randMin = robotState.cfg_snd_rand_min;
+                uint16_t randMax = robotState.cfg_snd_rand_max;
+                taskEXIT_CRITICAL(&robotStateMux);
+                if (randMax < randMin) randMax = randMin;  // guard against bad config
                 // esp_random() uses the ESP32 hardware RNG — no seeding needed.
-                uint32_t range = AUDIO_RAND_TRACK_MAX - AUDIO_RAND_TRACK_MIN + 1;
-                uint16_t track = (uint16_t)(AUDIO_RAND_TRACK_MIN + (esp_random() % range));
+                uint32_t range = (uint32_t)(randMax - randMin) + 1;
+                uint16_t track = (uint16_t)(randMin + (esp_random() % range));
                 driver->playTrack(track);
                 PA_LOG_DEBUG(TAG, "random track %u", (unsigned)track);
             }

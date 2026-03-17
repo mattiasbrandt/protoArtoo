@@ -2,16 +2,23 @@
 // src/web/api_audio.cpp
 //
 // Audio REST API
-//   POST /api/audio — structured audio control
+//   POST /api/audio          — structured audio control
+//   GET  /api/audio/tracks   — named track assignments + random range
+//   POST /api/audio/tracks   — update a named track or random range (NVS-persisted)
 //
-// Accepted form parameters:
+// POST /api/audio params:
 //   action=play   &track=N      — play track N (1-based)
 //   action=stop                 — stop playback
 //   action=volume &level=N      — set absolute volume (0–30)
 //   action=dollar &cmd=$R       — raw $ command (any from the $ command set)
 //
-// All commands are non-blocking: they enqueue to audioCmdQueue (timeout 0)
-// and return immediately. The actual serial TX happens in AudioTask on Core 0.
+// POST /api/audio/tracks params:
+//   key=<name>   &track=N       — set named track (1–999)
+//   key=rand_min &track=N       — set random pool minimum
+//   key=rand_max &track=N       — set random pool maximum
+//
+// Valid key names: scream faint leia cantina_s sw_theme imp_march cantina_l
+//                  startup rand_min rand_max
 // =============================================================================
 
 #include "api_audio.h"
@@ -19,7 +26,12 @@
 #include <Arduino.h>
 #include <ESPAsyncWebServer.h>
 
+#include <Preferences.h>
+#include <stdio.h>
+
+#include "audio_dollar_parser.h"
 #include "audio_task.h"
+#include "config.h"
 #include "logging.h"
 #include "mood.h"
 #include "robot_state.h"
@@ -27,6 +39,109 @@
 static const char* TAG = "WebServer";
 
 void registerAudioRoutes(AsyncWebServer& server) {
+    // NOTE: /api/audio/tracks must be registered BEFORE /api/audio because
+    // ESPAsyncWebServer matches routes in registration order and /api/audio
+    // would otherwise match /api/audio/tracks requests first.
+
+    // ---- GET /api/audio/tracks ----
+    server.on("/api/audio/tracks", HTTP_GET, [](AsyncWebServerRequest* req) {
+        uint16_t scream, faint, leia, cantinaS, swTheme, impMarch, cantinaL, startup;
+        uint16_t randMin, randMax;
+        taskENTER_CRITICAL(&robotStateMux);
+        scream    = robotState.cfg_snd_scream;
+        faint     = robotState.cfg_snd_faint;
+        leia      = robotState.cfg_snd_leia;
+        cantinaS  = robotState.cfg_snd_cantina_s;
+        swTheme   = robotState.cfg_snd_sw_theme;
+        impMarch  = robotState.cfg_snd_imp_march;
+        cantinaL  = robotState.cfg_snd_cantina_l;
+        startup   = robotState.cfg_snd_startup;
+        randMin   = robotState.cfg_snd_rand_min;
+        randMax   = robotState.cfg_snd_rand_max;
+        taskEXIT_CRITICAL(&robotStateMux);
+
+        static char body[256];
+        snprintf(body, sizeof(body),
+                 "{\"scream\":%u,\"faint\":%u,\"leia\":%u,"
+                 "\"cantina_s\":%u,\"sw_theme\":%u,\"imp_march\":%u,"
+                 "\"cantina_l\":%u,\"startup\":%u,"
+                 "\"rand_min\":%u,\"rand_max\":%u}",
+                 scream, faint, leia, cantinaS, swTheme, impMarch,
+                 cantinaL, startup, randMin, randMax);
+        req->send(200, "application/json", body);
+    });
+
+    // ---- POST /api/audio/tracks ----
+    server.on("/api/audio/tracks", HTTP_POST, [](AsyncWebServerRequest* req) {
+        const AsyncWebParameter* keyParam   = req->getParam("key",   true);
+        const AsyncWebParameter* trackParam = req->getParam("track", true);
+        if (!keyParam || !trackParam) {
+            req->send(400, "application/json",
+                      "{\"ok\":false,\"error\":\"requires key and track parameters\"}");
+            return;
+        }
+
+        int track = trackParam->value().toInt();
+        if (track < 1 || track > 999) {
+            req->send(400, "application/json",
+                      "{\"ok\":false,\"error\":\"track must be 1–999\"}");
+            return;
+        }
+        uint16_t t = (uint16_t)track;
+        const String& key = keyParam->value();
+
+        bool found = true;
+        taskENTER_CRITICAL(&robotStateMux);
+        if      (key == "scream")    robotState.cfg_snd_scream    = t;
+        else if (key == "faint")     robotState.cfg_snd_faint     = t;
+        else if (key == "leia")      robotState.cfg_snd_leia      = t;
+        else if (key == "cantina_s") robotState.cfg_snd_cantina_s = t;
+        else if (key == "sw_theme")  robotState.cfg_snd_sw_theme  = t;
+        else if (key == "imp_march") robotState.cfg_snd_imp_march = t;
+        else if (key == "cantina_l") robotState.cfg_snd_cantina_l = t;
+        else if (key == "startup")   robotState.cfg_snd_startup   = t;
+        else if (key == "rand_min")  robotState.cfg_snd_rand_min  = t;
+        else if (key == "rand_max")  robotState.cfg_snd_rand_max  = t;
+        else                         found = false;
+        taskEXIT_CRITICAL(&robotStateMux);
+
+        if (!found) {
+            req->send(400, "application/json",
+                      "{\"ok\":false,\"error\":\"unknown key\"}");
+            return;
+        }
+
+        // Persist to NVS — dedicated mini-write for this field only
+        Preferences prefs;
+        bool ok = false;
+        if (prefs.begin(NVS_NAMESPACE, false)) {
+            const char* nvsKey = nullptr;
+            if      (key == "scream")    nvsKey = "snd_scream";
+            else if (key == "faint")     nvsKey = "snd_faint";
+            else if (key == "leia")      nvsKey = "snd_leia";
+            else if (key == "cantina_s") nvsKey = "snd_cantina_s";
+            else if (key == "sw_theme")  nvsKey = "snd_sw";
+            else if (key == "imp_march") nvsKey = "snd_march";
+            else if (key == "cantina_l") nvsKey = "snd_cantina_l";
+            else if (key == "startup")   nvsKey = "snd_startup";
+            else if (key == "rand_min")  nvsKey = "snd_rand_min";
+            else if (key == "rand_max")  nvsKey = "snd_rand_max";
+            if (nvsKey) {
+                ok = prefs.putUShort(nvsKey, t) > 0;
+            }
+            prefs.end();
+        }
+
+        PA_LOG_INFO(TAG, "[AUDIO] POST /api/audio/tracks key=%s track=%u",
+                    key.c_str(), (unsigned)t);
+        if (ok) {
+            req->send(200, "application/json", "{\"ok\":true}");
+        } else {
+            req->send(500, "application/json",
+                      "{\"ok\":false,\"error\":\"NVS write failed\"}");
+        }
+    });
+
     // POST /api/mood — apply a mood preset (dual-path: audio + dome TX)
     server.on("/api/mood", HTTP_POST, [](AsyncWebServerRequest* req) {
         const AsyncWebParameter* moodParam = req->getParam("mood", true);

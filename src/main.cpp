@@ -9,6 +9,7 @@
 #include <Preferences.h>
 #include <esp_task_wdt.h>
 
+#include "audio_dollar_parser.h"
 #include "audio_task.h"
 #include "dome_link.h"
 #include "mood.h"
@@ -253,7 +254,17 @@ void loadConfigToState() {
     robotState.cfg_sbusTimeoutMs = prefs.getULong("sbus_tmo", SBUS_TIMEOUT_MS);
     robotState.cfg_webDriveTimeoutMs = prefs.getULong("web_tmo", WEB_DRIVE_TIMEOUT_MS);
     robotState.cfg_ch8ModeLock = prefs.getBool("ch8_lock", false);
-    robotState.cfg_audioVolume = (uint8_t)prefs.getUChar("aud_vol", 20);
+    robotState.cfg_audioVolume    = (uint8_t)prefs.getUChar("aud_vol", 20);
+    robotState.cfg_snd_scream    = prefs.getUShort("snd_scream",    AUDIO_TRACK_SCREAM);
+    robotState.cfg_snd_faint     = prefs.getUShort("snd_faint",     AUDIO_TRACK_FAINT);
+    robotState.cfg_snd_leia      = prefs.getUShort("snd_leia",      AUDIO_TRACK_LEIA);
+    robotState.cfg_snd_cantina_s = prefs.getUShort("snd_cantina_s", AUDIO_TRACK_CANTINA_S);
+    robotState.cfg_snd_sw_theme  = prefs.getUShort("snd_sw",        AUDIO_TRACK_SW_THEME);
+    robotState.cfg_snd_imp_march = prefs.getUShort("snd_march",     AUDIO_TRACK_IMP_MARCH);
+    robotState.cfg_snd_cantina_l = prefs.getUShort("snd_cantina_l", AUDIO_TRACK_CANTINA_L);
+    robotState.cfg_snd_startup   = prefs.getUShort("snd_startup",   AUDIO_TRACK_STARTUP);
+    robotState.cfg_snd_rand_min  = prefs.getUShort("snd_rand_min",  AUDIO_RAND_TRACK_MIN);
+    robotState.cfg_snd_rand_max  = prefs.getUShort("snd_rand_max",  AUDIO_RAND_TRACK_MAX);
 
     robotState.cfg_arm1_open_us = prefs.getUShort("arm1_op", 2000);
     robotState.cfg_arm1_close_us = prefs.getUShort("arm1_cl", 1000);
@@ -496,6 +507,8 @@ bool saveConfigToNvs() {
     uint32_t webDriveTimeoutMs;
     bool ch8ModeLock;
     uint8_t audioVolume;
+    uint16_t sndScream, sndFaint, sndLeia, sndCantinaS, sndSwTheme;
+    uint16_t sndImpMarch, sndCantinaL, sndStartup, sndRandMin, sndRandMax;
     uint16_t arm1Open, arm1Close, arm2Open, arm2Close;
     float domeMin, domeMax;
     uint16_t seqOpenMs, seqCloseMs;
@@ -518,7 +531,17 @@ bool saveConfigToNvs() {
     sbusTimeoutMs = robotState.cfg_sbusTimeoutMs;
     webDriveTimeoutMs = robotState.cfg_webDriveTimeoutMs;
     ch8ModeLock = robotState.cfg_ch8ModeLock;
-    audioVolume = robotState.cfg_audioVolume;
+    audioVolume  = robotState.cfg_audioVolume;
+    sndScream    = robotState.cfg_snd_scream;
+    sndFaint     = robotState.cfg_snd_faint;
+    sndLeia      = robotState.cfg_snd_leia;
+    sndCantinaS  = robotState.cfg_snd_cantina_s;
+    sndSwTheme   = robotState.cfg_snd_sw_theme;
+    sndImpMarch  = robotState.cfg_snd_imp_march;
+    sndCantinaL  = robotState.cfg_snd_cantina_l;
+    sndStartup   = robotState.cfg_snd_startup;
+    sndRandMin   = robotState.cfg_snd_rand_min;
+    sndRandMax   = robotState.cfg_snd_rand_max;
     arm1Open = robotState.cfg_arm1_open_us;
     arm1Close = robotState.cfg_arm1_close_us;
     arm2Open = robotState.cfg_arm2_open_us;
@@ -601,6 +624,16 @@ bool saveConfigToNvs() {
     prefs.putULong("web_tmo", webDriveTimeoutMs);
     prefs.putBool("ch8_lock", ch8ModeLock);
     prefs.putUChar("aud_vol", audioVolume);
+    prefs.putUShort("snd_scream",    sndScream);
+    prefs.putUShort("snd_faint",     sndFaint);
+    prefs.putUShort("snd_leia",      sndLeia);
+    prefs.putUShort("snd_cantina_s", sndCantinaS);
+    prefs.putUShort("snd_sw",        sndSwTheme);
+    prefs.putUShort("snd_march",     sndImpMarch);
+    prefs.putUShort("snd_cantina_l", sndCantinaL);
+    prefs.putUShort("snd_startup",   sndStartup);
+    prefs.putUShort("snd_rand_min",  sndRandMin);
+    prefs.putUShort("snd_rand_max",  sndRandMax);
     prefs.putUShort("arm1_op", arm1Open);
     prefs.putUShort("arm1_cl", arm1Close);
     prefs.putUShort("arm2_op", arm2Open);
