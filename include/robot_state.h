@@ -153,6 +153,11 @@ struct RobotState {
     uint32_t domeHbRx;
     uint32_t bodyHbTx;
 
+    // --- Mood ---
+    // Active mood SE1x index: 10=Quiet, 11=Full-Awake, 13=Mid-Awake, 14=Awake+.
+    // 0 = unset (no mood applied this session). NVS key: "last_mood".
+    uint8_t activeMood;
+
     // --- Web control state ---
     bool webControlEnabled;
     bool rcDebugMode;  // Enable verbose RC/SBUS logging when RC page is active

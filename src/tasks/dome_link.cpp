@@ -39,6 +39,7 @@
 #include "config.h"
 #include "logging.h"
 #include "marcduino_rx.h"
+#include "mood.h"
 #include "robot_state.h"
 
 static const char* TAG = "DomeLink";
@@ -92,6 +93,16 @@ static void parseDomeRxLine(const char* line) {
         taskEXIT_CRITICAL(&robotStateMux);
         PA_LOG_DEBUG(TAG, "dome heartbeat rx (#%lu)", (unsigned long)rxCount);
         return;
+    }
+
+    // Intercept mood commands (:SE10, :SE11, :SE13, :SE14) before general
+    // dispatch. fromDome=true suppresses the dome TX echo.
+    if (strncmp(line, ":SE", 3) == 0) {
+        int seqId = atoi(line + 3);
+        if (seqId == 10 || seqId == 11 || seqId == 13 || seqId == 14) {
+            applyMood((uint8_t)seqId, true);
+            return;
+        }
     }
 
     // All other commands — route through standard Marcduino body parser.

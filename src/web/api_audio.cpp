@@ -21,11 +21,33 @@
 
 #include "audio_task.h"
 #include "logging.h"
+#include "mood.h"
 #include "robot_state.h"
 
 static const char* TAG = "WebServer";
 
 void registerAudioRoutes(AsyncWebServer& server) {
+    // POST /api/mood — apply a mood preset (dual-path: audio + dome TX)
+    server.on("/api/mood", HTTP_POST, [](AsyncWebServerRequest* req) {
+        const AsyncWebParameter* moodParam = req->getParam("mood", true);
+        if (!moodParam) {
+            req->send(400, "application/json",
+                      "{\"ok\":false,\"error\":\"missing mood parameter\"}");
+            return;
+        }
+        int mood = moodParam->value().toInt();
+        // Valid mood IDs: 10 (Quiet), 11 (Full-Awake), 13 (Mid-Awake), 14 (Awake+)
+        if (mood != 10 && mood != 11 && mood != 13 && mood != 14) {
+            req->send(400, "application/json",
+                      "{\"ok\":false,\"error\":\"mood must be 10, 11, 13, or 14\"}");
+            return;
+        }
+        applyMood((uint8_t)mood);
+        PA_LOG_INFO(TAG, "[MOOD] POST /api/mood mood=%d", mood);
+        req->send(200, "application/json", "{\"ok\":true}");
+    });
+
+
     server.on("/api/audio", HTTP_POST, [](AsyncWebServerRequest* req) {
         const AsyncWebParameter* actionParam = req->getParam("action", true);
         if (!actionParam) {

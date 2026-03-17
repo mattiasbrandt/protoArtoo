@@ -136,6 +136,7 @@
       renderComponentStatus(payload);
       renderOpMode(payload);
       renderMoodDomeNote(payload);
+      renderActiveMood(payload);
     } catch (_error) {}
   };
 
@@ -226,6 +227,15 @@
   // ---- Mood Selector ----
   const moodDomeNote = document.getElementById("mood-dome-note");
 
+  function renderActiveMood(payload) {
+    if (!payload.activeMood) return;
+    document.querySelectorAll(".mood-btn").forEach(btn => {
+      const match = btn.dataset.cmd?.match(/:SE(\d+)/);
+      const btnMood = match ? parseInt(match[1], 10) : 0;
+      btn.classList.toggle("active", btnMood === payload.activeMood);
+    });
+  }
+
   function renderMoodDomeNote(payload) {
     if (!moodDomeNote) return;
     const domeConnected = !!payload.domeConnected;
@@ -234,12 +244,14 @@
 
   document.querySelectorAll(".mood-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
-      const cmd = btn.dataset.cmd;
-      if (!cmd) return;
-      // Optimistic active state — mark clicked button active
+      const match = btn.dataset.cmd?.match(/:SE(\d+)/);
+      if (!match) return;
+      const moodId = match[1];
+      // Optimistic active state
       document.querySelectorAll(".mood-btn").forEach(b => b.classList.remove("active"));
       btn.classList.add("active");
-      sendManualCommand(cmd);
+      const body = new URLSearchParams({ mood: moodId });
+      fetch("/api/mood", { method: "POST", body }).catch(() => {});
     });
   });
 

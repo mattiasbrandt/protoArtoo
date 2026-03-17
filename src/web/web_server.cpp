@@ -331,6 +331,7 @@ void buildStatusJson(char* buffer, size_t bufferSize) {
     bool enableRcCh1, enableRcCh2, enableRcCh3, enableRcCh4, enableRcCh5, enableRcCh6;
     bool enableS1Hoverboard, enableS2Sound, enableS3DomeCtrl;
     bool audioActive;
+    uint8_t activeMood;
     RcInputMode rcInputMode;
     uint16_t arm1TargetUs;
     uint16_t arm2TargetUs;
@@ -381,6 +382,7 @@ void buildStatusJson(char* buffer, size_t bufferSize) {
     enableS2Sound = robotState.cfg_enable_s2_sound;
     enableS3DomeCtrl = robotState.cfg_enable_s3_dome_ctrl;
     audioActive = robotState.audioActive;
+    activeMood  = robotState.activeMood;
     taskEXIT_CRITICAL(&robotStateMux);
     uptimeMs = millis();
     heapFree = ESP.getFreeHeap();
@@ -396,13 +398,15 @@ void buildStatusJson(char* buffer, size_t bufferSize) {
         "\"failsafeCount\":%lu,\"uptimeMs\":%lu,\"firmwareVersion\":\"%s\","
         "\"heapFree\":%lu,\"heapMin\":%lu,\"wifiRssi\":%ld,\"wifiConnected\":%s,"
         "\"wifiClientConnected\":%s,"
-        "\"littleFsReady\":%s",
+        "\"littleFsReady\":%s,"
+        "\"activeMood\":%u",
         estop ? "true" : "false", webControlEnabled ? "true" : "false",
         sbusSignalLost ? "true" : "false", sbusHwFailsafe ? "true" : "false",
         webDriveExpired ? "true" : "false", failsafeSource, driveSpeed, driveSteer,
         (double)speedLimitScale, stationary ? "true" : "false", failsafeCount, uptimeMs,
         PA_FIRMWARE_VERSION, heapFree, heapMin, wifiRssi, wifiClientConnected ? "true" : "false",
-        wifiClientConnected ? "true" : "false", littleFsReady ? "true" : "false");
+        wifiClientConnected ? "true" : "false", littleFsReady ? "true" : "false",
+        (unsigned)activeMood);
 
     // Conditionally append enabled-component keys — disabled components are absent,
     // not emitted as false placeholders (Phase 3 status/dashboard contract).

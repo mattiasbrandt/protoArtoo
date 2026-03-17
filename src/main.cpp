@@ -11,6 +11,7 @@
 
 #include "audio_task.h"
 #include "dome_link.h"
+#include "mood.h"
 #include "dome_task.h"
 #include "drive.h"
 #include "log_buffer.h"
@@ -306,6 +307,7 @@ void loadConfigToState() {
     robotState.cfg_enable_s2_sound = prefs.getBool("en_s2", true);
     robotState.cfg_enable_s3_dome_ctrl = prefs.getBool("en_s3", true);
     robotState.cfg_stationary = prefs.getBool("op_mode", false);
+    robotState.activeMood     = prefs.getUChar("last_mood", 0);
 
     RcBindingNvsSpec bindingSpecs[] = {
         {"rcp_drv", &robotState.cfg_rc_pwm_drive_speed, defaultPwmBinding(1)},
@@ -742,6 +744,12 @@ void setup() {
 
     // SafetyMonitorTask: 10 Hz audit on Core 0 (non-RT, low priority)
     xTaskCreatePinnedToCore(safetyMonitorTask, "SafetyMonitor", 2048, nullptr, 2, nullptr, 0);
+
+    // Restore last mood — audio component only (dome link not yet established at boot).
+    // domeConnected() returns false here so applyMood() naturally skips dome TX.
+    if (robotState.activeMood != 0) {
+        applyMood(robotState.activeMood);
+    }
 
     // Start WiFi AP and web server
     webServerInit();
