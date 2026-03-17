@@ -11,6 +11,7 @@
 
 #include <unity.h>
 
+#include "audio_dollar_parser.h"
 #include "mood.h"
 
 void setUp() {}
@@ -102,6 +103,52 @@ void test_only_valid_ids_return_non_null() {
 }
 
 // -----------------------------------------------------------------------------
+// Integration: moodAudioCommand() output is correctly understood by parseAudioDollar()
+// This closes the loop between the mood system and the AudioTask dollar parser.
+// -----------------------------------------------------------------------------
+
+void test_quiet_mood_cmd_parses_to_stop() {
+    const char* cmd = moodAudioCommand(10);
+    TEST_ASSERT_NOT_NULL(cmd);
+    AudioAction action = parseAudioDollar(cmd);
+    TEST_ASSERT_EQUAL(AUDIO_ACTION_STOP, action.type);
+}
+
+void test_full_awake_mood_cmd_parses_to_random_on() {
+    const char* cmd = moodAudioCommand(11);
+    TEST_ASSERT_NOT_NULL(cmd);
+    AudioAction action = parseAudioDollar(cmd);
+    TEST_ASSERT_EQUAL(AUDIO_ACTION_RANDOM_ON, action.type);
+}
+
+void test_mid_awake_mood_cmd_parses_to_random_on() {
+    const char* cmd = moodAudioCommand(13);
+    TEST_ASSERT_NOT_NULL(cmd);
+    AudioAction action = parseAudioDollar(cmd);
+    TEST_ASSERT_EQUAL(AUDIO_ACTION_RANDOM_ON, action.type);
+}
+
+void test_awake_plus_mood_cmd_parses_to_random_on() {
+    const char* cmd = moodAudioCommand(14);
+    TEST_ASSERT_NOT_NULL(cmd);
+    AudioAction action = parseAudioDollar(cmd);
+    TEST_ASSERT_EQUAL(AUDIO_ACTION_RANDOM_ON, action.type);
+}
+
+void test_all_valid_moods_produce_parseable_commands() {
+    // Every valid mood must yield a $ command that parseAudioDollar handles —
+    // AUDIO_ACTION_NONE would mean AudioTask would silently do nothing.
+    const uint8_t validMoods[] = {10, 11, 13, 14};
+    for (size_t i = 0; i < sizeof(validMoods); i++) {
+        const char* cmd = moodAudioCommand(validMoods[i]);
+        TEST_ASSERT_NOT_NULL(cmd);
+        AudioAction action = parseAudioDollar(cmd);
+        TEST_ASSERT_NOT_EQUAL_MESSAGE(AUDIO_ACTION_NONE, action.type,
+            "mood audio command must not parse to NONE");
+    }
+}
+
+// -----------------------------------------------------------------------------
 
 int main(int argc, char** argv) {
     UNITY_BEGIN();
@@ -121,6 +168,13 @@ int main(int argc, char** argv) {
     RUN_TEST(test_awake_starts_with_dollar);
 
     RUN_TEST(test_only_valid_ids_return_non_null);
+
+    // Integration
+    RUN_TEST(test_quiet_mood_cmd_parses_to_stop);
+    RUN_TEST(test_full_awake_mood_cmd_parses_to_random_on);
+    RUN_TEST(test_mid_awake_mood_cmd_parses_to_random_on);
+    RUN_TEST(test_awake_plus_mood_cmd_parses_to_random_on);
+    RUN_TEST(test_all_valid_moods_produce_parseable_commands);
 
     return UNITY_END();
 }

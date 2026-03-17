@@ -16,6 +16,7 @@
 #include "audio_task.h"
 #include "dome_link.h"
 #include "marcduino_rx.h"
+#include "mood.h"
 #include "config.h"
 #include "logging.h"
 #include "robot_state.h"
@@ -41,6 +42,15 @@ bool executeManualCommand(const String& raw) {
 
         // : and # — body-processed Marcduino: servo sequences, panel cmds, config
         if (prefix == ':' || prefix == '#') {
+            // Mood commands (:SE10/11/13/14) are not valid body sequences so
+            // parseMarcduinoCommand() would silently discard them. Intercept first.
+            if (strncmp(command.c_str(), ":SE", 3) == 0) {
+                int seqId = atoi(command.c_str() + 3);
+                if (seqId == 10 || seqId == 11 || seqId == 13 || seqId == 14) {
+                    applyMood((uint8_t)seqId);
+                    return true;
+                }
+            }
             parseMarcduinoCommand(command.c_str());
             return true;  // always accept — body handles or discards per routing table
         }

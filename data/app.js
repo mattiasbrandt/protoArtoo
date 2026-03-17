@@ -228,11 +228,14 @@
   const moodDomeNote = document.getElementById("mood-dome-note");
 
   function renderActiveMood(payload) {
-    if (!payload.activeMood) return;
+    // Always update — activeMood=0 means unset, which clears all active states.
+    // Without this, a button clicked optimistically before the first poll would
+    // remain visually active after a reboot with no stored mood.
+    const activeMood = payload.activeMood || 0;
     document.querySelectorAll(".mood-btn").forEach(btn => {
       const match = btn.dataset.cmd?.match(/:SE(\d+)/);
       const btnMood = match ? parseInt(match[1], 10) : 0;
-      btn.classList.toggle("active", btnMood === payload.activeMood);
+      btn.classList.toggle("active", btnMood !== 0 && btnMood === activeMood);
     });
   }
 

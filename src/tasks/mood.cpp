@@ -48,6 +48,10 @@ void applyMood(uint8_t moodId, bool fromDome) {
 
     // --- Persist to NVS ---
     // Dedicated mini-write — avoids saving entire config for a mood change.
+    // NOTE: applyMood() may be called from DomeLinkTask (Core 1) when a mood
+    // command arrives from dome serial. Flash writes take a few ms and will
+    // briefly stall DomeLinkTask. This is acceptable because mood changes are
+    // rare (user-initiated) and DomeLinkTask is not safety-critical real-time.
     Preferences prefs;
     if (prefs.begin(NVS_NAMESPACE, false)) {
         prefs.putUChar("last_mood", moodId);

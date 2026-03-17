@@ -745,10 +745,17 @@ void setup() {
     // SafetyMonitorTask: 10 Hz audit on Core 0 (non-RT, low priority)
     xTaskCreatePinnedToCore(safetyMonitorTask, "SafetyMonitor", 2048, nullptr, 2, nullptr, 0);
 
-    // Restore last mood — audio component only (dome link not yet established at boot).
-    // domeConnected() returns false here so applyMood() naturally skips dome TX.
+    // Restore last mood — audio component only.
+    // - Dome link is not yet established at boot, so dome TX is intentionally skipped.
+    // - We apply audio directly here rather than via applyMood() to avoid writing
+    //   last_mood back to NVS (we just read it; the value has not changed).
     if (robotState.activeMood != 0) {
-        applyMood(robotState.activeMood);
+        const char* bootAudioCmd = moodAudioCommand(robotState.activeMood);
+        if (bootAudioCmd) {
+            audioQueueDollar(bootAudioCmd, SRC_INTERNAL);
+            PA_LOG_INFO("main", "boot mood restore: SE%u -> %s",
+                        (unsigned)robotState.activeMood, bootAudioCmd);
+        }
     }
 
     // Start WiFi AP and web server
