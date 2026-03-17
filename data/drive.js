@@ -206,6 +206,8 @@
   // -------------------------------------------------------------------------
   // Drive settings with auto-save
   // -------------------------------------------------------------------------
+  const driveDisabledCard = document.getElementById("drive-disabled-card");
+
   const renderConfig = (payload) => {
     if (speedLimitMax)   speedLimitMax.value      = payload.speedLimitMax;
     if (webDriveTimeout) webDriveTimeout.value    = payload.webDriveTimeoutMs;
@@ -213,6 +215,9 @@
     if (configFeedback) {
       configFeedback.textContent = `Settings loaded at ${new Date().toLocaleTimeString()}`;
       configFeedback.className = "feedback success";
+    }
+    if (driveDisabledCard) {
+      driveDisabledCard.classList.toggle("hidden", Boolean(payload.enableS1Hoverboard));
     }
   };
 

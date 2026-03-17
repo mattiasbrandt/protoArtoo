@@ -169,20 +169,26 @@
   // ---------------------------------------------------------------------------
   // Global audio state polling
   // ---------------------------------------------------------------------------
-  const audioStateBadge = document.getElementById("audio-state-badge");
+  const audioStateBadge  = document.getElementById("audio-state-badge");
+  const soundDisabledCard = document.getElementById("sound-disabled-card");
 
   const pollState = async () => {
     try {
       const res  = await fetch("/api/status", { cache: "no-store" });
       if (!res.ok) return;
       const data = await res.json();
-      if (!audioStateBadge) return;
 
-      const s2 = data.s2Sound;
-      if (!s2) {
+      const s2enabled = Boolean(data.s2Sound);
+      if (soundDisabledCard) {
+        soundDisabledCard.classList.toggle("hidden", s2enabled);
+      }
+
+      if (!audioStateBadge) return;
+      if (!s2enabled) {
         audioStateBadge.textContent = "Disabled";
         audioStateBadge.style.color = "var(--text-dim)";
       } else {
+        const s2 = data.s2Sound;
         audioStateBadge.textContent = s2.state === "playing" ? "🔊 Playing" : "✅ Idle";
         audioStateBadge.style.color = s2.state === "playing"
           ? "var(--success)" : "var(--text)";

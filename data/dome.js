@@ -70,6 +70,8 @@
   // -------------------------------------------------------------------------
   // Dome motor ESC settings with auto-save
   // -------------------------------------------------------------------------
+  const domeDisabledCard = document.getElementById("dome-disabled-card");
+
   const renderEsc = (payload) => {
     if (domeNeutral)    domeNeutral.value    = payload.domeNeutralUs;
     if (domeMinPulse)   domeMinPulse.value   = payload.domeMinPulseUs;
@@ -78,6 +80,9 @@
     if (escFeedback) {
       escFeedback.textContent = `Motor settings loaded at ${new Date().toLocaleTimeString()}`;
       escFeedback.className = "feedback success";
+    }
+    if (domeDisabledCard) {
+      domeDisabledCard.classList.toggle("hidden", Boolean(payload.enableDome));
     }
   };
 

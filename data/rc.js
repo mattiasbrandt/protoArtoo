@@ -699,6 +699,12 @@
         rcModeFeedback.textContent = `Receiver type: ${data.rcInputMode || "standard_pwm"}`;
         rcModeFeedback.className = "feedback success";
       }
+      const rcDisabledCard = document.getElementById("rc-disabled-card");
+      if (rcDisabledCard) {
+        const anyRcEnabled = data.enableRcCh1 || data.enableRcCh2 || data.enableRcCh3 ||
+                             data.enableRcCh4 || data.enableRcCh5 || data.enableRcCh6;
+        rcDisabledCard.classList.toggle("hidden", Boolean(anyRcEnabled));
+      }
     } catch (_error) {
       if (rcModeFeedback) {
         rcModeFeedback.textContent = "Failed to load receiver type";

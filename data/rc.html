@@ -32,6 +32,13 @@
     </nav>
 
     <!-- Receiver Type (shown first: this choice defines everything else on this page) -->
+    <!-- No RC inputs notice (hidden when any RC channel is enabled) -->
+    <div id="rc-disabled-card" class="card hidden">
+      <h3>🕹️ No RC Inputs Enabled</h3>
+      <div class="desc">No RC input channels are currently enabled — the receiver will be ignored at runtime. You can still configure bindings here. Go to
+        <a href="/setup.html">Setup</a> and enable at least <strong>CH1 — Drive / SBUS 1</strong> to activate RC input.</div>
+    </div>
+
     <div class="card">
       <h3>📡 Receiver Type</h3>
       <div class="desc">Select how your RC receiver connects to the controller. This setting determines which bindings and calibration values apply.</div>
