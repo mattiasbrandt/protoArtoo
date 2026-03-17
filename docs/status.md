@@ -21,7 +21,7 @@
 | Phase 2 — Web server + OTA | Complete — bench-tested baseline established |
 | Phase 3 — Servos + dome motor | **Bench-complete** — software bench-verified; hardware validation formally deferred; deferred items carried forward as T11/T12 in Phase 4 |
 | **Web UI/UX quality gate** | **CLEARED** — signed off 2026-03-15. See `tasks/web_ui_quality_gate.md` |
-| Phase 4 — Audio + full dome link | **In progress** — branch `phase/v0.4.0` active; T00 complete 2026-03-16 |
+| Phase 4 — Audio + full dome link | **In progress** — branch `phase/v0.4.0` active; T01/T02 compile-only (no bench run yet); see Phase 4 section below |
 | Phase 5 — Community release | Pending Phase 4 |
 
 ---
@@ -97,6 +97,23 @@ Tracked as T11 and T12 in `tasks/phase4-tasks.md`.
 - Dome ESC response — full wiring harness not connected
 - RC mapping with real transmitter/receiver — standard PWM and dual SBUS physical validation
 - Upload UX verification — firmware/filesystem upload flow confirmation
+
+---
+
+## Phase 4 Progress (v0.4.0)
+
+| Task | Description | Status |
+|---|---|---|
+| T00 | Phase branch setup, workflow alignment | Complete |
+| T01 | AudioDriver interface + soft UART backend | **compile-only** — no functional verification |
+| T02 | AudioTask, dollar parser, queue helpers | `parseAudioDollar()`: **native-tested** (26 tests); AudioTask / queue helpers / marcduino_rx routing: **compile-only** |
+| T03–T15 | Remaining Phase 4 tasks | Not started |
+
+**Verification terminology used in this project:**
+- `native-tested` — covered by `pio test -e native` passing
+- `compile-only` — builds clean; no functional verification performed
+- `bench-tested` — observed working on bare ESP32 over USB/WiFi (no Artoo PCB required)
+- `full-hardware-required` — needs Artoo PCB + peripherals connected and powered
 
 ---
 
