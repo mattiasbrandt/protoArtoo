@@ -21,7 +21,7 @@
 | Phase 2 — Web server + OTA | Complete — bench-tested baseline established |
 | Phase 3 — Servos + dome motor | **Bench-complete** — software bench-verified; hardware validation formally deferred; deferred items carried forward as T11/T12 in Phase 4 |
 | **Web UI/UX quality gate** | **CLEARED** — signed off 2026-03-15. See `tasks/web_ui_quality_gate.md` |
-| Phase 4 — Audio + full dome link | **In progress** — branch `phase/v0.4.0` active; T01/T02 compile-only (no bench run yet); see Phase 4 section below |
+| Phase 4 — Audio + full dome link | **In progress** — branch `phase/v0.4.0` active; all software tasks T01–T09, T13–T17 complete; T10–T12 hardware-blocked; see Phase 4 section below |
 | Phase 5 — Community release | Pending Phase 4 |
 
 ---
@@ -130,18 +130,18 @@ Tracked as T11 and T12 in `tasks/phase4-tasks.md`.
 |---|---|---|
 | T00 | Phase branch setup, workflow alignment | Complete |
 | T01 | AudioDriver interface + soft UART backend | **compile-only** — no functional verification |
-| T02 | AudioTask, dollar parser, queue helpers | `parseAudioDollar()`: **native-tested** (26 tests); AudioTask / queue helpers / marcduino_rx routing: **compile-only** |
-| T03/T04/T05 | DomeLinkTask — UART2 TX/RX, `#PAHB` heartbeat, Marcduino dispatch | `#PAHB` 1 Hz: **bench-tested**; RX/dome connection: **compile-only** (dome not connected) |
+| T02 | AudioTask, dollar parser, queue helpers | ✅ **bench-tested** — queue wiring, API routing, random playback, enable/disable; audio hardware output requires T10 |
+| T03/T04/T05 | DomeLinkTask — UART2 TX/RX, `#PAHB` heartbeat, Marcduino dispatch | `#PAHB` TX + `#APHB` RX intercept: **compile-only** (dome board not connected); UART2 wiring not validated |
 | T06 | Status API + dashboard — `dome_link` block, audio health indicators | ✅ **bench-tested** |
-| T07 | `/api/audio`, Marcduino routing in manual-command, serial.js fix | ✅ **bench-tested** |
-| T08 | Mood dual-path — `/api/mood`, boot restore, dome RX intercept | ✅ **bench-tested** |
-| T09 | Parser/track mapping tests + hardware validation plan | **native-tested** (401 tests); hardware checklist in tasks/phase4-tasks.md |
+| T07 | `/api/audio`, `/api/audio/tracks`, Marcduino routing, serial.js fix | ✅ **bench-tested** |
+| T08 | Mood dual-path — `/api/mood`, boot restore, dome RX intercept | ✅ **bench-tested** (audio path); dome TX path requires T10 hardware |
+| T09 | Parser/track mapping tests + hardware validation plan | ✅ **native-tested** (431 tests); hardware checklist in tasks/phase4-tasks.md |
 | T10 | Full hardware validation | **formally deferred** — audio module and dome board not connected; checklist recorded |
 | T11–T12 | Phase 3 carryover (SBUS failsafe, drive path, RC physical) | Pending hardware availability |
 | T13 | Reconcile NVS remapping claim | ✅ **closed** — stale doc; all RC bindings are NVS-backed (full load/save in main.cpp) |
-| T14 | RC learning mode re-evaluation | Low priority, post-T11/T12 |
+| T14 | RC detect-channel mode (was: learning mode) | ✅ **bench-tested** (UI, SSE raw channel arrays, detect logic 25 tests); physical RC button press pending T11/T12 hardware |
 | T15 | CHIRP Audio Trigger backend (`AUDIO_CHIRP`) | ✅ **compile-only** — driver implemented; `pio run -e protoArtoo_chirp_check` passes |
-| T16 | Static RAM reduction + heap improvement | ✅ **bench-tested** — BSS −11.5 KB; heapMin +28 KB (107 KB → 135 KB measured) |
+| T16 | Sound page (`sound.html`/`sound.js`) + `/api/audio/tracks` | ✅ **bench-tested** — page renders, named tracks NVS roundtrip, volume/stop/play API; audio output requires T10 |
 | T17 | Runtime log level selector on Setup page | ✅ **bench-tested** — dropdown renders, POST works, NVS-persisted; OTA bug fixed (UPDATE_SIZE_UNKNOWN) |
 
 **Verification terminology used in this project:**

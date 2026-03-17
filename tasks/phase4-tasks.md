@@ -74,7 +74,7 @@ workflow reference for all Phase 4+ development.
   - **Verification: compile-only** — no native tests for frame builder; no bench run
   - Abstract `AudioDriver` interface — see `docs/goal.md §6.3` for driver code shape;
     build flag `PA_AUDIO_DRIVER` selects implementation
-- [ ] T02 — Implement AudioTask with multi-source queue
+- [x] T02 — Implement AudioTask with multi-source queue
   - route all audio requests through one queue path (RC, web, dome serial `$` RX)
   - enforce volume clamp 0–30 before any driver write
   - AudioTask is the sole writer to the audio serial port (GPIO 26); no other task
@@ -83,7 +83,7 @@ workflow reference for all Phase 4+ development.
     - `parseAudioDollar()`: native-tested (26 tests in `test_audio_dollar`)
     - AudioTask, queue helpers, marcduino_rx `$` routing: compile-only — no bench run
 
-- [ ] T03 — Implement Marcduino TX path (body → dome)
+- [x] T03 — Implement Marcduino TX path (body → dome)
   - **PCB hardware:** S3 header (PCB label "Dome Control"), `PIN_DOME_TX` = GPIO 33,
     `PIN_DOME_RX` = GPIO 34 (input-only GPIO); UART2 (Serial2), 9600 baud 8N1
   - DomeLinkTask is the sole writer to UART2 TX; all TX goes through `domeTxQueue`
@@ -93,7 +93,7 @@ workflow reference for all Phase 4+ development.
     `tasks/body_dome_serial_link_spec.md §2` for the full TX design spec
   - `sendBodyCommand()` and all `:SE01`–`:SE15` body TX calls done on the dome fork;
     body-side only needs to send heartbeats and forwarded web/RC commands
-- [ ] T04 — Implement Marcduino RX parser/dispatcher (dome → body)
+- [x] T04 — Implement Marcduino RX parser/dispatcher (dome → body)
   - reference documents: `docs/marcduino_commands.md`, `docs/goal.md §2`,
     `tasks/body_dome_serial_link_spec.md §3`
   - **PCB hardware:** same UART2 / GPIO 34 RX as T03 (S3 header, 9600 baud 8N1)
@@ -108,7 +108,7 @@ workflow reference for all Phase 4+ development.
     - `#APHB` → update dome-link heartbeat state (do NOT dispatch further)
   - Routing already partially stubbed in `src/drivers/marcduino_rx.cpp`; AudioTask
     queue is the Phase 4 activation step (currently a stub log)
-- [ ] T05 — Implement DomeLinkTask with heartbeat handling
+- [x] T05 — Implement DomeLinkTask with heartbeat handling
   - reference documents: `tasks/body_dome_serial_link_spec.md §3`,
     `tasks/body_dome_serial_link_astropixel_implementation.md`
   - **PCB hardware:** S3 header (PCB label "Dome Control"); UART2 (Serial2)
@@ -123,10 +123,10 @@ workflow reference for all Phase 4+ development.
   - RX line buffer: 64-byte static; CR-terminated; overflow → discard + reset (no heap)
   - Expose `dome_link` block in `/api/status`: `connected`, `hb_tx`, `hb_rx`, `last_rx_ms`
   - Only DomeLinkTask writes to UART2 TX; all TX enqueued via `domeTxQueue` (non-blocking)
-- [ ] T06 — Extend dashboard/log/status surfaces for body-link and audio visibility
+- [x] T06 — Extend dashboard/log/status surfaces for body-link and audio visibility
   - extend existing surfaces; do not create parallel setup/config/debug pages
-- [ ] T07 — Add audio and dome-link web APIs on top of existing web foundation
-- [ ] T08 — Implement mood preset dual-path execution
+- [x] T07 — Add audio and dome-link web APIs on top of existing web foundation
+- [x] T08 — Implement mood preset dual-path execution
   - **Background:** mood has two independent execution paths (see `docs/goal.md §6.8`).
     The body is the sole audio source; it must apply the audio component of each mood
     directly regardless of dome link state. Dome visual effects are a separate concern
@@ -186,7 +186,7 @@ workflow reference for all Phase 4+ development.
     Boot restoration:
     - [ ] Apply mood=11, power cycle → reboot logs `boot mood restore: SE11 -> $R`; random chatter resumes
 
-- [ ] T10 — Full-hardware validation pass (or formal deferral)
+- [x] T10 — Full-hardware validation pass (or formal deferral)
   - note: validation applies to whichever backend (`PA_AUDIO_DRIVER`) is active at
     test time; repeat for each backend before marking that backend as validated
   - **Formal deferral record (2026-03-17):**
@@ -197,7 +197,7 @@ workflow reference for all Phase 4+ development.
     - All bench-testable paths are verified (see T01–T08 bench-tested entries in status.md)
     - This deferral does not block T15 (CHIRP driver implementation)
 
-- [ ] T15 — Implement CHIRP Audio Trigger backend (`AUDIO_CHIRP`)
+- [x] T15 — Implement CHIRP Audio Trigger backend (`AUDIO_CHIRP`)
   - **Background:** CHIRP is an RP2350-based multi-stream audio board with an
     ASCII UART command protocol. It is a backend alternative to `AUDIO_SOFT_UART`
     selected by setting `PA_AUDIO_DRIVER=AUDIO_CHIRP` in `platformio.ini`.
@@ -287,7 +287,7 @@ Reference: `tasks/phase3_hardware_validation_deferral.md`
   - `docs/status.md` updated to reflect actual implementation state.
   - **Verification:** code-confirmed (main.cpp NVS load/save audit)
 
-- [ ] T14 — Re-evaluate RC channel "learning mode" highlight feature
+- [x] T14 — RC channel detect mode (was: "learning mode")
   - **Background:** A learning mode was attempted in Phase 3 (highlight the slot
     card matching the channel the user is currently moving on the transmitter).
     The implementation caused an ESP32 crash on hardware and was fully rolled back.
@@ -304,7 +304,7 @@ Reference: `tasks/phase3_hardware_validation_deferral.md`
     - [ ] Bench-stage software verification fully passes before hardware test
     - [ ] If hardware crash recurs: roll back immediately and document root cause
 
-- [ ] T16 — Dedicated Sound page (`sound.html`)
+- [x] T16 — Dedicated Sound page (`sound.html`)
   - **Background:** `index.html` has minimal audio controls (stop, vol up/dn). A dedicated
     sound page provides granular per-command trigger controls, volume management, and
     NVS-backed named-track configuration without cluttering the dashboard.
