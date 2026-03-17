@@ -108,7 +108,7 @@ void registerStatusRoutes(AsyncWebServer& server) {
     });
 
     server.on("/api/status", HTTP_GET, [](AsyncWebServerRequest* req) {
-        char body[768];
+        char body[1024];
         buildStatusJson(body, sizeof(body));
         req->send(200, "application/json", body);
     });

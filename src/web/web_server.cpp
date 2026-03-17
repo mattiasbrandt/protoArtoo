@@ -329,6 +329,7 @@ void buildStatusJson(char* buffer, size_t bufferSize) {
     bool enableArm1, enableArm2, enableAux1, enableAux2, enableAux3, enableDome;
     bool enableRcCh1, enableRcCh2, enableRcCh3, enableRcCh4, enableRcCh5, enableRcCh6;
     bool enableS1Hoverboard, enableS2Sound, enableS3DomeCtrl;
+    bool audioActive;
     RcInputMode rcInputMode;
     uint16_t arm1TargetUs;
     uint16_t arm2TargetUs;
@@ -378,6 +379,7 @@ void buildStatusJson(char* buffer, size_t bufferSize) {
     enableS1Hoverboard = robotState.cfg_enable_s1_hoverboard;
     enableS2Sound = robotState.cfg_enable_s2_sound;
     enableS3DomeCtrl = robotState.cfg_enable_s3_dome_ctrl;
+    audioActive = robotState.audioActive;
     taskEXIT_CRITICAL(&robotStateMux);
     uptimeMs = millis();
     heapFree = ESP.getFreeHeap();
@@ -518,8 +520,9 @@ void buildStatusJson(char* buffer, size_t bufferSize) {
             }
         }
         if (enableS2Sound) {
-            appendPeripheralStatus(pos, remaining, "s2Sound", "idle",
-                                   "Configured, live playback telemetry unavailable");
+            appendPeripheralStatus(pos, remaining, "s2Sound",
+                                   audioActive ? "playing" : "idle",
+                                   audioActive ? "Playback active" : "Ready, no active playback");
         }
         if (enableS3DomeCtrl) {
             if (domeLastSeenMs == 0) {
@@ -537,6 +540,32 @@ void buildStatusJson(char* buffer, size_t bufferSize) {
                          uptimeMs - domeLastSeenMs);
                 appendPeripheralStatus(pos, remaining, "s3DomeCtrl", "lost", detail);
             }
+        }
+
+        // Top-level dome_link block — always present for external tooling,
+        // regardless of whether the s3DomeCtrl component is enabled.
+        // three states: connected (hb seen < 5s), lost (was seen, now > 5s), not_seen (never).
+        {
+            const char* dlState;
+            int32_t lastRxMs = -1;
+            if (!enableS3DomeCtrl) {
+                dlState = "disabled";
+            } else if (domeLastSeenMs == 0) {
+                dlState = "not_seen";
+            } else if ((uptimeMs - domeLastSeenMs) < 5000UL) {
+                dlState = "connected";
+                lastRxMs = (int32_t)(uptimeMs - domeLastSeenMs);
+            } else {
+                dlState = "lost";
+                lastRxMs = (int32_t)(uptimeMs - domeLastSeenMs);
+            }
+            char dlBuf[96];
+            snprintf(dlBuf, sizeof(dlBuf),
+                     ",\"dome_link\":{\"state\":\"%s\",\"hb_tx\":%lu,\"hb_rx\":%lu"
+                     ",\"last_rx_ms\":%ld}",
+                     dlState, (unsigned long)bodyHbTx, (unsigned long)domeHbRx,
+                     (long)lastRxMs);
+            appendJsonChunk(pos, remaining, dlBuf);
         }
 
         appendJsonChunk(pos, remaining, "}");
@@ -702,7 +731,7 @@ bool webLittleFsMounted() {
 }
 
 void eventStreamTask(void*) {
-    static char statusBody[768];
+    static char statusBody[1024];
     static char rcBody[2048];
     static uint32_t lastLogSent = 0;
     static char logLines[8][LOG_LINE_MAX];
@@ -736,7 +765,7 @@ void startHttpServerOnce() {
 
     if (!routesRegistered) {
         events.onConnect([](AsyncEventSourceClient* client) {
-            static char statusBody[768];
+            static char statusBody[1024];
             static char rcBody[2048];
             uint32_t nowMs = millis();
             buildStatusJson(statusBody, sizeof(statusBody));

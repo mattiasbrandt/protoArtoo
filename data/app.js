@@ -42,6 +42,27 @@
     setIndicator("h-fs",    payload.littleFsReady ? "ok" : "fail");
     setIndicator("h-heap",  payload.heapFree > 120000 ? "ok" : payload.heapFree > 80000 ? "warn" : "fail");
 
+    // Dome link — connected=green, not_seen=amber, lost=red, disabled=grey
+    if (payload.dome_link) {
+      const s = payload.dome_link.state;
+      setIndicator("h-dome-link",
+        s === "connected" ? "ok" :
+        s === "lost"      ? "fail" :
+        s === "not_seen"  ? "warn" : "off");
+    } else {
+      setIndicator("h-dome-link", "off");
+    }
+
+    // Audio — playing=green, idle=muted-green (ok), disabled=grey
+    const s2 = payload.s2Sound;
+    if (s2 && typeof s2 === "object") {
+      // Both playing and idle are healthy — green either way.
+      // The component status card shows the playing/idle detail text.
+      setIndicator("h-audio", "ok");
+    } else {
+      setIndicator("h-audio", "off");
+    }
+
     if (!healthSummary) return;
 
     const heapFreeKb = Math.round(payload.heapFree / 1024);

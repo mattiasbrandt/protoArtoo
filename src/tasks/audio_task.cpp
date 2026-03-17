@@ -127,12 +127,18 @@ static void dispatchAction(const AudioAction& action, uint8_t& vol, bool& random
     switch (action.type) {
         case AUDIO_ACTION_PLAY_TRACK:
             driver->playTrack(action.track);
+            taskENTER_CRITICAL(&robotStateMux);
+            robotState.audioActive = true;
+            taskEXIT_CRITICAL(&robotStateMux);
             PA_LOG_INFO(TAG, "play track %u", (unsigned)action.track);
             break;
 
         case AUDIO_ACTION_STOP:
             driver->stop();
             randomMode = false;
+            taskENTER_CRITICAL(&robotStateMux);
+            robotState.audioActive = false;
+            taskEXIT_CRITICAL(&robotStateMux);
             PA_LOG_INFO(TAG, "stop + random off");
             break;
 
@@ -241,6 +247,9 @@ void audioTask(void* pvParameters) {
                 }
                 case AUDIO_CMD_PLAY_TRACK:
                     driver->playTrack(cmd.track);
+                    taskENTER_CRITICAL(&robotStateMux);
+                    robotState.audioActive = true;
+                    taskEXIT_CRITICAL(&robotStateMux);
                     PA_LOG_INFO(TAG, "[%s] play track %u",
                                 commandSourceToString(cmd.source), (unsigned)cmd.track);
                     break;
@@ -248,6 +257,9 @@ void audioTask(void* pvParameters) {
                 case AUDIO_CMD_STOP:
                     driver->stop();
                     randomMode = false;
+                    taskENTER_CRITICAL(&robotStateMux);
+                    robotState.audioActive = false;
+                    taskEXIT_CRITICAL(&robotStateMux);
                     PA_LOG_INFO(TAG, "[%s] stop", commandSourceToString(cmd.source));
                     break;
 
