@@ -6,13 +6,16 @@
 
   // ── Learning mode state ───────────────────────────────────────────────────
   let learnActive = false;
-  let learnPrev = null;        // rcSnapshot from previous tick
-  let learnDeltas = {};        // { channelName: cumulativeDelta }
-  let learnWinner = null;      // slot key with most movement
+  let learnBaseline = null;    // raw snapshot taken when detect mode was entered
+  let learnHit = null;         // { source:"sbus1"|"sbus2"|"pwm", channel:1-based, raw:value }
   let learnStartMs = 0;
-  const LEARN_TIMEOUT_MS = 30000;    // auto-exit after 30 s of inactivity
-  const LEARN_ANALOG_THRESHOLD = 0.06; // ignore jitter below 6% of full range
-  const LEARN_COMMIT_DELTA = 0.25;   // cumulative delta to commit a winner
+  const LEARN_TIMEOUT_MS = 30000;
+  // SBUS raw threshold: 300 units from baseline (~18% of 1639 full range).
+  // Buttons snap 820+ units from center; this filters mild stick drift.
+  const LEARN_SBUS_THRESHOLD = 300;
+  // PWM threshold: 200 µs from baseline.
+  // Buttons go 500+ µs from center (1500); filters cable noise (~10 µs).
+  const LEARN_PWM_THRESHOLD = 200;
   // ─────────────────────────────────────────────────────────────────────────
 
   const rcModeCards = document.querySelectorAll(".rc-mode-card");
@@ -721,120 +724,151 @@
     renderEditor();
   };
 
-  // ── RC Learning mode ──────────────────────────────────────────────────────
+  // ── RC Channel detect mode ────────────────────────────────────────────────
   //
-  // Pure logic (computeLearnDeltas / pickLearnWinner) is tested in
-  // test/test_rc_learn/index.html — keep in sync if thresholds or algorithms change.
+  // Scans raw channel arrays (sbus1[], sbus2[], pwm[]) in the SSE rc payload.
+  // Pure logic is tested in test/test_rc_learn/index.html — keep in sync with
+  // threshold constants and computeDetectHit() if changed here.
 
-  // Pure: compute new deltas from two consecutive SSE snapshots.
-  // Does not mutate existingDeltas. Returns a new object.
-  const computeLearnDeltas = (prev, curr, existingDeltas) => {
-    const deltas = Object.assign({}, existingDeltas);
-    if (!prev || !curr) return deltas;
+  // Pure: given a raw snapshot baseline and a current snapshot, return the
+  // source+channel with the greatest deviation from baseline, or null if none
+  // exceeds the configured threshold.
+  //
+  // Returns: { source: "sbus1"|"sbus2"|"pwm", channel: 1-based, raw: value,
+  //            baseline: baselineValue, delta: absDeviation }  or null.
+  const computeDetectHit = (baseline, curr) => {
+    if (!baseline || !curr) return null;
+    const raw = curr.raw;
+    if (!raw || typeof raw !== 'object') return null;
+    const baseRaw = baseline.raw;
+    if (!baseRaw || typeof baseRaw !== 'object') return null;
 
-    // Analog channels — accumulate |normalized| delta above jitter threshold
-    const prevCh = Array.isArray(prev.channels) ? prev.channels : [];
-    const currCh = Array.isArray(curr.channels) ? curr.channels : [];
-    currCh.forEach(ch => {
-      const p = prevCh.find(x => x.name === ch.name);
-      if (!p) return;
-      const delta = Math.abs((ch.normalized || 0) - (p.normalized || 0));
-      if (delta >= LEARN_ANALOG_THRESHOLD) {
-        deltas[ch.name] = (deltas[ch.name] || 0) + delta;
-      }
+    let best = null;
+
+    // SBUS sources — raw units 172-1811, center ~992
+    ['sbus1', 'sbus2'].forEach(src => {
+      const currArr = Array.isArray(raw[src]) ? raw[src] : [];
+      const baseArr = Array.isArray(baseRaw[src]) ? baseRaw[src] : [];
+      currArr.forEach((val, idx) => {
+        const base = baseArr[idx] ?? val;  // if no baseline, deviation = 0
+        const delta = Math.abs(val - base);
+        if (delta >= LEARN_SBUS_THRESHOLD) {
+          if (!best || delta > best.delta) {
+            best = { source: src, channel: idx + 1, raw: val, baseline: base, delta };
+          }
+        }
+      });
     });
 
-    // Digital channels — count rising edges only (false → true)
-    const prevDig = (prev.digital && typeof prev.digital === 'object') ? prev.digital : {};
-    const currDig = (curr.digital && typeof curr.digital === 'object') ? curr.digital : {};
-    Object.keys(currDig).forEach(name => {
-      const wasPressed = prevDig[name]?.pressed ?? false;
-      const isPressed  = currDig[name]?.pressed  ?? false;
-      if (isPressed && !wasPressed) {
-        deltas[name] = (deltas[name] || 0) + LEARN_COMMIT_DELTA;
-      }
-    });
+    // PWM — microseconds 1000-2000, center ~1500
+    {
+      const currArr = Array.isArray(raw.pwm) ? raw.pwm : [];
+      const baseArr = Array.isArray(baseRaw.pwm) ? baseRaw.pwm : [];
+      currArr.forEach((val, idx) => {
+        if (val === 0) return;          // 0 = no valid pulse on this channel
+        const base = baseArr[idx] ?? val;
+        if (base === 0) return;
+        const delta = Math.abs(val - base);
+        if (delta >= LEARN_PWM_THRESHOLD) {
+          if (!best || delta > best.delta) {
+            best = { source: 'pwm', channel: idx + 1, raw: val, baseline: base, delta };
+          }
+        }
+      });
+    }
 
-    return deltas;
+    return best;
   };
 
-  // Pure: return the channel name with highest accumulated delta >= LEARN_COMMIT_DELTA,
-  // or null if nothing qualifies.
-  const pickLearnWinner = (deltas) => {
-    let maxDelta = LEARN_COMMIT_DELTA - Number.EPSILON;
-    let winner = null;
-    Object.entries(deltas).forEach(([name, delta]) => {
-      if (delta > maxDelta) { maxDelta = delta; winner = name; }
-    });
-    return winner;
-  };
-
-  // Resolve a channel name to a human-readable slot label from RC_ACTIONS.
-  const learnSlotLabel = (channelName) => {
-    const mode = (rcSnapshot?.mode || getEditorMode());
+  // Find all slot keys whose current binding matches the detected source+channel.
+  const slotsForDetectHit = (hit) => {
+    if (!hit) return [];
+    const mode = getEditorMode();
     const slots = RC_ACTIONS[mode] || RC_ACTIONS.dual_sbus;
-    const slot = slots.find(s => s.key === channelName);
-    return slot ? slot.label : channelName;
+    return slots
+      .filter(({ key }) => {
+        const b = bindingForSlot(key);
+        return b.source === hit.source && Number(b.channel) === hit.channel;
+      })
+      .map(({ key }) => key);
   };
 
-  // Apply/remove learn-hot CSS class without re-rendering the slot list.
-  // Called on winner change and after renderSlotList() re-renders the DOM.
+  // Human-readable label for a detect hit.
+  const detectHitLabel = (hit) => {
+    if (!hit) return '';
+    const srcLabel = { sbus1: 'SBUS1', sbus2: 'SBUS2', pwm: 'PWM' }[hit.source] || hit.source.toUpperCase();
+    return `${srcLabel} CH ${hit.channel}`;
+  };
+
+  // Apply/remove learn-hot class on slot cards that are already bound to the
+  // detected source+channel. Uses direct classList toggle — no re-render.
   const applyLearnHighlight = () => {
     if (!rcSlotItems) return;
+    const bound = learnActive && learnHit ? slotsForDetectHit(learnHit) : [];
     rcSlotItems.querySelectorAll('.rc-slot-item').forEach(el => {
-      const key = el.dataset.slot;
-      el.classList.toggle('learn-hot', learnActive && key === learnWinner);
+      el.classList.toggle('learn-hot', bound.includes(el.dataset.slot));
     });
   };
 
   const updateLearnBanner = () => {
     if (!rcLearnStatus) return;
-    if (learnWinner) {
-      rcLearnStatus.textContent = `Detected: ${learnSlotLabel(learnWinner)} — click the highlighted slot to select it`;
+    if (!learnHit) {
+      const hasRaw = rcSnapshot?.raw && Object.keys(rcSnapshot.raw).length > 0;
+      rcLearnStatus.textContent = hasRaw
+        ? 'Listening… press a switch or button on your transmitter'
+        : 'No RC signal — connect your receiver first';
+      return;
+    }
+    const label = detectHitLabel(learnHit);
+    const bound = slotsForDetectHit(learnHit);
+    if (bound.length > 0) {
+      const slotLabels = bound.map(k => {
+        const mode = getEditorMode();
+        const slots = RC_ACTIONS[mode] || RC_ACTIONS.dual_sbus;
+        return slots.find(s => s.key === k)?.label || k;
+      }).join(', ');
+      rcLearnStatus.textContent = `Detected: ${label} → already assigned to ${slotLabels}`;
     } else {
-      rcLearnStatus.textContent = 'Listening… move a stick or switch on your transmitter';
+      rcLearnStatus.textContent = `Detected: ${label} — not assigned to any slot. Select a slot to configure it.`;
     }
   };
 
   const enterLearnMode = () => {
     learnActive  = true;
-    learnPrev    = rcSnapshot;   // use current snapshot as baseline (may be null)
-    learnDeltas  = {};
-    learnWinner  = null;
+    learnBaseline = rcSnapshot;   // snapshot at mode entry — baseline for deviation
+    learnHit     = null;
     learnStartMs = Date.now();
-    if (rcLearnBtn)    rcLearnBtn.textContent = '🎯 Detecting…';
+    if (rcLearnBtn)    rcLearnBtn.textContent = '🔍 Detecting…';
     if (rcLearnBanner) rcLearnBanner.hidden = false;
     updateLearnBanner();
     applyLearnHighlight();
   };
 
   const exitLearnMode = () => {
-    learnActive = false;
-    learnPrev   = null;
-    learnDeltas = {};
-    learnWinner = null;
-    if (rcLearnBtn)    rcLearnBtn.textContent = '🎯 Wiggle to detect';
+    learnActive  = false;
+    learnBaseline = null;
+    learnHit     = null;
+    if (rcLearnBtn)    rcLearnBtn.textContent = '🔍 Detect channel';
     if (rcLearnBanner) rcLearnBanner.hidden = true;
-    applyLearnHighlight();   // removes all learn-hot classes
+    applyLearnHighlight();
   };
 
   // Called on every SSE rc tick when learnActive is true.
-  // Uses rcSnapshot (previous tick) and the new payload as current.
   const processLearnTick = (currSnapshot) => {
-    // Auto-exit after timeout
     if (Date.now() - learnStartMs > LEARN_TIMEOUT_MS) {
       exitLearnMode();
       return;
     }
 
-    learnDeltas = computeLearnDeltas(learnPrev, currSnapshot, learnDeltas);
-    learnPrev   = currSnapshot;
+    const newHit = computeDetectHit(learnBaseline, currSnapshot);
+    const prevHit = learnHit;
+    learnHit = newHit;
 
-    const newWinner = pickLearnWinner(learnDeltas);
-    if (newWinner !== learnWinner) {
-      learnWinner = newWinner;
+    // Update DOM only when result changes to avoid needless repaints.
+    const changed = JSON.stringify(newHit) !== JSON.stringify(prevHit);
+    if (changed) {
       updateLearnBanner();
-      applyLearnHighlight();   // direct class toggle — no full slot list re-render
+      applyLearnHighlight();
     }
   };
 
@@ -878,8 +912,8 @@
       try {
         const payload = JSON.parse(event.data);
 
-        // Process learning mode tick before updating rcSnapshot so we can compare
-        // payload (current) against rcSnapshot (previous tick).
+        // Process learning mode tick: compare current raw channels against the
+        // baseline snapshot captured when detect mode was entered.
         if (learnActive) {
           processLearnTick(payload);
         }

@@ -728,7 +728,63 @@ bool buildRcDiagnosticsJson(char* buffer, size_t bufferSize) {
         }
     }
 
-    return formatRcDiagnosticsJson(buffer, bufferSize, snapshot);
+    if (!formatRcDiagnosticsJson(buffer, bufferSize, snapshot)) {
+        return false;
+    }
+
+    // Append raw channel arrays for client-side channel discovery.
+    //
+    // The JSON currently ends with "}}}" (closes mappingProfile.channels, mappingProfile,
+    // and root). We overwrite the final "}" (root close) with the "raw" section, then
+    // close raw and root ourselves. No snapshot struct change — we use the local arrays
+    // already on the stack (sbus1Raw[16], sbus2Raw[16], pwmPulseUs[6]).
+    //
+    // The "raw" key is always present so the client has a stable structure to test
+    // for detect-channel availability regardless of which source is active.
+    size_t written = strlen(buffer);
+    if (written < 3) return false;
+
+    // Position pos at the last '}' (root close) to overwrite it.
+    char* pos = buffer + written - 1;
+    size_t remaining = bufferSize - (written - 1);
+
+    bool ok = rcDiagnosticsAppendf(pos, remaining, ",\"raw\":{");
+
+    bool addedOne = false;
+
+    // SBUS1 (16 channels, raw SBUS units 172-1811, center ~992)
+    if (ok && lastSbus1Ms > 0) {
+        ok = rcDiagnosticsAppendf(pos, remaining, "\"sbus1\":[");
+        for (int i = 0; i < 16 && ok; ++i) {
+            ok = rcDiagnosticsAppendf(pos, remaining, "%s%u", i == 0 ? "" : ",", sbus1Raw[i]);
+        }
+        ok = ok && rcDiagnosticsAppendf(pos, remaining, "]");
+        addedOne = true;
+    }
+
+    // SBUS2 (16 channels, same raw unit range as SBUS1)
+    if (ok && lastSbus2Ms > 0) {
+        ok = rcDiagnosticsAppendf(pos, remaining, "%s\"sbus2\":[", addedOne ? "," : "");
+        for (int i = 0; i < 16 && ok; ++i) {
+            ok = rcDiagnosticsAppendf(pos, remaining, "%s%u", i == 0 ? "" : ",", sbus2Raw[i]);
+        }
+        ok = ok && rcDiagnosticsAppendf(pos, remaining, "]");
+        addedOne = true;
+    }
+
+    // PWM (up to 6 channels, values in microseconds 1000-2000, center ~1500).
+    // Output 0 for channels with no valid pulse yet; client checks sources.pwm.linked.
+    if (ok && lastPwmMs > 0) {
+        ok = rcDiagnosticsAppendf(pos, remaining, "%s\"pwm\":[", addedOne ? "," : "");
+        for (int i = 0; i < 6 && ok; ++i) {
+            uint16_t val = pwmPulseValid[i] ? pwmPulseUs[i] : 0;
+            ok = rcDiagnosticsAppendf(pos, remaining, "%s%u", i == 0 ? "" : ",", val);
+        }
+        ok = ok && rcDiagnosticsAppendf(pos, remaining, "]");
+    }
+
+    // Close "raw" object and root object.
+    return ok && rcDiagnosticsAppendf(pos, remaining, "}}");
 }
 
 bool webLittleFsMounted() {

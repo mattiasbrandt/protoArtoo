@@ -2,19 +2,20 @@
 <!--
   test/test_rc_learn/index.html
 
-  Standalone browser test for the RC learning mode pure logic.
-  Open this file directly (file:// or local HTTP server) — NOT served to device.
-  All test logic is self-contained; no network calls.
+  Standalone browser test for the RC channel detect mode pure logic.
+  Open with a local HTTP server (or file://) — NOT served to device.
 
   Run:  python3 -m http.server 8080 --directory /path/to/protoArtoo
         then open http://localhost:8080/test/test_rc_learn/index.html
 
   Pass criteria: all rows show ✅.  Any ❌ is a bug in the implementation.
+
+  Keep computeDetectHit() and the threshold constants in sync with rc.js.
 -->
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>RC Learn Core — Tests</title>
+  <title>RC Detect Channel — Tests</title>
   <style>
     body { font-family: monospace; padding: 24px; background: #111; color: #eee; }
     h2   { color: #6ab0ff; }
@@ -30,8 +31,8 @@
   </style>
 </head>
 <body>
-<h2>RC Learning Mode — Core Logic Tests</h2>
-<p>Tests the pure delta-accumulation and winner-selection logic extracted from rc.js.</p>
+<h2>RC Channel Detect Mode — Core Logic Tests</h2>
+<p>Tests <code>computeDetectHit(baseline, curr)</code> extracted from rc.js.</p>
 <table id="results">
   <thead><tr><th>Test</th><th>Expected</th><th>Got</th></tr></thead>
   <tbody></tbody>
@@ -39,312 +40,296 @@
 <div id="summary"></div>
 
 <script>
-// ─── Pure logic under test (must stay in sync with rc.js implementation) ─────
-//
-// These are the same functions that live inside the rc.js IIFE, extracted here
-// as standalone pure functions for testability. If the rc.js implementation
-// changes, update these to match.
+// ─── Pure logic under test ────────────────────────────────────────────────────
+// Keep in sync with rc.js: computeDetectHit(), LEARN_SBUS_THRESHOLD,
+// LEARN_PWM_THRESHOLD.
 
-const LEARN_ANALOG_THRESHOLD = 0.06;  // ignore deltas below 6% of full range
-const LEARN_COMMIT_DELTA     = 0.25;  // cumulative delta needed to commit winner
+const LEARN_SBUS_THRESHOLD = 300;
+const LEARN_PWM_THRESHOLD  = 200;
 
-/**
- * computeLearnDeltas(prev, curr, existingDeltas) → newDeltas
- *
- * Pure function: given two consecutive SSE rc snapshots and the current
- * accumulated delta map, returns an updated delta map.
- *
- * Analog channels:  accumulate |normalized_curr - normalized_prev| when above threshold.
- * Digital channels: count rising edges (false→true) as LEARN_COMMIT_DELTA each.
- *
- * @param {object} prev - previous rcSnapshot (may be null → returns existingDeltas unchanged)
- * @param {object} curr - current  rcSnapshot
- * @param {object} existingDeltas - { channelName: number } accumulated so far
- * @returns {object} updated deltas (new object, existingDeltas not mutated)
- */
-function computeLearnDeltas(prev, curr, existingDeltas) {
-  const deltas = Object.assign({}, existingDeltas);
+function computeDetectHit(baseline, curr) {
+  if (!baseline || !curr) return null;
+  const raw = curr.raw;
+  if (!raw || typeof raw !== 'object') return null;
+  const baseRaw = baseline.raw;
+  if (!baseRaw || typeof baseRaw !== 'object') return null;
 
-  if (!prev || !curr) return deltas;
+  let best = null;
 
-  // Analog channels
-  const prevCh = Array.isArray(prev.channels) ? prev.channels : [];
-  const currCh = Array.isArray(curr.channels) ? curr.channels : [];
-
-  currCh.forEach(ch => {
-    const p = prevCh.find(x => x.name === ch.name);
-    if (!p) return;
-    const delta = Math.abs((ch.normalized || 0) - (p.normalized || 0));
-    if (delta >= LEARN_ANALOG_THRESHOLD) {
-      deltas[ch.name] = (deltas[ch.name] || 0) + delta;
-    }
+  // SBUS sources — raw units 172-1811, center ~992
+  ['sbus1', 'sbus2'].forEach(src => {
+    const currArr = Array.isArray(raw[src])     ? raw[src]     : [];
+    const baseArr = Array.isArray(baseRaw[src]) ? baseRaw[src] : [];
+    currArr.forEach((val, idx) => {
+      const base  = baseArr[idx] !== undefined ? baseArr[idx] : val;
+      const delta = Math.abs(val - base);
+      if (delta >= LEARN_SBUS_THRESHOLD) {
+        if (!best || delta > best.delta) {
+          best = { source: src, channel: idx + 1, raw: val, baseline: base, delta };
+        }
+      }
+    });
   });
 
-  // Digital channels — rising edge only
-  const prevDig = (prev.digital && typeof prev.digital === 'object') ? prev.digital : {};
-  const currDig = (curr.digital && typeof curr.digital === 'object') ? curr.digital : {};
+  // PWM — microseconds 1000-2000, center ~1500
+  {
+    const currArr = Array.isArray(raw.pwm)     ? raw.pwm     : [];
+    const baseArr = Array.isArray(baseRaw.pwm) ? baseRaw.pwm : [];
+    currArr.forEach((val, idx) => {
+      if (val === 0) return;
+      const base = baseArr[idx] !== undefined ? baseArr[idx] : val;
+      if (base === 0) return;
+      const delta = Math.abs(val - base);
+      if (delta >= LEARN_PWM_THRESHOLD) {
+        if (!best || delta > best.delta) {
+          best = { source: 'pwm', channel: idx + 1, raw: val, baseline: base, delta };
+        }
+      }
+    });
+  }
 
-  Object.keys(currDig).forEach(name => {
-    const wasPressed = prevDig[name]?.pressed ?? false;
-    const isPressed  = currDig[name]?.pressed  ?? false;
-    if (isPressed && !wasPressed) {
-      deltas[name] = (deltas[name] || 0) + LEARN_COMMIT_DELTA;
-    }
-  });
-
-  return deltas;
-}
-
-/**
- * pickLearnWinner(deltas) → string|null
- *
- * Pure function: given the accumulated delta map, return the channel name
- * with the highest delta that is >= LEARN_COMMIT_DELTA, or null if none qualify.
- */
-function pickLearnWinner(deltas) {
-  let maxDelta = LEARN_COMMIT_DELTA - Number.EPSILON; // must strictly exceed threshold
-  let winner = null;
-  Object.entries(deltas).forEach(([name, delta]) => {
-    if (delta > maxDelta) {
-      maxDelta = delta;
-      winner = name;
-    }
-  });
-  return winner;
+  return best;
 }
 
 // ─── Test helpers ─────────────────────────────────────────────────────────────
 
 const results = [];
 
+function eq(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
+
 function assert(name, expected, got) {
-  const pass = JSON.stringify(expected) === JSON.stringify(got);
-  results.push({ name, expected, got, pass });
+  results.push({ name, expected, got, pass: eq(expected, got) });
 }
 
-function makeSnapshot(analogOverrides = {}, digitalOverrides = {}) {
-  // Build a minimal rc snapshot like the firmware sends
-  const defaultChannels = [
-    { name: "driveSpeed", type: "analog", normalized: 0.0 },
-    { name: "driveSteer", type: "analog", normalized: 0.0 },
-    { name: "driveLimit", type: "analog", normalized: 0.0 },
-    { name: "domeSpeed",  type: "analog", normalized: 0.0 },
-    { name: "arm1",       type: "analog", normalized: 0.0 },
-    { name: "arm2",       type: "analog", normalized: 0.0 },
-  ];
-  const channels = defaultChannels.map(ch => ({
-    ...ch,
-    normalized: analogOverrides[ch.name] ?? ch.normalized,
-  }));
+function assertNull(name, got) {
+  results.push({ name, expected: null, got, pass: got === null });
+}
 
-  const digital = {};
-  Object.keys(digitalOverrides).forEach(k => {
-    digital[k] = { pressed: digitalOverrides[k], activeSource: "sbus1", bindingChannel: 4 };
-  });
+function assertNotNull(name, got) {
+  results.push({ name, expected: '(not null)', got, pass: got !== null });
+}
 
-  return { mode: "dual_sbus", updatedMs: Date.now(), sources: {}, channels, digital };
+function assertField(name, got, field, expected) {
+  const actual = got !== null ? got[field] : undefined;
+  results.push({ name, expected: `${field}=${JSON.stringify(expected)}`, got: `${field}=${JSON.stringify(actual)}`, pass: eq(actual, expected) });
+}
+
+// Build a minimal SSE rc snapshot with raw section.
+function makeSnap({ sbus1 = null, sbus2 = null, pwm = null } = {}) {
+  const raw = {};
+  if (sbus1) raw.sbus1 = sbus1;
+  if (sbus2) raw.sbus2 = sbus2;
+  if (pwm)   raw.pwm   = pwm;
+  return { raw };
+}
+
+// Build a neutral SBUS array (16 channels, all at center 992)
+function neutralSbus(override = {}) {
+  const arr = Array(16).fill(992);
+  Object.entries(override).forEach(([ch, val]) => { arr[Number(ch) - 1] = val; });
+  return arr;
+}
+
+// Build a neutral PWM array (6 channels, all at center 1500)
+function neutralPwm(override = {}) {
+  const arr = Array(6).fill(1500);
+  Object.entries(override).forEach(([ch, val]) => { arr[Number(ch) - 1] = val; });
+  return arr;
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
-// 1. No prev → deltas unchanged
+// 1. null baseline → null
+assertNull('null baseline → null',
+  computeDetectHit(null, makeSnap({ sbus1: neutralSbus() })));
+
+// 2. null curr → null
+assertNull('null curr → null',
+  computeDetectHit(makeSnap({ sbus1: neutralSbus() }), null));
+
+// 3. Both snapshots identical (no movement) → null
 {
-  const d = computeLearnDeltas(null, makeSnapshot({ driveSpeed: 0.5 }), {});
-  assert("null prev → empty deltas", {}, d);
+  const s = makeSnap({ sbus1: neutralSbus() });
+  assertNull('identical snapshots → null', computeDetectHit(s, s));
 }
 
-// 2. Both prev and curr same values → no delta accumulated
+// 4. SBUS1 CH5 moved to 1811 (button press, delta 819 >> threshold 300) → detected
 {
-  const snap = makeSnapshot({ driveSpeed: 0.5 });
-  const d = computeLearnDeltas(snap, snap, {});
-  assert("identical snapshots → no delta", {}, d);
+  const base = makeSnap({ sbus1: neutralSbus() });
+  const curr = makeSnap({ sbus1: neutralSbus({ 5: 1811 }) });
+  const hit  = computeDetectHit(base, curr);
+  assertField('SBUS1 CH5 button press → source=sbus1', hit, 'source', 'sbus1');
+  assertField('SBUS1 CH5 button press → channel=5',    hit, 'channel', 5);
+  assertField('SBUS1 CH5 button press → raw=1811',     hit, 'raw', 1811);
 }
 
-// 3. Single channel moves above threshold → delta accumulated
+// 5. Movement exactly at threshold (300) → detected
 {
-  const prev = makeSnapshot({ driveSpeed: 0.0 });
-  const curr = makeSnapshot({ driveSpeed: 0.5 });
-  const d = computeLearnDeltas(prev, curr, {});
-  assert("driveSpeed moves 0.5 → accumulated", { driveSpeed: 0.5 }, d);
+  const base = makeSnap({ sbus1: neutralSbus() });
+  const curr = makeSnap({ sbus1: neutralSbus({ 3: 992 + 300 }) });
+  const hit  = computeDetectHit(base, curr);
+  assertField('delta=300 exactly → detected', hit, 'channel', 3);
 }
 
-// 4. Movement below threshold → not accumulated
+// 6. Movement 1 unit below threshold (299) → null
 {
-  const prev = makeSnapshot({ driveSteer: 0.0 });
-  const curr = makeSnapshot({ driveSteer: 0.05 }); // 0.05 < 0.06 threshold
-  const d = computeLearnDeltas(prev, curr, {});
-  assert("delta 0.05 < threshold → not accumulated", {}, d);
+  const base = makeSnap({ sbus1: neutralSbus() });
+  const curr = makeSnap({ sbus1: neutralSbus({ 3: 992 + 299 }) });
+  assertNull('delta=299 < threshold → null', computeDetectHit(base, curr));
 }
 
-// 5. Exactly at threshold → not accumulated (strictly less than threshold counts as jitter)
+// 7. Negative direction (button to low end, delta also large) → detected
 {
-  const prev = makeSnapshot({ driveSteer: 0.0 });
-  const curr = makeSnapshot({ driveSteer: 0.06 }); // exactly at threshold → should accumulate
-  const d = computeLearnDeltas(prev, curr, {});
-  assert("delta exactly at threshold 0.06 → accumulated", { driveSteer: 0.06 }, d);
+  const base = makeSnap({ sbus1: neutralSbus() });
+  const curr = makeSnap({ sbus1: neutralSbus({ 2: 172 }) });  // 992-172=820
+  const hit  = computeDetectHit(base, curr);
+  assertField('SBUS1 CH2 low-end press → detected', hit, 'channel', 2);
 }
 
-// 6. Multiple ticks accumulate correctly
+// 8. Two channels active → highest delta wins
 {
-  const s0 = makeSnapshot({ driveSpeed: 0.0 });
-  const s1 = makeSnapshot({ driveSpeed: 0.3 });
-  const s2 = makeSnapshot({ driveSpeed: 0.6 });
-  let d = {};
-  d = computeLearnDeltas(s0, s1, d); // +0.3
-  d = computeLearnDeltas(s1, s2, d); // +0.3
-  assert("two ticks accumulate", { driveSpeed: 0.6 }, d);
+  const base = makeSnap({ sbus1: neutralSbus() });
+  const curr = makeSnap({ sbus1: neutralSbus({ 1: 992 + 350, 4: 1811 }) }); // CH1 delta=350, CH4 delta=819
+  const hit  = computeDetectHit(base, curr);
+  assertField('two channels → highest delta wins (CH4)', hit, 'channel', 4);
 }
 
-// 7. Two channels both move → both accumulated, higher one wins
+// 9. SBUS2 detection works
 {
-  const prev = makeSnapshot({ driveSpeed: 0.0, driveSteer: 0.0 });
-  const curr = makeSnapshot({ driveSpeed: 0.4, driveSteer: 0.1 });
-  const d = computeLearnDeltas(prev, curr, {});
-  assert("two channels → both in deltas",
-    { driveSpeed: 0.4, driveSteer: 0.1 }, d);
-  const winner = pickLearnWinner(d);
-  assert("higher channel wins", "driveSpeed", winner);
+  const base = makeSnap({ sbus2: neutralSbus() });
+  const curr = makeSnap({ sbus2: neutralSbus({ 7: 1811 }) });
+  const hit  = computeDetectHit(base, curr);
+  assertField('SBUS2 CH7 → source=sbus2', hit, 'source', 'sbus2');
+  assertField('SBUS2 CH7 → channel=7',    hit, 'channel', 7);
 }
 
-// 8. pickLearnWinner → null when max delta < commit threshold
+// 10. SBUS1 vs SBUS2: highest delta across both sources wins
 {
-  const w = pickLearnWinner({ driveSpeed: 0.10 }); // 0.10 < 0.25
-  assert("below commit threshold → null winner", null, w);
+  const base = makeSnap({ sbus1: neutralSbus(), sbus2: neutralSbus() });
+  const curr = makeSnap({
+    sbus1: neutralSbus({ 2: 992 + 400 }),   // delta 400
+    sbus2: neutralSbus({ 3: 172 }),          // delta 820 ← should win
+  });
+  const hit = computeDetectHit(base, curr);
+  assertField('SBUS1 vs SBUS2: highest wins → sbus2', hit, 'source', 'sbus2');
+  assertField('SBUS1 vs SBUS2: highest wins → CH3',   hit, 'channel', 3);
 }
 
-// 9. pickLearnWinner → winner when max delta >= commit threshold
+// 11. PWM CH2 button press (1500→2000, delta=500 >> 200 threshold) → detected
 {
-  const w = pickLearnWinner({ driveSpeed: 0.25 });
-  assert("at commit threshold → winner selected", "driveSpeed", w);
+  const base = makeSnap({ pwm: neutralPwm() });
+  const curr = makeSnap({ pwm: neutralPwm({ 2: 2000 }) });
+  const hit  = computeDetectHit(base, curr);
+  assertField('PWM CH2 press → source=pwm', hit, 'source', 'pwm');
+  assertField('PWM CH2 press → channel=2',  hit, 'channel', 2);
 }
 
-// 10. pickLearnWinner with multiple entries → highest wins
+// 12. PWM threshold: delta=200 exactly → detected
 {
-  const w = pickLearnWinner({ driveSpeed: 0.30, driveSteer: 0.80, domeSpeed: 0.50 });
-  assert("highest delta wins", "driveSteer", w);
+  const base = makeSnap({ pwm: neutralPwm() });
+  const curr = makeSnap({ pwm: neutralPwm({ 1: 1700 }) });  // delta=200
+  const hit  = computeDetectHit(base, curr);
+  assertField('PWM delta=200 → detected', hit, 'source', 'pwm');
 }
 
-// 11. Digital rising edge → counted as LEARN_COMMIT_DELTA
+// 13. PWM threshold: delta=199 → null
 {
-  const prev = makeSnapshot({}, { arm1: false });
-  const curr = makeSnapshot({}, { arm1: true });
-  const d = computeLearnDeltas(prev, curr, {});
-  assert("digital rising edge → LEARN_COMMIT_DELTA", { arm1: LEARN_COMMIT_DELTA }, d);
+  const base = makeSnap({ pwm: neutralPwm() });
+  const curr = makeSnap({ pwm: neutralPwm({ 1: 1699 }) });  // delta=199
+  assertNull('PWM delta=199 < threshold → null', computeDetectHit(base, curr));
 }
 
-// 12. Digital held pressed → not double-counted
+// 14. PWM channel with val=0 (no pulse) → skipped
 {
-  const prev = makeSnapshot({}, { arm1: true });
-  const curr = makeSnapshot({}, { arm1: true });
-  const d = computeLearnDeltas(prev, curr, {});
-  assert("digital held → not counted again", {}, d);
+  const base = makeSnap({ pwm: neutralPwm() });
+  const curr = makeSnap({ pwm: [0, 2000, 1500, 1500, 1500, 1500] }); // CH1=0 (invalid)
+  const hit  = computeDetectHit(base, curr);
+  // CH1 is val=0 (skipped). CH2 delta=2000-1500=500 → detected.
+  assertField('PWM val=0 skipped, CH2 detected', hit, 'channel', 2);
 }
 
-// 13. Digital falling edge → not counted
+// 15. PWM baseline val=0 (no pulse at baseline) → skipped
 {
-  const prev = makeSnapshot({}, { arm1: true });
-  const curr = makeSnapshot({}, { arm1: false });
-  const d = computeLearnDeltas(prev, curr, {});
-  assert("digital falling edge → not counted", {}, d);
+  const base = makeSnap({ pwm: [0, 1500, 1500, 1500, 1500, 1500] }); // CH1 baseline=0
+  const curr = makeSnap({ pwm: [2000, 1500, 1500, 1500, 1500, 1500] }); // CH1 now 2000
+  // CH1: base=0, skipped per rule. No other channel moves. → null
+  assertNull('PWM base=0 → channel skipped → null', computeDetectHit(base, curr));
 }
 
-// 14. Empty digital section on prev → treated as all-unpressed
+// 16. SBUS + PWM active simultaneously → highest delta across all sources wins
 {
-  const prev = makeSnapshot({}, {});               // no digital keys
-  const curr = makeSnapshot({}, { arm2: true });   // arm2 just pressed
-  const d = computeLearnDeltas(prev, curr, {});
-  assert("digital missing from prev → treated as unpressed, rising edge counted",
-    { arm2: LEARN_COMMIT_DELTA }, d);
+  const base = makeSnap({ sbus1: neutralSbus(), pwm: neutralPwm() });
+  const curr = makeSnap({
+    sbus1: neutralSbus({ 1: 992 + 400 }),  // SBUS delta 400
+    pwm:   neutralPwm({ 3: 2000 }),         // PWM delta 500 ← wins
+  });
+  const hit = computeDetectHit(base, curr);
+  assertField('SBUS vs PWM: highest wins → pwm', hit, 'source', 'pwm');
 }
 
-// 15. existingDeltas is not mutated
+// 17. raw section missing from curr → null
 {
-  const existing = { driveSpeed: 0.3 };
-  const frozen = Object.freeze({ driveSpeed: 0.3 }); // freeze to detect mutation
-  const prev = makeSnapshot({ driveSteer: 0.0 });
-  const curr = makeSnapshot({ driveSteer: 0.2 });
-  let threw = false;
-  try {
-    computeLearnDeltas(prev, curr, frozen);
-  } catch (_) {
-    threw = true;
-  }
-  assert("frozen existingDeltas → no mutation (no throw)", false, threw);
+  const base = makeSnap({ sbus1: neutralSbus() });
+  const curr = { channels: [], digital: {} };  // no raw key
+  assertNull('missing raw in curr → null', computeDetectHit(base, curr));
 }
 
-// 16. Accumulated deltas from prior ticks are preserved
+// 18. raw section missing from baseline → null
 {
-  const existingDeltas = { driveSpeed: 0.20 };
-  const prev = makeSnapshot({ driveSteer: 0.0 });
-  const curr = makeSnapshot({ driveSteer: 0.5 });
-  const d = computeLearnDeltas(prev, curr, existingDeltas);
-  assert("prior deltas preserved", { driveSpeed: 0.20, driveSteer: 0.5 }, d);
+  const base = { channels: [], digital: {} };  // no raw key
+  const curr = makeSnap({ sbus1: neutralSbus({ 5: 1811 }) });
+  assertNull('missing raw in baseline → null', computeDetectHit(base, curr));
 }
 
-// 17. Channel not in prev snapshot → skipped (no undefined-access error)
+// 19. Channel present in curr but not in baseline → deviation 0 (uses val as own baseline)
 {
-  const prev = { channels: [], digital: {} }; // no channels in prev
-  const curr = makeSnapshot({ driveSpeed: 0.5 });
-  let threw = false;
-  try {
-    computeLearnDeltas(prev, curr, {});
-  } catch (_) { threw = true; }
-  assert("channel missing from prev → skipped, no crash", false, threw);
+  // Only curr has sbus1 data; baseline has no sbus1 key.
+  const base = makeSnap({});  // raw = {}
+  const curr = makeSnap({ sbus1: neutralSbus({ 5: 1811 }) });
+  // baseArr[4] = undefined → base = val (1811) → delta = 0 → not detected
+  assertNull('channel not in baseline → deviation=0 → null', computeDetectHit(base, curr));
 }
 
-// 18. Malformed channel (null normalized) → treated as 0, no crash
+// 20. All channels at neutral, no movement → null
 {
-  const prev = { channels: [{ name: "driveSpeed", normalized: null }], digital: {} };
-  const curr = { channels: [{ name: "driveSpeed", normalized: 0.5 }],  digital: {} };
-  let threw = false;
-  try {
-    computeLearnDeltas(prev, curr, {});
-  } catch (_) { threw = true; }
-  assert("null normalized → treated as 0, no crash", false, threw);
+  const base = makeSnap({ sbus1: neutralSbus(), sbus2: neutralSbus(), pwm: neutralPwm() });
+  const curr = makeSnap({ sbus1: neutralSbus(), sbus2: neutralSbus(), pwm: neutralPwm() });
+  assertNull('all neutral → null', computeDetectHit(base, curr));
 }
 
-// 19. Reverse-direction movement: normalized goes negative → absolute delta used
+// 21. delta field on hit matches the actual deviation
 {
-  const prev = makeSnapshot({ driveSteer: 0.0 });
-  const curr = makeSnapshot({ driveSteer: -0.5 });
-  const d = computeLearnDeltas(prev, curr, {});
-  assert("negative normalized → absolute delta accumulated", { driveSteer: 0.5 }, d);
+  const base = makeSnap({ sbus1: neutralSbus() });
+  const curr = makeSnap({ sbus1: neutralSbus({ 6: 1811 }) });
+  const hit  = computeDetectHit(base, curr);
+  assertField('delta on hit = 1811-992 = 819', hit, 'delta', 819);
 }
 
-// 20. Multiple analog channels move; only the one above threshold wins
+// 22. baseline field on hit = baseline value used
 {
-  const prev = makeSnapshot({ driveSpeed: 0.0, driveSteer: 0.0, domeSpeed: 0.0 });
-  const curr = makeSnapshot({ driveSpeed: 0.04, driveSteer: 0.0, domeSpeed: 0.80 });
-  // driveSpeed 0.04 < threshold → ignored; domeSpeed 0.80 above
-  const d = computeLearnDeltas(prev, curr, {});
-  assert("sub-threshold ignored, above-threshold accumulated",
-    { domeSpeed: 0.8 }, d);
-  const w = pickLearnWinner(d);
-  assert("domeSpeed wins", "domeSpeed", w);
+  const base = makeSnap({ sbus1: neutralSbus() });
+  const curr = makeSnap({ sbus1: neutralSbus({ 1: 1811 }) });
+  const hit  = computeDetectHit(base, curr);
+  assertField('baseline field = 992', hit, 'baseline', 992);
 }
 
-// ─── Render results ───────────────────────────────────────────────────────────
+// ─── Render ───────────────────────────────────────────────────────────────────
 
-const tbody = document.querySelector("#results tbody");
+const tbody = document.querySelector('#results tbody');
 let passed = 0, failed = 0;
 results.forEach(r => {
-  const tr = document.createElement("tr");
-  tr.className = r.pass ? "pass-row" : "fail-row";
-  tr.innerHTML = `
-    <td>${r.name}</td>
-    <td>${JSON.stringify(r.expected)}</td>
-    <td>${JSON.stringify(r.got)}</td>
-  `;
+  const tr = document.createElement('tr');
+  tr.className = r.pass ? 'pass-row' : 'fail-row';
+  tr.innerHTML = `<td>${r.name}</td><td>${r.expected}</td><td>${JSON.stringify(r.got)}</td>`;
   tbody.appendChild(tr);
   r.pass ? passed++ : failed++;
 });
 
-const summary = document.getElementById("summary");
-summary.innerHTML = failed === 0
+document.getElementById('summary').innerHTML = failed === 0
   ? `<span class="pass">✅ All ${passed} tests passed.</span>`
   : `<span class="fail">❌ ${failed} FAILED, ${passed} passed.</span>`;
 
-if (failed > 0) console.error("TESTS FAILED:", results.filter(r => !r.pass).map(r => r.name));
+if (failed > 0) console.error('FAILED:', results.filter(r => !r.pass).map(r => r.name));
 </script>
 </body>
 </html>
