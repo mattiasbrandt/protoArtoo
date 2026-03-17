@@ -123,15 +123,27 @@ bool audioQueueSetVolume(uint8_t vol, CommandSource src) {
 // dispatchAction()
 // Apply a parsed AudioAction to the driver; update volume and randomMode state.
 // -----------------------------------------------------------------------------
-static void dispatchAction(const AudioAction& action, uint8_t& vol, bool& randomMode) {
+static constexpr uint32_t DISPATCH_PLAY_MIN_MS = 300;
+
+static void dispatchAction(const AudioAction& action, uint8_t& vol, bool& randomMode,
+                           uint32_t& lastPlayMs) {
     switch (action.type) {
-        case AUDIO_ACTION_PLAY_TRACK:
+        case AUDIO_ACTION_PLAY_TRACK: {
+            uint32_t now = millis();
+            if ((uint32_t)(now - lastPlayMs) < DISPATCH_PLAY_MIN_MS) {
+                PA_LOG_DEBUG(TAG, "play track %u dropped (anti-spam %lu ms)",
+                             (unsigned)action.track,
+                             (unsigned long)(now - lastPlayMs));
+                break;
+            }
+            lastPlayMs = now;
             driver->playTrack(action.track);
             taskENTER_CRITICAL(&robotStateMux);
             robotState.audioActive = true;
             taskEXIT_CRITICAL(&robotStateMux);
             PA_LOG_INFO(TAG, "play track %u", (unsigned)action.track);
             break;
+        }
 
         case AUDIO_ACTION_STOP:
             driver->stop();
@@ -197,7 +209,16 @@ void audioTask(void* pvParameters) {
     bool driverInitialized = false;  // becomes true on first enable
     bool randomMode        = false;
     uint32_t lastRandMs    = 0;
+    uint32_t lastPlayMs    = 0;      // anti-spam: last playTrack() timestamp
     uint8_t currentVol     = 20;     // updated from config on first enable
+
+    // Minimum interval between successive playTrack() calls (ms).
+    // The DY-SV5W needs ~100 ms per command (enforced in the driver) plus
+    // processing time to start playback. Rapid-fire play commands arriving
+    // faster than this are silently dropped. Stop and volume commands are
+    // NOT throttled — they must remain responsive.
+    // The constant is defined near dispatchAction() (DISPATCH_PLAY_MIN_MS)
+    // and also used for direct AUDIO_CMD_PLAY_TRACK below.
 
     // Named tracks populated from NVS-backed robotState fields.
     // Updated at runtime via POST /api/audio/tracks.
@@ -286,7 +307,7 @@ void audioTask(void* pvParameters) {
                     taskEXIT_CRITICAL(&robotStateMux);
                     bool wasRandom = randomMode;
                     AudioAction action = parseAudioDollar(cmd.dollar, named);
-                    dispatchAction(action, currentVol, randomMode);
+                    dispatchAction(action, currentVol, randomMode, lastPlayMs);
                     // Reset timer when random mode first turns on so the
                     // first track fires after a full interval, not immediately.
                     if (randomMode && !wasRandom) {
@@ -295,7 +316,14 @@ void audioTask(void* pvParameters) {
                     break;
                 }
 
-                case AUDIO_CMD_PLAY_TRACK:
+                case AUDIO_CMD_PLAY_TRACK: {
+                    uint32_t now = millis();
+                    if ((uint32_t)(now - lastPlayMs) < DISPATCH_PLAY_MIN_MS) {
+                        PA_LOG_DEBUG(TAG, "[%s] play track %u dropped (anti-spam)",
+                                     commandSourceToString(cmd.source), (unsigned)cmd.track);
+                        break;
+                    }
+                    lastPlayMs = now;
                     driver->playTrack(cmd.track);
                     taskENTER_CRITICAL(&robotStateMux);
                     robotState.audioActive = true;
@@ -303,6 +331,7 @@ void audioTask(void* pvParameters) {
                     PA_LOG_INFO(TAG, "[%s] play track %u",
                                 commandSourceToString(cmd.source), (unsigned)cmd.track);
                     break;
+                }
 
                 case AUDIO_CMD_STOP:
                     driver->stop();
@@ -341,6 +370,10 @@ void audioTask(void* pvParameters) {
                 // esp_random() uses the ESP32 hardware RNG — no seeding needed.
                 uint32_t range = (uint32_t)(randMax - randMin) + 1;
                 uint16_t track = (uint16_t)(randMin + (esp_random() % range));
+                // Random timer already enforces a multi-second interval so
+                // anti-spam check is redundant here, but update lastPlayMs
+                // so a manual play immediately after a random fire is gated.
+                lastPlayMs = millis();
                 driver->playTrack(track);
                 taskENTER_CRITICAL(&robotStateMux);
                 robotState.audioActive = true;
