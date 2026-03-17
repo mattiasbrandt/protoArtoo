@@ -9,6 +9,7 @@
 #include <Preferences.h>
 #include <esp_task_wdt.h>
 
+#include "audio_task.h"
 #include "dome_task.h"
 #include "drive.h"
 #include "log_buffer.h"
@@ -22,7 +23,8 @@
 RobotState robotState = {};
 portMUX_TYPE robotStateMux = portMUX_INITIALIZER_UNLOCKED;
 QueueHandle_t servoCmdQueue = nullptr;
-QueueHandle_t domeCmdQueue = nullptr;
+QueueHandle_t domeCmdQueue  = nullptr;
+QueueHandle_t audioCmdQueue = nullptr;
 static volatile bool restartRequested = false;
 static volatile uint32_t restartAtMs = 0;
 static portMUX_TYPE restartMux = portMUX_INITIALIZER_UNLOCKED;
@@ -299,7 +301,7 @@ void loadConfigToState() {
     robotState.cfg_enable_rc_ch5 = prefs.getBool("en_rc_ch5", false);
     robotState.cfg_enable_rc_ch6 = prefs.getBool("en_rc_ch6", false);
     robotState.cfg_enable_s1_hoverboard = prefs.getBool("en_s1", true);
-    robotState.cfg_enable_s2_sound = prefs.getBool("en_s2", false);
+    robotState.cfg_enable_s2_sound = prefs.getBool("en_s2", true);
     robotState.cfg_enable_s3_dome_ctrl = prefs.getBool("en_s3", true);
     robotState.cfg_stationary = prefs.getBool("op_mode", false);
 
@@ -707,9 +709,10 @@ void setup() {
         PA_LOG_ERROR("main", "task watchdog reset detected - estop set");
     }
 
-    // Create command queues for Phase 3 tasks
+    // Create command queues
     servoCmdQueue = xQueueCreate(8, sizeof(ServoCommand));
-    domeCmdQueue = xQueueCreate(8, sizeof(DomeCommand));
+    domeCmdQueue  = xQueueCreate(8, sizeof(DomeCommand));
+    audioCmdQueue = xQueueCreate(8, sizeof(AudioCommand));
 
     // Initialize servo hardware (before tasks start)
     servoTaskInit();
@@ -725,6 +728,10 @@ void setup() {
     xTaskCreatePinnedToCore(servoTask, "ServoTask", 5120, nullptr, 4, nullptr,
                             1);  // Increased for string formatting
     xTaskCreatePinnedToCore(domeTask, "DomeTask", 4096, nullptr, 4, nullptr, 1);
+
+    // AudioTask: Core 0 (non-RT) — software bit-bang TX blocks ~6 ms per command;
+    // keeping off Core 1 avoids any interaction with DriveTask / ServoTask timing.
+    xTaskCreatePinnedToCore(audioTask, "AudioTask", 3072, nullptr, 3, nullptr, 0);
 
     // SafetyMonitorTask: 10 Hz audit on Core 0 (non-RT, low priority)
     xTaskCreatePinnedToCore(safetyMonitorTask, "SafetyMonitor", 2048, nullptr, 2, nullptr, 0);

@@ -266,6 +266,7 @@ extern RobotState robotState;
 extern portMUX_TYPE robotStateMux;
 extern QueueHandle_t servoCmdQueue;
 extern QueueHandle_t domeCmdQueue;
+extern QueueHandle_t audioCmdQueue;
 // -----------------------------------------------------------------------------
 // Helper function declarations (defined in main.cpp or a dedicated helpers.cpp)
 // -----------------------------------------------------------------------------
