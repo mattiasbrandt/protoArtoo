@@ -37,7 +37,16 @@
   };
 
   const renderHealth = (payload) => {
-    setIndicator("h-sbus",  payload.sbusSignalLost || payload.sbusHwFailsafe ? "fail" : "ok");
+    // RC Receiver — only show ok/fail when at least one RC channel is enabled.
+    // When all channels are disabled, sbusSignalLost=false is expected (no signal
+    // is expected), so we must not interpret that as "connected".
+    const anyRcEnabled = !!(payload.rcCh1 || payload.rcCh2 || payload.rcCh3 ||
+                             payload.rcCh4 || payload.rcCh5 || payload.rcCh6);
+    if (!anyRcEnabled) {
+      setIndicator("h-sbus", "off");
+    } else {
+      setIndicator("h-sbus", payload.sbusSignalLost || payload.sbusHwFailsafe ? "fail" : "ok");
+    }
     setIndicator("h-wifi",  (payload.wifiConnected || payload.wifiClientConnected) ? "ok" : "warn");
     setIndicator("h-fs",    payload.littleFsReady ? "ok" : "fail");
     setIndicator("h-heap",  payload.heapFree > 120000 ? "ok" : payload.heapFree > 80000 ? "warn" : "fail");
