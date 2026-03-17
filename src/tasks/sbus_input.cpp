@@ -628,24 +628,24 @@ void sbusInputTask(void* pvParameters) {
 
     if (driveSbusEnabled) {
         if (!sbus_drive.begin(&Serial1, PIN_SBUS1_RX)) {
-            Serial.printf("[%s] ERROR: UART init failed for SBUS1 GPIO%d\n", TAG, PIN_SBUS1_RX);
+            PA_LOG_ERROR(TAG, "UART init failed for SBUS1 GPIO%d", PIN_SBUS1_RX);
             driveSbusEnabled = false;
         }
     }
     if (domeSbusEnabled) {
         if (!sbus_dome.begin(&Serial2, PIN_SBUS2_RX)) {
-            Serial.printf("[%s] WARNING: UART init failed for SBUS2 GPIO%d\n", TAG, PIN_SBUS2_RX);
+            PA_LOG_WARN(TAG, "UART init failed for SBUS2 GPIO%d", PIN_SBUS2_RX);
             domeSbusEnabled = false;
         }
     }
 
     if (rcInputMode == RC_INPUT_STANDARD_PWM) {
-        Serial.printf("[%s] started — standard_pwm mode selected (SBUS decoders inactive)\n", TAG);
+        PA_LOG_INFO(TAG, "started — standard_pwm mode selected (SBUS decoders inactive)");
     } else if (rcInputMode == RC_INPUT_SINGLE_SBUS) {
-        Serial.printf("[%s] started — single_sbus mode, SBUS1 GPIO%d active\n", TAG, PIN_SBUS1_RX);
+        PA_LOG_INFO(TAG, "started — single_sbus mode, SBUS1 GPIO%d active", PIN_SBUS1_RX);
     } else {
-        Serial.printf("[%s] started — dual_sbus mode, SBUS1 GPIO%d + SBUS2 GPIO%d active\n", TAG,
-                      PIN_SBUS1_RX, PIN_SBUS2_RX);
+        PA_LOG_INFO(TAG, "started — dual_sbus mode, SBUS1 GPIO%d + SBUS2 GPIO%d active",
+                    PIN_SBUS1_RX, PIN_SBUS2_RX);
     }
 
     // Register with Task Watchdog Timer (TWDT) — Layer 4 safety
@@ -692,8 +692,7 @@ void sbusInputTask(void* pvParameters) {
                 bool rcDebug = robotState.rcDebugMode;
                 taskEXIT_CRITICAL(&robotStateMux);
                 if (rcDebug && (lostCount % 100 == 0)) {
-                    Serial.printf("[%s] SBUS1 lost_frame count: %lu\n", TAG,
-                                  (unsigned long)lostCount);
+                    PA_LOG_DEBUG(TAG, "SBUS1 lost_frame count: %lu", (unsigned long)lostCount);
                 }
             } else {
                 // Signal confirmed — clear watchdog and hardware failsafe flags

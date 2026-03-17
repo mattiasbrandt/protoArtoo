@@ -85,8 +85,14 @@ void registerSystemRoutes(AsyncWebServer& server) {
                                  (unsigned)contentLength, (unsigned)MAX_FIRMWARE_SIZE);
                     return;
                 }
-                PA_LOG_INFO(TAG, "OTA upload started: %s", filename.c_str());
-                if (!Update.begin(contentLength, U_FLASH)) {
+                PA_LOG_INFO(TAG, "OTA firmware upload started: %s (%u bytes)",
+                            filename.c_str(), (unsigned)contentLength);
+                // Use UPDATE_SIZE_UNKNOWN: req->contentLength() is the full multipart
+                // body (including boundary overhead), not the raw firmware binary size.
+                // Passing the exact content-length causes Update.end() to fail a size
+                // check and silently roll back to the old firmware. UPDATE_SIZE_UNKNOWN
+                // skips that check and accepts however many bytes are written.
+                if (!Update.begin(UPDATE_SIZE_UNKNOWN, U_FLASH)) {
                     Update.printError(Serial);
                     return;
                 }
@@ -128,8 +134,12 @@ void registerSystemRoutes(AsyncWebServer& server) {
                                  (unsigned)contentLength, (unsigned)MAX_FILESYSTEM_SIZE);
                     return;
                 }
-                PA_LOG_INFO(TAG, "Filesystem OTA upload started: %s", filename.c_str());
-                if (!Update.begin(contentLength, U_SPIFFS)) {
+                PA_LOG_INFO(TAG, "OTA filesystem upload started: %s (%u bytes)",
+                            filename.c_str(), (unsigned)contentLength);
+                // Use UPDATE_SIZE_UNKNOWN for the same reason as firmware: multipart
+                // content-length includes boundary overhead that Update.end() would
+                // mismatch against written bytes, causing silent rollback.
+                if (!Update.begin(UPDATE_SIZE_UNKNOWN, U_SPIFFS)) {
                     Update.printError(Serial);
                     return;
                 }

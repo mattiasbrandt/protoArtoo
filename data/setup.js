@@ -33,6 +33,8 @@
   };
 
   const featureFeedback = document.getElementById("feature-feedback");
+  const logLevelSelect = document.getElementById("log-level-select");
+  const diagFeedback = document.getElementById("diag-feedback");
 
   // Map from API payload key to featureToggles key
   const TOGGLE_KEY_MAP = {
@@ -88,6 +90,10 @@
     if (featureFeedback) {
       featureFeedback.textContent = `Components loaded at ${new Date().toLocaleTimeString()}`;
       featureFeedback.className = "feedback success";
+    }
+    // Populate log level dropdown from config
+    if (logLevelSelect && payload.logLevel !== undefined) {
+      logLevelSelect.value = String(payload.logLevel);
     }
   };
 
@@ -210,6 +216,43 @@
 
   if (rebootButton) {
     rebootButton.addEventListener("click", handleReboot);
+  }
+
+  // --- Diagnostics: log level selector ---
+  const saveLogLevel = async () => {
+    if (!logLevelSelect) return;
+    if (diagFeedback) {
+      diagFeedback.textContent = "Saving...";
+      diagFeedback.className = "feedback";
+    }
+    try {
+      const body = new URLSearchParams();
+      body.set("logLevel", logLevelSelect.value);
+      const response = await fetch("/api/config", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
+        body,
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => null);
+        throw new Error(err?.error || `HTTP ${response.status}`);
+      }
+      const data = await response.json();
+      if (data.logLevel !== undefined) logLevelSelect.value = String(data.logLevel);
+      if (diagFeedback) {
+        diagFeedback.textContent = `✓ Log level saved at ${new Date().toLocaleTimeString()}`;
+        diagFeedback.className = "feedback success";
+      }
+    } catch (error) {
+      if (diagFeedback) {
+        diagFeedback.textContent = error instanceof Error ? `❌ ${error.message}` : "❌ Failed to save";
+        diagFeedback.className = "feedback error";
+      }
+    }
+  };
+
+  if (logLevelSelect) {
+    logLevelSelect.addEventListener("change", saveLogLevel);
   }
 
   loadFeatures();

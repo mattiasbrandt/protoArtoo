@@ -5,7 +5,7 @@
 // Runs at 10 Hz on Core 0 (low priority, non-blocking).
 //
 // Responsibilities:
-//   - Log failsafe trigger count increases to Serial
+//   - Log failsafe trigger count increases
 //   - Verify dome connection state transitions (connected ↔ lost)
 //   - Warn if free heap drops below 20 KB
 //
@@ -16,6 +16,7 @@
 #include <Arduino.h>
 #include <esp_heap_caps.h>
 
+#include "logging.h"
 #include "robot_state.h"
 
 static const char* TAG = "SafetyMonitor";
@@ -32,7 +33,7 @@ static bool lastDomeConnected = false;
 // Does NOT set failsafe flags — read-only access to RobotState.
 // -----------------------------------------------------------------------------
 void safetyMonitorTask(void* pvParameters) {
-    Serial.printf("[%s] started — 10 Hz audit on Core 0\n", TAG);
+    PA_LOG_INFO(TAG, "started — 10 Hz audit on Core 0");
 
     while (true) {
         // Read state snapshot under mutex
@@ -47,23 +48,23 @@ void safetyMonitorTask(void* pvParameters) {
 
         // Log new failsafe triggers
         if (fsCount > lastFailsafeCount) {
-            Serial.printf("[%s] failsafe triggered — count:%lu source:%d estop:%d sbus:%d hw:%d\n",
-                          TAG, (unsigned long)fsCount, (int)fsSrc, (int)estop, (int)sbusLost,
-                          (int)sbusHw);
+            PA_LOG_WARN(TAG, "failsafe triggered — count:%lu source:%d estop:%d sbus:%d hw:%d",
+                        (unsigned long)fsCount, (int)fsSrc, (int)estop, (int)sbusLost,
+                        (int)sbusHw);
             lastFailsafeCount = fsCount;
         }
 
         // Log dome connection state transitions
         bool domeNowConnected = (millis() - domeLastMs) < 5000 && domeLastMs > 0;
         if (domeNowConnected != lastDomeConnected) {
-            Serial.printf("[%s] dome link %s\n", TAG, domeNowConnected ? "CONNECTED" : "LOST");
+            PA_LOG_INFO(TAG, "dome link %s", domeNowConnected ? "CONNECTED" : "LOST");
             lastDomeConnected = domeNowConnected;
         }
 
-        // Warn if free heap is low
+        // Warn if free heap is low — goes to ring buffer so it appears in dashboard log
         uint32_t freeHeap = ESP.getFreeHeap();
         if (freeHeap < 20480) {  // 20 KB threshold
-            Serial.printf("[%s] WARNING low heap: %lu bytes free\n", TAG, (unsigned long)freeHeap);
+            PA_LOG_WARN(TAG, "low heap: %lu bytes free", (unsigned long)freeHeap);
         }
 
         vTaskDelay(pdMS_TO_TICKS(100));  // 10 Hz

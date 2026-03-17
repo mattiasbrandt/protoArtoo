@@ -232,6 +232,7 @@ bool buildConfigJson(char* buffer, size_t bufferSize) {
     uint32_t webDriveTimeoutMs;
     bool ch8ModeLock;
     bool stationary;
+    uint8_t logLevel;
     RcInputMode rcInputMode;
     bool enableArm1, enableArm2, enableAux1, enableAux2, enableAux3, enableDome;
     bool enableRcCh1, enableRcCh2, enableRcCh3, enableRcCh4, enableRcCh5, enableRcCh6;
@@ -253,6 +254,7 @@ bool buildConfigJson(char* buffer, size_t bufferSize) {
     webDriveTimeoutMs = robotState.cfg_webDriveTimeoutMs;
     ch8ModeLock = robotState.cfg_ch8ModeLock;
     stationary = robotState.cfg_stationary;
+    logLevel = robotState.cfg_logLevel;
     rcInputMode = robotState.cfg_rc_input_mode;
 
     enableArm1 = robotState.cfg_enable_arm1;
@@ -376,6 +378,7 @@ bool buildConfigJson(char* buffer, size_t bufferSize) {
         "\"webDriveTimeoutMs\":%lu,"
         "\"ch8ModeLock\":%s,"
         "\"stationary\":%s,"
+        "\"logLevel\":%u,"
         "\"rcInputMode\":\"%s\","
         "\"enableArm1\":%s,\"enableArm2\":%s,\"enableAux1\":%s,\"enableAux2\":%s,"
         "\"enableAux3\":%s,\"enableDome\":%s,"
@@ -394,7 +397,7 @@ bool buildConfigJson(char* buffer, size_t bufferSize) {
         "\"rcFree0\":\"%s\",\"rcFree1\":\"%s\",\"rcFree2\":\"%s\",\"rcFree3\":\"%s\""
         "}",
         (int)speedLimitMax, (unsigned long)webDriveTimeoutMs, ch8ModeLock ? "true" : "false",
-        stationary ? "true" : "false", rcModeToString(rcInputMode), enableArm1 ? "true" : "false",
+        stationary ? "true" : "false", (unsigned int)logLevel, rcModeToString(rcInputMode), enableArm1 ? "true" : "false",
         enableArm2 ? "true" : "false", enableAux1 ? "true" : "false", enableAux2 ? "true" : "false",
         enableAux3 ? "true" : "false", enableDome ? "true" : "false",
         enableRcCh1 ? "true" : "false", enableRcCh2 ? "true" : "false",
@@ -481,6 +484,21 @@ void registerConfigRoutes(AsyncWebServer& server) {
             req->send(400, "application/json",
                       "{\"ok\":false,\"error\":\"stationary must be true/false or 1/0\"}");
             return;
+        }
+
+        if (req->hasParam("logLevel", true)) {
+            int16_t lvl = 0;
+            if (parseInt16Param(req, "logLevel", 1, 3, &lvl)) {
+                taskENTER_CRITICAL(&robotStateMux);
+                robotState.cfg_logLevel = (uint8_t)lvl;
+                taskEXIT_CRITICAL(&robotStateMux);
+                PA_LOG_INFO(TAG, "[CFG] logLevel updated to %d", (int)lvl);
+                changed = true;
+            } else {
+                req->send(400, "application/json",
+                          "{\"ok\":false,\"error\":\"logLevel must be 1 (Error), 2 (Info), or 3 (Debug)\"}");
+                return;
+            }
         }
 
         if (req->hasParam("rcInputMode", true)) {

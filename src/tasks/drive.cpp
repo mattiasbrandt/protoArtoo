@@ -18,6 +18,7 @@
 
 #include "config.h"
 #include "hoverboard_uart.h"
+#include "logging.h"
 #include "robot_state.h"
 
 static const char* TAG = "DriveTask";
@@ -39,8 +40,8 @@ void driveTask(void* pvParameters) {
     esp_task_wdt_add(NULL);
 
     hoverSerial.begin(HOVERBOARD_BAUD, SERIAL_8N1, PIN_HOVERBOARD_RX, PIN_HOVERBOARD_TX);
-    Serial.printf("[%s] started — UART1 %d baud, GPIO TX=%d RX=%d\n", TAG, HOVERBOARD_BAUD,
-                  PIN_HOVERBOARD_TX, PIN_HOVERBOARD_RX);
+    PA_LOG_INFO(TAG, "started — UART1 %d baud, GPIO TX=%d RX=%d",
+                HOVERBOARD_BAUD, PIN_HOVERBOARD_TX, PIN_HOVERBOARD_RX);
 
     uint8_t frameBuf[8];
     const TickType_t period = pdMS_TO_TICKS(1000 / DRIVE_FREQ_HZ);  // 20 ms at 50 Hz

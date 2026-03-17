@@ -126,5 +126,3 @@ constexpr uint8_t PA_LOG_LEVEL_DEBUG = 3;
 #ifndef PA_LOG_LEVEL
 #  define PA_LOG_LEVEL 3
 #endif
-// C++ typed alias for use in runtime comparisons (e.g. PA_LOG_LEVEL >= PA_LOG_LEVEL_INFO)
-static constexpr uint8_t PA_LOG_LEVEL_VAL = PA_LOG_LEVEL;

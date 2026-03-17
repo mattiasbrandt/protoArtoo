@@ -20,6 +20,10 @@ static const char* TAG = "RC";
 
 void registerRcRoutes(AsyncWebServer& server) {
     server.on("/api/rc", HTTP_GET, [](AsyncWebServerRequest* req) {
+        // Static buffer: ESPAsyncWebServer serialises handler invocations on the
+        // async TCP task — concurrent GET /api/rc requests are not possible, so
+        // this buffer is safe without an additional mutex.
+        // req->send() copies the string synchronously before returning.
         static char rcBuf[2048];
         if (!buildRcDiagnosticsJson(rcBuf, sizeof(rcBuf))) {
             req->send(500, "application/json", "{\"ok\":false,\"error\":\"rc json build failed\"}");

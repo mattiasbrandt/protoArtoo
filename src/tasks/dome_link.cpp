@@ -159,11 +159,12 @@ void domeLinkTask(void* pvParameters) {
         if ((uint32_t)(now - lastHbMs) >= 1000) {
             lastHbMs = now;
             s_domeSerial.print("#PAHB\r");
+            uint32_t hbTx;
             taskENTER_CRITICAL(&robotStateMux);
             robotState.bodyHbTx++;
+            hbTx = robotState.bodyHbTx;
             taskEXIT_CRITICAL(&robotStateMux);
-            PA_LOG_DEBUG(TAG, "TX: #PAHB (hb_tx=%lu)",
-                         (unsigned long)robotState.bodyHbTx);
+            PA_LOG_DEBUG(TAG, "TX: #PAHB (hb_tx=%lu)", (unsigned long)hbTx);
         }
 
         // ----------------------------------------------------------------

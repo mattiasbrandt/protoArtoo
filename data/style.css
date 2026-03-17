@@ -284,7 +284,8 @@ nav a.active {
 }
 
 .field input[type="number"],
-.field input[type="text"] {
+.field input[type="text"],
+.field select {
   width: 100%;
   padding: 12px 14px;
   color: var(--text);
@@ -298,7 +299,8 @@ nav a.active {
 }
 
 .field input[type="number"]:focus,
-.field input[type="text"]:focus {
+.field input[type="text"]:focus,
+.field select:focus {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(74, 144, 217, 0.2);

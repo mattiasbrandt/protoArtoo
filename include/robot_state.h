@@ -168,6 +168,7 @@ struct RobotState {
     uint32_t cfg_webDriveTimeoutMs;  // Default: WEB_DRIVE_TIMEOUT_MS
     bool cfg_ch8ModeLock;            // Default: false
     uint8_t cfg_audioVolume;         // Default: 20 (0-30)
+    uint8_t cfg_logLevel;            // Runtime log verbosity: 1=Error 2=Info 3=Debug. NVS: log_level
 
     // NVS-backed named sound track indices (mirror AudioNamedTracks defaults).
     // NVS keys: snd_scream, snd_faint, snd_leia, snd_cantina_s, snd_sw,

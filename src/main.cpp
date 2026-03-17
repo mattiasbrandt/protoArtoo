@@ -255,6 +255,7 @@ void loadConfigToState() {
     robotState.cfg_webDriveTimeoutMs = prefs.getULong("web_tmo", WEB_DRIVE_TIMEOUT_MS);
     robotState.cfg_ch8ModeLock = prefs.getBool("ch8_lock", false);
     robotState.cfg_audioVolume    = (uint8_t)prefs.getUChar("aud_vol", 20);
+    robotState.cfg_logLevel       = (uint8_t)prefs.getUChar("log_level", PA_LOG_LEVEL);
     robotState.cfg_snd_scream    = prefs.getUShort("snd_scream",    AUDIO_TRACK_SCREAM);
     robotState.cfg_snd_faint     = prefs.getUShort("snd_faint",     AUDIO_TRACK_FAINT);
     robotState.cfg_snd_leia      = prefs.getUShort("snd_leia",      AUDIO_TRACK_LEIA);
@@ -507,6 +508,7 @@ bool saveConfigToNvs() {
     uint32_t webDriveTimeoutMs;
     bool ch8ModeLock;
     uint8_t audioVolume;
+    uint8_t logLevel;
     uint16_t sndScream, sndFaint, sndLeia, sndCantinaS, sndSwTheme;
     uint16_t sndImpMarch, sndCantinaL, sndStartup, sndRandMin, sndRandMax;
     uint16_t arm1Open, arm1Close, arm2Open, arm2Close;
@@ -532,6 +534,7 @@ bool saveConfigToNvs() {
     webDriveTimeoutMs = robotState.cfg_webDriveTimeoutMs;
     ch8ModeLock = robotState.cfg_ch8ModeLock;
     audioVolume  = robotState.cfg_audioVolume;
+    logLevel     = robotState.cfg_logLevel;
     sndScream    = robotState.cfg_snd_scream;
     sndFaint     = robotState.cfg_snd_faint;
     sndLeia      = robotState.cfg_snd_leia;
@@ -624,6 +627,7 @@ bool saveConfigToNvs() {
     prefs.putULong("web_tmo", webDriveTimeoutMs);
     prefs.putBool("ch8_lock", ch8ModeLock);
     prefs.putUChar("aud_vol", audioVolume);
+    prefs.putUChar("log_level", logLevel);
     prefs.putUShort("snd_scream",    sndScream);
     prefs.putUShort("snd_faint",     sndFaint);
     prefs.putUShort("snd_leia",      sndLeia);
@@ -729,8 +733,12 @@ void setup() {
     // Safety: boot with drive locked until SBUS confirmed
     robotState.sbusSignalLost = true;
     robotState.estop = false;
+    // Pre-init log level to compile-time default so any log calls added before
+    // loadConfigToState() in the future are not silently dropped (cfg_logLevel
+    // is zero-initialized by robotState = {} which would suppress all output).
+    robotState.cfg_logLevel = PA_LOG_LEVEL;
 
-    // Load config defaults (NVS in Phase 2)
+    // Load config from NVS — may override cfg_logLevel with the user's saved value.
     loadConfigToState();
     logBootHealth();
 

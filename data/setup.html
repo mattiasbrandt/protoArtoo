@@ -172,6 +172,24 @@
       <div id="feature-feedback" class="feedback mt-12">Loading component settings...</div>
     </div>
 
+    <!-- Diagnostics -->
+    <div class="card">
+      <h3>🩺 Diagnostics</h3>
+      <div class="desc">Controls what the firmware writes to the serial console and the live log
+        panel. Takes effect immediately — no reboot needed. The setting persists across reboots.</div>
+      <form id="diag-form" class="form-grid mt-16">
+        <label class="field" for="log-level-select">
+          <span>Log verbosity</span>
+          <select id="log-level-select" name="logLevel">
+            <option value="1">1 — Error only (faults and crashes)</option>
+            <option value="2">2 — Info (normal boot and service messages)</option>
+            <option value="3">3 — Debug (verbose, for development and fault diagnosis)</option>
+          </select>
+        </label>
+      </form>
+      <div id="diag-feedback" class="feedback mt-12"></div>
+    </div>
+
     <!-- System Controls -->
     <div class="card">
       <h3>🔄 System</h3>

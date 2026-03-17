@@ -90,24 +90,26 @@ void registerAudioRoutes(AsyncWebServer& server) {
             return;
         }
         uint16_t t = (uint16_t)track;
-        const String& key = keyParam->value();
-
-        bool found = true;
+        // Resolve the target field pointer before entering the critical section.
+        // String comparisons must not run inside portMUX — they are safe here
+        // (no allocation) but keeping critical sections minimal is good practice.
+        const char* key = keyParam->value().c_str();
+        uint16_t* fieldPtr = nullptr;
         taskENTER_CRITICAL(&robotStateMux);
-        if      (key == "scream")    robotState.cfg_snd_scream    = t;
-        else if (key == "faint")     robotState.cfg_snd_faint     = t;
-        else if (key == "leia")      robotState.cfg_snd_leia      = t;
-        else if (key == "cantina_s") robotState.cfg_snd_cantina_s = t;
-        else if (key == "sw_theme")  robotState.cfg_snd_sw_theme  = t;
-        else if (key == "imp_march") robotState.cfg_snd_imp_march = t;
-        else if (key == "cantina_l") robotState.cfg_snd_cantina_l = t;
-        else if (key == "startup")   robotState.cfg_snd_startup   = t;
-        else if (key == "rand_min")  robotState.cfg_snd_rand_min  = t;
-        else if (key == "rand_max")  robotState.cfg_snd_rand_max  = t;
-        else                         found = false;
+        if      (strcmp(key, "scream")    == 0) fieldPtr = &robotState.cfg_snd_scream;
+        else if (strcmp(key, "faint")     == 0) fieldPtr = &robotState.cfg_snd_faint;
+        else if (strcmp(key, "leia")      == 0) fieldPtr = &robotState.cfg_snd_leia;
+        else if (strcmp(key, "cantina_s") == 0) fieldPtr = &robotState.cfg_snd_cantina_s;
+        else if (strcmp(key, "sw_theme")  == 0) fieldPtr = &robotState.cfg_snd_sw_theme;
+        else if (strcmp(key, "imp_march") == 0) fieldPtr = &robotState.cfg_snd_imp_march;
+        else if (strcmp(key, "cantina_l") == 0) fieldPtr = &robotState.cfg_snd_cantina_l;
+        else if (strcmp(key, "startup")   == 0) fieldPtr = &robotState.cfg_snd_startup;
+        else if (strcmp(key, "rand_min")  == 0) fieldPtr = &robotState.cfg_snd_rand_min;
+        else if (strcmp(key, "rand_max")  == 0) fieldPtr = &robotState.cfg_snd_rand_max;
+        if (fieldPtr) *fieldPtr = t;
         taskEXIT_CRITICAL(&robotStateMux);
 
-        if (!found) {
+        if (!fieldPtr) {
             req->send(400, "application/json",
                       "{\"ok\":false,\"error\":\"unknown key\"}");
             return;
@@ -115,7 +117,7 @@ void registerAudioRoutes(AsyncWebServer& server) {
 
         // Persist to NVS — dedicated mini-write for this field only.
         // audioTrackNvsKey() maps API key → NVS key (pure helper, tested natively).
-        const char* nvsKey = audioTrackNvsKey(key.c_str());
+        const char* nvsKey = audioTrackNvsKey(key);
         Preferences prefs;
         bool ok = false;
         if (nvsKey && prefs.begin(NVS_NAMESPACE, false)) {
@@ -123,8 +125,7 @@ void registerAudioRoutes(AsyncWebServer& server) {
             prefs.end();
         }
 
-        PA_LOG_INFO(TAG, "[AUDIO] POST /api/audio/tracks key=%s track=%u",
-                    key.c_str(), (unsigned)t);
+        PA_LOG_INFO(TAG, "[AUDIO] POST /api/audio/tracks key=%s track=%u", key, (unsigned)t);
         if (ok) {
             req->send(200, "application/json", "{\"ok\":true}");
         } else {
