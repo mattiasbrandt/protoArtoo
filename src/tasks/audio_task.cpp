@@ -20,10 +20,10 @@
 
 #include "audio_task.h"
 
-#include <stdlib.h>  // rand()
 #include <string.h>
 
 #include <Arduino.h>
+#include <esp_random.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
 
@@ -193,7 +193,7 @@ void audioTask(void* pvParameters) {
         // Drain queue silently so senders do not stall; never touch hardware.
         AudioCommand cmd{};
         for (;;) {
-            xQueueReceive(audioCmdQueue, &cmd, portMAX_DELAY);
+            xQueueReceive(audioCmdQueue, &cmd, pdMS_TO_TICKS(5000));
         }
     }
 
@@ -213,8 +213,8 @@ void audioTask(void* pvParameters) {
 
     AudioCommand cmd{};
     for (;;) {
-        // Block up to AUDIO_RAND_INTERVAL_MS so the random timer can fire
-        // even when the queue is idle.
+        // Block up to 500 ms so the random playback timer can fire
+        // even when the command queue is idle.
         const TickType_t waitTicks = pdMS_TO_TICKS(500);
         if (xQueueReceive(audioCmdQueue, &cmd, waitTicks) == pdTRUE) {
             // Re-read audio enabled flag in case it changed via web API
@@ -228,8 +228,15 @@ void audioTask(void* pvParameters) {
 
             switch (cmd.type) {
                 case AUDIO_CMD_DOLLAR: {
+                    bool wasRandom = randomMode;
                     AudioAction action = parseAudioDollar(cmd.dollar, named);
                     dispatchAction(action, currentVol, randomMode);
+                    // If random mode just turned on, reset the timer so the
+                    // first random track fires after a full interval, not
+                    // immediately (lastRandMs was 0 or stale before this).
+                    if (randomMode && !wasRandom) {
+                        lastRandMs = millis();
+                    }
                     break;
                 }
                 case AUDIO_CMD_PLAY_TRACK:
@@ -258,9 +265,10 @@ void audioTask(void* pvParameters) {
             uint32_t now = millis();
             if ((uint32_t)(now - lastRandMs) >= AUDIO_RAND_INTERVAL_MS) {
                 lastRandMs = now;
-                // Uniform random in [AUDIO_RAND_TRACK_MIN, AUDIO_RAND_TRACK_MAX]
+                // Uniform random in [AUDIO_RAND_TRACK_MIN, AUDIO_RAND_TRACK_MAX].
+                // esp_random() uses the ESP32 hardware RNG — no seeding needed.
                 uint32_t range = AUDIO_RAND_TRACK_MAX - AUDIO_RAND_TRACK_MIN + 1;
-                uint16_t track = (uint16_t)(AUDIO_RAND_TRACK_MIN + (rand() % range));
+                uint16_t track = (uint16_t)(AUDIO_RAND_TRACK_MIN + (esp_random() % range));
                 driver->playTrack(track);
                 PA_LOG_DEBUG(TAG, "random track %u", (unsigned)track);
             }

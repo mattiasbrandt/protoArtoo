@@ -46,6 +46,11 @@ struct AudioCommand {
     };
 };
 
+// Union must be large enough to hold the dollar string (largest member).
+// If this fires, increase dollar[] or check for accidental struct changes.
+static_assert(sizeof(AudioCommand) >= 10 + 2,
+              "AudioCommand too small — dollar[] union member may be truncated");
+
 // -----------------------------------------------------------------------------
 // audioTask() — FreeRTOS task entry point.
 // Pinned to Core 0 (non-RT side). Software bit-bang TX blocks for up to ~6 ms

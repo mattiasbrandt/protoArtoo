@@ -115,7 +115,7 @@ void domeLinkTask(void* pvParameters) {
         // Drain queue silently so senders do not block.
         DomeTxCmd cmd{};
         for (;;) {
-            xQueueReceive(domeTxQueue, &cmd, portMAX_DELAY);
+            xQueueReceive(domeTxQueue, &cmd, pdMS_TO_TICKS(5000));
         }
     }
 
