@@ -1,0 +1,350 @@
+<!doctype html>
+<!--
+  test/test_rc_learn/index.html
+
+  Standalone browser test for the RC learning mode pure logic.
+  Open this file directly (file:// or local HTTP server) — NOT served to device.
+  All test logic is self-contained; no network calls.
+
+  Run:  python3 -m http.server 8080 --directory /path/to/protoArtoo
+        then open http://localhost:8080/test/test_rc_learn/index.html
+
+  Pass criteria: all rows show ✅.  Any ❌ is a bug in the implementation.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>RC Learn Core — Tests</title>
+  <style>
+    body { font-family: monospace; padding: 24px; background: #111; color: #eee; }
+    h2   { color: #6ab0ff; }
+    .pass { color: #4caf50; }
+    .fail { color: #f44336; font-weight: bold; }
+    table { border-collapse: collapse; width: 100%; margin-top: 16px; }
+    td, th { padding: 6px 12px; border: 1px solid #333; text-align: left; }
+    th { background: #222; }
+    tr.pass-row td:first-child::before { content: "✅  "; }
+    tr.fail-row td:first-child::before { content: "❌  "; }
+    tr.fail-row { background: rgba(244,67,54,0.10); }
+    #summary { margin-top: 16px; font-size: 1.1em; }
+  </style>
+</head>
+<body>
+<h2>RC Learning Mode — Core Logic Tests</h2>
+<p>Tests the pure delta-accumulation and winner-selection logic extracted from rc.js.</p>
+<table id="results">
+  <thead><tr><th>Test</th><th>Expected</th><th>Got</th></tr></thead>
+  <tbody></tbody>
+</table>
+<div id="summary"></div>
+
+<script>
+// ─── Pure logic under test (must stay in sync with rc.js implementation) ─────
+//
+// These are the same functions that live inside the rc.js IIFE, extracted here
+// as standalone pure functions for testability. If the rc.js implementation
+// changes, update these to match.
+
+const LEARN_ANALOG_THRESHOLD = 0.06;  // ignore deltas below 6% of full range
+const LEARN_COMMIT_DELTA     = 0.25;  // cumulative delta needed to commit winner
+
+/**
+ * computeLearnDeltas(prev, curr, existingDeltas) → newDeltas
+ *
+ * Pure function: given two consecutive SSE rc snapshots and the current
+ * accumulated delta map, returns an updated delta map.
+ *
+ * Analog channels:  accumulate |normalized_curr - normalized_prev| when above threshold.
+ * Digital channels: count rising edges (false→true) as LEARN_COMMIT_DELTA each.
+ *
+ * @param {object} prev - previous rcSnapshot (may be null → returns existingDeltas unchanged)
+ * @param {object} curr - current  rcSnapshot
+ * @param {object} existingDeltas - { channelName: number } accumulated so far
+ * @returns {object} updated deltas (new object, existingDeltas not mutated)
+ */
+function computeLearnDeltas(prev, curr, existingDeltas) {
+  const deltas = Object.assign({}, existingDeltas);
+
+  if (!prev || !curr) return deltas;
+
+  // Analog channels
+  const prevCh = Array.isArray(prev.channels) ? prev.channels : [];
+  const currCh = Array.isArray(curr.channels) ? curr.channels : [];
+
+  currCh.forEach(ch => {
+    const p = prevCh.find(x => x.name === ch.name);
+    if (!p) return;
+    const delta = Math.abs((ch.normalized || 0) - (p.normalized || 0));
+    if (delta >= LEARN_ANALOG_THRESHOLD) {
+      deltas[ch.name] = (deltas[ch.name] || 0) + delta;
+    }
+  });
+
+  // Digital channels — rising edge only
+  const prevDig = (prev.digital && typeof prev.digital === 'object') ? prev.digital : {};
+  const currDig = (curr.digital && typeof curr.digital === 'object') ? curr.digital : {};
+
+  Object.keys(currDig).forEach(name => {
+    const wasPressed = prevDig[name]?.pressed ?? false;
+    const isPressed  = currDig[name]?.pressed  ?? false;
+    if (isPressed && !wasPressed) {
+      deltas[name] = (deltas[name] || 0) + LEARN_COMMIT_DELTA;
+    }
+  });
+
+  return deltas;
+}
+
+/**
+ * pickLearnWinner(deltas) → string|null
+ *
+ * Pure function: given the accumulated delta map, return the channel name
+ * with the highest delta that is >= LEARN_COMMIT_DELTA, or null if none qualify.
+ */
+function pickLearnWinner(deltas) {
+  let maxDelta = LEARN_COMMIT_DELTA - Number.EPSILON; // must strictly exceed threshold
+  let winner = null;
+  Object.entries(deltas).forEach(([name, delta]) => {
+    if (delta > maxDelta) {
+      maxDelta = delta;
+      winner = name;
+    }
+  });
+  return winner;
+}
+
+// ─── Test helpers ─────────────────────────────────────────────────────────────
+
+const results = [];
+
+function assert(name, expected, got) {
+  const pass = JSON.stringify(expected) === JSON.stringify(got);
+  results.push({ name, expected, got, pass });
+}
+
+function makeSnapshot(analogOverrides = {}, digitalOverrides = {}) {
+  // Build a minimal rc snapshot like the firmware sends
+  const defaultChannels = [
+    { name: "driveSpeed", type: "analog", normalized: 0.0 },
+    { name: "driveSteer", type: "analog", normalized: 0.0 },
+    { name: "driveLimit", type: "analog", normalized: 0.0 },
+    { name: "domeSpeed",  type: "analog", normalized: 0.0 },
+    { name: "arm1",       type: "analog", normalized: 0.0 },
+    { name: "arm2",       type: "analog", normalized: 0.0 },
+  ];
+  const channels = defaultChannels.map(ch => ({
+    ...ch,
+    normalized: analogOverrides[ch.name] ?? ch.normalized,
+  }));
+
+  const digital = {};
+  Object.keys(digitalOverrides).forEach(k => {
+    digital[k] = { pressed: digitalOverrides[k], activeSource: "sbus1", bindingChannel: 4 };
+  });
+
+  return { mode: "dual_sbus", updatedMs: Date.now(), sources: {}, channels, digital };
+}
+
+// ─── Tests ────────────────────────────────────────────────────────────────────
+
+// 1. No prev → deltas unchanged
+{
+  const d = computeLearnDeltas(null, makeSnapshot({ driveSpeed: 0.5 }), {});
+  assert("null prev → empty deltas", {}, d);
+}
+
+// 2. Both prev and curr same values → no delta accumulated
+{
+  const snap = makeSnapshot({ driveSpeed: 0.5 });
+  const d = computeLearnDeltas(snap, snap, {});
+  assert("identical snapshots → no delta", {}, d);
+}
+
+// 3. Single channel moves above threshold → delta accumulated
+{
+  const prev = makeSnapshot({ driveSpeed: 0.0 });
+  const curr = makeSnapshot({ driveSpeed: 0.5 });
+  const d = computeLearnDeltas(prev, curr, {});
+  assert("driveSpeed moves 0.5 → accumulated", { driveSpeed: 0.5 }, d);
+}
+
+// 4. Movement below threshold → not accumulated
+{
+  const prev = makeSnapshot({ driveSteer: 0.0 });
+  const curr = makeSnapshot({ driveSteer: 0.05 }); // 0.05 < 0.06 threshold
+  const d = computeLearnDeltas(prev, curr, {});
+  assert("delta 0.05 < threshold → not accumulated", {}, d);
+}
+
+// 5. Exactly at threshold → not accumulated (strictly less than threshold counts as jitter)
+{
+  const prev = makeSnapshot({ driveSteer: 0.0 });
+  const curr = makeSnapshot({ driveSteer: 0.06 }); // exactly at threshold → should accumulate
+  const d = computeLearnDeltas(prev, curr, {});
+  assert("delta exactly at threshold 0.06 → accumulated", { driveSteer: 0.06 }, d);
+}
+
+// 6. Multiple ticks accumulate correctly
+{
+  const s0 = makeSnapshot({ driveSpeed: 0.0 });
+  const s1 = makeSnapshot({ driveSpeed: 0.3 });
+  const s2 = makeSnapshot({ driveSpeed: 0.6 });
+  let d = {};
+  d = computeLearnDeltas(s0, s1, d); // +0.3
+  d = computeLearnDeltas(s1, s2, d); // +0.3
+  assert("two ticks accumulate", { driveSpeed: 0.6 }, d);
+}
+
+// 7. Two channels both move → both accumulated, higher one wins
+{
+  const prev = makeSnapshot({ driveSpeed: 0.0, driveSteer: 0.0 });
+  const curr = makeSnapshot({ driveSpeed: 0.4, driveSteer: 0.1 });
+  const d = computeLearnDeltas(prev, curr, {});
+  assert("two channels → both in deltas",
+    { driveSpeed: 0.4, driveSteer: 0.1 }, d);
+  const winner = pickLearnWinner(d);
+  assert("higher channel wins", "driveSpeed", winner);
+}
+
+// 8. pickLearnWinner → null when max delta < commit threshold
+{
+  const w = pickLearnWinner({ driveSpeed: 0.10 }); // 0.10 < 0.25
+  assert("below commit threshold → null winner", null, w);
+}
+
+// 9. pickLearnWinner → winner when max delta >= commit threshold
+{
+  const w = pickLearnWinner({ driveSpeed: 0.25 });
+  assert("at commit threshold → winner selected", "driveSpeed", w);
+}
+
+// 10. pickLearnWinner with multiple entries → highest wins
+{
+  const w = pickLearnWinner({ driveSpeed: 0.30, driveSteer: 0.80, domeSpeed: 0.50 });
+  assert("highest delta wins", "driveSteer", w);
+}
+
+// 11. Digital rising edge → counted as LEARN_COMMIT_DELTA
+{
+  const prev = makeSnapshot({}, { arm1: false });
+  const curr = makeSnapshot({}, { arm1: true });
+  const d = computeLearnDeltas(prev, curr, {});
+  assert("digital rising edge → LEARN_COMMIT_DELTA", { arm1: LEARN_COMMIT_DELTA }, d);
+}
+
+// 12. Digital held pressed → not double-counted
+{
+  const prev = makeSnapshot({}, { arm1: true });
+  const curr = makeSnapshot({}, { arm1: true });
+  const d = computeLearnDeltas(prev, curr, {});
+  assert("digital held → not counted again", {}, d);
+}
+
+// 13. Digital falling edge → not counted
+{
+  const prev = makeSnapshot({}, { arm1: true });
+  const curr = makeSnapshot({}, { arm1: false });
+  const d = computeLearnDeltas(prev, curr, {});
+  assert("digital falling edge → not counted", {}, d);
+}
+
+// 14. Empty digital section on prev → treated as all-unpressed
+{
+  const prev = makeSnapshot({}, {});               // no digital keys
+  const curr = makeSnapshot({}, { arm2: true });   // arm2 just pressed
+  const d = computeLearnDeltas(prev, curr, {});
+  assert("digital missing from prev → treated as unpressed, rising edge counted",
+    { arm2: LEARN_COMMIT_DELTA }, d);
+}
+
+// 15. existingDeltas is not mutated
+{
+  const existing = { driveSpeed: 0.3 };
+  const frozen = Object.freeze({ driveSpeed: 0.3 }); // freeze to detect mutation
+  const prev = makeSnapshot({ driveSteer: 0.0 });
+  const curr = makeSnapshot({ driveSteer: 0.2 });
+  let threw = false;
+  try {
+    computeLearnDeltas(prev, curr, frozen);
+  } catch (_) {
+    threw = true;
+  }
+  assert("frozen existingDeltas → no mutation (no throw)", false, threw);
+}
+
+// 16. Accumulated deltas from prior ticks are preserved
+{
+  const existingDeltas = { driveSpeed: 0.20 };
+  const prev = makeSnapshot({ driveSteer: 0.0 });
+  const curr = makeSnapshot({ driveSteer: 0.5 });
+  const d = computeLearnDeltas(prev, curr, existingDeltas);
+  assert("prior deltas preserved", { driveSpeed: 0.20, driveSteer: 0.5 }, d);
+}
+
+// 17. Channel not in prev snapshot → skipped (no undefined-access error)
+{
+  const prev = { channels: [], digital: {} }; // no channels in prev
+  const curr = makeSnapshot({ driveSpeed: 0.5 });
+  let threw = false;
+  try {
+    computeLearnDeltas(prev, curr, {});
+  } catch (_) { threw = true; }
+  assert("channel missing from prev → skipped, no crash", false, threw);
+}
+
+// 18. Malformed channel (null normalized) → treated as 0, no crash
+{
+  const prev = { channels: [{ name: "driveSpeed", normalized: null }], digital: {} };
+  const curr = { channels: [{ name: "driveSpeed", normalized: 0.5 }],  digital: {} };
+  let threw = false;
+  try {
+    computeLearnDeltas(prev, curr, {});
+  } catch (_) { threw = true; }
+  assert("null normalized → treated as 0, no crash", false, threw);
+}
+
+// 19. Reverse-direction movement: normalized goes negative → absolute delta used
+{
+  const prev = makeSnapshot({ driveSteer: 0.0 });
+  const curr = makeSnapshot({ driveSteer: -0.5 });
+  const d = computeLearnDeltas(prev, curr, {});
+  assert("negative normalized → absolute delta accumulated", { driveSteer: 0.5 }, d);
+}
+
+// 20. Multiple analog channels move; only the one above threshold wins
+{
+  const prev = makeSnapshot({ driveSpeed: 0.0, driveSteer: 0.0, domeSpeed: 0.0 });
+  const curr = makeSnapshot({ driveSpeed: 0.04, driveSteer: 0.0, domeSpeed: 0.80 });
+  // driveSpeed 0.04 < threshold → ignored; domeSpeed 0.80 above
+  const d = computeLearnDeltas(prev, curr, {});
+  assert("sub-threshold ignored, above-threshold accumulated",
+    { domeSpeed: 0.8 }, d);
+  const w = pickLearnWinner(d);
+  assert("domeSpeed wins", "domeSpeed", w);
+}
+
+// ─── Render results ───────────────────────────────────────────────────────────
+
+const tbody = document.querySelector("#results tbody");
+let passed = 0, failed = 0;
+results.forEach(r => {
+  const tr = document.createElement("tr");
+  tr.className = r.pass ? "pass-row" : "fail-row";
+  tr.innerHTML = `
+    <td>${r.name}</td>
+    <td>${JSON.stringify(r.expected)}</td>
+    <td>${JSON.stringify(r.got)}</td>
+  `;
+  tbody.appendChild(tr);
+  r.pass ? passed++ : failed++;
+});
+
+const summary = document.getElementById("summary");
+summary.innerHTML = failed === 0
+  ? `<span class="pass">✅ All ${passed} tests passed.</span>`
+  : `<span class="fail">❌ ${failed} FAILED, ${passed} passed.</span>`;
+
+if (failed > 0) console.error("TESTS FAILED:", results.filter(r => !r.pass).map(r => r.name));
+</script>
+</body>
+</html>

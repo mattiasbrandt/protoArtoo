@@ -989,6 +989,61 @@ input.input-narrow:focus {
   min-height: 44px;
 }
 
+/* ─── RC Learning Mode ─────────────────────────────────────────────────────── */
+
+.rc-learn-bar {
+  padding: 0 0 10px;
+}
+
+.rc-learn-bar .btn {
+  width: 100%;
+  font-size: 0.85rem;
+}
+
+.rc-learn-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  border-radius: 8px;
+  background: rgba(106, 176, 255, 0.10);
+  border: 1px solid rgba(106, 176, 255, 0.30);
+  font-size: 0.85rem;
+}
+
+.rc-learn-banner-icon {
+  font-size: 1.3rem;
+  line-height: 1;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.rc-learn-banner-title {
+  font-weight: 600;
+  color: var(--accent-bright);
+  margin-bottom: 4px;
+}
+
+.rc-learn-banner-status {
+  color: var(--text-dim);
+  font-size: 0.82rem;
+}
+
+/* Active slot highlight during learning */
+.rc-slot-item.learn-hot {
+  border-color: var(--accent-bright) !important;
+  box-shadow: 0 0 0 2px rgba(106, 176, 255, 0.35);
+  animation: learnPulse 1.2s ease-in-out infinite;
+}
+
+@keyframes learnPulse {
+  0%, 100% { box-shadow: 0 0 0 2px rgba(106, 176, 255, 0.35); }
+  50%       { box-shadow: 0 0 0 4px rgba(106, 176, 255, 0.20); }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────── */
+
 .rc-map-source-badge {
   display: inline-flex;
   align-items: center;

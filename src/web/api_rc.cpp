@@ -24,7 +24,9 @@ void registerRcRoutes(AsyncWebServer& server) {
         // async TCP task — concurrent GET /api/rc requests are not possible, so
         // this buffer is safe without an additional mutex.
         // req->send() copies the string synchronously before returning.
-        static char rcBuf[2048];
+        // 3072 bytes: RC diagnostics JSON reaches ~2570 bytes in dual_sbus mode
+        // (2 sources + 7 analog channels + digital section + full mapping profile).
+        static char rcBuf[3072];
         if (!buildRcDiagnosticsJson(rcBuf, sizeof(rcBuf))) {
             req->send(500, "application/json", "{\"ok\":false,\"error\":\"rc json build failed\"}");
             return;

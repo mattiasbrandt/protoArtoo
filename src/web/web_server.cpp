@@ -742,7 +742,11 @@ bool webLittleFsMounted() {
 // so sharing these buffers is safe without additional locking.
 // Combined saving vs previous approach (two sets of statics): 3 KB BSS.
 static char s_sseStatusBody[1024];
-static char s_sseRcBody[2048];
+// RC diagnostics JSON requires ~2570 bytes in dual_sbus mode (2 sources + 7 analog
+// channels with all fields + digital section + mapping profile). The previous 2048-byte
+// buffer caused buildRcDiagnosticsJson() to silently fail, dropping all SSE rc events
+// and making /api/rc always return {ok:false}. 3072 gives adequate margin.
+static char s_sseRcBody[3072];
 static uint32_t s_lastLogSent = 0;
 static char s_sseLogLines[8][LOG_LINE_MAX];
 

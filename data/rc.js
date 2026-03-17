@@ -4,6 +4,17 @@
   let configCache = null;
   let mappingDraft = {};
 
+  // ── Learning mode state ───────────────────────────────────────────────────
+  let learnActive = false;
+  let learnPrev = null;        // rcSnapshot from previous tick
+  let learnDeltas = {};        // { channelName: cumulativeDelta }
+  let learnWinner = null;      // slot key with most movement
+  let learnStartMs = 0;
+  const LEARN_TIMEOUT_MS = 30000;    // auto-exit after 30 s of inactivity
+  const LEARN_ANALOG_THRESHOLD = 0.06; // ignore jitter below 6% of full range
+  const LEARN_COMMIT_DELTA = 0.25;   // cumulative delta to commit a winner
+  // ─────────────────────────────────────────────────────────────────────────
+
   const rcModeCards = document.querySelectorAll(".rc-mode-card");
   const rcInputModeHidden = document.getElementById("rc-input-mode");
   const rcModeFeedback = document.getElementById("rc-mode-feedback");
@@ -18,6 +29,11 @@
   const rcEditorApply = document.getElementById("rc-editor-apply");
   const rcEditorRevert = document.getElementById("rc-editor-revert");
   const rcEditorFeedback = document.getElementById("rc-editor-feedback");
+
+  const rcLearnBtn    = document.getElementById("rc-learn-btn");
+  const rcLearnBanner = document.getElementById("rc-learn-banner");
+  const rcLearnStatus = document.getElementById("rc-learn-status");
+  const rcLearnStop   = document.getElementById("rc-learn-stop");
 
   const SUPPORTED_SLOTS = [
     "driveSpeed", "driveSteer", "driveLimit", "domeSpeed",
@@ -400,6 +416,10 @@
         }
       });
     });
+
+    // Re-apply learn-hot after innerHTML wipe — defined below, called safely
+    // because renderSlotList() is only invoked after all functions are declared.
+    applyLearnHighlight();
   };
 
   const renderLivePreview = () => {
@@ -701,6 +721,125 @@
     renderEditor();
   };
 
+  // ── RC Learning mode ──────────────────────────────────────────────────────
+  //
+  // Pure logic (computeLearnDeltas / pickLearnWinner) is tested in
+  // test/test_rc_learn/index.html — keep in sync if thresholds or algorithms change.
+
+  // Pure: compute new deltas from two consecutive SSE snapshots.
+  // Does not mutate existingDeltas. Returns a new object.
+  const computeLearnDeltas = (prev, curr, existingDeltas) => {
+    const deltas = Object.assign({}, existingDeltas);
+    if (!prev || !curr) return deltas;
+
+    // Analog channels — accumulate |normalized| delta above jitter threshold
+    const prevCh = Array.isArray(prev.channels) ? prev.channels : [];
+    const currCh = Array.isArray(curr.channels) ? curr.channels : [];
+    currCh.forEach(ch => {
+      const p = prevCh.find(x => x.name === ch.name);
+      if (!p) return;
+      const delta = Math.abs((ch.normalized || 0) - (p.normalized || 0));
+      if (delta >= LEARN_ANALOG_THRESHOLD) {
+        deltas[ch.name] = (deltas[ch.name] || 0) + delta;
+      }
+    });
+
+    // Digital channels — count rising edges only (false → true)
+    const prevDig = (prev.digital && typeof prev.digital === 'object') ? prev.digital : {};
+    const currDig = (curr.digital && typeof curr.digital === 'object') ? curr.digital : {};
+    Object.keys(currDig).forEach(name => {
+      const wasPressed = prevDig[name]?.pressed ?? false;
+      const isPressed  = currDig[name]?.pressed  ?? false;
+      if (isPressed && !wasPressed) {
+        deltas[name] = (deltas[name] || 0) + LEARN_COMMIT_DELTA;
+      }
+    });
+
+    return deltas;
+  };
+
+  // Pure: return the channel name with highest accumulated delta >= LEARN_COMMIT_DELTA,
+  // or null if nothing qualifies.
+  const pickLearnWinner = (deltas) => {
+    let maxDelta = LEARN_COMMIT_DELTA - Number.EPSILON;
+    let winner = null;
+    Object.entries(deltas).forEach(([name, delta]) => {
+      if (delta > maxDelta) { maxDelta = delta; winner = name; }
+    });
+    return winner;
+  };
+
+  // Resolve a channel name to a human-readable slot label from RC_ACTIONS.
+  const learnSlotLabel = (channelName) => {
+    const mode = (rcSnapshot?.mode || getEditorMode());
+    const slots = RC_ACTIONS[mode] || RC_ACTIONS.dual_sbus;
+    const slot = slots.find(s => s.key === channelName);
+    return slot ? slot.label : channelName;
+  };
+
+  // Apply/remove learn-hot CSS class without re-rendering the slot list.
+  // Called on winner change and after renderSlotList() re-renders the DOM.
+  const applyLearnHighlight = () => {
+    if (!rcSlotItems) return;
+    rcSlotItems.querySelectorAll('.rc-slot-item').forEach(el => {
+      const key = el.dataset.slot;
+      el.classList.toggle('learn-hot', learnActive && key === learnWinner);
+    });
+  };
+
+  const updateLearnBanner = () => {
+    if (!rcLearnStatus) return;
+    if (learnWinner) {
+      rcLearnStatus.textContent = `Detected: ${learnSlotLabel(learnWinner)} — click the highlighted slot to select it`;
+    } else {
+      rcLearnStatus.textContent = 'Listening… move a stick or switch on your transmitter';
+    }
+  };
+
+  const enterLearnMode = () => {
+    learnActive  = true;
+    learnPrev    = rcSnapshot;   // use current snapshot as baseline (may be null)
+    learnDeltas  = {};
+    learnWinner  = null;
+    learnStartMs = Date.now();
+    if (rcLearnBtn)    rcLearnBtn.textContent = '🎯 Detecting…';
+    if (rcLearnBanner) rcLearnBanner.hidden = false;
+    updateLearnBanner();
+    applyLearnHighlight();
+  };
+
+  const exitLearnMode = () => {
+    learnActive = false;
+    learnPrev   = null;
+    learnDeltas = {};
+    learnWinner = null;
+    if (rcLearnBtn)    rcLearnBtn.textContent = '🎯 Wiggle to detect';
+    if (rcLearnBanner) rcLearnBanner.hidden = true;
+    applyLearnHighlight();   // removes all learn-hot classes
+  };
+
+  // Called on every SSE rc tick when learnActive is true.
+  // Uses rcSnapshot (previous tick) and the new payload as current.
+  const processLearnTick = (currSnapshot) => {
+    // Auto-exit after timeout
+    if (Date.now() - learnStartMs > LEARN_TIMEOUT_MS) {
+      exitLearnMode();
+      return;
+    }
+
+    learnDeltas = computeLearnDeltas(learnPrev, currSnapshot, learnDeltas);
+    learnPrev   = currSnapshot;
+
+    const newWinner = pickLearnWinner(learnDeltas);
+    if (newWinner !== learnWinner) {
+      learnWinner = newWinner;
+      updateLearnBanner();
+      applyLearnHighlight();   // direct class toggle — no full slot list re-render
+    }
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────
+
   const renderRcDiagnostics = (payload) => {
     rcSnapshot = payload;
 
@@ -738,6 +877,13 @@
     events.addEventListener("rc", (event) => {
       try {
         const payload = JSON.parse(event.data);
+
+        // Process learning mode tick before updating rcSnapshot so we can compare
+        // payload (current) against rcSnapshot (previous tick).
+        if (learnActive) {
+          processLearnTick(payload);
+        }
+
         rcSnapshot = payload;
 
         // Fast path updates for frequently changing elements
@@ -974,6 +1120,17 @@
 
   if (rcResetDefaults) {
     rcResetDefaults.addEventListener("click", resetToDefaults);
+  }
+
+  if (rcLearnBtn) {
+    rcLearnBtn.addEventListener("click", () => {
+      if (learnActive) exitLearnMode();
+      else enterLearnMode();
+    });
+  }
+
+  if (rcLearnStop) {
+    rcLearnStop.addEventListener("click", exitLearnMode);
   }
 
   const setRcDebugMode = async (enabled) => {
