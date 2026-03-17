@@ -851,6 +851,14 @@ void startHttpServerOnce() {
             if (buildRcDiagnosticsJson(s_sseRcBody, sizeof(s_sseRcBody))) {
                 client->send(s_sseRcBody, "rc", nowMs);
             }
+            // Backfill recent log history immediately so the browser console
+            // is populated without waiting for the next 1 Hz periodic tick.
+            // Pass lastSent=0 to get all lines currently in the ring buffer.
+            size_t backfillCopied = 0;
+            copyNewLogLinesSince(0, s_sseLogLines, 8, &backfillCopied);
+            for (size_t i = 0; i < backfillCopied; ++i) {
+                client->send(s_sseLogLines[i], "log", nowMs);
+            }
         });
         server.addHandler(&events);
 
@@ -949,7 +957,12 @@ void webServerInit() {
     if (!eventTaskStarted) {
         // 4096 bytes is sufficient: all large buffers are file-scope statics,
         // not stack-allocated inside the task. Reduced from 8192 (saves 4 KB heap).
-        xTaskCreatePinnedToCore(eventStreamTask, "WebEvents", 2048, nullptr, 1, nullptr, 0);
+        // 4096 bytes required: buildRcDiagnosticsJson allocates a ~792-byte
+        // snapshot struct on the stack, then calls vsnprintf with %.3f float
+        // formatting which consumes ~500 bytes for newlib float conversion.
+        // The 2048-byte reduction (based on HWM at first iteration, before the
+        // task body ran) caused a stack overflow on every client connect.
+        xTaskCreatePinnedToCore(eventStreamTask, "WebEvents", 4096, nullptr, 1, nullptr, 0);
         eventTaskStarted = true;
     }
 
