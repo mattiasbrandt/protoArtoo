@@ -97,12 +97,10 @@ static void parseDomeRxLine(const char* line) {
 
     // Intercept mood commands (:SE10, :SE11, :SE13, :SE14) before general
     // dispatch. fromDome=true suppresses the dome TX echo.
-    if (strncmp(line, ":SE", 3) == 0) {
-        int seqId = atoi(line + 3);
-        if (seqId == 10 || seqId == 11 || seqId == 13 || seqId == 14) {
-            applyMood((uint8_t)seqId, true);
-            return;
-        }
+    uint8_t moodId = moodIdFromSeCommand(line);
+    if (moodId != 0) {
+        applyMood(moodId, true);
+        return;
     }
 
     // All other commands — route through standard Marcduino body parser.

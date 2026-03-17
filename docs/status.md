@@ -107,7 +107,15 @@ Tracked as T11 and T12 in `tasks/phase4-tasks.md`.
 | T00 | Phase branch setup, workflow alignment | Complete |
 | T01 | AudioDriver interface + soft UART backend | **compile-only** — no functional verification |
 | T02 | AudioTask, dollar parser, queue helpers | `parseAudioDollar()`: **native-tested** (26 tests); AudioTask / queue helpers / marcduino_rx routing: **compile-only** |
-| T03–T15 | Remaining Phase 4 tasks | Not started |
+| T03/T04/T05 | DomeLinkTask — UART2 TX/RX, `#PAHB` heartbeat, Marcduino dispatch | `#PAHB` 1 Hz: **bench-tested**; RX/dome connection: **compile-only** (dome not connected) |
+| T06 | Status API + dashboard — `dome_link` block, audio health indicators | ✅ **bench-tested** |
+| T07 | `/api/audio`, Marcduino routing in manual-command, serial.js fix | ✅ **bench-tested** |
+| T08 | Mood dual-path — `/api/mood`, boot restore, dome RX intercept | ✅ **bench-tested** |
+| T09 | Parser/track mapping tests + hardware validation plan | **native-tested** (401 tests); hardware checklist in tasks/phase4-tasks.md |
+| T10 | Full hardware validation | **formally deferred** — audio module and dome board not connected; checklist recorded |
+| T11–T13 | Phase 3 carryover items | Pending hardware availability |
+| T14 | RC learning mode re-evaluation | Low priority, post-T11/T12 |
+| T15 | CHIRP Audio Trigger backend | Not started |
 
 **Verification terminology used in this project:**
 - `native-tested` — covered by `pio test -e native` passing

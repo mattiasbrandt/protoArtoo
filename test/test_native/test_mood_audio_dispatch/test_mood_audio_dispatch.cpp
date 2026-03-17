@@ -103,6 +103,63 @@ void test_only_valid_ids_return_non_null() {
 }
 
 // -----------------------------------------------------------------------------
+// moodIdFromSeCommand() — :SE line → mood ID extraction
+// -----------------------------------------------------------------------------
+
+void test_se10_returns_10() {
+    TEST_ASSERT_EQUAL_UINT8(10, moodIdFromSeCommand(":SE10"));
+}
+
+void test_se11_returns_11() {
+    TEST_ASSERT_EQUAL_UINT8(11, moodIdFromSeCommand(":SE11"));
+}
+
+void test_se13_returns_13() {
+    TEST_ASSERT_EQUAL_UINT8(13, moodIdFromSeCommand(":SE13"));
+}
+
+void test_se14_returns_14() {
+    TEST_ASSERT_EQUAL_UINT8(14, moodIdFromSeCommand(":SE14"));
+}
+
+void test_se30_returns_zero_not_a_mood() {
+    TEST_ASSERT_EQUAL_UINT8(0, moodIdFromSeCommand(":SE30"));
+}
+
+void test_se12_returns_zero_not_a_mood() {
+    TEST_ASSERT_EQUAL_UINT8(0, moodIdFromSeCommand(":SE12"));
+}
+
+void test_se01_returns_zero_not_a_mood() {
+    TEST_ASSERT_EQUAL_UINT8(0, moodIdFromSeCommand(":SE01"));
+}
+
+void test_op_command_returns_zero() {
+    TEST_ASSERT_EQUAL_UINT8(0, moodIdFromSeCommand(":OP01"));
+}
+
+void test_null_returns_zero() {
+    TEST_ASSERT_EQUAL_UINT8(0, moodIdFromSeCommand(nullptr));
+}
+
+void test_empty_returns_zero() {
+    TEST_ASSERT_EQUAL_UINT8(0, moodIdFromSeCommand(""));
+}
+
+void test_bare_se_no_number_returns_zero() {
+    TEST_ASSERT_EQUAL_UINT8(0, moodIdFromSeCommand(":SE"));
+}
+
+void test_all_se1x_ids_exhaustive() {
+    // SE10, SE11, SE13, SE14 are moods; SE12 is not
+    TEST_ASSERT_EQUAL_UINT8(10, moodIdFromSeCommand(":SE10"));
+    TEST_ASSERT_EQUAL_UINT8(11, moodIdFromSeCommand(":SE11"));
+    TEST_ASSERT_EQUAL_UINT8(0,  moodIdFromSeCommand(":SE12"));
+    TEST_ASSERT_EQUAL_UINT8(13, moodIdFromSeCommand(":SE13"));
+    TEST_ASSERT_EQUAL_UINT8(14, moodIdFromSeCommand(":SE14"));
+}
+
+// -----------------------------------------------------------------------------
 // Integration: moodAudioCommand() output is correctly understood by parseAudioDollar()
 // This closes the loop between the mood system and the AudioTask dollar parser.
 // -----------------------------------------------------------------------------
@@ -168,6 +225,20 @@ int main(int argc, char** argv) {
     RUN_TEST(test_awake_starts_with_dollar);
 
     RUN_TEST(test_only_valid_ids_return_non_null);
+
+    // moodIdFromSeCommand
+    RUN_TEST(test_se10_returns_10);
+    RUN_TEST(test_se11_returns_11);
+    RUN_TEST(test_se13_returns_13);
+    RUN_TEST(test_se14_returns_14);
+    RUN_TEST(test_se30_returns_zero_not_a_mood);
+    RUN_TEST(test_se12_returns_zero_not_a_mood);
+    RUN_TEST(test_se01_returns_zero_not_a_mood);
+    RUN_TEST(test_op_command_returns_zero);
+    RUN_TEST(test_null_returns_zero);
+    RUN_TEST(test_empty_returns_zero);
+    RUN_TEST(test_bare_se_no_number_returns_zero);
+    RUN_TEST(test_all_se1x_ids_exhaustive);
 
     // Integration
     RUN_TEST(test_quiet_mood_cmd_parses_to_stop);

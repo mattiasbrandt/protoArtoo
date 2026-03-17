@@ -25,6 +25,40 @@
 #include <stdint.h>
 
 // -----------------------------------------------------------------------------
+// moodIdFromSeCommand()
+// Extract the mood SE index from a Marcduino ':SE' line.
+// Returns the mood ID (10, 11, 13, or 14) if the line is a valid mood command,
+// or 0 if it is not a mood command or not a valid mood index.
+//
+// Examples:
+//   ":SE10"  → 10
+//   ":SE14"  → 14
+//   ":SE30"  → 0  (valid body sequence, but not a mood)
+//   ":OP01"  → 0  (not a :SE command)
+//   nullptr  → 0
+//
+// Pure function — no Arduino/FreeRTOS deps, safe to call from native tests.
+// Used in dome_link.cpp (dome RX intercept) and api_drive.cpp (manual-command).
+// -----------------------------------------------------------------------------
+inline uint8_t moodIdFromSeCommand(const char* line) {
+    if (!line || line[0] != ':' || line[1] != 'S' || line[2] != 'E') {
+        return 0;
+    }
+    int id = 0;
+    // atoi is safe here: returns 0 on non-numeric, which we treat as invalid
+    id = 0;
+    const char* p = line + 3;
+    while (*p >= '0' && *p <= '9') {
+        id = id * 10 + (*p - '0');
+        p++;
+    }
+    if (id == 10 || id == 11 || id == 13 || id == 14) {
+        return (uint8_t)id;
+    }
+    return 0;
+}
+
+// -----------------------------------------------------------------------------
 // moodAudioCommand()
 // Returns the $ audio command for a given SE1x mood index, or nullptr if the
 // index is not a valid mood. Pure function — safe to call from native tests.
