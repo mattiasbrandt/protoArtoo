@@ -10,6 +10,7 @@
 #include <esp_task_wdt.h>
 
 #include "audio_task.h"
+#include "dome_link.h"
 #include "dome_task.h"
 #include "drive.h"
 #include "log_buffer.h"
@@ -25,6 +26,7 @@ portMUX_TYPE robotStateMux = portMUX_INITIALIZER_UNLOCKED;
 QueueHandle_t servoCmdQueue = nullptr;
 QueueHandle_t domeCmdQueue  = nullptr;
 QueueHandle_t audioCmdQueue = nullptr;
+QueueHandle_t domeTxQueue   = nullptr;
 static volatile bool restartRequested = false;
 static volatile uint32_t restartAtMs = 0;
 static portMUX_TYPE restartMux = portMUX_INITIALIZER_UNLOCKED;
@@ -713,6 +715,7 @@ void setup() {
     servoCmdQueue = xQueueCreate(8, sizeof(ServoCommand));
     domeCmdQueue  = xQueueCreate(8, sizeof(DomeCommand));
     audioCmdQueue = xQueueCreate(8, sizeof(AudioCommand));
+    domeTxQueue   = xQueueCreate(16, sizeof(DomeTxCmd));
 
     // Initialize servo hardware (before tasks start)
     servoTaskInit();
@@ -732,6 +735,10 @@ void setup() {
     // AudioTask: Core 0 (non-RT) — software bit-bang TX blocks ~6 ms per command;
     // keeping off Core 1 avoids any interaction with DriveTask / ServoTask timing.
     xTaskCreatePinnedToCore(audioTask, "AudioTask", 3072, nullptr, 3, nullptr, 0);
+
+    // DomeLinkTask: Core 1 — bidirectional Marcduino serial to AstroPixelsPlus.
+    // UART2 TX/RX are non-blocking hardware operations; Core 1 at priority 3.
+    xTaskCreatePinnedToCore(domeLinkTask, "DomeLinkTask", 3072, nullptr, 3, nullptr, 1);
 
     // SafetyMonitorTask: 10 Hz audit on Core 0 (non-RT, low priority)
     xTaskCreatePinnedToCore(safetyMonitorTask, "SafetyMonitor", 2048, nullptr, 2, nullptr, 0);
