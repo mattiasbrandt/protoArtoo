@@ -79,6 +79,8 @@ code {
   display: flex;
   align-items: center;
   gap: 12px;
+  text-decoration: none;
+  color: inherit;
 }
 
 .topbar-logo {
@@ -145,9 +147,7 @@ nav a:focus-visible {
 }
 
 nav a.active {
-  background: var(--accent);
-  color: var(--white);
-  border-color: var(--accent);
+  display: none;
 }
 
 .card {
