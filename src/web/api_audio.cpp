@@ -60,7 +60,9 @@ void registerAudioRoutes(AsyncWebServer& server) {
         randMax   = robotState.cfg_snd_rand_max;
         taskEXIT_CRITICAL(&robotStateMux);
 
-        static char body[256];
+        // Stack-allocated — not static. Static local buffers in async handlers
+        // are shared across concurrent requests and would cause data races.
+        char body[256];
         snprintf(body, sizeof(body),
                  "{\"scream\":%u,\"faint\":%u,\"leia\":%u,"
                  "\"cantina_s\":%u,\"sw_theme\":%u,\"imp_march\":%u,"
@@ -111,24 +113,13 @@ void registerAudioRoutes(AsyncWebServer& server) {
             return;
         }
 
-        // Persist to NVS — dedicated mini-write for this field only
+        // Persist to NVS — dedicated mini-write for this field only.
+        // audioTrackNvsKey() maps API key → NVS key (pure helper, tested natively).
+        const char* nvsKey = audioTrackNvsKey(key.c_str());
         Preferences prefs;
         bool ok = false;
-        if (prefs.begin(NVS_NAMESPACE, false)) {
-            const char* nvsKey = nullptr;
-            if      (key == "scream")    nvsKey = "snd_scream";
-            else if (key == "faint")     nvsKey = "snd_faint";
-            else if (key == "leia")      nvsKey = "snd_leia";
-            else if (key == "cantina_s") nvsKey = "snd_cantina_s";
-            else if (key == "sw_theme")  nvsKey = "snd_sw";
-            else if (key == "imp_march") nvsKey = "snd_march";
-            else if (key == "cantina_l") nvsKey = "snd_cantina_l";
-            else if (key == "startup")   nvsKey = "snd_startup";
-            else if (key == "rand_min")  nvsKey = "snd_rand_min";
-            else if (key == "rand_max")  nvsKey = "snd_rand_max";
-            if (nvsKey) {
-                ok = prefs.putUShort(nvsKey, t) > 0;
-            }
+        if (nvsKey && prefs.begin(NVS_NAMESPACE, false)) {
+            ok = prefs.putUShort(nvsKey, t) > 0;
             prefs.end();
         }
 

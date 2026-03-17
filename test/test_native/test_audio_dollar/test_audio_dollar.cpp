@@ -6,6 +6,7 @@
 //         edge cases, and custom AudioNamedTracks overrides.
 // =============================================================================
 
+#include <string.h>
 #include <unity.h>
 
 #include "audio_dollar_parser.h"
@@ -200,6 +201,63 @@ void test_custom_named_tracks() {
 }
 
 // -----------------------------------------------------------------------------
+// audioTrackNvsKey() — API key → NVS key mapping
+// -----------------------------------------------------------------------------
+
+void test_nvs_key_scream() {
+    TEST_ASSERT_EQUAL_STRING("snd_scream", audioTrackNvsKey("scream"));
+}
+void test_nvs_key_faint() {
+    TEST_ASSERT_EQUAL_STRING("snd_faint", audioTrackNvsKey("faint"));
+}
+void test_nvs_key_leia() {
+    TEST_ASSERT_EQUAL_STRING("snd_leia", audioTrackNvsKey("leia"));
+}
+void test_nvs_key_cantina_s() {
+    TEST_ASSERT_EQUAL_STRING("snd_cantina_s", audioTrackNvsKey("cantina_s"));
+}
+void test_nvs_key_sw_theme() {
+    TEST_ASSERT_EQUAL_STRING("snd_sw", audioTrackNvsKey("sw_theme"));
+}
+void test_nvs_key_imp_march() {
+    TEST_ASSERT_EQUAL_STRING("snd_march", audioTrackNvsKey("imp_march"));
+}
+void test_nvs_key_cantina_l() {
+    TEST_ASSERT_EQUAL_STRING("snd_cantina_l", audioTrackNvsKey("cantina_l"));
+}
+void test_nvs_key_startup() {
+    TEST_ASSERT_EQUAL_STRING("snd_startup", audioTrackNvsKey("startup"));
+}
+void test_nvs_key_rand_min() {
+    TEST_ASSERT_EQUAL_STRING("snd_rand_min", audioTrackNvsKey("rand_min"));
+}
+void test_nvs_key_rand_max() {
+    TEST_ASSERT_EQUAL_STRING("snd_rand_max", audioTrackNvsKey("rand_max"));
+}
+void test_nvs_key_unknown_returns_null() {
+    TEST_ASSERT_NULL(audioTrackNvsKey("bogus"));
+}
+void test_nvs_key_null_returns_null() {
+    TEST_ASSERT_NULL(audioTrackNvsKey(nullptr));
+}
+void test_nvs_key_empty_returns_null() {
+    TEST_ASSERT_NULL(audioTrackNvsKey(""));
+}
+void test_nvs_keys_are_15_chars_or_less() {
+    // NVS key length limit is 15 chars (ESP-IDF constraint)
+    const char* keys[] = {
+        "scream","faint","leia","cantina_s","sw_theme",
+        "imp_march","cantina_l","startup","rand_min","rand_max"
+    };
+    for (size_t i = 0; i < sizeof(keys)/sizeof(keys[0]); i++) {
+        const char* nvsKey = audioTrackNvsKey(keys[i]);
+        TEST_ASSERT_NOT_NULL(nvsKey);
+        TEST_ASSERT_TRUE_MESSAGE(strlen(nvsKey) <= 15,
+            "NVS key exceeds 15-char ESP-IDF limit");
+    }
+}
+
+// -----------------------------------------------------------------------------
 
 int main(int argc, char** argv) {
     UNITY_BEGIN();
@@ -241,6 +299,22 @@ int main(int argc, char** argv) {
 
     // Custom named tracks
     RUN_TEST(test_custom_named_tracks);
+
+    // audioTrackNvsKey
+    RUN_TEST(test_nvs_key_scream);
+    RUN_TEST(test_nvs_key_faint);
+    RUN_TEST(test_nvs_key_leia);
+    RUN_TEST(test_nvs_key_cantina_s);
+    RUN_TEST(test_nvs_key_sw_theme);
+    RUN_TEST(test_nvs_key_imp_march);
+    RUN_TEST(test_nvs_key_cantina_l);
+    RUN_TEST(test_nvs_key_startup);
+    RUN_TEST(test_nvs_key_rand_min);
+    RUN_TEST(test_nvs_key_rand_max);
+    RUN_TEST(test_nvs_key_unknown_returns_null);
+    RUN_TEST(test_nvs_key_null_returns_null);
+    RUN_TEST(test_nvs_key_empty_returns_null);
+    RUN_TEST(test_nvs_keys_are_15_chars_or_less);
 
     return UNITY_END();
 }

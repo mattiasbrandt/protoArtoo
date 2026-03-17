@@ -97,6 +97,33 @@ struct AudioAction {
 };
 
 // -----------------------------------------------------------------------------
+// audioTrackNvsKey()
+// Map an API track key name to its NVS key string.
+// Returns nullptr for unknown key names.
+//
+// Key names are the same strings used in GET/POST /api/audio/tracks and in
+// the sound.js NAMED_SOUNDS table. NVS keys are ≤15 chars (NVS limit).
+//
+// Pure function — no Arduino/FreeRTOS deps, safe to call from native tests.
+// Used in api_audio.cpp (POST /api/audio/tracks) to avoid duplicating the
+// key→NVS mapping.
+// -----------------------------------------------------------------------------
+inline const char* audioTrackNvsKey(const char* key) {
+    if (!key) return nullptr;
+    if (__builtin_strcmp(key, "scream")    == 0) return "snd_scream";
+    if (__builtin_strcmp(key, "faint")     == 0) return "snd_faint";
+    if (__builtin_strcmp(key, "leia")      == 0) return "snd_leia";
+    if (__builtin_strcmp(key, "cantina_s") == 0) return "snd_cantina_s";
+    if (__builtin_strcmp(key, "sw_theme")  == 0) return "snd_sw";
+    if (__builtin_strcmp(key, "imp_march") == 0) return "snd_march";
+    if (__builtin_strcmp(key, "cantina_l") == 0) return "snd_cantina_l";
+    if (__builtin_strcmp(key, "startup")   == 0) return "snd_startup";
+    if (__builtin_strcmp(key, "rand_min")  == 0) return "snd_rand_min";
+    if (__builtin_strcmp(key, "rand_max")  == 0) return "snd_rand_max";
+    return nullptr;
+}
+
+// -----------------------------------------------------------------------------
 // parseAudioDollar()
 // Parse a MarcDuino $ command string into an AudioAction.
 //

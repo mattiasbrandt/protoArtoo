@@ -264,6 +264,19 @@ void audioTask(void* pvParameters) {
         if (xQueueReceive(audioCmdQueue, &cmd, pdMS_TO_TICKS(500)) == pdTRUE) {
             switch (cmd.type) {
                 case AUDIO_CMD_DOLLAR: {
+                    // Refresh named tracks from RobotState so runtime changes
+                    // via POST /api/audio/tracks take effect immediately without
+                    // requiring a disable/enable cycle.
+                    taskENTER_CRITICAL(&robotStateMux);
+                    named.scream    = robotState.cfg_snd_scream;
+                    named.faint     = robotState.cfg_snd_faint;
+                    named.leia      = robotState.cfg_snd_leia;
+                    named.cantina_s = robotState.cfg_snd_cantina_s;
+                    named.sw_theme  = robotState.cfg_snd_sw_theme;
+                    named.imp_march = robotState.cfg_snd_imp_march;
+                    named.cantina_l = robotState.cfg_snd_cantina_l;
+                    named.startup   = robotState.cfg_snd_startup;
+                    taskEXIT_CRITICAL(&robotStateMux);
                     bool wasRandom = randomMode;
                     AudioAction action = parseAudioDollar(cmd.dollar, named);
                     dispatchAction(action, currentVol, randomMode);
@@ -322,6 +335,9 @@ void audioTask(void* pvParameters) {
                 uint32_t range = (uint32_t)(randMax - randMin) + 1;
                 uint16_t track = (uint16_t)(randMin + (esp_random() % range));
                 driver->playTrack(track);
+                taskENTER_CRITICAL(&robotStateMux);
+                robotState.audioActive = true;
+                taskEXIT_CRITICAL(&robotStateMux);
                 PA_LOG_DEBUG(TAG, "random track %u", (unsigned)track);
             }
         }
