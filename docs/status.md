@@ -21,7 +21,7 @@
 | Phase 2 — Web server + OTA | Complete — bench-tested baseline established |
 | Phase 3 — Servos + dome motor | **Bench-complete** — software bench-verified; hardware validation formally deferred; deferred items carried forward as T11/T12 in Phase 4 |
 | **Web UI/UX quality gate** | **CLEARED** — signed off 2026-03-15. See `tasks/web_ui_quality_gate.md` |
-| Phase 4 — Audio + full dome link | **In progress** — branch `phase/v0.4.0` active; all software tasks T01–T09, T13–T17 complete; T10–T12 hardware-blocked; see Phase 4 section below |
+| Phase 4 — Audio + full dome link | **In progress** — branch `phase/v0.4.0` active; all software tasks T01–T09, T13–T17 complete; T10 audio hardware partially validated (deterministic playback confirmed on DY-SV5W); T11–T12 hardware-blocked; see Phase 4 section below |
 | Phase 5 — Community release | Pending Phase 4 |
 
 ---
@@ -92,6 +92,18 @@ from git tag + build timestamp (e.g. `v0.2.0-1-g23008b7-20260315-013914`).
 
 - AudioDriver pluggable backend (`PA_AUDIO_DRIVER` build flag): `AUDIO_SOFT_UART`
   (DY-SV5W via 9600-baud soft UART on GPIO 26) and `AUDIO_CHIRP` (CHIRP board) both compile clean
+- **DY-SV5W hardware-validated on real droid (2026-03-17):**
+  - Deterministic track playback confirmed (play track N → same sound every time)
+  - Volume control working and NVS-persisted (survives reboot)
+  - Stop command functional
+  - Driver aligned to DYPlayerArduino library + BetterDuino reference:
+    checksum framing, opcodes `0x07`/`0x04`/`0x13`, `delay(100)` per command
+  - Anti-spam guard: 300 ms minimum interval between play commands at AudioTask level
+  - Sound page slider synced to persisted volume on page load
+  - Named sound track mappings (e.g. Star Wars = track 177) need SD card content
+    verification — silent playback for high track numbers is likely a content gap
+  - HardwareSerial(2) remapped to S2 pins (GPIO 26 TX / GPIO 35 RX); shared with
+    dome serial link — only one active at a time
 - AudioTask queues all audio requests from RC, web API, and dome serial `$` commands
 - `parseAudioDollar()` native-tested (26 test cases), mood dispatch native-tested
 - Mood system: 15 presets, dual-path (body audio + dome serial `:SE01`–`:SE15`),
@@ -99,7 +111,7 @@ from git tag + build timestamp (e.g. `v0.2.0-1-g23008b7-20260315-013914`).
 - DomeLinkTask: `#PAHB` 1 Hz heartbeat to dome bench-tested on GPIO 33/34
 - `/api/audio` (play, stop, volume), `/api/mood`, `/api/status` dome_link block: bench-tested
 - Dashboard: Mood Selector card, audio source indicators
-- Static RAM: 20.0% (65,408 / 327,680 B); heapMin ~135 KB post-WiFi (up from ~107 KB)
+- Static RAM: 20.6% (67,528 / 327,680 B); heapMin ~126 KB post-WiFi
 - 431 native test cases passing (includes audio parser, mood dispatch, frame builder)
 - Runtime log level: Setup page Diagnostics card, NVS-backed (`log_level`), 1=Error / 2=Info / 3=Debug
 - Stack HWM bench-measured (first-iteration): DriveTask 2520 B / 4096, SBUSInput 2360 B / 4096,
@@ -129,14 +141,14 @@ Tracked as T11 and T12 in `tasks/phase4-tasks.md`.
 | Task | Description | Status |
 |---|---|---|
 | T00 | Phase branch setup, workflow alignment | Complete |
-| T01 | AudioDriver interface + soft UART backend | **compile-only** — no functional verification |
+| T01 | AudioDriver interface + soft UART backend | ✅ **bench-tested** — DY-SV5W playback verified on hardware (DYPlayer-aligned driver) |
 | T02 | AudioTask, dollar parser, queue helpers | ✅ **bench-tested** — queue wiring, API routing, random playback, enable/disable; audio hardware output requires T10 |
 | T03/T04/T05 | DomeLinkTask — UART2 TX/RX, `#PAHB` heartbeat, Marcduino dispatch | `#PAHB` TX + `#APHB` RX intercept: **compile-only** (dome board not connected); UART2 wiring not validated |
 | T06 | Status API + dashboard — `dome_link` block, audio health indicators | ✅ **bench-tested** |
 | T07 | `/api/audio`, `/api/audio/tracks`, Marcduino routing, serial.js fix | ✅ **bench-tested** |
 | T08 | Mood dual-path — `/api/mood`, boot restore, dome RX intercept | ✅ **bench-tested** (audio path); dome TX path requires T10 hardware |
 | T09 | Parser/track mapping tests + hardware validation plan | ✅ **native-tested** (431 tests); hardware checklist in tasks/phase4-tasks.md |
-| T10 | Full hardware validation | **formally deferred** — audio module and dome board not connected; checklist recorded |
+| T10 | Full hardware validation | **partially validated** — DY-SV5W audio: deterministic playback, volume, stop confirmed on hardware; named sound SD mapping + dome link pending |
 | T11–T12 | Phase 3 carryover (SBUS failsafe, drive path, RC physical) | Pending hardware availability |
 | T13 | Reconcile NVS remapping claim | ✅ **closed** — stale doc; all RC bindings are NVS-backed (full load/save in main.cpp) |
 | T14 | RC detect-channel mode (was: learning mode) | ✅ **bench-tested** (UI, SSE raw channel arrays, detect logic 25 tests); physical RC button press pending T11/T12 hardware |

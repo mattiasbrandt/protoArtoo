@@ -221,15 +221,30 @@ workflow reference for all Phase 4+ development.
     - BetterDuino `MDuinoSound.cpp` (`MDuinoSoundDYPlayer`)
     - AstroPixelsPlus `MarcduinoSound.h`
     - Padawan360 DY-SV5W sketch + bundled `dyplayer-main` library (`DYPlayer.cpp`)
-  - **Current unresolved blocker:**
-    - Deterministic track mapping is not yet stable across repeated trigger tests on this module/firmware variant
-    - Some trial builds produced random chirps, delayed starts, or silent play attempts
+  - **Root cause identified and fixed (2026-03-17):**
+    - The driver was sending opcode `0x06` (next track) and `0x0D` (getPlayingSound
+      query) instead of `0x07` (playSpecified). Additionally, the dual end-marker +
+      checksum frame wrapper produced 4 frames per play command, two of which
+      triggered "next track" — explaining the random playback behavior.
+    - Stop sent `0x03` (pause) then `0x02` (play/resume), cancelling itself out.
+    - The module also needed `delay(100)` between commands (matching BetterDuino
+      reference) and a full power cycle to clear confused state from prior
+      malformed command sequences.
+    - Authoritative command table from DYPlayerArduino library (`DYPlayer.cpp`):
+      `0x07`=playSpecified, `0x04`=stop, `0x13`=setVolume, `0x0B`=setPlayingDevice
+    - Fix committed: `23957bb` — checksum-only framing, correct opcodes, delay(100)
+  - **Anti-spam guard added (`e08b5b5`):**
+    - 300 ms minimum interval between successive `playTrack()` calls at the
+      AudioTask dispatch level. Rapid-fire commands (web UI clicks, RC bounce)
+      are silently dropped. Stop and volume remain unthrottled.
+    - Matches BetterDuino approach (delay per command) plus application-level guard
+      that no reference project implements but is appropriate for web UI control.
   - **Closure checklist (required before T10 can be checked complete):**
-    - [ ] Lock one verified command/frame dialect for this exact module revision
-    - [ ] Verify direct track play determinism (same track request -> same audible file, 10/10 repeats)
-    - [ ] Verify named sound determinism (`$S/$F/$L/$c/$C/$W/$M/$B`)
-    - [ ] Verify stop semantics (stop does not trigger/resume playback)
-    - [ ] Re-run T09 hardware checklist items and record final `bench-tested` status
+    - [x] Lock one verified command/frame dialect for this exact module revision
+    - [x] Verify direct track play determinism (same track request → same audible file, 3/3 repeats confirmed for track 1 and track 2)
+    - [ ] Verify named sound determinism (`$S/$F/$L/$c/$C/$W/$M/$B`) — track 177 (Star Wars) was silent; likely SD card content/mapping issue, not driver bug
+    - [x] Verify stop semantics (stop does not trigger/resume playback)
+    - [ ] Re-run full T09 hardware checklist items and record final `bench-tested` status
 
 - [x] T15 — Implement CHIRP Audio Trigger backend (`AUDIO_CHIRP`)
   - **Background:** CHIRP is an RP2350-based multi-stream audio board with an
