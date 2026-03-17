@@ -13,6 +13,7 @@
 #include <ESPAsyncWebServer.h>
 
 #include "api_helpers.h"
+#include "audio_task.h"
 #include "config.h"
 #include "logging.h"
 #include "robot_state.h"
@@ -26,8 +27,15 @@ static const char* TAG = "WebServer";
 bool executeManualCommand(const String& raw) {
     String command = raw;
     command.trim();
-    command.toLowerCase();
 
+    // Marcduino $ audio commands are case-sensitive — must be routed BEFORE
+    // toLowerCase() is applied, otherwise $R becomes $r and $S becomes $s
+    // (which is the stop command — wrong).
+    if (command.length() > 0 && command[0] == '$') {
+        return audioQueueDollar(command.c_str(), SRC_WEB_API);
+    }
+
+    command.toLowerCase();
     ManualCommand cmd = resolveManualCommand(command.c_str());
 
     switch (cmd) {
