@@ -35,13 +35,28 @@ static HardwareSerial hoverSerial(1);
 // Thread safety: all RobotState reads/writes use taskENTER/EXIT_CRITICAL.
 // -----------------------------------------------------------------------------
 void driveTask(void* pvParameters) {
-    // Register this task with TWDT before any blocking work.
-    // If esp_task_wdt_reset() is not reached within WATCHDOG_TIMEOUT_S, chip resets.
+    // Register with TWDT unconditionally — this task must feed the watchdog
+    // regardless of enable state or the chip will reset after WATCHDOG_TIMEOUT_S.
     esp_task_wdt_add(NULL);
 
+    // Feature toggle: when cfg_enable_s1_hoverboard is false, do not open
+    // UART1 or send any frames. Task idles here feeding TWDT only.
+    // Mirrors the DomeLinkTask disabled path.
+    {
+        taskENTER_CRITICAL(&robotStateMux);
+        bool enabled = robotState.cfg_enable_s1_hoverboard;
+        taskEXIT_CRITICAL(&robotStateMux);
+        if (!enabled) {
+            for (;;) {
+                esp_task_wdt_reset();
+                vTaskDelay(pdMS_TO_TICKS(1000 / DRIVE_FREQ_HZ));
+            }
+        }
+    }
+
     hoverSerial.begin(HOVERBOARD_BAUD, SERIAL_8N1, PIN_HOVERBOARD_RX, PIN_HOVERBOARD_TX);
-    PA_LOG_INFO(TAG, "started — UART1 %d baud, GPIO TX=%d RX=%d",
-                HOVERBOARD_BAUD, PIN_HOVERBOARD_TX, PIN_HOVERBOARD_RX);
+    PA_LOG_INFO(TAG, "started — UART1 %d baud, GPIO TX=%d RX=%d", HOVERBOARD_BAUD,
+                PIN_HOVERBOARD_TX, PIN_HOVERBOARD_RX);
 
     uint8_t frameBuf[8];
     const TickType_t period = pdMS_TO_TICKS(1000 / DRIVE_FREQ_HZ);  // 20 ms at 50 Hz

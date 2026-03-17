@@ -93,17 +93,23 @@ static void setDomeNeutral() {
 // Outputs the configured neutral pulse for ESC arming.
 // -----------------------------------------------------------------------------
 void domeTaskInit() {
-    // Read configured neutral pulse for arming — do not hardcode
-    uint16_t neutralUs;
+    // Feature toggle: skip ESC arming entirely when dome is disabled.
+    // No LEDC pulse is written; the channel stays at whatever neutral value
+    // ledcPwmInit() set at boot.  domeTask() will also idle (see task body).
     taskENTER_CRITICAL(&robotStateMux);
-    neutralUs = robotState.cfg_dome_neutral_us;
+    bool enabled = robotState.cfg_enable_dome;
+    uint16_t neutralUs = robotState.cfg_dome_neutral_us;
     taskEXIT_CRITICAL(&robotStateMux);
+
+    if (!enabled) {
+        PA_LOG_INFO(TAG, "dome disabled (en_dome=false) — skipping ESC arming");
+        return;
+    }
 
     ledcPwmSetPulseWidth(LEDC_CH_DOME, neutralUs);
     PA_LOG_INFO(TAG, "Dome ESC arming (neutral=%d us for %d ms)", (int)neutralUs,
                 ESC_ARMING_DURATION_MS);
 
-    // Delay for arming - this happens during setup, not in task loop
     delay(ESC_ARMING_DURATION_MS);
 
     PA_LOG_INFO(TAG, "Dome ESC armed and ready");
@@ -127,8 +133,14 @@ void domeTask(void* pvParameters) {
     uint32_t lastCommandMs = 0;
     bool hasCommand = false;
 
-    // Start at neutral — safe idle output
-    setDomeNeutral();
+    // Start at neutral only when dome output is enabled. If disabled, LEDC may
+    // be intentionally uninitialized (all outputs disabled configuration).
+    taskENTER_CRITICAL(&robotStateMux);
+    bool domeEnabledAtBoot = robotState.cfg_enable_dome;
+    taskEXIT_CRITICAL(&robotStateMux);
+    if (domeEnabledAtBoot) {
+        setDomeNeutral();
+    }
 
     bool hwmLogged = false;
 

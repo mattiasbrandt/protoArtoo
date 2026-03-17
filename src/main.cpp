@@ -18,7 +18,8 @@
 #include "log_buffer.h"
 #include "robot_state.h"
 #include "safety.h"
-#include "sbus_input.h"
+#include "rc_input.h"
+#include "ledc_pwm.h"
 #include "servo_task.h"
 #include "web_server.h"
 
@@ -219,7 +220,7 @@ bool copyLogLineAt(size_t idx, char* out, size_t outSize) {
 
 // -----------------------------------------------------------------------------
 // setDriveCommand() — thread-safe drive command update
-// Called from SBUSInputTask, WebAPI handler, or safety zeroing.
+// Called from RcInputTask, WebAPI handler, or safety zeroing.
 // -----------------------------------------------------------------------------
 void setDriveCommand(int16_t speed, int16_t steer, CommandSource src) {
     taskENTER_CRITICAL(&robotStateMux);
@@ -303,21 +304,24 @@ void loadConfigToState() {
     robotState.cfg_dome_speed_limit_pct = prefs.getUChar("dome_pct", 100);
     robotState.cfg_rc_input_mode = (RcInputMode)prefs.getUChar("rc_mode", RC_INPUT_DUAL_SBUS);
 
-    robotState.cfg_enable_arm1 = prefs.getBool("en_arm1", true);
-    robotState.cfg_enable_arm2 = prefs.getBool("en_arm2", true);
+    // All component toggles default OFF — operator must explicitly enable each
+    // connected peripheral via the Setup page. NVS overrides the default once
+    // a value has been saved.
+    robotState.cfg_enable_arm1 = prefs.getBool("en_arm1", false);
+    robotState.cfg_enable_arm2 = prefs.getBool("en_arm2", false);
     robotState.cfg_enable_aux1 = prefs.getBool("en_aux1", false);
     robotState.cfg_enable_aux2 = prefs.getBool("en_aux2", false);
     robotState.cfg_enable_aux3 = prefs.getBool("en_aux3", false);
-    robotState.cfg_enable_dome = prefs.getBool("en_dome", true);
-    robotState.cfg_enable_rc_ch1 = prefs.getBool("en_rc_ch1", true);
-    robotState.cfg_enable_rc_ch2 = prefs.getBool("en_rc_ch2", true);
+    robotState.cfg_enable_dome = prefs.getBool("en_dome", false);
+    robotState.cfg_enable_rc_ch1 = prefs.getBool("en_rc_ch1", false);
+    robotState.cfg_enable_rc_ch2 = prefs.getBool("en_rc_ch2", false);
     robotState.cfg_enable_rc_ch3 = prefs.getBool("en_rc_ch3", false);
     robotState.cfg_enable_rc_ch4 = prefs.getBool("en_rc_ch4", false);
     robotState.cfg_enable_rc_ch5 = prefs.getBool("en_rc_ch5", false);
     robotState.cfg_enable_rc_ch6 = prefs.getBool("en_rc_ch6", false);
-    robotState.cfg_enable_s1_hoverboard = prefs.getBool("en_s1", true);
-    robotState.cfg_enable_s2_sound = prefs.getBool("en_s2", true);
-    robotState.cfg_enable_s3_dome_ctrl = prefs.getBool("en_s3", true);
+    robotState.cfg_enable_s1_hoverboard = prefs.getBool("en_s1", false);
+    robotState.cfg_enable_s2_sound = prefs.getBool("en_s2", false);
+    robotState.cfg_enable_s3_dome_ctrl = prefs.getBool("en_s3", false);
     robotState.cfg_stationary = prefs.getBool("op_mode", false);
     robotState.activeMood     = prefs.getUChar("last_mood", 0);
 
@@ -760,17 +764,30 @@ void setup() {
     audioCmdQueue = xQueueCreate(8, sizeof(AudioCommand));
     domeTxQueue   = xQueueCreate(16, sizeof(DomeTxCmd));
 
-    // Initialize servo hardware (before tasks start)
+    // Initialize LEDC PWM hardware only if at least one LEDC-driven output is
+    // enabled.  ARM1/2/AUX1-3 and DOME all share the same LEDC timer, so the
+    // init lives here rather than inside either task-init function.
+    {
+        taskENTER_CRITICAL(&robotStateMux);
+        bool anyLedc = robotState.cfg_enable_arm1 || robotState.cfg_enable_arm2 ||
+                       robotState.cfg_enable_aux1 || robotState.cfg_enable_aux2 ||
+                       robotState.cfg_enable_aux3 || robotState.cfg_enable_dome;
+        taskEXIT_CRITICAL(&robotStateMux);
+        if (anyLedc) {
+            ledcPwmInit();
+            ledcPwmInitNeutralPositions();
+        }
+    }
     servoTaskInit();
     domeTaskInit();
 
     // Launch real-time tasks on Core 1
     // DriveTask: 50 Hz hoverboard frames, feeds TWDT, Layer 3 web timeout
-    // SBUSInputTask: 200 Hz SBUS poll, Layer 1+2 failsafe
+    // RcInputTask: ~200 Hz RC poll (all modes), Layer 1+2 failsafe
     // ServoTask: 50 Hz servo PWM updates
     // DomeTask: 50 Hz ESC PWM updates
     xTaskCreatePinnedToCore(driveTask, "DriveTask", 4096, nullptr, 5, nullptr, 1);
-    xTaskCreatePinnedToCore(sbusInputTask, "SBUSInputTask", 4096, nullptr, 5, nullptr, 1);
+    xTaskCreatePinnedToCore(rcInputTask, "RCInputTask", 4096, nullptr, 5, nullptr, 1);
     xTaskCreatePinnedToCore(servoTask, "ServoTask", 3072, nullptr, 4, nullptr,
                             1);  // HWM: ~728 B used; was 5120 (oversized for string formatting assumption)
     xTaskCreatePinnedToCore(domeTask, "DomeTask", 2048, nullptr, 4, nullptr, 1);  // HWM: ~764 B used

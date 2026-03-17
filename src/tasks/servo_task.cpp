@@ -327,9 +327,20 @@ static void processCommand(const ServoCommand& cmd) {
 // Initialize servo hardware.
 // -----------------------------------------------------------------------------
 void servoTaskInit() {
-    ledcPwmInit();
-    ledcPwmInitNeutralPositions();
-    PA_LOG_INFO(TAG, "Servo hardware initialized");
+    // LEDC timer and neutral positions are initialized in main.cpp before this
+    // call, conditioned on any LEDC output being enabled (ARM1/2/AUX1-3/DOME).
+    // This function only logs the servo-specific enable state.
+    taskENTER_CRITICAL(&robotStateMux);
+    bool anyServo = robotState.cfg_enable_arm1 || robotState.cfg_enable_arm2 ||
+                    robotState.cfg_enable_aux1  || robotState.cfg_enable_aux2 ||
+                    robotState.cfg_enable_aux3;
+    taskEXIT_CRITICAL(&robotStateMux);
+
+    if (anyServo) {
+        PA_LOG_INFO(TAG, "Servo outputs ready (ARM1/2/AUX1-3 channels armed at neutral)");
+    } else {
+        PA_LOG_INFO(TAG, "all arm/aux outputs disabled (en_arm1/2/aux1-3=false) — servos idle");
+    }
 }
 
 // -----------------------------------------------------------------------------
@@ -339,8 +350,26 @@ void servoTaskInit() {
 void servoTask(void* pvParameters) {
     (void)pvParameters;
 
-    // Register with task watchdog
+    // Register with task watchdog unconditionally.
     esp_task_wdt_add(NULL);
+
+    // Feature toggle: if no arm/aux outputs are enabled, LEDC was never
+    // initialized and calling ledcPwmSetPulseWidth() would crash. Idle here
+    // feeding TWDT only — no queue processing, no sequence updates.
+    {
+        taskENTER_CRITICAL(&robotStateMux);
+        bool anyServo = robotState.cfg_enable_arm1 || robotState.cfg_enable_arm2 ||
+                        robotState.cfg_enable_aux1  || robotState.cfg_enable_aux2 ||
+                        robotState.cfg_enable_aux3;
+        taskEXIT_CRITICAL(&robotStateMux);
+        if (!anyServo) {
+            PA_LOG_INFO("ServoTask", "all arm/aux outputs disabled — task idle");
+            for (;;) {
+                esp_task_wdt_reset();
+                vTaskDelay(pdMS_TO_TICKS(20));
+            }
+        }
+    }
 
     ServoCommand cmd;
     bool hwmLogged = false;

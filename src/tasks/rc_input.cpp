@@ -1,10 +1,11 @@
 // =============================================================================
-// src/tasks/sbus_input.cpp
+// src/tasks/rc_input.cpp
 //
-// SBUSInputTask — decodes SBUS receivers using the RMT-based SbusDecoder.
+// RcInputTask — handles all RC input modes: standard_pwm, single_sbus, dual_sbus.
+// Renamed from sbus_input.cpp; the task was never SBUS-specific.
+//
 // Receiver #1 (PIN_SBUS1_RX = GPIO 15): Drive — CH1=speed, CH2=steer, CH8=limit
-// Receiver #2 (PIN_SBUS2_RX = GPIO 13): Dome spin — Phase 3 (initialized,
-//   dome channel processing deferred until DomeLinkTask plumbing is complete).
+// Receiver #2 (PIN_SBUS2_RX = GPIO 13): Dome spin
 //
 // SbusDecoder API:
 //   .begin(pin)   — initialize RMT channel, returns false if no channel free
@@ -32,7 +33,7 @@
 #include "../../include/sbus_decoder.h"
 #include "../../include/sbus_math.h"
 
-static const char* TAG = "SBUSInputTask";
+static const char* TAG = "RCInputTask";
 
 // SBUS receiver objects — UART-based with hardware inversion
 // GPIO 15 (drive) uses Serial1, GPIO 13 (dome) uses Serial2
@@ -611,12 +612,17 @@ static bool is_dome_sbus_mode(RcInputMode mode) {
 }
 
 // -----------------------------------------------------------------------------
-// sbusInputTask()
-// Polls both SBUS receivers at ~200 Hz (5 ms delay) to catch every 100 Hz frame.
+// rcInputTask()
+// Handles all RC input modes: standard_pwm, single_sbus, dual_sbus.
+// Polls receivers at ~200 Hz (5 ms delay) to catch every 100 Hz SBUS frame.
 // Implements Layer 1 (HW failsafe flag) and Layer 2 (SW watchdog) safety.
 // Thread safety: all RobotState writes use taskENTER/EXIT_CRITICAL.
 // -----------------------------------------------------------------------------
-void sbusInputTask(void* pvParameters) {
+void rcInputTask(void* pvParameters) {
+    // Register with TWDT unconditionally — this task feeds the watchdog
+    // regardless of which RC mode is active or what channels are enabled.
+    esp_task_wdt_add(NULL);
+
     taskENTER_CRITICAL(&robotStateMux);
     RcInputMode rcInputMode = robotState.cfg_rc_input_mode;
     bool enableRcCh1 = robotState.cfg_enable_rc_ch1;
@@ -625,6 +631,16 @@ void sbusInputTask(void* pvParameters) {
 
     bool driveSbusEnabled = is_drive_sbus_mode(rcInputMode) && enableRcCh1;
     bool domeSbusEnabled = is_dome_sbus_mode(rcInputMode) && enableRcCh2;
+
+    // Disabled SBUS guard:
+    // In SBUS modes, if both receivers are disabled, this task has no runtime
+    // work and should idle immediately while feeding TWDT.
+    if (rcInputMode != RC_INPUT_STANDARD_PWM && !driveSbusEnabled && !domeSbusEnabled) {
+        for (;;) {
+            esp_task_wdt_reset();
+            vTaskDelay(pdMS_TO_TICKS(5));
+        }
+    }
 
     if (driveSbusEnabled) {
         if (!sbus_drive.begin(&Serial1, PIN_SBUS1_RX)) {
@@ -640,16 +656,23 @@ void sbusInputTask(void* pvParameters) {
     }
 
     if (rcInputMode == RC_INPUT_STANDARD_PWM) {
-        PA_LOG_INFO(TAG, "started — standard_pwm mode selected (SBUS decoders inactive)");
+        PA_LOG_INFO(TAG, "started — standard_pwm mode, SBUS decoders inactive");
     } else if (rcInputMode == RC_INPUT_SINGLE_SBUS) {
-        PA_LOG_INFO(TAG, "started — single_sbus mode, SBUS1 GPIO%d active", PIN_SBUS1_RX);
+        if (driveSbusEnabled)
+            PA_LOG_INFO(TAG, "started — single_sbus mode, SBUS1 GPIO%d active", PIN_SBUS1_RX);
+        else
+            PA_LOG_INFO(TAG, "started — single_sbus mode, SBUS1 disabled (en_rc_ch1=false) — idle");
     } else {
-        PA_LOG_INFO(TAG, "started — dual_sbus mode, SBUS1 GPIO%d + SBUS2 GPIO%d active",
-                    PIN_SBUS1_RX, PIN_SBUS2_RX);
+        if (!driveSbusEnabled)
+            PA_LOG_INFO(TAG, "started — dual_sbus mode, SBUS2 GPIO%d only (SBUS1 disabled)",
+                        PIN_SBUS2_RX);
+        else if (!domeSbusEnabled)
+            PA_LOG_INFO(TAG, "started — dual_sbus mode, SBUS1 GPIO%d only (SBUS2 disabled)",
+                        PIN_SBUS1_RX);
+        else
+            PA_LOG_INFO(TAG, "started — dual_sbus mode, SBUS1 GPIO%d + SBUS2 GPIO%d active",
+                        PIN_SBUS1_RX, PIN_SBUS2_RX);
     }
-
-    // Register with Task Watchdog Timer (TWDT) — Layer 4 safety
-    esp_task_wdt_add(NULL);
 
     // SBUS2 watchdog state
     bool sbus2WatchdogFired = false;
