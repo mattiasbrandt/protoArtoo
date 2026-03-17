@@ -14,6 +14,7 @@
 #include <stddef.h>
 #include <stdio.h>
 
+#include "../../include/api_audio.h"
 #include "../../include/api_config.h"
 #include "../../include/api_drive.h"
 #include "../../include/api_estop.h"
@@ -778,6 +779,7 @@ void startHttpServerOnce() {
 
         registerEstopRoutes(server);
         registerDriveRoutes(server);
+        registerAudioRoutes(server);
         registerConfigRoutes(server);
         registerRcRoutes(server);
         registerServoRoutes(server);

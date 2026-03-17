@@ -233,4 +233,29 @@
       sendManualCommand(cmd);
     });
   });
+
+  // ---- Audio Quick Controls ----
+  const audioFeedback = document.getElementById("audio-feedback");
+
+  const postAudio = async (params) => {
+    const body = new URLSearchParams(params);
+    try {
+      const res = await fetch("/api/audio", { method: "POST", body });
+      const json = await res.json();
+      if (audioFeedback) {
+        audioFeedback.textContent = json.ok ? "✅ Done" : `❌ ${json.error}`;
+        audioFeedback.className = `feedback ${json.ok ? "success" : "error"}`;
+        setTimeout(() => { if (audioFeedback) audioFeedback.textContent = ""; }, 2000);
+      }
+    } catch (_e) {
+      if (audioFeedback) {
+        audioFeedback.textContent = "❌ Request failed";
+        audioFeedback.className = "feedback error";
+      }
+    }
+  };
+
+  document.getElementById("audio-stop")  ?.addEventListener("click", () => postAudio({ action: "stop" }));
+  document.getElementById("audio-vol-up")?.addEventListener("click", () => postAudio({ action: "dollar", cmd: "$+" }));
+  document.getElementById("audio-vol-dn")?.addEventListener("click", () => postAudio({ action: "dollar", cmd: "$-" }));
 })();

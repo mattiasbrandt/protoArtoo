@@ -14,6 +14,8 @@
 
 #include "api_helpers.h"
 #include "audio_task.h"
+#include "dome_link.h"
+#include "marcduino_rx.h"
 #include "config.h"
 #include "logging.h"
 #include "robot_state.h"
@@ -28,11 +30,29 @@ bool executeManualCommand(const String& raw) {
     String command = raw;
     command.trim();
 
-    // Marcduino $ audio commands are case-sensitive — must be routed BEFORE
-    // toLowerCase() is applied, otherwise $R becomes $r and $S becomes $s
-    // (which is the stop command — wrong).
-    if (command.length() > 0 && command[0] == '$') {
-        return audioQueueDollar(command.c_str(), SRC_WEB_API);
+    // Marcduino commands are case-sensitive — must be routed BEFORE toLowerCase().
+    if (command.length() > 0) {
+        char prefix = command[0];
+
+        // $ — audio commands: route to AudioTask
+        if (prefix == '$') {
+            return audioQueueDollar(command.c_str(), SRC_WEB_API);
+        }
+
+        // : and # — body-processed Marcduino: servo sequences, panel cmds, config
+        if (prefix == ':' || prefix == '#') {
+            parseMarcduinoCommand(command.c_str());
+            return true;  // always accept — body handles or discards per routing table
+        }
+
+        // * @ % & ! — dome-bound Marcduino: forward to dome TX queue
+        // These are dome-only prefixes; the body discards them from dome RX,
+        // but from the web UI the operator may want to send them to the dome.
+        if (prefix == '*' || prefix == '@' || prefix == '%' ||
+            prefix == '&' || prefix == '!') {
+            domeQueueTx(command.c_str());
+            return true;
+        }
     }
 
     command.toLowerCase();

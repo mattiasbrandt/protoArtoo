@@ -19,14 +19,38 @@
 
       const data = await response.json();
       
+      // S1 — hoverboard: present in status when enabled; state is "idle"/"commanding"
       if (s1Status) {
-        s1Status.textContent = data.s1Hoverboard?.state === "connected" ? "✅ Connected" : "⏸️ Disconnected";
+        if (!data.s1Hoverboard) {
+          s1Status.textContent = "⏸️ Disabled";
+        } else {
+          s1Status.textContent = data.s1Hoverboard.state === "commanding"
+            ? "✅ Active" : "✅ Enabled / Idle";
+        }
       }
+
+      // S2 — audio: present when enabled; state is "idle" or "playing"
       if (s2Status) {
-        s2Status.textContent = data.s2Sound?.state === "connected" ? "✅ Connected" : "⏸️ Disconnected";
+        if (!data.s2Sound) {
+          s2Status.textContent = "⏸️ Disabled";
+        } else {
+          s2Status.textContent = data.s2Sound.state === "playing"
+            ? "🔊 Playing" : "✅ Enabled / Idle";
+        }
       }
+
+      // S3 — dome link: use top-level dome_link block (always present)
       if (s3Status) {
-        s3Status.textContent = data.s3DomeCtrl?.state === "connected" ? "✅ Connected" : "⏸️ Disconnected";
+        const dl = data.dome_link;
+        if (!dl || dl.state === "disabled") {
+          s3Status.textContent = "⏸️ Disabled";
+        } else if (dl.state === "connected") {
+          s3Status.textContent = `✅ Connected (hb rx ${dl.hb_rx} / tx ${dl.hb_tx})`;
+        } else if (dl.state === "lost") {
+          s3Status.textContent = `❌ Lost — last seen ${dl.last_rx_ms} ms ago`;
+        } else {
+          s3Status.textContent = "⚠️ Not seen — waiting for dome heartbeat";
+        }
       }
       
       if (feedback) {
