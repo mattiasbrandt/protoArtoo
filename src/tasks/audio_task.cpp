@@ -205,8 +205,15 @@ void audioTask(void* pvParameters) {
     AudioNamedTracks named{};
 
     AudioCommand cmd{};
+    bool hwmLogged = false;
 
     for (;;) {
+        if (!hwmLogged) {
+            PA_LOG_INFO("AudioTask", "stack HWM: %u words free",
+                        (unsigned)uxTaskGetStackHighWaterMark(NULL));
+            hwmLogged = true;
+        }
+
         // ----------------------------------------------------------------
         // Read enabled state fresh every iteration.
         // The user can toggle S2 Sound in the Setup page at any time;

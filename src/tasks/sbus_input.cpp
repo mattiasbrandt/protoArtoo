@@ -653,8 +653,15 @@ void sbusInputTask(void* pvParameters) {
 
     // SBUS2 watchdog state
     bool sbus2WatchdogFired = false;
+    bool hwmLogged = false;
 
     while (true) {
+        if (!hwmLogged) {
+            PA_LOG_INFO(TAG, "stack HWM: %u words free",
+                        (unsigned)uxTaskGetStackHighWaterMark(NULL));
+            hwmLogged = true;
+        }
+
         if (rcInputMode == RC_INPUT_STANDARD_PWM) {
             dispatchStandardPwmInputs();
             esp_task_wdt_reset();

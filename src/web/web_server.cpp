@@ -747,7 +747,14 @@ static uint32_t s_lastLogSent = 0;
 static char s_sseLogLines[8][LOG_LINE_MAX];
 
 void eventStreamTask(void*) {
+    bool hwmLogged = false;
     for (;;) {
+        if (!hwmLogged) {
+            PA_LOG_INFO("WebEvents", "stack HWM: %u words free",
+                        (unsigned)uxTaskGetStackHighWaterMark(NULL));
+            hwmLogged = true;
+        }
+
         if (serverStarted && events.count() > 0) {
             uint32_t nowMs = millis();
 
@@ -882,7 +889,7 @@ void webServerInit() {
     if (!eventTaskStarted) {
         // 4096 bytes is sufficient: all large buffers are file-scope statics,
         // not stack-allocated inside the task. Reduced from 8192 (saves 4 KB heap).
-        xTaskCreatePinnedToCore(eventStreamTask, "WebEvents", 4096, nullptr, 1, nullptr, 0);
+        xTaskCreatePinnedToCore(eventStreamTask, "WebEvents", 2048, nullptr, 1, nullptr, 0);
         eventTaskStarted = true;
     }
 

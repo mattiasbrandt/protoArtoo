@@ -130,7 +130,15 @@ void domeTask(void* pvParameters) {
     // Start at neutral — safe idle output
     setDomeNeutral();
 
+    bool hwmLogged = false;
+
     while (true) {
+        if (!hwmLogged) {
+            PA_LOG_INFO(TAG, "stack HWM: %u words free",
+                        (unsigned)uxTaskGetStackHighWaterMark(NULL));
+            hwmLogged = true;
+        }
+
         // Read safety state under mutex
         taskENTER_CRITICAL(&robotStateMux);
         bool estop = robotState.estop;

@@ -343,8 +343,15 @@ void servoTask(void* pvParameters) {
     esp_task_wdt_add(NULL);
 
     ServoCommand cmd;
+    bool hwmLogged = false;
 
     while (true) {
+        if (!hwmLogged) {
+            PA_LOG_INFO("ServoTask", "stack HWM: %u words free",
+                        (unsigned)uxTaskGetStackHighWaterMark(NULL));
+            hwmLogged = true;
+        }
+
         // Process any pending commands (non-blocking)
         while (xQueueReceive(servoCmdQueue, &cmd, 0) == pdTRUE) {
             processCommand(cmd);

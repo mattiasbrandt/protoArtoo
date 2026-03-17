@@ -771,9 +771,9 @@ void setup() {
     // DomeTask: 50 Hz ESC PWM updates
     xTaskCreatePinnedToCore(driveTask, "DriveTask", 4096, nullptr, 5, nullptr, 1);
     xTaskCreatePinnedToCore(sbusInputTask, "SBUSInputTask", 4096, nullptr, 5, nullptr, 1);
-    xTaskCreatePinnedToCore(servoTask, "ServoTask", 5120, nullptr, 4, nullptr,
-                            1);  // Increased for string formatting
-    xTaskCreatePinnedToCore(domeTask, "DomeTask", 4096, nullptr, 4, nullptr, 1);
+    xTaskCreatePinnedToCore(servoTask, "ServoTask", 3072, nullptr, 4, nullptr,
+                            1);  // HWM: ~728 B used; was 5120 (oversized for string formatting assumption)
+    xTaskCreatePinnedToCore(domeTask, "DomeTask", 2048, nullptr, 4, nullptr, 1);  // HWM: ~764 B used
 
     // AudioTask: Core 0 (non-RT) — software bit-bang TX blocks ~6 ms per command;
     // keeping off Core 1 avoids any interaction with DriveTask / ServoTask timing.
@@ -783,8 +783,10 @@ void setup() {
     // UART2 TX/RX are non-blocking hardware operations; Core 1 at priority 3.
     xTaskCreatePinnedToCore(domeLinkTask, "DomeLinkTask", 3072, nullptr, 3, nullptr, 1);
 
-    // SafetyMonitorTask: 10 Hz audit on Core 0 (non-RT, low priority)
-    xTaskCreatePinnedToCore(safetyMonitorTask, "SafetyMonitor", 2048, nullptr, 2, nullptr, 0);
+    // SafetyMonitorTask: 10 Hz audit on Core 0 (non-RT, low priority).
+    // HWM first-iteration: 476 B free — WARN path allocates 128 B format buffer +
+    // printf; bumped to 3072 to ensure adequate headroom for all log paths.
+    xTaskCreatePinnedToCore(safetyMonitorTask, "SafetyMonitor", 3072, nullptr, 2, nullptr, 0);
 
     // Restore last mood — audio component only.
     // - Dome link is not yet established at boot, so dome TX is intentionally skipped.

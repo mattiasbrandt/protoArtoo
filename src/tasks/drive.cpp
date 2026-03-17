@@ -45,10 +45,18 @@ void driveTask(void* pvParameters) {
 
     uint8_t frameBuf[8];
     const TickType_t period = pdMS_TO_TICKS(1000 / DRIVE_FREQ_HZ);  // 20 ms at 50 Hz
+    bool hwmLogged = false;
 
     while (true) {
         // Feed TWDT — if this line is not reached within WATCHDOG_TIMEOUT_S, chip resets
         esp_task_wdt_reset();
+
+        // Log stack high-water mark once, after the first loop (captures init overhead).
+        if (!hwmLogged) {
+            PA_LOG_INFO(TAG, "stack HWM: %u words free",
+                        (unsigned)uxTaskGetStackHighWaterMark(NULL));
+            hwmLogged = true;
+        }
 
         // Read current state under mutex
         int16_t speed;

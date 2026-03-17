@@ -35,7 +35,15 @@ static bool lastDomeConnected = false;
 void safetyMonitorTask(void* pvParameters) {
     PA_LOG_INFO(TAG, "started — 10 Hz audit on Core 0");
 
+    bool hwmLogged = false;
+
     while (true) {
+        if (!hwmLogged) {
+            PA_LOG_INFO(TAG, "stack HWM: %u words free",
+                        (unsigned)uxTaskGetStackHighWaterMark(NULL));
+            hwmLogged = true;
+        }
+
         // Read state snapshot under mutex
         taskENTER_CRITICAL(&robotStateMux);
         uint32_t fsCount = robotState.failsafeTriggerCount;

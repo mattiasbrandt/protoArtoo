@@ -84,6 +84,30 @@ from git tag + build timestamp (e.g. `v0.2.0-1-g23008b7-20260315-013914`).
   shows live channel values; arm servo confirmed working from SBUS controller
 - RC mapper UX overhauled (Task 3.11): three-panel layout, binding summary table,
   focused live preview, per-slot editor; software-verified, hardware sign-off pending
+- RC channel bindings and calibration are fully NVS-backed: all `rcp_*`, `rcs_*`,
+  `rc_arm1/2`, `rc_aux1-3`, `rc_sound`, `rc_opmode`, `rc_free0-3` keys load and
+  save correctly through `loadConfigToState()` / `saveConfigToNvs()`
+
+### Phase 4 (Audio + Dome Link — v0.4.0, in progress)
+
+- AudioDriver pluggable backend (`PA_AUDIO_DRIVER` build flag): `AUDIO_SOFT_UART`
+  (DY-SV5W via 9600-baud soft UART on GPIO 26) and `AUDIO_CHIRP` (CHIRP board) both compile clean
+- AudioTask queues all audio requests from RC, web API, and dome serial `$` commands
+- `parseAudioDollar()` native-tested (26 test cases), mood dispatch native-tested
+- Mood system: 15 presets, dual-path (body audio + dome serial `:SE01`–`:SE15`),
+  boot restore, NVS-persisted (`last_mood`); `/api/mood` bench-tested
+- DomeLinkTask: `#PAHB` 1 Hz heartbeat to dome bench-tested on GPIO 33/34
+- `/api/audio` (play, stop, volume), `/api/mood`, `/api/status` dome_link block: bench-tested
+- Dashboard: Mood Selector card, audio source indicators
+- Static RAM: 20.0% (65,408 / 327,680 B); heapMin ~135 KB post-WiFi (up from ~107 KB)
+- 431 native test cases passing (includes audio parser, mood dispatch, frame builder)
+- Runtime log level: Setup page Diagnostics card, NVS-backed (`log_level`), 1=Error / 2=Info / 3=Debug
+- Stack HWM bench-measured (first-iteration): DriveTask 2520 B / 4096, SBUSInput 2360 B / 4096,
+  DomeTask 3332 B / 2048, ServoTask 4392 B / 3072, AudioTask 2680 B / 3072,
+  SafetyMonitor was 476 B / 2048 → stack bumped to 3072, WebEvents 3804 B / 4096 → trimmed to 2048
+- OTA via HTTP POST fixed: `UPDATE_SIZE_UNKNOWN` in `Update.begin()` prevents multipart boundary
+  size mismatch that was causing silent rollback to old firmware on every upload
+- All raw `Serial.printf` in `safety.cpp`, `drive.cpp`, `sbus_input.cpp` replaced with `PA_LOG_*`
 
 ---
 
@@ -113,9 +137,12 @@ Tracked as T11 and T12 in `tasks/phase4-tasks.md`.
 | T08 | Mood dual-path — `/api/mood`, boot restore, dome RX intercept | ✅ **bench-tested** |
 | T09 | Parser/track mapping tests + hardware validation plan | **native-tested** (401 tests); hardware checklist in tasks/phase4-tasks.md |
 | T10 | Full hardware validation | **formally deferred** — audio module and dome board not connected; checklist recorded |
-| T11–T13 | Phase 3 carryover items | Pending hardware availability |
+| T11–T12 | Phase 3 carryover (SBUS failsafe, drive path, RC physical) | Pending hardware availability |
+| T13 | Reconcile NVS remapping claim | ✅ **closed** — stale doc; all RC bindings are NVS-backed (full load/save in main.cpp) |
 | T14 | RC learning mode re-evaluation | Low priority, post-T11/T12 |
-| T15 | CHIRP Audio Trigger backend | Not started |
+| T15 | CHIRP Audio Trigger backend (`AUDIO_CHIRP`) | ✅ **compile-only** — driver implemented; `pio run -e protoArtoo_chirp_check` passes |
+| T16 | Static RAM reduction + heap improvement | ✅ **bench-tested** — BSS −11.5 KB; heapMin +28 KB (107 KB → 135 KB measured) |
+| T17 | Runtime log level selector on Setup page | ✅ **bench-tested** — dropdown renders, POST works, NVS-persisted; OTA bug fixed (UPDATE_SIZE_UNKNOWN) |
 
 **Verification terminology used in this project:**
 - `native-tested` — covered by `pio test -e native` passing

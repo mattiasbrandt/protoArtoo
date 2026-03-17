@@ -277,16 +277,15 @@ Reference: `tasks/phase3_hardware_validation_deferral.md`
     - [ ] Upload UX: firmware upload from `/firmware.html` shows progress, triggers
           reboot, displays updated version on reconnect; filesystem upload same flow
 
-- [ ] T13 — Reconcile status.md NVS remapping claim
-  - `tasks/status.md` states "RC channel assignments are not yet NVS-remappable
-    per the latest plan revision" — written before the full Task 3.11 implementation
-  - Task 3.11 implementation notes record that NVS persists was confirmed in the
-    2026-03-15 hardware test
-  - **Action:** verify at bench whether this is a stale entry or a real software gap
-    - If stale: update `tasks/status.md` to reflect the actual implementation state
-    - If real gap: implement NVS remapping per `tasks/rc_diagnostics_contract.md`
-      and add native test coverage
-  - No hardware required — can be resolved during Phase 4 bench bring-up
+- [x] T13 — Reconcile status.md NVS remapping claim
+  - **Resolved: stale documentation.** `main.cpp` fully loads all RC channel
+    bindings (`loadRcBindingFromPrefs`/`loadRcTriggerBindingFromPrefs`) and saves
+    them (`saveRcBindingToPrefs`/`saveRcTriggerBindingToPrefs`) under NVS keys
+    `rcp_*`, `rcs_*`, `rc_arm1`, `rc_arm2`, `rc_aux1`–`rc_aux3`, `rc_sound`,
+    `rc_opmode`, `rc_free0`–`rc_free3`. All RC binding and calibration state
+    survives reboot. No software gap found.
+  - `docs/status.md` updated to reflect actual implementation state.
+  - **Verification:** code-confirmed (main.cpp NVS load/save audit)
 
 - [ ] T14 — Re-evaluate RC channel "learning mode" highlight feature
   - **Background:** A learning mode was attempted in Phase 3 (highlight the slot
@@ -388,7 +387,7 @@ Reference: `tasks/phase3_hardware_validation_deferral.md`
     audio driver status/diagnostic readouts. Scope additions require a new task or
     phase amendment — do not expand T16 in-place.
 
-- [ ] T17 — Runtime log level selector on Setup page
+- [x] T17 — Runtime log level selector on Setup page
   - **Background:** `PA_LOG_LEVEL` is currently a compile-time build flag. The
     operator should be able to select the desired log verbosity at runtime from
     the Setup page without reflashing. Log level controls both serial output

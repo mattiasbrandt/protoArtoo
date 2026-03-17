@@ -141,8 +141,15 @@ void domeLinkTask(void* pvParameters) {
     static uint8_t rxLen = 0;
 
     DomeTxCmd txCmd{};
+    bool hwmLogged = false;
 
     for (;;) {
+        if (!hwmLogged) {
+            PA_LOG_INFO(TAG, "stack HWM: %u words free",
+                        (unsigned)uxTaskGetStackHighWaterMark(NULL));
+            hwmLogged = true;
+        }
+
         // ----------------------------------------------------------------
         // TX — drain outbound command queue
         // ----------------------------------------------------------------
