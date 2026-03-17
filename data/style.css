@@ -1012,6 +1012,10 @@ input.input-narrow:focus {
   font-size: 0.85rem;
 }
 
+.rc-learn-banner[hidden] {
+  display: none;
+}
+
 .rc-learn-banner-icon {
   font-size: 1.3rem;
   line-height: 1;
