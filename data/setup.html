@@ -39,24 +39,54 @@
         Disabled components are hidden from all pages and not driven by the firmware.</div>
       <form id="feature-form" class="mt-16">
 
-        <div class="section-label">🔧 Servo &amp; Motor Outputs</div>
+        <div class="section-label">ARM &amp; AUX</div>
         <div class="component-row">
-          <label class="toggle-switch" title="ARM1 (GPIO 23) — Left utility arm servo">
-            <input type="checkbox" id="enable-arm1" name="enableArm1">
+          <label class="toggle-switch" title="AUX1 / ARM3 (GPIO 19) — Auxiliary PWM output 1">
+            <input type="checkbox" id="enable-aux1" name="enableAux1">
             <span class="toggle-slider"></span>
-            <span class="toggle-label">ARM1 — Left Arm</span>
-            <span class="toggle-status" id="status-arm1">Disabled</span>
+            <span class="toggle-label">AUX1</span>
+            <span class="toggle-status" id="status-aux1">Disabled</span>
           </label>
-          <select class="type-select" id="type-arm1" title="Component type connected to ARM1">
-            <option value="mg996r">MG996R (standard)</option>
-            <option value="mg90s">MG90S (micro)</option>
+          <select class="type-select" id="type-aux1" title="Component type connected to AUX1 / ARM3">
+            <option value="none">Nothing connected</option>
+            <option value="mg996r">MG996R servo</option>
+            <option value="mg90s">MG90S servo</option>
+            <option value="rgb">RGB LED strip</option>
+          </select>
+        </div>
+        <div class="component-row">
+          <label class="toggle-switch" title="AUX2 / ARM4 (GPIO 18) — Auxiliary PWM output 2">
+            <input type="checkbox" id="enable-aux2" name="enableAux2">
+            <span class="toggle-slider"></span>
+            <span class="toggle-label">AUX2</span>
+            <span class="toggle-status" id="status-aux2">Disabled</span>
+          </label>
+          <select class="type-select" id="type-aux2" title="Component type connected to AUX2 / ARM4">
+            <option value="none">Nothing connected</option>
+            <option value="mg996r">MG996R servo</option>
+            <option value="mg90s">MG90S servo</option>
+            <option value="rgb">RGB LED strip</option>
+          </select>
+        </div>
+        <div class="component-row">
+          <label class="toggle-switch" title="AUX3 / ARM5 (GPIO 32) — Auxiliary PWM output 3">
+            <input type="checkbox" id="enable-aux3" name="enableAux3">
+            <span class="toggle-slider"></span>
+            <span class="toggle-label">AUX3</span>
+            <span class="toggle-status" id="status-aux3">Disabled</span>
+          </label>
+          <select class="type-select" id="type-aux3" title="Component type connected to AUX3 / ARM5">
+            <option value="none">Nothing connected</option>
+            <option value="mg996r">MG996R servo</option>
+            <option value="mg90s">MG90S servo</option>
+            <option value="rgb">RGB LED strip</option>
           </select>
         </div>
         <div class="component-row">
           <label class="toggle-switch" title="ARM2 (GPIO 5) — Right utility arm servo">
             <input type="checkbox" id="enable-arm2" name="enableArm2">
             <span class="toggle-slider"></span>
-            <span class="toggle-label">ARM2 — Right Arm</span>
+            <span class="toggle-label">ARM2</span>
             <span class="toggle-status" id="status-arm2">Disabled</span>
           </label>
           <select class="type-select" id="type-arm2" title="Component type connected to ARM2">
@@ -65,55 +95,25 @@
           </select>
         </div>
         <div class="component-row">
-          <label class="toggle-switch" title="ARM3 (GPIO 19) — Auxiliary PWM output 1">
-            <input type="checkbox" id="enable-aux1" name="enableAux1">
+          <label class="toggle-switch" title="ARM1 (GPIO 23) — Left utility arm servo">
+            <input type="checkbox" id="enable-arm1" name="enableArm1">
             <span class="toggle-slider"></span>
-            <span class="toggle-label">ARM3 — AUX 1</span>
-            <span class="toggle-status" id="status-aux1">Disabled</span>
+            <span class="toggle-label">ARM1</span>
+            <span class="toggle-status" id="status-arm1">Disabled</span>
           </label>
-          <select class="type-select" id="type-aux1" title="Component type connected to ARM3 / AUX1">
-            <option value="none">Nothing connected</option>
-            <option value="mg996r">MG996R servo</option>
-            <option value="mg90s">MG90S servo</option>
-            <option value="rgb">RGB LED strip</option>
-          </select>
-        </div>
-        <div class="component-row">
-          <label class="toggle-switch" title="ARM4 (GPIO 18) — Auxiliary PWM output 2">
-            <input type="checkbox" id="enable-aux2" name="enableAux2">
-            <span class="toggle-slider"></span>
-            <span class="toggle-label">ARM4 — AUX 2</span>
-            <span class="toggle-status" id="status-aux2">Disabled</span>
-          </label>
-          <select class="type-select" id="type-aux2" title="Component type connected to ARM4 / AUX2">
-            <option value="none">Nothing connected</option>
-            <option value="mg996r">MG996R servo</option>
-            <option value="mg90s">MG90S servo</option>
-            <option value="rgb">RGB LED strip</option>
-          </select>
-        </div>
-        <div class="component-row">
-          <label class="toggle-switch" title="ARM5 (GPIO 32) — Auxiliary PWM output 3">
-            <input type="checkbox" id="enable-aux3" name="enableAux3">
-            <span class="toggle-slider"></span>
-            <span class="toggle-label">ARM5 — AUX 3</span>
-            <span class="toggle-status" id="status-aux3">Disabled</span>
-          </label>
-          <select class="type-select" id="type-aux3" title="Component type connected to ARM5 / AUX3">
-            <option value="none">Nothing connected</option>
-            <option value="mg996r">MG996R servo</option>
-            <option value="mg90s">MG90S servo</option>
-            <option value="rgb">RGB LED strip</option>
+          <select class="type-select" id="type-arm1" title="Component type connected to ARM1">
+            <option value="mg996r">MG996R (standard)</option>
+            <option value="mg90s">MG90S (micro)</option>
           </select>
         </div>
         <label class="toggle-switch" title="DOME (GPIO 25) — Dome rotation motor ESC">
           <input type="checkbox" id="enable-dome" name="enableDome">
           <span class="toggle-slider"></span>
-          <span class="toggle-label">DOME — Dome Motor</span>
+          <span class="toggle-label">DOME</span>
           <span class="toggle-status" id="status-dome">Disabled</span>
         </label>
 
-        <div class="section-label">🕹️ RC Inputs</div>
+        <div class="section-label">RX IN/OUT</div>
         <label class="toggle-switch" title="CH1 (GPIO 15) — SBUS drive receiver or PWM input 1">
           <input type="checkbox" id="enable-rc-ch1" name="enableRcCh1">
           <span class="toggle-slider"></span>
@@ -151,7 +151,7 @@
           <span class="toggle-status" id="status-rc-ch6">Disabled</span>
         </label>
 
-        <div class="section-label">🔌 Serial Connections</div>
+        <div class="section-label">SERIAL COMMS</div>
         <label class="toggle-switch" title="S1 (GPIO 16/17) — Hoverboard drive motor controller">
           <input type="checkbox" id="enable-s1-hoverboard" name="enableS1Hoverboard">
           <span class="toggle-slider"></span>
