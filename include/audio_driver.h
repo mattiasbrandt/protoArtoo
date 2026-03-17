@@ -32,6 +32,7 @@
 #define AUDIO_SOFT_UART  1  // Software UART TX binary-frame driver (default)
 #define AUDIO_DFPLAYER   2
 #define AUDIO_MP3TRIGGER 3
+#define AUDIO_CHIRP      4  // CHIRP Audio Trigger — ASCII UART commands
 
 // -----------------------------------------------------------------------------
 // AudioDriver — abstract interface

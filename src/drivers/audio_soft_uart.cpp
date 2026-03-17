@@ -20,12 +20,7 @@
 
 #include "audio_soft_uart.h"
 
-#include <Arduino.h>
-
-#include "config.h"
-
-// Bit period for 9600 baud: 1,000,000 / 9600 ≈ 104 µs
-static constexpr uint32_t BAUD_BIT_US = 104;
+#include "audio_soft_uart_tx.h"
 
 // Command bytes for the installed audio module.
 // ⚠ Verify against physical module firmware during T09 hardware validation.
@@ -39,29 +34,14 @@ static constexpr uint8_t CMD_SET_VOLUME = 0x13;  // Set volume (0–30)
 // UART idle state is logic HIGH — line must be high before the first byte.
 // -----------------------------------------------------------------------------
 void AudioDriverSoftUart::begin() {
-    pinMode(PIN_AUDIO_TX, OUTPUT);
-    digitalWrite(PIN_AUDIO_TX, HIGH);
+    softUartTxBegin();
 }
 
 // -----------------------------------------------------------------------------
-// softTxByte()
-// Transmit one byte via software UART: start bit, 8 data bits LSB-first,
-// stop bit. Uses delayMicroseconds() for bit timing at 9600 baud.
+// softTxByte() — thin wrapper around shared primitive
 // -----------------------------------------------------------------------------
 void AudioDriverSoftUart::softTxByte(uint8_t b) {
-    // Start bit — pull low for one bit period
-    digitalWrite(PIN_AUDIO_TX, LOW);
-    delayMicroseconds(BAUD_BIT_US);
-
-    // 8 data bits, LSB first
-    for (int i = 0; i < 8; i++) {
-        digitalWrite(PIN_AUDIO_TX, (b >> i) & 0x01);
-        delayMicroseconds(BAUD_BIT_US);
-    }
-
-    // Stop bit — return high for one bit period
-    digitalWrite(PIN_AUDIO_TX, HIGH);
-    delayMicroseconds(BAUD_BIT_US);
+    softUartTxByte(b);
 }
 
 // -----------------------------------------------------------------------------
