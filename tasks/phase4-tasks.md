@@ -552,13 +552,23 @@ Reference: `tasks/phase3_hardware_validation_deferral.md`
   - **Verification classification:** `bench-tested` (API + UI) +
     `full-hardware-required` (audible chatter rate change per mood; reboot NVS persistence)
 
+  **2026-03-18 session additions (T00 polish):**
+  - `AudioDriver::driverName()` pure virtual added; `DY-SV5W` / `CHIRP` implementations inline.
+    `audioGetDriverName()` accessor. `s2Sound.driver` field in `/api/status`.
+    Setup S2 row shows active driver label (bench-tested).
+  - Serial page removed; content absorbed into Setup page Serial Status card (live S1/S2/S3,
+    GPIO/baud reference, 5 s auto-refresh).
+  - Double-emoji feedback bug fixed across `sound.js`, `servo.js`, `setup.js`.
+  - Nav active button restored with compact sizing (all 10 pages on one line).
+  - Setup Hardware Components one-per-row layout (RX IN/OUT, SERIAL COMMS sections).
+
 ## Exit Criteria
 
 - [ ] Phase 3 carryover T11 and T12 are complete, or formally re-deferred with updated
   closure checklists
-- [ ] T13 status.md NVS claim reconciled (stale text updated or software gap closed)
-- [ ] Bench development stage objectives are validated and recorded
-- [ ] Body-link heartbeat/status is visible through the current dashboard/status system
+- [x] T13 status.md NVS claim reconciled — stale doc confirmed; all RC bindings NVS-backed
+- [x] Bench development stage objectives validated and recorded (T01–T09, T13–T18 complete)
+- [x] Body-link heartbeat/status visible through dashboard/status system (Serial Status card in Setup)
 - [ ] Dome-originated commands trigger body audio/arms correctly
 - [ ] Audio works from all intended sources on hardware
 - [ ] Build, native tests, and static analysis pass

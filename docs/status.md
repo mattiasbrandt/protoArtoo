@@ -21,7 +21,7 @@
 | Phase 2 — Web server + OTA | Complete — bench-tested baseline established |
 | Phase 3 — Servos + dome motor | **Bench-complete** — software bench-verified; hardware validation formally deferred; deferred items carried forward as T11/T12 in Phase 4 |
 | **Web UI/UX quality gate** | **CLEARED** — signed off 2026-03-15. See `tasks/web_ui_quality_gate.md` |
-| Phase 4 — Audio + full dome link | **In progress** — branch `phase/v0.4.0` active; all software tasks T01–T09, T13–T17 complete; T10 audio hardware partially validated (deterministic playback confirmed on DY-SV5W); T11–T12 hardware-blocked; see Phase 4 section below |
+| **Phase 4 — Audio + full dome link** | **In progress** — branch `phase/v0.4.0` active; all software tasks T01–T09, T13–T18 complete; T10 audio hardware partially validated (deterministic playback, named sounds, mood intervals confirmed on DY-SV5W); T11–T12 hardware-blocked; see Phase 4 section below |
 | Phase 5 — Community release | Pending Phase 4 |
 
 ---
@@ -100,8 +100,8 @@ from git tag + build timestamp (e.g. `v0.2.0-1-g23008b7-20260315-013914`).
     checksum framing, opcodes `0x07`/`0x04`/`0x13`, `delay(100)` per command
   - Anti-spam guard: 300 ms minimum interval between play commands at AudioTask level
   - Sound page slider synced to persisted volume on page load
-  - Named sound track mappings (e.g. Star Wars = track 177) need SD card content
-    verification — silent playback for high track numbers is likely a content gap
+  - Named sound SD layout requirement confirmed: contiguous zero-padded `NNN.mp3`, no gaps;
+    all named sounds (`$S`/`$F`/`$L`/`$c`/`$C`/`$W`/`$M`/`$B`) verified deterministic
   - HardwareSerial(2) remapped to S2 pins (GPIO 26 TX / GPIO 35 RX); shared with
     dome serial link — only one active at a time
 - AudioTask queues all audio requests from RC, web API, and dome serial `$` commands
@@ -112,8 +112,22 @@ from git tag + build timestamp (e.g. `v0.2.0-1-g23008b7-20260315-013914`).
 - `/api/audio` (play, stop, volume), `/api/mood`, `/api/status` dome_link block: bench-tested
 - Dashboard: Mood Selector card, audio source indicators
 - Static RAM: 20.6% (67,528 / 327,680 B); heapMin ~126 KB post-WiFi
-- 431 native test cases passing (includes audio parser, mood dispatch, frame builder)
+- 435 native test cases passing (includes audio parser, mood dispatch, frame builder, per-mood interval NVS keys)
 - Runtime log level: Setup page Diagnostics card, NVS-backed (`log_level`), 1=Error / 2=Info / 3=Debug
+- **Per-mood random sound intervals (T18, bench-tested 2026-03-18):** Quiet=0 s / Mid-Awake=30 s /
+  Full-Awake=20 s / Awake+=10 s; NVS-backed per-mood keys; configurable from Sound page Mood Intervals
+  section; AudioTask reads `activeMood` on every timer tick
+- **Audio driver name API:** `AudioDriver::driverName()` virtual; `audioGetDriverName()` accessor;
+  `s2Sound.driver` field in `/api/status`; Setup page S2 row shows `DY-SV5W` or `CHIRP` label.
+  Foundation for CHIRP-specific sound page features
+- **Named `$` command audit (2026-03-18):** cross-referenced MarcDuino, BetterDuino, Reeltwo,
+  SHADOW_MD, Padawan360 — all `$` commands and `:SE` sequences accounted for; `$D` (Disco)
+  intentionally omitted (non-Star Wars; documented in `docs/sound_playback.md`)
+- **Serial page removed:** absorbed into Setup — Serial Status card with live S1/S2/S3 state,
+  GPIO/baud reference, auto-refresh every 5 s; `serial.html`/`serial.js` deleted
+- **Web UI polish (2026-03-18):** double-emoji feedback bug fixed across sound.js/servo.js/setup.js;
+  nav active button restored with compact sizing; Setup Hardware Components reflowed to one-per-row;
+  Setup S2 row shows active driver name label
 - Stack HWM bench-measured (first-iteration): DriveTask 2520 B / 4096, SBUSInput 2360 B / 4096,
   DomeTask 3332 B / 2048, ServoTask 4392 B / 3072, AudioTask 2680 B / 3072,
   SafetyMonitor was 476 B / 2048 → stack bumped to 3072, WebEvents 3804 B / 4096 → trimmed to 2048
@@ -145,16 +159,17 @@ Tracked as T11 and T12 in `tasks/phase4-tasks.md`.
 | T02 | AudioTask, dollar parser, queue helpers | ✅ **bench-tested** — queue wiring, API routing, random playback, enable/disable; audio hardware output requires T10 |
 | T03/T04/T05 | DomeLinkTask — UART2 TX/RX, `#PAHB` heartbeat, Marcduino dispatch | `#PAHB` TX + `#APHB` RX intercept: **compile-only** (dome board not connected); UART2 wiring not validated |
 | T06 | Status API + dashboard — `dome_link` block, audio health indicators | ✅ **bench-tested** |
-| T07 | `/api/audio`, `/api/audio/tracks`, Marcduino routing, serial.js fix | ✅ **bench-tested** |
+| T07 | `/api/audio`, `/api/audio/tracks`, Marcduino routing | ✅ **bench-tested** |
 | T08 | Mood dual-path — `/api/mood`, boot restore, dome RX intercept | ✅ **bench-tested** (audio path); dome TX path requires T10 hardware |
-| T09 | Parser/track mapping tests + hardware validation plan | ✅ **native-tested** (431 tests); hardware checklist in tasks/phase4-tasks.md |
-| T10 | Full hardware validation | **partially validated** — DY-SV5W audio: deterministic playback, volume, stop confirmed on hardware; named sound SD mapping + dome link pending |
+| T09 | Parser/track mapping tests + hardware validation plan | ✅ **native-tested** (435 tests); `$` command audit complete; `$D` intentionally omitted |
+| T10 | Full hardware validation | **partially validated** — DY-SV5W: deterministic playback, volume, stop, all named sounds, mood chatter confirmed on hardware; S2 toggle enable/disable + boot mood restore pending hardware reconnect; dome link pending full hardware |
 | T11–T12 | Phase 3 carryover (SBUS failsafe, drive path, RC physical) | Pending hardware availability |
 | T13 | Reconcile NVS remapping claim | ✅ **closed** — stale doc; all RC bindings are NVS-backed (full load/save in main.cpp) |
 | T14 | RC detect-channel mode (was: learning mode) | ✅ **bench-tested** (UI, SSE raw channel arrays, detect logic 25 tests); physical RC button press pending T11/T12 hardware |
 | T15 | CHIRP Audio Trigger backend (`AUDIO_CHIRP`) | ✅ **compile-only** — driver implemented; `pio run -e protoArtoo_chirp_check` passes |
 | T16 | Sound page (`sound.html`/`sound.js`) + `/api/audio/tracks` | ✅ **bench-tested** — page renders, named tracks NVS roundtrip, volume/stop/play API; audio output requires T10 |
 | T17 | Runtime log level selector on Setup page | ✅ **bench-tested** — dropdown renders, POST works, NVS-persisted; OTA bug fixed (UPDATE_SIZE_UNKNOWN) |
+| T18 | Per-mood random sound intervals | ✅ **bench-tested** — API, NVS, Sound page UI; audible frequency change per mood requires T10 hardware |
 
 **Verification terminology used in this project:**
 - `native-tested` — covered by `pio test -e native` passing
