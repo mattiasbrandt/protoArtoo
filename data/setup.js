@@ -143,13 +143,13 @@
       const data = await response.json();
       renderFeatures(data);
       if (featureFeedback) {
-        featureFeedback.textContent = `✓ Saved at ${new Date().toLocaleTimeString()}`;
+        featureFeedback.textContent = `Saved at ${new Date().toLocaleTimeString()}`;
         featureFeedback.className = "feedback success";
       }
     } catch (error) {
       if (featureFeedback) {
         featureFeedback.textContent = error instanceof Error
-          ? `❌ ${error.message}` : "❌ Failed to save";
+          ? error.message : "Failed to save";
         featureFeedback.className = "feedback error";
       }
     }
@@ -190,7 +190,7 @@
       const response = await fetch("/api/reboot", { method: "POST" });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       if (rebootFeedback) {
-        rebootFeedback.textContent = "✓ Reboot command sent. Wait ~10 seconds and refresh...";
+        rebootFeedback.textContent = "Reboot command sent. Wait ~10 seconds and refresh...";
         rebootFeedback.className = "feedback success";
       }
       // Start countdown
@@ -208,7 +208,7 @@
       }, 1000);
     } catch (error) {
       if (rebootFeedback) {
-        rebootFeedback.textContent = error instanceof Error ? `❌ ${error.message}` : "❌ Failed to send reboot command";
+        rebootFeedback.textContent = error instanceof Error ? error.message : "Failed to send reboot command";
         rebootFeedback.className = "feedback error";
       }
     }
@@ -240,12 +240,12 @@
       const data = await response.json();
       if (data.logLevel !== undefined) logLevelSelect.value = String(data.logLevel);
       if (diagFeedback) {
-        diagFeedback.textContent = `✓ Log level saved at ${new Date().toLocaleTimeString()}`;
+        diagFeedback.textContent = `Log level saved at ${new Date().toLocaleTimeString()}`;
         diagFeedback.className = "feedback success";
       }
     } catch (error) {
       if (diagFeedback) {
-        diagFeedback.textContent = error instanceof Error ? `❌ ${error.message}` : "❌ Failed to save";
+          diagFeedback.textContent = error instanceof Error ? error.message : "Failed to save";
         diagFeedback.className = "feedback error";
       }
     }
@@ -256,4 +256,56 @@
   }
 
   loadFeatures();
+
+  // --- Serial connection status ---
+  const serialS1 = document.getElementById("serial-s1-state");
+  const serialS2 = document.getElementById("serial-s2-state");
+  const serialS3 = document.getElementById("serial-s3-state");
+  const serialStatusLine = document.getElementById("serial-status-line");
+
+  const loadSerialStatus = async () => {
+    try {
+      const res = await fetch("/api/status", { cache: "no-store" });
+      if (!res.ok) return;
+      const d = await res.json();
+      if (serialS1) {
+        serialS1.textContent = !d.s1Hoverboard ? "Disabled"
+          : d.s1Hoverboard.state === "commanding" ? "Active" : "Enabled / Idle";
+        serialS1.style.color = d.s1Hoverboard ? "var(--success)" : "var(--text-dim)";
+      }
+      if (serialS2) {
+        serialS2.textContent = !d.s2Sound ? "Disabled"
+          : d.s2Sound.state === "playing" ? "Playing" : "Enabled / Idle";
+        serialS2.style.color = d.s2Sound ? "var(--success)" : "var(--text-dim)";
+      }
+      if (serialS3) {
+        const dl = d.dome_link;
+        if (!dl || dl.state === "disabled") {
+          serialS3.textContent = "Disabled";
+          serialS3.style.color = "var(--text-dim)";
+        } else if (dl.state === "connected") {
+          serialS3.textContent = `Connected (hb rx ${dl.hb_rx} / tx ${dl.hb_tx})`;
+          serialS3.style.color = "var(--success)";
+        } else if (dl.state === "lost") {
+          serialS3.textContent = `Lost — last seen ${dl.last_rx_ms} ms ago`;
+          serialS3.style.color = "var(--danger)";
+        } else {
+          serialS3.textContent = "Waiting for dome heartbeat";
+          serialS3.style.color = "var(--warning)";
+        }
+      }
+      if (serialStatusLine) {
+        serialStatusLine.textContent = `Updated ${new Date().toLocaleTimeString()}`;
+        serialStatusLine.className = "feedback success";
+      }
+    } catch (_e) {
+      if (serialStatusLine) {
+        serialStatusLine.textContent = "Status unavailable";
+        serialStatusLine.className = "feedback error";
+      }
+    }
+  };
+
+  loadSerialStatus();
+  window.setInterval(loadSerialStatus, 5000);
 })();
