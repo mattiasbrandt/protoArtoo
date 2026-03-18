@@ -112,28 +112,28 @@ code {
 nav {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: 2px;
   margin-bottom: 16px;
   border-bottom: 2px solid var(--border);
   padding-bottom: 10px;
 }
 
 nav a {
-  padding: 10px 14px;
+  padding: 10px 10px;
   background: var(--surface);
   color: var(--silver);
   text-decoration: none;
   border-radius: 4px 4px 0 0;
   border: 1px solid var(--border);
   border-bottom: none;
-  font-size: 0.9rem;
+  font-size: 0.87rem;
   font-weight: 500;
   transition: background 0.2s ease, color 0.2s ease;
   white-space: nowrap;
   min-height: 44px;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
 }
 
 nav a:hover {
@@ -147,7 +147,10 @@ nav a:focus-visible {
 }
 
 nav a.active {
-  display: none;
+  background: var(--accent);
+  color: var(--text);
+  border-color: var(--accent);
+  pointer-events: none;
 }
 
 .card {
