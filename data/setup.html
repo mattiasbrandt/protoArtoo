@@ -113,62 +113,84 @@
         </label>
 
         <div class="section-label">RX IN/OUT</div>
-        <label class="toggle-switch" title="CH1 (GPIO 15) — SBUS drive receiver or PWM input 1">
-          <input type="checkbox" id="enable-rc-ch1" name="enableRcCh1">
-          <span class="toggle-slider"></span>
-          <span class="toggle-label">CH1 — Drive / SBUS 1</span>
-          <span class="toggle-status" id="status-rc-ch1">Disabled</span>
-        </label>
-        <label class="toggle-switch" title="CH2 (GPIO 13) — SBUS dome receiver or PWM input 2">
-          <input type="checkbox" id="enable-rc-ch2" name="enableRcCh2">
-          <span class="toggle-slider"></span>
-          <span class="toggle-label">CH2 — Dome / SBUS 2</span>
-          <span class="toggle-status" id="status-rc-ch2">Disabled</span>
-        </label>
-        <label class="toggle-switch" title="CH3 (GPIO 2) — Standard PWM input 3 (strapping pin)">
-          <input type="checkbox" id="enable-rc-ch3" name="enableRcCh3">
-          <span class="toggle-slider"></span>
-          <span class="toggle-label">CH3 — PWM 3</span>
-          <span class="toggle-status" id="status-rc-ch3">Disabled</span>
-        </label>
-        <label class="toggle-switch" title="CH4 (GPIO 4) — Standard PWM input 4">
-          <input type="checkbox" id="enable-rc-ch4" name="enableRcCh4">
-          <span class="toggle-slider"></span>
-          <span class="toggle-label">CH4 — PWM 4</span>
-          <span class="toggle-status" id="status-rc-ch4">Disabled</span>
-        </label>
-        <label class="toggle-switch" title="CH5 (GPIO 12) — Standard PWM input 5 (strapping pin)">
-          <input type="checkbox" id="enable-rc-ch5" name="enableRcCh5">
-          <span class="toggle-slider"></span>
-          <span class="toggle-label">CH5 — PWM 5</span>
-          <span class="toggle-status" id="status-rc-ch5">Disabled</span>
-        </label>
-        <label class="toggle-switch" title="CH6 (GPIO 27) — Standard PWM input 6">
-          <input type="checkbox" id="enable-rc-ch6" name="enableRcCh6">
-          <span class="toggle-slider"></span>
-          <span class="toggle-label">CH6 — PWM 6</span>
-          <span class="toggle-status" id="status-rc-ch6">Disabled</span>
-        </label>
+        <div class="component-row">
+          <label class="toggle-switch" title="CH1 (GPIO 15) — SBUS drive receiver or PWM input 1">
+            <input type="checkbox" id="enable-rc-ch1" name="enableRcCh1">
+            <span class="toggle-slider"></span>
+            <span class="toggle-label">CH1 — Drive / SBUS 1</span>
+            <span class="toggle-status" id="status-rc-ch1">Disabled</span>
+          </label>
+        </div>
+        <div class="component-row">
+          <label class="toggle-switch" title="CH2 (GPIO 13) — SBUS dome receiver or PWM input 2">
+            <input type="checkbox" id="enable-rc-ch2" name="enableRcCh2">
+            <span class="toggle-slider"></span>
+            <span class="toggle-label">CH2 — Dome / SBUS 2</span>
+            <span class="toggle-status" id="status-rc-ch2">Disabled</span>
+          </label>
+        </div>
+        <div class="component-row">
+          <label class="toggle-switch" title="CH3 (GPIO 2) — Standard PWM input 3 (strapping pin)">
+            <input type="checkbox" id="enable-rc-ch3" name="enableRcCh3">
+            <span class="toggle-slider"></span>
+            <span class="toggle-label">CH3 — PWM 3</span>
+            <span class="toggle-status" id="status-rc-ch3">Disabled</span>
+          </label>
+        </div>
+        <div class="component-row">
+          <label class="toggle-switch" title="CH4 (GPIO 4) — Standard PWM input 4">
+            <input type="checkbox" id="enable-rc-ch4" name="enableRcCh4">
+            <span class="toggle-slider"></span>
+            <span class="toggle-label">CH4 — PWM 4</span>
+            <span class="toggle-status" id="status-rc-ch4">Disabled</span>
+          </label>
+        </div>
+        <div class="component-row">
+          <label class="toggle-switch" title="CH5 (GPIO 12) — Standard PWM input 5 (strapping pin)">
+            <input type="checkbox" id="enable-rc-ch5" name="enableRcCh5">
+            <span class="toggle-slider"></span>
+            <span class="toggle-label">CH5 — PWM 5</span>
+            <span class="toggle-status" id="status-rc-ch5">Disabled</span>
+          </label>
+        </div>
+        <div class="component-row">
+          <label class="toggle-switch" title="CH6 (GPIO 27) — Standard PWM input 6">
+            <input type="checkbox" id="enable-rc-ch6" name="enableRcCh6">
+            <span class="toggle-slider"></span>
+            <span class="toggle-label">CH6 — PWM 6</span>
+            <span class="toggle-status" id="status-rc-ch6">Disabled</span>
+          </label>
+        </div>
 
         <div class="section-label">SERIAL COMMS</div>
-        <label class="toggle-switch" title="S1 (GPIO 16/17) — Hoverboard drive motor controller">
-          <input type="checkbox" id="enable-s1-hoverboard" name="enableS1Hoverboard">
-          <span class="toggle-slider"></span>
-          <span class="toggle-label">S1 — Hoverboard</span>
-          <span class="toggle-status" id="status-s1-hoverboard">Disabled</span>
-        </label>
-        <label class="toggle-switch" title="S2 (GPIO 26/35) — Audio module (DY-SV5W or CHIRP)">
-          <input type="checkbox" id="enable-s2-sound" name="enableS2Sound">
-          <span class="toggle-slider"></span>
-          <span class="toggle-label">S2 — Sound</span>
-          <span class="toggle-status" id="status-s2-sound">Disabled</span>
-        </label>
-        <label class="toggle-switch" title="S3 (GPIO 33/34) — Dome controller serial link (slip ring)">
-          <input type="checkbox" id="enable-s3-dome-ctrl" name="enableS3DomeCtrl">
-          <span class="toggle-slider"></span>
-          <span class="toggle-label">S3 — Dome Control</span>
-          <span class="toggle-status" id="status-s3-dome-ctrl">Disabled</span>
-        </label>
+        <div class="component-row">
+          <label class="toggle-switch" title="S1 (GPIO 16/17) — Hoverboard drive motor controller">
+            <input type="checkbox" id="enable-s1-hoverboard" name="enableS1Hoverboard">
+            <span class="toggle-slider"></span>
+            <span class="toggle-label">S1 — Hoverboard</span>
+            <span class="toggle-status" id="status-s1-hoverboard">Disabled</span>
+          </label>
+        </div>
+        <div class="component-row" style="flex-direction:column;align-items:flex-start;">
+          <label class="toggle-switch" style="width:100%;" title="S2 (GPIO 26/35) — Audio module TX. Backend selected by PA_AUDIO_DRIVER build flag: AUDIO_SOFT_UART for DY-SV5W, AUDIO_CHIRP for CHIRP board.">
+            <input type="checkbox" id="enable-s2-sound" name="enableS2Sound">
+            <span class="toggle-slider"></span>
+            <span class="toggle-label">S2 — Sound</span>
+            <span class="toggle-status" id="status-s2-sound">Disabled</span>
+          </label>
+          <div class="desc" style="padding-left:60px;margin-top:2px;">
+            Module type set via <code>PA_AUDIO_DRIVER</code> in <code>platformio.ini</code>
+            &mdash; <code>AUDIO_SOFT_UART</code> (DY-SV5W) or <code>AUDIO_CHIRP</code>.
+          </div>
+        </div>
+        <div class="component-row">
+          <label class="toggle-switch" title="S3 (GPIO 33/34) — Dome controller serial link (slip ring)">
+            <input type="checkbox" id="enable-s3-dome-ctrl" name="enableS3DomeCtrl">
+            <span class="toggle-slider"></span>
+            <span class="toggle-label">S3 — Dome Control</span>
+            <span class="toggle-status" id="status-s3-dome-ctrl">Disabled</span>
+          </label>
+        </div>
 
       </form>
       <div id="feature-feedback" class="feedback mt-12">Loading component settings...</div>
