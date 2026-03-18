@@ -65,6 +65,20 @@ modules using the same binary frame protocol.
 files are placed in the SD root numbered sequentially (`001.mp3`, `002.mp3` …).
 FAT32-formatted card required; avoid hidden files (macOS `._` files cause issues).
 
+Important module behavior (confirmed): DY-SV5W expects contiguous numbering with
+no gaps in the sequence. If a number is missing, the module's internal track
+index does not align with filename intent and later files can be addressed as if
+they were the missing number.
+
+Example:
+
+- Present: `001.mp3`, `002.mp3`, `004.mp3`
+- Missing: `003.mp3`
+- Result: requesting track `003` may play the file named `004.mp3`
+
+Recommended rule: keep the root directory as strict `NNN.mp3` contiguous files
+(`001`..`N`) with no skipped numbers.
+
 ---
 
 ### 2.2 `AUDIO_CHIRP` — CHIRP Audio Trigger ASCII Backend
