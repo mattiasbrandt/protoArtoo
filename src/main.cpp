@@ -267,6 +267,10 @@ void loadConfigToState() {
     robotState.cfg_snd_startup   = prefs.getUShort("snd_startup",   AUDIO_TRACK_STARTUP);
     robotState.cfg_snd_rand_min  = prefs.getUShort("snd_rand_min",  AUDIO_RAND_TRACK_MIN);
     robotState.cfg_snd_rand_max  = prefs.getUShort("snd_rand_max",  AUDIO_RAND_TRACK_MAX);
+    robotState.cfg_snd_int_quiet = prefs.getUShort("snd_int_quiet", AUDIO_RAND_INT_QUIET);
+    robotState.cfg_snd_int_mid   = prefs.getUShort("snd_int_mid",   AUDIO_RAND_INT_MID);
+    robotState.cfg_snd_int_full  = prefs.getUShort("snd_int_full",  AUDIO_RAND_INT_FULL);
+    robotState.cfg_snd_int_awake = prefs.getUShort("snd_int_awake", AUDIO_RAND_INT_AWAKE);
 
     robotState.cfg_arm1_open_us = prefs.getUShort("arm1_op", 2000);
     robotState.cfg_arm1_close_us = prefs.getUShort("arm1_cl", 1000);
@@ -515,6 +519,7 @@ bool saveConfigToNvs() {
     uint8_t logLevel;
     uint16_t sndScream, sndFaint, sndLeia, sndCantinaS, sndSwTheme;
     uint16_t sndImpMarch, sndCantinaL, sndStartup, sndRandMin, sndRandMax;
+    uint16_t sndIntQuiet, sndIntMid, sndIntFull, sndIntAwake;
     uint16_t arm1Open, arm1Close, arm2Open, arm2Close;
     float domeMin, domeMax;
     uint16_t seqOpenMs, seqCloseMs;
@@ -549,6 +554,10 @@ bool saveConfigToNvs() {
     sndStartup   = robotState.cfg_snd_startup;
     sndRandMin   = robotState.cfg_snd_rand_min;
     sndRandMax   = robotState.cfg_snd_rand_max;
+    sndIntQuiet  = robotState.cfg_snd_int_quiet;
+    sndIntMid    = robotState.cfg_snd_int_mid;
+    sndIntFull   = robotState.cfg_snd_int_full;
+    sndIntAwake  = robotState.cfg_snd_int_awake;
     arm1Open = robotState.cfg_arm1_open_us;
     arm1Close = robotState.cfg_arm1_close_us;
     arm2Open = robotState.cfg_arm2_open_us;
@@ -642,6 +651,10 @@ bool saveConfigToNvs() {
     prefs.putUShort("snd_startup",   sndStartup);
     prefs.putUShort("snd_rand_min",  sndRandMin);
     prefs.putUShort("snd_rand_max",  sndRandMax);
+    prefs.putUShort("snd_int_quiet", sndIntQuiet);
+    prefs.putUShort("snd_int_mid",   sndIntMid);
+    prefs.putUShort("snd_int_full",  sndIntFull);
+    prefs.putUShort("snd_int_awake", sndIntAwake);
     prefs.putUShort("arm1_op", arm1Open);
     prefs.putUShort("arm1_cl", arm1Close);
     prefs.putUShort("arm2_op", arm2Open);

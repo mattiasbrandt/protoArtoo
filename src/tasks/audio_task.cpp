@@ -356,29 +356,50 @@ void audioTask(void* pvParameters) {
         // randomMode is only true when audio is enabled and a $R command
         // was received. audioEnabled is guaranteed true here (we continued
         // at the top of the loop if it was false).
+        //
+        // Interval is per-mood and NVS-configurable (T18). AudioTask reads
+        // activeMood + cfg_snd_int_* on every timer check, so a mood change
+        // takes effect on the next tick after the current interval expires.
+        // Mood 0 (unset) falls back to the Full-Awake interval.
+        // An interval of 0 s suppresses random playback for that mood.
         // ----------------------------------------------------------------
         if (randomMode) {
-            uint32_t now = millis();
-            if ((uint32_t)(now - lastRandMs) >= AUDIO_RAND_INTERVAL_MS) {
-                lastRandMs = now;
-                // Read random pool bounds from NVS-backed config (may change at runtime).
-                taskENTER_CRITICAL(&robotStateMux);
-                uint16_t randMin = robotState.cfg_snd_rand_min;
-                uint16_t randMax = robotState.cfg_snd_rand_max;
-                taskEXIT_CRITICAL(&robotStateMux);
-                if (randMax < randMin) randMax = randMin;  // guard against bad config
-                // esp_random() uses the ESP32 hardware RNG — no seeding needed.
-                uint32_t range = (uint32_t)(randMax - randMin) + 1;
-                uint16_t track = (uint16_t)(randMin + (esp_random() % range));
-                // Random timer already enforces a multi-second interval so
-                // anti-spam check is redundant here, but update lastPlayMs
-                // so a manual play immediately after a random fire is gated.
-                lastPlayMs = millis();
-                driver->playTrack(track);
-                taskENTER_CRITICAL(&robotStateMux);
-                robotState.audioActive = true;
-                taskEXIT_CRITICAL(&robotStateMux);
-                PA_LOG_DEBUG(TAG, "random track %u", (unsigned)track);
+            taskENTER_CRITICAL(&robotStateMux);
+            uint8_t  mood    = robotState.activeMood;
+            uint16_t randMin = robotState.cfg_snd_rand_min;
+            uint16_t randMax = robotState.cfg_snd_rand_max;
+            uint16_t intSec;
+            switch (mood) {
+                case 10: intSec = robotState.cfg_snd_int_quiet; break;
+                case 13: intSec = robotState.cfg_snd_int_mid;   break;
+                case 14: intSec = robotState.cfg_snd_int_awake; break;
+                default: intSec = robotState.cfg_snd_int_full;  break;  // SE11 + unset
+            }
+            taskEXIT_CRITICAL(&robotStateMux);
+            if (intSec == 0) {
+                // Interval of 0 suppresses random playback for this mood.
+                // Advance the timer so a mood change doesn't fire immediately.
+                lastRandMs = millis();
+            } else {
+                uint32_t intervalMs = (uint32_t)intSec * 1000u;
+                uint32_t now = millis();
+                if ((uint32_t)(now - lastRandMs) >= intervalMs) {
+                    lastRandMs = now;
+                    if (randMax < randMin) randMax = randMin;  // guard against bad config
+                    // esp_random() uses the ESP32 hardware RNG — no seeding needed.
+                    uint32_t range = (uint32_t)(randMax - randMin) + 1;
+                    uint16_t track = (uint16_t)(randMin + (esp_random() % range));
+                    // Random timer already enforces a multi-second interval so
+                    // anti-spam check is redundant here, but update lastPlayMs
+                    // so a manual play immediately after a random fire is gated.
+                    lastPlayMs = millis();
+                    driver->playTrack(track);
+                    taskENTER_CRITICAL(&robotStateMux);
+                    robotState.audioActive = true;
+                    taskEXIT_CRITICAL(&robotStateMux);
+                    PA_LOG_DEBUG(TAG, "random track %u (mood %u, int %us)",
+                                 (unsigned)track, (unsigned)mood, (unsigned)intSec);
+                }
             }
         }
     }

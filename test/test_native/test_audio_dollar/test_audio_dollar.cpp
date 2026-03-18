@@ -234,6 +234,19 @@ void test_nvs_key_rand_min() {
 void test_nvs_key_rand_max() {
     TEST_ASSERT_EQUAL_STRING("snd_rand_max", audioTrackNvsKey("rand_max"));
 }
+void test_nvs_key_snd_int_quiet() {
+    TEST_ASSERT_EQUAL_STRING("snd_int_quiet", audioTrackNvsKey("snd_int_quiet"));
+}
+void test_nvs_key_snd_int_mid() {
+    TEST_ASSERT_EQUAL_STRING("snd_int_mid", audioTrackNvsKey("snd_int_mid"));
+}
+void test_nvs_key_snd_int_full() {
+    TEST_ASSERT_EQUAL_STRING("snd_int_full", audioTrackNvsKey("snd_int_full"));
+}
+void test_nvs_key_snd_int_awake() {
+    TEST_ASSERT_EQUAL_STRING("snd_int_awake", audioTrackNvsKey("snd_int_awake"));
+}
+
 void test_nvs_key_unknown_returns_null() {
     TEST_ASSERT_NULL(audioTrackNvsKey("bogus"));
 }
@@ -247,7 +260,8 @@ void test_nvs_keys_are_15_chars_or_less() {
     // NVS key length limit is 15 chars (ESP-IDF constraint)
     const char* keys[] = {
         "scream","faint","leia","cantina_s","sw_theme",
-        "imp_march","cantina_l","startup","rand_min","rand_max"
+        "imp_march","cantina_l","startup","rand_min","rand_max",
+        "snd_int_quiet","snd_int_mid","snd_int_full","snd_int_awake"
     };
     for (size_t i = 0; i < sizeof(keys)/sizeof(keys[0]); i++) {
         const char* nvsKey = audioTrackNvsKey(keys[i]);
@@ -311,6 +325,10 @@ int main(int argc, char** argv) {
     RUN_TEST(test_nvs_key_startup);
     RUN_TEST(test_nvs_key_rand_min);
     RUN_TEST(test_nvs_key_rand_max);
+    RUN_TEST(test_nvs_key_snd_int_quiet);
+    RUN_TEST(test_nvs_key_snd_int_mid);
+    RUN_TEST(test_nvs_key_snd_int_full);
+    RUN_TEST(test_nvs_key_snd_int_awake);
     RUN_TEST(test_nvs_key_unknown_returns_null);
     RUN_TEST(test_nvs_key_null_returns_null);
     RUN_TEST(test_nvs_key_empty_returns_null);

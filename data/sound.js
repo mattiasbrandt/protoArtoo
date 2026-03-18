@@ -162,6 +162,16 @@
       if (randMin && data.rand_min !== undefined) randMin.value = data.rand_min;
       if (randMax && data.rand_max !== undefined) randMax.value = data.rand_max;
 
+      // Mood sound intervals (T18)
+      const intQuiet = document.getElementById("int-quiet");
+      const intMid   = document.getElementById("int-mid");
+      const intFull  = document.getElementById("int-full");
+      const intAwake = document.getElementById("int-awake");
+      if (intQuiet && data.snd_int_quiet !== undefined) intQuiet.value = data.snd_int_quiet;
+      if (intMid   && data.snd_int_mid   !== undefined) intMid.value   = data.snd_int_mid;
+      if (intFull  && data.snd_int_full  !== undefined) intFull.value  = data.snd_int_full;
+      if (intAwake && data.snd_int_awake !== undefined) intAwake.value = data.snd_int_awake;
+
       // Persisted default volume
       const volSlider = document.getElementById("vol-slider");
       if (volSlider && data.volume !== undefined) volSlider.value = data.volume;
@@ -269,6 +279,40 @@
       showFeedback(randFb, ok ? "✅ Range saved" : "❌ Save failed", ok);
     } catch (_e) {
       showFeedback(randFb, "❌ Request failed", false);
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // Mood sound interval save (T18)
+  // ---------------------------------------------------------------------------
+  const intFb = document.getElementById("int-feedback");
+  const INT_FIELDS = [
+    { id: "int-quiet", key: "snd_int_quiet" },
+    { id: "int-mid",   key: "snd_int_mid" },
+    { id: "int-full",  key: "snd_int_full" },
+    { id: "int-awake", key: "snd_int_awake" },
+  ];
+
+  document.getElementById("btn-int-save")?.addEventListener("click", async () => {
+    for (const f of INT_FIELDS) {
+      const val = parseInt(document.getElementById(f.id)?.value, 10);
+      if (isNaN(val) || val < 0 || val > 3600) {
+        showFeedback(intFb, `\u274c ${f.key}: must be 0\u20133600`, false);
+        return;
+      }
+    }
+    try {
+      const results = await Promise.all(INT_FIELDS.map(f => {
+        const val = parseInt(document.getElementById(f.id)?.value, 10);
+        return fetch("/api/audio/tracks", {
+          method: "POST",
+          body: new URLSearchParams({ key: f.key, track: val }),
+        }).then(r => r.json());
+      }));
+      const ok = results.every(r => r.ok);
+      showFeedback(intFb, ok ? "\u2705 Intervals saved" : "\u274c Save failed", ok);
+    } catch (_e) {
+      showFeedback(intFb, "\u274c Request failed", false);
     }
   });
 })();

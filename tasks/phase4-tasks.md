@@ -469,6 +469,58 @@ Reference: `tasks/phase3_hardware_validation_deferral.md`
     - `pio run -e protoArtoo` + `pio test -e native` pass
   - **Verification:** bench-tested (no hardware required beyond ESP32 + WiFi)
 
+- [ ] T18 — Per-mood random sound intervals
+  - **Discovery:** Identified during T10 hardware testing. All reference projects (MarcDuino,
+    BetterDuino, AstroPixelsPlus, SHADOW_MD, Padawan360) treat random chatter as binary
+    on/off — all awake moods use a single global interval. In practice this means
+    Quiet mode is silent but Mid-Awake, Full-Awake, and Awake+ all sound identical.
+    Mood should reflect character energy level — a more awake R2 should chatter more
+    frequently.
+  - **Design:**
+    - Replace single `AUDIO_RAND_INTERVAL_MS` constant with four NVS-backed per-mood
+      interval fields in `RobotState`:
+      - `cfg_snd_int_quiet`  — default 0 s (silent; Quiet mood disables random)
+      - `cfg_snd_int_mid`    — default 30 s (sparse; Mid-Awake)
+      - `cfg_snd_int_full`   — default 20 s (normal; Full-Awake)
+      - `cfg_snd_int_awake`  — default 10 s (frequent; Awake+)
+    - NVS keys: `snd_int_quiet`, `snd_int_mid`, `snd_int_full`, `snd_int_awake`.
+    - `loadConfigToState()` / `saveConfigToNvs()` in `main.cpp` load and persist all four.
+    - `AudioTask` derives the active random interval from `robotState.activeMood` +
+      `cfg_snd_int_*` on every timer reset; no dedicated notification needed.
+    - `applyMood()` does not require changes — AudioTask picks up the new mood from
+      `robotState.activeMood` on the next random timer expiry.
+    - When `activeMood == 0` (unset / boot before first mood apply), AudioTask falls back
+      to `cfg_snd_int_full` (20 s) — safe default, not silent.
+    - `GET /api/audio/tracks` includes the four interval values.
+    - `POST /api/audio/tracks` accepts `snd_int_quiet`, `snd_int_mid`, `snd_int_full`,
+      `snd_int_awake` as keys; validates range 0–3600 s; rejects out-of-range with 400.
+    - `audioTrackNvsKey()` in `audio_dollar_parser.h` maps the four new keys to their
+      NVS strings.
+  - **Sound page UI** (`data/sound.html` + `data/sound.js`):
+    - New section at the bottom of `sound.html`: **Mood Sound Intervals**.
+    - Four labelled number inputs — one per mood — in seconds:
+      - Quiet (SE10): 0
+      - Mid-Awake (SE13): 30
+      - Full-Awake (SE11): 20
+      - Awake+ (SE14): 10
+    - Loaded on page init from `GET /api/audio/tracks`; saved individually via
+      `POST /api/audio/tracks` on blur or explicit Save.
+    - Input constraints: min 0, max 3600; step 1; server-side validation also enforced.
+    - Inline save feedback per field (ok / error); clears after 2 s.
+    - Section note: explains that 0 = silent (no random chatter in that mood).
+  - **Acceptance criteria:**
+    - `pio run -e protoArtoo` compiles cleanly
+    - `pio test -e native` passes; new native tests cover interval-per-mood selection
+      logic (mood 10 → 0 ms, mood 14 → cfg value, mood 0 → fallback)
+    - Sound page loads interval values from API and round-trips save correctly
+    - Changing mood while random chatter is active shifts to new interval within one
+      timer cycle (no immediate restart of timer — fires at old expiry, then uses new
+      interval on next reset)
+    - All four intervals survive reboot (NVS-persisted)
+  - **Verification classification:** `bench-tested` (API + timer logic) +
+    `full-hardware-required` (audible frequency change per mood on connected module)
+
+
 ## Exit Criteria
 
 - [ ] Phase 3 carryover T11 and T12 are complete, or formally re-deferred with updated

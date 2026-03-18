@@ -183,6 +183,10 @@ struct RobotState {
     uint16_t cfg_snd_startup;    // $B  default 255
     uint16_t cfg_snd_rand_min;   // random pool start  default 1
     uint16_t cfg_snd_rand_max;   // random pool end    default 100
+    uint16_t cfg_snd_int_quiet;  // random interval Quiet mode (s)     default 0
+    uint16_t cfg_snd_int_mid;    // random interval Mid-Awake mode (s) default 30
+    uint16_t cfg_snd_int_full;   // random interval Full-Awake mode (s) default 20
+    uint16_t cfg_snd_int_awake;  // random interval Awake+ mode (s)    default 10
 
     // Servo config
     uint16_t cfg_arm1_open_us;

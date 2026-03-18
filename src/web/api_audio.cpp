@@ -47,6 +47,7 @@ void registerAudioRoutes(AsyncWebServer& server) {
     server.on("/api/audio/tracks", HTTP_GET, [](AsyncWebServerRequest* req) {
         uint16_t scream, faint, leia, cantinaS, swTheme, impMarch, cantinaL, startup;
         uint16_t randMin, randMax;
+        uint16_t intQuiet, intMid, intFull, intAwake;
         uint8_t volume;
         taskENTER_CRITICAL(&robotStateMux);
         scream    = robotState.cfg_snd_scream;
@@ -60,18 +61,25 @@ void registerAudioRoutes(AsyncWebServer& server) {
         randMin   = robotState.cfg_snd_rand_min;
         randMax   = robotState.cfg_snd_rand_max;
         volume    = robotState.cfg_audioVolume;
+        intQuiet  = robotState.cfg_snd_int_quiet;
+        intMid    = robotState.cfg_snd_int_mid;
+        intFull   = robotState.cfg_snd_int_full;
+        intAwake  = robotState.cfg_snd_int_awake;
         taskEXIT_CRITICAL(&robotStateMux);
 
         // Stack-allocated — not static. Static local buffers in async handlers
         // are shared across concurrent requests and would cause data races.
-        char body[256];
+        char body[384];
         snprintf(body, sizeof(body),
                  "{\"scream\":%u,\"faint\":%u,\"leia\":%u,"
                  "\"cantina_s\":%u,\"sw_theme\":%u,\"imp_march\":%u,"
                  "\"cantina_l\":%u,\"startup\":%u,"
-                 "\"rand_min\":%u,\"rand_max\":%u,\"volume\":%u}",
+                 "\"rand_min\":%u,\"rand_max\":%u,\"volume\":%u,"
+                 "\"snd_int_quiet\":%u,\"snd_int_mid\":%u,"
+                 "\"snd_int_full\":%u,\"snd_int_awake\":%u}",
                  scream, faint, leia, cantinaS, swTheme, impMarch,
-                 cantinaL, startup, randMin, randMax, volume);
+                 cantinaL, startup, randMin, randMax, volume,
+                 intQuiet, intMid, intFull, intAwake);
         req->send(200, "application/json", body);
     });
 
@@ -85,29 +93,44 @@ void registerAudioRoutes(AsyncWebServer& server) {
             return;
         }
 
+        // Resolve key before range validation — interval keys accept 0–3600 s,
+        // track-number keys accept 1–999.
+        const char* key = keyParam->value().c_str();
+        bool isInterval = (strncmp(key, "snd_int_", 8) == 0);
         int track = trackParam->value().toInt();
-        if (track < 1 || track > 999) {
-            req->send(400, "application/json",
-                      "{\"ok\":false,\"error\":\"track must be 1–999\"}");
-            return;
+        if (isInterval) {
+            if (track < 0 || track > 3600) {
+                req->send(400, "application/json",
+                          "{\"ok\":false,\"error\":\"interval must be 0\u20133600 s\"}");
+                return;
+            }
+        } else {
+            if (track < 1 || track > 999) {
+                req->send(400, "application/json",
+                          "{\"ok\":false,\"error\":\"track must be 1\u2013999\"}");
+                return;
+            }
         }
         uint16_t t = (uint16_t)track;
         // Resolve the target field pointer before entering the critical section.
         // String comparisons must not run inside portMUX — they are safe here
         // (no allocation) but keeping critical sections minimal is good practice.
-        const char* key = keyParam->value().c_str();
         uint16_t* fieldPtr = nullptr;
         taskENTER_CRITICAL(&robotStateMux);
-        if      (strcmp(key, "scream")    == 0) fieldPtr = &robotState.cfg_snd_scream;
-        else if (strcmp(key, "faint")     == 0) fieldPtr = &robotState.cfg_snd_faint;
-        else if (strcmp(key, "leia")      == 0) fieldPtr = &robotState.cfg_snd_leia;
-        else if (strcmp(key, "cantina_s") == 0) fieldPtr = &robotState.cfg_snd_cantina_s;
-        else if (strcmp(key, "sw_theme")  == 0) fieldPtr = &robotState.cfg_snd_sw_theme;
-        else if (strcmp(key, "imp_march") == 0) fieldPtr = &robotState.cfg_snd_imp_march;
-        else if (strcmp(key, "cantina_l") == 0) fieldPtr = &robotState.cfg_snd_cantina_l;
-        else if (strcmp(key, "startup")   == 0) fieldPtr = &robotState.cfg_snd_startup;
-        else if (strcmp(key, "rand_min")  == 0) fieldPtr = &robotState.cfg_snd_rand_min;
-        else if (strcmp(key, "rand_max")  == 0) fieldPtr = &robotState.cfg_snd_rand_max;
+        if      (strcmp(key, "scream")        == 0) fieldPtr = &robotState.cfg_snd_scream;
+        else if (strcmp(key, "faint")         == 0) fieldPtr = &robotState.cfg_snd_faint;
+        else if (strcmp(key, "leia")          == 0) fieldPtr = &robotState.cfg_snd_leia;
+        else if (strcmp(key, "cantina_s")     == 0) fieldPtr = &robotState.cfg_snd_cantina_s;
+        else if (strcmp(key, "sw_theme")      == 0) fieldPtr = &robotState.cfg_snd_sw_theme;
+        else if (strcmp(key, "imp_march")     == 0) fieldPtr = &robotState.cfg_snd_imp_march;
+        else if (strcmp(key, "cantina_l")     == 0) fieldPtr = &robotState.cfg_snd_cantina_l;
+        else if (strcmp(key, "startup")       == 0) fieldPtr = &robotState.cfg_snd_startup;
+        else if (strcmp(key, "rand_min")      == 0) fieldPtr = &robotState.cfg_snd_rand_min;
+        else if (strcmp(key, "rand_max")      == 0) fieldPtr = &robotState.cfg_snd_rand_max;
+        else if (strcmp(key, "snd_int_quiet") == 0) fieldPtr = &robotState.cfg_snd_int_quiet;
+        else if (strcmp(key, "snd_int_mid")   == 0) fieldPtr = &robotState.cfg_snd_int_mid;
+        else if (strcmp(key, "snd_int_full")  == 0) fieldPtr = &robotState.cfg_snd_int_full;
+        else if (strcmp(key, "snd_int_awake") == 0) fieldPtr = &robotState.cfg_snd_int_awake;
         if (fieldPtr) *fieldPtr = t;
         taskEXIT_CRITICAL(&robotStateMux);
 

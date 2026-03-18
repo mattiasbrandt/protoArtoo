@@ -127,6 +127,60 @@
       <div id="rand-feedback" class="feedback mt-8"></div>
     </div>
 
+    <!-- Mood Sound Intervals -->
+    <div class="card">
+      <h3>⏱ Mood Sound Intervals</h3>
+      <div class="desc">
+        How often a random sound plays in each mood. Set 0 to suppress random
+        playback for that mood. Changes are NVS-persisted and take effect on the
+        next timer cycle.
+      </div>
+      <table class="mt-12" style="width:100%;border-collapse:collapse;">
+        <thead>
+          <tr style="text-align:left;color:var(--text-dim);font-size:0.8rem;">
+            <th style="padding:6px 8px;">Mood</th>
+            <th style="padding:6px 8px;">Command</th>
+            <th style="padding:6px 8px;">Interval (seconds)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr style="border-bottom:1px solid var(--border);">
+            <td style="padding:8px;">Quiet</td>
+            <td style="padding:8px;font-family:monospace;color:var(--accent);">:SE10</td>
+            <td style="padding:8px;">
+              <input type="number" id="int-quiet" min="0" max="3600" step="1" value="0" style="width:80px;">
+              <span style="color:var(--text-dim);font-size:0.85rem;margin-left:6px;">0 = silent</span>
+            </td>
+          </tr>
+          <tr style="border-bottom:1px solid var(--border);">
+            <td style="padding:8px;">Mid-Awake</td>
+            <td style="padding:8px;font-family:monospace;color:var(--accent);">:SE13</td>
+            <td style="padding:8px;">
+              <input type="number" id="int-mid" min="0" max="3600" step="1" value="30" style="width:80px;">
+            </td>
+          </tr>
+          <tr style="border-bottom:1px solid var(--border);">
+            <td style="padding:8px;">Full-Awake</td>
+            <td style="padding:8px;font-family:monospace;color:var(--accent);">:SE11</td>
+            <td style="padding:8px;">
+              <input type="number" id="int-full" min="0" max="3600" step="1" value="20" style="width:80px;">
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:8px;">Awake+</td>
+            <td style="padding:8px;font-family:monospace;color:var(--accent);">:SE14</td>
+            <td style="padding:8px;">
+              <input type="number" id="int-awake" min="0" max="3600" step="1" value="10" style="width:80px;">
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="button-row mt-12">
+        <button class="btn" id="btn-int-save">💾 Save Intervals</button>
+      </div>
+      <div id="int-feedback" class="feedback mt-8"></div>
+    </div>
+
     <div class="status-bar">
       <div><span class="dot green"></span>Sound page connected</div>
       <div class="status-subline" id="fw-meta">Loading firmware info...</div>

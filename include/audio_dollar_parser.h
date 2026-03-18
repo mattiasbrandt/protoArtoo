@@ -50,7 +50,14 @@ constexpr uint16_t AUDIO_TRACK_STARTUP   = 255;  // $B — startup / boot sound
 // Random playback pool defaults (NVS-configurable in T07)
 constexpr uint16_t AUDIO_RAND_TRACK_MIN   = 1;
 constexpr uint16_t AUDIO_RAND_TRACK_MAX   = 100;
-constexpr uint32_t AUDIO_RAND_INTERVAL_MS = 10000;  // ms between random sounds
+// Per-mood random playback intervals in seconds — NVS-configurable (T18).
+// AudioTask derives the active interval from robotState.activeMood + cfg_snd_int_*.
+// Mood 0 (unset) falls back to AUDIO_RAND_INT_FULL. An interval of 0 suppresses
+// random playback for that mood.
+constexpr uint16_t AUDIO_RAND_INT_QUIET = 0;   // SE10 Quiet     — silent
+constexpr uint16_t AUDIO_RAND_INT_MID   = 30;  // SE13 Mid-Awake — sparse
+constexpr uint16_t AUDIO_RAND_INT_FULL  = 20;  // SE11 Full-Awake — normal
+constexpr uint16_t AUDIO_RAND_INT_AWAKE = 10;  // SE14 Awake+    — frequent
 
 // Volume presets (normalised 0–30 interface range)
 constexpr uint8_t AUDIO_VOLUME_MID = 15;
@@ -120,6 +127,10 @@ inline const char* audioTrackNvsKey(const char* key) {
     if (__builtin_strcmp(key, "startup")   == 0) return "snd_startup";
     if (__builtin_strcmp(key, "rand_min")  == 0) return "snd_rand_min";
     if (__builtin_strcmp(key, "rand_max")  == 0) return "snd_rand_max";
+    if (__builtin_strcmp(key, "snd_int_quiet") == 0) return "snd_int_quiet";
+    if (__builtin_strcmp(key, "snd_int_mid")   == 0) return "snd_int_mid";
+    if (__builtin_strcmp(key, "snd_int_full")  == 0) return "snd_int_full";
+    if (__builtin_strcmp(key, "snd_int_awake") == 0) return "snd_int_awake";
     return nullptr;
 }
 
