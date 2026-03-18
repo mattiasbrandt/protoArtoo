@@ -78,3 +78,8 @@ bool audioQueueStop(CommandSource src);
 
 // Enqueue an absolute volume set (clamped to 0–30 before enqueue).
 bool audioQueueSetVolume(uint8_t vol, CommandSource src);
+
+
+// Returns the short name of the active audio driver (e.g. "DY-SV5W", "CHIRP").
+// Safe to call from any task or web handler after AudioTask has been created.
+const char* audioGetDriverName();

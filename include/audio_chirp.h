@@ -50,6 +50,7 @@ public:
 
     // Set volume 0–30 (clamped by AudioTask). Scaled to CHIRP 0–99 range.
     void setVolume(uint8_t vol) override;
+    const char* driverName() const override { return "CHIRP"; }
 
 private:
     // Send a null-terminated ASCII command string followed by '\n'.

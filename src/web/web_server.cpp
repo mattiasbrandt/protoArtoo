@@ -22,6 +22,7 @@
 #include "../../include/api_servo.h"
 #include "../../include/api_status.h"
 #include "../../include/api_system.h"
+#include "../../include/audio_task.h"
 #include "../../include/config.h"
 #include "../../include/rc_diagnostics.h"
 #include "../../include/robot_state.h"
@@ -525,9 +526,12 @@ void buildStatusJson(char* buffer, size_t bufferSize) {
             }
         }
         if (enableS2Sound) {
-            appendPeripheralStatus(pos, remaining, "s2Sound",
-                                   audioActive ? "playing" : "idle",
-                                   audioActive ? "Playback active" : "Ready, no active playback");
+            int _n = snprintf(pos, remaining,
+                             ",\"s2Sound\":{\"state\":\"%s\",\"detail\":\"%s\",\"driver\":\"%s\"}",
+                             audioActive ? "playing" : "idle",
+                             audioActive ? "Playback active" : "Ready, no active playback",
+                             audioGetDriverName());
+            if (_n > 0 && _n < (int)remaining) { pos += _n; remaining -= (size_t)_n; }
         }
         if (enableS3DomeCtrl) {
             if (domeLastSeenMs == 0) {

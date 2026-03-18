@@ -51,6 +51,10 @@ static AudioDriverChirp s_driver;
 
 static AudioDriver* const driver = &s_driver;
 
+const char* audioGetDriverName() {
+    return driver->driverName();
+}
+
 static const char* TAG = "AudioTask";
 
 // -----------------------------------------------------------------------------

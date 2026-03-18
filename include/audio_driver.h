@@ -54,4 +54,8 @@ public:
     virtual void setVolume(uint8_t vol) = 0;
 
     virtual ~AudioDriver() = default;
+
+    // Returns a short human-readable name for this driver (e.g. "DY-SV5W", "CHIRP").
+    // Used by the status API to expose the active backend to the web UI.
+    virtual const char* driverName() const = 0;
 };

@@ -278,6 +278,10 @@
           : d.s2Sound.state === "playing" ? "Playing" : "Enabled / Idle";
         serialS2.style.color = d.s2Sound ? "var(--success)" : "var(--text-dim)";
       }
+      const s2DriverEl = document.getElementById("s2-driver-label");
+      if (s2DriverEl) {
+        s2DriverEl.textContent = d.s2Sound?.driver || "";
+      }
       if (serialS3) {
         const dl = d.dome_link;
         if (!dl || dl.state === "disabled") {

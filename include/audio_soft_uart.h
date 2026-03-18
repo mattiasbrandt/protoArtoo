@@ -24,6 +24,7 @@ public:
     void playTrack(uint16_t track) override;
     void stop() override;
     void setVolume(uint8_t vol) override;
+    const char* driverName() const override { return "DY-SV5W"; }
 
 private:
     // Send one command payload across both known DY-SV5W wire dialects.
