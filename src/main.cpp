@@ -267,10 +267,10 @@ void loadConfigToState() {
     robotState.cfg_snd_startup   = prefs.getUShort("snd_startup",   AUDIO_TRACK_STARTUP);
     robotState.cfg_snd_rand_min  = prefs.getUShort("snd_rand_min",  AUDIO_RAND_TRACK_MIN);
     robotState.cfg_snd_rand_max  = prefs.getUShort("snd_rand_max",  AUDIO_RAND_TRACK_MAX);
-    robotState.cfg_snd_int_quiet = prefs.getUShort("snd_int_quiet", AUDIO_RAND_INT_QUIET);
-    robotState.cfg_snd_int_mid   = prefs.getUShort("snd_int_mid",   AUDIO_RAND_INT_MID);
-    robotState.cfg_snd_int_full  = prefs.getUShort("snd_int_full",  AUDIO_RAND_INT_FULL);
-    robotState.cfg_snd_int_awake = prefs.getUShort("snd_int_awake", AUDIO_RAND_INT_AWAKE);
+    robotState.cfg_snd_int_quiet = constrain(prefs.getUShort("snd_int_quiet", AUDIO_RAND_INT_QUIET), (uint16_t)0, (uint16_t)3600);
+    robotState.cfg_snd_int_mid   = constrain(prefs.getUShort("snd_int_mid",   AUDIO_RAND_INT_MID),   (uint16_t)0, (uint16_t)3600);
+    robotState.cfg_snd_int_full  = constrain(prefs.getUShort("snd_int_full",  AUDIO_RAND_INT_FULL),  (uint16_t)0, (uint16_t)3600);
+    robotState.cfg_snd_int_awake = constrain(prefs.getUShort("snd_int_awake", AUDIO_RAND_INT_AWAKE), (uint16_t)0, (uint16_t)3600);
 
     robotState.cfg_arm1_open_us = prefs.getUShort("arm1_op", 2000);
     robotState.cfg_arm1_close_us = prefs.getUShort("arm1_cl", 1000);
