@@ -33,9 +33,9 @@
     try {
       const res  = await fetch("/api/audio", { method: "POST", body });
       const json = await res.json();
-      showFeedback(feedbackEl, json.ok ? "✅ Sent" : `❌ ${json.error}`, json.ok);
+      showFeedback(feedbackEl, json.ok ? "Sent" : json.error, json.ok);
     } catch (_e) {
-      showFeedback(feedbackEl, "❌ Request failed", false);
+      showFeedback(feedbackEl, "Request failed", false);
     }
   };
 
@@ -44,9 +44,9 @@
     try {
       const res  = await fetch("/api/audio/tracks", { method: "POST", body });
       const json = await res.json();
-      showFeedback(feedbackEl, json.ok ? "✅ Saved" : `❌ ${json.error}`, json.ok);
+      showFeedback(feedbackEl, json.ok ? "Saved" : json.error, json.ok);
     } catch (_e) {
-      showFeedback(feedbackEl, "❌ Request failed", false);
+      showFeedback(feedbackEl, "Request failed", false);
     }
   };
 
@@ -105,7 +105,7 @@
         saveBtn.addEventListener("click", () => {
           const val = parseInt(inp.value, 10);
           if (!val || val < 1 || val > 999) {
-            showFeedback(fbEl, "❌ 1–999", false);
+            showFeedback(fbEl, "1–999", false);
             return;
           }
           postTrack(s.key, val, fbEl);
@@ -243,7 +243,7 @@
   document.getElementById("btn-direct-play")?.addEventListener("click", () => {
     const val = parseInt(document.getElementById("direct-track")?.value, 10);
     if (!val || val < 1 || val > 65535) {
-      showFeedback(directFb, "❌ Track must be 1–65535", false);
+      showFeedback(directFb, "Track must be 1–65535", false);
       return;
     }
     postAudio({ action: "play", track: val }, directFb);
@@ -259,11 +259,11 @@
     const maxVal = parseInt(document.getElementById("rand-max")?.value, 10);
 
     if (!minVal || minVal < 1 || minVal > 999 || !maxVal || maxVal < 1 || maxVal > 999) {
-      showFeedback(randFb, "❌ Values must be 1–999", false);
+      showFeedback(randFb, "Values must be 1–999", false);
       return;
     }
     if (minVal > maxVal) {
-      showFeedback(randFb, "❌ Min must be ≤ Max", false);
+      showFeedback(randFb, "Min must be ≤ Max", false);
       return;
     }
 
@@ -276,9 +276,9 @@
       ]);
       const [j1, j2] = await Promise.all([r1.json(), r2.json()]);
       const ok = j1.ok && j2.ok;
-      showFeedback(randFb, ok ? "✅ Range saved" : "❌ Save failed", ok);
+      showFeedback(randFb, ok ? "Range saved" : "Save failed", ok);
     } catch (_e) {
-      showFeedback(randFb, "❌ Request failed", false);
+      showFeedback(randFb, "Request failed", false);
     }
   });
 
@@ -297,7 +297,7 @@
     for (const f of INT_FIELDS) {
       const val = parseInt(document.getElementById(f.id)?.value, 10);
       if (isNaN(val) || val < 0 || val > 3600) {
-        showFeedback(intFb, `\u274c ${f.key}: must be 0\u20133600`, false);
+        showFeedback(intFb, `${f.key}: must be 0–3600`, false);
         return;
       }
     }
@@ -310,9 +310,9 @@
         }).then(r => r.json());
       }));
       const ok = results.every(r => r.ok);
-      showFeedback(intFb, ok ? "\u2705 Intervals saved" : "\u274c Save failed", ok);
+      showFeedback(intFb, ok ? "Intervals saved" : "Save failed", ok);
     } catch (_e) {
-      showFeedback(intFb, "\u274c Request failed", false);
+      showFeedback(intFb, "Request failed", false);
     }
   });
 })();

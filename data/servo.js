@@ -72,12 +72,12 @@
       const label = `${arm} ${action}`;
       if (!res.ok) {
         const err = await res.json().catch(() => null);
-        setFeedback(fb, `❌ ${label} failed: ${err?.error || res.status}`, "error");
+        setFeedback(fb, `${label} failed: ${err?.error || res.status}`, "error");
       } else {
-        setFeedback(fb, `✅ ${label} sent at ${new Date().toLocaleTimeString()}`, "success");
+        setFeedback(fb, `${label} sent at ${new Date().toLocaleTimeString()}`, "success");
       }
     } catch (_e) {
-      setFeedback(fb, "❌ Network error sending servo command", "error");
+      setFeedback(fb, "Network error sending servo command", "error");
     }
   };
 
@@ -93,12 +93,12 @@
       const label = `${arm} → ${pulseUs} µs`;
       if (!res.ok) {
         const err = await res.json().catch(() => null);
-        setFeedback(fb, `❌ Test ${label} failed: ${err?.error || res.status}`, "error");
+        setFeedback(fb, `Test ${label} failed: ${err?.error || res.status}`, "error");
       } else {
         setFeedback(fb, `▶ Test ${label} at ${new Date().toLocaleTimeString()}`, "success");
       }
     } catch (_e) {
-      setFeedback(fb, "❌ Network error sending test position", "error");
+      setFeedback(fb, "Network error sending test position", "error");
     }
   };
 
@@ -337,9 +337,9 @@
         const err = await res.json().catch(() => null);
         throw new Error(err?.error || `HTTP ${res.status}`);
       }
-      setCalibFeedback(`✓ Saved at ${new Date().toLocaleTimeString()}`, "success");
+      setCalibFeedback(`Saved at ${new Date().toLocaleTimeString()}`, "success");
     } catch (e) {
-      setCalibFeedback(`❌ Save failed: ${e.message}`, "error");
+      setCalibFeedback(`Save failed: ${e.message}`, "error");
     }
   };
 
