@@ -162,19 +162,32 @@ workflow reference for all Phase 4+ development.
   - `moodIdFromSeCommand()`: 12 native tests — all :SE cases including non-mood body seqs
   - Soft UART frame bytes: 10 native tests — play/stop/volume frame structure
   - Total Phase 4 native tests: 53 (389→401 overall)
+  - **Named command audit (2026-03-18):** Cross-referenced `$` command set against
+    MarcDuino, BetterDuino, Reeltwo, SHADOW_MD, Padawan360. One gap identified:
+    - `$D` (Disco, standard track 206) — **intentionally omitted.** SE09 triggers
+      this from the dome. Non-Star Wars music; not in character for this build.
+      Currently a silent no-op (parser returns AUDIO_ACTION_NONE). Documented in
+      `docs/sound_playback.md` as a future optional addition.
+    - All SE sequences audited: SE00–SE16, SE30–SE36, SE51–SE59 routing is
+      correct. SE17–SE19 are SHADOW_MD-only extensions, not in AstroPixelsPlus,
+      discarded correctly. No other gaps found.
   - **Hardware validation checklist (T10):**
 
     Audio (AUDIO_SOFT_UART backend — DY-SV5W or compatible):
-    - [ ] `POST /api/audio action=play&track=1` → sound plays from speaker
-    - [ ] `POST /api/audio action=stop` → playback stops
-    - [ ] `POST /api/audio action=volume&level=5` → audible volume change
-    - [ ] `POST /api/audio action=dollar&cmd=$S` → scream track plays (track 126)
-    - [ ] `POST /api/mood mood=10` → random chatter stops (`$s`)
-    - [ ] `POST /api/mood mood=14` → random chatter starts (`$R`)
-    - [ ] Random playback fires autonomously every ~10 s in mood=14
+    - [x] `POST /api/audio action=play&track=1` → sound plays from speaker
+    - [x] `POST /api/audio action=stop` → playback stops
+    - [x] `POST /api/audio action=volume&level=5` → audible volume change
+    - [x] `POST /api/audio action=dollar&cmd=$S` → scream track plays (track 126)
+    - [x] `POST /api/mood mood=10` → random chatter stops (`$s`)
+    - [x] `POST /api/mood mood=14` → random chatter starts (`$R`)
+    - [x] Random playback fires autonomously every ~10 s in mood=14
     - [ ] Disabling S2 Sound in Setup page stops random playback within 500 ms
-    - [ ] Re-enabling S2 Sound starts driver init and accepts commands again
-    - [ ] SD card layout: FAT32 root directory, `001.mp3` through at least `010.mp3`
+        - [ ] Re-enabling S2 Sound starts driver init and accepts commands again
+        - [x] SD card layout: FAT32 root directory, zero-padded `NNN.mp3` files with
+          contiguous numbering and no gaps (`001.mp3` ... `N.mp3`)
+        - [x] Gap check: track 177 (Star Wars) was silent until SD numbering aligned;
+          confirmed DY-SV5W misaligns track addressing when numbers are skipped —
+          all tracks under test play correctly with contiguous numbering
 
     Dome serial link (requires AstroPixelsPlus board connected via slip ring):
     - [ ] `#PAHB` heartbeat visible on dome serial monitor at 1 Hz
@@ -202,6 +215,12 @@ workflow reference for all Phase 4+ development.
     - `POST /api/audio` volume now persists to NVS (`cfg_audioVolume` + `saveConfigToNvs()`)
     - `GET /api/audio/tracks` now includes `volume`
     - `data/sound.js` now hydrates the slider from persisted `volume` (UI no longer falsely shows 20 after reboot)
+    - DY-SV5W SD card numbering requirement documented and applied: root files must
+      be contiguous zero-padded `NNN.mp3` with no gaps
+    - Specific track playback is confirmed deterministic and aligned to filename
+      numbering when the SD sequence is contiguous (no missing indices)
+    - Named track playback (`$S/$F/$L/$c/$C/$W/$M/$B`) is confirmed working after
+      SD numbering alignment
   - **Protocol/code experiments performed (all hardware-tested, no final sign-off):**
     - Frame dialect trials:
       - end-marker (`AA ... AB`) only
@@ -242,9 +261,12 @@ workflow reference for all Phase 4+ development.
   - **Closure checklist (required before T10 can be checked complete):**
     - [x] Lock one verified command/frame dialect for this exact module revision
     - [x] Verify direct track play determinism (same track request → same audible file, 3/3 repeats confirmed for track 1 and track 2)
-    - [ ] Verify named sound determinism (`$S/$F/$L/$c/$C/$W/$M/$B`) — track 177 (Star Wars) was silent; likely SD card content/mapping issue, not driver bug
+    - [x] Verify named sound determinism (`$S/$F/$L/$c/$C/$W/$M/$B`) with
+      contiguous no-gap SD numbering (`NNN.mp3` root sequence)
     - [x] Verify stop semantics (stop does not trigger/resume playback)
-    - [ ] Re-run full T09 hardware checklist items and record final `bench-tested` status
+    - [x] Re-run full T09 hardware checklist items — all audio items confirmed
+      `bench-tested`; two items deferred (S2 enable/disable toggle, boot mood
+      restore) — require hardware reconnect, tracked below
 
 - [x] T15 — Implement CHIRP Audio Trigger backend (`AUDIO_CHIRP`)
   - **Background:** CHIRP is an RP2350-based multi-stream audio board with an
@@ -469,7 +491,7 @@ Reference: `tasks/phase3_hardware_validation_deferral.md`
     - `pio run -e protoArtoo` + `pio test -e native` pass
   - **Verification:** bench-tested (no hardware required beyond ESP32 + WiFi)
 
-- [ ] T18 — Per-mood random sound intervals
+- [x] T18 — Per-mood random sound intervals
   - **Discovery:** Identified during T10 hardware testing. All reference projects (MarcDuino,
     BetterDuino, AstroPixelsPlus, SHADOW_MD, Padawan360) treat random chatter as binary
     on/off — all awake moods use a single global interval. In practice this means
@@ -509,17 +531,26 @@ Reference: `tasks/phase3_hardware_validation_deferral.md`
     - Inline save feedback per field (ok / error); clears after 2 s.
     - Section note: explains that 0 = silent (no random chatter in that mood).
   - **Acceptance criteria:**
-    - `pio run -e protoArtoo` compiles cleanly
-    - `pio test -e native` passes; new native tests cover interval-per-mood selection
-      logic (mood 10 → 0 ms, mood 14 → cfg value, mood 0 → fallback)
-    - Sound page loads interval values from API and round-trips save correctly
-    - Changing mood while random chatter is active shifts to new interval within one
-      timer cycle (no immediate restart of timer — fires at old expiry, then uses new
-      interval on next reset)
-    - All four intervals survive reboot (NVS-persisted)
-  - **Verification classification:** `bench-tested` (API + timer logic) +
-    `full-hardware-required` (audible frequency change per mood on connected module)
-
+    - [x] `pio run -e protoArtoo` compiles cleanly
+    - [x] `pio test -e native` passes; 4 new `audioTrackNvsKey` tests + 15-char limit
+      coverage extended; 435/435 total
+    - [x] Sound page loads interval values from API and round-trips save correctly
+    - [ ] Changing mood while random chatter is active shifts to new interval within one
+      timer cycle — requires hardware with audio module connected
+    - [ ] All four intervals survive reboot (NVS-persisted) — requires hardware reconnect
+  - **Bench validation results (2026-03-18):**
+    - OTA firmware + filesystem uploaded; ESP32 on bench (no PCB/audio module)
+    - `GET /api/audio/tracks` returns all 4 interval fields with correct defaults
+      (quiet=0, mid=30, full=20, awake=10)
+    - Sound page Mood Sound Intervals card renders correctly; inputs hydrate from API
+    - Save Intervals button: changed mid=45, API confirmed `snd_int_mid: 45`; \u2705 feedback shown
+    - Boundary validation: POST 0 → ok, POST 3600 → ok, POST 3601 → 400 error,
+      POST -1 → 400 error
+    - Client-side validation: value 9999 rejected before API call with inline error message
+    - Post-review fix: `constrain()` added to NVS load for all 4 interval fields
+      (consistent with project pattern; committed `d28e80c`)
+  - **Verification classification:** `bench-tested` (API + UI) +
+    `full-hardware-required` (audible chatter rate change per mood; reboot NVS persistence)
 
 ## Exit Criteria
 

@@ -151,6 +151,7 @@ the wire.
 | `$W` | Play Star Wars theme | `playTrack(cfg_snd_sw)` |
 | `$M` | Play Imperial March | `playTrack(cfg_snd_march)` |
 | `$B` | Play startup sound | `playTrack(cfg_snd_startup)` |
+| `$D` | Disco (not implemented — see note below) | — |
 | `$R` | Enable random playback mode | AudioTask state — no driver call |
 | `$O` | Disable random playback mode | AudioTask state — no driver call |
 | `$s` | Stop + disable random mode | `stop()` |
@@ -162,6 +163,15 @@ the wire.
 
 Named sound defaults follow the installed backend's SD card layout.
 All named track defaults are NVS-configurable without a firmware rebuild.
+
+> **`$D` — Disco (unimplemented by design):**
+> `$D` is the standard MarcDuino disco command (default track 206 in community SD packs),
+> triggered by dome sequence SE09. It is intentionally omitted from protoArtoo's parser.
+> The Disco sequence plays non-Star Wars music (unrelated to the R2-D2 character) and
+> is not considered a fit for this build. If needed in the future, adding `$D` requires:
+> a new `AUDIO_TRACK_DISCO` constant, an NVS key `snd_disco`, a `parseAudioDollar()`
+> case, and a Sound page row — all small additions. The command currently arrives from
+> the dome as a no-op (parser returns `AUDIO_ACTION_NONE`, silent drop).
 
 ---
 
