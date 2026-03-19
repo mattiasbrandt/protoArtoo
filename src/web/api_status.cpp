@@ -14,6 +14,7 @@
 #include <Arduino.h>
 #include <ESPAsyncWebServer.h>
 #include <WiFi.h>
+#include <esp_heap_caps.h>
 
 #include "api_helpers.h"
 #include "config.h"
@@ -56,6 +57,7 @@ static void buildHealthJson(char* buffer, size_t bufferSize) {
     bool fsReady;
     unsigned long heapFree;
     unsigned long heapMin;
+    unsigned long heapLargestBlock;
     long wifiRssi;
 
     taskENTER_CRITICAL(&robotStateMux);
@@ -70,10 +72,11 @@ static void buildHealthJson(char* buffer, size_t bufferSize) {
     fsReady = webLittleFsMounted();
     heapFree = ESP.getFreeHeap();
     heapMin = ESP.getMinFreeHeap();
+    heapLargestBlock = (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
     wifiRssi = wifiConnected ? WiFi.RSSI() : 0;
 
     formatHealthJson(buffer, bufferSize, estop, sbusSignalLost, sbusHwFailsafe, webControlEnabled,
-                     wifiConnected, wifiClientConnected, fsReady, heapFree, heapMin, wifiRssi);
+                     wifiConnected, wifiClientConnected, fsReady, heapFree, heapMin, heapLargestBlock, wifiRssi);
 }
 
 void registerStatusRoutes(AsyncWebServer& server) {

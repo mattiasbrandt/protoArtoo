@@ -131,93 +131,108 @@ void test_formatSerialJson_is_valid_json_object() {
 // --- formatHealthJson() tests ---
 
 void test_formatHealthJson_estop_true() {
-    char out[256];
+    char out[320];
     formatHealthJson(out, sizeof(out), true, false, false, false, false, false, false, 100000,
-                     90000, 0);
+                     90000, 75000UL, 0);
     TEST_ASSERT_NOT_NULL(strstr(out, "\"estop\":true"));
 }
 
 void test_formatHealthJson_estop_false() {
-    char out[256];
+    char out[320];
     formatHealthJson(out, sizeof(out), false, false, false, false, false, false, false, 100000,
-                     90000, 0);
+                     90000, 75000UL, 0);
     TEST_ASSERT_NOT_NULL(strstr(out, "\"estop\":false"));
 }
 
 void test_formatHealthJson_sbusSignalLost_true() {
-    char out[256];
+    char out[320];
     formatHealthJson(out, sizeof(out), false, true, false, false, false, false, false, 100000,
-                     90000, 0);
+                     90000, 75000UL, 0);
     TEST_ASSERT_NOT_NULL(strstr(out, "\"sbusSignalLost\":true"));
 }
 
 void test_formatHealthJson_sbusHwFailsafe_true() {
-    char out[256];
+    char out[320];
     formatHealthJson(out, sizeof(out), false, false, true, false, false, false, false, 100000,
-                     90000, 0);
+                     90000, 75000UL, 0);
     TEST_ASSERT_NOT_NULL(strstr(out, "\"sbusHwFailsafe\":true"));
 }
 
 void test_formatHealthJson_webControlEnabled_true() {
-    char out[256];
+    char out[320];
     formatHealthJson(out, sizeof(out), false, false, false, true, false, false, false, 100000,
-                     90000, 0);
+                     90000, 75000UL, 0);
     TEST_ASSERT_NOT_NULL(strstr(out, "\"webControlEnabled\":true"));
 }
 
 void test_formatHealthJson_wifiConnected_true() {
-    char out[256];
+    char out[320];
     formatHealthJson(out, sizeof(out), false, false, false, false, true, true, false, 100000, 90000,
-                     -65);
+                     75000UL, -65);
     TEST_ASSERT_NOT_NULL(strstr(out, "\"wifiConnected\":true"));
 }
 
 void test_formatHealthJson_wifiClientConnected_false() {
-    char out[256];
+    char out[320];
     formatHealthJson(out, sizeof(out), false, false, false, false, false, false, false, 100000,
-                     90000, 0);
+                     90000, 75000UL, 0);
     TEST_ASSERT_NOT_NULL(strstr(out, "\"wifiClientConnected\":false"));
 }
 
 void test_formatHealthJson_littleFsReady_true() {
-    char out[256];
+    char out[320];
     formatHealthJson(out, sizeof(out), false, false, false, false, false, false, true, 100000,
-                     90000, 0);
+                     90000, 75000UL, 0);
     TEST_ASSERT_NOT_NULL(strstr(out, "\"littleFsReady\":true"));
 }
 
 void test_formatHealthJson_heapFree() {
-    char out[256];
+    char out[320];
     formatHealthJson(out, sizeof(out), false, false, false, false, false, false, false, 123456,
-                     90000, 0);
+                     90000, 75000UL, 0);
     TEST_ASSERT_NOT_NULL(strstr(out, "\"heapFree\":123456"));
 }
 
 void test_formatHealthJson_heapMin() {
-    char out[256];
+    char out[320];
     formatHealthJson(out, sizeof(out), false, false, false, false, false, false, false, 100000,
-                     77777, 0);
+                     77777, 75000UL, 0);
     TEST_ASSERT_NOT_NULL(strstr(out, "\"heapMin\":77777"));
 }
 
+void test_formatHealthJson_heapLargestBlock() {
+    char out[320];
+    formatHealthJson(out, sizeof(out), false, false, false, false, false, false, false, 100000,
+                     90000, 75000UL, 0);
+    TEST_ASSERT_NOT_NULL(strstr(out, "\"heapLargestBlock\":75000"));
+}
+
 void test_formatHealthJson_wifiRssi_negative() {
-    char out[256];
+    char out[320];
     formatHealthJson(out, sizeof(out), false, false, false, false, true, true, false, 100000, 90000,
-                     -72);
+                     75000UL, -72);
     TEST_ASSERT_NOT_NULL(strstr(out, "\"wifiRssi\":-72"));
 }
 
 void test_formatHealthJson_wifiRssi_zero_when_disconnected() {
-    char out[256];
+    char out[320];
     formatHealthJson(out, sizeof(out), false, false, false, false, false, false, false, 100000,
-                     90000, 0);
+                     90000, 75000UL, 0);
     TEST_ASSERT_NOT_NULL(strstr(out, "\"wifiRssi\":0"));
 }
 
 void test_formatHealthJson_is_valid_json_object() {
-    char out[256];
+    char out[320];
     formatHealthJson(out, sizeof(out), false, false, false, false, false, false, false, 100000,
-                     90000, 0);
+                     90000, 75000UL, 0);
+    TEST_ASSERT_EQUAL_CHAR('{', out[0]);
+    TEST_ASSERT_EQUAL_CHAR('}', out[strlen(out) - 1]);
+}
+
+void test_formatHealthJson_is_valid_json_with_largest_block() {
+    char out[320];
+    formatHealthJson(out, sizeof(out), false, false, false, false, true, false, true, 200000,
+                     180000, 75000UL, -70);
     TEST_ASSERT_EQUAL_CHAR('{', out[0]);
     TEST_ASSERT_EQUAL_CHAR('}', out[strlen(out) - 1]);
 }
@@ -253,9 +268,11 @@ int main() {
     RUN_TEST(test_formatHealthJson_littleFsReady_true);
     RUN_TEST(test_formatHealthJson_heapFree);
     RUN_TEST(test_formatHealthJson_heapMin);
+    RUN_TEST(test_formatHealthJson_heapLargestBlock);
     RUN_TEST(test_formatHealthJson_wifiRssi_negative);
     RUN_TEST(test_formatHealthJson_wifiRssi_zero_when_disconnected);
     RUN_TEST(test_formatHealthJson_is_valid_json_object);
+    RUN_TEST(test_formatHealthJson_is_valid_json_with_largest_block);
 
     return UNITY_END();
 }

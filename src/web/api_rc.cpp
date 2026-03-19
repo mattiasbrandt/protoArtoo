@@ -38,7 +38,7 @@ void registerRcRoutes(AsyncWebServer& server) {
     server.on(
         "/api/rc/debug", HTTP_POST, [](AsyncWebServerRequest* req) {}, NULL,
         [](AsyncWebServerRequest* req, uint8_t* data, size_t len, size_t, size_t) {
-            StaticJsonDocument<64> doc;
+            JsonDocument doc;
             if (deserializeJson(doc, data, len)) {
                 req->send(400, "application/json", "{\"ok\":false,\"error\":\"invalid json\"}");
                 return;

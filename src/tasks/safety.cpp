@@ -7,7 +7,7 @@
 // Responsibilities:
 //   - Log failsafe trigger count increases
 //   - Verify dome connection state transitions (connected ↔ lost)
-//   - Warn if free heap drops below 20 KB
+//   - Warn if free heap drops below 20 KB and monitor heap fragmentation
 //
 // SAFETY: This task does NOT directly control motors or actuators.
 //         It is an observer only. All motor control is in DriveTask.
@@ -69,12 +69,27 @@ void safetyMonitorTask(void* pvParameters) {
             lastDomeConnected = domeNowConnected;
         }
 
-        // Warn if free heap is low — goes to ring buffer so it appears in dashboard log
+        // Heap health: warn on low free heap, high fragmentation, and log periodic metrics
         uint32_t freeHeap = ESP.getFreeHeap();
+        size_t largestBlock = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+        float fragRatio = (freeHeap > 0) ? (1.0f - (float)largestBlock / (float)freeHeap) : 0.0f;
+
         if (freeHeap < 20480) {  // 20 KB threshold
-            PA_LOG_WARN(TAG, "low heap: %lu bytes free", (unsigned long)freeHeap);
+            PA_LOG_WARN(TAG, "low heap: %lu bytes free, largest block: %u bytes",
+                        (unsigned long)freeHeap, (unsigned)largestBlock);
+        }
+        if (largestBlock < 30720) {  // 30 KB fragmentation threshold
+            PA_LOG_WARN(TAG, "heap fragmented: largest block %u bytes, frag ratio %.2f",
+                        (unsigned)largestBlock, (double)fragRatio);
         }
 
+        static int periodicCount = 0;
+        if (++periodicCount >= 60) {  // ~6 s at 10 Hz
+            periodicCount = 0;
+            PA_LOG_INFO(TAG, "heap: free=%lu min=%lu largest=%u frag=%.2f",
+                        (unsigned long)freeHeap, (unsigned long)ESP.getMinFreeHeap(),
+                        (unsigned)largestBlock, (double)fragRatio);
+        }
         vTaskDelay(pdMS_TO_TICKS(100));  // 10 Hz
     }
 }

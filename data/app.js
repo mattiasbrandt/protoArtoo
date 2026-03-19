@@ -76,6 +76,8 @@
 
     const heapFreeKb = Math.round(payload.heapFree / 1024);
     const heapMinKb  = Math.round(payload.heapMin  / 1024);
+    const heapLargestKb = (payload.heapLargestBlock !== undefined)
+      ? Math.round(payload.heapLargestBlock / 1024) : null;
 
     let heapLabel = "✅ Healthy"; let heapColor = "var(--success)";
     if (heapFreeKb < 80)  { heapLabel = "❌ Critical"; heapColor = "var(--danger)"; }
@@ -84,6 +86,12 @@
     let heapMinLabel = "✅ Good"; let heapMinColor = "var(--success)";
     if (heapMinKb < 64)  { heapMinLabel = "❌ Critical"; heapMinColor = "var(--danger)"; }
     else if (heapMinKb < 96) { heapMinLabel = "⚠️ Watch"; heapMinColor = "var(--warning)"; }
+
+    let heapLargestLabel = "✅ OK"; let heapLargestColor = "var(--success)";
+    if (heapLargestKb !== null) {
+      if      (heapLargestKb < 30) { heapLargestLabel = "❌ Fragmented"; heapLargestColor = "var(--danger)"; }
+      else if (heapLargestKb < 50) { heapLargestLabel = "⚠️ Watch";      heapLargestColor = "var(--warning)"; }
+    }
 
     let wifiQuality = "❌ Unknown"; let wifiColor = "var(--danger)";
     if ((payload.wifiConnected || payload.wifiClientConnected) && payload.wifiRssi !== 0) {
@@ -96,6 +104,9 @@
     healthSummary.innerHTML =
       `Memory: <span style="color:${heapColor};font-weight:700">${heapFreeKb} KB ${heapLabel}</span><br>` +
       `Memory Min: <span style="color:${heapMinColor};font-weight:700">${heapMinKb} KB ${heapMinLabel}</span><br>` +
+      (heapLargestKb !== null
+        ? `Largest Block: <span style="color:${heapLargestColor};font-weight:700">${heapLargestKb} KB ${heapLargestLabel}</span><br>`
+        : '') +
       `WiFi: <span style="color:${wifiColor};font-weight:700">${wifiQuality}</span>`;
   };
 

@@ -31,6 +31,12 @@
 #include "secrets.h"
 #endif
 
+// PA_ENABLE_STA_WIFI defaults to 1 (enabled). Set to 0 in build_flags only for
+// the protoArtoo_prod env (AP-only field deployment).
+#ifndef PA_ENABLE_STA_WIFI
+#define PA_ENABLE_STA_WIFI 1
+#endif
+
 #ifndef ARDUINO
 class String {
    public:
@@ -161,6 +167,11 @@ inline int xTaskCreatePinnedToCore(void (*)(void*), const char*, unsigned int, v
                                    void*, int) {
     return 0;
 }
+inline size_t heap_caps_get_largest_free_block(uint32_t) { return 0; }
+static const uint32_t MALLOC_CAP_8BIT = 4;
+#endif
+#ifdef ARDUINO
+#include <esp_heap_caps.h>
 #endif
 
 static const char* TAG = "WebServer";
@@ -275,6 +286,7 @@ bool appendPeripheralStatus(char*& pos, size_t& remaining, const char* key, cons
     return true;
 }
 
+#if PA_ENABLE_STA_WIFI
 bool hasStaConfig() {
 #if __has_include("secrets.h")
     return PA_STA_SSID[0] != '\0';
@@ -307,6 +319,8 @@ const char* staPassword() {
 #endif
 }
 
+#endif  // PA_ENABLE_STA_WIFI
+
 }  // namespace
 
 void buildStatusJson(char* buffer, size_t bufferSize) {
@@ -327,6 +341,7 @@ void buildStatusJson(char* buffer, size_t bufferSize) {
     unsigned long uptimeMs;
     unsigned long heapFree;
     unsigned long heapMin;
+    uint32_t heapLargestBlock;
     long wifiRssi;
     bool enableArm1, enableArm2, enableAux1, enableAux2, enableAux3, enableDome;
     bool enableRcCh1, enableRcCh2, enableRcCh3, enableRcCh4, enableRcCh5, enableRcCh6;
@@ -388,6 +403,7 @@ void buildStatusJson(char* buffer, size_t bufferSize) {
     uptimeMs = millis();
     heapFree = ESP.getFreeHeap();
     heapMin = ESP.getMinFreeHeap();
+    heapLargestBlock = (uint32_t)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
     wifiRssi = wifiClientConnected ? WiFi.RSSI() : 0;
 
     // Build the fixed system-health fields first.
@@ -397,7 +413,7 @@ void buildStatusJson(char* buffer, size_t bufferSize) {
         "\"webDriveExpired\":%s,\"failsafeSource\":%d,\"driveSpeed\":%d,"
         "\"driveSteer\":%d,\"speedLimitScale\":%.3f,\"stationary\":%s,"
         "\"failsafeCount\":%lu,\"uptimeMs\":%lu,\"firmwareVersion\":\"%s\","
-        "\"heapFree\":%lu,\"heapMin\":%lu,\"wifiRssi\":%ld,\"wifiConnected\":%s,"
+        "\"heapFree\":%lu,\"heapMin\":%lu,\"heapLargestBlock\":%lu,\"wifiRssi\":%ld,\"wifiConnected\":%s,"
         "\"wifiClientConnected\":%s,"
         "\"littleFsReady\":%s,"
         "\"activeMood\":%u",
@@ -405,7 +421,7 @@ void buildStatusJson(char* buffer, size_t bufferSize) {
         sbusSignalLost ? "true" : "false", sbusHwFailsafe ? "true" : "false",
         webDriveExpired ? "true" : "false", failsafeSource, driveSpeed, driveSteer,
         (double)speedLimitScale, stationary ? "true" : "false", failsafeCount, uptimeMs,
-        PA_FIRMWARE_VERSION, heapFree, heapMin, wifiRssi, wifiClientConnected ? "true" : "false",
+        PA_FIRMWARE_VERSION, heapFree, heapMin, (unsigned long)heapLargestBlock, wifiRssi, wifiClientConnected ? "true" : "false",
         wifiClientConnected ? "true" : "false", littleFsReady ? "true" : "false",
         (unsigned)activeMood);
 
@@ -928,6 +944,7 @@ void handleWiFiEvent(WiFiEvent_t event) {
             }
             startHttpServerOnce();
             break;
+#if PA_ENABLE_STA_WIFI
         case ARDUINO_EVENT_WIFI_STA_START:
             PA_LOG_INFO(TAG, "WiFi client connect started");
             break;
@@ -938,6 +955,7 @@ void handleWiFiEvent(WiFiEvent_t event) {
         case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
             PA_LOG_DEBUG(TAG, "WiFi client disconnected");
             break;
+#endif  // PA_ENABLE_STA_WIFI
         default:
             break;
     }
@@ -970,6 +988,7 @@ void webServerInit() {
         eventTaskStarted = true;
     }
 
+#if PA_ENABLE_STA_WIFI
     if (hasStaConfig()) {
         apFallbackMode = true;
         WiFi.mode(WIFI_AP_STA);
@@ -982,4 +1001,10 @@ void webServerInit() {
         WiFi.softAP(WIFI_AP_SSID);
         PA_LOG_INFO(TAG, "WiFi bootstrap: AP-only mode");
     }
+#else
+    apFallbackMode = false;
+    WiFi.mode(WIFI_AP);
+    WiFi.softAP(WIFI_AP_SSID);
+    PA_LOG_INFO(TAG, "WiFi bootstrap: AP-only (STA disabled at build)");
+#endif  // PA_ENABLE_STA_WIFI
 }

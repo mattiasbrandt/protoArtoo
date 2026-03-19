@@ -139,13 +139,13 @@ void formatSerialJson(char* buf, size_t bufSize, bool domeLinkActive, unsigned l
 void formatHealthJson(char* buf, size_t bufSize, bool estop, bool sbusSignalLost,
                       bool sbusHwFailsafe, bool webControlEnabled, bool wifiConnected,
                       bool wifiClientConnected, bool fsReady, unsigned long heapFree,
-                      unsigned long heapMin, long wifiRssi) {
+                      unsigned long heapMin, unsigned long heapLargestBlock, long wifiRssi) {
     snprintf(buf, bufSize,
              "{\"estop\":%s,\"sbusSignalLost\":%s,\"sbusHwFailsafe\":%s,\"webControlEnabled\":%s,"
              "\"wifiConnected\":%s,\"wifiClientConnected\":%s,\"littleFsReady\":%s,"
-             "\"heapFree\":%lu,\"heapMin\":%lu,\"wifiRssi\":%ld}",
+             "\"heapFree\":%lu,\"heapMin\":%lu,\"heapLargestBlock\":%lu,\"wifiRssi\":%ld}",
              estop ? "true" : "false", sbusSignalLost ? "true" : "false",
              sbusHwFailsafe ? "true" : "false", webControlEnabled ? "true" : "false",
              wifiConnected ? "true" : "false", wifiClientConnected ? "true" : "false",
-             fsReady ? "true" : "false", heapFree, heapMin, wifiRssi);
+             fsReady ? "true" : "false", heapFree, heapMin, heapLargestBlock, wifiRssi);
 }

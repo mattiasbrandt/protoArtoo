@@ -135,10 +135,10 @@ void formatSerialJson(char* buf, size_t bufSize, bool domeLinkActive, unsigned l
 //         fsReady           — true if LittleFS is mounted
 //         heapFree          — current free heap in bytes
 //         heapMin           — minimum free heap since boot in bytes
-//         wifiRssi          — WiFi RSSI in dBm (0 if not connected)
+//         heapLargestBlock  — largest contiguous free heap block in bytes
 // thread-safe: yes (pure function, no globals)
 // -----------------------------------------------------------------------------
 void formatHealthJson(char* buf, size_t bufSize, bool estop, bool sbusSignalLost,
                       bool sbusHwFailsafe, bool webControlEnabled, bool wifiConnected,
                       bool wifiClientConnected, bool fsReady, unsigned long heapFree,
-                      unsigned long heapMin, long wifiRssi);
+                      unsigned long heapMin, unsigned long heapLargestBlock, long wifiRssi);
