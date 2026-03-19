@@ -171,7 +171,9 @@ inline int xTaskCreatePinnedToCore(void (*)(void*), const char*, unsigned int, v
                                    void*, int) {
     return 0;
 }
-inline size_t heap_caps_get_largest_free_block(uint32_t) { return 0; }
+inline size_t heap_caps_get_largest_free_block(uint32_t) {
+    return 0;
+}
 static const uint32_t MALLOC_CAP_8BIT = 4;
 #endif
 #ifdef ARDUINO
@@ -289,7 +291,6 @@ bool appendPeripheralStatus(char*& pos, size_t& remaining, const char* key, cons
     return true;
 }
 
-
 }  // namespace
 
 void buildStatusJson(char* buffer, size_t bufferSize) {
@@ -367,7 +368,7 @@ void buildStatusJson(char* buffer, size_t bufferSize) {
     enableS2Sound = robotState.cfg_enable_s2_sound;
     enableS3DomeCtrl = robotState.cfg_enable_s3_dome_ctrl;
     audioActive = robotState.audioActive;
-    activeMood  = robotState.activeMood;
+    activeMood = robotState.activeMood;
     taskEXIT_CRITICAL(&robotStateMux);
     uptimeMs = millis();
     heapFree = ESP.getFreeHeap();
@@ -382,7 +383,8 @@ void buildStatusJson(char* buffer, size_t bufferSize) {
         "\"webDriveExpired\":%s,\"failsafeSource\":%d,\"driveSpeed\":%d,"
         "\"driveSteer\":%d,\"speedLimitScale\":%.3f,\"stationary\":%s,"
         "\"failsafeCount\":%lu,\"uptimeMs\":%lu,\"firmwareVersion\":\"%s\","
-        "\"heapFree\":%lu,\"heapMin\":%lu,\"heapLargestBlock\":%lu,\"wifiRssi\":%ld,\"wifiConnected\":%s,"
+        "\"heapFree\":%lu,\"heapMin\":%lu,\"heapLargestBlock\":%lu,\"wifiRssi\":%ld,"
+        "\"wifiConnected\":%s,"
         "\"wifiClientConnected\":%s,"
         "\"littleFsReady\":%s,"
         "\"activeMood\":%u",
@@ -390,9 +392,9 @@ void buildStatusJson(char* buffer, size_t bufferSize) {
         sbusSignalLost ? "true" : "false", sbusHwFailsafe ? "true" : "false",
         webDriveExpired ? "true" : "false", failsafeSource, driveSpeed, driveSteer,
         (double)speedLimitScale, stationary ? "true" : "false", failsafeCount, uptimeMs,
-        PA_FIRMWARE_VERSION, heapFree, heapMin, (unsigned long)heapLargestBlock, wifiRssi, wifiClientConnected ? "true" : "false",
-        wifiClientConnected ? "true" : "false", littleFsReady ? "true" : "false",
-        (unsigned)activeMood);
+        PA_FIRMWARE_VERSION, heapFree, heapMin, (unsigned long)heapLargestBlock, wifiRssi,
+        wifiClientConnected ? "true" : "false", wifiClientConnected ? "true" : "false",
+        littleFsReady ? "true" : "false", (unsigned)activeMood);
 
     // Conditionally append enabled-component keys — disabled components are absent,
     // not emitted as false placeholders (Phase 3 status/dashboard contract).
@@ -512,11 +514,14 @@ void buildStatusJson(char* buffer, size_t bufferSize) {
         }
         if (enableS2Sound) {
             int _n = snprintf(pos, remaining,
-                             ",\"s2Sound\":{\"state\":\"%s\",\"detail\":\"%s\",\"driver\":\"%s\"}",
-                             audioActive ? "playing" : "idle",
-                             audioActive ? "Playback active" : "Ready, no active playback",
-                             audioGetDriverName());
-            if (_n > 0 && _n < (int)remaining) { pos += _n; remaining -= (size_t)_n; }
+                              ",\"s2Sound\":{\"state\":\"%s\",\"detail\":\"%s\",\"driver\":\"%s\"}",
+                              audioActive ? "playing" : "idle",
+                              audioActive ? "Playback active" : "Ready, no active playback",
+                              audioGetDriverName());
+            if (_n > 0 && _n < (int)remaining) {
+                pos += _n;
+                remaining -= (size_t)_n;
+            }
         }
         if (enableS3DomeCtrl) {
             if (domeLastSeenMs == 0) {
@@ -557,8 +562,7 @@ void buildStatusJson(char* buffer, size_t bufferSize) {
             snprintf(dlBuf, sizeof(dlBuf),
                      ",\"dome_link\":{\"state\":\"%s\",\"hb_tx\":%lu,\"hb_rx\":%lu"
                      ",\"last_rx_ms\":%ld}",
-                     dlState, (unsigned long)bodyHbTx, (unsigned long)domeHbRx,
-                     (long)lastRxMs);
+                     dlState, (unsigned long)bodyHbTx, (unsigned long)domeHbRx, (long)lastRxMs);
             appendJsonChunk(pos, remaining, dlBuf);
         }
 
@@ -731,7 +735,8 @@ bool buildRcDiagnosticsJson(char* buffer, size_t bufferSize) {
     // The "raw" key is always present so the client has a stable structure to test
     // for detect-channel availability regardless of which source is active.
     size_t written = strlen(buffer);
-    if (written < 3) return false;
+    if (written < 3)
+        return false;
 
     // Position pos at the last '}' (root close) to overwrite it.
     char* pos = buffer + written - 1;
@@ -797,6 +802,7 @@ static char s_sseLogLines[8][LOG_LINE_MAX];
 
 void eventStreamTask(void*) {
     bool hwmLogged = false;
+    bool hwmUnderLoadLogged = false;
     for (;;) {
         if (!hwmLogged) {
             PA_LOG_INFO("WebEvents", "stack HWM: %u words free",
@@ -813,10 +819,14 @@ void eventStreamTask(void*) {
             if (buildRcDiagnosticsJson(s_sseRcBody, sizeof(s_sseRcBody))) {
                 events.send(s_sseRcBody, "rc", nowMs);
             }
+            if (!hwmUnderLoadLogged) {
+                PA_LOG_INFO("WebEvents", "stack HWM under SSE load: %u words free",
+                            (unsigned)uxTaskGetStackHighWaterMark(NULL));
+                hwmUnderLoadLogged = true;
+            }
 
             size_t linesCopied = 0;
-            s_lastLogSent = copyNewLogLinesSince(s_lastLogSent, s_sseLogLines, 8,
-                                                  &linesCopied);
+            s_lastLogSent = copyNewLogLinesSince(s_lastLogSent, s_sseLogLines, 8, &linesCopied);
             for (size_t i = 0; i < linesCopied; ++i) {
                 events.send(s_sseLogLines[i], "log", nowMs);
             }
@@ -833,21 +843,9 @@ void startHttpServerOnce() {
 
     if (!routesRegistered) {
         events.onConnect([](AsyncEventSourceClient* client) {
-            // Reuse the shared SSE buffers — same Core 0, no concurrency risk.
-            uint32_t nowMs = millis();
-            buildStatusJson(s_sseStatusBody, sizeof(s_sseStatusBody));
-            client->send(s_sseStatusBody, "status", nowMs);
-            if (buildRcDiagnosticsJson(s_sseRcBody, sizeof(s_sseRcBody))) {
-                client->send(s_sseRcBody, "rc", nowMs);
-            }
-            // Backfill recent log history immediately so the browser console
-            // is populated without waiting for the next 1 Hz periodic tick.
-            // Pass lastSent=0 to get all lines currently in the ring buffer.
-            size_t backfillCopied = 0;
-            copyNewLogLinesSince(0, s_sseLogLines, 8, &backfillCopied);
-            for (size_t i = 0; i < backfillCopied; ++i) {
-                client->send(s_sseLogLines[i], "log", nowMs);
-            }
+            // Keep AsyncTCP callback light. Heavy JSON/log formatting runs in
+            // eventStreamTask on Core 0 to avoid async_tcp stack pressure.
+            (void)client;
         });
         server.addHandler(&events);
 
