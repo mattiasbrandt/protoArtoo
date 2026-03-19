@@ -134,6 +134,15 @@ Before marking complete (as applicable):
 3. `pio check`
 4. Hardware checks for hardware-touching behavior
 
+**Upload gate:** `pio test -e native` MUST pass and all tests must be green before
+issuing any `upload` or `uploadfs` command. A compile-only build does not qualify
+as a pre-upload verification step.
+
+**JSON response test rule:** Any function that builds a JSON API response — whether
+via `snprintf` into a fixed buffer or via `JsonDocument` — MUST have a corresponding
+native test covering the typical case and confirming the serialized output fits within
+its intended size budget.
+
 Always classify verification status explicitly:
 
 - `bench-tested`

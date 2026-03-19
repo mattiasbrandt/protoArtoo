@@ -176,6 +176,14 @@ are defined in `AGENTS.md` § "Execution Model". Follow those rules as-is.
   - `pio test -e native` passes for all logic tests
   - `pio check` has no high/medium findings
   - On-device verification for hardware-touching changes
+- **Upload gate:** `pio test -e native` MUST pass and all tests must be green before
+  issuing any `upload` or `uploadfs` command. A compile-only build does not qualify
+  as a pre-upload verification step. A compile-only verification note in a commit
+  message does not satisfy this gate.
+- **JSON response test rule:** Any function that builds a JSON API response — whether
+  via `snprintf` into a fixed buffer or via `JsonDocument` — MUST have a corresponding
+  native test covering the typical case and confirming the serialized output fits
+  within its intended size budget.
 - For every feature, test, and finding, explicitly classify verification as one of:
   - `bench-tested` — can be verified with the ESP32 alone over USB/WiFi at the current bench stage
   - `full-hardware-required` — needs the Artoo PCB/peripherals connected and powered
@@ -430,7 +438,11 @@ If anything unexpected happens (test failures, build errors, behavior regression
 - **Core assignment**: Core 1 = real-time (SBUS, Drive, DomeLink, Audio, Servo); Core 0 = WiFi, web, OTA.
 - **Shared state**: ALL reads AND writes to `RobotState` fields use `portMUX` critical sections.
 - **Queues**: Use timeout 0 for non-blocking sends from real-time tasks. Never use `portMAX_DELAY` in a control loop.
-- **No dynamic allocation after setup()**: All buffers static. No `new`/`malloc` in task loops.
+- **No dynamic allocation after setup()**: All buffers static. No `new`/`malloc` in
+  Core 1 real-time task loops (DriveTask, SBUSTask, AudioTask, DomeLinkTask, ServoTask).
+  Core 0 web handlers MAY use `JsonDocument` (ArduinoJson 7) for request deserialization
+  and response building; allocation is temporary, per-request, and bounded.
+  `api_rc.cpp` already establishes this pattern for POST body deserialization.
 - **Stack sizing**: Measure actual high-water mark; add 25% headroom.
 - **TWDT**: Only `DriveTask` is registered. If it hangs, chip resets. On reboot: `estop = true`.
 

@@ -562,12 +562,182 @@ Reference: `tasks/phase3_hardware_validation_deferral.md`
   - Nav active button restored with compact sizing (all 10 pages on one line).
   - Setup Hardware Components one-per-row layout (RX IN/OUT, SERIAL COMMS sections).
 
+- [ ] T19 — Config API JSON refactor: ConfigSnapshot + ArduinoJson streaming
+  - **Background:** `buildConfigJson` in `src/web/api_config.cpp` uses a 55-argument
+    `snprintf` into a 2048-byte static buffer. Buffer sizing is manual and has broken
+    production twice. The function reads `robotState` under `portMUX` internally, coupling
+    it to FreeRTOS and making it structurally untestable. `ArduinoJson@7.4.3` is already
+    pinned and already used in `api_rc.cpp` for POST deserialization; not using it for
+    GET response building is the wrong tool on the wrong side.
+  - **Design:**
+    - Define `struct ConfigSnapshot` in `include/api_config_snapshot.h` — all the fields
+      currently copied as locals inside `buildConfigJson` promoted to a named struct.
+    - `void captureConfigSnapshot(ConfigSnapshot* out)` — takes the `portMUX` critical
+      section, copies `robotState.cfg_*` fields into the snapshot. Defined in
+      `src/web/api_config.cpp` (requires FreeRTOS; not in the native build).
+    - `bool populateConfigJson(JsonDocument& doc, const ConfigSnapshot& snap)` — pure
+      function with no global reads; builds the ArduinoJson document field by field.
+      Declared in `include/api_config_snapshot.h`, defined in `src/web/api_config.cpp`.
+    - RC binding strings still use `formatRcBindingConfig` / `triggerBindingToUiString`
+      into temporary 48/96-byte char buffers before being assigned into the doc; failure
+      returns false (→ 500) unchanged.
+    - GET handler: `captureConfigSnapshot(&snap)` → `JsonDocument doc` →
+      `populateConfigJson(doc, snap)` → `req->beginResponseStream("application/json")`
+      → `serializeJson(doc, *stream)` → `req->send(stream)`.
+    - Static `configJsonBuf[2048]` removed — no buffer, no sizing problem.
+  - **Heap allocation note:** `JsonDocument` heap-allocates internally. This is
+    acceptable for Core 0 web handlers — already the pattern in `api_rc.cpp` for POST
+    deserialization. The "no dynamic allocation after `setup()`" rule applies to Core 1
+    real-time tasks. Clarified explicitly in `CLAUDE.md` as part of T23.
+  - **Files:**
+    - `include/api_config_snapshot.h` — new: `ConfigSnapshot` struct +
+      `populateConfigJson` declaration
+    - `src/web/api_config.cpp` — `captureConfigSnapshot` + `populateConfigJson`
+      implementation + updated GET handler; add `#include <ArduinoJson.h>`
+  - **Acceptance criteria:**
+    - `pio run -e protoArtoo` compiles cleanly; `configJsonBuf` gone from BSS
+    - `GET /api/config` returns all fields present in the old response
+    - POST handler, NVS save/load, and all validation paths are untouched
+    - `pio test -e native` passes (T20 tests cover `populateConfigJson` directly)
+  - **Verification classification:** `bench-tested`
+
+- [ ] T20 — Native tests: populateConfigJson coverage and worst-case size guard
+  - **Background:** Zero test coverage exists for the config JSON response shape.
+    T19 exposes `populateConfigJson` as a testable function. These tests create a
+    permanent guard against the "add a field, silently break the response" class of
+    regressions that has already recurred.
+  - **Test infrastructure:** `populateConfigJson` is defined in `api_config.cpp`.
+    Add `src/web/api_config.cpp` to `build_src_filter` in `[env:native]`, providing
+    any required FreeRTOS / Arduino stubs (e.g. `taskENTER_CRITICAL` as no-ops,
+    `robotState` / `robotStateMux` as extern-linked test stubs). Test setup complexity
+    does not constrain the design; we sort the plumbing to match the architecture.
+  - **Test suite:** `test/test_native/test_api_config_json/test_api_config_json.cpp`
+  - **Test cases:**
+    1. `test_populateConfigJson_typical_valid_json` — default `ConfigSnapshot`;
+       serialize to `char[2048]`; assert `n > 0 && n < 2048`; assert output
+       starts `{` and ends `}`.
+    2. `test_populateConfigJson_worst_case_fits_buffer` — maximally large snapshot:
+       all `marcduinoPayload` fields at 15 chars, SBUS2 ch18 bindings with extreme
+       calibration values, `rcInputMode = standard_pwm`, all booleans false,
+       `logLevel=3`, `webDriveTimeoutMs=UINT32_MAX`; serialize to `char[2048]`;
+       assert `n < 2048`.
+    3. `test_populateConfigJson_expected_keys_present` — spot-check a representative
+       cross-section of key names via `strstr` on the serialized output: at minimum
+       `speedLimitMax`, `rcInputMode`, `enableArm1`, `arm1Type`, `domeNeutralUs`,
+       `rcPwmDriveSpeed`, `rcSbusDriveSpeed`, `rcArm1`, `rcFree0`, `logLevel`.
+    4. `test_populateConfigJson_disabled_trigger_binding_serializes` — all trigger
+       slots set to `disabledRcTriggerBinding()`; assert returns true and output
+       is valid JSON.
+    5. `test_populateConfigJson_overflow_is_measurable` — serialize a fully populated
+       snapshot to a deliberately small `char[64]`; assert `serializeJson` returns a
+       length > 64, proving silent truncation from the old `snprintf` approach was a
+       real risk.
+  - **Acceptance criteria:**
+    - `pio test -e native` passes with the new suite included
+    - All 5 test cases pass; total native test count increases accordingly
+  - **Verification classification:** `bench-tested` (native host execution, no hardware)
+
+- [ ] T21 — Apply same snapshot + ArduinoJson pattern to buildRcDiagnosticsJson
+  - **Background:** `buildRcDiagnosticsJson` in `src/web/web_server.cpp` has the
+    identical structural problem: static `rcBuf[3072]`, hand-sized from a live
+    measurement, `snprintf`-based, not natively testable. The RC diagnostics JSON
+    reaches ~2570 bytes in dual_sbus mode — uncomfortably close to the ceiling for a
+    function that grows as RC mapping evolves.
+  - **Design:** mirror T19 exactly:
+    - `struct RcDiagnosticsSnapshot` in `include/rc_diagnostics_snapshot.h`
+    - `void captureRcDiagnosticsSnapshot(RcDiagnosticsSnapshot* out)` — FreeRTOS-gated,
+      defined in `src/web/web_server.cpp`
+    - `bool populateRcDiagnosticsJson(JsonDocument& doc, const RcDiagnosticsSnapshot& snap)`
+      — pure function, defined in `src/web/web_server.cpp`, declared in the header
+    - GET handler in `api_rc.cpp`: snapshot → doc → stream; `rcBuf` removed
+    - `buildRcDiagnosticsJson` declaration in `include/web_server.h` removed
+  - **Files:**
+    - `include/rc_diagnostics_snapshot.h` — new: struct + declaration
+    - `src/web/web_server.cpp` — replace `buildRcDiagnosticsJson`
+    - `src/web/api_rc.cpp` — update GET handler
+    - `include/web_server.h` — remove old declaration, add new ones
+  - **Native tests:**
+    - `test_populateRcDiagnosticsJson_typical_valid` — default snapshot; valid JSON
+    - `test_populateRcDiagnosticsJson_dual_sbus_fits_buffer` — dual_sbus mode with all
+      channels populated; serialize to `char[3072]`; assert `n < 3072`
+    - Add `src/web/web_server.cpp` to `[env:native]` `build_src_filter` as needed
+  - **Acceptance criteria:**
+    - `pio run -e protoArtoo` compiles; `rcBuf` gone from BSS
+    - `GET /api/rc` response is identical to pre-refactor output
+    - `pio test -e native` passes including the two new RC tests
+  - **Verification classification:** `bench-tested`
+
+- [ ] T22 — Grouped /api/config JSON schema (deferred — Phase 5 candidate)
+  - **Background:** The flat namespace conflates drive config, RC bindings, component
+    toggles, dome params, and system settings into one undifferentiated object. A
+    grouped schema is cleaner to extend and easier to consume on the JS side.
+  - **Why deferred:** Requires migrating `setup.js`, `rc.js`, `drive.js`, and possibly
+    `dome.js` to use nested key paths. After T19 the firmware change is trivial
+    (`doc["rc"]["pwm"]["driveSpeed"] = ...`); the JS migration carries real regression
+    risk and warrants its own scoped task with full acceptance testing.
+  - **Precondition:** T19 must be complete.
+  - **Proposed schema sketch:**
+    ```json
+    {
+      "drive":      { "speedLimitMax", "webDriveTimeoutMs", "ch8ModeLock", "stationary" },
+      "rc":         { "inputMode", "pwm": { ... }, "sbus": { ... }, "triggers": { ... } },
+      "components": { "arm1": { "enabled", "type" }, "dome": { "enabled" }, ... },
+      "dome":       { "neutralUs", "minPulseUs", "maxPulseUs", "speedLimitPct" },
+      "system":     { "logLevel" }
+    }
+    ```
+  - **When actioned:** update `docs/goal.md §9`; migrate all consuming JS; update
+    native tests for new schema shape.
+  - **Action:** move to `tasks/phase5-tasks.md` when Phase 5 is scoped; do not
+    implement in Phase 4 unless all T11/T12 carryover items are resolved and
+    explicit capacity exists.
+  - **Verification classification:** `bench-tested`
+
+- [ ] T23 — Upload gate: pio test required before upload; fix silent JS error catch
+  - **Background:** AGENTS.md / CLAUDE.md advise running `pio test -e native` before
+    marking complete but this is not enforced. The `buildConfigJson` bug reached the
+    device because the coverage gap went undetected and no gate blocked the upload.
+    Two root causes: (1) no test existed for `buildConfigJson`, (2) no process rule
+    prevented uploading with untested code.
+  - **AGENTS.md changes (§ Verification and Reporting):**
+    - Upload gate: "`pio test -e native` MUST pass and all tests must be green before
+      issuing any `upload` or `uploadfs` command. A compile-only build does not qualify
+      as a pre-upload verification step."
+    - JSON test rule: "Any function that builds a JSON API response — whether via
+      `snprintf` into a fixed buffer or via `JsonDocument` — MUST have a corresponding
+      native test covering the typical case and confirming the serialized output fits
+      within its intended size budget."
+  - **CLAUDE.md changes:**
+    - Add identical upload gate to `§ Verification Before "Done"`.
+    - Clarify heap allocation scope under `§ Engineering Best Practices`: "The 'no
+      dynamic memory allocation after `setup()`' rule applies to Core 1 real-time tasks
+      (DriveTask, SBUSTask, AudioTask, DomeLinkTask, ServoTask). Core 0 web handlers MAY
+      use `JsonDocument` (ArduinoJson 7) for request deserialization and response
+      building; allocation is temporary, per-request, and bounded. `api_rc.cpp` already
+      establishes this pattern for POST bodies."
+  - **setup.js fix:**
+    - `loadFeatures` catch block discards the error silently (`catch (_error)`).
+      Change to `catch (error)` and add
+      `console.error("[setup] loadFeatures failed:", error)` before setting the
+      user-facing text. The on-screen message stays clean; browser devtools shows the
+      actual HTTP status or JS exception for diagnosis.
+    - Audit all other `catch (_error)` blocks in `setup.js`; apply the same pattern
+      to any that cover a non-trivial operation with a visible failure state.
+  - **Acceptance criteria:**
+    - AGENTS.md upload gate and JSON test rule present and unambiguous
+    - CLAUDE.md upload gate and heap allocation clarification present
+    - `setup.js` `loadFeatures` catch logs to `console.error`
+    - `pio run -e protoArtoo` + `pio test -e native` pass
+  - **Verification classification:** `bench-tested`
+
 ## Exit Criteria
 
 - [ ] Phase 3 carryover T11 and T12 are complete, or formally re-deferred with updated
   closure checklists
 - [x] T13 status.md NVS claim reconciled — stale doc confirmed; all RC bindings NVS-backed
 - [x] Bench development stage objectives validated and recorded (T01–T09, T13–T18 complete)
+- [ ] API JSON serialization refactor complete: T19, T20, T21, T23 bench-verified;
+  T22 formally deferred to Phase 5 with rationale recorded above
 - [x] Body-link heartbeat/status visible through dashboard/status system (Serial Status card in Setup)
 - [ ] Dome-originated commands trigger body audio/arms correctly
 - [ ] Audio works from all intended sources on hardware

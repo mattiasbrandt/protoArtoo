@@ -106,7 +106,8 @@
       const response = await fetch("/api/config", { cache: "no-store" });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       renderFeatures(await response.json());
-    } catch (_error) {
+    } catch (error) {
+      console.error("[setup] loadFeatures failed:", error);
       if (featureFeedback) {
         featureFeedback.textContent = "Failed to load component settings";
         featureFeedback.className = "feedback error";
@@ -302,7 +303,8 @@
         serialStatusLine.textContent = `Updated ${new Date().toLocaleTimeString()}`;
         serialStatusLine.className = "feedback success";
       }
-    } catch (_e) {
+    } catch (e) {
+      console.warn("[setup] loadSerialStatus failed:", e);
       if (serialStatusLine) {
         serialStatusLine.textContent = "Status unavailable";
         serialStatusLine.className = "feedback error";
