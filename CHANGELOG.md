@@ -13,6 +13,44 @@ Every semantic version release belongs here:
 - minor releases for new backwards-compatible features
 - major releases for breaking changes
 
+## [Unreleased]
+
+### Added
+- **Heap fragmentation monitoring** — `heap_caps_get_largest_free_block(MALLOC_CAP_8BIT)`
+  tracked in `SafetyMonitorTask` alongside `getFreeHeap()`; fragmentation ratio logged
+  every 6 seconds; `heapLargestBlock` field added to SSE status JSON and `/api/health`
+- **`PA_ENABLE_STA_WIFI` build flag** — controls whether WiFi STA client is compiled in.
+  New `protoArtoo_prod` env uses `PA_ENABLE_STA_WIFI=0` (AP-only field deployment,
+  saves ~7 KB steady-state heap and ~18 KB boot watermark vs STA+AP mode)
+
+### Changed
+- **Platform upgraded: `espressif32@5.2.0` → `6.13.0`** — arduino-esp32 2.0.5 → 2.0.17
+  (IDF 4.4.x → 4.4.7, esptool 4.2.1 → 4.11.0). Same 2.x API family — zero source
+  changes required. Benefit: 12 patch releases of arduino-esp32 bug fixes, more stable
+  WiFi stack, +7 KB heap minimum watermark at boot.
+- **AsyncWebServer and AsyncTCP migrated from abandoned `me-no-dev/` namespace to
+  maintained `ESP32Async/` fork** (`ESPAsyncWebServer@3.10.3`, `AsyncTCP@3.4.10`).
+  The `me-no-dev` repos have had no activity since 2022. The `ESP32Async` fork (formerly
+  `mathieucarbou/`) carries confirmed SSE memory leak fixes, proper TCP buffer teardown,
+  and `SSE_MAX_QUEUED_MESSAGES` queue cap support.
+- **`CONFIG_ASYNC_TCP_STACK_SIZE=4096`** in build_flags — reduces AsyncTCP internal
+  task stack from 16 KB default to 4 KB, saving 12 KB runtime heap
+- **`SSE_MAX_QUEUED_MESSAGES=8`** in build_flags — caps per-client SSE outbox to
+  prevent unbounded heap growth when browser tabs fall behind
+- **`PA_LOG_LEVEL` lowered from 3 (debug) to 2 (info)** in production build — saves
+  4 KB BSS (debug ring buffer 6.1 KB → 2.0 KB)
+- **`board_upload.before_reset = default_reset`** replaces old `upload_flags = --before
+  no_reset_no_sync`. PlatformIO appends `upload_flags` after the `write_flash` subcommand
+  where `--before` is ignored by esptool 4.x; `board_upload.*` inserts it correctly.
+  DTR/RTS auto-reset confirmed working on this USB-serial adapter when ESP32 is unseated.
+- **`StaticJsonDocument<64>` replaced with `JsonDocument`** in `api_rc.cpp` — removes
+  ArduinoJson v7 deprecation warning
+
+### Fixed
+- **Heap monitoring blind spot** — `safety.cpp` and SSE status previously reported only
+  total free bytes; fragmentation could drive the largest contiguous block below WiFi's
+  minimum needs while total free looked healthy. `heapLargestBlock` closes this gap.
+
 ## [0.3.0] - 2026-03-16
 
 ### Added

@@ -193,14 +193,13 @@ Tracked as T11 and T12 in `tasks/phase4-tasks.md`.
 
 ## Dependency State
 
-Last audited: 2026-03-14
+Last audited: 2026-03-19
 
 | Dependency | Version | Notes |
 |---|---|---|
-| `espressif32` | `6.13.0` | Arduino core 2.0.17 / IDF 5.5.3 / esptool 4.11.0 |
-| `ESP32Async/ESPAsyncWebServer` | `3.6.0` | Canonical namespace (was `me-no-dev/`) |
-| `ESP32Async/AsyncTCP` | `3.3.2` | Canonical namespace (was `me-no-dev/`) |
+| `espressif32` | `6.13.0` | Arduino core 2.0.17 / IDF 4.4.7 / esptool 4.11.0. Upgraded from 5.2.0 (arduino-esp32 2.0.5 / IDF 4.4.x / esptool 4.2.1): 12 patch releases of bug fixes, +7 KB heap watermark improvement at boot. |
+| `ESP32Async/ESPAsyncWebServer` | `3.10.3` | Migrated from abandoned `me-no-dev/` namespace to maintained `ESP32Async/` fork. Fixes SSE memory leaks, adds `SSE_MAX_QUEUED_MESSAGES` queue cap. |
+| `ESP32Async/AsyncTCP` | `3.4.10` | Same namespace migration as WebServer. `CONFIG_ASYNC_TCP_STACK_SIZE=4096` set in build_flags (saves 12 KB heap vs 16 KB default). |
 | `bblanchon/ArduinoJson` | `7.4.3` | Pinned |
 
-All `lib_deps` explicitly pinned. `ESP32Servo` removed — never imported; servo
-PWM runs through native LEDC channels.
+All `lib_deps` explicitly pinned. `ESP32Servo` removed — never imported; servo PWM runs through native LEDC channels. `PA_LOG_LEVEL` reduced from 3 (debug) to 2 (info) in production build, saving 4 KB BSS.

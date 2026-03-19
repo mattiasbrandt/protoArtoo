@@ -25,7 +25,7 @@ These rules define how an AI coding agent should plan, execute, verify, communic
 ### What protoArtoo Is
 
 - **Target:** Artoo Controller PCB — ESP32 (WROOM-32 or D1 Mini, unconfirmed)
-- **Framework:** Arduino on ESP32 via PlatformIO (`espressif32@5.2.0`)
+- **Framework:** Arduino on ESP32 via PlatformIO (`espressif32@6.13.0`, arduino-esp32 2.0.17, IDF 4.4.7)
 - **Architecture:** FreeRTOS tasks split across dual cores (Core 0: WiFi/web; Core 1: real-time control)
 - **Drive:** Hoverboard motors via Gen2.x 8-byte UART frames at 50 Hz (115200 baud, ESP32 UART1 / PCB S1)
 - **RC input:** Runtime-selectable receiver modes:
@@ -70,6 +70,15 @@ All rules apply unconditionally to every code change in this repository.
 
 - Default USB upload port (ESP32 unseated): `/dev/ttyUSB0` — never use `/dev/ttyS0`.
 - USB flash: `pio run -e protoArtoo --target upload --upload-port /dev/ttyUSB0`
+  - When unseated, DTR/RTS auto-reset works reliably — no BOOT button press required.
+  - `protoArtoo` env uses `board_upload.before_reset = default_reset` for this.
+- **esptool flag placement (espressif32 6.x / esptool 4.x):** Set `board_upload.before_reset`
+  in platformio.ini — never `upload_flags = --before ...`. PlatformIO appends `upload_flags`
+  after the `write_flash` subcommand; `--before` at that position is ignored by esptool 4.x.
+  The builder reads `board_upload.*` and inserts flags in the correct pre-subcommand position.
+- **AP-only build OTA (`protoArtoo_prod`):** accessible at `192.168.4.1` when connected to
+  the robot's open AP (`protoArtoo` SSID, no password). Use `--upload-port 192.168.4.1`.
+
 - **OTA firmware (preferred in-PCB path):** `pio run -e protoArtoo_ota --target upload`
 - **OTA filesystem:** `pio run -e protoArtoo_ota --target uploadfs`
 - `protoArtoo_ota` defaults to `upload_port = 10.0.0.22` (STA client IP); override with `--upload-port <ip>`
@@ -97,7 +106,7 @@ python3 tools/serial_monitor.py --stream
 ### Build Commands (Quick Reference)
 ```bash
 pio run -e protoArtoo           # compile firmware
-pio run -e protoArtoo -t upload # USB flash (ESP32 unseated from PCB, /dev/ttyUSB0)
+pio run -e protoArtoo -t upload # USB flash (ESP32 unseated; auto-reset, no button needed)
 pio run -e protoArtoo_ota -t upload    # OTA firmware (in-PCB, 10.0.0.22)
 pio run -e protoArtoo_ota -t uploadfs  # OTA filesystem/LittleFS (in-PCB, 10.0.0.22)
 pio test -e native              # fast logic tests (no hardware)
@@ -395,7 +404,7 @@ If anything unexpected happens (test failures, build errors, behavior regression
 - Pinned library versions in `platformio.ini` — no `^` or `~` ranges.
 - **No Reeltwo on the body.** It belongs in the dome only.
 - Prefer Arduino standard libraries (`Preferences`, `LittleFS`, `ArduinoOTA`) over third-party alternatives.
-- Current approved dependencies: `ESPAsyncWebServer@3.6.0`, `AsyncTCP@3.3.2`, `ArduinoJson`, `ESP32Servo`.
+- Current approved dependencies: `ESP32Async/ESPAsyncWebServer@3.10.3`, `ESP32Async/AsyncTCP@3.4.10`, `ArduinoJson@7.4.3`. (`ESP32Servo` removed — servo PWM uses native LEDC; `me-no-dev/` namespace abandoned, replaced by `ESP32Async/` maintained fork.)
 
 ### 5. Security and Privacy
 - Never introduce WiFi credentials into committed code — use `src/secrets.h` (gitignored).

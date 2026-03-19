@@ -137,11 +137,19 @@ protoArtoo supports all three receiver modes shown above:
 > this pin during the esptool reset-into-bootloader sequence and prevent the
 > bootloader from entering download mode. USB upload will fail or time out.
 >
-> **Workaround for initial flash:** unseat the ESP32 from the PCB socket, flash
-> via USB, then reseat.
-> **Standard in-PCB flash path:** use OTA (`--upload-port 192.168.4.1`) once the
-> firmware is running. OTA bypasses bootloader entry entirely.
-> See `tasks/lessons.md` for the full write-up.
+> **Unseated ESP32 — auto-reset works:** when the ESP32 is removed from the PCB
+> socket there is no receiver load on GPIO 15. DTR/RTS auto-reset enters bootloader
+> mode reliably — no BOOT button press required.
+> `pio run -e protoArtoo --target upload --upload-port /dev/ttyUSB0`
+> (`protoArtoo` env uses `board_upload.before_reset = default_reset`.)
+>
+> **Seated ESP32 — OTA only:** use `pio run -e protoArtoo_ota --target upload`
+> (defaults to STA IP `10.0.0.22`). OTA bypasses bootloader entry entirely.
+> For AP-only builds (`protoArtoo_prod`), connect to the `protoArtoo` open AP
+> and use `--upload-port 192.168.4.1`.
+>
+> **esptool flag placement:** always use `board_upload.before_reset` in platformio.ini,
+> never `upload_flags = --before ...`. See `tasks/lessons.md` for the full write-up.
 
 In SBUS modes, CH3-CH6 (GPIO 2, 4, 12, 27) are idle PWM-capable inputs that become active again
 when `standard_pwm` mode is selected:

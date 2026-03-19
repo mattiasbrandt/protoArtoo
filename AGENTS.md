@@ -95,10 +95,17 @@ Clarification policy:
 
 ## Flashing and Monitoring
 
-### USB flash (ESP32 must be unseated from Artoo PCB)
+### USB flash (ESP32 unseated — auto-reset works, no button needed)
 ```bash
 pio run -e protoArtoo --target upload --upload-port /dev/ttyUSB0
 ```
+- DTR/RTS auto-reset works reliably when the ESP32 is unseated — no BOOT button press
+  required. The `protoArtoo` env uses `board_upload.before_reset = default_reset`.
+- **esptool flag placement:** Always use `board_upload.before_reset = <value>` in
+  platformio.ini, never `upload_flags = --before <value>`. PlatformIO appends
+  `upload_flags` after the `write_flash` subcommand; `--before` there is ignored
+  by esptool 4.x. Full write-up in `tasks/lessons.md`.
+
 > ⚠️ **Seated-PCB USB upload fails.** GPIO 15 (`PIN_SBUS1_RX`) is a strapping pin.
 > When the ESP32 is seated in the Artoo Controller PCB with a SBUS receiver attached,
 > the receiver can prevent the bootloader from entering download mode — USB upload

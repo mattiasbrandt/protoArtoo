@@ -989,15 +989,13 @@ examples and should not override those canonical files.
 
 ### 7.1 Framework & Dependencies
 
-**Arduino framework on ESP32** via PlatformIO. Versions pinned to match dome firmware.
+**Arduino framework on ESP32** via PlatformIO. All versions explicitly pinned — no `^` or `~` ranges.
 
 | Library | Version | Notes |
 |---|---|---|
-| `me-no-dev/ESPAsyncWebServer` | `3.5.1` | Match dome |
-| `me-no-dev/AsyncTCP` | `3.3.2` | Match dome |
-| `bblanchon/ArduinoJson` | latest stable | |
-| `bolderflight/sbus` | latest stable | |
-| `madhephaestus/ESP32Servo` | latest stable | |
+| `ESP32Async/ESPAsyncWebServer` | `3.10.3` | Maintained fork of abandoned `me-no-dev/` — SSE leak fixes, `SSE_MAX_QUEUED_MESSAGES` support |
+| `ESP32Async/AsyncTCP` | `3.4.10` | Maintained fork of abandoned `me-no-dev/` — `CONFIG_ASYNC_TCP_STACK_SIZE=4096` saves 12 KB heap |
+| `bblanchon/ArduinoJson` | `7.4.3` | Pinned |
 | Arduino `Preferences` | — | NVS |
 | Arduino `LittleFS` | — | Web assets |
 | Arduino `ArduinoOTA` | — | OTA |
@@ -1006,7 +1004,7 @@ examples and should not override those canonical files.
 
 ```ini
 [env:protoArtoo]
-platform = espressif32@5.2.0
+platform = espressif32@6.13.0
 board = esp32dev
 framework = arduino
 build_flags =
@@ -1820,7 +1818,7 @@ void DriveTask(void* pvParams) {
 ; =============================================================================
 
 [env:protoArtoo]
-platform    = espressif32@5.2.0          ; pin platform version — never use @latest
+platform    = espressif32@6.13.0          ; pin platform version — never use @latest
 board       = esp32dev
 framework   = arduino
 monitor_speed = 115200
@@ -1855,11 +1853,9 @@ test_build_src = true
 test_ignore    = test_native
 
 lib_deps =
-    me-no-dev/ESPAsyncWebServer @ 3.5.1  ; pin exact versions — no ^ or ~
-    me-no-dev/AsyncTCP          @ 3.3.2
-    bblanchon/ArduinoJson
-    bolderflight/sbus
-    madhephaestus/ESP32Servo
+    ESP32Async/ESPAsyncWebServer @ 3.10.3  ; maintained fork — me-no-dev/ abandoned
+    ESP32Async/AsyncTCP          @ 3.4.10  ; maintained fork — me-no-dev/ abandoned
+    bblanchon/ArduinoJson        @ 7.4.3   ; pin exact versions — no ^ or ~
 
 ; =============================================================================
 [env:native]
