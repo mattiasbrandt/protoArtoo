@@ -19,9 +19,11 @@ Every semantic version release belongs here:
 - **Heap fragmentation monitoring** — `heap_caps_get_largest_free_block(MALLOC_CAP_8BIT)`
   tracked in `SafetyMonitorTask` alongside `getFreeHeap()`; fragmentation ratio logged
   every 6 seconds; `heapLargestBlock` field added to SSE status JSON and `/api/health`
-- **`PA_ENABLE_STA_WIFI` build flag** — controls whether WiFi STA client is compiled in.
-  New `protoArtoo_prod` env uses `PA_ENABLE_STA_WIFI=0` (AP-only field deployment,
-  saves ~7 KB steady-state heap and ~18 KB boot watermark vs STA+AP mode)
+- **`PA_ENABLE_STA_WIFI` build flag and `protoArtoo_prod` env** — build-time WiFi mode
+  selection. `PA_ENABLE_STA_WIFI=1` (default): WiFi client mode only, connects to an
+  existing network via credentials in `src/secrets.h`. `PA_ENABLE_STA_WIFI=0`
+  (`protoArtoo_prod`): hotspot mode only. Saves ~7 KB steady-state heap and ~18 KB
+  boot watermark vs the previous AP+client simultaneous design.
 
 ### Changed
 - **Platform upgraded: `espressif32@5.2.0` → `6.13.0`** — arduino-esp32 2.0.5 → 2.0.17
@@ -45,6 +47,16 @@ Every semantic version release belongs here:
   DTR/RTS auto-reset confirmed working on this USB-serial adapter when ESP32 is unseated.
 - **`StaticJsonDocument<64>` replaced with `JsonDocument`** in `api_rc.cpp` — removes
   ArduinoJson v7 deprecation warning
+- **WiFi mode is now a build-time choice — AP fallback removed** — previous design ran
+  hotspot and WiFi client simultaneously and toggled the hotspot off/on based on client
+  connection state. This was unnecessary attack surface: an AP running alongside an
+  active WiFi client connection has no recovery value (no config UI to fix a broken
+  connection). New design: `PA_ENABLE_STA_WIFI` is the sole compile-time decision;
+  the two modes are mutually exclusive. Removed: `apFallbackMode`, `hasStaConfig()`,
+  `apPassword()`, `staSsid()`, `staPassword()` credential helpers, `WIFI_AP_STA` mode,
+  all AP start/stop event logic. Added: `#error` compile guard if
+  `PA_ENABLE_STA_WIFI=1` but credentials are missing from `secrets.h`.
+
 
 ### Fixed
 - **Heap monitoring blind spot** — `safety.cpp` and SSE status previously reported only

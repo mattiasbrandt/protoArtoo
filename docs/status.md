@@ -45,7 +45,7 @@ from git tag + build timestamp (e.g. `v0.2.0-1-g23008b7-20260315-013914`).
 ### Phase 2 (Web / OTA baseline)
 
 - PlatformIO firmware flashing and LittleFS uploads working on bench setup
-- AP + STA WiFi working; AP fallback clearly logged when STA is configured
+- WiFi working; build-time mode selection: hotspot (AP) or client — mutually exclusive
 - Home, Setup, WiFi, Firmware, and Serial pages served from LittleFS
 - Core REST API implemented and bench-tested: `GET /api/status`, `/api/config`,
   `/api/wifi`, `/api/serial`, `/api/health`, `/api/logs`; `POST /api/estop`,

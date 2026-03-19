@@ -61,9 +61,9 @@ The Artoo Controller board from artoo.uk is a custom PCB (v1.1) built around an 
 │  • Drive (hoverboard Gen2.x UART)    │  RX ←── │  • Dome panel servos (PCA9685)         │
 │  • RC input (PWM / single SBUS / dual SBUS) │ 9600 │  • Holoprojectors                      │
 │  • Utility arm servos                │  baud   │  • Logic displays + PSI                │
-│  • Audio module ← SOLE AUDIO        │ slip    │  • WiFi AP+STA                         │
+│  • Audio module ← SOLE AUDIO        │ slip    │  • WiFi (hotspot or client mode)       │
 │  • Dome motor ESC                    │  ring   │  • Async web UI + REST API             │
-│  • WiFi AP+STA                       │         │                                        │
+│  • WiFi (hotspot or client mode)   │         │                                        │
 │  • Async web UI + REST API           │         └────────────────────────────────────────┘
 └──────────────────────────────────────┘
          NOTE: NO MarcDuino Slave board.
@@ -1293,7 +1293,10 @@ The startup order matters. Hoverboard UART must open before WiFi starts (ADC2 co
 7. TWDT init — esp_task_wdt_init(WATCHDOG_TIMEOUT_S, true)
 8. Audio module UART begin — play startup sound if configured
 9. WiFi.onEvent() registered — initAsyncWeb() called ONLY from event callback
-10. WiFi.mode(WIFI_AP_STA) + softAP("protoArtoo", ...) + WiFi.begin(sta_ssid, sta_pass)
+10. WiFi init — build-time choice:
+    PA_ENABLE_STA_WIFI=1: WiFi.mode(WIFI_STA) + WiFi.begin(PA_STA_SSID, PA_STA_PASSWORD)
+    PA_ENABLE_STA_WIFI=0: WiFi.mode(WIFI_AP)  + WiFi.softAP(WIFI_AP_SSID)
+    (Never both active simultaneously — hotspot and client are mutually exclusive)
 11. FreeRTOS tasks launched:
       Core 1: SBUSInputTask, DriveTask, DomeLinkTask, AudioTask, ServoTask
       Core 0: WiFiManagerTask, OTATask
@@ -1304,21 +1307,26 @@ The startup order matters. Hoverboard UART must open before WiFi starts (ADC2 co
 > **Critical:** Step 5 (hoverboard UART2) before step 10 (WiFi). The ESP32 ADC2 is unusable while WiFi is active. UART2 does not conflict with WiFi. Establishing the hoverboard connection early means zero frames are flowing before any other subsystem starts — the droid is in a known-safe state from the first millisecond.
 
 > **Critical:** Step 2 (watchdog reset detection). If the firmware crashed and the TWDT fired, the droid must not silently resume driving. `estop = true` on watchdog reset is a hard requirement — the operator must explicitly clear it via web UI before the droid will accept drive commands again.
-### 7.7 WiFi — AP + STA
+### 7.7 WiFi — build-time mode selection
 
 ```cpp
+// Build-time WiFi mode — mutually exclusive, never both active simultaneously.
+// PA_ENABLE_STA_WIFI=1 (default): WiFi client mode.
+//   Credentials defined at build time in src/secrets.h (gitignored).
+//   Server starts when WiFi connection is established (ARDUINO_EVENT_WIFI_STA_GOT_IP).
+#if PA_ENABLE_STA_WIFI
+WiFi.mode(WIFI_STA);
+WiFi.begin(PA_STA_SSID, PA_STA_PASSWORD);  // compile-time credentials from secrets.h
+// Server starts from ARDUINO_EVENT_WIFI_STA_GOT_IP event
+#else
+// PA_ENABLE_STA_WIFI=0 (protoArtoo_prod): hotspot mode.
+//   Device creates its own access point. No external network needed.
+//   Server starts from ARDUINO_EVENT_WIFI_AP_START event.
+WiFi.mode(WIFI_AP);
+WiFi.softAP(WIFI_AP_SSID);  // SSID: "protoArtoo", IP: 192.168.4.1
+#endif
 // Gate initAsyncWeb() behind WiFi event — avoids tcpip_api_call crashloop
-WiFi.onEvent([](WiFiEvent_t event, WiFiEventInfo_t info) {
-    if (event == ARDUINO_EVENT_WIFI_AP_START ||
-        event == ARDUINO_EVENT_WIFI_STA_CONNECTED) {
-        initAsyncWeb();   // Only here — never directly in setup()
-    }
-});
-WiFi.mode(WIFI_AP_STA);
-WiFi.softAP("protoArtoo", AP_PASSWORD);  // Always on, 192.168.4.1
-// Note: original Artoo firmware uses "Artoo Inventions" / 10.10.10.10
-// protoArtoo uses standard ESP32 AP defaults with project name as SSID
-WiFi.begin(saved_ssid, saved_password);  // STA optional, fails silently
+WiFi.onEvent(handleWiFiEvent);  // registered before WiFi.mode() call
 ```
 
 ### 7.8 Multi-Layer Drive Failsafe
