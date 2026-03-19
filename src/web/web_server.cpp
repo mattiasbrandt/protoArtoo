@@ -31,8 +31,12 @@
 #include "secrets.h"
 #endif
 
-// PA_ENABLE_STA_WIFI defaults to 1 (enabled). Set to 0 in build_flags only for
-// the protoArtoo_prod env (AP-only field deployment).
+// PA_ENABLE_STA_WIFI=1 (default): WiFi client mode — connects to an existing network.
+//   Credentials (PA_STA_SSID, PA_STA_PASSWORD) must be in src/secrets.h.
+//   Server starts when the connection is established.
+// PA_ENABLE_STA_WIFI=0 (protoArtoo_prod): hotspot mode — device creates its own
+//   access point. No external network needed.
+// These are mutually exclusive — never both active simultaneously.
 #ifndef PA_ENABLE_STA_WIFI
 #define PA_ENABLE_STA_WIFI 1
 #endif
@@ -181,7 +185,6 @@ static bool littleFsReady = false;
 static bool routesRegistered = false;
 static bool serverStarted = false;
 static bool eventTaskStarted = false;
-static bool apFallbackMode = false;
 static bool otaTaskStarted = false;
 
 namespace {
@@ -286,40 +289,6 @@ bool appendPeripheralStatus(char*& pos, size_t& remaining, const char* key, cons
     return true;
 }
 
-#if PA_ENABLE_STA_WIFI
-bool hasStaConfig() {
-#if __has_include("secrets.h")
-    return PA_STA_SSID[0] != '\0';
-#else
-    return false;
-#endif
-}
-
-const char* apPassword() {
-#if __has_include("secrets.h")
-    return PA_AP_PASSWORD;
-#else
-    return nullptr;
-#endif
-}
-
-const char* staSsid() {
-#if __has_include("secrets.h")
-    return PA_STA_SSID;
-#else
-    return nullptr;
-#endif
-}
-
-const char* staPassword() {
-#if __has_include("secrets.h")
-    return PA_STA_PASSWORD;
-#else
-    return nullptr;
-#endif
-}
-
-#endif  // PA_ENABLE_STA_WIFI
 
 }  // namespace
 
@@ -935,25 +904,20 @@ void startHttpServerOnce() {
 void handleWiFiEvent(WiFiEvent_t event) {
     switch (event) {
         case ARDUINO_EVENT_WIFI_AP_START:
-            if (apFallbackMode) {
-                PA_LOG_INFO(TAG, "AP fallback started - SSID: %s  IP: %s", WIFI_AP_SSID,
-                            WiFi.softAPIP().toString().c_str());
-            } else {
-                PA_LOG_INFO(TAG, "AP started - SSID: %s  IP: %s", WIFI_AP_SSID,
-                            WiFi.softAPIP().toString().c_str());
-            }
+            PA_LOG_INFO(TAG, "Hotspot started - SSID: %s  IP: %s", WIFI_AP_SSID,
+                        WiFi.softAPIP().toString().c_str());
             startHttpServerOnce();
             break;
 #if PA_ENABLE_STA_WIFI
         case ARDUINO_EVENT_WIFI_STA_START:
-            PA_LOG_INFO(TAG, "WiFi client connect started");
+            PA_LOG_INFO(TAG, "Connecting to WiFi network...");
             break;
         case ARDUINO_EVENT_WIFI_STA_GOT_IP:
-            PA_LOG_INFO(TAG, "WiFi client got IP: %s", WiFi.localIP().toString().c_str());
+            PA_LOG_INFO(TAG, "WiFi connected, IP: %s", WiFi.localIP().toString().c_str());
             startHttpServerOnce();
             break;
         case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
-            PA_LOG_DEBUG(TAG, "WiFi client disconnected");
+            PA_LOG_INFO(TAG, "WiFi connection lost");
             break;
 #endif  // PA_ENABLE_STA_WIFI
         default:
@@ -989,22 +953,22 @@ void webServerInit() {
     }
 
 #if PA_ENABLE_STA_WIFI
-    if (hasStaConfig()) {
-        apFallbackMode = true;
-        WiFi.mode(WIFI_AP_STA);
-        WiFi.softAP(WIFI_AP_SSID, apPassword());
-        WiFi.begin(staSsid(), staPassword());
-        PA_LOG_INFO(TAG, "WiFi bootstrap: AP+WiFi client enabled (AP as fallback)");
-    } else {
-        apFallbackMode = false;
-        WiFi.mode(WIFI_AP);
-        WiFi.softAP(WIFI_AP_SSID);
-        PA_LOG_INFO(TAG, "WiFi bootstrap: AP-only mode");
-    }
+    // Compile-time guard: credentials must be present when WiFi client mode is enabled.
+#if !__has_include("secrets.h")
+#error "PA_ENABLE_STA_WIFI=1 requires src/secrets.h defining PA_STA_SSID and PA_STA_PASSWORD"
+#endif
+#ifndef PA_STA_SSID
+#error "PA_ENABLE_STA_WIFI=1: PA_STA_SSID not defined in secrets.h"
+#endif
+#ifndef PA_STA_PASSWORD
+#error "PA_ENABLE_STA_WIFI=1: PA_STA_PASSWORD not defined in secrets.h"
+#endif
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(PA_STA_SSID, PA_STA_PASSWORD);
+    PA_LOG_INFO(TAG, "WiFi bootstrap: client mode");
 #else
-    apFallbackMode = false;
     WiFi.mode(WIFI_AP);
     WiFi.softAP(WIFI_AP_SSID);
-    PA_LOG_INFO(TAG, "WiFi bootstrap: AP-only (STA disabled at build)");
+    PA_LOG_INFO(TAG, "WiFi bootstrap: hotspot mode");
 #endif  // PA_ENABLE_STA_WIFI
 }
