@@ -57,8 +57,7 @@ void safetyMonitorTask(void* pvParameters) {
         // Log new failsafe triggers
         if (fsCount > lastFailsafeCount) {
             PA_LOG_WARN(TAG, "failsafe triggered — count:%lu source:%d estop:%d sbus:%d hw:%d",
-                        (unsigned long)fsCount, (int)fsSrc, (int)estop, (int)sbusLost,
-                        (int)sbusHw);
+                        (unsigned long)fsCount, (int)fsSrc, (int)estop, (int)sbusLost, (int)sbusHw);
             lastFailsafeCount = fsCount;
         }
 
@@ -86,9 +85,9 @@ void safetyMonitorTask(void* pvParameters) {
         static int periodicCount = 0;
         if (++periodicCount >= 60) {  // ~6 s at 10 Hz
             periodicCount = 0;
-            PA_LOG_INFO(TAG, "heap: free=%lu min=%lu largest=%u frag=%.2f",
-                        (unsigned long)freeHeap, (unsigned long)ESP.getMinFreeHeap(),
-                        (unsigned)largestBlock, (double)fragRatio);
+            PA_LOG_DEBUG(TAG, "heap: free=%lu min=%lu largest=%u frag=%.2f",
+                         (unsigned long)freeHeap, (unsigned long)ESP.getMinFreeHeap(),
+                         (unsigned)largestBlock, (double)fragRatio);
         }
         vTaskDelay(pdMS_TO_TICKS(100));  // 10 Hz
     }
