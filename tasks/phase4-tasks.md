@@ -562,7 +562,13 @@ Reference: `tasks/phase3_hardware_validation_deferral.md`
   - Nav active button restored with compact sizing (all 10 pages on one line).
   - Setup Hardware Components one-per-row layout (RX IN/OUT, SERIAL COMMS sections).
 
-- [ ] T19 — Config API JSON refactor: ConfigSnapshot + ArduinoJson streaming
+- [x] T19 — Config API JSON refactor: ConfigSnapshot + ArduinoJson streaming
+  - **Execution coupling note:** T19 and T20 are coupled and must be executed in the
+    same implementation session. T20 test work depends directly on the `ConfigSnapshot`
+    struct and `populateConfigJson()` introduced by T19.
+  - **Session scope boundary:** keep the T19+T20 session self-contained to
+    `src/web/api_config.cpp`, `include/api_config_snapshot.h`, and the new native
+    test file added by T20.
   - **Background:** `buildConfigJson` in `src/web/api_config.cpp` uses a 55-argument
     `snprintf` into a 2048-byte static buffer. Buffer sizing is manual and has broken
     production twice. The function reads `robotState` under `portMUX` internally, coupling
@@ -595,13 +601,25 @@ Reference: `tasks/phase3_hardware_validation_deferral.md`
     - `src/web/api_config.cpp` — `captureConfigSnapshot` + `populateConfigJson`
       implementation + updated GET handler; add `#include <ArduinoJson.h>`
   - **Acceptance criteria:**
+    - Mandatory post-implementation code review pass completed for T19
+      (focus: hidden regressions, missed edge cases, API parity drift, and code quality concerns)
     - `pio run -e protoArtoo` compiles cleanly; `configJsonBuf` gone from BSS
     - `GET /api/config` returns all fields present in the old response
     - POST handler, NVS save/load, and all validation paths are untouched
     - `pio test -e native` passes (T20 tests cover `populateConfigJson` directly)
   - **Verification classification:** `bench-tested`
+  - **Completed 2026-03-19:** `buildConfigJson` and `configJsonBuf` removed.
+    `captureConfigSnapshot()` + `populateConfigJson()` implemented outside anonymous
+    namespace. Both GET and POST handlers updated to ArduinoJson streaming response.
+    `pio run -e protoArtoo` clean; RAM 19.5% (was 20.6%; 2 KB BSS reclaimed).
 
-- [ ] T20 — Native tests: populateConfigJson coverage and worst-case size guard
+- [x] T20 — Native tests: populateConfigJson coverage and worst-case size guard
+  - **Execution coupling note:** T20 is not a standalone task in practice; execute it
+    immediately after T19 in the same session because its tests require the
+    `ConfigSnapshot` type and `populateConfigJson()` from T19.
+  - **Session scope boundary:** keep T20 within the same self-contained file set:
+    `src/web/api_config.cpp`, `include/api_config_snapshot.h`, and
+    `test/test_native/test_api_config_json/test_api_config_json.cpp`.
   - **Background:** Zero test coverage exists for the config JSON response shape.
     T19 exposes `populateConfigJson` as a testable function. These tests create a
     permanent guard against the "add a field, silently break the response" class of
@@ -633,9 +651,19 @@ Reference: `tasks/phase3_hardware_validation_deferral.md`
        length > 64, proving silent truncation from the old `snprintf` approach was a
        real risk.
   - **Acceptance criteria:**
+    - Mandatory post-implementation code review pass completed for T20
+      (focus: test realism, negative-path coverage, and serialized-size guard quality)
     - `pio test -e native` passes with the new suite included
     - All 5 test cases pass; total native test count increases accordingly
   - **Verification classification:** `bench-tested` (native host execution, no hardware)
+  - **Completed 2026-03-19:** Stub infrastructure in `test/stubs/include/` provides
+    Arduino, FreeRTOS, and ESPAsyncWebServer stubs for native compilation of
+    `api_config.cpp`. `src/native_test_stubs.cpp` supplies extern symbol definitions.
+    All 5 test cases pass; 442/442 native tests green (up from 437).
+    Calibration extremes in worst-case helper constrained by `rcBindingIsValid` /
+    `rcTriggerBindingIsValid` deadband rule (`deadband < max - min`); test uses
+    `deadband=0` with 5-digit calibration values to maximize string length within
+    valid bounds. `measureJson()` used for test 5 (exact byte count, no truncation).
 
 - [ ] T21 — Apply same snapshot + ArduinoJson pattern to buildRcDiagnosticsJson
   - **Background:** `buildRcDiagnosticsJson` in `src/web/web_server.cpp` has the
@@ -662,6 +690,8 @@ Reference: `tasks/phase3_hardware_validation_deferral.md`
       channels populated; serialize to `char[3072]`; assert `n < 3072`
     - Add `src/web/web_server.cpp` to `[env:native]` `build_src_filter` as needed
   - **Acceptance criteria:**
+    - Mandatory post-implementation code review pass completed for T21
+      (focus: response parity, snapshot correctness, and cross-file integration risks)
     - `pio run -e protoArtoo` compiles; `rcBuf` gone from BSS
     - `GET /api/rc` response is identical to pre-refactor output
     - `pio test -e native` passes including the two new RC tests
@@ -691,6 +721,9 @@ Reference: `tasks/phase3_hardware_validation_deferral.md`
   - **Action:** move to `tasks/phase5-tasks.md` when Phase 5 is scoped; do not
     implement in Phase 4 unless all T11/T12 carryover items are resolved and
     explicit capacity exists.
+  - **Additional required verification (when implemented):**
+    - Mandatory post-implementation code review pass completed for T22
+      (focus: frontend consumer migration correctness, schema consistency, and UX regression risks)
   - **Verification classification:** `bench-tested`
 
 - [ ] T23 — Upload gate: pio test required before upload; fix silent JS error catch
@@ -730,6 +763,106 @@ Reference: `tasks/phase3_hardware_validation_deferral.md`
     - `pio run -e protoArtoo` + `pio test -e native` pass
   - **Verification classification:** `bench-tested`
 
+- [x] T24 — Regression: WebEvents task crash on SSE client connect (third recurrence)
+  - **Symptom:** ESP32 becomes unreachable ~1 minute after boot. Serial monitor shows
+    a continuous crash-reboot loop (garbled ROM bootloader output repeating). Device
+    is stable until a browser connects to the SSE stream, then crashes within seconds
+    of the first `buildRcDiagnosticsJson` call.
+  - **Root cause (established):** The `WebEvents` FreeRTOS task stack has been
+    hand-tuned incorrectly three times:
+    1. **T16** (018387b): 8192 → 4096. Justification: "large buffers moved to
+       file-scope statics, not on stack." Partially wrong — those buffers were
+       already `static` locals (BSS, not stack) in the original code. The actual
+       stack users are `RcDiagnosticsSnapshot snapshot` and
+       `RcActionBindingSpec specs[7]` inside `buildRcDiagnosticsJson`, which
+       are non-static locals and DO live on the stack. 4096 was adequate because
+       measured peak is ~1750 bytes (~2350 B headroom).
+    2. **T13 HWM commit** (4b35e4d): 4096 → 2048. HWM was measured at the FIRST
+       loop iteration, before any SSE client connected and before
+       `buildRcDiagnosticsJson` had ever been called. Measured an idle task,
+       not a loaded one. Left ~298 bytes of real margin — less than FreeRTOS
+       context-save overhead on preemption. Crash on every client connect.
+    3. **ed42c90** (fix): 2048 → 4096. Correctly documented peak at ~1750 bytes.
+       Commit says "Verified" but contains NO OTA deploy note. Subsequent commits
+       (`52cfba0` T14 rewrite) DO have deploy notes and contain the 2048-byte stack.
+  - **Current device state (most likely):** Firmware from `52cfba0` (T14 rewrite,
+    deployed to 10.0.0.22 per commit message) with 2048-byte WebEvents stack.
+    Fix in `ed42c90` (4096) exists in the repo but was never OTA-flashed.
+    Three further commits today (`c75720e`, `dd075ef`, `ecc3924`) also not deployed.
+  - **The `hwmLogged` guard is a recurring trap:** `eventStreamTask` logs HWM exactly
+    once, at the first loop iteration, before `serverStarted && events.count() > 0`
+    is true. The HWM log will ALWAYS show near-empty stack — it never fires under
+    SSE load. Any future HWM measurement MUST be taken after a call to
+    `buildRcDiagnosticsJson` with at least one active SSE client.
+  - **Contributing factors (do not increase stack beyond 4096 at 4096):**
+    - `52cfba0` T14: Added `sbus1Raw[16] + sbus2Raw[16] + pwmPulseUs[6]` serialization
+      after `formatRcDiagnosticsJson`. These arrays were already on the stack before
+      T14 (T14 just serialized them); the additional `rcDiagnosticsAppendf` calls
+      use `%u` integer formatting only (no float), minimal stack increase.
+    - `dd075ef`: Added `uint32_t heapLargestBlock` to `buildStatusJson`. Called from
+      `eventStreamTask` but sequentially with `buildRcDiagnosticsJson` — frames
+      do not overlap. Negligible stack impact.
+  - **Fix options (in priority order):**
+    1. **OTA-deploy current HEAD firmware** (immediate mitigation): HEAD has 4096-byte
+       stack (`ed42c90`). Flash `pio run -e protoArtoo_ota --target upload` to replace
+       the 2048-byte firmware currently running. Stable until T21 is implemented.
+    2. **Restore to 8192** (safe fallback if 4096 proves insufficient): costs 4 KB heap
+       but eliminates all uncertainty. Appropriate if any new code is added to
+       `buildRcDiagnosticsJson` before T21 is complete.
+    3. **T21 (structural fix):** `RcDiagnosticsSnapshot` moves from `buildRcDiagnosticsJson`'s
+       stack frame into a captured snapshot struct passed by reference. `populateRcDiagnosticsJson`
+       uses ArduinoJson on the heap (per-request, bounded). Stack usage of `eventStreamTask`
+       drops to near-zero for the RC diagnostics path. Stack sizing becomes a non-issue.
+  - **Interaction with T21:** T21 is already planned and is the correct permanent fix.
+    Implementing T21 makes this class of crash structurally impossible regardless of
+    how many fields are added to the RC diagnostics JSON in future.
+  - **Before implementing any fix:**
+    - Confirm device firmware version by checking `/api/status` `version` field.
+    - If running pre-ed42c90 firmware: OTA-flash HEAD first, confirm stable.
+    - Add a second HWM log point INSIDE the SSE send block (after the first
+      `buildRcDiagnosticsJson` call completes) to get an accurate under-load measurement.
+  - **Bench validation update (2026-03-19):**
+    - Reproduced crash on current firmware in USB bench mode with SSE connect:
+      `Guru Meditation Error ... Stack canary watchpoint triggered (async_tcp)`.
+    - Implemented fix in `src/web/web_server.cpp`:
+      - kept `WebEvents` task stack at 4096 bytes
+      - added under-load HWM log in `eventStreamTask` after first successful
+        `buildRcDiagnosticsJson` call
+      - removed heavy JSON/log backfill work from `events.onConnect` callback;
+        callback now only registers connection while periodic send work stays in
+        `eventStreamTask` on Core 0
+    - Verified on hardware (USB bench mode, serial monitor + SSE client):
+      - 10-minute SSE soak captured (`/api/events`) with no panic/reboot
+      - `uptimeMs` advanced by `609703 ms` across SSE status events
+      - under-load HWM log captured: `[WebEvents] stack HWM under SSE load: 1320 words free`
+      - serial panic scan showed no `Guru Meditation`, `Stack canary`, or reboot loop entries after fix
+    - Verification commands run:
+      - `pio run -e protoArtoo`
+      - `pio test -e native` (437/437 passed)
+      - `pio run -e protoArtoo --target upload --upload-port /dev/ttyUSB0`
+  - **Post-fix follow-on regressions addressed (2026-03-19):**
+    - Setup page toggles intermittently failed with `Failed to load component settings`.
+      Root cause was AsyncTCP callback stack pressure on `/api/config` GET; serial
+      showed `Stack canary watchpoint triggered (async_tcp)` on config fetch.
+    - Guardrail applied: `CONFIG_ASYNC_TCP_STACK_SIZE=8192` in `platformio.ini`
+      for both `protoArtoo` and `protoArtoo_prod` environments.
+    - Operator log-noise complaint addressed: periodic SafetyMonitor heap telemetry
+      (`[SafetyMonitor] heap: free=...`) is now `PA_LOG_DEBUG` instead of
+      `PA_LOG_INFO`, so log level `1 - Error only` suppresses it as expected.
+    - Runtime verification after flash:
+      - `/api/config` returns HTTP 200 with full payload again
+      - setup page shows `Components loaded ...` and toggles hydrate normally
+      - `POST /api/config` with `logLevel=1` persists and reports `"logLevel":1`
+  - **Acceptance criteria:**
+    - Device remains reachable for >10 minutes with at least one browser tab open on
+      any SSE-consuming page (dashboard, setup, RC)
+    - Serial monitor shows no crash-reboot pattern during that window
+    - HWM measured under load (not at first iteration); value recorded here
+    - `pio run -e protoArtoo` + `pio test -e native` pass
+  - **Verification classification:** `full-hardware-required` (requires WiFi-connected
+    ESP32 with a browser holding an SSE connection)
+
+
 ## Exit Criteria
 
 - [ ] Phase 3 carryover T11 and T12 are complete, or formally re-deferred with updated
@@ -738,6 +871,8 @@ Reference: `tasks/phase3_hardware_validation_deferral.md`
 - [x] Bench development stage objectives validated and recorded (T01–T09, T13–T18 complete)
 - [ ] API JSON serialization refactor complete: T19, T20, T21, T23 bench-verified;
   T22 formally deferred to Phase 5 with rationale recorded above
+- [x] T24 WebEvents crash regression resolved: device stable >10 min under SSE load;
+  T21 structural fix is the preferred long-term closure path
 - [x] Body-link heartbeat/status visible through dashboard/status system (Serial Status card in Setup)
 - [ ] Dome-originated commands trigger body audio/arms correctly
 - [ ] Audio works from all intended sources on hardware

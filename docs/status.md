@@ -170,6 +170,8 @@ Tracked as T11 and T12 in `tasks/phase4-tasks.md`.
 | T16 | Sound page (`sound.html`/`sound.js`) + `/api/audio/tracks` | ✅ **bench-tested** — page renders, named tracks NVS roundtrip, volume/stop/play API; audio output requires T10 |
 | T17 | Runtime log level selector on Setup page | ✅ **bench-tested** — dropdown renders, POST works, NVS-persisted; OTA bug fixed (UPDATE_SIZE_UNKNOWN) |
 | T18 | Per-mood random sound intervals | ✅ **bench-tested** — API, NVS, Sound page UI; audible frequency change per mood requires T10 hardware |
+| T19 | Config API JSON refactor: ConfigSnapshot + ArduinoJson streaming | ✅ **bench-tested** — `buildConfigJson`/`configJsonBuf` removed; `captureConfigSnapshot` + `populateConfigJson` implemented; GET+POST handlers use ArduinoJson streaming; `configJsonBuf` 2 KB BSS reclaimed; firmware compiles cleanly |
+| T20 | Native tests: populateConfigJson coverage | ✅ **native-tested** — 442/442 tests green (up from 437); 5 new cases cover typical, worst-case size, key presence, disabled bindings, overflow measurability; stub headers + `native_test_stubs.cpp` enable native compilation of `api_config.cpp` |
 
 **Verification terminology used in this project:**
 - `native-tested` — covered by `pio test -e native` passing
