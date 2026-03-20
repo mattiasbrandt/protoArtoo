@@ -209,15 +209,17 @@
   const driveDisabledCard = document.getElementById("drive-disabled-card");
 
   const renderConfig = (payload) => {
-    if (speedLimitMax)   speedLimitMax.value      = payload.speedLimitMax;
-    if (webDriveTimeout) webDriveTimeout.value    = payload.webDriveTimeoutMs;
-    if (ch8ModeLock)     ch8ModeLock.checked      = Boolean(payload.ch8ModeLock);
+    const drive = payload?.drive || {};
+    const components = payload?.components || {};
+    if (speedLimitMax)   speedLimitMax.value      = drive.speedLimitMax;
+    if (webDriveTimeout) webDriveTimeout.value    = drive.webDriveTimeoutMs;
+    if (ch8ModeLock)     ch8ModeLock.checked      = Boolean(drive.ch8ModeLock);
     if (configFeedback) {
       configFeedback.textContent = `Settings loaded at ${new Date().toLocaleTimeString()}`;
       configFeedback.className = "feedback success";
     }
     if (driveDisabledCard) {
-      driveDisabledCard.classList.toggle("hidden", Boolean(payload.enableS1Hoverboard));
+      driveDisabledCard.classList.toggle("hidden", Boolean(components.s1Hoverboard?.enabled));
     }
   };
 

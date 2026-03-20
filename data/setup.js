@@ -72,28 +72,54 @@
   };
 
   const renderFeatures = (payload) => {
+    const components = payload?.components || {};
+    const system = payload?.system || {};
+
+    const togglePayload = {
+      enableArm1: components.arm1?.enabled,
+      enableArm2: components.arm2?.enabled,
+      enableAux1: components.aux1?.enabled,
+      enableAux2: components.aux2?.enabled,
+      enableAux3: components.aux3?.enabled,
+      enableDome: components.dome?.enabled,
+      enableRcCh1: components.rcCh1?.enabled,
+      enableRcCh2: components.rcCh2?.enabled,
+      enableRcCh3: components.rcCh3?.enabled,
+      enableRcCh4: components.rcCh4?.enabled,
+      enableRcCh5: components.rcCh5?.enabled,
+      enableRcCh6: components.rcCh6?.enabled,
+      enableS1Hoverboard: components.s1Hoverboard?.enabled,
+      enableS2Sound: components.s2Sound?.enabled,
+      enableS3DomeCtrl: components.s3DomeCtrl?.enabled,
+    };
+
     Object.entries(TOGGLE_KEY_MAP).forEach(([payloadKey, toggleKey]) => {
       const toggle = featureToggles[toggleKey];
-      if (toggle && toggle.input && payload[payloadKey] !== undefined) {
-        toggle.input.checked = Boolean(payload[payloadKey]);
+      if (toggle && toggle.input && togglePayload[payloadKey] !== undefined) {
+        toggle.input.checked = Boolean(togglePayload[payloadKey]);
         updateToggleStatus(toggleKey);
       }
     });
-    // Populate type selects from API payload (convert numeric API values to string option values)
-    const typeValueMap = ["none", "mg996r", "mg90s", "rgb"];
+
+    const typePayload = {
+      arm1Type: components.arm1?.type,
+      arm2Type: components.arm2?.type,
+      aux1Type: components.aux1?.type,
+      aux2Type: components.aux2?.type,
+      aux3Type: components.aux3?.type,
+    };
     Object.entries(typeSelects).forEach(([apiKey, select]) => {
-      if (select && payload[apiKey] !== undefined) {
-        const numericValue = parseInt(payload[apiKey], 10);
-        select.value = typeValueMap[numericValue] || "none";
+      if (select && typePayload[apiKey] !== undefined) {
+        select.value = String(typePayload[apiKey] || "none");
       }
     });
+
     if (featureFeedback) {
       featureFeedback.textContent = `Components loaded at ${new Date().toLocaleTimeString()}`;
       featureFeedback.className = "feedback success";
     }
-    // Populate log level dropdown from config
-    if (logLevelSelect && payload.logLevel !== undefined) {
-      logLevelSelect.value = String(payload.logLevel);
+    if (logLevelSelect && system.logLevel !== undefined) {
+      logLevelSelect.value = String(system.logLevel);
     }
   };
 
@@ -241,7 +267,7 @@
         throw new Error(err?.error || `HTTP ${response.status}`);
       }
       const data = await response.json();
-      if (data.logLevel !== undefined) logLevelSelect.value = String(data.logLevel);
+      if (data?.system?.logLevel !== undefined) logLevelSelect.value = String(data.system.logLevel);
       if (diagFeedback) {
         diagFeedback.textContent = `Log level saved at ${new Date().toLocaleTimeString()}`;
         diagFeedback.className = "feedback success";

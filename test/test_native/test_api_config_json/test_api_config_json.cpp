@@ -13,6 +13,8 @@
 #include "api_config_snapshot.h"
 #include "rc_mapping.h"
 
+
+static constexpr size_t kConfigJsonBudget = 3072;
 // Helper: build a default snapshot with all binding fields explicitly disabled.
 // Scalar fields stay zero-initialized (speedLimitMax=0, booleans=false, etc.).
 static ConfigSnapshot makeDefaultSnap() {
@@ -119,54 +121,65 @@ void tearDown(void) {
 }
 
 // --- Test 1 ---
-// Default snapshot serializes to valid JSON within the 2 KB size budget.
+// Default snapshot serializes to valid JSON within the grouped-schema size budget.
 void test_populateConfigJson_typical_valid_json(void) {
     ConfigSnapshot snap = makeDefaultSnap();
     JsonDocument doc;
     TEST_ASSERT_TRUE(populateConfigJson(doc, snap));
 
-    char out[2048] = {};
+    char out[kConfigJsonBudget] = {};
     size_t n = serializeJson(doc, out, sizeof(out));
 
     TEST_ASSERT_GREATER_THAN(0u, n);
-    TEST_ASSERT_LESS_THAN(2048u, n);
+    TEST_ASSERT_LESS_THAN(kConfigJsonBudget, n);
     TEST_ASSERT_EQUAL_CHAR('{', out[0]);
     TEST_ASSERT_EQUAL_CHAR('}', out[n - 1]);
 }
 
 // --- Test 2 ---
-// Maximally-large snapshot still serializes within the 2 KB budget.
+// Maximally-large grouped snapshot still serializes within the grouped-schema budget.
 void test_populateConfigJson_worst_case_fits_buffer(void) {
     ConfigSnapshot snap = makeWorstCaseSnap();
     JsonDocument doc;
     TEST_ASSERT_TRUE(populateConfigJson(doc, snap));
 
-    char out[2048] = {};
+    char out[kConfigJsonBudget] = {};
     size_t n = serializeJson(doc, out, sizeof(out));
 
-    TEST_ASSERT_LESS_THAN(2048u, n);
+    TEST_ASSERT_LESS_THAN(kConfigJsonBudget, n);
 }
 
 // --- Test 3 ---
-// A representative cross-section of expected keys is present in the output.
+// Grouped schema keys and nested fields are present with expected types.
 void test_populateConfigJson_expected_keys_present(void) {
     ConfigSnapshot snap = makeDefaultSnap();
     JsonDocument doc;
     TEST_ASSERT_TRUE(populateConfigJson(doc, snap));
 
-    char out[2048] = {};
-    serializeJson(doc, out, sizeof(out));
+    JsonObject drive = doc["drive"].as<JsonObject>();
+    JsonObject rc = doc["rc"].as<JsonObject>();
+    JsonObject components = doc["components"].as<JsonObject>();
+    JsonObject dome = doc["dome"].as<JsonObject>();
+    JsonObject system = doc["system"].as<JsonObject>();
 
-    TEST_ASSERT_NOT_NULL(strstr(out, "\"speedLimitMax\""));
-    TEST_ASSERT_NOT_NULL(strstr(out, "\"rcInputMode\""));
-    TEST_ASSERT_NOT_NULL(strstr(out, "\"enableArm1\""));
-    TEST_ASSERT_NOT_NULL(strstr(out, "\"arm1Type\""));
-    TEST_ASSERT_NOT_NULL(strstr(out, "\"domeNeutralUs\""));
-    TEST_ASSERT_NOT_NULL(strstr(out, "\"rcPwmDriveSpeed\""));
-    TEST_ASSERT_NOT_NULL(strstr(out, "\"rcSbusDriveSpeed\""));
-    TEST_ASSERT_NOT_NULL(strstr(out, "\"rcArm1\""));
-    TEST_ASSERT_NOT_NULL(strstr(out, "\"rcFree0\""));
-    TEST_ASSERT_NOT_NULL(strstr(out, "\"logLevel\""));
+    TEST_ASSERT_TRUE(!drive.isNull());
+    TEST_ASSERT_TRUE(!rc.isNull());
+    TEST_ASSERT_TRUE(!components.isNull());
+    TEST_ASSERT_TRUE(!dome.isNull());
+    TEST_ASSERT_TRUE(!system.isNull());
+
+    TEST_ASSERT_TRUE(!drive["speedLimitMax"].isNull());
+    TEST_ASSERT_TRUE(!drive["webDriveTimeoutMs"].isNull());
+    TEST_ASSERT_TRUE(rc["inputMode"].is<const char*>());
+    TEST_ASSERT_EQUAL_STRING("standard_pwm", rc["inputMode"] | "");
+    TEST_ASSERT_TRUE(rc["pwm"]["driveSpeed"].is<const char*>());
+    TEST_ASSERT_TRUE(rc["sbus"]["driveSpeed"].is<const char*>());
+    TEST_ASSERT_TRUE(rc["triggers"]["arm1"].is<const char*>());
+    TEST_ASSERT_TRUE(rc["triggers"]["free0"].is<const char*>());
+    TEST_ASSERT_TRUE(components["arm1"]["enabled"].is<bool>());
+    TEST_ASSERT_EQUAL_STRING("none", components["arm1"]["type"] | "");
+    TEST_ASSERT_TRUE(!dome["neutralUs"].isNull());
+    TEST_ASSERT_TRUE(!system["logLevel"].isNull());
 }
 
 // --- Test 4 ---
@@ -177,7 +190,7 @@ void test_populateConfigJson_disabled_trigger_binding_serializes(void) {
     JsonDocument doc;
     TEST_ASSERT_TRUE(populateConfigJson(doc, snap));
 
-    char out[2048] = {};
+    char out[kConfigJsonBudget] = {};
     size_t n = serializeJson(doc, out, sizeof(out));
 
     TEST_ASSERT_GREATER_THAN(0u, n);

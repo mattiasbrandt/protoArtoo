@@ -140,6 +140,63 @@
     ],
   };
 
+  const RC_BINDING_PATHS = {
+    rcPwmDriveSpeed: ["rc", "pwm", "driveSpeed"],
+    rcPwmDriveSteer: ["rc", "pwm", "driveSteer"],
+    rcPwmDriveLimit: ["rc", "pwm", "driveLimit"],
+    rcPwmDomeSpeed: ["rc", "pwm", "domeSpeed"],
+    rcPwmArm1: ["rc", "pwm", "arm1"],
+    rcPwmArm2: ["rc", "pwm", "arm2"],
+    rcPwmSound: ["rc", "pwm", "sound"],
+    rcSbusDriveSpeed: ["rc", "sbus", "driveSpeed"],
+    rcSbusDriveSteer: ["rc", "sbus", "driveSteer"],
+    rcSbusDriveLimit: ["rc", "sbus", "driveLimit"],
+    rcSbusDomeSpeed: ["rc", "sbus", "domeSpeed"],
+    rcSbusArm1: ["rc", "sbus", "arm1"],
+    rcSbusArm2: ["rc", "sbus", "arm2"],
+    rcSbusSound: ["rc", "sbus", "sound"],
+    rcArm1: ["rc", "triggers", "arm1"],
+    rcArm2: ["rc", "triggers", "arm2"],
+    rcAux1: ["rc", "triggers", "aux1"],
+    rcAux2: ["rc", "triggers", "aux2"],
+    rcAux3: ["rc", "triggers", "aux3"],
+    rcSound: ["rc", "triggers", "sound"],
+    rcOpMode: ["rc", "triggers", "opMode"],
+    rcFree0: ["rc", "triggers", "free0"],
+    rcFree1: ["rc", "triggers", "free1"],
+    rcFree2: ["rc", "triggers", "free2"],
+    rcFree3: ["rc", "triggers", "free3"],
+  };
+
+  const readPath = (obj, path) => {
+    let cur = obj;
+    for (let i = 0; i < path.length; i += 1) {
+      if (cur == null || typeof cur !== "object") return undefined;
+      cur = cur[path[i]];
+    }
+    return cur;
+  };
+
+  const getConfigBindingString = (cfg, field) => {
+    const path = RC_BINDING_PATHS[field];
+    if (!path) return "";
+    const value = readPath(cfg, path);
+    return typeof value === "string" ? value : "";
+  };
+
+  const getRcModeFromConfig = (cfg) => {
+    const mode = cfg?.rc?.inputMode;
+    return typeof mode === "string" ? mode : "standard_pwm";
+  };
+
+  const rcComponentsEnabled = (cfg) => {
+    const c = cfg?.components || {};
+    return Boolean(
+      c.rcCh1?.enabled || c.rcCh2?.enabled || c.rcCh3?.enabled ||
+      c.rcCh4?.enabled || c.rcCh5?.enabled || c.rcCh6?.enabled
+    );
+  };
+
   const escapeHtml = (value) => String(value)
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -222,7 +279,7 @@
   const cloneModeDraft = (mode) => {
     const draft = {};
     (RC_ACTIONS[mode] || []).forEach(({ key, field }) => {
-      draft[key] = parseBindingString(configCache?.[field]);
+      draft[key] = parseBindingString(getConfigBindingString(configCache, field));
     });
     return draft;
   };
@@ -617,7 +674,7 @@
         throw new Error(errorBody?.error || `HTTP ${response.status}`);
       }
       const data = await response.json();
-      if (data.rcInputMode) switchRcMode(data.rcInputMode);
+      switchRcMode(getRcModeFromConfig(data));
       if (rcModeFeedback) {
         rcModeFeedback.textContent = `✓ Saved at ${new Date().toLocaleTimeString()}`;
         rcModeFeedback.className = "feedback success";
@@ -686,23 +743,21 @@
       const response = await fetch("/api/config", { cache: "no-store" });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await response.json();
-      if (data.rcInputMode) {
-        if (rcInputModeHidden) rcInputModeHidden.value = data.rcInputMode;
-        rcModeCards.forEach((card) => {
-          const selected = card.dataset.mode === data.rcInputMode;
-          card.classList.toggle("selected", selected);
-          card.setAttribute("aria-pressed", selected ? "true" : "false");
-        });
-      }
+      const mode = getRcModeFromConfig(data);
+      if (rcInputModeHidden) rcInputModeHidden.value = mode;
+      rcModeCards.forEach((card) => {
+        const selected = card.dataset.mode === mode;
+        card.classList.toggle("selected", selected);
+        card.setAttribute("aria-pressed", selected ? "true" : "false");
+      });
       configCache = data;
       if (rcModeFeedback) {
-        rcModeFeedback.textContent = `Receiver type: ${data.rcInputMode || "standard_pwm"}`;
+        rcModeFeedback.textContent = `Receiver type: ${mode}`;
         rcModeFeedback.className = "feedback success";
       }
       const rcDisabledCard = document.getElementById("rc-disabled-card");
       if (rcDisabledCard) {
-        const anyRcEnabled = data.enableRcCh1 || data.enableRcCh2 || data.enableRcCh3 ||
-                             data.enableRcCh4 || data.enableRcCh5 || data.enableRcCh6;
+        const anyRcEnabled = rcComponentsEnabled(data);
         rcDisabledCard.classList.toggle("hidden", Boolean(anyRcEnabled));
       }
     } catch (_error) {

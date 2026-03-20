@@ -286,11 +286,10 @@
       if (aux2TestUs) aux2TestUs.value = 1500;
       if (aux3TestUs) aux3TestUs.value = 1500;
 
-      // Store AUX types for conditional rendering
-      auxTypes.aux1 = cfg.aux1Type ?? "none";
-      auxTypes.aux2 = cfg.aux2Type ?? "none";
-      auxTypes.aux3 = cfg.aux3Type ?? "none";
-
+      const components = cfg?.components || {};
+      auxTypes.aux1 = String(components.aux1?.type || "none");
+      auxTypes.aux2 = String(components.aux2?.type || "none");
+      auxTypes.aux3 = String(components.aux3?.type || "none");
       // Re-render AUX controls now that types are known
       if (lastPayload) {
         renderAuxControls(lastPayload);

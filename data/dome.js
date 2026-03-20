@@ -73,16 +73,18 @@
   const domeDisabledCard = document.getElementById("dome-disabled-card");
 
   const renderEsc = (payload) => {
-    if (domeNeutral)    domeNeutral.value    = payload.domeNeutralUs;
-    if (domeMinPulse)   domeMinPulse.value   = payload.domeMinPulseUs;
-    if (domeMaxPulse)   domeMaxPulse.value   = payload.domeMaxPulseUs;
-    if (domeSpeedLimit) domeSpeedLimit.value = payload.domeSpeedLimitPct;
+    const dome = payload?.dome || {};
+    const components = payload?.components || {};
+    if (domeNeutral)    domeNeutral.value    = dome.neutralUs;
+    if (domeMinPulse)   domeMinPulse.value   = dome.minPulseUs;
+    if (domeMaxPulse)   domeMaxPulse.value   = dome.maxPulseUs;
+    if (domeSpeedLimit) domeSpeedLimit.value = dome.speedLimitPct;
     if (escFeedback) {
       escFeedback.textContent = `Motor settings loaded at ${new Date().toLocaleTimeString()}`;
       escFeedback.className = "feedback success";
     }
     if (domeDisabledCard) {
-      domeDisabledCard.classList.toggle("hidden", Boolean(payload.enableDome));
+      domeDisabledCard.classList.toggle("hidden", Boolean(components.dome?.enabled));
     }
   };
 

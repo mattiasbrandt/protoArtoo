@@ -2574,6 +2574,45 @@ POST /upload/filesystem    → OTA filesystem flash (U_SPIFFS/LittleFS, multipar
 `failsafe.trigger_count` is the lifetime count since boot — useful for diagnosing intermittent antenna dropouts.
 `drive.speed_limit_pct` reflects the current CH8 dial position (0–100%).
 
+**`/api/config` — canonical grouped response:**
+```json
+{
+  "drive": {
+    "speedLimitMax": 600,
+    "webDriveTimeoutMs": 500,
+    "ch8ModeLock": false,
+    "stationary": true
+  },
+  "rc": {
+    "inputMode": "dual_sbus",
+    "pwm": { "driveSpeed": "pwm:1:1000:1500:2000:0:0", "...": "..." },
+    "sbus": { "driveSpeed": "sbus1:1:172:992:1811:0:0", "...": "..." },
+    "triggers": { "arm1": "sbus1:4:arm1_toggle::172:992:1811:0:0", "...": "..." }
+  },
+  "components": {
+    "arm1": { "enabled": true, "type": "mg996r" },
+    "arm2": { "enabled": true, "type": "mg996r" },
+    "aux1": { "enabled": false, "type": "none" },
+    "aux2": { "enabled": false, "type": "none" },
+    "aux3": { "enabled": false, "type": "none" },
+    "dome": { "enabled": true },
+    "rcCh1": { "enabled": true }, "rcCh2": { "enabled": true },
+    "rcCh3": { "enabled": true }, "rcCh4": { "enabled": true },
+    "rcCh5": { "enabled": true }, "rcCh6": { "enabled": true },
+    "s1Hoverboard": { "enabled": true },
+    "s2Sound": { "enabled": true },
+    "s3DomeCtrl": { "enabled": true }
+  },
+  "dome": {
+    "neutralUs": 1500,
+    "minPulseUs": 1000,
+    "maxPulseUs": 2000,
+    "speedLimitPct": 100
+  },
+  "system": { "logLevel": 2 }
+}
+```
+
 ---
 
 ## 10. Web UI — Context and Labelling
