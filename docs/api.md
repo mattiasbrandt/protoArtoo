@@ -14,6 +14,7 @@ headers in `include/`:
 | `api_drive.cpp` | Drive commands, web control, and operation mode | `POST /api/drive`, `POST /api/web-control/enable`, `POST /api/web-control/disable`, `POST /api/mode` |
 | `api_config.cpp` | Configuration management | `GET /api/config`, `POST /api/config` |
 | `api_status.cpp` | Status, health, and telemetry | `GET /api/status`, `GET /api/health`, `GET /api/logs`, `GET /api/wifi`, `GET /api/serial` |
+| `api_validation.cpp` | Consolidated validation snapshot | `GET /api/validation` |
 | `api_system.cpp` | System control and OTA | `POST /api/manual-command`, `POST /api/reboot`, `POST /upload/firmware` |
 | `api_helpers.cpp` | Pure parsing/formatting helpers | Shared JSON formatting utilities |
 
@@ -551,6 +552,63 @@ Notes:
 - `uptimeMs` and `firmwareVersion` support the shared device-info status block in the UI
 - `heapFree`, `heapMin`, `wifiRssi`, `wifiConnected`, `wifiClientConnected`, and `littleFsReady` support dashboard health/status surfaces
 - Disabled components are absent from the response, not emitted as false placeholders
+
+### `GET /api/validation`
+
+Return a compact validation-focused snapshot that consolidates drive/failsafe, dome-link, audio, and RC source health for hardware-closure checks.
+
+- Request body: none
+- Success response shape:
+
+```json
+{
+  "updatedMs": 27790,
+  "drive": {
+    "estop": false,
+    "webDriveExpired": false,
+    "sbusSignalLost": false,
+    "sbusHwFailsafe": false,
+    "failsafeSource": 0,
+    "failsafeCount": 2,
+    "triggerMs": 20123,
+    "zeroMs": 20138,
+    "triggerToZeroMs": 15,
+    "watchdogMs": 20123,
+    "triggerSource": 1
+  },
+  "domeLink": {
+    "state": "connected",
+    "hbTx": 52,
+    "hbRx": 49,
+    "lastRxMs": 110
+  },
+  "audio": {
+    "enabled": true,
+    "active": true,
+    "activeMood": 14,
+    "randomMin": 1,
+    "randomMax": 120,
+    "intervalQuietS": 0,
+    "intervalMidS": 30,
+    "intervalFullS": 20,
+    "intervalAwakeS": 10
+  },
+  "rc": {
+    "mode": "dual_sbus",
+    "timeoutMs": 200,
+    "sources": {
+      "sbus1": {"enabled": true, "linked": true, "signalLost": false, "failsafe": false, "ageMs": 12},
+      "sbus2": {"enabled": true, "linked": false, "signalLost": true, "failsafe": false, "ageMs": 310},
+      "pwm": {"enabled": false, "linked": false, "signalLost": false, "failsafe": false, "ageMs": 0}
+    }
+  }
+}
+```
+
+Notes:
+- `drive.failsafeSource` and `drive.triggerSource` are numeric `FailsafeSource` enum values.
+- `domeLink.state` is one of `disabled`, `not_seen`, `connected`, or `lost`.
+- `rc.sources.*.linked` is the source-ready indicator for control eligibility; `signalLost` and `failsafe` provide source-specific fault detail.
 
 ### `GET /api/events`
 

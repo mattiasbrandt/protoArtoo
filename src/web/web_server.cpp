@@ -24,6 +24,7 @@
 #include "../../include/api_servo.h"
 #include "../../include/api_status.h"
 #include "../../include/api_system.h"
+#include "../../include/api_validation.h"
 #include "../../include/audio_task.h"
 #include "../../include/config.h"
 #include "../../include/rc_diagnostics_snapshot.h"
@@ -663,6 +664,7 @@ void startHttpServerOnce() {
         registerRcRoutes(server);
         registerServoRoutes(server);
         registerStatusRoutes(server);
+        registerValidationRoutes(server);
         registerSystemRoutes(server);
 
         if (littleFsReady) {
