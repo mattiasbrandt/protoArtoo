@@ -148,6 +148,7 @@
         featureFeedback.className = "feedback success";
       }
     } catch (error) {
+      console.error("[setup] saveFeatures failed:", error);
       if (featureFeedback) {
         featureFeedback.textContent = error instanceof Error
           ? error.message : "Failed to save";
@@ -208,6 +209,7 @@
         }
       }, 1000);
     } catch (error) {
+      console.error("[setup] handleReboot failed:", error);
       if (rebootFeedback) {
         rebootFeedback.textContent = error instanceof Error ? error.message : "Failed to send reboot command";
         rebootFeedback.className = "feedback error";
@@ -245,6 +247,7 @@
         diagFeedback.className = "feedback success";
       }
     } catch (error) {
+      console.error("[setup] saveLogLevel failed:", error);
       if (diagFeedback) {
           diagFeedback.textContent = error instanceof Error ? error.message : "Failed to save";
         diagFeedback.className = "feedback error";
