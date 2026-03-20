@@ -55,6 +55,17 @@ struct ConfigSnapshot {
     ServoComponentType aux2Type;
     ServoComponentType aux3Type;
 
+    uint16_t arm1OpenUs;
+    uint16_t arm1CloseUs;
+    uint16_t arm2OpenUs;
+    uint16_t arm2CloseUs;
+    uint16_t aux1OpenUs;
+    uint16_t aux1CloseUs;
+    uint16_t aux2OpenUs;
+    uint16_t aux2CloseUs;
+    uint16_t aux3OpenUs;
+    uint16_t aux3CloseUs;
+
     RcBindingConfig rcPwmDriveSpeed;
     RcBindingConfig rcPwmDriveSteer;
     RcBindingConfig rcPwmDriveLimit;

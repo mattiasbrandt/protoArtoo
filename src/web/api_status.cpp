@@ -113,8 +113,10 @@ void registerStatusRoutes(AsyncWebServer& server) {
     });
 
     server.on("/api/status", HTTP_GET, [](AsyncWebServerRequest* req) {
-        char body[1024];
-        buildStatusJson(body, sizeof(body));
+        char body[3072];
+        if (!buildStatusJson(body, sizeof(body))) {
+            PA_LOG_WARN("StatusAPI", "status payload overflowed; returning fallback payload");
+        }
         req->send(200, "application/json", body);
     });
 }

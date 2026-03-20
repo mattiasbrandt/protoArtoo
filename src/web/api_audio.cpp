@@ -95,7 +95,8 @@ void registerAudioRoutes(AsyncWebServer& server) {
 
         // Resolve key before range validation — interval keys accept 0–3600 s,
         // track-number keys accept 1–999.
-        const char* key = keyParam->value().c_str();
+        String keyValue = keyParam->value();
+        const char* key = keyValue.c_str();
         bool isInterval = (strncmp(key, "snd_int_", 8) == 0);
         int track = trackParam->value().toInt();
         if (isInterval) {
@@ -204,7 +205,11 @@ void registerAudioRoutes(AsyncWebServer& server) {
                           "{\"ok\":false,\"error\":\"track must be 1–65535\"}");
                 return;
             }
-            audioQueuePlayTrack((uint16_t)track, SRC_WEB_API);
+            if (!audioQueuePlayTrack((uint16_t)track, SRC_WEB_API)) {
+                req->send(503, "application/json",
+                          "{\"ok\":false,\"error\":\"audio command queue full\"}");
+                return;
+            }
             PA_LOG_INFO(TAG, "[AUDIO] POST /api/audio play track=%d", track);
             req->send(200, "application/json", "{\"ok\":true}");
             return;
@@ -212,7 +217,11 @@ void registerAudioRoutes(AsyncWebServer& server) {
 
         // ---- stop ----
         if (action == "stop") {
-            audioQueueStop(SRC_WEB_API);
+            if (!audioQueueStop(SRC_WEB_API)) {
+                req->send(503, "application/json",
+                          "{\"ok\":false,\"error\":\"audio command queue full\"}");
+                return;
+            }
             PA_LOG_INFO(TAG, "[AUDIO] POST /api/audio stop");
             req->send(200, "application/json", "{\"ok\":true}");
             return;
@@ -234,8 +243,11 @@ void registerAudioRoutes(AsyncWebServer& server) {
             }
 
             // Apply immediately in AudioTask runtime
-            audioQueueSetVolume((uint8_t)level, SRC_WEB_API);
-
+            if (!audioQueueSetVolume((uint8_t)level, SRC_WEB_API)) {
+                req->send(503, "application/json",
+                          "{\"ok\":false,\"error\":\"audio command queue full\"}");
+                return;
+            }
             // Persist as the new default volume so it survives reboot
             taskENTER_CRITICAL(&robotStateMux);
             robotState.cfg_audioVolume = (uint8_t)level;
@@ -268,7 +280,11 @@ void registerAudioRoutes(AsyncWebServer& server) {
                           "{\"ok\":false,\"error\":\"cmd too long (max 9 chars)\"}");
                 return;
             }
-            audioQueueDollar(cmdParam->value().c_str(), SRC_WEB_API);
+            if (!audioQueueDollar(cmdParam->value().c_str(), SRC_WEB_API)) {
+                req->send(503, "application/json",
+                          "{\"ok\":false,\"error\":\"audio command queue full\"}");
+                return;
+            }
             PA_LOG_INFO(TAG, "[AUDIO] POST /api/audio dollar cmd=%s",
                         cmdParam->value().c_str());
             req->send(200, "application/json", "{\"ok\":true}");

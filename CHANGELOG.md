@@ -62,6 +62,14 @@ Every semantic version release belongs here:
 - **Heap monitoring blind spot** — `safety.cpp` and SSE status previously reported only
   total free bytes; fragmentation could drive the largest contiguous block below WiFi's
   minimum needs while total free looked healthy. `heapLargestBlock` closes this gap.
+- **Post-review hardening for refactor + Phase 4 T19–T23** — fixed `/api/audio` truthfulness on queue-full (`503` instead of false success), fixed `/api/mode` driving response path, and fixed `/api/audio/tracks` key lifetime bug (`String` temporary `c_str()` pointer).
+- **RC runtime reconfiguration correctness** — `RcInputTask` now re-reads `rcInputMode` and SBUS channel enable flags each loop so `/api/config` mode/channel changes apply without reboot; removed the disabled-SBUS idle trap that prevented later activation.
+- **Status payload robustness** — `buildStatusJson()` now returns success/failure and emits explicit fallback JSON on overflow; status route + SSE status buffer sizes increased to 3072 bytes; one-time overflow warning logging added.
+- **AP security in AP-only builds** — AP mode now requires `PA_AP_PASSWORD` from `src/secrets.h` (compile-time guard + minimum-length assertion) and uses `WiFi.softAP(WIFI_AP_SSID, PA_AP_PASSWORD)`.
+- **Frontend/backend contract alignment** — restored top-level servo calibration fields in `/api/config` GET/POST (`arm1OpenUs` … `aux3CloseUs`) used by `data/servo.js`; fixed mood dome-link note in `data/app.js` to use `payload.dome_link.state`.
+- **Drive logging format warning resolved** — corrected hoverboard baud logging format specifier in `drive.cpp` to match argument type.
+- **Web UI stale-content sweep** — WiFi page now strictly reflects build-time mode (STA builds hide AP IP/details), Drive page CH8 wording now matches `ch8ModeLock` behavior, D-pad hold loop now transmits every 50 ms to stay below the minimum configurable timeout, RC page removed operator-facing phase wording for unavailable dome sequence mapping, Home page restored dome-link mood note visibility, and Setup/Firmware stale labels/details were refreshed.
+- **Static-analysis high findings closure** — resolved remaining `pio check` HIGH findings in `src/tasks`/`src/web` (`src/tasks=0`, `src/web=0`): added null-safe parameter retrieval in `/api/servo` route handling and defined `PA_AUDIO_DRIVER` for native-analysis compilation path. Added inline comments in `platformio.ini` documenting why narrowly scoped cppcheck suppressions exist for ArduinoJson vendor macro false positives.
 
 ## [0.3.0] - 2026-03-16
 

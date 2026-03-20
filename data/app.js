@@ -252,7 +252,7 @@
 
   function renderMoodDomeNote(payload) {
     if (!moodDomeNote) return;
-    const domeConnected = !!payload.domeConnected;
+    const domeConnected = payload?.dome_link?.state === "connected";
     moodDomeNote.classList.toggle("visible", !domeConnected);
   }
 

@@ -180,6 +180,16 @@ void test_populateConfigJson_expected_keys_present(void) {
     TEST_ASSERT_EQUAL_STRING("none", components["arm1"]["type"] | "");
     TEST_ASSERT_TRUE(!dome["neutralUs"].isNull());
     TEST_ASSERT_TRUE(!system["logLevel"].isNull());
+    TEST_ASSERT_TRUE(!doc["arm1OpenUs"].isNull());
+    TEST_ASSERT_TRUE(!doc["arm1CloseUs"].isNull());
+    TEST_ASSERT_TRUE(!doc["arm2OpenUs"].isNull());
+    TEST_ASSERT_TRUE(!doc["arm2CloseUs"].isNull());
+    TEST_ASSERT_TRUE(!doc["aux1OpenUs"].isNull());
+    TEST_ASSERT_TRUE(!doc["aux1CloseUs"].isNull());
+    TEST_ASSERT_TRUE(!doc["aux2OpenUs"].isNull());
+    TEST_ASSERT_TRUE(!doc["aux2CloseUs"].isNull());
+    TEST_ASSERT_TRUE(!doc["aux3OpenUs"].isNull());
+    TEST_ASSERT_TRUE(!doc["aux3CloseUs"].isNull());
 }
 
 // --- Test 4 ---
@@ -199,6 +209,19 @@ void test_populateConfigJson_disabled_trigger_binding_serializes(void) {
 }
 
 // --- Test 5 ---
+// populateConfigJson clears any pre-existing document content before rebuilding.
+void test_populateConfigJson_clears_existing_document(void) {
+    ConfigSnapshot snap = makeDefaultSnap();
+    JsonDocument doc;
+    doc["legacy"] = true;
+    TEST_ASSERT_TRUE(!doc["legacy"].isNull());
+
+    TEST_ASSERT_TRUE(populateConfigJson(doc, snap));
+    TEST_ASSERT_TRUE(doc["legacy"].isNull());
+    TEST_ASSERT_TRUE(!doc["drive"].isNull());
+}
+
+// --- Test 6 ---
 // The full JSON is substantially larger than a 64-byte buffer, proving the
 // class of bug that snprintf silent truncation produced is measurable.
 void test_populateConfigJson_overflow_is_measurable(void) {
@@ -223,6 +246,7 @@ int main(void) {
     RUN_TEST(test_populateConfigJson_worst_case_fits_buffer);
     RUN_TEST(test_populateConfigJson_expected_keys_present);
     RUN_TEST(test_populateConfigJson_disabled_trigger_binding_serializes);
+    RUN_TEST(test_populateConfigJson_clears_existing_document);
     RUN_TEST(test_populateConfigJson_overflow_is_measurable);
     return UNITY_END();
 }

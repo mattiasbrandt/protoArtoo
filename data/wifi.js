@@ -1,14 +1,15 @@
 // =============================================================================
 // wifi.js
 //
-// WiFi page — shows the active connection mode contextually.
-// If WiFi client (STA) is connected, the STA card is primary.
-// The Access Point card is always shown but de-emphasised when STA is active.
+// WiFi page — reflects the active build-time WiFi mode.
+// PA_ENABLE_STA_WIFI=1: WiFi Client (STA) mode.
+// PA_ENABLE_STA_WIFI=0: Access Point (AP) mode.
 // =============================================================================
 (() => {
   const reloadButton   = document.getElementById("reload-wifi-button");
   const feedback       = document.getElementById("wifi-feedback");
   const staCard        = document.getElementById("wifi-sta-card");
+  const staDesc        = document.getElementById("wifi-sta-desc");
   const apCard         = document.getElementById("wifi-ap-card");
   const apDesc         = document.getElementById("wifi-ap-desc");
   const apSsid         = document.getElementById("wifi-ap-ssid");
@@ -27,11 +28,11 @@
   };
 
   const render = (data) => {
-    const staActive = data.staEnabled && data.staConnected;
+    const staModeEnabled = !!data.staEnabled;
 
-    // STA (WiFi client) card — only shown when connected
+    // STA (WiFi client) card — shown whenever STA mode is enabled
     if (staCard) {
-      if (staActive) {
+      if (staModeEnabled) {
         staCard.classList.remove("hidden");
       } else {
         staCard.classList.add("hidden");
@@ -41,14 +42,19 @@
     if (staIp)        staIp.textContent        = data.staIp || "--";
     if (wifiSignal)   wifiSignal.textContent   = signalLabel(data.wifiRssi);
     if (wifiRssi)     wifiRssi.textContent     = data.wifiRssi || "--";
+    if (staDesc) {
+      staDesc.textContent = data.staConnected
+        ? "Connected in WiFi Client (STA) mode. Access Point mode is not available in this build."
+        : "WiFi Client (STA) mode is enabled, but the controller is not connected to a network.";
+    }
 
-    // AP card — always present; tone down its description when STA is active
-    if (apSsid) apSsid.textContent = data.apSsid || "--";
-    if (apIp)   apIp.textContent   = data.apIp   || "--";
-    if (apDesc) {
-      apDesc.textContent = staActive
-        ? "The controller access point is also active as a fallback."
-        : "Connect to this network to reach the controller.";
+    // AP card — only shown when firmware is built in AP mode
+    if (apCard) apCard.classList.toggle("hidden", staModeEnabled);
+
+    if (!staModeEnabled) {
+      if (apSsid) apSsid.textContent = data.apSsid || "--";
+      if (apIp)   apIp.textContent   = data.apIp   || "--";
+      if (apDesc) apDesc.textContent = "Connect to this network to reach the controller.";
     }
   };
 

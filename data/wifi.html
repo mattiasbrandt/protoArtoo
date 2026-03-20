@@ -29,10 +29,10 @@
       <a href="/firmware.html">💾 Firmware</a>
     </nav>
 
-    <!-- Active connection — shown based on what mode is running -->
-    <div class="card" id="wifi-sta-card" class="hidden">
+    <!-- WiFi Client card — shown when firmware is built in STA mode -->
+    <div class="card hidden" id="wifi-sta-card">
       <h3>🌐 WiFi Client</h3>
-      <div class="desc">The controller is connected to your WiFi network.</div>
+      <div class="desc" id="wifi-sta-desc">Running in WiFi Client (STA) mode.</div>
       <div class="status-grid mt-16">
         <div class="status-item">
           <dt>Status</dt>
@@ -50,7 +50,7 @@
       </div>
     </div>
 
-    <!-- Access Point — always active; primary when no STA client -->
+    <!-- Access Point card — active in AP-mode builds -->
     <div class="card" id="wifi-ap-card">
       <h3>📡 Access Point</h3>
       <div class="desc" id="wifi-ap-desc">Connect to this network to reach the controller.</div>

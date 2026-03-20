@@ -149,6 +149,8 @@ via `snprintf` into a fixed buffer or via `JsonDocument` — MUST have a corresp
 native test covering the typical case and confirming the serialized output fits within
 its intended size budget.
 
+**Static analysis suppression rule:** Any `pio check` suppression or analysis-only build flag (for example in `platformio.ini`) MUST include an adjacent inline comment that explains why it is needed and how its scope is constrained. Prefer file-targeted suppressions over global suppressions.
+
 Always classify verification status explicitly:
 
 - `bench-tested`

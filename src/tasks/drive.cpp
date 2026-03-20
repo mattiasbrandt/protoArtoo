@@ -55,8 +55,8 @@ void driveTask(void* pvParameters) {
     }
 
     hoverSerial.begin(HOVERBOARD_BAUD, SERIAL_8N1, PIN_HOVERBOARD_RX, PIN_HOVERBOARD_TX);
-    PA_LOG_INFO(TAG, "started — UART1 %d baud, GPIO TX=%d RX=%d", HOVERBOARD_BAUD,
-                PIN_HOVERBOARD_TX, PIN_HOVERBOARD_RX);
+    PA_LOG_INFO(TAG, "started — UART1 %lu baud, GPIO TX=%d RX=%d",
+                (unsigned long)HOVERBOARD_BAUD, PIN_HOVERBOARD_TX, PIN_HOVERBOARD_RX);
 
     uint8_t frameBuf[8];
     const TickType_t period = pdMS_TO_TICKS(1000 / DRIVE_FREQ_HZ);  // 20 ms at 50 Hz

@@ -632,15 +632,9 @@ void rcInputTask(void* pvParameters) {
     bool driveSbusEnabled = is_drive_sbus_mode(rcInputMode) && enableRcCh1;
     bool domeSbusEnabled = is_dome_sbus_mode(rcInputMode) && enableRcCh2;
 
-    // Disabled SBUS guard:
-    // In SBUS modes, if both receivers are disabled, this task has no runtime
-    // work and should idle immediately while feeding TWDT.
-    if (rcInputMode != RC_INPUT_STANDARD_PWM && !driveSbusEnabled && !domeSbusEnabled) {
-        for (;;) {
-            esp_task_wdt_reset();
-            vTaskDelay(pdMS_TO_TICKS(5));
-        }
-    }
+    // Do not early-idle when SBUS channels are currently disabled:
+    // rcInputMode and channel enables are runtime-configurable via /api/config.
+    // This task must keep running so mode/channel changes take effect without reboot.
 
     if (driveSbusEnabled) {
         if (!sbus_drive.begin(&Serial1, PIN_SBUS1_RX)) {
@@ -678,6 +672,9 @@ void rcInputTask(void* pvParameters) {
     bool sbus2WatchdogFired = false;
     bool hwmLogged = false;
 
+    bool driveSbusInitWarned = false;
+    bool domeSbusInitWarned = false;
+
     while (true) {
         if (!hwmLogged) {
             PA_LOG_INFO(TAG, "stack HWM: %u words free",
@@ -685,7 +682,46 @@ void rcInputTask(void* pvParameters) {
             hwmLogged = true;
         }
 
+        taskENTER_CRITICAL(&robotStateMux);
+        rcInputMode = robotState.cfg_rc_input_mode;
+        enableRcCh1 = robotState.cfg_enable_rc_ch1;
+        enableRcCh2 = robotState.cfg_enable_rc_ch2;
+        taskEXIT_CRITICAL(&robotStateMux);
+
+        driveSbusEnabled = is_drive_sbus_mode(rcInputMode) && enableRcCh1;
+        domeSbusEnabled = is_dome_sbus_mode(rcInputMode) && enableRcCh2;
+
+        if (driveSbusEnabled && !sbus_drive.isInitialized()) {
+            if (!sbus_drive.begin(&Serial1, PIN_SBUS1_RX)) {
+                if (!driveSbusInitWarned) {
+                    PA_LOG_ERROR(TAG, "UART init failed for SBUS1 GPIO%d", PIN_SBUS1_RX);
+                    driveSbusInitWarned = true;
+                }
+                driveSbusEnabled = false;
+            } else {
+                driveSbusInitWarned = false;
+            }
+        }
+
+        if (domeSbusEnabled && !sbus_dome.isInitialized()) {
+            if (!sbus_dome.begin(&Serial2, PIN_SBUS2_RX)) {
+                if (!domeSbusInitWarned) {
+                    PA_LOG_WARN(TAG, "UART init failed for SBUS2 GPIO%d", PIN_SBUS2_RX);
+                    domeSbusInitWarned = true;
+                }
+                domeSbusEnabled = false;
+            } else {
+                domeSbusInitWarned = false;
+            }
+        }
+
         if (rcInputMode == RC_INPUT_STANDARD_PWM) {
+            taskENTER_CRITICAL(&robotStateMux);
+            robotState.sbusSignalLost = false;
+            robotState.sbusHwFailsafe = false;
+            robotState.sbus2SignalLost = false;
+            robotState.sbus2HwFailsafe = false;
+            taskEXIT_CRITICAL(&robotStateMux);
             dispatchStandardPwmInputs();
             esp_task_wdt_reset();
             vTaskDelay(pdMS_TO_TICKS(20));

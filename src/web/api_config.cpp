@@ -31,6 +31,9 @@ static const char* TAG = "WebServer";
 extern bool saveConfigToNvs();
 
 namespace {
+constexpr uint16_t kServoPulseMinUs = 500;
+constexpr uint16_t kServoPulseMaxUs = 2500;
+
 
 const char* rcModeToString(RcInputMode mode) {
     switch (mode) {
@@ -234,6 +237,9 @@ bool triggerTargetAllowedByRuntime(const RcTriggerBinding& binding) {
 // Call this once; pass the result to populateConfigJson().
 // -----------------------------------------------------------------------------
 void captureConfigSnapshot(ConfigSnapshot* out) {
+    if (out == nullptr) {
+        return;
+    }
     taskENTER_CRITICAL(&robotStateMux);
     out->speedLimitMax = robotState.cfg_speedLimitMax;
     out->webDriveTimeoutMs = robotState.cfg_webDriveTimeoutMs;
@@ -268,6 +274,16 @@ void captureConfigSnapshot(ConfigSnapshot* out) {
     out->aux1Type = robotState.cfg_aux1_type;
     out->aux2Type = robotState.cfg_aux2_type;
     out->aux3Type = robotState.cfg_aux3_type;
+    out->arm1OpenUs = robotState.cfg_arm1_open_us;
+    out->arm1CloseUs = robotState.cfg_arm1_close_us;
+    out->arm2OpenUs = robotState.cfg_arm2_open_us;
+    out->arm2CloseUs = robotState.cfg_arm2_close_us;
+    out->aux1OpenUs = robotState.cfg_aux1_open_us;
+    out->aux1CloseUs = robotState.cfg_aux1_close_us;
+    out->aux2OpenUs = robotState.cfg_aux2_open_us;
+    out->aux2CloseUs = robotState.cfg_aux2_close_us;
+    out->aux3OpenUs = robotState.cfg_aux3_open_us;
+    out->aux3CloseUs = robotState.cfg_aux3_close_us;
 
     out->rcPwmDriveSpeed = robotState.cfg_rc_pwm_drive_speed;
     out->rcPwmDriveSteer = robotState.cfg_rc_pwm_drive_steer;
@@ -309,6 +325,7 @@ void captureConfigSnapshot(ConfigSnapshot* out) {
 // Returns false if any binding format call fails; caller should send HTTP 500.
 // -----------------------------------------------------------------------------
 bool populateConfigJson(JsonDocument& doc, const ConfigSnapshot& snap) {
+    doc.clear();
     // --- RC binding config strings (14 channels, 48 bytes each) ---
     char rcPwmDriveSpeedStr[48] = {};
     char rcPwmDriveSteerStr[48] = {};
@@ -435,6 +452,18 @@ bool populateConfigJson(JsonDocument& doc, const ConfigSnapshot& snap) {
     components["s2Sound"]["enabled"] = snap.enableS2Sound;
     components["s3DomeCtrl"]["enabled"] = snap.enableS3DomeCtrl;
 
+    // Legacy top-level calibration fields consumed by data/servo.js
+    doc["arm1OpenUs"] = snap.arm1OpenUs;
+    doc["arm1CloseUs"] = snap.arm1CloseUs;
+    doc["arm2OpenUs"] = snap.arm2OpenUs;
+    doc["arm2CloseUs"] = snap.arm2CloseUs;
+    doc["aux1OpenUs"] = snap.aux1OpenUs;
+    doc["aux1CloseUs"] = snap.aux1CloseUs;
+    doc["aux2OpenUs"] = snap.aux2OpenUs;
+    doc["aux2CloseUs"] = snap.aux2CloseUs;
+    doc["aux3OpenUs"] = snap.aux3OpenUs;
+    doc["aux3CloseUs"] = snap.aux3CloseUs;
+
     JsonObject dome = doc["dome"].to<JsonObject>();
     dome["neutralUs"] = snap.domeNeutralUs;
     dome["minPulseUs"] = snap.domeMinPulseUs;
@@ -444,7 +473,7 @@ bool populateConfigJson(JsonDocument& doc, const ConfigSnapshot& snap) {
     JsonObject system = doc["system"].to<JsonObject>();
     system["logLevel"] = snap.logLevel;
 
-    return true;
+    return !doc.overflowed();
 }
 
 void registerConfigRoutes(AsyncWebServer& server) {
@@ -641,6 +670,44 @@ void registerConfigRoutes(AsyncWebServer& server) {
             req->send(400, "application/json",
                       "{\"ok\":false,\"error\":\"domeSpeedLimitPct must be 0..100\"}");
             return;
+        }
+
+        struct ServoCalField {
+            const char* param;
+            uint16_t* field;
+        };
+
+        ServoCalField servoCalFields[] = {
+            {"arm1OpenUs", &robotState.cfg_arm1_open_us},
+            {"arm1CloseUs", &robotState.cfg_arm1_close_us},
+            {"arm2OpenUs", &robotState.cfg_arm2_open_us},
+            {"arm2CloseUs", &robotState.cfg_arm2_close_us},
+            {"aux1OpenUs", &robotState.cfg_aux1_open_us},
+            {"aux1CloseUs", &robotState.cfg_aux1_close_us},
+            {"aux2OpenUs", &robotState.cfg_aux2_open_us},
+            {"aux2CloseUs", &robotState.cfg_aux2_close_us},
+            {"aux3OpenUs", &robotState.cfg_aux3_open_us},
+            {"aux3CloseUs", &robotState.cfg_aux3_close_us},
+        };
+
+        for (size_t i = 0; i < sizeof(servoCalFields) / sizeof(servoCalFields[0]); ++i) {
+            if (!req->hasParam(servoCalFields[i].param, true)) {
+                continue;
+            }
+            uint16_t pulseUs = 0;
+            if (!parseUint16Param(req, servoCalFields[i].param, kServoPulseMinUs,
+                                  kServoPulseMaxUs, &pulseUs)) {
+                char err[192];
+                snprintf(err, sizeof(err),
+                         "{\"ok\":false,\"error\":\"%s must be 500..2500\"}",
+                         servoCalFields[i].param);
+                req->send(400, "application/json", err);
+                return;
+            }
+            taskENTER_CRITICAL(&robotStateMux);
+            *servoCalFields[i].field = pulseUs;
+            taskEXIT_CRITICAL(&robotStateMux);
+            changed = true;
         }
 
         struct ServoTypeField {

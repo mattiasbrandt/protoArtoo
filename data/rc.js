@@ -63,7 +63,7 @@
     { token: 'aux2_toggle',  label: 'AUX2 Toggle',                   group: 'Arms' },
     { token: 'aux3_toggle',  label: 'AUX3 Toggle',                   group: 'Arms' },
     { token: 'seq',          label: 'Body Sequence',                  group: 'Sequences' },
-    { token: 'dome_seq',     label: 'Dome Sequence (Phase 4)',       group: 'Sequences', disabled: true },
+    { token: 'dome_seq',     label: 'Dome Sequence (Unavailable)', group: 'Sequences', disabled: true },
     { token: 'cmd',          label: 'Marcduino Command',              group: 'Command' },
     { token: 'estop',        label: 'E-Stop Latch',                   group: 'Safety' },
   ];
@@ -1047,7 +1047,7 @@
 
     if (binding.target === "dome_seq") {
       if (rcEditorFeedback) {
-        rcEditorFeedback.textContent = "Dome sequence trigger mapping is not available until Phase 4.";
+        rcEditorFeedback.textContent = "Dome sequence trigger mapping is not available in this firmware build.";
         rcEditorFeedback.className = "feedback warning";
       }
       return;

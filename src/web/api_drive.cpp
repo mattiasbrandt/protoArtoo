@@ -11,6 +11,7 @@
 
 #include <Arduino.h>
 #include <ESPAsyncWebServer.h>
+#include <stdlib.h>
 
 #include "api_helpers.h"
 #include "audio_task.h"
@@ -125,6 +126,24 @@ bool executeManualCommand(const String& raw) {
     }
 }
 
+static bool parseDomeSpeedValue(const char* raw, float* out) {
+    if (raw == nullptr || out == nullptr) {
+        return false;
+    }
+
+    char* end = nullptr;
+    float value = strtof(raw, &end);
+    if (end == raw || end == nullptr || *end != '\0') {
+        return false;
+    }
+    if (value < -1.0f || value > 1.0f) {
+        return false;
+    }
+
+    *out = value;
+    return true;
+}
+
 void registerDriveRoutes(AsyncWebServer& server) {
     server.on("/api/mode", HTTP_POST, [](AsyncWebServerRequest* req) {
         const AsyncWebParameter* modeParam = req->getParam("mode", true);
@@ -152,6 +171,7 @@ void registerDriveRoutes(AsyncWebServer& server) {
             taskEXIT_CRITICAL(&robotStateMux);
             saveConfigToNvs();
             PA_LOG_INFO(TAG, "[WEB] Mode set to driving");
+            req->send(200, "application/json", "{\"ok\":true}");
         } else {
             req->send(400, "application/json",
                       "{\"ok\":false,\"error\":\"invalid mode - use 'stationary' or 'driving'\"}");
@@ -223,6 +243,47 @@ void registerDriveRoutes(AsyncWebServer& server) {
         }
         taskEXIT_CRITICAL(&robotStateMux);
 
+        req->send(200, "application/json", "{\"ok\":true}");
+    });
+
+    server.on("/api/dome", HTTP_POST, [](AsyncWebServerRequest* req) {
+        const AsyncWebParameter* speedParam = req->getParam("speed", true);
+        if (speedParam == nullptr) {
+            req->send(400, "application/json",
+                      "{\"ok\":false,\"error\":\"missing speed\"}");
+            return;
+        }
+
+        float speed = 0.0f;
+        if (!parseDomeSpeedValue(speedParam->value().c_str(), &speed)) {
+            req->send(400, "application/json",
+                      "{\"ok\":false,\"error\":\"speed must be a float in range -1.0..1.0\"}");
+            return;
+        }
+
+        taskENTER_CRITICAL(&robotStateMux);
+        bool domeEnabled = robotState.cfg_enable_dome;
+        taskEXIT_CRITICAL(&robotStateMux);
+        if (!domeEnabled) {
+            req->send(409, "application/json",
+                      "{\"ok\":false,\"error\":\"dome output is disabled\"}");
+            return;
+        }
+
+        DomeCommand cmd = {};
+        cmd.speed = constrain(speed, -1.0f, 1.0f);
+        cmd.source = SRC_WEB_API;
+        cmd.timestampMs = millis();
+        if (xQueueSend(domeCmdQueue, &cmd, 0) != pdTRUE) {
+            taskENTER_CRITICAL(&robotStateMux);
+            robotState.queueOverflowCount++;
+            taskEXIT_CRITICAL(&robotStateMux);
+            req->send(503, "application/json",
+                      "{\"ok\":false,\"error\":\"dome command queue full\"}");
+            return;
+        }
+
+        PA_LOG_INFO(TAG, "[WEB] POST /api/dome speed=%.2f", (double)cmd.speed);
         req->send(200, "application/json", "{\"ok\":true}");
     });
 }

@@ -239,7 +239,7 @@ bool appendPeripheralStatus(char*& pos, size_t& remaining, const char* key, cons
 
 }  // namespace
 
-void buildStatusJson(char* buffer, size_t bufferSize) {
+bool buildStatusJson(char* buffer, size_t bufferSize) {
     bool estop;
     bool webControlEnabled;
     bool sbusSignalLost;
@@ -273,6 +273,10 @@ void buildStatusJson(char* buffer, size_t bufferSize) {
     uint32_t domeHbRx;
     uint32_t bodyHbTx;
     uint32_t domeLastSeenMs;
+
+    if (buffer == nullptr || bufferSize == 0) {
+        return false;
+    }
 
     taskENTER_CRITICAL(&robotStateMux);
     estop = robotState.estop;
@@ -344,118 +348,119 @@ void buildStatusJson(char* buffer, size_t bufferSize) {
 
     // Conditionally append enabled-component keys — disabled components are absent,
     // not emitted as false placeholders (Phase 3 status/dashboard contract).
-    if (written > 0 && written < (int)bufferSize - 1) {
+    bool ok = written > 0 && written < (int)bufferSize - 1;
+    if (ok) {
         char* pos = buffer + written;
         size_t remaining = bufferSize - (size_t)written;
         char detail[96];
 
         if (enableArm1) {
             snprintf(detail, sizeof(detail), "Target %u us", (unsigned)arm1TargetUs);
-            appendPeripheralStatus(pos, remaining, "arm1", "ready", detail);
+            ok = appendPeripheralStatus(pos, remaining, "arm1", "ready", detail) && ok;
         }
         if (enableArm2) {
             snprintf(detail, sizeof(detail), "Target %u us", (unsigned)arm2TargetUs);
-            appendPeripheralStatus(pos, remaining, "arm2", "ready", detail);
+            ok = appendPeripheralStatus(pos, remaining, "arm2", "ready", detail) && ok;
         }
         if (enableAux1) {
-            appendPeripheralStatus(pos, remaining, "aux1", "ready", "Servo channel enabled");
+            ok = appendPeripheralStatus(pos, remaining, "aux1", "ready", "Servo channel enabled") && ok;
         }
         if (enableAux2) {
-            appendPeripheralStatus(pos, remaining, "aux2", "ready", "Servo channel enabled");
+            ok = appendPeripheralStatus(pos, remaining, "aux2", "ready", "Servo channel enabled") && ok;
         }
         if (enableAux3) {
-            appendPeripheralStatus(pos, remaining, "aux3", "ready", "Servo channel enabled");
+            ok = appendPeripheralStatus(pos, remaining, "aux3", "ready", "Servo channel enabled") && ok;
         }
         if (enableDome) {
             if (domeTargetSpeed > 0.001f || domeTargetSpeed < -0.001f) {
                 snprintf(detail, sizeof(detail), "Target %.0f%%",
                          (double)(domeTargetSpeed * 100.0f));
-                appendPeripheralStatus(pos, remaining, "dome", "spinning", detail);
+                ok = appendPeripheralStatus(pos, remaining, "dome", "spinning", detail) && ok;
             } else {
-                appendPeripheralStatus(pos, remaining, "dome", "idle", "Target 0%");
+                ok = appendPeripheralStatus(pos, remaining, "dome", "idle", "Target 0%") && ok;
             }
         }
         if (enableRcCh1) {
             if (rcInputMode == RC_INPUT_STANDARD_PWM) {
-                appendPeripheralStatus(
+                ok = appendPeripheralStatus(
                     pos, remaining, "rcCh1", "ready",
-                    "Standard PWM input enabled; routing configurable via /api/config");
+                    "Standard PWM input enabled; routing configurable via /api/config") && ok;
             } else if (lastSbus1Ms == 0) {
-                appendPeripheralStatus(pos, remaining, "rcCh1", "not_seen",
-                                       "Drive SBUS input waiting for first frame");
+                ok = appendPeripheralStatus(pos, remaining, "rcCh1", "not_seen",
+                                            "Drive SBUS input waiting for first frame") && ok;
             } else if (sbusSignalLost) {
                 snprintf(detail, sizeof(detail),
                          "Drive SBUS lost, last %lu ms ago, lost frames %lu",
                          uptimeMs - lastSbus1Ms, (unsigned long)sbus1LostFrameCount);
-                appendPeripheralStatus(pos, remaining, "rcCh1", "signal_lost", detail);
+                ok = appendPeripheralStatus(pos, remaining, "rcCh1", "signal_lost", detail) && ok;
             } else {
                 snprintf(detail, sizeof(detail),
                          "Drive SBUS active, last %lu ms ago, lost frames %lu",
                          uptimeMs - lastSbus1Ms, (unsigned long)sbus1LostFrameCount);
-                appendPeripheralStatus(pos, remaining, "rcCh1", "active", detail);
+                ok = appendPeripheralStatus(pos, remaining, "rcCh1", "active", detail) && ok;
             }
         }
         if (enableRcCh2) {
             if (rcInputMode == RC_INPUT_STANDARD_PWM) {
-                appendPeripheralStatus(
+                ok = appendPeripheralStatus(
                     pos, remaining, "rcCh2", "ready",
-                    "Standard PWM input enabled; routing configurable via /api/config");
+                    "Standard PWM input enabled; routing configurable via /api/config") && ok;
             } else if (rcInputMode == RC_INPUT_SINGLE_SBUS) {
-                appendPeripheralStatus(
+                ok = appendPeripheralStatus(
                     pos, remaining, "rcCh2", "standby",
-                    "Reserved for SBUS2 in dual_sbus mode; inactive in single_sbus mode");
+                    "Reserved for SBUS2 in dual_sbus mode; inactive in single_sbus mode") && ok;
             } else if (lastSbus2Ms == 0) {
-                appendPeripheralStatus(pos, remaining, "rcCh2", "not_seen",
-                                       "Dome SBUS input waiting for first frame");
+                ok = appendPeripheralStatus(pos, remaining, "rcCh2", "not_seen",
+                                            "Dome SBUS input waiting for first frame") && ok;
             } else if (sbus2SignalLost) {
                 snprintf(detail, sizeof(detail), "Dome SBUS lost, last %lu ms ago",
                          uptimeMs - lastSbus2Ms);
-                appendPeripheralStatus(pos, remaining, "rcCh2", "signal_lost", detail);
+                ok = appendPeripheralStatus(pos, remaining, "rcCh2", "signal_lost", detail) && ok;
             } else {
                 snprintf(detail, sizeof(detail), "Dome SBUS active, last %lu ms ago",
                          uptimeMs - lastSbus2Ms);
-                appendPeripheralStatus(pos, remaining, "rcCh2", "active", detail);
+                ok = appendPeripheralStatus(pos, remaining, "rcCh2", "active", detail) && ok;
             }
         }
         if (enableRcCh3) {
             snprintf(detail, sizeof(detail),
                      "CH3 enabled; %s routing is configurable via /api/config",
                      rcInputModeLabel(rcInputMode));
-            appendPeripheralStatus(pos, remaining, "rcCh3",
-                                   rcInputMode == RC_INPUT_STANDARD_PWM ? "ready" : "standby",
-                                   detail);
+            ok = appendPeripheralStatus(pos, remaining, "rcCh3",
+                                        rcInputMode == RC_INPUT_STANDARD_PWM ? "ready" : "standby",
+                                        detail) && ok;
         }
         if (enableRcCh4) {
             snprintf(detail, sizeof(detail),
                      "CH4 enabled; %s routing is configurable via /api/config",
                      rcInputModeLabel(rcInputMode));
-            appendPeripheralStatus(pos, remaining, "rcCh4",
-                                   rcInputMode == RC_INPUT_STANDARD_PWM ? "ready" : "standby",
-                                   detail);
+            ok = appendPeripheralStatus(pos, remaining, "rcCh4",
+                                        rcInputMode == RC_INPUT_STANDARD_PWM ? "ready" : "standby",
+                                        detail) && ok;
         }
         if (enableRcCh5) {
             snprintf(detail, sizeof(detail),
                      "CH5 enabled; %s routing is configurable via /api/config",
                      rcInputModeLabel(rcInputMode));
-            appendPeripheralStatus(pos, remaining, "rcCh5",
-                                   rcInputMode == RC_INPUT_STANDARD_PWM ? "ready" : "standby",
-                                   detail);
+            ok = appendPeripheralStatus(pos, remaining, "rcCh5",
+                                        rcInputMode == RC_INPUT_STANDARD_PWM ? "ready" : "standby",
+                                        detail) && ok;
         }
         if (enableRcCh6) {
             snprintf(detail, sizeof(detail),
                      "CH6 enabled; %s routing is configurable via /api/config",
                      rcInputModeLabel(rcInputMode));
-            appendPeripheralStatus(pos, remaining, "rcCh6",
-                                   rcInputMode == RC_INPUT_STANDARD_PWM ? "ready" : "standby",
-                                   detail);
+            ok = appendPeripheralStatus(pos, remaining, "rcCh6",
+                                        rcInputMode == RC_INPUT_STANDARD_PWM ? "ready" : "standby",
+                                        detail) && ok;
         }
         if (enableS1Hoverboard) {
             if (driveSpeed != 0 || driveSteer != 0) {
                 snprintf(detail, sizeof(detail), "Command %d/%d", driveSpeed, driveSteer);
-                appendPeripheralStatus(pos, remaining, "s1Hoverboard", "commanding", detail);
+                ok = appendPeripheralStatus(pos, remaining, "s1Hoverboard", "commanding", detail) && ok;
             } else {
-                appendPeripheralStatus(pos, remaining, "s1Hoverboard", "idle",
-                                       "No drive command requested");
+                ok = appendPeripheralStatus(pos, remaining, "s1Hoverboard", "idle",
+                                            "No drive command requested") && ok;
             }
         }
         if (enableS2Sound) {
@@ -467,23 +472,25 @@ void buildStatusJson(char* buffer, size_t bufferSize) {
             if (_n > 0 && _n < (int)remaining) {
                 pos += _n;
                 remaining -= (size_t)_n;
+            } else {
+                ok = false;
             }
         }
         if (enableS3DomeCtrl) {
             if (domeLastSeenMs == 0) {
                 snprintf(detail, sizeof(detail), "Heartbeat tx %lu, no dome heartbeat seen yet",
                          (unsigned long)bodyHbTx);
-                appendPeripheralStatus(pos, remaining, "s3DomeCtrl", "not_seen", detail);
+                ok = appendPeripheralStatus(pos, remaining, "s3DomeCtrl", "not_seen", detail) && ok;
             } else if ((uptimeMs - domeLastSeenMs) < 5000UL) {
                 snprintf(detail, sizeof(detail), "Heartbeat rx %lu / tx %lu, last %lu ms ago",
                          (unsigned long)domeHbRx, (unsigned long)bodyHbTx,
                          uptimeMs - domeLastSeenMs);
-                appendPeripheralStatus(pos, remaining, "s3DomeCtrl", "connected", detail);
+                ok = appendPeripheralStatus(pos, remaining, "s3DomeCtrl", "connected", detail) && ok;
             } else {
                 snprintf(detail, sizeof(detail), "Heartbeat rx %lu / tx %lu, last %lu ms ago",
                          (unsigned long)domeHbRx, (unsigned long)bodyHbTx,
                          uptimeMs - domeLastSeenMs);
-                appendPeripheralStatus(pos, remaining, "s3DomeCtrl", "lost", detail);
+                ok = appendPeripheralStatus(pos, remaining, "s3DomeCtrl", "lost", detail) && ok;
             }
         }
 
@@ -509,11 +516,17 @@ void buildStatusJson(char* buffer, size_t bufferSize) {
                      ",\"dome_link\":{\"state\":\"%s\",\"hb_tx\":%lu,\"hb_rx\":%lu"
                      ",\"last_rx_ms\":%ld}",
                      dlState, (unsigned long)bodyHbTx, (unsigned long)domeHbRx, (long)lastRxMs);
-            appendJsonChunk(pos, remaining, dlBuf);
+            ok = appendJsonChunk(pos, remaining, dlBuf) && ok;
         }
 
-        appendJsonChunk(pos, remaining, "}");
+        ok = appendJsonChunk(pos, remaining, "}") && ok;
     }
+
+    if (!ok) {
+        snprintf(buffer, bufferSize, "{\"ok\":false,\"error\":\"status payload overflow\"}");
+        return false;
+    }
+    return true;
 }
 
 
@@ -527,11 +540,16 @@ bool webLittleFsMounted() {
 // task also on Core 0. They cannot run truly concurrently on the same core,
 // so sharing these buffers is safe without additional locking.
 // Combined saving vs previous approach (two sets of statics): 3 KB BSS.
-static char s_sseStatusBody[1024];
+// Status JSON can exceed 1 KB when many components are enabled; keep headroom.
+static char s_sseStatusBody[3072];
 // RC diagnostics JSON reaches ~2570 bytes in dual_sbus mode (2 sources + 7 analog
 // channels + digital section + mapping profile + raw channel arrays).
 // Keep a 3072-byte margin to avoid truncating SSE rc events.
 static char s_sseRcBody[3072];
+static JsonDocument s_sseRcDoc;
+static bool s_rcSseBuildWarned = false;
+static bool s_rcSseSizeWarned = false;
+static bool s_statusSseOverflowWarned = false;
 static uint32_t s_lastLogSent = 0;
 static char s_sseLogLines[8][LOG_LINE_MAX];
 
@@ -548,16 +566,37 @@ void eventStreamTask(void*) {
         if (serverStarted && events.count() > 0) {
             uint32_t nowMs = millis();
 
-            buildStatusJson(s_sseStatusBody, sizeof(s_sseStatusBody));
+            if (!buildStatusJson(s_sseStatusBody, sizeof(s_sseStatusBody))) {
+                if (!s_statusSseOverflowWarned) {
+                    PA_LOG_WARN("WebEvents", "status SSE payload overflowed; sending fallback payload");
+                    s_statusSseOverflowWarned = true;
+                }
+            } else {
+                s_statusSseOverflowWarned = false;
+            }
             events.send(s_sseStatusBody, "status", nowMs);
 
             RcDiagnosticsSnapshot rcSnap;
             captureRcDiagnosticsSnapshot(&rcSnap);
-            JsonDocument rcDoc;
-            if (populateRcDiagnosticsJson(rcDoc, rcSnap)) {
-                size_t rcBytes = measureJson(rcDoc);
-                if (rcBytes < sizeof(s_sseRcBody)) {
-                    serializeJson(rcDoc, s_sseRcBody, sizeof(s_sseRcBody));
+            s_sseRcDoc.clear();
+            if (!populateRcDiagnosticsJson(s_sseRcDoc, rcSnap)) {
+                if (!s_rcSseBuildWarned) {
+                    PA_LOG_WARN("WebEvents", "rc SSE JSON build failed; event dropped");
+                    s_rcSseBuildWarned = true;
+                }
+            } else {
+                s_rcSseBuildWarned = false;
+                size_t rcBytes = measureJson(s_sseRcDoc);
+                if (rcBytes >= sizeof(s_sseRcBody)) {
+                    if (!s_rcSseSizeWarned) {
+                        PA_LOG_WARN("WebEvents",
+                                    "rc SSE payload too large (%u bytes >= %u); event dropped",
+                                    (unsigned)rcBytes, (unsigned)sizeof(s_sseRcBody));
+                        s_rcSseSizeWarned = true;
+                    }
+                } else {
+                    s_rcSseSizeWarned = false;
+                    serializeJson(s_sseRcDoc, s_sseRcBody, sizeof(s_sseRcBody));
                     events.send(s_sseRcBody, "rc", nowMs);
                 }
             }
@@ -702,8 +741,16 @@ void webServerInit() {
     WiFi.begin(PA_STA_SSID, PA_STA_PASSWORD);
     PA_LOG_INFO(TAG, "WiFi bootstrap: client mode");
 #else
+#if !__has_include("secrets.h")
+#error "PA_ENABLE_STA_WIFI=0 requires src/secrets.h defining PA_AP_PASSWORD"
+#endif
+#ifndef PA_AP_PASSWORD
+#error "PA_ENABLE_STA_WIFI=0: PA_AP_PASSWORD not defined in secrets.h"
+#endif
+    static_assert(sizeof(PA_AP_PASSWORD) >= 9,
+                  "PA_AP_PASSWORD must be at least 8 characters");
     WiFi.mode(WIFI_AP);
-    WiFi.softAP(WIFI_AP_SSID);
-    PA_LOG_INFO(TAG, "WiFi bootstrap: hotspot mode");
+    WiFi.softAP(WIFI_AP_SSID, PA_AP_PASSWORD);
+    PA_LOG_INFO(TAG, "WiFi bootstrap: hotspot mode (secured)");
 #endif  // PA_ENABLE_STA_WIFI
 }

@@ -106,8 +106,8 @@
   const startHoldLoop = (speed, steer) => {
     stopHoldLoop();
     postDriveCommand(speed, steer);
-    // Send repeated commands at 150 ms so the 500 ms web timeout can't expire mid-hold
-    holdTimer = window.setInterval(() => postDriveCommand(speed, steer), 150);
+    // Send repeated commands faster than the minimum allowed web timeout (100 ms).
+    holdTimer = window.setInterval(() => postDriveCommand(speed, steer), 50);
   };
 
   driveButtons.forEach((button) => {

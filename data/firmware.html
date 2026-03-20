@@ -54,7 +54,7 @@
     </div>
 
     <div class="card">
-      <h3>�️ Filesystem Update</h3>
+      <h3>🗂️ Filesystem Update</h3>
       <div class="desc">Upload a new filesystem image (<code>.bin</code>) to update the web UI and assets.</div>
       <div class="desc mt-8 text-warning">
         ⚠️ Warning: Keep power connected during the update. Do not refresh this page while updating.
@@ -73,12 +73,12 @@
         <div class="button-row">
           <button id="upload-fs-button" class="btn accent" type="button">📤 Upload Filesystem</button>
         </div>
-        <div class="desc mt-8">Build with <code>pio run -e protoArtoo --target buildfs</code>, then select the <code>.bin</code> from <code>.pio/build/protoArtoo/littlefs.bin</code>. The controller reboots automatically when done.</div>
+        <div class="desc mt-8">Build with <code>pio run -e &lt;env&gt; --target buildfs</code>, then select <code>.pio/build/&lt;env&gt;/littlefs.bin</code> for your active environment. The controller reboots automatically when done.</div>
       </div>
     </div>
 
     <div class="card">
-      <h3>�🔄 System Controls</h3>
+      <h3>🔄 System Controls</h3>
       <div class="button-row">
         <button id="reboot-button" class="btn danger" type="button">🔄 Reboot Controller</button>
       </div>

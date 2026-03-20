@@ -87,7 +87,7 @@
     <!-- Drive Controls - D-Pad Grid Layout -->
     <div class="card">
       <h3>🎮 Drive Controls</h3>
-      <div class="desc">Hold to drive, release to stop. Commands time out after 500 ms for safety.</div>
+      <div class="desc">Hold to drive, release to stop. Command timeout follows the configured Web Control Timeout setting.</div>
       <div class="dpad-grid mt-16">
         <button class="btn dpad-btn" data-drive-speed="260" data-drive-steer="0"
           type="button" aria-label="Drive Forward">⬆️</button>
@@ -118,9 +118,9 @@
             title="Web drive commands expire after this many milliseconds. The droid stops if no new command arrives within this window.">
         </label>
         <label class="field field-checkbox"
-          title="When enabled, CH8 on your transmitter scales the speed limit from 0% to 100% of the maximum.">
+          title="When enabled, CH8 still scales speed limit 0–100%. Near zero (below ~2%) it also forces Stationary mode and commands stop.">
           <input id="ch8-mode-lock" name="ch8ModeLock" type="checkbox">
-          <span>Enable CH8 Speed Limit Control</span>
+          <span>Enable CH8 Mode Lock at Zero</span>
         </label>
         <div class="button-row">
           <button id="reload-config-button" class="btn" type="button">🔄 Reload</button>
