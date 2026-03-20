@@ -14,24 +14,27 @@
 
 #include "logging.h"
 #include "robot_state.h"
-#include "web_server.h"
+#include "rc_diagnostics_snapshot.h"
 
 static const char* TAG = "RC";
 
 void registerRcRoutes(AsyncWebServer& server) {
     server.on("/api/rc", HTTP_GET, [](AsyncWebServerRequest* req) {
-        // Static buffer: ESPAsyncWebServer serialises handler invocations on the
-        // async TCP task — concurrent GET /api/rc requests are not possible, so
-        // this buffer is safe without an additional mutex.
-        // req->send() copies the string synchronously before returning.
-        // 3072 bytes: RC diagnostics JSON reaches ~2570 bytes in dual_sbus mode
-        // (2 sources + 7 analog channels + digital section + full mapping profile).
-        static char rcBuf[3072];
-        if (!buildRcDiagnosticsJson(rcBuf, sizeof(rcBuf))) {
+        RcDiagnosticsSnapshot snap;
+        captureRcDiagnosticsSnapshot(&snap);
+        JsonDocument doc;
+        if (!populateRcDiagnosticsJson(doc, snap)) {
             req->send(500, "application/json", "{\"ok\":false,\"error\":\"rc json build failed\"}");
             return;
         }
-        req->send(200, "application/json", rcBuf);
+        auto* stream = req->beginResponseStream("application/json");
+        if (stream == nullptr) {
+            req->send(500, "application/json",
+                      "{\"ok\":false,\"error\":\"response stream alloc failed\"}");
+            return;
+        }
+        serializeJson(doc, *stream);
+        req->send(stream);
         PA_LOG_DEBUG(TAG, "GET /api/rc");
     });
 

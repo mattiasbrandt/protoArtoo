@@ -16,7 +16,6 @@
 class AsyncWebServer;
 
 void buildStatusJson(char* buffer, size_t bufferSize);
-bool buildRcDiagnosticsJson(char* buffer, size_t bufferSize);
 size_t copyRecentLogs(char* buffer, size_t bufferSize);
 uint32_t copyNewLogLinesSince(uint32_t lastSent, char out[][LOG_LINE_MAX], size_t maxLines,
                               size_t* linesCopied);

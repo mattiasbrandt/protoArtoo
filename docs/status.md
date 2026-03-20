@@ -21,7 +21,7 @@
 | Phase 2 — Web server + OTA | Complete — bench-tested baseline established |
 | Phase 3 — Servos + dome motor | **Bench-complete** — software bench-verified; hardware validation formally deferred; deferred items carried forward as T11/T12 in Phase 4 |
 | **Web UI/UX quality gate** | **CLEARED** — signed off 2026-03-15. See `tasks/web_ui_quality_gate.md` |
-| **Phase 4 — Audio + full dome link** | **In progress** — branch `phase/v0.4.0` active; all software tasks T01–T09, T13–T18 complete; T10 audio hardware partially validated (deterministic playback, named sounds, mood intervals confirmed on DY-SV5W); T11–T12 hardware-blocked; see Phase 4 section below |
+| **Phase 4 — Audio + full dome link** | **In progress** — branch `phase/v0.4.0` active; software tasks T01–T09, T13–T21 complete; T10 audio hardware partially validated (deterministic playback, named sounds, mood intervals confirmed on DY-SV5W); T11–T12 hardware-blocked; see Phase 4 section below |
 | Phase 5 — Community release | Pending Phase 4 |
 
 ---
@@ -112,7 +112,7 @@ from git tag + build timestamp (e.g. `v0.2.0-1-g23008b7-20260315-013914`).
 - `/api/audio` (play, stop, volume), `/api/mood`, `/api/status` dome_link block: bench-tested
 - Dashboard: Mood Selector card, audio source indicators
 - Static RAM: 20.6% (67,528 / 327,680 B); heapMin ~126 KB post-WiFi
-- 435 native test cases passing (includes audio parser, mood dispatch, frame builder, per-mood interval NVS keys)
+- 441 native test cases passing (includes config/audio snapshot JSON coverage, RC diagnostics snapshot+ArduinoJson parity/size checks, mood dispatch, frame builder, and per-mood interval NVS keys)
 - Runtime log level: Setup page Diagnostics card, NVS-backed (`log_level`), 1=Error / 2=Info / 3=Debug
 - **Per-mood random sound intervals (T18, bench-tested 2026-03-18):** Quiet=0 s / Mid-Awake=30 s /
   Full-Awake=20 s / Awake+=10 s; NVS-backed per-mood keys; configurable from Sound page Mood Intervals
@@ -171,7 +171,8 @@ Tracked as T11 and T12 in `tasks/phase4-tasks.md`.
 | T17 | Runtime log level selector on Setup page | ✅ **bench-tested** — dropdown renders, POST works, NVS-persisted; OTA bug fixed (UPDATE_SIZE_UNKNOWN) |
 | T18 | Per-mood random sound intervals | ✅ **bench-tested** — API, NVS, Sound page UI; audible frequency change per mood requires T10 hardware |
 | T19 | Config API JSON refactor: ConfigSnapshot + ArduinoJson streaming | ✅ **bench-tested** — `buildConfigJson`/`configJsonBuf` removed; `captureConfigSnapshot` + `populateConfigJson` implemented; GET+POST handlers use ArduinoJson streaming; `configJsonBuf` 2 KB BSS reclaimed; post-review hardening added null checks for `beginResponseStream()` in both config response paths; `pio run -e protoArtoo` passes |
-| T20 | Native tests: populateConfigJson coverage | ✅ **native-tested** — 442/442 tests green (up from 437); 5 new cases cover typical, worst-case size, key presence, disabled bindings, overflow measurability; overflow case now exercises real tiny-buffer serialization + `measureJson`; native stubs gated to `[env:native]` via `PA_NATIVE_TEST_STUBS` to avoid firmware contamination |
+| T20 | Native tests: populateConfigJson coverage | ✅ **native-tested** — originally 442/442 at T20 closure (up from 437) with 5 new config JSON cases; after T21 retired obsolete `formatRcDiagnosticsJson` tests and added snapshot/ArduinoJson RC tests, current suite is 441/441 |
+| T21 | RC diagnostics JSON refactor: RcDiagnosticsSnapshot + ArduinoJson streaming | ✅ **bench-tested** — removed `buildRcDiagnosticsJson` + `/api/rc` `rcBuf`; shared `captureRcDiagnosticsSnapshot` + `populateRcDiagnosticsJson` now drive GET `/api/rc` and SSE `event: rc`; native tests cover typical payload, dual_sbus size budget, key-order contract, and empty `raw` object behavior; `pio run -e protoArtoo`, `pio test -e native` (441/441), and `pio check` pass; OTA deployment to `10.0.0.22` (`v0.3.0-65-g6f6e636`) verified `GET /api/rc` payload and SSE `event: rc` on `/api/events` (`Accept: text/event-stream`) |
 
 **Verification terminology used in this project:**
 - `native-tested` — covered by `pio test -e native` passing
