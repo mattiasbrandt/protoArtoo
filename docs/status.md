@@ -158,7 +158,7 @@ Tracked as T11 and T12 in `tasks/phase4-tasks.md`.
 | T00 | Phase branch setup, workflow alignment | Complete |
 | T01 | AudioDriver interface + soft UART backend | ✅ **bench-tested** — DY-SV5W playback verified on hardware (DYPlayer-aligned driver) |
 | T02 | AudioTask, dollar parser, queue helpers | ✅ **bench-tested** — queue wiring, API routing, random playback, enable/disable; audio hardware output requires T10 |
-| T03/T04/T05 | DomeLinkTask — UART2 TX/RX, `#PAHB` heartbeat, Marcduino dispatch | `#PAHB` TX + `#APHB` RX intercept: **compile-only** (dome board not connected); UART2 wiring not validated |
+| T03/T04/T05 | DomeLinkTask — UART2 TX/RX, `#PAHB` heartbeat, Marcduino dispatch | **partial** — `#PAHB` TX and `#APHB` RX intercept bench-tested; full dome-board integration remains hardware-blocked |
 | T06 | Status API + dashboard — `dome_link` block, audio health indicators | ✅ **bench-tested** |
 | T07 | `/api/audio`, `/api/audio/tracks`, Marcduino routing | ✅ **bench-tested** |
 | T08 | Mood dual-path — `/api/mood`, boot restore, dome RX intercept | ✅ **bench-tested** (audio path); dome TX path requires T10 hardware |
