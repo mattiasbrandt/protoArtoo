@@ -13,13 +13,13 @@
 // =============================================================================
 
 #include "api_config.h"
-#include "api_config_snapshot.h"
-#include <ArduinoJson.h>
 
 #include <Arduino.h>
+#include <ArduinoJson.h>
 #include <ESPAsyncWebServer.h>
 #include <string.h>
 
+#include "api_config_snapshot.h"
 #include "api_helpers.h"
 #include "config.h"
 #include "logging.h"
@@ -225,7 +225,6 @@ bool triggerTargetAllowedByRuntime(const RcTriggerBinding& binding) {
     return binding.target != RC_ACTION_DOME_SEQ;
 }
 
-
 }  // namespace
 
 // -----------------------------------------------------------------------------
@@ -236,67 +235,67 @@ bool triggerTargetAllowedByRuntime(const RcTriggerBinding& binding) {
 // -----------------------------------------------------------------------------
 void captureConfigSnapshot(ConfigSnapshot* out) {
     taskENTER_CRITICAL(&robotStateMux);
-    out->speedLimitMax      = robotState.cfg_speedLimitMax;
-    out->webDriveTimeoutMs  = robotState.cfg_webDriveTimeoutMs;
-    out->ch8ModeLock        = robotState.cfg_ch8ModeLock;
-    out->stationary         = robotState.cfg_stationary;
-    out->logLevel           = robotState.cfg_logLevel;
-    out->rcInputMode        = robotState.cfg_rc_input_mode;
+    out->speedLimitMax = robotState.cfg_speedLimitMax;
+    out->webDriveTimeoutMs = robotState.cfg_webDriveTimeoutMs;
+    out->ch8ModeLock = robotState.cfg_ch8ModeLock;
+    out->stationary = robotState.cfg_stationary;
+    out->logLevel = robotState.cfg_logLevel;
+    out->rcInputMode = robotState.cfg_rc_input_mode;
 
-    out->enableArm1         = robotState.cfg_enable_arm1;
-    out->enableArm2         = robotState.cfg_enable_arm2;
-    out->enableAux1         = robotState.cfg_enable_aux1;
-    out->enableAux2         = robotState.cfg_enable_aux2;
-    out->enableAux3         = robotState.cfg_enable_aux3;
-    out->enableDome         = robotState.cfg_enable_dome;
-    out->enableRcCh1        = robotState.cfg_enable_rc_ch1;
-    out->enableRcCh2        = robotState.cfg_enable_rc_ch2;
-    out->enableRcCh3        = robotState.cfg_enable_rc_ch3;
-    out->enableRcCh4        = robotState.cfg_enable_rc_ch4;
-    out->enableRcCh5        = robotState.cfg_enable_rc_ch5;
-    out->enableRcCh6        = robotState.cfg_enable_rc_ch6;
+    out->enableArm1 = robotState.cfg_enable_arm1;
+    out->enableArm2 = robotState.cfg_enable_arm2;
+    out->enableAux1 = robotState.cfg_enable_aux1;
+    out->enableAux2 = robotState.cfg_enable_aux2;
+    out->enableAux3 = robotState.cfg_enable_aux3;
+    out->enableDome = robotState.cfg_enable_dome;
+    out->enableRcCh1 = robotState.cfg_enable_rc_ch1;
+    out->enableRcCh2 = robotState.cfg_enable_rc_ch2;
+    out->enableRcCh3 = robotState.cfg_enable_rc_ch3;
+    out->enableRcCh4 = robotState.cfg_enable_rc_ch4;
+    out->enableRcCh5 = robotState.cfg_enable_rc_ch5;
+    out->enableRcCh6 = robotState.cfg_enable_rc_ch6;
     out->enableS1Hoverboard = robotState.cfg_enable_s1_hoverboard;
-    out->enableS2Sound      = robotState.cfg_enable_s2_sound;
-    out->enableS3DomeCtrl   = robotState.cfg_enable_s3_dome_ctrl;
+    out->enableS2Sound = robotState.cfg_enable_s2_sound;
+    out->enableS3DomeCtrl = robotState.cfg_enable_s3_dome_ctrl;
 
-    out->domeNeutralUs      = robotState.cfg_dome_neutral_us;
-    out->domeMinPulseUs     = robotState.cfg_dome_min_pulse_us;
-    out->domeMaxPulseUs     = robotState.cfg_dome_max_pulse_us;
-    out->domeSpeedLimitPct  = robotState.cfg_dome_speed_limit_pct;
+    out->domeNeutralUs = robotState.cfg_dome_neutral_us;
+    out->domeMinPulseUs = robotState.cfg_dome_min_pulse_us;
+    out->domeMaxPulseUs = robotState.cfg_dome_max_pulse_us;
+    out->domeSpeedLimitPct = robotState.cfg_dome_speed_limit_pct;
 
-    out->arm1Type           = robotState.cfg_arm1_type;
-    out->arm2Type           = robotState.cfg_arm2_type;
-    out->aux1Type           = robotState.cfg_aux1_type;
-    out->aux2Type           = robotState.cfg_aux2_type;
-    out->aux3Type           = robotState.cfg_aux3_type;
+    out->arm1Type = robotState.cfg_arm1_type;
+    out->arm2Type = robotState.cfg_arm2_type;
+    out->aux1Type = robotState.cfg_aux1_type;
+    out->aux2Type = robotState.cfg_aux2_type;
+    out->aux3Type = robotState.cfg_aux3_type;
 
-    out->rcPwmDriveSpeed    = robotState.cfg_rc_pwm_drive_speed;
-    out->rcPwmDriveSteer    = robotState.cfg_rc_pwm_drive_steer;
-    out->rcPwmDriveLimit    = robotState.cfg_rc_pwm_drive_limit;
-    out->rcPwmDomeSpeed     = robotState.cfg_rc_pwm_dome_speed;
-    out->rcPwmArm1          = robotState.cfg_rc_pwm_arm1;
-    out->rcPwmArm2          = robotState.cfg_rc_pwm_arm2;
-    out->rcPwmSound         = robotState.cfg_rc_pwm_sound;
+    out->rcPwmDriveSpeed = robotState.cfg_rc_pwm_drive_speed;
+    out->rcPwmDriveSteer = robotState.cfg_rc_pwm_drive_steer;
+    out->rcPwmDriveLimit = robotState.cfg_rc_pwm_drive_limit;
+    out->rcPwmDomeSpeed = robotState.cfg_rc_pwm_dome_speed;
+    out->rcPwmArm1 = robotState.cfg_rc_pwm_arm1;
+    out->rcPwmArm2 = robotState.cfg_rc_pwm_arm2;
+    out->rcPwmSound = robotState.cfg_rc_pwm_sound;
 
-    out->rcSbusDriveSpeed   = robotState.cfg_rc_sbus_drive_speed;
-    out->rcSbusDriveSteer   = robotState.cfg_rc_sbus_drive_steer;
-    out->rcSbusDriveLimit   = robotState.cfg_rc_sbus_drive_limit;
-    out->rcSbusDomeSpeed    = robotState.cfg_rc_sbus_dome_speed;
-    out->rcSbusArm1         = robotState.cfg_rc_sbus_arm1;
-    out->rcSbusArm2         = robotState.cfg_rc_sbus_arm2;
-    out->rcSbusSound        = robotState.cfg_rc_sbus_sound;
+    out->rcSbusDriveSpeed = robotState.cfg_rc_sbus_drive_speed;
+    out->rcSbusDriveSteer = robotState.cfg_rc_sbus_drive_steer;
+    out->rcSbusDriveLimit = robotState.cfg_rc_sbus_drive_limit;
+    out->rcSbusDomeSpeed = robotState.cfg_rc_sbus_dome_speed;
+    out->rcSbusArm1 = robotState.cfg_rc_sbus_arm1;
+    out->rcSbusArm2 = robotState.cfg_rc_sbus_arm2;
+    out->rcSbusSound = robotState.cfg_rc_sbus_sound;
 
-    out->rcArm1             = robotState.cfg_rc_arm1;
-    out->rcArm2             = robotState.cfg_rc_arm2;
-    out->rcAux1             = robotState.cfg_rc_aux1;
-    out->rcAux2             = robotState.cfg_rc_aux2;
-    out->rcAux3             = robotState.cfg_rc_aux3;
-    out->rcSound            = robotState.cfg_rc_sound;
-    out->rcOpmode           = robotState.cfg_rc_opmode;
-    out->rcFree0            = robotState.cfg_rc_free0;
-    out->rcFree1            = robotState.cfg_rc_free1;
-    out->rcFree2            = robotState.cfg_rc_free2;
-    out->rcFree3            = robotState.cfg_rc_free3;
+    out->rcArm1 = robotState.cfg_rc_arm1;
+    out->rcArm2 = robotState.cfg_rc_arm2;
+    out->rcAux1 = robotState.cfg_rc_aux1;
+    out->rcAux2 = robotState.cfg_rc_aux2;
+    out->rcAux3 = robotState.cfg_rc_aux3;
+    out->rcSound = robotState.cfg_rc_sound;
+    out->rcOpmode = robotState.cfg_rc_opmode;
+    out->rcFree0 = robotState.cfg_rc_free0;
+    out->rcFree1 = robotState.cfg_rc_free1;
+    out->rcFree2 = robotState.cfg_rc_free2;
+    out->rcFree3 = robotState.cfg_rc_free3;
     taskEXIT_CRITICAL(&robotStateMux);
 }
 
@@ -311,123 +310,130 @@ void captureConfigSnapshot(ConfigSnapshot* out) {
 // -----------------------------------------------------------------------------
 bool populateConfigJson(JsonDocument& doc, const ConfigSnapshot& snap) {
     // --- RC binding config strings (14 channels, 48 bytes each) ---
-    char rcPwmDriveSpeedStr[48]  = {};
-    char rcPwmDriveSteerStr[48]  = {};
-    char rcPwmDriveLimitStr[48]  = {};
-    char rcPwmDomeSpeedStr[48]   = {};
-    char rcPwmArm1Str[48]        = {};
-    char rcPwmArm2Str[48]        = {};
-    char rcPwmSoundStr[48]       = {};
+    char rcPwmDriveSpeedStr[48] = {};
+    char rcPwmDriveSteerStr[48] = {};
+    char rcPwmDriveLimitStr[48] = {};
+    char rcPwmDomeSpeedStr[48] = {};
+    char rcPwmArm1Str[48] = {};
+    char rcPwmArm2Str[48] = {};
+    char rcPwmSoundStr[48] = {};
     char rcSbusDriveSpeedStr[48] = {};
     char rcSbusDriveSteerStr[48] = {};
     char rcSbusDriveLimitStr[48] = {};
-    char rcSbusDomeSpeedStr[48]  = {};
-    char rcSbusArm1Str[48]       = {};
-    char rcSbusArm2Str[48]       = {};
-    char rcSbusSoundStr[48]      = {};
+    char rcSbusDomeSpeedStr[48] = {};
+    char rcSbusArm1Str[48] = {};
+    char rcSbusArm2Str[48] = {};
+    char rcSbusSoundStr[48] = {};
 
     // --- Trigger binding strings (11 slots, 96 bytes each — wider for payload) ---
-    char rcArm1Str[96]   = {};
-    char rcArm2Str[96]   = {};
-    char rcAux1Str[96]   = {};
-    char rcAux2Str[96]   = {};
-    char rcAux3Str[96]   = {};
-    char rcSoundStr[96]  = {};
+    char rcArm1Str[96] = {};
+    char rcArm2Str[96] = {};
+    char rcAux1Str[96] = {};
+    char rcAux2Str[96] = {};
+    char rcAux3Str[96] = {};
+    char rcSoundStr[96] = {};
     char rcOpmodeStr[96] = {};
-    char rcFree0Str[96]  = {};
-    char rcFree1Str[96]  = {};
-    char rcFree2Str[96]  = {};
-    char rcFree3Str[96]  = {};
+    char rcFree0Str[96] = {};
+    char rcFree1Str[96] = {};
+    char rcFree2Str[96] = {};
+    char rcFree3Str[96] = {};
 
-    if (!formatRcBindingConfig(rcPwmDriveSpeedStr,  sizeof(rcPwmDriveSpeedStr),  snap.rcPwmDriveSpeed)  ||
-        !formatRcBindingConfig(rcPwmDriveSteerStr,  sizeof(rcPwmDriveSteerStr),  snap.rcPwmDriveSteer)  ||
-        !formatRcBindingConfig(rcPwmDriveLimitStr,  sizeof(rcPwmDriveLimitStr),  snap.rcPwmDriveLimit)  ||
-        !formatRcBindingConfig(rcPwmDomeSpeedStr,   sizeof(rcPwmDomeSpeedStr),   snap.rcPwmDomeSpeed)   ||
-        !formatRcBindingConfig(rcPwmArm1Str,        sizeof(rcPwmArm1Str),        snap.rcPwmArm1)        ||
-        !formatRcBindingConfig(rcPwmArm2Str,        sizeof(rcPwmArm2Str),        snap.rcPwmArm2)        ||
-        !formatRcBindingConfig(rcPwmSoundStr,       sizeof(rcPwmSoundStr),       snap.rcPwmSound)       ||
-        !formatRcBindingConfig(rcSbusDriveSpeedStr, sizeof(rcSbusDriveSpeedStr), snap.rcSbusDriveSpeed) ||
-        !formatRcBindingConfig(rcSbusDriveSteerStr, sizeof(rcSbusDriveSteerStr), snap.rcSbusDriveSteer) ||
-        !formatRcBindingConfig(rcSbusDriveLimitStr, sizeof(rcSbusDriveLimitStr), snap.rcSbusDriveLimit) ||
-        !formatRcBindingConfig(rcSbusDomeSpeedStr,  sizeof(rcSbusDomeSpeedStr),  snap.rcSbusDomeSpeed)  ||
-        !formatRcBindingConfig(rcSbusArm1Str,       sizeof(rcSbusArm1Str),       snap.rcSbusArm1)       ||
-        !formatRcBindingConfig(rcSbusArm2Str,       sizeof(rcSbusArm2Str),       snap.rcSbusArm2)       ||
-        !formatRcBindingConfig(rcSbusSoundStr,      sizeof(rcSbusSoundStr),      snap.rcSbusSound)      ||
-        !triggerBindingToUiString(rcArm1Str,   sizeof(rcArm1Str),   snap.rcArm1)   ||
-        !triggerBindingToUiString(rcArm2Str,   sizeof(rcArm2Str),   snap.rcArm2)   ||
-        !triggerBindingToUiString(rcAux1Str,   sizeof(rcAux1Str),   snap.rcAux1)   ||
-        !triggerBindingToUiString(rcAux2Str,   sizeof(rcAux2Str),   snap.rcAux2)   ||
-        !triggerBindingToUiString(rcAux3Str,   sizeof(rcAux3Str),   snap.rcAux3)   ||
-        !triggerBindingToUiString(rcSoundStr,  sizeof(rcSoundStr),  snap.rcSound)  ||
+    if (!formatRcBindingConfig(rcPwmDriveSpeedStr, sizeof(rcPwmDriveSpeedStr),
+                               snap.rcPwmDriveSpeed) ||
+        !formatRcBindingConfig(rcPwmDriveSteerStr, sizeof(rcPwmDriveSteerStr),
+                               snap.rcPwmDriveSteer) ||
+        !formatRcBindingConfig(rcPwmDriveLimitStr, sizeof(rcPwmDriveLimitStr),
+                               snap.rcPwmDriveLimit) ||
+        !formatRcBindingConfig(rcPwmDomeSpeedStr, sizeof(rcPwmDomeSpeedStr), snap.rcPwmDomeSpeed) ||
+        !formatRcBindingConfig(rcPwmArm1Str, sizeof(rcPwmArm1Str), snap.rcPwmArm1) ||
+        !formatRcBindingConfig(rcPwmArm2Str, sizeof(rcPwmArm2Str), snap.rcPwmArm2) ||
+        !formatRcBindingConfig(rcPwmSoundStr, sizeof(rcPwmSoundStr), snap.rcPwmSound) ||
+        !formatRcBindingConfig(rcSbusDriveSpeedStr, sizeof(rcSbusDriveSpeedStr),
+                               snap.rcSbusDriveSpeed) ||
+        !formatRcBindingConfig(rcSbusDriveSteerStr, sizeof(rcSbusDriveSteerStr),
+                               snap.rcSbusDriveSteer) ||
+        !formatRcBindingConfig(rcSbusDriveLimitStr, sizeof(rcSbusDriveLimitStr),
+                               snap.rcSbusDriveLimit) ||
+        !formatRcBindingConfig(rcSbusDomeSpeedStr, sizeof(rcSbusDomeSpeedStr),
+                               snap.rcSbusDomeSpeed) ||
+        !formatRcBindingConfig(rcSbusArm1Str, sizeof(rcSbusArm1Str), snap.rcSbusArm1) ||
+        !formatRcBindingConfig(rcSbusArm2Str, sizeof(rcSbusArm2Str), snap.rcSbusArm2) ||
+        !formatRcBindingConfig(rcSbusSoundStr, sizeof(rcSbusSoundStr), snap.rcSbusSound) ||
+        !triggerBindingToUiString(rcArm1Str, sizeof(rcArm1Str), snap.rcArm1) ||
+        !triggerBindingToUiString(rcArm2Str, sizeof(rcArm2Str), snap.rcArm2) ||
+        !triggerBindingToUiString(rcAux1Str, sizeof(rcAux1Str), snap.rcAux1) ||
+        !triggerBindingToUiString(rcAux2Str, sizeof(rcAux2Str), snap.rcAux2) ||
+        !triggerBindingToUiString(rcAux3Str, sizeof(rcAux3Str), snap.rcAux3) ||
+        !triggerBindingToUiString(rcSoundStr, sizeof(rcSoundStr), snap.rcSound) ||
         !triggerBindingToUiString(rcOpmodeStr, sizeof(rcOpmodeStr), snap.rcOpmode) ||
-        !triggerBindingToUiString(rcFree0Str,  sizeof(rcFree0Str),  snap.rcFree0)  ||
-        !triggerBindingToUiString(rcFree1Str,  sizeof(rcFree1Str),  snap.rcFree1)  ||
-        !triggerBindingToUiString(rcFree2Str,  sizeof(rcFree2Str),  snap.rcFree2)  ||
-        !triggerBindingToUiString(rcFree3Str,  sizeof(rcFree3Str),  snap.rcFree3)) {
+        !triggerBindingToUiString(rcFree0Str, sizeof(rcFree0Str), snap.rcFree0) ||
+        !triggerBindingToUiString(rcFree1Str, sizeof(rcFree1Str), snap.rcFree1) ||
+        !triggerBindingToUiString(rcFree2Str, sizeof(rcFree2Str), snap.rcFree2) ||
+        !triggerBindingToUiString(rcFree3Str, sizeof(rcFree3Str), snap.rcFree3)) {
         return false;
     }
 
-    doc["speedLimitMax"]      = snap.speedLimitMax;
-    doc["webDriveTimeoutMs"]  = snap.webDriveTimeoutMs;
-    doc["ch8ModeLock"]        = snap.ch8ModeLock;
-    doc["stationary"]         = snap.stationary;
-    doc["logLevel"]           = snap.logLevel;
-    doc["rcInputMode"]        = rcModeToString(snap.rcInputMode);
+    doc["speedLimitMax"] = snap.speedLimitMax;
+    doc["webDriveTimeoutMs"] = snap.webDriveTimeoutMs;
+    doc["ch8ModeLock"] = snap.ch8ModeLock;
+    doc["stationary"] = snap.stationary;
+    doc["logLevel"] = snap.logLevel;
+    doc["rcInputMode"] = rcModeToString(snap.rcInputMode);
 
-    doc["enableArm1"]         = snap.enableArm1;
-    doc["enableArm2"]         = snap.enableArm2;
-    doc["enableAux1"]         = snap.enableAux1;
-    doc["enableAux2"]         = snap.enableAux2;
-    doc["enableAux3"]         = snap.enableAux3;
-    doc["enableDome"]         = snap.enableDome;
-    doc["enableRcCh1"]        = snap.enableRcCh1;
-    doc["enableRcCh2"]        = snap.enableRcCh2;
-    doc["enableRcCh3"]        = snap.enableRcCh3;
-    doc["enableRcCh4"]        = snap.enableRcCh4;
-    doc["enableRcCh5"]        = snap.enableRcCh5;
-    doc["enableRcCh6"]        = snap.enableRcCh6;
+    doc["enableArm1"] = snap.enableArm1;
+    doc["enableArm2"] = snap.enableArm2;
+    doc["enableAux1"] = snap.enableAux1;
+    doc["enableAux2"] = snap.enableAux2;
+    doc["enableAux3"] = snap.enableAux3;
+    doc["enableDome"] = snap.enableDome;
+    doc["enableRcCh1"] = snap.enableRcCh1;
+    doc["enableRcCh2"] = snap.enableRcCh2;
+    doc["enableRcCh3"] = snap.enableRcCh3;
+    doc["enableRcCh4"] = snap.enableRcCh4;
+    doc["enableRcCh5"] = snap.enableRcCh5;
+    doc["enableRcCh6"] = snap.enableRcCh6;
     doc["enableS1Hoverboard"] = snap.enableS1Hoverboard;
-    doc["enableS2Sound"]      = snap.enableS2Sound;
-    doc["enableS3DomeCtrl"]   = snap.enableS3DomeCtrl;
+    doc["enableS2Sound"] = snap.enableS2Sound;
+    doc["enableS3DomeCtrl"] = snap.enableS3DomeCtrl;
 
-    doc["arm1Type"]           = (unsigned int)snap.arm1Type;
-    doc["arm2Type"]           = (unsigned int)snap.arm2Type;
-    doc["aux1Type"]           = (unsigned int)snap.aux1Type;
-    doc["aux2Type"]           = (unsigned int)snap.aux2Type;
-    doc["aux3Type"]           = (unsigned int)snap.aux3Type;
+    doc["arm1Type"] = (unsigned int)snap.arm1Type;
+    doc["arm2Type"] = (unsigned int)snap.arm2Type;
+    doc["aux1Type"] = (unsigned int)snap.aux1Type;
+    doc["aux2Type"] = (unsigned int)snap.aux2Type;
+    doc["aux3Type"] = (unsigned int)snap.aux3Type;
 
-    doc["domeNeutralUs"]      = snap.domeNeutralUs;
-    doc["domeMinPulseUs"]     = snap.domeMinPulseUs;
-    doc["domeMaxPulseUs"]     = snap.domeMaxPulseUs;
-    doc["domeSpeedLimitPct"]  = snap.domeSpeedLimitPct;
+    doc["domeNeutralUs"] = snap.domeNeutralUs;
+    doc["domeMinPulseUs"] = snap.domeMinPulseUs;
+    doc["domeMaxPulseUs"] = snap.domeMaxPulseUs;
+    doc["domeSpeedLimitPct"] = snap.domeSpeedLimitPct;
 
-    doc["rcPwmDriveSpeed"]    = rcPwmDriveSpeedStr;
-    doc["rcPwmDriveSteer"]    = rcPwmDriveSteerStr;
-    doc["rcPwmDriveLimit"]    = rcPwmDriveLimitStr;
-    doc["rcPwmDomeSpeed"]     = rcPwmDomeSpeedStr;
-    doc["rcPwmArm1"]          = rcPwmArm1Str;
-    doc["rcPwmArm2"]          = rcPwmArm2Str;
-    doc["rcPwmSound"]         = rcPwmSoundStr;
+    doc["rcPwmDriveSpeed"] = rcPwmDriveSpeedStr;
+    doc["rcPwmDriveSteer"] = rcPwmDriveSteerStr;
+    doc["rcPwmDriveLimit"] = rcPwmDriveLimitStr;
+    doc["rcPwmDomeSpeed"] = rcPwmDomeSpeedStr;
+    doc["rcPwmArm1"] = rcPwmArm1Str;
+    doc["rcPwmArm2"] = rcPwmArm2Str;
+    doc["rcPwmSound"] = rcPwmSoundStr;
 
-    doc["rcSbusDriveSpeed"]   = rcSbusDriveSpeedStr;
-    doc["rcSbusDriveSteer"]   = rcSbusDriveSteerStr;
-    doc["rcSbusDriveLimit"]   = rcSbusDriveLimitStr;
-    doc["rcSbusDomeSpeed"]    = rcSbusDomeSpeedStr;
-    doc["rcSbusArm1"]         = rcSbusArm1Str;
-    doc["rcSbusArm2"]         = rcSbusArm2Str;
-    doc["rcSbusSound"]        = rcSbusSoundStr;
+    doc["rcSbusDriveSpeed"] = rcSbusDriveSpeedStr;
+    doc["rcSbusDriveSteer"] = rcSbusDriveSteerStr;
+    doc["rcSbusDriveLimit"] = rcSbusDriveLimitStr;
+    doc["rcSbusDomeSpeed"] = rcSbusDomeSpeedStr;
+    doc["rcSbusArm1"] = rcSbusArm1Str;
+    doc["rcSbusArm2"] = rcSbusArm2Str;
+    doc["rcSbusSound"] = rcSbusSoundStr;
 
-    doc["rcArm1"]             = rcArm1Str;
-    doc["rcArm2"]             = rcArm2Str;
-    doc["rcAux1"]             = rcAux1Str;
-    doc["rcAux2"]             = rcAux2Str;
-    doc["rcAux3"]             = rcAux3Str;
-    doc["rcSound"]            = rcSoundStr;
-    doc["rcOpMode"]           = rcOpmodeStr;
-    doc["rcFree0"]            = rcFree0Str;
-    doc["rcFree1"]            = rcFree1Str;
-    doc["rcFree2"]            = rcFree2Str;
-    doc["rcFree3"]            = rcFree3Str;
+    doc["rcArm1"] = rcArm1Str;
+    doc["rcArm2"] = rcArm2Str;
+    doc["rcAux1"] = rcAux1Str;
+    doc["rcAux2"] = rcAux2Str;
+    doc["rcAux3"] = rcAux3Str;
+    doc["rcSound"] = rcSoundStr;
+    doc["rcOpMode"] = rcOpmodeStr;
+    doc["rcFree0"] = rcFree0Str;
+    doc["rcFree1"] = rcFree1Str;
+    doc["rcFree2"] = rcFree2Str;
+    doc["rcFree3"] = rcFree3Str;
 
     return true;
 }
@@ -443,6 +449,11 @@ void registerConfigRoutes(AsyncWebServer& server) {
             return;
         }
         auto* stream = req->beginResponseStream("application/json");
+        if (stream == nullptr) {
+            req->send(500, "application/json",
+                      "{\"ok\":false,\"error\":\"response stream alloc failed\"}");
+            return;
+        }
         serializeJson(doc, *stream);
         req->send(stream);
     });
@@ -512,7 +523,8 @@ void registerConfigRoutes(AsyncWebServer& server) {
                 changed = true;
             } else {
                 req->send(400, "application/json",
-                          "{\"ok\":false,\"error\":\"logLevel must be 1 (Error), 2 (Info), or 3 (Debug)\"}");
+                          "{\"ok\":false,\"error\":\"logLevel must be 1 (Error), 2 (Info), or 3 "
+                          "(Debug)\"}");
                 return;
             }
         }
@@ -881,6 +893,11 @@ void registerConfigRoutes(AsyncWebServer& server) {
             return;
         }
         auto* stream = req->beginResponseStream("application/json");
+        if (stream == nullptr) {
+            req->send(500, "application/json",
+                      "{\"ok\":false,\"error\":\"response stream alloc failed\"}");
+            return;
+        }
         serializeJson(doc, *stream);
         req->send(stream);
     });

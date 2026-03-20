@@ -612,6 +612,10 @@ Reference: `tasks/phase3_hardware_validation_deferral.md`
     `captureConfigSnapshot()` + `populateConfigJson()` implemented outside anonymous
     namespace. Both GET and POST handlers updated to ArduinoJson streaming response.
     `pio run -e protoArtoo` clean; RAM 19.5% (was 20.6%; 2 KB BSS reclaimed).
+  - **Post-review closure 2026-03-20:** Added null checks for
+    `beginResponseStream("application/json")` in both config response paths
+    (GET + POST response) so low-memory stream allocation failure now returns
+    HTTP 500 JSON instead of dereferencing a null pointer.
 
 - [x] T20 — Native tests: populateConfigJson coverage and worst-case size guard
   - **Execution coupling note:** T20 is not a standalone task in practice; execute it
@@ -664,6 +668,14 @@ Reference: `tasks/phase3_hardware_validation_deferral.md`
     `rcTriggerBindingIsValid` deadband rule (`deadband < max - min`); test uses
     `deadband=0` with 5-digit calibration values to maximize string length within
     valid bounds. `measureJson()` used for test 5 (exact byte count, no truncation).
+  - **Post-review closure 2026-03-20:** Strengthened test 5 to serialize into a
+    real `char[64]` tiny buffer and assert measured full JSON size remains larger
+    than bytes reported by tiny-buffer serialization, proving truncation risk in
+    bounded serialization paths. Native test infrastructure was also hardened by
+    gating `src/native_test_stubs.cpp` behind `PA_NATIVE_TEST_STUBS` and defining
+    that macro only in `[env:native]`, preventing firmware build contamination.
+  - **Verification rerun 2026-03-20:** `pio run -e protoArtoo` passes and
+    `pio test -e native` passes (442/442).
 
 - [ ] T21 — Apply same snapshot + ArduinoJson pattern to buildRcDiagnosticsJson
   - **Background:** `buildRcDiagnosticsJson` in `src/web/web_server.cpp` has the
