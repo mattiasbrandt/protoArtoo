@@ -67,14 +67,20 @@ static void buildHealthJson(char* buffer, size_t bufferSize) {
     webControlEnabled = robotState.webControlEnabled;
     taskEXIT_CRITICAL(&robotStateMux);
 
-    wifiConnected = WiFi.status() == WL_CONNECTED;
-    wifiClientConnected = wifiConnected;
+    int wifiMode = WiFi.getMode();
+    bool apEnabled = wifiMode == WIFI_AP || wifiMode == WIFI_AP_STA;
+    bool staConnected = WiFi.status() == WL_CONNECTED;
+    unsigned int apStationCount = apEnabled ? (unsigned int)WiFi.softAPgetStationNum() : 0U;
+    WiFiConnectivityFields wifi =
+        deriveWiFiConnectivityFields(apEnabled, staConnected, apStationCount, WiFi.RSSI());
+    wifiConnected = wifi.wifiConnected;
+    wifiClientConnected = wifi.wifiClientConnected;
+    wifiRssi = wifi.wifiRssi;
+
     fsReady = webLittleFsMounted();
     heapFree = ESP.getFreeHeap();
     heapMin = ESP.getMinFreeHeap();
     heapLargestBlock = (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
-    wifiRssi = wifiConnected ? WiFi.RSSI() : 0;
-
     formatHealthJson(buffer, bufferSize, estop, sbusSignalLost, sbusHwFailsafe, webControlEnabled,
                      wifiConnected, wifiClientConnected, fsReady, heapFree, heapMin, heapLargestBlock, wifiRssi);
 }

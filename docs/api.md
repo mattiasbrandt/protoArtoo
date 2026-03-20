@@ -486,6 +486,7 @@ Return the current web-control state snapshot.
   "heapFree": 173152,
   "heapMin": 150932,
   "wifiRssi": -70,
+  "wifiConnected": true,
   "wifiClientConnected": true,
   "littleFsReady": true
 }
@@ -519,6 +520,7 @@ Example response with arm1, RC routing, and dome enabled:
   "heapFree": 173152,
   "heapMin": 150932,
   "wifiRssi": -70,
+  "wifiConnected": true,
   "wifiClientConnected": true,
   "littleFsReady": true,
   "arm1": {"state": "ready", "detail": "Target 1500 us"},
@@ -530,11 +532,13 @@ Example response with arm1, RC routing, and dome enabled:
 
 Notes:
 
+- `wifiConnected` is true when WiFi control surface is available (AP active or STA connected)
+- `wifiClientConnected` is true when at least one station is attached to the device soft AP
 - `failsafeSource` is the numeric `FailsafeSource` enum value
 - `speedLimitScale` reflects CH8 speed limiting from the drive SBUS receiver
 - `stationary` indicates CH8 mode-lock is holding the drive at zero
 - `uptimeMs` and `firmwareVersion` support the shared device-info status block in the UI
-- `heapFree`, `heapMin`, `wifiRssi`, `wifiClientConnected`, and `littleFsReady` support dashboard health/status surfaces
+- `heapFree`, `heapMin`, `wifiRssi`, `wifiConnected`, `wifiClientConnected`, and `littleFsReady` support dashboard health/status surfaces
 - Disabled components are absent from the response, not emitted as false placeholders
 
 ### `GET /api/events`

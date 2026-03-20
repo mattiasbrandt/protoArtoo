@@ -19,6 +19,7 @@
 #include "../../include/api_config.h"
 #include "../../include/api_drive.h"
 #include "../../include/api_estop.h"
+#include "../../include/api_helpers.h"
 #include "../../include/api_rc.h"
 #include "../../include/api_servo.h"
 #include "../../include/api_status.h"
@@ -136,6 +137,9 @@ class WiFiClass {
     int getMode() const {
         return WIFI_AP;
     }
+    int softAPgetStationNum() const {
+        return 0;
+    }
     void onEvent(void (*)(WiFiEvent_t)) {
     }
     void mode(int) {
@@ -246,6 +250,7 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     bool sbus2SignalLost;
     bool sbusHwFailsafe;
     bool webDriveExpired;
+    bool wifiConnected;
     bool wifiClientConnected;
     int failsafeSource;
     int driveSpeed;
@@ -285,7 +290,6 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     sbus2SignalLost = robotState.sbus2SignalLost;
     sbusHwFailsafe = robotState.sbusHwFailsafe;
     webDriveExpired = robotState.webDriveExpired;
-    wifiClientConnected = WiFi.status() == WL_CONNECTED;
     failsafeSource = (int)robotState.failsafeSource;
     driveSpeed = robotState.driveSpeed;
     driveSteer = robotState.driveSteer;
@@ -324,7 +328,15 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     heapFree = ESP.getFreeHeap();
     heapMin = ESP.getMinFreeHeap();
     heapLargestBlock = (uint32_t)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
-    wifiRssi = wifiClientConnected ? WiFi.RSSI() : 0;
+    int wifiMode = WiFi.getMode();
+    bool apEnabled = wifiMode == WIFI_AP || wifiMode == WIFI_AP_STA;
+    bool staConnected = WiFi.status() == WL_CONNECTED;
+    unsigned int apStationCount = apEnabled ? (unsigned int)WiFi.softAPgetStationNum() : 0U;
+    WiFiConnectivityFields wifi =
+        deriveWiFiConnectivityFields(apEnabled, staConnected, apStationCount, WiFi.RSSI());
+    wifiConnected = wifi.wifiConnected;
+    wifiClientConnected = wifi.wifiClientConnected;
+    wifiRssi = wifi.wifiRssi;
 
     // Build the fixed system-health fields first.
     int written = snprintf(
@@ -343,7 +355,7 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
         webDriveExpired ? "true" : "false", failsafeSource, driveSpeed, driveSteer,
         (double)speedLimitScale, stationary ? "true" : "false", failsafeCount, uptimeMs,
         PA_FIRMWARE_VERSION, heapFree, heapMin, (unsigned long)heapLargestBlock, wifiRssi,
-        wifiClientConnected ? "true" : "false", wifiClientConnected ? "true" : "false",
+        wifiConnected ? "true" : "false", wifiClientConnected ? "true" : "false",
         littleFsReady ? "true" : "false", (unsigned)activeMood);
 
     // Conditionally append enabled-component keys — disabled components are absent,

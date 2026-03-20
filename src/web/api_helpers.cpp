@@ -136,6 +136,15 @@ void formatSerialJson(char* buf, size_t bufSize, bool domeLinkActive, unsigned l
              domeLinkActive ? "true" : "false", domeHbRx, bodyHbTx);
 }
 
+WiFiConnectivityFields deriveWiFiConnectivityFields(bool apEnabled, bool staConnected,
+                                                    unsigned int apStationCount, long staRssi) {
+    WiFiConnectivityFields fields{};
+    fields.wifiConnected = apEnabled || staConnected;
+    fields.wifiClientConnected = apEnabled && apStationCount > 0U;
+    fields.wifiRssi = staConnected ? staRssi : 0;
+    return fields;
+}
+
 void formatHealthJson(char* buf, size_t bufSize, bool estop, bool sbusSignalLost,
                       bool sbusHwFailsafe, bool webControlEnabled, bool wifiConnected,
                       bool wifiClientConnected, bool fsReady, unsigned long heapFree,

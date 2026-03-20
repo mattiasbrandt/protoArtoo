@@ -237,6 +237,35 @@ void test_formatHealthJson_is_valid_json_with_largest_block() {
     TEST_ASSERT_EQUAL_CHAR('}', out[strlen(out) - 1]);
 }
 
+void test_deriveWiFiConnectivityFields_ap_only_no_clients() {
+    WiFiConnectivityFields fields = deriveWiFiConnectivityFields(true, false, 0U, -65);
+    TEST_ASSERT_TRUE(fields.wifiConnected);
+    TEST_ASSERT_FALSE(fields.wifiClientConnected);
+    TEST_ASSERT_EQUAL(0, fields.wifiRssi);
+}
+
+void test_deriveWiFiConnectivityFields_ap_only_with_client() {
+    WiFiConnectivityFields fields = deriveWiFiConnectivityFields(true, false, 2U, -65);
+    TEST_ASSERT_TRUE(fields.wifiConnected);
+    TEST_ASSERT_TRUE(fields.wifiClientConnected);
+    TEST_ASSERT_EQUAL(0, fields.wifiRssi);
+}
+
+void test_deriveWiFiConnectivityFields_sta_only_connected() {
+    WiFiConnectivityFields fields = deriveWiFiConnectivityFields(false, true, 0U, -72);
+    TEST_ASSERT_TRUE(fields.wifiConnected);
+    TEST_ASSERT_FALSE(fields.wifiClientConnected);
+    TEST_ASSERT_EQUAL(-72, fields.wifiRssi);
+}
+
+void test_deriveWiFiConnectivityFields_disconnected() {
+    WiFiConnectivityFields fields = deriveWiFiConnectivityFields(false, false, 0U, -80);
+    TEST_ASSERT_FALSE(fields.wifiConnected);
+    TEST_ASSERT_FALSE(fields.wifiClientConnected);
+    TEST_ASSERT_EQUAL(0, fields.wifiRssi);
+}
+
+
 int main() {
     UNITY_BEGIN();
 
@@ -257,6 +286,11 @@ int main() {
     RUN_TEST(test_formatSerialJson_debug_always_active);
     RUN_TEST(test_formatSerialJson_sound_always_inactive);
     RUN_TEST(test_formatSerialJson_is_valid_json_object);
+
+    RUN_TEST(test_deriveWiFiConnectivityFields_ap_only_no_clients);
+    RUN_TEST(test_deriveWiFiConnectivityFields_ap_only_with_client);
+    RUN_TEST(test_deriveWiFiConnectivityFields_sta_only_connected);
+    RUN_TEST(test_deriveWiFiConnectivityFields_disconnected);
 
     RUN_TEST(test_formatHealthJson_estop_true);
     RUN_TEST(test_formatHealthJson_estop_false);
