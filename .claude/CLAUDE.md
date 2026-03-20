@@ -45,7 +45,7 @@ These rules define how an AI coding agent should plan, execute, verify, communic
 - Not using SHADOW, PS2, or any classic control stack
 - No dome-side sound module — `PREFERENCE_MARCSOUND = kNone` in the dome fork
 - No MarcDuino Slave board — `%` prefix commands have no destination
-- No dynamic memory allocation after `setup()` — all buffers are static
+- No dynamic memory allocation in Core 1 real-time task loops after `setup()`; Core 0 web handlers may use bounded per-request `JsonDocument` allocations
 
 ### Critical Safety Invariants
 
