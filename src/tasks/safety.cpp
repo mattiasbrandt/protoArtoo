@@ -52,12 +52,19 @@ void safetyMonitorTask(void* pvParameters) {
         bool sbusHw = robotState.sbusHwFailsafe;
         uint32_t domeLastMs = robotState.domeLastSeenMs;
         FailsafeSource fsSrc = robotState.failsafeSource;
-        taskEXIT_CRITICAL(&robotStateMux);
+        uint32_t triggerMs = robotState.failsafeLastTriggerMs;
+        uint32_t zeroMs = robotState.failsafeLastZeroOutputMs;
+        uint32_t triggerToZeroMs = robotState.failsafeLastTriggerToZeroMs;
+        FailsafeSource triggerSrc = robotState.failsafeLastTriggerSource;
 
+        taskEXIT_CRITICAL(&robotStateMux);
         // Log new failsafe triggers
         if (fsCount > lastFailsafeCount) {
-            PA_LOG_WARN(TAG, "failsafe triggered — count:%lu source:%d estop:%d sbus:%d hw:%d",
-                        (unsigned long)fsCount, (int)fsSrc, (int)estop, (int)sbusLost, (int)sbusHw);
+            PA_LOG_WARN(TAG,
+                        "failsafe triggered — count:%lu source:%d estop:%d sbus:%d hw:%d trigger_ms:%lu zero_ms:%lu trigger_to_zero_ms:%lu trigger_src:%d",
+                        (unsigned long)fsCount, (int)fsSrc, (int)estop, (int)sbusLost, (int)sbusHw,
+                        (unsigned long)triggerMs, (unsigned long)zeroMs,
+                        (unsigned long)triggerToZeroMs, (int)triggerSrc);
             lastFailsafeCount = fsCount;
         }
 

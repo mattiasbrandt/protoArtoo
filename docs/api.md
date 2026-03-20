@@ -481,6 +481,11 @@ Return the current web-control state snapshot.
   "speedLimitScale": 1.0,
   "stationary": false,
   "failsafeCount": 0,
+  "failsafeTriggerMs": 0,
+  "failsafeZeroMs": 0,
+  "failsafeTriggerToZeroMs": 0,
+  "failsafeWatchdogMs": 0,
+  "failsafeTriggerSource": 0,
   "uptimeMs": 27790,
   "firmwareVersion": "v0.1.0-phase3-dev",
   "heapFree": 173152,
@@ -515,6 +520,11 @@ Example response with arm1, RC routing, and dome enabled:
   "speedLimitScale": 1.0,
   "stationary": false,
   "failsafeCount": 0,
+  "failsafeTriggerMs": 0,
+  "failsafeZeroMs": 0,
+  "failsafeTriggerToZeroMs": 0,
+  "failsafeWatchdogMs": 0,
+  "failsafeTriggerSource": 0,
   "uptimeMs": 27790,
   "firmwareVersion": "v0.1.0-phase3-dev",
   "heapFree": 173152,
@@ -535,6 +545,7 @@ Notes:
 - `wifiConnected` is true when WiFi control surface is available (AP active or STA connected)
 - `wifiClientConnected` is true when at least one station is attached to the device soft AP
 - `failsafeSource` is the numeric `FailsafeSource` enum value
+- `failsafeTriggerMs`, `failsafeZeroMs`, `failsafeTriggerToZeroMs`, `failsafeWatchdogMs`, and `failsafeTriggerSource` provide timing evidence for failsafe trigger-to-zero behavior in hardware validation
 - `speedLimitScale` reflects CH8 speed limiting from the drive SBUS receiver
 - `stationary` indicates CH8 mode-lock is holding the drive at zero
 - `uptimeMs` and `firmwareVersion` support the shared device-info status block in the UI

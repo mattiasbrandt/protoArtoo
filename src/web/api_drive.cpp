@@ -73,8 +73,7 @@ bool executeManualCommand(const String& raw) {
         case MC_ESTOP:
             taskENTER_CRITICAL(&robotStateMux);
             robotState.estop = true;
-            robotState.failsafeSource = FS_ESTOP_CMD;
-            robotState.failsafeTriggerCount++;
+            recordFailsafeTriggerLocked(FS_ESTOP_CMD, millis());
             taskEXIT_CRITICAL(&robotStateMux);
             return true;
 

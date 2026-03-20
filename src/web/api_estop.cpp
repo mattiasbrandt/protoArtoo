@@ -31,8 +31,7 @@ void registerEstopRoutes(AsyncWebServer& server) {
     server.on("/api/estop", HTTP_POST, [](AsyncWebServerRequest* req) {
         taskENTER_CRITICAL(&robotStateMux);
         robotState.estop = true;
-        robotState.failsafeSource = FS_ESTOP_CMD;
-        robotState.failsafeTriggerCount++;
+        recordFailsafeTriggerLocked(FS_ESTOP_CMD, millis());
         taskEXIT_CRITICAL(&robotStateMux);
         PA_LOG_INFO(TAG, "[WEB] POST /api/estop - estop latched");
         req->send(200, "application/json", "{\"ok\":true}");

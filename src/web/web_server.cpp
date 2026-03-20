@@ -259,6 +259,11 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     float speedLimitScale;
     bool stationary;
     unsigned long failsafeCount;
+    unsigned long failsafeTriggerMs;
+    unsigned long failsafeZeroMs;
+    unsigned long failsafeTriggerToZeroMs;
+    unsigned long failsafeWatchdogMs;
+    int failsafeTriggerSource;
     unsigned long uptimeMs;
     unsigned long heapFree;
     unsigned long heapMin;
@@ -297,6 +302,11 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     speedLimitScale = robotState.speedLimitScale;
     stationary = robotState.stationary;
     failsafeCount = robotState.failsafeTriggerCount;
+    failsafeTriggerMs = robotState.failsafeLastTriggerMs;
+    failsafeZeroMs = robotState.failsafeLastZeroOutputMs;
+    failsafeTriggerToZeroMs = robotState.failsafeLastTriggerToZeroMs;
+    failsafeWatchdogMs = robotState.failsafeLastWatchdogMs;
+    failsafeTriggerSource = (int)robotState.failsafeLastTriggerSource;
     arm1TargetUs = robotState.arm1TargetUs;
     arm2TargetUs = robotState.arm2TargetUs;
     lastSbus1Ms = robotState.lastSbus1Ms;
@@ -344,7 +354,9 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
         "{\"estop\":%s,\"webControlEnabled\":%s,\"sbusSignalLost\":%s,\"sbusHwFailsafe\":%s,"
         "\"webDriveExpired\":%s,\"failsafeSource\":%d,\"driveSpeed\":%d,"
         "\"driveSteer\":%d,\"speedLimitScale\":%.3f,\"stationary\":%s,"
-        "\"failsafeCount\":%lu,\"uptimeMs\":%lu,\"firmwareVersion\":\"%s\","
+        "\"failsafeCount\":%lu,\"failsafeTriggerMs\":%lu,\"failsafeZeroMs\":%lu,"
+        "\"failsafeTriggerToZeroMs\":%lu,\"failsafeWatchdogMs\":%lu,\"failsafeTriggerSource\":%d,"
+        "\"uptimeMs\":%lu,\"firmwareVersion\":\"%s\","
         "\"heapFree\":%lu,\"heapMin\":%lu,\"heapLargestBlock\":%lu,\"wifiRssi\":%ld,"
         "\"wifiConnected\":%s,"
         "\"wifiClientConnected\":%s,"
@@ -353,8 +365,10 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
         estop ? "true" : "false", webControlEnabled ? "true" : "false",
         sbusSignalLost ? "true" : "false", sbusHwFailsafe ? "true" : "false",
         webDriveExpired ? "true" : "false", failsafeSource, driveSpeed, driveSteer,
-        (double)speedLimitScale, stationary ? "true" : "false", failsafeCount, uptimeMs,
-        PA_FIRMWARE_VERSION, heapFree, heapMin, (unsigned long)heapLargestBlock, wifiRssi,
+        (double)speedLimitScale, stationary ? "true" : "false", failsafeCount,
+        failsafeTriggerMs, failsafeZeroMs, failsafeTriggerToZeroMs, failsafeWatchdogMs,
+        failsafeTriggerSource, uptimeMs, PA_FIRMWARE_VERSION,
+        heapFree, heapMin, (unsigned long)heapLargestBlock, wifiRssi,
         wifiConnected ? "true" : "false", wifiClientConnected ? "true" : "false",
         littleFsReady ? "true" : "false", (unsigned)activeMood);
 

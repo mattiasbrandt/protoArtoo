@@ -133,7 +133,11 @@ struct RobotState {
     uint32_t sbus1LostFrameCount;  // cumulative lost_frame events (not failsafe)
     uint32_t sbus2LostFrameCount;  // cumulative lost_frame events (not failsafe)
     bool sbus2HwFailsafe;
-
+    uint32_t failsafeLastTriggerMs;       // millis() when last failsafe trigger latched
+    uint32_t failsafeLastWatchdogMs;      // millis() when last SBUS watchdog trigger fired
+    uint32_t failsafeLastZeroOutputMs;    // millis() when DriveTask first asserted zero output
+    uint32_t failsafeLastTriggerToZeroMs; // latency from trigger to first zero output (ms)
+    FailsafeSource failsafeLastTriggerSource;
     // --- Timing state ---
     uint32_t lastPwmMs;
     uint32_t lastSbus1Ms;
@@ -305,6 +309,29 @@ bool domeConnected();
 void loadConfigToState();
 
 bool saveConfigToNvs();
+
+// ----------------------------------------------------------------------------
+// Failsafe instrumentation helpers (MUST be called under robotStateMux lock)
+// ----------------------------------------------------------------------------
+inline void recordFailsafeTriggerLocked(FailsafeSource src, uint32_t nowMs) {
+    robotState.failsafeSource = src;
+    robotState.failsafeTriggerCount++;
+    robotState.failsafeLastTriggerMs = nowMs;
+    robotState.failsafeLastTriggerSource = src;
+    if (src == FS_SBUS_TIMEOUT || src == FS_SBUS2_TIMEOUT) {
+        robotState.failsafeLastWatchdogMs = nowMs;
+    }
+}
+
+inline void recordFailsafeZeroOutputLocked(uint32_t nowMs) {
+    robotState.failsafeLastZeroOutputMs = nowMs;
+    if (robotState.failsafeLastTriggerMs == 0) {
+        robotState.failsafeLastTriggerToZeroMs = 0;
+        return;
+    }
+    robotState.failsafeLastTriggerToZeroMs = (uint32_t)(nowMs - robotState.failsafeLastTriggerMs);
+}
+
 
 // -----------------------------------------------------------------------------
 // Safe read-only accessors for safety-critical state

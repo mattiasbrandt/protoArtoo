@@ -62,6 +62,8 @@ void driveTask(void* pvParameters) {
     const TickType_t period = pdMS_TO_TICKS(1000 / DRIVE_FREQ_HZ);  // 20 ms at 50 Hz
     bool hwmLogged = false;
 
+    bool zeroOutputRecorded = false;
+    uint32_t zeroRecordedForTriggerMs = 0;
     while (true) {
         // Feed TWDT — if this line is not reached within WATCHDOG_TIMEOUT_S, chip resets
         esp_task_wdt_reset();
@@ -89,8 +91,10 @@ void driveTask(void* pvParameters) {
 
         if (robotState.lastDriveSource == SRC_WEB_API &&
             (uint32_t)(nowMs - robotState.lastDriveCommandMs) > robotState.cfg_webDriveTimeoutMs) {
-            robotState.webDriveExpired = true;
-            robotState.failsafeSource = FS_WEB_TIMEOUT;
+            if (!robotState.webDriveExpired) {
+                robotState.webDriveExpired = true;
+                recordFailsafeTriggerLocked(FS_WEB_TIMEOUT, nowMs);
+            }
             robotState.driveSpeed = 0;
             robotState.driveSteer = 0;
             speed = 0;
@@ -103,10 +107,34 @@ void driveTask(void* pvParameters) {
         speed = constrain(speed, (int16_t)(-maxOut), maxOut);
         steer = constrain(steer, (int16_t)(-maxOut), maxOut);
 
-        // Zero output if any failsafe active (estop, SBUS loss, HW failsafe, web timeout)
+        // Zero output if any failsafe active (estop, SBUS loss, HW failsafe, web timeout).
+        // Record first zero assertion time once per failsafe episode for timing evidence.
         if (failsafeActive) {
             speed = 0;
             steer = 0;
+            uint32_t triggerMs;
+            taskENTER_CRITICAL(&robotStateMux);
+            triggerMs = robotState.failsafeLastTriggerMs;
+            taskEXIT_CRITICAL(&robotStateMux);
+            if (!zeroOutputRecorded || triggerMs != zeroRecordedForTriggerMs) {
+                FailsafeSource triggerSource;
+                uint32_t triggerToZeroMs;
+                uint32_t recordedTriggerMs;
+                taskENTER_CRITICAL(&robotStateMux);
+                recordFailsafeZeroOutputLocked(nowMs);
+                triggerSource = robotState.failsafeLastTriggerSource;
+                triggerToZeroMs = robotState.failsafeLastTriggerToZeroMs;
+                recordedTriggerMs = robotState.failsafeLastTriggerMs;
+                taskEXIT_CRITICAL(&robotStateMux);
+                PA_LOG_INFO(TAG,
+                            "failsafe zero output asserted — source:%d trigger_to_zero:%lu ms",
+                            (int)triggerSource, (unsigned long)triggerToZeroMs);
+                zeroOutputRecorded = true;
+                zeroRecordedForTriggerMs = recordedTriggerMs;
+            }
+        } else {
+            zeroOutputRecorded = false;
+            zeroRecordedForTriggerMs = 0;
         }
 
         // Send frame — always (zero-frame rule: never go silent, hoverboard must coast, not drift)

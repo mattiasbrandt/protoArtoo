@@ -744,12 +744,20 @@ void rcInputTask(void* pvParameters) {
 
             // Layer 1: Hardware failsafe flag from receiver firmware
             if (data.failsafe) {
+                bool hwFailsafeTriggered = !robotState.sbusHwFailsafe;
                 robotState.sbusHwFailsafe = true;
-                robotState.failsafeSource = FS_SBUS_HW;
+                if (hwFailsafeTriggered) {
+                    recordFailsafeTriggerLocked(FS_SBUS_HW, robotState.lastSbus1Ms);
+                } else {
+                    robotState.failsafeSource = FS_SBUS_HW;
+                }
                 robotState.driveSpeed = 0;
                 robotState.driveSteer = 0;
                 robotState.lastDriveSource = SRC_SBUS;
                 taskEXIT_CRITICAL(&robotStateMux);
+                if (hwFailsafeTriggered) {
+                    PA_LOG_WARN(TAG, "SBUS1 hardware failsafe asserted");
+                }
             } else if (data.lost_frame) {
                 // lost_frame: single frame missed — not a failsafe condition.
                 // Track count; drive state is unchanged (last good frame holds).
@@ -826,21 +834,20 @@ void rcInputTask(void* pvParameters) {
 
         if (driveSbusEnabled) {
             bool watchdogFired = false;
-            bool debugMode = false;
             if ((uint32_t)(millis() - lastSbus1) > timeoutMs) {
+                uint32_t nowMs = millis();
                 taskENTER_CRITICAL(&robotStateMux);
                 if (!robotState.sbusSignalLost) {
                     robotState.sbusSignalLost = true;
-                    robotState.failsafeSource = FS_SBUS_TIMEOUT;
-                    robotState.failsafeTriggerCount++;
+                    recordFailsafeTriggerLocked(FS_SBUS_TIMEOUT, nowMs);
                     robotState.driveSpeed = 0;
                     robotState.driveSteer = 0;
                     watchdogFired = true;
                 }
-                debugMode = robotState.rcDebugMode;
                 taskEXIT_CRITICAL(&robotStateMux);
-                if (watchdogFired && debugMode) {
-                    PA_LOG_WARN(TAG, "SBUS1 watchdog fired — signal lost");
+                if (watchdogFired) {
+                    PA_LOG_WARN(TAG, "SBUS1 watchdog fired — no frame for %lu ms (timeout=%lu ms)",
+                                (unsigned long)(nowMs - lastSbus1), (unsigned long)timeoutMs);
                 }
             } else {
                 taskENTER_CRITICAL(&robotStateMux);
@@ -848,10 +855,9 @@ void rcInputTask(void* pvParameters) {
                 if (signalRestored) {
                     robotState.sbusSignalLost = false;
                 }
-                debugMode = robotState.rcDebugMode;
                 robotState.sbusHwFailsafe = false;
                 taskEXIT_CRITICAL(&robotStateMux);
-                if (signalRestored && debugMode) {
+                if (signalRestored) {
                     PA_LOG_INFO(TAG, "SBUS1 signal restored");
                 }
             }
@@ -882,15 +888,9 @@ void rcInputTask(void* pvParameters) {
             dispatchSbusBindingsForSource(data, RC_BINDING_SBUS2, rcInputMode, enableRcCh1,
                                           enableRcCh2);
 
-            taskENTER_CRITICAL(&robotStateMux);
-            bool rcDebug = robotState.rcDebugMode;
-            taskEXIT_CRITICAL(&robotStateMux);
-
             if (sbus2WatchdogFired) {
                 sbus2WatchdogFired = false;
-                if (rcDebug) {
-                    PA_LOG_INFO(TAG, "SBUS2 signal restored");
-                }
+                PA_LOG_INFO(TAG, "SBUS2 signal restored");
             }
         }
 
@@ -905,12 +905,9 @@ void rcInputTask(void* pvParameters) {
                     sbus2WatchdogFired = true;
                     taskENTER_CRITICAL(&robotStateMux);
                     robotState.sbus2SignalLost = true;
-                    robotState.failsafeTriggerCount++;
-                    bool rcDebug = robotState.rcDebugMode;
+                    recordFailsafeTriggerLocked(FS_SBUS2_TIMEOUT, millis());
                     taskEXIT_CRITICAL(&robotStateMux);
-                    if (rcDebug) {
-                        PA_LOG_WARN(TAG, "SBUS2 watchdog fired — dome signal lost");
-                    }
+                    PA_LOG_WARN(TAG, "SBUS2 watchdog fired — dome signal lost");
 
                     DomeCommand stopCmd = {};
                     stopCmd.speed = 0.0f;

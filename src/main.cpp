@@ -767,7 +767,9 @@ void setup() {
     esp_reset_reason_t resetReason = esp_reset_reason();
     if (resetReason == ESP_RST_TASK_WDT) {
         robotState.estop = true;
-        robotState.failsafeSource = FS_WATCHDOG_RESET;
+        taskENTER_CRITICAL(&robotStateMux);
+        recordFailsafeTriggerLocked(FS_WATCHDOG_RESET, millis());
+        taskEXIT_CRITICAL(&robotStateMux);
         PA_LOG_ERROR("main", "task watchdog reset detected - estop set");
     }
 
