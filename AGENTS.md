@@ -24,15 +24,21 @@ assumption briefly.
 
 ## Source of Truth Files
 
-- Planning baseline: `docs/status.md`, `tasks/phase0-tasks.md`,
-  `tasks/phase1-tasks.md`, `tasks/phase2-tasks.md`, `tasks/phase3-tasks.md`,
-  `tasks/phase4-tasks.md`, `tasks/phase5-tasks.md`, `docs/goal.md`
+- Public planning baseline (commit/push allowed): `docs/status.md`, `docs/goal.md`
+- Internal planning/agent working docs (local only, never commit/push): `tasks/**`
 - Phase 3 RC diagnostics/mapping contract: `tasks/rc_diagnostics_contract.md`
 - Hardware truth: `docs/pin_map.md`, `include/config.h`
 - Shared state truth: `include/robot_state.h`
 
-Do not treat `.sisyphus/plans/` as authoritative when equivalent task docs exist
-in `tasks/`.
+Do not treat `.sisyphus/plans/` as authoritative when equivalent local task docs
+exist in `tasks/`.
+
+Documentation publication rule:
+- Only `docs/goal.md` and `docs/status.md` are public planning docs.
+- `docs/goal.md` and `docs/status.md` must not contain agent/tool/model wording
+  (for example: "agent", "LLM", "model", "Copilot", "Claude").
+- Any `tasks/*.md` file is internal operator/agent working context and must remain
+  untracked in git.
 
 ## Safety Invariants (Never Violate)
 

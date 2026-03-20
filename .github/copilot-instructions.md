@@ -95,6 +95,14 @@ See `AGENTS.md` for canonical rules on:
 - Clarification policy (multi-choice, non-blocking)
 - Verification classification (`bench-tested`, `partial`, `full-hardware-required`)
 
+### Planning Docs Visibility Policy
+
+- Public planning docs (commit/push allowed): `docs/goal.md`, `docs/status.md`.
+- `docs/goal.md` and `docs/status.md` must not contain agent/tool/model wording
+    (for example: "agent", "LLM", "model", "Copilot", "Claude").
+- `tasks/**` markdown files are internal local working context and must never be
+    committed or pushed.
+
 ### FreeRTOS Task Model
 
 | Core | Tasks | Purpose |
