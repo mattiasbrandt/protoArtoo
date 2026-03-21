@@ -66,10 +66,14 @@ static void sendCommand(const uint8_t* payload, uint8_t len) {
 // -----------------------------------------------------------------------------
 // sendQuery()
 // Send a 4-byte query frame (no data bytes) and wait for a response.
-// query[] must be exactly 4 bytes: [0xAA, CMD, 0x00, SM].
+// query[]      — exactly 4 bytes: [0xAA, CMD, 0x00, SM].
+// expectedLen  — break once this many bytes have been received; avoids
+//               burning the full timeoutMs when the module responds quickly.
+//               Pass sizeof(response) for the expected response size.
 // Returns number of bytes read into buf (max maxLen).
 // -----------------------------------------------------------------------------
-static uint8_t sendQuery(const uint8_t* query, uint8_t* buf, uint8_t maxLen, uint32_t timeoutMs) {
+static uint8_t sendQuery(const uint8_t* query, uint8_t* buf, uint8_t maxLen, uint8_t expectedLen,
+                         uint32_t timeoutMs) {
     // Drain stale RX bytes before sending
     while (s_audioSerial.available()) {
         (void)s_audioSerial.read();
@@ -80,6 +84,12 @@ static uint8_t sendQuery(const uint8_t* query, uint8_t* buf, uint8_t maxLen, uin
     while ((uint32_t)(millis() - start) < timeoutMs && count < maxLen) {
         if (s_audioSerial.available()) {
             buf[count++] = (uint8_t)s_audioSerial.read();
+            if (count >= expectedLen) {
+                break;  // got all expected bytes — don't burn the rest of timeoutMs
+            }
+        } else {
+            // Yield while waiting so Core 0 tasks (WiFi, web) stay responsive.
+            vTaskDelay(pdMS_TO_TICKS(1));
         }
     }
     return count;
@@ -121,8 +131,10 @@ void AudioDriverSoftUart::begin() {
     // Query device online (0x09): which storage is detected?
     // Response: AA 09 01 [device] SM   device: 00=USB 01=SD 02=FLASH FF=none
     static const uint8_t Q_DEV_ONLINE[] = {0xAA, 0x09, 0x00, 0xB3};
-    n = sendQuery(Q_DEV_ONLINE, rsp, sizeof(rsp), 300);
+    n = sendQuery(Q_DEV_ONLINE, rsp, sizeof(rsp), 5,
+                  300);  // response: AA 09 01 device SM (5 bytes)
     if (n >= 4) {
+        m_device = rsp[3];  // cache for queryModuleState()
         const char* dev = (rsp[3] == 0x00)   ? "USB"
                           : (rsp[3] == 0x01) ? "SD/TF"
                           : (rsp[3] == 0x02) ? "FLASH"
@@ -138,7 +150,7 @@ void AudioDriverSoftUart::begin() {
     // Query play state (0x01): is module already playing from a prior session?
     // Response: AA 01 01 [state] SM   state: 00=stop 01=playing 02=paused
     static const uint8_t Q_PLAY_STATE[] = {0xAA, 0x01, 0x00, 0xAB};
-    n = sendQuery(Q_PLAY_STATE, rsp, sizeof(rsp), 300);
+    n = sendQuery(Q_PLAY_STATE, rsp, sizeof(rsp), 5, 300);  // response: AA 01 01 state SM (5 bytes)
     if (n >= 4) {
         const char* st = (rsp[3] == 0)   ? "stop"
                          : (rsp[3] == 1) ? "playing"
@@ -152,10 +164,11 @@ void AudioDriverSoftUart::begin() {
     // Query total tracks (0x0C): how many files does the module see?
     // Response: AA 0C 02 [HI] [LO] SM
     static const uint8_t Q_TOTAL_TRACKS[] = {0xAA, 0x0C, 0x00, 0xB6};
-    n = sendQuery(Q_TOTAL_TRACKS, rsp, sizeof(rsp), 300);
+    n = sendQuery(Q_TOTAL_TRACKS, rsp, sizeof(rsp), 6,
+                  300);  // response: AA 0C 02 SN_H SN_L SM (6 bytes)
     if (n >= 5) {
-        uint16_t total = ((uint16_t)rsp[3] << 8) | rsp[4];
-        PA_LOG_INFO(TAG, "pre-init: total tracks = %u", (unsigned)total);
+        m_totalTracks = ((uint16_t)rsp[3] << 8) | rsp[4];  // cache for queryModuleState()
+        PA_LOG_INFO(TAG, "pre-init: total tracks = %u", (unsigned)m_totalTracks);
     } else {
         PA_LOG_WARN(TAG, "pre-init: no response to total-tracks query (%u bytes)", (unsigned)n);
     }
@@ -177,8 +190,9 @@ void AudioDriverSoftUart::begin() {
     // Post-init confirmation — verify device select took effect.
     // -------------------------------------------------------------------------
     static const uint8_t Q_PLAY_DRIVE[] = {0xAA, 0x0A, 0x00, 0xB4};
-    n = sendQuery(Q_PLAY_DRIVE, rsp, sizeof(rsp), 300);
+    n = sendQuery(Q_PLAY_DRIVE, rsp, sizeof(rsp), 5, 300);  // response: AA 0A 01 drive SM (5 bytes)
     if (n >= 4) {
+        m_device = rsp[3];  // update: post-init device is the authoritative drive selection
         const char* dev = (rsp[3] == 0x00)   ? "USB"
                           : (rsp[3] == 0x01) ? "SD/TF"
                           : (rsp[3] == 0x02) ? "FLASH"
@@ -187,6 +201,55 @@ void AudioDriverSoftUart::begin() {
     } else {
         PA_LOG_WARN(TAG, "post-init: no response to play-drive query");
     }
+}
+
+// -----------------------------------------------------------------------------
+// queryModuleState()
+// Send live queries for device, play state, and current track.
+// Populates 'out' from the responses; returns true if at least one query
+// received a valid response (i.e. the UART link is alive).
+// Called by AudioTask after begin() and then periodically every ~2 s.
+// Blocking up to ~900 ms total (3 × 300 ms timeout) in the worst case.
+// Only call from AudioTask (Core 0).
+// -----------------------------------------------------------------------------
+bool AudioDriverSoftUart::queryModuleState(AudioModuleState& out) {
+    uint8_t rsp[8];
+    uint8_t n;
+    bool gotAny = false;
+
+    out.linkOk = false;
+    out.playState = 0xFF;
+    out.device = m_device;            // carry forward cached value from begin()
+    out.totalTracks = m_totalTracks;  // not re-queried on every poll
+    out.currentTrack = 0;
+
+    // Query device online (0x09)
+    static const uint8_t Q_DEV[] = {0xAA, 0x09, 0x00, 0xB3};
+    n = sendQuery(Q_DEV, rsp, sizeof(rsp), 5, 300);  // response: AA 09 01 device SM (5 bytes)
+    if (n >= 4) {
+        out.device = rsp[3];
+        m_device = rsp[3];  // keep member in sync
+        gotAny = true;
+    }
+
+    // Query play state (0x01)
+    static const uint8_t Q_PLAY[] = {0xAA, 0x01, 0x00, 0xAB};
+    n = sendQuery(Q_PLAY, rsp, sizeof(rsp), 5, 300);  // response: AA 01 01 state SM (5 bytes)
+    if (n >= 4) {
+        out.playState = rsp[3];
+        gotAny = true;
+    }
+
+    // Query current song (0x0D)
+    static const uint8_t Q_SONG[] = {0xAA, 0x0D, 0x00, 0xB7};
+    n = sendQuery(Q_SONG, rsp, sizeof(rsp), 6, 300);  // response: AA 0D 02 SN_H SN_L SM (6 bytes)
+    if (n >= 5) {
+        out.currentTrack = ((uint16_t)rsp[3] << 8) | rsp[4];
+        gotAny = true;
+    }
+
+    out.linkOk = gotAny;
+    return gotAny;
 }
 
 // -----------------------------------------------------------------------------

@@ -29,16 +29,28 @@
 // Build-flag constants — match values used in platformio.ini build_flags.
 // PA_AUDIO_DRIVER must be set to one of these at compile time.
 // -----------------------------------------------------------------------------
-#define AUDIO_SOFT_UART  1  // Software UART TX binary-frame driver (default)
-#define AUDIO_DFPLAYER   2
+#define AUDIO_SOFT_UART 1  // Software UART TX binary-frame driver (default)
+#define AUDIO_DFPLAYER 2
 #define AUDIO_MP3TRIGGER 3
-#define AUDIO_CHIRP      4  // CHIRP Audio Trigger — ASCII UART commands
+#define AUDIO_CHIRP 4  // CHIRP Audio Trigger — ASCII UART commands
+
+// -----------------------------------------------------------------------------
+// AudioModuleState — live state returned by queryModuleState().
+// Populated from live UART RX queries; reflects what the module actually reports.
+// -----------------------------------------------------------------------------
+struct AudioModuleState {
+    bool linkOk;            // true if the module responded to at least one query
+    uint8_t playState;      // 0=stop  1=playing  2=paused  0xFF=unknown
+    uint8_t device;         // 0=USB   1=SD/TF    2=FLASH   0xFF=unknown/none
+    uint16_t totalTracks;   // 0 if unknown
+    uint16_t currentTrack;  // 0 if unknown
+};
 
 // -----------------------------------------------------------------------------
 // AudioDriver — abstract interface
 // -----------------------------------------------------------------------------
 class AudioDriver {
-public:
+   public:
     // Initialise hardware (GPIO, serial pin) — called once during AudioTask init.
     virtual void begin() = 0;
 
@@ -58,4 +70,12 @@ public:
     // Returns a short human-readable name for this driver (e.g. "DY-SV5W", "CHIRP").
     // Used by the status API to expose the active backend to the web UI.
     virtual const char* driverName() const = 0;
+
+    // Query the module for live state. Returns true and populates 'out' if the
+    // module responds. Default returns false (driver has no RX path).
+    // Must only be called from the AudioTask (Core 0). Blocking up to ~300 ms.
+    virtual bool queryModuleState(AudioModuleState& out) {
+        (void)out;
+        return false;
+    }
 };

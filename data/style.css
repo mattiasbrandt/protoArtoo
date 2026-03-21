@@ -1258,8 +1258,10 @@ textarea:disabled {
 }
 
 .sound-state-badge[data-state="disabled"] { color: var(--text-dim); }
-.sound-state-badge[data-state="playing"] { color: var(--success); }
-.sound-state-badge[data-state="idle"] { color: var(--text); }
+.sound-state-badge[data-state="playing"]  { color: var(--success); }
+.sound-state-badge[data-state="idle"]     { color: var(--text); }
+.sound-state-badge[data-state="ok"]       { color: var(--success); }
+.sound-state-badge[data-state="error"]    { color: var(--danger, #e55); }
 
 /* Setup page small layout helpers */
 .component-row.stack {

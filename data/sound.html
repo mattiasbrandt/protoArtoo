@@ -11,6 +11,41 @@
     <div id="shell-top"></div>
 
 
+    <!-- Audio Module Status -->
+    <div class="card">
+      <h3>🔌 Audio Module Status</h3>
+      <div class="desc">Live status queried from the DY-SV5W module every 2 seconds.</div>
+      <table class="sound-table mt-12">
+        <tbody>
+          <tr>
+            <td>Driver</td>
+            <td><span id="mod-driver">—</span></td>
+          </tr>
+          <tr>
+            <td>Module link</td>
+            <td><span id="mod-link" class="sound-state-badge" data-state="disabled">—</span></td>
+          </tr>
+          <tr>
+            <td>Device</td>
+            <td><span id="mod-device">—</span></td>
+          </tr>
+          <tr>
+            <td>Play state</td>
+            <td><span id="mod-play-state">—</span></td>
+          </tr>
+          <tr>
+            <td>Total tracks</td>
+            <td><span id="mod-total-tracks">—</span></td>
+          </tr>
+          <tr>
+            <td>Current track</td>
+            <td><span id="mod-current-track">—</span></td>
+          </tr>
+        </tbody>
+      </table>
+      <div id="mod-status-feedback" class="feedback mt-8" role="status" aria-live="polite" aria-atomic="true"></div>
+    </div>
+
     <!-- Global Controls -->
     <!-- Disabled notice (hidden when S2 Sound is enabled) -->
     <div id="sound-disabled-card" class="card disabled-card hidden" role="status" aria-live="polite" aria-atomic="true">

@@ -28,6 +28,57 @@
   const volDisplay = document.getElementById("vol-display");
   let soundHardwareEnabled = true;
 
+  // Module status elements
+  const modDriver = document.getElementById("mod-driver");
+  const modLink = document.getElementById("mod-link");
+  const modDevice = document.getElementById("mod-device");
+  const modPlayState = document.getElementById("mod-play-state");
+  const modTotalTracks = document.getElementById("mod-total-tracks");
+  const modCurrentTrack = document.getElementById("mod-current-track");
+
+  const updateModuleStatus = async () => {
+    if (!window.PAApi) return;
+    try {
+      const result = await window.PAApi.get("/api/audio", { timeoutMs: 3000 });
+      const d = result.data;
+      if (modDriver) modDriver.textContent = d.driver ?? "—";
+      if (modLink) {
+        const ok = Boolean(d.link_ok);
+        modLink.textContent = ok ? "OK" : "No response";
+        modLink.dataset.state = ok ? "ok" : "error";
+      }
+      if (modDevice) modDevice.textContent = d.device ?? "—";
+      if (modPlayState) modPlayState.textContent = d.play_state ?? "—";
+      if (modTotalTracks) modTotalTracks.textContent = d.total_tracks ?? "—";
+      if (modCurrentTrack) modCurrentTrack.textContent = d.current_track ?? "—";
+
+      // Update the badge with the real module-reported play state.
+      // Only override when the module is actually responding; if link_ok is
+      // false the user needs to see "No module response", not a stale "Idle".
+      if (audioStateBadge && soundHardwareEnabled) {
+        const linkOk = Boolean(d.link_ok);
+        if (!linkOk) {
+          audioStateBadge.textContent = "No module response";
+          audioStateBadge.dataset.state = "error";
+        } else if (d.play_state === "playing") {
+          audioStateBadge.textContent = "🔊 Playing";
+          audioStateBadge.dataset.state = "playing";
+        } else if (d.play_state === "paused") {
+          audioStateBadge.textContent = "⏸ Paused";
+          audioStateBadge.dataset.state = "idle";
+        } else {
+          audioStateBadge.textContent = "✅ Idle";
+          audioStateBadge.dataset.state = "idle";
+        }
+      }
+    } catch (_err) {
+      if (modLink) {
+        modLink.textContent = "Fetch error";
+        modLink.dataset.state = "error";
+      }
+    }
+  };
+
   const showFeedback = (el, msg, ok) => {
     if (!el) return;
     el.textContent = msg;
@@ -202,16 +253,15 @@
   const renderStatus = (data) => {
     const s2Enabled = Boolean(data.s2Sound);
     setSoundHardwareEnabled(s2Enabled);
+    // Note: the audio-state-badge is intentionally NOT updated here from
+    // data.s2Sound.state — that field reflects firmware's guess (audioActive),
+    // not confirmed module state. Badge is updated by updateModuleStatus()
+    // which uses the real module-reported play state from GET /api/audio.
     if (!audioStateBadge) return;
     if (!s2Enabled) {
       audioStateBadge.textContent = "Disabled";
       audioStateBadge.dataset.state = "disabled";
-      return;
     }
-
-    const state = data.s2Sound?.state === "playing" ? "playing" : "idle";
-    audioStateBadge.textContent = state === "playing" ? "🔊 Playing" : "✅ Idle";
-    audioStateBadge.dataset.state = state;
   };
 
   const refreshStatusOnce = async () => {
@@ -346,4 +396,12 @@
       showFeedback(intFb, `Save failed: ${window.PAApi.messageFor(error)}`, false);
     }
   });
+
+  // Initial module status fetch + 3 s poll while page is open
+  // Skip poll when tab is hidden — consistent with other poll guards in this file.
+  updateModuleStatus();
+  window.setInterval(() => {
+    if (document.visibilityState === "hidden") return;
+    updateModuleStatus();
+  }, 3000);
 })();

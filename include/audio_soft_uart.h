@@ -28,7 +28,19 @@ class AudioDriverSoftUart : public AudioDriver {
         return "DY-SV5W";
     }
 
+    // Query live module state via UART RX: device, play state, current track.
+    // Sends three query frames and waits up to 300 ms each for a response.
+    // Returns true if at least one query received a valid response (link alive).
+    // Only call from AudioTask (Core 0).
+    bool queryModuleState(AudioModuleState& out) override;
+
    private:
+    // Last known total tracks and device — populated during begin() and carried
+    // forward when queryModuleState() is called (total-tracks query runs in begin
+    // only, not on every periodic poll to keep poll overhead low).
+    uint16_t m_totalTracks = 0;
+    uint8_t m_device = 0xFF;  // 0xFF = unknown until first successful query
+
     // Send one DY-SV5W checksum frame via UART2.
     // data = [0xAA, CMD, LEN, DATA...]
     void sendFrame(const uint8_t* data, uint8_t len);

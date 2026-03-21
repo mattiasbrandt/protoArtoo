@@ -114,6 +114,17 @@ struct RobotState {
 
     // --- Subsystem state ---
     bool audioActive;
+
+    // Audio module state — populated by AudioTask from DY-SV5W query responses.
+    // link_ok: false until the module responds to at least one query.
+    // play_state: 0=stop 1=playing 2=paused 0xFF=unknown
+    // device:     0=USB  1=SD/TF  2=FLASH  0xFF=unknown/none
+    bool audio_module_link_ok;
+    uint8_t audio_module_play_state;
+    uint8_t audio_module_device;
+    uint16_t audio_module_total_tracks;
+    uint16_t audio_module_current_track;
+
     bool armOpen[2];
     uint16_t arm1TargetUs;
     uint16_t arm2TargetUs;
@@ -133,10 +144,10 @@ struct RobotState {
     uint32_t sbus1LostFrameCount;  // cumulative lost_frame events (not failsafe)
     uint32_t sbus2LostFrameCount;  // cumulative lost_frame events (not failsafe)
     bool sbus2HwFailsafe;
-    uint32_t failsafeLastTriggerMs;       // millis() when last failsafe trigger latched
-    uint32_t failsafeLastWatchdogMs;      // millis() when last SBUS watchdog trigger fired
-    uint32_t failsafeLastZeroOutputMs;    // millis() when DriveTask first asserted zero output
-    uint32_t failsafeLastTriggerToZeroMs; // latency from trigger to first zero output (ms)
+    uint32_t failsafeLastTriggerMs;        // millis() when last failsafe trigger latched
+    uint32_t failsafeLastWatchdogMs;       // millis() when last SBUS watchdog trigger fired
+    uint32_t failsafeLastZeroOutputMs;     // millis() when DriveTask first asserted zero output
+    uint32_t failsafeLastTriggerToZeroMs;  // latency from trigger to first zero output (ms)
     FailsafeSource failsafeLastTriggerSource;
     // --- Timing state ---
     uint32_t lastPwmMs;
@@ -172,7 +183,7 @@ struct RobotState {
     uint32_t cfg_webDriveTimeoutMs;  // Default: WEB_DRIVE_TIMEOUT_MS
     bool cfg_ch8ModeLock;            // Default: false
     uint8_t cfg_audioVolume;         // Default: 20 (0-30)
-    uint8_t cfg_logLevel;            // Runtime log verbosity: 1=Error 2=Info 3=Debug. NVS: log_level
+    uint8_t cfg_logLevel;  // Runtime log verbosity: 1=Error 2=Info 3=Debug. NVS: log_level
 
     // NVS-backed named sound track indices (mirror AudioNamedTracks defaults).
     // NVS keys: snd_scream, snd_faint, snd_leia, snd_cantina_s, snd_sw,
@@ -331,7 +342,6 @@ inline void recordFailsafeZeroOutputLocked(uint32_t nowMs) {
     }
     robotState.failsafeLastTriggerToZeroMs = (uint32_t)(nowMs - robotState.failsafeLastTriggerMs);
 }
-
 
 // -----------------------------------------------------------------------------
 // Safe read-only accessors for safety-critical state

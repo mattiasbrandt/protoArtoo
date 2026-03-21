@@ -156,8 +156,8 @@ WiFiConnectivityFields deriveWiFiConnectivityFields(bool apEnabled, bool staConn
 //         sbusSignalLost    — true if SBUS signal is lost
 //         sbusHwFailsafe    — true if SBUS hardware failsafe is active
 //         webControlEnabled — true if web drive control is enabled
-//         wifiConnected     — true if control-surface WiFi is available (AP active or STA connected)
-//         wifiClientConnected — true if at least one station is attached to soft AP
+//         wifiConnected     — true if control-surface WiFi is available (AP active or STA
+//         connected) wifiClientConnected — true if at least one station is attached to soft AP
 //         fsReady           — true if LittleFS is mounted
 //         heapFree          — current free heap in bytes
 //         heapMin           — minimum free heap since boot in bytes
@@ -169,3 +169,22 @@ void formatHealthJson(char* buf, size_t bufSize, bool estop, bool sbusSignalLost
                       bool sbusHwFailsafe, bool webControlEnabled, bool wifiConnected,
                       bool wifiClientConnected, bool fsReady, unsigned long heapFree,
                       unsigned long heapMin, unsigned long heapLargestBlock, long wifiRssi);
+
+// -----------------------------------------------------------------------------
+// formatAudioStatusJson()
+// Write a JSON audio-module status object into a caller-supplied buffer.
+// Pure function — no globals, no Arduino, no FreeRTOS.
+// params: buf          — output buffer (must not be null)
+//         bufSize      — size of buf in bytes (192 bytes is sufficient)
+//         driverName   — driver name string e.g. "DY-SV5W" (must not be null)
+//         linkOk       — true if module responded to at least one UART query
+//         active       — true if firmware sent a play command recently (audioActive)
+//         playState    — 0=stop 1=playing 2=paused 0xFF=unknown
+//         device       — 0=USB 1=SD/TF 2=FLASH 0xFF=none/unknown
+//         totalTracks  — total tracks reported by module (0 if unknown)
+//         currentTrack — currently selected track (0 if unknown)
+// thread-safe: yes (pure function, no globals)
+// -----------------------------------------------------------------------------
+void formatAudioStatusJson(char* buf, size_t bufSize, const char* driverName, bool linkOk,
+                           bool active, uint8_t playState, uint8_t device, uint16_t totalTracks,
+                           uint16_t currentTrack);

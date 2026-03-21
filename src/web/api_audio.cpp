@@ -25,10 +25,10 @@
 
 #include <Arduino.h>
 #include <ESPAsyncWebServer.h>
-
 #include <Preferences.h>
 #include <stdio.h>
 
+#include "api_helpers.h"
 #include "audio_dollar_parser.h"
 #include "audio_task.h"
 #include "config.h"
@@ -50,21 +50,21 @@ void registerAudioRoutes(AsyncWebServer& server) {
         uint16_t intQuiet, intMid, intFull, intAwake;
         uint8_t volume;
         taskENTER_CRITICAL(&robotStateMux);
-        scream    = robotState.cfg_snd_scream;
-        faint     = robotState.cfg_snd_faint;
-        leia      = robotState.cfg_snd_leia;
-        cantinaS  = robotState.cfg_snd_cantina_s;
-        swTheme   = robotState.cfg_snd_sw_theme;
-        impMarch  = robotState.cfg_snd_imp_march;
-        cantinaL  = robotState.cfg_snd_cantina_l;
-        startup   = robotState.cfg_snd_startup;
-        randMin   = robotState.cfg_snd_rand_min;
-        randMax   = robotState.cfg_snd_rand_max;
-        volume    = robotState.cfg_audioVolume;
-        intQuiet  = robotState.cfg_snd_int_quiet;
-        intMid    = robotState.cfg_snd_int_mid;
-        intFull   = robotState.cfg_snd_int_full;
-        intAwake  = robotState.cfg_snd_int_awake;
+        scream = robotState.cfg_snd_scream;
+        faint = robotState.cfg_snd_faint;
+        leia = robotState.cfg_snd_leia;
+        cantinaS = robotState.cfg_snd_cantina_s;
+        swTheme = robotState.cfg_snd_sw_theme;
+        impMarch = robotState.cfg_snd_imp_march;
+        cantinaL = robotState.cfg_snd_cantina_l;
+        startup = robotState.cfg_snd_startup;
+        randMin = robotState.cfg_snd_rand_min;
+        randMax = robotState.cfg_snd_rand_max;
+        volume = robotState.cfg_audioVolume;
+        intQuiet = robotState.cfg_snd_int_quiet;
+        intMid = robotState.cfg_snd_int_mid;
+        intFull = robotState.cfg_snd_int_full;
+        intAwake = robotState.cfg_snd_int_awake;
         taskEXIT_CRITICAL(&robotStateMux);
 
         // Stack-allocated — not static. Static local buffers in async handlers
@@ -77,15 +77,14 @@ void registerAudioRoutes(AsyncWebServer& server) {
                  "\"rand_min\":%u,\"rand_max\":%u,\"volume\":%u,"
                  "\"snd_int_quiet\":%u,\"snd_int_mid\":%u,"
                  "\"snd_int_full\":%u,\"snd_int_awake\":%u}",
-                 scream, faint, leia, cantinaS, swTheme, impMarch,
-                 cantinaL, startup, randMin, randMax, volume,
-                 intQuiet, intMid, intFull, intAwake);
+                 scream, faint, leia, cantinaS, swTheme, impMarch, cantinaL, startup, randMin,
+                 randMax, volume, intQuiet, intMid, intFull, intAwake);
         req->send(200, "application/json", body);
     });
 
     // ---- POST /api/audio/tracks ----
     server.on("/api/audio/tracks", HTTP_POST, [](AsyncWebServerRequest* req) {
-        const AsyncWebParameter* keyParam   = req->getParam("key",   true);
+        const AsyncWebParameter* keyParam = req->getParam("key", true);
         const AsyncWebParameter* trackParam = req->getParam("track", true);
         if (!keyParam || !trackParam) {
             req->send(400, "application/json",
@@ -118,26 +117,40 @@ void registerAudioRoutes(AsyncWebServer& server) {
         // (no allocation) but keeping critical sections minimal is good practice.
         uint16_t* fieldPtr = nullptr;
         taskENTER_CRITICAL(&robotStateMux);
-        if      (strcmp(key, "scream")        == 0) fieldPtr = &robotState.cfg_snd_scream;
-        else if (strcmp(key, "faint")         == 0) fieldPtr = &robotState.cfg_snd_faint;
-        else if (strcmp(key, "leia")          == 0) fieldPtr = &robotState.cfg_snd_leia;
-        else if (strcmp(key, "cantina_s")     == 0) fieldPtr = &robotState.cfg_snd_cantina_s;
-        else if (strcmp(key, "sw_theme")      == 0) fieldPtr = &robotState.cfg_snd_sw_theme;
-        else if (strcmp(key, "imp_march")     == 0) fieldPtr = &robotState.cfg_snd_imp_march;
-        else if (strcmp(key, "cantina_l")     == 0) fieldPtr = &robotState.cfg_snd_cantina_l;
-        else if (strcmp(key, "startup")       == 0) fieldPtr = &robotState.cfg_snd_startup;
-        else if (strcmp(key, "rand_min")      == 0) fieldPtr = &robotState.cfg_snd_rand_min;
-        else if (strcmp(key, "rand_max")      == 0) fieldPtr = &robotState.cfg_snd_rand_max;
-        else if (strcmp(key, "snd_int_quiet") == 0) fieldPtr = &robotState.cfg_snd_int_quiet;
-        else if (strcmp(key, "snd_int_mid")   == 0) fieldPtr = &robotState.cfg_snd_int_mid;
-        else if (strcmp(key, "snd_int_full")  == 0) fieldPtr = &robotState.cfg_snd_int_full;
-        else if (strcmp(key, "snd_int_awake") == 0) fieldPtr = &robotState.cfg_snd_int_awake;
-        if (fieldPtr) *fieldPtr = t;
+        if (strcmp(key, "scream") == 0)
+            fieldPtr = &robotState.cfg_snd_scream;
+        else if (strcmp(key, "faint") == 0)
+            fieldPtr = &robotState.cfg_snd_faint;
+        else if (strcmp(key, "leia") == 0)
+            fieldPtr = &robotState.cfg_snd_leia;
+        else if (strcmp(key, "cantina_s") == 0)
+            fieldPtr = &robotState.cfg_snd_cantina_s;
+        else if (strcmp(key, "sw_theme") == 0)
+            fieldPtr = &robotState.cfg_snd_sw_theme;
+        else if (strcmp(key, "imp_march") == 0)
+            fieldPtr = &robotState.cfg_snd_imp_march;
+        else if (strcmp(key, "cantina_l") == 0)
+            fieldPtr = &robotState.cfg_snd_cantina_l;
+        else if (strcmp(key, "startup") == 0)
+            fieldPtr = &robotState.cfg_snd_startup;
+        else if (strcmp(key, "rand_min") == 0)
+            fieldPtr = &robotState.cfg_snd_rand_min;
+        else if (strcmp(key, "rand_max") == 0)
+            fieldPtr = &robotState.cfg_snd_rand_max;
+        else if (strcmp(key, "snd_int_quiet") == 0)
+            fieldPtr = &robotState.cfg_snd_int_quiet;
+        else if (strcmp(key, "snd_int_mid") == 0)
+            fieldPtr = &robotState.cfg_snd_int_mid;
+        else if (strcmp(key, "snd_int_full") == 0)
+            fieldPtr = &robotState.cfg_snd_int_full;
+        else if (strcmp(key, "snd_int_awake") == 0)
+            fieldPtr = &robotState.cfg_snd_int_awake;
+        if (fieldPtr)
+            *fieldPtr = t;
         taskEXIT_CRITICAL(&robotStateMux);
 
         if (!fieldPtr) {
-            req->send(400, "application/json",
-                      "{\"ok\":false,\"error\":\"unknown key\"}");
+            req->send(400, "application/json", "{\"ok\":false,\"error\":\"unknown key\"}");
             return;
         }
 
@@ -155,9 +168,32 @@ void registerAudioRoutes(AsyncWebServer& server) {
         if (ok) {
             req->send(200, "application/json", "{\"ok\":true}");
         } else {
-            req->send(500, "application/json",
-                      "{\"ok\":false,\"error\":\"NVS write failed\"}");
+            req->send(500, "application/json", "{\"ok\":false,\"error\":\"NVS write failed\"}");
         }
+    });
+
+    // ---- GET /api/audio — live module status ----
+    // Returns driver name, module link state, and live module-reported status.
+    // Module state fields reflect the last successful UART query from AudioTask;
+    // updated every ~2 s by the AudioTask polling loop.
+    server.on("/api/audio", HTTP_GET, [](AsyncWebServerRequest* req) {
+        bool linkOk;
+        uint8_t playState, device;
+        uint16_t totalTracks, currentTrack;
+        bool active;
+        taskENTER_CRITICAL(&robotStateMux);
+        linkOk = robotState.audio_module_link_ok;
+        playState = robotState.audio_module_play_state;
+        device = robotState.audio_module_device;
+        totalTracks = robotState.audio_module_total_tracks;
+        currentTrack = robotState.audio_module_current_track;
+        active = robotState.audioActive;
+        taskEXIT_CRITICAL(&robotStateMux);
+
+        char body[192];
+        formatAudioStatusJson(body, sizeof(body), audioGetDriverName(), linkOk, active, playState,
+                              device, totalTracks, currentTrack);
+        req->send(200, "application/json", body);
     });
 
     // POST /api/mood — apply a mood preset (dual-path: audio + dome TX)
@@ -179,7 +215,6 @@ void registerAudioRoutes(AsyncWebServer& server) {
         PA_LOG_INFO(TAG, "[MOOD] POST /api/mood mood=%d", mood);
         req->send(200, "application/json", "{\"ok\":true}");
     });
-
 
     server.on("/api/audio", HTTP_POST, [](AsyncWebServerRequest* req) {
         const AsyncWebParameter* actionParam = req->getParam("action", true);
@@ -268,8 +303,7 @@ void registerAudioRoutes(AsyncWebServer& server) {
         // ---- dollar (raw $ command) ----
         if (action == "dollar") {
             const AsyncWebParameter* cmdParam = req->getParam("cmd", true);
-            if (!cmdParam || cmdParam->value().length() == 0 ||
-                cmdParam->value()[0] != '$') {
+            if (!cmdParam || cmdParam->value().length() == 0 || cmdParam->value()[0] != '$') {
                 req->send(400, "application/json",
                           "{\"ok\":false,\"error\":\"dollar requires cmd starting with '$'\"}");
                 return;
@@ -285,8 +319,7 @@ void registerAudioRoutes(AsyncWebServer& server) {
                           "{\"ok\":false,\"error\":\"audio command queue full\"}");
                 return;
             }
-            PA_LOG_INFO(TAG, "[AUDIO] POST /api/audio dollar cmd=%s",
-                        cmdParam->value().c_str());
+            PA_LOG_INFO(TAG, "[AUDIO] POST /api/audio dollar cmd=%s", cmdParam->value().c_str());
             req->send(200, "application/json", "{\"ok\":true}");
             return;
         }

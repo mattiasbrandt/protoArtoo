@@ -12,14 +12,14 @@
 #include "audio_dollar_parser.h"
 #include "audio_task.h"
 #include "dome_link.h"
-#include "mood.h"
 #include "dome_task.h"
 #include "drive.h"
+#include "ledc_pwm.h"
 #include "log_buffer.h"
+#include "mood.h"
+#include "rc_input.h"
 #include "robot_state.h"
 #include "safety.h"
-#include "rc_input.h"
-#include "ledc_pwm.h"
 #include "servo_task.h"
 #include "web_server.h"
 
@@ -27,9 +27,9 @@
 RobotState robotState = {};
 portMUX_TYPE robotStateMux = portMUX_INITIALIZER_UNLOCKED;
 QueueHandle_t servoCmdQueue = nullptr;
-QueueHandle_t domeCmdQueue  = nullptr;
+QueueHandle_t domeCmdQueue = nullptr;
 QueueHandle_t audioCmdQueue = nullptr;
-QueueHandle_t domeTxQueue   = nullptr;
+QueueHandle_t domeTxQueue = nullptr;
 static volatile bool restartRequested = false;
 static volatile uint32_t restartAtMs = 0;
 static portMUX_TYPE restartMux = portMUX_INITIALIZER_UNLOCKED;
@@ -255,22 +255,26 @@ void loadConfigToState() {
     robotState.cfg_sbusTimeoutMs = prefs.getULong("sbus_tmo", SBUS_TIMEOUT_MS);
     robotState.cfg_webDriveTimeoutMs = prefs.getULong("web_tmo", WEB_DRIVE_TIMEOUT_MS);
     robotState.cfg_ch8ModeLock = prefs.getBool("ch8_lock", false);
-    robotState.cfg_audioVolume    = (uint8_t)prefs.getUChar("aud_vol", 20);
-    robotState.cfg_logLevel       = (uint8_t)prefs.getUChar("log_level", PA_LOG_LEVEL);
-    robotState.cfg_snd_scream    = prefs.getUShort("snd_scream",    AUDIO_TRACK_SCREAM);
-    robotState.cfg_snd_faint     = prefs.getUShort("snd_faint",     AUDIO_TRACK_FAINT);
-    robotState.cfg_snd_leia      = prefs.getUShort("snd_leia",      AUDIO_TRACK_LEIA);
+    robotState.cfg_audioVolume = (uint8_t)prefs.getUChar("aud_vol", 20);
+    robotState.cfg_logLevel = (uint8_t)prefs.getUChar("log_level", PA_LOG_LEVEL);
+    robotState.cfg_snd_scream = prefs.getUShort("snd_scream", AUDIO_TRACK_SCREAM);
+    robotState.cfg_snd_faint = prefs.getUShort("snd_faint", AUDIO_TRACK_FAINT);
+    robotState.cfg_snd_leia = prefs.getUShort("snd_leia", AUDIO_TRACK_LEIA);
     robotState.cfg_snd_cantina_s = prefs.getUShort("snd_cantina_s", AUDIO_TRACK_CANTINA_S);
-    robotState.cfg_snd_sw_theme  = prefs.getUShort("snd_sw",        AUDIO_TRACK_SW_THEME);
-    robotState.cfg_snd_imp_march = prefs.getUShort("snd_march",     AUDIO_TRACK_IMP_MARCH);
+    robotState.cfg_snd_sw_theme = prefs.getUShort("snd_sw", AUDIO_TRACK_SW_THEME);
+    robotState.cfg_snd_imp_march = prefs.getUShort("snd_march", AUDIO_TRACK_IMP_MARCH);
     robotState.cfg_snd_cantina_l = prefs.getUShort("snd_cantina_l", AUDIO_TRACK_CANTINA_L);
-    robotState.cfg_snd_startup   = prefs.getUShort("snd_startup",   AUDIO_TRACK_STARTUP);
-    robotState.cfg_snd_rand_min  = prefs.getUShort("snd_rand_min",  AUDIO_RAND_TRACK_MIN);
-    robotState.cfg_snd_rand_max  = prefs.getUShort("snd_rand_max",  AUDIO_RAND_TRACK_MAX);
-    robotState.cfg_snd_int_quiet = constrain(prefs.getUShort("snd_int_quiet", AUDIO_RAND_INT_QUIET), (uint16_t)0, (uint16_t)3600);
-    robotState.cfg_snd_int_mid   = constrain(prefs.getUShort("snd_int_mid",   AUDIO_RAND_INT_MID),   (uint16_t)0, (uint16_t)3600);
-    robotState.cfg_snd_int_full  = constrain(prefs.getUShort("snd_int_full",  AUDIO_RAND_INT_FULL),  (uint16_t)0, (uint16_t)3600);
-    robotState.cfg_snd_int_awake = constrain(prefs.getUShort("snd_int_awake", AUDIO_RAND_INT_AWAKE), (uint16_t)0, (uint16_t)3600);
+    robotState.cfg_snd_startup = prefs.getUShort("snd_startup", AUDIO_TRACK_STARTUP);
+    robotState.cfg_snd_rand_min = prefs.getUShort("snd_rand_min", AUDIO_RAND_TRACK_MIN);
+    robotState.cfg_snd_rand_max = prefs.getUShort("snd_rand_max", AUDIO_RAND_TRACK_MAX);
+    robotState.cfg_snd_int_quiet = constrain(prefs.getUShort("snd_int_quiet", AUDIO_RAND_INT_QUIET),
+                                             (uint16_t)0, (uint16_t)3600);
+    robotState.cfg_snd_int_mid =
+        constrain(prefs.getUShort("snd_int_mid", AUDIO_RAND_INT_MID), (uint16_t)0, (uint16_t)3600);
+    robotState.cfg_snd_int_full = constrain(prefs.getUShort("snd_int_full", AUDIO_RAND_INT_FULL),
+                                            (uint16_t)0, (uint16_t)3600);
+    robotState.cfg_snd_int_awake = constrain(prefs.getUShort("snd_int_awake", AUDIO_RAND_INT_AWAKE),
+                                             (uint16_t)0, (uint16_t)3600);
 
     robotState.cfg_arm1_open_us = prefs.getUShort("arm1_op", 2000);
     robotState.cfg_arm1_close_us = prefs.getUShort("arm1_cl", 1000);
@@ -327,7 +331,7 @@ void loadConfigToState() {
     robotState.cfg_enable_s2_sound = prefs.getBool("en_s2", false);
     robotState.cfg_enable_s3_dome_ctrl = prefs.getBool("en_s3", false);
     robotState.cfg_stationary = prefs.getBool("op_mode", false);
-    robotState.activeMood     = prefs.getUChar("last_mood", 0);
+    robotState.activeMood = prefs.getUChar("last_mood", 0);
 
     RcBindingNvsSpec bindingSpecs[] = {
         {"rcp_drv", &robotState.cfg_rc_pwm_drive_speed, defaultPwmBinding(1)},
@@ -542,22 +546,22 @@ bool saveConfigToNvs() {
     sbusTimeoutMs = robotState.cfg_sbusTimeoutMs;
     webDriveTimeoutMs = robotState.cfg_webDriveTimeoutMs;
     ch8ModeLock = robotState.cfg_ch8ModeLock;
-    audioVolume  = robotState.cfg_audioVolume;
-    logLevel     = robotState.cfg_logLevel;
-    sndScream    = robotState.cfg_snd_scream;
-    sndFaint     = robotState.cfg_snd_faint;
-    sndLeia      = robotState.cfg_snd_leia;
-    sndCantinaS  = robotState.cfg_snd_cantina_s;
-    sndSwTheme   = robotState.cfg_snd_sw_theme;
-    sndImpMarch  = robotState.cfg_snd_imp_march;
-    sndCantinaL  = robotState.cfg_snd_cantina_l;
-    sndStartup   = robotState.cfg_snd_startup;
-    sndRandMin   = robotState.cfg_snd_rand_min;
-    sndRandMax   = robotState.cfg_snd_rand_max;
-    sndIntQuiet  = robotState.cfg_snd_int_quiet;
-    sndIntMid    = robotState.cfg_snd_int_mid;
-    sndIntFull   = robotState.cfg_snd_int_full;
-    sndIntAwake  = robotState.cfg_snd_int_awake;
+    audioVolume = robotState.cfg_audioVolume;
+    logLevel = robotState.cfg_logLevel;
+    sndScream = robotState.cfg_snd_scream;
+    sndFaint = robotState.cfg_snd_faint;
+    sndLeia = robotState.cfg_snd_leia;
+    sndCantinaS = robotState.cfg_snd_cantina_s;
+    sndSwTheme = robotState.cfg_snd_sw_theme;
+    sndImpMarch = robotState.cfg_snd_imp_march;
+    sndCantinaL = robotState.cfg_snd_cantina_l;
+    sndStartup = robotState.cfg_snd_startup;
+    sndRandMin = robotState.cfg_snd_rand_min;
+    sndRandMax = robotState.cfg_snd_rand_max;
+    sndIntQuiet = robotState.cfg_snd_int_quiet;
+    sndIntMid = robotState.cfg_snd_int_mid;
+    sndIntFull = robotState.cfg_snd_int_full;
+    sndIntAwake = robotState.cfg_snd_int_awake;
     arm1Open = robotState.cfg_arm1_open_us;
     arm1Close = robotState.cfg_arm1_close_us;
     arm2Open = robotState.cfg_arm2_open_us;
@@ -641,19 +645,19 @@ bool saveConfigToNvs() {
     prefs.putBool("ch8_lock", ch8ModeLock);
     prefs.putUChar("aud_vol", audioVolume);
     prefs.putUChar("log_level", logLevel);
-    prefs.putUShort("snd_scream",    sndScream);
-    prefs.putUShort("snd_faint",     sndFaint);
-    prefs.putUShort("snd_leia",      sndLeia);
+    prefs.putUShort("snd_scream", sndScream);
+    prefs.putUShort("snd_faint", sndFaint);
+    prefs.putUShort("snd_leia", sndLeia);
     prefs.putUShort("snd_cantina_s", sndCantinaS);
-    prefs.putUShort("snd_sw",        sndSwTheme);
-    prefs.putUShort("snd_march",     sndImpMarch);
+    prefs.putUShort("snd_sw", sndSwTheme);
+    prefs.putUShort("snd_march", sndImpMarch);
     prefs.putUShort("snd_cantina_l", sndCantinaL);
-    prefs.putUShort("snd_startup",   sndStartup);
-    prefs.putUShort("snd_rand_min",  sndRandMin);
-    prefs.putUShort("snd_rand_max",  sndRandMax);
+    prefs.putUShort("snd_startup", sndStartup);
+    prefs.putUShort("snd_rand_min", sndRandMin);
+    prefs.putUShort("snd_rand_max", sndRandMax);
     prefs.putUShort("snd_int_quiet", sndIntQuiet);
-    prefs.putUShort("snd_int_mid",   sndIntMid);
-    prefs.putUShort("snd_int_full",  sndIntFull);
+    prefs.putUShort("snd_int_mid", sndIntMid);
+    prefs.putUShort("snd_int_full", sndIntFull);
     prefs.putUShort("snd_int_awake", sndIntAwake);
     prefs.putUShort("arm1_op", arm1Open);
     prefs.putUShort("arm1_cl", arm1Close);
@@ -750,6 +754,10 @@ void setup() {
     // Safety: boot with drive locked until SBUS confirmed
     robotState.sbusSignalLost = true;
     robotState.estop = false;
+    // Audio module state: 0xFF = "unknown/none" until AudioTask runs its init
+    // query. Zero-init would show "USB" (0x00) before any query succeeds.
+    robotState.audio_module_device = 0xFF;
+    robotState.audio_module_play_state = 0xFF;
     // Pre-init log level to compile-time default so any log calls added before
     // loadConfigToState() in the future are not silently dropped (cfg_logLevel
     // is zero-initialized by robotState = {} which would suppress all output).
@@ -775,9 +783,9 @@ void setup() {
 
     // Create command queues
     servoCmdQueue = xQueueCreate(8, sizeof(ServoCommand));
-    domeCmdQueue  = xQueueCreate(8, sizeof(DomeCommand));
+    domeCmdQueue = xQueueCreate(8, sizeof(DomeCommand));
     audioCmdQueue = xQueueCreate(8, sizeof(AudioCommand));
-    domeTxQueue   = xQueueCreate(16, sizeof(DomeTxCmd));
+    domeTxQueue = xQueueCreate(16, sizeof(DomeTxCmd));
 
     // Initialize LEDC PWM hardware only if at least one LEDC-driven output is
     // enabled.  ARM1/2/AUX1-3 and DOME all share the same LEDC timer, so the
@@ -803,9 +811,11 @@ void setup() {
     // DomeTask: 50 Hz ESC PWM updates
     xTaskCreatePinnedToCore(driveTask, "DriveTask", 4096, nullptr, 5, nullptr, 1);
     xTaskCreatePinnedToCore(rcInputTask, "RCInputTask", 4096, nullptr, 5, nullptr, 1);
-    xTaskCreatePinnedToCore(servoTask, "ServoTask", 3072, nullptr, 4, nullptr,
-                            1);  // HWM: ~728 B used; was 5120 (oversized for string formatting assumption)
-    xTaskCreatePinnedToCore(domeTask, "DomeTask", 2048, nullptr, 4, nullptr, 1);  // HWM: ~764 B used
+    xTaskCreatePinnedToCore(
+        servoTask, "ServoTask", 3072, nullptr, 4, nullptr,
+        1);  // HWM: ~728 B used; was 5120 (oversized for string formatting assumption)
+    xTaskCreatePinnedToCore(domeTask, "DomeTask", 2048, nullptr, 4, nullptr,
+                            1);  // HWM: ~764 B used
 
     // AudioTask: Core 0 (non-RT) — software bit-bang TX blocks ~6 ms per command;
     // keeping off Core 1 avoids any interaction with DriveTask / ServoTask timing.
@@ -828,8 +838,8 @@ void setup() {
         const char* bootAudioCmd = moodAudioCommand(robotState.activeMood);
         if (bootAudioCmd) {
             audioQueueDollar(bootAudioCmd, SRC_INTERNAL);
-            PA_LOG_INFO("main", "boot mood restore: SE%u -> %s",
-                        (unsigned)robotState.activeMood, bootAudioCmd);
+            PA_LOG_INFO("main", "boot mood restore: SE%u -> %s", (unsigned)robotState.activeMood,
+                        bootAudioCmd);
         }
     }
 

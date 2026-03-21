@@ -20,12 +20,11 @@
 
 #include "audio_task.h"
 
-#include <string.h>
-
 #include <Arduino.h>
 #include <esp_random.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
+#include <string.h>
 
 #include "audio_dollar_parser.h"
 #include "audio_driver.h"
@@ -66,7 +65,7 @@ bool audioQueueDollar(const char* cmd, CommandSource src) {
         return false;
     }
     AudioCommand msg{};
-    msg.type   = AUDIO_CMD_DOLLAR;
+    msg.type = AUDIO_CMD_DOLLAR;
     msg.source = src;
     strncpy(msg.dollar, cmd, sizeof(msg.dollar) - 1);
     msg.dollar[sizeof(msg.dollar) - 1] = '\0';
@@ -84,9 +83,9 @@ bool audioQueuePlayTrack(uint16_t track, CommandSource src) {
         return false;
     }
     AudioCommand msg{};
-    msg.type   = AUDIO_CMD_PLAY_TRACK;
+    msg.type = AUDIO_CMD_PLAY_TRACK;
     msg.source = src;
-    msg.track  = track;
+    msg.track = track;
     if (xQueueSend(audioCmdQueue, &msg, 0) != pdTRUE) {
         taskENTER_CRITICAL(&robotStateMux);
         robotState.queueOverflowCount++;
@@ -98,7 +97,7 @@ bool audioQueuePlayTrack(uint16_t track, CommandSource src) {
 
 bool audioQueueStop(CommandSource src) {
     AudioCommand msg{};
-    msg.type   = AUDIO_CMD_STOP;
+    msg.type = AUDIO_CMD_STOP;
     msg.source = src;
     if (xQueueSend(audioCmdQueue, &msg, 0) != pdTRUE) {
         taskENTER_CRITICAL(&robotStateMux);
@@ -111,7 +110,7 @@ bool audioQueueStop(CommandSource src) {
 
 bool audioQueueSetVolume(uint8_t vol, CommandSource src) {
     AudioCommand msg{};
-    msg.type   = AUDIO_CMD_SET_VOLUME;
+    msg.type = AUDIO_CMD_SET_VOLUME;
     msg.source = src;
     msg.volume = (vol > AUDIO_VOLUME_MAX) ? AUDIO_VOLUME_MAX : vol;
     if (xQueueSend(audioCmdQueue, &msg, 0) != pdTRUE) {
@@ -136,8 +135,7 @@ static void dispatchAction(const AudioAction& action, uint8_t& vol, bool& random
             uint32_t now = millis();
             if ((uint32_t)(now - lastPlayMs) < DISPATCH_PLAY_MIN_MS) {
                 PA_LOG_DEBUG(TAG, "play track %u dropped (anti-spam %lu ms)",
-                             (unsigned)action.track,
-                             (unsigned long)(now - lastPlayMs));
+                             (unsigned)action.track, (unsigned long)(now - lastPlayMs));
                 break;
             }
             lastPlayMs = now;
@@ -211,10 +209,11 @@ void audioTask(void* pvParameters) {
     (void)pvParameters;
 
     bool driverInitialized = false;  // becomes true on first enable
-    bool randomMode        = false;
-    uint32_t lastRandMs    = 0;
-    uint32_t lastPlayMs    = 0;      // anti-spam: last playTrack() timestamp
-    uint8_t currentVol     = 20;     // updated from config on first enable
+    bool randomMode = false;
+    uint32_t lastRandMs = 0;
+    uint32_t lastPlayMs = 0;   // anti-spam: last playTrack() timestamp
+    uint32_t lastQueryMs = 0;  // periodic module state re-query timestamp
+    uint8_t currentVol = 20;   // updated from config on first enable
 
     // Minimum interval between successive playTrack() calls (ms).
     // The DY-SV5W needs ~100 ms per command (enforced in the driver) plus
@@ -272,21 +271,40 @@ void audioTask(void* pvParameters) {
         // ----------------------------------------------------------------
         if (!driverInitialized) {
             taskENTER_CRITICAL(&robotStateMux);
-            currentVol      = robotState.cfg_audioVolume;
-            named.scream    = robotState.cfg_snd_scream;
-            named.faint     = robotState.cfg_snd_faint;
-            named.leia      = robotState.cfg_snd_leia;
+            currentVol = robotState.cfg_audioVolume;
+            named.scream = robotState.cfg_snd_scream;
+            named.faint = robotState.cfg_snd_faint;
+            named.leia = robotState.cfg_snd_leia;
             named.cantina_s = robotState.cfg_snd_cantina_s;
-            named.sw_theme  = robotState.cfg_snd_sw_theme;
+            named.sw_theme = robotState.cfg_snd_sw_theme;
             named.imp_march = robotState.cfg_snd_imp_march;
             named.cantina_l = robotState.cfg_snd_cantina_l;
-            named.startup   = robotState.cfg_snd_startup;
+            named.startup = robotState.cfg_snd_startup;
             taskEXIT_CRITICAL(&robotStateMux);
             driver->begin();
             driver->setVolume(currentVol);
             driverInitialized = true;
-            PA_LOG_INFO(TAG, "audio driver init — PA_AUDIO_DRIVER=%d vol=%u",
-                        PA_AUDIO_DRIVER, (unsigned)currentVol);
+            PA_LOG_INFO(TAG, "audio driver init — PA_AUDIO_DRIVER=%d vol=%u", PA_AUDIO_DRIVER,
+                        (unsigned)currentVol);
+
+            // Initial module state query — write results to RobotState so
+            // GET /api/audio can report actual module status from the moment
+            // the driver is up.
+            {
+                AudioModuleState ms{};
+                bool ok = driver->queryModuleState(ms);
+                taskENTER_CRITICAL(&robotStateMux);
+                robotState.audio_module_link_ok = ok && ms.linkOk;
+                robotState.audio_module_play_state = ms.playState;
+                robotState.audio_module_device = ms.device;
+                robotState.audio_module_total_tracks = ms.totalTracks;
+                robotState.audio_module_current_track = ms.currentTrack;
+                taskEXIT_CRITICAL(&robotStateMux);
+                PA_LOG_INFO(TAG, "module init query: link=%s device=0x%02X play=0x%02X tracks=%u",
+                            ok ? "OK" : "NO_RESPONSE", (unsigned)ms.device, (unsigned)ms.playState,
+                            (unsigned)ms.totalTracks);
+            }
+            lastQueryMs = millis();
         }
 
         // ----------------------------------------------------------------
@@ -300,14 +318,14 @@ void audioTask(void* pvParameters) {
                     // via POST /api/audio/tracks take effect immediately without
                     // requiring a disable/enable cycle.
                     taskENTER_CRITICAL(&robotStateMux);
-                    named.scream    = robotState.cfg_snd_scream;
-                    named.faint     = robotState.cfg_snd_faint;
-                    named.leia      = robotState.cfg_snd_leia;
+                    named.scream = robotState.cfg_snd_scream;
+                    named.faint = robotState.cfg_snd_faint;
+                    named.leia = robotState.cfg_snd_leia;
                     named.cantina_s = robotState.cfg_snd_cantina_s;
-                    named.sw_theme  = robotState.cfg_snd_sw_theme;
+                    named.sw_theme = robotState.cfg_snd_sw_theme;
                     named.imp_march = robotState.cfg_snd_imp_march;
                     named.cantina_l = robotState.cfg_snd_cantina_l;
-                    named.startup   = robotState.cfg_snd_startup;
+                    named.startup = robotState.cfg_snd_startup;
                     taskEXIT_CRITICAL(&robotStateMux);
                     bool wasRandom = randomMode;
                     AudioAction action = parseAudioDollar(cmd.dollar, named);
@@ -332,8 +350,8 @@ void audioTask(void* pvParameters) {
                     taskENTER_CRITICAL(&robotStateMux);
                     robotState.audioActive = true;
                     taskEXIT_CRITICAL(&robotStateMux);
-                    PA_LOG_INFO(TAG, "[%s] play track %u",
-                                commandSourceToString(cmd.source), (unsigned)cmd.track);
+                    PA_LOG_INFO(TAG, "[%s] play track %u", commandSourceToString(cmd.source),
+                                (unsigned)cmd.track);
                     break;
                 }
 
@@ -349,8 +367,8 @@ void audioTask(void* pvParameters) {
                 case AUDIO_CMD_SET_VOLUME:
                     currentVol = cmd.volume;  // clamped by helper before enqueue
                     driver->setVolume(currentVol);
-                    PA_LOG_INFO(TAG, "[%s] volume %u",
-                                commandSourceToString(cmd.source), (unsigned)currentVol);
+                    PA_LOG_INFO(TAG, "[%s] volume %u", commandSourceToString(cmd.source),
+                                (unsigned)currentVol);
                     break;
             }
         }
@@ -369,15 +387,23 @@ void audioTask(void* pvParameters) {
         // ----------------------------------------------------------------
         if (randomMode) {
             taskENTER_CRITICAL(&robotStateMux);
-            uint8_t  mood    = robotState.activeMood;
+            uint8_t mood = robotState.activeMood;
             uint16_t randMin = robotState.cfg_snd_rand_min;
             uint16_t randMax = robotState.cfg_snd_rand_max;
             uint16_t intSec;
             switch (mood) {
-                case 10: intSec = robotState.cfg_snd_int_quiet; break;
-                case 13: intSec = robotState.cfg_snd_int_mid;   break;
-                case 14: intSec = robotState.cfg_snd_int_awake; break;
-                default: intSec = robotState.cfg_snd_int_full;  break;  // SE11 + unset
+                case 10:
+                    intSec = robotState.cfg_snd_int_quiet;
+                    break;
+                case 13:
+                    intSec = robotState.cfg_snd_int_mid;
+                    break;
+                case 14:
+                    intSec = robotState.cfg_snd_int_awake;
+                    break;
+                default:
+                    intSec = robotState.cfg_snd_int_full;
+                    break;  // SE11 + unset
             }
             taskEXIT_CRITICAL(&robotStateMux);
             if (intSec == 0) {
@@ -389,7 +415,8 @@ void audioTask(void* pvParameters) {
                 uint32_t now = millis();
                 if ((uint32_t)(now - lastRandMs) >= intervalMs) {
                     lastRandMs = now;
-                    if (randMax < randMin) randMax = randMin;  // guard against bad config
+                    if (randMax < randMin)
+                        randMax = randMin;  // guard against bad config
                     // esp_random() uses the ESP32 hardware RNG — no seeding needed.
                     uint32_t range = (uint32_t)(randMax - randMin) + 1;
                     uint16_t track = (uint16_t)(randMin + (esp_random() % range));
@@ -401,10 +428,29 @@ void audioTask(void* pvParameters) {
                     taskENTER_CRITICAL(&robotStateMux);
                     robotState.audioActive = true;
                     taskEXIT_CRITICAL(&robotStateMux);
-                    PA_LOG_DEBUG(TAG, "random track %u (mood %u, int %us)",
-                                 (unsigned)track, (unsigned)mood, (unsigned)intSec);
+                    PA_LOG_DEBUG(TAG, "random track %u (mood %u, int %us)", (unsigned)track,
+                                 (unsigned)mood, (unsigned)intSec);
                 }
             }
+        }
+
+        // ----------------------------------------------------------------
+        // Periodic module state re-query (every 2 s while audio is enabled).
+        // Updates RobotState so GET /api/audio reflects live module status.
+        // queryModuleState() is ~900 ms worst-case but only runs between
+        // queue receive cycles, never during a playback command.
+        // ----------------------------------------------------------------
+        if ((uint32_t)(millis() - lastQueryMs) >= 2000u) {
+            lastQueryMs = millis();
+            AudioModuleState ms{};
+            bool ok = driver->queryModuleState(ms);
+            taskENTER_CRITICAL(&robotStateMux);
+            robotState.audio_module_link_ok = ok && ms.linkOk;
+            robotState.audio_module_play_state = ms.playState;
+            robotState.audio_module_device = ms.device;
+            robotState.audio_module_total_tracks = ms.totalTracks;
+            robotState.audio_module_current_track = ms.currentTrack;
+            taskEXIT_CRITICAL(&robotStateMux);
         }
     }
 }
