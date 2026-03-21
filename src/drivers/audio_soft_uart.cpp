@@ -1,34 +1,40 @@
 // =============================================================================
 // src/drivers/audio_soft_uart.cpp
 //
-// DY-SV5W driver — aligned to DYPlayerArduino library + BetterDuino reference.
+// DY-SV5W UART driver — authoritative implementation from module datasheet.
 //
-// Root cause of prior "random playback" bug:
-//   The driver was sending opcodes 0x0D (getPlayingSound query) and 0x06
-//   (next track) instead of 0x07 (playSpecified). It was also dual-sending
-//   both end-marker and checksum frame wrappers, producing 4 frames per
-//   command — two of which triggered "next track" on the module.
-//   See tasks/phase4-tasks.md T10 for full troubleshooting history.
+// Frame format (checksum dialect — confirmed by datasheet):
+//   [0xAA] [CMD] [LEN] [DATA...] [SM]
+//   SM = low 8 bits of sum of ALL preceding bytes (0xAA + CMD + LEN + DATA).
+//   Example: play   = AA 02 00 AC  (AA+02+00 = AC)
+//            stop   = AA 04 00 AE  (AA+04+00 = AE)
+//            vol 15 = AA 13 01 0F C7  (AA+13+01+0F = C7)
 //
-// Authoritative command table (DYPlayerArduino DYPlayer.cpp):
-//   0x02 = play/resume       0x03 = pause         0x04 = stop
-//   0x05 = previous          0x06 = next           0x07 = playSpecified
-//   0x0B = setPlayingDevice  0x0D = getPlayingSound (QUERY, not play!)
-//   0x13 = setVolume (0-30)  0x1A = setEq
+// NOTE: The "0xAB end-marker" previously used was wrong. 0xAB appearing in
+//   query frame AA 01 00 AB is coincidence (AA+01+00 = AB). End-marker dialect
+//   does not exist in this module's datasheet.
 //
-// Frame format (checksum dialect — the only one used by DYPlayer library):
-//   [0xAA] [CMD] [LEN] [DATA...] [CHECKSUM]
-//   CHECKSUM = (sum of ALL preceding bytes including 0xAA) & 0xFF
+// Device codes (Switch Drive / 0x0B):
+//   0x00 = USB    0x01 = SD/TF    0x02 = FLASH
+//
+// Command table (from datasheet):
+//   0x01 = queryPlayState    0x02 = play/resume     0x03 = pause
+//   0x04 = stop              0x06 = next            0x07 = playSpecified
+//   0x09 = queryDeviceOnline 0x0A = queryPlayDrive  0x0B = switchDrive
+//   0x0C = queryTotalTracks  0x0D = queryCurrentTrack
+//   0x13 = setVolume(0-30)   0x18 = setLoopMode     0x1A = setEq
+//
+// Default play mode: 02 = single stop (plays once, then stops).
 //
 // Transport:
-//   HardwareSerial(2) remapped to S2 pins (GPIO26 TX / GPIO35 RX), 9600 8N1.
-//   UART2 is shared with dome serial link (S3) and SBUS2 receiver; only one
-//   may be active at a time. See T65 for the long-term contention fix.
+//   HardwareSerial(2) on GPIO26 TX / GPIO35 RX, 9600 8N1.
+//   UART2 is shared with dome serial link (S3) and SBUS2; only one active
+//   at a time. See T65 for the long-term contention resolution.
 //
-// References:
-//   - DYPlayerArduino: github.com/SnijderC/dyern (bundled in Padawan360 repo)
-//   - BetterDuinoFirmwareV4: MDuinoSoundDYPlayer in src/MDuinoSound.cpp
-//   - Padawan360: Imperiallandm/Padawan360_mega_maestro_DYSV5W
+// Diagnostic queries in begin():
+//   Runs three queries before and after init commands so the serial log
+//   tells us definitively whether TX reaches the module, SD is online,
+//   and how many tracks are present. Zero-byte responses = TX dead.
 // =============================================================================
 
 #include "audio_soft_uart.h"
@@ -36,16 +42,16 @@
 #include <Arduino.h>
 
 #include "config.h"
+#include "logging.h"
 
+static const char* TAG = "AudioDrv";
 static HardwareSerial s_audioSerial(2);
 
 // -----------------------------------------------------------------------------
 // sendCommand()
-// Send one DY-SV5W checksum frame: [payload bytes][CHECKSUM] over UART2.
-// A 100 ms delay follows each command for module processing time (matches
-// BetterDuino MDuinoSoundDYPlayer::sendCommand).
-// Send ONCE only — dual-sending causes the module to misinterpret follow-up
-// bytes as a new command (previously identified root cause of silent audio).
+// Send one DY-SV5W frame: [payload bytes][SM] over UART2.
+// SM = low 8 bits of sum of all payload bytes (including 0xAA start byte).
+// A 100 ms delay follows each command for module processing time.
 // -----------------------------------------------------------------------------
 static void sendCommand(const uint8_t* payload, uint8_t len) {
     uint8_t sum = 0;
@@ -57,6 +63,28 @@ static void sendCommand(const uint8_t* payload, uint8_t len) {
     delay(100);
 }
 
+// -----------------------------------------------------------------------------
+// sendQuery()
+// Send a 4-byte query frame (no data bytes) and wait for a response.
+// query[] must be exactly 4 bytes: [0xAA, CMD, 0x00, SM].
+// Returns number of bytes read into buf (max maxLen).
+// -----------------------------------------------------------------------------
+static uint8_t sendQuery(const uint8_t* query, uint8_t* buf, uint8_t maxLen, uint32_t timeoutMs) {
+    // Drain stale RX bytes before sending
+    while (s_audioSerial.available()) {
+        (void)s_audioSerial.read();
+    }
+    s_audioSerial.write(query, 4);
+    uint32_t start = millis();
+    uint8_t count = 0;
+    while ((uint32_t)(millis() - start) < timeoutMs && count < maxLen) {
+        if (s_audioSerial.available()) {
+            buf[count++] = (uint8_t)s_audioSerial.read();
+        }
+    }
+    return count;
+}
+
 // Wrapper satisfying AudioDriver private method signature
 void AudioDriverSoftUart::sendFrame(const uint8_t* data, uint8_t len) {
     sendCommand(data, len);
@@ -64,31 +92,101 @@ void AudioDriverSoftUart::sendFrame(const uint8_t* data, uint8_t len) {
 
 // -----------------------------------------------------------------------------
 // begin()
-// Open UART2 on the audio GPIO pins. Wait for module boot, then initialise.
-// Matches BetterDuino init sequence: EQ Normal → delay → VolumeMid → delay.
+// Open UART2 on the audio GPIO pins, wait for module boot, then init.
+// Runs diagnostic queries before and after init to confirm the UART link is
+// alive and the SD card is present. Zero-byte query responses mean TX is not
+// reaching the module (check DIP switches: CON3=1 CON2=0 CON1=0 for UART mode).
 // Runs inside AudioTask on Core 0 — blocking here is acceptable.
 // -----------------------------------------------------------------------------
 void AudioDriverSoftUart::begin() {
     s_audioSerial.begin(9600, SERIAL_8N1, PIN_AUDIO_RX, PIN_AUDIO_TX);
 
-    // DY-SV5W needs ~1-1.5 s after power-on to boot and enumerate SD.
+    // DY-SV5W needs ~1.5 s after power-on to boot and enumerate SD.
     delay(1500);
 
-    // Drain any bytes the module sent during boot
+    // Drain any bytes the module sent during boot (e.g. boot announcement).
     while (s_audioSerial.available()) {
         (void)s_audioSerial.read();
     }
 
-    // Select SD/TF card as playback device (opcode 0x0B, TF = 0x02).
-    // DYPlayerArduino enum Device { Usb=1, Tf=2, Spi=4, Flash=5 }.
-    // Using 0x01 (USB) silently fails when no USB drive is connected.
-    uint8_t selectSd[] = {0xAA, 0x0B, 0x01, 0x02};
+    // -------------------------------------------------------------------------
+    // Pre-init diagnostic queries — run BEFORE sending any commands so we
+    // see the module's raw power-on state. If all three return 0 bytes the
+    // UART TX wire is not reaching the module or DIP mode is wrong.
+    // SM values are exact checksums: AA+CMD+00 = SM.
+    // -------------------------------------------------------------------------
+    uint8_t rsp[8];
+    uint8_t n;
+
+    // Query device online (0x09): which storage is detected?
+    // Response: AA 09 01 [device] SM   device: 00=USB 01=SD 02=FLASH FF=none
+    static const uint8_t Q_DEV_ONLINE[] = {0xAA, 0x09, 0x00, 0xB3};
+    n = sendQuery(Q_DEV_ONLINE, rsp, sizeof(rsp), 300);
+    if (n >= 4) {
+        const char* dev = (rsp[3] == 0x00)   ? "USB"
+                          : (rsp[3] == 0x01) ? "SD/TF"
+                          : (rsp[3] == 0x02) ? "FLASH"
+                          : (rsp[3] == 0xFF) ? "NO_DEVICE"
+                                             : "?";
+        PA_LOG_INFO(TAG, "pre-init: device online = %s (0x%02X)", dev, rsp[3]);
+    } else {
+        PA_LOG_WARN(TAG,
+                    "pre-init: no response to device-online query — "
+                    "check DIP (CON3=1 CON2=0 CON1=0) and TX wiring");
+    }
+
+    // Query play state (0x01): is module already playing from a prior session?
+    // Response: AA 01 01 [state] SM   state: 00=stop 01=playing 02=paused
+    static const uint8_t Q_PLAY_STATE[] = {0xAA, 0x01, 0x00, 0xAB};
+    n = sendQuery(Q_PLAY_STATE, rsp, sizeof(rsp), 300);
+    if (n >= 4) {
+        const char* st = (rsp[3] == 0)   ? "stop"
+                         : (rsp[3] == 1) ? "playing"
+                         : (rsp[3] == 2) ? "paused"
+                                         : "unknown";
+        PA_LOG_INFO(TAG, "pre-init: play state = %s (0x%02X)", st, rsp[3]);
+    } else {
+        PA_LOG_WARN(TAG, "pre-init: no response to play-state query");
+    }
+
+    // Query total tracks (0x0C): how many files does the module see?
+    // Response: AA 0C 02 [HI] [LO] SM
+    static const uint8_t Q_TOTAL_TRACKS[] = {0xAA, 0x0C, 0x00, 0xB6};
+    n = sendQuery(Q_TOTAL_TRACKS, rsp, sizeof(rsp), 300);
+    if (n >= 5) {
+        uint16_t total = ((uint16_t)rsp[3] << 8) | rsp[4];
+        PA_LOG_INFO(TAG, "pre-init: total tracks = %u", (unsigned)total);
+    } else {
+        PA_LOG_WARN(TAG, "pre-init: no response to total-tracks query (%u bytes)", (unsigned)n);
+    }
+
+    // -------------------------------------------------------------------------
+    // Init commands — SD/TF device select, EQ normal, then apply NVS volume.
+    // (Volume is applied by AudioTask after begin() returns via setVolume().)
+    // -------------------------------------------------------------------------
+
+    // Switch to SD/TF card (0x0B, device=0x01). SM = AA+0B+01+01 = 0xB7.
+    uint8_t selectSd[] = {0xAA, 0x0B, 0x01, 0x01};
     sendCommand(selectSd, sizeof(selectSd));
 
-    // Set EQ to Normal (opcode 0x1A, Normal = 0x00)
-    // BetterDuino MDuinoSoundDYPlayer::init sends this first
+    // Set EQ to Normal (0x1A, eq=0x00). SM = AA+1A+01+00 = 0xC5.
     uint8_t eqNormal[] = {0xAA, 0x1A, 0x01, 0x00};
     sendCommand(eqNormal, sizeof(eqNormal));
+
+    // -------------------------------------------------------------------------
+    // Post-init confirmation — verify device select took effect.
+    // -------------------------------------------------------------------------
+    static const uint8_t Q_PLAY_DRIVE[] = {0xAA, 0x0A, 0x00, 0xB4};
+    n = sendQuery(Q_PLAY_DRIVE, rsp, sizeof(rsp), 300);
+    if (n >= 4) {
+        const char* dev = (rsp[3] == 0x00)   ? "USB"
+                          : (rsp[3] == 0x01) ? "SD/TF"
+                          : (rsp[3] == 0x02) ? "FLASH"
+                                             : "?";
+        PA_LOG_INFO(TAG, "post-init: play drive = %s (0x%02X)", dev, rsp[3]);
+    } else {
+        PA_LOG_WARN(TAG, "post-init: no response to play-drive query");
+    }
 }
 
 // -----------------------------------------------------------------------------
