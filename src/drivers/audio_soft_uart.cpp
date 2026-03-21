@@ -79,9 +79,10 @@ void AudioDriverSoftUart::begin() {
         (void)s_audioSerial.read();
     }
 
-    // Select SD card as playback device (opcode 0x0B, SD = 0x01)
-    // DYPlayer::setPlayingDevice: {0xAA, 0x0B, 0x01, device}
-    uint8_t selectSd[] = {0xAA, 0x0B, 0x01, 0x01};
+    // Select SD/TF card as playback device (opcode 0x0B, TF = 0x02).
+    // DYPlayerArduino enum Device { Usb=1, Tf=2, Spi=4, Flash=5 }.
+    // Using 0x01 (USB) silently fails when no USB drive is connected.
+    uint8_t selectSd[] = {0xAA, 0x0B, 0x01, 0x02};
     sendCommand(selectSd, sizeof(selectSd));
 
     // Set EQ to Normal (opcode 0x1A, Normal = 0x00)
