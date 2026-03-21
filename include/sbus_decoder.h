@@ -39,6 +39,7 @@ class SbusDecoder {
     SbusDecoder();
     bool begin(HardwareSerial* uart, int rxPin);
     bool read();
+    void end();
     SbusData data() const {
         return _data;
     }

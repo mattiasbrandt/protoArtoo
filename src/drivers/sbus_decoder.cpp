@@ -21,6 +21,16 @@ bool SbusDecoder::begin(HardwareSerial* uart, int rxPin) {
     return true;
 }
 
+void SbusDecoder::end() {
+    if (_uart != nullptr) {
+        _uart->end();
+        _uart = nullptr;
+    }
+    _newData = false;
+    _lastFrameMs = 0;
+    _resetFrame();
+}
+
 bool SbusDecoder::read() {
     if (_uart == nullptr || !_uart->available()) {
         return false;

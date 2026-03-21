@@ -715,6 +715,19 @@ void rcInputTask(void* pvParameters) {
             }
         }
 
+        if (!driveSbusEnabled && sbus_drive.isInitialized()) {
+            sbus_drive.end();
+            driveSbusInitWarned = false;
+            PA_LOG_INFO(TAG, "SBUS1 disabled — released UART1");
+        }
+
+        if (!domeSbusEnabled && sbus_dome.isInitialized()) {
+            sbus_dome.end();
+            domeSbusInitWarned = false;
+            sbus2WatchdogFired = false;
+            PA_LOG_INFO(TAG, "SBUS2 disabled — released UART2");
+        }
+
         if (rcInputMode == RC_INPUT_STANDARD_PWM) {
             taskENTER_CRITICAL(&robotStateMux);
             robotState.sbusSignalLost = false;

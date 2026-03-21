@@ -21,8 +21,8 @@
 //   CHECKSUM = (sum of ALL preceding bytes including 0xAA) & 0xFF
 //
 // Transport:
-//   HardwareSerial(2) remapped to S2 pins (GPIO26 TX / GPIO35 RX), 9600 8N1.
-//   UART2 is shared with dome serial link (S3); only one may be active.
+//   Software UART TX on S2 TX pin (GPIO26) at 9600 8N1.
+//   Independent of UART2 so SBUS2 and dome serial can run concurrently.
 //
 // References:
 //   - DYPlayerArduino: github.com/SnijderC/dyern (bundled in Padawan360 repo)
@@ -34,25 +34,31 @@
 
 #include <Arduino.h>
 
-#include "config.h"
-
-static HardwareSerial s_audioSerial(2);
-
+#include "audio_soft_uart_tx.h"  // shared software UART TX primitives
 // -----------------------------------------------------------------------------
 // sendCommand()
-// Send a complete DY-SV5W frame: write payload bytes, then checksum.
-// payload[] MUST include the leading 0xAA byte (matching DYPlayer/BetterDuino).
-// Checksum = byte-sum of entire payload (mod 256).
+// Send one DY-SV5W checksum frame: [payload bytes][CHECKSUM] over soft UART.
+// TX is wrapped in a critical section to reduce bit-timing jitter.
 // A 100 ms delay follows each command for module processing time (matches
 // BetterDuino MDuinoSoundDYPlayer::sendCommand).
+// Send ONCE only — dual-sending causes the module to misinterpret follow-up
+// bytes as a new command (previously identified root cause of silent audio).
 // -----------------------------------------------------------------------------
+static portMUX_TYPE s_audioTxMux = portMUX_INITIALIZER_UNLOCKED;
+
 static void sendCommand(const uint8_t* payload, uint8_t len) {
     uint8_t sum = 0;
     for (uint8_t i = 0; i < len; i++) {
         sum = (uint8_t)(sum + payload[i]);
     }
-    s_audioSerial.write(payload, len);
-    s_audioSerial.write(sum);
+
+    taskENTER_CRITICAL(&s_audioTxMux);
+    for (uint8_t i = 0; i < len; i++) {
+        softUartTxByte(payload[i]);
+    }
+    softUartTxByte(sum);
+    taskEXIT_CRITICAL(&s_audioTxMux);
+
     delay(100);
 }
 
@@ -63,20 +69,15 @@ void AudioDriverSoftUart::sendFrame(const uint8_t* data, uint8_t len) {
 
 // -----------------------------------------------------------------------------
 // begin()
-// Open UART2 on the audio GPIO pins. Wait for module boot, then initialise.
-// Matches BetterDuino init sequence: EQ Normal → delay → VolumeMid → delay.
+// Configure software UART TX on the audio GPIO. Wait for module boot, then
+// initialise using the same DYPlayer command sequence.
 // Runs inside AudioTask on Core 0 — blocking here is acceptable.
 // -----------------------------------------------------------------------------
 void AudioDriverSoftUart::begin() {
-    s_audioSerial.begin(9600, SERIAL_8N1, PIN_AUDIO_RX, PIN_AUDIO_TX);
+    softUartTxBegin();
 
     // DY-SV5W needs ~1-1.5 s after power-on to boot and enumerate SD.
     delay(1500);
-
-    // Drain any bytes the module sent during boot
-    while (s_audioSerial.available()) {
-        (void)s_audioSerial.read();
-    }
 
     // Select SD card as playback device (opcode 0x0B, SD = 0x01)
     // DYPlayer::setPlayingDevice: {0xAA, 0x0B, 0x01, device}
