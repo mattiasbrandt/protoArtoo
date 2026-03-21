@@ -1023,13 +1023,13 @@
 
     window.PAStatusStream.subscribe((eventType, payload) => {
       try {
-        const data = typeof payload === "string" ? JSON.parse(payload) : payload;
-
         if (eventType === "status") {
+          const data = typeof payload === "string" ? JSON.parse(payload) : payload;
           setRcInputsEnabled(rcEnabledFromStatus(data));
           return;
         }
         if (eventType !== "rc") return;
+        const data = typeof payload === "string" ? JSON.parse(payload) : payload;
 
         // Process learning mode tick: compare current raw channels against the
         // baseline snapshot captured when detect mode was entered.

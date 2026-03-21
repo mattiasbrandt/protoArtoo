@@ -224,7 +224,7 @@ which match our PCB trace:
 | Motor Controller   | 16, 17  | Hoverboard serial       | S1 Hoverboard    |
 
 Note: the artoo.uk manual calls GPIO 25 "Dome Servo" but the signal drives an ESC
-(ISDT ESC70) for a brushless motor, not a servo. The label is a naming convention
+(ISDT ESC70) for a **brushed** gearmotor, not a servo. The label is a naming convention
 from the original artoo.uk firmware; protoArtoo uses "Dome rotation ESC" for clarity.
 
 ### Deviations from artoo.uk Manual
@@ -234,6 +234,6 @@ from the original artoo.uk firmware; protoArtoo uses "Dome rotation ESC" for cla
 | Hoverboard serial | S3 / GPIO 16+17 | **S1** / GPIO 16+17 | PCB legend says S1 = Hoverboard (GPIOs match manual) |
 | Dome serial | (not specified) | **S3** / GPIO 33+34 | PCB legend says S3 = Dome Control |
 | Audio serial | TX-only assumed | TX (26) + RX (35) | RX available but optional |
-| GPIO 25 label | "Dome Servo" | Dome rotation ESC | Signal drives ISDT ESC70 brushless motor ESC, not a servo |
+| GPIO 25 label | "Dome Servo" | Dome rotation ESC | Signal drives ISDT ESC70 brushed ESC + brushed gearmotor path, not a servo |
 
 If you have a different PCB revision and find different assignments, please open an issue.

@@ -838,6 +838,10 @@ For the dome ESC (ISDT ESC70), runtime control is also standard RC PWM
 (1000-2000 us, neutral 1500 us). BLE/app controls are configuration-time only,
 not runtime control path.
 
+Project-recommended ESC70 tuning baseline is documented in `docs/isdt_esc70_dome_esc.md`
+(1 kHz PWM, Start force MAX, Brake force minimum, drag/active brake disabled,
+aggressive throttle mid-curve). Apply that baseline first, then tune per-build drivetrain load.
+
 ### 6.7 Operation Modes and CH8 Speed Limit Dial
 
 The **Driving ↔ Stationary** mode state is controlled either by the CH8 dial

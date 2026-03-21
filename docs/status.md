@@ -136,6 +136,12 @@ from git tag + build timestamp (e.g. `v0.2.0-1-g23008b7-20260315-013914`).
 - All raw `Serial.printf` in `safety.cpp`, `drive.cpp`, `sbus_input.cpp` replaced with `PA_LOG_*`
 
 - **Post-review remediation sweep completed (2026-03-20):** addressed full review findings from refactor + T19–T23 and whole-code pass: `/api/audio` queue backpressure now returns truthfully, `/api/mode` driving path response fixed, RC mode/channel runtime changes now apply without reboot, `/api/config` servo calibration contract restored for `servo.js`, status JSON overflow now returns explicit fallback and uses larger buffers, AP mode now requires `PA_AP_PASSWORD`, dashboard mood dome-link note reads `dome_link.state`, `drive.cpp` printf type mismatch fixed, stale web-page/operator-copy drift corrected across Drive/RC/Home/Setup/Firmware/WiFi surfaces, and remaining `pio check` HIGH findings in `src/tasks`/`src/web` were resolved (including null-safe `/api/servo` parameter handling).
+- **Dome ESC hardware tuning session (2026-03-21):** ISDT app throttle telemetry now matches
+  protoArtoo command percentages on GPIO25; unloaded motor spins correctly at 50/70/90.
+  With dome ring coupled, movement is improved but still struggles in localized high-friction sectors
+  and during hard direction flips. Recommended ESC70 baseline locked in `docs/isdt_esc70_dome_esc.md`
+  (validated from web/API path). RC-driven dome rotation validation remains pending T11/T12 closure.
+
 ---
 
 ## Open Items (Phase 3 hardware carryover)
@@ -145,7 +151,7 @@ Tracked as T11 and T12 in `tasks/phase4-tasks.md`.
 
 - SBUS Layer 1 / Layer 2 failsafe — deliberate disconnect/timeout test pending
 - Full hoverboard drive path — hoverboard disconnected during Phase 3
-- Dome ESC response — full wiring harness not connected
+- Dome ESC loaded-drive torque margin — PWM path validated and ring rotation achieved, but localized high-friction sectors and reversal struggle remain; RC-driven dome validation still pending
 - RC mapping with real transmitter/receiver — standard PWM and dual SBUS physical validation
 - Upload UX verification — firmware/filesystem upload flow confirmation
 

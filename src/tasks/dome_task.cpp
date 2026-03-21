@@ -64,9 +64,9 @@ static void setDomeSpeed(float speed) {
     robotState.domeTargetSpeed = speed;
     taskEXIT_CRITICAL(&robotStateMux);
 
-    PA_LOG_DEBUG(TAG, "Dome speed %.2f -> %d us (neutral=%d min=%d max=%d lim=%d%%)", (double)speed,
-                 (int)pulseUs, (int)neutralUs, (int)minPulseUs, (int)maxPulseUs,
-                 (int)speedLimitPct);
+    PA_LOG_DEBUG(TAG, "Dome speed %d%% -> %d us (neutral=%d min=%d max=%d lim=%d%%)",
+                 (int)(speed * 100.0f), (int)pulseUs, (int)neutralUs,
+                 (int)minPulseUs, (int)maxPulseUs, (int)speedLimitPct);
 }
 
 // -----------------------------------------------------------------------------
@@ -189,8 +189,8 @@ void domeTask(void* pvParameters) {
 
             setDomeSpeed(currentSpeed);
             if (currentSpeed != 0.0f) {
-                PA_LOG_INFO(TAG, "[%s] Dome command: speed %.2f", commandSourceToString(cmd.source),
-                            (double)cmd.speed);
+                PA_LOG_INFO(TAG, "[%s] Dome command: speed %d%%",
+                            commandSourceToString(cmd.source), (int)(cmd.speed * 100.0f));
             }
         }
 
