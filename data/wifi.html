@@ -3,31 +3,13 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>WiFi - protoArtoo</title>
     <link rel="stylesheet" href="/style.css">
     <link rel="icon" type="image/png" href="/r2d2body-favicon.png">
   </head>
-  <body>
-    <div class="topbar">
-      <a href="/" class="topbar-brand">
-        <img src="/r2d2body.svg" alt="R2-D2 body icon" class="topbar-logo">
-        <div>
-          <h1>protoArtoo</h1>
-          <div class="subtitle">R2-D2 Body Controller</div>
-        </div>
-      </a>
-    </div>
+  <body data-page="wifi">
+    <div id="shell-top"></div>
 
-    <nav>
-      <a href="/">🏠 Home</a>
-      <a href="/drive.html">🏎️ Drive</a>
-      <a href="/dome.html">🔄 Dome</a>
-      <a href="/sound.html">🔊 Sound</a>
-      <a href="/servo.html">🦾 Servos</a>
-      <a href="/rc.html">🕹️ RC</a>
-      <a href="/setup.html">⚙️ Setup</a>
-      <a href="/wifi.html" class="active">📶 WiFi</a>
-      <a href="/firmware.html">💾 Firmware</a>
-    </nav>
 
     <!-- WiFi Client card — shown when firmware is built in STA mode -->
     <div class="card hidden" id="wifi-sta-card">
@@ -69,13 +51,13 @@
     <div class="button-row">
       <button id="reload-wifi-button" class="btn" type="button">🔄 Refresh</button>
     </div>
-    <div id="wifi-feedback" class="feedback mt-12">Loading WiFi status...</div>
+    <div id="wifi-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true">Loading WiFi status...</div>
 
-    <div class="status-bar">
-      <div><span class="dot green"></span>WiFi page connected</div>
-      <div class="status-subline" id="fw-meta">Loading firmware info...</div>
-    </div>
+    <div id="shell-status"></div>
 
+    <script src="/web_api.js"></script>
+    <script src="/status_stream.js"></script>
+    <script src="/shell.js"></script>
     <script src="/wifi.js"></script>
     <script src="/footer.js"></script>
   </body>

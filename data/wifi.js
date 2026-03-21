@@ -4,8 +4,14 @@
 // WiFi page — reflects the active build-time WiFi mode.
 // PA_ENABLE_STA_WIFI=1: WiFi Client (STA) mode.
 // PA_ENABLE_STA_WIFI=0: Access Point (AP) mode.
+//
+// Status updates: PAApi.get polling with visibility pause/resume.
+// SSE stream does not carry the full wifi-specific payload (apSsid, staEnabled,
+// apIp) so polling /api/wifi is required.
 // =============================================================================
 (() => {
+  const POLL_INTERVAL_MS = 10000;
+
   const reloadButton   = document.getElementById("reload-wifi-button");
   const feedback       = document.getElementById("wifi-feedback");
   const staCard        = document.getElementById("wifi-sta-card");
@@ -59,26 +65,56 @@
   };
 
   const loadWifiStatus = async () => {
+    if (!window.PAApi) {
+      if (feedback) {
+        feedback.textContent = "API helper unavailable";
+        feedback.className = "feedback error";
+      }
+      return;
+    }
     if (feedback) {
       feedback.textContent = "Loading WiFi status...";
       feedback.className = "feedback";
     }
     try {
-      const response = await fetch("/api/wifi", { cache: "no-store" });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      render(await response.json());
+      const result = await window.PAApi.get("/api/wifi");
+      render(result.data);
       if (feedback) {
         feedback.textContent = `Updated at ${new Date().toLocaleTimeString()}`;
         feedback.className = "feedback success";
       }
     } catch (error) {
       if (feedback) {
-        feedback.textContent = error instanceof Error ? error.message : "Failed to load WiFi status";
+        feedback.textContent = window.PAApi.messageFor(error);
         feedback.className = "feedback error";
       }
     }
   };
 
+  // Visibility-aware polling: pause when tab is hidden, resume (and refresh
+  // immediately) when it becomes visible again. Guard against duplicate
+  // listeners by using a module-scoped flag.
+  let pollTimer = null;
+
+  const startPolling = () => {
+    if (pollTimer !== null) return;
+    pollTimer = window.setInterval(() => {
+      if (document.visibilityState !== "hidden") {
+        loadWifiStatus();
+      }
+    }, POLL_INTERVAL_MS);
+  };
+
+  const onVisibilityChange = () => {
+    if (document.visibilityState !== "hidden") {
+      // Immediate refresh when tab returns to foreground.
+      loadWifiStatus();
+    }
+  };
+
   if (reloadButton) reloadButton.addEventListener("click", loadWifiStatus);
+  document.addEventListener("visibilitychange", onVisibilityChange);
+
   loadWifiStatus();
+  startPolling();
 })();

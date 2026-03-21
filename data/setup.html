@@ -3,31 +3,13 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Setup - protoArtoo</title>
     <link rel="stylesheet" href="/style.css">
     <link rel="icon" type="image/png" href="/r2d2body-favicon.png">
   </head>
-  <body>
-    <div class="topbar">
-      <a href="/" class="topbar-brand">
-        <img src="/r2d2body.svg" alt="R2-D2 body icon" class="topbar-logo">
-        <div>
-          <h1>protoArtoo</h1>
-          <div class="subtitle">R2-D2 Body Controller</div>
-        </div>
-      </a>
-    </div>
+  <body data-page="setup">
+    <div id="shell-top"></div>
 
-    <nav>
-      <a href="/">🏠 Home</a>
-      <a href="/drive.html">🏎️ Drive</a>
-      <a href="/dome.html">🔄 Dome</a>
-      <a href="/sound.html">🔊 Sound</a>
-      <a href="/servo.html">🦾 Servos</a>
-      <a href="/rc.html">🕹️ RC</a>
-      <a href="/setup.html" class="active">⚙️ Setup</a>
-      <a href="/wifi.html">📶 WiFi</a>
-      <a href="/firmware.html">💾 Firmware</a>
-    </nav>
 
     <div class="board-image-wrap">
       <img src="/artoo_board.jpg" alt="Artoo Controller PCB" title="Artoo Controller PCB">
@@ -46,7 +28,7 @@
             <span class="toggle-label">AUX1</span>
             <span class="toggle-status" id="status-aux1">Disabled</span>
           </label>
-          <select class="type-select" id="type-aux1" title="Component type connected to AUX1 / ARM3">
+          <select class="type-select" id="type-aux1" title="Component type connected to AUX1 / ARM3" aria-label="AUX1 component type">
             <option value="none">Nothing connected</option>
             <option value="mg996r">MG996R servo</option>
             <option value="mg90s">MG90S servo</option>
@@ -60,7 +42,7 @@
             <span class="toggle-label">AUX2</span>
             <span class="toggle-status" id="status-aux2">Disabled</span>
           </label>
-          <select class="type-select" id="type-aux2" title="Component type connected to AUX2 / ARM4">
+          <select class="type-select" id="type-aux2" title="Component type connected to AUX2 / ARM4" aria-label="AUX2 component type">
             <option value="none">Nothing connected</option>
             <option value="mg996r">MG996R servo</option>
             <option value="mg90s">MG90S servo</option>
@@ -74,7 +56,7 @@
             <span class="toggle-label">AUX3</span>
             <span class="toggle-status" id="status-aux3">Disabled</span>
           </label>
-          <select class="type-select" id="type-aux3" title="Component type connected to AUX3 / ARM5">
+          <select class="type-select" id="type-aux3" title="Component type connected to AUX3 / ARM5" aria-label="AUX3 component type">
             <option value="none">Nothing connected</option>
             <option value="mg996r">MG996R servo</option>
             <option value="mg90s">MG90S servo</option>
@@ -88,7 +70,7 @@
             <span class="toggle-label">ARM2</span>
             <span class="toggle-status" id="status-arm2">Disabled</span>
           </label>
-          <select class="type-select" id="type-arm2" title="Component type connected to ARM2">
+          <select class="type-select" id="type-arm2" title="Component type connected to ARM2" aria-label="ARM2 component type">
             <option value="mg996r">MG996R (standard)</option>
             <option value="mg90s">MG90S (micro)</option>
           </select>
@@ -100,7 +82,7 @@
             <span class="toggle-label">ARM1</span>
             <span class="toggle-status" id="status-arm1">Disabled</span>
           </label>
-          <select class="type-select" id="type-arm1" title="Component type connected to ARM1">
+          <select class="type-select" id="type-arm1" title="Component type connected to ARM1" aria-label="ARM1 component type">
             <option value="mg996r">MG996R (standard)</option>
             <option value="mg90s">MG90S (micro)</option>
           </select>
@@ -171,13 +153,13 @@
             <span class="toggle-status" id="status-s1-hoverboard">Disabled</span>
           </label>
         </div>
-        <div class="component-row" style="flex-direction:column;align-items:flex-start;">
-          <label class="toggle-switch" style="width:100%;" title="S2 (GPIO 26/35) — Audio module TX. Backend selected by PA_AUDIO_DRIVER build flag: AUDIO_SOFT_UART for DY-SV5W, AUDIO_CHIRP for CHIRP board.">
+        <div class="component-row stack">
+          <label class="toggle-switch full-width" title="S2 (GPIO 26/35) — Audio module TX. Backend selected by PA_AUDIO_DRIVER build flag: AUDIO_SOFT_UART for DY-SV5W, AUDIO_CHIRP for CHIRP board.">
             <input type="checkbox" id="enable-s2-sound" name="enableS2Sound">
             <span class="toggle-slider"></span>
             <span class="toggle-label">S2 — Sound</span>
             <span class="toggle-status" id="status-s2-sound">Disabled</span>
-            <span id="s2-driver-label" style="font-size:0.8rem;color:var(--text-dim);margin-left:8px;"></span>
+            <span id="s2-driver-label" class="s2-driver-label"></span>
           </label>
         </div>
         <div class="component-row">
@@ -190,7 +172,7 @@
         </div>
 
       </form>
-      <div id="feature-feedback" class="feedback mt-12">Loading component settings...</div>
+      <div id="feature-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true">Loading component settings...</div>
     </div>
 
     <!-- Serial Connection Status -->
@@ -214,7 +196,7 @@
           <div class="desc mt-6">GPIO 33/34 · UART2 · 9600 baud</div>
         </div>
       </div>
-      <div id="serial-status-line" class="feedback mt-12"></div>
+      <div id="serial-status-line" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true"></div>
     </div>
 
     <!-- Diagnostics -->
@@ -232,7 +214,30 @@
           </select>
         </label>
       </form>
-      <div id="diag-feedback" class="feedback mt-12"></div>
+      <div class="status-grid mt-16">
+        <div class="status-item">
+          <dt>Uptime</dt>
+          <dd id="diag-uptime">...</dd>
+          <div class="desc mt-6">Controller runtime since boot</div>
+        </div>
+        <div class="status-item">
+          <dt>Memory Free</dt>
+          <dd id="diag-heap-free">...</dd>
+          <div class="desc mt-6">Current free heap</div>
+        </div>
+        <div class="status-item">
+          <dt>Memory Min (since boot)</dt>
+          <dd id="diag-heap-min">...</dd>
+          <div class="desc mt-6">Low-water mark</div>
+        </div>
+        <div class="status-item">
+          <dt>Largest Block</dt>
+          <dd id="diag-heap-largest">...</dd>
+          <div class="desc mt-6">Fragmentation indicator</div>
+        </div>
+      </div>
+      <div id="diag-memory-note" class="desc mt-12">Memory Min is the lowest free heap seen since boot (historical low-water mark).</div>
+      <div id="diag-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true"></div>
     </div>
 
     <!-- System Controls -->
@@ -242,14 +247,14 @@
       <div class="button-row mt-16">
         <button id="reboot-button" class="btn danger" type="button">🔄 Reboot Controller</button>
       </div>
-      <div id="reboot-feedback" class="feedback mt-12"></div>
+      <div id="reboot-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true"></div>
     </div>
 
-    <div class="status-bar">
-      <div><span class="dot green"></span>Setup page connected</div>
-      <div class="status-subline" id="fw-meta">Loading firmware info...</div>
-    </div>
+    <div id="shell-status"></div>
 
+    <script src="/web_api.js"></script>
+    <script src="/status_stream.js"></script>
+    <script src="/shell.js"></script>
     <script src="/setup.js"></script>
     <script src="/footer.js"></script>
   </body>

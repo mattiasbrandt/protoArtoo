@@ -1,98 +1,97 @@
 // =============================================================================
 // drive.js
 //
-// Drive page controller — Safety controls, movement status, D-pad hold-to-drive,
-// conditional arm servo controls, and drive settings form with auto-save.
+// Drive page controller.
+// - Safety commands and hold-to-drive controls
+// - Live status via shared SSE stream (poll fallback)
+// - Config load/save via shared API helper
 // =============================================================================
 (() => {
-  // Safety control buttons
   const estopButton = document.getElementById("estop-button");
   const clearEstopButton = document.getElementById("clear-estop-button");
   const enableWebControlButton = document.getElementById("enable-web-control-button");
   const disableWebControlButton = document.getElementById("disable-web-control-button");
   const controlFeedback = document.getElementById("control-feedback");
 
-  // Movement status elements
   const estopState = document.getElementById("estop-state");
   const webControlState = document.getElementById("web-control-state");
   const failsafeSource = document.getElementById("failsafe-source");
   const driveOutput = document.getElementById("drive-output");
   const speedLimitDisplay = document.getElementById("speed-limit");
 
-  // Arm controls (conditional)
   const armControlsCard = document.getElementById("arm-controls-card");
   const armControlsContainer = document.getElementById("arm-controls-container");
 
-  // Drive settings form
   const speedLimitMax = document.getElementById("speed-limit-max");
   const webDriveTimeout = document.getElementById("web-drive-timeout");
   const ch8ModeLock = document.getElementById("ch8-mode-lock");
   const reloadConfigButton = document.getElementById("reload-config-button");
   const configFeedback = document.getElementById("config-feedback");
+  const driveDisabledCard = document.getElementById("drive-disabled-card");
 
   const driveButtons = document.querySelectorAll("[data-drive-speed]");
-  let holdTimer = null;
-  let pollTimer = null;
 
-  // Debounce utility for auto-save
+  let holdTimer = null;
   let saveTimeout = null;
-  const debounce = (fn, ms) => {
-    return (...args) => {
-      clearTimeout(saveTimeout);
-      saveTimeout = setTimeout(() => fn(...args), ms);
-    };
+  let driveHardwareEnabled = true;
+  const showFeedback = (el, text, level = "") => {
+    if (!el) return;
+    el.textContent = text;
+    el.className = level ? `feedback ${level}` : "feedback";
   };
 
-  // -------------------------------------------------------------------------
-  // Safety commands (estop / web control)
-  // -------------------------------------------------------------------------
-  const postCommand = async (path, label) => {
-    if (!controlFeedback) return;
-    controlFeedback.textContent = `⏳ ${label}...`;
-    controlFeedback.className = "feedback";
-    try {
-      const response = await fetch(path, { method: "POST" });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      controlFeedback.textContent = `✅ ${label} sent at ${new Date().toLocaleTimeString()}`;
-      controlFeedback.className = "feedback success";
-    } catch (_error) {
-      controlFeedback.textContent = `❌ ${label} failed`;
-      controlFeedback.className = "feedback error";
+  const debounce = (fn, ms) => (...args) => {
+    window.clearTimeout(saveTimeout);
+    saveTimeout = window.setTimeout(() => fn(...args), ms);
+  };
+
+  const setDriveHardwareEnabled = (enabled) => {
+    driveHardwareEnabled = enabled;
+    driveDisabledCard?.classList.toggle("hidden", enabled);
+
+    const gatedControls = [
+      ...Array.from(driveButtons),
+      enableWebControlButton,
+      disableWebControlButton,
+    ];
+
+    gatedControls.forEach((control) => {
+      if (!control) return;
+      control.disabled = !enabled;
+      control.setAttribute("aria-disabled", enabled ? "false" : "true");
+    });
+
+    if (!enabled) {
+      stopHoldLoop();
+      driveButtons.forEach((button) => button.classList.remove("active"));
     }
   };
 
-  if (estopButton) {
-    estopButton.addEventListener("click", () => postCommand("/api/estop", "Estop latch"));
-  }
-  if (clearEstopButton) {
-    clearEstopButton.addEventListener("click", () => postCommand("/api/estop/clear", "Estop clear"));
-  }
-  if (enableWebControlButton) {
-    enableWebControlButton.addEventListener("click", () =>
-      postCommand("/api/web-control/enable", "Web control enable"));
-  }
-  if (disableWebControlButton) {
-    disableWebControlButton.addEventListener("click", () =>
-      postCommand("/api/web-control/disable", "Web control disable"));
-  }
-
-  // -------------------------------------------------------------------------
-  // D-pad hold-to-drive
-  // -------------------------------------------------------------------------
-  const postDriveCommand = async (speed, steer) => {
+  const postCommand = async (path, label) => {
+    if (!window.PAApi) return;
+    if (!driveHardwareEnabled && path.startsWith("/api/web-control")) {
+      showFeedback(controlFeedback, "Web control unavailable: enable S1 — Hoverboard in Setup.", "warning");
+      return;
+    }
+    showFeedback(controlFeedback, `${label}...`);
     try {
-      const body = new URLSearchParams({ speed: String(speed), steer: String(steer) });
-      const response = await fetch("/api/drive", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
-        body,
-      });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    } catch (_error) {
-      if (controlFeedback) {
-        controlFeedback.textContent = "❌ Drive command failed";
-        controlFeedback.className = "feedback error";
-      }
+      await window.PAApi.postForm(path, {}, { timeoutMs: 3000 });
+      showFeedback(controlFeedback, `${label} sent at ${new Date().toLocaleTimeString()}`, "success");
+    } catch (error) {
+      showFeedback(controlFeedback, `${label} failed: ${window.PAApi.messageFor(error)}`, "error");
+    }
+  };
+
+  const postDriveCommand = async (speed, steer) => {
+    if (!window.PAApi) return;
+    if (!driveHardwareEnabled) {
+      showFeedback(controlFeedback, "Drive controls unavailable: enable S1 — Hoverboard in Setup.", "warning");
+      return;
+    }
+    try {
+      await window.PAApi.postForm("/api/drive", { speed: String(speed), steer: String(steer) }, { timeoutMs: 2500 });
+    } catch (error) {
+      showFeedback(controlFeedback, `Drive command failed: ${window.PAApi.messageFor(error)}`, "error");
     }
   };
 
@@ -106,18 +105,21 @@
   const startHoldLoop = (speed, steer) => {
     stopHoldLoop();
     postDriveCommand(speed, steer);
-    // Send repeated commands faster than the minimum allowed web timeout (100 ms).
-    holdTimer = window.setInterval(() => postDriveCommand(speed, steer), 50);
+    holdTimer = window.setInterval(() => {
+      postDriveCommand(speed, steer);
+    }, 50);
   };
 
   driveButtons.forEach((button) => {
     const speed = button.dataset.driveSpeed;
     const steer = button.dataset.driveSteer;
+
     const release = () => {
       button.classList.remove("active");
       stopHoldLoop();
       postDriveCommand(0, 0);
     };
+
     button.addEventListener("pointerdown", () => {
       button.classList.add("active");
       startHoldLoop(speed, steer);
@@ -127,27 +129,13 @@
     button.addEventListener("pointercancel", release);
   });
 
-  // -------------------------------------------------------------------------
-  // Arm servo controls (rendered conditionally from /api/status payload)
-  // -------------------------------------------------------------------------
   const postServoCommand = async (arm, action) => {
+    if (!window.PAApi) return;
     try {
-      const body = new URLSearchParams({ arm, action });
-      const response = await fetch("/api/servo", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
-        body,
-      });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      if (controlFeedback) {
-        controlFeedback.textContent = `✅ Arm ${arm} ${action} at ${new Date().toLocaleTimeString()}`;
-        controlFeedback.className = "feedback success";
-      }
-    } catch (_error) {
-      if (controlFeedback) {
-        controlFeedback.textContent = "❌ Arm command failed";
-        controlFeedback.className = "feedback error";
-      }
+      await window.PAApi.postForm("/api/servo", { arm, action }, { timeoutMs: 3000 });
+      showFeedback(controlFeedback, `Arm ${arm} ${action} at ${new Date().toLocaleTimeString()}`, "success");
+    } catch (error) {
+      showFeedback(controlFeedback, `Arm command failed: ${window.PAApi.messageFor(error)}`, "error");
     }
   };
 
@@ -155,16 +143,17 @@
     if (!armControlsContainer || !armControlsCard) return;
 
     const arms = [
-      { id: "arm1", name: "Left Arm",   present: "arm1" in payload },
-      { id: "arm2", name: "Right Arm",  present: "arm2" in payload },
-      { id: "aux1", name: "Aux 1",      present: "aux1" in payload },
-      { id: "aux2", name: "Aux 2",      present: "aux2" in payload },
-      { id: "aux3", name: "Aux 3",      present: "aux3" in payload },
+      { id: "arm1", name: "Left Arm", present: "arm1" in payload },
+      { id: "arm2", name: "Right Arm", present: "arm2" in payload },
+      { id: "aux1", name: "Aux 1", present: "aux1" in payload },
+      { id: "aux2", name: "Aux 2", present: "aux2" in payload },
+      { id: "aux3", name: "Aux 3", present: "aux3" in payload },
     ];
     const enabledArms = arms.filter((a) => a.present);
 
     if (enabledArms.length === 0) {
       armControlsCard.classList.add("hidden");
+      armControlsContainer.innerHTML = "";
       return;
     }
 
@@ -172,129 +161,115 @@
     armControlsContainer.innerHTML = enabledArms.map((arm) => `
       <div class="arm-control-row">
         <span class="arm-name">${arm.name}</span>
-        <button class="btn" data-arm="${arm.id}" data-action="open"  type="button">📂 Open</button>
+        <button class="btn" data-arm="${arm.id}" data-action="open" type="button">📂 Open</button>
         <button class="btn" data-arm="${arm.id}" data-action="close" type="button">📁 Close</button>
         <button class="btn accent" data-arm="${arm.id}" data-action="stop" type="button">⏹️ Stop</button>
       </div>
     `).join("");
+
     armControlsContainer.querySelectorAll("[data-arm]").forEach((btn) => {
-      btn.addEventListener("click", () =>
-        postServoCommand(btn.dataset.arm, btn.dataset.action));
+      btn.addEventListener("click", () => postServoCommand(btn.dataset.arm, btn.dataset.action));
     });
   };
 
-  // -------------------------------------------------------------------------
-  // Movement status polling
-  // -------------------------------------------------------------------------
   const renderStatus = (payload) => {
-    if (estopState)       estopState.textContent       = payload.estop ? "❌ Latched" : "✅ Clear";
-    if (webControlState)  webControlState.textContent  = payload.webControlEnabled ? "✅ Enabled" : "⏸️ Disabled";
-    if (failsafeSource)   failsafeSource.textContent   = String(payload.failsafeSource);
-    if (driveOutput)      driveOutput.textContent      = `${payload.driveSpeed} / ${payload.driveSteer}`;
+    if (estopState) estopState.textContent = payload.estop ? "❌ Latched" : "✅ Clear";
+    if (webControlState) webControlState.textContent = payload.webControlEnabled ? "✅ Enabled" : "⏸️ Disabled";
+    if (failsafeSource) failsafeSource.textContent = String(payload.failsafeSource);
+    if (driveOutput) driveOutput.textContent = `${payload.driveSpeed} / ${payload.driveSteer}`;
     if (speedLimitDisplay) speedLimitDisplay.textContent = Number(payload.speedLimitScale).toFixed(3);
     renderArmControls(payload);
   };
 
-  const poll = async () => {
-    try {
-      const response = await fetch("/api/status", { cache: "no-store" });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      renderStatus(await response.json());
-    } catch (_error) {}
-  };
-
-  // -------------------------------------------------------------------------
-  // Drive settings with auto-save
-  // -------------------------------------------------------------------------
-  const driveDisabledCard = document.getElementById("drive-disabled-card");
-
   const renderConfig = (payload) => {
     const drive = payload?.drive || {};
     const components = payload?.components || {};
-    if (speedLimitMax)   speedLimitMax.value      = drive.speedLimitMax;
-    if (webDriveTimeout) webDriveTimeout.value    = drive.webDriveTimeoutMs;
-    if (ch8ModeLock)     ch8ModeLock.checked      = Boolean(drive.ch8ModeLock);
-    if (configFeedback) {
-      configFeedback.textContent = `Settings loaded at ${new Date().toLocaleTimeString()}`;
-      configFeedback.className = "feedback success";
-    }
-    if (driveDisabledCard) {
-      driveDisabledCard.classList.toggle("hidden", Boolean(components.s1Hoverboard?.enabled));
-    }
+    if (speedLimitMax) speedLimitMax.value = drive.speedLimitMax;
+    if (webDriveTimeout) webDriveTimeout.value = drive.webDriveTimeoutMs;
+    if (ch8ModeLock) ch8ModeLock.checked = Boolean(drive.ch8ModeLock);
+
+    setDriveHardwareEnabled(Boolean(components.s1Hoverboard?.enabled));
+
+    showFeedback(configFeedback, `Settings loaded at ${new Date().toLocaleTimeString()}`, "success");
   };
 
   const loadConfig = async () => {
-    if (configFeedback) {
-      configFeedback.textContent = "Loading settings...";
-      configFeedback.className = "feedback";
-    }
+    if (!window.PAApi) return;
+    showFeedback(configFeedback, "Loading settings...");
     try {
-      const response = await fetch("/api/config", { cache: "no-store" });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      renderConfig(await response.json());
-    } catch (_error) {
-      if (configFeedback) {
-        configFeedback.textContent = "Failed to load settings";
-        configFeedback.className = "feedback error";
-      }
+      const result = await window.PAApi.get("/api/config", { timeoutMs: 3000 });
+      renderConfig(result.data);
+    } catch (error) {
+      showFeedback(configFeedback, `Failed to load settings: ${window.PAApi.messageFor(error)}`, "error");
     }
   };
 
-  // Auto-save function
   const saveConfig = async () => {
-    if (configFeedback) {
-      configFeedback.textContent = "Saving...";
-      configFeedback.className = "feedback";
-    }
+    if (!window.PAApi) return;
+    showFeedback(configFeedback, "Saving...");
+
     try {
-      const body = new URLSearchParams({
-        speedLimitMax:     speedLimitMax?.value ?? "600",
+      const result = await window.PAApi.postForm("/api/config", {
+        speedLimitMax: speedLimitMax?.value ?? "600",
         webDriveTimeoutMs: webDriveTimeout?.value ?? "500",
-        ch8ModeLock:       ch8ModeLock?.checked ? "true" : "false",
-      });
-      const response = await fetch("/api/config", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
-        body,
-      });
-      if (!response.ok) {
-        const errorBody = await response.json().catch(() => null);
-        throw new Error(errorBody?.error || `HTTP ${response.status}`);
-      }
-      renderConfig(await response.json());
-      if (configFeedback) {
-        configFeedback.textContent = `✓ Saved at ${new Date().toLocaleTimeString()}`;
-        configFeedback.className = "feedback success";
-      }
+        ch8ModeLock: ch8ModeLock?.checked ? "true" : "false",
+      }, { timeoutMs: 3000 });
+
+      renderConfig(result.data);
+      showFeedback(configFeedback, `Saved at ${new Date().toLocaleTimeString()}`, "success");
     } catch (error) {
-      if (configFeedback) {
-        configFeedback.textContent = error instanceof Error ? `❌ ${error.message}` : "❌ Failed to save";
-        configFeedback.className = "feedback error";
-      }
+      showFeedback(configFeedback, `Failed to save: ${window.PAApi.messageFor(error)}`, "error");
     }
   };
+
+  const refreshStatusOnce = async () => {
+    if (!window.PAApi) return;
+    const result = await window.PAApi.get("/api/status", { timeoutMs: 3000 });
+    renderStatus(result.data);
+    setDriveHardwareEnabled(Boolean(result.data.s1Hoverboard));
+  };
+
+  estopButton?.addEventListener("click", () => postCommand("/api/estop", "Estop latch"));
+  clearEstopButton?.addEventListener("click", () => postCommand("/api/estop/clear", "Estop clear"));
+  enableWebControlButton?.addEventListener("click", () => postCommand("/api/web-control/enable", "Web control enable"));
+  disableWebControlButton?.addEventListener("click", () => postCommand("/api/web-control/disable", "Web control disable"));
 
   const debouncedSave = debounce(saveConfig, 300);
+  speedLimitMax?.addEventListener("input", debouncedSave);
+  webDriveTimeout?.addEventListener("input", debouncedSave);
+  ch8ModeLock?.addEventListener("change", debouncedSave);
+  reloadConfigButton?.addEventListener("click", loadConfig);
 
-  // Attach auto-save listeners
-  if (speedLimitMax) {
-    speedLimitMax.addEventListener("input", debouncedSave);
-  }
-  if (webDriveTimeout) {
-    webDriveTimeout.addEventListener("input", debouncedSave);
-  }
-  if (ch8ModeLock) {
-    ch8ModeLock.addEventListener("change", debouncedSave);
+  if (window.PAStatusStream?.isSupported()) {
+    window.PAStatusStream.subscribe((eventType, payload) => {
+      if (eventType === "status") renderStatus(payload);
+    });
+
+    if (!window.PAStatusStream.getLastStatus()) {
+      refreshStatusOnce().catch((error) => {
+        showFeedback(controlFeedback, `Status load failed: ${window.PAApi?.messageFor(error) || "request failed"}`, "error");
+      });
+    }
+  } else {
+    const refreshFromFallback = () => {
+      refreshStatusOnce().catch(() => {
+        // Retry next cycle.
+      });
+    };
+
+    refreshFromFallback();
+
+    window.setInterval(() => {
+      if (document.visibilityState === "hidden") return;
+      refreshFromFallback();
+    }, 2000);
+
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState !== "hidden") {
+        refreshFromFallback();
+      }
+    });
   }
 
-  if (reloadConfigButton) {
-    reloadConfigButton.addEventListener("click", loadConfig);
-  }
-
-  // -------------------------------------------------------------------------
-  // Init
-  // -------------------------------------------------------------------------
-  poll();
-  pollTimer = window.setInterval(poll, 1000);
   loadConfig();
 })();

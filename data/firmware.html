@@ -3,31 +3,13 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Firmware - protoArtoo</title>
     <link rel="stylesheet" href="/style.css">
     <link rel="icon" type="image/png" href="/r2d2body-favicon.png">
   </head>
-  <body>
-    <div class="topbar">
-      <a href="/" class="topbar-brand">
-        <img src="/r2d2body.svg" alt="R2-D2 body icon" class="topbar-logo">
-        <div>
-          <h1>protoArtoo</h1>
-          <div class="subtitle">R2-D2 Body Controller</div>
-        </div>
-      </a>
-    </div>
+  <body data-page="firmware">
+    <div id="shell-top"></div>
 
-    <nav>
-      <a href="/">🏠 Home</a>
-      <a href="/drive.html">🏎️ Drive</a>
-      <a href="/dome.html">🔄 Dome</a>
-      <a href="/sound.html">🔊 Sound</a>
-      <a href="/servo.html">🦾 Servos</a>
-      <a href="/rc.html">🕹️ RC</a>
-      <a href="/setup.html">⚙️ Setup</a>
-      <a href="/wifi.html">📶 WiFi</a>
-      <a href="/firmware.html" class="active">💾 Firmware</a>
-    </nav>
 
     <div class="card">
       <h3>⬆️ Firmware Update</h3>
@@ -44,7 +26,7 @@
           <div class="fw-progress-track">
             <div id="fw-bar" class="fw-progress-bar"></div>
           </div>
-          <div id="fw-status" class="fw-progress-status">Uploading...</div>
+          <div id="fw-status" class="fw-progress-status" role="status" aria-live="polite" aria-atomic="true">Uploading...</div>
         </div>
         <div class="button-row">
           <button id="upload-fw-button" class="btn accent" type="button">📤 Upload and Flash</button>
@@ -68,7 +50,7 @@
           <div class="fw-progress-track">
             <div id="fs-bar" class="fw-progress-bar"></div>
           </div>
-          <div id="fs-status" class="fw-progress-status">Uploading...</div>
+          <div id="fs-status" class="fw-progress-status" role="status" aria-live="polite" aria-atomic="true">Uploading...</div>
         </div>
         <div class="button-row">
           <button id="upload-fs-button" class="btn accent" type="button">📤 Upload Filesystem</button>
@@ -82,15 +64,15 @@
       <div class="button-row">
         <button id="reboot-button" class="btn danger" type="button">🔄 Reboot Controller</button>
       </div>
-      <div id="fw-feedback" class="feedback mt-12">No action taken yet.</div>
+      <div id="fw-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true">No action taken yet.</div>
       <div class="desc mt-12">Use Reboot if the controller stops responding. All settings are retained across reboots.</div>
     </div>
 
-    <div class="status-bar">
-      <div><span class="dot green"></span>Firmware page connected</div>
-      <div class="status-subline" id="fw-meta">Loading firmware info...</div>
-    </div>
+    <div id="shell-status"></div>
 
+    <script src="/web_api.js"></script>
+    <script src="/status_stream.js"></script>
+    <script src="/shell.js"></script>
     <script src="/firmware.js"></script>
     <script src="/footer.js"></script>
   </body>

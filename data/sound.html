@@ -7,35 +7,17 @@
     <link rel="stylesheet" href="/style.css">
     <link rel="icon" type="image/png" href="/r2d2body-favicon.png">
   </head>
-  <body>
-    <div class="topbar">
-      <a href="/" class="topbar-brand">
-        <img src="/r2d2body.svg" alt="R2-D2 body icon" class="topbar-logo">
-        <div>
-          <h1>protoArtoo</h1>
-          <div class="subtitle">R2-D2 Body Controller</div>
-        </div>
-      </a>
-    </div>
+  <body data-page="sound">
+    <div id="shell-top"></div>
 
-    <nav>
-      <a href="/">🏠 Home</a>
-      <a href="/drive.html">🏎️ Drive</a>
-      <a href="/dome.html">🔄 Dome</a>
-      <a href="/sound.html" class="active">🔊 Sound</a>
-      <a href="/servo.html">🦾 Servos</a>
-      <a href="/rc.html">🕹️ RC</a>
-      <a href="/setup.html">⚙️ Setup</a>
-      <a href="/wifi.html">📶 WiFi</a>
-      <a href="/firmware.html">💾 Firmware</a>
-    </nav>
 
     <!-- Global Controls -->
     <!-- Disabled notice (hidden when S2 Sound is enabled) -->
-    <div id="sound-disabled-card" class="card hidden">
-      <h3>🔊 S2 — Sound Module Not Enabled</h3>
-      <div class="desc">The audio module is not enabled. Go to
-        <a href="/setup.html">Setup</a> and enable <strong>S2 — Sound</strong> to use sound controls.</div>
+    <div id="sound-disabled-card" class="card disabled-card hidden" role="status" aria-live="polite" aria-atomic="true">
+      <h3>🔊 Sound Hardware Disabled</h3>
+      <div class="desc">Playback controls are unavailable because the audio module is disabled.</div>
+      <div class="desc disabled-reason"><strong>Required component:</strong> S2 — Sound</div>
+      <div class="desc">Open <a class="setup-link" href="/setup.html">Setup</a> and enable <strong>S2 — Sound</strong> to restore sound controls.</div>
     </div>
 
     <div class="card">
@@ -43,11 +25,10 @@
       <div class="desc">Volume and playback state apply to the active audio backend.</div>
 
       <div class="mt-12">
-        <label class="form-label">Volume (0–30)</label>
-        <div style="display:flex;align-items:center;gap:12px;margin-top:6px;">
-          <input type="range" id="vol-slider" min="0" max="30" value="20"
-                 style="flex:1;" oninput="document.getElementById('vol-display').textContent=this.value">
-          <span id="vol-display" style="min-width:28px;text-align:right;font-weight:700;">20</span>
+        <label class="form-label" for="vol-slider">Volume (0–30)</label>
+        <div class="sound-inline-row">
+          <input type="range" id="vol-slider" min="0" max="30" value="20" class="grow">
+          <span id="vol-display" class="sound-volume-value">20</span>
         </div>
       </div>
 
@@ -59,10 +40,10 @@
 
       <div class="mt-12">
         <span class="desc">State: </span>
-        <span id="audio-state-badge" style="font-weight:600;">—</span>
+        <span id="audio-state-badge" class="sound-state-badge" data-state="disabled" role="status" aria-live="polite" aria-atomic="true">—</span>
       </div>
 
-      <div id="global-feedback" class="feedback mt-8"></div>
+      <div id="global-feedback" class="feedback mt-8" role="status" aria-live="polite" aria-atomic="true"></div>
     </div>
 
     <!-- Named Sound Commands -->
@@ -73,14 +54,14 @@
         changes take effect immediately and survive reboot.
       </div>
 
-      <table class="mt-12" style="width:100%;border-collapse:collapse;">
+      <table class="sound-table mt-12">
         <thead>
-          <tr style="text-align:left;color:var(--text-dim);font-size:0.8rem;">
-            <th style="padding:6px 8px;">Label</th>
-            <th style="padding:6px 8px;">Cmd</th>
-            <th style="padding:6px 8px;">Track #</th>
-            <th style="padding:6px 8px;"></th>
-            <th style="padding:6px 8px;"></th>
+          <tr>
+            <th>Label</th>
+            <th>Cmd</th>
+            <th>Track #</th>
+            <th></th>
+            <th></th>
           </tr>
         </thead>
         <tbody id="named-sound-rows">
@@ -93,12 +74,12 @@
     <div class="card">
       <h3>▶ Direct Track</h3>
       <div class="desc">Play any track number directly — useful for testing SD card layout.</div>
-      <div style="display:flex;align-items:center;gap:8px;margin-top:12px;">
+      <div class="sound-inline-row tight">
         <input type="number" id="direct-track" min="1" max="65535" value="1"
-               style="width:90px;" placeholder="Track #">
+               class="sound-track-input-lg" placeholder="Track #" aria-label="Direct track number">
         <button class="btn" id="btn-direct-play">▶ Play</button>
       </div>
-      <div id="direct-feedback" class="feedback mt-8"></div>
+      <div id="direct-feedback" class="feedback mt-8" role="status" aria-live="polite" aria-atomic="true"></div>
     </div>
 
     <!-- Random Playback Range -->
@@ -108,22 +89,20 @@
         Tracks in this range are chosen randomly when random mode is active.
         Changes are NVS-persisted and take effect on the next random event.
       </div>
-      <div style="display:flex;align-items:center;gap:12px;margin-top:12px;flex-wrap:wrap;">
+      <div class="sound-inline-row wrap">
         <div>
-          <label class="form-label">Min track</label>
-          <input type="number" id="rand-min" min="1" max="999" value="1"
-                 style="width:80px;margin-top:4px;">
+          <label class="form-label" for="rand-min">Min track</label>
+          <input type="number" id="rand-min" min="1" max="999" value="1" class="sound-track-input-md mt-6">
         </div>
         <div>
-          <label class="form-label">Max track</label>
-          <input type="number" id="rand-max" min="1" max="999" value="100"
-                 style="width:80px;margin-top:4px;">
+          <label class="form-label" for="rand-max">Max track</label>
+          <input type="number" id="rand-max" min="1" max="999" value="100" class="sound-track-input-md mt-6">
         </div>
-        <div style="align-self:flex-end;">
+        <div class="sound-align-end">
           <button class="btn" id="btn-rand-save">💾 Save Range</button>
         </div>
       </div>
-      <div id="rand-feedback" class="feedback mt-8"></div>
+      <div id="rand-feedback" class="feedback mt-8" role="status" aria-live="polite" aria-atomic="true"></div>
     </div>
 
     <!-- Mood Sound Intervals -->
@@ -134,42 +113,42 @@
         playback for that mood. Changes are NVS-persisted and take effect on the
         next timer cycle.
       </div>
-      <table class="mt-12" style="width:100%;border-collapse:collapse;">
+      <table class="sound-table mt-12">
         <thead>
-          <tr style="text-align:left;color:var(--text-dim);font-size:0.8rem;">
-            <th style="padding:6px 8px;">Mood</th>
-            <th style="padding:6px 8px;">Command</th>
-            <th style="padding:6px 8px;">Interval (seconds)</th>
+          <tr>
+            <th>Mood</th>
+            <th>Command</th>
+            <th>Interval (seconds)</th>
           </tr>
         </thead>
         <tbody>
-          <tr style="border-bottom:1px solid var(--border);">
-            <td style="padding:8px;">Quiet</td>
-            <td style="padding:8px;font-family:monospace;color:var(--accent);">:SE10</td>
-            <td style="padding:8px;">
-              <input type="number" id="int-quiet" min="0" max="3600" step="1" value="0" style="width:80px;">
-              <span style="color:var(--text-dim);font-size:0.85rem;margin-left:6px;">0 = silent</span>
+          <tr class="sound-row-divider">
+            <td>Quiet</td>
+            <td class="sound-mono">:SE10</td>
+            <td>
+              <input type="number" id="int-quiet" min="0" max="3600" step="1" value="0" class="sound-track-input-md" aria-label="Quiet mood interval seconds">
+              <span class="sound-note-inline">0 = silent</span>
             </td>
           </tr>
-          <tr style="border-bottom:1px solid var(--border);">
-            <td style="padding:8px;">Mid-Awake</td>
-            <td style="padding:8px;font-family:monospace;color:var(--accent);">:SE13</td>
-            <td style="padding:8px;">
-              <input type="number" id="int-mid" min="0" max="3600" step="1" value="30" style="width:80px;">
+          <tr class="sound-row-divider">
+            <td>Mid-Awake</td>
+            <td class="sound-mono">:SE13</td>
+            <td>
+              <input type="number" id="int-mid" min="0" max="3600" step="1" value="30" class="sound-track-input-md" aria-label="Mid-Awake mood interval seconds">
             </td>
           </tr>
-          <tr style="border-bottom:1px solid var(--border);">
-            <td style="padding:8px;">Full-Awake</td>
-            <td style="padding:8px;font-family:monospace;color:var(--accent);">:SE11</td>
-            <td style="padding:8px;">
-              <input type="number" id="int-full" min="0" max="3600" step="1" value="20" style="width:80px;">
+          <tr class="sound-row-divider">
+            <td>Full-Awake</td>
+            <td class="sound-mono">:SE11</td>
+            <td>
+              <input type="number" id="int-full" min="0" max="3600" step="1" value="20" class="sound-track-input-md" aria-label="Full-Awake mood interval seconds">
             </td>
           </tr>
           <tr>
-            <td style="padding:8px;">Awake+</td>
-            <td style="padding:8px;font-family:monospace;color:var(--accent);">:SE14</td>
-            <td style="padding:8px;">
-              <input type="number" id="int-awake" min="0" max="3600" step="1" value="10" style="width:80px;">
+            <td>Awake+</td>
+            <td class="sound-mono">:SE14</td>
+            <td>
+              <input type="number" id="int-awake" min="0" max="3600" step="1" value="10" class="sound-track-input-md" aria-label="Awake Plus mood interval seconds">
             </td>
           </tr>
         </tbody>
@@ -177,14 +156,14 @@
       <div class="button-row mt-12">
         <button class="btn" id="btn-int-save">💾 Save Intervals</button>
       </div>
-      <div id="int-feedback" class="feedback mt-8"></div>
+      <div id="int-feedback" class="feedback mt-8" role="status" aria-live="polite" aria-atomic="true"></div>
     </div>
 
-    <div class="status-bar">
-      <div><span class="dot green"></span>Sound page connected</div>
-      <div class="status-subline" id="fw-meta">Loading firmware info...</div>
-    </div>
+    <div id="shell-status"></div>
 
+    <script src="/web_api.js"></script>
+    <script src="/status_stream.js"></script>
+    <script src="/shell.js"></script>
     <script src="/sound.js"></script>
     <script src="/footer.js"></script>
   </body>

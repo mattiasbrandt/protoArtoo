@@ -6,130 +6,153 @@
 // Named track assignments are loaded from and saved to /api/audio/tracks.
 // =============================================================================
 (() => {
-  // ---------------------------------------------------------------------------
-  // Named sound rows definition
-  // key: RobotState / NVS field name; cmd: $ command to trigger play;
-  // editable: whether the track # can be changed by the operator.
-  // ---------------------------------------------------------------------------
   const NAMED_SOUNDS = [
-    { label: "Scream",          cmd: "$S", key: "scream",    editable: true },
-    { label: "Short Circuit",   cmd: "$F", key: "faint",     editable: true },
-    { label: "Leia Message",    cmd: "$L", key: "leia",      editable: true },
-    { label: "Short Cantina",   cmd: "$c", key: "cantina_s", editable: true },
-    { label: "Star Wars Theme", cmd: "$W", key: "sw_theme",  editable: true },
-    { label: "Imperial March",  cmd: "$M", key: "imp_march", editable: true },
-    { label: "Long Cantina",    cmd: "$C", key: "cantina_l", editable: true },
-    { label: "Boot Sound",      cmd: "$B", key: "startup",   editable: true },
-    { label: "Random On",       cmd: "$R", key: null,        editable: false },
-    { label: "Random Off",      cmd: "$O", key: null,        editable: false },
-    { label: "Stop / Chatter Off", cmd: "$s", key: null,     editable: false },
+    { label: "Scream", cmd: "$S", key: "scream", editable: true },
+    { label: "Short Circuit", cmd: "$F", key: "faint", editable: true },
+    { label: "Leia Message", cmd: "$L", key: "leia", editable: true },
+    { label: "Short Cantina", cmd: "$c", key: "cantina_s", editable: true },
+    { label: "Star Wars Theme", cmd: "$W", key: "sw_theme", editable: true },
+    { label: "Imperial March", cmd: "$M", key: "imp_march", editable: true },
+    { label: "Long Cantina", cmd: "$C", key: "cantina_l", editable: true },
+    { label: "Boot Sound", cmd: "$B", key: "startup", editable: true },
+    { label: "Random On", cmd: "$R", key: null, editable: false },
+    { label: "Random Off", cmd: "$O", key: null, editable: false },
+    { label: "Stop / Chatter Off", cmd: "$s", key: null, editable: false },
   ];
 
-  // ---------------------------------------------------------------------------
-  // Helpers
-  // ---------------------------------------------------------------------------
+  const tbody = document.getElementById("named-sound-rows");
+  const audioStateBadge = document.getElementById("audio-state-badge");
+  const soundDisabledCard = document.getElementById("sound-disabled-card");
+  const globalFb = document.getElementById("global-feedback");
+  const volSlider = document.getElementById("vol-slider");
+  const volDisplay = document.getElementById("vol-display");
+  let soundHardwareEnabled = true;
+
+  const showFeedback = (el, msg, ok) => {
+    if (!el) return;
+    el.textContent = msg;
+    el.className = `feedback ${ok ? "success" : "error"}`;
+    window.setTimeout(() => {
+      if (!el) return;
+      el.textContent = "";
+      el.className = "feedback";
+    }, 2500);
+  };
+
+  const setSoundHardwareEnabled = (enabled) => {
+    soundHardwareEnabled = enabled;
+    soundDisabledCard?.classList.toggle("hidden", enabled);
+
+    const controls = document.querySelectorAll(
+      '.card:not(#sound-disabled-card) button, .card:not(#sound-disabled-card) input, .card:not(#sound-disabled-card) select, .card:not(#sound-disabled-card) textarea'
+    );
+    controls.forEach((control) => {
+      control.disabled = !enabled;
+      if (control.tagName === "BUTTON") {
+        control.setAttribute("aria-disabled", enabled ? "false" : "true");
+      }
+    });
+  };
+
   const postAudio = async (params, feedbackEl) => {
-    const body = new URLSearchParams(params);
+    if (!window.PAApi) return;
+    if (!soundHardwareEnabled) {
+      showFeedback(feedbackEl || globalFb, "Sound controls unavailable: enable S2 — Sound in Setup.", false);
+      return;
+    }
     try {
-      const res  = await fetch("/api/audio", { method: "POST", body });
-      const json = await res.json();
-      showFeedback(feedbackEl, json.ok ? "Sent" : json.error, json.ok);
-    } catch (_e) {
-      showFeedback(feedbackEl, "Request failed", false);
+      const result = await window.PAApi.postForm("/api/audio", params, { timeoutMs: 3000 });
+      const ok = Boolean(result.data?.ok);
+      showFeedback(feedbackEl, ok ? "Sent" : (result.data?.error || "Failed"), ok);
+    } catch (error) {
+      showFeedback(feedbackEl, `Command failed: ${window.PAApi.messageFor(error)}`, false);
     }
   };
 
   const postTrack = async (key, track, feedbackEl) => {
-    const body = new URLSearchParams({ key, track });
+    if (!window.PAApi) return;
+    if (!soundHardwareEnabled) {
+      showFeedback(feedbackEl || globalFb, "Track updates unavailable: enable S2 — Sound in Setup.", false);
+      return;
+    }
     try {
-      const res  = await fetch("/api/audio/tracks", { method: "POST", body });
-      const json = await res.json();
-      showFeedback(feedbackEl, json.ok ? "Saved" : json.error, json.ok);
-    } catch (_e) {
-      showFeedback(feedbackEl, "Request failed", false);
+      const result = await window.PAApi.postForm("/api/audio/tracks", { key, track }, { timeoutMs: 3000 });
+      const ok = Boolean(result.data?.ok);
+      showFeedback(feedbackEl, ok ? "Saved" : (result.data?.error || "Save failed"), ok);
+    } catch (error) {
+      showFeedback(feedbackEl, `Save failed: ${window.PAApi.messageFor(error)}`, false);
     }
   };
 
-  const showFeedback = (el, msg, ok) => {
-    if (!el) return;
-    el.textContent  = msg;
-    el.className    = `feedback ${ok ? "success" : "error"}`;
-    setTimeout(() => { if (el) { el.textContent = ""; el.className = "feedback"; } }, 2500);
+  const syncVolumeLabel = () => {
+    if (!volSlider || !volDisplay) return;
+    volDisplay.textContent = String(volSlider.value);
   };
 
-  // ---------------------------------------------------------------------------
-  // Build named sound rows table
-  // ---------------------------------------------------------------------------
-  const tbody = document.getElementById("named-sound-rows");
-  const rowFeedback = {};
+  const buildNamedSoundRows = () => {
+    if (!tbody) return;
 
-  if (tbody) {
-    NAMED_SOUNDS.forEach((s) => {
+    NAMED_SOUNDS.forEach((sound) => {
       const tr = document.createElement("tr");
-      tr.style.borderBottom = "1px solid var(--border)";
+      tr.className = "sound-row-divider";
 
       const tdLabel = document.createElement("td");
-      tdLabel.style.padding = "8px";
-      tdLabel.textContent   = s.label;
+      tdLabel.textContent = sound.label;
 
       const tdCmd = document.createElement("td");
-      tdCmd.style.padding      = "8px";
-      tdCmd.style.fontFamily   = "monospace";
-      tdCmd.style.color        = "var(--accent)";
-      tdCmd.textContent        = s.cmd;
+      tdCmd.className = "sound-mono";
+      tdCmd.textContent = sound.cmd;
 
       const tdTrack = document.createElement("td");
-      tdTrack.style.padding = "8px";
+      const tdPlay = document.createElement("td");
 
-      const fbEl = document.createElement("span");
-      fbEl.style.marginLeft = "8px";
-      fbEl.style.fontSize   = "0.85rem";
-      rowFeedback[s.key || s.cmd] = fbEl;
+      if (sound.editable && sound.key) {
+        const input = document.createElement("input");
+        input.type = "number";
+        input.min = "1";
+        input.max = "999";
+        input.className = "sound-track-input-sm";
+        input.dataset.key = sound.key;
+        input.id = `track-input-${sound.key}`;
+        input.setAttribute("aria-label", `${sound.label} track number`);
+        tdTrack.appendChild(input);
 
-      if (s.editable) {
-        const inp = document.createElement("input");
-        inp.type          = "number";
-        inp.min           = "1";
-        inp.max           = "999";
-        inp.style.width   = "70px";
-        inp.dataset.key   = s.key;
-        inp.id            = `track-input-${s.key}`;
-        tdTrack.appendChild(inp);
+        const saveButton = document.createElement("button");
+        saveButton.className = "btn sound-btn-compact";
+        saveButton.textContent = "💾";
+        saveButton.title = "Save track number";
+        saveButton.setAttribute("aria-label", `Save ${sound.label} track number`);
 
-        const saveBtn = document.createElement("button");
-        saveBtn.className   = "btn";
-        saveBtn.textContent = "💾";
-        saveBtn.title       = "Save track number";
-        saveBtn.style.marginLeft = "6px";
-        saveBtn.style.padding    = "4px 8px";
-        saveBtn.addEventListener("click", () => {
-          const val = parseInt(inp.value, 10);
-          if (!val || val < 1 || val > 999) {
-            showFeedback(fbEl, "1–999", false);
+        const rowFeedback = document.createElement("span");
+        rowFeedback.className = "sound-feedback-inline";
+        rowFeedback.setAttribute("role", "status");
+        rowFeedback.setAttribute("aria-live", "polite");
+        rowFeedback.setAttribute("aria-atomic", "true");
+
+        saveButton.addEventListener("click", () => {
+          const value = Number.parseInt(input.value, 10);
+          if (!value || value < 1 || value > 999) {
+            showFeedback(rowFeedback, "1–999", false);
             return;
           }
-          postTrack(s.key, val, fbEl);
+          postTrack(sound.key, value, rowFeedback);
         });
-        tdTrack.appendChild(saveBtn);
-        tdTrack.appendChild(fbEl);
+
+        tdTrack.appendChild(saveButton);
+        tdTrack.appendChild(rowFeedback);
       } else {
         tdTrack.textContent = "—";
-        tdTrack.style.color = "var(--text-dim)";
       }
 
-      const tdPlay = document.createElement("td");
-      tdPlay.style.padding = "8px";
-
-      const playBtn = document.createElement("button");
-      playBtn.className   = "btn";
-      playBtn.textContent = "▶";
-      playBtn.title       = `Play ${s.cmd}`;
-      playBtn.style.padding = "4px 10px";
-      playBtn.addEventListener("click", () => {
-        const globalFb = document.getElementById("global-feedback");
-        postAudio({ action: "dollar", cmd: s.cmd }, globalFb);
+      const playButton = document.createElement("button");
+      playButton.className = "btn sound-btn-play";
+      playButton.textContent = "▶";
+      playButton.title = `Play ${sound.cmd}`;
+      playButton.setAttribute("aria-label", `Play ${sound.label}`);
+      playButton.addEventListener("click", () => {
+        postAudio({ action: "dollar", cmd: sound.cmd }, globalFb);
       });
-      tdPlay.appendChild(playBtn);
+      tdPlay.appendChild(playButton);
 
       tr.appendChild(tdLabel);
       tr.appendChild(tdCmd);
@@ -137,95 +160,105 @@
       tr.appendChild(tdPlay);
       tbody.appendChild(tr);
     });
-  }
+  };
 
-  // ---------------------------------------------------------------------------
-  // Load current track assignments from /api/audio/tracks
-  // ---------------------------------------------------------------------------
   const loadTracks = async () => {
+    if (!window.PAApi) return;
     try {
-      const res  = await fetch("/api/audio/tracks", { cache: "no-store" });
-      if (!res.ok) return;
-      const data = await res.json();
+      const result = await window.PAApi.get("/api/audio/tracks", { timeoutMs: 3000 });
+      const data = result.data;
 
-      NAMED_SOUNDS.forEach((s) => {
-        if (!s.editable || !s.key) return;
-        const inp = document.getElementById(`track-input-${s.key}`);
-        if (inp && data[s.key] !== undefined) {
-          inp.value = data[s.key];
+      NAMED_SOUNDS.forEach((sound) => {
+        if (!sound.editable || !sound.key) return;
+        const input = document.getElementById(`track-input-${sound.key}`);
+        if (input && data[sound.key] !== undefined) {
+          input.value = data[sound.key];
         }
       });
 
-      // Random range
       const randMin = document.getElementById("rand-min");
       const randMax = document.getElementById("rand-max");
       if (randMin && data.rand_min !== undefined) randMin.value = data.rand_min;
       if (randMax && data.rand_max !== undefined) randMax.value = data.rand_max;
 
-      // Mood sound intervals (T18)
       const intQuiet = document.getElementById("int-quiet");
-      const intMid   = document.getElementById("int-mid");
-      const intFull  = document.getElementById("int-full");
+      const intMid = document.getElementById("int-mid");
+      const intFull = document.getElementById("int-full");
       const intAwake = document.getElementById("int-awake");
       if (intQuiet && data.snd_int_quiet !== undefined) intQuiet.value = data.snd_int_quiet;
-      if (intMid   && data.snd_int_mid   !== undefined) intMid.value   = data.snd_int_mid;
-      if (intFull  && data.snd_int_full  !== undefined) intFull.value  = data.snd_int_full;
+      if (intMid && data.snd_int_mid !== undefined) intMid.value = data.snd_int_mid;
+      if (intFull && data.snd_int_full !== undefined) intFull.value = data.snd_int_full;
       if (intAwake && data.snd_int_awake !== undefined) intAwake.value = data.snd_int_awake;
 
-      // Persisted default volume
-      const volSlider = document.getElementById("vol-slider");
-      if (volSlider && data.volume !== undefined) volSlider.value = data.volume;
-    } catch (_e) {}
+      if (volSlider && data.volume !== undefined) {
+        volSlider.value = data.volume;
+        syncVolumeLabel();
+      }
+    } catch (_error) {
+      // No dedicated feedback surface for initial track hydration.
+    }
   };
 
+  const renderStatus = (data) => {
+    const s2Enabled = Boolean(data.s2Sound);
+    setSoundHardwareEnabled(s2Enabled);
+    if (!audioStateBadge) return;
+    if (!s2Enabled) {
+      audioStateBadge.textContent = "Disabled";
+      audioStateBadge.dataset.state = "disabled";
+      return;
+    }
+
+    const state = data.s2Sound?.state === "playing" ? "playing" : "idle";
+    audioStateBadge.textContent = state === "playing" ? "🔊 Playing" : "✅ Idle";
+    audioStateBadge.dataset.state = state;
+  };
+
+  const refreshStatusOnce = async () => {
+    if (!window.PAApi) return;
+    const result = await window.PAApi.get("/api/status", { timeoutMs: 3000 });
+    renderStatus(result.data);
+  };
+
+  buildNamedSoundRows();
   loadTracks();
+  syncVolumeLabel();
 
-  // ---------------------------------------------------------------------------
-  // Global audio state polling
-  // ---------------------------------------------------------------------------
-  const audioStateBadge  = document.getElementById("audio-state-badge");
-  const soundDisabledCard = document.getElementById("sound-disabled-card");
+  if (window.PAStatusStream?.isSupported()) {
+    window.PAStatusStream.subscribe((eventType, payload) => {
+      if (eventType === "status") renderStatus(payload);
+    });
 
-  const pollState = async () => {
-    try {
-      const res  = await fetch("/api/status", { cache: "no-store" });
-      if (!res.ok) return;
-      const data = await res.json();
+    if (!window.PAStatusStream.getLastStatus()) {
+      refreshStatusOnce().catch(() => {
+        // Retry via next SSE event.
+      });
+    }
+  } else {
+    const refreshFromFallback = () => {
+      refreshStatusOnce().catch(() => {
+        // Retry next cycle.
+      });
+    };
 
-      const s2enabled = Boolean(data.s2Sound);
-      if (soundDisabledCard) {
-        soundDisabledCard.classList.toggle("hidden", s2enabled);
+    refreshFromFallback();
+    window.setInterval(() => {
+      if (document.visibilityState === "hidden") return;
+      refreshFromFallback();
+    }, 2000);
+
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState !== "hidden") {
+        refreshFromFallback();
       }
+    });
+  }
 
-      if (!audioStateBadge) return;
-      if (!s2enabled) {
-        audioStateBadge.textContent = "Disabled";
-        audioStateBadge.style.color = "var(--text-dim)";
-      } else {
-        const s2 = data.s2Sound;
-        audioStateBadge.textContent = s2.state === "playing" ? "🔊 Playing" : "✅ Idle";
-        audioStateBadge.style.color = s2.state === "playing"
-          ? "var(--success)" : "var(--text)";
-      }
-    } catch (_e) {}
-  };
-
-  pollState();
-  window.setInterval(pollState, 2000);
-
-  // ---------------------------------------------------------------------------
-  // Volume slider
-  // ---------------------------------------------------------------------------
-  const volSlider = document.getElementById("vol-slider");
-  const globalFb  = document.getElementById("global-feedback");
-
+  volSlider?.addEventListener("input", syncVolumeLabel);
   volSlider?.addEventListener("change", () => {
     postAudio({ action: "volume", level: volSlider.value }, globalFb);
   });
 
-  // ---------------------------------------------------------------------------
-  // Global control buttons
-  // ---------------------------------------------------------------------------
   document.getElementById("btn-stop")
     ?.addEventListener("click", () => postAudio({ action: "stop" }, globalFb));
 
@@ -235,28 +268,28 @@
   document.getElementById("btn-random-off")
     ?.addEventListener("click", () => postAudio({ action: "dollar", cmd: "$O" }, globalFb));
 
-  // ---------------------------------------------------------------------------
-  // Direct track play
-  // ---------------------------------------------------------------------------
   const directFb = document.getElementById("direct-feedback");
-
   document.getElementById("btn-direct-play")?.addEventListener("click", () => {
-    const val = parseInt(document.getElementById("direct-track")?.value, 10);
-    if (!val || val < 1 || val > 65535) {
+    const value = Number.parseInt(document.getElementById("direct-track")?.value, 10);
+    if (!soundHardwareEnabled) {
+      showFeedback(directFb, "Direct play unavailable: enable S2 — Sound in Setup.", false);
+      return;
+    }
+    if (!value || value < 1 || value > 65535) {
       showFeedback(directFb, "Track must be 1–65535", false);
       return;
     }
-    postAudio({ action: "play", track: val }, directFb);
+    postAudio({ action: "play", track: value }, directFb);
   });
 
-  // ---------------------------------------------------------------------------
-  // Random range save
-  // ---------------------------------------------------------------------------
   const randFb = document.getElementById("rand-feedback");
-
   document.getElementById("btn-rand-save")?.addEventListener("click", async () => {
-    const minVal = parseInt(document.getElementById("rand-min")?.value, 10);
-    const maxVal = parseInt(document.getElementById("rand-max")?.value, 10);
+    const minVal = Number.parseInt(document.getElementById("rand-min")?.value, 10);
+    if (!soundHardwareEnabled) {
+      showFeedback(randFb, "Random range unavailable: enable S2 — Sound in Setup.", false);
+      return;
+    }
+    const maxVal = Number.parseInt(document.getElementById("rand-max")?.value, 10);
 
     if (!minVal || minVal < 1 || minVal > 999 || !maxVal || maxVal < 1 || maxVal > 999) {
       showFeedback(randFb, "Values must be 1–999", false);
@@ -267,52 +300,50 @@
       return;
     }
 
-    const body1 = new URLSearchParams({ key: "rand_min", track: minVal });
-    const body2 = new URLSearchParams({ key: "rand_max", track: maxVal });
+    if (!window.PAApi) return;
     try {
       const [r1, r2] = await Promise.all([
-        fetch("/api/audio/tracks", { method: "POST", body: body1 }),
-        fetch("/api/audio/tracks", { method: "POST", body: body2 }),
+        window.PAApi.postForm("/api/audio/tracks", { key: "rand_min", track: minVal }, { timeoutMs: 3000 }),
+        window.PAApi.postForm("/api/audio/tracks", { key: "rand_max", track: maxVal }, { timeoutMs: 3000 }),
       ]);
-      const [j1, j2] = await Promise.all([r1.json(), r2.json()]);
-      const ok = j1.ok && j2.ok;
+      const ok = Boolean(r1.data?.ok && r2.data?.ok);
       showFeedback(randFb, ok ? "Range saved" : "Save failed", ok);
-    } catch (_e) {
-      showFeedback(randFb, "Request failed", false);
+    } catch (error) {
+      showFeedback(randFb, `Save failed: ${window.PAApi.messageFor(error)}`, false);
     }
   });
 
-  // ---------------------------------------------------------------------------
-  // Mood sound interval save (T18)
-  // ---------------------------------------------------------------------------
   const intFb = document.getElementById("int-feedback");
   const INT_FIELDS = [
     { id: "int-quiet", key: "snd_int_quiet" },
-    { id: "int-mid",   key: "snd_int_mid" },
-    { id: "int-full",  key: "snd_int_full" },
+    { id: "int-mid", key: "snd_int_mid" },
+    { id: "int-full", key: "snd_int_full" },
     { id: "int-awake", key: "snd_int_awake" },
   ];
 
   document.getElementById("btn-int-save")?.addEventListener("click", async () => {
-    for (const f of INT_FIELDS) {
-      const val = parseInt(document.getElementById(f.id)?.value, 10);
-      if (isNaN(val) || val < 0 || val > 3600) {
-        showFeedback(intFb, `${f.key}: must be 0–3600`, false);
+    if (!soundHardwareEnabled) {
+      showFeedback(intFb, "Interval updates unavailable: enable S2 — Sound in Setup.", false);
+      return;
+    }
+    for (const field of INT_FIELDS) {
+      const value = Number.parseInt(document.getElementById(field.id)?.value, 10);
+      if (Number.isNaN(value) || value < 0 || value > 3600) {
+        showFeedback(intFb, `${field.key}: must be 0–3600`, false);
         return;
       }
     }
+
+    if (!window.PAApi) return;
     try {
-      const results = await Promise.all(INT_FIELDS.map(f => {
-        const val = parseInt(document.getElementById(f.id)?.value, 10);
-        return fetch("/api/audio/tracks", {
-          method: "POST",
-          body: new URLSearchParams({ key: f.key, track: val }),
-        }).then(r => r.json());
+      const results = await Promise.all(INT_FIELDS.map((field) => {
+        const value = Number.parseInt(document.getElementById(field.id)?.value, 10);
+        return window.PAApi.postForm("/api/audio/tracks", { key: field.key, track: value }, { timeoutMs: 3000 });
       }));
-      const ok = results.every(r => r.ok);
+      const ok = results.every((entry) => entry.data?.ok);
       showFeedback(intFb, ok ? "Intervals saved" : "Save failed", ok);
-    } catch (_e) {
-      showFeedback(intFb, "Request failed", false);
+    } catch (error) {
+      showFeedback(intFb, `Save failed: ${window.PAApi.messageFor(error)}`, false);
     }
   });
 })();

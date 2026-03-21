@@ -1,15 +1,18 @@
 // =============================================================================
 // dome.js
 //
-// Dome page controller — rotation slider (hold-to-run, auto-returns to stop)
-// and dome motor ESC settings form with auto-save.
+// Dome page controller.
+// - Rotation slider (hold-to-run, return-to-stop)
+// - Dome motor configuration load/save
+// - Shared API helper error handling
 // =============================================================================
 (() => {
   const domeSlider = document.getElementById("dome-slider");
   const domeSpeedDisplay = document.getElementById("dome-speed-display");
   const domeFeedback = document.getElementById("dome-feedback");
 
-  const escForm = document.getElementById("esc-form");
+  const domeDisabledCard = document.getElementById("dome-disabled-card");
+
   const domeNeutral = document.getElementById("dome-neutral");
   const domeMinPulse = document.getElementById("dome-min-pulse");
   const domeMaxPulse = document.getElementById("dome-max-pulse");
@@ -17,32 +20,53 @@
   const reloadEscButton = document.getElementById("reload-esc-button");
   const escFeedback = document.getElementById("esc-feedback");
 
-  // Debounce utility for auto-save
   let saveTimeout = null;
-  const debounce = (fn, ms) => {
-    return (...args) => {
-      clearTimeout(saveTimeout);
-      saveTimeout = setTimeout(() => fn(...args), ms);
-    };
+  let domeHardwareEnabled = true;
+  const showFeedback = (el, text, level = "") => {
+    if (!el) return;
+    el.textContent = text;
+    el.className = level ? `feedback ${level}` : "feedback";
   };
 
-  // -------------------------------------------------------------------------
-  // Dome rotation slider
-  // -------------------------------------------------------------------------
+  const debounce = (fn, ms) => (...args) => {
+    window.clearTimeout(saveTimeout);
+    saveTimeout = window.setTimeout(() => fn(...args), ms);
+  };
+
+  const setDomeHardwareEnabled = (enabled) => {
+    domeHardwareEnabled = enabled;
+    domeDisabledCard?.classList.toggle("hidden", enabled);
+
+    const controls = [
+      domeSlider,
+      domeNeutral,
+      domeMinPulse,
+      domeMaxPulse,
+      domeSpeedLimit,
+      reloadEscButton,
+    ];
+    controls.forEach((control) => {
+      if (!control) return;
+      control.disabled = !enabled;
+      control.setAttribute("aria-disabled", enabled ? "false" : "true");
+    });
+
+    if (!enabled && domeSlider) {
+      domeSlider.value = "0";
+      if (domeSpeedDisplay) domeSpeedDisplay.textContent = "0%";
+    }
+  };
+
   const postDomeCommand = async (speed) => {
+    if (!window.PAApi) return;
+    if (!domeHardwareEnabled) {
+      showFeedback(domeFeedback, "Dome controls unavailable: enable DOME in Setup.", "warning");
+      return;
+    }
     try {
-      const body = new URLSearchParams({ speed: String(speed) });
-      const response = await fetch("/api/dome", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
-        body,
-      });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    } catch (_error) {
-      if (domeFeedback) {
-        domeFeedback.textContent = "❌ Dome command failed";
-        domeFeedback.className = "feedback error";
-      }
+      await window.PAApi.postForm("/api/dome", { speed: String(speed) }, { timeoutMs: 2500 });
+    } catch (error) {
+      showFeedback(domeFeedback, `Dome command failed: ${window.PAApi.messageFor(error)}`, "error");
     }
   };
 
@@ -50,16 +74,17 @@
     let domeDebounceTimer = null;
 
     domeSlider.addEventListener("input", (event) => {
-      const speed = parseInt(event.target.value, 10);
+      const speed = Number.parseInt(event.target.value, 10);
       if (domeSpeedDisplay) domeSpeedDisplay.textContent = `${speed}%`;
+
       if (domeDebounceTimer) window.clearTimeout(domeDebounceTimer);
-      // Debounce rapid drag events; send at most once per 100 ms
-      domeDebounceTimer = window.setTimeout(() => postDomeCommand(speed / 100), 100);
+      domeDebounceTimer = window.setTimeout(() => {
+        postDomeCommand(speed / 100);
+      }, 100);
     });
 
-    // Return-to-stop on release
     domeSlider.addEventListener("change", (event) => {
-      if (parseInt(event.target.value, 10) !== 0) {
+      if (Number.parseInt(event.target.value, 10) !== 0) {
         event.target.value = 0;
         if (domeSpeedDisplay) domeSpeedDisplay.textContent = "0%";
         postDomeCommand(0);
@@ -67,97 +92,67 @@
     });
   }
 
-  // -------------------------------------------------------------------------
-  // Dome motor ESC settings with auto-save
-  // -------------------------------------------------------------------------
-  const domeDisabledCard = document.getElementById("dome-disabled-card");
-
   const renderEsc = (payload) => {
     const dome = payload?.dome || {};
     const components = payload?.components || {};
-    if (domeNeutral)    domeNeutral.value    = dome.neutralUs;
-    if (domeMinPulse)   domeMinPulse.value   = dome.minPulseUs;
-    if (domeMaxPulse)   domeMaxPulse.value   = dome.maxPulseUs;
+
+    if (domeNeutral) domeNeutral.value = dome.neutralUs;
+    if (domeMinPulse) domeMinPulse.value = dome.minPulseUs;
+    if (domeMaxPulse) domeMaxPulse.value = dome.maxPulseUs;
     if (domeSpeedLimit) domeSpeedLimit.value = dome.speedLimitPct;
-    if (escFeedback) {
-      escFeedback.textContent = `Motor settings loaded at ${new Date().toLocaleTimeString()}`;
-      escFeedback.className = "feedback success";
-    }
-    if (domeDisabledCard) {
-      domeDisabledCard.classList.toggle("hidden", Boolean(components.dome?.enabled));
-    }
+
+    setDomeHardwareEnabled(Boolean(components.dome?.enabled));
+
+    showFeedback(escFeedback, `Motor settings loaded at ${new Date().toLocaleTimeString()}`, "success");
   };
 
   const loadEscConfig = async () => {
-    if (escFeedback) {
-      escFeedback.textContent = "Loading motor settings...";
-      escFeedback.className = "feedback";
-    }
+    if (!window.PAApi) return;
+    showFeedback(escFeedback, "Loading motor settings...");
+
     try {
-      const response = await fetch("/api/config", { cache: "no-store" });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      renderEsc(await response.json());
-    } catch (_error) {
-      if (escFeedback) {
-        escFeedback.textContent = "Failed to load motor settings";
-        escFeedback.className = "feedback error";
-      }
+      const result = await window.PAApi.get("/api/config", { timeoutMs: 3000 });
+      renderEsc(result.data);
+    } catch (error) {
+      showFeedback(escFeedback, `Failed to load motor settings: ${window.PAApi.messageFor(error)}`, "error");
     }
   };
 
-  // Auto-save function
   const saveEscConfig = async () => {
-    if (escFeedback) {
-      escFeedback.textContent = "Saving...";
-      escFeedback.className = "feedback";
+    if (!window.PAApi) return;
+    if (!domeHardwareEnabled) {
+      showFeedback(escFeedback, "Dome settings unavailable: enable DOME in Setup.", "warning");
+      return;
     }
+    showFeedback(escFeedback, "Saving...");
+
     try {
-      const body = new URLSearchParams({
-        domeNeutralUs:    domeNeutral.value,
-        domeMinPulseUs:   domeMinPulse.value,
-        domeMaxPulseUs:   domeMaxPulse.value,
-        domeSpeedLimitPct: domeSpeedLimit.value,
-      });
-      const response = await fetch("/api/config", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
-        body,
-      });
-      if (!response.ok) {
-        const errorBody = await response.json().catch(() => null);
-        throw new Error(errorBody?.error || `HTTP ${response.status}`);
-      }
-      if (escFeedback) {
-        escFeedback.textContent = `✓ Saved at ${new Date().toLocaleTimeString()}`;
-        escFeedback.className = "feedback success";
-      }
+      await window.PAApi.postForm("/api/config", {
+        domeNeutralUs: domeNeutral?.value || "1500",
+        domeMinPulseUs: domeMinPulse?.value || "1000",
+        domeMaxPulseUs: domeMaxPulse?.value || "2000",
+        domeSpeedLimitPct: domeSpeedLimit?.value || "100",
+      }, { timeoutMs: 3000 });
+
+      showFeedback(escFeedback, `Saved at ${new Date().toLocaleTimeString()}`, "success");
     } catch (error) {
-      if (escFeedback) {
-        escFeedback.textContent = error instanceof Error
-          ? `❌ ${error.message}` : "❌ Failed to save motor settings";
-        escFeedback.className = "feedback error";
-      }
+      showFeedback(escFeedback, `Failed to save motor settings: ${window.PAApi.messageFor(error)}`, "error");
     }
   };
 
   const debouncedSave = debounce(saveEscConfig, 500);
 
-  // Attach auto-save listeners to all inputs
-  if (domeNeutral) {
-    domeNeutral.addEventListener("input", debouncedSave);
-  }
-  if (domeMinPulse) {
-    domeMinPulse.addEventListener("input", debouncedSave);
-  }
-  if (domeMaxPulse) {
-    domeMaxPulse.addEventListener("input", debouncedSave);
-  }
-  if (domeSpeedLimit) {
-    domeSpeedLimit.addEventListener("input", debouncedSave);
-  }
+  domeNeutral?.addEventListener("input", debouncedSave);
+  domeMinPulse?.addEventListener("input", debouncedSave);
+  domeMaxPulse?.addEventListener("input", debouncedSave);
+  domeSpeedLimit?.addEventListener("input", debouncedSave);
+  reloadEscButton?.addEventListener("click", loadEscConfig);
 
-  if (reloadEscButton) {
-    reloadEscButton.addEventListener("click", loadEscConfig);
+  if (window.PAStatusStream?.isSupported()) {
+    window.PAStatusStream.subscribe((eventType, payload) => {
+      if (eventType !== "status") return;
+      setDomeHardwareEnabled(Boolean(payload.dome));
+    });
   }
 
   loadEscConfig();

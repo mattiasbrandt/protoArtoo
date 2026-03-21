@@ -7,34 +7,16 @@
     <link rel="stylesheet" href="/style.css">
     <link rel="icon" type="image/png" href="/r2d2body-favicon.png">
   </head>
-  <body>
-    <div class="topbar">
-      <a href="/" class="topbar-brand">
-        <img src="/r2d2body.svg" alt="R2-D2 body icon" class="topbar-logo">
-        <div>
-          <h1>protoArtoo</h1>
-          <div class="subtitle">R2-D2 Body Controller</div>
-        </div>
-      </a>
-    </div>
+  <body data-page="drive">
+    <div id="shell-top"></div>
 
-    <nav>
-      <a href="/">🏠 Home</a>
-      <a href="/drive.html" class="active">🏎️ Drive</a>
-      <a href="/dome.html">🔄 Dome</a>
-      <a href="/sound.html">🔊 Sound</a>
-      <a href="/servo.html">🦾 Servos</a>
-      <a href="/rc.html">🕹️ RC</a>
-      <a href="/setup.html">⚙️ Setup</a>
-      <a href="/wifi.html">📶 WiFi</a>
-      <a href="/firmware.html">💾 Firmware</a>
-    </nav>
 
     <!-- Disabled notice (hidden when S1 Hoverboard is enabled) -->
-    <div id="drive-disabled-card" class="card hidden">
-      <h3>🚗 S1 — Hoverboard Not Enabled</h3>
-      <div class="desc">The hoverboard drive controller is not enabled. Go to
-        <a href="/setup.html">Setup</a> and enable <strong>S1 — Hoverboard</strong> to use drive controls.</div>
+    <div id="drive-disabled-card" class="card disabled-card hidden" role="status" aria-live="polite" aria-atomic="true">
+      <h3>🚗 Drive Hardware Disabled</h3>
+      <div class="desc">Drive commands are unavailable because the hoverboard controller is disabled.</div>
+      <div class="desc disabled-reason"><strong>Required component:</strong> S1 — Hoverboard</div>
+      <div class="desc">Open <a class="setup-link" href="/setup.html">Setup</a> and enable <strong>S1 — Hoverboard</strong> to restore drive controls.</div>
     </div>
 
     <!-- Safety Controls - ALWAYS FIRST -->
@@ -54,7 +36,7 @@
           ✕ Disable Web Control
         </button>
       </div>
-      <div id="control-feedback" class="feedback mt-12">No command sent yet.</div>
+      <div id="control-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true">No command sent yet.</div>
     </div>
 
     <!-- Movement Status -->
@@ -126,14 +108,14 @@
           <button id="reload-config-button" class="btn" type="button">🔄 Reload</button>
         </div>
       </form>
-      <div id="config-feedback" class="feedback mt-12">Loading settings...</div>
+      <div id="config-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true">Loading settings...</div>
     </div>
 
-    <div class="status-bar">
-      <div><span class="dot green"></span>Drive page connected</div>
-      <div class="status-subline" id="fw-meta">Loading firmware info...</div>
-    </div>
+    <div id="shell-status"></div>
 
+    <script src="/web_api.js"></script>
+    <script src="/status_stream.js"></script>
+    <script src="/shell.js"></script>
     <script src="/drive.js"></script>
     <script src="/footer.js"></script>
   </body>

@@ -190,6 +190,7 @@ static const char* TAG = "WebServer";
 static AsyncWebServer server(80);
 static AsyncEventSource events("/api/events");
 static bool littleFsReady = false;
+static char s_webVersion[48] = "unknown";
 static bool routesRegistered = false;
 static bool serverStarted = false;
 static bool eventTaskStarted = false;
@@ -209,6 +210,40 @@ const char* rcInputModeLabel(RcInputMode mode) {
     }
 }
 
+
+void loadWebVersionFromFs() {
+    snprintf(s_webVersion, sizeof(s_webVersion), "%s", "unknown");
+#ifdef ARDUINO
+    if (!littleFsReady) {
+        return;
+    }
+
+    File versionFile = LittleFS.open("/web-version.json", "r");
+    if (!versionFile) {
+        PA_LOG_WARN(TAG, "web-version.json missing; using unknown webVersion");
+        return;
+    }
+
+    JsonDocument versionDoc;
+    DeserializationError parseError = deserializeJson(versionDoc, versionFile);
+    versionFile.close();
+    if (parseError) {
+        PA_LOG_WARN(TAG, "web-version.json parse failed: %s", parseError.c_str());
+        return;
+    }
+
+    const char* loadedVersion = versionDoc["webVersion"] | "";
+    if (loadedVersion[0] == '\0') {
+        PA_LOG_WARN(TAG, "web-version.json missing webVersion key");
+        return;
+    }
+
+    int n = snprintf(s_webVersion, sizeof(s_webVersion), "%s", loadedVersion);
+    if (n <= 0 || n >= (int)sizeof(s_webVersion)) {
+        PA_LOG_WARN(TAG, "webVersion truncated to %u chars", (unsigned)(sizeof(s_webVersion) - 1));
+    }
+#endif
+}
 
 bool appendJsonChunk(char*& pos, size_t& remaining, const char* chunk) {
     if (remaining == 0) {
@@ -357,7 +392,7 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
         "\"driveSteer\":%d,\"speedLimitScale\":%.3f,\"stationary\":%s,"
         "\"failsafeCount\":%lu,\"failsafeTriggerMs\":%lu,\"failsafeZeroMs\":%lu,"
         "\"failsafeTriggerToZeroMs\":%lu,\"failsafeWatchdogMs\":%lu,\"failsafeTriggerSource\":%d,"
-        "\"uptimeMs\":%lu,\"firmwareVersion\":\"%s\","
+        "\"uptimeMs\":%lu,\"firmwareVersion\":\"%s\",\"webVersion\":\"%s\","
         "\"heapFree\":%lu,\"heapMin\":%lu,\"heapLargestBlock\":%lu,\"wifiRssi\":%ld,"
         "\"wifiConnected\":%s,"
         "\"wifiClientConnected\":%s,"
@@ -368,7 +403,7 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
         webDriveExpired ? "true" : "false", failsafeSource, driveSpeed, driveSteer,
         (double)speedLimitScale, stationary ? "true" : "false", failsafeCount,
         failsafeTriggerMs, failsafeZeroMs, failsafeTriggerToZeroMs, failsafeWatchdogMs,
-        failsafeTriggerSource, uptimeMs, PA_FIRMWARE_VERSION,
+        failsafeTriggerSource, uptimeMs, PA_FIRMWARE_VERSION, s_webVersion,
         heapFree, heapMin, (unsigned long)heapLargestBlock, wifiRssi,
         wifiConnected ? "true" : "false", wifiClientConnected ? "true" : "false",
         littleFsReady ? "true" : "false", (unsigned)activeMood);
@@ -744,6 +779,8 @@ void webServerInit() {
     } else {
         PA_LOG_ERROR(TAG, "LittleFS mount failed - API only mode");
     }
+
+    loadWebVersionFromFs();
 
     WiFi.onEvent(handleWiFiEvent);
 

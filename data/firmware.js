@@ -12,15 +12,16 @@
   }
 
   const postReboot = async () => {
+    if (!window.PAApi) {
+      feedback.textContent = "API helper unavailable";
+      return;
+    }
     feedback.textContent = "Requesting reboot...";
     try {
-      const response = await fetch("/api/reboot", { method: "POST" });
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
+      await window.PAApi.postForm("/api/reboot", {});
       feedback.textContent = "Reboot requested.";
-    } catch (_error) {
-      feedback.textContent = "Failed to request reboot.";
+    } catch (error) {
+      feedback.textContent = `Reboot failed: ${window.PAApi.messageFor(error)}`;
     }
   };
 

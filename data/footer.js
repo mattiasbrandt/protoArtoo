@@ -1,31 +1,110 @@
+// =============================================================================
+// data/footer.js
+//
+// Footer metadata controller.
+// Shows firmware + web bundle version only.
+// Prefers SSE status stream; falls back to periodic API fetch when needed.
+// =============================================================================
 (() => {
   const footer = document.getElementById("fw-meta");
+  if (!footer) return;
 
-  if (!footer) {
-    return;
-  }
+  let webVersion = "unknown";
+  let pollTimer = null;
+  let unsubscribe = null;
 
-  const formatUptime = (uptimeMs) => {
-    const totalSeconds = Math.floor(Number(uptimeMs || 0) / 1000);
-    const hours = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-    const seconds = totalSeconds % 60;
-    return `${hours}h ${minutes}m ${seconds}s`;
+  const escapeHtml = (value) => String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+
+
+  const renderFooter = (status) => {
+    if (!status) {
+      footer.textContent = "Firmware info unavailable";
+      return;
+    }
+
+    const fw = String(status.firmwareVersion || "unknown");
+    const apiWebVersion = String(status.webVersion || "unknown");
+    const loadedWebVersion = webVersion !== "unknown" ? webVersion : "unknown";
+    const resolvedWeb = loadedWebVersion !== "unknown" ? loadedWebVersion : apiWebVersion;
+
+    footer.innerHTML =
+      `FW: <span class="mono">${escapeHtml(fw)}</span><br>` +
+      `Web: <span class="mono">${escapeHtml(resolvedWeb)}</span>`;
   };
 
-  const loadFooter = async () => {
+  const loadWebVersion = async () => {
+    if (!window.PAApi) return;
     try {
-      const response = await fetch("/api/status", { cache: "no-store" });
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
+      const result = await window.PAApi.get("/web-version.json", { timeoutMs: 2500, cache: "no-store" });
+      if (result.data && typeof result.data === "object" && result.data.webVersion) {
+        webVersion = String(result.data.webVersion);
       }
+    } catch (_error) {
+      // Keep fallback value.
+    }
+  };
 
-      const payload = await response.json();
-      footer.innerHTML = `Build: <span class="mono">${payload.firmwareVersion}</span><br>Uptime: ${formatUptime(payload.uptimeMs)}`;
+  const fetchStatus = async () => {
+    if (!window.PAApi) {
+      footer.textContent = "Firmware info unavailable";
+      return;
+    }
+    try {
+      const result = await window.PAApi.get("/api/status", { timeoutMs: 3000, cache: "no-store" });
+      renderFooter(result.data);
     } catch (_error) {
       footer.textContent = "Firmware info unavailable";
     }
   };
 
-  loadFooter();
+  const startFallbackPolling = () => {
+    fetchStatus();
+    pollTimer = window.setInterval(() => {
+      if (document.visibilityState === "hidden") return;
+      fetchStatus();
+    }, 5000);
+  };
+
+  const startSseMode = () => {
+    unsubscribe = window.PAStatusStream.subscribe((eventType, payload) => {
+      if (eventType === "status") renderFooter(payload);
+    });
+
+    if (!window.PAStatusStream.getLastStatus()) {
+      fetchStatus();
+    }
+  };
+
+  const onVisibilityChange = () => {
+    if (document.visibilityState !== "hidden") {
+      fetchStatus();
+    }
+  };
+
+  const init = async () => {
+    await loadWebVersion();
+
+    if (window.PAStatusStream?.isSupported()) {
+      startSseMode();
+    } else {
+      startFallbackPolling();
+    }
+
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("beforeunload", () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      if (unsubscribe) unsubscribe();
+      if (pollTimer !== null) {
+        window.clearInterval(pollTimer);
+        pollTimer = null;
+      }
+    });
+  };
+
+  init();
 })();

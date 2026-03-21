@@ -22,6 +22,7 @@
   const rcInputModeHidden = document.getElementById("rc-input-mode");
   const rcModeFeedback = document.getElementById("rc-mode-feedback");
   const rcResetDefaults = document.getElementById("rc-reset-defaults");
+  const rcDisabledCard = document.getElementById("rc-disabled-card");
 
   const rcSummaryBody = document.getElementById("rc-summary-body");
 
@@ -32,11 +33,14 @@
   const rcEditorApply = document.getElementById("rc-editor-apply");
   const rcEditorRevert = document.getElementById("rc-editor-revert");
   const rcEditorFeedback = document.getElementById("rc-editor-feedback");
+  const rcEditorDirty = document.getElementById("rc-editor-dirty");
+  const rcEditorSavedAt = document.getElementById("rc-editor-saved-at");
 
   const rcLearnBtn    = document.getElementById("rc-learn-btn");
   const rcLearnBanner = document.getElementById("rc-learn-banner");
   const rcLearnStatus = document.getElementById("rc-learn-status");
   const rcLearnStop   = document.getElementById("rc-learn-stop");
+  let rcInputsEnabled = true;
 
   const SUPPORTED_SLOTS = [
     "driveSpeed", "driveSteer", "driveLimit", "domeSpeed",
@@ -197,6 +201,25 @@
     );
   };
 
+
+  const setRcInputsEnabled = (enabled) => {
+    rcInputsEnabled = enabled;
+    rcDisabledCard?.classList.toggle("hidden", enabled);
+
+    if (rcLearnBtn) {
+      rcLearnBtn.disabled = !enabled;
+      rcLearnBtn.setAttribute("aria-disabled", enabled ? "false" : "true");
+      if (!enabled) rcLearnBtn.textContent = "🔍 Detect channel";
+    }
+    if (rcLearnStop) {
+      rcLearnStop.disabled = !enabled;
+      rcLearnStop.setAttribute("aria-disabled", enabled ? "false" : "true");
+    }
+
+    if (!enabled && learnActive) {
+      exitLearnMode();
+    }
+  };
   const escapeHtml = (value) => String(value)
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -328,6 +351,37 @@
     return "Disabled";
   };
 
+  const slotLabelForKey = (slotKey) => {
+    const found = getActionsForMode().find((action) => action.key === slotKey);
+    return found ? found.label : slotKey;
+  };
+
+  const setEditorDirtyState = (state, text) => {
+    if (!rcEditorDirty) return;
+    rcEditorDirty.dataset.state = state;
+    rcEditorDirty.textContent = text;
+  };
+
+  const setEditorSavedTimestamp = (stamp) => {
+    if (!rcEditorSavedAt) return;
+    rcEditorSavedAt.textContent = stamp ? `Last saved: ${stamp}` : "Last saved: —";
+  };
+
+  const markEditorDirty = () => {
+    if (rcEditorApply) rcEditorApply.disabled = false;
+    if (rcEditorRevert) rcEditorRevert.disabled = false;
+    setEditorDirtyState("dirty", "Unsaved changes");
+  };
+
+  const markEditorClean = (savedStamp = null) => {
+    if (rcEditorApply) rcEditorApply.disabled = true;
+    if (rcEditorRevert) rcEditorRevert.disabled = true;
+    setEditorDirtyState("clean", "Saved");
+    if (savedStamp !== null) {
+      setEditorSavedTimestamp(savedStamp);
+    }
+  };
+
   const bindingForSlot = (slotKey) => {
     const mode = getEditorMode();
     if (!mappingDraft[mode]) {
@@ -348,7 +402,7 @@
   const miniBarHtml = (mapped) => {
     const normalized = Math.max(0, Math.min(1, (Number(mapped) + 1) / 2));
     const pct = Math.round(normalized * 100);
-    return `<div class="rc-mini-bar" style="height:8px;background:rgba(255,255,255,.12);border-radius:999px;overflow:hidden;min-width:80px"><div style="height:100%;width:${pct}%;background:var(--accent)"></div></div>`;
+    return `<div class="rc-mini-bar"><div class="rc-mini-fill" style="--mini-pct:${pct}%"></div></div>`;
   };
 
   const triggerStateHtml = (channel) => {
@@ -366,9 +420,9 @@
       const linked = Boolean(src.linked);
       const age = Number(src.ageMs || 0);
       const state = !enabled ? "disabled" : linked ? "linked" : "waiting";
-      return `<div class="rc-source-card" style="padding:8px 10px;border:1px solid rgba(255,255,255,.15);border-radius:8px">
-        <div style="font-weight:600">${escapeHtml(name.toUpperCase())}</div>
-        <div style="font-size:.85em;opacity:.9">${state} · age ${age}ms</div>
+      return `<div class="rc-source-card rc-source-card-compact">
+        <div class="rc-source-card-title">${escapeHtml(name.toUpperCase())}</div>
+        <div class="rc-source-card-meta">${state} · age ${age}ms</div>
       </div>`;
     }).join("");
   };
@@ -377,12 +431,10 @@
     if (!el) return;
     el.setAttribute("tabindex", "0");
     el.addEventListener("focus", () => {
-      el.style.outline = "2px solid var(--accent)";
-      el.style.outlineOffset = "2px";
+      el.classList.add("keyboard-focus");
     });
     el.addEventListener("blur", () => {
-      el.style.outline = "";
-      el.style.outlineOffset = "";
+      el.classList.remove("keyboard-focus");
     });
     el.addEventListener("keydown", (e) => {
       if (e.key === "Enter" || e.key === " ") {
@@ -417,7 +469,7 @@
 
     rcSummaryBody.querySelectorAll("tr[data-slot]").forEach(row => {
       const key = row.dataset.slot;
-      row.style.cursor = "pointer";
+      row.classList.add("row-clickable");
       row.classList.toggle("active-slot", selectedSlot === key);
       row.addEventListener("click", () => selectSlot(key));
       wireFocusableItem(row, () => selectSlot(key));
@@ -438,11 +490,11 @@
         : `<span>${triggerStateHtml(telemetry)}</span>`;
 
       return `<div class="rc-slot-item${selectedSlot === key ? " active" : ""}" data-slot="${escapeHtml(key)}" role="button" aria-pressed="${selectedSlot === key ? "true" : "false"}">
-        <div style="display:flex;justify-content:space-between;gap:10px;align-items:center">
+        <div class="rc-slot-item-head">
           <strong>${escapeHtml(label)}</strong>
           <span class="rc-map-source-badge" data-source="${escapeHtml(binding.source)}">${escapeHtml(sourceLabel(binding.source))}</span>
         </div>
-        <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;font-size:.9em;opacity:.95;margin-top:6px">
+        <div class="rc-slot-item-meta">
           <span>CH ${binding.source === "none" ? "—" : escapeHtml(String(binding.channel || "—"))}</span>
           ${live}
         </div>
@@ -450,9 +502,9 @@
     }).join("");
 
     rcSlotItems.innerHTML = `
-      <div class="rc-slot-group-title" style="font-weight:700;margin:4px 0 8px">Backbone Channels</div>
+      <div class="rc-slot-group-title">Backbone Channels</div>
       ${renderItems(backbone)}
-      <div class="rc-slot-group-title" style="font-weight:700;margin:14px 0 8px">Trigger/Button Channels</div>
+      <div class="rc-slot-group-title trigger">Trigger/Button Channels</div>
       ${renderItems(trigger)}
     `;
 
@@ -501,27 +553,26 @@
     if (selectedSlot === "driveSpeed" || selectedSlot === "driveSteer") {
       const width = Math.min(50, Math.round(Math.abs(mapped) * 50));
       const left = mapped >= 0 ? 50 : 50 - width;
-      barHtml = `<div style="position:relative;height:16px;background:rgba(255,255,255,.12);border-radius:999px;overflow:hidden">
-        <div style="position:absolute;left:50%;top:0;bottom:0;width:1px;background:rgba(255,255,255,.45)"></div>
-        <div style="position:absolute;left:${left}%;width:${width}%;top:0;bottom:0;background:var(--accent)"></div>
+      barHtml = `<div class="rc-preview-bar rc-preview-bar-center">
+        <div class="rc-preview-fill signed" style="--bar-left:${left}%;--bar-width:${width}%"></div>
       </div>`;
     } else if (selectedSlot === "domeSpeed") {
       const width = Math.round(Math.abs(mapped) * 100);
       const dir = mapped < 0 ? "Reverse" : mapped > 0 ? "Forward" : "Stopped";
-      barHtml = `<div style="position:relative;height:16px;background:rgba(255,255,255,.12);border-radius:999px;overflow:hidden">
-        <div style="position:absolute;left:0;top:0;bottom:0;width:${width}%;background:var(--accent)"></div>
-      </div><div style="font-size:.9em;margin-top:6px">Direction: ${dir}</div>`;
+      barHtml = `<div class="rc-preview-bar">
+        <div class="rc-preview-fill" style="--bar-width:${Math.max(0, Math.min(100, width))}%"></div>
+      </div><div class="rc-preview-dir">Direction: ${dir}</div>`;
     } else if (selectedSlot === "driveLimit") {
       const width = Math.round(((mapped + 1) / 2) * 100);
-      barHtml = `<div style="position:relative;height:16px;background:rgba(255,255,255,.12);border-radius:999px;overflow:hidden">
-        <div style="position:absolute;left:0;top:0;bottom:0;width:${Math.max(0, Math.min(100, width))}%;background:var(--accent)"></div>
+      barHtml = `<div class="rc-preview-bar">
+        <div class="rc-preview-fill" style="--bar-width:${Math.max(0, Math.min(100, width))}%"></div>
       </div>`;
     }
 
     if (isBackboneSlot(selectedSlot)) {
       rcLivePreviewContent.innerHTML = `
-        <h4 style="margin:0 0 10px">${escapeHtml(selectedSlot)}</h4>
-        <div style="display:grid;gap:8px">
+        <h4 class="rc-preview-title">${escapeHtml(slotLabelForKey(selectedSlot))}</h4>
+        <div class="rc-preview-stack">
           <div>Source: <strong>${escapeHtml(sourceLabel(binding.source))}</strong> · CH ${binding.source === "none" ? "—" : escapeHtml(String(binding.channel || "—"))}</div>
           <div>Raw: <strong>${escapeHtml(String(raw))}</strong> · ${escapeHtml(String(rawUs))} us</div>
           <div>Mapped: <strong>${mapped.toFixed(3)}</strong></div>
@@ -529,8 +580,8 @@
         </div>`;
     } else {
       rcLivePreviewContent.innerHTML = `
-        <h4 style="margin:0 0 10px">${escapeHtml(selectedSlot)}</h4>
-        <div style="display:grid;gap:8px">
+        <h4 class="rc-preview-title">${escapeHtml(slotLabelForKey(selectedSlot))}</h4>
+        <div class="rc-preview-stack">
           <div>Source: <strong>${escapeHtml(sourceLabel(binding.source))}</strong> · CH ${binding.source === "none" ? "—" : escapeHtml(String(binding.channel || "—"))}</div>
           <div>State: ${triggerStateHtml(telemetry)}</div>
           <div>Raw: <strong>${escapeHtml(String(raw))}</strong></div>
@@ -557,6 +608,9 @@
     if (!rcEditorContent) return;
     if (!selectedSlot) {
       rcEditorContent.innerHTML = '<div class="desc">Select a channel from the list to edit its mapping.</div>';
+      if (rcEditorApply) rcEditorApply.disabled = true;
+      if (rcEditorRevert) rcEditorRevert.disabled = true;
+      setEditorDirtyState("clean", "Select a slot to edit");
       return;
     }
 
@@ -564,6 +618,7 @@
     const mode = getEditorMode();
     const sourceOptions = SOURCE_OPTIONS[mode] || SOURCE_OPTIONS.standard_pwm;
     const isBackbone = isBackboneSlot(selectedSlot);
+    const slotLabel = slotLabelForKey(selectedSlot);
 
     const sourceSelect = sourceOptions.map(src =>
       `<option value="${escapeHtml(src)}"${binding.source === src ? " selected" : ""}>${escapeHtml(sourceLabel(src))}</option>`
@@ -572,7 +627,7 @@
     const channelMax = binding.source === "pwm" ? 6 : 18;
 
     rcEditorContent.innerHTML = `
-      <h4 style="margin:0 0 10px">Edit ${escapeHtml(selectedSlot)}</h4>
+      <h4 class="rc-editor-title">Edit ${escapeHtml(slotLabel)}</h4>
       <label>Source
         <select data-field="source">${sourceSelect}</select>
       </label>
@@ -580,7 +635,7 @@
         <input data-field="channel" type="number" min="0" max="${channelMax}" value="${escapeHtml(String(binding.channel || 0))}">
       </label>
       ${isBackbone ? "" : `<label>Action<select data-field="target">${renderActionOptions(binding.target || "none")}</select></label>`}
-      <div data-cond="seq" style="display:${binding.target === "seq" ? "block" : "none"}">
+      <div data-cond="seq" class="rc-editor-cond ${binding.target === "seq" ? "block" : "hidden"}">
         <label>Body Sequence
           <select data-field="payload">
             <option value="30"${binding.payload === "30" ? " selected" : ""}>SE30</option>
@@ -593,12 +648,12 @@
           </select>
         </label>
       </div>
-      <div data-cond="cmd" style="display:${binding.target === "cmd" ? "block" : "none"}">
+      <div data-cond="cmd" class="rc-editor-cond ${binding.target === "cmd" ? "block" : "hidden"}">
         <label>Marcduino Command
           <input data-field="payload" type="text" value="${escapeHtml(binding.payload || "")}" placeholder=":OP01">
         </label>
       </div>
-      <div data-cond="estop" style="display:${binding.target === "estop" ? "block" : "none"}">
+      <div data-cond="estop" class="rc-editor-cond ${binding.target === "estop" ? "block" : "hidden"}">
         <label><input data-field="estop-confirm" type="checkbox"> I understand this latches estop.</label>
       </div>
       <details>
@@ -617,26 +672,25 @@
       const seq = rcEditorContent.querySelector('[data-cond="seq"]');
       const cmd = rcEditorContent.querySelector('[data-cond="cmd"]');
       const estop = rcEditorContent.querySelector('[data-cond="estop"]');
-      if (seq) seq.style.display = target === "seq" ? "block" : "none";
-      if (cmd) cmd.style.display = target === "cmd" ? "block" : "none";
-      if (estop) estop.style.display = target === "estop" ? "block" : "none";
+      if (seq) seq.className = `rc-editor-cond ${target === "seq" ? "block" : "hidden"}`;
+      if (cmd) cmd.className = `rc-editor-cond ${target === "cmd" ? "block" : "hidden"}`;
+      if (estop) estop.className = `rc-editor-cond ${target === "estop" ? "block" : "hidden"}`;
     };
 
     rcEditorContent.querySelectorAll("[data-field]").forEach(field => {
       field.addEventListener("change", () => {
-        if (rcEditorApply) rcEditorApply.disabled = false;
-        if (rcEditorRevert) rcEditorRevert.disabled = false;
+        markEditorDirty();
         if (field.dataset.field === "target") {
           updateConditionalFields();
         }
       });
       field.addEventListener("input", () => {
-        if (rcEditorApply) rcEditorApply.disabled = false;
-        if (rcEditorRevert) rcEditorRevert.disabled = false;
+        markEditorDirty();
       });
     });
 
     updateConditionalFields();
+    markEditorClean();
   };
 
   const updateSummaryMiniBar = () => {
@@ -663,26 +717,15 @@
       rcModeFeedback.className = "feedback";
     }
     try {
-      const body = new URLSearchParams({ rcInputMode: mode });
-      const response = await fetch("/api/config", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
-        body,
-      });
-      if (!response.ok) {
-        const errorBody = await response.json().catch(() => null);
-        throw new Error(errorBody?.error || `HTTP ${response.status}`);
-      }
-      const data = await response.json();
-      switchRcMode(getRcModeFromConfig(data));
+      const result = await window.PAApi.postForm("/api/config", { rcInputMode: mode }, { timeoutMs: 5000 });
+      switchRcMode(getRcModeFromConfig(result.data));
       if (rcModeFeedback) {
-        rcModeFeedback.textContent = `✓ Saved at ${new Date().toLocaleTimeString()}`;
+        rcModeFeedback.textContent = `\u2713 Saved at ${new Date().toLocaleTimeString()}`;
         rcModeFeedback.className = "feedback success";
       }
     } catch (error) {
       if (rcModeFeedback) {
-        rcModeFeedback.textContent = error instanceof Error
-          ? `❌ ${error.message}` : "❌ Failed to save";
+        rcModeFeedback.textContent = `\u274c ${window.PAApi.messageFor(error)}`;
         rcModeFeedback.className = "feedback error";
       }
     }
@@ -740,9 +783,8 @@
 
   const loadRcMode = async () => {
     try {
-      const response = await fetch("/api/config", { cache: "no-store" });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const data = await response.json();
+      const result = await window.PAApi.get("/api/config", { timeoutMs: 5000 });
+      const data = result.data;
       const mode = getRcModeFromConfig(data);
       if (rcInputModeHidden) rcInputModeHidden.value = mode;
       rcModeCards.forEach((card) => {
@@ -755,14 +797,10 @@
         rcModeFeedback.textContent = `Receiver type: ${mode}`;
         rcModeFeedback.className = "feedback success";
       }
-      const rcDisabledCard = document.getElementById("rc-disabled-card");
-      if (rcDisabledCard) {
-        const anyRcEnabled = rcComponentsEnabled(data);
-        rcDisabledCard.classList.toggle("hidden", Boolean(anyRcEnabled));
-      }
-    } catch (_error) {
+      setRcInputsEnabled(rcComponentsEnabled(data));
+    } catch (error) {
       if (rcModeFeedback) {
-        rcModeFeedback.textContent = "Failed to load receiver type";
+        rcModeFeedback.textContent = `Failed to load receiver type: ${window.PAApi.messageFor(error)}`;
         rcModeFeedback.className = "feedback error";
       }
     }
@@ -894,7 +932,29 @@
     }
   };
 
+  const rcEnabledFromStatus = (payload) => {
+    const anyDirect = Boolean(
+      payload?.rcCh1 || payload?.rcCh2 || payload?.rcCh3 ||
+      payload?.rcCh4 || payload?.rcCh5 || payload?.rcCh6
+    );
+    if (anyDirect) return true;
+
+    const components = payload?.components || {};
+    return Boolean(
+      components.rcCh1?.enabled || components.rcCh2?.enabled || components.rcCh3?.enabled ||
+      components.rcCh4?.enabled || components.rcCh5?.enabled || components.rcCh6?.enabled
+    );
+  };
+
+
   const enterLearnMode = () => {
+    if (!rcInputsEnabled) {
+      if (rcEditorFeedback) {
+        rcEditorFeedback.textContent = "Detect mode unavailable: enable an RC channel in Setup.";
+        rcEditorFeedback.className = "feedback warning";
+      }
+      return;
+    }
     learnActive  = true;
     learnBaseline = rcSnapshot;   // snapshot at mode entry — baseline for deviation
     learnHit     = null;
@@ -948,38 +1008,36 @@
 
   const loadRcDiagnostics = async () => {
     try {
-      const response = await fetch("/api/rc", { cache: "no-store" });
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-
-      const data = await response.json();
-      renderRcDiagnostics(data);
+      const result = await window.PAApi.get("/api/rc", { timeoutMs: 5000 });
+      renderRcDiagnostics(result.data);
     } catch (error) {
       if (rcEditorFeedback) {
-        rcEditorFeedback.textContent = error instanceof Error ? error.message : "Failed to load RC diagnostics";
+        rcEditorFeedback.textContent = `Failed to load RC diagnostics: ${window.PAApi.messageFor(error)}`;
         rcEditorFeedback.className = "feedback error";
       }
     }
   };
 
-  const connectRcEvents = () => {
-    if (typeof EventSource === "undefined") {
-      return;
-    }
+  const subscribeRcEvents = () => {
+    if (!window.PAStatusStream?.isSupported()) return false;
 
-    const events = new EventSource("/api/events");
-    events.addEventListener("rc", (event) => {
+    window.PAStatusStream.subscribe((eventType, payload) => {
       try {
-        const payload = JSON.parse(event.data);
+        const data = typeof payload === "string" ? JSON.parse(payload) : payload;
+
+        if (eventType === "status") {
+          setRcInputsEnabled(rcEnabledFromStatus(data));
+          return;
+        }
+        if (eventType !== "rc") return;
 
         // Process learning mode tick: compare current raw channels against the
         // baseline snapshot captured when detect mode was entered.
         if (learnActive) {
-          processLearnTick(payload);
+          processLearnTick(data);
         }
 
-        rcSnapshot = payload;
+        rcSnapshot = data;
 
         // Fast path updates for frequently changing elements
         updateSummaryMiniBar();
@@ -994,13 +1052,10 @@
         }
       }
     });
-    events.onerror = () => {
-      if (rcEditorFeedback) {
-        rcEditorFeedback.textContent = "RC event stream disconnected.";
-        rcEditorFeedback.className = "feedback warning";
-      }
-    };
+
+    return true;
   };
+  
 
   const saveMapping = async () => {
     const mode = getEditorMode();
@@ -1076,39 +1131,30 @@
     const isBackbone = action.type === "backbone";
     body.set(action.field, formatBindingString(binding, isBackbone));
 
+    setEditorDirtyState("saving", "Saving changes…");
     if (rcEditorFeedback) {
       rcEditorFeedback.textContent = "Saving...";
       rcEditorFeedback.className = "feedback";
     }
 
     try {
-      const response = await fetch("/api/config", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
-        },
-        body,
-      });
+      const result = await window.PAApi.postForm("/api/config", body, { timeoutMs: 5000 });
+      configCache = result.data;
 
-      if (!response.ok) {
-        const errorBody = await response.json().catch(() => null);
-        throw new Error(errorBody?.error || `HTTP ${response.status}`);
-      }
-
-      const data = await response.json();
-      configCache = data;
-
+      const savedAt = new Date().toLocaleTimeString();
       if (rcEditorFeedback) {
-        rcEditorFeedback.textContent = `✓ Saved at ${new Date().toLocaleTimeString()}`;
+        rcEditorFeedback.textContent = `\u2713 Saved at ${savedAt}`;
         rcEditorFeedback.className = "feedback success";
       }
-
-      if (rcEditorApply) rcEditorApply.disabled = true;
+      markEditorClean(savedAt);
 
       await loadRcDiagnostics();
     } catch (error) {
+      setEditorDirtyState("error", "Save failed — unsaved changes");
+      if (rcEditorApply) rcEditorApply.disabled = false;
+      if (rcEditorRevert) rcEditorRevert.disabled = false;
       if (rcEditorFeedback) {
-        rcEditorFeedback.textContent = error instanceof Error ? error.message : "Failed to save";
+        rcEditorFeedback.textContent = `Failed to save: ${window.PAApi.messageFor(error)}`;
         rcEditorFeedback.className = "feedback error";
       }
     }
@@ -1124,8 +1170,7 @@
       rcEditorFeedback.className = "feedback";
     }
 
-    if (rcEditorApply) rcEditorApply.disabled = true;
-    if (rcEditorRevert) rcEditorRevert.disabled = true;
+    markEditorClean();
   };
 
   const resetToDefaults = async () => {
@@ -1175,31 +1220,20 @@
       body.set("rcFree2", "none:0:none::1000:1500:2000:0:0");
       body.set("rcFree3", "none:0:none::1000:1500:2000:0:0");
 
-      const response = await fetch("/api/config", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
-        },
-        body,
-      });
+      const result = await window.PAApi.postForm("/api/config", body, { timeoutMs: 5000 });
+      configCache = result.data;
 
-      if (!response.ok) {
-        const errorBody = await response.json().catch(() => null);
-        throw new Error(errorBody?.error || `HTTP ${response.status}`);
-      }
-
-      const data = await response.json();
-      configCache = data;
-
+      const savedAt = new Date().toLocaleTimeString();
       if (rcEditorFeedback) {
-        rcEditorFeedback.textContent = "✓ Reset to defaults successful";
+        rcEditorFeedback.textContent = "\u2713 Reset to defaults successful";
         rcEditorFeedback.className = "feedback success";
       }
+      markEditorClean(savedAt);
 
       await loadRcDiagnostics();
     } catch (error) {
       if (rcEditorFeedback) {
-        rcEditorFeedback.textContent = error instanceof Error ? error.message : "Failed to reset to defaults";
+        rcEditorFeedback.textContent = `Failed to reset to defaults: ${window.PAApi.messageFor(error)}`;
         rcEditorFeedback.className = "feedback error";
       }
     }
@@ -1230,15 +1264,10 @@
 
   const setRcDebugMode = async (enabled) => {
     try {
-      const response = await fetch("/api/rc/debug", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ enabled })
-      });
-      const result = await response.json();
-      console.log(`[RC] Debug mode ${enabled ? 'enabled' : 'disabled'}:`, result);
+      const result = await window.PAApi.postJson("/api/rc/debug", { enabled }, { timeoutMs: 3000 });
+      console.log(`[RC] Debug mode ${enabled ? 'enabled' : 'disabled'}:`, result.data);
     } catch (error) {
-      console.warn("[RC] Failed to toggle debug mode:", error);
+      console.warn("[RC] Failed to toggle debug mode:", window.PAApi.messageFor(error));
     }
   };
 
@@ -1248,7 +1277,27 @@
     navigator.sendBeacon("/api/rc/debug", JSON.stringify({ enabled: false }));
   });
 
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState !== "hidden") {
+      loadRcDiagnostics();
+    }
+  });
+
+  setEditorDirtyState("clean", "Saved");
+  setEditorSavedTimestamp(null);
+
   loadRcMode();
   loadRcDiagnostics();
-  connectRcEvents();
+
+  const hasRcStream = subscribeRcEvents();
+  if (!hasRcStream) {
+    const refreshFromFallback = () => {
+      loadRcDiagnostics();
+    };
+
+    window.setInterval(() => {
+      if (document.visibilityState === "hidden") return;
+      refreshFromFallback();
+    }, 1000);
+  }
 })();

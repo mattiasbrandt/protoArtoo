@@ -124,18 +124,18 @@
   };
 
   const loadFeatures = async () => {
+    if (!window.PAApi) return;
     if (featureFeedback) {
       featureFeedback.textContent = "Loading component settings...";
       featureFeedback.className = "feedback";
     }
     try {
-      const response = await fetch("/api/config", { cache: "no-store" });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      renderFeatures(await response.json());
+      const result = await window.PAApi.get("/api/config", { timeoutMs: 5000 });
+      renderFeatures(result.data);
     } catch (error) {
       console.error("[setup] loadFeatures failed:", error);
       if (featureFeedback) {
-        featureFeedback.textContent = "Failed to load component settings";
+        featureFeedback.textContent = `Failed to load component settings: ${window.PAApi.messageFor(error)}`;
         featureFeedback.className = "feedback error";
       }
     }
@@ -143,6 +143,7 @@
 
   // Auto-save function
   const saveFeatures = async () => {
+    if (!window.PAApi) return;
     if (featureFeedback) {
       featureFeedback.textContent = "Saving...";
       featureFeedback.className = "feedback";
@@ -158,17 +159,8 @@
       Object.entries(typeSelects).forEach(([apiKey, select]) => {
         if (select) body.set(apiKey, select.value);
       });
-      const response = await fetch("/api/config", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
-        body,
-      });
-      if (!response.ok) {
-        const errorBody = await response.json().catch(() => null);
-        throw new Error(errorBody?.error || `HTTP ${response.status}`);
-      }
-      const data = await response.json();
-      renderFeatures(data);
+      const result = await window.PAApi.postForm("/api/config", body, { timeoutMs: 5000 });
+      renderFeatures(result.data);
       if (featureFeedback) {
         featureFeedback.textContent = `Saved at ${new Date().toLocaleTimeString()}`;
         featureFeedback.className = "feedback success";
@@ -176,8 +168,7 @@
     } catch (error) {
       console.error("[setup] saveFeatures failed:", error);
       if (featureFeedback) {
-        featureFeedback.textContent = error instanceof Error
-          ? error.message : "Failed to save";
+        featureFeedback.textContent = window.PAApi.messageFor(error);
         featureFeedback.className = "feedback error";
       }
     }
@@ -210,13 +201,13 @@
     if (!confirm("Reboot the controller? The web interface will be unavailable for about 10 seconds.")) {
       return;
     }
+    if (!window.PAApi) return;
     if (rebootFeedback) {
       rebootFeedback.textContent = "Sending reboot command...";
       rebootFeedback.className = "feedback";
     }
     try {
-      const response = await fetch("/api/reboot", { method: "POST" });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      await window.PAApi.postForm("/api/reboot", {}, { timeoutMs: 5000 });
       if (rebootFeedback) {
         rebootFeedback.textContent = "Reboot command sent. Wait ~10 seconds and refresh...";
         rebootFeedback.className = "feedback success";
@@ -237,7 +228,7 @@
     } catch (error) {
       console.error("[setup] handleReboot failed:", error);
       if (rebootFeedback) {
-        rebootFeedback.textContent = error instanceof Error ? error.message : "Failed to send reboot command";
+        rebootFeedback.textContent = window.PAApi.messageFor(error);
         rebootFeedback.className = "feedback error";
       }
     }
@@ -249,7 +240,7 @@
 
   // --- Diagnostics: log level selector ---
   const saveLogLevel = async () => {
-    if (!logLevelSelect) return;
+    if (!logLevelSelect || !window.PAApi) return;
     if (diagFeedback) {
       diagFeedback.textContent = "Saving...";
       diagFeedback.className = "feedback";
@@ -257,17 +248,10 @@
     try {
       const body = new URLSearchParams();
       body.set("logLevel", logLevelSelect.value);
-      const response = await fetch("/api/config", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
-        body,
-      });
-      if (!response.ok) {
-        const err = await response.json().catch(() => null);
-        throw new Error(err?.error || `HTTP ${response.status}`);
+      const result = await window.PAApi.postForm("/api/config", body, { timeoutMs: 5000 });
+      if (result.data?.system?.logLevel !== undefined) {
+        logLevelSelect.value = String(result.data.system.logLevel);
       }
-      const data = await response.json();
-      if (data?.system?.logLevel !== undefined) logLevelSelect.value = String(data.system.logLevel);
       if (diagFeedback) {
         diagFeedback.textContent = `Log level saved at ${new Date().toLocaleTimeString()}`;
         diagFeedback.className = "feedback success";
@@ -275,7 +259,7 @@
     } catch (error) {
       console.error("[setup] saveLogLevel failed:", error);
       if (diagFeedback) {
-          diagFeedback.textContent = error instanceof Error ? error.message : "Failed to save";
+        diagFeedback.textContent = window.PAApi.messageFor(error);
         diagFeedback.className = "feedback error";
       }
     }
@@ -292,48 +276,106 @@
   const serialS2 = document.getElementById("serial-s2-state");
   const serialS3 = document.getElementById("serial-s3-state");
   const serialStatusLine = document.getElementById("serial-status-line");
+  const diagUptime = document.getElementById("diag-uptime");
+  const diagHeapFree = document.getElementById("diag-heap-free");
+  const diagHeapMin = document.getElementById("diag-heap-min");
+  const diagHeapLargest = document.getElementById("diag-heap-largest");
+  const diagMemoryNote = document.getElementById("diag-memory-note");
 
-  const loadSerialStatus = async () => {
+  const formatUptime = (uptimeMs) => {
+    const totalSeconds = Math.floor(Number(uptimeMs || 0) / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    return `${hours}h ${minutes}m ${seconds}s`;
+  };
+
+  const renderSerialStatus = (d) => {
+    if (serialS1) {
+      serialS1.textContent = !d.s1Hoverboard ? "Disabled"
+        : d.s1Hoverboard.state === "commanding" ? "Active" : "Enabled / Idle";
+      serialS1.style.color = d.s1Hoverboard ? "var(--success)" : "var(--text-dim)";
+    }
+    if (serialS2) {
+      serialS2.textContent = !d.s2Sound ? "Disabled"
+        : d.s2Sound.state === "playing" ? "Playing" : "Enabled / Idle";
+      serialS2.style.color = d.s2Sound ? "var(--success)" : "var(--text-dim)";
+    }
+    const s2DriverEl = document.getElementById("s2-driver-label");
+    if (s2DriverEl) {
+      s2DriverEl.textContent = d.s2Sound?.driver || "";
+    }
+    if (serialS3) {
+      const dl = d.dome_link;
+      if (!dl || dl.state === "disabled") {
+        serialS3.textContent = "Disabled";
+        serialS3.style.color = "var(--text-dim)";
+      } else if (dl.state === "connected") {
+        serialS3.textContent = `Connected (hb rx ${dl.hb_rx} / tx ${dl.hb_tx})`;
+        serialS3.style.color = "var(--success)";
+      } else if (dl.state === "lost") {
+        serialS3.textContent = `Lost — last seen ${dl.last_rx_ms} ms ago`;
+        serialS3.style.color = "var(--danger)";
+      } else {
+        serialS3.textContent = "Waiting for dome heartbeat";
+        serialS3.style.color = "var(--warning)";
+      }
+    }
+    if (diagUptime) {
+      diagUptime.textContent = formatUptime(d.uptimeMs);
+      diagUptime.style.color = "var(--success)";
+    }
+
+    const heapFreeKb = Math.round((d.heapFree || 0) / 1024);
+    const heapMinKb = Math.round((d.heapMin || 0) / 1024);
+    const hasLargest = d.heapLargestBlock !== undefined && d.heapLargestBlock !== null;
+    const heapLargestKb = hasLargest ? Math.round(d.heapLargestBlock / 1024) : null;
+
+    const heapFreeState = heapFreeKb < 80 ? "critical" : heapFreeKb < 120 ? "watch" : "good";
+    const heapMinState = heapMinKb < 64 ? "critical" : heapMinKb < 96 ? "watch" : "good";
+    const heapLargestState = !hasLargest ? "na" : heapLargestKb < 30 ? "critical" : heapLargestKb < 50 ? "watch" : "good";
+
+    const colorForState = (state) =>
+      state === "critical" ? "var(--danger)"
+        : state === "watch" ? "var(--warning)"
+          : state === "na" ? "var(--text-dim)" : "var(--success)";
+
+    if (diagHeapFree) {
+      const suffix = heapFreeState === "critical" ? "❌ Critical" : heapFreeState === "watch" ? "⚠️ Watch" : "✅ Good";
+      diagHeapFree.textContent = `${heapFreeKb} KB ${suffix}`;
+      diagHeapFree.style.color = colorForState(heapFreeState);
+    }
+    if (diagHeapMin) {
+      const suffix = heapMinState === "critical" ? "❌ Critical" : heapMinState === "watch" ? "⚠️ Watch" : "✅ Good";
+      diagHeapMin.textContent = `${heapMinKb} KB ${suffix}`;
+      diagHeapMin.style.color = colorForState(heapMinState);
+    }
+    if (diagHeapLargest) {
+      if (!hasLargest) {
+        diagHeapLargest.textContent = "N/A";
+      } else {
+        const suffix = heapLargestState === "critical" ? "❌ Fragmented" : heapLargestState === "watch" ? "⚠️ Watch" : "✅ Good";
+        diagHeapLargest.textContent = `${heapLargestKb} KB ${suffix}`;
+      }
+      diagHeapLargest.style.color = colorForState(heapLargestState);
+    }
+    if (diagMemoryNote) {
+      diagMemoryNote.textContent = `Memory Min is a historical low-water mark since boot; current low-water mark is ${heapMinKb} KB.`;
+    }
+
+    if (serialStatusLine) {
+      serialStatusLine.textContent = `Updated ${new Date().toLocaleTimeString()}`;
+      serialStatusLine.className = "feedback success";
+    }
+  };
+
+  const refreshSerialStatus = async () => {
+    if (!window.PAApi) return;
     try {
-      const res = await fetch("/api/status", { cache: "no-store" });
-      if (!res.ok) return;
-      const d = await res.json();
-      if (serialS1) {
-        serialS1.textContent = !d.s1Hoverboard ? "Disabled"
-          : d.s1Hoverboard.state === "commanding" ? "Active" : "Enabled / Idle";
-        serialS1.style.color = d.s1Hoverboard ? "var(--success)" : "var(--text-dim)";
-      }
-      if (serialS2) {
-        serialS2.textContent = !d.s2Sound ? "Disabled"
-          : d.s2Sound.state === "playing" ? "Playing" : "Enabled / Idle";
-        serialS2.style.color = d.s2Sound ? "var(--success)" : "var(--text-dim)";
-      }
-      const s2DriverEl = document.getElementById("s2-driver-label");
-      if (s2DriverEl) {
-        s2DriverEl.textContent = d.s2Sound?.driver || "";
-      }
-      if (serialS3) {
-        const dl = d.dome_link;
-        if (!dl || dl.state === "disabled") {
-          serialS3.textContent = "Disabled";
-          serialS3.style.color = "var(--text-dim)";
-        } else if (dl.state === "connected") {
-          serialS3.textContent = `Connected (hb rx ${dl.hb_rx} / tx ${dl.hb_tx})`;
-          serialS3.style.color = "var(--success)";
-        } else if (dl.state === "lost") {
-          serialS3.textContent = `Lost — last seen ${dl.last_rx_ms} ms ago`;
-          serialS3.style.color = "var(--danger)";
-        } else {
-          serialS3.textContent = "Waiting for dome heartbeat";
-          serialS3.style.color = "var(--warning)";
-        }
-      }
-      if (serialStatusLine) {
-        serialStatusLine.textContent = `Updated ${new Date().toLocaleTimeString()}`;
-        serialStatusLine.className = "feedback success";
-      }
-    } catch (e) {
-      console.warn("[setup] loadSerialStatus failed:", e);
+      const result = await window.PAApi.get("/api/status", { timeoutMs: 3000 });
+      renderSerialStatus(result.data);
+    } catch (error) {
+      console.warn("[setup] refreshSerialStatus failed:", error);
       if (serialStatusLine) {
         serialStatusLine.textContent = "Status unavailable";
         serialStatusLine.className = "feedback error";
@@ -341,6 +383,26 @@
     }
   };
 
-  loadSerialStatus();
-  window.setInterval(loadSerialStatus, 5000);
+  // SSE-first serial status updates with visibility-aware fallback polling.
+  if (window.PAStatusStream?.isSupported()) {
+    window.PAStatusStream.subscribe((eventType, payload) => {
+      if (eventType === "status") renderSerialStatus(payload);
+    });
+    // One-shot fetch if SSE hasn't delivered a status frame yet.
+    if (!window.PAStatusStream.getLastStatus()) {
+      refreshSerialStatus().catch(() => {});
+    }
+  } else {
+    // Fallback: poll every 5 s, suspended while the tab is hidden.
+    refreshSerialStatus().catch(() => {});
+    window.setInterval(() => {
+      if (document.visibilityState === "hidden") return;
+      refreshSerialStatus().catch(() => {});
+    }, 5000);
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState !== "hidden") {
+        refreshSerialStatus().catch(() => {});
+      }
+    });
+  }
 })();
