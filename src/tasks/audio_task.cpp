@@ -285,6 +285,12 @@ void audioTask(void* pvParameters) {
             driver->begin();
             driver->setVolume(currentVol);
             driverInitialized = true;
+            // begin() confirmed the module was online (ran pre-init queries).
+            // Seed lastLinkOkMs so the grace window starts from successful init,
+            // not from system boot epoch. Without this, the grace period expires
+            // 10 s from boot if begin()'s own queries ran and succeeded but the
+            // first AudioTask query fires during playback.
+            lastLinkOkMs = millis();
             PA_LOG_INFO(TAG, "audio driver init — PA_AUDIO_DRIVER=%d vol=%u", PA_AUDIO_DRIVER,
                         (unsigned)currentVol);
 

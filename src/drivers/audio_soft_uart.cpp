@@ -205,7 +205,7 @@ void AudioDriverSoftUart::begin() {
     // -------------------------------------------------------------------------
     static const uint8_t Q_PLAY_DRIVE[] = {0xAA, 0x0A, 0x00, 0xB4};
     n = sendQuery(Q_PLAY_DRIVE, rsp, sizeof(rsp), 5, 300);  // response: AA 0A 01 drive SM (5 bytes)
-    if (n >= 4) {
+    if (n >= 4 && rsp[0] == 0xAA && rsp[1] == 0x0A) {
         m_device = rsp[3];  // update: post-init device is the authoritative drive selection
         const char* dev = (rsp[3] == 0x00)   ? "USB"
                           : (rsp[3] == 0x01) ? "SD/TF"
@@ -238,9 +238,11 @@ bool AudioDriverSoftUart::queryModuleState(AudioModuleState& out) {
     out.currentTrack = 0;
 
     // Query device online (0x09)
+    // Validate rsp[0]==0xAA and rsp[1]==0x09 to reject spontaneous bytes
+    // the module emits during playback (status pushes, boot announcements).
     static const uint8_t Q_DEV[] = {0xAA, 0x09, 0x00, 0xB3};
     n = sendQuery(Q_DEV, rsp, sizeof(rsp), 5, 300);  // response: AA 09 01 device SM (5 bytes)
-    if (n >= 4) {
+    if (n >= 4 && rsp[0] == 0xAA && rsp[1] == 0x09) {
         out.device = rsp[3];
         m_device = rsp[3];  // keep member in sync
         gotAny = true;
@@ -249,7 +251,7 @@ bool AudioDriverSoftUart::queryModuleState(AudioModuleState& out) {
     // Query play state (0x01)
     static const uint8_t Q_PLAY[] = {0xAA, 0x01, 0x00, 0xAB};
     n = sendQuery(Q_PLAY, rsp, sizeof(rsp), 5, 300);  // response: AA 01 01 state SM (5 bytes)
-    if (n >= 4) {
+    if (n >= 4 && rsp[0] == 0xAA && rsp[1] == 0x01) {
         out.playState = rsp[3];
         gotAny = true;
     }
@@ -257,7 +259,7 @@ bool AudioDriverSoftUart::queryModuleState(AudioModuleState& out) {
     // Query current song (0x0D)
     static const uint8_t Q_SONG[] = {0xAA, 0x0D, 0x00, 0xB7};
     n = sendQuery(Q_SONG, rsp, sizeof(rsp), 6, 300);  // response: AA 0D 02 SN_H SN_L SM (6 bytes)
-    if (n >= 5) {
+    if (n >= 5 && rsp[0] == 0xAA && rsp[1] == 0x0D) {
         out.currentTrack = ((uint16_t)rsp[3] << 8) | rsp[4];
         gotAny = true;
     }
