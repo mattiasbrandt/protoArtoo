@@ -1,220 +1,115 @@
 # Project Status
 
-> **What this file is for:**
-> Single source of truth for the current development state of protoArtoo.
-> Keep it current: update the phase table when phases transition, record
-> confirmed hardware details as they are discovered, and note known gaps
-> so contributors can orient quickly. Detailed task checklists live in
-> `tasks/phase*-tasks.md`; detailed release notes live in `CHANGELOG.md`.
-> Dependency versions should be re-audited at each phase boundary.
+protoArtoo is open-source ESP32 body controller firmware for MK4 astromech droids.
+This page tracks the current development state across firmware phases.
+For detailed release notes see `CHANGELOG.md`.
 
 ---
 
 ## Phase Overview
 
-| Component | Status |
-|---|---|
-| Firmware plan & architecture | Complete |
-| Dome fork (mattiasbrandt/AstroPixelsPlus) | Complete — body link protocol implemented |
-| Phase 0 — PCB trace & hardware research | Complete |
-| Phase 1 — Drive + SBUS + failsafe | Complete — released as `v0.1.0` |
-| Phase 2 — Web server + OTA | Complete — bench-tested baseline established |
-| Phase 3 — Servos + dome motor | **Bench-complete** — software bench-verified; hardware validation formally deferred; deferred items carried forward as T11/T12 in Phase 4 |
-| **Web UI/UX quality gate** | **CLEARED** — signed off 2026-03-15. See `tasks/web_ui_quality_gate.md` |
-| **Phase 4 — Audio + full dome link** | **In progress** — branch `phase/v0.4.0` active; software tasks T01–T09, T13–T24 complete except hardware-dependent T10–T12; T10 audio hardware partially validated (deterministic playback, named sounds, mood intervals confirmed on DY-SV5W); T11–T12 remain hardware-blocked; see Phase 4 section below |
-| Phase 5 — Community release | Pending Phase 4 |
+| Phase | Description | Status |
+|---|---|---|
+| Architecture & planning | Firmware design and hardware research | Complete |
+| Dome firmware (AstroPixelsPlus fork) | Body-link protocol for the dome controller | Complete |
+| Phase 1 — Drive | Hoverboard drive, RC receiver input, failsafe | Complete — `v0.1.0` |
+| Phase 2 — Web interface | WiFi, web UI, OTA firmware updates | Complete |
+| Phase 3 — Servos + dome motor | Arm servos, dome motor, RC diagnostics and mapping | Software complete — hardware validation partially deferred |
+| **Phase 4 — Audio + dome link** | Sound playback, bidirectional dome communication, web UI improvements | **In progress** |
+| Phase 5 — Community release | Documentation, polish, public release | Planned |
 
 ---
 
 ## Current Version
 
-Released: `v0.1.0` — see `CHANGELOG.md` for full release history.
-
-Development firmware on bench controller: version string is dynamically generated
-from git tag + build timestamp (e.g. `v0.2.0-1-g23008b7-20260315-013914`).
-
-**Bench controller hardware:**
-- MCU: `ESP32-D0WD-V3` (revision 3)
-- Crystal: 40 MHz
-- Board: ESP32 D1 Mini
+Latest release: `v0.1.0` — see `CHANGELOG.md` for full history.
+Development builds are versioned from the git history and build timestamp.
 
 ---
 
-## Confirmed Capabilities
+## What Works
 
-### Phase 2 (Web / OTA baseline)
+### Drive and safety
 
-- PlatformIO firmware flashing and LittleFS uploads working on bench setup
-- WiFi working; build-time mode selection: hotspot (AP) or client — mutually exclusive
-- Home, Setup, WiFi, Firmware, and Serial pages served from LittleFS
-- Core REST API implemented and bench-tested: `GET /api/status`, `/api/config`,
-  `/api/wifi`, `/api/serial`, `/api/health`, `/api/logs`; `POST /api/estop`,
-  `/api/estop/clear`, `/api/drive`, `/api/web-control/enable|disable`,
-  `/api/manual-command`, `/api/mode`, `/api/reboot`, `/upload/firmware`
-- API routes modularized: `api_estop`, `api_drive`, `api_config`, `api_status`,
-  `api_system` — see `docs/api.md`
-- NVS config persistence survives reboot
-- Browser OTA path confirmed through API and web UI
-- Dashboard includes: health indicators, movement status, live log console,
-  manual command input, heap status, WiFi quality
+- Hoverboard drive with speed and steering control from an RC transmitter
+- Configurable speed limit from the web interface
+- Three RC receiver modes: standard PWM, single SBUS, or dual SBUS
+- Failsafe automatically stops the motors if the RC signal is lost
+- Emergency stop with latching behavior — requires a deliberate clear before drive resumes
 
-### Phase 3 (Servos + dome motor + RC diagnostics)
+### Web interface
 
-- ServoTask and DomeTask running on controller firmware
-- `/api/servo`, `/api/dome`, `/api/rc`, expanded `/api/config` and `/api/status`
-  implemented and bench-tested
-- Setup page: full 15-peripheral toggle set + RC Mapping/Diagnostics surface
-  backed by `GET /api/rc`, SSE `event: rc`, `POST /api/config`
-- `rc_input_mode` (`standard_pwm` / `single_sbus` / `dual_sbus`) in state, NVS,
-  API, Setup UI, and runtime initialization branching
-- Default channel map for `standard_pwm`: CH1 speed, CH2 steer, CH3 dome,
-  CH4 ARM1, CH5 ARM2, CH6 sound trigger stub
-- Servo component type system: `ServoComponentType` (NONE/MG996R/MG90S/RGB)
-  per channel, NVS-backed, auto-defaults on type change
-- AUX1/2/3 open/close calibration NVS-backed
-- Home dashboard: Operation Mode card (Driving ↔ Stationary) and Mood Selector
-  card (Quiet / Mid-Awake / Full-Awake / Awake+)
-- Marcduino manual-command dispatch: `:OP`, `:CL`, `:SE`, `:MVxxdddd` implemented;
-  `$`, `@`, `*`, `%`, `#`, `&`, `!` stubbed with truthful deferred handling
-- Component command logging with scoped origins and source prefixes:
-  `[SERVO] [WEB] Arm1 opened`, `[DOME] [SBUS] Dome command: speed 0.50`
-- 330 native test cases passing: LEDC math, dome math, SBUS flags, SBUS unpacking,
-  Marcduino helpers, servo helpers, PWM helpers, config payloads
-- SBUS diagnostics confirmed live on hardware — dual SBUS receiving, RC page
-  shows live channel values; arm servo confirmed working from SBUS controller
-- RC mapper UX overhauled (Task 3.11): three-panel layout, binding summary table,
-  focused live preview, per-slot editor; software-verified, hardware sign-off pending
-- RC channel bindings and calibration are fully NVS-backed: all `rcp_*`, `rcs_*`,
-  `rc_arm1/2`, `rc_aux1-3`, `rc_sound`, `rc_opmode`, `rc_free0-3` keys load and
-  save correctly through `loadConfigToState()` / `saveConfigToNvs()`
+- WiFi configuration: standalone access point or connection to an existing network
+- Home dashboard: drive mode switcher, mood selector, and live status indicators
+- Setup page: configure connected hardware components, RC receiver mode, and channel mapping
+- Drive page: manual drive and dome control from the browser
+- Dome page: direct dome motor control
+- Servo page: arm and accessory servo control
+- Sound page: trigger named sounds, configure track assignments, and set mood chatter rates
+- RC diagnostics: live channel values, binding editor, and per-mode calibration
+- Firmware and web UI updates directly from the browser
+- Runtime log verbosity control without reflashing
+- All settings persist across reboots
 
-### Phase 4 (Audio + Dome Link — v0.4.0, in progress)
+### Arms and servos
 
-- AudioDriver pluggable backend (`PA_AUDIO_DRIVER` build flag): `AUDIO_SOFT_UART`
-  (DY-SV5W via 9600-baud soft UART on GPIO 26) and `AUDIO_CHIRP` (CHIRP board) both compile clean
-- **DY-SV5W hardware-validated on real droid (2026-03-17):**
-  - Deterministic track playback confirmed (play track N → same sound every time)
-  - Volume control working and NVS-persisted (survives reboot)
-  - Stop command functional
-  - Driver aligned to DYPlayerArduino library + BetterDuino reference:
-    checksum framing, opcodes `0x07`/`0x04`/`0x13`, `delay(100)` per command
-  - Anti-spam guard: 300 ms minimum interval between play commands at AudioTask level
-  - Sound page slider synced to persisted volume on page load
-  - Named sound SD layout requirement confirmed: contiguous zero-padded `NNN.mp3`, no gaps;
-    all named sounds (`$S`/`$F`/`$L`/`$c`/`$C`/`$W`/`$M`/`$B`) verified deterministic
-  - HardwareSerial(2) remapped to S2 pins (GPIO 26 TX / GPIO 35 RX); shared with
-    dome serial link — only one active at a time
-- AudioTask queues all audio requests from RC, web API, and dome serial `$` commands
-- `parseAudioDollar()` native-tested (26 test cases), mood dispatch native-tested
-- Mood system: 15 presets, dual-path (body audio + dome serial `:SE01`–`:SE15`),
-  boot restore, NVS-persisted (`last_mood`); `/api/mood` bench-tested
-- DomeLinkTask: `#PAHB` 1 Hz heartbeat to dome bench-tested on GPIO 33/34
-- `/api/audio` (play, stop, volume), `/api/mood`, `/api/status` dome_link block: bench-tested
-- Dashboard: Mood Selector card, audio source indicators
-- Static RAM: 20.6% (67,528 / 327,680 B); heapMin ~126 KB post-WiFi
-- 442 native test cases passing (includes config/audio snapshot JSON coverage, RC diagnostics snapshot+ArduinoJson parity/size checks, mood dispatch, frame builder, and per-mood interval NVS keys)
-- Runtime log level: Setup page Diagnostics card, NVS-backed (`log_level`), 1=Error / 2=Info / 3=Debug
-- **Per-mood random sound intervals (T18, bench-tested 2026-03-18):** Quiet=0 s / Mid-Awake=30 s /
-  Full-Awake=20 s / Awake+=10 s; NVS-backed per-mood keys; configurable from Sound page Mood Intervals
-  section; AudioTask reads `activeMood` on every timer tick
-- **Audio driver name API:** `AudioDriver::driverName()` virtual; `audioGetDriverName()` accessor;
-  `s2Sound.driver` field in `/api/status`; Setup page S2 row shows `DY-SV5W` or `CHIRP` label.
-  Foundation for CHIRP-specific sound page features
-- **Named `$` command audit (2026-03-18):** cross-referenced MarcDuino, BetterDuino, Reeltwo,
-  SHADOW_MD, Padawan360 — all `$` commands and `:SE` sequences accounted for; `$D` (Disco)
-  intentionally omitted (non-Star Wars; documented in `docs/sound_playback.md`)
-- **Serial page removed:** absorbed into Setup — Serial Status card with live S1/S2/S3 state,
-  GPIO/baud reference, auto-refresh every 5 s; `serial.html`/`serial.js` deleted
-- **Web UI polish (2026-03-18):** double-emoji feedback bug fixed across sound.js/servo.js/setup.js;
-  nav active button restored with compact sizing; Setup Hardware Components reflowed to one-per-row;
-  Setup S2 row shows active driver name label
-- Stack HWM bench-measured (first-iteration): DriveTask 2520 B / 4096, SBUSInput 2360 B / 4096,
-  DomeTask 3332 B / 2048, ServoTask 4392 B / 3072, AudioTask 2680 B / 3072,
-  SafetyMonitor was 476 B / 2048 → stack bumped to 3072, WebEvents 3804 B / 4096 → trimmed to 2048
-- OTA via HTTP POST fixed: `UPDATE_SIZE_UNKNOWN` in `Update.begin()` prevents multipart boundary
-  size mismatch that was causing silent rollback to old firmware on every upload
-- All raw `Serial.printf` in `safety.cpp`, `drive.cpp`, `sbus_input.cpp` replaced with `PA_LOG_*`
+- Up to six servo channels supported: two main arms, three auxiliary outputs, one RGB indicator
+- Open/close calibration per channel, configurable from the web interface
+- Servo type selection (MG996R, MG90S, RGB, or none) per channel
 
-- **Post-review remediation sweep completed (2026-03-20):** addressed full review findings from refactor + T19–T23 and whole-code pass: `/api/audio` queue backpressure now returns truthfully, `/api/mode` driving path response fixed, RC mode/channel runtime changes now apply without reboot, `/api/config` servo calibration contract restored for `servo.js`, status JSON overflow now returns explicit fallback and uses larger buffers, AP mode now requires `PA_AP_PASSWORD`, dashboard mood dome-link note reads `dome_link.state`, `drive.cpp` printf type mismatch fixed, stale web-page/operator-copy drift corrected across Drive/RC/Home/Setup/Firmware/WiFi surfaces, and remaining `pio check` HIGH findings in `src/tasks`/`src/web` were resolved (including null-safe `/api/servo` parameter handling).
-- **Dome ESC hardware tuning session (2026-03-21):** ISDT app throttle telemetry now matches
-  protoArtoo command percentages on GPIO25; unloaded motor spins correctly at 50/70/90.
-  With dome ring coupled, movement is improved but still struggles in localized high-friction sectors
-  and during hard direction flips. Recommended ESC70 baseline locked in `docs/isdt_esc70_dome_esc.md`
-  (validated from web/API path). RC-driven dome rotation validation remains pending T11/T12 closure.
+### Audio
+
+- Pluggable audio module support: DY-SV5W (confirmed on hardware) and CHIRP (ready for hardware test)
+- Plays named sound cues: scream, Leia message, Short Circuit, Cantina, Imperial March, Star Wars theme, and more
+- Sounds triggered from RC transmitter, web interface, or dome serial commands
+- Random ambient chatter with per-mood frequency — each mood preset has its own chatter rate
+- Volume configurable from the Sound page and persisted across reboots
+- Sound module connection state and playback status visible on the Sound page
+
+### Moods and sequences
+
+- 15 mood and sequence presets selectable from the home dashboard or RC transmitter
+- Mood selection triggers body sounds and, when the dome is connected, the corresponding dome lighting sequence
+- Last active mood is restored on reboot
+
+### Dome link
+
+- Bidirectional serial communication with the dome controller over the slip ring
+- Body sends a regular heartbeat to the dome; connection state shown on the dashboard
+- Commands received from the dome (sounds, arm sequences) are dispatched to the body automatically
+- Body-side communication confirmed; full end-to-end requires the dome board connected via slip ring
 
 ---
 
-## Open Items (Phase 3 hardware carryover)
+## Known Limitations
 
-Full deferral record: `tasks/phase3_hardware_validation_deferral.md`
-Tracked as T11 and T12 in `tasks/phase4-tasks.md`.
-
-- SBUS Layer 1 / Layer 2 failsafe — deliberate disconnect/timeout test pending
-- Full hoverboard drive path — hoverboard disconnected during Phase 3
-- Dome ESC loaded-drive torque margin — PWM path validated and ring rotation achieved, but localized high-friction sectors and reversal struggle remain; RC-driven dome validation still pending
-- RC mapping with real transmitter/receiver — standard PWM and dual SBUS physical validation
-- Upload UX verification — firmware/filesystem upload flow confirmation
+- **Audio in dual-receiver + dome-link configurations:** Audio playback may be unreliable
+  when dual SBUS receiver mode and dome serial link are both active simultaneously. This is
+  a known hardware constraint. A fix for the audio path is planned for Phase 4; full
+  resolution is targeted for Phase 5.
 
 ---
 
-## Phase 4 Progress (v0.4.0)
+## Pending Hardware Validation
 
-| Task | Description | Status |
-|---|---|---|
-| T00 | Phase branch setup, workflow alignment | Complete |
-| T01 | AudioDriver interface + soft UART backend | ✅ **bench-tested** — DY-SV5W playback verified on hardware (DYPlayer-aligned driver) |
-| T02 | AudioTask, dollar parser, queue helpers | ✅ **bench-tested** — queue wiring, API routing, random playback, enable/disable; audio hardware output requires T10 |
-| T03/T04/T05 | DomeLinkTask — UART2 TX/RX, `#PAHB` heartbeat, Marcduino dispatch | **partial** — `#PAHB` TX and `#APHB` RX intercept bench-tested; full dome-board integration remains hardware-blocked |
-| T06 | Status API + dashboard — `dome_link` block, audio health indicators | ✅ **bench-tested** |
-| T07 | `/api/audio`, `/api/audio/tracks`, Marcduino routing | ✅ **bench-tested** |
-| T08 | Mood dual-path — `/api/mood`, boot restore, dome RX intercept | ✅ **bench-tested** (audio path); dome TX path requires T10 hardware |
-| T09 | Parser/track mapping tests + hardware validation plan | ✅ **native-tested** (435 tests); `$` command audit complete; `$D` intentionally omitted |
-| T10 | Full hardware validation | **partially validated** — DY-SV5W: deterministic playback, volume, stop, all named sounds, mood chatter confirmed on hardware; S2 toggle enable/disable + boot mood restore pending hardware reconnect; dome link pending full hardware |
-| T11–T12 | Phase 3 carryover (SBUS failsafe, drive path, RC physical) | Pending hardware availability |
-| T13 | Reconcile NVS remapping claim | ✅ **closed** — stale doc; all RC bindings are NVS-backed (full load/save in main.cpp) |
-| T14 | RC detect-channel mode (was: learning mode) | ✅ **bench-tested** (UI, SSE raw channel arrays, detect logic 25 tests); physical RC button press pending T11/T12 hardware |
-| T15 | CHIRP Audio Trigger backend (`AUDIO_CHIRP`) | ✅ **compile-only** — driver implemented; `pio run -e protoArtoo_chirp_check` passes |
-| T16 | Sound page (`sound.html`/`sound.js`) + `/api/audio/tracks` | ✅ **bench-tested** — page renders, named tracks NVS roundtrip, volume/stop/play API; audio output requires T10 |
-| T17 | Runtime log level selector on Setup page | ✅ **bench-tested** — dropdown renders, POST works, NVS-persisted; OTA bug fixed (UPDATE_SIZE_UNKNOWN) |
-| T18 | Per-mood random sound intervals | ✅ **bench-tested** — API, NVS, Sound page UI; audible frequency change per mood requires T10 hardware |
-| T19 | Config API JSON refactor: ConfigSnapshot + ArduinoJson streaming | ✅ **bench-tested** — `buildConfigJson`/`configJsonBuf` removed; `captureConfigSnapshot` + `populateConfigJson` implemented; GET+POST handlers use ArduinoJson streaming; `configJsonBuf` 2 KB BSS reclaimed; post-review hardening added null checks for `beginResponseStream()` in both config response paths; `pio run -e protoArtoo` passes |
-| T20 | Native tests: populateConfigJson coverage | ✅ **native-tested** — currently 442/442 passing (up from 437 baseline) with dedicated config JSON coverage including document clear behavior and top-level servo calibration fields |
-| T21 | RC diagnostics JSON refactor: RcDiagnosticsSnapshot + ArduinoJson streaming | ✅ **bench-tested** — removed `buildRcDiagnosticsJson` + `/api/rc` `rcBuf`; shared `captureRcDiagnosticsSnapshot` + `populateRcDiagnosticsJson` now drive GET `/api/rc` and SSE `event: rc`; native tests cover typical payload, dual_sbus size budget, key-order contract, and empty `raw` object behavior; `pio run -e protoArtoo`, `pio test -e native` (442/442), and `pio check` pass; OTA deployment to `10.0.0.22` (`v0.3.0-65-g6f6e636`) verified `GET /api/rc` payload and SSE `event: rc` on `/api/events` (`Accept: text/event-stream`) |
-| T22 | Grouped `/api/config` JSON schema migration | ✅ **bench-tested** — `populateConfigJson` now emits grouped schema (`drive`, `rc`, `components`, `dome`, `system`); frontend consumers migrated (`setup.js`, `drive.js`, `dome.js`, `servo.js`, `rc.js`) to nested keys; native config JSON tests updated for grouped shape + size budget (`3072`); OTA deploy to `10.0.0.22` (`v0.3.0-69-g8962622`) verified grouped `GET /api/config` response and page load sanity on Setup/Drive/Dome/RC surfaces |
-| T23 | Upload gate + JSON response test rule + setup diagnostics catch cleanup | ✅ **bench-tested** — AGENTS/CLAUDE upload gate language confirmed (`pio test -e native` required before upload), JSON response native-test rule documented, `data/setup.js` `loadFeatures` error path logs `console.error`, and `.claude/CLAUDE.md` allocation rule clarified to allow bounded Core 0 `JsonDocument` while keeping Core 1 real-time loops allocation-free; `pio run -e protoArtoo` and `pio test -e native` (442/442) pass |
-| T24 | Regression fix: WebEvents crash on SSE client connect | ✅ **bench-tested** — structural T21 snapshot refactor removes previous stack-heavy RC JSON path; OTA-deployed firmware remains stable while streaming `/api/events` with repeated `event: rc` payloads on 10.0.0.22 |
-| T24a | Post-review hardening follow-up for T19–T23 and full code sweep findings | ✅ **bench-tested + native-tested** — fixed `/api/audio` queue result handling + key lifetime bug, `/api/mode` driving response, dynamic RC mode/channel runtime refresh, AP password enforcement in AP-only mode, status JSON overflow fallback + larger status buffers, mood card dome-link field alignment, `drive.cpp` logging format specifier mismatch, stale operator web UI details (WiFi mode-specific cards, CH8 mode-lock wording, timeout copy, RC unavailable option wording, Setup/Firmware stale labels), and cleared remaining `pio check` HIGH findings (`src/tasks=0`, `src/web=0`) with documented suppression rationale in `platformio.ini`; verified by `pio test -e native` (442/442), `pio run -e protoArtoo`, `pio run -e protoArtoo_prod`, and `pio check` |
-| T53–T64 | Validation snapshot + operator-requested web UI/UX hardening backlog (mode/mood rollback, shared API client, inline-style cleanup, page-shell dedupe, page titles, RC hierarchy, disabled-state consistency, SSE-first status updates, background-update pause, stronger ARIA/live regions, footer web build version + webVersion status field) | ✅ **bench-tested** — completed and OTA-verified on `10.0.0.22`; `/api/validation` and `/api/status.webVersion` live-validated, footer now shows version-only `FW/Web` lines while uptime and detailed memory telemetry are in Setup → Diagnostics |
+The following features are implemented and software-verified but require a fully assembled
+droid for final confirmation:
 
-**Verification terminology used in this project:**
-- `native-tested` — covered by `pio test -e native` passing
-- `compile-only` — builds clean; no functional verification performed
-- `bench-tested` — observed working on bare ESP32 over USB/WiFi (no Artoo PCB required)
-- `full-hardware-required` — needs Artoo PCB + peripherals connected and powered
+- **Drive and failsafe** — hoverboard response, RC failsafe, and speed limit; the hoverboard
+  is not currently connected to the test setup
+- **Dome motor** — requires the full wiring harness connected
+- **RC mapping with a physical transmitter** — channel mapping and calibration across all
+  receiver modes; save/restore across reboots
+- **Dome link end-to-end** — requires both the body board and dome board connected over
+  the slip ring
+- **Full audio validation** — most audio paths confirmed on hardware; the enable/disable
+  toggle and boot mood restore require hardware reconnect
+- **Firmware and web UI update flows** — upload progress indication and post-reboot
+  reconnect with the updated version
 
 ---
 
-## Planning Notes
+## Roadmap
 
-- Hardware validation must explicitly distinguish bench-stage (ESP32 + USB/WiFi only)
-  from full hardware (Artoo PCB + receivers + hoverboard + actuators wired).
-- Network authentication and hardening are intentionally deferred while the droid
-  operates on a closed home LAN.
-- **Phase 4 workflow:** branch `phase/v0.4.0`; commit scope
-  `type(phase:v0.4.0/T<NN>): summary`. Canonical reference:
-  `tasks/dev-workflow-change-spec.md` (Status: Reviewed — Decided).
-
----
-
-## Dependency State
-
-Last audited: 2026-03-19
-
-| Dependency | Version | Notes |
-|---|---|---|
-| `espressif32` | `6.13.0` | Arduino core 2.0.17 / IDF 4.4.7 / esptool 4.11.0. Upgraded from 5.2.0 (arduino-esp32 2.0.5 / IDF 4.4.x / esptool 4.2.1): 12 patch releases of bug fixes, +7 KB heap watermark improvement at boot. |
-| `ESP32Async/ESPAsyncWebServer` | `3.10.3` | Migrated from abandoned `me-no-dev/` namespace to maintained `ESP32Async/` fork. Fixes SSE memory leaks, adds `SSE_MAX_QUEUED_MESSAGES` queue cap. |
-| `ESP32Async/AsyncTCP` | `3.4.10` | Same namespace migration as WebServer. `CONFIG_ASYNC_TCP_STACK_SIZE=4096` set in build_flags (saves 12 KB heap vs 16 KB default). |
-| `bblanchon/ArduinoJson` | `7.4.3` | Pinned |
-
-All `lib_deps` explicitly pinned. `ESP32Servo` removed — never imported; servo PWM runs through native LEDC channels. `PA_LOG_LEVEL` reduced from 3 (debug) to 2 (info) in production build, saving 4 KB BSS.
+- **Phase 4 (active):** audio system, full dome link, and web UI quality improvements
+- **Phase 5:** final hardware validation, documentation, and initial public release as `v1.0.0`
