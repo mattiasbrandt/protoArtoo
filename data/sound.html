@@ -14,7 +14,13 @@
     <!-- Audio Module Status -->
     <div class="card">
       <h3>🔌 Audio Module Status</h3>
-      <div class="desc">Live status queried from the DY-SV5W module every 2 seconds.</div>
+      <div class="desc">Cached from module init. Use Poll to refresh live status — only poll while not playing to avoid disturbing playback.</div>
+      <ul class="desc">
+        <li><strong>Device</strong> and <strong>Total tracks</strong> are read at boot and cached — they do not require polling.</li>
+        <li><strong>Play state</strong> and <strong>Current track</strong> are only updated when you poll.</li>
+        <li><strong>Do not poll while sounds are playing</strong> — UART queries can disrupt the DY-SV5W and stop playback.</li>
+        <li><strong>Module link: No response</strong> on startup is normal — it means the boot-time query got no reply (module not yet connected, or link was live when it was cached). Use Poll to re-check.</li>
+      </ul>
       <table class="sound-table mt-12">
         <tbody>
           <tr>
@@ -43,6 +49,9 @@
           </tr>
         </tbody>
       </table>
+      <div class="mt-12">
+        <button id="btn-poll-status" class="btn-secondary">Poll status</button>
+      </div>
       <div id="mod-status-feedback" class="feedback mt-8" role="status" aria-live="polite" aria-atomic="true"></div>
     </div>
 

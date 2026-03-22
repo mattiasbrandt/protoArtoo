@@ -106,14 +106,14 @@ void AudioDriverSoftUart::sendFrame(const uint8_t* data, uint8_t len) {
 // begin()
 // Open UART2 on the audio GPIO pins, wait for module boot, then init.
 // Runs diagnostic queries before and after init to confirm the UART link is
-// alive and the SD card is present. Zero-byte query responses mean TX is not
-// reaching the module (check DIP switches: CON3=1 CON2=0 CON1=0 for UART mode).
+// alive and the storage device is present. Zero-byte query responses mean TX
+// is not reaching the module (check DIP: CON3=1 CON2=0 CON1=0 for UART mode).
 // Runs inside AudioTask on Core 0 — blocking here is acceptable.
 // -----------------------------------------------------------------------------
-void AudioDriverSoftUart::begin() {
+void AudioDriverSoftUart::begin(uint8_t vol) {
     s_audioSerial.begin(9600, SERIAL_8N1, PIN_AUDIO_RX, PIN_AUDIO_TX);
 
-    // DY-SV5W needs ~1.5 s after power-on to boot and enumerate SD.
+    // DY-SV5W needs ~1.5 s after power-on to boot and enumerate storage.
     delay(1500);
 
     // Drain any bytes the module sent during boot (e.g. boot announcement).
@@ -125,18 +125,15 @@ void AudioDriverSoftUart::begin() {
     // Pre-init diagnostic queries — run BEFORE sending any commands so we
     // see the module's raw power-on state. If all three return 0 bytes the
     // UART TX wire is not reaching the module or DIP mode is wrong.
-    // SM values are exact checksums: AA+CMD+00 = SM.
     // -------------------------------------------------------------------------
     uint8_t rsp[8];
     uint8_t n;
 
     // Query device online (0x09): which storage is detected?
-    // Response: AA 09 01 [device] SM   device: 00=USB 01=SD 02=FLASH FF=none
     static const uint8_t Q_DEV_ONLINE[] = {0xAA, 0x09, 0x00, 0xB3};
-    n = sendQuery(Q_DEV_ONLINE, rsp, sizeof(rsp), 5,
-                  300);  // response: AA 09 01 device SM (5 bytes)
-    if (n >= 4) {
-        m_device = rsp[3];  // cache for queryModuleState()
+    n = sendQuery(Q_DEV_ONLINE, rsp, sizeof(rsp), 5, 300);
+    if (n >= 4 && rsp[0] == 0xAA && rsp[1] == 0x09) {
+        m_device = rsp[3];
         const char* dev = (rsp[3] == 0x00)   ? "USB"
                           : (rsp[3] == 0x01) ? "SD/TF"
                           : (rsp[3] == 0x02) ? "FLASH"
@@ -150,10 +147,9 @@ void AudioDriverSoftUart::begin() {
     }
 
     // Query play state (0x01): is module already playing from a prior session?
-    // Response: AA 01 01 [state] SM   state: 00=stop 01=playing 02=paused
     static const uint8_t Q_PLAY_STATE[] = {0xAA, 0x01, 0x00, 0xAB};
-    n = sendQuery(Q_PLAY_STATE, rsp, sizeof(rsp), 5, 300);  // response: AA 01 01 state SM (5 bytes)
-    if (n >= 4) {
+    n = sendQuery(Q_PLAY_STATE, rsp, sizeof(rsp), 5, 300);
+    if (n >= 4 && rsp[0] == 0xAA && rsp[1] == 0x01) {
         const char* st = (rsp[3] == 0)   ? "stop"
                          : (rsp[3] == 1) ? "playing"
                          : (rsp[3] == 2) ? "paused"
@@ -164,30 +160,25 @@ void AudioDriverSoftUart::begin() {
     }
 
     // Query total tracks (0x0C): how many files does the module see?
-    // Response: AA 0C 02 [HI] [LO] SM
     static const uint8_t Q_TOTAL_TRACKS[] = {0xAA, 0x0C, 0x00, 0xB6};
-    n = sendQuery(Q_TOTAL_TRACKS, rsp, sizeof(rsp), 6,
-                  300);  // response: AA 0C 02 SN_H SN_L SM (6 bytes)
-    if (n >= 5) {
-        m_totalTracks = ((uint16_t)rsp[3] << 8) | rsp[4];  // cache for queryModuleState()
+    n = sendQuery(Q_TOTAL_TRACKS, rsp, sizeof(rsp), 6, 300);
+    if (n >= 5 && rsp[0] == 0xAA && rsp[1] == 0x0C) {
+        m_totalTracks = ((uint16_t)rsp[3] << 8) | rsp[4];
         PA_LOG_INFO(TAG, "pre-init: total tracks = %u", (unsigned)m_totalTracks);
     } else {
         PA_LOG_WARN(TAG, "pre-init: no response to total-tracks query (%u bytes)", (unsigned)n);
     }
 
     // -------------------------------------------------------------------------
-    // Init commands — device select (use detected device), EQ normal, then
-    // apply NVS volume. (Volume is applied by AudioTask after begin() returns.)
+    // Init commands — device select (use detected device), EQ normal, volume.
     //
     // IMPORTANT: do NOT hardcode SD/TF here. The module reports its actual
     // storage type via Q_DEV_ONLINE. Sending switchDrive(SD) to a FLASH module
     // causes it to attempt SD card enumeration, fail, and stop responding to
-    // queries — while play commands still work (different UART path inside the
-    // module). Use the detected m_device to select the right storage, or skip
-    // the command if pre-init detection failed (m_device == 0xFF).
+    // queries. Use the detected m_device, or skip if detection failed.
     // -------------------------------------------------------------------------
 
-    // Switch to detected device (0x0B). SM = AA+0B+01+[device].
+    // Switch to detected device (0x0B).
     if (m_device != 0xFF) {
         uint8_t selectDev[] = {0xAA, 0x0B, 0x01, m_device};
         sendCommand(selectDev, sizeof(selectDev));
@@ -196,17 +187,21 @@ void AudioDriverSoftUart::begin() {
         PA_LOG_WARN(TAG, "init: skipping switchDrive — device unknown from pre-init query");
     }
 
-    // Set EQ to Normal (0x1A, eq=0x00). SM = AA+1A+01+00 = 0xC5.
+    // Set EQ to Normal (0x1A, eq=0x00).
     uint8_t eqNormal[] = {0xAA, 0x1A, 0x01, 0x00};
     sendCommand(eqNormal, sizeof(eqNormal));
+
+    // Set volume from NVS config — applied once during init.
+    uint8_t volCmd[] = {0xAA, 0x13, 0x01, vol};
+    sendCommand(volCmd, sizeof(volCmd));
 
     // -------------------------------------------------------------------------
     // Post-init confirmation — verify device select took effect.
     // -------------------------------------------------------------------------
     static const uint8_t Q_PLAY_DRIVE[] = {0xAA, 0x0A, 0x00, 0xB4};
-    n = sendQuery(Q_PLAY_DRIVE, rsp, sizeof(rsp), 5, 300);  // response: AA 0A 01 drive SM (5 bytes)
+    n = sendQuery(Q_PLAY_DRIVE, rsp, sizeof(rsp), 5, 300);
     if (n >= 4 && rsp[0] == 0xAA && rsp[1] == 0x0A) {
-        m_device = rsp[3];  // update: post-init device is the authoritative drive selection
+        m_device = rsp[3];
         const char* dev = (rsp[3] == 0x00)   ? "USB"
                           : (rsp[3] == 0x01) ? "SD/TF"
                           : (rsp[3] == 0x02) ? "FLASH"
@@ -215,6 +210,9 @@ void AudioDriverSoftUart::begin() {
     } else {
         PA_LOG_WARN(TAG, "post-init: no response to play-drive query");
     }
+
+    PA_LOG_INFO(TAG, "init done — vol=%u device=0x%02X tracks=%u", (unsigned)vol,
+                (unsigned)m_device, (unsigned)m_totalTracks);
 }
 
 // -----------------------------------------------------------------------------
@@ -242,7 +240,7 @@ bool AudioDriverSoftUart::queryModuleState(AudioModuleState& out) {
     // the module emits during playback (status pushes, boot announcements).
     static const uint8_t Q_DEV[] = {0xAA, 0x09, 0x00, 0xB3};
     n = sendQuery(Q_DEV, rsp, sizeof(rsp), 5, 300);  // response: AA 09 01 device SM (5 bytes)
-    if (n >= 4 && rsp[0] == 0xAA && rsp[1] == 0x09) {
+    if (n >= 4 && rsp[0] == 0xAA && rsp[1] == 0x09 && rsp[2] == 0x01) {
         out.device = rsp[3];
         m_device = rsp[3];  // keep member in sync
         gotAny = true;
@@ -251,7 +249,7 @@ bool AudioDriverSoftUart::queryModuleState(AudioModuleState& out) {
     // Query play state (0x01)
     static const uint8_t Q_PLAY[] = {0xAA, 0x01, 0x00, 0xAB};
     n = sendQuery(Q_PLAY, rsp, sizeof(rsp), 5, 300);  // response: AA 01 01 state SM (5 bytes)
-    if (n >= 4 && rsp[0] == 0xAA && rsp[1] == 0x01) {
+    if (n >= 4 && rsp[0] == 0xAA && rsp[1] == 0x01 && rsp[2] == 0x01) {
         out.playState = rsp[3];
         gotAny = true;
     }
@@ -259,13 +257,29 @@ bool AudioDriverSoftUart::queryModuleState(AudioModuleState& out) {
     // Query current song (0x0D)
     static const uint8_t Q_SONG[] = {0xAA, 0x0D, 0x00, 0xB7};
     n = sendQuery(Q_SONG, rsp, sizeof(rsp), 6, 300);  // response: AA 0D 02 SN_H SN_L SM (6 bytes)
-    if (n >= 5 && rsp[0] == 0xAA && rsp[1] == 0x0D) {
+    if (n >= 5 && rsp[0] == 0xAA && rsp[1] == 0x0D && rsp[2] == 0x02) {
         out.currentTrack = ((uint16_t)rsp[3] << 8) | rsp[4];
         gotAny = true;
     }
 
     out.linkOk = gotAny;
     return gotAny;
+}
+
+// -----------------------------------------------------------------------------
+// getCachedState()
+// Returns the last-known module state with no UART traffic. Safe to call at
+// any time including during playback.
+// m_device and m_totalTracks are populated by begin() (pre-init queries) and
+// updated by queryModuleState() on each periodic or manual poll.
+// playState and currentTrack are always poll-only.
+// -----------------------------------------------------------------------------
+void AudioDriverSoftUart::getCachedState(AudioModuleState& out) const {
+    out.linkOk = (m_device != 0xFF);
+    out.device = m_device;
+    out.totalTracks = m_totalTracks;
+    out.playState = 0xFF;  // not cached — requires active query
+    out.currentTrack = 0;  // not cached — requires active query
 }
 
 // -----------------------------------------------------------------------------

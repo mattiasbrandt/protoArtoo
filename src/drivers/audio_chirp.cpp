@@ -27,7 +27,8 @@
 // begin()
 // Configure PIN_AUDIO_TX as a digital output and set idle HIGH.
 // -----------------------------------------------------------------------------
-void AudioDriverChirp::begin() {
+void AudioDriverChirp::begin(uint8_t vol) {
+    (void)vol;  // CHIRP driver has no volume control
     softUartTxBegin();
 }
 

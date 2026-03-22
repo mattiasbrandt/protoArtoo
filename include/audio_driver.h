@@ -51,8 +51,9 @@ struct AudioModuleState {
 // -----------------------------------------------------------------------------
 class AudioDriver {
    public:
-    // Initialise hardware (GPIO, serial pin) — called once during AudioTask init.
-    virtual void begin() = 0;
+    // Initialise hardware (GPIO, serial pin) and set initial volume — called once
+    // during AudioTask init. vol is the NVS-configured volume (0–30).
+    virtual void begin(uint8_t vol) = 0;
 
     // Play a specific track by 1-based index (maps directly to SD card file number).
     // Track 0 is invalid; driver should silently ignore it.
@@ -77,5 +78,14 @@ class AudioDriver {
     virtual bool queryModuleState(AudioModuleState& out) {
         (void)out;
         return false;
+    }
+
+    // Returns last-known cached state without issuing any UART traffic.
+    // Safe to call at any time including during playback.
+    // Default implementation returns all-unknown values.
+    virtual void getCachedState(AudioModuleState& out) const {
+        out = AudioModuleState{};
+        out.playState = 0xFF;
+        out.device = 0xFF;
     }
 };

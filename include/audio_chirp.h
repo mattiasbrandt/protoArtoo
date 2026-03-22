@@ -37,9 +37,9 @@
 static constexpr uint8_t CHIRP_VOL_MAX = 99;
 
 class AudioDriverChirp : public AudioDriver {
-public:
+   public:
     // Initialise PIN_AUDIO_TX as output and set idle HIGH.
-    void begin() override;
+    void begin(uint8_t vol) override;
 
     // Play track by 1-based index in Bank 1, Page A.
     // Track 0 is silently ignored.
@@ -50,9 +50,11 @@ public:
 
     // Set volume 0–30 (clamped by AudioTask). Scaled to CHIRP 0–99 range.
     void setVolume(uint8_t vol) override;
-    const char* driverName() const override { return "CHIRP"; }
+    const char* driverName() const override {
+        return "CHIRP";
+    }
 
-private:
+   private:
     // Send a null-terminated ASCII command string followed by '\n'.
     void sendCommand(const char* cmd);
 };

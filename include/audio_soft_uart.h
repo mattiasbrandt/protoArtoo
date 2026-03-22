@@ -20,7 +20,7 @@
 
 class AudioDriverSoftUart : public AudioDriver {
    public:
-    void begin() override;
+    void begin(uint8_t vol) override;
     void playTrack(uint16_t track) override;
     void stop() override;
     void setVolume(uint8_t vol) override;
@@ -33,6 +33,10 @@ class AudioDriverSoftUart : public AudioDriver {
     // Returns true if at least one query received a valid response (link alive).
     // Only call from AudioTask (Core 0).
     bool queryModuleState(AudioModuleState& out) override;
+
+    // Returns last-known cached state from begin()-time queries with no UART traffic.
+    // Safe to call at any time including during playback.
+    void getCachedState(AudioModuleState& out) const override;
 
    private:
     // Last known total tracks and device — populated during begin() and carried

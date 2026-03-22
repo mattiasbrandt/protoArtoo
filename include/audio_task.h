@@ -7,10 +7,12 @@
 // are enqueued via the helpers below and processed by audioTask() on Core 0.
 //
 // Queue design:
-//   - AUDIO_CMD_DOLLAR   : raw '$' command string, parsed inside AudioTask.
-//   - AUDIO_CMD_PLAY_TRACK: direct play-by-track-number (e.g. from web API).
-//   - AUDIO_CMD_STOP     : direct stop.
-//   - AUDIO_CMD_SET_VOLUME: direct absolute volume set.
+//   - AUDIO_CMD_DOLLAR      : raw '$' command string, parsed inside AudioTask.
+//   - AUDIO_CMD_PLAY_TRACK  : direct play-by-track-number (e.g. from web API).
+//   - AUDIO_CMD_STOP        : direct stop.
+//   - AUDIO_CMD_SET_VOLUME  : direct absolute volume set.
+//   - AUDIO_CMD_QUERY_STATUS: on-demand module status query (web UI poll button
+//                             only — never from a loop or real-time task).
 //
 // Queue sends from real-time tasks MUST use the audioQueue* helpers which
 // use timeout 0 (non-blocking). Never call xQueueSend directly on audioCmdQueue
@@ -26,10 +28,11 @@
 // AudioCommandType
 // -----------------------------------------------------------------------------
 enum AudioCommandType : uint8_t {
-    AUDIO_CMD_DOLLAR    = 0,  // raw '$' command string — parsed in AudioTask
-    AUDIO_CMD_PLAY_TRACK,     // play specific track number directly
-    AUDIO_CMD_STOP,           // stop playback
-    AUDIO_CMD_SET_VOLUME,     // set absolute volume 0–30
+    AUDIO_CMD_DOLLAR = 0,    // raw '$' command string — parsed in AudioTask
+    AUDIO_CMD_PLAY_TRACK,    // play specific track number directly
+    AUDIO_CMD_STOP,          // stop playback
+    AUDIO_CMD_SET_VOLUME,    // set absolute volume 0–30
+    AUDIO_CMD_QUERY_STATUS,  // on-demand module status query (web UI poll button)
 };
 
 // -----------------------------------------------------------------------------
@@ -40,9 +43,9 @@ struct AudioCommand {
     AudioCommandType type;
     CommandSource source;
     union {
-        char     dollar[10];  // AUDIO_CMD_DOLLAR: '$'-prefixed, null-terminated
-        uint16_t track;       // AUDIO_CMD_PLAY_TRACK
-        uint8_t  volume;      // AUDIO_CMD_SET_VOLUME
+        char dollar[10];  // AUDIO_CMD_DOLLAR: '$'-prefixed, null-terminated
+        uint16_t track;   // AUDIO_CMD_PLAY_TRACK
+        uint8_t volume;   // AUDIO_CMD_SET_VOLUME
     };
 };
 
@@ -79,6 +82,11 @@ bool audioQueueStop(CommandSource src);
 // Enqueue an absolute volume set (clamped to 0–30 before enqueue).
 bool audioQueueSetVolume(uint8_t vol, CommandSource src);
 
+// Enqueue an on-demand module status query. AudioTask runs queryModuleState()
+// and updates RobotState. The caller should GET /api/audio after ~1.5 s to
+// read the result. Only use from the web UI poll button — do not call from
+// real-time tasks or in any loop.
+bool audioQueueQueryStatus(CommandSource src);
 
 // Returns the short name of the active audio driver (e.g. "DY-SV5W", "CHIRP").
 // Safe to call from any task or web handler after AudioTask has been created.

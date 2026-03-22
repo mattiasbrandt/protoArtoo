@@ -173,9 +173,11 @@ void registerAudioRoutes(AsyncWebServer& server) {
     });
 
     // ---- GET /api/audio — live module status ----
-    // Returns driver name, module link state, and live module-reported status.
-    // Module state fields reflect the last successful UART query from AudioTask;
-    // updated every ~2 s by the AudioTask polling loop.
+    // Returns driver name, module link state, and last-known module status.
+    // Device and total-tracks are populated from begin()-time cached queries.
+    // Play state, current track, and link_ok are updated only when the poll
+    // button triggers AUDIO_CMD_QUERY_STATUS — there is no automatic background
+    // polling (polling mid-playback corrupts the DY-SV5W RX state machine).
     server.on("/api/audio", HTTP_GET, [](AsyncWebServerRequest* req) {
         bool linkOk;
         uint8_t playState, device;
@@ -213,6 +215,20 @@ void registerAudioRoutes(AsyncWebServer& server) {
         }
         applyMood((uint8_t)mood);
         PA_LOG_INFO(TAG, "[MOOD] POST /api/mood mood=%d", mood);
+        req->send(200, "application/json", "{\"ok\":true}");
+    });
+
+    // ---- POST /api/audio/query — on-demand module status poll ----
+    // Enqueues AUDIO_CMD_QUERY_STATUS; AudioTask runs queryModuleState() and
+    // updates RobotState. The result is available via GET /api/audio after
+    // ~1.5 s (3 × 300 ms query timeout + queue latency).
+    server.on("/api/audio/query", HTTP_POST, [](AsyncWebServerRequest* req) {
+        if (!audioQueueQueryStatus(SRC_WEB_API)) {
+            req->send(503, "application/json",
+                      "{\"ok\":false,\"error\":\"audio command queue full\"}");
+            return;
+        }
+        PA_LOG_INFO(TAG, "[AUDIO] POST /api/audio/query — status poll enqueued");
         req->send(200, "application/json", "{\"ok\":true}");
     });
 

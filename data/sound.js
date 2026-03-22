@@ -397,11 +397,39 @@
     }
   });
 
-  // Initial module status fetch + 3 s poll while page is open
-  // Skip poll when tab is hidden — consistent with other poll guards in this file.
+  // Initial module status fetch from cached data (no UART query on load)
   updateModuleStatus();
-  window.setInterval(() => {
-    if (document.visibilityState === "hidden") return;
-    updateModuleStatus();
-  }, 3000);
+
+  // Poll button — sends a POST /api/audio/query which runs queryModuleState()
+  // in AudioTask, then re-fetches /api/audio after 1.5 s to show the result.
+  // Only use while not playing — querying the DY-SV5W mid-playback can
+  // corrupt its RX state machine.
+  const btnPoll = document.getElementById("btn-poll-status");
+  const modStatusFb = document.getElementById("mod-status-feedback");
+  if (btnPoll) {
+    btnPoll.addEventListener("click", async () => {
+      btnPoll.disabled = true;
+      btnPoll.textContent = "Polling…";
+      try {
+        await window.PAApi.postForm("/api/audio/query", {});
+        window.setTimeout(() => {
+          updateModuleStatus()
+            .then(() => {
+              showFeedback(modStatusFb, "Status updated", true);
+            })
+            .catch(() => {
+              showFeedback(modStatusFb, "Fetch failed after poll", false);
+            })
+            .finally(() => {
+              btnPoll.disabled = false;
+              btnPoll.textContent = "Poll status";
+            });
+        }, 1600);
+      } catch (err) {
+        btnPoll.disabled = false;
+        btnPoll.textContent = "Poll status";
+        showFeedback(modStatusFb, `Poll failed: ${window.PAApi.messageFor(err)}`, false);
+      }
+    });
+  }
 })();

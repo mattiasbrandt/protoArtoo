@@ -122,6 +122,19 @@ bool audioQueueSetVolume(uint8_t vol, CommandSource src) {
     return true;
 }
 
+bool audioQueueQueryStatus(CommandSource src) {
+    AudioCommand msg{};
+    msg.type = AUDIO_CMD_QUERY_STATUS;
+    msg.source = src;
+    if (xQueueSend(audioCmdQueue, &msg, 0) != pdTRUE) {
+        taskENTER_CRITICAL(&robotStateMux);
+        robotState.queueOverflowCount++;
+        taskEXIT_CRITICAL(&robotStateMux);
+        return false;
+    }
+    return true;
+}
+
 // -----------------------------------------------------------------------------
 // dispatchAction()
 // Apply a parsed AudioAction to the driver; update volume and randomMode state.
@@ -268,7 +281,7 @@ void audioTask(void* pvParameters) {
         // Enabled: initialise driver on first enable.
         // Covers both the boot case (enabled from the start) and the
         // runtime case (user enables audio after boot via Setup page).
-        // driver->begin() is safe to call once; it configures GPIO only.
+        // driver->begin(vol) is safe to call once; it configures GPIO and sets volume.
         // ----------------------------------------------------------------
         if (!driverInitialized) {
             taskENTER_CRITICAL(&robotStateMux);
@@ -282,42 +295,31 @@ void audioTask(void* pvParameters) {
             named.cantina_l = robotState.cfg_snd_cantina_l;
             named.startup = robotState.cfg_snd_startup;
             taskEXIT_CRITICAL(&robotStateMux);
-            driver->begin();
-            driver->setVolume(currentVol);
+            driver->begin(currentVol);
             driverInitialized = true;
-            // begin() confirmed the module was online (ran pre-init queries).
-            // Seed lastLinkOkMs so the grace window starts from successful init,
-            // not from system boot epoch. Without this, the grace period expires
-            // 10 s from boot if begin()'s own queries ran and succeeded but the
-            // first AudioTask query fires during playback.
+            // Seed lastLinkOkMs so the grace window starts from init, not from
+            // system boot epoch (t=0 would expire after only 10 s).
             lastLinkOkMs = millis();
             PA_LOG_INFO(TAG, "audio driver init — PA_AUDIO_DRIVER=%d vol=%u", PA_AUDIO_DRIVER,
                         (unsigned)currentVol);
 
-            // Initial module state query — write results to RobotState so
-            // GET /api/audio can report actual module status from the moment
-            // the driver is up.
+            // Seed RobotState from getCachedState() — begin() now runs
+            // pre-init queries so m_device and m_totalTracks may already
+            // be populated (non-0xFF/0) if the module responded.
             {
                 AudioModuleState ms{};
-                bool ok = driver->queryModuleState(ms);
-                if (ok && ms.linkOk)
-                    lastLinkOkMs = millis();
-                // Grace period: keep link_ok true if we had a good response
-                // within the last 10 s. The DY-SV5W does not respond to queries
-                // while actively playing a track, causing valid poll failures.
-                bool linkOk = (ok && ms.linkOk) || ((uint32_t)(millis() - lastLinkOkMs) < 10000u);
+                driver->getCachedState(ms);
                 taskENTER_CRITICAL(&robotStateMux);
-                robotState.audio_module_link_ok = linkOk;
+                robotState.audio_module_link_ok = ms.linkOk;
                 robotState.audio_module_play_state = ms.playState;
                 robotState.audio_module_device = ms.device;
                 robotState.audio_module_total_tracks = ms.totalTracks;
                 robotState.audio_module_current_track = ms.currentTrack;
                 taskEXIT_CRITICAL(&robotStateMux);
-                PA_LOG_INFO(TAG, "module init query: link=%s device=0x%02X play=0x%02X tracks=%u",
-                            ok ? "OK" : "NO_RESPONSE", (unsigned)ms.device, (unsigned)ms.playState,
+                PA_LOG_INFO(TAG, "module init cached: link=%s device=0x%02X tracks=%u",
+                            ms.linkOk ? "OK" : "NO_DEVICE", (unsigned)ms.device,
                             (unsigned)ms.totalTracks);
             }
-            lastQueryMs = millis();
         }
 
         // ----------------------------------------------------------------
@@ -383,6 +385,26 @@ void audioTask(void* pvParameters) {
                     PA_LOG_INFO(TAG, "[%s] volume %u", commandSourceToString(cmd.source),
                                 (unsigned)currentVol);
                     break;
+
+                case AUDIO_CMD_QUERY_STATUS: {
+                    // On-demand query triggered by the web UI poll button.
+                    // Runs only when explicitly requested — never automatically.
+                    // The 3-query sequence takes up to ~900 ms; this is acceptable
+                    // since it is user-initiated and not in a real-time loop.
+                    AudioModuleState ms{};
+                    bool ok = driver->queryModuleState(ms);
+                    taskENTER_CRITICAL(&robotStateMux);
+                    robotState.audio_module_link_ok = ok && ms.linkOk;
+                    robotState.audio_module_play_state = ms.playState;
+                    robotState.audio_module_device = ms.device;
+                    robotState.audio_module_total_tracks = ms.totalTracks;
+                    robotState.audio_module_current_track = ms.currentTrack;
+                    taskEXIT_CRITICAL(&robotStateMux);
+                    PA_LOG_INFO(TAG, "[%s] status poll: link=%s device=0x%02X play=0x%02X",
+                                commandSourceToString(cmd.source), ok ? "OK" : "NO_RSP",
+                                (unsigned)ms.device, (unsigned)ms.playState);
+                    break;
+                }
             }
         }
 
