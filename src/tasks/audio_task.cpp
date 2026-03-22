@@ -224,10 +224,8 @@ void audioTask(void* pvParameters) {
     bool driverInitialized = false;  // becomes true on first enable
     bool randomMode = false;
     uint32_t lastRandMs = 0;
-    uint32_t lastPlayMs = 0;    // anti-spam: last playTrack() timestamp
-    uint32_t lastQueryMs = 0;   // periodic module state re-query timestamp
-    uint32_t lastLinkOkMs = 0;  // last time queryModuleState returned link_ok=true
-    uint8_t currentVol = 20;    // updated from config on first enable
+    uint32_t lastPlayMs = 0;  // anti-spam: last playTrack() timestamp
+    uint8_t currentVol = 20;  // updated from config on first enable
 
     // Minimum interval between successive playTrack() calls (ms).
     // The DY-SV5W needs ~100 ms per command (enforced in the driver) plus
@@ -297,9 +295,6 @@ void audioTask(void* pvParameters) {
             taskEXIT_CRITICAL(&robotStateMux);
             driver->begin(currentVol);
             driverInitialized = true;
-            // Seed lastLinkOkMs so the grace window starts from init, not from
-            // system boot epoch (t=0 would expire after only 10 s).
-            lastLinkOkMs = millis();
             PA_LOG_INFO(TAG, "audio driver init — PA_AUDIO_DRIVER=%d vol=%u", PA_AUDIO_DRIVER,
                         (unsigned)currentVol);
 
@@ -470,27 +465,13 @@ void audioTask(void* pvParameters) {
         }
 
         // ----------------------------------------------------------------
-        // Periodic module state re-query (every 2 s while audio is enabled).
-        // Updates RobotState so GET /api/audio reflects live module status.
-        // queryModuleState() is ~900 ms worst-case but only runs between
-        // queue receive cycles, never during a playback command.
-        // Grace period: keep link_ok true for 10 s after the last good
-        // response — the DY-SV5W does not respond to queries while playing.
+        // Periodic auto-query REMOVED.
+        // The DY-SV5W FLASH variant's RX state machine is corrupted by
+        // query frames sent while the module is playing. The 2 s auto-query
+        // reliably caused "one sound then silence" after the first query
+        // landed during playback. Module status is now updated ONLY via the
+        // manual Poll button (AUDIO_CMD_QUERY_STATUS) which the operator
+        // can use when no playback is active.
         // ----------------------------------------------------------------
-        if ((uint32_t)(millis() - lastQueryMs) >= 2000u) {
-            lastQueryMs = millis();
-            AudioModuleState ms{};
-            bool ok = driver->queryModuleState(ms);
-            if (ok && ms.linkOk)
-                lastLinkOkMs = millis();
-            bool linkOk = (ok && ms.linkOk) || ((uint32_t)(millis() - lastLinkOkMs) < 10000u);
-            taskENTER_CRITICAL(&robotStateMux);
-            robotState.audio_module_link_ok = linkOk;
-            robotState.audio_module_play_state = ms.playState;
-            robotState.audio_module_device = ms.device;
-            robotState.audio_module_total_tracks = ms.totalTracks;
-            robotState.audio_module_current_track = ms.currentTrack;
-            taskEXIT_CRITICAL(&robotStateMux);
-        }
     }
 }
