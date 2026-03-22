@@ -33,8 +33,10 @@
 //
 // Diagnostic queries in begin():
 //   Runs three queries before and after init commands so the serial log
-//   tells us definitively whether TX reaches the module, SD is online,
+//   tells us definitively whether TX reaches the module, device is online,
 //   and how many tracks are present. Zero-byte responses = TX dead.
+//   The detected device type is used to send the correct switchDrive command
+//   so FLASH modules are not accidentally switched to SD (which breaks queries).
 // =============================================================================
 
 #include "audio_soft_uart.h"
@@ -174,13 +176,25 @@ void AudioDriverSoftUart::begin() {
     }
 
     // -------------------------------------------------------------------------
-    // Init commands — SD/TF device select, EQ normal, then apply NVS volume.
-    // (Volume is applied by AudioTask after begin() returns via setVolume().)
+    // Init commands — device select (use detected device), EQ normal, then
+    // apply NVS volume. (Volume is applied by AudioTask after begin() returns.)
+    //
+    // IMPORTANT: do NOT hardcode SD/TF here. The module reports its actual
+    // storage type via Q_DEV_ONLINE. Sending switchDrive(SD) to a FLASH module
+    // causes it to attempt SD card enumeration, fail, and stop responding to
+    // queries — while play commands still work (different UART path inside the
+    // module). Use the detected m_device to select the right storage, or skip
+    // the command if pre-init detection failed (m_device == 0xFF).
     // -------------------------------------------------------------------------
 
-    // Switch to SD/TF card (0x0B, device=0x01). SM = AA+0B+01+01 = 0xB7.
-    uint8_t selectSd[] = {0xAA, 0x0B, 0x01, 0x01};
-    sendCommand(selectSd, sizeof(selectSd));
+    // Switch to detected device (0x0B). SM = AA+0B+01+[device].
+    if (m_device != 0xFF) {
+        uint8_t selectDev[] = {0xAA, 0x0B, 0x01, m_device};
+        sendCommand(selectDev, sizeof(selectDev));
+        PA_LOG_INFO(TAG, "init: switchDrive to 0x%02X", m_device);
+    } else {
+        PA_LOG_WARN(TAG, "init: skipping switchDrive — device unknown from pre-init query");
+    }
 
     // Set EQ to Normal (0x1A, eq=0x00). SM = AA+1A+01+00 = 0xC5.
     uint8_t eqNormal[] = {0xAA, 0x1A, 0x01, 0x00};
