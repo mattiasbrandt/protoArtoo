@@ -497,13 +497,13 @@ void registerConfigRoutes(AsyncWebServer& server) {
     });
 
     server.on("/api/config", HTTP_POST, [](AsyncWebServerRequest* req) {
+        ConfigSnapshot working;
+        captureConfigSnapshot(&working);
         bool changed = false;
 
         int16_t speedLimitMax;
         if (parseInt16Param(req, "speedLimitMax", 0, SPEED_LIMIT_MAX, &speedLimitMax)) {
-            taskENTER_CRITICAL(&robotStateMux);
-            robotState.cfg_speedLimitMax = speedLimitMax;
-            taskEXIT_CRITICAL(&robotStateMux);
+            working.speedLimitMax = speedLimitMax;
             PA_LOG_INFO(TAG, "[CFG] speedLimitMax updated to %d", (int)speedLimitMax);
             changed = true;
         } else if (req->hasParam("speedLimitMax", true)) {
@@ -514,9 +514,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
 
         uint32_t webDriveTimeoutMs;
         if (parseUint32Param(req, "webDriveTimeoutMs", 100, 5000, &webDriveTimeoutMs)) {
-            taskENTER_CRITICAL(&robotStateMux);
-            robotState.cfg_webDriveTimeoutMs = webDriveTimeoutMs;
-            taskEXIT_CRITICAL(&robotStateMux);
+            working.webDriveTimeoutMs = webDriveTimeoutMs;
             PA_LOG_INFO(TAG, "[CFG] webDriveTimeoutMs updated to %u", (unsigned)webDriveTimeoutMs);
             changed = true;
         } else if (req->hasParam("webDriveTimeoutMs", true)) {
@@ -527,9 +525,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
 
         bool boolValue;
         if (parseBoolParam(req, "ch8ModeLock", &boolValue)) {
-            taskENTER_CRITICAL(&robotStateMux);
-            robotState.cfg_ch8ModeLock = boolValue;
-            taskEXIT_CRITICAL(&robotStateMux);
+            working.ch8ModeLock = boolValue;
             PA_LOG_INFO(TAG, "[CFG] ch8ModeLock updated to %s", boolValue ? "true" : "false");
             changed = true;
         } else if (req->hasParam("ch8ModeLock", true)) {
@@ -539,10 +535,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
         }
 
         if (parseBoolParam(req, "stationary", &boolValue)) {
-            taskENTER_CRITICAL(&robotStateMux);
-            robotState.cfg_stationary = boolValue;
-            robotState.stationary = boolValue;
-            taskEXIT_CRITICAL(&robotStateMux);
+            working.stationary = boolValue;
             PA_LOG_INFO(TAG, "[CFG] stationary updated to %s", boolValue ? "true" : "false");
             changed = true;
         } else if (req->hasParam("stationary", true)) {
@@ -554,9 +547,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
         if (req->hasParam("logLevel", true)) {
             int16_t lvl = 0;
             if (parseInt16Param(req, "logLevel", 1, 3, &lvl)) {
-                taskENTER_CRITICAL(&robotStateMux);
-                robotState.cfg_logLevel = (uint8_t)lvl;
-                taskEXIT_CRITICAL(&robotStateMux);
+                working.logLevel = (uint8_t)lvl;
                 PA_LOG_INFO(TAG, "[CFG] logLevel updated to %d", (int)lvl);
                 changed = true;
             } else {
@@ -575,9 +566,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
                           "single_sbus, or dual_sbus\"}");
                 return;
             }
-            taskENTER_CRITICAL(&robotStateMux);
-            robotState.cfg_rc_input_mode = mode;
-            taskEXIT_CRITICAL(&robotStateMux);
+            working.rcInputMode = mode;
             PA_LOG_INFO(TAG, "[CFG] rcInputMode updated to %s", rcModeToString(mode));
             changed = true;
         }
@@ -588,21 +577,21 @@ void registerConfigRoutes(AsyncWebServer& server) {
         };
 
         BoolCfgField boolFields[] = {
-            {"enableArm1", &robotState.cfg_enable_arm1},
-            {"enableArm2", &robotState.cfg_enable_arm2},
-            {"enableAux1", &robotState.cfg_enable_aux1},
-            {"enableAux2", &robotState.cfg_enable_aux2},
-            {"enableAux3", &robotState.cfg_enable_aux3},
-            {"enableDome", &robotState.cfg_enable_dome},
-            {"enableRcCh1", &robotState.cfg_enable_rc_ch1},
-            {"enableRcCh2", &robotState.cfg_enable_rc_ch2},
-            {"enableRcCh3", &robotState.cfg_enable_rc_ch3},
-            {"enableRcCh4", &robotState.cfg_enable_rc_ch4},
-            {"enableRcCh5", &robotState.cfg_enable_rc_ch5},
-            {"enableRcCh6", &robotState.cfg_enable_rc_ch6},
-            {"enableS1Hoverboard", &robotState.cfg_enable_s1_hoverboard},
-            {"enableS2Sound", &robotState.cfg_enable_s2_sound},
-            {"enableS3DomeCtrl", &robotState.cfg_enable_s3_dome_ctrl},
+            {"enableArm1", &working.enableArm1},
+            {"enableArm2", &working.enableArm2},
+            {"enableAux1", &working.enableAux1},
+            {"enableAux2", &working.enableAux2},
+            {"enableAux3", &working.enableAux3},
+            {"enableDome", &working.enableDome},
+            {"enableRcCh1", &working.enableRcCh1},
+            {"enableRcCh2", &working.enableRcCh2},
+            {"enableRcCh3", &working.enableRcCh3},
+            {"enableRcCh4", &working.enableRcCh4},
+            {"enableRcCh5", &working.enableRcCh5},
+            {"enableRcCh6", &working.enableRcCh6},
+            {"enableS1Hoverboard", &working.enableS1Hoverboard},
+            {"enableS2Sound", &working.enableS2Sound},
+            {"enableS3DomeCtrl", &working.enableS3DomeCtrl},
         };
 
         for (size_t i = 0; i < sizeof(boolFields) / sizeof(boolFields[0]); ++i) {
@@ -618,9 +607,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
                 req->send(400, "application/json", err);
                 return;
             }
-            taskENTER_CRITICAL(&robotStateMux);
             *boolFields[i].field = boolValue;
-            taskEXIT_CRITICAL(&robotStateMux);
             PA_LOG_INFO(TAG, "[CFG] %s updated to %s", boolFields[i].param,
                         boolValue ? "true" : "false");
             changed = true;
@@ -628,9 +615,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
 
         uint16_t domeU16;
         if (parseUint16Param(req, "domeNeutralUs", 1000, 2000, &domeU16)) {
-            taskENTER_CRITICAL(&robotStateMux);
-            robotState.cfg_dome_neutral_us = domeU16;
-            taskEXIT_CRITICAL(&robotStateMux);
+            working.domeNeutralUs = domeU16;
             changed = true;
         } else if (req->hasParam("domeNeutralUs", true)) {
             req->send(400, "application/json",
@@ -639,9 +624,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
         }
 
         if (parseUint16Param(req, "domeMinPulseUs", 1000, 2000, &domeU16)) {
-            taskENTER_CRITICAL(&robotStateMux);
-            robotState.cfg_dome_min_pulse_us = domeU16;
-            taskEXIT_CRITICAL(&robotStateMux);
+            working.domeMinPulseUs = domeU16;
             changed = true;
         } else if (req->hasParam("domeMinPulseUs", true)) {
             req->send(400, "application/json",
@@ -650,9 +633,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
         }
 
         if (parseUint16Param(req, "domeMaxPulseUs", 1000, 2000, &domeU16)) {
-            taskENTER_CRITICAL(&robotStateMux);
-            robotState.cfg_dome_max_pulse_us = domeU16;
-            taskEXIT_CRITICAL(&robotStateMux);
+            working.domeMaxPulseUs = domeU16;
             changed = true;
         } else if (req->hasParam("domeMaxPulseUs", true)) {
             req->send(400, "application/json",
@@ -662,9 +643,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
 
         uint8_t domePct;
         if (parseUint8Param(req, "domeSpeedLimitPct", 0, 100, &domePct)) {
-            taskENTER_CRITICAL(&robotStateMux);
-            robotState.cfg_dome_speed_limit_pct = domePct;
-            taskEXIT_CRITICAL(&robotStateMux);
+            working.domeSpeedLimitPct = domePct;
             changed = true;
         } else if (req->hasParam("domeSpeedLimitPct", true)) {
             req->send(400, "application/json",
@@ -678,16 +657,16 @@ void registerConfigRoutes(AsyncWebServer& server) {
         };
 
         ServoCalField servoCalFields[] = {
-            {"arm1OpenUs", &robotState.cfg_arm1_open_us},
-            {"arm1CloseUs", &robotState.cfg_arm1_close_us},
-            {"arm2OpenUs", &robotState.cfg_arm2_open_us},
-            {"arm2CloseUs", &robotState.cfg_arm2_close_us},
-            {"aux1OpenUs", &robotState.cfg_aux1_open_us},
-            {"aux1CloseUs", &robotState.cfg_aux1_close_us},
-            {"aux2OpenUs", &robotState.cfg_aux2_open_us},
-            {"aux2CloseUs", &robotState.cfg_aux2_close_us},
-            {"aux3OpenUs", &robotState.cfg_aux3_open_us},
-            {"aux3CloseUs", &robotState.cfg_aux3_close_us},
+            {"arm1OpenUs", &working.arm1OpenUs},
+            {"arm1CloseUs", &working.arm1CloseUs},
+            {"arm2OpenUs", &working.arm2OpenUs},
+            {"arm2CloseUs", &working.arm2CloseUs},
+            {"aux1OpenUs", &working.aux1OpenUs},
+            {"aux1CloseUs", &working.aux1CloseUs},
+            {"aux2OpenUs", &working.aux2OpenUs},
+            {"aux2CloseUs", &working.aux2CloseUs},
+            {"aux3OpenUs", &working.aux3OpenUs},
+            {"aux3CloseUs", &working.aux3CloseUs},
         };
 
         for (size_t i = 0; i < sizeof(servoCalFields) / sizeof(servoCalFields[0]); ++i) {
@@ -704,9 +683,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
                 req->send(400, "application/json", err);
                 return;
             }
-            taskENTER_CRITICAL(&robotStateMux);
             *servoCalFields[i].field = pulseUs;
-            taskEXIT_CRITICAL(&robotStateMux);
             changed = true;
         }
 
@@ -716,9 +693,9 @@ void registerConfigRoutes(AsyncWebServer& server) {
         };
 
         ServoTypeField servoTypeFields[] = {
-            {"arm1Type", &robotState.cfg_arm1_type}, {"arm2Type", &robotState.cfg_arm2_type},
-            {"aux1Type", &robotState.cfg_aux1_type}, {"aux2Type", &robotState.cfg_aux2_type},
-            {"aux3Type", &robotState.cfg_aux3_type},
+            {"arm1Type", &working.arm1Type}, {"arm2Type", &working.arm2Type},
+            {"aux1Type", &working.aux1Type}, {"aux2Type", &working.aux2Type},
+            {"aux3Type", &working.aux3Type},
         };
 
         for (size_t i = 0; i < sizeof(servoTypeFields) / sizeof(servoTypeFields[0]); ++i) {
@@ -744,9 +721,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
                 return;
             }
 
-            taskENTER_CRITICAL(&robotStateMux);
             *servoTypeFields[i].field = parsed;
-            taskEXIT_CRITICAL(&robotStateMux);
             changed = true;
         }
 
@@ -756,20 +731,20 @@ void registerConfigRoutes(AsyncWebServer& server) {
         };
 
         BindingField bindingFields[] = {
-            {"rcPwmDriveSpeed", &robotState.cfg_rc_pwm_drive_speed},
-            {"rcPwmDriveSteer", &robotState.cfg_rc_pwm_drive_steer},
-            {"rcPwmDriveLimit", &robotState.cfg_rc_pwm_drive_limit},
-            {"rcPwmDomeSpeed", &robotState.cfg_rc_pwm_dome_speed},
-            {"rcPwmArm1", &robotState.cfg_rc_pwm_arm1},
-            {"rcPwmArm2", &robotState.cfg_rc_pwm_arm2},
-            {"rcPwmSound", &robotState.cfg_rc_pwm_sound},
-            {"rcSbusDriveSpeed", &robotState.cfg_rc_sbus_drive_speed},
-            {"rcSbusDriveSteer", &robotState.cfg_rc_sbus_drive_steer},
-            {"rcSbusDriveLimit", &robotState.cfg_rc_sbus_drive_limit},
-            {"rcSbusDomeSpeed", &robotState.cfg_rc_sbus_dome_speed},
-            {"rcSbusArm1", &robotState.cfg_rc_sbus_arm1},
-            {"rcSbusArm2", &robotState.cfg_rc_sbus_arm2},
-            {"rcSbusSound", &robotState.cfg_rc_sbus_sound},
+            {"rcPwmDriveSpeed", &working.rcPwmDriveSpeed},
+            {"rcPwmDriveSteer", &working.rcPwmDriveSteer},
+            {"rcPwmDriveLimit", &working.rcPwmDriveLimit},
+            {"rcPwmDomeSpeed", &working.rcPwmDomeSpeed},
+            {"rcPwmArm1", &working.rcPwmArm1},
+            {"rcPwmArm2", &working.rcPwmArm2},
+            {"rcPwmSound", &working.rcPwmSound},
+            {"rcSbusDriveSpeed", &working.rcSbusDriveSpeed},
+            {"rcSbusDriveSteer", &working.rcSbusDriveSteer},
+            {"rcSbusDriveLimit", &working.rcSbusDriveLimit},
+            {"rcSbusDomeSpeed", &working.rcSbusDomeSpeed},
+            {"rcSbusArm1", &working.rcSbusArm1},
+            {"rcSbusArm2", &working.rcSbusArm2},
+            {"rcSbusSound", &working.rcSbusSound},
         };
 
         for (size_t i = 0; i < sizeof(bindingFields) / sizeof(bindingFields[0]); ++i) {
@@ -777,10 +752,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
                 continue;
             }
 
-            RcInputMode activeMode;
-            taskENTER_CRITICAL(&robotStateMux);
-            activeMode = robotState.cfg_rc_input_mode;
-            taskEXIT_CRITICAL(&robotStateMux);
+            RcInputMode activeMode = working.rcInputMode;
 
             RcBindingConfig parsed;
             if (parseRcBindingParam(req, bindingFields[i].param, &parsed)) {
@@ -793,9 +765,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
                     req->send(400, "application/json", err);
                     return;
                 }
-                taskENTER_CRITICAL(&robotStateMux);
                 *bindingFields[i].field = parsed;
-                taskEXIT_CRITICAL(&robotStateMux);
                 changed = true;
                 continue;
             }
@@ -814,9 +784,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
                     req->send(400, "application/json", err);
                     return;
                 }
-                taskENTER_CRITICAL(&robotStateMux);
-                robotState.cfg_rc_arm1 = triggerParsed;
-                taskEXIT_CRITICAL(&robotStateMux);
+                working.rcArm1 = triggerParsed;
                 changed = true;
                 continue;
             }
@@ -833,9 +801,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
                     req->send(400, "application/json", err);
                     return;
                 }
-                taskENTER_CRITICAL(&robotStateMux);
-                robotState.cfg_rc_arm2 = triggerParsed;
-                taskEXIT_CRITICAL(&robotStateMux);
+                working.rcArm2 = triggerParsed;
                 changed = true;
                 continue;
             }
@@ -852,9 +818,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
                     req->send(400, "application/json", err);
                     return;
                 }
-                taskENTER_CRITICAL(&robotStateMux);
-                robotState.cfg_rc_sound = triggerParsed;
-                taskEXIT_CRITICAL(&robotStateMux);
+                working.rcSound = triggerParsed;
                 changed = true;
                 continue;
             }
@@ -872,34 +836,34 @@ void registerConfigRoutes(AsyncWebServer& server) {
         };
 
         TriggerField triggerFields[] = {
-            {"rcArm1", &robotState.cfg_rc_arm1},
-            {"rcArm2", &robotState.cfg_rc_arm2},
-            {"rcAux1", &robotState.cfg_rc_aux1},
-            {"rcAux2", &robotState.cfg_rc_aux2},
-            {"rcAux3", &robotState.cfg_rc_aux3},
-            {"rcSound", &robotState.cfg_rc_sound},
-            {"rcOpMode", &robotState.cfg_rc_opmode},
-            {"rcFree0", &robotState.cfg_rc_free0},
-            {"rcFree1", &robotState.cfg_rc_free1},
-            {"rcFree2", &robotState.cfg_rc_free2},
-            {"rcFree3", &robotState.cfg_rc_free3},
+            {"rcArm1", &working.rcArm1},
+            {"rcArm2", &working.rcArm2},
+            {"rcAux1", &working.rcAux1},
+            {"rcAux2", &working.rcAux2},
+            {"rcAux3", &working.rcAux3},
+            {"rcSound", &working.rcSound},
+            {"rcOpMode", &working.rcOpmode},
+            {"rcFree0", &working.rcFree0},
+            {"rcFree1", &working.rcFree1},
+            {"rcFree2", &working.rcFree2},
+            {"rcFree3", &working.rcFree3},
             // Compatibility aliases from in-flight UI names
-            {"rcPwmAux1", &robotState.cfg_rc_aux1},
-            {"rcPwmAux2", &robotState.cfg_rc_aux2},
-            {"rcPwmAux3", &robotState.cfg_rc_aux3},
-            {"rcPwmOpMode", &robotState.cfg_rc_opmode},
-            {"rcPwmFree0", &robotState.cfg_rc_free0},
-            {"rcPwmFree1", &robotState.cfg_rc_free1},
-            {"rcPwmFree2", &robotState.cfg_rc_free2},
-            {"rcPwmFree3", &robotState.cfg_rc_free3},
-            {"rcSbusAux1", &robotState.cfg_rc_aux1},
-            {"rcSbusAux2", &robotState.cfg_rc_aux2},
-            {"rcSbusAux3", &robotState.cfg_rc_aux3},
-            {"rcSbusOpMode", &robotState.cfg_rc_opmode},
-            {"rcSbusFree0", &robotState.cfg_rc_free0},
-            {"rcSbusFree1", &robotState.cfg_rc_free1},
-            {"rcSbusFree2", &robotState.cfg_rc_free2},
-            {"rcSbusFree3", &robotState.cfg_rc_free3},
+            {"rcPwmAux1", &working.rcAux1},
+            {"rcPwmAux2", &working.rcAux2},
+            {"rcPwmAux3", &working.rcAux3},
+            {"rcPwmOpMode", &working.rcOpmode},
+            {"rcPwmFree0", &working.rcFree0},
+            {"rcPwmFree1", &working.rcFree1},
+            {"rcPwmFree2", &working.rcFree2},
+            {"rcPwmFree3", &working.rcFree3},
+            {"rcSbusAux1", &working.rcAux1},
+            {"rcSbusAux2", &working.rcAux2},
+            {"rcSbusAux3", &working.rcAux3},
+            {"rcSbusOpMode", &working.rcOpmode},
+            {"rcSbusFree0", &working.rcFree0},
+            {"rcSbusFree1", &working.rcFree1},
+            {"rcSbusFree2", &working.rcFree2},
+            {"rcSbusFree3", &working.rcFree3},
         };
 
         for (size_t i = 0; i < sizeof(triggerFields) / sizeof(triggerFields[0]); ++i) {
@@ -907,10 +871,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
                 continue;
             }
 
-            RcInputMode activeMode;
-            taskENTER_CRITICAL(&robotStateMux);
-            activeMode = robotState.cfg_rc_input_mode;
-            taskEXIT_CRITICAL(&robotStateMux);
+            RcInputMode activeMode = working.rcInputMode;
 
             RcTriggerBinding parsed;
             if (!parseRcTriggerParam(req, triggerFields[i].param, &parsed)) {
@@ -942,9 +903,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
                 return;
             }
 
-            taskENTER_CRITICAL(&robotStateMux);
             *triggerFields[i].field = parsed;
-            taskEXIT_CRITICAL(&robotStateMux);
             changed = true;
         }
 
@@ -953,6 +912,81 @@ void registerConfigRoutes(AsyncWebServer& server) {
                       "{\"ok\":false,\"error\":\"no supported config fields supplied\"}");
             return;
         }
+
+        taskENTER_CRITICAL(&robotStateMux);
+        robotState.cfg_speedLimitMax = working.speedLimitMax;
+        robotState.cfg_webDriveTimeoutMs = working.webDriveTimeoutMs;
+        robotState.cfg_ch8ModeLock = working.ch8ModeLock;
+        robotState.cfg_stationary = working.stationary;
+        robotState.stationary = working.stationary;
+        robotState.cfg_logLevel = working.logLevel;
+        robotState.cfg_rc_input_mode = working.rcInputMode;
+
+        robotState.cfg_enable_arm1 = working.enableArm1;
+        robotState.cfg_enable_arm2 = working.enableArm2;
+        robotState.cfg_enable_aux1 = working.enableAux1;
+        robotState.cfg_enable_aux2 = working.enableAux2;
+        robotState.cfg_enable_aux3 = working.enableAux3;
+        robotState.cfg_enable_dome = working.enableDome;
+        robotState.cfg_enable_rc_ch1 = working.enableRcCh1;
+        robotState.cfg_enable_rc_ch2 = working.enableRcCh2;
+        robotState.cfg_enable_rc_ch3 = working.enableRcCh3;
+        robotState.cfg_enable_rc_ch4 = working.enableRcCh4;
+        robotState.cfg_enable_rc_ch5 = working.enableRcCh5;
+        robotState.cfg_enable_rc_ch6 = working.enableRcCh6;
+        robotState.cfg_enable_s1_hoverboard = working.enableS1Hoverboard;
+        robotState.cfg_enable_s2_sound = working.enableS2Sound;
+        robotState.cfg_enable_s3_dome_ctrl = working.enableS3DomeCtrl;
+
+        robotState.cfg_dome_neutral_us = working.domeNeutralUs;
+        robotState.cfg_dome_min_pulse_us = working.domeMinPulseUs;
+        robotState.cfg_dome_max_pulse_us = working.domeMaxPulseUs;
+        robotState.cfg_dome_speed_limit_pct = working.domeSpeedLimitPct;
+
+        robotState.cfg_arm1_type = working.arm1Type;
+        robotState.cfg_arm2_type = working.arm2Type;
+        robotState.cfg_aux1_type = working.aux1Type;
+        robotState.cfg_aux2_type = working.aux2Type;
+        robotState.cfg_aux3_type = working.aux3Type;
+        robotState.cfg_arm1_open_us = working.arm1OpenUs;
+        robotState.cfg_arm1_close_us = working.arm1CloseUs;
+        robotState.cfg_arm2_open_us = working.arm2OpenUs;
+        robotState.cfg_arm2_close_us = working.arm2CloseUs;
+        robotState.cfg_aux1_open_us = working.aux1OpenUs;
+        robotState.cfg_aux1_close_us = working.aux1CloseUs;
+        robotState.cfg_aux2_open_us = working.aux2OpenUs;
+        robotState.cfg_aux2_close_us = working.aux2CloseUs;
+        robotState.cfg_aux3_open_us = working.aux3OpenUs;
+        robotState.cfg_aux3_close_us = working.aux3CloseUs;
+
+        robotState.cfg_rc_pwm_drive_speed = working.rcPwmDriveSpeed;
+        robotState.cfg_rc_pwm_drive_steer = working.rcPwmDriveSteer;
+        robotState.cfg_rc_pwm_drive_limit = working.rcPwmDriveLimit;
+        robotState.cfg_rc_pwm_dome_speed = working.rcPwmDomeSpeed;
+        robotState.cfg_rc_pwm_arm1 = working.rcPwmArm1;
+        robotState.cfg_rc_pwm_arm2 = working.rcPwmArm2;
+        robotState.cfg_rc_pwm_sound = working.rcPwmSound;
+
+        robotState.cfg_rc_sbus_drive_speed = working.rcSbusDriveSpeed;
+        robotState.cfg_rc_sbus_drive_steer = working.rcSbusDriveSteer;
+        robotState.cfg_rc_sbus_drive_limit = working.rcSbusDriveLimit;
+        robotState.cfg_rc_sbus_dome_speed = working.rcSbusDomeSpeed;
+        robotState.cfg_rc_sbus_arm1 = working.rcSbusArm1;
+        robotState.cfg_rc_sbus_arm2 = working.rcSbusArm2;
+        robotState.cfg_rc_sbus_sound = working.rcSbusSound;
+
+        robotState.cfg_rc_arm1 = working.rcArm1;
+        robotState.cfg_rc_arm2 = working.rcArm2;
+        robotState.cfg_rc_aux1 = working.rcAux1;
+        robotState.cfg_rc_aux2 = working.rcAux2;
+        robotState.cfg_rc_aux3 = working.rcAux3;
+        robotState.cfg_rc_sound = working.rcSound;
+        robotState.cfg_rc_opmode = working.rcOpmode;
+        robotState.cfg_rc_free0 = working.rcFree0;
+        robotState.cfg_rc_free1 = working.rcFree1;
+        robotState.cfg_rc_free2 = working.rcFree2;
+        robotState.cfg_rc_free3 = working.rcFree3;
+        taskEXIT_CRITICAL(&robotStateMux);
 
         if (!saveConfigToNvs()) {
             req->send(500, "application/json",
