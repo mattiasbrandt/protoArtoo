@@ -184,7 +184,15 @@ void AudioDriverSoftUart::begin(uint8_t vol) {
         sendCommand(selectDev, sizeof(selectDev));
         PA_LOG_INFO(TAG, "init: switchDrive to 0x%02X", m_device);
     } else {
-        PA_LOG_WARN(TAG, "init: skipping switchDrive — device unknown from pre-init query");
+        // RX may be unavailable while TX still works (one-way operation).
+        // In that case, force FLASH as a safe default for this hardware.
+        m_device = 0x02;
+        uint8_t selectFlash[] = {0xAA, 0x0B, 0x01, m_device};
+        sendCommand(selectFlash, sizeof(selectFlash));
+        PA_LOG_WARN(TAG,
+                    "init: device unknown from pre-init query; forcing switchDrive to FLASH "
+                    "(0x%02X)",
+                    (unsigned)m_device);
     }
 
     // Set EQ to Normal (0x1A, eq=0x00).
