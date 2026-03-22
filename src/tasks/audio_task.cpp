@@ -211,9 +211,10 @@ void audioTask(void* pvParameters) {
     bool driverInitialized = false;  // becomes true on first enable
     bool randomMode = false;
     uint32_t lastRandMs = 0;
-    uint32_t lastPlayMs = 0;   // anti-spam: last playTrack() timestamp
-    uint32_t lastQueryMs = 0;  // periodic module state re-query timestamp
-    uint8_t currentVol = 20;   // updated from config on first enable
+    uint32_t lastPlayMs = 0;    // anti-spam: last playTrack() timestamp
+    uint32_t lastQueryMs = 0;   // periodic module state re-query timestamp
+    uint32_t lastLinkOkMs = 0;  // last time queryModuleState returned link_ok=true
+    uint8_t currentVol = 20;    // updated from config on first enable
 
     // Minimum interval between successive playTrack() calls (ms).
     // The DY-SV5W needs ~100 ms per command (enforced in the driver) plus
@@ -293,8 +294,14 @@ void audioTask(void* pvParameters) {
             {
                 AudioModuleState ms{};
                 bool ok = driver->queryModuleState(ms);
+                if (ok && ms.linkOk)
+                    lastLinkOkMs = millis();
+                // Grace period: keep link_ok true if we had a good response
+                // within the last 10 s. The DY-SV5W does not respond to queries
+                // while actively playing a track, causing valid poll failures.
+                bool linkOk = (ok && ms.linkOk) || ((uint32_t)(millis() - lastLinkOkMs) < 10000u);
                 taskENTER_CRITICAL(&robotStateMux);
-                robotState.audio_module_link_ok = ok && ms.linkOk;
+                robotState.audio_module_link_ok = linkOk;
                 robotState.audio_module_play_state = ms.playState;
                 robotState.audio_module_device = ms.device;
                 robotState.audio_module_total_tracks = ms.totalTracks;
@@ -439,13 +446,18 @@ void audioTask(void* pvParameters) {
         // Updates RobotState so GET /api/audio reflects live module status.
         // queryModuleState() is ~900 ms worst-case but only runs between
         // queue receive cycles, never during a playback command.
+        // Grace period: keep link_ok true for 10 s after the last good
+        // response — the DY-SV5W does not respond to queries while playing.
         // ----------------------------------------------------------------
         if ((uint32_t)(millis() - lastQueryMs) >= 2000u) {
             lastQueryMs = millis();
             AudioModuleState ms{};
             bool ok = driver->queryModuleState(ms);
+            if (ok && ms.linkOk)
+                lastLinkOkMs = millis();
+            bool linkOk = (ok && ms.linkOk) || ((uint32_t)(millis() - lastLinkOkMs) < 10000u);
             taskENTER_CRITICAL(&robotStateMux);
-            robotState.audio_module_link_ok = ok && ms.linkOk;
+            robotState.audio_module_link_ok = linkOk;
             robotState.audio_module_play_state = ms.playState;
             robotState.audio_module_device = ms.device;
             robotState.audio_module_total_tracks = ms.totalTracks;
