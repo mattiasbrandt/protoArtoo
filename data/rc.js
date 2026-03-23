@@ -24,6 +24,10 @@
   const rcResetDefaults = document.getElementById("rc-reset-defaults");
   const rcDisabledCard = document.getElementById("rc-disabled-card");
 
+  const singleSbusRecvSection = document.getElementById("single-sbus-recv-section");
+  const sbusRecvSel = document.getElementById("sbus-recv-sel");
+  const sbusRecvFeedback = document.getElementById("sbus-recv-feedback");
+  let sbusRecvFeedbackTimer = null;
   const rcSummaryBody = document.getElementById("rc-summary-body");
 
   const rcSlotItems = document.getElementById("rc-slot-items");
@@ -199,6 +203,37 @@
       c.rcCh1?.enabled || c.rcCh2?.enabled || c.rcCh3?.enabled ||
       c.rcCh4?.enabled || c.rcCh5?.enabled || c.rcCh6?.enabled
     );
+  };
+
+  const getSingleSbusRecvCh2 = (cfg) => cfg?.rc?.sbus?.recvCh2 === true;
+
+  const setSingleSbusRecvSelect = (recvCh2) => {
+    if (!sbusRecvSel) return;
+    sbusRecvSel.value = recvCh2 ? "true" : "false";
+  };
+
+  const updateRecvSel = (mode) => {
+    if (!singleSbusRecvSection) return;
+    const visible = mode === "single_sbus";
+    singleSbusRecvSection.classList.toggle("hidden", !visible);
+    singleSbusRecvSection.setAttribute("aria-hidden", visible ? "false" : "true");
+  };
+
+  const setSbusRecvFeedback = (message, variant = "", clearAfterMs = 0) => {
+    if (!sbusRecvFeedback) return;
+    if (sbusRecvFeedbackTimer) {
+      window.clearTimeout(sbusRecvFeedbackTimer);
+      sbusRecvFeedbackTimer = null;
+    }
+    sbusRecvFeedback.textContent = message;
+    sbusRecvFeedback.className = variant ? `feedback mt-8 ${variant}` : "feedback mt-8";
+    if (clearAfterMs > 0) {
+      sbusRecvFeedbackTimer = window.setTimeout(() => {
+        sbusRecvFeedback.textContent = "";
+        sbusRecvFeedback.className = "feedback mt-8";
+        sbusRecvFeedbackTimer = null;
+      }, clearAfterMs);
+    }
   };
 
 
@@ -740,6 +775,7 @@
       card.classList.toggle("selected", selected);
       card.setAttribute("aria-pressed", selected ? "true" : "false");
     });
+    updateRecvSel(mode);
 
     // Clear selected slot when mode changes
     selectedSlot = null;
@@ -793,6 +829,8 @@
         card.setAttribute("aria-pressed", selected ? "true" : "false");
       });
       configCache = data;
+      setSingleSbusRecvSelect(getSingleSbusRecvCh2(data));
+      updateRecvSel(mode);
       if (rcModeFeedback) {
         rcModeFeedback.textContent = `Receiver type: ${mode}`;
         rcModeFeedback.className = "feedback success";
@@ -1260,6 +1298,21 @@
 
   if (rcLearnStop) {
     rcLearnStop.addEventListener("click", exitLearnMode);
+  }
+
+  if (sbusRecvSel) {
+    sbusRecvSel.addEventListener("change", async () => {
+      const recvCh2 = sbusRecvSel.value === "true";
+      const prevValue = sbusRecvSel.value;  // save for revert on failure
+      setSbusRecvFeedback("Saving...");
+      try {
+        await window.PAApi.postJson("/api/config", { rc: { sbus: { recvCh2 } } }, { timeoutMs: 5000 });
+        setSbusRecvFeedback(`\u2713 Saved at ${new Date().toLocaleTimeString()}`, "success", 2000);
+      } catch (error) {
+        sbusRecvSel.value = prevValue;  // revert to last confirmed server state
+        setSbusRecvFeedback(`\u274c ${window.PAApi.messageFor(error)}`, "error", 2000);
+      }
+    });
   }
 
   const setRcDebugMode = async (enabled) => {

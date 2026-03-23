@@ -87,6 +87,19 @@ was wrong in the manual, but the GPIO numbers were right all along.
 | 2 | S2 | Sound | Audio module | 26 | 35 | 9600 | DY-SV5W binary (TX primary, RX optional) |
 | 3 | S3 | Dome Control | Dome link (slip ring) | 33 | 34 | 9600 | Marcduino ASCII, bidirectional |
 
+## Runtime UART Ownership
+
+| UART | Arduino name | Assigned owner | Condition |
+|------|--------------|----------------|-----------|
+| UART0 | Serial | USB debug | Always occupied |
+| UART1 | Serial1 | DriveTask (hoverboard) | S1 enabled |
+| UART1 | Serial1 | RcInputTask (SBUS1/SBUS2 RX) | SBUS mode active — conflicts with hoverboard |
+| UART2 | Serial2 | DomeLinkTask (dome link) | S3 enabled |
+| UART2 | Serial2 | RcInputTask (SBUS2 RX) | Dual SBUS mode — conflicts with dome link |
+| — | GPIO 26 soft-UART | AudioTask (DY-SV5W TX) | S2 enabled |
+
+Safe simultaneous combinations: Standard PWM + dome link + audio; Single SBUS + audio (dome link optional with UART2 query degradation to cached state).
+
 ---
 
 ## GPIO Assignment Summary

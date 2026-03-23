@@ -212,6 +212,8 @@ Update the current web-configurable settings and persist them to NVS.
   - `webDriveTimeoutMs` (`100..5000`)
   - `ch8ModeLock` (`true`/`false` or `1`/`0`)
   - `rcInputMode` (`standard_pwm`, `single_sbus`, `dual_sbus`)
+    - `dual_sbus` requires `enableS3DomeCtrl=false`
+    - in `single_sbus`, setting `rc.sbus.recvCh2=true` selects SBUS2 on GPIO 13 (the same receiver input used as receiver #2 in `dual_sbus`)
   - `enableArm1`, `enableArm2`, `enableAux1`, `enableAux2`, `enableAux3`, `enableDome` (`true`/`false` or `1`/`0`)
   - `enableRcCh1`, `enableRcCh2`, `enableRcCh3`, `enableRcCh4`, `enableRcCh5`, `enableRcCh6` (`true`/`false` or `1`/`0`)
   - `enableS1Hoverboard`, `enableS2Sound`, `enableS3DomeCtrl` (`true`/`false` or `1`/`0`)
@@ -219,6 +221,8 @@ Update the current web-configurable settings and persist them to NVS.
   - `domeSpeedLimitPct` (`0..100`)
   - `rcPwmDriveSpeed`, `rcPwmDriveSteer`, `rcPwmDriveLimit`, `rcPwmDomeSpeed`, `rcPwmArm1`, `rcPwmArm2`, `rcPwmSound`
   - `rcSbusDriveSpeed`, `rcSbusDriveSteer`, `rcSbusDriveLimit`, `rcSbusDomeSpeed`, `rcSbusArm1`, `rcSbusArm2`, `rcSbusSound`
+  - `rc.sbus.recvCh2` (`true`/`false` or `1`/`0`)
+
 - Success response: same shape as `GET /api/config`
 
 RC binding fields use the persisted format
@@ -230,6 +234,11 @@ RC binding fields use the persisted format
   SBUS input
 - `rcPwm*` bindings are the persisted profile used by `standard_pwm`
 - `rcSbus*` bindings are the persisted profile used by both `single_sbus` and `dual_sbus`
+
+`rc.sbus.recvCh2` (boolean) — When `rc.inputMode` is `single_sbus`, selects which
+physical receiver is used: `false` = SBUS1 (GPIO 15), `true` = SBUS2 (GPIO 13).
+Changing this value does not modify channel mapping assignments. Default: `false`.
+
 
 ### `GET /api/rc`
 

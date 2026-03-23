@@ -42,7 +42,23 @@
         </div>
       </div>
 
+      <div class="info-note" role="note" aria-label="Receiver mode compatibility notice">
+        <div>Dual SBUS is only available when S3 Dome Control is disabled.</div>
+        <div>When hoverboard drive (S1) is enabled, use Standard PWM for RC drive input.</div>
+      </div>
+
+
       <input type="hidden" id="rc-input-mode" value="standard_pwm">
+      <div id="single-sbus-recv-section" class="mt-16 hidden" aria-hidden="true">
+        <label for="sbus-recv-sel">Single SBUS receiver</label>
+        <select id="sbus-recv-sel" aria-describedby="sbus-recv-note sbus-recv-feedback">
+          <option value="false">SBUS1 (GPIO 15)</option>
+          <option value="true">SBUS2 (GPIO 13)</option>
+        </select>
+        <div id="sbus-recv-note" class="desc mt-8">Selecting a different receiver does not change your channel mapping.</div>
+        <div id="sbus-recv-feedback" class="feedback mt-8" role="status" aria-live="polite" aria-atomic="true"></div>
+      </div>
+
 
       <div id="rc-mode-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true">Loading receiver type...</div>
       

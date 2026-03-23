@@ -84,9 +84,22 @@ Development builds are versioned from the git history and build timestamp.
 ## Known Limitations
 
 - **Audio in dual-receiver + dome-link configurations:** Audio playback may be unreliable
-  when dual SBUS receiver mode and dome serial link are both active simultaneously. This is
-  a known hardware constraint. A fix for the audio path is planned for Phase 4; full
-  resolution is targeted for Phase 5.
+  when dual SBUS receiver mode and dome serial link are both active simultaneously
+  because these functions share UART resources.
+
+- **S3 Dome Control and Dual SBUS are mutually exclusive:** The dome serial link and
+  SBUS receiver #2 (GPIO 13) share UART2 and cannot be used simultaneously. When
+  S3 Dome Control is enabled, Dual SBUS mode is unavailable for live use.
+
+- **Hoverboard drive requires Standard PWM input:** The hoverboard drive serial port
+  and SBUS RC receivers share UART1. Running hoverboard drive with SBUS receiver mode
+  active simultaneously is not supported. Use Standard PWM for RC drive input when
+  hoverboard drive is connected.
+
+- **Single SBUS receiver selection:** In Single SBUS mode, either SBUS receiver input
+  can be selected as the active source (SBUS1 on GPIO 15 or SBUS2 on GPIO 13). The
+  selection is configurable from the RC page and persists across reboots. Changing
+  the receiver selection does not affect channel mapping.
 
 ---
 
