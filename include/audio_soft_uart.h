@@ -3,9 +3,14 @@
 //
 // Concrete AudioDriver for the DY-SV5W audio module.
 //
-// Uses HardwareSerial(2) remapped to PIN_AUDIO_TX (GPIO 26) / PIN_AUDIO_RX
-// (GPIO 35) at 9600 baud 8N1. UART2 is shared with the dome serial link;
-// only one may be active at a time. See T65 for contention resolution plan.
+// TX uses interrupt-protected software UART on GPIO26 (PIN_AUDIO_TX) via
+// audio_soft_uart_tx.h.
+// RX queries use HardwareSerial(2) on GPIO35 (PIN_AUDIO_RX) when UART2 is not
+// contended by dome link or SBUS2; last-cached AudioModuleState is returned
+// otherwise.
+//
+// AudioModuleState interface, queryModuleState(), and getCachedState() remain
+// fully intact. See T66 for UART2 contention handling.
 //
 // For compatibility with DY-SV5W firmware variants, this driver sends the
 // checksum-frame dialect used by DYPlayer/BetterDuino.

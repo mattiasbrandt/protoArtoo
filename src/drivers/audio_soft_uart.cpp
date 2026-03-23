@@ -27,9 +27,10 @@
 // Default play mode: 02 = single stop (plays once, then stops).
 //
 // Transport:
-//   HardwareSerial(2) on GPIO26 TX / GPIO35 RX, 9600 8N1.
-//   UART2 is shared with dome serial link (S3) and SBUS2; only one active
-//   at a time. See T65 for the long-term contention resolution.
+//   TX: software UART bit-bang on GPIO26 (PIN_AUDIO_TX) via audio_soft_uart_tx.h.
+//   RX: HardwareSerial(2) on GPIO35 (PIN_AUDIO_RX), opened RX-only (TX pin = -1).
+//   UART2 is shared with dome link (S3) and SBUS2. queryModuleState() skips UART2
+//   queries and returns cached state when dome ctrl or dual_sbus is active.
 //
 // Diagnostic queries in begin():
 //   Runs three queries before and after init commands so the serial log
@@ -45,13 +46,15 @@
 
 #include "config.h"
 #include "logging.h"
+#include "audio_soft_uart_tx.h"
+#include "robot_state.h"
 
 static const char* TAG = "AudioDrv";
 static HardwareSerial s_audioSerial(2);
 
 // -----------------------------------------------------------------------------
 // sendCommand()
-// Send one DY-SV5W frame: [payload bytes][SM] over UART2.
+// Send one DY-SV5W frame: [payload bytes][SM] over soft-UART TX (GPIO26).
 // SM = low 8 bits of sum of all payload bytes (including 0xAA start byte).
 // A 100 ms delay follows each command for module processing time.
 // -----------------------------------------------------------------------------
@@ -60,8 +63,10 @@ static void sendCommand(const uint8_t* payload, uint8_t len) {
     for (uint8_t i = 0; i < len; i++) {
         sum = (uint8_t)(sum + payload[i]);
     }
-    s_audioSerial.write(payload, len);
-    s_audioSerial.write(sum);
+    for (uint8_t i = 0; i < len; i++) {
+        softUartTxByte(payload[i]);
+    }
+    softUartTxByte(sum);
     delay(100);
 }
 
@@ -80,7 +85,12 @@ static uint8_t sendQuery(const uint8_t* query, uint8_t* buf, uint8_t maxLen, uin
     while (s_audioSerial.available()) {
         (void)s_audioSerial.read();
     }
-    s_audioSerial.write(query, 4);
+    // Send 4-byte query frame via soft-UART TX — s_audioSerial.write() cannot
+    // be used here: softUartTxBegin() called pinMode(OUTPUT) on PIN_AUDIO_TX,
+    // which severs UART2's GPIO matrix TX route to that pin.
+    for (uint8_t i = 0; i < 4; i++) {
+        softUartTxByte(query[i]);
+    }
     uint32_t start = millis();
     uint8_t count = 0;
     while ((uint32_t)(millis() - start) < timeoutMs && count < maxLen) {
@@ -104,16 +114,18 @@ void AudioDriverSoftUart::sendFrame(const uint8_t* data, uint8_t len) {
 
 // -----------------------------------------------------------------------------
 // begin()
-// Open UART2 on the audio GPIO pins, wait for module boot, then init.
+// Open UART2 RX-only on PIN_AUDIO_RX (GPIO35) for status query responses.
+// TX uses soft-UART bit-bang on PIN_AUDIO_TX (GPIO26) via softUartTxBegin().
 // Runs diagnostic queries before and after init to confirm the UART link is
 // alive and the storage device is present. Zero-byte query responses mean TX
 // is not reaching the module (check DIP: CON3=1 CON2=0 CON1=0 for UART mode).
 // Runs inside AudioTask on Core 0 — blocking here is acceptable.
 // -----------------------------------------------------------------------------
 void AudioDriverSoftUart::begin(uint8_t vol) {
-    s_audioSerial.begin(9600, SERIAL_8N1, PIN_AUDIO_RX, PIN_AUDIO_TX);
+    s_audioSerial.begin(9600, SERIAL_8N1, PIN_AUDIO_RX, -1);
 
     // DY-SV5W needs ~1.5 s after power-on to boot and enumerate storage.
+    softUartTxBegin();
     delay(1500);
 
     // Drain any bytes the module sent during boot (e.g. boot announcement).
@@ -225,6 +237,16 @@ void AudioDriverSoftUart::begin(uint8_t vol) {
 // Only call from AudioTask (Core 0).
 // -----------------------------------------------------------------------------
 bool AudioDriverSoftUart::queryModuleState(AudioModuleState& out) {
+    bool uart2Contended;
+    taskENTER_CRITICAL(&robotStateMux);
+    uart2Contended = (robotState.cfg_rc_input_mode == RC_INPUT_DUAL_SBUS) || robotState.cfg_enable_s3_dome_ctrl;
+    taskEXIT_CRITICAL(&robotStateMux);
+    if (uart2Contended) {
+        PA_LOG_DEBUG(TAG, "UART2 contended — returning cached module state");
+        getCachedState(out);
+        return false;
+    }
+
     uint8_t rsp[8];
     uint8_t n;
     bool gotAny = false;
