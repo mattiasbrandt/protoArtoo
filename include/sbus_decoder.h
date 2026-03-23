@@ -37,6 +37,13 @@ struct SbusData {
 class SbusDecoder {
    public:
     SbusDecoder();
+    // WARNING — UART1 conflict with DriveTask.
+    // Calling begin(&Serial1, ...) fully reconfigures UART1 (baud divisor, parity,
+    // stop bits, inversion flag, GPIO matrix). DriveTask also claims Serial1 for
+    // hoverboard drive (115200 8N1). The second begin() wins and silently breaks
+    // the other task's UART configuration. SBUS1 on Serial1 and hoverboard on
+    // Serial1 cannot coexist on the current PCB hardware.
+    // Structural fix: RMT peripheral (Phase 5 T01 — tasks/phase5-tasks.md).
     bool begin(HardwareSerial* uart, int rxPin);
     bool read();
     void end();
