@@ -33,7 +33,9 @@ Development builds are versioned from the git history and build timestamp.
 
 - Hoverboard drive with speed and steering control from an RC transmitter
 - Configurable speed limit from the web interface
-- Three RC receiver modes: standard PWM, single SBUS, or dual SBUS
+- Three RC receiver modes: standard PWM, single SBUS, or dual SBUS; in Single SBUS mode,
+  the active receiver (SBUS1 or SBUS2) is selectable from the RC page and persists across reboots
+  without affecting channel mapping
 - Failsafe automatically stops the motors if the RC signal is lost
 - Emergency stop with latching behavior — requires a deliberate clear before drive resumes
 
@@ -83,24 +85,15 @@ Development builds are versioned from the git history and build timestamp.
 
 ## Known Limitations
 
-- **Audio in dual-receiver + dome-link configurations:** Audio playback may be unreliable
-  when dual SBUS receiver mode and dome serial link are both active simultaneously
-  because these functions share UART resources.
+- **Dome Control and Dual SBUS cannot be used at the same time:** The dome serial link
+  and the second SBUS receiver input share the same hardware resource on this board.
+  When S3 Dome Control is enabled in Setup, Dual SBUS mode is not available for
+  simultaneous use. Single SBUS and Standard PWM are unaffected.
 
-- **S3 Dome Control and Dual SBUS are mutually exclusive:** The dome serial link and
-  SBUS receiver #2 (GPIO 13) share UART2 and cannot be used simultaneously. When
-  S3 Dome Control is enabled, Dual SBUS mode is unavailable for live use.
-
-- **Hoverboard drive requires Standard PWM input:** The hoverboard drive serial port
-  and SBUS RC receivers share UART1. Running hoverboard drive with SBUS receiver mode
-  active simultaneously is not supported. Use Standard PWM for RC drive input when
-  hoverboard drive is connected.
-
-- **Single SBUS receiver selection:** In Single SBUS mode, either SBUS receiver input
-  can be selected as the active source (SBUS1 on GPIO 15 or SBUS2 on GPIO 13). The
-  selection is configurable from the RC page and persists across reboots. Changing
-  the receiver selection does not affect channel mapping.
-
+- **Hoverboard drive requires Standard PWM for RC input:** The hoverboard drive
+  connection and SBUS receiver inputs share hardware resources. When hoverboard drive
+  is connected and active, use Standard PWM mode for RC drive input rather than a SBUS
+  receiver mode. This constraint will be removed in a future update.
 ---
 
 ## Pending Hardware Validation
