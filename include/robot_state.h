@@ -249,6 +249,7 @@ struct RobotState {
     //
     // RC receiver inputs:
     RcInputMode cfg_rc_input_mode;
+    bool cfg_single_sbus_use_ch2;  // sbus_recv_ch2 — false=SBUS1 (GPIO15), true=SBUS2 (GPIO13); single_sbus mode only
     bool cfg_enable_rc_ch1;  // en_rc_ch1 — CH1 (GPIO 15) — SBUS #1 (drive) OR Standard PWM CH1
     bool cfg_enable_rc_ch2;  // en_rc_ch2 — CH2 (GPIO 13) — SBUS #2 (dome) OR Standard PWM CH2
     bool

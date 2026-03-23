@@ -27,6 +27,7 @@ struct ConfigSnapshot {
     bool stationary;
     uint8_t logLevel;
     RcInputMode rcInputMode;
+    bool sbusRecvCh2;
 
     bool enableArm1;
     bool enableArm2;

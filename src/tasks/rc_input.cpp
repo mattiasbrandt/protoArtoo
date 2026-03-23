@@ -36,7 +36,10 @@
 static const char* TAG = "RCInputTask";
 
 // SBUS receiver objects — UART-based with hardware inversion
-// GPIO 15 (drive) uses Serial1, GPIO 13 (dome) uses Serial2
+// GPIO 15 (PIN_SBUS1_RX) and GPIO 13 (PIN_SBUS2_RX) are the SBUS receiver pins.
+// In single_sbus mode, one hardware UART (Serial1) is configured for the selected
+// receiver. In dual_sbus mode, Serial1=SBUS1 and Serial2=SBUS2.
+// NOTE: Serial1 is also claimed by DriveTask (hoverboard). See sbus_decoder.h.
 static SbusDecoder sbus_drive;
 static SbusDecoder sbus_dome;
 static const uint8_t kRcPwmPins[6] = {PIN_RC_CH1, PIN_RC_CH2, PIN_RC_CH3,
@@ -627,6 +630,7 @@ void rcInputTask(void* pvParameters) {
     RcInputMode rcInputMode = robotState.cfg_rc_input_mode;
     bool enableRcCh1 = robotState.cfg_enable_rc_ch1;
     bool enableRcCh2 = robotState.cfg_enable_rc_ch2;
+    bool useCh2 = robotState.cfg_single_sbus_use_ch2;
     taskEXIT_CRITICAL(&robotStateMux);
 
     bool driveSbusEnabled = is_drive_sbus_mode(rcInputMode) && enableRcCh1;
@@ -637,8 +641,11 @@ void rcInputTask(void* pvParameters) {
     // This task must keep running so mode/channel changes take effect without reboot.
 
     if (driveSbusEnabled) {
-        if (!sbus_drive.begin(&Serial1, PIN_SBUS1_RX)) {
-            PA_LOG_ERROR(TAG, "UART init failed for SBUS1 GPIO%d", PIN_SBUS1_RX);
+        bool useDriveSbus2 = (rcInputMode == RC_INPUT_SINGLE_SBUS) && useCh2;
+        int sbusRxPin = useDriveSbus2 ? PIN_SBUS2_RX : PIN_SBUS1_RX;
+        if (!sbus_drive.begin(&Serial1, sbusRxPin)) {
+            PA_LOG_ERROR(TAG, "UART init failed for SBUS%d GPIO%d", useDriveSbus2 ? 2 : 1,
+                         sbusRxPin);
             driveSbusEnabled = false;
         }
     }
@@ -652,10 +659,15 @@ void rcInputTask(void* pvParameters) {
     if (rcInputMode == RC_INPUT_STANDARD_PWM) {
         PA_LOG_INFO(TAG, "started — standard_pwm mode, SBUS decoders inactive");
     } else if (rcInputMode == RC_INPUT_SINGLE_SBUS) {
-        if (driveSbusEnabled)
-            PA_LOG_INFO(TAG, "started — single_sbus mode, SBUS1 GPIO%d active", PIN_SBUS1_RX);
-        else
-            PA_LOG_INFO(TAG, "started — single_sbus mode, SBUS1 disabled (en_rc_ch1=false) — idle");
+        if (driveSbusEnabled) {
+            int sbusRxPin = useCh2 ? PIN_SBUS2_RX : PIN_SBUS1_RX;
+            PA_LOG_INFO(TAG, "started — single_sbus mode, SBUS%d GPIO%d active",
+                        useCh2 ? 2 : 1, sbusRxPin);
+        } else {
+            PA_LOG_INFO(TAG,
+                        "started — single_sbus mode, SBUS%d disabled (en_rc_ch1=false) — idle",
+                        useCh2 ? 2 : 1);
+        }
     } else {
         if (!driveSbusEnabled)
             PA_LOG_INFO(TAG, "started — dual_sbus mode, SBUS2 GPIO%d only (SBUS1 disabled)",
@@ -674,7 +686,7 @@ void rcInputTask(void* pvParameters) {
 
     bool driveSbusInitWarned = false;
     bool domeSbusInitWarned = false;
-
+    bool lastUseCh2 = useCh2;
     while (true) {
         if (!hwmLogged) {
             PA_LOG_INFO(TAG, "stack HWM: %u words free",
@@ -686,15 +698,19 @@ void rcInputTask(void* pvParameters) {
         rcInputMode = robotState.cfg_rc_input_mode;
         enableRcCh1 = robotState.cfg_enable_rc_ch1;
         enableRcCh2 = robotState.cfg_enable_rc_ch2;
+        useCh2 = robotState.cfg_single_sbus_use_ch2;
         taskEXIT_CRITICAL(&robotStateMux);
-
         driveSbusEnabled = is_drive_sbus_mode(rcInputMode) && enableRcCh1;
         domeSbusEnabled = is_dome_sbus_mode(rcInputMode) && enableRcCh2;
 
         if (driveSbusEnabled && !sbus_drive.isInitialized()) {
-            if (!sbus_drive.begin(&Serial1, PIN_SBUS1_RX)) {
+            int sbusRxPin =
+                (rcInputMode == RC_INPUT_SINGLE_SBUS && useCh2) ? PIN_SBUS2_RX : PIN_SBUS1_RX;
+            bool useDriveSbus2 = (sbusRxPin == PIN_SBUS2_RX);
+            if (!sbus_drive.begin(&Serial1, sbusRxPin)) {
                 if (!driveSbusInitWarned) {
-                    PA_LOG_ERROR(TAG, "UART init failed for SBUS1 GPIO%d", PIN_SBUS1_RX);
+                    PA_LOG_ERROR(TAG, "UART init failed for SBUS%d GPIO%d", useDriveSbus2 ? 2 : 1,
+                                 sbusRxPin);
                     driveSbusInitWarned = true;
                 }
                 driveSbusEnabled = false;
@@ -702,6 +718,15 @@ void rcInputTask(void* pvParameters) {
                 driveSbusInitWarned = false;
             }
         }
+
+        // If single_sbus receiver selection changed, force reinit with new pin.
+        if (rcInputMode == RC_INPUT_SINGLE_SBUS && useCh2 != lastUseCh2 &&
+            sbus_drive.isInitialized()) {
+            sbus_drive.end();
+            PA_LOG_INFO(TAG, "single_sbus receiver changed to SBUS%d — reinitializing",
+                        useCh2 ? 2 : 1);
+        }
+        lastUseCh2 = useCh2;
 
         if (domeSbusEnabled && !sbus_dome.isInitialized()) {
             if (!sbus_dome.begin(&Serial2, PIN_SBUS2_RX)) {

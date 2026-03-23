@@ -327,6 +327,7 @@ void loadConfigToState() {
     robotState.cfg_enable_rc_ch4 = prefs.getBool("en_rc_ch4", false);
     robotState.cfg_enable_rc_ch5 = prefs.getBool("en_rc_ch5", false);
     robotState.cfg_enable_rc_ch6 = prefs.getBool("en_rc_ch6", false);
+    robotState.cfg_single_sbus_use_ch2 = prefs.getBool("sbus_recv_ch2", false);
     robotState.cfg_enable_s1_hoverboard = prefs.getBool("en_s1", false);
     robotState.cfg_enable_s2_sound = prefs.getBool("en_s2", false);
     robotState.cfg_enable_s3_dome_ctrl = prefs.getBool("en_s3", false);
@@ -532,7 +533,7 @@ bool saveConfigToNvs() {
     RcInputMode rcInputMode;
     bool enableArm1, enableArm2, enableAux1, enableAux2, enableAux3, enableDome;
     bool enableRcCh1, enableRcCh2, enableRcCh3, enableRcCh4, enableRcCh5, enableRcCh6;
-    bool enableS1Hoverboard, enableS2Sound, enableS3DomeCtrl;
+    bool enableS1Hoverboard, enableS2Sound, enableS3DomeCtrl, singleSbusUseCh2;
     bool stationary;
     RcBindingConfig rcPwmDriveSpeed, rcPwmDriveSteer, rcPwmDriveLimit, rcPwmDomeSpeed, rcPwmArm1,
         rcPwmArm2, rcPwmSound;
@@ -590,6 +591,7 @@ bool saveConfigToNvs() {
     enableS1Hoverboard = robotState.cfg_enable_s1_hoverboard;
     enableS2Sound = robotState.cfg_enable_s2_sound;
     enableS3DomeCtrl = robotState.cfg_enable_s3_dome_ctrl;
+    singleSbusUseCh2 = robotState.cfg_single_sbus_use_ch2;
     stationary = robotState.cfg_stationary;
     rcPwmDriveSpeed = robotState.cfg_rc_pwm_drive_speed;
     rcPwmDriveSteer = robotState.cfg_rc_pwm_drive_steer;
@@ -703,6 +705,7 @@ bool saveConfigToNvs() {
     ok = prefs.putBool("en_rc_ch4", enableRcCh4) > 0 && ok;
     ok = prefs.putBool("en_rc_ch5", enableRcCh5) > 0 && ok;
     ok = prefs.putBool("en_rc_ch6", enableRcCh6) > 0 && ok;
+    ok = prefs.putBool("sbus_recv_ch2", singleSbusUseCh2) > 0 && ok;
     ok = prefs.putBool("en_s1", enableS1Hoverboard) > 0 && ok;
     ok = prefs.putBool("en_s2", enableS2Sound) > 0 && ok;
     ok = prefs.putBool("en_s3", enableS3DomeCtrl) > 0 && ok;
@@ -808,6 +811,12 @@ void setup() {
     // RcInputTask: ~200 Hz RC poll (all modes), Layer 1+2 failsafe
     // ServoTask: 50 Hz servo PWM updates
     // DomeTask: 50 Hz ESC PWM updates
+    // UART1 ownership: DriveTask (hoverboard, Serial1 @ 115200 8N1) and RcInputTask
+    // (SBUS1 decoder, Serial1 @ 100000 8E2 inverted) both call Serial1.begin().
+    // With this creation order (DriveTask first, RcInputTask second) and equal FreeRTOS
+    // priority, RcInputTask's begin() wins UART1 when SBUS mode is active — hoverboard
+    // TX is left at wrong baud. Do not enable S1 hoverboard and SBUS mode simultaneously
+    // until Phase 5 T01 (RMT SBUS decoder) is implemented.
     xTaskCreatePinnedToCore(driveTask, "DriveTask", 4096, nullptr, 5, nullptr, 1);
     xTaskCreatePinnedToCore(rcInputTask, "RCInputTask", 4096, nullptr, 5, nullptr, 1);
     xTaskCreatePinnedToCore(

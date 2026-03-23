@@ -247,6 +247,7 @@ void captureConfigSnapshot(ConfigSnapshot* out) {
     out->stationary = robotState.cfg_stationary;
     out->logLevel = robotState.cfg_logLevel;
     out->rcInputMode = robotState.cfg_rc_input_mode;
+    out->sbusRecvCh2 = robotState.cfg_single_sbus_use_ch2;
 
     out->enableArm1 = robotState.cfg_enable_arm1;
     out->enableArm2 = robotState.cfg_enable_arm2;
@@ -416,6 +417,7 @@ bool populateConfigJson(JsonDocument& doc, const ConfigSnapshot& snap) {
     rcSbus["arm1"] = rcSbusArm1Str;
     rcSbus["arm2"] = rcSbusArm2Str;
     rcSbus["sound"] = rcSbusSoundStr;
+    rcSbus["recvCh2"] = snap.sbusRecvCh2;
 
     JsonObject rcTriggers = rc["triggers"].to<JsonObject>();
     rcTriggers["arm1"] = rcArm1Str;
@@ -569,6 +571,38 @@ void registerConfigRoutes(AsyncWebServer& server) {
             working.rcInputMode = mode;
             PA_LOG_INFO(TAG, "[CFG] rcInputMode updated to %s", rcModeToString(mode));
             changed = true;
+        }
+
+        if (parseBoolParam(req, "sbusRecvCh2", &boolValue)) {
+            working.sbusRecvCh2 = boolValue;
+            changed = true;
+        } else if (req->hasParam("sbusRecvCh2", true)) {
+            req->send(400, "application/json",
+                      "{\"ok\":false,\"error\":\"sbusRecvCh2 must be true/false or 1/0\"}");
+            return;
+        }
+
+        if (req->hasParam("plain", true)) {
+            JsonDocument bodyDoc;
+            const String rawBody = req->getParam("plain", true)->value();
+            DeserializationError jsonErr = deserializeJson(bodyDoc, rawBody.c_str());
+            if (jsonErr) {
+                req->send(400, "application/json",
+                          "{\"ok\":false,\"error\":\"invalid json body\"}");
+                return;
+            }
+
+            JsonVariantConst rcSbus = bodyDoc["rc"]["sbus"];
+            if (!rcSbus.isNull()) {
+                if (rcSbus["recvCh2"].is<bool>()) {
+                    working.sbusRecvCh2 = rcSbus["recvCh2"].as<bool>();
+                    changed = true;
+                } else if (!rcSbus["recvCh2"].isNull()) {
+                    req->send(400, "application/json",
+                              "{\"ok\":false,\"error\":\"rc.sbus.recvCh2 must be boolean\"}");
+                    return;
+                }
+            }
         }
 
         struct BoolCfgField {
@@ -921,6 +955,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
         robotState.stationary = working.stationary;
         robotState.cfg_logLevel = working.logLevel;
         robotState.cfg_rc_input_mode = working.rcInputMode;
+        robotState.cfg_single_sbus_use_ch2 = working.sbusRecvCh2;
 
         robotState.cfg_enable_arm1 = working.enableArm1;
         robotState.cfg_enable_arm2 = working.enableArm2;
