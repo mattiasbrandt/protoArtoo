@@ -25,7 +25,7 @@ These rules define how an AI coding agent should plan, execute, verify, communic
 ### What protoArtoo Is
 
 - **Target:** Artoo Controller PCB — ESP32 (WROOM-32 or D1 Mini, unconfirmed)
-- **Framework:** Arduino on ESP32 via PlatformIO (`espressif32@6.13.0`, arduino-esp32 2.0.17, IDF 4.4.7)
+- **Framework:** Arduino on ESP32 via PlatformIO (`pioarduino/espressif32@55.03.37`, arduino-esp32 3.3.7, IDF 5.5.2)
 - **Architecture:** FreeRTOS tasks split across dual cores (Core 0: WiFi/web; Core 1: real-time control)
 - **Drive:** Hoverboard motors via Gen2.x 8-byte UART frames at 50 Hz (115200 baud, ESP32 UART1 / PCB S1)
 - **RC input:** Runtime-selectable receiver modes:
@@ -72,7 +72,7 @@ All rules apply unconditionally to every code change in this repository.
 - USB flash: `pio run -e protoArtoo --target upload --upload-port /dev/ttyUSB0`
   - When unseated, DTR/RTS auto-reset works reliably — no BOOT button press required.
   - `protoArtoo` env uses `board_upload.before_reset = default_reset` for this.
-- **esptool flag placement (espressif32 6.x / esptool 4.x):** Set `board_upload.before_reset`
+- **esptool flag placement:** Set `board_upload.before_reset`
   in platformio.ini — never `upload_flags = --before ...`. PlatformIO appends `upload_flags`
   after the `write_flash` subcommand; `--before` at that position is ignored by esptool 4.x.
   The builder reads `board_upload.*` and inserts flags in the correct pre-subcommand position.
@@ -415,7 +415,7 @@ If anything unexpected happens (test failures, build errors, behavior regression
 - Pinned library versions in `platformio.ini` — no `^` or `~` ranges.
 - **No Reeltwo on the body.** It belongs in the dome only.
 - Prefer Arduino standard libraries (`Preferences`, `LittleFS`, `ArduinoOTA`) over third-party alternatives.
-- Current approved dependencies: `ESP32Async/ESPAsyncWebServer@3.10.3`, `ESP32Async/AsyncTCP@3.4.10`, `ArduinoJson@7.4.3`. (`ESP32Servo` removed — servo PWM uses native LEDC; `me-no-dev/` namespace abandoned, replaced by `ESP32Async/` maintained fork.)
+- Platform: `pioarduino/espressif32@55.03.37` (arduino-esp32 v3.3.7, IDF 5.5.2) — the official espressif32 platform only delivers v2.x. Current approved dependencies: `ESP32Async/ESPAsyncWebServer@3.10.3`, `ESP32Async/AsyncTCP@3.4.10`, `ArduinoJson@7.4.3`. (`ESP32Servo` removed — servo PWM uses native LEDC; `me-no-dev/` namespace abandoned, replaced by `ESP32Async/` maintained fork.)
 
 ### 5. Security and Privacy
 - Never introduce WiFi credentials into committed code — use `src/secrets.h` (gitignored).

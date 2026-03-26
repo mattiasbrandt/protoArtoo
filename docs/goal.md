@@ -997,6 +997,7 @@ examples and should not override those canonical files.
 
 | Library | Version | Notes |
 |---|---|---|
+| Platform | `pioarduino/espressif32@55.03.37` | arduino-esp32 v3.3.7 + IDF 5.5.2; community fork — official espressif32 platform only delivers v2.x |
 | `ESP32Async/ESPAsyncWebServer` | `3.10.3` | Maintained fork of abandoned `me-no-dev/` — SSE leak fixes, `SSE_MAX_QUEUED_MESSAGES` support |
 | `ESP32Async/AsyncTCP` | `3.4.10` | Maintained fork of abandoned `me-no-dev/` — `CONFIG_ASYNC_TCP_STACK_SIZE=4096` saves 12 KB heap |
 | `bblanchon/ArduinoJson` | `7.4.3` | Pinned |
@@ -1008,7 +1009,7 @@ examples and should not override those canonical files.
 
 ```ini
 [env:protoArtoo]
-platform = espressif32@6.13.0
+platform = https://github.com/pioarduino/platform-espressif32/releases/download/55.03.37/platform-espressif32.zip
 board = esp32dev
 framework = arduino
 build_flags =
@@ -1830,7 +1831,7 @@ void DriveTask(void* pvParams) {
 ; =============================================================================
 
 [env:protoArtoo]
-platform    = espressif32@6.13.0          ; pin platform version — never use @latest
+platform    = https://github.com/pioarduino/platform-espressif32/releases/download/55.03.37/platform-espressif32.zip          ; pin platform version — never use @latest
 board       = esp32dev
 framework   = arduino
 monitor_speed = 115200

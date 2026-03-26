@@ -770,7 +770,15 @@ void setup() {
     logBootHealth();
 
     // Layer 4: Initialize Task Watchdog Timer
-    esp_task_wdt_init(WATCHDOG_TIMEOUT_S, true);
+    // IDF 5.x: esp_task_wdt_init() takes a config struct (timeout_ms, idle_core_mask,
+    // trigger_panic). IDF 4.x took (timeout_seconds, trigger_panic) directly.
+    // idle_core_mask=0: do not subscribe idle tasks; only DriveTask subscribes itself.
+    const esp_task_wdt_config_t twdt_config = {
+        .timeout_ms    = WATCHDOG_TIMEOUT_S * 1000U,
+        .idle_core_mask = 0,
+        .trigger_panic  = true,
+    };
+    esp_task_wdt_init(&twdt_config);
 
     // Detect TWDT reset from previous boot — set estop so robot does not move
     // until operator explicitly clears via POST /api/estop/clear
