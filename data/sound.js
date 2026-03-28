@@ -69,7 +69,7 @@
       moduleStatusRefreshTimer = window.setInterval(() => {
         if (document.visibilityState === "hidden") return;
         updateModuleStatus();
-      }, 3000);
+      }, 2000);
     }
   };
 

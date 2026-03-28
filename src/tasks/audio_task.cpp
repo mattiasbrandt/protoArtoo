@@ -394,7 +394,7 @@ void audioTask(void* pvParameters) {
                     AudioModuleState ms{};
                     bool ok = driver->queryModuleState(ms);
                     taskENTER_CRITICAL(&robotStateMux);
-                    robotState.audio_module_link_ok = ok && ms.linkOk;
+                    robotState.audio_module_link_ok = ms.linkOk;
                     robotState.audio_module_play_state = ms.playState;
                     robotState.audio_module_device = ms.device;
                     robotState.audio_module_total_tracks = ms.totalTracks;
@@ -482,7 +482,7 @@ void audioTask(void* pvParameters) {
             AudioModuleState ms{};
             bool ok = driver->queryModuleState(ms);
             taskENTER_CRITICAL(&robotStateMux);
-            robotState.audio_module_link_ok = ok && ms.linkOk;
+            robotState.audio_module_link_ok = ms.linkOk;
             robotState.audio_module_play_state = ms.playState;
             robotState.audio_module_device = ms.device;
             robotState.audio_module_total_tracks = ms.totalTracks;
