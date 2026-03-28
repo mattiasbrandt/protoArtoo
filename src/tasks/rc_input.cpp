@@ -703,6 +703,22 @@ void rcInputTask(void* pvParameters) {
         driveSbusEnabled = is_drive_sbus_mode(rcInputMode) && enableRcCh1;
         domeSbusEnabled = is_dome_sbus_mode(rcInputMode) && enableRcCh2;
 
+        // Detect single_sbus receiver selection change BEFORE the reinit guard.
+        // If change detection ran after reinit, we could init-then-teardown the decoder
+        // in the same iteration when useCh2 changes while the decoder is uninitialized.
+        if (rcInputMode == RC_INPUT_SINGLE_SBUS && useCh2 != lastUseCh2
+                && sbus_drive.isInitialized()) {
+            sbus_drive.end();
+            PA_LOG_INFO(TAG, "single_sbus receiver changed to SBUS%d \u2014 reinitializing",
+                         useCh2 ? 2 : 1);
+        }
+        // Only track lastUseCh2 while in single_sbus mode. Freezing the baseline across
+        // mode transitions prevents a spurious reinit when returning to single_sbus after
+        // useCh2 was changed while in dual_sbus or standard_pwm mode.
+        if (rcInputMode == RC_INPUT_SINGLE_SBUS) {
+            lastUseCh2 = useCh2;
+        }
+
         if (driveSbusEnabled && !sbus_drive.isInitialized()) {
             int sbusRxPin =
                 (rcInputMode == RC_INPUT_SINGLE_SBUS && useCh2) ? PIN_SBUS2_RX : PIN_SBUS1_RX;
@@ -718,15 +734,6 @@ void rcInputTask(void* pvParameters) {
                 driveSbusInitWarned = false;
             }
         }
-
-        // If single_sbus receiver selection changed, force reinit with new pin.
-        if (rcInputMode == RC_INPUT_SINGLE_SBUS && useCh2 != lastUseCh2 &&
-            sbus_drive.isInitialized()) {
-            sbus_drive.end();
-            PA_LOG_INFO(TAG, "single_sbus receiver changed to SBUS%d — reinitializing",
-                        useCh2 ? 2 : 1);
-        }
-        lastUseCh2 = useCh2;
 
         if (domeSbusEnabled && !sbus_dome.isInitialized()) {
             if (!sbus_dome.begin(&Serial2, PIN_SBUS2_RX)) {
