@@ -11,8 +11,9 @@
 //   - AUDIO_CMD_PLAY_TRACK  : direct play-by-track-number (e.g. from web API).
 //   - AUDIO_CMD_STOP        : direct stop.
 //   - AUDIO_CMD_SET_VOLUME  : direct absolute volume set.
-//   - AUDIO_CMD_QUERY_STATUS: on-demand module status query (web UI poll button
-//                             only — never from a loop or real-time task).
+//   - AUDIO_CMD_QUERY_STATUS: on-demand module status query (web UI poll button).
+//                             Used for manual DY-SV5W poll and modules without
+//                             AUDIO_CAP_QUERY_SAFE_PLAYING only.
 //
 // Queue sends from real-time tasks MUST use the audioQueue* helpers which
 // use timeout 0 (non-blocking). Never call xQueueSend directly on audioCmdQueue
@@ -32,7 +33,7 @@ enum AudioCommandType : uint8_t {
     AUDIO_CMD_PLAY_TRACK,    // play specific track number directly
     AUDIO_CMD_STOP,          // stop playback
     AUDIO_CMD_SET_VOLUME,    // set absolute volume 0–30
-    AUDIO_CMD_QUERY_STATUS,  // on-demand module status query (web UI poll button)
+    AUDIO_CMD_QUERY_STATUS,  // on-demand status query (manual/fallback poll path)
 };
 
 // -----------------------------------------------------------------------------
@@ -83,11 +84,16 @@ bool audioQueueStop(CommandSource src);
 bool audioQueueSetVolume(uint8_t vol, CommandSource src);
 
 // Enqueue an on-demand module status query. AudioTask runs queryModuleState()
-// and updates RobotState. The caller should GET /api/audio after ~1.5 s to
-// read the result. Only use from the web UI poll button — do not call from
-// real-time tasks or in any loop.
+// and updates RobotState. Used by the web UI Poll button for manual DY-SV5W
+// polling and as a fallback for modules without AUDIO_CAP_QUERY_SAFE_PLAYING.
+// The caller should GET /api/audio after ~1.5 s to read the result. Do not call
+// from real-time tasks or in any loop.
 bool audioQueueQueryStatus(CommandSource src);
 
 // Returns the short name of the active audio driver (e.g. "DY-SV5W", "CHIRP").
 // Safe to call from any task or web handler after AudioTask has been created.
 const char* audioGetDriverName();
+// Returns the capabilities bitmask of the compiled-in audio driver.
+// Safe to call from any context after AudioTask has been created.
+uint8_t audioGetCapabilities();
+

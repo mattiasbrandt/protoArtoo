@@ -12,12 +12,13 @@
 //   - One concrete driver is compiled in per build, selected by PA_AUDIO_DRIVER.
 //   - Volume range is normalised 0–30 at the interface level; concrete drivers
 //     scale to their module's native range if different.
-//   - Drivers are TX-primary; any ACK/status RX path is driver-internal and
-//     optional.
+//   - Drivers expose capability bits so AudioTask can choose safe query strategy
+//     per backend (for example polling only when stopped vs safe-during-play).
+//   - Any ACK/status RX path is driver-internal and optional.
 //
 // Adding a new driver:
 //   1. Create include/audio_<name>.h and src/drivers/audio_<name>.cpp.
-//   2. Subclass AudioDriver and implement all four pure virtual methods.
+//   2. Subclass AudioDriver and implement required interface methods.
 //   3. Add a new AUDIO_<NAME> constant below.
 //   4. Instantiate in AudioTask behind #if PA_AUDIO_DRIVER == AUDIO_<NAME>.
 // =============================================================================
@@ -51,6 +52,13 @@ struct AudioModuleState {
 // -----------------------------------------------------------------------------
 class AudioDriver {
    public:
+    // Capability bitmask returned by capabilities().
+    static constexpr uint8_t AUDIO_CAP_STATUS_QUERY = 0x01;
+    static constexpr uint8_t AUDIO_CAP_DEVICE_TYPE = 0x02;
+    static constexpr uint8_t AUDIO_CAP_TRACK_COUNT = 0x04;
+    static constexpr uint8_t AUDIO_CAP_CURRENT_TRACK = 0x08;
+    static constexpr uint8_t AUDIO_CAP_QUERY_SAFE_PLAYING = 0x10;
+
     // Initialise hardware (GPIO, serial pin) and set initial volume — called once
     // during AudioTask init. vol is the NVS-configured volume (0–30).
     virtual void begin(uint8_t vol) = 0;
@@ -71,6 +79,12 @@ class AudioDriver {
     // Returns a short human-readable name for this driver (e.g. "DY-SV5W", "CHIRP").
     // Used by the status API to expose the active backend to the web UI.
     virtual const char* driverName() const = 0;
+
+    // Capability bits describing which query fields this backend can provide and
+    // whether status polling is safe during playback. Default: no query support.
+    virtual uint8_t capabilities() const {
+        return 0;
+    }
 
     // Query the module for live state. Returns true and populates 'out' if the
     // module responds. Default returns false (driver has no RX path).

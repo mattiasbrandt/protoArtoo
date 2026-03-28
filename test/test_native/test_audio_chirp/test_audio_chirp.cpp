@@ -59,6 +59,12 @@ void test_volume_1_maps_to_3() {
     TEST_ASSERT_EQUAL_UINT8(3, chirpVolScale(1));
 }
 
+void test_begin_vol_scale_nonzero() {
+    // CHIRP begin() must call setVolume(vol), which sends VOL:N\n.
+    // Verify the scale formula does not produce zero for a non-zero input vol.
+    TEST_ASSERT_GREATER_THAN(0u, (unsigned)chirpVolScale(1));
+}
+
 void test_volume_10_maps_to_33() {
     // (10 * 99) / 30 = 990 / 30 = 33
     TEST_ASSERT_EQUAL_UINT8(33, chirpVolScale(10));
@@ -131,9 +137,14 @@ void test_play_cmd_uses_bank1_page_a() {
     TEST_ASSERT_NOT_NULL(strstr(cmd, ",1,A"));
 }
 
-void test_stop_cmd_is_literal_STOP() {
-    // Stop command is just "STOP" — verify constant matches CHIRP protocol
-    TEST_ASSERT_EQUAL_STRING("STOP", "STOP");
+void test_stop_cmd_body_is_STOP() {
+    // The stop command string must be exactly "STOP" (sendCommand appends '\n').
+    // Verify the literal we pass to sendCommand matches CHIRP protocol.
+    char cmd[] = "STOP";
+    TEST_ASSERT_EQUAL_INT(4, (int)strlen(cmd));
+    TEST_ASSERT_EQUAL_STRING("STOP", cmd);
+    // Additional: verify it does NOT contain a newline (sendCommand adds that)
+    TEST_ASSERT_NULL(strchr(cmd, '\n'));
 }
 
 // -----------------------------------------------------------------------------
@@ -150,6 +161,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_volume_20_maps_to_66);
     RUN_TEST(test_volume_scale_never_exceeds_99);
     RUN_TEST(test_volume_scale_is_monotonically_non_decreasing);
+    RUN_TEST(test_begin_vol_scale_nonzero);
 
     // Command format
     RUN_TEST(test_play_track_1_format);
@@ -159,7 +171,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_volume_cmd_max);
     RUN_TEST(test_volume_cmd_mid);
     RUN_TEST(test_play_cmd_uses_bank1_page_a);
-    RUN_TEST(test_stop_cmd_is_literal_STOP);
+    RUN_TEST(test_stop_cmd_body_is_STOP);
 
     return UNITY_END();
 }

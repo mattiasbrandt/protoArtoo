@@ -175,9 +175,9 @@ void registerAudioRoutes(AsyncWebServer& server) {
     // ---- GET /api/audio — live module status ----
     // Returns driver name, module link state, and last-known module status.
     // Device and total-tracks are populated from begin()-time cached queries.
-    // Play state, current track, and link_ok are updated only when the poll
-    // button triggers AUDIO_CMD_QUERY_STATUS — there is no automatic background
-    // polling (polling mid-playback corrupts the DY-SV5W RX state machine).
+    // Play state, current track, and link_ok are updated by status queries.
+    // Polling during playback may interfere with some module RX paths; see
+    // driver capabilities for safe-polling flag.
     server.on("/api/audio", HTTP_GET, [](AsyncWebServerRequest* req) {
         bool linkOk;
         uint8_t playState, device;
@@ -192,9 +192,10 @@ void registerAudioRoutes(AsyncWebServer& server) {
         active = robotState.audioActive;
         taskEXIT_CRITICAL(&robotStateMux);
 
+        uint8_t caps = audioGetCapabilities();
         char body[192];
-        formatAudioStatusJson(body, sizeof(body), audioGetDriverName(), linkOk, active, playState,
-                              device, totalTracks, currentTrack);
+        formatAudioStatusJson(body, sizeof(body), audioGetDriverName(), caps, linkOk, active,
+                              playState, device, totalTracks, currentTrack);
         req->send(200, "application/json", body);
     });
 

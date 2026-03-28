@@ -20,6 +20,13 @@
     { label: "Stop / Chatter Off", cmd: "$s", key: null, editable: false },
   ];
 
+  // AudioDriver capability bits — must match audio_driver.h AUDIO_CAP_* constants
+  const AUDIO_CAP_STATUS_QUERY = 0x01;
+  const AUDIO_CAP_DEVICE_TYPE = 0x02;
+  const AUDIO_CAP_TRACK_COUNT = 0x04;
+  const AUDIO_CAP_CURRENT_TRACK = 0x08;
+  const AUDIO_CAP_QUERY_SAFE_PLAYING = 0x10;
+
   const tbody = document.getElementById("named-sound-rows");
   const audioStateBadge = document.getElementById("audio-state-badge");
   const soundDisabledCard = document.getElementById("sound-disabled-card");
@@ -35,12 +42,77 @@
   const modPlayState = document.getElementById("mod-play-state");
   const modTotalTracks = document.getElementById("mod-total-tracks");
   const modCurrentTrack = document.getElementById("mod-current-track");
+  const modDeviceRow = document.getElementById("mod-device-row");
+  const modCurrentTrackRow = document.getElementById("mod-current-track-row");
+  const modStatusTable = document.getElementById("mod-status-table");
+  const modPollSection = document.getElementById("mod-poll-section");
+  const modQueryNote = document.getElementById("mod-query-note");
+  const modNoQueryNotice = document.getElementById("mod-no-query-notice");
+  const btnPoll = document.getElementById("btn-poll-status");
+  const modStatusFb = document.getElementById("mod-status-feedback");
+  const trackNumberNote = document.getElementById("track-number-note");
+  let lastCapabilities = null; // null = not yet received
+  let moduleStatusRefreshTimer = null;
+
+  const setElementVisible = (element, visible) => {
+    if (!element) return;
+    element.classList.toggle("hidden", !visible);
+  };
+
+  const resetModuleStatusAutoRefresh = (caps) => {
+    if (moduleStatusRefreshTimer !== null) {
+      window.clearInterval(moduleStatusRefreshTimer);
+      moduleStatusRefreshTimer = null;
+    }
+
+    if ((caps & AUDIO_CAP_QUERY_SAFE_PLAYING) !== 0) {
+      moduleStatusRefreshTimer = window.setInterval(() => {
+        if (document.visibilityState === "hidden") return;
+        updateModuleStatus();
+      }, 3000);
+    }
+  };
+
+  const applyCapabilityUI = (caps) => {
+    const supportsStatusQuery = (caps & AUDIO_CAP_STATUS_QUERY) !== 0;
+    const supportsDeviceType = (caps & AUDIO_CAP_DEVICE_TYPE) !== 0;
+    const supportsCurrentTrack = (caps & AUDIO_CAP_CURRENT_TRACK) !== 0;
+    const supportsSafePlayingQuery = (caps & AUDIO_CAP_QUERY_SAFE_PLAYING) !== 0;
+    const showManualPoll = supportsStatusQuery && !supportsSafePlayingQuery;
+
+    setElementVisible(modDeviceRow, supportsStatusQuery && supportsDeviceType);
+    setElementVisible(modCurrentTrackRow, supportsStatusQuery && supportsCurrentTrack);
+    setElementVisible(modPollSection, showManualPoll);
+    setElementVisible(btnPoll, showManualPoll);
+    setElementVisible(modStatusTable, supportsStatusQuery);
+    if (modNoQueryNotice) setElementVisible(modNoQueryNotice, !supportsStatusQuery);
+
+    if (!modQueryNote) return;
+    if (!supportsStatusQuery) {
+      modQueryNote.textContent = "Status queries not supported by this module.";
+      return;
+    }
+    if (supportsSafePlayingQuery) {
+      modQueryNote.textContent = "Module status updates automatically every 2 s.";
+      return;
+    }
+    modQueryNote.textContent = "Status is cached from boot. Use Poll to refresh — only poll when not playing.";
+  };
 
   const updateModuleStatus = async () => {
     if (!window.PAApi) return;
     try {
       const result = await window.PAApi.get("/api/audio", { timeoutMs: 3000 });
       const d = result.data;
+
+      if (d.capabilities !== undefined && d.capabilities !== null) {
+        const caps = Number(d.capabilities) & 0xFF;
+        const capabilitiesChanged = lastCapabilities !== caps;
+        lastCapabilities = caps;
+        applyCapabilityUI(caps);
+        if (capabilitiesChanged) resetModuleStatusAutoRefresh(caps);
+      }
+
       if (modDriver) modDriver.textContent = d.driver ?? "—";
       if (modLink) {
         const ok = Boolean(d.link_ok);
@@ -142,6 +214,9 @@
 
   const buildNamedSoundRows = () => {
     if (!tbody) return;
+    if (trackNumberNote) {
+      trackNumberNote.textContent = "Track numbers are module-specific — set these to match your installed module's layout.";
+    }
 
     NAMED_SOUNDS.forEach((sound) => {
       const tr = document.createElement("tr");
@@ -399,13 +474,15 @@
 
   // Initial module status fetch from cached data (no UART query on load)
   updateModuleStatus();
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState !== "hidden") {
+      updateModuleStatus();
+    }
+  });
 
   // Poll button — sends a POST /api/audio/query which runs queryModuleState()
   // in AudioTask, then re-fetches /api/audio after 1.5 s to show the result.
-  // Only use while not playing — querying the DY-SV5W mid-playback can
-  // corrupt its RX state machine.
-  const btnPoll = document.getElementById("btn-poll-status");
-  const modStatusFb = document.getElementById("mod-status-feedback");
+  // For manual-poll backends, only poll while not playing to avoid UART disruption.
   if (btnPoll) {
     btnPoll.addEventListener("click", async () => {
       btnPoll.disabled = true;

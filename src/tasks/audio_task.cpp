@@ -54,6 +54,10 @@ const char* audioGetDriverName() {
     return driver->driverName();
 }
 
+uint8_t audioGetCapabilities() {
+    return driver->capabilities();
+}
+
 static const char* TAG = "AudioTask";
 
 // -----------------------------------------------------------------------------
@@ -225,13 +229,14 @@ void audioTask(void* pvParameters) {
     bool randomMode = false;
     uint32_t lastRandMs = 0;
     uint32_t lastPlayMs = 0;  // anti-spam: last playTrack() timestamp
+    uint32_t lastAutoQueryMs = 0;  // 2 s status poll timer for safe-polling modules
     uint8_t currentVol = 20;  // updated from config on first enable
 
     // Minimum interval between successive playTrack() calls (ms).
-    // The DY-SV5W needs ~100 ms per command (enforced in the driver) plus
-    // processing time to start playback. Rapid-fire play commands arriving
-    // faster than this are silently dropped. Stop and volume commands are
-    // NOT throttled — they must remain responsive.
+    // Application-level anti-bounce guard for rapid-fire play commands
+    // (e.g. UI double-tap, RC switch bounce). Driver-level timing
+    // constraints, if any, are enforced inside the driver's
+    // playTrack() implementation.
     // The constant is defined near dispatchAction() (DISPATCH_PLAY_MIN_MS)
     // and also used for direct AUDIO_CMD_PLAY_TRACK below.
 
@@ -465,13 +470,26 @@ void audioTask(void* pvParameters) {
         }
 
         // ----------------------------------------------------------------
-        // Periodic auto-query REMOVED.
-        // The DY-SV5W FLASH variant's RX state machine is corrupted by
-        // query frames sent while the module is playing. The 2 s auto-query
-        // reliably caused "one sound then silence" after the first query
-        // landed during playback. Module status is now updated ONLY via the
-        // manual Poll button (AUDIO_CMD_QUERY_STATUS) which the operator
-        // can use when no playback is active.
+        // Periodic auto-query runs only for modules reporting
+        // AUDIO_CAP_QUERY_SAFE_PLAYING. For modules without that capability
+        // (background polling can corrupt some module RX state machines during
+        // playback), status is updated only via the manual Poll button
+        // (AUDIO_CMD_QUERY_STATUS).
         // ----------------------------------------------------------------
+        if ((driver->capabilities() & AudioDriver::AUDIO_CAP_QUERY_SAFE_PLAYING) &&
+            ((uint32_t)(millis() - lastAutoQueryMs) >= 2000u)) {
+            lastAutoQueryMs = millis();
+            AudioModuleState ms{};
+            bool ok = driver->queryModuleState(ms);
+            taskENTER_CRITICAL(&robotStateMux);
+            robotState.audio_module_link_ok = ok && ms.linkOk;
+            robotState.audio_module_play_state = ms.playState;
+            robotState.audio_module_device = ms.device;
+            robotState.audio_module_total_tracks = ms.totalTracks;
+            robotState.audio_module_current_track = ms.currentTrack;
+            taskEXIT_CRITICAL(&robotStateMux);
+            PA_LOG_DEBUG(TAG, "auto-query: link=%s play=0x%02X", ok ? "OK" : "no-rsp",
+                         (unsigned)ms.playState);
+        }
     }
 }

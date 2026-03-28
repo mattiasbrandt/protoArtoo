@@ -3,24 +3,14 @@
 //
 // Concrete AudioDriver implementation for the CHIRP Audio Trigger board.
 //
-// The CHIRP Audio Trigger is an RP2350-based multi-stream audio board with an
-// ASCII UART command protocol. This driver maps the AudioDriver interface to
-// CHIRP ASCII commands sent over software UART TX on PIN_AUDIO_TX (GPIO 26)
-// at 9600 baud.
+// CHIRP is an RP2350-based multi-stream audio board with an ASCII UART command
+// protocol. TX commands are sent over software UART on PIN_AUDIO_TX (GPIO 26) at
+// 9600 baud. RX status/manifest responses are read via HardwareSerial(2) on
+// PIN_AUDIO_RX (GPIO 35).
 //
 // ⚠ CHIRP defaults to 115200 baud. Before using this driver, set the board's
 // baud rate to 9600 by placing the following in CHIRP.INI on the SD card root:
 //   #BAUD_RATE 9600
-//
-// Protocol: ASCII commands, '\n' terminated — fire-and-forget TX.
-// Responses from CHIRP (PACK:*, S:*, etc.) are not read in this driver.
-// GPIO 35 (PIN_AUDIO_RX) is available for a future RX extension if needed.
-//
-// AudioDriver interface → CHIRP command mapping:
-//   begin()          → configure GPIO 26 output, idle HIGH
-//   playTrack(n)     → "PLAY:n,1,A\n"  (Bank 1, Page A, index n, stream 0)
-//   stop()           → "STOP\n"
-//   setVolume(v)     → "VOL:N\n"  where N = v * CHIRP_VOL_MAX / 30 (scale 0–30 → 0–99)
 //
 // Reference: https://github.com/joymonkey/CHIRP
 // See docs/sound_playback.md §2.2 for full protocol and file layout details.
@@ -38,7 +28,8 @@ static constexpr uint8_t CHIRP_VOL_MAX = 99;
 
 class AudioDriverChirp : public AudioDriver {
    public:
-    // Initialise PIN_AUDIO_TX as output and set idle HIGH.
+    // Configures soft-UART TX and hardware UART RX; sends initial volume and
+    // queries Bank 1 sound count via GMAN.
     void begin(uint8_t vol) override;
 
     // Play track by 1-based index in Bank 1, Page A.
@@ -54,7 +45,24 @@ class AudioDriverChirp : public AudioDriver {
         return "CHIRP";
     }
 
+    // CHIRP reports all five capability dimensions: status queries are safe
+    // at any time including during playback; device is always Flash+SD (Bank 1
+    // flash-backed, Banks 2–6 on SD); Bank 1 manifest count is fetched via GMAN;
+    // last-triggered track index is cached in the driver on every playTrack() call.
+    uint8_t capabilities() const override {
+        return AUDIO_CAP_STATUS_QUERY | AUDIO_CAP_DEVICE_TYPE | AUDIO_CAP_TRACK_COUNT |
+               AUDIO_CAP_CURRENT_TRACK | AUDIO_CAP_QUERY_SAFE_PLAYING;  // 0x1F
+    }
+
+    bool queryModuleState(AudioModuleState& out) override;
+    void getCachedState(AudioModuleState& out) const override;
+
    private:
+    uint16_t m_totalTracks = 0;
+    uint8_t m_playState = 0xFF;
+    bool m_linkOk = false;
+    uint16_t m_lastTrack = 0;   // last track index sent to playTrack(); reported as currentTrack
+
     // Send a null-terminated ASCII command string followed by '\n'.
     void sendCommand(const char* cmd);
 };

@@ -34,7 +34,7 @@ this to its module's native range.
 | `PA_AUDIO_DRIVER` | Backend | Protocol | Status |
 |---|---|---|---|
 | `AUDIO_SOFT_UART` | Software UART binary frame | Binary frames, 9600 baud | ✅ Implemented (T01) |
-| `AUDIO_CHIRP` | CHIRP Audio Trigger ASCII | ASCII commands, configurable baud | 🔲 Planned (T15) |
+| `AUDIO_CHIRP` | CHIRP Audio Trigger ASCII | ASCII commands, configurable baud | ✅ Implemented (T15) — TX+RX, live status queries |
 | `AUDIO_DFPLAYER` | DFPlayer Mini | Binary frames, 9600 baud | 🔲 Not yet implemented |
 | `AUDIO_MP3TRIGGER` | SparkFun MP3 Trigger | Binary, 38400 baud | 🔲 Not yet implemented |
 
@@ -83,7 +83,7 @@ Recommended rule: keep the root directory as strict `NNN.mp3` contiguous files
 
 ### 2.2 `AUDIO_CHIRP` — CHIRP Audio Trigger ASCII Backend
 
-**File:** `src/drivers/audio_chirp.cpp` — planned in T15
+**File:** `src/drivers/audio_chirp.cpp`
 
 The CHIRP Audio Trigger is an RP2350-based multi-stream audio board that accepts
 ASCII text commands over UART. It is a significant capability step up from
@@ -103,6 +103,19 @@ in `CHIRP.INI` on the SD root to match the protoArtoo software UART driver. If
 a hardware UART becomes available in a future revision, higher baud rates are
 possible without code changes beyond the driver.
 
+#### Setup
+
+Required `CHIRP.INI` settings:
+
+| Key | Required value | Purpose |
+|---|---|---|
+| `#BAUD_RATE` | `9600` | Must match protoArtoo soft-UART rate |
+| `#BANK1_PAGE` | `A` (default) | Selects active page for Bank 1 vocals |
+| `#USE_FLASH_BANK1` | `1` (default) | Enable flash sync for fast Bank 1 access; disable if Bank 1 exceeds 14 MB |
+
+Alternative baud-rate method (no SD card edit): hold **Prev** and press
+**Play/Stop** on the CHIRP board to cycle 115200 → 2400 → 9600.
+
 **protoArtoo driver mapping:**
 
 | `AudioDriver` call | CHIRP command | Notes |
@@ -111,9 +124,29 @@ possible without code changes beyond the driver.
 | `stop()` | `STOP\n` | Stops all active streams |
 | `setVolume(v)` | `VOL:${v*99/30}\n` | Scales 0–30 → 0–99 |
 
+> ⚠ **Track numbers are module-specific.** CHIRP's `PLAY:n,1,A` command plays the
+> *nth entry in the Bank 1 sound manifest* (sorted by basename after variant
+> grouping), not a file sequence number. The default named track values
+> (scream=126, leia=151, etc.) are calibrated for DY-SV5W community SD pack
+> numbering and must be re-mapped via the Sound page when using CHIRP.
+
 The base driver uses stream 0 for all `$`-command playback. Multi-stream layering
 and CHIRP-exclusive features (`CHRP:` chirp tones, `GMAN` manifest queries) are
 beyond the `AudioDriver` base interface and are candidates for a future extension.
+
+#### SD card layout
+
+- Bank 1 folder format is `1A_<droidname>` (example: `1A_R2D2`). `1` is the bank
+  number, `A` is the page letter, and the remainder is a human label.
+- Bank 1 variant grouping is basename-driven: `beep_01.wav`, `beep_02.wav`,
+  `beep_03.wav` become one logical sound (`beep`) with random variant selection.
+- Keep Bank 1 at **14 MB or less** when `#USE_FLASH_BANK1 1` is enabled; larger
+  Bank 1 collections should set `#USE_FLASH_BANK1 0`.
+- Recommended format for Bank 1 is WAV 44.1 kHz mono (smallest files, fast flash
+  sync). MP3 stereo is fine for Banks 2–6. Files at 48 kHz play about 8% slow,
+  so resample before deployment.
+- Banks 2–6 use `NA_Label/` naming where `N` is bank and `A` is page, for
+  example: `2A_SW-Music/`, `2B_StarWarsClips/`.
 
 **CHIRP SD card structure:**
 
@@ -128,6 +161,17 @@ SD:/2A_SW-Music/       Bank 2, Page A
 SD:/3A_Effects/        Bank 3, Page A
     periscope01.mp3
 ```
+
+#### Status queries
+
+CHIRP supports live status queries at any time, including active playback. The
+protoArtoo CHIRP driver queries automatically every 2 seconds, so no operator
+poll action is required.
+
+Reported fields include module link state (ACK-based), play state (idle/playing
+from `STAT` response), and Bank 1 sound count (from `GMAN` at boot). The Sound
+page status card auto-refreshes for CHIRP; device type and current track are
+not applicable for CHIRP and are hidden.
 
 **Source:** https://github.com/joymonkey/CHIRP
 

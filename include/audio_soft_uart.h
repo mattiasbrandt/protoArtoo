@@ -33,6 +33,11 @@ class AudioDriverSoftUart : public AudioDriver {
         return "DY-SV5W";
     }
 
+    // DY-SV5W: supports query, device type, track count, current track; not safe to poll during playback
+    uint8_t capabilities() const override {
+        return AUDIO_CAP_STATUS_QUERY | AUDIO_CAP_DEVICE_TYPE | AUDIO_CAP_TRACK_COUNT | AUDIO_CAP_CURRENT_TRACK;
+    }
+
     // Query live module state via UART RX: device, play state, current track.
     // Sends three query frames and waits up to 300 ms each for a response.
     // Returns true if at least one query received a valid response (link alive).

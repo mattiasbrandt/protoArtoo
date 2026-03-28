@@ -61,7 +61,7 @@ Development builds are versioned from the git history and build timestamp.
 
 ### Audio
 
-- Pluggable audio module support: DY-SV5W (confirmed on hardware) and CHIRP (ready for hardware test)
+- Pluggable audio module support: DY-SV5W (confirmed on hardware) and CHIRP (implemented — hardware validation pending)
 - Plays named sound cues: scream, Leia message, Short Circuit, Cantina, Imperial March, Star Wars theme, and more
 - Sounds triggered from RC transmitter, web interface, or dome serial commands
 - Random ambient chatter with per-mood frequency — each mood preset has its own chatter rate
@@ -94,6 +94,8 @@ Development builds are versioned from the git history and build timestamp.
   connection and SBUS receiver inputs share hardware resources. When hoverboard drive
   is connected and active, use Standard PWM mode for RC drive input rather than a SBUS
   receiver mode. This constraint will be removed in a future update.
+
+- **Sound module status varies by backend:** Modules with bidirectional UART (DY-SV5W, CHIRP) report module state on the Sound page. DY-SV5W status is manually polled to avoid disrupting its RX state machine during playback. CHIRP status updates automatically every 2 seconds and is safe to query at any time.
 ---
 
 ## Pending Hardware Validation
@@ -109,7 +111,8 @@ droid for final confirmation:
 - **Dome link end-to-end** — requires both the body board and dome board connected over
   the slip ring
 - **Full audio validation** — most audio paths confirmed on hardware; the enable/disable
-  toggle and boot mood restore require hardware reconnect
+  toggle and boot mood restore require hardware reconnect. CHIRP backend requires
+  hardware validation with board connected (T15).
 - **Firmware and web UI update flows** — upload progress indication and post-reboot
   reconnect with the updated version
 

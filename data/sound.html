@@ -14,14 +14,9 @@
     <!-- Audio Module Status -->
     <div class="card">
       <h3>🔌 Audio Module Status</h3>
-      <div class="desc">Cached from module init. Use Poll to refresh live status — only poll while not playing to avoid disturbing playback.</div>
-      <ul class="desc">
-        <li><strong>Device</strong> and <strong>Total tracks</strong> are read at boot and cached — they do not require polling.</li>
-        <li><strong>Play state</strong> and <strong>Current track</strong> are only updated when you poll.</li>
-        <li><strong>Do not poll while sounds are playing</strong> — UART queries can disrupt the DY-SV5W and stop playback.</li>
-        <li><strong>Module link: No response</strong> on startup is normal — it means the boot-time query got no reply (module not yet connected, or link was live when it was cached). Use Poll to re-check.</li>
-      </ul>
-      <table class="sound-table mt-12">
+      <div class="desc">Module status visibility and polling behavior are determined by backend capabilities.</div>
+      <p id="mod-query-note" class="desc"></p>
+      <table id="mod-status-table" class="sound-table mt-12">
         <tbody>
           <tr>
             <td>Driver</td>
@@ -31,7 +26,7 @@
             <td>Module link</td>
             <td><span id="mod-link" class="sound-state-badge" data-state="disabled">—</span></td>
           </tr>
-          <tr>
+          <tr id="mod-device-row">
             <td>Device</td>
             <td><span id="mod-device">—</span></td>
           </tr>
@@ -43,13 +38,13 @@
             <td>Total tracks</td>
             <td><span id="mod-total-tracks">—</span></td>
           </tr>
-          <tr>
+          <tr id="mod-current-track-row">
             <td>Current track</td>
             <td><span id="mod-current-track">—</span></td>
           </tr>
         </tbody>
       </table>
-      <div class="mt-12">
+      <div id="mod-poll-section" class="mt-12">
         <button id="btn-poll-status" class="btn-secondary">Poll status</button>
       </div>
       <div id="mod-status-feedback" class="feedback mt-8" role="status" aria-live="polite" aria-atomic="true"></div>
@@ -98,6 +93,7 @@
         changes take effect immediately and survive reboot.
       </div>
 
+      <p id="track-number-note" class="desc"></p>
       <table class="sound-table mt-12">
         <thead>
           <tr>

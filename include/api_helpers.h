@@ -175,8 +175,9 @@ void formatHealthJson(char* buf, size_t bufSize, bool estop, bool sbusSignalLost
 // Write a JSON audio-module status object into a caller-supplied buffer.
 // Pure function — no globals, no Arduino, no FreeRTOS.
 // params: buf          — output buffer (must not be null)
-//         bufSize      — size of buf in bytes (192 bytes is sufficient)
+//         bufSize      — size of buf in bytes (192 bytes sufficient; worst-case ~160 bytes with capabilities field)
 //         driverName   — driver name string e.g. "DY-SV5W" (must not be null)
+//         capabilities — AudioDriver::AUDIO_CAP_* bitmask; controls which fields are meaningful
 //         linkOk       — true if module responded to at least one UART query
 //         active       — true if firmware sent a play command recently (audioActive)
 //         playState    — 0=stop 1=playing 2=paused 0xFF=unknown
@@ -185,6 +186,7 @@ void formatHealthJson(char* buf, size_t bufSize, bool estop, bool sbusSignalLost
 //         currentTrack — currently selected track (0 if unknown)
 // thread-safe: yes (pure function, no globals)
 // -----------------------------------------------------------------------------
-void formatAudioStatusJson(char* buf, size_t bufSize, const char* driverName, bool linkOk,
-                           bool active, uint8_t playState, uint8_t device, uint16_t totalTracks,
+void formatAudioStatusJson(char* buf, size_t bufSize, const char* driverName,
+                           uint8_t capabilities, bool linkOk, bool active,
+                           uint8_t playState, uint8_t device, uint16_t totalTracks,
                            uint16_t currentTrack);
