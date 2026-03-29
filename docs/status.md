@@ -15,14 +15,14 @@ For detailed release notes see `CHANGELOG.md`.
 | Phase 1 — Drive | Hoverboard drive, RC receiver input, failsafe | Complete — `v0.1.0` |
 | Phase 2 — Web interface | WiFi, web UI, OTA firmware updates | Complete |
 | Phase 3 — Servos + dome motor | Arm servos, dome motor, RC diagnostics and mapping | Software complete — hardware validation partially deferred |
-| **Phase 4 — Audio + dome link** | Sound playback, bidirectional dome communication, web UI improvements | Software complete — hardware validation deferred to Phase 5 |
+| **Phase 4 — Audio + dome link** | Sound playback, bidirectional dome communication, web UI improvements | Complete — `v0.4.0`; hardware validation deferred to Phase 5 |
 | Phase 5 — Community release | Documentation, polish, public release | Planned |
 
 ---
 
 ## Current Version
 
-Latest release: `v0.1.0` — see `CHANGELOG.md` for full history.
+Latest release: `v0.4.0` — see `CHANGELOG.md` for full history.
 Development builds are versioned from the git history and build timestamp.
 
 ---

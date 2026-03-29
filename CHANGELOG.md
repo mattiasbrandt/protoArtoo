@@ -15,61 +15,112 @@ Every semantic version release belongs here:
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-03-29
+
 ### Added
-- **Heap fragmentation monitoring** — `heap_caps_get_largest_free_block(MALLOC_CAP_8BIT)`
-  tracked in `SafetyMonitorTask` alongside `getFreeHeap()`; fragmentation ratio logged
-  every 6 seconds; `heapLargestBlock` field added to SSE status JSON and `/api/health`
-- **`PA_ENABLE_STA_WIFI` build flag and `protoArtoo_prod` env** — build-time WiFi mode
-  selection. `PA_ENABLE_STA_WIFI=1` (default): WiFi client mode only, connects to an
-  existing network via credentials in `src/secrets.h`. `PA_ENABLE_STA_WIFI=0`
-  (`protoArtoo_prod`): hotspot mode only. Saves ~7 KB steady-state heap and ~18 KB
-  boot watermark vs the previous AP+client simultaneous design.
+- **Audio system** — pluggable audio module support with three backends: DY-SV5W binary-frame
+  driver (confirmed on hardware), CHIRP Audio Trigger ASCII driver, and SparkFun MP3 Trigger
+  binary driver. All audio routes through a single `AudioTask` queue accepting commands from
+  RC, web API, and dome serial. Backend selected at compile time via `PA_AUDIO_DRIVER`.
+- **Sound page** — dedicated `/sound.html` with volume slider, named sound triggers (scream,
+  Leia message, Short Circuit, Cantina variants, Star Wars theme, Imperial March, startup),
+  direct track play by number, random chatter pool range, mood sound intervals, and a live
+  Audio Module Status card showing link state, device type, play state, and track count.
+- **Per-mood random sound intervals** — each mood state has its own configurable chatter
+  interval: Quiet = 0 s (silent), Mid-Awake = 30 s, Full-Awake = 20 s, Awake+ = 10 s.
+  All four are configurable from the Sound page and persisted across reboots.
+- **Dome serial link** — body sends `#PAHB` heartbeat to the dome at 1 Hz; receives and
+  dispatches Marcduino commands from the dome (sounds, arm sequences, mood triggers).
+  Dome link health shown on the dashboard.
+- **Mood presets** — mood selection dispatches the audio command locally and forwards the
+  dome lighting sequence over the serial link when the dome is connected. Last active mood
+  is restored on reboot (audio component only; dome TX deferred until link is up).
+- **Runtime log verbosity selector** — log level adjustable from the Setup page (Error only,
+  Info, Debug) without reflashing; persisted across reboots; takes effect immediately.
+- **Audio Module Status card** — Sound page shows confirmed live state from the module
+  itself (link OK / no response, device type, play state, total tracks, current track);
+  badge distinguishes unreachable module from idle module.
+- **`/api/validation` endpoint** — single-call hardware validation snapshot covering drive,
+  dome link, audio, and RC source health; useful for scripted validation sessions.
+- **Failsafe timing telemetry** — trigger-to-zero latency fields added to `/api/status`
+  (`failsafeTriggerMs`, `failsafeZeroMs`, `failsafeTriggerToZeroMs`, `failsafeTriggerSource`);
+  makes the 200 ms safety requirement measurable rather than inferred.
+- **Hardware validation script** — `tools/phase4_hw_check.py` runs a repeatable validation
+  pass against a connected robot and writes machine-readable and human-readable reports.
+- **Heap fragmentation monitoring** — `heapLargestBlock` tracked in `SafetyMonitorTask`
+  and exposed in `/api/status` and `/api/health`; catches fragmentation before total-free
+  looks healthy but WiFi cannot allocate a contiguous block.
+- **`protoArtoo_prod` build environment** — AP-only WiFi mode (`PA_ENABLE_STA_WIFI=0`) for
+  field deployment; saves ∼7 KB steady-state heap vs the default STA client mode.
 
 ### Changed
-- **Platform upgraded: `espressif32@5.2.0` → `6.13.0`** — arduino-esp32 2.0.5 → 2.0.17
-  (IDF 4.4.x → 4.4.7, esptool 4.2.1 → 4.11.0). Same 2.x API family — zero source
-  changes required. Benefit: 12 patch releases of arduino-esp32 bug fixes, more stable
-  WiFi stack, +7 KB heap minimum watermark at boot.
-- **AsyncWebServer and AsyncTCP migrated from abandoned `me-no-dev/` namespace to
-  maintained `ESP32Async/` fork** (`ESPAsyncWebServer@3.10.3`, `AsyncTCP@3.4.10`).
-  The `me-no-dev` repos have had no activity since 2022. The `ESP32Async` fork (formerly
-  `mathieucarbou/`) carries confirmed SSE memory leak fixes, proper TCP buffer teardown,
-  and `SSE_MAX_QUEUED_MESSAGES` queue cap support.
-- **`CONFIG_ASYNC_TCP_STACK_SIZE=4096`** in build_flags — reduces AsyncTCP internal
-  task stack from 16 KB default to 4 KB, saving 12 KB runtime heap
-- **`SSE_MAX_QUEUED_MESSAGES=8`** in build_flags — caps per-client SSE outbox to
-  prevent unbounded heap growth when browser tabs fall behind
-- **`PA_LOG_LEVEL` lowered from 3 (debug) to 2 (info)** in production build — saves
-  4 KB BSS (debug ring buffer 6.1 KB → 2.0 KB)
-- **`board_upload.before_reset = default_reset`** replaces old `upload_flags = --before
-  no_reset_no_sync`. PlatformIO appends `upload_flags` after the `write_flash` subcommand
-  where `--before` is ignored by esptool 4.x; `board_upload.*` inserts it correctly.
-  DTR/RTS auto-reset confirmed working on this USB-serial adapter when ESP32 is unseated.
-- **`StaticJsonDocument<64>` replaced with `JsonDocument`** in `api_rc.cpp` — removes
-  ArduinoJson v7 deprecation warning
-- **WiFi mode is now a build-time choice — AP fallback removed** — previous design ran
-  hotspot and WiFi client simultaneously and toggled the hotspot off/on based on client
-  connection state. This was unnecessary attack surface: an AP running alongside an
-  active WiFi client connection has no recovery value (no config UI to fix a broken
-  connection). New design: `PA_ENABLE_STA_WIFI` is the sole compile-time decision;
-  the two modes are mutually exclusive. Removed: `apFallbackMode`, `hasStaConfig()`,
-  `apPassword()`, `staSsid()`, `staPassword()` credential helpers, `WIFI_AP_STA` mode,
-  all AP start/stop event logic. Added: `#error` compile guard if
-  `PA_ENABLE_STA_WIFI=1` but credentials are missing from `secrets.h`.
-
+- **`/api/config` response is now grouped** — fields organized into `drive`, `rc`,
+  `components`, `dome`, and `system` objects; all frontend pages updated accordingly.
+- **Platform upgraded to IDF 5.5.2 / arduino-esp32 3.3.7** via
+  `pioarduino/platform-espressif32@55.03.37`. Zero source changes required. Brings the
+  IDF 5.x WiFi stack, improved power management, and 2026 toolchain improvements.
+- **AsyncWebServer and AsyncTCP migrated to `ESP32Async/` maintained fork**
+  (`ESPAsyncWebServer@3.10.3`, `AsyncTCP@3.4.10`). The `me-no-dev/` namespace has had no
+  activity since 2022; the `ESP32Async` fork carries SSE memory-leak fixes, proper TCP
+  buffer teardown, and `SSE_MAX_QUEUED_MESSAGES` queue-cap support.
+- **WiFi mode is now a build-time decision** — AP and STA modes are mutually exclusive;
+  the prior AP+STA simultaneous mode with AP-fallback logic is removed. `PA_ENABLE_STA_WIFI`
+  selects the mode at compile time; a `#error` guard fires if credentials are missing.
+- **Soft-UART TX is now interrupt-protected** — each byte is wrapped in a portMUX critical
+  section, preventing FreeRTOS tick and WiFi radio ISRs from stretching bit periods and
+  corrupting DY-SV5W frames.
+- **Single SBUS receiver is now selectable at runtime** — in `single_sbus` mode, the active
+  physical receiver (`sbus1` / `sbus2`) can be changed from the RC page and persists across
+  reboots without modifying any existing channel mappings.
+- **Dashboard live status now uses SSE** — target pages subscribe to the existing
+  `/api/events` stream instead of polling; reconnects automatically on visibility restore.
+- **Shared web API client** — all pages use `PAApi` (`data/web_api.js`) for consistent
+  error handling, timeout behaviour, and operator feedback.
+- **Shared page chrome** — navigation and footer rendered from a single source (`shell.js`,
+  `footer.js`); one edit point for all nav changes.
+- **Footer shows both firmware and web bundle versions** — helps detect stale UI after a
+  firmware flash or filesystem update.
+- **`/api/config` JSON serialized via ArduinoJson** — eliminates the hand-sized 2 KB static
+  buffer (`configJsonBuf`) that had caused production truncation twice; 2 KB BSS reclaimed.
+- **RC diagnostics JSON also migrated to ArduinoJson** — eliminates `rcBuf[3072]` and the
+  associated `WebEvents` task stack pressure that caused SSE-connect crashes.
 
 ### Fixed
-- **Heap monitoring blind spot** — `safety.cpp` and SSE status previously reported only
-  total free bytes; fragmentation could drive the largest contiguous block below WiFi's
-  minimum needs while total free looked healthy. `heapLargestBlock` closes this gap.
-- **Post-review hardening for refactor + Phase 4 T19–T23** — fixed `/api/audio` truthfulness on queue-full (`503` instead of false success), fixed `/api/mode` driving response path, and fixed `/api/audio/tracks` key lifetime bug (`String` temporary `c_str()` pointer).
-- **RC runtime reconfiguration correctness** — `RcInputTask` now re-reads `rcInputMode` and SBUS channel enable flags each loop so `/api/config` mode/channel changes apply without reboot; removed the disabled-SBUS idle trap that prevented later activation.
-- **Status payload robustness** — `buildStatusJson()` now returns success/failure and emits explicit fallback JSON on overflow; status route + SSE status buffer sizes increased to 3072 bytes; one-time overflow warning logging added.
-- **AP security in AP-only builds** — AP mode now requires `PA_AP_PASSWORD` from `src/secrets.h` (compile-time guard + minimum-length assertion) and uses `WiFi.softAP(WIFI_AP_SSID, PA_AP_PASSWORD)`.
-- **Frontend/backend contract alignment** — restored top-level servo calibration fields in `/api/config` GET/POST (`arm1OpenUs` … `aux3CloseUs`) used by `data/servo.js`; fixed mood dome-link note in `data/app.js` to use `payload.dome_link.state`.
-- **Drive logging format warning resolved** — corrected hoverboard baud logging format specifier in `drive.cpp` to match argument type.
-- **Web UI stale-content sweep** — WiFi page now strictly reflects build-time mode (STA builds hide AP IP/details), Drive page CH8 wording now matches `ch8ModeLock` behavior, D-pad hold loop now transmits every 50 ms to stay below the minimum configurable timeout, RC page removed operator-facing phase wording for unavailable dome sequence mapping, Home page restored dome-link mood note visibility, and Setup/Firmware stale labels/details were refreshed.
-- **Static-analysis high findings closure** — resolved remaining `pio check` HIGH findings in `src/tasks`/`src/web` (`src/tasks=0`, `src/web=0`): added null-safe parameter retrieval in `/api/servo` route handling and defined `PA_AUDIO_DRIVER` for native-analysis compilation path. Added inline comments in `platformio.ini` documenting why narrowly scoped cppcheck suppressions exist for ArduinoJson vendor macro false positives.
+- **DY-SV5W audio regression** — driver was sending wrong play opcode (`0x06` next-track
+  instead of `0x07` play-specified), a self-cancelling stop sequence, and dual-dialect frame
+  wrapping producing four frames per command. All corrected with source-verified opcodes from
+  the DYPlayer/BetterDuino reference. `switchDrive` now uses the device the module reports,
+  not a hardcoded SD/TF value (FLASH modules were silently breaking status queries on boot).
+- **Volume not persisted** — `POST /api/audio action=volume` now writes to NVS; the Sound
+  page slider hydrates from the persisted value on load instead of defaulting to 20.
+- **WebEvents task crash under SSE load** — task stack was sized against an idle measurement
+  taken before any SSE client connected, giving a false low-water mark. Corrected to 4096
+  bytes; under-load measurement confirmed 1320 words free.
+- **AsyncTCP stack canary faults on `/api/config`** — `CONFIG_ASYNC_TCP_STACK_SIZE=8192`
+  in build flags prevents stack overflow when the config handler runs under connection load.
+- **RC mode and channel changes now apply without reboot** — `RcInputTask` re-reads config
+  each loop; mode and channel assignment changes from the web interface take effect
+  immediately.
+- **AP security in AP-only builds** — AP mode now requires `PA_AP_PASSWORD` from
+  `src/secrets.h` with a minimum-length compile-time assertion; open AP removed.
+- **Status payload overflow** — `buildStatusJson` returns failure on overflow and emits
+  explicit fallback JSON instead of silently truncating; buffer sizes increased to 3072 bytes.
+- **Optimistic mode/mood state** — mode and mood controls no longer flip state before API
+  confirmation; on failure the UI rolls back to the last confirmed state.
+- **`board_upload.before_reset` placement** — moved from `upload_flags` to `board_upload.*`
+  in `platformio.ini`; esptool 4.x ignores `--before` when appended after `write_flash`.
+
+### Hardware Validated
+- DY-SV5W audio output on Artoo PCB: named sounds, random chatter, play/stop/volume,
+  module status card, volume NVS persistence confirmed
+- Dome ESC GPIO25 PWM path: spins correctly at 50/70/90% command from web API (unloaded and
+  loaded ring tests); ESC baseline parameters confirmed and locked
+
+### Deferred
+- Dome serial link end-to-end (requires slip-ring connection to AstroPixelsPlus board)
+- Audio edge cases: S2 enable/disable toggle, boot mood restore, mood interval NVS persistence
+- Drive, hoverboard, and SBUS failsafe validation (hoverboard not yet connected)
+- RC mapping and upload UX with physical transmitter/receiver
 
 ## [0.3.0] - 2026-03-16
 
