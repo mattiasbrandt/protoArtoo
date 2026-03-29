@@ -173,7 +173,7 @@ void test_driver_name_is_MP3Trigger() {
     // Mirror the literal from AudioDriverMp3Trigger::driverName()
     const char* name = "MP3Trigger";
     TEST_ASSERT_EQUAL_STRING("MP3Trigger", name);
-    TEST_ASSERT_EQUAL_INT(10, (int)__builtin_strlen("MP3Trigger"));
+    TEST_ASSERT_EQUAL_INT(10, (int)(sizeof("MP3Trigger") - 1));
 }
 
 // -----------------------------------------------------------------------------
@@ -196,11 +196,14 @@ void test_s1_response_parse_single_digit() {
     TEST_ASSERT_EQUAL_UINT16(5, count);
 }
 
-void test_s1_response_no_equals_is_rejected() {
-    // If line[0] != '=', the driver skips parsing. Verify the guard.
-    char line[] = "171";
-    TEST_ASSERT_NOT_EQUAL('=', (int)line[0]);
-    // sscanf would still parse it — but the driver checks line[0]=='=' first.
+void test_s1_response_no_equals_prefix_skips_parse() {
+    // The driver guard: only parse when line[0] == '='.
+    // Verify that a response without '=' is correctly identified as non-matching,
+    // i.e. the predicate that gates sscanf returns false.
+    char line[] = "171";  // no '=' prefix — would happen on timeout/noise byte
+    bool guard_passes = (line[0] == '=');
+    TEST_ASSERT_FALSE_MESSAGE(guard_passes,
+        "response without '=' prefix must not trigger sscanf parse");
 }
 
 // Volume formula: additional spot-check values
@@ -257,7 +260,7 @@ int main(int argc, char** argv) {
     // S1 response parsing
     RUN_TEST(test_s1_response_parse_strips_equals_prefix);
     RUN_TEST(test_s1_response_parse_single_digit);
-    RUN_TEST(test_s1_response_no_equals_is_rejected);
+    RUN_TEST(test_s1_response_no_equals_prefix_skips_parse);
 
     return UNITY_END();
 }
