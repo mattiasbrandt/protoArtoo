@@ -22,14 +22,15 @@ tested, and designed to be understood and extended by the wider droid-building c
 
 ### What it controls
 
-- **Drive** — hoverboard motors via custom hoverboard firmware and serial UART3 communication
-- **RC input** — three selectable modes: Standard PWM (6-channel), Single SBUS, or Dual SBUS receivers
-- **Audio** — DY-SV5W sound module (default); abstract `AudioDriver` interface for alternatives
+- **Drive** — hoverboard motors via custom hoverboard firmware and serial UART communication
+- **RC input** — three selectable modes: Standard PWM (6-channel), Single SBUS, or Dual SBUS
+- **Audio** — pluggable backend: DY-SV5W (confirmed on hardware), CHIRP Audio Trigger, or
+  SparkFun MP3 Trigger; abstract `AudioDriver` interface for future modules
+- **Moods** — 15 presets coordinating body sounds and dome lighting; per-mood random chatter rate
 - **Servo arms** — 2× MG996R utility arm servos via LEDC PWM
-- **AUX outputs** — 3× configurable outputs (ARM3-5) supporting MG996R servo, MG90S servo, RGB LED, or disabled
+- **AUX outputs** — 3× configurable outputs (ARM3–5): MG996R, MG90S, RGB LED, or disabled
 - **Dome motor** — ESC signal via LEDC PWM (tested: ISDT ESC70)
 - **Dome link** — bidirectional Marcduino serial to AstroPixelsPlus over slip ring
-- **Operation mode** — Driving (full movement) or Stationary (performance mode) via web UI or RC
 
 ### What makes it different from a classic MarcDuino build
 
@@ -58,7 +59,7 @@ For project terms and abbreviations, see [`docs/terminology.md`](./docs/terminol
 
 **Tested / Supported:**
 - **RC receivers:** Dual SBUS, Single SBUS, or 6-channel PWM (tested: HOTRC 650)
-- **Audio:** DY-SV5W (default), DFPlayer Mini via `AudioDriver` interface
+- **Audio:** DY-SV5W (confirmed on hardware), CHIRP Audio Trigger, SparkFun MP3 Trigger
 - **Servos:** MG996R/MG90S utility arms + 3× configurable AUX outputs
 - **Dome motor:** Standard 50 Hz RC ESC (tested: ISDT ESC70)
 - **Dome controller:** [AstroPixelsPlus fork](https://github.com/mattiasbrandt/AstroPixelsPlus) with bidirectional body link
@@ -71,28 +72,39 @@ GPIO assignments and wiring details: [`docs/pin_map.md`](./docs/pin_map.md)
 
 ```
 protoArtoo/
-├── platformio.ini             # Build configuration — two envs: protoArtoo + native
+├── platformio.ini             # Build configuration and environment definitions
 ├── CHANGELOG.md               # All releases, conventional commits format
 ├── CONTRIBUTING.md            # Commit format, branch strategy, PR checklist
 ├── include/
-│   ├── config.h               # GPIO pin assignments — populate from PCB trace
+│   ├── config.h               # GPIO pin assignments — source of truth
 │   ├── robot_state.h          # RobotState struct, queues, mutexes
-│   ├── marcduino.h            # Command string constants
-│   └── audio_driver.h         # AudioDriver abstract interface
+│   ├── audio_driver.h         # AudioDriver abstract interface
+│   └── ...                    # Task interfaces, helpers, API snapshots
 ├── src/
 │   ├── main.cpp
-│   ├── tasks/                 # FreeRTOS tasks (Core 0: WiFi/Web; Core 1: RT control)
-│   └── drivers/               # Hardware abstractions (UART, audio, Marcduino parser)
-├── data/                      # LittleFS web UI assets
+│   ├── tasks/                 # FreeRTOS tasks (Core 0: WiFi/web; Core 1: RT control)
+│   │   ├── audio_task.cpp     # Sole writer to audio serial GPIO
+│   │   ├── dome_link.cpp      # Bidirectional Marcduino serial link
+│   │   ├── mood.cpp           # Mood preset dual-path dispatch
+│   │   └── ...
+│   ├── drivers/               # Hardware abstractions (audio backends, SBUS, Marcduino)
+│   └── web/                   # REST API route handlers
+├── data/                      # LittleFS web UI assets (HTML/JS/CSS)
+│   ├── sound.html / sound.js  # Audio controls, module status, track configuration
+│   ├── shell.js               # Shared page chrome (nav, topbar)
+│   ├── web_api.js             # Shared fetch helpers and error policy
+│   └── ...
 ├── test/
 │   ├── test_native/           # Pure-logic tests — run on dev machine, no hardware
 │   └── test_embedded/         # On-device tests — requires flashed ESP32
 ├── tools/
-│   └── command_compat.py      # Marcduino command verification script
+│   ├── serial_monitor.py      # Serial monitor (holds DTR/RTS low — no accidental reset)
+│   └── phase4_hw_check.py     # Hardware validation runner script
 └── docs/
-    ├── pin_map.md             # GPIO assignments (filled in Phase 0)
+    ├── pin_map.md             # GPIO assignments and UART ownership
     ├── api.md                 # REST API reference
-     ├── terminology.md         # Project glossary (RobotState, NVS, SBUS, etc.)
+    ├── sound_playback.md      # Audio backend details and SD card layout
+    ├── terminology.md         # Project glossary
     └── topology.md            # Classic MarcDuino vs protoArtoo architecture
 ```
 
@@ -101,12 +113,11 @@ protoArtoo/
 ## Build prerequisites
 
 - [VS Code](https://code.visualstudio.com/) + [PlatformIO extension](https://platformio.org/install/ide?install=vscode)
-- Python 3.8+ (for `tools/command_compat.py`)
+- Python 3.8+
 - `clang-format` (for code style enforcement — see `.clang-format`)
 
 Open the repo in VS Code and accept the recommended extensions when prompted
-(see `.vscode/extensions.json`). Workspace settings for formatting, linting,
-and file hygiene are checked in at `.vscode/settings.json`.
+(see `.vscode/extensions.json`).
 
 ---
 
@@ -119,19 +130,29 @@ cd protoArtoo
 
 # Copy and edit credentials (never commit this file)
 cp src/secrets.h.example src/secrets.h
-# Edit src/secrets.h with your WiFi SSID/password for WiFi client mode
+# Edit src/secrets.h with your WiFi SSID/password
 
-# Build (no hardware required)
+# Run native tests (required before any upload)
+pio test -e native
+
+# Build
 pio run -e protoArtoo
 
-# Flash via USB
-pio run -e protoArtoo --target upload
+# Flash via USB — ESP32 must be UNSEATED from the PCB
+# (GPIO15/SBUS strapping pin blocks bootloader download mode when seated)
+pio run -e protoArtoo --target upload --upload-port /dev/ttyUSB0
 
-# Flash via OTA (device must be on network)
-pio run -e protoArtoo --target upload --upload-port 192.168.4.1
+# Flash via OTA — WiFi client mode (default, device on your network)
+pio run -e protoArtoo_ota --target upload
 
-# Open serial monitor
-pio device monitor
+# Flash via OTA — AP mode (connect to the robot's hotspot first)
+pio run -e protoArtoo_ota --target upload --upload-port 192.168.4.1
+
+# Upload web UI assets via OTA
+pio run -e protoArtoo_ota --target uploadfs
+
+# Serial monitor (holds DTR/RTS low — connecting does not reset the ESP32)
+python3 tools/serial_monitor.py
 ```
 
 ---
@@ -144,9 +165,6 @@ pio test -e native
 
 # On-device — requires flashed ESP32
 pio test -e protoArtoo
-
-# Verbose output
-pio test -e native -v
 
 # Static analysis
 pio check
@@ -182,8 +200,8 @@ RC Transmitter ──SBUS──→  [protoArtoo — Artoo Controller PCB]  ←�
                                                    • Holoprojectors
                                                    • Logic displays
                            ↑
-                      UART (9600)
-                     DY-SV5W audio module
+                      soft-UART (9600)
+                     Audio module
                      (body = sole audio source)
 ```
 
@@ -194,52 +212,63 @@ The dome has no local sound module. The body is the sole audio authority.
 
 ## Key Features
 
-**Modular API Architecture**
-API routes organized into focused modules (`api_estop.cpp`, `api_drive.cpp`, `api_config.cpp`,
-`api_status.cpp`, `api_system.cpp`) replacing the original monolithic structure.
+**Audio System**
+- Three pluggable backends: DY-SV5W binary-frame (confirmed on hardware), CHIRP Audio Trigger
+  ASCII, and SparkFun MP3 Trigger
+- All audio routes through a single `AudioTask` queue — commands accepted from RC, web, and
+  dome serial simultaneously
+- Named sound cues (scream, Leia, Cantina, Star Wars, Imperial March, and more) with
+  NVS-configurable track assignments
+- Random ambient chatter with per-mood interval (Quiet: silent, Mid-Awake: 30 s,
+  Full-Awake: 20 s, Awake+: 10 s); all four intervals configurable from the web UI
 
-**Operator-Quality Web Interface**
-Web UI formally signed off by project manager (2026-03-15). Operator-facing copy with no
-developer/planning language, component-scoped logging, and responsive design.
+**Sound Page**
+- Dedicated `/sound.html` with volume slider, named sound trigger buttons, direct track play,
+  random chatter range, mood sound intervals, and a live Audio Module Status card showing
+  link state, device type, play state, and track count from the module itself
 
-**Three RC Input Modes**
-Runtime-selectable: Standard PWM (6-channel), Single SBUS, or Dual SBUS. All modes
-support full channel remapping via web UI without firmware rebuild.
-
-**Configurable AUX Outputs**
-Three AUX channels (ARM3-5) independently configurable as MG996R servo, MG90S servo,
-RGB LED strip, or disabled. Type selection auto-applies safe calibration defaults.
-
-**Operation Mode & Mood Selector**
-- Driving ↔ Stationary modes via dedicated `/api/mode` endpoint
-- Four mood profiles (Quiet, Mid-Awake, Full-Awake, Awake+) coordinating body audio
-  and dome visuals over bidirectional link
-
-**Safety-First Architecture**
-- Five independent failsafe layers from hardware through application
-- Latching estop requiring explicit clear — never auto-resets
-- Component-scoped logging with source tracing (`[SERVO] [WEB] Arm1 opened`) for full auditability
+**Moods and Sequences**
+- 15 mood and sequence presets selectable from the dashboard or RC transmitter
+- Mood selection dispatches audio locally and forwards the dome lighting sequence when the
+  dome link is active
+- Last active mood restored on reboot (audio component only; dome TX deferred until link is up)
 
 **Bidirectional Dome Link**
 - Full-duplex serial over slip ring (body ↔ dome, not just body → dome)
-- Dome can trigger body actions (sounds, arm sequences) — coordinated cross-controller sequences
-- Heartbeat protocol with connection state tracking (Connected / Lost / Not seen)
+- Body sends `#PAHB` heartbeat at 1 Hz; dome responds with `#APHB`
+- Dome can trigger body sounds and arm sequences — coordinated cross-controller sequences
+- Connection state tracked (Connected / Lost / Not seen) and shown on the dashboard
 
-**Universal Browser Control**
-- Works on any phone/tablet/laptop — no app installation required
-- Build-time WiFi mode: hotspot for field use, or WiFi client for home network
-- Real-time dashboard with live logs, health indicators, and manual command interface
+**Three RC Input Modes**
+- Runtime-selectable without reflashing: Standard PWM (6-channel), Single SBUS, or Dual SBUS
+- In Single SBUS mode, active receiver (sbus1/sbus2) selectable from the RC page without
+  touching existing channel mappings
+- Full channel remapping and calibration from the web UI; all bindings NVS-persisted
+
+**Operator Web Interface**
+- Works on any phone, tablet, or laptop — no app required
+- Home dashboard with drive mode, mood selector, and live status
+- Sound page, RC diagnostics, servo control, dome control, setup, and firmware update pages
+- Real-time SSE updates — no polling; reconnects automatically on tab visibility restore
+- Shared API client (`PAApi`) and consistent error handling across all pages
+- Runtime log verbosity selector (Error / Info / Debug) on Setup page — no reflash required
+
+**Safety-First Architecture**
+- Five independent failsafe layers from hardware through application
+- Latching estop requiring explicit `POST /api/estop/clear` — never auto-resets
+- Failsafe timing telemetry (`failsafeTriggerToZeroMs`) measurable in `/api/status`
 
 **Hardware Flexibility**
-- Abstract `AudioDriver` interface — swap audio modules without code changes
-- Component type system — AUX outputs configurable per-channel (servo types or RGB)
-- Runtime RC mode selection — PWM, Single SBUS, or Dual SBUS without rebuild
+- Abstract `AudioDriver` interface — swap audio modules without changing AudioTask or API
+- Component type system — AUX outputs configurable per-channel (servo types, RGB, or off)
+- Build-time WiFi mode: STA client (`protoArtoo`) or AP-only (`protoArtoo_prod`)
 
 **Modern Development Practices**
-- 315+ native unit tests covering LEDC math, dome math, SBUS protocol, Marcduino helpers
+- 488+ native unit tests covering audio parsers, frame protocols, SBUS, RC diagnostics,
+  API serialization, failsafe logic, and more
 - PlatformIO build system with static analysis (`pio check`)
 - FreeRTOS core isolation: Core 0 (network/web), Core 1 (real-time control)
-- Modular architecture with focused API route modules
+- ArduinoJson for all API serialization — no hand-sized static buffers
 
 ---
 
@@ -278,9 +307,9 @@ and pull request checklist.
 
 Key rules:
 - All commits follow [Conventional Commits](https://www.conventionalcommits.org/) format
+- `pio test -e native` must pass before any upload or merge
 - All code passes `pio check` before commit
-- All native tests pass before merge to `dev`
-- No WiFi credentials, no TBD GPIO guesses, no code that doesn't compile
+- No WiFi credentials, no TBD GPIO guesses, no code that does not compile
 
 ---
 
@@ -329,9 +358,9 @@ If you are building a droid and considering the Artoo Controller PCB:
 
 | Library | Version | Purpose |
 |---------|---------|---------|
-| [ESPAsyncWebServer](https://github.com/ESP32Async/ESPAsyncWebServer) | 3.6.0 | Asynchronous HTTP/WebSocket server for web UI and REST API |
-| [AsyncTCP](https://github.com/ESP32Async/AsyncTCP) | 3.3.2 | Async TCP library for ESP32 (required by ESPAsyncWebServer) |
-| [ArduinoJson](https://github.com/bblanchon/ArduinoJson) | 7.4.3 | JSON serialization/deserialization for API payloads |
+| [ESPAsyncWebServer](https://github.com/ESP32Async/ESPAsyncWebServer) | 3.10.3 | Asynchronous HTTP/SSE server for web UI and REST API |
+| [AsyncTCP](https://github.com/ESP32Async/AsyncTCP) | 3.4.10 | Async TCP library for ESP32 (required by ESPAsyncWebServer) |
+| [ArduinoJson](https://github.com/bblanchon/ArduinoJson) | 7.4.3 | JSON serialization/deserialization for all API payloads |
 
 **ESP32 Arduino Core (Built-in)**
 
@@ -339,9 +368,8 @@ If you are building a droid and considering the Artoo Controller PCB:
 |-----------|---------|
 | `Preferences` | NVS (Non-Volatile Storage) for configuration persistence |
 | `LittleFS` | Flash filesystem for web UI assets |
-| `WiFi` | WiFi support — hotspot or client mode (build-time choice, never both) |
+| `WiFi` | WiFi support — STA client or AP mode (build-time choice) |
 | `LEDC` | PWM generation for servos and ESC |
-| `RMT` | Remote Control peripheral for SBUS decoding (no hardware UART consumed) |
 | `FreeRTOS` | Task scheduling with core isolation (Core 0: network/web, Core 1: real-time control) |
 
 ---
