@@ -7,28 +7,9 @@
     <link rel="stylesheet" href="/style.css">
     <link rel="icon" type="image/png" href="/r2d2body-favicon.png">
   </head>
-  <body>
-    <div class="topbar">
-      <div class="topbar-brand">
-        <img src="/r2d2body.svg" alt="R2-D2 body icon" class="topbar-logo">
-        <div>
-          <h1>protoArtoo</h1>
-          <div class="subtitle">R2-D2 Body Controller</div>
-        </div>
-      </div>
-    </div>
+  <body data-page="home">
+    <div id="shell-top"></div>
 
-    <nav>
-      <a href="/" class="active">🏠 Home</a>
-      <a href="/drive.html">🏎️ Drive</a>
-      <a href="/dome.html">🔄 Dome</a>
-      <a href="/servo.html">🦾 Servos</a>
-      <a href="/setup.html">⚙️ Setup</a>
-      <a href="/rc.html">🕹️ RC</a>
-      <a href="/serial.html">🔌 Serial</a>
-      <a href="/wifi.html">📶 WiFi</a>
-      <a href="/firmware.html">💾 Firmware</a>
-    </nav>
 
     <!-- Quick Controls -->
     <div class="card">
@@ -37,6 +18,13 @@
         <a href="/drive.html" class="btn">🏎️ Drive Controls</a>
         <a href="/dome.html" class="btn">🔄 Dome Controls</a>
       </div>
+      <div class="desc mt-12">Audio</div>
+      <div class="button-row mt-6">
+        <button class="btn" id="audio-stop" title="Stop current playback" aria-label="Stop audio playback">⏹ Stop</button>
+        <button class="btn" id="audio-vol-up" title="Volume up" aria-label="Increase audio volume">🔊+</button>
+        <button class="btn" id="audio-vol-dn" title="Volume down" aria-label="Decrease audio volume">🔉-</button>
+      </div>
+      <div id="audio-feedback" class="feedback mt-8" role="status" aria-live="polite" aria-atomic="true"></div>
     </div>
 
     <!-- System Health -->
@@ -59,6 +47,14 @@
           <div class="indicator" id="h-heap"></div>
           <span>Memory</span>
         </div>
+        <div class="health-item">
+          <div class="indicator" id="h-dome-link"></div>
+          <span>Dome Link</span>
+        </div>
+        <div class="health-item">
+          <div class="indicator" id="h-audio"></div>
+          <span>Audio</span>
+        </div>
       </div>
     </div>
 
@@ -74,15 +70,16 @@
       <h3>🕹️ Operation Mode</h3>
       <div class="desc">Switch between active driving and stationary performance mode.</div>
       <div class="opmode-grid">
-        <button class="opmode-btn drive active" id="opmode-drive" title="Full movement control with tank-style steering">
+        <button class="opmode-btn drive active" id="opmode-drive" title="Full movement control with tank-style steering" aria-label="Set operation mode to Driving" aria-pressed="true">
           <span class="opmode-icon">🏎️</span>
           <span>Driving</span>
         </button>
-        <button class="opmode-btn stationary" id="opmode-stationary" title="Dome rotation and sound system focus — drive locked">
+        <button class="opmode-btn stationary" id="opmode-stationary" title="Dome rotation and sound system focus — drive locked" aria-label="Set operation mode to Stationary" aria-pressed="false">
           <span class="opmode-icon">🤖</span>
           <span>Stationary</span>
         </button>
       </div>
+      <div id="opmode-feedback" class="feedback mt-8" role="status" aria-live="polite" aria-atomic="true"></div>
     </div>
 
     <!-- Mood Selector -->
@@ -90,23 +87,25 @@
       <h3>🎭 Mood</h3>
       <div class="desc">Set R2-D2's idle behavior — sound chatter, holo activity, and dome lights.</div>
       <div class="mood-grid">
-        <button class="mood-btn quiet" id="mood-quiet" data-cmd=":SE10" title="Stop sound chatter. Holo projectors parked and off.">
+        <button class="mood-btn quiet" id="mood-quiet" data-cmd=":SE10" title="Stop sound chatter. Holo projectors parked and off." aria-label="Set mood to Quiet" aria-pressed="false">
           <span class="mood-icon">😴</span>
           <span>Quiet</span>
         </button>
-        <button class="mood-btn mid" id="mood-mid" data-cmd=":SE13" title="Resume sound chatter. Holo projectors parked.">
+        <button class="mood-btn mid" id="mood-mid" data-cmd=":SE13" title="Resume sound chatter. Holo projectors parked." aria-label="Set mood to Mid-Awake" aria-pressed="false">
           <span class="mood-icon">🙂</span>
           <span>Mid-Awake</span>
         </button>
-        <button class="mood-btn full" id="mood-full" data-cmd=":SE11" title="Resume sound chatter. Holo projectors moving.">
+        <button class="mood-btn full" id="mood-full" data-cmd=":SE11" title="Resume sound chatter. Holo projectors moving." aria-label="Set mood to Full-Awake" aria-pressed="false">
           <span class="mood-icon">😄</span>
           <span>Full-Awake</span>
         </button>
-        <button class="mood-btn awakeplus" id="mood-awakeplus" data-cmd=":SE14" title="Resume sound chatter. Holo projectors moving with LEDs on.">
+        <button class="mood-btn awakeplus" id="mood-awakeplus" data-cmd=":SE14" title="Resume sound chatter. Holo projectors moving with LEDs on." aria-label="Set mood to Awake Plus" aria-pressed="false">
           <span class="mood-icon">✨</span>
           <span>Awake+</span>
         </button>
       </div>
+      <div id="mood-dome-note" class="mood-dome-note">Dome visuals require an active dome link. Mood still controls body audio when the dome is offline.</div>
+      <div id="mood-feedback" class="feedback mt-8" role="status" aria-live="polite" aria-atomic="true"></div>
   
     </div>
     <div class="card">
@@ -117,12 +116,11 @@
       <div class="log-paused" id="log-paused">⏸ Auto-scroll paused — scroll to bottom to resume</div>
     </div>
 
-    <div class="status-bar" id="conn-status">
-      <div><span class="dot yellow"></span>Dashboard connected</div>
-      <div class="status-subline" id="fw-meta">Loading firmware info...</div>
-      <div class="status-subline" id="health-summary">Loading health...</div>
-    </div>
+    <div id="shell-status"></div>
 
+    <script src="/web_api.js"></script>
+    <script src="/status_stream.js"></script>
+    <script src="/shell.js"></script>
     <script src="/app.js"></script>
     <script src="/footer.js"></script>
   </body>

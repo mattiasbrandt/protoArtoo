@@ -87,6 +87,19 @@ was wrong in the manual, but the GPIO numbers were right all along.
 | 2 | S2 | Sound | Audio module | 26 | 35 | 9600 | DY-SV5W binary (TX primary, RX optional) |
 | 3 | S3 | Dome Control | Dome link (slip ring) | 33 | 34 | 9600 | Marcduino ASCII, bidirectional |
 
+## Runtime UART Ownership
+
+| UART | Arduino name | Assigned owner | Condition |
+|------|--------------|----------------|-----------|
+| UART0 | Serial | USB debug | Always occupied |
+| UART1 | Serial1 | DriveTask (hoverboard) | S1 enabled |
+| UART1 | Serial1 | RcInputTask (SBUS1/SBUS2 RX) | SBUS mode active — conflicts with hoverboard |
+| UART2 | Serial2 | DomeLinkTask (dome link) | S3 enabled |
+| UART2 | Serial2 | RcInputTask (SBUS2 RX) | Dual SBUS mode — conflicts with dome link |
+| — | GPIO 26 soft-UART | AudioTask (DY-SV5W TX) | S2 enabled |
+
+Safe simultaneous combinations: Standard PWM + dome link + audio; Single SBUS + audio (dome link optional with UART2 query degradation to cached state).
+
 ---
 
 ## GPIO Assignment Summary
@@ -137,11 +150,19 @@ protoArtoo supports all three receiver modes shown above:
 > this pin during the esptool reset-into-bootloader sequence and prevent the
 > bootloader from entering download mode. USB upload will fail or time out.
 >
-> **Workaround for initial flash:** unseat the ESP32 from the PCB socket, flash
-> via USB, then reseat.
-> **Standard in-PCB flash path:** use OTA (`--upload-port 192.168.4.1`) once the
-> firmware is running. OTA bypasses bootloader entry entirely.
-> See `tasks/lessons.md` for the full write-up.
+> **Unseated ESP32 — auto-reset works:** when the ESP32 is removed from the PCB
+> socket there is no receiver load on GPIO 15. DTR/RTS auto-reset enters bootloader
+> mode reliably — no BOOT button press required.
+> `pio run -e protoArtoo --target upload --upload-port /dev/ttyUSB0`
+> (`protoArtoo` env uses `board_upload.before_reset = default_reset`.)
+>
+> **Seated ESP32 — OTA only:** use `pio run -e protoArtoo_ota --target upload`
+> (defaults to STA IP `10.0.0.22`). OTA bypasses bootloader entry entirely.
+> For AP-only builds (`protoArtoo_prod`), connect to the `protoArtoo` open AP
+> and use `--upload-port 192.168.4.1`.
+>
+> **esptool flag placement:** always use `board_upload.before_reset` in platformio.ini,
+> never `upload_flags = --before ...`. See `tasks/lessons.md` for the full write-up.
 
 In SBUS modes, CH3-CH6 (GPIO 2, 4, 12, 27) are idle PWM-capable inputs that become active again
 when `standard_pwm` mode is selected:
@@ -216,7 +237,7 @@ which match our PCB trace:
 | Motor Controller   | 16, 17  | Hoverboard serial       | S1 Hoverboard    |
 
 Note: the artoo.uk manual calls GPIO 25 "Dome Servo" but the signal drives an ESC
-(ISDT ESC70) for a brushless motor, not a servo. The label is a naming convention
+(ISDT ESC70) for a **brushed** gearmotor, not a servo. The label is a naming convention
 from the original artoo.uk firmware; protoArtoo uses "Dome rotation ESC" for clarity.
 
 ### Deviations from artoo.uk Manual
@@ -226,6 +247,6 @@ from the original artoo.uk firmware; protoArtoo uses "Dome rotation ESC" for cla
 | Hoverboard serial | S3 / GPIO 16+17 | **S1** / GPIO 16+17 | PCB legend says S1 = Hoverboard (GPIOs match manual) |
 | Dome serial | (not specified) | **S3** / GPIO 33+34 | PCB legend says S3 = Dome Control |
 | Audio serial | TX-only assumed | TX (26) + RX (35) | RX available but optional |
-| GPIO 25 label | "Dome Servo" | Dome rotation ESC | Signal drives ISDT ESC70 brushless motor ESC, not a servo |
+| GPIO 25 label | "Dome Servo" | Dome rotation ESC | Signal drives ISDT ESC70 brushed ESC + brushed gearmotor path, not a servo |
 
 If you have a different PCB revision and find different assignments, please open an issue.

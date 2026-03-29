@@ -16,8 +16,30 @@
 // Compile-time ring-buffer dimensions.
 // These match the constants in main.cpp; changing them here changes both.
 // -----------------------------------------------------------------------------
-static constexpr size_t LOG_LINE_MAX = 160;
-static constexpr size_t LOG_BUFFER_LINES = 64;
+// LOG_LINE_MAX: max chars per stored line (including null terminator space).
+// 128 chars covers all normal log lines; longer lines are truncated at source.
+static constexpr size_t LOG_LINE_MAX = 128;
+
+// LOG_BUFFER_LINES: in-memory ring depth, scaled to PA_LOG_LEVEL.
+//
+//   PA_LOG_LEVEL_ERROR (1): 16 lines — faults only; minimal memory use
+//   PA_LOG_LEVEL_INFO  (2): 20 lines — normal operator use; default production
+//   PA_LOG_LEVEL_DEBUG (3): 48 lines — verbose; more history needed for diagnosis
+//
+// Deeper debug sessions that need more history should raise the log level.
+// The dashboard console always shows all buffered lines; there is no separate
+// UI control for ring depth — log level is the single knob.
+#ifndef PA_LOG_LEVEL
+#  define PA_LOG_LEVEL 2
+#endif
+
+#if PA_LOG_LEVEL >= 3
+static constexpr size_t LOG_BUFFER_LINES = 48;
+#elif PA_LOG_LEVEL >= 2
+static constexpr size_t LOG_BUFFER_LINES = 20;
+#else
+static constexpr size_t LOG_BUFFER_LINES = 16;
+#endif
 
 // -----------------------------------------------------------------------------
 // LogBuffer — plain-old-data ring buffer, zero-initialise before use.

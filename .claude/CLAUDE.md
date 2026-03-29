@@ -25,7 +25,7 @@ These rules define how an AI coding agent should plan, execute, verify, communic
 ### What protoArtoo Is
 
 - **Target:** Artoo Controller PCB — ESP32 (WROOM-32 or D1 Mini, unconfirmed)
-- **Framework:** Arduino on ESP32 via PlatformIO (`espressif32@5.2.0`)
+- **Framework:** Arduino on ESP32 via PlatformIO (`pioarduino/espressif32@55.03.37`, arduino-esp32 3.3.7, IDF 5.5.2)
 - **Architecture:** FreeRTOS tasks split across dual cores (Core 0: WiFi/web; Core 1: real-time control)
 - **Drive:** Hoverboard motors via Gen2.x 8-byte UART frames at 50 Hz (115200 baud, ESP32 UART1 / PCB S1)
 - **RC input:** Runtime-selectable receiver modes:
@@ -45,7 +45,7 @@ These rules define how an AI coding agent should plan, execute, verify, communic
 - Not using SHADOW, PS2, or any classic control stack
 - No dome-side sound module — `PREFERENCE_MARCSOUND = kNone` in the dome fork
 - No MarcDuino Slave board — `%` prefix commands have no destination
-- No dynamic memory allocation after `setup()` — all buffers are static
+- No dynamic memory allocation in Core 1 real-time task loops after `setup()`; Core 0 web handlers may use bounded per-request `JsonDocument` allocations
 
 ### Critical Safety Invariants
 
@@ -70,6 +70,15 @@ All rules apply unconditionally to every code change in this repository.
 
 - Default USB upload port (ESP32 unseated): `/dev/ttyUSB0` — never use `/dev/ttyS0`.
 - USB flash: `pio run -e protoArtoo --target upload --upload-port /dev/ttyUSB0`
+  - When unseated, DTR/RTS auto-reset works reliably — no BOOT button press required.
+  - `protoArtoo` env uses `board_upload.before_reset = default_reset` for this.
+- **esptool flag placement:** Set `board_upload.before_reset`
+  in platformio.ini — never `upload_flags = --before ...`. PlatformIO appends `upload_flags`
+  after the `write_flash` subcommand; `--before` at that position is ignored by esptool 4.x.
+  The builder reads `board_upload.*` and inserts flags in the correct pre-subcommand position.
+- **AP-only build OTA (`protoArtoo_prod`):** accessible at `192.168.4.1` when connected to
+  the robot's open AP (`protoArtoo` SSID, no password). Use `--upload-port 192.168.4.1`.
+
 - **OTA firmware (preferred in-PCB path):** `pio run -e protoArtoo_ota --target upload`
 - **OTA filesystem:** `pio run -e protoArtoo_ota --target uploadfs`
 - `protoArtoo_ota` defaults to `upload_port = 10.0.0.22` (STA client IP); override with `--upload-port <ip>`
@@ -77,27 +86,27 @@ All rules apply unconditionally to every code change in this repository.
 - ArduinoOTA starts on Core 0 when WiFi comes up (port 3232)
 - Web UI OTA: firmware via `POST /upload/firmware`, filesystem via `POST /upload/filesystem` (`/firmware.html`)
 
-**Serial monitor — always use `scripts/serial_monitor.py`, never craft ad-hoc pyserial snippets.**
+**Serial monitor — always use `tools/serial_monitor.py`, never craft ad-hoc pyserial snippets.**
 - The script holds DTR/RTS low so connecting does NOT reset the ESP32.
 - Output goes to stdout; status/errors go to stderr. Exit code 1 on failure.
 ```bash
 # Capture 10s (default), print to stdout:
-python3 scripts/serial_monitor.py
+python3 tools/serial_monitor.py
 
 # Capture longer on a specific port:
-python3 scripts/serial_monitor.py --port /dev/ttyUSB1 --duration 30
+python3 tools/serial_monitor.py --port /dev/ttyUSB1 --duration 30
 
 # Wait for a known boot message, then exit (preferred for verification tasks):
-python3 scripts/serial_monitor.py --until "setup complete" --timeout 20
+python3 tools/serial_monitor.py --until "init complete" --timeout 20
 
 # Stream continuously (human monitoring only — not for agents):
-python3 scripts/serial_monitor.py --stream
+python3 tools/serial_monitor.py --stream
 ```
 
 ### Build Commands (Quick Reference)
 ```bash
 pio run -e protoArtoo           # compile firmware
-pio run -e protoArtoo -t upload # USB flash (ESP32 unseated from PCB, /dev/ttyUSB0)
+pio run -e protoArtoo -t upload # USB flash (ESP32 unseated; auto-reset, no button needed)
 pio run -e protoArtoo_ota -t upload    # OTA firmware (in-PCB, 10.0.0.22)
 pio run -e protoArtoo_ota -t uploadfs  # OTA filesystem/LittleFS (in-PCB, 10.0.0.22)
 pio test -e native              # fast logic tests (no hardware)
@@ -115,7 +124,10 @@ pio check                       # static analysis (cppcheck)
 - If anything goes sideways or new information invalidates the plan: **stop immediately**, update the plan, then continue — do not keep pushing.
 - Write a crisp spec first when requirements are ambiguous (inputs/outputs, edge cases, success criteria).
 - For hardware-touching changes: specify which GPIO, UART, or peripheral is affected and confirm the pin is traced/confirmed before writing code.
-- **Authoritative plan files live in `tasks/` and `docs/`**. Use `docs/status.md`, `tasks/phase*-tasks.md`, and `docs/goal.md` as the planning source of truth for this repository.
+- **Public planning source of truth is `docs/status.md` + `docs/goal.md`.**
+- `tasks/**` is internal local planning/agent context and must never be committed or pushed.
+- `docs/status.md` and `docs/goal.md` must not contain agent/tool/model wording
+  (for example: "agent", "LLM", "model", "Copilot", "Claude").
 - Also consult phase-specific companion contracts/specs when present
   (for example `tasks/rc_diagnostics_contract.md` for Phase 3 RC diagnostics/mapping).
 - Treat `.sisyphus/plans/` as internal agent scratch/history only — do not rely on it as the authoritative project plan when repo-local `tasks/` files exist.
@@ -167,6 +179,14 @@ are defined in `AGENTS.md` § "Execution Model". Follow those rules as-is.
   - `pio test -e native` passes for all logic tests
   - `pio check` has no high/medium findings
   - On-device verification for hardware-touching changes
+- **Upload gate:** `pio test -e native` MUST pass and all tests must be green before
+  issuing any `upload` or `uploadfs` command. A compile-only build does not qualify
+  as a pre-upload verification step. A compile-only verification note in a commit
+  message does not satisfy this gate.
+- **JSON response test rule:** Any function that builds a JSON API response — whether
+  via `snprintf` into a fixed buffer or via `JsonDocument` — MUST have a corresponding
+  native test covering the typical case and confirming the serialized output fits
+  within its intended size budget.
 - For every feature, test, and finding, explicitly classify verification as one of:
   - `bench-tested` — can be verified with the ESP32 alone over USB/WiFi at the current bench stage
   - `full-hardware-required` — needs the Artoo PCB/peripherals connected and powered
@@ -395,7 +415,7 @@ If anything unexpected happens (test failures, build errors, behavior regression
 - Pinned library versions in `platformio.ini` — no `^` or `~` ranges.
 - **No Reeltwo on the body.** It belongs in the dome only.
 - Prefer Arduino standard libraries (`Preferences`, `LittleFS`, `ArduinoOTA`) over third-party alternatives.
-- Current approved dependencies: `ESPAsyncWebServer@3.6.0`, `AsyncTCP@3.3.2`, `ArduinoJson`, `ESP32Servo`.
+- Platform: `pioarduino/espressif32@55.03.37` (arduino-esp32 v3.3.7, IDF 5.5.2) — the official espressif32 platform only delivers v2.x. Current approved dependencies: `ESP32Async/ESPAsyncWebServer@3.10.3`, `ESP32Async/AsyncTCP@3.4.10`, `ArduinoJson@7.4.3`. (`ESP32Servo` removed — servo PWM uses native LEDC; `me-no-dev/` namespace abandoned, replaced by `ESP32Async/` maintained fork.)
 
 ### 5. Security and Privacy
 - Never introduce WiFi credentials into committed code — use `src/secrets.h` (gitignored).
@@ -421,7 +441,11 @@ If anything unexpected happens (test failures, build errors, behavior regression
 - **Core assignment**: Core 1 = real-time (SBUS, Drive, DomeLink, Audio, Servo); Core 0 = WiFi, web, OTA.
 - **Shared state**: ALL reads AND writes to `RobotState` fields use `portMUX` critical sections.
 - **Queues**: Use timeout 0 for non-blocking sends from real-time tasks. Never use `portMAX_DELAY` in a control loop.
-- **No dynamic allocation after setup()**: All buffers static. No `new`/`malloc` in task loops.
+- **No dynamic allocation after setup()**: All buffers static. No `new`/`malloc` in
+  Core 1 real-time task loops (DriveTask, SBUSTask, AudioTask, DomeLinkTask, ServoTask).
+  Core 0 web handlers MAY use `JsonDocument` (ArduinoJson 7) for request deserialization
+  and response building; allocation is temporary, per-request, and bounded.
+  `api_rc.cpp` already establishes this pattern for POST body deserialization.
 - **Stack sizing**: Measure actual high-water mark; add 25% headroom.
 - **TWDT**: Only `DriveTask` is registered. If it hangs, chip resets. On reboot: `estop = true`.
 

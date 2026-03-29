@@ -7,25 +7,17 @@
     <link rel="stylesheet" href="/style.css">
     <link rel="icon" type="image/png" href="/r2d2body-favicon.png">
   </head>
-  <body>
-    <div class="topbar">
-      <div>
-        <h1>🏎️ Drive</h1>
-        <div class="subtitle">Motor controls and safety</div>
-      </div>
-    </div>
+  <body data-page="drive">
+    <div id="shell-top"></div>
 
-    <nav>
-      <a href="/">🏠 Home</a>
-      <a href="/drive.html" class="active">🏎️ Drive</a>
-      <a href="/dome.html">🔄 Dome</a>
-      <a href="/servo.html">🦾 Servos</a>
-      <a href="/setup.html">⚙️ Setup</a>
-      <a href="/rc.html">🕹️ RC</a>
-      <a href="/serial.html">🔌 Serial</a>
-      <a href="/wifi.html">📶 WiFi</a>
-      <a href="/firmware.html">💾 Firmware</a>
-    </nav>
+
+    <!-- Disabled notice (hidden when S1 Hoverboard is enabled) -->
+    <div id="drive-disabled-card" class="card disabled-card hidden" role="status" aria-live="polite" aria-atomic="true">
+      <h3>🚗 Drive Hardware Disabled</h3>
+      <div class="desc">Drive commands are unavailable because the hoverboard controller is disabled.</div>
+      <div class="desc disabled-reason"><strong>Required component:</strong> S1 — Hoverboard</div>
+      <div class="desc">Open <a class="setup-link" href="/setup.html">Setup</a> and enable <strong>S1 — Hoverboard</strong> to restore drive controls.</div>
+    </div>
 
     <!-- Safety Controls - ALWAYS FIRST -->
     <div class="card danger">
@@ -44,7 +36,7 @@
           ✕ Disable Web Control
         </button>
       </div>
-      <div id="control-feedback" class="feedback mt-12">No command sent yet.</div>
+      <div id="control-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true">No command sent yet.</div>
     </div>
 
     <!-- Movement Status -->
@@ -77,7 +69,7 @@
     <!-- Drive Controls - D-Pad Grid Layout -->
     <div class="card">
       <h3>🎮 Drive Controls</h3>
-      <div class="desc">Hold to drive, release to stop. Commands time out after 500 ms for safety.</div>
+      <div class="desc">Hold to drive, release to stop. Command timeout follows the configured Web Control Timeout setting.</div>
       <div class="dpad-grid mt-16">
         <button class="btn dpad-btn" data-drive-speed="260" data-drive-steer="0"
           type="button" aria-label="Drive Forward">⬆️</button>
@@ -108,22 +100,22 @@
             title="Web drive commands expire after this many milliseconds. The droid stops if no new command arrives within this window.">
         </label>
         <label class="field field-checkbox"
-          title="When enabled, CH8 on your transmitter scales the speed limit from 0% to 100% of the maximum.">
+          title="When enabled, CH8 still scales speed limit 0–100%. Near zero (below ~2%) it also forces Stationary mode and commands stop.">
           <input id="ch8-mode-lock" name="ch8ModeLock" type="checkbox">
-          <span>Enable CH8 Speed Limit Control</span>
+          <span>Enable CH8 Mode Lock at Zero</span>
         </label>
         <div class="button-row">
           <button id="reload-config-button" class="btn" type="button">🔄 Reload</button>
         </div>
       </form>
-      <div id="config-feedback" class="feedback mt-12">Loading settings...</div>
+      <div id="config-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true">Loading settings...</div>
     </div>
 
-    <div class="status-bar">
-      <div><span class="dot green"></span>Drive page connected</div>
-      <div class="status-subline" id="fw-meta">Loading firmware info...</div>
-    </div>
+    <div id="shell-status"></div>
 
+    <script src="/web_api.js"></script>
+    <script src="/status_stream.js"></script>
+    <script src="/shell.js"></script>
     <script src="/drive.js"></script>
     <script src="/footer.js"></script>
   </body>

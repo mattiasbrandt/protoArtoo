@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>protoArtoo - Sound</title>
+    <link rel="stylesheet" href="/style.css">
+    <link rel="icon" type="image/png" href="/r2d2body-favicon.png">
+  </head>
+  <body data-page="sound">
+    <div id="shell-top"></div>
+
+
+    <!-- Audio Module Status -->
+    <div class="card">
+      <h3>🔌 Audio Module Status</h3>
+      <div class="desc">Module status visibility and polling behavior are determined by backend capabilities.</div>
+      <p id="mod-query-note" class="desc"></p>
+      <table id="mod-status-table" class="sound-table mt-12">
+        <tbody>
+          <tr>
+            <td>Driver</td>
+            <td><span id="mod-driver">—</span></td>
+          </tr>
+          <tr>
+            <td>Module link</td>
+            <td><span id="mod-link" class="sound-state-badge" data-state="disabled">—</span></td>
+          </tr>
+          <tr id="mod-device-row">
+            <td>Device</td>
+            <td><span id="mod-device">—</span></td>
+          </tr>
+          <tr>
+            <td>Play state</td>
+            <td><span id="mod-play-state">—</span></td>
+          </tr>
+          <tr>
+            <td>Total tracks</td>
+            <td><span id="mod-total-tracks">—</span></td>
+          </tr>
+          <tr id="mod-current-track-row">
+            <td>Current track</td>
+            <td><span id="mod-current-track">—</span></td>
+          </tr>
+        </tbody>
+      </table>
+      <div id="mod-poll-section" class="mt-12">
+        <button id="btn-poll-status" class="btn-secondary">Poll status</button>
+      </div>
+      <div id="mod-status-feedback" class="feedback mt-8" role="status" aria-live="polite" aria-atomic="true"></div>
+    </div>
+
+    <!-- Global Controls -->
+    <!-- Disabled notice (hidden when S2 Sound is enabled) -->
+    <div id="sound-disabled-card" class="card disabled-card hidden" role="status" aria-live="polite" aria-atomic="true">
+      <h3>🔊 Sound Hardware Disabled</h3>
+      <div class="desc">Playback controls are unavailable because the audio module is disabled.</div>
+      <div class="desc disabled-reason"><strong>Required component:</strong> S2 — Sound</div>
+      <div class="desc">Open <a class="setup-link" href="/setup.html">Setup</a> and enable <strong>S2 — Sound</strong> to restore sound controls.</div>
+    </div>
+
+    <div class="card">
+      <h3>🔊 Global Controls</h3>
+      <div class="desc">Volume and playback state apply to the active audio backend.</div>
+
+      <div class="mt-12">
+        <label class="form-label" for="vol-slider">Volume (0–30)</label>
+        <div class="sound-inline-row">
+          <input type="range" id="vol-slider" min="0" max="30" value="20" class="grow">
+          <span id="vol-display" class="sound-volume-value">20</span>
+        </div>
+      </div>
+
+      <div class="button-row mt-12">
+        <button class="btn" id="btn-stop">⏹ Stop</button>
+        <button class="btn" id="btn-random-on">🔁 Random On</button>
+        <button class="btn" id="btn-random-off">⏸ Random Off</button>
+      </div>
+
+      <div class="mt-12">
+        <span class="desc">State: </span>
+        <span id="audio-state-badge" class="sound-state-badge" data-state="disabled" role="status" aria-live="polite" aria-atomic="true">—</span>
+      </div>
+
+      <div id="global-feedback" class="feedback mt-8" role="status" aria-live="polite" aria-atomic="true"></div>
+    </div>
+
+    <!-- Named Sound Commands -->
+    <div class="card">
+      <h3>🎵 Named Sounds</h3>
+      <div class="desc">
+        Play named R2-D2 sound shortcuts. Track numbers are NVS-backed and editable —
+        changes take effect immediately and survive reboot.
+      </div>
+
+      <p id="track-number-note" class="desc"></p>
+      <table class="sound-table mt-12">
+        <thead>
+          <tr>
+            <th>Label</th>
+            <th>Cmd</th>
+            <th>Track #</th>
+            <th></th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="named-sound-rows">
+          <!-- Populated by sound.js -->
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Direct Track Play -->
+    <div class="card">
+      <h3>▶ Direct Track</h3>
+      <div class="desc">Play any track number directly — useful for testing SD card layout.</div>
+      <div class="sound-inline-row tight">
+        <input type="number" id="direct-track" min="1" max="65535" value="1"
+               class="sound-track-input-lg" placeholder="Track #" aria-label="Direct track number">
+        <button class="btn" id="btn-direct-play">▶ Play</button>
+      </div>
+      <div id="direct-feedback" class="feedback mt-8" role="status" aria-live="polite" aria-atomic="true"></div>
+    </div>
+
+    <!-- Random Playback Range -->
+    <div class="card">
+      <h3>🎲 Random Playback Range</h3>
+      <div class="desc">
+        Tracks in this range are chosen randomly when random mode is active.
+        Changes are NVS-persisted and take effect on the next random event.
+      </div>
+      <div class="sound-inline-row wrap">
+        <div>
+          <label class="form-label" for="rand-min">Min track</label>
+          <input type="number" id="rand-min" min="1" max="999" value="1" class="sound-track-input-md mt-6">
+        </div>
+        <div>
+          <label class="form-label" for="rand-max">Max track</label>
+          <input type="number" id="rand-max" min="1" max="999" value="100" class="sound-track-input-md mt-6">
+        </div>
+        <div class="sound-align-end">
+          <button class="btn" id="btn-rand-save">💾 Save Range</button>
+        </div>
+      </div>
+      <div id="rand-feedback" class="feedback mt-8" role="status" aria-live="polite" aria-atomic="true"></div>
+    </div>
+
+    <!-- Mood Sound Intervals -->
+    <div class="card">
+      <h3>⏱ Mood Sound Intervals</h3>
+      <div class="desc">
+        How often a random sound plays in each mood. Set 0 to suppress random
+        playback for that mood. Changes are NVS-persisted and take effect on the
+        next timer cycle.
+      </div>
+      <table class="sound-table mt-12">
+        <thead>
+          <tr>
+            <th>Mood</th>
+            <th>Command</th>
+            <th>Interval (seconds)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="sound-row-divider">
+            <td>Quiet</td>
+            <td class="sound-mono">:SE10</td>
+            <td>
+              <input type="number" id="int-quiet" min="0" max="3600" step="1" value="0" class="sound-track-input-md" aria-label="Quiet mood interval seconds">
+              <span class="sound-note-inline">0 = silent</span>
+            </td>
+          </tr>
+          <tr class="sound-row-divider">
+            <td>Mid-Awake</td>
+            <td class="sound-mono">:SE13</td>
+            <td>
+              <input type="number" id="int-mid" min="0" max="3600" step="1" value="30" class="sound-track-input-md" aria-label="Mid-Awake mood interval seconds">
+            </td>
+          </tr>
+          <tr class="sound-row-divider">
+            <td>Full-Awake</td>
+            <td class="sound-mono">:SE11</td>
+            <td>
+              <input type="number" id="int-full" min="0" max="3600" step="1" value="20" class="sound-track-input-md" aria-label="Full-Awake mood interval seconds">
+            </td>
+          </tr>
+          <tr>
+            <td>Awake+</td>
+            <td class="sound-mono">:SE14</td>
+            <td>
+              <input type="number" id="int-awake" min="0" max="3600" step="1" value="10" class="sound-track-input-md" aria-label="Awake Plus mood interval seconds">
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="button-row mt-12">
+        <button class="btn" id="btn-int-save">💾 Save Intervals</button>
+      </div>
+      <div id="int-feedback" class="feedback mt-8" role="status" aria-live="polite" aria-atomic="true"></div>
+    </div>
+
+    <div id="shell-status"></div>
+
+    <script src="/web_api.js"></script>
+    <script src="/status_stream.js"></script>
+    <script src="/shell.js"></script>
+    <script src="/sound.js"></script>
+    <script src="/footer.js"></script>
+  </body>
+</html>

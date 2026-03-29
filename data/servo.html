@@ -3,43 +3,28 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Servos - protoArtoo</title>
     <link rel="stylesheet" href="/style.css">
     <link rel="icon" type="image/png" href="/r2d2body-favicon.png">
   </head>
-  <body>
-    <div class="topbar">
-      <div>
-        <h1>🦾 Servos</h1>
-        <div class="subtitle">Arm and auxiliary servo controls and calibration</div>
-      </div>
-    </div>
+  <body data-page="servo">
+    <div id="shell-top"></div>
 
-    <nav>
-      <a href="/">🏠 Home</a>
-      <a href="/drive.html">🏎️ Drive</a>
-      <a href="/dome.html">🔄 Dome</a>
-      <a href="/servo.html" class="active">🦾 Servos</a>
-      <a href="/setup.html">⚙️ Setup</a>
-      <a href="/rc.html">🕹️ RC</a>
-      <a href="/serial.html">🔌 Serial</a>
-      <a href="/wifi.html">📶 WiFi</a>
-      <a href="/firmware.html">💾 Firmware</a>
-    </nav>
 
     <!-- Arm Controls (ARM1 / ARM2 only) -->
     <div class="card hidden" id="arm-controls-card">
       <h3>🎮 Arm Controls</h3>
       <div class="desc">Open, close, or stop each utility arm. Commands are sent immediately.</div>
       <div id="arm-controls-container" class="mt-12"></div>
-      <div id="arm-feedback" class="feedback mt-12">No command sent yet.</div>
+      <div id="arm-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true">No command sent yet.</div>
     </div>
 
     <!-- No arms enabled notice -->
-    <div class="card" id="no-arms-card">
-      <h3>🦾 No Arms Enabled</h3>
-      <div class="desc">No utility arm servos are currently enabled. Go to
-        <a href="/setup.html">Setup</a> and enable Left Arm Servo and/or Right Arm Servo to use
-        arm controls.</div>
+    <div class="card disabled-card" id="no-arms-card" role="status" aria-live="polite" aria-atomic="true">
+      <h3>🦾 Servo Hardware Disabled</h3>
+      <div class="desc">Servo control buttons are unavailable because no arm servos are enabled.</div>
+      <div class="desc disabled-reason"><strong>Required component:</strong> ARM1 and/or ARM2</div>
+      <div class="desc">Open <a class="setup-link" href="/setup.html">Setup</a> and enable at least one arm servo to restore arm controls.</div>
     </div>
 
     <!-- AUX Outputs (AUX1 / AUX2 / AUX3) -->
@@ -48,7 +33,7 @@
       <div class="desc">Controls for enabled auxiliary outputs. Servo outputs support open, close,
         and stop. RGB LED strips show a placeholder — output control coming soon.</div>
       <div id="aux-controls-container" class="mt-12"></div>
-      <div id="aux-feedback" class="feedback mt-12">No command sent yet.</div>
+      <div id="aux-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true">No command sent yet.</div>
     </div>
 
     <!-- Servo Calibration (ARM1 / ARM2 / AUX servo channels) -->
@@ -82,7 +67,7 @@
             <div class="button-row mt-4">
               <input id="arm1-test-us" type="number" min="500" max="2500" step="10" value="1500"
                 title="Move the servo to this pulse width immediately without saving."
-                class="input-narrow">
+                aria-label="ARM1 test pulse width microseconds" class="input-narrow">
               <button class="btn" type="button" id="arm1-test-btn" title="Send test position to ARM1">
                 ▶ Test ARM1
               </button>
@@ -113,7 +98,7 @@
             <div class="button-row mt-4">
               <input id="arm2-test-us" type="number" min="500" max="2500" step="10" value="1500"
                 title="Move the servo to this pulse width immediately without saving."
-                class="input-narrow">
+                aria-label="ARM2 test pulse width microseconds" class="input-narrow">
               <button class="btn" type="button" id="arm2-test-btn" title="Send test position to ARM2">
                 ▶ Test ARM2
               </button>
@@ -144,7 +129,7 @@
             <div class="button-row mt-4">
               <input id="aux1-test-us" type="number" min="500" max="2500" step="10" value="1500"
                 title="Move the servo to this pulse width immediately without saving."
-                class="input-narrow">
+                aria-label="AUX1 test pulse width microseconds" class="input-narrow">
               <button class="btn" type="button" id="aux1-test-btn">▶ Test AUX1</button>
               <button class="btn" type="button" id="aux1-open-test-btn">▶ Test Open</button>
               <button class="btn" type="button" id="aux1-close-test-btn">▶ Test Close</button>
@@ -173,7 +158,7 @@
             <div class="button-row mt-4">
               <input id="aux2-test-us" type="number" min="500" max="2500" step="10" value="1500"
                 title="Move the servo to this pulse width immediately without saving."
-                class="input-narrow">
+                aria-label="AUX2 test pulse width microseconds" class="input-narrow">
               <button class="btn" type="button" id="aux2-test-btn">▶ Test AUX2</button>
               <button class="btn" type="button" id="aux2-open-test-btn">▶ Test Open</button>
               <button class="btn" type="button" id="aux2-close-test-btn">▶ Test Close</button>
@@ -202,7 +187,7 @@
             <div class="button-row mt-4">
               <input id="aux3-test-us" type="number" min="500" max="2500" step="10" value="1500"
                 title="Move the servo to this pulse width immediately without saving."
-                class="input-narrow">
+                aria-label="AUX3 test pulse width microseconds" class="input-narrow">
               <button class="btn" type="button" id="aux3-test-btn">▶ Test AUX3</button>
               <button class="btn" type="button" id="aux3-open-test-btn">▶ Test Open</button>
               <button class="btn" type="button" id="aux3-close-test-btn">▶ Test Close</button>
@@ -215,14 +200,14 @@
           <button class="btn" type="button" id="reload-calib-btn">🔄 Reload</button>
         </div>
       </form>
-      <div id="calib-feedback" class="feedback mt-12">Loading calibration...</div>
+      <div id="calib-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true">Loading calibration...</div>
     </div>
 
-    <div class="status-bar">
-      <div><span class="dot green"></span>Servos page connected</div>
-      <div class="status-subline" id="fw-meta">Loading firmware info...</div>
-    </div>
+    <div id="shell-status"></div>
 
+    <script src="/web_api.js"></script>
+    <script src="/status_stream.js"></script>
+    <script src="/shell.js"></script>
     <script src="/servo.js"></script>
     <script src="/footer.js"></script>
   </body>

@@ -203,6 +203,7 @@ Before opening a PR from your branch to the active `phase/vX.Y.Z` branch, confir
 
 **Static analysis**
 - [ ] `pio check` — no high or medium severity findings
+- [ ] Any `pio check` suppression or analysis-only build flag in `platformio.ini` has an inline comment explaining rationale and scope (no broad/global suppressions unless unavoidable)
 
 **Code style**
 - [ ] `clang-format -i src/**/*.cpp src/**/*.h` applied

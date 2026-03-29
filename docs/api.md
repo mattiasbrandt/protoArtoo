@@ -14,6 +14,7 @@ headers in `include/`:
 | `api_drive.cpp` | Drive commands, web control, and operation mode | `POST /api/drive`, `POST /api/web-control/enable`, `POST /api/web-control/disable`, `POST /api/mode` |
 | `api_config.cpp` | Configuration management | `GET /api/config`, `POST /api/config` |
 | `api_status.cpp` | Status, health, and telemetry | `GET /api/status`, `GET /api/health`, `GET /api/logs`, `GET /api/wifi`, `GET /api/serial` |
+| `api_validation.cpp` | Consolidated validation snapshot | `GET /api/validation` |
 | `api_system.cpp` | System control and OTA | `POST /api/manual-command`, `POST /api/reboot`, `POST /upload/firmware` |
 | `api_helpers.cpp` | Pure parsing/formatting helpers | Shared JSON formatting utilities |
 
@@ -211,6 +212,8 @@ Update the current web-configurable settings and persist them to NVS.
   - `webDriveTimeoutMs` (`100..5000`)
   - `ch8ModeLock` (`true`/`false` or `1`/`0`)
   - `rcInputMode` (`standard_pwm`, `single_sbus`, `dual_sbus`)
+    - `dual_sbus` requires `enableS3DomeCtrl=false`
+    - in `single_sbus`, setting `rc.sbus.recvCh2=true` selects SBUS2 on GPIO 13 (the same receiver input used as receiver #2 in `dual_sbus`)
   - `enableArm1`, `enableArm2`, `enableAux1`, `enableAux2`, `enableAux3`, `enableDome` (`true`/`false` or `1`/`0`)
   - `enableRcCh1`, `enableRcCh2`, `enableRcCh3`, `enableRcCh4`, `enableRcCh5`, `enableRcCh6` (`true`/`false` or `1`/`0`)
   - `enableS1Hoverboard`, `enableS2Sound`, `enableS3DomeCtrl` (`true`/`false` or `1`/`0`)
@@ -218,6 +221,8 @@ Update the current web-configurable settings and persist them to NVS.
   - `domeSpeedLimitPct` (`0..100`)
   - `rcPwmDriveSpeed`, `rcPwmDriveSteer`, `rcPwmDriveLimit`, `rcPwmDomeSpeed`, `rcPwmArm1`, `rcPwmArm2`, `rcPwmSound`
   - `rcSbusDriveSpeed`, `rcSbusDriveSteer`, `rcSbusDriveLimit`, `rcSbusDomeSpeed`, `rcSbusArm1`, `rcSbusArm2`, `rcSbusSound`
+  - `rc.sbus.recvCh2` (`true`/`false` or `1`/`0`)
+
 - Success response: same shape as `GET /api/config`
 
 RC binding fields use the persisted format
@@ -229,6 +234,11 @@ RC binding fields use the persisted format
   SBUS input
 - `rcPwm*` bindings are the persisted profile used by `standard_pwm`
 - `rcSbus*` bindings are the persisted profile used by both `single_sbus` and `dual_sbus`
+
+`rc.sbus.recvCh2` (boolean) — When `rc.inputMode` is `single_sbus`, selects which
+physical receiver is used: `false` = SBUS1 (GPIO 15), `true` = SBUS2 (GPIO 13).
+Changing this value does not modify channel mapping assignments. Default: `false`.
+
 
 ### `GET /api/rc`
 
@@ -481,11 +491,18 @@ Return the current web-control state snapshot.
   "speedLimitScale": 1.0,
   "stationary": false,
   "failsafeCount": 0,
+  "failsafeTriggerMs": 0,
+  "failsafeZeroMs": 0,
+  "failsafeTriggerToZeroMs": 0,
+  "failsafeWatchdogMs": 0,
+  "failsafeTriggerSource": 0,
   "uptimeMs": 27790,
   "firmwareVersion": "v0.1.0-phase3-dev",
+  "webVersion": "web-2026-03-20-wave6",
   "heapFree": 173152,
   "heapMin": 150932,
   "wifiRssi": -70,
+  "wifiConnected": true,
   "wifiClientConnected": true,
   "littleFsReady": true
 }
@@ -514,11 +531,18 @@ Example response with arm1, RC routing, and dome enabled:
   "speedLimitScale": 1.0,
   "stationary": false,
   "failsafeCount": 0,
+  "failsafeTriggerMs": 0,
+  "failsafeZeroMs": 0,
+  "failsafeTriggerToZeroMs": 0,
+  "failsafeWatchdogMs": 0,
+  "failsafeTriggerSource": 0,
   "uptimeMs": 27790,
   "firmwareVersion": "v0.1.0-phase3-dev",
+  "webVersion": "web-2026-03-20-wave6",
   "heapFree": 173152,
   "heapMin": 150932,
   "wifiRssi": -70,
+  "wifiConnected": true,
   "wifiClientConnected": true,
   "littleFsReady": true,
   "arm1": {"state": "ready", "detail": "Target 1500 us"},
@@ -530,12 +554,72 @@ Example response with arm1, RC routing, and dome enabled:
 
 Notes:
 
+- `wifiConnected` is true when WiFi control surface is available (AP active or STA connected)
+- `wifiClientConnected` is true when at least one station is attached to the device soft AP
 - `failsafeSource` is the numeric `FailsafeSource` enum value
+- `failsafeTriggerMs`, `failsafeZeroMs`, `failsafeTriggerToZeroMs`, `failsafeWatchdogMs`, and `failsafeTriggerSource` provide timing evidence for failsafe trigger-to-zero behavior in hardware validation
 - `speedLimitScale` reflects CH8 speed limiting from the drive SBUS receiver
 - `stationary` indicates CH8 mode-lock is holding the drive at zero
-- `uptimeMs` and `firmwareVersion` support the shared device-info status block in the UI
-- `heapFree`, `heapMin`, `wifiRssi`, `wifiClientConnected`, and `littleFsReady` support dashboard health/status surfaces
+- `uptimeMs`, `firmwareVersion`, and `webVersion` support the shared device-info status block in the UI
+- `heapFree`, `heapMin`, `wifiRssi`, `wifiConnected`, `wifiClientConnected`, and `littleFsReady` support dashboard health/status surfaces
 - Disabled components are absent from the response, not emitted as false placeholders
+
+### `GET /api/validation`
+
+Return a compact validation-focused snapshot that consolidates drive/failsafe, dome-link, audio, and RC source health for hardware-closure checks.
+
+- Request body: none
+- Success response shape:
+
+```json
+{
+  "updatedMs": 27790,
+  "drive": {
+    "estop": false,
+    "webDriveExpired": false,
+    "sbusSignalLost": false,
+    "sbusHwFailsafe": false,
+    "failsafeSource": 0,
+    "failsafeCount": 2,
+    "triggerMs": 20123,
+    "zeroMs": 20138,
+    "triggerToZeroMs": 15,
+    "watchdogMs": 20123,
+    "triggerSource": 1
+  },
+  "domeLink": {
+    "state": "connected",
+    "hbTx": 52,
+    "hbRx": 49,
+    "lastRxMs": 110
+  },
+  "audio": {
+    "enabled": true,
+    "active": true,
+    "activeMood": 14,
+    "randomMin": 1,
+    "randomMax": 120,
+    "intervalQuietS": 0,
+    "intervalMidS": 30,
+    "intervalFullS": 20,
+    "intervalAwakeS": 10
+  },
+  "rc": {
+    "mode": "dual_sbus",
+    "timeoutMs": 200,
+    "sources": {
+      "sbus1": {"enabled": true, "linked": true, "signalLost": false, "failsafe": false, "ageMs": 12},
+      "sbus2": {"enabled": true, "linked": false, "signalLost": true, "failsafe": false, "ageMs": 310},
+      "pwm": {"enabled": false, "linked": false, "signalLost": false, "failsafe": false, "ageMs": 0}
+    }
+  }
+}
+```
+
+Notes:
+- `drive.failsafeSource` and `drive.triggerSource` are numeric `FailsafeSource` enum values.
+- `domeLink.state` is one of `disabled`, `not_seen`, `connected`, or `lost`.
+- `rc.sources.*.linked` is the source-ready indicator for control eligibility; `signalLost` and `failsafe` provide source-specific fault detail.
 
 ### `GET /api/events`
 

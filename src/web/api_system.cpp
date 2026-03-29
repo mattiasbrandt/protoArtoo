@@ -14,6 +14,7 @@
 #include <ESPAsyncWebServer.h>
 #include <LittleFS.h>
 #include <Update.h>
+#include <stdint.h>
 
 #include "api_drive.h"
 #include "logging.h"
@@ -29,6 +30,17 @@ static uint32_t lastManualCmdMs = 0;
 // Maximum allowed OTA upload size (4MB firmware, 1.5MB filesystem)
 static const size_t MAX_FIRMWARE_SIZE = 4 * 1024 * 1024;
 static const size_t MAX_FILESYSTEM_SIZE = 1536 * 1024;
+static constexpr uintptr_t UPLOAD_STATE_NONE = 0;
+static constexpr uintptr_t UPLOAD_STATE_REJECT_OVERSIZE = 1;
+static constexpr uintptr_t UPLOAD_STATE_REJECT_INTERNAL = 2;
+
+static inline uintptr_t getUploadState(const AsyncWebServerRequest* req) {
+    return reinterpret_cast<uintptr_t>(req->_tempObject);
+}
+
+static inline void setUploadState(AsyncWebServerRequest* req, uintptr_t state) {
+    req->_tempObject = reinterpret_cast<void*>(state);
+}
 
 void registerSystemRoutes(AsyncWebServer& server) {
     server.on("/api/manual-command", HTTP_POST, [](AsyncWebServerRequest* req) {
@@ -64,40 +76,61 @@ void registerSystemRoutes(AsyncWebServer& server) {
     server.on(
         "/upload/firmware", HTTP_POST,
         [](AsyncWebServerRequest* req) {
-            bool ok = !Update.hasError();
-            if (ok) {
-                PA_LOG_INFO(TAG, "[WEB] POST /upload/firmware - update complete, reboot scheduled");
-                req->send(200, "application/json", "{\"ok\":true}");
-                requestSystemRestart(1000);
-            } else {
+            uintptr_t uploadState = getUploadState(req);
+            setUploadState(req, UPLOAD_STATE_NONE);
+            if (uploadState == UPLOAD_STATE_REJECT_OVERSIZE) {
+                PA_LOG_ERROR(TAG, "POST /upload/firmware - rejected: payload too large");
+                req->send(413, "application/json",
+                          "{\"ok\":false,\"error\":\"firmware image exceeds upload size limit\"}");
+                return;
+            }
+            if (uploadState == UPLOAD_STATE_REJECT_INTERNAL || Update.hasError()) {
                 PA_LOG_ERROR(TAG, "POST /upload/firmware - update failed");
                 req->send(500, "application/json", "{\"ok\":false,\"error\":\"update failed\"}");
+                return;
             }
+
+            PA_LOG_INFO(TAG, "[WEB] POST /upload/firmware - update complete, reboot scheduled");
+            req->send(200, "application/json", "{\"ok\":true}");
+            requestSystemRestart(1000);
         },
         [](AsyncWebServerRequest* req, const String& filename, size_t index, uint8_t* data,
            size_t len, bool final) {
-            (void)req;
+            if (getUploadState(req) != UPLOAD_STATE_NONE) {
+                return;
+            }
 
             if (index == 0) {
                 size_t contentLength = req->contentLength();
                 if (contentLength > MAX_FIRMWARE_SIZE) {
                     PA_LOG_ERROR(TAG, "Firmware upload rejected: size %u exceeds limit %u",
                                  (unsigned)contentLength, (unsigned)MAX_FIRMWARE_SIZE);
+                    setUploadState(req, UPLOAD_STATE_REJECT_OVERSIZE);
                     return;
                 }
-                PA_LOG_INFO(TAG, "OTA upload started: %s", filename.c_str());
-                if (!Update.begin(contentLength, U_FLASH)) {
+                PA_LOG_INFO(TAG, "OTA firmware upload started: %s (%u bytes)",
+                            filename.c_str(), (unsigned)contentLength);
+                // Use UPDATE_SIZE_UNKNOWN: req->contentLength() is the full multipart
+                // body (including boundary overhead), not the raw firmware binary size.
+                // Passing the exact content-length causes Update.end() to fail a size
+                // check and silently roll back to the old firmware. UPDATE_SIZE_UNKNOWN
+                // skips that check and accepts however many bytes are written.
+                if (!Update.begin(UPDATE_SIZE_UNKNOWN, U_FLASH)) {
                     Update.printError(Serial);
+                    setUploadState(req, UPLOAD_STATE_REJECT_INTERNAL);
                     return;
                 }
             }
 
             if (len > 0 && Update.write(data, len) != len) {
                 Update.printError(Serial);
+                setUploadState(req, UPLOAD_STATE_REJECT_INTERNAL);
+                return;
             }
 
             if (final && !Update.end(true)) {
                 Update.printError(Serial);
+                setUploadState(req, UPLOAD_STATE_REJECT_INTERNAL);
             }
         });
 
@@ -106,39 +139,59 @@ void registerSystemRoutes(AsyncWebServer& server) {
     server.on(
         "/upload/filesystem", HTTP_POST,
         [](AsyncWebServerRequest* req) {
-            bool ok = !Update.hasError();
-            if (ok) {
-                PA_LOG_INFO(TAG,
-                            "[WEB] POST /upload/filesystem - update complete, reboot scheduled");
-                req->send(200, "application/json", "{\"ok\":true}");
-                requestSystemRestart(1000);
-            } else {
+            uintptr_t uploadState = getUploadState(req);
+            setUploadState(req, UPLOAD_STATE_NONE);
+            if (uploadState == UPLOAD_STATE_REJECT_OVERSIZE) {
+                PA_LOG_ERROR(TAG, "POST /upload/filesystem - rejected: payload too large");
+                req->send(413, "application/json",
+                          "{\"ok\":false,\"error\":\"filesystem image exceeds upload size limit\"}");
+                return;
+            }
+            if (uploadState == UPLOAD_STATE_REJECT_INTERNAL || Update.hasError()) {
                 PA_LOG_ERROR(TAG, "POST /upload/filesystem - update failed");
                 req->send(500, "application/json",
                           "{\"ok\":false,\"error\":\"filesystem update failed\"}");
+                return;
             }
+
+            PA_LOG_INFO(TAG,
+                        "[WEB] POST /upload/filesystem - update complete, reboot scheduled");
+            req->send(200, "application/json", "{\"ok\":true}");
+            requestSystemRestart(1000);
         },
         [](AsyncWebServerRequest* req, const String& filename, size_t index, uint8_t* data,
            size_t len, bool final) {
-            (void)req;
+            if (getUploadState(req) != UPLOAD_STATE_NONE) {
+                return;
+            }
+
             if (index == 0) {
                 size_t contentLength = req->contentLength();
                 if (contentLength > MAX_FILESYSTEM_SIZE) {
                     PA_LOG_ERROR(TAG, "Filesystem upload rejected: size %u exceeds limit %u",
                                  (unsigned)contentLength, (unsigned)MAX_FILESYSTEM_SIZE);
+                    setUploadState(req, UPLOAD_STATE_REJECT_OVERSIZE);
                     return;
                 }
-                PA_LOG_INFO(TAG, "Filesystem OTA upload started: %s", filename.c_str());
-                if (!Update.begin(contentLength, U_SPIFFS)) {
+                PA_LOG_INFO(TAG, "OTA filesystem upload started: %s (%u bytes)",
+                            filename.c_str(), (unsigned)contentLength);
+                // Use UPDATE_SIZE_UNKNOWN for the same reason as firmware: multipart
+                // content-length includes boundary overhead that Update.end() would
+                // mismatch against written bytes, causing silent rollback.
+                if (!Update.begin(UPDATE_SIZE_UNKNOWN, U_SPIFFS)) {
                     Update.printError(Serial);
+                    setUploadState(req, UPLOAD_STATE_REJECT_INTERNAL);
                     return;
                 }
             }
             if (len > 0 && Update.write(data, len) != len) {
                 Update.printError(Serial);
+                setUploadState(req, UPLOAD_STATE_REJECT_INTERNAL);
+                return;
             }
             if (final && !Update.end(true)) {
                 Update.printError(Serial);
+                setUploadState(req, UPLOAD_STATE_REJECT_INTERNAL);
             }
         });
 }

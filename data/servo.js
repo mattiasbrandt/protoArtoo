@@ -3,7 +3,8 @@
 //
 // Servos page controller — arm servo controls, AUX output controls, and
 // servo calibration (ARM1/ARM2 and AUX servo channels).
-// Polls /api/status every second to show which outputs are enabled.
+// SSE-first status delivery (consume `status` events from PAStatusStream),
+// with visibility-aware fallback polling when SSE is unavailable.
 // Sends open/close/stop/position commands via POST /api/servo.
 // Loads and saves calibration via GET/POST /api/config (auto-save on change).
 // Component types (mg996r/mg90s/rgb/none) are read from /api/config to render
@@ -60,52 +61,36 @@
   // -------------------------------------------------------------------------
   // Servo command helpers
   // -------------------------------------------------------------------------
-  const postServoAction = async (arm, action, feedbackEl) => {
-    const fb = feedbackEl || armFeedback;
-    try {
-      const body = new URLSearchParams({ arm, action });
-      const res = await fetch("/api/servo", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
-        body,
-      });
-      const label = `${arm} ${action}`;
-      if (!res.ok) {
-        const err = await res.json().catch(() => null);
-        setFeedback(fb, `❌ ${label} failed: ${err?.error || res.status}`, "error");
-      } else {
-        setFeedback(fb, `✅ ${label} sent at ${new Date().toLocaleTimeString()}`, "success");
-      }
-    } catch (_e) {
-      setFeedback(fb, "❌ Network error sending servo command", "error");
-    }
-  };
-
-  const postServoPosition = async (arm, pulseUs, feedbackEl) => {
-    const fb = feedbackEl || armFeedback;
-    try {
-      const body = new URLSearchParams({ arm, action: "position", positionUs: String(pulseUs) });
-      const res = await fetch("/api/servo", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
-        body,
-      });
-      const label = `${arm} → ${pulseUs} µs`;
-      if (!res.ok) {
-        const err = await res.json().catch(() => null);
-        setFeedback(fb, `❌ Test ${label} failed: ${err?.error || res.status}`, "error");
-      } else {
-        setFeedback(fb, `▶ Test ${label} at ${new Date().toLocaleTimeString()}`, "success");
-      }
-    } catch (_e) {
-      setFeedback(fb, "❌ Network error sending test position", "error");
-    }
-  };
-
   const setFeedback = (el, text, cls = "") => {
     if (!el) return;
     el.textContent = text;
     el.className = cls ? `feedback ${cls}` : "feedback";
+  };
+
+  const postServoAction = async (arm, action, feedbackEl) => {
+    if (!window.PAApi) return;
+    const fb = feedbackEl || armFeedback;
+    const label = `${arm} ${action}`;
+    try {
+      await window.PAApi.postForm("/api/servo", { arm, action }, { timeoutMs: 3000 });
+      setFeedback(fb, `${label} sent at ${new Date().toLocaleTimeString()}`, "success");
+    } catch (error) {
+      setFeedback(fb, `${label} failed: ${window.PAApi.messageFor(error)}`, "error");
+    }
+  };
+
+  const postServoPosition = async (arm, pulseUs, feedbackEl) => {
+    if (!window.PAApi) return;
+    const fb = feedbackEl || armFeedback;
+    const label = `${arm} → ${pulseUs} µs`;
+    try {
+      await window.PAApi.postForm("/api/servo",
+        { arm, action: "position", positionUs: String(pulseUs) },
+        { timeoutMs: 3000 });
+      setFeedback(fb, `▶ Test ${label} at ${new Date().toLocaleTimeString()}`, "success");
+    } catch (error) {
+      setFeedback(fb, `Test ${label} failed: ${window.PAApi.messageFor(error)}`, "error");
+    }
   };
 
   // -------------------------------------------------------------------------
@@ -234,19 +219,21 @@
   };
 
   // -------------------------------------------------------------------------
-  // Status poll
+  // Status rendering — shared by SSE and fallback polling paths
   // -------------------------------------------------------------------------
   let lastPayload = null;
 
-  const poll = async () => {
-    try {
-      const res = await fetch("/api/status", { cache: "no-store" });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      lastPayload = await res.json();
-      renderArmControls(lastPayload);
-      renderAuxControls(lastPayload);
-      renderCalibSections(lastPayload);
-    } catch (_e) {}
+  const renderStatus = (payload) => {
+    lastPayload = payload;
+    renderArmControls(payload);
+    renderAuxControls(payload);
+    renderCalibSections(payload);
+  };
+
+  const refreshStatusOnce = async () => {
+    if (!window.PAApi) return;
+    const result = await window.PAApi.get("/api/status", { timeoutMs: 3000 });
+    renderStatus(result.data);
   };
 
   // -------------------------------------------------------------------------
@@ -259,11 +246,11 @@
   };
 
   const loadCalib = async () => {
+    if (!window.PAApi) return;
     setCalibFeedback("Loading calibration...");
     try {
-      const res = await fetch("/api/config", { cache: "no-store" });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const cfg = await res.json();
+      const result = await window.PAApi.get("/api/config", { timeoutMs: 5000 });
+      const cfg = result.data;
 
       // Arm calibration
       if (arm1OpenUs)  arm1OpenUs.value  = cfg.arm1OpenUs  ?? 2000;
@@ -286,11 +273,10 @@
       if (aux2TestUs) aux2TestUs.value = 1500;
       if (aux3TestUs) aux3TestUs.value = 1500;
 
-      // Store AUX types for conditional rendering
-      auxTypes.aux1 = cfg.aux1Type ?? "none";
-      auxTypes.aux2 = cfg.aux2Type ?? "none";
-      auxTypes.aux3 = cfg.aux3Type ?? "none";
-
+      const components = cfg?.components || {};
+      auxTypes.aux1 = String(components.aux1?.type || "none");
+      auxTypes.aux2 = String(components.aux2?.type || "none");
+      auxTypes.aux3 = String(components.aux3?.type || "none");
       // Re-render AUX controls now that types are known
       if (lastPayload) {
         renderAuxControls(lastPayload);
@@ -298,13 +284,15 @@
       }
 
       setCalibFeedback(`Calibration loaded at ${new Date().toLocaleTimeString()}`, "success");
-    } catch (_e) {
-      setCalibFeedback("Failed to load calibration", "error");
+    } catch (error) {
+      console.error("[servo] loadCalib failed:", error);
+      setCalibFeedback(`Failed to load calibration: ${window.PAApi.messageFor(error)}`, "error");
     }
   };
 
   // Auto-save calibration
   const saveCalib = async () => {
+    if (!window.PAApi) return;
     setCalibFeedback("Saving...");
     try {
       const body = new URLSearchParams();
@@ -328,18 +316,11 @@
         body.set("aux3OpenUs",  aux3OpenUs.value);
         body.set("aux3CloseUs", aux3CloseUs.value);
       }
-      const res = await fetch("/api/config", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
-        body,
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => null);
-        throw new Error(err?.error || `HTTP ${res.status}`);
-      }
-      setCalibFeedback(`✓ Saved at ${new Date().toLocaleTimeString()}`, "success");
-    } catch (e) {
-      setCalibFeedback(`❌ Save failed: ${e.message}`, "error");
+      await window.PAApi.postForm("/api/config", body, { timeoutMs: 5000 });
+      setCalibFeedback(`Saved at ${new Date().toLocaleTimeString()}`, "success");
+    } catch (error) {
+      console.error("[servo] saveCalib failed:", error);
+      setCalibFeedback(`Save failed: ${window.PAApi.messageFor(error)}`, "error");
     }
   };
 
@@ -383,11 +364,30 @@
   wireTestBtn("aux3-close-test-btn", "aux3", () => aux3CloseUs?.value || 1000, auxFeedback);
 
   // -------------------------------------------------------------------------
-  // Boot
+  // Boot — load config then start status subscription
   // -------------------------------------------------------------------------
   loadCalib();
-  poll();
-  const pollTimer = window.setInterval(poll, 1000);
 
-  window.addEventListener("beforeunload", () => window.clearInterval(pollTimer));
+  // SSE-first status updates with visibility-aware fallback polling.
+  if (window.PAStatusStream?.isSupported()) {
+    window.PAStatusStream.subscribe((eventType, payload) => {
+      if (eventType === "status") renderStatus(payload);
+    });
+    // One-shot fetch if SSE hasn't delivered a status frame yet.
+    if (!window.PAStatusStream.getLastStatus()) {
+      refreshStatusOnce().catch(() => {});
+    }
+  } else {
+    // Fallback: poll every 1 s, suspended while the tab is hidden.
+    refreshStatusOnce().catch(() => {});
+    window.setInterval(() => {
+      if (document.visibilityState === "hidden") return;
+      refreshStatusOnce().catch(() => {});
+    }, 1000);
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState !== "hidden") {
+        refreshStatusOnce().catch(() => {});
+      }
+    });
+  }
 })();

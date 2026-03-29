@@ -3,30 +3,23 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Dome - protoArtoo</title>
     <link rel="stylesheet" href="/style.css">
     <link rel="icon" type="image/png" href="/r2d2body-favicon.png">
   </head>
-  <body>
-    <div class="topbar">
-      <div>
-        <h1>🔄 Dome</h1>
-        <div class="subtitle">Dome rotation control and motor settings</div>
-      </div>
-    </div>
+  <body data-page="dome">
+    <div id="shell-top"></div>
 
-    <nav>
-      <a href="/">🏠 Home</a>
-      <a href="/drive.html">🏎️ Drive</a>
-      <a href="/dome.html" class="active">🔄 Dome</a>
-      <a href="/servo.html">🦾 Servos</a>
-      <a href="/setup.html">⚙️ Setup</a>
-      <a href="/rc.html">🕹️ RC</a>
-      <a href="/serial.html">🔌 Serial</a>
-      <a href="/wifi.html">📶 WiFi</a>
-      <a href="/firmware.html">💾 Firmware</a>
-    </nav>
 
     <!-- Dome Rotation Control -->
+    <!-- Disabled notice (hidden when DOME is enabled) -->
+    <div id="dome-disabled-card" class="card disabled-card hidden" role="status" aria-live="polite" aria-atomic="true">
+      <h3>🔄 Dome Hardware Disabled</h3>
+      <div class="desc">Dome motor controls are unavailable because the dome output is disabled.</div>
+      <div class="desc disabled-reason"><strong>Required component:</strong> DOME — Dome Motor</div>
+      <div class="desc">Open <a class="setup-link" href="/setup.html">Setup</a> and enable <strong>DOME — Dome Motor</strong> to restore dome controls.</div>
+    </div>
+
     <div class="card">
       <h3>🔄 Dome Rotation</h3>
       <div class="desc">Drag the slider to rotate the dome. Releasing returns to stop automatically.</div>
@@ -40,7 +33,7 @@
         </div>
       </div>
       <div class="slider-value" id="dome-speed-display">0%</div>
-      <div id="dome-feedback" class="feedback mt-12">Dome ready.</div>
+      <div id="dome-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true">Dome ready.</div>
     </div>
 
     <!-- Dome Motor Settings -->
@@ -76,14 +69,14 @@
           <button id="reload-esc-button" class="btn" type="button">🔄 Reload</button>
         </div>
       </form>
-      <div id="esc-feedback" class="feedback mt-12">Loading motor settings...</div>
+      <div id="esc-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true">Loading motor settings...</div>
     </div>
 
-    <div class="status-bar">
-      <div><span class="dot green"></span>Dome page connected</div>
-      <div class="status-subline" id="fw-meta">Loading firmware info...</div>
-    </div>
+    <div id="shell-status"></div>
 
+    <script src="/web_api.js"></script>
+    <script src="/status_stream.js"></script>
+    <script src="/shell.js"></script>
     <script src="/dome.js"></script>
     <script src="/footer.js"></script>
   </body>

@@ -114,6 +114,17 @@ struct RobotState {
 
     // --- Subsystem state ---
     bool audioActive;
+
+    // Audio module state — populated by AudioTask from DY-SV5W query responses.
+    // link_ok: false until the module responds to at least one query.
+    // play_state: 0=stop 1=playing 2=paused 0xFF=unknown
+    // device:     0=USB  1=SD/TF  2=FLASH  0xFF=unknown/none
+    bool audio_module_link_ok;
+    uint8_t audio_module_play_state;
+    uint8_t audio_module_device;
+    uint16_t audio_module_total_tracks;
+    uint16_t audio_module_current_track;
+
     bool armOpen[2];
     uint16_t arm1TargetUs;
     uint16_t arm2TargetUs;
@@ -133,7 +144,11 @@ struct RobotState {
     uint32_t sbus1LostFrameCount;  // cumulative lost_frame events (not failsafe)
     uint32_t sbus2LostFrameCount;  // cumulative lost_frame events (not failsafe)
     bool sbus2HwFailsafe;
-
+    uint32_t failsafeLastTriggerMs;        // millis() when last failsafe trigger latched
+    uint32_t failsafeLastWatchdogMs;       // millis() when last SBUS watchdog trigger fired
+    uint32_t failsafeLastZeroOutputMs;     // millis() when DriveTask first asserted zero output
+    uint32_t failsafeLastTriggerToZeroMs;  // latency from trigger to first zero output (ms)
+    FailsafeSource failsafeLastTriggerSource;
     // --- Timing state ---
     uint32_t lastPwmMs;
     uint32_t lastSbus1Ms;
@@ -153,6 +168,11 @@ struct RobotState {
     uint32_t domeHbRx;
     uint32_t bodyHbTx;
 
+    // --- Mood ---
+    // Active mood SE1x index: 10=Quiet, 11=Full-Awake, 13=Mid-Awake, 14=Awake+.
+    // 0 = unset (no mood applied this session). NVS key: "last_mood".
+    uint8_t activeMood;
+
     // --- Web control state ---
     bool webControlEnabled;
     bool rcDebugMode;  // Enable verbose RC/SBUS logging when RC page is active
@@ -163,6 +183,25 @@ struct RobotState {
     uint32_t cfg_webDriveTimeoutMs;  // Default: WEB_DRIVE_TIMEOUT_MS
     bool cfg_ch8ModeLock;            // Default: false
     uint8_t cfg_audioVolume;         // Default: 20 (0-30)
+    uint8_t cfg_logLevel;  // Runtime log verbosity: 1=Error 2=Info 3=Debug. NVS: log_level
+
+    // NVS-backed named sound track indices (mirror AudioNamedTracks defaults).
+    // NVS keys: snd_scream, snd_faint, snd_leia, snd_cantina_s, snd_sw,
+    //           snd_march, snd_cantina_l, snd_startup, snd_rand_min, snd_rand_max
+    uint16_t cfg_snd_scream;     // $S  default 126
+    uint16_t cfg_snd_faint;      // $F  default 128
+    uint16_t cfg_snd_leia;       // $L  default 151
+    uint16_t cfg_snd_cantina_s;  // $c  default 176
+    uint16_t cfg_snd_sw_theme;   // $W  default 177
+    uint16_t cfg_snd_imp_march;  // $M  default 178
+    uint16_t cfg_snd_cantina_l;  // $C  default 180
+    uint16_t cfg_snd_startup;    // $B  default 255
+    uint16_t cfg_snd_rand_min;   // random pool start  default 1
+    uint16_t cfg_snd_rand_max;   // random pool end    default 100
+    uint16_t cfg_snd_int_quiet;  // random interval Quiet mode (s)     default 0
+    uint16_t cfg_snd_int_mid;    // random interval Mid-Awake mode (s) default 30
+    uint16_t cfg_snd_int_full;   // random interval Full-Awake mode (s) default 20
+    uint16_t cfg_snd_int_awake;  // random interval Awake+ mode (s)    default 10
 
     // Servo config
     uint16_t cfg_arm1_open_us;
@@ -210,6 +249,7 @@ struct RobotState {
     //
     // RC receiver inputs:
     RcInputMode cfg_rc_input_mode;
+    bool cfg_single_sbus_use_ch2;  // sbus_recv_ch2 — false=SBUS1 (GPIO15), true=SBUS2 (GPIO13); single_sbus mode only
     bool cfg_enable_rc_ch1;  // en_rc_ch1 — CH1 (GPIO 15) — SBUS #1 (drive) OR Standard PWM CH1
     bool cfg_enable_rc_ch2;  // en_rc_ch2 — CH2 (GPIO 13) — SBUS #2 (dome) OR Standard PWM CH2
     bool
@@ -266,6 +306,8 @@ extern RobotState robotState;
 extern portMUX_TYPE robotStateMux;
 extern QueueHandle_t servoCmdQueue;
 extern QueueHandle_t domeCmdQueue;
+extern QueueHandle_t audioCmdQueue;
+extern QueueHandle_t domeTxQueue;
 // -----------------------------------------------------------------------------
 // Helper function declarations (defined in main.cpp or a dedicated helpers.cpp)
 // -----------------------------------------------------------------------------
@@ -279,6 +321,28 @@ bool domeConnected();
 void loadConfigToState();
 
 bool saveConfigToNvs();
+
+// ----------------------------------------------------------------------------
+// Failsafe instrumentation helpers (MUST be called under robotStateMux lock)
+// ----------------------------------------------------------------------------
+inline void recordFailsafeTriggerLocked(FailsafeSource src, uint32_t nowMs) {
+    robotState.failsafeSource = src;
+    robotState.failsafeTriggerCount++;
+    robotState.failsafeLastTriggerMs = nowMs;
+    robotState.failsafeLastTriggerSource = src;
+    if (src == FS_SBUS_TIMEOUT || src == FS_SBUS2_TIMEOUT) {
+        robotState.failsafeLastWatchdogMs = nowMs;
+    }
+}
+
+inline void recordFailsafeZeroOutputLocked(uint32_t nowMs) {
+    robotState.failsafeLastZeroOutputMs = nowMs;
+    if (robotState.failsafeLastTriggerMs == 0) {
+        robotState.failsafeLastTriggerToZeroMs = 0;
+        return;
+    }
+    robotState.failsafeLastTriggerToZeroMs = (uint32_t)(nowMs - robotState.failsafeLastTriggerMs);
+}
 
 // -----------------------------------------------------------------------------
 // Safe read-only accessors for safety-critical state

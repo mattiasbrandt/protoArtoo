@@ -24,6 +24,7 @@
 
 #include <string.h>
 
+#include "audio_task.h"
 #include "ledc_pwm.h"
 #include "logging.h"
 #include "marcduino_helpers.h"
@@ -163,8 +164,14 @@ bool parseMarcduinoCommand(const char* line) {
             }
 
         case '$':
-            PA_LOG_INFO(TAG, "[AUDIO] body-local sound command accepted (Phase 3 stub only): %s",
-                        line);
+            // Route to AudioTask queue (non-blocking). The queue send will fail
+            // gracefully if the queue is full — queueOverflowCount is incremented
+            // by audioQueueDollar() in that case.
+            if (!audioQueueDollar(line, SRC_INTERNAL)) {
+                PA_LOG_WARN(TAG, "[AUDIO] queue full, dropped: %s", line);
+            } else {
+                PA_LOG_DEBUG(TAG, "[AUDIO] queued: %s", line);
+            }
             return true;
 
         case '@':

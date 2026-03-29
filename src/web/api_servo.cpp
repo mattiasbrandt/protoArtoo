@@ -58,14 +58,16 @@ static bool parseAction(const String& action, ServoCommandType& type, uint16_t& 
 void registerServoRoutes(AsyncWebServer& server) {
     server.on("/api/servo", HTTP_POST, [](AsyncWebServerRequest* req) {
         // Validate required parameters
-        if (!req->hasParam("arm", true) || !req->hasParam("action", true)) {
+        const AsyncWebParameter* armParam = req->getParam("arm", true);
+        const AsyncWebParameter* actionParam = req->getParam("action", true);
+        if (armParam == nullptr || actionParam == nullptr) {
             req->send(400, "application/json",
                       "{\"ok\":false,\"error\":\"Missing arm or action parameter\"}");
             return;
         }
 
-        String arm = req->getParam("arm", true)->value();
-        String action = req->getParam("action", true)->value();
+        String arm = armParam->value();
+        String action = actionParam->value();
 
         int8_t armId = parseArmId(arm);
         if (armId < 0) {
@@ -90,13 +92,14 @@ void registerServoRoutes(AsyncWebServer& server) {
 
         // Handle position action with positionUs parameter
         if (cmd.type == SERVO_CMD_POSITION && action == "position") {
-            if (!req->hasParam("positionUs", true)) {
+            const AsyncWebParameter* positionParam = req->getParam("positionUs", true);
+            if (positionParam == nullptr) {
                 req->send(400, "application/json",
                           "{\"ok\":false,\"error\":\"Missing positionUs parameter for position "
                           "action\"}");
                 return;
             }
-            cmd.positionUs = (uint16_t)req->getParam("positionUs", true)->value().toInt();
+            cmd.positionUs = (uint16_t)positionParam->value().toInt();
             // Validate range
             if (cmd.positionUs < SERVO_PULSE_MIN_US || cmd.positionUs > SERVO_PULSE_MAX_US) {
                 char errBuf[96];

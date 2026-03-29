@@ -7,27 +7,19 @@
     <link rel="stylesheet" href="/style.css">
     <link rel="icon" type="image/png" href="/r2d2body-favicon.png">
   </head>
-  <body>
-    <div class="topbar">
-      <div>
-        <h1>🕹️ RC Control</h1>
-        <div class="subtitle">Remote control diagnostics and channel mapping</div>
-      </div>
-    </div>
+  <body data-page="rc">
+    <div id="shell-top"></div>
 
-    <nav>
-      <a href="/">🏠 Home</a>
-      <a href="/drive.html">🏎️ Drive</a>
-      <a href="/dome.html">🔄 Dome</a>
-      <a href="/servo.html">🦾 Servos</a>
-      <a href="/setup.html">⚙️ Setup</a>
-      <a href="/rc.html" class="active">🕹️ RC</a>
-      <a href="/serial.html">🔌 Serial</a>
-      <a href="/wifi.html">📶 WiFi</a>
-      <a href="/firmware.html">💾 Firmware</a>
-    </nav>
 
     <!-- Receiver Type (shown first: this choice defines everything else on this page) -->
+    <!-- No RC inputs notice (hidden when any RC channel is enabled) -->
+    <div id="rc-disabled-card" class="card disabled-card hidden" role="status" aria-live="polite" aria-atomic="true">
+      <h3>🕹️ RC Inputs Disabled</h3>
+      <div class="desc">Live receiver diagnostics are unavailable because all RC input channels are disabled.</div>
+      <div class="desc disabled-reason"><strong>Required component:</strong> At least one RC channel (typically CH1 — Drive / SBUS 1)</div>
+      <div class="desc">Open <a class="setup-link" href="/setup.html">Setup</a> and enable an RC input channel to restore live RC status. Mapping edits remain available.</div>
+    </div>
+
     <div class="card">
       <h3>📡 Receiver Type</h3>
       <div class="desc">Select how your RC receiver connects to the controller. This setting determines which bindings and calibration values apply.</div>
@@ -50,9 +42,25 @@
         </div>
       </div>
 
-      <input type="hidden" id="rc-input-mode" value="standard_pwm">
+      <div class="info-note" role="note" aria-label="Receiver mode compatibility notice">
+        <div>Dual SBUS is only available when S3 Dome Control is disabled.</div>
+        <div>When hoverboard drive (S1) is enabled, use Standard PWM for RC drive input.</div>
+      </div>
 
-      <div id="rc-mode-feedback" class="feedback mt-12">Loading receiver type...</div>
+
+      <input type="hidden" id="rc-input-mode" value="standard_pwm">
+      <div id="single-sbus-recv-section" class="mt-16 hidden" aria-hidden="true">
+        <label for="sbus-recv-sel">Single SBUS receiver</label>
+        <select id="sbus-recv-sel" aria-describedby="sbus-recv-note sbus-recv-feedback">
+          <option value="false">SBUS1 (GPIO 15)</option>
+          <option value="true">SBUS2 (GPIO 13)</option>
+        </select>
+        <div id="sbus-recv-note" class="desc mt-8">Selecting a different receiver does not change your channel mapping.</div>
+        <div id="sbus-recv-feedback" class="feedback mt-8" role="status" aria-live="polite" aria-atomic="true"></div>
+      </div>
+
+
+      <div id="rc-mode-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true">Loading receiver type...</div>
       
       <div class="mt-16">
         <button id="rc-reset-defaults" class="btn" type="button">↺ Reset to Defaults</button>
@@ -85,12 +93,27 @@
       <div class="rc-mapper-grid">
         <!-- Slot List (left sidebar) -->
         <div class="rc-slot-list">
+          <h4 class="rc-panel-title">1) Slot List</h4>
+          <div class="desc rc-panel-desc">Select a slot to inspect and edit. Backbone channels are listed first.</div>
+          <div class="rc-learn-bar">
+            <button id="rc-learn-btn" class="btn" type="button">🔍 Detect channel</button>
+          </div>
+          <div id="rc-learn-banner" class="rc-learn-banner" hidden>
+            <div class="rc-learn-banner-icon">🔍</div>
+            <div>
+              <div class="rc-learn-banner-title">Keep all controls neutral, then press a switch or button</div>
+              <div id="rc-learn-status" class="rc-learn-banner-status" role="status" aria-live="polite" aria-atomic="true">Listening…</div>
+            </div>
+            <button id="rc-learn-stop" class="btn btn-sm" type="button">✕ Stop</button>
+          </div>
           <div id="rc-slot-items">
           </div>
         </div>
         
         <!-- Live Preview Panel (center) -->
         <div class="rc-live-preview">
+          <h4 class="rc-panel-title">2) Live Preview</h4>
+          <div class="desc rc-panel-desc">Shows real-time source and mapped values for the selected slot.</div>
           <div id="rc-live-preview-content">
             <div class="desc">Select a channel from the list to see live data.</div>
           </div>
@@ -104,26 +127,32 @@
         
         <!-- Editor Panel (right) -->
         <div class="rc-editor-panel">
+          <h4 class="rc-panel-title">3) Mapping Editor</h4>
+          <div class="desc rc-panel-desc">Adjust source, channel, and action for the selected slot, then apply to save.</div>
           <div id="rc-editor-content">
             <div class="desc">Select a channel from the list to edit its mapping.</div>
           </div>
           
-          <!-- Save Controls -->
-          <div class="button-row rc-editor-actions mt-20">
-            <button id="rc-editor-apply" class="btn accent" type="button" disabled>Apply & Save</button>
-            <button id="rc-editor-revert" class="btn" type="button" disabled>Revert</button>
+          <div class="rc-editor-status-row mt-20" role="status" aria-live="polite" aria-atomic="true">
+            <span id="rc-editor-dirty" class="rc-dirty-state" data-state="clean">Saved</span>
+            <span id="rc-editor-saved-at" class="rc-saved-at">Last saved: —</span>
           </div>
-          
-          <div id="rc-editor-feedback" class="feedback mt-12"></div>
+
+          <div class="button-row rc-editor-actions mt-12">
+            <button id="rc-editor-apply" class="btn accent" type="button" disabled>Apply & Save</button>
+            <button id="rc-editor-revert" class="btn" type="button" disabled>Revert Draft</button>
+          </div>
+
+          <div id="rc-editor-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true"></div>
         </div>
       </div>
     </div>
 
-    <div class="status-bar">
-      <div><span class="dot green"></span>RC page connected</div>
-      <div class="status-subline" id="fw-meta">Loading firmware info...</div>
-    </div>
+    <div id="shell-status"></div>
 
+    <script src="/web_api.js"></script>
+    <script src="/status_stream.js"></script>
+    <script src="/shell.js"></script>
     <script src="/rc.js"></script>
     <script src="/footer.js"></script>
   </body>

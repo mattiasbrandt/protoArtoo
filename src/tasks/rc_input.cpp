@@ -1,10 +1,11 @@
 // =============================================================================
-// src/tasks/sbus_input.cpp
+// src/tasks/rc_input.cpp
 //
-// SBUSInputTask — decodes SBUS receivers using the RMT-based SbusDecoder.
+// RcInputTask — handles all RC input modes: standard_pwm, single_sbus, dual_sbus.
+// Renamed from sbus_input.cpp; the task was never SBUS-specific.
+//
 // Receiver #1 (PIN_SBUS1_RX = GPIO 15): Drive — CH1=speed, CH2=steer, CH8=limit
-// Receiver #2 (PIN_SBUS2_RX = GPIO 13): Dome spin — Phase 3 (initialized,
-//   dome channel processing deferred until DomeLinkTask plumbing is complete).
+// Receiver #2 (PIN_SBUS2_RX = GPIO 13): Dome spin
 //
 // SbusDecoder API:
 //   .begin(pin)   — initialize RMT channel, returns false if no channel free
@@ -32,10 +33,13 @@
 #include "../../include/sbus_decoder.h"
 #include "../../include/sbus_math.h"
 
-static const char* TAG = "SBUSInputTask";
+static const char* TAG = "RCInputTask";
 
 // SBUS receiver objects — UART-based with hardware inversion
-// GPIO 15 (drive) uses Serial1, GPIO 13 (dome) uses Serial2
+// GPIO 15 (PIN_SBUS1_RX) and GPIO 13 (PIN_SBUS2_RX) are the SBUS receiver pins.
+// In single_sbus mode, one hardware UART (Serial1) is configured for the selected
+// receiver. In dual_sbus mode, Serial1=SBUS1 and Serial2=SBUS2.
+// NOTE: Serial1 is also claimed by DriveTask (hoverboard). See sbus_decoder.h.
 static SbusDecoder sbus_drive;
 static SbusDecoder sbus_dome;
 static const uint8_t kRcPwmPins[6] = {PIN_RC_CH1, PIN_RC_CH2, PIN_RC_CH3,
@@ -611,51 +615,158 @@ static bool is_dome_sbus_mode(RcInputMode mode) {
 }
 
 // -----------------------------------------------------------------------------
-// sbusInputTask()
-// Polls both SBUS receivers at ~200 Hz (5 ms delay) to catch every 100 Hz frame.
+// rcInputTask()
+// Handles all RC input modes: standard_pwm, single_sbus, dual_sbus.
+// Polls receivers at ~200 Hz (5 ms delay) to catch every 100 Hz SBUS frame.
 // Implements Layer 1 (HW failsafe flag) and Layer 2 (SW watchdog) safety.
 // Thread safety: all RobotState writes use taskENTER/EXIT_CRITICAL.
 // -----------------------------------------------------------------------------
-void sbusInputTask(void* pvParameters) {
+void rcInputTask(void* pvParameters) {
+    // Register with TWDT unconditionally — this task feeds the watchdog
+    // regardless of which RC mode is active or what channels are enabled.
+    esp_task_wdt_add(NULL);
+
     taskENTER_CRITICAL(&robotStateMux);
     RcInputMode rcInputMode = robotState.cfg_rc_input_mode;
     bool enableRcCh1 = robotState.cfg_enable_rc_ch1;
     bool enableRcCh2 = robotState.cfg_enable_rc_ch2;
+    bool useCh2 = robotState.cfg_single_sbus_use_ch2;
     taskEXIT_CRITICAL(&robotStateMux);
 
     bool driveSbusEnabled = is_drive_sbus_mode(rcInputMode) && enableRcCh1;
     bool domeSbusEnabled = is_dome_sbus_mode(rcInputMode) && enableRcCh2;
 
+    // Do not early-idle when SBUS channels are currently disabled:
+    // rcInputMode and channel enables are runtime-configurable via /api/config.
+    // This task must keep running so mode/channel changes take effect without reboot.
+
     if (driveSbusEnabled) {
-        if (!sbus_drive.begin(&Serial1, PIN_SBUS1_RX)) {
-            Serial.printf("[%s] ERROR: UART init failed for SBUS1 GPIO%d\n", TAG, PIN_SBUS1_RX);
+        bool useDriveSbus2 = (rcInputMode == RC_INPUT_SINGLE_SBUS) && useCh2;
+        int sbusRxPin = useDriveSbus2 ? PIN_SBUS2_RX : PIN_SBUS1_RX;
+        if (!sbus_drive.begin(&Serial1, sbusRxPin)) {
+            PA_LOG_ERROR(TAG, "UART init failed for SBUS%d GPIO%d", useDriveSbus2 ? 2 : 1,
+                         sbusRxPin);
             driveSbusEnabled = false;
         }
     }
     if (domeSbusEnabled) {
         if (!sbus_dome.begin(&Serial2, PIN_SBUS2_RX)) {
-            Serial.printf("[%s] WARNING: UART init failed for SBUS2 GPIO%d\n", TAG, PIN_SBUS2_RX);
+            PA_LOG_WARN(TAG, "UART init failed for SBUS2 GPIO%d", PIN_SBUS2_RX);
             domeSbusEnabled = false;
         }
     }
 
     if (rcInputMode == RC_INPUT_STANDARD_PWM) {
-        Serial.printf("[%s] started — standard_pwm mode selected (SBUS decoders inactive)\n", TAG);
+        PA_LOG_INFO(TAG, "started — standard_pwm mode, SBUS decoders inactive");
     } else if (rcInputMode == RC_INPUT_SINGLE_SBUS) {
-        Serial.printf("[%s] started — single_sbus mode, SBUS1 GPIO%d active\n", TAG, PIN_SBUS1_RX);
+        if (driveSbusEnabled) {
+            int sbusRxPin = useCh2 ? PIN_SBUS2_RX : PIN_SBUS1_RX;
+            PA_LOG_INFO(TAG, "started — single_sbus mode, SBUS%d GPIO%d active",
+                        useCh2 ? 2 : 1, sbusRxPin);
+        } else {
+            PA_LOG_INFO(TAG,
+                        "started — single_sbus mode, SBUS%d disabled (en_rc_ch1=false) — idle",
+                        useCh2 ? 2 : 1);
+        }
     } else {
-        Serial.printf("[%s] started — dual_sbus mode, SBUS1 GPIO%d + SBUS2 GPIO%d active\n", TAG,
-                      PIN_SBUS1_RX, PIN_SBUS2_RX);
+        if (!driveSbusEnabled)
+            PA_LOG_INFO(TAG, "started — dual_sbus mode, SBUS2 GPIO%d only (SBUS1 disabled)",
+                        PIN_SBUS2_RX);
+        else if (!domeSbusEnabled)
+            PA_LOG_INFO(TAG, "started — dual_sbus mode, SBUS1 GPIO%d only (SBUS2 disabled)",
+                        PIN_SBUS1_RX);
+        else
+            PA_LOG_INFO(TAG, "started — dual_sbus mode, SBUS1 GPIO%d + SBUS2 GPIO%d active",
+                        PIN_SBUS1_RX, PIN_SBUS2_RX);
     }
-
-    // Register with Task Watchdog Timer (TWDT) — Layer 4 safety
-    esp_task_wdt_add(NULL);
 
     // SBUS2 watchdog state
     bool sbus2WatchdogFired = false;
+    bool hwmLogged = false;
 
+    bool driveSbusInitWarned = false;
+    bool domeSbusInitWarned = false;
+    bool lastUseCh2 = useCh2;
     while (true) {
+        if (!hwmLogged) {
+            PA_LOG_INFO(TAG, "stack HWM: %u words free",
+                        (unsigned)uxTaskGetStackHighWaterMark(NULL));
+            hwmLogged = true;
+        }
+
+        taskENTER_CRITICAL(&robotStateMux);
+        rcInputMode = robotState.cfg_rc_input_mode;
+        enableRcCh1 = robotState.cfg_enable_rc_ch1;
+        enableRcCh2 = robotState.cfg_enable_rc_ch2;
+        useCh2 = robotState.cfg_single_sbus_use_ch2;
+        taskEXIT_CRITICAL(&robotStateMux);
+        driveSbusEnabled = is_drive_sbus_mode(rcInputMode) && enableRcCh1;
+        domeSbusEnabled = is_dome_sbus_mode(rcInputMode) && enableRcCh2;
+
+        // Detect single_sbus receiver selection change BEFORE the reinit guard.
+        // If change detection ran after reinit, we could init-then-teardown the decoder
+        // in the same iteration when useCh2 changes while the decoder is uninitialized.
+        if (rcInputMode == RC_INPUT_SINGLE_SBUS && useCh2 != lastUseCh2
+                && sbus_drive.isInitialized()) {
+            sbus_drive.end();
+            PA_LOG_INFO(TAG, "single_sbus receiver changed to SBUS%d \u2014 reinitializing",
+                         useCh2 ? 2 : 1);
+        }
+        // Only track lastUseCh2 while in single_sbus mode. Freezing the baseline across
+        // mode transitions prevents a spurious reinit when returning to single_sbus after
+        // useCh2 was changed while in dual_sbus or standard_pwm mode.
+        if (rcInputMode == RC_INPUT_SINGLE_SBUS) {
+            lastUseCh2 = useCh2;
+        }
+
+        if (driveSbusEnabled && !sbus_drive.isInitialized()) {
+            int sbusRxPin =
+                (rcInputMode == RC_INPUT_SINGLE_SBUS && useCh2) ? PIN_SBUS2_RX : PIN_SBUS1_RX;
+            bool useDriveSbus2 = (sbusRxPin == PIN_SBUS2_RX);
+            if (!sbus_drive.begin(&Serial1, sbusRxPin)) {
+                if (!driveSbusInitWarned) {
+                    PA_LOG_ERROR(TAG, "UART init failed for SBUS%d GPIO%d", useDriveSbus2 ? 2 : 1,
+                                 sbusRxPin);
+                    driveSbusInitWarned = true;
+                }
+                driveSbusEnabled = false;
+            } else {
+                driveSbusInitWarned = false;
+            }
+        }
+
+        if (domeSbusEnabled && !sbus_dome.isInitialized()) {
+            if (!sbus_dome.begin(&Serial2, PIN_SBUS2_RX)) {
+                if (!domeSbusInitWarned) {
+                    PA_LOG_WARN(TAG, "UART init failed for SBUS2 GPIO%d", PIN_SBUS2_RX);
+                    domeSbusInitWarned = true;
+                }
+                domeSbusEnabled = false;
+            } else {
+                domeSbusInitWarned = false;
+            }
+        }
+
+        if (!driveSbusEnabled && sbus_drive.isInitialized()) {
+            sbus_drive.end();
+            driveSbusInitWarned = false;
+            PA_LOG_INFO(TAG, "SBUS1 disabled — released UART1");
+        }
+
+        if (!domeSbusEnabled && sbus_dome.isInitialized()) {
+            sbus_dome.end();
+            domeSbusInitWarned = false;
+            sbus2WatchdogFired = false;
+            PA_LOG_INFO(TAG, "SBUS2 disabled — released UART2");
+        }
+
         if (rcInputMode == RC_INPUT_STANDARD_PWM) {
+            taskENTER_CRITICAL(&robotStateMux);
+            robotState.sbusSignalLost = false;
+            robotState.sbusHwFailsafe = false;
+            robotState.sbus2SignalLost = false;
+            robotState.sbus2HwFailsafe = false;
+            taskEXIT_CRITICAL(&robotStateMux);
             dispatchStandardPwmInputs();
             esp_task_wdt_reset();
             vTaskDelay(pdMS_TO_TICKS(20));
@@ -678,12 +789,20 @@ void sbusInputTask(void* pvParameters) {
 
             // Layer 1: Hardware failsafe flag from receiver firmware
             if (data.failsafe) {
+                bool hwFailsafeTriggered = !robotState.sbusHwFailsafe;
                 robotState.sbusHwFailsafe = true;
-                robotState.failsafeSource = FS_SBUS_HW;
+                if (hwFailsafeTriggered) {
+                    recordFailsafeTriggerLocked(FS_SBUS_HW, robotState.lastSbus1Ms);
+                } else {
+                    robotState.failsafeSource = FS_SBUS_HW;
+                }
                 robotState.driveSpeed = 0;
                 robotState.driveSteer = 0;
                 robotState.lastDriveSource = SRC_SBUS;
                 taskEXIT_CRITICAL(&robotStateMux);
+                if (hwFailsafeTriggered) {
+                    PA_LOG_WARN(TAG, "SBUS1 hardware failsafe asserted");
+                }
             } else if (data.lost_frame) {
                 // lost_frame: single frame missed — not a failsafe condition.
                 // Track count; drive state is unchanged (last good frame holds).
@@ -692,8 +811,7 @@ void sbusInputTask(void* pvParameters) {
                 bool rcDebug = robotState.rcDebugMode;
                 taskEXIT_CRITICAL(&robotStateMux);
                 if (rcDebug && (lostCount % 100 == 0)) {
-                    Serial.printf("[%s] SBUS1 lost_frame count: %lu\n", TAG,
-                                  (unsigned long)lostCount);
+                    PA_LOG_DEBUG(TAG, "SBUS1 lost_frame count: %lu", (unsigned long)lostCount);
                 }
             } else {
                 // Signal confirmed — clear watchdog and hardware failsafe flags
@@ -761,21 +879,20 @@ void sbusInputTask(void* pvParameters) {
 
         if (driveSbusEnabled) {
             bool watchdogFired = false;
-            bool debugMode = false;
             if ((uint32_t)(millis() - lastSbus1) > timeoutMs) {
+                uint32_t nowMs = millis();
                 taskENTER_CRITICAL(&robotStateMux);
                 if (!robotState.sbusSignalLost) {
                     robotState.sbusSignalLost = true;
-                    robotState.failsafeSource = FS_SBUS_TIMEOUT;
-                    robotState.failsafeTriggerCount++;
+                    recordFailsafeTriggerLocked(FS_SBUS_TIMEOUT, nowMs);
                     robotState.driveSpeed = 0;
                     robotState.driveSteer = 0;
                     watchdogFired = true;
                 }
-                debugMode = robotState.rcDebugMode;
                 taskEXIT_CRITICAL(&robotStateMux);
-                if (watchdogFired && debugMode) {
-                    PA_LOG_WARN(TAG, "SBUS1 watchdog fired — signal lost");
+                if (watchdogFired) {
+                    PA_LOG_WARN(TAG, "SBUS1 watchdog fired — no frame for %lu ms (timeout=%lu ms)",
+                                (unsigned long)(nowMs - lastSbus1), (unsigned long)timeoutMs);
                 }
             } else {
                 taskENTER_CRITICAL(&robotStateMux);
@@ -783,10 +900,9 @@ void sbusInputTask(void* pvParameters) {
                 if (signalRestored) {
                     robotState.sbusSignalLost = false;
                 }
-                debugMode = robotState.rcDebugMode;
                 robotState.sbusHwFailsafe = false;
                 taskEXIT_CRITICAL(&robotStateMux);
-                if (signalRestored && debugMode) {
+                if (signalRestored) {
                     PA_LOG_INFO(TAG, "SBUS1 signal restored");
                 }
             }
@@ -817,15 +933,9 @@ void sbusInputTask(void* pvParameters) {
             dispatchSbusBindingsForSource(data, RC_BINDING_SBUS2, rcInputMode, enableRcCh1,
                                           enableRcCh2);
 
-            taskENTER_CRITICAL(&robotStateMux);
-            bool rcDebug = robotState.rcDebugMode;
-            taskEXIT_CRITICAL(&robotStateMux);
-
             if (sbus2WatchdogFired) {
                 sbus2WatchdogFired = false;
-                if (rcDebug) {
-                    PA_LOG_INFO(TAG, "SBUS2 signal restored");
-                }
+                PA_LOG_INFO(TAG, "SBUS2 signal restored");
             }
         }
 
@@ -840,12 +950,9 @@ void sbusInputTask(void* pvParameters) {
                     sbus2WatchdogFired = true;
                     taskENTER_CRITICAL(&robotStateMux);
                     robotState.sbus2SignalLost = true;
-                    robotState.failsafeTriggerCount++;
-                    bool rcDebug = robotState.rcDebugMode;
+                    recordFailsafeTriggerLocked(FS_SBUS2_TIMEOUT, millis());
                     taskEXIT_CRITICAL(&robotStateMux);
-                    if (rcDebug) {
-                        PA_LOG_WARN(TAG, "SBUS2 watchdog fired — dome signal lost");
-                    }
+                    PA_LOG_WARN(TAG, "SBUS2 watchdog fired — dome signal lost");
 
                     DomeCommand stopCmd = {};
                     stopCmd.speed = 0.0f;

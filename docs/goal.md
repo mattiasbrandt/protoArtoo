@@ -61,9 +61,9 @@ The Artoo Controller board from artoo.uk is a custom PCB (v1.1) built around an 
 │  • Drive (hoverboard Gen2.x UART)    │  RX ←── │  • Dome panel servos (PCA9685)         │
 │  • RC input (PWM / single SBUS / dual SBUS) │ 9600 │  • Holoprojectors                      │
 │  • Utility arm servos                │  baud   │  • Logic displays + PSI                │
-│  • Audio module ← SOLE AUDIO        │ slip    │  • WiFi AP+STA                         │
+│  • Audio module ← SOLE AUDIO        │ slip    │  • WiFi (hotspot or client mode)       │
 │  • Dome motor ESC                    │  ring   │  • Async web UI + REST API             │
-│  • WiFi AP+STA                       │         │                                        │
+│  • WiFi (hotspot or client mode)   │         │                                        │
 │  • Async web UI + REST API           │         └────────────────────────────────────────┘
 └──────────────────────────────────────┘
          NOTE: NO MarcDuino Slave board.
@@ -838,6 +838,10 @@ For the dome ESC (ISDT ESC70), runtime control is also standard RC PWM
 (1000-2000 us, neutral 1500 us). BLE/app controls are configuration-time only,
 not runtime control path.
 
+Project-recommended ESC70 tuning baseline is documented in `docs/isdt_esc70_dome_esc.md`
+(1 kHz PWM, Start force MAX, Brake force minimum, drag/active brake disabled,
+aggressive throttle mid-curve). Apply that baseline first, then tune per-build drivetrain load.
+
 ### 6.7 Operation Modes and CH8 Speed Limit Dial
 
 The **Driving ↔ Stationary** mode state is controlled either by the CH8 dial
@@ -989,15 +993,14 @@ examples and should not override those canonical files.
 
 ### 7.1 Framework & Dependencies
 
-**Arduino framework on ESP32** via PlatformIO. Versions pinned to match dome firmware.
+**Arduino framework on ESP32** via PlatformIO. All versions explicitly pinned — no `^` or `~` ranges.
 
 | Library | Version | Notes |
 |---|---|---|
-| `me-no-dev/ESPAsyncWebServer` | `3.5.1` | Match dome |
-| `me-no-dev/AsyncTCP` | `3.3.2` | Match dome |
-| `bblanchon/ArduinoJson` | latest stable | |
-| `bolderflight/sbus` | latest stable | |
-| `madhephaestus/ESP32Servo` | latest stable | |
+| Platform | `pioarduino/espressif32@55.03.37` | arduino-esp32 v3.3.7 + IDF 5.5.2; community fork — official espressif32 platform only delivers v2.x |
+| `ESP32Async/ESPAsyncWebServer` | `3.10.3` | Maintained fork of abandoned `me-no-dev/` — SSE leak fixes, `SSE_MAX_QUEUED_MESSAGES` support |
+| `ESP32Async/AsyncTCP` | `3.4.10` | Maintained fork of abandoned `me-no-dev/` — `CONFIG_ASYNC_TCP_STACK_SIZE=4096` saves 12 KB heap |
+| `bblanchon/ArduinoJson` | `7.4.3` | Pinned |
 | Arduino `Preferences` | — | NVS |
 | Arduino `LittleFS` | — | Web assets |
 | Arduino `ArduinoOTA` | — | OTA |
@@ -1006,7 +1009,7 @@ examples and should not override those canonical files.
 
 ```ini
 [env:protoArtoo]
-platform = espressif32@5.2.0
+platform = https://github.com/pioarduino/platform-espressif32/releases/download/55.03.37/platform-espressif32.zip
 board = esp32dev
 framework = arduino
 build_flags =
@@ -1295,7 +1298,10 @@ The startup order matters. Hoverboard UART must open before WiFi starts (ADC2 co
 7. TWDT init — esp_task_wdt_init(WATCHDOG_TIMEOUT_S, true)
 8. Audio module UART begin — play startup sound if configured
 9. WiFi.onEvent() registered — initAsyncWeb() called ONLY from event callback
-10. WiFi.mode(WIFI_AP_STA) + softAP("protoArtoo", ...) + WiFi.begin(sta_ssid, sta_pass)
+10. WiFi init — build-time choice:
+    PA_ENABLE_STA_WIFI=1: WiFi.mode(WIFI_STA) + WiFi.begin(PA_STA_SSID, PA_STA_PASSWORD)
+    PA_ENABLE_STA_WIFI=0: WiFi.mode(WIFI_AP)  + WiFi.softAP(WIFI_AP_SSID)
+    (Never both active simultaneously — hotspot and client are mutually exclusive)
 11. FreeRTOS tasks launched:
       Core 1: SBUSInputTask, DriveTask, DomeLinkTask, AudioTask, ServoTask
       Core 0: WiFiManagerTask, OTATask
@@ -1306,21 +1312,26 @@ The startup order matters. Hoverboard UART must open before WiFi starts (ADC2 co
 > **Critical:** Step 5 (hoverboard UART2) before step 10 (WiFi). The ESP32 ADC2 is unusable while WiFi is active. UART2 does not conflict with WiFi. Establishing the hoverboard connection early means zero frames are flowing before any other subsystem starts — the droid is in a known-safe state from the first millisecond.
 
 > **Critical:** Step 2 (watchdog reset detection). If the firmware crashed and the TWDT fired, the droid must not silently resume driving. `estop = true` on watchdog reset is a hard requirement — the operator must explicitly clear it via web UI before the droid will accept drive commands again.
-### 7.7 WiFi — AP + STA
+### 7.7 WiFi — build-time mode selection
 
 ```cpp
+// Build-time WiFi mode — mutually exclusive, never both active simultaneously.
+// PA_ENABLE_STA_WIFI=1 (default): WiFi client mode.
+//   Credentials defined at build time in src/secrets.h (gitignored).
+//   Server starts when WiFi connection is established (ARDUINO_EVENT_WIFI_STA_GOT_IP).
+#if PA_ENABLE_STA_WIFI
+WiFi.mode(WIFI_STA);
+WiFi.begin(PA_STA_SSID, PA_STA_PASSWORD);  // compile-time credentials from secrets.h
+// Server starts from ARDUINO_EVENT_WIFI_STA_GOT_IP event
+#else
+// PA_ENABLE_STA_WIFI=0 (protoArtoo_prod): hotspot mode.
+//   Device creates its own access point. No external network needed.
+//   Server starts from ARDUINO_EVENT_WIFI_AP_START event.
+WiFi.mode(WIFI_AP);
+WiFi.softAP(WIFI_AP_SSID);  // SSID: "protoArtoo", IP: 192.168.4.1
+#endif
 // Gate initAsyncWeb() behind WiFi event — avoids tcpip_api_call crashloop
-WiFi.onEvent([](WiFiEvent_t event, WiFiEventInfo_t info) {
-    if (event == ARDUINO_EVENT_WIFI_AP_START ||
-        event == ARDUINO_EVENT_WIFI_STA_CONNECTED) {
-        initAsyncWeb();   // Only here — never directly in setup()
-    }
-});
-WiFi.mode(WIFI_AP_STA);
-WiFi.softAP("protoArtoo", AP_PASSWORD);  // Always on, 192.168.4.1
-// Note: original Artoo firmware uses "Artoo Inventions" / 10.10.10.10
-// protoArtoo uses standard ESP32 AP defaults with project name as SSID
-WiFi.begin(saved_ssid, saved_password);  // STA optional, fails silently
+WiFi.onEvent(handleWiFiEvent);  // registered before WiFi.mode() call
 ```
 
 ### 7.8 Multi-Layer Drive Failsafe
@@ -1820,7 +1831,7 @@ void DriveTask(void* pvParams) {
 ; =============================================================================
 
 [env:protoArtoo]
-platform    = espressif32@5.2.0          ; pin platform version — never use @latest
+platform    = https://github.com/pioarduino/platform-espressif32/releases/download/55.03.37/platform-espressif32.zip          ; pin platform version — never use @latest
 board       = esp32dev
 framework   = arduino
 monitor_speed = 115200
@@ -1855,11 +1866,9 @@ test_build_src = true
 test_ignore    = test_native
 
 lib_deps =
-    me-no-dev/ESPAsyncWebServer @ 3.5.1  ; pin exact versions — no ^ or ~
-    me-no-dev/AsyncTCP          @ 3.3.2
-    bblanchon/ArduinoJson
-    bolderflight/sbus
-    madhephaestus/ESP32Servo
+    ESP32Async/ESPAsyncWebServer @ 3.10.3  ; maintained fork — me-no-dev/ abandoned
+    ESP32Async/AsyncTCP          @ 3.4.10  ; maintained fork — me-no-dev/ abandoned
+    bblanchon/ArduinoJson        @ 7.4.3   ; pin exact versions — no ^ or ~
 
 ; =============================================================================
 [env:native]
@@ -2569,6 +2578,45 @@ POST /upload/filesystem    → OTA filesystem flash (U_SPIFFS/LittleFS, multipar
 `failsafe.source` is one of: `"NONE"`, `"SBUS_TIMEOUT"`, `"SBUS_HW"`, `"SBUS2_TIMEOUT"`, `"WEB_TIMEOUT"`, `"ESTOP_CMD"`, `"WATCHDOG_RESET"`.
 `failsafe.trigger_count` is the lifetime count since boot — useful for diagnosing intermittent antenna dropouts.
 `drive.speed_limit_pct` reflects the current CH8 dial position (0–100%).
+
+**`/api/config` — canonical grouped response:**
+```json
+{
+  "drive": {
+    "speedLimitMax": 600,
+    "webDriveTimeoutMs": 500,
+    "ch8ModeLock": false,
+    "stationary": true
+  },
+  "rc": {
+    "inputMode": "dual_sbus",
+    "pwm": { "driveSpeed": "pwm:1:1000:1500:2000:0:0", "...": "..." },
+    "sbus": { "driveSpeed": "sbus1:1:172:992:1811:0:0", "...": "..." },
+    "triggers": { "arm1": "sbus1:4:arm1_toggle::172:992:1811:0:0", "...": "..." }
+  },
+  "components": {
+    "arm1": { "enabled": true, "type": "mg996r" },
+    "arm2": { "enabled": true, "type": "mg996r" },
+    "aux1": { "enabled": false, "type": "none" },
+    "aux2": { "enabled": false, "type": "none" },
+    "aux3": { "enabled": false, "type": "none" },
+    "dome": { "enabled": true },
+    "rcCh1": { "enabled": true }, "rcCh2": { "enabled": true },
+    "rcCh3": { "enabled": true }, "rcCh4": { "enabled": true },
+    "rcCh5": { "enabled": true }, "rcCh6": { "enabled": true },
+    "s1Hoverboard": { "enabled": true },
+    "s2Sound": { "enabled": true },
+    "s3DomeCtrl": { "enabled": true }
+  },
+  "dome": {
+    "neutralUs": 1500,
+    "minPulseUs": 1000,
+    "maxPulseUs": 2000,
+    "speedLimitPct": 100
+  },
+  "system": { "logLevel": 2 }
+}
+```
 
 ---
 

@@ -14,6 +14,7 @@
 #include <Arduino.h>
 #include <ESPAsyncWebServer.h>
 #include <WiFi.h>
+#include <esp_heap_caps.h>
 
 #include "api_helpers.h"
 #include "config.h"
@@ -56,6 +57,7 @@ static void buildHealthJson(char* buffer, size_t bufferSize) {
     bool fsReady;
     unsigned long heapFree;
     unsigned long heapMin;
+    unsigned long heapLargestBlock;
     long wifiRssi;
 
     taskENTER_CRITICAL(&robotStateMux);
@@ -65,15 +67,22 @@ static void buildHealthJson(char* buffer, size_t bufferSize) {
     webControlEnabled = robotState.webControlEnabled;
     taskEXIT_CRITICAL(&robotStateMux);
 
-    wifiConnected = WiFi.status() == WL_CONNECTED;
-    wifiClientConnected = wifiConnected;
+    int wifiMode = WiFi.getMode();
+    bool apEnabled = wifiMode == WIFI_AP || wifiMode == WIFI_AP_STA;
+    bool staConnected = WiFi.status() == WL_CONNECTED;
+    unsigned int apStationCount = apEnabled ? (unsigned int)WiFi.softAPgetStationNum() : 0U;
+    WiFiConnectivityFields wifi =
+        deriveWiFiConnectivityFields(apEnabled, staConnected, apStationCount, WiFi.RSSI());
+    wifiConnected = wifi.wifiConnected;
+    wifiClientConnected = wifi.wifiClientConnected;
+    wifiRssi = wifi.wifiRssi;
+
     fsReady = webLittleFsMounted();
     heapFree = ESP.getFreeHeap();
     heapMin = ESP.getMinFreeHeap();
-    wifiRssi = wifiConnected ? WiFi.RSSI() : 0;
-
+    heapLargestBlock = (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
     formatHealthJson(buffer, bufferSize, estop, sbusSignalLost, sbusHwFailsafe, webControlEnabled,
-                     wifiConnected, wifiClientConnected, fsReady, heapFree, heapMin, wifiRssi);
+                     wifiConnected, wifiClientConnected, fsReady, heapFree, heapMin, heapLargestBlock, wifiRssi);
 }
 
 void registerStatusRoutes(AsyncWebServer& server) {
@@ -100,7 +109,9 @@ void registerStatusRoutes(AsyncWebServer& server) {
     // complex and unnecessary for this infrequent debug endpoint.
     static portMUX_TYPE logsMux = portMUX_INITIALIZER_UNLOCKED;
     server.on("/api/logs", HTTP_GET, [](AsyncWebServerRequest* req) {
-        static char body[4096];
+        // Buffer sized to match ring capacity: LOG_BUFFER_LINES * LOG_LINE_MAX + 1.
+        // Was 4096 static (always allocated); now sized to actual ring content max.
+        static char body[LOG_BUFFER_LINES * LOG_LINE_MAX + 1];
         taskENTER_CRITICAL(&logsMux);
         copyRecentLogs(body, sizeof(body) - 1);
         taskEXIT_CRITICAL(&logsMux);
@@ -108,8 +119,10 @@ void registerStatusRoutes(AsyncWebServer& server) {
     });
 
     server.on("/api/status", HTTP_GET, [](AsyncWebServerRequest* req) {
-        char body[768];
-        buildStatusJson(body, sizeof(body));
+        char body[3072];
+        if (!buildStatusJson(body, sizeof(body))) {
+            PA_LOG_WARN("StatusAPI", "status payload overflowed; returning fallback payload");
+        }
         req->send(200, "application/json", body);
     });
 }

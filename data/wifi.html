@@ -3,33 +3,18 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>WiFi - protoArtoo</title>
     <link rel="stylesheet" href="/style.css">
     <link rel="icon" type="image/png" href="/r2d2body-favicon.png">
   </head>
-  <body>
-    <div class="topbar">
-      <div>
-        <h1>📶 WiFi</h1>
-        <div class="subtitle">Wireless network status</div>
-      </div>
-    </div>
+  <body data-page="wifi">
+    <div id="shell-top"></div>
 
-    <nav>
-      <a href="/">🏠 Home</a>
-      <a href="/drive.html">🏎️ Drive</a>
-      <a href="/dome.html">🔄 Dome</a>
-      <a href="/servo.html">🦾 Servos</a>
-      <a href="/setup.html">⚙️ Setup</a>
-      <a href="/rc.html">🕹️ RC</a>
-      <a href="/serial.html">🔌 Serial</a>
-      <a href="/wifi.html" class="active">📶 WiFi</a>
-      <a href="/firmware.html">💾 Firmware</a>
-    </nav>
 
-    <!-- Active connection — shown based on what mode is running -->
-    <div class="card" id="wifi-sta-card" class="hidden">
+    <!-- WiFi Client card — shown when firmware is built in STA mode -->
+    <div class="card hidden" id="wifi-sta-card">
       <h3>🌐 WiFi Client</h3>
-      <div class="desc">The controller is connected to your WiFi network.</div>
+      <div class="desc" id="wifi-sta-desc">Running in WiFi Client (STA) mode.</div>
       <div class="status-grid mt-16">
         <div class="status-item">
           <dt>Status</dt>
@@ -47,7 +32,7 @@
       </div>
     </div>
 
-    <!-- Access Point — always active; primary when no STA client -->
+    <!-- Access Point card — active in AP-mode builds -->
     <div class="card" id="wifi-ap-card">
       <h3>📡 Access Point</h3>
       <div class="desc" id="wifi-ap-desc">Connect to this network to reach the controller.</div>
@@ -66,13 +51,13 @@
     <div class="button-row">
       <button id="reload-wifi-button" class="btn" type="button">🔄 Refresh</button>
     </div>
-    <div id="wifi-feedback" class="feedback mt-12">Loading WiFi status...</div>
+    <div id="wifi-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true">Loading WiFi status...</div>
 
-    <div class="status-bar">
-      <div><span class="dot green"></span>WiFi page connected</div>
-      <div class="status-subline" id="fw-meta">Loading firmware info...</div>
-    </div>
+    <div id="shell-status"></div>
 
+    <script src="/web_api.js"></script>
+    <script src="/status_stream.js"></script>
+    <script src="/shell.js"></script>
     <script src="/wifi.js"></script>
     <script src="/footer.js"></script>
   </body>

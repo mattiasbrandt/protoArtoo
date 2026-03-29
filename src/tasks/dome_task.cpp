@@ -64,9 +64,9 @@ static void setDomeSpeed(float speed) {
     robotState.domeTargetSpeed = speed;
     taskEXIT_CRITICAL(&robotStateMux);
 
-    PA_LOG_DEBUG(TAG, "Dome speed %.2f -> %d us (neutral=%d min=%d max=%d lim=%d%%)", (double)speed,
-                 (int)pulseUs, (int)neutralUs, (int)minPulseUs, (int)maxPulseUs,
-                 (int)speedLimitPct);
+    PA_LOG_DEBUG(TAG, "Dome speed %d%% -> %d us (neutral=%d min=%d max=%d lim=%d%%)",
+                 (int)(speed * 100.0f), (int)pulseUs, (int)neutralUs,
+                 (int)minPulseUs, (int)maxPulseUs, (int)speedLimitPct);
 }
 
 // -----------------------------------------------------------------------------
@@ -93,17 +93,23 @@ static void setDomeNeutral() {
 // Outputs the configured neutral pulse for ESC arming.
 // -----------------------------------------------------------------------------
 void domeTaskInit() {
-    // Read configured neutral pulse for arming — do not hardcode
-    uint16_t neutralUs;
+    // Feature toggle: skip ESC arming entirely when dome is disabled.
+    // No LEDC pulse is written; the channel stays at whatever neutral value
+    // ledcPwmInit() set at boot.  domeTask() will also idle (see task body).
     taskENTER_CRITICAL(&robotStateMux);
-    neutralUs = robotState.cfg_dome_neutral_us;
+    bool enabled = robotState.cfg_enable_dome;
+    uint16_t neutralUs = robotState.cfg_dome_neutral_us;
     taskEXIT_CRITICAL(&robotStateMux);
+
+    if (!enabled) {
+        PA_LOG_INFO(TAG, "dome disabled (en_dome=false) — skipping ESC arming");
+        return;
+    }
 
     ledcPwmSetPulseWidth(LEDC_CH_DOME, neutralUs);
     PA_LOG_INFO(TAG, "Dome ESC arming (neutral=%d us for %d ms)", (int)neutralUs,
                 ESC_ARMING_DURATION_MS);
 
-    // Delay for arming - this happens during setup, not in task loop
     delay(ESC_ARMING_DURATION_MS);
 
     PA_LOG_INFO(TAG, "Dome ESC armed and ready");
@@ -127,10 +133,24 @@ void domeTask(void* pvParameters) {
     uint32_t lastCommandMs = 0;
     bool hasCommand = false;
 
-    // Start at neutral — safe idle output
-    setDomeNeutral();
+    // Start at neutral only when dome output is enabled. If disabled, LEDC may
+    // be intentionally uninitialized (all outputs disabled configuration).
+    taskENTER_CRITICAL(&robotStateMux);
+    bool domeEnabledAtBoot = robotState.cfg_enable_dome;
+    taskEXIT_CRITICAL(&robotStateMux);
+    if (domeEnabledAtBoot) {
+        setDomeNeutral();
+    }
+
+    bool hwmLogged = false;
 
     while (true) {
+        if (!hwmLogged) {
+            PA_LOG_INFO(TAG, "stack HWM: %u words free",
+                        (unsigned)uxTaskGetStackHighWaterMark(NULL));
+            hwmLogged = true;
+        }
+
         // Read safety state under mutex
         taskENTER_CRITICAL(&robotStateMux);
         bool estop = robotState.estop;
@@ -169,8 +189,8 @@ void domeTask(void* pvParameters) {
 
             setDomeSpeed(currentSpeed);
             if (currentSpeed != 0.0f) {
-                PA_LOG_INFO(TAG, "[%s] Dome command: speed %.2f", commandSourceToString(cmd.source),
-                            (double)cmd.speed);
+                PA_LOG_INFO(TAG, "[%s] Dome command: speed %d%%",
+                            commandSourceToString(cmd.source), (int)(cmd.speed * 100.0f));
             }
         }
 

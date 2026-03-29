@@ -1,127 +1,124 @@
 # Project Status
 
-> **What this file is for:**
-> Single source of truth for the current development state of protoArtoo.
-> Keep it current: update the phase table when phases transition, record
-> confirmed hardware details as they are discovered, and note known gaps
-> so contributors can orient quickly. Detailed task checklists live in
-> `tasks/phase*-tasks.md`; detailed release notes live in `CHANGELOG.md`.
-> Dependency versions should be re-audited at each phase boundary.
+protoArtoo is open-source ESP32 body controller firmware for MK4 astromech droids.
+This page tracks the current development state across firmware phases.
+For detailed release notes see `CHANGELOG.md`.
 
 ---
 
 ## Phase Overview
 
-| Component | Status |
-|---|---|
-| Firmware plan & architecture | Complete |
-| Dome fork (mattiasbrandt/AstroPixelsPlus) | Complete — body link protocol implemented |
-| Phase 0 — PCB trace & hardware research | Complete |
-| Phase 1 — Drive + SBUS + failsafe | Complete — released as `v0.1.0` |
-| Phase 2 — Web server + OTA | Complete — bench-tested baseline established |
-| Phase 3 — Servos + dome motor | **Bench-complete** — software bench-verified; hardware validation formally deferred; deferred items carried forward as T11/T12 in Phase 4 |
-| **Web UI/UX quality gate** | **CLEARED** — signed off 2026-03-15. See `tasks/web_ui_quality_gate.md` |
-| Phase 4 — Audio + full dome link | **In progress** — branch `phase/v0.4.0` active; T00 complete 2026-03-16 |
-| Phase 5 — Community release | Pending Phase 4 |
+| Phase | Description | Status |
+|---|---|---|
+| Architecture & planning | Firmware design and hardware research | Complete |
+| Dome firmware (AstroPixelsPlus fork) | Body-link protocol for the dome controller | Complete |
+| Phase 1 — Drive | Hoverboard drive, RC receiver input, failsafe | Complete — `v0.1.0` |
+| Phase 2 — Web interface | WiFi, web UI, OTA firmware updates | Complete |
+| Phase 3 — Servos + dome motor | Arm servos, dome motor, RC diagnostics and mapping | Software complete — hardware validation partially deferred |
+| **Phase 4 — Audio + dome link** | Sound playback, bidirectional dome communication, web UI improvements | Complete — `v0.4.0`; hardware validation deferred to Phase 5 |
+| Phase 5 — Community release | Documentation, polish, public release | Planned |
 
 ---
 
 ## Current Version
 
-Released: `v0.1.0` — see `CHANGELOG.md` for full release history.
-
-Development firmware on bench controller: version string is dynamically generated
-from git tag + build timestamp (e.g. `v0.2.0-1-g23008b7-20260315-013914`).
-
-**Bench controller hardware:**
-- MCU: `ESP32-D0WD-V3` (revision 3)
-- Crystal: 40 MHz
-- Board: ESP32 D1 Mini
+Latest release: `v0.4.0` — see `CHANGELOG.md` for full history.
+Development builds are versioned from the git history and build timestamp.
 
 ---
 
-## Confirmed Capabilities
+## What Works
 
-### Phase 2 (Web / OTA baseline)
+### Drive and safety
 
-- PlatformIO firmware flashing and LittleFS uploads working on bench setup
-- AP + STA WiFi working; AP fallback clearly logged when STA is configured
-- Home, Setup, WiFi, Firmware, and Serial pages served from LittleFS
-- Core REST API implemented and bench-tested: `GET /api/status`, `/api/config`,
-  `/api/wifi`, `/api/serial`, `/api/health`, `/api/logs`; `POST /api/estop`,
-  `/api/estop/clear`, `/api/drive`, `/api/web-control/enable|disable`,
-  `/api/manual-command`, `/api/mode`, `/api/reboot`, `/upload/firmware`
-- API routes modularized: `api_estop`, `api_drive`, `api_config`, `api_status`,
-  `api_system` — see `docs/api.md`
-- NVS config persistence survives reboot
-- Browser OTA path confirmed through API and web UI
-- Dashboard includes: health indicators, movement status, live log console,
-  manual command input, heap status, WiFi quality
+- Hoverboard drive with speed and steering control from an RC transmitter
+- Configurable speed limit from the web interface
+- Three RC receiver modes: standard PWM, single SBUS, or dual SBUS; in Single SBUS mode,
+  the active receiver (SBUS1 or SBUS2) is selectable from the RC page and persists across reboots
+  without affecting channel mapping
+- Failsafe automatically stops the motors if the RC signal is lost
+- Emergency stop with latching behavior — requires a deliberate clear before drive resumes
 
-### Phase 3 (Servos + dome motor + RC diagnostics)
+### Web interface
 
-- ServoTask and DomeTask running on controller firmware
-- `/api/servo`, `/api/dome`, `/api/rc`, expanded `/api/config` and `/api/status`
-  implemented and bench-tested
-- Setup page: full 15-peripheral toggle set + RC Mapping/Diagnostics surface
-  backed by `GET /api/rc`, SSE `event: rc`, `POST /api/config`
-- `rc_input_mode` (`standard_pwm` / `single_sbus` / `dual_sbus`) in state, NVS,
-  API, Setup UI, and runtime initialization branching
-- Default channel map for `standard_pwm`: CH1 speed, CH2 steer, CH3 dome,
-  CH4 ARM1, CH5 ARM2, CH6 sound trigger stub
-- Servo component type system: `ServoComponentType` (NONE/MG996R/MG90S/RGB)
-  per channel, NVS-backed, auto-defaults on type change
-- AUX1/2/3 open/close calibration NVS-backed
-- Home dashboard: Operation Mode card (Driving ↔ Stationary) and Mood Selector
-  card (Quiet / Mid-Awake / Full-Awake / Awake+)
-- Marcduino manual-command dispatch: `:OP`, `:CL`, `:SE`, `:MVxxdddd` implemented;
-  `$`, `@`, `*`, `%`, `#`, `&`, `!` stubbed with truthful deferred handling
-- Component command logging with scoped origins and source prefixes:
-  `[SERVO] [WEB] Arm1 opened`, `[DOME] [SBUS] Dome command: speed 0.50`
-- 330 native test cases passing: LEDC math, dome math, SBUS flags, SBUS unpacking,
-  Marcduino helpers, servo helpers, PWM helpers, config payloads
-- SBUS diagnostics confirmed live on hardware — dual SBUS receiving, RC page
-  shows live channel values; arm servo confirmed working from SBUS controller
-- RC mapper UX overhauled (Task 3.11): three-panel layout, binding summary table,
-  focused live preview, per-slot editor; software-verified, hardware sign-off pending
+- WiFi configuration: standalone access point or connection to an existing network
+- Home dashboard: drive mode switcher, mood selector, and live status indicators
+- Setup page: configure connected hardware components, RC receiver mode, and channel mapping
+- Drive page: manual drive and dome control from the browser
+- Dome page: direct dome motor control
+- Servo page: arm and accessory servo control
+- Sound page: trigger named sounds, configure track assignments, and set mood chatter rates
+- RC diagnostics: live channel values, binding editor, and per-mode calibration
+- Firmware and web UI updates directly from the browser
+- Runtime log verbosity control without reflashing
+- All settings persist across reboots
 
----
+### Arms and servos
 
-## Open Items (Phase 3 hardware carryover)
+- Up to six servo channels supported: two main arms, three auxiliary outputs, one RGB indicator
+- Open/close calibration per channel, configurable from the web interface
+- Servo type selection (MG996R, MG90S, RGB, or none) per channel
 
-Full deferral record: `tasks/phase3_hardware_validation_deferral.md`
-Tracked as T11 and T12 in `tasks/phase4-tasks.md`.
+### Audio
 
-- SBUS Layer 1 / Layer 2 failsafe — deliberate disconnect/timeout test pending
-- Full hoverboard drive path — hoverboard disconnected during Phase 3
-- Dome ESC response — full wiring harness not connected
-- RC mapping with real transmitter/receiver — standard PWM and dual SBUS physical validation
-- Upload UX verification — firmware/filesystem upload flow confirmation
+- Pluggable audio module support: DY-SV5W (confirmed on hardware) and CHIRP (implemented — hardware validation pending)
+- Plays named sound cues: scream, Leia message, Short Circuit, Cantina, Imperial March, Star Wars theme, and more
+- Sounds triggered from RC transmitter, web interface, or dome serial commands
+- Random ambient chatter with per-mood frequency — each mood preset has its own chatter rate
+- Volume configurable from the Sound page and persisted across reboots
+- Sound module connection state and playback status visible on the Sound page
+
+### Moods and sequences
+
+- 15 mood and sequence presets selectable from the home dashboard or RC transmitter
+- Mood selection triggers body sounds and, when the dome is connected, the corresponding dome lighting sequence
+- Last active mood is restored on reboot
+
+### Dome link
+
+- Bidirectional serial communication with the dome controller over the slip ring
+- Body sends a regular heartbeat to the dome; connection state shown on the dashboard
+- Commands received from the dome (sounds, arm sequences) are dispatched to the body automatically
+- Body-side communication confirmed; full end-to-end requires the dome board connected via slip ring
 
 ---
 
-## Planning Notes
+## Known Limitations
 
-- Hardware validation must explicitly distinguish bench-stage (ESP32 + USB/WiFi only)
-  from full hardware (Artoo PCB + receivers + hoverboard + actuators wired).
-- Network authentication and hardening are intentionally deferred while the droid
-  operates on a closed home LAN.
-- **Phase 4 workflow:** branch `phase/v0.4.0`; commit scope
-  `type(phase:v0.4.0/T<NN>): summary`. Canonical reference:
-  `tasks/dev-workflow-change-spec.md` (Status: Reviewed — Decided).
+- **Dome Control and Dual SBUS cannot be used at the same time:** The dome serial link
+  and the second SBUS receiver input share the same hardware resource on this board.
+  When S3 Dome Control is enabled in Setup, Dual SBUS mode is not available for
+  simultaneous use. Single SBUS and Standard PWM are unaffected.
+
+- **Hoverboard drive requires Standard PWM for RC input:** The hoverboard drive
+  connection and SBUS receiver inputs share hardware resources. When hoverboard drive
+  is connected and active, use Standard PWM mode for RC drive input rather than a SBUS
+  receiver mode. This constraint will be removed in a future update.
+
+- **Sound module status varies by backend:** Modules with bidirectional UART (DY-SV5W, CHIRP) report module state on the Sound page. DY-SV5W status is manually polled to avoid disrupting its RX state machine during playback. CHIRP status updates automatically every 2 seconds and is safe to query at any time.
+---
+
+## Pending Hardware Validation
+
+The following features are implemented and software-verified but require a fully assembled
+droid for final confirmation. They are planned for the Phase 5 hardware validation pass.
+
+- **Drive and failsafe** — hoverboard response, RC failsafe, and speed limit; hoverboard
+  is not currently connected
+- **Dome motor** — RC-driven dome motor response; requires the full wiring harness connected
+- **RC mapping with a physical transmitter** — channel mapping and calibration across all
+  receiver modes; save/restore across reboots
+- **Dome link end-to-end** — requires both the body board and dome board connected over
+  the slip ring
+- **Audio edge cases** — most audio paths confirmed on hardware; S2 enable/disable toggle
+  and boot mood restore require hardware reconnect
+- **Firmware and web UI update flows** — upload progress indication and post-reboot
+  reconnect with the updated version
 
 ---
 
-## Dependency State
+## Roadmap
 
-Last audited: 2026-03-14
-
-| Dependency | Version | Notes |
-|---|---|---|
-| `espressif32` | `6.13.0` | Arduino core 2.0.17 / IDF 5.5.3 / esptool 4.11.0 |
-| `ESP32Async/ESPAsyncWebServer` | `3.6.0` | Canonical namespace (was `me-no-dev/`) |
-| `ESP32Async/AsyncTCP` | `3.3.2` | Canonical namespace (was `me-no-dev/`) |
-| `bblanchon/ArduinoJson` | `7.4.3` | Pinned |
-
-All `lib_deps` explicitly pinned. `ESP32Servo` removed — never imported; servo
-PWM runs through native LEDC channels.
+- **Phase 4 (software complete):** audio system, full dome link, and web UI quality improvements;
+  hardware validation deferred to Phase 5
+- **Phase 5 (next):** hardware validation, final documentation, and initial public release as `v1.0.0`

@@ -95,6 +95,14 @@ See `AGENTS.md` for canonical rules on:
 - Clarification policy (multi-choice, non-blocking)
 - Verification classification (`bench-tested`, `partial`, `full-hardware-required`)
 
+### Planning Docs Visibility Policy
+
+- Public planning docs (commit/push allowed): `docs/goal.md`, `docs/status.md`.
+- `docs/goal.md` and `docs/status.md` must not contain agent/tool/model wording
+    (for example: "agent", "LLM", "model", "Copilot", "Claude").
+- `tasks/**` markdown files are internal local working context and must never be
+    committed or pushed.
+
 ### FreeRTOS Task Model
 
 | Core | Tasks | Purpose |
@@ -191,11 +199,16 @@ When generating failsafe-related code, always check against the 5-layer model:
 - **No unnecessary dependencies** — check approved list in `platformio.ini` first.
 - **No ADC2 reads when WiFi is active** — use ADC1 (GPIO 32–39) only.
 - **No `ArduinoOTA.handle()` on Core 1** — OTA runs on Core 0.
+- **USB flash when unseated** — `pio run -e protoArtoo --target upload --upload-port /dev/ttyUSB0`;
+    DTR/RTS auto-reset works reliably — no BOOT button press required. The `protoArtoo` env
+    uses `board_upload.before_reset = default_reset`.
 - **Seated-PCB USB upload fails** — GPIO 15 (`PIN_SBUS1_RX`) is a strapping pin;
-    when the ESP32 is seated in the Artoo Controller PCB with a SBUS receiver attached,
-    the receiver can prevent the bootloader from entering download mode — USB upload
-    silently fails or times out. Unseat the ESP32 → USB flash → reseat.
+    when seated in the Artoo Controller PCB the SBUS receiver prevents bootloader entry —
+    USB upload fails. Unseat → flash → reseat, or use OTA.
     Full write-up: `tasks/lessons.md`, `docs/pin_map.md`.
+- **esptool flag placement** — use `board_upload.before_reset = <value>` in platformio.ini,
+    never `upload_flags = --before <value>`. PlatformIO appends `upload_flags` after the
+    `write_flash` subcommand where `--before` is ignored by esptool 4.x.
 - **OTA standard paths:** `pio run -e protoArtoo_ota --target upload` (firmware) and
     `pio run -e protoArtoo_ota --target uploadfs` (filesystem). Default IP: `10.0.0.22`
     (STA client IP — do **not** use the AP IP `192.168.4.1`). Web UI OTA also available

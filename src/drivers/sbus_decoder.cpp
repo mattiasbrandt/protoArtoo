@@ -7,6 +7,7 @@ SbusDecoder::SbusDecoder()
     memset(_frameBuffer, 0, sizeof(_frameBuffer));
 }
 
+// WARNING: UART1 conflict with DriveTask — see include/sbus_decoder.h begin() declaration.
 bool SbusDecoder::begin(HardwareSerial* uart, int rxPin) {
     if (uart == nullptr) {
         return false;
@@ -19,6 +20,16 @@ bool SbusDecoder::begin(HardwareSerial* uart, int rxPin) {
 
     _resetFrame();
     return true;
+}
+
+void SbusDecoder::end() {
+    if (_uart != nullptr) {
+        _uart->end();
+        _uart = nullptr;
+    }
+    _newData = false;
+    _lastFrameMs = 0;
+    _resetFrame();
 }
 
 bool SbusDecoder::read() {

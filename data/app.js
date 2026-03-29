@@ -1,34 +1,54 @@
 // =============================================================================
 // app.js
 //
-// Home dashboard controller — system health indicators, component status grid,
-// and live log console. Polls /api/status every 2 seconds.
-// Drive controls and dome controls live in drive.js and dome.js respectively.
+// Home dashboard controller.
+// - Uses shared status stream (SSE-first, polling fallback)
+// - Provides truthful mode/mood command UX with rollback on failure
+// - Renders system health, component status, live logs, and quick audio controls
 // =============================================================================
 (() => {
   const healthSummary = document.getElementById("health-summary");
   const logConsole = document.getElementById("log-console");
+  const logPaused = document.getElementById("log-paused");
   const componentStatusCard = document.getElementById("component-status-card");
   const componentStatusGrid = document.getElementById("component-status-grid");
 
-  // Per-component labels: [stateKey, emoji, humanLabel]
+  const opmodeDrive = document.getElementById("opmode-drive");
+  const opmodeStationary = document.getElementById("opmode-stationary");
+  const opmodeFeedback = document.getElementById("opmode-feedback");
+
+  const moodDomeNote = document.getElementById("mood-dome-note");
+  const moodFeedback = document.getElementById("mood-feedback");
+
+  const audioFeedback = document.getElementById("audio-feedback");
+
+  let lastStatus = null;
+  let modePending = false;
+  let moodPending = false;
+
   const COMPONENT_LABELS = [
-    ["arm1",         "🦾", "Left Arm"],
-    ["arm2",         "🦾", "Right Arm"],
-    ["aux1",         "🦾", "Aux Servo 1"],
-    ["aux2",         "🦾", "Aux Servo 2"],
-    ["aux3",         "🦾", "Aux Servo 3"],
-    ["dome",         "🔄", "Dome Motor"],
-    ["rcCh1",        "🕹️", "RC Channel 1"],
-    ["rcCh2",        "🕹️", "RC Channel 2"],
-    ["rcCh3",        "🕹️", "RC Channel 3"],
-    ["rcCh4",        "🕹️", "RC Channel 4"],
-    ["rcCh5",        "🕹️", "RC Channel 5"],
-    ["rcCh6",        "🕹️", "RC Channel 6"],
+    ["arm1", "🦾", "Left Arm"],
+    ["arm2", "🦾", "Right Arm"],
+    ["aux1", "🦾", "Aux Servo 1"],
+    ["aux2", "🦾", "Aux Servo 2"],
+    ["aux3", "🦾", "Aux Servo 3"],
+    ["dome", "🔄", "Dome Motor"],
+    ["rcCh1", "🕹️", "RC Channel 1"],
+    ["rcCh2", "🕹️", "RC Channel 2"],
+    ["rcCh3", "🕹️", "RC Channel 3"],
+    ["rcCh4", "🕹️", "RC Channel 4"],
+    ["rcCh5", "🕹️", "RC Channel 5"],
+    ["rcCh6", "🕹️", "RC Channel 6"],
     ["s1Hoverboard", "🔌", "Hoverboard Drive"],
-    ["s2Sound",      "🔊", "Sound Module"],
-    ["s3DomeCtrl",   "🔌", "Dome Controller"],
+    ["s2Sound", "🔊", "Sound Module"],
+    ["s3DomeCtrl", "🔌", "Dome Controller"],
   ];
+
+  const showFeedback = (el, message, level = "") => {
+    if (!el) return;
+    el.textContent = message;
+    el.className = level ? `feedback ${level}` : "feedback";
+  };
 
   const setIndicator = (id, state) => {
     const el = document.getElementById(id);
@@ -37,36 +57,70 @@
   };
 
   const renderHealth = (payload) => {
-    setIndicator("h-sbus",  payload.sbusSignalLost || payload.sbusHwFailsafe ? "fail" : "ok");
-    setIndicator("h-wifi",  (payload.wifiConnected || payload.wifiClientConnected) ? "ok" : "warn");
-    setIndicator("h-fs",    payload.littleFsReady ? "ok" : "fail");
-    setIndicator("h-heap",  payload.heapFree > 120000 ? "ok" : payload.heapFree > 80000 ? "warn" : "fail");
+    const anyRcEnabled = !!(
+      payload.rcCh1 || payload.rcCh2 || payload.rcCh3 ||
+      payload.rcCh4 || payload.rcCh5 || payload.rcCh6
+    );
+    if (!anyRcEnabled) {
+      setIndicator("h-sbus", "off");
+    } else {
+      setIndicator("h-sbus", payload.sbusSignalLost || payload.sbusHwFailsafe ? "fail" : "ok");
+    }
+
+    setIndicator("h-wifi", (payload.wifiConnected || payload.wifiClientConnected) ? "ok" : "warn");
+    setIndicator("h-fs", payload.littleFsReady ? "ok" : "fail");
+    setIndicator("h-heap", payload.heapFree > 120000 ? "ok" : payload.heapFree > 80000 ? "warn" : "fail");
+
+    if (payload.dome_link) {
+      const s = payload.dome_link.state;
+      setIndicator(
+        "h-dome-link",
+        s === "connected" ? "ok" :
+        s === "lost" ? "fail" :
+        s === "not_seen" ? "warn" : "off"
+      );
+    } else {
+      setIndicator("h-dome-link", "off");
+    }
+
+    setIndicator("h-audio", payload.s2Sound && typeof payload.s2Sound === "object" ? "ok" : "off");
 
     if (!healthSummary) return;
 
     const heapFreeKb = Math.round(payload.heapFree / 1024);
-    const heapMinKb  = Math.round(payload.heapMin  / 1024);
 
-    let heapLabel = "✅ Healthy"; let heapColor = "var(--success)";
-    if (heapFreeKb < 80)  { heapLabel = "❌ Critical"; heapColor = "var(--danger)"; }
-    else if (heapFreeKb < 120) { heapLabel = "⚠️ Low"; heapColor = "var(--warning)"; }
+    let heapLabel = "✅ Healthy";
+    let heapColor = "var(--success)";
+    if (heapFreeKb < 80) {
+      heapLabel = "❌ Critical";
+      heapColor = "var(--danger)";
+    } else if (heapFreeKb < 120) {
+      heapLabel = "⚠️ Low";
+      heapColor = "var(--warning)";
+    }
 
-    let heapMinLabel = "✅ Good"; let heapMinColor = "var(--success)";
-    if (heapMinKb < 64)  { heapMinLabel = "❌ Critical"; heapMinColor = "var(--danger)"; }
-    else if (heapMinKb < 96) { heapMinLabel = "⚠️ Watch"; heapMinColor = "var(--warning)"; }
-
-    let wifiQuality = "❌ Unknown"; let wifiColor = "var(--danger)";
+    let wifiQuality = "❌ Unknown";
+    let wifiColor = "var(--danger)";
     if ((payload.wifiConnected || payload.wifiClientConnected) && payload.wifiRssi !== 0) {
-      if      (payload.wifiRssi >= -67) { wifiQuality = `✅ Excellent (${payload.wifiRssi} dBm)`; wifiColor = "var(--success)"; }
-      else if (payload.wifiRssi >= -75) { wifiQuality = `✅ Good (${payload.wifiRssi} dBm)`;      wifiColor = "var(--success)"; }
-      else if (payload.wifiRssi >= -85) { wifiQuality = `⚠️ Fair (${payload.wifiRssi} dBm)`;  wifiColor = "var(--warning)"; }
-      else                              { wifiQuality = `❌ Poor (${payload.wifiRssi} dBm)`;       wifiColor = "var(--danger)"; }
+      if (payload.wifiRssi >= -67) {
+        wifiQuality = `✅ Excellent (${payload.wifiRssi} dBm)`;
+        wifiColor = "var(--success)";
+      } else if (payload.wifiRssi >= -75) {
+        wifiQuality = `✅ Good (${payload.wifiRssi} dBm)`;
+        wifiColor = "var(--success)";
+      } else if (payload.wifiRssi >= -85) {
+        wifiQuality = `⚠️ Fair (${payload.wifiRssi} dBm)`;
+        wifiColor = "var(--warning)";
+      } else {
+        wifiQuality = `❌ Poor (${payload.wifiRssi} dBm)`;
+        wifiColor = "var(--danger)";
+      }
     }
 
     healthSummary.innerHTML =
       `Memory: <span style="color:${heapColor};font-weight:700">${heapFreeKb} KB ${heapLabel}</span><br>` +
-      `Memory Min: <span style="color:${heapMinColor};font-weight:700">${heapMinKb} KB ${heapMinLabel}</span><br>` +
-      `WiFi: <span style="color:${wifiColor};font-weight:700">${wifiQuality}</span>`;
+      `WiFi: <span style="color:${wifiColor};font-weight:700">${wifiQuality}</span><br>` +
+      `<span class="desc">Detailed memory headroom telemetry is available on Setup → Diagnostics.</span>`;
   };
 
   const renderComponentStatus = (payload) => {
@@ -82,10 +136,10 @@
     componentStatusCard.classList.remove("hidden");
     componentStatusGrid.innerHTML = active.map(([key, icon, label]) => {
       const entry = payload[key];
-      let state  = entry ? "enabled" : "disabled";
-      let detail = entry ? "✅ Enabled"  : "⏸️ Disabled";
+      let state = entry ? "enabled" : "disabled";
+      let detail = entry ? "✅ Enabled" : "⏸️ Disabled";
       if (entry && typeof entry === "object") {
-        state  = entry.state  || "enabled";
+        state = entry.state || "enabled";
         detail = entry.detail || "✅ Enabled";
       }
       return `
@@ -97,119 +151,195 @@
     }).join("");
   };
 
-  const poll = async () => {
-    try {
-      const response = await fetch("/api/status", { cache: "no-store" });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const payload = await response.json();
-      renderHealth(payload);
-      renderComponentStatus(payload);
-      renderOpMode(payload);
-      renderMoodDomeNote(payload);
-    } catch (_error) {}
+  const renderOpMode = (payload) => {
+    if (!opmodeDrive || !opmodeStationary) return;
+    const isStationary = !!payload.stationary;
+    opmodeDrive.classList.toggle("active", !isStationary);
+    opmodeStationary.classList.toggle("active", isStationary);
+    opmodeDrive.setAttribute("aria-pressed", (!isStationary).toString());
+    opmodeStationary.setAttribute("aria-pressed", isStationary.toString());
   };
 
-  poll();
-  window.setInterval(poll, 2000);
+  const renderActiveMood = (payload) => {
+    const activeMood = payload.activeMood || 0;
+    document.querySelectorAll(".mood-btn").forEach((btn) => {
+      const match = btn.dataset.cmd?.match(/:SE(\d+)/);
+      const btnMood = match ? Number.parseInt(match[1], 10) : 0;
+      const isActive = btnMood !== 0 && btnMood === activeMood;
+      btn.classList.toggle("active", isActive);
+      btn.setAttribute("aria-pressed", isActive.toString());
+    });
+  };
 
-  // ---- Live Log Console (SSE push) ----
-  // Backfill and live lines arrive via event:log on /api/events.
-  // GET /api/logs is preserved for curl/diagnostics but not used by this page.
-  const logPaused = document.getElementById("log-paused");
+  const renderMoodDomeNote = (payload) => {
+    if (!moodDomeNote) return;
+    const domeConnected = payload?.dome_link?.state === "connected";
+    moodDomeNote.classList.toggle("visible", !domeConnected);
+  };
 
-  function appendLogLine(text) {
+  const applyStatus = (payload) => {
+    lastStatus = payload;
+    renderHealth(payload);
+    renderComponentStatus(payload);
+    renderOpMode(payload);
+    renderMoodDomeNote(payload);
+    renderActiveMood(payload);
+  };
+
+  const refreshStatusOnce = async () => {
+    if (!window.PAApi) return;
+    const result = await window.PAApi.get("/api/status", { cache: "no-store", timeoutMs: 3000 });
+    applyStatus(result.data);
+  };
+
+  const setModePending = (pending) => {
+    modePending = pending;
+    if (opmodeDrive) opmodeDrive.disabled = pending;
+    if (opmodeStationary) opmodeStationary.disabled = pending;
+    document.querySelectorAll(".opmode-btn").forEach((btn) => {
+      btn.classList.toggle("is-pending", pending);
+      btn.setAttribute("aria-disabled", pending ? "true" : "false");
+    });
+  };
+
+  const setMoodPending = (pending) => {
+    moodPending = pending;
+    document.querySelectorAll(".mood-btn").forEach((btn) => {
+      btn.disabled = pending;
+      btn.classList.toggle("is-pending", pending);
+      btn.setAttribute("aria-disabled", pending ? "true" : "false");
+    });
+  };
+
+  const setMode = async (mode) => {
+    if (!window.PAApi || modePending) return;
+    setModePending(true);
+    showFeedback(opmodeFeedback, `Setting mode to ${mode}...`);
+
+    try {
+      await window.PAApi.postForm("/api/mode", { mode }, { timeoutMs: 3000 });
+      await refreshStatusOnce();
+      showFeedback(opmodeFeedback, "Mode updated", "success");
+    } catch (error) {
+      if (lastStatus) renderOpMode(lastStatus);
+      showFeedback(opmodeFeedback, `Mode update failed: ${window.PAApi.messageFor(error)}`, "error");
+    } finally {
+      setModePending(false);
+    }
+  };
+
+  const setMood = async (moodId) => {
+    if (!window.PAApi || moodPending) return;
+    setMoodPending(true);
+    showFeedback(moodFeedback, `Applying mood SE${moodId}...`);
+
+    try {
+      await window.PAApi.postForm("/api/mood", { mood: String(moodId) }, { timeoutMs: 3000 });
+      await refreshStatusOnce();
+      showFeedback(moodFeedback, "Mood updated", "success");
+    } catch (error) {
+      if (lastStatus) renderActiveMood(lastStatus);
+      showFeedback(moodFeedback, `Mood update failed: ${window.PAApi.messageFor(error)}`, "error");
+    } finally {
+      setMoodPending(false);
+    }
+  };
+
+  const appendLogLine = (text) => {
     if (!logConsole) return;
-    // Trim oldest lines when buffer exceeds 250 to keep the DOM light.
+
     const raw = logConsole.textContent;
     if (raw.length > 0 && raw !== "Waiting for logs…") {
       const lines = raw.split("\n");
       if (lines.length > 250) {
-        logConsole.textContent = lines.slice(lines.length - 200).join("\n") + "\n";
+        logConsole.textContent = `${lines.slice(lines.length - 200).join("\n")}\n`;
       }
     } else {
       logConsole.textContent = "";
     }
-    logConsole.textContent += text + "\n";
-    // Auto-scroll unless the user has scrolled up.
+
+    logConsole.textContent += `${text}\n`;
+
     const threshold = 50;
     const atBottom =
       logConsole.scrollTop + logConsole.clientHeight >= logConsole.scrollHeight - threshold;
     if (atBottom) {
       logConsole.scrollTop = logConsole.scrollHeight;
-      if (logPaused) logPaused.classList.remove("visible");
+      logPaused?.classList.remove("visible");
     } else {
-      if (logPaused) logPaused.classList.add("visible");
+      logPaused?.classList.add("visible");
     }
-  }
+  };
 
-  // Resume auto-scroll when the user scrolls back to the bottom.
   logConsole?.addEventListener("scroll", () => {
     const threshold = 50;
     const atBottom =
       logConsole.scrollTop + logConsole.clientHeight >= logConsole.scrollHeight - threshold;
-    if (atBottom && logPaused) logPaused.classList.remove("visible");
+    if (atBottom) logPaused?.classList.remove("visible");
   });
 
-  if (typeof EventSource !== "undefined" && logConsole) {
-    const logSource = new EventSource("/api/events");
-    logSource.addEventListener("log", (e) => appendLogLine(e.data));
-  }
-
-  // ---- Operation Mode ----
-  const opmodeDrive      = document.getElementById("opmode-drive");
-  const opmodeStationary = document.getElementById("opmode-stationary");
-
-  function renderOpMode(payload) {
-    if (!opmodeDrive || !opmodeStationary) return;
-    const isStationary = !!payload.stationary;
-    opmodeDrive.classList.toggle("active", !isStationary);
-    opmodeStationary.classList.toggle("active", isStationary);
-  }
-
-  const sendManualCommand = async (cmd) => {
-    const body = new URLSearchParams();
-    body.set("command", cmd);
+  const postAudio = async (params) => {
+    if (!window.PAApi) return;
     try {
-      await fetch("/api/manual-command", { method: "POST", body });
-    } catch (_e) {}
+      const result = await window.PAApi.postForm("/api/audio", params, { timeoutMs: 3000 });
+      const payload = result.data;
+      const ok = payload && typeof payload === "object" ? !!payload.ok : true;
+      const msg = ok ? "Done" : (payload?.error || "Audio command failed");
+      showFeedback(audioFeedback, msg, ok ? "success" : "error");
+      if (ok) {
+        window.setTimeout(() => {
+          if (audioFeedback) audioFeedback.textContent = "";
+        }, 2000);
+      }
+    } catch (error) {
+      showFeedback(audioFeedback, window.PAApi.messageFor(error), "error");
+    }
   };
 
-  const setMode = async (mode) => {
-    const body = new URLSearchParams();
-    body.set("mode", mode);
-    try {
-      await fetch("/api/mode", { method: "POST", body });
-    } catch (_e) {}
-  };
-
-  opmodeDrive?.addEventListener("click", () => {
-    opmodeDrive.classList.add("active");
-    opmodeStationary.classList.remove("active");
-    setMode("driving");
-  });
-  opmodeStationary?.addEventListener("click", () => {
-    opmodeStationary.classList.add("active");
-    opmodeDrive.classList.remove("active");
-    setMode("stationary");
-  });
-
-  // ---- Mood Selector ----
-  const moodDomeNote = document.getElementById("mood-dome-note");
-
-  function renderMoodDomeNote(payload) {
-    if (!moodDomeNote) return;
-    const domeConnected = !!payload.domeConnected;
-    moodDomeNote.classList.toggle("visible", !domeConnected);
-  }
+  opmodeDrive?.addEventListener("click", () => setMode("driving"));
+  opmodeStationary?.addEventListener("click", () => setMode("stationary"));
 
   document.querySelectorAll(".mood-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
-      const cmd = btn.dataset.cmd;
-      if (!cmd) return;
-      // Optimistic active state — mark clicked button active
-      document.querySelectorAll(".mood-btn").forEach(b => b.classList.remove("active"));
-      btn.classList.add("active");
-      sendManualCommand(cmd);
+      const match = btn.dataset.cmd?.match(/:SE(\d+)/);
+      if (!match) return;
+      setMood(match[1]);
     });
   });
+
+  document.getElementById("audio-stop")?.addEventListener("click", () => postAudio({ action: "stop" }));
+  document.getElementById("audio-vol-up")?.addEventListener("click", () => postAudio({ action: "dollar", cmd: "$+" }));
+  document.getElementById("audio-vol-dn")?.addEventListener("click", () => postAudio({ action: "dollar", cmd: "$-" }));
+
+  if (window.PAStatusStream?.isSupported()) {
+    window.PAStatusStream.subscribe((eventType, payload) => {
+      if (eventType === "status") applyStatus(payload);
+      if (eventType === "log") appendLogLine(payload);
+    });
+
+    if (!window.PAStatusStream.getLastStatus()) {
+      refreshStatusOnce().catch(() => {
+        // Fallback polling below handles temporary fetch failures.
+      });
+    }
+  } else {
+    const refreshFromFallback = () => {
+      refreshStatusOnce().catch(() => {
+        // No-op: operator sees stale values; next cycle retries.
+      });
+    };
+
+    refreshFromFallback();
+
+    window.setInterval(() => {
+      if (document.visibilityState === "hidden") return;
+      refreshFromFallback();
+    }, 3000);
+
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState !== "hidden") {
+        refreshFromFallback();
+      }
+    });
+  }
 })();

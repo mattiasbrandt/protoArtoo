@@ -119,7 +119,7 @@ cd protoArtoo
 
 # Copy and edit credentials (never commit this file)
 cp src/secrets.h.example src/secrets.h
-# Edit src/secrets.h with your WiFi SSID/password if using STA mode
+# Edit src/secrets.h with your WiFi SSID/password for WiFi client mode
 
 # Build (no hardware required)
 pio run -e protoArtoo
@@ -227,7 +227,7 @@ RGB LED strip, or disabled. Type selection auto-applies safe calibration default
 
 **Universal Browser Control**
 - Works on any phone/tablet/laptop — no app installation required
-- WiFi AP mode for field use + STA mode for home network
+- Build-time WiFi mode: hotspot for field use, or WiFi client for home network
 - Real-time dashboard with live logs, health indicators, and manual command interface
 
 **Hardware Flexibility**
@@ -339,7 +339,7 @@ If you are building a droid and considering the Artoo Controller PCB:
 |-----------|---------|
 | `Preferences` | NVS (Non-Volatile Storage) for configuration persistence |
 | `LittleFS` | Flash filesystem for web UI assets |
-| `WiFi` | WiFi AP + STA mode support |
+| `WiFi` | WiFi support — hotspot or client mode (build-time choice, never both) |
 | `LEDC` | PWM generation for servos and ESC |
 | `RMT` | Remote Control peripheral for SBUS decoding (no hardware UART consumed) |
 | `FreeRTOS` | Task scheduling with core isolation (Core 0: network/web, Core 1: real-time control) |

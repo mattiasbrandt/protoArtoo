@@ -24,15 +24,21 @@ assumption briefly.
 
 ## Source of Truth Files
 
-- Planning baseline: `docs/status.md`, `tasks/phase0-tasks.md`,
-  `tasks/phase1-tasks.md`, `tasks/phase2-tasks.md`, `tasks/phase3-tasks.md`,
-  `tasks/phase4-tasks.md`, `tasks/phase5-tasks.md`, `docs/goal.md`
+- Public planning baseline (commit/push allowed): `docs/status.md`, `docs/goal.md`
+- Internal planning/agent working docs (local only, never commit/push): `tasks/**`
 - Phase 3 RC diagnostics/mapping contract: `tasks/rc_diagnostics_contract.md`
 - Hardware truth: `docs/pin_map.md`, `include/config.h`
 - Shared state truth: `include/robot_state.h`
 
-Do not treat `.sisyphus/plans/` as authoritative when equivalent task docs exist
-in `tasks/`.
+Do not treat `.sisyphus/plans/` as authoritative when equivalent local task docs
+exist in `tasks/`.
+
+Documentation publication rule:
+- Only `docs/goal.md` and `docs/status.md` are public planning docs.
+- `docs/goal.md` and `docs/status.md` must not contain agent/tool/model wording
+  (for example: "agent", "LLM", "model", "Copilot", "Claude").
+- Any `tasks/*.md` file is internal operator/agent working context and must remain
+  untracked in git.
 
 ## Safety Invariants (Never Violate)
 
@@ -95,10 +101,17 @@ Clarification policy:
 
 ## Flashing and Monitoring
 
-### USB flash (ESP32 must be unseated from Artoo PCB)
+### USB flash (ESP32 unseated — auto-reset works, no button needed)
 ```bash
 pio run -e protoArtoo --target upload --upload-port /dev/ttyUSB0
 ```
+- DTR/RTS auto-reset works reliably when the ESP32 is unseated — no BOOT button press
+  required. The `protoArtoo` env uses `board_upload.before_reset = default_reset`.
+- **esptool flag placement:** Always use `board_upload.before_reset = <value>` in
+  platformio.ini, never `upload_flags = --before <value>`. PlatformIO appends
+  `upload_flags` after the `write_flash` subcommand; `--before` there is ignored
+  by esptool 4.x. Full write-up in `tasks/lessons.md`.
+
 > ⚠️ **Seated-PCB USB upload fails.** GPIO 15 (`PIN_SBUS1_RX`) is a strapping pin.
 > When the ESP32 is seated in the Artoo Controller PCB with a SBUS receiver attached,
 > the receiver can prevent the bootloader from entering download mode — USB upload
@@ -126,6 +139,17 @@ Before marking complete (as applicable):
 2. `pio test -e native`
 3. `pio check`
 4. Hardware checks for hardware-touching behavior
+
+**Upload gate:** `pio test -e native` MUST pass and all tests must be green before
+issuing any `upload` or `uploadfs` command. A compile-only build does not qualify
+as a pre-upload verification step.
+
+**JSON response test rule:** Any function that builds a JSON API response — whether
+via `snprintf` into a fixed buffer or via `JsonDocument` — MUST have a corresponding
+native test covering the typical case and confirming the serialized output fits within
+its intended size budget.
+
+**Static analysis suppression rule:** Any `pio check` suppression or analysis-only build flag (for example in `platformio.ini`) MUST include an adjacent inline comment that explains why it is needed and how its scope is constrained. Prefer file-targeted suppressions over global suppressions.
 
 Always classify verification status explicitly:
 

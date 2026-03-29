@@ -4,11 +4,30 @@
   let configCache = null;
   let mappingDraft = {};
 
+  // ── Learning mode state ───────────────────────────────────────────────────
+  let learnActive = false;
+  let learnBaseline = null;    // raw snapshot taken when detect mode was entered
+  let learnHit = null;         // { source:"sbus1"|"sbus2"|"pwm", channel:1-based, raw:value }
+  let learnStartMs = 0;
+  const LEARN_TIMEOUT_MS = 30000;
+  // SBUS raw threshold: 300 units from baseline (~18% of 1639 full range).
+  // Buttons snap 820+ units from center; this filters mild stick drift.
+  const LEARN_SBUS_THRESHOLD = 300;
+  // PWM threshold: 200 µs from baseline.
+  // Buttons go 500+ µs from center (1500); filters cable noise (~10 µs).
+  const LEARN_PWM_THRESHOLD = 200;
+  // ─────────────────────────────────────────────────────────────────────────
+
   const rcModeCards = document.querySelectorAll(".rc-mode-card");
   const rcInputModeHidden = document.getElementById("rc-input-mode");
   const rcModeFeedback = document.getElementById("rc-mode-feedback");
   const rcResetDefaults = document.getElementById("rc-reset-defaults");
+  const rcDisabledCard = document.getElementById("rc-disabled-card");
 
+  const singleSbusRecvSection = document.getElementById("single-sbus-recv-section");
+  const sbusRecvSel = document.getElementById("sbus-recv-sel");
+  const sbusRecvFeedback = document.getElementById("sbus-recv-feedback");
+  let sbusRecvFeedbackTimer = null;
   const rcSummaryBody = document.getElementById("rc-summary-body");
 
   const rcSlotItems = document.getElementById("rc-slot-items");
@@ -18,6 +37,14 @@
   const rcEditorApply = document.getElementById("rc-editor-apply");
   const rcEditorRevert = document.getElementById("rc-editor-revert");
   const rcEditorFeedback = document.getElementById("rc-editor-feedback");
+  const rcEditorDirty = document.getElementById("rc-editor-dirty");
+  const rcEditorSavedAt = document.getElementById("rc-editor-saved-at");
+
+  const rcLearnBtn    = document.getElementById("rc-learn-btn");
+  const rcLearnBanner = document.getElementById("rc-learn-banner");
+  const rcLearnStatus = document.getElementById("rc-learn-status");
+  const rcLearnStop   = document.getElementById("rc-learn-stop");
+  let rcInputsEnabled = true;
 
   const SUPPORTED_SLOTS = [
     "driveSpeed", "driveSteer", "driveLimit", "domeSpeed",
@@ -44,7 +71,7 @@
     { token: 'aux2_toggle',  label: 'AUX2 Toggle',                   group: 'Arms' },
     { token: 'aux3_toggle',  label: 'AUX3 Toggle',                   group: 'Arms' },
     { token: 'seq',          label: 'Body Sequence',                  group: 'Sequences' },
-    { token: 'dome_seq',     label: 'Dome Sequence (Phase 4)',       group: 'Sequences', disabled: true },
+    { token: 'dome_seq',     label: 'Dome Sequence (Unavailable)', group: 'Sequences', disabled: true },
     { token: 'cmd',          label: 'Marcduino Command',              group: 'Command' },
     { token: 'estop',        label: 'E-Stop Latch',                   group: 'Safety' },
   ];
@@ -121,6 +148,113 @@
     ],
   };
 
+  const RC_BINDING_PATHS = {
+    rcPwmDriveSpeed: ["rc", "pwm", "driveSpeed"],
+    rcPwmDriveSteer: ["rc", "pwm", "driveSteer"],
+    rcPwmDriveLimit: ["rc", "pwm", "driveLimit"],
+    rcPwmDomeSpeed: ["rc", "pwm", "domeSpeed"],
+    rcPwmArm1: ["rc", "pwm", "arm1"],
+    rcPwmArm2: ["rc", "pwm", "arm2"],
+    rcPwmSound: ["rc", "pwm", "sound"],
+    rcSbusDriveSpeed: ["rc", "sbus", "driveSpeed"],
+    rcSbusDriveSteer: ["rc", "sbus", "driveSteer"],
+    rcSbusDriveLimit: ["rc", "sbus", "driveLimit"],
+    rcSbusDomeSpeed: ["rc", "sbus", "domeSpeed"],
+    rcSbusArm1: ["rc", "sbus", "arm1"],
+    rcSbusArm2: ["rc", "sbus", "arm2"],
+    rcSbusSound: ["rc", "sbus", "sound"],
+    rcArm1: ["rc", "triggers", "arm1"],
+    rcArm2: ["rc", "triggers", "arm2"],
+    rcAux1: ["rc", "triggers", "aux1"],
+    rcAux2: ["rc", "triggers", "aux2"],
+    rcAux3: ["rc", "triggers", "aux3"],
+    rcSound: ["rc", "triggers", "sound"],
+    rcOpMode: ["rc", "triggers", "opMode"],
+    rcFree0: ["rc", "triggers", "free0"],
+    rcFree1: ["rc", "triggers", "free1"],
+    rcFree2: ["rc", "triggers", "free2"],
+    rcFree3: ["rc", "triggers", "free3"],
+  };
+
+  const readPath = (obj, path) => {
+    let cur = obj;
+    for (let i = 0; i < path.length; i += 1) {
+      if (cur == null || typeof cur !== "object") return undefined;
+      cur = cur[path[i]];
+    }
+    return cur;
+  };
+
+  const getConfigBindingString = (cfg, field) => {
+    const path = RC_BINDING_PATHS[field];
+    if (!path) return "";
+    const value = readPath(cfg, path);
+    return typeof value === "string" ? value : "";
+  };
+
+  const getRcModeFromConfig = (cfg) => {
+    const mode = cfg?.rc?.inputMode;
+    return typeof mode === "string" ? mode : "standard_pwm";
+  };
+
+  const rcComponentsEnabled = (cfg) => {
+    const c = cfg?.components || {};
+    return Boolean(
+      c.rcCh1?.enabled || c.rcCh2?.enabled || c.rcCh3?.enabled ||
+      c.rcCh4?.enabled || c.rcCh5?.enabled || c.rcCh6?.enabled
+    );
+  };
+
+  const getSingleSbusRecvCh2 = (cfg) => cfg?.rc?.sbus?.recvCh2 === true;
+
+  const setSingleSbusRecvSelect = (recvCh2) => {
+    if (!sbusRecvSel) return;
+    sbusRecvSel.value = recvCh2 ? "true" : "false";
+  };
+
+  const updateRecvSel = (mode) => {
+    if (!singleSbusRecvSection) return;
+    const visible = mode === "single_sbus";
+    singleSbusRecvSection.classList.toggle("hidden", !visible);
+    singleSbusRecvSection.setAttribute("aria-hidden", visible ? "false" : "true");
+  };
+
+  const setSbusRecvFeedback = (message, variant = "", clearAfterMs = 0) => {
+    if (!sbusRecvFeedback) return;
+    if (sbusRecvFeedbackTimer) {
+      window.clearTimeout(sbusRecvFeedbackTimer);
+      sbusRecvFeedbackTimer = null;
+    }
+    sbusRecvFeedback.textContent = message;
+    sbusRecvFeedback.className = variant ? `feedback mt-8 ${variant}` : "feedback mt-8";
+    if (clearAfterMs > 0) {
+      sbusRecvFeedbackTimer = window.setTimeout(() => {
+        sbusRecvFeedback.textContent = "";
+        sbusRecvFeedback.className = "feedback mt-8";
+        sbusRecvFeedbackTimer = null;
+      }, clearAfterMs);
+    }
+  };
+
+
+  const setRcInputsEnabled = (enabled) => {
+    rcInputsEnabled = enabled;
+    rcDisabledCard?.classList.toggle("hidden", enabled);
+
+    if (rcLearnBtn) {
+      rcLearnBtn.disabled = !enabled;
+      rcLearnBtn.setAttribute("aria-disabled", enabled ? "false" : "true");
+      if (!enabled) rcLearnBtn.textContent = "🔍 Detect channel";
+    }
+    if (rcLearnStop) {
+      rcLearnStop.disabled = !enabled;
+      rcLearnStop.setAttribute("aria-disabled", enabled ? "false" : "true");
+    }
+
+    if (!enabled && learnActive) {
+      exitLearnMode();
+    }
+  };
   const escapeHtml = (value) => String(value)
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -203,7 +337,7 @@
   const cloneModeDraft = (mode) => {
     const draft = {};
     (RC_ACTIONS[mode] || []).forEach(({ key, field }) => {
-      draft[key] = parseBindingString(configCache?.[field]);
+      draft[key] = parseBindingString(getConfigBindingString(configCache, field));
     });
     return draft;
   };
@@ -252,6 +386,37 @@
     return "Disabled";
   };
 
+  const slotLabelForKey = (slotKey) => {
+    const found = getActionsForMode().find((action) => action.key === slotKey);
+    return found ? found.label : slotKey;
+  };
+
+  const setEditorDirtyState = (state, text) => {
+    if (!rcEditorDirty) return;
+    rcEditorDirty.dataset.state = state;
+    rcEditorDirty.textContent = text;
+  };
+
+  const setEditorSavedTimestamp = (stamp) => {
+    if (!rcEditorSavedAt) return;
+    rcEditorSavedAt.textContent = stamp ? `Last saved: ${stamp}` : "Last saved: —";
+  };
+
+  const markEditorDirty = () => {
+    if (rcEditorApply) rcEditorApply.disabled = false;
+    if (rcEditorRevert) rcEditorRevert.disabled = false;
+    setEditorDirtyState("dirty", "Unsaved changes");
+  };
+
+  const markEditorClean = (savedStamp = null) => {
+    if (rcEditorApply) rcEditorApply.disabled = true;
+    if (rcEditorRevert) rcEditorRevert.disabled = true;
+    setEditorDirtyState("clean", "Saved");
+    if (savedStamp !== null) {
+      setEditorSavedTimestamp(savedStamp);
+    }
+  };
+
   const bindingForSlot = (slotKey) => {
     const mode = getEditorMode();
     if (!mappingDraft[mode]) {
@@ -272,7 +437,7 @@
   const miniBarHtml = (mapped) => {
     const normalized = Math.max(0, Math.min(1, (Number(mapped) + 1) / 2));
     const pct = Math.round(normalized * 100);
-    return `<div class="rc-mini-bar" style="height:8px;background:rgba(255,255,255,.12);border-radius:999px;overflow:hidden;min-width:80px"><div style="height:100%;width:${pct}%;background:var(--accent)"></div></div>`;
+    return `<div class="rc-mini-bar"><div class="rc-mini-fill" style="--mini-pct:${pct}%"></div></div>`;
   };
 
   const triggerStateHtml = (channel) => {
@@ -290,9 +455,9 @@
       const linked = Boolean(src.linked);
       const age = Number(src.ageMs || 0);
       const state = !enabled ? "disabled" : linked ? "linked" : "waiting";
-      return `<div class="rc-source-card" style="padding:8px 10px;border:1px solid rgba(255,255,255,.15);border-radius:8px">
-        <div style="font-weight:600">${escapeHtml(name.toUpperCase())}</div>
-        <div style="font-size:.85em;opacity:.9">${state} · age ${age}ms</div>
+      return `<div class="rc-source-card rc-source-card-compact">
+        <div class="rc-source-card-title">${escapeHtml(name.toUpperCase())}</div>
+        <div class="rc-source-card-meta">${state} · age ${age}ms</div>
       </div>`;
     }).join("");
   };
@@ -301,12 +466,10 @@
     if (!el) return;
     el.setAttribute("tabindex", "0");
     el.addEventListener("focus", () => {
-      el.style.outline = "2px solid var(--accent)";
-      el.style.outlineOffset = "2px";
+      el.classList.add("keyboard-focus");
     });
     el.addEventListener("blur", () => {
-      el.style.outline = "";
-      el.style.outlineOffset = "";
+      el.classList.remove("keyboard-focus");
     });
     el.addEventListener("keydown", (e) => {
       if (e.key === "Enter" || e.key === " ") {
@@ -341,7 +504,7 @@
 
     rcSummaryBody.querySelectorAll("tr[data-slot]").forEach(row => {
       const key = row.dataset.slot;
-      row.style.cursor = "pointer";
+      row.classList.add("row-clickable");
       row.classList.toggle("active-slot", selectedSlot === key);
       row.addEventListener("click", () => selectSlot(key));
       wireFocusableItem(row, () => selectSlot(key));
@@ -362,11 +525,11 @@
         : `<span>${triggerStateHtml(telemetry)}</span>`;
 
       return `<div class="rc-slot-item${selectedSlot === key ? " active" : ""}" data-slot="${escapeHtml(key)}" role="button" aria-pressed="${selectedSlot === key ? "true" : "false"}">
-        <div style="display:flex;justify-content:space-between;gap:10px;align-items:center">
+        <div class="rc-slot-item-head">
           <strong>${escapeHtml(label)}</strong>
           <span class="rc-map-source-badge" data-source="${escapeHtml(binding.source)}">${escapeHtml(sourceLabel(binding.source))}</span>
         </div>
-        <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;font-size:.9em;opacity:.95;margin-top:6px">
+        <div class="rc-slot-item-meta">
           <span>CH ${binding.source === "none" ? "—" : escapeHtml(String(binding.channel || "—"))}</span>
           ${live}
         </div>
@@ -374,9 +537,9 @@
     }).join("");
 
     rcSlotItems.innerHTML = `
-      <div class="rc-slot-group-title" style="font-weight:700;margin:4px 0 8px">Backbone Channels</div>
+      <div class="rc-slot-group-title">Backbone Channels</div>
       ${renderItems(backbone)}
-      <div class="rc-slot-group-title" style="font-weight:700;margin:14px 0 8px">Trigger/Button Channels</div>
+      <div class="rc-slot-group-title trigger">Trigger/Button Channels</div>
       ${renderItems(trigger)}
     `;
 
@@ -400,6 +563,10 @@
         }
       });
     });
+
+    // Re-apply learn-hot after innerHTML wipe — defined below, called safely
+    // because renderSlotList() is only invoked after all functions are declared.
+    applyLearnHighlight();
   };
 
   const renderLivePreview = () => {
@@ -421,27 +588,26 @@
     if (selectedSlot === "driveSpeed" || selectedSlot === "driveSteer") {
       const width = Math.min(50, Math.round(Math.abs(mapped) * 50));
       const left = mapped >= 0 ? 50 : 50 - width;
-      barHtml = `<div style="position:relative;height:16px;background:rgba(255,255,255,.12);border-radius:999px;overflow:hidden">
-        <div style="position:absolute;left:50%;top:0;bottom:0;width:1px;background:rgba(255,255,255,.45)"></div>
-        <div style="position:absolute;left:${left}%;width:${width}%;top:0;bottom:0;background:var(--accent)"></div>
+      barHtml = `<div class="rc-preview-bar rc-preview-bar-center">
+        <div class="rc-preview-fill signed" style="--bar-left:${left}%;--bar-width:${width}%"></div>
       </div>`;
     } else if (selectedSlot === "domeSpeed") {
       const width = Math.round(Math.abs(mapped) * 100);
       const dir = mapped < 0 ? "Reverse" : mapped > 0 ? "Forward" : "Stopped";
-      barHtml = `<div style="position:relative;height:16px;background:rgba(255,255,255,.12);border-radius:999px;overflow:hidden">
-        <div style="position:absolute;left:0;top:0;bottom:0;width:${width}%;background:var(--accent)"></div>
-      </div><div style="font-size:.9em;margin-top:6px">Direction: ${dir}</div>`;
+      barHtml = `<div class="rc-preview-bar">
+        <div class="rc-preview-fill" style="--bar-width:${Math.max(0, Math.min(100, width))}%"></div>
+      </div><div class="rc-preview-dir">Direction: ${dir}</div>`;
     } else if (selectedSlot === "driveLimit") {
       const width = Math.round(((mapped + 1) / 2) * 100);
-      barHtml = `<div style="position:relative;height:16px;background:rgba(255,255,255,.12);border-radius:999px;overflow:hidden">
-        <div style="position:absolute;left:0;top:0;bottom:0;width:${Math.max(0, Math.min(100, width))}%;background:var(--accent)"></div>
+      barHtml = `<div class="rc-preview-bar">
+        <div class="rc-preview-fill" style="--bar-width:${Math.max(0, Math.min(100, width))}%"></div>
       </div>`;
     }
 
     if (isBackboneSlot(selectedSlot)) {
       rcLivePreviewContent.innerHTML = `
-        <h4 style="margin:0 0 10px">${escapeHtml(selectedSlot)}</h4>
-        <div style="display:grid;gap:8px">
+        <h4 class="rc-preview-title">${escapeHtml(slotLabelForKey(selectedSlot))}</h4>
+        <div class="rc-preview-stack">
           <div>Source: <strong>${escapeHtml(sourceLabel(binding.source))}</strong> · CH ${binding.source === "none" ? "—" : escapeHtml(String(binding.channel || "—"))}</div>
           <div>Raw: <strong>${escapeHtml(String(raw))}</strong> · ${escapeHtml(String(rawUs))} us</div>
           <div>Mapped: <strong>${mapped.toFixed(3)}</strong></div>
@@ -449,8 +615,8 @@
         </div>`;
     } else {
       rcLivePreviewContent.innerHTML = `
-        <h4 style="margin:0 0 10px">${escapeHtml(selectedSlot)}</h4>
-        <div style="display:grid;gap:8px">
+        <h4 class="rc-preview-title">${escapeHtml(slotLabelForKey(selectedSlot))}</h4>
+        <div class="rc-preview-stack">
           <div>Source: <strong>${escapeHtml(sourceLabel(binding.source))}</strong> · CH ${binding.source === "none" ? "—" : escapeHtml(String(binding.channel || "—"))}</div>
           <div>State: ${triggerStateHtml(telemetry)}</div>
           <div>Raw: <strong>${escapeHtml(String(raw))}</strong></div>
@@ -477,6 +643,9 @@
     if (!rcEditorContent) return;
     if (!selectedSlot) {
       rcEditorContent.innerHTML = '<div class="desc">Select a channel from the list to edit its mapping.</div>';
+      if (rcEditorApply) rcEditorApply.disabled = true;
+      if (rcEditorRevert) rcEditorRevert.disabled = true;
+      setEditorDirtyState("clean", "Select a slot to edit");
       return;
     }
 
@@ -484,6 +653,7 @@
     const mode = getEditorMode();
     const sourceOptions = SOURCE_OPTIONS[mode] || SOURCE_OPTIONS.standard_pwm;
     const isBackbone = isBackboneSlot(selectedSlot);
+    const slotLabel = slotLabelForKey(selectedSlot);
 
     const sourceSelect = sourceOptions.map(src =>
       `<option value="${escapeHtml(src)}"${binding.source === src ? " selected" : ""}>${escapeHtml(sourceLabel(src))}</option>`
@@ -492,7 +662,7 @@
     const channelMax = binding.source === "pwm" ? 6 : 18;
 
     rcEditorContent.innerHTML = `
-      <h4 style="margin:0 0 10px">Edit ${escapeHtml(selectedSlot)}</h4>
+      <h4 class="rc-editor-title">Edit ${escapeHtml(slotLabel)}</h4>
       <label>Source
         <select data-field="source">${sourceSelect}</select>
       </label>
@@ -500,7 +670,7 @@
         <input data-field="channel" type="number" min="0" max="${channelMax}" value="${escapeHtml(String(binding.channel || 0))}">
       </label>
       ${isBackbone ? "" : `<label>Action<select data-field="target">${renderActionOptions(binding.target || "none")}</select></label>`}
-      <div data-cond="seq" style="display:${binding.target === "seq" ? "block" : "none"}">
+      <div data-cond="seq" class="rc-editor-cond ${binding.target === "seq" ? "block" : "hidden"}">
         <label>Body Sequence
           <select data-field="payload">
             <option value="30"${binding.payload === "30" ? " selected" : ""}>SE30</option>
@@ -513,12 +683,12 @@
           </select>
         </label>
       </div>
-      <div data-cond="cmd" style="display:${binding.target === "cmd" ? "block" : "none"}">
+      <div data-cond="cmd" class="rc-editor-cond ${binding.target === "cmd" ? "block" : "hidden"}">
         <label>Marcduino Command
           <input data-field="payload" type="text" value="${escapeHtml(binding.payload || "")}" placeholder=":OP01">
         </label>
       </div>
-      <div data-cond="estop" style="display:${binding.target === "estop" ? "block" : "none"}">
+      <div data-cond="estop" class="rc-editor-cond ${binding.target === "estop" ? "block" : "hidden"}">
         <label><input data-field="estop-confirm" type="checkbox"> I understand this latches estop.</label>
       </div>
       <details>
@@ -537,26 +707,25 @@
       const seq = rcEditorContent.querySelector('[data-cond="seq"]');
       const cmd = rcEditorContent.querySelector('[data-cond="cmd"]');
       const estop = rcEditorContent.querySelector('[data-cond="estop"]');
-      if (seq) seq.style.display = target === "seq" ? "block" : "none";
-      if (cmd) cmd.style.display = target === "cmd" ? "block" : "none";
-      if (estop) estop.style.display = target === "estop" ? "block" : "none";
+      if (seq) seq.className = `rc-editor-cond ${target === "seq" ? "block" : "hidden"}`;
+      if (cmd) cmd.className = `rc-editor-cond ${target === "cmd" ? "block" : "hidden"}`;
+      if (estop) estop.className = `rc-editor-cond ${target === "estop" ? "block" : "hidden"}`;
     };
 
     rcEditorContent.querySelectorAll("[data-field]").forEach(field => {
       field.addEventListener("change", () => {
-        if (rcEditorApply) rcEditorApply.disabled = false;
-        if (rcEditorRevert) rcEditorRevert.disabled = false;
+        markEditorDirty();
         if (field.dataset.field === "target") {
           updateConditionalFields();
         }
       });
       field.addEventListener("input", () => {
-        if (rcEditorApply) rcEditorApply.disabled = false;
-        if (rcEditorRevert) rcEditorRevert.disabled = false;
+        markEditorDirty();
       });
     });
 
     updateConditionalFields();
+    markEditorClean();
   };
 
   const updateSummaryMiniBar = () => {
@@ -583,26 +752,15 @@
       rcModeFeedback.className = "feedback";
     }
     try {
-      const body = new URLSearchParams({ rcInputMode: mode });
-      const response = await fetch("/api/config", {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
-        body,
-      });
-      if (!response.ok) {
-        const errorBody = await response.json().catch(() => null);
-        throw new Error(errorBody?.error || `HTTP ${response.status}`);
-      }
-      const data = await response.json();
-      if (data.rcInputMode) switchRcMode(data.rcInputMode);
+      const result = await window.PAApi.postForm("/api/config", { rcInputMode: mode }, { timeoutMs: 5000 });
+      switchRcMode(getRcModeFromConfig(result.data));
       if (rcModeFeedback) {
-        rcModeFeedback.textContent = `✓ Saved at ${new Date().toLocaleTimeString()}`;
+        rcModeFeedback.textContent = `\u2713 Saved at ${new Date().toLocaleTimeString()}`;
         rcModeFeedback.className = "feedback success";
       }
     } catch (error) {
       if (rcModeFeedback) {
-        rcModeFeedback.textContent = error instanceof Error
-          ? `❌ ${error.message}` : "❌ Failed to save";
+        rcModeFeedback.textContent = `\u274c ${window.PAApi.messageFor(error)}`;
         rcModeFeedback.className = "feedback error";
       }
     }
@@ -617,6 +775,7 @@
       card.classList.toggle("selected", selected);
       card.setAttribute("aria-pressed", selected ? "true" : "false");
     });
+    updateRecvSel(mode);
 
     // Clear selected slot when mode changes
     selectedSlot = null;
@@ -660,25 +819,26 @@
 
   const loadRcMode = async () => {
     try {
-      const response = await fetch("/api/config", { cache: "no-store" });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const data = await response.json();
-      if (data.rcInputMode) {
-        if (rcInputModeHidden) rcInputModeHidden.value = data.rcInputMode;
-        rcModeCards.forEach((card) => {
-          const selected = card.dataset.mode === data.rcInputMode;
-          card.classList.toggle("selected", selected);
-          card.setAttribute("aria-pressed", selected ? "true" : "false");
-        });
-      }
+      const result = await window.PAApi.get("/api/config", { timeoutMs: 5000 });
+      const data = result.data;
+      const mode = getRcModeFromConfig(data);
+      if (rcInputModeHidden) rcInputModeHidden.value = mode;
+      rcModeCards.forEach((card) => {
+        const selected = card.dataset.mode === mode;
+        card.classList.toggle("selected", selected);
+        card.setAttribute("aria-pressed", selected ? "true" : "false");
+      });
       configCache = data;
+      setSingleSbusRecvSelect(getSingleSbusRecvCh2(data));
+      updateRecvSel(mode);
       if (rcModeFeedback) {
-        rcModeFeedback.textContent = `Receiver type: ${data.rcInputMode || "standard_pwm"}`;
+        rcModeFeedback.textContent = `Receiver type: ${mode}`;
         rcModeFeedback.className = "feedback success";
       }
-    } catch (_error) {
+      setRcInputsEnabled(rcComponentsEnabled(data));
+    } catch (error) {
       if (rcModeFeedback) {
-        rcModeFeedback.textContent = "Failed to load receiver type";
+        rcModeFeedback.textContent = `Failed to load receiver type: ${window.PAApi.messageFor(error)}`;
         rcModeFeedback.className = "feedback error";
       }
     }
@@ -701,6 +861,178 @@
     renderEditor();
   };
 
+  // ── RC Channel detect mode ────────────────────────────────────────────────
+  //
+  // Scans raw channel arrays (sbus1[], sbus2[], pwm[]) in the SSE rc payload.
+  // Pure logic is tested in test/test_rc_learn/index.html — keep in sync with
+  // threshold constants and computeDetectHit() if changed here.
+
+  // Pure: given a raw snapshot baseline and a current snapshot, return the
+  // source+channel with the greatest deviation from baseline, or null if none
+  // exceeds the configured threshold.
+  //
+  // Returns: { source: "sbus1"|"sbus2"|"pwm", channel: 1-based, raw: value,
+  //            baseline: baselineValue, delta: absDeviation }  or null.
+  const computeDetectHit = (baseline, curr) => {
+    if (!baseline || !curr) return null;
+    const raw = curr.raw;
+    if (!raw || typeof raw !== 'object') return null;
+    const baseRaw = baseline.raw;
+    if (!baseRaw || typeof baseRaw !== 'object') return null;
+
+    let best = null;
+
+    // SBUS sources — raw units 172-1811, center ~992
+    ['sbus1', 'sbus2'].forEach(src => {
+      const currArr = Array.isArray(raw[src]) ? raw[src] : [];
+      const baseArr = Array.isArray(baseRaw[src]) ? baseRaw[src] : [];
+      currArr.forEach((val, idx) => {
+        const base = baseArr[idx] ?? val;  // if no baseline, deviation = 0
+        const delta = Math.abs(val - base);
+        if (delta >= LEARN_SBUS_THRESHOLD) {
+          if (!best || delta > best.delta) {
+            best = { source: src, channel: idx + 1, raw: val, baseline: base, delta };
+          }
+        }
+      });
+    });
+
+    // PWM — microseconds 1000-2000, center ~1500
+    {
+      const currArr = Array.isArray(raw.pwm) ? raw.pwm : [];
+      const baseArr = Array.isArray(baseRaw.pwm) ? baseRaw.pwm : [];
+      currArr.forEach((val, idx) => {
+        if (val === 0) return;          // 0 = no valid pulse on this channel
+        const base = baseArr[idx] ?? val;
+        if (base === 0) return;
+        const delta = Math.abs(val - base);
+        if (delta >= LEARN_PWM_THRESHOLD) {
+          if (!best || delta > best.delta) {
+            best = { source: 'pwm', channel: idx + 1, raw: val, baseline: base, delta };
+          }
+        }
+      });
+    }
+
+    return best;
+  };
+
+  // Find all slot keys whose current binding matches the detected source+channel.
+  const slotsForDetectHit = (hit) => {
+    if (!hit) return [];
+    const mode = getEditorMode();
+    const slots = RC_ACTIONS[mode] || RC_ACTIONS.dual_sbus;
+    return slots
+      .filter(({ key }) => {
+        const b = bindingForSlot(key);
+        return b.source === hit.source && Number(b.channel) === hit.channel;
+      })
+      .map(({ key }) => key);
+  };
+
+  // Human-readable label for a detect hit.
+  const detectHitLabel = (hit) => {
+    if (!hit) return '';
+    const srcLabel = { sbus1: 'SBUS1', sbus2: 'SBUS2', pwm: 'PWM' }[hit.source] || hit.source.toUpperCase();
+    return `${srcLabel} CH ${hit.channel}`;
+  };
+
+  // Apply/remove learn-hot class on slot cards that are already bound to the
+  // detected source+channel. Uses direct classList toggle — no re-render.
+  const applyLearnHighlight = () => {
+    if (!rcSlotItems) return;
+    const bound = learnActive && learnHit ? slotsForDetectHit(learnHit) : [];
+    rcSlotItems.querySelectorAll('.rc-slot-item').forEach(el => {
+      el.classList.toggle('learn-hot', bound.includes(el.dataset.slot));
+    });
+  };
+
+  const updateLearnBanner = () => {
+    if (!rcLearnStatus) return;
+    if (!learnHit) {
+      const hasRaw = rcSnapshot?.raw && Object.keys(rcSnapshot.raw).length > 0;
+      rcLearnStatus.textContent = hasRaw
+        ? 'Listening… press a switch or button on your transmitter'
+        : 'No RC signal — connect your receiver first';
+      return;
+    }
+    const label = detectHitLabel(learnHit);
+    const bound = slotsForDetectHit(learnHit);
+    if (bound.length > 0) {
+      const slotLabels = bound.map(k => {
+        const mode = getEditorMode();
+        const slots = RC_ACTIONS[mode] || RC_ACTIONS.dual_sbus;
+        return slots.find(s => s.key === k)?.label || k;
+      }).join(', ');
+      rcLearnStatus.textContent = `Detected: ${label} → already assigned to ${slotLabels}`;
+    } else {
+      rcLearnStatus.textContent = `Detected: ${label} — not assigned to any slot. Select a slot to configure it.`;
+    }
+  };
+
+  const rcEnabledFromStatus = (payload) => {
+    const anyDirect = Boolean(
+      payload?.rcCh1 || payload?.rcCh2 || payload?.rcCh3 ||
+      payload?.rcCh4 || payload?.rcCh5 || payload?.rcCh6
+    );
+    if (anyDirect) return true;
+
+    const components = payload?.components || {};
+    return Boolean(
+      components.rcCh1?.enabled || components.rcCh2?.enabled || components.rcCh3?.enabled ||
+      components.rcCh4?.enabled || components.rcCh5?.enabled || components.rcCh6?.enabled
+    );
+  };
+
+
+  const enterLearnMode = () => {
+    if (!rcInputsEnabled) {
+      if (rcEditorFeedback) {
+        rcEditorFeedback.textContent = "Detect mode unavailable: enable an RC channel in Setup.";
+        rcEditorFeedback.className = "feedback warning";
+      }
+      return;
+    }
+    learnActive  = true;
+    learnBaseline = rcSnapshot;   // snapshot at mode entry — baseline for deviation
+    learnHit     = null;
+    learnStartMs = Date.now();
+    if (rcLearnBtn)    rcLearnBtn.textContent = '🔍 Detecting…';
+    if (rcLearnBanner) rcLearnBanner.hidden = false;
+    updateLearnBanner();
+    applyLearnHighlight();
+  };
+
+  const exitLearnMode = () => {
+    learnActive  = false;
+    learnBaseline = null;
+    learnHit     = null;
+    if (rcLearnBtn)    rcLearnBtn.textContent = '🔍 Detect channel';
+    if (rcLearnBanner) rcLearnBanner.hidden = true;
+    applyLearnHighlight();
+  };
+
+  // Called on every SSE rc tick when learnActive is true.
+  const processLearnTick = (currSnapshot) => {
+    if (Date.now() - learnStartMs > LEARN_TIMEOUT_MS) {
+      exitLearnMode();
+      return;
+    }
+
+    const newHit = computeDetectHit(learnBaseline, currSnapshot);
+    const prevHit = learnHit;
+    learnHit = newHit;
+
+    // Update DOM only when result changes to avoid needless repaints.
+    const changed = JSON.stringify(newHit) !== JSON.stringify(prevHit);
+    if (changed) {
+      updateLearnBanner();
+      applyLearnHighlight();
+    }
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────
+
   const renderRcDiagnostics = (payload) => {
     rcSnapshot = payload;
 
@@ -714,31 +1046,36 @@
 
   const loadRcDiagnostics = async () => {
     try {
-      const response = await fetch("/api/rc", { cache: "no-store" });
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-
-      const data = await response.json();
-      renderRcDiagnostics(data);
+      const result = await window.PAApi.get("/api/rc", { timeoutMs: 5000 });
+      renderRcDiagnostics(result.data);
     } catch (error) {
       if (rcEditorFeedback) {
-        rcEditorFeedback.textContent = error instanceof Error ? error.message : "Failed to load RC diagnostics";
+        rcEditorFeedback.textContent = `Failed to load RC diagnostics: ${window.PAApi.messageFor(error)}`;
         rcEditorFeedback.className = "feedback error";
       }
     }
   };
 
-  const connectRcEvents = () => {
-    if (typeof EventSource === "undefined") {
-      return;
-    }
+  const subscribeRcEvents = () => {
+    if (!window.PAStatusStream?.isSupported()) return false;
 
-    const events = new EventSource("/api/events");
-    events.addEventListener("rc", (event) => {
+    window.PAStatusStream.subscribe((eventType, payload) => {
       try {
-        const payload = JSON.parse(event.data);
-        rcSnapshot = payload;
+        if (eventType === "status") {
+          const data = typeof payload === "string" ? JSON.parse(payload) : payload;
+          setRcInputsEnabled(rcEnabledFromStatus(data));
+          return;
+        }
+        if (eventType !== "rc") return;
+        const data = typeof payload === "string" ? JSON.parse(payload) : payload;
+
+        // Process learning mode tick: compare current raw channels against the
+        // baseline snapshot captured when detect mode was entered.
+        if (learnActive) {
+          processLearnTick(data);
+        }
+
+        rcSnapshot = data;
 
         // Fast path updates for frequently changing elements
         updateSummaryMiniBar();
@@ -753,13 +1090,10 @@
         }
       }
     });
-    events.onerror = () => {
-      if (rcEditorFeedback) {
-        rcEditorFeedback.textContent = "RC event stream disconnected.";
-        rcEditorFeedback.className = "feedback warning";
-      }
-    };
+
+    return true;
   };
+  
 
   const saveMapping = async () => {
     const mode = getEditorMode();
@@ -806,7 +1140,7 @@
 
     if (binding.target === "dome_seq") {
       if (rcEditorFeedback) {
-        rcEditorFeedback.textContent = "Dome sequence trigger mapping is not available until Phase 4.";
+        rcEditorFeedback.textContent = "Dome sequence trigger mapping is not available in this firmware build.";
         rcEditorFeedback.className = "feedback warning";
       }
       return;
@@ -835,39 +1169,30 @@
     const isBackbone = action.type === "backbone";
     body.set(action.field, formatBindingString(binding, isBackbone));
 
+    setEditorDirtyState("saving", "Saving changes…");
     if (rcEditorFeedback) {
       rcEditorFeedback.textContent = "Saving...";
       rcEditorFeedback.className = "feedback";
     }
 
     try {
-      const response = await fetch("/api/config", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
-        },
-        body,
-      });
+      const result = await window.PAApi.postForm("/api/config", body, { timeoutMs: 5000 });
+      configCache = result.data;
 
-      if (!response.ok) {
-        const errorBody = await response.json().catch(() => null);
-        throw new Error(errorBody?.error || `HTTP ${response.status}`);
-      }
-
-      const data = await response.json();
-      configCache = data;
-
+      const savedAt = new Date().toLocaleTimeString();
       if (rcEditorFeedback) {
-        rcEditorFeedback.textContent = `✓ Saved at ${new Date().toLocaleTimeString()}`;
+        rcEditorFeedback.textContent = `\u2713 Saved at ${savedAt}`;
         rcEditorFeedback.className = "feedback success";
       }
-
-      if (rcEditorApply) rcEditorApply.disabled = true;
+      markEditorClean(savedAt);
 
       await loadRcDiagnostics();
     } catch (error) {
+      setEditorDirtyState("error", "Save failed — unsaved changes");
+      if (rcEditorApply) rcEditorApply.disabled = false;
+      if (rcEditorRevert) rcEditorRevert.disabled = false;
       if (rcEditorFeedback) {
-        rcEditorFeedback.textContent = error instanceof Error ? error.message : "Failed to save";
+        rcEditorFeedback.textContent = `Failed to save: ${window.PAApi.messageFor(error)}`;
         rcEditorFeedback.className = "feedback error";
       }
     }
@@ -883,8 +1208,7 @@
       rcEditorFeedback.className = "feedback";
     }
 
-    if (rcEditorApply) rcEditorApply.disabled = true;
-    if (rcEditorRevert) rcEditorRevert.disabled = true;
+    markEditorClean();
   };
 
   const resetToDefaults = async () => {
@@ -934,31 +1258,20 @@
       body.set("rcFree2", "none:0:none::1000:1500:2000:0:0");
       body.set("rcFree3", "none:0:none::1000:1500:2000:0:0");
 
-      const response = await fetch("/api/config", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
-        },
-        body,
-      });
+      const result = await window.PAApi.postForm("/api/config", body, { timeoutMs: 5000 });
+      configCache = result.data;
 
-      if (!response.ok) {
-        const errorBody = await response.json().catch(() => null);
-        throw new Error(errorBody?.error || `HTTP ${response.status}`);
-      }
-
-      const data = await response.json();
-      configCache = data;
-
+      const savedAt = new Date().toLocaleTimeString();
       if (rcEditorFeedback) {
-        rcEditorFeedback.textContent = "✓ Reset to defaults successful";
+        rcEditorFeedback.textContent = "\u2713 Reset to defaults successful";
         rcEditorFeedback.className = "feedback success";
       }
+      markEditorClean(savedAt);
 
       await loadRcDiagnostics();
     } catch (error) {
       if (rcEditorFeedback) {
-        rcEditorFeedback.textContent = error instanceof Error ? error.message : "Failed to reset to defaults";
+        rcEditorFeedback.textContent = `Failed to reset to defaults: ${window.PAApi.messageFor(error)}`;
         rcEditorFeedback.className = "feedback error";
       }
     }
@@ -976,17 +1289,38 @@
     rcResetDefaults.addEventListener("click", resetToDefaults);
   }
 
+  if (rcLearnBtn) {
+    rcLearnBtn.addEventListener("click", () => {
+      if (learnActive) exitLearnMode();
+      else enterLearnMode();
+    });
+  }
+
+  if (rcLearnStop) {
+    rcLearnStop.addEventListener("click", exitLearnMode);
+  }
+
+  if (sbusRecvSel) {
+    sbusRecvSel.addEventListener("change", async () => {
+      const recvCh2 = sbusRecvSel.value === "true";
+      const prevValue = sbusRecvSel.value;  // save for revert on failure
+      setSbusRecvFeedback("Saving...");
+      try {
+        await window.PAApi.postJson("/api/config", { rc: { sbus: { recvCh2 } } }, { timeoutMs: 5000 });
+        setSbusRecvFeedback(`\u2713 Saved at ${new Date().toLocaleTimeString()}`, "success", 2000);
+      } catch (error) {
+        sbusRecvSel.value = prevValue;  // revert to last confirmed server state
+        setSbusRecvFeedback(`\u274c ${window.PAApi.messageFor(error)}`, "error", 2000);
+      }
+    });
+  }
+
   const setRcDebugMode = async (enabled) => {
     try {
-      const response = await fetch("/api/rc/debug", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ enabled })
-      });
-      const result = await response.json();
-      console.log(`[RC] Debug mode ${enabled ? 'enabled' : 'disabled'}:`, result);
+      const result = await window.PAApi.postJson("/api/rc/debug", { enabled }, { timeoutMs: 3000 });
+      console.log(`[RC] Debug mode ${enabled ? 'enabled' : 'disabled'}:`, result.data);
     } catch (error) {
-      console.warn("[RC] Failed to toggle debug mode:", error);
+      console.warn("[RC] Failed to toggle debug mode:", window.PAApi.messageFor(error));
     }
   };
 
@@ -996,7 +1330,27 @@
     navigator.sendBeacon("/api/rc/debug", JSON.stringify({ enabled: false }));
   });
 
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState !== "hidden") {
+      loadRcDiagnostics();
+    }
+  });
+
+  setEditorDirtyState("clean", "Saved");
+  setEditorSavedTimestamp(null);
+
   loadRcMode();
   loadRcDiagnostics();
-  connectRcEvents();
+
+  const hasRcStream = subscribeRcEvents();
+  if (!hasRcStream) {
+    const refreshFromFallback = () => {
+      loadRcDiagnostics();
+    };
+
+    window.setInterval(() => {
+      if (document.visibilityState === "hidden") return;
+      refreshFromFallback();
+    }, 1000);
+  }
 })();

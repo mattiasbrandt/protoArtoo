@@ -121,6 +121,32 @@ void formatSerialJson(char* buf, size_t bufSize, bool domeLinkActive, unsigned l
                       unsigned long bodyHbTx);
 
 // -----------------------------------------------------------------------------
+// WiFiConnectivityFields
+// Derived connectivity fields shared by /api/health and /api/status.
+// `wifiConnected` answers "is WiFi service reachable from operators" while
+// `wifiClientConnected` answers "is an external client currently attached to AP".
+// -----------------------------------------------------------------------------
+struct WiFiConnectivityFields {
+    bool wifiConnected;
+    bool wifiClientConnected;
+    long wifiRssi;
+};
+
+// -----------------------------------------------------------------------------
+// deriveWiFiConnectivityFields()
+// Compute canonical WiFi status booleans used in JSON status/health payloads.
+// Pure function — no globals, no Arduino, no FreeRTOS.
+// params: apEnabled       — true when AP mode is active (AP or AP+STA)
+//         staConnected    — true when STA is connected (`WL_CONNECTED`)
+//         apStationCount  — number of stations currently attached to soft AP
+//         staRssi         — RSSI to upstream AP in dBm (valid when staConnected)
+// returns: derived wifiConnected / wifiClientConnected flags + wifiRssi
+// thread-safe: yes (pure function, no globals)
+// -----------------------------------------------------------------------------
+WiFiConnectivityFields deriveWiFiConnectivityFields(bool apEnabled, bool staConnected,
+                                                    unsigned int apStationCount, long staRssi);
+
+// -----------------------------------------------------------------------------
 // formatHealthJson()
 // Write a JSON health/diagnostics object into a caller-supplied buffer.
 // Pure function — no globals, no Arduino, no FreeRTOS.
@@ -130,15 +156,37 @@ void formatSerialJson(char* buf, size_t bufSize, bool domeLinkActive, unsigned l
 //         sbusSignalLost    — true if SBUS signal is lost
 //         sbusHwFailsafe    — true if SBUS hardware failsafe is active
 //         webControlEnabled — true if web drive control is enabled
-//         wifiConnected     — true if STA WiFi is connected
-//         wifiClientConnected — true if a WiFi client is connected (same as wifiConnected)
+//         wifiConnected     — true if control-surface WiFi is available (AP active or STA
+//         connected) wifiClientConnected — true if at least one station is attached to soft AP
 //         fsReady           — true if LittleFS is mounted
 //         heapFree          — current free heap in bytes
 //         heapMin           — minimum free heap since boot in bytes
-//         wifiRssi          — WiFi RSSI in dBm (0 if not connected)
+//         heapLargestBlock  — largest contiguous free heap block in bytes
+//         wifiRssi          — STA RSSI in dBm (0 when STA disconnected)
 // thread-safe: yes (pure function, no globals)
 // -----------------------------------------------------------------------------
 void formatHealthJson(char* buf, size_t bufSize, bool estop, bool sbusSignalLost,
                       bool sbusHwFailsafe, bool webControlEnabled, bool wifiConnected,
                       bool wifiClientConnected, bool fsReady, unsigned long heapFree,
-                      unsigned long heapMin, long wifiRssi);
+                      unsigned long heapMin, unsigned long heapLargestBlock, long wifiRssi);
+
+// -----------------------------------------------------------------------------
+// formatAudioStatusJson()
+// Write a JSON audio-module status object into a caller-supplied buffer.
+// Pure function — no globals, no Arduino, no FreeRTOS.
+// params: buf          — output buffer (must not be null)
+//         bufSize      — size of buf in bytes (192 bytes sufficient; worst-case ~160 bytes with capabilities field)
+//         driverName   — driver name string e.g. "DY-SV5W" (must not be null)
+//         capabilities — AudioDriver::AUDIO_CAP_* bitmask; controls which fields are meaningful
+//         linkOk       — true if module responded to at least one UART query
+//         active       — true if firmware sent a play command recently (audioActive)
+//         playState    — 0=stop 1=playing 2=paused 0xFF=unknown
+//         device       — 0=USB 1=SD/TF 2=FLASH 0xFF=none/unknown
+//         totalTracks  — total tracks reported by module (0 if unknown)
+//         currentTrack — currently selected track (0 if unknown)
+// thread-safe: yes (pure function, no globals)
+// -----------------------------------------------------------------------------
+void formatAudioStatusJson(char* buf, size_t bufSize, const char* driverName,
+                           uint8_t capabilities, bool linkOk, bool active,
+                           uint8_t playState, uint8_t device, uint16_t totalTracks,
+                           uint16_t currentTrack);
