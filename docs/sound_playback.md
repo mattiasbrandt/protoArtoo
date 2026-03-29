@@ -36,7 +36,7 @@ this to its module's native range.
 | `AUDIO_SOFT_UART` | Software UART binary frame | Binary frames, 9600 baud | ✅ Implemented (T01) |
 | `AUDIO_CHIRP` | CHIRP Audio Trigger ASCII | ASCII commands, configurable baud | ✅ Implemented (T15) — TX+RX, live status queries |
 | `AUDIO_DFPLAYER` | DFPlayer Mini | Binary frames, 9600 baud | 🔲 Not yet implemented |
-| `AUDIO_MP3TRIGGER` | SparkFun MP3 Trigger | Binary, 38400 baud | 🔲 Not yet implemented |
+| `AUDIO_MP3TRIGGER` | SparkFun MP3 Trigger | Binary, 9600 baud (community standard; factory default 38400) | ✅ Implemented (T67) — hardware validation pending |
 
 To switch backends: change `PA_AUDIO_DRIVER` in `platformio.ini`, wire up the
 new module, and flash. No other firmware changes required.
@@ -174,6 +174,90 @@ page status card auto-refreshes for CHIRP; device type and current track are
 not applicable for CHIRP and are hidden.
 
 **Source:** https://github.com/joymonkey/CHIRP
+
+---
+
+### 2.3 `AUDIO_MP3TRIGGER` — SparkFun MP3 Trigger
+
+**File:** `src/drivers/audio_mp3trigger.cpp`
+
+The SparkFun MP3 Trigger (DEV-13720) is the most widely used R2-D2 sound module
+in the community. BetterDuino, SHADOW_MD, and Padawan360 all treat it as their
+default. It uses a VS1053 audio codec with a simple 2-byte binary serial protocol.
+
+**Baud rate:** 9600 (community standard). Factory default is 38400. Configure
+to 9600 by placing a baud rate init file in the SD root; refer to the SparkFun
+MP3 Trigger v2.4 Hookup Guide for the exact filename and format. No firmware
+changes are required — the existing 9600-baud soft-UART path is compatible.
+
+#### SD card layout
+
+Files in the SD root, named `NNNxxxx.MP3` where `NNN` is a zero-padded 3-digit
+prefix. The `'t'` play command matches on the NNN prefix.
+
+Community R2 track bank assignments (source-verified: BetterDuino, SHADOW_MD):
+
+| Tracks | Category | Named-track defaults |
+|---|---|---|
+| 001–025 | General sounds | — |
+| 026–050 | Chatty | — |
+| 051–075 | Happy | — |
+| 076–100 | Sad | — |
+| 101–125 | Whistle | — |
+| 126–150 | Scream | `cfg_snd_scream` = 126 ✓ |
+| 151–175 | Leia | `cfg_snd_leia` = 151 ✓ |
+| 176–200 | Sing / music | SW theme = 177, Imperial March = 178, Cantina = 180 ✓ |
+| 201–225 | Music tracks | — |
+| 254 | Silent / blank | Stop workaround track |
+| 255 | Startup sound | `cfg_snd_startup` = 255 ✓ |
+
+All protoArtoo named-track NVS defaults match this layout with no remapping needed.
+
+#### Wire protocol
+
+| Wire command | Action | Notes |
+|---|---|---|
+| `'t'` + `uint8_t(N)` | Play track N by filename prefix | N = 1–255 |
+| `'v'` + `uint8_t(V)` | Set volume | V: 0=loudest, 255=silent (inverted VS1053 register) |
+| `'S'+'0'` | Query firmware version | Response: `=MP3 Trigger v2.NN\r\n` |
+| `'S'+'1'` | Query SD track count | Response: `=NNN\r\n` (strip `=` before parsing) |
+| `'O'` | Toggle play/pause | Not used directly by driver |
+
+**protoArtoo driver mapping:**
+
+| `AudioDriver` call | Wire command | Notes |
+|---|---|---|
+| `playTrack(n)` | `'t'` + `uint8_t(n)` | n must be 1–255; values outside range are dropped |
+| `stop()` | `'t'` + `0xFE` (254) | Play silent blank track MP3TRIGGER_STOP_TRACK |
+| `setVolume(v)` | `'v'` + nativeVol | nativeVol = (30 − v) × 255 / 30 |
+
+> \u26a0 **Stop workaround:** The MP3 Trigger has no discrete stop command.
+> `stop()` plays track 254, the community-standard silent blank track
+> (used identically by BetterDuino and SHADOW_MD). Ensure `254XXXX.MP3`
+> exists in the SD root — all R2 community packs include it.
+
+#### Volume scaling (VS1053 register is inverted)
+
+- vol=0 \u2192 nativeVol=255 (silent)
+- vol=15 \u2192 nativeVol=127 (mid)
+- vol=30 \u2192 nativeVol=0 (maximum)
+
+Following BetterDuino: practical audible range is approximately 0–100 on the
+native scale; values above ~100 are near-inaudible but technically valid.
+
+#### Status queries
+
+The driver sends `'S'+'0'` (version) and `'S'+'1'` (track count) at init and
+on each periodic query to verify the serial link and refresh total tracks.
+Response lines are `=`-prefixed; the `=` character is stripped before parsing.
+
+Play state and device type cannot be queried in this protocol. `AudioModuleState`
+returns `playState=0xFF` and `device=0xFF` always. The Sound page hides the
+Device row and shows a manual Poll button for this backend.
+
+> \u26a0 **Play-state indicator always shows `unknown`** for the MP3 Trigger.
+> Use the Track counter (cached from last `playTrack()` call) to confirm
+> commands are reaching the module.
 
 ---
 

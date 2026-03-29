@@ -43,7 +43,8 @@ static AudioDriverChirp s_driver;
 #elif PA_AUDIO_DRIVER == AUDIO_DFPLAYER
 #error "AUDIO_DFPLAYER driver not yet implemented — see T15 / T16"
 #elif PA_AUDIO_DRIVER == AUDIO_MP3TRIGGER
-#error "AUDIO_MP3TRIGGER driver not yet implemented"
+#include "audio_mp3trigger.h"
+static AudioDriverMp3Trigger s_driver;
 #else
 #error "PA_AUDIO_DRIVER build flag is not set or has an unknown value"
 #endif
