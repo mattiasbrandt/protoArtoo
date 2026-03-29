@@ -15,7 +15,7 @@ For detailed release notes see `CHANGELOG.md`.
 | Phase 1 — Drive | Hoverboard drive, RC receiver input, failsafe | Complete — `v0.1.0` |
 | Phase 2 — Web interface | WiFi, web UI, OTA firmware updates | Complete |
 | Phase 3 — Servos + dome motor | Arm servos, dome motor, RC diagnostics and mapping | Software complete — hardware validation partially deferred |
-| **Phase 4 — Audio + dome link** | Sound playback, bidirectional dome communication, web UI improvements | **In progress** |
+| **Phase 4 — Audio + dome link** | Sound playback, bidirectional dome communication, web UI improvements | Software complete — hardware validation deferred to Phase 5 |
 | Phase 5 — Community release | Documentation, polish, public release | Planned |
 
 ---
@@ -101,18 +101,17 @@ Development builds are versioned from the git history and build timestamp.
 ## Pending Hardware Validation
 
 The following features are implemented and software-verified but require a fully assembled
-droid for final confirmation:
+droid for final confirmation. They are planned for the Phase 5 hardware validation pass.
 
-- **Drive and failsafe** — hoverboard response, RC failsafe, and speed limit; the hoverboard
-  is not currently connected to the test setup
-- **Dome motor** — requires the full wiring harness connected
+- **Drive and failsafe** — hoverboard response, RC failsafe, and speed limit; hoverboard
+  is not currently connected
+- **Dome motor** — RC-driven dome motor response; requires the full wiring harness connected
 - **RC mapping with a physical transmitter** — channel mapping and calibration across all
   receiver modes; save/restore across reboots
 - **Dome link end-to-end** — requires both the body board and dome board connected over
   the slip ring
-- **Full audio validation** — most audio paths confirmed on hardware; the enable/disable
-  toggle and boot mood restore require hardware reconnect. CHIRP backend requires
-  hardware validation with board connected (T15).
+- **Audio edge cases** — most audio paths confirmed on hardware; S2 enable/disable toggle
+  and boot mood restore require hardware reconnect
 - **Firmware and web UI update flows** — upload progress indication and post-reboot
   reconnect with the updated version
 
@@ -120,5 +119,6 @@ droid for final confirmation:
 
 ## Roadmap
 
-- **Phase 4 (active):** audio system, full dome link, and web UI quality improvements
-- **Phase 5:** final hardware validation, documentation, and initial public release as `v1.0.0`
+- **Phase 4 (software complete):** audio system, full dome link, and web UI quality improvements;
+  hardware validation deferred to Phase 5
+- **Phase 5 (next):** hardware validation, final documentation, and initial public release as `v1.0.0`
