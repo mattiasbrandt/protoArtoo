@@ -75,7 +75,13 @@ static constexpr uint8_t kSbusFooter = 0x00;
 
 // Total bits in one complete SBUS frame (25 bytes × 12 bits/byte).
 // 12 bits/byte = start(1) + data(8) + parity(1) + stop(2).
-static constexpr int kTotalBits = SbusDecoder::kFrameLen * SbusDecoder::kBitsPerByte;  // 300
+static constexpr int kTotalBits    = SbusDecoder::kFrameLen * SbusDecoder::kBitsPerByte;  // 300
+
+// Bit array capacity: frame bits plus headroom for initial idle captured before
+// the first start bit. The ISR re-arms immediately after a 3 ms idle timeout;
+// the next rmt_receive() call may capture a brief leading idle before the frame.
+// 64 bits = 640 µs of headroom — well above the worst-case leading idle after re-arm.
+static constexpr int kBitArraySize = kTotalBits + 64;  // 364
 
 // ---------------------------------------------------------------------------
 // SbusDecoder
@@ -122,6 +128,7 @@ bool SbusDecoder::begin(int rxPin) {
     err = rmt_enable(_channel);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "rmt_enable failed: %s GPIO%d", esp_err_to_name(err), rxPin);
+        rmt_disable(_channel);  // safe to call even on partial enable failure
         rmt_del_channel(_channel); _channel = nullptr;
         vQueueDelete(_queue);      _queue   = nullptr;
         return false;
@@ -189,6 +196,11 @@ bool IRAM_ATTR SbusDecoder::_onRecvDone(rmt_channel_handle_t chan,
     BaseType_t   woken = pdFALSE;
 
     // Record symbol count for the buffer that just completed.
+    // Double-buffer timing note: with queue depth 2 and SBUS at 100 Hz (10 ms),
+    // the ISR could cycle back to writing buf[N] while the task holds buf[N] in the
+    // queue. In practice this requires the task to miss >20 ms of execution — not
+    // possible at the 5 ms poll rate. If it did occur, _parseSymbols() would reject
+    // the corrupt frame via header/footer validation, so there is no safety impact.
     self->_rxBufs[self->_activeBuf].count = edata->num_symbols;
     uint8_t doneIdx = self->_activeBuf;
 
@@ -235,18 +247,20 @@ bool IRAM_ATTR SbusDecoder::_onRecvDone(rmt_channel_handle_t chan,
 bool SbusDecoder::_parseSymbols(const RxBuf& buf) {
     if (buf.count < kMinSymsForFrame) return false;
 
-    // Flat bit array — static to avoid stack pressure.
-    // Size: kTotalBits (300) + 64 headroom for initial idle bits.
-    // Static local is safe because _parseSymbols is only called from RcInputTask.
-    static bool bits[364];
+    // Flat bit array — static to avoid stack pressure on RcInputTask.
+    // kBitArraySize = kTotalBits (300) + 64 headroom for leading idle bits.
+    // Static local is safe: _parseSymbols is only called from RcInputTask, never
+    // concurrently. The array is fully overwritten on each call up to bc.
+    static bool bits[kBitArraySize];
+    static constexpr int kBitArrayLen = kBitArraySize;  // element count (sizeof(bool)==1 on ESP32)
     int bc = 0;
 
-    for (size_t i = 0; i < buf.count && bc < (int)(sizeof(bits)); i++) {
+    for (size_t i = 0; i < buf.count && bc < kBitArrayLen; i++) {
         const rmt_symbol_word_t& s = buf.symbols[i];
 
         if (s.duration0 > 0) {
             int n = (int)((s.duration0 + kBitHalfTicks) / kBitPeriodTicks);
-            int lim = (int)(sizeof(bits)) - bc;
+            int lim = kBitArrayLen - bc;
             if (n > lim) n = lim;
             for (int j = 0; j < n; j++) bits[bc++] = (s.level0 != 0);
         }
@@ -256,7 +270,7 @@ bool SbusDecoder::_parseSymbols(const RxBuf& buf) {
 
         {
             int n = (int)((s.duration1 + kBitHalfTicks) / kBitPeriodTicks);
-            int lim = (int)(sizeof(bits)) - bc;
+            int lim = kBitArrayLen - bc;
             if (n > lim) n = lim;
             for (int j = 0; j < n; j++) bits[bc++] = (s.level1 != 0);
         }
