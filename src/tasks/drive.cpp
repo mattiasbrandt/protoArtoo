@@ -55,6 +55,7 @@ void driveTask(void* pvParameters) {
     }
 
     hoverSerial.begin(HOVERBOARD_BAUD, SERIAL_8N1, PIN_HOVERBOARD_RX, PIN_HOVERBOARD_TX);
+    resetHoverboardFeedbackParser();  // clear parser state after UART reinit
     PA_LOG_INFO(TAG, "started — UART1 %lu baud, GPIO TX=%d RX=%d",
                 (unsigned long)HOVERBOARD_BAUD, PIN_HOVERBOARD_TX, PIN_HOVERBOARD_RX);
 
@@ -140,6 +141,23 @@ void driveTask(void* pvParameters) {
         // Send frame — always (zero-frame rule: never go silent, hoverboard must coast, not drift)
         buildHoverboardFrame(frameBuf, steer, speed);
         hoverSerial.write(frameBuf, sizeof(frameBuf));
+
+        // Read hoverboard controller feedback — non-blocking, drains available bytes.
+        // Decodes battery voltage, board temperature, and motor speed from the
+        // Gen2.x feedback frame the hoverboard controller sends back at 10–100 Hz.
+        HoverboardFeedback hbFb;
+        if (readHoverboardFeedback(hoverSerial, &hbFb)) {
+            taskENTER_CRITICAL(&robotStateMux);
+            robotState.hb_batteryRaw = hbFb.batteryRaw;
+            robotState.hb_boardTempRaw = hbFb.boardTempRaw;
+            robotState.hb_speedR = hbFb.speedR;
+            robotState.hb_speedL = hbFb.speedL;
+            robotState.hb_currentL = hbFb.currentL;
+            robotState.hb_currentR = hbFb.currentR;
+            robotState.hb_feedbackValid = true;
+            robotState.hb_lastFeedbackMs = millis();
+            taskEXIT_CRITICAL(&robotStateMux);
+        }
 
 #ifdef PA_VERBOSE_DRIVE
         Serial.printf("[%s] frame spd:%d str:%d fs:%d\n", TAG, speed, steer, (int)failsafeActive);

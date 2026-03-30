@@ -319,6 +319,13 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     uint32_t domeHbRx;
     uint32_t bodyHbTx;
     uint32_t domeLastSeenMs;
+    int16_t hbBatteryRaw;
+    int16_t hbBoardTempRaw;
+    int16_t hbSpeedR;
+    int16_t hbSpeedL;
+    int16_t hbCurrentL;
+    int16_t hbCurrentR;
+    bool hbFeedbackValid;
 
     if (buffer == nullptr || bufferSize == 0) {
         return false;
@@ -351,6 +358,13 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     domeHbRx = robotState.domeHbRx;
     bodyHbTx = robotState.bodyHbTx;
     domeLastSeenMs = robotState.domeLastSeenMs;
+    hbBatteryRaw = robotState.hb_batteryRaw;
+    hbBoardTempRaw = robotState.hb_boardTempRaw;
+    hbSpeedR = robotState.hb_speedR;
+    hbSpeedL = robotState.hb_speedL;
+    hbCurrentL = robotState.hb_currentL;
+    hbCurrentR = robotState.hb_currentR;
+    hbFeedbackValid = robotState.hb_feedbackValid;
     enableArm1 = robotState.cfg_enable_arm1;
     enableArm2 = robotState.cfg_enable_arm2;
     enableAux1 = robotState.cfg_enable_aux1;
@@ -579,6 +593,20 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
                      ",\"last_rx_ms\":%ld}",
                      dlState, (unsigned long)bodyHbTx, (unsigned long)domeHbRx, (long)lastRxMs);
             ok = appendJsonChunk(pos, remaining, dlBuf) && ok;
+        }
+
+        if (hbFeedbackValid) {
+            char hbBuf[128];
+            snprintf(hbBuf, sizeof(hbBuf),
+                     ",\"hoverboard\":{\"batteryV\":%.2f,\"boardTempC\":%.1f"
+                     ",\"speedR\":%d,\"speedL\":%d"
+                     ",\"currentL\":%.2f,\"currentR\":%.2f}",
+                     (double)(hbBatteryRaw / 100.0f),
+                     (double)(hbBoardTempRaw / 10.0f),
+                     (int)hbSpeedR, (int)hbSpeedL,
+                     (double)(hbCurrentL / 100.0f),
+                     (double)(hbCurrentR / 100.0f));
+            ok = appendJsonChunk(pos, remaining, hbBuf) && ok;
         }
 
         ok = appendJsonChunk(pos, remaining, "}") && ok;

@@ -18,6 +18,13 @@
   const failsafeSource = document.getElementById("failsafe-source");
   const driveOutput = document.getElementById("drive-output");
   const speedLimitDisplay = document.getElementById("speed-limit");
+  const hbNoData    = document.getElementById("hb-no-data");
+  const hbDataGrid  = document.getElementById("hb-data-grid");
+  const hbBattery   = document.getElementById("hb-battery");
+  const hbBoardTemp = document.getElementById("hb-board-temp");
+  const hbSpeed     = document.getElementById("hb-speed");
+  const hbCurrentRow = document.getElementById("hb-current-row");
+  const hbCurrent   = document.getElementById("hb-current");
 
   const armControlsCard = document.getElementById("arm-controls-card");
   const armControlsContainer = document.getElementById("arm-controls-container");
@@ -172,6 +179,22 @@
     });
   };
 
+  const renderHoverboard = (hb) => {
+    if (!hb) {
+      if (hbNoData)   hbNoData.style.display   = "";
+      if (hbDataGrid) hbDataGrid.style.display = "none";
+      return;
+    }
+    if (hbNoData)   hbNoData.style.display   = "none";
+    if (hbDataGrid) hbDataGrid.style.display = "";
+    if (hbBattery)   hbBattery.textContent   = `${hb.batteryV.toFixed(1)} V`;
+    if (hbBoardTemp) hbBoardTemp.textContent = `${hb.boardTempC.toFixed(1)} \u00b0C`;
+    if (hbSpeed)     hbSpeed.textContent     = `R\u00a0${hb.speedR}\u00a0/\u00a0L\u00a0${hb.speedL} RPM`;
+    const hasCurrent = Math.abs(hb.currentL) > 0.01 || Math.abs(hb.currentR) > 0.01;
+    if (hbCurrentRow) hbCurrentRow.style.display = hasCurrent ? "" : "none";
+    if (hbCurrent)    hbCurrent.textContent = `L\u00a0${hb.currentL.toFixed(1)}\u00a0A\u00a0/\u00a0R\u00a0${hb.currentR.toFixed(1)}\u00a0A`;
+  };
+
   const renderStatus = (payload) => {
     if (estopState) estopState.textContent = payload.estop ? "❌ Latched" : "✅ Clear";
     if (webControlState) webControlState.textContent = payload.webControlEnabled ? "✅ Enabled" : "⏸️ Disabled";
@@ -179,6 +202,7 @@
     if (driveOutput) driveOutput.textContent = `${payload.driveSpeed} / ${payload.driveSteer}`;
     if (speedLimitDisplay) speedLimitDisplay.textContent = Number(payload.speedLimitScale).toFixed(3);
     renderArmControls(payload);
+    renderHoverboard(payload.hoverboard);
   };
 
   const renderConfig = (payload) => {
@@ -272,4 +296,5 @@
   }
 
   loadConfig();
+  renderHoverboard(null);
 })();

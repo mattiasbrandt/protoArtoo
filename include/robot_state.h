@@ -297,6 +297,20 @@ struct RobotState {
     RcTriggerBinding cfg_rc_free1;
     RcTriggerBinding cfg_rc_free2;
     RcTriggerBinding cfg_rc_free3;
+    // -------------------------------------------------------------------------
+    // Hoverboard controller feedback — populated by DriveTask from UART1 RX.
+    // batteryRaw = V × 100; boardTempRaw = °C × 10.
+    // currentL/R = A × 100 from Gen2.x firmware only; 0 for FOC firmware.
+    // feedbackValid is false until the first valid frame is received.
+    // -------------------------------------------------------------------------
+    int16_t  hb_batteryRaw;
+    int16_t  hb_boardTempRaw;
+    int16_t  hb_speedR;
+    int16_t  hb_speedL;
+    int16_t  hb_currentL;
+    int16_t  hb_currentR;
+    bool     hb_feedbackValid;
+    uint32_t hb_lastFeedbackMs;
 };
 
 // -----------------------------------------------------------------------------
