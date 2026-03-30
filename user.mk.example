@@ -1,0 +1,26 @@
+# user.mk.example — committed reference for user.mk overrides.
+#
+# Copy to user.mk (gitignored) and edit, or generate with:
+#   make setup
+#   python3 tools/configure.py
+#
+# All variables are optional — Makefile defaults apply when absent.
+# Override on the command line without editing any file:
+#   make ota OTA_IP=192.168.4.1
+
+# OTA upload target IP.
+# Default: 10.0.0.22 (STA client IP when robot is on your network).
+# Use 192.168.4.1 when connected directly to the robot's own AP.
+OTA_IP      = 10.0.0.22
+
+# PlatformIO build environment for 'make build', 'make flash', 'make ota'.
+# Supported values:
+#   protoArtoo           DY-SV5W audio (default — confirmed hardware)
+#   protoArtoo_chirp     CHIRP audio backend
+#   protoArtoo_mp3trigger  MP3 Trigger audio backend
+BUILD_ENV   = protoArtoo
+
+# Serial port for USB flash ('make flash').
+# Linux: /dev/ttyUSB0 or /dev/ttyACM0
+# macOS: /dev/cu.usbserial-*
+UPLOAD_PORT = /dev/ttyUSB0

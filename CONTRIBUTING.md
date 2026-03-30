@@ -14,6 +14,20 @@ This document covers:
 For project-specific terms and abbreviations (for example `RobotState`, NVS,
 Marcduino, SBUS, AP/STA), see `docs/terminology.md`.
 
+## Getting started
+
+For a new clone, run the setup wizard to configure your build environment:
+
+```bash
+make setup
+```
+
+This writes `user.mk` (gitignored) with your OTA IP, USB upload port, and audio
+backend choice. Run `make help` to see all available targets.
+
+If you do not have `make` installed, you can run PlatformIO commands directly —
+the Makefile is a convenience wrapper only and is never required.
+
 ---
 
 ## Commit message format — Conventional Commits

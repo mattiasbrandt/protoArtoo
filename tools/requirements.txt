@@ -1,0 +1,6 @@
+# tools/requirements.txt — optional developer tools for protoArtoo.
+# Install with: pip install -r tools/requirements.txt
+#
+# questionary: interactive prompts for tools/configure.py (make setup).
+# Falls back to plain input() if not installed — not required for core workflow.
+questionary>=2.0
