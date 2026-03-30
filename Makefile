@@ -16,7 +16,7 @@ UPLOAD_PORT ?= /dev/ttyUSB0
 
 -include user.mk
 
-.PHONY: help build test check all flash ota uploadfs check-chirp check-mp3trigger setup clean monitor
+.PHONY: help build test check check-s3 all flash ota uploadfs check-chirp check-mp3trigger setup clean monitor
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -30,6 +30,9 @@ test: ## Run native unit tests  (required gate before any upload)
 
 check: ## Static analysis with cppcheck
 	pio check -e protoArtoo
+
+check-s3: ## Static analysis for S3 Mini build  (checks S3-specific GPIO overrides)
+	pio check -e protoArtoo_s3
 
 all: test build ## Run tests then build  (full pre-upload validation sequence)
 

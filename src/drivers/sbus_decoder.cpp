@@ -221,92 +221,92 @@ bool IRAM_ATTR SbusDecoder::_onRecvDone(rmt_channel_handle_t chan,
 }
 
 // -----------------------------------------------------------------------------
-// _parseSymbols — convert one RMT symbol buffer into a validated SBUS frame
-//
-// Runs in task context (never in ISR).
-//
-// Step 1: Flatten RMT symbols into a boolean bit array.
-//   Each rmt_symbol_word_t represents two consecutive signal levels:
-//   {level0, duration0, level1, duration1}. duration1=0 is the IDF end marker.
-//   We convert duration ticks → bit count by rounding to the nearest 10 µs.
-//
-// Step 2: Skip the initial idle (HIGH=1) bits before the first start bit.
-//   The frame begins at the first LOW=0 bit (start bit of byte 0).
-//
-// Step 3: Extract 25 bytes (12 bits each: start + 8 data + parity + 2 stop).
-//   Bit layout per byte at position b, offset from first start bit:
-//     bits[b*12 + 0]    = start bit  (must be 0)
-//     bits[b*12 + 1..8] = data bits D0..D7 (LSB first, standard polarity)
-//     bits[b*12 + 9]    = parity bit (not validated; rely on header/footer)
-//     bits[b*12 + 10,11] = stop bits (should be 1)
-//
-// Step 4: Validate header (0x0F) and footer (0x00).
-//
-// Step 5: Decode channels via sbusUnpackChannels() and parseSbusFlags().
+// flattenSymbols() — Step 1 helper
+// Converts an RMT symbol array to a flat bit array.
+// Each symbol encodes two consecutive signal levels {level, duration}.
+// Duration in ticks is rounded to the nearest 10-tick (10 µs) bit count.
+// duration1==0 is the IDF end-of-sequence marker; stops iteration.
+// Returns the number of bits written.
 // -----------------------------------------------------------------------------
-bool SbusDecoder::_parseSymbols(const RxBuf& buf) {
-    if (buf.count < kMinSymsForFrame) return false;
-
-    // Flat bit array — static to avoid stack pressure on RcInputTask.
-    // kBitArraySize = kTotalBits (300) + 64 headroom for leading idle bits.
-    // Static local is safe: _parseSymbols is only called from RcInputTask, never
-    // concurrently. The array is fully overwritten on each call up to bc.
-    static bool bits[kBitArraySize];
-    static constexpr int kBitArrayLen = kBitArraySize;  // element count (sizeof(bool)==1 on ESP32)
+static int flattenSymbols(const rmt_symbol_word_t* syms, size_t count,
+                          bool* bits, int maxBits) {
     int bc = 0;
-
-    for (size_t i = 0; i < buf.count && bc < kBitArrayLen; i++) {
-        const rmt_symbol_word_t& s = buf.symbols[i];
-
+    for (size_t i = 0; i < count && bc < maxBits; i++) {
+        const rmt_symbol_word_t& s = syms[i];
         if (s.duration0 > 0) {
             int n = (int)((s.duration0 + kBitHalfTicks) / kBitPeriodTicks);
-            int lim = kBitArrayLen - bc;
-            if (n > lim) n = lim;
+            if (n > maxBits - bc) n = maxBits - bc;
             for (int j = 0; j < n; j++) bits[bc++] = (s.level0 != 0);
         }
-
-        // duration1 == 0 is the IDF end-of-sequence marker.
-        if (s.duration1 == 0) break;
-
+        if (s.duration1 == 0) break;  // IDF end-of-sequence marker
         {
             int n = (int)((s.duration1 + kBitHalfTicks) / kBitPeriodTicks);
-            int lim = kBitArrayLen - bc;
-            if (n > lim) n = lim;
+            if (n > maxBits - bc) n = maxBits - bc;
             for (int j = 0; j < n; j++) bits[bc++] = (s.level1 != 0);
         }
     }
+    return bc;
+}
 
-    // Find the first start bit: first LOW (0) after the initial idle (HIGH).
-    // After invert_in=1: idle = HIGH = 1; SBUS start bit = LOW = 0.
+// -----------------------------------------------------------------------------
+// findFirstStartBit() — Step 2 helper
+// Skips the leading idle (HIGH=1 bits) before the SBUS frame start bit.
+// After invert_in=1 the decoder sees standard polarity: idle=HIGH, start=LOW.
+// Returns the index of the first LOW (0) bit, or bc if none found.
+// -----------------------------------------------------------------------------
+static int findFirstStartBit(const bool* bits, int bc) {
     int pos = 0;
     while (pos < bc && bits[pos]) pos++;
+    return pos;
+}
 
-    // Need at least kTotalBits (300 bits = 25 bytes × 12 bits) from here.
-    if (bc - pos < kTotalBits) return false;
-
-    // Extract 25 bytes.
-    uint8_t frame[kFrameLen];
-    for (int b = 0; b < kFrameLen; b++) {
-        int base = pos + b * kBitsPerByte;
-        if (base + kBitsPerByte > bc) return false;
+// -----------------------------------------------------------------------------
+// extractSbusBytes() — Step 3 helper
+// Extracts frameLen bytes from the bit array starting at startPos.
+// Each byte occupies kBitsPerByte bits: start(0) + D0..D7 + parity + stop stop.
+// Returns false if there are not enough bits or a start bit is wrong.
+// -----------------------------------------------------------------------------
+static bool extractSbusBytes(const bool* bits, int bc, int startPos,
+                              uint8_t* frame, int frameLen) {
+    if (bc - startPos < frameLen * SbusDecoder::kBitsPerByte) return false;
+    for (int b = 0; b < frameLen; b++) {
+        int base = startPos + b * SbusDecoder::kBitsPerByte;
+        if (base + SbusDecoder::kBitsPerByte > bc) return false;
         if (bits[base]) return false;  // start bit must be LOW (0)
-
-        // Reconstruct data byte from D0..D7 (LSB first, standard polarity).
         uint8_t byte = 0;
         for (int d = 0; d < 8; d++) {
             if (bits[base + 1 + d]) byte |= (uint8_t)(1u << d);
         }
         frame[b] = byte;
-        // bits[base+9]  = parity (not validated — header/footer check is sufficient)
-        // bits[base+10] = stop bit 1 (should be 1)
-        // bits[base+11] = stop bit 2 (should be 1)
+        // bits[base+9] = parity (not validated — header/footer check is sufficient)
+        // bits[base+10..11] = stop bits
     }
+    return true;
+}
 
-    // Validate SBUS frame boundaries.
+// -----------------------------------------------------------------------------
+// _parseSymbols
+// Orchestrates the three steps: flatten → locate → extract → validate → decode.
+// Runs in task context (never in ISR).
+// -----------------------------------------------------------------------------
+bool SbusDecoder::_parseSymbols(const RxBuf& buf) {
+    if (buf.count < kMinSymsForFrame) return false;
+
+    // Static bit array avoids stack pressure. Safe for sequential single-task use.
+    static bool bits[kBitArraySize];
+    static constexpr int kBitArrayLen = kBitArraySize;
+
+    int bc  = flattenSymbols(buf.symbols, buf.count, bits, kBitArrayLen);
+    int pos = findFirstStartBit(bits, bc);
+
+    if (bc - pos < kTotalBits) return false;
+
+    uint8_t frame[kFrameLen];
+    if (!extractSbusBytes(bits, bc, pos, frame, kFrameLen)) return false;
+
     if (frame[0]  != kSbusHeader) return false;
     if (frame[24] != kSbusFooter) return false;
 
-    // Decode channels and flags using shared, independently-tested helpers.
     int16_t ch[16];
     sbusUnpackChannels(&frame[1], ch);
     for (int i = 0; i < 16; i++) _data.ch[i] = (uint16_t)ch[i];

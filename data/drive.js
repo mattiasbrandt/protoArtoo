@@ -181,7 +181,12 @@
 
   const renderHoverboard = (hb) => {
     if (!hb) {
-      if (hbNoData)   hbNoData.style.display   = "";
+      if (hbNoData) {
+        hbNoData.textContent = driveHardwareEnabled
+          ? "Waiting for first feedback frame\u2026"
+          : "Hoverboard not enabled \u2014 enable S1 in Setup.";
+        hbNoData.style.display = "";
+      }
       if (hbDataGrid) hbDataGrid.style.display = "none";
       return;
     }

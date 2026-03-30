@@ -54,9 +54,10 @@ void driveTask(void* pvParameters) {
         }
     }
 
+    HoverboardFeedbackParser hbParser;
     hoverSerial.begin(HOVERBOARD_BAUD, SERIAL_8N1, PIN_HOVERBOARD_RX, PIN_HOVERBOARD_TX);
-    resetHoverboardFeedbackParser();  // clear parser state after UART reinit
-    PA_LOG_INFO(TAG, "started — UART1 %lu baud, GPIO TX=%d RX=%d",
+    initHoverboardFeedbackParser(&hbParser);  // clear parser state after UART reinit
+    PA_LOG_INFO(TAG, "started \u2014 UART1 %lu baud, GPIO TX=%d RX=%d",
                 (unsigned long)HOVERBOARD_BAUD, PIN_HOVERBOARD_TX, PIN_HOVERBOARD_RX);
 
     uint8_t frameBuf[8];
@@ -146,7 +147,7 @@ void driveTask(void* pvParameters) {
         // Decodes battery voltage, board temperature, and motor speed from the
         // Gen2.x feedback frame the hoverboard controller sends back at 10–100 Hz.
         HoverboardFeedback hbFb;
-        if (readHoverboardFeedback(hoverSerial, &hbFb)) {
+        if (readHoverboardFeedback(hoverSerial, &hbParser, &hbFb)) {
             taskENTER_CRITICAL(&robotStateMux);
             robotState.hb_batteryRaw = hbFb.batteryRaw;
             robotState.hb_boardTempRaw = hbFb.boardTempRaw;

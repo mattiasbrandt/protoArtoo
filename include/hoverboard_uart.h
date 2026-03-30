@@ -71,10 +71,25 @@ static constexpr int kHoverGen2xFrameLen = 26;
 // thread-safe: yes (no globals — state is in caller's variables)
 bool parseHoverboardFeedbackFrame(const uint8_t* buf, int len, HoverboardFeedback* out);
 
-// resetHoverboardFeedbackParser()
-// Clear the internal byte accumulator and format-detection state.
-// Call after HardwareSerial::begin() to ensure clean parser state.
-void resetHoverboardFeedbackParser();
+// -----------------------------------------------------------------------------
+// HoverboardFeedbackParser
+// Caller-owned streaming parser state. Declare as a task-local variable in
+// DriveTask and pass a pointer to readHoverboardFeedback().
+// Auto-detects EFeru FOC (18-byte) vs RoboDurden Gen2.x (26-byte) format on
+// the first valid XOR-passing frame and sticks to it until re-initialised.
+// -----------------------------------------------------------------------------
+struct HoverboardFeedbackParser {
+    uint8_t buf[kHoverGen2xFrameLen];  // accumulation buffer (max frame size)
+    int     idx;                        // bytes accumulated so far
+    bool    seekingStart;               // true = scanning for 0xCD 0xAB start marker
+    bool    formatKnown;                // true once first valid frame detected format
+    bool    isFoc;                      // true = EFeru FOC; false = RoboDurden Gen2.x
+};
+
+// initHoverboardFeedbackParser()
+// Initialise or reset parser state. Call after HardwareSerial::begin() so a
+// mid-stream accumulator from a prior UART session cannot corrupt new frames.
+void initHoverboardFeedbackParser(HoverboardFeedbackParser* p);
 
 #ifdef ARDUINO_ARCH_ESP32
 class HardwareSerial;
@@ -82,8 +97,8 @@ class HardwareSerial;
 // Non-blocking. Drains available bytes from uart; decodes any complete
 // feedback frame. Returns true if a new valid frame was decoded.
 // Call from DriveTask after sending each hoverboard drive frame.
-// Auto-detects EFeru FOC (18-byte) vs RoboDurden Gen2.x (26-byte) on the
-// first valid frame; sticks to detected format until resetHoverboardFeedbackParser().
 // thread-safe: must only be called from the task that owns the serial port.
-bool readHoverboardFeedback(HardwareSerial& uart, HoverboardFeedback* out);
+bool readHoverboardFeedback(HardwareSerial& uart,
+                            HoverboardFeedbackParser* parser,
+                            HoverboardFeedback* out);
 #endif

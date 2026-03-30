@@ -177,6 +177,11 @@ constexpr uint8_t PIN_AUDIO_TX      = 7;    // was GPIO26 — right outer pos 4
 
 // RC inputs — CH3 and CH6 land on different GPIOs at their inner-row positions.
 // All remaining RC channels (CH1/CH2/CH4/CH5) are direct matches.
+//
+// GPIO5 overlap on S3: PIN_RC_CH3 and PIN_ARM2_SERVO both map to GPIO5 (right
+// inner pos 7). In SBUS modes CH3 is dormant — no conflict. In standard_pwm
+// mode with ARM2 enabled, both compete for GPIO5. Use standard_pwm + ARM2 on
+// the classic ESP32 target where PIN_RC_CH3 = GPIO2 and PIN_ARM2_SERVO = GPIO5.
 constexpr uint8_t PIN_RC_CH3        = 5;    // was GPIO2  — right inner pos 7
 constexpr uint8_t PIN_RC_CH6        = 38;   // was GPIO27 — left inner pos 6
 

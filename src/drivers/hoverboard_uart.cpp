@@ -40,16 +40,7 @@ void buildHoverboardFrame(uint8_t* buf, int16_t steer, int16_t speed) {
     memcpy(buf, &frame, sizeof(frame));
 }
 
-// -----------------------------------------------------------------------------
-// Hoverboard feedback parser state (UART1 RX)
-// Auto-detects EFeru FOC (18-byte) vs RoboDurden Gen2.x (26-byte) format
-// on first valid frame and sticks to that format until reset.
-// -----------------------------------------------------------------------------
-static uint8_t s_fbBuf[kHoverGen2xFrameLen];
-static int s_fbIdx = 0;
-static bool s_fbSeekingStart = true;
-static bool s_fbFormatKnown = false;
-static bool s_fbIsFoc = false;
+// Parser helpers and public API: see hoverboard_uart.h for struct layout.
 
 // -----------------------------------------------------------------------------
 // validateXorFrame()
@@ -117,103 +108,86 @@ bool parseHoverboardFeedbackFrame(const uint8_t* buf, int len, HoverboardFeedbac
     return false;
 }
 
-// -----------------------------------------------------------------------------
-// resetFeedbackAccumulator()
-// Clear only framing accumulator; preserve detected frame format.
-// -----------------------------------------------------------------------------
-static void resetFeedbackAccumulator() {
-    memset(s_fbBuf, 0, sizeof(s_fbBuf));
-    s_fbIdx = 0;
-    s_fbSeekingStart = true;
-}
-
-// -----------------------------------------------------------------------------
-// resetHoverboardFeedbackParser()
-// Clear parser accumulator and auto-detection state.
-// -----------------------------------------------------------------------------
-void resetHoverboardFeedbackParser() {
-    resetFeedbackAccumulator();
-    s_fbFormatKnown = false;
-    s_fbIsFoc = false;
+// initHoverboardFeedbackParser()
+// Zero-initialise the struct and set seekingStart so the parser starts fresh.
+// Preserves no state from a prior session.
+void initHoverboardFeedbackParser(HoverboardFeedbackParser* p) {
+    if (p == nullptr) return;
+    memset(p->buf, 0, sizeof(p->buf));
+    p->idx          = 0;
+    p->seekingStart = true;
+    p->formatKnown  = false;
+    p->isFoc        = false;
 }
 
 #ifdef ARDUINO_ARCH_ESP32
-// -----------------------------------------------------------------------------
 // readHoverboardFeedback()
 // Non-blocking UART feedback parser for DriveTask-owned serial port.
-// -----------------------------------------------------------------------------
-bool readHoverboardFeedback(HardwareSerial& uart, HoverboardFeedback* out) {
-    if (out == nullptr) {
-        return false;
-    }
+bool readHoverboardFeedback(HardwareSerial& uart,
+                            HoverboardFeedbackParser* parser,
+                            HoverboardFeedback* out) {
+    if (parser == nullptr || out == nullptr) return false;
 
     bool gotFrame = false;
 
     while (uart.available() > 0) {
         const int raw = uart.read();
-        if (raw < 0) {
-            break;
-        }
+        if (raw < 0) break;
+        const uint8_t b = (uint8_t)raw;
 
-        const uint8_t byte = (uint8_t)raw;
-
-        if (s_fbSeekingStart) {
-            if (s_fbIdx == 0) {
-                if (byte == 0xCD) {
-                    s_fbBuf[0] = byte;
-                    s_fbIdx = 1;
-                }
-                continue;
-            }
-
-            if (s_fbIdx == 1) {
-                if (byte == 0xAB) {
-                    s_fbBuf[1] = byte;
-                    s_fbIdx = 2;
-                    s_fbSeekingStart = false;
-                } else if (byte == 0xCD) {
-                    s_fbBuf[0] = byte;
-                    s_fbIdx = 1;
+        if (parser->seekingStart) {
+            if (parser->idx == 0) {
+                if (b == 0xCD) { parser->buf[0] = b; parser->idx = 1; }
+            } else {  // idx == 1, waiting for 0xAB
+                if (b == 0xAB) {
+                    parser->buf[1] = b; parser->idx = 2; parser->seekingStart = false;
+                } else if (b == 0xCD) {
+                    parser->buf[0] = b;  // keep idx=1
                 } else {
-                    s_fbIdx = 0;
+                    parser->idx = 0;
                 }
             }
             continue;
         }
 
-        if (s_fbIdx >= kHoverGen2xFrameLen) {
-            resetFeedbackAccumulator();
+        // Guard against accumulator overflow (should not happen in practice)
+        if (parser->idx >= kHoverGen2xFrameLen) {
+            initHoverboardFeedbackParser(parser);
             continue;
         }
 
-        s_fbBuf[s_fbIdx++] = byte;
+        parser->buf[parser->idx++] = b;
 
-        if (s_fbIdx == kHoverFocFrameLen) {
-            if (!s_fbFormatKnown || s_fbIsFoc) {
-                if (validateXorFrame(s_fbBuf, 9)) {
-                    s_fbFormatKnown = true;
-                    s_fbIsFoc = true;
-                    parseFocFrame(s_fbBuf, out);
-                    resetFeedbackAccumulator();
+        // Try FOC format at 18 bytes
+        if (parser->idx == kHoverFocFrameLen) {
+            if (!parser->formatKnown || parser->isFoc) {
+                if (validateXorFrame(parser->buf, 9)) {
+                    parser->formatKnown = true; parser->isFoc = true;
+                    parseFocFrame(parser->buf, out);
+                    memset(parser->buf, 0, sizeof(parser->buf));
+                    parser->idx = 0; parser->seekingStart = true;
                     gotFrame = true;
                     continue;
                 }
-
-                if (s_fbFormatKnown) {
-                    resetFeedbackAccumulator();
+                if (parser->formatKnown) {  // known FOC, bad checksum — resync
+                    memset(parser->buf, 0, sizeof(parser->buf));
+                    parser->idx = 0; parser->seekingStart = true;
                     continue;
                 }
+                // unknown format, FOC failed — keep accumulating to 26 bytes
             }
+            // known Gen2.x — keep accumulating
         }
 
-        if (s_fbIdx == kHoverGen2xFrameLen) {
-            if (validateXorFrame(s_fbBuf, 13)) {
-                s_fbFormatKnown = true;
-                s_fbIsFoc = false;
-                parseGen2xFrame(s_fbBuf, out);
+        // Try Gen2.x format at 26 bytes
+        if (parser->idx == kHoverGen2xFrameLen) {
+            if (validateXorFrame(parser->buf, 13)) {
+                parser->formatKnown = true; parser->isFoc = false;
+                parseGen2xFrame(parser->buf, out);
                 gotFrame = true;
             }
-            resetFeedbackAccumulator();
+            memset(parser->buf, 0, sizeof(parser->buf));
+            parser->idx = 0; parser->seekingStart = true;
         }
     }
 
