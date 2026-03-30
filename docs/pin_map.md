@@ -250,3 +250,60 @@ from the original artoo.uk firmware; protoArtoo uses "Dome rotation ESC" for cla
 | GPIO 25 label | "Dome Servo" | Dome rotation ESC | Signal drives ISDT ESC70 brushed ESC + brushed gearmotor path, not a servo |
 
 If you have a different PCB revision and find different assignments, please open an issue.
+
+
+---
+
+## S3 Mini GPIO Assignment
+
+The WEMOS LOLIN S3 Mini is a drop-in alternative for the classic ESP32 D1 Mini in the
+Artoo Controller PCB socket. All 27 exposed GPIOs are reachable through the standard PCB
+socket. GPIO assignments that are direct matches (same GPIO at the same socket position)
+are noted; only the 10 positions that carry a different GPIO on S3 require firmware
+overrides (defined in `include/config.h` under `#ifdef PA_BOARD_S3_MINI`).
+
+| Artoo function | config.h constant | D1 Mini GPIO | S3 GPIO | Override? |
+|---|---|---|---|---|
+| Debug TX | — | 1 | 43 | No — same UART0 TX role |
+| Debug RX | — | 3 | 44 | No — same UART0 RX role |
+| I2C SDA | PIN_I2C_SDA | 21 | **35** | Yes — 21→35 |
+| I2C SCL | PIN_I2C_SCL | 22 | **36** | Yes — 22→36 |
+| Hoverboard TX | PIN_HOVERBOARD_TX | 16 | 16 | No — direct match |
+| Hoverboard RX | PIN_HOVERBOARD_RX | 17 | **15** | Yes — 17→15 |
+| Audio TX (S2) | PIN_AUDIO_TX | 26 | **7** | Yes — 26→7 |
+| Audio RX (S2) | PIN_AUDIO_RX | 35 | 35 | No — direct match |
+| Dome TX (S3) | PIN_DOME_TX | 33 | 33 | No — direct match |
+| Dome RX (S3) | PIN_DOME_RX | 34 | 34 | No — direct match |
+| SBUS1 / CH1 | PIN_SBUS1_RX / PIN_RC_CH1 | 15 | 15 | No — direct match (UART changes to Serial0) |
+| SBUS2 / CH2 | PIN_SBUS2_RX / PIN_RC_CH2 | 13 | 13 | No — direct match |
+| CH3 RC PWM | PIN_RC_CH3 | 2 | **5** | Yes — 2→5 |
+| CH4 RC PWM | PIN_RC_CH4 | 4 | 4 | No — direct match |
+| CH5 RC PWM | PIN_RC_CH5 | 12 | 12 | No — direct match |
+| CH6 RC PWM | PIN_RC_CH6 | 27 | **38** | Yes — 27→38 |
+| ARM1 servo | PIN_ARM1_SERVO | 23 | **8** | Yes — 23→8 |
+| ARM2 servo | PIN_ARM2_SERVO | 5 | 5 | No — direct match |
+| AUX1/ARM3 | PIN_ARM3_SERVO | 19 | — | Disabled — GPIO19 = USB D− on S3 |
+| AUX2/ARM4 | PIN_ARM4_SERVO | 18 | **6** | Yes — 18→6 |
+| AUX3/ARM5 | PIN_ARM5_SERVO | 32 | **11** | Yes — 32→11 |
+| Dome ESC | PIN_DOME_ESC | 25 | **3** | Yes — 25→3 |
+
+### S3 Mini Runtime UART Ownership
+
+On the S3 Mini, UART0 is free because native USB uses the dedicated USB peripheral
+(GPIO 19/20) instead of UART0. This eliminates the SBUS1 vs hoverboard contention
+that exists on the classic ESP32 build.
+
+| UART | Arduino name | Assigned owner | Condition |
+|------|--------------|----------------|----------|
+| UART0 | Serial0 | RcInputTask (SBUS1 RX) | SBUS mode active |
+| UART1 | Serial1 | DriveTask (hoverboard) | Always — no contention |
+| UART2 | Serial2 | DomeLinkTask (dome link) | S3 enabled |
+| — | GPIO 7 soft-UART | AudioTask (DY-SV5W TX) | S2 enabled |
+
+Conflict A does not exist on S3. SBUS1 + hoverboard drive operate simultaneously
+in all RC modes.
+
+### S3 Mini: GPIO 15 upload note
+
+GPIO 15 is **not** a strapping pin on the S3 Mini. USB upload works with the board
+seated in the PCB socket without any receiver interference.

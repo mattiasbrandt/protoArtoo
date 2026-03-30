@@ -67,6 +67,9 @@ All rules apply unconditionally to every code change in this repository.
 > can prevent the bootloader from entering download mode. **USB upload only works
 > with the ESP32 removed from the PCB socket.** Use OTA for all normal in-PCB flashing.
 > Full write-up: `tasks/lessons.md`, `docs/pin_map.md`.
+> For the S3 Mini build (`protoArtoo_s3`): GPIO 15 is not a strapping pin on the
+> S3 Mini. USB upload works with the board seated in the PCB socket. OTA is still
+> preferred for convenience.
 
 - Default USB upload port (ESP32 unseated): `/dev/ttyUSB0` — never use `/dev/ttyS0`.
 - USB flash: `pio run -e protoArtoo --target upload --upload-port /dev/ttyUSB0`
@@ -109,6 +112,8 @@ pio run -e protoArtoo           # compile firmware
 pio run -e protoArtoo -t upload # USB flash (ESP32 unseated; auto-reset, no button needed)
 pio run -e protoArtoo_ota -t upload    # OTA firmware (in-PCB, 10.0.0.22)
 pio run -e protoArtoo_ota -t uploadfs  # OTA filesystem/LittleFS (in-PCB, 10.0.0.22)
+pio run -e protoArtoo_s3        # compile S3 Mini firmware
+pio run -e protoArtoo_s3_ota -t upload    # OTA firmware (S3 Mini, 10.0.0.22)
 pio test -e native              # fast logic tests (no hardware)
 pio test -e protoArtoo          # on-device tests (requires ESP32)
 pio check                       # static analysis (cppcheck)

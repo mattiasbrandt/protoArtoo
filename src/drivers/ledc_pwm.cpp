@@ -23,7 +23,7 @@ static const char* TAG = "ledc_pwm";
 // header stays free of ESP32-specific types and is includable on native.
 #define PA_LEDC_TIMER LEDC_TIMER_0
 #define PA_LEDC_MODE LEDC_LOW_SPEED_MODE
-#define PA_LEDC_RESOLUTION LEDC_TIMER_16_BIT
+#define PA_LEDC_RESOLUTION LEDC_RESOLUTION  // platform-appropriate: 14-bit on S3, 16-bit on classic
 
 // GPIO pin for each channel — indexed by LedcChannel enum value (0-5).
 static const uint8_t kChannelGpio[LEDC_CH_MAX] = {

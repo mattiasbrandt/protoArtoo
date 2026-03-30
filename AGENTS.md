@@ -117,6 +117,9 @@ pio run -e protoArtoo --target upload --upload-port /dev/ttyUSB0
 > the receiver can prevent the bootloader from entering download mode — USB upload
 > silently fails or times out. Unseat the ESP32 → USB flash → reseat.
 > Full write-up: `tasks/lessons.md`, `docs/pin_map.md`.
+> For the S3 Mini build (`protoArtoo_s3`): GPIO 15 is not a strapping pin on the
+> S3 Mini. USB upload works with the board seated in the PCB socket. OTA is still
+> preferred for convenience.
 
 ### OTA — standard in-PCB flash path (preferred)
 ```bash
@@ -130,6 +133,15 @@ pio run -e protoArtoo_ota --target uploadfs  # filesystem (LittleFS web UI)
 ### Web UI OTA
 - Firmware: `POST /upload/firmware` — filesystem: `POST /upload/filesystem`
 - Both available on the Firmware page (`/firmware.html`).
+
+### Build Commands (Quick Reference)
+```bash
+pio run -e protoArtoo           # compile firmware
+pio run -e protoArtoo -t upload # USB flash (ESP32 unseated; auto-reset, no button needed)
+pio run -e protoArtoo_ota -t upload    # OTA firmware (in-PCB, 10.0.0.22)
+pio run -e protoArtoo_s3        # compile S3 Mini firmware
+pio run -e protoArtoo_s3_ota -t upload    # OTA firmware (S3 Mini, 10.0.0.22)
+```
 
 ## Verification and Reporting
 

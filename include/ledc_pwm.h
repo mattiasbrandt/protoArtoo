@@ -34,8 +34,14 @@
 // LEDC Configuration
 // -----------------------------------------------------------------------------
 #define LEDC_FREQUENCY_HZ 50
-#define LEDC_RESOLUTION_BITS 16
-#define LEDC_DUTY_MAX ((1U << LEDC_RESOLUTION_BITS) - 1U)  // 65535
+// ESP32-S3 LEDC tops out at 14-bit resolution in low-speed mode.
+// Classic ESP32 supports up to 16-bit resolution.
+#ifdef PA_BOARD_S3_MINI
+#  define LEDC_RESOLUTION_BITS 14
+#else
+#  define LEDC_RESOLUTION_BITS 16
+#endif
+#define LEDC_DUTY_MAX ((1U << LEDC_RESOLUTION_BITS) - 1U)  // 16383 on S3, 65535 on classic
 
 // PWM period at 50Hz = 20,000µs
 #define PWM_PERIOD_US 20000U
@@ -53,7 +59,11 @@
 // ESP32 LEDC hardware configuration (firmware only)
 #ifdef ARDUINO_ARCH_ESP32
 #define LEDC_MODE LEDC_LOW_SPEED_MODE
-#define LEDC_RESOLUTION LEDC_TIMER_16_BIT
+#ifdef PA_BOARD_S3_MINI
+#  define LEDC_RESOLUTION LEDC_TIMER_14_BIT
+#else
+#  define LEDC_RESOLUTION LEDC_TIMER_16_BIT
+#endif
 #define LEDC_TIMER LEDC_TIMER_0
 #endif
 
@@ -82,10 +92,10 @@ struct ChannelConfig {
 
 // -----------------------------------------------------------------------------
 // pulseUsToDuty() — pure math, inline for native testability
-// Convert pulse width in microseconds to 16-bit LEDC duty cycle.
-// Formula: duty = (pulseUs / 20000) * 65535
+// Convert pulse width in microseconds to LEDC duty cycle.
+// Formula: duty = (pulseUs / 20000) * LEDC_DUTY_MAX
 // Uses 64-bit intermediate to avoid overflow.
-// Precision: ±1 count at 16-bit resolution (~0.3µs at 50Hz).
+// Precision: ±1 count at the configured resolution (~0.3µs at 50Hz/16-bit).
 // -----------------------------------------------------------------------------
 inline uint32_t pulseUsToDuty(uint16_t pulseUs) {
     return (uint32_t)(((uint64_t)pulseUs * LEDC_DUTY_MAX) / PWM_PERIOD_US);
