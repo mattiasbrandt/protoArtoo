@@ -7,7 +7,7 @@
 # Variables: override in user.mk (gitignored) or on the command line.
 #   make ota OTA_IP=192.168.4.1
 #
-# First-time setup: make setup
+# First-time setup: make setup (local build vars) + make setup-wifi (credentials)
 # =============================================================================
 
 OTA_IP      ?= 10.0.0.22
@@ -16,7 +16,7 @@ UPLOAD_PORT ?= /dev/ttyUSB0
 
 -include user.mk
 
-.PHONY: help build test check check-s3 all flash ota uploadfs check-chirp check-mp3trigger setup clean monitor
+.PHONY: help build test check check-s3 all flash ota uploadfs check-chirp check-mp3trigger setup setup-wifi clean monitor
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -57,6 +57,10 @@ check-mp3trigger: ## Compile-check MP3Trigger audio backend  (no flash)
 
 setup: ## Run first-time setup wizard  (writes user.mk)
 	python3 tools/configure.py
+
+setup-wifi: ## Configure WiFi credentials securely  (writes src/secrets.h)
+	python3 tools/configure.py --wifi
+
 
 clean: ## Remove PlatformIO build artifacts
 	pio run -t clean

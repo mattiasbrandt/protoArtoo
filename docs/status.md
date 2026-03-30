@@ -9,9 +9,9 @@ For detailed release notes see `CHANGELOG.md`.
 ## Build
 
 Run `make help` for a full list of build, test, flash, and OTA targets.
-For first-time setup: `make setup` writes a local `user.mk` with your
-OTA IP, upload port, and audio backend choice.
-
+For first-time setup:
+- `make setup` writes a local `user.mk` with OTA IP, upload port, and audio backend choice.
+- `make setup-wifi` writes `src/secrets.h` with masked WiFi credential prompts.
 ---
 
 

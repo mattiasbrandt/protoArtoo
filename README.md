@@ -128,9 +128,11 @@ Open the repo in VS Code and accept the recommended extensions when prompted
 git clone https://github.com/mattiasbrandt/protoArtoo.git
 cd protoArtoo
 
-# Copy and edit credentials (never commit this file)
-cp src/secrets.h.example src/secrets.h
-# Edit src/secrets.h with your WiFi SSID/password
+# Local build defaults (gitignored user.mk; no credentials stored here)
+make setup
+
+# WiFi credentials (writes src/secrets.h with masked prompts)
+make setup-wifi
 
 # Run native tests (required before any upload)
 pio test -e native
