@@ -157,7 +157,7 @@ for the full specification.
 
 ```
 main
-└── phase/v0.4.0        ← active phase branch (all work lands here)
+└── phase/v1.0.0        ← active phase branch (all work lands here)
     ├── (feat commits)
     └── (fix/docs/chore commits)
 
@@ -193,9 +193,9 @@ type(phase:vX.Y.Z/T00): summary
 
 Examples:
 ```
-fix(phase:v0.4.0/T00): correct typo in README
-docs(phase:v0.4.0/T00): add DFPlayer Mini to supported audio module list
-feat(phase:v0.4.0/T00): add example config for single-SBUS wiring
+fix(phase:v1.0.0/T00): correct typo in README
+docs(phase:v1.0.0/T00): add DFPlayer Mini to supported audio module list
+feat(phase:v1.0.0/T00): add example config for single-SBUS wiring
 ```
 
 If your contribution directly addresses a specific task in the phase plan,

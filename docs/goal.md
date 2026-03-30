@@ -256,6 +256,19 @@ See `body_dome_serial_link_spec.md` for all code.
 - **WiFi:** Simultaneous AP + STA
 - **Board fix:** Overheating trace cut on tested unit — permanent, board stable. May not apply to all units.
 
+**Alternative module: WEMOS LOLIN S3 Mini**
+
+The WEMOS LOLIN S3 Mini (ESP32-S3FH4R2) fits the same Artoo Controller PCB socket
+and is a fully supported alternative to the ESP32 D1 Mini:
+
+- Native USB peripheral (GPIO 19/20) — no strapping pin conflict on GPIO 15 when
+  seated; USB upload works with the board seated in the PCB socket
+- All RC modes, servos, audio, dome link, and web interface work identically
+- AUX1 spare servo output (GPIO 19 = USB D−) is not available on the S3 build;
+  all other servo channels are fully supported
+- Build environments: `protoArtoo_s3` (USB flash), `protoArtoo_s3_ota` (OTA)
+- GPIO mapping and socket compatibility details: `docs/pin_map.md` § S3 Mini GPIO Assignment
+
 ### 4.2 PCB Connector Reference
 
 > **Source:** Artoo Controller PCB schematic (EasyEDA rev 1.0) and verified continuity trace results in `docs/pin_map.md`. Use `docs/pin_map.md` and `include/config.h` as current hardware truth for implementation.
@@ -1010,7 +1023,7 @@ examples and should not override those canonical files.
 ```ini
 [env:protoArtoo]
 platform = https://github.com/pioarduino/platform-espressif32/releases/download/55.03.37/platform-espressif32.zip
-board = esp32dev
+board = wemos_d1_mini32
 framework = arduino
 build_flags =
     -Os
@@ -1023,6 +1036,10 @@ build_flags =
     -DPA_DROID_NAME="R2-D2"
     ; No -DUSE_REELTWO, no -DMARC_SLAVE, no -DMARC_MASTER
     ; protoArtoo is not a MarcDuino node.
+
+    ; S3 Mini build flags (protoArtoo_s3 env only):
+    ; -DPA_BOARD_S3_MINI=1   target WEMOS LOLIN S3 Mini; enables GPIO overrides in config.h
+    ; -DPA_ENABLE_AUX1=0     required with PA_BOARD_S3_MINI; GPIO 19 = USB D− on S3
 ```
 
 **`include/config.h` — confirmed and provisional GPIO assignments:**
@@ -1832,7 +1849,7 @@ void DriveTask(void* pvParams) {
 
 [env:protoArtoo]
 platform    = https://github.com/pioarduino/platform-espressif32/releases/download/55.03.37/platform-espressif32.zip          ; pin platform version — never use @latest
-board       = esp32dev
+board       = wemos_d1_mini32
 framework   = arduino
 monitor_speed = 115200
 upload_protocol = esptool
@@ -1860,6 +1877,10 @@ build_flags =
     -DPA_ENABLE_DOME_SBUS=1
     -DPA_AUDIO_DRIVER=AUDIO_DY_SV5W
     -DPA_DROID_NAME='"R2-D2"'
+    ; Optional flags (set per build environment, not in flags_base):
+    ;   -DPA_BOARD_S3_MINI=1   target WEMOS LOLIN S3 Mini (protoArtoo_s3 env)
+    ;   -DPA_ENABLE_AUX1=0     disable AUX1 servo; required with PA_BOARD_S3_MINI
+    ;   -DPA_ENABLE_STA_WIFI=0 AP-only WiFi mode (protoArtoo_prod env)
 
 ; Test config — on-device tests only in protoArtoo env
 test_build_src = true
@@ -1869,6 +1890,13 @@ lib_deps =
     ESP32Async/ESPAsyncWebServer @ 3.10.3  ; maintained fork — me-no-dev/ abandoned
     ESP32Async/AsyncTCP          @ 3.4.10  ; maintained fork — me-no-dev/ abandoned
     bblanchon/ArduinoJson        @ 7.4.3   ; pin exact versions — no ^ or ~
+
+; S3 Mini build target (same PCB socket as D1 Mini):
+; [env:protoArtoo_s3]
+; extends = env:protoArtoo
+; board   = lolin_s3_mini
+; build_flags = ${flags_base.build_flags} -DPA_AUDIO_DRIVER=AUDIO_SOFT_UART -DPA_BOARD_S3_MINI=1 -DPA_ENABLE_AUX1=0
+;
 
 ; =============================================================================
 [env:native]

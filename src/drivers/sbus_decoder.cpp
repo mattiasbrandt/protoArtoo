@@ -88,7 +88,7 @@ static constexpr int kBitArraySize = kTotalBits + 64;  // 364
 // ---------------------------------------------------------------------------
 
 SbusDecoder::SbusDecoder()
-    : _channel(nullptr), _queue(nullptr), _activeBuf(0), _rxCfg{}, _data{} {}
+    : _channel(nullptr), _queue(nullptr), _rxBufs{}, _activeBuf(0), _rxCfg{}, _data{} {}
 
 bool SbusDecoder::begin(int rxPin) {
     if (_channel) end();
