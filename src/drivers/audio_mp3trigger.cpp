@@ -214,7 +214,8 @@ void AudioDriverMp3Trigger::setVolume(uint8_t vol) {
 // -----------------------------------------------------------------------------
 // queryModuleState()
 // UART2 contention check identical to AudioDriverSoftUart and AudioDriverChirp.
-// Returns cached state when dome ctrl or dual_sbus owns UART2.
+// Returns cached state when dome ctrl is active. SBUS2 is RMT-based; it no
+// longer contends UART2.
 //
 // When UART2 is available: drain RX, send S0 (link), then S1 (track count).
 // playState and device are always 0xFF — the MP3 Trigger protocol has no
@@ -226,8 +227,7 @@ void AudioDriverMp3Trigger::setVolume(uint8_t vol) {
 bool AudioDriverMp3Trigger::queryModuleState(AudioModuleState& out) {
     bool uart2Contended;
     taskENTER_CRITICAL(&robotStateMux);
-    uart2Contended =
-        (robotState.cfg_rc_input_mode == RC_INPUT_DUAL_SBUS) || robotState.cfg_enable_s3_dome_ctrl;
+    uart2Contended = robotState.cfg_enable_s3_dome_ctrl;
     taskEXIT_CRITICAL(&robotStateMux);
     if (uart2Contended) {
         PA_LOG_DEBUG(TAG, "UART2 contended — returning cached module state");

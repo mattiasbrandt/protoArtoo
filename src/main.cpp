@@ -819,12 +819,6 @@ void setup() {
     // RcInputTask: ~200 Hz RC poll (all modes), Layer 1+2 failsafe
     // ServoTask: 50 Hz servo PWM updates
     // DomeTask: 50 Hz ESC PWM updates
-    // UART1 ownership: DriveTask (hoverboard, Serial1 @ 115200 8N1) and RcInputTask
-    // (SBUS1 decoder, Serial1 @ 100000 8E2 inverted) both call Serial1.begin().
-    // With this creation order (DriveTask first, RcInputTask second) and equal FreeRTOS
-    // priority, RcInputTask's begin() wins UART1 when SBUS mode is active — hoverboard
-    // TX is left at wrong baud. Do not enable S1 hoverboard and SBUS mode simultaneously
-    // until Phase 5 T01 (RMT SBUS decoder) is implemented.
     xTaskCreatePinnedToCore(driveTask, "DriveTask", 4096, nullptr, 5, nullptr, 1);
     xTaskCreatePinnedToCore(rcInputTask, "RCInputTask", 4096, nullptr, 5, nullptr, 1);
     xTaskCreatePinnedToCore(

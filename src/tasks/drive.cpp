@@ -54,12 +54,6 @@ void driveTask(void* pvParameters) {
         }
     }
 
-    // NOTE — UART1 contention: RcInputTask also calls Serial1.begin() for SBUS1
-    // decoding (100000 baud 8E2 inverted). The last begin() wins and reconfigures
-    // the peripheral — if RcInputTask starts after DriveTask, UART1 ends up in
-    // SBUS config and hoverboard TX sends corrupt frames to the GD32F130.
-    // Do not run hoverboard S1 and SBUS mode simultaneously until Phase 5 T01
-    // (RMT SBUS decoder) is in place. Use standard_pwm for RC input on full hardware.
     hoverSerial.begin(HOVERBOARD_BAUD, SERIAL_8N1, PIN_HOVERBOARD_RX, PIN_HOVERBOARD_TX);
     PA_LOG_INFO(TAG, "started — UART1 %lu baud, GPIO TX=%d RX=%d",
                 (unsigned long)HOVERBOARD_BAUD, PIN_HOVERBOARD_TX, PIN_HOVERBOARD_RX);

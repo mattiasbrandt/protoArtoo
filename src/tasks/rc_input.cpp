@@ -8,7 +8,7 @@
 // Receiver #2 (PIN_SBUS2_RX = GPIO 13): Dome spin
 //
 // SbusDecoder API:
-//   .begin(&uart, pin) — configure HardwareSerial for SBUS; returns false on failure
+//   .begin(pin)   — initialize RMT channel on pin; returns false if no channel free
 //   .read()       — returns true when a new 25-byte frame is decoded
 //   .data()       — returns SbusData{ch[16], failsafe, lost_frame}
 //   ch[]          — 0-indexed, range SBUS_MIN(172)..SBUS_MAX(1811), center ~992
@@ -35,14 +35,10 @@
 
 static const char* TAG = "RCInputTask";
 
-// SBUS receiver objects — UART-based with hardware inversion
+// SBUS receiver objects — RMT-based, no hardware UART consumed.
 // GPIO 15 (PIN_SBUS1_RX) and GPIO 13 (PIN_SBUS2_RX) are the SBUS receiver pins.
-//
-// Classic ESP32: SBUS1 uses Serial1 (UART1), which conflicts with DriveTask
-// (hoverboard). Conflict A persists until T01 (RMT decoder). See sbus_decoder.h.
-//
-// S3 Mini (PA_BOARD_S3_MINI): SBUS1 uses Serial0 (UART0), which is free because
-// native USB uses GPIO19/20 instead of UART0. Conflict A does not exist on S3.
+// SBUS1 and SBUS2 each occupy one RMT channel (3 memory blocks each).
+// UART1 is now exclusively owned by DriveTask; UART2 by DomeLinkTask.
 static SbusDecoder sbus_drive;
 static SbusDecoder sbus_dome;
 static const uint8_t kRcPwmPins[6] = {PIN_RC_CH1, PIN_RC_CH2, PIN_RC_CH3,
@@ -646,22 +642,15 @@ void rcInputTask(void* pvParameters) {
     if (driveSbusEnabled) {
         bool useDriveSbus2 = (rcInputMode == RC_INPUT_SINGLE_SBUS) && useCh2;
         int sbusRxPin = useDriveSbus2 ? PIN_SBUS2_RX : PIN_SBUS1_RX;
-        // SBUS1 UART assignment: Serial0 on S3 (UART0 free — native USB uses GPIO19/20),
-        // Serial1 on classic ESP32 (shared with hoverboard; Conflict A until T01).
-        // Do NOT pass &Serial on S3 — it is HWCDC (USB CDC), not HardwareSerial.
-#ifdef PA_BOARD_S3_MINI
-        if (!sbus_drive.begin(&Serial0, sbusRxPin)) {
-#else
-        if (!sbus_drive.begin(&Serial1, sbusRxPin)) {
-#endif
-            PA_LOG_ERROR(TAG, "UART init failed for SBUS%d GPIO%d", useDriveSbus2 ? 2 : 1,
+        if (!sbus_drive.begin(sbusRxPin)) {
+            PA_LOG_ERROR(TAG, "RMT init failed for SBUS%d GPIO%d", useDriveSbus2 ? 2 : 1,
                          sbusRxPin);
             driveSbusEnabled = false;
         }
     }
     if (domeSbusEnabled) {
-        if (!sbus_dome.begin(&Serial2, PIN_SBUS2_RX)) {
-            PA_LOG_WARN(TAG, "UART init failed for SBUS2 GPIO%d", PIN_SBUS2_RX);
+        if (!sbus_dome.begin(PIN_SBUS2_RX)) {
+            PA_LOG_WARN(TAG, "RMT init failed for SBUS2 GPIO%d", PIN_SBUS2_RX);
             domeSbusEnabled = false;
         }
     }
@@ -733,13 +722,9 @@ void rcInputTask(void* pvParameters) {
             int sbusRxPin =
                 (rcInputMode == RC_INPUT_SINGLE_SBUS && useCh2) ? PIN_SBUS2_RX : PIN_SBUS1_RX;
             bool useDriveSbus2 = (sbusRxPin == PIN_SBUS2_RX);
-#ifdef PA_BOARD_S3_MINI
-            if (!sbus_drive.begin(&Serial0, sbusRxPin)) {
-#else
-            if (!sbus_drive.begin(&Serial1, sbusRxPin)) {
-#endif
+            if (!sbus_drive.begin(sbusRxPin)) {
                 if (!driveSbusInitWarned) {
-                    PA_LOG_ERROR(TAG, "UART init failed for SBUS%d GPIO%d", useDriveSbus2 ? 2 : 1,
+                    PA_LOG_ERROR(TAG, "RMT init failed for SBUS%d GPIO%d", useDriveSbus2 ? 2 : 1,
                                  sbusRxPin);
                     driveSbusInitWarned = true;
                 }
@@ -750,9 +735,9 @@ void rcInputTask(void* pvParameters) {
         }
 
         if (domeSbusEnabled && !sbus_dome.isInitialized()) {
-            if (!sbus_dome.begin(&Serial2, PIN_SBUS2_RX)) {
+            if (!sbus_dome.begin(PIN_SBUS2_RX)) {
                 if (!domeSbusInitWarned) {
-                    PA_LOG_WARN(TAG, "UART init failed for SBUS2 GPIO%d", PIN_SBUS2_RX);
+                    PA_LOG_WARN(TAG, "RMT init failed for SBUS2 GPIO%d", PIN_SBUS2_RX);
                     domeSbusInitWarned = true;
                 }
                 domeSbusEnabled = false;
@@ -764,14 +749,14 @@ void rcInputTask(void* pvParameters) {
         if (!driveSbusEnabled && sbus_drive.isInitialized()) {
             sbus_drive.end();
             driveSbusInitWarned = false;
-            PA_LOG_INFO(TAG, "SBUS1 disabled — released UART1");
+            PA_LOG_INFO(TAG, "SBUS1 disabled — RMT channel released");
         }
 
         if (!domeSbusEnabled && sbus_dome.isInitialized()) {
             sbus_dome.end();
             domeSbusInitWarned = false;
             sbus2WatchdogFired = false;
-            PA_LOG_INFO(TAG, "SBUS2 disabled — released UART2");
+            PA_LOG_INFO(TAG, "SBUS2 disabled — RMT channel released");
         }
 
         if (rcInputMode == RC_INPUT_STANDARD_PWM) {

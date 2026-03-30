@@ -29,8 +29,9 @@
 // Transport:
 //   TX: software UART bit-bang on GPIO26 (PIN_AUDIO_TX) via audio_soft_uart_tx.h.
 //   RX: HardwareSerial(2) on GPIO35 (PIN_AUDIO_RX), opened RX-only (TX pin = -1).
-//   UART2 is shared with dome link (S3) and SBUS2. queryModuleState() skips UART2
-//   queries and returns cached state when dome ctrl or dual_sbus is active.
+//   UART2 is shared with dome link (S3). queryModuleState() skips UART2
+//   queries and returns cached state when dome ctrl is active.
+//   SBUS2 is now RMT-based and no longer contends UART2.
 //
 // Diagnostic queries in begin():
 //   Runs three queries before and after init commands so the serial log
@@ -239,7 +240,7 @@ void AudioDriverSoftUart::begin(uint8_t vol) {
 bool AudioDriverSoftUart::queryModuleState(AudioModuleState& out) {
     bool uart2Contended;
     taskENTER_CRITICAL(&robotStateMux);
-    uart2Contended = (robotState.cfg_rc_input_mode == RC_INPUT_DUAL_SBUS) || robotState.cfg_enable_s3_dome_ctrl;
+    uart2Contended = robotState.cfg_enable_s3_dome_ctrl;
     taskEXIT_CRITICAL(&robotStateMux);
     if (uart2Contended) {
         PA_LOG_DEBUG(TAG, "UART2 contended — returning cached module state");

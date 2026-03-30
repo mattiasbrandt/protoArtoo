@@ -100,10 +100,8 @@ protoArtoo supports two hardware targets using the same Artoo Controller PCB:
 - Build environments: `protoArtoo` (USB flash), `protoArtoo_ota` (OTA)
 - All features supported
 
-**WEMOS LOLIN S3 Mini** (drop-in alternative — recommended upgrade)
+**WEMOS LOLIN S3 Mini** (drop-in alternative — optional upgrade)
 - Build environments: `protoArtoo_s3` (USB flash), `protoArtoo_s3_ota` (OTA)
-- SBUS receiver and hoverboard drive operate simultaneously — the hardware constraint
-  present on the classic ESP32 build does not exist on the S3 Mini
 - No USB upload problem when seated in the PCB — GPIO 15 is not a strapping pin on S3
 - 2 MB built-in PSRAM for additional web server headroom
 - All RC modes, servos, audio, dome link, and web interface work identically
@@ -115,17 +113,6 @@ protoArtoo supports two hardware targets using the same Artoo Controller PCB:
 
 ## Known Limitations
 
-- **Dome Control and Dual SBUS cannot be used at the same time:** The dome serial link
-  and the second SBUS receiver input share the same hardware resource on this board.
-  When S3 Dome Control is enabled in Setup, Dual SBUS mode is not available for
-  simultaneous use. Single SBUS and Standard PWM are unaffected.
-
-- **Hoverboard drive requires Standard PWM for RC input (classic ESP32 only):** On the
-  classic ESP32 D1 Mini build, the hoverboard drive connection and SBUS receiver inputs
-  share hardware resources. When hoverboard drive is connected and active, use Standard
-  PWM mode for RC drive input rather than a SBUS receiver mode. This constraint does not
-  apply to the WEMOS LOLIN S3 Mini build, where SBUS and hoverboard drive operate
-  simultaneously without conflict.
 
 - **Sound module status varies by backend:** Modules with bidirectional UART (DY-SV5W, CHIRP) report module state on the Sound page. DY-SV5W status is manually polled to avoid disrupting its RX state machine during playback. CHIRP status updates automatically every 2 seconds and is safe to query at any time.
 ---
@@ -146,6 +133,12 @@ droid for final confirmation. They are planned for the Phase 5 hardware validati
   and boot mood restore require hardware reconnect
 - **Firmware and web UI update flows** — upload progress indication and post-reboot
   reconnect with the updated version
+
+- **SBUS + hoverboard simultaneous operation** — RMT SBUS decoder replaces
+  UART-based decoder; all SBUS modes can now run alongside hoverboard drive;
+  requires hardware confirmation on a connected droid
+- **Dual SBUS + dome link simultaneous operation** — SBUS2 moved off UART2;
+  dome link and dual SBUS should now coexist; requires hardware confirmation
 
 ---
 

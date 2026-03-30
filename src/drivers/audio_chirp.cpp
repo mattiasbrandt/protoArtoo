@@ -65,8 +65,8 @@ static uint8_t readLine(char* buf, uint8_t maxLen, uint32_t timeoutMs) {
 // Bank 1 track count.
 // -----------------------------------------------------------------------------
 void AudioDriverChirp::begin(uint8_t vol) {
-    // same UART2 RX path as DY-SV5W; see T66 for contention handling when dome
-    // link is also active.
+    // same UART2 RX path as DY-SV5W; see T66 for dome-link contention handling.
+    // SBUS2 is now RMT-based; UART2 is only contended by dome link.
     s_chirpSerial.begin(9600, SERIAL_8N1, PIN_AUDIO_RX, -1);
     softUartTxBegin();
 
@@ -177,7 +177,7 @@ void AudioDriverChirp::setVolume(uint8_t vol) {
 bool AudioDriverChirp::queryModuleState(AudioModuleState& out) {
     bool uart2Contended;
     taskENTER_CRITICAL(&robotStateMux);
-    uart2Contended = (robotState.cfg_rc_input_mode == RC_INPUT_DUAL_SBUS) || robotState.cfg_enable_s3_dome_ctrl;
+    uart2Contended = robotState.cfg_enable_s3_dome_ctrl;
     taskEXIT_CRITICAL(&robotStateMux);
     if (uart2Contended) {
         PA_LOG_DEBUG(TAG, "UART2 contended — returning cached module state");
