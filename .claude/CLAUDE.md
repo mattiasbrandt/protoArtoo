@@ -317,6 +317,7 @@ are defined in `AGENTS.md` § "Execution Model". Follow those rules as-is.
   - `tasks/body_dome_serial_link_astropixel_implementation.md` — dome fork implementation notes
   - `include/config.h` — GPIO assignments (source of truth for pin numbers)
   - `include/robot_state.h` — shared state struct (source of truth for all state fields)
+  - `docs/action-registry.yaml` — canonical action/event registry (naming, API bindings, Marcduino commands)
 
 ### 3. Minimize Cognitive Load in Code
 - Prefer explicit names and direct control flow.

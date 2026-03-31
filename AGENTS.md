@@ -29,6 +29,7 @@ assumption briefly.
 - Phase 3 RC diagnostics/mapping contract: `tasks/rc_diagnostics_contract.md`
 - Hardware truth: `docs/pin_map.md`, `include/config.h`
 - Shared state truth: `include/robot_state.h`
+- Action registry: `docs/action-registry.yaml`
 
 Do not treat `.sisyphus/plans/` as authoritative when equivalent local task docs
 exist in `tasks/`.
@@ -60,6 +61,58 @@ Documentation publication rule:
 - RC bindings/calibration must be NVS-backed and editable from webpage
 - RC mapping UX must remain modern/responsive: source badges, inline validation,
   live mapped preview, explicit apply/save feedback
+
+
+## Action Registry
+
+All robot actions, API endpoints, SSE events, and RC-bindable targets are defined in
+`docs/action-registry.yaml`. That file is the source of truth for naming and the
+authoritative reference when adding, renaming, or cross-referencing any action.
+
+### Naming convention
+
+  {domain}.{type}.{verb-noun}     e.g.  sound.action.play-track
+                                        drive.action.move
+                                        system.action.estop
+
+  Domains:  drive | dome | sound | servo | system | rc
+  Types:    action (command/intent) | status (observable state) |
+            event (SSE) | config (NVS-backed setting)
+  Format:   dots between structural segments; kebab-case within segments
+
+### audio <-> sound naming boundary
+
+  - Registry names, display labels, web UI copy: use "sound"
+  - C++ symbols (enums, class names, file names): use "audio"
+    Rationale: the Arduino/IDF library layer uses "audio"; renaming C++ symbols
+    would diverge from the library vocabulary without user-visible benefit.
+
+### C++ bindable-action enum
+
+  `RobotActionId` in `include/rc_mapping.h` is the C++ form of the bindable-action
+  subset of the registry (entries where type == action and sources includes sbus).
+  Values follow DOMAIN_ACTION_VERB_NOUN: DRIVE_ACTION_SPEED, SERVO_ACTION_ARM1_TOGGLE.
+
+  When adding a new bindable action:
+  1. Add the YAML entry to docs/action-registry.yaml.
+  2. Add the enum value to RobotActionId in include/rc_mapping.h.
+  3. Add the ActionEntry row to ACTION_REGISTRY[] in include/action_registry.h.
+  4. Add dispatch handling in src/tasks/rc_input.cpp.
+
+### Runtime registry
+
+  `GET /api/actions` returns all bindable actions as JSON (id, name, display_name,
+  domain, description, safety_critical). The RC mapping UI uses this to build
+  action dropdowns dynamically — do not hardcode action lists in the frontend.
+
+### What NOT to do
+
+  - Do not introduce a new action, command type, or RC target without a registry entry.
+  - Do not use ad-hoc names (soft_uart, manual_command, MC_*-style prefixes) for
+    symbols that represent user-visible actions — derive the symbol from the registry name.
+  - Do not rename NVS keys to match registry names — migration cost outweighs gain.
+    Document the nvs_key mapping in the registry entry instead.
+
 
 ## Architecture Guardrails
 
