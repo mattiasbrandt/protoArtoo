@@ -16,7 +16,7 @@ UPLOAD_PORT ?= /dev/ttyUSB0
 
 -include user.mk
 
-.PHONY: help build test check check-s3 all flash ota uploadfs check-chirp check-mp3trigger setup setup-wifi clean monitor
+.PHONY: help build test check check-s3 all flash ota uploadfs check-chirp check-mp3trigger setup setup-wifi clean monitor check-deps
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -67,3 +67,12 @@ clean: ## Remove PlatformIO build artifacts
 
 monitor: ## Open serial monitor  (does not reset the ESP32)
 	python3 tools/serial_monitor.py
+
+check-deps: ## Check required OS commands and Python packages are installed
+	@command -v python3 >/dev/null 2>&1 || { \
+		echo "  MISSING   python3  (command)"; \
+		echo "            sudo dnf install python3 python3-pip   (Fedora/RHEL / Fedora WSL)"; \
+		echo "            sudo apt install python3 python3-pip   (Debian/Ubuntu / Ubuntu WSL)"; \
+		echo "            brew install python3                   (macOS)"; \
+		exit 1; }
+	python3 tools/check_deps.py
