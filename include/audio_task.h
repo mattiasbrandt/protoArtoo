@@ -26,7 +26,12 @@
 #include "robot_state.h"
 
 // -----------------------------------------------------------------------------
-// AudioCommandType
+// AudioCommandType — discriminant for messages placed on audioCmdQueue.
+//
+// This is the queue-level enum: it describes what the AudioTask should execute.
+// It is intentionally coarser than AudioActionType (see audio_dollar_parser.h),
+// which operates at the dollar-command parsing layer and carries more variants
+// (RANDOM_ON/OFF, VOLUME_UP/DOWN) that the parser resolves before enqueueing.
 // -----------------------------------------------------------------------------
 enum AudioCommandType : uint8_t {
     AUDIO_CMD_DOLLAR = 0,    // raw '$' command string — parsed in AudioTask

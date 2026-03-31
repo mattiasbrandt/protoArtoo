@@ -16,6 +16,10 @@
 // ManualCommand — recognised command tokens for POST /api/manual-command.
 // Returned by resolveManualCommand() so callers can dispatch without string
 // comparison.
+//
+// Internal to the web layer. Exposed in this header because native tests
+// validate resolveManualCommand() return values directly. Do not use outside
+// src/web/ or test/.
 // -----------------------------------------------------------------------------
 enum ManualCommand : uint8_t {
     MC_UNKNOWN = 0,

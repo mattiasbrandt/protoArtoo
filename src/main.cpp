@@ -359,11 +359,11 @@ void loadConfigToState() {
     // Tier 2 Trigger/Button bindings
     RcTriggerBindingNvsSpec triggerSpecs[] = {
         {"rc_arm1", &robotState.cfg_rc_arm1,
-         makeRcTriggerBinding(RC_BINDING_SBUS1, 4, RC_ACTION_ARM1_TOGGLE, nullptr,
+         makeRcTriggerBinding(RC_BINDING_SBUS1, 4, SERVO_ACTION_ARM1_TOGGLE, nullptr,
                               RC_SBUS_DEFAULT_MIN, RC_SBUS_DEFAULT_CENTER, RC_SBUS_DEFAULT_MAX, 0,
                               false)},
         {"rc_arm2", &robotState.cfg_rc_arm2,
-         makeRcTriggerBinding(RC_BINDING_SBUS1, 5, RC_ACTION_ARM2_TOGGLE, nullptr,
+         makeRcTriggerBinding(RC_BINDING_SBUS1, 5, SERVO_ACTION_ARM2_TOGGLE, nullptr,
                               RC_SBUS_DEFAULT_MIN, RC_SBUS_DEFAULT_CENTER, RC_SBUS_DEFAULT_MAX, 0,
                               false)},
         {"rc_aux1", &robotState.cfg_rc_aux1, disabledRcTriggerBinding()},
@@ -489,10 +489,10 @@ void loadConfigToState() {
         &robotState.cfg_rc_free2,  &robotState.cfg_rc_free3,
     };
     const RcTriggerBinding triggerDefaults[] = {
-        makeRcTriggerBinding(RC_BINDING_SBUS1, 4, RC_ACTION_ARM1_TOGGLE, nullptr,
+        makeRcTriggerBinding(RC_BINDING_SBUS1, 4, SERVO_ACTION_ARM1_TOGGLE, nullptr,
                              RC_SBUS_DEFAULT_MIN, RC_SBUS_DEFAULT_CENTER, RC_SBUS_DEFAULT_MAX, 0,
                              false),
-        makeRcTriggerBinding(RC_BINDING_SBUS1, 5, RC_ACTION_ARM2_TOGGLE, nullptr,
+        makeRcTriggerBinding(RC_BINDING_SBUS1, 5, SERVO_ACTION_ARM2_TOGGLE, nullptr,
                              RC_SBUS_DEFAULT_MIN, RC_SBUS_DEFAULT_CENTER, RC_SBUS_DEFAULT_MAX, 0,
                              false),
         disabledRcTriggerBinding(),

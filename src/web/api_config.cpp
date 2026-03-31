@@ -223,9 +223,9 @@ bool sourceAllowedForMode(RcInputMode mode, RcBindingSource source) {
 }
 
 bool triggerTargetAllowedByRuntime(const RcTriggerBinding& binding) {
-    // Phase 4 deferred: RC_ACTION_DOME_SEQ is intentionally blocked at API level
+    // Phase 4 deferred: DOME_ACTION_SEQ is intentionally blocked at API level
     // until DomeLinkTask routing is implemented in runtime trigger handling.
-    return binding.target != RC_ACTION_DOME_SEQ;
+    return binding.target != DOME_ACTION_SEQ;
 }
 
 }  // namespace

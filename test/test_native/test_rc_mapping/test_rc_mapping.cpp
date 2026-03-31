@@ -249,12 +249,12 @@ void test_trigger_parse_accepts_colon_payload() {
     TEST_ASSERT_TRUE(parseRcTriggerBinding("sbus1:6:cmd::OP01:172:992:1811:0:0", &binding));
     TEST_ASSERT_EQUAL_UINT8(RC_BINDING_SBUS1, binding.source);
     TEST_ASSERT_EQUAL_UINT8(6, binding.channel);
-    TEST_ASSERT_EQUAL_UINT8(RC_ACTION_MARCDUINO_CMD, binding.target);
+    TEST_ASSERT_EQUAL_UINT8(DOME_ACTION_MARCDUINO_CMD, binding.target);
     TEST_ASSERT_EQUAL_STRING(":OP01", binding.marcduinoPayload);
 }
 
 void test_trigger_format_round_trip_keeps_colon_payload() {
-    RcTriggerBinding input = makeRcTriggerBinding(RC_BINDING_SBUS1, 7, RC_ACTION_MARCDUINO_CMD,
+    RcTriggerBinding input = makeRcTriggerBinding(RC_BINDING_SBUS1, 7, DOME_ACTION_MARCDUINO_CMD,
                                                   ":MV120", 172, 992, 1811, 0, false);
     char encoded[96] = {};
     RcTriggerBinding decoded = {};
@@ -270,7 +270,7 @@ void test_trigger_format_round_trip_keeps_colon_payload() {
 void test_trigger_parse_accepts_dome_seq_payload() {
     RcTriggerBinding binding = {};
     TEST_ASSERT_TRUE(parseRcTriggerBinding("sbus2:3:dome_seq:12:172:992:1811:0:0", &binding));
-    TEST_ASSERT_EQUAL_UINT8(RC_ACTION_DOME_SEQ, binding.target);
+    TEST_ASSERT_EQUAL_UINT8(DOME_ACTION_SEQ, binding.target);
     TEST_ASSERT_EQUAL_STRING("12", binding.marcduinoPayload);
 }
 

@@ -81,7 +81,13 @@ struct AudioNamedTracks {
 };
 
 // -----------------------------------------------------------------------------
-// AudioActionType — what AudioTask should do after parsing a $ command.
+// AudioActionType — output of the dollar-command parser (audio_dollar_parser.h).
+//
+// This enum operates at the parsing layer, one level above the queue. It
+// carries variants the queue enum (AudioCommandType) does not need: RANDOM_ON,
+// RANDOM_OFF, VOLUME_UP, VOLUME_DOWN. The parser resolves these to concrete
+// AudioCommandType values (or NVS config updates) before placing a message on
+// audioCmdQueue. Do not conflate the two enums.
 // -----------------------------------------------------------------------------
 enum AudioActionType : uint8_t {
     AUDIO_ACTION_NONE = 0,

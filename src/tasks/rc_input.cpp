@@ -256,58 +256,58 @@ struct TriggerRuntimeState {
 
 static TriggerRuntimeState g_triggerStates[11] = {};  // One per Tier 2 binding slot
 
-static void processTriggerAction(RcActionTarget target, const char* payload, bool pressed) {
+static void processTriggerAction(RobotActionId target, const char* payload, bool pressed) {
     switch (target) {
-        case RC_ACTION_NONE:
+        case ROBOT_ACTION_NONE:
             break;
-        case RC_ACTION_ARM1_TOGGLE:
+        case SERVO_ACTION_ARM1_TOGGLE:
             if (pressed) {
                 queueServoCommand(0, SERVO_CMD_OPEN, 0, SRC_SBUS);
             } else {
                 queueServoCommand(0, SERVO_CMD_CLOSE, 0, SRC_SBUS);
             }
             break;
-        case RC_ACTION_ARM2_TOGGLE:
+        case SERVO_ACTION_ARM2_TOGGLE:
             if (pressed) {
                 queueServoCommand(1, SERVO_CMD_OPEN, 0, SRC_SBUS);
             } else {
                 queueServoCommand(1, SERVO_CMD_CLOSE, 0, SRC_SBUS);
             }
             break;
-        case RC_ACTION_AUX1_TOGGLE:
+        case SERVO_ACTION_AUX1_TOGGLE:
             if (pressed) {
                 queueServoCommand(2, SERVO_CMD_OPEN, 0, SRC_SBUS);
             } else {
                 queueServoCommand(2, SERVO_CMD_CLOSE, 0, SRC_SBUS);
             }
             break;
-        case RC_ACTION_AUX2_TOGGLE:
+        case SERVO_ACTION_AUX2_TOGGLE:
             if (pressed) {
                 queueServoCommand(3, SERVO_CMD_OPEN, 0, SRC_SBUS);
             } else {
                 queueServoCommand(3, SERVO_CMD_CLOSE, 0, SRC_SBUS);
             }
             break;
-        case RC_ACTION_AUX3_TOGGLE:
+        case SERVO_ACTION_AUX3_TOGGLE:
             if (pressed) {
                 queueServoCommand(4, SERVO_CMD_OPEN, 0, SRC_SBUS);
             } else {
                 queueServoCommand(4, SERVO_CMD_CLOSE, 0, SRC_SBUS);
             }
             break;
-        case RC_ACTION_MARCDUINO_SEQ:
+        case DOME_ACTION_MARCDUINO_SEQ:
             if (pressed && rcPayloadValidForBodySequence(payload)) {
                 char cmd[20];
                 snprintf(cmd, sizeof(cmd), ":SE%s", payload);
                 parseMarcduinoCommand(cmd);
             }
             break;
-        case RC_ACTION_MARCDUINO_CMD:
+        case DOME_ACTION_MARCDUINO_CMD:
             if (pressed && rcPayloadValidForMarcduinoCommand(payload)) {
                 parseMarcduinoCommand(payload);
             }
             break;
-        case RC_ACTION_ESTOP_LATCH:
+        case SYSTEM_ACTION_ESTOP:
             if (pressed) {
                 taskENTER_CRITICAL(&robotStateMux);
                 robotState.estop = true;
@@ -315,12 +315,12 @@ static void processTriggerAction(RcActionTarget target, const char* payload, boo
                 taskEXIT_CRITICAL(&robotStateMux);
             }
             break;
-        case RC_ACTION_OP_MODE_SWITCH:
+        case SYSTEM_ACTION_OP_MODE:
             taskENTER_CRITICAL(&robotStateMux);
             robotState.stationary = pressed;  // HIGH = Stationary, LOW = Driving
             taskEXIT_CRITICAL(&robotStateMux);
             break;
-        case RC_ACTION_DOME_SEQ:
+        case DOME_ACTION_SEQ:
             // Phase 4: Route to DomeLinkTask
             break;
         default:
@@ -330,19 +330,19 @@ static void processTriggerAction(RcActionTarget target, const char* payload, boo
 
 static void processTier2Trigger(const RcTriggerBinding& binding, int rawValue,
                                 TriggerRuntimeState& state) {
-    if (binding.target == RC_ACTION_NONE || binding.source == RC_BINDING_NONE) {
+    if (binding.target == ROBOT_ACTION_NONE || binding.source == RC_BINDING_NONE) {
         return;
     }
 
     // Tier 2 only supports button/switch actions - analog targets are backbone-only
-    if (!rcActionTargetValidForTier2(binding.target)) {
+    if (!robotActionValidForTier2(binding.target)) {
         return;
     }
 
     bool pressed = false;
     bool stateChanged = false;
 
-    if (rcActionTargetIsButton(binding.target)) {
+    if (robotActionIsButton(binding.target)) {
         // Button targets use switch state with edge detection
         RcSwitchState switchState = rcTriggerToSwitchState(rawValue, binding);
         if (switchState != RC_SWITCH_INVALID && switchState != state.lastSwitchState) {
@@ -584,7 +584,7 @@ static void dispatchSbusBindingsForSource(const SbusData& data, RcBindingSource 
     loadTier2TriggerBindings(tier2Bindings, &tier2Count);
 
     for (size_t i = 0; i < tier2Count; ++i) {
-        if (tier2Bindings[i].source != source || tier2Bindings[i].target == RC_ACTION_NONE) {
+        if (tier2Bindings[i].source != source || tier2Bindings[i].target == ROBOT_ACTION_NONE) {
             continue;
         }
 

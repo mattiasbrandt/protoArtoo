@@ -48,22 +48,22 @@ enum RcSwitchState : uint8_t {
 // Tier 2 Trigger/Button Action Targets
 // Defines what a trigger/button binding DOES (the action it triggers)
 // -----------------------------------------------------------------------------
-enum RcActionTarget : uint8_t {
-    RC_ACTION_NONE = 0,        // Unbound / disabled slot
-    RC_ACTION_DRIVE_SPEED,     // Analog: forward/back movement
-    RC_ACTION_DRIVE_STEER,     // Analog: left/right steering
-    RC_ACTION_DOME_SPEED,      // Analog: dome rotation speed
-    RC_ACTION_SPEED_LIMIT,     // Analog: speed ceiling dial
-    RC_ACTION_OP_MODE_SWITCH,  // Switch: Driving (LOW) / Stationary (HIGH)
-    RC_ACTION_ARM1_TOGGLE,     // Button: ARM1 open/close toggle
-    RC_ACTION_ARM2_TOGGLE,     // Button: ARM2 open/close toggle
-    RC_ACTION_AUX1_TOGGLE,     // Button: AUX1 toggle
-    RC_ACTION_AUX2_TOGGLE,     // Button: AUX2 toggle
-    RC_ACTION_AUX3_TOGGLE,     // Button: AUX3 toggle
-    RC_ACTION_MARCDUINO_SEQ,   // Button: Body sequence SE30-SE36
-    RC_ACTION_MARCDUINO_CMD,   // Button: Arbitrary Marcduino command
-    RC_ACTION_ESTOP_LATCH,     // Button: Latch estop (guarded)
-    RC_ACTION_DOME_SEQ,        // Button: Dome sequence SE10-SE16 (Phase 4)
+enum RobotActionId : uint8_t {
+    ROBOT_ACTION_NONE = 0,        // Unbound / disabled slot
+    DRIVE_ACTION_SPEED,     // Analog: forward/back movement
+    DRIVE_ACTION_STEER,     // Analog: left/right steering
+    DOME_ACTION_SPEED,      // Analog: dome rotation speed
+    DRIVE_ACTION_SPEED_LIMIT,     // Analog: speed ceiling dial
+    SYSTEM_ACTION_OP_MODE,  // Switch: Driving (LOW) / Stationary (HIGH)
+    SERVO_ACTION_ARM1_TOGGLE,     // Button: ARM1 open/close toggle
+    SERVO_ACTION_ARM2_TOGGLE,     // Button: ARM2 open/close toggle
+    SERVO_ACTION_AUX1_TOGGLE,     // Button: AUX1 toggle
+    SERVO_ACTION_AUX2_TOGGLE,     // Button: AUX2 toggle
+    SERVO_ACTION_AUX3_TOGGLE,     // Button: AUX3 toggle
+    DOME_ACTION_MARCDUINO_SEQ,   // Button: Body sequence SE30-SE36
+    DOME_ACTION_MARCDUINO_CMD,   // Button: Arbitrary Marcduino command
+    SYSTEM_ACTION_ESTOP,     // Button: Latch estop (guarded)
+    DOME_ACTION_SEQ,        // Button: Dome sequence SE10-SE16 (Phase 4)
 };
 
 // -----------------------------------------------------------------------------
@@ -73,7 +73,7 @@ enum RcActionTarget : uint8_t {
 struct RcTriggerBinding {
     RcBindingSource source;     // PWM, SBUS1, SBUS2, or NONE
     uint8_t channel;            // Channel number (1-6 for PWM, 1-18 for SBUS)
-    RcActionTarget target;      // What action this binding triggers
+    RobotActionId target;      // What action this binding triggers
     char marcduinoPayload[16];  // Payload for SEQ/CMD targets (e.g., "SE30", ":OP01")
     uint16_t min;               // Calibration: minimum raw value
     uint16_t center;            // Calibration: center raw value
@@ -289,128 +289,128 @@ inline RcSwitchState rcAnalogToSwitchState(int raw, const RcBindingConfig& bindi
 // Tier 2 Trigger Binding Helpers
 // -----------------------------------------------------------------------------
 
-inline const char* rcActionTargetToString(RcActionTarget target) {
+inline const char* robotActionIdToString(RobotActionId target) {
     switch (target) {
-        case RC_ACTION_DRIVE_SPEED:
+        case DRIVE_ACTION_SPEED:
             return "drive_speed";
-        case RC_ACTION_DRIVE_STEER:
+        case DRIVE_ACTION_STEER:
             return "drive_steer";
-        case RC_ACTION_DOME_SPEED:
+        case DOME_ACTION_SPEED:
             return "dome_speed";
-        case RC_ACTION_SPEED_LIMIT:
+        case DRIVE_ACTION_SPEED_LIMIT:
             return "speed_limit";
-        case RC_ACTION_OP_MODE_SWITCH:
+        case SYSTEM_ACTION_OP_MODE:
             return "op_mode";
-        case RC_ACTION_ARM1_TOGGLE:
+        case SERVO_ACTION_ARM1_TOGGLE:
             return "arm1_toggle";
-        case RC_ACTION_ARM2_TOGGLE:
+        case SERVO_ACTION_ARM2_TOGGLE:
             return "arm2_toggle";
-        case RC_ACTION_AUX1_TOGGLE:
+        case SERVO_ACTION_AUX1_TOGGLE:
             return "aux1_toggle";
-        case RC_ACTION_AUX2_TOGGLE:
+        case SERVO_ACTION_AUX2_TOGGLE:
             return "aux2_toggle";
-        case RC_ACTION_AUX3_TOGGLE:
+        case SERVO_ACTION_AUX3_TOGGLE:
             return "aux3_toggle";
-        case RC_ACTION_MARCDUINO_SEQ:
+        case DOME_ACTION_MARCDUINO_SEQ:
             return "seq";
-        case RC_ACTION_MARCDUINO_CMD:
+        case DOME_ACTION_MARCDUINO_CMD:
             return "cmd";
-        case RC_ACTION_ESTOP_LATCH:
+        case SYSTEM_ACTION_ESTOP:
             return "estop";
-        case RC_ACTION_DOME_SEQ:
+        case DOME_ACTION_SEQ:
             return "dome_seq";
-        case RC_ACTION_NONE:
+        case ROBOT_ACTION_NONE:
         default:
             return "none";
     }
 }
 
-inline bool parseRcActionTarget(const char* raw, RcActionTarget* out) {
+inline bool parseRobotActionId(const char* raw, RobotActionId* out) {
     if (raw == nullptr || out == nullptr) {
         return false;
     }
     if (strcmp(raw, "none") == 0) {
-        *out = RC_ACTION_NONE;
+        *out = ROBOT_ACTION_NONE;
         return true;
     }
     if (strcmp(raw, "drive_speed") == 0) {
-        *out = RC_ACTION_DRIVE_SPEED;
+        *out = DRIVE_ACTION_SPEED;
         return true;
     }
     if (strcmp(raw, "drive_steer") == 0) {
-        *out = RC_ACTION_DRIVE_STEER;
+        *out = DRIVE_ACTION_STEER;
         return true;
     }
     if (strcmp(raw, "dome_speed") == 0) {
-        *out = RC_ACTION_DOME_SPEED;
+        *out = DOME_ACTION_SPEED;
         return true;
     }
     if (strcmp(raw, "speed_limit") == 0) {
-        *out = RC_ACTION_SPEED_LIMIT;
+        *out = DRIVE_ACTION_SPEED_LIMIT;
         return true;
     }
     if (strcmp(raw, "op_mode") == 0) {
-        *out = RC_ACTION_OP_MODE_SWITCH;
+        *out = SYSTEM_ACTION_OP_MODE;
         return true;
     }
     if (strcmp(raw, "arm1_toggle") == 0) {
-        *out = RC_ACTION_ARM1_TOGGLE;
+        *out = SERVO_ACTION_ARM1_TOGGLE;
         return true;
     }
     if (strcmp(raw, "arm2_toggle") == 0) {
-        *out = RC_ACTION_ARM2_TOGGLE;
+        *out = SERVO_ACTION_ARM2_TOGGLE;
         return true;
     }
     if (strcmp(raw, "aux1_toggle") == 0) {
-        *out = RC_ACTION_AUX1_TOGGLE;
+        *out = SERVO_ACTION_AUX1_TOGGLE;
         return true;
     }
     if (strcmp(raw, "aux2_toggle") == 0) {
-        *out = RC_ACTION_AUX2_TOGGLE;
+        *out = SERVO_ACTION_AUX2_TOGGLE;
         return true;
     }
     if (strcmp(raw, "aux3_toggle") == 0) {
-        *out = RC_ACTION_AUX3_TOGGLE;
+        *out = SERVO_ACTION_AUX3_TOGGLE;
         return true;
     }
     if (strcmp(raw, "seq") == 0) {
-        *out = RC_ACTION_MARCDUINO_SEQ;
+        *out = DOME_ACTION_MARCDUINO_SEQ;
         return true;
     }
     if (strcmp(raw, "cmd") == 0) {
-        *out = RC_ACTION_MARCDUINO_CMD;
+        *out = DOME_ACTION_MARCDUINO_CMD;
         return true;
     }
     if (strcmp(raw, "estop") == 0) {
-        *out = RC_ACTION_ESTOP_LATCH;
+        *out = SYSTEM_ACTION_ESTOP;
         return true;
     }
     if (strcmp(raw, "dome_seq") == 0) {
-        *out = RC_ACTION_DOME_SEQ;
+        *out = DOME_ACTION_SEQ;
         return true;
     }
     return false;
 }
 
-inline bool rcActionTargetNeedsPayload(RcActionTarget target) {
-    return target == RC_ACTION_MARCDUINO_SEQ || target == RC_ACTION_MARCDUINO_CMD ||
-           target == RC_ACTION_DOME_SEQ;
+inline bool robotActionNeedsPayload(RobotActionId target) {
+    return target == DOME_ACTION_MARCDUINO_SEQ || target == DOME_ACTION_MARCDUINO_CMD ||
+           target == DOME_ACTION_SEQ;
 }
 
-inline bool rcActionTargetIsAnalog(RcActionTarget target) {
-    return target == RC_ACTION_DRIVE_SPEED || target == RC_ACTION_DRIVE_STEER ||
-           target == RC_ACTION_DOME_SPEED || target == RC_ACTION_SPEED_LIMIT;
+inline bool robotActionIsAnalog(RobotActionId target) {
+    return target == DRIVE_ACTION_SPEED || target == DRIVE_ACTION_STEER ||
+           target == DOME_ACTION_SPEED || target == DRIVE_ACTION_SPEED_LIMIT;
 }
 
 // Tier 2 trigger bindings only support button/switch actions (not analog axes)
 // Analog targets (drive_speed, drive_steer, dome_speed, speed_limit) are backbone-only
-inline bool rcActionTargetValidForTier2(RcActionTarget target) {
-    return target == RC_ACTION_NONE || target == RC_ACTION_OP_MODE_SWITCH ||
-           target == RC_ACTION_ARM1_TOGGLE || target == RC_ACTION_ARM2_TOGGLE ||
-           target == RC_ACTION_AUX1_TOGGLE || target == RC_ACTION_AUX2_TOGGLE ||
-           target == RC_ACTION_AUX3_TOGGLE || target == RC_ACTION_MARCDUINO_SEQ ||
-           target == RC_ACTION_MARCDUINO_CMD || target == RC_ACTION_ESTOP_LATCH ||
-           target == RC_ACTION_DOME_SEQ;
+inline bool robotActionValidForTier2(RobotActionId target) {
+    return target == ROBOT_ACTION_NONE || target == SYSTEM_ACTION_OP_MODE ||
+           target == SERVO_ACTION_ARM1_TOGGLE || target == SERVO_ACTION_ARM2_TOGGLE ||
+           target == SERVO_ACTION_AUX1_TOGGLE || target == SERVO_ACTION_AUX2_TOGGLE ||
+           target == SERVO_ACTION_AUX3_TOGGLE || target == DOME_ACTION_MARCDUINO_SEQ ||
+           target == DOME_ACTION_MARCDUINO_CMD || target == SYSTEM_ACTION_ESTOP ||
+           target == DOME_ACTION_SEQ;
 }
 
 // Validate Marcduino sequence payload for body sequences (SE30-SE36)
@@ -458,16 +458,16 @@ inline bool rcPayloadValidForMarcduinoCommand(const char* payload) {
     return prefix == ':' || prefix == '$' || prefix == '#';
 }
 
-inline bool rcActionTargetIsButton(RcActionTarget target) {
-    return target == RC_ACTION_ARM1_TOGGLE || target == RC_ACTION_ARM2_TOGGLE ||
-           target == RC_ACTION_AUX1_TOGGLE || target == RC_ACTION_AUX2_TOGGLE ||
-           target == RC_ACTION_AUX3_TOGGLE || target == RC_ACTION_MARCDUINO_SEQ ||
-           target == RC_ACTION_MARCDUINO_CMD || target == RC_ACTION_ESTOP_LATCH ||
-           target == RC_ACTION_DOME_SEQ;
+inline bool robotActionIsButton(RobotActionId target) {
+    return target == SERVO_ACTION_ARM1_TOGGLE || target == SERVO_ACTION_ARM2_TOGGLE ||
+           target == SERVO_ACTION_AUX1_TOGGLE || target == SERVO_ACTION_AUX2_TOGGLE ||
+           target == SERVO_ACTION_AUX3_TOGGLE || target == DOME_ACTION_MARCDUINO_SEQ ||
+           target == DOME_ACTION_MARCDUINO_CMD || target == SYSTEM_ACTION_ESTOP ||
+           target == DOME_ACTION_SEQ;
 }
 
 inline RcTriggerBinding makeRcTriggerBinding(RcBindingSource source, uint8_t channel,
-                                             RcActionTarget target, const char* payload,
+                                             RobotActionId target, const char* payload,
                                              uint16_t min, uint16_t center, uint16_t max,
                                              uint16_t deadband, bool reverse) {
     RcTriggerBinding binding = {};
@@ -487,7 +487,7 @@ inline RcTriggerBinding makeRcTriggerBinding(RcBindingSource source, uint8_t cha
 }
 
 inline RcTriggerBinding disabledRcTriggerBinding() {
-    return makeRcTriggerBinding(RC_BINDING_NONE, 0, RC_ACTION_NONE, nullptr, 1000, 1500, 2000, 0,
+    return makeRcTriggerBinding(RC_BINDING_NONE, 0, ROBOT_ACTION_NONE, nullptr, 1000, 1500, 2000, 0,
                                 false);
 }
 
@@ -496,10 +496,10 @@ inline bool rcTriggerBindingIsValid(const RcTriggerBinding& binding) {
         return false;
     }
     if (binding.source == RC_BINDING_NONE) {
-        return binding.target == RC_ACTION_NONE;
+        return binding.target == ROBOT_ACTION_NONE;
     }
     // Tier 2 bindings cannot use analog action targets (those are backbone-only)
-    if (!rcActionTargetValidForTier2(binding.target)) {
+    if (!robotActionValidForTier2(binding.target)) {
         return false;
     }
     if (!(binding.min < binding.center && binding.center < binding.max)) {
@@ -519,7 +519,7 @@ inline bool formatRcTriggerBinding(char* buf, size_t bufSize, const RcTriggerBin
     const char* payload = binding.marcduinoPayload[0] != '\0' ? binding.marcduinoPayload : "";
     int written = snprintf(
         buf, bufSize, "%s:%u:%s:%s:%u:%u:%u:%u:%u", rcBindingSourceToString(binding.source),
-        (unsigned int)binding.channel, rcActionTargetToString(binding.target), payload,
+        (unsigned int)binding.channel, robotActionIdToString(binding.target), payload,
         (unsigned int)binding.min, (unsigned int)binding.center, (unsigned int)binding.max,
         (unsigned int)binding.deadband, binding.reverse ? 1u : 0u);
     if (written > 0 && (size_t)written < bufSize) {
@@ -676,8 +676,8 @@ inline bool parseRcTriggerBinding(const char* raw, RcTriggerBinding* out) {
         return false;
     }
 
-    RcActionTarget target = RC_ACTION_NONE;
-    if (!parseRcActionTarget(targetBuf, &target)) {
+    RobotActionId target = ROBOT_ACTION_NONE;
+    if (!parseRobotActionId(targetBuf, &target)) {
         return false;
     }
 

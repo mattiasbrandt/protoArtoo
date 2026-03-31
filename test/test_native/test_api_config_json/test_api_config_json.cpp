@@ -91,7 +91,7 @@ static ConfigSnapshot makeWorstCaseSnap() {
     RcTriggerBinding xtrig = {};
     xtrig.source = RC_BINDING_SBUS2;
     xtrig.channel = 18;
-    xtrig.target = RC_ACTION_MARCDUINO_CMD;
+    xtrig.target = DOME_ACTION_MARCDUINO_CMD;
     strncpy(xtrig.marcduinoPayload, "AAAAAAAAAAAAAAA", 15);
     xtrig.marcduinoPayload[15] = '\0';
     xtrig.min = 10000;
