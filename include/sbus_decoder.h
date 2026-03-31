@@ -119,6 +119,9 @@ private:
     RxBuf                 _rxBufs[2];  // ping-pong buffers
     uint8_t               _activeBuf; // index currently being filled by RMT
     rmt_receive_config_t  _rxCfg;
+    // Set by _onRecvDone when rmt_receive() fails (ISR cannot log).
+    // read() checks this flag, attempts task-context recovery, and logs.
+    volatile bool         _isrRearmFailed;
 
     // ISR callback — IRAM_ATTR required (called from RMT interrupt context).
     // Swaps buffers, re-arms receive immediately, notifies task via queue.

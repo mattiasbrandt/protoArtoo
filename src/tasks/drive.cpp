@@ -146,18 +146,35 @@ void driveTask(void* pvParameters) {
         // Read hoverboard controller feedback — non-blocking, drains available bytes.
         // Decodes battery voltage, board temperature, and motor speed from the
         // Gen2.x feedback frame the hoverboard controller sends back at 10–100 Hz.
+        // If no valid frame arrives within HB_FEEDBACK_STALE_MS, mark feedback as
+        // invalid so the UI does not display stale readings indefinitely.
+        static constexpr uint32_t kFeedbackStaleMs = 5000;
+
         HoverboardFeedback hbFb;
         if (readHoverboardFeedback(hoverSerial, &hbParser, &hbFb)) {
             taskENTER_CRITICAL(&robotStateMux);
-            robotState.hb_batteryRaw = hbFb.batteryRaw;
-            robotState.hb_boardTempRaw = hbFb.boardTempRaw;
-            robotState.hb_speedR = hbFb.speedR;
-            robotState.hb_speedL = hbFb.speedL;
-            robotState.hb_currentL = hbFb.currentL;
-            robotState.hb_currentR = hbFb.currentR;
+            robotState.hb_batteryRaw    = hbFb.batteryRaw;
+            robotState.hb_boardTempRaw  = hbFb.boardTempRaw;
+            robotState.hb_speedR        = hbFb.speedR;
+            robotState.hb_speedL        = hbFb.speedL;
+            robotState.hb_currentL      = hbFb.currentL;
+            robotState.hb_currentR      = hbFb.currentR;
             robotState.hb_feedbackValid = true;
             robotState.hb_lastFeedbackMs = millis();
             taskEXIT_CRITICAL(&robotStateMux);
+        } else {
+            // Check for stale data: invalidate if no frame received recently.
+            taskENTER_CRITICAL(&robotStateMux);
+            bool wasValid  = robotState.hb_feedbackValid;
+            uint32_t lastMs = robotState.hb_lastFeedbackMs;
+            taskEXIT_CRITICAL(&robotStateMux);
+            if (wasValid && (uint32_t)(millis() - lastMs) > kFeedbackStaleMs) {
+                taskENTER_CRITICAL(&robotStateMux);
+                robotState.hb_feedbackValid = false;
+                taskEXIT_CRITICAL(&robotStateMux);
+                PA_LOG_INFO(TAG, "hoverboard feedback stale (>%lu ms) — invalidated",
+                            (unsigned long)kFeedbackStaleMs);
+            }
         }
 
 #ifdef PA_VERBOSE_DRIVE

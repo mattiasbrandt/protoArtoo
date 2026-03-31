@@ -214,10 +214,14 @@ def _render_secrets_h(ap_password: str, sta_ssid: str, sta_password: str) -> str
 
 
 def _write_private_file(path: str, content: str) -> None:
-    """Write with owner-only permissions to reduce credential exposure."""
-    if os.path.islink(path):
-        raise OSError(f"Refusing to write symlinked path: {path}")
-    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+    """Write with owner-only permissions to reduce credential exposure.
+
+    Uses O_NOFOLLOW to atomically reject symlinks at open time, eliminating
+    the TOCTOU race between a pre-open islink() check and the actual open().
+    """
+    # O_NOFOLLOW: if path is a symlink, os.open() raises OSError (ELOOP/ENOENT).
+    # This is race-free unlike a separate islink() check.
+    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
     fd = os.open(path, flags, 0o600)
     try:
         with os.fdopen(fd, "w") as fh:

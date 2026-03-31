@@ -187,6 +187,112 @@ void test_gen2x_negative_speed() {
     TEST_ASSERT_EQUAL_INT16(225, out.currentR);
 }
 
+// =============================================================================
+// feedHoverboardFeedbackByte — streaming parser state machine tests
+// =============================================================================
+
+// Feed a complete byte array through the streaming parser.
+// Returns the number of frames decoded.
+static int feedAll(HoverboardFeedbackParser* p, const uint8_t* data, size_t len,
+                   HoverboardFeedback* out) {
+    int frames = 0;
+    for (size_t i = 0; i < len; i++) {
+        if (feedHoverboardFeedbackByte(p, data[i], out)) frames++;
+    }
+    return frames;
+}
+
+void test_stream_foc_byte_by_byte() {
+    uint8_t frame[kHoverFocFrameLen] = {};
+    buildValidFocFrame(frame);
+    HoverboardFeedbackParser p;
+    initHoverboardFeedbackParser(&p);
+    HoverboardFeedback out = {};
+    int got = feedAll(&p, frame, kHoverFocFrameLen, &out);
+    TEST_ASSERT_EQUAL_INT(1, got);
+    TEST_ASSERT_EQUAL_INT16(3650, out.batteryRaw);
+    TEST_ASSERT_EQUAL_INT16(100,  out.speedR);
+}
+
+void test_stream_gen2x_byte_by_byte() {
+    uint8_t frame[kHoverGen2xFrameLen] = {};
+    buildValidGen2xFrame(frame);
+    HoverboardFeedbackParser p;
+    initHoverboardFeedbackParser(&p);
+    HoverboardFeedback out = {};
+    int got = feedAll(&p, frame, kHoverGen2xFrameLen, &out);
+    TEST_ASSERT_EQUAL_INT(1, got);
+    TEST_ASSERT_EQUAL_INT16(3700, out.batteryRaw);
+    TEST_ASSERT_EQUAL_INT16(200,  out.speedR);
+    TEST_ASSERT_EQUAL_INT16(230,  out.currentL);
+}
+
+void test_stream_two_consecutive_gen2x_frames() {
+    uint8_t frame[kHoverGen2xFrameLen] = {};
+    buildValidGen2xFrame(frame);
+    HoverboardFeedbackParser p;
+    initHoverboardFeedbackParser(&p);
+    HoverboardFeedback out = {};
+    int got = feedAll(&p, frame, kHoverGen2xFrameLen, &out);
+    got    += feedAll(&p, frame, kHoverGen2xFrameLen, &out);
+    TEST_ASSERT_EQUAL_INT(2, got);
+}
+
+void test_stream_partial_then_full_frame() {
+    // Feed the first 10 bytes of a Gen2.x frame (no decode yet),
+    // then feed the full frame. Only the second full feed should decode.
+    uint8_t frame[kHoverGen2xFrameLen] = {};
+    buildValidGen2xFrame(frame);
+    HoverboardFeedbackParser p;
+    initHoverboardFeedbackParser(&p);
+    HoverboardFeedback out = {};
+    // Partial: first 10 bytes — no frame yet
+    int got = feedAll(&p, frame, 10, &out);
+    TEST_ASSERT_EQUAL_INT(0, got);
+    // Reset parser (simulates resync after partial — real stream would continue
+    // accumulating; here we reset to give a clean second-frame scenario).
+    initHoverboardFeedbackParser(&p);
+    // Full frame after reset — should decode exactly once
+    got = feedAll(&p, frame, kHoverGen2xFrameLen, &out);
+    TEST_ASSERT_EQUAL_INT(1, got);
+    TEST_ASSERT_EQUAL_INT16(3700, out.batteryRaw);
+}
+
+void test_stream_no_start_marker_no_decode() {
+    // All-zero bytes: no 0xCD start marker, parser should never decode
+    uint8_t junk[kHoverGen2xFrameLen] = {};
+    HoverboardFeedbackParser p;
+    initHoverboardFeedbackParser(&p);
+    HoverboardFeedback out = {};
+    int got = feedAll(&p, junk, sizeof(junk), &out);
+    TEST_ASSERT_EQUAL_INT(0, got);
+    TEST_ASSERT_TRUE(p.seekingStart);
+}
+
+void test_stream_overflow_guard_resyncs() {
+    // Manually force idx to max to trigger the overflow guard.
+    HoverboardFeedbackParser p;
+    initHoverboardFeedbackParser(&p);
+    p.seekingStart = false;
+    p.idx = kHoverGen2xFrameLen;  // at limit — next byte triggers guard
+    HoverboardFeedback out = {};
+    bool decoded = feedHoverboardFeedbackByte(&p, 0xAB, &out);
+    TEST_ASSERT_FALSE(decoded);
+    TEST_ASSERT_EQUAL_INT(0, p.idx);
+    TEST_ASSERT_TRUE(p.seekingStart);
+}
+
+void test_stream_null_parser_returns_false() {
+    HoverboardFeedback out = {};
+    TEST_ASSERT_FALSE(feedHoverboardFeedbackByte(nullptr, 0x00, &out));
+}
+
+void test_stream_null_out_returns_false() {
+    HoverboardFeedbackParser p;
+    initHoverboardFeedbackParser(&p);
+    TEST_ASSERT_FALSE(feedHoverboardFeedbackByte(&p, 0x00, nullptr));
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_foc_valid_frame);
@@ -197,5 +303,14 @@ int main() {
     RUN_TEST(test_null_out_returns_false);
     RUN_TEST(test_foc_neutral_values);
     RUN_TEST(test_gen2x_negative_speed);
+    // --- streaming parser ---
+    RUN_TEST(test_stream_foc_byte_by_byte);
+    RUN_TEST(test_stream_gen2x_byte_by_byte);
+    RUN_TEST(test_stream_two_consecutive_gen2x_frames);
+    RUN_TEST(test_stream_partial_then_full_frame);
+    RUN_TEST(test_stream_no_start_marker_no_decode);
+    RUN_TEST(test_stream_overflow_guard_resyncs);
+    RUN_TEST(test_stream_null_parser_returns_false);
+    RUN_TEST(test_stream_null_out_returns_false);
     return UNITY_END();
 }

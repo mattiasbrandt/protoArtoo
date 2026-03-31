@@ -88,7 +88,8 @@ static constexpr int kBitArraySize = kTotalBits + 64;  // 364
 // ---------------------------------------------------------------------------
 
 SbusDecoder::SbusDecoder()
-    : _channel(nullptr), _queue(nullptr), _rxBufs{}, _activeBuf(0), _rxCfg{}, _data{} {}
+    : _channel(nullptr), _queue(nullptr), _rxBufs{}, _activeBuf(0), _rxCfg{},
+      _isrRearmFailed(false), _data{} {}
 
 bool SbusDecoder::begin(int rxPin) {
     if (_channel) end();
@@ -168,6 +169,20 @@ void SbusDecoder::end() {
 bool SbusDecoder::read() {
     if (!_channel || !_queue) return false;
 
+    // If the ISR failed to re-arm rmt_receive() (cannot log from ISR), attempt
+    // recovery from task context before draining the queue.
+    if (_isrRearmFailed) {
+        _isrRearmFailed = false;
+        ESP_LOGW(TAG, "ISR re-arm failed — attempting recovery from task context");
+        esp_err_t err = rmt_receive(_channel,
+                                    _rxBufs[_activeBuf].symbols,
+                                    sizeof(_rxBufs[_activeBuf].symbols),
+                                    &_rxCfg);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "task-context re-arm also failed: %s", esp_err_to_name(err));
+        }
+    }
+
     // Drain all pending buffers; return true on the first valid parsed frame.
     uint8_t idx;
     while (xQueueReceive(_queue, &idx, 0) == pdTRUE) {
@@ -207,11 +222,14 @@ bool IRAM_ATTR SbusDecoder::_onRecvDone(rmt_channel_handle_t chan,
     // Swap to the other buffer and re-arm receive before anything else.
     // rmt_receive() is ISR-safe in IDF 5.x.
     self->_activeBuf ^= 1;
-    rmt_receive(chan,
-                self->_rxBufs[self->_activeBuf].symbols,
-                sizeof(self->_rxBufs[self->_activeBuf].symbols),
-                &self->_rxCfg);
-
+    esp_err_t rearmErr = rmt_receive(chan,
+                                     self->_rxBufs[self->_activeBuf].symbols,
+                                     sizeof(self->_rxBufs[self->_activeBuf].symbols),
+                                     &self->_rxCfg);
+    if (rearmErr != ESP_OK) {
+        // Cannot call ESP_LOG from ISR. Set flag; read() will log and recover.
+        self->_isrRearmFailed = true;
+    }
     // Wake the task only for buffers likely to contain a real frame.
     if (edata->num_symbols >= kMinSymsForFrame) {
         xQueueSendFromISR(self->_queue, &doneIdx, &woken);
@@ -294,9 +312,8 @@ bool SbusDecoder::_parseSymbols(const RxBuf& buf) {
 
     // Static bit array avoids stack pressure. Safe for sequential single-task use.
     static bool bits[kBitArraySize];
-    static constexpr int kBitArrayLen = kBitArraySize;
 
-    int bc  = flattenSymbols(buf.symbols, buf.count, bits, kBitArrayLen);
+    int bc  = flattenSymbols(buf.symbols, buf.count, bits, kBitArraySize);
     int pos = findFirstStartBit(bits, bc);
 
     if (bc - pos < kTotalBits) return false;

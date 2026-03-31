@@ -57,8 +57,8 @@ struct HoverboardFeedback {
 };
 
 // Frame length constants (used by parser and tests)
-static constexpr int kHoverFocFrameLen = 18;
-static constexpr int kHoverGen2xFrameLen = 26;
+inline constexpr int kHoverFocFrameLen  = 18;
+inline constexpr int kHoverGen2xFrameLen = 26;
 
 // parseHoverboardFeedbackFrame()
 // Pure logic — no hardware, no FreeRTOS. Testable on native.
@@ -90,6 +90,14 @@ struct HoverboardFeedbackParser {
 // Initialise or reset parser state. Call after HardwareSerial::begin() so a
 // mid-stream accumulator from a prior UART session cannot corrupt new frames.
 void initHoverboardFeedbackParser(HoverboardFeedbackParser* p);
+
+// feedHoverboardFeedbackByte()
+// Process a single byte through the streaming parser state machine.
+// Returns true if a complete valid frame was decoded into *out.
+// Testable on native (no hardware dependency).
+// thread-safe: must only be called from the task that owns the parser.
+bool feedHoverboardFeedbackByte(HoverboardFeedbackParser* parser, uint8_t b,
+                                HoverboardFeedback* out);
 
 #ifdef ARDUINO_ARCH_ESP32
 class HardwareSerial;

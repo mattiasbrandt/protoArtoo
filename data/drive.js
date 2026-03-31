@@ -255,6 +255,9 @@
     if (!window.PAApi) return;
     const result = await window.PAApi.get("/api/status", { timeoutMs: 3000 });
     renderStatus(result.data);
+    // /api/status omits the "s1Hoverboard" key entirely when the peripheral is
+    // disabled. Key presence = enabled; absence = disabled. This differs from
+    // renderConfig() which reads components.s1Hoverboard.enabled explicitly.
     setDriveHardwareEnabled(Boolean(result.data.s1Hoverboard));
   };
 

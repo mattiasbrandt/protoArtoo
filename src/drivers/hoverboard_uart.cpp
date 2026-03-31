@@ -120,77 +120,85 @@ void initHoverboardFeedbackParser(HoverboardFeedbackParser* p) {
     p->isFoc        = false;
 }
 
+// feedHoverboardFeedbackByte()
+// Processes one byte through the streaming parser state machine.
+// Shared between the testable native path and the ESP32 UART path.
+bool feedHoverboardFeedbackByte(HoverboardFeedbackParser* parser, uint8_t b,
+                                HoverboardFeedback* out) {
+    if (parser == nullptr || out == nullptr) return false;
+
+    if (parser->seekingStart) {
+        if (parser->idx == 0) {
+            if (b == 0xCD) { parser->buf[0] = b; parser->idx = 1; }
+        } else {  // idx == 1, waiting for 0xAB
+            if (b == 0xAB) {
+                parser->buf[1] = b; parser->idx = 2; parser->seekingStart = false;
+            } else if (b == 0xCD) {
+                parser->buf[0] = b;  // keep idx=1
+            } else {
+                parser->idx = 0;
+            }
+        }
+        return false;
+    }
+
+    // Guard against accumulator overflow (should not happen in practice)
+    if (parser->idx >= kHoverGen2xFrameLen) {
+        initHoverboardFeedbackParser(parser);
+        return false;
+    }
+
+    parser->buf[parser->idx++] = b;
+
+    // Try FOC format at 18 bytes
+    if (parser->idx == kHoverFocFrameLen) {
+        if (!parser->formatKnown || parser->isFoc) {
+            if (validateXorFrame(parser->buf, 9)) {
+                parser->formatKnown = true; parser->isFoc = true;
+                parseFocFrame(parser->buf, out);
+                memset(parser->buf, 0, sizeof(parser->buf));
+                parser->idx = 0; parser->seekingStart = true;
+                return true;
+            }
+            if (parser->formatKnown) {  // known FOC, bad checksum — resync
+                memset(parser->buf, 0, sizeof(parser->buf));
+                parser->idx = 0; parser->seekingStart = true;
+                return false;
+            }
+            // unknown format, FOC failed — keep accumulating to 26 bytes
+        }
+        // known Gen2.x — keep accumulating
+    }
+
+    // Try Gen2.x format at 26 bytes
+    if (parser->idx == kHoverGen2xFrameLen) {
+        bool ok = false;
+        if (validateXorFrame(parser->buf, 13)) {
+            parser->formatKnown = true; parser->isFoc = false;
+            parseGen2xFrame(parser->buf, out);
+            ok = true;
+        }
+        memset(parser->buf, 0, sizeof(parser->buf));
+        parser->idx = 0; parser->seekingStart = true;
+        return ok;
+    }
+
+    return false;
+}
+
 #ifdef ARDUINO_ARCH_ESP32
 // readHoverboardFeedback()
-// Non-blocking UART feedback parser for DriveTask-owned serial port.
+// Non-blocking UART feedback parser — thin loop over feedHoverboardFeedbackByte.
 bool readHoverboardFeedback(HardwareSerial& uart,
                             HoverboardFeedbackParser* parser,
                             HoverboardFeedback* out) {
     if (parser == nullptr || out == nullptr) return false;
-
     bool gotFrame = false;
-
     while (uart.available() > 0) {
         const int raw = uart.read();
         if (raw < 0) break;
-        const uint8_t b = (uint8_t)raw;
-
-        if (parser->seekingStart) {
-            if (parser->idx == 0) {
-                if (b == 0xCD) { parser->buf[0] = b; parser->idx = 1; }
-            } else {  // idx == 1, waiting for 0xAB
-                if (b == 0xAB) {
-                    parser->buf[1] = b; parser->idx = 2; parser->seekingStart = false;
-                } else if (b == 0xCD) {
-                    parser->buf[0] = b;  // keep idx=1
-                } else {
-                    parser->idx = 0;
-                }
-            }
-            continue;
-        }
-
-        // Guard against accumulator overflow (should not happen in practice)
-        if (parser->idx >= kHoverGen2xFrameLen) {
-            initHoverboardFeedbackParser(parser);
-            continue;
-        }
-
-        parser->buf[parser->idx++] = b;
-
-        // Try FOC format at 18 bytes
-        if (parser->idx == kHoverFocFrameLen) {
-            if (!parser->formatKnown || parser->isFoc) {
-                if (validateXorFrame(parser->buf, 9)) {
-                    parser->formatKnown = true; parser->isFoc = true;
-                    parseFocFrame(parser->buf, out);
-                    memset(parser->buf, 0, sizeof(parser->buf));
-                    parser->idx = 0; parser->seekingStart = true;
-                    gotFrame = true;
-                    continue;
-                }
-                if (parser->formatKnown) {  // known FOC, bad checksum — resync
-                    memset(parser->buf, 0, sizeof(parser->buf));
-                    parser->idx = 0; parser->seekingStart = true;
-                    continue;
-                }
-                // unknown format, FOC failed — keep accumulating to 26 bytes
-            }
-            // known Gen2.x — keep accumulating
-        }
-
-        // Try Gen2.x format at 26 bytes
-        if (parser->idx == kHoverGen2xFrameLen) {
-            if (validateXorFrame(parser->buf, 13)) {
-                parser->formatKnown = true; parser->isFoc = false;
-                parseGen2xFrame(parser->buf, out);
-                gotFrame = true;
-            }
-            memset(parser->buf, 0, sizeof(parser->buf));
-            parser->idx = 0; parser->seekingStart = true;
-        }
+        if (feedHoverboardFeedbackByte(parser, (uint8_t)raw, out)) gotFrame = true;
     }
-
     return gotFrame;
 }
 #endif
