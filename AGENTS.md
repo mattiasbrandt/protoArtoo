@@ -15,6 +15,10 @@ workflows.
 If instructions conflict, follow the highest-precedence source and document the
 assumption briefly.
 
+External profile tips (for example token-efficiency profiles) may be adopted only
+when they do not conflict with AGENTS safety invariants, verification gates, or
+interactive workflow requirements.
+
 ## Project Context
 
 - Project: `protoArtoo` (ESP32 body controller firmware for MK4 astromech droids)
@@ -154,25 +158,7 @@ Clarification policy:
 
 ## Flashing and Monitoring
 
-### USB flash (ESP32 unseated — auto-reset works, no button needed)
-```bash
-pio run -e protoArtoo --target upload --upload-port /dev/ttyUSB0
-```
-- DTR/RTS auto-reset works reliably when the ESP32 is unseated — no BOOT button press
-  required. The `protoArtoo` env uses `board_upload.before_reset = default_reset`.
-- **esptool flag placement:** Always use `board_upload.before_reset = <value>` in
-  platformio.ini, never `upload_flags = --before <value>`. PlatformIO appends
-  `upload_flags` after the `write_flash` subcommand; `--before` there is ignored
-  by esptool 4.x. Full write-up in `tasks/lessons.md`.
-
-> ⚠️ **Seated-PCB USB upload fails.** GPIO 15 (`PIN_SBUS1_RX`) is a strapping pin.
-> When the ESP32 is seated in the Artoo Controller PCB with a SBUS receiver attached,
-> the receiver can prevent the bootloader from entering download mode — USB upload
-> silently fails or times out. Unseat the ESP32 → USB flash → reseat.
-> Full write-up: `tasks/lessons.md`, `docs/pin_map.md`.
-> For the S3 Mini build (`protoArtoo_s3`): GPIO 15 is not a strapping pin on the
-> S3 Mini. USB upload works with the board seated in the PCB socket. OTA is still
-> preferred for convenience.
+### Quick reference
 
 ### OTA — standard in-PCB flash path (preferred)
 ```bash
@@ -182,6 +168,11 @@ pio run -e protoArtoo_ota --target uploadfs  # filesystem (LittleFS web UI)
 - `protoArtoo_ota` defaults to `upload_port = 10.0.0.22` (STA client IP).
 - Override with `--upload-port <ip>`. Do **not** use `192.168.4.1` (AP IP) by default.
 - ArduinoOTA starts automatically on Core 0 when WiFi comes up (port 3232).
+
+### USB flash (ESP32 unseated)
+```bash
+pio run -e protoArtoo --target upload --upload-port /dev/ttyUSB0
+```
 
 ### Web UI OTA
 - Firmware: `POST /upload/firmware` — filesystem: `POST /upload/filesystem`
@@ -195,6 +186,9 @@ pio run -e protoArtoo_ota -t upload    # OTA firmware (in-PCB, 10.0.0.22)
 pio run -e protoArtoo_s3        # compile S3 Mini firmware
 pio run -e protoArtoo_s3_ota -t upload    # OTA firmware (S3 Mini, 10.0.0.22)
 ```
+
+Detailed flashing troubleshooting and transport notes live in
+`tasks/lessons.md` and `docs/pin_map.md`.
 
 ## Verification and Reporting
 
@@ -270,13 +264,6 @@ type(phase:vX.Y.Z/T<NN>): summary
 - `T00` = phase scaffolding or admin commits not tied to a specific task
 - `type` follows [Conventional Commits](https://www.conventionalcommits.org): `feat`, `fix`, `docs`, `refactor`, `chore`, `test`, `style`, `perf`
 - Slice notation: `type(phase:vX.Y.Z/T<NN>/slice:a): summary`
-
-Examples:
-```
-feat(phase:v0.4.0/T01): implement AudioDriver interface and DY-SV5W driver
-fix(phase:v0.4.0/T02): correct dome UART baud rate assignment
-docs(phase:v0.4.0/T00): update AGENTS.md with phase-branch workflow
-```
 
 ### Invariants
 
