@@ -63,7 +63,7 @@ entries:
     marcduino_cmd: null
     api_path: null
     sse_event: null
-    cpp_enum: RC_ACTION_SPEED_LIMIT  # → DRIVE_ACTION_SPEED_LIMIT after slice:c
+    cpp_enum: DRIVE_ACTION_SPEED_LIMIT
     cpp_file: include/rc_mapping.h
     sources: [sbus]
     safety_critical: false
@@ -129,7 +129,7 @@ entries:
     marcduino_cmd: null
     api_path: /api/dome
     sse_event: null
-    cpp_enum: RC_ACTION_DOME_SPEED  # → DOME_ACTION_SPEED after slice:c
+    cpp_enum: DOME_ACTION_SPEED
     cpp_file: include/rc_mapping.h
     sources: [web_api, sbus]
     safety_critical: false
@@ -159,7 +159,7 @@ entries:
     marcduino_cmd: M<nn>
     api_path: null
     sse_event: null
-    cpp_enum: RC_ACTION_MARCDUINO_SEQ  # → DOME_ACTION_MARCDUINO_SEQ after slice:c
+    cpp_enum: DOME_ACTION_MARCDUINO_SEQ
     cpp_file: include/rc_mapping.h
     sources: [sbus]
     safety_critical: false
@@ -174,7 +174,7 @@ entries:
     marcduino_cmd: varies
     api_path: null
     sse_event: null
-    cpp_enum: RC_ACTION_MARCDUINO_CMD  # → DOME_ACTION_MARCDUINO_CMD after slice:c
+    cpp_enum: DOME_ACTION_MARCDUINO_CMD
     cpp_file: include/rc_mapping.h
     sources: [sbus]
     safety_critical: false
@@ -189,7 +189,7 @@ entries:
     marcduino_cmd: :SE<nn>
     api_path: null
     sse_event: null
-    cpp_enum: RC_ACTION_DOME_SEQ  # → DOME_ACTION_SEQ after slice:c
+    cpp_enum: DOME_ACTION_SEQ
     cpp_file: include/rc_mapping.h
     sources: [sbus]
     safety_critical: false
@@ -548,7 +548,7 @@ entries:
     marcduino_cmd: null
     api_path: null
     sse_event: null
-    cpp_enum: RC_ACTION_ARM1_TOGGLE  # → SERVO_ACTION_ARM1_TOGGLE after slice:c
+    cpp_enum: SERVO_ACTION_ARM1_TOGGLE
     cpp_file: include/rc_mapping.h
     sources: [sbus]
     safety_critical: false
@@ -563,7 +563,7 @@ entries:
     marcduino_cmd: null
     api_path: null
     sse_event: null
-    cpp_enum: RC_ACTION_ARM2_TOGGLE  # → SERVO_ACTION_ARM2_TOGGLE after slice:c
+    cpp_enum: SERVO_ACTION_ARM2_TOGGLE
     cpp_file: include/rc_mapping.h
     sources: [sbus]
     safety_critical: false
@@ -578,7 +578,7 @@ entries:
     marcduino_cmd: null
     api_path: null
     sse_event: null
-    cpp_enum: RC_ACTION_AUX1_TOGGLE  # → SERVO_ACTION_AUX1_TOGGLE after slice:c
+    cpp_enum: SERVO_ACTION_AUX1_TOGGLE
     cpp_file: include/rc_mapping.h
     sources: [sbus]
     safety_critical: false
@@ -593,7 +593,7 @@ entries:
     marcduino_cmd: null
     api_path: null
     sse_event: null
-    cpp_enum: RC_ACTION_AUX2_TOGGLE  # → SERVO_ACTION_AUX2_TOGGLE after slice:c
+    cpp_enum: SERVO_ACTION_AUX2_TOGGLE
     cpp_file: include/rc_mapping.h
     sources: [sbus]
     safety_critical: false
@@ -608,7 +608,7 @@ entries:
     marcduino_cmd: null
     api_path: null
     sse_event: null
-    cpp_enum: RC_ACTION_AUX3_TOGGLE  # → SERVO_ACTION_AUX3_TOGGLE after slice:c
+    cpp_enum: SERVO_ACTION_AUX3_TOGGLE
     cpp_file: include/rc_mapping.h
     sources: [sbus]
     safety_critical: false
@@ -639,7 +639,7 @@ entries:
     marcduino_cmd: null
     api_path: /api/mode
     sse_event: null
-    cpp_enum: RC_ACTION_OP_MODE_SWITCH  # → SYSTEM_ACTION_OP_MODE after slice:c
+    cpp_enum: SYSTEM_ACTION_OP_MODE
     cpp_file: include/rc_mapping.h
     sources: [web_api, sbus]
     safety_critical: false
@@ -654,7 +654,7 @@ entries:
     marcduino_cmd: null
     api_path: /api/estop
     sse_event: null
-    cpp_enum: RC_ACTION_ESTOP_LATCH  # → SYSTEM_ACTION_ESTOP after slice:c
+    cpp_enum: SYSTEM_ACTION_ESTOP
     cpp_file: include/rc_mapping.h
     sources: [web_api, sbus]
     safety_critical: true
