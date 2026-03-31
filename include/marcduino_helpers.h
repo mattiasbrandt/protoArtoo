@@ -4,7 +4,7 @@
 // Pure-math helpers for Marcduino command parsing.
 // No Arduino, no FreeRTOS, no queues — safe to include in native unit tests.
 //
-// Extracted from src/drivers/marcduino_rx.cpp so the mapping and conversion
+// Extracted from src/drivers/dome_rx_parser.cpp so the mapping and conversion
 // logic can be exercised without hardware dependencies.
 // =============================================================================
 #pragma once

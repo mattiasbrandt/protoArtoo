@@ -35,8 +35,8 @@
 // Driver instantiation — one concrete driver per build
 // -----------------------------------------------------------------------------
 #if PA_AUDIO_DRIVER == AUDIO_SOFT_UART
-#include "audio_soft_uart.h"
-static AudioDriverSoftUart s_driver;
+#include "audio_dy_sv5w.h"
+static AudioDriverDySv5w s_driver;
 #elif PA_AUDIO_DRIVER == AUDIO_CHIRP
 #include "audio_chirp.h"
 static AudioDriverChirp s_driver;

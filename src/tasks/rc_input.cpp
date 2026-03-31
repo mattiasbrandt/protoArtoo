@@ -27,7 +27,7 @@
 #include "../../include/config.h"
 #include "../../include/ledc_pwm.h"
 #include "../../include/logging.h"
-#include "../../include/marcduino_rx.h"
+#include "../../include/dome_rx_parser.h"
 #include "../../include/rc_pwm_helpers.h"
 #include "../../include/robot_state.h"
 #include "../../include/sbus_decoder.h"

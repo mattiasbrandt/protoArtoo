@@ -1,5 +1,5 @@
 // =============================================================================
-// src/drivers/audio_soft_uart.cpp
+// src/drivers/audio_dy_sv5w.cpp
 //
 // DY-SV5W UART driver — authoritative implementation from module datasheet.
 //
@@ -41,7 +41,7 @@
 //   so FLASH modules are not accidentally switched to SD (which breaks queries).
 // =============================================================================
 
-#include "audio_soft_uart.h"
+#include "audio_dy_sv5w.h"
 
 #include <Arduino.h>
 
@@ -109,7 +109,7 @@ static uint8_t sendQuery(const uint8_t* query, uint8_t* buf, uint8_t maxLen, uin
 }
 
 // Wrapper satisfying AudioDriver private method signature
-void AudioDriverSoftUart::sendFrame(const uint8_t* data, uint8_t len) {
+void AudioDriverDySv5w::sendFrame(const uint8_t* data, uint8_t len) {
     sendCommand(data, len);
 }
 
@@ -122,7 +122,7 @@ void AudioDriverSoftUart::sendFrame(const uint8_t* data, uint8_t len) {
 // is not reaching the module (check DIP: CON3=1 CON2=0 CON1=0 for UART mode).
 // Runs inside AudioTask on Core 0 — blocking here is acceptable.
 // -----------------------------------------------------------------------------
-void AudioDriverSoftUart::begin(uint8_t vol) {
+void AudioDriverDySv5w::begin(uint8_t vol) {
     s_audioSerial.begin(9600, SERIAL_8N1, PIN_AUDIO_RX, -1);
 
     // DY-SV5W needs ~1.5 s after power-on to boot and enumerate storage.
@@ -237,7 +237,7 @@ void AudioDriverSoftUart::begin(uint8_t vol) {
 // Blocking up to ~900 ms total (3 × 300 ms timeout) in the worst case.
 // Only call from AudioTask (Core 0).
 // -----------------------------------------------------------------------------
-bool AudioDriverSoftUart::queryModuleState(AudioModuleState& out) {
+bool AudioDriverDySv5w::queryModuleState(AudioModuleState& out) {
     bool uart2Contended;
     taskENTER_CRITICAL(&robotStateMux);
     uart2Contended = robotState.cfg_enable_s3_dome_ctrl;
@@ -297,7 +297,7 @@ bool AudioDriverSoftUart::queryModuleState(AudioModuleState& out) {
 // updated by queryModuleState() on each periodic or manual poll.
 // playState and currentTrack are always poll-only.
 // -----------------------------------------------------------------------------
-void AudioDriverSoftUart::getCachedState(AudioModuleState& out) const {
+void AudioDriverDySv5w::getCachedState(AudioModuleState& out) const {
     out.linkOk = (m_device != 0xFF);
     out.device = m_device;
     out.totalTracks = m_totalTracks;
@@ -315,7 +315,7 @@ void AudioDriverSoftUart::getCachedState(AudioModuleState& out) const {
 // NOTE: BetterDuino uses uint8_t for track number (max 255). We support
 // uint16_t for forward compatibility but clamp to 255 for DY-SV5W modules.
 // -----------------------------------------------------------------------------
-void AudioDriverSoftUart::playTrack(uint16_t track) {
+void AudioDriverDySv5w::playTrack(uint16_t track) {
     if (track == 0) {
         return;
     }
@@ -339,7 +339,7 @@ void AudioDriverSoftUart::playTrack(uint16_t track) {
 // WARNING: 0x02 = play/resume, 0x03 = pause. Neither is stop!
 // Prior driver versions sent 0x03+0x02 which paused then immediately resumed.
 // -----------------------------------------------------------------------------
-void AudioDriverSoftUart::stop() {
+void AudioDriverDySv5w::stop() {
     uint8_t cmd[] = {0xAA, 0x04, 0x00};
     sendCommand(cmd, sizeof(cmd));
 }
@@ -351,7 +351,7 @@ void AudioDriverSoftUart::stop() {
 // DYPlayer::setVolume: {0xAA, 0x13, 0x01, volume}
 // BetterDuino MDuinoSoundDYPlayer::SetVolume: {0xAA, 0x13, 0x01, Volume}
 // -----------------------------------------------------------------------------
-void AudioDriverSoftUart::setVolume(uint8_t vol) {
+void AudioDriverDySv5w::setVolume(uint8_t vol) {
     uint8_t cmd[] = {0xAA, 0x13, 0x01, vol};
     sendCommand(cmd, sizeof(cmd));
 }

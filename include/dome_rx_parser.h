@@ -1,5 +1,5 @@
 // =============================================================================
-// include/marcduino_rx.h
+// include/dome_rx_parser.h
 //
 // Marcduino command parser for dome→body serial communication.
 // Parses :OP/:CL/:MV commands and body sequences (:SE30-:SE36).

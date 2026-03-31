@@ -1,5 +1,5 @@
 // =============================================================================
-// include/audio_soft_uart.h
+// include/audio_dy_sv5w.h
 //
 // Concrete AudioDriver for the DY-SV5W audio module.
 //
@@ -23,7 +23,7 @@
 
 #include "audio_driver.h"
 
-class AudioDriverSoftUart : public AudioDriver {
+class AudioDriverDySv5w : public AudioDriver {
    public:
     void begin(uint8_t vol) override;
     void playTrack(uint16_t track) override;

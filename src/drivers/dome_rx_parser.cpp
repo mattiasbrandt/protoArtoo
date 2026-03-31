@@ -1,5 +1,5 @@
 // =============================================================================
-// src/drivers/marcduino_rx.cpp
+// src/drivers/dome_rx_parser.cpp
 //
 // Marcduino command parser implementation.
 //
@@ -20,7 +20,7 @@
 //   covered by native tests under test/test_native/test_marcduino_helpers/.
 // =============================================================================
 
-#include "marcduino_rx.h"
+#include "dome_rx_parser.h"
 
 #include <string.h>
 

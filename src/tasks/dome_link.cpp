@@ -38,7 +38,7 @@
 #include "audio_task.h"
 #include "config.h"
 #include "logging.h"
-#include "marcduino_rx.h"
+#include "dome_rx_parser.h"
 #include "mood.h"
 #include "robot_state.h"
 

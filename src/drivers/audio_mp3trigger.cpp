@@ -213,7 +213,7 @@ void AudioDriverMp3Trigger::setVolume(uint8_t vol) {
 
 // -----------------------------------------------------------------------------
 // queryModuleState()
-// UART2 contention check identical to AudioDriverSoftUart and AudioDriverChirp.
+// UART2 contention check identical to AudioDriverDySv5w and AudioDriverChirp.
 // Returns cached state when dome ctrl is active. SBUS2 is RMT-based; it no
 // longer contends UART2.
 //

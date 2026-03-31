@@ -16,7 +16,7 @@
 #include "api_helpers.h"
 #include "audio_task.h"
 #include "dome_link.h"
-#include "marcduino_rx.h"
+#include "dome_rx_parser.h"
 #include "mood.h"
 #include "config.h"
 #include "logging.h"
