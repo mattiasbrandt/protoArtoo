@@ -55,21 +55,6 @@ entries:
         required: true
     nvs_key: null
 
-  - name: drive.action.set-mode
-    display_name: Set Mode
-    description: Switch between stationary and driving mode
-    domain: drive
-    type: action
-    marcduino_cmd: null
-    api_path: /api/mode
-    sse_event: null
-    cpp_enum: RC_ACTION_OP_MODE_SWITCH
-    cpp_file: include/rc_mapping.h
-    sources: [web_api, sbus]
-    safety_critical: false
-    requires_web_control: false
-    nvs_key: null
-
   - name: drive.action.speed-limit
     display_name: Speed Limit
     description: Set the maximum drive speed as a percentage of full range
@@ -78,7 +63,7 @@ entries:
     marcduino_cmd: null
     api_path: null
     sse_event: null
-    cpp_enum: RC_ACTION_SPEED_LIMIT
+    cpp_enum: RC_ACTION_SPEED_LIMIT  # → DRIVE_ACTION_SPEED_LIMIT after slice:c
     cpp_file: include/rc_mapping.h
     sources: [sbus]
     safety_critical: false
@@ -144,11 +129,11 @@ entries:
     marcduino_cmd: null
     api_path: /api/dome
     sse_event: null
-    cpp_enum: RC_ACTION_DOME_SPEED
+    cpp_enum: RC_ACTION_DOME_SPEED  # → DOME_ACTION_SPEED after slice:c
     cpp_file: include/rc_mapping.h
     sources: [web_api, sbus]
     safety_critical: false
-    requires_web_control: false
+    requires_web_control: true  # POST /api/dome currently lacks this check — fix tracked separately
     nvs_key: null
 
   - name: dome.action.send-command
@@ -174,7 +159,7 @@ entries:
     marcduino_cmd: M<nn>
     api_path: null
     sse_event: null
-    cpp_enum: RC_ACTION_MARCDUINO_SEQ
+    cpp_enum: RC_ACTION_MARCDUINO_SEQ  # → DOME_ACTION_MARCDUINO_SEQ after slice:c
     cpp_file: include/rc_mapping.h
     sources: [sbus]
     safety_critical: false
@@ -189,7 +174,7 @@ entries:
     marcduino_cmd: varies
     api_path: null
     sse_event: null
-    cpp_enum: RC_ACTION_MARCDUINO_CMD
+    cpp_enum: RC_ACTION_MARCDUINO_CMD  # → DOME_ACTION_MARCDUINO_CMD after slice:c
     cpp_file: include/rc_mapping.h
     sources: [sbus]
     safety_critical: false
@@ -204,7 +189,7 @@ entries:
     marcduino_cmd: :SE<nn>
     api_path: null
     sse_event: null
-    cpp_enum: RC_ACTION_DOME_SEQ
+    cpp_enum: RC_ACTION_DOME_SEQ  # → DOME_ACTION_SEQ after slice:c
     cpp_file: include/rc_mapping.h
     sources: [sbus]
     safety_critical: false
@@ -305,7 +290,7 @@ entries:
     marcduino_cmd: $+
     api_path: null
     sse_event: null
-    cpp_enum: AUDIO_CMD_DOLLAR
+    cpp_enum: AUDIO_CMD_DOLLAR  # dispatched as $+ dollar command — not a separate enum value
     cpp_file: include/audio_task.h
     sources: [dome_rx]
     safety_critical: false
@@ -320,7 +305,7 @@ entries:
     marcduino_cmd: $-
     api_path: null
     sse_event: null
-    cpp_enum: AUDIO_CMD_DOLLAR
+    cpp_enum: AUDIO_CMD_DOLLAR  # dispatched as $- dollar command — not a separate enum value
     cpp_file: include/audio_task.h
     sources: [dome_rx]
     safety_critical: false
@@ -334,7 +319,7 @@ entries:
     type: status
     marcduino_cmd: null
     api_path: /api/audio
-    sse_event: null
+    sse_event: null  # no dedicated SSE event; audio state fields ride the main 'status' event
     cpp_enum: null
     cpp_file: null
     sources: [internal]
@@ -392,6 +377,66 @@ entries:
     requires_web_control: false
     nvs_key: cfg_sndRandMax
 
+
+  - name: sound.config.mood-interval-quiet
+    display_name: Quiet Mode Interval
+    description: Seconds between random sound plays in Quiet mood
+    domain: sound
+    type: config
+    marcduino_cmd: null
+    api_path: /api/config
+    sse_event: null
+    cpp_enum: null
+    cpp_file: null
+    sources: [internal]
+    safety_critical: false
+    requires_web_control: false
+    nvs_key: snd_int_quiet
+
+  - name: sound.config.mood-interval-mid
+    display_name: Mid-Awake Interval
+    description: Seconds between random sound plays in Mid-Awake mood
+    domain: sound
+    type: config
+    marcduino_cmd: null
+    api_path: /api/config
+    sse_event: null
+    cpp_enum: null
+    cpp_file: null
+    sources: [internal]
+    safety_critical: false
+    requires_web_control: false
+    nvs_key: snd_int_mid
+
+  - name: sound.config.mood-interval-full
+    display_name: Full-Awake Interval
+    description: Seconds between random sound plays in Full-Awake mood
+    domain: sound
+    type: config
+    marcduino_cmd: null
+    api_path: /api/config
+    sse_event: null
+    cpp_enum: null
+    cpp_file: null
+    sources: [internal]
+    safety_critical: false
+    requires_web_control: false
+    nvs_key: snd_int_full
+
+  - name: sound.config.mood-interval-awake-plus
+    display_name: Awake+ Interval
+    description: Seconds between random sound plays in Awake+ mood
+    domain: sound
+    type: config
+    marcduino_cmd: null
+    api_path: /api/config
+    sse_event: null
+    cpp_enum: null
+    cpp_file: null
+    sources: [internal]
+    safety_critical: false
+    requires_web_control: false
+    nvs_key: snd_int_awake
   - name: sound.config.track-assignments
     display_name: Track Assignments
     description: Named track number assignments (S, F, L, c, C, W, M, B)
@@ -405,7 +450,15 @@ entries:
     sources: [internal]
     safety_critical: false
     requires_web_control: false
-    nvs_key: null
+    nvs_keys:  # 8 named track NVS keys — see POST /api/audio/tracks
+      - snd_scream
+      - snd_faint
+      - snd_leia
+      - snd_cantina_s
+      - snd_sw
+      - snd_march
+      - snd_cantina_l
+      - snd_startup
 
   # --- servo ---
   - name: servo.action.open
@@ -480,7 +533,7 @@ entries:
     marcduino_cmd: null
     api_path: /api/servo
     sse_event: null
-    cpp_enum: null
+    cpp_enum: null  # ServoCommandType has no STOP value; stop is handled implicitly by the servo task
     cpp_file: null
     sources: [web_api]
     safety_critical: false
@@ -495,7 +548,7 @@ entries:
     marcduino_cmd: null
     api_path: null
     sse_event: null
-    cpp_enum: RC_ACTION_ARM1_TOGGLE
+    cpp_enum: RC_ACTION_ARM1_TOGGLE  # → SERVO_ACTION_ARM1_TOGGLE after slice:c
     cpp_file: include/rc_mapping.h
     sources: [sbus]
     safety_critical: false
@@ -510,7 +563,7 @@ entries:
     marcduino_cmd: null
     api_path: null
     sse_event: null
-    cpp_enum: RC_ACTION_ARM2_TOGGLE
+    cpp_enum: RC_ACTION_ARM2_TOGGLE  # → SERVO_ACTION_ARM2_TOGGLE after slice:c
     cpp_file: include/rc_mapping.h
     sources: [sbus]
     safety_critical: false
@@ -525,7 +578,7 @@ entries:
     marcduino_cmd: null
     api_path: null
     sse_event: null
-    cpp_enum: RC_ACTION_AUX1_TOGGLE
+    cpp_enum: RC_ACTION_AUX1_TOGGLE  # → SERVO_ACTION_AUX1_TOGGLE after slice:c
     cpp_file: include/rc_mapping.h
     sources: [sbus]
     safety_critical: false
@@ -540,7 +593,7 @@ entries:
     marcduino_cmd: null
     api_path: null
     sse_event: null
-    cpp_enum: RC_ACTION_AUX2_TOGGLE
+    cpp_enum: RC_ACTION_AUX2_TOGGLE  # → SERVO_ACTION_AUX2_TOGGLE after slice:c
     cpp_file: include/rc_mapping.h
     sources: [sbus]
     safety_critical: false
@@ -555,7 +608,7 @@ entries:
     marcduino_cmd: null
     api_path: null
     sse_event: null
-    cpp_enum: RC_ACTION_AUX3_TOGGLE
+    cpp_enum: RC_ACTION_AUX3_TOGGLE  # → SERVO_ACTION_AUX3_TOGGLE after slice:c
     cpp_file: include/rc_mapping.h
     sources: [sbus]
     safety_critical: false
@@ -578,6 +631,21 @@ entries:
     nvs_key: null
 
   # --- system ---
+  - name: system.action.set-mode
+    display_name: Set Mode
+    description: Switch between stationary and driving mode
+    domain: system
+    type: action
+    marcduino_cmd: null
+    api_path: /api/mode
+    sse_event: null
+    cpp_enum: RC_ACTION_OP_MODE_SWITCH  # → SYSTEM_ACTION_OP_MODE after slice:c
+    cpp_file: include/rc_mapping.h
+    sources: [web_api, sbus]
+    safety_critical: false
+    requires_web_control: false
+    nvs_key: null
+
   - name: system.action.estop
     display_name: Emergency Stop
     description: Immediately stop all drive output and latch the emergency stop
@@ -586,7 +654,7 @@ entries:
     marcduino_cmd: null
     api_path: /api/estop
     sse_event: null
-    cpp_enum: RC_ACTION_ESTOP_LATCH
+    cpp_enum: RC_ACTION_ESTOP_LATCH  # → SYSTEM_ACTION_ESTOP after slice:c
     cpp_file: include/rc_mapping.h
     sources: [web_api, sbus]
     safety_critical: true
@@ -653,6 +721,56 @@ entries:
     requires_web_control: false
     nvs_key: null
 
+
+  - name: system.action.set-mood
+    display_name: Set Mood
+    description: Set the droid's active mood, controlling body chatter rate and dome lighting behaviour
+    domain: system
+    type: action
+    marcduino_cmd: null
+    api_path: /api/mood
+    sse_event: null
+    cpp_enum: null  # mood IDs are plain uint8 values (10, 11, 13, 14) — not a named enum
+    cpp_file: null
+    sources: [web_api]
+    safety_critical: false
+    requires_web_control: false
+    params:
+      - name: mood
+        type: uint8
+        values: [10, 11, 13, 14]  # Quiet=10, Full-Awake=11, Mid-Awake=13, Awake+=14
+        required: true
+    nvs_key: null
+
+  - name: system.status.mood
+    display_name: Mood
+    description: Currently active mood preset (Quiet=10, Full-Awake=11, Mid-Awake=13, Awake+=14)
+    domain: system
+    type: status
+    marcduino_cmd: null
+    api_path: null  # included as activeMood field in GET /api/status
+    sse_event: status  # activeMood field in the status SSE event
+    cpp_enum: null
+    cpp_file: null
+    sources: [internal]
+    safety_critical: false
+    requires_web_control: false
+    nvs_key: null
+
+  - name: system.config.mood
+    display_name: Active Mood
+    description: Persisted active mood preset ID
+    domain: system
+    type: config
+    marcduino_cmd: null
+    api_path: /api/mood
+    sse_event: null
+    cpp_enum: null
+    cpp_file: null
+    sources: [internal]
+    safety_critical: false
+    requires_web_control: false
+    nvs_key: last_mood
   - name: system.status.health
     display_name: Health
     description: System health snapshot: estop, SBUS, WiFi, heap, filesystem
@@ -698,10 +816,10 @@ entries:
     requires_web_control: false
     nvs_key: null
 
-  - name: system.status.serial
-    display_name: Serial
+  - name: dome.status.serial-link
+    display_name: Dome Serial Link
     description: Dome serial link status and heartbeat timing
-    domain: system
+    domain: dome
     type: status
     marcduino_cmd: null
     api_path: /api/serial
