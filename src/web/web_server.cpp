@@ -25,6 +25,7 @@
 #include "../../include/api_status.h"
 #include "../../include/api_system.h"
 #include "../../include/api_validation.h"
+#include "../../include/api_actions.h"
 #include "../../include/audio_task.h"
 #include "../../include/config.h"
 #include "../../include/rc_diagnostics_snapshot.h"
@@ -729,6 +730,7 @@ void startHttpServerOnce() {
         registerStatusRoutes(server);
         registerValidationRoutes(server);
         registerSystemRoutes(server);
+        registerActionsRoutes(server);
 
         if (littleFsReady) {
             server.serveStatic("/", LittleFS, "/").setDefaultFile("index.html");

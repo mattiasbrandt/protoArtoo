@@ -55,6 +55,46 @@ entries:
         required: true
     nvs_key: null
 
+
+  - name: drive.action.speed
+    display_name: Speed
+    description: Forward/reverse drive speed (analog axis binding)
+    domain: drive
+    type: action
+    marcduino_cmd: null
+    api_path: null
+    sse_event: null
+    cpp_enum: DRIVE_ACTION_SPEED
+    cpp_file: include/rc_mapping.h
+    sources: [sbus]
+    safety_critical: false
+    requires_web_control: false
+    params:
+      - name: value
+        type: float
+        range: [-1.0, 1.0]
+        required: true
+    nvs_key: null
+
+  - name: drive.action.steer
+    display_name: Steer
+    description: Left/right steering (analog axis binding)
+    domain: drive
+    type: action
+    marcduino_cmd: null
+    api_path: null
+    sse_event: null
+    cpp_enum: DRIVE_ACTION_STEER
+    cpp_file: include/rc_mapping.h
+    sources: [sbus]
+    safety_critical: false
+    requires_web_control: false
+    params:
+      - name: value
+        type: float
+        range: [-1.0, 1.0]
+        required: true
+    nvs_key: null
   - name: drive.action.speed-limit
     display_name: Speed Limit
     description: Set the maximum drive speed as a percentage of full range

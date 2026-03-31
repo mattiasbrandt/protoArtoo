@@ -575,6 +575,8 @@ non-empty name/display_name, id values are unique.
 
 Commit: `feat(phase:v1.0.0/T04/slice:d): add ActionEntry registry and GET /api/actions endpoint`
 
+**slice:d: COMPLETE (bench-tested)** — `include/action_registry.h` + `src/web/action_registry.cpp` (14 entries: all non-NONE `RobotActionId` values) + `include/api_actions.h` + `src/web/api_actions.cpp` (`GET /api/actions`) created. `platformio.ini` native `build_src_filter` updated to include `action_registry.cpp`. `docs/action-registry.yaml` updated with missing `drive.action.speed` and `drive.action.steer` entries. New test suite `test_action_registry` (4 tests: size > 0, non-empty fields, unique ids, no NONE entry). `pio run -e protoArtoo` SUCCESS, `pio run -e protoArtoo_s3` SUCCESS, `pio test -e native` 499/499 passed.
+
 ---
 
 #### T04/slice:e — RC mapping UI uses runtime registry
