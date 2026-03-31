@@ -2,7 +2,7 @@
 // test/test_native/test_api_helpers/test_api_helpers.cpp
 //
 // Native unit tests for web API parsing helpers.
-// Tests: parseDriveValue, parseUint32Value, parseBoolValue, resolveManualCommand.
+// Tests: parseDriveValue, parseUint32Value, parseBoolValue.
 // =============================================================================
 #include <unity.h>
 
@@ -162,44 +162,6 @@ void test_parseBool_yes_fails() {
     TEST_ASSERT_FALSE(parseBoolValue("yes", &out));
 }
 
-// --- resolveManualCommand() tests ---
-
-void test_resolve_estop() {
-    TEST_ASSERT_EQUAL_INT(MC_ESTOP, (int)resolveManualCommand("estop"));
-}
-
-void test_resolve_clear_estop() {
-    TEST_ASSERT_EQUAL_INT(MC_CLEAR_ESTOP, (int)resolveManualCommand("clear_estop"));
-}
-
-void test_resolve_enable_web_control() {
-    TEST_ASSERT_EQUAL_INT(MC_ENABLE_WEB_CONTROL, (int)resolveManualCommand("enable_web_control"));
-}
-
-void test_resolve_disable_web_control() {
-    TEST_ASSERT_EQUAL_INT(MC_DISABLE_WEB_CONTROL, (int)resolveManualCommand("disable_web_control"));
-}
-
-void test_resolve_reboot() {
-    TEST_ASSERT_EQUAL_INT(MC_REBOOT, (int)resolveManualCommand("reboot"));
-}
-
-void test_resolve_unknown() {
-    TEST_ASSERT_EQUAL_INT(MC_UNKNOWN, (int)resolveManualCommand("unknown_cmd"));
-}
-
-void test_resolve_empty_unknown() {
-    TEST_ASSERT_EQUAL_INT(MC_UNKNOWN, (int)resolveManualCommand(""));
-}
-
-void test_resolve_null_unknown() {
-    TEST_ASSERT_EQUAL_INT(MC_UNKNOWN, (int)resolveManualCommand(nullptr));
-}
-
-void test_resolve_uppercase_unknown() {
-    TEST_ASSERT_EQUAL_INT(MC_UNKNOWN, (int)resolveManualCommand("ESTOP"));
-}
-
 int main() {
     UNITY_BEGIN();
 
@@ -231,16 +193,6 @@ int main() {
     RUN_TEST(test_parseBool_null_fails);
     RUN_TEST(test_parseBool_uppercase_fails);
     RUN_TEST(test_parseBool_yes_fails);
-
-    RUN_TEST(test_resolve_estop);
-    RUN_TEST(test_resolve_clear_estop);
-    RUN_TEST(test_resolve_enable_web_control);
-    RUN_TEST(test_resolve_disable_web_control);
-    RUN_TEST(test_resolve_reboot);
-    RUN_TEST(test_resolve_unknown);
-    RUN_TEST(test_resolve_empty_unknown);
-    RUN_TEST(test_resolve_null_unknown);
-    RUN_TEST(test_resolve_uppercase_unknown);
 
     return UNITY_END();
 }

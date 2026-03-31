@@ -73,35 +73,6 @@ bool parseBoolValue(const char* raw, bool* out) {
     return false;
 }
 
-ManualCommand resolveManualCommand(const char* command) {
-    if (command == nullptr) {
-        return MC_UNKNOWN;
-    }
-
-    if (strcmp(command, "estop") == 0) {
-        return MC_ESTOP;
-    }
-    if (strcmp(command, "clear_estop") == 0) {
-        return MC_CLEAR_ESTOP;
-    }
-    if (strcmp(command, "enable_web_control") == 0) {
-        return MC_ENABLE_WEB_CONTROL;
-    }
-    if (strcmp(command, "disable_web_control") == 0) {
-        return MC_DISABLE_WEB_CONTROL;
-    }
-    if (strcmp(command, "reboot") == 0) {
-        return MC_REBOOT;
-    }
-    if (strcmp(command, "#st") == 0) {
-        return MC_STATIONARY_MODE;
-    }
-    if (strcmp(command, "#sm") == 0) {
-        return MC_DRIVING_MODE;
-    }
-
-    return MC_UNKNOWN;
-}
 
 void formatConfigJson(char* buf, size_t bufSize, int16_t speedLimitMax, uint32_t webDriveTimeoutMs,
                       bool ch8ModeLock) {

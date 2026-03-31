@@ -13,26 +13,6 @@
 #include <stdint.h>
 
 // -----------------------------------------------------------------------------
-// ManualCommand — recognised command tokens for POST /api/manual-command.
-// Returned by resolveManualCommand() so callers can dispatch without string
-// comparison.
-//
-// Internal to the web layer. Exposed in this header because native tests
-// validate resolveManualCommand() return values directly. Do not use outside
-// src/web/ or test/.
-// -----------------------------------------------------------------------------
-enum ManualCommand : uint8_t {
-    MC_UNKNOWN = 0,
-    MC_ESTOP,
-    MC_CLEAR_ESTOP,
-    MC_ENABLE_WEB_CONTROL,
-    MC_DISABLE_WEB_CONTROL,
-    MC_REBOOT,
-    MC_STATIONARY_MODE,
-    MC_DRIVING_MODE,
-};
-
-// -----------------------------------------------------------------------------
 // parseDriveValue()
 // Parse a null-terminated decimal integer string into an int16_t.
 // Accepts negative values. Rejects empty strings, non-numeric input, and
@@ -67,17 +47,6 @@ bool parseUint32Value(const char* raw, uint32_t* out);
 // thread-safe: yes (pure function, no globals)
 // -----------------------------------------------------------------------------
 bool parseBoolValue(const char* raw, bool* out);
-
-// -----------------------------------------------------------------------------
-// resolveManualCommand()
-// Map a null-terminated command string to a ManualCommand enum value.
-// Input is trimmed and lowercased before matching (caller must pass already
-// normalised input — lowercase, no leading/trailing whitespace).
-// params: command — null-terminated, already-normalised command string
-// returns: ManualCommand enum value; MC_UNKNOWN if not recognised
-// thread-safe: yes (pure function, no globals)
-// -----------------------------------------------------------------------------
-ManualCommand resolveManualCommand(const char* command);
 
 // -----------------------------------------------------------------------------
 // formatConfigJson()
