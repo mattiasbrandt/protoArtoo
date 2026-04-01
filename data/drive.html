@@ -26,9 +26,6 @@
         <button id="estop-button" class="btn danger" type="button" aria-label="Emergency Stop">
           🛑 Latch Estop
         </button>
-        <button id="clear-estop-button" class="btn" type="button" aria-label="Clear Emergency Stop">
-          🟢 Clear Estop
-        </button>
         <button id="enable-web-control-button" class="btn accent" type="button" aria-label="Enable Web Control">
           ✓ Enable Web Control
         </button>
@@ -37,6 +34,10 @@
         </button>
       </div>
       <div id="control-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true">No command sent yet.</div>
+      <div class="recovery-row mt-12">
+        <span class="desc">Recovery: only available when estop is latched</span>
+        <button id="clear-estop-button" class="btn" type="button" aria-label="Clear Emergency Stop">🟢 Clear Estop</button>
+      </div>
     </div>
 
     <!-- Movement Status -->

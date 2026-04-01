@@ -177,7 +177,7 @@
     });
   };
 
-  const postAudio = async (params, feedbackEl) => {
+  const postAudio = async (params, feedbackEl, label = 'Sound command') => {
     if (!window.PAApi) return;
     if (!soundHardwareEnabled) {
       showFeedback(feedbackEl || globalFb, "Sound controls unavailable: enable S2 — Sound in Setup.", false);
@@ -186,7 +186,7 @@
     try {
       const result = await window.PAApi.postForm("/api/audio", params, { timeoutMs: 3000 });
       const ok = Boolean(result.data?.ok);
-      showFeedback(feedbackEl, ok ? "Sent" : (result.data?.error || "Failed"), ok);
+      showFeedback(feedbackEl, ok ? `${label} sent` : (result.data?.error || "Failed"), ok);
     } catch (error) {
       showFeedback(feedbackEl, `Command failed: ${window.PAApi.messageFor(error)}`, false);
     }
@@ -276,7 +276,7 @@
       playButton.title = `Play ${sound.cmd}`;
       playButton.setAttribute("aria-label", `Play ${sound.label}`);
       playButton.addEventListener("click", () => {
-        postAudio({ action: "dollar", cmd: sound.cmd }, globalFb);
+        postAudio({ action: "dollar", cmd: sound.cmd }, globalFb, sound.label);
       });
       tdPlay.appendChild(playButton);
 
@@ -381,18 +381,17 @@
 
   volSlider?.addEventListener("input", syncVolumeLabel);
   volSlider?.addEventListener("change", () => {
-    postAudio({ action: "volume", level: volSlider.value }, globalFb);
+    postAudio({ action: "volume", level: volSlider.value }, globalFb, 'Volume');
   });
 
   document.getElementById("btn-stop")
-    ?.addEventListener("click", () => postAudio({ action: "stop" }, globalFb));
+    ?.addEventListener("click", () => postAudio({ action: "stop" }, globalFb, 'Stop'));
 
   document.getElementById("btn-random-on")
-    ?.addEventListener("click", () => postAudio({ action: "dollar", cmd: "$R" }, globalFb));
+    ?.addEventListener("click", () => postAudio({ action: "dollar", cmd: "$R" }, globalFb, 'Random mode on'));
 
   document.getElementById("btn-random-off")
-    ?.addEventListener("click", () => postAudio({ action: "dollar", cmd: "$O" }, globalFb));
-
+    ?.addEventListener("click", () => postAudio({ action: "dollar", cmd: "$O" }, globalFb, 'Random mode off'));
   const directFb = document.getElementById("direct-feedback");
   document.getElementById("btn-direct-play")?.addEventListener("click", () => {
     const value = Number.parseInt(document.getElementById("direct-track")?.value, 10);
@@ -404,7 +403,7 @@
       showFeedback(directFb, "Track must be 1–65535", false);
       return;
     }
-    postAudio({ action: "play", track: value }, directFb);
+    postAudio({ action: "play", track: value }, directFb, `Track ${value}`);
   });
 
   const randFb = document.getElementById("rand-feedback");

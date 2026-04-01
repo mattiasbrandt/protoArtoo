@@ -199,6 +199,16 @@ nav a.active {
   line-height: 1.5;
 }
 
+.caution-banner {
+  background: color-mix(in srgb, var(--warning) 15%, transparent);
+  border-left: 3px solid var(--warning);
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 0.85em;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+}
+
 .hero-grid,
 .status-grid,
 .drive-grid,
@@ -271,6 +281,13 @@ nav a.active {
   background: var(--text-dim);
   box-shadow: none;
   opacity: 0.4;
+}
+
+.indicator-text {
+  font-size: 0.65em;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  opacity: 0.75;
 }
 
 .status-item dt {
@@ -410,6 +427,12 @@ input.input-narrow:focus {
 .toggle-label {
   font-size: 0.9rem;
   color: var(--silver-bright);
+}
+
+.toggle-sublabel {
+  font-size: 0.7em;
+  opacity: 0.65;
+  margin-left: 4px;
 }
 
 .toggle-status {
@@ -647,6 +670,23 @@ input.input-narrow:focus {
   font-size: 0.85rem;
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
   white-space: pre-wrap;
+}
+
+.stale-banner {
+  background: color-mix(in srgb, var(--warning) 20%, transparent);
+  border-bottom: 2px solid var(--warning);
+  color: var(--text);
+  font-size: 0.85em;
+  padding: 8px 16px;
+  text-align: center;
+}
+
+.log-paused {
+  display: none;
+}
+
+.log-paused.visible {
+  display: block;
 }
 
 .btn {
@@ -1555,7 +1595,7 @@ textarea:disabled {
   nav a {
     padding: 8px 10px;
     font-size: 0.85rem;
-    min-height: 40px;
+    min-height: 44px;
   }
 
   .dpad-grid {

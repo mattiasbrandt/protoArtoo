@@ -21,6 +21,8 @@
   const moodFeedback = document.getElementById("mood-feedback");
 
   const soundFeedback = document.getElementById("sound-feedback");
+  const staleBanner = document.getElementById('status-stale-banner');
+  const setStale = (stale) => { if (staleBanner) staleBanner.style.display = stale ? '' : 'none'; };
 
   let lastStatus = null;
   let modePending = false;
@@ -54,6 +56,11 @@
     const el = document.getElementById(id);
     if (!el) return;
     el.className = `indicator ${state}`;
+    const textEl = document.getElementById(id.replace('h-', 'ht-'));
+    if (textEl) {
+      const labels = { ok: 'OK', warn: 'WARN', fail: 'FAIL', off: 'OFF' };
+      textEl.textContent = labels[state] || state;
+    }
   };
 
   const renderHealth = (payload) => {
@@ -179,6 +186,7 @@
 
   const applyStatus = (payload) => {
     lastStatus = payload;
+    setStale(false);
     renderHealth(payload);
     renderComponentStatus(payload);
     renderOpMode(payload);
@@ -313,8 +321,15 @@
 
   if (window.PAStatusStream?.isSupported()) {
     window.PAStatusStream.subscribe((eventType, payload) => {
-      if (eventType === "status") applyStatus(payload);
+      if (eventType === "status") {
+        applyStatus(payload);
+        setStale(false);
+      }
       if (eventType === "log") appendLogLine(payload);
+      if (eventType === "stream_error") {
+        appendLogLine("[connection lost \u2014 retrying…]");
+        setStale(true);
+      }
     });
 
     if (!window.PAStatusStream.getLastStatus()) {
@@ -325,7 +340,7 @@
   } else {
     const refreshFromFallback = () => {
       refreshStatusOnce().catch(() => {
-        // No-op: operator sees stale values; next cycle retries.
+        setStale(true);
       });
     };
 

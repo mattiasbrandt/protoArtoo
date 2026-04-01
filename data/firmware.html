@@ -12,8 +12,8 @@
 
 
     <div class="card">
-      <h3>⬆️ Firmware Update</h3>
-      <div class="desc">Upload a new firmware binary (<code>.bin</code>) compiled from source.</div>
+      <h3>💾 Firmware Update (.bin)</h3>
+      <div class="desc">Flash new firmware. Expects the compiled firmware binary (e.g. firmware.bin).</div>
       <div class="desc mt-8 text-warning">
         ⚠️ Warning: Keep power connected during the update. Do not refresh this page while updating.
       </div>
@@ -31,13 +31,15 @@
         <div class="button-row">
           <button id="upload-fw-button" class="btn accent" type="button">📤 Upload and Flash</button>
         </div>
+        <div class="desc mt-8">⚠️ Wrong file will brick the device. Verify the filename before uploading.</div>
         <div class="desc mt-8">Select a <code>.bin</code> firmware file, then click Upload and Flash. Keep power connected during the update. The controller reboots automatically when done — reconnect after it restarts.</div>
       </div>
     </div>
+    <hr>
 
     <div class="card">
-      <h3>🗂️ Filesystem Update</h3>
-      <div class="desc">Upload a new filesystem image (<code>.bin</code>) to update the web UI and assets.</div>
+      <h3>📁 Filesystem Update (.bin)</h3>
+      <div class="desc">Update the web UI files. Expects the LittleFS image (e.g. littlefs.bin).</div>
       <div class="desc mt-8 text-warning">
         ⚠️ Warning: Keep power connected during the update. Do not refresh this page while updating.
       </div>
@@ -55,6 +57,7 @@
         <div class="button-row">
           <button id="upload-fs-button" class="btn accent" type="button">📤 Upload Filesystem</button>
         </div>
+        <div class="desc mt-8">⚠️ Wrong file will erase the web UI. Verify the filename before uploading.</div>
         <div class="desc mt-8">Build with <code>pio run -e &lt;env&gt; --target buildfs</code>, then select <code>.pio/build/&lt;env&gt;/littlefs.bin</code> for your active environment. The controller reboots automatically when done.</div>
       </div>
     </div>

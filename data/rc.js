@@ -28,6 +28,7 @@
   const sbusRecvSel = document.getElementById("sbus-recv-sel");
   const sbusRecvFeedback = document.getElementById("sbus-recv-feedback");
   let sbusRecvFeedbackTimer = null;
+  let confirmedSbusRecvValue = null;
   const rcSummaryBody = document.getElementById("rc-summary-body");
 
   const rcSlotItems = document.getElementById("rc-slot-items");
@@ -766,7 +767,6 @@
     });
 
     updateConditionalFields();
-    markEditorClean();
   };
 
   const updateSummaryMiniBar = () => {
@@ -871,6 +871,7 @@
       });
       configCache = data;
       setSingleSbusRecvSelect(getSingleSbusRecvCh2(data));
+      confirmedSbusRecvValue = sbusRecvSel?.value ?? null;
       updateRecvSel(mode);
       if (rcModeFeedback) {
         rcModeFeedback.textContent = `Receiver type: ${mode}`;
@@ -892,6 +893,7 @@
     }
 
     selectedSlot = key;
+    markEditorClean();
     document.querySelectorAll('.rc-slot-item').forEach(el => {
       el.classList.toggle('active', el.dataset.slot === key);
     });
@@ -1344,13 +1346,13 @@
   if (sbusRecvSel) {
     sbusRecvSel.addEventListener("change", async () => {
       const recvCh2 = sbusRecvSel.value === "true";
-      const prevValue = sbusRecvSel.value;  // save for revert on failure
       setSbusRecvFeedback("Saving...");
       try {
         await window.PAApi.postJson("/api/config", { rc: { sbus: { recvCh2 } } }, { timeoutMs: 5000 });
         setSbusRecvFeedback(`\u2713 Saved at ${new Date().toLocaleTimeString()}`, "success", 2000);
+        confirmedSbusRecvValue = sbusRecvSel.value;
       } catch (error) {
-        sbusRecvSel.value = prevValue;  // revert to last confirmed server state
+        sbusRecvSel.value = confirmedSbusRecvValue;
         setSbusRecvFeedback(`\u274c ${window.PAApi.messageFor(error)}`, "error", 2000);
       }
     });

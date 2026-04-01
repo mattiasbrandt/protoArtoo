@@ -15,44 +15,44 @@
     },
     drive: {
       title: "Drive - protoArtoo",
-      statusDot: "green",
-      statusText: "Drive page connected",
-    },
+      statusDot: "yellow",
+      statusText: "Connecting…",
+      connectedText: "Drive page connected",
     dome: {
       title: "Dome - protoArtoo",
-      statusDot: "green",
-      statusText: "Dome page connected",
-    },
+      statusDot: "yellow",
+      statusText: "Connecting…",
+      connectedText: "Dome page connected",
     sound: {
       title: "protoArtoo - Sound",
-      statusDot: "green",
-      statusText: "Sound page connected",
-    },
+      statusDot: "yellow",
+      statusText: "Connecting…",
+      connectedText: "Sound page connected",
     servo: {
       title: "Servos - protoArtoo",
-      statusDot: "green",
-      statusText: "Servos page connected",
-    },
+      statusDot: "yellow",
+      statusText: "Connecting…",
+      connectedText: "Servos page connected",
     rc: {
       title: "RC Control - protoArtoo",
-      statusDot: "green",
-      statusText: "RC page connected",
-    },
+      statusDot: "yellow",
+      statusText: "Connecting…",
+      connectedText: "RC page connected",
     setup: {
       title: "Setup - protoArtoo",
-      statusDot: "green",
-      statusText: "Setup page connected",
-    },
+      statusDot: "yellow",
+      statusText: "Connecting…",
+      connectedText: "Setup page connected",
     wifi: {
       title: "WiFi - protoArtoo",
-      statusDot: "green",
-      statusText: "WiFi page connected",
-    },
+      statusDot: "yellow",
+      statusText: "Connecting…",
+      connectedText: "WiFi page connected",
     firmware: {
       title: "Firmware - protoArtoo",
-      statusDot: "green",
-      statusText: "Firmware page connected",
-    },
+      statusDot: "yellow",
+      statusText: "Connecting…",
+      connectedText: "Firmware page connected",
   };
 
   const NAV = [
@@ -101,5 +101,21 @@
         ${cfg.extraStatus || ""}
       </div>
     `;
+  }
+
+  if (window.PAStatusStream?.isSupported()) {
+    const connStatus = document.getElementById('conn-status');
+    const dotEl = connStatus?.querySelector('.dot');
+    const textEl = connStatus?.querySelector('div');
+
+    window.PAStatusStream.subscribe((eventType) => {
+      if (!connStatus) return;
+      if (eventType === 'status') {
+        if (dotEl) { dotEl.className = 'dot green'; }
+        if (textEl) { textEl.innerHTML = `<span class="dot green"></span>${cfg.connectedText || cfg.statusText}`; }
+      } else if (eventType === 'stream_error') {
+        if (textEl) { textEl.innerHTML = `<span class="dot warn"></span>Connection lost — retrying…`; }
+      }
+    });
   }
 })();

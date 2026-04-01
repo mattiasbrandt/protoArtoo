@@ -9,6 +9,7 @@
 (() => {
   const estopButton = document.getElementById("estop-button");
   const clearEstopButton = document.getElementById("clear-estop-button");
+  if (clearEstopButton) clearEstopButton.disabled = true;
   const enableWebControlButton = document.getElementById("enable-web-control-button");
   const disableWebControlButton = document.getElementById("disable-web-control-button");
   const controlFeedback = document.getElementById("control-feedback");
@@ -58,7 +59,6 @@
     driveDisabledCard?.classList.toggle("hidden", enabled);
 
     const gatedControls = [
-      ...Array.from(driveButtons),
       enableWebControlButton,
       disableWebControlButton,
     ];
@@ -72,6 +72,21 @@
     if (!enabled) {
       stopHoldLoop();
       driveButtons.forEach((button) => button.classList.remove("active"));
+    }
+
+    updateDriveButtonsEnabled();
+  };
+
+  const updateDriveButtonsEnabled = () => {
+    const enabled = driveHardwareEnabled && webControlEnabled;
+    driveButtons.forEach((btn) => {
+      if (!btn) return;
+      btn.disabled = !enabled;
+      btn.setAttribute('aria-disabled', enabled ? 'false' : 'true');
+    });
+    if (!enabled) {
+      stopHoldLoop();
+      driveButtons.forEach((btn) => btn.classList.remove('active'));
     }
   };
 
@@ -207,8 +222,10 @@
 
   const renderStatus = (payload) => {
     if (estopState) estopState.textContent = payload.estop ? "❌ Latched" : "✅ Clear";
+    if (clearEstopButton) clearEstopButton.disabled = !payload.estop;
     if (webControlState) webControlState.textContent = payload.webControlEnabled ? "✅ Enabled" : "⏸️ Disabled";
     webControlEnabled = !!payload.webControlEnabled;
+    updateDriveButtonsEnabled();
     if (failsafeSource) failsafeSource.textContent = String(payload.failsafeSource);
     if (driveOutput) driveOutput.textContent = `${payload.driveSpeed} / ${payload.driveSteer}`;
     if (speedLimitDisplay) speedLimitDisplay.textContent = Number(payload.speedLimitScale).toFixed(3);

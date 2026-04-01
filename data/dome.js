@@ -34,10 +34,8 @@
     saveTimeout = window.setTimeout(() => fn(...args), ms);
   };
 
-  const setDomeHardwareEnabled = (enabled) => {
-    domeHardwareEnabled = enabled;
-    domeDisabledCard?.classList.toggle("hidden", enabled);
-
+  const updateDomeControlsEnabled = () => {
+    const enabled = domeHardwareEnabled && webControlEnabled;
     const controls = [
       domeSlider,
       domeNeutral,
@@ -51,11 +49,19 @@
       control.disabled = !enabled;
       control.setAttribute("aria-disabled", enabled ? "false" : "true");
     });
-
+    domeDisabledCard?.classList.toggle("hidden", domeHardwareEnabled);
     if (!enabled && domeSlider) {
       domeSlider.value = "0";
       if (domeSpeedDisplay) domeSpeedDisplay.textContent = "0%";
     }
+    if (domeHardwareEnabled && !webControlEnabled) {
+      showFeedback(domeFeedback, "Web control is disabled — enable it on the Drive page.", "warning");
+    }
+  };
+
+  const setDomeHardwareEnabled = (enabled) => {
+    domeHardwareEnabled = enabled;
+    updateDomeControlsEnabled();
   };
 
   const postDomeCommand = async (speed) => {
@@ -94,6 +100,7 @@
         event.target.value = 0;
         if (domeSpeedDisplay) domeSpeedDisplay.textContent = "0%";
         postDomeCommand(0);
+        showFeedback(domeFeedback, "Released — dome stopped.", "");
       }
     });
   }
@@ -158,8 +165,8 @@
     window.PAStatusStream.subscribe((eventType, payload) => {
       if (eventType !== "status") return;
       webControlEnabled = !!payload.webControlEnabled;
+      updateDomeControlsEnabled();
       setDomeHardwareEnabled(Boolean(payload.dome));
-    });
   }
 
   loadEscConfig();

@@ -57,11 +57,23 @@
 
   // Debounce utility for auto-save
   let saveTimeout = null;
+  let savePending = false;
   const debounce = (fn, ms) => {
     return (...args) => {
       clearTimeout(saveTimeout);
-      saveTimeout = setTimeout(() => fn(...args), ms);
+      saveTimeout = setTimeout(() => {
+        setSavePending(true);
+        fn(...args);
+      }, ms);
     };
+  };
+
+  const setSavePending = (pending) => {
+    savePending = pending;
+    if (rebootButton) {
+      rebootButton.disabled = pending;
+      rebootButton.title = pending ? 'Waiting for settings to save...' : '';
+    }
   };
 
   const updateToggleStatus = (key) => {
@@ -172,6 +184,8 @@
         featureFeedback.className = "feedback error";
       }
     }
+    } finally {
+      setSavePending(false);
   };
 
   const debouncedSave = debounce(saveFeatures, 300);

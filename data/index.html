@@ -9,6 +9,9 @@
   </head>
   <body data-page="home">
     <div id="shell-top"></div>
+    <div id="status-stale-banner" class="stale-banner" role="alert" aria-live="polite" style="display:none">
+      ⚠️ Status data may be stale — connection interrupted
+    </div>
 
 
     <!-- Quick Controls -->
@@ -21,8 +24,8 @@
       <div class="desc mt-12">Sound</div>
       <div class="button-row mt-6">
         <button class="btn" id="sound-stop" title="Stop current playback" aria-label="Stop sound playback">⏹ Stop</button>
-        <button class="btn" id="sound-vol-up" title="Volume up" aria-label="Increase sound volume">🔊+</button>
-        <button class="btn" id="sound-vol-dn" title="Volume down" aria-label="Decrease sound volume">🔉-</button>
+        <button class="btn" id="sound-vol-up" title="Volume up" aria-label="Increase sound volume">🔊 Vol +</button>
+        <button class="btn" id="sound-vol-dn" title="Volume down" aria-label="Decrease sound volume">🔉 Vol −</button>
       </div>
       <div id="sound-feedback" class="feedback mt-8" role="status" aria-live="polite" aria-atomic="true"></div>
     </div>
@@ -34,26 +37,32 @@
         <div class="health-item">
           <div class="indicator" id="h-sbus"></div>
           <span>RC Receiver</span>
+          <span class="indicator-text" id="ht-sbus"></span>
         </div>
         <div class="health-item">
           <div class="indicator" id="h-wifi"></div>
           <span>WiFi</span>
+          <span class="indicator-text" id="ht-wifi"></span>
         </div>
         <div class="health-item">
           <div class="indicator" id="h-fs"></div>
           <span>File System</span>
+          <span class="indicator-text" id="ht-fs"></span>
         </div>
         <div class="health-item">
           <div class="indicator" id="h-heap"></div>
           <span>Memory</span>
+          <span class="indicator-text" id="ht-heap"></span>
         </div>
         <div class="health-item">
           <div class="indicator" id="h-dome-link"></div>
           <span>Dome Link</span>
+          <span class="indicator-text" id="ht-dome-link"></span>
         </div>
         <div class="health-item">
           <div class="indicator" id="h-sound"></div>
           <span>Sound</span>
+          <span class="indicator-text" id="ht-sound"></span>
         </div>
       </div>
     </div>

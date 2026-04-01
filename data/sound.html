@@ -26,24 +26,29 @@
             <td>Module link</td>
             <td><span id="mod-link" class="sound-state-badge" data-state="disabled">—</span></td>
           </tr>
-          <tr id="mod-device-row">
-            <td>Device</td>
-            <td><span id="mod-device">—</span></td>
-          </tr>
-          <tr>
-            <td>Play state</td>
-            <td><span id="mod-play-state">—</span></td>
-          </tr>
-          <tr>
-            <td>Total tracks</td>
-            <td><span id="mod-total-tracks">—</span></td>
-          </tr>
-          <tr id="mod-current-track-row">
-            <td>Current track</td>
-            <td><span id="mod-current-track">—</span></td>
-          </tr>
         </tbody>
       </table>
+      <details class="mt-12">
+        <summary>More detail</summary>
+        <div class="sound-details mt-8">
+          <div id="mod-device-row" class="sound-detail-row">
+            <span class="sound-detail-label">Device</span>
+            <span id="mod-device">—</span>
+          </div>
+          <div class="sound-detail-row">
+            <span class="sound-detail-label">Play state</span>
+            <span id="mod-play-state">—</span>
+          </div>
+          <div class="sound-detail-row">
+            <span class="sound-detail-label">Total tracks</span>
+            <span id="mod-total-tracks">—</span>
+          </div>
+          <div id="mod-current-track-row" class="sound-detail-row">
+            <span class="sound-detail-label">Current track</span>
+            <span id="mod-current-track">—</span>
+          </div>
+        </div>
+      </details>
       <div id="mod-poll-section" class="mt-12">
         <button id="btn-poll-status" class="btn-secondary">Poll status</button>
       </div>
