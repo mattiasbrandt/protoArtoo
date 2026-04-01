@@ -284,7 +284,7 @@
       const result = await window.PAApi.postForm("/api/audio", params, { timeoutMs: 3000 });
       const payload = result.data;
       const ok = payload && typeof payload === "object" ? !!payload.ok : true;
-      const msg = ok ? "Done" : (payload?.error || "Audio command failed");
+      const msg = ok ? "Done" : (payload?.error || "Sound command failed");
       showFeedback(audioFeedback, msg, ok ? "success" : "error");
       if (ok) {
         window.setTimeout(() => {

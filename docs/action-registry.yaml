@@ -581,7 +581,7 @@ entries:
     nvs_key: null
 
   - name: servo.action.toggle-arm1
-    display_name: Toggle Arm 1
+    display_name: ARM1 Toggle
     description: Toggle the arm 1 servo between open and closed
     domain: servo
     type: action
@@ -596,7 +596,7 @@ entries:
     nvs_key: null
 
   - name: servo.action.toggle-arm2
-    display_name: Toggle Arm 2
+    display_name: ARM2 Toggle
     description: Toggle the arm 2 servo between open and closed
     domain: servo
     type: action
@@ -611,7 +611,7 @@ entries:
     nvs_key: null
 
   - name: servo.action.toggle-aux1
-    display_name: Toggle Aux 1
+    display_name: AUX1 Toggle
     description: Toggle the aux 1 servo between open and closed
     domain: servo
     type: action
@@ -626,7 +626,7 @@ entries:
     nvs_key: null
 
   - name: servo.action.toggle-aux2
-    display_name: Toggle Aux 2
+    display_name: AUX2 Toggle
     description: Toggle the aux 2 servo between open and closed
     domain: servo
     type: action
@@ -641,7 +641,7 @@ entries:
     nvs_key: null
 
   - name: servo.action.toggle-aux3
-    display_name: Toggle Aux 3
+    display_name: AUX3 Toggle
     description: Toggle the aux 3 servo between open and closed
     domain: servo
     type: action

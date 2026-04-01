@@ -62,20 +62,20 @@
   // Matches robotActionIdToString() NVS token keys in rc_mapping.h.
   const HARDCODED_ACTION_TARGETS = [
     { token: 'none',         label: 'Disabled',                    group: 'Off' },
-    { token: 'drive_speed',  label: 'Drive Speed',                 group: 'Movement' },
-    { token: 'drive_steer',  label: 'Drive Steer',                 group: 'Movement' },
+    { token: 'drive_speed',  label: 'Speed',                 group: 'Movement' },
+    { token: 'drive_steer',  label: 'Steer',                 group: 'Movement' },
     { token: 'dome_speed',   label: 'Dome Speed',                  group: 'Movement' },
     { token: 'speed_limit',  label: 'Speed Limit',                 group: 'Movement' },
-    { token: 'op_mode',      label: 'Driving \u2194 Stationary Switch', group: 'Mode' },
+    { token: 'op_mode',      label: 'Set Mode', group: 'Mode' },
     { token: 'arm1_toggle',  label: 'ARM1 Toggle',                 group: 'Arms' },
     { token: 'arm2_toggle',  label: 'ARM2 Toggle',                 group: 'Arms' },
     { token: 'aux1_toggle',  label: 'AUX1 Toggle',                 group: 'Arms' },
     { token: 'aux2_toggle',  label: 'AUX2 Toggle',                 group: 'Arms' },
     { token: 'aux3_toggle',  label: 'AUX3 Toggle',                 group: 'Arms' },
-    { token: 'seq',          label: 'Body Sequence',               group: 'Sequences' },
+    { token: 'seq',          label: 'Marcduino Sequence',               group: 'Sequences' },
     { token: 'dome_seq',     label: 'Dome Sequence (Unavailable)', group: 'Sequences', disabled: true },
     { token: 'cmd',          label: 'Marcduino Command',           group: 'Command' },
-    { token: 'estop',        label: 'E-Stop Latch',                group: 'Safety' },
+    { token: 'estop',        label: 'Emergency Stop',                group: 'Safety' },
   ];
 
   // Live action targets — replaced on load from GET /api/actions.
@@ -716,7 +716,7 @@
       </label>
       ${isBackbone ? "" : `<label>Action<select data-field="target">${renderActionOptions(binding.target || "none")}</select></label>`}
       <div data-cond="seq" class="rc-editor-cond ${binding.target === "seq" ? "block" : "hidden"}">
-        <label>Body Sequence
+        <label>Marcduino Sequence
           <select data-field="payload">
             <option value="30"${binding.payload === "30" ? " selected" : ""}>SE30</option>
             <option value="31"${binding.payload === "31" ? " selected" : ""}>SE31</option>
