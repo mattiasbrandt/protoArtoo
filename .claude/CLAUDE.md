@@ -66,6 +66,14 @@ Follow [AGENTS.md](../AGENTS.md) for the full canonical list. Do not violate:
 - For minor details, state assumptions and proceed.
 - Use non-blocking progress updates instead of repeated planning chatter.
 
+### Subagent Delegation Mode
+
+- Default to planner-orchestrator behavior for non-trivial tasks:
+	- main model performs deep analysis and creates a detailed TODO packet,
+	- subagents execute scoped tasks from that packet.
+- Do not fall back to main-model solo execution after subagent timeout/cancel/usage-cap unless the user explicitly requests solo execution.
+- On interruption, checkpoint completed results and continue with a new delegated wave.
+
 ### Hardware and Tooling Reminders
 
 - Use [tools/serial_monitor.py](../tools/serial_monitor.py) for serial capture; avoid ad-hoc pyserial snippets.

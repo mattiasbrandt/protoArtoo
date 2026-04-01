@@ -81,3 +81,11 @@ Use AGENTS verification flow and classify status as one of:
 - `full-hardware-required`
 
 When hardware validation is deferred, explicitly state blockers and remaining checks.
+
+## Subagent Orchestration
+
+- For non-trivial tasks, use planner-orchestrator mode:
+	- main model handles deep reasoning and detailed TODO packet design,
+	- subagents execute scoped tasks.
+- Do not switch to main-model solo execution after subagent timeout/cancel/usage-cap unless the user explicitly asks.
+- Preserve partial results and continue in a new delegated wave when interruptions occur.
