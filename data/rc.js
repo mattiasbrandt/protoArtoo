@@ -121,6 +121,8 @@
     }
   };
 
+  const MARCDUINO_SEQUENCES = [30, 31, 32, 33, 34, 35, 36];
+
   const SOURCE_OPTIONS = {
     standard_pwm: ["none", "pwm"],
     single_sbus: ["none", "sbus1"],
@@ -718,13 +720,7 @@
       <div data-cond="seq" class="rc-editor-cond ${binding.target === "seq" ? "block" : "hidden"}">
         <label>Marcduino Sequence
           <select data-field="payload">
-            <option value="30"${binding.payload === "30" ? " selected" : ""}>SE30</option>
-            <option value="31"${binding.payload === "31" ? " selected" : ""}>SE31</option>
-            <option value="32"${binding.payload === "32" ? " selected" : ""}>SE32</option>
-            <option value="33"${binding.payload === "33" ? " selected" : ""}>SE33</option>
-            <option value="34"${binding.payload === "34" ? " selected" : ""}>SE34</option>
-            <option value="35"${binding.payload === "35" ? " selected" : ""}>SE35</option>
-            <option value="36"${binding.payload === "36" ? " selected" : ""}>SE36</option>
+            ${MARCDUINO_SEQUENCES.map(n => `<option value="${n}"${binding.payload === String(n) ? " selected" : ""}>SE${n}</option>`).join("\n            ")}
           </select>
         </label>
       </div>
@@ -1386,7 +1382,7 @@
 
   loadRcMode();
   loadRcDiagnostics();
-  loadActionTargets();
+  loadActionTargets().then(() => { if (selectedSlot) renderEditor(); });
 
   const hasRcStream = subscribeRcEvents();
   if (!hasRcStream) {
