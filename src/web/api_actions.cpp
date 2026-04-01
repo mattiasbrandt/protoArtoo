@@ -38,6 +38,7 @@ void registerActionsRoutes(AsyncWebServer& server) {
             obj["domain"]          = e.domain;
             obj["description"]     = e.description;
             obj["safety_critical"] = e.safety_critical;
+            obj["token"]          = robotActionIdToString(e.id);
         }
 
         auto* stream = req->beginResponseStream("application/json");

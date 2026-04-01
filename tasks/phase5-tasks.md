@@ -588,6 +588,8 @@ Confirm target file during implementation (likely `data/setup.html` + associated
 
 Commit: `feat(phase:v1.0.0/T04/slice:e): RC mapping UI populates action list from GET /api/actions`
 
+**slice:e: COMPLETE (bench-tested)** — `data/rc.js`: `RC_ACTION_TARGETS` const renamed to `HARDCODED_ACTION_TARGETS`; `let actionTargets` starts from hardcoded fallback and is replaced by `buildActionTargetsFromApi()` on successful `GET /api/actions` load. `loadActionTargets()` fires at init alongside `loadRcMode()` / `loadRcDiagnostics()`. `src/web/api_actions.cpp` updated to include `token` (legacy NVS key via `robotActionIdToString()`) in the JSON response so the save path requires no changes. `actionGroup()` derives optgroup from domain+name. `UNAVAILABLE_TOKENS` set preserves the `dome_seq` disabled state. `pio run -e protoArtoo` SUCCESS, `pio run -e protoArtoo_s3` SUCCESS, `pio test -e native` 499/499 passed.
+
 ---
 
 #### Slice dependency order

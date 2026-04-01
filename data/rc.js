@@ -58,23 +58,68 @@
 
   const BACKBONE_SLOTS = ["driveSpeed", "driveSteer", "domeSpeed", "driveLimit"];
 
-  const RC_ACTION_TARGETS = [
-    { token: 'none',         label: 'Disabled',                      group: 'Off' },
-    { token: 'drive_speed',  label: 'Drive Speed',                   group: 'Movement' },
-    { token: 'drive_steer',  label: 'Drive Steer',                   group: 'Movement' },
-    { token: 'dome_speed',   label: 'Dome Speed',                    group: 'Movement' },
-    { token: 'speed_limit',  label: 'Speed Limit',                   group: 'Movement' },
-    { token: 'op_mode',      label: 'Driving ↔ Stationary Switch',   group: 'Mode' },
-    { token: 'arm1_toggle',  label: 'ARM1 Toggle',                   group: 'Arms' },
-    { token: 'arm2_toggle',  label: 'ARM2 Toggle',                   group: 'Arms' },
-    { token: 'aux1_toggle',  label: 'AUX1 Toggle',                   group: 'Arms' },
-    { token: 'aux2_toggle',  label: 'AUX2 Toggle',                   group: 'Arms' },
-    { token: 'aux3_toggle',  label: 'AUX3 Toggle',                   group: 'Arms' },
-    { token: 'seq',          label: 'Body Sequence',                  group: 'Sequences' },
+  // Hardcoded fallback used until GET /api/actions resolves.
+  // Matches robotActionIdToString() NVS token keys in rc_mapping.h.
+  const HARDCODED_ACTION_TARGETS = [
+    { token: 'none',         label: 'Disabled',                    group: 'Off' },
+    { token: 'drive_speed',  label: 'Drive Speed',                 group: 'Movement' },
+    { token: 'drive_steer',  label: 'Drive Steer',                 group: 'Movement' },
+    { token: 'dome_speed',   label: 'Dome Speed',                  group: 'Movement' },
+    { token: 'speed_limit',  label: 'Speed Limit',                 group: 'Movement' },
+    { token: 'op_mode',      label: 'Driving \u2194 Stationary Switch', group: 'Mode' },
+    { token: 'arm1_toggle',  label: 'ARM1 Toggle',                 group: 'Arms' },
+    { token: 'arm2_toggle',  label: 'ARM2 Toggle',                 group: 'Arms' },
+    { token: 'aux1_toggle',  label: 'AUX1 Toggle',                 group: 'Arms' },
+    { token: 'aux2_toggle',  label: 'AUX2 Toggle',                 group: 'Arms' },
+    { token: 'aux3_toggle',  label: 'AUX3 Toggle',                 group: 'Arms' },
+    { token: 'seq',          label: 'Body Sequence',               group: 'Sequences' },
     { token: 'dome_seq',     label: 'Dome Sequence (Unavailable)', group: 'Sequences', disabled: true },
-    { token: 'cmd',          label: 'Marcduino Command',              group: 'Command' },
-    { token: 'estop',        label: 'E-Stop Latch',                   group: 'Safety' },
+    { token: 'cmd',          label: 'Marcduino Command',           group: 'Command' },
+    { token: 'estop',        label: 'E-Stop Latch',                group: 'Safety' },
   ];
+
+  // Live action targets — replaced on load from GET /api/actions.
+  // Falls back to HARDCODED_ACTION_TARGETS if the request fails.
+  let actionTargets = HARDCODED_ACTION_TARGETS;
+
+  // Derive the display group for a registry entry from domain + name.
+  const actionGroup = (entry) => {
+    if (entry.domain === 'drive' || entry.name === 'dome.action.speed') return 'Movement';
+    if (entry.domain === 'servo') return 'Arms';
+    if (entry.name === 'system.action.set-mode') return 'Mode';
+    if (entry.name === 'system.action.estop') return 'Safety';
+    if (entry.name === 'dome.action.marcduino-command') return 'Command';
+    return 'Sequences';
+  };
+
+  // dome_seq is blocked at save time (api_config.cpp); show as unavailable.
+  const UNAVAILABLE_TOKENS = new Set(['dome_seq']);
+
+  const buildActionTargetsFromApi = (entries) => {
+    const targets = [{ token: 'none', label: 'Disabled', group: 'Off' }];
+    entries.forEach((entry) => {
+      const token = entry.token;
+      const unavail = UNAVAILABLE_TOKENS.has(token);
+      targets.push({
+        token,
+        label: unavail ? `${entry.display_name} (Unavailable)` : entry.display_name,
+        group: actionGroup(entry),
+        disabled: unavail,
+      });
+    });
+    return targets;
+  };
+
+  const loadActionTargets = async () => {
+    try {
+      const result = await window.PAApi.get('/api/actions', { timeoutMs: 5000 });
+      if (Array.isArray(result.data)) {
+        actionTargets = buildActionTargetsFromApi(result.data);
+      }
+    } catch (_err) {
+      console.warn('[RC] Failed to load action registry, using built-in list');
+    }
+  };
 
   const SOURCE_OPTIONS = {
     standard_pwm: ["none", "pwm"],
@@ -375,7 +420,7 @@
   };
 
   const actionLabelFromToken = (token) => {
-    const found = RC_ACTION_TARGETS.find(item => item.token === token);
+    const found = actionTargets.find(item => item.token === token);
     return found ? found.label : token;
   };
 
@@ -626,7 +671,7 @@
 
   const renderActionOptions = (selected) => {
     const groups = {};
-    RC_ACTION_TARGETS.forEach(item => {
+    actionTargets.forEach(item => {
       if (!groups[item.group]) groups[item.group] = [];
       groups[item.group].push(item);
     });
@@ -1341,6 +1386,7 @@
 
   loadRcMode();
   loadRcDiagnostics();
+  loadActionTargets();
 
   const hasRcStream = subscribeRcEvents();
   if (!hasRcStream) {
