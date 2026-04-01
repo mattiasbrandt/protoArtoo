@@ -20,7 +20,7 @@
   const moodDomeNote = document.getElementById("mood-dome-note");
   const moodFeedback = document.getElementById("mood-feedback");
 
-  const audioFeedback = document.getElementById("audio-feedback");
+  const soundFeedback = document.getElementById("sound-feedback");
 
   let lastStatus = null;
   let modePending = false;
@@ -83,7 +83,7 @@
       setIndicator("h-dome-link", "off");
     }
 
-    setIndicator("h-audio", payload.s2Sound && typeof payload.s2Sound === "object" ? "ok" : "off");
+    setIndicator("h-sound", payload.s2Sound && typeof payload.s2Sound === "object" ? "ok" : "off");
 
     if (!healthSummary) return;
 
@@ -278,21 +278,21 @@
     if (atBottom) logPaused?.classList.remove("visible");
   });
 
-  const postAudio = async (params) => {
+  const postSound = async (params) => {
     if (!window.PAApi) return;
     try {
       const result = await window.PAApi.postForm("/api/audio", params, { timeoutMs: 3000 });
       const payload = result.data;
       const ok = payload && typeof payload === "object" ? !!payload.ok : true;
       const msg = ok ? "Done" : (payload?.error || "Sound command failed");
-      showFeedback(audioFeedback, msg, ok ? "success" : "error");
+      showFeedback(soundFeedback, msg, ok ? "success" : "error");
       if (ok) {
         window.setTimeout(() => {
-          if (audioFeedback) audioFeedback.textContent = "";
+          if (soundFeedback) soundFeedback.textContent = "";
         }, 2000);
       }
     } catch (error) {
-      showFeedback(audioFeedback, window.PAApi.messageFor(error), "error");
+      showFeedback(soundFeedback, window.PAApi.messageFor(error), "error");
     }
   };
 
@@ -307,9 +307,9 @@
     });
   });
 
-  document.getElementById("audio-stop")?.addEventListener("click", () => postAudio({ action: "stop" }));
-  document.getElementById("audio-vol-up")?.addEventListener("click", () => postAudio({ action: "dollar", cmd: "$+" }));
-  document.getElementById("audio-vol-dn")?.addEventListener("click", () => postAudio({ action: "dollar", cmd: "$-" }));
+  document.getElementById("sound-stop")?.addEventListener("click", () => postSound({ action: "stop" }));
+  document.getElementById("sound-vol-up")?.addEventListener("click", () => postSound({ action: "dollar", cmd: "$+" }));
+  document.getElementById("sound-vol-dn")?.addEventListener("click", () => postSound({ action: "dollar", cmd: "$-" }));
 
   if (window.PAStatusStream?.isSupported()) {
     window.PAStatusStream.subscribe((eventType, payload) => {

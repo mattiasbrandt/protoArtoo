@@ -28,7 +28,7 @@
   const AUDIO_CAP_QUERY_SAFE_PLAYING = 0x10;
 
   const tbody = document.getElementById("named-sound-rows");
-  const audioStateBadge = document.getElementById("audio-state-badge");
+  const soundStateBadge = document.getElementById("sound-state-badge");
   const soundDisabledCard = document.getElementById("sound-disabled-card");
   const globalFb = document.getElementById("global-feedback");
   const volSlider = document.getElementById("vol-slider");
@@ -127,20 +127,20 @@
       // Update the badge with the real module-reported play state.
       // Only override when the module is actually responding; if link_ok is
       // false the user needs to see "No module response", not a stale "Idle".
-      if (audioStateBadge && soundHardwareEnabled) {
+      if (soundStateBadge && soundHardwareEnabled) {
         const linkOk = Boolean(d.link_ok);
         if (!linkOk) {
-          audioStateBadge.textContent = "No module response";
-          audioStateBadge.dataset.state = "error";
+          soundStateBadge.textContent = "No module response";
+          soundStateBadge.dataset.state = "error";
         } else if (d.play_state === "playing") {
-          audioStateBadge.textContent = "🔊 Playing";
-          audioStateBadge.dataset.state = "playing";
+          soundStateBadge.textContent = "🔊 Playing";
+          soundStateBadge.dataset.state = "playing";
         } else if (d.play_state === "paused") {
-          audioStateBadge.textContent = "⏸ Paused";
-          audioStateBadge.dataset.state = "idle";
+          soundStateBadge.textContent = "⏸ Paused";
+          soundStateBadge.dataset.state = "idle";
         } else {
-          audioStateBadge.textContent = "✅ Idle";
-          audioStateBadge.dataset.state = "idle";
+          soundStateBadge.textContent = "✅ Idle";
+          soundStateBadge.dataset.state = "idle";
         }
       }
     } catch (_err) {
@@ -328,14 +328,14 @@
   const renderStatus = (data) => {
     const s2Enabled = Boolean(data.s2Sound);
     setSoundHardwareEnabled(s2Enabled);
-    // Note: the audio-state-badge is intentionally NOT updated here from
+    // Note: the sound-state-badge is intentionally NOT updated here from
     // data.s2Sound.state — that field reflects firmware's guess (audioActive),
     // not confirmed module state. Badge is updated by updateModuleStatus()
     // which uses the real module-reported play state from GET /api/audio.
-    if (!audioStateBadge) return;
+    if (!soundStateBadge) return;
     if (!s2Enabled) {
-      audioStateBadge.textContent = "Disabled";
-      audioStateBadge.dataset.state = "disabled";
+      soundStateBadge.textContent = "Disabled";
+      soundStateBadge.dataset.state = "disabled";
     }
   };
 

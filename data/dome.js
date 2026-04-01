@@ -22,6 +22,7 @@
 
   let saveTimeout = null;
   let domeHardwareEnabled = true;
+  let webControlEnabled = false;
   const showFeedback = (el, text, level = "") => {
     if (!el) return;
     el.textContent = text;
@@ -63,8 +64,13 @@
       showFeedback(domeFeedback, "Dome controls unavailable: enable DOME in Setup.", "warning");
       return;
     }
+    if (!webControlEnabled) {
+      showFeedback(domeFeedback, "Dome unavailable: web control is disabled.", "warning");
+      return;
+    }
     try {
       await window.PAApi.postForm("/api/dome", { speed: String(speed) }, { timeoutMs: 2500 });
+      showFeedback(domeFeedback, "Dome command sent.", "success");
     } catch (error) {
       showFeedback(domeFeedback, `Dome command failed: ${window.PAApi.messageFor(error)}`, "error");
     }
@@ -151,6 +157,7 @@
   if (window.PAStatusStream?.isSupported()) {
     window.PAStatusStream.subscribe((eventType, payload) => {
       if (eventType !== "status") return;
+      webControlEnabled = !!payload.webControlEnabled;
       setDomeHardwareEnabled(Boolean(payload.dome));
     });
   }

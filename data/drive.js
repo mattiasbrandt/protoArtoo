@@ -41,6 +41,7 @@
   let holdTimer = null;
   let saveTimeout = null;
   let driveHardwareEnabled = true;
+  let webControlEnabled = false;
   const showFeedback = (el, text, level = "") => {
     if (!el) return;
     el.textContent = text;
@@ -91,6 +92,10 @@
 
   const postDriveCommand = async (speed, steer) => {
     if (!window.PAApi) return;
+    if (!webControlEnabled) {
+      showFeedback(controlFeedback, "Drive unavailable: web control is disabled.", "warning");
+      return;
+    }
     if (!driveHardwareEnabled) {
       showFeedback(controlFeedback, "Drive controls unavailable: enable S1 — Hoverboard in Setup.", "warning");
       return;
@@ -203,6 +208,7 @@
   const renderStatus = (payload) => {
     if (estopState) estopState.textContent = payload.estop ? "❌ Latched" : "✅ Clear";
     if (webControlState) webControlState.textContent = payload.webControlEnabled ? "✅ Enabled" : "⏸️ Disabled";
+    webControlEnabled = !!payload.webControlEnabled;
     if (failsafeSource) failsafeSource.textContent = String(payload.failsafeSource);
     if (driveOutput) driveOutput.textContent = `${payload.driveSpeed} / ${payload.driveSteer}`;
     if (speedLimitDisplay) speedLimitDisplay.textContent = Number(payload.speedLimitScale).toFixed(3);

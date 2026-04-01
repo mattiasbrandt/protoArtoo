@@ -37,6 +37,7 @@
     progressStatus.textContent = "Uploading...";
     feedback.textContent = `Uploading ${file.name}...`;
 
+    uploadButton.disabled = true;
     const xhr = new XMLHttpRequest();
     xhr.open("POST", "/upload/firmware");
 
@@ -50,6 +51,7 @@
     };
 
     xhr.onload = () => {
+      uploadButton.disabled = false;
       if (xhr.status === 200) {
         progressBar.style.width = "100%";
         progressStatus.textContent = "Upload complete. Waiting for reboot...";
@@ -61,12 +63,19 @@
     };
 
     xhr.onerror = () => {
+      uploadButton.disabled = false;
       progressStatus.textContent = "Upload failed";
       feedback.textContent = "Upload error.";
+      progressBar.style.width = "0%";
+      progressWrap.style.display = "none";
     };
 
     const formData = new FormData();
     formData.append("firmware", file, file.name);
+    if (!confirm("Upload firmware? Keep power connected during the update.")) {
+      uploadButton.disabled = false;
+      return;
+    }
     xhr.send(formData);
   };
 
@@ -89,6 +98,7 @@
     if (fsProgressStatus) fsProgressStatus.textContent = "Uploading...";
     feedback.textContent = `Uploading filesystem ${file.name}...`;
 
+    if (uploadFsButton) uploadFsButton.disabled = true;
     const xhr = new XMLHttpRequest();
     xhr.open("POST", "/upload/filesystem");
 
@@ -100,6 +110,7 @@
     };
 
     xhr.onload = () => {
+      if (uploadFsButton) uploadFsButton.disabled = false;
       if (xhr.status === 200) {
         if (fsProgressBar) fsProgressBar.style.width = "100%";
         if (fsProgressStatus) fsProgressStatus.textContent = "Upload complete. Waiting for reboot...";
@@ -111,12 +122,19 @@
     };
 
     xhr.onerror = () => {
+      if (uploadFsButton) uploadFsButton.disabled = false;
       if (fsProgressStatus) fsProgressStatus.textContent = "Upload failed";
       feedback.textContent = "Filesystem upload error.";
+      if (fsProgressBar) fsProgressBar.style.width = "0%";
+      if (fsProgressWrap) fsProgressWrap.style.display = "none";
     };
 
     const formData = new FormData();
     formData.append("filesystem", file, file.name);
+    if (!confirm("Upload filesystem? Keep power connected during the update.")) {
+      if (uploadFsButton) uploadFsButton.disabled = false;
+      return;
+    }
     xhr.send(formData);
   };
 

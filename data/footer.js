@@ -29,8 +29,7 @@
 
     const fw = String(status.firmwareVersion || "unknown");
     const apiWebVersion = String(status.webVersion || "unknown");
-    const loadedWebVersion = webVersion !== "unknown" ? webVersion : "unknown";
-    const resolvedWeb = loadedWebVersion !== "unknown" ? loadedWebVersion : apiWebVersion;
+    const resolvedWeb = apiWebVersion !== "unknown" ? apiWebVersion : webVersion;
 
     footer.innerHTML =
       `FW: <span class="mono">${escapeHtml(fw)}</span><br>` +
