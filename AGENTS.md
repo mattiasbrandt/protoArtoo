@@ -94,7 +94,7 @@ authoritative reference when adding, renaming, or cross-referencing any action.
 ### C++ bindable-action enum
 
   `RobotActionId` in `include/rc_mapping.h` is the C++ form of the bindable-action
-  subset of the registry (entries where type == action and sources includes sbus).
+  subset of the registry (entries with cpp_file: include/rc_mapping.h).
   Values follow DOMAIN_ACTION_VERB_NOUN: DRIVE_ACTION_SPEED, SERVO_ACTION_ARM1_TOGGLE.
 
   When adding a new bindable action:
@@ -155,6 +155,25 @@ Clarification policy:
 - Ask concise multi-choice questions only when ambiguity materially affects
   correctness/safety/design
 - For minor details, state assumptions and proceed
+
+### Subagent Orchestration Policy
+
+- Default mode for non-trivial work is planner-orchestrator:
+  - Main model owns deep reasoning, architecture, risk checks, and a detailed TODO packet.
+  - Subagents execute scoped tasks from that packet.
+- Do not collapse delegated work back to main-model solo execution unless the user explicitly asks.
+- Delegate by default when work is parallelizable, read-heavy, repetitive, or review-oriented.
+- Subagent tasks must be narrowly scoped and deliverable-driven:
+  - one objective per subagent,
+  - concrete inputs and expected outputs,
+  - explicit boundaries (files/contracts the subagent may touch),
+  - required verification artifact (test/build/output summary).
+- Use bounded batches to reduce usage-cap risk: prefer a small number of focused subagents per wave.
+- If a subagent times out, is cancelled, or hits usage cap:
+  - do not reinterpret this as task invalidation,
+  - preserve completed results and checkpoint remaining TODOs,
+  - resume delegation in a new wave instead of shifting all remaining work to the main model,
+  - ask the user before changing strategy from delegated to solo execution.
 
 ## Flashing and Monitoring
 

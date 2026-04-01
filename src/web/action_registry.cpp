@@ -16,7 +16,7 @@ const ActionEntry ACTION_REGISTRY[] = {
     { DRIVE_ACTION_SPEED,         "drive.action.speed",              "Speed",             "drive",  "Forward/reverse drive speed (analog axis)",            false },
     { DRIVE_ACTION_STEER,         "drive.action.steer",              "Steer",             "drive",  "Left/right steering (analog axis)",                    false },
     { DRIVE_ACTION_SPEED_LIMIT,   "drive.action.speed-limit",        "Speed Limit",       "drive",  "Maximum drive speed as a fraction of full range",      false },
-    { DOME_ACTION_SPEED,          "dome.action.speed",               "Dome Speed",        "dome",   "Dome rotation speed (analog axis)",                    false },
+    { DOME_ACTION_SPEED,          "dome.action.set-speed",           "Dome Speed",        "dome",   "Dome rotation speed (analog axis)",                    false },
     { DOME_ACTION_MARCDUINO_SEQ,  "dome.action.marcduino-sequence",  "Marcduino Sequence","dome",   "Trigger a numbered Marcduino sequence on the dome",    false },
     { DOME_ACTION_MARCDUINO_CMD,  "dome.action.marcduino-command",   "Marcduino Command", "dome",   "Send a specific Marcduino command string to the dome", false },
     { DOME_ACTION_SEQ,            "dome.action.dome-sequence",       "Dome Sequence",     "dome",   "Trigger a dome panel/light sequence by number",        false },

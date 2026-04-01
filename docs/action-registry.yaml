@@ -15,7 +15,7 @@
 #
 # How to add a new entry:
 #   1. Add the YAML entry here first (docs/action-registry.yaml).
-#   2. If bindable (type: action, sources includes sbus): add to RobotActionId enum
+#   2. If bindable (cpp_file: include/rc_mapping.h): add to RobotActionId enum
 #      in include/rc_mapping.h and to ACTION_REGISTRY[] in include/action_registry.h.
 #   3. Add the API handler or queue case as needed.
 #   4. Add a native test if the new action involves parsing or transformation logic.
@@ -28,6 +28,7 @@
 #
 # NVS keys are NOT renamed to match registry names. The registry documents the mapping
 # between a config entry's canonical name and its NVS key in the `nvs_key` field.
+# For entries with multiple NVS keys, `nvs_keys` (sequence) is used instead.
 
 entries:
   # --- drive ---
