@@ -173,7 +173,7 @@ entries:
     cpp_file: include/rc_mapping.h
     sources: [web_api, sbus]
     safety_critical: false
-    requires_web_control: true  # POST /api/dome currently lacks this check — fix tracked separately
+    requires_web_control: true
     nvs_key: null
 
   - name: dome.action.send-command
