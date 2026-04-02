@@ -172,9 +172,9 @@
         featureFeedback.textContent = window.PAApi.messageFor(error);
         featureFeedback.className = "feedback error";
       }
-    }
     } finally {
       setSavePending(false);
+    }
   };
 
   const debouncedSave = (...args) => {
