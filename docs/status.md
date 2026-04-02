@@ -94,19 +94,12 @@ Development builds are versioned from the git history and build timestamp.
 
 ## Supported Hardware
 
-protoArtoo supports two hardware targets using the same Artoo Controller PCB:
+protoArtoo targets a single hardware platform:
 
-**Artoo Controller PCB v1.1/v1.2 — ESP32 D1 Mini** (default, fully validated)
+**Artoo Controller PCB v1.1/v1.2 — ESP32 D1 Mini clone** (`wemos_d1_mini32`)
 - Build environments: `protoArtoo` (USB flash), `protoArtoo_ota` (OTA)
 - All features supported
-
-**WEMOS LOLIN S3 Mini** (drop-in alternative — optional upgrade)
-- Build environments: `protoArtoo_s3` (USB flash), `protoArtoo_s3_ota` (OTA)
-- No USB upload problem when seated in the PCB — GPIO 15 is not a strapping pin on S3
-- 2 MB built-in PSRAM for additional web server headroom
-- All RC modes, servos, audio, dome link, and web interface work identically
-- One accepted limitation: AUX1 spare servo output (GPIO 19) is not available;
-  all other servo channels are fully supported
+- The Artoo PCB is purpose-built for the dual-header ESP32 D1 Mini clone; no other ESP32 board fits the PCB socket
 
 ---
 

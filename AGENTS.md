@@ -202,8 +202,6 @@ pio run -e protoArtoo --target upload --upload-port /dev/ttyUSB0
 pio run -e protoArtoo           # compile firmware
 pio run -e protoArtoo -t upload # USB flash (ESP32 unseated; auto-reset, no button needed)
 pio run -e protoArtoo_ota -t upload    # OTA firmware (in-PCB, 10.0.0.22)
-pio run -e protoArtoo_s3        # compile S3 Mini firmware
-pio run -e protoArtoo_s3_ota -t upload    # OTA firmware (S3 Mini, 10.0.0.22)
 ```
 
 Detailed flashing troubleshooting and transport notes live in
