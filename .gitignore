@@ -80,3 +80,4 @@ user.mk
 # Misc
 node_modules/  # If any JS tools are involved
 package-lock.json
+data/fs-version.json
