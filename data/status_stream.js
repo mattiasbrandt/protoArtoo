@@ -7,7 +7,9 @@
 // - Fallback-friendly: pages may use polling if EventSource is unavailable
 // =============================================================================
 (() => {
-  const RETRY_MS = 2000;
+  const RETRY_BASE_MS = 2000;
+  const RETRY_MAX_MS  = 30000;
+  let retryCount = 0;
 
   let source = null;
   let reconnectTimer = null;
@@ -34,10 +36,12 @@
 
   const scheduleReconnect = () => {
     if (reconnectTimer !== null || !visible || typeof EventSource === "undefined") return;
+    const delay = Math.min(RETRY_BASE_MS * Math.pow(2, retryCount), RETRY_MAX_MS);
+    retryCount++;
     reconnectTimer = window.setTimeout(() => {
       reconnectTimer = null;
       connect();
-    }, RETRY_MS);
+    }, delay);
   };
 
   const close = () => {
@@ -55,6 +59,7 @@
       try {
         lastStatus = JSON.parse(event.data);
         emit("status", lastStatus);
+        retryCount = 0;
       } catch (_error) {
         emit("status_error", new Error("Malformed status event payload"));
       }
@@ -79,6 +84,7 @@
     }
 
     connect();
+    retryCount = 0;
     if (lastStatus) emit("status", lastStatus);
   };
 

@@ -11,6 +11,48 @@
     return;
   }
 
+  const waitForReconnect = (feedbackEl, statusEl) => {
+    let attempts = 0;
+    const MAX_ATTEMPTS = 30;
+    const POLL_MS = 2000;
+    const INITIAL_DELAY_MS = 4000;
+
+    const poll = () => {
+      attempts++;
+      if (statusEl) statusEl.textContent = `Reconnecting… (${MAX_ATTEMPTS - attempts} attempts left)`;
+
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(() => controller.abort(), 2000);
+
+      fetch("/api/status", { method: "GET", signal: controller.signal })
+        .then((r) => {
+          window.clearTimeout(timeoutId);
+          if (r.ok) {
+            if (statusEl) statusEl.textContent = "Device is back online.";
+            if (feedbackEl) feedbackEl.textContent = "Upload complete — reloading page.";
+            window.setTimeout(() => window.location.reload(), 1200);
+          } else {
+            schedule();
+          }
+        })
+        .catch(() => {
+          window.clearTimeout(timeoutId);
+          schedule();
+        });
+    };
+
+    const schedule = () => {
+      if (attempts >= MAX_ATTEMPTS) {
+        if (statusEl) statusEl.textContent = "Device did not reconnect. Refresh manually.";
+        return;
+      }
+      window.setTimeout(poll, POLL_MS);
+    };
+
+    if (statusEl) statusEl.textContent = "Waiting for device to reboot…";
+    window.setTimeout(poll, INITIAL_DELAY_MS);
+  };
+
   const postReboot = async () => {
     if (!window.PAApi) {
       feedback.textContent = "API helper unavailable";
@@ -54,8 +96,7 @@
       uploadButton.disabled = false;
       if (xhr.status === 200) {
         progressBar.style.width = "100%";
-        progressStatus.textContent = "Upload complete. Waiting for reboot...";
-        feedback.textContent = "Firmware uploaded. Controller should reboot shortly.";
+        waitForReconnect(feedback, progressStatus);
       } else {
         progressStatus.textContent = "Upload failed";
         feedback.textContent = xhr.responseText || `Upload failed (HTTP ${xhr.status}).`;
@@ -113,8 +154,7 @@
       if (uploadFsButton) uploadFsButton.disabled = false;
       if (xhr.status === 200) {
         if (fsProgressBar) fsProgressBar.style.width = "100%";
-        if (fsProgressStatus) fsProgressStatus.textContent = "Upload complete. Waiting for reboot...";
-        feedback.textContent = "Filesystem uploaded. Controller should reboot shortly.";
+        waitForReconnect(feedback, fsProgressStatus);
       } else {
         if (fsProgressStatus) fsProgressStatus.textContent = "Upload failed";
         feedback.textContent = xhr.responseText || `Filesystem upload failed (HTTP ${xhr.status}).`;
