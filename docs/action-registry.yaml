@@ -783,6 +783,74 @@ entries:
         required: true
     nvs_key: null
 
+  - name: system.action.sleep
+    display_name: Sleep
+    description: >
+      Put the droid into sleep mode: suppresses sound chatter, dome idle
+      animations, and servo idle animations. Drive and RC remain fully active.
+      Also notifies the dome controller via the dome serial link.
+    domain: system
+    type: action
+    marcduino_cmd: null  # dome-link TX cmd: TBD — verify against AstroPixelsPlus protocol
+    api_path: /api/sleep
+    sse_event: null
+    cpp_enum: null
+    cpp_file: null
+    sources: [web_api, rc, dome_link]
+    safety_critical: false
+    requires_web_control: true  # applies only when source is web_api or rc
+    nvs_key: null
+
+  - name: system.action.wake
+    display_name: Wake
+    description: >
+      Wake the droid from sleep mode: resumes sound chatter, dome idle
+      animations, and servo idle animations. Also notifies the dome controller
+      via the dome serial link.
+    domain: system
+    type: action
+    marcduino_cmd: null  # dome-link TX cmd: TBD — verify against AstroPixelsPlus protocol
+    api_path: /api/wake
+    sse_event: null
+    cpp_enum: null
+    cpp_file: null
+    sources: [web_api, rc, dome_link]
+    safety_critical: false
+    requires_web_control: true  # applies only when source is web_api or rc
+    nvs_key: null
+
+  - name: system.action.sleep-toggle
+    display_name: Sleep / Wake Toggle
+    description: Toggle sleep mode on/off. RC-bindable momentary or toggle.
+    domain: system
+    type: action
+    marcduino_cmd: null
+    api_path: null  # dispatched via RobotActionId; resolved to /api/sleep or /api/wake
+    sse_event: null
+    cpp_enum: SYSTEM_ACTION_SLEEP_TOGGLE
+    cpp_file: include/rc_mapping.h
+    sources: [rc]
+    safety_critical: false
+    requires_web_control: false
+    nvs_key: null
+
+  - name: system.status.sleep-mode
+    display_name: Sleep Mode
+    description: >
+      Whether the droid is currently in sleep mode. RAM-only — always boots
+      awake. Carried as the `sleepMode` field in the status SSE event.
+    domain: system
+    type: status
+    marcduino_cmd: null
+    api_path: null  # included as sleepMode field in GET /api/status
+    sse_event: status  # sleepMode boolean field in the status SSE event
+    cpp_enum: null
+    cpp_file: null
+    sources: [internal]
+    safety_critical: false
+    requires_web_control: false
+    nvs_key: null  # not persisted — boots awake
+
   - name: system.status.mood
     display_name: Mood
     description: Currently active mood preset (Quiet=10, Full-Awake=11, Mid-Awake=13, Awake+=14)
