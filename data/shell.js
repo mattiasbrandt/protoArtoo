@@ -18,41 +18,49 @@
       statusDot: "yellow",
       statusText: "Connecting…",
       connectedText: "Drive page connected",
+    },
     dome: {
       title: "Dome - protoArtoo",
       statusDot: "yellow",
       statusText: "Connecting…",
       connectedText: "Dome page connected",
+    },
     sound: {
       title: "protoArtoo - Sound",
       statusDot: "yellow",
       statusText: "Connecting…",
       connectedText: "Sound page connected",
+    },
     servo: {
       title: "Servos - protoArtoo",
       statusDot: "yellow",
       statusText: "Connecting…",
       connectedText: "Servos page connected",
+    },
     rc: {
       title: "RC Control - protoArtoo",
       statusDot: "yellow",
       statusText: "Connecting…",
       connectedText: "RC page connected",
+    },
     setup: {
       title: "Setup - protoArtoo",
       statusDot: "yellow",
       statusText: "Connecting…",
       connectedText: "Setup page connected",
+    },
     wifi: {
       title: "WiFi - protoArtoo",
       statusDot: "yellow",
       statusText: "Connecting…",
       connectedText: "WiFi page connected",
+    },
     firmware: {
       title: "Firmware - protoArtoo",
       statusDot: "yellow",
       statusText: "Connecting…",
       connectedText: "Firmware page connected",
+    },
   };
 
   const NAV = [
