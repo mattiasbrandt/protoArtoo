@@ -44,11 +44,7 @@
       domeSpeedLimit,
       reloadEscButton,
     ];
-    controls.forEach((control) => {
-      if (!control) return;
-      control.disabled = !enabled;
-      control.setAttribute("aria-disabled", enabled ? "false" : "true");
-    });
+    window.PAApi.gateControls(controls, enabled);
     domeDisabledCard?.classList.toggle("hidden", domeHardwareEnabled);
     if (!enabled && domeSlider) {
       domeSlider.value = "0";

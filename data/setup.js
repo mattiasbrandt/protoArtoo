@@ -57,10 +57,8 @@
 
   // Auto-save state
   let saveTimeout = null;
-  let savePending = false;
 
   const setSavePending = (pending) => {
-    savePending = pending;
     if (rebootButton) {
       rebootButton.disabled = pending;
       rebootButton.title = pending ? 'Waiting for settings to save...' : '';

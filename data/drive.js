@@ -61,22 +61,14 @@
 
   const updateDriveControlsEnabled = () => {
     const driveEnabled = driveHardwareEnabled && webControlEnabled;
-    driveButtons.forEach((btn) => {
-      if (!btn) return;
-      btn.disabled = !driveEnabled;
-      btn.setAttribute('aria-disabled', driveEnabled ? 'false' : 'true');
-    });
+    window.PAApi.gateControls(Array.from(driveButtons), driveEnabled);
 
     const controlsEnabled = driveHardwareEnabled;
     const gatedControls = [
       enableWebControlButton,
       disableWebControlButton,
     ];
-    gatedControls.forEach((control) => {
-      if (!control) return;
-      control.disabled = !controlsEnabled;
-      control.setAttribute('aria-disabled', controlsEnabled ? 'false' : 'true');
-    });
+    window.PAApi.gateControls(gatedControls, controlsEnabled);
 
     driveDisabledCard?.classList.toggle('hidden', driveHardwareEnabled);
 

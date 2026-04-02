@@ -99,6 +99,15 @@
     return error.message || "Request failed";
   };
 
+  // Disable or enable a list of controls, keeping aria-disabled in sync.
+  const gateControls = (elements, enabled) => {
+    elements.forEach((el) => {
+      if (!el) return;
+      el.disabled = !enabled;
+      el.setAttribute("aria-disabled", enabled ? "false" : "true");
+    });
+  };
+
   window.PAApi = {
     ApiError,
     request,
@@ -106,5 +115,6 @@
     postForm,
     postJson,
     messageFor,
+    gateControls,
   };
 })();
