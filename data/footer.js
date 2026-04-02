@@ -9,7 +9,7 @@
   const footer = document.getElementById("fw-meta");
   if (!footer) return;
 
-  let webVersion = "unknown";
+  let fsVersion = "unknown";
   let pollTimer = null;
   let unsubscribe = null;
 
@@ -28,20 +28,20 @@
     }
 
     const fw = String(status.firmwareVersion || "unknown");
-    const apiWebVersion = String(status.webVersion || "unknown");
-    const resolvedWeb = apiWebVersion !== "unknown" ? apiWebVersion : webVersion;
+    const apiFsVersion = String(status.fsVersion || "unknown");
+    const resolvedWeb = apiFsVersion !== "unknown" ? apiFsVersion : fsVersion;
 
     footer.innerHTML =
       `FW: <span class="mono">${escapeHtml(fw)}</span><br>` +
-      `Web: <span class="mono">${escapeHtml(resolvedWeb)}</span>`;
+      `FS: <span class="mono">${escapeHtml(resolvedWeb)}</span>`;
   };
 
-  const loadWebVersion = async () => {
+  const loadFsVersion = async () => {
     if (!window.PAApi) return;
     try {
-      const result = await window.PAApi.get("/web-version.json", { timeoutMs: 2500, cache: "no-store" });
-      if (result.data && typeof result.data === "object" && result.data.webVersion) {
-        webVersion = String(result.data.webVersion);
+      const result = await window.PAApi.get("/fs-version.json", { timeoutMs: 2500, cache: "no-store" });
+      if (result.data && typeof result.data === "object" && result.data.fsVersion) {
+        fsVersion = String(result.data.fsVersion);
       }
     } catch (_error) {
       // Keep fallback value.
@@ -86,7 +86,7 @@
   };
 
   const init = async () => {
-    await loadWebVersion();
+    await loadFsVersion();
 
     if (window.PAStatusStream?.isSupported()) {
       startSseMode();

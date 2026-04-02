@@ -15,6 +15,8 @@ Strategy (in order):
 The define name PA_FIRMWARE_VERSION must match the guard in include/config.h.
 """
 
+import json
+import os
 import re
 import subprocess
 
@@ -66,3 +68,12 @@ version = _version_from_git() or _version_from_changelog() or "v0.0.0-dev"
 # Inject as PA_FIRMWARE_VERSION — must match the #ifndef guard in include/config.h
 env.Append(CPPDEFINES=[("PA_FIRMWARE_VERSION", f'\\"{version}\\"')])
 print(f"[extract_version.py] PA_FIRMWARE_VERSION={version}")
+# Write data/fs-version.json so the FS image carries the same version.
+# A stale FS will show a different string than FW on the footer, making
+# "forgot to uploadfs" immediately visible.
+fs_version_path = os.path.join(env.subst("$PROJECT_DIR"), "data", "fs-version.json")
+fs_version_str = f"fs-{version}"
+with open(fs_version_path, "w") as f:
+    json.dump({"fsVersion": fs_version_str}, f, indent=2)
+    f.write("\n")
+print(f"[extract_version.py] fs-version.json -> {fs_version_str}")

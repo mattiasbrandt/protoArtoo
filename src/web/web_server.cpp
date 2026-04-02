@@ -15,6 +15,7 @@
 #include <stddef.h>
 #include <stdio.h>
 
+#include "../../include/api_actions.h"
 #include "../../include/api_audio.h"
 #include "../../include/api_config.h"
 #include "../../include/api_drive.h"
@@ -25,7 +26,6 @@
 #include "../../include/api_status.h"
 #include "../../include/api_system.h"
 #include "../../include/api_validation.h"
-#include "../../include/api_actions.h"
 #include "../../include/audio_task.h"
 #include "../../include/config.h"
 #include "../../include/rc_diagnostics_snapshot.h"
@@ -191,7 +191,7 @@ static const char* TAG = "WebServer";
 static AsyncWebServer server(80);
 static AsyncEventSource events("/api/events");
 static bool littleFsReady = false;
-static char s_webVersion[48] = "unknown";
+static char s_fsVersion[48] = "unknown";
 static bool routesRegistered = false;
 static bool serverStarted = false;
 static bool eventTaskStarted = false;
@@ -211,17 +211,16 @@ const char* rcInputModeLabel(RcInputMode mode) {
     }
 }
 
-
-void loadWebVersionFromFs() {
-    snprintf(s_webVersion, sizeof(s_webVersion), "%s", "unknown");
+void loadFsVersion() {
+    snprintf(s_fsVersion, sizeof(s_fsVersion), "%s", "unknown");
 #ifdef ARDUINO
     if (!littleFsReady) {
         return;
     }
 
-    File versionFile = LittleFS.open("/web-version.json", "r");
+    File versionFile = LittleFS.open("/fs-version.json", "r");
     if (!versionFile) {
-        PA_LOG_WARN(TAG, "web-version.json missing; using unknown webVersion");
+        PA_LOG_WARN(TAG, "fs-version.json missing; using unknown fsVersion");
         return;
     }
 
@@ -229,19 +228,19 @@ void loadWebVersionFromFs() {
     DeserializationError parseError = deserializeJson(versionDoc, versionFile);
     versionFile.close();
     if (parseError) {
-        PA_LOG_WARN(TAG, "web-version.json parse failed: %s", parseError.c_str());
+        PA_LOG_WARN(TAG, "fs-version.json parse failed: %s", parseError.c_str());
         return;
     }
 
-    const char* loadedVersion = versionDoc["webVersion"] | "";
+    const char* loadedVersion = versionDoc["fsVersion"] | "";
     if (loadedVersion[0] == '\0') {
-        PA_LOG_WARN(TAG, "web-version.json missing webVersion key");
+        PA_LOG_WARN(TAG, "fs-version.json missing fsVersion key");
         return;
     }
 
-    int n = snprintf(s_webVersion, sizeof(s_webVersion), "%s", loadedVersion);
-    if (n <= 0 || n >= (int)sizeof(s_webVersion)) {
-        PA_LOG_WARN(TAG, "webVersion truncated to %u chars", (unsigned)(sizeof(s_webVersion) - 1));
+    int n = snprintf(s_fsVersion, sizeof(s_fsVersion), "%s", loadedVersion);
+    if (n <= 0 || n >= (int)sizeof(s_fsVersion)) {
+        PA_LOG_WARN(TAG, "fsVersion truncated to %u chars", (unsigned)(sizeof(s_fsVersion) - 1));
     }
 #endif
 }
@@ -416,12 +415,12 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
         estop ? "true" : "false", webControlEnabled ? "true" : "false",
         sbusSignalLost ? "true" : "false", sbusHwFailsafe ? "true" : "false",
         webDriveExpired ? "true" : "false", failsafeSource, driveSpeed, driveSteer,
-        (double)speedLimitScale, stationary ? "true" : "false", failsafeCount,
-        failsafeTriggerMs, failsafeZeroMs, failsafeTriggerToZeroMs, failsafeWatchdogMs,
-        failsafeTriggerSource, uptimeMs, PA_FIRMWARE_VERSION, s_webVersion,
-        heapFree, heapMin, (unsigned long)heapLargestBlock, wifiRssi,
-        wifiConnected ? "true" : "false", wifiClientConnected ? "true" : "false",
-        littleFsReady ? "true" : "false", (unsigned)activeMood);
+        (double)speedLimitScale, stationary ? "true" : "false", failsafeCount, failsafeTriggerMs,
+        failsafeZeroMs, failsafeTriggerToZeroMs, failsafeWatchdogMs, failsafeTriggerSource,
+        uptimeMs, PA_FIRMWARE_VERSION, s_fsVersion, heapFree, heapMin,
+        (unsigned long)heapLargestBlock, wifiRssi, wifiConnected ? "true" : "false",
+        wifiClientConnected ? "true" : "false", littleFsReady ? "true" : "false",
+        (unsigned)activeMood);
 
     // Conditionally append enabled-component keys — disabled components are absent,
     // not emitted as false placeholders (Phase 3 status/dashboard contract).
@@ -440,13 +439,16 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
             ok = appendPeripheralStatus(pos, remaining, "arm2", "ready", detail) && ok;
         }
         if (enableAux1) {
-            ok = appendPeripheralStatus(pos, remaining, "aux1", "ready", "Servo channel enabled") && ok;
+            ok = appendPeripheralStatus(pos, remaining, "aux1", "ready", "Servo channel enabled") &&
+                 ok;
         }
         if (enableAux2) {
-            ok = appendPeripheralStatus(pos, remaining, "aux2", "ready", "Servo channel enabled") && ok;
+            ok = appendPeripheralStatus(pos, remaining, "aux2", "ready", "Servo channel enabled") &&
+                 ok;
         }
         if (enableAux3) {
-            ok = appendPeripheralStatus(pos, remaining, "aux3", "ready", "Servo channel enabled") && ok;
+            ok = appendPeripheralStatus(pos, remaining, "aux3", "ready", "Servo channel enabled") &&
+                 ok;
         }
         if (enableDome) {
             if (domeTargetSpeed > 0.001f || domeTargetSpeed < -0.001f) {
@@ -460,11 +462,13 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
         if (enableRcCh1) {
             if (rcInputMode == RC_INPUT_STANDARD_PWM) {
                 ok = appendPeripheralStatus(
-                    pos, remaining, "rcCh1", "ready",
-                    "Standard PWM input enabled; routing configurable via /api/config") && ok;
+                         pos, remaining, "rcCh1", "ready",
+                         "Standard PWM input enabled; routing configurable via /api/config") &&
+                     ok;
             } else if (lastSbus1Ms == 0) {
                 ok = appendPeripheralStatus(pos, remaining, "rcCh1", "not_seen",
-                                            "Drive SBUS input waiting for first frame") && ok;
+                                            "Drive SBUS input waiting for first frame") &&
+                     ok;
             } else if (sbusSignalLost) {
                 snprintf(detail, sizeof(detail),
                          "Drive SBUS lost, last %lu ms ago, lost frames %lu",
@@ -480,15 +484,18 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
         if (enableRcCh2) {
             if (rcInputMode == RC_INPUT_STANDARD_PWM) {
                 ok = appendPeripheralStatus(
-                    pos, remaining, "rcCh2", "ready",
-                    "Standard PWM input enabled; routing configurable via /api/config") && ok;
+                         pos, remaining, "rcCh2", "ready",
+                         "Standard PWM input enabled; routing configurable via /api/config") &&
+                     ok;
             } else if (rcInputMode == RC_INPUT_SINGLE_SBUS) {
                 ok = appendPeripheralStatus(
-                    pos, remaining, "rcCh2", "standby",
-                    "Reserved for SBUS2 in dual_sbus mode; inactive in single_sbus mode") && ok;
+                         pos, remaining, "rcCh2", "standby",
+                         "Reserved for SBUS2 in dual_sbus mode; inactive in single_sbus mode") &&
+                     ok;
             } else if (lastSbus2Ms == 0) {
                 ok = appendPeripheralStatus(pos, remaining, "rcCh2", "not_seen",
-                                            "Dome SBUS input waiting for first frame") && ok;
+                                            "Dome SBUS input waiting for first frame") &&
+                     ok;
             } else if (sbus2SignalLost) {
                 snprintf(detail, sizeof(detail), "Dome SBUS lost, last %lu ms ago",
                          uptimeMs - lastSbus2Ms);
@@ -505,7 +512,8 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
                      rcInputModeLabel(rcInputMode));
             ok = appendPeripheralStatus(pos, remaining, "rcCh3",
                                         rcInputMode == RC_INPUT_STANDARD_PWM ? "ready" : "standby",
-                                        detail) && ok;
+                                        detail) &&
+                 ok;
         }
         if (enableRcCh4) {
             snprintf(detail, sizeof(detail),
@@ -513,7 +521,8 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
                      rcInputModeLabel(rcInputMode));
             ok = appendPeripheralStatus(pos, remaining, "rcCh4",
                                         rcInputMode == RC_INPUT_STANDARD_PWM ? "ready" : "standby",
-                                        detail) && ok;
+                                        detail) &&
+                 ok;
         }
         if (enableRcCh5) {
             snprintf(detail, sizeof(detail),
@@ -521,7 +530,8 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
                      rcInputModeLabel(rcInputMode));
             ok = appendPeripheralStatus(pos, remaining, "rcCh5",
                                         rcInputMode == RC_INPUT_STANDARD_PWM ? "ready" : "standby",
-                                        detail) && ok;
+                                        detail) &&
+                 ok;
         }
         if (enableRcCh6) {
             snprintf(detail, sizeof(detail),
@@ -529,15 +539,18 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
                      rcInputModeLabel(rcInputMode));
             ok = appendPeripheralStatus(pos, remaining, "rcCh6",
                                         rcInputMode == RC_INPUT_STANDARD_PWM ? "ready" : "standby",
-                                        detail) && ok;
+                                        detail) &&
+                 ok;
         }
         if (enableS1Hoverboard) {
             if (driveSpeed != 0 || driveSteer != 0) {
                 snprintf(detail, sizeof(detail), "Command %d/%d", driveSpeed, driveSteer);
-                ok = appendPeripheralStatus(pos, remaining, "s1Hoverboard", "commanding", detail) && ok;
+                ok = appendPeripheralStatus(pos, remaining, "s1Hoverboard", "commanding", detail) &&
+                     ok;
             } else {
                 ok = appendPeripheralStatus(pos, remaining, "s1Hoverboard", "idle",
-                                            "No drive command requested") && ok;
+                                            "No drive command requested") &&
+                     ok;
             }
         }
         if (enableS2Sound) {
@@ -562,7 +575,8 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
                 snprintf(detail, sizeof(detail), "Heartbeat rx %lu / tx %lu, last %lu ms ago",
                          (unsigned long)domeHbRx, (unsigned long)bodyHbTx,
                          uptimeMs - domeLastSeenMs);
-                ok = appendPeripheralStatus(pos, remaining, "s3DomeCtrl", "connected", detail) && ok;
+                ok =
+                    appendPeripheralStatus(pos, remaining, "s3DomeCtrl", "connected", detail) && ok;
             } else {
                 snprintf(detail, sizeof(detail), "Heartbeat rx %lu / tx %lu, last %lu ms ago",
                          (unsigned long)domeHbRx, (unsigned long)bodyHbTx,
@@ -602,10 +616,8 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
                      ",\"hoverboard\":{\"batteryV\":%.2f,\"boardTempC\":%.1f"
                      ",\"speedR\":%d,\"speedL\":%d"
                      ",\"currentL\":%.2f,\"currentR\":%.2f}",
-                     (double)(hbBatteryRaw / 100.0f),
-                     (double)(hbBoardTempRaw / 10.0f),
-                     (int)hbSpeedR, (int)hbSpeedL,
-                     (double)(hbCurrentL / 100.0f),
+                     (double)(hbBatteryRaw / 100.0f), (double)(hbBoardTempRaw / 10.0f),
+                     (int)hbSpeedR, (int)hbSpeedL, (double)(hbCurrentL / 100.0f),
                      (double)(hbCurrentR / 100.0f));
             ok = appendJsonChunk(pos, remaining, hbBuf) && ok;
         }
@@ -619,7 +631,6 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     }
     return true;
 }
-
 
 bool webLittleFsMounted() {
     return littleFsReady;
@@ -659,7 +670,8 @@ void eventStreamTask(void*) {
 
             if (!buildStatusJson(s_sseStatusBody, sizeof(s_sseStatusBody))) {
                 if (!s_statusSseOverflowWarned) {
-                    PA_LOG_WARN("WebEvents", "status SSE payload overflowed; sending fallback payload");
+                    PA_LOG_WARN("WebEvents",
+                                "status SSE payload overflowed; sending fallback payload");
                     s_statusSseOverflowWarned = true;
                 }
             } else {
@@ -810,7 +822,7 @@ void webServerInit() {
         PA_LOG_ERROR(TAG, "LittleFS mount failed - API only mode");
     }
 
-    loadWebVersionFromFs();
+    loadFsVersion();
 
     WiFi.onEvent(handleWiFiEvent);
 
@@ -842,8 +854,7 @@ void webServerInit() {
 #ifndef PA_AP_PASSWORD
 #error "PA_ENABLE_STA_WIFI=0: PA_AP_PASSWORD not defined in secrets.h"
 #endif
-    static_assert(sizeof(PA_AP_PASSWORD) >= 9,
-                  "PA_AP_PASSWORD must be at least 8 characters");
+    static_assert(sizeof(PA_AP_PASSWORD) >= 9, "PA_AP_PASSWORD must be at least 8 characters");
     WiFi.mode(WIFI_AP);
     WiFi.softAP(WIFI_AP_SSID, PA_AP_PASSWORD);
     PA_LOG_INFO(TAG, "WiFi bootstrap: hotspot mode (secured)");

@@ -498,7 +498,7 @@ Return the current web-control state snapshot.
   "failsafeTriggerSource": 0,
   "uptimeMs": 27790,
   "firmwareVersion": "v0.1.0-phase3-dev",
-  "webVersion": "web-2026-03-20-wave6",
+  "fsVersion": "fs-v1.0.0-alpha.1",
   "heapFree": 173152,
   "heapMin": 150932,
   "wifiRssi": -70,
@@ -538,7 +538,7 @@ Example response with arm1, RC routing, and dome enabled:
   "failsafeTriggerSource": 0,
   "uptimeMs": 27790,
   "firmwareVersion": "v0.1.0-phase3-dev",
-  "webVersion": "web-2026-03-20-wave6",
+  "fsVersion": "fs-v1.0.0-alpha.1",
   "heapFree": 173152,
   "heapMin": 150932,
   "wifiRssi": -70,
@@ -560,7 +560,7 @@ Notes:
 - `failsafeTriggerMs`, `failsafeZeroMs`, `failsafeTriggerToZeroMs`, `failsafeWatchdogMs`, and `failsafeTriggerSource` provide timing evidence for failsafe trigger-to-zero behavior in hardware validation
 - `speedLimitScale` reflects CH8 speed limiting from the drive SBUS receiver
 - `stationary` indicates CH8 mode-lock is holding the drive at zero
-- `uptimeMs`, `firmwareVersion`, and `webVersion` support the shared device-info status block in the UI
+- `uptimeMs`, `firmwareVersion`, and `fsVersion` support the shared device-info status block in the UI
 - `heapFree`, `heapMin`, `wifiRssi`, `wifiConnected`, `wifiClientConnected`, and `littleFsReady` support dashboard health/status surfaces
 - Disabled components are absent from the response, not emitted as false placeholders
 
