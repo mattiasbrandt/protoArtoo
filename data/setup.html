@@ -26,7 +26,6 @@
             <input type="checkbox" id="enable-aux1" name="enableAux1">
             <span class="toggle-slider"></span>
             <span class="toggle-label">AUX1</span>
-            <span class="toggle-sublabel">GPIO 19</span>
             <span class="toggle-status" id="status-aux1">Disabled</span>
           </label>
           <select class="type-select" id="type-aux1" title="Component type connected to AUX1 / ARM3" aria-label="AUX1 component type">
@@ -41,7 +40,6 @@
             <input type="checkbox" id="enable-aux2" name="enableAux2">
             <span class="toggle-slider"></span>
             <span class="toggle-label">AUX2</span>
-            <span class="toggle-sublabel">GPIO 18</span>
             <span class="toggle-status" id="status-aux2">Disabled</span>
           </label>
           <select class="type-select" id="type-aux2" title="Component type connected to AUX2 / ARM4" aria-label="AUX2 component type">
@@ -56,7 +54,6 @@
             <input type="checkbox" id="enable-aux3" name="enableAux3">
             <span class="toggle-slider"></span>
             <span class="toggle-label">AUX3</span>
-            <span class="toggle-sublabel">GPIO 32</span>
             <span class="toggle-status" id="status-aux3">Disabled</span>
           </label>
           <select class="type-select" id="type-aux3" title="Component type connected to AUX3 / ARM5" aria-label="AUX3 component type">
@@ -71,7 +68,6 @@
             <input type="checkbox" id="enable-arm2" name="enableArm2">
             <span class="toggle-slider"></span>
             <span class="toggle-label">ARM2</span>
-            <span class="toggle-sublabel">GPIO 5</span>
             <span class="toggle-status" id="status-arm2">Disabled</span>
           </label>
           <select class="type-select" id="type-arm2" title="Component type connected to ARM2" aria-label="ARM2 component type">
@@ -84,7 +80,6 @@
             <input type="checkbox" id="enable-arm1" name="enableArm1">
             <span class="toggle-slider"></span>
             <span class="toggle-label">ARM1</span>
-            <span class="toggle-sublabel">GPIO 23</span>
             <span class="toggle-status" id="status-arm1">Disabled</span>
           </label>
           <select class="type-select" id="type-arm1" title="Component type connected to ARM1" aria-label="ARM1 component type">
@@ -96,7 +91,6 @@
           <input type="checkbox" id="enable-dome" name="enableDome">
           <span class="toggle-slider"></span>
           <span class="toggle-label">DOME</span>
-          <span class="toggle-sublabel">GPIO 25</span>
           <span class="toggle-status" id="status-dome">Disabled</span>
         </label>
 
@@ -106,7 +100,6 @@
             <input type="checkbox" id="enable-rc-ch1" name="enableRcCh1">
             <span class="toggle-slider"></span>
             <span class="toggle-label">CH1 — Drive / SBUS 1</span>
-            <span class="toggle-sublabel">GPIO 15</span>
             <span class="toggle-status" id="status-rc-ch1">Disabled</span>
           </label>
         </div>
@@ -115,7 +108,6 @@
             <input type="checkbox" id="enable-rc-ch2" name="enableRcCh2">
             <span class="toggle-slider"></span>
             <span class="toggle-label">CH2 — Dome / SBUS 2</span>
-            <span class="toggle-sublabel">GPIO 13</span>
             <span class="toggle-status" id="status-rc-ch2">Disabled</span>
           </label>
         </div>
@@ -124,7 +116,6 @@
             <input type="checkbox" id="enable-rc-ch3" name="enableRcCh3">
             <span class="toggle-slider"></span>
             <span class="toggle-label">CH3 — PWM 3</span>
-            <span class="toggle-sublabel">GPIO 2</span>
             <span class="toggle-status" id="status-rc-ch3">Disabled</span>
           </label>
         </div>
@@ -133,7 +124,6 @@
             <input type="checkbox" id="enable-rc-ch4" name="enableRcCh4">
             <span class="toggle-slider"></span>
             <span class="toggle-label">CH4 — PWM 4</span>
-            <span class="toggle-sublabel">GPIO 4</span>
             <span class="toggle-status" id="status-rc-ch4">Disabled</span>
           </label>
         </div>
@@ -142,7 +132,6 @@
             <input type="checkbox" id="enable-rc-ch5" name="enableRcCh5">
             <span class="toggle-slider"></span>
             <span class="toggle-label">CH5 — PWM 5</span>
-            <span class="toggle-sublabel">GPIO 12</span>
             <span class="toggle-status" id="status-rc-ch5">Disabled</span>
           </label>
         </div>
@@ -151,7 +140,6 @@
             <input type="checkbox" id="enable-rc-ch6" name="enableRcCh6">
             <span class="toggle-slider"></span>
             <span class="toggle-label">CH6 — PWM 6</span>
-            <span class="toggle-sublabel">GPIO 27</span>
             <span class="toggle-status" id="status-rc-ch6">Disabled</span>
           </label>
         </div>
@@ -162,26 +150,23 @@
             <input type="checkbox" id="enable-s1-hoverboard" name="enableS1Hoverboard">
             <span class="toggle-slider"></span>
             <span class="toggle-label">S1 — Hoverboard</span>
-            <span class="toggle-sublabel">GPIO 16/17</span>
             <span class="toggle-status" id="status-s1-hoverboard">Disabled</span>
           </label>
         </div>
-        <div class="component-row stack">
-          <label class="toggle-switch full-width" title="S2 (GPIO 26/35) — Sound module TX. Backend selected by PA_AUDIO_DRIVER build flag: AUDIO_SOFT_UART for DY-SV5W, AUDIO_CHIRP for CHIRP board.">
+        <div class="component-row">
+          <label class="toggle-switch" title="S2 (GPIO 26/35) — Sound module TX. Backend selected by PA_AUDIO_DRIVER build flag: AUDIO_SOFT_UART for DY-SV5W, AUDIO_CHIRP for CHIRP board.">
             <input type="checkbox" id="enable-s2-sound" name="enableS2Sound">
             <span class="toggle-slider"></span>
             <span class="toggle-label">S2 — Sound</span>
-            <span class="toggle-sublabel">GPIO 26/35</span>
             <span class="toggle-status" id="status-s2-sound">Disabled</span>
-            <span id="s2-driver-label" class="s2-driver-label"></span>
           </label>
+          <span id="s2-driver-label" class="s2-driver-label"></span>
         </div>
         <div class="component-row">
           <label class="toggle-switch" title="S3 (GPIO 33/34) — Dome controller serial link (slip ring)">
             <input type="checkbox" id="enable-s3-dome-ctrl" name="enableS3DomeCtrl">
             <span class="toggle-slider"></span>
             <span class="toggle-label">S3 — Dome Control</span>
-            <span class="toggle-sublabel">GPIO 33/34</span>
             <span class="toggle-status" id="status-s3-dome-ctrl">Disabled</span>
           </label>
         </div>

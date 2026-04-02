@@ -1304,15 +1304,6 @@ textarea:disabled {
 .sound-state-badge[data-state="error"]    { color: var(--danger, #e55); }
 
 /* Setup page small layout helpers */
-.component-row.stack {
-  flex-direction: column;
-  align-items: flex-start;
-}
-
-.toggle-switch.full-width {
-  width: 100%;
-}
-
 .s2-driver-label {
   font-size: 0.8rem;
   color: var(--text-dim);
