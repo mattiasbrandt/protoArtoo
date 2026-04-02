@@ -56,35 +56,31 @@
 
   const setDriveHardwareEnabled = (enabled) => {
     driveHardwareEnabled = enabled;
-    driveDisabledCard?.classList.toggle("hidden", enabled);
+    updateDriveControlsEnabled();
+  };
 
+  const updateDriveControlsEnabled = () => {
+    const driveEnabled = driveHardwareEnabled && webControlEnabled;
+    driveButtons.forEach((btn) => {
+      if (!btn) return;
+      btn.disabled = !driveEnabled;
+      btn.setAttribute('aria-disabled', driveEnabled ? 'false' : 'true');
+    });
+
+    const controlsEnabled = driveHardwareEnabled;
     const gatedControls = [
       enableWebControlButton,
       disableWebControlButton,
     ];
-
     gatedControls.forEach((control) => {
       if (!control) return;
-      control.disabled = !enabled;
-      control.setAttribute("aria-disabled", enabled ? "false" : "true");
+      control.disabled = !controlsEnabled;
+      control.setAttribute('aria-disabled', controlsEnabled ? 'false' : 'true');
     });
 
-    if (!enabled) {
-      stopHoldLoop();
-      driveButtons.forEach((button) => button.classList.remove("active"));
-    }
+    driveDisabledCard?.classList.toggle('hidden', driveHardwareEnabled);
 
-    updateDriveButtonsEnabled();
-  };
-
-  const updateDriveButtonsEnabled = () => {
-    const enabled = driveHardwareEnabled && webControlEnabled;
-    driveButtons.forEach((btn) => {
-      if (!btn) return;
-      btn.disabled = !enabled;
-      btn.setAttribute('aria-disabled', enabled ? 'false' : 'true');
-    });
-    if (!enabled) {
+    if (!driveEnabled) {
       stopHoldLoop();
       driveButtons.forEach((btn) => btn.classList.remove('active'));
     }
@@ -225,7 +221,7 @@
     if (clearEstopButton) clearEstopButton.disabled = !payload.estop;
     if (webControlState) webControlState.textContent = payload.webControlEnabled ? "✅ Enabled" : "⏸️ Disabled";
     webControlEnabled = !!payload.webControlEnabled;
-    updateDriveButtonsEnabled();
+    updateDriveControlsEnabled();
     if (failsafeSource) failsafeSource.textContent = String(payload.failsafeSource);
     if (driveOutput) driveOutput.textContent = `${payload.driveSpeed} / ${payload.driveSteer}`;
     if (speedLimitDisplay) speedLimitDisplay.textContent = Number(payload.speedLimitScale).toFixed(3);

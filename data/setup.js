@@ -55,18 +55,9 @@
     enableS3DomeCtrl:  "s3DomeCtrl",
   };
 
-  // Debounce utility for auto-save
+  // Auto-save state
   let saveTimeout = null;
   let savePending = false;
-  const debounce = (fn, ms) => {
-    return (...args) => {
-      clearTimeout(saveTimeout);
-      saveTimeout = setTimeout(() => {
-        setSavePending(true);
-        fn(...args);
-      }, ms);
-    };
-  };
 
   const setSavePending = (pending) => {
     savePending = pending;
@@ -188,7 +179,11 @@
       setSavePending(false);
   };
 
-  const debouncedSave = debounce(saveFeatures, 300);
+  const debouncedSave = (...args) => {
+    setSavePending(true);
+    clearTimeout(saveTimeout);
+    saveTimeout = setTimeout(() => saveFeatures(...args), 300);
+  };
 
   // Attach listeners to all toggles and selects
   Object.keys(featureToggles).forEach((key) => {

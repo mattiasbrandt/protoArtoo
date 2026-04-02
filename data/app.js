@@ -27,6 +27,16 @@
   let lastStatus = null;
   let modePending = false;
   let moodPending = false;
+  let pollFailCount = 0;
+
+  const INDICATOR_TEXT = {
+    'h-sbus':      'ht-sbus',
+    'h-wifi':      'ht-wifi',
+    'h-fs':        'ht-fs',
+    'h-heap':      'ht-heap',
+    'h-dome-link': 'ht-dome-link',
+    'h-sound':     'ht-sound',
+  };
 
   const COMPONENT_LABELS = [
     ["arm1", "🦾", "Left Arm"],
@@ -56,7 +66,7 @@
     const el = document.getElementById(id);
     if (!el) return;
     el.className = `indicator ${state}`;
-    const textEl = document.getElementById(id.replace('h-', 'ht-'));
+    const textEl = INDICATOR_TEXT[id] ? document.getElementById(INDICATOR_TEXT[id]) : null;
     if (textEl) {
       const labels = { ok: 'OK', warn: 'WARN', fail: 'FAIL', off: 'OFF' };
       textEl.textContent = labels[state] || state;
@@ -186,6 +196,7 @@
 
   const applyStatus = (payload) => {
     lastStatus = payload;
+    pollFailCount = 0;
     setStale(false);
     renderHealth(payload);
     renderComponentStatus(payload);
@@ -340,7 +351,8 @@
   } else {
     const refreshFromFallback = () => {
       refreshStatusOnce().catch(() => {
-        setStale(true);
+        pollFailCount++;
+        if (pollFailCount >= 2) setStale(true);
       });
     };
 
