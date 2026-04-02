@@ -162,7 +162,8 @@
       if (eventType !== "status") return;
       webControlEnabled = !!payload.webControlEnabled;
       updateDomeControlsEnabled();
-      setDomeHardwareEnabled(Boolean(payload.dome));
+      setDomeHardwareEnabled(Boolean(payload.s3DomeCtrl));
+    });
   }
 
   loadEscConfig();
