@@ -53,7 +53,10 @@ For project terms and abbreviations, see [`docs/terminology.md`](./docs/terminol
 ## Core Hardware
 
 **Required:**
-- **Artoo Controller PCB v1.1** — ESP32 D1 Mini-based body controller ([artoo.uk](https://artoo.uk))
+- **Artoo Controller PCB v1.1** — body controller ([artoo.uk](https://artoo.uk))  
+  Requires the **dual-header ESP32 D1 Mini clone** (`wemos_d1_mini32`) — the elongated
+  ~68 mm board with dual-row headers (~40 pins). This is a Chinese third-party clone,
+  not an official Wemos/LOLIN board. No other ESP32 board fits the PCB socket.
 - **Hoverboard** with custom firmware — drive motors via UART serial  
   Compatible: [EFeru FOC](https://github.com/EFeru/hoverboard-firmware-hack-FOC) (STM32) or [RoboDurden Gen2.x](https://github.com/RoboDurden/Hoverboard-Firmware-Hack-Gen2.x-GD32) (GD32)
 
