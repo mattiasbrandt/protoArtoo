@@ -5,7 +5,7 @@
 # Naming convention:
 #   name:          {domain}.{type}.{verb-noun}  — dots between structural segments, kebab within
 #   display_name:  Short operator-facing label; domain and type are NOT repeated here
-#   domain:        drive | dome | sound | servo | system | rc
+#   domain:        drive | dome | sound | servo | system | rc | aux
 #   type:          action (command/intent) | status (observable state) |
 #                  event (SSE emission) | config (NVS-backed setting)
 #
@@ -660,6 +660,70 @@ entries:
     display_name: Servo Status
     description: Current position and state of all servo channels
     domain: servo
+    type: status
+    marcduino_cmd: null
+    api_path: /api/status
+    sse_event: status
+    cpp_enum: null
+    cpp_file: null
+    sources: [internal]
+    safety_critical: false
+    requires_web_control: false
+    nvs_key: null
+
+  # --- aux ---
+  - name: aux.action.led-color
+    display_name: LED Color
+    description: Set AUX LED strip RGB color
+    domain: aux
+    type: action
+    marcduino_cmd: null
+    api_path: /api/aux-led/color
+    sse_event: null
+    cpp_enum: null
+    cpp_file: null
+    sources: [web_api]
+    safety_critical: false
+    requires_web_control: false
+    params:
+      - name: r
+        type: uint8
+        range: [0, 255]
+        required: true
+      - name: g
+        type: uint8
+        range: [0, 255]
+        required: true
+      - name: b
+        type: uint8
+        range: [0, 255]
+        required: true
+    nvs_key: null
+
+  - name: aux.action.led-effect
+    display_name: LED Effect
+    description: Set AUX LED strip effect mode
+    domain: aux
+    type: action
+    marcduino_cmd: null
+    api_path: /api/aux-led/effect
+    sse_event: null
+    cpp_enum: null
+    cpp_file: null
+    sources: [web_api]
+    safety_critical: false
+    requires_web_control: false
+    params:
+      - name: effect
+        type: string
+        values: [solid, blink, pulse, off]
+        required: true
+    nvs_key: null
+
+  - name: aux.status.led-state
+    display_name: AUX LED State
+    description: Current AUX LED pin selection, color, and effect
+    domain: aux
     type: status
     marcduino_cmd: null
     api_path: /api/status
