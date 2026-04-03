@@ -16,6 +16,7 @@
 class AsyncWebServer;
 
 bool buildStatusJson(char* buffer, size_t bufferSize);
+void requestStatusBroadcastNow();
 size_t copyRecentLogs(char* buffer, size_t bufferSize);
 uint32_t copyNewLogLinesSince(uint32_t lastSent, char out[][LOG_LINE_MAX], size_t maxLines,
                               size_t* linesCopied);

@@ -17,7 +17,9 @@
 #include <stdint.h>
 
 #include "api_drive.h"
+#include "api_helpers.h"
 #include "logging.h"
+#include "dome_link.h"
 #include "robot_state.h"
 #include "web_server.h"
 
@@ -42,7 +44,83 @@ static inline void setUploadState(AsyncWebServerRequest* req, uintptr_t state) {
     req->_tempObject = reinterpret_cast<void*>(state);
 }
 
+static bool setSleepModeState(bool sleepMode, bool* changedOut) {
+    uint32_t nowMs = millis();
+    bool changed = false;
+
+    taskENTER_CRITICAL(&robotStateMux);
+    if (robotState.sleepMode != sleepMode) {
+        robotState.sleepMode = sleepMode;
+        robotState.sleepSinceMs = sleepMode ? nowMs : 0U;
+        changed = true;
+    }
+    taskEXIT_CRITICAL(&robotStateMux);
+
+    if (changed) {
+        requestStatusBroadcastNow();
+    }
+    if (changedOut != nullptr) {
+        *changedOut = changed;
+    }
+    return true;
+}
+
+static bool webControlEnabledForSleepApi() {
+    taskENTER_CRITICAL(&robotStateMux);
+    bool enabled = robotState.webControlEnabled;
+    taskEXIT_CRITICAL(&robotStateMux);
+    return enabled;
+}
+
 void registerSystemRoutes(AsyncWebServer& server) {
+    server.on("/api/sleep", HTTP_POST, [](AsyncWebServerRequest* req) {
+        if (!webControlEnabledForSleepApi()) {
+            req->send(409, "application/json",
+                      "{\"ok\":false,\"error\":\"web control is not enabled\"}");
+            return;
+        }
+
+        bool changed = false;
+        setSleepModeState(true, &changed);
+        if (changed && domeConnected()) {
+            domeQueueTx("#PASL");
+        }
+
+        char body[96];
+        if (!formatSleepControlJson(body, sizeof(body), true, changed)) {
+            req->send(500, "application/json",
+                      "{\"ok\":false,\"error\":\"sleep response overflow\"}");
+            return;
+        }
+
+        PA_LOG_INFO(TAG, "[WEB] POST /api/sleep changed=%s", changed ? "true" : "false");
+        req->send(200, "application/json", body);
+    });
+
+    server.on("/api/wake", HTTP_POST, [](AsyncWebServerRequest* req) {
+        if (!webControlEnabledForSleepApi()) {
+            req->send(409, "application/json",
+                      "{\"ok\":false,\"error\":\"web control is not enabled\"}");
+            return;
+        }
+
+        bool changed = false;
+        setSleepModeState(false, &changed);
+        if (changed && domeConnected()) {
+            domeQueueTx("#PAWU");
+        }
+
+        char body[96];
+        if (!formatSleepControlJson(body, sizeof(body), false, changed)) {
+            req->send(500, "application/json",
+                      "{\"ok\":false,\"error\":\"wake response overflow\"}");
+            return;
+        }
+
+        PA_LOG_INFO(TAG, "[WEB] POST /api/wake changed=%s", changed ? "true" : "false");
+        req->send(200, "application/json", body);
+    });
+
     server.on("/api/manual-command", HTTP_POST, [](AsyncWebServerRequest* req) {
         uint32_t now = millis();
         if ((now - lastManualCmdMs) < MANUAL_CMD_MIN_INTERVAL_MS) {
@@ -56,8 +134,24 @@ void registerSystemRoutes(AsyncWebServer& server) {
             req->send(400, "application/json", "{\"ok\":false,\"error\":\"missing command\"}");
             return;
         }
+        const String& rawCommand = commandParam->value();
 
-        if (!executeManualCommand(commandParam->value())) {
+        taskENTER_CRITICAL(&robotStateMux);
+        bool sleepMode = robotState.sleepMode;
+        taskEXIT_CRITICAL(&robotStateMux);
+
+        if (sleepMode && rawCommand.length() > 0) {
+            const char prefix = rawCommand[0];
+            bool blockedBySleep = prefix == '$' || prefix == ':' || prefix == '#' || prefix == '*' ||
+                                  prefix == '@' || prefix == '%' || prefix == '&' || prefix == '!';
+            if (blockedBySleep) {
+                req->send(423, "application/json",
+                          "{\"error\":\"sleeping\",\"hint\":\"POST /api/wake\"}");
+                return;
+            }
+        }
+
+        if (!executeManualCommand(rawCommand)) {
             req->send(400, "application/json", "{\"ok\":false,\"error\":\"unsupported command\"}");
             return;
         }

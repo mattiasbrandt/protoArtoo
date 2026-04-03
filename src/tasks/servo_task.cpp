@@ -167,6 +167,30 @@ static void executeSequence(uint8_t seqId) {
     PA_LOG_INFO(TAG, "Sequence :SE%02d started", seqId);
 }
 
+static void abortSequenceAndPark(const char* reason) {
+    if (seqState.state == SEQ_IDLE) {
+        return;
+    }
+
+    const uint8_t activeArm = seqState.activeArm;
+    const uint8_t sequenceId = seqState.sequenceId;
+    seqState.state = SEQ_IDLE;
+
+    uint16_t openUs = 0;
+    uint16_t closeUs = SERVO_PULSE_NEUTRAL_US;
+    if (activeArm == 255) {
+        getOpenClosePositions(0, openUs, closeUs);
+        setArmPosition(0, closeUs);
+        getOpenClosePositions(1, openUs, closeUs);
+        setArmPosition(1, closeUs);
+    } else if (activeArm <= 4) {
+        getOpenClosePositions(activeArm, openUs, closeUs);
+        setArmPosition(activeArm, closeUs);
+    }
+
+    PA_LOG_INFO(TAG, "Sequence :SE%02d aborted — %s", sequenceId, reason);
+}
+
 // -----------------------------------------------------------------------------
 // updateSequence()
 // Update sequence state machine.
@@ -177,15 +201,15 @@ static void updateSequence() {
 
     taskENTER_CRITICAL(&robotStateMux);
     bool estop = robotState.estop;
+    bool sleepMode = robotState.sleepMode;
     taskEXIT_CRITICAL(&robotStateMux);
 
+    if (sleepMode) {
+        abortSequenceAndPark("sleep mode active");
+        return;
+    }
     if (estop) {
-        seqState.state = SEQ_IDLE;
-        uint16_t openUs, closeUs;
-        getOpenClosePositions(0, openUs, closeUs);
-        setArmPosition(0, closeUs);
-        setArmPosition(1, closeUs);
-        PA_LOG_INFO(TAG, "Sequence :SE%02d aborted — estop active", seqState.sequenceId);
+        abortSequenceAndPark("estop active");
         return;
     }
 
@@ -252,10 +276,16 @@ static void processCommand(const ServoCommand& cmd) {
     // Safety: Check estop — reject all commands while emergency stopped
     taskENTER_CRITICAL(&robotStateMux);
     bool estop = robotState.estop;
+    bool sleepMode = robotState.sleepMode;
     taskEXIT_CRITICAL(&robotStateMux);
 
     if (estop) {
         PA_LOG_WARN(TAG, "[%s] Command rejected — estop active", commandSourceToString(cmd.source));
+        return;
+    }
+    if (sleepMode && cmd.type == SERVO_CMD_SEQUENCE) {
+        PA_LOG_INFO(TAG, "[%s] Sequence command ignored — sleep mode active",
+                    commandSourceToString(cmd.source));
         return;
     }
 

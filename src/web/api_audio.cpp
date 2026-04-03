@@ -38,6 +38,13 @@
 
 static const char* TAG = "WebServer";
 
+static bool isSleepModeActive() {
+    taskENTER_CRITICAL(&robotStateMux);
+    bool sleeping = robotState.sleepMode;
+    taskEXIT_CRITICAL(&robotStateMux);
+    return sleeping;
+}
+
 void registerAudioRoutes(AsyncWebServer& server) {
     // NOTE: /api/audio/tracks must be registered BEFORE /api/audio because
     // ESPAsyncWebServer matches routes in registration order and /api/audio
@@ -201,6 +208,11 @@ void registerAudioRoutes(AsyncWebServer& server) {
 
     // POST /api/mood — apply a mood preset (dual-path: audio + dome TX)
     server.on("/api/mood", HTTP_POST, [](AsyncWebServerRequest* req) {
+        if (isSleepModeActive()) {
+            req->send(423, "application/json",
+                      "{\"error\":\"sleeping\",\"hint\":\"POST /api/wake\"}");
+            return;
+        }
         const AsyncWebParameter* moodParam = req->getParam("mood", true);
         if (!moodParam) {
             req->send(400, "application/json",
@@ -245,6 +257,11 @@ void registerAudioRoutes(AsyncWebServer& server) {
 
         // ---- play ----
         if (action == "play") {
+            if (isSleepModeActive()) {
+                req->send(423, "application/json",
+                          "{\"error\":\"sleeping\",\"hint\":\"POST /api/wake\"}");
+                return;
+            }
             const AsyncWebParameter* trackParam = req->getParam("track", true);
             if (!trackParam) {
                 req->send(400, "application/json",
@@ -319,6 +336,11 @@ void registerAudioRoutes(AsyncWebServer& server) {
 
         // ---- dollar (raw $ command) ----
         if (action == "dollar") {
+            if (isSleepModeActive()) {
+                req->send(423, "application/json",
+                          "{\"error\":\"sleeping\",\"hint\":\"POST /api/wake\"}");
+                return;
+            }
             const AsyncWebParameter* cmdParam = req->getParam("cmd", true);
             if (!cmdParam || cmdParam->value().length() == 0 || cmdParam->value()[0] != '$') {
                 req->send(400, "application/json",

@@ -27,6 +27,7 @@ const ActionEntry ACTION_REGISTRY[] = {
     { SERVO_ACTION_AUX3_TOGGLE,   "servo.action.toggle-aux3",        "AUX3 Toggle",      "servo",  "Toggle aux 3 servo between open and closed",           false },
     { SYSTEM_ACTION_OP_MODE,      "system.action.set-mode",          "Set Mode",          "system", "Switch between stationary and driving mode",           false },
     { SYSTEM_ACTION_ESTOP,        "system.action.estop",             "Emergency Stop",    "system", "Immediately stop all drive output and latch estop",    true  },
+    { SYSTEM_ACTION_SLEEP_TOGGLE, "system.action.sleep-toggle",      "Sleep Toggle",      "system", "Toggle cosmetic sleep mode while keeping drive safety active", false },
 };
 // clang-format on
 

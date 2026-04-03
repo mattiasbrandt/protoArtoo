@@ -772,6 +772,55 @@ textarea:disabled {
   justify-content: flex-start;
 }
 
+body.sleep-mode-active {
+  overflow: hidden;
+}
+
+.sleep-control-card .button-row {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.sleep-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(4, 10, 20, 0.85);
+  backdrop-filter: blur(3px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+.sleep-overlay.active {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.sleep-overlay-panel {
+  width: min(520px, 100%);
+  padding: 24px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(58, 26, 26, 0.92), rgba(12, 21, 37, 0.96));
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.45);
+  text-align: center;
+  display: grid;
+  gap: 14px;
+}
+
+.sleep-overlay-panel h2 {
+  margin: 0;
+  color: var(--white);
+}
+
+.sleep-overlay-panel p {
+  color: var(--silver-bright);
+}
+
 .endpoint-list,
 .feature-list {
   list-style: none;

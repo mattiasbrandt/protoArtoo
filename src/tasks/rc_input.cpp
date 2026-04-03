@@ -28,6 +28,8 @@
 #include "../../include/ledc_pwm.h"
 #include "../../include/logging.h"
 #include "../../include/dome_rx_parser.h"
+#include "../../include/dome_link.h"
+#include "../../include/web_server.h"
 #include "../../include/rc_pwm_helpers.h"
 #include "../../include/robot_state.h"
 #include "../../include/sbus_decoder.h"
@@ -313,6 +315,22 @@ static void processTriggerAction(RobotActionId target, const char* payload, bool
                 robotState.estop = true;
                 robotState.failsafeSource = FS_ESTOP_CMD;
                 taskEXIT_CRITICAL(&robotStateMux);
+            }
+            break;
+        case SYSTEM_ACTION_SLEEP_TOGGLE:
+            if (pressed) {
+                const uint32_t nowMs = millis();
+                bool sleepMode = false;
+                taskENTER_CRITICAL(&robotStateMux);
+                sleepMode = !robotState.sleepMode;
+                robotState.sleepMode = sleepMode;
+                robotState.sleepSinceMs = sleepMode ? nowMs : 0U;
+                taskEXIT_CRITICAL(&robotStateMux);
+
+                requestStatusBroadcastNow();
+                if (domeConnected()) {
+                    domeQueueTx(sleepMode ? "#PASL" : "#PAWU");
+                }
             }
             break;
         case SYSTEM_ACTION_OP_MODE:

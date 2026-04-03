@@ -143,6 +143,7 @@ void domeTask(void* pvParameters) {
     }
 
     bool hwmLogged = false;
+    bool sleepHolding = false;
 
     while (true) {
         if (!hwmLogged) {
@@ -155,6 +156,7 @@ void domeTask(void* pvParameters) {
         taskENTER_CRITICAL(&robotStateMux);
         bool estop = robotState.estop;
         bool enabled = robotState.cfg_enable_dome;
+        bool sleepMode = robotState.sleepMode;
         taskEXIT_CRITICAL(&robotStateMux);
 
         // Feature toggle: dome disabled — hold neutral, drain queue, do nothing
@@ -169,9 +171,33 @@ void domeTask(void* pvParameters) {
                 // discard
             }
             hasCommand = false;
+            sleepHolding = false;
             esp_task_wdt_reset();
             vTaskDelay(pdMS_TO_TICKS(20));
             continue;
+        }
+
+        if (sleepMode) {
+            if (!sleepHolding || currentSpeed != 0.0f) {
+                currentSpeed = 0.0f;
+                setDomeNeutral();
+            }
+            if (!sleepHolding) {
+                PA_LOG_INFO(TAG, "Sleep mode active — dome neutral");
+                sleepHolding = true;
+            }
+
+            while (xQueueReceive(domeCmdQueue, &cmd, 0) == pdTRUE) {
+                // discard while sleeping
+            }
+            hasCommand = false;
+            esp_task_wdt_reset();
+            vTaskDelay(pdMS_TO_TICKS(20));
+            continue;
+        }
+        if (sleepHolding) {
+            sleepHolding = false;
+            PA_LOG_INFO(TAG, "Sleep mode cleared — dome command processing resumed");
         }
 
         // Safety: estop — force neutral while emergency stopped

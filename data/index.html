@@ -14,6 +14,15 @@
     </div>
 
 
+    <div class="card sleep-control-card">
+      <h3>🌙 Sleep Mode</h3>
+      <div class="desc">Park cosmetic subsystems while keeping drive and safety controls active.</div>
+      <div class="button-row mt-10">
+        <button class="btn accent" id="sleep-toggle" title="Toggle sleep mode" aria-label="Toggle sleep mode" aria-pressed="false">Sleep Droid</button>
+      </div>
+      <div id="sleep-feedback" class="feedback mt-8" role="status" aria-live="polite" aria-atomic="true"></div>
+    </div>
+
     <!-- Quick Controls -->
     <div class="card">
       <h3>⚡ Quick Controls</h3>
@@ -126,6 +135,14 @@
     </div>
 
     <div id="shell-status"></div>
+
+    <div id="sleep-overlay" class="sleep-overlay" aria-live="polite" aria-hidden="true">
+      <div class="sleep-overlay-panel">
+        <h2>Sleep Mode Active</h2>
+        <p>Cosmetic subsystems are parked. Drive and safety controls remain active.</p>
+        <button class="btn danger" id="sleep-overlay-wake" aria-label="Wake droid">Wake Droid</button>
+      </div>
+    </div>
 
     <script src="/web_api.js"></script>
     <script src="/status_stream.js"></script>

@@ -130,6 +130,7 @@ struct RobotState {
     uint16_t arm2TargetUs;
     float dome_speed;
     bool sleepMode;
+    uint32_t sleepSinceMs;
 
     // --- Failsafe state ---
     bool estop;

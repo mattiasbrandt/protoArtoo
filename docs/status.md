@@ -25,7 +25,7 @@ For first-time setup:
 | Phase 2 — Web interface | WiFi, web UI, OTA firmware updates | Complete |
 | Phase 3 — Servos + dome motor | Arm servos, dome motor, RC diagnostics and mapping | Software complete — hardware validation partially deferred |
 | **Phase 4 — Audio + dome link** | Sound playback, bidirectional dome communication, web UI improvements | Complete — `v0.4.0`; hardware validation deferred to Phase 5 |
-| Phase 5 — Community release | Documentation, polish, public release | Planned |
+| Phase 5 — Community release | Documentation, polish, public release | In progress — T03/T04/T05 complete (bench-tested); hardware validation ongoing |
 
 ---
 
@@ -53,6 +53,7 @@ Development builds are versioned from the git history and build timestamp.
 - WiFi configuration: standalone access point or connection to an existing network
 - Home dashboard: drive mode switcher, mood selector, and live status indicators
 - Setup page: configure connected hardware components, RC receiver mode, and channel mapping
+- Sleep/wake mode on the dashboard that pauses cosmetic subsystems while keeping RC, drive safety, and web control active
 - Drive page: manual drive and dome control from the browser
 - Dome page: direct dome motor control
 - Servo page: arm and accessory servo control
@@ -139,4 +140,4 @@ droid for final confirmation. They are planned for the Phase 5 hardware validati
 
 - **Phase 4 (software complete):** audio system, full dome link, and web UI quality improvements;
   hardware validation deferred to Phase 5
-- **Phase 5 (in progress):** hardware validation, final documentation, and initial public release as `v1.0.0`
+- **Phase 5 (in progress):** T03 tooling, T04 registry alignment, and T05 sleep/wake mode are complete on bench; full-hardware validation and release closure remain

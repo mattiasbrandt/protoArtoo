@@ -154,3 +154,14 @@ void formatAudioStatusJson(char* buf, size_t bufSize, const char* driverName,
              active ? "true" : "false", playSt, devStr, (unsigned)totalTracks,
              (unsigned)currentTrack);
 }
+
+
+bool formatSleepControlJson(char* buf, size_t bufSize, bool sleepMode, bool changed) {
+    if (buf == nullptr || bufSize == 0) {
+        return false;
+    }
+
+    int written = snprintf(buf, bufSize, "{\"ok\":true,\"sleepMode\":%s,\"changed\":%s}",
+                         sleepMode ? "true" : "false", changed ? "true" : "false");
+    return written > 0 && (size_t)written < bufSize;
+}

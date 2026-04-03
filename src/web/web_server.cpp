@@ -309,7 +309,9 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     bool enableRcCh1, enableRcCh2, enableRcCh3, enableRcCh4, enableRcCh5, enableRcCh6;
     bool enableS1Hoverboard, enableS2Sound, enableS3DomeCtrl;
     bool audioActive;
+    bool sleepMode;
     uint8_t activeMood;
+    uint32_t sleepSinceMs;
     RcInputMode rcInputMode;
     uint16_t arm1TargetUs;
     uint16_t arm2TargetUs;
@@ -383,6 +385,8 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     enableS3DomeCtrl = robotState.cfg_enable_s3_dome_ctrl;
     audioActive = robotState.audioActive;
     activeMood = robotState.activeMood;
+    sleepMode = robotState.sleepMode;
+    sleepSinceMs = robotState.sleepSinceMs;
     taskEXIT_CRITICAL(&robotStateMux);
     uptimeMs = millis();
     heapFree = ESP.getFreeHeap();
@@ -410,7 +414,7 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
         "\"heapFree\":%lu,\"heapMin\":%lu,\"heapLargestBlock\":%lu,\"wifiRssi\":%ld,"
         "\"wifiConnected\":%s,"
         "\"wifiClientConnected\":%s,"
-        "\"littleFsReady\":%s,"
+        "\"littleFsReady\":%s,\"sleepMode\":%s,\"sleepSinceMs\":%lu,"
         "\"activeMood\":%u",
         estop ? "true" : "false", webControlEnabled ? "true" : "false",
         sbusSignalLost ? "true" : "false", sbusHwFailsafe ? "true" : "false",
@@ -420,7 +424,7 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
         uptimeMs, PA_FIRMWARE_VERSION, s_fsVersion, heapFree, heapMin,
         (unsigned long)heapLargestBlock, wifiRssi, wifiConnected ? "true" : "false",
         wifiClientConnected ? "true" : "false", littleFsReady ? "true" : "false",
-        (unsigned)activeMood);
+        sleepMode ? "true" : "false", (unsigned long)sleepSinceMs, (unsigned)activeMood);
 
     // Conditionally append enabled-component keys — disabled components are absent,
     // not emitted as false placeholders (Phase 3 status/dashboard contract).
@@ -654,6 +658,24 @@ static bool s_rcSseSizeWarned = false;
 static bool s_statusSseOverflowWarned = false;
 static uint32_t s_lastLogSent = 0;
 static char s_sseLogLines[8][LOG_LINE_MAX];
+
+void requestStatusBroadcastNow() {
+    if (!serverStarted || events.count() == 0) {
+        return;
+    }
+
+    char body[3072];
+    uint32_t nowMs = millis();
+    if (!buildStatusJson(body, sizeof(body))) {
+        if (!s_statusSseOverflowWarned) {
+            PA_LOG_WARN("WebEvents", "status SSE payload overflowed; sending fallback payload");
+            s_statusSseOverflowWarned = true;
+        }
+    } else {
+        s_statusSseOverflowWarned = false;
+    }
+    events.send(body, "status", nowMs);
+}
 
 void eventStreamTask(void*) {
     bool hwmLogged = false;

@@ -63,6 +63,7 @@ enum RobotActionId : uint8_t {
     DOME_ACTION_MARCDUINO_SEQ,   // Button: Body sequence SE30-SE36
     DOME_ACTION_MARCDUINO_CMD,   // Button: Arbitrary Marcduino command
     SYSTEM_ACTION_ESTOP,     // Button: Latch estop (guarded)
+    SYSTEM_ACTION_SLEEP_TOGGLE,  // Button: toggle sleep/wake mode
     DOME_ACTION_SEQ,        // Button: Dome sequence SE10-SE16 (Phase 4)
 };
 
@@ -317,6 +318,8 @@ inline const char* robotActionIdToString(RobotActionId target) {
             return "cmd";
         case SYSTEM_ACTION_ESTOP:
             return "estop";
+        case SYSTEM_ACTION_SLEEP_TOGGLE:
+            return "sleep_toggle";
         case DOME_ACTION_SEQ:
             return "dome_seq";
         case ROBOT_ACTION_NONE:
@@ -385,6 +388,10 @@ inline bool parseRobotActionId(const char* raw, RobotActionId* out) {
         *out = SYSTEM_ACTION_ESTOP;
         return true;
     }
+    if (strcmp(raw, "sleep_toggle") == 0) {
+        *out = SYSTEM_ACTION_SLEEP_TOGGLE;
+        return true;
+    }
     if (strcmp(raw, "dome_seq") == 0) {
         *out = DOME_ACTION_SEQ;
         return true;
@@ -410,7 +417,7 @@ inline bool robotActionValidForTier2(RobotActionId target) {
            target == SERVO_ACTION_AUX1_TOGGLE || target == SERVO_ACTION_AUX2_TOGGLE ||
            target == SERVO_ACTION_AUX3_TOGGLE || target == DOME_ACTION_MARCDUINO_SEQ ||
            target == DOME_ACTION_MARCDUINO_CMD || target == SYSTEM_ACTION_ESTOP ||
-           target == DOME_ACTION_SEQ;
+           target == SYSTEM_ACTION_SLEEP_TOGGLE || target == DOME_ACTION_SEQ;
 }
 
 // Validate Marcduino sequence payload for body sequences (SE30-SE36)
@@ -463,7 +470,7 @@ inline bool robotActionIsButton(RobotActionId target) {
            target == SERVO_ACTION_AUX1_TOGGLE || target == SERVO_ACTION_AUX2_TOGGLE ||
            target == SERVO_ACTION_AUX3_TOGGLE || target == DOME_ACTION_MARCDUINO_SEQ ||
            target == DOME_ACTION_MARCDUINO_CMD || target == SYSTEM_ACTION_ESTOP ||
-           target == DOME_ACTION_SEQ;
+           target == SYSTEM_ACTION_SLEEP_TOGGLE || target == DOME_ACTION_SEQ;
 }
 
 inline RcTriggerBinding makeRcTriggerBinding(RcBindingSource source, uint8_t channel,

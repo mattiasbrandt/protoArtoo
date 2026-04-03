@@ -28,6 +28,13 @@ extern bool saveConfigToNvs();
 
 static const char* TAG = "WebServer";
 
+
+static bool isSleepModeActive() {
+    taskENTER_CRITICAL(&robotStateMux);
+    bool sleeping = robotState.sleepMode;
+    taskEXIT_CRITICAL(&robotStateMux);
+    return sleeping;
+}
 namespace {
 
 // ManualCommand — recognized command tokens for POST /api/manual-command.
@@ -295,6 +302,12 @@ void registerDriveRoutes(AsyncWebServer& server) {
         if (speedParam == nullptr) {
             req->send(400, "application/json",
                       "{\"ok\":false,\"error\":\"missing speed\"}");
+            return;
+        }
+
+        if (isSleepModeActive()) {
+            req->send(423, "application/json",
+                      "{\"error\":\"sleeping\",\"hint\":\"POST /api/wake\"}");
             return;
         }
 

@@ -21,6 +21,10 @@
   const moodFeedback = document.getElementById("mood-feedback");
 
   const soundFeedback = document.getElementById("sound-feedback");
+  const sleepToggle = document.getElementById("sleep-toggle");
+  const sleepOverlay = document.getElementById("sleep-overlay");
+  const sleepOverlayWake = document.getElementById("sleep-overlay-wake");
+  const sleepFeedback = document.getElementById("sleep-feedback");
   const staleBanner = document.getElementById('status-stale-banner');
   const setStale = (stale) => { if (staleBanner) staleBanner.style.display = stale ? '' : 'none'; };
 
@@ -28,6 +32,8 @@
   let modePending = false;
   let moodPending = false;
   let pollFailCount = 0;
+  let sleepPending = false;
+  let isSleeping = false;
 
   const INDICATOR_TEXT = {
     'h-sbus':      'ht-sbus',
@@ -60,6 +66,31 @@
     if (!el) return;
     el.textContent = message;
     el.className = level ? `feedback ${level}` : "feedback";
+  };
+
+  const setSleepPending = (pending) => {
+    sleepPending = pending;
+    [sleepToggle, sleepOverlayWake].forEach((el) => {
+      if (!el) return;
+      el.disabled = pending;
+      el.classList.toggle("is-pending", pending);
+      el.setAttribute("aria-disabled", pending ? "true" : "false");
+    });
+  };
+
+  const setSleepUi = (sleeping) => {
+    isSleeping = !!sleeping;
+    if (sleepToggle) {
+      sleepToggle.textContent = isSleeping ? "Wake Droid" : "Sleep Droid";
+      sleepToggle.classList.toggle("danger", isSleeping);
+      sleepToggle.classList.toggle("accent", !isSleeping);
+      sleepToggle.setAttribute("aria-pressed", isSleeping.toString());
+    }
+    if (sleepOverlay) {
+      sleepOverlay.classList.toggle("active", isSleeping);
+      sleepOverlay.setAttribute("aria-hidden", (!isSleeping).toString());
+    }
+    document.body.classList.toggle("sleep-mode-active", isSleeping);
   };
 
   const setIndicator = (id, state) => {
@@ -203,12 +234,35 @@
     renderOpMode(payload);
     renderMoodDomeNote(payload);
     renderActiveMood(payload);
+    setSleepUi(!!payload.sleepMode);
   };
 
   const refreshStatusOnce = async () => {
     if (!window.PAApi) return;
     const result = await window.PAApi.get("/api/status", { cache: "no-store", timeoutMs: 3000 });
     applyStatus(result.data);
+  };
+
+  const toggleSleepWake = async (forceWake = false) => {
+    if (!window.PAApi || sleepPending) return;
+    const targetSleep = forceWake ? false : !isSleeping;
+    setSleepPending(true);
+    showFeedback(sleepFeedback, targetSleep ? "Entering sleep mode..." : "Waking droid...");
+
+    try {
+      await window.PAApi.postForm(targetSleep ? "/api/sleep" : "/api/wake", {}, { timeoutMs: 3000 });
+      await refreshStatusOnce();
+      showFeedback(sleepFeedback, targetSleep ? "Sleep mode enabled" : "Droid awake", "success");
+    } catch (error) {
+      showFeedback(
+        sleepFeedback,
+        `Sleep toggle failed: ${window.PAApi.messageFor(error)}`,
+        "error"
+      );
+      if (lastStatus) setSleepUi(!!lastStatus.sleepMode);
+    } finally {
+      setSleepPending(false);
+    }
   };
 
   const setModePending = (pending) => {
@@ -326,6 +380,9 @@
     });
   });
 
+  sleepToggle?.addEventListener("click", () => toggleSleepWake(false));
+  sleepOverlayWake?.addEventListener("click", () => toggleSleepWake(true));
+
   document.getElementById("sound-stop")?.addEventListener("click", () => postSound({ action: "stop" }));
   document.getElementById("sound-vol-up")?.addEventListener("click", () => postSound({ action: "dollar", cmd: "$+" }));
   document.getElementById("sound-vol-dn")?.addEventListener("click", () => postSound({ action: "dollar", cmd: "$-" }));
@@ -369,4 +426,5 @@
       }
     });
   }
+  setSleepUi(false);
 })();

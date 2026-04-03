@@ -163,3 +163,8 @@ void formatAudioStatusJson(char* buf, size_t bufSize, const char* driverName,
                            uint8_t capabilities, bool linkOk, bool active,
                            uint8_t playState, uint8_t device, uint16_t totalTracks,
                            uint16_t currentTrack);
+
+// Format JSON response for sleep/wake control endpoints.
+// Output: {"ok":true,"sleepMode":<bool>,"changed":<bool>}
+// Returns false if the payload does not fit in buf.
+bool formatSleepControlJson(char* buf, size_t bufSize, bool sleepMode, bool changed);

@@ -6,6 +6,7 @@
 // =============================================================================
 #include <unity.h>
 
+#include <string.h>
 #include "api_helpers.h"
 
 void setUp() {
@@ -162,6 +163,29 @@ void test_parseBool_yes_fails() {
     TEST_ASSERT_FALSE(parseBoolValue("yes", &out));
 }
 
+// --- formatSleepControlJson() tests ---
+
+void test_formatSleepControlJson_sleep_changed() {
+    char out[96] = {};
+    TEST_ASSERT_TRUE(formatSleepControlJson(out, sizeof(out), true, true));
+    TEST_ASSERT_EQUAL_STRING("{\"ok\":true,\"sleepMode\":true,\"changed\":true}", out);
+}
+
+void test_formatSleepControlJson_wake_unchanged() {
+    char out[96] = {};
+    TEST_ASSERT_TRUE(formatSleepControlJson(out, sizeof(out), false, false));
+    TEST_ASSERT_EQUAL_STRING("{\"ok\":true,\"sleepMode\":false,\"changed\":false}", out);
+}
+
+void test_formatSleepControlJson_null_buffer_fails() {
+    TEST_ASSERT_FALSE(formatSleepControlJson(nullptr, 32, true, true));
+}
+
+void test_formatSleepControlJson_small_buffer_fails() {
+    char out[16] = {};
+    TEST_ASSERT_FALSE(formatSleepControlJson(out, sizeof(out), true, true));
+}
+
 int main() {
     UNITY_BEGIN();
 
@@ -193,6 +217,10 @@ int main() {
     RUN_TEST(test_parseBool_null_fails);
     RUN_TEST(test_parseBool_uppercase_fails);
     RUN_TEST(test_parseBool_yes_fails);
+    RUN_TEST(test_formatSleepControlJson_sleep_changed);
+    RUN_TEST(test_formatSleepControlJson_wake_unchanged);
+    RUN_TEST(test_formatSleepControlJson_null_buffer_fails);
+    RUN_TEST(test_formatSleepControlJson_small_buffer_fails);
 
     return UNITY_END();
 }

@@ -232,6 +232,7 @@ void audioTask(void* pvParameters) {
     uint32_t lastPlayMs = 0;  // anti-spam: last playTrack() timestamp
     uint32_t lastAutoQueryMs = 0;  // 2 s status poll timer for safe-polling modules
     uint8_t currentVol = 20;  // updated from config on first enable
+    bool wasSleeping = false;
 
     // Minimum interval between successive playTrack() calls (ms).
     // Application-level anti-bounce guard for rapid-fire play commands
@@ -262,8 +263,10 @@ void audioTask(void* pvParameters) {
         // we must not require a reboot for the change to take effect.
         // ----------------------------------------------------------------
         bool audioEnabled;
+        bool sleepMode;
         taskENTER_CRITICAL(&robotStateMux);
         audioEnabled = robotState.cfg_enable_s2_sound;
+        sleepMode = robotState.sleepMode;
         taskEXIT_CRITICAL(&robotStateMux);
 
         if (!audioEnabled) {
@@ -278,6 +281,7 @@ void audioTask(void* pvParameters) {
                 PA_LOG_INFO(TAG, "audio disabled — random mode cleared");
             }
             xQueueReceive(audioCmdQueue, &cmd, pdMS_TO_TICKS(500));
+            wasSleeping = sleepMode;
             continue;
         }
 
@@ -323,6 +327,18 @@ void audioTask(void* pvParameters) {
             }
         }
 
+        if (sleepMode && !wasSleeping) {
+            if (driverInitialized) {
+                driver->stop();
+            }
+            randomMode = false;
+            taskENTER_CRITICAL(&robotStateMux);
+            robotState.audioActive = false;
+            taskEXIT_CRITICAL(&robotStateMux);
+            PA_LOG_INFO(TAG, "sleep mode active — audio playback suppressed");
+        }
+        wasSleeping = sleepMode;
+
         // ----------------------------------------------------------------
         // Process one command from the queue (500 ms timeout so the random
         // timer below can fire even when the queue is idle).
@@ -330,6 +346,11 @@ void audioTask(void* pvParameters) {
         if (xQueueReceive(audioCmdQueue, &cmd, pdMS_TO_TICKS(500)) == pdTRUE) {
             switch (cmd.type) {
                 case AUDIO_CMD_DOLLAR: {
+                    if (sleepMode) {
+                        PA_LOG_INFO(TAG, "[%s] dollar command ignored — sleep mode active",
+                                    commandSourceToString(cmd.source));
+                        break;
+                    }
                     // Refresh named tracks from RobotState so runtime changes
                     // via POST /api/audio/tracks take effect immediately without
                     // requiring a disable/enable cycle.
@@ -355,6 +376,11 @@ void audioTask(void* pvParameters) {
                 }
 
                 case AUDIO_CMD_PLAY_TRACK: {
+                    if (sleepMode) {
+                        PA_LOG_INFO(TAG, "[%s] play track ignored — sleep mode active",
+                                    commandSourceToString(cmd.source));
+                        break;
+                    }
                     uint32_t now = millis();
                     if ((uint32_t)(now - lastPlayMs) < DISPATCH_PLAY_MIN_MS) {
                         PA_LOG_DEBUG(TAG, "[%s] play track %u dropped (anti-spam)",
@@ -421,7 +447,7 @@ void audioTask(void* pvParameters) {
         // Mood 0 (unset) falls back to the Full-Awake interval.
         // An interval of 0 s suppresses random playback for that mood.
         // ----------------------------------------------------------------
-        if (randomMode) {
+        if (randomMode && !sleepMode) {
             taskENTER_CRITICAL(&robotStateMux);
             uint8_t mood = robotState.activeMood;
             uint16_t randMin = robotState.cfg_snd_rand_min;

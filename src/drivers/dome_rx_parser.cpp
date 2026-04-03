@@ -29,6 +29,7 @@
 #include "logging.h"
 #include "marcduino_helpers.h"
 #include "robot_state.h"
+#include "web_server.h"
 
 static const char* TAG = "MARCDUINO";
 
@@ -186,12 +187,41 @@ bool parseMarcduinoCommand(const char* line) {
             PA_LOG_DEBUG(TAG, "Slave-out command deferred to dome link: %s", line);
             return false;
 
-        case '#':
+        case '#': {
+            bool syncSleep = false;
+            bool syncWake = false;
+            if (strcmp(line, "#APSL") == 0) {
+                syncSleep = true;
+            } else if (strcmp(line, "#APWU") == 0) {
+                syncWake = true;
+            }
+
+            if (syncSleep || syncWake) {
+                bool changed = false;
+                const bool sleepMode = syncSleep;
+                const uint32_t nowMs = millis();
+                taskENTER_CRITICAL(&robotStateMux);
+                if (robotState.sleepMode != sleepMode) {
+                    robotState.sleepMode = sleepMode;
+                    robotState.sleepSinceMs = sleepMode ? nowMs : 0U;
+                    changed = true;
+                }
+                taskEXIT_CRITICAL(&robotStateMux);
+
+                if (changed) {
+                    requestStatusBroadcastNow();
+                    PA_LOG_INFO(TAG, "[SYSTEM] sleep sync from dome: %s",
+                                sleepMode ? "sleep" : "wake");
+                }
+                return true;
+            }
+
             PA_LOG_INFO(TAG,
                         "[CONFIG] body-local setup command reserved for future handling; "
                         "no ConfigTask in Phase 3: %s",
                         line);
             return true;
+        }
 
         case '&':
             PA_LOG_DEBUG(TAG, "Marcduino I2C command not applicable to body controller: %s", line);
