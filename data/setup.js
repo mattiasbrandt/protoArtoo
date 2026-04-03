@@ -35,6 +35,12 @@
   const featureFeedback = document.getElementById("feature-feedback");
   const logLevelSelect = document.getElementById("log-level-select");
   const diagFeedback = document.getElementById("diag-feedback");
+  const auxLedPinSelect = document.getElementById("aux-led-pin");
+  const auxLedCountInput = document.getElementById("aux-led-count");
+  const auxLedCountField = document.getElementById("aux-led-count-field");
+  const auxLedSwatch = document.getElementById("aux-led-swatch");
+  const auxLedPreviewText = document.getElementById("aux-led-preview-text");
+  const auxLedPreviewNote = document.getElementById("aux-led-preview-note");
 
   // Map from API payload key to featureToggles key
   const TOGGLE_KEY_MAP = {
@@ -65,6 +71,21 @@
     }
   };
 
+  const sanitizeAuxLedCount = () => {
+    if (!auxLedCountInput) return 1;
+    const parsed = Number(auxLedCountInput.value);
+    const normalized = Number.isFinite(parsed)
+      ? Math.max(1, Math.min(255, Math.round(parsed)))
+      : 1;
+    auxLedCountInput.value = String(normalized);
+    return normalized;
+  };
+
+  const updateAuxLedConfigVisibility = () => {
+    if (!auxLedPinSelect || !auxLedCountField) return;
+    const enabled = auxLedPinSelect.value !== "0";
+    auxLedCountField.style.display = enabled ? "" : "none";
+  };
   const updateToggleStatus = (key) => {
     const toggle = featureToggles[key];
     if (!toggle || !toggle.input || !toggle.status) return;
@@ -115,6 +136,15 @@
       }
     });
 
+    if (auxLedPinSelect && payload?.aux_led_pin !== undefined) {
+      auxLedPinSelect.value = String(payload.aux_led_pin);
+    }
+    if (auxLedCountInput && payload?.aux_led_count !== undefined) {
+      auxLedCountInput.value = String(payload.aux_led_count);
+    }
+    sanitizeAuxLedCount();
+    updateAuxLedConfigVisibility();
+
     if (featureFeedback) {
       featureFeedback.textContent = `Components loaded at ${new Date().toLocaleTimeString()}`;
       featureFeedback.className = "feedback success";
@@ -160,6 +190,12 @@
       Object.entries(typeSelects).forEach(([apiKey, select]) => {
         if (select) body.set(apiKey, select.value);
       });
+      if (auxLedPinSelect) {
+        body.set("aux_led_pin", auxLedPinSelect.value);
+      }
+      if (auxLedCountInput) {
+        body.set("aux_led_count", String(sanitizeAuxLedCount()));
+      }
       const result = await window.PAApi.postForm("/api/config", body, { timeoutMs: 5000 });
       renderFeatures(result.data);
       if (featureFeedback) {
@@ -199,6 +235,18 @@
       select.addEventListener("change", debouncedSave);
     }
   });
+  if (auxLedPinSelect) {
+    auxLedPinSelect.addEventListener("change", () => {
+      updateAuxLedConfigVisibility();
+      debouncedSave();
+    });
+  }
+  if (auxLedCountInput) {
+    auxLedCountInput.addEventListener("change", () => {
+      sanitizeAuxLedCount();
+      debouncedSave();
+    });
+  }
 
   // Reboot functionality
   const rebootButton = document.getElementById("reboot-button");
@@ -276,6 +324,7 @@
     logLevelSelect.addEventListener("change", saveLogLevel);
   }
 
+  updateAuxLedConfigVisibility();
   loadFeatures();
 
   // --- Serial connection status ---
@@ -295,6 +344,38 @@
     const minutes = Math.floor((totalSeconds % 3600) / 60);
     const seconds = totalSeconds % 60;
     return `${hours}h ${minutes}m ${seconds}s`;
+  };
+
+  const renderAuxLedPreview = (status) => {
+    if (!auxLedSwatch || !auxLedPreviewText || !auxLedPreviewNote) return;
+    const aux = status?.auxLed;
+    const pin = Number(aux?.pin || 0);
+    const available = aux?.available !== false;
+    const effect = String(aux?.effect || "off");
+    const r = Math.max(0, Math.min(255, Number(aux?.r || 0)));
+    const g = Math.max(0, Math.min(255, Number(aux?.g || 0)));
+    const b = Math.max(0, Math.min(255, Number(aux?.b || 0)));
+
+    auxLedSwatch.style.backgroundColor = `rgb(${r}, ${g}, ${b})`;
+    auxLedSwatch.style.opacity = pin > 0 && available && effect !== "off" ? "1" : "0.35";
+
+    if (pin === 0) {
+      auxLedPreviewText.textContent = "AUX LED disabled";
+      auxLedPreviewText.style.color = "var(--text-dim)";
+      auxLedPreviewNote.textContent = "Select AUX1/AUX2/AUX3 above to enable strip output.";
+      return;
+    }
+
+    if (!available) {
+      auxLedPreviewText.textContent = `AUX LED GPIO ${pin} unavailable`;
+      auxLedPreviewText.style.color = "var(--warning)";
+      auxLedPreviewNote.textContent = "Strip configured, but driver is unavailable (RMT/channel allocation failed).";
+      return;
+    }
+
+    auxLedPreviewText.textContent = `AUX LED GPIO ${pin} - ${effect}`;
+    auxLedPreviewText.style.color = "var(--success)";
+    auxLedPreviewNote.textContent = `Live color ${r},${g},${b} with ${effect} effect.`;
   };
 
   const renderSerialStatus = (d) => {
@@ -369,6 +450,7 @@
     if (diagMemoryNote) {
       diagMemoryNote.textContent = `Memory Min is a historical low-water mark since boot; current low-water mark is ${heapMinKb} KB.`;
     }
+    renderAuxLedPreview(d);
 
     if (serialStatusLine) {
       serialStatusLine.textContent = `Updated ${new Date().toLocaleTimeString()}`;

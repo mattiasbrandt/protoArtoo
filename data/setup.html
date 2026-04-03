@@ -63,6 +63,31 @@
             <option value="rgb">RGB LED strip</option>
           </select>
         </div>
+
+        <div class="section-label">AUX LED STRIP</div>
+        <div class="form-grid">
+          <label class="field" for="aux-led-pin">
+            <span>AUX LED header</span>
+            <select id="aux-led-pin" name="auxLedPin" aria-label="AUX LED header selector">
+              <option value="0">Disabled</option>
+              <option value="1">AUX1 (GPIO 19)</option>
+              <option value="2">AUX2 (GPIO 18)</option>
+              <option value="3">AUX3 (GPIO 32)</option>
+            </select>
+          </label>
+          <label class="field" id="aux-led-count-field" for="aux-led-count">
+            <span>LED count</span>
+            <input id="aux-led-count" name="auxLedCount" type="number" min="1" max="255" step="1" value="1">
+          </label>
+        </div>
+        <div class="mt-12" aria-live="polite" aria-atomic="true">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span id="aux-led-swatch" style="display:inline-block;width:22px;height:22px;border-radius:50%;border:1px solid var(--border);background:rgb(0,0,0);"></span>
+            <span id="aux-led-preview-text" class="desc">AUX LED disabled</span>
+          </div>
+          <div id="aux-led-preview-note" class="desc mt-6">Live color/effect preview from status stream.</div>
+        </div>
+
         <div class="component-row">
           <label class="toggle-switch" title="ARM2 (GPIO 5) — Right utility arm servo">
             <input type="checkbox" id="enable-arm2" name="enableArm2">
