@@ -255,6 +255,8 @@ static void updateSequence() {
 // isArmEnabled()
 // Check feature toggle for a given armId.
 // armId 255 (broadcast) is allowed only if at least ARM1 and ARM2 are enabled.
+// AUX channel selected for WS2812 (cfg_aux_led_pin) is treated as unavailable
+// for servo commands to avoid pin ownership conflicts.
 // -----------------------------------------------------------------------------
 static bool isArmEnabled(uint8_t armId) {
     taskENTER_CRITICAL(&robotStateMux);
@@ -263,9 +265,10 @@ static bool isArmEnabled(uint8_t armId) {
     bool aux1 = robotState.cfg_enable_aux1;
     bool aux2 = robotState.cfg_enable_aux2;
     bool aux3 = robotState.cfg_enable_aux3;
+    uint8_t auxLedPin = robotState.cfg_aux_led_pin;
     taskEXIT_CRITICAL(&robotStateMux);
 
-    return servo_arm_enabled(armId, arm1, arm2, aux1, aux2, aux3);
+    return servo_arm_enabled(armId, arm1, arm2, aux1, aux2, aux3, auxLedPin);
 }
 
 // -----------------------------------------------------------------------------
@@ -289,10 +292,10 @@ static void processCommand(const ServoCommand& cmd) {
         return;
     }
 
-    // Feature toggle: reject commands for disabled subsystems
+    // Feature toggle: reject commands for disabled or AUX-LED-reserved subsystems
     if (cmd.type != SERVO_CMD_SEQUENCE && !isArmEnabled(cmd.armId)) {
-        PA_LOG_WARN(TAG, "[%s] Command rejected — arm%d disabled", commandSourceToString(cmd.source),
-                    cmd.armId);
+        PA_LOG_WARN(TAG, "[%s] Command rejected — arm%d disabled or reserved",
+                    commandSourceToString(cmd.source), cmd.armId);
         return;
     }
 

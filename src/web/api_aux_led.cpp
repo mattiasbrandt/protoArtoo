@@ -110,6 +110,15 @@ bool parseEffectPayload(AsyncWebServerRequest* req, AuxLedEffect* outEffect) {
     return parseAuxLedEffect(req->getParam("effect", true)->value().c_str(), outEffect);
 }
 
+bool isAuxLedAvailable() {
+    taskENTER_CRITICAL(&robotStateMux);
+    const bool available = robotState.auxLed.available;
+    const uint8_t pin = robotState.auxLed.pin;
+    taskEXIT_CRITICAL(&robotStateMux);
+
+    return available && pin != 0;
+}
+
 void sendAuxLedStateResponse(AsyncWebServerRequest* req) {
     uint8_t pin = 0;
     uint8_t r = 0;
@@ -148,7 +157,13 @@ void registerAuxLedRoutes(AsyncWebServer& server) {
         }
 
         if (!auxLedQueueSetColor(r, g, b, SRC_WEB_API)) {
-            req->send(503, "application/json", "{\"ok\":false,\"error\":\"aux LED command queue full\"}");
+            if (!isAuxLedAvailable()) {
+                req->send(503, "application/json",
+                          "{\"ok\":false,\"error\":\"aux LED unavailable\"}");
+            } else {
+                req->send(503, "application/json",
+                          "{\"ok\":false,\"error\":\"aux LED command queue full\"}");
+            }
             return;
         }
 
@@ -164,7 +179,13 @@ void registerAuxLedRoutes(AsyncWebServer& server) {
         }
 
         if (!auxLedQueueSetEffect(effect, SRC_WEB_API)) {
-            req->send(503, "application/json", "{\"ok\":false,\"error\":\"aux LED command queue full\"}");
+            if (!isAuxLedAvailable()) {
+                req->send(503, "application/json",
+                          "{\"ok\":false,\"error\":\"aux LED unavailable\"}");
+            } else {
+                req->send(503, "application/json",
+                          "{\"ok\":false,\"error\":\"aux LED command queue full\"}");
+            }
             return;
         }
 

@@ -68,6 +68,15 @@ static bool setAuxLedStateLocked(uint8_t pin, uint8_t r, uint8_t g, uint8_t b, A
     return changed;
 }
 
+static bool auxLedCommandsAccepted() {
+    taskENTER_CRITICAL(&robotStateMux);
+    const bool available = robotState.auxLed.available;
+    const uint8_t pin = robotState.auxLed.pin;
+    taskEXIT_CRITICAL(&robotStateMux);
+
+    return available && pin != 0;
+}
+
 static uint8_t clampLedCount(uint8_t rawCount) {
     return constrain(rawCount, AUX_LED_COUNT_DEFAULT, AUX_LED_COUNT_MAX);
 }
@@ -208,7 +217,7 @@ bool auxLedTaskInit() {
 }
 
 bool auxLedQueueSetColor(uint8_t r, uint8_t g, uint8_t b, CommandSource source) {
-    if (s_auxLedQueue == nullptr) {
+    if (s_auxLedQueue == nullptr || !auxLedCommandsAccepted()) {
         return false;
     }
 
@@ -230,7 +239,7 @@ bool auxLedQueueSetColor(uint8_t r, uint8_t g, uint8_t b, CommandSource source) 
 }
 
 bool auxLedQueueSetEffect(AuxLedEffect effect, CommandSource source) {
-    if (s_auxLedQueue == nullptr) {
+    if (s_auxLedQueue == nullptr || !auxLedCommandsAccepted()) {
         return false;
     }
 
