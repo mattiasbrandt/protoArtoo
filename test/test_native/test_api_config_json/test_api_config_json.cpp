@@ -49,6 +49,8 @@ static ConfigSnapshot makeDefaultSnap() {
     snap.rcFree2 = {};
     snap.rcFree3 = {};
 
+    snap.auxLedPin = AUX_LED_PIN_DISABLED;
+    snap.auxLedCount = AUX_LED_COUNT_DEFAULT;
     return snap;
 }
 
@@ -111,6 +113,8 @@ static ConfigSnapshot makeWorstCaseSnap() {
     snap.rcFree1 = xtrig;
     snap.rcFree2 = xtrig;
     snap.rcFree3 = xtrig;
+    snap.auxLedPin = AUX_LED_PIN_AUX3;
+    snap.auxLedCount = AUX_LED_COUNT_MAX;
 
     return snap;
 }
@@ -190,6 +194,30 @@ void test_populateConfigJson_expected_keys_present(void) {
     TEST_ASSERT_TRUE(!doc["aux2CloseUs"].isNull());
     TEST_ASSERT_TRUE(!doc["aux3OpenUs"].isNull());
     TEST_ASSERT_TRUE(!doc["aux3CloseUs"].isNull());
+    TEST_ASSERT_TRUE(!doc["aux_led_pin"].isNull());
+    TEST_ASSERT_TRUE(!doc["aux_led_count"].isNull());
+    TEST_ASSERT_EQUAL_UINT(AUX_LED_PIN_DISABLED, doc["aux_led_pin"].as<unsigned>());
+    TEST_ASSERT_EQUAL_UINT(AUX_LED_COUNT_DEFAULT, doc["aux_led_count"].as<unsigned>());
+}
+
+// --- Test 3b ---
+// AUX LED config fields retain all valid pin selections and count values.
+void test_populateConfigJson_aux_led_round_trip(void) {
+    const uint8_t pins[] = {AUX_LED_PIN_DISABLED, AUX_LED_PIN_AUX1, AUX_LED_PIN_AUX2, AUX_LED_PIN_AUX3};
+    const uint8_t counts[] = {AUX_LED_COUNT_DEFAULT, 32, AUX_LED_COUNT_MAX};
+
+    for (size_t i = 0; i < sizeof(pins) / sizeof(pins[0]); ++i) {
+        for (size_t j = 0; j < sizeof(counts) / sizeof(counts[0]); ++j) {
+            ConfigSnapshot snap = makeDefaultSnap();
+            snap.auxLedPin = pins[i];
+            snap.auxLedCount = counts[j];
+
+            JsonDocument doc;
+            TEST_ASSERT_TRUE(populateConfigJson(doc, snap));
+            TEST_ASSERT_EQUAL_UINT(pins[i], doc["aux_led_pin"].as<unsigned>());
+            TEST_ASSERT_EQUAL_UINT(counts[j], doc["aux_led_count"].as<unsigned>());
+        }
+    }
 }
 
 // --- Test 4 ---
@@ -245,6 +273,7 @@ int main(void) {
     RUN_TEST(test_populateConfigJson_typical_valid_json);
     RUN_TEST(test_populateConfigJson_worst_case_fits_buffer);
     RUN_TEST(test_populateConfigJson_expected_keys_present);
+    RUN_TEST(test_populateConfigJson_aux_led_round_trip);
     RUN_TEST(test_populateConfigJson_disabled_trigger_binding_serializes);
     RUN_TEST(test_populateConfigJson_clears_existing_document);
     RUN_TEST(test_populateConfigJson_overflow_is_measurable);

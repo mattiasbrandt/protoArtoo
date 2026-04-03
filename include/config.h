@@ -67,6 +67,33 @@ constexpr uint8_t PIN_ARM4_SERVO = 18;  // AUX2 — spare servo output
 constexpr uint8_t PIN_ARM5_SERVO = 32;  // AUX3 — spare servo output
 constexpr uint8_t PIN_DOME_ESC = 25;
 
+// AUX LED strip selection values (NVS aux_led_pin)
+constexpr uint8_t AUX_LED_PIN_DISABLED = 0;
+constexpr uint8_t AUX_LED_PIN_AUX1 = 1;
+constexpr uint8_t AUX_LED_PIN_AUX2 = 2;
+constexpr uint8_t AUX_LED_PIN_AUX3 = 3;
+constexpr uint8_t AUX_LED_PIN_MAX = AUX_LED_PIN_AUX3;
+constexpr uint8_t AUX_LED_COUNT_DEFAULT = 1;
+constexpr uint8_t AUX_LED_COUNT_MAX = 255;
+
+inline bool auxLedPinSettingValid(uint8_t selection) {
+    return selection <= AUX_LED_PIN_MAX;
+}
+
+inline uint8_t auxLedSelectionToGpio(uint8_t selection) {
+    switch (selection) {
+        case AUX_LED_PIN_AUX1:
+            return PIN_ARM3_SERVO;
+        case AUX_LED_PIN_AUX2:
+            return PIN_ARM4_SERVO;
+        case AUX_LED_PIN_AUX3:
+            return PIN_ARM5_SERVO;
+        case AUX_LED_PIN_DISABLED:
+        default:
+            return 0;
+    }
+}
+
 // -----------------------------------------------------------------------------
 // I2C
 // -----------------------------------------------------------------------------
@@ -101,6 +128,8 @@ constexpr uint32_t WATCHDOG_TIMEOUT_S = 3;  // ESP32 TWDT timeout
 // NVS
 // -----------------------------------------------------------------------------
 constexpr char NVS_NAMESPACE[] = "proto";
+constexpr char NVS_KEY_AUX_LED_PIN[] = "aux_led_pin";
+constexpr char NVS_KEY_AUX_LED_COUNT[] = "aux_led_count";
 
 // -----------------------------------------------------------------------------
 // WiFi AP

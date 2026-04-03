@@ -285,6 +285,8 @@ void captureConfigSnapshot(ConfigSnapshot* out) {
     out->aux2CloseUs = robotState.cfg_aux2_close_us;
     out->aux3OpenUs = robotState.cfg_aux3_open_us;
     out->aux3CloseUs = robotState.cfg_aux3_close_us;
+    out->auxLedPin = robotState.cfg_aux_led_pin;
+    out->auxLedCount = robotState.cfg_aux_led_count;
 
     out->rcPwmDriveSpeed = robotState.cfg_rc_pwm_drive_speed;
     out->rcPwmDriveSteer = robotState.cfg_rc_pwm_drive_steer;
@@ -465,6 +467,8 @@ bool populateConfigJson(JsonDocument& doc, const ConfigSnapshot& snap) {
     doc["aux2CloseUs"] = snap.aux2CloseUs;
     doc["aux3OpenUs"] = snap.aux3OpenUs;
     doc["aux3CloseUs"] = snap.aux3CloseUs;
+    doc["aux_led_pin"] = snap.auxLedPin;
+    doc["aux_led_count"] = snap.auxLedCount;
 
     JsonObject dome = doc["dome"].to<JsonObject>();
     dome["neutralUs"] = snap.domeNeutralUs;
@@ -582,6 +586,27 @@ void registerConfigRoutes(AsyncWebServer& server) {
             return;
         }
 
+        uint8_t auxLedPin = 0;
+        if (parseUint8Param(req, "aux_led_pin", AUX_LED_PIN_DISABLED, AUX_LED_PIN_MAX, &auxLedPin)) {
+            working.auxLedPin = auxLedPin;
+            changed = true;
+        } else if (req->hasParam("aux_led_pin", true)) {
+            req->send(400, "application/json",
+                      "{\"ok\":false,\"error\":\"aux_led_pin must be 0..3\"}");
+            return;
+        }
+
+        uint8_t auxLedCount = 0;
+        if (parseUint8Param(req, "aux_led_count", AUX_LED_COUNT_DEFAULT, AUX_LED_COUNT_MAX,
+                            &auxLedCount)) {
+            working.auxLedCount = auxLedCount;
+            changed = true;
+        } else if (req->hasParam("aux_led_count", true)) {
+            req->send(400, "application/json",
+                      "{\"ok\":false,\"error\":\"aux_led_count must be 1..255\"}");
+            return;
+        }
+
         if (req->hasParam("plain", true)) {
             JsonDocument bodyDoc;
             const String rawBody = req->getParam("plain", true)->value();
@@ -602,6 +627,36 @@ void registerConfigRoutes(AsyncWebServer& server) {
                               "{\"ok\":false,\"error\":\"rc.sbus.recvCh2 must be boolean\"}");
                     return;
                 }
+            }
+
+            if (bodyDoc["aux_led_pin"].is<uint8_t>()) {
+                uint8_t parsed = bodyDoc["aux_led_pin"].as<uint8_t>();
+                if (!auxLedPinSettingValid(parsed)) {
+                    req->send(400, "application/json",
+                              "{\"ok\":false,\"error\":\"aux_led_pin must be 0..3\"}");
+                    return;
+                }
+                working.auxLedPin = parsed;
+                changed = true;
+            } else if (!bodyDoc["aux_led_pin"].isNull()) {
+                req->send(400, "application/json",
+                          "{\"ok\":false,\"error\":\"aux_led_pin must be integer 0..3\"}");
+                return;
+            }
+
+            if (bodyDoc["aux_led_count"].is<uint8_t>()) {
+                uint8_t parsed = bodyDoc["aux_led_count"].as<uint8_t>();
+                if (parsed < AUX_LED_COUNT_DEFAULT) {
+                    req->send(400, "application/json",
+                              "{\"ok\":false,\"error\":\"aux_led_count must be 1..255\"}");
+                    return;
+                }
+                working.auxLedCount = parsed;
+                changed = true;
+            } else if (!bodyDoc["aux_led_count"].isNull()) {
+                req->send(400, "application/json",
+                          "{\"ok\":false,\"error\":\"aux_led_count must be integer 1..255\"}");
+                return;
             }
         }
 
@@ -956,6 +1011,8 @@ void registerConfigRoutes(AsyncWebServer& server) {
         robotState.cfg_logLevel = working.logLevel;
         robotState.cfg_rc_input_mode = working.rcInputMode;
         robotState.cfg_single_sbus_use_ch2 = working.sbusRecvCh2;
+        robotState.cfg_aux_led_pin = working.auxLedPin;
+        robotState.cfg_aux_led_count = working.auxLedCount;
 
         robotState.cfg_enable_arm1 = working.enableArm1;
         robotState.cfg_enable_arm2 = working.enableArm2;

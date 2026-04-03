@@ -357,14 +357,48 @@ static void processCommand(const ServoCommand& cmd) {
 // Initialize servo hardware.
 // -----------------------------------------------------------------------------
 void servoTaskInit() {
-    // LEDC timer and neutral positions are initialized in main.cpp before this
-    // call, conditioned on any LEDC output being enabled (ARM1/2/AUX1-3/DOME).
-    // This function only logs the servo-specific enable state.
     taskENTER_CRITICAL(&robotStateMux);
-    bool anyServo = robotState.cfg_enable_arm1 || robotState.cfg_enable_arm2 ||
-                    robotState.cfg_enable_aux1  || robotState.cfg_enable_aux2 ||
-                    robotState.cfg_enable_aux3;
+    bool enableArm1 = robotState.cfg_enable_arm1;
+    bool enableArm2 = robotState.cfg_enable_arm2;
+    bool enableAux1 = robotState.cfg_enable_aux1;
+    bool enableAux2 = robotState.cfg_enable_aux2;
+    bool enableAux3 = robotState.cfg_enable_aux3;
+    bool enableDome = robotState.cfg_enable_dome;
+    uint8_t auxLedPin = robotState.cfg_aux_led_pin;
     taskEXIT_CRITICAL(&robotStateMux);
+
+    bool anyServo = enableArm1 || enableArm2 || enableAux1 || enableAux2 || enableAux3;
+    bool anyLedc = anyServo || enableDome;
+
+    uint8_t skipChannel = LEDC_CH_MAX;
+    if (auxLedPin == AUX_LED_PIN_AUX1) {
+        skipChannel = LEDC_CH_AUX1;
+    } else if (auxLedPin == AUX_LED_PIN_AUX2) {
+        skipChannel = LEDC_CH_AUX2;
+    } else if (auxLedPin == AUX_LED_PIN_AUX3) {
+        skipChannel = LEDC_CH_AUX3;
+    }
+
+    if (anyLedc) {
+        if (!ledcPwmInit(skipChannel)) {
+            PA_LOG_ERROR(TAG, "LEDC init failed");
+            return;
+        }
+
+        for (uint8_t channel = 0; channel < LEDC_CH_MAX; ++channel) {
+            if (channel == skipChannel) {
+                continue;
+            }
+            ledcPwmSetNeutral(channel);
+        }
+
+        if (skipChannel != LEDC_CH_MAX) {
+            PA_LOG_INFO(TAG, "AUX LED active on selection %u (GPIO %u) — LEDC skipped for that header",
+                        (unsigned)auxLedPin, (unsigned)getChannelGpio(skipChannel));
+        }
+    } else {
+        PA_LOG_INFO(TAG, "all LEDC outputs disabled — skipping LEDC init");
+    }
 
     if (anyServo) {
         PA_LOG_INFO(TAG, "Servo outputs ready (ARM1/2/AUX1-3 channels armed at neutral)");
@@ -383,9 +417,9 @@ void servoTask(void* pvParameters) {
     // Register with task watchdog unconditionally.
     esp_task_wdt_add(NULL);
 
-    // Feature toggle: if no arm/aux outputs are enabled, LEDC was never
-    // initialized and calling ledcPwmSetPulseWidth() would crash. Idle here
-    // feeding TWDT only — no queue processing, no sequence updates.
+    // Feature toggle: if no arm/aux outputs are enabled, ServoTask has no
+    // channels to drive. Idle here feeding TWDT only — no queue processing,
+    // no sequence updates.
     {
         taskENTER_CRITICAL(&robotStateMux);
         bool anyServo = robotState.cfg_enable_arm1 || robotState.cfg_enable_arm2 ||

@@ -133,10 +133,11 @@ inline uint16_t clampPulseWidth(uint8_t channel, uint16_t pulseUs) {
 // Hardware-dependent functions — implemented in ledc_pwm.cpp (ESP32 only)
 // -----------------------------------------------------------------------------
 
-// Initialize LEDC timer and configure all PWM channels.
+// Initialize LEDC timer and configure PWM channels.
+// skipChannel allows leaving one channel detached (LEDC_CH_MAX = no skip).
 // Must be called once before using any PWM outputs.
 // Returns true on success, false if LEDC setup fails.
-bool ledcPwmInit();
+bool ledcPwmInit(uint8_t skipChannel = LEDC_CH_MAX);
 
 // Set pulse width for a specific channel in microseconds.
 // Pulse width is automatically clamped to safe range for the channel type.

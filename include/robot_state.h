@@ -225,6 +225,10 @@ struct RobotState {
     uint16_t cfg_aux3_open_us;
     uint16_t cfg_aux3_close_us;
 
+    // AUX LED strip config (single selectable AUX header; NVS-backed)
+    uint8_t cfg_aux_led_pin;    // aux_led_pin   0=disabled, 1=AUX1, 2=AUX2, 3=AUX3
+    uint8_t cfg_aux_led_count;  // aux_led_count 1..255 (default 1)
+
     // Dome config
     float cfg_dome_min_speed;
     float cfg_dome_max_speed;

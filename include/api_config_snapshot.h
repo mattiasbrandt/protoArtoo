@@ -67,6 +67,9 @@ struct ConfigSnapshot {
     uint16_t aux3OpenUs;
     uint16_t aux3CloseUs;
 
+    uint8_t auxLedPin;
+    uint8_t auxLedCount;
+
     RcBindingConfig rcPwmDriveSpeed;
     RcBindingConfig rcPwmDriveSteer;
     RcBindingConfig rcPwmDriveLimit;

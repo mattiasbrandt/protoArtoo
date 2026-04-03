@@ -48,11 +48,12 @@ uint8_t getChannelGpio(uint8_t channel) {
 
 // -----------------------------------------------------------------------------
 // ledcPwmInit()
-// Configure LEDC timer 0 at 50Hz/16-bit and attach all 6 channels.
-// All channels start at neutral (1500µs) to prevent servo/ESC movement on boot.
+// Configure LEDC timer 0 at 50Hz/16-bit and attach channels.
+// skipChannel leaves one channel detached so the GPIO can be reused (e.g. AUX LED RMT).
+// Configured channels start at neutral (1500µs).
 // Returns false and logs on any LEDC API error.
 // -----------------------------------------------------------------------------
-bool ledcPwmInit() {
+bool ledcPwmInit(uint8_t skipChannel) {
     ledc_timer_config_t timerConfig = {};
     timerConfig.speed_mode = PA_LEDC_MODE;
     timerConfig.duty_resolution = PA_LEDC_RESOLUTION;
@@ -66,7 +67,13 @@ bool ledcPwmInit() {
         return false;
     }
 
+    uint8_t configuredCount = 0;
     for (int i = 0; i < LEDC_CH_MAX; i++) {
+        if ((uint8_t)i == skipChannel) {
+            ESP_LOGI(TAG, "Skipping channel %d GPIO %d", i, (int)kChannelGpio[i]);
+            continue;
+        }
+
         ledc_channel_config_t channelConfig = {};
         channelConfig.gpio_num = kChannelGpio[i];
         channelConfig.speed_mode = PA_LEDC_MODE;
@@ -81,9 +88,11 @@ bool ledcPwmInit() {
             ESP_LOGE(TAG, "Channel %d config failed: %d", i, err);
             return false;
         }
+        configuredCount++;
     }
 
-    ESP_LOGI(TAG, "LEDC PWM initialized: %d channels @ %dHz", LEDC_CH_MAX, LEDC_FREQUENCY_HZ);
+    ESP_LOGI(TAG, "LEDC PWM initialized: %d channels @ %dHz", (int)configuredCount,
+             LEDC_FREQUENCY_HZ);
     return true;
 }
 

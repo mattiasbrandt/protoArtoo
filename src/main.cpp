@@ -332,6 +332,8 @@ void loadConfigToState() {
     robotState.cfg_enable_s2_sound = prefs.getBool("en_s2", false);
     robotState.cfg_enable_s3_dome_ctrl = prefs.getBool("en_s3", false);
     robotState.cfg_stationary = prefs.getBool("op_mode", false);
+    robotState.cfg_aux_led_pin = prefs.getUChar(NVS_KEY_AUX_LED_PIN, AUX_LED_PIN_DISABLED);
+    robotState.cfg_aux_led_count = prefs.getUChar(NVS_KEY_AUX_LED_COUNT, AUX_LED_COUNT_DEFAULT);
     robotState.activeMood = prefs.getUChar("last_mood", 0);
 
     RcBindingNvsSpec bindingSpecs[] = {
@@ -449,6 +451,11 @@ void loadConfigToState() {
     if (robotState.cfg_rc_input_mode > RC_INPUT_DUAL_SBUS) {
         robotState.cfg_rc_input_mode = RC_INPUT_DUAL_SBUS;
     }
+    if (!auxLedPinSettingValid(robotState.cfg_aux_led_pin)) {
+        robotState.cfg_aux_led_pin = AUX_LED_PIN_DISABLED;
+    }
+    robotState.cfg_aux_led_count =
+        constrain(robotState.cfg_aux_led_count, AUX_LED_COUNT_DEFAULT, AUX_LED_COUNT_MAX);
 
     RcBindingConfig* bindings[] = {
         &robotState.cfg_rc_pwm_drive_speed,  &robotState.cfg_rc_pwm_drive_steer,
@@ -541,6 +548,7 @@ bool saveConfigToNvs() {
         rcSbusArm1, rcSbusArm2, rcSbusSound;
     ServoComponentType arm1Type, arm2Type, aux1Type, aux2Type, aux3Type;
     uint16_t aux1Open, aux1Close, aux2Open, aux2Close, aux3Open, aux3Close;
+    uint8_t auxLedPin, auxLedCount;
 
     taskENTER_CRITICAL(&robotStateMux);
     speedLimitMax = robotState.cfg_speedLimitMax;
@@ -634,6 +642,8 @@ bool saveConfigToNvs() {
     aux2Close = robotState.cfg_aux2_close_us;
     aux3Open = robotState.cfg_aux3_open_us;
     aux3Close = robotState.cfg_aux3_close_us;
+    auxLedPin = robotState.cfg_aux_led_pin;
+    auxLedCount = robotState.cfg_aux_led_count;
     taskEXIT_CRITICAL(&robotStateMux);
 
     Preferences prefs;
@@ -710,6 +720,8 @@ bool saveConfigToNvs() {
     ok = prefs.putBool("en_s2", enableS2Sound) > 0 && ok;
     ok = prefs.putBool("en_s3", enableS3DomeCtrl) > 0 && ok;
     ok = prefs.putBool("op_mode", stationary) > 0 && ok;
+    ok = prefs.putUChar(NVS_KEY_AUX_LED_PIN, auxLedPin) > 0 && ok;
+    ok = prefs.putUChar(NVS_KEY_AUX_LED_COUNT, auxLedCount) > 0 && ok;
     ok = saveRcBindingToPrefs(prefs, "rcp_drv", rcPwmDriveSpeed) && ok;
     ok = saveRcBindingToPrefs(prefs, "rcp_str", rcPwmDriveSteer) && ok;
     ok = saveRcBindingToPrefs(prefs, "rcp_lim", rcPwmDriveLimit) && ok;
@@ -797,20 +809,7 @@ void setup() {
     audioCmdQueue = xQueueCreate(8, sizeof(AudioCommand));
     domeTxQueue = xQueueCreate(16, sizeof(DomeTxCmd));
 
-    // Initialize LEDC PWM hardware only if at least one LEDC-driven output is
-    // enabled.  ARM1/2/AUX1-3 and DOME all share the same LEDC timer, so the
-    // init lives here rather than inside either task-init function.
-    {
-        taskENTER_CRITICAL(&robotStateMux);
-        bool anyLedc = robotState.cfg_enable_arm1 || robotState.cfg_enable_arm2 ||
-                       robotState.cfg_enable_aux1 || robotState.cfg_enable_aux2 ||
-                       robotState.cfg_enable_aux3 || robotState.cfg_enable_dome;
-        taskEXIT_CRITICAL(&robotStateMux);
-        if (anyLedc) {
-            ledcPwmInit();
-            ledcPwmInitNeutralPositions();
-        }
-    }
+    // ServoTask owns LEDC hardware init and applies AUX LED channel skip policy.
     servoTaskInit();
     domeTaskInit();
 
