@@ -64,6 +64,22 @@ enum ServoComponentType : uint8_t {
     SERVO_COMP_RGB = 3,     // RGB LED strip (no servo PWM calibration)
 };
 
+enum AuxLedEffect : uint8_t {
+    AUX_LED_EFFECT_OFF = 0,
+    AUX_LED_EFFECT_SOLID,
+    AUX_LED_EFFECT_BLINK,
+    AUX_LED_EFFECT_PULSE,
+};
+
+struct AuxLedState {
+    uint8_t pin;   // 0 when disabled; otherwise active GPIO number
+    uint8_t r;
+    uint8_t g;
+    uint8_t b;
+    AuxLedEffect effect;
+    bool available;  // false when RMT/driver init failed
+};
+
 // -----------------------------------------------------------------------------
 // Drive command message (sent via driveQueue)
 // -----------------------------------------------------------------------------
@@ -132,6 +148,7 @@ struct RobotState {
     bool sleepMode;
     uint32_t sleepSinceMs;
 
+    AuxLedState auxLed;
     // --- Failsafe state ---
     bool estop;
     bool sbusSignalLost;

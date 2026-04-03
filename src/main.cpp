@@ -11,6 +11,7 @@
 
 #include "audio_dollar_parser.h"
 #include "audio_task.h"
+#include "aux_led.h"
 #include "dome_link.h"
 #include "dome_task.h"
 #include "drive.h"
@@ -812,6 +813,10 @@ void setup() {
     // ServoTask owns LEDC hardware init and applies AUX LED channel skip policy.
     servoTaskInit();
     domeTaskInit();
+    bool auxLedTaskReady = auxLedTaskInit();
+    if (!auxLedTaskReady) {
+        PA_LOG_WARN("main", "aux LED task init failed; AUX LED API will report unavailable");
+    }
 
     // Launch real-time tasks on Core 1
     // DriveTask: 50 Hz hoverboard frames, feeds TWDT, Layer 3 web timeout
@@ -829,6 +834,12 @@ void setup() {
     // AudioTask: Core 0 (non-RT) — software bit-bang TX blocks ~6 ms per command;
     // keeping off Core 1 avoids any interaction with DriveTask / ServoTask timing.
     xTaskCreatePinnedToCore(audioTask, "AudioTask", 3072, nullptr, 3, nullptr, 0);
+
+    // AuxLedTask: Core 0 (non-RT) - WS2812B effects and API-driven color/effect updates.
+    // Runs independently of Core 1 control loops.
+    if (auxLedTaskReady) {
+        xTaskCreatePinnedToCore(auxLedTask, "AuxLedTask", 3072, nullptr, 2, nullptr, 0);
+    }
 
     // DomeLinkTask: Core 1 — bidirectional Marcduino serial to AstroPixelsPlus.
     // UART2 TX/RX are non-blocking hardware operations; Core 1 at priority 3.

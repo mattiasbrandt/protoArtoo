@@ -186,6 +186,26 @@ void test_formatSleepControlJson_small_buffer_fails() {
     TEST_ASSERT_FALSE(formatSleepControlJson(out, sizeof(out), true, true));
 }
 
+// --- formatAuxLedStateJson() tests ---
+
+void test_formatAuxLedStateJson_valid_payload() {
+    char out[128] = {};
+    TEST_ASSERT_TRUE(formatAuxLedStateJson(out, sizeof(out), 19, 10, 20, 30, "pulse"));
+    TEST_ASSERT_EQUAL_STRING(
+        "{\"ok\":true,\"auxLed\":{\"pin\":19,\"r\":10,\"g\":20,\"b\":30,\"effect\":\"pulse\"}}",
+        out);
+}
+
+void test_formatAuxLedStateJson_null_effect_fails() {
+    char out[128] = {};
+    TEST_ASSERT_FALSE(formatAuxLedStateJson(out, sizeof(out), 19, 10, 20, 30, nullptr));
+}
+
+void test_formatAuxLedStateJson_small_buffer_fails() {
+    char out[16] = {};
+    TEST_ASSERT_FALSE(formatAuxLedStateJson(out, sizeof(out), 19, 10, 20, 30, "solid"));
+}
+
 int main() {
     UNITY_BEGIN();
 
@@ -221,6 +241,9 @@ int main() {
     RUN_TEST(test_formatSleepControlJson_wake_unchanged);
     RUN_TEST(test_formatSleepControlJson_null_buffer_fails);
     RUN_TEST(test_formatSleepControlJson_small_buffer_fails);
+    RUN_TEST(test_formatAuxLedStateJson_valid_payload);
+    RUN_TEST(test_formatAuxLedStateJson_null_effect_fails);
+    RUN_TEST(test_formatAuxLedStateJson_small_buffer_fails);
 
     return UNITY_END();
 }

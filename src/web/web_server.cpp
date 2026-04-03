@@ -17,6 +17,7 @@
 
 #include "../../include/api_actions.h"
 #include "../../include/api_audio.h"
+#include "../../include/api_aux_led.h"
 #include "../../include/api_config.h"
 #include "../../include/api_drive.h"
 #include "../../include/api_estop.h"
@@ -28,6 +29,7 @@
 #include "../../include/api_validation.h"
 #include "../../include/audio_task.h"
 #include "../../include/config.h"
+#include "../../include/aux_led.h"
 #include "../../include/rc_diagnostics_snapshot.h"
 #include "../../include/robot_state.h"
 
@@ -312,6 +314,12 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     bool sleepMode;
     uint8_t activeMood;
     uint32_t sleepSinceMs;
+    uint8_t auxLedPin;
+    uint8_t auxLedR;
+    uint8_t auxLedG;
+    uint8_t auxLedB;
+    AuxLedEffect auxLedEffect;
+    bool auxLedAvailable;
     RcInputMode rcInputMode;
     uint16_t arm1TargetUs;
     uint16_t arm2TargetUs;
@@ -387,6 +395,12 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     activeMood = robotState.activeMood;
     sleepMode = robotState.sleepMode;
     sleepSinceMs = robotState.sleepSinceMs;
+    auxLedPin = robotState.auxLed.pin;
+    auxLedR = robotState.auxLed.r;
+    auxLedG = robotState.auxLed.g;
+    auxLedB = robotState.auxLed.b;
+    auxLedEffect = robotState.auxLed.effect;
+    auxLedAvailable = robotState.auxLed.available;
     taskEXIT_CRITICAL(&robotStateMux);
     uptimeMs = millis();
     heapFree = ESP.getFreeHeap();
@@ -402,6 +416,7 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     wifiClientConnected = wifi.wifiClientConnected;
     wifiRssi = wifi.wifiRssi;
 
+    const char* auxLedEffectLabel = auxLedEffectToString(auxLedEffect);
     // Build the fixed system-health fields first.
     int written = snprintf(
         buffer, bufferSize,
@@ -415,7 +430,7 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
         "\"wifiConnected\":%s,"
         "\"wifiClientConnected\":%s,"
         "\"littleFsReady\":%s,\"sleepMode\":%s,\"sleepSinceMs\":%lu,"
-        "\"activeMood\":%u",
+        "\"activeMood\":%u,\"auxLed\":{\"pin\":%u,\"r\":%u,\"g\":%u,\"b\":%u,\"effect\":\"%s\",\"available\":%s}",
         estop ? "true" : "false", webControlEnabled ? "true" : "false",
         sbusSignalLost ? "true" : "false", sbusHwFailsafe ? "true" : "false",
         webDriveExpired ? "true" : "false", failsafeSource, driveSpeed, driveSteer,
@@ -424,7 +439,9 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
         uptimeMs, PA_FIRMWARE_VERSION, s_fsVersion, heapFree, heapMin,
         (unsigned long)heapLargestBlock, wifiRssi, wifiConnected ? "true" : "false",
         wifiClientConnected ? "true" : "false", littleFsReady ? "true" : "false",
-        sleepMode ? "true" : "false", (unsigned long)sleepSinceMs, (unsigned)activeMood);
+        sleepMode ? "true" : "false", (unsigned long)sleepSinceMs, (unsigned)activeMood,
+        (unsigned)auxLedPin, (unsigned)auxLedR, (unsigned)auxLedG, (unsigned)auxLedB,
+        auxLedEffectLabel, auxLedAvailable ? "true" : "false");
 
     // Conditionally append enabled-component keys — disabled components are absent,
     // not emitted as false placeholders (Phase 3 status/dashboard contract).
@@ -759,6 +776,7 @@ void startHttpServerOnce() {
         registerDriveRoutes(server);
         registerAudioRoutes(server);
         registerConfigRoutes(server);
+        registerAuxLedRoutes(server);
         registerRcRoutes(server);
         registerServoRoutes(server);
         registerStatusRoutes(server);

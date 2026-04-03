@@ -168,3 +168,9 @@ void formatAudioStatusJson(char* buf, size_t bufSize, const char* driverName,
 // Output: {"ok":true,"sleepMode":<bool>,"changed":<bool>}
 // Returns false if the payload does not fit in buf.
 bool formatSleepControlJson(char* buf, size_t bufSize, bool sleepMode, bool changed);
+
+// Format JSON response for AUX LED endpoints.
+// Output: {"ok":true,"auxLed":{"pin":<u8>,"r":<u8>,"g":<u8>,"b":<u8>,"effect":"..."}}
+// Returns false if the payload does not fit in buf.
+bool formatAuxLedStateJson(char* buf, size_t bufSize, uint8_t pin, uint8_t r, uint8_t g,
+                           uint8_t b, const char* effect);
