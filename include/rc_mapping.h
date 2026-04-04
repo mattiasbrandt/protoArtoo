@@ -50,21 +50,33 @@ enum RcSwitchState : uint8_t {
 // -----------------------------------------------------------------------------
 enum RobotActionId : uint8_t {
     ROBOT_ACTION_NONE = 0,        // Unbound / disabled slot
-    DRIVE_ACTION_SPEED,     // Analog: forward/back movement
-    DRIVE_ACTION_STEER,     // Analog: left/right steering
-    DOME_ACTION_SPEED,      // Analog: dome rotation speed
+    DRIVE_ACTION_SPEED,           // Analog: forward/back movement
+    DRIVE_ACTION_STEER,           // Analog: left/right steering
+    DOME_ACTION_SPEED,            // Analog: dome rotation speed
     DRIVE_ACTION_SPEED_LIMIT,     // Analog: speed ceiling dial
-    SYSTEM_ACTION_OP_MODE,  // Switch: Driving (LOW) / Stationary (HIGH)
+    SYSTEM_ACTION_OP_MODE,        // Switch: Driving (LOW) / Stationary (HIGH)
     SERVO_ACTION_ARM1_TOGGLE,     // Button: ARM1 open/close toggle
     SERVO_ACTION_ARM2_TOGGLE,     // Button: ARM2 open/close toggle
     SERVO_ACTION_AUX1_TOGGLE,     // Button: AUX1 toggle
     SERVO_ACTION_AUX2_TOGGLE,     // Button: AUX2 toggle
     SERVO_ACTION_AUX3_TOGGLE,     // Button: AUX3 toggle
-    DOME_ACTION_MARCDUINO_SEQ,   // Button: Body sequence SE30-SE36
-    DOME_ACTION_MARCDUINO_CMD,   // Button: Arbitrary Marcduino command
-    SYSTEM_ACTION_ESTOP,     // Button: Latch estop (guarded)
-    SYSTEM_ACTION_SLEEP_TOGGLE,  // Button: toggle sleep/wake mode
-    DOME_ACTION_SEQ,        // Button: Dome sequence SE10-SE16 (Phase 4)
+    DOME_ACTION_MARCDUINO_SEQ,    // Button: Body sequence SE30-SE36
+    DOME_ACTION_MARCDUINO_CMD,    // Button: Arbitrary Marcduino command
+    SOUND_ACTION_RANDOM_GENERAL,
+    SOUND_ACTION_RANDOM_CHATTY,
+    SOUND_ACTION_RANDOM_HAPPY,
+    SOUND_ACTION_RANDOM_PROCESSING,
+    SOUND_ACTION_RANDOM_SAD,
+    SOUND_ACTION_RANDOM_SENTIMENTAL,
+    SOUND_ACTION_RANDOM_HUMMING,
+    SOUND_ACTION_RANDOM_SCREAM,
+    SOUND_ACTION_RANDOM_SURPRISED,
+    SOUND_ACTION_RANDOM_ALERT,
+    SOUND_ACTION_RANDOM_PFFT,
+    SOUND_ACTION_RANDOM_WHISTLE,
+    SYSTEM_ACTION_ESTOP,          // Button: Latch estop (guarded)
+    SYSTEM_ACTION_SLEEP_TOGGLE,   // Button: toggle sleep/wake mode
+    DOME_ACTION_SEQ,              // Button: Dome sequence SE10-SE16 (Phase 4)
 };
 
 // -----------------------------------------------------------------------------
@@ -286,6 +298,18 @@ inline RcSwitchState rcAnalogToSwitchState(int raw, const RcBindingConfig& bindi
     return RC_SWITCH_MID;
 }
 
+// Resolve a random track from an inclusive [lo, hi] category range.
+// Returns false when the range is inactive (lo==0 or lo>hi) or outTrack is null.
+inline bool selectRandomTrackInRange(uint16_t lo, uint16_t hi, uint32_t randomValue,
+                                     uint16_t* outTrack) {
+    if (outTrack == nullptr || lo == 0 || lo > hi) {
+        return false;
+    }
+    const uint32_t span = (uint32_t)hi - (uint32_t)lo + 1U;
+    *outTrack = (uint16_t)((uint32_t)lo + (randomValue % span));
+    return true;
+}
+
 // -----------------------------------------------------------------------------
 // Tier 2 Trigger Binding Helpers
 // -----------------------------------------------------------------------------
@@ -316,6 +340,30 @@ inline const char* robotActionIdToString(RobotActionId target) {
             return "seq";
         case DOME_ACTION_MARCDUINO_CMD:
             return "cmd";
+        case SOUND_ACTION_RANDOM_GENERAL:
+            return "sound_rand_general";
+        case SOUND_ACTION_RANDOM_CHATTY:
+            return "sound_rand_chatty";
+        case SOUND_ACTION_RANDOM_HAPPY:
+            return "sound_rand_happy";
+        case SOUND_ACTION_RANDOM_PROCESSING:
+            return "sound_rand_processing";
+        case SOUND_ACTION_RANDOM_SAD:
+            return "sound_rand_sad";
+        case SOUND_ACTION_RANDOM_SENTIMENTAL:
+            return "sound_rand_sentimental";
+        case SOUND_ACTION_RANDOM_HUMMING:
+            return "sound_rand_humming";
+        case SOUND_ACTION_RANDOM_SCREAM:
+            return "sound_rand_scream";
+        case SOUND_ACTION_RANDOM_SURPRISED:
+            return "sound_rand_surprised";
+        case SOUND_ACTION_RANDOM_ALERT:
+            return "sound_rand_alert";
+        case SOUND_ACTION_RANDOM_PFFT:
+            return "sound_rand_pfft";
+        case SOUND_ACTION_RANDOM_WHISTLE:
+            return "sound_rand_whistle";
         case SYSTEM_ACTION_ESTOP:
             return "estop";
         case SYSTEM_ACTION_SLEEP_TOGGLE:
@@ -384,6 +432,54 @@ inline bool parseRobotActionId(const char* raw, RobotActionId* out) {
         *out = DOME_ACTION_MARCDUINO_CMD;
         return true;
     }
+    if (strcmp(raw, "sound_rand_general") == 0) {
+        *out = SOUND_ACTION_RANDOM_GENERAL;
+        return true;
+    }
+    if (strcmp(raw, "sound_rand_chatty") == 0) {
+        *out = SOUND_ACTION_RANDOM_CHATTY;
+        return true;
+    }
+    if (strcmp(raw, "sound_rand_happy") == 0) {
+        *out = SOUND_ACTION_RANDOM_HAPPY;
+        return true;
+    }
+    if (strcmp(raw, "sound_rand_processing") == 0) {
+        *out = SOUND_ACTION_RANDOM_PROCESSING;
+        return true;
+    }
+    if (strcmp(raw, "sound_rand_sad") == 0) {
+        *out = SOUND_ACTION_RANDOM_SAD;
+        return true;
+    }
+    if (strcmp(raw, "sound_rand_sentimental") == 0) {
+        *out = SOUND_ACTION_RANDOM_SENTIMENTAL;
+        return true;
+    }
+    if (strcmp(raw, "sound_rand_humming") == 0) {
+        *out = SOUND_ACTION_RANDOM_HUMMING;
+        return true;
+    }
+    if (strcmp(raw, "sound_rand_scream") == 0) {
+        *out = SOUND_ACTION_RANDOM_SCREAM;
+        return true;
+    }
+    if (strcmp(raw, "sound_rand_surprised") == 0) {
+        *out = SOUND_ACTION_RANDOM_SURPRISED;
+        return true;
+    }
+    if (strcmp(raw, "sound_rand_alert") == 0) {
+        *out = SOUND_ACTION_RANDOM_ALERT;
+        return true;
+    }
+    if (strcmp(raw, "sound_rand_pfft") == 0) {
+        *out = SOUND_ACTION_RANDOM_PFFT;
+        return true;
+    }
+    if (strcmp(raw, "sound_rand_whistle") == 0) {
+        *out = SOUND_ACTION_RANDOM_WHISTLE;
+        return true;
+    }
     if (strcmp(raw, "estop") == 0) {
         *out = SYSTEM_ACTION_ESTOP;
         return true;
@@ -416,8 +512,15 @@ inline bool robotActionValidForTier2(RobotActionId target) {
            target == SERVO_ACTION_ARM1_TOGGLE || target == SERVO_ACTION_ARM2_TOGGLE ||
            target == SERVO_ACTION_AUX1_TOGGLE || target == SERVO_ACTION_AUX2_TOGGLE ||
            target == SERVO_ACTION_AUX3_TOGGLE || target == DOME_ACTION_MARCDUINO_SEQ ||
-           target == DOME_ACTION_MARCDUINO_CMD || target == SYSTEM_ACTION_ESTOP ||
-           target == SYSTEM_ACTION_SLEEP_TOGGLE || target == DOME_ACTION_SEQ;
+           target == DOME_ACTION_MARCDUINO_CMD ||
+           target == SOUND_ACTION_RANDOM_GENERAL || target == SOUND_ACTION_RANDOM_CHATTY ||
+           target == SOUND_ACTION_RANDOM_HAPPY || target == SOUND_ACTION_RANDOM_PROCESSING ||
+           target == SOUND_ACTION_RANDOM_SAD || target == SOUND_ACTION_RANDOM_SENTIMENTAL ||
+           target == SOUND_ACTION_RANDOM_HUMMING || target == SOUND_ACTION_RANDOM_SCREAM ||
+           target == SOUND_ACTION_RANDOM_SURPRISED || target == SOUND_ACTION_RANDOM_ALERT ||
+           target == SOUND_ACTION_RANDOM_PFFT || target == SOUND_ACTION_RANDOM_WHISTLE ||
+           target == SYSTEM_ACTION_ESTOP || target == SYSTEM_ACTION_SLEEP_TOGGLE ||
+           target == DOME_ACTION_SEQ;
 }
 
 // Validate Marcduino sequence payload for body sequences (SE30-SE36)
@@ -469,8 +572,15 @@ inline bool robotActionIsButton(RobotActionId target) {
     return target == SERVO_ACTION_ARM1_TOGGLE || target == SERVO_ACTION_ARM2_TOGGLE ||
            target == SERVO_ACTION_AUX1_TOGGLE || target == SERVO_ACTION_AUX2_TOGGLE ||
            target == SERVO_ACTION_AUX3_TOGGLE || target == DOME_ACTION_MARCDUINO_SEQ ||
-           target == DOME_ACTION_MARCDUINO_CMD || target == SYSTEM_ACTION_ESTOP ||
-           target == SYSTEM_ACTION_SLEEP_TOGGLE || target == DOME_ACTION_SEQ;
+           target == DOME_ACTION_MARCDUINO_CMD ||
+           target == SOUND_ACTION_RANDOM_GENERAL || target == SOUND_ACTION_RANDOM_CHATTY ||
+           target == SOUND_ACTION_RANDOM_HAPPY || target == SOUND_ACTION_RANDOM_PROCESSING ||
+           target == SOUND_ACTION_RANDOM_SAD || target == SOUND_ACTION_RANDOM_SENTIMENTAL ||
+           target == SOUND_ACTION_RANDOM_HUMMING || target == SOUND_ACTION_RANDOM_SCREAM ||
+           target == SOUND_ACTION_RANDOM_SURPRISED || target == SOUND_ACTION_RANDOM_ALERT ||
+           target == SOUND_ACTION_RANDOM_PFFT || target == SOUND_ACTION_RANDOM_WHISTLE ||
+           target == SYSTEM_ACTION_ESTOP || target == SYSTEM_ACTION_SLEEP_TOGGLE ||
+           target == DOME_ACTION_SEQ;
 }
 
 inline RcTriggerBinding makeRcTriggerBinding(RcBindingSource source, uint8_t channel,

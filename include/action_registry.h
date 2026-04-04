@@ -32,7 +32,7 @@ struct ActionEntry {
     RobotActionId id;            // enum value — unique per entry
     const char*   name;          // canonical: "drive.action.speed"
     const char*   display_name;  // short operator label: "Speed"
-    const char*   domain;        // "drive" | "dome" | "servo" | "system"
+    const char*   domain;        // "drive" | "dome" | "sound" | "servo" | "system"
     const char*   description;   // one-line end-user explanation
     bool          safety_critical;  // true for estop and drive safety actions
 };

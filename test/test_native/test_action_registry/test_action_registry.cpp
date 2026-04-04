@@ -8,6 +8,7 @@
 #include <unity.h>
 
 #include "action_registry.h"
+#include <ArduinoJson.h>
 
 void setUp() {
 }
@@ -52,6 +53,52 @@ void test_registry_no_none_entry() {
     }
 }
 
+static bool registryContainsAction(RobotActionId id) {
+    for (size_t i = 0; i < ACTION_REGISTRY_SIZE; ++i) {
+        if (ACTION_REGISTRY[i].id == id) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void test_registry_contains_sound_category_actions() {
+    const RobotActionId ids[] = {
+        SOUND_ACTION_RANDOM_GENERAL,     SOUND_ACTION_RANDOM_CHATTY,
+        SOUND_ACTION_RANDOM_HAPPY,       SOUND_ACTION_RANDOM_PROCESSING,
+        SOUND_ACTION_RANDOM_SAD,         SOUND_ACTION_RANDOM_SENTIMENTAL,
+        SOUND_ACTION_RANDOM_HUMMING,     SOUND_ACTION_RANDOM_SCREAM,
+        SOUND_ACTION_RANDOM_SURPRISED,   SOUND_ACTION_RANDOM_ALERT,
+        SOUND_ACTION_RANDOM_PFFT,        SOUND_ACTION_RANDOM_WHISTLE,
+    };
+
+    for (size_t i = 0; i < sizeof(ids) / sizeof(ids[0]); ++i) {
+        TEST_ASSERT_TRUE(registryContainsAction(ids[i]));
+    }
+}
+
+void test_registry_json_payload_fits_budget() {
+    JsonDocument doc;
+    JsonArray arr = doc.to<JsonArray>();
+
+    for (size_t i = 0; i < ACTION_REGISTRY_SIZE; ++i) {
+        const ActionEntry& e = ACTION_REGISTRY[i];
+        JsonObject obj = arr.add<JsonObject>();
+        obj["id"] = static_cast<int>(e.id);
+        obj["name"] = e.name;
+        obj["display_name"] = e.display_name;
+        obj["domain"] = e.domain;
+        obj["description"] = e.description;
+        obj["safety_critical"] = e.safety_critical;
+        obj["token"] = robotActionIdToString(e.id);
+    }
+
+    const size_t bytes = measureJson(doc);
+    TEST_ASSERT_GREATER_THAN(0u, bytes);
+    TEST_ASSERT_LESS_THAN_MESSAGE(8192u, bytes,
+                                  "GET /api/actions JSON payload exceeded expected budget");
+}
+
 int main() {
     UNITY_BEGIN();
 
@@ -59,6 +106,8 @@ int main() {
     RUN_TEST(test_registry_all_fields_nonempty);
     RUN_TEST(test_registry_ids_unique);
     RUN_TEST(test_registry_no_none_entry);
+    RUN_TEST(test_registry_contains_sound_category_actions);
+    RUN_TEST(test_registry_json_payload_fits_budget);
 
     return UNITY_END();
 }

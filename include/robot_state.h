@@ -221,6 +221,32 @@ struct RobotState {
     uint16_t cfg_snd_int_full;   // random interval Full-Awake mode (s) default 20
     uint16_t cfg_snd_int_awake;  // random interval Awake+ mode (s)    default 10
 
+    // RC-bindable random sound category ranges (NVS-backed).
+    // A range is inactive when lo==0 or lo>hi (silent no-op).
+    uint16_t cfg_snd_cat_gen_lo;
+    uint16_t cfg_snd_cat_gen_hi;
+    uint16_t cfg_snd_cat_chat_lo;
+    uint16_t cfg_snd_cat_chat_hi;
+    uint16_t cfg_snd_cat_hap_lo;
+    uint16_t cfg_snd_cat_hap_hi;
+    uint16_t cfg_snd_cat_proc_lo;
+    uint16_t cfg_snd_cat_proc_hi;
+    uint16_t cfg_snd_cat_sad_lo;
+    uint16_t cfg_snd_cat_sad_hi;
+    uint16_t cfg_snd_cat_sent_lo;
+    uint16_t cfg_snd_cat_sent_hi;
+    uint16_t cfg_snd_cat_hum_lo;
+    uint16_t cfg_snd_cat_hum_hi;
+    uint16_t cfg_snd_cat_scrm_lo;
+    uint16_t cfg_snd_cat_scrm_hi;
+    uint16_t cfg_snd_cat_ooh_lo;
+    uint16_t cfg_snd_cat_ooh_hi;
+    uint16_t cfg_snd_cat_alrm_lo;
+    uint16_t cfg_snd_cat_alrm_hi;
+    uint16_t cfg_snd_cat_pfft_lo;
+    uint16_t cfg_snd_cat_pfft_hi;
+    uint16_t cfg_snd_cat_whis_lo;
+    uint16_t cfg_snd_cat_whis_hi;
     // Servo config
     uint16_t cfg_arm1_open_us;
     uint16_t cfg_arm1_close_us;

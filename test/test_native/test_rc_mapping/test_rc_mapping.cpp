@@ -289,6 +289,27 @@ void test_trigger_parse_rejects_uint16_field_overflow() {
     TEST_ASSERT_FALSE(parseRcTriggerBinding("sbus1:6:cmd::OP01:70000:992:1811:0:0", &binding));
 }
 
+void test_sound_random_action_tokens_round_trip() {
+    const RobotActionId ids[] = {
+        SOUND_ACTION_RANDOM_GENERAL,     SOUND_ACTION_RANDOM_CHATTY,
+        SOUND_ACTION_RANDOM_HAPPY,       SOUND_ACTION_RANDOM_PROCESSING,
+        SOUND_ACTION_RANDOM_SAD,         SOUND_ACTION_RANDOM_SENTIMENTAL,
+        SOUND_ACTION_RANDOM_HUMMING,     SOUND_ACTION_RANDOM_SCREAM,
+        SOUND_ACTION_RANDOM_SURPRISED,   SOUND_ACTION_RANDOM_ALERT,
+        SOUND_ACTION_RANDOM_PFFT,        SOUND_ACTION_RANDOM_WHISTLE,
+    };
+
+    for (size_t i = 0; i < sizeof(ids) / sizeof(ids[0]); ++i) {
+        const char* token = robotActionIdToString(ids[i]);
+        TEST_ASSERT_NOT_NULL(token);
+        TEST_ASSERT_NOT_EQUAL(0, strcmp(token, "none"));
+
+        RobotActionId parsed = ROBOT_ACTION_NONE;
+        TEST_ASSERT_TRUE(parseRobotActionId(token, &parsed));
+        TEST_ASSERT_EQUAL_UINT8(ids[i], parsed);
+    }
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_parse_pwm_binding);
@@ -340,6 +361,7 @@ int main() {
     RUN_TEST(test_trigger_parse_rejects_channel_overflow_wraparound);
     RUN_TEST(test_trigger_parse_rejects_reverse_overflow);
     RUN_TEST(test_trigger_parse_rejects_uint16_field_overflow);
+    RUN_TEST(test_sound_random_action_tokens_round_trip);
 
     return UNITY_END();
 }

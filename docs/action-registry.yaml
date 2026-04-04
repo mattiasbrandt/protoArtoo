@@ -353,6 +353,186 @@ entries:
     requires_web_control: false
     nvs_key: null
 
+
+  - name: sound.action.random-general
+    display_name: Random General
+    description: Play one random track from the configured General category range
+    domain: sound
+    type: action
+    marcduino_cmd: null
+    api_path: null
+    sse_event: null
+    cpp_enum: SOUND_ACTION_RANDOM_GENERAL
+    cpp_file: include/rc_mapping.h
+    sources: [sbus]
+    safety_critical: false
+    requires_web_control: false
+    nvs_keys: [snd_cat_gen_lo, snd_cat_gen_hi]
+
+  - name: sound.action.random-chatty
+    display_name: Random Chatty
+    description: Play one random track from the configured Chatty category range
+    domain: sound
+    type: action
+    marcduino_cmd: null
+    api_path: null
+    sse_event: null
+    cpp_enum: SOUND_ACTION_RANDOM_CHATTY
+    cpp_file: include/rc_mapping.h
+    sources: [sbus]
+    safety_critical: false
+    requires_web_control: false
+    nvs_keys: [snd_cat_chat_lo, snd_cat_chat_hi]
+
+  - name: sound.action.random-happy
+    display_name: Random Happy
+    description: Play one random track from the configured Happy category range
+    domain: sound
+    type: action
+    marcduino_cmd: null
+    api_path: null
+    sse_event: null
+    cpp_enum: SOUND_ACTION_RANDOM_HAPPY
+    cpp_file: include/rc_mapping.h
+    sources: [sbus]
+    safety_critical: false
+    requires_web_control: false
+    nvs_keys: [snd_cat_hap_lo, snd_cat_hap_hi]
+
+  - name: sound.action.random-processing
+    display_name: Random Processing
+    description: Play one random track from the configured Processing category range
+    domain: sound
+    type: action
+    marcduino_cmd: null
+    api_path: null
+    sse_event: null
+    cpp_enum: SOUND_ACTION_RANDOM_PROCESSING
+    cpp_file: include/rc_mapping.h
+    sources: [sbus]
+    safety_critical: false
+    requires_web_control: false
+    nvs_keys: [snd_cat_proc_lo, snd_cat_proc_hi]
+
+  - name: sound.action.random-sad
+    display_name: Random Sad
+    description: Play one random track from the configured Sad category range
+    domain: sound
+    type: action
+    marcduino_cmd: null
+    api_path: null
+    sse_event: null
+    cpp_enum: SOUND_ACTION_RANDOM_SAD
+    cpp_file: include/rc_mapping.h
+    sources: [sbus]
+    safety_critical: false
+    requires_web_control: false
+    nvs_keys: [snd_cat_sad_lo, snd_cat_sad_hi]
+
+  - name: sound.action.random-sentimental
+    display_name: Random Sentimental
+    description: Play one random track from the configured Sentimental category range
+    domain: sound
+    type: action
+    marcduino_cmd: null
+    api_path: null
+    sse_event: null
+    cpp_enum: SOUND_ACTION_RANDOM_SENTIMENTAL
+    cpp_file: include/rc_mapping.h
+    sources: [sbus]
+    safety_critical: false
+    requires_web_control: false
+    nvs_keys: [snd_cat_sent_lo, snd_cat_sent_hi]
+
+  - name: sound.action.random-humming
+    display_name: Random Humming
+    description: Play one random track from the configured Humming category range
+    domain: sound
+    type: action
+    marcduino_cmd: null
+    api_path: null
+    sse_event: null
+    cpp_enum: SOUND_ACTION_RANDOM_HUMMING
+    cpp_file: include/rc_mapping.h
+    sources: [sbus]
+    safety_critical: false
+    requires_web_control: false
+    nvs_keys: [snd_cat_hum_lo, snd_cat_hum_hi]
+
+  - name: sound.action.random-scream
+    display_name: Random Scream
+    description: Play one random track from the configured Scream category range
+    domain: sound
+    type: action
+    marcduino_cmd: null
+    api_path: null
+    sse_event: null
+    cpp_enum: SOUND_ACTION_RANDOM_SCREAM
+    cpp_file: include/rc_mapping.h
+    sources: [sbus]
+    safety_critical: false
+    requires_web_control: false
+    nvs_keys: [snd_cat_scrm_lo, snd_cat_scrm_hi]
+
+  - name: sound.action.random-surprised
+    display_name: Random Surprised
+    description: Play one random track from the configured Surprised category range
+    domain: sound
+    type: action
+    marcduino_cmd: null
+    api_path: null
+    sse_event: null
+    cpp_enum: SOUND_ACTION_RANDOM_SURPRISED
+    cpp_file: include/rc_mapping.h
+    sources: [sbus]
+    safety_critical: false
+    requires_web_control: false
+    nvs_keys: [snd_cat_ooh_lo, snd_cat_ooh_hi]
+
+  - name: sound.action.random-alert
+    display_name: Random Alert
+    description: Play one random track from the configured Alert category range
+    domain: sound
+    type: action
+    marcduino_cmd: null
+    api_path: null
+    sse_event: null
+    cpp_enum: SOUND_ACTION_RANDOM_ALERT
+    cpp_file: include/rc_mapping.h
+    sources: [sbus]
+    safety_critical: false
+    requires_web_control: false
+    nvs_keys: [snd_cat_alrm_lo, snd_cat_alrm_hi]
+
+  - name: sound.action.random-pfft
+    display_name: Random Pfft
+    description: Play one random track from the configured Pfft category range
+    domain: sound
+    type: action
+    marcduino_cmd: null
+    api_path: null
+    sse_event: null
+    cpp_enum: SOUND_ACTION_RANDOM_PFFT
+    cpp_file: include/rc_mapping.h
+    sources: [sbus]
+    safety_critical: false
+    requires_web_control: false
+    nvs_keys: [snd_cat_pfft_lo, snd_cat_pfft_hi]
+
+  - name: sound.action.random-whistle
+    display_name: Random Whistle
+    description: Play one random track from the configured Whistle category range
+    domain: sound
+    type: action
+    marcduino_cmd: null
+    api_path: null
+    sse_event: null
+    cpp_enum: SOUND_ACTION_RANDOM_WHISTLE
+    cpp_file: include/rc_mapping.h
+    sources: [sbus]
+    safety_critical: false
+    requires_web_control: false
+    nvs_keys: [snd_cat_whis_lo, snd_cat_whis_hi]
   - name: sound.status.current
     display_name: Sound Status
     description: Current playback state, volume, and module health

@@ -24,8 +24,8 @@ static const char* TAG = "Actions";
 
 void registerActionsRoutes(AsyncWebServer& server) {
     server.on("/api/actions", HTTP_GET, [](AsyncWebServerRequest* req) {
-        // Each entry serializes to ~120 bytes; 14 entries ~1700 bytes.
-        // JsonDocument with default allocator handles this comfortably.
+        // Each entry serializes to roughly 120 bytes.
+        // Keep this dynamic JsonDocument because ACTION_REGISTRY grows over phases.
         JsonDocument doc;
         JsonArray arr = doc.to<JsonArray>();
 

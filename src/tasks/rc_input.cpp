@@ -23,8 +23,10 @@
 
 #include <Arduino.h>
 #include <esp_task_wdt.h>
+#include <esp_system.h>
 
 #include "../../include/config.h"
+#include "../../include/audio_task.h"
 #include "../../include/ledc_pwm.h"
 #include "../../include/logging.h"
 #include "../../include/dome_rx_parser.h"
@@ -258,6 +260,71 @@ struct TriggerRuntimeState {
 
 static TriggerRuntimeState g_triggerStates[11] = {};  // One per Tier 2 binding slot
 
+static bool queueRandomTrackForAction(RobotActionId target) {
+    uint16_t lo = 0;
+    uint16_t hi = 0;
+    taskENTER_CRITICAL(&robotStateMux);
+    switch (target) {
+        case SOUND_ACTION_RANDOM_GENERAL:
+            lo = robotState.cfg_snd_cat_gen_lo;
+            hi = robotState.cfg_snd_cat_gen_hi;
+            break;
+        case SOUND_ACTION_RANDOM_CHATTY:
+            lo = robotState.cfg_snd_cat_chat_lo;
+            hi = robotState.cfg_snd_cat_chat_hi;
+            break;
+        case SOUND_ACTION_RANDOM_HAPPY:
+            lo = robotState.cfg_snd_cat_hap_lo;
+            hi = robotState.cfg_snd_cat_hap_hi;
+            break;
+        case SOUND_ACTION_RANDOM_PROCESSING:
+            lo = robotState.cfg_snd_cat_proc_lo;
+            hi = robotState.cfg_snd_cat_proc_hi;
+            break;
+        case SOUND_ACTION_RANDOM_SAD:
+            lo = robotState.cfg_snd_cat_sad_lo;
+            hi = robotState.cfg_snd_cat_sad_hi;
+            break;
+        case SOUND_ACTION_RANDOM_SENTIMENTAL:
+            lo = robotState.cfg_snd_cat_sent_lo;
+            hi = robotState.cfg_snd_cat_sent_hi;
+            break;
+        case SOUND_ACTION_RANDOM_HUMMING:
+            lo = robotState.cfg_snd_cat_hum_lo;
+            hi = robotState.cfg_snd_cat_hum_hi;
+            break;
+        case SOUND_ACTION_RANDOM_SCREAM:
+            lo = robotState.cfg_snd_cat_scrm_lo;
+            hi = robotState.cfg_snd_cat_scrm_hi;
+            break;
+        case SOUND_ACTION_RANDOM_SURPRISED:
+            lo = robotState.cfg_snd_cat_ooh_lo;
+            hi = robotState.cfg_snd_cat_ooh_hi;
+            break;
+        case SOUND_ACTION_RANDOM_ALERT:
+            lo = robotState.cfg_snd_cat_alrm_lo;
+            hi = robotState.cfg_snd_cat_alrm_hi;
+            break;
+        case SOUND_ACTION_RANDOM_PFFT:
+            lo = robotState.cfg_snd_cat_pfft_lo;
+            hi = robotState.cfg_snd_cat_pfft_hi;
+            break;
+        case SOUND_ACTION_RANDOM_WHISTLE:
+            lo = robotState.cfg_snd_cat_whis_lo;
+            hi = robotState.cfg_snd_cat_whis_hi;
+            break;
+        default:
+            break;
+    }
+    taskEXIT_CRITICAL(&robotStateMux);
+
+    uint16_t track = 0;
+    if (!selectRandomTrackInRange(lo, hi, esp_random(), &track)) {
+        return false;
+    }
+    return audioQueuePlayTrack(track, SRC_SBUS);
+}
+
 static void processTriggerAction(RobotActionId target, const char* payload, bool pressed) {
     switch (target) {
         case ROBOT_ACTION_NONE:
@@ -307,6 +374,22 @@ static void processTriggerAction(RobotActionId target, const char* payload, bool
         case DOME_ACTION_MARCDUINO_CMD:
             if (pressed && rcPayloadValidForMarcduinoCommand(payload)) {
                 parseMarcduinoCommand(payload);
+            }
+            break;
+        case SOUND_ACTION_RANDOM_GENERAL:
+        case SOUND_ACTION_RANDOM_CHATTY:
+        case SOUND_ACTION_RANDOM_HAPPY:
+        case SOUND_ACTION_RANDOM_PROCESSING:
+        case SOUND_ACTION_RANDOM_SAD:
+        case SOUND_ACTION_RANDOM_SENTIMENTAL:
+        case SOUND_ACTION_RANDOM_HUMMING:
+        case SOUND_ACTION_RANDOM_SCREAM:
+        case SOUND_ACTION_RANDOM_SURPRISED:
+        case SOUND_ACTION_RANDOM_ALERT:
+        case SOUND_ACTION_RANDOM_PFFT:
+        case SOUND_ACTION_RANDOM_WHISTLE:
+            if (pressed) {
+                queueRandomTrackForAction(target);
             }
             break;
         case SYSTEM_ACTION_ESTOP:
