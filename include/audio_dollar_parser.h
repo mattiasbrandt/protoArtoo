@@ -143,6 +143,12 @@ inline const char* audioTrackNvsKey(const char* key) {
     if (__builtin_strcmp(key, "stayin")    == 0) return "snd_stayin";
     if (__builtin_strcmp(key, "harlem")    == 0) return "snd_harlem";
     if (__builtin_strcmp(key, "pbjtime")   == 0) return "snd_pbjtime";
+    if (__builtin_strcmp(key, "sys_boot")  == 0) return "snd_sys_boot";
+    if (__builtin_strcmp(key, "sys_mode_n") == 0) return "snd_sys_mode_n";
+    if (__builtin_strcmp(key, "sys_mode_s") == 0) return "snd_sys_mode_s";
+    if (__builtin_strcmp(key, "sys_mode_t") == 0) return "snd_sys_mode_t";
+    if (__builtin_strcmp(key, "sys_drv_on") == 0) return "snd_sys_drv_on";
+    if (__builtin_strcmp(key, "sys_dome_on") == 0) return "snd_sys_dome_on";
     if (__builtin_strcmp(key, "rand_min")  == 0) return "snd_rand_min";
     if (__builtin_strcmp(key, "rand_max")  == 0) return "snd_rand_max";
     if (__builtin_strcmp(key, "snd_int_quiet") == 0) return "snd_int_quiet";

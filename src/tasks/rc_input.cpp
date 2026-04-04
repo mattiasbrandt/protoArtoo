@@ -27,6 +27,7 @@
 
 #include "../../include/config.h"
 #include "../../include/audio_task.h"
+#include "../../include/system_sounds.h"
 #include "../../include/ledc_pwm.h"
 #include "../../include/logging.h"
 #include "../../include/dome_rx_parser.h"
@@ -260,6 +261,53 @@ struct TriggerRuntimeState {
 
 static TriggerRuntimeState g_triggerStates[11] = {};  // One per Tier 2 binding slot
 
+static bool setStationaryMode(bool stationary) {
+    uint16_t driveTrack = 0;
+    bool wasStationary = false;
+    taskENTER_CRITICAL(&robotStateMux);
+    wasStationary = robotState.stationary;
+    robotState.stationary = stationary;
+    if (wasStationary && !stationary) {
+        driveTrack = robotState.cfg_snd_sys_drv_on;
+    }
+    taskEXIT_CRITICAL(&robotStateMux);
+    return queueSystemSoundTrack(driveTrack, audioQueuePlayTrack, SRC_INTERNAL);
+}
+
+static void maybeQueueDriveModeSound(float scale) {
+    static bool initialized = false;
+    static SystemDriveModeBucket lastBucket = SYSTEM_DRIVE_MODE_NORMAL;
+    SystemDriveModeBucket bucket = classifySystemDriveMode(scale);
+    if (!initialized) {
+        initialized = true;
+        lastBucket = bucket;
+        return;
+    }
+    if (bucket == lastBucket) {
+        return;
+    }
+    lastBucket = bucket;
+
+    uint16_t track = 0;
+    taskENTER_CRITICAL(&robotStateMux);
+    switch (bucket) {
+        case SYSTEM_DRIVE_MODE_SLOW:
+            track = robotState.cfg_snd_sys_mode_s;
+            break;
+        case SYSTEM_DRIVE_MODE_NORMAL:
+            track = robotState.cfg_snd_sys_mode_n;
+            break;
+        case SYSTEM_DRIVE_MODE_TURBO:
+            track = robotState.cfg_snd_sys_mode_t;
+            break;
+        default:
+            break;
+    }
+    taskEXIT_CRITICAL(&robotStateMux);
+
+    queueSystemSoundTrack(track, audioQueuePlayTrack, SRC_INTERNAL);
+}
+
 static bool queueRandomTrackForAction(RobotActionId target) {
     uint16_t lo = 0;
     uint16_t hi = 0;
@@ -417,9 +465,7 @@ static void processTriggerAction(RobotActionId target, const char* payload, bool
             }
             break;
         case SYSTEM_ACTION_OP_MODE:
-            taskENTER_CRITICAL(&robotStateMux);
-            robotState.stationary = pressed;  // HIGH = Stationary, LOW = Driving
-            taskEXIT_CRITICAL(&robotStateMux);
+            setStationaryMode(pressed);  // HIGH = Stationary, LOW = Driving
             break;
         case DOME_ACTION_SEQ:
             // Phase 4: Route to DomeLinkTask
@@ -572,14 +618,11 @@ static void dispatchStandardPwmInputs() {
             maxOut = (int16_t)(cfg.maxOut * scale);
 
             if (cfg.ch8ModeLock && scale < 0.02f) {
-                taskENTER_CRITICAL(&robotStateMux);
-                robotState.stationary = true;
-                taskEXIT_CRITICAL(&robotStateMux);
+                setStationaryMode(true);
                 setDriveCommand(0, 0, SRC_SBUS);
             } else {
-                taskENTER_CRITICAL(&robotStateMux);
-                robotState.stationary = false;
-                taskEXIT_CRITICAL(&robotStateMux);
+                setStationaryMode(false);
+                maybeQueueDriveModeSound(scale);
                 setDriveCommand(
                     (int16_t)(applyRcAnalogCalibration(rawSpeed, cfg.driveSpeed, nullptr) * maxOut),
                     (int16_t)(applyRcAnalogCalibration(rawSteer, cfg.driveSteer, nullptr) * maxOut),
@@ -588,8 +631,9 @@ static void dispatchStandardPwmInputs() {
         } else {
             taskENTER_CRITICAL(&robotStateMux);
             robotState.speedLimitScale = 1.0f;
-            robotState.stationary = false;
             taskEXIT_CRITICAL(&robotStateMux);
+            setStationaryMode(false);
+            maybeQueueDriveModeSound(1.0f);
             setDriveCommand(
                 (int16_t)(applyRcAnalogCalibration(rawSpeed, cfg.driveSpeed, nullptr) * maxOut),
                 (int16_t)(applyRcAnalogCalibration(rawSteer, cfg.driveSteer, nullptr) * maxOut),
@@ -946,14 +990,11 @@ void rcInputTask(void* pvParameters) {
 
                     int16_t maxOut = (int16_t)(cfg.maxOut * scale);
                     if (cfg.ch8ModeLock && scale < 0.02f) {
-                        taskENTER_CRITICAL(&robotStateMux);
-                        robotState.stationary = true;
-                        taskEXIT_CRITICAL(&robotStateMux);
+                        setStationaryMode(true);
                         setDriveCommand(0, 0, SRC_SBUS);
                     } else {
-                        taskENTER_CRITICAL(&robotStateMux);
-                        robotState.stationary = false;
-                        taskEXIT_CRITICAL(&robotStateMux);
+                        setStationaryMode(false);
+                        maybeQueueDriveModeSound(scale);
                         setDriveCommand(constrain((int16_t)(applyRcAnalogCalibration(
                                                                 rawSpeed, cfg.driveSpeed, nullptr) *
                                                             maxOut),

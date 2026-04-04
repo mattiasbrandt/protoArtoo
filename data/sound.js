@@ -32,6 +32,15 @@
     { label: "Random Off", cmd: "$O", key: null, editable: false },
     { label: "Stop / Chatter Off", cmd: "$s", key: null, editable: false },
   ];
+
+  const SYSTEM_SOUNDS = [
+    { label: "Boot complete", key: "sys_boot" },
+    { label: "Mode → Normal", key: "sys_mode_n" },
+    { label: "Mode → Slow", key: "sys_mode_s" },
+    { label: "Mode → Turbo", key: "sys_mode_t" },
+    { label: "Drives engaged", key: "sys_drv_on" },
+    { label: "Dome enabled", key: "sys_dome_on" },
+  ];
   const CMD_MARKER = "—";
 
   // AudioDriver capability bits — must match audio_driver.h AUDIO_CAP_* constants
@@ -42,6 +51,7 @@
   const AUDIO_CAP_QUERY_SAFE_PLAYING = 0x10;
 
   const tbody = document.getElementById("named-sound-rows");
+  const systemTbody = document.getElementById("system-sound-rows");
   const soundStateBadge = document.getElementById("sound-state-badge");
   const soundDisabledCard = document.getElementById("sound-disabled-card");
   const globalFb = document.getElementById("global-feedback");
@@ -321,6 +331,77 @@
     });
   };
 
+  const buildSystemSoundRows = () => {
+    if (!systemTbody) return;
+    SYSTEM_SOUNDS.forEach((sound) => {
+      const tr = document.createElement("tr");
+      tr.className = "sound-row-divider";
+
+      const tdLabel = document.createElement("td");
+      tdLabel.textContent = sound.label;
+
+      const tdTrack = document.createElement("td");
+      const input = document.createElement("input");
+      input.type = "number";
+      input.min = "0";
+      input.max = String(TRACK_MAX);
+      input.className = "sound-track-input-sm";
+      input.id = `sys-track-input-${sound.key}`;
+      input.dataset.key = sound.key;
+      input.setAttribute("aria-label", `${sound.label} track number`);
+      tdTrack.appendChild(input);
+
+      const saveButton = document.createElement("button");
+      saveButton.className = "btn sound-btn-compact";
+      saveButton.textContent = "💾";
+      saveButton.title = "Save track number";
+      saveButton.setAttribute("aria-label", `Save ${sound.label} track number`);
+
+      const rowFeedback = document.createElement("span");
+      rowFeedback.className = "sound-feedback-inline";
+      rowFeedback.setAttribute("role", "status");
+      rowFeedback.setAttribute("aria-live", "polite");
+      rowFeedback.setAttribute("aria-atomic", "true");
+
+      saveButton.addEventListener("click", () => {
+        const value = Number.parseInt(input.value, 10);
+        if (Number.isNaN(value) || value < 0 || value > TRACK_MAX) {
+          showFeedback(rowFeedback, `0–${TRACK_MAX}`, false);
+          return;
+        }
+        postTrack(sound.key, value, rowFeedback);
+      });
+
+      tdTrack.appendChild(saveButton);
+      tdTrack.appendChild(rowFeedback);
+
+      const tdPlay = document.createElement("td");
+      const playButton = document.createElement("button");
+      playButton.className = "btn sound-btn-play";
+      playButton.textContent = "▶";
+      playButton.title = `Play configured track for ${sound.label}`;
+      playButton.setAttribute("aria-label", `Play ${sound.label}`);
+      playButton.addEventListener("click", () => {
+        const value = Number.parseInt(input.value, 10);
+        if (Number.isNaN(value) || value < 0 || value > TRACK_MAX) {
+          showFeedback(rowFeedback, `0–${TRACK_MAX}`, false);
+          return;
+        }
+        if (value === 0) return;
+        postAudio({ action: "play", track: value }, globalFb, sound.label);
+      });
+      tdPlay.appendChild(playButton);
+
+      const tdSpacer = document.createElement("td");
+
+      tr.appendChild(tdLabel);
+      tr.appendChild(tdTrack);
+      tr.appendChild(tdPlay);
+      tr.appendChild(tdSpacer);
+      systemTbody.appendChild(tr);
+    });
+  };
+
   const loadTracks = async () => {
     if (!window.PAApi) return;
     try {
@@ -330,6 +411,13 @@
       NAMED_SOUNDS.forEach((sound) => {
         if (!sound.editable || !sound.key) return;
         const input = document.getElementById(`track-input-${sound.key}`);
+        if (input && data[sound.key] !== undefined) {
+          input.value = data[sound.key];
+        }
+      });
+
+      SYSTEM_SOUNDS.forEach((sound) => {
+        const input = document.getElementById(`sys-track-input-${sound.key}`);
         if (input && data[sound.key] !== undefined) {
           input.value = data[sound.key];
         }
@@ -379,6 +467,7 @@
   };
 
   buildNamedSoundRows();
+  buildSystemSoundRows();
   loadTracks();
   syncVolumeLabel();
 

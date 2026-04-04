@@ -282,6 +282,25 @@ void test_nvs_key_harlem() {
 void test_nvs_key_pbjtime() {
     TEST_ASSERT_EQUAL_STRING("snd_pbjtime", audioTrackNvsKey("pbjtime"));
 }
+void test_nvs_key_sys_boot() {
+    TEST_ASSERT_EQUAL_STRING("snd_sys_boot", audioTrackNvsKey("sys_boot"));
+}
+void test_nvs_key_sys_mode_n() {
+    TEST_ASSERT_EQUAL_STRING("snd_sys_mode_n", audioTrackNvsKey("sys_mode_n"));
+}
+void test_nvs_key_sys_mode_s() {
+    TEST_ASSERT_EQUAL_STRING("snd_sys_mode_s", audioTrackNvsKey("sys_mode_s"));
+}
+void test_nvs_key_sys_mode_t() {
+    TEST_ASSERT_EQUAL_STRING("snd_sys_mode_t", audioTrackNvsKey("sys_mode_t"));
+}
+void test_nvs_key_sys_drv_on() {
+    TEST_ASSERT_EQUAL_STRING("snd_sys_drv_on", audioTrackNvsKey("sys_drv_on"));
+}
+void test_nvs_key_sys_dome_on() {
+    TEST_ASSERT_EQUAL_STRING("snd_sys_dome_on", audioTrackNvsKey("sys_dome_on"));
+}
+
 
 void test_nvs_key_unknown_returns_null() {
     TEST_ASSERT_NULL(audioTrackNvsKey("bogus"));
@@ -298,8 +317,9 @@ void test_nvs_keys_are_15_chars_or_less() {
         "scream","faint","leia","cantina_s","sw_theme",
         "imp_march","cantina_l","startup","doodoo","failure",
         "disco","mahna","inlove","macho","gangnam","uptown",
-        "celebr","stayin","harlem","pbjtime","rand_min","rand_max",
-        "snd_int_quiet","snd_int_mid","snd_int_full","snd_int_awake"
+        "celebr","stayin","harlem","pbjtime",
+        "sys_boot","sys_mode_n","sys_mode_s","sys_mode_t","sys_drv_on","sys_dome_on",
+        "rand_min","rand_max","snd_int_quiet","snd_int_mid","snd_int_full","snd_int_awake"
     };
     for (size_t i = 0; i < sizeof(keys)/sizeof(keys[0]); i++) {
         const char* nvsKey = audioTrackNvsKey(keys[i]);
@@ -373,6 +393,12 @@ int main(int argc, char** argv) {
     RUN_TEST(test_nvs_key_stayin);
     RUN_TEST(test_nvs_key_harlem);
     RUN_TEST(test_nvs_key_pbjtime);
+    RUN_TEST(test_nvs_key_sys_boot);
+    RUN_TEST(test_nvs_key_sys_mode_n);
+    RUN_TEST(test_nvs_key_sys_mode_s);
+    RUN_TEST(test_nvs_key_sys_mode_t);
+    RUN_TEST(test_nvs_key_sys_drv_on);
+    RUN_TEST(test_nvs_key_sys_dome_on);
     RUN_TEST(test_nvs_key_rand_min);
     RUN_TEST(test_nvs_key_rand_max);
     RUN_TEST(test_nvs_key_snd_int_quiet);

@@ -278,6 +278,12 @@ void loadConfigToState() {
     robotState.cfg_snd_stayin = prefs.getUShort("snd_stayin", 0);
     robotState.cfg_snd_harlem = prefs.getUShort("snd_harlem", 0);
     robotState.cfg_snd_pbjtime = prefs.getUShort("snd_pbjtime", 0);
+    robotState.cfg_snd_sys_boot = prefs.getUShort("snd_sys_boot", 0);
+    robotState.cfg_snd_sys_mode_n = prefs.getUShort("snd_sys_mode_n", 0);
+    robotState.cfg_snd_sys_mode_s = prefs.getUShort("snd_sys_mode_s", 0);
+    robotState.cfg_snd_sys_mode_t = prefs.getUShort("snd_sys_mode_t", 0);
+    robotState.cfg_snd_sys_drv_on = prefs.getUShort("snd_sys_drv_on", 0);
+    robotState.cfg_snd_sys_dome_on = prefs.getUShort("snd_sys_dome_on", 0);
     robotState.cfg_snd_rand_min = prefs.getUShort("snd_rand_min", AUDIO_RAND_TRACK_MIN);
     robotState.cfg_snd_rand_max = prefs.getUShort("snd_rand_max", AUDIO_RAND_TRACK_MAX);
     robotState.cfg_snd_int_quiet = constrain(prefs.getUShort("snd_int_quiet", AUDIO_RAND_INT_QUIET),
@@ -570,6 +576,7 @@ bool saveConfigToNvs() {
     uint16_t sndImpMarch, sndCantinaL, sndStartup;
     uint16_t sndDoodoo, sndFailure, sndDisco, sndMahna, sndInlove, sndMacho;
     uint16_t sndGangnam, sndUptown, sndCelebr, sndStayin, sndHarlem, sndPbjtime;
+    uint16_t sndSysBoot, sndSysModeN, sndSysModeS, sndSysModeT, sndSysDrvOn, sndSysDomeOn;
     uint16_t sndRandMin, sndRandMax;
     uint16_t sndIntQuiet, sndIntMid, sndIntFull, sndIntAwake;
     uint16_t sndCatGenLo, sndCatGenHi, sndCatChatLo, sndCatChatHi, sndCatHapLo, sndCatHapHi;
@@ -621,6 +628,12 @@ bool saveConfigToNvs() {
     sndStayin = robotState.cfg_snd_stayin;
     sndHarlem = robotState.cfg_snd_harlem;
     sndPbjtime = robotState.cfg_snd_pbjtime;
+    sndSysBoot = robotState.cfg_snd_sys_boot;
+    sndSysModeN = robotState.cfg_snd_sys_mode_n;
+    sndSysModeS = robotState.cfg_snd_sys_mode_s;
+    sndSysModeT = robotState.cfg_snd_sys_mode_t;
+    sndSysDrvOn = robotState.cfg_snd_sys_drv_on;
+    sndSysDomeOn = robotState.cfg_snd_sys_dome_on;
     sndRandMin = robotState.cfg_snd_rand_min;
     sndRandMax = robotState.cfg_snd_rand_max;
     sndIntQuiet = robotState.cfg_snd_int_quiet;
@@ -758,6 +771,12 @@ bool saveConfigToNvs() {
     ok = prefs.putUShort("snd_stayin", sndStayin) > 0 && ok;
     ok = prefs.putUShort("snd_harlem", sndHarlem) > 0 && ok;
     ok = prefs.putUShort("snd_pbjtime", sndPbjtime) > 0 && ok;
+    ok = prefs.putUShort("snd_sys_boot", sndSysBoot) > 0 && ok;
+    ok = prefs.putUShort("snd_sys_mode_n", sndSysModeN) > 0 && ok;
+    ok = prefs.putUShort("snd_sys_mode_s", sndSysModeS) > 0 && ok;
+    ok = prefs.putUShort("snd_sys_mode_t", sndSysModeT) > 0 && ok;
+    ok = prefs.putUShort("snd_sys_drv_on", sndSysDrvOn) > 0 && ok;
+    ok = prefs.putUShort("snd_sys_dome_on", sndSysDomeOn) > 0 && ok;
     ok = prefs.putUShort("snd_rand_min", sndRandMin) > 0 && ok;
     ok = prefs.putUShort("snd_rand_max", sndRandMax) > 0 && ok;
     ok = prefs.putUShort("snd_int_quiet", sndIntQuiet) > 0 && ok;
@@ -980,6 +999,15 @@ void setup() {
 
     // Start WiFi AP and web server
     webServerInit();
+
+    uint16_t bootTrack = 0;
+    taskENTER_CRITICAL(&robotStateMux);
+    bootTrack = robotState.cfg_snd_sys_boot;
+    taskEXIT_CRITICAL(&robotStateMux);
+    if (bootTrack != 0) {
+        audioQueuePlayTrack(bootTrack, SRC_INTERNAL);
+        PA_LOG_INFO("main", "system boot sound queued: track=%u", (unsigned)bootTrack);
+    }
 
     PA_LOG_INFO("main", "init complete");
     Serial.flush();

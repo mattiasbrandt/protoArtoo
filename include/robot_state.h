@@ -227,6 +227,13 @@ struct RobotState {
     uint16_t cfg_snd_stayin;
     uint16_t cfg_snd_harlem;
     uint16_t cfg_snd_pbjtime;
+    // T09 system sound events (default 0 = silent/no-op).
+    uint16_t cfg_snd_sys_boot;
+    uint16_t cfg_snd_sys_mode_n;
+    uint16_t cfg_snd_sys_mode_s;
+    uint16_t cfg_snd_sys_mode_t;
+    uint16_t cfg_snd_sys_drv_on;
+    uint16_t cfg_snd_sys_dome_on;
     uint16_t cfg_snd_rand_min;   // random pool start  default 1
     uint16_t cfg_snd_rand_max;   // random pool end    default 100
     uint16_t cfg_snd_int_quiet;  // random interval Quiet mode (s)     default 0

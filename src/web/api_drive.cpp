@@ -15,6 +15,7 @@
 
 #include "api_helpers.h"
 #include "audio_task.h"
+#include "system_sounds.h"
 #include "dome_link.h"
 #include "dome_rx_parser.h"
 #include "mood.h"
@@ -49,6 +50,20 @@ enum ManualCommand : uint8_t {
     MC_STATIONARY_MODE,
     MC_DRIVING_MODE,
 };
+
+void setStationaryModeWithSound(bool stationary) {
+    uint16_t driveTrack = 0;
+    bool wasStationary = false;
+    taskENTER_CRITICAL(&robotStateMux);
+    wasStationary = robotState.stationary;
+    robotState.stationary = stationary;
+    robotState.cfg_stationary = stationary;
+    if (wasStationary && !stationary) {
+        driveTrack = robotState.cfg_snd_sys_drv_on;
+    }
+    taskEXIT_CRITICAL(&robotStateMux);
+    queueSystemSoundTrack(driveTrack, audioQueuePlayTrack, SRC_INTERNAL);
+}
 
 ManualCommand resolveManualCommand(const char* command) {
     if (command == nullptr) {
@@ -156,18 +171,12 @@ bool executeManualCommand(const String& raw) {
             return true;
 
         case MC_STATIONARY_MODE:
-            taskENTER_CRITICAL(&robotStateMux);
-            robotState.stationary = true;
-            robotState.cfg_stationary = true;
-            taskEXIT_CRITICAL(&robotStateMux);
+            setStationaryModeWithSound(true);
             saveConfigToNvs();
             return true;
 
         case MC_DRIVING_MODE:
-            taskENTER_CRITICAL(&robotStateMux);
-            robotState.stationary = false;
-            robotState.cfg_stationary = false;
-            taskEXIT_CRITICAL(&robotStateMux);
+            setStationaryModeWithSound(false);
             saveConfigToNvs();
             return true;
 
@@ -208,18 +217,12 @@ void registerDriveRoutes(AsyncWebServer& server) {
         mode.toLowerCase();
 
         if (mode == "stationary") {
-            taskENTER_CRITICAL(&robotStateMux);
-            robotState.stationary = true;
-            robotState.cfg_stationary = true;
-            taskEXIT_CRITICAL(&robotStateMux);
+            setStationaryModeWithSound(true);
             saveConfigToNvs();
             PA_LOG_INFO(TAG, "[WEB] Mode set to stationary");
             req->send(200, "application/json", "{\"ok\":true}");
         } else if (mode == "driving") {
-            taskENTER_CRITICAL(&robotStateMux);
-            robotState.stationary = false;
-            robotState.cfg_stationary = false;
-            taskEXIT_CRITICAL(&robotStateMux);
+            setStationaryModeWithSound(false);
             saveConfigToNvs();
             PA_LOG_INFO(TAG, "[WEB] Mode set to driving");
             req->send(200, "application/json", "{\"ok\":true}");

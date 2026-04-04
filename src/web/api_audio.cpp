@@ -13,13 +13,15 @@
 //   action=dollar &cmd=$R       — raw $ command (any from the $ command set)
 //
 // POST /api/audio/tracks params:
-//   key=<name>   &track=N       — set named track (1–999, or 0–999 for T08 keys)
+//   key=<name>   &track=N       — set named track (1–999, or 0–999 for T08/T09 keys)
 //   key=rand_min &track=N       — set random pool minimum
 //   key=rand_max &track=N       — set random pool maximum
 //
 // Valid key names: scream faint leia cantina_s sw_theme imp_march cantina_l
 //                  startup doodoo failure disco mahna inlove macho gangnam
-//                  uptown celebr stayin harlem pbjtime rand_min rand_max
+//                  uptown celebr stayin harlem pbjtime
+//                  sys_boot sys_mode_n sys_mode_s sys_mode_t sys_drv_on sys_dome_on
+//                  rand_min rand_max
 // =============================================================================
 
 #include "api_audio.h"
@@ -56,6 +58,7 @@ void registerAudioRoutes(AsyncWebServer& server) {
         uint16_t scream, faint, leia, cantinaS, swTheme, impMarch, cantinaL, startup;
         uint16_t doodoo, failure, disco, mahna, inlove, macho;
         uint16_t gangnam, uptown, celebr, stayin, harlem, pbjtime;
+        uint16_t sysBoot, sysModeN, sysModeS, sysModeT, sysDrvOn, sysDomeOn;
         uint16_t randMin, randMax;
         uint16_t intQuiet, intMid, intFull, intAwake;
         uint8_t volume;
@@ -80,6 +83,12 @@ void registerAudioRoutes(AsyncWebServer& server) {
         stayin = robotState.cfg_snd_stayin;
         harlem = robotState.cfg_snd_harlem;
         pbjtime = robotState.cfg_snd_pbjtime;
+        sysBoot = robotState.cfg_snd_sys_boot;
+        sysModeN = robotState.cfg_snd_sys_mode_n;
+        sysModeS = robotState.cfg_snd_sys_mode_s;
+        sysModeT = robotState.cfg_snd_sys_mode_t;
+        sysDrvOn = robotState.cfg_snd_sys_drv_on;
+        sysDomeOn = robotState.cfg_snd_sys_dome_on;
         randMin = robotState.cfg_snd_rand_min;
         randMax = robotState.cfg_snd_rand_max;
         volume = robotState.cfg_audioVolume;
@@ -91,7 +100,7 @@ void registerAudioRoutes(AsyncWebServer& server) {
 
         // Stack-allocated — not static. Static local buffers in async handlers
         // are shared across concurrent requests and would cause data races.
-        char body[768];
+        char body[1024];
         snprintf(body, sizeof(body),
                  "{\"scream\":%u,\"faint\":%u,\"leia\":%u,"
                  "\"cantina_s\":%u,\"sw_theme\":%u,\"imp_march\":%u,"
@@ -99,12 +108,15 @@ void registerAudioRoutes(AsyncWebServer& server) {
                  "\"doodoo\":%u,\"failure\":%u,\"disco\":%u,\"mahna\":%u,"
                  "\"inlove\":%u,\"macho\":%u,\"gangnam\":%u,\"uptown\":%u,"
                  "\"celebr\":%u,\"stayin\":%u,\"harlem\":%u,\"pbjtime\":%u,"
+                 "\"sys_boot\":%u,\"sys_mode_n\":%u,\"sys_mode_s\":%u,"
+                 "\"sys_mode_t\":%u,\"sys_drv_on\":%u,\"sys_dome_on\":%u,"
                  "\"rand_min\":%u,\"rand_max\":%u,\"volume\":%u,"
                  "\"snd_int_quiet\":%u,\"snd_int_mid\":%u,"
                  "\"snd_int_full\":%u,\"snd_int_awake\":%u}",
                  scream, faint, leia, cantinaS, swTheme, impMarch, cantinaL, startup, doodoo,
                  failure, disco, mahna, inlove, macho, gangnam, uptown, celebr, stayin,
-                 harlem, pbjtime, randMin, randMax, volume, intQuiet, intMid, intFull, intAwake);
+                 harlem, pbjtime, sysBoot, sysModeN, sysModeS, sysModeT, sysDrvOn, sysDomeOn,
+                 randMin, randMax, volume, intQuiet, intMid, intFull, intAwake);
         req->send(200, "application/json", body);
     });
 
@@ -123,12 +135,16 @@ void registerAudioRoutes(AsyncWebServer& server) {
         String keyValue = keyParam->value();
         const char* key = keyValue.c_str();
         bool isInterval = (strncmp(key, "snd_int_", 8) == 0);
-        bool isT08NamedKey = strcmp(key, "doodoo") == 0 || strcmp(key, "failure") == 0 ||
-                            strcmp(key, "disco") == 0 || strcmp(key, "mahna") == 0 ||
-                            strcmp(key, "inlove") == 0 || strcmp(key, "macho") == 0 ||
-                            strcmp(key, "gangnam") == 0 || strcmp(key, "uptown") == 0 ||
-                            strcmp(key, "celebr") == 0 || strcmp(key, "stayin") == 0 ||
-                            strcmp(key, "harlem") == 0 || strcmp(key, "pbjtime") == 0;
+        bool isZeroAllowedTrackKey =
+            strcmp(key, "doodoo") == 0 || strcmp(key, "failure") == 0 ||
+            strcmp(key, "disco") == 0 || strcmp(key, "mahna") == 0 ||
+            strcmp(key, "inlove") == 0 || strcmp(key, "macho") == 0 ||
+            strcmp(key, "gangnam") == 0 || strcmp(key, "uptown") == 0 ||
+            strcmp(key, "celebr") == 0 || strcmp(key, "stayin") == 0 ||
+            strcmp(key, "harlem") == 0 || strcmp(key, "pbjtime") == 0 ||
+            strcmp(key, "sys_boot") == 0 || strcmp(key, "sys_mode_n") == 0 ||
+            strcmp(key, "sys_mode_s") == 0 || strcmp(key, "sys_mode_t") == 0 ||
+            strcmp(key, "sys_drv_on") == 0 || strcmp(key, "sys_dome_on") == 0;
 
         String trackValue = trackParam->value();
         uint32_t track = 0;
@@ -150,7 +166,7 @@ void registerAudioRoutes(AsyncWebServer& server) {
                           "{\"ok\":false,\"error\":\"track must be 0–999\"}");
                 return;
             }
-            if (track == 0U && !isT08NamedKey) {
+            if (track == 0U && !isZeroAllowedTrackKey) {
                 req->send(400, "application/json",
                           "{\"ok\":false,\"error\":\"track must be 1–999\"}");
                 return;
@@ -202,6 +218,18 @@ void registerAudioRoutes(AsyncWebServer& server) {
             fieldPtr = &robotState.cfg_snd_harlem;
         else if (strcmp(key, "pbjtime") == 0)
             fieldPtr = &robotState.cfg_snd_pbjtime;
+        else if (strcmp(key, "sys_boot") == 0)
+            fieldPtr = &robotState.cfg_snd_sys_boot;
+        else if (strcmp(key, "sys_mode_n") == 0)
+            fieldPtr = &robotState.cfg_snd_sys_mode_n;
+        else if (strcmp(key, "sys_mode_s") == 0)
+            fieldPtr = &robotState.cfg_snd_sys_mode_s;
+        else if (strcmp(key, "sys_mode_t") == 0)
+            fieldPtr = &robotState.cfg_snd_sys_mode_t;
+        else if (strcmp(key, "sys_drv_on") == 0)
+            fieldPtr = &robotState.cfg_snd_sys_drv_on;
+        else if (strcmp(key, "sys_dome_on") == 0)
+            fieldPtr = &robotState.cfg_snd_sys_dome_on;
         else if (strcmp(key, "rand_min") == 0)
             fieldPtr = &robotState.cfg_snd_rand_min;
         else if (strcmp(key, "rand_max") == 0)
