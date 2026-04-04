@@ -246,6 +246,42 @@ void test_nvs_key_snd_int_full() {
 void test_nvs_key_snd_int_awake() {
     TEST_ASSERT_EQUAL_STRING("snd_int_awake", audioTrackNvsKey("snd_int_awake"));
 }
+void test_nvs_key_doodoo() {
+    TEST_ASSERT_EQUAL_STRING("snd_doodoo", audioTrackNvsKey("doodoo"));
+}
+void test_nvs_key_failure() {
+    TEST_ASSERT_EQUAL_STRING("snd_failure", audioTrackNvsKey("failure"));
+}
+void test_nvs_key_disco() {
+    TEST_ASSERT_EQUAL_STRING("snd_disco", audioTrackNvsKey("disco"));
+}
+void test_nvs_key_mahna() {
+    TEST_ASSERT_EQUAL_STRING("snd_mahna", audioTrackNvsKey("mahna"));
+}
+void test_nvs_key_inlove() {
+    TEST_ASSERT_EQUAL_STRING("snd_inlove", audioTrackNvsKey("inlove"));
+}
+void test_nvs_key_macho() {
+    TEST_ASSERT_EQUAL_STRING("snd_macho", audioTrackNvsKey("macho"));
+}
+void test_nvs_key_gangnam() {
+    TEST_ASSERT_EQUAL_STRING("snd_gangnam", audioTrackNvsKey("gangnam"));
+}
+void test_nvs_key_uptown() {
+    TEST_ASSERT_EQUAL_STRING("snd_uptown", audioTrackNvsKey("uptown"));
+}
+void test_nvs_key_celebr() {
+    TEST_ASSERT_EQUAL_STRING("snd_celebr", audioTrackNvsKey("celebr"));
+}
+void test_nvs_key_stayin() {
+    TEST_ASSERT_EQUAL_STRING("snd_stayin", audioTrackNvsKey("stayin"));
+}
+void test_nvs_key_harlem() {
+    TEST_ASSERT_EQUAL_STRING("snd_harlem", audioTrackNvsKey("harlem"));
+}
+void test_nvs_key_pbjtime() {
+    TEST_ASSERT_EQUAL_STRING("snd_pbjtime", audioTrackNvsKey("pbjtime"));
+}
 
 void test_nvs_key_unknown_returns_null() {
     TEST_ASSERT_NULL(audioTrackNvsKey("bogus"));
@@ -260,7 +296,9 @@ void test_nvs_keys_are_15_chars_or_less() {
     // NVS key length limit is 15 chars (ESP-IDF constraint)
     const char* keys[] = {
         "scream","faint","leia","cantina_s","sw_theme",
-        "imp_march","cantina_l","startup","rand_min","rand_max",
+        "imp_march","cantina_l","startup","doodoo","failure",
+        "disco","mahna","inlove","macho","gangnam","uptown",
+        "celebr","stayin","harlem","pbjtime","rand_min","rand_max",
         "snd_int_quiet","snd_int_mid","snd_int_full","snd_int_awake"
     };
     for (size_t i = 0; i < sizeof(keys)/sizeof(keys[0]); i++) {
@@ -323,6 +361,18 @@ int main(int argc, char** argv) {
     RUN_TEST(test_nvs_key_imp_march);
     RUN_TEST(test_nvs_key_cantina_l);
     RUN_TEST(test_nvs_key_startup);
+    RUN_TEST(test_nvs_key_doodoo);
+    RUN_TEST(test_nvs_key_failure);
+    RUN_TEST(test_nvs_key_disco);
+    RUN_TEST(test_nvs_key_mahna);
+    RUN_TEST(test_nvs_key_inlove);
+    RUN_TEST(test_nvs_key_macho);
+    RUN_TEST(test_nvs_key_gangnam);
+    RUN_TEST(test_nvs_key_uptown);
+    RUN_TEST(test_nvs_key_celebr);
+    RUN_TEST(test_nvs_key_stayin);
+    RUN_TEST(test_nvs_key_harlem);
+    RUN_TEST(test_nvs_key_pbjtime);
     RUN_TEST(test_nvs_key_rand_min);
     RUN_TEST(test_nvs_key_rand_max);
     RUN_TEST(test_nvs_key_snd_int_quiet);

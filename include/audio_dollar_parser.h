@@ -131,6 +131,18 @@ inline const char* audioTrackNvsKey(const char* key) {
     if (__builtin_strcmp(key, "imp_march") == 0) return "snd_march";
     if (__builtin_strcmp(key, "cantina_l") == 0) return "snd_cantina_l";
     if (__builtin_strcmp(key, "startup")   == 0) return "snd_startup";
+    if (__builtin_strcmp(key, "doodoo")    == 0) return "snd_doodoo";
+    if (__builtin_strcmp(key, "failure")   == 0) return "snd_failure";
+    if (__builtin_strcmp(key, "disco")     == 0) return "snd_disco";
+    if (__builtin_strcmp(key, "mahna")     == 0) return "snd_mahna";
+    if (__builtin_strcmp(key, "inlove")    == 0) return "snd_inlove";
+    if (__builtin_strcmp(key, "macho")     == 0) return "snd_macho";
+    if (__builtin_strcmp(key, "gangnam")   == 0) return "snd_gangnam";
+    if (__builtin_strcmp(key, "uptown")    == 0) return "snd_uptown";
+    if (__builtin_strcmp(key, "celebr")    == 0) return "snd_celebr";
+    if (__builtin_strcmp(key, "stayin")    == 0) return "snd_stayin";
+    if (__builtin_strcmp(key, "harlem")    == 0) return "snd_harlem";
+    if (__builtin_strcmp(key, "pbjtime")   == 0) return "snd_pbjtime";
     if (__builtin_strcmp(key, "rand_min")  == 0) return "snd_rand_min";
     if (__builtin_strcmp(key, "rand_max")  == 0) return "snd_rand_max";
     if (__builtin_strcmp(key, "snd_int_quiet") == 0) return "snd_int_quiet";

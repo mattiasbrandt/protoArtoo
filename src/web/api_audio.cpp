@@ -13,12 +13,13 @@
 //   action=dollar &cmd=$R       — raw $ command (any from the $ command set)
 //
 // POST /api/audio/tracks params:
-//   key=<name>   &track=N       — set named track (1–999)
+//   key=<name>   &track=N       — set named track (1–999, or 0–999 for T08 keys)
 //   key=rand_min &track=N       — set random pool minimum
 //   key=rand_max &track=N       — set random pool maximum
 //
 // Valid key names: scream faint leia cantina_s sw_theme imp_march cantina_l
-//                  startup rand_min rand_max
+//                  startup doodoo failure disco mahna inlove macho gangnam
+//                  uptown celebr stayin harlem pbjtime rand_min rand_max
 // =============================================================================
 
 #include "api_audio.h"
@@ -53,6 +54,8 @@ void registerAudioRoutes(AsyncWebServer& server) {
     // ---- GET /api/audio/tracks ----
     server.on("/api/audio/tracks", HTTP_GET, [](AsyncWebServerRequest* req) {
         uint16_t scream, faint, leia, cantinaS, swTheme, impMarch, cantinaL, startup;
+        uint16_t doodoo, failure, disco, mahna, inlove, macho;
+        uint16_t gangnam, uptown, celebr, stayin, harlem, pbjtime;
         uint16_t randMin, randMax;
         uint16_t intQuiet, intMid, intFull, intAwake;
         uint8_t volume;
@@ -65,6 +68,18 @@ void registerAudioRoutes(AsyncWebServer& server) {
         impMarch = robotState.cfg_snd_imp_march;
         cantinaL = robotState.cfg_snd_cantina_l;
         startup = robotState.cfg_snd_startup;
+        doodoo = robotState.cfg_snd_doodoo;
+        failure = robotState.cfg_snd_failure;
+        disco = robotState.cfg_snd_disco;
+        mahna = robotState.cfg_snd_mahna;
+        inlove = robotState.cfg_snd_inlove;
+        macho = robotState.cfg_snd_macho;
+        gangnam = robotState.cfg_snd_gangnam;
+        uptown = robotState.cfg_snd_uptown;
+        celebr = robotState.cfg_snd_celebr;
+        stayin = robotState.cfg_snd_stayin;
+        harlem = robotState.cfg_snd_harlem;
+        pbjtime = robotState.cfg_snd_pbjtime;
         randMin = robotState.cfg_snd_rand_min;
         randMax = robotState.cfg_snd_rand_max;
         volume = robotState.cfg_audioVolume;
@@ -76,16 +91,20 @@ void registerAudioRoutes(AsyncWebServer& server) {
 
         // Stack-allocated — not static. Static local buffers in async handlers
         // are shared across concurrent requests and would cause data races.
-        char body[384];
+        char body[768];
         snprintf(body, sizeof(body),
                  "{\"scream\":%u,\"faint\":%u,\"leia\":%u,"
                  "\"cantina_s\":%u,\"sw_theme\":%u,\"imp_march\":%u,"
                  "\"cantina_l\":%u,\"startup\":%u,"
+                 "\"doodoo\":%u,\"failure\":%u,\"disco\":%u,\"mahna\":%u,"
+                 "\"inlove\":%u,\"macho\":%u,\"gangnam\":%u,\"uptown\":%u,"
+                 "\"celebr\":%u,\"stayin\":%u,\"harlem\":%u,\"pbjtime\":%u,"
                  "\"rand_min\":%u,\"rand_max\":%u,\"volume\":%u,"
                  "\"snd_int_quiet\":%u,\"snd_int_mid\":%u,"
                  "\"snd_int_full\":%u,\"snd_int_awake\":%u}",
-                 scream, faint, leia, cantinaS, swTheme, impMarch, cantinaL, startup, randMin,
-                 randMax, volume, intQuiet, intMid, intFull, intAwake);
+                 scream, faint, leia, cantinaS, swTheme, impMarch, cantinaL, startup, doodoo,
+                 failure, disco, mahna, inlove, macho, gangnam, uptown, celebr, stayin,
+                 harlem, pbjtime, randMin, randMax, volume, intQuiet, intMid, intFull, intAwake);
         req->send(200, "application/json", body);
     });
 
@@ -100,21 +119,40 @@ void registerAudioRoutes(AsyncWebServer& server) {
         }
 
         // Resolve key before range validation — interval keys accept 0–3600 s,
-        // track-number keys accept 1–999.
+        // track-number keys accept 1–999, except T08 named keys which allow 0–999.
         String keyValue = keyParam->value();
         const char* key = keyValue.c_str();
         bool isInterval = (strncmp(key, "snd_int_", 8) == 0);
-        int track = trackParam->value().toInt();
+        bool isT08NamedKey = strcmp(key, "doodoo") == 0 || strcmp(key, "failure") == 0 ||
+                            strcmp(key, "disco") == 0 || strcmp(key, "mahna") == 0 ||
+                            strcmp(key, "inlove") == 0 || strcmp(key, "macho") == 0 ||
+                            strcmp(key, "gangnam") == 0 || strcmp(key, "uptown") == 0 ||
+                            strcmp(key, "celebr") == 0 || strcmp(key, "stayin") == 0 ||
+                            strcmp(key, "harlem") == 0 || strcmp(key, "pbjtime") == 0;
+
+        String trackValue = trackParam->value();
+        uint32_t track = 0;
+        if (!parseUint32Value(trackValue.c_str(), &track)) {
+            req->send(400, "application/json",
+                      "{\"ok\":false,\"error\":\"track must be a non-negative integer\"}");
+            return;
+        }
+
         if (isInterval) {
-            if (track < 0 || track > 3600) {
+            if (track > 3600U) {
                 req->send(400, "application/json",
-                          "{\"ok\":false,\"error\":\"interval must be 0\u20133600 s\"}");
+                          "{\"ok\":false,\"error\":\"interval must be 0–3600 s\"}");
                 return;
             }
         } else {
-            if (track < 1 || track > 999) {
+            if (track > 999U) {
                 req->send(400, "application/json",
-                          "{\"ok\":false,\"error\":\"track must be 1\u2013999\"}");
+                          "{\"ok\":false,\"error\":\"track must be 0–999\"}");
+                return;
+            }
+            if (track == 0U && !isT08NamedKey) {
+                req->send(400, "application/json",
+                          "{\"ok\":false,\"error\":\"track must be 1–999\"}");
                 return;
             }
         }
@@ -140,6 +178,30 @@ void registerAudioRoutes(AsyncWebServer& server) {
             fieldPtr = &robotState.cfg_snd_cantina_l;
         else if (strcmp(key, "startup") == 0)
             fieldPtr = &robotState.cfg_snd_startup;
+        else if (strcmp(key, "doodoo") == 0)
+            fieldPtr = &robotState.cfg_snd_doodoo;
+        else if (strcmp(key, "failure") == 0)
+            fieldPtr = &robotState.cfg_snd_failure;
+        else if (strcmp(key, "disco") == 0)
+            fieldPtr = &robotState.cfg_snd_disco;
+        else if (strcmp(key, "mahna") == 0)
+            fieldPtr = &robotState.cfg_snd_mahna;
+        else if (strcmp(key, "inlove") == 0)
+            fieldPtr = &robotState.cfg_snd_inlove;
+        else if (strcmp(key, "macho") == 0)
+            fieldPtr = &robotState.cfg_snd_macho;
+        else if (strcmp(key, "gangnam") == 0)
+            fieldPtr = &robotState.cfg_snd_gangnam;
+        else if (strcmp(key, "uptown") == 0)
+            fieldPtr = &robotState.cfg_snd_uptown;
+        else if (strcmp(key, "celebr") == 0)
+            fieldPtr = &robotState.cfg_snd_celebr;
+        else if (strcmp(key, "stayin") == 0)
+            fieldPtr = &robotState.cfg_snd_stayin;
+        else if (strcmp(key, "harlem") == 0)
+            fieldPtr = &robotState.cfg_snd_harlem;
+        else if (strcmp(key, "pbjtime") == 0)
+            fieldPtr = &robotState.cfg_snd_pbjtime;
         else if (strcmp(key, "rand_min") == 0)
             fieldPtr = &robotState.cfg_snd_rand_min;
         else if (strcmp(key, "rand_max") == 0)

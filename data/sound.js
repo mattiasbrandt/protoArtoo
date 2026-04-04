@@ -6,12 +6,25 @@
 // Named track assignments are loaded from and saved to /api/audio/tracks.
 // =============================================================================
 (() => {
+  const TRACK_MAX = 999;
   const NAMED_SOUNDS = [
     { label: "Scream", cmd: "$S", key: "scream", editable: true },
     { label: "Short Circuit", cmd: "$F", key: "faint", editable: true },
+    { label: "Doo-doo", cmd: null, key: "doodoo", editable: true, playMode: "track", trackMin: 0 },
+    { label: "Failure", cmd: null, key: "failure", editable: true, playMode: "track", trackMin: 0 },
     { label: "Leia Message", cmd: "$L", key: "leia", editable: true },
     { label: "Short Cantina", cmd: "$c", key: "cantina_s", editable: true },
     { label: "Star Wars Theme", cmd: "$W", key: "sw_theme", editable: true },
+    { label: "Disco", cmd: null, key: "disco", editable: true, playMode: "track", trackMin: 0 },
+    { label: "Mahna Mahna", cmd: null, key: "mahna", editable: true, playMode: "track", trackMin: 0 },
+    { label: "In Love", cmd: null, key: "inlove", editable: true, playMode: "track", trackMin: 0 },
+    { label: "Macho Man", cmd: null, key: "macho", editable: true, playMode: "track", trackMin: 0 },
+    { label: "Gangnam Style", cmd: null, key: "gangnam", editable: true, playMode: "track", trackMin: 0 },
+    { label: "Uptown Funk", cmd: null, key: "uptown", editable: true, playMode: "track", trackMin: 0 },
+    { label: "Celebration", cmd: null, key: "celebr", editable: true, playMode: "track", trackMin: 0 },
+    { label: "Stayin' Alive", cmd: null, key: "stayin", editable: true, playMode: "track", trackMin: 0 },
+    { label: "Harlem Shake", cmd: null, key: "harlem", editable: true, playMode: "track", trackMin: 0 },
+    { label: "PBJ Time", cmd: null, key: "pbjtime", editable: true, playMode: "track", trackMin: 0 },
     { label: "Imperial March", cmd: "$M", key: "imp_march", editable: true },
     { label: "Long Cantina", cmd: "$C", key: "cantina_l", editable: true },
     { label: "Boot Sound", cmd: "$B", key: "startup", editable: true },
@@ -19,6 +32,7 @@
     { label: "Random Off", cmd: "$O", key: null, editable: false },
     { label: "Stop / Chatter Off", cmd: "$s", key: null, editable: false },
   ];
+  const CMD_MARKER = "—";
 
   // AudioDriver capability bits — must match audio_driver.h AUDIO_CAP_* constants
   const AUDIO_CAP_STATUS_QUERY = 0x01;
@@ -215,7 +229,7 @@
   const buildNamedSoundRows = () => {
     if (!tbody) return;
     if (trackNumberNote) {
-      trackNumberNote.textContent = "Track numbers are module-specific — set these to match your installed module's layout.";
+      trackNumberNote.textContent = "Track numbers are module-specific — set these to match your installed module's layout. T08 music rows allow 0 for silent/no-op play.";
     }
 
     NAMED_SOUNDS.forEach((sound) => {
@@ -227,21 +241,25 @@
 
       const tdCmd = document.createElement("td");
       tdCmd.className = "sound-mono";
-      tdCmd.textContent = sound.cmd;
+      tdCmd.textContent = sound.cmd ?? CMD_MARKER;
 
       const tdTrack = document.createElement("td");
       const tdPlay = document.createElement("td");
+      let rowInput = null;
+      let rowFeedback = null;
 
       if (sound.editable && sound.key) {
+        const minTrack = sound.trackMin ?? 1;
         const input = document.createElement("input");
         input.type = "number";
-        input.min = "1";
-        input.max = "999";
+        input.min = String(minTrack);
+        input.max = String(TRACK_MAX);
         input.className = "sound-track-input-sm";
         input.dataset.key = sound.key;
         input.id = `track-input-${sound.key}`;
         input.setAttribute("aria-label", `${sound.label} track number`);
         tdTrack.appendChild(input);
+        rowInput = input;
 
         const saveButton = document.createElement("button");
         saveButton.className = "btn sound-btn-compact";
@@ -249,7 +267,7 @@
         saveButton.title = "Save track number";
         saveButton.setAttribute("aria-label", `Save ${sound.label} track number`);
 
-        const rowFeedback = document.createElement("span");
+        rowFeedback = document.createElement("span");
         rowFeedback.className = "sound-feedback-inline";
         rowFeedback.setAttribute("role", "status");
         rowFeedback.setAttribute("aria-live", "polite");
@@ -257,8 +275,8 @@
 
         saveButton.addEventListener("click", () => {
           const value = Number.parseInt(input.value, 10);
-          if (!value || value < 1 || value > 999) {
-            showFeedback(rowFeedback, "1–999", false);
+          if (Number.isNaN(value) || value < minTrack || value > TRACK_MAX) {
+            showFeedback(rowFeedback, `${minTrack}–${TRACK_MAX}`, false);
             return;
           }
           postTrack(sound.key, value, rowFeedback);
@@ -273,11 +291,26 @@
       const playButton = document.createElement("button");
       playButton.className = "btn sound-btn-play";
       playButton.textContent = "▶";
-      playButton.title = `Play ${sound.cmd}`;
       playButton.setAttribute("aria-label", `Play ${sound.label}`);
-      playButton.addEventListener("click", () => {
-        postAudio({ action: "dollar", cmd: sound.cmd }, globalFb, sound.label);
-      });
+
+      if (sound.playMode === "track") {
+        playButton.title = `Play configured track for ${sound.label}`;
+        playButton.addEventListener("click", () => {
+          const minTrack = sound.trackMin ?? 1;
+          const value = Number.parseInt(rowInput?.value, 10);
+          if (Number.isNaN(value) || value < minTrack || value > TRACK_MAX) {
+            showFeedback(rowFeedback || globalFb, `${minTrack}–${TRACK_MAX}`, false);
+            return;
+          }
+          if (value === 0) return;
+          postAudio({ action: "play", track: value }, globalFb, sound.label);
+        });
+      } else {
+        playButton.title = `Play ${sound.cmd}`;
+        playButton.addEventListener("click", () => {
+          postAudio({ action: "dollar", cmd: sound.cmd }, globalFb, sound.label);
+        });
+      }
       tdPlay.appendChild(playButton);
 
       tr.appendChild(tdLabel);

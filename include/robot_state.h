@@ -214,6 +214,19 @@ struct RobotState {
     uint16_t cfg_snd_imp_march;  // $M  default 178
     uint16_t cfg_snd_cantina_l;  // $C  default 180
     uint16_t cfg_snd_startup;    // $B  default 255
+    // T08 named tracks without $ aliases (default 0 = unset/silent).
+    uint16_t cfg_snd_doodoo;
+    uint16_t cfg_snd_failure;
+    uint16_t cfg_snd_disco;
+    uint16_t cfg_snd_mahna;
+    uint16_t cfg_snd_inlove;
+    uint16_t cfg_snd_macho;
+    uint16_t cfg_snd_gangnam;
+    uint16_t cfg_snd_uptown;
+    uint16_t cfg_snd_celebr;
+    uint16_t cfg_snd_stayin;
+    uint16_t cfg_snd_harlem;
+    uint16_t cfg_snd_pbjtime;
     uint16_t cfg_snd_rand_min;   // random pool start  default 1
     uint16_t cfg_snd_rand_max;   // random pool end    default 100
     uint16_t cfg_snd_int_quiet;  // random interval Quiet mode (s)     default 0
