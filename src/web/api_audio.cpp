@@ -13,7 +13,7 @@
 //   action=dollar &cmd=$R       — raw $ command (any from the $ command set)
 //
 // POST /api/audio/tracks params:
-//   key=<name>   &track=N       — set named track (1–999, or 0–999 for T08/T09 keys)
+//   key=<name>   &track=N       — set named/category/system track (1–999, or 0–999 where allowed)
 //   key=rand_min &track=N       — set random pool minimum
 //   key=rand_max &track=N       — set random pool maximum
 //
@@ -21,7 +21,7 @@
 //                  startup doodoo failure disco mahna inlove macho gangnam
 //                  uptown celebr stayin harlem pbjtime
 //                  sys_boot sys_mode_n sys_mode_s sys_mode_t sys_drv_on sys_dome_on
-//                  rand_min rand_max
+//                  snd_cat_*_lo snd_cat_*_hi, rand_min rand_max
 // =============================================================================
 
 #include "api_audio.h"
@@ -59,6 +59,10 @@ void registerAudioRoutes(AsyncWebServer& server) {
         uint16_t doodoo, failure, disco, mahna, inlove, macho;
         uint16_t gangnam, uptown, celebr, stayin, harlem, pbjtime;
         uint16_t sysBoot, sysModeN, sysModeS, sysModeT, sysDrvOn, sysDomeOn;
+        uint16_t catGenLo, catGenHi, catChatLo, catChatHi, catHapLo, catHapHi;
+        uint16_t catProcLo, catProcHi, catSadLo, catSadHi, catSentLo, catSentHi;
+        uint16_t catHumLo, catHumHi, catScrmLo, catScrmHi, catOohLo, catOohHi;
+        uint16_t catAlrmLo, catAlrmHi, catPfftLo, catPfftHi, catWhisLo, catWhisHi;
         uint16_t randMin, randMax;
         uint16_t intQuiet, intMid, intFull, intAwake;
         uint8_t volume;
@@ -89,6 +93,30 @@ void registerAudioRoutes(AsyncWebServer& server) {
         sysModeT = robotState.cfg_snd_sys_mode_t;
         sysDrvOn = robotState.cfg_snd_sys_drv_on;
         sysDomeOn = robotState.cfg_snd_sys_dome_on;
+        catGenLo = robotState.cfg_snd_cat_gen_lo;
+        catGenHi = robotState.cfg_snd_cat_gen_hi;
+        catChatLo = robotState.cfg_snd_cat_chat_lo;
+        catChatHi = robotState.cfg_snd_cat_chat_hi;
+        catHapLo = robotState.cfg_snd_cat_hap_lo;
+        catHapHi = robotState.cfg_snd_cat_hap_hi;
+        catProcLo = robotState.cfg_snd_cat_proc_lo;
+        catProcHi = robotState.cfg_snd_cat_proc_hi;
+        catSadLo = robotState.cfg_snd_cat_sad_lo;
+        catSadHi = robotState.cfg_snd_cat_sad_hi;
+        catSentLo = robotState.cfg_snd_cat_sent_lo;
+        catSentHi = robotState.cfg_snd_cat_sent_hi;
+        catHumLo = robotState.cfg_snd_cat_hum_lo;
+        catHumHi = robotState.cfg_snd_cat_hum_hi;
+        catScrmLo = robotState.cfg_snd_cat_scrm_lo;
+        catScrmHi = robotState.cfg_snd_cat_scrm_hi;
+        catOohLo = robotState.cfg_snd_cat_ooh_lo;
+        catOohHi = robotState.cfg_snd_cat_ooh_hi;
+        catAlrmLo = robotState.cfg_snd_cat_alrm_lo;
+        catAlrmHi = robotState.cfg_snd_cat_alrm_hi;
+        catPfftLo = robotState.cfg_snd_cat_pfft_lo;
+        catPfftHi = robotState.cfg_snd_cat_pfft_hi;
+        catWhisLo = robotState.cfg_snd_cat_whis_lo;
+        catWhisHi = robotState.cfg_snd_cat_whis_hi;
         randMin = robotState.cfg_snd_rand_min;
         randMax = robotState.cfg_snd_rand_max;
         volume = robotState.cfg_audioVolume;
@@ -100,7 +128,7 @@ void registerAudioRoutes(AsyncWebServer& server) {
 
         // Stack-allocated — not static. Static local buffers in async handlers
         // are shared across concurrent requests and would cause data races.
-        char body[1024];
+        char body[2048];
         snprintf(body, sizeof(body),
                  "{\"scream\":%u,\"faint\":%u,\"leia\":%u,"
                  "\"cantina_s\":%u,\"sw_theme\":%u,\"imp_march\":%u,"
@@ -110,13 +138,29 @@ void registerAudioRoutes(AsyncWebServer& server) {
                  "\"celebr\":%u,\"stayin\":%u,\"harlem\":%u,\"pbjtime\":%u,"
                  "\"sys_boot\":%u,\"sys_mode_n\":%u,\"sys_mode_s\":%u,"
                  "\"sys_mode_t\":%u,\"sys_drv_on\":%u,\"sys_dome_on\":%u,"
+                 "\"snd_cat_gen_lo\":%u,\"snd_cat_gen_hi\":%u,"
+                 "\"snd_cat_chat_lo\":%u,\"snd_cat_chat_hi\":%u,"
+                 "\"snd_cat_hap_lo\":%u,\"snd_cat_hap_hi\":%u,"
+                 "\"snd_cat_proc_lo\":%u,\"snd_cat_proc_hi\":%u,"
+                 "\"snd_cat_sad_lo\":%u,\"snd_cat_sad_hi\":%u,"
+                 "\"snd_cat_sent_lo\":%u,\"snd_cat_sent_hi\":%u,"
+                 "\"snd_cat_hum_lo\":%u,\"snd_cat_hum_hi\":%u,"
+                 "\"snd_cat_scrm_lo\":%u,\"snd_cat_scrm_hi\":%u,"
+                 "\"snd_cat_ooh_lo\":%u,\"snd_cat_ooh_hi\":%u,"
+                 "\"snd_cat_alrm_lo\":%u,\"snd_cat_alrm_hi\":%u,"
+                 "\"snd_cat_pfft_lo\":%u,\"snd_cat_pfft_hi\":%u,"
+                 "\"snd_cat_whis_lo\":%u,\"snd_cat_whis_hi\":%u,"
                  "\"rand_min\":%u,\"rand_max\":%u,\"volume\":%u,"
                  "\"snd_int_quiet\":%u,\"snd_int_mid\":%u,"
                  "\"snd_int_full\":%u,\"snd_int_awake\":%u}",
                  scream, faint, leia, cantinaS, swTheme, impMarch, cantinaL, startup, doodoo,
                  failure, disco, mahna, inlove, macho, gangnam, uptown, celebr, stayin,
                  harlem, pbjtime, sysBoot, sysModeN, sysModeS, sysModeT, sysDrvOn, sysDomeOn,
-                 randMin, randMax, volume, intQuiet, intMid, intFull, intAwake);
+                 catGenLo, catGenHi, catChatLo, catChatHi, catHapLo, catHapHi, catProcLo,
+                 catProcHi, catSadLo, catSadHi, catSentLo, catSentHi, catHumLo, catHumHi,
+                 catScrmLo, catScrmHi, catOohLo, catOohHi, catAlrmLo, catAlrmHi, catPfftLo,
+                 catPfftHi, catWhisLo, catWhisHi, randMin, randMax, volume, intQuiet, intMid,
+                 intFull, intAwake);
         req->send(200, "application/json", body);
     });
 
@@ -131,12 +175,14 @@ void registerAudioRoutes(AsyncWebServer& server) {
         }
 
         // Resolve key before range validation — interval keys accept 0–3600 s,
-        // track-number keys accept 1–999, except T08 named keys which allow 0–999.
+        // track-number keys accept 1–999, except T08/T09 keys and snd_cat_* keys
+        // which allow 0–999 (0 = silent/unset).
         String keyValue = keyParam->value();
         const char* key = keyValue.c_str();
         bool isInterval = (strncmp(key, "snd_int_", 8) == 0);
+        bool isCategoryRangeKey = (strncmp(key, "snd_cat_", 8) == 0);
         bool isZeroAllowedTrackKey =
-            strcmp(key, "doodoo") == 0 || strcmp(key, "failure") == 0 ||
+            isCategoryRangeKey || strcmp(key, "doodoo") == 0 || strcmp(key, "failure") == 0 ||
             strcmp(key, "disco") == 0 || strcmp(key, "mahna") == 0 ||
             strcmp(key, "inlove") == 0 || strcmp(key, "macho") == 0 ||
             strcmp(key, "gangnam") == 0 || strcmp(key, "uptown") == 0 ||
@@ -230,6 +276,54 @@ void registerAudioRoutes(AsyncWebServer& server) {
             fieldPtr = &robotState.cfg_snd_sys_drv_on;
         else if (strcmp(key, "sys_dome_on") == 0)
             fieldPtr = &robotState.cfg_snd_sys_dome_on;
+        else if (strcmp(key, "snd_cat_gen_lo") == 0)
+            fieldPtr = &robotState.cfg_snd_cat_gen_lo;
+        else if (strcmp(key, "snd_cat_gen_hi") == 0)
+            fieldPtr = &robotState.cfg_snd_cat_gen_hi;
+        else if (strcmp(key, "snd_cat_chat_lo") == 0)
+            fieldPtr = &robotState.cfg_snd_cat_chat_lo;
+        else if (strcmp(key, "snd_cat_chat_hi") == 0)
+            fieldPtr = &robotState.cfg_snd_cat_chat_hi;
+        else if (strcmp(key, "snd_cat_hap_lo") == 0)
+            fieldPtr = &robotState.cfg_snd_cat_hap_lo;
+        else if (strcmp(key, "snd_cat_hap_hi") == 0)
+            fieldPtr = &robotState.cfg_snd_cat_hap_hi;
+        else if (strcmp(key, "snd_cat_proc_lo") == 0)
+            fieldPtr = &robotState.cfg_snd_cat_proc_lo;
+        else if (strcmp(key, "snd_cat_proc_hi") == 0)
+            fieldPtr = &robotState.cfg_snd_cat_proc_hi;
+        else if (strcmp(key, "snd_cat_sad_lo") == 0)
+            fieldPtr = &robotState.cfg_snd_cat_sad_lo;
+        else if (strcmp(key, "snd_cat_sad_hi") == 0)
+            fieldPtr = &robotState.cfg_snd_cat_sad_hi;
+        else if (strcmp(key, "snd_cat_sent_lo") == 0)
+            fieldPtr = &robotState.cfg_snd_cat_sent_lo;
+        else if (strcmp(key, "snd_cat_sent_hi") == 0)
+            fieldPtr = &robotState.cfg_snd_cat_sent_hi;
+        else if (strcmp(key, "snd_cat_hum_lo") == 0)
+            fieldPtr = &robotState.cfg_snd_cat_hum_lo;
+        else if (strcmp(key, "snd_cat_hum_hi") == 0)
+            fieldPtr = &robotState.cfg_snd_cat_hum_hi;
+        else if (strcmp(key, "snd_cat_scrm_lo") == 0)
+            fieldPtr = &robotState.cfg_snd_cat_scrm_lo;
+        else if (strcmp(key, "snd_cat_scrm_hi") == 0)
+            fieldPtr = &robotState.cfg_snd_cat_scrm_hi;
+        else if (strcmp(key, "snd_cat_ooh_lo") == 0)
+            fieldPtr = &robotState.cfg_snd_cat_ooh_lo;
+        else if (strcmp(key, "snd_cat_ooh_hi") == 0)
+            fieldPtr = &robotState.cfg_snd_cat_ooh_hi;
+        else if (strcmp(key, "snd_cat_alrm_lo") == 0)
+            fieldPtr = &robotState.cfg_snd_cat_alrm_lo;
+        else if (strcmp(key, "snd_cat_alrm_hi") == 0)
+            fieldPtr = &robotState.cfg_snd_cat_alrm_hi;
+        else if (strcmp(key, "snd_cat_pfft_lo") == 0)
+            fieldPtr = &robotState.cfg_snd_cat_pfft_lo;
+        else if (strcmp(key, "snd_cat_pfft_hi") == 0)
+            fieldPtr = &robotState.cfg_snd_cat_pfft_hi;
+        else if (strcmp(key, "snd_cat_whis_lo") == 0)
+            fieldPtr = &robotState.cfg_snd_cat_whis_lo;
+        else if (strcmp(key, "snd_cat_whis_hi") == 0)
+            fieldPtr = &robotState.cfg_snd_cat_whis_hi;
         else if (strcmp(key, "rand_min") == 0)
             fieldPtr = &robotState.cfg_snd_rand_min;
         else if (strcmp(key, "rand_max") == 0)

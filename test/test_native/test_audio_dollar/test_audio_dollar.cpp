@@ -302,6 +302,33 @@ void test_nvs_key_sys_dome_on() {
 }
 
 
+void test_nvs_key_sound_categories() {
+    TEST_ASSERT_EQUAL_STRING("snd_cat_gen_lo", audioTrackNvsKey("snd_cat_gen_lo"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_gen_hi", audioTrackNvsKey("snd_cat_gen_hi"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_chat_lo", audioTrackNvsKey("snd_cat_chat_lo"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_chat_hi", audioTrackNvsKey("snd_cat_chat_hi"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_hap_lo", audioTrackNvsKey("snd_cat_hap_lo"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_hap_hi", audioTrackNvsKey("snd_cat_hap_hi"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_proc_lo", audioTrackNvsKey("snd_cat_proc_lo"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_proc_hi", audioTrackNvsKey("snd_cat_proc_hi"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_sad_lo", audioTrackNvsKey("snd_cat_sad_lo"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_sad_hi", audioTrackNvsKey("snd_cat_sad_hi"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_sent_lo", audioTrackNvsKey("snd_cat_sent_lo"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_sent_hi", audioTrackNvsKey("snd_cat_sent_hi"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_hum_lo", audioTrackNvsKey("snd_cat_hum_lo"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_hum_hi", audioTrackNvsKey("snd_cat_hum_hi"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_scrm_lo", audioTrackNvsKey("snd_cat_scrm_lo"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_scrm_hi", audioTrackNvsKey("snd_cat_scrm_hi"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_ooh_lo", audioTrackNvsKey("snd_cat_ooh_lo"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_ooh_hi", audioTrackNvsKey("snd_cat_ooh_hi"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_alrm_lo", audioTrackNvsKey("snd_cat_alrm_lo"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_alrm_hi", audioTrackNvsKey("snd_cat_alrm_hi"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_pfft_lo", audioTrackNvsKey("snd_cat_pfft_lo"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_pfft_hi", audioTrackNvsKey("snd_cat_pfft_hi"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_whis_lo", audioTrackNvsKey("snd_cat_whis_lo"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_whis_hi", audioTrackNvsKey("snd_cat_whis_hi"));
+}
+
 void test_nvs_key_unknown_returns_null() {
     TEST_ASSERT_NULL(audioTrackNvsKey("bogus"));
 }
@@ -319,6 +346,12 @@ void test_nvs_keys_are_15_chars_or_less() {
         "disco","mahna","inlove","macho","gangnam","uptown",
         "celebr","stayin","harlem","pbjtime",
         "sys_boot","sys_mode_n","sys_mode_s","sys_mode_t","sys_drv_on","sys_dome_on",
+        "snd_cat_gen_lo","snd_cat_gen_hi","snd_cat_chat_lo","snd_cat_chat_hi",
+        "snd_cat_hap_lo","snd_cat_hap_hi","snd_cat_proc_lo","snd_cat_proc_hi",
+        "snd_cat_sad_lo","snd_cat_sad_hi","snd_cat_sent_lo","snd_cat_sent_hi",
+        "snd_cat_hum_lo","snd_cat_hum_hi","snd_cat_scrm_lo","snd_cat_scrm_hi",
+        "snd_cat_ooh_lo","snd_cat_ooh_hi","snd_cat_alrm_lo","snd_cat_alrm_hi",
+        "snd_cat_pfft_lo","snd_cat_pfft_hi","snd_cat_whis_lo","snd_cat_whis_hi",
         "rand_min","rand_max","snd_int_quiet","snd_int_mid","snd_int_full","snd_int_awake"
     };
     for (size_t i = 0; i < sizeof(keys)/sizeof(keys[0]); i++) {
@@ -399,6 +432,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_nvs_key_sys_mode_t);
     RUN_TEST(test_nvs_key_sys_drv_on);
     RUN_TEST(test_nvs_key_sys_dome_on);
+    RUN_TEST(test_nvs_key_sound_categories);
     RUN_TEST(test_nvs_key_rand_min);
     RUN_TEST(test_nvs_key_rand_max);
     RUN_TEST(test_nvs_key_snd_int_quiet);

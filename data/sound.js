@@ -41,6 +41,21 @@
     { label: "Drives engaged", key: "sys_drv_on" },
     { label: "Dome enabled", key: "sys_dome_on" },
   ];
+  const CATEGORY_SOUNDS = [
+    { label: "General", loKey: "snd_cat_gen_lo", hiKey: "snd_cat_gen_hi" },
+    { label: "Chatty", loKey: "snd_cat_chat_lo", hiKey: "snd_cat_chat_hi" },
+    { label: "Happy", loKey: "snd_cat_hap_lo", hiKey: "snd_cat_hap_hi" },
+    { label: "Processing", loKey: "snd_cat_proc_lo", hiKey: "snd_cat_proc_hi" },
+    { label: "Sad", loKey: "snd_cat_sad_lo", hiKey: "snd_cat_sad_hi" },
+    { label: "Sentimental", loKey: "snd_cat_sent_lo", hiKey: "snd_cat_sent_hi" },
+    { label: "Humming", loKey: "snd_cat_hum_lo", hiKey: "snd_cat_hum_hi" },
+    { label: "Scream", loKey: "snd_cat_scrm_lo", hiKey: "snd_cat_scrm_hi" },
+    { label: "Surprised", loKey: "snd_cat_ooh_lo", hiKey: "snd_cat_ooh_hi" },
+    { label: "Alert", loKey: "snd_cat_alrm_lo", hiKey: "snd_cat_alrm_hi" },
+    { label: "Pfft", loKey: "snd_cat_pfft_lo", hiKey: "snd_cat_pfft_hi" },
+    { label: "Whistle", loKey: "snd_cat_whis_lo", hiKey: "snd_cat_whis_hi" },
+  ];
+
   const CMD_MARKER = "—";
 
   // AudioDriver capability bits — must match audio_driver.h AUDIO_CAP_* constants
@@ -52,6 +67,7 @@
 
   const tbody = document.getElementById("named-sound-rows");
   const systemTbody = document.getElementById("system-sound-rows");
+  const categoryTbody = document.getElementById("category-sound-rows");
   const soundStateBadge = document.getElementById("sound-state-badge");
   const soundDisabledCard = document.getElementById("sound-disabled-card");
   const globalFb = document.getElementById("global-feedback");
@@ -199,6 +215,9 @@
         control.setAttribute("aria-disabled", enabled ? "false" : "true");
       }
     });
+    if (enabled) {
+      refreshCategoryTestButtons();
+    }
   };
 
   const postAudio = async (params, feedbackEl, label = 'Sound command') => {
@@ -234,6 +253,30 @@
   const syncVolumeLabel = () => {
     if (!volSlider || !volDisplay) return;
     volDisplay.textContent = String(volSlider.value);
+  };
+
+  const isCategoryRangeValid = (minVal, maxVal) => {
+    if (Number.isNaN(minVal) || Number.isNaN(maxVal)) return false;
+    if (minVal === 0 && maxVal === 0) return true;
+    return minVal >= 1 && maxVal >= 1 && minVal <= maxVal && maxVal <= TRACK_MAX;
+  };
+
+  const updateCategoryTestButtonState = (button, minVal, maxVal) => {
+    if (!button) return;
+    const enabled = soundHardwareEnabled && isCategoryRangeValid(minVal, maxVal) && minVal !== 0;
+    button.disabled = !enabled;
+    button.setAttribute("aria-disabled", enabled ? "false" : "true");
+  };
+
+  const refreshCategoryTestButtons = () => {
+    CATEGORY_SOUNDS.forEach((category) => {
+      const minInput = document.getElementById(`cat-min-${category.loKey}`);
+      const maxInput = document.getElementById(`cat-max-${category.hiKey}`);
+      const playButton = minInput?.closest("tr")?.querySelector("td:last-child button");
+      const minVal = Number.parseInt(minInput?.value, 10);
+      const maxVal = Number.parseInt(maxInput?.value, 10);
+      updateCategoryTestButtonState(playButton, minVal, maxVal);
+    });
   };
 
   const buildNamedSoundRows = () => {
@@ -331,6 +374,110 @@
     });
   };
 
+  const buildCategorySoundRows = () => {
+    if (!categoryTbody) return;
+    CATEGORY_SOUNDS.forEach((category) => {
+      const tr = document.createElement("tr");
+      tr.className = "sound-row-divider";
+
+      const tdLabel = document.createElement("td");
+      tdLabel.textContent = category.label;
+
+      const tdMin = document.createElement("td");
+      const minInput = document.createElement("input");
+      minInput.type = "number";
+      minInput.min = "0";
+      minInput.max = String(TRACK_MAX);
+      minInput.value = "0";
+      minInput.className = "sound-track-input-sm";
+      minInput.id = `cat-min-${category.loKey}`;
+      minInput.setAttribute("aria-label", `${category.label} minimum track`);
+      tdMin.appendChild(minInput);
+
+      const tdMax = document.createElement("td");
+      const maxInput = document.createElement("input");
+      maxInput.type = "number";
+      maxInput.min = "0";
+      maxInput.max = String(TRACK_MAX);
+      maxInput.value = "0";
+      maxInput.className = "sound-track-input-sm";
+      maxInput.id = `cat-max-${category.hiKey}`;
+      maxInput.setAttribute("aria-label", `${category.label} maximum track`);
+      tdMax.appendChild(maxInput);
+
+      const tdSave = document.createElement("td");
+      const saveButton = document.createElement("button");
+      saveButton.className = "btn sound-btn-compact";
+      saveButton.textContent = "💾";
+      saveButton.title = "Save category range";
+      saveButton.setAttribute("aria-label", `Save ${category.label} range`);
+      const rowFeedback = document.createElement("span");
+      rowFeedback.className = "sound-feedback-inline";
+      rowFeedback.setAttribute("role", "status");
+      rowFeedback.setAttribute("aria-live", "polite");
+      rowFeedback.setAttribute("aria-atomic", "true");
+      saveButton.addEventListener("click", async () => {
+        const minVal = Number.parseInt(minInput.value, 10);
+        const maxVal = Number.parseInt(maxInput.value, 10);
+        if (!isCategoryRangeValid(minVal, maxVal)) {
+          showFeedback(rowFeedback, "Use 0/0 or 1–999 with Min ≤ Max", false);
+          return;
+        }
+        if (!window.PAApi) return;
+        if (!soundHardwareEnabled) {
+          showFeedback(rowFeedback, "Category updates unavailable: enable S2 — Sound in Setup.", false);
+          return;
+        }
+        try {
+          const [lowResp, highResp] = await Promise.all([
+            window.PAApi.postForm("/api/audio/tracks", { key: category.loKey, track: minVal }, { timeoutMs: 3000 }),
+            window.PAApi.postForm("/api/audio/tracks", { key: category.hiKey, track: maxVal }, { timeoutMs: 3000 }),
+          ]);
+          const ok = Boolean(lowResp.data?.ok && highResp.data?.ok);
+          showFeedback(rowFeedback, ok ? "Saved" : "Save failed", ok);
+        } catch (error) {
+          showFeedback(rowFeedback, `Save failed: ${window.PAApi.messageFor(error)}`, false);
+        }
+      });
+      tdSave.appendChild(saveButton);
+      tdSave.appendChild(rowFeedback);
+
+      const tdPlay = document.createElement("td");
+      const playButton = document.createElement("button");
+      playButton.className = "btn sound-btn-play";
+      playButton.textContent = "▶";
+      playButton.title = `Play random ${category.label} track`;
+      playButton.setAttribute("aria-label", `Play ${category.label}`);
+      playButton.addEventListener("click", () => {
+        const minVal = Number.parseInt(minInput.value, 10);
+        const maxVal = Number.parseInt(maxInput.value, 10);
+        if (!isCategoryRangeValid(minVal, maxVal)) {
+          showFeedback(rowFeedback, "Use 0/0 or 1–999 with Min ≤ Max", false);
+          return;
+        }
+        if (minVal === 0) return;
+        const randomTrack = minVal + Math.floor(Math.random() * (maxVal - minVal + 1));
+        postAudio({ action: "play", track: randomTrack }, globalFb, `${category.label} (${randomTrack})`);
+      });
+      const syncPlayButtonState = () => {
+        const minVal = Number.parseInt(minInput.value, 10);
+        const maxVal = Number.parseInt(maxInput.value, 10);
+        updateCategoryTestButtonState(playButton, minVal, maxVal);
+      };
+      minInput.addEventListener("input", syncPlayButtonState);
+      maxInput.addEventListener("input", syncPlayButtonState);
+      syncPlayButtonState();
+      tdPlay.appendChild(playButton);
+
+      tr.appendChild(tdLabel);
+      tr.appendChild(tdMin);
+      tr.appendChild(tdMax);
+      tr.appendChild(tdSave);
+      tr.appendChild(tdPlay);
+      categoryTbody.appendChild(tr);
+    });
+  };
+
   const buildSystemSoundRows = () => {
     if (!systemTbody) return;
     SYSTEM_SOUNDS.forEach((sound) => {
@@ -349,6 +496,7 @@
       input.id = `sys-track-input-${sound.key}`;
       input.dataset.key = sound.key;
       input.setAttribute("aria-label", `${sound.label} track number`);
+      input.placeholder = "(silent / not set)";
       tdTrack.appendChild(input);
 
       const saveButton = document.createElement("button");
@@ -423,6 +571,21 @@
         }
       });
 
+      CATEGORY_SOUNDS.forEach((category) => {
+        const minInput = document.getElementById(`cat-min-${category.loKey}`);
+        const maxInput = document.getElementById(`cat-max-${category.hiKey}`);
+        if (minInput && data[category.loKey] !== undefined) {
+          minInput.value = data[category.loKey];
+        }
+        if (maxInput && data[category.hiKey] !== undefined) {
+          maxInput.value = data[category.hiKey];
+        }
+        const playButton = minInput?.closest("tr")?.querySelector("td:last-child button");
+        const minVal = Number.parseInt(minInput?.value, 10);
+        const maxVal = Number.parseInt(maxInput?.value, 10);
+        updateCategoryTestButtonState(playButton, minVal, maxVal);
+      });
+
       const randMin = document.getElementById("rand-min");
       const randMax = document.getElementById("rand-max");
       if (randMin && data.rand_min !== undefined) randMin.value = data.rand_min;
@@ -467,6 +630,7 @@
   };
 
   buildNamedSoundRows();
+  buildCategorySoundRows();
   buildSystemSoundRows();
   loadTracks();
   syncVolumeLabel();
