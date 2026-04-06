@@ -27,6 +27,7 @@
 #include "api_audio.h"
 
 #include <Arduino.h>
+#include <ArduinoJson.h>
 #include <ESPAsyncWebServer.h>
 #include <Preferences.h>
 #include <stdio.h>
@@ -37,6 +38,7 @@
 #include "config.h"
 #include "logging.h"
 #include "mood.h"
+#include "mood_sound_mapping.h"
 #include "robot_state.h"
 
 static const char* TAG = "WebServer";
@@ -46,6 +48,155 @@ static bool isSleepModeActive() {
     bool sleeping = robotState.sleepMode;
     taskEXIT_CRITICAL(&robotStateMux);
     return sleeping;
+}
+
+void registerMoodMapRoutes(AsyncWebServer& server) {
+    server.on("/api/audio/mood-map", HTTP_GET, [](AsyncWebServerRequest* req) {
+        MoodCategoryMaskConfig masks{};
+        taskENTER_CRITICAL(&robotStateMux);
+        masks.quiet = (uint16_t)(robotState.cfg_snd_moodcat_quiet & MOOD_CATEGORY_MASK_MAX);
+        masks.mid = (uint16_t)(robotState.cfg_snd_moodcat_mid & MOOD_CATEGORY_MASK_MAX);
+        masks.full = (uint16_t)(robotState.cfg_snd_moodcat_full & MOOD_CATEGORY_MASK_MAX);
+        masks.awakeplus =
+            (uint16_t)(robotState.cfg_snd_moodcat_awakeplus & MOOD_CATEGORY_MASK_MAX);
+        taskEXIT_CRITICAL(&robotStateMux);
+
+        char body[128];
+        size_t n = formatMoodCategoryMapJson(body, sizeof(body), masks);
+        if (n >= sizeof(body)) {
+            req->send(500, "application/json",
+                      "{\"ok\":false,\"error\":\"mood-map response overflow\"}");
+            return;
+        }
+        req->send(200, "application/json", body);
+    });
+
+    server.on("/api/audio/mood-map", HTTP_POST, [](AsyncWebServerRequest* req) {
+        uint16_t quiet = 0;
+        uint16_t mid = 0;
+        uint16_t full = 0;
+        uint16_t awakeplus = 0;
+
+        auto parseMaskText = [&](const String& raw, const char* key, uint16_t* out) -> bool {
+            uint32_t value = 0;
+            if (!parseUint32Value(raw.c_str(), &value)) {
+                char err[96];
+                snprintf(err, sizeof(err),
+                         "{\"ok\":false,\"error\":\"%s must be a non-negative integer\"}", key);
+                req->send(400, "application/json", err);
+                return false;
+            }
+            if (!isValidMoodCategoryMaskValue(value)) {
+                char err[96];
+                snprintf(err, sizeof(err),
+                         "{\"ok\":false,\"error\":\"%s must be 0..4095\"}", key);
+                req->send(400, "application/json", err);
+                return false;
+            }
+            *out = (uint16_t)value;
+            return true;
+        };
+
+        const AsyncWebParameter* quietParam = req->getParam("quiet", true);
+        const AsyncWebParameter* midParam = req->getParam("mid", true);
+        const AsyncWebParameter* fullParam = req->getParam("full", true);
+        const AsyncWebParameter* awakeplusParam = req->getParam("awakeplus", true);
+        const bool hasAnyForm = quietParam || midParam || fullParam || awakeplusParam;
+
+        if (hasAnyForm) {
+            if (!(quietParam && midParam && fullParam && awakeplusParam)) {
+                req->send(400, "application/json",
+                          "{\"ok\":false,\"error\":\"requires quiet, mid, full, awakeplus\"}");
+                return;
+            }
+            if (!parseMaskText(quietParam->value(), "quiet", &quiet) ||
+                !parseMaskText(midParam->value(), "mid", &mid) ||
+                !parseMaskText(fullParam->value(), "full", &full) ||
+                !parseMaskText(awakeplusParam->value(), "awakeplus", &awakeplus)) {
+                return;
+            }
+        } else if (req->hasParam("plain", true)) {
+            JsonDocument bodyDoc;
+            const String rawBody = req->getParam("plain", true)->value();
+            DeserializationError jsonErr = deserializeJson(bodyDoc, rawBody.c_str());
+            if (jsonErr) {
+                req->send(400, "application/json", "{\"ok\":false,\"error\":\"invalid json body\"}");
+                return;
+            }
+
+            auto parseMaskJson = [&](const char* key, uint16_t* out) -> bool {
+                JsonVariantConst value = bodyDoc[key];
+                if (value.isNull()) {
+                    char err[96];
+                    snprintf(err, sizeof(err),
+                             "{\"ok\":false,\"error\":\"missing %s\"}", key);
+                    req->send(400, "application/json", err);
+                    return false;
+                }
+
+                if (value.is<uint32_t>()) {
+                    uint32_t parsed = value.as<uint32_t>();
+                    if (!isValidMoodCategoryMaskValue(parsed)) {
+                        char err[96];
+                        snprintf(err, sizeof(err),
+                                 "{\"ok\":false,\"error\":\"%s must be 0..4095\"}", key);
+                        req->send(400, "application/json", err);
+                        return false;
+                    }
+                    *out = (uint16_t)parsed;
+                    return true;
+                }
+
+                if (value.is<int32_t>()) {
+                    int32_t parsed = value.as<int32_t>();
+                    if (parsed < 0 || !isValidMoodCategoryMaskValue((uint32_t)parsed)) {
+                        char err[96];
+                        snprintf(err, sizeof(err),
+                                 "{\"ok\":false,\"error\":\"%s must be 0..4095\"}", key);
+                        req->send(400, "application/json", err);
+                        return false;
+                    }
+                    *out = (uint16_t)parsed;
+                    return true;
+                }
+
+                if (value.is<const char*>()) {
+                    return parseMaskText(String(value.as<const char*>()), key, out);
+                }
+
+                char err[96];
+                snprintf(err, sizeof(err),
+                         "{\"ok\":false,\"error\":\"%s must be integer\"}", key);
+                req->send(400, "application/json", err);
+                return false;
+            };
+
+            if (!parseMaskJson("quiet", &quiet) || !parseMaskJson("mid", &mid) ||
+                !parseMaskJson("full", &full) || !parseMaskJson("awakeplus", &awakeplus)) {
+                return;
+            }
+        } else {
+            req->send(400, "application/json",
+                      "{\"ok\":false,\"error\":\"requires form fields or json body\"}");
+            return;
+        }
+
+        taskENTER_CRITICAL(&robotStateMux);
+        robotState.cfg_snd_moodcat_quiet = quiet;
+        robotState.cfg_snd_moodcat_mid = mid;
+        robotState.cfg_snd_moodcat_full = full;
+        robotState.cfg_snd_moodcat_awakeplus = awakeplus;
+        taskEXIT_CRITICAL(&robotStateMux);
+
+        if (!saveConfigToNvs()) {
+            req->send(500, "application/json", "{\"ok\":false,\"error\":\"NVS write failed\"}");
+            return;
+        }
+
+        PA_LOG_INFO(TAG, "[AUDIO] POST /api/audio/mood-map q=%u m=%u f=%u a=%u",
+                    (unsigned)quiet, (unsigned)mid, (unsigned)full, (unsigned)awakeplus);
+        req->send(200, "application/json", "{\"ok\":true}");
+    });
 }
 
 void registerAudioRoutes(AsyncWebServer& server) {

@@ -294,6 +294,14 @@ void loadConfigToState() {
                                             (uint16_t)0, (uint16_t)3600);
     robotState.cfg_snd_int_awake = constrain(prefs.getUShort("snd_int_awake", AUDIO_RAND_INT_AWAKE),
                                              (uint16_t)0, (uint16_t)3600);
+    robotState.cfg_snd_moodcat_quiet =
+        constrain(prefs.getUShort("snd_moodcat_q", 0x0048), (uint16_t)0, (uint16_t)0x0FFF);
+    robotState.cfg_snd_moodcat_mid =
+        constrain(prefs.getUShort("snd_moodcat_m", 0x004F), (uint16_t)0, (uint16_t)0x0FFF);
+    robotState.cfg_snd_moodcat_full =
+        constrain(prefs.getUShort("snd_moodcat_f", 0x090F), (uint16_t)0, (uint16_t)0x0FFF);
+    robotState.cfg_snd_moodcat_awakeplus =
+        constrain(prefs.getUShort("snd_moodcat_a", 0x0F8F), (uint16_t)0, (uint16_t)0x0FFF);
     robotState.cfg_snd_cat_gen_lo = prefs.getUShort("snd_cat_gen_lo", 0);
     robotState.cfg_snd_cat_gen_hi = prefs.getUShort("snd_cat_gen_hi", 0);
     robotState.cfg_snd_cat_chat_lo = prefs.getUShort("snd_cat_chat_lo", 0);
@@ -579,6 +587,7 @@ bool saveConfigToNvs() {
     uint16_t sndSysBoot, sndSysModeN, sndSysModeS, sndSysModeT, sndSysDrvOn, sndSysDomeOn;
     uint16_t sndRandMin, sndRandMax;
     uint16_t sndIntQuiet, sndIntMid, sndIntFull, sndIntAwake;
+    uint16_t sndMoodcatQuiet, sndMoodcatMid, sndMoodcatFull, sndMoodcatAwakeplus;
     uint16_t sndCatGenLo, sndCatGenHi, sndCatChatLo, sndCatChatHi, sndCatHapLo, sndCatHapHi;
     uint16_t sndCatProcLo, sndCatProcHi, sndCatSadLo, sndCatSadHi, sndCatSentLo, sndCatSentHi;
     uint16_t sndCatHumLo, sndCatHumHi, sndCatScrmLo, sndCatScrmHi, sndCatOohLo, sndCatOohHi;
@@ -640,6 +649,10 @@ bool saveConfigToNvs() {
     sndIntMid = robotState.cfg_snd_int_mid;
     sndIntFull = robotState.cfg_snd_int_full;
     sndIntAwake = robotState.cfg_snd_int_awake;
+    sndMoodcatQuiet = robotState.cfg_snd_moodcat_quiet;
+    sndMoodcatMid = robotState.cfg_snd_moodcat_mid;
+    sndMoodcatFull = robotState.cfg_snd_moodcat_full;
+    sndMoodcatAwakeplus = robotState.cfg_snd_moodcat_awakeplus;
     sndCatGenLo = robotState.cfg_snd_cat_gen_lo;
     sndCatGenHi = robotState.cfg_snd_cat_gen_hi;
     sndCatChatLo = robotState.cfg_snd_cat_chat_lo;
@@ -739,6 +752,12 @@ bool saveConfigToNvs() {
     auxLedCount = robotState.cfg_aux_led_count;
     taskEXIT_CRITICAL(&robotStateMux);
 
+    // Enforce 12-bit mood-category masks before persisting.
+    sndMoodcatQuiet = (uint16_t)(sndMoodcatQuiet & 0x0FFF);
+    sndMoodcatMid = (uint16_t)(sndMoodcatMid & 0x0FFF);
+    sndMoodcatFull = (uint16_t)(sndMoodcatFull & 0x0FFF);
+    sndMoodcatAwakeplus = (uint16_t)(sndMoodcatAwakeplus & 0x0FFF);
+
     Preferences prefs;
     if (!prefs.begin(NVS_NAMESPACE, false)) {
         return false;
@@ -783,6 +802,10 @@ bool saveConfigToNvs() {
     ok = prefs.putUShort("snd_int_mid", sndIntMid) > 0 && ok;
     ok = prefs.putUShort("snd_int_full", sndIntFull) > 0 && ok;
     ok = prefs.putUShort("snd_int_awake", sndIntAwake) > 0 && ok;
+    ok = prefs.putUShort("snd_moodcat_q", sndMoodcatQuiet) > 0 && ok;
+    ok = prefs.putUShort("snd_moodcat_m", sndMoodcatMid) > 0 && ok;
+    ok = prefs.putUShort("snd_moodcat_f", sndMoodcatFull) > 0 && ok;
+    ok = prefs.putUShort("snd_moodcat_a", sndMoodcatAwakeplus) > 0 && ok;
     ok = prefs.putUShort("snd_cat_gen_lo", sndCatGenLo) > 0 && ok;
     ok = prefs.putUShort("snd_cat_gen_hi", sndCatGenHi) > 0 && ok;
     ok = prefs.putUShort("snd_cat_chat_lo", sndCatChatLo) > 0 && ok;

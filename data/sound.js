@@ -55,6 +55,18 @@
     { label: "Pfft", loKey: "snd_cat_pfft_lo", hiKey: "snd_cat_pfft_hi" },
     { label: "Whistle", loKey: "snd_cat_whis_lo", hiKey: "snd_cat_whis_hi" },
   ];
+  const MOOD_MAP_MOODS = [
+    { key: "quiet", label: "Quiet" },
+    { key: "mid", label: "Mid-Awake" },
+    { key: "full", label: "Full-Awake" },
+    { key: "awakeplus", label: "Awake+" },
+  ];
+  const MOOD_MAP_DEFAULTS = {
+    quiet: 0x0048,
+    mid: 0x004F,
+    full: 0x090F,
+    awakeplus: 0x0F8F,
+  };
 
   const CMD_MARKER = "—";
 
@@ -68,12 +80,17 @@
   const tbody = document.getElementById("named-sound-rows");
   const systemTbody = document.getElementById("system-sound-rows");
   const categoryTbody = document.getElementById("category-sound-rows");
+  const moodMapTbody = document.getElementById("mood-map-rows");
+  const moodMapFb = document.getElementById("mood-map-feedback");
+  const moodMapSaveBtn = document.getElementById("btn-mood-map-save");
   const soundStateBadge = document.getElementById("sound-state-badge");
   const soundDisabledCard = document.getElementById("sound-disabled-card");
   const globalFb = document.getElementById("global-feedback");
   const volSlider = document.getElementById("vol-slider");
   const volDisplay = document.getElementById("vol-display");
   let soundHardwareEnabled = true;
+  let moodMapApiAvailable = true;
+  let moodMapLoaded = false;
 
   // Module status elements
   const modDriver = document.getElementById("mod-driver");
@@ -202,6 +219,48 @@
     }, 2500);
   };
 
+  const setMoodMapStatus = (msg, ok) => {
+    if (!moodMapFb) return;
+    if (!msg) {
+      moodMapFb.textContent = "";
+      moodMapFb.className = "feedback mt-8";
+      return;
+    }
+    moodMapFb.textContent = msg;
+    moodMapFb.className = `feedback mt-8 ${ok ? "success" : "error"}`;
+  };
+
+  const getMoodMapCheckbox = (moodKey, categoryIndex) =>
+    document.getElementById(`mood-map-${moodKey}-${categoryIndex}`);
+
+  const decodeMoodMaskToUi = (moodKey, maskValue) => {
+    CATEGORY_SOUNDS.forEach((_, index) => {
+      const checkbox = getMoodMapCheckbox(moodKey, index);
+      if (!checkbox) return;
+      checkbox.checked = (maskValue & (1 << index)) !== 0;
+    });
+  };
+
+  const encodeMoodMaskFromUi = (moodKey) => {
+    let mask = 0;
+    CATEGORY_SOUNDS.forEach((_, index) => {
+      const checkbox = getMoodMapCheckbox(moodKey, index);
+      if (checkbox?.checked) mask |= (1 << index);
+    });
+    return mask;
+  };
+
+  const syncMoodMapControlState = () => {
+    const enabled = soundHardwareEnabled && moodMapApiAvailable;
+    moodMapTbody?.querySelectorAll('input[type="checkbox"]').forEach((checkbox) => {
+      checkbox.disabled = !enabled;
+    });
+    if (moodMapSaveBtn) {
+      moodMapSaveBtn.disabled = !enabled;
+      moodMapSaveBtn.setAttribute("aria-disabled", enabled ? "false" : "true");
+    }
+  };
+
   const setSoundHardwareEnabled = (enabled) => {
     soundHardwareEnabled = enabled;
     soundDisabledCard?.classList.toggle("hidden", enabled);
@@ -218,6 +277,7 @@
     if (enabled) {
       refreshCategoryTestButtons();
     }
+    syncMoodMapControlState();
   };
 
   const postAudio = async (params, feedbackEl, label = 'Sound command') => {
@@ -478,6 +538,35 @@
     });
   };
 
+
+  const buildMoodMapRows = () => {
+    if (!moodMapTbody) return;
+    moodMapTbody.innerHTML = "";
+
+    CATEGORY_SOUNDS.forEach((category, index) => {
+      const tr = document.createElement("tr");
+      tr.className = "sound-row-divider";
+
+      const tdLabel = document.createElement("td");
+      tdLabel.textContent = category.label;
+      tr.appendChild(tdLabel);
+
+      MOOD_MAP_MOODS.forEach((mood) => {
+        const td = document.createElement("td");
+        td.className = "sound-center";
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.id = `mood-map-${mood.key}-${index}`;
+        checkbox.setAttribute("aria-label", `${category.label} enabled for ${mood.label}`);
+        td.appendChild(checkbox);
+        tr.appendChild(td);
+      });
+
+      moodMapTbody.appendChild(tr);
+    });
+
+    syncMoodMapControlState();
+  };
   const buildSystemSoundRows = () => {
     if (!systemTbody) return;
     SYSTEM_SOUNDS.forEach((sound) => {
@@ -609,6 +698,42 @@
     }
   };
 
+  const loadMoodMap = async () => {
+    if (!window.PAApi) return false;
+    try {
+      const result = await window.PAApi.get("/api/audio/mood-map", { timeoutMs: 3000 });
+      const data = result.data || {};
+
+      MOOD_MAP_MOODS.forEach((mood) => {
+        const raw = Number.parseInt(data[mood.key], 10);
+        const fallback = MOOD_MAP_DEFAULTS[mood.key] ?? 0;
+        const mask = Number.isNaN(raw) ? fallback : (raw & 0x0FFF);
+        decodeMoodMaskToUi(mood.key, mask);
+      });
+
+      moodMapApiAvailable = true;
+      moodMapLoaded = true;
+      setMoodMapStatus("", true);
+    } catch (error) {
+      const endpointMissing =
+        error instanceof window.PAApi.ApiError && error.kind === "http" && error.status === 404;
+      if (endpointMissing) {
+        MOOD_MAP_MOODS.forEach((mood) => {
+          const fallback = MOOD_MAP_DEFAULTS[mood.key] ?? 0;
+          decodeMoodMaskToUi(mood.key, fallback);
+        });
+        moodMapApiAvailable = false;
+        moodMapLoaded = false;
+        setMoodMapStatus("Mood mapping unavailable", false);
+      } else {
+        moodMapApiAvailable = true;
+        setMoodMapStatus(`Mood mapping load failed: ${window.PAApi.messageFor(error)}`, false);
+      }
+    }
+    syncMoodMapControlState();
+    return moodMapLoaded;
+  };
+
   const renderStatus = (data) => {
     const s2Enabled = Boolean(data.s2Sound);
     setSoundHardwareEnabled(s2Enabled);
@@ -631,8 +756,10 @@
 
   buildNamedSoundRows();
   buildCategorySoundRows();
+  buildMoodMapRows();
   buildSystemSoundRows();
   loadTracks();
+  loadMoodMap();
   syncVolumeLabel();
 
   if (window.PAStatusStream?.isSupported()) {
@@ -755,6 +882,39 @@
     } catch (error) {
       showFeedback(intFb, `Save failed: ${window.PAApi.messageFor(error)}`, false);
     }
+  });
+
+  moodMapSaveBtn?.addEventListener("click", async () => {
+    if (!soundHardwareEnabled) {
+      setMoodMapStatus("Mood mapping unavailable: enable S2 — Sound in Setup.", false);
+      return;
+    }
+    if (!moodMapApiAvailable) {
+      setMoodMapStatus("Mood mapping unavailable", false);
+      return;
+    }
+    if (!moodMapLoaded && moodMapApiAvailable) {
+      await loadMoodMap();
+    }
+    if (!moodMapLoaded) {
+      setMoodMapStatus("Mood mapping not loaded yet; retry after connection recovers.", false);
+      return;
+    }
+    if (!window.PAApi) return;
+
+    const payload = {};
+    MOOD_MAP_MOODS.forEach((mood) => {
+      payload[mood.key] = encodeMoodMaskFromUi(mood.key);
+    });
+
+    try {
+      const result = await window.PAApi.postForm("/api/audio/mood-map", payload, { timeoutMs: 3000 });
+      const ok = Boolean(result.data?.ok);
+      setMoodMapStatus(ok ? "Mood mapping saved" : (result.data?.error || "Save failed"), ok);
+    } catch (error) {
+      setMoodMapStatus(`Mood mapping save failed: ${window.PAApi.messageFor(error)}`, false);
+    }
+    syncMoodMapControlState();
   });
 
   // Initial module status fetch from cached data (no UART query on load)

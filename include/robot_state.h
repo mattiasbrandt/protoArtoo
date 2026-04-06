@@ -240,6 +240,11 @@ struct RobotState {
     uint16_t cfg_snd_int_mid;    // random interval Mid-Awake mode (s) default 30
     uint16_t cfg_snd_int_full;   // random interval Full-Awake mode (s) default 20
     uint16_t cfg_snd_int_awake;  // random interval Awake+ mode (s)    default 10
+    // T11 mood-category bitmasks (12-bit; one bit per sound category).
+    uint16_t cfg_snd_moodcat_quiet;
+    uint16_t cfg_snd_moodcat_mid;
+    uint16_t cfg_snd_moodcat_full;
+    uint16_t cfg_snd_moodcat_awakeplus;
 
     // RC-bindable random sound category ranges (NVS-backed).
     // A range is inactive when lo==0 or lo>hi (silent no-op).

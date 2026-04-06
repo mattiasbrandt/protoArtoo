@@ -137,6 +137,32 @@
       </table>
     </div>
 
+
+    <!-- Mood Mapping -->
+    <div class="card">
+      <h3>🧠 Mood Mapping</h3>
+      <div class="desc">
+        Choose which category ranges are used for each mood's idle random chatter.
+      </div>
+      <table class="sound-table mt-12">
+        <thead>
+          <tr>
+            <th>Category</th>
+            <th>Quiet</th>
+            <th>Mid-Awake</th>
+            <th>Full-Awake</th>
+            <th>Awake+</th>
+          </tr>
+        </thead>
+        <tbody id="mood-map-rows">
+          <!-- Populated by sound.js -->
+        </tbody>
+      </table>
+      <div class="button-row mt-12">
+        <button class="btn" id="btn-mood-map-save">💾 Save Changes</button>
+      </div>
+      <div id="mood-map-feedback" class="feedback mt-8" role="status" aria-live="polite" aria-atomic="true"></div>
+    </div>
     <!-- System Sounds -->
     <div class="card">
       <h3>🛎 System Sounds</h3>

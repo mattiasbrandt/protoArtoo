@@ -29,6 +29,7 @@
 #include "audio_dollar_parser.h"
 #include "audio_driver.h"
 #include "logging.h"
+#include "mood_sound_mapping.h"
 #include "robot_state.h"
 
 // -----------------------------------------------------------------------------
@@ -452,6 +453,24 @@ void audioTask(void* pvParameters) {
             uint8_t mood = robotState.activeMood;
             uint16_t randMin = robotState.cfg_snd_rand_min;
             uint16_t randMax = robotState.cfg_snd_rand_max;
+            MoodCategoryMaskConfig moodMasks = {robotState.cfg_snd_moodcat_quiet,
+                                                robotState.cfg_snd_moodcat_mid,
+                                                robotState.cfg_snd_moodcat_full,
+                                                robotState.cfg_snd_moodcat_awakeplus};
+            SoundCategoryRange categoryRanges[SOUND_CATEGORY_COUNT] = {
+                {robotState.cfg_snd_cat_gen_lo, robotState.cfg_snd_cat_gen_hi},
+                {robotState.cfg_snd_cat_chat_lo, robotState.cfg_snd_cat_chat_hi},
+                {robotState.cfg_snd_cat_hap_lo, robotState.cfg_snd_cat_hap_hi},
+                {robotState.cfg_snd_cat_proc_lo, robotState.cfg_snd_cat_proc_hi},
+                {robotState.cfg_snd_cat_sad_lo, robotState.cfg_snd_cat_sad_hi},
+                {robotState.cfg_snd_cat_sent_lo, robotState.cfg_snd_cat_sent_hi},
+                {robotState.cfg_snd_cat_hum_lo, robotState.cfg_snd_cat_hum_hi},
+                {robotState.cfg_snd_cat_scrm_lo, robotState.cfg_snd_cat_scrm_hi},
+                {robotState.cfg_snd_cat_ooh_lo, robotState.cfg_snd_cat_ooh_hi},
+                {robotState.cfg_snd_cat_alrm_lo, robotState.cfg_snd_cat_alrm_hi},
+                {robotState.cfg_snd_cat_pfft_lo, robotState.cfg_snd_cat_pfft_hi},
+                {robotState.cfg_snd_cat_whis_lo, robotState.cfg_snd_cat_whis_hi},
+            };
             uint16_t intSec;
             switch (mood) {
                 case 10:
@@ -477,21 +496,31 @@ void audioTask(void* pvParameters) {
                 uint32_t now = millis();
                 if ((uint32_t)(now - lastRandMs) >= intervalMs) {
                     lastRandMs = now;
-                    if (randMax < randMin)
-                        randMax = randMin;  // guard against bad config
-                    // esp_random() uses the ESP32 hardware RNG — no seeding needed.
-                    uint32_t range = (uint32_t)(randMax - randMin) + 1;
-                    uint16_t track = (uint16_t)(randMin + (esp_random() % range));
-                    // Random timer already enforces a multi-second interval so
-                    // anti-spam check is redundant here, but update lastPlayMs
-                    // so a manual play immediately after a random fire is gated.
-                    lastPlayMs = millis();
-                    driver->playTrack(track);
-                    taskENTER_CRITICAL(&robotStateMux);
-                    robotState.audioActive = true;
-                    taskEXIT_CRITICAL(&robotStateMux);
-                    PA_LOG_DEBUG(TAG, "random track %u (mood %u, int %us)", (unsigned)track,
-                                 (unsigned)mood, (unsigned)intSec);
+                    uint16_t track = 0;
+                    bool usedFlatFallback = false;
+                    const bool selected =
+                        selectRandomTrackForMood(mood, moodMasks, categoryRanges, SOUND_CATEGORY_COUNT,
+                                                 randMin, randMax, esp_random(), &track,
+                                                 &usedFlatFallback);
+                    if (selected) {
+                        // Random timer already enforces a multi-second interval so
+                        // anti-spam check is redundant here, but update lastPlayMs
+                        // so a manual play immediately after a random fire is gated.
+                        lastPlayMs = millis();
+                        driver->playTrack(track);
+                        taskENTER_CRITICAL(&robotStateMux);
+                        robotState.audioActive = true;
+                        taskEXIT_CRITICAL(&robotStateMux);
+                        if (usedFlatFallback) {
+                            PA_LOG_DEBUG(TAG,
+                                         "random track %u (mood %u, int %us, flat fallback)",
+                                         (unsigned)track, (unsigned)mood, (unsigned)intSec);
+                        } else {
+                            PA_LOG_DEBUG(TAG,
+                                         "random track %u (mood %u, int %us, category pool)",
+                                         (unsigned)track, (unsigned)mood, (unsigned)intSec);
+                        }
+                    }
                 }
             }
         }

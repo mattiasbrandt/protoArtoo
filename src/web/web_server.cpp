@@ -774,6 +774,7 @@ void startHttpServerOnce() {
 
         registerEstopRoutes(server);
         registerDriveRoutes(server);
+        registerMoodMapRoutes(server);
         registerAudioRoutes(server);
         registerConfigRoutes(server);
         registerAuxLedRoutes(server);

@@ -9,3 +9,4 @@
 #include <ESPAsyncWebServer.h>
 
 void registerAudioRoutes(AsyncWebServer& server);
+void registerMoodMapRoutes(AsyncWebServer& server);
