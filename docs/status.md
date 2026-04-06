@@ -1,42 +1,39 @@
 # Project Status
 
 protoArtoo is open-source ESP32 body controller firmware for MK4 astromech droids.
-This page tracks the current development state across firmware phases.
-For detailed release notes see `CHANGELOG.md`.
+This page covers features, supported hardware, and known limitations.
+For a full change history, see `CHANGELOG.md`.
 
 ---
 
 ## Build
 
-Run `make help` for a full list of build, test, flash, and OTA targets.
+Run `make help` for a full list of build, flash, and OTA targets.
 For first-time setup:
 - `make setup` writes a local `user.mk` with OTA IP, upload port, and audio backend choice.
-- `make setup-wifi` writes `src/secrets.h` with masked WiFi credential prompts.
+- `make setup-wifi` writes `src/secrets.h` with WiFi credentials.
+
 ---
 
+## Release History
 
-## Phase Overview
-
-| Phase | Description | Status |
-|---|---|---|
-| Architecture & planning | Firmware design and hardware research | Complete |
-| Dome firmware (AstroPixelsPlus fork) | Body-link protocol for the dome controller | Complete |
-| Phase 1 — Drive | Hoverboard drive, RC receiver input, failsafe | Complete — `v0.1.0` |
-| Phase 2 — Web interface | WiFi, web UI, OTA firmware updates | Complete |
-| Phase 3 — Servos + dome motor | Arm servos, dome motor, RC diagnostics and mapping | Software complete — hardware validation partially deferred |
-| **Phase 4 — Audio + dome link** | Sound playback, bidirectional dome communication, web UI improvements | Complete — `v0.4.0`; hardware validation deferred to Phase 5 |
-| Phase 5 — Community release | Documentation, polish, public release | In progress — feature polish, documentation updates, and hardware validation |
+| Release | Key additions |
+|---------|---------------|
+| `v0.1.0` | Hoverboard drive, RC receiver input, failsafe |
+| `v0.2.0` | WiFi, web UI, OTA firmware updates |
+| `v0.3.0` | Arm servos, dome motor, RC diagnostics and channel mapping |
+| `v0.4.0` | Audio system (DY-SV5W, CHIRP, MP3 Trigger), bidirectional dome link, web UI improvements |
+| `v1.0.0` _(upcoming)_ | AUX LED strip, sound categories, system event sounds, hardware validation on full droid build, community release |
 
 ---
 
 ## Current Version
 
 Latest release: `v0.4.0` — see `CHANGELOG.md` for full history.
-Development builds are versioned from the git history and build timestamp.
 
 ---
 
-## What Works
+## Features
 
 ### Drive and safety
 
@@ -53,11 +50,11 @@ Development builds are versioned from the git history and build timestamp.
 - WiFi configuration: standalone access point or connection to an existing network
 - Home dashboard: drive mode switcher, mood selector, and live status indicators
 - Setup page: configure connected hardware components, RC receiver mode, and channel mapping
-- Sleep/wake mode on the dashboard that pauses cosmetic subsystems while keeping RC, drive safety, and web control active
+- Sleep/wake mode that pauses cosmetic subsystems (sound chatter, dome animations, servo idle) while keeping RC, drive, and web control fully active; body and dome automatically stay in sync when either side initiates a sleep or wake
 - Drive page: manual drive and dome control from the browser
 - Dome page: direct dome motor control
 - Servo page: arm and accessory servo control
-- Sound page: trigger named sounds, configure track assignments, and set mood chatter rates
+- Sound page: trigger over 20 named sounds, configure sound categories with per-category track ranges, assign tracks to system events, and set per-mood chatter rates
 - RC diagnostics: live channel values, binding editor, and per-mode calibration
 - Firmware and web UI updates directly from the browser
 - Runtime log verbosity control without reflashing
@@ -65,14 +62,23 @@ Development builds are versioned from the git history and build timestamp.
 
 ### Arms and servos
 
-- Up to six servo channels supported: two main arms, three auxiliary outputs, one RGB indicator
+- Up to five servo channels: two main arms (ARM1/ARM2) and three auxiliary outputs (AUX1/AUX2/AUX3)
 - Open/close calibration per channel, configurable from the web interface
-- Servo type selection (MG996R, MG90S, RGB, or none) per channel
+- Servo type selection (MG996R, MG90S, or none) per channel
+
+### AUX LED strip
+
+- One WS2812B LED strip can be connected to a selectable AUX header (AUX1, AUX2, or AUX3)
+- Color (RGB) and effect (solid, blink, pulse, off) controllable from the web interface
+- Header selection and LED count configured from the Setup page and persisted across reboots
+- The selected AUX header is reserved for the LED strip; remaining AUX headers remain servo outputs
 
 ### Audio
 
-- Pluggable audio module support: DY-SV5W (confirmed on hardware) and CHIRP (implemented — hardware validation pending)
-- Plays named sound cues: scream, Leia message, Short Circuit, Cantina, Imperial March, Star Wars theme, and more
+- Pluggable audio module support: DY-SV5W (confirmed on hardware), CHIRP, and SparkFun MP3 Trigger (both implemented; hardware confirmation pending)
+- Over 20 named sound cues: scream, Leia message, Short Circuit, Cantina, Imperial March, Star Wars theme, Disco, Macho Man, Gangnam Style, and more
+- 12 sound categories (General, Chatty, Happy, Processing, Sad, Sentimental, Humming, Scream, Surprised, Alert, Snarky, Whistle) — each with a configurable track range and an RC-bindable "play random from this category" action
+- System event sounds: configurable tracks for boot, mode changes (Normal/Slow/Turbo), drives engaged, and dome link connected — all opt-in with a default of silent
 - Sounds triggered from RC transmitter, web interface, or dome serial commands
 - Random ambient chatter with per-mood frequency — each mood preset has its own chatter rate
 - Volume configurable from the Sound page and persisted across reboots
@@ -104,40 +110,32 @@ protoArtoo targets a single hardware platform:
 
 ---
 
-
 ## Known Limitations
 
-
 - **Sound module status varies by backend:** Modules with bidirectional UART (DY-SV5W, CHIRP) report module state on the Sound page. DY-SV5W status is manually polled to avoid disrupting its RX state machine during playback. CHIRP status updates automatically every 2 seconds and is safe to query at any time.
+
 ---
 
-## Pending Hardware Validation
+## Not Yet Confirmed on Full Hardware
 
-The following features are implemented and software-verified but require a fully assembled
-droid for final confirmation. They are planned for the Phase 5 hardware validation pass.
+The following features are implemented and work in bench testing but have not been
+exercised on a complete droid build. If you encounter unexpected behavior with any
+of these, please open an issue.
 
-- **Drive and failsafe** — hoverboard response, RC failsafe, and speed limit; hoverboard
-  is not currently connected
-- **Dome motor** — RC-driven dome motor response; requires the full wiring harness connected
-- **RC mapping with a physical transmitter** — channel mapping and calibration across all
-  receiver modes; save/restore across reboots
-- **Dome link end-to-end** — requires both the body board and dome board connected over
-  the slip ring
-- **Audio edge cases** — most audio paths confirmed on hardware; S2 enable/disable toggle
-  and boot mood restore require hardware reconnect
-- **Firmware and web UI update flows** — upload progress indication and post-reboot
-  reconnect with the updated version
-
-- **SBUS + hoverboard simultaneous operation** — RMT SBUS decoder replaces
-  UART-based decoder; all SBUS modes can now run alongside hoverboard drive;
-  requires hardware confirmation on a connected droid
-- **Dual SBUS + dome link simultaneous operation** — SBUS2 moved off UART2;
-  dome link and dual SBUS should now coexist; requires hardware confirmation
+- **Drive and failsafe** — hoverboard motor response, RC failsafe, and speed limit cap; requires the hoverboard wired to the S1 header
+- **Dome motor** — RC-driven dome rotation; requires the dome ESC and motor wired to the DOME header
+- **RC mapping with a physical transmitter** — channel mapping, calibration, and NVS persistence across receiver modes; requires a transmitter and receiver connected
+- **Dome link end-to-end** — requires both the Artoo PCB and AstroPixelsPlus dome board connected via the slip ring
+- **Audio: S2 enable/disable and boot mood restore** — most audio paths are confirmed; the S2 hardware toggle behavior and boot-time mood restore require a reconnected audio module to re-verify
+- **CHIRP and MP3 Trigger audio backends** — implemented and bench-compiled; require the respective board wired to the S2 header for full confirmation
+- **Sound categories and system event sounds** — track ranges, RC triggers, and system hooks are implemented; audible playback per category and event requires hardware with a loaded SD card
+- **Firmware and web UI OTA update flow** — upload progress and post-reboot reconnect; requires a live device on the network
+- **AUX LED strip** — color and effect control are implemented; actual LED behavior requires a WS2812B strip connected to an AUX header
+- **SBUS + hoverboard simultaneous operation** — all SBUS receiver modes can run alongside hoverboard drive; requires a connected droid to confirm during real operation
+- **Dual SBUS + dome link simultaneous operation** — dual SBUS and dome link can now run at the same time; requires a connected droid to confirm
 
 ---
 
 ## Roadmap
 
-- **Phase 4 (software complete):** audio system, full dome link, and web UI quality improvements;
-  hardware validation deferred to Phase 5
-- **Phase 5 (in progress):** final hardware validation, documentation polish, and `v1.0.0` release preparation
+- **v1.0.0 (in progress):** end-to-end hardware validation on a complete droid build, documentation polish, and public community release
