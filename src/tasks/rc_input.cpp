@@ -283,6 +283,7 @@ static void maybeQueueDriveModeSound(float scale) {
         lastBucket = bucket;
         return;
     }
+    bucket = classifySystemDriveModeWithHysteresis(lastBucket, scale);
     if (bucket == lastBucket) {
         return;
     }
@@ -309,6 +310,7 @@ static void maybeQueueDriveModeSound(float scale) {
 }
 
 static bool queueRandomTrackForAction(RobotActionId target) {
+    const char* categoryLabel = randomSoundCategoryLabel(target);
     uint16_t lo = 0;
     uint16_t hi = 0;
     taskENTER_CRITICAL(&robotStateMux);
@@ -353,9 +355,9 @@ static bool queueRandomTrackForAction(RobotActionId target) {
             lo = robotState.cfg_snd_cat_alrm_lo;
             hi = robotState.cfg_snd_cat_alrm_hi;
             break;
-        case SOUND_ACTION_RANDOM_PFFT:
-            lo = robotState.cfg_snd_cat_pfft_lo;
-            hi = robotState.cfg_snd_cat_pfft_hi;
+        case SOUND_ACTION_RANDOM_SNARKY:
+            lo = robotState.cfg_snd_cat_snarky_lo;
+            hi = robotState.cfg_snd_cat_snarky_hi;
             break;
         case SOUND_ACTION_RANDOM_WHISTLE:
             lo = robotState.cfg_snd_cat_whis_lo;
@@ -366,11 +368,26 @@ static bool queueRandomTrackForAction(RobotActionId target) {
     }
     taskEXIT_CRITICAL(&robotStateMux);
 
-    uint16_t track = 0;
-    if (!selectRandomTrackInRange(lo, hi, esp_random(), &track)) {
+    if (categoryLabel == nullptr) {
+        PA_LOG_WARN(TAG, "random sound trigger ignored: unknown category action=%u",
+                    (unsigned)target);
         return false;
     }
-    return audioQueuePlayTrack(track, SRC_SBUS);
+
+    uint16_t track = 0;
+    if (!selectRandomTrackInRange(lo, hi, esp_random(), &track)) {
+        PA_LOG_WARN(TAG, "random sound trigger ignored: category=%s range=%u..%u inactive",
+                    categoryLabel, (unsigned)lo, (unsigned)hi);
+        return false;
+    }
+    if (!audioQueuePlayTrack(track, SRC_SBUS)) {
+        PA_LOG_WARN(TAG, "random sound trigger dropped: category=%s track=%u queue full",
+                    categoryLabel, (unsigned)track);
+        return false;
+    }
+    PA_LOG_INFO(TAG, "random sound trigger: category=%s track=%u",
+                categoryLabel, (unsigned)track);
+    return true;
 }
 
 static void processTriggerAction(RobotActionId target, const char* payload, bool pressed) {
@@ -434,7 +451,7 @@ static void processTriggerAction(RobotActionId target, const char* payload, bool
         case SOUND_ACTION_RANDOM_SCREAM:
         case SOUND_ACTION_RANDOM_SURPRISED:
         case SOUND_ACTION_RANDOM_ALERT:
-        case SOUND_ACTION_RANDOM_PFFT:
+        case SOUND_ACTION_RANDOM_SNARKY:
         case SOUND_ACTION_RANDOM_WHISTLE:
             if (pressed) {
                 queueRandomTrackForAction(target);

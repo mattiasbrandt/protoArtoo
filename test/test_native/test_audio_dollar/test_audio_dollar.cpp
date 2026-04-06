@@ -323,8 +323,8 @@ void test_nvs_key_sound_categories() {
     TEST_ASSERT_EQUAL_STRING("snd_cat_ooh_hi", audioTrackNvsKey("snd_cat_ooh_hi"));
     TEST_ASSERT_EQUAL_STRING("snd_cat_alrm_lo", audioTrackNvsKey("snd_cat_alrm_lo"));
     TEST_ASSERT_EQUAL_STRING("snd_cat_alrm_hi", audioTrackNvsKey("snd_cat_alrm_hi"));
-    TEST_ASSERT_EQUAL_STRING("snd_cat_pfft_lo", audioTrackNvsKey("snd_cat_pfft_lo"));
-    TEST_ASSERT_EQUAL_STRING("snd_cat_pfft_hi", audioTrackNvsKey("snd_cat_pfft_hi"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_snrk_lo", audioTrackNvsKey("snd_cat_snrk_lo"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_snrk_hi", audioTrackNvsKey("snd_cat_snrk_hi"));
     TEST_ASSERT_EQUAL_STRING("snd_cat_whis_lo", audioTrackNvsKey("snd_cat_whis_lo"));
     TEST_ASSERT_EQUAL_STRING("snd_cat_whis_hi", audioTrackNvsKey("snd_cat_whis_hi"));
 }
@@ -351,7 +351,7 @@ void test_nvs_keys_are_15_chars_or_less() {
         "snd_cat_sad_lo","snd_cat_sad_hi","snd_cat_sent_lo","snd_cat_sent_hi",
         "snd_cat_hum_lo","snd_cat_hum_hi","snd_cat_scrm_lo","snd_cat_scrm_hi",
         "snd_cat_ooh_lo","snd_cat_ooh_hi","snd_cat_alrm_lo","snd_cat_alrm_hi",
-        "snd_cat_pfft_lo","snd_cat_pfft_hi","snd_cat_whis_lo","snd_cat_whis_hi",
+        "snd_cat_snrk_lo","snd_cat_snrk_hi","snd_cat_whis_lo","snd_cat_whis_hi",
         "rand_min","rand_max","snd_int_quiet","snd_int_mid","snd_int_full","snd_int_awake"
     };
     for (size_t i = 0; i < sizeof(keys)/sizeof(keys[0]); i++) {

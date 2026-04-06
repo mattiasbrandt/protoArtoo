@@ -322,8 +322,8 @@ void loadConfigToState() {
     robotState.cfg_snd_cat_ooh_hi = prefs.getUShort("snd_cat_ooh_hi", 0);
     robotState.cfg_snd_cat_alrm_lo = prefs.getUShort("snd_cat_alrm_lo", 0);
     robotState.cfg_snd_cat_alrm_hi = prefs.getUShort("snd_cat_alrm_hi", 0);
-    robotState.cfg_snd_cat_pfft_lo = prefs.getUShort("snd_cat_pfft_lo", 0);
-    robotState.cfg_snd_cat_pfft_hi = prefs.getUShort("snd_cat_pfft_hi", 0);
+    robotState.cfg_snd_cat_snarky_lo = prefs.getUShort("snd_cat_snrk_lo", 0);
+    robotState.cfg_snd_cat_snarky_hi = prefs.getUShort("snd_cat_snrk_hi", 0);
     robotState.cfg_snd_cat_whis_lo = prefs.getUShort("snd_cat_whis_lo", 0);
     robotState.cfg_snd_cat_whis_hi = prefs.getUShort("snd_cat_whis_hi", 0);
 
@@ -591,7 +591,7 @@ bool saveConfigToNvs() {
     uint16_t sndCatGenLo, sndCatGenHi, sndCatChatLo, sndCatChatHi, sndCatHapLo, sndCatHapHi;
     uint16_t sndCatProcLo, sndCatProcHi, sndCatSadLo, sndCatSadHi, sndCatSentLo, sndCatSentHi;
     uint16_t sndCatHumLo, sndCatHumHi, sndCatScrmLo, sndCatScrmHi, sndCatOohLo, sndCatOohHi;
-    uint16_t sndCatAlrmLo, sndCatAlrmHi, sndCatPfftLo, sndCatPfftHi, sndCatWhisLo, sndCatWhisHi;
+    uint16_t sndCatAlrmLo, sndCatAlrmHi, sndCatSnarkyLo, sndCatSnarkyHi, sndCatWhisLo, sndCatWhisHi;
     uint16_t arm1Open, arm1Close, arm2Open, arm2Close;
     float domeMin, domeMax;
     uint16_t seqOpenMs, seqCloseMs;
@@ -673,8 +673,8 @@ bool saveConfigToNvs() {
     sndCatOohHi = robotState.cfg_snd_cat_ooh_hi;
     sndCatAlrmLo = robotState.cfg_snd_cat_alrm_lo;
     sndCatAlrmHi = robotState.cfg_snd_cat_alrm_hi;
-    sndCatPfftLo = robotState.cfg_snd_cat_pfft_lo;
-    sndCatPfftHi = robotState.cfg_snd_cat_pfft_hi;
+    sndCatSnarkyLo = robotState.cfg_snd_cat_snarky_lo;
+    sndCatSnarkyHi = robotState.cfg_snd_cat_snarky_hi;
     sndCatWhisLo = robotState.cfg_snd_cat_whis_lo;
     sndCatWhisHi = robotState.cfg_snd_cat_whis_hi;
     arm1Open = robotState.cfg_arm1_open_us;
@@ -826,8 +826,8 @@ bool saveConfigToNvs() {
     ok = prefs.putUShort("snd_cat_ooh_hi", sndCatOohHi) > 0 && ok;
     ok = prefs.putUShort("snd_cat_alrm_lo", sndCatAlrmLo) > 0 && ok;
     ok = prefs.putUShort("snd_cat_alrm_hi", sndCatAlrmHi) > 0 && ok;
-    ok = prefs.putUShort("snd_cat_pfft_lo", sndCatPfftLo) > 0 && ok;
-    ok = prefs.putUShort("snd_cat_pfft_hi", sndCatPfftHi) > 0 && ok;
+    ok = prefs.putUShort("snd_cat_snrk_lo", sndCatSnarkyLo) > 0 && ok;
+    ok = prefs.putUShort("snd_cat_snrk_hi", sndCatSnarkyHi) > 0 && ok;
     ok = prefs.putUShort("snd_cat_whis_lo", sndCatWhisLo) > 0 && ok;
     ok = prefs.putUShort("snd_cat_whis_hi", sndCatWhisHi) > 0 && ok;
     ok = prefs.putUShort("arm1_op", arm1Open) > 0 && ok;
@@ -1028,8 +1028,11 @@ void setup() {
     bootTrack = robotState.cfg_snd_sys_boot;
     taskEXIT_CRITICAL(&robotStateMux);
     if (bootTrack != 0) {
-        audioQueuePlayTrack(bootTrack, SRC_INTERNAL);
-        PA_LOG_INFO("main", "system boot sound queued: track=%u", (unsigned)bootTrack);
+        if (audioQueuePlayTrack(bootTrack, SRC_INTERNAL)) {
+            PA_LOG_INFO("main", "system boot sound queued: track=%u", (unsigned)bootTrack);
+        } else {
+            PA_LOG_WARN("main", "system boot sound queue full: track=%u", (unsigned)bootTrack);
+        }
     }
 
     PA_LOG_INFO("main", "init complete");

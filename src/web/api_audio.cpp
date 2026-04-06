@@ -50,6 +50,65 @@ static bool isSleepModeActive() {
     return sleeping;
 }
 
+// Resolve a category-range key to the corresponding RobotState field.
+// Caller MUST hold robotStateMux.
+static uint16_t* categoryTrackFieldForKeyLocked(const char* key) {
+    if (strcmp(key, "snd_cat_gen_lo") == 0) return &robotState.cfg_snd_cat_gen_lo;
+    if (strcmp(key, "snd_cat_gen_hi") == 0) return &robotState.cfg_snd_cat_gen_hi;
+    if (strcmp(key, "snd_cat_chat_lo") == 0) return &robotState.cfg_snd_cat_chat_lo;
+    if (strcmp(key, "snd_cat_chat_hi") == 0) return &robotState.cfg_snd_cat_chat_hi;
+    if (strcmp(key, "snd_cat_hap_lo") == 0) return &robotState.cfg_snd_cat_hap_lo;
+    if (strcmp(key, "snd_cat_hap_hi") == 0) return &robotState.cfg_snd_cat_hap_hi;
+    if (strcmp(key, "snd_cat_proc_lo") == 0) return &robotState.cfg_snd_cat_proc_lo;
+    if (strcmp(key, "snd_cat_proc_hi") == 0) return &robotState.cfg_snd_cat_proc_hi;
+    if (strcmp(key, "snd_cat_sad_lo") == 0) return &robotState.cfg_snd_cat_sad_lo;
+    if (strcmp(key, "snd_cat_sad_hi") == 0) return &robotState.cfg_snd_cat_sad_hi;
+    if (strcmp(key, "snd_cat_sent_lo") == 0) return &robotState.cfg_snd_cat_sent_lo;
+    if (strcmp(key, "snd_cat_sent_hi") == 0) return &robotState.cfg_snd_cat_sent_hi;
+    if (strcmp(key, "snd_cat_hum_lo") == 0) return &robotState.cfg_snd_cat_hum_lo;
+    if (strcmp(key, "snd_cat_hum_hi") == 0) return &robotState.cfg_snd_cat_hum_hi;
+    if (strcmp(key, "snd_cat_scrm_lo") == 0) return &robotState.cfg_snd_cat_scrm_lo;
+    if (strcmp(key, "snd_cat_scrm_hi") == 0) return &robotState.cfg_snd_cat_scrm_hi;
+    if (strcmp(key, "snd_cat_ooh_lo") == 0) return &robotState.cfg_snd_cat_ooh_lo;
+    if (strcmp(key, "snd_cat_ooh_hi") == 0) return &robotState.cfg_snd_cat_ooh_hi;
+    if (strcmp(key, "snd_cat_alrm_lo") == 0) return &robotState.cfg_snd_cat_alrm_lo;
+    if (strcmp(key, "snd_cat_alrm_hi") == 0) return &robotState.cfg_snd_cat_alrm_hi;
+    if (strcmp(key, "snd_cat_snrk_lo") == 0) return &robotState.cfg_snd_cat_snarky_lo;
+    if (strcmp(key, "snd_cat_snrk_hi") == 0) return &robotState.cfg_snd_cat_snarky_hi;
+    if (strcmp(key, "snd_cat_whis_lo") == 0) return &robotState.cfg_snd_cat_whis_lo;
+    if (strcmp(key, "snd_cat_whis_hi") == 0) return &robotState.cfg_snd_cat_whis_hi;
+    return nullptr;
+}
+
+// Return matching category-range partner key (lo<->hi).
+static const char* categoryRangeCompanionKey(const char* key) {
+    if (strcmp(key, "snd_cat_gen_lo") == 0) return "snd_cat_gen_hi";
+    if (strcmp(key, "snd_cat_gen_hi") == 0) return "snd_cat_gen_lo";
+    if (strcmp(key, "snd_cat_chat_lo") == 0) return "snd_cat_chat_hi";
+    if (strcmp(key, "snd_cat_chat_hi") == 0) return "snd_cat_chat_lo";
+    if (strcmp(key, "snd_cat_hap_lo") == 0) return "snd_cat_hap_hi";
+    if (strcmp(key, "snd_cat_hap_hi") == 0) return "snd_cat_hap_lo";
+    if (strcmp(key, "snd_cat_proc_lo") == 0) return "snd_cat_proc_hi";
+    if (strcmp(key, "snd_cat_proc_hi") == 0) return "snd_cat_proc_lo";
+    if (strcmp(key, "snd_cat_sad_lo") == 0) return "snd_cat_sad_hi";
+    if (strcmp(key, "snd_cat_sad_hi") == 0) return "snd_cat_sad_lo";
+    if (strcmp(key, "snd_cat_sent_lo") == 0) return "snd_cat_sent_hi";
+    if (strcmp(key, "snd_cat_sent_hi") == 0) return "snd_cat_sent_lo";
+    if (strcmp(key, "snd_cat_hum_lo") == 0) return "snd_cat_hum_hi";
+    if (strcmp(key, "snd_cat_hum_hi") == 0) return "snd_cat_hum_lo";
+    if (strcmp(key, "snd_cat_scrm_lo") == 0) return "snd_cat_scrm_hi";
+    if (strcmp(key, "snd_cat_scrm_hi") == 0) return "snd_cat_scrm_lo";
+    if (strcmp(key, "snd_cat_ooh_lo") == 0) return "snd_cat_ooh_hi";
+    if (strcmp(key, "snd_cat_ooh_hi") == 0) return "snd_cat_ooh_lo";
+    if (strcmp(key, "snd_cat_alrm_lo") == 0) return "snd_cat_alrm_hi";
+    if (strcmp(key, "snd_cat_alrm_hi") == 0) return "snd_cat_alrm_lo";
+    if (strcmp(key, "snd_cat_snrk_lo") == 0) return "snd_cat_snrk_hi";
+    if (strcmp(key, "snd_cat_snrk_hi") == 0) return "snd_cat_snrk_lo";
+    if (strcmp(key, "snd_cat_whis_lo") == 0) return "snd_cat_whis_hi";
+    if (strcmp(key, "snd_cat_whis_hi") == 0) return "snd_cat_whis_lo";
+    return nullptr;
+}
+
 void registerMoodMapRoutes(AsyncWebServer& server) {
     server.on("/api/audio/mood-map", HTTP_GET, [](AsyncWebServerRequest* req) {
         MoodCategoryMaskConfig masks{};
@@ -213,7 +272,7 @@ void registerAudioRoutes(AsyncWebServer& server) {
         uint16_t catGenLo, catGenHi, catChatLo, catChatHi, catHapLo, catHapHi;
         uint16_t catProcLo, catProcHi, catSadLo, catSadHi, catSentLo, catSentHi;
         uint16_t catHumLo, catHumHi, catScrmLo, catScrmHi, catOohLo, catOohHi;
-        uint16_t catAlrmLo, catAlrmHi, catPfftLo, catPfftHi, catWhisLo, catWhisHi;
+        uint16_t catAlrmLo, catAlrmHi, catSnarkyLo, catSnarkyHi, catWhisLo, catWhisHi;
         uint16_t randMin, randMax;
         uint16_t intQuiet, intMid, intFull, intAwake;
         uint8_t volume;
@@ -264,8 +323,8 @@ void registerAudioRoutes(AsyncWebServer& server) {
         catOohHi = robotState.cfg_snd_cat_ooh_hi;
         catAlrmLo = robotState.cfg_snd_cat_alrm_lo;
         catAlrmHi = robotState.cfg_snd_cat_alrm_hi;
-        catPfftLo = robotState.cfg_snd_cat_pfft_lo;
-        catPfftHi = robotState.cfg_snd_cat_pfft_hi;
+        catSnarkyLo = robotState.cfg_snd_cat_snarky_lo;
+        catSnarkyHi = robotState.cfg_snd_cat_snarky_hi;
         catWhisLo = robotState.cfg_snd_cat_whis_lo;
         catWhisHi = robotState.cfg_snd_cat_whis_hi;
         randMin = robotState.cfg_snd_rand_min;
@@ -299,7 +358,7 @@ void registerAudioRoutes(AsyncWebServer& server) {
                  "\"snd_cat_scrm_lo\":%u,\"snd_cat_scrm_hi\":%u,"
                  "\"snd_cat_ooh_lo\":%u,\"snd_cat_ooh_hi\":%u,"
                  "\"snd_cat_alrm_lo\":%u,\"snd_cat_alrm_hi\":%u,"
-                 "\"snd_cat_pfft_lo\":%u,\"snd_cat_pfft_hi\":%u,"
+                 "\"snd_cat_snrk_lo\":%u,\"snd_cat_snrk_hi\":%u,"
                  "\"snd_cat_whis_lo\":%u,\"snd_cat_whis_hi\":%u,"
                  "\"rand_min\":%u,\"rand_max\":%u,\"volume\":%u,"
                  "\"snd_int_quiet\":%u,\"snd_int_mid\":%u,"
@@ -309,10 +368,108 @@ void registerAudioRoutes(AsyncWebServer& server) {
                  harlem, pbjtime, sysBoot, sysModeN, sysModeS, sysModeT, sysDrvOn, sysDomeOn,
                  catGenLo, catGenHi, catChatLo, catChatHi, catHapLo, catHapHi, catProcLo,
                  catProcHi, catSadLo, catSadHi, catSentLo, catSentHi, catHumLo, catHumHi,
-                 catScrmLo, catScrmHi, catOohLo, catOohHi, catAlrmLo, catAlrmHi, catPfftLo,
-                 catPfftHi, catWhisLo, catWhisHi, randMin, randMax, volume, intQuiet, intMid,
+                 catScrmLo, catScrmHi, catOohLo, catOohHi, catAlrmLo, catAlrmHi, catSnarkyLo,
+                 catSnarkyHi, catWhisLo, catWhisHi, randMin, randMax, volume, intQuiet, intMid,
                  intFull, intAwake);
         req->send(200, "application/json", body);
+    });
+
+    // ---- POST /api/audio/category-range ----
+    // Atomic update for one category lo/hi pair to avoid partial two-request saves.
+    server.on("/api/audio/category-range", HTTP_POST, [](AsyncWebServerRequest* req) {
+        const AsyncWebParameter* loKeyParam = req->getParam("lo_key", true);
+        const AsyncWebParameter* hiKeyParam = req->getParam("hi_key", true);
+        const AsyncWebParameter* loParam = req->getParam("lo", true);
+        const AsyncWebParameter* hiParam = req->getParam("hi", true);
+        if (!loKeyParam || !hiKeyParam || !loParam || !hiParam) {
+            req->send(400, "application/json",
+                      "{\"ok\":false,\"error\":\"requires lo_key, hi_key, lo, hi parameters\"}");
+            return;
+        }
+
+        String loKeyValue = loKeyParam->value();
+        String hiKeyValue = hiKeyParam->value();
+        const char* loKey = loKeyValue.c_str();
+        const char* hiKey = hiKeyValue.c_str();
+
+        const char* loCompanion = categoryRangeCompanionKey(loKey);
+        const char* hiCompanion = categoryRangeCompanionKey(hiKey);
+        if (loCompanion == nullptr || hiCompanion == nullptr || strcmp(loCompanion, hiKey) != 0 ||
+            strcmp(hiCompanion, loKey) != 0) {
+            req->send(400, "application/json",
+                      "{\"ok\":false,\"error\":\"invalid category key pair\"}");
+            return;
+        }
+
+        uint32_t loTrack = 0;
+        uint32_t hiTrack = 0;
+        if (!parseUint32Value(loParam->value().c_str(), &loTrack) ||
+            !parseUint32Value(hiParam->value().c_str(), &hiTrack)) {
+            req->send(400, "application/json",
+                      "{\"ok\":false,\"error\":\"range values must be non-negative integers\"}");
+            return;
+        }
+        if (loTrack > 999U || hiTrack > 999U) {
+            req->send(400, "application/json",
+                      "{\"ok\":false,\"error\":\"range values must be 0–999\"}");
+            return;
+        }
+        if (!((loTrack == 0U && hiTrack == 0U) ||
+              (loTrack >= 1U && hiTrack >= 1U && loTrack <= hiTrack))) {
+            req->send(400, "application/json",
+                      "{\"ok\":false,\"error\":\"range must be 0/0 or 1–999 with lo <= hi\"}");
+            return;
+        }
+
+        uint16_t* loField = nullptr;
+        uint16_t* hiField = nullptr;
+        uint16_t oldLo = 0;
+        uint16_t oldHi = 0;
+        const uint16_t loValue = (uint16_t)loTrack;
+        const uint16_t hiValue = (uint16_t)hiTrack;
+        taskENTER_CRITICAL(&robotStateMux);
+        loField = categoryTrackFieldForKeyLocked(loKey);
+        hiField = categoryTrackFieldForKeyLocked(hiKey);
+        if (loField != nullptr && hiField != nullptr) {
+            oldLo = *loField;
+            oldHi = *hiField;
+            *loField = loValue;
+            *hiField = hiValue;
+        }
+        taskEXIT_CRITICAL(&robotStateMux);
+
+        if (loField == nullptr || hiField == nullptr) {
+            req->send(400, "application/json", "{\"ok\":false,\"error\":\"unknown category key\"}");
+            return;
+        }
+
+        const char* loNvsKey = audioTrackNvsKey(loKey);
+        const char* hiNvsKey = audioTrackNvsKey(hiKey);
+        Preferences prefs;
+        bool ok = false;
+        if (loNvsKey != nullptr && hiNvsKey != nullptr && prefs.begin(NVS_NAMESPACE, false)) {
+            bool wroteLo = prefs.putUShort(loNvsKey, loValue) > 0;
+            bool wroteHi = wroteLo && (prefs.putUShort(hiNvsKey, hiValue) > 0);
+            if (!wroteHi && wroteLo) {
+                prefs.putUShort(loNvsKey, oldLo);
+            }
+            ok = wroteLo && wroteHi;
+            prefs.end();
+        }
+
+        if (!ok) {
+            taskENTER_CRITICAL(&robotStateMux);
+            *loField = oldLo;
+            *hiField = oldHi;
+            taskEXIT_CRITICAL(&robotStateMux);
+            req->send(500, "application/json",
+                      "{\"ok\":false,\"error\":\"NVS write failed\"}");
+            return;
+        }
+
+        PA_LOG_INFO(TAG, "[AUDIO] POST /api/audio/category-range %s=%u %s=%u", loKey,
+                    (unsigned)loValue, hiKey, (unsigned)hiValue);
+        req->send(200, "application/json", "{\"ok\":true}");
     });
 
     // ---- POST /api/audio/tracks ----
@@ -467,10 +624,10 @@ void registerAudioRoutes(AsyncWebServer& server) {
             fieldPtr = &robotState.cfg_snd_cat_alrm_lo;
         else if (strcmp(key, "snd_cat_alrm_hi") == 0)
             fieldPtr = &robotState.cfg_snd_cat_alrm_hi;
-        else if (strcmp(key, "snd_cat_pfft_lo") == 0)
-            fieldPtr = &robotState.cfg_snd_cat_pfft_lo;
-        else if (strcmp(key, "snd_cat_pfft_hi") == 0)
-            fieldPtr = &robotState.cfg_snd_cat_pfft_hi;
+        else if (strcmp(key, "snd_cat_snrk_lo") == 0)
+            fieldPtr = &robotState.cfg_snd_cat_snarky_lo;
+        else if (strcmp(key, "snd_cat_snrk_hi") == 0)
+            fieldPtr = &robotState.cfg_snd_cat_snarky_hi;
         else if (strcmp(key, "snd_cat_whis_lo") == 0)
             fieldPtr = &robotState.cfg_snd_cat_whis_lo;
         else if (strcmp(key, "snd_cat_whis_hi") == 0)

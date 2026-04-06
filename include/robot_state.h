@@ -268,8 +268,8 @@ struct RobotState {
     uint16_t cfg_snd_cat_ooh_hi;
     uint16_t cfg_snd_cat_alrm_lo;
     uint16_t cfg_snd_cat_alrm_hi;
-    uint16_t cfg_snd_cat_pfft_lo;
-    uint16_t cfg_snd_cat_pfft_hi;
+    uint16_t cfg_snd_cat_snarky_lo;
+    uint16_t cfg_snd_cat_snarky_hi;
     uint16_t cfg_snd_cat_whis_lo;
     uint16_t cfg_snd_cat_whis_hi;
     // Servo config

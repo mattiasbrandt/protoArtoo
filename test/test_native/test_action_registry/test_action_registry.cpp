@@ -69,7 +69,7 @@ void test_registry_contains_sound_category_actions() {
         SOUND_ACTION_RANDOM_SAD,         SOUND_ACTION_RANDOM_SENTIMENTAL,
         SOUND_ACTION_RANDOM_HUMMING,     SOUND_ACTION_RANDOM_SCREAM,
         SOUND_ACTION_RANDOM_SURPRISED,   SOUND_ACTION_RANDOM_ALERT,
-        SOUND_ACTION_RANDOM_PFFT,        SOUND_ACTION_RANDOM_WHISTLE,
+        SOUND_ACTION_RANDOM_SNARKY,        SOUND_ACTION_RANDOM_WHISTLE,
     };
 
     for (size_t i = 0; i < sizeof(ids) / sizeof(ids[0]); ++i) {

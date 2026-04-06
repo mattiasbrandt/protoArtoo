@@ -169,8 +169,8 @@ inline const char* audioTrackNvsKey(const char* key) {
     if (__builtin_strcmp(key, "snd_cat_ooh_hi") == 0) return "snd_cat_ooh_hi";
     if (__builtin_strcmp(key, "snd_cat_alrm_lo") == 0) return "snd_cat_alrm_lo";
     if (__builtin_strcmp(key, "snd_cat_alrm_hi") == 0) return "snd_cat_alrm_hi";
-    if (__builtin_strcmp(key, "snd_cat_pfft_lo") == 0) return "snd_cat_pfft_lo";
-    if (__builtin_strcmp(key, "snd_cat_pfft_hi") == 0) return "snd_cat_pfft_hi";
+    if (__builtin_strcmp(key, "snd_cat_snrk_lo") == 0) return "snd_cat_snrk_lo";
+    if (__builtin_strcmp(key, "snd_cat_snrk_hi") == 0) return "snd_cat_snrk_hi";
     if (__builtin_strcmp(key, "snd_cat_whis_lo") == 0) return "snd_cat_whis_lo";
     if (__builtin_strcmp(key, "snd_cat_whis_hi") == 0) return "snd_cat_whis_hi";
     if (__builtin_strcmp(key, "rand_min")  == 0) return "snd_rand_min";

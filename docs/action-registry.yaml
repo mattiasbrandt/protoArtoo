@@ -327,10 +327,10 @@ entries:
   description: Enable automatic random sound playback
   domain: sound
   type: action
-  marcduino_cmd: $+
+  marcduino_cmd: $R
   api_path: null
   sse_event: null
-  cpp_enum: AUDIO_CMD_DOLLAR # dispatched as $+ dollar command — not a separate enum value
+  cpp_enum: AUDIO_CMD_DOLLAR # dispatched as $R dollar command — not a separate enum value
   cpp_file: include/audio_task.h
   sources: [ dome_rx ]
   safety_critical: false
@@ -342,10 +342,10 @@ entries:
   description: Disable automatic random sound playback
   domain: sound
   type: action
-  marcduino_cmd: $-
+  marcduino_cmd: $O
   api_path: null
   sse_event: null
-  cpp_enum: AUDIO_CMD_DOLLAR # dispatched as $- dollar command — not a separate enum value
+  cpp_enum: AUDIO_CMD_DOLLAR # dispatched as $O dollar command — not a separate enum value
   cpp_file: include/audio_task.h
   sources: [ dome_rx ]
   safety_critical: false
@@ -502,20 +502,20 @@ entries:
   requires_web_control: false
   nvs_keys: [ snd_cat_alrm_lo, snd_cat_alrm_hi ]
 
-- name: sound.action.random-pfft
-  display_name: Random Pfft
-  description: Play one random track from the configured Pfft category range
+- name: sound.action.random-snarky
+  display_name: Random Snarky
+  description: Play one random track from the configured Snarky category range
   domain: sound
   type: action
   marcduino_cmd: null
   api_path: null
   sse_event: null
-  cpp_enum: SOUND_ACTION_RANDOM_PFFT
+  cpp_enum: SOUND_ACTION_RANDOM_SNARKY
   cpp_file: include/rc_mapping.h
   sources: [ sbus ]
   safety_critical: false
   requires_web_control: false
-  nvs_keys: [ snd_cat_pfft_lo, snd_cat_pfft_hi ]
+  nvs_keys: [ snd_cat_snrk_lo, snd_cat_snrk_hi ]
 
 - name: sound.action.random-whistle
   display_name: Random Whistle
@@ -746,8 +746,8 @@ entries:
   - snd_cat_ooh_hi
   - snd_cat_alrm_lo
   - snd_cat_alrm_hi
-  - snd_cat_pfft_lo
-  - snd_cat_pfft_hi
+  - snd_cat_snrk_lo
+  - snd_cat_snrk_hi
   - snd_cat_whis_lo
   - snd_cat_whis_hi
 

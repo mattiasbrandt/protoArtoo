@@ -296,7 +296,7 @@ void test_sound_random_action_tokens_round_trip() {
         SOUND_ACTION_RANDOM_SAD,         SOUND_ACTION_RANDOM_SENTIMENTAL,
         SOUND_ACTION_RANDOM_HUMMING,     SOUND_ACTION_RANDOM_SCREAM,
         SOUND_ACTION_RANDOM_SURPRISED,   SOUND_ACTION_RANDOM_ALERT,
-        SOUND_ACTION_RANDOM_PFFT,        SOUND_ACTION_RANDOM_WHISTLE,
+        SOUND_ACTION_RANDOM_SNARKY,        SOUND_ACTION_RANDOM_WHISTLE,
     };
 
     for (size_t i = 0; i < sizeof(ids) / sizeof(ids[0]); ++i) {
@@ -308,6 +308,31 @@ void test_sound_random_action_tokens_round_trip() {
         TEST_ASSERT_TRUE(parseRobotActionId(token, &parsed));
         TEST_ASSERT_EQUAL_UINT8(ids[i], parsed);
     }
+}
+
+void test_sound_random_category_labels() {
+    struct Expected {
+        RobotActionId id;
+        const char* label;
+    };
+    const Expected expected[] = {
+        {SOUND_ACTION_RANDOM_GENERAL, "general"},
+        {SOUND_ACTION_RANDOM_CHATTY, "chatty"},
+        {SOUND_ACTION_RANDOM_HAPPY, "happy"},
+        {SOUND_ACTION_RANDOM_PROCESSING, "processing"},
+        {SOUND_ACTION_RANDOM_SAD, "sad"},
+        {SOUND_ACTION_RANDOM_SENTIMENTAL, "sentimental"},
+        {SOUND_ACTION_RANDOM_HUMMING, "humming"},
+        {SOUND_ACTION_RANDOM_SCREAM, "scream"},
+        {SOUND_ACTION_RANDOM_SURPRISED, "surprised"},
+        {SOUND_ACTION_RANDOM_ALERT, "alert"},
+        {SOUND_ACTION_RANDOM_SNARKY, "snarky"},
+        {SOUND_ACTION_RANDOM_WHISTLE, "whistle"},
+    };
+    for (size_t i = 0; i < sizeof(expected) / sizeof(expected[0]); ++i) {
+        TEST_ASSERT_EQUAL_STRING(expected[i].label, randomSoundCategoryLabel(expected[i].id));
+    }
+    TEST_ASSERT_NULL(randomSoundCategoryLabel(SYSTEM_ACTION_ESTOP));
 }
 
 int main() {
@@ -362,6 +387,7 @@ int main() {
     RUN_TEST(test_trigger_parse_rejects_reverse_overflow);
     RUN_TEST(test_trigger_parse_rejects_uint16_field_overflow);
     RUN_TEST(test_sound_random_action_tokens_round_trip);
+    RUN_TEST(test_sound_random_category_labels);
 
     return UNITY_END();
 }

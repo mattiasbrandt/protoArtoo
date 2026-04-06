@@ -35,7 +35,7 @@ const ActionEntry ACTION_REGISTRY[] = {
     { SOUND_ACTION_RANDOM_SCREAM,     "sound.action.random-scream",       "Random Scream",       "sound",  "Play one random track from configured scream range",   false },
     { SOUND_ACTION_RANDOM_SURPRISED,  "sound.action.random-surprised",    "Random Surprised",    "sound",  "Play one random track from configured surprised range",false },
     { SOUND_ACTION_RANDOM_ALERT,      "sound.action.random-alert",        "Random Alert",        "sound",  "Play one random track from configured alert range",    false },
-    { SOUND_ACTION_RANDOM_PFFT,       "sound.action.random-pfft",         "Random Pfft",         "sound",  "Play one random track from configured pfft range",     false },
+    { SOUND_ACTION_RANDOM_SNARKY,       "sound.action.random-snarky",         "Random Snarky",         "sound",  "Play one random track from configured snarky range",     false },
     { SOUND_ACTION_RANDOM_WHISTLE,    "sound.action.random-whistle",      "Random Whistle",      "sound",  "Play one random track from configured whistle range",  false },
     { SYSTEM_ACTION_ESTOP,            "system.action.estop",              "Emergency Stop",      "system", "Immediately stop all drive output and latch estop",    true  },
     { SYSTEM_ACTION_SLEEP_TOGGLE,     "system.action.sleep-toggle",       "Sleep Toggle",        "system", "Toggle cosmetic sleep mode while keeping drive safety active", false },

@@ -72,7 +72,7 @@ enum RobotActionId : uint8_t {
     SOUND_ACTION_RANDOM_SCREAM,
     SOUND_ACTION_RANDOM_SURPRISED,
     SOUND_ACTION_RANDOM_ALERT,
-    SOUND_ACTION_RANDOM_PFFT,
+    SOUND_ACTION_RANDOM_SNARKY,
     SOUND_ACTION_RANDOM_WHISTLE,
     SYSTEM_ACTION_ESTOP,          // Button: Latch estop (guarded)
     SYSTEM_ACTION_SLEEP_TOGGLE,   // Button: toggle sleep/wake mode
@@ -310,6 +310,39 @@ inline bool selectRandomTrackInRange(uint16_t lo, uint16_t hi, uint32_t randomVa
     return true;
 }
 
+// Human-readable category labels for random sound trigger actions.
+// Returns nullptr for non-random actions.
+inline const char* randomSoundCategoryLabel(RobotActionId target) {
+    switch (target) {
+        case SOUND_ACTION_RANDOM_GENERAL:
+            return "general";
+        case SOUND_ACTION_RANDOM_CHATTY:
+            return "chatty";
+        case SOUND_ACTION_RANDOM_HAPPY:
+            return "happy";
+        case SOUND_ACTION_RANDOM_PROCESSING:
+            return "processing";
+        case SOUND_ACTION_RANDOM_SAD:
+            return "sad";
+        case SOUND_ACTION_RANDOM_SENTIMENTAL:
+            return "sentimental";
+        case SOUND_ACTION_RANDOM_HUMMING:
+            return "humming";
+        case SOUND_ACTION_RANDOM_SCREAM:
+            return "scream";
+        case SOUND_ACTION_RANDOM_SURPRISED:
+            return "surprised";
+        case SOUND_ACTION_RANDOM_ALERT:
+            return "alert";
+        case SOUND_ACTION_RANDOM_SNARKY:
+            return "snarky";
+        case SOUND_ACTION_RANDOM_WHISTLE:
+            return "whistle";
+        default:
+            return nullptr;
+    }
+}
+
 // -----------------------------------------------------------------------------
 // Tier 2 Trigger Binding Helpers
 // -----------------------------------------------------------------------------
@@ -360,8 +393,8 @@ inline const char* robotActionIdToString(RobotActionId target) {
             return "sound_rand_surprised";
         case SOUND_ACTION_RANDOM_ALERT:
             return "sound_rand_alert";
-        case SOUND_ACTION_RANDOM_PFFT:
-            return "sound_rand_pfft";
+        case SOUND_ACTION_RANDOM_SNARKY:
+            return "sound_rand_snarky";
         case SOUND_ACTION_RANDOM_WHISTLE:
             return "sound_rand_whistle";
         case SYSTEM_ACTION_ESTOP:
@@ -472,8 +505,8 @@ inline bool parseRobotActionId(const char* raw, RobotActionId* out) {
         *out = SOUND_ACTION_RANDOM_ALERT;
         return true;
     }
-    if (strcmp(raw, "sound_rand_pfft") == 0) {
-        *out = SOUND_ACTION_RANDOM_PFFT;
+    if (strcmp(raw, "sound_rand_snarky") == 0) {
+        *out = SOUND_ACTION_RANDOM_SNARKY;
         return true;
     }
     if (strcmp(raw, "sound_rand_whistle") == 0) {
@@ -518,7 +551,7 @@ inline bool robotActionValidForTier2(RobotActionId target) {
            target == SOUND_ACTION_RANDOM_SAD || target == SOUND_ACTION_RANDOM_SENTIMENTAL ||
            target == SOUND_ACTION_RANDOM_HUMMING || target == SOUND_ACTION_RANDOM_SCREAM ||
            target == SOUND_ACTION_RANDOM_SURPRISED || target == SOUND_ACTION_RANDOM_ALERT ||
-           target == SOUND_ACTION_RANDOM_PFFT || target == SOUND_ACTION_RANDOM_WHISTLE ||
+           target == SOUND_ACTION_RANDOM_SNARKY || target == SOUND_ACTION_RANDOM_WHISTLE ||
            target == SYSTEM_ACTION_ESTOP || target == SYSTEM_ACTION_SLEEP_TOGGLE ||
            target == DOME_ACTION_SEQ;
 }
@@ -578,7 +611,7 @@ inline bool robotActionIsButton(RobotActionId target) {
            target == SOUND_ACTION_RANDOM_SAD || target == SOUND_ACTION_RANDOM_SENTIMENTAL ||
            target == SOUND_ACTION_RANDOM_HUMMING || target == SOUND_ACTION_RANDOM_SCREAM ||
            target == SOUND_ACTION_RANDOM_SURPRISED || target == SOUND_ACTION_RANDOM_ALERT ||
-           target == SOUND_ACTION_RANDOM_PFFT || target == SOUND_ACTION_RANDOM_WHISTLE ||
+           target == SOUND_ACTION_RANDOM_SNARKY || target == SOUND_ACTION_RANDOM_WHISTLE ||
            target == SYSTEM_ACTION_ESTOP || target == SYSTEM_ACTION_SLEEP_TOGGLE ||
            target == DOME_ACTION_SEQ;
 }

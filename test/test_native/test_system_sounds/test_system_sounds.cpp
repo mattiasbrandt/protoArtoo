@@ -86,6 +86,34 @@ void test_classify_boundaries_and_clamps_above_one() {
     TEST_ASSERT_EQUAL_UINT8(SYSTEM_DRIVE_MODE_TURBO, classifySystemDriveMode(2.0f));
 }
 
+void test_hysteresis_slow_to_normal_requires_upper_threshold() {
+    TEST_ASSERT_EQUAL_UINT8(SYSTEM_DRIVE_MODE_SLOW,
+                            classifySystemDriveModeWithHysteresis(SYSTEM_DRIVE_MODE_SLOW, 0.35f));
+    TEST_ASSERT_EQUAL_UINT8(SYSTEM_DRIVE_MODE_NORMAL,
+                            classifySystemDriveModeWithHysteresis(SYSTEM_DRIVE_MODE_SLOW, 0.36f));
+}
+
+void test_hysteresis_normal_to_slow_uses_lower_threshold() {
+    TEST_ASSERT_EQUAL_UINT8(SYSTEM_DRIVE_MODE_NORMAL,
+                            classifySystemDriveModeWithHysteresis(SYSTEM_DRIVE_MODE_NORMAL, 0.33f));
+    TEST_ASSERT_EQUAL_UINT8(SYSTEM_DRIVE_MODE_SLOW,
+                            classifySystemDriveModeWithHysteresis(SYSTEM_DRIVE_MODE_NORMAL, 0.31f));
+}
+
+void test_hysteresis_normal_to_turbo_uses_upper_threshold() {
+    TEST_ASSERT_EQUAL_UINT8(SYSTEM_DRIVE_MODE_NORMAL,
+                            classifySystemDriveModeWithHysteresis(SYSTEM_DRIVE_MODE_NORMAL, 0.68f));
+    TEST_ASSERT_EQUAL_UINT8(SYSTEM_DRIVE_MODE_TURBO,
+                            classifySystemDriveModeWithHysteresis(SYSTEM_DRIVE_MODE_NORMAL, 0.69f));
+}
+
+void test_hysteresis_turbo_to_normal_uses_lower_threshold() {
+    TEST_ASSERT_EQUAL_UINT8(SYSTEM_DRIVE_MODE_TURBO,
+                            classifySystemDriveModeWithHysteresis(SYSTEM_DRIVE_MODE_TURBO, 0.65f));
+    TEST_ASSERT_EQUAL_UINT8(SYSTEM_DRIVE_MODE_NORMAL,
+                            classifySystemDriveModeWithHysteresis(SYSTEM_DRIVE_MODE_TURBO, 0.64f));
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_queue_track_zero_is_noop_and_false);
@@ -94,5 +122,9 @@ int main() {
     RUN_TEST(test_queue_nonzero_with_null_callback_is_false_and_noop);
     RUN_TEST(test_classify_clamps_below_zero_to_slow);
     RUN_TEST(test_classify_boundaries_and_clamps_above_one);
+    RUN_TEST(test_hysteresis_slow_to_normal_requires_upper_threshold);
+    RUN_TEST(test_hysteresis_normal_to_slow_uses_lower_threshold);
+    RUN_TEST(test_hysteresis_normal_to_turbo_uses_upper_threshold);
+    RUN_TEST(test_hysteresis_turbo_to_normal_uses_lower_threshold);
     return UNITY_END();
 }

@@ -468,7 +468,7 @@ void audioTask(void* pvParameters) {
                 {robotState.cfg_snd_cat_scrm_lo, robotState.cfg_snd_cat_scrm_hi},
                 {robotState.cfg_snd_cat_ooh_lo, robotState.cfg_snd_cat_ooh_hi},
                 {robotState.cfg_snd_cat_alrm_lo, robotState.cfg_snd_cat_alrm_hi},
-                {robotState.cfg_snd_cat_pfft_lo, robotState.cfg_snd_cat_pfft_hi},
+                {robotState.cfg_snd_cat_snarky_lo, robotState.cfg_snd_cat_snarky_hi},
                 {robotState.cfg_snd_cat_whis_lo, robotState.cfg_snd_cat_whis_hi},
             };
             uint16_t intSec;

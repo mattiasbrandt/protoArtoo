@@ -52,7 +52,7 @@
     { label: "Scream", loKey: "snd_cat_scrm_lo", hiKey: "snd_cat_scrm_hi" },
     { label: "Surprised", loKey: "snd_cat_ooh_lo", hiKey: "snd_cat_ooh_hi" },
     { label: "Alert", loKey: "snd_cat_alrm_lo", hiKey: "snd_cat_alrm_hi" },
-    { label: "Pfft", loKey: "snd_cat_pfft_lo", hiKey: "snd_cat_pfft_hi" },
+    { label: "Snarky", loKey: "snd_cat_snrk_lo", hiKey: "snd_cat_snrk_hi" },
     { label: "Whistle", loKey: "snd_cat_whis_lo", hiKey: "snd_cat_whis_hi" },
   ];
   const MOOD_MAP_MOODS = [
@@ -489,12 +489,13 @@
           return;
         }
         try {
-          const [lowResp, highResp] = await Promise.all([
-            window.PAApi.postForm("/api/audio/tracks", { key: category.loKey, track: minVal }, { timeoutMs: 3000 }),
-            window.PAApi.postForm("/api/audio/tracks", { key: category.hiKey, track: maxVal }, { timeoutMs: 3000 }),
-          ]);
-          const ok = Boolean(lowResp.data?.ok && highResp.data?.ok);
-          showFeedback(rowFeedback, ok ? "Saved" : "Save failed", ok);
+          const response = await window.PAApi.postForm(
+            "/api/audio/category-range",
+            { lo_key: category.loKey, hi_key: category.hiKey, lo: minVal, hi: maxVal },
+            { timeoutMs: 3000 }
+          );
+          const ok = Boolean(response.data?.ok);
+          showFeedback(rowFeedback, ok ? "Saved" : (response.data?.error || "Save failed"), ok);
         } catch (error) {
           showFeedback(rowFeedback, `Save failed: ${window.PAApi.messageFor(error)}`, false);
         }
