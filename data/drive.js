@@ -27,13 +27,10 @@
   const hbCurrentRow = document.getElementById("hb-current-row");
   const hbCurrent   = document.getElementById("hb-current");
 
-  const armControlsCard = document.getElementById("arm-controls-card");
-  const armControlsContainer = document.getElementById("arm-controls-container");
 
   const speedLimitMax = document.getElementById("speed-limit-max");
   const webDriveTimeout = document.getElementById("web-drive-timeout");
   const ch8ModeLock = document.getElementById("ch8-mode-lock");
-  const reloadConfigButton = document.getElementById("reload-config-button");
   const configFeedback = document.getElementById("config-feedback");
   const driveDisabledCard = document.getElementById("drive-disabled-card");
 
@@ -43,6 +40,31 @@
   let saveTimeout = null;
   let driveHardwareEnabled = true;
   let webControlEnabled = false;
+  let saveInFlight = false;
+  let saveQueued = false;
+
+  const setupActionText = window.PAUi?.setupActionText || ((action) => `${action} in Setup`);
+  const s1EnableInSetup = setupActionText("Enable S1 — Hoverboard");
+
+  const FAILSAFE_SOURCE_LABELS = {
+    0: "None",
+    1: "SBUS timeout",
+    2: "SBUS hardware",
+    3: "SBUS2 timeout",
+    4: "Web timeout",
+    5: "Estop command",
+    6: "Watchdog reset",
+  };
+
+  const formatFailsafeSource = (source) => {
+    const parsed = Number(source);
+    if (Number.isFinite(parsed)) {
+      const label = FAILSAFE_SOURCE_LABELS[parsed] || "Unknown";
+      return `${label} (${parsed})`;
+    }
+    if (source === undefined || source === null || source === "") return "--";
+    return String(source);
+  };
   const showFeedback = (el, text, level = "") => {
     if (!el) return;
     el.textContent = text;
@@ -81,7 +103,7 @@
   const postCommand = async (path, label) => {
     if (!window.PAApi) return;
     if (!driveHardwareEnabled && path.startsWith("/api/web-control")) {
-      showFeedback(controlFeedback, "Web control unavailable: enable S1 — Hoverboard in Setup.", "warning");
+      showFeedback(controlFeedback, `Web control unavailable: ${s1EnableInSetup}.`, "warning");
       return;
     }
     showFeedback(controlFeedback, `${label}...`);
@@ -100,7 +122,7 @@
       return;
     }
     if (!driveHardwareEnabled) {
-      showFeedback(controlFeedback, "Drive controls unavailable: enable S1 — Hoverboard in Setup.", "warning");
+      showFeedback(controlFeedback, `Drive controls unavailable: ${s1EnableInSetup}.`, "warning");
       return;
     }
     try {
@@ -144,48 +166,6 @@
     button.addEventListener("pointercancel", release);
   });
 
-  const postServoCommand = async (arm, action) => {
-    if (!window.PAApi) return;
-    try {
-      await window.PAApi.postForm("/api/servo", { arm, action }, { timeoutMs: 3000 });
-      showFeedback(controlFeedback, `Arm ${arm} ${action} at ${new Date().toLocaleTimeString()}`, "success");
-    } catch (error) {
-      showFeedback(controlFeedback, `Arm command failed: ${window.PAApi.messageFor(error)}`, "error");
-    }
-  };
-
-  const renderArmControls = (payload) => {
-    if (!armControlsContainer || !armControlsCard) return;
-
-    const arms = [
-      { id: "arm1", name: "Left Arm", present: "arm1" in payload },
-      { id: "arm2", name: "Right Arm", present: "arm2" in payload },
-      { id: "aux1", name: "Aux 1", present: "aux1" in payload },
-      { id: "aux2", name: "Aux 2", present: "aux2" in payload },
-      { id: "aux3", name: "Aux 3", present: "aux3" in payload },
-    ];
-    const enabledArms = arms.filter((a) => a.present);
-
-    if (enabledArms.length === 0) {
-      armControlsCard.classList.add("hidden");
-      armControlsContainer.innerHTML = "";
-      return;
-    }
-
-    armControlsCard.classList.remove("hidden");
-    armControlsContainer.innerHTML = enabledArms.map((arm) => `
-      <div class="arm-control-row">
-        <span class="arm-name">${arm.name}</span>
-        <button class="btn" data-arm="${arm.id}" data-action="open" type="button">📂 Open</button>
-        <button class="btn" data-arm="${arm.id}" data-action="close" type="button">📁 Close</button>
-        <button class="btn accent" data-arm="${arm.id}" data-action="stop" type="button">⏹️ Stop</button>
-      </div>
-    `).join("");
-
-    armControlsContainer.querySelectorAll("[data-arm]").forEach((btn) => {
-      btn.addEventListener("click", () => postServoCommand(btn.dataset.arm, btn.dataset.action));
-    });
-  };
 
   const renderHoverboard = (hb) => {
     const batteryV = Number(hb?.batteryV);
@@ -201,7 +181,7 @@
       if (hbNoData) {
         hbNoData.textContent = driveHardwareEnabled
           ? "Waiting for complete hoverboard telemetry…"
-          : "Hoverboard not enabled — enable S1 in Setup.";
+          : `Hoverboard not enabled — ${s1EnableInSetup}.`;
         hbNoData.style.display = "";
       }
       if (hbDataGrid) hbDataGrid.style.display = "none";
@@ -227,16 +207,20 @@
     if (webControlState) webControlState.textContent = payload.webControlEnabled ? "✅ Enabled" : "⏸️ Disabled";
     webControlEnabled = !!payload.webControlEnabled;
     updateDriveControlsEnabled();
-    if (failsafeSource) failsafeSource.textContent = String(payload.failsafeSource ?? "--");
+    if (failsafeSource) failsafeSource.textContent = formatFailsafeSource(payload.failsafeSource);
     const driveSpeed = Number(payload.driveSpeed);
     const driveSteer = Number(payload.driveSteer);
-    if (driveOutput) driveOutput.textContent =
-      `${Number.isFinite(driveSpeed) ? Math.round(driveSpeed) : "--"} / ${Number.isFinite(driveSteer) ? Math.round(driveSteer) : "--"}`;
+    if (driveOutput) {
+      const speedText = Number.isFinite(driveSpeed) ? Math.round(driveSpeed) : "--";
+      const steerText = Number.isFinite(driveSteer) ? Math.round(driveSteer) : "--";
+      driveOutput.textContent = `SPD ${speedText} · STR ${steerText}`;
+    }
     const speedLimitScale = Number(payload.speedLimitScale);
-    if (speedLimitDisplay) speedLimitDisplay.textContent = Number.isFinite(speedLimitScale)
-      ? speedLimitScale.toFixed(3)
-      : "--";
-    renderArmControls(payload);
+    if (speedLimitDisplay) {
+      speedLimitDisplay.textContent = Number.isFinite(speedLimitScale)
+        ? `${Math.round(speedLimitScale * 100)}% (${speedLimitScale.toFixed(3)})`
+        : "--";
+    }
     renderHoverboard(payload.hoverboard);
   };
 
@@ -265,6 +249,12 @@
 
   const saveConfig = async () => {
     if (!window.PAApi) return;
+    if (saveInFlight) {
+      saveQueued = true;
+      return;
+    }
+
+    saveInFlight = true;
     showFeedback(configFeedback, "Saving...");
 
     try {
@@ -278,6 +268,12 @@
       showFeedback(configFeedback, `Saved at ${new Date().toLocaleTimeString()}`, "success");
     } catch (error) {
       showFeedback(configFeedback, `Failed to save: ${window.PAApi.messageFor(error)}`, "error");
+    } finally {
+      saveInFlight = false;
+      if (saveQueued) {
+        saveQueued = false;
+        saveConfig();
+      }
     }
   };
 
@@ -300,7 +296,6 @@
   speedLimitMax?.addEventListener("input", debouncedSave);
   webDriveTimeout?.addEventListener("input", debouncedSave);
   ch8ModeLock?.addEventListener("change", debouncedSave);
-  reloadConfigButton?.addEventListener("click", loadConfig);
 
   if (window.PAStatusStream?.isSupported()) {
     window.PAStatusStream.subscribe((eventType, payload) => {

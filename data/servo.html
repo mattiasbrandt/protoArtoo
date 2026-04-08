@@ -27,11 +27,10 @@
       <div class="desc">Open <a class="setup-link" href="/setup.html">Setup</a> and enable at least one arm servo to restore arm controls.</div>
     </div>
 
-    <!-- AUX Outputs (AUX1 / AUX2 / AUX3) -->
-    <div class="card hidden" id="aux-controls-card">
-      <h3>🔌 AUX Outputs</h3>
-      <div class="desc">Controls for enabled auxiliary outputs. Servo outputs support open, close,
-        and stop. RGB LED strips show a placeholder — output control coming soon.</div>
+    <!-- AUX (AUX1 / AUX2 / AUX3) -->
+    <div class="card" id="aux-controls-card">
+      <h3>🔌 AUX</h3>
+      <div class="desc">Controls for enabled AUX outputs. 💡 LED strip options are configured in <a class="setup-link" href="/setup.html">Setup</a>.</div>
       <div id="aux-controls-container" class="mt-12"></div>
       <div id="aux-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true">No command sent yet.</div>
     </div>
@@ -53,7 +52,7 @@
 
         <!-- ARM1 calibration (shown only when ARM1 enabled) -->
         <div class="hidden" id="arm1-calib-section">
-          <div class="section-label">Left Arm — ARM1 (GPIO 23)</div>
+          <div class="section-label">Left Arm — ARM1</div>
           <div class="form-grid">
             <label class="field">
               <span>Open position (µs)</span>
@@ -84,7 +83,7 @@
 
         <!-- ARM2 calibration (shown only when ARM2 enabled) -->
         <div class="hidden" id="arm2-calib-section">
-          <div class="section-label">Right Arm — ARM2 (GPIO 5)</div>
+          <div class="section-label">Right Arm — ARM2</div>
           <div class="form-grid">
             <label class="field">
               <span>Open position (µs)</span>
@@ -115,7 +114,7 @@
 
         <!-- AUX1 calibration (shown only when AUX1 enabled and type is a servo) -->
         <div class="hidden" id="aux1-calib-section">
-          <div class="section-label">AUX Output 1 — AUX1 (GPIO 19)</div>
+          <div class="section-label">AUX Output 1 — AUX1</div>
           <div class="form-grid">
             <label class="field">
               <span>Open position (µs)</span>
@@ -144,7 +143,7 @@
 
         <!-- AUX2 calibration (shown only when AUX2 enabled and type is a servo) -->
         <div class="hidden" id="aux2-calib-section">
-          <div class="section-label">AUX Output 2 — AUX2 (GPIO 18)</div>
+          <div class="section-label">AUX Output 2 — AUX2</div>
           <div class="form-grid">
             <label class="field">
               <span>Open position (µs)</span>
@@ -173,7 +172,7 @@
 
         <!-- AUX3 calibration (shown only when AUX3 enabled and type is a servo) -->
         <div class="hidden" id="aux3-calib-section">
-          <div class="section-label">AUX Output 3 — AUX3 (GPIO 32)</div>
+          <div class="section-label">AUX Output 3 — AUX3</div>
           <div class="form-grid">
             <label class="field">
               <span>Open position (µs)</span>

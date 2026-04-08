@@ -22,7 +22,7 @@
     <!-- Safety Controls - ALWAYS FIRST -->
     <div class="card danger">
       <h3>🛑 Safety Controls</h3>
-      <div class="button-row">
+      <div class="button-row drive-safety-actions">
         <button id="estop-button" class="btn danger" type="button" aria-label="Emergency Stop">
           🛑 Latch Estop
         </button>
@@ -69,7 +69,7 @@
 
     <!-- Hoverboard Controller -->
     <div class="card" id="hoverboard-card">
-      <h3>Hoverboard Controller</h3>
+      <h3>🤖 Hoverboard Controller</h3>
       <div class="desc" id="hb-no-data">No data — controller feedback not yet received.</div>
       <div class="status-grid" id="hb-data-grid">
         <div class="status-item">
@@ -95,6 +95,10 @@
     <div class="card">
       <h3>🎮 Drive Controls</h3>
       <div class="desc">Hold to drive, release to stop. Command timeout follows the configured Web Control Timeout setting.</div>
+      <div class="drive-control-hints mt-10">
+        <span class="status-pill pill-info status-pill-compact">🎯 Hold = command</span>
+        <span class="status-pill pill-info status-pill-compact">🛑 Release = stop</span>
+      </div>
       <div class="dpad-grid mt-16">
         <button class="btn dpad-btn" data-drive-speed="260" data-drive-steer="0"
           type="button" aria-label="Drive Forward">⬆️</button>
@@ -129,9 +133,6 @@
           <input id="ch8-mode-lock" name="ch8ModeLock" type="checkbox">
           <span>Enable CH8 Mode Lock at Zero</span>
         </label>
-        <div class="button-row">
-          <button id="reload-config-button" class="btn" type="button">🔄 Reload</button>
-        </div>
       </form>
       <div id="config-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true">Loading settings...</div>
     </div>

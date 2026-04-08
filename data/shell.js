@@ -78,6 +78,14 @@
   const cfg = PAGE_CONFIG[page] || PAGE_CONFIG.home;
   document.title = cfg.title;
 
+
+  window.PAUi = window.PAUi || {};
+  if (typeof window.PAUi.setupActionText !== "function") {
+    window.PAUi.setupActionText = (action) => `${action} in Setup`;
+  }
+  if (typeof window.PAUi.setupActionHtml !== "function") {
+    window.PAUi.setupActionHtml = (action) => `${action} in <a class="setup-link" href="/setup.html">Setup</a>`;
+  }
   const shellTop = document.getElementById("shell-top");
   if (shellTop) {
     const navHtml = NAV.map((item) =>
