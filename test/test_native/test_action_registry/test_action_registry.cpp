@@ -77,6 +77,19 @@ void test_registry_contains_sound_category_actions() {
     }
 }
 
+void test_registry_contains_droid_sequence_actions() {
+    const RobotActionId ids[] = {
+        DROID_SEQ_SCREAM,      DROID_SEQ_WAVE,        DROID_SEQ_FAST_WAVE,
+        DROID_SEQ_OPEN_WAVE,   DROID_SEQ_BEEP_CANTINA,DROID_SEQ_FAINT,
+        DROID_SEQ_CANTINA,     DROID_SEQ_LEIA,        DROID_SEQ_DISCO,
+        DROID_SEQ_SCREAMS,     DROID_SEQ_WIGGLE,
+    };
+
+    for (size_t i = 0; i < sizeof(ids) / sizeof(ids[0]); ++i) {
+        TEST_ASSERT_TRUE(registryContainsAction(ids[i]));
+    }
+}
+
 void test_registry_json_payload_fits_budget() {
     JsonDocument doc;
     JsonArray arr = doc.to<JsonArray>();
@@ -107,6 +120,7 @@ int main() {
     RUN_TEST(test_registry_ids_unique);
     RUN_TEST(test_registry_no_none_entry);
     RUN_TEST(test_registry_contains_sound_category_actions);
+    RUN_TEST(test_registry_contains_droid_sequence_actions);
     RUN_TEST(test_registry_json_payload_fits_budget);
 
     return UNITY_END();

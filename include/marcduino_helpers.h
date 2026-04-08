@@ -111,19 +111,46 @@ inline bool marcduino_sequence_id_valid(int seq_id) {
 }
 
 // -----------------------------------------------------------------------------
-// marcduino_full_sequence_to_body_sequence()
-// Compatibility mapping for full-droid sequence IDs (:SE01-:SE16) that have a
-// direct body-arm sequence equivalent in protoArtoo.
+// Full-droid sequence decomposition for body-local actions.
 //
-// Return value:
-//   - body sequence ID (30-36) when a direct mapping exists
-//   - -1 when no direct body-arm mapping exists
+// audioDollarCmd:
+//   - nullptr => no local audio trigger
+//   - "$X"    => queue this audio command to AudioTask
+//
+// bodySeqId:
+//   - -1      => no local body servo sequence
+//   - 30 / 31 => queue existing body sequence handler
 // -----------------------------------------------------------------------------
-inline int marcduino_full_sequence_to_body_sequence(int seq_id) {
+struct FullDroidBodyAction {
+    const char* audioDollarCmd;
+    int         bodySeqId;
+};
+
+inline FullDroidBodyAction marcduino_full_droid_body_actions(int seq_id) {
     switch (seq_id) {
         case 1:
-            return 30;  // ScreamSequence body side == utility arm open/close
+            return {"$S", 30};
+        case 2:
+            return {nullptr, 31};
+        case 3:
+            return {nullptr, 31};
+        case 4:
+            return {nullptr, 31};
+        case 5:
+            return {"$c", 31};
+        case 6:
+            return {"$F", 30};
+        case 7:
+            return {"$C", 31};
+        case 8:
+            return {"$L", 30};
+        case 9:
+            return {"$D", 31};
+        case 15:
+            return {"$S", -1};
+        case 16:
+            return {nullptr, 31};
         default:
-            return -1;
+            return {nullptr, -1};
     }
 }

@@ -23,7 +23,7 @@ const ActionEntry ACTION_REGISTRY[] = {
     { SERVO_ACTION_AUX1_TOGGLE,       "servo.action.toggle-aux1",         "AUX1 Toggle",         "servo",  "Toggle aux 1 servo between open and closed",           false },
     { SERVO_ACTION_AUX2_TOGGLE,       "servo.action.toggle-aux2",         "AUX2 Toggle",         "servo",  "Toggle aux 2 servo between open and closed",           false },
     { SERVO_ACTION_AUX3_TOGGLE,       "servo.action.toggle-aux3",         "AUX3 Toggle",         "servo",  "Toggle aux 3 servo between open and closed",           false },
-    { DOME_ACTION_MARCDUINO_SEQ,      "dome.action.marcduino-sequence",   "Marcduino Sequence",  "dome",   "Trigger a numbered Marcduino sequence on the dome",    false },
+    { DOME_ACTION_MARCDUINO_SEQ,      "dome.action.marcduino-sequence",   "Marcduino Sequence",  "dome",   "Trigger a raw numbered body sequence payload (typically SE30-SE36)", false },
     { DOME_ACTION_MARCDUINO_CMD,      "dome.action.marcduino-command",    "Marcduino Command",   "dome",   "Send a specific Marcduino command string to the dome", false },
     { SOUND_ACTION_RANDOM_GENERAL,    "sound.action.random-general",      "Random General",      "sound",  "Play one random track from configured general range",  false },
     { SOUND_ACTION_RANDOM_CHATTY,     "sound.action.random-chatty",       "Random Chatty",       "sound",  "Play one random track from configured chatty range",   false },
@@ -39,7 +39,18 @@ const ActionEntry ACTION_REGISTRY[] = {
     { SOUND_ACTION_RANDOM_WHISTLE,    "sound.action.random-whistle",      "Random Whistle",      "sound",  "Play one random track from configured whistle range",  false },
     { SYSTEM_ACTION_ESTOP,            "system.action.estop",              "Emergency Stop",      "system", "Immediately stop all drive output and latch estop",    true  },
     { SYSTEM_ACTION_SLEEP_TOGGLE,     "system.action.sleep-toggle",       "Sleep Toggle",        "system", "Toggle cosmetic sleep mode while keeping drive safety active", false },
-    { DOME_ACTION_SEQ,                "dome.action.dome-sequence",        "Dome Sequence",       "dome",   "Trigger a dome panel/light sequence by number",        false },
+    { DOME_ACTION_SEQ,                "dome.action.dome-sequence",        "Dome Sequence",       "dome",   "Trigger a dome-side panel/light sequence by number",  false },
+    { DROID_SEQ_SCREAM,               "dome.action.droid-sequence-scream", "Scream",              "dome",   "SE01 - scream audio and body sequence, then forward :SE01 to dome", false },
+    { DROID_SEQ_WAVE,                 "dome.action.droid-sequence-wave",   "Wave",                "dome",   "SE02 - body wave sequence, then forward :SE02 to dome", false },
+    { DROID_SEQ_FAST_WAVE,            "dome.action.droid-sequence-fast-wave", "Fast Wave",         "dome",   "SE03 - fast wave sequence, then forward :SE03 to dome", false },
+    { DROID_SEQ_OPEN_WAVE,            "dome.action.droid-sequence-open-wave", "Open Wave",         "dome",   "SE04 - open wave sequence, then forward :SE04 to dome", false },
+    { DROID_SEQ_BEEP_CANTINA,         "dome.action.droid-sequence-beep-cantina", "Beep Cantina",  "dome",   "SE05 - short Cantina audio with body wave, then forward :SE05 to dome", false },
+    { DROID_SEQ_FAINT,                "dome.action.droid-sequence-faint",  "Faint",               "dome",   "SE06 - faint audio with body park sequence, then forward :SE06 to dome", false },
+    { DROID_SEQ_CANTINA,              "dome.action.droid-sequence-cantina", "Cantina Dance",     "dome",   "SE07 - long Cantina audio with body wave, then forward :SE07 to dome", false },
+    { DROID_SEQ_LEIA,                 "dome.action.droid-sequence-leia",   "Leia Message",        "dome",   "SE08 - Leia audio with body sequence, then forward :SE08 to dome", false },
+    { DROID_SEQ_DISCO,                "dome.action.droid-sequence-disco",  "Disco",               "dome",   "SE09 - disco audio ($D) with body wave, then forward :SE09 to dome", false },
+    { DROID_SEQ_SCREAMS,              "dome.action.droid-sequence-screams", "Screams",           "dome",   "SE15 - screams audio only on body side, then forward :SE15 to dome", false },
+    { DROID_SEQ_WIGGLE,               "dome.action.droid-sequence-wiggle", "Panel Wiggle",        "dome",   "SE16 - body wave sequence, then forward :SE16 to dome", false },
 };
 // clang-format on
 

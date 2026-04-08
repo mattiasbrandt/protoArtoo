@@ -94,6 +94,11 @@ void test_startup() {
     TEST_ASSERT_EQUAL_UINT16(AUDIO_TRACK_STARTUP, a.track);
 }
 
+void test_disco_default_is_none_until_configured() {
+    AudioAction a = parseAudioDollar("$D");
+    TEST_ASSERT_EQUAL(AUDIO_ACTION_NONE, a.type);
+}
+
 // -----------------------------------------------------------------------------
 // Playback control
 // -----------------------------------------------------------------------------
@@ -198,6 +203,23 @@ void test_custom_named_tracks() {
     // Unchanged field uses its own default
     AudioAction faint = parseAudioDollar("$F", custom);
     TEST_ASSERT_EQUAL_UINT16(AUDIO_TRACK_FAINT, faint.track);
+}
+
+void test_disco_plays_custom_named_track() {
+    AudioNamedTracks custom{};
+    custom.disco = 9;
+
+    AudioAction disco = parseAudioDollar("$D", custom);
+    TEST_ASSERT_EQUAL(AUDIO_ACTION_PLAY_TRACK, disco.type);
+    TEST_ASSERT_EQUAL_UINT16(9, disco.track);
+}
+
+void test_disco_zero_track_is_suppressed() {
+    AudioNamedTracks custom{};
+    custom.disco = 0;
+
+    AudioAction disco = parseAudioDollar("$D", custom);
+    TEST_ASSERT_EQUAL(AUDIO_ACTION_NONE, disco.type);
 }
 
 // -----------------------------------------------------------------------------
@@ -383,6 +405,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_imp_march);
     RUN_TEST(test_startup);
 
+    RUN_TEST(test_disco_default_is_none_until_configured);
     // Playback control
     RUN_TEST(test_random_on);
     RUN_TEST(test_random_off);
@@ -404,6 +427,8 @@ int main(int argc, char** argv) {
 
     // Custom named tracks
     RUN_TEST(test_custom_named_tracks);
+    RUN_TEST(test_disco_plays_custom_named_track);
+    RUN_TEST(test_disco_zero_track_is_suppressed);
 
     // audioTrackNvsKey
     RUN_TEST(test_nvs_key_scream);

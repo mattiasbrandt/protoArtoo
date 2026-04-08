@@ -20,6 +20,7 @@
 //   $W    — play Star Wars theme
 //   $M    — play Imperial March
 //   $B    — play startup / boot sound
+//   $D    — play disco (NVS key snd_disco, disabled when 0)
 //   $R    — enable random playback mode
 //   $O    — disable random mode (does not stop current sound)
 //   $s    — stop playback and disable random mode
@@ -46,6 +47,7 @@ constexpr uint16_t AUDIO_TRACK_SW_THEME  = 177;  // $W — Star Wars theme
 constexpr uint16_t AUDIO_TRACK_IMP_MARCH = 178;  // $M — Imperial March
 constexpr uint16_t AUDIO_TRACK_CANTINA_L = 180;  // $C — long Cantina
 constexpr uint16_t AUDIO_TRACK_STARTUP   = 255;  // $B — startup / boot sound
+constexpr uint16_t AUDIO_TRACK_DISCO     = 0;    // $D — disco (NVS snd_disco, 0=disabled)
 
 // Random playback pool defaults (NVS-configurable in T07)
 constexpr uint16_t AUDIO_RAND_TRACK_MIN   = 1;
@@ -78,6 +80,7 @@ struct AudioNamedTracks {
     uint16_t imp_march = AUDIO_TRACK_IMP_MARCH;
     uint16_t cantina_l = AUDIO_TRACK_CANTINA_L;
     uint16_t startup   = AUDIO_TRACK_STARTUP;
+    uint16_t disco     = AUDIO_TRACK_DISCO;
 };
 
 // -----------------------------------------------------------------------------

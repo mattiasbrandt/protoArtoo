@@ -193,7 +193,7 @@ entries:
 
 - name: dome.action.marcduino-sequence
   display_name: Marcduino Sequence
-  description: Trigger a numbered Marcduino sequence on the dome
+  description: Trigger a raw numbered body sequence payload (typically SE30-SE36)
   domain: dome
   type: action
   marcduino_cmd: M<nn>
@@ -223,7 +223,7 @@ entries:
 
 - name: dome.action.dome-sequence
   display_name: Dome Sequence
-  description: Trigger a dome panel/light sequence by number
+  description: Trigger a dome-side panel/light sequence by number
   domain: dome
   type: action
   marcduino_cmd: :SE<nn>
@@ -232,6 +232,171 @@ entries:
   cpp_enum: DOME_ACTION_SEQ
   cpp_file: include/rc_mapping.h
   sources: [ sbus ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+- name: dome.action.droid-sequence-scream
+  display_name: Scream
+  description: SE01 - scream audio and body sequence, then forward :SE01 to dome
+  domain: dome
+  type: action
+  marcduino_cmd: :SE01
+  api_path: null
+  sse_event: null
+  cpp_enum: DROID_SEQ_SCREAM
+  cpp_file: include/rc_mapping.h
+  sources: [ sbus, dome_rx ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+- name: dome.action.droid-sequence-wave
+  display_name: Wave
+  description: SE02 - body wave sequence, then forward :SE02 to dome
+  domain: dome
+  type: action
+  marcduino_cmd: :SE02
+  api_path: null
+  sse_event: null
+  cpp_enum: DROID_SEQ_WAVE
+  cpp_file: include/rc_mapping.h
+  sources: [ sbus, dome_rx ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+- name: dome.action.droid-sequence-fast-wave
+  display_name: Fast Wave
+  description: SE03 - fast wave sequence, then forward :SE03 to dome
+  domain: dome
+  type: action
+  marcduino_cmd: :SE03
+  api_path: null
+  sse_event: null
+  cpp_enum: DROID_SEQ_FAST_WAVE
+  cpp_file: include/rc_mapping.h
+  sources: [ sbus, dome_rx ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+- name: dome.action.droid-sequence-open-wave
+  display_name: Open Wave
+  description: SE04 - open wave sequence, then forward :SE04 to dome
+  domain: dome
+  type: action
+  marcduino_cmd: :SE04
+  api_path: null
+  sse_event: null
+  cpp_enum: DROID_SEQ_OPEN_WAVE
+  cpp_file: include/rc_mapping.h
+  sources: [ sbus, dome_rx ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+- name: dome.action.droid-sequence-beep-cantina
+  display_name: Beep Cantina
+  description: SE05 - short Cantina audio with body wave, then forward :SE05 to dome
+  domain: dome
+  type: action
+  marcduino_cmd: :SE05
+  api_path: null
+  sse_event: null
+  cpp_enum: DROID_SEQ_BEEP_CANTINA
+  cpp_file: include/rc_mapping.h
+  sources: [ sbus, dome_rx ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+- name: dome.action.droid-sequence-faint
+  display_name: Faint
+  description: SE06 - faint audio with body park sequence, then forward :SE06 to dome
+  domain: dome
+  type: action
+  marcduino_cmd: :SE06
+  api_path: null
+  sse_event: null
+  cpp_enum: DROID_SEQ_FAINT
+  cpp_file: include/rc_mapping.h
+  sources: [ sbus, dome_rx ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+- name: dome.action.droid-sequence-cantina
+  display_name: Cantina Dance
+  description: SE07 - long Cantina audio with body wave, then forward :SE07 to dome
+  domain: dome
+  type: action
+  marcduino_cmd: :SE07
+  api_path: null
+  sse_event: null
+  cpp_enum: DROID_SEQ_CANTINA
+  cpp_file: include/rc_mapping.h
+  sources: [ sbus, dome_rx ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+- name: dome.action.droid-sequence-leia
+  display_name: Leia Message
+  description: SE08 - Leia audio with body sequence, then forward :SE08 to dome
+  domain: dome
+  type: action
+  marcduino_cmd: :SE08
+  api_path: null
+  sse_event: null
+  cpp_enum: DROID_SEQ_LEIA
+  cpp_file: include/rc_mapping.h
+  sources: [ sbus, dome_rx ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+- name: dome.action.droid-sequence-disco
+  display_name: Disco
+  description: SE09 - disco audio ($D) with body wave, then forward :SE09 to dome
+  domain: dome
+  type: action
+  marcduino_cmd: :SE09
+  api_path: null
+  sse_event: null
+  cpp_enum: DROID_SEQ_DISCO
+  cpp_file: include/rc_mapping.h
+  sources: [ sbus, dome_rx ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+- name: dome.action.droid-sequence-screams
+  display_name: Screams
+  description: SE15 - screams audio only on body side, then forward :SE15 to dome
+  domain: dome
+  type: action
+  marcduino_cmd: :SE15
+  api_path: null
+  sse_event: null
+  cpp_enum: DROID_SEQ_SCREAMS
+  cpp_file: include/rc_mapping.h
+  sources: [ sbus, dome_rx ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+- name: dome.action.droid-sequence-wiggle
+  display_name: Panel Wiggle
+  description: SE16 - body wave sequence, then forward :SE16 to dome
+  domain: dome
+  type: action
+  marcduino_cmd: :SE16
+  api_path: null
+  sse_event: null
+  cpp_enum: DROID_SEQ_WIGGLE
+  cpp_file: include/rc_mapping.h
+  sources: [ sbus, dome_rx ]
   safety_critical: false
   requires_web_control: false
   nvs_key: null

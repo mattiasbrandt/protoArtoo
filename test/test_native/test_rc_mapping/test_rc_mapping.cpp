@@ -310,6 +310,48 @@ void test_sound_random_action_tokens_round_trip() {
     }
 }
 
+void test_droid_sequence_action_tokens_round_trip() {
+    struct Expected {
+        RobotActionId id;
+        const char* token;
+        int seqId;
+    };
+    const Expected expected[] = {
+        {DROID_SEQ_SCREAM, "droid_seq_scream", 1},
+        {DROID_SEQ_WAVE, "droid_seq_wave", 2},
+        {DROID_SEQ_FAST_WAVE, "droid_seq_fast_wave", 3},
+        {DROID_SEQ_OPEN_WAVE, "droid_seq_open_wave", 4},
+        {DROID_SEQ_BEEP_CANTINA, "droid_seq_beep_cantina", 5},
+        {DROID_SEQ_FAINT, "droid_seq_faint", 6},
+        {DROID_SEQ_CANTINA, "droid_seq_cantina", 7},
+        {DROID_SEQ_LEIA, "droid_seq_leia", 8},
+        {DROID_SEQ_DISCO, "droid_seq_disco", 9},
+        {DROID_SEQ_SCREAMS, "droid_seq_screams", 15},
+        {DROID_SEQ_WIGGLE, "droid_seq_wiggle", 16},
+    };
+
+    for (size_t i = 0; i < sizeof(expected) / sizeof(expected[0]); ++i) {
+        const char* token = robotActionIdToString(expected[i].id);
+        TEST_ASSERT_EQUAL_STRING(expected[i].token, token);
+
+        RobotActionId parsed = ROBOT_ACTION_NONE;
+        TEST_ASSERT_TRUE(parseRobotActionId(token, &parsed));
+        TEST_ASSERT_EQUAL_UINT8(expected[i].id, parsed);
+
+        TEST_ASSERT_TRUE(robotActionIsButton(expected[i].id));
+        TEST_ASSERT_TRUE(robotActionValidForTier2(expected[i].id));
+        TEST_ASSERT_FALSE(robotActionNeedsPayload(expected[i].id));
+        TEST_ASSERT_EQUAL_INT(expected[i].seqId, robotActionIdToDroidSeqId(expected[i].id));
+    }
+}
+
+void test_droid_sequence_helper_returns_minus_one_for_non_droid_actions() {
+    TEST_ASSERT_EQUAL_INT(-1, robotActionIdToDroidSeqId(ROBOT_ACTION_NONE));
+    TEST_ASSERT_EQUAL_INT(-1, robotActionIdToDroidSeqId(SERVO_ACTION_ARM1_TOGGLE));
+    TEST_ASSERT_EQUAL_INT(-1, robotActionIdToDroidSeqId(DOME_ACTION_SEQ));
+    TEST_ASSERT_EQUAL_INT(-1, robotActionIdToDroidSeqId(SYSTEM_ACTION_ESTOP));
+}
+
 void test_sound_random_category_labels() {
     struct Expected {
         RobotActionId id;
@@ -388,6 +430,8 @@ int main() {
     RUN_TEST(test_trigger_parse_rejects_uint16_field_overflow);
     RUN_TEST(test_sound_random_action_tokens_round_trip);
     RUN_TEST(test_sound_random_category_labels);
+    RUN_TEST(test_droid_sequence_action_tokens_round_trip);
+    RUN_TEST(test_droid_sequence_helper_returns_minus_one_for_non_droid_actions);
 
     return UNITY_END();
 }

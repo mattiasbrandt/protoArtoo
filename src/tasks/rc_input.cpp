@@ -31,6 +31,7 @@
 #include "../../include/ledc_pwm.h"
 #include "../../include/logging.h"
 #include "../../include/dome_rx_parser.h"
+#include "../../include/marcduino_helpers.h"
 #include "../../include/dome_link.h"
 #include "../../include/web_server.h"
 #include "../../include/rc_pwm_helpers.h"
@@ -390,6 +391,68 @@ static bool queueRandomTrackForAction(RobotActionId target) {
     return true;
 }
 
+static bool queueServoSequence(uint8_t sequenceId, CommandSource source) {
+    ServoCommand cmd = {};
+    cmd.type = SERVO_CMD_SEQUENCE;
+    cmd.sequenceId = sequenceId;
+    cmd.source = source;
+    cmd.timestampMs = millis();
+    if (xQueueSend(servoCmdQueue, &cmd, 0) != pdTRUE) {
+        taskENTER_CRITICAL(&robotStateMux);
+        robotState.queueOverflowCount++;
+        taskEXIT_CRITICAL(&robotStateMux);
+        return false;
+    }
+    return true;
+}
+
+static void dispatchFullDroidSequence(int seqId) {
+    FullDroidBodyAction bodyAction = marcduino_full_droid_body_actions(seqId);
+    if (bodyAction.audioDollarCmd == nullptr && bodyAction.bodySeqId < 0) {
+        PA_LOG_WARN(TAG, "droid sequence ignored: no body mapping for SE%02d", seqId);
+        return;
+    }
+
+    if (bodyAction.audioDollarCmd != nullptr &&
+        !audioQueueDollar(bodyAction.audioDollarCmd, SRC_SBUS)) {
+        PA_LOG_WARN(TAG, "droid sequence audio dropped: %s", bodyAction.audioDollarCmd);
+    }
+
+    int queuedBodySeqId = -1;
+    if (bodyAction.bodySeqId >= 30) {
+        bool estop = false;
+        taskENTER_CRITICAL(&robotStateMux);
+        estop = robotState.estop;
+        taskEXIT_CRITICAL(&robotStateMux);
+
+        if (estop) {
+            PA_LOG_WARN(TAG, "droid sequence servo blocked by estop: SE%02d -> body SE%d",
+                        seqId, bodyAction.bodySeqId);
+        } else if (!queueServoSequence((uint8_t)bodyAction.bodySeqId, SRC_SBUS)) {
+            PA_LOG_WARN(TAG, "droid sequence servo queue full: SE%02d -> body SE%d", seqId,
+                        bodyAction.bodySeqId);
+        } else {
+            queuedBodySeqId = bodyAction.bodySeqId;
+        }
+    }
+
+    const char* domeStatus = "disconnected";
+    if (domeConnected()) {
+        char cmd[8];
+        snprintf(cmd, sizeof(cmd), ":SE%02d", seqId);
+        if (domeQueueTx(cmd)) {
+            domeStatus = "forwarded";
+        } else {
+            domeStatus = "queue_full";
+            PA_LOG_WARN(TAG, "droid sequence dome queue full: %s", cmd);
+        }
+    }
+
+    PA_LOG_INFO(TAG, "droid sequence trigger: SE%02d audio=%s body_seq=%d dome=%s", seqId,
+                bodyAction.audioDollarCmd != nullptr ? bodyAction.audioDollarCmd : "none",
+                queuedBodySeqId, domeStatus);
+}
+
 static void processTriggerAction(RobotActionId target, const char* payload, bool pressed) {
     switch (target) {
         case ROBOT_ACTION_NONE:
@@ -455,6 +518,24 @@ static void processTriggerAction(RobotActionId target, const char* payload, bool
         case SOUND_ACTION_RANDOM_WHISTLE:
             if (pressed) {
                 queueRandomTrackForAction(target);
+            }
+            break;
+        case DROID_SEQ_SCREAM:
+        case DROID_SEQ_WAVE:
+        case DROID_SEQ_FAST_WAVE:
+        case DROID_SEQ_OPEN_WAVE:
+        case DROID_SEQ_BEEP_CANTINA:
+        case DROID_SEQ_FAINT:
+        case DROID_SEQ_CANTINA:
+        case DROID_SEQ_LEIA:
+        case DROID_SEQ_DISCO:
+        case DROID_SEQ_SCREAMS:
+        case DROID_SEQ_WIGGLE:
+            if (pressed) {
+                int seqId = robotActionIdToDroidSeqId(target);
+                if (seqId > 0) {
+                    dispatchFullDroidSequence(seqId);
+                }
             }
             break;
         case SYSTEM_ACTION_ESTOP:

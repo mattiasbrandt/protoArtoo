@@ -46,6 +46,12 @@ AudioAction parseAudioDollar(const char* cmd, const AudioNamedTracks& named) {
         case 'W': action.type = AUDIO_ACTION_PLAY_TRACK; action.track = named.sw_theme;  break;
         case 'M': action.type = AUDIO_ACTION_PLAY_TRACK; action.track = named.imp_march; break;
         case 'B': action.type = AUDIO_ACTION_PLAY_TRACK; action.track = named.startup;   break;
+        case 'D':
+            if (named.disco > 0) {
+                action.type = AUDIO_ACTION_PLAY_TRACK;
+                action.track = named.disco;
+            }
+            break;
 
         // ---- Playback control ----
         case 'R': action.type = AUDIO_ACTION_RANDOM_ON;  break;

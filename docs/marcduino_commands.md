@@ -10,22 +10,27 @@ Current body-side handling status in protoArtoo:
 
 | Command family | Body status | Notes |
 |---------|---------|---------|
-| `:OP`, `:CL`, `:MV` | Implemented | Routed to `ServoTask` via `parseMarcduinoCommand()`. |
-| `:SE30-:SE36` | Implemented | Routed to `ServoTask` sequence state machine. |
-| `:SE01` | Implemented (compat alias) | Mapped to body `:SE30` arm choreography. |
-| `:SE02-:SE16` | Not directly implemented on body | Expected decomposition from dome into body-owned commands (primarily `$...` audio and `:SE30-:SE36` arms). |
-| `$...` | Parser recognizes command | Current Phase 3 path is a stub log in `marcduino_rx.cpp`; AudioTask routing is pending. |
+| `:OP`, `:CL`, `:MV` | Implemented | Parsed in `src/drivers/dome_rx_parser.cpp`; routed to `ServoTask`. |
+| `:SE30-:SE36` | Implemented | Direct body sequence IDs in `handleSequenceCommand()`. |
+| `:SE01-:SE09` | Implemented | Decomposed via `marcduino_full_droid_body_actions()` into local audio + body sequence, no dome TX echo on this RX path. |
+| `:SE10`, `:SE11`, `:SE13`, `:SE14` | Implemented (mood path) | Intercepted in `src/tasks/dome_link.cpp` via `applyMood()` before `parseMarcduinoCommand()`. |
+| `:SE15`, `:SE16` | Implemented | Decomposed in `handleSequenceCommand()` using `marcduino_full_droid_body_actions()`. |
+| `$...` | Implemented | Routed to `audioQueueDollar()` and parsed by `src/tasks/audio_dollar_parser.cpp`. |
+| `$D` | Implemented | Uses NVS-backed `snd_disco` (`cfg_snd_disco`); track `0` disables playback. |
+| `#APSL`, `#APWU` | Implemented | Parsed in `src/drivers/dome_rx_parser.cpp`; updates sleep state and broadcasts status. |
+| `#PAHB`, `#APHB` | Implemented | `#PAHB` heartbeat TX and `#APHB` heartbeat RX/ack handled in `src/tasks/dome_link.cpp`. |
 | `*`, `@`, `%`, `&`, `!` | Intentionally ignored on body | Dome-only or unsupported in this topology. |
 
 Source of truth for coordinated behavior:
 
 - Dome sequence implementation: `mattiasbrandt/AstroPixelsPlus` (`MarcduinoSequence.h`)
 - Body routing contract: `docs/goal.md` Section 2
-- Body parser: `src/drivers/marcduino_rx.cpp`
+- Body parser: `src/drivers/dome_rx_parser.cpp`
+- Dome link transport and heartbeat: `src/tasks/dome_link.cpp`
 
 Practical rule: when adding/changing synchronized sequences in the dome fork,
 keep the body payload decomposition explicit (`$...`, `:SE3x`, `:OP/:CL/:MV`)
-and update this table if a new body-owned command is introduced.
+and update this table as part of the same implementation change.
 
 MarcDuino is a control system for astromech droids (e.g., R2-D2 replicas), handling panels, lights, sounds, and holoprojectors via Arduino-based boards (Master/Slave setup). Commands are ASCII strings prefixed by specific characters and terminated by carriage return (`\r`). Firmware versions (e.g., V1.6 Master, V1.5 Slave, V3) vary slightly, with V3 adding dynamic configuration like servo reversal and MP3 player selection.
 

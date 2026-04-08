@@ -98,52 +98,74 @@ bool handlePanelCommand(const char* cmd) {
 
 // -----------------------------------------------------------------------------
 // handleSequenceCommand()
-// Parse body sequence commands.
-// Supported direct IDs: :SE30-:SE36.
-// Compatibility alias: :SE01 maps to body :SE30 arm choreography.
+// Parse Marcduino sequence commands for body-owned behavior.
+//
+// Direct body sequence IDs: :SE30-:SE36
+// Full-droid sequence IDs:  :SE01-:SE09, :SE15, :SE16 (decomposed locally)
 // -----------------------------------------------------------------------------
 bool handleSequenceCommand(const char* cmd) {
     if (cmd[0] != ':' || cmd[1] != 'S' || cmd[2] != 'E') {
         return false;
     }
 
-    int seqId = atoi(cmd + 3);
-    int mappedSeqId = seqId;
+    const int seqId = atoi(cmd + 3);
+    int mappedSeqId = -1;
+    FullDroidBodyAction bodyAction{nullptr, -1};
 
-    if (!marcduino_sequence_id_valid(seqId)) {
-        int alias = marcduino_full_sequence_to_body_sequence(seqId);
-        if (alias < 0) {
+    if (marcduino_sequence_id_valid(seqId)) {
+        mappedSeqId = seqId;
+    } else {
+        bodyAction = marcduino_full_droid_body_actions(seqId);
+        if (bodyAction.audioDollarCmd == nullptr && bodyAction.bodySeqId < 0) {
             return false;
         }
-        mappedSeqId = alias;
-        PA_LOG_INFO(TAG, "[SERVO] sequence alias: :SE%02d -> :SE%02d", seqId, mappedSeqId);
+        mappedSeqId = bodyAction.bodySeqId;
     }
 
-    if (!marcduino_sequence_id_valid(mappedSeqId)) {
-        return false;
+    bool handled = false;
+    if (bodyAction.audioDollarCmd != nullptr) {
+        handled = true;
+        if (!audioQueueDollar(bodyAction.audioDollarCmd, SRC_INTERNAL)) {
+            PA_LOG_WARN(TAG, "[AUDIO] queue full, dropped: %s", bodyAction.audioDollarCmd);
+        }
     }
 
-    taskENTER_CRITICAL(&robotStateMux);
-    bool estop = robotState.estop;
-    taskEXIT_CRITICAL(&robotStateMux);
+    int queuedSeqId = -1;
+    if (mappedSeqId >= 30) {
+        if (!marcduino_sequence_id_valid(mappedSeqId)) {
+            return false;
+        }
 
-    if (estop) {
-        PA_LOG_WARN(TAG, "[SERVO] sequence command rejected — estop active");
-        return false;
-    }
-
-    ServoCommand servoCmd = {};
-    servoCmd.type = SERVO_CMD_SEQUENCE;
-    servoCmd.sequenceId = (uint8_t)mappedSeqId;
-    servoCmd.source = SRC_INTERNAL;
-    servoCmd.timestampMs = millis();
-
-    if (xQueueSend(servoCmdQueue, &servoCmd, 0) != pdTRUE) {
         taskENTER_CRITICAL(&robotStateMux);
-        robotState.queueOverflowCount++;
+        bool estop = robotState.estop;
         taskEXIT_CRITICAL(&robotStateMux);
+
+        if (estop) {
+            PA_LOG_WARN(TAG, "[SERVO] sequence command rejected - estop active");
+        } else {
+            ServoCommand servoCmd = {};
+            servoCmd.type = SERVO_CMD_SEQUENCE;
+            servoCmd.sequenceId = (uint8_t)mappedSeqId;
+            servoCmd.source = SRC_INTERNAL;
+            servoCmd.timestampMs = millis();
+
+            if (xQueueSend(servoCmdQueue, &servoCmd, 0) != pdTRUE) {
+                taskENTER_CRITICAL(&robotStateMux);
+                robotState.queueOverflowCount++;
+                taskEXIT_CRITICAL(&robotStateMux);
+            }
+            handled = true;
+            queuedSeqId = mappedSeqId;
+        }
     }
-    PA_LOG_INFO(TAG, "[SERVO] sequence command: %s", cmd);
+
+    if (!handled) {
+        return false;
+    }
+
+    PA_LOG_INFO(TAG, "[MARCDUINO] SE%02d -> audio=%s seq=%d", seqId,
+                bodyAction.audioDollarCmd != nullptr ? bodyAction.audioDollarCmd : "none",
+                queuedSeqId);
     return true;
 }
 

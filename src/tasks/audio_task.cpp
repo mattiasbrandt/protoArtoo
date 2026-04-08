@@ -148,7 +148,7 @@ bool audioQueueQueryStatus(CommandSource src) {
 static constexpr uint32_t DISPATCH_PLAY_MIN_MS = 300;
 
 static void dispatchAction(const AudioAction& action, uint8_t& vol, bool& randomMode,
-                           uint32_t& lastPlayMs) {
+                           uint32_t& lastPlayMs, uint32_t& lastRandMs) {
     switch (action.type) {
         case AUDIO_ACTION_PLAY_TRACK: {
             uint32_t now = millis();
@@ -159,6 +159,7 @@ static void dispatchAction(const AudioAction& action, uint8_t& vol, bool& random
             }
             lastPlayMs = now;
             driver->playTrack(action.track);
+            lastRandMs = lastPlayMs;
             taskENTER_CRITICAL(&robotStateMux);
             robotState.audioActive = true;
             taskEXIT_CRITICAL(&robotStateMux);
@@ -303,6 +304,7 @@ void audioTask(void* pvParameters) {
             named.imp_march = robotState.cfg_snd_imp_march;
             named.cantina_l = robotState.cfg_snd_cantina_l;
             named.startup = robotState.cfg_snd_startup;
+            named.disco = robotState.cfg_snd_disco;
             taskEXIT_CRITICAL(&robotStateMux);
             driver->begin(currentVol);
             driverInitialized = true;
@@ -364,10 +366,11 @@ void audioTask(void* pvParameters) {
                     named.imp_march = robotState.cfg_snd_imp_march;
                     named.cantina_l = robotState.cfg_snd_cantina_l;
                     named.startup = robotState.cfg_snd_startup;
+                    named.disco = robotState.cfg_snd_disco;
                     taskEXIT_CRITICAL(&robotStateMux);
                     bool wasRandom = randomMode;
                     AudioAction action = parseAudioDollar(cmd.dollar, named);
-                    dispatchAction(action, currentVol, randomMode, lastPlayMs);
+                    dispatchAction(action, currentVol, randomMode, lastPlayMs, lastRandMs);
                     // Reset timer when random mode first turns on so the
                     // first track fires after a full interval, not immediately.
                     if (randomMode && !wasRandom) {
@@ -390,6 +393,7 @@ void audioTask(void* pvParameters) {
                     }
                     lastPlayMs = now;
                     driver->playTrack(cmd.track);
+                    lastRandMs = lastPlayMs;
                     taskENTER_CRITICAL(&robotStateMux);
                     robotState.audioActive = true;
                     taskEXIT_CRITICAL(&robotStateMux);

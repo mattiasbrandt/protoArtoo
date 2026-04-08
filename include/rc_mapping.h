@@ -77,6 +77,17 @@ enum RobotActionId : uint8_t {
     SYSTEM_ACTION_ESTOP,          // Button: Latch estop (guarded)
     SYSTEM_ACTION_SLEEP_TOGGLE,   // Button: toggle sleep/wake mode
     DOME_ACTION_SEQ,              // Button: Dome sequence SE10-SE16 (Phase 4)
+    DROID_SEQ_SCREAM,           // Button: SE01 scream + body + dome forward
+    DROID_SEQ_WAVE,             // Button: SE02 wave sequence
+    DROID_SEQ_FAST_WAVE,        // Button: SE03 fast wave sequence
+    DROID_SEQ_OPEN_WAVE,        // Button: SE04 open wave sequence
+    DROID_SEQ_BEEP_CANTINA,     // Button: SE05 beep cantina sequence
+    DROID_SEQ_FAINT,            // Button: SE06 faint sequence
+    DROID_SEQ_CANTINA,          // Button: SE07 cantina dance sequence
+    DROID_SEQ_LEIA,             // Button: SE08 leia sequence
+    DROID_SEQ_DISCO,            // Button: SE09 disco sequence
+    DROID_SEQ_SCREAMS,          // Button: SE15 screams (audio-only body side)
+    DROID_SEQ_WIGGLE,           // Button: SE16 panel wiggle sequence
 };
 
 // -----------------------------------------------------------------------------
@@ -403,6 +414,28 @@ inline const char* robotActionIdToString(RobotActionId target) {
             return "sleep_toggle";
         case DOME_ACTION_SEQ:
             return "dome_seq";
+        case DROID_SEQ_SCREAM:
+            return "droid_seq_scream";
+        case DROID_SEQ_WAVE:
+            return "droid_seq_wave";
+        case DROID_SEQ_FAST_WAVE:
+            return "droid_seq_fast_wave";
+        case DROID_SEQ_OPEN_WAVE:
+            return "droid_seq_open_wave";
+        case DROID_SEQ_BEEP_CANTINA:
+            return "droid_seq_beep_cantina";
+        case DROID_SEQ_FAINT:
+            return "droid_seq_faint";
+        case DROID_SEQ_CANTINA:
+            return "droid_seq_cantina";
+        case DROID_SEQ_LEIA:
+            return "droid_seq_leia";
+        case DROID_SEQ_DISCO:
+            return "droid_seq_disco";
+        case DROID_SEQ_SCREAMS:
+            return "droid_seq_screams";
+        case DROID_SEQ_WIGGLE:
+            return "droid_seq_wiggle";
         case ROBOT_ACTION_NONE:
         default:
             return "none";
@@ -525,6 +558,50 @@ inline bool parseRobotActionId(const char* raw, RobotActionId* out) {
         *out = DOME_ACTION_SEQ;
         return true;
     }
+    if (strcmp(raw, "droid_seq_scream") == 0) {
+        *out = DROID_SEQ_SCREAM;
+        return true;
+    }
+    if (strcmp(raw, "droid_seq_wave") == 0) {
+        *out = DROID_SEQ_WAVE;
+        return true;
+    }
+    if (strcmp(raw, "droid_seq_fast_wave") == 0) {
+        *out = DROID_SEQ_FAST_WAVE;
+        return true;
+    }
+    if (strcmp(raw, "droid_seq_open_wave") == 0) {
+        *out = DROID_SEQ_OPEN_WAVE;
+        return true;
+    }
+    if (strcmp(raw, "droid_seq_beep_cantina") == 0) {
+        *out = DROID_SEQ_BEEP_CANTINA;
+        return true;
+    }
+    if (strcmp(raw, "droid_seq_faint") == 0) {
+        *out = DROID_SEQ_FAINT;
+        return true;
+    }
+    if (strcmp(raw, "droid_seq_cantina") == 0) {
+        *out = DROID_SEQ_CANTINA;
+        return true;
+    }
+    if (strcmp(raw, "droid_seq_leia") == 0) {
+        *out = DROID_SEQ_LEIA;
+        return true;
+    }
+    if (strcmp(raw, "droid_seq_disco") == 0) {
+        *out = DROID_SEQ_DISCO;
+        return true;
+    }
+    if (strcmp(raw, "droid_seq_screams") == 0) {
+        *out = DROID_SEQ_SCREAMS;
+        return true;
+    }
+    if (strcmp(raw, "droid_seq_wiggle") == 0) {
+        *out = DROID_SEQ_WIGGLE;
+        return true;
+    }
     return false;
 }
 
@@ -536,6 +613,35 @@ inline bool robotActionNeedsPayload(RobotActionId target) {
 inline bool robotActionIsAnalog(RobotActionId target) {
     return target == DRIVE_ACTION_SPEED || target == DRIVE_ACTION_STEER ||
            target == DOME_ACTION_SPEED || target == DRIVE_ACTION_SPEED_LIMIT;
+}
+
+inline int robotActionIdToDroidSeqId(RobotActionId target) {
+    switch (target) {
+        case DROID_SEQ_SCREAM:
+            return 1;
+        case DROID_SEQ_WAVE:
+            return 2;
+        case DROID_SEQ_FAST_WAVE:
+            return 3;
+        case DROID_SEQ_OPEN_WAVE:
+            return 4;
+        case DROID_SEQ_BEEP_CANTINA:
+            return 5;
+        case DROID_SEQ_FAINT:
+            return 6;
+        case DROID_SEQ_CANTINA:
+            return 7;
+        case DROID_SEQ_LEIA:
+            return 8;
+        case DROID_SEQ_DISCO:
+            return 9;
+        case DROID_SEQ_SCREAMS:
+            return 15;
+        case DROID_SEQ_WIGGLE:
+            return 16;
+        default:
+            return -1;
+    }
 }
 
 // Tier 2 trigger bindings only support button/switch actions (not analog axes)
@@ -553,7 +659,12 @@ inline bool robotActionValidForTier2(RobotActionId target) {
            target == SOUND_ACTION_RANDOM_SURPRISED || target == SOUND_ACTION_RANDOM_ALERT ||
            target == SOUND_ACTION_RANDOM_SNARKY || target == SOUND_ACTION_RANDOM_WHISTLE ||
            target == SYSTEM_ACTION_ESTOP || target == SYSTEM_ACTION_SLEEP_TOGGLE ||
-           target == DOME_ACTION_SEQ;
+           target == DOME_ACTION_SEQ || target == DROID_SEQ_SCREAM ||
+           target == DROID_SEQ_WAVE || target == DROID_SEQ_FAST_WAVE ||
+           target == DROID_SEQ_OPEN_WAVE || target == DROID_SEQ_BEEP_CANTINA ||
+           target == DROID_SEQ_FAINT || target == DROID_SEQ_CANTINA ||
+           target == DROID_SEQ_LEIA || target == DROID_SEQ_DISCO ||
+           target == DROID_SEQ_SCREAMS || target == DROID_SEQ_WIGGLE;
 }
 
 // Validate Marcduino sequence payload for body sequences (SE30-SE36)
@@ -613,7 +724,12 @@ inline bool robotActionIsButton(RobotActionId target) {
            target == SOUND_ACTION_RANDOM_SURPRISED || target == SOUND_ACTION_RANDOM_ALERT ||
            target == SOUND_ACTION_RANDOM_SNARKY || target == SOUND_ACTION_RANDOM_WHISTLE ||
            target == SYSTEM_ACTION_ESTOP || target == SYSTEM_ACTION_SLEEP_TOGGLE ||
-           target == DOME_ACTION_SEQ;
+           target == DOME_ACTION_SEQ || target == DROID_SEQ_SCREAM ||
+           target == DROID_SEQ_WAVE || target == DROID_SEQ_FAST_WAVE ||
+           target == DROID_SEQ_OPEN_WAVE || target == DROID_SEQ_BEEP_CANTINA ||
+           target == DROID_SEQ_FAINT || target == DROID_SEQ_CANTINA ||
+           target == DROID_SEQ_LEIA || target == DROID_SEQ_DISCO ||
+           target == DROID_SEQ_SCREAMS || target == DROID_SEQ_WIGGLE;
 }
 
 inline RcTriggerBinding makeRcTriggerBinding(RcBindingSource source, uint8_t channel,
