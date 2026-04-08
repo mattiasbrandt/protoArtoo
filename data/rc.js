@@ -101,6 +101,11 @@
   let actionPickerLastSlot = null;
   const actionPickerGroupOpen = {};
 
+  let actionPickerQuery = '';
+  let recentActionTokens = [];
+  const ACTION_RECENTS_KEY = 'pa.rc.recentActionTokens';
+  const ACTION_RECENTS_LIMIT = 8;
+
   const DOMAIN_GROUP = {
     drive: 'Movement',
     servo: 'Arms',
@@ -134,6 +139,42 @@
     return a.localeCompare(b);
   };
 
+  const loadRecentActionTokens = () => {
+    try {
+      const parsed = JSON.parse(window.localStorage.getItem(ACTION_RECENTS_KEY) || '[]');
+      if (!Array.isArray(parsed)) return;
+      recentActionTokens = parsed
+        .filter((token) => typeof token === 'string' && token.trim() !== '')
+        .slice(0, ACTION_RECENTS_LIMIT);
+    } catch (_error) {
+      recentActionTokens = [];
+    }
+  };
+
+  const saveRecentActionTokens = () => {
+    try {
+      window.localStorage.setItem(ACTION_RECENTS_KEY, JSON.stringify(recentActionTokens));
+    } catch (_error) {
+      // Ignore localStorage persistence failures.
+    }
+  };
+
+  const syncRecentActionTokensWithTargets = () => {
+    const validTokens = new Set(actionTargets.map((item) => item.token));
+    const filtered = recentActionTokens.filter((token) => validTokens.has(token));
+    if (filtered.length !== recentActionTokens.length) {
+      recentActionTokens = filtered;
+      saveRecentActionTokens();
+    }
+  };
+
+  const rememberRecentActionToken = (token) => {
+    if (!token || token === 'none') return;
+    recentActionTokens = [token, ...recentActionTokens.filter((entry) => entry !== token)]
+      .slice(0, ACTION_RECENTS_LIMIT);
+    saveRecentActionTokens();
+  };
+
   const buildActionTargetsFromApi = (entries) => {
     const targets = [HARDCODED_ACTION_TARGETS[0]];
     entries.forEach((entry) => {
@@ -164,8 +205,10 @@
       if (Array.isArray(result.data)) {
         actionTargets = buildActionTargetsFromApi(result.data);
       }
+      syncRecentActionTokensWithTargets();
     } catch (_err) {
       console.warn('[RC] Failed to load action registry, using built-in list');
+      syncRecentActionTokensWithTargets();
     }
   };
 
@@ -332,6 +375,18 @@
   };
 
 
+  const setModeFeedback = (message, variant = '') => {
+    if (!rcModeFeedback) return;
+    rcModeFeedback.textContent = message;
+    rcModeFeedback.className = variant ? `feedback mt-12 ${variant}` : 'feedback mt-12';
+  };
+
+  const setEditorFeedback = (message, variant = '') => {
+    if (!rcEditorFeedback) return;
+    rcEditorFeedback.textContent = message;
+    rcEditorFeedback.className = variant ? `feedback mt-12 ${variant}` : 'feedback mt-12';
+  };
+
   const setRcInputsEnabled = (enabled) => {
     rcInputsEnabled = enabled;
     rcDisabledCard?.classList.toggle("hidden", enabled);
@@ -480,6 +535,15 @@
     if (source === "sbus2") return "SBUS#2";
     return "Disabled";
   };
+
+
+  const MODE_LABEL = {
+    standard_pwm: "🎮 Standard PWM",
+    single_sbus: "📻 Single SBUS",
+    dual_sbus: "📡 Dual SBUS",
+  };
+
+  const modeLabel = (mode) => MODE_LABEL[mode] || mode;
 
   const slotLabelForKey = (slotKey) => {
     const found = getActionsForMode().find((action) => action.key === slotKey);
@@ -741,44 +805,77 @@
     return !DEFAULT_COLLAPSED_GROUPS.has(groupName);
   };
 
-  const renderActionPicker = (selectedToken) => {
-    const groups = groupedActionTargets();
+  const actionMatchesQuery = (item, query) => {
+    if (!query) return true;
+    const q = query.toLowerCase();
+    return item.label.toLowerCase().includes(q)
+      || item.token.toLowerCase().includes(q)
+      || (item.description || '').toLowerCase().includes(q);
+  };
+
+  const renderActionRow = (item, selectedToken) => {
+    const selected = item.token === selectedToken;
+    const disabled = Boolean(item.disabled);
+    const showSafetyPill = Boolean(item.safetyCritical);
+    const showTestButton = Boolean(item.testable) && !disabled && !showSafetyPill;
+    const inFlight = actionPickerInFlightToken !== null;
+    const feedback = actionPickerFeedback && actionPickerFeedback.token === item.token
+      ? actionPickerFeedback
+      : null;
+    const feedbackClass = feedback ? ` ${feedback.kind || ''}` : '';
+    const feedbackText = feedback ? feedback.text : '';
+
+    return `<div class="rc-action-row${selected ? ' selected' : ''}${disabled ? ' disabled' : ''}" data-action-token="${escapeHtml(item.token)}" data-action-disabled="${disabled ? 'true' : 'false'}" role="option" aria-selected="${selected ? 'true' : 'false'}" aria-disabled="${disabled ? 'true' : 'false'}">
+      <button type="button" class="rc-action-select-btn" data-action-select="${escapeHtml(item.token)}"${disabled ? ' disabled' : ''}>
+        <span class="rc-action-radio" aria-hidden="true">${selected ? '●' : '○'}</span>
+        <span class="rc-action-main">
+          <span class="rc-action-label">${escapeHtml(item.label)}</span>
+          <span class="rc-action-desc">${escapeHtml(item.description || 'No description available.')}</span>
+        </span>
+      </button>
+      <span class="rc-action-side">
+        ${showSafetyPill ? '<span class="rc-action-safety-pill">⚠ Safety critical</span>' : ''}
+        ${showTestButton ? `<button type="button" class="rc-action-test-btn" data-action-test="${escapeHtml(item.token)}"${inFlight ? ' disabled' : ''}>▶</button>` : ''}
+        <span class="rc-action-test-feedback${feedbackClass}" data-action-feedback="${escapeHtml(item.token)}">${escapeHtml(feedbackText || '')}</span>
+      </span>
+    </div>`;
+  };
+
+  const renderActionPicker = (selectedToken, queryText = '') => {
+    const query = String(queryText || '').trim();
+    const groups = groupedActionTargets()
+      .map(({ name, items }) => ({
+        name,
+        items: items.filter((item) => actionMatchesQuery(item, query)),
+      }))
+      .filter(({ items }) => items.length > 0);
+
+    const recentItems = recentActionTokens
+      .map((token) => actionTargets.find((item) => item.token === token))
+      .filter((item) => Boolean(item) && actionMatchesQuery(item, query));
+
+    const hasMatches = recentItems.length > 0 || groups.length > 0;
+    const recentBlock = recentItems.length > 0
+      ? `<details class="rc-action-group rc-action-group-recent" open>
+          <summary>🕘 Recently used</summary>
+          <div class="rc-action-group-rows">${recentItems.map((item) => renderActionRow(item, selectedToken)).join('')}</div>
+        </details>`
+      : '';
+
     return `<div class="rc-action-picker" role="listbox" aria-label="Select action" tabindex="0">
+      <div class="rc-action-search-row">
+        <input class="rc-action-search-input" data-action-search type="search" placeholder="Search actions..." value="${escapeHtml(query)}" autocomplete="off">
+        <button type="button" class="rc-action-search-clear" data-action-search-clear${query ? '' : ' disabled'}>✕</button>
+      </div>
+      ${recentBlock}
       ${groups.map(({ name, items }) => {
-        const openAttr = isActionGroupOpen(name) ? ' open' : '';
-        const rows = items.map((item) => {
-          const selected = item.token === selectedToken;
-          const disabled = Boolean(item.disabled);
-          const showSafetyPill = Boolean(item.safetyCritical);
-          const showTestButton = Boolean(item.testable) && !disabled && !showSafetyPill;
-          const inFlight = actionPickerInFlightToken !== null;
-          const feedback = actionPickerFeedback && actionPickerFeedback.token === item.token
-            ? actionPickerFeedback
-            : null;
-          const feedbackClass = feedback ? ` ${feedback.kind || ''}` : '';
-          const feedbackText = feedback ? feedback.text : '';
-
-          return `<div class="rc-action-row${selected ? ' selected' : ''}${disabled ? ' disabled' : ''}" data-action-token="${escapeHtml(item.token)}" data-action-disabled="${disabled ? 'true' : 'false'}" role="option" aria-selected="${selected ? 'true' : 'false'}" aria-disabled="${disabled ? 'true' : 'false'}">
-            <button type="button" class="rc-action-select-btn" data-action-select="${escapeHtml(item.token)}"${disabled ? ' disabled' : ''}>
-              <span class="rc-action-radio" aria-hidden="true">${selected ? '●' : '○'}</span>
-              <span class="rc-action-main">
-                <span class="rc-action-label">${escapeHtml(item.label)}</span>
-                <span class="rc-action-desc">${escapeHtml(item.description || 'No description available.')}</span>
-              </span>
-            </button>
-            <span class="rc-action-side">
-              ${showSafetyPill ? '<span class="rc-action-safety-pill">⚠ Safety critical</span>' : ''}
-              ${showTestButton ? `<button type="button" class="rc-action-test-btn" data-action-test="${escapeHtml(item.token)}"${inFlight ? ' disabled' : ''}>▶</button>` : ''}
-              <span class="rc-action-test-feedback${feedbackClass}" data-action-feedback="${escapeHtml(item.token)}">${escapeHtml(feedbackText || '')}</span>
-            </span>
-          </div>`;
-        }).join('');
-
+        const openAttr = query ? ' open' : (isActionGroupOpen(name) ? ' open' : '');
         return `<details class="rc-action-group" data-action-group="${escapeHtml(name)}"${openAttr}>
           <summary>${escapeHtml(name)}</summary>
-          <div class="rc-action-group-rows">${rows}</div>
+          <div class="rc-action-group-rows">${items.map((item) => renderActionRow(item, selectedToken)).join('')}</div>
         </details>`;
       }).join('')}
+      ${hasMatches ? '' : `<div class="rc-action-empty">No actions match "${escapeHtml(query)}".</div>`}
     </div>`;
   };
 
@@ -799,6 +896,7 @@
       actionPickerFeedback = null;
       actionPickerInFlightToken = null;
       actionPickerScrollTop = 0;
+      actionPickerQuery = '';
       Object.keys(actionPickerGroupOpen).forEach((group) => delete actionPickerGroupOpen[group]);
       actionPickerLastSlot = selectedSlot;
     } else {
@@ -831,7 +929,7 @@
       <label>Channel
         <input data-field="channel" type="number" min="0" max="${channelMax}" value="${escapeHtml(String(binding.channel || 0))}">
       </label>
-      ${isBackbone ? "" : `<label class="rc-action-label-head">Action</label><input data-field="target" type="hidden" value="${escapeHtml(binding.target || 'none')}">${renderActionPicker(binding.target || 'none')}`}
+      ${isBackbone ? "" : `<label class="rc-action-label-head">Action</label><input data-field="target" type="hidden" value="${escapeHtml(binding.target || 'none')}">${renderActionPicker(binding.target || 'none', actionPickerQuery)}`}
       <div data-cond="seq" class="rc-editor-cond ${binding.target === "seq" ? "block" : "hidden"}">
         <label>Marcduino Sequence
           <select data-field="payload">
@@ -911,6 +1009,7 @@
       if (!targetEl || targetEl.value === token) return;
       targetEl.value = token;
       binding.target = token;
+      rememberRecentActionToken(token);
       actionPickerFeedback = null;
       updateConditionalFields();
       refreshActionPickerSelectionUi();
@@ -963,6 +1062,33 @@
         actionPickerScrollTop = picker.scrollTop;
       });
 
+      const searchInput = picker.querySelector('[data-action-search]');
+      if (searchInput) {
+        searchInput.addEventListener('input', () => {
+          const nextQuery = searchInput.value || '';
+          if (nextQuery === actionPickerQuery) return;
+          actionPickerQuery = nextQuery;
+          actionPickerScrollTop = 0;
+          renderEditor();
+          const nextInput = rcEditorContent.querySelector('[data-action-search]');
+          if (nextInput) {
+            nextInput.focus();
+            nextInput.setSelectionRange(actionPickerQuery.length, actionPickerQuery.length);
+          }
+        });
+      }
+
+      const clearSearchBtn = picker.querySelector('[data-action-search-clear]');
+      if (clearSearchBtn) {
+        clearSearchBtn.addEventListener('click', () => {
+          if (!actionPickerQuery) return;
+          actionPickerQuery = '';
+          actionPickerScrollTop = 0;
+          renderEditor();
+          rcEditorContent.querySelector('[data-action-search]')?.focus();
+        });
+      }
+
       picker.querySelectorAll('[data-action-group]').forEach((groupNode) => {
         groupNode.addEventListener('toggle', () => {
           actionPickerGroupOpen[groupNode.dataset.actionGroup] = groupNode.open;
@@ -996,13 +1122,18 @@
         if (event.target instanceof Element && event.target.closest('.rc-action-test-btn')) {
           return;
         }
+        if (event.target instanceof Element && event.target.closest('.rc-action-search-input')) {
+          return;
+        }
 
         if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp' && event.key !== 'Enter') {
           return;
         }
         event.preventDefault();
 
-        const selectable = actionTargets.filter((item) => !item.disabled).map((item) => item.token);
+        const selectable = actionTargets
+          .filter((item) => !item.disabled && actionMatchesQuery(item, actionPickerQuery))
+          .map((item) => item.token);
         if (!selectable.length) return;
 
         const targetEl = rcEditorContent.querySelector('[data-field="target"]');
@@ -1030,6 +1161,8 @@
     refreshActionPickerSelectionUi();
     syncActionTestUi();
 
+  };
+
   const updateSummaryMiniBar = () => {
     if (!rcSummaryBody || !rcSnapshot) return;
     const rows = rcSummaryBody.querySelectorAll("tr[data-slot]");
@@ -1049,22 +1182,13 @@
   const saveRcMode = async () => {
     if (!rcInputModeHidden) return;
     const mode = rcInputModeHidden.value;
-    if (rcModeFeedback) {
-      rcModeFeedback.textContent = "Saving...";
-      rcModeFeedback.className = "feedback";
-    }
+    setModeFeedback("Saving...");
     try {
       const result = await window.PAApi.postForm("/api/config", { rcInputMode: mode }, { timeoutMs: 5000 });
       switchRcMode(getRcModeFromConfig(result.data));
-      if (rcModeFeedback) {
-        rcModeFeedback.textContent = `\u2713 Saved at ${new Date().toLocaleTimeString()}`;
-        rcModeFeedback.className = "feedback success";
-      }
+      setModeFeedback(`${modeLabel(mode)} saved at ${new Date().toLocaleTimeString()}`, "success");
     } catch (error) {
-      if (rcModeFeedback) {
-        rcModeFeedback.textContent = `\u274c ${window.PAApi.messageFor(error)}`;
-        rcModeFeedback.className = "feedback error";
-      }
+      setModeFeedback(`❌ ${window.PAApi.messageFor(error)}`, "error");
     }
   };
 
@@ -1134,16 +1258,12 @@
       setSingleSbusRecvSelect(getSingleSbusRecvCh2(data));
       confirmedSbusRecvValue = sbusRecvSel?.value ?? null;
       updateRecvSel(mode);
-      if (rcModeFeedback) {
-        rcModeFeedback.textContent = `Receiver type: ${mode}`;
-        rcModeFeedback.className = "feedback success";
-      }
+      setModeFeedback(`Receiver type: ${modeLabel(mode)}`, "success");
       setRcInputsEnabled(rcComponentsEnabled(data));
     } catch (error) {
-      if (rcModeFeedback) {
-        rcModeFeedback.textContent = `Failed to load receiver type: ${window.PAApi.messageFor(error)}`;
-        rcModeFeedback.className = "feedback error";
-      }
+      const fallbackMode = rcInputModeHidden?.value || "standard_pwm";
+      switchRcMode(fallbackMode);
+      setModeFeedback(`Receiver config unavailable: ${window.PAApi.messageFor(error)}. Showing ${modeLabel(fallbackMode)} draft controls.`, "warning");
     }
   };
 
@@ -1291,10 +1411,7 @@
 
   const enterLearnMode = () => {
     if (!rcInputsEnabled) {
-      if (rcEditorFeedback) {
-        rcEditorFeedback.textContent = "Detect mode unavailable: enable an RC channel in Setup.";
-        rcEditorFeedback.className = "feedback warning";
-      }
+      setEditorFeedback("Detect mode unavailable: enable an RC channel in Setup.", "warning");
       return;
     }
     learnActive  = true;
@@ -1353,10 +1470,7 @@
       const result = await window.PAApi.get("/api/rc", { timeoutMs: 5000 });
       renderRcDiagnostics(result.data);
     } catch (error) {
-      if (rcEditorFeedback) {
-        rcEditorFeedback.textContent = `Failed to load RC diagnostics: ${window.PAApi.messageFor(error)}`;
-        rcEditorFeedback.className = "feedback error";
-      }
+      setEditorFeedback(`Failed to load RC diagnostics: ${window.PAApi.messageFor(error)}`, "error");
     }
   };
 
@@ -1388,10 +1502,7 @@
         }
         // Note: Not re-rendering slot list or editor on every SSE tick for performance
       } catch (_error) {
-        if (rcEditorFeedback) {
-          rcEditorFeedback.textContent = "Received malformed RC event payload.";
-          rcEditorFeedback.className = "feedback error";
-        }
+        setEditorFeedback("Received malformed RC event payload.", "error");
       }
     });
 
@@ -1424,29 +1535,20 @@
 
     const allowedSources = SOURCE_OPTIONS[mode] || SOURCE_OPTIONS.standard_pwm;
     if (!allowedSources.includes(binding.source)) {
-      if (rcEditorFeedback) {
-        rcEditorFeedback.textContent = `Source must be one of: ${allowedSources.join(", ")}.`;
-        rcEditorFeedback.className = "feedback error";
-      }
+      setEditorFeedback(`Source must be one of: ${allowedSources.join(", ")}.`, "error");
       return;
     }
 
     // Validate Marcduino command prefix
     if (binding.target === "cmd" && binding.payload) {
       if (!/^[:$#]/.test(binding.payload)) {
-        if (rcEditorFeedback) {
-          rcEditorFeedback.textContent = "Marcduino command must start with :, $, or #";
-          rcEditorFeedback.className = "feedback error";
-        }
+        setEditorFeedback("Marcduino command must start with :, $, or #", "error");
         return;
       }
     }
 
     if (binding.target === "dome_seq") {
-      if (rcEditorFeedback) {
-        rcEditorFeedback.textContent = "Dome sequence trigger mapping is not available in this firmware build.";
-        rcEditorFeedback.className = "feedback warning";
-      }
+      setEditorFeedback("Dome sequence trigger mapping is not available in this firmware build.", "warning");
       return;
     }
 
@@ -1454,10 +1556,7 @@
     if (binding.target === "estop") {
       const confirmCheckbox = rcEditorContent.querySelector('[data-field="estop-confirm"]');
       if (!confirmCheckbox || !confirmCheckbox.checked) {
-        if (rcEditorFeedback) {
-          rcEditorFeedback.textContent = "E-Stop action requires confirmation checkbox";
-          rcEditorFeedback.className = "feedback error";
-        }
+        setEditorFeedback("E-Stop action requires confirmation checkbox", "error");
         return;
       }
     }
@@ -1474,20 +1573,14 @@
     body.set(action.field, formatBindingString(binding, isBackbone));
 
     setEditorDirtyState("saving", "Saving changes…");
-    if (rcEditorFeedback) {
-      rcEditorFeedback.textContent = "Saving...";
-      rcEditorFeedback.className = "feedback";
-    }
+    setEditorFeedback("Saving...");
 
     try {
       const result = await window.PAApi.postForm("/api/config", body, { timeoutMs: 5000 });
       configCache = result.data;
 
       const savedAt = new Date().toLocaleTimeString();
-      if (rcEditorFeedback) {
-        rcEditorFeedback.textContent = `\u2713 Saved at ${savedAt}`;
-        rcEditorFeedback.className = "feedback success";
-      }
+      setEditorFeedback(`✓ Saved at ${savedAt}`, "success");
       markEditorClean(savedAt);
 
       await loadRcDiagnostics();
@@ -1495,10 +1588,7 @@
       setEditorDirtyState("error", "Save failed — unsaved changes");
       if (rcEditorApply) rcEditorApply.disabled = false;
       if (rcEditorRevert) rcEditorRevert.disabled = false;
-      if (rcEditorFeedback) {
-        rcEditorFeedback.textContent = `Failed to save: ${window.PAApi.messageFor(error)}`;
-        rcEditorFeedback.className = "feedback error";
-      }
+      setEditorFeedback(`Failed to save: ${window.PAApi.messageFor(error)}`, "error");
     }
   };
 
@@ -1507,10 +1597,7 @@
     mappingDraft[mode] = cloneModeDraft(mode);
     renderEditor();
 
-    if (rcEditorFeedback) {
-      rcEditorFeedback.textContent = "Reverted to saved configuration.";
-      rcEditorFeedback.className = "feedback";
-    }
+    setEditorFeedback("Reverted to saved configuration.");
 
     markEditorClean();
   };
@@ -1520,10 +1607,7 @@
       return;
     }
 
-    if (rcEditorFeedback) {
-      rcEditorFeedback.textContent = "Resetting to defaults...";
-      rcEditorFeedback.className = "feedback";
-    }
+    setEditorFeedback("Resetting to defaults...");
 
     try {
       const body = new URLSearchParams();
@@ -1566,18 +1650,12 @@
       configCache = result.data;
 
       const savedAt = new Date().toLocaleTimeString();
-      if (rcEditorFeedback) {
-        rcEditorFeedback.textContent = "\u2713 Reset to defaults successful";
-        rcEditorFeedback.className = "feedback success";
-      }
+      setEditorFeedback("✓ Reset to defaults successful", "success");
       markEditorClean(savedAt);
 
       await loadRcDiagnostics();
     } catch (error) {
-      if (rcEditorFeedback) {
-        rcEditorFeedback.textContent = `Failed to reset to defaults: ${window.PAApi.messageFor(error)}`;
-        rcEditorFeedback.className = "feedback error";
-      }
+      setEditorFeedback(`Failed to reset to defaults: ${window.PAApi.messageFor(error)}`, "error");
     }
   };
 
@@ -1643,6 +1721,8 @@
   setEditorDirtyState("clean", "Saved");
   setEditorSavedTimestamp(null);
 
+  loadRecentActionTokens();
+  switchRcMode(rcInputModeHidden?.value || "standard_pwm");
   loadRcMode();
   loadRcDiagnostics();
   loadActionTargets().then(() => { if (selectedSlot) renderEditor(); });

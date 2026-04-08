@@ -1736,6 +1736,64 @@ label.sound-search-field {
   padding: 6px;
 }
 
+.rc-action-search-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin-bottom: 8px;
+  padding: 2px 0 6px;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+}
+
+.rc-action-search-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text);
+  padding: 8px 10px;
+}
+
+.rc-action-search-input:focus {
+  outline: 2px solid var(--accent-bright);
+  outline-offset: 1px;
+}
+
+.rc-action-search-clear {
+  width: 30px;
+  height: 30px;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: var(--surface-alt);
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.rc-action-search-clear:hover:enabled {
+  border-color: var(--accent-bright);
+  color: var(--silver-bright);
+}
+
+.rc-action-search-clear:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.rc-action-group-recent {
+  border-color: color-mix(in srgb, var(--accent-bright) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.rc-action-empty {
+  padding: 10px 12px;
+  font-size: 0.84rem;
+  color: var(--text-dim);
+}
+
 .rc-action-picker:focus {
   outline: 2px solid var(--accent-bright);
   outline-offset: 2px;
