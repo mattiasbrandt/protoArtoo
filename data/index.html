@@ -14,7 +14,7 @@
     </div>
 
     <div class="card home-snapshot-card">
-      <h3>🛰️ Mission Snapshot</h3>
+      <h3>🛰️ Status</h3>
       <div class="snapshot-pills mt-12">
         <span id="snapshot-web-control" class="status-pill pill-info status-pill-compact">🕹️ Web control: ...</span>
         <span id="snapshot-mode" class="status-pill pill-info status-pill-compact">🧭 Mode: ...</span>
@@ -31,66 +31,7 @@
       </div>
     </template>
 
-    <!-- Quick Controls -->
-    <div class="card">
-      <h3>⚡ Quick Controls</h3>
-      <div class="button-row">
-        <a href="/drive.html" class="btn">🏎️ Drive Controls</a>
-        <a href="/dome.html" class="btn">🔄 Dome Controls</a>
-      </div>
-      <div class="desc mt-12">Sound</div>
-      <div class="button-row mt-6">
-        <button class="btn" id="sound-stop" title="Stop current playback" aria-label="Stop sound playback">⏹ Stop</button>
-        <button class="btn" id="sound-vol-up" title="Volume up" aria-label="Increase sound volume">🔊 Vol +</button>
-        <button class="btn" id="sound-vol-dn" title="Volume down" aria-label="Decrease sound volume">🔉 Vol −</button>
-      </div>
-      <div id="sound-feedback" class="feedback mt-8" role="status" aria-live="polite" aria-atomic="true"></div>
-    </div>
 
-    <!-- System Health -->
-    <div class="card">
-      <h3>📊 System Health</h3>
-      <div class="health-grid" id="health-grid">
-        <div class="health-item">
-          <div class="indicator" id="h-sbus"></div>
-          <span>RC Receiver</span>
-          <span class="indicator-text" id="ht-sbus"></span>
-        </div>
-        <div class="health-item">
-          <div class="indicator" id="h-wifi"></div>
-          <span>WiFi</span>
-          <span class="indicator-text" id="ht-wifi"></span>
-        </div>
-        <div class="health-item">
-          <div class="indicator" id="h-fs"></div>
-          <span>File System</span>
-          <span class="indicator-text" id="ht-fs"></span>
-        </div>
-        <div class="health-item">
-          <div class="indicator" id="h-heap"></div>
-          <span>Memory</span>
-          <span class="indicator-text" id="ht-heap"></span>
-        </div>
-        <div class="health-item">
-          <div class="indicator" id="h-dome-link"></div>
-          <span>Dome Link</span>
-          <span class="indicator-text" id="ht-dome-link"></span>
-        </div>
-        <div class="health-item">
-          <div class="indicator" id="h-sound"></div>
-          <span>Sound</span>
-          <span class="indicator-text" id="ht-sound"></span>
-        </div>
-      </div>
-      <div id="health-summary" class="desc mt-12"></div>
-    </div>
-
-    <!-- Components (shown only when hardware is enabled) -->
-    <div class="card hidden" id="component-status-card">
-      <h3>🔧 Components</h3>
-      <div class="desc">Active hardware modules and their current state.</div>
-      <div id="component-status-grid" class="status-grid mt-12"></div>
-    </div>
 
     <!-- Operation Mode -->
     <div class="card">
@@ -135,10 +76,54 @@
       <div id="mood-feedback" class="feedback mt-8" role="status" aria-live="polite" aria-atomic="true"></div>
   
     </div>
+    <!-- Components (shown only when hardware is enabled) -->
+    <div class="card hidden" id="component-status-card">
+      <h3>🔧 Components</h3>
+      <div class="desc">Active hardware modules and their current state.</div>
+      <div id="component-status-grid" class="status-grid mt-12"></div>
+    </div>
+
+    <!-- System Health -->
+    <div class="card">
+      <h3>📊 System Health</h3>
+      <div class="health-grid" id="health-grid">
+        <div class="health-item">
+          <div class="indicator" id="h-sbus"></div>
+          <span>RC Receiver</span>
+          <span class="indicator-text" id="ht-sbus"></span>
+        </div>
+        <div class="health-item">
+          <div class="indicator" id="h-wifi"></div>
+          <span>WiFi</span>
+          <span class="indicator-text" id="ht-wifi"></span>
+        </div>
+        <div class="health-item">
+          <div class="indicator" id="h-fs"></div>
+          <span>File System</span>
+          <span class="indicator-text" id="ht-fs"></span>
+        </div>
+        <div class="health-item">
+          <div class="indicator" id="h-heap"></div>
+          <span>Memory</span>
+          <span class="indicator-text" id="ht-heap"></span>
+        </div>
+        <div class="health-item">
+          <div class="indicator" id="h-dome-link"></div>
+          <span>Dome Link</span>
+          <span class="indicator-text" id="ht-dome-link"></span>
+        </div>
+        <div class="health-item">
+          <div class="indicator" id="h-sound"></div>
+          <span>Sound</span>
+          <span class="indicator-text" id="ht-sound"></span>
+        </div>
+      </div>
+    </div>
+
     <div class="card">
       <h3>📋 Live Logs</h3>
       <div class="log-wrap">
-        <pre id="log-console" class="log-console">Waiting for logs…</pre>
+        <pre id="log-console" class="log-console"></pre>
       </div>
       <div class="log-paused" id="log-paused">⏸ Auto-scroll paused — scroll to bottom to resume</div>
     </div>

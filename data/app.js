@@ -4,10 +4,9 @@
 // Home dashboard controller.
 // - Uses shared status stream (SSE-first, polling fallback)
 // - Provides truthful mode/mood command UX with rollback on failure
-// - Renders system health, component status, live logs, and quick audio controls
+// - Renders system health, component status, live logs, and status snapshots
 // =============================================================================
 (() => {
-  const healthSummary = document.getElementById("health-summary");
   const logConsole = document.getElementById("log-console");
   const logPaused = document.getElementById("log-paused");
   const componentStatusCard = document.getElementById("component-status-card");
@@ -20,7 +19,6 @@
   const moodDomeNote = document.getElementById("mood-dome-note");
   const moodFeedback = document.getElementById("mood-feedback");
 
-  const soundFeedback = document.getElementById("sound-feedback");
   const sleepToggle = document.getElementById("sleep-toggle");
   const sleepOverlay = document.getElementById("sleep-overlay");
   const sleepOverlayWake = document.getElementById("sleep-overlay-wake");
@@ -167,45 +165,6 @@
 
     setIndicator("h-sound", payload.s2Sound && typeof payload.s2Sound === "object" ? "ok" : "off");
 
-    if (!healthSummary) return;
-
-    const heapFreeKb = heapKnown ? Math.round(heapBytes / 1024) : null;
-
-    let heapLabel = "Healthy ✅";
-    let heapState = "ok";
-    if (!heapKnown) {
-      heapLabel = "Unknown ⚠️";
-      heapState = "warn";
-    } else if (heapFreeKb < 80) {
-      heapLabel = "Critical ❌";
-      heapState = "error";
-    } else if (heapFreeKb < 120) {
-      heapLabel = "Low ⚠️";
-      heapState = "warn";
-    }
-
-    let wifiLabel = "Unknown ❌";
-    let wifiState = "error";
-    if ((payload.wifiConnected || payload.wifiClientConnected) && payload.wifiRssi !== 0) {
-      if (payload.wifiRssi >= -67) {
-        wifiLabel = `Excellent ✅ (${payload.wifiRssi} dBm)`;
-        wifiState = "ok";
-      } else if (payload.wifiRssi >= -75) {
-        wifiLabel = `Good ✅ (${payload.wifiRssi} dBm)`;
-        wifiState = "ok";
-      } else if (payload.wifiRssi >= -85) {
-        wifiLabel = `Fair ⚠️ (${payload.wifiRssi} dBm)`;
-        wifiState = "warn";
-      } else {
-        wifiLabel = `Poor ❌ (${payload.wifiRssi} dBm)`;
-        wifiState = "error";
-      }
-    }
-
-    healthSummary.innerHTML =
-      `<div class="health-summary-row">Memory: <span class="health-summary-value is-${heapState}">${heapKnown ? `${heapFreeKb} KB ${heapLabel}` : heapLabel}</span></div>` +
-      `<div class="health-summary-row">WiFi: <span class="health-summary-value is-${wifiState}">${wifiLabel}</span></div>` +
-      `<div class="health-summary-note">Detailed memory headroom telemetry is available on Setup → Diagnostics.</div>`;
   };
 
   const renderComponentStatus = (payload) => {
@@ -388,25 +347,23 @@
     }
   };
 
-  const appendLogLine = (text) => {
-    if (!logConsole) return;
+  const LOG_MAX_LINES = 250;
+  const LOG_TRIM_LINES = 200;
+  const LOG_EMPTY_TEXT = "No log history available yet.";
+  let logLines = [];
 
-    const raw = logConsole.textContent;
-    if (raw.length > 0 && raw !== "Waiting for logs…") {
-      const lines = raw.split("\n");
-      if (lines.length > 250) {
-        logConsole.textContent = `${lines.slice(lines.length - 200).join("\n")}\n`;
-      }
-    } else {
-      logConsole.textContent = "";
-    }
+  const normalizeLogMessage = (line) => String(line ?? "").replace(/^\[t\+\d+ms\]\s*/i, "").trim();
 
-    logConsole.textContent += `${text}\n`;
-
+  const isLogAtBottom = () => {
+    if (!logConsole) return true;
     const threshold = 50;
-    const atBottom =
-      logConsole.scrollTop + logConsole.clientHeight >= logConsole.scrollHeight - threshold;
-    if (atBottom) {
+    return logConsole.scrollTop + logConsole.clientHeight >= logConsole.scrollHeight - threshold;
+  };
+
+  const renderLogConsole = (stickToBottom = false) => {
+    if (!logConsole) return;
+    logConsole.textContent = logLines.length > 0 ? logLines.join("\n") : LOG_EMPTY_TEXT;
+    if (stickToBottom) {
       logConsole.scrollTop = logConsole.scrollHeight;
       logPaused?.classList.remove("visible");
     } else {
@@ -414,30 +371,49 @@
     }
   };
 
-  logConsole?.addEventListener("scroll", () => {
-    const threshold = 50;
-    const atBottom =
-      logConsole.scrollTop + logConsole.clientHeight >= logConsole.scrollHeight - threshold;
-    if (atBottom) logPaused?.classList.remove("visible");
-  });
+  const setLogLines = (lines, { forceBottom = true } = {}) => {
+    logLines = lines.slice(-LOG_MAX_LINES);
+    const stickToBottom = forceBottom || isLogAtBottom();
+    renderLogConsole(stickToBottom);
+  };
 
-  const postSound = async (params) => {
-    if (!window.PAApi) return;
+  const appendLogLine = (text) => {
+    if (!logConsole) return;
+    const message = normalizeLogMessage(text);
+    if (!message) return;
+
+    const stickToBottom = isLogAtBottom();
+    const line = message;
+    logLines.push(line);
+    if (logLines.length > LOG_MAX_LINES) {
+      logLines = logLines.slice(logLines.length - LOG_TRIM_LINES);
+    }
+    renderLogConsole(stickToBottom);
+  };
+
+  const loadRecentLogs = async () => {
+    if (!window.PAApi || !logConsole) return;
     try {
-      const result = await window.PAApi.postForm("/api/audio", params, { timeoutMs: 3000 });
-      const payload = result.data;
-      const ok = payload && typeof payload === "object" ? !!payload.ok : true;
-      const msg = ok ? "Done" : (payload?.error || "Sound command failed");
-      showFeedback(soundFeedback, msg, ok ? "success" : "error");
-      if (ok) {
-        window.setTimeout(() => {
-          if (soundFeedback) soundFeedback.textContent = "";
-        }, 2000);
-      }
+      const result = await window.PAApi.get("/api/logs", { cache: "no-store", timeoutMs: 3000 });
+      if (logLines.length > 0) return;
+      const historyLines = String(result.data ?? "")
+        .split(/\r?\n/)
+        .map((line) => normalizeLogMessage(line.trimEnd()))
+        .filter((line) => line.length > 0);
+      setLogLines(historyLines);
     } catch (error) {
-      showFeedback(soundFeedback, window.PAApi.messageFor(error), "error");
+      if (logLines.length === 0) {
+        setLogLines([]);
+      }
     }
   };
+
+  logConsole?.addEventListener("scroll", () => {
+    if (isLogAtBottom()) {
+      logPaused?.classList.remove("visible");
+    }
+  });
+
 
   opmodeDrive?.addEventListener("click", () => setMode("driving"));
   opmodeStationary?.addEventListener("click", () => setMode("stationary"));
@@ -453,9 +429,8 @@
   sleepToggle?.addEventListener("click", () => toggleSleepWake(false));
   sleepOverlayWake?.addEventListener("click", () => toggleSleepWake(true));
 
-  document.getElementById("sound-stop")?.addEventListener("click", () => postSound({ action: "stop" }));
-  document.getElementById("sound-vol-up")?.addEventListener("click", () => postSound({ action: "dollar", cmd: "$+" }));
-  document.getElementById("sound-vol-dn")?.addEventListener("click", () => postSound({ action: "dollar", cmd: "$-" }));
+
+  loadRecentLogs();
 
   if (window.PAStatusStream?.isSupported()) {
     window.PAStatusStream.subscribe((eventType, payload) => {
@@ -465,7 +440,7 @@
       }
       if (eventType === "log") appendLogLine(payload);
       if (eventType === "stream_error") {
-        appendLogLine("[connection lost \u2014 retrying…]");
+        appendLogLine("[connection lost — retrying…]");
         setStale(true);
       }
     });
