@@ -338,6 +338,29 @@ nav a.active {
   gap: 16px;
 }
 
+.dome-settings-grid {
+  grid-template-columns: repeat(2, minmax(220px, 320px));
+  justify-content: start;
+  column-gap: 20px;
+}
+
+.dome-settings-grid .field {
+  max-width: 280px;
+}
+
+.dome-settings-grid .field input.compact-number {
+  width: 170px;
+  justify-self: start;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.dome-settings-grid .button-row {
+  grid-column: 1 / -1;
+  max-width: 220px;
+  grid-template-columns: minmax(0, 220px);
+}
+
 .field {
   display: grid;
   gap: 8px;
@@ -713,6 +736,55 @@ input.input-narrow:focus {
   font-weight: 700;
   font-size: 1.1rem;
   color: var(--silver-bright);
+}
+
+/* Dome page live rotation status */
+.dome-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.dome-live-track {
+  position: relative;
+  height: 16px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  overflow: hidden;
+}
+
+.dome-live-center {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: color-mix(in srgb, var(--accent-bright) 75%, var(--border));
+}
+
+.dome-live-fill {
+  position: absolute;
+  left: 50%;
+  top: 2px;
+  bottom: 2px;
+  width: 0%;
+  border-radius: 999px;
+  opacity: 0;
+  transition: width 0.16s ease, left 0.16s ease, opacity 0.16s ease, background 0.16s ease;
+}
+
+.dome-live-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.dome-live-meta .slider-value {
+  margin-top: 0;
 }
 
 .fw-progress {

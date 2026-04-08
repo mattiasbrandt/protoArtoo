@@ -22,17 +22,24 @@
 
     <div class="card">
       <h3>🔄 Dome Rotation</h3>
-      <div class="desc">Drag the slider to rotate the dome. Releasing returns to stop automatically.</div>
-      <div class="slider-container mt-16">
-        <input id="dome-slider" type="range" min="-100" max="100" value="0"
-          aria-label="Dome rotation speed">
-        <div class="slider-labels">
-          <span>Reverse</span>
-          <span>Stop</span>
-          <span>Forward</span>
-        </div>
+      <div class="desc">Dome rotation follows RC input. This panel shows live requested rotation and direction.</div>
+      <div class="dome-toolbar mt-16">
+        <span id="dome-hardware-pill" class="status-pill pill-info status-pill-compact">🧩 DOME status pending</span>
+        <span id="dome-web-pill" class="status-pill pill-info status-pill-compact">🕹️ Web control status pending</span>
       </div>
-      <div class="slider-value" id="dome-speed-display">0%</div>
+      <div class="dome-live-track mt-16" role="img" aria-label="Live dome rotation target from RC input">
+        <div id="dome-live-fill" class="dome-live-fill"></div>
+        <div class="dome-live-center"></div>
+      </div>
+      <div class="slider-labels">
+        <span>Reverse</span>
+        <span>Stop</span>
+        <span>Forward</span>
+      </div>
+      <div class="dome-live-meta mt-12">
+        <div class="slider-value" id="dome-speed-display">0%</div>
+        <span id="dome-rotation-state" class="status-pill pill-info">⏸️ Idle</span>
+      </div>
       <div id="dome-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true">Dome ready.</div>
     </div>
 
@@ -44,25 +51,25 @@
         <strong>Note:</strong> ESC calibration, PWM frequency, and voltage cutoff are configured
         via the ISD Go mobile app over Bluetooth. These settings only adjust the pulse width range.
       </div>
-      <form id="esc-form" class="form-grid mt-16">
+      <form id="esc-form" class="form-grid dome-settings-grid mt-16">
         <label class="field">
           <span>Neutral Pulse (µs)</span>
-          <input id="dome-neutral" name="domeNeutralUs" type="number" min="1000" max="2000" step="1"
+          <input id="dome-neutral" class="compact-number" name="domeNeutralUs" type="number" min="1000" max="2000" step="1"
             title="ESC neutral/stop pulse width in microseconds">
         </label>
         <label class="field">
           <span>Minimum Pulse (µs)</span>
-          <input id="dome-min-pulse" name="domeMinPulseUs" type="number" min="1000" max="2000" step="1"
+          <input id="dome-min-pulse" class="compact-number" name="domeMinPulseUs" type="number" min="1000" max="2000" step="1"
             title="ESC full-reverse pulse width in microseconds">
         </label>
         <label class="field">
           <span>Maximum Pulse (µs)</span>
-          <input id="dome-max-pulse" name="domeMaxPulseUs" type="number" min="1000" max="2000" step="1"
+          <input id="dome-max-pulse" class="compact-number" name="domeMaxPulseUs" type="number" min="1000" max="2000" step="1"
             title="ESC full-forward pulse width in microseconds">
         </label>
         <label class="field">
           <span>Speed Limit (%)</span>
-          <input id="dome-speed-limit" name="domeSpeedLimitPct" type="number" min="0" max="100" step="1"
+          <input id="dome-speed-limit" class="compact-number" name="domeSpeedLimitPct" type="number" min="0" max="100" step="1"
             title="Maximum dome rotation speed as a percentage of the full ESC range">
         </label>
         <div class="button-row">

@@ -422,7 +422,7 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
         buffer, bufferSize,
         "{\"estop\":%s,\"webControlEnabled\":%s,\"sbusSignalLost\":%s,\"sbusHwFailsafe\":%s,"
         "\"webDriveExpired\":%s,\"failsafeSource\":%d,\"driveSpeed\":%d,"
-        "\"driveSteer\":%d,\"speedLimitScale\":%.3f,\"stationary\":%s,"
+        "\"driveSteer\":%d,\"domeTargetSpeed\":%.3f,\"domeEnabled\":%s,\"speedLimitScale\":%.3f,\"stationary\":%s,"
         "\"failsafeCount\":%lu,\"failsafeTriggerMs\":%lu,\"failsafeZeroMs\":%lu,"
         "\"failsafeTriggerToZeroMs\":%lu,\"failsafeWatchdogMs\":%lu,\"failsafeTriggerSource\":%d,"
         "\"uptimeMs\":%lu,\"firmwareVersion\":\"%s\",\"webVersion\":\"%s\","
@@ -434,7 +434,8 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
         estop ? "true" : "false", webControlEnabled ? "true" : "false",
         sbusSignalLost ? "true" : "false", sbusHwFailsafe ? "true" : "false",
         webDriveExpired ? "true" : "false", failsafeSource, driveSpeed, driveSteer,
-        (double)speedLimitScale, stationary ? "true" : "false", failsafeCount, failsafeTriggerMs,
+        (double)domeTargetSpeed, enableDome ? "true" : "false", (double)speedLimitScale,
+        stationary ? "true" : "false", failsafeCount, failsafeTriggerMs,
         failsafeZeroMs, failsafeTriggerToZeroMs, failsafeWatchdogMs, failsafeTriggerSource,
         uptimeMs, PA_FIRMWARE_VERSION, s_fsVersion, heapFree, heapMin,
         (unsigned long)heapLargestBlock, wifiRssi, wifiConnected ? "true" : "false",

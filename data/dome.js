@@ -2,16 +2,18 @@
 // dome.js
 //
 // Dome page controller.
-// - Rotation slider (hold-to-run, return-to-stop)
+// - Live RC dome target status (read-only)
 // - Dome motor configuration load/save
 // - Shared API helper error handling
 // =============================================================================
 (() => {
-  const domeSlider = document.getElementById("dome-slider");
-  const domeSpeedDisplay = document.getElementById("dome-speed-display");
   const domeFeedback = document.getElementById("dome-feedback");
-
   const domeDisabledCard = document.getElementById("dome-disabled-card");
+  const domeHardwarePill = document.getElementById("dome-hardware-pill");
+  const domeWebPill = document.getElementById("dome-web-pill");
+  const domeSpeedDisplay = document.getElementById("dome-speed-display");
+  const domeRotationState = document.getElementById("dome-rotation-state");
+  const domeLiveFill = document.getElementById("dome-live-fill");
 
   const domeNeutral = document.getElementById("dome-neutral");
   const domeMinPulse = document.getElementById("dome-min-pulse");
@@ -23,10 +25,27 @@
   let saveTimeout = null;
   let domeHardwareEnabled = true;
   let webControlEnabled = false;
+  let webControlStatusKnown = false;
+
+  const FEEDBACK_BASE_CLASS = "feedback mt-12";
+
   const showFeedback = (el, text, level = "") => {
     if (!el) return;
     el.textContent = text;
-    el.className = level ? `feedback ${level}` : "feedback";
+    el.className = level ? `${FEEDBACK_BASE_CLASS} ${level}` : FEEDBACK_BASE_CLASS;
+  };
+
+  const setPillState = (el, text, state = "info", compact = true) => {
+    if (!el) return;
+    const classMap = {
+      ok: "pill-ok",
+      warn: "pill-warn",
+      error: "pill-error",
+      info: "pill-info",
+    };
+    const sizeClass = compact ? "status-pill status-pill-compact" : "status-pill";
+    el.textContent = text;
+    el.className = `${sizeClass} ${classMap[state] || classMap.info}`;
   };
 
   const debounce = (fn, ms) => (...args) => {
@@ -34,76 +53,121 @@
     saveTimeout = window.setTimeout(() => fn(...args), ms);
   };
 
-  const updateDomeControlsEnabled = () => {
-    const enabled = domeHardwareEnabled && webControlEnabled;
-    const controls = [
-      domeSlider,
-      domeNeutral,
-      domeMinPulse,
-      domeMaxPulse,
-      domeSpeedLimit,
-      reloadEscButton,
-    ];
-    window.PAApi.gateControls(controls, enabled);
-    domeDisabledCard?.classList.toggle("hidden", domeHardwareEnabled);
-    if (!enabled && domeSlider) {
-      domeSlider.value = "0";
-      if (domeSpeedDisplay) domeSpeedDisplay.textContent = "0%";
+  const clampSpeed = (value) => {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return 0;
+    return Math.max(-1, Math.min(1, parsed));
+  };
+
+  const extractSpeedFromDetail = (detail) => {
+    const text = String(detail || "");
+    const match = text.match(/(-?\d+(?:\.\d+)?)%/);
+    if (!match) return 0;
+    const percent = Number(match[1]);
+    if (!Number.isFinite(percent)) return 0;
+    return clampSpeed(percent / 100);
+  };
+
+  const renderDomeTargetSpeed = (speed) => {
+    const normalized = clampSpeed(speed);
+    const percent = Math.round(normalized * 100);
+    const widthPct = Math.abs(percent) / 2;
+
+    if (domeSpeedDisplay) domeSpeedDisplay.textContent = `${percent}%`;
+
+    if (domeLiveFill) {
+      domeLiveFill.style.width = `${widthPct}%`;
+      if (widthPct < 0.5) {
+        domeLiveFill.style.opacity = "0";
+        domeLiveFill.style.left = "50%";
+      } else if (percent >= 0) {
+        domeLiveFill.style.opacity = "1";
+        domeLiveFill.style.left = "50%";
+        domeLiveFill.style.background = "color-mix(in srgb, var(--success) 80%, var(--accent-bright))";
+      } else {
+        domeLiveFill.style.opacity = "1";
+        domeLiveFill.style.left = `calc(50% - ${widthPct}%)`;
+        domeLiveFill.style.background = "color-mix(in srgb, var(--warning) 85%, var(--accent-bright))";
+      }
     }
-    if (domeHardwareEnabled && !webControlEnabled) {
+
+    if (Math.abs(percent) < 2) {
+      setPillState(domeRotationState, "⏸️ Idle", "info", false);
+    } else if (percent > 0) {
+      setPillState(domeRotationState, `↻ Forward ${percent}%`, "ok", false);
+    } else {
+      setPillState(domeRotationState, `↺ Reverse ${Math.abs(percent)}%`, "warn", false);
+    }
+  };
+
+  const updateDomeControlsEnabled = () => {
+    const configEnabled = domeHardwareEnabled;
+    window.PAApi.gateControls([domeNeutral, domeMinPulse, domeMaxPulse, domeSpeedLimit, reloadEscButton],
+                              configEnabled);
+
+    domeDisabledCard?.classList.toggle("hidden", domeHardwareEnabled);
+
+    setPillState(
+      domeHardwarePill,
+      domeHardwareEnabled ? "🧩 DOME enabled" : "🧩 DOME disabled in Setup",
+      domeHardwareEnabled ? "ok" : "warn",
+      true,
+    );
+
+    if (!webControlStatusKnown) {
+      setPillState(domeWebPill, "🕹️ Web control status pending", "info", true);
+    } else {
+      setPillState(
+        domeWebPill,
+        webControlEnabled ? "🕹️ Web control enabled" : "🕹️ Web control disabled",
+        webControlEnabled ? "ok" : "warn",
+        true,
+      );
+    }
+
+    if (!domeHardwareEnabled) {
+      showFeedback(domeFeedback, "Dome controls unavailable: enable DOME in Setup.", "warning");
+    } else if (!webControlStatusKnown) {
+      showFeedback(domeFeedback, "Waiting for live web-control status frame...");
+    } else if (!webControlEnabled) {
       showFeedback(domeFeedback, "Web control is disabled — enable it on the Drive page.", "warning");
+    } else {
+      showFeedback(domeFeedback, "Dome ready.");
     }
   };
 
   const setDomeHardwareEnabled = (enabled) => {
     domeHardwareEnabled = enabled;
+    if (!enabled) {
+      renderDomeTargetSpeed(0);
+    }
     updateDomeControlsEnabled();
   };
 
-  const postDomeCommand = async (speed) => {
-    if (!window.PAApi) return;
-    if (!domeHardwareEnabled) {
-      showFeedback(domeFeedback, "Dome controls unavailable: enable DOME in Setup.", "warning");
-      return;
+  const resolveDomeEnabledFromStatus = (payload) => {
+    if (typeof payload?.domeEnabled === "boolean") {
+      return payload.domeEnabled;
     }
-    if (!webControlEnabled) {
-      showFeedback(domeFeedback, "Dome unavailable: web control is disabled.", "warning");
-      return;
-    }
-    try {
-      await window.PAApi.postForm("/api/dome", { speed: String(speed) }, { timeoutMs: 2500 });
-      showFeedback(domeFeedback, "Dome command sent.", "success");
-    } catch (error) {
-      showFeedback(domeFeedback, `Dome command failed: ${window.PAApi.messageFor(error)}`, "error");
-    }
+    return payload ? Object.prototype.hasOwnProperty.call(payload, "dome") : false;
   };
 
-  if (domeSlider) {
-    let domeDebounceTimer = null;
+  const resolveDomeTargetSpeed = (payload) => {
+    const direct = Number(payload?.domeTargetSpeed);
+    if (Number.isFinite(direct)) return direct;
+    return extractSpeedFromDetail(payload?.dome?.detail);
+  };
 
-    domeSlider.addEventListener("input", (event) => {
-      const speed = Number.parseInt(event.target.value, 10);
-      if (domeSpeedDisplay) domeSpeedDisplay.textContent = `${speed}%`;
+  const renderStatusFrame = (payload) => {
+    webControlStatusKnown = true;
+    webControlEnabled = !!payload?.webControlEnabled;
+    domeHardwareEnabled = resolveDomeEnabledFromStatus(payload);
+    renderDomeTargetSpeed(resolveDomeTargetSpeed(payload));
+    updateDomeControlsEnabled();
+  };
 
-      if (domeDebounceTimer) window.clearTimeout(domeDebounceTimer);
-      domeDebounceTimer = window.setTimeout(() => {
-        postDomeCommand(speed / 100);
-      }, 100);
-    });
-
-    domeSlider.addEventListener("change", (event) => {
-      if (Number.parseInt(event.target.value, 10) !== 0) {
-        event.target.value = 0;
-        if (domeSpeedDisplay) domeSpeedDisplay.textContent = "0%";
-        postDomeCommand(0);
-        showFeedback(domeFeedback, "Released — dome stopped.", "");
-      }
-    });
-  }
-
-  const renderEsc = (payload) => {
-    const dome = payload?.dome || {};
-    const components = payload?.components || {};
+  const renderEscConfigSnapshot = (data) => {
+    const dome = data?.dome || {};
+    const components = data?.components || {};
 
     if (domeNeutral) domeNeutral.value = dome.neutralUs;
     if (domeMinPulse) domeMinPulse.value = dome.minPulseUs;
@@ -111,9 +175,8 @@
     if (domeSpeedLimit) domeSpeedLimit.value = dome.speedLimitPct;
 
     setDomeHardwareEnabled(Boolean(components.dome?.enabled));
-
-    showFeedback(escFeedback, `Motor settings loaded at ${new Date().toLocaleTimeString()}`, "success");
   };
+
 
   const loadEscConfig = async () => {
     if (!window.PAApi) return;
@@ -121,7 +184,8 @@
 
     try {
       const result = await window.PAApi.get("/api/config", { timeoutMs: 3000 });
-      renderEsc(result.data);
+      renderEscConfigSnapshot(result.data);
+      showFeedback(escFeedback, `Motor settings loaded at ${new Date().toLocaleTimeString()}`, "success");
     } catch (error) {
       showFeedback(escFeedback, `Failed to load motor settings: ${window.PAApi.messageFor(error)}`, "error");
     }
@@ -133,19 +197,34 @@
       showFeedback(escFeedback, "Dome settings unavailable: enable DOME in Setup.", "warning");
       return;
     }
+
     showFeedback(escFeedback, "Saving...");
 
     try {
-      await window.PAApi.postForm("/api/config", {
-        domeNeutralUs: domeNeutral?.value || "1500",
-        domeMinPulseUs: domeMinPulse?.value || "1000",
-        domeMaxPulseUs: domeMaxPulse?.value || "2000",
-        domeSpeedLimitPct: domeSpeedLimit?.value || "100",
-      }, { timeoutMs: 3000 });
+      await window.PAApi.postForm(
+        "/api/config",
+        {
+          domeNeutralUs: domeNeutral?.value || "1500",
+          domeMinPulseUs: domeMinPulse?.value || "1000",
+          domeMaxPulseUs: domeMaxPulse?.value || "2000",
+          domeSpeedLimitPct: domeSpeedLimit?.value || "100",
+        },
+        { timeoutMs: 3000 },
+      );
 
       showFeedback(escFeedback, `Saved at ${new Date().toLocaleTimeString()}`, "success");
     } catch (error) {
       showFeedback(escFeedback, `Failed to save motor settings: ${window.PAApi.messageFor(error)}`, "error");
+    }
+  };
+
+  const refreshStatus = async () => {
+    if (!window.PAApi) return;
+    try {
+      const result = await window.PAApi.get("/api/status", { timeoutMs: 3000 });
+      renderStatusFrame(result.data);
+    } catch {
+      // Keep pending/last-known UI state when status is temporarily unavailable.
     }
   };
 
@@ -160,11 +239,25 @@
   if (window.PAStatusStream?.isSupported()) {
     window.PAStatusStream.subscribe((eventType, payload) => {
       if (eventType !== "status") return;
-      webControlEnabled = !!payload.webControlEnabled;
-      updateDomeControlsEnabled();
-      setDomeHardwareEnabled(Boolean(payload.s3DomeCtrl));
+      renderStatusFrame(payload);
+    });
+    if (!window.PAStatusStream.getLastStatus()) {
+      refreshStatus().catch(() => {});
+    }
+  } else {
+    refreshStatus().catch(() => {});
+    window.setInterval(() => {
+      if (document.visibilityState === "hidden") return;
+      refreshStatus().catch(() => {});
+    }, 5000);
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState !== "hidden") {
+        refreshStatus().catch(() => {});
+      }
     });
   }
 
+  renderDomeTargetSpeed(0);
+  updateDomeControlsEnabled();
   loadEscConfig();
 })();
