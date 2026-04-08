@@ -316,10 +316,27 @@ Always classify verification status explicitly:
 If hardware validation is deferred, record blockers and closure checklist in
 planning/status docs.
 
+## Web/UI Target Platform
+
+The web UI targets **PC desktop first, tablet second.**
+Small-screen mobile phone support is explicitly out of scope.
+
+- Do NOT constrain layout, component size, whitespace, or information density to
+  accommodate narrow phone viewports.
+- Do NOT add mobile-first breakpoints, collapse menus for small screens, or
+  reduce functionality to fit a phone form factor.
+- Minimum supported viewport is a modern tablet in landscape (~1024 px wide).
+  Any responsive behavior below that is unintentional and should not be defended.
+- The operator uses this UI seated at a PC or with a tablet on a bench — design
+  for that context: data-dense, direct controls, no large-tap-target padding.
+- If a CSS framework or snippet introduces mobile-first defaults that compromise
+  the desktop layout, override them — do not accept the mobile-first default.
+
 ## Web/UI Copy Rules
 
 - Avoid internal planning language in operator-facing text
 - Keep copy focused on device state, controls, and diagnostics
+- Prefer symbols and related emoji over verbose text labels where meaning is clear at a glance — reduces visual clutter and aids quick scanning
 
 ## Change Hygiene
 

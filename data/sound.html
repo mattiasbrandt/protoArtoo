@@ -90,6 +90,18 @@
       <div id="global-feedback" class="feedback mt-8" role="status" aria-live="polite" aria-atomic="true"></div>
     </div>
 
+    <div class="card">
+      <h3>🧭 Workspace Mode</h3>
+      <div class="desc">Advanced keeps full editing visible (recommended for desktop). Compact hides advanced tuning cards for quick operation.</div>
+      <div class="sound-view-toggle mt-12" role="group" aria-label="Sound workspace mode">
+        <button class="btn accent" id="sound-mode-advanced" type="button" aria-pressed="true">Advanced</button>
+        <button class="btn" id="sound-mode-compact" type="button" aria-pressed="false">Compact</button>
+      </div>
+      <div id="sound-mode-feedback" class="desc mt-8">Advanced mode active.</div>
+    </div>
+
+
+    <div class="sound-section-label">Core Playback</div>
     <!-- Named Sound Commands -->
     <div class="card">
       <h3>🎵 Named Sounds</h3>
@@ -98,90 +110,105 @@
         changes take effect immediately and survive reboot.
       </div>
 
-      <p id="track-number-note" class="desc"></p>
-      <table class="sound-table mt-12">
-        <thead>
-          <tr>
-            <th>Label</th>
-            <th>Cmd</th>
-            <th>Track #</th>
-            <th></th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody id="named-sound-rows">
-          <!-- Populated by sound.js -->
-        </tbody>
-      </table>
+      <div class="sound-toolbar mt-12">
+        <label class="field sound-search-field" for="named-sound-filter">
+          <span>Filter named sounds</span>
+          <input type="text" id="named-sound-filter" placeholder="Search by name or command" autocomplete="off">
+        </label>
+        <div id="named-sound-filter-count" class="sound-filter-count" role="status" aria-live="polite" aria-atomic="true"></div>
+      </div>
+      <p id="track-number-note" class="desc mt-8"></p>
+      <div class="sound-table-wrap mt-12">
+        <table class="sound-table">
+          <thead>
+            <tr>
+              <th>Label</th>
+              <th>Cmd</th>
+              <th>Track #</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="named-sound-rows">
+            <!-- Populated by sound.js -->
+          </tbody>
+        </table>
+      </div>
     </div>
 
+    <div class="sound-section-label sound-section-label-advanced">Advanced Tuning</div>
+    <div class="sound-advanced-grid">
     <!-- Sound Categories -->
-    <div class="card">
+    <div class="card sound-advanced-card">
       <h3>🎚 Sound Categories</h3>
       <div class="desc">
         Configure random playback ranges per sound category. Set both Min and Max to 0 for silent/unset.
       </div>
-      <table class="sound-table mt-12">
-        <thead>
-          <tr>
-            <th>Category</th>
-            <th>Min</th>
-            <th>Max</th>
-            <th></th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody id="category-sound-rows">
-          <!-- Populated by sound.js -->
-        </tbody>
-      </table>
+      <div class="sound-table-wrap mt-12">
+        <table class="sound-table">
+          <thead>
+            <tr>
+              <th>Category</th>
+              <th>Min</th>
+              <th>Max</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="category-sound-rows">
+            <!-- Populated by sound.js -->
+          </tbody>
+        </table>
+      </div>
     </div>
 
 
     <!-- Mood Mapping -->
-    <div class="card">
+    <div class="card sound-advanced-card">
       <h3>🧠 Mood Mapping</h3>
       <div class="desc">
         Choose which category ranges are used for each mood's idle random chatter.
       </div>
-      <table class="sound-table mt-12">
-        <thead>
-          <tr>
-            <th>Category</th>
-            <th>Quiet</th>
-            <th>Mid-Awake</th>
-            <th>Full-Awake</th>
-            <th>Awake+</th>
-          </tr>
-        </thead>
-        <tbody id="mood-map-rows">
-          <!-- Populated by sound.js -->
-        </tbody>
-      </table>
+      <div class="sound-table-wrap mt-12">
+        <table class="sound-table">
+          <thead>
+            <tr>
+              <th>Category</th>
+              <th>Quiet</th>
+              <th>Mid-Awake</th>
+              <th>Full-Awake</th>
+              <th>Awake+</th>
+            </tr>
+          </thead>
+          <tbody id="mood-map-rows">
+            <!-- Populated by sound.js -->
+          </tbody>
+        </table>
+      </div>
       <div class="button-row mt-12">
         <button class="btn" id="btn-mood-map-save">💾 Save Changes</button>
       </div>
       <div id="mood-map-feedback" class="feedback mt-8" role="status" aria-live="polite" aria-atomic="true"></div>
     </div>
     <!-- System Sounds -->
-    <div class="card">
+    <div class="card sound-advanced-card">
       <h3>🛎 System Sounds</h3>
       <div class="desc">
         Configure event sounds for boot and drive-state changes. Track 0 keeps the event silent.
       </div>
-      <table class="sound-table mt-12">
-        <thead>
-          <tr>
-            <th>Event</th>
-            <th>Track #</th>
-            <th></th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody id="system-sound-rows">
-          <!-- Populated by sound.js -->
-        </tbody>
-      </table>
+      <div class="sound-table-wrap mt-12">
+        <table class="sound-table">
+          <thead>
+            <tr>
+              <th>Event</th>
+              <th>Track #</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="system-sound-rows">
+            <!-- Populated by sound.js -->
+          </tbody>
+        </table>
+      </div>
+    </div>
     </div>
 
     <!-- Direct Track Play -->
@@ -196,8 +223,10 @@
       <div id="direct-feedback" class="feedback mt-8" role="status" aria-live="polite" aria-atomic="true"></div>
     </div>
 
+    <div class="sound-section-label sound-section-label-advanced">Automation and Timing</div>
+    <div class="sound-advanced-grid">
     <!-- Random Playback Range -->
-    <div class="card">
+    <div class="card sound-advanced-card">
       <h3>🎲 Random Playback Range</h3>
       <div class="desc">
         Tracks in this range are chosen randomly when random mode is active.
@@ -220,57 +249,60 @@
     </div>
 
     <!-- Mood Sound Intervals -->
-    <div class="card">
+    <div class="card sound-advanced-card">
       <h3>⏱ Mood Sound Intervals</h3>
       <div class="desc">
         How often a random sound plays in each mood. Set 0 to suppress random
         playback for that mood. Changes are NVS-persisted and take effect on the
         next timer cycle.
       </div>
-      <table class="sound-table mt-12">
-        <thead>
-          <tr>
-            <th>Mood</th>
-            <th>Command</th>
-            <th>Interval (seconds)</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr class="sound-row-divider">
-            <td>Quiet</td>
-            <td class="sound-mono">:SE10</td>
-            <td>
-              <input type="number" id="int-quiet" min="0" max="3600" step="1" value="0" class="sound-track-input-md" aria-label="Quiet mood interval seconds">
-              <span class="sound-note-inline">0 = silent</span>
-            </td>
-          </tr>
-          <tr class="sound-row-divider">
-            <td>Mid-Awake</td>
-            <td class="sound-mono">:SE13</td>
-            <td>
-              <input type="number" id="int-mid" min="0" max="3600" step="1" value="30" class="sound-track-input-md" aria-label="Mid-Awake mood interval seconds">
-            </td>
-          </tr>
-          <tr class="sound-row-divider">
-            <td>Full-Awake</td>
-            <td class="sound-mono">:SE11</td>
-            <td>
-              <input type="number" id="int-full" min="0" max="3600" step="1" value="20" class="sound-track-input-md" aria-label="Full-Awake mood interval seconds">
-            </td>
-          </tr>
-          <tr>
-            <td>Awake+</td>
-            <td class="sound-mono">:SE14</td>
-            <td>
-              <input type="number" id="int-awake" min="0" max="3600" step="1" value="10" class="sound-track-input-md" aria-label="Awake Plus mood interval seconds">
-            </td>
-          </tr>
-        </tbody>
-      </table>
+      <div class="sound-table-wrap mt-12">
+        <table class="sound-table">
+          <thead>
+            <tr>
+              <th>Mood</th>
+              <th>Command</th>
+              <th>Interval (seconds)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr class="sound-row-divider">
+              <td>Quiet</td>
+              <td class="sound-mono">:SE10</td>
+              <td>
+                <input type="number" id="int-quiet" min="0" max="3600" step="1" value="0" class="sound-track-input-md" aria-label="Quiet mood interval seconds">
+                <span class="sound-note-inline">0 = silent</span>
+              </td>
+            </tr>
+            <tr class="sound-row-divider">
+              <td>Mid-Awake</td>
+              <td class="sound-mono">:SE13</td>
+              <td>
+                <input type="number" id="int-mid" min="0" max="3600" step="1" value="30" class="sound-track-input-md" aria-label="Mid-Awake mood interval seconds">
+              </td>
+            </tr>
+            <tr class="sound-row-divider">
+              <td>Full-Awake</td>
+              <td class="sound-mono">:SE11</td>
+              <td>
+                <input type="number" id="int-full" min="0" max="3600" step="1" value="20" class="sound-track-input-md" aria-label="Full-Awake mood interval seconds">
+              </td>
+            </tr>
+            <tr>
+              <td>Awake+</td>
+              <td class="sound-mono">:SE14</td>
+              <td>
+                <input type="number" id="int-awake" min="0" max="3600" step="1" value="10" class="sound-track-input-md" aria-label="Awake Plus mood interval seconds">
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
       <div class="button-row mt-12">
         <button class="btn" id="btn-int-save">💾 Save Intervals</button>
       </div>
       <div id="int-feedback" class="feedback mt-8" role="status" aria-live="polite" aria-atomic="true"></div>
+    </div>
     </div>
 
     <div id="shell-status"></div>

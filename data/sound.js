@@ -88,6 +88,30 @@
   const globalFb = document.getElementById("global-feedback");
   const volSlider = document.getElementById("vol-slider");
   const volDisplay = document.getElementById("vol-display");
+  const namedSoundFilterInput = document.getElementById("named-sound-filter");
+  const namedSoundFilterCount = document.getElementById("named-sound-filter-count");
+  const soundModeAdvancedBtn = document.getElementById("sound-mode-advanced");
+  const soundModeCompactBtn = document.getElementById("sound-mode-compact");
+  const soundModeFeedback = document.getElementById("sound-mode-feedback");
+  const SOUND_VIEW_MODE_KEY = "pa.sound.viewMode";
+  const SOUND_VIEW_MODE_ADVANCED = "advanced";
+  const SOUND_VIEW_MODE_COMPACT = "compact";
+
+  const MSG = {
+    categoryRangeInvalid: "Use 0/0 or 1–999 with Min ≤ Max",
+    valuesMustBe1To999: "Values must be 1–999",
+    minMustBeLeMax: "Min must be ≤ Max",
+    saveFailed: "Save failed",
+    saved: "Saved",
+    unsaved: "Unsaved",
+    trackRange: (min, max) => `${min}–${max}`,
+    trackRangeZeroToMax: `0–${TRACK_MAX}`,
+  };
+
+  const namedDirtyTrackers = new Map();
+  const categoryDirtyTrackers = new Map();
+  const systemDirtyTrackers = new Map();
+
   let soundHardwareEnabled = true;
   let moodMapApiAvailable = true;
   let moodMapLoaded = false;
@@ -114,6 +138,47 @@
   const setElementVisible = (element, visible) => {
     if (!element) return;
     element.classList.toggle("hidden", !visible);
+  };
+
+  const setModeButtonState = (button, active) => {
+    if (!button) return;
+    button.classList.toggle("accent", active);
+    button.setAttribute("aria-pressed", active ? "true" : "false");
+  };
+
+  const applySoundWorkspaceMode = (mode, persist = true) => {
+    const normalizedMode = mode === SOUND_VIEW_MODE_COMPACT
+      ? SOUND_VIEW_MODE_COMPACT
+      : SOUND_VIEW_MODE_ADVANCED;
+
+    document.body.classList.toggle("sound-mode-compact", normalizedMode === SOUND_VIEW_MODE_COMPACT);
+    setModeButtonState(soundModeAdvancedBtn, normalizedMode === SOUND_VIEW_MODE_ADVANCED);
+    setModeButtonState(soundModeCompactBtn, normalizedMode === SOUND_VIEW_MODE_COMPACT);
+
+    if (soundModeFeedback) {
+      soundModeFeedback.textContent = normalizedMode === SOUND_VIEW_MODE_COMPACT
+        ? "Compact mode active. Advanced tuning cards are hidden."
+        : "Advanced mode active. Full editing cards are visible.";
+    }
+
+    if (!persist) return;
+    try {
+      window.localStorage?.setItem(SOUND_VIEW_MODE_KEY, normalizedMode);
+    } catch (_err) {
+      // Non-fatal when storage is unavailable.
+    }
+  };
+
+  const loadSoundWorkspaceMode = () => {
+    try {
+      const storedMode = window.localStorage?.getItem(SOUND_VIEW_MODE_KEY);
+      if (storedMode === SOUND_VIEW_MODE_COMPACT || storedMode === SOUND_VIEW_MODE_ADVANCED) {
+        return storedMode;
+      }
+    } catch (_err) {
+      // Ignore storage read failures and use default.
+    }
+    return SOUND_VIEW_MODE_ADVANCED;
   };
 
   const resetModuleStatusAutoRefresh = (caps) => {
@@ -219,6 +284,18 @@
     }, 2500);
   };
 
+  const getApiErrorMessage = (error) => window.PAApi?.messageFor(error) || String(error);
+
+  const feedbackFromSaveResponse = (feedbackEl, response, successMessage = MSG.saved) => {
+    const ok = Boolean(response.data?.ok);
+    showFeedback(feedbackEl, ok ? successMessage : (response.data?.error || MSG.saveFailed), ok);
+    return ok;
+  };
+
+  const feedbackSaveFailure = (feedbackEl, error, prefix = MSG.saveFailed) => {
+    showFeedback(feedbackEl, `${prefix}: ${getApiErrorMessage(error)}`, false);
+  };
+
   const setMoodMapStatus = (msg, ok) => {
     if (!moodMapFb) return;
     if (!msg) {
@@ -281,32 +358,34 @@
   };
 
   const postAudio = async (params, feedbackEl, label = 'Sound command') => {
-    if (!window.PAApi) return;
+    if (!window.PAApi) return false;
     if (!soundHardwareEnabled) {
       showFeedback(feedbackEl || globalFb, "Sound controls unavailable: enable S2 — Sound in Setup.", false);
-      return;
+      return false;
     }
     try {
       const result = await window.PAApi.postForm("/api/audio", params, { timeoutMs: 3000 });
       const ok = Boolean(result.data?.ok);
       showFeedback(feedbackEl, ok ? `${label} sent` : (result.data?.error || "Failed"), ok);
+      return ok;
     } catch (error) {
-      showFeedback(feedbackEl, `Command failed: ${window.PAApi.messageFor(error)}`, false);
+      showFeedback(feedbackEl, `Command failed: ${getApiErrorMessage(error)}`, false);
+      return false;
     }
   };
 
   const postTrack = async (key, track, feedbackEl) => {
-    if (!window.PAApi) return;
+    if (!window.PAApi) return false;
     if (!soundHardwareEnabled) {
       showFeedback(feedbackEl || globalFb, "Track updates unavailable: enable S2 — Sound in Setup.", false);
-      return;
+      return false;
     }
     try {
       const result = await window.PAApi.postForm("/api/audio/tracks", { key, track }, { timeoutMs: 3000 });
-      const ok = Boolean(result.data?.ok);
-      showFeedback(feedbackEl, ok ? "Saved" : (result.data?.error || "Save failed"), ok);
+      return feedbackFromSaveResponse(feedbackEl, result);
     } catch (error) {
-      showFeedback(feedbackEl, `Save failed: ${window.PAApi.messageFor(error)}`, false);
+      feedbackSaveFailure(feedbackEl, error);
+      return false;
     }
   };
 
@@ -328,19 +407,127 @@
     button.setAttribute("aria-disabled", enabled ? "false" : "true");
   };
 
+  const findCategoryPlayButton = (minInput) =>
+    minInput?.closest("tr")?.querySelector(".sound-btn-play");
+
   const refreshCategoryTestButtons = () => {
     CATEGORY_SOUNDS.forEach((category) => {
       const minInput = document.getElementById(`cat-min-${category.loKey}`);
       const maxInput = document.getElementById(`cat-max-${category.hiKey}`);
-      const playButton = minInput?.closest("tr")?.querySelector("td:last-child button");
+      const playButton = findCategoryPlayButton(minInput);
       const minVal = Number.parseInt(minInput?.value, 10);
       const maxVal = Number.parseInt(maxInput?.value, 10);
       updateCategoryTestButtonState(playButton, minVal, maxVal);
     });
   };
 
+  const updateNamedSoundFilterCount = (visibleRows, totalRows) => {
+    if (!namedSoundFilterCount) return;
+    namedSoundFilterCount.textContent = `${visibleRows} of ${totalRows} sounds shown`;
+  };
+
+  const applyNamedSoundFilter = () => {
+    if (!tbody) return;
+    const query = namedSoundFilterInput?.value?.trim().toLowerCase() ?? "";
+    const rows = Array.from(tbody.querySelectorAll("tr"));
+    if (!rows.length) {
+      updateNamedSoundFilterCount(0, 0);
+      return;
+    }
+
+    let visibleRows = 0;
+    rows.forEach((row) => {
+      const label = (row.dataset.soundLabel ?? "").toLowerCase();
+      const command = (row.dataset.soundCmd ?? "").toLowerCase();
+      const matches = !query || label.includes(query) || command.includes(query);
+      row.classList.toggle("hidden-row", !matches);
+      if (matches) visibleRows += 1;
+    });
+
+    updateNamedSoundFilterCount(visibleRows, rows.length);
+  };
+
+  const createActionCell = () => {
+    const tdActions = document.createElement("td");
+    tdActions.className = "sound-actions-cell";
+
+    const actionsWrap = document.createElement("div");
+    actionsWrap.className = "sound-action-row";
+    tdActions.appendChild(actionsWrap);
+
+    return { tdActions, actionsWrap };
+  };
+
+  const createActionButton = ({ label, title, ariaLabel, className, onClick }) => {
+    const button = document.createElement("button");
+    button.className = className;
+    button.textContent = label;
+    button.title = title;
+    button.setAttribute("aria-label", ariaLabel);
+    button.addEventListener("click", onClick);
+    return button;
+  };
+
+  const createInlineFeedback = () => {
+    const feedback = document.createElement("span");
+    feedback.className = "sound-feedback-inline";
+    feedback.setAttribute("role", "status");
+    feedback.setAttribute("aria-live", "polite");
+    feedback.setAttribute("aria-atomic", "true");
+    return feedback;
+  };
+
+  const createDirtyMarker = () => {
+    const marker = document.createElement("span");
+    marker.className = "sound-dirty-pill hidden";
+    marker.textContent = MSG.unsaved;
+    return marker;
+  };
+
+  const createRowDirtyTracker = ({ row, inputs, marker }) => {
+    const normalizedValue = (input) => String(input?.value ?? "");
+
+    const update = () => {
+      const dirty = inputs.some((input) => normalizedValue(input) !== (input.dataset.savedValue ?? ""));
+      row.classList.toggle("sound-row-dirty", dirty);
+      marker.classList.toggle("hidden", !dirty);
+    };
+
+    const markSaved = () => {
+      inputs.forEach((input) => {
+        input.dataset.savedValue = normalizedValue(input);
+      });
+      update();
+    };
+
+    inputs.forEach((input) => {
+      input.addEventListener("input", update);
+      input.addEventListener("change", update);
+    });
+
+    markSaved();
+    return { markSaved, update };
+  };
+
+  const createNumberInput = ({ id, min, max, className, ariaLabel, datasetKey = null, placeholder = null, value = null }) => {
+    const input = document.createElement("input");
+    input.type = "number";
+    input.min = String(min);
+    input.max = String(max);
+    input.className = className;
+    if (id) input.id = id;
+    if (datasetKey) input.dataset.key = datasetKey;
+    if (placeholder !== null) input.placeholder = placeholder;
+    if (value !== null) input.value = String(value);
+    input.setAttribute("aria-label", ariaLabel);
+    return input;
+  };
+
   const buildNamedSoundRows = () => {
     if (!tbody) return;
+    tbody.innerHTML = "";
+    namedDirtyTrackers.clear();
+
     if (trackNumberNote) {
       trackNumberNote.textContent = "Track numbers are module-specific — set these to match your installed module's layout. T08 music rows allow 0 for silent/no-op play.";
     }
@@ -348,6 +535,8 @@
     NAMED_SOUNDS.forEach((sound) => {
       const tr = document.createElement("tr");
       tr.className = "sound-row-divider";
+      tr.dataset.soundLabel = sound.label;
+      tr.dataset.soundCmd = sound.cmd ?? "";
 
       const tdLabel = document.createElement("td");
       tdLabel.textContent = sound.label;
@@ -357,85 +546,92 @@
       tdCmd.textContent = sound.cmd ?? CMD_MARKER;
 
       const tdTrack = document.createElement("td");
-      const tdPlay = document.createElement("td");
+      const { tdActions, actionsWrap } = createActionCell();
+
       let rowInput = null;
       let rowFeedback = null;
+      let dirtyMarker = null;
+      let dirtyTracker = null;
 
       if (sound.editable && sound.key) {
         const minTrack = sound.trackMin ?? 1;
-        const input = document.createElement("input");
-        input.type = "number";
-        input.min = String(minTrack);
-        input.max = String(TRACK_MAX);
-        input.className = "sound-track-input-sm";
-        input.dataset.key = sound.key;
-        input.id = `track-input-${sound.key}`;
-        input.setAttribute("aria-label", `${sound.label} track number`);
-        tdTrack.appendChild(input);
-        rowInput = input;
-
-        const saveButton = document.createElement("button");
-        saveButton.className = "btn sound-btn-compact";
-        saveButton.textContent = "💾";
-        saveButton.title = "Save track number";
-        saveButton.setAttribute("aria-label", `Save ${sound.label} track number`);
-
-        rowFeedback = document.createElement("span");
-        rowFeedback.className = "sound-feedback-inline";
-        rowFeedback.setAttribute("role", "status");
-        rowFeedback.setAttribute("aria-live", "polite");
-        rowFeedback.setAttribute("aria-atomic", "true");
-
-        saveButton.addEventListener("click", () => {
-          const value = Number.parseInt(input.value, 10);
-          if (Number.isNaN(value) || value < minTrack || value > TRACK_MAX) {
-            showFeedback(rowFeedback, `${minTrack}–${TRACK_MAX}`, false);
-            return;
-          }
-          postTrack(sound.key, value, rowFeedback);
+        rowInput = createNumberInput({
+          id: `track-input-${sound.key}`,
+          min: minTrack,
+          max: TRACK_MAX,
+          className: "sound-track-input-sm",
+          ariaLabel: `${sound.label} track number`,
+          datasetKey: sound.key,
         });
+        tdTrack.appendChild(rowInput);
 
-        tdTrack.appendChild(saveButton);
-        tdTrack.appendChild(rowFeedback);
+        rowFeedback = createInlineFeedback();
+        dirtyMarker = createDirtyMarker();
+        dirtyTracker = createRowDirtyTracker({ row: tr, inputs: [rowInput], marker: dirtyMarker });
+        namedDirtyTrackers.set(sound.key, dirtyTracker);
+
+        const saveButton = createActionButton({
+          label: "💾 Save",
+          title: "Save track number",
+          ariaLabel: `Save ${sound.label} track number`,
+          className: "btn sound-btn-compact",
+          onClick: async () => {
+            const value = Number.parseInt(rowInput.value, 10);
+            if (Number.isNaN(value) || value < minTrack || value > TRACK_MAX) {
+              showFeedback(rowFeedback, MSG.trackRange(minTrack, TRACK_MAX), false);
+              return;
+            }
+            const ok = await postTrack(sound.key, value, rowFeedback);
+            if (ok) dirtyTracker?.markSaved();
+          },
+        });
+        actionsWrap.appendChild(saveButton);
       } else {
         tdTrack.textContent = "—";
       }
 
-      const playButton = document.createElement("button");
-      playButton.className = "btn sound-btn-play";
-      playButton.textContent = "▶";
-      playButton.setAttribute("aria-label", `Play ${sound.label}`);
-
-      if (sound.playMode === "track") {
-        playButton.title = `Play configured track for ${sound.label}`;
-        playButton.addEventListener("click", () => {
-          const minTrack = sound.trackMin ?? 1;
-          const value = Number.parseInt(rowInput?.value, 10);
-          if (Number.isNaN(value) || value < minTrack || value > TRACK_MAX) {
-            showFeedback(rowFeedback || globalFb, `${minTrack}–${TRACK_MAX}`, false);
+      const playButton = createActionButton({
+        label: "▶ Play",
+        title: sound.playMode === "track"
+          ? `Play configured track for ${sound.label}`
+          : `Play ${sound.cmd}`,
+        ariaLabel: `Play ${sound.label}`,
+        className: "btn sound-btn-play",
+        onClick: () => {
+          if (sound.playMode === "track") {
+            const minTrack = sound.trackMin ?? 1;
+            const value = Number.parseInt(rowInput?.value, 10);
+            if (Number.isNaN(value) || value < minTrack || value > TRACK_MAX) {
+              showFeedback(rowFeedback || globalFb, MSG.trackRange(minTrack, TRACK_MAX), false);
+              return;
+            }
+            if (value === 0) return;
+            postAudio({ action: "play", track: value }, globalFb, sound.label);
             return;
           }
-          if (value === 0) return;
-          postAudio({ action: "play", track: value }, globalFb, sound.label);
-        });
-      } else {
-        playButton.title = `Play ${sound.cmd}`;
-        playButton.addEventListener("click", () => {
           postAudio({ action: "dollar", cmd: sound.cmd }, globalFb, sound.label);
-        });
-      }
-      tdPlay.appendChild(playButton);
+        },
+      });
+      actionsWrap.appendChild(playButton);
+
+      if (dirtyMarker) tdActions.appendChild(dirtyMarker);
+      if (rowFeedback) tdActions.appendChild(rowFeedback);
 
       tr.appendChild(tdLabel);
       tr.appendChild(tdCmd);
       tr.appendChild(tdTrack);
-      tr.appendChild(tdPlay);
+      tr.appendChild(tdActions);
       tbody.appendChild(tr);
     });
+
+    applyNamedSoundFilter();
   };
 
   const buildCategorySoundRows = () => {
     if (!categoryTbody) return;
+    categoryTbody.innerHTML = "";
+    categoryDirtyTrackers.clear();
+
     CATEGORY_SOUNDS.forEach((category) => {
       const tr = document.createElement("tr");
       tr.className = "sound-row-divider";
@@ -444,82 +640,82 @@
       tdLabel.textContent = category.label;
 
       const tdMin = document.createElement("td");
-      const minInput = document.createElement("input");
-      minInput.type = "number";
-      minInput.min = "0";
-      minInput.max = String(TRACK_MAX);
-      minInput.value = "0";
-      minInput.className = "sound-track-input-sm";
-      minInput.id = `cat-min-${category.loKey}`;
-      minInput.setAttribute("aria-label", `${category.label} minimum track`);
+      const minInput = createNumberInput({
+        id: `cat-min-${category.loKey}`,
+        min: 0,
+        max: TRACK_MAX,
+        value: 0,
+        className: "sound-track-input-sm",
+        ariaLabel: `${category.label} minimum track`,
+      });
       tdMin.appendChild(minInput);
 
       const tdMax = document.createElement("td");
-      const maxInput = document.createElement("input");
-      maxInput.type = "number";
-      maxInput.min = "0";
-      maxInput.max = String(TRACK_MAX);
-      maxInput.value = "0";
-      maxInput.className = "sound-track-input-sm";
-      maxInput.id = `cat-max-${category.hiKey}`;
-      maxInput.setAttribute("aria-label", `${category.label} maximum track`);
+      const maxInput = createNumberInput({
+        id: `cat-max-${category.hiKey}`,
+        min: 0,
+        max: TRACK_MAX,
+        value: 0,
+        className: "sound-track-input-sm",
+        ariaLabel: `${category.label} maximum track`,
+      });
       tdMax.appendChild(maxInput);
 
-      const tdSave = document.createElement("td");
-      const saveButton = document.createElement("button");
-      saveButton.className = "btn sound-btn-compact";
-      saveButton.textContent = "💾";
-      saveButton.title = "Save category range";
-      saveButton.setAttribute("aria-label", `Save ${category.label} range`);
-      const rowFeedback = document.createElement("span");
-      rowFeedback.className = "sound-feedback-inline";
-      rowFeedback.setAttribute("role", "status");
-      rowFeedback.setAttribute("aria-live", "polite");
-      rowFeedback.setAttribute("aria-atomic", "true");
-      saveButton.addEventListener("click", async () => {
-        const minVal = Number.parseInt(minInput.value, 10);
-        const maxVal = Number.parseInt(maxInput.value, 10);
-        if (!isCategoryRangeValid(minVal, maxVal)) {
-          showFeedback(rowFeedback, "Use 0/0 or 1–999 with Min ≤ Max", false);
-          return;
-        }
-        if (!window.PAApi) return;
-        if (!soundHardwareEnabled) {
-          showFeedback(rowFeedback, "Category updates unavailable: enable S2 — Sound in Setup.", false);
-          return;
-        }
-        try {
-          const response = await window.PAApi.postForm(
-            "/api/audio/category-range",
-            { lo_key: category.loKey, hi_key: category.hiKey, lo: minVal, hi: maxVal },
-            { timeoutMs: 3000 }
-          );
-          const ok = Boolean(response.data?.ok);
-          showFeedback(rowFeedback, ok ? "Saved" : (response.data?.error || "Save failed"), ok);
-        } catch (error) {
-          showFeedback(rowFeedback, `Save failed: ${window.PAApi.messageFor(error)}`, false);
-        }
-      });
-      tdSave.appendChild(saveButton);
-      tdSave.appendChild(rowFeedback);
+      const { tdActions, actionsWrap } = createActionCell();
+      const rowFeedback = createInlineFeedback();
+      const dirtyMarker = createDirtyMarker();
+      const dirtyTracker = createRowDirtyTracker({ row: tr, inputs: [minInput, maxInput], marker: dirtyMarker });
+      categoryDirtyTrackers.set(category.loKey, dirtyTracker);
 
-      const tdPlay = document.createElement("td");
-      const playButton = document.createElement("button");
-      playButton.className = "btn sound-btn-play";
-      playButton.textContent = "▶";
-      playButton.title = `Play random ${category.label} track`;
-      playButton.setAttribute("aria-label", `Play ${category.label}`);
-      playButton.addEventListener("click", () => {
-        const minVal = Number.parseInt(minInput.value, 10);
-        const maxVal = Number.parseInt(maxInput.value, 10);
-        if (!isCategoryRangeValid(minVal, maxVal)) {
-          showFeedback(rowFeedback, "Use 0/0 or 1–999 with Min ≤ Max", false);
-          return;
-        }
-        if (minVal === 0) return;
-        const randomTrack = minVal + Math.floor(Math.random() * (maxVal - minVal + 1));
-        postAudio({ action: "play", track: randomTrack }, globalFb, `${category.label} (${randomTrack})`);
+      const saveButton = createActionButton({
+        label: "💾 Save",
+        title: "Save category range",
+        ariaLabel: `Save ${category.label} range`,
+        className: "btn sound-btn-compact",
+        onClick: async () => {
+          const minVal = Number.parseInt(minInput.value, 10);
+          const maxVal = Number.parseInt(maxInput.value, 10);
+          if (!isCategoryRangeValid(minVal, maxVal)) {
+            showFeedback(rowFeedback, MSG.categoryRangeInvalid, false);
+            return;
+          }
+          if (!window.PAApi) return;
+          if (!soundHardwareEnabled) {
+            showFeedback(rowFeedback, "Category updates unavailable: enable S2 — Sound in Setup.", false);
+            return;
+          }
+          try {
+            const response = await window.PAApi.postForm(
+              "/api/audio/category-range",
+              { lo_key: category.loKey, hi_key: category.hiKey, lo: minVal, hi: maxVal },
+              { timeoutMs: 3000 }
+            );
+            const ok = feedbackFromSaveResponse(rowFeedback, response);
+            if (ok) dirtyTracker.markSaved();
+          } catch (error) {
+            feedbackSaveFailure(rowFeedback, error);
+          }
+        },
       });
+
+      const playButton = createActionButton({
+        label: "▶ Play",
+        title: `Play random ${category.label} track`,
+        ariaLabel: `Play ${category.label}`,
+        className: "btn sound-btn-play",
+        onClick: () => {
+          const minVal = Number.parseInt(minInput.value, 10);
+          const maxVal = Number.parseInt(maxInput.value, 10);
+          if (!isCategoryRangeValid(minVal, maxVal)) {
+            showFeedback(rowFeedback, MSG.categoryRangeInvalid, false);
+            return;
+          }
+          if (minVal === 0) return;
+          const randomTrack = minVal + Math.floor(Math.random() * (maxVal - minVal + 1));
+          postAudio({ action: "play", track: randomTrack }, globalFb, `${category.label} (${randomTrack})`);
+        },
+      });
+
       const syncPlayButtonState = () => {
         const minVal = Number.parseInt(minInput.value, 10);
         const maxVal = Number.parseInt(maxInput.value, 10);
@@ -528,13 +724,16 @@
       minInput.addEventListener("input", syncPlayButtonState);
       maxInput.addEventListener("input", syncPlayButtonState);
       syncPlayButtonState();
-      tdPlay.appendChild(playButton);
+
+      actionsWrap.appendChild(saveButton);
+      actionsWrap.appendChild(playButton);
+      tdActions.appendChild(dirtyMarker);
+      tdActions.appendChild(rowFeedback);
 
       tr.appendChild(tdLabel);
       tr.appendChild(tdMin);
       tr.appendChild(tdMax);
-      tr.appendChild(tdSave);
-      tr.appendChild(tdPlay);
+      tr.appendChild(tdActions);
       categoryTbody.appendChild(tr);
     });
   };
@@ -570,6 +769,9 @@
   };
   const buildSystemSoundRows = () => {
     if (!systemTbody) return;
+    systemTbody.innerHTML = "";
+    systemDirtyTrackers.clear();
+
     SYSTEM_SOUNDS.forEach((sound) => {
       const tr = document.createElement("tr");
       tr.className = "sound-row-divider";
@@ -578,64 +780,63 @@
       tdLabel.textContent = sound.label;
 
       const tdTrack = document.createElement("td");
-      const input = document.createElement("input");
-      input.type = "number";
-      input.min = "0";
-      input.max = String(TRACK_MAX);
-      input.className = "sound-track-input-sm";
-      input.id = `sys-track-input-${sound.key}`;
-      input.dataset.key = sound.key;
-      input.setAttribute("aria-label", `${sound.label} track number`);
-      input.placeholder = "(silent / not set)";
+      const input = createNumberInput({
+        id: `sys-track-input-${sound.key}`,
+        min: 0,
+        max: TRACK_MAX,
+        className: "sound-track-input-sm",
+        ariaLabel: `${sound.label} track number`,
+        datasetKey: sound.key,
+        placeholder: "(silent / not set)",
+      });
       tdTrack.appendChild(input);
 
-      const saveButton = document.createElement("button");
-      saveButton.className = "btn sound-btn-compact";
-      saveButton.textContent = "💾";
-      saveButton.title = "Save track number";
-      saveButton.setAttribute("aria-label", `Save ${sound.label} track number`);
+      const { tdActions, actionsWrap } = createActionCell();
+      const rowFeedback = createInlineFeedback();
+      const dirtyMarker = createDirtyMarker();
+      const dirtyTracker = createRowDirtyTracker({ row: tr, inputs: [input], marker: dirtyMarker });
+      systemDirtyTrackers.set(sound.key, dirtyTracker);
 
-      const rowFeedback = document.createElement("span");
-      rowFeedback.className = "sound-feedback-inline";
-      rowFeedback.setAttribute("role", "status");
-      rowFeedback.setAttribute("aria-live", "polite");
-      rowFeedback.setAttribute("aria-atomic", "true");
-
-      saveButton.addEventListener("click", () => {
-        const value = Number.parseInt(input.value, 10);
-        if (Number.isNaN(value) || value < 0 || value > TRACK_MAX) {
-          showFeedback(rowFeedback, `0–${TRACK_MAX}`, false);
-          return;
-        }
-        postTrack(sound.key, value, rowFeedback);
+      const saveButton = createActionButton({
+        label: "💾 Save",
+        title: "Save track number",
+        ariaLabel: `Save ${sound.label} track number`,
+        className: "btn sound-btn-compact",
+        onClick: async () => {
+          const value = Number.parseInt(input.value, 10);
+          if (Number.isNaN(value) || value < 0 || value > TRACK_MAX) {
+            showFeedback(rowFeedback, MSG.trackRangeZeroToMax, false);
+            return;
+          }
+          const ok = await postTrack(sound.key, value, rowFeedback);
+          if (ok) dirtyTracker.markSaved();
+        },
       });
 
-      tdTrack.appendChild(saveButton);
-      tdTrack.appendChild(rowFeedback);
-
-      const tdPlay = document.createElement("td");
-      const playButton = document.createElement("button");
-      playButton.className = "btn sound-btn-play";
-      playButton.textContent = "▶";
-      playButton.title = `Play configured track for ${sound.label}`;
-      playButton.setAttribute("aria-label", `Play ${sound.label}`);
-      playButton.addEventListener("click", () => {
-        const value = Number.parseInt(input.value, 10);
-        if (Number.isNaN(value) || value < 0 || value > TRACK_MAX) {
-          showFeedback(rowFeedback, `0–${TRACK_MAX}`, false);
-          return;
-        }
-        if (value === 0) return;
-        postAudio({ action: "play", track: value }, globalFb, sound.label);
+      const playButton = createActionButton({
+        label: "▶ Play",
+        title: `Play configured track for ${sound.label}`,
+        ariaLabel: `Play ${sound.label}`,
+        className: "btn sound-btn-play",
+        onClick: () => {
+          const value = Number.parseInt(input.value, 10);
+          if (Number.isNaN(value) || value < 0 || value > TRACK_MAX) {
+            showFeedback(rowFeedback, MSG.trackRangeZeroToMax, false);
+            return;
+          }
+          if (value === 0) return;
+          postAudio({ action: "play", track: value }, globalFb, sound.label);
+        },
       });
-      tdPlay.appendChild(playButton);
 
-      const tdSpacer = document.createElement("td");
+      actionsWrap.appendChild(saveButton);
+      actionsWrap.appendChild(playButton);
+      tdActions.appendChild(dirtyMarker);
+      tdActions.appendChild(rowFeedback);
 
       tr.appendChild(tdLabel);
       tr.appendChild(tdTrack);
-      tr.appendChild(tdPlay);
-      tr.appendChild(tdSpacer);
+      tr.appendChild(tdActions);
       systemTbody.appendChild(tr);
     });
   };
@@ -652,6 +853,7 @@
         if (input && data[sound.key] !== undefined) {
           input.value = data[sound.key];
         }
+        namedDirtyTrackers.get(sound.key)?.markSaved();
       });
 
       SYSTEM_SOUNDS.forEach((sound) => {
@@ -659,6 +861,7 @@
         if (input && data[sound.key] !== undefined) {
           input.value = data[sound.key];
         }
+        systemDirtyTrackers.get(sound.key)?.markSaved();
       });
 
       CATEGORY_SOUNDS.forEach((category) => {
@@ -670,7 +873,8 @@
         if (maxInput && data[category.hiKey] !== undefined) {
           maxInput.value = data[category.hiKey];
         }
-        const playButton = minInput?.closest("tr")?.querySelector("td:last-child button");
+        categoryDirtyTrackers.get(category.loKey)?.markSaved();
+        const playButton = findCategoryPlayButton(minInput);
         const minVal = Number.parseInt(minInput?.value, 10);
         const maxVal = Number.parseInt(maxInput?.value, 10);
         updateCategoryTestButtonState(playButton, minVal, maxVal);
@@ -759,6 +963,7 @@
   buildCategorySoundRows();
   buildMoodMapRows();
   buildSystemSoundRows();
+  applySoundWorkspaceMode(loadSoundWorkspaceMode(), false);
   loadTracks();
   loadMoodMap();
   syncVolumeLabel();
@@ -793,6 +998,17 @@
     });
   }
 
+  namedSoundFilterInput?.addEventListener("input", () => {
+    applyNamedSoundFilter();
+  });
+
+  soundModeAdvancedBtn?.addEventListener("click", () => {
+    applySoundWorkspaceMode(SOUND_VIEW_MODE_ADVANCED);
+  });
+
+  soundModeCompactBtn?.addEventListener("click", () => {
+    applySoundWorkspaceMode(SOUND_VIEW_MODE_COMPACT);
+  });
   volSlider?.addEventListener("input", syncVolumeLabel);
   volSlider?.addEventListener("change", () => {
     postAudio({ action: "volume", level: volSlider.value }, globalFb, 'Volume');
@@ -829,12 +1045,12 @@
     }
     const maxVal = Number.parseInt(document.getElementById("rand-max")?.value, 10);
 
-    if (!minVal || minVal < 1 || minVal > 999 || !maxVal || maxVal < 1 || maxVal > 999) {
-      showFeedback(randFb, "Values must be 1–999", false);
+    if (!minVal || minVal < 1 || minVal > TRACK_MAX || !maxVal || maxVal < 1 || maxVal > TRACK_MAX) {
+      showFeedback(randFb, MSG.valuesMustBe1To999, false);
       return;
     }
     if (minVal > maxVal) {
-      showFeedback(randFb, "Min must be ≤ Max", false);
+      showFeedback(randFb, MSG.minMustBeLeMax, false);
       return;
     }
 
@@ -845,9 +1061,9 @@
         window.PAApi.postForm("/api/audio/tracks", { key: "rand_max", track: maxVal }, { timeoutMs: 3000 }),
       ]);
       const ok = Boolean(r1.data?.ok && r2.data?.ok);
-      showFeedback(randFb, ok ? "Range saved" : "Save failed", ok);
+      showFeedback(randFb, ok ? "Range saved" : MSG.saveFailed, ok);
     } catch (error) {
-      showFeedback(randFb, `Save failed: ${window.PAApi.messageFor(error)}`, false);
+      feedbackSaveFailure(randFb, error);
     }
   });
 
@@ -879,9 +1095,9 @@
         return window.PAApi.postForm("/api/audio/tracks", { key: field.key, track: value }, { timeoutMs: 3000 });
       }));
       const ok = results.every((entry) => entry.data?.ok);
-      showFeedback(intFb, ok ? "Intervals saved" : "Save failed", ok);
+      showFeedback(intFb, ok ? "Intervals saved" : MSG.saveFailed, ok);
     } catch (error) {
-      showFeedback(intFb, `Save failed: ${window.PAApi.messageFor(error)}`, false);
+      feedbackSaveFailure(intFb, error);
     }
   });
 
@@ -911,9 +1127,9 @@
     try {
       const result = await window.PAApi.postForm("/api/audio/mood-map", payload, { timeoutMs: 3000 });
       const ok = Boolean(result.data?.ok);
-      setMoodMapStatus(ok ? "Mood mapping saved" : (result.data?.error || "Save failed"), ok);
+      setMoodMapStatus(ok ? "Mood mapping saved" : (result.data?.error || MSG.saveFailed), ok);
     } catch (error) {
-      setMoodMapStatus(`Mood mapping save failed: ${window.PAApi.messageFor(error)}`, false);
+      setMoodMapStatus(`Mood mapping save failed: ${getApiErrorMessage(error)}`, false);
     }
     syncMoodMapControlState();
   });

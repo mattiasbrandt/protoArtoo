@@ -1259,6 +1259,85 @@ body.sleep-mode-active {
 }
 
 /* Sound page layout helpers */
+body[data-page="sound"] {
+  max-width: 1280px;
+}
+
+.sound-view-toggle {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.sound-view-toggle .btn {
+  min-width: 120px;
+}
+
+.sound-section-label {
+  margin: 2px 2px 8px;
+  color: var(--silver-bright);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.85;
+}
+
+.sound-toolbar {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.sound-advanced-grid {
+  display: grid;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+@media (min-width: 1080px) {
+  .sound-advanced-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+  }
+}
+
+body.sound-mode-compact .sound-advanced-grid,
+body.sound-mode-compact .sound-advanced-card,
+body.sound-mode-compact .sound-section-label-advanced {
+  display: none;
+}
+
+label.sound-search-field {
+  margin: 0;
+}
+
+.sound-search-field input[type="text"] {
+  width: 100%;
+  padding: 10px 12px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font: inherit;
+  min-height: 40px;
+}
+
+.sound-search-field input[type="text"]:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(74, 144, 217, 0.2);
+}
+
+.sound-filter-count {
+  color: var(--text-dim);
+  font-size: 0.82rem;
+  font-weight: 600;
+  white-space: nowrap;
+  padding-bottom: 2px;
+}
+
 .sound-inline-row {
   display: flex;
   align-items: center;
@@ -1288,19 +1367,29 @@ body.sleep-mode-active {
   font-weight: 600;
 }
 
+.sound-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid rgba(74, 144, 217, 0.16);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
 .sound-table {
   width: 100%;
   border-collapse: collapse;
+  table-layout: auto;
 }
 
 .sound-table th,
 .sound-table td {
-  padding: 6px 8px;
+  padding: 8px 10px;
+  word-break: break-word;
 }
 
 .sound-table td {
-  padding-top: 8px;
-  padding-bottom: 8px;
+  padding-top: 9px;
+  padding-bottom: 9px;
 }
 
 .sound-table thead tr {
@@ -1309,8 +1398,30 @@ body.sleep-mode-active {
   font-size: 0.8rem;
 }
 
+.sound-table th {
+  white-space: nowrap;
+}
+
 .sound-row-divider {
   border-bottom: 1px solid var(--border);
+}
+
+.sound-row-dirty td {
+  background: color-mix(in srgb, var(--warning) 18%, transparent);
+}
+
+.sound-dirty-pill {
+  display: inline-block;
+  margin-top: 2px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--warning) 45%, transparent);
+  background: color-mix(in srgb, var(--warning) 20%, transparent);
+  color: var(--warning);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
 }
 
 .sound-mono {
@@ -1318,13 +1429,26 @@ body.sleep-mode-active {
   color: var(--accent);
 }
 
-.sound-track-input-sm { width: 70px; }
-.sound-track-input-md { width: 80px; }
-.sound-track-input-lg { width: 90px; }
+.sound-track-input-sm { width: 84px; }
+.sound-track-input-md { width: 104px; }
+.sound-track-input-lg { width: 132px; }
+
+.sound-actions-cell {
+  min-width: 190px;
+}
+
+.sound-action-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
 
 .sound-feedback-inline {
-  margin-left: 8px;
-  font-size: 0.85rem;
+  display: block;
+  margin-top: 4px;
+  font-size: 0.82rem;
+  min-height: 1.1em;
 }
 
 .sound-note-inline {
@@ -1333,17 +1457,19 @@ body.sleep-mode-active {
   margin-left: 6px;
 }
 
-.sound-btn-compact {
-  margin-left: 6px;
-  padding: 4px 8px;
-}
-
+.sound-btn-compact,
 .sound-btn-play {
-  padding: 4px 10px;
+  min-height: 36px;
+  padding: 6px 12px;
+  font-size: 0.82rem;
 }
 
 .sound-align-end {
   align-self: flex-end;
+}
+
+.hidden-row {
+  display: none;
 }
 
 .sound-state-badge[data-state="disabled"] { color: var(--text-dim); }
@@ -1351,6 +1477,35 @@ body.sleep-mode-active {
 .sound-state-badge[data-state="idle"]     { color: var(--text); }
 .sound-state-badge[data-state="ok"]       { color: var(--success); }
 .sound-state-badge[data-state="error"]    { color: var(--danger, #e55); }
+
+@media (max-width: 720px) {
+  .sound-toolbar {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .sound-filter-count {
+    white-space: normal;
+    padding-bottom: 0;
+  }
+
+  .sound-table th {
+    white-space: normal;
+  }
+
+  .sound-table th,
+  .sound-table td {
+    padding: 7px 8px;
+  }
+
+  .sound-track-input-sm { width: 70px; }
+  .sound-track-input-md { width: 82px; }
+  .sound-track-input-lg { width: 104px; }
+
+  .sound-actions-cell {
+    min-width: 152px;
+  }
+}
 
 /* Setup page small layout helpers */
 .s2-driver-label {
