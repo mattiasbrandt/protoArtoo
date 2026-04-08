@@ -181,22 +181,23 @@
       }
     });
     const keptLabel = AUX_RGB_LABEL_BY_KEY[keepKey] || "selected AUX";
-    setFeatureFeedback(`Only one AUX line can drive RGB strip output. Keeping ${keptLabel}.`, "warning");
+    setFeatureFeedback(`Only one AUX line can drive LED strip output. Keeping ${keptLabel}.`, "warning");
   };
 
   const updateAuxLedConfigVisibility = () => {
     const rgbKeys = getRgbAuxKeys();
     const rgbKey = rgbKeys[0] || "";
-    const ledRow = auxLedCountInput?.closest(".component-row");
     const hasRgb = Boolean(rgbKey);
 
-    if (ledRow) ledRow.style.display = hasRgb ? "" : "none";
+    if (auxLedCountInput) {
+      auxLedCountInput.disabled = !hasRgb;
+    }
     if (auxLedRouteStatus) {
       if (!hasRgb) {
-        auxLedRouteStatus.textContent = "Select RGB on AUX1/AUX2/AUX3";
+        auxLedRouteStatus.textContent = "Not routed";
         auxLedRouteStatus.style.color = "var(--text-dim)";
       } else {
-        auxLedRouteStatus.textContent = `Routed via ${AUX_RGB_LABEL_BY_KEY[rgbKey]}`;
+        auxLedRouteStatus.textContent = `Routed via ${AUX_RGB_LABEL_BY_KEY[rgbKey]} LED`;
         auxLedRouteStatus.style.color = "var(--success)";
       }
     }
@@ -485,20 +486,20 @@
     auxLedSwatch.style.opacity = pin > 0 && available && effect !== "off" ? "1" : "0.35";
 
     if (pin === 0) {
-      auxLedPreviewText.textContent = "AUX LED disabled";
+      auxLedPreviewText.textContent = "";
       auxLedPreviewText.style.color = "var(--text-dim)";
-      auxLedPreviewNote.textContent = "Select AUX1/AUX2/AUX3 above to enable strip output.";
+      auxLedPreviewNote.textContent = "";
       return;
     }
 
     if (!available) {
-      auxLedPreviewText.textContent = `AUX LED GPIO ${pin} unavailable`;
+      auxLedPreviewText.textContent = `LED strip on AUX${pin} unavailable`;
       auxLedPreviewText.style.color = "var(--warning)";
-      auxLedPreviewNote.textContent = "Strip configured, but driver is unavailable (RMT/channel allocation failed).";
+      auxLedPreviewNote.textContent = "Strip configured, but output driver is unavailable.";
       return;
     }
 
-    auxLedPreviewText.textContent = `AUX LED GPIO ${pin} - ${effect}`;
+    auxLedPreviewText.textContent = `AUX${pin} LED - ${effect}`;
     auxLedPreviewText.style.color = "var(--success)";
     auxLedPreviewNote.textContent = `Live color ${r},${g},${b} with ${effect} effect.`;
   };

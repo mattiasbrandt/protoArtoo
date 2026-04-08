@@ -36,13 +36,13 @@
             <button type="button" class="seg-option is-active" data-value="none">None</button>
             <button type="button" class="seg-option" data-value="mg996r">MG996R</button>
             <button type="button" class="seg-option" data-value="mg90s">MG90S</button>
-            <button type="button" class="seg-option" data-value="rgb">RGB</button>
+            <button type="button" class="seg-option" data-value="rgb">LED strip</button>
           </div>
           <select class="type-select type-select-native" id="type-aux1" title="Component type connected to AUX1 / ARM3" aria-label="AUX1 component type" tabindex="-1" aria-hidden="true">
             <option value="none">Nothing connected</option>
             <option value="mg996r">MG996R servo</option>
             <option value="mg90s">MG90S servo</option>
-            <option value="rgb">RGB LED strip</option>
+            <option value="rgb">LED strip</option>
           </select>
         </div>
         <div class="component-row">
@@ -56,13 +56,13 @@
             <button type="button" class="seg-option is-active" data-value="none">None</button>
             <button type="button" class="seg-option" data-value="mg996r">MG996R</button>
             <button type="button" class="seg-option" data-value="mg90s">MG90S</button>
-            <button type="button" class="seg-option" data-value="rgb">RGB</button>
+            <button type="button" class="seg-option" data-value="rgb">LED strip</button>
           </div>
           <select class="type-select type-select-native" id="type-aux2" title="Component type connected to AUX2 / ARM4" aria-label="AUX2 component type" tabindex="-1" aria-hidden="true">
             <option value="none">Nothing connected</option>
             <option value="mg996r">MG996R servo</option>
             <option value="mg90s">MG90S servo</option>
-            <option value="rgb">RGB LED strip</option>
+            <option value="rgb">LED strip</option>
           </select>
         </div>
         <div class="component-row">
@@ -76,34 +76,16 @@
             <button type="button" class="seg-option is-active" data-value="none">None</button>
             <button type="button" class="seg-option" data-value="mg996r">MG996R</button>
             <button type="button" class="seg-option" data-value="mg90s">MG90S</button>
-            <button type="button" class="seg-option" data-value="rgb">RGB</button>
+            <button type="button" class="seg-option" data-value="rgb">LED strip</button>
           </div>
           <select class="type-select type-select-native" id="type-aux3" title="Component type connected to AUX3 / ARM5" aria-label="AUX3 component type" tabindex="-1" aria-hidden="true">
             <option value="none">Nothing connected</option>
             <option value="mg996r">MG996R servo</option>
             <option value="mg90s">MG90S servo</option>
-            <option value="rgb">RGB LED strip</option>
+            <option value="rgb">LED strip</option>
           </select>
         </div>
 
-        <div class="section-label-row">
-          <div class="section-label">💡 AUX LED STRIP</div>
-          <span id="aux-led-route-badge" class="status-pill pill-info status-pill-compact">🔗 Not routed</span>
-        </div>
-        <div class="component-row">
-          <label class="toggle-switch" for="aux-led-count" title="LED count for the AUX line currently configured as RGB LED strip">
-            <span class="toggle-label">RGB strip LED count</span>
-            <span class="toggle-status" id="aux-led-route-status">Select RGB on AUX1/AUX2/AUX3</span>
-          </label>
-          <input id="aux-led-count" class="type-select" name="auxLedCount" type="number" min="1" max="255" step="1" value="1" aria-label="RGB strip LED count">
-        </div>
-        <div class="mt-12" aria-live="polite" aria-atomic="true">
-          <div style="display:flex;align-items:center;gap:10px;">
-            <span id="aux-led-swatch" style="display:inline-block;width:22px;height:22px;border-radius:50%;border:1px solid var(--border);background:rgb(0,0,0);"></span>
-            <span id="aux-led-preview-text" class="desc">AUX LED disabled</span>
-          </div>
-          <div id="aux-led-preview-note" class="desc mt-6">Live color/effect preview from status stream. Routing follows AUX type selection.</div>
-        </div>
 
         <div class="component-row">
           <label class="toggle-switch" title="ARM2 (GPIO 5) — Right utility arm servo">
@@ -229,6 +211,27 @@
       <div id="feature-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true">Loading component settings...</div>
     </div>
 
+    <!-- LED Strip -->
+    <div class="card">
+      <h3>💡 LED Strip</h3>
+      <div class="desc">Configure AUX LED strip routing and live output preview. Route is set by enabling AUX1/AUX2/AUX3 and selecting LED strip as that AUX component type.</div>
+      <div class="component-row mt-16">
+        <label class="toggle-switch" for="aux-led-count" title="LED strip count for the routed AUX LED output">
+          <span class="toggle-label">LED strip count</span>
+          <span class="toggle-status" id="aux-led-route-status">Not routed</span>
+        </label>
+        <input id="aux-led-count" class="type-select" name="auxLedCount" type="number" min="1" max="255" step="1" value="1" aria-label="LED strip count">
+        <span id="aux-led-route-badge" class="status-pill pill-info status-pill-compact">🔗 Not routed</span>
+      </div>
+      <div class="mt-12" aria-live="polite" aria-atomic="true">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span id="aux-led-swatch" style="display:inline-block;width:22px;height:22px;border-radius:50%;border:1px solid var(--border);background:rgb(0,0,0);"></span>
+          <span id="aux-led-preview-text" class="desc"></span>
+        </div>
+        <div id="aux-led-preview-note" class="desc mt-6"></div>
+      </div>
+    </div>
+
     <!-- Serial Connection Status -->
     <div class="card">
       <h3>🔌 Serial Status</h3>
@@ -237,17 +240,17 @@
         <div class="status-item">
           <dt>S1 — Hoverboard</dt>
           <dd id="serial-s1-state">...</dd>
-          <div class="desc mt-6">GPIO 16/17 · UART1 · 115200 baud</div>
+          <div class="desc mt-6" title="GPIO 16/17 · UART1 · 115200 baud">UART1 · 115200 baud</div>
         </div>
         <div class="status-item">
           <dt>S2 — Sound</dt>
           <dd id="serial-s2-state">...</dd>
-          <div class="desc mt-6">GPIO 26/35 · sound serial (driver-dependent) · 9600 baud</div>
+          <div class="desc mt-6" title="GPIO 26/35 · sound serial (driver-dependent) · 9600 baud">Sound serial (driver-dependent) · 9600 baud</div>
         </div>
         <div class="status-item">
           <dt>S3 — Dome Link</dt>
           <dd id="serial-s3-state">...</dd>
-          <div class="desc mt-6">GPIO 33/34 · UART2 · 9600 baud</div>
+          <div class="desc mt-6" title="GPIO 33/34 · UART2 · 9600 baud">UART2 · 9600 baud</div>
         </div>
       </div>
       <div id="serial-status-line" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true"></div>
@@ -298,7 +301,7 @@
     <div class="card">
       <h3>🔄 System</h3>
       <div class="desc">Restart the controller to apply certain hardware configuration changes. The web interface will be unavailable for ~10 seconds during reboot.</div>
-      <div class="button-row mt-16">
+      <div class="button-row button-row-compact mt-16">
         <button id="reboot-button" class="btn danger" type="button">🔄 Reboot Controller</button>
       </div>
       <div id="reboot-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true"></div>
