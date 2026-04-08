@@ -59,14 +59,6 @@
     return Math.max(-1, Math.min(1, parsed));
   };
 
-  const extractSpeedFromDetail = (detail) => {
-    const text = String(detail || "");
-    const match = text.match(/(-?\d+(?:\.\d+)?)%/);
-    if (!match) return 0;
-    const percent = Number(match[1]);
-    if (!Number.isFinite(percent)) return 0;
-    return clampSpeed(percent / 100);
-  };
 
   const renderDomeTargetSpeed = (speed) => {
     const normalized = clampSpeed(speed);
@@ -148,19 +140,29 @@
     if (typeof payload?.domeEnabled === "boolean") {
       return payload.domeEnabled;
     }
-    return payload ? Object.prototype.hasOwnProperty.call(payload, "dome") : false;
+    if (typeof payload?.components?.dome?.enabled === "boolean") {
+      return payload.components.dome.enabled;
+    }
+    return null;
   };
 
   const resolveDomeTargetSpeed = (payload) => {
     const direct = Number(payload?.domeTargetSpeed);
-    if (Number.isFinite(direct)) return direct;
-    return extractSpeedFromDetail(payload?.dome?.detail);
+    if (!Number.isFinite(direct)) return 0;
+    return clampSpeed(direct);
   };
 
   const renderStatusFrame = (payload) => {
-    webControlStatusKnown = true;
-    webControlEnabled = !!payload?.webControlEnabled;
-    domeHardwareEnabled = resolveDomeEnabledFromStatus(payload);
+    webControlStatusKnown = typeof payload?.webControlEnabled === "boolean";
+    if (webControlStatusKnown) {
+      webControlEnabled = payload.webControlEnabled;
+    }
+
+    const statusDomeEnabled = resolveDomeEnabledFromStatus(payload);
+    if (typeof statusDomeEnabled === "boolean") {
+      domeHardwareEnabled = statusDomeEnabled;
+    }
+
     renderDomeTargetSpeed(resolveDomeTargetSpeed(payload));
     updateDomeControlsEnabled();
   };
@@ -191,10 +193,61 @@
     }
   };
 
+  const clampInt = (value, min, max) => Math.max(min, Math.min(max, value));
+
+  const parseEscField = (input, fallback, min, max, label) => {
+    const raw = Number.parseInt(String(input?.value ?? "").trim(), 10);
+    const fallbackValue = Number.parseInt(String(fallback), 10);
+    const parsed = Number.isFinite(raw) ? raw : fallbackValue;
+    if (!Number.isFinite(parsed)) {
+      return { error: `${label} must be a whole number.` };
+    }
+    const clamped = clampInt(parsed, min, max);
+    if (input) input.value = String(clamped);
+    return { value: clamped };
+  };
+
+  const validateEscConfig = () => {
+    const neutral = parseEscField(domeNeutral, 1500, 1000, 2000, "Neutral pulse");
+    if (neutral.error) return { ok: false, error: neutral.error };
+
+    const minPulse = parseEscField(domeMinPulse, 1000, 1000, 2000, "Minimum pulse");
+    if (minPulse.error) return { ok: false, error: minPulse.error };
+
+    const maxPulse = parseEscField(domeMaxPulse, 2000, 1000, 2000, "Maximum pulse");
+    if (maxPulse.error) return { ok: false, error: maxPulse.error };
+
+    const speedLimit = parseEscField(domeSpeedLimit, 100, 0, 100, "Speed limit");
+    if (speedLimit.error) return { ok: false, error: speedLimit.error };
+
+    if (minPulse.value > maxPulse.value) {
+      return { ok: false, error: "Minimum pulse must be less than or equal to maximum pulse." };
+    }
+    if (neutral.value < minPulse.value || neutral.value > maxPulse.value) {
+      return { ok: false, error: "Neutral pulse must be within the minimum and maximum pulse range." };
+    }
+
+    return {
+      ok: true,
+      payload: {
+        domeNeutralUs: String(neutral.value),
+        domeMinPulseUs: String(minPulse.value),
+        domeMaxPulseUs: String(maxPulse.value),
+        domeSpeedLimitPct: String(speedLimit.value),
+      },
+    };
+  };
+
   const saveEscConfig = async () => {
     if (!window.PAApi) return;
     if (!domeHardwareEnabled) {
       showFeedback(escFeedback, "Dome settings unavailable: enable DOME in Setup.", "warning");
+      return;
+    }
+
+    const validation = validateEscConfig();
+    if (!validation.ok) {
+      showFeedback(escFeedback, validation.error, "warning");
       return;
     }
 
@@ -203,12 +256,7 @@
     try {
       await window.PAApi.postForm(
         "/api/config",
-        {
-          domeNeutralUs: domeNeutral?.value || "1500",
-          domeMinPulseUs: domeMinPulse?.value || "1000",
-          domeMaxPulseUs: domeMaxPulse?.value || "2000",
-          domeSpeedLimitPct: domeSpeedLimit?.value || "100",
-        },
+        validation.payload,
         { timeoutMs: 3000 },
       );
 

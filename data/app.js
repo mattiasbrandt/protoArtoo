@@ -27,6 +27,10 @@
   const sleepFeedback = document.getElementById("sleep-feedback");
   const staleBanner = document.getElementById('status-stale-banner');
   const setStale = (stale) => { if (staleBanner) staleBanner.style.display = stale ? '' : 'none'; };
+  const snapshotWebControl = document.getElementById("snapshot-web-control");
+  const snapshotMode = document.getElementById("snapshot-mode");
+  const snapshotEstop = document.getElementById("snapshot-estop");
+  const snapshotMood = document.getElementById("snapshot-mood");
 
   let lastStatus = null;
   let modePending = false;
@@ -62,10 +66,28 @@
     ["s3DomeCtrl", "🔌", "Dome Controller"],
   ];
 
+  const MOOD_LABELS = {
+    0: "Idle 😐",
+    10: "Quiet 😴",
+    11: "Full-Awake 😄",
+    13: "Mid-Awake 🙂",
+    14: "Awake+ ✨",
+  };
+
+  const PILL_CLASS_MAP = {
+    ok: "pill-ok",
+    warn: "pill-warn",
+    error: "pill-error",
+    info: "pill-info",
+  };
+
   const showFeedback = (el, message, level = "") => {
     if (!el) return;
+    if (!el.dataset.baseClass) {
+      el.dataset.baseClass = el.className || "feedback";
+    }
     el.textContent = message;
-    el.className = level ? `feedback ${level}` : "feedback";
+    el.className = level ? `${el.dataset.baseClass} ${level}` : el.dataset.baseClass;
   };
 
   const setSleepPending = (pending) => {
@@ -81,7 +103,8 @@
   const setSleepUi = (sleeping) => {
     isSleeping = !!sleeping;
     if (sleepToggle) {
-      sleepToggle.textContent = isSleeping ? "Wake Droid" : "Sleep Droid";
+      sleepToggle.textContent = isSleeping ? "⏻ Wake" : "⏻ Sleep";
+      sleepToggle.title = isSleeping ? "Wake droid subsystems" : "Park droid subsystems";
       sleepToggle.classList.toggle("danger", isSleeping);
       sleepToggle.classList.toggle("accent", !isSleeping);
       sleepToggle.setAttribute("aria-pressed", isSleeping.toString());
@@ -92,6 +115,7 @@
     }
     document.body.classList.toggle("sleep-mode-active", isSleeping);
   };
+
 
   const setIndicator = (id, state) => {
     const el = document.getElementById(id);
@@ -137,38 +161,38 @@
 
     const heapFreeKb = Math.round(payload.heapFree / 1024);
 
-    let heapLabel = "✅ Healthy";
-    let heapColor = "var(--success)";
+    let heapLabel = "Healthy ✅";
+    let heapState = "ok";
     if (heapFreeKb < 80) {
-      heapLabel = "❌ Critical";
-      heapColor = "var(--danger)";
+      heapLabel = "Critical ❌";
+      heapState = "error";
     } else if (heapFreeKb < 120) {
-      heapLabel = "⚠️ Low";
-      heapColor = "var(--warning)";
+      heapLabel = "Low ⚠️";
+      heapState = "warn";
     }
 
-    let wifiQuality = "❌ Unknown";
-    let wifiColor = "var(--danger)";
+    let wifiLabel = "Unknown ❌";
+    let wifiState = "error";
     if ((payload.wifiConnected || payload.wifiClientConnected) && payload.wifiRssi !== 0) {
       if (payload.wifiRssi >= -67) {
-        wifiQuality = `✅ Excellent (${payload.wifiRssi} dBm)`;
-        wifiColor = "var(--success)";
+        wifiLabel = `Excellent ✅ (${payload.wifiRssi} dBm)`;
+        wifiState = "ok";
       } else if (payload.wifiRssi >= -75) {
-        wifiQuality = `✅ Good (${payload.wifiRssi} dBm)`;
-        wifiColor = "var(--success)";
+        wifiLabel = `Good ✅ (${payload.wifiRssi} dBm)`;
+        wifiState = "ok";
       } else if (payload.wifiRssi >= -85) {
-        wifiQuality = `⚠️ Fair (${payload.wifiRssi} dBm)`;
-        wifiColor = "var(--warning)";
+        wifiLabel = `Fair ⚠️ (${payload.wifiRssi} dBm)`;
+        wifiState = "warn";
       } else {
-        wifiQuality = `❌ Poor (${payload.wifiRssi} dBm)`;
-        wifiColor = "var(--danger)";
+        wifiLabel = `Poor ❌ (${payload.wifiRssi} dBm)`;
+        wifiState = "error";
       }
     }
 
     healthSummary.innerHTML =
-      `Memory: <span style="color:${heapColor};font-weight:700">${heapFreeKb} KB ${heapLabel}</span><br>` +
-      `WiFi: <span style="color:${wifiColor};font-weight:700">${wifiQuality}</span><br>` +
-      `<span class="desc">Detailed memory headroom telemetry is available on Setup → Diagnostics.</span>`;
+      `<div class="health-summary-row">Memory: <span class="health-summary-value is-${heapState}">${heapFreeKb} KB ${heapLabel}</span></div>` +
+      `<div class="health-summary-row">WiFi: <span class="health-summary-value is-${wifiState}">${wifiLabel}</span></div>` +
+      `<div class="health-summary-note">Detailed memory headroom telemetry is available on Setup → Diagnostics.</div>`;
   };
 
   const renderComponentStatus = (payload) => {
@@ -225,12 +249,42 @@
     moodDomeNote.classList.toggle("visible", !domeConnected);
   };
 
+  const setStatusPill = (el, text, state = "info", compact = true) => {
+    if (!el) return;
+    const sizeClass = compact ? "status-pill status-pill-compact" : "status-pill";
+    el.textContent = text;
+    el.className = `${sizeClass} ${PILL_CLASS_MAP[state] || PILL_CLASS_MAP.info}`;
+  };
+
+  const renderMissionSnapshot = (payload) => {
+    const isStationary = !!payload.stationary;
+    const moodText = MOOD_LABELS[payload.activeMood] || `Mood ${payload.activeMood || 0}`;
+
+    setStatusPill(
+      snapshotWebControl,
+      payload.webControlEnabled ? "🕹️ Web control: Enabled" : "🕹️ Web control: Disabled",
+      payload.webControlEnabled ? "ok" : "warn",
+    );
+    setStatusPill(
+      snapshotMode,
+      isStationary ? "🧭 Mode: Stationary" : "🧭 Mode: Driving",
+      isStationary ? "warn" : "ok",
+    );
+    setStatusPill(
+      snapshotEstop,
+      payload.estop ? "🛑 E-Stop: Latched" : "🛑 E-Stop: Clear",
+      payload.estop ? "error" : "ok",
+    );
+    setStatusPill(snapshotMood, `🎭 Mood: ${moodText}`, "info");
+  };
+
   const applyStatus = (payload) => {
     lastStatus = payload;
     pollFailCount = 0;
     setStale(false);
     renderHealth(payload);
     renderComponentStatus(payload);
+    renderMissionSnapshot(payload);
     renderOpMode(payload);
     renderMoodDomeNote(payload);
     renderActiveMood(payload);

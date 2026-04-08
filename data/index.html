@@ -13,15 +13,23 @@
       ⚠️ Status data may be stale — connection interrupted
     </div>
 
-
-    <div class="card sleep-control-card">
-      <h3>🌙 Sleep Mode</h3>
-      <div class="desc">Park cosmetic subsystems while keeping drive and safety controls active.</div>
-      <div class="button-row mt-10">
-        <button class="btn accent" id="sleep-toggle" title="Toggle sleep mode" aria-label="Toggle sleep mode" aria-pressed="false">Sleep Droid</button>
+    <div class="card home-snapshot-card">
+      <h3>🛰️ Mission Snapshot</h3>
+      <div class="snapshot-pills mt-12">
+        <span id="snapshot-web-control" class="status-pill pill-info status-pill-compact">🕹️ Web control: ...</span>
+        <span id="snapshot-mode" class="status-pill pill-info status-pill-compact">🧭 Mode: ...</span>
+        <span id="snapshot-estop" class="status-pill pill-info status-pill-compact">🛑 E-Stop: ...</span>
+        <span id="snapshot-mood" class="status-pill pill-info status-pill-compact">🎭 Mood: ...</span>
       </div>
-      <div id="sleep-feedback" class="feedback mt-8" role="status" aria-live="polite" aria-atomic="true"></div>
     </div>
+
+
+    <template id="topbar-actions-template">
+      <div class="index-top-actions">
+        <button class="btn power-toggle accent" id="sleep-toggle" title="Toggle sleep mode" aria-label="Toggle sleep mode" aria-pressed="false">⏻ Sleep</button>
+        <div id="sleep-feedback" class="feedback compact-feedback" role="status" aria-live="polite" aria-atomic="true"></div>
+      </div>
+    </template>
 
     <!-- Quick Controls -->
     <div class="card">
@@ -74,6 +82,7 @@
           <span class="indicator-text" id="ht-sound"></span>
         </div>
       </div>
+      <div id="health-summary" class="desc mt-12"></div>
     </div>
 
     <!-- Components (shown only when hardware is enabled) -->

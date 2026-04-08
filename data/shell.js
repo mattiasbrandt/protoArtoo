@@ -83,6 +83,8 @@
     const navHtml = NAV.map((item) =>
       `<a href="${item.href}"${item.key === page ? ' class="active"' : ""}>${item.label}</a>`
     ).join("");
+    const topbarActionsTemplate = document.getElementById("topbar-actions-template");
+    const topbarActionsHtml = topbarActionsTemplate?.innerHTML?.trim() || "";
 
     shellTop.innerHTML = `
       <div class="topbar">
@@ -93,6 +95,7 @@
             <div class="subtitle">R2-D2 Body Controller</div>
           </div>
         </a>
+        <div class="topbar-actions" id="shell-top-actions">${topbarActionsHtml}</div>
       </div>
       <nav>
         ${navHtml}

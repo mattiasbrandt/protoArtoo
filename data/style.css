@@ -75,6 +75,12 @@ code {
   gap: 10px;
 }
 
+.topbar-actions {
+  margin-left: auto;
+  display: flex;
+  justify-content: flex-end;
+}
+
 .topbar-brand {
   display: flex;
   align-items: center;
@@ -135,6 +141,21 @@ code {
   padding: 6px 10px;
   font-size: 0.78rem;
   font-weight: 700;
+}
+
+.home-snapshot-card {
+  border-left-color: color-mix(in srgb, var(--accent-bright) 70%, var(--border));
+}
+
+.snapshot-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.snapshot-pills .status-pill {
+  justify-content: flex-start;
 }
 
 nav {
@@ -278,6 +299,34 @@ nav a.active {
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.02);
   transition: border-color 0.2s ease;
+}
+
+.health-summary-row {
+  margin-top: 4px;
+  color: var(--silver-bright);
+  font-size: 0.88rem;
+}
+
+.health-summary-value {
+  font-weight: 700;
+}
+
+.health-summary-value.is-ok {
+  color: var(--success);
+}
+
+.health-summary-value.is-warn {
+  color: var(--warning);
+}
+
+.health-summary-value.is-error {
+  color: var(--danger);
+}
+
+.health-summary-note {
+  margin-top: 6px;
+  color: var(--text-dim);
+  font-size: 0.82rem;
 }
 
 .indicator {
@@ -934,8 +983,28 @@ body.sleep-mode-active {
   overflow: hidden;
 }
 
-.sleep-control-card .button-row {
-  grid-template-columns: minmax(0, 1fr);
+.index-top-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  margin: 0 0 0 auto;
+}
+
+.index-top-actions .power-toggle {
+  min-width: 0;
+  padding: 8px 12px;
+  font-size: 0.84rem;
+  line-height: 1.1;
+}
+
+.compact-feedback {
+  min-height: 1.2em;
+  max-width: 220px;
+  text-align: right;
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  margin: 0;
 }
 
 .sleep-overlay {
