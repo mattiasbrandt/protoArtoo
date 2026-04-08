@@ -74,6 +74,24 @@ Follow [AGENTS.md](../AGENTS.md) for the full canonical list. Do not violate:
 - Do not fall back to main-model solo execution after subagent timeout/cancel/usage-cap unless the user explicitly requests solo execution.
 - On interruption, checkpoint completed results and continue with a new delegated wave.
 
+### MemPalace MCP (Claude-Specific Operational Notes)
+
+The canonical MemPalace protocol is defined in `AGENTS.md` under
+`## MemPalace Memory Protocol`. Follow that. Claude-specific additions:
+
+- Claude Code auto-save hooks (Stop + PreCompact) are configured in `.claude/settings.json`
+  and run automatically — you do not need to manually trigger saves at session end.
+- `mempalace_status` is your first MCP call every session, before any tool use.
+  The response self-teaches the AAAK dialect and reveals the palace structure:
+  use the wing name it returns for all subsequent scoped searches.
+- When context compression is imminent (PreCompact hook fires), the hook saves
+  automatically — you do not need to take any extra action.
+- Prefer `mempalace_search` over re-reading large files when looking for a past
+  decision or rationale. Only fall back to file reads when you need the
+  exact current source of truth (code, config, task spec).
+- `hall_facts` = confirmed design decisions; `hall_discoveries` = notable findings;
+  `hall_events` = session milestones; `hall_preferences` = operator preferences.
+
 ### Hardware and Tooling Reminders
 
 - Use [tools/serial_monitor.py](../tools/serial_monitor.py) for serial capture; avoid ad-hoc pyserial snippets.

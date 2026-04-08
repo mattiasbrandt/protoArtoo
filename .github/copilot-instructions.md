@@ -89,3 +89,15 @@ When hardware validation is deferred, explicitly state blockers and remaining ch
 	- subagents execute scoped tasks.
 - Do not switch to main-model solo execution after subagent timeout/cancel/usage-cap unless the user explicitly asks.
 - Preserve partial results and continue in a new delegated wave when interruptions occur.
+
+## MemPalace Memory
+
+This project uses MemPalace for long-term memory (`mempalace` MCP server, 19 tools).
+GitHub Copilot does not currently support MCP tool calls, so this is advisory:
+
+- Past design decisions, architectural rationale, and session history for this
+  project are stored in the MemPalace palace. When another agent (Claude, Cursor)
+  references prior context, it is retrieving from MemPalace — treat those results
+  as authoritative session history.
+- The canonical memory protocol is in `AGENTS.md` under `## MemPalace Memory Protocol`.
+- Do not store memory content in this file — the palace is the memory layer.
