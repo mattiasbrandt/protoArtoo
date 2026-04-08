@@ -18,9 +18,13 @@
       <h3>🔧 Hardware Components</h3>
       <div class="desc">Enable the hardware modules connected to your Artoo Controller.
         Disabled components are hidden from all pages and not driven by the firmware.</div>
+      <div class="setup-toolbar mt-16">
+        <span id="setup-enabled-summary" class="status-pill pill-ok">✅ 0 enabled</span>
+        <span id="setup-save-summary" class="status-pill pill-info">💾 Auto-save ready</span>
+      </div>
       <form id="feature-form" class="mt-16">
 
-        <div class="section-label">ARM &amp; AUX</div>
+        <div class="section-label">🤖 ARM &amp; AUX</div>
         <div class="component-row">
           <label class="toggle-switch" title="AUX1 / ARM3 (GPIO 19) — Auxiliary PWM output 1">
             <input type="checkbox" id="enable-aux1" name="enableAux1">
@@ -28,7 +32,13 @@
             <span class="toggle-label">AUX1</span>
             <span class="toggle-status" id="status-aux1">Disabled</span>
           </label>
-          <select class="type-select" id="type-aux1" title="Component type connected to AUX1 / ARM3" aria-label="AUX1 component type">
+          <div class="type-segmented" id="seg-type-aux1" data-target="type-aux1" role="group" aria-label="AUX1 component type">
+            <button type="button" class="seg-option is-active" data-value="none">None</button>
+            <button type="button" class="seg-option" data-value="mg996r">MG996R</button>
+            <button type="button" class="seg-option" data-value="mg90s">MG90S</button>
+            <button type="button" class="seg-option" data-value="rgb">RGB</button>
+          </div>
+          <select class="type-select type-select-native" id="type-aux1" title="Component type connected to AUX1 / ARM3" aria-label="AUX1 component type" tabindex="-1" aria-hidden="true">
             <option value="none">Nothing connected</option>
             <option value="mg996r">MG996R servo</option>
             <option value="mg90s">MG90S servo</option>
@@ -42,7 +52,13 @@
             <span class="toggle-label">AUX2</span>
             <span class="toggle-status" id="status-aux2">Disabled</span>
           </label>
-          <select class="type-select" id="type-aux2" title="Component type connected to AUX2 / ARM4" aria-label="AUX2 component type">
+          <div class="type-segmented" id="seg-type-aux2" data-target="type-aux2" role="group" aria-label="AUX2 component type">
+            <button type="button" class="seg-option is-active" data-value="none">None</button>
+            <button type="button" class="seg-option" data-value="mg996r">MG996R</button>
+            <button type="button" class="seg-option" data-value="mg90s">MG90S</button>
+            <button type="button" class="seg-option" data-value="rgb">RGB</button>
+          </div>
+          <select class="type-select type-select-native" id="type-aux2" title="Component type connected to AUX2 / ARM4" aria-label="AUX2 component type" tabindex="-1" aria-hidden="true">
             <option value="none">Nothing connected</option>
             <option value="mg996r">MG996R servo</option>
             <option value="mg90s">MG90S servo</option>
@@ -56,7 +72,13 @@
             <span class="toggle-label">AUX3</span>
             <span class="toggle-status" id="status-aux3">Disabled</span>
           </label>
-          <select class="type-select" id="type-aux3" title="Component type connected to AUX3 / ARM5" aria-label="AUX3 component type">
+          <div class="type-segmented" id="seg-type-aux3" data-target="type-aux3" role="group" aria-label="AUX3 component type">
+            <button type="button" class="seg-option is-active" data-value="none">None</button>
+            <button type="button" class="seg-option" data-value="mg996r">MG996R</button>
+            <button type="button" class="seg-option" data-value="mg90s">MG90S</button>
+            <button type="button" class="seg-option" data-value="rgb">RGB</button>
+          </div>
+          <select class="type-select type-select-native" id="type-aux3" title="Component type connected to AUX3 / ARM5" aria-label="AUX3 component type" tabindex="-1" aria-hidden="true">
             <option value="none">Nothing connected</option>
             <option value="mg996r">MG996R servo</option>
             <option value="mg90s">MG90S servo</option>
@@ -64,28 +86,23 @@
           </select>
         </div>
 
-        <div class="section-label">AUX LED STRIP</div>
-        <div class="form-grid">
-          <label class="field" for="aux-led-pin">
-            <span>AUX LED header</span>
-            <select id="aux-led-pin" name="auxLedPin" aria-label="AUX LED header selector">
-              <option value="0">Disabled</option>
-              <option value="1">AUX1 (GPIO 19)</option>
-              <option value="2">AUX2 (GPIO 18)</option>
-              <option value="3">AUX3 (GPIO 32)</option>
-            </select>
+        <div class="section-label-row">
+          <div class="section-label">💡 AUX LED STRIP</div>
+          <span id="aux-led-route-badge" class="status-pill pill-info status-pill-compact">🔗 Not routed</span>
+        </div>
+        <div class="component-row">
+          <label class="toggle-switch" for="aux-led-count" title="LED count for the AUX line currently configured as RGB LED strip">
+            <span class="toggle-label">RGB strip LED count</span>
+            <span class="toggle-status" id="aux-led-route-status">Select RGB on AUX1/AUX2/AUX3</span>
           </label>
-          <label class="field" id="aux-led-count-field" for="aux-led-count">
-            <span>LED count</span>
-            <input id="aux-led-count" name="auxLedCount" type="number" min="1" max="255" step="1" value="1">
-          </label>
+          <input id="aux-led-count" class="type-select" name="auxLedCount" type="number" min="1" max="255" step="1" value="1" aria-label="RGB strip LED count">
         </div>
         <div class="mt-12" aria-live="polite" aria-atomic="true">
           <div style="display:flex;align-items:center;gap:10px;">
             <span id="aux-led-swatch" style="display:inline-block;width:22px;height:22px;border-radius:50%;border:1px solid var(--border);background:rgb(0,0,0);"></span>
             <span id="aux-led-preview-text" class="desc">AUX LED disabled</span>
           </div>
-          <div id="aux-led-preview-note" class="desc mt-6">Live color/effect preview from status stream.</div>
+          <div id="aux-led-preview-note" class="desc mt-6">Live color/effect preview from status stream. Routing follows AUX type selection.</div>
         </div>
 
         <div class="component-row">
@@ -95,7 +112,11 @@
             <span class="toggle-label">ARM2</span>
             <span class="toggle-status" id="status-arm2">Disabled</span>
           </label>
-          <select class="type-select" id="type-arm2" title="Component type connected to ARM2" aria-label="ARM2 component type">
+          <div class="type-segmented" id="seg-type-arm2" data-target="type-arm2" role="group" aria-label="ARM2 component type">
+            <button type="button" class="seg-option is-active" data-value="mg996r">MG996R</button>
+            <button type="button" class="seg-option" data-value="mg90s">MG90S</button>
+          </div>
+          <select class="type-select type-select-native" id="type-arm2" title="Component type connected to ARM2" aria-label="ARM2 component type" tabindex="-1" aria-hidden="true">
             <option value="mg996r">MG996R (standard)</option>
             <option value="mg90s">MG90S (micro)</option>
           </select>
@@ -107,7 +128,11 @@
             <span class="toggle-label">ARM1</span>
             <span class="toggle-status" id="status-arm1">Disabled</span>
           </label>
-          <select class="type-select" id="type-arm1" title="Component type connected to ARM1" aria-label="ARM1 component type">
+          <div class="type-segmented" id="seg-type-arm1" data-target="type-arm1" role="group" aria-label="ARM1 component type">
+            <button type="button" class="seg-option is-active" data-value="mg996r">MG996R</button>
+            <button type="button" class="seg-option" data-value="mg90s">MG90S</button>
+          </div>
+          <select class="type-select type-select-native" id="type-arm1" title="Component type connected to ARM1" aria-label="ARM1 component type" tabindex="-1" aria-hidden="true">
             <option value="mg996r">MG996R (standard)</option>
             <option value="mg90s">MG90S (micro)</option>
           </select>
@@ -119,7 +144,7 @@
           <span class="toggle-status" id="status-dome">Disabled</span>
         </label>
 
-        <div class="section-label">RX IN/OUT</div>
+        <div class="section-label">🎮 RX IN/OUT</div>
         <div class="component-row">
           <label class="toggle-switch" title="CH1 (GPIO 15) — SBUS drive receiver or PWM input 1">
             <input type="checkbox" id="enable-rc-ch1" name="enableRcCh1">
@@ -169,7 +194,7 @@
           </label>
         </div>
 
-        <div class="section-label">SERIAL COMMS</div>
+        <div class="section-label">🔌 SERIAL COMMS</div>
         <div class="component-row">
           <label class="toggle-switch" title="S1 (GPIO 16/17) — Hoverboard drive motor controller">
             <input type="checkbox" id="enable-s1-hoverboard" name="enableS1Hoverboard">

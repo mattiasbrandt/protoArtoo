@@ -31,16 +31,21 @@
     aux2Type: document.getElementById("type-aux2"),
     aux3Type: document.getElementById("type-aux3"),
   };
+  const AUX_RGB_SELECT_KEYS = ["aux1Type", "aux2Type", "aux3Type"];
+  const AUX_RGB_PIN_BY_KEY = { aux1Type: 1, aux2Type: 2, aux3Type: 3 };
+  const AUX_RGB_LABEL_BY_KEY = { aux1Type: "AUX1", aux2Type: "AUX2", aux3Type: "AUX3" };
 
   const featureFeedback = document.getElementById("feature-feedback");
   const logLevelSelect = document.getElementById("log-level-select");
   const diagFeedback = document.getElementById("diag-feedback");
-  const auxLedPinSelect = document.getElementById("aux-led-pin");
   const auxLedCountInput = document.getElementById("aux-led-count");
-  const auxLedCountField = document.getElementById("aux-led-count-field");
+  const auxLedRouteStatus = document.getElementById("aux-led-route-status");
+  const auxLedRouteBadge = document.getElementById("aux-led-route-badge");
   const auxLedSwatch = document.getElementById("aux-led-swatch");
   const auxLedPreviewText = document.getElementById("aux-led-preview-text");
   const auxLedPreviewNote = document.getElementById("aux-led-preview-note");
+  const setupEnabledSummary = document.getElementById("setup-enabled-summary");
+  const setupSaveSummary = document.getElementById("setup-save-summary");
 
   // Map from API payload key to featureToggles key
   const TOGGLE_KEY_MAP = {
@@ -64,10 +69,37 @@
   // Auto-save state
   let saveTimeout = null;
 
+  const setSaveSummary = (message, state = "info") => {
+    if (!setupSaveSummary) return;
+    const classMap = { ok: "pill-ok", saving: "pill-warn", warn: "pill-warn", error: "pill-error", info: "pill-info" };
+    setupSaveSummary.dataset.state = state;
+    setupSaveSummary.className = `status-pill ${classMap[state] || classMap.info}`;
+    setupSaveSummary.textContent = message;
+  };
+
+  const setFeedbackState = (element, message, variant = "") => {
+    if (!element) return;
+    element.textContent = message;
+    element.className = variant ? `feedback mt-12 ${variant}` : "feedback mt-12";
+  };
+
+  const setFeatureFeedback = (message, variant = "") => {
+    setFeedbackState(featureFeedback, message, variant);
+  };
+
+  const setDiagFeedback = (message, variant = "") => {
+    setFeedbackState(diagFeedback, message, variant);
+  };
+
   const setSavePending = (pending) => {
     if (rebootButton) {
       rebootButton.disabled = pending;
-      rebootButton.title = pending ? 'Waiting for settings to save...' : '';
+      rebootButton.title = pending ? "Waiting for settings to save..." : "";
+    }
+    if (pending) {
+      setSaveSummary("💾 Saving...", "saving");
+    } else if (setupSaveSummary?.dataset.state === "saving") {
+      setSaveSummary("💾 Auto-save ready", "info");
     }
   };
 
@@ -81,10 +113,93 @@
     return normalized;
   };
 
+  const segmentedTypeControls = Array.from(document.querySelectorAll(".type-segmented[data-target]"));
+
+  const syncSegmentedControl = (control) => {
+    if (!control) return;
+    const targetId = control.dataset.target || "";
+    const target = document.getElementById(targetId);
+    if (!target) return;
+    const selected = String(target.value || "");
+    control.querySelectorAll(".seg-option[data-value]").forEach((button) => {
+      const isActive = button.dataset.value === selected;
+      button.classList.toggle("is-active", isActive);
+      button.setAttribute("aria-pressed", isActive ? "true" : "false");
+    });
+  };
+
+  const syncAllSegmentedControls = () => {
+    segmentedTypeControls.forEach((control) => syncSegmentedControl(control));
+  };
+
+  const initSegmentedTypeControls = () => {
+    segmentedTypeControls.forEach((control) => {
+      const targetId = control.dataset.target || "";
+      const target = document.getElementById(targetId);
+      if (!target) return;
+
+      control.addEventListener("click", (event) => {
+        const button = event.target.closest(".seg-option[data-value]");
+        if (!button) return;
+        const nextValue = String(button.dataset.value || "");
+        if (target.value !== nextValue) {
+          target.value = nextValue;
+          target.dispatchEvent(new Event("change", { bubbles: true }));
+        } else {
+          syncSegmentedControl(control);
+        }
+      });
+
+      target.addEventListener("change", () => syncSegmentedControl(control));
+      syncSegmentedControl(control);
+    });
+  };
+
+  const getRgbAuxKeys = () => AUX_RGB_SELECT_KEYS.filter((key) => typeSelects[key]?.value === "rgb");
+
+  const deriveAuxLedPinFromTypes = () => {
+    const rgbKey = getRgbAuxKeys()[0];
+    return rgbKey ? AUX_RGB_PIN_BY_KEY[rgbKey] : 0;
+  };
+
+  const enforceSingleRgbAux = (changedKey = "") => {
+    const rgbKeys = getRgbAuxKeys();
+    if (rgbKeys.length <= 1) return;
+    const keepKey = changedKey && rgbKeys.includes(changedKey) ? changedKey : rgbKeys[0];
+    rgbKeys.forEach((key) => {
+      if (key !== keepKey && typeSelects[key]) {
+        typeSelects[key].value = "none";
+      }
+    });
+    const keptLabel = AUX_RGB_LABEL_BY_KEY[keepKey] || "selected AUX";
+    setFeatureFeedback(`Only one AUX line can drive RGB strip output. Keeping ${keptLabel}.`, "warning");
+  };
+
   const updateAuxLedConfigVisibility = () => {
-    if (!auxLedPinSelect || !auxLedCountField) return;
-    const enabled = auxLedPinSelect.value !== "0";
-    auxLedCountField.style.display = enabled ? "" : "none";
+    const rgbKeys = getRgbAuxKeys();
+    const rgbKey = rgbKeys[0] || "";
+    const ledRow = auxLedCountInput?.closest(".component-row");
+    const hasRgb = Boolean(rgbKey);
+
+    if (ledRow) ledRow.style.display = hasRgb ? "" : "none";
+    if (auxLedRouteStatus) {
+      if (!hasRgb) {
+        auxLedRouteStatus.textContent = "Select RGB on AUX1/AUX2/AUX3";
+        auxLedRouteStatus.style.color = "var(--text-dim)";
+      } else {
+        auxLedRouteStatus.textContent = `Routed via ${AUX_RGB_LABEL_BY_KEY[rgbKey]}`;
+        auxLedRouteStatus.style.color = "var(--success)";
+      }
+    }
+    if (auxLedRouteBadge) {
+      if (!hasRgb) {
+        auxLedRouteBadge.textContent = "🔗 Not routed";
+        auxLedRouteBadge.className = "status-pill pill-info status-pill-compact";
+      } else {
+        auxLedRouteBadge.textContent = `🔗 ${AUX_RGB_LABEL_BY_KEY[rgbKey]}`;
+        auxLedRouteBadge.className = "status-pill pill-ok status-pill-compact";
+      }
+    }
   };
   const updateToggleStatus = (key) => {
     const toggle = featureToggles[key];
@@ -92,6 +207,18 @@
     toggle.status.textContent = toggle.input.checked ? "Enabled" : "Disabled";
     toggle.status.style.color = toggle.input.checked ? "var(--success)" : "var(--text-dim)";
   };
+
+  const updateEnabledSummary = () => {
+    if (!setupEnabledSummary) return;
+    const toggles = Object.values(featureToggles).filter((toggle) => Boolean(toggle.input));
+    const enabledCount = toggles.filter((toggle) => toggle.input.checked).length;
+    const total = toggles.length;
+    const state = enabledCount > 0 ? "ok" : "info";
+    const prefix = enabledCount > 0 ? "✅" : "⚪";
+    setupEnabledSummary.className = `status-pill ${state === "ok" ? "pill-ok" : "pill-info"}`;
+    setupEnabledSummary.textContent = `${prefix} ${enabledCount}/${total} enabled`;
+  };
+
 
   const renderFeatures = (payload) => {
     const components = payload?.components || {};
@@ -136,19 +263,21 @@
       }
     });
 
-    if (auxLedPinSelect && payload?.aux_led_pin !== undefined) {
-      auxLedPinSelect.value = String(payload.aux_led_pin);
+    const auxLedPin = Number(payload?.aux_led_pin || 0);
+    const routedRgbKey = auxLedPin >= 1 && auxLedPin <= 3 ? AUX_RGB_SELECT_KEYS[auxLedPin - 1] : "";
+    if (routedRgbKey && typeSelects[routedRgbKey]) {
+      typeSelects[routedRgbKey].value = "rgb";
     }
+    enforceSingleRgbAux(routedRgbKey);
+    syncAllSegmentedControls();
+
     if (auxLedCountInput && payload?.aux_led_count !== undefined) {
       auxLedCountInput.value = String(payload.aux_led_count);
     }
     sanitizeAuxLedCount();
     updateAuxLedConfigVisibility();
-
-    if (featureFeedback) {
-      featureFeedback.textContent = `Components loaded at ${new Date().toLocaleTimeString()}`;
-      featureFeedback.className = "feedback success";
-    }
+    updateEnabledSummary();
+    setFeatureFeedback(`Components loaded at ${new Date().toLocaleTimeString()}`, "success");
     if (logLevelSelect && system.logLevel !== undefined) {
       logLevelSelect.value = String(system.logLevel);
     }
@@ -156,29 +285,20 @@
 
   const loadFeatures = async () => {
     if (!window.PAApi) return;
-    if (featureFeedback) {
-      featureFeedback.textContent = "Loading component settings...";
-      featureFeedback.className = "feedback";
-    }
+    setFeatureFeedback("Loading component settings...");
     try {
       const result = await window.PAApi.get("/api/config", { timeoutMs: 5000 });
       renderFeatures(result.data);
     } catch (error) {
       console.error("[setup] loadFeatures failed:", error);
-      if (featureFeedback) {
-        featureFeedback.textContent = `Failed to load component settings: ${window.PAApi.messageFor(error)}`;
-        featureFeedback.className = "feedback error";
-      }
+      setFeatureFeedback(`Failed to load component settings: ${window.PAApi.messageFor(error)}`, "error");
     }
   };
 
   // Auto-save function
   const saveFeatures = async () => {
     if (!window.PAApi) return;
-    if (featureFeedback) {
-      featureFeedback.textContent = "Saving...";
-      featureFeedback.className = "feedback";
-    }
+    setFeatureFeedback("Saving...");
     try {
       const body = new URLSearchParams();
       Object.entries(featureToggles).forEach(([key, toggle]) => {
@@ -190,24 +310,19 @@
       Object.entries(typeSelects).forEach(([apiKey, select]) => {
         if (select) body.set(apiKey, select.value);
       });
-      if (auxLedPinSelect) {
-        body.set("aux_led_pin", auxLedPinSelect.value);
-      }
+      body.set("aux_led_pin", String(deriveAuxLedPinFromTypes()));
       if (auxLedCountInput) {
         body.set("aux_led_count", String(sanitizeAuxLedCount()));
       }
       const result = await window.PAApi.postForm("/api/config", body, { timeoutMs: 5000 });
       renderFeatures(result.data);
-      if (featureFeedback) {
-        featureFeedback.textContent = `Saved at ${new Date().toLocaleTimeString()}`;
-        featureFeedback.className = "feedback success";
-      }
+      const savedAt = new Date().toLocaleTimeString();
+      setFeatureFeedback(`Saved at ${savedAt}`, "success");
+      setSaveSummary(`✅ Saved at ${savedAt}`, "ok");
     } catch (error) {
       console.error("[setup] saveFeatures failed:", error);
-      if (featureFeedback) {
-        featureFeedback.textContent = window.PAApi.messageFor(error);
-        featureFeedback.className = "feedback error";
-      }
+      setFeatureFeedback(window.PAApi.messageFor(error), "error");
+      setSaveSummary("❌ Save failed", "error");
     } finally {
       setSavePending(false);
     }
@@ -225,28 +340,32 @@
     if (toggle.input) {
       toggle.input.addEventListener("change", () => {
         updateToggleStatus(key);
+        updateEnabledSummary();
         debouncedSave();
       });
     }
   });
 
-  Object.values(typeSelects).forEach((select) => {
+  Object.entries(typeSelects).forEach(([typeKey, select]) => {
     if (select) {
-      select.addEventListener("change", debouncedSave);
+      select.addEventListener("change", () => {
+        if (AUX_RGB_SELECT_KEYS.includes(typeKey)) {
+          enforceSingleRgbAux(typeKey);
+          updateAuxLedConfigVisibility();
+        }
+        syncAllSegmentedControls();
+        debouncedSave();
+      });
     }
   });
-  if (auxLedPinSelect) {
-    auxLedPinSelect.addEventListener("change", () => {
-      updateAuxLedConfigVisibility();
-      debouncedSave();
-    });
-  }
+
   if (auxLedCountInput) {
     auxLedCountInput.addEventListener("change", () => {
       sanitizeAuxLedCount();
       debouncedSave();
     });
   }
+
 
   // Reboot functionality
   const rebootButton = document.getElementById("reboot-button");
@@ -257,16 +376,10 @@
       return;
     }
     if (!window.PAApi) return;
-    if (rebootFeedback) {
-      rebootFeedback.textContent = "Sending reboot command...";
-      rebootFeedback.className = "feedback";
-    }
+    setFeedbackState(rebootFeedback, "Sending reboot command...");
     try {
       await window.PAApi.postForm("/api/reboot", {}, { timeoutMs: 5000 });
-      if (rebootFeedback) {
-        rebootFeedback.textContent = "Reboot command sent. Wait ~10 seconds and refresh...";
-        rebootFeedback.className = "feedback success";
-      }
+      setFeedbackState(rebootFeedback, "Reboot command sent. Wait ~10 seconds and refresh...", "success");
       // Start countdown
       let seconds = 12;
       const countdown = setInterval(() => {
@@ -282,10 +395,7 @@
       }, 1000);
     } catch (error) {
       console.error("[setup] handleReboot failed:", error);
-      if (rebootFeedback) {
-        rebootFeedback.textContent = window.PAApi.messageFor(error);
-        rebootFeedback.className = "feedback error";
-      }
+      setFeedbackState(rebootFeedback, window.PAApi.messageFor(error), "error");
     }
   };
 
@@ -296,10 +406,7 @@
   // --- Diagnostics: log level selector ---
   const saveLogLevel = async () => {
     if (!logLevelSelect || !window.PAApi) return;
-    if (diagFeedback) {
-      diagFeedback.textContent = "Saving...";
-      diagFeedback.className = "feedback";
-    }
+    setDiagFeedback("Saving...");
     try {
       const body = new URLSearchParams();
       body.set("logLevel", logLevelSelect.value);
@@ -307,16 +414,10 @@
       if (result.data?.system?.logLevel !== undefined) {
         logLevelSelect.value = String(result.data.system.logLevel);
       }
-      if (diagFeedback) {
-        diagFeedback.textContent = `Log level saved at ${new Date().toLocaleTimeString()}`;
-        diagFeedback.className = "feedback success";
-      }
+      setDiagFeedback(`Log level saved at ${new Date().toLocaleTimeString()}`, "success");
     } catch (error) {
       console.error("[setup] saveLogLevel failed:", error);
-      if (diagFeedback) {
-        diagFeedback.textContent = window.PAApi.messageFor(error);
-        diagFeedback.className = "feedback error";
-      }
+      setDiagFeedback(window.PAApi.messageFor(error), "error");
     }
   };
 
@@ -324,9 +425,11 @@
     logLevelSelect.addEventListener("change", saveLogLevel);
   }
 
+  initSegmentedTypeControls();
+  updateEnabledSummary();
   updateAuxLedConfigVisibility();
+  setSaveSummary("💾 Auto-save ready", "info");
   loadFeatures();
-
   // --- Serial connection status ---
   const serialS1 = document.getElementById("serial-s1-state");
   const serialS2 = document.getElementById("serial-s2-state");
@@ -452,10 +555,7 @@
     }
     renderAuxLedPreview(d);
 
-    if (serialStatusLine) {
-      serialStatusLine.textContent = `Updated ${new Date().toLocaleTimeString()}`;
-      serialStatusLine.className = "feedback success";
-    }
+    setFeedbackState(serialStatusLine, `Updated ${new Date().toLocaleTimeString()}`, "success");
   };
 
   const refreshSerialStatus = async () => {
@@ -465,10 +565,7 @@
       renderSerialStatus(result.data);
     } catch (error) {
       console.warn("[setup] refreshSerialStatus failed:", error);
-      if (serialStatusLine) {
-        serialStatusLine.textContent = "Status unavailable";
-        serialStatusLine.className = "feedback error";
-      }
+      setFeedbackState(serialStatusLine, "Status unavailable", "error");
     }
   };
 
