@@ -65,6 +65,10 @@ Follow [AGENTS.md](../AGENTS.md) for the full canonical list. Do not violate:
 - Ask concise multi-choice clarification questions only when ambiguity materially affects safety, correctness, architecture, or acceptance criteria.
 - For minor details, state assumptions and proceed.
 - Use non-blocking progress updates instead of repeated planning chatter.
+- **Use the tool's structured ask mechanism** (`ask_followup_question` or equivalent MCP
+  tool) for any question with discrete options — never emit lettered/numbered plain-text
+  option lists ("A:", "B:", "1.", "2.") that require the user to type a reply manually.
+  Structured questions render as native UI pickers; plain-text lists break the interaction.
 
 ### Subagent Delegation Mode
 

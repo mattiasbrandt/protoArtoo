@@ -82,6 +82,14 @@ Use AGENTS verification flow and classify status as one of:
 
 When hardware validation is deferred, explicitly state blockers and remaining checks.
 
+## Interaction and Clarification
+
+- Use `vscode_askQuestions` (or equivalent structured ask tool) for any question with
+  discrete options — never emit lettered/numbered plain-text option lists ("A:", "B:",
+  "1.", "2.") that require the user to type a reply manually. Structured questions
+  render as native VS Code UI pickers.
+- For minor/inferable details, state the assumption and proceed rather than asking.
+
 ## Subagent Orchestration
 
 - For non-trivial tasks, use planner-orchestrator mode:

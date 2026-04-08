@@ -235,6 +235,11 @@ Clarification policy:
 - Ask concise multi-choice questions only when ambiguity materially affects
   correctness/safety/design
 - For minor details, state assumptions and proceed
+- **Always use the tool's structured ask/questions mechanism** (e.g. `vscode_askQuestions`,
+  `ask_followup_question`, or equivalent) when posing choices to the user — never
+  print lettered/numbered option lists ("A:", "B:", "1.", "2.") in plain text and
+  expect a typed reply. Structured questions surface as native UI pickers; plain-text
+  lists force the user to type manually and break the interaction contract.
 
 ### Subagent Orchestration Policy
 
