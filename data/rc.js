@@ -73,9 +73,9 @@
     { token: 'aux1_toggle', label: 'AUX1 Toggle', group: 'Arms', description: 'Toggle aux 1 servo between open and closed', disabled: false, testable: true, safetyCritical: false },
     { token: 'aux2_toggle', label: 'AUX2 Toggle', group: 'Arms', description: 'Toggle aux 2 servo between open and closed', disabled: false, testable: true, safetyCritical: false },
     { token: 'aux3_toggle', label: 'AUX3 Toggle', group: 'Arms', description: 'Toggle aux 3 servo between open and closed', disabled: false, testable: true, safetyCritical: false },
-    { token: 'seq', label: 'Marcduino Sequence', group: 'Sequences', description: 'Trigger a raw numbered body sequence payload (typically SE30-SE36)', disabled: false, testable: true, safetyCritical: false },
+    { token: 'seq', label: 'Marcduino Sequence', group: 'Sequences', description: 'Trigger a raw numbered body sequence payload (typically SE30-SE36)', disabled: false, testable: false, safetyCritical: false },
     { token: 'dome_seq', label: 'Dome Sequence (Unavailable)', group: 'Sequences', description: 'Trigger a dome-side panel/light sequence by number', disabled: true, testable: false, safetyCritical: false },
-    { token: 'cmd', label: 'Marcduino Command', group: 'Command', description: 'Send a specific Marcduino command string to the dome', disabled: false, testable: true, safetyCritical: false },
+    { token: 'cmd', label: 'Marcduino Command', group: 'Command', description: 'Send a specific Marcduino command string to the dome', disabled: false, testable: false, safetyCritical: false },
     { token: 'sleep_toggle', label: 'Sleep Toggle', group: 'System', description: 'Toggle cosmetic sleep mode while keeping drive safety active', disabled: false, testable: true, safetyCritical: false },
     { token: 'sound_rand_general', label: 'Random General', group: 'Sound', description: 'Play one random track from configured general range', disabled: false, testable: true, safetyCritical: false },
     { token: 'sound_rand_chatty', label: 'Random Chatty', group: 'Sound', description: 'Play one random track from configured chatty range', disabled: false, testable: true, safetyCritical: false },
@@ -769,7 +769,7 @@
             <span class="rc-action-side">
               ${showSafetyPill ? '<span class="rc-action-safety-pill">⚠ Safety critical</span>' : ''}
               ${showTestButton ? `<button type="button" class="rc-action-test-btn" data-action-test="${escapeHtml(item.token)}"${inFlight ? ' disabled' : ''}>▶</button>` : ''}
-              <span class="rc-action-test-feedback${feedbackClass}">${escapeHtml(feedbackText || '')}</span>
+              <span class="rc-action-test-feedback${feedbackClass}" data-action-feedback="${escapeHtml(item.token)}">${escapeHtml(feedbackText || '')}</span>
             </span>
           </div>`;
         }).join('');
@@ -884,6 +884,21 @@
       if (picker) picker.scrollTop = actionPickerScrollTop;
     };
 
+    const syncActionTestUi = () => {
+      const inFlight = actionPickerInFlightToken !== null;
+      rcEditorContent.querySelectorAll('[data-action-test]').forEach((btn) => {
+        btn.disabled = inFlight;
+      });
+      rcEditorContent.querySelectorAll('[data-action-feedback]').forEach((node) => {
+        const token = node.dataset.actionFeedback;
+        const feedback = token && actionPickerFeedback && actionPickerFeedback.token === token
+          ? actionPickerFeedback
+          : null;
+        node.textContent = feedback ? feedback.text : '';
+        node.className = `rc-action-test-feedback${feedback ? ` ${feedback.kind || ''}` : ''}`;
+      });
+    };
+
     const collapseExpandedActionGroups = () => {
       rcEditorContent.querySelectorAll('[data-action-group]').forEach((groupNode) => {
         if (groupNode.open) groupNode.open = false;
@@ -899,6 +914,7 @@
       actionPickerFeedback = null;
       updateConditionalFields();
       refreshActionPickerSelectionUi();
+      syncActionTestUi();
       markEditorDirty();
       if (keepFocus) {
         const picker = rcEditorContent.querySelector('.rc-action-picker');
@@ -908,17 +924,24 @@
 
     const runActionTest = async (token) => {
       if (actionPickerInFlightToken) return;
+      const slotAtStart = selectedSlot;
       actionPickerInFlightToken = token;
       actionPickerFeedback = { token, kind: 'info', text: 'Testing...' };
-      renderEditor();
+      syncActionTestUi();
       try {
         await window.PAApi.postForm('/api/actions/test', { token }, { timeoutMs: 5000 });
+        if (selectedSlot !== slotAtStart) return;
         actionPickerFeedback = { token, kind: 'success', text: 'Dispatched' };
       } catch (error) {
+        if (selectedSlot !== slotAtStart) return;
         actionPickerFeedback = { token, kind: 'error', text: window.PAApi.messageFor(error) };
       } finally {
-        actionPickerInFlightToken = null;
-        renderEditor();
+        if (actionPickerInFlightToken === token) {
+          actionPickerInFlightToken = null;
+        }
+        if (selectedSlot === slotAtStart) {
+          syncActionTestUi();
+        }
       }
     };
 
@@ -1005,7 +1028,7 @@
 
     updateConditionalFields();
     refreshActionPickerSelectionUi();
-  };
+    syncActionTestUi();
 
   const updateSummaryMiniBar = () => {
     if (!rcSummaryBody || !rcSnapshot) return;

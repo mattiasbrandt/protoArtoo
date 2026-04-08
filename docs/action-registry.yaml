@@ -33,7 +33,7 @@
 ## Runtime action registry API notes:
 ## - GET /api/actions returns bindable actions with token + testability metadata.
 ## - `token` maps to robotActionIdToString() and is accepted by POST /api/actions/test.
-## - `testable` is false for analog-only actions and system.action.estop.
+## - `testable` is false for analog actions, payload-required actions, and system.action.estop.
 
 entries:
 # --- drive ---
@@ -1528,7 +1528,7 @@ entries:
 
 - name: rc.action.test-bindable
   display_name: Test Bindable Action
-  description: Dispatch a bindable action token through the RC trigger path for one-shot UI testing
+  description: Dispatch a token-only bindable action through the RC trigger path for one-shot UI testing
   domain: rc
   type: action
   marcduino_cmd: null

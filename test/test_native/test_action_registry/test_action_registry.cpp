@@ -97,6 +97,8 @@ void test_web_testable_action_logic() {
     TEST_ASSERT_FALSE(robotActionIsWebTestable(DOME_ACTION_SPEED));
     TEST_ASSERT_FALSE(robotActionIsWebTestable(DRIVE_ACTION_SPEED_LIMIT));
     TEST_ASSERT_FALSE(robotActionIsWebTestable(SYSTEM_ACTION_ESTOP));
+    TEST_ASSERT_FALSE(robotActionIsWebTestable(DOME_ACTION_MARCDUINO_SEQ));
+    TEST_ASSERT_FALSE(robotActionIsWebTestable(DOME_ACTION_MARCDUINO_CMD));
 
     TEST_ASSERT_TRUE(robotActionIsWebTestable(SERVO_ACTION_ARM1_TOGGLE));
     TEST_ASSERT_TRUE(robotActionIsWebTestable(SOUND_ACTION_RANDOM_GENERAL));
@@ -109,7 +111,7 @@ void test_action_test_guard_logic() {
                       evaluateActionTestGuard(SYSTEM_ACTION_ESTOP, false));
     TEST_ASSERT_EQUAL(ACTION_TEST_WEB_CONTROL_DISABLED,
                       evaluateActionTestGuard(SERVO_ACTION_ARM1_TOGGLE, false));
-    TEST_ASSERT_EQUAL(ACTION_TEST_ANALOG_ACTION_NOT_TESTABLE,
+    TEST_ASSERT_EQUAL(ACTION_TEST_ACTION_NOT_TESTABLE,
                       evaluateActionTestGuard(DRIVE_ACTION_SPEED, true));
     TEST_ASSERT_EQUAL(ACTION_TEST_ALLOWED,
                       evaluateActionTestGuard(SERVO_ACTION_ARM1_TOGGLE, true));

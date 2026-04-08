@@ -117,9 +117,9 @@ void registerActionsRoutes(AsyncWebServer& server) {
                 req->send(423, "application/json",
                           "{\"ok\":false,\"error\":\"web_control_disabled\"}");
                 return;
-            case ACTION_TEST_ANALOG_ACTION_NOT_TESTABLE:
+            case ACTION_TEST_ACTION_NOT_TESTABLE:
                 req->send(422, "application/json",
-                          "{\"ok\":false,\"error\":\"analog_action_not_testable\"}");
+                          "{\"ok\":false,\"error\":\"action_not_testable\"}");
                 return;
             case ACTION_TEST_ALLOWED:
             default:
