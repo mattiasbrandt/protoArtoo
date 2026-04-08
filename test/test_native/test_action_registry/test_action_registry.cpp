@@ -8,6 +8,7 @@
 #include <unity.h>
 
 #include "action_registry.h"
+#include "api_actions.h"
 #include <ArduinoJson.h>
 
 void setUp() {
@@ -90,6 +91,30 @@ void test_registry_contains_droid_sequence_actions() {
     }
 }
 
+void test_web_testable_action_logic() {
+    TEST_ASSERT_FALSE(robotActionIsWebTestable(DRIVE_ACTION_SPEED));
+    TEST_ASSERT_FALSE(robotActionIsWebTestable(DRIVE_ACTION_STEER));
+    TEST_ASSERT_FALSE(robotActionIsWebTestable(DOME_ACTION_SPEED));
+    TEST_ASSERT_FALSE(robotActionIsWebTestable(DRIVE_ACTION_SPEED_LIMIT));
+    TEST_ASSERT_FALSE(robotActionIsWebTestable(SYSTEM_ACTION_ESTOP));
+
+    TEST_ASSERT_TRUE(robotActionIsWebTestable(SERVO_ACTION_ARM1_TOGGLE));
+    TEST_ASSERT_TRUE(robotActionIsWebTestable(SOUND_ACTION_RANDOM_GENERAL));
+    TEST_ASSERT_TRUE(robotActionIsWebTestable(SYSTEM_ACTION_SLEEP_TOGGLE));
+    TEST_ASSERT_TRUE(robotActionIsWebTestable(DROID_SEQ_SCREAM));
+}
+
+void test_action_test_guard_logic() {
+    TEST_ASSERT_EQUAL(ACTION_TEST_SAFETY_CRITICAL_BLOCKED,
+                      evaluateActionTestGuard(SYSTEM_ACTION_ESTOP, false));
+    TEST_ASSERT_EQUAL(ACTION_TEST_WEB_CONTROL_DISABLED,
+                      evaluateActionTestGuard(SERVO_ACTION_ARM1_TOGGLE, false));
+    TEST_ASSERT_EQUAL(ACTION_TEST_ANALOG_ACTION_NOT_TESTABLE,
+                      evaluateActionTestGuard(DRIVE_ACTION_SPEED, true));
+    TEST_ASSERT_EQUAL(ACTION_TEST_ALLOWED,
+                      evaluateActionTestGuard(SERVO_ACTION_ARM1_TOGGLE, true));
+}
+
 void test_registry_json_payload_fits_budget() {
     JsonDocument doc;
     JsonArray arr = doc.to<JsonArray>();
@@ -103,12 +128,13 @@ void test_registry_json_payload_fits_budget() {
         obj["domain"] = e.domain;
         obj["description"] = e.description;
         obj["safety_critical"] = e.safety_critical;
+        obj["testable"] = robotActionIsWebTestable(e.id);
         obj["token"] = robotActionIdToString(e.id);
     }
 
     const size_t bytes = measureJson(doc);
     TEST_ASSERT_GREATER_THAN(0u, bytes);
-    TEST_ASSERT_LESS_THAN_MESSAGE(8192u, bytes,
+    TEST_ASSERT_LESS_THAN_MESSAGE(10240u, bytes,
                                   "GET /api/actions JSON payload exceeded expected budget");
 }
 
@@ -121,6 +147,8 @@ int main() {
     RUN_TEST(test_registry_no_none_entry);
     RUN_TEST(test_registry_contains_sound_category_actions);
     RUN_TEST(test_registry_contains_droid_sequence_actions);
+    RUN_TEST(test_web_testable_action_logic);
+    RUN_TEST(test_action_test_guard_logic);
     RUN_TEST(test_registry_json_payload_fits_budget);
 
     return UNITY_END();

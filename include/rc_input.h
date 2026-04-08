@@ -7,6 +7,8 @@
 // =============================================================================
 #pragma once
 
+#include "rc_mapping.h"
+
 // -----------------------------------------------------------------------------
 // rcInputTask()
 // FreeRTOS task function — pin to Core 1 via xTaskCreatePinnedToCore().
@@ -14,3 +16,7 @@
 // Implements Layers 1 (hardware failsafe) and 2 (software watchdog) failsafe.
 // -----------------------------------------------------------------------------
 void rcInputTask(void* pvParameters);
+
+// Test-dispatch helper used by web action testing endpoint.
+// Routes through the same trigger-action dispatch path as RC input runtime.
+void dispatchRcTriggerActionTest(RobotActionId target, const char* payload, bool pressed);

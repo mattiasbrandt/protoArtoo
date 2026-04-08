@@ -573,6 +573,10 @@ static void processTriggerAction(RobotActionId target, const char* payload, bool
     }
 }
 
+void dispatchRcTriggerActionTest(RobotActionId target, const char* payload, bool pressed) {
+    processTriggerAction(target, payload, pressed);
+}
+
 static void processTier2Trigger(const RcTriggerBinding& binding, int rawValue,
                                 TriggerRuntimeState& state) {
     if (binding.target == ROBOT_ACTION_NONE || binding.source == RC_BINDING_NONE) {

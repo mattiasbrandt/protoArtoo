@@ -29,6 +29,11 @@
 # NVS keys are NOT renamed to match registry names. The registry documents the mapping
 # between a config entry's canonical name and its NVS key in the `nvs_key` field.
 # For entries with multiple NVS keys, `nvs_keys` (sequence) is used instead.
+#
+## Runtime action registry API notes:
+## - GET /api/actions returns bindable actions with token + testability metadata.
+## - `token` maps to robotActionIdToString() and is accepted by POST /api/actions/test.
+## - `testable` is false for analog-only actions and system.action.estop.
 
 entries:
 # --- drive ---
@@ -1519,6 +1524,25 @@ entries:
   sources: [ web_api ]
   safety_critical: false
   requires_web_control: false
+  nvs_key: null
+
+- name: rc.action.test-bindable
+  display_name: Test Bindable Action
+  description: Dispatch a bindable action token through the RC trigger path for one-shot UI testing
+  domain: rc
+  type: action
+  marcduino_cmd: null
+  api_path: /api/actions/test
+  sse_event: null
+  cpp_enum: null
+  cpp_file: null
+  sources: [ web_api ]
+  safety_critical: false
+  requires_web_control: true
+  params:
+  - name: token
+    type: string
+    required: true
   nvs_key: null
 
 - name: rc.config.mode
