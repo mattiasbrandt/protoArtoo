@@ -171,10 +171,10 @@
     const dome = data?.dome || {};
     const components = data?.components || {};
 
-    if (domeNeutral) domeNeutral.value = dome.neutralUs;
-    if (domeMinPulse) domeMinPulse.value = dome.minPulseUs;
-    if (domeMaxPulse) domeMaxPulse.value = dome.maxPulseUs;
-    if (domeSpeedLimit) domeSpeedLimit.value = dome.speedLimitPct;
+    if (domeNeutral && dome.neutralUs !== undefined) domeNeutral.value = dome.neutralUs;
+    if (domeMinPulse && dome.minPulseUs !== undefined) domeMinPulse.value = dome.minPulseUs;
+    if (domeMaxPulse && dome.maxPulseUs !== undefined) domeMaxPulse.value = dome.maxPulseUs;
+    if (domeSpeedLimit && dome.speedLimitPct !== undefined) domeSpeedLimit.value = dome.speedLimitPct;
 
     setDomeHardwareEnabled(Boolean(components.dome?.enabled));
   };
@@ -195,29 +195,30 @@
 
   const clampInt = (value, min, max) => Math.max(min, Math.min(max, value));
 
-  const parseEscField = (input, fallback, min, max, label) => {
-    const raw = Number.parseInt(String(input?.value ?? "").trim(), 10);
-    const fallbackValue = Number.parseInt(String(fallback), 10);
-    const parsed = Number.isFinite(raw) ? raw : fallbackValue;
+  const parseEscField = (input, min, max, label) => {
+    const rawText = String(input?.value ?? "").trim();
+    if (!rawText) {
+      return { error: `${label} is required.` };
+    }
+    const parsed = Number.parseInt(rawText, 10);
     if (!Number.isFinite(parsed)) {
       return { error: `${label} must be a whole number.` };
     }
     const clamped = clampInt(parsed, min, max);
-    if (input) input.value = String(clamped);
     return { value: clamped };
   };
 
   const validateEscConfig = () => {
-    const neutral = parseEscField(domeNeutral, 1500, 1000, 2000, "Neutral pulse");
+    const neutral = parseEscField(domeNeutral, 1000, 2000, "Neutral pulse");
     if (neutral.error) return { ok: false, error: neutral.error };
 
-    const minPulse = parseEscField(domeMinPulse, 1000, 1000, 2000, "Minimum pulse");
+    const minPulse = parseEscField(domeMinPulse, 1000, 2000, "Minimum pulse");
     if (minPulse.error) return { ok: false, error: minPulse.error };
 
-    const maxPulse = parseEscField(domeMaxPulse, 2000, 1000, 2000, "Maximum pulse");
+    const maxPulse = parseEscField(domeMaxPulse, 1000, 2000, "Maximum pulse");
     if (maxPulse.error) return { ok: false, error: maxPulse.error };
 
-    const speedLimit = parseEscField(domeSpeedLimit, 100, 0, 100, "Speed limit");
+    const speedLimit = parseEscField(domeSpeedLimit, 0, 100, "Speed limit");
     if (speedLimit.error) return { ok: false, error: speedLimit.error };
 
     if (minPulse.value > maxPulse.value) {

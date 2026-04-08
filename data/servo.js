@@ -58,6 +58,13 @@
     };
   };
 
+
+  const escapeHtml = (value) => String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#39;");
   // -------------------------------------------------------------------------
   // Servo command helpers
   // -------------------------------------------------------------------------
@@ -115,7 +122,7 @@
     if (armControlsContainer && ids !== renderedArmIds) {
       renderedArmIds = ids;
       armControlsContainer.innerHTML = enabled.map((arm) => {
-        const detail = payload[arm.id]?.detail || "";
+        const detail = escapeHtml(payload[arm.id]?.detail || "");
         return `
           <div class="arm-control-row" id="row-${arm.id}">
             <span class="arm-name">${arm.name}</span>
@@ -159,7 +166,7 @@
       renderedAuxIds = ids;
       auxControlsContainer.innerHTML = enabled.map((aux) => {
         const type = auxTypes[aux.id] || "none";
-        const detail = payload[aux.id]?.detail || "";
+        const detail = escapeHtml(payload[aux.id]?.detail || "");
         if (type === "rgb") {
           return `
             <div class="arm-control-row" id="row-${aux.id}">

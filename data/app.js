@@ -81,6 +81,13 @@
     info: "pill-info",
   };
 
+  const escapeHtml = (value) => String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+
   const showFeedback = (el, message, level = "") => {
     if (!el) return;
     if (!el.dataset.baseClass) {
@@ -141,8 +148,11 @@
 
     setIndicator("h-wifi", (payload.wifiConnected || payload.wifiClientConnected) ? "ok" : "warn");
     setIndicator("h-fs", payload.littleFsReady ? "ok" : "fail");
-    setIndicator("h-heap", payload.heapFree > 120000 ? "ok" : payload.heapFree > 80000 ? "warn" : "fail");
-
+    const heapBytes = Number(payload.heapFree);
+    const heapKnown = Number.isFinite(heapBytes) && heapBytes >= 0;
+    setIndicator("h-heap", heapKnown
+      ? (heapBytes > 120000 ? "ok" : heapBytes > 80000 ? "warn" : "fail")
+      : "off");
     if (payload.dome_link) {
       const s = payload.dome_link.state;
       setIndicator(
@@ -159,11 +169,14 @@
 
     if (!healthSummary) return;
 
-    const heapFreeKb = Math.round(payload.heapFree / 1024);
+    const heapFreeKb = heapKnown ? Math.round(heapBytes / 1024) : null;
 
     let heapLabel = "Healthy ✅";
     let heapState = "ok";
-    if (heapFreeKb < 80) {
+    if (!heapKnown) {
+      heapLabel = "Unknown ⚠️";
+      heapState = "warn";
+    } else if (heapFreeKb < 80) {
       heapLabel = "Critical ❌";
       heapState = "error";
     } else if (heapFreeKb < 120) {
@@ -190,7 +203,7 @@
     }
 
     healthSummary.innerHTML =
-      `<div class="health-summary-row">Memory: <span class="health-summary-value is-${heapState}">${heapFreeKb} KB ${heapLabel}</span></div>` +
+      `<div class="health-summary-row">Memory: <span class="health-summary-value is-${heapState}">${heapKnown ? `${heapFreeKb} KB ${heapLabel}` : heapLabel}</span></div>` +
       `<div class="health-summary-row">WiFi: <span class="health-summary-value is-${wifiState}">${wifiLabel}</span></div>` +
       `<div class="health-summary-note">Detailed memory headroom telemetry is available on Setup → Diagnostics.</div>`;
   };
@@ -214,11 +227,14 @@
         state = entry.state || "enabled";
         detail = entry.detail || "✅ Enabled";
       }
+      const stateText = String(state).replace(/_/g, " ");
+      const safeState = escapeHtml(stateText);
+      const safeDetail = escapeHtml(detail);
       return `
         <div class="status-item">
           <dt>${icon} ${label}</dt>
-          <dd>${state.replace(/_/g, " ")}</dd>
-          <div class="desc mt-6">${detail}</div>
+          <dd>${safeState}</dd>
+          <div class="desc mt-6">${safeDetail}</div>
         </div>`;
     }).join("");
   };

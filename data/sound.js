@@ -97,6 +97,13 @@
   const SOUND_VIEW_MODE_ADVANCED = "advanced";
   const SOUND_VIEW_MODE_COMPACT = "compact";
 
+  const SOUND_UI_ALWAYS_ENABLED_IDS = new Set([
+    "sound-mode-advanced",
+    "sound-mode-compact",
+    "named-sound-filter",
+    "btn-poll-status",
+  ]);
+  const feedbackTimers = new WeakMap();
   const MSG = {
     categoryRangeInvalid: "Use 0/0 or 1–999 with Min ≤ Max",
     valuesMustBe1To999: "Values must be 1–999",
@@ -275,13 +282,22 @@
 
   const showFeedback = (el, msg, ok) => {
     if (!el) return;
+    const priorTimer = feedbackTimers.get(el);
+    if (priorTimer) {
+      window.clearTimeout(priorTimer);
+      feedbackTimers.delete(el);
+    }
+    if (!el.dataset.baseClass) {
+      el.dataset.baseClass = el.className || "feedback";
+    }
     el.textContent = msg;
-    el.className = `feedback ${ok ? "success" : "error"}`;
-    window.setTimeout(() => {
-      if (!el) return;
+    el.className = `${el.dataset.baseClass} ${ok ? "success" : "error"}`;
+    const timer = window.setTimeout(() => {
       el.textContent = "";
-      el.className = "feedback";
+      el.className = el.dataset.baseClass || "feedback";
+      feedbackTimers.delete(el);
     }, 2500);
+    feedbackTimers.set(el, timer);
   };
 
   const getApiErrorMessage = (error) => window.PAApi?.messageFor(error) || String(error);
@@ -346,6 +362,7 @@
       '.card:not(#sound-disabled-card) button, .card:not(#sound-disabled-card) input, .card:not(#sound-disabled-card) select, .card:not(#sound-disabled-card) textarea'
     );
     controls.forEach((control) => {
+      if (SOUND_UI_ALWAYS_ENABLED_IDS.has(control.id)) return;
       control.disabled = !enabled;
       if (control.tagName === "BUTTON") {
         control.setAttribute("aria-disabled", enabled ? "false" : "true");

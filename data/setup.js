@@ -34,6 +34,7 @@
   const AUX_RGB_SELECT_KEYS = ["aux1Type", "aux2Type", "aux3Type"];
   const AUX_RGB_PIN_BY_KEY = { aux1Type: 1, aux2Type: 2, aux3Type: 3 };
   const AUX_RGB_LABEL_BY_KEY = { aux1Type: "AUX1", aux2Type: "AUX2", aux3Type: "AUX3" };
+  const AUX_RGB_TOGGLE_KEY_BY_TYPE = { aux1Type: "aux1", aux2Type: "aux2", aux3Type: "aux3" };
 
   const featureFeedback = document.getElementById("feature-feedback");
   const logLevelSelect = document.getElementById("log-level-select");
@@ -46,6 +47,8 @@
   const auxLedPreviewNote = document.getElementById("aux-led-preview-note");
   const setupEnabledSummary = document.getElementById("setup-enabled-summary");
   const setupSaveSummary = document.getElementById("setup-save-summary");
+  const rebootButton = document.getElementById("reboot-button");
+  const rebootFeedback = document.getElementById("reboot-feedback");
 
   // Map from API payload key to featureToggles key
   const TOGGLE_KEY_MAP = {
@@ -66,6 +69,8 @@
     enableS3DomeCtrl:  "s3DomeCtrl",
   };
 
+  let saveInFlight = false;
+  let saveQueued = false;
   // Auto-save state
   let saveTimeout = null;
 
@@ -155,7 +160,11 @@
     });
   };
 
-  const getRgbAuxKeys = () => AUX_RGB_SELECT_KEYS.filter((key) => typeSelects[key]?.value === "rgb");
+  const getRgbAuxKeys = () => AUX_RGB_SELECT_KEYS.filter((key) => {
+    const toggleKey = AUX_RGB_TOGGLE_KEY_BY_TYPE[key];
+    const enabled = Boolean(featureToggles[toggleKey]?.input?.checked);
+    return enabled && typeSelects[key]?.value === "rgb";
+  });
 
   const deriveAuxLedPinFromTypes = () => {
     const rgbKey = getRgbAuxKeys()[0];
@@ -298,6 +307,12 @@
   // Auto-save function
   const saveFeatures = async () => {
     if (!window.PAApi) return;
+    if (saveInFlight) {
+      saveQueued = true;
+      return;
+    }
+
+    saveInFlight = true;
     setFeatureFeedback("Saving...");
     try {
       const body = new URLSearchParams();
@@ -324,6 +339,12 @@
       setFeatureFeedback(window.PAApi.messageFor(error), "error");
       setSaveSummary("❌ Save failed", "error");
     } finally {
+      saveInFlight = false;
+      if (saveQueued) {
+        saveQueued = false;
+        saveFeatures();
+        return;
+      }
       setSavePending(false);
     }
   };
@@ -341,6 +362,9 @@
       toggle.input.addEventListener("change", () => {
         updateToggleStatus(key);
         updateEnabledSummary();
+        if (["aux1", "aux2", "aux3"].includes(key)) {
+          updateAuxLedConfigVisibility();
+        }
         debouncedSave();
       });
     }
@@ -368,8 +392,6 @@
 
 
   // Reboot functionality
-  const rebootButton = document.getElementById("reboot-button");
-  const rebootFeedback = document.getElementById("reboot-feedback");
 
   const handleReboot = async () => {
     if (!confirm("Reboot the controller? The web interface will be unavailable for about 10 seconds.")) {

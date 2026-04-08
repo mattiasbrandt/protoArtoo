@@ -11,7 +11,8 @@
     return;
   }
 
-  const waitForReconnect = (feedbackEl, statusEl) => {
+  let uploadInProgress = false;
+  const waitForReconnect = (feedbackEl, statusEl, onTimeout) => {
     let attempts = 0;
     const MAX_ATTEMPTS = 30;
     const POLL_MS = 2000;
@@ -44,6 +45,7 @@
     const schedule = () => {
       if (attempts >= MAX_ATTEMPTS) {
         if (statusEl) statusEl.textContent = "Device did not reconnect. Refresh manually.";
+        if (typeof onTimeout === "function") onTimeout();
         return;
       }
       window.setTimeout(poll, POLL_MS);
@@ -51,11 +53,22 @@
 
     if (statusEl) statusEl.textContent = "Waiting for device to reboot…";
     window.setTimeout(poll, INITIAL_DELAY_MS);
+
+  const setUploadBusy = (busy) => {
+    uploadInProgress = busy;
+    uploadButton.disabled = busy;
+    rebootButton.disabled = busy;
+    if (uploadFsButton) uploadFsButton.disabled = busy;
+  };
   };
 
   const postReboot = async () => {
     if (!window.PAApi) {
       feedback.textContent = "API helper unavailable";
+      return;
+    }
+    if (uploadInProgress) {
+      feedback.textContent = "Upload in progress — reboot is temporarily blocked.";
       return;
     }
     feedback.textContent = "Requesting reboot...";
@@ -73,13 +86,24 @@
       feedback.textContent = "Select a .bin file first.";
       return;
     }
+    if (uploadInProgress) {
+      feedback.textContent = "Another upload is already in progress.";
+      return;
+    }
 
-    progressWrap.style.display = "block";
+    const formData = new FormData();
+    formData.append("firmware", file, file.name);
+    if (!confirm("Upload firmware? Keep power connected during the update.")) {
+      feedback.textContent = "Firmware upload canceled.";
+      return;
+    }
+
+    progressWrap.classList.remove("hidden");
     progressBar.style.width = "0%";
     progressStatus.textContent = "Uploading...";
     feedback.textContent = `Uploading ${file.name}...`;
 
-    uploadButton.disabled = true;
+    setUploadBusy(true);
     const xhr = new XMLHttpRequest();
     xhr.open("POST", "/upload/firmware");
 
@@ -93,30 +117,24 @@
     };
 
     xhr.onload = () => {
-      uploadButton.disabled = false;
       if (xhr.status === 200) {
         progressBar.style.width = "100%";
-        waitForReconnect(feedback, progressStatus);
+        waitForReconnect(feedback, progressStatus, () => setUploadBusy(false));
       } else {
+        setUploadBusy(false);
         progressStatus.textContent = "Upload failed";
         feedback.textContent = xhr.responseText || `Upload failed (HTTP ${xhr.status}).`;
       }
     };
 
     xhr.onerror = () => {
-      uploadButton.disabled = false;
+      setUploadBusy(false);
       progressStatus.textContent = "Upload failed";
       feedback.textContent = "Upload error.";
       progressBar.style.width = "0%";
-      progressWrap.style.display = "none";
+      progressWrap.classList.add("hidden");
     };
 
-    const formData = new FormData();
-    formData.append("firmware", file, file.name);
-    if (!confirm("Upload firmware? Keep power connected during the update.")) {
-      uploadButton.disabled = false;
-      return;
-    }
     xhr.send(formData);
   };
 
@@ -133,13 +151,24 @@
       feedback.textContent = "Select a filesystem .bin file first.";
       return;
     }
+    if (uploadInProgress) {
+      feedback.textContent = "Another upload is already in progress.";
+      return;
+    }
 
-    if (fsProgressWrap) fsProgressWrap.style.display = "block";
+    const formData = new FormData();
+    formData.append("filesystem", file, file.name);
+    if (!confirm("Upload filesystem? Keep power connected during the update.")) {
+      feedback.textContent = "Filesystem upload canceled.";
+      return;
+    }
+
+    if (fsProgressWrap) fsProgressWrap.classList.remove("hidden");
     if (fsProgressBar) fsProgressBar.style.width = "0%";
     if (fsProgressStatus) fsProgressStatus.textContent = "Uploading...";
     feedback.textContent = `Uploading filesystem ${file.name}...`;
 
-    if (uploadFsButton) uploadFsButton.disabled = true;
+    setUploadBusy(true);
     const xhr = new XMLHttpRequest();
     xhr.open("POST", "/upload/filesystem");
 
@@ -151,30 +180,24 @@
     };
 
     xhr.onload = () => {
-      if (uploadFsButton) uploadFsButton.disabled = false;
       if (xhr.status === 200) {
         if (fsProgressBar) fsProgressBar.style.width = "100%";
-        waitForReconnect(feedback, fsProgressStatus);
+        waitForReconnect(feedback, fsProgressStatus, () => setUploadBusy(false));
       } else {
+        setUploadBusy(false);
         if (fsProgressStatus) fsProgressStatus.textContent = "Upload failed";
         feedback.textContent = xhr.responseText || `Filesystem upload failed (HTTP ${xhr.status}).`;
       }
     };
 
     xhr.onerror = () => {
-      if (uploadFsButton) uploadFsButton.disabled = false;
+      setUploadBusy(false);
       if (fsProgressStatus) fsProgressStatus.textContent = "Upload failed";
       feedback.textContent = "Filesystem upload error.";
       if (fsProgressBar) fsProgressBar.style.width = "0%";
-      if (fsProgressWrap) fsProgressWrap.style.display = "none";
+      if (fsProgressWrap) fsProgressWrap.classList.add("hidden");
     };
 
-    const formData = new FormData();
-    formData.append("filesystem", file, file.name);
-    if (!confirm("Upload filesystem? Keep power connected during the update.")) {
-      if (uploadFsButton) uploadFsButton.disabled = false;
-      return;
-    }
     xhr.send(formData);
   };
 

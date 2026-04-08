@@ -1516,9 +1516,9 @@
     const formFields = rcEditorContent.querySelectorAll('[data-field]');
     const binding = { ...DEFAULT_BINDING };
 
-    formFields.forEach(field => {
+    formFields.forEach((field) => {
       const fieldName = field.dataset.field;
-      if (fieldName === "estop-confirm") {
+      if (fieldName === "estop-confirm" || fieldName === "payload") {
         return;
       }
 
@@ -1532,6 +1532,11 @@
         binding[fieldName] = Number.parseInt(field.value, 10) || 0;
       }
     });
+
+    const activePayloadField = rcEditorContent.querySelector(
+      `.rc-editor-cond[data-cond="${binding.target}"] [data-field="payload"]`,
+    );
+    binding.payload = activePayloadField ? activePayloadField.value : "";
 
     const allowedSources = SOURCE_OPTIONS[mode] || SOURCE_OPTIONS.standard_pwm;
     if (!allowedSources.includes(binding.source)) {
@@ -1709,7 +1714,8 @@
   setRcDebugMode(true).catch(err => console.error("[RC] Debug mode init failed:", err));
 
   window.addEventListener("beforeunload", () => {
-    navigator.sendBeacon("/api/rc/debug", JSON.stringify({ enabled: false }));
+    const body = new Blob([JSON.stringify({ enabled: false })], { type: "application/json" });
+    navigator.sendBeacon("/api/rc/debug", body);
   });
 
   document.addEventListener("visibilitychange", () => {

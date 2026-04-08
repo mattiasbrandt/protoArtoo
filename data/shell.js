@@ -116,13 +116,11 @@
 
   if (window.PAStatusStream?.isSupported()) {
     const connStatus = document.getElementById('conn-status');
-    const dotEl = connStatus?.querySelector('.dot');
     const textEl = connStatus?.querySelector('div');
 
     window.PAStatusStream.subscribe((eventType) => {
       if (!connStatus) return;
       if (eventType === 'status') {
-        if (dotEl) { dotEl.className = 'dot green'; }
         if (textEl) { textEl.innerHTML = `<span class="dot green"></span>${cfg.connectedText || cfg.statusText}`; }
       } else if (eventType === 'stream_error') {
         if (textEl) { textEl.innerHTML = `<span class="dot warn"></span>Connection lost — retrying…`; }

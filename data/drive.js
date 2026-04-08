@@ -188,24 +188,37 @@
   };
 
   const renderHoverboard = (hb) => {
-    if (!hb) {
+    const batteryV = Number(hb?.batteryV);
+    const boardTempC = Number(hb?.boardTempC);
+    const speedR = Number(hb?.speedR);
+    const speedL = Number(hb?.speedL);
+    const currentL = Number(hb?.currentL);
+    const currentR = Number(hb?.currentR);
+
+    const hasTelemetry = Number.isFinite(batteryV) && Number.isFinite(boardTempC) &&
+      Number.isFinite(speedR) && Number.isFinite(speedL);
+    if (!hasTelemetry) {
       if (hbNoData) {
         hbNoData.textContent = driveHardwareEnabled
-          ? "Waiting for first feedback frame\u2026"
-          : "Hoverboard not enabled \u2014 enable S1 in Setup.";
+          ? "Waiting for complete hoverboard telemetry…"
+          : "Hoverboard not enabled — enable S1 in Setup.";
         hbNoData.style.display = "";
       }
       if (hbDataGrid) hbDataGrid.style.display = "none";
       return;
     }
-    if (hbNoData)   hbNoData.style.display   = "none";
+
+    if (hbNoData) hbNoData.style.display = "none";
     if (hbDataGrid) hbDataGrid.style.display = "";
-    if (hbBattery)   hbBattery.textContent   = `${hb.batteryV.toFixed(1)} V`;
-    if (hbBoardTemp) hbBoardTemp.textContent = `${hb.boardTempC.toFixed(1)} \u00b0C`;
-    if (hbSpeed)     hbSpeed.textContent     = `R\u00a0${hb.speedR}\u00a0/\u00a0L\u00a0${hb.speedL} RPM`;
-    const hasCurrent = Math.abs(hb.currentL) > 0.01 || Math.abs(hb.currentR) > 0.01;
+    if (hbBattery) hbBattery.textContent = `${batteryV.toFixed(1)} V`;
+    if (hbBoardTemp) hbBoardTemp.textContent = `${boardTempC.toFixed(1)} °C`;
+    if (hbSpeed) hbSpeed.textContent = `R ${Math.round(speedR)} / L ${Math.round(speedL)} RPM`;
+
+    const safeCurrentL = Number.isFinite(currentL) ? currentL : 0;
+    const safeCurrentR = Number.isFinite(currentR) ? currentR : 0;
+    const hasCurrent = Math.abs(safeCurrentL) > 0.01 || Math.abs(safeCurrentR) > 0.01;
     if (hbCurrentRow) hbCurrentRow.style.display = hasCurrent ? "" : "none";
-    if (hbCurrent)    hbCurrent.textContent = `L\u00a0${hb.currentL.toFixed(1)}\u00a0A\u00a0/\u00a0R\u00a0${hb.currentR.toFixed(1)}\u00a0A`;
+    if (hbCurrent) hbCurrent.textContent = `L ${safeCurrentL.toFixed(1)} A / R ${safeCurrentR.toFixed(1)} A`;
   };
 
   const renderStatus = (payload) => {
@@ -214,9 +227,15 @@
     if (webControlState) webControlState.textContent = payload.webControlEnabled ? "✅ Enabled" : "⏸️ Disabled";
     webControlEnabled = !!payload.webControlEnabled;
     updateDriveControlsEnabled();
-    if (failsafeSource) failsafeSource.textContent = String(payload.failsafeSource);
-    if (driveOutput) driveOutput.textContent = `${payload.driveSpeed} / ${payload.driveSteer}`;
-    if (speedLimitDisplay) speedLimitDisplay.textContent = Number(payload.speedLimitScale).toFixed(3);
+    if (failsafeSource) failsafeSource.textContent = String(payload.failsafeSource ?? "--");
+    const driveSpeed = Number(payload.driveSpeed);
+    const driveSteer = Number(payload.driveSteer);
+    if (driveOutput) driveOutput.textContent =
+      `${Number.isFinite(driveSpeed) ? Math.round(driveSpeed) : "--"} / ${Number.isFinite(driveSteer) ? Math.round(driveSteer) : "--"}`;
+    const speedLimitScale = Number(payload.speedLimitScale);
+    if (speedLimitDisplay) speedLimitDisplay.textContent = Number.isFinite(speedLimitScale)
+      ? speedLimitScale.toFixed(3)
+      : "--";
     renderArmControls(payload);
     renderHoverboard(payload.hoverboard);
   };
