@@ -91,6 +91,12 @@ The canonical MemPalace protocol is defined in `AGENTS.md` under
   exact current source of truth (code, config, task spec).
 - `hall_facts` = confirmed design decisions; `hall_discoveries` = notable findings;
   `hall_events` = session milestones; `hall_preferences` = operator preferences.
+- After `mempalace_status`, call `mempalace_list_agents` to discover available
+  specialist agents. If one exists for the domain being worked on, read its
+  recent diary (`mempalace_diary_read("<agent>", last_n=10)`) before starting
+  and write a AAAK diary entry (`mempalace_diary_write`) after significant
+  domain work completes. Agent definitions live in `~/.mempalace/agents/` —
+  not in `CLAUDE.md`.
 
 ### Hardware and Tooling Reminders
 

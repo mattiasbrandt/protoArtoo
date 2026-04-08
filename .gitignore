@@ -47,6 +47,7 @@ task.md
 .claude/*
 !.claude/CLAUDE.md
 .clangd
+.omp/mcp.json
 
 # Python/virtualenv (if using scripts or tools)
 __pycache__/

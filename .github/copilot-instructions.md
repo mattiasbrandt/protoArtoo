@@ -99,5 +99,9 @@ GitHub Copilot does not currently support MCP tool calls, so this is advisory:
   project are stored in the MemPalace palace. When another agent (Claude, Cursor)
   references prior context, it is retrieving from MemPalace — treat those results
   as authoritative session history.
+- Specialist agents with per-domain diaries may exist for this project
+  (`~/.mempalace/agents/`). When another agent retrieves diary context via
+  `mempalace_diary_read`, treat those entries as authoritative domain history.
+  Agent role definitions belong in the palace, not in this file.
 - The canonical memory protocol is in `AGENTS.md` under `## MemPalace Memory Protocol`.
 - Do not store memory content in this file — the palace is the memory layer.

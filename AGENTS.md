@@ -89,10 +89,27 @@ The MCP server exposes 19 tools. Agents with MCP access MUST follow this protoco
 - Use `mempalace_kg_timeline` to reconstruct the history of a component or
   decision when debugging a regression.
 
+### Specialist agents
+
+MemPalace supports specialist agents — each with its own wing and diary in the
+palace. Agent definitions live in `~/.mempalace/agents/`; do not embed agent
+role or focus definitions in `AGENTS.md` or `CLAUDE.md` — the palace is the
+agent memory layer.
+
+- Call `mempalace_list_agents` after `mempalace_status` to discover available
+  specialist agents.
+- If a relevant agent exists for the domain being worked on (e.g. a reviewer,
+  architect, or ops agent), read its recent diary before starting:
+  `mempalace_diary_read("<agent_name>", last_n=10)`.
+- After significant domain work, write a concise AAAK diary entry:
+  `mempalace_diary_write("<agent_name>", "<aaak_entry>")`.
+- Diary entries are compressed in AAAK — keep them structured and entity-coded
+  per the AAAK spec from `mempalace_status`.
+
 ### What NOT to do
 
-- Do not store MemPalace facts in `AGENTS.md`, `CLAUDE.md`, or
-  `copilot-instructions.md` — the palace is the memory layer.
+- Do not store MemPalace facts or agent definitions in `AGENTS.md`, `CLAUDE.md`,
+  or `copilot-instructions.md` — the palace is the memory layer.
 - Do not call `mempalace_search` for facts that are clearly in the current
   session context — this wastes tokens and latency.
 - Do not use MemPalace as a substitute for reading the actual source files;
