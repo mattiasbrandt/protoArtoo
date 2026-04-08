@@ -64,9 +64,19 @@
       <div class="desc">Open <a class="setup-link" href="/setup.html">Setup</a> and enable <strong>S2 — Sound</strong> to restore sound controls.</div>
     </div>
 
-    <div class="card">
-      <h3>🔊 Global Controls</h3>
+    <div class="card sound-global-controls">
+      <div class="sound-global-head">
+        <h3>🔊 Global Controls</h3>
+        <div class="sound-mode-inline">
+          <span class="desc">View</span>
+          <div class="sound-view-toggle sound-view-toggle-pill" role="group" aria-label="Sound workspace mode">
+            <button class="btn accent" id="sound-mode-advanced" type="button" aria-pressed="true">Advanced</button>
+            <button class="btn" id="sound-mode-compact" type="button" aria-pressed="false">Compact</button>
+          </div>
+        </div>
+      </div>
       <div class="desc">Volume and playback state apply to the active sound module.</div>
+      <div id="sound-mode-feedback" class="desc mt-8">Advanced mode active.</div>
 
       <div class="mt-12">
         <label class="form-label" for="vol-slider">Volume (0–30)</label>
@@ -88,16 +98,6 @@
       </div>
 
       <div id="global-feedback" class="feedback mt-8" role="status" aria-live="polite" aria-atomic="true"></div>
-    </div>
-
-    <div class="card">
-      <h3>🧭 Workspace Mode</h3>
-      <div class="desc">Advanced keeps full editing visible (recommended for desktop). Compact hides advanced tuning cards for quick operation.</div>
-      <div class="sound-view-toggle mt-12" role="group" aria-label="Sound workspace mode">
-        <button class="btn accent" id="sound-mode-advanced" type="button" aria-pressed="true">Advanced</button>
-        <button class="btn" id="sound-mode-compact" type="button" aria-pressed="false">Compact</button>
-      </div>
-      <div id="sound-mode-feedback" class="desc mt-8">Advanced mode active.</div>
     </div>
 
 
