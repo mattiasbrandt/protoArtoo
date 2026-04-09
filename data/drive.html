@@ -34,6 +34,27 @@
         </button>
       </div>
       <div id="control-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true">No command sent yet.</div>
+      <div class="drive-preset-section mt-16" aria-label="Speed preset controls">
+        <h4 class="drive-preset-heading">🚦 Speed Preset</h4>
+        <div class="desc">Choose a drive speed profile for one-tap limit switching.</div>
+        <div class="rc-mode-grid drive-preset-grid mt-12">
+          <button class="rc-mode-card drive-preset-card preset-btn" data-speed-preset="slow" type="button" aria-label="Apply slow speed preset" aria-pressed="false">
+            <div class="rc-mode-icon" aria-hidden="true">🐌</div>
+            <div class="rc-mode-title">Slow</div>
+            <div class="rc-mode-desc">Precision / indoor pace</div>
+          </button>
+          <button class="rc-mode-card drive-preset-card preset-btn" data-speed-preset="normal" type="button" aria-label="Apply normal speed preset" aria-pressed="false">
+            <div class="rc-mode-title">Normal</div>
+            <div class="rc-mode-desc">Balanced default profile</div>
+          </button>
+          <button class="rc-mode-card drive-preset-card preset-btn" data-speed-preset="turbo" type="button" aria-label="Apply turbo speed preset" aria-pressed="false">
+            <div class="rc-mode-icon" aria-hidden="true">⚡</div>
+            <div class="rc-mode-title">Turbo</div>
+            <div class="rc-mode-desc">Fast profile for open runs</div>
+          </button>
+        </div>
+      </div>
+      <div id="preset-feedback" class="feedback mt-8" role="status" aria-live="polite" aria-atomic="true"></div>
       <div class="recovery-row mt-12">
         <span class="desc">Recovery: only available when estop is latched</span>
         <button id="clear-estop-button" class="btn" type="button" aria-label="Clear Emergency Stop">🟢 Clear Estop</button>
@@ -99,15 +120,6 @@
         <span class="status-pill pill-info status-pill-compact">🎯 Hold = command</span>
         <span class="status-pill pill-info status-pill-compact">🛑 Release = stop</span>
       </div>
-      <div class="preset-row mt-12">
-        <span class="desc">Speed Preset</span>
-        <div class="button-row button-row-compact">
-          <button class="btn preset-btn" data-speed-preset="slow" type="button">Slow</button>
-          <button class="btn preset-btn" data-speed-preset="normal" type="button">Normal</button>
-          <button class="btn preset-btn" data-speed-preset="turbo" type="button">Turbo</button>
-        </div>
-      </div>
-      <div id="preset-feedback" class="feedback mt-6" role="status" aria-live="polite" aria-atomic="true"></div>
       <div class="dpad-grid mt-16">
         <button class="btn dpad-btn" data-drive-speed="260" data-drive-steer="0"
           type="button" aria-label="Drive Forward">⬆️</button>

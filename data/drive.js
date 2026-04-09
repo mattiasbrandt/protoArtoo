@@ -64,9 +64,9 @@
   };
 
   const PRESET_LABELS = {
-    slow: "Slow",
+    slow: "🐌 Slow",
     normal: "Normal",
-    turbo: "Turbo",
+    turbo: "⚡ Turbo",
   };
 
   const formatFailsafeSource = (source) => {
@@ -108,7 +108,10 @@
     }
 
     presetButtons.forEach((button) => {
-      button.classList.toggle("preset-active", button.dataset.speedPreset === activePreset);
+      const isActive = button.dataset.speedPreset === activePreset;
+      button.classList.toggle("preset-active", isActive);
+      button.classList.toggle("selected", isActive);
+      button.setAttribute("aria-pressed", isActive ? "true" : "false");
     });
   };
 

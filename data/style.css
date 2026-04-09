@@ -379,27 +379,62 @@ nav a.active {
   margin: 0;
 }
 
-/* Drive preset buttons */
-.preset-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+/* Drive preset controls */
+.drive-preset-section {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.02);
+  padding: 12px;
+}
+
+.drive-preset-heading {
+  margin: 0 0 8px;
+  font-size: 1rem;
+  color: var(--silver-bright);
+}
+
+.drive-preset-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(180px, 1fr));
   gap: 10px;
-  flex-wrap: wrap;
 }
-.preset-row .button-row {
-  grid-template-columns: repeat(3, minmax(90px, max-content));
-  gap: 8px;
-}
-.preset-btn {
+
+.drive-preset-card {
   min-width: 0;
-  padding-inline: 14px;
+  width: 100%;
+  min-height: 96px;
+  padding: 14px 12px;
 }
-.preset-btn.preset-active {
+
+.drive-preset-card .rc-mode-icon {
+  font-size: 2.1rem;
+  margin-bottom: 6px;
+}
+
+.drive-preset-card .rc-mode-title {
+  margin-bottom: 4px;
+}
+
+.drive-preset-card .rc-mode-desc {
+  font-size: 0.82rem;
+}
+
+.drive-preset-card.preset-active,
+.drive-preset-card.selected {
   border-color: var(--accent-bright);
-  color: var(--accent-bright);
   background: rgba(74, 144, 217, 0.18);
   box-shadow: 0 0 0 2px rgba(74, 144, 217, 0.35);
+}
+
+.drive-preset-card.preset-active .rc-mode-title,
+.drive-preset-card.selected .rc-mode-title {
+  color: var(--accent-bright);
+}
+
+.drive-preset-card:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
 }
 
 .form-grid {
