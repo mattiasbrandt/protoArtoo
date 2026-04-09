@@ -19,7 +19,6 @@
 #include "api_helpers.h"
 #include "audio_task.h"
 #include "drive_speed_preset.h"
-#include "system_sounds.h"
 #include "dome_link.h"
 #include "dome_rx_parser.h"
 #include "mood.h"
@@ -56,17 +55,19 @@ enum ManualCommand : uint8_t {
 
 
 void setStationaryModeWithSound(bool stationary) {
-    uint16_t driveTrack = 0;
+    bool queueDriveOn = false;
     bool wasStationary = false;
     taskENTER_CRITICAL(&robotStateMux);
     wasStationary = robotState.stationary;
     robotState.stationary = stationary;
     robotState.cfg_stationary = stationary;
     if (wasStationary && !stationary) {
-        driveTrack = robotState.cfg_snd_sys_drv_on;
+        queueDriveOn = true;
     }
     taskEXIT_CRITICAL(&robotStateMux);
-    queueSystemSoundTrack(driveTrack, audioQueuePlayTrack, SRC_INTERNAL);
+    if (queueDriveOn) {
+        audioQueuePlaySlot(AUDIO_SLOT_SYS_DRIVE_ON, SRC_INTERNAL);
+    }
 }
 
 ManualCommand resolveManualCommand(const char* command) {

@@ -22,7 +22,6 @@
 #include "api_config_snapshot.h"
 #include "api_helpers.h"
 #include "audio_task.h"
-#include "system_sounds.h"
 #include "config.h"
 #include "logging.h"
 #include "robot_state.h"
@@ -1078,8 +1077,8 @@ void registerConfigRoutes(AsyncWebServer& server) {
             return;
         }
 
-        uint16_t driveOnTrack = 0;
-        uint16_t domeOnTrack = 0;
+        bool queueDriveOn = false;
+        bool queueDomeOn = false;
         bool wasStationary = false;
         bool wasDomeEnabled = false;
 
@@ -1166,15 +1165,19 @@ void registerConfigRoutes(AsyncWebServer& server) {
         robotState.cfg_rc_free2 = working.rcFree2;
         robotState.cfg_rc_free3 = working.rcFree3;
         if (stationaryProvided && wasStationary && !robotState.stationary) {
-            driveOnTrack = robotState.cfg_snd_sys_drv_on;
+            queueDriveOn = true;
         }
         if (!wasDomeEnabled && robotState.cfg_enable_dome) {
-            domeOnTrack = robotState.cfg_snd_sys_dome_on;
+            queueDomeOn = true;
         }
         taskEXIT_CRITICAL(&robotStateMux);
 
-        queueSystemSoundTrack(driveOnTrack, audioQueuePlayTrack, SRC_INTERNAL);
-        queueSystemSoundTrack(domeOnTrack, audioQueuePlayTrack, SRC_INTERNAL);
+        if (queueDriveOn) {
+            audioQueuePlaySlot(AUDIO_SLOT_SYS_DRIVE_ON, SRC_INTERNAL);
+        }
+        if (queueDomeOn) {
+            audioQueuePlaySlot(AUDIO_SLOT_SYS_DOME_ON, SRC_INTERNAL);
+        }
 
         if (!saveConfigToNvs()) {
             req->send(500, "application/json",

@@ -264,16 +264,19 @@ struct TriggerRuntimeState {
 static TriggerRuntimeState g_triggerStates[11] = {};  // One per Tier 2 binding slot
 
 static bool setStationaryMode(bool stationary) {
-    uint16_t driveTrack = 0;
+    bool queueDriveOn = false;
     bool wasStationary = false;
     taskENTER_CRITICAL(&robotStateMux);
     wasStationary = robotState.stationary;
     robotState.stationary = stationary;
     if (wasStationary && !stationary) {
-        driveTrack = robotState.cfg_snd_sys_drv_on;
+        queueDriveOn = true;
     }
     taskEXIT_CRITICAL(&robotStateMux);
-    return queueSystemSoundTrack(driveTrack, audioQueuePlayTrack, SRC_INTERNAL);
+    if (!queueDriveOn) {
+        return false;
+    }
+    return audioQueuePlaySlot(AUDIO_SLOT_SYS_DRIVE_ON, SRC_INTERNAL);
 }
 
 static void maybeQueueDriveModeSound(float scale) {
@@ -291,24 +294,23 @@ static void maybeQueueDriveModeSound(float scale) {
     }
     lastBucket = bucket;
 
-    uint16_t track = 0;
-    taskENTER_CRITICAL(&robotStateMux);
+    AudioPlaybackSlot slot = AUDIO_SLOT_NONE;
     switch (bucket) {
         case SYSTEM_DRIVE_MODE_SLOW:
-            track = robotState.cfg_snd_sys_mode_s;
+            slot = AUDIO_SLOT_SYS_MODE_SLOW;
             break;
         case SYSTEM_DRIVE_MODE_NORMAL:
-            track = robotState.cfg_snd_sys_mode_n;
+            slot = AUDIO_SLOT_SYS_MODE_NORMAL;
             break;
         case SYSTEM_DRIVE_MODE_TURBO:
-            track = robotState.cfg_snd_sys_mode_t;
+            slot = AUDIO_SLOT_SYS_MODE_TURBO;
             break;
         default:
             break;
     }
-    taskEXIT_CRITICAL(&robotStateMux);
-
-    queueSystemSoundTrack(track, audioQueuePlayTrack, SRC_INTERNAL);
+    if (slot != AUDIO_SLOT_NONE) {
+        audioQueuePlaySlot(slot, SRC_INTERNAL);
+    }
 }
 
 static bool queueRandomTrackForAction(RobotActionId target) {

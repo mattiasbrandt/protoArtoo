@@ -1058,10 +1058,10 @@ void setup() {
     bootTrack = robotState.cfg_snd_sys_boot;
     taskEXIT_CRITICAL(&robotStateMux);
     if (bootTrack != 0) {
-        if (audioQueuePlayTrack(bootTrack, SRC_INTERNAL)) {
-            PA_LOG_INFO("main", "system boot sound queued: track=%u", (unsigned)bootTrack);
+        if (audioQueuePlaySlot(AUDIO_SLOT_SYS_BOOT, SRC_INTERNAL)) {
+            PA_LOG_INFO("main", "system boot sound queued");
         } else {
-            PA_LOG_WARN("main", "system boot sound queue full: track=%u", (unsigned)bootTrack);
+            PA_LOG_WARN("main", "system boot sound queue full");
         }
     }
 

@@ -4,7 +4,6 @@
 #include "config.h"
 #include "logging.h"
 #include "robot_state.h"
-#include "system_sounds.h"
 
 extern bool saveConfigToNvs();
 
@@ -12,25 +11,20 @@ namespace {
 
 static const char* TAG = "DrivePreset";
 
-bool readSpeedPresetValueAndTrack(SpeedPresetId preset, int16_t* valueOut, uint16_t* trackOut) {
-    if (valueOut == nullptr || trackOut == nullptr) {
+bool readSpeedPresetValueAndSlot(SpeedPresetId preset, int16_t* valueOut,
+                                AudioPlaybackSlot* slotOut) {
+    if (valueOut == nullptr || slotOut == nullptr) {
         return false;
     }
 
     int16_t slow;
     int16_t normal;
     int16_t turbo;
-    uint16_t modeSlowTrack = 0;
-    uint16_t modeNormalTrack = 0;
-    uint16_t modeTurboTrack = 0;
 
     taskENTER_CRITICAL(&robotStateMux);
     slow = robotState.cfg_speedPresetSlow;
     normal = robotState.cfg_speedPresetNormal;
     turbo = robotState.cfg_speedPresetTurbo;
-    modeSlowTrack = robotState.cfg_snd_sys_mode_s;
-    modeNormalTrack = robotState.cfg_snd_sys_mode_n;
-    modeTurboTrack = robotState.cfg_snd_sys_mode_t;
     taskEXIT_CRITICAL(&robotStateMux);
 
     if (slow < 0) slow = 0;
@@ -43,13 +37,13 @@ bool readSpeedPresetValueAndTrack(SpeedPresetId preset, int16_t* valueOut, uint1
     *valueOut = speedPresetValueForId(preset, slow, normal, turbo);
     switch (preset) {
         case SpeedPresetId::Slow:
-            *trackOut = modeSlowTrack;
+            *slotOut = AUDIO_SLOT_SYS_MODE_SLOW;
             return true;
         case SpeedPresetId::Normal:
-            *trackOut = modeNormalTrack;
+            *slotOut = AUDIO_SLOT_SYS_MODE_NORMAL;
             return true;
         case SpeedPresetId::Turbo:
-            *trackOut = modeTurboTrack;
+            *slotOut = AUDIO_SLOT_SYS_MODE_TURBO;
             return true;
         default:
             return false;
@@ -60,8 +54,8 @@ bool readSpeedPresetValueAndTrack(SpeedPresetId preset, int16_t* valueOut, uint1
 
 bool applySpeedPresetRuntime(SpeedPresetId preset) {
     int16_t value = SPEED_PRESET_NORMAL;
-    uint16_t track = 0;
-    if (!readSpeedPresetValueAndTrack(preset, &value, &track)) {
+    AudioPlaybackSlot slot = AUDIO_SLOT_NONE;
+    if (!readSpeedPresetValueAndSlot(preset, &value, &slot)) {
         return false;
     }
 
@@ -70,14 +64,14 @@ bool applySpeedPresetRuntime(SpeedPresetId preset) {
     robotState.cfg_speedPresetActive = preset;
     taskEXIT_CRITICAL(&robotStateMux);
 
-    queueSystemSoundTrack(track, audioQueuePlayTrack, SRC_INTERNAL);
+    audioQueuePlaySlot(slot, SRC_INTERNAL);
     return true;
 }
 
 bool applySpeedPresetPersisted(SpeedPresetId preset) {
     int16_t targetValue = SPEED_PRESET_NORMAL;
-    uint16_t targetTrack = 0;
-    if (!readSpeedPresetValueAndTrack(preset, &targetValue, &targetTrack)) {
+    AudioPlaybackSlot slot = AUDIO_SLOT_NONE;
+    if (!readSpeedPresetValueAndSlot(preset, &targetValue, &slot)) {
         return false;
     }
 
@@ -99,6 +93,6 @@ bool applySpeedPresetPersisted(SpeedPresetId preset) {
         return false;
     }
 
-    queueSystemSoundTrack(targetTrack, audioQueuePlayTrack, SRC_INTERNAL);
+    audioQueuePlaySlot(slot, SRC_INTERNAL);
     return true;
 }
