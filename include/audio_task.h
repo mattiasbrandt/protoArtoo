@@ -23,6 +23,7 @@
 
 #include <stdint.h>
 
+#include "audio_chirp.h"
 #include "robot_state.h"
 
 // -----------------------------------------------------------------------------
@@ -36,9 +37,32 @@
 enum AudioCommandType : uint8_t {
     AUDIO_CMD_DOLLAR = 0,    // raw '$' command string — parsed in AudioTask
     AUDIO_CMD_PLAY_TRACK,    // play specific track number directly
+    AUDIO_CMD_PLAY_TRACK_BANKED,  // play CHIRP bank/page/index tuple
+    AUDIO_CMD_PLAY_SLOT,  // play named/system slot with backend-aware resolution
     AUDIO_CMD_STOP,          // stop playback
     AUDIO_CMD_SET_VOLUME,    // set absolute volume 0–30
     AUDIO_CMD_QUERY_STATUS,  // on-demand status query (manual/fallback poll path)
+    AUDIO_CMD_REFRESH_CATALOG,  // refresh CHIRP catalog cache
+
+};
+
+enum AudioPlaybackSlot : uint8_t {
+    AUDIO_SLOT_NONE = 0,
+    AUDIO_SLOT_NAMED_SCREAM,
+    AUDIO_SLOT_NAMED_FAINT,
+    AUDIO_SLOT_NAMED_LEIA,
+    AUDIO_SLOT_NAMED_CANTINA_S,
+    AUDIO_SLOT_NAMED_SW_THEME,
+    AUDIO_SLOT_NAMED_IMP_MARCH,
+    AUDIO_SLOT_NAMED_CANTINA_L,
+    AUDIO_SLOT_NAMED_STARTUP,
+    AUDIO_SLOT_NAMED_DISCO,
+    AUDIO_SLOT_SYS_BOOT,
+    AUDIO_SLOT_SYS_MODE_NORMAL,
+    AUDIO_SLOT_SYS_MODE_SLOW,
+    AUDIO_SLOT_SYS_MODE_TURBO,
+    AUDIO_SLOT_SYS_DRIVE_ON,
+    AUDIO_SLOT_SYS_DOME_ON,
 };
 
 // -----------------------------------------------------------------------------
@@ -52,6 +76,12 @@ struct AudioCommand {
         char dollar[10];  // AUDIO_CMD_DOLLAR: '$'-prefixed, null-terminated
         uint16_t track;   // AUDIO_CMD_PLAY_TRACK
         uint8_t volume;   // AUDIO_CMD_SET_VOLUME
+        AudioPlaybackSlot slot;  // AUDIO_CMD_PLAY_SLOT
+        struct {          // AUDIO_CMD_PLAY_TRACK_BANKED
+            uint16_t index;
+            uint8_t bank;
+            char page;
+        } banked;
     };
 };
 
@@ -82,6 +112,13 @@ bool audioQueueDollar(const char* cmd, CommandSource src);
 // Enqueue a direct play-by-track command. track must be > 0.
 bool audioQueuePlayTrack(uint16_t track, CommandSource src);
 
+// Enqueue a banked play-by-index command (CHIRP).
+bool audioQueuePlayTrackBanked(uint16_t index, uint8_t bank, char page, CommandSource src);
+
+// Enqueue backend-aware playback for a named/system slot.
+// Uses CHIRP bank/page/index binding when available; otherwise falls back to numeric snd_* track.
+bool audioQueuePlaySlot(AudioPlaybackSlot slot, CommandSource src);
+
 // Enqueue a stop command.
 bool audioQueueStop(CommandSource src);
 
@@ -95,10 +132,18 @@ bool audioQueueSetVolume(uint8_t vol, CommandSource src);
 // from real-time tasks or in any loop.
 bool audioQueueQueryStatus(CommandSource src);
 
+// Enqueue an asynchronous CHIRP catalog refresh.
+bool audioQueueRefreshCatalog(CommandSource src);
+
 // Returns the short name of the active audio driver (e.g. "DY-SV5W", "CHIRP").
 // Safe to call from any task or web handler after AudioTask has been created.
 const char* audioGetDriverName();
 // Returns the capabilities bitmask of the compiled-in audio driver.
 // Safe to call from any context after AudioTask has been created.
 uint8_t audioGetCapabilities();
+
+// CHIRP catalog accessors (Core 0 only). Non-CHIRP builds return empty values.
+const ChirpCatalogEntry* audioGetCatalogEntries(uint16_t* count);
+const ChirpCatalogBank* audioGetCatalogBanks(uint8_t* count);
+bool audioIsCatalogReady();
 

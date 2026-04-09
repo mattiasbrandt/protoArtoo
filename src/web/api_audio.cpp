@@ -31,6 +31,8 @@
 #include <ESPAsyncWebServer.h>
 #include <Preferences.h>
 #include <stdio.h>
+#include <ctype.h>
+#include <string.h>
 
 #include "api_helpers.h"
 #include "audio_dollar_parser.h"
@@ -107,6 +109,165 @@ static const char* categoryRangeCompanionKey(const char* key) {
     if (strcmp(key, "snd_cat_whis_lo") == 0) return "snd_cat_whis_hi";
     if (strcmp(key, "snd_cat_whis_hi") == 0) return "snd_cat_whis_lo";
     return nullptr;
+}
+
+struct ChirpBindingKeyMapEntry {
+    const char* key;
+    const char* nvsKey;
+};
+
+struct ChirpCategoryBindingMapEntry {
+    const char* loKey;
+    const char* hiKey;
+    const char* nvsKey;
+};
+
+static constexpr ChirpBindingKeyMapEntry CHIRP_BINDING_KEYS[] = {
+    {"scream", "chr_scream"},       {"faint", "chr_faint"},
+    {"leia", "chr_leia"},           {"cantina_s", "chr_cantina_s"},
+    {"sw_theme", "chr_sw_theme"},   {"imp_march", "chr_imp_march"},
+    {"cantina_l", "chr_cantina_l"}, {"startup", "chr_startup"},
+    {"doodoo", "chr_doodoo"},       {"failure", "chr_failure"},
+    {"disco", "chr_disco"},         {"mahna", "chr_mahna"},
+    {"inlove", "chr_inlove"},       {"macho", "chr_macho"},
+    {"gangnam", "chr_gangnam"},     {"uptown", "chr_uptown"},
+    {"celebr", "chr_celebr"},       {"stayin", "chr_stayin"},
+    {"harlem", "chr_harlem"},       {"pbjtime", "chr_pbjtime"},
+    {"sys_boot", "chr_sys_boot"},   {"sys_mode_n", "chr_sys_mode_n"},
+    {"sys_mode_s", "chr_sys_mode_s"},
+    {"sys_mode_t", "chr_sys_mode_t"},
+    {"sys_drv_on", "chr_sys_drv_on"},
+    {"sys_dome_on", "chr_sys_dome_on"},
+};
+
+static bool audioCatalogSupported() {
+    return (audioGetCapabilities() & AudioDriver::AUDIO_CAP_CATALOG) != 0;
+}
+
+static constexpr ChirpCategoryBindingMapEntry CHIRP_CATEGORY_BINDING_KEYS[] = {
+    {"snd_cat_gen_lo", "snd_cat_gen_hi", "chr_cat_gen"},
+    {"snd_cat_chat_lo", "snd_cat_chat_hi", "chr_cat_chat"},
+    {"snd_cat_hap_lo", "snd_cat_hap_hi", "chr_cat_hap"},
+    {"snd_cat_proc_lo", "snd_cat_proc_hi", "chr_cat_proc"},
+    {"snd_cat_sad_lo", "snd_cat_sad_hi", "chr_cat_sad"},
+    {"snd_cat_sent_lo", "snd_cat_sent_hi", "chr_cat_sent"},
+    {"snd_cat_hum_lo", "snd_cat_hum_hi", "chr_cat_hum"},
+    {"snd_cat_scrm_lo", "snd_cat_scrm_hi", "chr_cat_scrm"},
+    {"snd_cat_ooh_lo", "snd_cat_ooh_hi", "chr_cat_ooh"},
+    {"snd_cat_alrm_lo", "snd_cat_alrm_hi", "chr_cat_alrm"},
+    {"snd_cat_snrk_lo", "snd_cat_snrk_hi", "chr_cat_snrk"},
+    {"snd_cat_whis_lo", "snd_cat_whis_hi", "chr_cat_whis"},
+};
+
+static const ChirpCategoryBindingMapEntry* chirpCategoryBindingEntryForRangeKeys(const char* loKey,
+                                                                                   const char* hiKey) {
+    if (loKey == nullptr || hiKey == nullptr) {
+        return nullptr;
+    }
+    for (size_t i = 0;
+         i < (sizeof(CHIRP_CATEGORY_BINDING_KEYS) / sizeof(CHIRP_CATEGORY_BINDING_KEYS[0])); ++i) {
+        const ChirpCategoryBindingMapEntry& entry = CHIRP_CATEGORY_BINDING_KEYS[i];
+        if (strcmp(entry.loKey, loKey) == 0 && strcmp(entry.hiKey, hiKey) == 0) {
+            return &entry;
+        }
+    }
+    return nullptr;
+}
+
+
+static const char* chirpBindingNvsKey(const char* key) {
+    if (key == nullptr) {
+        return nullptr;
+    }
+    for (size_t i = 0; i < (sizeof(CHIRP_BINDING_KEYS) / sizeof(CHIRP_BINDING_KEYS[0])); ++i) {
+        if (strcmp(CHIRP_BINDING_KEYS[i].key, key) == 0) {
+            return CHIRP_BINDING_KEYS[i].nvsKey;
+        }
+    }
+    return nullptr;
+}
+
+static uint32_t packChirpBinding(uint16_t index, uint8_t bank, char page) {
+    const uint8_t pageByte = (uint8_t)toupper((unsigned char)page);
+    return ((uint32_t)bank << 24) | ((uint32_t)pageByte << 16) | (uint32_t)index;
+}
+
+static bool unpackChirpBinding(uint32_t packed, uint8_t* bankOut, char* pageOut,
+                               uint16_t* indexOut) {
+    if (bankOut == nullptr || pageOut == nullptr || indexOut == nullptr) {
+        return false;
+    }
+    uint8_t bank = (uint8_t)((packed >> 24) & 0xFFu);
+    char page = (char)((packed >> 16) & 0xFFu);
+    uint16_t index = (uint16_t)(packed & 0xFFFFu);
+    if (bank == 0 || index == 0) {
+        return false;
+    }
+    page = (char)toupper((unsigned char)page);
+    if (page < 'A' || page > 'Z') {
+        return false;
+    }
+    *bankOut = bank;
+    *pageOut = page;
+    *indexOut = index;
+    return true;
+}
+
+static uint32_t packChirpCategoryBinding(uint8_t bank, char page) {
+    const uint8_t pageByte = (uint8_t)toupper((unsigned char)page);
+    return ((uint32_t)bank << 8) | (uint32_t)pageByte;
+}
+
+static bool unpackChirpCategoryBinding(uint32_t packed, uint8_t* bankOut, char* pageOut) {
+    if (bankOut == nullptr || pageOut == nullptr) {
+        return false;
+    }
+    uint8_t bank = (uint8_t)((packed >> 8) & 0xFFu);
+    char page = (char)(packed & 0xFFu);
+    if (bank == 0) {
+        return false;
+    }
+    page = (char)toupper((unsigned char)page);
+    if (page < 'A' || page > 'Z') {
+        return false;
+    }
+    *bankOut = bank;
+    *pageOut = page;
+    return true;
+}
+
+static bool parseChirpPage(const String& raw, char* pageOut) {
+    if (pageOut == nullptr || raw.length() != 1) {
+        return false;
+    }
+    char page = (char)toupper((unsigned char)raw[0]);
+    if (page < 'A' || page > 'Z') {
+        return false;
+    }
+    *pageOut = page;
+    return true;
+}
+
+static void writeJsonEscaped(Print& out, const char* text) {
+    out.print('"');
+    if (text != nullptr) {
+        for (const char* p = text; *p != '\0'; ++p) {
+            const char c = *p;
+            if (c == '"' || c == '\\') {
+                out.print('\\');
+                out.print(c);
+            } else if (c == '\n') {
+                out.print("\\n");
+            } else if (c == '\r') {
+                out.print("\\r");
+            } else if (c == '\t') {
+                out.print("\\t");
+            } else {
+                out.print(c);
+            }
+        }
+    }
+    out.print('"');
 }
 
 void registerMoodMapRoutes(AsyncWebServer& server) {
@@ -371,7 +532,86 @@ void registerAudioRoutes(AsyncWebServer& server) {
                  catScrmLo, catScrmHi, catOohLo, catOohHi, catAlrmLo, catAlrmHi, catSnarkyLo,
                  catSnarkyHi, catWhisLo, catWhisHi, randMin, randMax, volume, intQuiet, intMid,
                  intFull, intAwake);
-        req->send(200, "application/json", body);
+        if (!audioCatalogSupported()) {
+            req->send(200, "application/json", body);
+            return;
+        }
+
+        auto* stream = req->beginResponseStream("application/json");
+        if (stream == nullptr) {
+            req->send(500, "application/json",
+                      "{\"ok\":false,\"error\":\"response stream alloc failed\"}");
+            return;
+        }
+
+        size_t bodyLen = strnlen(body, sizeof(body));
+        if (bodyLen == 0 || body[bodyLen - 1] != '}') {
+            req->send(200, "application/json", body);
+            return;
+        }
+
+        body[bodyLen - 1] = '\0';
+        stream->print(body);
+        stream->print(",\"chirp_bindings\":{");
+
+        bool firstBinding = true;
+        bool firstCategoryBinding = true;
+        Preferences prefs;
+        if (prefs.begin(NVS_NAMESPACE, true)) {
+            for (size_t i = 0; i < (sizeof(CHIRP_BINDING_KEYS) / sizeof(CHIRP_BINDING_KEYS[0])); ++i) {
+                uint32_t packed = prefs.getUInt(CHIRP_BINDING_KEYS[i].nvsKey, 0);
+                uint8_t bank = 0;
+                char page = 'A';
+                uint16_t index = 0;
+                if (!unpackChirpBinding(packed, &bank, &page, &index)) {
+                    continue;
+                }
+
+                if (!firstBinding) {
+                    stream->print(',');
+                }
+                firstBinding = false;
+
+                stream->print('"');
+                stream->print(CHIRP_BINDING_KEYS[i].key);
+                stream->print("\":{\"bank\":");
+                stream->print((unsigned)bank);
+                stream->print(",\"page\":\"");
+                stream->print(page);
+                stream->print("\",\"index\":");
+                stream->print((unsigned)index);
+                stream->print('}');
+            }
+
+            stream->print("},\"chirp_category_bindings\":{");
+            for (size_t i = 0;
+                 i < (sizeof(CHIRP_CATEGORY_BINDING_KEYS) / sizeof(CHIRP_CATEGORY_BINDING_KEYS[0]));
+                 ++i) {
+                uint32_t packed = prefs.getUInt(CHIRP_CATEGORY_BINDING_KEYS[i].nvsKey, 0);
+                uint8_t bank = 0;
+                char page = 'A';
+                if (!unpackChirpCategoryBinding(packed, &bank, &page)) {
+                    continue;
+                }
+                if (!firstCategoryBinding) {
+                    stream->print(',');
+                }
+                firstCategoryBinding = false;
+                stream->print('"');
+                stream->print(CHIRP_CATEGORY_BINDING_KEYS[i].loKey);
+                stream->print("\":{\"bank\":");
+                stream->print((unsigned)bank);
+                stream->print(",\"page\":\"");
+                stream->print(page);
+                stream->print("\"}");
+            }
+            prefs.end();
+        } else {
+            stream->print("},\"chirp_category_bindings\":{");
+        }
+
+        stream->print("}}");
+        req->send(stream);
     });
 
     // ---- POST /api/audio/category-range ----
@@ -394,11 +634,44 @@ void registerAudioRoutes(AsyncWebServer& server) {
 
         const char* loCompanion = categoryRangeCompanionKey(loKey);
         const char* hiCompanion = categoryRangeCompanionKey(hiKey);
+        const ChirpCategoryBindingMapEntry* categoryBindingEntry =
+            chirpCategoryBindingEntryForRangeKeys(loKey, hiKey);
         if (loCompanion == nullptr || hiCompanion == nullptr || strcmp(loCompanion, hiKey) != 0 ||
-            strcmp(hiCompanion, loKey) != 0) {
+            strcmp(hiCompanion, loKey) != 0 || categoryBindingEntry == nullptr) {
             req->send(400, "application/json",
                       "{\"ok\":false,\"error\":\"invalid category key pair\"}");
             return;
+        }
+
+        const AsyncWebParameter* bankParam = req->getParam("bank", true);
+        const AsyncWebParameter* pageParam = req->getParam("page", true);
+        const bool hasBankedParams = (bankParam != nullptr) || (pageParam != nullptr);
+        uint8_t categoryBank = 0;
+        char categoryPage = 'A';
+        if (hasBankedParams) {
+            if (!(bankParam && pageParam)) {
+                req->send(400, "application/json",
+                          "{\"ok\":false,\"error\":\"bank and page must be provided together\"}");
+                return;
+            }
+            if (!audioCatalogSupported()) {
+                req->send(404, "application/json",
+                          "{\"ok\":false,\"error\":\"catalog unsupported by active backend\"}");
+                return;
+            }
+            uint32_t bankValue = 0;
+            if (!parseUint32Value(bankParam->value().c_str(), &bankValue) || bankValue < 1 ||
+                bankValue > 6) {
+                req->send(400, "application/json",
+                          "{\"ok\":false,\"error\":\"bank must be 1-6\"}");
+                return;
+            }
+            if (!parseChirpPage(pageParam->value(), &categoryPage)) {
+                req->send(400, "application/json",
+                          "{\"ok\":false,\"error\":\"page must be a single letter A-Z\"}");
+                return;
+            }
+            categoryBank = (uint8_t)bankValue;
         }
 
         uint32_t loTrack = 0;
@@ -450,10 +723,18 @@ void registerAudioRoutes(AsyncWebServer& server) {
         if (loNvsKey != nullptr && hiNvsKey != nullptr && prefs.begin(NVS_NAMESPACE, false)) {
             bool wroteLo = prefs.putUShort(loNvsKey, loValue) > 0;
             bool wroteHi = wroteLo && (prefs.putUShort(hiNvsKey, hiValue) > 0);
-            if (!wroteHi && wroteLo) {
+            bool wroteBinding = true;
+            if (wroteHi && hasBankedParams) {
+                uint32_t packedBinding = packChirpCategoryBinding(categoryBank, categoryPage);
+                wroteBinding = prefs.putUInt(categoryBindingEntry->nvsKey, packedBinding) > 0;
+            }
+            if (wroteLo && (!wroteHi || !wroteBinding)) {
                 prefs.putUShort(loNvsKey, oldLo);
             }
-            ok = wroteLo && wroteHi;
+            if (wroteHi && !wroteBinding) {
+                prefs.putUShort(hiNvsKey, oldHi);
+            }
+            ok = wroteLo && wroteHi && wroteBinding;
             prefs.end();
         }
 
@@ -467,8 +748,15 @@ void registerAudioRoutes(AsyncWebServer& server) {
             return;
         }
 
-        PA_LOG_INFO(TAG, "[AUDIO] POST /api/audio/category-range %s=%u %s=%u", loKey,
-                    (unsigned)loValue, hiKey, (unsigned)hiValue);
+        if (hasBankedParams) {
+            PA_LOG_INFO(TAG,
+                        "[AUDIO] POST /api/audio/category-range %s=%u %s=%u bank=%u page=%c",
+                        loKey, (unsigned)loValue, hiKey, (unsigned)hiValue,
+                        (unsigned)categoryBank, categoryPage);
+        } else {
+            PA_LOG_INFO(TAG, "[AUDIO] POST /api/audio/category-range %s=%u %s=%u", loKey,
+                        (unsigned)loValue, hiKey, (unsigned)hiValue);
+        }
         req->send(200, "application/json", "{\"ok\":true}");
     });
 
@@ -482,9 +770,6 @@ void registerAudioRoutes(AsyncWebServer& server) {
             return;
         }
 
-        // Resolve key before range validation — interval keys accept 0–3600 s,
-        // track-number keys accept 1–999, except T08/T09 keys and snd_cat_* keys
-        // which allow 0–999 (0 = silent/unset).
         String keyValue = keyParam->value();
         const char* key = keyValue.c_str();
         bool isInterval = (strncmp(key, "snd_int_", 8) == 0);
@@ -500,6 +785,48 @@ void registerAudioRoutes(AsyncWebServer& server) {
             strcmp(key, "sys_mode_s") == 0 || strcmp(key, "sys_mode_t") == 0 ||
             strcmp(key, "sys_drv_on") == 0 || strcmp(key, "sys_dome_on") == 0;
 
+        const AsyncWebParameter* bankParam = req->getParam("bank", true);
+        const AsyncWebParameter* pageParam = req->getParam("page", true);
+        const bool hasBankedParams = (bankParam != nullptr) || (pageParam != nullptr);
+
+        uint8_t bank = 0;
+        char page = 'A';
+        bool useBanked = false;
+        const char* chirpBindingKey = chirpBindingNvsKey(key);
+
+        if (hasBankedParams) {
+            if (!(bankParam && pageParam)) {
+                req->send(400, "application/json",
+                          "{\"ok\":false,\"error\":\"bank and page must be provided together\"}");
+                return;
+            }
+            if (!audioCatalogSupported()) {
+                req->send(404, "application/json",
+                          "{\"ok\":false,\"error\":\"catalog unsupported by active backend\"}");
+                return;
+            }
+            if (chirpBindingKey == nullptr || isInterval) {
+                req->send(400, "application/json",
+                          "{\"ok\":false,\"error\":\"key does not support CHIRP binding\"}");
+                return;
+            }
+
+            uint32_t bankValue = 0;
+            if (!parseUint32Value(bankParam->value().c_str(), &bankValue) || bankValue < 1 ||
+                bankValue > 6) {
+                req->send(400, "application/json",
+                          "{\"ok\":false,\"error\":\"bank must be 1-6\"}");
+                return;
+            }
+            if (!parseChirpPage(pageParam->value(), &page)) {
+                req->send(400, "application/json",
+                          "{\"ok\":false,\"error\":\"page must be a single letter A-Z\"}");
+                return;
+            }
+            bank = (uint8_t)bankValue;
+            useBanked = true;
+        }
+
         String trackValue = trackParam->value();
         uint32_t track = 0;
         if (!parseUint32Value(trackValue.c_str(), &track)) {
@@ -511,26 +838,31 @@ void registerAudioRoutes(AsyncWebServer& server) {
         if (isInterval) {
             if (track > 3600U) {
                 req->send(400, "application/json",
-                          "{\"ok\":false,\"error\":\"interval must be 0–3600 s\"}");
+                          "{\"ok\":false,\"error\":\"interval must be 0-3600 s\"}");
+                return;
+            }
+        } else if (useBanked) {
+            if (track < 1U || track > 65535U) {
+                req->send(400, "application/json",
+                          "{\"ok\":false,\"error\":\"banked index must be 1-65535\"}");
                 return;
             }
         } else {
             if (track > 999U) {
                 req->send(400, "application/json",
-                          "{\"ok\":false,\"error\":\"track must be 0–999\"}");
+                          "{\"ok\":false,\"error\":\"track must be 0-999\"}");
                 return;
             }
             if (track == 0U && !isZeroAllowedTrackKey) {
                 req->send(400, "application/json",
-                          "{\"ok\":false,\"error\":\"track must be 1–999\"}");
+                          "{\"ok\":false,\"error\":\"track must be 1-999\"}");
                 return;
             }
         }
+
         uint16_t t = (uint16_t)track;
-        // Resolve the target field pointer before entering the critical section.
-        // String comparisons must not run inside portMUX — they are safe here
-        // (no allocation) but keeping critical sections minimal is good practice.
         uint16_t* fieldPtr = nullptr;
+        uint16_t oldTrack = 0;
         taskENTER_CRITICAL(&robotStateMux);
         if (strcmp(key, "scream") == 0)
             fieldPtr = &robotState.cfg_snd_scream;
@@ -644,8 +976,9 @@ void registerAudioRoutes(AsyncWebServer& server) {
             fieldPtr = &robotState.cfg_snd_int_full;
         else if (strcmp(key, "snd_int_awake") == 0)
             fieldPtr = &robotState.cfg_snd_int_awake;
-        if (fieldPtr)
-            *fieldPtr = t;
+        if (fieldPtr) {
+            oldTrack = *fieldPtr;
+        }
         taskEXIT_CRITICAL(&robotStateMux);
 
         if (!fieldPtr) {
@@ -653,50 +986,44 @@ void registerAudioRoutes(AsyncWebServer& server) {
             return;
         }
 
-        // Persist to NVS — dedicated mini-write for this field only.
-        // audioTrackNvsKey() maps API key → NVS key (pure helper, tested natively).
         const char* nvsKey = audioTrackNvsKey(key);
         Preferences prefs;
         bool ok = false;
-        if (nvsKey && prefs.begin(NVS_NAMESPACE, false)) {
-            ok = prefs.putUShort(nvsKey, t) > 0;
+        if (nvsKey != nullptr && prefs.begin(NVS_NAMESPACE, false)) {
+            bool wroteTrack = prefs.putUShort(nvsKey, t) > 0;
+            bool wroteChirp = true;
+
+            if (wroteTrack && chirpBindingKey != nullptr) {
+                uint32_t chirpPacked = useBanked ? packChirpBinding(t, bank, page) : 0;
+                wroteChirp = prefs.putUInt(chirpBindingKey, chirpPacked) > 0;
+            }
+
+            if (wroteTrack && !wroteChirp) {
+                prefs.putUShort(nvsKey, oldTrack);
+            }
+
+            ok = wroteTrack && wroteChirp;
             prefs.end();
         }
 
-        PA_LOG_INFO(TAG, "[AUDIO] POST /api/audio/tracks key=%s track=%u", key, (unsigned)t);
+        if (useBanked) {
+            PA_LOG_INFO(TAG,
+                        "[AUDIO] POST /api/audio/tracks key=%s index=%u bank=%u page=%c", key,
+                        (unsigned)t, (unsigned)bank, page);
+        } else {
+            PA_LOG_INFO(TAG, "[AUDIO] POST /api/audio/tracks key=%s track=%u", key, (unsigned)t);
+        }
+
         if (ok) {
+            taskENTER_CRITICAL(&robotStateMux);
+            *fieldPtr = t;
+            taskEXIT_CRITICAL(&robotStateMux);
             req->send(200, "application/json", "{\"ok\":true}");
         } else {
             req->send(500, "application/json", "{\"ok\":false,\"error\":\"NVS write failed\"}");
         }
     });
 
-    // ---- GET /api/audio — live module status ----
-    // Returns driver name, module link state, and last-known module status.
-    // Device and total-tracks are populated from begin()-time cached queries.
-    // Play state, current track, and link_ok are updated by status queries.
-    // Polling during playback may interfere with some module RX paths; see
-    // driver capabilities for safe-polling flag.
-    server.on("/api/audio", HTTP_GET, [](AsyncWebServerRequest* req) {
-        bool linkOk;
-        uint8_t playState, device;
-        uint16_t totalTracks, currentTrack;
-        bool active;
-        taskENTER_CRITICAL(&robotStateMux);
-        linkOk = robotState.audio_module_link_ok;
-        playState = robotState.audio_module_play_state;
-        device = robotState.audio_module_device;
-        totalTracks = robotState.audio_module_total_tracks;
-        currentTrack = robotState.audio_module_current_track;
-        active = robotState.audioActive;
-        taskEXIT_CRITICAL(&robotStateMux);
-
-        uint8_t caps = audioGetCapabilities();
-        char body[192];
-        formatAudioStatusJson(body, sizeof(body), audioGetDriverName(), caps, linkOk, active,
-                              playState, device, totalTracks, currentTrack);
-        req->send(200, "application/json", body);
-    });
 
     // POST /api/mood — apply a mood preset (dual-path: audio + dome TX)
     server.on("/api/mood", HTTP_POST, [](AsyncWebServerRequest* req) {
@@ -735,6 +1062,194 @@ void registerAudioRoutes(AsyncWebServer& server) {
         }
         PA_LOG_INFO(TAG, "[AUDIO] POST /api/audio/query — status poll enqueued");
         req->send(200, "application/json", "{\"ok\":true}");
+    });
+
+    // ---- GET /api/audio/catalog ----
+    // Returns cached CHIRP catalog from the most recent refresh.
+    server.on("/api/audio/catalog", HTTP_GET, [](AsyncWebServerRequest* req) {
+        if (!audioCatalogSupported()) {
+            req->send(404, "application/json",
+                      "{\"ok\":false,\"error\":\"catalog unsupported by active backend\"}");
+            return;
+        }
+
+        uint8_t bankFilter = 0;
+        const AsyncWebParameter* bankParam = req->getParam("bank");
+        if (bankParam != nullptr) {
+            uint32_t parsedBank = 0;
+            if (!parseUint32Value(bankParam->value().c_str(), &parsedBank) || parsedBank < 1 ||
+                parsedBank > 6) {
+                req->send(400, "application/json",
+                          "{\"ok\":false,\"error\":\"bank must be 1-6\"}");
+                return;
+            }
+            bankFilter = (uint8_t)parsedBank;
+        }
+
+        bool ready = audioIsCatalogReady();
+        uint8_t bankCount = 0;
+        uint16_t entryCount = 0;
+        const ChirpCatalogBank* banks = audioGetCatalogBanks(&bankCount);
+        const ChirpCatalogEntry* entries = audioGetCatalogEntries(&entryCount);
+
+        auto* stream = req->beginResponseStream("application/json");
+        if (stream == nullptr) {
+            req->send(500, "application/json",
+                      "{\"ok\":false,\"error\":\"response stream alloc failed\"}");
+            return;
+        }
+
+        stream->print("{\"ready\":");
+        stream->print(ready ? "true" : "false");
+
+        stream->print(",\"banks\":[");
+        if (ready && banks != nullptr) {
+            bool first = true;
+            for (uint8_t i = 0; i < bankCount; ++i) {
+                if (bankFilter != 0 && banks[i].bank != bankFilter) {
+                    continue;
+                }
+                if (!first) {
+                    stream->print(',');
+                }
+                first = false;
+                stream->print("{\"bank\":");
+                stream->print((unsigned)banks[i].bank);
+                stream->print(",\"page\":\"");
+                stream->print(banks[i].page);
+                stream->print("\",\"dir\":");
+                writeJsonEscaped(*stream, banks[i].dirName);
+                stream->print(",\"count\":");
+                stream->print((unsigned)banks[i].count);
+                stream->print('}');
+            }
+        }
+        stream->print(']');
+
+        stream->print(",\"entries\":[");
+        if (ready && entries != nullptr) {
+            bool first = true;
+            for (uint16_t i = 0; i < entryCount; ++i) {
+                if (bankFilter != 0 && entries[i].bank != bankFilter) {
+                    continue;
+                }
+                if (!first) {
+                    stream->print(',');
+                }
+                first = false;
+                stream->print("{\"bank\":");
+                stream->print((unsigned)entries[i].bank);
+                stream->print(",\"page\":\"");
+                stream->print(entries[i].page);
+                stream->print("\",\"index\":");
+                stream->print((unsigned)entries[i].index);
+                stream->print(",\"name\":");
+                writeJsonEscaped(*stream, entries[i].name);
+                stream->print('}');
+            }
+        }
+        stream->print("]}");
+        req->send(stream);
+    });
+
+    // ---- POST /api/audio/catalog/refresh ----
+    // Enqueue asynchronous CHIRP catalog refresh.
+    server.on("/api/audio/catalog/refresh", HTTP_POST, [](AsyncWebServerRequest* req) {
+        if (!audioCatalogSupported()) {
+            req->send(404, "application/json",
+                      "{\"ok\":false,\"error\":\"catalog unsupported by active backend\"}");
+            return;
+        }
+        if (!audioQueueRefreshCatalog(SRC_WEB_API)) {
+            req->send(503, "application/json",
+                      "{\"ok\":false,\"error\":\"audio command queue full\"}");
+            return;
+        }
+        PA_LOG_INFO(TAG, "[AUDIO] POST /api/audio/catalog/refresh queued");
+        req->send(200, "application/json", "{\"ok\":true}");
+    });
+
+    // ---- POST /api/audio/play-banked ----
+    // Play a CHIRP entry by bank/page/index for quick validation from Sound UI.
+    server.on("/api/audio/play-banked", HTTP_POST, [](AsyncWebServerRequest* req) {
+        if (isSleepModeActive()) {
+            req->send(423, "application/json",
+                      "{\"error\":\"sleeping\",\"hint\":\"POST /api/wake\"}");
+            return;
+        }
+        if (!audioCatalogSupported()) {
+            req->send(404, "application/json",
+                      "{\"ok\":false,\"error\":\"catalog unsupported by active backend\"}");
+            return;
+        }
+
+        const AsyncWebParameter* indexParam = req->getParam("index", true);
+        const AsyncWebParameter* bankParam = req->getParam("bank", true);
+        const AsyncWebParameter* pageParam = req->getParam("page", true);
+        if (!indexParam || !bankParam || !pageParam) {
+            req->send(400, "application/json",
+                      "{\"ok\":false,\"error\":\"requires index, bank, page\"}");
+            return;
+        }
+
+        uint32_t indexValue = 0;
+        uint32_t bankValue = 0;
+        if (!parseUint32Value(indexParam->value().c_str(), &indexValue) || indexValue < 1 ||
+            indexValue > 65535) {
+            req->send(400, "application/json",
+                      "{\"ok\":false,\"error\":\"index must be 1-65535\"}");
+            return;
+        }
+        if (!parseUint32Value(bankParam->value().c_str(), &bankValue) || bankValue < 1 ||
+            bankValue > 6) {
+            req->send(400, "application/json",
+                      "{\"ok\":false,\"error\":\"bank must be 1-6\"}");
+            return;
+        }
+
+        char page = 'A';
+        if (!parseChirpPage(pageParam->value(), &page)) {
+            req->send(400, "application/json",
+                      "{\"ok\":false,\"error\":\"page must be a single letter A-Z\"}");
+            return;
+        }
+
+        if (!audioQueuePlayTrackBanked((uint16_t)indexValue, (uint8_t)bankValue, page, SRC_WEB_API)) {
+            req->send(503, "application/json",
+                      "{\"ok\":false,\"error\":\"audio command queue full\"}");
+            return;
+        }
+
+        PA_LOG_INFO(TAG, "[AUDIO] POST /api/audio/play-banked bank=%u page=%c index=%u",
+                    (unsigned)bankValue, page, (unsigned)indexValue);
+        req->send(200, "application/json", "{\"ok\":true}");
+    });
+
+    // ---- GET /api/audio — live module status ----
+    // Returns driver name, module link state, and last-known module status.
+    // Device and total-tracks are populated from begin()-time cached queries.
+    // Play state, current track, and link_ok are updated by status queries.
+    // Polling during playback may interfere with some module RX paths; see
+    // driver capabilities for safe-polling flag.
+    server.on("/api/audio", HTTP_GET, [](AsyncWebServerRequest* req) {
+        bool linkOk;
+        uint8_t playState, device;
+        uint16_t totalTracks, currentTrack;
+        bool active;
+        taskENTER_CRITICAL(&robotStateMux);
+        linkOk = robotState.audio_module_link_ok;
+        playState = robotState.audio_module_play_state;
+        device = robotState.audio_module_device;
+        totalTracks = robotState.audio_module_total_tracks;
+        currentTrack = robotState.audio_module_current_track;
+        active = robotState.audioActive;
+        taskEXIT_CRITICAL(&robotStateMux);
+
+        uint8_t caps = audioGetCapabilities();
+        char body[192];
+        formatAudioStatusJson(body, sizeof(body), audioGetDriverName(), caps, linkOk, active,
+                              playState, device, totalTracks, currentTrack);
+        req->send(200, "application/json", body);
     });
 
     server.on("/api/audio", HTTP_POST, [](AsyncWebServerRequest* req) {

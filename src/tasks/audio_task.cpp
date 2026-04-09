@@ -21,13 +21,16 @@
 #include "audio_task.h"
 
 #include <Arduino.h>
+#include <Preferences.h>
 #include <esp_random.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
 #include <string.h>
+#include <ctype.h>
 
 #include "audio_dollar_parser.h"
 #include "audio_driver.h"
+#include "config.h"
 #include "logging.h"
 #include "mood_sound_mapping.h"
 #include "robot_state.h"
@@ -58,6 +61,44 @@ const char* audioGetDriverName() {
 
 uint8_t audioGetCapabilities() {
     return driver->capabilities();
+}
+
+const ChirpCatalogEntry* audioGetCatalogEntries(uint16_t* count) {
+#if PA_AUDIO_DRIVER == AUDIO_CHIRP
+    AudioDriverChirp* chirp = static_cast<AudioDriverChirp*>(driver);
+    if (count) {
+        *count = chirp->getCatalogEntryCount();
+    }
+    return chirp->getCatalogEntries();
+#else
+    if (count) {
+        *count = 0;
+    }
+    return nullptr;
+#endif
+}
+
+const ChirpCatalogBank* audioGetCatalogBanks(uint8_t* count) {
+#if PA_AUDIO_DRIVER == AUDIO_CHIRP
+    AudioDriverChirp* chirp = static_cast<AudioDriverChirp*>(driver);
+    if (count) {
+        *count = chirp->getCatalogBankCount();
+    }
+    return chirp->getCatalogBanks();
+#else
+    if (count) {
+        *count = 0;
+    }
+    return nullptr;
+#endif
+}
+
+bool audioIsCatalogReady() {
+#if PA_AUDIO_DRIVER == AUDIO_CHIRP
+    return static_cast<AudioDriverChirp*>(driver)->isCatalogReady();
+#else
+    return false;
+#endif
 }
 
 static const char* TAG = "AudioTask";
@@ -92,6 +133,42 @@ bool audioQueuePlayTrack(uint16_t track, CommandSource src) {
     msg.type = AUDIO_CMD_PLAY_TRACK;
     msg.source = src;
     msg.track = track;
+    if (xQueueSend(audioCmdQueue, &msg, 0) != pdTRUE) {
+        taskENTER_CRITICAL(&robotStateMux);
+        robotState.queueOverflowCount++;
+        taskEXIT_CRITICAL(&robotStateMux);
+        return false;
+    }
+    return true;
+}
+
+bool audioQueuePlayTrackBanked(uint16_t index, uint8_t bank, char page, CommandSource src) {
+    if (index == 0 || bank == 0) {
+        return false;
+    }
+    AudioCommand msg{};
+    msg.type = AUDIO_CMD_PLAY_TRACK_BANKED;
+    msg.source = src;
+    msg.banked.index = index;
+    msg.banked.bank = bank;
+    msg.banked.page = page;
+    if (xQueueSend(audioCmdQueue, &msg, 0) != pdTRUE) {
+        taskENTER_CRITICAL(&robotStateMux);
+        robotState.queueOverflowCount++;
+        taskEXIT_CRITICAL(&robotStateMux);
+        return false;
+    }
+    return true;
+}
+
+bool audioQueuePlaySlot(AudioPlaybackSlot slot, CommandSource src) {
+    if (slot == AUDIO_SLOT_NONE) {
+        return false;
+    }
+    AudioCommand msg{};
+    msg.type = AUDIO_CMD_PLAY_SLOT;
+    msg.source = src;
+    msg.slot = slot;
     if (xQueueSend(audioCmdQueue, &msg, 0) != pdTRUE) {
         taskENTER_CRITICAL(&robotStateMux);
         robotState.queueOverflowCount++;
@@ -141,11 +218,278 @@ bool audioQueueQueryStatus(CommandSource src) {
     return true;
 }
 
+bool audioQueueRefreshCatalog(CommandSource src) {
+    AudioCommand msg{};
+    msg.type = AUDIO_CMD_REFRESH_CATALOG;
+    msg.source = src;
+    if (xQueueSend(audioCmdQueue, &msg, 0) != pdTRUE) {
+        taskENTER_CRITICAL(&robotStateMux);
+        robotState.queueOverflowCount++;
+        taskEXIT_CRITICAL(&robotStateMux);
+        return false;
+    }
+    return true;
+}
+
 // -----------------------------------------------------------------------------
 // dispatchAction()
 // Apply a parsed AudioAction to the driver; update volume and randomMode state.
 // -----------------------------------------------------------------------------
 static constexpr uint32_t DISPATCH_PLAY_MIN_MS = 300;
+static constexpr uint32_t AUTO_STATUS_QUERY_INTERVAL_MS = 10000;  // 10 s
+static const char* chirpBindingKeyForSlot(AudioPlaybackSlot slot) {
+    switch (slot) {
+        case AUDIO_SLOT_NAMED_SCREAM: return "chr_scream";
+        case AUDIO_SLOT_NAMED_FAINT: return "chr_faint";
+        case AUDIO_SLOT_NAMED_LEIA: return "chr_leia";
+        case AUDIO_SLOT_NAMED_CANTINA_S: return "chr_cantina_s";
+        case AUDIO_SLOT_NAMED_SW_THEME: return "chr_sw_theme";
+        case AUDIO_SLOT_NAMED_IMP_MARCH: return "chr_imp_march";
+        case AUDIO_SLOT_NAMED_CANTINA_L: return "chr_cantina_l";
+        case AUDIO_SLOT_NAMED_STARTUP: return "chr_startup";
+        case AUDIO_SLOT_NAMED_DISCO: return "chr_disco";
+        case AUDIO_SLOT_SYS_BOOT: return "chr_sys_boot";
+        case AUDIO_SLOT_SYS_MODE_NORMAL: return "chr_sys_mode_n";
+        case AUDIO_SLOT_SYS_MODE_SLOW: return "chr_sys_mode_s";
+        case AUDIO_SLOT_SYS_MODE_TURBO: return "chr_sys_mode_t";
+        case AUDIO_SLOT_SYS_DRIVE_ON: return "chr_sys_drv_on";
+        case AUDIO_SLOT_SYS_DOME_ON: return "chr_sys_dome_on";
+        case AUDIO_SLOT_NONE:
+        default:
+            return nullptr;
+    }
+}
+
+static const char* chirpBindingKeyForCategoryIndex(uint8_t categoryIndex) {
+    switch (categoryIndex) {
+        case 0: return "chr_cat_gen";
+        case 1: return "chr_cat_chat";
+        case 2: return "chr_cat_hap";
+        case 3: return "chr_cat_proc";
+        case 4: return "chr_cat_sad";
+        case 5: return "chr_cat_sent";
+        case 6: return "chr_cat_hum";
+        case 7: return "chr_cat_scrm";
+        case 8: return "chr_cat_ooh";
+        case 9: return "chr_cat_alrm";
+        case 10: return "chr_cat_snrk";
+        case 11: return "chr_cat_whis";
+        default:
+            return nullptr;
+    }
+}
+
+static bool readTrackForSlot(AudioPlaybackSlot slot, uint16_t* trackOut) {
+    if (trackOut == nullptr) {
+        return false;
+    }
+
+    uint16_t track = 0;
+    bool known = true;
+    taskENTER_CRITICAL(&robotStateMux);
+    switch (slot) {
+        case AUDIO_SLOT_NAMED_SCREAM:
+            track = robotState.cfg_snd_scream;
+            break;
+        case AUDIO_SLOT_NAMED_FAINT:
+            track = robotState.cfg_snd_faint;
+            break;
+        case AUDIO_SLOT_NAMED_LEIA:
+            track = robotState.cfg_snd_leia;
+            break;
+        case AUDIO_SLOT_NAMED_CANTINA_S:
+            track = robotState.cfg_snd_cantina_s;
+            break;
+        case AUDIO_SLOT_NAMED_SW_THEME:
+            track = robotState.cfg_snd_sw_theme;
+            break;
+        case AUDIO_SLOT_NAMED_IMP_MARCH:
+            track = robotState.cfg_snd_imp_march;
+            break;
+        case AUDIO_SLOT_NAMED_CANTINA_L:
+            track = robotState.cfg_snd_cantina_l;
+            break;
+        case AUDIO_SLOT_NAMED_STARTUP:
+            track = robotState.cfg_snd_startup;
+            break;
+        case AUDIO_SLOT_NAMED_DISCO:
+            track = robotState.cfg_snd_disco;
+            break;
+        case AUDIO_SLOT_SYS_BOOT:
+            track = robotState.cfg_snd_sys_boot;
+            break;
+        case AUDIO_SLOT_SYS_MODE_NORMAL:
+            track = robotState.cfg_snd_sys_mode_n;
+            break;
+        case AUDIO_SLOT_SYS_MODE_SLOW:
+            track = robotState.cfg_snd_sys_mode_s;
+            break;
+        case AUDIO_SLOT_SYS_MODE_TURBO:
+            track = robotState.cfg_snd_sys_mode_t;
+            break;
+        case AUDIO_SLOT_SYS_DRIVE_ON:
+            track = robotState.cfg_snd_sys_drv_on;
+            break;
+        case AUDIO_SLOT_SYS_DOME_ON:
+            track = robotState.cfg_snd_sys_dome_on;
+            break;
+        case AUDIO_SLOT_NONE:
+        default:
+            known = false;
+            break;
+    }
+    taskEXIT_CRITICAL(&robotStateMux);
+
+    if (!known) {
+        return false;
+    }
+    *trackOut = track;
+    return true;
+}
+
+static AudioPlaybackSlot slotForDollarCommand(const char* cmd) {
+    if (cmd == nullptr || cmd[0] != '$') {
+        return AUDIO_SLOT_NONE;
+    }
+    switch (cmd[1]) {
+        case 'S': return AUDIO_SLOT_NAMED_SCREAM;
+        case 'F': return AUDIO_SLOT_NAMED_FAINT;
+        case 'L': return AUDIO_SLOT_NAMED_LEIA;
+        case 'c': return AUDIO_SLOT_NAMED_CANTINA_S;
+        case 'C': return AUDIO_SLOT_NAMED_CANTINA_L;
+        case 'W': return AUDIO_SLOT_NAMED_SW_THEME;
+        case 'M': return AUDIO_SLOT_NAMED_IMP_MARCH;
+        case 'B': return AUDIO_SLOT_NAMED_STARTUP;
+        case 'D': return AUDIO_SLOT_NAMED_DISCO;
+        default:
+            return AUDIO_SLOT_NONE;
+    }
+}
+
+static bool unpackChirpBinding(uint32_t packed, uint8_t* bankOut, char* pageOut,
+                               uint16_t* indexOut) {
+    if (bankOut == nullptr || pageOut == nullptr || indexOut == nullptr) {
+        return false;
+    }
+
+    uint8_t bank = (uint8_t)((packed >> 24) & 0xFFu);
+    char page = (char)((packed >> 16) & 0xFFu);
+    uint16_t index = (uint16_t)(packed & 0xFFFFu);
+    if (bank == 0 || index == 0) {
+        return false;
+    }
+
+    page = (char)toupper((unsigned char)page);
+    if (page < 'A' || page > 'Z') {
+        return false;
+    }
+
+    *bankOut = bank;
+    *pageOut = page;
+    *indexOut = index;
+    return true;
+}
+
+static bool unpackChirpCategoryBinding(uint32_t packed, uint8_t* bankOut, char* pageOut) {
+    if (bankOut == nullptr || pageOut == nullptr) {
+        return false;
+    }
+    uint8_t bank = (uint8_t)((packed >> 8) & 0xFFu);
+    char page = (char)(packed & 0xFFu);
+    if (bank == 0) {
+        return false;
+    }
+    page = (char)toupper((unsigned char)page);
+    if (page < 'A' || page > 'Z') {
+        return false;
+    }
+    *bankOut = bank;
+    *pageOut = page;
+    return true;
+}
+
+static bool loadChirpBindingForSlot(AudioPlaybackSlot slot, uint8_t* bankOut, char* pageOut,
+                                    uint16_t* indexOut) {
+    const char* nvsKey = chirpBindingKeyForSlot(slot);
+    if (nvsKey == nullptr) {
+        return false;
+    }
+
+    Preferences prefs;
+    if (!prefs.begin(NVS_NAMESPACE, true)) {
+        return false;
+    }
+    uint32_t packed = prefs.getUInt(nvsKey, 0);
+    prefs.end();
+
+    return unpackChirpBinding(packed, bankOut, pageOut, indexOut);
+}
+
+static bool loadChirpBindingForCategory(uint8_t categoryIndex, uint8_t* bankOut,
+                                        char* pageOut) {
+    const char* nvsKey = chirpBindingKeyForCategoryIndex(categoryIndex);
+    if (nvsKey == nullptr) {
+        return false;
+    }
+    Preferences prefs;
+    if (!prefs.begin(NVS_NAMESPACE, true)) {
+        return false;
+    }
+    uint32_t packed = prefs.getUInt(nvsKey, 0);
+    prefs.end();
+    return unpackChirpCategoryBinding(packed, bankOut, pageOut);
+}
+
+static void dispatchPlayResolved(uint16_t track, AudioPlaybackSlot slot, CommandSource source,
+                                 uint32_t& lastPlayMs, uint32_t& lastRandMs) {
+    if (track == 0 && slot == AUDIO_SLOT_NONE) {
+        PA_LOG_DEBUG(TAG, "[%s] playback skipped (track=0)", commandSourceToString(source));
+        return;
+    }
+
+    uint32_t now = millis();
+    if ((uint32_t)(now - lastPlayMs) < DISPATCH_PLAY_MIN_MS) {
+        PA_LOG_DEBUG(TAG, "[%s] play track %u dropped (anti-spam)",
+                     commandSourceToString(source), (unsigned)track);
+        return;
+    }
+
+    bool playedBanked = false;
+    if (slot != AUDIO_SLOT_NONE && (driver->capabilities() & AudioDriver::AUDIO_CAP_CATALOG)) {
+        uint8_t bank = 0;
+        char page = 'A';
+        uint16_t index = 0;
+        if (loadChirpBindingForSlot(slot, &bank, &page, &index)) {
+            driver->playTrackBanked(index, bank, page);
+            playedBanked = true;
+            PA_LOG_INFO(TAG, "[%s] play slot=%u bank=%u page=%c index=%u (fallback track=%u)",
+                        commandSourceToString(source), (unsigned)slot, (unsigned)bank, page,
+                        (unsigned)index, (unsigned)track);
+        }
+    }
+
+    if (!playedBanked) {
+        if (track == 0) {
+            PA_LOG_DEBUG(TAG, "[%s] slot playback skipped (slot=%u track=0)",
+                         commandSourceToString(source), (unsigned)slot);
+            return;
+        }
+        driver->playTrack(track);
+        if (slot == AUDIO_SLOT_NONE) {
+            PA_LOG_INFO(TAG, "[%s] play track %u", commandSourceToString(source),
+                        (unsigned)track);
+        } else {
+            PA_LOG_INFO(TAG, "[%s] play slot=%u track=%u", commandSourceToString(source),
+                        (unsigned)slot, (unsigned)track);
+        }
+    }
+
+    lastPlayMs = now;
+    lastRandMs = lastPlayMs;
+    taskENTER_CRITICAL(&robotStateMux);
+    robotState.audioActive = true;
+    taskEXIT_CRITICAL(&robotStateMux);
+}
 
 static void dispatchAction(const AudioAction& action, uint8_t& vol, bool& randomMode,
                            uint32_t& lastPlayMs, uint32_t& lastRandMs) {
@@ -232,7 +576,7 @@ void audioTask(void* pvParameters) {
     bool randomMode = false;
     uint32_t lastRandMs = 0;
     uint32_t lastPlayMs = 0;  // anti-spam: last playTrack() timestamp
-    uint32_t lastAutoQueryMs = 0;  // 2 s status poll timer for safe-polling modules
+    uint32_t lastAutoQueryMs = 0;  // periodic status poll timer for safe-polling modules
     uint8_t currentVol = 20;  // updated from config on first enable
     bool wasSleeping = false;
 
@@ -370,7 +714,12 @@ void audioTask(void* pvParameters) {
                     taskEXIT_CRITICAL(&robotStateMux);
                     bool wasRandom = randomMode;
                     AudioAction action = parseAudioDollar(cmd.dollar, named);
-                    dispatchAction(action, currentVol, randomMode, lastPlayMs, lastRandMs);
+                    if (action.type == AUDIO_ACTION_PLAY_TRACK) {
+                        AudioPlaybackSlot slot = slotForDollarCommand(cmd.dollar);
+                        dispatchPlayResolved(action.track, slot, cmd.source, lastPlayMs, lastRandMs);
+                    } else {
+                        dispatchAction(action, currentVol, randomMode, lastPlayMs, lastRandMs);
+                    }
                     // Reset timer when random mode first turns on so the
                     // first track fires after a full interval, not immediately.
                     if (randomMode && !wasRandom) {
@@ -385,20 +734,49 @@ void audioTask(void* pvParameters) {
                                     commandSourceToString(cmd.source));
                         break;
                     }
+                    dispatchPlayResolved(cmd.track, AUDIO_SLOT_NONE, cmd.source, lastPlayMs,
+                                         lastRandMs);
+                    break;
+                }
+                case AUDIO_CMD_PLAY_SLOT: {
+                    if (sleepMode) {
+                        PA_LOG_INFO(TAG, "[%s] slot play ignored — sleep mode active",
+                                    commandSourceToString(cmd.source));
+                        break;
+                    }
+                    uint16_t slotTrack = 0;
+                    if (!readTrackForSlot(cmd.slot, &slotTrack)) {
+                        PA_LOG_WARN(TAG, "[%s] slot play ignored — unknown slot=%u",
+                                    commandSourceToString(cmd.source), (unsigned)cmd.slot);
+                        break;
+                    }
+                    dispatchPlayResolved(slotTrack, cmd.slot, cmd.source, lastPlayMs,
+                                         lastRandMs);
+                    break;
+                }
+
+                case AUDIO_CMD_PLAY_TRACK_BANKED: {
+                    if (sleepMode) {
+                        PA_LOG_INFO(TAG, "[%s] banked play ignored — sleep mode active",
+                                    commandSourceToString(cmd.source));
+                        break;
+                    }
                     uint32_t now = millis();
                     if ((uint32_t)(now - lastPlayMs) < DISPATCH_PLAY_MIN_MS) {
-                        PA_LOG_DEBUG(TAG, "[%s] play track %u dropped (anti-spam)",
-                                     commandSourceToString(cmd.source), (unsigned)cmd.track);
+                        PA_LOG_DEBUG(TAG, "[%s] banked play %u/%c/%u dropped (anti-spam)",
+                                     commandSourceToString(cmd.source), (unsigned)cmd.banked.bank,
+                                     cmd.banked.page, (unsigned)cmd.banked.index);
                         break;
                     }
                     lastPlayMs = now;
-                    driver->playTrack(cmd.track);
+                    driver->playTrackBanked(cmd.banked.index, cmd.banked.bank, cmd.banked.page);
                     lastRandMs = lastPlayMs;
                     taskENTER_CRITICAL(&robotStateMux);
                     robotState.audioActive = true;
                     taskEXIT_CRITICAL(&robotStateMux);
-                    PA_LOG_INFO(TAG, "[%s] play track %u", commandSourceToString(cmd.source),
-                                (unsigned)cmd.track);
+                    PA_LOG_INFO(TAG, "[%s] play bank=%u page=%c index=%u",
+                                commandSourceToString(cmd.source), (unsigned)cmd.banked.bank,
+                                cmd.banked.page, (unsigned)cmd.banked.index);
                     break;
                 }
 
@@ -417,6 +795,23 @@ void audioTask(void* pvParameters) {
                     PA_LOG_INFO(TAG, "[%s] volume %u", commandSourceToString(cmd.source),
                                 (unsigned)currentVol);
                     break;
+
+                case AUDIO_CMD_REFRESH_CATALOG: {
+                    if (!(driver->capabilities() & AudioDriver::AUDIO_CAP_CATALOG)) {
+                        PA_LOG_DEBUG(TAG, "[%s] catalog refresh ignored (unsupported backend)",
+                                     commandSourceToString(cmd.source));
+                        break;
+                    }
+#if PA_AUDIO_DRIVER == AUDIO_CHIRP
+                    bool ok = static_cast<AudioDriverChirp*>(driver)->refreshCatalog();
+                    PA_LOG_INFO(TAG, "[%s] catalog refresh %s", commandSourceToString(cmd.source),
+                                ok ? "OK" : "FAILED");
+#else
+                    PA_LOG_DEBUG(TAG, "[%s] catalog refresh ignored (non-CHIRP build)",
+                                 commandSourceToString(cmd.source));
+#endif
+                    break;
+                }
 
                 case AUDIO_CMD_QUERY_STATUS: {
                     // On-demand query triggered by the web UI poll button.
@@ -502,28 +897,47 @@ void audioTask(void* pvParameters) {
                     lastRandMs = now;
                     uint16_t track = 0;
                     bool usedFlatFallback = false;
+                    uint8_t selectedCategory = 0xFF;
                     const bool selected =
                         selectRandomTrackForMood(mood, moodMasks, categoryRanges, SOUND_CATEGORY_COUNT,
                                                  randMin, randMax, esp_random(), &track,
-                                                 &usedFlatFallback);
+                                                 &usedFlatFallback, &selectedCategory);
                     if (selected) {
                         // Random timer already enforces a multi-second interval so
                         // anti-spam check is redundant here, but update lastPlayMs
                         // so a manual play immediately after a random fire is gated.
                         lastPlayMs = millis();
-                        driver->playTrack(track);
+
+                        bool playedBanked = false;
+                        if (!usedFlatFallback && selectedCategory != 0xFF &&
+                            (driver->capabilities() & AudioDriver::AUDIO_CAP_CATALOG)) {
+                            uint8_t bank = 0;
+                            char page = 'A';
+                            if (loadChirpBindingForCategory(selectedCategory, &bank, &page)) {
+                                driver->playTrackBanked(track, bank, page);
+                                playedBanked = true;
+                                PA_LOG_DEBUG(TAG,
+                                             "random track %u (mood %u, int %us, category pool bank=%u page=%c)",
+                                             (unsigned)track, (unsigned)mood, (unsigned)intSec,
+                                             (unsigned)bank, page);
+                            }
+                        }
+                        if (!playedBanked) {
+                            driver->playTrack(track);
+                            if (usedFlatFallback) {
+                                PA_LOG_DEBUG(TAG,
+                                             "random track %u (mood %u, int %us, flat fallback)",
+                                             (unsigned)track, (unsigned)mood, (unsigned)intSec);
+                            } else {
+                                PA_LOG_DEBUG(TAG,
+                                             "random track %u (mood %u, int %us, category pool)",
+                                             (unsigned)track, (unsigned)mood, (unsigned)intSec);
+                            }
+                        }
+
                         taskENTER_CRITICAL(&robotStateMux);
                         robotState.audioActive = true;
                         taskEXIT_CRITICAL(&robotStateMux);
-                        if (usedFlatFallback) {
-                            PA_LOG_DEBUG(TAG,
-                                         "random track %u (mood %u, int %us, flat fallback)",
-                                         (unsigned)track, (unsigned)mood, (unsigned)intSec);
-                        } else {
-                            PA_LOG_DEBUG(TAG,
-                                         "random track %u (mood %u, int %us, category pool)",
-                                         (unsigned)track, (unsigned)mood, (unsigned)intSec);
-                        }
                     }
                 }
             }
@@ -531,13 +945,13 @@ void audioTask(void* pvParameters) {
 
         // ----------------------------------------------------------------
         // Periodic auto-query runs only for modules reporting
-        // AUDIO_CAP_QUERY_SAFE_PLAYING. For modules without that capability
-        // (background polling can corrupt some module RX state machines during
-        // playback), status is updated only via the manual Poll button
-        // (AUDIO_CMD_QUERY_STATUS).
+        // AUDIO_CAP_QUERY_SAFE_PLAYING at AUTO_STATUS_QUERY_INTERVAL_MS
+        // cadence. For modules without that capability (background polling
+        // can corrupt some module RX state machines during playback),
+        // status is updated only via the manual Poll button
         // ----------------------------------------------------------------
         if ((driver->capabilities() & AudioDriver::AUDIO_CAP_QUERY_SAFE_PLAYING) &&
-            ((uint32_t)(millis() - lastAutoQueryMs) >= 2000u)) {
+            ((uint32_t)(millis() - lastAutoQueryMs) >= AUTO_STATUS_QUERY_INTERVAL_MS)) {
             lastAutoQueryMs = millis();
             AudioModuleState ms{};
             bool ok = driver->queryModuleState(ms);

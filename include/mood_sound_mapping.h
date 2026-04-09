@@ -67,9 +67,13 @@ inline uint16_t moodCategoryMaskForMood(uint8_t mood, const MoodCategoryMaskConf
 // Returns false when no enabled valid categories produce an active pool.
 inline bool selectRandomTrackFromCategoryMask(const SoundCategoryRange* ranges, size_t count,
                                               uint16_t bitmask, uint32_t randomValue,
-                                              uint16_t* outTrack) {
+                                              uint16_t* outTrack,
+                                              uint8_t* outCategoryIndex = nullptr) {
     if (ranges == nullptr || outTrack == nullptr || count == 0) {
         return false;
+    }
+    if (outCategoryIndex != nullptr) {
+        *outCategoryIndex = 0xFF;
     }
 
     const size_t cappedCount = (count < SOUND_CATEGORY_COUNT) ? count : SOUND_CATEGORY_COUNT;
@@ -105,6 +109,9 @@ inline bool selectRandomTrackFromCategoryMask(const SoundCategoryRange* ranges, 
         const uint32_t span = (uint32_t)hi - (uint32_t)lo + 1U;
         if (r < span) {
             *outTrack = (uint16_t)((uint32_t)lo + r);
+            if (outCategoryIndex != nullptr) {
+                *outCategoryIndex = (uint8_t)i;
+            }
             return true;
         }
         r -= span;
@@ -128,16 +135,21 @@ inline uint16_t selectRandomTrackFromFlatRange(uint16_t randMin, uint16_t randMa
 inline bool selectRandomTrackForMood(uint8_t mood, const MoodCategoryMaskConfig& masks,
                                      const SoundCategoryRange* ranges, size_t rangeCount,
                                      uint16_t randMin, uint16_t randMax, uint32_t randomValue,
-                                     uint16_t* outTrack, bool* outUsedFlatFallback = nullptr) {
+                                     uint16_t* outTrack, bool* outUsedFlatFallback = nullptr,
+                                     uint8_t* outCategoryIndex = nullptr) {
     if (outTrack == nullptr) {
         return false;
+    }
+    if (outCategoryIndex != nullptr) {
+        *outCategoryIndex = 0xFF;
     }
 
     bool useFlatFallback = false;
     const uint16_t mask = moodCategoryMaskForMood(mood, masks, &useFlatFallback);
 
     if (!useFlatFallback) {
-        if (selectRandomTrackFromCategoryMask(ranges, rangeCount, mask, randomValue, outTrack)) {
+        if (selectRandomTrackFromCategoryMask(ranges, rangeCount, mask, randomValue, outTrack,
+                                              outCategoryIndex)) {
             if (outUsedFlatFallback) {
                 *outUsedFlatFallback = false;
             }

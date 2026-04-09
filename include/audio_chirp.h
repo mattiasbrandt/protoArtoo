@@ -25,16 +25,33 @@
 
 // CHIRP native volume range (0 = silent, 99 = maximum)
 static constexpr uint8_t CHIRP_VOL_MAX = 99;
+static constexpr uint8_t CHIRP_CATALOG_MAX_BANKS = 6;
+static constexpr uint16_t CHIRP_CATALOG_MAX_ENTRIES = 300;
+
+struct ChirpCatalogEntry {
+    uint8_t bank = 0;
+    char page = 'A';
+    uint16_t index = 0;
+    char name[48] = {0};
+};
+
+struct ChirpCatalogBank {
+    uint8_t bank = 0;
+    char page = 'A';
+    char dirName[32] = {0};
+    uint16_t count = 0;
+};
 
 class AudioDriverChirp : public AudioDriver {
    public:
     // Configures soft-UART TX and hardware UART RX; sends initial volume and
-    // queries Bank 1 sound count via GMAN.
+    // reads GMAN bank descriptors.
     void begin(uint8_t vol) override;
 
     // Play track by 1-based index in Bank 1, Page A.
     // Track 0 is silently ignored.
     void playTrack(uint16_t track) override;
+    void playTrackBanked(uint16_t index, uint8_t bank, char page) override;
 
     // Stop all active streams.
     void stop() override;
@@ -45,23 +62,34 @@ class AudioDriverChirp : public AudioDriver {
         return "CHIRP";
     }
 
-    // CHIRP reports all five capability dimensions: status queries are safe
-    // at any time including during playback; device is always Flash+SD (Bank 1
-    // flash-backed, Banks 2–6 on SD); Bank 1 manifest count is fetched via GMAN;
-    // last-triggered track index is cached in the driver on every playTrack() call.
     uint8_t capabilities() const override {
         return AUDIO_CAP_STATUS_QUERY | AUDIO_CAP_DEVICE_TYPE | AUDIO_CAP_TRACK_COUNT |
-               AUDIO_CAP_CURRENT_TRACK | AUDIO_CAP_QUERY_SAFE_PLAYING;  // 0x1F
+               AUDIO_CAP_CURRENT_TRACK | AUDIO_CAP_QUERY_SAFE_PLAYING | AUDIO_CAP_CATALOG;  // 0x3F
     }
 
     bool queryModuleState(AudioModuleState& out) override;
     void getCachedState(AudioModuleState& out) const override;
+
+    // Blocking catalog refresh (Core 0 only).
+    bool refreshCatalog();
+    uint16_t getCatalogEntryCount() const;
+    const ChirpCatalogEntry* getCatalogEntries() const;
+    uint8_t getCatalogBankCount() const;
+    const ChirpCatalogBank* getCatalogBanks() const;
+    bool isCatalogReady() const;
 
    private:
     uint16_t m_totalTracks = 0;
     uint8_t m_playState = 0xFF;
     bool m_linkOk = false;
     uint16_t m_lastTrack = 0;   // last track index sent to playTrack(); reported as currentTrack
+    bool m_catalogReady = false;
+    uint16_t m_catalogCount = 0;
+    uint8_t m_catalogBankCount = 0;
+    ChirpCatalogEntry m_catalog[CHIRP_CATALOG_MAX_ENTRIES] = {};
+    ChirpCatalogBank m_catalogBanks[CHIRP_CATALOG_MAX_BANKS] = {};
+
+    bool loadManifestBanks(uint32_t timeoutMs, bool keepTotalTracks);
 
     // Send a null-terminated ASCII command string followed by '\n'.
     void sendCommand(const char* cmd);

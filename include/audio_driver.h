@@ -58,6 +58,7 @@ class AudioDriver {
     static constexpr uint8_t AUDIO_CAP_TRACK_COUNT = 0x04;
     static constexpr uint8_t AUDIO_CAP_CURRENT_TRACK = 0x08;
     static constexpr uint8_t AUDIO_CAP_QUERY_SAFE_PLAYING = 0x10;
+    static constexpr uint8_t AUDIO_CAP_CATALOG = 0x20;
 
     // Initialise hardware (GPIO, serial pin) and set initial volume — called once
     // during AudioTask init. vol is the NVS-configured volume (0–30).
@@ -66,6 +67,14 @@ class AudioDriver {
     // Play a specific track by 1-based index (maps directly to SD card file number).
     // Track 0 is invalid; driver should silently ignore it.
     virtual void playTrack(uint16_t track) = 0;
+
+    // Play a specific bank/page/index tuple. Default maps to flat track playback
+    // so non-banked backends do not need an override.
+    virtual void playTrackBanked(uint16_t index, uint8_t bank, char page) {
+        (void)bank;
+        (void)page;
+        playTrack(index);
+    }
 
     // Stop current playback immediately.
     virtual void stop() = 0;
