@@ -24,13 +24,19 @@
   const sleepOverlayWake = document.getElementById("sleep-overlay-wake");
   const sleepFeedback = document.getElementById("sleep-feedback");
   const staleBanner = document.getElementById('status-stale-banner');
-  const setStale = (stale) => { if (staleBanner) staleBanner.style.display = stale ? '' : 'none'; };
+  const setStale = (stale, options = {}) => {
+    const rerender = options.rerender !== false;
+    statusIsStale = stale === true;
+    if (staleBanner) staleBanner.style.display = statusIsStale ? "" : "none";
+    if (rerender && lastStatus) renderHealth(lastStatus);
+  };
   const snapshotWebControl = document.getElementById("snapshot-web-control");
   const snapshotMode = document.getElementById("snapshot-mode");
   const snapshotEstop = document.getElementById("snapshot-estop");
   const snapshotMood = document.getElementById("snapshot-mood");
 
   let lastStatus = null;
+  let statusIsStale = false;
   let modePending = false;
   let moodPending = false;
   let pollFailCount = 0;
@@ -44,6 +50,14 @@
     'h-heap':      'ht-heap',
     'h-dome-link': 'ht-dome-link',
     'h-sound':     'ht-sound',
+    'h-dome-esc': 'ht-dome-esc',
+  };
+  const HEALTH_SIGNAL_MODEL = window.PAHealthSignals;
+  const INDICATOR_STATE_LABELS = HEALTH_SIGNAL_MODEL?.INDICATOR_STATE_LABELS || {
+    ok: "OK",
+    warn: "WARN",
+    fail: "FAIL",
+    off: "OFF",
   };
 
   const COMPONENT_LABELS = [
@@ -122,49 +136,26 @@
   };
 
 
-  const setIndicator = (id, state) => {
+  const setIndicator = (id, state, reason = "") => {
     const el = document.getElementById(id);
     if (!el) return;
     el.className = `indicator ${state}`;
     const textEl = INDICATOR_TEXT[id] ? document.getElementById(INDICATOR_TEXT[id]) : null;
     if (textEl) {
-      const labels = { ok: 'OK', warn: 'WARN', fail: 'FAIL', off: 'OFF' };
-      textEl.textContent = labels[state] || state;
+      const label = INDICATOR_STATE_LABELS[state] || String(state).toUpperCase();
+      textEl.textContent = reason ? `${label}: ${reason}` : label;
+      textEl.title = reason ? `${label} - ${reason}` : label;
     }
   };
 
   const renderHealth = (payload) => {
-    const anyRcEnabled = !!(
-      payload.rcCh1 || payload.rcCh2 || payload.rcCh3 ||
-      payload.rcCh4 || payload.rcCh5 || payload.rcCh6
-    );
-    if (!anyRcEnabled) {
-      setIndicator("h-sbus", "off");
-    } else {
-      setIndicator("h-sbus", payload.sbusSignalLost || payload.sbusHwFailsafe ? "fail" : "ok");
+    if (!HEALTH_SIGNAL_MODEL || typeof HEALTH_SIGNAL_MODEL.deriveHealthSignals !== "function") {
+      Object.keys(INDICATOR_TEXT).forEach((id) => setIndicator(id, "warn", "Health model missing"));
+      return;
     }
 
-    setIndicator("h-wifi", (payload.wifiConnected || payload.wifiClientConnected) ? "ok" : "warn");
-    setIndicator("h-fs", payload.littleFsReady ? "ok" : "fail");
-    const heapBytes = Number(payload.heapFree);
-    const heapKnown = Number.isFinite(heapBytes) && heapBytes >= 0;
-    setIndicator("h-heap", heapKnown
-      ? (heapBytes > 120000 ? "ok" : heapBytes > 80000 ? "warn" : "fail")
-      : "off");
-    if (payload.dome_link) {
-      const s = payload.dome_link.state;
-      setIndicator(
-        "h-dome-link",
-        s === "connected" ? "ok" :
-        s === "lost" ? "fail" :
-        s === "not_seen" ? "warn" : "off"
-      );
-    } else {
-      setIndicator("h-dome-link", "off");
-    }
-
-    setIndicator("h-sound", payload.s2Sound && typeof payload.s2Sound === "object" ? "ok" : "off");
-
+    const signals = HEALTH_SIGNAL_MODEL.deriveHealthSignals(payload, { stale: statusIsStale });
+    signals.forEach(({ id, state, reason }) => setIndicator(id, state, reason));
   };
 
   const renderComponentStatus = (payload) => {
@@ -256,7 +247,7 @@
   const applyStatus = (payload) => {
     lastStatus = payload;
     pollFailCount = 0;
-    setStale(false);
+    setStale(false, { rerender: false });
     renderHealth(payload);
     renderComponentStatus(payload);
     renderMissionSnapshot(payload);
@@ -436,7 +427,6 @@
     window.PAStatusStream.subscribe((eventType, payload) => {
       if (eventType === "status") {
         applyStatus(payload);
-        setStale(false);
       }
       if (eventType === "log") appendLogLine(payload);
       if (eventType === "stream_error") {
