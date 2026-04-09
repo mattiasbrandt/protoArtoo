@@ -31,6 +31,7 @@
 
 static HardwareSerial s_chirpSerial(2);
 static const char* TAG = "ChirpDrv";
+static uint32_t s_lastNoRspDiagMs = 0;
 
 // Read one \r\n-terminated ASCII line from s_chirpSerial into buf (null-terminated).
 // Returns number of characters written (excluding null). Stops at '\n', '\r' discarded.
@@ -125,12 +126,14 @@ void AudioDriverChirp::begin(uint8_t vol) {
 
     uint32_t startMs = millis();
     bool gotValidGmanLine = false;
+    uint32_t rxBytes = 0;
     char line[96];
     while ((uint32_t)(millis() - startMs) < 1500u) {
         uint8_t n = readLine(line, (uint8_t)sizeof(line), 60u);
         if (n == 0) {
             continue;
         }
+        rxBytes += n;
 
         bool isGmanLine = (strncmp(line, "MDAT:", 5) == 0) || (strncmp(line, "BANK:", 5) == 0) ||
                           (strncmp(line, "MSUM:", 5) == 0) || (strcmp(line, "MEND") == 0);
@@ -155,8 +158,14 @@ void AudioDriverChirp::begin(uint8_t vol) {
     PA_LOG_INFO(TAG, "init — vol=%u Bank1 sounds=%u link=%s", (unsigned)vol,
                 (unsigned)m_totalTracks, m_linkOk ? "OK" : "no response");
     if (!m_linkOk) {
-        PA_LOG_WARN(TAG,
-                    "No CHIRP manifest response. Verify CHIRP UART baud (9600) and S2 TX/RX wiring.");
+        if (rxBytes == 0) {
+            PA_LOG_WARN(TAG,
+                        "No CHIRP RX bytes during GMAN bootstrap. Verify CHIRP TX->S2 RX (GPIO35), common GND, and baud=9600.");
+        } else {
+            PA_LOG_WARN(TAG,
+                        "CHIRP RX activity seen (%u bytes) but no valid GMAN frame. Verify CHIRP baud/protocol settings.",
+                        (unsigned)rxBytes);
+        }
     }
 }
 
@@ -239,13 +248,17 @@ bool AudioDriverChirp::queryModuleState(AudioModuleState& out) {
 
     uint32_t startMs = millis();
     char line[64];
+    uint32_t rxBytes = 0;
+    uint16_t unparsableLines = 0;
     while ((uint32_t)(millis() - startMs) < 300u) {
         uint8_t n = readLine(line, (uint8_t)sizeof(line), 40u);
         if (n == 0) {
             continue;
         }
+        rxBytes += n;
         uint8_t parsedPlayState = 0xFF;
         if (!parseChirpStatusLine(line, &parsedPlayState)) {
+            ++unparsableLines;
             continue;
         }
 
@@ -263,6 +276,21 @@ bool AudioDriverChirp::queryModuleState(AudioModuleState& out) {
     m_linkOk = out.linkOk;
     if (out.playState != 0xFF) {
         m_playState = out.playState;
+    }
+
+    if (!out.linkOk) {
+        uint32_t now = millis();
+        if ((uint32_t)(now - s_lastNoRspDiagMs) > 5000u) {
+            if (rxBytes == 0) {
+                PA_LOG_WARN(TAG,
+                            "No CHIRP RX bytes during STAT query. Verify return path CHIRP TX->S2 RX and shared GND.");
+            } else {
+                PA_LOG_WARN(TAG,
+                            "CHIRP RX activity seen (%u bytes) but no valid STAT line (%u unparsable lines).",
+                            (unsigned)rxBytes, (unsigned)unparsableLines);
+            }
+            s_lastNoRspDiagMs = now;
+        }
     }
 
     return out.linkOk;
