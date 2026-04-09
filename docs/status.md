@@ -83,6 +83,8 @@ Latest release: `v0.4.0` — see `CHANGELOG.md` for full history.
 - Random ambient chatter with per-mood frequency — each mood preset has its own chatter rate
 - Volume configurable from the Sound page and persisted across reboots
 - Sound module connection state and playback status visible on the Sound page
+- CHIRP catalog-assisted mapping on Sound page: refresh live module catalog (`GMAN` + `GNME`), browse bank/page/index/name entries, map single entries to Named/System slots, bulk-map selected entries to category ranges, apply directory-name-based category suggestions, and trigger banked playback tests
+- CHIRP bindings persist separately from default numbered tracks (`chr_*` for Named/System slots, `chr_cat_*` for categories alongside `snd_*`) so non-CHIRP behavior remains unchanged
 
 ### Moods and sequences
 
@@ -112,7 +114,8 @@ protoArtoo targets a single hardware platform:
 
 ## Known Limitations
 
-- **Sound module status varies by backend:** Modules with bidirectional UART (DY-SV5W, CHIRP) report module state on the Sound page. DY-SV5W status is manually polled to avoid disrupting its RX state machine during playback. CHIRP status updates automatically every 2 seconds and is safe to query at any time.
+- **Sound module status varies by backend:** Modules with bidirectional UART (DY-SV5W, CHIRP) report module state on the Sound page. DY-SV5W status is manually polled to avoid disrupting its RX state machine during playback. CHIRP status auto-polls every 10 seconds and is safe to query while playing.
+- **CHIRP binding scope:** `chirp_bindings` are applied to named/system slot playback, and `chirp_category_bindings` are applied to category random playback. Both paths fall back to numeric `snd_*`/`snd_cat_*` values when no valid binding exists.
 
 ---
 
@@ -128,6 +131,7 @@ of these, please open an issue.
 - **Dome link end-to-end** — requires both the Artoo PCB and AstroPixelsPlus dome board connected via the slip ring
 - **Audio: S2 enable/disable and boot mood restore** — most audio paths are confirmed; the S2 hardware toggle behavior and boot-time mood restore require a reconnected audio module to re-verify
 - **CHIRP and MP3 Trigger audio backends** — implemented and bench-compiled; require the respective board wired to the S2 header for full confirmation
+- **CHIRP catalog-assisted mapping + banked playback across Bank 2+** — API/UI paths compile and bench-run; audible cross-bank validation requires CHIRP hardware with populated multi-bank media
 - **Sound categories and system event sounds** — track ranges, RC triggers, and system hooks are implemented; audible playback per category and event requires hardware with a loaded SD card
 - **Firmware and web UI OTA update flow** — upload progress and post-reboot reconnect; requires a live device on the network
 - **AUX LED strip** — color and effect control are implemented; actual LED behavior requires a WS2812B strip connected to an AUX header

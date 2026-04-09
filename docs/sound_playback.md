@@ -120,9 +120,10 @@ Alternative baud-rate method (no SD card edit): hold **Prev** and press
 
 | `AudioDriver` call | CHIRP command | Notes |
 |---|---|---|
-| `playTrack(n)` | `PLAY:n,1,A\n` | Bank 1, Page A, index n |
+| `playTrack(n)` | `PLAY:n,1,A\n` | Flat compatibility path (Bank 1, Page A, index n) |
+| `playTrackBanked(i,b,p)` | `PLAY:i,b,p\n` | Bank/page/index path used by CHIRP slot bindings and `/api/audio/play-banked` |
 | `stop()` | `STOP\n` | Stops all active streams |
-| `setVolume(v)` | `VOL:${v*99/30}\n` | Scales 0–30 → 0–99 |
+| `setVolume(v)` | `VOL:${v*99/30}\n` | Scales 0-30 -> 0-99 |
 
 > ⚠ **Track numbers are module-specific.** CHIRP's `PLAY:n,1,A` command plays the
 > *nth entry in the Bank 1 sound manifest* (sorted by basename after variant
@@ -130,9 +131,12 @@ Alternative baud-rate method (no SD card edit): hold **Prev** and press
 > (scream=126, leia=151, etc.) are calibrated for DY-SV5W community SD pack
 > numbering and must be re-mapped via the Sound page when using CHIRP.
 
-The base driver uses stream 0 for all `$`-command playback. Multi-stream layering
-and CHIRP-exclusive features (`CHRP:` chirp tones, `GMAN` manifest queries) are
-beyond the `AudioDriver` base interface and are candidates for a future extension.
+CHIRP catalog operations are integrated in the backend. AudioTask can queue a catalog
+refresh (`GMAN` + `GNME`) and the driver caches up to 6 banks and 300 entries for
+web consumption.
+
+Catalog source-of-truth is the connected module response. `tasks/CHIRP-SD` remains
+reference-only developer data and is not used as runtime catalog input.
 
 #### SD card layout
 
@@ -165,13 +169,35 @@ SD:/3A_Effects/        Bank 3, Page A
 #### Status queries
 
 CHIRP supports live status queries at any time, including active playback. The
-protoArtoo CHIRP driver queries automatically every 2 seconds, so no operator
+protoArtoo CHIRP driver queries automatically every 10 seconds, so no operator
 poll action is required.
 
 Reported fields include module link state (ACK-based), play state (idle/playing
 from `STAT` response), and Bank 1 sound count (from `GMAN` at boot). The Sound
 page status card auto-refreshes for CHIRP; device type and current track are
 not applicable for CHIRP and are hidden.
+
+#### Catalog-assisted slot mapping (Sound page)
+
+When CHIRP catalog capability is present, the Sound page adds a CHIRP workspace that:
+
+- refreshes and lists live catalog entries (bank/page/index/name) from the module cache
+- supports single-row map/play plus bulk mode with multi-select checkboxes and map-checked action
+- includes map targets for every Named/System slot plus every sound category
+- shows per-row pill badges for entries already mapped to Named/System slots and category ranges
+- maps an entry directly to Named/System slots (CHIRP binding path via `chr_*`)
+- maps entry/selection to category ranges (`snd_cat_*` `lo..hi`) and persists category bank/page binding (`chr_cat_*`)
+  when rows are from the same bank/page
+- offers `Apply suggestions` to infer category mappings from CHIRP bank directory names (`*_chatty`, `*_sad`, etc.)
+  and apply them in one action
+- locks catalog controls during refresh and shows long-running feedback (large catalogs can take about 1 minute)
+- enables slot-aware playback resolution in firmware: CHIRP-capable named/system slots
+  prefer `PLAY:index,bank,page` when a valid binding exists and fall back to numeric `snd_*`
+  tracks otherwise
+
+`GET /api/audio/tracks` includes both `chirp_bindings` (slot mappings) and
+`chirp_category_bindings` (category bank/page mappings) when catalog support is active.
+Entries are omitted when no valid binding is saved.
 
 **Source:** https://github.com/joymonkey/CHIRP
 
@@ -276,8 +302,8 @@ the wire.
 | `$L` | Play Leia message | `playTrack(cfg_snd_leia)` — NVS `snd_leia` |
 | `$c` | Play short Cantina | `playTrack(cfg_snd_cantina_s)` |
 | `$C` | Play long Cantina | `playTrack(cfg_snd_cantina_l)` |
-| `$W` | Play Star Wars theme | `playTrack(cfg_snd_sw)` |
-| `$M` | Play Imperial March | `playTrack(cfg_snd_march)` |
+| `$W` | Play Star Wars theme | `playTrack(cfg_snd_sw_theme)` |
+| `$M` | Play Imperial March | `playTrack(cfg_snd_imp_march)` |
 | `$B` | Play startup sound | `playTrack(cfg_snd_startup)` |
 | `$D` | Disco (not implemented — see note below) | — |
 | `$R` | Enable random playback mode | AudioTask state — no driver call |
@@ -291,6 +317,14 @@ the wire.
 
 Named sound defaults follow the installed backend's SD card layout.
 All named track defaults are NVS-configurable without a firmware rebuild.
+
+For CHIRP builds, named/system slot playback is backend-aware: if a valid `chr_*` binding
+exists for the slot, firmware uses `playTrackBanked(index,bank,page)`; otherwise it falls
+back to numeric `snd_*` via `playTrack(n)`.
+
+Random/category playback also consumes category bindings: when a valid `chr_cat_*` mapping
+exists for the selected category, firmware uses `playTrackBanked(track,bank,page)`;
+otherwise it falls back to numeric playback from `snd_cat_*`/`snd_rand_*`.
 
 > **`$D` — Disco (unimplemented by design):**
 > `$D` is the standard MarcDuino disco command (default track 206 in community SD packs),

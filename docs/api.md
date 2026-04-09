@@ -13,6 +13,7 @@ headers in `include/`:
 | `api_estop.cpp` | Emergency stop control | `POST /api/estop`, `POST /api/estop/clear` |
 | `api_drive.cpp` | Drive commands, web control, and operation mode | `POST /api/drive`, `POST /api/web-control/enable`, `POST /api/web-control/disable`, `POST /api/mode` |
 | `api_config.cpp` | Configuration management | `GET /api/config`, `POST /api/config` |
+| `api_audio.cpp` | Audio control, mapping, and module status | `GET/POST /api/audio`, `POST /api/audio/query`, `GET/POST /api/audio/tracks`, `POST /api/audio/category-range`, `GET/POST /api/audio/mood-map`, CHIRP-only: `GET /api/audio/catalog`, `POST /api/audio/catalog/refresh`, `POST /api/audio/play-banked` |
 | `api_status.cpp` | Status, health, and telemetry | `GET /api/status`, `GET /api/health`, `GET /api/logs`, `GET /api/wifi`, `GET /api/serial` |
 | `api_validation.cpp` | Consolidated validation snapshot | `GET /api/validation` |
 | `api_system.cpp` | System control and OTA | `POST /api/manual-command`, `POST /api/reboot`, `POST /upload/firmware` |
@@ -152,6 +153,96 @@ Example body:
 ```text
 mode=stationary
 ```
+
+### Audio endpoints
+
+Audio routes are implemented in `src/web/api_audio.cpp` and are backend-aware.
+Non-CHIRP backends keep the flat numbered-track flow; CHIRP adds catalog and
+banked playback routes when `AUDIO_CAP_CATALOG` is present.
+
+#### `GET /api/audio`
+
+Return live audio module status and capability flags.
+
+Response includes driver identity and backend capability bits used by the Sound page
+to gate status polling, current-track display, and CHIRP catalog UI.
+
+#### `POST /api/audio`
+
+Structured command endpoint.
+
+- `action=play&track=N` (`1..65535`)
+- `action=stop`
+- `action=volume&level=N` (`0..30`)
+- `action=dollar&cmd=$...` (raw MarcDuino `$` command, max 9 chars)
+
+#### `POST /api/audio/query`
+
+Queue an on-demand module status query in AudioTask.
+Used by backends that do not support safe background polling.
+
+#### `GET /api/audio/tracks`
+
+Return persisted sound mappings and tuning values: named tracks, system-event tracks,
+category ranges, random range, random intervals, and volume.
+
+When CHIRP catalog capability is active, response also includes:
+
+- `chirp_bindings` - per-slot `{bank,page,index}` mappings for Named/System slots
+- `chirp_category_bindings` - per-category `{bank,page}` mappings keyed by category `lo` key (`snd_cat_*_lo`)
+
+#### `POST /api/audio/tracks`
+
+Update one persisted track/tuning key.
+
+Form fields:
+- `key` (track key)
+- `track` (value; range depends on key class)
+- optional CHIRP mapping fields: `bank` (`1..6`) + `page` (`A..Z`) for CHIRP-bindable named/system keys
+
+Behavior:
+- writes canonical numeric `snd_*` key/value for all backends
+- for CHIRP-capable named/system keys, also writes/clears packed `chr_*` binding metadata
+- if `bank`/`page` are omitted, any existing CHIRP slot binding for that key is cleared
+- updates runtime state only after NVS persistence succeeds (failed CHIRP-binding write rolls back the track write)
+
+CHIRP binding consumption:
+- named/system slot playback (`$S/$F/.../$B`, system events, Sound-page slot tests)
+  prefers valid `chr_*` mapping and falls back to numeric `snd_*` track
+- random/category playback prefers category bank/page binding (`chr_cat_*`) when present and
+  falls back to numeric playback (`snd_cat_*`, `snd_rand_*`) otherwise
+
+#### `POST /api/audio/category-range`
+
+Atomically update one category `lo/hi` pair to avoid partial two-request saves.
+Validation requires either `0/0` (unset) or `1..999` with `lo <= hi`.
+
+Form fields:
+- required: `lo_key`, `hi_key`, `lo`, `hi`
+- optional CHIRP binding fields: `bank` (`1..6`) + `page` (`A..Z`)
+
+Behavior:
+- writes the numeric category range (`snd_cat_*_lo`, `snd_cat_*_hi`)
+- when `bank`+`page` are provided together, also writes category CHIRP binding (`chr_cat_*`)
+- when `bank`/`page` are omitted, existing category CHIRP binding is preserved
+- `bank` and `page` must be provided together; endpoint returns `404` on non-catalog backends
+  if CHIRP binding fields are supplied
+#### `GET /api/audio/mood-map` and `POST /api/audio/mood-map`
+
+Get/set per-mood category-bitmask mapping (`quiet`, `mid`, `full`, `awakeplus`).
+
+#### CHIRP-only catalog endpoints
+
+These return `404` when the active backend does not expose catalog capability.
+
+- `GET /api/audio/catalog`
+  - Returns cached CHIRP manifest/list view: `ready`, `banks[]`, `entries[]`
+  - Optional query param: `bank=1..6` for server-side filtering
+- `POST /api/audio/catalog/refresh`
+  - Queues asynchronous catalog rebuild (`GMAN` + `GNME`) in AudioTask
+- `POST /api/audio/play-banked`
+  - Plays explicit CHIRP tuple `{bank,page,index}` via `PLAY:index,bank,page`
+
 
 ### `GET /api/config`
 

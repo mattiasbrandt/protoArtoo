@@ -517,6 +517,69 @@ entries:
     required: true
   nvs_key: null
 
+
+- name: sound.api.get-catalog
+  display_name: Get Catalog
+  description: Return cached CHIRP catalog banks and entries from the active audio backend
+  domain: sound
+  type: action
+  marcduino_cmd: null
+  api_path: /api/audio/catalog
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/web/api_audio.cpp
+  sources: [ web_api ]
+  safety_critical: false
+  requires_web_control: false
+  params:
+  - name: bank
+    type: uint8
+    range: [ 1, 6 ]
+    required: false
+  nvs_key: null
+
+- name: sound.api.refresh-catalog
+  display_name: Refresh Catalog
+  description: Queue CHIRP catalog refresh (GMAN plus GNME enumeration)
+  domain: sound
+  type: action
+  marcduino_cmd: null
+  api_path: /api/audio/catalog/refresh
+  sse_event: null
+  cpp_enum: AUDIO_CMD_REFRESH_CATALOG
+  cpp_file: include/audio_task.h
+  sources: [ web_api ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+- name: sound.api.play-banked
+  display_name: Play Banked Entry
+  description: Play a CHIRP sound by explicit bank, page, and index
+  domain: sound
+  type: action
+  marcduino_cmd: null
+  api_path: /api/audio/play-banked
+  sse_event: null
+  cpp_enum: AUDIO_CMD_PLAY_TRACK_BANKED
+  cpp_file: include/audio_task.h
+  sources: [ web_api ]
+  safety_critical: false
+  requires_web_control: false
+  params:
+  - name: bank
+    type: uint8
+    range: [ 1, 6 ]
+    required: true
+  - name: page
+    type: string
+    values: [ A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z ]
+    required: true
+  - name: index
+    type: uint16
+    range: [ 1, 65535 ]
+    required: true
+  nvs_key: null
 - name: sound.action.stop
   display_name: Stop
   description: Stop audio playback
