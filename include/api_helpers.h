@@ -12,6 +12,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "drive_speed_preset.h"
 // -----------------------------------------------------------------------------
 // parseDriveValue()
 // Parse a null-terminated decimal integer string into an int16_t.
@@ -168,6 +169,12 @@ void formatAudioStatusJson(char* buf, size_t bufSize, const char* driverName,
 // Output: {"ok":true,"sleepMode":<bool>,"changed":<bool>}
 // Returns false if the payload does not fit in buf.
 bool formatSleepControlJson(char* buf, size_t bufSize, bool sleepMode, bool changed);
+
+// Format JSON response for speed preset endpoint.
+// Output: {"ok":true,"preset":"slow|normal|turbo","speedLimitMax":<0..600>}
+// Returns false if the payload does not fit in buf or preset is invalid.
+bool formatSpeedPresetResponseJson(char* buf, size_t bufSize, SpeedPresetId preset,
+                                   int16_t speedLimitMax);
 
 // Format JSON response for AUX LED endpoints.
 // Output: {"ok":true,"auxLed":{"pin":<u8>,"r":<u8>,"g":<u8>,"b":<u8>,"effect":"..."}}

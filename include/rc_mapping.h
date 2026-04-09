@@ -88,6 +88,7 @@ enum RobotActionId : uint8_t {
     DROID_SEQ_DISCO,            // Button: SE09 disco sequence
     DROID_SEQ_SCREAMS,          // Button: SE15 screams (audio-only body side)
     DROID_SEQ_WIGGLE,           // Button: SE16 panel wiggle sequence
+    DRIVE_ACTION_SPEED_PRESET_CYCLE,  // Button: cycle Slow/Normal/Turbo speed presets
 };
 
 // -----------------------------------------------------------------------------
@@ -436,6 +437,8 @@ inline const char* robotActionIdToString(RobotActionId target) {
             return "droid_seq_screams";
         case DROID_SEQ_WIGGLE:
             return "droid_seq_wiggle";
+        case DRIVE_ACTION_SPEED_PRESET_CYCLE:
+            return "speed_preset_cycle";
         case ROBOT_ACTION_NONE:
         default:
             return "none";
@@ -602,6 +605,10 @@ inline bool parseRobotActionId(const char* raw, RobotActionId* out) {
         *out = DROID_SEQ_WIGGLE;
         return true;
     }
+    if (strcmp(raw, "speed_preset_cycle") == 0) {
+        *out = DRIVE_ACTION_SPEED_PRESET_CYCLE;
+        return true;
+    }
     return false;
 }
 
@@ -664,7 +671,8 @@ inline bool robotActionValidForTier2(RobotActionId target) {
            target == DROID_SEQ_OPEN_WAVE || target == DROID_SEQ_BEEP_CANTINA ||
            target == DROID_SEQ_FAINT || target == DROID_SEQ_CANTINA ||
            target == DROID_SEQ_LEIA || target == DROID_SEQ_DISCO ||
-           target == DROID_SEQ_SCREAMS || target == DROID_SEQ_WIGGLE;
+           target == DROID_SEQ_SCREAMS || target == DROID_SEQ_WIGGLE ||
+           target == DRIVE_ACTION_SPEED_PRESET_CYCLE;
 }
 
 // Validate Marcduino sequence payload for body sequences (SE30-SE36)
@@ -729,7 +737,8 @@ inline bool robotActionIsButton(RobotActionId target) {
            target == DROID_SEQ_OPEN_WAVE || target == DROID_SEQ_BEEP_CANTINA ||
            target == DROID_SEQ_FAINT || target == DROID_SEQ_CANTINA ||
            target == DROID_SEQ_LEIA || target == DROID_SEQ_DISCO ||
-           target == DROID_SEQ_SCREAMS || target == DROID_SEQ_WIGGLE;
+           target == DROID_SEQ_SCREAMS || target == DROID_SEQ_WIGGLE ||
+           target == DRIVE_ACTION_SPEED_PRESET_CYCLE;
 }
 
 inline RcTriggerBinding makeRcTriggerBinding(RcBindingSource source, uint8_t channel,

@@ -91,6 +91,10 @@ void test_registry_contains_droid_sequence_actions() {
     }
 }
 
+void test_registry_contains_speed_preset_cycle_action() {
+    TEST_ASSERT_TRUE(registryContainsAction(DRIVE_ACTION_SPEED_PRESET_CYCLE));
+}
+
 void test_web_testable_action_logic() {
     TEST_ASSERT_FALSE(robotActionIsWebTestable(DRIVE_ACTION_SPEED));
     TEST_ASSERT_FALSE(robotActionIsWebTestable(DRIVE_ACTION_STEER));
@@ -150,6 +154,7 @@ int main() {
     RUN_TEST(test_registry_contains_sound_category_actions);
     RUN_TEST(test_registry_contains_droid_sequence_actions);
     RUN_TEST(test_web_testable_action_logic);
+    RUN_TEST(test_registry_contains_speed_preset_cycle_action);
     RUN_TEST(test_action_test_guard_logic);
     RUN_TEST(test_registry_json_payload_fits_budget);
 

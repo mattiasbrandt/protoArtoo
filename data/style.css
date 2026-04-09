@@ -379,6 +379,29 @@ nav a.active {
   margin: 0;
 }
 
+/* Drive preset buttons */
+.preset-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.preset-row .button-row {
+  grid-template-columns: repeat(3, minmax(90px, max-content));
+  gap: 8px;
+}
+.preset-btn {
+  min-width: 0;
+  padding-inline: 14px;
+}
+.preset-btn.preset-active {
+  border-color: var(--accent-bright);
+  color: var(--accent-bright);
+  background: rgba(74, 144, 217, 0.18);
+  box-shadow: 0 0 0 2px rgba(74, 144, 217, 0.35);
+}
+
 .form-grid {
   display: grid;
   gap: 16px;
@@ -414,6 +437,12 @@ nav a.active {
   font-size: 0.9rem;
 }
 
+/* Drive page: shown when slow/normal/turbo limits collide. */
+.preset-distinct-hint {
+  grid-column: 1 / -1;
+  margin-top: -6px;
+}
+
 .field input[type="number"],
 .field input[type="text"],
 .field select {
@@ -446,6 +475,16 @@ input[type="number"]::-webkit-inner-spin-button {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(74, 144, 217, 0.2);
+}
+
+.field input.preset-input[aria-invalid="true"] {
+  border-color: color-mix(in srgb, var(--warning) 65%, var(--border));
+  box-shadow: 0 0 0 2px rgba(232, 168, 50, 0.22);
+}
+
+.field input.preset-input[aria-invalid="true"]:focus {
+  border-color: var(--warning);
+  box-shadow: 0 0 0 3px rgba(232, 168, 50, 0.30);
 }
 
 /* Compact number input for inline use (e.g. test position field in button rows) */

@@ -51,6 +51,7 @@ const ActionEntry ACTION_REGISTRY[] = {
     { DROID_SEQ_DISCO,                "dome.action.droid-sequence-disco",  "Disco",               "dome",   "SE09 - disco audio ($D) with body wave, then forward :SE09 to dome", false },
     { DROID_SEQ_SCREAMS,              "dome.action.droid-sequence-screams", "Screams",           "dome",   "SE15 - screams audio only on body side, then forward :SE15 to dome", false },
     { DROID_SEQ_WIGGLE,               "dome.action.droid-sequence-wiggle", "Panel Wiggle",        "dome",   "SE16 - body wave sequence, then forward :SE16 to dome", false },
+    { DRIVE_ACTION_SPEED_PRESET_CYCLE,   "drive.action.speed-preset-cycle", "Speed Preset Cycle",  "drive",  "Cycle drive speed preset Slow → Normal → Turbo",      false },
 };
 // clang-format on
 

@@ -253,6 +253,11 @@ void loadConfigToState() {
     Preferences prefs;
     prefs.begin(NVS_NAMESPACE, true);
     robotState.cfg_speedLimitMax = prefs.getShort("spd_max", SPEED_LIMIT_MAX);
+    robotState.cfg_speedPresetSlow = prefs.getShort("spd_pre_s", SPEED_PRESET_SLOW);
+    robotState.cfg_speedPresetNormal = prefs.getShort("spd_pre_n", SPEED_PRESET_NORMAL);
+    robotState.cfg_speedPresetTurbo = prefs.getShort("spd_pre_t", SPEED_PRESET_TURBO);
+    robotState.cfg_speedPresetActive =
+        normalizeSpeedPresetId(prefs.getUChar("spd_pre_a", (uint8_t)SpeedPresetId::Normal));
     robotState.cfg_sbusTimeoutMs = prefs.getULong("sbus_tmo", SBUS_TIMEOUT_MS);
     robotState.cfg_webDriveTimeoutMs = prefs.getULong("web_tmo", WEB_DRIVE_TIMEOUT_MS);
     robotState.cfg_ch8ModeLock = prefs.getBool("ch8_lock", false);
@@ -439,6 +444,21 @@ void loadConfigToState() {
 
     robotState.cfg_speedLimitMax =
         constrain(robotState.cfg_speedLimitMax, (int16_t)0, (int16_t)SPEED_LIMIT_MAX);
+    robotState.cfg_speedPresetSlow =
+        constrain(robotState.cfg_speedPresetSlow, (int16_t)0, (int16_t)SPEED_LIMIT_MAX);
+    robotState.cfg_speedPresetNormal =
+        constrain(robotState.cfg_speedPresetNormal, (int16_t)0, (int16_t)SPEED_LIMIT_MAX);
+    robotState.cfg_speedPresetTurbo =
+        constrain(robotState.cfg_speedPresetTurbo, (int16_t)0, (int16_t)SPEED_LIMIT_MAX);
+    SpeedPresetId inferredPreset = SpeedPresetId::Normal;
+    if (resolveSpeedPresetForLimit(robotState.cfg_speedLimitMax, robotState.cfg_speedPresetSlow,
+                                   robotState.cfg_speedPresetNormal, robotState.cfg_speedPresetTurbo,
+                                   &inferredPreset)) {
+        robotState.cfg_speedPresetActive = inferredPreset;
+    } else {
+        robotState.cfg_speedPresetActive =
+            normalizeSpeedPresetId((uint8_t)robotState.cfg_speedPresetActive);
+    }
     robotState.cfg_sbusTimeoutMs =
         constrain(robotState.cfg_sbusTimeoutMs, (uint32_t)50, (uint32_t)5000);
     robotState.cfg_webDriveTimeoutMs =
@@ -575,6 +595,10 @@ void loadConfigToState() {
 
 bool saveConfigToNvs() {
     int16_t speedLimitMax;
+    int16_t speedPresetSlow;
+    int16_t speedPresetNormal;
+    int16_t speedPresetTurbo;
+    uint8_t speedPresetActive;
     uint32_t sbusTimeoutMs;
     uint32_t webDriveTimeoutMs;
     bool ch8ModeLock;
@@ -612,6 +636,10 @@ bool saveConfigToNvs() {
 
     taskENTER_CRITICAL(&robotStateMux);
     speedLimitMax = robotState.cfg_speedLimitMax;
+    speedPresetSlow = robotState.cfg_speedPresetSlow;
+    speedPresetNormal = robotState.cfg_speedPresetNormal;
+    speedPresetTurbo = robotState.cfg_speedPresetTurbo;
+    speedPresetActive = (uint8_t)robotState.cfg_speedPresetActive;
     sbusTimeoutMs = robotState.cfg_sbusTimeoutMs;
     webDriveTimeoutMs = robotState.cfg_webDriveTimeoutMs;
     ch8ModeLock = robotState.cfg_ch8ModeLock;
@@ -765,6 +793,10 @@ bool saveConfigToNvs() {
 
     bool ok = true;
     ok = prefs.putShort("spd_max", speedLimitMax) > 0 && ok;
+    ok = prefs.putShort("spd_pre_s", speedPresetSlow) > 0 && ok;
+    ok = prefs.putShort("spd_pre_n", speedPresetNormal) > 0 && ok;
+    ok = prefs.putShort("spd_pre_t", speedPresetTurbo) > 0 && ok;
+    ok = prefs.putUChar("spd_pre_a", speedPresetActive) > 0 && ok;
     ok = prefs.putULong("sbus_tmo", sbusTimeoutMs) > 0 && ok;
     ok = prefs.putULong("web_tmo", webDriveTimeoutMs) > 0 && ok;
     ok = prefs.putBool("ch8_lock", ch8ModeLock) > 0 && ok;

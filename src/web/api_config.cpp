@@ -244,6 +244,10 @@ void captureConfigSnapshot(ConfigSnapshot* out) {
     }
     taskENTER_CRITICAL(&robotStateMux);
     out->speedLimitMax = robotState.cfg_speedLimitMax;
+    out->speedPresetSlow = robotState.cfg_speedPresetSlow;
+    out->speedPresetNormal = robotState.cfg_speedPresetNormal;
+    out->speedPresetTurbo = robotState.cfg_speedPresetTurbo;
+    out->speedPresetActive = normalizeSpeedPresetId((uint8_t)robotState.cfg_speedPresetActive);
     out->webDriveTimeoutMs = robotState.cfg_webDriveTimeoutMs;
     out->ch8ModeLock = robotState.cfg_ch8ModeLock;
     out->stationary = robotState.cfg_stationary;
@@ -397,6 +401,10 @@ bool populateConfigJson(JsonDocument& doc, const ConfigSnapshot& snap) {
 
     JsonObject drive = doc["drive"].to<JsonObject>();
     drive["speedLimitMax"] = snap.speedLimitMax;
+    drive["speedPresetSlow"] = snap.speedPresetSlow;
+    drive["speedPresetNormal"] = snap.speedPresetNormal;
+    drive["speedPresetTurbo"] = snap.speedPresetTurbo;
+    drive["speedPreset"] = speedPresetIdToString(snap.speedPresetActive);
     drive["webDriveTimeoutMs"] = snap.webDriveTimeoutMs;
     drive["ch8ModeLock"] = snap.ch8ModeLock;
     drive["stationary"] = snap.stationary;
@@ -508,16 +516,80 @@ void registerConfigRoutes(AsyncWebServer& server) {
         ConfigSnapshot working;
         captureConfigSnapshot(&working);
         bool changed = false;
-
+        bool speedLimitMaxProvided = false;
+        bool speedPresetValuesProvided = false;
+        SpeedPresetId activePresetBefore = SpeedPresetId::Normal;
+        taskENTER_CRITICAL(&robotStateMux);
+        activePresetBefore = normalizeSpeedPresetId((uint8_t)robotState.cfg_speedPresetActive);
+        taskEXIT_CRITICAL(&robotStateMux);
+        SpeedPresetId activePresetAfter = activePresetBefore;
         int16_t speedLimitMax;
         if (parseInt16Param(req, "speedLimitMax", 0, SPEED_LIMIT_MAX, &speedLimitMax)) {
             working.speedLimitMax = speedLimitMax;
+            speedLimitMaxProvided = true;
             PA_LOG_INFO(TAG, "[CFG] speedLimitMax updated to %d", (int)speedLimitMax);
             changed = true;
         } else if (req->hasParam("speedLimitMax", true)) {
             req->send(400, "application/json",
                       "{\"ok\":false,\"error\":\"speedLimitMax must be 0..600\"}");
             return;
+        }
+
+        int16_t speedPresetSlow;
+        if (parseInt16Param(req, "speedPresetSlow", 0, SPEED_LIMIT_MAX, &speedPresetSlow)) {
+            working.speedPresetSlow = speedPresetSlow;
+            speedPresetValuesProvided = true;
+            PA_LOG_INFO(TAG, "[CFG] speedPresetSlow updated to %d", (int)speedPresetSlow);
+            changed = true;
+        } else if (req->hasParam("speedPresetSlow", true)) {
+            req->send(400, "application/json",
+                      "{\"ok\":false,\"error\":\"speedPresetSlow must be 0..600\"}");
+            return;
+        }
+
+        int16_t speedPresetNormal;
+        if (parseInt16Param(req, "speedPresetNormal", 0, SPEED_LIMIT_MAX, &speedPresetNormal)) {
+            working.speedPresetNormal = speedPresetNormal;
+            speedPresetValuesProvided = true;
+            PA_LOG_INFO(TAG, "[CFG] speedPresetNormal updated to %d", (int)speedPresetNormal);
+            changed = true;
+        } else if (req->hasParam("speedPresetNormal", true)) {
+            req->send(400, "application/json",
+                      "{\"ok\":false,\"error\":\"speedPresetNormal must be 0..600\"}");
+            return;
+        }
+
+        int16_t speedPresetTurbo;
+        if (parseInt16Param(req, "speedPresetTurbo", 0, SPEED_LIMIT_MAX, &speedPresetTurbo)) {
+            working.speedPresetTurbo = speedPresetTurbo;
+            speedPresetValuesProvided = true;
+            PA_LOG_INFO(TAG, "[CFG] speedPresetTurbo updated to %d", (int)speedPresetTurbo);
+            changed = true;
+        } else if (req->hasParam("speedPresetTurbo", true)) {
+            req->send(400, "application/json",
+                      "{\"ok\":false,\"error\":\"speedPresetTurbo must be 0..600\"}");
+            return;
+        }
+        if (speedPresetValuesProvided &&
+            !speedPresetValuesAreUnique(working.speedPresetSlow, working.speedPresetNormal,
+                                        working.speedPresetTurbo)) {
+            req->send(400, "application/json",
+                      "{\"ok\":false,\"error\":\"speed presets must be distinct values\"}");
+            return;
+        }
+        if (speedPresetValuesProvided && !speedLimitMaxProvided) {
+            working.speedLimitMax = speedPresetValueForId(
+                activePresetBefore, working.speedPresetSlow, working.speedPresetNormal,
+                working.speedPresetTurbo);
+            PA_LOG_INFO(TAG, "[CFG] speedLimitMax derived from active preset %s -> %d",
+                        speedPresetIdToString(activePresetBefore), (int)working.speedLimitMax);
+        }
+        if (speedLimitMaxProvided) {
+            if (!resolveSpeedPresetForLimit(working.speedLimitMax, working.speedPresetSlow,
+                                            working.speedPresetNormal, working.speedPresetTurbo,
+                                            &activePresetAfter)) {
+                activePresetAfter = SpeedPresetId::Normal;
+            }
         }
 
         uint32_t webDriveTimeoutMs;
@@ -1015,6 +1087,10 @@ void registerConfigRoutes(AsyncWebServer& server) {
         wasStationary = robotState.stationary;
         wasDomeEnabled = robotState.cfg_enable_dome;
         robotState.cfg_speedLimitMax = working.speedLimitMax;
+        robotState.cfg_speedPresetSlow = working.speedPresetSlow;
+        robotState.cfg_speedPresetNormal = working.speedPresetNormal;
+        robotState.cfg_speedPresetTurbo = working.speedPresetTurbo;
+        robotState.cfg_speedPresetActive = activePresetAfter;
         robotState.cfg_webDriveTimeoutMs = working.webDriveTimeoutMs;
         robotState.cfg_ch8ModeLock = working.ch8ModeLock;
         robotState.cfg_stationary = working.stationary;

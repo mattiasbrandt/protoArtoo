@@ -3,6 +3,7 @@
 //
 // Drive and web control API endpoints
 //   POST /api/drive                   — browser drive command (timeout-protected)
+//   POST /api/drive/speed-preset      — apply Slow/Normal/Turbo speed preset
 //   POST /api/web-control/enable      — enable browser control
 //   POST /api/web-control/disable     — disable browser control
 // =============================================================================
@@ -12,14 +13,16 @@
 #include <Arduino.h>
 #include <ESPAsyncWebServer.h>
 #include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
 
 #include "api_helpers.h"
 #include "audio_task.h"
+#include "drive_speed_preset.h"
 #include "system_sounds.h"
 #include "dome_link.h"
 #include "dome_rx_parser.h"
 #include "mood.h"
-#include "config.h"
 #include "logging.h"
 #include "robot_state.h"
 #include "web_server.h"
@@ -50,6 +53,7 @@ enum ManualCommand : uint8_t {
     MC_STATIONARY_MODE,
     MC_DRIVING_MODE,
 };
+
 
 void setStationaryModeWithSound(bool stationary) {
     uint16_t driveTrack = 0;
@@ -94,6 +98,7 @@ ManualCommand resolveManualCommand(const char* command) {
 }
 
 }  // namespace
+
 
 bool executeManualCommand(const String& raw) {
     if (raw.length() == 0) {
@@ -230,6 +235,45 @@ void registerDriveRoutes(AsyncWebServer& server) {
             req->send(400, "application/json",
                       "{\"ok\":false,\"error\":\"invalid mode - use 'stationary' or 'driving'\"}");
         }
+    });
+
+    server.on("/api/drive/speed-preset", HTTP_POST, [](AsyncWebServerRequest* req) {
+        const AsyncWebParameter* presetParam = req->getParam("preset", true);
+        if (presetParam == nullptr) {
+            req->send(400, "application/json",
+                      "{\"ok\":false,\"error\":\"missing preset\"}");
+            return;
+        }
+
+        String presetRaw = presetParam->value();
+        presetRaw.toLowerCase();
+        SpeedPresetId preset = SpeedPresetId::Normal;
+        if (!parseSpeedPresetId(presetRaw.c_str(), &preset)) {
+            req->send(400, "application/json",
+                      "{\"ok\":false,\"error\":\"invalid preset - use slow, normal, or turbo\"}");
+            return;
+        }
+
+        if (!applySpeedPresetPersisted(preset)) {
+            req->send(500, "application/json",
+                      "{\"ok\":false,\"error\":\"failed to persist speed preset\"}");
+            return;
+        }
+
+        int16_t speedLimitMax = 0;
+        SpeedPresetId activePreset = SpeedPresetId::Normal;
+        taskENTER_CRITICAL(&robotStateMux);
+        speedLimitMax = robotState.cfg_speedLimitMax;
+        activePreset = normalizeSpeedPresetId((uint8_t)robotState.cfg_speedPresetActive);
+        taskEXIT_CRITICAL(&robotStateMux);
+
+        char response[96];
+        if (!formatSpeedPresetResponseJson(response, sizeof(response), activePreset, speedLimitMax)) {
+            req->send(500, "application/json",
+                      "{\"ok\":false,\"error\":\"speed preset response overflow\"}");
+            return;
+        }
+        req->send(200, "application/json", response);
     });
 
     server.on("/api/web-control/enable", HTTP_POST, [](AsyncWebServerRequest* req) {

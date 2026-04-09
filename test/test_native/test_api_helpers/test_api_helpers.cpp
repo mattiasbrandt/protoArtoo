@@ -186,6 +186,35 @@ void test_formatSleepControlJson_small_buffer_fails() {
     TEST_ASSERT_FALSE(formatSleepControlJson(out, sizeof(out), true, true));
 }
 
+// --- formatSpeedPresetResponseJson() tests ---
+
+void test_formatSpeedPresetResponseJson_valid_payload() {
+    char out[96] = {};
+    TEST_ASSERT_TRUE(formatSpeedPresetResponseJson(out, sizeof(out), SpeedPresetId::Turbo, 600));
+    TEST_ASSERT_EQUAL_STRING("{\"ok\":true,\"preset\":\"turbo\",\"speedLimitMax\":600}", out);
+}
+
+void test_formatSpeedPresetResponseJson_null_buffer_fails() {
+    TEST_ASSERT_FALSE(formatSpeedPresetResponseJson(nullptr, 32, SpeedPresetId::Slow, 200));
+}
+
+void test_formatSpeedPresetResponseJson_small_buffer_fails() {
+    char out[24] = {};
+    TEST_ASSERT_FALSE(formatSpeedPresetResponseJson(out, sizeof(out), SpeedPresetId::Normal, 350));
+}
+
+void test_formatSpeedPresetResponseJson_out_of_range_fails() {
+    char out[96] = {};
+    TEST_ASSERT_FALSE(formatSpeedPresetResponseJson(out, sizeof(out), SpeedPresetId::Slow, 601));
+}
+
+void test_formatSpeedPresetResponseJson_invalid_preset_fails() {
+    char out[96] = {};
+    TEST_ASSERT_FALSE(
+        formatSpeedPresetResponseJson(out, sizeof(out), (SpeedPresetId)99, 200));
+}
+
+
 // --- formatAuxLedStateJson() tests ---
 
 void test_formatAuxLedStateJson_valid_payload() {
@@ -241,6 +270,11 @@ int main() {
     RUN_TEST(test_formatSleepControlJson_wake_unchanged);
     RUN_TEST(test_formatSleepControlJson_null_buffer_fails);
     RUN_TEST(test_formatSleepControlJson_small_buffer_fails);
+    RUN_TEST(test_formatSpeedPresetResponseJson_valid_payload);
+    RUN_TEST(test_formatSpeedPresetResponseJson_null_buffer_fails);
+    RUN_TEST(test_formatSpeedPresetResponseJson_small_buffer_fails);
+    RUN_TEST(test_formatSpeedPresetResponseJson_out_of_range_fails);
+    RUN_TEST(test_formatSpeedPresetResponseJson_invalid_preset_fails);
     RUN_TEST(test_formatAuxLedStateJson_valid_payload);
     RUN_TEST(test_formatAuxLedStateJson_null_effect_fails);
     RUN_TEST(test_formatAuxLedStateJson_small_buffer_fails);

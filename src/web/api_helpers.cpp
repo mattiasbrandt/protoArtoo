@@ -7,6 +7,7 @@
 
 #include "api_helpers.h"
 
+#include "config.h"
 #include <cerrno>
 #include <climits>
 #include <cstdint>
@@ -163,6 +164,24 @@ bool formatSleepControlJson(char* buf, size_t bufSize, bool sleepMode, bool chan
 
     int written = snprintf(buf, bufSize, "{\"ok\":true,\"sleepMode\":%s,\"changed\":%s}",
                          sleepMode ? "true" : "false", changed ? "true" : "false");
+    return written > 0 && (size_t)written < bufSize;
+}
+
+bool formatSpeedPresetResponseJson(char* buf, size_t bufSize, SpeedPresetId preset,
+                                   int16_t speedLimitMax) {
+    if (buf == nullptr || bufSize == 0) {
+        return false;
+    }
+    if (!speedPresetIdIsValid(preset)) {
+        return false;
+    }
+    if (speedLimitMax < 0 || speedLimitMax > SPEED_LIMIT_MAX) {
+        return false;
+    }
+
+    int written = snprintf(buf, bufSize,
+                         "{\"ok\":true,\"preset\":\"%s\",\"speedLimitMax\":%d}",
+                         speedPresetIdToString(preset), (int)speedLimitMax);
     return written > 0 && (size_t)written < bufSize;
 }
 

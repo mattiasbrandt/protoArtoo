@@ -104,6 +104,9 @@ constexpr uint8_t PIN_I2C_SDA = 21;
 // Drive constants
 // -----------------------------------------------------------------------------
 constexpr int16_t SPEED_LIMIT_MAX = 600;  // Absolute max drive output (never exceeded)
+constexpr int16_t SPEED_PRESET_SLOW = 200;
+constexpr int16_t SPEED_PRESET_NORMAL = 350;
+constexpr int16_t SPEED_PRESET_TURBO = SPEED_LIMIT_MAX;
 constexpr uint32_t HOVERBOARD_BAUD = 115200;
 constexpr uint32_t DRIVE_FREQ_HZ = 50;  // Frame rate for hoverboard UART
 

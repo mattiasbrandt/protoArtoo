@@ -51,6 +51,7 @@ static ConfigSnapshot makeDefaultSnap() {
 
     snap.auxLedPin = AUX_LED_PIN_DISABLED;
     snap.auxLedCount = AUX_LED_COUNT_DEFAULT;
+    snap.speedPresetActive = SpeedPresetId::Normal;
     return snap;
 }
 
@@ -62,6 +63,7 @@ static ConfigSnapshot makeWorstCaseSnap() {
     snap.webDriveTimeoutMs = 0xFFFFFFFFUL;
     snap.logLevel = 3;
     snap.rcInputMode = RC_INPUT_STANDARD_PWM;
+    snap.speedPresetActive = SpeedPresetId::Turbo;
 
     // Extreme binding config — SBUS2 ch18, long-format calibration values.
     // deadband must satisfy deadband < (max - min), per rcBindingIsValid().
@@ -174,6 +176,8 @@ void test_populateConfigJson_expected_keys_present(void) {
 
     TEST_ASSERT_TRUE(!drive["speedLimitMax"].isNull());
     TEST_ASSERT_TRUE(!drive["webDriveTimeoutMs"].isNull());
+    TEST_ASSERT_TRUE(drive["speedPreset"].is<const char*>());
+    TEST_ASSERT_EQUAL_STRING("normal", drive["speedPreset"] | "");
     TEST_ASSERT_TRUE(rc["inputMode"].is<const char*>());
     TEST_ASSERT_EQUAL_STRING("standard_pwm", rc["inputMode"] | "");
     TEST_ASSERT_TRUE(rc["pwm"]["driveSpeed"].is<const char*>());

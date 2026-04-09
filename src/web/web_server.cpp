@@ -20,6 +20,7 @@
 #include "../../include/api_aux_led.h"
 #include "../../include/api_config.h"
 #include "../../include/api_drive.h"
+#include "../../include/drive_speed_preset.h"
 #include "../../include/api_estop.h"
 #include "../../include/api_helpers.h"
 #include "../../include/api_rc.h"
@@ -295,6 +296,8 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     int driveSteer;
     float domeTargetSpeed;
     float speedLimitScale;
+    int speedLimitMax;
+    SpeedPresetId speedPresetActive;
     bool stationary;
     unsigned long failsafeCount;
     unsigned long failsafeTriggerMs;
@@ -353,6 +356,8 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     driveSteer = robotState.driveSteer;
     domeTargetSpeed = robotState.domeTargetSpeed;
     speedLimitScale = robotState.speedLimitScale;
+    speedLimitMax = robotState.cfg_speedLimitMax;
+    speedPresetActive = normalizeSpeedPresetId((uint8_t)robotState.cfg_speedPresetActive);
     stationary = robotState.stationary;
     failsafeCount = robotState.failsafeTriggerCount;
     failsafeTriggerMs = robotState.failsafeLastTriggerMs;
@@ -420,25 +425,16 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     // Build the fixed system-health fields first.
     int written = snprintf(
         buffer, bufferSize,
-        "{\"estop\":%s,\"webControlEnabled\":%s,\"sbusSignalLost\":%s,\"sbusHwFailsafe\":%s,"
-        "\"webDriveExpired\":%s,\"failsafeSource\":%d,\"driveSpeed\":%d,"
-        "\"driveSteer\":%d,\"domeTargetSpeed\":%.3f,\"domeEnabled\":%s,\"speedLimitScale\":%.3f,\"stationary\":%s,"
-        "\"failsafeCount\":%lu,\"failsafeTriggerMs\":%lu,\"failsafeZeroMs\":%lu,"
-        "\"failsafeTriggerToZeroMs\":%lu,\"failsafeWatchdogMs\":%lu,\"failsafeTriggerSource\":%d,"
-        "\"uptimeMs\":%lu,\"firmwareVersion\":\"%s\",\"webVersion\":\"%s\","
-        "\"heapFree\":%lu,\"heapMin\":%lu,\"heapLargestBlock\":%lu,\"wifiRssi\":%ld,"
-        "\"wifiConnected\":%s,"
-        "\"wifiClientConnected\":%s,"
-        "\"littleFsReady\":%s,\"sleepMode\":%s,\"sleepSinceMs\":%lu,"
-        "\"activeMood\":%u,\"auxLed\":{\"pin\":%u,\"r\":%u,\"g\":%u,\"b\":%u,\"effect\":\"%s\",\"available\":%s}",
+        "{\"estop\":%s,\"webControlEnabled\":%s,\"sbusSignalLost\":%s,\"sbusHwFailsafe\":%s,\"webDriveExpired\":%s,\"failsafeSource\":%d,\"driveSpeed\":%d,\"driveSteer\":%d,\"domeTargetSpeed\":%.3f,\"domeEnabled\":%s,\"speedLimitScale\":%.3f,\"speedLimitMax\":%d,\"speedPreset\":\"%s\",\"stationary\":%s,\"failsafeCount\":%lu,\"failsafeTriggerMs\":%lu,\"failsafeZeroMs\":%lu,\"failsafeTriggerToZeroMs\":%lu,\"failsafeWatchdogMs\":%lu,\"failsafeTriggerSource\":%d,\"uptimeMs\":%lu,\"firmwareVersion\":\"%s\",\"webVersion\":\"%s\",\"heapFree\":%lu,\"heapMin\":%lu,\"heapLargestBlock\":%lu,\"wifiRssi\":%ld,\"wifiConnected\":%s,\"wifiClientConnected\":%s,\"littleFsReady\":%s,\"sleepMode\":%s,\"sleepSinceMs\":%lu,\"activeMood\":%u,\"auxLed\":{\"pin\":%u,\"r\":%u,\"g\":%u,\"b\":%u,\"effect\":\"%s\",\"available\":%s}",
         estop ? "true" : "false", webControlEnabled ? "true" : "false",
         sbusSignalLost ? "true" : "false", sbusHwFailsafe ? "true" : "false",
         webDriveExpired ? "true" : "false", failsafeSource, driveSpeed, driveSteer,
         (double)domeTargetSpeed, enableDome ? "true" : "false", (double)speedLimitScale,
-        stationary ? "true" : "false", failsafeCount, failsafeTriggerMs,
-        failsafeZeroMs, failsafeTriggerToZeroMs, failsafeWatchdogMs, failsafeTriggerSource,
-        uptimeMs, PA_FIRMWARE_VERSION, s_fsVersion, heapFree, heapMin,
-        (unsigned long)heapLargestBlock, wifiRssi, wifiConnected ? "true" : "false",
+        speedLimitMax, speedPresetIdToString(speedPresetActive), stationary ? "true" : "false",
+        failsafeCount, failsafeTriggerMs, failsafeZeroMs, failsafeTriggerToZeroMs,
+        failsafeWatchdogMs, failsafeTriggerSource, uptimeMs, PA_FIRMWARE_VERSION, s_fsVersion,
+        heapFree, heapMin, (unsigned long)heapLargestBlock, wifiRssi,
+        wifiConnected ? "true" : "false",
         wifiClientConnected ? "true" : "false", littleFsReady ? "true" : "false",
         sleepMode ? "true" : "false", (unsigned long)sleepSinceMs, (unsigned)activeMood,
         (unsigned)auxLedPin, (unsigned)auxLedR, (unsigned)auxLedG, (unsigned)auxLedB,

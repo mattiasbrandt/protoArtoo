@@ -27,14 +27,14 @@
     { label: "PBJ Time", cmd: null, key: "pbjtime", editable: true, playMode: "track", trackMin: 0 },
     { label: "Imperial March", cmd: "$M", key: "imp_march", editable: true },
     { label: "Long Cantina", cmd: "$C", key: "cantina_l", editable: true },
-    { label: "Boot Sound", cmd: "$B", key: "startup", editable: true },
+    { label: "Boot Sound ($B)", cmd: "$B", key: "startup", editable: true },
     { label: "Random On", cmd: "$R", key: null, editable: false },
     { label: "Random Off", cmd: "$O", key: null, editable: false },
     { label: "Stop / Chatter Off", cmd: "$s", key: null, editable: false },
   ];
 
   const SYSTEM_SOUNDS = [
-    { label: "Boot complete", key: "sys_boot" },
+    { label: "Boot Complete (auto)", key: "sys_boot" },
     { label: "Mode → Normal", key: "sys_mode_n" },
     { label: "Mode → Slow", key: "sys_mode_s" },
     { label: "Mode → Turbo", key: "sys_mode_t" },

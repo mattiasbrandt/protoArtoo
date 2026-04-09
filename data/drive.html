@@ -99,6 +99,15 @@
         <span class="status-pill pill-info status-pill-compact">🎯 Hold = command</span>
         <span class="status-pill pill-info status-pill-compact">🛑 Release = stop</span>
       </div>
+      <div class="preset-row mt-12">
+        <span class="desc">Speed Preset</span>
+        <div class="button-row button-row-compact">
+          <button class="btn preset-btn" data-speed-preset="slow" type="button">Slow</button>
+          <button class="btn preset-btn" data-speed-preset="normal" type="button">Normal</button>
+          <button class="btn preset-btn" data-speed-preset="turbo" type="button">Turbo</button>
+        </div>
+      </div>
+      <div id="preset-feedback" class="feedback mt-6" role="status" aria-live="polite" aria-atomic="true"></div>
       <div class="dpad-grid mt-16">
         <button class="btn dpad-btn" data-drive-speed="260" data-drive-steer="0"
           type="button" aria-label="Drive Forward">⬆️</button>
@@ -133,6 +142,22 @@
           <input id="ch8-mode-lock" name="ch8ModeLock" type="checkbox">
           <span>Enable CH8 Mode Lock at Zero</span>
         </label>
+        <label class="field">
+          <span>Slow Preset Limit</span>
+          <input id="speed-preset-slow" name="speedPresetSlow" class="preset-input" aria-describedby="preset-distinct-hint" type="number" min="0" max="600" step="1"
+            title="Drive speed limit applied by Slow preset.">
+        </label>
+        <label class="field">
+          <span>Normal Preset Limit</span>
+          <input id="speed-preset-normal" name="speedPresetNormal" class="preset-input" aria-describedby="preset-distinct-hint" type="number" min="0" max="600" step="1"
+            title="Drive speed limit applied by Normal preset.">
+        </label>
+        <label class="field">
+          <span>Turbo Preset Limit</span>
+          <input id="speed-preset-turbo" name="speedPresetTurbo" class="preset-input" aria-describedby="preset-distinct-hint" type="number" min="0" max="600" step="1"
+            title="Drive speed limit applied by Turbo preset.">
+        </label>
+        <div id="preset-distinct-hint" class="feedback warning preset-distinct-hint hidden" role="status" aria-live="polite" aria-atomic="true">Preset limits must be distinct. Duplicate values make preset switching ambiguous.</div>
       </form>
       <div id="config-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true">Loading settings...</div>
     </div>

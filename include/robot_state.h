@@ -15,6 +15,7 @@
 #include <freertos/semphr.h>
 
 #include "config.h"
+#include "drive_speed_preset.h"
 #include "rc_mapping.h"
 
 // -----------------------------------------------------------------------------
@@ -196,8 +197,12 @@ struct RobotState {
     bool rcDebugMode;  // Enable verbose RC/SBUS logging when RC page is active
 
     // --- NVS-backed config (loaded at boot, written via web API) ---
-    int16_t cfg_speedLimitMax;       // Default: SPEED_LIMIT_MAX
-    uint32_t cfg_sbusTimeoutMs;      // Default: SBUS_TIMEOUT_MS
+    int16_t cfg_speedLimitMax;      // Default: SPEED_LIMIT_MAX
+    int16_t cfg_speedPresetSlow;    // Default: SPEED_PRESET_SLOW
+    int16_t cfg_speedPresetNormal;  // Default: SPEED_PRESET_NORMAL
+    int16_t cfg_speedPresetTurbo;   // Default: SPEED_PRESET_TURBO
+    SpeedPresetId cfg_speedPresetActive;  // Default: Normal
+    uint32_t cfg_sbusTimeoutMs;     // Default: SBUS_TIMEOUT_MS
     uint32_t cfg_webDriveTimeoutMs;  // Default: WEB_DRIVE_TIMEOUT_MS
     bool cfg_ch8ModeLock;            // Default: false
     uint8_t cfg_audioVolume;         // Default: 20 (0-30)

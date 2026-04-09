@@ -22,6 +22,10 @@
 // All NVS-backed config fields, copied out of RobotState under portMUX.
 struct ConfigSnapshot {
     int16_t speedLimitMax;
+    int16_t speedPresetSlow;
+    int16_t speedPresetNormal;
+    int16_t speedPresetTurbo;
+    SpeedPresetId speedPresetActive;
     uint32_t webDriveTimeoutMs;
     bool ch8ModeLock;
     bool stationary;

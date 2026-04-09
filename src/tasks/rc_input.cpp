@@ -34,6 +34,7 @@
 #include "../../include/marcduino_helpers.h"
 #include "../../include/dome_link.h"
 #include "../../include/web_server.h"
+#include "../../include/drive_speed_preset.h"
 #include "../../include/rc_pwm_helpers.h"
 #include "../../include/robot_state.h"
 #include "../../include/sbus_decoder.h"
@@ -564,6 +565,15 @@ static void processTriggerAction(RobotActionId target, const char* payload, bool
             break;
         case SYSTEM_ACTION_OP_MODE:
             setStationaryMode(pressed);  // HIGH = Stationary, LOW = Driving
+            break;
+        case DRIVE_ACTION_SPEED_PRESET_CYCLE:
+            if (pressed) {
+                SpeedPresetId current = SpeedPresetId::Normal;
+                taskENTER_CRITICAL(&robotStateMux);
+                current = normalizeSpeedPresetId((uint8_t)robotState.cfg_speedPresetActive);
+                taskEXIT_CRITICAL(&robotStateMux);
+                applySpeedPresetRuntime(nextSpeedPreset(current));
+            }
             break;
         case DOME_ACTION_SEQ:
             // Phase 4: Route to DomeLinkTask
