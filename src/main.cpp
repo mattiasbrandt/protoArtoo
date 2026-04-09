@@ -256,8 +256,10 @@ void loadConfigToState() {
     robotState.cfg_speedPresetSlow = prefs.getShort("spd_pre_s", SPEED_PRESET_SLOW);
     robotState.cfg_speedPresetNormal = prefs.getShort("spd_pre_n", SPEED_PRESET_NORMAL);
     robotState.cfg_speedPresetTurbo = prefs.getShort("spd_pre_t", SPEED_PRESET_TURBO);
-    robotState.cfg_speedPresetActive =
-        normalizeSpeedPresetId(prefs.getUChar("spd_pre_a", (uint8_t)SpeedPresetId::Normal));
+    const bool hasSpeedPresetActiveKey = prefs.isKey("spd_pre_a");
+    const uint8_t storedSpeedPresetActive =
+        prefs.getUChar("spd_pre_a", (uint8_t)SpeedPresetId::Normal);
+    robotState.cfg_speedPresetActive = normalizeSpeedPresetId(storedSpeedPresetActive);
     robotState.cfg_sbusTimeoutMs = prefs.getULong("sbus_tmo", SBUS_TIMEOUT_MS);
     robotState.cfg_webDriveTimeoutMs = prefs.getULong("web_tmo", WEB_DRIVE_TIMEOUT_MS);
     robotState.cfg_ch8ModeLock = prefs.getBool("ch8_lock", false);
@@ -450,14 +452,10 @@ void loadConfigToState() {
         constrain(robotState.cfg_speedPresetNormal, (int16_t)0, (int16_t)SPEED_LIMIT_MAX);
     robotState.cfg_speedPresetTurbo =
         constrain(robotState.cfg_speedPresetTurbo, (int16_t)0, (int16_t)SPEED_LIMIT_MAX);
-    SpeedPresetId inferredPreset = SpeedPresetId::Normal;
-    if (resolveSpeedPresetForLimit(robotState.cfg_speedLimitMax, robotState.cfg_speedPresetSlow,
-                                   robotState.cfg_speedPresetNormal, robotState.cfg_speedPresetTurbo,
-                                   &inferredPreset)) {
-        robotState.cfg_speedPresetActive = inferredPreset;
-    } else {
-        robotState.cfg_speedPresetActive =
-            normalizeSpeedPresetId((uint8_t)robotState.cfg_speedPresetActive);
+    if (!hasSpeedPresetActiveKey) {
+        // Legacy configs without an explicit active preset default to Normal for safer first boot.
+        robotState.cfg_speedPresetActive = SpeedPresetId::Normal;
+        robotState.cfg_speedLimitMax = robotState.cfg_speedPresetNormal;
     }
     robotState.cfg_sbusTimeoutMs =
         constrain(robotState.cfg_sbusTimeoutMs, (uint32_t)50, (uint32_t)5000);
