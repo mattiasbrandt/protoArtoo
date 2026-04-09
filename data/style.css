@@ -1227,7 +1227,7 @@ body.sleep-mode-active {
 }
 
 /* Tooltip styles — exclude buttons and interactive elements */
-[title]:not(button):not(.btn):not(input):not(select) {
+[title]:not(button):not(.btn):not(input):not(select):not(.indicator-text) {
   cursor: help;
   text-decoration: underline dotted;
   text-decoration-color: var(--text-dim);

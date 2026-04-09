@@ -22,10 +22,12 @@ test("dome esc reports OK for idle and spinning states", () => {
   const idle = toSignalMap({ domeEnabled: true, dome: { state: "idle" } });
   assert.equal(idle["h-dome-esc"].state, "ok");
   assert.equal(idle["h-dome-esc"].reason, "Idle");
+  assert.match(idle["h-dome-esc"].detail, /domeEnabled=true, state=idle/);
 
   const spinning = toSignalMap({ domeEnabled: true, dome: { state: "spinning" } });
   assert.equal(spinning["h-dome-esc"].state, "ok");
   assert.equal(spinning["h-dome-esc"].reason, "Spinning");
+  assert.match(spinning["h-dome-esc"].detail, /domeEnabled=true, state=spinning/);
 });
 
 test("dome esc falls back to WARN for unknown or missing state", () => {
@@ -36,6 +38,13 @@ test("dome esc falls back to WARN for unknown or missing state", () => {
   const missingState = toSignalMap({ domeEnabled: true });
   assert.equal(missingState["h-dome-esc"].state, "warn");
   assert.equal(missingState["h-dome-esc"].reason, "No status");
+});
+
+test("dome link reports OFF when backend marks link disabled", () => {
+  const disabled = toSignalMap({ dome_link: { state: "disabled" } });
+  assert.equal(disabled["h-dome-link"].state, "off");
+  assert.equal(disabled["h-dome-link"].reason, "Disabled");
+  assert.match(disabled["h-dome-link"].detail, /state=disabled/);
 });
 
 test("heap unknown data is WARN instead of OFF", () => {
@@ -69,6 +78,10 @@ test("stale mode downgrades non-off indicators to WARN", () => {
   assert.equal(stale["h-sound"].state, "warn");
   assert.equal(stale["h-dome-esc"].state, "warn");
   assert.equal(stale["h-dome-esc"].reason, "Stale data");
+  assert.equal(
+    stale["h-dome-esc"].detail,
+    "Status stream interrupted; showing last known values",
+  );
 });
 
 test("stale mode preserves OFF indicators as OFF", () => {

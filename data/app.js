@@ -136,7 +136,7 @@
   };
 
 
-  const setIndicator = (id, state, reason = "") => {
+  const setIndicator = (id, state, reason = "", detail = "") => {
     const el = document.getElementById(id);
     if (!el) return;
     el.className = `indicator ${state}`;
@@ -144,18 +144,25 @@
     if (textEl) {
       const label = INDICATOR_STATE_LABELS[state] || String(state).toUpperCase();
       textEl.textContent = reason ? `${label}: ${reason}` : label;
-      textEl.title = reason ? `${label} - ${reason}` : label;
+
+      if (detail) {
+        textEl.title = detail;
+      } else {
+        textEl.removeAttribute("title");
+      }
     }
   };
 
   const renderHealth = (payload) => {
     if (!HEALTH_SIGNAL_MODEL || typeof HEALTH_SIGNAL_MODEL.deriveHealthSignals !== "function") {
-      Object.keys(INDICATOR_TEXT).forEach((id) => setIndicator(id, "warn", "Health model missing"));
+      Object.keys(INDICATOR_TEXT).forEach((id) => {
+        setIndicator(id, "warn", "Health model missing", "health_signals.js failed to load");
+      });
       return;
     }
 
     const signals = HEALTH_SIGNAL_MODEL.deriveHealthSignals(payload, { stale: statusIsStale });
-    signals.forEach(({ id, state, reason }) => setIndicator(id, state, reason));
+    signals.forEach(({ id, state, reason, detail }) => setIndicator(id, state, reason, detail));
   };
 
   const renderComponentStatus = (payload) => {
