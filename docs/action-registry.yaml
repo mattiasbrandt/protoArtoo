@@ -1600,6 +1600,21 @@ entries:
   requires_web_control: false
   nvs_key: null
 
+- name: system.status.dashboard-health
+  display_name: Dashboard Health Signals
+  description: Traffic-light health indicators derived client-side from /api/status (RC receiver, WiFi, filesystem, heap, dome serial link, sound module, dome ESC)
+  domain: system
+  type: status
+  marcduino_cmd: null
+  api_path: /api/status
+  sse_event: status
+  cpp_enum: null
+  cpp_file: null
+  sources: [ internal ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
 - name: system.status.logs
   display_name: Logs
   description: Recent firmware log lines
