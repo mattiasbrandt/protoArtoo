@@ -56,7 +56,7 @@
     { label: "Whistle", loKey: "snd_cat_whis_lo", hiKey: "snd_cat_whis_hi" },
   ];
   const MOOD_MAP_MOODS = [
-    { key: "quiet", label: "Quiet" },
+    { key: "quiet", label: "Quiet 🤐" },
     { key: "mid", label: "Mid-Awake" },
     { key: "full", label: "Full-Awake" },
     { key: "awakeplus", label: "Awake+" },

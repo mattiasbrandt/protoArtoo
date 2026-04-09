@@ -80,7 +80,7 @@
 
   const MOOD_LABELS = {
     0: "Idle 😐",
-    10: "Quiet 😴",
+    10: "Quiet 🤐",
     11: "Full-Awake 😄",
     13: "Mid-Awake 🙂",
     14: "Awake+ ✨",
