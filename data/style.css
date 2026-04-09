@@ -1903,6 +1903,95 @@ label.sound-search-field {
 .sound-state-badge[data-state="ok"]       { color: var(--success); }
 .sound-state-badge[data-state="error"]    { color: var(--danger, #e55); }
 
+.chirp-binding-badge {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--accent-bright) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent-bright);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+
+#catalog-bank-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.catalog-bank-tab {
+  min-height: 32px;
+  padding: 4px 10px;
+}
+
+#catalog-status {
+  min-height: 1.2em;
+}
+
+  .catalog-bulk-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .catalog-bulk-count {
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: var(--text-dim);
+    padding: 4px 8px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+  }
+
+  .catalog-select-col {
+    width: 42px;
+    min-width: 42px;
+    text-align: center;
+    vertical-align: middle;
+  }
+
+  .catalog-select-checkbox {
+    width: 15px;
+    height: 15px;
+  }
+
+  .catalog-mapped-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 6px;
+  }
+
+  .catalog-mapped-tag {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--accent-bright);
+    border: 1px solid color-mix(in srgb, var(--accent-bright) 45%, transparent);
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+  }
+
+.catalog-map-select {
+  min-width: 190px;
+  max-width: 260px;
+  width: 100%;
+}
+
+#catalog-rows .catalog-map-cell {
+  min-width: 210px;
+}
+
+#catalog-rows .catalog-actions-cell {
+  min-width: 180px;
+}
+
+
 @media (max-width: 720px) {
   .sound-toolbar {
     grid-template-columns: 1fr;
@@ -1930,6 +2019,26 @@ label.sound-search-field {
   .sound-actions-cell {
     min-width: 152px;
   }
+
+  .catalog-map-select {
+    min-width: 130px;
+    max-width: 180px;
+  }
+
+  .catalog-bulk-bar {
+    align-items: stretch;
+  }
+
+  #catalog-bulk-target {
+    min-width: 100%;
+    max-width: 100%;
+  }
+
+  .catalog-select-col {
+    width: 34px;
+    min-width: 34px;
+  }
+
 }
 
 @media (max-width: 980px) {

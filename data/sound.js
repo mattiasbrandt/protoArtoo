@@ -41,6 +41,17 @@
     { label: "Drives engaged", key: "sys_drv_on" },
     { label: "Dome enabled", key: "sys_dome_on" },
   ];
+
+  const SLOT_BINDING_TARGETS = [
+    ...NAMED_SOUNDS.filter((sound) => sound.editable && Boolean(sound.key)).map((sound) => ({
+      key: sound.key,
+      label: `Named · ${sound.label}`,
+    })),
+    ...SYSTEM_SOUNDS.map((sound) => ({
+      key: sound.key,
+      label: `System · ${sound.label}`,
+    })),
+  ];
   const CATEGORY_SOUNDS = [
     { label: "General", loKey: "snd_cat_gen_lo", hiKey: "snd_cat_gen_hi" },
     { label: "Chatty", loKey: "snd_cat_chat_lo", hiKey: "snd_cat_chat_hi" },
@@ -55,6 +66,38 @@
     { label: "Snarky", loKey: "snd_cat_snrk_lo", hiKey: "snd_cat_snrk_hi" },
     { label: "Whistle", loKey: "snd_cat_whis_lo", hiKey: "snd_cat_whis_hi" },
   ];
+  const SLOT_TARGET_PREFIX = "slot:";
+  const CATEGORY_TARGET_PREFIX = "category:";
+  const CATALOG_MAP_TARGETS = [
+    ...SLOT_BINDING_TARGETS.map((target) => ({
+      value: `${SLOT_TARGET_PREFIX}${target.key}`,
+      label: target.label,
+    })),
+    ...CATEGORY_SOUNDS.map((category) => ({
+      value: `${CATEGORY_TARGET_PREFIX}${category.loKey}`,
+      label: `Category · ${category.label}`,
+    })),
+  ];
+  const SLOT_TARGET_LABEL_BY_KEY = Object.fromEntries(
+    SLOT_BINDING_TARGETS.map((target) => [target.key, target.label])
+  );
+  const CATEGORY_BY_LO_KEY = Object.fromEntries(
+    CATEGORY_SOUNDS.map((category) => [category.loKey, category])
+  );
+  const CATEGORY_SUGGESTION_KEYWORDS = {
+    snd_cat_gen_lo: ["general", "beep", "boop"],
+    snd_cat_chat_lo: ["chatty", "chat"],
+    snd_cat_hap_lo: ["happy"],
+    snd_cat_proc_lo: ["processing", "process"],
+    snd_cat_sad_lo: ["sad"],
+    snd_cat_sent_lo: ["sentimental"],
+    snd_cat_hum_lo: ["humming", "hum"],
+    snd_cat_scrm_lo: ["scream"],
+    snd_cat_ooh_lo: ["surprised", "ooh"],
+    snd_cat_alrm_lo: ["alert", "alarm"],
+    snd_cat_snrk_lo: ["snarky", "pfft", "razzberry"],
+    snd_cat_whis_lo: ["whistle"],
+  };
   const MOOD_MAP_MOODS = [
     { key: "quiet", label: "Quiet 🤐" },
     { key: "mid", label: "Mid-Awake" },
@@ -77,6 +120,7 @@
   const AUDIO_CAP_CURRENT_TRACK = 0x08;
   const AUDIO_CAP_QUERY_SAFE_PLAYING = 0x10;
 
+  const AUDIO_CAP_CATALOG = 0x20;
   const tbody = document.getElementById("named-sound-rows");
   const systemTbody = document.getElementById("system-sound-rows");
   const categoryTbody = document.getElementById("category-sound-rows");
@@ -139,8 +183,39 @@
   const btnPoll = document.getElementById("btn-poll-status");
   const modStatusFb = document.getElementById("mod-status-feedback");
   const trackNumberNote = document.getElementById("track-number-note");
+  const chirpCatalogCard = document.getElementById("chirp-catalog-card");
+  const catalogRows = document.getElementById("catalog-rows");
+  const catalogStatus = document.getElementById("catalog-status");
+  const catalogFeedback = document.getElementById("catalog-feedback");
+  const catalogFilterInput = document.getElementById("catalog-filter");
+  const catalogBankTabs = document.getElementById("catalog-bank-tabs");
+  const catalogRefreshBtn = document.getElementById("btn-catalog-refresh");
+  const catalogSuggestBtn = document.getElementById("btn-catalog-apply-suggestions");
+  const catalogBulkToggleBtn = document.getElementById("btn-catalog-bulk");
+  const catalogBulkBar = document.getElementById("catalog-bulk-bar");
+  const catalogBulkCount = document.getElementById("catalog-bulk-count");
+  const catalogBulkTarget = document.getElementById("catalog-bulk-target");
+  const catalogBulkMapBtn = document.getElementById("btn-catalog-bulk-map");
+  const catalogBulkClearBtn = document.getElementById("btn-catalog-bulk-clear");
+  const catalogBulkCancelBtn = document.getElementById("btn-catalog-bulk-cancel");
+  const catalogSelectAll = document.getElementById("catalog-select-all");
+  const catalogSelectCol = document.getElementById("catalog-col-select");
   let lastCapabilities = null; // null = not yet received
   let moduleStatusRefreshTimer = null;
+  let catalogSupported = false;
+  let catalogReady = false;
+  let catalogBanks = [];
+  let catalogEntries = [];
+  let catalogBankFilter = 0;
+  let catalogFetchInFlight = false;
+  let catalogRefreshInFlight = false;
+  let catalogAutoLoadAttempted = false;
+  let catalogBulkMode = false;
+  let chirpBindings = {};
+  let chirpCategoryBindings = {};
+  const catalogSelectedKeys = new Set();
+  let catalogCategoryRanges = [];
+  let catalogSuggestedCategoryMappings = [];
 
   const setElementVisible = (element, visible) => {
     if (!element) return;
@@ -207,7 +282,34 @@
     const supportsDeviceType = (caps & AUDIO_CAP_DEVICE_TYPE) !== 0;
     const supportsCurrentTrack = (caps & AUDIO_CAP_CURRENT_TRACK) !== 0;
     const supportsSafePlayingQuery = (caps & AUDIO_CAP_QUERY_SAFE_PLAYING) !== 0;
+    const supportsCatalog = (caps & AUDIO_CAP_CATALOG) !== 0;
     const showManualPoll = supportsStatusQuery && !supportsSafePlayingQuery;
+
+    catalogSupported = supportsCatalog;
+    setElementVisible(chirpCatalogCard, supportsCatalog);
+    if (!supportsCatalog) {
+      catalogReady = false;
+      catalogBanks = [];
+      catalogEntries = [];
+      catalogBankFilter = 0;
+      catalogAutoLoadAttempted = false;
+      catalogBulkMode = false;
+      catalogSelectedKeys.clear();
+      chirpCategoryBindings = {};
+      catalogSuggestedCategoryMappings = [];
+      if (catalogRows) catalogRows.innerHTML = "";
+      if (catalogBankTabs) catalogBankTabs.innerHTML = "";
+      if (catalogBulkTarget) catalogBulkTarget.value = "";
+      if (catalogStatus) catalogStatus.textContent = "Catalog unavailable for this backend.";
+    } else if (!catalogReady && catalogEntries.length === 0 && !catalogAutoLoadAttempted) {
+      catalogAutoLoadAttempted = true;
+      if (catalogStatus && !catalogStatus.textContent) {
+        catalogStatus.textContent = "Catalog not loaded yet. Click Refresh Catalog.";
+      }
+      loadCatalog();
+    }
+    syncCatalogBulkUi();
+    applyChirpBindingBadges();
 
     setElementVisible(modDeviceRow, supportsStatusQuery && supportsDeviceType);
     setElementVisible(modCurrentTrackRow, supportsStatusQuery && supportsCurrentTrack);
@@ -222,7 +324,7 @@
       return;
     }
     if (supportsSafePlayingQuery) {
-      modQueryNote.textContent = "Module status updates automatically every 2 s.";
+      modQueryNote.textContent = "Module status auto-refreshes from firmware cache.";
       return;
     }
     modQueryNote.textContent = "Status is cached from boot. Use Poll to refresh — only poll when not playing.";
@@ -372,6 +474,7 @@
       refreshCategoryTestButtons();
     }
     syncMoodMapControlState();
+    syncCatalogBulkUi();
   };
 
   const postAudio = async (params, feedbackEl, label = 'Sound command') => {
@@ -391,18 +494,736 @@
     }
   };
 
-  const postTrack = async (key, track, feedbackEl) => {
+  const postTrack = async (key, track, feedbackEl, binding = null) => {
     if (!window.PAApi) return false;
     if (!soundHardwareEnabled) {
       showFeedback(feedbackEl || globalFb, "Track updates unavailable: enable S2 — Sound in Setup.", false);
       return false;
     }
     try {
-      const result = await window.PAApi.postForm("/api/audio/tracks", { key, track }, { timeoutMs: 3000 });
+      const payload = { key, track };
+      if (binding?.bank && binding?.page) {
+        payload.bank = binding.bank;
+        payload.page = binding.page;
+      }
+      const result = await window.PAApi.postForm("/api/audio/tracks", payload, { timeoutMs: 3000 });
       return feedbackFromSaveResponse(feedbackEl, result);
     } catch (error) {
       feedbackSaveFailure(feedbackEl, error);
       return false;
+    }
+  };
+
+  const findCategoryByLoKey = (loKey) =>
+    CATEGORY_SOUNDS.find((category) => category.loKey === loKey) || null;
+
+  const postCategoryRange = async (loKey, hiKey, lo, hi, feedbackEl, binding = null, quiet = false) => {
+    if (!window.PAApi) return false;
+    if (!soundHardwareEnabled) {
+      if (!quiet) {
+        showFeedback(feedbackEl || globalFb, "Category updates unavailable: enable S2 — Sound in Setup.", false);
+      }
+      return false;
+    }
+    try {
+      const payload = { lo_key: loKey, hi_key: hiKey, lo, hi };
+      if (binding?.bank && binding?.page) {
+        payload.bank = binding.bank;
+        payload.page = binding.page;
+      }
+      const result = await window.PAApi.postForm(
+        "/api/audio/category-range",
+        payload,
+        { timeoutMs: 3000 }
+      );
+      if (quiet) return Boolean(result.data?.ok);
+      return feedbackFromSaveResponse(feedbackEl || globalFb, result);
+    } catch (error) {
+      if (!quiet) feedbackSaveFailure(feedbackEl || globalFb, error);
+      return false;
+    }
+  };
+
+  const postPlayBanked = async (bank, page, index, feedbackEl, label = "Catalog") => {
+    if (!window.PAApi) return false;
+    if (!soundHardwareEnabled) {
+      showFeedback(feedbackEl || globalFb, "Playback unavailable: enable S2 — Sound in Setup.", false);
+      return false;
+    }
+    try {
+      const result = await window.PAApi.postForm(
+        "/api/audio/play-banked",
+        { bank, page, index },
+        { timeoutMs: 3000 }
+      );
+      const ok = Boolean(result.data?.ok);
+      showFeedback(feedbackEl || globalFb, ok ? `${label} played` : (result.data?.error || "Failed"), ok);
+      return ok;
+    } catch (error) {
+      showFeedback(feedbackEl || globalFb, `Playback failed: ${getApiErrorMessage(error)}`, false);
+      return false;
+    }
+  };
+
+  const getSlotBinding = (key) => {
+    const raw = chirpBindings?.[key];
+    if (!raw) return null;
+    const bank = Number.parseInt(raw.bank, 10);
+    const index = Number.parseInt(raw.index, 10);
+    const page = String(raw.page ?? "").trim().toUpperCase();
+    if (!Number.isFinite(bank) || !Number.isFinite(index) || bank < 1 || index < 1 || page.length !== 1) {
+      return null;
+    }
+    return { bank, page, index };
+  };
+
+  const formatBindingLabel = (binding) => `CHIRP B${binding.bank}${binding.page} #${binding.index}`;
+
+  const playMappedSlot = async (key, fallbackTrack, feedbackEl, label) => {
+    const binding = getSlotBinding(key);
+    if (catalogSupported && binding) {
+      return postPlayBanked(binding.bank, binding.page, binding.index, feedbackEl, label);
+    }
+    return postAudio({ action: "play", track: fallbackTrack }, feedbackEl || globalFb, label);
+  };
+
+  const applyChirpBindingBadges = () => {
+    const keys = new Set(SLOT_BINDING_TARGETS.map((entry) => entry.key));
+    keys.forEach((key) => {
+      const badge = document.getElementById(`chirp-binding-${key}`);
+      if (!badge) return;
+      const binding = getSlotBinding(key);
+      if (!catalogSupported || !binding) {
+        badge.textContent = "";
+        badge.classList.add("hidden");
+        return;
+      }
+      badge.textContent = formatBindingLabel(binding);
+      badge.classList.remove("hidden");
+    });
+  };
+
+  const catalogEntryKey = (entry) => {
+    const bank = Number.parseInt(String(entry?.bank ?? "0"), 10);
+    const index = Number.parseInt(String(entry?.index ?? "0"), 10);
+    const page = String(entry?.page ?? "A").trim().toUpperCase() || "A";
+    return `${Number.isFinite(bank) ? bank : 0}:${page}:${Number.isFinite(index) ? index : 0}`;
+  };
+
+  const populateCatalogTargetSelect = (select, placeholderText = "Choose target…") => {
+    if (!select) return;
+    const currentValue = select.value;
+    select.innerHTML = "";
+
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = placeholderText;
+    select.appendChild(placeholder);
+
+    CATALOG_MAP_TARGETS.forEach((target) => {
+      const option = document.createElement("option");
+      option.value = target.value;
+      option.textContent = target.label;
+      select.appendChild(option);
+    });
+
+    if (currentValue) {
+      select.value = currentValue;
+    }
+  };
+
+  const mapCatalogEntriesToTarget = async (entries, target, feedbackEl) => {
+    if (!Array.isArray(entries) || entries.length === 0) {
+      showFeedback(feedbackEl || catalogFeedback, "Select at least one catalog entry.", false);
+      return false;
+    }
+    if (!target) {
+      showFeedback(feedbackEl || catalogFeedback, "Select a target before mapping.", false);
+      return false;
+    }
+
+    if (target.startsWith(SLOT_TARGET_PREFIX)) {
+      if (entries.length !== 1) {
+        showFeedback(
+          feedbackEl || catalogFeedback,
+          "Slot targets accept one sound at a time. Use a Category target for multi-select mapping.",
+          false
+        );
+        return false;
+      }
+      const entry = entries[0];
+      const index = Number.parseInt(String(entry.index), 10);
+      const bank = Number.parseInt(String(entry.bank), 10);
+      const page = String(entry.page || "A").trim().toUpperCase();
+      if (Number.isNaN(index) || index < 1 || Number.isNaN(bank) || bank < 1 || page.length !== 1) {
+        showFeedback(feedbackEl || catalogFeedback, "Catalog entry is invalid.", false);
+        return false;
+      }
+      const key = target.slice(SLOT_TARGET_PREFIX.length);
+      return postTrack(key, index, feedbackEl || catalogFeedback, { bank, page });
+    }
+
+    if (target.startsWith(CATEGORY_TARGET_PREFIX)) {
+      const loKey = target.slice(CATEGORY_TARGET_PREFIX.length);
+      const category = findCategoryByLoKey(loKey);
+      if (!category) {
+        showFeedback(feedbackEl || catalogFeedback, "Unknown category target.", false);
+        return false;
+      }
+      let minIndex = Number.MAX_SAFE_INTEGER;
+      let maxIndex = 0;
+      let selectedBank = 0;
+      let selectedPage = "A";
+      for (const entry of entries) {
+        const index = Number.parseInt(String(entry.index), 10);
+        const bank = Number.parseInt(String(entry.bank), 10);
+        const page = String(entry.page || "A").trim().toUpperCase();
+        if (Number.isNaN(bank) || bank < 1 || page.length !== 1) {
+          showFeedback(feedbackEl || catalogFeedback, "Catalog entry is invalid.", false);
+          return false;
+        }
+        if (selectedBank === 0) {
+          selectedBank = bank;
+          selectedPage = page;
+        } else if (selectedBank !== bank || selectedPage !== page) {
+          showFeedback(
+            feedbackEl || catalogFeedback,
+            "Category mapping requires selected rows from the same bank/page.",
+            false
+          );
+          return false;
+        }
+        if (Number.isNaN(index) || index < 1 || index > TRACK_MAX) {
+          showFeedback(feedbackEl || catalogFeedback, `Category mapping requires index 1-${TRACK_MAX}.`, false);
+          return false;
+        }
+        if (index < minIndex) minIndex = index;
+        if (index > maxIndex) maxIndex = index;
+      }
+      return postCategoryRange(
+        category.loKey,
+        category.hiKey,
+        minIndex,
+        maxIndex,
+        feedbackEl || catalogFeedback,
+        { bank: selectedBank, page: selectedPage }
+      );
+    }
+
+    showFeedback(feedbackEl || catalogFeedback, "Unknown mapping target.", false);
+    return false;
+  };
+
+  const getCatalogMappedTargets = (entry) => {
+    const mapped = [];
+    const entryBank = Number.parseInt(String(entry?.bank ?? "0"), 10);
+    const entryIndex = Number.parseInt(String(entry?.index ?? "0"), 10);
+    const entryPage = String(entry?.page ?? "A").trim().toUpperCase();
+    if (Number.isNaN(entryBank) || Number.isNaN(entryIndex) || entryBank < 1 || entryIndex < 1 || entryPage.length !== 1) {
+      return mapped;
+    }
+
+    Object.entries(chirpBindings || {}).forEach(([slotKey, raw]) => {
+      const bank = Number.parseInt(raw?.bank, 10);
+      const index = Number.parseInt(raw?.index, 10);
+      const page = String(raw?.page ?? "").trim().toUpperCase();
+      if (bank === entryBank && index === entryIndex && page === entryPage) {
+        mapped.push(SLOT_TARGET_LABEL_BY_KEY[slotKey] || `Slot · ${slotKey}`);
+      }
+    });
+
+    catalogCategoryRanges.forEach((range) => {
+      const binding = chirpCategoryBindings?.[range.loKey] || null;
+      const boundBank = Number.parseInt(binding?.bank, 10);
+      const boundPage = String(binding?.page ?? "").trim().toUpperCase();
+      const effectiveBank = Number.isFinite(boundBank) && boundBank >= 1 ? boundBank : 1;
+      const effectivePage = boundPage.length === 1 ? boundPage : "A";
+      if (entryBank === effectiveBank && entryPage === effectivePage &&
+          entryIndex >= range.lo && entryIndex <= range.hi) {
+        mapped.push(`Category · ${range.label}`);
+      }
+    });
+    return mapped;
+  };
+
+  const buildMappedTargetsElement = (entry) => {
+    const mappedTargets = getCatalogMappedTargets(entry);
+    if (!mappedTargets.length) return null;
+    const wrap = document.createElement("div");
+    wrap.className = "catalog-mapped-tags";
+    mappedTargets.forEach((label) => {
+      const badge = document.createElement("span");
+      badge.className = "catalog-mapped-tag";
+      badge.textContent = label;
+      wrap.appendChild(badge);
+    });
+    return wrap;
+  };
+
+
+  const normalizeCatalogDirLabel = (value) =>
+    String(value ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+
+  const guessCategoryLoKeyForDirName = (dirName) => {
+    const normalized = normalizeCatalogDirLabel(dirName);
+    if (!normalized) return null;
+    const compact = normalized.replace(/\s+/g, "");
+    for (const [loKey, keywords] of Object.entries(CATEGORY_SUGGESTION_KEYWORDS)) {
+      if (keywords.some((token) => normalized.includes(token) || compact.includes(token.replace(/\s+/g, "")))) {
+        return loKey;
+      }
+    }
+    return null;
+  };
+
+  const buildSuggestedCategoryMappings = () => {
+    const suggestions = [];
+    const usedLoKeys = new Set();
+    if (!catalogSupported || !catalogReady) return suggestions;
+
+    const safeEntries = Array.isArray(catalogEntries) ? catalogEntries : [];
+    const safeBanks = Array.isArray(catalogBanks) ? catalogBanks : [];
+
+    safeBanks.forEach((bankRow) => {
+      const loKey = guessCategoryLoKeyForDirName(bankRow?.dir);
+      if (!loKey || usedLoKeys.has(loKey)) return;
+      const category = CATEGORY_BY_LO_KEY[loKey];
+      if (!category) return;
+
+      const bank = Number.parseInt(String(bankRow?.bank ?? "0"), 10);
+      const page = String(bankRow?.page ?? "A").trim().toUpperCase();
+      if (!Number.isFinite(bank) || bank < 1 || page.length !== 1) return;
+
+      const indexes = safeEntries
+        .filter((entry) => Number.parseInt(String(entry?.bank ?? "0"), 10) === bank &&
+                         String(entry?.page ?? "A").trim().toUpperCase() === page)
+        .map((entry) => Number.parseInt(String(entry?.index ?? "0"), 10))
+        .filter((index) => Number.isFinite(index) && index >= 1 && index <= TRACK_MAX);
+
+      let lo = 0;
+      let hi = 0;
+      if (indexes.length > 0) {
+        lo = Math.min(...indexes);
+        hi = Math.max(...indexes);
+      } else {
+        const count = Number.parseInt(String(bankRow?.count ?? "0"), 10);
+        if (!Number.isFinite(count) || count < 1) return;
+        lo = 1;
+        hi = Math.min(count, TRACK_MAX);
+      }
+      if (lo < 1 || hi < lo) return;
+
+      suggestions.push({
+        loKey,
+        hiKey: category.hiKey,
+        label: category.label,
+        bank,
+        page,
+        lo,
+        hi,
+        sourceDir: String(bankRow?.dir ?? ""),
+      });
+      usedLoKeys.add(loKey);
+    });
+
+    return suggestions;
+  };
+
+  const syncCatalogSuggestionUi = () => {
+    catalogSuggestedCategoryMappings = buildSuggestedCategoryMappings();
+    if (!catalogSuggestBtn) return;
+    const suggestionCount = catalogSuggestedCategoryMappings.length;
+    catalogSuggestBtn.textContent = suggestionCount > 0
+      ? `🧭 Apply suggestions (${suggestionCount})`
+      : "🧭 Apply suggestions";
+    const enabled = catalogSupported && catalogReady && soundHardwareEnabled && !catalogRefreshInFlight && suggestionCount > 0;
+    catalogSuggestBtn.disabled = !enabled;
+    catalogSuggestBtn.setAttribute("aria-disabled", enabled ? "false" : "true");
+  };
+
+  const applySuggestedCategoryMappings = async () => {
+    if (!catalogSupported || !catalogReady) {
+      showFeedback(catalogFeedback, "Load catalog before applying suggestions.", false);
+      return false;
+    }
+    if (catalogRefreshInFlight) {
+      showFeedback(catalogFeedback, "Wait for catalog refresh to finish.", false);
+      return false;
+    }
+
+    const suggestions = buildSuggestedCategoryMappings();
+    if (!suggestions.length) {
+      showFeedback(catalogFeedback, "No category suggestions found from bank directory names.", false);
+      return false;
+    }
+
+    let applied = 0;
+    let failed = 0;
+    for (const suggestion of suggestions) {
+      const ok = await postCategoryRange(
+        suggestion.loKey,
+        suggestion.hiKey,
+        suggestion.lo,
+        suggestion.hi,
+        catalogFeedback,
+        { bank: suggestion.bank, page: suggestion.page },
+        true
+      );
+      if (ok) {
+        applied += 1;
+      } else {
+        failed += 1;
+      }
+    }
+
+    if (applied > 0) {
+      await loadTracks();
+    }
+    if (failed === 0) {
+      showFeedback(catalogFeedback, `Applied ${applied} suggested category mappings.`, true);
+      return true;
+    }
+    showFeedback(catalogFeedback, `Applied ${applied} suggestions; ${failed} failed.`, false);
+    return applied > 0;
+  };
+
+  const syncCatalogBulkUi = (visibleEntries = null) => {
+    const visible = Array.isArray(visibleEntries) ? visibleEntries : getVisibleCatalogEntries();
+    const bulkVisible = catalogSupported && catalogBulkMode;
+
+    setElementVisible(catalogBulkBar, bulkVisible);
+    setElementVisible(catalogSelectCol, bulkVisible);
+
+    if (catalogBulkToggleBtn) {
+      catalogBulkToggleBtn.textContent = bulkVisible ? "✕ Done" : "☑ Bulk";
+      catalogBulkToggleBtn.setAttribute("aria-pressed", bulkVisible ? "true" : "false");
+      catalogBulkToggleBtn.disabled = !catalogSupported || catalogRefreshInFlight || !soundHardwareEnabled;
+      catalogBulkToggleBtn.setAttribute("aria-disabled", catalogBulkToggleBtn.disabled ? "true" : "false");
+    }
+
+    if (catalogBulkCount) {
+      catalogBulkCount.textContent = `${catalogSelectedKeys.size} selected`;
+    }
+
+    if (catalogSelectAll) {
+      const visibleKeys = visible.map((entry) => catalogEntryKey(entry));
+      const selectedVisibleCount = visibleKeys.filter((key) => catalogSelectedKeys.has(key)).length;
+      catalogSelectAll.checked = visibleKeys.length > 0 && selectedVisibleCount === visibleKeys.length;
+      catalogSelectAll.indeterminate = selectedVisibleCount > 0 && selectedVisibleCount < visibleKeys.length;
+      catalogSelectAll.disabled = !bulkVisible || visibleKeys.length === 0 || catalogRefreshInFlight || !soundHardwareEnabled;
+    }
+
+    if (catalogBulkTarget) {
+      catalogBulkTarget.disabled = !bulkVisible || catalogRefreshInFlight || !soundHardwareEnabled;
+    }
+    if (catalogBulkMapBtn) {
+      const canMap = bulkVisible && soundHardwareEnabled && !catalogRefreshInFlight && catalogSelectedKeys.size > 0 && Boolean(catalogBulkTarget?.value);
+      catalogBulkMapBtn.disabled = !canMap;
+      catalogBulkMapBtn.setAttribute("aria-disabled", canMap ? "false" : "true");
+    }
+    if (catalogBulkClearBtn) {
+      const canClear = bulkVisible && catalogSelectedKeys.size > 0 && !catalogRefreshInFlight;
+      catalogBulkClearBtn.disabled = !canClear;
+      catalogBulkClearBtn.setAttribute("aria-disabled", canClear ? "false" : "true");
+    }
+    if (catalogBulkCancelBtn) {
+      const canCancel = bulkVisible && !catalogRefreshInFlight;
+      catalogBulkCancelBtn.disabled = !canCancel;
+      catalogBulkCancelBtn.setAttribute("aria-disabled", canCancel ? "false" : "true");
+    }
+    syncCatalogSuggestionUi();
+  };
+
+  const setCatalogBulkMode = (enabled) => {
+    const next = Boolean(enabled && catalogSupported && !catalogRefreshInFlight && soundHardwareEnabled);
+    if (next === catalogBulkMode) {
+      syncCatalogBulkUi();
+      return;
+    }
+    catalogBulkMode = next;
+    if (!catalogBulkMode) {
+      catalogSelectedKeys.clear();
+      if (catalogBulkTarget) catalogBulkTarget.value = "";
+      if (catalogSelectAll) {
+        catalogSelectAll.checked = false;
+        catalogSelectAll.indeterminate = false;
+      }
+    }
+    renderCatalogRows();
+    syncCatalogBulkUi();
+  };
+
+  const setCatalogActionLock = (locked) => {
+    const refreshRunning = Boolean(locked);
+    if (catalogRefreshBtn) {
+      catalogRefreshBtn.disabled = refreshRunning || !soundHardwareEnabled || !catalogSupported;
+      catalogRefreshBtn.setAttribute("aria-disabled", catalogRefreshBtn.disabled ? "true" : "false");
+    }
+    if (catalogFilterInput) {
+      catalogFilterInput.disabled = refreshRunning || !catalogSupported || !soundHardwareEnabled;
+    }
+    if (catalogStatus && refreshRunning) {
+      catalogStatus.textContent = "Refreshing catalog... this can take around 1 minute for 100+ entries.";
+    }
+    renderCatalogBankTabs();
+    renderCatalogRows();
+    syncCatalogBulkUi();
+  };
+
+  const buildCatalogTargetSelect = () => {
+    const select = document.createElement("select");
+    select.className = "sound-track-input-md catalog-map-select";
+    select.setAttribute("aria-label", "Map catalog entry to slot or category");
+    populateCatalogTargetSelect(select, "Choose target…");
+    return select;
+  };
+
+  const renderCatalogBankTabs = () => {
+    if (!catalogBankTabs) return;
+    catalogBankTabs.innerHTML = "";
+    if (!catalogSupported) return;
+
+    const tabs = [{ bank: 0, label: "All banks" }, ...catalogBanks.map((bank) => ({
+      bank: Number(bank.bank) || 0,
+      label: `B${bank.bank}${bank.page || "A"}`
+    }))];
+
+    tabs.forEach((tab) => {
+      const button = document.createElement("button");
+      button.className = `btn sound-btn-compact catalog-bank-tab${catalogBankFilter === tab.bank ? " accent" : ""}`;
+      button.type = "button";
+      button.textContent = tab.label;
+      button.setAttribute("role", "tab");
+      button.setAttribute("aria-selected", catalogBankFilter === tab.bank ? "true" : "false");
+      button.disabled = catalogRefreshInFlight || !soundHardwareEnabled;
+      button.setAttribute("aria-disabled", button.disabled ? "true" : "false");
+      button.addEventListener("click", () => {
+        if (catalogRefreshInFlight || !soundHardwareEnabled) return;
+        catalogBankFilter = tab.bank;
+        renderCatalogBankTabs();
+        renderCatalogRows();
+      });
+      catalogBankTabs.appendChild(button);
+    });
+  };
+
+  const getVisibleCatalogEntries = () => {
+    const query = catalogFilterInput?.value?.trim().toLowerCase() ?? "";
+    return catalogEntries.filter((entry) => {
+      if (catalogBankFilter !== 0 && Number(entry.bank) !== catalogBankFilter) return false;
+      if (!query) return true;
+      const haystack = `${entry.name ?? ""} ${entry.bank ?? ""}${entry.page ?? ""} ${entry.index ?? ""}`.toLowerCase();
+      return haystack.includes(query);
+    });
+  };
+
+  const renderCatalogRows = () => {
+    if (!catalogRows) return;
+    catalogRows.innerHTML = "";
+
+    const columnCount = catalogBulkMode ? 6 : 5;
+    if (!catalogSupported) {
+      syncCatalogBulkUi([]);
+      return;
+    }
+
+    if (!catalogReady) {
+      const tr = document.createElement("tr");
+      tr.className = "sound-row-divider";
+      const td = document.createElement("td");
+      td.colSpan = columnCount;
+      td.className = "desc";
+      td.textContent = "Catalog not loaded yet. Click Refresh Catalog.";
+      tr.appendChild(td);
+      catalogRows.appendChild(tr);
+      syncCatalogBulkUi([]);
+      return;
+    }
+
+    const visibleEntries = getVisibleCatalogEntries();
+    if (!visibleEntries.length) {
+      const tr = document.createElement("tr");
+      tr.className = "sound-row-divider";
+      const td = document.createElement("td");
+      td.colSpan = columnCount;
+      td.className = "desc";
+      td.textContent = "No catalog entries match the current filter.";
+      tr.appendChild(td);
+      catalogRows.appendChild(tr);
+      syncCatalogBulkUi([]);
+      return;
+    }
+
+    visibleEntries.forEach((entry) => {
+      const tr = document.createElement("tr");
+      tr.className = "sound-row-divider";
+      const entryKey = catalogEntryKey(entry);
+
+      const tdSelect = document.createElement("td");
+      tdSelect.className = "catalog-select-col";
+      if (!catalogBulkMode) {
+        tdSelect.classList.add("hidden");
+      } else {
+        const rowSelect = document.createElement("input");
+        rowSelect.type = "checkbox";
+        rowSelect.className = "catalog-select-checkbox";
+        rowSelect.checked = catalogSelectedKeys.has(entryKey);
+        rowSelect.disabled = catalogRefreshInFlight || !soundHardwareEnabled;
+        rowSelect.setAttribute("aria-label", `Select ${entry.name || `(index ${entry.index})`}`);
+        rowSelect.addEventListener("change", () => {
+          if (rowSelect.checked) {
+            catalogSelectedKeys.add(entryKey);
+          } else {
+            catalogSelectedKeys.delete(entryKey);
+          }
+          syncCatalogBulkUi(visibleEntries);
+        });
+        tdSelect.appendChild(rowSelect);
+      }
+
+      const tdBank = document.createElement("td");
+      tdBank.className = "sound-mono";
+      tdBank.textContent = `B${entry.bank}${entry.page}`;
+
+      const tdIndex = document.createElement("td");
+      tdIndex.className = "sound-mono";
+      tdIndex.textContent = String(entry.index);
+
+      const tdName = document.createElement("td");
+      tdName.textContent = entry.name || `(index ${entry.index})`;
+      const mappedTargetsEl = buildMappedTargetsElement(entry);
+      if (mappedTargetsEl) {
+        tdName.appendChild(mappedTargetsEl);
+      }
+      const tdMap = document.createElement("td");
+      tdMap.className = "catalog-map-cell";
+      const targetSelect = buildCatalogTargetSelect();
+      targetSelect.disabled = catalogRefreshInFlight || !soundHardwareEnabled;
+      tdMap.appendChild(targetSelect);
+
+      const tdActions = document.createElement("td");
+      tdActions.className = "sound-actions-cell catalog-actions-cell";
+      const actionRow = document.createElement("div");
+      actionRow.className = "sound-action-row";
+
+      const mapButton = createActionButton({
+        label: "💾 Map",
+        title: "Save mapping to selected target",
+        ariaLabel: `Map ${entry.name || entry.index} to selected target`,
+        className: "btn sound-btn-compact",
+        onClick: async () => {
+          if (catalogRefreshInFlight) return;
+          const ok = await mapCatalogEntriesToTarget([entry], targetSelect.value, catalogFeedback);
+          if (ok) await loadTracks();
+        },
+      });
+      mapButton.disabled = catalogRefreshInFlight || !soundHardwareEnabled;
+      mapButton.setAttribute("aria-disabled", mapButton.disabled ? "true" : "false");
+
+      const playButton = createActionButton({
+        label: "▶ Play",
+        title: "Play this catalog entry",
+        ariaLabel: `Play catalog entry ${entry.name || entry.index}`,
+        className: "btn sound-btn-play",
+        onClick: () => {
+          if (catalogRefreshInFlight) return;
+          postPlayBanked(Number(entry.bank), String(entry.page || "A").toUpperCase(), Number(entry.index), catalogFeedback, "Catalog");
+        },
+      });
+      playButton.disabled = catalogRefreshInFlight || !soundHardwareEnabled;
+      playButton.setAttribute("aria-disabled", playButton.disabled ? "true" : "false");
+
+      actionRow.appendChild(mapButton);
+      actionRow.appendChild(playButton);
+      tdActions.appendChild(actionRow);
+
+      tr.appendChild(tdSelect);
+      tr.appendChild(tdBank);
+      tr.appendChild(tdIndex);
+      tr.appendChild(tdName);
+      tr.appendChild(tdMap);
+      tr.appendChild(tdActions);
+      catalogRows.appendChild(tr);
+    });
+
+    syncCatalogBulkUi(visibleEntries);
+  };
+
+  const loadCatalog = async () => {
+    if (!window.PAApi || !catalogSupported) return false;
+    if (catalogFetchInFlight) return catalogReady;
+    catalogFetchInFlight = true;
+    try {
+      const result = await window.PAApi.get("/api/audio/catalog", { timeoutMs: 12000 });
+      const data = result.data || {};
+      catalogReady = Boolean(data.ready);
+      catalogBanks = Array.isArray(data.banks) ? data.banks : [];
+      catalogEntries = Array.isArray(data.entries) ? data.entries : [];
+      const validKeys = new Set(catalogEntries.map((entry) => catalogEntryKey(entry)));
+      [...catalogSelectedKeys].forEach((key) => {
+        if (!validKeys.has(key)) {
+          catalogSelectedKeys.delete(key);
+        }
+      });
+
+      if (catalogStatus) {
+        if (!catalogReady) {
+          catalogStatus.textContent = "Catalog not loaded yet. Click Refresh Catalog.";
+        } else {
+          catalogStatus.textContent = `${catalogEntries.length} entries across ${catalogBanks.length} bank(s).`;
+        }
+      }
+
+      renderCatalogBankTabs();
+      renderCatalogRows();
+      return catalogReady;
+    } catch (error) {
+      if (catalogStatus) catalogStatus.textContent = "Catalog load failed.";
+      showFeedback(catalogFeedback, `Catalog load failed: ${getApiErrorMessage(error)}`, false);
+      return false;
+    } finally {
+      catalogFetchInFlight = false;
+    }
+  };
+  const refreshCatalog = async () => {
+    if (!window.PAApi || !catalogSupported) return false;
+    if (catalogRefreshInFlight) {
+      showFeedback(catalogFeedback, "Catalog refresh already running", false);
+      return false;
+    }
+
+    catalogRefreshInFlight = true;
+    setCatalogActionLock(true);
+    showFeedback(catalogFeedback, "Catalog refresh queued. This can take around 1 minute for large banks.", true);
+
+    try {
+      const result = await window.PAApi.postForm("/api/audio/catalog/refresh", {}, { timeoutMs: 3000 });
+      if (!result.data?.ok) {
+        showFeedback(catalogFeedback, result.data?.error || "Refresh enqueue failed", false);
+        return false;
+      }
+
+      for (let attempt = 0; attempt < 30; attempt += 1) {
+        await new Promise((resolve) => window.setTimeout(resolve, 1000));
+        const ready = await loadCatalog();
+        if (ready) {
+          showFeedback(catalogFeedback, "Catalog refreshed", true);
+          return true;
+        }
+      }
+
+      showFeedback(catalogFeedback, "Catalog refresh still running. Try again in a moment.", false);
+      return false;
+    } catch (error) {
+      showFeedback(catalogFeedback, `Catalog refresh failed: ${getApiErrorMessage(error)}`, false);
+      return false;
+    } finally {
+      catalogRefreshInFlight = false;
+      setCatalogActionLock(false);
+      if (!catalogReady && catalogStatus) {
+        catalogStatus.textContent = "Catalog not loaded yet. Click Refresh Catalog.";
+      }
+      renderCatalogRows();
     }
   };
 
@@ -581,6 +1402,10 @@
           datasetKey: sound.key,
         });
         tdTrack.appendChild(rowInput);
+        const bindingBadge = document.createElement("span");
+        bindingBadge.id = `chirp-binding-${sound.key}`;
+        bindingBadge.className = "chirp-binding-badge hidden";
+        tdTrack.appendChild(bindingBadge);
 
         rowFeedback = createInlineFeedback();
         dirtyMarker = createDirtyMarker();
@@ -615,7 +1440,7 @@
         ariaLabel: `Play ${sound.label}`,
         className: "btn sound-btn-play",
         onClick: () => {
-          if (sound.playMode === "track") {
+          if (sound.editable && sound.key) {
             const minTrack = sound.trackMin ?? 1;
             const value = Number.parseInt(rowInput?.value, 10);
             if (Number.isNaN(value) || value < minTrack || value > TRACK_MAX) {
@@ -623,10 +1448,24 @@
               return;
             }
             if (value === 0) return;
-            postAudio({ action: "play", track: value }, globalFb, sound.label);
+
+            const binding = getSlotBinding(sound.key);
+            if (catalogSupported && binding) {
+              playMappedSlot(sound.key, value, rowFeedback || globalFb, sound.label);
+              return;
+            }
+
+            if (sound.playMode === "track") {
+              postAudio({ action: "play", track: value }, globalFb, sound.label);
+              return;
+            }
+            postAudio({ action: "dollar", cmd: sound.cmd }, globalFb, sound.label);
             return;
           }
-          postAudio({ action: "dollar", cmd: sound.cmd }, globalFb, sound.label);
+
+          if (sound.cmd) {
+            postAudio({ action: "dollar", cmd: sound.cmd }, globalFb, sound.label);
+          }
         },
       });
       actionsWrap.appendChild(playButton);
@@ -696,22 +1535,14 @@
             showFeedback(rowFeedback, MSG.categoryRangeInvalid, false);
             return;
           }
-          if (!window.PAApi) return;
-          if (!soundHardwareEnabled) {
-            showFeedback(rowFeedback, "Category updates unavailable: enable S2 — Sound in Setup.", false);
-            return;
-          }
-          try {
-            const response = await window.PAApi.postForm(
-              "/api/audio/category-range",
-              { lo_key: category.loKey, hi_key: category.hiKey, lo: minVal, hi: maxVal },
-              { timeoutMs: 3000 }
-            );
-            const ok = feedbackFromSaveResponse(rowFeedback, response);
-            if (ok) dirtyTracker.markSaved();
-          } catch (error) {
-            feedbackSaveFailure(rowFeedback, error);
-          }
+          const ok = await postCategoryRange(
+            category.loKey,
+            category.hiKey,
+            minVal,
+            maxVal,
+            rowFeedback
+          );
+          if (ok) dirtyTracker.markSaved();
         },
       });
 
@@ -729,6 +1560,13 @@
           }
           if (minVal === 0) return;
           const randomTrack = minVal + Math.floor(Math.random() * (maxVal - minVal + 1));
+          const binding = chirpCategoryBindings?.[category.loKey];
+          const bank = Number.parseInt(binding?.bank, 10);
+          const page = String(binding?.page ?? "").trim().toUpperCase();
+          if (catalogSupported && Number.isFinite(bank) && bank >= 1 && page.length === 1) {
+            postPlayBanked(bank, page, randomTrack, globalFb, `${category.label} (${randomTrack})`);
+            return;
+          }
           postAudio({ action: "play", track: randomTrack }, globalFb, `${category.label} (${randomTrack})`);
         },
       });
@@ -807,6 +1645,10 @@
         placeholder: "(silent / not set)",
       });
       tdTrack.appendChild(input);
+      const bindingBadge = document.createElement("span");
+      bindingBadge.id = `chirp-binding-${sound.key}`;
+      bindingBadge.className = "chirp-binding-badge hidden";
+      tdTrack.appendChild(bindingBadge);
 
       const { tdActions, actionsWrap } = createActionCell();
       const rowFeedback = createInlineFeedback();
@@ -842,7 +1684,7 @@
             return;
           }
           if (value === 0) return;
-          postAudio({ action: "play", track: value }, globalFb, sound.label);
+          playMappedSlot(sound.key, value, rowFeedback || globalFb, sound.label);
         },
       });
 
@@ -863,7 +1705,12 @@
     try {
       const result = await window.PAApi.get("/api/audio/tracks", { timeoutMs: 3000 });
       const data = result.data;
-
+      chirpBindings = (data && typeof data.chirp_bindings === "object" && data.chirp_bindings)
+        ? data.chirp_bindings
+        : {};
+      chirpCategoryBindings = (data && typeof data.chirp_category_bindings === "object" && data.chirp_category_bindings)
+        ? data.chirp_category_bindings
+        : {};
       NAMED_SOUNDS.forEach((sound) => {
         if (!sound.editable || !sound.key) return;
         const input = document.getElementById(`track-input-${sound.key}`);
@@ -881,6 +1728,7 @@
         systemDirtyTrackers.get(sound.key)?.markSaved();
       });
 
+      catalogCategoryRanges = [];
       CATEGORY_SOUNDS.forEach((category) => {
         const minInput = document.getElementById(`cat-min-${category.loKey}`);
         const maxInput = document.getElementById(`cat-max-${category.hiKey}`);
@@ -895,6 +1743,9 @@
         const minVal = Number.parseInt(minInput?.value, 10);
         const maxVal = Number.parseInt(maxInput?.value, 10);
         updateCategoryTestButtonState(playButton, minVal, maxVal);
+        if (isCategoryRangeValid(minVal, maxVal) && minVal > 0) {
+          catalogCategoryRanges.push({ label: category.label, loKey: category.loKey, lo: minVal, hi: maxVal });
+        }
       });
 
       const randMin = document.getElementById("rand-min");
@@ -915,6 +1766,8 @@
         volSlider.value = data.volume;
         syncVolumeLabel();
       }
+      applyChirpBindingBadges();
+      renderCatalogRows();
     } catch (_error) {
       // No dedicated feedback surface for initial track hydration.
     }
@@ -980,6 +1833,12 @@
   buildCategorySoundRows();
   buildMoodMapRows();
   buildSystemSoundRows();
+  if (catalogStatus) catalogStatus.textContent = "Catalog unavailable for this backend.";
+  populateCatalogTargetSelect(catalogBulkTarget, "Map checked to target…");
+  renderCatalogBankTabs();
+  renderCatalogRows();
+  syncCatalogBulkUi([]);
+  syncCatalogSuggestionUi();
   applySoundWorkspaceMode(loadSoundWorkspaceMode(), false);
   loadTracks();
   loadMoodMap();
@@ -1017,6 +1876,63 @@
 
   namedSoundFilterInput?.addEventListener("input", () => {
     applyNamedSoundFilter();
+  });
+
+  catalogFilterInput?.addEventListener("input", () => {
+    renderCatalogRows();
+  });
+
+  catalogRefreshBtn?.addEventListener("click", async () => {
+    await refreshCatalog();
+  });
+
+  catalogSuggestBtn?.addEventListener("click", async () => {
+    await applySuggestedCategoryMappings();
+  });
+
+  catalogBulkToggleBtn?.addEventListener("click", () => {
+    setCatalogBulkMode(!catalogBulkMode);
+  });
+
+  catalogBulkCancelBtn?.addEventListener("click", () => {
+    setCatalogBulkMode(false);
+  });
+
+  catalogBulkClearBtn?.addEventListener("click", () => {
+    catalogSelectedKeys.clear();
+    renderCatalogRows();
+    syncCatalogBulkUi();
+  });
+
+  catalogBulkTarget?.addEventListener("change", () => {
+    syncCatalogBulkUi();
+  });
+
+  catalogSelectAll?.addEventListener("change", () => {
+    if (!catalogBulkMode) return;
+    const visibleEntries = getVisibleCatalogEntries();
+    visibleEntries.forEach((entry) => {
+      const key = catalogEntryKey(entry);
+      if (catalogSelectAll.checked) {
+        catalogSelectedKeys.add(key);
+      } else {
+        catalogSelectedKeys.delete(key);
+      }
+    });
+    renderCatalogRows();
+    syncCatalogBulkUi(visibleEntries);
+  });
+
+  catalogBulkMapBtn?.addEventListener("click", async () => {
+    if (!catalogBulkMode || catalogRefreshInFlight) return;
+    const target = catalogBulkTarget?.value || "";
+    const selectedEntries = catalogEntries.filter((entry) => catalogSelectedKeys.has(catalogEntryKey(entry)));
+    const ok = await mapCatalogEntriesToTarget(selectedEntries, target, catalogFeedback);
+    if (!ok) return;
+    catalogSelectedKeys.clear();
+    await loadTracks();
+    renderCatalogRows();
+    syncCatalogBulkUi();
   });
 
   soundModeAdvancedBtn?.addEventListener("click", () => {

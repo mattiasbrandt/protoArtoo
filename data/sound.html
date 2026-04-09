@@ -136,6 +136,50 @@
       <p class="help-text desc mt-8">Boot Sound ($B) is the named startup macro track assignment, while Boot Complete (auto) is the system event track that plays automatically after boot.</p>
     </div>
 
+
+    <!-- CHIRP Catalog (visible only when backend supports catalog) -->
+    <div id="chirp-catalog-card" class="card hidden">
+      <h3>📚 CHIRP Sound Catalog</h3>
+      <div class="desc">Browse live CHIRP banks and map entries into named/system slots or category ranges.</div>
+      <div class="button-row mt-12">
+        <button id="btn-catalog-refresh" class="btn">🔄 Refresh Catalog</button>
+        <button id="btn-catalog-apply-suggestions" class="btn">🧭 Apply suggestions</button>
+        <button id="btn-catalog-bulk" class="btn">☑ Bulk</button>
+      </div>
+      <div id="catalog-status" class="desc mt-8"></div>
+      <label class="field mt-12">
+        <span>Filter catalog</span>
+        <input type="text" id="catalog-filter" placeholder="Search by name, bank, or index" autocomplete="off">
+      </label>
+      <div id="catalog-bank-tabs" class="mt-12" role="tablist" aria-label="Catalog bank filter"></div>
+      <div id="catalog-bulk-bar" class="catalog-bulk-bar mt-8 hidden" aria-live="polite">
+        <span id="catalog-bulk-count" class="catalog-bulk-count">0 selected</span>
+        <select id="catalog-bulk-target" class="sound-track-input-md catalog-map-select" aria-label="Bulk map target">
+          <option value="">Choose target…</option>
+        </select>
+        <button id="btn-catalog-bulk-map" class="btn sound-btn-compact">💾 Map checked</button>
+        <button id="btn-catalog-bulk-clear" class="btn sound-btn-compact">Clear</button>
+        <button id="btn-catalog-bulk-cancel" class="btn sound-btn-compact">Done</button>
+      </div>
+      <div class="sound-table-wrap mt-8">
+        <table class="sound-table">
+          <thead>
+            <tr>
+              <th id="catalog-col-select" class="catalog-select-col hidden">
+                <input type="checkbox" id="catalog-select-all" aria-label="Select all visible catalog rows">
+              </th>
+              <th>Bank</th>
+              <th>#</th>
+              <th>Name</th>
+              <th>Map target</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="catalog-rows"></tbody>
+        </table>
+      </div>
+      <div id="catalog-feedback" class="feedback mt-8" role="status" aria-live="polite" aria-atomic="true"></div>
+    </div>
     <div class="sound-section-label sound-section-label-advanced">Advanced Tuning</div>
     <div class="sound-advanced-grid">
     <!-- Sound Categories -->
