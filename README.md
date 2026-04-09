@@ -53,11 +53,11 @@ For project terms and abbreviations, see [`docs/terminology.md`](./docs/terminol
 ## Core Hardware
 
 **Required:**
-- **Artoo Controller PCB v1.1** — body controller ([artoo.uk](https://artoo.uk))  
+- **Artoo Controller PCB v1.1** — body controller ([artoo.uk](https://artoo.uk))
   Requires the **dual-header ESP32 D1 Mini clone** (`wemos_d1_mini32`) — the elongated
   ~68 mm board with dual-row headers (~40 pins). This is a Chinese third-party clone,
   not an official Wemos/LOLIN board. No other ESP32 board fits the PCB socket.
-- **Hoverboard** with custom firmware — drive motors via UART serial  
+- **Hoverboard** with custom firmware — drive motors via UART serial
   Compatible: [EFeru FOC](https://github.com/EFeru/hoverboard-firmware-hack-FOC) (STM32) or [RoboDurden Gen2.x](https://github.com/RoboDurden/Hoverboard-Firmware-Hack-Gen2.x-GD32) (GD32)
 
 **Tested / Supported:**
@@ -127,38 +127,33 @@ Open the repo in VS Code and accept the recommended extensions when prompted
 ## Building and flashing
 
 ```bash
-# Clone
 git clone https://github.com/mattiasbrandt/protoArtoo.git
 cd protoArtoo
 
-# Local build defaults (gitignored user.mk; no credentials stored here)
-make setup
-
-# WiFi credentials (writes src/secrets.h with masked prompts)
+# First-time only: WiFi credentials (writes src/secrets.h, gitignored)
 make setup-wifi
 
-# Run native tests (required before any upload)
-pio test -e native
-
-# Build
-pio run -e protoArtoo
-
-# Flash via USB — ESP32 must be UNSEATED from the PCB
-# (GPIO15/SBUS strapping pin blocks bootloader download mode when seated)
-pio run -e protoArtoo --target upload --upload-port /dev/ttyUSB0
-
-# Flash via OTA — WiFi client mode (default, device on your network)
-pio run -e protoArtoo_ota --target upload
-
-# Flash via OTA — AP mode (connect to the robot's hotspot first)
-pio run -e protoArtoo_ota --target upload --upload-port 192.168.4.1
-
-# Upload web UI assets via OTA
-pio run -e protoArtoo_ota --target uploadfs
-
-# Serial monitor (holds DTR/RTS low — connecting does not reset the ESP32)
-python3 tools/serial_monitor.py
+# Interactive build & deploy wizard — answers questions, runs tests, flashes
+make
 ```
+
+The wizard asks what you want to do (OTA flash, USB flash, build-only, etc.),
+which audio module you have, and the target IP/port. All PlatformIO output
+streams live; errors are highlighted if something goes wrong.
+
+**Power-user shortcuts** (skip the wizard):
+
+```bash
+make ota              # OTA flash — DY-SV5W, default IP
+make ota-chirp        # OTA flash — CHIRP module
+make ota-mp3trigger   # OTA flash — MP3 Trigger module
+make flash            # USB flash (ESP32 must be unseated)
+make uploadfs         # Upload web UI only via OTA
+make test             # Run native unit tests only
+make monitor          # Serial monitor (no reset on connect)
+make help             # List all named targets
+```
+
 
 ---
 
