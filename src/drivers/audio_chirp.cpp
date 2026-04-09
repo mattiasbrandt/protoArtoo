@@ -59,6 +59,41 @@ static uint8_t readLine(char* buf, uint8_t maxLen, uint32_t timeoutMs) {
     return pos;
 }
 
+// Parse CHIRP status lines.
+// Current firmware format: "STAT:playing,<file>,<vol>" or "STAT:idle,,0".
+// Legacy integration notes used "S:<stream>,ply/idle,..."; accept both for
+// robustness while bench hardware is being validated.
+static bool parseChirpStatusLine(const char* line, uint8_t* playStateOut) {
+    if (line == nullptr || playStateOut == nullptr) {
+        return false;
+    }
+
+    if (strncmp(line, "STAT:", 5) == 0) {
+        const char* state = line + 5;
+        if (strncmp(state, "playing,", 8) == 0) {
+            *playStateOut = 0x01;
+            return true;
+        }
+        if (strncmp(state, "idle,", 5) == 0) {
+            *playStateOut = 0x00;
+            return true;
+        }
+    }
+
+    if (strncmp(line, "S:", 2) == 0) {
+        if (strstr(line, ",ply,") != nullptr) {
+            *playStateOut = 0x01;
+            return true;
+        }
+        if (strstr(line, ",idle,") != nullptr) {
+            *playStateOut = 0x00;
+            return true;
+        }
+    }
+
+    return false;
+}
+
 // -----------------------------------------------------------------------------
 // begin()
 // Configures CHIRP TX/RX, applies boot volume, then queries GMAN to cache
@@ -91,7 +126,7 @@ void AudioDriverChirp::begin(uint8_t vol) {
     uint32_t startMs = millis();
     bool gotValidGmanLine = false;
     char line[96];
-    while ((uint32_t)(millis() - startMs) < 500u) {
+    while ((uint32_t)(millis() - startMs) < 1500u) {
         uint8_t n = readLine(line, (uint8_t)sizeof(line), 60u);
         if (n == 0) {
             continue;
@@ -119,6 +154,10 @@ void AudioDriverChirp::begin(uint8_t vol) {
 
     PA_LOG_INFO(TAG, "init — vol=%u Bank1 sounds=%u link=%s", (unsigned)vol,
                 (unsigned)m_totalTracks, m_linkOk ? "OK" : "no response");
+    if (!m_linkOk) {
+        PA_LOG_WARN(TAG,
+                    "No CHIRP manifest response. Verify CHIRP UART baud (9600) and S2 TX/RX wiring.");
+    }
 }
 
 // -----------------------------------------------------------------------------
@@ -172,7 +211,7 @@ void AudioDriverChirp::setVolume(uint8_t vol) {
 // -----------------------------------------------------------------------------
 // queryModuleState()
 // Query CHIRP stream status and map to AudioModuleState.
-// Returns true if at least one valid S: line is received.
+// Returns true if at least one valid status line is received.
 // -----------------------------------------------------------------------------
 bool AudioDriverChirp::queryModuleState(AudioModuleState& out) {
     bool uart2Contended;
@@ -195,23 +234,25 @@ bool AudioDriverChirp::queryModuleState(AudioModuleState& out) {
         s_chirpSerial.read();
     }
 
-    // STAT queries all stream states; responds with one S:N,ply/idle,... line per stream.
-    // Verify STAT response format on first hardware test; STAT:0\n is an alternative
-    // if bare STAT\n is rejected by CHIRP firmware.
-    sendCommand("STAT");
+    // Query stream 0 state; CHIRP responds with "STAT:playing,..." or "STAT:idle,,0".
+    sendCommand("STAT:0");
 
     uint32_t startMs = millis();
     char line[64];
     while ((uint32_t)(millis() - startMs) < 300u) {
         uint8_t n = readLine(line, (uint8_t)sizeof(line), 40u);
-        if (n == 0 || strncmp(line, "S:", 2) != 0) {
+        if (n == 0) {
+            continue;
+        }
+        uint8_t parsedPlayState = 0xFF;
+        if (!parseChirpStatusLine(line, &parsedPlayState)) {
             continue;
         }
 
-        if (strstr(line, ",ply,") != nullptr) {
+        if (parsedPlayState == 0x01) {
             out.playState = 0x01;
             out.linkOk = true;
-        } else if (strstr(line, ",idle,") != nullptr) {
+        } else if (parsedPlayState == 0x00) {
             if (out.playState != 0x01) {
                 out.playState = 0x00;
             }
