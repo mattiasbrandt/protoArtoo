@@ -227,7 +227,7 @@ bool AudioDriverChirp::loadManifestBanks(uint32_t timeoutMs, bool keepTotalTrack
     uint16_t bank1Count = keepTotalTracks ? m_totalTracks : 0;
     uint8_t catalogBankCount = 0;
     uint16_t droppedBankLines = 0;
-    ChirpCatalogBank parsedBanks[CHIRP_CATALOG_MAX_BANKS] = {};
+    memset(m_catalogBanks, 0, sizeof(m_catalogBanks));
     char line[96];
 
     while ((uint32_t)(millis() - startMs) < timeoutMs) {
@@ -248,7 +248,7 @@ bool AudioDriverChirp::loadManifestBanks(uint32_t timeoutMs, bool keepTotalTrack
             ChirpCatalogBank bank{};
             if (parseBankLine(line, &bank)) {
                 if (catalogBankCount < CHIRP_CATALOG_MAX_BANKS) {
-                    parsedBanks[catalogBankCount++] = bank;
+                    m_catalogBanks[catalogBankCount++] = bank;
                 } else {
                     ++droppedBankLines;
                 }
@@ -281,10 +281,6 @@ bool AudioDriverChirp::loadManifestBanks(uint32_t timeoutMs, bool keepTotalTrack
     }
 
     m_catalogBankCount = catalogBankCount;
-    memset(m_catalogBanks, 0, sizeof(m_catalogBanks));
-    if (catalogBankCount > 0) {
-        memcpy(m_catalogBanks, parsedBanks, sizeof(ChirpCatalogBank) * catalogBankCount);
-    }
     m_totalTracks = bank1Count;
     return true;
 }
