@@ -815,7 +815,11 @@
       const index = Number.parseInt(raw?.index, 10);
       const page = String(raw?.page ?? "").trim().toUpperCase();
       if (bank === entryBank && index === entryIndex && page === entryPage) {
-        mapped.push(SLOT_TARGET_LABEL_BY_KEY[slotKey] || `Slot · ${slotKey}`);
+        mapped.push({
+          kind: "slot",
+          slotKey,
+          label: SLOT_TARGET_LABEL_BY_KEY[slotKey] || `Slot · ${slotKey}`,
+        });
       }
     });
 
@@ -827,10 +831,34 @@
       const effectivePage = boundPage.length === 1 ? boundPage : "A";
       if (entryBank === effectiveBank && entryPage === effectivePage &&
           entryIndex >= range.lo && entryIndex <= range.hi) {
-        mapped.push(`Category · ${range.label}`);
+        mapped.push({
+          kind: "category",
+          loKey: range.loKey,
+          label: `Category · ${range.label}`,
+        });
       }
     });
     return mapped;
+  };
+
+  const catalogMappedTargetValue = (mappedTarget) => (
+    mappedTarget.kind === "slot"
+      ? `${SLOT_TARGET_PREFIX}${mappedTarget.slotKey}`
+      : `${CATEGORY_TARGET_PREFIX}${mappedTarget.loKey}`
+  );
+
+  const clearCatalogEntryMappings = async (entry, feedbackEl) => {
+    const mappedTargets = getCatalogMappedTargets(entry);
+    if (!mappedTargets.length) {
+      showFeedback(feedbackEl || catalogFeedback, "No CHIRP mappings found for this sound.", false);
+      return false;
+    }
+    let cleared = 0;
+    for (const mappedTarget of mappedTargets) {
+      const ok = await clearCatalogTargetMapping(catalogMappedTargetValue(mappedTarget), feedbackEl || catalogFeedback);
+      if (ok) cleared += 1;
+    }
+    return cleared > 0;
   };
 
   const buildMappedTargetsElement = (entry) => {
@@ -838,10 +866,21 @@
     if (!mappedTargets.length) return null;
     const wrap = document.createElement("div");
     wrap.className = "catalog-mapped-tags";
-    mappedTargets.forEach((label) => {
-      const badge = document.createElement("span");
+    mappedTargets.forEach((mappedTarget) => {
+      const targetValue = catalogMappedTargetValue(mappedTarget);
+      const badge = document.createElement("button");
+      badge.type = "button";
       badge.className = "catalog-mapped-tag";
-      badge.textContent = label;
+      badge.textContent = `${mappedTarget.label} ×`;
+      badge.title = `Clear ${mappedTarget.label} mapping`;
+      badge.setAttribute("aria-label", `Clear ${mappedTarget.label} mapping`);
+      badge.disabled = catalogRefreshInFlight || !soundHardwareEnabled;
+      badge.setAttribute("aria-disabled", badge.disabled ? "true" : "false");
+      badge.addEventListener("click", async () => {
+        if (catalogRefreshInFlight || !soundHardwareEnabled) return;
+        const ok = await clearCatalogTargetMapping(targetValue, catalogFeedback);
+        if (ok) await loadTracks();
+      });
       wrap.appendChild(badge);
     });
     return wrap;
@@ -1220,12 +1259,12 @@
 
       const clearButton = createActionButton({
         label: "Clear",
-        title: "Clear mapping for selected target",
-        ariaLabel: `Clear mapping target for ${entry.name || entry.index}`,
+        title: "Clear all mappings shown on this sound",
+        ariaLabel: `Clear mapped targets for ${entry.name || entry.index}`,
         className: "btn sound-btn-compact",
         onClick: async () => {
           if (catalogRefreshInFlight) return;
-          const ok = await clearCatalogTargetMapping(targetSelect.value, catalogFeedback);
+          const ok = await clearCatalogEntryMappings(entry, catalogFeedback);
           if (ok) await loadTracks();
         },
       });
