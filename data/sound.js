@@ -72,8 +72,6 @@
   ];
   const SLOT_TARGET_PREFIX = "slot:";
   const CATEGORY_TARGET_PREFIX = "category:";
-  const SLOT_CLEAR_TARGET_PREFIX = "slot-clear:";
-  const CATEGORY_CLEAR_TARGET_PREFIX = "category-clear:";
   const CATALOG_MAP_TARGETS = [
     ...NAMED_SLOT_TARGETS.map((target) => ({
       value: `${SLOT_TARGET_PREFIX}${target.key}`,
@@ -89,21 +87,6 @@
       value: `${CATEGORY_TARGET_PREFIX}${category.loKey}`,
       label: `Category · ${category.label}`,
       group: "Map to category",
-    })),
-    ...NAMED_SLOT_TARGETS.map((target) => ({
-      value: `${SLOT_CLEAR_TARGET_PREFIX}${target.key}`,
-      label: `Unmap named slot · ${target.label}`,
-      group: "Clear named slot mapping",
-    })),
-    ...SYSTEM_SLOT_TARGETS.map((target) => ({
-      value: `${SLOT_CLEAR_TARGET_PREFIX}${target.key}`,
-      label: `Unmap system slot · ${target.label}`,
-      group: "Clear system slot mapping",
-    })),
-    ...CATEGORY_SOUNDS.map((category) => ({
-      value: `${CATEGORY_CLEAR_TARGET_PREFIX}${category.loKey}`,
-      label: `Reset category · ${category.label}`,
-      group: "Clear category mapping",
     })),
   ];
   const SLOT_TARGET_LABEL_BY_KEY = Object.fromEntries(
@@ -702,35 +685,6 @@
       return false;
     }
 
-    if (target.startsWith(SLOT_CLEAR_TARGET_PREFIX)) {
-      const key = target.slice(SLOT_CLEAR_TARGET_PREFIX.length);
-      const currentTrack = getCurrentConfiguredTrack(key);
-      if (currentTrack === null) {
-        showFeedback(feedbackEl || catalogFeedback, "Cannot clear slot mapping: track value is unavailable.", false);
-        return false;
-      }
-      return postTrack(key, currentTrack, feedbackEl || catalogFeedback);
-    }
-
-    if (target.startsWith(CATEGORY_CLEAR_TARGET_PREFIX)) {
-      const loKey = target.slice(CATEGORY_CLEAR_TARGET_PREFIX.length);
-      const category = findCategoryByLoKey(loKey);
-      if (!category) {
-        showFeedback(feedbackEl || catalogFeedback, "Unknown category target.", false);
-        return false;
-      }
-      return postCategoryRange(
-        category.loKey,
-        category.hiKey,
-        0,
-        0,
-        feedbackEl || catalogFeedback,
-        null,
-        false,
-        true
-      );
-    }
-
     if (!Array.isArray(entries) || entries.length === 0) {
       showFeedback(feedbackEl || catalogFeedback, "Select at least one catalog entry.", false);
       return false;
@@ -805,6 +759,45 @@
     }
 
     showFeedback(feedbackEl || catalogFeedback, "Unknown mapping target.", false);
+    return false;
+  };
+
+  const clearCatalogTargetMapping = async (target, feedbackEl) => {
+    if (!target) {
+      showFeedback(feedbackEl || catalogFeedback, "Select a target before clearing.", false);
+      return false;
+    }
+
+    if (target.startsWith(SLOT_TARGET_PREFIX)) {
+      const key = target.slice(SLOT_TARGET_PREFIX.length);
+      const currentTrack = getCurrentConfiguredTrack(key);
+      if (currentTrack === null) {
+        showFeedback(feedbackEl || catalogFeedback, "Cannot clear slot mapping: track value is unavailable.", false);
+        return false;
+      }
+      return postTrack(key, currentTrack, feedbackEl || catalogFeedback);
+    }
+
+    if (target.startsWith(CATEGORY_TARGET_PREFIX)) {
+      const loKey = target.slice(CATEGORY_TARGET_PREFIX.length);
+      const category = findCategoryByLoKey(loKey);
+      if (!category) {
+        showFeedback(feedbackEl || catalogFeedback, "Unknown category target.", false);
+        return false;
+      }
+      return postCategoryRange(
+        category.loKey,
+        category.hiKey,
+        0,
+        0,
+        feedbackEl || catalogFeedback,
+        null,
+        false,
+        true
+      );
+    }
+
+    showFeedback(feedbackEl || catalogFeedback, "Unknown clear target.", false);
     return false;
   };
 
@@ -1078,7 +1071,7 @@
   const buildCatalogTargetSelect = () => {
     const select = document.createElement("select");
     select.className = "sound-track-input-md catalog-map-select";
-    select.setAttribute("aria-label", "Map catalog entry to slot or category");
+    select.setAttribute("aria-label", "Select mapping target");
     populateCatalogTargetSelect(select, "Choose target…");
     return select;
   };
@@ -1225,6 +1218,20 @@
       mapButton.disabled = catalogRefreshInFlight || !soundHardwareEnabled;
       mapButton.setAttribute("aria-disabled", mapButton.disabled ? "true" : "false");
 
+      const clearButton = createActionButton({
+        label: "Clear",
+        title: "Clear mapping for selected target",
+        ariaLabel: `Clear mapping target for ${entry.name || entry.index}`,
+        className: "btn sound-btn-compact",
+        onClick: async () => {
+          if (catalogRefreshInFlight) return;
+          const ok = await clearCatalogTargetMapping(targetSelect.value, catalogFeedback);
+          if (ok) await loadTracks();
+        },
+      });
+      clearButton.disabled = catalogRefreshInFlight || !soundHardwareEnabled;
+      clearButton.setAttribute("aria-disabled", clearButton.disabled ? "true" : "false");
+
       const playButton = createActionButton({
         label: "▶ Play",
         title: "Play this catalog entry",
@@ -1239,6 +1246,7 @@
       playButton.setAttribute("aria-disabled", playButton.disabled ? "true" : "false");
 
       actionRow.appendChild(mapButton);
+      actionRow.appendChild(clearButton);
       actionRow.appendChild(playButton);
       tdActions.appendChild(actionRow);
 
