@@ -43,7 +43,7 @@ enum AudioCommandType : uint8_t {
     AUDIO_CMD_SET_VOLUME,    // set absolute volume 0–30
     AUDIO_CMD_QUERY_STATUS,  // on-demand status query (manual/fallback poll path)
     AUDIO_CMD_REFRESH_CATALOG,  // refresh CHIRP catalog cache
-
+    AUDIO_CMD_REFRESH_BINDINGS,  // refresh cached CHIRP slot/category bindings from NVS
 };
 
 enum AudioPlaybackSlot : uint8_t {
@@ -135,6 +135,8 @@ bool audioQueueQueryStatus(CommandSource src);
 // Enqueue an asynchronous CHIRP catalog refresh.
 bool audioQueueRefreshCatalog(CommandSource src);
 
+// Enqueue CHIRP slot/category binding cache refresh from NVS.
+bool audioQueueRefreshBindings(CommandSource src);
 // Returns the short name of the active audio driver (e.g. "DY-SV5W", "CHIRP").
 // Safe to call from any task or web handler after AudioTask has been created.
 const char* audioGetDriverName();

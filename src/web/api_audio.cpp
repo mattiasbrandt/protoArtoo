@@ -781,6 +781,9 @@ void registerAudioRoutes(AsyncWebServer& server) {
             PA_LOG_INFO(TAG, "[AUDIO] POST /api/audio/category-range %s=%u %s=%u", loKey,
                         (unsigned)loValue, hiKey, (unsigned)hiValue);
         }
+        if ((hasBankedParams || clearBinding) && !audioQueueRefreshBindings(SRC_WEB_API)) {
+            PA_LOG_WARN(TAG, "[AUDIO] binding cache refresh enqueue failed (queue full)");
+        }
         req->send(200, "application/json", "{\"ok\":true}");
     });
 
@@ -1042,6 +1045,9 @@ void registerAudioRoutes(AsyncWebServer& server) {
             taskENTER_CRITICAL(&robotStateMux);
             *fieldPtr = t;
             taskEXIT_CRITICAL(&robotStateMux);
+            if (chirpBindingKey != nullptr && !audioQueueRefreshBindings(SRC_WEB_API)) {
+                PA_LOG_WARN(TAG, "[AUDIO] binding cache refresh enqueue failed (queue full)");
+            }
             req->send(200, "application/json", "{\"ok\":true}");
         } else {
             req->send(500, "application/json", "{\"ok\":false,\"error\":\"NVS write failed\"}");

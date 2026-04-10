@@ -231,6 +231,19 @@ bool audioQueueRefreshCatalog(CommandSource src) {
     return true;
 }
 
+bool audioQueueRefreshBindings(CommandSource src) {
+    AudioCommand msg{};
+    msg.type = AUDIO_CMD_REFRESH_BINDINGS;
+    msg.source = src;
+    if (xQueueSend(audioCmdQueue, &msg, 0) != pdTRUE) {
+        taskENTER_CRITICAL(&robotStateMux);
+        robotState.queueOverflowCount++;
+        taskEXIT_CRITICAL(&robotStateMux);
+        return false;
+    }
+    return true;
+}
+
 // -----------------------------------------------------------------------------
 // dispatchAction()
 // Apply a parsed AudioAction to the driver; update volume and randomMode state.
@@ -408,10 +421,34 @@ static bool unpackChirpCategoryBinding(uint32_t packed, uint8_t* bankOut, char* 
     return true;
 }
 
-static bool loadChirpBindingForSlot(AudioPlaybackSlot slot, uint8_t* bankOut, char* pageOut,
-                                    uint16_t* indexOut) {
-    const char* nvsKey = chirpBindingKeyForSlot(slot);
-    if (nvsKey == nullptr) {
+static constexpr uint8_t CHIRP_CATEGORY_BINDING_COUNT = 12u;
+static constexpr uint8_t CHIRP_SLOT_BINDING_COUNT = (uint8_t)AUDIO_SLOT_SYS_DOME_ON + 1u;
+
+struct ChirpSlotBindingCache {
+    bool valid = false;
+    uint8_t bank = 0;
+    char page = 'A';
+    uint16_t index = 0;
+};
+
+struct ChirpCategoryBindingCache {
+    bool valid = false;
+    uint8_t bank = 0;
+    char page = 'A';
+};
+
+static ChirpSlotBindingCache s_chirpSlotBindings[CHIRP_SLOT_BINDING_COUNT] = {};
+static ChirpCategoryBindingCache s_chirpCategoryBindings[CHIRP_CATEGORY_BINDING_COUNT] = {};
+
+static void clearChirpBindingCache() {
+    memset(s_chirpSlotBindings, 0, sizeof(s_chirpSlotBindings));
+    memset(s_chirpCategoryBindings, 0, sizeof(s_chirpCategoryBindings));
+}
+
+static bool refreshChirpBindingCacheFromNvs() {
+    clearChirpBindingCache();
+
+    if ((driver->capabilities() & AudioDriver::AUDIO_CAP_CATALOG) == 0) {
         return false;
     }
 
@@ -419,25 +456,78 @@ static bool loadChirpBindingForSlot(AudioPlaybackSlot slot, uint8_t* bankOut, ch
     if (!prefs.begin(NVS_NAMESPACE, true)) {
         return false;
     }
-    uint32_t packed = prefs.getUInt(nvsKey, 0);
-    prefs.end();
 
-    return unpackChirpBinding(packed, bankOut, pageOut, indexOut);
+    for (uint8_t slotIdx = 1; slotIdx < CHIRP_SLOT_BINDING_COUNT; ++slotIdx) {
+        const char* nvsKey = chirpBindingKeyForSlot((AudioPlaybackSlot)slotIdx);
+        if (nvsKey == nullptr) {
+            continue;
+        }
+
+        uint8_t bank = 0;
+        char page = 'A';
+        uint16_t index = 0;
+        uint32_t packed = prefs.getUInt(nvsKey, 0);
+        if (unpackChirpBinding(packed, &bank, &page, &index)) {
+            ChirpSlotBindingCache& entry = s_chirpSlotBindings[slotIdx];
+            entry.valid = true;
+            entry.bank = bank;
+            entry.page = page;
+            entry.index = index;
+        }
+    }
+
+    for (uint8_t categoryIdx = 0; categoryIdx < CHIRP_CATEGORY_BINDING_COUNT; ++categoryIdx) {
+        const char* nvsKey = chirpBindingKeyForCategoryIndex(categoryIdx);
+        if (nvsKey == nullptr) {
+            continue;
+        }
+
+        uint8_t bank = 0;
+        char page = 'A';
+        uint32_t packed = prefs.getUInt(nvsKey, 0);
+        if (unpackChirpCategoryBinding(packed, &bank, &page)) {
+            ChirpCategoryBindingCache& entry = s_chirpCategoryBindings[categoryIdx];
+            entry.valid = true;
+            entry.bank = bank;
+            entry.page = page;
+        }
+    }
+
+    prefs.end();
+    return true;
+}
+
+static bool loadChirpBindingForSlot(AudioPlaybackSlot slot, uint8_t* bankOut, char* pageOut,
+                                    uint16_t* indexOut) {
+    if (bankOut == nullptr || pageOut == nullptr || indexOut == nullptr) {
+        return false;
+    }
+    uint8_t slotIdx = (uint8_t)slot;
+    if (slotIdx >= CHIRP_SLOT_BINDING_COUNT) {
+        return false;
+    }
+    const ChirpSlotBindingCache& entry = s_chirpSlotBindings[slotIdx];
+    if (!entry.valid) {
+        return false;
+    }
+    *bankOut = entry.bank;
+    *pageOut = entry.page;
+    *indexOut = entry.index;
+    return true;
 }
 
 static bool loadChirpBindingForCategory(uint8_t categoryIndex, uint8_t* bankOut,
                                         char* pageOut) {
-    const char* nvsKey = chirpBindingKeyForCategoryIndex(categoryIndex);
-    if (nvsKey == nullptr) {
+    if (bankOut == nullptr || pageOut == nullptr || categoryIndex >= CHIRP_CATEGORY_BINDING_COUNT) {
         return false;
     }
-    Preferences prefs;
-    if (!prefs.begin(NVS_NAMESPACE, true)) {
+    const ChirpCategoryBindingCache& entry = s_chirpCategoryBindings[categoryIndex];
+    if (!entry.valid) {
         return false;
     }
-    uint32_t packed = prefs.getUInt(nvsKey, 0);
-    prefs.end();
-    return unpackChirpCategoryBinding(packed, bankOut, pageOut);
+    *bankOut = entry.bank;
+    *pageOut = entry.page;
+    return true;
 }
 
 static void dispatchPlayResolved(uint16_t track, AudioPlaybackSlot slot, CommandSource source,
@@ -651,6 +741,10 @@ void audioTask(void* pvParameters) {
             named.disco = robotState.cfg_snd_disco;
             taskEXIT_CRITICAL(&robotStateMux);
             driver->begin(currentVol);
+            if (driver->capabilities() & AudioDriver::AUDIO_CAP_CATALOG) {
+                bool cacheLoaded = refreshChirpBindingCacheFromNvs();
+                PA_LOG_INFO(TAG, "CHIRP binding cache %s", cacheLoaded ? "loaded" : "load failed");
+            }
             driverInitialized = true;
             PA_LOG_INFO(TAG, "audio driver init — PA_AUDIO_DRIVER=%d vol=%u", PA_AUDIO_DRIVER,
                         (unsigned)currentVol);
@@ -810,6 +904,18 @@ void audioTask(void* pvParameters) {
                     PA_LOG_DEBUG(TAG, "[%s] catalog refresh ignored (non-CHIRP build)",
                                  commandSourceToString(cmd.source));
 #endif
+                    break;
+                }
+
+                case AUDIO_CMD_REFRESH_BINDINGS: {
+                    if (!(driver->capabilities() & AudioDriver::AUDIO_CAP_CATALOG)) {
+                        PA_LOG_DEBUG(TAG, "[%s] binding cache refresh ignored (unsupported backend)",
+                                     commandSourceToString(cmd.source));
+                        break;
+                    }
+                    bool ok = refreshChirpBindingCacheFromNvs();
+                    PA_LOG_INFO(TAG, "[%s] binding cache refresh %s",
+                                commandSourceToString(cmd.source), ok ? "OK" : "FAILED");
                     break;
                 }
 

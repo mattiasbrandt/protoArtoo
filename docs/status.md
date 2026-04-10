@@ -83,8 +83,8 @@ Latest release: `v0.4.0` — see `CHANGELOG.md` for full history.
 - Random ambient chatter with per-mood frequency — each mood preset has its own chatter rate
 - Volume configurable from the Sound page and persisted across reboots
 - Sound module connection state and playback status visible on the Sound page
-- CHIRP catalog-assisted mapping on Sound page: refresh live module catalog (`GMAN` + `GNME`), browse bank/page/index/name entries, map single entries to Named/System slots, bulk-map selected entries to category ranges, apply directory-name-based category suggestions, and trigger banked playback tests
-- CHIRP bindings persist separately from default numbered tracks (`chr_*` for Named/System slots, `chr_cat_*` for categories alongside `snd_*`) so non-CHIRP behavior remains unchanged
+- CHIRP Sound Catalog on the Sound page can refresh the module catalog, browse bank/page/track names, map sounds to Named and System slots, bulk-map checked sounds into a category range, apply directory-based mapping suggestions, and play test sounds directly from the catalog
+- CHIRP mapping is optional and non-destructive: if no CHIRP mapping is set for a slot or category, protoArtoo continues to use the standard numbered track settings
 
 ### Moods and sequences
 
@@ -114,9 +114,9 @@ protoArtoo targets a single hardware platform:
 
 ## Known Limitations
 
-- **Sound module status varies by backend:** Modules with bidirectional UART (DY-SV5W, CHIRP) report module state on the Sound page. DY-SV5W status is manually polled to avoid disrupting its RX state machine during playback. CHIRP status auto-polls every 10 seconds and is safe to query while playing.
-- **CHIRP binding scope:** `chirp_bindings` are applied to named/system slot playback, and `chirp_category_bindings` are applied to category random playback. Both paths fall back to numeric `snd_*`/`snd_cat_*` values when no valid binding exists.
-
+- **Sound module status varies by backend:** Modules with bidirectional UART (DY-SV5W, CHIRP) report module state on the Sound page. DY-SV5W status is manually polled to avoid disrupting playback. CHIRP status auto-polls every 10 seconds and is safe to query while playing.
+- **CHIRP catalog refresh takes time:** Large SD-card catalogs can take around a minute to scan. While a refresh is running, catalog actions are temporarily paused to avoid conflicting requests.
+- **Bank 1 General is configured by range:** The catalog focuses on browsable SD pages. Bank 1 General sounds are set using the General category track range, with a hint shown on the Sound page for the detected count.
 ---
 
 ## Not Yet Confirmed on Full Hardware
