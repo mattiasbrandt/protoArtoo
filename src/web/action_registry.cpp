@@ -16,7 +16,6 @@ const ActionEntry ACTION_REGISTRY[] = {
     { DRIVE_ACTION_SPEED,             "drive.action.speed",               "Speed",               "drive",  "Forward/reverse drive speed (analog axis)",            false },
     { DRIVE_ACTION_STEER,             "drive.action.steer",               "Steer",               "drive",  "Left/right steering (analog axis)",                    false },
     { DOME_ACTION_SPEED,              "dome.action.set-speed",            "Dome Speed",          "dome",   "Dome rotation speed (analog axis)",                    false },
-    { DRIVE_ACTION_SPEED_LIMIT,       "drive.action.speed-limit",         "Speed Limit",         "drive",  "Maximum drive speed as a fraction of full range",      false },
     { SYSTEM_ACTION_OP_MODE,          "system.action.set-mode",           "Set Mode",            "system", "Switch between stationary and driving mode",            false },
     { SERVO_ACTION_ARM1_TOGGLE,       "servo.action.toggle-arm1",         "ARM1 Toggle",         "servo",  "Toggle arm 1 servo between open and closed",           false },
     { SERVO_ACTION_ARM2_TOGGLE,       "servo.action.toggle-arm2",         "ARM2 Toggle",         "servo",  "Toggle arm 2 servo between open and closed",           false },

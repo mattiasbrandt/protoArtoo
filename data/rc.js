@@ -48,16 +48,16 @@
   let rcInputsEnabled = true;
 
   const SUPPORTED_SLOTS = [
-    "driveSpeed", "driveSteer", "driveLimit", "domeSpeed",
+    "driveSpeed", "driveSteer", "domeSpeed",
     "arm1", "arm2", "aux1", "aux2", "aux3", "sound",
-    "opMode", "free0", "free1", "free2", "free3"
+    "speedPresetCycle", "opMode", "free1", "free2", "free3"
   ];
 
   const isSlotSupported = (slotKey) => {
     return SUPPORTED_SLOTS.includes(slotKey);
   };
 
-  const BACKBONE_SLOTS = ["driveSpeed", "driveSteer", "domeSpeed", "driveLimit"];
+  const BACKBONE_SLOTS = ["driveSpeed", "driveSteer", "domeSpeed"];
 
   // Hardcoded fallback used until GET /api/actions resolves.
   // Matches robotActionIdToString() NVS token keys in rc_mapping.h.
@@ -66,7 +66,6 @@
     { token: 'drive_speed', label: 'Speed', group: 'Movement', description: 'Forward/reverse drive speed (analog axis)', disabled: false, testable: false, safetyCritical: false },
     { token: 'drive_steer', label: 'Steer', group: 'Movement', description: 'Left/right steering (analog axis)', disabled: false, testable: false, safetyCritical: false },
     { token: 'dome_speed', label: 'Dome Speed', group: 'Movement', description: 'Dome rotation speed (analog axis)', disabled: false, testable: false, safetyCritical: false },
-    { token: 'speed_limit', label: 'Speed Limit', group: 'Movement', description: 'Maximum drive speed as a fraction of full range', disabled: false, testable: false, safetyCritical: false },
     { token: 'op_mode', label: 'Set Mode', group: 'Mode', description: 'Switch between stationary and driving mode', disabled: false, testable: true, safetyCritical: false },
     { token: 'arm1_toggle', label: 'ARM1 Toggle', group: 'Arms', description: 'Toggle arm 1 servo between open and closed', disabled: false, testable: true, safetyCritical: false },
     { token: 'arm2_toggle', label: 'ARM2 Toggle', group: 'Arms', description: 'Toggle arm 2 servo between open and closed', disabled: false, testable: true, safetyCritical: false },
@@ -122,7 +121,7 @@
   };
   const ACTION_GROUP_ORDER = ['Off', 'Movement', 'Mode', 'Arms', 'Sound', 'Sequences', 'Command', 'Safety', 'System', 'Aux', 'Other'];
   const DEFAULT_COLLAPSED_GROUPS = new Set(['Sound', 'Sequences']);
-  const NON_TESTABLE_TOKENS = new Set(['drive_speed', 'drive_steer', 'dome_speed', 'speed_limit', 'estop']);
+  const NON_TESTABLE_TOKENS = new Set(['drive_speed', 'drive_steer', 'dome_speed', 'estop']);
 
   // dome_seq is blocked at save time (api_config.cpp); show as unavailable.
   const UNAVAILABLE_TOKENS = new Set(['dome_seq']);
@@ -236,7 +235,6 @@
     standard_pwm: [
       { key: "driveSpeed", field: "rcPwmDriveSpeed", label: "Drive speed", type: "backbone" },
       { key: "driveSteer", field: "rcPwmDriveSteer", label: "Drive steer", type: "backbone" },
-      { key: "driveLimit", field: "rcPwmDriveLimit", label: "Speed limit", type: "backbone" },
       { key: "domeSpeed", field: "rcPwmDomeSpeed", label: "Dome speed", type: "backbone" },
       { key: "arm1", field: "rcArm1", label: "ARM1 trigger", type: "trigger" },
       { key: "arm2", field: "rcArm2", label: "ARM2 trigger", type: "trigger" },
@@ -244,8 +242,8 @@
       { key: "aux2", field: "rcAux2", label: "AUX2 trigger", type: "trigger" },
       { key: "aux3", field: "rcAux3", label: "AUX3 trigger", type: "trigger" },
       { key: "sound", field: "rcSound", label: "Sound trigger", type: "trigger" },
+      { key: "speedPresetCycle", field: "rcFree0", label: "Speed preset cycle", type: "trigger" },
       { key: "opMode", field: "rcOpMode", label: "Op-mode switch", type: "trigger" },
-      { key: "free0", field: "rcFree0", label: "Free slot 0", type: "trigger" },
       { key: "free1", field: "rcFree1", label: "Free slot 1", type: "trigger" },
       { key: "free2", field: "rcFree2", label: "Free slot 2", type: "trigger" },
       { key: "free3", field: "rcFree3", label: "Free slot 3", type: "trigger" },
@@ -253,7 +251,6 @@
     single_sbus: [
       { key: "driveSpeed", field: "rcSbusDriveSpeed", label: "Drive speed", type: "backbone" },
       { key: "driveSteer", field: "rcSbusDriveSteer", label: "Drive steer", type: "backbone" },
-      { key: "driveLimit", field: "rcSbusDriveLimit", label: "Speed limit", type: "backbone" },
       { key: "domeSpeed", field: "rcSbusDomeSpeed", label: "Dome speed", type: "backbone" },
       { key: "arm1", field: "rcArm1", label: "ARM1 trigger", type: "trigger" },
       { key: "arm2", field: "rcArm2", label: "ARM2 trigger", type: "trigger" },
@@ -261,8 +258,8 @@
       { key: "aux2", field: "rcAux2", label: "AUX2 trigger", type: "trigger" },
       { key: "aux3", field: "rcAux3", label: "AUX3 trigger", type: "trigger" },
       { key: "sound", field: "rcSound", label: "Sound trigger", type: "trigger" },
+      { key: "speedPresetCycle", field: "rcFree0", label: "Speed preset cycle", type: "trigger" },
       { key: "opMode", field: "rcOpMode", label: "Op-mode switch", type: "trigger" },
-      { key: "free0", field: "rcFree0", label: "Free slot 0", type: "trigger" },
       { key: "free1", field: "rcFree1", label: "Free slot 1", type: "trigger" },
       { key: "free2", field: "rcFree2", label: "Free slot 2", type: "trigger" },
       { key: "free3", field: "rcFree3", label: "Free slot 3", type: "trigger" },
@@ -270,7 +267,6 @@
     dual_sbus: [
       { key: "driveSpeed", field: "rcSbusDriveSpeed", label: "Drive speed", type: "backbone" },
       { key: "driveSteer", field: "rcSbusDriveSteer", label: "Drive steer", type: "backbone" },
-      { key: "driveLimit", field: "rcSbusDriveLimit", label: "Speed limit", type: "backbone" },
       { key: "domeSpeed", field: "rcSbusDomeSpeed", label: "Dome speed", type: "backbone" },
       { key: "arm1", field: "rcArm1", label: "ARM1 trigger", type: "trigger" },
       { key: "arm2", field: "rcArm2", label: "ARM2 trigger", type: "trigger" },
@@ -278,8 +274,8 @@
       { key: "aux2", field: "rcAux2", label: "AUX2 trigger", type: "trigger" },
       { key: "aux3", field: "rcAux3", label: "AUX3 trigger", type: "trigger" },
       { key: "sound", field: "rcSound", label: "Sound trigger", type: "trigger" },
+      { key: "speedPresetCycle", field: "rcFree0", label: "Speed preset cycle", type: "trigger" },
       { key: "opMode", field: "rcOpMode", label: "Op-mode switch", type: "trigger" },
-      { key: "free0", field: "rcFree0", label: "Free slot 0", type: "trigger" },
       { key: "free1", field: "rcFree1", label: "Free slot 1", type: "trigger" },
       { key: "free2", field: "rcFree2", label: "Free slot 2", type: "trigger" },
       { key: "free3", field: "rcFree3", label: "Free slot 3", type: "trigger" },
@@ -289,14 +285,12 @@
   const RC_BINDING_PATHS = {
     rcPwmDriveSpeed: ["rc", "pwm", "driveSpeed"],
     rcPwmDriveSteer: ["rc", "pwm", "driveSteer"],
-    rcPwmDriveLimit: ["rc", "pwm", "driveLimit"],
     rcPwmDomeSpeed: ["rc", "pwm", "domeSpeed"],
     rcPwmArm1: ["rc", "pwm", "arm1"],
     rcPwmArm2: ["rc", "pwm", "arm2"],
     rcPwmSound: ["rc", "pwm", "sound"],
     rcSbusDriveSpeed: ["rc", "sbus", "driveSpeed"],
     rcSbusDriveSteer: ["rc", "sbus", "driveSteer"],
-    rcSbusDriveLimit: ["rc", "sbus", "driveLimit"],
     rcSbusDomeSpeed: ["rc", "sbus", "domeSpeed"],
     rcSbusArm1: ["rc", "sbus", "arm1"],
     rcSbusArm2: ["rc", "sbus", "arm2"],
@@ -520,7 +514,6 @@
     if (slotKey === "driveSpeed") return "drive_speed";
     if (slotKey === "driveSteer") return "drive_steer";
     if (slotKey === "domeSpeed") return "dome_speed";
-    if (slotKey === "driveLimit") return "speed_limit";
     return binding?.target || "none";
   };
 
@@ -698,7 +691,7 @@
     rcSlotItems.innerHTML = `
       <div class="rc-slot-group-title">Backbone Channels</div>
       ${renderItems(backbone)}
-      <div class="rc-slot-group-title trigger">Trigger/Button Channels</div>
+      <div class="rc-slot-group-title trigger">Trigger/Button Channels (use Speed preset cycle for runtime speed mode)</div>
       ${renderItems(trigger)}
     `;
 
@@ -756,11 +749,6 @@
       barHtml = `<div class="rc-preview-bar">
         <div class="rc-preview-fill" style="--bar-width:${Math.max(0, Math.min(100, width))}%"></div>
       </div><div class="rc-preview-dir">Direction: ${dir}</div>`;
-    } else if (selectedSlot === "driveLimit") {
-      const width = Math.round(((mapped + 1) / 2) * 100);
-      barHtml = `<div class="rc-preview-bar">
-        <div class="rc-preview-fill" style="--bar-width:${Math.max(0, Math.min(100, width))}%"></div>
-      </div>`;
     }
 
     if (isBackboneSlot(selectedSlot)) {
@@ -1557,6 +1545,12 @@
       return;
     }
 
+    if (selectedSlot === "speedPresetCycle" &&
+        binding.target !== "none" && binding.target !== "speed_preset_cycle") {
+      setEditorFeedback("Speed preset cycle slot only supports Disabled or Speed Preset Cycle action.", "error");
+      return;
+    }
+
     // Validate E-Stop confirmation
     if (binding.target === "estop") {
       const confirmCheckbox = rcEditorContent.querySelector('[data-field="estop-confirm"]');
@@ -1621,21 +1615,18 @@
       if (mode === "standard_pwm") {
         body.set("rcPwmDriveSpeed", "pwm:1:1000:1500:2000:0:0");
         body.set("rcPwmDriveSteer", "pwm:2:1000:1500:2000:0:0");
-        body.set("rcPwmDriveLimit", "none:0:1000:1500:2000:0:0");
         body.set("rcPwmDomeSpeed", "pwm:3:1000:1500:2000:0:0");
         body.set("rcArm1", "pwm:4:arm1_toggle::1000:1500:2000:0:0");
         body.set("rcArm2", "pwm:5:arm2_toggle::1000:1500:2000:0:0");
       } else if (mode === "single_sbus") {
         body.set("rcSbusDriveSpeed", "sbus1:1:172:992:1811:0:0");
         body.set("rcSbusDriveSteer", "sbus1:2:172:992:1811:0:0");
-        body.set("rcSbusDriveLimit", "sbus1:8:172:992:1811:0:0");
         body.set("rcSbusDomeSpeed", "sbus1:3:172:992:1811:0:0");
         body.set("rcArm1", "sbus1:4:arm1_toggle::172:992:1811:0:0");
         body.set("rcArm2", "sbus1:5:arm2_toggle::172:992:1811:0:0");
       } else {
         body.set("rcSbusDriveSpeed", "sbus1:1:172:992:1811:0:0");
         body.set("rcSbusDriveSteer", "sbus1:2:172:992:1811:0:0");
-        body.set("rcSbusDriveLimit", "sbus1:8:172:992:1811:0:0");
         body.set("rcSbusDomeSpeed", "sbus2:1:172:992:1811:0:0");
         body.set("rcArm1", "sbus1:4:arm1_toggle::172:992:1811:0:0");
         body.set("rcArm2", "sbus1:5:arm2_toggle::172:992:1811:0:0");

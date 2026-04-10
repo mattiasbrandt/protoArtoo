@@ -50,7 +50,7 @@ bool rcSourceEnabledForMode(RcBindingSource source, RcInputMode mode, bool enabl
 void loadModeBindingSpecs(RcInputMode mode,
                           RcActionBindingSpec specs[RC_DIAGNOSTICS_CHANNEL_CAPACITY]) {
     const char* names[RC_DIAGNOSTICS_CHANNEL_CAPACITY] = {
-        "driveSpeed", "driveSteer", "driveLimit", "domeSpeed", "arm1", "arm2", "sound"};
+        "driveSpeed", "driveSteer", "domeSpeed", "arm1", "arm2", "sound"};
     for (size_t i = 0; i < RC_DIAGNOSTICS_CHANNEL_CAPACITY; ++i) {
         specs[i].name = names[i];
     }
@@ -59,19 +59,17 @@ void loadModeBindingSpecs(RcInputMode mode,
     if (mode == RC_INPUT_STANDARD_PWM) {
         specs[0].binding = robotState.cfg_rc_pwm_drive_speed;
         specs[1].binding = robotState.cfg_rc_pwm_drive_steer;
-        specs[2].binding = robotState.cfg_rc_pwm_drive_limit;
-        specs[3].binding = robotState.cfg_rc_pwm_dome_speed;
-        specs[4].binding = robotState.cfg_rc_pwm_arm1;
-        specs[5].binding = robotState.cfg_rc_pwm_arm2;
-        specs[6].binding = robotState.cfg_rc_pwm_sound;
+        specs[2].binding = robotState.cfg_rc_pwm_dome_speed;
+        specs[3].binding = robotState.cfg_rc_pwm_arm1;
+        specs[4].binding = robotState.cfg_rc_pwm_arm2;
+        specs[5].binding = robotState.cfg_rc_pwm_sound;
     } else {
         specs[0].binding = robotState.cfg_rc_sbus_drive_speed;
         specs[1].binding = robotState.cfg_rc_sbus_drive_steer;
-        specs[2].binding = robotState.cfg_rc_sbus_drive_limit;
-        specs[3].binding = robotState.cfg_rc_sbus_dome_speed;
-        specs[4].binding = robotState.cfg_rc_sbus_arm1;
-        specs[5].binding = robotState.cfg_rc_sbus_arm2;
-        specs[6].binding = robotState.cfg_rc_sbus_sound;
+        specs[2].binding = robotState.cfg_rc_sbus_dome_speed;
+        specs[3].binding = robotState.cfg_rc_sbus_arm1;
+        specs[4].binding = robotState.cfg_rc_sbus_arm2;
+        specs[5].binding = robotState.cfg_rc_sbus_sound;
     }
     taskEXIT_CRITICAL(&robotStateMux);
 }

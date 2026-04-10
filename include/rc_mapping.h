@@ -53,7 +53,6 @@ enum RobotActionId : uint8_t {
     DRIVE_ACTION_SPEED,           // Analog: forward/back movement
     DRIVE_ACTION_STEER,           // Analog: left/right steering
     DOME_ACTION_SPEED,            // Analog: dome rotation speed
-    DRIVE_ACTION_SPEED_LIMIT,     // Analog: speed ceiling dial
     SYSTEM_ACTION_OP_MODE,        // Switch: Driving (LOW) / Stationary (HIGH)
     SERVO_ACTION_ARM1_TOGGLE,     // Button: ARM1 open/close toggle
     SERVO_ACTION_ARM2_TOGGLE,     // Button: ARM2 open/close toggle
@@ -367,8 +366,6 @@ inline const char* robotActionIdToString(RobotActionId target) {
             return "drive_steer";
         case DOME_ACTION_SPEED:
             return "dome_speed";
-        case DRIVE_ACTION_SPEED_LIMIT:
-            return "speed_limit";
         case SYSTEM_ACTION_OP_MODE:
             return "op_mode";
         case SERVO_ACTION_ARM1_TOGGLE:
@@ -463,10 +460,6 @@ inline bool parseRobotActionId(const char* raw, RobotActionId* out) {
     }
     if (strcmp(raw, "dome_speed") == 0) {
         *out = DOME_ACTION_SPEED;
-        return true;
-    }
-    if (strcmp(raw, "speed_limit") == 0) {
-        *out = DRIVE_ACTION_SPEED_LIMIT;
         return true;
     }
     if (strcmp(raw, "op_mode") == 0) {
@@ -619,7 +612,7 @@ inline bool robotActionNeedsPayload(RobotActionId target) {
 
 inline bool robotActionIsAnalog(RobotActionId target) {
     return target == DRIVE_ACTION_SPEED || target == DRIVE_ACTION_STEER ||
-           target == DOME_ACTION_SPEED || target == DRIVE_ACTION_SPEED_LIMIT;
+           target == DOME_ACTION_SPEED;
 }
 
 inline int robotActionIdToDroidSeqId(RobotActionId target) {
@@ -652,7 +645,7 @@ inline int robotActionIdToDroidSeqId(RobotActionId target) {
 }
 
 // Tier 2 trigger bindings only support button/switch actions (not analog axes)
-// Analog targets (drive_speed, drive_steer, dome_speed, speed_limit) are backbone-only
+// Analog targets (drive_speed, drive_steer, dome_speed) are backbone-only
 inline bool robotActionValidForTier2(RobotActionId target) {
     return target == ROBOT_ACTION_NONE || target == SYSTEM_ACTION_OP_MODE ||
            target == SERVO_ACTION_ARM1_TOGGLE || target == SERVO_ACTION_ARM2_TOGGLE ||

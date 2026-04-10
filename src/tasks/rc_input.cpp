@@ -4,7 +4,7 @@
 // RcInputTask — handles all RC input modes: standard_pwm, single_sbus, dual_sbus.
 // Renamed from sbus_input.cpp; the task was never SBUS-specific.
 //
-// Receiver #1 (PIN_SBUS1_RX = GPIO 15): Drive — CH1=speed, CH2=steer, CH8=limit
+// Receiver #1 (PIN_SBUS1_RX = GPIO 15): Drive — CH1=speed, CH2=steer
 // Receiver #2 (PIN_SBUS2_RX = GPIO 13): Dome spin
 //
 // SbusDecoder API:
@@ -17,8 +17,7 @@
 //   Layer 1: SBUS receiver hardware failsafe flag (data.failsafe)
 //   Layer 2: SBUS software watchdog (SBUS_TIMEOUT_MS = 200 ms)
 //
-// CH8 speed-limit: linear scale 0.0–1.0 applied to cfg_speedLimitMax.
-// ch8_mode_lock: CH8 at zero (<2%) enters Stationary Mode (drive locked).
+// Runtime drive output uses cfg_speedLimitMax and speed presets; no RC speed-limit axis.
 // =============================================================================
 
 #include <Arduino.h>
@@ -57,11 +56,9 @@ struct RcRuntimeConfig {
     bool enableArm1;
     bool enableArm2;
     bool enableSound;
-    bool ch8ModeLock;
     int16_t maxOut;
     RcBindingConfig driveSpeed;
     RcBindingConfig driveSteer;
-    RcBindingConfig driveLimit;
     RcBindingConfig domeSpeed;
     RcBindingConfig arm1;
     RcBindingConfig arm2;
@@ -99,13 +96,11 @@ static void loadRcRuntimeConfig(RcRuntimeConfig* cfg, RcInputMode mode) {
     cfg->enableArm1 = robotState.cfg_enable_arm1;
     cfg->enableArm2 = robotState.cfg_enable_arm2;
     cfg->enableSound = robotState.cfg_enable_s2_sound;
-    cfg->ch8ModeLock = robotState.cfg_ch8ModeLock;
     cfg->maxOut = robotState.cfg_speedLimitMax;
 
     if (mode == RC_INPUT_STANDARD_PWM) {
         cfg->driveSpeed = robotState.cfg_rc_pwm_drive_speed;
         cfg->driveSteer = robotState.cfg_rc_pwm_drive_steer;
-        cfg->driveLimit = robotState.cfg_rc_pwm_drive_limit;
         cfg->domeSpeed = robotState.cfg_rc_pwm_dome_speed;
         cfg->arm1 = robotState.cfg_rc_pwm_arm1;
         cfg->arm2 = robotState.cfg_rc_pwm_arm2;
@@ -113,7 +108,6 @@ static void loadRcRuntimeConfig(RcRuntimeConfig* cfg, RcInputMode mode) {
     } else {
         cfg->driveSpeed = robotState.cfg_rc_sbus_drive_speed;
         cfg->driveSteer = robotState.cfg_rc_sbus_drive_steer;
-        cfg->driveLimit = robotState.cfg_rc_sbus_drive_limit;
         cfg->domeSpeed = robotState.cfg_rc_sbus_dome_speed;
         cfg->arm1 = robotState.cfg_rc_sbus_arm1;
         cfg->arm2 = robotState.cfg_rc_sbus_arm2;
@@ -279,39 +273,6 @@ static bool setStationaryMode(bool stationary) {
     return audioQueuePlaySlot(AUDIO_SLOT_SYS_DRIVE_ON, SRC_INTERNAL);
 }
 
-static void maybeQueueDriveModeSound(float scale) {
-    static bool initialized = false;
-    static SystemDriveModeBucket lastBucket = SYSTEM_DRIVE_MODE_NORMAL;
-    SystemDriveModeBucket bucket = classifySystemDriveMode(scale);
-    if (!initialized) {
-        initialized = true;
-        lastBucket = bucket;
-        return;
-    }
-    bucket = classifySystemDriveModeWithHysteresis(lastBucket, scale);
-    if (bucket == lastBucket) {
-        return;
-    }
-    lastBucket = bucket;
-
-    AudioPlaybackSlot slot = AUDIO_SLOT_NONE;
-    switch (bucket) {
-        case SYSTEM_DRIVE_MODE_SLOW:
-            slot = AUDIO_SLOT_SYS_MODE_SLOW;
-            break;
-        case SYSTEM_DRIVE_MODE_NORMAL:
-            slot = AUDIO_SLOT_SYS_MODE_NORMAL;
-            break;
-        case SYSTEM_DRIVE_MODE_TURBO:
-            slot = AUDIO_SLOT_SYS_MODE_TURBO;
-            break;
-        default:
-            break;
-    }
-    if (slot != AUDIO_SLOT_NONE) {
-        audioQueuePlaySlot(slot, SRC_INTERNAL);
-    }
-}
 
 static bool queueRandomTrackForAction(RobotActionId target) {
     const char* categoryLabel = randomSoundCategoryLabel(target);
@@ -701,7 +662,6 @@ static void dispatchStandardPwmInputs() {
 
     int rawSpeed = 0;
     int rawSteer = 0;
-    int rawLimit = 0;
     bool speedActive = bindingSourceActive(cfg.driveSpeed, RC_INPUT_STANDARD_PWM, cfg.enableRc[0],
                                            cfg.enableRc[1]) &&
                        readPwmBindingRaw(cfg.driveSpeed, pulses, &rawSpeed) &&
@@ -710,49 +670,14 @@ static void dispatchStandardPwmInputs() {
                                            cfg.enableRc[1]) &&
                        readPwmBindingRaw(cfg.driveSteer, pulses, &rawSteer) &&
                        cfg.enableRc[cfg.driveSteer.channel - 1];
-    bool limitActive = bindingSourceActive(cfg.driveLimit, RC_INPUT_STANDARD_PWM, cfg.enableRc[0],
-                                           cfg.enableRc[1]) &&
-                       readPwmBindingRaw(cfg.driveLimit, pulses, &rawLimit) &&
-                       cfg.enableRc[cfg.driveLimit.channel - 1];
 
     if (speedActive && steerActive) {
         int16_t maxOut = cfg.maxOut;
-        if (limitActive && rcBindingSupportsAnalog(cfg.driveLimit)) {
-            float scale =
-                (applyRcAnalogCalibration(rawLimit, cfg.driveLimit, nullptr) + 1.0f) * 0.5f;
-            if (scale < 0.0f) {
-                scale = 0.0f;
-            }
-            if (scale > 1.0f) {
-                scale = 1.0f;
-            }
-            taskENTER_CRITICAL(&robotStateMux);
-            robotState.speedLimitScale = scale;
-            taskEXIT_CRITICAL(&robotStateMux);
-            maxOut = (int16_t)(cfg.maxOut * scale);
-
-            if (cfg.ch8ModeLock && scale < 0.02f) {
-                setStationaryMode(true);
-                setDriveCommand(0, 0, SRC_SBUS);
-            } else {
-                setStationaryMode(false);
-                maybeQueueDriveModeSound(scale);
-                setDriveCommand(
-                    (int16_t)(applyRcAnalogCalibration(rawSpeed, cfg.driveSpeed, nullptr) * maxOut),
-                    (int16_t)(applyRcAnalogCalibration(rawSteer, cfg.driveSteer, nullptr) * maxOut),
-                    SRC_SBUS);
-            }
-        } else {
-            taskENTER_CRITICAL(&robotStateMux);
-            robotState.speedLimitScale = 1.0f;
-            taskEXIT_CRITICAL(&robotStateMux);
-            setStationaryMode(false);
-            maybeQueueDriveModeSound(1.0f);
-            setDriveCommand(
-                (int16_t)(applyRcAnalogCalibration(rawSpeed, cfg.driveSpeed, nullptr) * maxOut),
-                (int16_t)(applyRcAnalogCalibration(rawSteer, cfg.driveSteer, nullptr) * maxOut),
-                SRC_SBUS);
-        }
+        setStationaryMode(false);
+        setDriveCommand(
+            (int16_t)(applyRcAnalogCalibration(rawSpeed, cfg.driveSpeed, nullptr) * maxOut),
+            (int16_t)(applyRcAnalogCalibration(rawSteer, cfg.driveSteer, nullptr) * maxOut),
+            SRC_SBUS);
     }
 
     int rawDome = 0;
@@ -1079,46 +1004,21 @@ void rcInputTask(void* pvParameters) {
 
                 int rawSpeed = 0;
                 int rawSteer = 0;
-                int rawLimit = 0;
                 if (cfg.driveSpeed.source == RC_BINDING_SBUS1 &&
                     cfg.driveSteer.source == RC_BINDING_SBUS1 &&
                     readSbusAnalog(data, cfg.driveSpeed, &rawSpeed) &&
                     readSbusAnalog(data, cfg.driveSteer, &rawSteer)) {
-                    float scale = 1.0f;
-                    if (cfg.driveLimit.source == RC_BINDING_SBUS1 &&
-                        readSbusAnalog(data, cfg.driveLimit, &rawLimit)) {
-                        scale =
-                            (applyRcAnalogCalibration(rawLimit, cfg.driveLimit, nullptr) + 1.0f) *
-                            0.5f;
-                        if (scale < 0.0f) {
-                            scale = 0.0f;
-                        }
-                        if (scale > 1.0f) {
-                            scale = 1.0f;
-                        }
-                    }
-
-                    taskENTER_CRITICAL(&robotStateMux);
-                    robotState.speedLimitScale = scale;
-                    taskEXIT_CRITICAL(&robotStateMux);
-
-                    int16_t maxOut = (int16_t)(cfg.maxOut * scale);
-                    if (cfg.ch8ModeLock && scale < 0.02f) {
-                        setStationaryMode(true);
-                        setDriveCommand(0, 0, SRC_SBUS);
-                    } else {
-                        setStationaryMode(false);
-                        maybeQueueDriveModeSound(scale);
-                        setDriveCommand(constrain((int16_t)(applyRcAnalogCalibration(
-                                                                rawSpeed, cfg.driveSpeed, nullptr) *
-                                                            maxOut),
-                                                  (int16_t)(-maxOut), maxOut),
-                                        constrain((int16_t)(applyRcAnalogCalibration(
-                                                                rawSteer, cfg.driveSteer, nullptr) *
-                                                            maxOut),
-                                                  (int16_t)(-maxOut), maxOut),
-                                        SRC_SBUS);
-                    }
+                    int16_t maxOut = cfg.maxOut;
+                    setStationaryMode(false);
+                    setDriveCommand(constrain((int16_t)(applyRcAnalogCalibration(
+                                                            rawSpeed, cfg.driveSpeed, nullptr) *
+                                                        maxOut),
+                                              (int16_t)(-maxOut), maxOut),
+                                    constrain((int16_t)(applyRcAnalogCalibration(
+                                                            rawSteer, cfg.driveSteer, nullptr) *
+                                                        maxOut),
+                                              (int16_t)(-maxOut), maxOut),
+                                    SRC_SBUS);
                 }
 
                 dispatchSbusBindingsForSource(data, RC_BINDING_SBUS1, rcInputMode, enableRcCh1,

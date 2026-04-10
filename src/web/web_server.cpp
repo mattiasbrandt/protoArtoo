@@ -295,7 +295,6 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     int driveSpeed;
     int driveSteer;
     float domeTargetSpeed;
-    float speedLimitScale;
     int speedLimitMax;
     SpeedPresetId speedPresetActive;
     bool stationary;
@@ -355,7 +354,6 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     driveSpeed = robotState.driveSpeed;
     driveSteer = robotState.driveSteer;
     domeTargetSpeed = robotState.domeTargetSpeed;
-    speedLimitScale = robotState.speedLimitScale;
     speedLimitMax = robotState.cfg_speedLimitMax;
     speedPresetActive = normalizeSpeedPresetId((uint8_t)robotState.cfg_speedPresetActive);
     stationary = robotState.stationary;
@@ -425,11 +423,11 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     // Build the fixed system-health fields first.
     int written = snprintf(
         buffer, bufferSize,
-        "{\"estop\":%s,\"webControlEnabled\":%s,\"sbusSignalLost\":%s,\"sbusHwFailsafe\":%s,\"webDriveExpired\":%s,\"failsafeSource\":%d,\"driveSpeed\":%d,\"driveSteer\":%d,\"domeTargetSpeed\":%.3f,\"domeEnabled\":%s,\"speedLimitScale\":%.3f,\"speedLimitMax\":%d,\"speedPreset\":\"%s\",\"stationary\":%s,\"failsafeCount\":%lu,\"failsafeTriggerMs\":%lu,\"failsafeZeroMs\":%lu,\"failsafeTriggerToZeroMs\":%lu,\"failsafeWatchdogMs\":%lu,\"failsafeTriggerSource\":%d,\"uptimeMs\":%lu,\"firmwareVersion\":\"%s\",\"webVersion\":\"%s\",\"heapFree\":%lu,\"heapMin\":%lu,\"heapLargestBlock\":%lu,\"wifiRssi\":%ld,\"wifiConnected\":%s,\"wifiClientConnected\":%s,\"littleFsReady\":%s,\"sleepMode\":%s,\"sleepSinceMs\":%lu,\"activeMood\":%u,\"auxLed\":{\"pin\":%u,\"r\":%u,\"g\":%u,\"b\":%u,\"effect\":\"%s\",\"available\":%s}",
+        "{\"estop\":%s,\"webControlEnabled\":%s,\"sbusSignalLost\":%s,\"sbusHwFailsafe\":%s,\"webDriveExpired\":%s,\"failsafeSource\":%d,\"driveSpeed\":%d,\"driveSteer\":%d,\"domeTargetSpeed\":%.3f,\"domeEnabled\":%s,\"speedLimitMax\":%d,\"speedPreset\":\"%s\",\"stationary\":%s,\"failsafeCount\":%lu,\"failsafeTriggerMs\":%lu,\"failsafeZeroMs\":%lu,\"failsafeTriggerToZeroMs\":%lu,\"failsafeWatchdogMs\":%lu,\"failsafeTriggerSource\":%d,\"uptimeMs\":%lu,\"firmwareVersion\":\"%s\",\"webVersion\":\"%s\",\"heapFree\":%lu,\"heapMin\":%lu,\"heapLargestBlock\":%lu,\"wifiRssi\":%ld,\"wifiConnected\":%s,\"wifiClientConnected\":%s,\"littleFsReady\":%s,\"sleepMode\":%s,\"sleepSinceMs\":%lu,\"activeMood\":%u,\"auxLed\":{\"pin\":%u,\"r\":%u,\"g\":%u,\"b\":%u,\"effect\":\"%s\",\"available\":%s}",
         estop ? "true" : "false", webControlEnabled ? "true" : "false",
         sbusSignalLost ? "true" : "false", sbusHwFailsafe ? "true" : "false",
         webDriveExpired ? "true" : "false", failsafeSource, driveSpeed, driveSteer,
-        (double)domeTargetSpeed, enableDome ? "true" : "false", (double)speedLimitScale,
+        (double)domeTargetSpeed, enableDome ? "true" : "false",
         speedLimitMax, speedPresetIdToString(speedPresetActive), stationary ? "true" : "false",
         failsafeCount, failsafeTriggerMs, failsafeZeroMs, failsafeTriggerToZeroMs,
         failsafeWatchdogMs, failsafeTriggerSource, uptimeMs, PA_FIRMWARE_VERSION, s_fsVersion,

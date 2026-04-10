@@ -126,7 +126,6 @@ struct RobotState {
     // --- Drive output (written by SBUSInputTask/WebAPI, read by DriveTask) ---
     int16_t driveSpeed;
     int16_t driveSteer;
-    float speedLimitScale;
     float domeTargetSpeed;  // -1.0 .. +1.0
 
     // --- Subsystem state ---
@@ -204,7 +203,6 @@ struct RobotState {
     SpeedPresetId cfg_speedPresetActive;  // Default: Normal
     uint32_t cfg_sbusTimeoutMs;     // Default: SBUS_TIMEOUT_MS
     uint32_t cfg_webDriveTimeoutMs;  // Default: WEB_DRIVE_TIMEOUT_MS
-    bool cfg_ch8ModeLock;            // Default: false
     uint8_t cfg_audioVolume;         // Default: 20 (0-30)
     uint8_t cfg_logLevel;  // Runtime log verbosity: 1=Error 2=Info 3=Debug. NVS: log_level
 
@@ -348,7 +346,6 @@ struct RobotState {
 
     RcBindingConfig cfg_rc_pwm_drive_speed;
     RcBindingConfig cfg_rc_pwm_drive_steer;
-    RcBindingConfig cfg_rc_pwm_drive_limit;
     RcBindingConfig cfg_rc_pwm_dome_speed;
     RcBindingConfig cfg_rc_pwm_arm1;
     RcBindingConfig cfg_rc_pwm_arm2;
@@ -356,7 +353,6 @@ struct RobotState {
 
     RcBindingConfig cfg_rc_sbus_drive_speed;
     RcBindingConfig cfg_rc_sbus_drive_steer;
-    RcBindingConfig cfg_rc_sbus_drive_limit;
     RcBindingConfig cfg_rc_sbus_dome_speed;
     RcBindingConfig cfg_rc_sbus_arm1;
     RcBindingConfig cfg_rc_sbus_arm2;

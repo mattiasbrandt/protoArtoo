@@ -741,10 +741,9 @@ a different channel is the main expected SBUS customization.
 This map is only the default profile. Channel assignments remain NVS-configurable
 for builder-specific transmitter layouts.
 
-`standard_pwm` is limited to six analog channels, so there is no native CH8 dial
-in this mode. If a builder wants speed-limit control in PWM mode, the speed-limit
-action can be mapped to any available channel via NVS channel bindings.
-
+`standard_pwm` is limited to six analog channels, so runtime speed selection is handled
+via the trigger action `speed_preset_cycle` (typically bound to a switch/button slot)
+while the global safety cap remains `speedLimitMax` from Drive settings.
 ### 6.5.1 RC Action Target Model
 
 Every configurable trigger/button channel binding carries an **action target** that
@@ -753,8 +752,8 @@ channel and editable from the Setup page without a firmware rebuild.
 
 **Two-tier binding structure:**
 
-- **Backbone bindings** — fixed-role slots (`drive_speed`, `drive_steer`, `dome_speed`,
-  `speed_limit`): the action is implied by the field name; only source, channel, and
+- **Backbone bindings** — fixed-role slots (`drive_speed`, `drive_steer`, `dome_speed`):
+  the action is implied by the field name; only source, channel, and
   calibration values are user-configurable. No action dropdown in the UI for these.
 - **Trigger/button bindings** — user-assignable slots (`arm1`, `arm2`, `aux1`, `aux2`,
   `aux3`, `sound`, `op_mode`, plus N free slots): the operator configures both the
@@ -768,7 +767,7 @@ channel and editable from the Setup page without a firmware rebuild.
 | `drive_speed` | Forward / back movement axis | analog |
 | `drive_steer` | Left / right steering axis | analog |
 | `dome_speed` | Dome rotation speed axis | analog |
-| `speed_limit` | Speed ceiling dial (0–100%) | analog |
+| `speed_preset_cycle` | Cycle runtime speed preset Slow→Normal→Turbo on rising edge | switch/button |
 | `op_mode` | Driving ↔ Stationary mode; LOW=Drive, HIGH=Stationary | switch |
 | `arm1_toggle` | ARM1 open↔close toggle on rising edge | switch/button |
 | `arm2_toggle` | ARM2 open↔close toggle on rising edge | switch/button |
@@ -799,7 +798,7 @@ unbound: "none:0:none::1000:1500:2000:0:0"
 | `rc_aux2` | AUX2 trigger | unbound | `none` |
 | `rc_aux3` | AUX3 trigger | unbound | `none` |
 | `rc_sound` | Sound trigger | unbound — CH6 is natural candidate | `none` |
-| `rc_opmode` | Op-mode switch | unbound — CH8 dial is primary mode mechanism | `none` |
+| `rc_opmode` | Op-mode switch | unbound | `none` |
 | `rc_free0` | Free slot 0 | unbound | `none` |
 | `rc_free1` | Free slot 1 | unbound | `none` |
 | `rc_free2` | Free slot 2 | unbound | `none` |
@@ -840,43 +839,20 @@ Project-recommended ESC70 tuning baseline is documented in `docs/isdt_esc70_dome
 (1 kHz PWM, Start force MAX, Brake force minimum, drag/active brake disabled,
 aggressive throttle mid-curve). Apply that baseline first, then tune per-build drivetrain load.
 
-### 6.7 Operation Modes and CH8 Speed Limit Dial
+### 6.7 Runtime Speed Model and Operation Mode
 
-The **Driving ↔ Stationary** mode state is controlled either by the CH8 dial
-(default) or by mapping any available channel to the `op_mode` action target
-(see Section 6.5.1). The `op_mode` target makes mode-switching fully remappable
-— any button or 2-pos/3-pos switch on the transmitter can toggle modes without
-requiring CH8 or a firmware rebuild.
+protoArtoo uses a single coherent runtime speed model:
 
-#### CH8 — Speed Limit Dial (primary behaviour)
+- `speedLimitMax` is the persisted global safety ceiling configured from the Drive page.
+- Runtime speed mode is the active preset (`slow`, `normal`, `turbo`).
+- Preset changes come from web preset controls or the RC trigger action
+  `speed_preset_cycle` (recommended in `rc_free0`, unbound by default).
 
-CH8 on receiver #1 is a **continuous speed-limit dial** by default:
+`op_mode` remains an independent trigger action for entering/leaving stationary mode.
+It is not tied to CH8 and does not depend on a speed dial.
 
-- CH8 at minimum (0): drive output = 0 (droid stationary regardless of CH1/CH2)
-- CH8 increasing: scales the maximum allowed drive output linearly from 0 to `SPEED_LIMIT_MAX`
-- This gives the operator a physical "confidence dial" — turn it up slowly when moving in tight spaces, full up for open floor
-
-The effective speed output is: `speed_out = speed_in × (ch8_value / CH8_MAX)`
-
-#### Stationary Mode lock (NVS-configurable, default OFF)
-
-An optional NVS setting `ch8_mode_lock` (bool, default `false`) changes CH8 behaviour:
-
-| `ch8_mode_lock` | CH8 at zero | CH8 above zero |
-|---|---|---|
-| `false` (default) | Drive locked at zero, no mode change | Speed limited proportionally |
-| `true` | Enters **Stationary Mode** (random sounds, dome auto-spin, drive locked) | **Drive Mode** (sounds manual, dome manual) |
-
-When `ch8_mode_lock` is `true`:
-
-| Mode | Trigger | Drive | Dome spin | Sound |
-|---|---|---|---|---|
-| **Drive Mode** | CH8 above zero threshold | Tank-style, speed-limited by CH8 | Manual via receiver #2 CH1 | Manual via CH4/CH5 |
-| **Stationary Mode** | CH8 at zero | Locked — zero frames to hoverboard | Auto-spin at configured speed | Random sounds enabled |
-
-In **Stationary Mode**, random audio events fire at the configured interval, dome rotates automatically, and drive is electronically locked. This is the "performing" state.
-
-The mode-lock option is configurable in the web UI config page, NVS key `ch8_mode_lock`. The operator can switch between simple dial behaviour and mode-lock behaviour without reflashing.
+There is no CH8-specific speed-limit dial path and no `ch8_mode_lock` setting in the
+current design.
 
 ### 6.8 Mood Selector — Droid Idle Behavior Profiles
 
@@ -1193,9 +1169,8 @@ struct RobotState {
     uint32_t lastSbus2Ms;        // millis() of last valid frame from receiver #2 (dome spin)
     uint32_t lastDomeRxMs;       // millis() of last command received FROM dome
 
-    // --- CH8 speed limit (receiver #1) --------------------------------------
-    float    speedLimitScale;    // 0.0–1.0 derived from CH8 value
-    bool     stationary;         // true when ch8_mode_lock=true AND CH8 at zero
+    // --- Drive mode state ------------------------------------------------------
+    bool     stationary;         // true when runtime drive mode lockout is active
 
     // --- Health counters (visible in /api/status) ----------------------------
     uint32_t bodyHbTx;           // #PAHB heartbeats sent to dome
@@ -1211,7 +1186,6 @@ struct RobotState {
     int16_t  cfg_speedLimitMax;      // Hard speed ceiling (default SPEED_LIMIT_MAX)
     uint32_t cfg_sbusTimeoutMs;      // SBUS loss timeout (default 200)
     uint32_t cfg_webDriveTimeoutMs;  // Web drive command expiry (default 500)
-    bool     cfg_ch8ModeLock;        // CH8 binary mode-lock (default false)
     uint16_t cfg_sndRandMin;         // Random sound track range min
     uint16_t cfg_sndRandMax;         // Random sound track range max
     uint8_t  cfg_volume;             // Audio volume 0-30
@@ -1256,7 +1230,7 @@ Preferences nvs;
 nvs.begin("proto", false);   // false = read/write
 ```
 
-Key naming uses lowercase with underscores: `vol_limit`, `ch8_mode_lock`, `sbus_timeout_ms`, etc. Full key list is in `src/web/nvs_config.cpp`.
+Key naming uses lowercase with underscores: `vol_limit`, `spd_max`, `sbus_timeout_ms`, etc. Full key list is in `src/web/nvs_config.cpp`.
 
 **NVS access pattern — tasks never call NVS directly:**
 
@@ -1266,7 +1240,6 @@ void loadConfigToState(Preferences& nvs, RobotState& state) {
     state.cfg_speedLimitMax    = nvs.getInt("spd_max",    SPEED_LIMIT_MAX);
     state.cfg_sbusTimeoutMs    = nvs.getInt("sbus_tmout", SBUS_TIMEOUT_MS);
     state.cfg_webDriveTimeoutMs= nvs.getInt("web_tmout",  WEB_DRIVE_TIMEOUT_MS);
-    state.cfg_ch8ModeLock      = nvs.getBool("ch8_mode_lock", false);
     state.cfg_sndRandMin       = nvs.getInt("snd_rand_min", 1);
     state.cfg_sndRandMax       = nvs.getInt("snd_rand_max", 99);
     state.cfg_volume           = nvs.getInt("vol_limit",  20);
@@ -1457,24 +1430,11 @@ void SBUSInputTask(void* params)
             }
             else
             {
-                // CH8 speed-limit dial: scale 0.0–1.0 from raw SBUS value
-                float scale = (ch[7] - SBUS_MIN) / float(SBUS_MAX - SBUS_MIN);  // CH8 (0-indexed)
-                scale = constrain(scale, 0.0f, 1.0f);
-                robotState.speedLimitScale = scale;
-
-                // Mode-lock (optional NVS setting): CH8 at zero = Stationary Mode
-                if (robotState.cfg_ch8ModeLock && scale < 0.02f)
-                {
-                    robotState.stationary = true;
-                    setDriveCommand(0, 0, SRC_SBUS);
-                }
-                else
-                {
-                    robotState.stationary = false;
-                    int16_t maxOut = (int16_t)(SPEED_LIMIT_MAX * scale);
-                    int16_t speed  = constrain(mapSbusToSpeed(ch[0]), -maxOut, maxOut);
-                    int16_t steer  = constrain(mapSbusToSteer(ch[1]), -maxOut, maxOut);
-                    setDriveCommand(speed, steer, SRC_SBUS);
+                // Drive command uses the active speed preset and global speedLimitMax cap.
+                int16_t maxOut = robotState.cfg_speedLimitMax;
+                int16_t speed  = constrain(mapSbusToSpeed(ch[0]), -maxOut, maxOut);
+                int16_t steer  = constrain(mapSbusToSteer(ch[1]), -maxOut, maxOut);
+                setDriveCommand(speed, steer, SRC_SBUS);
                 }
             }
         }
@@ -1923,7 +1883,7 @@ test/
 ├── test_native/                  ← runs in [env:native] only
 │   ├── test_marcduino_rx.cpp     # prefix routing, parse_dome_rx() edge cases
 │   ├── test_hoverboard_frame.cpp # frame checksum, boundary values, overflow
-│   ├── test_sbus_channel_map.cpp # CH8 scale math, speed_limit_scale formula
+│   ├── test_sbus_channel_map.cpp # SBUS channel normalization, deadband, and clamp math
 │   └── test_audio_track_map.cpp  # $001 → track 1, $S → random, bounds
 │
 └── test_embedded/                ← runs in [env:protoArtoo] only
@@ -2286,8 +2246,8 @@ CH8 on receiver #1 now scales drive output linearly from 0 to
 SPEED_LIMIT_MAX. CH8 at minimum completely locks drive output.
 This gives the operator a physical confidence dial for tight spaces.
 
-NVS key ch8_mode_lock (default false) enables optional binary
-mode-lock behaviour — see Section 6.7 of firmware plan.
+Speed-mode changes are performed through web preset controls or RC
+`speed_preset_cycle` trigger bindings (see Section 6.7).
 ```
 
 ```
@@ -2437,7 +2397,7 @@ Drive via RC with full 5-layer failsafe system.
 ### Added
 - DriveTask: Gen2.x hoverboard 8-byte frame at 50 Hz via ESP32 UART2
 - SBUSInputTask: dual SBUS receivers in RMT mode (GPIO 15 drive, GPIO 13 dome spin)
-- CH8 speed-limit dial with linear scaling and optional ch8_mode_lock mode
+- Runtime speed presets (`slow|normal|turbo`) plus global `speedLimitMax` cap (no CH8 dial path)
 - 5-layer failsafe: SBUS HW failsafe, SBUS watchdog (200 ms), web drive timeout,
   ESP32 TWDT (3 s), hoverboard own timeout
 - Watchdog reset detection on boot — sets estop=true if TWDT fired
@@ -2538,7 +2498,7 @@ POST /upload/filesystem    → OTA filesystem flash (U_SPIFFS/LittleFS, multipar
   "project": "protoArtoo",
   "uptime_ms": 0,
   "sleep_mode": false,
-  "drive": { "speed": 0, "steer": 0, "speed_limit_pct": 100 },
+  "drive": { "speed": 0, "steer": 0, "speed_limit_max": 600, "speed_preset": "normal" },
   "arms": [false, false],
   "audio_driver": "DY-SV5W",
   "dome_link": {
@@ -2577,7 +2537,7 @@ POST /upload/filesystem    → OTA filesystem flash (U_SPIFFS/LittleFS, multipar
 
 `failsafe.source` is one of: `"NONE"`, `"SBUS_TIMEOUT"`, `"SBUS_HW"`, `"SBUS2_TIMEOUT"`, `"WEB_TIMEOUT"`, `"ESTOP_CMD"`, `"WATCHDOG_RESET"`.
 `failsafe.trigger_count` is the lifetime count since boot — useful for diagnosing intermittent antenna dropouts.
-`drive.speed_limit_pct` reflects the current CH8 dial position (0–100%).
+`drive.speed_limit_max` is the persisted global cap from Drive settings, and `drive.speed_preset` reflects the active runtime speed mode (`slow|normal|turbo`).
 
 **`/api/config` — canonical grouped response:**
 ```json
@@ -2585,8 +2545,8 @@ POST /upload/filesystem    → OTA filesystem flash (U_SPIFFS/LittleFS, multipar
   "drive": {
     "speedLimitMax": 600,
     "webDriveTimeoutMs": 500,
-    "ch8ModeLock": false,
-    "stationary": true
+    "speedPreset": "normal",
+    "stationary": false
   },
   "rc": {
     "inputMode": "dual_sbus",
@@ -2705,7 +2665,7 @@ protoArtoo/
 │   ├── test_native/                    // [env:native] — no hardware, fast iteration
 │   │   ├── test_marcduino_rx.cpp       // parse_dome_rx() prefix routing
 │   │   ├── test_hoverboard_frame.cpp   // frame checksum, boundary values
-│   │   ├── test_sbus_channel_map.cpp   // CH8 scale math, speed_limit formula
+│   │   ├── test_sbus_channel_map.cpp   // SBUS channel normalization and clamp behavior
 │   │   └── test_audio_track_map.cpp    // $001→track1, $S→random, bounds
 │   └── test_embedded/                  // [env:protoArtoo] — on-device
 │       ├── test_uart_loopback.cpp      // UART2 TX→RX loopback

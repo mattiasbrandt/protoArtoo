@@ -169,37 +169,31 @@ void test_totalWritten_exceeds_capacity_on_wraparound() {
 
 void test_formatConfigJson_contains_speedLimitMax() {
     char out[512];
-    formatConfigJson(out, sizeof(out), 400, 500, false);
+    formatConfigJson(out, sizeof(out), 400, 500);
     TEST_ASSERT_NOT_NULL(strstr(out, "\"speedLimitMax\":400"));
 }
 
 void test_formatConfigJson_contains_webDriveTimeoutMs() {
     char out[512];
-    formatConfigJson(out, sizeof(out), 400, 500, false);
+    formatConfigJson(out, sizeof(out), 400, 500);
     TEST_ASSERT_NOT_NULL(strstr(out, "\"webDriveTimeoutMs\":500"));
 }
 
-void test_formatConfigJson_ch8ModeLock_false() {
+void test_formatConfigJson_omits_legacy_ch8ModeLock() {
     char out[512];
-    formatConfigJson(out, sizeof(out), 400, 500, false);
-    TEST_ASSERT_NOT_NULL(strstr(out, "\"ch8ModeLock\":false"));
-}
-
-void test_formatConfigJson_ch8ModeLock_true() {
-    char out[512];
-    formatConfigJson(out, sizeof(out), 400, 500, true);
-    TEST_ASSERT_NOT_NULL(strstr(out, "\"ch8ModeLock\":true"));
+    formatConfigJson(out, sizeof(out), 400, 500);
+    TEST_ASSERT_NULL(strstr(out, "\"ch8ModeLock\":"));
 }
 
 void test_formatConfigJson_zero_speed_limit() {
     char out[512];
-    formatConfigJson(out, sizeof(out), 0, 100, false);
+    formatConfigJson(out, sizeof(out), 0, 100);
     TEST_ASSERT_NOT_NULL(strstr(out, "\"speedLimitMax\":0"));
 }
 
 void test_formatConfigJson_is_valid_json_object() {
     char out[512];
-    formatConfigJson(out, sizeof(out), 600, 1000, true);
+    formatConfigJson(out, sizeof(out), 600, 1000);
     TEST_ASSERT_EQUAL_CHAR('{', out[0]);
     TEST_ASSERT_EQUAL_CHAR('}', out[strlen(out) - 1]);
 }
@@ -226,8 +220,7 @@ int main() {
 
     RUN_TEST(test_formatConfigJson_contains_speedLimitMax);
     RUN_TEST(test_formatConfigJson_contains_webDriveTimeoutMs);
-    RUN_TEST(test_formatConfigJson_ch8ModeLock_false);
-    RUN_TEST(test_formatConfigJson_ch8ModeLock_true);
+    RUN_TEST(test_formatConfigJson_omits_legacy_ch8ModeLock);
     RUN_TEST(test_formatConfigJson_zero_speed_limit);
     RUN_TEST(test_formatConfigJson_is_valid_json_object);
 

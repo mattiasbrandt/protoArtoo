@@ -20,17 +20,15 @@ static constexpr size_t kConfigJsonBudget = 3072;
 static ConfigSnapshot makeDefaultSnap() {
     ConfigSnapshot snap = {};
 
-    // 14 RcBindingConfig fields
+    // 12 RcBindingConfig fields
     snap.rcPwmDriveSpeed = disabledRcBinding();
     snap.rcPwmDriveSteer = disabledRcBinding();
-    snap.rcPwmDriveLimit = disabledRcBinding();
     snap.rcPwmDomeSpeed = disabledRcBinding();
     snap.rcPwmArm1 = disabledRcBinding();
     snap.rcPwmArm2 = disabledRcBinding();
     snap.rcPwmSound = disabledRcBinding();
     snap.rcSbusDriveSpeed = disabledRcBinding();
     snap.rcSbusDriveSteer = disabledRcBinding();
-    snap.rcSbusDriveLimit = disabledRcBinding();
     snap.rcSbusDomeSpeed = disabledRcBinding();
     snap.rcSbusArm1 = disabledRcBinding();
     snap.rcSbusArm2 = disabledRcBinding();
@@ -78,14 +76,12 @@ static ConfigSnapshot makeWorstCaseSnap() {
 
     snap.rcPwmDriveSpeed = extreme;
     snap.rcPwmDriveSteer = extreme;
-    snap.rcPwmDriveLimit = extreme;
     snap.rcPwmDomeSpeed = extreme;
     snap.rcPwmArm1 = extreme;
     snap.rcPwmArm2 = extreme;
     snap.rcPwmSound = extreme;
     snap.rcSbusDriveSpeed = extreme;
     snap.rcSbusDriveSteer = extreme;
-    snap.rcSbusDriveLimit = extreme;
     snap.rcSbusDomeSpeed = extreme;
     snap.rcSbusArm1 = extreme;
     snap.rcSbusArm2 = extreme;

@@ -100,25 +100,6 @@ entries:
     range: [ -1, 1.0 ]
     required: true
   nvs_key: null
-- name: drive.action.speed-limit
-  display_name: Speed Limit
-  description: Set the maximum drive speed as a percentage of full range
-  domain: drive
-  type: action
-  marcduino_cmd: null
-  api_path: null
-  sse_event: null
-  cpp_enum: DRIVE_ACTION_SPEED_LIMIT
-  cpp_file: include/rc_mapping.h
-  sources: [ sbus ]
-  safety_critical: false
-  requires_web_control: false
-  params:
-  - name: value
-    type: uint8
-    range: [ 0, 100 ]
-    required: true
-  nvs_key: null
 
 - name: drive.action.speed-preset-slow
   display_name: Speed Preset Slow

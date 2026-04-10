@@ -57,11 +57,9 @@ bool parseBoolValue(const char* raw, bool* out);
 //         bufSize           — size of buf in bytes
 //         speedLimitMax     — current speed limit cap
 //         webDriveTimeoutMs — current web drive timeout in ms
-//         ch8ModeLock       — current CH8 mode-lock setting
 // thread-safe: yes (pure function, no globals)
 // -----------------------------------------------------------------------------
-void formatConfigJson(char* buf, size_t bufSize, int16_t speedLimitMax, uint32_t webDriveTimeoutMs,
-                      bool ch8ModeLock);
+void formatConfigJson(char* buf, size_t bufSize, int16_t speedLimitMax, uint32_t webDriveTimeoutMs);
 
 // -----------------------------------------------------------------------------
 // formatWifiJson()

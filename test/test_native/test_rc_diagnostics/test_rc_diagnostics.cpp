@@ -58,7 +58,7 @@ RcDiagnosticsSnapshot makeWorstCaseDualSbusSnapshot() {
     snapshot.sourceCount = RC_DIAGNOSTICS_SOURCE_CAPACITY;
 
     const char* names[RC_DIAGNOSTICS_CHANNEL_CAPACITY] = {
-        "driveSpeed", "driveSteer", "driveLimit", "domeSpeed", "arm1", "arm2", "sound"};
+        "driveSpeed", "driveSteer", "domeSpeed", "arm1", "arm2", "sound"};
 
     for (size_t i = 0; i < RC_DIAGNOSTICS_CHANNEL_CAPACITY; ++i) {
         snapshot.analogChannels[i].id = (uint8_t)(i + 1);

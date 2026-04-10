@@ -75,10 +75,9 @@ bool parseBoolValue(const char* raw, bool* out) {
 }
 
 
-void formatConfigJson(char* buf, size_t bufSize, int16_t speedLimitMax, uint32_t webDriveTimeoutMs,
-                      bool ch8ModeLock) {
-    snprintf(buf, bufSize, "{\"speedLimitMax\":%d,\"webDriveTimeoutMs\":%lu,\"ch8ModeLock\":%s}",
-             (int)speedLimitMax, (unsigned long)webDriveTimeoutMs, ch8ModeLock ? "true" : "false");
+void formatConfigJson(char* buf, size_t bufSize, int16_t speedLimitMax, uint32_t webDriveTimeoutMs) {
+    snprintf(buf, bufSize, "{\"speedLimitMax\":%d,\"webDriveTimeoutMs\":%lu}",
+             (int)speedLimitMax, (unsigned long)webDriveTimeoutMs);
 }
 
 void formatWifiJson(char* buf, size_t bufSize, const char* apSsid, const char* apIp,

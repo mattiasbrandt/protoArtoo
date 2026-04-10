@@ -255,7 +255,6 @@ Return the current persisted web-configurable settings loaded into runtime.
 {
   "speedLimitMax": 600,
   "webDriveTimeoutMs": 500,
-  "ch8ModeLock": false,
   "rcInputMode": "dual_sbus",
   "enableArm1": true,
   "enableArm2": true,
@@ -278,14 +277,12 @@ Return the current persisted web-configurable settings loaded into runtime.
   "domeSpeedLimitPct": 100,
   "rcPwmDriveSpeed": "pwm:1:1000:1500:2000:0:0",
   "rcPwmDriveSteer": "pwm:2:1000:1500:2000:0:0",
-  "rcPwmDriveLimit": "none:0:1000:1500:2000:0:0",
   "rcPwmDomeSpeed": "pwm:3:1000:1500:2000:0:0",
   "rcPwmArm1": "pwm:4:1000:1500:2000:0:0",
   "rcPwmArm2": "pwm:5:1000:1500:2000:0:0",
   "rcPwmSound": "pwm:6:1000:1500:2000:0:0",
   "rcSbusDriveSpeed": "sbus1:1:172:992:1811:0:0",
   "rcSbusDriveSteer": "sbus1:2:172:992:1811:0:0",
-  "rcSbusDriveLimit": "sbus1:8:172:992:1811:0:0",
   "rcSbusDomeSpeed": "sbus2:1:172:992:1811:0:0",
   "rcSbusArm1": "sbus2:2:172:992:1811:0:0",
   "rcSbusArm2": "sbus2:3:172:992:1811:0:0",
@@ -301,7 +298,6 @@ Update the current web-configurable settings and persist them to NVS.
 - Supported fields:
   - `speedLimitMax` (`0..600`)
   - `webDriveTimeoutMs` (`100..5000`)
-  - `ch8ModeLock` (`true`/`false` or `1`/`0`)
   - `rcInputMode` (`standard_pwm`, `single_sbus`, `dual_sbus`)
     - `dual_sbus` requires `enableS3DomeCtrl=false`
     - in `single_sbus`, setting `rc.sbus.recvCh2=true` selects SBUS2 on GPIO 13 (the same receiver input used as receiver #2 in `dual_sbus`)
@@ -310,8 +306,8 @@ Update the current web-configurable settings and persist them to NVS.
   - `enableS1Hoverboard`, `enableS2Sound`, `enableS3DomeCtrl` (`true`/`false` or `1`/`0`)
   - `domeNeutralUs`, `domeMinPulseUs`, `domeMaxPulseUs` (`1000..2000`)
   - `domeSpeedLimitPct` (`0..100`)
-  - `rcPwmDriveSpeed`, `rcPwmDriveSteer`, `rcPwmDriveLimit`, `rcPwmDomeSpeed`, `rcPwmArm1`, `rcPwmArm2`, `rcPwmSound`
-  - `rcSbusDriveSpeed`, `rcSbusDriveSteer`, `rcSbusDriveLimit`, `rcSbusDomeSpeed`, `rcSbusArm1`, `rcSbusArm2`, `rcSbusSound`
+  - `rcPwmDriveSpeed`, `rcPwmDriveSteer`, `rcPwmDomeSpeed`, `rcPwmArm1`, `rcPwmArm2`, `rcPwmSound`
+  - `rcSbusDriveSpeed`, `rcSbusDriveSteer`, `rcSbusDomeSpeed`, `rcSbusArm1`, `rcSbusArm2`, `rcSbusSound`
   - `rc.sbus.recvCh2` (`true`/`false` or `1`/`0`)
 
 - Success response: same shape as `GET /api/config`
@@ -384,7 +380,6 @@ Return the live RC diagnostics snapshot used by the Setup-page RC Mapping surfac
     "channels": {
       "driveSpeed": {"source": "sbus1", "channel": 1, "min": 172, "center": 992, "max": 1811, "deadband": 0, "reverse": false},
       "driveSteer": {"source": "sbus1", "channel": 2, "min": 172, "center": 992, "max": 1811, "deadband": 0, "reverse": false},
-      "driveLimit": {"source": "sbus1", "channel": 8, "min": 172, "center": 992, "max": 1811, "deadband": 0, "reverse": false},
       "domeSpeed": {"source": "sbus2", "channel": 1, "min": 172, "center": 992, "max": 1811, "deadband": 0, "reverse": false},
       "arm1": {"source": "sbus2", "channel": 2, "min": 172, "center": 992, "max": 1811, "deadband": 0, "reverse": false},
       "arm2": {"source": "sbus2", "channel": 3, "min": 172, "center": 992, "max": 1811, "deadband": 0, "reverse": false},
@@ -398,9 +393,8 @@ Behavior:
 
 - `mode` reflects the active runtime `rcInputMode`
 - `sources` reports link health for `pwm`, `sbus1`, and `sbus2`
-- `channels` are action-oriented analog rows (`driveSpeed`, `driveSteer`, `driveLimit`,
-  `domeSpeed`, `arm1`, `arm2`, `sound`) for bindings that currently resolve to analog
-  input channels
+- `channels` are action-oriented analog rows (`driveSpeed`, `driveSteer`, `domeSpeed`,
+  `arm1`, `arm2`, `sound`) for bindings that currently resolve to analog input channels
 - `digital` contains action-oriented trigger rows when a binding resolves to SBUS
   channel `17` or `18`
 - `mappingProfile` mirrors the persisted binding/calibration profile currently active at
@@ -409,7 +403,7 @@ Behavior:
 Example body:
 
 ```text
-speedLimitMax=400&webDriveTimeoutMs=750&ch8ModeLock=true&enableArm1=true&enableDome=true&domeNeutralUs=1500
+speedLimitMax=400&webDriveTimeoutMs=750&enableArm1=true&enableDome=true&domeNeutralUs=1500
 ```
 
 ### `POST /api/servo`
@@ -579,7 +573,6 @@ Return the current web-control state snapshot.
   "failsafeSource": 0,
   "driveSpeed": 0,
   "driveSteer": 0,
-  "speedLimitScale": 1.0,
   "stationary": false,
   "failsafeCount": 0,
   "failsafeTriggerMs": 0,
@@ -619,7 +612,6 @@ Example response with arm1, RC routing, and dome enabled:
   "failsafeSource": 0,
   "driveSpeed": 0,
   "driveSteer": 0,
-  "speedLimitScale": 1.0,
   "stationary": false,
   "failsafeCount": 0,
   "failsafeTriggerMs": 0,
@@ -649,8 +641,7 @@ Notes:
 - `wifiClientConnected` is true when at least one station is attached to the device soft AP
 - `failsafeSource` is the numeric `FailsafeSource` enum value
 - `failsafeTriggerMs`, `failsafeZeroMs`, `failsafeTriggerToZeroMs`, `failsafeWatchdogMs`, and `failsafeTriggerSource` provide timing evidence for failsafe trigger-to-zero behavior in hardware validation
-- `speedLimitScale` reflects CH8 speed limiting from the drive SBUS receiver
-- `stationary` indicates CH8 mode-lock is holding the drive at zero
+- `stationary` indicates the currently active drive mode lockout state
 - `uptimeMs`, `firmwareVersion`, and `fsVersion` support the shared device-info status block in the UI
 - `heapFree`, `heapMin`, `wifiRssi`, `wifiConnected`, `wifiClientConnected`, and `littleFsReady` support dashboard health/status surfaces
 - Disabled components are absent from the response, not emitted as false placeholders

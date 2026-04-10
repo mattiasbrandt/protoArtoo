@@ -145,11 +145,9 @@ void logBootHealth() {
     PA_LOG_INFO("main", "reset_reason=%s (%d)", resetReasonName(esp_reset_reason()),
                 (int)esp_reset_reason());
     PA_LOG_INFO("main",
-                "config speed_limit_max=%d sbus_timeout_ms=%lu web_timeout_ms=%lu ch8_mode_lock=%s "
-                "audio_volume=%u",
+                "config speed_limit_max=%d sbus_timeout_ms=%lu web_timeout_ms=%lu audio_volume=%u",
                 robotState.cfg_speedLimitMax, (unsigned long)robotState.cfg_sbusTimeoutMs,
-                (unsigned long)robotState.cfg_webDriveTimeoutMs,
-                robotState.cfg_ch8ModeLock ? "true" : "false", robotState.cfg_audioVolume);
+                (unsigned long)robotState.cfg_webDriveTimeoutMs, robotState.cfg_audioVolume);
     PA_LOG_DEBUG("main", "heap_free=%lu", (unsigned long)ESP.getFreeHeap());
 }
 
@@ -262,7 +260,6 @@ void loadConfigToState() {
     robotState.cfg_speedPresetActive = normalizeSpeedPresetId(storedSpeedPresetActive);
     robotState.cfg_sbusTimeoutMs = prefs.getULong("sbus_tmo", SBUS_TIMEOUT_MS);
     robotState.cfg_webDriveTimeoutMs = prefs.getULong("web_tmo", WEB_DRIVE_TIMEOUT_MS);
-    robotState.cfg_ch8ModeLock = prefs.getBool("ch8_lock", false);
     robotState.cfg_audioVolume = (uint8_t)prefs.getUChar("aud_vol", 20);
     robotState.cfg_logLevel = (uint8_t)prefs.getUChar("log_level", PA_LOG_LEVEL);
     robotState.cfg_snd_scream = prefs.getUShort("snd_scream", AUDIO_TRACK_SCREAM);
@@ -397,14 +394,12 @@ void loadConfigToState() {
     RcBindingNvsSpec bindingSpecs[] = {
         {"rcp_drv", &robotState.cfg_rc_pwm_drive_speed, defaultPwmBinding(1)},
         {"rcp_str", &robotState.cfg_rc_pwm_drive_steer, defaultPwmBinding(2)},
-        {"rcp_lim", &robotState.cfg_rc_pwm_drive_limit, disabledRcBinding()},
         {"rcp_dom", &robotState.cfg_rc_pwm_dome_speed, defaultPwmBinding(3)},
         {"rcp_a1", &robotState.cfg_rc_pwm_arm1, defaultPwmBinding(4)},
         {"rcp_a2", &robotState.cfg_rc_pwm_arm2, defaultPwmBinding(5)},
         {"rcp_snd", &robotState.cfg_rc_pwm_sound, defaultPwmBinding(6)},
         {"rcs_drv", &robotState.cfg_rc_sbus_drive_speed, defaultSbusBinding(RC_BINDING_SBUS1, 1)},
         {"rcs_str", &robotState.cfg_rc_sbus_drive_steer, defaultSbusBinding(RC_BINDING_SBUS1, 2)},
-        {"rcs_lim", &robotState.cfg_rc_sbus_drive_limit, defaultSbusBinding(RC_BINDING_SBUS1, 8)},
         {"rcs_dom", &robotState.cfg_rc_sbus_dome_speed, defaultSbusBinding(RC_BINDING_SBUS2, 1)},
         {"rcs_a1", &robotState.cfg_rc_sbus_arm1, defaultSbusBinding(RC_BINDING_SBUS2, 2)},
         {"rcs_a2", &robotState.cfg_rc_sbus_arm2, defaultSbusBinding(RC_BINDING_SBUS2, 3)},
@@ -528,24 +523,20 @@ void loadConfigToState() {
 
     RcBindingConfig* bindings[] = {
         &robotState.cfg_rc_pwm_drive_speed,  &robotState.cfg_rc_pwm_drive_steer,
-        &robotState.cfg_rc_pwm_drive_limit,  &robotState.cfg_rc_pwm_dome_speed,
         &robotState.cfg_rc_pwm_arm1,         &robotState.cfg_rc_pwm_arm2,
         &robotState.cfg_rc_pwm_sound,        &robotState.cfg_rc_sbus_drive_speed,
-        &robotState.cfg_rc_sbus_drive_steer, &robotState.cfg_rc_sbus_drive_limit,
         &robotState.cfg_rc_sbus_dome_speed,  &robotState.cfg_rc_sbus_arm1,
         &robotState.cfg_rc_sbus_arm2,        &robotState.cfg_rc_sbus_sound,
     };
     const RcBindingConfig defaults[] = {
         defaultPwmBinding(1),
         defaultPwmBinding(2),
-        disabledRcBinding(),
         defaultPwmBinding(3),
         defaultPwmBinding(4),
         defaultPwmBinding(5),
         defaultPwmBinding(6),
         defaultSbusBinding(RC_BINDING_SBUS1, 1),
         defaultSbusBinding(RC_BINDING_SBUS1, 2),
-        defaultSbusBinding(RC_BINDING_SBUS1, 8),
         defaultSbusBinding(RC_BINDING_SBUS2, 1),
         defaultSbusBinding(RC_BINDING_SBUS2, 2),
         defaultSbusBinding(RC_BINDING_SBUS2, 3),
@@ -599,7 +590,6 @@ bool saveConfigToNvs() {
     uint8_t speedPresetActive;
     uint32_t sbusTimeoutMs;
     uint32_t webDriveTimeoutMs;
-    bool ch8ModeLock;
     uint8_t audioVolume;
     uint8_t logLevel;
     uint16_t sndScream, sndFaint, sndLeia, sndCantinaS, sndSwTheme;
@@ -624,10 +614,10 @@ bool saveConfigToNvs() {
     bool enableRcCh1, enableRcCh2, enableRcCh3, enableRcCh4, enableRcCh5, enableRcCh6;
     bool enableS1Hoverboard, enableS2Sound, enableS3DomeCtrl, singleSbusUseCh2;
     bool stationary;
-    RcBindingConfig rcPwmDriveSpeed, rcPwmDriveSteer, rcPwmDriveLimit, rcPwmDomeSpeed, rcPwmArm1,
-        rcPwmArm2, rcPwmSound;
-    RcBindingConfig rcSbusDriveSpeed, rcSbusDriveSteer, rcSbusDriveLimit, rcSbusDomeSpeed,
-        rcSbusArm1, rcSbusArm2, rcSbusSound;
+    RcBindingConfig rcPwmDriveSpeed, rcPwmDriveSteer, rcPwmDomeSpeed, rcPwmArm1, rcPwmArm2,
+        rcPwmSound;
+    RcBindingConfig rcSbusDriveSpeed, rcSbusDriveSteer, rcSbusDomeSpeed, rcSbusArm1, rcSbusArm2,
+        rcSbusSound;
     ServoComponentType arm1Type, arm2Type, aux1Type, aux2Type, aux3Type;
     uint16_t aux1Open, aux1Close, aux2Open, aux2Close, aux3Open, aux3Close;
     uint8_t auxLedPin, auxLedCount;
@@ -640,7 +630,6 @@ bool saveConfigToNvs() {
     speedPresetActive = (uint8_t)robotState.cfg_speedPresetActive;
     sbusTimeoutMs = robotState.cfg_sbusTimeoutMs;
     webDriveTimeoutMs = robotState.cfg_webDriveTimeoutMs;
-    ch8ModeLock = robotState.cfg_ch8ModeLock;
     audioVolume = robotState.cfg_audioVolume;
     logLevel = robotState.cfg_logLevel;
     sndScream = robotState.cfg_snd_scream;
@@ -735,14 +724,12 @@ bool saveConfigToNvs() {
     stationary = robotState.cfg_stationary;
     rcPwmDriveSpeed = robotState.cfg_rc_pwm_drive_speed;
     rcPwmDriveSteer = robotState.cfg_rc_pwm_drive_steer;
-    rcPwmDriveLimit = robotState.cfg_rc_pwm_drive_limit;
     rcPwmDomeSpeed = robotState.cfg_rc_pwm_dome_speed;
     rcPwmArm1 = robotState.cfg_rc_pwm_arm1;
     rcPwmArm2 = robotState.cfg_rc_pwm_arm2;
     rcPwmSound = robotState.cfg_rc_pwm_sound;
     rcSbusDriveSpeed = robotState.cfg_rc_sbus_drive_speed;
     rcSbusDriveSteer = robotState.cfg_rc_sbus_drive_steer;
-    rcSbusDriveLimit = robotState.cfg_rc_sbus_drive_limit;
     rcSbusDomeSpeed = robotState.cfg_rc_sbus_dome_speed;
     rcSbusArm1 = robotState.cfg_rc_sbus_arm1;
     rcSbusArm2 = robotState.cfg_rc_sbus_arm2;
@@ -797,7 +784,6 @@ bool saveConfigToNvs() {
     ok = prefs.putUChar("spd_pre_a", speedPresetActive) > 0 && ok;
     ok = prefs.putULong("sbus_tmo", sbusTimeoutMs) > 0 && ok;
     ok = prefs.putULong("web_tmo", webDriveTimeoutMs) > 0 && ok;
-    ok = prefs.putBool("ch8_lock", ch8ModeLock) > 0 && ok;
     ok = prefs.putUChar("aud_vol", audioVolume) > 0 && ok;
     ok = prefs.putUChar("log_level", logLevel) > 0 && ok;
     ok = prefs.putUShort("snd_scream", sndScream) > 0 && ok;
@@ -912,14 +898,12 @@ bool saveConfigToNvs() {
     ok = prefs.putUChar(NVS_KEY_AUX_LED_COUNT, auxLedCount) > 0 && ok;
     ok = saveRcBindingToPrefs(prefs, "rcp_drv", rcPwmDriveSpeed) && ok;
     ok = saveRcBindingToPrefs(prefs, "rcp_str", rcPwmDriveSteer) && ok;
-    ok = saveRcBindingToPrefs(prefs, "rcp_lim", rcPwmDriveLimit) && ok;
     ok = saveRcBindingToPrefs(prefs, "rcp_dom", rcPwmDomeSpeed) && ok;
     ok = saveRcBindingToPrefs(prefs, "rcp_a1", rcPwmArm1) && ok;
     ok = saveRcBindingToPrefs(prefs, "rcp_a2", rcPwmArm2) && ok;
     ok = saveRcBindingToPrefs(prefs, "rcp_snd", rcPwmSound) && ok;
     ok = saveRcBindingToPrefs(prefs, "rcs_drv", rcSbusDriveSpeed) && ok;
     ok = saveRcBindingToPrefs(prefs, "rcs_str", rcSbusDriveSteer) && ok;
-    ok = saveRcBindingToPrefs(prefs, "rcs_lim", rcSbusDriveLimit) && ok;
     ok = saveRcBindingToPrefs(prefs, "rcs_dom", rcSbusDomeSpeed) && ok;
     ok = saveRcBindingToPrefs(prefs, "rcs_a1", rcSbusArm1) && ok;
     ok = saveRcBindingToPrefs(prefs, "rcs_a2", rcSbusArm2) && ok;

@@ -99,7 +99,7 @@ void test_web_testable_action_logic() {
     TEST_ASSERT_FALSE(robotActionIsWebTestable(DRIVE_ACTION_SPEED));
     TEST_ASSERT_FALSE(robotActionIsWebTestable(DRIVE_ACTION_STEER));
     TEST_ASSERT_FALSE(robotActionIsWebTestable(DOME_ACTION_SPEED));
-    TEST_ASSERT_FALSE(robotActionIsWebTestable(DRIVE_ACTION_SPEED_LIMIT));
+    TEST_ASSERT_TRUE(robotActionIsWebTestable(DRIVE_ACTION_SPEED_PRESET_CYCLE));
     TEST_ASSERT_FALSE(robotActionIsWebTestable(SYSTEM_ACTION_ESTOP));
     TEST_ASSERT_FALSE(robotActionIsWebTestable(DOME_ACTION_MARCDUINO_SEQ));
     TEST_ASSERT_FALSE(robotActionIsWebTestable(DOME_ACTION_MARCDUINO_CMD));

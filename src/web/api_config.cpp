@@ -248,7 +248,6 @@ void captureConfigSnapshot(ConfigSnapshot* out) {
     out->speedPresetTurbo = robotState.cfg_speedPresetTurbo;
     out->speedPresetActive = normalizeSpeedPresetId((uint8_t)robotState.cfg_speedPresetActive);
     out->webDriveTimeoutMs = robotState.cfg_webDriveTimeoutMs;
-    out->ch8ModeLock = robotState.cfg_ch8ModeLock;
     out->stationary = robotState.cfg_stationary;
     out->logLevel = robotState.cfg_logLevel;
     out->rcInputMode = robotState.cfg_rc_input_mode;
@@ -295,7 +294,6 @@ void captureConfigSnapshot(ConfigSnapshot* out) {
 
     out->rcPwmDriveSpeed = robotState.cfg_rc_pwm_drive_speed;
     out->rcPwmDriveSteer = robotState.cfg_rc_pwm_drive_steer;
-    out->rcPwmDriveLimit = robotState.cfg_rc_pwm_drive_limit;
     out->rcPwmDomeSpeed = robotState.cfg_rc_pwm_dome_speed;
     out->rcPwmArm1 = robotState.cfg_rc_pwm_arm1;
     out->rcPwmArm2 = robotState.cfg_rc_pwm_arm2;
@@ -303,7 +301,6 @@ void captureConfigSnapshot(ConfigSnapshot* out) {
 
     out->rcSbusDriveSpeed = robotState.cfg_rc_sbus_drive_speed;
     out->rcSbusDriveSteer = robotState.cfg_rc_sbus_drive_steer;
-    out->rcSbusDriveLimit = robotState.cfg_rc_sbus_drive_limit;
     out->rcSbusDomeSpeed = robotState.cfg_rc_sbus_dome_speed;
     out->rcSbusArm1 = robotState.cfg_rc_sbus_arm1;
     out->rcSbusArm2 = robotState.cfg_rc_sbus_arm2;
@@ -334,17 +331,15 @@ void captureConfigSnapshot(ConfigSnapshot* out) {
 // -----------------------------------------------------------------------------
 bool populateConfigJson(JsonDocument& doc, const ConfigSnapshot& snap) {
     doc.clear();
-    // --- RC binding config strings (14 channels, 48 bytes each) ---
+    // --- RC binding config strings (12 channels, 48 bytes each) ---
     char rcPwmDriveSpeedStr[48] = {};
     char rcPwmDriveSteerStr[48] = {};
-    char rcPwmDriveLimitStr[48] = {};
     char rcPwmDomeSpeedStr[48] = {};
     char rcPwmArm1Str[48] = {};
     char rcPwmArm2Str[48] = {};
     char rcPwmSoundStr[48] = {};
     char rcSbusDriveSpeedStr[48] = {};
     char rcSbusDriveSteerStr[48] = {};
-    char rcSbusDriveLimitStr[48] = {};
     char rcSbusDomeSpeedStr[48] = {};
     char rcSbusArm1Str[48] = {};
     char rcSbusArm2Str[48] = {};
@@ -367,8 +362,6 @@ bool populateConfigJson(JsonDocument& doc, const ConfigSnapshot& snap) {
                                snap.rcPwmDriveSpeed) ||
         !formatRcBindingConfig(rcPwmDriveSteerStr, sizeof(rcPwmDriveSteerStr),
                                snap.rcPwmDriveSteer) ||
-        !formatRcBindingConfig(rcPwmDriveLimitStr, sizeof(rcPwmDriveLimitStr),
-                               snap.rcPwmDriveLimit) ||
         !formatRcBindingConfig(rcPwmDomeSpeedStr, sizeof(rcPwmDomeSpeedStr), snap.rcPwmDomeSpeed) ||
         !formatRcBindingConfig(rcPwmArm1Str, sizeof(rcPwmArm1Str), snap.rcPwmArm1) ||
         !formatRcBindingConfig(rcPwmArm2Str, sizeof(rcPwmArm2Str), snap.rcPwmArm2) ||
@@ -377,8 +370,6 @@ bool populateConfigJson(JsonDocument& doc, const ConfigSnapshot& snap) {
                                snap.rcSbusDriveSpeed) ||
         !formatRcBindingConfig(rcSbusDriveSteerStr, sizeof(rcSbusDriveSteerStr),
                                snap.rcSbusDriveSteer) ||
-        !formatRcBindingConfig(rcSbusDriveLimitStr, sizeof(rcSbusDriveLimitStr),
-                               snap.rcSbusDriveLimit) ||
         !formatRcBindingConfig(rcSbusDomeSpeedStr, sizeof(rcSbusDomeSpeedStr),
                                snap.rcSbusDomeSpeed) ||
         !formatRcBindingConfig(rcSbusArm1Str, sizeof(rcSbusArm1Str), snap.rcSbusArm1) ||
@@ -405,7 +396,6 @@ bool populateConfigJson(JsonDocument& doc, const ConfigSnapshot& snap) {
     drive["speedPresetTurbo"] = snap.speedPresetTurbo;
     drive["speedPreset"] = speedPresetIdToString(snap.speedPresetActive);
     drive["webDriveTimeoutMs"] = snap.webDriveTimeoutMs;
-    drive["ch8ModeLock"] = snap.ch8ModeLock;
     drive["stationary"] = snap.stationary;
 
     JsonObject rc = doc["rc"].to<JsonObject>();
@@ -414,7 +404,6 @@ bool populateConfigJson(JsonDocument& doc, const ConfigSnapshot& snap) {
     JsonObject rcPwm = rc["pwm"].to<JsonObject>();
     rcPwm["driveSpeed"] = rcPwmDriveSpeedStr;
     rcPwm["driveSteer"] = rcPwmDriveSteerStr;
-    rcPwm["driveLimit"] = rcPwmDriveLimitStr;
     rcPwm["domeSpeed"] = rcPwmDomeSpeedStr;
     rcPwm["arm1"] = rcPwmArm1Str;
     rcPwm["arm2"] = rcPwmArm2Str;
@@ -423,7 +412,6 @@ bool populateConfigJson(JsonDocument& doc, const ConfigSnapshot& snap) {
     JsonObject rcSbus = rc["sbus"].to<JsonObject>();
     rcSbus["driveSpeed"] = rcSbusDriveSpeedStr;
     rcSbus["driveSteer"] = rcSbusDriveSteerStr;
-    rcSbus["driveLimit"] = rcSbusDriveLimitStr;
     rcSbus["domeSpeed"] = rcSbusDomeSpeedStr;
     rcSbus["arm1"] = rcSbusArm1Str;
     rcSbus["arm2"] = rcSbusArm2Str;
@@ -604,15 +592,6 @@ void registerConfigRoutes(AsyncWebServer& server) {
 
         bool boolValue;
         bool stationaryProvided = false;
-        if (parseBoolParam(req, "ch8ModeLock", &boolValue)) {
-            working.ch8ModeLock = boolValue;
-            PA_LOG_INFO(TAG, "[CFG] ch8ModeLock updated to %s", boolValue ? "true" : "false");
-            changed = true;
-        } else if (req->hasParam("ch8ModeLock", true)) {
-            req->send(400, "application/json",
-                      "{\"ok\":false,\"error\":\"ch8ModeLock must be true/false or 1/0\"}");
-            return;
-        }
 
         if (parseBoolParam(req, "stationary", &boolValue)) {
             stationaryProvided = true;
@@ -897,14 +876,12 @@ void registerConfigRoutes(AsyncWebServer& server) {
         BindingField bindingFields[] = {
             {"rcPwmDriveSpeed", &working.rcPwmDriveSpeed},
             {"rcPwmDriveSteer", &working.rcPwmDriveSteer},
-            {"rcPwmDriveLimit", &working.rcPwmDriveLimit},
             {"rcPwmDomeSpeed", &working.rcPwmDomeSpeed},
             {"rcPwmArm1", &working.rcPwmArm1},
             {"rcPwmArm2", &working.rcPwmArm2},
             {"rcPwmSound", &working.rcPwmSound},
             {"rcSbusDriveSpeed", &working.rcSbusDriveSpeed},
             {"rcSbusDriveSteer", &working.rcSbusDriveSteer},
-            {"rcSbusDriveLimit", &working.rcSbusDriveLimit},
             {"rcSbusDomeSpeed", &working.rcSbusDomeSpeed},
             {"rcSbusArm1", &working.rcSbusArm1},
             {"rcSbusArm2", &working.rcSbusArm2},
@@ -1091,7 +1068,6 @@ void registerConfigRoutes(AsyncWebServer& server) {
         robotState.cfg_speedPresetTurbo = working.speedPresetTurbo;
         robotState.cfg_speedPresetActive = activePresetAfter;
         robotState.cfg_webDriveTimeoutMs = working.webDriveTimeoutMs;
-        robotState.cfg_ch8ModeLock = working.ch8ModeLock;
         robotState.cfg_stationary = working.stationary;
         robotState.stationary = working.stationary;
         robotState.cfg_logLevel = working.logLevel;
@@ -1139,7 +1115,6 @@ void registerConfigRoutes(AsyncWebServer& server) {
 
         robotState.cfg_rc_pwm_drive_speed = working.rcPwmDriveSpeed;
         robotState.cfg_rc_pwm_drive_steer = working.rcPwmDriveSteer;
-        robotState.cfg_rc_pwm_drive_limit = working.rcPwmDriveLimit;
         robotState.cfg_rc_pwm_dome_speed = working.rcPwmDomeSpeed;
         robotState.cfg_rc_pwm_arm1 = working.rcPwmArm1;
         robotState.cfg_rc_pwm_arm2 = working.rcPwmArm2;
@@ -1147,7 +1122,6 @@ void registerConfigRoutes(AsyncWebServer& server) {
 
         robotState.cfg_rc_sbus_drive_speed = working.rcSbusDriveSpeed;
         robotState.cfg_rc_sbus_drive_steer = working.rcSbusDriveSteer;
-        robotState.cfg_rc_sbus_drive_limit = working.rcSbusDriveLimit;
         robotState.cfg_rc_sbus_dome_speed = working.rcSbusDomeSpeed;
         robotState.cfg_rc_sbus_arm1 = working.rcSbusArm1;
         robotState.cfg_rc_sbus_arm2 = working.rcSbusArm2;

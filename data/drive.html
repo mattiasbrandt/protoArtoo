@@ -85,10 +85,6 @@
           <dt>Drive Output</dt>
           <dd id="drive-output">--</dd>
         </div>
-        <div class="status-item">
-          <dt>Speed Limit Scale</dt>
-          <dd id="speed-limit">--</dd>
-        </div>
       </div>
     </div>
 
@@ -141,7 +137,7 @@
     <!-- Drive Settings -->
     <div class="card">
       <h3>⚙️ Drive Settings</h3>
-      <div class="desc">Speed limits, web control timeout, and CH8 binding. Settings take effect immediately and survive reboot.</div>
+      <div class="desc">Speed cap and web control timeout settings. Speed presets are switched from the buttons above or via RC Speed preset cycle trigger.</div>
       <form id="config-form" class="form-grid mt-16">
         <label class="field">
           <span>Maximum Speed Limit</span>
@@ -152,11 +148,6 @@
           <span>Web Control Timeout (ms)</span>
           <input id="web-drive-timeout" name="webDriveTimeoutMs" type="number" min="100" max="5000" step="50"
             title="Web drive commands expire after this many milliseconds. The droid stops if no new command arrives within this window.">
-        </label>
-        <label class="field field-checkbox"
-          title="When enabled, CH8 still scales speed limit 0–100%. Near zero (below ~2%) it also forces Stationary mode and commands stop.">
-          <input id="ch8-mode-lock" name="ch8ModeLock" type="checkbox">
-          <span>Enable CH8 Mode Lock at Zero</span>
         </label>
         <label class="field">
           <span>Slow Preset Limit</span>

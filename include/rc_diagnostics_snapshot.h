@@ -17,7 +17,7 @@
 #include "rc_mapping.h"
 
 static constexpr size_t RC_DIAGNOSTICS_SOURCE_CAPACITY = 3;
-static constexpr size_t RC_DIAGNOSTICS_CHANNEL_CAPACITY = 7;
+static constexpr size_t RC_DIAGNOSTICS_CHANNEL_CAPACITY = 6;
 static constexpr size_t RC_DIAGNOSTICS_SBUS_RAW_CAPACITY = 16;
 static constexpr size_t RC_DIAGNOSTICS_PWM_RAW_CAPACITY = 6;
 

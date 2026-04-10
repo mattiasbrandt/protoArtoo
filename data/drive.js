@@ -18,7 +18,6 @@
   const webControlState = document.getElementById("web-control-state");
   const failsafeSource = document.getElementById("failsafe-source");
   const driveOutput = document.getElementById("drive-output");
-  const speedLimitDisplay = document.getElementById("speed-limit");
   const hbNoData    = document.getElementById("hb-no-data");
   const hbDataGrid  = document.getElementById("hb-data-grid");
   const hbBattery   = document.getElementById("hb-battery");
@@ -33,7 +32,6 @@
   const speedPresetNormal = document.getElementById("speed-preset-normal");
   const speedPresetTurbo = document.getElementById("speed-preset-turbo");
   const webDriveTimeout = document.getElementById("web-drive-timeout");
-  const ch8ModeLock = document.getElementById("ch8-mode-lock");
   const configFeedback = document.getElementById("config-feedback");
   const presetFeedback = document.getElementById("preset-feedback");
   const presetDistinctHint = document.getElementById("preset-distinct-hint");
@@ -315,16 +313,6 @@
       const steerText = Number.isFinite(driveSteer) ? Math.round(driveSteer) : "--";
       driveOutput.textContent = `SPD ${speedText} · STR ${steerText}`;
     }
-    const speedLimitScale = Number(payload.speedLimitScale);
-    const statusSpeedLimitMax = parsePresetNumber(payload.speedLimitMax);
-    const statusPreset = parsePresetId(payload.speedPreset);
-    if (statusSpeedLimitMax !== null) currentSpeedLimitMax = statusSpeedLimitMax;
-    if (statusPreset) currentSpeedPreset = statusPreset;
-    if (speedLimitDisplay) {
-      speedLimitDisplay.textContent = Number.isFinite(speedLimitScale)
-        ? `${Math.round(speedLimitScale * 100)}% (${speedLimitScale.toFixed(3)})`
-        : "--";
-    }
     renderHoverboard(payload.hoverboard);
     updatePresetHighlight();
   };
@@ -336,7 +324,6 @@
     if (speedPresetNormal) speedPresetNormal.value = drive.speedPresetNormal;
     if (speedPresetTurbo) speedPresetTurbo.value = drive.speedPresetTurbo;
     if (webDriveTimeout) webDriveTimeout.value = drive.webDriveTimeoutMs;
-    if (ch8ModeLock) ch8ModeLock.checked = Boolean(drive.ch8ModeLock);
 
     currentSpeedLimitMax = parsePresetNumber(drive.speedLimitMax);
     currentSpeedPreset = parsePresetId(drive.speedPreset);
@@ -379,7 +366,6 @@
         speedPresetNormal: speedPresetNormal?.value ?? "350",
         speedPresetTurbo: speedPresetTurbo?.value ?? "600",
         webDriveTimeoutMs: webDriveTimeout?.value ?? "500",
-        ch8ModeLock: ch8ModeLock?.checked ? "true" : "false",
       }, { timeoutMs: 3000 });
 
       renderConfig(result.data);
@@ -432,7 +418,6 @@
   speedPresetNormal?.addEventListener("input", presetInputHandler);
   speedPresetTurbo?.addEventListener("input", presetInputHandler);
   webDriveTimeout?.addEventListener("input", debouncedSave);
-  ch8ModeLock?.addEventListener("change", debouncedSave);
   if (window.PAStatusStream?.isSupported()) {
     window.PAStatusStream.subscribe((eventType, payload) => {
       if (eventType === "status") renderStatus(payload);

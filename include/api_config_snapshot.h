@@ -27,7 +27,6 @@ struct ConfigSnapshot {
     int16_t speedPresetTurbo;
     SpeedPresetId speedPresetActive;
     uint32_t webDriveTimeoutMs;
-    bool ch8ModeLock;
     bool stationary;
     uint8_t logLevel;
     RcInputMode rcInputMode;
@@ -76,7 +75,6 @@ struct ConfigSnapshot {
 
     RcBindingConfig rcPwmDriveSpeed;
     RcBindingConfig rcPwmDriveSteer;
-    RcBindingConfig rcPwmDriveLimit;
     RcBindingConfig rcPwmDomeSpeed;
     RcBindingConfig rcPwmArm1;
     RcBindingConfig rcPwmArm2;
@@ -84,7 +82,6 @@ struct ConfigSnapshot {
 
     RcBindingConfig rcSbusDriveSpeed;
     RcBindingConfig rcSbusDriveSteer;
-    RcBindingConfig rcSbusDriveLimit;
     RcBindingConfig rcSbusDomeSpeed;
     RcBindingConfig rcSbusArm1;
     RcBindingConfig rcSbusArm2;
