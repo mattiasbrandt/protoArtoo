@@ -57,7 +57,12 @@
     ...SYSTEM_SLOT_TARGETS.map((target) => ({ key: target.key, label: `System · ${target.label}` })),
   ];
   const CATEGORY_SOUNDS = [
-    { label: "General", loKey: "snd_cat_gen_lo", hiKey: "snd_cat_gen_hi" },
+    {
+      label: "General",
+      loKey: "snd_cat_gen_lo",
+      hiKey: "snd_cat_gen_hi",
+      hint: "Bank 1 (1A_general) uses tracks 1-24.",
+    },
     { label: "Chatty", loKey: "snd_cat_chat_lo", hiKey: "snd_cat_chat_hi" },
     { label: "Happy", loKey: "snd_cat_hap_lo", hiKey: "snd_cat_hap_hi" },
     { label: "Processing", loKey: "snd_cat_proc_lo", hiKey: "snd_cat_proc_hi" },
@@ -1657,6 +1662,12 @@
 
       const tdLabel = document.createElement("td");
       tdLabel.textContent = category.label;
+      if (category.hint) {
+        const hint = document.createElement("div");
+        hint.className = "sound-category-hint";
+        hint.textContent = category.hint;
+        tdLabel.appendChild(hint);
+      }
 
       const tdMin = document.createElement("td");
       const minInput = createNumberInput({

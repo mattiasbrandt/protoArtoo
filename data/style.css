@@ -1881,6 +1881,12 @@ label.sound-search-field {
   font-size: 0.85rem;
   margin-left: 6px;
 }
+.sound-category-hint {
+  margin-top: 4px;
+  color: var(--text-dim);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
 
 .sound-btn-compact,
 .sound-btn-play {
