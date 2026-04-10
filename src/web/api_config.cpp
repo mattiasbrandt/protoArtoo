@@ -17,6 +17,7 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <ESPAsyncWebServer.h>
+#include <ctype.h>
 #include <string.h>
 
 #include "api_config_snapshot.h"
@@ -189,6 +190,70 @@ bool parseBoolParam(const AsyncWebServerRequest* req, const char* name, bool* ou
     return parseBoolValue(req->getParam(name, true)->value().c_str(), out);
 }
 
+bool isValidIpv4Literal(const char* raw) {
+    if (raw == nullptr || raw[0] == '\0') {
+        return false;
+    }
+
+    const char* p = raw;
+    int octetCount = 0;
+    while (*p != '\0') {
+        if (!isdigit((unsigned char)*p)) {
+            return false;
+        }
+
+        int value = 0;
+        int digits = 0;
+        while (*p != '\0' && *p != '.') {
+            if (!isdigit((unsigned char)*p)) {
+                return false;
+            }
+            value = (value * 10) + (*p - '0');
+            digits++;
+            if (digits > 3 || value > 255) {
+                return false;
+            }
+            p++;
+        }
+
+        if (digits == 0) {
+            return false;
+        }
+
+        octetCount++;
+        if (octetCount > 4) {
+            return false;
+        }
+
+        if (*p == '.') {
+            p++;
+            if (*p == '\0') {
+                return false;
+            }
+        }
+    }
+
+    return octetCount == 4;
+}
+
+bool parseDomeWifiPeerIp(const char* raw, char* out, size_t outSize) {
+    if (raw == nullptr || out == nullptr || outSize == 0) {
+        return false;
+    }
+    if (raw[0] == '\0') {
+        out[0] = '\0';
+        return true;
+    }
+    if (strlen(raw) >= outSize) {
+        return false;
+    }
+    if (!isValidIpv4Literal(raw)) {
+        return false;
+    }
+    int n = snprintf(out, outSize, "%s", raw);
+    return n > 0 && n < (int)outSize;
+}
+
 bool parseRcBindingParam(const AsyncWebServerRequest* req, const char* name, RcBindingConfig* out) {
     if (req == nullptr || out == nullptr || !req->hasParam(name, true)) {
         return false;
@@ -273,6 +338,8 @@ void captureConfigSnapshot(ConfigSnapshot* out) {
     out->domeMinPulseUs = robotState.cfg_dome_min_pulse_us;
     out->domeMaxPulseUs = robotState.cfg_dome_max_pulse_us;
     out->domeSpeedLimitPct = robotState.cfg_dome_speed_limit_pct;
+    snprintf(out->domeWifiPeerIp, sizeof(out->domeWifiPeerIp), "%s",
+             robotState.cfg_dome_wifi_peer_ip);
 
     out->arm1Type = robotState.cfg_arm1_type;
     out->arm2Type = robotState.cfg_arm2_type;
@@ -472,6 +539,7 @@ bool populateConfigJson(JsonDocument& doc, const ConfigSnapshot& snap) {
     dome["minPulseUs"] = snap.domeMinPulseUs;
     dome["maxPulseUs"] = snap.domeMaxPulseUs;
     dome["speedLimitPct"] = snap.domeSpeedLimitPct;
+    dome["wifiPeerIp"] = snap.domeWifiPeerIp;
 
     JsonObject system = doc["system"].to<JsonObject>();
     system["logLevel"] = snap.logLevel;
@@ -712,6 +780,24 @@ void registerConfigRoutes(AsyncWebServer& server) {
                           "{\"ok\":false,\"error\":\"aux_led_count must be integer 1..255\"}");
                 return;
             }
+
+            JsonVariantConst domeCfg = bodyDoc["dome"];
+            if (!domeCfg.isNull()) {
+                if (domeCfg["wifiPeerIp"].is<const char*>()) {
+                    if (!parseDomeWifiPeerIp(domeCfg["wifiPeerIp"].as<const char*>(),
+                                            working.domeWifiPeerIp,
+                                            sizeof(working.domeWifiPeerIp))) {
+                        req->send(400, "application/json",
+                                  "{\"ok\":false,\"error\":\"dome.wifiPeerIp must be empty or a valid IPv4 address\"}");
+                        return;
+                    }
+                    changed = true;
+                } else if (!domeCfg["wifiPeerIp"].isNull()) {
+                    req->send(400, "application/json",
+                              "{\"ok\":false,\"error\":\"dome.wifiPeerIp must be a string\"}");
+                    return;
+                }
+            }
         }
 
         struct BoolCfgField {
@@ -792,6 +878,17 @@ void registerConfigRoutes(AsyncWebServer& server) {
             req->send(400, "application/json",
                       "{\"ok\":false,\"error\":\"domeSpeedLimitPct must be 0..100\"}");
             return;
+        }
+
+        if (req->hasParam("domeWifiPeerIp", true)) {
+            const char* rawPeerIp = req->getParam("domeWifiPeerIp", true)->value().c_str();
+            if (!parseDomeWifiPeerIp(rawPeerIp, working.domeWifiPeerIp,
+                                     sizeof(working.domeWifiPeerIp))) {
+                req->send(400, "application/json",
+                          "{\"ok\":false,\"error\":\"domeWifiPeerIp must be empty or a valid IPv4 address\"}");
+                return;
+            }
+            changed = true;
         }
 
         struct ServoCalField {
@@ -1096,6 +1193,8 @@ void registerConfigRoutes(AsyncWebServer& server) {
         robotState.cfg_dome_min_pulse_us = working.domeMinPulseUs;
         robotState.cfg_dome_max_pulse_us = working.domeMaxPulseUs;
         robotState.cfg_dome_speed_limit_pct = working.domeSpeedLimitPct;
+        snprintf(robotState.cfg_dome_wifi_peer_ip, sizeof(robotState.cfg_dome_wifi_peer_ip), "%s",
+                 working.domeWifiPeerIp);
 
         robotState.cfg_arm1_type = working.arm1Type;
         robotState.cfg_arm2_type = working.arm2Type;

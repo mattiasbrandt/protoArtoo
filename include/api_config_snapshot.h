@@ -52,6 +52,7 @@ struct ConfigSnapshot {
     uint16_t domeMinPulseUs;
     uint16_t domeMaxPulseUs;
     uint8_t domeSpeedLimitPct;
+    char domeWifiPeerIp[16];
 
     ServoComponentType arm1Type;
     ServoComponentType arm2Type;

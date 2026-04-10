@@ -236,14 +236,6 @@ void setDriveCommand(int16_t speed, int16_t steer, CommandSource src) {
 }
 
 // -----------------------------------------------------------------------------
-bool domeConnected() {
-    taskENTER_CRITICAL(&robotStateMux);
-    uint32_t lastSeen = robotState.domeLastSeenMs;
-    taskEXIT_CRITICAL(&robotStateMux);
-    return lastSeen > 0 && (millis() - lastSeen) < 5000;
-}
-
-// -----------------------------------------------------------------------------
 // loadConfigToState() — load NVS config into robotState.cfg_* fields
 // Called once at boot before tasks start.
 // -----------------------------------------------------------------------------
@@ -386,6 +378,12 @@ void loadConfigToState() {
     robotState.cfg_enable_s1_hoverboard = prefs.getBool("en_s1", false);
     robotState.cfg_enable_s2_sound = prefs.getBool("en_s2", false);
     robotState.cfg_enable_s3_dome_ctrl = prefs.getBool("en_s3", false);
+    String domeWifiPeerIp = prefs.getString("dome_wip", "");
+    if (domeWifiPeerIp.length() >= sizeof(robotState.cfg_dome_wifi_peer_ip)) {
+        domeWifiPeerIp = "";
+    }
+    snprintf(robotState.cfg_dome_wifi_peer_ip, sizeof(robotState.cfg_dome_wifi_peer_ip), "%s",
+             domeWifiPeerIp.c_str());
     robotState.cfg_stationary = prefs.getBool("op_mode", false);
     robotState.cfg_aux_led_pin = prefs.getUChar(NVS_KEY_AUX_LED_PIN, AUX_LED_PIN_DISABLED);
     robotState.cfg_aux_led_count = prefs.getUChar(NVS_KEY_AUX_LED_COUNT, AUX_LED_COUNT_DEFAULT);
@@ -520,6 +518,12 @@ void loadConfigToState() {
     }
     robotState.cfg_aux_led_count =
         constrain(robotState.cfg_aux_led_count, AUX_LED_COUNT_DEFAULT, AUX_LED_COUNT_MAX);
+    if (robotState.cfg_dome_wifi_peer_ip[0] != '\0') {
+        IPAddress parsedPeerIp;
+        if (!parsedPeerIp.fromString(robotState.cfg_dome_wifi_peer_ip)) {
+            robotState.cfg_dome_wifi_peer_ip[0] = '\0';
+        }
+    }
 
     RcBindingConfig* bindings[] = {
         &robotState.cfg_rc_pwm_drive_speed,  &robotState.cfg_rc_pwm_drive_steer,
@@ -621,6 +625,7 @@ bool saveConfigToNvs() {
     ServoComponentType arm1Type, arm2Type, aux1Type, aux2Type, aux3Type;
     uint16_t aux1Open, aux1Close, aux2Open, aux2Close, aux3Open, aux3Close;
     uint8_t auxLedPin, auxLedCount;
+    char domeWifiPeerIp[16];
 
     taskENTER_CRITICAL(&robotStateMux);
     speedLimitMax = robotState.cfg_speedLimitMax;
@@ -763,6 +768,8 @@ bool saveConfigToNvs() {
     aux3Close = robotState.cfg_aux3_close_us;
     auxLedPin = robotState.cfg_aux_led_pin;
     auxLedCount = robotState.cfg_aux_led_count;
+    snprintf(domeWifiPeerIp, sizeof(domeWifiPeerIp), "%s",
+             robotState.cfg_dome_wifi_peer_ip);
     taskEXIT_CRITICAL(&robotStateMux);
 
     // Enforce 12-bit mood-category masks before persisting.
@@ -896,6 +903,11 @@ bool saveConfigToNvs() {
     ok = prefs.putBool("op_mode", stationary) > 0 && ok;
     ok = prefs.putUChar(NVS_KEY_AUX_LED_PIN, auxLedPin) > 0 && ok;
     ok = prefs.putUChar(NVS_KEY_AUX_LED_COUNT, auxLedCount) > 0 && ok;
+    if (domeWifiPeerIp[0] == '\0') {
+        prefs.remove("dome_wip");
+    } else {
+        ok = prefs.putString("dome_wip", domeWifiPeerIp) > 0 && ok;
+    }
     ok = saveRcBindingToPrefs(prefs, "rcp_drv", rcPwmDriveSpeed) && ok;
     ok = saveRcBindingToPrefs(prefs, "rcp_str", rcPwmDriveSteer) && ok;
     ok = saveRcBindingToPrefs(prefs, "rcp_dom", rcPwmDomeSpeed) && ok;

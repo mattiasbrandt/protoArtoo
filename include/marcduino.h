@@ -11,15 +11,16 @@
 #pragma once
 
 // -----------------------------------------------------------------------------
+// -----------------------------------------------------------------------------
 // Body→Dome heartbeat (sent at 1 Hz by DomeLinkTask)
-// Dome responds with APHB_ACK
+// Dome responds with #APHB
 // -----------------------------------------------------------------------------
 #define MD_BODY_HB          "#PAHB\r"
 
 // -----------------------------------------------------------------------------
-// Dome→Body heartbeat ACK (received from dome)
+// Dome→Body heartbeat (received from dome)
 // -----------------------------------------------------------------------------
-#define MD_DOME_HB_ACK      "#APHB\r"
+#define MD_DOME_HB          "#APHB\r"
 
 // -----------------------------------------------------------------------------
 // Body→Dome: full-droid sequences (triggers coordinated dome + body action)

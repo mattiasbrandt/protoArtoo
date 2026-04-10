@@ -214,6 +214,18 @@ const char* rcInputModeLabel(RcInputMode mode) {
     }
 }
 
+const char* domeTransportLabel(DomeLinkTransport transport) {
+    switch (transport) {
+        case DOME_LINK_TRANSPORT_UART:
+            return "uart";
+        case DOME_LINK_TRANSPORT_WIFI:
+            return "wifi";
+        case DOME_LINK_TRANSPORT_DISCONNECTED:
+        default:
+            return "disconnected";
+    }
+}
+
 void loadFsVersion() {
     snprintf(s_fsVersion, sizeof(s_fsVersion), "%s", "unknown");
 #ifdef ARDUINO
@@ -331,6 +343,10 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     uint32_t domeHbRx;
     uint32_t bodyHbTx;
     uint32_t domeLastSeenMs;
+    uint32_t domeRxOverflowCount;
+    uint32_t domeRxUnknownCount;
+    DomeLinkTransport domeActiveTransport;
+    bool domeUartOwned;
     int16_t hbBatteryRaw;
     int16_t hbBoardTempRaw;
     int16_t hbSpeedR;
@@ -371,6 +387,10 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     domeHbRx = robotState.domeHbRx;
     bodyHbTx = robotState.bodyHbTx;
     domeLastSeenMs = robotState.domeLastSeenMs;
+    domeRxOverflowCount = robotState.domeRxOverflowCount;
+    domeRxUnknownCount = robotState.domeRxUnknownCount;
+    domeActiveTransport = robotState.domeActiveTransport;
+    domeUartOwned = robotState.domeUartOwned;
     hbBatteryRaw = robotState.hb_batteryRaw;
     hbBoardTempRaw = robotState.hb_boardTempRaw;
     hbSpeedR = robotState.hb_speedR;
@@ -583,20 +603,24 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
             }
         }
         if (enableS3DomeCtrl) {
+            const char* transportLabel = domeTransportLabel(domeActiveTransport);
             if (domeLastSeenMs == 0) {
-                snprintf(detail, sizeof(detail), "Heartbeat tx %lu, no dome heartbeat seen yet",
-                         (unsigned long)bodyHbTx);
+                snprintf(detail, sizeof(detail),
+                         "Heartbeat tx %lu, no dome heartbeat seen yet (transport %s)",
+                         (unsigned long)bodyHbTx, transportLabel);
                 ok = appendPeripheralStatus(pos, remaining, "s3DomeCtrl", "not_seen", detail) && ok;
             } else if ((uptimeMs - domeLastSeenMs) < 5000UL) {
-                snprintf(detail, sizeof(detail), "Heartbeat rx %lu / tx %lu, last %lu ms ago",
+                snprintf(detail, sizeof(detail),
+                         "Heartbeat rx %lu / tx %lu, last %lu ms ago (transport %s)",
                          (unsigned long)domeHbRx, (unsigned long)bodyHbTx,
-                         uptimeMs - domeLastSeenMs);
+                         uptimeMs - domeLastSeenMs, transportLabel);
                 ok =
                     appendPeripheralStatus(pos, remaining, "s3DomeCtrl", "connected", detail) && ok;
             } else {
-                snprintf(detail, sizeof(detail), "Heartbeat rx %lu / tx %lu, last %lu ms ago",
+                snprintf(detail, sizeof(detail),
+                         "Heartbeat rx %lu / tx %lu, last %lu ms ago (transport %s)",
                          (unsigned long)domeHbRx, (unsigned long)bodyHbTx,
-                         uptimeMs - domeLastSeenMs);
+                         uptimeMs - domeLastSeenMs, transportLabel);
                 ok = appendPeripheralStatus(pos, remaining, "s3DomeCtrl", "lost", detail) && ok;
             }
         }
@@ -606,9 +630,12 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
         // three states: connected (hb seen < 5s), lost (was seen, now > 5s), not_seen (never).
         {
             const char* dlState;
+            const char* dlTransport = domeTransportLabel(domeActiveTransport);
             int32_t lastRxMs = -1;
+            char dlDetail[96];
             if (!enableS3DomeCtrl) {
                 dlState = "disabled";
+                dlTransport = "none";
             } else if (domeLastSeenMs == 0) {
                 dlState = "not_seen";
             } else if ((uptimeMs - domeLastSeenMs) < 5000UL) {
@@ -618,11 +645,15 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
                 dlState = "lost";
                 lastRxMs = (int32_t)(uptimeMs - domeLastSeenMs);
             }
-            char dlBuf[96];
+            snprintf(dlDetail, sizeof(dlDetail), "transport=%s, uart_owned=%s", dlTransport,
+                     domeUartOwned ? "true" : "false");
+            char dlBuf[320];
             snprintf(dlBuf, sizeof(dlBuf),
-                     ",\"dome_link\":{\"state\":\"%s\",\"hb_tx\":%lu,\"hb_rx\":%lu"
-                     ",\"last_rx_ms\":%ld}",
-                     dlState, (unsigned long)bodyHbTx, (unsigned long)domeHbRx, (long)lastRxMs);
+                     ",\"dome_link\":{\"state\":\"%s\",\"transport\":\"%s\",\"detail\":\"%s\",\"hb_tx\":%lu,\"hb_rx\":%lu"
+                     ",\"rx_overflow\":%lu,\"rx_unknown\":%lu,\"last_rx_ms\":%ld}",
+                     dlState, dlTransport, dlDetail, (unsigned long)bodyHbTx,
+                     (unsigned long)domeHbRx, (unsigned long)domeRxOverflowCount,
+                     (unsigned long)domeRxUnknownCount, (long)lastRxMs);
             ok = appendJsonChunk(pos, remaining, dlBuf) && ok;
         }
 

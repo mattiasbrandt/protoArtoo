@@ -13,8 +13,12 @@
 //        route remaining commands through the Marcduino body parser
 //        (parseMarcduinoCommand) which dispatches to AudioTask / ServoTask.
 //
-// DomeLinkTask is the sole writer to UART2 TX. All outbound commands must be
-// enqueued via domeQueueTx() — never write to Serial2 from any other task.
+// UART2 ownership contract (S2 audio RX + S3 dome link share UART2 hardware):
+//   - When active transport is UART, DomeLinkTask owns UART2 on GPIO33/34.
+//   - When active transport is WiFi fallback, DomeLinkTask releases UART2 so
+//     audio status/query paths can reclaim RX on GPIO35.
+//   - DomeLinkTask is still the sole writer for dome-bound Marcduino TX; callers
+//     must enqueue via domeQueueTx() and never write Serial2 directly.
 //
 // Queue sends from real-time tasks must use domeQueueTx() (timeout 0).
 // =============================================================================
@@ -52,3 +56,6 @@ void domeLinkTask(void* pvParameters);
 // Safe to call from any task with timeout 0.
 // -----------------------------------------------------------------------------
 bool domeQueueTx(const char* cmd);
+
+// True when a dome heartbeat has been seen within the timeout window.
+bool domeConnected();

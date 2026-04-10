@@ -18,6 +18,7 @@
 
 #include "api_helpers.h"
 #include "config.h"
+#include "dome_link.h"
 #include "dome_task.h"
 #include "log_buffer.h"
 #include "logging.h"

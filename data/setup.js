@@ -521,17 +521,18 @@
     }
     if (serialS3) {
       const dl = d.dome_link;
+      const transport = typeof dl?.transport === "string" ? dl.transport.toUpperCase() : "N/A";
       if (!dl || dl.state === "disabled") {
         serialS3.textContent = "Disabled";
         serialS3.style.color = "var(--text-dim)";
       } else if (dl.state === "connected") {
-        serialS3.textContent = `Connected (hb rx ${dl.hb_rx} / tx ${dl.hb_tx})`;
+        serialS3.textContent = `Connected (${transport}, hb rx ${dl.hb_rx} / tx ${dl.hb_tx})`;
         serialS3.style.color = "var(--success)";
       } else if (dl.state === "lost") {
-        serialS3.textContent = `Lost — last seen ${dl.last_rx_ms} ms ago`;
+        serialS3.textContent = `Lost (${transport}) — last seen ${dl.last_rx_ms} ms ago`;
         serialS3.style.color = "var(--danger)";
       } else {
-        serialS3.textContent = "Waiting for dome heartbeat";
+        serialS3.textContent = `Waiting for dome heartbeat (${transport})`;
         serialS3.style.color = "var(--warning)";
       }
     }

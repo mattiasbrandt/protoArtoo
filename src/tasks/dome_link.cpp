@@ -1,52 +1,369 @@
 // =============================================================================
 // src/tasks/dome_link.cpp
 //
-// DomeLinkTask — bidirectional Marcduino serial link to dome controller.
+// DomeLinkTask — body-side protoR2link transport.
 //
-// UART2 (Serial2), 9600 baud 8N1, GPIO 33 TX / GPIO 34 RX.
-// This task is the sole writer to UART2 TX. All outbound commands are
-// enqueued via domeQueueTx() from other tasks (web API, mood system, etc.).
+// Transport model:
+//   - Primary: UART2 over slip ring (GPIO 33 TX / GPIO 34 RX)
+//   - Fallback: WiFi (UDP heartbeat + HTTP command forwarding)
 //
-// TX path:
-//   - Drain domeTxQueue each loop iteration; write cmd + \r to UART2.
-//   - Send #PAHB\r heartbeat to dome once per second.
-//   - Increment robotState.bodyHbTx on each heartbeat sent.
+// UART2 ownership model:
+//   - UART transport active: DomeLinkTask owns UART2 on S3 pins.
+//   - WiFi transport active: UART2 is released/reconfigured for audio RX (GPIO 35)
+//     so audio status queries can reclaim the peripheral.
 //
-// RX path:
-//   - Read available bytes from UART2 into a static 64-byte line buffer.
-//   - On CR (or LF): dispatch complete line via parseDomeRxLine().
-//   - Buffer overflow (line > 63 chars): discard and reset — no heap alloc.
-//
-// parseDomeRxLine() contract:
-//   - #APHB → update domeLastSeenMs + domeHbRx; do not forward.
-//   - All other prefixes → parseMarcduinoCommand() which routes:
-//       $   → audioQueueDollar()       (audio playback)
-//       :   → ServoTask queue          (arm sequences and positions)
-//       *@%&! → silently discarded     (dome-only, no slave board)
-//       #   → stub log                 (ConfigTask in future phase)
-//
-// Task disabled path: when cfg_enable_s3_dome_ctrl is false the UART is not
-// opened, the queue is drained silently, and no heartbeat is sent.
+// Real-time safety:
+//   - Non-blocking queue receive and bounded poll loop
+//   - No heap allocation on Core 1 steady-state path
 // =============================================================================
 
 #include "dome_link.h"
 
 #include <Arduino.h>
+#include <HTTPClient.h>
+#include <WiFi.h>
+#include <WiFiUdp.h>
+#include <ESPmDNS.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
 
-#include "audio_task.h"
 #include "config.h"
-#include "logging.h"
 #include "dome_rx_parser.h"
+#include "logging.h"
+#include "marcduino.h"
 #include "mood.h"
 #include "robot_state.h"
 
 static const char* TAG = "DomeLink";
 
-// UART2 — dedicated to the dome serial link (PCB S3 header).
-// Sole instance; no other task may call begin() or write() on this object.
 static HardwareSerial s_domeSerial(2);
+static WiFiUDP s_domeUdp;
+static bool s_uartOwned = false;
+
+namespace {
+
+constexpr uint16_t kDomeUdpPort = 4901;
+constexpr uint32_t kHeartbeatIntervalMs = 1000;
+constexpr uint32_t kHeartbeatTimeoutMs = 5000;
+constexpr uint32_t kUartProbeIntervalMs = 1000;
+constexpr uint32_t kUartProbeWindowMs = 150;
+constexpr uint32_t kMdnsRefreshMs = 5000;
+constexpr const char* kDomeMdnsHost = "astropixelsplus";
+constexpr const char* kBodyMdnsHost = "protoartoo";
+constexpr const char* kDomeCmdEndpoint = "/api/cmd";
+constexpr uint8_t kRxBufLen = 64;
+
+enum DomeRxSource : uint8_t {
+    DOME_RX_UART = 0,
+    DOME_RX_WIFI = 1,
+};
+
+static void setTransportState(DomeLinkTransport transport, bool uartOwned) {
+    taskENTER_CRITICAL(&robotStateMux);
+    robotState.domeActiveTransport = transport;
+    robotState.domeUartOwned = uartOwned;
+    taskEXIT_CRITICAL(&robotStateMux);
+}
+
+static void incrementBodyHeartbeatTx() {
+    taskENTER_CRITICAL(&robotStateMux);
+    robotState.bodyHbTx++;
+    taskEXIT_CRITICAL(&robotStateMux);
+}
+
+static void incrementDomeRxOverflow() {
+    taskENTER_CRITICAL(&robotStateMux);
+    robotState.domeRxOverflowCount++;
+    taskEXIT_CRITICAL(&robotStateMux);
+}
+
+static void incrementDomeRxUnknown() {
+    taskENTER_CRITICAL(&robotStateMux);
+    robotState.domeRxUnknownCount++;
+    taskEXIT_CRITICAL(&robotStateMux);
+}
+
+static void recordHeartbeatRx(uint32_t nowMs, DomeRxSource source) {
+    taskENTER_CRITICAL(&robotStateMux);
+    robotState.domeLastSeenMs = nowMs;
+    if (source == DOME_RX_UART) {
+        robotState.domeLastSeenUartMs = nowMs;
+    } else {
+        robotState.domeLastSeenWifiMs = nowMs;
+    }
+    robotState.domeHbRx++;
+    taskEXIT_CRITICAL(&robotStateMux);
+}
+
+static bool acquireDomeUart() {
+    if (s_uartOwned) {
+        return true;
+    }
+
+    s_domeSerial.end();
+    s_domeSerial.begin(9600, SERIAL_8N1, PIN_DOME_RX, PIN_DOME_TX);
+    s_uartOwned = true;
+
+    taskENTER_CRITICAL(&robotStateMux);
+    robotState.domeUartOwned = true;
+    taskEXIT_CRITICAL(&robotStateMux);
+
+    PA_LOG_INFO(TAG, "UART2 ownership -> dome link (GPIO%d/GPIO%d)", PIN_DOME_TX, PIN_DOME_RX);
+    return true;
+}
+
+static void releaseUartToAudioRx() {
+    if (!s_uartOwned) {
+        return;
+    }
+
+    s_domeSerial.end();
+    // Reconfigure UART2 RX to audio module status pin so AudioTask queries can run.
+    s_domeSerial.begin(9600, SERIAL_8N1, PIN_AUDIO_RX, -1);
+    s_uartOwned = false;
+
+    taskENTER_CRITICAL(&robotStateMux);
+    robotState.domeUartOwned = false;
+    taskEXIT_CRITICAL(&robotStateMux);
+
+    PA_LOG_INFO(TAG, "UART2 ownership -> audio RX (GPIO%d)", PIN_AUDIO_RX);
+}
+
+static bool readConfiguredPeerIp(IPAddress* out) {
+    if (out == nullptr) {
+        return false;
+    }
+
+    char ipBuf[16] = {0};
+    taskENTER_CRITICAL(&robotStateMux);
+    snprintf(ipBuf, sizeof(ipBuf), "%s", robotState.cfg_dome_wifi_peer_ip);
+    taskEXIT_CRITICAL(&robotStateMux);
+
+    if (ipBuf[0] == '\0') {
+        return false;
+    }
+
+    IPAddress parsed;
+    if (!parsed.fromString(ipBuf)) {
+        return false;
+    }
+
+    *out = parsed;
+    return true;
+}
+
+static bool resolveDomePeerIp(uint32_t nowMs, bool staConnected, bool cachedPeerValid,
+                              uint32_t* inOutLastMdnsLookupMs, IPAddress* inOutPeerIp,
+                              bool* outUsingManualIp) {
+    if (inOutLastMdnsLookupMs == nullptr || inOutPeerIp == nullptr || outUsingManualIp == nullptr) {
+        return false;
+    }
+
+    *outUsingManualIp = false;
+
+    IPAddress manualIp;
+    if (readConfiguredPeerIp(&manualIp)) {
+        *inOutPeerIp = manualIp;
+        *outUsingManualIp = true;
+        return true;
+    }
+
+    if (!staConnected) {
+        return false;
+    }
+
+    if ((uint32_t)(nowMs - *inOutLastMdnsLookupMs) < kMdnsRefreshMs) {
+        return cachedPeerValid;
+    }
+
+    *inOutLastMdnsLookupMs = nowMs;
+
+    IPAddress resolved = MDNS.queryHost(kDomeMdnsHost);
+    if (resolved[0] == 0 && resolved[1] == 0 && resolved[2] == 0 && resolved[3] == 0) {
+        PA_LOG_DEBUG(TAG, "mDNS lookup failed for %s.local", kDomeMdnsHost);
+        return cachedPeerValid;
+    }
+
+    *inOutPeerIp = resolved;
+    PA_LOG_INFO(TAG, "mDNS resolved %s.local -> %s", kDomeMdnsHost, inOutPeerIp->toString().c_str());
+    return true;
+}
+
+static void appendUrlEncodedChar(String& out, char c) {
+    if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' ||
+        c == '_' || c == '.' || c == '~') {
+        out += c;
+        return;
+    }
+    if (c == ' ') {
+        out += '+';
+        return;
+    }
+
+    static const char* kHex = "0123456789ABCDEF";
+    out += '%';
+    out += kHex[(uint8_t)c >> 4];
+    out += kHex[(uint8_t)c & 0x0F];
+}
+
+static String urlEncode(const char* input) {
+    String encoded;
+    if (input == nullptr) {
+        return encoded;
+    }
+
+    for (size_t i = 0; input[i] != '\0'; ++i) {
+        appendUrlEncodedChar(encoded, input[i]);
+    }
+    return encoded;
+}
+
+static bool sendCommandOverWifi(const IPAddress& peerIp, const char* cmd) {
+    if (cmd == nullptr || cmd[0] == '\0') {
+        return false;
+    }
+
+    String url = "http://" + peerIp.toString() + String(kDomeCmdEndpoint);
+    String body = "cmd=" + urlEncode(cmd);
+
+    HTTPClient http;
+    http.setConnectTimeout(250);
+    http.setTimeout(250);
+    if (!http.begin(url)) {
+        PA_LOG_WARN(TAG, "WiFi cmd begin failed: %s", url.c_str());
+        return false;
+    }
+
+    http.addHeader("Content-Type", "application/x-www-form-urlencoded");
+    int status = http.POST(body);
+    http.end();
+
+    if (status >= 200 && status < 300) {
+        PA_LOG_DEBUG(TAG, "TX WIFI HTTP: %s", cmd);
+        return true;
+    }
+
+    PA_LOG_WARN(TAG, "WiFi cmd POST failed (%d): %s", status, cmd);
+    return false;
+}
+
+static bool sendHeartbeatOverUdp(const IPAddress& peerIp) {
+    if (!s_domeUdp.beginPacket(peerIp, kDomeUdpPort)) {
+        return false;
+    }
+    s_domeUdp.write((const uint8_t*)MD_BODY_HB, strlen(MD_BODY_HB));
+    return s_domeUdp.endPacket() == 1;
+}
+
+static bool parseDomeRxLine(const char* line, DomeRxSource source, uint32_t nowMs,
+                            bool* heartbeatSeenOut) {
+    if (heartbeatSeenOut != nullptr) {
+        *heartbeatSeenOut = false;
+    }
+
+    if (line == nullptr || line[0] == '\0') {
+        return false;
+    }
+
+    if (strncmp(line, MD_DOME_HB, 5) == 0) {
+        recordHeartbeatRx(nowMs, source);
+        if (heartbeatSeenOut != nullptr) {
+            *heartbeatSeenOut = true;
+        }
+        return true;
+    }
+
+    uint8_t moodId = moodIdFromSeCommand(line);
+    if (moodId != 0) {
+        applyMood(moodId, true);
+        return true;
+    }
+
+    bool handled = parseMarcduinoCommand(line);
+    if (!handled) {
+        incrementDomeRxUnknown();
+        PA_LOG_DEBUG(TAG, "Unknown/ignored dome RX line: %s", line);
+    }
+    return handled;
+}
+
+static void processUartRx(uint32_t nowMs, uint32_t* inOutLastUartHeartbeatMs) {
+    static char rxBuf[kRxBufLen] = {0};
+    static uint8_t rxLen = 0;
+
+    while (s_uartOwned && s_domeSerial.available()) {
+        char c = (char)s_domeSerial.read();
+        if (c == '\r' || c == '\n') {
+            if (rxLen == 0) {
+                continue;
+            }
+            rxBuf[rxLen] = '\0';
+            bool heartbeatSeen = false;
+            parseDomeRxLine(rxBuf, DOME_RX_UART, nowMs, &heartbeatSeen);
+            if (heartbeatSeen && inOutLastUartHeartbeatMs != nullptr) {
+                *inOutLastUartHeartbeatMs = nowMs;
+            }
+            rxLen = 0;
+            continue;
+        }
+
+        if (rxLen < (kRxBufLen - 1)) {
+            rxBuf[rxLen++] = c;
+            continue;
+        }
+
+        // Line overflow.
+        incrementDomeRxOverflow();
+        PA_LOG_WARN(TAG, "UART RX overflow, discarding line");
+        rxLen = 0;
+    }
+}
+
+static void processUdpRx(uint32_t nowMs, uint32_t* inOutLastWifiHeartbeatMs) {
+    char lineBuf[kRxBufLen] = {0};
+
+    int packetLen = s_domeUdp.parsePacket();
+    while (packetLen > 0) {
+        const int maxPayload = (int)sizeof(lineBuf) - 1;
+        const int toRead = packetLen > maxPayload ? maxPayload : packetLen;
+        int n = s_domeUdp.read((uint8_t*)lineBuf, (size_t)toRead);
+        if (n < 0) {
+            n = 0;
+        }
+        lineBuf[n] = '\0';
+
+        if (packetLen > toRead) {
+            // Drain remaining bytes from oversized packet.
+            uint8_t sink[16];
+            int remaining = packetLen - toRead;
+            while (remaining > 0) {
+                int chunk = remaining > (int)sizeof(sink) ? (int)sizeof(sink) : remaining;
+                int drained = s_domeUdp.read(sink, (size_t)chunk);
+                if (drained <= 0) {
+                    break;
+                }
+                remaining -= drained;
+            }
+            incrementDomeRxOverflow();
+            PA_LOG_WARN(TAG, "UDP RX overflow (%d bytes), truncated", packetLen);
+        }
+
+        while (n > 0 && (lineBuf[n - 1] == '\r' || lineBuf[n - 1] == '\n')) {
+            lineBuf[n - 1] = '\0';
+            --n;
+        }
+
+        bool heartbeatSeen = false;
+        parseDomeRxLine(lineBuf, DOME_RX_WIFI, nowMs, &heartbeatSeen);
+        if (heartbeatSeen && inOutLastWifiHeartbeatMs != nullptr) {
+            *inOutLastWifiHeartbeatMs = nowMs;
+        }
+
+        packetLen = s_domeUdp.parsePacket();
+    }
+}
+
+}  // namespace
 
 // -----------------------------------------------------------------------------
 // domeQueueTx()
@@ -56,6 +373,7 @@ bool domeQueueTx(const char* cmd) {
     if (!cmd || !*cmd) {
         return false;
     }
+
     DomeTxCmd msg{};
     strncpy(msg.buf, cmd, sizeof(msg.buf) - 1);
     msg.buf[sizeof(msg.buf) - 1] = '\0';
@@ -69,43 +387,11 @@ bool domeQueueTx(const char* cmd) {
     return true;
 }
 
-// -----------------------------------------------------------------------------
-// parseDomeRxLine()
-// Dispatch one complete CR-terminated line received from the dome.
-//
-// #APHB is intercepted here so it never reaches parseMarcduinoCommand() —
-// the # stub there would log it as an unhandled config command.
-// Everything else goes through the standard Marcduino body parser which
-// already routes $ to AudioTask and : to ServoTask.
-// -----------------------------------------------------------------------------
-static void parseDomeRxLine(const char* line) {
-    if (!line || !*line) {
-        return;
-    }
-
-    // Intercept dome heartbeat before general Marcduino dispatch
-    if (strncmp(line, "#APHB", 5) == 0) {
-        uint32_t now = millis();
-        taskENTER_CRITICAL(&robotStateMux);
-        robotState.domeLastSeenMs = now;
-        robotState.domeHbRx++;
-        uint32_t rxCount = robotState.domeHbRx;
-        taskEXIT_CRITICAL(&robotStateMux);
-        PA_LOG_DEBUG(TAG, "dome heartbeat rx (#%lu)", (unsigned long)rxCount);
-        return;
-    }
-
-    // Intercept mood commands (:SE10, :SE11, :SE13, :SE14) before general
-    // dispatch. fromDome=true suppresses the dome TX echo.
-    uint8_t moodId = moodIdFromSeCommand(line);
-    if (moodId != 0) {
-        applyMood(moodId, true);
-        return;
-    }
-
-    // All other commands — route through standard Marcduino body parser.
-    // $ → AudioTask, : → ServoTask, dome-only prefixes discarded silently.
-    parseMarcduinoCommand(line);
+bool domeConnected() {
+    taskENTER_CRITICAL(&robotStateMux);
+    uint32_t lastSeen = robotState.domeLastSeenMs;
+    taskEXIT_CRITICAL(&robotStateMux);
+    return lastSeen > 0 && (millis() - lastSeen) < kHeartbeatTimeoutMs;
 }
 
 // -----------------------------------------------------------------------------
@@ -114,84 +400,125 @@ static void parseDomeRxLine(const char* line) {
 void domeLinkTask(void* pvParameters) {
     (void)pvParameters;
 
-    // Read enable flag once at startup; a change requires reboot to take effect.
     taskENTER_CRITICAL(&robotStateMux);
     bool enabled = robotState.cfg_enable_s3_dome_ctrl;
     taskEXIT_CRITICAL(&robotStateMux);
 
     if (!enabled) {
-        PA_LOG_INFO(TAG, "dome serial disabled (en_s3=false) — task idle");
-        // Drain queue silently so senders do not block.
+        setTransportState(DOME_LINK_TRANSPORT_DISCONNECTED, false);
+        PA_LOG_INFO(TAG, "dome link disabled (en_s3=false) — task idle");
+
         DomeTxCmd cmd{};
         for (;;) {
             xQueueReceive(domeTxQueue, &cmd, pdMS_TO_TICKS(5000));
         }
     }
 
-    // Open UART2 for dome serial link.
-    // RX pin first, TX pin second — matches ESP32 Arduino begin() convention.
-    s_domeSerial.begin(9600, SERIAL_8N1, PIN_DOME_RX, PIN_DOME_TX);
-    PA_LOG_INFO(TAG, "started — UART2 9600 baud, TX GPIO%d RX GPIO%d",
-                PIN_DOME_TX, PIN_DOME_RX);
+    acquireDomeUart();
+    setTransportState(DOME_LINK_TRANSPORT_UART, true);
 
-    uint32_t lastHbMs = 0;
+    bool udpReady = s_domeUdp.begin(kDomeUdpPort) == 1;
+    if (!udpReady) {
+        PA_LOG_WARN(TAG, "UDP bind failed on port %u", (unsigned)kDomeUdpPort);
+    }
 
-    // Static RX line buffer — no heap, overflow-safe.
-    static char rxBuf[64];
-    static uint8_t rxLen = 0;
+    uint32_t lastHeartbeatTxMs = 0;
+    uint32_t lastUartHeartbeatMs = 0;
+    uint32_t lastUartProbeMs = 0;
+    uint32_t uartProbeWindowUntilMs = 0;
+    uint32_t lastMdnsLookupMs = 0;
+
+    IPAddress peerIp;
+    bool peerKnown = false;
+    bool peerManual = false;
+    bool mdnsReady = false;
 
     DomeTxCmd txCmd{};
-    bool hwmLogged = false;
 
     for (;;) {
-        if (!hwmLogged) {
-            PA_LOG_INFO(TAG, "stack HWM: %u words free",
-                        (unsigned)uxTaskGetStackHighWaterMark(NULL));
-            hwmLogged = true;
+        const uint32_t now = millis();
+        const bool staConnected = WiFi.status() == WL_CONNECTED;
+        if (!staConnected) {
+            mdnsReady = false;
+        } else if (!mdnsReady) {
+            mdnsReady = MDNS.begin(kBodyMdnsHost);
+            if (!mdnsReady) {
+                PA_LOG_WARN(TAG, "mDNS init failed for host %s", kBodyMdnsHost);
+            }
         }
 
-        // ----------------------------------------------------------------
-        // TX — drain outbound command queue
-        // ----------------------------------------------------------------
-        while (xQueueReceive(domeTxQueue, &txCmd, 0) == pdTRUE) {
-            s_domeSerial.print(txCmd.buf);
-            s_domeSerial.print('\r');
-            PA_LOG_DEBUG(TAG, "TX: %s", txCmd.buf);
+        peerKnown = resolveDomePeerIp(now, staConnected, peerKnown, &lastMdnsLookupMs, &peerIp,
+                                      &peerManual);
+
+        processUartRx(now, &lastUartHeartbeatMs);
+        if (udpReady) {
+            processUdpRx(now, nullptr);
         }
 
-        // ----------------------------------------------------------------
-        // TX — 1 Hz heartbeat (#PAHB) to dome
-        // ----------------------------------------------------------------
-        uint32_t now = millis();
-        if ((uint32_t)(now - lastHbMs) >= 1000) {
-            lastHbMs = now;
-            s_domeSerial.print("#PAHB\r");
-            uint32_t hbTx;
-            taskENTER_CRITICAL(&robotStateMux);
-            robotState.bodyHbTx++;
-            hbTx = robotState.bodyHbTx;
-            taskEXIT_CRITICAL(&robotStateMux);
-            PA_LOG_DEBUG(TAG, "TX: #PAHB (hb_tx=%lu)", (unsigned long)hbTx);
+        const bool uartFresh =
+            lastUartHeartbeatMs > 0 && (uint32_t)(now - lastUartHeartbeatMs) < kHeartbeatTimeoutMs;
+        const bool initialUartGrace =
+            lastUartHeartbeatMs == 0 && (uint32_t)now < kHeartbeatTimeoutMs;
+
+        DomeLinkTransport desiredTransport = DOME_LINK_TRANSPORT_UART;
+        if (!uartFresh && !initialUartGrace && staConnected && peerKnown) {
+            desiredTransport = DOME_LINK_TRANSPORT_WIFI;
         }
 
-        // ----------------------------------------------------------------
-        // RX — read available bytes and dispatch complete lines
-        // ----------------------------------------------------------------
-        while (s_domeSerial.available()) {
-            char c = (char)s_domeSerial.read();
-
-            if (c == '\r' || c == '\n') {
-                if (rxLen > 0) {
-                    rxBuf[rxLen] = '\0';
-                    parseDomeRxLine(rxBuf);
-                    rxLen = 0;
+        if (desiredTransport == DOME_LINK_TRANSPORT_UART) {
+            uartProbeWindowUntilMs = 0;
+            acquireDomeUart();
+        } else {
+            if ((uint32_t)(now - lastUartProbeMs) >= kUartProbeIntervalMs) {
+                lastUartProbeMs = now;
+                if (acquireDomeUart()) {
+                    uartProbeWindowUntilMs = now + kUartProbeWindowMs;
+                    // Probe ping for failback detection; not counted as active transport heartbeat.
+                    s_domeSerial.print(MD_BODY_HB);
                 }
-            } else if (rxLen < (uint8_t)(sizeof(rxBuf) - 1)) {
-                rxBuf[rxLen++] = c;
-            } else {
-                // Line too long — discard and reset
-                PA_LOG_WARN(TAG, "RX line overflow, discarding");
-                rxLen = 0;
+            }
+
+            if (uartFresh) {
+                desiredTransport = DOME_LINK_TRANSPORT_UART;
+                uartProbeWindowUntilMs = 0;
+            } else if (s_uartOwned && uartProbeWindowUntilMs != 0 &&
+                       (int32_t)(now - uartProbeWindowUntilMs) >= 0) {
+                releaseUartToAudioRx();
+                uartProbeWindowUntilMs = 0;
+            }
+        }
+
+        setTransportState(desiredTransport, s_uartOwned);
+
+        while (xQueueReceive(domeTxQueue, &txCmd, 0) == pdTRUE) {
+            if (desiredTransport == DOME_LINK_TRANSPORT_UART && s_uartOwned) {
+                s_domeSerial.print(txCmd.buf);
+                s_domeSerial.print('\r');
+                PA_LOG_DEBUG(TAG, "TX UART: %s", txCmd.buf);
+                continue;
+            }
+
+            if (desiredTransport == DOME_LINK_TRANSPORT_WIFI && staConnected && peerKnown) {
+                sendCommandOverWifi(peerIp, txCmd.buf);
+                continue;
+            }
+
+            PA_LOG_WARN(TAG, "TX dropped (no active transport): %s", txCmd.buf);
+        }
+
+        if ((uint32_t)(now - lastHeartbeatTxMs) >= kHeartbeatIntervalMs) {
+            lastHeartbeatTxMs = now;
+
+            if (desiredTransport == DOME_LINK_TRANSPORT_UART && s_uartOwned) {
+                s_domeSerial.print(MD_BODY_HB);
+                incrementBodyHeartbeatTx();
+                PA_LOG_DEBUG(TAG, "TX UART heartbeat");
+            } else if (desiredTransport == DOME_LINK_TRANSPORT_WIFI && staConnected && peerKnown) {
+                if (sendHeartbeatOverUdp(peerIp)) {
+                    incrementBodyHeartbeatTx();
+                    PA_LOG_DEBUG(TAG, "TX WiFi heartbeat (%s)",
+                                 peerManual ? "manual-ip" : "mdns");
+                }
             }
         }
 

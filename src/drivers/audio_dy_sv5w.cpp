@@ -240,7 +240,7 @@ void AudioDriverDySv5w::begin(uint8_t vol) {
 bool AudioDriverDySv5w::queryModuleState(AudioModuleState& out) {
     bool uart2Contended;
     taskENTER_CRITICAL(&robotStateMux);
-    uart2Contended = robotState.cfg_enable_s3_dome_ctrl;
+    uart2Contended = robotState.domeUartOwned;
     taskEXIT_CRITICAL(&robotStateMux);
     if (uart2Contended) {
         PA_LOG_DEBUG(TAG, "UART2 contended — returning cached module state");

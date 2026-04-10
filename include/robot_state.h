@@ -58,6 +58,12 @@ enum RcInputMode : uint8_t {
     RC_INPUT_DUAL_SBUS,
 };
 
+enum DomeLinkTransport : uint8_t {
+    DOME_LINK_TRANSPORT_DISCONNECTED = 0,
+    DOME_LINK_TRANSPORT_UART,
+    DOME_LINK_TRANSPORT_WIFI,
+};
+
 enum ServoComponentType : uint8_t {
     SERVO_COMP_NONE = 0,    // Nothing connected / unassigned
     SERVO_COMP_MG996R = 1,  // Standard hobby servo, 1000-2000 µs range
@@ -173,6 +179,8 @@ struct RobotState {
     uint32_t lastSbus2Ms;
     uint32_t lastDriveCommandMs;
     uint32_t domeLastSeenMs;
+    uint32_t domeLastSeenUartMs;
+    uint32_t domeLastSeenWifiMs;
     CommandSource lastDriveSource;
 
     uint16_t rcPwmPulseUs[6];
@@ -182,9 +190,13 @@ struct RobotState {
     bool rcSbus1Digital[2];
     bool rcSbus2Digital[2];
 
-    // --- Dome heartbeat ---
+    // --- Dome link diagnostics / transport state ---
     uint32_t domeHbRx;
     uint32_t bodyHbTx;
+    uint32_t domeRxOverflowCount;
+    uint32_t domeRxUnknownCount;
+    DomeLinkTransport domeActiveTransport;
+    bool domeUartOwned;
 
     // --- Mood ---
     // Active mood SE1x index: 10=Quiet, 11=Full-Awake, 13=Mid-Awake, 14=Awake+.
@@ -307,6 +319,7 @@ struct RobotState {
     uint16_t cfg_dome_min_pulse_us;
     uint16_t cfg_dome_max_pulse_us;
     uint8_t cfg_dome_speed_limit_pct;
+    char cfg_dome_wifi_peer_ip[16];  // dome_wip — fallback IPv4 peer for WiFi dome link
 
     // Sequence timing (ms)
     uint16_t cfg_seq_open_ms;
@@ -402,8 +415,6 @@ extern QueueHandle_t domeTxQueue;
 
 // Set drive command under mutex and update lastDriveCommandMs
 void setDriveCommand(int16_t speed, int16_t steer, CommandSource src);
-
-bool domeConnected();
 
 // Load NVS config into robotState.cfg_* fields
 void loadConfigToState();
