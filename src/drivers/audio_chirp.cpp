@@ -176,11 +176,16 @@ static bool parseNameLine(const char* line, uint8_t* bankOut, char* pageOut, uin
         ++p;
     }
 
-    if (*p == '\0' || p[1] != ',' || !isalpha((unsigned char)*p)) {
+    char pageVal = 'A';
+    if (*p == ',') {
+        // Bank 1 NAME frames use empty page field: NAME:1,,<index>,<name>
+        ++p;
+    } else if (*p != '\0' && p[1] == ',' && isalpha((unsigned char)*p)) {
+        pageVal = normalizePage(*p);
+        p += 2;
+    } else {
         return false;
     }
-    char pageVal = normalizePage(*p);
-    p += 2;
     while (*p == ' ') {
         ++p;
     }
@@ -221,6 +226,7 @@ bool AudioDriverChirp::loadManifestBanks(uint32_t timeoutMs, bool keepTotalTrack
     uint32_t rxBytes = 0;
     uint16_t bank1Count = keepTotalTracks ? m_totalTracks : 0;
     uint8_t catalogBankCount = 0;
+    uint16_t droppedBankLines = 0;
     ChirpCatalogBank parsedBanks[CHIRP_CATALOG_MAX_BANKS] = {};
     char line[96];
 
@@ -243,6 +249,8 @@ bool AudioDriverChirp::loadManifestBanks(uint32_t timeoutMs, bool keepTotalTrack
             if (parseBankLine(line, &bank)) {
                 if (catalogBankCount < CHIRP_CATALOG_MAX_BANKS) {
                     parsedBanks[catalogBankCount++] = bank;
+                } else {
+                    ++droppedBankLines;
                 }
                 if (bank.bank == 1) {
                     bank1Count = bank.count;
@@ -265,6 +273,11 @@ bool AudioDriverChirp::loadManifestBanks(uint32_t timeoutMs, bool keepTotalTrack
                         (unsigned)rxBytes);
         }
         return false;
+    }
+    if (droppedBankLines > 0) {
+        PA_LOG_WARN(TAG,
+                    "GMAN reported more banks/pages than supported (max=%u). Ignoring %u extra BANK lines.",
+                    (unsigned)CHIRP_CATALOG_MAX_BANKS, (unsigned)droppedBankLines);
     }
 
     m_catalogBankCount = catalogBankCount;

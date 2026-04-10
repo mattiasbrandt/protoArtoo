@@ -25,7 +25,9 @@
 
 // CHIRP native volume range (0 = silent, 99 = maximum)
 static constexpr uint8_t CHIRP_VOL_MAX = 99;
-static constexpr uint8_t CHIRP_CATALOG_MAX_BANKS = 6;
+// CHIRP can expose multiple pages per bank (A-Z). Keep this comfortably above
+// legacy 6-bank layouts so page-sharded catalogs are not truncated.
+static constexpr uint8_t CHIRP_CATALOG_MAX_BANKS = 64;
 static constexpr uint16_t CHIRP_CATALOG_MAX_ENTRIES = 300;
 
 struct ChirpCatalogEntry {

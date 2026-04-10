@@ -382,7 +382,7 @@
     }
   };
 
-  const showFeedback = (el, msg, ok) => {
+  const showFeedback = (el, msg, ok, timeoutMs = 2500) => {
     if (!el) return;
     const priorTimer = feedbackTimers.get(el);
     if (priorTimer) {
@@ -394,11 +394,14 @@
     }
     el.textContent = msg;
     el.className = `${el.dataset.baseClass} ${ok ? "success" : "error"}`;
+    if (timeoutMs <= 0) {
+      return;
+    }
     const timer = window.setTimeout(() => {
       el.textContent = "";
       el.className = el.dataset.baseClass || "feedback";
       feedbackTimers.delete(el);
-    }, 2500);
+    }, timeoutMs);
     feedbackTimers.set(el, timer);
   };
 
@@ -1170,7 +1173,14 @@
         if (!catalogReady) {
           catalogStatus.textContent = "Catalog not loaded yet. Click Refresh Catalog.";
         } else {
-          catalogStatus.textContent = `${catalogEntries.length} entries across ${catalogBanks.length} bank(s).`;
+          const bank1PageCount = catalogBanks.filter((bankRow) =>
+            Number.parseInt(String(bankRow?.bank ?? "0"), 10) === 1
+          ).length;
+          let statusText = `${catalogEntries.length} entries across ${catalogBanks.length} bank(s).`;
+          if (bank1PageCount === 1) {
+            statusText += " CHIRP reports one active Bank 1 page per refresh.";
+          }
+          catalogStatus.textContent = statusText;
         }
       }
 
@@ -1194,7 +1204,7 @@
 
     catalogRefreshInFlight = true;
     setCatalogActionLock(true);
-    showFeedback(catalogFeedback, "Catalog refresh queued. This can take around 1 minute for large banks.", true);
+    showFeedback(catalogFeedback, "Catalog refresh queued. This can take around 1 minute for large banks.", true, 0);
 
     try {
       const result = await window.PAApi.postForm("/api/audio/catalog/refresh", {}, { timeoutMs: 3000 });
