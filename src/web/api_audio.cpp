@@ -645,7 +645,21 @@ void registerAudioRoutes(AsyncWebServer& server) {
 
         const AsyncWebParameter* bankParam = req->getParam("bank", true);
         const AsyncWebParameter* pageParam = req->getParam("page", true);
+        const AsyncWebParameter* clearBindingParam = req->getParam("clear_binding", true);
         const bool hasBankedParams = (bankParam != nullptr) || (pageParam != nullptr);
+        bool clearBinding = false;
+        if (clearBindingParam != nullptr &&
+            !parseBoolValue(clearBindingParam->value().c_str(), &clearBinding)) {
+            req->send(400, "application/json",
+                      "{\"ok\":false,\"error\":\"clear_binding must be true/false/1/0\"}");
+            return;
+        }
+        if (hasBankedParams && clearBinding) {
+            req->send(400, "application/json",
+                      "{\"ok\":false,\"error\":\"clear_binding cannot be combined with bank/page\"}");
+            return;
+        }
+
         uint8_t categoryBank = 0;
         char categoryPage = 'A';
         if (hasBankedParams) {
@@ -672,6 +686,10 @@ void registerAudioRoutes(AsyncWebServer& server) {
                 return;
             }
             categoryBank = (uint8_t)bankValue;
+        } else if (clearBinding && !audioCatalogSupported()) {
+            req->send(404, "application/json",
+                      "{\"ok\":false,\"error\":\"catalog unsupported by active backend\"}");
+            return;
         }
 
         uint32_t loTrack = 0;
@@ -727,6 +745,8 @@ void registerAudioRoutes(AsyncWebServer& server) {
             if (wroteHi && hasBankedParams) {
                 uint32_t packedBinding = packChirpCategoryBinding(categoryBank, categoryPage);
                 wroteBinding = prefs.putUInt(categoryBindingEntry->nvsKey, packedBinding) > 0;
+            } else if (wroteHi && clearBinding) {
+                wroteBinding = prefs.putUInt(categoryBindingEntry->nvsKey, 0) > 0;
             }
             if (wroteLo && (!wroteHi || !wroteBinding)) {
                 prefs.putUShort(loNvsKey, oldLo);
@@ -753,6 +773,10 @@ void registerAudioRoutes(AsyncWebServer& server) {
                         "[AUDIO] POST /api/audio/category-range %s=%u %s=%u bank=%u page=%c",
                         loKey, (unsigned)loValue, hiKey, (unsigned)hiValue,
                         (unsigned)categoryBank, categoryPage);
+        } else if (clearBinding) {
+            PA_LOG_INFO(TAG,
+                        "[AUDIO] POST /api/audio/category-range %s=%u %s=%u clear_binding=true",
+                        loKey, (unsigned)loValue, hiKey, (unsigned)hiValue);
         } else {
             PA_LOG_INFO(TAG, "[AUDIO] POST /api/audio/category-range %s=%u %s=%u", loKey,
                         (unsigned)loValue, hiKey, (unsigned)hiValue);

@@ -42,15 +42,19 @@
     { label: "Dome enabled", key: "sys_dome_on" },
   ];
 
+  const NAMED_SLOT_TARGETS = NAMED_SOUNDS
+    .filter((sound) => sound.editable && Boolean(sound.key))
+    .map((sound) => ({
+      key: sound.key,
+      label: `${sound.label} (${sound.key})`,
+    }));
+  const SYSTEM_SLOT_TARGETS = SYSTEM_SOUNDS.map((sound) => ({
+    key: sound.key,
+    label: `${sound.label} (${sound.key})`,
+  }));
   const SLOT_BINDING_TARGETS = [
-    ...NAMED_SOUNDS.filter((sound) => sound.editable && Boolean(sound.key)).map((sound) => ({
-      key: sound.key,
-      label: `Named · ${sound.label}`,
-    })),
-    ...SYSTEM_SOUNDS.map((sound) => ({
-      key: sound.key,
-      label: `System · ${sound.label}`,
-    })),
+    ...NAMED_SLOT_TARGETS.map((target) => ({ key: target.key, label: `Named · ${target.label}` })),
+    ...SYSTEM_SLOT_TARGETS.map((target) => ({ key: target.key, label: `System · ${target.label}` })),
   ];
   const CATEGORY_SOUNDS = [
     { label: "General", loKey: "snd_cat_gen_lo", hiKey: "snd_cat_gen_hi" },
@@ -68,14 +72,38 @@
   ];
   const SLOT_TARGET_PREFIX = "slot:";
   const CATEGORY_TARGET_PREFIX = "category:";
+  const SLOT_CLEAR_TARGET_PREFIX = "slot-clear:";
+  const CATEGORY_CLEAR_TARGET_PREFIX = "category-clear:";
   const CATALOG_MAP_TARGETS = [
-    ...SLOT_BINDING_TARGETS.map((target) => ({
+    ...NAMED_SLOT_TARGETS.map((target) => ({
       value: `${SLOT_TARGET_PREFIX}${target.key}`,
       label: target.label,
+      group: "Map to named slot",
+    })),
+    ...SYSTEM_SLOT_TARGETS.map((target) => ({
+      value: `${SLOT_TARGET_PREFIX}${target.key}`,
+      label: target.label,
+      group: "Map to system slot",
     })),
     ...CATEGORY_SOUNDS.map((category) => ({
       value: `${CATEGORY_TARGET_PREFIX}${category.loKey}`,
       label: `Category · ${category.label}`,
+      group: "Map to category",
+    })),
+    ...NAMED_SLOT_TARGETS.map((target) => ({
+      value: `${SLOT_CLEAR_TARGET_PREFIX}${target.key}`,
+      label: `Unmap named slot · ${target.label}`,
+      group: "Clear named slot mapping",
+    })),
+    ...SYSTEM_SLOT_TARGETS.map((target) => ({
+      value: `${SLOT_CLEAR_TARGET_PREFIX}${target.key}`,
+      label: `Unmap system slot · ${target.label}`,
+      group: "Clear system slot mapping",
+    })),
+    ...CATEGORY_SOUNDS.map((category) => ({
+      value: `${CATEGORY_CLEAR_TARGET_PREFIX}${category.loKey}`,
+      label: `Reset category · ${category.label}`,
+      group: "Clear category mapping",
     })),
   ];
   const SLOT_TARGET_LABEL_BY_KEY = Object.fromEntries(
@@ -520,7 +548,16 @@
   const findCategoryByLoKey = (loKey) =>
     CATEGORY_SOUNDS.find((category) => category.loKey === loKey) || null;
 
-  const postCategoryRange = async (loKey, hiKey, lo, hi, feedbackEl, binding = null, quiet = false) => {
+  const postCategoryRange = async (
+    loKey,
+    hiKey,
+    lo,
+    hi,
+    feedbackEl,
+    binding = null,
+    quiet = false,
+    clearBinding = false
+  ) => {
     if (!window.PAApi) return false;
     if (!soundHardwareEnabled) {
       if (!quiet) {
@@ -533,6 +570,9 @@
       if (binding?.bank && binding?.page) {
         payload.bank = binding.bank;
         payload.page = binding.page;
+      }
+      if (clearBinding) {
+        payload.clear_binding = 1;
       }
       const result = await window.PAApi.postForm(
         "/api/audio/category-range",
@@ -623,11 +663,22 @@
     placeholder.textContent = placeholderText;
     select.appendChild(placeholder);
 
+    const groups = new Map();
     CATALOG_MAP_TARGETS.forEach((target) => {
-      const option = document.createElement("option");
-      option.value = target.value;
-      option.textContent = target.label;
-      select.appendChild(option);
+      if (!groups.has(target.group)) groups.set(target.group, []);
+      groups.get(target.group).push(target);
+    });
+
+    groups.forEach((targets, groupLabel) => {
+      const optGroup = document.createElement("optgroup");
+      optGroup.label = groupLabel;
+      targets.forEach((target) => {
+        const option = document.createElement("option");
+        option.value = target.value;
+        option.textContent = target.label;
+        optGroup.appendChild(option);
+      });
+      select.appendChild(optGroup);
     });
 
     if (currentValue) {
@@ -635,13 +686,53 @@
     }
   };
 
+  const getCurrentConfiguredTrack = (key) => {
+    if (!key) return null;
+    const namedInput = document.getElementById(`track-input-${key}`);
+    const systemInput = document.getElementById(`sys-track-input-${key}`);
+    const raw = namedInput?.value ?? systemInput?.value ?? null;
+    const value = Number.parseInt(String(raw ?? ""), 10);
+    if (!Number.isFinite(value) || value < 0 || value > TRACK_MAX) return null;
+    return value;
+  };
+
   const mapCatalogEntriesToTarget = async (entries, target, feedbackEl) => {
-    if (!Array.isArray(entries) || entries.length === 0) {
-      showFeedback(feedbackEl || catalogFeedback, "Select at least one catalog entry.", false);
-      return false;
-    }
     if (!target) {
       showFeedback(feedbackEl || catalogFeedback, "Select a target before mapping.", false);
+      return false;
+    }
+
+    if (target.startsWith(SLOT_CLEAR_TARGET_PREFIX)) {
+      const key = target.slice(SLOT_CLEAR_TARGET_PREFIX.length);
+      const currentTrack = getCurrentConfiguredTrack(key);
+      if (currentTrack === null) {
+        showFeedback(feedbackEl || catalogFeedback, "Cannot clear slot mapping: track value is unavailable.", false);
+        return false;
+      }
+      return postTrack(key, currentTrack, feedbackEl || catalogFeedback);
+    }
+
+    if (target.startsWith(CATEGORY_CLEAR_TARGET_PREFIX)) {
+      const loKey = target.slice(CATEGORY_CLEAR_TARGET_PREFIX.length);
+      const category = findCategoryByLoKey(loKey);
+      if (!category) {
+        showFeedback(feedbackEl || catalogFeedback, "Unknown category target.", false);
+        return false;
+      }
+      return postCategoryRange(
+        category.loKey,
+        category.hiKey,
+        0,
+        0,
+        feedbackEl || catalogFeedback,
+        null,
+        false,
+        true
+      );
+    }
+
+    if (!Array.isArray(entries) || entries.length === 0) {
+      showFeedback(feedbackEl || catalogFeedback, "Select at least one catalog entry.", false);
       return false;
     }
 
@@ -834,14 +925,25 @@
 
   const syncCatalogSuggestionUi = () => {
     catalogSuggestedCategoryMappings = buildSuggestedCategoryMappings();
-    if (!catalogSuggestBtn) return;
     const suggestionCount = catalogSuggestedCategoryMappings.length;
-    catalogSuggestBtn.textContent = suggestionCount > 0
-      ? `🧭 Apply suggestions (${suggestionCount})`
-      : "🧭 Apply suggestions";
-    const enabled = catalogSupported && catalogReady && soundHardwareEnabled && !catalogRefreshInFlight && suggestionCount > 0;
-    catalogSuggestBtn.disabled = !enabled;
-    catalogSuggestBtn.setAttribute("aria-disabled", enabled ? "false" : "true");
+
+    if (catalogSuggestBtn) {
+      catalogSuggestBtn.textContent = suggestionCount > 0
+        ? `🧭 Apply suggestions (${suggestionCount})`
+        : "🧭 Apply suggestions";
+      const enabled = catalogSupported && catalogReady && soundHardwareEnabled && !catalogRefreshInFlight && suggestionCount > 0;
+      catalogSuggestBtn.disabled = !enabled;
+      catalogSuggestBtn.setAttribute("aria-disabled", enabled ? "false" : "true");
+    }
+
+    if (catalogStatus && catalogReady && !catalogRefreshInFlight) {
+      const baseText = catalogStatus.dataset.baseText || catalogStatus.textContent || "";
+      if (suggestionCount > 0) {
+        catalogStatus.textContent = `${baseText} ${suggestionCount} suggestion(s) ready.`.trim();
+      } else {
+        catalogStatus.textContent = baseText;
+      }
+    }
   };
 
   const applySuggestedCategoryMappings = async () => {
@@ -1180,6 +1282,7 @@
           if (bank1PageCount === 1) {
             statusText += " CHIRP reports one active Bank 1 page per refresh.";
           }
+          catalogStatus.dataset.baseText = statusText;
           catalogStatus.textContent = statusText;
         }
       }
@@ -1188,7 +1291,10 @@
       renderCatalogRows();
       return catalogReady;
     } catch (error) {
-      if (catalogStatus) catalogStatus.textContent = "Catalog load failed.";
+      if (catalogStatus) {
+        delete catalogStatus.dataset.baseText;
+        catalogStatus.textContent = "Catalog load failed.";
+      }
       showFeedback(catalogFeedback, `Catalog load failed: ${getApiErrorMessage(error)}`, false);
       return false;
     } finally {

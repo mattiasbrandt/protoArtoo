@@ -160,12 +160,28 @@ static bool parseNameLine(const char* line, uint8_t* bankOut, char* pageOut, uin
     if (namePrefix == nullptr) {
         return false;
     }
-
     const char* p = namePrefix + 5;
     while (*p == ' ') {
         ++p;
     }
     char* end = nullptr;
+
+    // Bank 1 responses use empty page field: NAME:1,,<index>,<name>
+    // Handle this form first to avoid parser ambiguity.
+    unsigned long bankEmptyPage = 0;
+    unsigned long indexEmptyPage = 0;
+    char emptyPageName[48] = {0};
+    if (sscanf(namePrefix, "NAME:%lu,,%lu,%47[^\r\n]", &bankEmptyPage, &indexEmptyPage,
+               emptyPageName) == 3) {
+        if (bankEmptyPage <= 255u && indexEmptyPage <= 65535u && emptyPageName[0] != '\0') {
+            *bankOut = (uint8_t)bankEmptyPage;
+            *pageOut = 'A';
+            *indexOut = (uint16_t)indexEmptyPage;
+            strncpy(nameOut, emptyPageName, nameLen - 1);
+            nameOut[nameLen - 1] = '\0';
+            return true;
+        }
+    }
 
     unsigned long bankVal = strtoul(p, &end, 10);
     if (end == p || *end != ',') {
