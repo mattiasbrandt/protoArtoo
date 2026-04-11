@@ -368,16 +368,10 @@ void registerDriveRoutes(AsyncWebServer& server) {
 
         taskENTER_CRITICAL(&robotStateMux);
         bool domeEnabled = robotState.cfg_enable_dome;
-        bool webCtrl    = robotState.webControlEnabled;
         taskEXIT_CRITICAL(&robotStateMux);
         if (!domeEnabled) {
             req->send(409, "application/json",
                       "{\"ok\":false,\"error\":\"dome output is disabled\"}");
-            return;
-        }
-        if (!webCtrl) {
-            req->send(409, "application/json",
-                      "{\"ok\":false,\"error\":\"web control is not enabled\"}");
             return;
         }
 

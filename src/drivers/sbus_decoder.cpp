@@ -14,20 +14,15 @@
 //   5. Calls sbusUnpackChannels() + parseSbusFlags() — shared, independently
 //      tested helpers in sbus_unpack.h and sbus_flags.h.
 //
-// Signal polarity after invert_in=1:
-//   SBUS wire uses inverted UART: idle LOW, start bit HIGH, data '1' = LOW.
-//   With invert_in=1 the GPIO matrix re-inverts before RMT, so the decoder
-//   sees standard polarity: idle HIGH, start bit LOW, data '1' = HIGH.
-//   No manual bit inversion is needed during frame reconstruction.
-//
-// Bit timing with 1 µs/tick (1 MHz RMT clock):
-//   SBUS bit period = 10 µs = 10 ticks.
-//   Rounding: n_bits = (duration_ticks + 5) / 10 — correct for ±1 tick error.
+// Signal handling and compatibility notes:
+//   - RMT input is configured with invert_in=1 (expected for inverted SBUS wire).
+//   - Decode path includes a polarity fallback in task context for receivers that
+//     present non-standard or pre-inverted output.
+//   - Parser tries both standard (100 kbaud) and fast (200 kbaud) SBUS bit timing.
 //
 // Frame gap detection:
-//   signal_range_max_ns = 3 ms. Max in-frame same-level run ≈ 100 µs (7 data
-//   '1' bits + even parity + 2 stop bits = 10 × 10 µs). Inter-frame idle is
-//   at least 7 ms at 100 Hz. The 3 ms threshold correctly separates them.
+//   signal_range_max_ns = 1 ms keeps frame segmentation stable while tolerating
+//   higher refresh SBUS variants with shorter inter-frame gaps.
 // =============================================================================
 
 #include "sbus_decoder.h"
@@ -51,37 +46,36 @@ static constexpr size_t kMemBlockSymbols = 192;
 // Ignore pulses shorter than 3 µs (glitch filter).
 static constexpr uint32_t kGlitchNs = 3'000;
 
-// Terminate receive after 3 ms of same-level signal (inter-frame gap marker).
-// Max in-frame same-level run ≈ 100 µs; min inter-frame gap ≈ 7 ms at 100 Hz.
-static constexpr uint32_t kFrameGapNs = 3'000'000;
+// Terminate receive after 1 ms of same-level signal (inter-frame gap marker).
+// Max in-frame same-level run is << 1 ms, so this remains a safe delimiter while
+// tolerating higher-refresh SBUS variants with shorter frame gaps.
+static constexpr uint32_t kFrameGapNs = 1'000'000;
 
 // Minimum symbols to forward to the task queue.
-// Idle timeouts produce 0–2 symbols; a real SBUS frame produces ≥ 20.
+// Idle timeouts produce 0–2 symbols; a real SBUS frame produces >= 20.
 static constexpr size_t kMinSymsForFrame = 10;
 
 // ---------------------------------------------------------------------------
 // Bit extraction constants
 // ---------------------------------------------------------------------------
 
-// SBUS bit period in RMT ticks (1 µs/tick → 10 ticks/bit at 100 kbaud).
-static constexpr uint32_t kBitPeriodTicks = 10;
-
-// Half-period used for round-to-nearest-bit arithmetic.
-static constexpr uint32_t kBitHalfTicks = 5;
+// SBUS bit period in RMT ticks (1 us/tick):
+// - Standard SBUS 100 kbaud: 10 ticks/bit
+// - Fast SBUS 200 kbaud: 5 ticks/bit
+static constexpr uint32_t kBitPeriodTicksStd = 10;
+static constexpr uint32_t kBitPeriodTicksFast = 5;
 
 // SBUS frame constants
 static constexpr uint8_t kSbusHeader = 0x0F;
 static constexpr uint8_t kSbusFooter = 0x00;
 
-// Total bits in one complete SBUS frame (25 bytes × 12 bits/byte).
+// Total bits in one complete SBUS frame (25 bytes x 12 bits/byte).
 // 12 bits/byte = start(1) + data(8) + parity(1) + stop(2).
 static constexpr int kTotalBits    = SbusDecoder::kFrameLen * SbusDecoder::kBitsPerByte;  // 300
 
-// Bit array capacity: frame bits plus headroom for initial idle captured before
-// the first start bit. The ISR re-arms immediately after a 3 ms idle timeout;
-// the next rmt_receive() call may capture a brief leading idle before the frame.
-// 64 bits = 640 µs of headroom — well above the worst-case leading idle after re-arm.
-static constexpr int kBitArraySize = kTotalBits + 64;  // 364
+// Bit array capacity: one frame plus headroom for leading idle and occasional
+// extra symbols. Sized to tolerate both standard and fast SBUS timing variants.
+static constexpr int kBitArraySize = 640;  // bits
 
 // ---------------------------------------------------------------------------
 // SbusDecoder
@@ -89,7 +83,9 @@ static constexpr int kBitArraySize = kTotalBits + 64;  // 364
 
 SbusDecoder::SbusDecoder()
     : _channel(nullptr), _queue(nullptr), _rxBufs{}, _activeBuf(0), _rxCfg{},
-      _isrRearmFailed(false), _data{} {}
+      _isrRearmFailed(false), _rxDoneCount(0), _queuedCount(0), _shortDropCount(0),
+      _parseOkCount(0), _parseFailCount(0), _rearmFailCount(0), _lastSymbolCount(0),
+      _maxSymbolCount(0), _data{} {}
 
 bool SbusDecoder::begin(int rxPin) {
     if (_channel) end();
@@ -149,7 +145,7 @@ bool SbusDecoder::begin(int rxPin) {
         return false;
     }
 
-    ESP_LOGI(TAG, "started — GPIO%d  RMT 1us/tick  gap_threshold=3ms", rxPin);
+    ESP_LOGI(TAG, "started — GPIO%d  RMT 1us/tick  gap_threshold=1ms", rxPin);
     return true;
 }
 
@@ -165,6 +161,20 @@ void SbusDecoder::end() {
     }
     _activeBuf = 0;
 }
+
+SbusDecoderDebugStats SbusDecoder::debugStats() const {
+    SbusDecoderDebugStats stats = {};
+    stats.rxDoneCount = _rxDoneCount;
+    stats.queuedCount = _queuedCount;
+    stats.shortDropCount = _shortDropCount;
+    stats.parseOkCount = _parseOkCount;
+    stats.parseFailCount = _parseFailCount;
+    stats.rearmFailCount = _rearmFailCount;
+    stats.lastSymbolCount = _lastSymbolCount;
+    stats.maxSymbolCount = _maxSymbolCount;
+    return stats;
+}
+
 
 bool SbusDecoder::read() {
     if (!_channel || !_queue) return false;
@@ -186,7 +196,11 @@ bool SbusDecoder::read() {
     // Drain all pending buffers; return true on the first valid parsed frame.
     uint8_t idx;
     while (xQueueReceive(_queue, &idx, 0) == pdTRUE) {
-        if (_parseSymbols(_rxBufs[idx])) return true;
+        if (_parseSymbols(_rxBufs[idx])) {
+            _parseOkCount = _parseOkCount + 1;
+            return true;
+        }
+        _parseFailCount = _parseFailCount + 1;
     }
     return false;
 }
@@ -216,6 +230,12 @@ bool IRAM_ATTR SbusDecoder::_onRecvDone(rmt_channel_handle_t chan,
     // queue. In practice this requires the task to miss >20 ms of execution — not
     // possible at the 5 ms poll rate. If it did occur, _parseSymbols() would reject
     // the corrupt frame via header/footer validation, so there is no safety impact.
+    self->_rxDoneCount = self->_rxDoneCount + 1;
+    self->_lastSymbolCount = (uint32_t)edata->num_symbols;
+    if ((uint32_t)edata->num_symbols > self->_maxSymbolCount) {
+        self->_maxSymbolCount = (uint32_t)edata->num_symbols;
+    }
+
     self->_rxBufs[self->_activeBuf].count = edata->num_symbols;
     uint8_t doneIdx = self->_activeBuf;
 
@@ -229,10 +249,15 @@ bool IRAM_ATTR SbusDecoder::_onRecvDone(rmt_channel_handle_t chan,
     if (rearmErr != ESP_OK) {
         // Cannot call ESP_LOG from ISR. Set flag; read() will log and recover.
         self->_isrRearmFailed = true;
+        self->_rearmFailCount = self->_rearmFailCount + 1;
     }
     // Wake the task only for buffers likely to contain a real frame.
     if (edata->num_symbols >= kMinSymsForFrame) {
-        xQueueSendFromISR(self->_queue, &doneIdx, &woken);
+        if (xQueueSendFromISR(self->_queue, &doneIdx, &woken) == pdTRUE) {
+            self->_queuedCount = self->_queuedCount + 1;
+        }
+    } else {
+        self->_shortDropCount = self->_shortDropCount + 1;
     }
 
     return woken == pdTRUE;
@@ -242,69 +267,102 @@ bool IRAM_ATTR SbusDecoder::_onRecvDone(rmt_channel_handle_t chan,
 // flattenSymbols() — Step 1 helper
 // Converts an RMT symbol array to a flat bit array.
 // Each symbol encodes two consecutive signal levels {level, duration}.
-// Duration in ticks is rounded to the nearest 10-tick (10 µs) bit count.
+// Duration in ticks is rounded to the nearest bit period for the candidate mode.
 // duration1==0 is the IDF end-of-sequence marker; stops iteration.
 // Returns the number of bits written.
 // -----------------------------------------------------------------------------
 static int flattenSymbols(const rmt_symbol_word_t* syms, size_t count,
-                          bool* bits, int maxBits) {
+                          bool* bits, int maxBits, uint32_t bitPeriodTicks) {
     int bc = 0;
+    const uint32_t halfPeriodTicks = bitPeriodTicks / 2;
+
     for (size_t i = 0; i < count && bc < maxBits; i++) {
         const rmt_symbol_word_t& s = syms[i];
         if (s.duration0 > 0) {
-            int n = (int)((s.duration0 + kBitHalfTicks) / kBitPeriodTicks);
+            int n = (int)((s.duration0 + halfPeriodTicks) / bitPeriodTicks);
             if (n > maxBits - bc) n = maxBits - bc;
             for (int j = 0; j < n; j++) bits[bc++] = (s.level0 != 0);
         }
+
         if (s.duration1 == 0) break;  // IDF end-of-sequence marker
-        {
-            int n = (int)((s.duration1 + kBitHalfTicks) / kBitPeriodTicks);
-            if (n > maxBits - bc) n = maxBits - bc;
-            for (int j = 0; j < n; j++) bits[bc++] = (s.level1 != 0);
-        }
+
+        int n = (int)((s.duration1 + halfPeriodTicks) / bitPeriodTicks);
+        if (n > maxBits - bc) n = maxBits - bc;
+        for (int j = 0; j < n; j++) bits[bc++] = (s.level1 != 0);
     }
+
     return bc;
+}
+
+static inline bool decodedBit(const bool* bits, int index, bool invertBits) {
+    bool value = bits[index];
+    return invertBits ? !value : value;
 }
 
 // -----------------------------------------------------------------------------
 // findFirstStartBit() — Step 2 helper
-// Skips the leading idle (HIGH=1 bits) before the SBUS frame start bit.
-// After invert_in=1 the decoder sees standard polarity: idle=HIGH, start=LOW.
+// Skips leading idle bits before the frame start bit.
+// For decoded UART polarity: idle=HIGH (1), start=LOW (0).
 // Returns the index of the first LOW (0) bit, or bc if none found.
 // -----------------------------------------------------------------------------
-static int findFirstStartBit(const bool* bits, int bc) {
+static int findFirstStartBit(const bool* bits, int bc, bool invertBits) {
     int pos = 0;
-    while (pos < bc && bits[pos]) pos++;
+    while (pos < bc && decodedBit(bits, pos, invertBits)) pos++;
     return pos;
 }
 
 // -----------------------------------------------------------------------------
 // extractSbusBytes() — Step 3 helper
 // Extracts frameLen bytes from the bit array starting at startPos.
-// Each byte occupies kBitsPerByte bits: start(0) + D0..D7 + parity + stop stop.
+// Each byte occupies kBitsPerByte bits: start + data + parity + stop bits.
 // Returns false if there are not enough bits or a start bit is wrong.
 // -----------------------------------------------------------------------------
 static bool extractSbusBytes(const bool* bits, int bc, int startPos,
-                              uint8_t* frame, int frameLen) {
+                             uint8_t* frame, int frameLen, bool invertBits) {
     if (bc - startPos < frameLen * SbusDecoder::kBitsPerByte) return false;
+
     for (int b = 0; b < frameLen; b++) {
         int base = startPos + b * SbusDecoder::kBitsPerByte;
         if (base + SbusDecoder::kBitsPerByte > bc) return false;
-        if (bits[base]) return false;  // start bit must be LOW (0)
+        if (decodedBit(bits, base, invertBits)) return false;  // start bit must be LOW
+
         uint8_t byte = 0;
         for (int d = 0; d < 8; d++) {
-            if (bits[base + 1 + d]) byte |= (uint8_t)(1u << d);
+            if (decodedBit(bits, base + 1 + d, invertBits)) byte |= (uint8_t)(1u << d);
         }
         frame[b] = byte;
         // bits[base+9] = parity (not validated — header/footer check is sufficient)
         // bits[base+10..11] = stop bits
     }
+
     return true;
+}
+
+static bool decodeFrameFromBits(const bool* bits, int bc, bool invertBits, uint8_t* frame) {
+    int pos = findFirstStartBit(bits, bc, invertBits);
+    if (bc - pos < kTotalBits) return false;
+    if (!extractSbusBytes(bits, bc, pos, frame, SbusDecoder::kFrameLen, invertBits)) return false;
+    if (frame[0] != kSbusHeader) return false;
+    if (frame[SbusDecoder::kFrameLen - 1] != kSbusFooter) return false;
+    return true;
+}
+
+static void storeDecodedFrame(const uint8_t* frame, SbusData* out) {
+    int16_t ch[16];
+    sbusUnpackChannels(&frame[1], ch);
+    for (int i = 0; i < 16; i++) out->ch[i] = (uint16_t)ch[i];
+
+    SbusFlags flags = parseSbusFlags(frame[23]);
+    out->ch17       = flags.ch17;
+    out->ch18       = flags.ch18;
+    out->lost_frame = flags.lost_frame;
+    out->failsafe   = flags.failsafe;
 }
 
 // -----------------------------------------------------------------------------
 // _parseSymbols
-// Orchestrates the three steps: flatten → locate → extract → validate → decode.
+// Orchestrates flatten → locate → extract → validate → decode.
+// Tries standard and fast SBUS timing, then polarity fallback.
 // Runs in task context (never in ISR).
 // -----------------------------------------------------------------------------
 bool SbusDecoder::_parseSymbols(const RxBuf& buf) {
@@ -313,26 +371,25 @@ bool SbusDecoder::_parseSymbols(const RxBuf& buf) {
     // Static bit array avoids stack pressure. Safe for sequential single-task use.
     static bool bits[kBitArraySize];
 
-    int bc  = flattenSymbols(buf.symbols, buf.count, bits, kBitArraySize);
-    int pos = findFirstStartBit(bits, bc);
+    const uint32_t bitPeriods[] = {kBitPeriodTicksStd, kBitPeriodTicksFast};
+    const bool invertOptions[] = {false, true};
 
-    if (bc - pos < kTotalBits) return false;
+    for (size_t i = 0; i < (sizeof(bitPeriods) / sizeof(bitPeriods[0])); ++i) {
+        int bc = flattenSymbols(buf.symbols, buf.count, bits, kBitArraySize, bitPeriods[i]);
+        if (bc < kTotalBits) {
+            continue;
+        }
 
-    uint8_t frame[kFrameLen];
-    if (!extractSbusBytes(bits, bc, pos, frame, kFrameLen)) return false;
+        for (size_t j = 0; j < (sizeof(invertOptions) / sizeof(invertOptions[0])); ++j) {
+            uint8_t frame[kFrameLen];
+            if (!decodeFrameFromBits(bits, bc, invertOptions[j], frame)) {
+                continue;
+            }
 
-    if (frame[0]  != kSbusHeader) return false;
-    if (frame[24] != kSbusFooter) return false;
+            storeDecodedFrame(frame, &_data);
+            return true;
+        }
+    }
 
-    int16_t ch[16];
-    sbusUnpackChannels(&frame[1], ch);
-    for (int i = 0; i < 16; i++) _data.ch[i] = (uint16_t)ch[i];
-
-    SbusFlags flags = parseSbusFlags(frame[23]);
-    _data.ch17       = flags.ch17;
-    _data.ch18       = flags.ch18;
-    _data.lost_frame = flags.lost_frame;
-    _data.failsafe   = flags.failsafe;
-
-    return true;
+    return false;
 }

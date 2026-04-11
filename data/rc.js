@@ -1445,6 +1445,7 @@
   const renderRcDiagnostics = (payload) => {
     rcSnapshot = payload;
 
+    renderSourceHealth();
     renderSummaryTable();
     renderSlotList();
     if (selectedSlot) {
@@ -1484,6 +1485,7 @@
         rcSnapshot = data;
 
         // Fast path updates for frequently changing elements
+        renderSourceHealth();
         updateSummaryMiniBar();
         if (selectedSlot) {
           renderLivePreview();

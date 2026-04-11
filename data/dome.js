@@ -107,12 +107,12 @@
     );
 
     if (!webControlStatusKnown) {
-      setPillState(domeWebPill, "🕹️ Web control status pending", "info", true);
+      setPillState(domeWebPill, "🕹️ Drive web lock status pending", "info", true);
     } else {
       setPillState(
         domeWebPill,
-        webControlEnabled ? "🕹️ Web control enabled" : "🕹️ Web control disabled",
-        webControlEnabled ? "ok" : "warn",
+        webControlEnabled ? "🕹️ Drive web lock ON (drive only)" : "🕹️ Drive web lock OFF (drive only)",
+        "info",
         true,
       );
     }
@@ -120,11 +120,9 @@
     if (!domeHardwareEnabled) {
       showFeedback(domeFeedback, "Dome controls unavailable: enable DOME in Setup.", "warning");
     } else if (!webControlStatusKnown) {
-      showFeedback(domeFeedback, "Waiting for live web-control status frame...");
-    } else if (!webControlEnabled) {
-      showFeedback(domeFeedback, "Web control is disabled — enable it on the Drive page.", "warning");
+      showFeedback(domeFeedback, "Waiting for live status frame...");
     } else {
-      showFeedback(domeFeedback, "Dome ready.");
+      showFeedback(domeFeedback, "Dome ready (independent of drive web lock).");
     }
   };
 

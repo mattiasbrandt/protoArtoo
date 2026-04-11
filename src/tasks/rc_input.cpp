@@ -870,6 +870,7 @@ void rcInputTask(void* pvParameters) {
     bool driveSbusInitWarned = false;
     bool domeSbusInitWarned = false;
     bool lastUseCh2 = useCh2;
+    uint32_t lastSbusDiagLogMs = 0;
     while (true) {
         if (!hwmLogged) {
             PA_LOG_INFO(TAG, "stack HWM: %u words free",
@@ -1125,6 +1126,42 @@ void rcInputTask(void* pvParameters) {
             robotState.sbus2SignalLost = false;
             robotState.sbus2HwFailsafe = false;
             taskEXIT_CRITICAL(&robotStateMux);
+        }
+
+        uint32_t nowMs = millis();
+        if ((driveSbusEnabled || domeSbusEnabled) &&
+            (uint32_t)(nowMs - lastSbusDiagLogMs) >= 2000U) {
+            lastSbusDiagLogMs = nowMs;
+            bool waitingDrive = driveSbusEnabled && (lastSbus1 == 0);
+            bool waitingDome = domeSbusEnabled && (lastSbus2 == 0);
+            if (waitingDrive || waitingDome) {
+                SbusDecoderDebugStats driveStats = sbus_drive.debugStats();
+                SbusDecoderDebugStats domeStats = sbus_dome.debugStats();
+                if (waitingDrive) {
+                    PA_LOG_WARN(TAG,
+                                "SBUS1 waiting first frame: rx_done=%lu queued=%lu short=%lu ok=%lu fail=%lu rearm=%lu syms(last=%lu max=%lu)",
+                                (unsigned long)driveStats.rxDoneCount,
+                                (unsigned long)driveStats.queuedCount,
+                                (unsigned long)driveStats.shortDropCount,
+                                (unsigned long)driveStats.parseOkCount,
+                                (unsigned long)driveStats.parseFailCount,
+                                (unsigned long)driveStats.rearmFailCount,
+                                (unsigned long)driveStats.lastSymbolCount,
+                                (unsigned long)driveStats.maxSymbolCount);
+                }
+                if (waitingDome) {
+                    PA_LOG_WARN(TAG,
+                                "SBUS2 waiting first frame: rx_done=%lu queued=%lu short=%lu ok=%lu fail=%lu rearm=%lu syms(last=%lu max=%lu)",
+                                (unsigned long)domeStats.rxDoneCount,
+                                (unsigned long)domeStats.queuedCount,
+                                (unsigned long)domeStats.shortDropCount,
+                                (unsigned long)domeStats.parseOkCount,
+                                (unsigned long)domeStats.parseFailCount,
+                                (unsigned long)domeStats.rearmFailCount,
+                                (unsigned long)domeStats.lastSymbolCount,
+                                (unsigned long)domeStats.maxSymbolCount);
+                }
+            }
         }
 
         // Feed Task Watchdog Timer

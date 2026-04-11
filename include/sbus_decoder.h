@@ -9,23 +9,20 @@
 // Conflict B (UART2) from the UART contention audit.
 //
 // Hardware: HOTRC SBUS-A receivers on GPIO 15 (drive) and GPIO 13 (dome).
-// Protocol: 25-byte frame at 50–100 Hz. Channels 172–1811, center ~992.
+// Protocol: 25-byte frame; supports standard 100 kbaud SBUS and fast 200 kbaud
+// timing variants seen on some receiver/transmitter combinations.
 //
 // Frame format: [0x0F header][22 data bytes][flags byte][0x00 footer]
-//   16 channels × 11 bits packed LSB-first into bytes 1–22.
+//   16 channels x 11 bits packed LSB-first into bytes 1–22.
 //   Flags byte (index 23): bit0=CH17, bit1=CH18, bit2=lost_frame, bit3=failsafe.
 //
-// Physical signal (SBUS wire):
-//   Baud: 100000 (100 kbaud) | Bits: 8 | Parity: Even | Stop: 2 | Inverted
-//   Idle LOW on wire; start bit HIGH; data '1' = LOW, data '0' = HIGH.
-//   12 bits per byte frame: start(1) + data(8) + parity(1) + stop(2).
+// Physical signal handling:
+//   - RMT channel uses invert_in=1 for standard inverted SBUS wiring.
+//   - Decoder includes task-context polarity fallback for non-standard output paths.
 //
 // RMT configuration:
-//   invert_in=1 — GPIO matrix re-inverts signal to standard UART polarity
-//     so the decoder sees: idle=HIGH, start=LOW, data '1'=HIGH, data '0'=LOW.
-//   resolution_hz = 1 MHz — 1 µs per tick; 10 ticks per SBUS bit.
-//   signal_range_max_ns = 3 ms — frame gap delimiter.
-//     Max in-frame same-level run ≈ 100 µs; min inter-frame gap at 100 Hz ≈ 7 ms.
+//   resolution_hz = 1 MHz — 1 us/tick.
+//   signal_range_max_ns = 1 ms — robust frame delimiter for standard/fast variants.
 //   mem_block_symbols = 192 — 3 RMT memory blocks; worst-case frame ≈ 150 symbols.
 //
 // RMT channel budget (classic ESP32 has 8 channels / 8 memory blocks):
@@ -62,6 +59,17 @@ struct SbusData {
     bool ch18;
     bool lost_frame;
     bool failsafe;
+};
+
+struct SbusDecoderDebugStats {
+    uint32_t rxDoneCount;
+    uint32_t queuedCount;
+    uint32_t shortDropCount;
+    uint32_t parseOkCount;
+    uint32_t parseFailCount;
+    uint32_t rearmFailCount;
+    uint32_t lastSymbolCount;
+    uint32_t maxSymbolCount;
 };
 
 // -----------------------------------------------------------------------------
@@ -101,6 +109,8 @@ public:
 #endif
     }
 
+    SbusDecoderDebugStats debugStats() const;
+
 private:
 #ifdef ARDUINO_ARCH_ESP32
     // Symbol buffer capacity per decoder instance.
@@ -122,6 +132,14 @@ private:
     // Set by _onRecvDone when rmt_receive() fails (ISR cannot log).
     // read() checks this flag, attempts task-context recovery, and logs.
     volatile bool         _isrRearmFailed;
+    volatile uint32_t     _rxDoneCount;
+    volatile uint32_t     _queuedCount;
+    volatile uint32_t     _shortDropCount;
+    volatile uint32_t     _parseOkCount;
+    volatile uint32_t     _parseFailCount;
+    volatile uint32_t     _rearmFailCount;
+    volatile uint32_t     _lastSymbolCount;
+    volatile uint32_t     _maxSymbolCount;
 
     // ISR callback — IRAM_ATTR required (called from RMT interrupt context).
     // Swaps buffers, re-arms receive immediately, notifies task via queue.
