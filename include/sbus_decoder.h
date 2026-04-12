@@ -41,6 +41,7 @@
 #include <stdint.h>
 #include <stddef.h>
 
+#include "sbus_decode_helpers.h"
 #include "sbus_flags.h"
 #include "sbus_unpack.h"
 
@@ -67,6 +68,11 @@ struct SbusDecoderDebugStats {
     uint32_t shortDropCount;
     uint32_t parseOkCount;
     uint32_t parseFailCount;
+    uint32_t bitCountLowCount;      // flattenSymbols produced < kTotalBits
+    uint32_t extractFailCount;      // extractSbusBytes returned false
+    uint32_t headerMismatchCount;   // frame[0] != 0x0F
+    uint32_t footerMismatchCount;   // footer not in accepted set
+    uint8_t  lastRejectedFooter;    // last footer byte that failed validation
     uint32_t rearmFailCount;
     uint32_t lastSymbolCount;
     uint32_t maxSymbolCount;
@@ -127,7 +133,7 @@ private:
     rmt_channel_handle_t  _channel;
     QueueHandle_t         _queue;      // element: uint8_t buffer index (0 or 1)
     RxBuf                 _rxBufs[2];  // ping-pong buffers
-    uint8_t               _activeBuf; // index currently being filled by RMT
+    uint8_t               _activeBuf;  // index currently being filled by RMT
     rmt_receive_config_t  _rxCfg;
     // Set by _onRecvDone when rmt_receive() fails (ISR cannot log).
     // read() checks this flag, attempts task-context recovery, and logs.
@@ -137,6 +143,11 @@ private:
     volatile uint32_t     _shortDropCount;
     volatile uint32_t     _parseOkCount;
     volatile uint32_t     _parseFailCount;
+    volatile uint32_t     _bitCountLowCount;
+    volatile uint32_t     _extractFailCount;
+    volatile uint32_t     _headerMismatchCount;
+    volatile uint32_t     _footerMismatchCount;
+    volatile uint8_t      _lastRejectedFooter;
     volatile uint32_t     _rearmFailCount;
     volatile uint32_t     _lastSymbolCount;
     volatile uint32_t     _maxSymbolCount;
