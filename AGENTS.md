@@ -242,6 +242,14 @@ Rules:
 - Keep each commit reversible and scoped to one mechanism (timing, alignment, calibration, telemetry, etc.).
 - Preserve safety invariants and do not bypass watchdog/failsafe gates as a workaround.
 
+Mandatory test-effort policy for this mode:
+- Precedence: while Regression Debug Mode is active, this policy overrides generic guidance that might otherwise imply test authoring/updates on every small code change.
+- Do not require new/updated tests for every micro-iteration during active regression troubleshooting.
+- Each micro-iteration must still run the fastest relevant verification check (targeted existing test, focused build, or runtime probe).
+- Add or update tests when a fix is confirmed and committed, when a larger feature/task slice is completed, or when safety-critical behavior changes.
+- For larger feature implementations, tests and coverage updates are required before marking the task complete.
+- If two iterations fail without new telemetry, stop expanding tests and gather fresh runtime evidence first.
+
 Parallelization rules:
 
 - Parallelize only independent tasks with no file/contract conflicts

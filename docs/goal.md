@@ -1959,6 +1959,12 @@ pio test -e native -v           # verbose output
 pio test -e native -f test_marcduino_rx  # run single test file
 ```
 
+Regression troubleshooting test-effort policy (parser/protocol iterate-fix loops):
+- Precedence: this policy overrides any implied expectation to author/update tests on every micro-change.
+- Each iteration still requires a fast relevant verification step (targeted existing test, focused build, or runtime probe).
+- Add/update tests at confirmed-fix commit boundaries, when safety-critical behavior changes, and when a larger feature/task slice is completed.
+- For larger feature implementations, tests and coverage updates are required before declaring completion.
+
 References:
 - PlatformIO Unit Testing: https://docs.platformio.org/en/latest/advanced/unit-testing/
 - Unity framework: https://github.com/ThrowTheSwitch/Unity

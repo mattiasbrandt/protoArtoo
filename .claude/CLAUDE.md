@@ -64,6 +64,14 @@ When debugging parser/protocol regressions, default to iterate-commit-fail-fast:
 - Do not spend long cycles re-checking the same reasoning without new telemetry.
 - After two failed loops without new signal, gather fresh runtime evidence before further edits.
 
+Mandatory test-effort policy in this mode:
+- Precedence: in Regression Troubleshooting Mode, this policy overrides generic expectations to create/update tests for every small change.
+- Do not create/update tests for every small troubleshooting iteration.
+- Every iteration still requires a fast verification step (targeted existing test/build/runtime probe).
+- Add/update tests at commit boundaries for confirmed fixes and when a larger feature/task slice is completed.
+- For larger feature implementations, keeping tests up to date is required before task completion.
+- If two loops fail without new telemetry, stop test churn and collect fresh device/runtime evidence.
+
 ### Hallucination and Pipeline Safety (Compatible Subset)
 
 - Never invent file paths, symbols, API endpoints, or field names.

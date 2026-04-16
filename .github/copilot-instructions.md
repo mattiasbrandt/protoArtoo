@@ -82,6 +82,13 @@ Use AGENTS verification flow and classify status as one of:
 
 When hardware validation is deferred, explicitly state blockers and remaining checks.
 
+Regression troubleshooting test policy:
+- Precedence: while Regression Debug Mode is active, this policy takes priority over generic per-change test-update expectations.
+- During small iterate/fix loops, do not require new test authoring on every micro-change.
+- Still run a fast relevant verification on each loop (targeted existing tests/build/runtime probe).
+- Add/update tests when a fix is confirmed for commit, when safety-critical behavior changes, or when a larger feature/task slice is completed.
+- For larger feature implementations, tests must be kept up to date before marking complete.
+
 ## Interaction and Clarification
 
 - Use `vscode_askQuestions` (or equivalent structured ask tool) for any question with
