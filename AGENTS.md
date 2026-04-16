@@ -234,6 +234,7 @@ Clarification policy:
 
 - Ask concise multi-choice questions only when ambiguity materially affects
   correctness/safety/design
+- If multiple valid interpretations exist, present them — do not pick silently
 - For minor details, state assumptions and proceed
 - **Always use the tool's structured ask/questions mechanism** (e.g. `vscode_askQuestions`,
   `ask_followup_question`, or equivalent) when posing choices to the user — never
@@ -346,6 +347,9 @@ Small-screen mobile phone support is explicitly out of scope.
 ## Change Hygiene
 
 - Use smallest safe change that solves the task
+- Every changed line should trace directly to the user's request; if it can't, remove it
+- When your changes leave orphaned imports, variables, or functions unused, remove them;
+  do not remove pre-existing dead code unless asked
 - Preserve existing patterns unless a change is required for correctness/safety
 - Avoid broad refactors during targeted fixes
 - Preserve useful code comments by default. Do not remove inline/function/file
