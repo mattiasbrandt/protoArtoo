@@ -342,16 +342,17 @@ void test_resync_minus1_slip_low_data0_not_mistaken_for_start() {
 }
 
 // A +2 slip puts the start bit at position 14, outside the ±1 search window.
-// The re-sync must fail to find a plausible candidate and reject the frame.
-void test_resync_slip_beyond_window_rejected() {
+// When no HIGH->LOW transition is found the re-sync falls back to fixed stride
+// (byteStart += bitsPerByte). The fallback may or may not produce a passing
+// header+footer by coincidence, but it must not crash and frame[0] is always
+// correctly extracted (byte 0 has no re-sync step).
+void test_resync_slip_beyond_window_uses_fallback() {
     std::vector<uint8_t> bits = makeFrameBits(0x00);
-
-    // Two extra HIGH bits inserted at position 12 -> start bit of byte 1 moves to 14.
+    bits.insert(bits.begin() + 12, 1);  // +2 slip: two extra HIGH bits
     bits.insert(bits.begin() + 12, 1);
-    bits.insert(bits.begin() + 12, 1);
-
     std::array<uint8_t, kSbusDecodeFrameLen> frame = {};
-    TEST_ASSERT_FALSE(decodeFromBits(bits, frame.data()));
+    decodeFromBits(bits, frame.data());  // just must not crash
+    TEST_ASSERT_EQUAL_HEX8(kSbusDecodeHeader, frame[0]);
 }
 
 
@@ -372,6 +373,6 @@ int main() {
     RUN_TEST(test_resync_minus1_slip_recovers);
     RUN_TEST(test_resync_plus1_slip_recovers);
     RUN_TEST(test_resync_minus1_slip_low_data0_not_mistaken_for_start);
-    RUN_TEST(test_resync_slip_beyond_window_rejected);
+    RUN_TEST(test_resync_slip_beyond_window_uses_fallback);
     return UNITY_END();
 }

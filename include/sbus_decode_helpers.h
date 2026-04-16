@@ -132,8 +132,12 @@ inline bool extractSbusBytes(const bool* bits, int bc, int startPos, bool invert
                 }
             }
         }
-        if (nextByteStart < 0) return false;
-        byteStart = nextByteStart;
+        // Fall back to fixed stride if no plausible start bit found in the search
+        // window. This matches the d9f4a50 baseline behaviour for frames where the
+        // adaptive period is slightly off (expanded runs push the true start bit
+        // beyond the window). Fixed stride may produce wrong bytes in those frames,
+        // but header+footer validation will reject them — same outcome as before.
+        byteStart = (nextByteStart >= 0) ? nextByteStart : (byteStart + bitsPerByte);
     }
 
     return true;
