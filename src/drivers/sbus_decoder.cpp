@@ -301,20 +301,26 @@ bool SbusDecoder::_parseSymbols(const RxBuf& buf) {
     // Static buffer avoids stack pressure. Safe for sequential single-task use.
     static bool bits[kBitArraySize];
 
-    // Estimate actual SBUS bit period from the header start bit (first LOW segment
-    // in the buffer). After hardware inversion (invert_in=1), SBUS idle is HIGH and
-    // the header start bit is LOW. Start bit is always exactly 1 bit period long, so
-    // its captured duration is the actual bit period for this transmitter.
-    // Clamped to [7, 15] ticks (70-150 kbaud) to filter inter-frame gap fragments.
+    // Estimate bit period from the first LOW segment (header start bit after inversion).
+    // Clamp to [kAdaptiveMin=9, kBitPeriodTicksStd=10]:
+    //   Upper=10: period=11 (+1 tick jitter) causes 6-bit runs to compress (-1 slip),
+    //             shrinking bc below 300 so byte-24 extract fails.
+    //   Lower=9:  HOTRC DS-650 appears to run at ~115 kbaud (standard UART baud rate),
+    //             giving start bits of 8-9 ticks. Period=8 causes +2 expansion beyond
+    //             the ±1 re-sync window, producing hdr failures. Period=9 is near-correct
+    //             for 115 kbaud: only 19+ bit runs get -1 slip (re-sync handles those).
+    //             Period=10 is kept for true 100 kbaud signals.
+    constexpr uint32_t kAdaptiveMin = 9;
     uint32_t adaptivePeriod = kBitPeriodTicksStd;
     for (size_t i = 0; i < buf.count; ++i) {
         const rmt_symbol_word_t& sym = buf.symbols[i];
-        if (sym.level0 == 0 && sym.duration0 >= 7 && sym.duration0 <= 15) {
+        if (sym.level0 == 0 && sym.duration0 >= kAdaptiveMin &&
+            sym.duration0 <= kBitPeriodTicksStd) {
             adaptivePeriod = sym.duration0;
             break;
         }
         if (sym.duration1 > 0 && sym.level1 == 0 &&
-            sym.duration1 >= 7 && sym.duration1 <= 15) {
+            sym.duration1 >= kAdaptiveMin && sym.duration1 <= kBitPeriodTicksStd) {
             adaptivePeriod = sym.duration1;
             break;
         }
