@@ -16,6 +16,10 @@ constexpr int kSbusDecodeFrameLen = 25;
 constexpr int kSbusDecodeMinBitsPerByte = 11;
 constexpr int kSbusDecodeTotalBits = kSbusDecodeFrameLen * kSbusDecodeBitsPerByte;
 constexpr int kSbusDecodeMaxScanBits = 1024;
+// Maximum slip correction (in bits) per byte boundary during re-sync.
+// Handles up to ±1 slip per byte (±2 would require stop bit at byteStart+8,
+// which may be data — unreliable). HOTRC dominant mode is single-bit slip per frame.
+constexpr int kSbusDecodeMaxStartBitSlip = 1;
 
 struct SbusDecodeAttemptStats {
     uint32_t extractFailCount;
@@ -92,13 +96,44 @@ inline bool extractSbusBytes(const bool* bits, int bc, int startPos, bool invert
                              int bitsPerByte, uint8_t* frame, int frameLen) {
     if (!frame || frameLen < 1) return false;
     if (bitsPerByte < kSbusDecodeMinBitsPerByte || bitsPerByte > kSbusDecodeBitsPerByte) return false;
-    if (bc - startPos < frameLen * bitsPerByte) return false;
+    // With per-byte re-sync, each inter-byte boundary may shrink by up to
+    // kSbusDecodeMaxStartBitSlip bits (-1 slip). Minimum bits needed accounts
+    // for maximum cumulative contraction across all (frameLen-1) boundaries.
+    const int minExtractBits = frameLen * bitsPerByte - (frameLen - 1) * kSbusDecodeMaxStartBitSlip;
+    if (bc - startPos < minExtractBits) return false;
 
+    int byteStart = startPos;
     for (int b = 0; b < frameLen; ++b) {
-        int base = startPos + (b * bitsPerByte);
-        if (!extractSbusSerialByte(bits, bc, base, invertBits, bitsPerByte, &frame[b])) {
+        if (!extractSbusSerialByte(bits, bc, byteStart, invertBits, bitsPerByte, &frame[b])) {
             return false;
         }
+
+        if (b >= frameLen - 1) continue;  // no re-sync needed after last byte
+
+        // Re-sync: locate the start bit of the next byte by scanning forward from
+        // the stop-bit region (byteStart+bitsPerByte-2) for the first HIGH→LOW
+        // transition. Stop bits are structurally always HIGH; the first LOW after
+        // them is unambiguously the next start bit. This handles ±kSbusDecodeMaxStartBitSlip
+        // bit slips per byte without the risk of mistaking a LOW data bit for a start bit
+        // (a LOW data bit is NOT preceded by a stop bit at the byte boundary).
+        //
+        // Search window: [byteStart+bitsPerByte-2 .. byteStart+bitsPerByte+kSbusDecodeMaxStartBitSlip]
+        //   -1 slip: stop2 at +10, start at +11  (prev=+10=HIGH) ✓
+        //    0 slip: stop1/2 at +10/+11, start at +12 (prev=+11=HIGH) ✓
+        //   +1 slip: extra stop at +12, start at +13 (prev=+12=HIGH) ✓
+        const int searchStart = byteStart + bitsPerByte - 2;
+        const int searchEnd   = byteStart + bitsPerByte + kSbusDecodeMaxStartBitSlip;
+        int nextByteStart = -1;
+        for (int p = searchStart; p <= searchEnd && p < bc; ++p) {
+            if (!decodedBit(bits, p, invertBits)) {            // candidate LOW
+                if (p > byteStart && decodedBit(bits, p - 1, invertBits)) {  // preceded by HIGH
+                    nextByteStart = p;
+                    break;
+                }
+            }
+        }
+        if (nextByteStart < 0) return false;
+        byteStart = nextByteStart;
     }
 
     return true;
@@ -121,7 +156,8 @@ inline bool decodeFrameFromBits(const bool* bits, int bc, bool invertBits,
     }
 
     uint8_t candidateFrame[kSbusDecodeFrameLen] = {};
-    const int minBitsNeeded = frameLen * bitsPerByte;
+    // Minimum bits: nominal frame minus maximum cumulative slip contraction.
+    const int minBitsNeeded = frameLen * bitsPerByte - (frameLen - 1) * kSbusDecodeMaxStartBitSlip;
 
     // RMT terminates capture on the inter-frame idle gap, so every buffer starts
     // at the beginning of a SBUS frame. We therefore only attempt decode from the

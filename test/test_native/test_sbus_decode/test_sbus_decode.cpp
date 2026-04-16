@@ -123,6 +123,22 @@ static bool decodeFromSymbols(const std::vector<TestSymbol>& symbols,
                                kSbusDecodeFrameLen, stats);
 }
 
+// Frame with custom byte[1] value, all other channel bytes use the standard
+// (i * 17) & 0xFF pattern. Byte1 = first channel data byte; its D0 bit value
+// determines whether the naive re-sync can confuse a LOW data bit for a start bit.
+static std::vector<uint8_t> makeFrameBitsCustomByte1(uint8_t footer, uint8_t byte1_val) {
+    std::array<uint8_t, kSbusDecodeFrameLen> frame = {};
+    frame[0] = kSbusDecodeHeader;
+    frame[1] = byte1_val;
+    for (int i = 2; i < 23; ++i) frame[(size_t)i] = static_cast<uint8_t>((i * 17) & 0xFF);
+    frame[23] = 0x00;
+    frame[24] = footer;
+    std::vector<uint8_t> bits;
+    bits.reserve((size_t)(kSbusDecodeFrameLen * kSbusDecodeBitsPerByte));
+    for (uint8_t b : frame) appendSbusByteBits(b, &bits);
+    return bits;
+}
+
 }  // namespace
 
 void setUp() {
@@ -258,6 +274,87 @@ void test_decode_false_positive_rejected_by_framing() {
     TEST_ASSERT_EQUAL_HEX8(0x00, frame[kSbusDecodeFrameLen - 1]);
 }
 
+// =============================================================================
+// Per-byte re-sync tests
+// =============================================================================
+
+// -1 slip at the byte-0/byte-1 boundary: erase stop2 of byte 0 (position 11).
+// The start bit of byte 1 shifts from position 12 to 11. Re-sync must find it
+// by detecting the HIGH->LOW transition at position 10->11.
+void test_resync_minus1_slip_recovers() {
+    std::vector<uint8_t> bits = makeFrameBits(0x00);
+    std::array<uint8_t, kSbusDecodeFrameLen> expected = {};
+    expected[0] = kSbusDecodeHeader;
+    for (int i = 1; i < 23; ++i) expected[(size_t)i] = static_cast<uint8_t>((i * 17) & 0xFF);
+    expected[23] = 0x00;
+    expected[24] = 0x00;
+
+    bits.erase(bits.begin() + 11);  // -1 slip: remove stop2 of byte 0
+
+    std::array<uint8_t, kSbusDecodeFrameLen> frame = {};
+    TEST_ASSERT_TRUE(decodeFromBits(bits, frame.data()));
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(expected.data(), frame.data(), kSbusDecodeFrameLen);
+}
+
+// +1 slip at the byte-0/byte-1 boundary: insert an extra HIGH after stop2 of byte 0
+// (position 12). The start bit of byte 1 shifts from position 12 to 13. Re-sync must
+// find it by scanning past the extra HIGH at position 12.
+void test_resync_plus1_slip_recovers() {
+    std::vector<uint8_t> bits = makeFrameBits(0x04);
+    std::array<uint8_t, kSbusDecodeFrameLen> expected = {};
+    expected[0] = kSbusDecodeHeader;
+    for (int i = 1; i < 23; ++i) expected[(size_t)i] = static_cast<uint8_t>((i * 17) & 0xFF);
+    expected[23] = 0x00;
+    expected[24] = 0x04;
+
+    bits.insert(bits.begin() + 12, 1);  // +1 slip: insert extra HIGH after stop2 of byte 0
+
+    std::array<uint8_t, kSbusDecodeFrameLen> frame = {};
+    TEST_ASSERT_TRUE(decodeFromBits(bits, frame.data()));
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(expected.data(), frame.data(), kSbusDecodeFrameLen);
+}
+
+// Regression test for the broken naive re-sync: -1 slip at byte-0/byte-1 boundary
+// where data-bit-0 of byte 1 is LOW (= 0). Without HIGH->LOW transition validation,
+// the naive implementation accepted the LOW data bit at position 12 as the start bit,
+// extracting D1-D7+parity instead of D0-D7 -- producing wrong channel values.
+//
+// byte1 = 0xC0 (LSB-first D0=0,D1=0,D2=0,D3=0,D4=0,D5=0,D6=1,D7=1):
+//   D0 = 0 (LOW) -- exactly the HOTRC ch1=1472 neutral encoding.
+// After -1 slip: position 11 = start bit (LOW), position 12 = D0 = LOW.
+// Correct re-sync: HIGH(10)->LOW(11) transition wins; byteStart=11.
+// Naive re-sync: bits[12]=LOW -> accepted as start bit; byteStart=12 (WRONG).
+void test_resync_minus1_slip_low_data0_not_mistaken_for_start() {
+    // 0xC0 = 11000000, D0=0 (LOW) when transmitted LSB-first.
+    std::vector<uint8_t> bits = makeFrameBitsCustomByte1(0x00, 0xC0);
+    std::array<uint8_t, kSbusDecodeFrameLen> expected = {};
+    expected[0] = kSbusDecodeHeader;
+    expected[1] = 0xC0;
+    for (int i = 2; i < 23; ++i) expected[(size_t)i] = static_cast<uint8_t>((i * 17) & 0xFF);
+    expected[23] = 0x00;
+    expected[24] = 0x00;
+
+    bits.erase(bits.begin() + 11);  // -1 slip: remove stop2 of byte 0
+
+    std::array<uint8_t, kSbusDecodeFrameLen> frame = {};
+    TEST_ASSERT_TRUE(decodeFromBits(bits, frame.data()));
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(expected.data(), frame.data(), kSbusDecodeFrameLen);
+}
+
+// A +2 slip puts the start bit at position 14, outside the ±1 search window.
+// The re-sync must fail to find a plausible candidate and reject the frame.
+void test_resync_slip_beyond_window_rejected() {
+    std::vector<uint8_t> bits = makeFrameBits(0x00);
+
+    // Two extra HIGH bits inserted at position 12 -> start bit of byte 1 moves to 14.
+    bits.insert(bits.begin() + 12, 1);
+    bits.insert(bits.begin() + 12, 1);
+
+    std::array<uint8_t, kSbusDecodeFrameLen> frame = {};
+    TEST_ASSERT_FALSE(decodeFromBits(bits, frame.data()));
+}
+
+
 int main() {
     UNITY_BEGIN();
 
@@ -272,5 +369,9 @@ int main() {
     RUN_TEST(test_decode_from_symbols_fast_timing);
     RUN_TEST(test_decode_skips_leading_high_bits);
     RUN_TEST(test_decode_false_positive_rejected_by_framing);
+    RUN_TEST(test_resync_minus1_slip_recovers);
+    RUN_TEST(test_resync_plus1_slip_recovers);
+    RUN_TEST(test_resync_minus1_slip_low_data0_not_mistaken_for_start);
+    RUN_TEST(test_resync_slip_beyond_window_rejected);
     return UNITY_END();
 }
