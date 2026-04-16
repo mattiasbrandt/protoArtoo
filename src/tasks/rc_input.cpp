@@ -1107,20 +1107,25 @@ void rcInputTask(void* pvParameters) {
             if (data.lost_frame) {
                 robotState.sbus2LostFrameCount++;
             }
-            // Only update the watchdog timestamp when the frame is not in hardware
-            // failsafe. This lets the SBUS2 watchdog fire (sending dome speed=0)
-            // rather than dispatching the receiver's programmed failsafe channel
-            // values to the dome task.
-            if (!data.failsafe) {
+            // Suppress dispatch (and watchdog heartbeat) on any receiver-side signal
+            // quality event: hardware failsafe OR lost_frame.
+            // - failsafe: receiver outputting programmed failsafe positions.
+            // - lost_frame: receiver missed a TX packet; outputs hold/failsafe position
+            //   with lost_frame=true, failsafe=false. Without this guard, the programmed
+            //   hold position (ch1=389 = -89%) would be dispatched to the dome task.
+            // Suppressing the watchdog heartbeat on both events means the SBUS2 watchdog
+            // fires and stops the dome if either condition persists.
+            bool suppress = data.failsafe || data.lost_frame;
+            if (!suppress) {
                 robotState.lastSbus2Ms = millis();
             }
             taskEXIT_CRITICAL(&robotStateMux);
 
-            if (data.failsafe) {
-                if (!wasSbus2HwFailsafe) {
+            if (suppress) {
+                if (data.failsafe && !wasSbus2HwFailsafe) {
                     PA_LOG_WARN(TAG, "SBUS2 hardware failsafe asserted");
                 }
-                // Do not dispatch failsafe channel values. Watchdog will stop dome.
+                // Do not dispatch. Watchdog stops dome if condition persists.
             } else {
                 dispatchSbusBindingsForSource(data, RC_BINDING_SBUS2, rcInputMode, enableRcCh1,
                                               enableRcCh2);

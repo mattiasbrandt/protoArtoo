@@ -320,8 +320,13 @@ bool SbusDecoder::_parseSymbols(const RxBuf& buf) {
         }
     }
 
-    const uint32_t bitPeriods[] = {adaptivePeriod, kBitPeriodTicksFast};
-    const bool invertOptions[] = {false, true};
+    // Only try the adaptive period with correct (non-inverted) polarity.
+    // kBitPeriodTicksFast (200 kbaud) and invertBits=true are wrong for the
+    // HOTRC DS-650 at 100 kbaud with RMT invert_in=1. Trying them wastes three
+    // of the four attempts per frame, triples the header-mismatch counter noise,
+    // and opens a path for false positives via coincidental header+footer match.
+    const uint32_t bitPeriods[]  = {adaptivePeriod};
+    const bool     invertOptions[] = {false};
 
     for (uint32_t bitPeriod : bitPeriods) {
         int bc = flattenSymbols(buf.symbols, buf.count, bits, kBitArraySize, bitPeriod);
