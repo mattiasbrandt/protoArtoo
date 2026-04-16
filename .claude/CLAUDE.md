@@ -63,6 +63,8 @@ When debugging parser/protocol regressions, default to iterate-commit-fail-fast:
 - If verification fails, stop quickly, record evidence, and move to the next bounded hypothesis.
 - Do not spend long cycles re-checking the same reasoning without new telemetry.
 - After two failed loops without new signal, gather fresh runtime evidence before further edits.
+- Do not re-test mechanisms already rejected in the active regression notes unless new telemetry directly contradicts that rejection.
+- Keep a short rejected-approaches list in task notes and treat it as out-of-scope during micro-iteration loops.
 
 Mandatory test-effort policy in this mode:
 - Precedence: in Regression Troubleshooting Mode, this policy overrides generic expectations to create/update tests for every small change.

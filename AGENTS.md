@@ -241,6 +241,8 @@ Rules:
 - After two failed iterations without new evidence, pause and require new telemetry before further edits.
 - Keep each commit reversible and scoped to one mechanism (timing, alignment, calibration, telemetry, etc.).
 - Preserve safety invariants and do not bypass watchdog/failsafe gates as a workaround.
+- Do not retry previously rejected mechanisms unless new telemetry directly contradicts the original rejection evidence.
+- Maintain an explicit rejected-approaches list in the active task notes; treat that list as blocked scope for future micro-iterations.
 
 Mandatory test-effort policy for this mode:
 - Precedence: while Regression Debug Mode is active, this policy overrides generic guidance that might otherwise imply test authoring/updates on every small code change.
