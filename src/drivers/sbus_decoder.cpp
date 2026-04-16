@@ -88,7 +88,7 @@ SbusDecoder::SbusDecoder()
       _shortDropCount(0), _parseOkCount(0), _parseFailCount(0),
       _bitCountLowCount(0), _extractFailCount(0), _headerMismatchCount(0),
       _footerMismatchCount(0), _lastRejectedFooter(0), _rearmFailCount(0),
-      _lastSymbolCount(0), _maxSymbolCount(0), _data{} {}
+      _parityFailCount(0), _lastSymbolCount(0), _maxSymbolCount(0), _data{} {}
 
 bool SbusDecoder::begin(int rxPin) {
     if (_channel) end();
@@ -178,6 +178,7 @@ SbusDecoderDebugStats SbusDecoder::debugStats() const {
     stats.footerMismatchCount = _footerMismatchCount;
     stats.lastRejectedFooter = _lastRejectedFooter;
     stats.rearmFailCount = _rearmFailCount;
+    stats.parityFailCount = _parityFailCount;
     stats.lastSymbolCount = _lastSymbolCount;
     stats.maxSymbolCount = _maxSymbolCount;
     return stats;
@@ -300,7 +301,26 @@ bool SbusDecoder::_parseSymbols(const RxBuf& buf) {
     // Static buffer avoids stack pressure. Safe for sequential single-task use.
     static bool bits[kBitArraySize];
 
-    const uint32_t bitPeriods[] = {kBitPeriodTicksStd, kBitPeriodTicksFast};
+    // Estimate actual SBUS bit period from the header start bit (first LOW segment
+    // in the buffer). After hardware inversion (invert_in=1), SBUS idle is HIGH and
+    // the header start bit is LOW. Start bit is always exactly 1 bit period long, so
+    // its captured duration is the actual bit period for this transmitter.
+    // Clamped to [7, 15] ticks (70-150 kbaud) to filter inter-frame gap fragments.
+    uint32_t adaptivePeriod = kBitPeriodTicksStd;
+    for (size_t i = 0; i < buf.count; ++i) {
+        const rmt_symbol_word_t& sym = buf.symbols[i];
+        if (sym.level0 == 0 && sym.duration0 >= 7 && sym.duration0 <= 15) {
+            adaptivePeriod = sym.duration0;
+            break;
+        }
+        if (sym.duration1 > 0 && sym.level1 == 0 &&
+            sym.duration1 >= 7 && sym.duration1 <= 15) {
+            adaptivePeriod = sym.duration1;
+            break;
+        }
+    }
+
+    const uint32_t bitPeriods[] = {adaptivePeriod, kBitPeriodTicksFast};
     const bool invertOptions[] = {false, true};
 
     for (uint32_t bitPeriod : bitPeriods) {
@@ -322,6 +342,7 @@ bool SbusDecoder::_parseSymbols(const RxBuf& buf) {
             if (attemptStats.footerMismatchCount > 0) {
                 _lastRejectedFooter = attemptStats.lastRejectedFooter;
             }
+            _parityFailCount = _parityFailCount + attemptStats.parityFailCount;
 
             if (!decoded) {
                 continue;

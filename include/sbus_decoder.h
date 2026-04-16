@@ -74,6 +74,7 @@ struct SbusDecoderDebugStats {
     uint32_t footerMismatchCount;   // footer not in accepted set
     uint8_t  lastRejectedFooter;    // last footer byte that failed validation
     uint32_t rearmFailCount;
+    uint32_t parityFailCount;     // parity mismatch on a header+footer-passing candidate
     uint32_t lastSymbolCount;
     uint32_t maxSymbolCount;
 };
@@ -149,6 +150,7 @@ private:
     volatile uint32_t     _footerMismatchCount;
     volatile uint8_t      _lastRejectedFooter;
     volatile uint32_t     _rearmFailCount;
+    volatile uint32_t     _parityFailCount;
     volatile uint32_t     _lastSymbolCount;
     volatile uint32_t     _maxSymbolCount;
 

@@ -312,6 +312,7 @@ void captureConfigSnapshot(ConfigSnapshot* out) {
     out->speedPresetNormal = robotState.cfg_speedPresetNormal;
     out->speedPresetTurbo = robotState.cfg_speedPresetTurbo;
     out->speedPresetActive = normalizeSpeedPresetId((uint8_t)robotState.cfg_speedPresetActive);
+    out->sbusTimeoutMs = robotState.cfg_sbusTimeoutMs;
     out->webDriveTimeoutMs = robotState.cfg_webDriveTimeoutMs;
     out->stationary = robotState.cfg_stationary;
     out->logLevel = robotState.cfg_logLevel;
@@ -467,6 +468,7 @@ bool populateConfigJson(JsonDocument& doc, const ConfigSnapshot& snap) {
 
     JsonObject rc = doc["rc"].to<JsonObject>();
     rc["inputMode"] = rcModeToString(snap.rcInputMode);
+    rc["sbusTimeoutMs"] = snap.sbusTimeoutMs;
 
     JsonObject rcPwm = rc["pwm"].to<JsonObject>();
     rcPwm["driveSpeed"] = rcPwmDriveSpeedStr;
@@ -658,6 +660,17 @@ void registerConfigRoutes(AsyncWebServer& server) {
             return;
         }
 
+        uint32_t sbusTimeoutMs;
+        if (parseUint32Param(req, "sbusTimeoutMs", 50, 5000, &sbusTimeoutMs)) {
+            working.sbusTimeoutMs = sbusTimeoutMs;
+            PA_LOG_INFO(TAG, "[CFG] sbusTimeoutMs updated to %u", (unsigned)sbusTimeoutMs);
+            changed = true;
+        } else if (req->hasParam("sbusTimeoutMs", true)) {
+            req->send(400, "application/json",
+                      "{\"ok\":false,\"error\":\"sbusTimeoutMs must be 50..5000\"}");
+            return;
+        }
+
         bool boolValue;
         bool stationaryProvided = false;
 
@@ -739,7 +752,25 @@ void registerConfigRoutes(AsyncWebServer& server) {
                 return;
             }
 
-            JsonVariantConst rcSbus = bodyDoc["rc"]["sbus"];
+            JsonVariantConst rcBody = bodyDoc["rc"];
+            if (!rcBody.isNull()) {
+                if (rcBody["sbusTimeoutMs"].is<uint32_t>()) {
+                    uint32_t parsedSbusTimeout = rcBody["sbusTimeoutMs"].as<uint32_t>();
+                    if (parsedSbusTimeout < 50 || parsedSbusTimeout > 5000) {
+                        req->send(400, "application/json",
+                                  "{\"ok\":false,\"error\":\"rc.sbusTimeoutMs must be 50..5000\"}");
+                        return;
+                    }
+                    working.sbusTimeoutMs = parsedSbusTimeout;
+                    changed = true;
+                } else if (!rcBody["sbusTimeoutMs"].isNull()) {
+                    req->send(400, "application/json",
+                              "{\"ok\":false,\"error\":\"rc.sbusTimeoutMs must be integer\"}");
+                    return;
+                }
+            }
+
+            JsonVariantConst rcSbus = rcBody["sbus"];
             if (!rcSbus.isNull()) {
                 if (rcSbus["recvCh2"].is<bool>()) {
                     working.sbusRecvCh2 = rcSbus["recvCh2"].as<bool>();
@@ -1164,6 +1195,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
         robotState.cfg_speedPresetNormal = working.speedPresetNormal;
         robotState.cfg_speedPresetTurbo = working.speedPresetTurbo;
         robotState.cfg_speedPresetActive = activePresetAfter;
+        robotState.cfg_sbusTimeoutMs = working.sbusTimeoutMs;
         robotState.cfg_webDriveTimeoutMs = working.webDriveTimeoutMs;
         robotState.cfg_stationary = working.stationary;
         robotState.stationary = working.stationary;

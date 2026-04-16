@@ -26,6 +26,7 @@ struct ConfigSnapshot {
     int16_t speedPresetNormal;
     int16_t speedPresetTurbo;
     SpeedPresetId speedPresetActive;
+    uint32_t sbusTimeoutMs;
     uint32_t webDriveTimeoutMs;
     bool stationary;
     uint8_t logLevel;
