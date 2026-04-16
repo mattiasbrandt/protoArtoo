@@ -225,6 +225,23 @@ For non-trivial tasks:
   - run relevant checks
 4. Iterate until acceptance + verification both pass
 
+### Regression Debug Mode (Iterate, Commit, Fail Fast)
+
+Use this mode by default for parser/protocol regressions (for example T19 SBUS).
+
+1. Start from latest known-good baseline + one clear hypothesis
+2. Apply the smallest change that tests only that hypothesis
+3. Run the fastest relevant verification immediately (build/tests + targeted runtime probe)
+4. If pass, commit the slice immediately with the observed effect
+5. If fail, stop, capture evidence, and switch to the next single hypothesis
+
+Rules:
+- One hypothesis per iteration; do not stack multiple parser changes in one slice.
+- Prefer 10-30 minute loops over long speculative analysis rounds.
+- After two failed iterations without new evidence, pause and require new telemetry before further edits.
+- Keep each commit reversible and scoped to one mechanism (timing, alignment, calibration, telemetry, etc.).
+- Preserve safety invariants and do not bypass watchdog/failsafe gates as a workaround.
+
 Parallelization rules:
 
 - Parallelize only independent tasks with no file/contract conflicts

@@ -52,6 +52,18 @@ Follow [AGENTS.md](../AGENTS.md) for the full canonical list. Do not violate:
 - For quantitative analysis, include units and source/derivation context; do not present unsupported numbers.
 - Distinguish observed facts from inference, and label low confidence explicitly.
 
+### Regression Troubleshooting Mode (T19-style)
+
+When debugging parser/protocol regressions, default to iterate-commit-fail-fast:
+
+- Use one explicit hypothesis per loop.
+- Make one minimal code change to test that hypothesis.
+- Run fast verification immediately after the change.
+- If verification passes, commit the slice immediately.
+- If verification fails, stop quickly, record evidence, and move to the next bounded hypothesis.
+- Do not spend long cycles re-checking the same reasoning without new telemetry.
+- After two failed loops without new signal, gather fresh runtime evidence before further edits.
+
 ### Hallucination and Pipeline Safety (Compatible Subset)
 
 - Never invent file paths, symbols, API endpoints, or field names.
