@@ -301,30 +301,25 @@ bool SbusDecoder::_parseSymbols(const RxBuf& buf) {
     // Static buffer avoids stack pressure. Safe for sequential single-task use.
     static bool bits[kBitArraySize];
 
-    // Estimate bit period from the first LOW segment (header start bit after inversion).
-    // Clamp to [kAdaptiveMin=9, kBitPeriodTicksStd=10]:
-    //   Upper=10: period=11 (+1 tick jitter) causes 6-bit runs to compress (-1 slip),
-    //             shrinking bc below 300 so byte-24 extract fails.
-    //   Lower=9:  HOTRC DS-650 appears to run at ~115 kbaud (standard UART baud rate),
-    //             giving start bits of 8-9 ticks. Period=8 causes +2 expansion beyond
-    //             the ±1 re-sync window, producing hdr failures. Period=9 is near-correct
-    //             for 115 kbaud: only 19+ bit runs get -1 slip (re-sync handles those).
-    //             Period=10 is kept for true 100 kbaud signals.
-    constexpr uint32_t kAdaptiveMin = 9;
-    uint32_t adaptivePeriod = kBitPeriodTicksStd;
+    // Estimate bit period from total frame ticks / 300 bits.
+    // This is robust to partial start-bit capture (ISR timing gap between re-arm and
+    // first edge): the per-symbol search for a 1-bit LOW run fails when the start bit
+    // duration is < 8 ticks or absent, but the total-ticks estimate uses all symbols
+    // and is unaffected by the partial leading edge.
+    //
+    // At 115 kbaud (8.68 ticks/bit): totalTicks ≈ 2604 → period = round(2604/300) = 9.
+    // At 100 kbaud (10 ticks/bit):   totalTicks ≈ 3000 → period = round(3000/300) = 10.
+    // Clamped to [8, 10] to reject bad frames (< 2400 ticks = < 80 kbaud equivalent).
+    constexpr uint32_t kAdaptiveMin = 8;
+    uint32_t totalTicks = 0;
     for (size_t i = 0; i < buf.count; ++i) {
-        const rmt_symbol_word_t& sym = buf.symbols[i];
-        if (sym.level0 == 0 && sym.duration0 >= kAdaptiveMin &&
-            sym.duration0 <= kBitPeriodTicksStd) {
-            adaptivePeriod = sym.duration0;
-            break;
-        }
-        if (sym.duration1 > 0 && sym.level1 == 0 &&
-            sym.duration1 >= kAdaptiveMin && sym.duration1 <= kBitPeriodTicksStd) {
-            adaptivePeriod = sym.duration1;
-            break;
-        }
+        totalTicks += buf.symbols[i].duration0;
+        if (buf.symbols[i].duration1 > 0) totalTicks += buf.symbols[i].duration1;
     }
+    // 150 = 300/2 for round-nearest; clamp result to valid range.
+    uint32_t adaptivePeriod = (totalTicks + 150U) / 300U;
+    if (adaptivePeriod < kAdaptiveMin)       adaptivePeriod = kAdaptiveMin;
+    if (adaptivePeriod > kBitPeriodTicksStd) adaptivePeriod = kBitPeriodTicksStd;
 
     // Only try the adaptive period with correct (non-inverted) polarity.
     // kBitPeriodTicksFast (200 kbaud) and invertBits=true are wrong for the
