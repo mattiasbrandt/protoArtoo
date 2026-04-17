@@ -96,14 +96,31 @@ inline bool extractSbusBytes(const bool* bits, int bc, int startPos, bool invert
                              int bitsPerByte, uint8_t* frame, int frameLen) {
     if (!frame || frameLen < 1) return false;
     if (bitsPerByte < kSbusDecodeMinBitsPerByte || bitsPerByte > kSbusDecodeBitsPerByte) return false;
-    // With per-byte re-sync, each inter-byte boundary may shrink by up to
-    // kSbusDecodeMaxStartBitSlip bits (-1 slip). Minimum bits needed accounts
-    // for maximum cumulative contraction across all (frameLen-1) boundaries.
-    const int minExtractBits = frameLen * bitsPerByte - (frameLen - 1) * kSbusDecodeMaxStartBitSlip;
+    // Minimum bits needed: (frameLen-1) full bytes with max -1 slip at each of
+    // the (frameLen-1) inter-byte boundaries, plus 9 bits for the footer byte
+    // (stop bits absent — absorbed by the RMT gap-terminator symbol).
+    const int minExtractBits = (frameLen - 1) * (bitsPerByte - kSbusDecodeMaxStartBitSlip) + 9;
     if (bc - startPos < minExtractBits) return false;
 
     int byteStart = startPos;
     for (int b = 0; b < frameLen; ++b) {
+        // Last byte (footer): the RMT gap threshold absorbs the stop bits into
+        // the gap-terminator symbol (duration1==0), so they are never added to
+        // the bit array. Only start + 8 data bits (9 bits) are available.
+        // Extract directly rather than routing through extractSbusSerialByte
+        // whose 12-bit minimum check would always reject the footer.
+        if (b == frameLen - 1) {
+            if (bc - byteStart < 9) return false;
+            uint8_t byte = 0;
+            for (int d = 0; d < 8; ++d) {
+                if (decodedBit(bits, byteStart + 1 + d, invertBits)) {
+                    byte |= (uint8_t)(1u << d);
+                }
+            }
+            frame[b] = byte;
+            return true;
+        }
+
         if (!extractSbusSerialByte(bits, bc, byteStart, invertBits, bitsPerByte, &frame[b])) {
             return false;
         }
@@ -160,8 +177,9 @@ inline bool decodeFrameFromBits(const bool* bits, int bc, bool invertBits,
     }
 
     uint8_t candidateFrame[kSbusDecodeFrameLen] = {};
-    // Minimum bits: nominal frame minus maximum cumulative slip contraction.
-    const int minBitsNeeded = frameLen * bitsPerByte - (frameLen - 1) * kSbusDecodeMaxStartBitSlip;
+    // Minimum bits: (frameLen-1) full bytes with max -1 slip at each boundary,
+    // plus 9 bits for the last byte (stop bits absent — absorbed by RMT gap symbol).
+    const int minBitsNeeded = (frameLen - 1) * (bitsPerByte - kSbusDecodeMaxStartBitSlip) + 9;
 
     // RMT terminates capture on the inter-frame idle gap, so every buffer starts
     // at the beginning of a SBUS frame. We therefore only attempt decode from the
