@@ -66,13 +66,14 @@ struct RcRuntimeConfig {
 };
 
 static bool bindingSourceActive(const RcBindingConfig& binding, RcInputMode mode, bool enableRcCh1,
-                                bool enableRcCh2) {
+                                bool enableRcCh2, bool useCh2) {
     switch (binding.source) {
         case RC_BINDING_PWM:
             return mode == RC_INPUT_STANDARD_PWM && binding.channel >= 1 && binding.channel <= 6;
         case RC_BINDING_SBUS1:
             return mode != RC_INPUT_STANDARD_PWM && enableRcCh1;
         case RC_BINDING_SBUS2:
+            if (mode == RC_INPUT_SINGLE_SBUS) return useCh2 && enableRcCh2;
             return mode == RC_INPUT_DUAL_SBUS && enableRcCh2;
         case RC_BINDING_NONE:
         default:
@@ -663,11 +664,11 @@ static void dispatchStandardPwmInputs() {
     int rawSpeed = 0;
     int rawSteer = 0;
     bool speedActive = bindingSourceActive(cfg.driveSpeed, RC_INPUT_STANDARD_PWM, cfg.enableRc[0],
-                                           cfg.enableRc[1]) &&
+                                           cfg.enableRc[1], false) &&
                        readPwmBindingRaw(cfg.driveSpeed, pulses, &rawSpeed) &&
                        cfg.enableRc[cfg.driveSpeed.channel - 1];
     bool steerActive = bindingSourceActive(cfg.driveSteer, RC_INPUT_STANDARD_PWM, cfg.enableRc[0],
-                                           cfg.enableRc[1]) &&
+                                           cfg.enableRc[1], false) &&
                        readPwmBindingRaw(cfg.driveSteer, pulses, &rawSteer) &&
                        cfg.enableRc[cfg.driveSteer.channel - 1];
 
@@ -683,7 +684,7 @@ static void dispatchStandardPwmInputs() {
     int rawDome = 0;
     if (cfg.enableDome &&
         bindingSourceActive(cfg.domeSpeed, RC_INPUT_STANDARD_PWM, cfg.enableRc[0],
-                            cfg.enableRc[1]) &&
+                            cfg.enableRc[1], false) &&
         readPwmBindingRaw(cfg.domeSpeed, pulses, &rawDome) &&
         cfg.enableRc[cfg.domeSpeed.channel - 1]) {
         queueDomeCommand(applyRcAnalogCalibration(rawDome, cfg.domeSpeed, nullptr), SRC_SBUS);
@@ -697,17 +698,17 @@ static void dispatchStandardPwmInputs() {
     int rawArm2 = 0;
     int rawSound = 0;
     if (cfg.enableArm1 &&
-        bindingSourceActive(cfg.arm1, RC_INPUT_STANDARD_PWM, cfg.enableRc[0], cfg.enableRc[1]) &&
+        bindingSourceActive(cfg.arm1, RC_INPUT_STANDARD_PWM, cfg.enableRc[0], cfg.enableRc[1], false) &&
         readPwmBindingRaw(cfg.arm1, pulses, &rawArm1) && cfg.enableRc[cfg.arm1.channel - 1]) {
         dispatchSwitchAction(cfg.arm1, rawArm1, 0, &lastArm1State);
     }
     if (cfg.enableArm2 &&
-        bindingSourceActive(cfg.arm2, RC_INPUT_STANDARD_PWM, cfg.enableRc[0], cfg.enableRc[1]) &&
+        bindingSourceActive(cfg.arm2, RC_INPUT_STANDARD_PWM, cfg.enableRc[0], cfg.enableRc[1], false) &&
         readPwmBindingRaw(cfg.arm2, pulses, &rawArm2) && cfg.enableRc[cfg.arm2.channel - 1]) {
         dispatchSwitchAction(cfg.arm2, rawArm2, 1, &lastArm2State);
     }
     if (cfg.enableSound &&
-        bindingSourceActive(cfg.sound, RC_INPUT_STANDARD_PWM, cfg.enableRc[0], cfg.enableRc[1]) &&
+        bindingSourceActive(cfg.sound, RC_INPUT_STANDARD_PWM, cfg.enableRc[0], cfg.enableRc[1], false) &&
         readPwmBindingRaw(cfg.sound, pulses, &rawSound) && cfg.enableRc[cfg.sound.channel - 1]) {
         handleSoundTrigger(rcAnalogToSwitchState(rawSound, cfg.sound) == RC_SWITCH_HIGH,
                            &lastSoundPressed);
@@ -715,7 +716,8 @@ static void dispatchStandardPwmInputs() {
 }
 
 static void dispatchSbusBindingsForSource(const SbusData& data, RcBindingSource source,
-                                          RcInputMode mode, bool enableRcCh1, bool enableRcCh2) {
+                                          RcInputMode mode, bool enableRcCh1, bool enableRcCh2,
+                                          bool useCh2) {
     RcRuntimeConfig cfg = {};
     loadRcRuntimeConfig(&cfg, mode);
     static RcSwitchState lastArm1Switch = RC_SWITCH_MID;
@@ -726,7 +728,7 @@ static void dispatchSbusBindingsForSource(const SbusData& data, RcBindingSource 
 
     auto sourceActive = [&](const RcBindingConfig& binding) {
         return binding.source == source &&
-               bindingSourceActive(binding, mode, enableRcCh1, enableRcCh2);
+               bindingSourceActive(binding, mode, enableRcCh1, enableRcCh2, useCh2);
     };
 
     int raw = 0;
@@ -960,73 +962,100 @@ void rcInputTask(void* pvParameters) {
             continue;
         }
 
-        // --- Drive receiver (SBUS #1) ---
+        // --- Drive receiver (SBUS #1, or SBUS2 GPIO when single_sbus+useCh2) ---
         if (driveSbusEnabled && sbus_drive.read()) {
             SbusData data = sbus_drive.data();
             RcRuntimeConfig cfg = {};
             loadRcRuntimeConfig(&cfg, rcInputMode);
 
-            taskENTER_CRITICAL(&robotStateMux);
-            robotState.lastSbus1Ms = millis();
-            for (int i = 0; i < 16; ++i) {
-                robotState.rcSbus1Raw[i] = (uint16_t)data.ch[i];
-            }
-            robotState.rcSbus1Digital[0] = data.ch17;
-            robotState.rcSbus1Digital[1] = data.ch18;
+            // single_sbus+useCh2=true: decoder reads GPIO13 (dome GPIO).
+            // Treat as SBUS2 — store to sbus2 state and dispatch dome/aux bindings only.
+            // Drive bindings (SBUS1) never fire; no drive commands from the dome controller.
+            bool asSbus2 = (rcInputMode == RC_INPUT_SINGLE_SBUS) && useCh2;
 
-            // Layer 1: Hardware failsafe flag from receiver firmware
-            if (data.failsafe) {
-                bool hwFailsafeTriggered = !robotState.sbusHwFailsafe;
-                robotState.sbusHwFailsafe = true;
-                if (hwFailsafeTriggered) {
-                    recordFailsafeTriggerLocked(FS_SBUS_HW, robotState.lastSbus1Ms);
+            if (asSbus2) {
+                taskENTER_CRITICAL(&robotStateMux);
+                robotState.lastSbus1Ms = millis();  // feed sbus1 watchdog
+                for (int i = 0; i < 16; ++i) {
+                    robotState.rcSbus2Raw[i] = (uint16_t)data.ch[i];
+                }
+                robotState.rcSbus2Digital[0] = data.ch17;
+                robotState.rcSbus2Digital[1] = data.ch18;
+                bool suppress = data.failsafe || data.lost_frame;
+                if (data.failsafe) {
+                    robotState.sbus2HwFailsafe = true;
+                } else if (data.lost_frame) {
+                    robotState.sbus2LostFrameCount++;
                 } else {
-                    robotState.failsafeSource = FS_SBUS_HW;
+                    robotState.sbus2HwFailsafe = false;
+                    robotState.sbus2SignalLost = false;
+                    robotState.lastSbus2Ms = millis();
                 }
-                robotState.driveSpeed = 0;
-                robotState.driveSteer = 0;
-                robotState.lastDriveSource = SRC_SBUS;
                 taskEXIT_CRITICAL(&robotStateMux);
-                if (hwFailsafeTriggered) {
-                    PA_LOG_WARN(TAG, "SBUS1 hardware failsafe asserted");
-                }
-            } else if (data.lost_frame) {
-                // lost_frame: single frame missed — not a failsafe condition.
-                // Track count; drive state is unchanged (last good frame holds).
-                robotState.sbus1LostFrameCount++;
-                uint32_t lostCount = robotState.sbus1LostFrameCount;
-                bool rcDebug = robotState.rcDebugMode;
-                taskEXIT_CRITICAL(&robotStateMux);
-                if (rcDebug && (lostCount % 100 == 0)) {
-                    PA_LOG_DEBUG(TAG, "SBUS1 lost_frame count: %lu", (unsigned long)lostCount);
+                if (!suppress) {
+                    dispatchSbusBindingsForSource(data, RC_BINDING_SBUS2, rcInputMode, enableRcCh1,
+                                                  enableRcCh2, useCh2);
                 }
             } else {
-                // Signal confirmed — clear watchdog and hardware failsafe flags
-                robotState.sbusHwFailsafe = false;
-                robotState.sbusSignalLost = false;
-                taskEXIT_CRITICAL(&robotStateMux);
-
-                int rawSpeed = 0;
-                int rawSteer = 0;
-                if (cfg.driveSpeed.source == RC_BINDING_SBUS1 &&
-                    cfg.driveSteer.source == RC_BINDING_SBUS1 &&
-                    readSbusAnalog(data, cfg.driveSpeed, &rawSpeed) &&
-                    readSbusAnalog(data, cfg.driveSteer, &rawSteer)) {
-                    int16_t maxOut = cfg.maxOut;
-                    setStationaryMode(false);
-                    setDriveCommand(constrain((int16_t)(applyRcAnalogCalibration(
-                                                            rawSpeed, cfg.driveSpeed, nullptr) *
-                                                        maxOut),
-                                              (int16_t)(-maxOut), maxOut),
-                                    constrain((int16_t)(applyRcAnalogCalibration(
-                                                            rawSteer, cfg.driveSteer, nullptr) *
-                                                        maxOut),
-                                              (int16_t)(-maxOut), maxOut),
-                                    SRC_SBUS);
+                taskENTER_CRITICAL(&robotStateMux);
+                robotState.lastSbus1Ms = millis();
+                for (int i = 0; i < 16; ++i) {
+                    robotState.rcSbus1Raw[i] = (uint16_t)data.ch[i];
                 }
+                robotState.rcSbus1Digital[0] = data.ch17;
+                robotState.rcSbus1Digital[1] = data.ch18;
 
-                dispatchSbusBindingsForSource(data, RC_BINDING_SBUS1, rcInputMode, enableRcCh1,
-                                              enableRcCh2);
+                // Layer 1: Hardware failsafe flag from receiver firmware
+                if (data.failsafe) {
+                    bool hwFailsafeTriggered = !robotState.sbusHwFailsafe;
+                    robotState.sbusHwFailsafe = true;
+                    if (hwFailsafeTriggered) {
+                        recordFailsafeTriggerLocked(FS_SBUS_HW, robotState.lastSbus1Ms);
+                    } else {
+                        robotState.failsafeSource = FS_SBUS_HW;
+                    }
+                    robotState.driveSpeed = 0;
+                    robotState.driveSteer = 0;
+                    robotState.lastDriveSource = SRC_SBUS;
+                    taskEXIT_CRITICAL(&robotStateMux);
+                    if (hwFailsafeTriggered) {
+                        PA_LOG_WARN(TAG, "SBUS1 hardware failsafe asserted");
+                    }
+                } else if (data.lost_frame) {
+                    robotState.sbus1LostFrameCount++;
+                    uint32_t lostCount = robotState.sbus1LostFrameCount;
+                    bool rcDebug = robotState.rcDebugMode;
+                    taskEXIT_CRITICAL(&robotStateMux);
+                    if (rcDebug && (lostCount % 100 == 0)) {
+                        PA_LOG_DEBUG(TAG, "SBUS1 lost_frame count: %lu", (unsigned long)lostCount);
+                    }
+                } else {
+                    robotState.sbusHwFailsafe = false;
+                    robotState.sbusSignalLost = false;
+                    taskEXIT_CRITICAL(&robotStateMux);
+
+                    int rawSpeed = 0;
+                    int rawSteer = 0;
+                    if (cfg.driveSpeed.source == RC_BINDING_SBUS1 &&
+                        cfg.driveSteer.source == RC_BINDING_SBUS1 &&
+                        readSbusAnalog(data, cfg.driveSpeed, &rawSpeed) &&
+                        readSbusAnalog(data, cfg.driveSteer, &rawSteer)) {
+                        int16_t maxOut = cfg.maxOut;
+                        setStationaryMode(false);
+                        setDriveCommand(constrain((int16_t)(applyRcAnalogCalibration(
+                                                                rawSpeed, cfg.driveSpeed, nullptr) *
+                                                            maxOut),
+                                                  (int16_t)(-maxOut), maxOut),
+                                        constrain((int16_t)(applyRcAnalogCalibration(
+                                                                rawSteer, cfg.driveSteer, nullptr) *
+                                                            maxOut),
+                                                  (int16_t)(-maxOut), maxOut),
+                                        SRC_SBUS);
+                    }
+
+                    dispatchSbusBindingsForSource(data, RC_BINDING_SBUS1, rcInputMode, enableRcCh1,
+                                                  enableRcCh2, useCh2);
+                }
             }
         }
 
@@ -1128,7 +1157,7 @@ void rcInputTask(void* pvParameters) {
                 // Do not dispatch. Watchdog stops dome if condition persists.
             } else {
                 dispatchSbusBindingsForSource(data, RC_BINDING_SBUS2, rcInputMode, enableRcCh1,
-                                              enableRcCh2);
+                                              enableRcCh2, useCh2);
                 if (sbus2WatchdogFired) {
                     sbus2WatchdogFired = false;
                     PA_LOG_INFO(TAG, "SBUS2 signal restored");
