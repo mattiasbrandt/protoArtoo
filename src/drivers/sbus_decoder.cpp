@@ -310,9 +310,16 @@ bool SbusDecoder::_parseSymbols(const RxBuf& buf) {
     // At 115 kbaud (8.68 ticks/bit): totalTicks ≈ 2604 → period = round(2604/300) = 9.
     // At 100 kbaud (10 ticks/bit):   totalTicks ≈ 3000 → period = round(3000/300) = 10.
     // Clamped to [8, 10] to reject bad frames (< 2400 ticks = < 80 kbaud equivalent).
+    //
+    // The last captured symbol (duration1==0) includes the ~300-tick inter-frame gap
+    // ticks in its duration0. Including it inflates totalTicks by ~300, pushing
+    // period from 9→10 for a 115 kbaud signal. With period=10 and actual 8.68
+    // ticks/bit, any run of ≥4 physical bits is under-counted, causing bc < 300 and
+    // near-total extract failures. Exclude the last symbol to get the correct estimate.
     constexpr uint32_t kAdaptiveMin = 8;
     uint32_t totalTicks = 0;
-    for (size_t i = 0; i < buf.count; ++i) {
+    const size_t tickSymCount = buf.count > 1 ? buf.count - 1 : buf.count;
+    for (size_t i = 0; i < tickSymCount; ++i) {
         totalTicks += buf.symbols[i].duration0;
         if (buf.symbols[i].duration1 > 0) totalTicks += buf.symbols[i].duration1;
     }
