@@ -532,16 +532,36 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
                          pos, remaining, "rcCh2", "standby",
                          "SBUS2 not selected; using SBUS1 (CH1) in single_sbus mode") &&
                      ok;
+            } else if (rcInputMode == RC_INPUT_SINGLE_SBUS && singleSbusUseCh2) {
+                // single_sbus useCh2: decoder uses SBUS2 GPIO but stores to sbus1 state
+                uint32_t refMs = lastSbus1Ms;
+                bool sigLost = sbusSignalLost;
+                uint32_t lostFr = sbus1LostFrameCount;
+                if (refMs == 0) {
+                    ok = appendPeripheralStatus(pos, remaining, "rcCh2", "not_seen",
+                                                "SBUS2 input waiting for first frame") &&
+                         ok;
+                } else if (sigLost) {
+                    snprintf(detail, sizeof(detail), "SBUS2 lost, last %lu ms ago, lost frames %lu",
+                             uptimeMs - refMs, (unsigned long)lostFr);
+                    ok = appendPeripheralStatus(pos, remaining, "rcCh2", "signal_lost", detail) &&
+                         ok;
+                } else {
+                    snprintf(detail, sizeof(detail),
+                             "SBUS2 active, last %lu ms ago, lost frames %lu", uptimeMs - refMs,
+                             (unsigned long)lostFr);
+                    ok = appendPeripheralStatus(pos, remaining, "rcCh2", "active", detail) && ok;
+                }
             } else if (lastSbus2Ms == 0) {
                 ok = appendPeripheralStatus(pos, remaining, "rcCh2", "not_seen",
-                                            "SBUS2 input waiting for first frame") &&
+                                            "Dome SBUS input waiting for first frame") &&
                      ok;
             } else if (sbus2SignalLost) {
-                snprintf(detail, sizeof(detail), "SBUS2 lost, last %lu ms ago, lost frames %lu",
+                snprintf(detail, sizeof(detail), "Dome SBUS lost, last %lu ms ago, lost frames %lu",
                          uptimeMs - lastSbus2Ms, (unsigned long)sbus2LostFrameCount);
                 ok = appendPeripheralStatus(pos, remaining, "rcCh2", "signal_lost", detail) && ok;
             } else {
-                snprintf(detail, sizeof(detail), "SBUS2 active, last %lu ms ago, lost frames %lu",
+                snprintf(detail, sizeof(detail), "Dome SBUS active, last %lu ms ago, lost frames %lu",
                          uptimeMs - lastSbus2Ms, (unsigned long)sbus2LostFrameCount);
                 ok = appendPeripheralStatus(pos, remaining, "rcCh2", "active", detail) && ok;
             }
