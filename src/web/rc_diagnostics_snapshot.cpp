@@ -33,13 +33,15 @@ struct RcActionBindingSpec {
 };
 
 bool rcSourceEnabledForMode(RcBindingSource source, RcInputMode mode, bool enableRcCh1,
-                            bool enableRcCh2, bool anyPwmEnabled) {
+                            bool enableRcCh2, bool anyPwmEnabled, bool useCh2) {
     switch (source) {
         case RC_BINDING_PWM:
             return mode == RC_INPUT_STANDARD_PWM && anyPwmEnabled;
         case RC_BINDING_SBUS1:
-            return mode != RC_INPUT_STANDARD_PWM && enableRcCh1;
+            if (mode == RC_INPUT_SINGLE_SBUS) return !useCh2;
+            return mode == RC_INPUT_DUAL_SBUS && enableRcCh1;
         case RC_BINDING_SBUS2:
+            if (mode == RC_INPUT_SINGLE_SBUS) return useCh2;
             return mode == RC_INPUT_DUAL_SBUS && enableRcCh2;
         case RC_BINDING_NONE:
         default:
@@ -106,6 +108,7 @@ void captureRcDiagnosticsSnapshot(RcDiagnosticsSnapshot* out) {
     RcInputMode rcInputMode;
     uint32_t timeoutMs;
     bool enableRcCh1, enableRcCh2, enableRcCh3, enableRcCh4, enableRcCh5, enableRcCh6;
+    bool sbusUseCh2;
     bool sbusSignalLost, sbus2SignalLost, sbusHwFailsafe, sbus2HwFailsafe;
     uint32_t lastPwmMs, lastSbus1Ms, lastSbus2Ms;
     uint32_t sbus1LostFrameCount, sbus2LostFrameCount;
@@ -119,6 +122,7 @@ void captureRcDiagnosticsSnapshot(RcDiagnosticsSnapshot* out) {
     taskENTER_CRITICAL(&robotStateMux);
     rcInputMode = robotState.cfg_rc_input_mode;
     timeoutMs = robotState.cfg_sbusTimeoutMs;
+    sbusUseCh2 = robotState.cfg_single_sbus_use_ch2;
     enableRcCh1 = robotState.cfg_enable_rc_ch1;
     enableRcCh2 = robotState.cfg_enable_rc_ch2;
     enableRcCh3 = robotState.cfg_enable_rc_ch3;
@@ -162,21 +166,22 @@ void captureRcDiagnosticsSnapshot(RcDiagnosticsSnapshot* out) {
 
     snap.sources[0] = {"sbus1",
                        rcSourceEnabledForMode(RC_BINDING_SBUS1, rcInputMode, enableRcCh1,
-                                              enableRcCh2, anyPwmEnabled),
+                                              enableRcCh2, anyPwmEnabled, sbusUseCh2),
                        false,
                        rcSourceAgeMs(nowMs, lastSbus1Ms),
                        sbus1LostFrameCount,
                        sbusHwFailsafe};
     snap.sources[1] = {"sbus2",
                        rcSourceEnabledForMode(RC_BINDING_SBUS2, rcInputMode, enableRcCh1,
-                                              enableRcCh2, anyPwmEnabled),
+                                              enableRcCh2, anyPwmEnabled, sbusUseCh2),
                        false,
                        rcSourceAgeMs(nowMs, lastSbus2Ms),
                        sbus2LostFrameCount,
                        sbus2HwFailsafe};
     snap.sources[2] = {
         "pwm",
-        rcSourceEnabledForMode(RC_BINDING_PWM, rcInputMode, enableRcCh1, enableRcCh2, anyPwmEnabled),
+        rcSourceEnabledForMode(RC_BINDING_PWM, rcInputMode, enableRcCh1, enableRcCh2, anyPwmEnabled,
+                               sbusUseCh2),
         false,
         rcSourceAgeMs(nowMs, lastPwmMs),
         0,
@@ -201,7 +206,7 @@ void captureRcDiagnosticsSnapshot(RcDiagnosticsSnapshot* out) {
         const RcBindingConfig& binding = specs[i].binding;
         const char* sourceName = rcDiagnosticsSourceName(binding.source);
         bool sourceEnabled = rcSourceEnabledForMode(binding.source, rcInputMode, enableRcCh1,
-                                                    enableRcCh2, anyPwmEnabled);
+                                                    enableRcCh2, anyPwmEnabled, sbusUseCh2);
 
         if (rcBindingSupportsAnalog(binding)) {
             int raw = 0;
