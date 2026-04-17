@@ -34,7 +34,22 @@ interactive workflow requirements.
 - Hardware truth: `docs/pin_map.md`, `include/config.h`
 - Shared state truth: `include/robot_state.h`
 - Action registry: `docs/action-registry.yaml`
+- SBUS protocol truth: `docs/SBUS_protocol.md`
+- ESP-IDF5 RMT driver truth: `docs/RMT_ESP32_IDF5.md`
+- HOTRC profile truth: `docs/hotrc-sbus-spec.md`
 - Long-term project memory: MemPalace MCP (`mempalace_search`, `mempalace_status`)
+
+## Spec Compliance Gate (SBUS/RMT)
+
+For any task that touches SBUS parsing, SBUS framing/flags/timing acceptance,
+or ESP-IDF5 RMT driver behavior, agents MUST:
+
+1. Read `docs/SBUS_protocol.md` and `docs/RMT_ESP32_IDF5.md` before proposing code changes.
+2. Treat those docs as implementation authority unless superseded by a higher-precedence source in this file.
+3. Mark unresolved values as `UNKNOWN` and stop dependent implementation changes rather than guessing.
+4. Avoid trial-and-error loops that retest previously rejected mechanisms unless new contradictory telemetry is captured.
+
+If HOTRC-specific behavior is involved, consult `docs/hotrc-sbus-spec.md` after the two protocol/driver docs above.
 
 ## MemPalace Memory Protocol
 

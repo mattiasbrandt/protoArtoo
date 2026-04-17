@@ -221,6 +221,15 @@ Regression troubleshooting policy (parser/protocol iterate-fix loops):
 - Add/update tests at confirmed-fix commit boundaries, for safety-critical behavior changes, and when a larger feature/task slice is completed.
 - For larger feature implementations, tests must be kept up to date before marking work complete.
 
+SBUS/RMT spec compliance gate:
+- For any change touching SBUS parsing, SBUS framing/flags/timing acceptance, or ESP-IDF5 RMT behavior, review these docs before coding:
+  - `docs/RMT_ESP32_IDF5.md`
+  - `docs/SBUS_protocol.md`
+  - `docs/hotrc-sbus-spec.md` (when HOTRC profile behavior is in scope)
+- Resolution order: RMT driver-level -> SBUS protocol-level -> HOTRC profile-level.
+- If a required value is unresolved, mark it `UNKNOWN` and stop dependent implementation changes instead of guessing.
+- Do not reopen previously rejected parser mechanisms unless new contradictory telemetry is captured.
+
 **Static analysis**
 - [ ] `pio check` — no high or medium severity findings
 - [ ] Any `pio check` suppression or analysis-only build flag in `platformio.ini` has an inline comment explaining rationale and scope (no broad/global suppressions unless unavoidable)

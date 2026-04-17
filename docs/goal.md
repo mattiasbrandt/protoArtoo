@@ -680,7 +680,18 @@ Web configurability requirement:
     (clear channel cards, source badges, inline validation, and explicit save/apply
     feedback)
 
-Protocol compliance requirements (from `tasks/SBUS_protocol.md`):
+Protocol/spec compliance requirements:
+
+- Canonical references for SBUS/RMT work:
+    - `docs/RMT_ESP32_IDF5.md` (driver-level behavior and migration constraints)
+    - `docs/SBUS_protocol.md` (wire protocol framing/packing/flags)
+    - `docs/hotrc-sbus-spec.md` (HOTRC profile assumptions and calibration context)
+- Resolution order for conflicting interpretations:
+    - `docs/RMT_ESP32_IDF5.md` -> `docs/SBUS_protocol.md` -> `docs/hotrc-sbus-spec.md`
+- If a required value is unresolved after applying that order, mark it `UNKNOWN` and stop dependent implementation changes instead of guessing.
+- Do not run trial-and-error loops that retest rejected parser mechanisms unless new contradictory telemetry is captured.
+
+SBUS protocol baseline:
 
 - 25-byte frame: `0x0F` header, 22-byte packed channel payload, flags byte,
     `0x00` end byte

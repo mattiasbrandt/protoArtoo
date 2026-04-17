@@ -1,5 +1,28 @@
 # SBUS Protocol
 
+## 0. Authority Contract
+
+This document is an implementation authority for SBUS frame parsing and validation behavior.
+
+Authority order for agent decisions:
+
+1. Vendor or standards references listed in Sources.
+2. This document.
+3. Secondary community references.
+
+If references conflict:
+
+- Prefer vendor/standards references.
+- If still unresolved, mark value as `UNKNOWN` and stop implementation changes that depend on it.
+- Request new evidence instead of trial-and-error tuning.
+
+Agent requirements when using this document:
+
+- MUST treat sections labeled protocol as normative.
+- MUST label heuristics as heuristics in code comments and notes.
+- MUST NOT invent byte layouts, bit assignments, or timing constants not present here.
+- MUST NOT silently switch between inverted and non-inverted assumptions.
+
 ## 1. Overview
 
 SBUS is a serial protocol used in RC systems to transport multiple channels over one signal line.
@@ -19,6 +42,11 @@ For Futaba-style SBUS, serial configuration is:
   - 1 even parity bit
   - 2 stop bits
 - Logic level convention: inverted relative to normal UART TTL representation.
+
+Normative parser baseline for this spec:
+
+- Assume `100000`, `8E2`, inverted signaling.
+- Treat alternative electrical variants as profile overrides, not default behavior.
 
 Parity detail:
 
@@ -42,6 +70,13 @@ An SBUS message is 25 bytes:
 - Bytes 1-22: packed channel payload (16 x 11-bit channels)
 - Byte 23: flag byte
 - Byte 24: footer (`0x00` in baseline references)
+
+Normative frame acceptance rules:
+
+- MUST require exact frame length of 25 bytes.
+- MUST require header byte `0x0F`.
+- MUST decode flags from byte 23 using Section 5 bit assignments.
+- MUST treat footer handling as profile-configurable when hardware evidence shows accepted variants.
 
 Timing commonly documented in public references:
 
@@ -123,6 +158,12 @@ Bit-label caveat:
   - mappings to control units like `1000..2000`
 - Other implementations also use common reference points near `172 / 992 / 1811`.
 
+Normative interpretation:
+
+- Parser output domain is `0..2047`.
+- Any mapping to PWM/us/percent is an application-layer transform and out of scope for frame decode.
+- Agents MUST NOT hardcode control mapping ranges into parser logic unless explicitly requested.
+
 ## 7. Synchronization Notes from Public Decoder References
 
 - Synchronization should rely on frame boundaries and inter-message idle behavior.
@@ -145,11 +186,34 @@ Timing health heuristics found in public implementation notes:
 
 These are implementation heuristics, not extra wire-format fields.
 
+Normative sync safety rules:
+
+- MUST fail closed: reject malformed frame candidates and resynchronize.
+- MUST NOT accept a frame on payload plausibility alone without structural checks.
+- MUST make frame validity checks deterministic and repeatable.
+
 ## 8. Representation Caveat
 
 Some references display captured data in inverted/bit-order views where the start byte can appear as `0xF0`. In logical decoded SBUS framing, header is treated as `0x0F`.
 
-## 9. Sources
+## 9. Agent Lookup Quick Reference
+
+Use this table first when implementing or reviewing parser behavior.
+
+- Field: Frame length. Required value: 25 bytes.
+- Field: Header. Required value: `0x0F`.
+- Field: Channel payload bytes. Required value: bytes 1-22 packed 16 x 11-bit LSB-first.
+- Field: Flags byte index. Required value: 23.
+- Field: Footer byte index. Required value: 24.
+- Field: CH17 bit. Required value: flags bit 0.
+- Field: CH18 bit. Required value: flags bit 1.
+- Field: lost_frame bit. Required value: flags bit 2.
+- Field: failsafe bit. Required value: flags bit 3.
+- Field: Raw channel range. Required value: `0..2047`.
+
+If a required value above cannot be proven for the target hardware profile, status is `UNKNOWN` and implementation work should stop pending clarification.
+
+## 10. Sources
 
 - UWARG SBUS Protocol page: https://uwarg-docs.atlassian.net/wiki/spaces/efs/pages/2238283817/SBUS+Protocol
 - RPG Quadrotor Control wiki SBUS page: https://github.com/uzh-rpg/rpg_quadrotor_control/wiki/SBUS-Protocol#for-sbus-a-serial-port-has-to-be-configured-as-follows
