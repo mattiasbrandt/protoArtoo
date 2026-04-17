@@ -340,6 +340,7 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     uint32_t lastSbus1Ms;
     uint32_t lastSbus2Ms;
     uint32_t sbus1LostFrameCount;
+    uint32_t sbus2LostFrameCount;
     uint32_t domeHbRx;
     uint32_t bodyHbTx;
     uint32_t domeLastSeenMs;
@@ -384,6 +385,7 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     lastSbus1Ms = robotState.lastSbus1Ms;
     lastSbus2Ms = robotState.lastSbus2Ms;
     sbus1LostFrameCount = robotState.sbus1LostFrameCount;
+    sbus2LostFrameCount = robotState.sbus2LostFrameCount;
     domeHbRx = robotState.domeHbRx;
     bodyHbTx = robotState.bodyHbTx;
     domeLastSeenMs = robotState.domeLastSeenMs;
@@ -533,12 +535,12 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
                                             "Dome SBUS input waiting for first frame") &&
                      ok;
             } else if (sbus2SignalLost) {
-                snprintf(detail, sizeof(detail), "Dome SBUS lost, last %lu ms ago",
-                         uptimeMs - lastSbus2Ms);
+                snprintf(detail, sizeof(detail), "Dome SBUS lost, last %lu ms ago, lost frames %lu",
+                         uptimeMs - lastSbus2Ms, (unsigned long)sbus2LostFrameCount);
                 ok = appendPeripheralStatus(pos, remaining, "rcCh2", "signal_lost", detail) && ok;
             } else {
-                snprintf(detail, sizeof(detail), "Dome SBUS active, last %lu ms ago",
-                         uptimeMs - lastSbus2Ms);
+                snprintf(detail, sizeof(detail), "Dome SBUS active, last %lu ms ago, lost frames %lu",
+                         uptimeMs - lastSbus2Ms, (unsigned long)sbus2LostFrameCount);
                 ok = appendPeripheralStatus(pos, remaining, "rcCh2", "active", detail) && ok;
             }
         }
