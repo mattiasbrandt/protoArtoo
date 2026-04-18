@@ -41,6 +41,22 @@ S3 — Dome Control
 - SBUS1 (GPIO 15) and SBUS2 (GPIO 13) use the ESP32 RMT peripheral, not hardware UARTs,
   so all four serial functions (hoverboard, audio, dome link, SBUS) can operate simultaneously.
 
+**Dome Control slip ring wiring (cross-connection required):**
+
+UART is a cross-connected protocol — body TX must land on dome RX and vice versa.
+With a straight 1:1 servo cable through the slip ring, one connector end must have its
+two signal wires swapped (or the cable itself must be a crossover).
+
+```
+Body "Dome Control" header   Slip ring (straight-through)    Dome board header
+GPIO 33  (TX) ───────────────────────────────────────────────────── RX
+GPIO 34  (RX) ───────────────────────────────────────────────────── TX
+GND           ───────────────────────────────────────────────────── GND
+```
+
+A straight cable (pin 1→1, 2→2, 3→3) will connect TX→TX and RX→RX, which is incorrect.
+Easiest fix: swap the two signal crimp pins in one connector housing before routing through the slip ring.
+
 ---
 
 ## GPIO Assignment Summary
