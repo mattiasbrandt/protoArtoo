@@ -3,6 +3,8 @@
 #include <unity.h>
 
 #include "rc_diagnostics.h"
+#include "rc_diagnostics_snapshot.h"
+#include "robot_state.h"
 
 namespace {
 
@@ -241,6 +243,44 @@ void test_rc_diagnostics_source_name_returns_correct_names() {
     TEST_ASSERT_EQUAL_STRING("none", rcDiagnosticsSourceName(RC_BINDING_NONE));
 }
 
+void test_rcSourceEnabledForMode_single_sbus_ch1_selected() {
+    // useCh2=false: SBUS1 active, SBUS2 not
+    TEST_ASSERT_TRUE(rcSourceEnabledForMode(RC_BINDING_SBUS1, RC_INPUT_SINGLE_SBUS, true, true, false, false));
+    TEST_ASSERT_FALSE(rcSourceEnabledForMode(RC_BINDING_SBUS2, RC_INPUT_SINGLE_SBUS, true, true, false, false));
+    TEST_ASSERT_FALSE(rcSourceEnabledForMode(RC_BINDING_PWM, RC_INPUT_SINGLE_SBUS, true, true, true, false));
+}
+
+void test_rcSourceEnabledForMode_single_sbus_ch2_selected() {
+    // useCh2=true: SBUS2 active, SBUS1 not — regardless of enableRcCh1/enableRcCh2
+    TEST_ASSERT_FALSE(rcSourceEnabledForMode(RC_BINDING_SBUS1, RC_INPUT_SINGLE_SBUS, true, true, false, true));
+    TEST_ASSERT_TRUE(rcSourceEnabledForMode(RC_BINDING_SBUS2, RC_INPUT_SINGLE_SBUS, true, true, false, true));
+    // enableRcCh2=false must not suppress it — single_sbus uses useCh2 only
+    TEST_ASSERT_TRUE(rcSourceEnabledForMode(RC_BINDING_SBUS2, RC_INPUT_SINGLE_SBUS, false, false, false, true));
+}
+
+void test_rcSourceEnabledForMode_dual_sbus_follows_enable_flags() {
+    TEST_ASSERT_TRUE(rcSourceEnabledForMode(RC_BINDING_SBUS1, RC_INPUT_DUAL_SBUS, true, false, false, false));
+    TEST_ASSERT_FALSE(rcSourceEnabledForMode(RC_BINDING_SBUS1, RC_INPUT_DUAL_SBUS, false, true, false, false));
+    TEST_ASSERT_FALSE(rcSourceEnabledForMode(RC_BINDING_SBUS2, RC_INPUT_DUAL_SBUS, true, false, false, false));
+    TEST_ASSERT_TRUE(rcSourceEnabledForMode(RC_BINDING_SBUS2, RC_INPUT_DUAL_SBUS, false, true, false, false));
+    // useCh2 has no effect in dual_sbus
+    TEST_ASSERT_TRUE(rcSourceEnabledForMode(RC_BINDING_SBUS1, RC_INPUT_DUAL_SBUS, true, false, false, true));
+}
+
+void test_rcSourceEnabledForMode_pwm_follows_anyPwmEnabled() {
+    TEST_ASSERT_TRUE(rcSourceEnabledForMode(RC_BINDING_PWM, RC_INPUT_STANDARD_PWM, false, false, true, false));
+    TEST_ASSERT_FALSE(rcSourceEnabledForMode(RC_BINDING_PWM, RC_INPUT_STANDARD_PWM, false, false, false, false));
+    // PWM disabled in non-PWM modes
+    TEST_ASSERT_FALSE(rcSourceEnabledForMode(RC_BINDING_PWM, RC_INPUT_DUAL_SBUS, false, false, true, false));
+    TEST_ASSERT_FALSE(rcSourceEnabledForMode(RC_BINDING_PWM, RC_INPUT_SINGLE_SBUS, false, false, true, false));
+}
+
+void test_rcSourceEnabledForMode_none_always_false() {
+    TEST_ASSERT_FALSE(rcSourceEnabledForMode(RC_BINDING_NONE, RC_INPUT_STANDARD_PWM, true, true, true, true));
+    TEST_ASSERT_FALSE(rcSourceEnabledForMode(RC_BINDING_NONE, RC_INPUT_DUAL_SBUS, true, true, true, true));
+    TEST_ASSERT_FALSE(rcSourceEnabledForMode(RC_BINDING_NONE, RC_INPUT_SINGLE_SBUS, true, true, true, true));
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_rc_diagnostics_normalize_raw_uses_binding_center);
@@ -257,6 +297,12 @@ int main() {
     RUN_TEST(test_raw_to_pulse_us_clamps_below_min);
     RUN_TEST(test_raw_to_pulse_us_clamps_above_max);
     RUN_TEST(test_rc_diagnostics_source_name_returns_correct_names);
+
+    RUN_TEST(test_rcSourceEnabledForMode_single_sbus_ch1_selected);
+    RUN_TEST(test_rcSourceEnabledForMode_single_sbus_ch2_selected);
+    RUN_TEST(test_rcSourceEnabledForMode_dual_sbus_follows_enable_flags);
+    RUN_TEST(test_rcSourceEnabledForMode_pwm_follows_anyPwmEnabled);
+    RUN_TEST(test_rcSourceEnabledForMode_none_always_false);
 
     return UNITY_END();
 }

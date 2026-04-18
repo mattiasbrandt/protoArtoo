@@ -205,8 +205,10 @@ void test_decode_skips_leading_high_bits() {
 }
 
 void test_decode_rejects_insufficient_bit_count() {
+    // Minimum bits needed = (frameLen-1)*(bitsPerByte-1)+9 = 24*11+9 = 273.
+    // Truncating to 272 must fail the minBitsNeeded check.
     std::vector<uint8_t> bits = makeFrameBits(0x04);
-    bits.resize((size_t)(kSbusDecodeTotalBits - 1));
+    bits.resize(272);
 
     std::array<uint8_t, kSbusDecodeFrameLen> frame = {};
     SbusDecodeAttemptStats stats = {};
@@ -341,6 +343,38 @@ void test_resync_minus1_slip_low_data0_not_mistaken_for_start() {
     TEST_ASSERT_EQUAL_UINT8_ARRAY(expected.data(), frame.data(), kSbusDecodeFrameLen);
 }
 
+// extractSbusBytes footer boundary: exactly 9 bits remaining for the last byte.
+// The footer path requires bc - byteStart >= 9. With a full 300-bit frame the
+// last byte starts at bit 288 (24 * 12), leaving exactly 12 bits — well above the
+// minimum. This test instead constructs a minimal 300-bit sequence where exactly 9
+// bits are available for the footer, confirming the boundary condition is accepted.
+void test_footer_exactly_9_bits_accepted() {
+    // Build a valid frame bit sequence, then trim it so exactly 9 bits remain
+    // after the 24th byte boundary (start of footer byte).
+    // 24 full bytes * 12 bits/byte = 288 bits consumed, footer needs 9 bits.
+    std::vector<uint8_t> bits = makeFrameBits(0x00);
+    // Trim to exactly 288 + 9 = 297 bits.
+    bits.resize(297);
+
+    std::array<uint8_t, kSbusDecodeFrameLen> frame = {};
+    TEST_ASSERT_TRUE(decodeFromBits(bits, frame.data()));
+    TEST_ASSERT_EQUAL_HEX8(kSbusDecodeHeader, frame[0]);
+    TEST_ASSERT_EQUAL_HEX8(0x00, frame[kSbusDecodeFrameLen - 1]);
+}
+
+// extractSbusBytes footer boundary: only 8 bits remaining for the last byte.
+// The `bc - byteStart < 9` guard must reject this — returning false so the
+// caller increments extractFailCount.
+void test_footer_only_8_bits_rejected() {
+    std::vector<uint8_t> bits = makeFrameBits(0x00);
+    bits.resize(296);  // 288 + 8 = one bit short of the 9-bit minimum
+
+    std::array<uint8_t, kSbusDecodeFrameLen> frame = {};
+    SbusDecodeAttemptStats stats = {};
+    TEST_ASSERT_FALSE(decodeFromBits(bits, frame.data(), &stats));
+    TEST_ASSERT_GREATER_THAN_UINT32(0, stats.extractFailCount);
+}
+
 // A +2 slip puts the start bit at position 14, outside the ±1 search window.
 // When no HIGH->LOW transition is found the re-sync falls back to fixed stride
 // (byteStart += bitsPerByte). The fallback may or may not produce a passing
@@ -374,5 +408,7 @@ int main() {
     RUN_TEST(test_resync_plus1_slip_recovers);
     RUN_TEST(test_resync_minus1_slip_low_data0_not_mistaken_for_start);
     RUN_TEST(test_resync_slip_beyond_window_uses_fallback);
+    RUN_TEST(test_footer_exactly_9_bits_accepted);
+    RUN_TEST(test_footer_only_8_bits_rejected);
     return UNITY_END();
 }

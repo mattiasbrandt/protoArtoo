@@ -13,6 +13,23 @@
 #include "../../include/rc_diagnostics.h"
 #include "../../include/robot_state.h"
 
+bool rcSourceEnabledForMode(RcBindingSource source, RcInputMode mode, bool enableRcCh1,
+                            bool enableRcCh2, bool anyPwmEnabled, bool useCh2) {
+    switch (source) {
+        case RC_BINDING_PWM:
+            return mode == RC_INPUT_STANDARD_PWM && anyPwmEnabled;
+        case RC_BINDING_SBUS1:
+            if (mode == RC_INPUT_SINGLE_SBUS) return !useCh2;
+            return mode == RC_INPUT_DUAL_SBUS && enableRcCh1;
+        case RC_BINDING_SBUS2:
+            if (mode == RC_INPUT_SINGLE_SBUS) return useCh2;
+            return mode == RC_INPUT_DUAL_SBUS && enableRcCh2;
+        case RC_BINDING_NONE:
+        default:
+            return false;
+    }
+}
+
 namespace {
 
 const char* rcInputModeLabel(RcInputMode mode) {
@@ -31,23 +48,6 @@ struct RcActionBindingSpec {
     const char* name;
     RcBindingConfig binding;
 };
-
-bool rcSourceEnabledForMode(RcBindingSource source, RcInputMode mode, bool enableRcCh1,
-                            bool enableRcCh2, bool anyPwmEnabled, bool useCh2) {
-    switch (source) {
-        case RC_BINDING_PWM:
-            return mode == RC_INPUT_STANDARD_PWM && anyPwmEnabled;
-        case RC_BINDING_SBUS1:
-            if (mode == RC_INPUT_SINGLE_SBUS) return !useCh2;
-            return mode == RC_INPUT_DUAL_SBUS && enableRcCh1;
-        case RC_BINDING_SBUS2:
-            if (mode == RC_INPUT_SINGLE_SBUS) return useCh2;
-            return mode == RC_INPUT_DUAL_SBUS && enableRcCh2;
-        case RC_BINDING_NONE:
-        default:
-            return false;
-    }
-}
 
 void loadModeBindingSpecs(RcInputMode mode,
                           RcActionBindingSpec specs[RC_DIAGNOSTICS_CHANNEL_CAPACITY]) {

@@ -1085,23 +1085,28 @@ void rcInputTask(void* pvParameters) {
                                 (unsigned long)(nowMs - lastSbus1), (unsigned long)timeoutMs);
                     if ((uint32_t)(nowMs - lastSbus1WatchdogDiagMs) >= kWatchdogDiagIntervalMs) {
                         lastSbus1WatchdogDiagMs = nowMs;
-                        SbusDecoderDebugStats driveStats = sbus_drive.debugStats();
-                        PA_LOG_WARN(TAG,
-                                    "SBUS1 watchdog decode stats: rx_done=%lu queued=%lu short=%lu ok=%lu fail=%lu bitlow=%lu extract=%lu hdr=%lu ftr=%lu last_ftr=0x%02x rearm=%lu parity=%lu syms(last=%lu max=%lu)",
-                                    (unsigned long)driveStats.rxDoneCount,
-                                    (unsigned long)driveStats.queuedCount,
-                                    (unsigned long)driveStats.shortDropCount,
-                                    (unsigned long)driveStats.parseOkCount,
-                                    (unsigned long)driveStats.parseFailCount,
-                                    (unsigned long)driveStats.bitCountLowCount,
-                                    (unsigned long)driveStats.extractFailCount,
-                                    (unsigned long)driveStats.headerMismatchCount,
-                                    (unsigned long)driveStats.footerMismatchCount,
-                                    (unsigned int)driveStats.lastRejectedFooter,
-                                    (unsigned long)driveStats.rearmFailCount,
-                                    (unsigned long)driveStats.parityFailCount,
-                                    (unsigned long)driveStats.lastSymbolCount,
-                                    (unsigned long)driveStats.maxSymbolCount);
+                        taskENTER_CRITICAL(&robotStateMux);
+                        bool rcDebug = robotState.rcDebugMode;
+                        taskEXIT_CRITICAL(&robotStateMux);
+                        if (rcDebug) {
+                            SbusDecoderDebugStats driveStats = sbus_drive.debugStats();
+                            PA_LOG_DEBUG(TAG,
+                                         "SBUS1 watchdog decode stats: rx_done=%lu queued=%lu short=%lu ok=%lu fail=%lu bitlow=%lu extract=%lu hdr=%lu ftr=%lu last_ftr=0x%02x rearm=%lu parity=%lu syms(last=%lu max=%lu)",
+                                         (unsigned long)driveStats.rxDoneCount,
+                                         (unsigned long)driveStats.queuedCount,
+                                         (unsigned long)driveStats.shortDropCount,
+                                         (unsigned long)driveStats.parseOkCount,
+                                         (unsigned long)driveStats.parseFailCount,
+                                         (unsigned long)driveStats.bitCountLowCount,
+                                         (unsigned long)driveStats.extractFailCount,
+                                         (unsigned long)driveStats.headerMismatchCount,
+                                         (unsigned long)driveStats.footerMismatchCount,
+                                         (unsigned int)driveStats.lastRejectedFooter,
+                                         (unsigned long)driveStats.rearmFailCount,
+                                         (unsigned long)driveStats.parityFailCount,
+                                         (unsigned long)driveStats.lastSymbolCount,
+                                         (unsigned long)driveStats.maxSymbolCount);
+                        }
                     }
                 }
             } else {
@@ -1184,23 +1189,28 @@ void rcInputTask(void* pvParameters) {
                     PA_LOG_WARN(TAG, "SBUS2 watchdog fired - dome signal lost");
                     if ((uint32_t)(nowMs - lastSbus2WatchdogDiagMs) >= kWatchdogDiagIntervalMs) {
                         lastSbus2WatchdogDiagMs = nowMs;
-                        SbusDecoderDebugStats domeStats = sbus_dome.debugStats();
-                        PA_LOG_WARN(TAG,
-                                    "SBUS2 watchdog decode stats: rx_done=%lu queued=%lu short=%lu ok=%lu fail=%lu bitlow=%lu extract=%lu hdr=%lu ftr=%lu last_ftr=0x%02x rearm=%lu parity=%lu syms(last=%lu max=%lu)",
-                                    (unsigned long)domeStats.rxDoneCount,
-                                    (unsigned long)domeStats.queuedCount,
-                                    (unsigned long)domeStats.shortDropCount,
-                                    (unsigned long)domeStats.parseOkCount,
-                                    (unsigned long)domeStats.parseFailCount,
-                                    (unsigned long)domeStats.bitCountLowCount,
-                                    (unsigned long)domeStats.extractFailCount,
-                                    (unsigned long)domeStats.headerMismatchCount,
-                                    (unsigned long)domeStats.footerMismatchCount,
-                                    (unsigned int)domeStats.lastRejectedFooter,
-                                    (unsigned long)domeStats.rearmFailCount,
-                                    (unsigned long)domeStats.parityFailCount,
-                                    (unsigned long)domeStats.lastSymbolCount,
-                                    (unsigned long)domeStats.maxSymbolCount);
+                        taskENTER_CRITICAL(&robotStateMux);
+                        bool rcDebug = robotState.rcDebugMode;
+                        taskEXIT_CRITICAL(&robotStateMux);
+                        if (rcDebug) {
+                            SbusDecoderDebugStats domeStats = sbus_dome.debugStats();
+                            PA_LOG_DEBUG(TAG,
+                                         "SBUS2 watchdog decode stats: rx_done=%lu queued=%lu short=%lu ok=%lu fail=%lu bitlow=%lu extract=%lu hdr=%lu ftr=%lu last_ftr=0x%02x rearm=%lu parity=%lu syms(last=%lu max=%lu)",
+                                         (unsigned long)domeStats.rxDoneCount,
+                                         (unsigned long)domeStats.queuedCount,
+                                         (unsigned long)domeStats.shortDropCount,
+                                         (unsigned long)domeStats.parseOkCount,
+                                         (unsigned long)domeStats.parseFailCount,
+                                         (unsigned long)domeStats.bitCountLowCount,
+                                         (unsigned long)domeStats.extractFailCount,
+                                         (unsigned long)domeStats.headerMismatchCount,
+                                         (unsigned long)domeStats.footerMismatchCount,
+                                         (unsigned int)domeStats.lastRejectedFooter,
+                                         (unsigned long)domeStats.rearmFailCount,
+                                         (unsigned long)domeStats.parityFailCount,
+                                         (unsigned long)domeStats.lastSymbolCount,
+                                         (unsigned long)domeStats.maxSymbolCount);
+                        }
                     }
 
                     DomeCommand stopCmd = {};
@@ -1228,43 +1238,50 @@ void rcInputTask(void* pvParameters) {
             bool waitingDrive = driveSbusEnabled && (lastSbus1 == 0);
             bool waitingDome = domeSbusEnabled && (lastSbus2 == 0);
             if (waitingDrive || waitingDome) {
-                SbusDecoderDebugStats driveStats = sbus_drive.debugStats();
-                SbusDecoderDebugStats domeStats = sbus_dome.debugStats();
-                if (waitingDrive) {
-                    PA_LOG_WARN(TAG,
-                                "SBUS1 waiting first frame: rx_done=%lu queued=%lu short=%lu ok=%lu fail=%lu bitlow=%lu extract=%lu hdr=%lu ftr=%lu last_ftr=0x%02x rearm=%lu parity=%lu syms(last=%lu max=%lu)",
-                                (unsigned long)driveStats.rxDoneCount,
-                                (unsigned long)driveStats.queuedCount,
-                                (unsigned long)driveStats.shortDropCount,
-                                (unsigned long)driveStats.parseOkCount,
-                                (unsigned long)driveStats.parseFailCount,
-                                (unsigned long)driveStats.bitCountLowCount,
-                                (unsigned long)driveStats.extractFailCount,
-                                (unsigned long)driveStats.headerMismatchCount,
-                                (unsigned long)driveStats.footerMismatchCount,
-                                (unsigned int)driveStats.lastRejectedFooter,
-                                (unsigned long)driveStats.rearmFailCount,
-                                (unsigned long)driveStats.parityFailCount,
-                                (unsigned long)driveStats.lastSymbolCount,
-                                (unsigned long)driveStats.maxSymbolCount);
-                }
-                if (waitingDome) {
-                    PA_LOG_WARN(TAG,
-                                "SBUS2 waiting first frame: rx_done=%lu queued=%lu short=%lu ok=%lu fail=%lu bitlow=%lu extract=%lu hdr=%lu ftr=%lu last_ftr=0x%02x rearm=%lu parity=%lu syms(last=%lu max=%lu)",
-                                (unsigned long)domeStats.rxDoneCount,
-                                (unsigned long)domeStats.queuedCount,
-                                (unsigned long)domeStats.shortDropCount,
-                                (unsigned long)domeStats.parseOkCount,
-                                (unsigned long)domeStats.parseFailCount,
-                                (unsigned long)domeStats.bitCountLowCount,
-                                (unsigned long)domeStats.extractFailCount,
-                                (unsigned long)domeStats.headerMismatchCount,
-                                (unsigned long)domeStats.footerMismatchCount,
-                                (unsigned int)domeStats.lastRejectedFooter,
-                                (unsigned long)domeStats.rearmFailCount,
-                                (unsigned long)domeStats.parityFailCount,
-                                (unsigned long)domeStats.lastSymbolCount,
-                                (unsigned long)domeStats.maxSymbolCount);
+                taskENTER_CRITICAL(&robotStateMux);
+                bool rcDebug = robotState.rcDebugMode;
+                taskEXIT_CRITICAL(&robotStateMux);
+                if (waitingDrive) PA_LOG_INFO(TAG, "SBUS1 waiting for first frame");
+                if (waitingDome)  PA_LOG_INFO(TAG, "SBUS2 waiting for first frame");
+                if (rcDebug) {
+                    SbusDecoderDebugStats driveStats = sbus_drive.debugStats();
+                    SbusDecoderDebugStats domeStats = sbus_dome.debugStats();
+                    if (waitingDrive) {
+                        PA_LOG_DEBUG(TAG,
+                                     "SBUS1 decode stats: rx_done=%lu queued=%lu short=%lu ok=%lu fail=%lu bitlow=%lu extract=%lu hdr=%lu ftr=%lu last_ftr=0x%02x rearm=%lu parity=%lu syms(last=%lu max=%lu)",
+                                     (unsigned long)driveStats.rxDoneCount,
+                                     (unsigned long)driveStats.queuedCount,
+                                     (unsigned long)driveStats.shortDropCount,
+                                     (unsigned long)driveStats.parseOkCount,
+                                     (unsigned long)driveStats.parseFailCount,
+                                     (unsigned long)driveStats.bitCountLowCount,
+                                     (unsigned long)driveStats.extractFailCount,
+                                     (unsigned long)driveStats.headerMismatchCount,
+                                     (unsigned long)driveStats.footerMismatchCount,
+                                     (unsigned int)driveStats.lastRejectedFooter,
+                                     (unsigned long)driveStats.rearmFailCount,
+                                     (unsigned long)driveStats.parityFailCount,
+                                     (unsigned long)driveStats.lastSymbolCount,
+                                     (unsigned long)driveStats.maxSymbolCount);
+                    }
+                    if (waitingDome) {
+                        PA_LOG_DEBUG(TAG,
+                                     "SBUS2 decode stats: rx_done=%lu queued=%lu short=%lu ok=%lu fail=%lu bitlow=%lu extract=%lu hdr=%lu ftr=%lu last_ftr=0x%02x rearm=%lu parity=%lu syms(last=%lu max=%lu)",
+                                     (unsigned long)domeStats.rxDoneCount,
+                                     (unsigned long)domeStats.queuedCount,
+                                     (unsigned long)domeStats.shortDropCount,
+                                     (unsigned long)domeStats.parseOkCount,
+                                     (unsigned long)domeStats.parseFailCount,
+                                     (unsigned long)domeStats.bitCountLowCount,
+                                     (unsigned long)domeStats.extractFailCount,
+                                     (unsigned long)domeStats.headerMismatchCount,
+                                     (unsigned long)domeStats.footerMismatchCount,
+                                     (unsigned int)domeStats.lastRejectedFooter,
+                                     (unsigned long)domeStats.rearmFailCount,
+                                     (unsigned long)domeStats.parityFailCount,
+                                     (unsigned long)domeStats.lastSymbolCount,
+                                     (unsigned long)domeStats.maxSymbolCount);
+                    }
                 }
             }
         }
