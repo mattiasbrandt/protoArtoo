@@ -616,3 +616,125 @@
     });
   }
 })();
+
+// =============================================================================
+// Memory Profiler UI (PA_HEAP_PROFILE=1 builds only)
+// Checks /api/profiler on load. If endpoint returns 200, shows the profiler
+// card and starts a 5-second refresh loop. If 404, card stays hidden.
+// =============================================================================
+(() => {
+  const card = document.getElementById("profiler-card");
+  if (!card) return;
+
+  function kb(bytes) {
+    return (bytes / 1024).toFixed(1) + " KB";
+  }
+
+  function hwmColor(hwm) {
+    if (hwm > 2048) return "#4caf50";   // green
+    if (hwm > 1024) return "#ff9800";   // amber
+    return "#f44336";                   // red
+  }
+
+  function fragColor(ratio) {
+    if (ratio < 0.30) return "#4caf50";
+    if (ratio < 0.50) return "#ff9800";
+    return "#f44336";
+  }
+
+  function setText(id, val) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = val;
+  }
+
+  function renderProfiler(d) {
+    setText("prof-heap-free",    kb(d.heapFree));
+    setText("prof-heap-min",     kb(d.heapMin));
+    setText("prof-heap-largest", kb(d.heapLargest));
+    setText("prof-frag-ratio",   (d.fragRatio * 100).toFixed(1) + "%");
+    setText("prof-alloc-blocks", d.allocBlocks);
+    setText("prof-free-blocks",  d.freeBlocks);
+    setText("prof-failed-allocs", d.failedAllocs);
+
+    // Fragmentation bar
+    const pct = Math.min(d.fragRatio * 100, 100);
+    const bar = document.getElementById("prof-frag-bar");
+    const lbl = document.getElementById("prof-frag-label");
+    if (bar) {
+      bar.style.width = pct.toFixed(1) + "%";
+      bar.style.background = fragColor(d.fragRatio);
+    }
+    if (lbl) {
+      const health = d.fragRatio < 0.30 ? "Healthy" : d.fragRatio < 0.50 ? "Watch" : "Critical";
+      lbl.textContent = health + " — fragmentation " + pct.toFixed(1) + "% (1 - largest/free)";
+    }
+
+    // Task stack HWM table
+    const hwmTbody = document.getElementById("prof-hwm-tbody");
+    if (hwmTbody && Array.isArray(d.taskStacks)) {
+      hwmTbody.innerHTML = d.taskStacks.map(t => {
+        const color = hwmColor(t.hwmBytes);
+        return `<tr>
+          <td style="padding:3px 8px">${t.name}</td>
+          <td style="text-align:right;padding:3px 8px">${kb(t.hwmBytes)}</td>
+          <td style="text-align:center;padding:3px 8px;color:${color};font-weight:bold">${t.status.toUpperCase()}</td>
+        </tr>`;
+      }).join("");
+    }
+
+    // Task heap table (Tier 2 — only when taskHeap present)
+    const heapSection = document.getElementById("prof-task-heap-section");
+    const heapTbody = document.getElementById("prof-heap-tbody");
+    if (heapSection && heapTbody && Array.isArray(d.taskHeap) && d.taskHeap.length > 0) {
+      heapSection.hidden = false;
+      heapTbody.innerHTML = d.taskHeap.map(t => `<tr>
+        <td style="padding:3px 8px">${t.name}</td>
+        <td style="text-align:right;padding:3px 8px">${kb(t.current)}</td>
+        <td style="text-align:right;padding:3px 8px">${kb(t.peak)}</td>
+        <td style="text-align:right;padding:3px 8px">${t.heapCount}</td>
+      </tr>`).join("");
+    } else if (heapSection) {
+      heapSection.hidden = true;
+    }
+
+    // Active window banner
+    const currentEl = document.getElementById("prof-current-window");
+    if (currentEl) {
+      if (d.current) {
+        currentEl.textContent = `Active: "${d.current.label}" — running min ${kb(d.current.heapFree)}`;
+        currentEl.hidden = false;
+      } else {
+        currentEl.hidden = true;
+      }
+    }
+
+    // Snapshot history table
+    const snapTbody = document.getElementById("prof-snap-tbody");
+    if (snapTbody && Array.isArray(d.snapshots)) {
+      snapTbody.innerHTML = d.snapshots.map(s => `<tr>
+        <td style="padding:3px 8px">${s.label}</td>
+        <td style="text-align:right;padding:3px 8px">${kb(s.heapFree)}</td>
+        <td style="text-align:right;padding:3px 8px">${kb(s.largestBlock)}</td>
+        <td style="text-align:right;padding:3px 8px">${s.ts}</td>
+      </tr>`).join("");
+    }
+  }
+
+  async function refreshProfiler() {
+    try {
+      const resp = await fetch("/api/profiler");
+      if (!resp.ok) return;
+      const data = await resp.json();
+      card.hidden = false;
+      renderProfiler(data);
+    } catch (_) {
+      // endpoint absent or network error — leave card hidden
+    }
+  }
+
+  refreshProfiler();
+  setInterval(refreshProfiler, 5000);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState !== "hidden") refreshProfiler();
+  });
+})();

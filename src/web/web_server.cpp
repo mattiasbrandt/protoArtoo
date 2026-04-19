@@ -16,6 +16,7 @@
 #include <stdio.h>
 
 #include "../../include/api_actions.h"
+#include "../../include/api_profiler.h"
 #include "../../include/api_audio.h"
 #include "../../include/api_aux_led.h"
 #include "../../include/api_config.h"
@@ -687,6 +688,10 @@ bool webLittleFsMounted() {
     return littleFsReady;
 }
 
+bool webServerHasSSEClients() {
+    return events.count() > 0;
+}
+
 // Shared SSE JSON buffers — file-scope so both eventStreamTask and the
 // onConnect handler use the same allocation rather than each having their own.
 // eventStreamTask runs at 1 Hz on Core 0; onConnect fires on the AsyncTCP
@@ -813,6 +818,9 @@ void startHttpServerOnce() {
         registerStatusRoutes(server);
         registerValidationRoutes(server);
         registerSystemRoutes(server);
+#if PA_HEAP_PROFILE
+        registerProfilerRoutes(server);
+#endif
         registerActionsRoutes(server);
 
         if (littleFsReady) {

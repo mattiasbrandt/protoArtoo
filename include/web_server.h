@@ -25,3 +25,5 @@ bool copyLogLineAt(size_t idx, char* out, size_t outSize);
 bool webLittleFsMounted();
 void requestSystemRestart(uint32_t delayMs);
 void webServerInit();
+// Returns true when at least one client is connected to the SSE event stream.
+bool webServerHasSSEClients();

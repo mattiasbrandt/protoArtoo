@@ -297,6 +297,96 @@
       <div id="diag-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true"></div>
     </div>
 
+    <!-- Memory Profiler (visible only in PA_HEAP_PROFILE=1 builds) -->
+    <div class="card" id="profiler-card" hidden>
+      <h3>🔬 Memory Profiler</h3>
+      <div class="desc">Live heap attribution data from the profiler build (<code>PA_HEAP_PROFILE=1</code>). Absent in normal builds.</div>
+
+      <div class="mt-16">
+        <div class="desc"><strong>Fragmentation</strong></div>
+        <div id="prof-frag-bar-wrap" style="margin-top:6px;background:#333;border-radius:4px;height:16px;overflow:hidden">
+          <div id="prof-frag-bar" style="height:100%;width:0%;background:#4caf50;transition:width .4s"></div>
+        </div>
+        <div id="prof-frag-label" class="desc mt-6"></div>
+      </div>
+
+      <div class="status-grid mt-16">
+        <div class="status-item">
+          <dt>Heap Free</dt>
+          <dd id="prof-heap-free">...</dd>
+        </div>
+        <div class="status-item">
+          <dt>Heap Min</dt>
+          <dd id="prof-heap-min">...</dd>
+        </div>
+        <div class="status-item">
+          <dt>Largest Block</dt>
+          <dd id="prof-heap-largest">...</dd>
+        </div>
+        <div class="status-item">
+          <dt>Frag Ratio</dt>
+          <dd id="prof-frag-ratio">...</dd>
+        </div>
+        <div class="status-item">
+          <dt>Alloc Blocks</dt>
+          <dd id="prof-alloc-blocks">...</dd>
+        </div>
+        <div class="status-item">
+          <dt>Free Blocks</dt>
+          <dd id="prof-free-blocks">...</dd>
+        </div>
+        <div class="status-item">
+          <dt>Failed Allocs</dt>
+          <dd id="prof-failed-allocs">...</dd>
+        </div>
+      </div>
+
+      <div class="mt-16">
+        <div class="desc"><strong>Task Stack HWM</strong> — minimum free stack remaining per task</div>
+        <table id="prof-hwm-table" style="width:100%;border-collapse:collapse;margin-top:8px;font-size:0.85em">
+          <thead>
+            <tr>
+              <th style="text-align:left;padding:4px 8px;border-bottom:1px solid #444">Task</th>
+              <th style="text-align:right;padding:4px 8px;border-bottom:1px solid #444">HWM (bytes)</th>
+              <th style="text-align:center;padding:4px 8px;border-bottom:1px solid #444">Status</th>
+            </tr>
+          </thead>
+          <tbody id="prof-hwm-tbody"></tbody>
+        </table>
+      </div>
+
+      <div id="prof-task-heap-section" class="mt-16" hidden>
+        <div class="desc"><strong>Task Heap Allocations</strong> — per-task heap usage (Tier 2)</div>
+        <table id="prof-heap-table" style="width:100%;border-collapse:collapse;margin-top:8px;font-size:0.85em">
+          <thead>
+            <tr>
+              <th style="text-align:left;padding:4px 8px;border-bottom:1px solid #444">Task</th>
+              <th style="text-align:right;padding:4px 8px;border-bottom:1px solid #444">Current</th>
+              <th style="text-align:right;padding:4px 8px;border-bottom:1px solid #444">Peak</th>
+              <th style="text-align:right;padding:4px 8px;border-bottom:1px solid #444">Count</th>
+            </tr>
+          </thead>
+          <tbody id="prof-heap-tbody"></tbody>
+        </table>
+      </div>
+
+      <div class="mt-16">
+        <div class="desc"><strong>Mode Snapshots</strong> — local low-water mark per mode window (heap_caps_monitor_local_minimum_free_size)</div>
+        <div id="prof-current-window" class="desc mt-6" style="color:#ff9800" hidden></div>
+        <table id="prof-snap-table" style="width:100%;border-collapse:collapse;margin-top:8px;font-size:0.85em">
+          <thead>
+            <tr>
+              <th style="text-align:left;padding:4px 8px;border-bottom:1px solid #444">Window Label</th>
+              <th style="text-align:right;padding:4px 8px;border-bottom:1px solid #444">Min During</th>
+              <th style="text-align:right;padding:4px 8px;border-bottom:1px solid #444">Largest Block</th>
+              <th style="text-align:right;padding:4px 8px;border-bottom:1px solid #444">Opened T+ms</th>
+            </tr>
+          </thead>
+          <tbody id="prof-snap-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
     <!-- System Controls -->
     <div class="card">
       <h3>🔄 System</h3>

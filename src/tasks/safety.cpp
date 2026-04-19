@@ -16,14 +16,21 @@
 #include <Arduino.h>
 #include <esp_heap_caps.h>
 
+#include "api_profiler.h"
 #include "logging.h"
 #include "robot_state.h"
+#include "web_server.h"
 
 static const char* TAG = "SafetyMonitor";
 
 // Track previous values to detect transitions
 static uint32_t lastFailsafeCount = 0;
 static bool lastDomeConnected = false;
+static bool lastSbusLost = true;
+#if PA_HEAP_PROFILE
+static bool lastAudioActive = false;
+static bool lastSseConnected = false;
+#endif
 
 // -----------------------------------------------------------------------------
 // safetyMonitorTask()
@@ -36,6 +43,10 @@ void safetyMonitorTask(void* pvParameters) {
     PA_LOG_INFO(TAG, "started — 10 Hz audit on Core 0");
 
     bool hwmLogged = false;
+#if PA_HEAP_PROFILE
+    profilerInit();
+    int profilerHwmTick = 0;
+#endif
 
     while (true) {
         if (!hwmLogged) {
@@ -56,7 +67,9 @@ void safetyMonitorTask(void* pvParameters) {
         uint32_t zeroMs = robotState.failsafeLastZeroOutputMs;
         uint32_t triggerToZeroMs = robotState.failsafeLastTriggerToZeroMs;
         FailsafeSource triggerSrc = robotState.failsafeLastTriggerSource;
-
+#if PA_HEAP_PROFILE
+        bool audioActive = robotState.audioActive;
+#endif
         taskEXIT_CRITICAL(&robotStateMux);
         // Log new failsafe triggers
         if (fsCount > lastFailsafeCount) {
@@ -72,8 +85,31 @@ void safetyMonitorTask(void* pvParameters) {
         bool domeNowConnected = (millis() - domeLastMs) < 5000 && domeLastMs > 0;
         if (domeNowConnected != lastDomeConnected) {
             PA_LOG_INFO(TAG, "dome link %s", domeNowConnected ? "CONNECTED" : "LOST");
+#if PA_HEAP_PROFILE
+            profilerModeTransition(domeNowConnected ? "dome_connected" : "dome_lost");
+#endif
             lastDomeConnected = domeNowConnected;
         }
+
+        // Track RC signal transitions
+        if (sbusLost != lastSbusLost) {
+#if PA_HEAP_PROFILE
+            profilerModeTransition(sbusLost ? "rc_lost" : "rc_linked");
+#endif
+            lastSbusLost = sbusLost;
+        }
+
+#if PA_HEAP_PROFILE
+        if (audioActive != lastAudioActive) {
+            profilerModeTransition(audioActive ? "audio_play" : "audio_stop");
+            lastAudioActive = audioActive;
+        }
+        bool sseConnected = webServerHasSSEClients();
+        if (sseConnected != lastSseConnected) {
+            profilerModeTransition(sseConnected ? "sse_connect" : "sse_disconnect");
+            lastSseConnected = sseConnected;
+        }
+#endif
 
         // Heap health: warn on low free heap, high fragmentation, and log periodic metrics
         uint32_t freeHeap = ESP.getFreeHeap();
@@ -96,6 +132,17 @@ void safetyMonitorTask(void* pvParameters) {
                          (unsigned long)freeHeap, (unsigned long)ESP.getMinFreeHeap(),
                          (unsigned)largestBlock, (double)fragRatio);
         }
+
+#if PA_HEAP_PROFILE
+        if (++profilerHwmTick >= 10) {  // 1 Hz at 10 Hz task rate
+            profilerHwmTick = 0;
+            profilerCollectHwm();
+#ifdef CONFIG_HEAP_TASK_TRACKING
+            profilerCollectTaskHeap();
+#endif
+        }
+#endif
+
         vTaskDelay(pdMS_TO_TICKS(100));  // 10 Hz
     }
 }
