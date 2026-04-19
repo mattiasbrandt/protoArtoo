@@ -1,5 +1,6 @@
 (() => {
   let selectedSlot = null;
+  let selectedChKey = null; // last channel clicked in channel list
   let rcSnapshot = null;
   let configCache = null;
   let mappingDraft = {};
@@ -31,7 +32,7 @@
   let confirmedSbusRecvValue = null;
   const rcSummaryBody = document.getElementById("rc-summary-body");
 
-  const rcSlotItems = document.getElementById("rc-slot-items");
+  const rcChannelItems = document.getElementById("rc-channel-items");
   const rcLivePreviewContent = document.getElementById("rc-live-preview-content");
   const rcPreviewSourceHealth = document.getElementById("rc-preview-source-health");
   const rcEditorContent = document.getElementById("rc-editor-content");
@@ -58,6 +59,11 @@
   };
 
   const BACKBONE_SLOTS = ["driveSpeed", "driveSteer", "domeSpeed"];
+  const BACKBONE_ACTION_TOKENS = new Set(['drive_speed', 'drive_steer', 'dome_speed']);
+  const naturalActionForSlot = (slotKey) => {
+    const map = { driveSpeed: 'drive_speed', driveSteer: 'drive_steer', domeSpeed: 'dome_speed' };
+    return map[slotKey] || 'none';
+  };
 
   // Hardcoded fallback used until GET /api/actions resolves.
   // Matches robotActionIdToString() NVS token keys in rc_mapping.h.
@@ -211,11 +217,37 @@
     }
   };
 
-  const MARCDUINO_SEQUENCES = [30, 31, 32, 33, 34, 35, 36];
+  const MARCDUINO_SEQUENCES = [
+    { id: 30, name: "Utility arm open-and-close", description: "Open both utility arms, then close them." },
+    { id: 31, name: "All body panels open and close", description: "Open all body panels, then close them." },
+    { id: 32, name: "All body doors wiggle-close", description: "Open all body doors, then close with wiggle timing." },
+    { id: 33, name: "Use gripper arm", description: "Run the body sequence that uses ARM1 gripper motion." },
+    { id: 34, name: "Use interface tool", description: "Run the body sequence that uses ARM2 interface-tool motion." },
+    { id: 35, name: "Ping-pong body doors", description: "Alternate body door motion in ping-pong pattern." },
+    { id: 36, name: "BT-1 two-gripper sequence", description: "Run the BT-1 style dual-gripper body sequence." },
+  ];
+
+  const normalizeMarcduinoSequencePayload = (payload) => {
+    const raw = String(payload || "").trim().toUpperCase();
+    if (/^\d{2}$/.test(raw)) return raw;
+    const match = /^SE(\d{2})$/.exec(raw);
+    return match ? match[1] : raw;
+  };
+
+  const renderMarcduinoSequenceOptions = (selectedPayload) => {
+    const normalizedSelected = normalizeMarcduinoSequencePayload(selectedPayload);
+    return MARCDUINO_SEQUENCES.map((entry) => {
+      const value = String(entry.id);
+      const selected = normalizedSelected === value ? " selected" : "";
+      const label = `SE${entry.id} - ${entry.name}`;
+      const title = entry.description || "";
+      return `<option value="${value}" title="${escapeHtml(title)}"${selected}>${escapeHtml(label)}</option>`;
+    }).join("\n            ");
+  };
 
   const SOURCE_OPTIONS = {
     standard_pwm: ["none", "pwm"],
-    single_sbus: ["none", "sbus1"],
+    single_sbus: ["none", "sbus1", "sbus2"],
     dual_sbus: ["none", "sbus1", "sbus2"],
   };
 
@@ -634,91 +666,130 @@
   const renderSummaryTable = () => {
     if (!rcSummaryBody) return;
     const actions = getActionsForMode();
-    if (!actions.length) {
-      rcSummaryBody.innerHTML = '<tr><td colspan="5">No slots for this mode.</td></tr>';
+
+    // Only show mapped (non-disabled) slots
+    const mapped = actions.filter(({ key }) => bindingForSlot(key).source !== "none");
+
+    if (!mapped.length) {
+      rcSummaryBody.innerHTML = '<tr><td colspan="5" class="desc">No channels mapped yet.</td></tr>';
       return;
     }
 
-    rcSummaryBody.innerHTML = actions.map(({ key, label }) => {
+    rcSummaryBody.innerHTML = mapped.map(({ key, label }) => {
       const binding = bindingForSlot(key);
       const telemetry = getChannelTelemetry(key);
       const actionToken = toActionToken(key, binding);
       const live = isBackboneSlot(key) ? miniBarHtml(telemetry?.mapped || 0) : triggerStateHtml(telemetry);
-      const channel = binding.source === "none" ? "—" : String(binding.channel || "—");
-      return `<tr data-slot="${escapeHtml(key)}">
+      return `<tr>
         <td>${escapeHtml(label)}</td>
         <td>${escapeHtml(actionLabelFromToken(actionToken))}</td>
         <td><span class="rc-map-source-badge" data-source="${escapeHtml(binding.source)}">${escapeHtml(sourceLabel(binding.source))}</span></td>
-        <td>${escapeHtml(channel)}</td>
+        <td>${escapeHtml(String(binding.channel || "—"))}</td>
         <td>${live}</td>
       </tr>`;
     }).join("");
-
-    rcSummaryBody.querySelectorAll("tr[data-slot]").forEach(row => {
-      const key = row.dataset.slot;
-      row.classList.add("row-clickable");
-      row.classList.toggle("active-slot", selectedSlot === key);
-      row.addEventListener("click", () => selectSlot(key));
-      wireFocusableItem(row, () => selectSlot(key));
-    });
   };
 
-  const renderSlotList = () => {
-    if (!rcSlotItems) return;
+  const renderChannelList = () => {
+    if (!rcChannelItems) return;
+    const mode = getEditorMode();
+    const snap = rcSnapshot;
+
+    // Build reverse lookup: "sbus1:3" -> slotKey
+    const chToSlot = {};
     const actions = getActionsForMode();
-    const backbone = actions.filter(a => isBackboneSlot(a.key));
-    const trigger = actions.filter(a => !isBackboneSlot(a.key));
+    actions.forEach(({ key }) => {
+      const b = bindingForSlot(key);
+      if (b.source !== 'none' && b.channel) {
+        chToSlot[`${b.source}:${b.channel}`] = key;
+      }
+    });
 
-    const renderItems = (items) => items.map(({ key, label }) => {
-      const binding = bindingForSlot(key);
-      const telemetry = getChannelTelemetry(key);
-      const live = isBackboneSlot(key)
-        ? miniBarHtml(telemetry?.mapped || 0)
-        : `<span>${triggerStateHtml(telemetry)}</span>`;
+    // Determine active channel key from selectedSlot
+    const selBinding = selectedSlot ? bindingForSlot(selectedSlot) : null;
+    const selectedChKey = selBinding && selBinding.source !== 'none'
+      ? `${selBinding.source}:${selBinding.channel}` : null;
 
-      return `<div class="rc-slot-item${selectedSlot === key ? " active" : ""}" data-slot="${escapeHtml(key)}" role="button" aria-pressed="${selectedSlot === key ? "true" : "false"}">
-        <div class="rc-slot-item-head">
-          <strong>${escapeHtml(label)}</strong>
-          <span class="rc-map-source-badge" data-source="${escapeHtml(binding.source)}">${escapeHtml(sourceLabel(binding.source))}</span>
-        </div>
-        <div class="rc-slot-item-meta">
-          <span>CH ${binding.source === "none" ? "—" : escapeHtml(String(binding.channel || "—"))}</span>
-          ${live}
-        </div>
+    const renderGroup = (title, source, rawArray, channelCount) => {
+      const items = [];
+      for (let i = 1; i <= channelCount; i++) {
+        const chKey = `${source}:${i}`;
+        const raw = rawArray ? rawArray[i - 1] : null;
+        const slotKey = chToSlot[chKey];
+        const slotLabel = slotKey ? slotLabelForKey(slotKey) : null;
+        const isActive = chKey === selectedChKey;
+        const rawDisplay = raw != null ? raw : '\u2014';
+        const barPct = raw != null
+          ? (source === 'pwm'
+              ? Math.round(((raw - 1000) / 1000) * 100)
+              : Math.round(((raw - 172) / (1811 - 172)) * 100))
+          : 0;
+        const clampedPct = Math.max(0, Math.min(100, barPct));
+        items.push(`<div class="rc-channel-item${isActive ? ' active' : ''}" data-chkey="${escapeHtml(chKey)}" role="button" tabindex="0" aria-pressed="${isActive}">
+          <div class="rc-channel-item-head">
+            <span class="rc-ch-num">CH ${i}</span>
+            <span class="rc-ch-raw">${rawDisplay}</span>
+          </div>
+          <div class="rc-channel-mini-bar"><div class="rc-channel-mini-fill" style="--pct:${clampedPct}%"></div></div>
+          <div class="rc-ch-slot">${slotLabel ? escapeHtml(slotLabel) : '<span class="rc-ch-unassigned">unassigned</span>'}</div>
+        </div>`);
+      }
+      return `<div class="rc-channel-group">
+        <div class="rc-slot-group-title">${escapeHtml(title)}</div>
+        ${items.join('')}
       </div>`;
-    }).join("");
+    };
 
-    rcSlotItems.innerHTML = `
-      <div class="rc-slot-group-title">Backbone Channels</div>
-      ${renderItems(backbone)}
-      <div class="rc-slot-group-title trigger">Trigger/Button Channels (use Speed preset cycle for runtime speed mode)</div>
-      ${renderItems(trigger)}
-    `;
+    let html = '';
+    if (mode === 'standard_pwm') {
+      html = renderGroup('PWM', 'pwm', snap?.raw?.pwm, 6);
+    } else {
+      // Show all SBUS channels — both receivers may have bindings regardless of which is "active"
+      html = renderGroup('SBUS1', 'sbus1', snap?.raw?.sbus1, 6)
+           + renderGroup('SBUS2', 'sbus2', snap?.raw?.sbus2, 6);
+    }
 
-    const slotNodes = Array.from(rcSlotItems.querySelectorAll(".rc-slot-item"));
-    slotNodes.forEach((node, index) => {
-      const key = node.dataset.slot;
-      node.addEventListener("click", () => selectSlot(key));
-      wireFocusableItem(node, () => selectSlot(key));
-      node.addEventListener("keydown", (e) => {
-        if (e.key === "ArrowDown") {
+    rcChannelItems.innerHTML = html;
+
+    const chNodes = Array.from(rcChannelItems.querySelectorAll('.rc-channel-item'));
+    chNodes.forEach((node, index) => {
+      const chKey = node.dataset.chkey;
+      node.addEventListener('click', () => selectChannel(chKey));
+      wireFocusableItem(node, () => selectChannel(chKey));
+      node.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowDown') {
           e.preventDefault();
-          const next = slotNodes[Math.min(index + 1, slotNodes.length - 1)];
-          next?.focus();
-          next?.click();
+          chNodes[Math.min(index + 1, chNodes.length - 1)]?.focus();
         }
-        if (e.key === "ArrowUp") {
+        if (e.key === 'ArrowUp') {
           e.preventDefault();
-          const prev = slotNodes[Math.max(index - 1, 0)];
-          prev?.focus();
-          prev?.click();
+          chNodes[Math.max(index - 1, 0)]?.focus();
         }
       });
     });
 
-    // Re-apply learn-hot after innerHTML wipe — defined below, called safely
-    // because renderSlotList() is only invoked after all functions are declared.
     applyLearnHighlight();
+  };
+
+  // Cheap live update: refresh raw values and bars without full re-render.
+  const updateChannelListRaw = () => {
+    if (!rcChannelItems || !rcSnapshot?.raw) return;
+    rcChannelItems.querySelectorAll('.rc-channel-item').forEach(el => {
+      const parts = el.dataset.chkey.split(':');
+      const source = parts[0];
+      const ch = Number(parts[1]);
+      const rawArr = rcSnapshot.raw[source];
+      const raw = rawArr ? rawArr[ch - 1] : null;
+      const rawEl = el.querySelector('.rc-ch-raw');
+      if (rawEl) rawEl.textContent = raw != null ? raw : '\u2014';
+      const fillEl = el.querySelector('.rc-channel-mini-fill');
+      if (fillEl && raw != null) {
+        const barPct = source === 'pwm'
+          ? Math.round(((raw - 1000) / 1000) * 100)
+          : Math.round(((raw - 172) / (1811 - 172)) * 100);
+        fillEl.style.setProperty('--pct', `${Math.max(0, Math.min(100, barPct))}%`);
+      }
+    });
   };
 
   const renderLivePreview = () => {
@@ -726,7 +797,19 @@
     renderSourceHealth();
 
     if (!selectedSlot) {
-      rcLivePreviewContent.innerHTML = '<div class="desc">Select a channel from the list to see live data.</div>';
+      if (selectedChKey) {
+        const [src, chStr] = selectedChKey.split(':');
+        const ch = Number(chStr);
+        const rawArr = rcSnapshot?.raw?.[src];
+        const raw = rawArr ? rawArr[ch - 1] : null;
+        rcLivePreviewContent.innerHTML = `
+          <div class="rc-bind-ch-label">${escapeHtml(src.toUpperCase())} CH ${escapeHtml(chStr)}</div>
+          <div class="rc-preview-stack mt-8">
+            <div>Raw: <strong>${raw != null ? raw : '\u2014'}</strong></div>
+          </div>`;
+      } else {
+        rcLivePreviewContent.innerHTML = '<div class="desc">Select a channel from the list to see live data.</div>';
+      }
       return;
     }
 
@@ -867,16 +950,91 @@
     </div>`;
   };
 
+  const findBestSlotForAction = (token) => {
+    const actions = getActionsForMode();
+    const natural = {
+      'drive_speed': 'driveSpeed', 'drive_steer': 'driveSteer', 'dome_speed': 'domeSpeed',
+      'arm1_toggle': 'arm1', 'arm2_toggle': 'arm2',
+      'aux1_toggle': 'aux1', 'aux2_toggle': 'aux2', 'aux3_toggle': 'aux3',
+      'speed_preset_cycle': 'speedPresetCycle', 'op_mode': 'opMode',
+    };
+    if (natural[token] && actions.find(a => a.key === natural[token])) return natural[token];
+    // Generic actions: use first unbound trigger slot in preference order
+    for (const key of ['sound', 'free1', 'free2', 'free3', 'aux3', 'aux2', 'aux1']) {
+      const b = bindingForSlot(key);
+      if (b.source === 'none' && actions.find(a => a.key === key)) return key;
+    }
+    return actions.find(({ key }) => !isBackboneSlot(key) && bindingForSlot(key).source === 'none')?.key || null;
+  };
+
   const renderEditor = () => {
     if (!rcEditorContent) return;
     if (!selectedSlot) {
       actionPickerFeedback = null;
       actionPickerInFlightToken = null;
       actionPickerLastSlot = null;
-      rcEditorContent.innerHTML = '<div class="desc">Select a channel from the list to edit its mapping.</div>';
-      if (rcEditorApply) rcEditorApply.disabled = true;
-      if (rcEditorRevert) rcEditorRevert.disabled = true;
-      setEditorDirtyState("clean", "Select a slot to edit");
+
+      if (selectedChKey) {
+        // Unassigned channel clicked — show action picker directly
+        const [src, chStr] = selectedChKey.split(':');
+        rcEditorContent.innerHTML = `
+          <div class="rc-bind-prompt">
+            <div class="rc-bind-ch-label">${escapeHtml(src.toUpperCase())} CH ${escapeHtml(chStr)}</div>
+            <div class="desc mt-4">Pick an action to assign to this channel:</div>
+            <label class="rc-action-label-head mt-8">Action</label>
+            ${renderActionPicker('none', actionPickerQuery)}
+          </div>`;
+
+        const bindSearchInput = rcEditorContent.querySelector('[data-action-search]');
+        if (bindSearchInput) {
+          bindSearchInput.value = actionPickerQuery;
+          bindSearchInput.addEventListener('input', () => {
+            actionPickerQuery = bindSearchInput.value;
+            actionPickerScrollTop = 0;
+            renderEditor();
+          });
+          const clearBtn = rcEditorContent.querySelector('[data-action-search-clear]');
+          if (clearBtn) {
+            clearBtn.addEventListener('click', () => {
+              actionPickerQuery = '';
+              actionPickerScrollTop = 0;
+              renderEditor();
+              rcEditorContent.querySelector('[data-action-search]')?.focus();
+            });
+          }
+        }
+        const bindPicker = rcEditorContent.querySelector('.rc-action-picker');
+        if (bindPicker) bindPicker.scrollTop = actionPickerScrollTop;
+
+        rcEditorContent.querySelectorAll('[data-action-token]').forEach(row => {
+          row.addEventListener('click', () => {
+            const token = row.dataset.actionToken;
+            if (!token || token === 'none') return;
+            const slotKey = findBestSlotForAction(token);
+            if (!slotKey) return;
+            const mode = getEditorMode();
+            if (!mappingDraft[mode]) mappingDraft[mode] = {};
+            mappingDraft[mode][slotKey] = {
+              ...(mappingDraft[mode][slotKey] || { ...DEFAULT_BINDING }),
+              source: src,
+              channel: Number(chStr),
+              target: token,
+            };
+            selectedChKey = null;
+            selectSlot(slotKey);
+            markEditorDirty();
+          });
+        });
+
+        if (rcEditorApply) rcEditorApply.disabled = true;
+        if (rcEditorRevert) rcEditorRevert.disabled = true;
+        setEditorDirtyState("clean", "Select an action");
+      } else {
+        rcEditorContent.innerHTML = '<div class="desc">Select a channel from the list to edit its mapping.</div>';
+        if (rcEditorApply) rcEditorApply.disabled = true;
+        if (rcEditorRevert) rcEditorRevert.disabled = true;
+        setEditorDirtyState("clean", "Select a slot to edit");
+      }
       return;
     }
 
@@ -903,6 +1061,11 @@
     const isBackbone = isBackboneSlot(selectedSlot);
     const slotLabel = slotLabelForKey(selectedSlot);
 
+    // For backbone slots, synthesize the action token from the slot name when not set
+    const displayToken = (binding.target && binding.target !== 'none')
+      ? binding.target
+      : naturalActionForSlot(selectedSlot);
+
     const sourceSelect = sourceOptions.map(src =>
       `<option value="${escapeHtml(src)}"${binding.source === src ? " selected" : ""}>${escapeHtml(sourceLabel(src))}</option>`
     ).join("");
@@ -917,11 +1080,11 @@
       <label>Channel
         <input data-field="channel" type="number" min="0" max="${channelMax}" value="${escapeHtml(String(binding.channel || 0))}">
       </label>
-      ${isBackbone ? "" : `<label class="rc-action-label-head">Action</label><input data-field="target" type="hidden" value="${escapeHtml(binding.target || 'none')}">${renderActionPicker(binding.target || 'none', actionPickerQuery)}`}
+      <label class="rc-action-label-head">Action</label><input data-field="target" type="hidden" value="${escapeHtml(displayToken)}">${renderActionPicker(displayToken, actionPickerQuery)}
       <div data-cond="seq" class="rc-editor-cond ${binding.target === "seq" ? "block" : "hidden"}">
         <label>Marcduino Sequence
           <select data-field="payload">
-            ${MARCDUINO_SEQUENCES.map(n => `<option value="${n}"${binding.payload === String(n) ? " selected" : ""}>SE${n}</option>`).join("\n            ")}
+            ${renderMarcduinoSequenceOptions(binding.payload)}
           </select>
         </label>
       </div>
@@ -992,9 +1155,39 @@
       });
     };
 
+    // Tokens that must always live in a specific named slot — switching to
+    // one of these while editing a different slot auto-routes the binding there.
+    const NATURAL_SLOT_MAP = {
+      drive_speed: 'driveSpeed', drive_steer: 'driveSteer', dome_speed: 'domeSpeed',
+      arm1_toggle: 'arm1', arm2_toggle: 'arm2',
+      aux1_toggle: 'aux1', aux2_toggle: 'aux2', aux3_toggle: 'aux3',
+      speed_preset_cycle: 'speedPresetCycle', op_mode: 'opMode',
+    };
+
     const setActionToken = (token, keepFocus = false) => {
       const targetEl = rcEditorContent.querySelector('[data-field="target"]');
       if (!targetEl || targetEl.value === token) return;
+
+      // Only auto-route for tokens that have a specific natural slot
+      if (token !== 'none' && NATURAL_SLOT_MAP[token]) {
+        const naturalSlot = NATURAL_SLOT_MAP[token];
+        if (naturalSlot !== selectedSlot) {
+          const currentSource = rcEditorContent.querySelector('[data-field="source"]')?.value || bindingForSlot(selectedSlot).source;
+          const currentChannel = Number(rcEditorContent.querySelector('[data-field="channel"]')?.value ?? bindingForSlot(selectedSlot).channel);
+          const editorMode = getEditorMode();
+          if (!mappingDraft[editorMode]) mappingDraft[editorMode] = {};
+          mappingDraft[editorMode][naturalSlot] = {
+            ...(mappingDraft[editorMode][naturalSlot] || { ...DEFAULT_BINDING }),
+            source: currentSource,
+            channel: currentChannel,
+            target: token,
+          };
+          selectSlot(naturalSlot);
+          markEditorDirty();
+          return;
+        }
+      }
+
       targetEl.value = token;
       binding.target = token;
       rememberRecentActionToken(token);
@@ -1153,17 +1346,15 @@
 
   const updateSummaryMiniBar = () => {
     if (!rcSummaryBody || !rcSnapshot) return;
-    const rows = rcSummaryBody.querySelectorAll("tr[data-slot]");
-    rows.forEach(row => {
-      const slot = row.dataset.slot;
-      const telemetry = getChannelTelemetry(slot);
+    const mapped = getActionsForMode().filter(({ key }) => bindingForSlot(key).source !== "none");
+    const rows = rcSummaryBody.querySelectorAll("tr");
+    mapped.forEach(({ key }, i) => {
+      const row = rows[i];
+      if (!row) return;
+      const telemetry = getChannelTelemetry(key);
       const cell = row.children[4];
       if (!cell) return;
-      if (isBackboneSlot(slot)) {
-        cell.innerHTML = miniBarHtml(telemetry?.mapped || 0);
-      } else {
-        cell.innerHTML = triggerStateHtml(telemetry);
-      }
+      cell.innerHTML = isBackboneSlot(key) ? miniBarHtml(telemetry?.mapped || 0) : triggerStateHtml(telemetry);
     });
   };
 
@@ -1193,16 +1384,11 @@
 
     // Clear selected slot when mode changes
     selectedSlot = null;
-    document.querySelectorAll('.rc-slot-item').forEach(el => {
-      el.classList.remove('active');
-    });
-    document.querySelectorAll('.rc-summary-table tr[data-slot]').forEach(tr => {
-      tr.classList.remove('active-slot');
-    });
+    document.querySelectorAll('.rc-channel-item').forEach(el => el.classList.remove('active'));
 
     // Re-render all panels to reflect the new mode
     renderSummaryTable();
-    renderSlotList();
+    renderChannelList();
     renderLivePreview();
     renderEditor();
   };
@@ -1256,19 +1442,51 @@
   };
 
   const selectSlot = (key) => {
-    // Prevent selecting unsupported slots
-    if (!isSlotSupported(key)) {
-      return;
-    }
+    if (!isSlotSupported(key)) return;
 
     selectedSlot = key;
+    selectedChKey = null;
     markEditorClean();
-    document.querySelectorAll('.rc-slot-item').forEach(el => {
-      el.classList.toggle('active', el.dataset.slot === key);
+
+    // Highlight matching channel item
+    const b = bindingForSlot(key);
+    const selChKey = b.source !== 'none' && b.channel ? `${b.source}:${b.channel}` : null;
+    document.querySelectorAll('.rc-channel-item').forEach(el => {
+      el.classList.toggle('active', selChKey !== null && el.dataset.chkey === selChKey);
     });
-    document.querySelectorAll('.rc-summary-table tr[data-slot]').forEach(tr => {
-      tr.classList.toggle('active-slot', tr.dataset.slot === key);
+    renderLivePreview();
+    renderEditor();
+  };
+
+  const selectChannel = (chKey) => {
+    const [source, chStr] = chKey.split(':');
+    const ch = Number(chStr);
+    const actions = getActionsForMode();
+    const match = actions.find(({ key }) => {
+      const b = bindingForSlot(key);
+      return b.source === source && Number(b.channel) === ch;
     });
+
+    // Highlight clicked channel regardless of assignment
+    document.querySelectorAll('.rc-channel-item').forEach(el => {
+      el.classList.toggle('active', el.dataset.chkey === chKey);
+    });
+
+    if (match) {
+      selectedSlot = match.key;
+      selectedChKey = null;
+      document.querySelectorAll('.rc-summary-table tr[data-slot]').forEach(tr => {
+        tr.classList.toggle('active-slot', tr.dataset.slot === match.key);
+      });
+      markEditorClean();
+    } else {
+      // Unassigned channel: open slot-picker in editor
+      selectedSlot = null;
+      selectedChKey = chKey;
+      document.querySelectorAll('.rc-summary-table tr[data-slot]').forEach(tr => {
+        tr.classList.remove('active-slot');
+      });
+    }
     renderLivePreview();
     renderEditor();
   };
@@ -1352,10 +1570,10 @@
   // Apply/remove learn-hot class on slot cards that are already bound to the
   // detected source+channel. Uses direct classList toggle — no re-render.
   const applyLearnHighlight = () => {
-    if (!rcSlotItems) return;
-    const bound = learnActive && learnHit ? slotsForDetectHit(learnHit) : [];
-    rcSlotItems.querySelectorAll('.rc-slot-item').forEach(el => {
-      el.classList.toggle('learn-hot', bound.includes(el.dataset.slot));
+    if (!rcChannelItems) return;
+    const chKey = learnActive && learnHit ? `${learnHit.source}:${learnHit.channel}` : null;
+    rcChannelItems.querySelectorAll('.rc-channel-item').forEach(el => {
+      el.classList.toggle('learn-hot', chKey !== null && el.dataset.chkey === chKey);
     });
   };
 
@@ -1447,7 +1665,7 @@
 
     renderSourceHealth();
     renderSummaryTable();
-    renderSlotList();
+    renderChannelList();
     if (selectedSlot) {
       renderLivePreview();
       renderEditor();
@@ -1487,10 +1705,11 @@
         // Fast path updates for frequently changing elements
         renderSourceHealth();
         updateSummaryMiniBar();
+        updateChannelListRaw();
         if (selectedSlot) {
           renderLivePreview();
         }
-        // Note: Not re-rendering slot list or editor on every SSE tick for performance
+        // Note: Not re-rendering channel list or editor on every SSE tick for performance
       } catch (_error) {
         setEditorFeedback("Received malformed RC event payload.", "error");
       }
@@ -1534,6 +1753,11 @@
       return;
     }
 
+    if (binding.source === "none" && binding.target && binding.target !== "none") {
+      setEditorFeedback("Select a source (e.g. SBUS#1 or SBUS#2) before saving.", "error");
+      return;
+    }
+
     // Validate Marcduino command prefix
     if (binding.target === "cmd" && binding.payload) {
       if (!/^[:$#]/.test(binding.payload)) {
@@ -1570,7 +1794,9 @@
     if (!action) return;
 
     const body = new URLSearchParams();
-    const isBackbone = action.type === "backbone";
+    // Backbone format when the effective action is a backbone action (drive/steer/dome)
+    const effectiveToken = binding.target && binding.target !== 'none' ? binding.target : naturalActionForSlot(selectedSlot);
+    const isBackbone = BACKBONE_ACTION_TOKENS.has(effectiveToken);
     body.set(action.field, formatBindingString(binding, isBackbone));
 
     setEditorDirtyState("saving", "Saving changes…");

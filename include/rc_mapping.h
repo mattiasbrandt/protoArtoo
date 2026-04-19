@@ -880,7 +880,7 @@ inline bool parseRcTriggerBinding(const char* raw, RcTriggerBinding* out) {
     memcpy(channelBuf, p1 + 1, channelLen);
     channelBuf[channelLen] = '\0';
 
-    char targetBuf[16] = {};
+    char targetBuf[32] = {};
     size_t targetLen = (size_t)(p3 - (p2 + 1));
     if (targetLen == 0 || targetLen >= sizeof(targetBuf)) {
         return false;

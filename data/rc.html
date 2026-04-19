@@ -66,7 +66,7 @@
     <!-- Binding Summary Table -->
     <div class="card">
       <h3>📋 Binding Summary</h3>
-      <div class="desc">Overview of all channel bindings. Click any row to edit.</div>
+      <div class="desc">Current active channel mappings.</div>
       
       <table class="rc-summary-table mt-16">
         <thead>
@@ -84,13 +84,30 @@
       </table>
     </div>
 
-    <!-- Three-panel Editor -->
+    <!-- Live Monitor strip (source health + selected slot live data) -->
+    <div class="card">
+      <div class="rc-live-monitor-layout">
+        <div>
+          <h4 class="rc-panel-title">📈 Live Monitor</h4>
+          <div class="desc rc-panel-desc">Real-time values for the selected channel.</div>
+          <div id="rc-live-preview-content">
+            <div class="desc">Select a channel from the list to see live data.</div>
+          </div>
+        </div>
+        <div>
+          <h4 class="rc-panel-title">📡 Source Health</h4>
+          <div id="rc-preview-source-health" class="rc-source-grid mt-12"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Two-panel Editor -->
     <div class="card">
       <div class="rc-mapper-grid">
-        <!-- Slot List (left sidebar) -->
-        <div class="rc-slot-list">
-          <h4 class="rc-panel-title">1) 🧩 Slot List</h4>
-          <div class="desc rc-panel-desc">Select a slot to inspect and edit. Backbone channels are listed first.</div>
+        <!-- Channel List (left) -->
+        <div class="rc-channel-list">
+          <h4 class="rc-panel-title">📻 Channels</h4>
+          <div class="desc rc-panel-desc">Live RC channel values. Click a channel to edit its mapping.</div>
           <div class="rc-learn-bar">
             <button id="rc-learn-btn" class="btn" type="button">🔍 Detect channel</button>
           </div>
@@ -102,28 +119,13 @@
             </div>
             <button id="rc-learn-stop" class="btn btn-sm" type="button">✕ Stop</button>
           </div>
-          <div id="rc-slot-items">
+          <div id="rc-channel-items">
           </div>
         </div>
-        
-        <!-- Live Preview Panel (center) -->
-        <div class="rc-live-preview">
-          <h4 class="rc-panel-title">2) 📈 Live Preview</h4>
-          <div class="desc rc-panel-desc">Shows real-time source and mapped values for the selected slot.</div>
-          <div id="rc-live-preview-content">
-            <div class="desc">Select a channel from the list to see live data.</div>
-          </div>
-          
-          <!-- Source Health Summary -->
-          <div class="mt-20">
-            <h4>📡 Source Health</h4>
-            <div id="rc-preview-source-health" class="rc-source-grid mt-12"></div>
-          </div>
-        </div>
-        
+
         <!-- Editor Panel (right) -->
         <div class="rc-editor-panel">
-          <h4 class="rc-panel-title">3) 🛠️ Mapping Editor</h4>
+          <h4 class="rc-panel-title">🛠️ Mapping Editor</h4>
           <div class="desc rc-panel-desc">Adjust source, channel, and action for the selected slot, then apply to save.</div>
           <div id="rc-editor-content">
             <div class="desc">Select a channel from the list to edit its mapping.</div>

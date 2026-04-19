@@ -1025,15 +1025,6 @@ void registerConfigRoutes(AsyncWebServer& server) {
 
             RcBindingConfig parsed;
             if (parseRcBindingParam(req, bindingFields[i].param, &parsed)) {
-                if (!sourceAllowedForMode(activeMode, parsed.source)) {
-                    char err[200];
-                    snprintf(
-                        err, sizeof(err),
-                        "{\"ok\":false,\"error\":\"invalid source for %s in current rcInputMode\"}",
-                        bindingFields[i].param);
-                    req->send(400, "application/json", err);
-                    return;
-                }
                 *bindingFields[i].field = parsed;
                 changed = true;
                 continue;
@@ -1044,15 +1035,6 @@ void registerConfigRoutes(AsyncWebServer& server) {
             if ((strcmp(bindingFields[i].param, "rcPwmArm1") == 0 ||
                  strcmp(bindingFields[i].param, "rcSbusArm1") == 0) &&
                 parseRcTriggerParam(req, bindingFields[i].param, &triggerParsed)) {
-                if (!sourceAllowedForMode(activeMode, triggerParsed.source)) {
-                    char err[200];
-                    snprintf(
-                        err, sizeof(err),
-                        "{\"ok\":false,\"error\":\"invalid source for %s in current rcInputMode\"}",
-                        bindingFields[i].param);
-                    req->send(400, "application/json", err);
-                    return;
-                }
                 working.rcArm1 = triggerParsed;
                 changed = true;
                 continue;
@@ -1061,15 +1043,6 @@ void registerConfigRoutes(AsyncWebServer& server) {
             if ((strcmp(bindingFields[i].param, "rcPwmArm2") == 0 ||
                  strcmp(bindingFields[i].param, "rcSbusArm2") == 0) &&
                 parseRcTriggerParam(req, bindingFields[i].param, &triggerParsed)) {
-                if (!sourceAllowedForMode(activeMode, triggerParsed.source)) {
-                    char err[200];
-                    snprintf(
-                        err, sizeof(err),
-                        "{\"ok\":false,\"error\":\"invalid source for %s in current rcInputMode\"}",
-                        bindingFields[i].param);
-                    req->send(400, "application/json", err);
-                    return;
-                }
                 working.rcArm2 = triggerParsed;
                 changed = true;
                 continue;
@@ -1078,15 +1051,6 @@ void registerConfigRoutes(AsyncWebServer& server) {
             if ((strcmp(bindingFields[i].param, "rcPwmSound") == 0 ||
                  strcmp(bindingFields[i].param, "rcSbusSound") == 0) &&
                 parseRcTriggerParam(req, bindingFields[i].param, &triggerParsed)) {
-                if (!sourceAllowedForMode(activeMode, triggerParsed.source)) {
-                    char err[200];
-                    snprintf(
-                        err, sizeof(err),
-                        "{\"ok\":false,\"error\":\"invalid source for %s in current rcInputMode\"}",
-                        bindingFields[i].param);
-                    req->send(400, "application/json", err);
-                    return;
-                }
                 working.rcSound = triggerParsed;
                 changed = true;
                 continue;
@@ -1157,16 +1121,6 @@ void registerConfigRoutes(AsyncWebServer& server) {
                 snprintf(
                     err, sizeof(err),
                     "{\"ok\":false,\"error\":\"dome_seq is not available until Phase 4 (%s)\"}",
-                    triggerFields[i].param);
-                req->send(400, "application/json", err);
-                return;
-            }
-
-            if (!sourceAllowedForMode(activeMode, parsed.source)) {
-                char err[200];
-                snprintf(
-                    err, sizeof(err),
-                    "{\"ok\":false,\"error\":\"invalid source for %s in current rcInputMode\"}",
                     triggerFields[i].param);
                 req->send(400, "application/json", err);
                 return;
