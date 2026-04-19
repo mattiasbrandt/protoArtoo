@@ -667,27 +667,48 @@
     if (!rcSummaryBody) return;
     const actions = getActionsForMode();
 
-    // Only show mapped (non-disabled) slots
-    const mapped = actions.filter(({ key }) => bindingForSlot(key).source !== "none");
+    const mapped = actions
+      .map(({ key }) => ({ key, binding: bindingForSlot(key) }))
+      .filter(({ key, binding }) => {
+        if (binding.source === "none") return false;
+        const token = toActionToken(key, binding);
+        return token && token !== "none";
+      });
 
     if (!mapped.length) {
-      rcSummaryBody.innerHTML = '<tr><td colspan="5" class="desc">No channels mapped yet.</td></tr>';
+      rcSummaryBody.innerHTML = '<tr><td colspan="3" class="desc">No channels mapped yet.</td></tr>';
       return;
     }
 
-    rcSummaryBody.innerHTML = mapped.map(({ key, label }) => {
-      const binding = bindingForSlot(key);
-      const telemetry = getChannelTelemetry(key);
-      const actionToken = toActionToken(key, binding);
-      const live = isBackboneSlot(key) ? miniBarHtml(telemetry?.mapped || 0) : triggerStateHtml(telemetry);
-      return `<tr>
-        <td>${escapeHtml(label)}</td>
-        <td>${escapeHtml(actionLabelFromToken(actionToken))}</td>
-        <td><span class="rc-map-source-badge" data-source="${escapeHtml(binding.source)}">${escapeHtml(sourceLabel(binding.source))}</span></td>
-        <td>${escapeHtml(String(binding.channel || "—"))}</td>
-        <td>${live}</td>
-      </tr>`;
-    }).join("");
+    // Group by source, sort within each group by channel number
+    const groups = {};
+    for (const { key, binding } of mapped) {
+      if (!groups[binding.source]) groups[binding.source] = [];
+      groups[binding.source].push({ key, binding });
+    }
+    for (const src of Object.keys(groups)) {
+      groups[src].sort((a, b) => (a.binding.channel || 0) - (b.binding.channel || 0));
+    }
+
+    const SOURCE_ORDER = ["sbus1", "sbus2", "pwm"];
+    const orderedSources = SOURCE_ORDER.filter(s => groups[s]);
+
+    const rows = [];
+    for (const src of orderedSources) {
+      rows.push(`<tr class="rc-summary-group-header"><td colspan="3"><span class="rc-map-source-badge" data-source="${escapeHtml(src)}">${escapeHtml(sourceLabel(src))}</span></td></tr>`);
+      for (const { key, binding } of groups[src]) {
+        const telemetry = getChannelTelemetry(key);
+        const actionToken = toActionToken(key, binding);
+        const live = isBackboneSlot(key) ? miniBarHtml(telemetry?.mapped || 0) : triggerStateHtml(telemetry);
+        rows.push(`<tr data-slot="${escapeHtml(key)}">
+          <td>${escapeHtml(actionLabelFromToken(actionToken))}</td>
+          <td>${escapeHtml(String(binding.channel || "—"))}</td>
+          <td>${live}</td>
+        </tr>`);
+      }
+    }
+
+    rcSummaryBody.innerHTML = rows.join("");
   };
 
   const renderChannelList = () => {
@@ -716,7 +737,10 @@
         const chKey = `${source}:${i}`;
         const raw = rawArray ? rawArray[i - 1] : null;
         const slotKey = chToSlot[chKey];
-        const slotLabel = slotKey ? slotLabelForKey(slotKey) : null;
+        const slotLabel = slotKey ? (() => {
+          const token = toActionToken(slotKey, bindingForSlot(slotKey));
+          return (token && token !== 'none') ? actionLabelFromToken(token) : null;
+        })() : null;
         const isActive = chKey === selectedChKey;
         const rawDisplay = raw != null ? raw : '\u2014';
         const barPct = raw != null
@@ -1347,15 +1371,14 @@
   const updateSummaryMiniBar = () => {
     if (!rcSummaryBody || !rcSnapshot) return;
     const mapped = getActionsForMode().filter(({ key }) => bindingForSlot(key).source !== "none");
-    const rows = rcSummaryBody.querySelectorAll("tr");
-    mapped.forEach(({ key }, i) => {
-      const row = rows[i];
-      if (!row) return;
+    for (const { key } of mapped) {
+      const row = rcSummaryBody.querySelector(`tr[data-slot="${key}"]`);
+      if (!row) continue;
       const telemetry = getChannelTelemetry(key);
-      const cell = row.children[4];
-      if (!cell) return;
+      const cell = row.children[2];
+      if (!cell) continue;
       cell.innerHTML = isBackboneSlot(key) ? miniBarHtml(telemetry?.mapped || 0) : triggerStateHtml(telemetry);
-    });
+    }
   };
 
   const saveRcMode = async () => {

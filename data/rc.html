@@ -48,8 +48,8 @@
       <div id="single-sbus-recv-section" class="mt-16 hidden" aria-hidden="true">
         <label for="sbus-recv-sel">Single SBUS receiver</label>
         <select id="sbus-recv-sel" aria-describedby="sbus-recv-note sbus-recv-feedback" title="Select which physical SBUS input is treated as the primary receiver.">
-          <option value="false">SBUS1 (primary)</option>
-          <option value="true">SBUS2 (alternate)</option>
+          <option value="false">SBUS1 / CH1</option>
+          <option value="true">SBUS2 / CH2</option>
         </select>
         <div id="sbus-recv-note" class="desc mt-8">Selecting a different receiver does not change your channel mapping.</div>
         <div id="sbus-recv-feedback" class="feedback mt-8" role="status" aria-live="polite" aria-atomic="true"></div>
@@ -71,15 +71,13 @@
       <table class="rc-summary-table mt-16">
         <thead>
           <tr>
-            <th>Slot</th>
             <th>Action</th>
-            <th>Source</th>
             <th>CH</th>
             <th>Live</th>
           </tr>
         </thead>
         <tbody id="rc-summary-body">
-          <tr><td colspan="5">Loading bindings...</td></tr>
+          <tr><td colspan="3">Loading bindings...</td></tr>
         </tbody>
       </table>
     </div>
