@@ -14,6 +14,7 @@
 // =============================================================================
 #pragma once
 
+#include <stddef.h>
 #include <ArduinoJson.h>
 
 #include "rc_mapping.h"
@@ -101,6 +102,22 @@ struct ConfigSnapshot {
     RcTriggerBinding rcFree2;
     RcTriggerBinding rcFree3;
 };
+
+// Pure helpers backing /api/rc/map serialization and slot assignment.
+// Exposed for native regression tests.
+static constexpr size_t kRcMapMaxEntries = 14;
+
+struct RcMapEntry {
+    RcBindingSource source;
+    uint8_t channel;
+    RobotActionId action;
+    char payload[16];
+};
+
+bool populateRcMapJson(JsonDocument& doc, const ConfigSnapshot& snap);
+void clearRcMapSlots(ConfigSnapshot* working);
+bool assignRcMapEntryToSnapshot(const RcMapEntry& entry, const ConfigSnapshot& existing,
+                                ConfigSnapshot* working, char* error, size_t errorSize);
 
 // Copies robotState.cfg_* into *out under portMUX critical section.
 // Defined in src/web/api_config.cpp.

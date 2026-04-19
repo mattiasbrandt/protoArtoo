@@ -64,6 +64,27 @@ void test_switch_state_uses_thresholds() {
     TEST_ASSERT_EQUAL_UINT8(RC_SWITCH_HIGH, rcAnalogToSwitchState(1800, binding));
 }
 
+void test_rc_trigger_default_reverse_applies_to_sbus_buttons() {
+    TEST_ASSERT_TRUE(rcTriggerDefaultReverse(RC_BINDING_SBUS1, 3));
+    TEST_ASSERT_TRUE(rcTriggerDefaultReverse(RC_BINDING_SBUS1, 6));
+    TEST_ASSERT_TRUE(rcTriggerDefaultReverse(RC_BINDING_SBUS2, 4));
+    TEST_ASSERT_TRUE(rcTriggerDefaultReverse(RC_BINDING_SBUS2, 5));
+}
+
+void test_rc_trigger_default_reverse_ignores_non_button_channels() {
+    TEST_ASSERT_FALSE(rcTriggerDefaultReverse(RC_BINDING_PWM, 3));
+    TEST_ASSERT_FALSE(rcTriggerDefaultReverse(RC_BINDING_SBUS1, 2));
+    TEST_ASSERT_FALSE(rcTriggerDefaultReverse(RC_BINDING_SBUS2, 7));
+}
+
+void test_robot_action_is_one_shot_button_classification() {
+    TEST_ASSERT_TRUE(robotActionIsOneShotButton(SOUND_ACTION_RANDOM_HUMMING));
+    TEST_ASSERT_TRUE(robotActionIsOneShotButton(DOME_ACTION_MARCDUINO_SEQ));
+    TEST_ASSERT_TRUE(robotActionIsOneShotButton(SYSTEM_ACTION_SLEEP_TOGGLE));
+    TEST_ASSERT_FALSE(robotActionIsOneShotButton(SERVO_ACTION_ARM1_TOGGLE));
+    TEST_ASSERT_FALSE(robotActionIsOneShotButton(SYSTEM_ACTION_OP_MODE));
+}
+
 // --- Edge case tests for parseRcBindingConfig ---
 
 void test_parse_rejects_empty_string() {
@@ -387,6 +408,9 @@ int main() {
     RUN_TEST(test_apply_calibration_reports_deadband);
     RUN_TEST(test_sbus_digital_channels_are_flagged_digital);
     RUN_TEST(test_switch_state_uses_thresholds);
+    RUN_TEST(test_rc_trigger_default_reverse_applies_to_sbus_buttons);
+    RUN_TEST(test_rc_trigger_default_reverse_ignores_non_button_channels);
+    RUN_TEST(test_robot_action_is_one_shot_button_classification);
 
     // Edge case tests
     RUN_TEST(test_parse_rejects_empty_string);

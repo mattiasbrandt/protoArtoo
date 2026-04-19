@@ -2181,7 +2181,8 @@ label.sound-search-field {
   transition: width 0.1s linear;
 }
 
-.rc-ch-slot {
+.rc-ch-slot,
+.rc-ch-action {
   font-size: 0.8rem;
   color: var(--text-dim);
   white-space: nowrap;
@@ -2189,7 +2190,8 @@ label.sound-search-field {
   text-overflow: ellipsis;
 }
 
-.rc-channel-item.active .rc-ch-slot {
+.rc-channel-item.active .rc-ch-slot,
+.rc-channel-item.active .rc-ch-action {
   color: var(--accent-bright);
 }
 
@@ -2243,13 +2245,15 @@ label.sound-search-field {
   padding-top: 4px;
 }
 
-.rc-summary-table tr.active-slot td {
+.rc-summary-table tr.active-slot td,
+.rc-summary-table tr.active-channel td {
   background: rgba(106, 176, 255, 0.10);
   border-top: 1px solid rgba(106, 176, 255, 0.28);
   border-bottom: 1px solid rgba(106, 176, 255, 0.28);
 }
 
-.rc-summary-table tr.active-slot td:first-child {
+.rc-summary-table tr.active-slot td:first-child,
+.rc-summary-table tr.active-channel td:first-child {
   border-left: 3px solid var(--accent-bright);
 }
 
@@ -2328,12 +2332,14 @@ label.sound-search-field {
   opacity: 0.9;
 }
 
-.rc-slot-group-title {
+.rc-slot-group-title,
+.rc-channel-group-title {
   font-weight: 700;
   margin: 4px 0 8px;
 }
 
-.rc-slot-group-title.trigger {
+.rc-slot-group-title.trigger,
+.rc-channel-group-title.trigger {
   margin-top: 14px;
 }
 

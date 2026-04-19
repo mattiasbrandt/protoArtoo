@@ -255,9 +255,15 @@ static void handleSoundTrigger(bool pressed, bool* lastPressed) {
 struct TriggerRuntimeState {
     bool lastPressed;
     RcSwitchState lastSwitchState;
+    RcSwitchState pendingSwitchState;
+    bool switchStateInit;
+    uint8_t pendingCount;
+    uint32_t lastEdgeMs;
 };
 
 static TriggerRuntimeState g_triggerStates[11] = {};  // One per Tier 2 binding slot
+static constexpr uint32_t kOneShotEdgeDebounceMs = 120;
+static constexpr uint8_t kSwitchEdgeConfirmFrames = 2;
 
 static bool setStationaryMode(bool stationary) {
     bool queueDriveOn = false;
@@ -563,23 +569,54 @@ static void processTier2Trigger(const RcTriggerBinding& binding, int rawValue,
         return;
     }
 
-    bool pressed = false;
-    bool stateChanged = false;
+    if (!robotActionIsButton(binding.target)) {
+        return;
+    }
 
-    if (robotActionIsButton(binding.target)) {
-        // Button targets use switch state with edge detection
-        RcSwitchState switchState = rcTriggerToSwitchState(rawValue, binding);
-        if (switchState != RC_SWITCH_INVALID && switchState != state.lastSwitchState) {
-            pressed = (switchState == RC_SWITCH_HIGH);
-            stateChanged = true;
-            state.lastSwitchState = switchState;
+    // Button targets use switch state with edge detection.
+    RcSwitchState switchState = rcTriggerToSwitchState(rawValue, binding);
+    if (switchState == RC_SWITCH_INVALID) {
+        return;
+    }
+
+    if (!state.switchStateInit) {
+        state.lastSwitchState = switchState;
+        state.pendingSwitchState = switchState;
+        state.switchStateInit = true;
+        state.pendingCount = 0;
+        return;
+    }
+    if (switchState == state.lastSwitchState) {
+        state.pendingCount = 0;
+        state.pendingSwitchState = switchState;
+        return;
+    }
+    if (state.pendingCount == 0 || state.pendingSwitchState != switchState) {
+        state.pendingSwitchState = switchState;
+        state.pendingCount = 1;
+        return;
+    }
+    state.pendingCount++;
+    if (state.pendingCount < kSwitchEdgeConfirmFrames) {
+        return;
+    }
+    state.pendingCount = 0;
+    state.lastSwitchState = switchState;
+
+    if (robotActionIsOneShotButton(binding.target)) {
+        uint32_t nowMs = millis();
+        if ((uint32_t)(nowMs - state.lastEdgeMs) < kOneShotEdgeDebounceMs) {
+            return;
         }
+        state.lastEdgeMs = nowMs;
+        processTriggerAction(binding.target, binding.marcduinoPayload, true);
+        state.lastPressed = true;
+        return;
     }
 
-    if (stateChanged) {
-        processTriggerAction(binding.target, binding.marcduinoPayload, pressed);
-        state.lastPressed = pressed;
-    }
+    bool pressed = (switchState == RC_SWITCH_HIGH);
+    processTriggerAction(binding.target, binding.marcduinoPayload, pressed);
+    state.lastPressed = pressed;
 }
 
 static void loadTier2TriggerBindings(RcTriggerBinding* bindings, size_t* count) {
@@ -726,6 +763,10 @@ static void dispatchSbusBindingsForSource(const SbusData& data, RcBindingSource 
     static bool lastArm1Digital = false;
     static bool lastArm2Digital = false;
     static bool lastSoundPressed = false;
+    static bool domeRawInit = false;
+    static int lastDomeRaw = 0;
+    static int pendingDomeRaw = 0;
+    static uint8_t pendingDomeCount = 0;
 
     auto sourceActive = [&](const RcBindingConfig& binding) {
         return binding.source == source &&
@@ -737,7 +778,40 @@ static void dispatchSbusBindingsForSource(const SbusData& data, RcBindingSource 
 
     if (cfg.enableDome && sourceActive(cfg.domeSpeed) &&
         readSbusAnalog(data, cfg.domeSpeed, &raw)) {
-        queueDomeCommand(applyRcAnalogCalibration(raw, cfg.domeSpeed, nullptr), SRC_SBUS);
+        const int center = (int)cfg.domeSpeed.center;
+        const int kDomeNeutralBand = 140;
+        const int kDomeStableBand = 90;
+
+        if (!domeRawInit) {
+            domeRawInit = true;
+            lastDomeRaw = raw;
+            pendingDomeRaw = raw;
+        }
+
+        bool wasNearNeutral = abs(lastDomeRaw - center) <= kDomeNeutralBand;
+        bool nowNearNeutral = abs(raw - center) <= kDomeNeutralBand;
+        bool acceptDomeSample = true;
+        if (wasNearNeutral && !nowNearNeutral) {
+            if (pendingDomeCount == 0 || abs(raw - pendingDomeRaw) > kDomeStableBand) {
+                pendingDomeRaw = raw;
+                pendingDomeCount = 1;
+                lastDomeRaw = raw;
+                acceptDomeSample = false;
+            } else {
+                pendingDomeCount++;
+                if (pendingDomeCount < kSwitchEdgeConfirmFrames) {
+                    lastDomeRaw = raw;
+                    acceptDomeSample = false;
+                }
+            }
+        }
+
+        if (acceptDomeSample) {
+            pendingDomeCount = 0;
+            pendingDomeRaw = raw;
+            lastDomeRaw = raw;
+            queueDomeCommand(applyRcAnalogCalibration(raw, cfg.domeSpeed, nullptr), SRC_SBUS);
+        }
     }
 
     if (cfg.enableArm1 && sourceActive(cfg.arm1)) {

@@ -414,11 +414,11 @@ void loadConfigToState() {
         {"rc_arm1", &robotState.cfg_rc_arm1,
          makeRcTriggerBinding(RC_BINDING_SBUS1, 4, SERVO_ACTION_ARM1_TOGGLE, nullptr,
                               RC_SBUS_DEFAULT_MIN, RC_SBUS_DEFAULT_CENTER, RC_SBUS_DEFAULT_MAX, 0,
-                              false)},
+                              rcTriggerDefaultReverse(RC_BINDING_SBUS1, 4))},
         {"rc_arm2", &robotState.cfg_rc_arm2,
          makeRcTriggerBinding(RC_BINDING_SBUS1, 5, SERVO_ACTION_ARM2_TOGGLE, nullptr,
                               RC_SBUS_DEFAULT_MIN, RC_SBUS_DEFAULT_CENTER, RC_SBUS_DEFAULT_MAX, 0,
-                              false)},
+                              rcTriggerDefaultReverse(RC_BINDING_SBUS1, 5))},
         {"rc_aux1", &robotState.cfg_rc_aux1, disabledRcTriggerBinding()},
         {"rc_aux2", &robotState.cfg_rc_aux2, disabledRcTriggerBinding()},
         {"rc_aux3", &robotState.cfg_rc_aux3, disabledRcTriggerBinding()},
@@ -433,6 +433,25 @@ void loadConfigToState() {
     for (size_t i = 0; i < sizeof(triggerSpecs) / sizeof(triggerSpecs[0]); ++i) {
         loadRcTriggerBindingFromPrefs(prefs, triggerSpecs[i].key, triggerSpecs[i].defaultValue,
                                       triggerSpecs[i].binding);
+    }
+
+    // DS-650 SBUS button channels (CH3-CH6) are latched high-at-rest. Older
+    // persisted defaults used reverse=false, which reads as permanently pressed.
+    // Migrate only untouched SBUS default calibrations to reverse=true.
+    for (size_t i = 0; i < sizeof(triggerSpecs) / sizeof(triggerSpecs[0]); ++i) {
+        RcTriggerBinding* binding = triggerSpecs[i].binding;
+        if (binding == nullptr) {
+            continue;
+        }
+        const bool looksDefaultSbusCalibration =
+            binding->min == RC_SBUS_DEFAULT_MIN &&
+            binding->center == RC_SBUS_DEFAULT_CENTER &&
+            binding->max == RC_SBUS_DEFAULT_MAX &&
+            binding->deadband == 0;
+        if (looksDefaultSbusCalibration && !binding->reverse &&
+            rcTriggerDefaultReverse(binding->source, binding->channel)) {
+            binding->reverse = true;
+        }
     }
 
     prefs.end();
@@ -562,10 +581,10 @@ void loadConfigToState() {
     const RcTriggerBinding triggerDefaults[] = {
         makeRcTriggerBinding(RC_BINDING_SBUS1, 4, SERVO_ACTION_ARM1_TOGGLE, nullptr,
                              RC_SBUS_DEFAULT_MIN, RC_SBUS_DEFAULT_CENTER, RC_SBUS_DEFAULT_MAX, 0,
-                             false),
+                             rcTriggerDefaultReverse(RC_BINDING_SBUS1, 4)),
         makeRcTriggerBinding(RC_BINDING_SBUS1, 5, SERVO_ACTION_ARM2_TOGGLE, nullptr,
                              RC_SBUS_DEFAULT_MIN, RC_SBUS_DEFAULT_CENTER, RC_SBUS_DEFAULT_MAX, 0,
-                             false),
+                             rcTriggerDefaultReverse(RC_BINDING_SBUS1, 5)),
         disabledRcTriggerBinding(),
         disabledRcTriggerBinding(),
         disabledRcTriggerBinding(),

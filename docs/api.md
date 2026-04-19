@@ -247,86 +247,132 @@ These return `404` when the active backend does not expose catalog capability.
 ### `GET /api/config`
 
 Return the current persisted web-configurable settings loaded into runtime.
+- Request body: none
+- Success response shape (abridged):
+
+```json
+{
+  "drive": {
+    "speedLimitMax": 600,
+    "speedPreset": "normal",
+    "speedPresetSlow": 200,
+    "speedPresetNormal": 350,
+    "speedPresetTurbo": 600,
+    "webDriveTimeoutMs": 500,
+    "stationary": true
+  },
+  "rc": {
+    "inputMode": "dual_sbus",
+    "sbusTimeoutMs": 300,
+    "sbus": { "recvCh2": false }
+  },
+  "components": {
+    "arm1": { "enabled": true, "type": "mg996r" },
+    "arm2": { "enabled": true, "type": "mg996r" },
+    "aux1": { "enabled": false, "type": "none" },
+    "aux2": { "enabled": false, "type": "none" },
+    "aux3": { "enabled": false, "type": "none" },
+    "dome": { "enabled": true }
+  },
+  "dome": {
+    "neutralUs": 1500,
+    "minPulseUs": 1000,
+    "maxPulseUs": 2000,
+    "speedLimitPct": 100,
+    "wifiPeerIp": ""
+  },
+  "system": { "logLevel": 2 },
+  "arm1OpenUs": 1000,
+  "arm1CloseUs": 2000
+}
+```
+
+Notes:
+- RC mapping fields are no longer exposed by `/api/config` (no `rc.sbus.driveSpeed`, `rc.triggers.*`, `rcPwm*`, or `rcSbus*` binding fields).
+- RC mapping reads/writes now use `/api/rc/map` exclusively.
+
+### `POST /api/config`
+
+Update non-mapping configuration settings and persist to NVS.
+
+- Request body: form-encoded and/or JSON
+- Supported form fields include:
+  - drive/system: `speedLimitMax`, `speedPresetSlow`, `speedPresetNormal`, `speedPresetTurbo`, `webDriveTimeoutMs`, `stationary`, `logLevel`
+  - RC mode/settings: `rcInputMode`, `sbusTimeoutMs`, `sbusRecvCh2`
+  - component toggles: `enableArm1`, `enableArm2`, `enableAux1`, `enableAux2`, `enableAux3`, `enableDome`, `enableRcCh1..6`, `enableS1Hoverboard`, `enableS2Sound`, `enableS3DomeCtrl`
+  - dome config: `domeNeutralUs`, `domeMinPulseUs`, `domeMaxPulseUs`, `domeSpeedLimitPct`, `domeWifiPeerIp`
+  - servo/AUX config: `arm1Type`, `arm2Type`, `aux1Type`, `aux2Type`, `aux3Type`, `arm1OpenUs`, `arm1CloseUs`, `arm2OpenUs`, `arm2CloseUs`, `aux1OpenUs`, `aux1CloseUs`, `aux2OpenUs`, `aux2CloseUs`, `aux3OpenUs`, `aux3CloseUs`, `aux_led_pin`, `aux_led_count`
+- Supported JSON body fields include:
+  - `rc.sbusTimeoutMs`
+  - `rc.sbus.recvCh2`
+  - `dome.wifiPeerIp`
+  - `aux_led_pin`, `aux_led_count`
+
+RC mapping is not accepted on `/api/config`. Use `/api/rc/map` to save mappings.
+
+### `GET /api/rc/map`
+
+Return the current channel-centric RC map.
 
 - Request body: none
 - Success response shape:
 
 ```json
 {
-  "speedLimitMax": 600,
-  "webDriveTimeoutMs": 500,
-  "rcInputMode": "dual_sbus",
-  "enableArm1": true,
-  "enableArm2": true,
-  "enableAux1": false,
-  "enableAux2": false,
-  "enableAux3": false,
-  "enableDome": true,
-  "enableRcCh1": true,
-  "enableRcCh2": true,
-  "enableRcCh3": false,
-  "enableRcCh4": false,
-  "enableRcCh5": false,
-  "enableRcCh6": false,
-  "enableS1Hoverboard": true,
-  "enableS2Sound": true,
-  "enableS3DomeCtrl": true,
-  "domeNeutralUs": 1500,
-  "domeMinPulseUs": 1000,
-  "domeMaxPulseUs": 2000,
-  "domeSpeedLimitPct": 100,
-  "rcPwmDriveSpeed": "pwm:1:1000:1500:2000:0:0",
-  "rcPwmDriveSteer": "pwm:2:1000:1500:2000:0:0",
-  "rcPwmDomeSpeed": "pwm:3:1000:1500:2000:0:0",
-  "rcPwmArm1": "pwm:4:1000:1500:2000:0:0",
-  "rcPwmArm2": "pwm:5:1000:1500:2000:0:0",
-  "rcPwmSound": "pwm:6:1000:1500:2000:0:0",
-  "rcSbusDriveSpeed": "sbus1:1:172:992:1811:0:0",
-  "rcSbusDriveSteer": "sbus1:2:172:992:1811:0:0",
-  "rcSbusDomeSpeed": "sbus2:1:172:992:1811:0:0",
-  "rcSbusArm1": "sbus2:2:172:992:1811:0:0",
-  "rcSbusArm2": "sbus2:3:172:992:1811:0:0",
-  "rcSbusSound": "none:0:1000:1500:2000:0:0"
+  "mode": "dual_sbus",
+  "map": [
+    { "source": "sbus1", "channel": 1, "action": "drive_speed" },
+    { "source": "sbus1", "channel": 2, "action": "drive_steer" },
+    { "source": "sbus2", "channel": 6, "action": "sound_rand_humming" },
+    { "source": "sbus2", "channel": 7, "action": "seq", "payload": "31" }
+  ],
+  "capacity": { "total": 14, "used": 4 }
 }
 ```
 
-### `POST /api/config`
+Notes:
+- `map` includes only mapped channels. Unmapped channels are absent.
+- No sentinel mapping value (`none`/`disabled`) is used in the API payload.
+- `mode` reflects current `rc.inputMode`; mode changes are still configured via `/api/config`.
 
-Update the current web-configurable settings and persist them to NVS.
+### `POST /api/rc/map`
 
-- Request body: form-encoded
-- Supported fields:
-  - `speedLimitMax` (`0..600`)
-  - `webDriveTimeoutMs` (`100..5000`)
-  - `rcInputMode` (`standard_pwm`, `single_sbus`, `dual_sbus`)
-    - `dual_sbus` requires `enableS3DomeCtrl=false`
-    - in `single_sbus`, setting `rc.sbus.recvCh2=true` selects SBUS2 on GPIO 13 (the same receiver input used as receiver #2 in `dual_sbus`)
-  - `enableArm1`, `enableArm2`, `enableAux1`, `enableAux2`, `enableAux3`, `enableDome` (`true`/`false` or `1`/`0`)
-  - `enableRcCh1`, `enableRcCh2`, `enableRcCh3`, `enableRcCh4`, `enableRcCh5`, `enableRcCh6` (`true`/`false` or `1`/`0`)
-  - `enableS1Hoverboard`, `enableS2Sound`, `enableS3DomeCtrl` (`true`/`false` or `1`/`0`)
-  - `domeNeutralUs`, `domeMinPulseUs`, `domeMaxPulseUs` (`1000..2000`)
-  - `domeSpeedLimitPct` (`0..100`)
-  - `rcPwmDriveSpeed`, `rcPwmDriveSteer`, `rcPwmDomeSpeed`, `rcPwmArm1`, `rcPwmArm2`, `rcPwmSound`
-  - `rcSbusDriveSpeed`, `rcSbusDriveSteer`, `rcSbusDomeSpeed`, `rcSbusArm1`, `rcSbusArm2`, `rcSbusSound`
-  - `rc.sbus.recvCh2` (`true`/`false` or `1`/`0`)
+Replace the full channel-centric RC map and persist it to NVS-backed slot storage.
 
-- Success response: same shape as `GET /api/config`
+- Request body (JSON):
 
-RC binding fields use the persisted format
-`source:channel:min:center:max:deadband:reverse`, for example
-`sbus1:1:172:992:1811:0:0` or `pwm:3:1000:1500:2000:0:0`.
+```json
+{
+  "map": [
+    { "source": "sbus1", "channel": 1, "action": "drive_speed" },
+    { "source": "sbus2", "channel": 6, "action": "sound_rand_humming" }
+  ]
+}
+```
 
-- `source` is one of `none`, `pwm`, `sbus1`, or `sbus2`
-- SBUS channels `17` and `18` are valid digital trigger channels when a binding targets
-  SBUS input
-- `rcPwm*` bindings are the persisted profile used by `standard_pwm`
-- `rcSbus*` bindings are the persisted profile used by both `single_sbus` and `dual_sbus`
+- Success response:
 
-`rc.sbus.recvCh2` (boolean) — When `rc.inputMode` is `single_sbus`, selects which
-physical receiver is used: `false` = SBUS1 (GPIO 15), `true` = SBUS2 (GPIO 13).
-Changing this value does not modify channel mapping assignments. Default: `false`.
+```json
+{ "ok": true }
+```
 
+- Validation failure response:
 
+```json
+{
+  "ok": false,
+  "error": "conflict: drive_speed mapped more than once",
+  "entry": { "source": "sbus1", "channel": 3, "action": "drive_speed" }
+}
+```
+
+Validation rules:
+- Duplicate `source+channel` pairs are rejected.
+- Duplicate backbone actions (`drive_speed`, `drive_steer`, `dome_speed`) are rejected.
+- `source` must be one of `sbus1`, `sbus2`, `pwm`.
+- channel range: SBUS `1..18`, PWM `1..6`.
+- `action` must be a known bindable token (see `docs/action-registry.yaml`).
+- Slots not filled by the submitted map are cleared.
 ### `GET /api/rc`
 
 Return the live RC diagnostics snapshot used by the Setup-page RC Mapping surface.

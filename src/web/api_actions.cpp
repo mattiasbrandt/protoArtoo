@@ -57,6 +57,7 @@ void registerActionsRoutes(AsyncWebServer& server) {
             obj["description"] = e.description;
             obj["safety_critical"] = e.safety_critical;
             obj["testable"] = robotActionIsWebTestable(e.id);
+            obj["one_shot"] = robotActionIsOneShotButton(e.id);
             obj["token"] = robotActionIdToString(e.id);
         }
 

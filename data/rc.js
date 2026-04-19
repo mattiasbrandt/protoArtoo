@@ -1,10 +1,10 @@
 (() => {
-  let selectedSlot = null;
-  let selectedChKey = null; // last channel clicked in channel list
+  let selectedChannel = null;
   let rcSnapshot = null;
   let configCache = null;
-  let mappingDraft = {};
-
+  let channelMap = {};
+  let triggerPulseState = {};
+  
   // ── Learning mode state ───────────────────────────────────────────────────
   let learnActive = false;
   let learnBaseline = null;    // raw snapshot taken when detect mode was entered
@@ -18,20 +18,20 @@
   // Buttons go 500+ µs from center (1500); filters cable noise (~10 µs).
   const LEARN_PWM_THRESHOLD = 200;
   // ─────────────────────────────────────────────────────────────────────────
-
+  
   const rcModeCards = document.querySelectorAll(".rc-mode-card");
   const rcInputModeHidden = document.getElementById("rc-input-mode");
   const rcModeFeedback = document.getElementById("rc-mode-feedback");
   const rcResetDefaults = document.getElementById("rc-reset-defaults");
   const rcDisabledCard = document.getElementById("rc-disabled-card");
-
+  
   const singleSbusRecvSection = document.getElementById("single-sbus-recv-section");
   const sbusRecvSel = document.getElementById("sbus-recv-sel");
   const sbusRecvFeedback = document.getElementById("sbus-recv-feedback");
   let sbusRecvFeedbackTimer = null;
   let confirmedSbusRecvValue = null;
   const rcSummaryBody = document.getElementById("rc-summary-body");
-
+  
   const rcChannelItems = document.getElementById("rc-channel-items");
   const rcLivePreviewContent = document.getElementById("rc-live-preview-content");
   const rcPreviewSourceHealth = document.getElementById("rc-preview-source-health");
@@ -41,43 +41,26 @@
   const rcEditorFeedback = document.getElementById("rc-editor-feedback");
   const rcEditorDirty = document.getElementById("rc-editor-dirty");
   const rcEditorSavedAt = document.getElementById("rc-editor-saved-at");
-
+  
   const rcLearnBtn    = document.getElementById("rc-learn-btn");
   const rcLearnBanner = document.getElementById("rc-learn-banner");
   const rcLearnStatus = document.getElementById("rc-learn-status");
   const rcLearnStop   = document.getElementById("rc-learn-stop");
   let rcInputsEnabled = true;
-
-  const SUPPORTED_SLOTS = [
-    "driveSpeed", "driveSteer", "domeSpeed",
-    "arm1", "arm2", "aux1", "aux2", "aux3", "sound",
-    "speedPresetCycle", "opMode", "free1", "free2", "free3"
-  ];
-
-  const isSlotSupported = (slotKey) => {
-    return SUPPORTED_SLOTS.includes(slotKey);
-  };
-
-  const BACKBONE_SLOTS = ["driveSpeed", "driveSteer", "domeSpeed"];
-  const BACKBONE_ACTION_TOKENS = new Set(['drive_speed', 'drive_steer', 'dome_speed']);
-  const naturalActionForSlot = (slotKey) => {
-    const map = { driveSpeed: 'drive_speed', driveSteer: 'drive_steer', domeSpeed: 'dome_speed' };
-    return map[slotKey] || 'none';
-  };
-
+  
+  const ANALOG_ACTION_TOKENS = new Set(['drive_speed', 'drive_steer', 'dome_speed']);
   // Hardcoded fallback used until GET /api/actions resolves.
   // Matches robotActionIdToString() NVS token keys in rc_mapping.h.
   const HARDCODED_ACTION_TARGETS = [
-    { token: 'none', label: 'Disabled', group: 'Off', description: 'Slot is not bound to any action.', disabled: false, testable: false, safetyCritical: false },
     { token: 'drive_speed', label: 'Speed', group: 'Movement', description: 'Forward/reverse drive speed (analog axis)', disabled: false, testable: false, safetyCritical: false },
     { token: 'drive_steer', label: 'Steer', group: 'Movement', description: 'Left/right steering (analog axis)', disabled: false, testable: false, safetyCritical: false },
     { token: 'dome_speed', label: 'Dome Speed', group: 'Movement', description: 'Dome rotation speed (analog axis)', disabled: false, testable: false, safetyCritical: false },
-    { token: 'op_mode', label: 'Set Mode', group: 'Mode', description: 'Switch between stationary and driving mode', disabled: false, testable: true, safetyCritical: false },
-    { token: 'arm1_toggle', label: 'ARM1 Toggle', group: 'Arms', description: 'Toggle arm 1 servo between open and closed', disabled: false, testable: true, safetyCritical: false },
-    { token: 'arm2_toggle', label: 'ARM2 Toggle', group: 'Arms', description: 'Toggle arm 2 servo between open and closed', disabled: false, testable: true, safetyCritical: false },
-    { token: 'aux1_toggle', label: 'AUX1 Toggle', group: 'Arms', description: 'Toggle aux 1 servo between open and closed', disabled: false, testable: true, safetyCritical: false },
-    { token: 'aux2_toggle', label: 'AUX2 Toggle', group: 'Arms', description: 'Toggle aux 2 servo between open and closed', disabled: false, testable: true, safetyCritical: false },
-    { token: 'aux3_toggle', label: 'AUX3 Toggle', group: 'Arms', description: 'Toggle aux 3 servo between open and closed', disabled: false, testable: true, safetyCritical: false },
+    { token: 'op_mode', label: 'Set Mode', group: 'Mode', description: 'Switch between stationary and driving mode', disabled: false, testable: true, safetyCritical: false, oneShot: false },
+    { token: 'arm1_toggle', label: 'ARM1 Toggle', group: 'Arms', description: 'Toggle arm 1 servo between open and closed', disabled: false, testable: true, safetyCritical: false, oneShot: false },
+    { token: 'arm2_toggle', label: 'ARM2 Toggle', group: 'Arms', description: 'Toggle arm 2 servo between open and closed', disabled: false, testable: true, safetyCritical: false, oneShot: false },
+    { token: 'aux1_toggle', label: 'AUX1 Toggle', group: 'Arms', description: 'Toggle aux 1 servo between open and closed', disabled: false, testable: true, safetyCritical: false, oneShot: false },
+    { token: 'aux2_toggle', label: 'AUX2 Toggle', group: 'Arms', description: 'Toggle aux 2 servo between open and closed', disabled: false, testable: true, safetyCritical: false, oneShot: false },
+    { token: 'aux3_toggle', label: 'AUX3 Toggle', group: 'Arms', description: 'Toggle aux 3 servo between open and closed', disabled: false, testable: true, safetyCritical: false, oneShot: false },
     { token: 'seq', label: 'Marcduino Sequence', group: 'Sequences', description: 'Trigger a raw numbered body sequence payload (typically SE30-SE36)', disabled: false, testable: false, safetyCritical: false },
     { token: 'dome_seq', label: 'Dome Sequence (Unavailable)', group: 'Sequences', description: 'Trigger a dome-side panel/light sequence by number', disabled: true, testable: false, safetyCritical: false },
     { token: 'cmd', label: 'Marcduino Command', group: 'Command', description: 'Send a specific Marcduino command string to the dome', disabled: false, testable: false, safetyCritical: false },
@@ -103,7 +86,7 @@
   let actionPickerScrollTop = 0;
   let actionPickerFeedback = null;
   let actionPickerInFlightToken = null;
-  let actionPickerLastSlot = null;
+  let actionPickerLastChannel = null;
   const actionPickerGroupOpen = {};
 
   let actionPickerQuery = '';
@@ -125,7 +108,7 @@
     'dome.action.marcduino-command': 'Command',
     'dome.action.set-speed': 'Movement',
   };
-  const ACTION_GROUP_ORDER = ['Off', 'Movement', 'Mode', 'Arms', 'Sound', 'Sequences', 'Command', 'Safety', 'System', 'Aux', 'Other'];
+  const ACTION_GROUP_ORDER = ['Movement', 'Mode', 'Arms', 'Sound', 'Sequences', 'Command', 'Safety', 'System', 'Aux', 'Other'];
   const DEFAULT_COLLAPSED_GROUPS = new Set(['Sound', 'Sequences']);
   const NON_TESTABLE_TOKENS = new Set(['drive_speed', 'drive_steer', 'dome_speed', 'estop']);
 
@@ -174,22 +157,25 @@
   };
 
   const rememberRecentActionToken = (token) => {
-    if (!token || token === 'none') return;
+    if (!token) return;
     recentActionTokens = [token, ...recentActionTokens.filter((entry) => entry !== token)]
       .slice(0, ACTION_RECENTS_LIMIT);
     saveRecentActionTokens();
   };
 
   const buildActionTargetsFromApi = (entries) => {
-    const targets = [HARDCODED_ACTION_TARGETS[0]];
+    const targets = [];
     entries.forEach((entry) => {
       const token = typeof entry.token === 'string' ? entry.token : '';
-      if (!token || token === 'none') return;
+      if (!token) return;
       const unavail = UNAVAILABLE_TOKENS.has(token);
       const safetyCritical = Boolean(entry.safety_critical);
       const testable = typeof entry.testable === 'boolean'
         ? entry.testable
         : !NON_TESTABLE_TOKENS.has(token);
+      const oneShot = typeof entry.one_shot === 'boolean'
+        ? entry.one_shot
+        : !ANALOG_ACTION_TOKENS.has(token);
       const label = entry.display_name || entry.name || token;
       targets.push({
         token,
@@ -199,6 +185,7 @@
         disabled: unavail,
         testable: testable && !unavail && !safetyCritical,
         safetyCritical,
+        oneShot,
       });
     });
     return targets;
@@ -246,114 +233,17 @@
   };
 
   const SOURCE_OPTIONS = {
-    standard_pwm: ["none", "pwm"],
-    single_sbus: ["none", "sbus1", "sbus2"],
-    dual_sbus: ["none", "sbus1", "sbus2"],
+    standard_pwm: ["pwm"],
+    single_sbus: ["sbus1", "sbus2"],
+    dual_sbus: ["sbus1", "sbus2"],
   };
 
-  const DEFAULT_BINDING = {
-    source: "none",
-    channel: 0,
-    min: 1000,
-    center: 1500,
-    max: 2000,
-    deadband: 0,
-    reverse: false,
-    target: "none",
-    payload: ""
-  };
+  const channelKeyOf = (source, channel) => `${source}:${Number(channel)}`;
 
-  const RC_ACTIONS = {
-    standard_pwm: [
-      { key: "driveSpeed", field: "rcPwmDriveSpeed", label: "Drive speed", type: "backbone" },
-      { key: "driveSteer", field: "rcPwmDriveSteer", label: "Drive steer", type: "backbone" },
-      { key: "domeSpeed", field: "rcPwmDomeSpeed", label: "Dome speed", type: "backbone" },
-      { key: "arm1", field: "rcArm1", label: "ARM1 trigger", type: "trigger" },
-      { key: "arm2", field: "rcArm2", label: "ARM2 trigger", type: "trigger" },
-      { key: "aux1", field: "rcAux1", label: "AUX1 trigger", type: "trigger" },
-      { key: "aux2", field: "rcAux2", label: "AUX2 trigger", type: "trigger" },
-      { key: "aux3", field: "rcAux3", label: "AUX3 trigger", type: "trigger" },
-      { key: "sound", field: "rcSound", label: "Sound trigger", type: "trigger" },
-      { key: "speedPresetCycle", field: "rcFree0", label: "Speed preset cycle", type: "trigger" },
-      { key: "opMode", field: "rcOpMode", label: "Op-mode switch", type: "trigger" },
-      { key: "free1", field: "rcFree1", label: "Free slot 1", type: "trigger" },
-      { key: "free2", field: "rcFree2", label: "Free slot 2", type: "trigger" },
-      { key: "free3", field: "rcFree3", label: "Free slot 3", type: "trigger" },
-    ],
-    single_sbus: [
-      { key: "driveSpeed", field: "rcSbusDriveSpeed", label: "Drive speed", type: "backbone" },
-      { key: "driveSteer", field: "rcSbusDriveSteer", label: "Drive steer", type: "backbone" },
-      { key: "domeSpeed", field: "rcSbusDomeSpeed", label: "Dome speed", type: "backbone" },
-      { key: "arm1", field: "rcArm1", label: "ARM1 trigger", type: "trigger" },
-      { key: "arm2", field: "rcArm2", label: "ARM2 trigger", type: "trigger" },
-      { key: "aux1", field: "rcAux1", label: "AUX1 trigger", type: "trigger" },
-      { key: "aux2", field: "rcAux2", label: "AUX2 trigger", type: "trigger" },
-      { key: "aux3", field: "rcAux3", label: "AUX3 trigger", type: "trigger" },
-      { key: "sound", field: "rcSound", label: "Sound trigger", type: "trigger" },
-      { key: "speedPresetCycle", field: "rcFree0", label: "Speed preset cycle", type: "trigger" },
-      { key: "opMode", field: "rcOpMode", label: "Op-mode switch", type: "trigger" },
-      { key: "free1", field: "rcFree1", label: "Free slot 1", type: "trigger" },
-      { key: "free2", field: "rcFree2", label: "Free slot 2", type: "trigger" },
-      { key: "free3", field: "rcFree3", label: "Free slot 3", type: "trigger" },
-    ],
-    dual_sbus: [
-      { key: "driveSpeed", field: "rcSbusDriveSpeed", label: "Drive speed", type: "backbone" },
-      { key: "driveSteer", field: "rcSbusDriveSteer", label: "Drive steer", type: "backbone" },
-      { key: "domeSpeed", field: "rcSbusDomeSpeed", label: "Dome speed", type: "backbone" },
-      { key: "arm1", field: "rcArm1", label: "ARM1 trigger", type: "trigger" },
-      { key: "arm2", field: "rcArm2", label: "ARM2 trigger", type: "trigger" },
-      { key: "aux1", field: "rcAux1", label: "AUX1 trigger", type: "trigger" },
-      { key: "aux2", field: "rcAux2", label: "AUX2 trigger", type: "trigger" },
-      { key: "aux3", field: "rcAux3", label: "AUX3 trigger", type: "trigger" },
-      { key: "sound", field: "rcSound", label: "Sound trigger", type: "trigger" },
-      { key: "speedPresetCycle", field: "rcFree0", label: "Speed preset cycle", type: "trigger" },
-      { key: "opMode", field: "rcOpMode", label: "Op-mode switch", type: "trigger" },
-      { key: "free1", field: "rcFree1", label: "Free slot 1", type: "trigger" },
-      { key: "free2", field: "rcFree2", label: "Free slot 2", type: "trigger" },
-      { key: "free3", field: "rcFree3", label: "Free slot 3", type: "trigger" },
-    ],
-  };
-
-  const RC_BINDING_PATHS = {
-    rcPwmDriveSpeed: ["rc", "pwm", "driveSpeed"],
-    rcPwmDriveSteer: ["rc", "pwm", "driveSteer"],
-    rcPwmDomeSpeed: ["rc", "pwm", "domeSpeed"],
-    rcPwmArm1: ["rc", "pwm", "arm1"],
-    rcPwmArm2: ["rc", "pwm", "arm2"],
-    rcPwmSound: ["rc", "pwm", "sound"],
-    rcSbusDriveSpeed: ["rc", "sbus", "driveSpeed"],
-    rcSbusDriveSteer: ["rc", "sbus", "driveSteer"],
-    rcSbusDomeSpeed: ["rc", "sbus", "domeSpeed"],
-    rcSbusArm1: ["rc", "sbus", "arm1"],
-    rcSbusArm2: ["rc", "sbus", "arm2"],
-    rcSbusSound: ["rc", "sbus", "sound"],
-    rcArm1: ["rc", "triggers", "arm1"],
-    rcArm2: ["rc", "triggers", "arm2"],
-    rcAux1: ["rc", "triggers", "aux1"],
-    rcAux2: ["rc", "triggers", "aux2"],
-    rcAux3: ["rc", "triggers", "aux3"],
-    rcSound: ["rc", "triggers", "sound"],
-    rcOpMode: ["rc", "triggers", "opMode"],
-    rcFree0: ["rc", "triggers", "free0"],
-    rcFree1: ["rc", "triggers", "free1"],
-    rcFree2: ["rc", "triggers", "free2"],
-    rcFree3: ["rc", "triggers", "free3"],
-  };
-
-  const readPath = (obj, path) => {
-    let cur = obj;
-    for (let i = 0; i < path.length; i += 1) {
-      if (cur == null || typeof cur !== "object") return undefined;
-      cur = cur[path[i]];
-    }
-    return cur;
-  };
-
-  const getConfigBindingString = (cfg, field) => {
-    const path = RC_BINDING_PATHS[field];
-    if (!path) return "";
-    const value = readPath(cfg, path);
-    return typeof value === "string" ? value : "";
+  const parseChannelKey = (channelKey) => {
+    const [source = "", channelValue = "0"] = String(channelKey || "").split(":");
+    const channel = Number.parseInt(channelValue, 10) || 0;
+    return { source, channel };
   };
 
   const getRcModeFromConfig = (cfg) => {
@@ -400,7 +290,6 @@
     }
   };
 
-
   const setModeFeedback = (message, variant = '') => {
     if (!rcModeFeedback) return;
     rcModeFeedback.textContent = message;
@@ -435,97 +324,71 @@
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
+    .replace(/\"/g, "&quot;")
     .replace(/'/g, "&#39;");
 
-  const parseBindingString = (value) => {
-    if (typeof value !== "string" || value.trim() === "") {
-      return { ...DEFAULT_BINDING };
-    }
-
-    const parts = value.split(":");
-    if (parts.length >= 9) {
-      const source = parts[0] || "none";
-      const channel = parts[1] || "0";
-      const target = parts[2] || "none";
-      const payload = parts.slice(3, parts.length - 5).join(":");
-      const min = parts[parts.length - 5] || "1000";
-      const center = parts[parts.length - 4] || "1500";
-      const max = parts[parts.length - 3] || "2000";
-      const deadband = parts[parts.length - 2] || "0";
-      const reverse = parts[parts.length - 1] || "0";
-
-      const normalizedTarget = target === "marcduino" ? "cmd" : target;
-
-      return {
-        source,
-        channel: Number.parseInt(channel, 10) || 0,
-        target: normalizedTarget,
-        payload,
-        min: Number.parseInt(min, 10) || 1000,
-        center: Number.parseInt(center, 10) || 1500,
-        max: Number.parseInt(max, 10) || 2000,
-        deadband: Number.parseInt(deadband, 10) || 0,
-        reverse: reverse === "1" || reverse === "true",
-      };
-    } else {
-      const [source = "none", channel = "0", min = "1000", center = "1500", max = "2000",
-        deadband = "0", reverse = "0"] = value.split(":");
-
-      return {
-        source,
-        channel: Number.parseInt(channel, 10) || 0,
-        target: "none",
-        payload: "",
-        min: Number.parseInt(min, 10) || 1000,
-        center: Number.parseInt(center, 10) || 1500,
-        max: Number.parseInt(max, 10) || 2000,
-        deadband: Number.parseInt(deadband, 10) || 0,
-        reverse: reverse === "1" || reverse === "true",
-      };
-    }
-  };
-
-  const formatBindingString = (binding, isBackbone = false) => {
-    const source = binding.source || "none";
-    const channel = source === "none" ? 0 : Number.parseInt(binding.channel, 10) || 0;
-    const min = Number.parseInt(binding.min, 10) || 1000;
-    const center = Number.parseInt(binding.center, 10) || 1500;
-    const max = Number.parseInt(binding.max, 10) || 2000;
-    const deadband = Number.parseInt(binding.deadband, 10) || 0;
-    const reverse = binding.reverse ? 1 : 0;
-
-    if (isBackbone) {
-      // Old format for backbone bindings: source:channel:min:center:max:deadband:reverse
-      return [source, channel, min, center, max, deadband, reverse].join(":");
-    } else {
-      // New format for trigger bindings: source:channel:target:payload:min:center:max:deadband:reverse
-      const target = binding.target || "none";
-      const payload = binding.payload || "";
-      return [source, channel, target, payload, min, center, max, deadband, reverse].join(":");
-    }
-  };
-
   const getEditorMode = () => {
-    return rcSnapshot?.mode || "standard_pwm";
+    return rcSnapshot?.mode || rcInputModeHidden?.value || "standard_pwm";
   };
 
-  const cloneModeDraft = (mode) => {
-    const draft = {};
-    (RC_ACTIONS[mode] || []).forEach(({ key, field }) => {
-      draft[key] = parseBindingString(getConfigBindingString(configCache, field));
+  const normalizeMapEntry = (entry) => {
+    const source = typeof entry?.source === 'string' ? entry.source : '';
+    const channel = Number.parseInt(entry?.channel, 10) || 0;
+    const action = typeof entry?.action === 'string' ? entry.action : '';
+    const payload = entry?.payload == null ? '' : String(entry.payload);
+    if (!source || channel <= 0 || !action) return null;
+    const normalized = { source, channel, action };
+    if (payload) normalized.payload = payload;
+    return normalized;
+  };
+
+  const assignmentForChannel = (channelKey) => channelMap[channelKey] || null;
+
+
+  const asMapArray = () => Object.values(channelMap);
+
+  const modeMapFromArray = (entries) => {
+    const byChannel = {};
+    (Array.isArray(entries) ? entries : []).forEach((entry) => {
+      const normalized = normalizeMapEntry(entry);
+      if (!normalized) return;
+      byChannel[channelKeyOf(normalized.source, normalized.channel)] = normalized;
     });
-    return draft;
+    return byChannel;
   };
 
-  const findChannelForSlot = (slotKey, snapshot) => {
-    if (!snapshot || !snapshot.channels) return null;
+  const isAnalogAction = (token) => ANALOG_ACTION_TOKENS.has(token);
 
-    if (BACKBONE_SLOTS.includes(slotKey)) {
-      return snapshot.channels.find(ch => ch.name === slotKey);
+  const mapEntryAction = (entry) => String(entry?.action || '');
+
+  const mappedFromRaw = (source, raw) => {
+    if (raw == null) return 0;
+    if (source === 'pwm') {
+      return Math.max(-1, Math.min(1, (Number(raw) - 1500) / 500));
     }
+    return Math.max(-1, Math.min(1, (Number(raw) - 992) / 819));
+  };
 
-    return snapshot.channels.find(ch => ch.name === slotKey);
+  const rawForChannel = (source, channel) => {
+    const sourceRaw = rcSnapshot?.raw?.[source];
+    return Array.isArray(sourceRaw) ? sourceRaw[channel - 1] : null;
+  };
+
+  const getChannelTelemetry = (channelKey) => {
+    if (!rcSnapshot) return null;
+    const { source, channel } = parseChannelKey(channelKey);
+    if (!source || channel <= 0) return null;
+    const raw = rawForChannel(source, channel);
+    if (raw == null) return { raw: null, mapped: 0, pressed: false, pressedLevel: false };
+    const center = source === 'pwm' ? 1500 : 992;
+    const threshold = source === 'pwm' ? 200 : 300;
+    const pressedLevel = Math.abs(raw - center) >= threshold;
+    return {
+      raw,
+      mapped: mappedFromRaw(source, raw),
+      pressed: pressedLevel,
+      pressedLevel,
+    };
   };
 
   let saveTimeout = null;
@@ -538,19 +401,10 @@
 
   let debouncedSaveRcMode = () => {};
 
-  const getActionsForMode = (mode = getEditorMode()) => RC_ACTIONS[mode] || RC_ACTIONS.standard_pwm;
-
-  const isBackboneSlot = (slotKey) => BACKBONE_SLOTS.includes(slotKey);
-
-  const toActionToken = (slotKey, binding) => {
-    if (slotKey === "driveSpeed") return "drive_speed";
-    if (slotKey === "driveSteer") return "drive_steer";
-    if (slotKey === "domeSpeed") return "dome_speed";
-    return binding?.target || "none";
-  };
+  const actionTargetFromToken = (token) => actionTargets.find((item) => item.token === token) || null;
 
   const actionLabelFromToken = (token) => {
-    const found = actionTargets.find(item => item.token === token);
+    const found = actionTargetFromToken(token);
     return found ? found.label : token;
   };
 
@@ -558,9 +412,8 @@
     if (source === "pwm") return "PWM";
     if (source === "sbus1") return "SBUS#1";
     if (source === "sbus2") return "SBUS#2";
-    return "Disabled";
+    return "Unknown";
   };
-
 
   const MODE_LABEL = {
     standard_pwm: "🎮 Standard PWM",
@@ -570,9 +423,9 @@
 
   const modeLabel = (mode) => MODE_LABEL[mode] || mode;
 
-  const slotLabelForKey = (slotKey) => {
-    const found = getActionsForMode().find((action) => action.key === slotKey);
-    return found ? found.label : slotKey;
+  const channelTitleFromKey = (channelKey) => {
+    const { source, channel } = parseChannelKey(channelKey);
+    return `${sourceLabel(source)} CH ${channel || '—'}`;
   };
 
   const setEditorDirtyState = (state, text) => {
@@ -601,31 +454,43 @@
     }
   };
 
-  const bindingForSlot = (slotKey) => {
-    const mode = getEditorMode();
-    if (!mappingDraft[mode]) {
-      mappingDraft[mode] = cloneModeDraft(mode);
-    }
-    return mappingDraft[mode][slotKey] || { ...DEFAULT_BINDING };
-  };
-
-  const normalizeSlotName = (name) => String(name || "").replace(/[_\s-]/g, "").toLowerCase();
-
-  const getChannelTelemetry = (slotKey) => {
-    if (!rcSnapshot) return null;
-    const channels = Array.isArray(rcSnapshot.channels) ? rcSnapshot.channels : [];
-    const wanted = normalizeSlotName(slotKey);
-    return channels.find(ch => normalizeSlotName(ch.name) === wanted) || null;
-  };
-
   const miniBarHtml = (mapped) => {
     const normalized = Math.max(0, Math.min(1, (Number(mapped) + 1) / 2));
     const pct = Math.round(normalized * 100);
     return `<div class="rc-mini-bar"><div class="rc-mini-fill" style="--mini-pct:${pct}%"></div></div>`;
   };
 
-  const triggerStateHtml = (channel) => {
-    const pressed = Boolean(channel && channel.pressed);
+  const isOneShotActionToken = (token) => {
+    if (!token || isAnalogAction(token)) return false;
+    const found = actionTargetFromToken(token);
+    if (found && typeof found.oneShot === 'boolean') return found.oneShot;
+    return true;
+  };
+
+  const consumeTriggerPulse = (channelKey, pressedLevel) => {
+    if (!channelKey) return false;
+    const now = Date.now();
+    const state = triggerPulseState[channelKey] || { init: false, lastPressed: false, pulseUntil: 0 };
+    if (!state.init) {
+      state.init = true;
+      state.lastPressed = pressedLevel;
+      state.pulseUntil = 0;
+      triggerPulseState[channelKey] = state;
+      return false;
+    }
+    if (pressedLevel !== state.lastPressed) {
+      state.lastPressed = pressedLevel;
+      state.pulseUntil = now + 450;
+    }
+    triggerPulseState[channelKey] = state;
+    return now <= state.pulseUntil;
+  };
+
+  const triggerStateHtml = (token, channelKey, telemetry) => {
+    const pressedLevel = Boolean(telemetry && telemetry.pressedLevel);
+    const pressed = isOneShotActionToken(token)
+      ? consumeTriggerPulse(channelKey, pressedLevel)
+      : pressedLevel;
     return pressed ? '<span aria-label="Pressed">● PRESSED</span>' : '<span aria-label="Released">○ Released</span>';
   };
 
@@ -665,50 +530,33 @@
 
   const renderSummaryTable = () => {
     if (!rcSummaryBody) return;
-    const actions = getActionsForMode();
+    const rows = asMapArray()
+      .slice()
+      .sort((a, b) => (a.source === b.source ? a.channel - b.channel : a.source.localeCompare(b.source)));
 
-    const mapped = actions
-      .map(({ key }) => ({ key, binding: bindingForSlot(key) }))
-      .filter(({ key, binding }) => {
-        if (binding.source === "none") return false;
-        const token = toActionToken(key, binding);
-        return token && token !== "none";
-      });
-
-    if (!mapped.length) {
+    if (!rows.length) {
       rcSummaryBody.innerHTML = '<tr><td colspan="3" class="desc">No channels mapped yet.</td></tr>';
       return;
     }
 
-    // Group by source, sort within each group by channel number
-    const groups = {};
-    for (const { key, binding } of mapped) {
-      if (!groups[binding.source]) groups[binding.source] = [];
-      groups[binding.source].push({ key, binding });
-    }
-    for (const src of Object.keys(groups)) {
-      groups[src].sort((a, b) => (a.binding.channel || 0) - (b.binding.channel || 0));
-    }
+    const liveKeys = new Set(rows.map((entry) => channelKeyOf(entry.source, entry.channel)));
+    Object.keys(triggerPulseState).forEach((key) => {
+      if (!liveKeys.has(key)) delete triggerPulseState[key];
+    });
 
-    const SOURCE_ORDER = ["sbus1", "sbus2", "pwm"];
-    const orderedSources = SOURCE_ORDER.filter(s => groups[s]);
-
-    const rows = [];
-    for (const src of orderedSources) {
-      rows.push(`<tr class="rc-summary-group-header"><td colspan="3"><span class="rc-map-source-badge" data-source="${escapeHtml(src)}">${escapeHtml(sourceLabel(src))}</span></td></tr>`);
-      for (const { key, binding } of groups[src]) {
-        const telemetry = getChannelTelemetry(key);
-        const actionToken = toActionToken(key, binding);
-        const live = isBackboneSlot(key) ? miniBarHtml(telemetry?.mapped || 0) : triggerStateHtml(telemetry);
-        rows.push(`<tr data-slot="${escapeHtml(key)}">
-          <td>${escapeHtml(actionLabelFromToken(actionToken))}</td>
-          <td>${escapeHtml(String(binding.channel || "—"))}</td>
-          <td>${live}</td>
-        </tr>`);
-      }
-    }
-
-    rcSummaryBody.innerHTML = rows.join("");
+    rcSummaryBody.innerHTML = rows.map((entry) => {
+      const channelKey = channelKeyOf(entry.source, entry.channel);
+      const telemetry = getChannelTelemetry(channelKey);
+      const token = mapEntryAction(entry);
+      const live = isAnalogAction(token)
+        ? miniBarHtml(telemetry?.mapped || 0)
+        : triggerStateHtml(token, channelKey, telemetry);
+      return `<tr data-chkey="${escapeHtml(channelKey)}" class="${selectedChannel === channelKey ? 'active-channel' : ''}">
+        <td>${escapeHtml(actionLabelFromToken(token))}</td>
+        <td>${escapeHtml(channelTitleFromKey(channelKey))}</td>
+        <td>${live}</td>
+      </tr>`;
+    }).join('');
   };
 
   const renderChannelList = () => {
@@ -716,50 +564,32 @@
     const mode = getEditorMode();
     const snap = rcSnapshot;
 
-    // Build reverse lookup: "sbus1:3" -> slotKey
-    const chToSlot = {};
-    const actions = getActionsForMode();
-    actions.forEach(({ key }) => {
-      const b = bindingForSlot(key);
-      if (b.source !== 'none' && b.channel) {
-        chToSlot[`${b.source}:${b.channel}`] = key;
-      }
-    });
-
-    // Determine active channel key from selectedSlot
-    const selBinding = selectedSlot ? bindingForSlot(selectedSlot) : null;
-    const selectedChKey = selBinding && selBinding.source !== 'none'
-      ? `${selBinding.source}:${selBinding.channel}` : null;
-
     const renderGroup = (title, source, rawArray, channelCount) => {
       const items = [];
       for (let i = 1; i <= channelCount; i++) {
-        const chKey = `${source}:${i}`;
+        const channelKey = channelKeyOf(source, i);
         const raw = rawArray ? rawArray[i - 1] : null;
-        const slotKey = chToSlot[chKey];
-        const slotLabel = slotKey ? (() => {
-          const token = toActionToken(slotKey, bindingForSlot(slotKey));
-          return (token && token !== 'none') ? actionLabelFromToken(token) : null;
-        })() : null;
-        const isActive = chKey === selectedChKey;
-        const rawDisplay = raw != null ? raw : '\u2014';
+        const entry = assignmentForChannel(channelKey);
+        const actionLabel = entry ? actionLabelFromToken(mapEntryAction(entry)) : null;
+        const isActive = channelKey === selectedChannel;
+        const rawDisplay = raw != null ? raw : '—';
         const barPct = raw != null
           ? (source === 'pwm'
               ? Math.round(((raw - 1000) / 1000) * 100)
               : Math.round(((raw - 172) / (1811 - 172)) * 100))
           : 0;
         const clampedPct = Math.max(0, Math.min(100, barPct));
-        items.push(`<div class="rc-channel-item${isActive ? ' active' : ''}" data-chkey="${escapeHtml(chKey)}" role="button" tabindex="0" aria-pressed="${isActive}">
+        items.push(`<div class="rc-channel-item${isActive ? ' active' : ''}" data-chkey="${escapeHtml(channelKey)}" role="button" tabindex="0" aria-pressed="${isActive}">
           <div class="rc-channel-item-head">
             <span class="rc-ch-num">CH ${i}</span>
             <span class="rc-ch-raw">${rawDisplay}</span>
           </div>
           <div class="rc-channel-mini-bar"><div class="rc-channel-mini-fill" style="--pct:${clampedPct}%"></div></div>
-          <div class="rc-ch-slot">${slotLabel ? escapeHtml(slotLabel) : '<span class="rc-ch-unassigned">unassigned</span>'}</div>
+          <div class="rc-ch-action">${actionLabel ? escapeHtml(actionLabel) : '<span class="rc-ch-unassigned">not mapped</span>'}</div>
         </div>`);
       }
       return `<div class="rc-channel-group">
-        <div class="rc-slot-group-title">${escapeHtml(title)}</div>
+        <div class="rc-channel-group-title">${escapeHtml(title)}</div>
         ${items.join('')}
       </div>`;
     };
@@ -768,26 +598,25 @@
     if (mode === 'standard_pwm') {
       html = renderGroup('PWM', 'pwm', snap?.raw?.pwm, 6);
     } else {
-      // Show all SBUS channels — both receivers may have bindings regardless of which is "active"
       html = renderGroup('SBUS1', 'sbus1', snap?.raw?.sbus1, 6)
            + renderGroup('SBUS2', 'sbus2', snap?.raw?.sbus2, 6);
     }
 
     rcChannelItems.innerHTML = html;
 
-    const chNodes = Array.from(rcChannelItems.querySelectorAll('.rc-channel-item'));
-    chNodes.forEach((node, index) => {
-      const chKey = node.dataset.chkey;
-      node.addEventListener('click', () => selectChannel(chKey));
-      wireFocusableItem(node, () => selectChannel(chKey));
+    const channelNodes = Array.from(rcChannelItems.querySelectorAll('.rc-channel-item'));
+    channelNodes.forEach((node, index) => {
+      const channelKey = node.dataset.chkey;
+      node.addEventListener('click', () => selectChannel(channelKey));
+      wireFocusableItem(node, () => selectChannel(channelKey));
       node.addEventListener('keydown', (e) => {
         if (e.key === 'ArrowDown') {
           e.preventDefault();
-          chNodes[Math.min(index + 1, chNodes.length - 1)]?.focus();
+          channelNodes[Math.min(index + 1, channelNodes.length - 1)]?.focus();
         }
         if (e.key === 'ArrowUp') {
           e.preventDefault();
-          chNodes[Math.max(index - 1, 0)]?.focus();
+          channelNodes[Math.max(index - 1, 0)]?.focus();
         }
       });
     });
@@ -799,13 +628,10 @@
   const updateChannelListRaw = () => {
     if (!rcChannelItems || !rcSnapshot?.raw) return;
     rcChannelItems.querySelectorAll('.rc-channel-item').forEach(el => {
-      const parts = el.dataset.chkey.split(':');
-      const source = parts[0];
-      const ch = Number(parts[1]);
-      const rawArr = rcSnapshot.raw[source];
-      const raw = rawArr ? rawArr[ch - 1] : null;
+      const { source, channel } = parseChannelKey(el.dataset.chkey);
+      const raw = rawForChannel(source, channel);
       const rawEl = el.querySelector('.rc-ch-raw');
-      if (rawEl) rawEl.textContent = raw != null ? raw : '\u2014';
+      if (rawEl) rawEl.textContent = raw != null ? raw : '—';
       const fillEl = el.querySelector('.rc-channel-mini-fill');
       if (fillEl && raw != null) {
         const barPct = source === 'pwm'
@@ -820,62 +646,33 @@
     if (!rcLivePreviewContent) return;
     renderSourceHealth();
 
-    if (!selectedSlot) {
-      if (selectedChKey) {
-        const [src, chStr] = selectedChKey.split(':');
-        const ch = Number(chStr);
-        const rawArr = rcSnapshot?.raw?.[src];
-        const raw = rawArr ? rawArr[ch - 1] : null;
-        rcLivePreviewContent.innerHTML = `
-          <div class="rc-bind-ch-label">${escapeHtml(src.toUpperCase())} CH ${escapeHtml(chStr)}</div>
-          <div class="rc-preview-stack mt-8">
-            <div>Raw: <strong>${raw != null ? raw : '\u2014'}</strong></div>
-          </div>`;
-      } else {
-        rcLivePreviewContent.innerHTML = '<div class="desc">Select a channel from the list to see live data.</div>';
-      }
+    if (!selectedChannel) {
+      rcLivePreviewContent.innerHTML = '<div class="desc">Select a channel from the list to see live data.</div>';
       return;
     }
 
-    const binding = bindingForSlot(selectedSlot);
-    const telemetry = getChannelTelemetry(selectedSlot);
+    const entry = assignmentForChannel(selectedChannel) || { ...parseChannelKey(selectedChannel), payload: '' };
+    const telemetry = getChannelTelemetry(selectedChannel);
     const mapped = Number(telemetry?.mapped || 0);
-    const raw = telemetry?.raw ?? 0;
-    const rawUs = telemetry?.rawUs ?? 1500;
+    const raw = telemetry?.raw ?? '—';
+    const actionToken = mapEntryAction(entry);
 
-    let barHtml = "";
-    if (selectedSlot === "driveSpeed" || selectedSlot === "driveSteer") {
+    let barHtml = '';
+    if (isAnalogAction(actionToken)) {
       const width = Math.min(50, Math.round(Math.abs(mapped) * 50));
       const left = mapped >= 0 ? 50 : 50 - width;
       barHtml = `<div class="rc-preview-bar rc-preview-bar-center">
         <div class="rc-preview-fill signed" style="--bar-left:${left}%;--bar-width:${width}%"></div>
       </div>`;
-    } else if (selectedSlot === "domeSpeed") {
-      const width = Math.round(Math.abs(mapped) * 100);
-      const dir = mapped < 0 ? "Reverse" : mapped > 0 ? "Forward" : "Stopped";
-      barHtml = `<div class="rc-preview-bar">
-        <div class="rc-preview-fill" style="--bar-width:${Math.max(0, Math.min(100, width))}%"></div>
-      </div><div class="rc-preview-dir">Direction: ${dir}</div>`;
     }
 
-    if (isBackboneSlot(selectedSlot)) {
-      rcLivePreviewContent.innerHTML = `
-        <h4 class="rc-preview-title">${escapeHtml(slotLabelForKey(selectedSlot))}</h4>
-        <div class="rc-preview-stack">
-          <div>Source: <strong>${escapeHtml(sourceLabel(binding.source))}</strong> · CH ${binding.source === "none" ? "—" : escapeHtml(String(binding.channel || "—"))}</div>
-          <div>Raw: <strong>${escapeHtml(String(raw))}</strong> · ${escapeHtml(String(rawUs))} us</div>
-          <div>Mapped: <strong>${mapped.toFixed(3)}</strong></div>
-          ${barHtml}
-        </div>`;
-    } else {
-      rcLivePreviewContent.innerHTML = `
-        <h4 class="rc-preview-title">${escapeHtml(slotLabelForKey(selectedSlot))}</h4>
-        <div class="rc-preview-stack">
-          <div>Source: <strong>${escapeHtml(sourceLabel(binding.source))}</strong> · CH ${binding.source === "none" ? "—" : escapeHtml(String(binding.channel || "—"))}</div>
-          <div>State: ${triggerStateHtml(telemetry)}</div>
-          <div>Raw: <strong>${escapeHtml(String(raw))}</strong></div>
-        </div>`;
-    }
+    rcLivePreviewContent.innerHTML = `
+      <h4 class="rc-preview-title">${escapeHtml(channelTitleFromKey(selectedChannel))}</h4>
+      <div class="rc-preview-stack">
+        <div>Action: <strong>${actionToken ? escapeHtml(actionLabelFromToken(actionToken)) : 'Not mapped'}</strong></div>
+        <div>Raw: <strong>${escapeHtml(String(raw))}</strong></div>
+        ${isAnalogAction(actionToken) ? `<div>Mapped: <strong>${mapped.toFixed(3)}</strong></div>${barHtml}` : `<div>State: ${triggerStateHtml(actionToken, selectedChannel, telemetry)}</div>`}
+      </div>`;
   };
 
   const groupedActionTargets = () => {
@@ -974,101 +771,26 @@
     </div>`;
   };
 
-  const findBestSlotForAction = (token) => {
-    const actions = getActionsForMode();
-    const natural = {
-      'drive_speed': 'driveSpeed', 'drive_steer': 'driveSteer', 'dome_speed': 'domeSpeed',
-      'arm1_toggle': 'arm1', 'arm2_toggle': 'arm2',
-      'aux1_toggle': 'aux1', 'aux2_toggle': 'aux2', 'aux3_toggle': 'aux3',
-      'speed_preset_cycle': 'speedPresetCycle', 'op_mode': 'opMode',
-    };
-    if (natural[token] && actions.find(a => a.key === natural[token])) return natural[token];
-    // Generic actions: use first unbound trigger slot in preference order
-    for (const key of ['sound', 'free1', 'free2', 'free3', 'aux3', 'aux2', 'aux1']) {
-      const b = bindingForSlot(key);
-      if (b.source === 'none' && actions.find(a => a.key === key)) return key;
-    }
-    return actions.find(({ key }) => !isBackboneSlot(key) && bindingForSlot(key).source === 'none')?.key || null;
-  };
-
   const renderEditor = () => {
     if (!rcEditorContent) return;
-    if (!selectedSlot) {
+    if (!selectedChannel) {
       actionPickerFeedback = null;
       actionPickerInFlightToken = null;
-      actionPickerLastSlot = null;
-
-      if (selectedChKey) {
-        // Unassigned channel clicked — show action picker directly
-        const [src, chStr] = selectedChKey.split(':');
-        rcEditorContent.innerHTML = `
-          <div class="rc-bind-prompt">
-            <div class="rc-bind-ch-label">${escapeHtml(src.toUpperCase())} CH ${escapeHtml(chStr)}</div>
-            <div class="desc mt-4">Pick an action to assign to this channel:</div>
-            <label class="rc-action-label-head mt-8">Action</label>
-            ${renderActionPicker('none', actionPickerQuery)}
-          </div>`;
-
-        const bindSearchInput = rcEditorContent.querySelector('[data-action-search]');
-        if (bindSearchInput) {
-          bindSearchInput.value = actionPickerQuery;
-          bindSearchInput.addEventListener('input', () => {
-            actionPickerQuery = bindSearchInput.value;
-            actionPickerScrollTop = 0;
-            renderEditor();
-          });
-          const clearBtn = rcEditorContent.querySelector('[data-action-search-clear]');
-          if (clearBtn) {
-            clearBtn.addEventListener('click', () => {
-              actionPickerQuery = '';
-              actionPickerScrollTop = 0;
-              renderEditor();
-              rcEditorContent.querySelector('[data-action-search]')?.focus();
-            });
-          }
-        }
-        const bindPicker = rcEditorContent.querySelector('.rc-action-picker');
-        if (bindPicker) bindPicker.scrollTop = actionPickerScrollTop;
-
-        rcEditorContent.querySelectorAll('[data-action-token]').forEach(row => {
-          row.addEventListener('click', () => {
-            const token = row.dataset.actionToken;
-            if (!token || token === 'none') return;
-            const slotKey = findBestSlotForAction(token);
-            if (!slotKey) return;
-            const mode = getEditorMode();
-            if (!mappingDraft[mode]) mappingDraft[mode] = {};
-            mappingDraft[mode][slotKey] = {
-              ...(mappingDraft[mode][slotKey] || { ...DEFAULT_BINDING }),
-              source: src,
-              channel: Number(chStr),
-              target: token,
-            };
-            selectedChKey = null;
-            selectSlot(slotKey);
-            markEditorDirty();
-          });
-        });
-
-        if (rcEditorApply) rcEditorApply.disabled = true;
-        if (rcEditorRevert) rcEditorRevert.disabled = true;
-        setEditorDirtyState("clean", "Select an action");
-      } else {
-        rcEditorContent.innerHTML = '<div class="desc">Select a channel from the list to edit its mapping.</div>';
-        if (rcEditorApply) rcEditorApply.disabled = true;
-        if (rcEditorRevert) rcEditorRevert.disabled = true;
-        setEditorDirtyState("clean", "Select a slot to edit");
-      }
+      actionPickerLastChannel = null;
+      rcEditorContent.innerHTML = '<div class="desc">Select a channel from the list to edit its mapping.</div>';
+      if (rcEditorApply) rcEditorApply.disabled = true;
+      if (rcEditorRevert) rcEditorRevert.disabled = true;
+      setEditorDirtyState('clean', 'Select a channel to edit');
       return;
     }
 
-    if (actionPickerLastSlot !== selectedSlot) {
+    if (actionPickerLastChannel !== selectedChannel) {
       actionPickerFeedback = null;
       actionPickerInFlightToken = null;
       actionPickerScrollTop = 0;
       actionPickerQuery = '';
       Object.keys(actionPickerGroupOpen).forEach((group) => delete actionPickerGroupOpen[group]);
-      actionPickerLastSlot = selectedSlot;
+      actionPickerLastChannel = selectedChannel;
     } else {
       const previousPicker = rcEditorContent.querySelector('.rc-action-picker');
       if (previousPicker) {
@@ -1079,71 +801,47 @@
       }
     }
 
-    const binding = { ...bindingForSlot(selectedSlot) };
-    const mode = getEditorMode();
-    const sourceOptions = SOURCE_OPTIONS[mode] || SOURCE_OPTIONS.standard_pwm;
-    const isBackbone = isBackboneSlot(selectedSlot);
-    const slotLabel = slotLabelForKey(selectedSlot);
-
-    // For backbone slots, synthesize the action token from the slot name when not set
-    const displayToken = (binding.target && binding.target !== 'none')
-      ? binding.target
-      : naturalActionForSlot(selectedSlot);
-
-    const sourceSelect = sourceOptions.map(src =>
-      `<option value="${escapeHtml(src)}"${binding.source === src ? " selected" : ""}>${escapeHtml(sourceLabel(src))}</option>`
-    ).join("");
-
-    const channelMax = binding.source === "pwm" ? 6 : 18;
+    const { source, channel } = parseChannelKey(selectedChannel);
+    const entry = assignmentForChannel(selectedChannel) || { source, channel, payload: '' };
+    const displayToken = mapEntryAction(entry);
 
     rcEditorContent.innerHTML = `
-      <h4 class="rc-editor-title">Edit ${escapeHtml(slotLabel)}</h4>
-      <label>Source
-        <select data-field="source">${sourceSelect}</select>
-      </label>
-      <label>Channel
-        <input data-field="channel" type="number" min="0" max="${channelMax}" value="${escapeHtml(String(binding.channel || 0))}">
-      </label>
-      <label class="rc-action-label-head">Action</label><input data-field="target" type="hidden" value="${escapeHtml(displayToken)}">${renderActionPicker(displayToken, actionPickerQuery)}
-      <div data-cond="seq" class="rc-editor-cond ${binding.target === "seq" ? "block" : "hidden"}">
+      <h4 class="rc-editor-title">Edit ${escapeHtml(channelTitleFromKey(selectedChannel))}</h4>
+      <div class="desc mt-4">Source: <strong>${escapeHtml(sourceLabel(source))}</strong> · CH <strong>${escapeHtml(String(channel))}</strong></div>
+      <label class="rc-action-label-head mt-8">Action</label>
+      <input data-field="target" type="hidden" value="${escapeHtml(displayToken)}">
+      ${renderActionPicker(displayToken, actionPickerQuery)}
+      <div class="mt-8"><button type="button" class="btn btn-sm" data-action-unmap>Unmap channel</button></div>
+      <div data-cond="seq" class="rc-editor-cond ${displayToken === 'seq' ? 'block' : 'hidden'}">
         <label>Marcduino Sequence
           <select data-field="payload">
-            ${renderMarcduinoSequenceOptions(binding.payload)}
+            ${renderMarcduinoSequenceOptions(entry.payload)}
           </select>
         </label>
       </div>
-      <div data-cond="cmd" class="rc-editor-cond ${binding.target === "cmd" ? "block" : "hidden"}">
+      <div data-cond="cmd" class="rc-editor-cond ${displayToken === 'cmd' ? 'block' : 'hidden'}">
         <label>Marcduino Command
-          <input data-field="payload" type="text" value="${escapeHtml(binding.payload || "")}" placeholder=":OP01">
+          <input data-field="payload" type="text" value="${escapeHtml(entry.payload || '')}" placeholder=":OP01">
         </label>
       </div>
-      <div data-cond="estop" class="rc-editor-cond ${binding.target === "estop" ? "block" : "hidden"}">
+      <div data-cond="estop" class="rc-editor-cond ${displayToken === 'estop' ? 'block' : 'hidden'}">
         <label><input data-field="estop-confirm" type="checkbox"> I understand this latches estop.</label>
-      </div>
-      <details>
-        <summary>Calibration</summary>
-        <label>Min <input data-field="min" type="number" value="${escapeHtml(String(binding.min || 1000))}"></label>
-        <label>Center <input data-field="center" type="number" value="${escapeHtml(String(binding.center || 1500))}"></label>
-        <label>Max <input data-field="max" type="number" value="${escapeHtml(String(binding.max || 2000))}"></label>
-        <label>Deadband <input data-field="deadband" type="number" value="${escapeHtml(String(binding.deadband || 0))}"></label>
-        <label><input data-field="reverse" type="checkbox"${binding.reverse ? " checked" : ""}> Reverse</label>
-      </details>
-    `;
+      </div>`;
 
     const updateConditionalFields = () => {
       const targetEl = rcEditorContent.querySelector('[data-field="target"]');
-      const target = targetEl ? targetEl.value : binding.target;
+      const target = targetEl ? targetEl.value : displayToken;
       const seq = rcEditorContent.querySelector('[data-cond="seq"]');
       const cmd = rcEditorContent.querySelector('[data-cond="cmd"]');
       const estop = rcEditorContent.querySelector('[data-cond="estop"]');
-      if (seq) seq.className = `rc-editor-cond ${target === "seq" ? "block" : "hidden"}`;
-      if (cmd) cmd.className = `rc-editor-cond ${target === "cmd" ? "block" : "hidden"}`;
-      if (estop) estop.className = `rc-editor-cond ${target === "estop" ? "block" : "hidden"}`;
+      if (seq) seq.className = `rc-editor-cond ${target === 'seq' ? 'block' : 'hidden'}`;
+      if (cmd) cmd.className = `rc-editor-cond ${target === 'cmd' ? 'block' : 'hidden'}`;
+      if (estop) estop.className = `rc-editor-cond ${target === 'estop' ? 'block' : 'hidden'}`;
     };
 
     const refreshActionPickerSelectionUi = () => {
       const targetEl = rcEditorContent.querySelector('[data-field="target"]');
-      const selectedToken = targetEl ? targetEl.value : 'none';
+      const selectedToken = targetEl ? targetEl.value : '';
       rcEditorContent.querySelectorAll('[data-action-token]').forEach((row) => {
         const rowToken = row.dataset.actionToken;
         const selected = rowToken === selectedToken;
@@ -1179,41 +877,10 @@
       });
     };
 
-    // Tokens that must always live in a specific named slot — switching to
-    // one of these while editing a different slot auto-routes the binding there.
-    const NATURAL_SLOT_MAP = {
-      drive_speed: 'driveSpeed', drive_steer: 'driveSteer', dome_speed: 'domeSpeed',
-      arm1_toggle: 'arm1', arm2_toggle: 'arm2',
-      aux1_toggle: 'aux1', aux2_toggle: 'aux2', aux3_toggle: 'aux3',
-      speed_preset_cycle: 'speedPresetCycle', op_mode: 'opMode',
-    };
-
     const setActionToken = (token, keepFocus = false) => {
       const targetEl = rcEditorContent.querySelector('[data-field="target"]');
       if (!targetEl || targetEl.value === token) return;
-
-      // Only auto-route for tokens that have a specific natural slot
-      if (token !== 'none' && NATURAL_SLOT_MAP[token]) {
-        const naturalSlot = NATURAL_SLOT_MAP[token];
-        if (naturalSlot !== selectedSlot) {
-          const currentSource = rcEditorContent.querySelector('[data-field="source"]')?.value || bindingForSlot(selectedSlot).source;
-          const currentChannel = Number(rcEditorContent.querySelector('[data-field="channel"]')?.value ?? bindingForSlot(selectedSlot).channel);
-          const editorMode = getEditorMode();
-          if (!mappingDraft[editorMode]) mappingDraft[editorMode] = {};
-          mappingDraft[editorMode][naturalSlot] = {
-            ...(mappingDraft[editorMode][naturalSlot] || { ...DEFAULT_BINDING }),
-            source: currentSource,
-            channel: currentChannel,
-            target: token,
-          };
-          selectSlot(naturalSlot);
-          markEditorDirty();
-          return;
-        }
-      }
-
       targetEl.value = token;
-      binding.target = token;
       rememberRecentActionToken(token);
       actionPickerFeedback = null;
       updateConditionalFields();
@@ -1221,42 +888,35 @@
       syncActionTestUi();
       markEditorDirty();
       if (keepFocus) {
-        const picker = rcEditorContent.querySelector('.rc-action-picker');
-        picker?.focus();
+        rcEditorContent.querySelector('.rc-action-picker')?.focus();
       }
     };
 
     const runActionTest = async (token) => {
       if (actionPickerInFlightToken) return;
-      const slotAtStart = selectedSlot;
+      const channelAtStart = selectedChannel;
       actionPickerInFlightToken = token;
       actionPickerFeedback = { token, kind: 'info', text: 'Testing...' };
       syncActionTestUi();
       try {
         await window.PAApi.postForm('/api/actions/test', { token }, { timeoutMs: 5000 });
-        if (selectedSlot !== slotAtStart) return;
+        if (selectedChannel !== channelAtStart) return;
         actionPickerFeedback = { token, kind: 'success', text: 'Dispatched' };
       } catch (error) {
-        if (selectedSlot !== slotAtStart) return;
+        if (selectedChannel !== channelAtStart) return;
         actionPickerFeedback = { token, kind: 'error', text: window.PAApi.messageFor(error) };
       } finally {
-        if (actionPickerInFlightToken === token) {
-          actionPickerInFlightToken = null;
-        }
-        if (selectedSlot === slotAtStart) {
-          syncActionTestUi();
-        }
+        if (actionPickerInFlightToken === token) actionPickerInFlightToken = null;
+        if (selectedChannel === channelAtStart) syncActionTestUi();
       }
     };
 
-    rcEditorContent.querySelectorAll("[data-field]").forEach(field => {
-      field.addEventListener("change", () => {
+    rcEditorContent.querySelectorAll('[data-field]').forEach((field) => {
+      field.addEventListener('change', () => {
         markEditorDirty();
-        if (field.dataset.field === "target") {
-          updateConditionalFields();
-        }
+        if (field.dataset.field === 'target') updateConditionalFields();
       });
-      field.addEventListener("input", () => {
+      field.addEventListener('input', () => {
         markEditorDirty();
       });
     });
@@ -1308,6 +968,11 @@
         });
       });
 
+      const unmapBtn = rcEditorContent.querySelector('[data-action-unmap]');
+      if (unmapBtn) {
+        unmapBtn.addEventListener('click', () => setActionToken(''));
+      }
+
       picker.querySelectorAll('[data-action-test]').forEach((btn) => {
         btn.addEventListener('click', (event) => {
           event.stopPropagation();
@@ -1324,16 +989,9 @@
           return;
         }
 
-        if (event.target instanceof Element && event.target.closest('.rc-action-test-btn')) {
-          return;
-        }
-        if (event.target instanceof Element && event.target.closest('.rc-action-search-input')) {
-          return;
-        }
-
-        if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp' && event.key !== 'Enter') {
-          return;
-        }
+        if (event.target instanceof Element && event.target.closest('.rc-action-test-btn')) return;
+        if (event.target instanceof Element && event.target.closest('.rc-action-search-input')) return;
+        if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp' && event.key !== 'Enter') return;
         event.preventDefault();
 
         const selectable = actionTargets
@@ -1342,7 +1000,7 @@
         if (!selectable.length) return;
 
         const targetEl = rcEditorContent.querySelector('[data-field="target"]');
-        const currentToken = targetEl ? targetEl.value : 'none';
+        const currentToken = targetEl ? targetEl.value : '';
         let index = selectable.indexOf(currentToken);
         if (index < 0) index = 0;
 
@@ -1365,32 +1023,34 @@
     updateConditionalFields();
     refreshActionPickerSelectionUi();
     syncActionTestUi();
-
   };
 
   const updateSummaryMiniBar = () => {
     if (!rcSummaryBody || !rcSnapshot) return;
-    const mapped = getActionsForMode().filter(({ key }) => bindingForSlot(key).source !== "none");
-    for (const { key } of mapped) {
-      const row = rcSummaryBody.querySelector(`tr[data-slot="${key}"]`);
-      if (!row) continue;
-      const telemetry = getChannelTelemetry(key);
+    rcSummaryBody.querySelectorAll('tr[data-chkey]').forEach((row) => {
+      const channelKey = row.dataset.chkey;
+      const entry = assignmentForChannel(channelKey);
+      if (!entry) return;
+      const telemetry = getChannelTelemetry(channelKey);
+      const token = mapEntryAction(entry);
       const cell = row.children[2];
-      if (!cell) continue;
-      cell.innerHTML = isBackboneSlot(key) ? miniBarHtml(telemetry?.mapped || 0) : triggerStateHtml(telemetry);
-    }
+      if (!cell) return;
+      cell.innerHTML = isAnalogAction(token) ? miniBarHtml(telemetry?.mapped || 0) : triggerStateHtml(telemetry);
+    });
   };
 
   const saveRcMode = async () => {
     if (!rcInputModeHidden) return;
     const mode = rcInputModeHidden.value;
-    setModeFeedback("Saving...");
+    setModeFeedback('Saving...');
     try {
-      const result = await window.PAApi.postForm("/api/config", { rcInputMode: mode }, { timeoutMs: 5000 });
-      switchRcMode(getRcModeFromConfig(result.data));
-      setModeFeedback(`${modeLabel(mode)} saved at ${new Date().toLocaleTimeString()}`, "success");
+      const result = await window.PAApi.postForm('/api/config', { rcInputMode: mode }, { timeoutMs: 5000 });
+      const savedMode = getRcModeFromConfig(result.data);
+      switchRcMode(savedMode);
+      await loadMappings();
+      setModeFeedback(`${modeLabel(savedMode)} saved at ${new Date().toLocaleTimeString()}`, 'success');
     } catch (error) {
-      setModeFeedback(`❌ ${window.PAApi.messageFor(error)}`, "error");
+      setModeFeedback(`❌ ${window.PAApi.messageFor(error)}`, 'error');
     }
   };
 
@@ -1400,24 +1060,19 @@
     if (rcInputModeHidden) rcInputModeHidden.value = mode;
     rcModeCards.forEach((card) => {
       const selected = card.dataset.mode === mode;
-      card.classList.toggle("selected", selected);
-      card.setAttribute("aria-pressed", selected ? "true" : "false");
+      card.classList.toggle('selected', selected);
+      card.setAttribute('aria-pressed', selected ? 'true' : 'false');
     });
     updateRecvSel(mode);
-
-    // Clear selected slot when mode changes
-    selectedSlot = null;
-    document.querySelectorAll('.rc-channel-item').forEach(el => el.classList.remove('active'));
-
-    // Re-render all panels to reflect the new mode
+    selectedChannel = null;
+    document.querySelectorAll('.rc-channel-item').forEach((el) => el.classList.remove('active'));
     renderSummaryTable();
     renderChannelList();
     renderLivePreview();
     renderEditor();
   };
 
-  // Set up event listeners for mode cards
-  rcModeCards.forEach(card => {
+  rcModeCards.forEach((card) => {
     card.addEventListener('click', () => {
       const mode = card.dataset.mode;
       if (mode && rcInputModeHidden) {
@@ -1442,74 +1097,65 @@
 
   const loadRcMode = async () => {
     try {
-      const result = await window.PAApi.get("/api/config", { timeoutMs: 5000 });
+      const result = await window.PAApi.get('/api/config', { timeoutMs: 5000 });
       const data = result.data;
       const mode = getRcModeFromConfig(data);
       if (rcInputModeHidden) rcInputModeHidden.value = mode;
       rcModeCards.forEach((card) => {
         const selected = card.dataset.mode === mode;
-        card.classList.toggle("selected", selected);
-        card.setAttribute("aria-pressed", selected ? "true" : "false");
+        card.classList.toggle('selected', selected);
+        card.setAttribute('aria-pressed', selected ? 'true' : 'false');
       });
       configCache = data;
       setSingleSbusRecvSelect(getSingleSbusRecvCh2(data));
       confirmedSbusRecvValue = sbusRecvSel?.value ?? null;
       updateRecvSel(mode);
-      setModeFeedback(`Receiver type: ${modeLabel(mode)}`, "success");
+      setModeFeedback(`Receiver type: ${modeLabel(mode)}`, 'success');
       setRcInputsEnabled(rcComponentsEnabled(data));
     } catch (error) {
-      const fallbackMode = rcInputModeHidden?.value || "standard_pwm";
+      const fallbackMode = rcInputModeHidden?.value || 'standard_pwm';
       switchRcMode(fallbackMode);
-      setModeFeedback(`Receiver config unavailable: ${window.PAApi.messageFor(error)}. Showing ${modeLabel(fallbackMode)} draft controls.`, "warning");
+      setModeFeedback(`Receiver config unavailable: ${window.PAApi.messageFor(error)}. Showing ${modeLabel(fallbackMode)} draft controls.`, 'warning');
     }
   };
 
-  const selectSlot = (key) => {
-    if (!isSlotSupported(key)) return;
+  const loadMappings = async () => {
+    try {
+      const result = await window.PAApi.get('/api/rc/map', { timeoutMs: 5000 });
+      const payload = result.data || {};
+      const mode = typeof payload.mode === 'string' ? payload.mode : getEditorMode();
+      channelMap = modeMapFromArray(payload.map);
+      triggerPulseState = {};
+      if (rcInputModeHidden?.value !== mode) switchRcMode(mode);
+      if (selectedChannel) {
+        const { source } = parseChannelKey(selectedChannel);
+        const allowedSources = SOURCE_OPTIONS[mode] || SOURCE_OPTIONS.standard_pwm;
+        if (!allowedSources.includes(source)) selectedChannel = null;
+      }
+      renderSummaryTable();
+      renderChannelList();
+      renderLivePreview();
+      renderEditor();
+    } catch (error) {
+      channelMap = {};
+      triggerPulseState = {};
+      renderSummaryTable();
+      renderChannelList();
+      renderLivePreview();
+      renderEditor();
+      setEditorFeedback(`Failed to load RC map: ${window.PAApi.messageFor(error)}`, 'error');
+    }
+  };
 
-    selectedSlot = key;
-    selectedChKey = null;
+  const selectChannel = (channelKey) => {
+    selectedChannel = channelKey;
+    document.querySelectorAll('.rc-channel-item').forEach((el) => {
+      el.classList.toggle('active', el.dataset.chkey === channelKey);
+    });
+    document.querySelectorAll('.rc-summary-table tr[data-chkey]').forEach((row) => {
+      row.classList.toggle('active-channel', row.dataset.chkey === channelKey);
+    });
     markEditorClean();
-
-    // Highlight matching channel item
-    const b = bindingForSlot(key);
-    const selChKey = b.source !== 'none' && b.channel ? `${b.source}:${b.channel}` : null;
-    document.querySelectorAll('.rc-channel-item').forEach(el => {
-      el.classList.toggle('active', selChKey !== null && el.dataset.chkey === selChKey);
-    });
-    renderLivePreview();
-    renderEditor();
-  };
-
-  const selectChannel = (chKey) => {
-    const [source, chStr] = chKey.split(':');
-    const ch = Number(chStr);
-    const actions = getActionsForMode();
-    const match = actions.find(({ key }) => {
-      const b = bindingForSlot(key);
-      return b.source === source && Number(b.channel) === ch;
-    });
-
-    // Highlight clicked channel regardless of assignment
-    document.querySelectorAll('.rc-channel-item').forEach(el => {
-      el.classList.toggle('active', el.dataset.chkey === chKey);
-    });
-
-    if (match) {
-      selectedSlot = match.key;
-      selectedChKey = null;
-      document.querySelectorAll('.rc-summary-table tr[data-slot]').forEach(tr => {
-        tr.classList.toggle('active-slot', tr.dataset.slot === match.key);
-      });
-      markEditorClean();
-    } else {
-      // Unassigned channel: open slot-picker in editor
-      selectedSlot = null;
-      selectedChKey = chKey;
-      document.querySelectorAll('.rc-summary-table tr[data-slot]').forEach(tr => {
-        tr.classList.remove('active-slot');
-      });
-    }
     renderLivePreview();
     renderEditor();
   };
@@ -1535,68 +1181,51 @@
 
     let best = null;
 
-    // SBUS sources — raw units 172-1811, center ~992
-    ['sbus1', 'sbus2'].forEach(src => {
+    ['sbus1', 'sbus2'].forEach((src) => {
       const currArr = Array.isArray(raw[src]) ? raw[src] : [];
       const baseArr = Array.isArray(baseRaw[src]) ? baseRaw[src] : [];
       currArr.forEach((val, idx) => {
-        const base = baseArr[idx] ?? val;  // if no baseline, deviation = 0
+        const base = baseArr[idx] ?? val;
         const delta = Math.abs(val - base);
-        if (delta >= LEARN_SBUS_THRESHOLD) {
-          if (!best || delta > best.delta) {
-            best = { source: src, channel: idx + 1, raw: val, baseline: base, delta };
-          }
+        if (delta >= LEARN_SBUS_THRESHOLD && (!best || delta > best.delta)) {
+          best = { source: src, channel: idx + 1, raw: val, baseline: base, delta };
         }
       });
     });
 
-    // PWM — microseconds 1000-2000, center ~1500
-    {
-      const currArr = Array.isArray(raw.pwm) ? raw.pwm : [];
-      const baseArr = Array.isArray(baseRaw.pwm) ? baseRaw.pwm : [];
-      currArr.forEach((val, idx) => {
-        if (val === 0) return;          // 0 = no valid pulse on this channel
-        const base = baseArr[idx] ?? val;
-        if (base === 0) return;
-        const delta = Math.abs(val - base);
-        if (delta >= LEARN_PWM_THRESHOLD) {
-          if (!best || delta > best.delta) {
-            best = { source: 'pwm', channel: idx + 1, raw: val, baseline: base, delta };
-          }
-        }
-      });
-    }
+    const currPwm = Array.isArray(raw.pwm) ? raw.pwm : [];
+    const basePwm = Array.isArray(baseRaw.pwm) ? baseRaw.pwm : [];
+    currPwm.forEach((val, idx) => {
+      if (val === 0) return;
+      const base = basePwm[idx] ?? val;
+      if (base === 0) return;
+      const delta = Math.abs(val - base);
+      if (delta >= LEARN_PWM_THRESHOLD && (!best || delta > best.delta)) {
+        best = { source: 'pwm', channel: idx + 1, raw: val, baseline: base, delta };
+      }
+    });
 
     return best;
   };
 
-  // Find all slot keys whose current binding matches the detected source+channel.
-  const slotsForDetectHit = (hit) => {
+  const mappedActionsForDetectHit = (hit) => {
     if (!hit) return [];
-    const mode = getEditorMode();
-    const slots = RC_ACTIONS[mode] || RC_ACTIONS.dual_sbus;
-    return slots
-      .filter(({ key }) => {
-        const b = bindingForSlot(key);
-        return b.source === hit.source && Number(b.channel) === hit.channel;
-      })
-      .map(({ key }) => key);
+    return asMapArray()
+      .filter((entry) => entry.source === hit.source && Number(entry.channel) === hit.channel)
+      .map((entry) => actionLabelFromToken(mapEntryAction(entry)));
   };
 
-  // Human-readable label for a detect hit.
   const detectHitLabel = (hit) => {
     if (!hit) return '';
     const srcLabel = { sbus1: 'SBUS1', sbus2: 'SBUS2', pwm: 'PWM' }[hit.source] || hit.source.toUpperCase();
     return `${srcLabel} CH ${hit.channel}`;
   };
 
-  // Apply/remove learn-hot class on slot cards that are already bound to the
-  // detected source+channel. Uses direct classList toggle — no re-render.
   const applyLearnHighlight = () => {
     if (!rcChannelItems) return;
-    const chKey = learnActive && learnHit ? `${learnHit.source}:${learnHit.channel}` : null;
-    rcChannelItems.querySelectorAll('.rc-channel-item').forEach(el => {
-      el.classList.toggle('learn-hot', chKey !== null && el.dataset.chkey === chKey);
+    const channelKey = learnActive && learnHit ? channelKeyOf(learnHit.source, learnHit.channel) : null;
+    rcChannelItems.querySelectorAll('.rc-channel-item').forEach((el) => {
+      el.classList.toggle('learn-hot', channelKey !== null && el.dataset.chkey === channelKey);
     });
   };
 
@@ -1610,16 +1239,11 @@
       return;
     }
     const label = detectHitLabel(learnHit);
-    const bound = slotsForDetectHit(learnHit);
-    if (bound.length > 0) {
-      const slotLabels = bound.map(k => {
-        const mode = getEditorMode();
-        const slots = RC_ACTIONS[mode] || RC_ACTIONS.dual_sbus;
-        return slots.find(s => s.key === k)?.label || k;
-      }).join(', ');
-      rcLearnStatus.textContent = `Detected: ${label} → already assigned to ${slotLabels}`;
+    const mappedActions = mappedActionsForDetectHit(learnHit);
+    if (mappedActions.length > 0) {
+      rcLearnStatus.textContent = `Detected: ${label} → already assigned to ${mappedActions.join(', ')}`;
     } else {
-      rcLearnStatus.textContent = `Detected: ${label} — not assigned to any slot. Select a slot to configure it.`;
+      rcLearnStatus.textContent = `Detected: ${label} — unassigned. Select this channel to configure it.`;
     }
   };
 
@@ -1637,59 +1261,50 @@
     );
   };
 
-
   const enterLearnMode = () => {
     if (!rcInputsEnabled) {
-      setEditorFeedback("Detect mode unavailable: enable an RC channel in Setup.", "warning");
+      setEditorFeedback('Detect mode unavailable: enable an RC channel in Setup.', 'warning');
       return;
     }
-    learnActive  = true;
-    learnBaseline = rcSnapshot;   // snapshot at mode entry — baseline for deviation
-    learnHit     = null;
+    learnActive = true;
+    learnBaseline = rcSnapshot;
+    learnHit = null;
     learnStartMs = Date.now();
-    if (rcLearnBtn)    rcLearnBtn.textContent = '🔍 Detecting…';
+    if (rcLearnBtn) rcLearnBtn.textContent = '🔍 Detecting…';
     if (rcLearnBanner) rcLearnBanner.hidden = false;
     updateLearnBanner();
     applyLearnHighlight();
   };
 
   const exitLearnMode = () => {
-    learnActive  = false;
+    learnActive = false;
     learnBaseline = null;
-    learnHit     = null;
-    if (rcLearnBtn)    rcLearnBtn.textContent = '🔍 Detect channel';
+    learnHit = null;
+    if (rcLearnBtn) rcLearnBtn.textContent = '🔍 Detect channel';
     if (rcLearnBanner) rcLearnBanner.hidden = true;
     applyLearnHighlight();
   };
 
-  // Called on every SSE rc tick when learnActive is true.
   const processLearnTick = (currSnapshot) => {
     if (Date.now() - learnStartMs > LEARN_TIMEOUT_MS) {
       exitLearnMode();
       return;
     }
-
-    const newHit = computeDetectHit(learnBaseline, currSnapshot);
-    const prevHit = learnHit;
-    learnHit = newHit;
-
-    // Update DOM only when result changes to avoid needless repaints.
-    const changed = JSON.stringify(newHit) !== JSON.stringify(prevHit);
+    const nextHit = computeDetectHit(learnBaseline, currSnapshot);
+    const changed = JSON.stringify(nextHit) !== JSON.stringify(learnHit);
+    learnHit = nextHit;
     if (changed) {
       updateLearnBanner();
       applyLearnHighlight();
     }
   };
 
-  // ─────────────────────────────────────────────────────────────────────────
-
   const renderRcDiagnostics = (payload) => {
     rcSnapshot = payload;
-
     renderSourceHealth();
     renderSummaryTable();
     renderChannelList();
-    if (selectedSlot) {
+    if (selectedChannel) {
       renderLivePreview();
       renderEditor();
     }
@@ -1697,10 +1312,10 @@
 
   const loadRcDiagnostics = async () => {
     try {
-      const result = await window.PAApi.get("/api/rc", { timeoutMs: 5000 });
+      const result = await window.PAApi.get('/api/rc', { timeoutMs: 5000 });
       renderRcDiagnostics(result.data);
     } catch (error) {
-      setEditorFeedback(`Failed to load RC diagnostics: ${window.PAApi.messageFor(error)}`, "error");
+      setEditorFeedback(`Failed to load RC diagnostics: ${window.PAApi.messageFor(error)}`, 'error');
     }
   };
 
@@ -1709,201 +1324,110 @@
 
     window.PAStatusStream.subscribe((eventType, payload) => {
       try {
-        if (eventType === "status") {
-          const data = typeof payload === "string" ? JSON.parse(payload) : payload;
+        if (eventType === 'status') {
+          const data = typeof payload === 'string' ? JSON.parse(payload) : payload;
           setRcInputsEnabled(rcEnabledFromStatus(data));
           return;
         }
-        if (eventType !== "rc") return;
-        const data = typeof payload === "string" ? JSON.parse(payload) : payload;
+        if (eventType !== 'rc') return;
+        const data = typeof payload === 'string' ? JSON.parse(payload) : payload;
 
-        // Process learning mode tick: compare current raw channels against the
-        // baseline snapshot captured when detect mode was entered.
-        if (learnActive) {
-          processLearnTick(data);
-        }
+        if (learnActive) processLearnTick(data);
 
         rcSnapshot = data;
-
-        // Fast path updates for frequently changing elements
         renderSourceHealth();
         updateSummaryMiniBar();
         updateChannelListRaw();
-        if (selectedSlot) {
-          renderLivePreview();
-        }
-        // Note: Not re-rendering channel list or editor on every SSE tick for performance
+        if (selectedChannel) renderLivePreview();
       } catch (_error) {
-        setEditorFeedback("Received malformed RC event payload.", "error");
+        setEditorFeedback('Received malformed RC event payload.', 'error');
       }
     });
 
     return true;
   };
-  
 
   const saveMapping = async () => {
+    if (!selectedChannel || !rcEditorContent) return;
+
+    const { source, channel } = parseChannelKey(selectedChannel);
     const mode = getEditorMode();
+    const target = rcEditorContent.querySelector('[data-field="target"]')?.value || '';
+    const payloadField = rcEditorContent.querySelector(`.rc-editor-cond[data-cond="${target}"] [data-field="payload"]`);
+    const payload = payloadField ? payloadField.value : '';
 
-    const formFields = rcEditorContent.querySelectorAll('[data-field]');
-    const binding = { ...DEFAULT_BINDING };
-
-    formFields.forEach((field) => {
-      const fieldName = field.dataset.field;
-      if (fieldName === "estop-confirm" || fieldName === "payload") {
-        return;
-      }
-
-      if (field.type === "checkbox") {
-        binding[fieldName] = field.checked;
-      } else {
-        binding[fieldName] = field.value;
-      }
-
-      if (["channel", "min", "center", "max", "deadband"].includes(fieldName)) {
-        binding[fieldName] = Number.parseInt(field.value, 10) || 0;
-      }
-    });
-
-    const activePayloadField = rcEditorContent.querySelector(
-      `.rc-editor-cond[data-cond="${binding.target}"] [data-field="payload"]`,
-    );
-    binding.payload = activePayloadField ? activePayloadField.value : "";
-
-    const allowedSources = SOURCE_OPTIONS[mode] || SOURCE_OPTIONS.standard_pwm;
-    if (!allowedSources.includes(binding.source)) {
-      setEditorFeedback(`Source must be one of: ${allowedSources.join(", ")}.`, "error");
+    if (target === 'cmd' && payload && !/^[:$#]/.test(payload)) {
+      setEditorFeedback('Marcduino command must start with :, $, or #', 'error');
       return;
     }
-
-    if (binding.source === "none" && binding.target && binding.target !== "none") {
-      setEditorFeedback("Select a source (e.g. SBUS#1 or SBUS#2) before saving.", "error");
+    if (target === 'dome_seq') {
+      setEditorFeedback('Dome sequence trigger mapping is not available in this firmware build.', 'warning');
       return;
     }
-
-    // Validate Marcduino command prefix
-    if (binding.target === "cmd" && binding.payload) {
-      if (!/^[:$#]/.test(binding.payload)) {
-        setEditorFeedback("Marcduino command must start with :, $, or #", "error");
-        return;
-      }
-    }
-
-    if (binding.target === "dome_seq") {
-      setEditorFeedback("Dome sequence trigger mapping is not available in this firmware build.", "warning");
-      return;
-    }
-
-    if (selectedSlot === "speedPresetCycle" &&
-        binding.target !== "none" && binding.target !== "speed_preset_cycle") {
-      setEditorFeedback("Speed preset cycle slot only supports Disabled or Speed Preset Cycle action.", "error");
-      return;
-    }
-
-    // Validate E-Stop confirmation
-    if (binding.target === "estop") {
+    if (target === 'estop') {
       const confirmCheckbox = rcEditorContent.querySelector('[data-field="estop-confirm"]');
       if (!confirmCheckbox || !confirmCheckbox.checked) {
-        setEditorFeedback("E-Stop action requires confirmation checkbox", "error");
+        setEditorFeedback('E-Stop action requires confirmation checkbox', 'error');
         return;
       }
     }
 
-    if (!mappingDraft[mode]) mappingDraft[mode] = {};
-    mappingDraft[mode][selectedSlot] = binding;
+    const allowedSources = SOURCE_OPTIONS[mode] || SOURCE_OPTIONS.standard_pwm;
+    if (!allowedSources.includes(source)) {
+      setEditorFeedback(`Channel source ${sourceLabel(source)} is not valid in ${modeLabel(mode)} mode.`, 'error');
+      return;
+    }
 
-    // Per-slot save semantics: only save the currently selected slot
-    const action = RC_ACTIONS[mode]?.find(a => a.key === selectedSlot);
-    if (!action) return;
+    const nextMap = { ...channelMap };
+    if (!target) {
+      delete nextMap[selectedChannel];
+    } else {
+      nextMap[selectedChannel] = normalizeMapEntry({ source, channel, action: target, payload });
+    }
 
-    const body = new URLSearchParams();
-    // Backbone format when the effective action is a backbone action (drive/steer/dome)
-    const effectiveToken = binding.target && binding.target !== 'none' ? binding.target : naturalActionForSlot(selectedSlot);
-    const isBackbone = BACKBONE_ACTION_TOKENS.has(effectiveToken);
-    body.set(action.field, formatBindingString(binding, isBackbone));
-
-    setEditorDirtyState("saving", "Saving changes…");
-    setEditorFeedback("Saving...");
+    setEditorDirtyState('saving', 'Saving changes…');
+    setEditorFeedback('Saving...');
 
     try {
-      const result = await window.PAApi.postForm("/api/config", body, { timeoutMs: 5000 });
-      configCache = result.data;
-
+      const result = await window.PAApi.postForm('/api/rc/map', { plain: JSON.stringify({ map: Object.values(nextMap) }) }, { timeoutMs: 5000 });
+      const serverMap = Array.isArray(result.data?.map) ? result.data.map : Object.values(nextMap);
+      channelMap = modeMapFromArray(serverMap);
       const savedAt = new Date().toLocaleTimeString();
-      setEditorFeedback(`✓ Saved at ${savedAt}`, "success");
+      setEditorFeedback(`✓ Saved at ${savedAt}`, 'success');
       markEditorClean(savedAt);
-
-      await loadRcDiagnostics();
+      renderSummaryTable();
+      renderChannelList();
+      renderLivePreview();
+      renderEditor();
     } catch (error) {
-      setEditorDirtyState("error", "Save failed — unsaved changes");
+      setEditorDirtyState('error', 'Save failed — unsaved changes');
       if (rcEditorApply) rcEditorApply.disabled = false;
       if (rcEditorRevert) rcEditorRevert.disabled = false;
-      setEditorFeedback(`Failed to save: ${window.PAApi.messageFor(error)}`, "error");
+      setEditorFeedback(`Failed to save: ${window.PAApi.messageFor(error)}`, 'error');
     }
   };
 
-  const revertMapping = () => {
-    const mode = getEditorMode();
-    mappingDraft[mode] = cloneModeDraft(mode);
-    renderEditor();
-
-    setEditorFeedback("Reverted to saved configuration.");
-
+  const revertMapping = async () => {
+    await loadMappings();
+    setEditorFeedback('Reverted to last saved mapping.');
     markEditorClean();
   };
 
   const resetToDefaults = async () => {
-    if (!confirm("Are you sure you want to reset all RC mappings to their default values?")) {
-      return;
-    }
-
-    setEditorFeedback("Resetting to defaults...");
-
+    if (!confirm('Are you sure you want to clear all RC mappings?')) return;
+    setEditorFeedback('Clearing mappings...');
     try {
-      const body = new URLSearchParams();
-      const mode = getEditorMode();
-
-      if (mode === "standard_pwm") {
-        body.set("rcPwmDriveSpeed", "pwm:1:1000:1500:2000:0:0");
-        body.set("rcPwmDriveSteer", "pwm:2:1000:1500:2000:0:0");
-        body.set("rcPwmDomeSpeed", "pwm:3:1000:1500:2000:0:0");
-        body.set("rcArm1", "pwm:4:arm1_toggle::1000:1500:2000:0:0");
-        body.set("rcArm2", "pwm:5:arm2_toggle::1000:1500:2000:0:0");
-      } else if (mode === "single_sbus") {
-        const src = getSingleSbusRecvCh2(configCache) ? "sbus2" : "sbus1";
-        body.set("rcSbusDriveSpeed", `${src}:1:172:992:1811:0:0`);
-        body.set("rcSbusDriveSteer", `${src}:2:172:992:1811:0:0`);
-        body.set("rcSbusDomeSpeed", `${src}:3:172:992:1811:0:0`);
-        body.set("rcArm1", `${src}:4:arm1_toggle::172:992:1811:0:0`);
-        body.set("rcArm2", `${src}:5:arm2_toggle::172:992:1811:0:0`);
-      } else {
-        body.set("rcSbusDriveSpeed", "sbus1:1:172:992:1811:0:0");
-        body.set("rcSbusDriveSteer", "sbus1:2:172:992:1811:0:0");
-        body.set("rcSbusDomeSpeed", "sbus2:1:172:992:1811:0:0");
-        body.set("rcArm1", "sbus1:4:arm1_toggle::172:992:1811:0:0");
-        body.set("rcArm2", "sbus1:5:arm2_toggle::172:992:1811:0:0");
-      }
-
-      body.set("rcAux1", "none:0:none::1000:1500:2000:0:0");
-      body.set("rcAux2", "none:0:none::1000:1500:2000:0:0");
-      body.set("rcAux3", "none:0:none::1000:1500:2000:0:0");
-      body.set("rcSound", "none:0:none::1000:1500:2000:0:0");
-      body.set("rcOpMode", "none:0:none::1000:1500:2000:0:0");
-      body.set("rcFree0", "none:0:none::1000:1500:2000:0:0");
-      body.set("rcFree1", "none:0:none::1000:1500:2000:0:0");
-      body.set("rcFree2", "none:0:none::1000:1500:2000:0:0");
-      body.set("rcFree3", "none:0:none::1000:1500:2000:0:0");
-
-      const result = await window.PAApi.postForm("/api/config", body, { timeoutMs: 5000 });
-      configCache = result.data;
-
+      await window.PAApi.postForm('/api/rc/map', { plain: JSON.stringify({ map: [] }) }, { timeoutMs: 5000 });
+      channelMap = {};
       const savedAt = new Date().toLocaleTimeString();
-      setEditorFeedback("✓ Reset to defaults successful", "success");
+      setEditorFeedback('✓ Cleared all mappings', 'success');
       markEditorClean(savedAt);
-
-      await loadRcDiagnostics();
+      renderSummaryTable();
+      renderChannelList();
+      renderLivePreview();
+      renderEditor();
     } catch (error) {
-      setEditorFeedback(`Failed to reset to defaults: ${window.PAApi.messageFor(error)}`, "error");
+      setEditorFeedback(`Failed to clear mappings: ${window.PAApi.messageFor(error)}`, 'error');
     }
   };
 
@@ -1972,9 +1496,11 @@
 
   loadRecentActionTokens();
   switchRcMode(rcInputModeHidden?.value || "standard_pwm");
-  loadRcMode();
+  loadRcMode().finally(() => {
+    loadMappings();
+  });
   loadRcDiagnostics();
-  loadActionTargets().then(() => { if (selectedSlot) renderEditor(); });
+  loadActionTargets().then(() => { if (selectedChannel) renderEditor(); });
 
   const hasRcStream = subscribeRcEvents();
   if (!hasRcStream) {

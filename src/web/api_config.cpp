@@ -9,7 +9,6 @@
 // - This route is the sole web entrypoint for config writes.
 // - Hardware access is not performed here; values are validated, written to
 //   RobotState cfg_* fields under robotStateMux, and persisted via saveConfigToNvs().
-// - Compatibility aliases are accepted for in-flight RC mapping UX work.
 // =============================================================================
 
 #include "api_config.h"
@@ -70,60 +69,7 @@ bool parseRcInputMode(const char* raw, RcInputMode* out) {
     return false;
 }
 
-bool normalizeTriggerTargetAlias(const char* raw, char* out, size_t outSize) {
-    if (raw == nullptr || out == nullptr || outSize == 0) {
-        return false;
-    }
 
-    int copied = snprintf(out, outSize, "%s", raw);
-    if (copied <= 0 || copied >= (int)outSize) {
-        return false;
-    }
-
-    const char* oldToken = ":marcduino:";
-    char* hit = strstr(out, oldToken);
-    if (hit == nullptr) {
-        return true;
-    }
-
-    char normalized[96] = {};
-    size_t prefixLen = (size_t)(hit - out);
-    const char* suffix = hit + strlen(oldToken);
-
-    int n = snprintf(normalized, sizeof(normalized), "%.*s:cmd:%s", (int)prefixLen, out, suffix);
-    if (n <= 0 || n >= (int)sizeof(normalized)) {
-        return false;
-    }
-
-    copied = snprintf(out, outSize, "%s", normalized);
-    return copied > 0 && copied < (int)outSize;
-}
-
-bool triggerBindingToUiString(char* out, size_t outSize, const RcTriggerBinding& binding) {
-    char encoded[96] = {};
-    if (!formatRcTriggerBinding(encoded, sizeof(encoded), binding)) {
-        return false;
-    }
-
-    const char* oldToken = ":cmd:";
-    char* hit = strstr(encoded, oldToken);
-    if (hit == nullptr) {
-        int n = snprintf(out, outSize, "%s", encoded);
-        return n > 0 && n < (int)outSize;
-    }
-
-    char uiEncoded[112] = {};
-    size_t prefixLen = (size_t)(hit - encoded);
-    const char* suffix = hit + strlen(oldToken);
-    int n = snprintf(uiEncoded, sizeof(uiEncoded), "%.*s:marcduino:%s", (int)prefixLen, encoded,
-                     suffix);
-    if (n <= 0 || n >= (int)sizeof(uiEncoded)) {
-        return false;
-    }
-
-    n = snprintf(out, outSize, "%s", uiEncoded);
-    return n > 0 && n < (int)outSize;
-}
 
 bool parseInt16Param(const AsyncWebServerRequest* req, const char* name, int16_t minValue,
                      int16_t maxValue, int16_t* out) {
@@ -254,39 +200,8 @@ bool parseDomeWifiPeerIp(const char* raw, char* out, size_t outSize) {
     return n > 0 && n < (int)outSize;
 }
 
-bool parseRcBindingParam(const AsyncWebServerRequest* req, const char* name, RcBindingConfig* out) {
-    if (req == nullptr || out == nullptr || !req->hasParam(name, true)) {
-        return false;
-    }
-    return parseRcBindingConfig(req->getParam(name, true)->value().c_str(), out);
-}
 
-bool parseRcTriggerParam(const AsyncWebServerRequest* req, const char* name,
-                         RcTriggerBinding* out) {
-    if (req == nullptr || out == nullptr || !req->hasParam(name, true)) {
-        return false;
-    }
 
-    char normalized[96] = {};
-    if (!normalizeTriggerTargetAlias(req->getParam(name, true)->value().c_str(), normalized,
-                                     sizeof(normalized))) {
-        return false;
-    }
-    return parseRcTriggerBinding(normalized, out);
-}
-
-bool sourceAllowedForMode(RcInputMode mode, RcBindingSource source) {
-    switch (mode) {
-        case RC_INPUT_STANDARD_PWM:
-            return source == RC_BINDING_NONE || source == RC_BINDING_PWM;
-        case RC_INPUT_SINGLE_SBUS:
-            return source == RC_BINDING_NONE || source == RC_BINDING_SBUS1;
-        case RC_INPUT_DUAL_SBUS:
-        default:
-            return source == RC_BINDING_NONE || source == RC_BINDING_SBUS1 ||
-                   source == RC_BINDING_SBUS2;
-    }
-}
 
 bool triggerTargetAllowedByRuntime(const RcTriggerBinding& binding) {
     // Phase 4 deferred: DOME_ACTION_SEQ is intentionally blocked at API level
@@ -294,7 +209,357 @@ bool triggerTargetAllowedByRuntime(const RcTriggerBinding& binding) {
     return binding.target != DOME_ACTION_SEQ;
 }
 
+
+
+bool rcMapSourceFromString(const char* raw, RcBindingSource* out) {
+    if (raw == nullptr || out == nullptr) {
+        return false;
+    }
+    if (strcmp(raw, "pwm") == 0) {
+        *out = RC_BINDING_PWM;
+        return true;
+    }
+    if (strcmp(raw, "sbus1") == 0) {
+        *out = RC_BINDING_SBUS1;
+        return true;
+    }
+    if (strcmp(raw, "sbus2") == 0) {
+        *out = RC_BINDING_SBUS2;
+        return true;
+    }
+    return false;
+}
+
+const char* rcMapSourceToString(RcBindingSource source) {
+    switch (source) {
+        case RC_BINDING_PWM:
+            return "pwm";
+        case RC_BINDING_SBUS1:
+            return "sbus1";
+        case RC_BINDING_SBUS2:
+            return "sbus2";
+        case RC_BINDING_NONE:
+        default:
+            return "none";
+    }
+}
+
+bool rcMapBindingIsMapped(const RcBindingConfig& binding) {
+    return binding.source != RC_BINDING_NONE &&
+           rcBindingChannelIsValid(binding.source, binding.channel);
+}
+
+bool rcMapTriggerIsMapped(const RcTriggerBinding& binding) {
+    return binding.source != RC_BINDING_NONE && binding.target != ROBOT_ACTION_NONE &&
+           rcBindingChannelIsValid(binding.source, binding.channel);
+}
+
+bool rcMapTryReuseCalibration(const ConfigSnapshot& existing, RcBindingSource source, uint8_t channel,
+                              uint16_t* min, uint16_t* center, uint16_t* max,
+                              uint16_t* deadband, bool* reverse) {
+    if (min == nullptr || center == nullptr || max == nullptr || deadband == nullptr ||
+        reverse == nullptr) {
+        return false;
+    }
+
+    const RcBindingConfig backboneBindings[] = {
+        existing.rcPwmDriveSpeed, existing.rcPwmDriveSteer, existing.rcPwmDomeSpeed,
+        existing.rcPwmArm1,       existing.rcPwmArm2,       existing.rcPwmSound,
+        existing.rcSbusDriveSpeed, existing.rcSbusDriveSteer, existing.rcSbusDomeSpeed,
+        existing.rcSbusArm1,      existing.rcSbusArm2,      existing.rcSbusSound,
+    };
+    for (size_t i = 0; i < sizeof(backboneBindings) / sizeof(backboneBindings[0]); ++i) {
+        const RcBindingConfig& binding = backboneBindings[i];
+        if (binding.source == source && binding.channel == channel &&
+            rcBindingChannelIsValid(binding.source, binding.channel)) {
+            *min = binding.min;
+            *center = binding.center;
+            *max = binding.max;
+            *deadband = binding.deadband;
+            *reverse = binding.reverse;
+            return true;
+        }
+    }
+
+    const RcTriggerBinding triggerBindings[] = {
+        existing.rcArm1, existing.rcArm2, existing.rcAux1, existing.rcAux2, existing.rcAux3,
+        existing.rcSound, existing.rcOpmode, existing.rcFree0, existing.rcFree1, existing.rcFree2,
+        existing.rcFree3,
+    };
+    for (size_t i = 0; i < sizeof(triggerBindings) / sizeof(triggerBindings[0]); ++i) {
+        const RcTriggerBinding& binding = triggerBindings[i];
+        if (binding.source == source && binding.channel == channel &&
+            rcBindingChannelIsValid(binding.source, binding.channel)) {
+            *min = binding.min;
+            *center = binding.center;
+            *max = binding.max;
+            *deadband = binding.deadband;
+            *reverse = binding.reverse;
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool rcMapBuildBackboneBinding(RcBindingSource source, uint8_t channel,
+                               const ConfigSnapshot& existing, RcBindingConfig* out) {
+    if (out == nullptr || !rcBindingChannelIsValid(source, channel)) {
+        return false;
+    }
+
+    RcBindingConfig binding =
+        (source == RC_BINDING_PWM) ? defaultPwmBinding(channel) : defaultSbusBinding(source, channel);
+
+    uint16_t min = binding.min;
+    uint16_t center = binding.center;
+    uint16_t max = binding.max;
+    uint16_t deadband = binding.deadband;
+    bool reverse = binding.reverse;
+    if (rcMapTryReuseCalibration(existing, source, channel, &min, &center, &max, &deadband,
+                                  &reverse)) {
+        RcBindingConfig reused =
+            makeRcBindingConfig(source, channel, min, center, max, deadband, reverse);
+        if (rcBindingIsValid(reused)) {
+            binding = reused;
+        }
+    }
+
+    *out = binding;
+    return true;
+}
+
+bool rcMapBuildTriggerBinding(const RcMapEntry& entry, const ConfigSnapshot& existing,
+                              RcTriggerBinding* out) {
+    if (out == nullptr || !rcBindingChannelIsValid(entry.source, entry.channel)) {
+        return false;
+    }
+
+    uint16_t min = 1000;
+    uint16_t center = 1500;
+    uint16_t max = 2000;
+    if (entry.source == RC_BINDING_SBUS1 || entry.source == RC_BINDING_SBUS2) {
+        min = RC_SBUS_DEFAULT_MIN;
+        center = RC_SBUS_DEFAULT_CENTER;
+        max = RC_SBUS_DEFAULT_MAX;
+    }
+    uint16_t deadband = 0;
+    bool reverse = rcTriggerDefaultReverse(entry.source, entry.channel);
+    rcMapTryReuseCalibration(existing, entry.source, entry.channel, &min, &center, &max, &deadband,
+                              &reverse);
+
+    *out = makeRcTriggerBinding(entry.source, entry.channel, entry.action, entry.payload, min,
+                                center, max, deadband, reverse);
+    if (!rcTriggerBindingIsValid(*out)) {
+        return false;
+    }
+    return triggerTargetAllowedByRuntime(*out);
+}
+
+RcBindingConfig rcMapSelectBackboneForMode(const ConfigSnapshot& snap, const RcBindingConfig& pwm,
+                                           const RcBindingConfig& sbus) {
+    if (snap.rcInputMode == RC_INPUT_STANDARD_PWM) {
+        return rcMapBindingIsMapped(pwm) ? pwm : sbus;
+    }
+    return rcMapBindingIsMapped(sbus) ? sbus : pwm;
+}
+
+void rcMapAppendEntry(JsonArray map, RcBindingSource source, uint8_t channel, RobotActionId action,
+                      const char* payload) {
+    JsonObject item = map.add<JsonObject>();
+    item["source"] = rcMapSourceToString(source);
+    item["channel"] = channel;
+    item["action"] = robotActionIdToString(action);
+    if (payload != nullptr && payload[0] != '\0') {
+        item["payload"] = payload;
+    }
+}
+
 }  // namespace
+bool populateRcMapJson(JsonDocument& doc, const ConfigSnapshot& snap) {
+    doc.clear();
+    doc["mode"] = rcModeToString(snap.rcInputMode);
+
+    JsonArray map = doc["map"].to<JsonArray>();
+
+    RcBindingConfig driveSpeed =
+        rcMapSelectBackboneForMode(snap, snap.rcPwmDriveSpeed, snap.rcSbusDriveSpeed);
+    RcBindingConfig driveSteer =
+        rcMapSelectBackboneForMode(snap, snap.rcPwmDriveSteer, snap.rcSbusDriveSteer);
+    RcBindingConfig domeSpeed =
+        rcMapSelectBackboneForMode(snap, snap.rcPwmDomeSpeed, snap.rcSbusDomeSpeed);
+
+    if (rcMapBindingIsMapped(driveSpeed)) {
+        rcMapAppendEntry(map, driveSpeed.source, driveSpeed.channel, DRIVE_ACTION_SPEED, nullptr);
+    }
+    if (rcMapBindingIsMapped(driveSteer)) {
+        rcMapAppendEntry(map, driveSteer.source, driveSteer.channel, DRIVE_ACTION_STEER, nullptr);
+    }
+    if (rcMapBindingIsMapped(domeSpeed)) {
+        rcMapAppendEntry(map, domeSpeed.source, domeSpeed.channel, DOME_ACTION_SPEED, nullptr);
+    }
+
+    const RcTriggerBinding namedSlots[] = {snap.rcArm1, snap.rcArm2, snap.rcAux1, snap.rcAux2,
+                                           snap.rcAux3, snap.rcOpmode, snap.rcSound, snap.rcFree0,
+                                           snap.rcFree1, snap.rcFree2, snap.rcFree3};
+
+    for (size_t i = 0; i < sizeof(namedSlots) / sizeof(namedSlots[0]); ++i) {
+        const RcTriggerBinding& binding = namedSlots[i];
+        if (!rcMapTriggerIsMapped(binding)) {
+            continue;
+        }
+        rcMapAppendEntry(map, binding.source, binding.channel, binding.target, binding.marcduinoPayload);
+    }
+
+    JsonObject capacity = doc["capacity"].to<JsonObject>();
+    capacity["total"] = kRcMapMaxEntries;
+    capacity["used"] = map.size();
+    return !doc.overflowed();
+}
+
+void clearRcMapSlots(ConfigSnapshot* working) {
+    if (working == nullptr) {
+        return;
+    }
+
+    working->rcPwmDriveSpeed = disabledRcBinding();
+    working->rcPwmDriveSteer = disabledRcBinding();
+    working->rcPwmDomeSpeed = disabledRcBinding();
+    working->rcSbusDriveSpeed = disabledRcBinding();
+    working->rcSbusDriveSteer = disabledRcBinding();
+    working->rcSbusDomeSpeed = disabledRcBinding();
+
+    working->rcArm1 = disabledRcTriggerBinding();
+    working->rcArm2 = disabledRcTriggerBinding();
+    working->rcAux1 = disabledRcTriggerBinding();
+    working->rcAux2 = disabledRcTriggerBinding();
+    working->rcAux3 = disabledRcTriggerBinding();
+    working->rcOpmode = disabledRcTriggerBinding();
+    working->rcSound = disabledRcTriggerBinding();
+    working->rcFree0 = disabledRcTriggerBinding();
+    working->rcFree1 = disabledRcTriggerBinding();
+    working->rcFree2 = disabledRcTriggerBinding();
+    working->rcFree3 = disabledRcTriggerBinding();
+}
+
+static bool triggerSlotIsFree(const RcTriggerBinding& binding) {
+    return binding.source == RC_BINDING_NONE || binding.target == ROBOT_ACTION_NONE;
+}
+
+bool assignRcMapEntryToSnapshot(const RcMapEntry& entry, const ConfigSnapshot& existing,
+                                ConfigSnapshot* working, char* error, size_t errorSize) {
+    if (working == nullptr || error == nullptr || errorSize == 0) {
+        return false;
+    }
+
+    // Slot-assignment algorithm for POST /api/rc/map
+    //
+    // Backbone actions are exclusive logical slots and mirror into both persisted
+    // profile groups (PWM + SBUS) to keep runtime mode switching behavior stable.
+    //
+    // - drive_speed -> rcPwmDriveSpeed + rcSbusDriveSpeed
+    // - drive_steer -> rcPwmDriveSteer + rcSbusDriveSteer
+    // - dome_speed  -> rcPwmDomeSpeed  + rcSbusDomeSpeed
+    //
+    // Named trigger actions map to dedicated trigger slots:
+    // - arm1_toggle -> rcArm1
+    // - arm2_toggle -> rcArm2
+    // - aux1_toggle -> rcAux1
+    // - aux2_toggle -> rcAux2
+    // - aux3_toggle -> rcAux3
+    // - op_mode     -> rcOpmode
+    //
+    // All remaining trigger actions fill first-free in this order:
+    // rcSound, rcFree0, rcFree1, rcFree2, rcFree3.
+    RcBindingConfig backbone = disabledRcBinding();
+    RcTriggerBinding trigger = disabledRcTriggerBinding();
+
+    if (entry.action == DRIVE_ACTION_SPEED || entry.action == DRIVE_ACTION_STEER ||
+        entry.action == DOME_ACTION_SPEED) {
+        if (!rcMapBuildBackboneBinding(entry.source, entry.channel, existing, &backbone)) {
+            snprintf(error, errorSize, "invalid backbone binding");
+            return false;
+        }
+        if (entry.action == DRIVE_ACTION_SPEED) {
+            working->rcPwmDriveSpeed = backbone;
+            working->rcSbusDriveSpeed = backbone;
+        } else if (entry.action == DRIVE_ACTION_STEER) {
+            working->rcPwmDriveSteer = backbone;
+            working->rcSbusDriveSteer = backbone;
+        } else {
+            working->rcPwmDomeSpeed = backbone;
+            working->rcSbusDomeSpeed = backbone;
+        }
+        return true;
+    }
+
+    if (!rcMapBuildTriggerBinding(entry, existing, &trigger)) {
+        snprintf(error, errorSize, "invalid trigger binding");
+        return false;
+    }
+
+    if (entry.action == SERVO_ACTION_ARM1_TOGGLE) {
+        if (!triggerSlotIsFree(working->rcArm1)) {
+            snprintf(error, errorSize, "conflict: arm1_toggle mapped more than once");
+            return false;
+        }
+        working->rcArm1 = trigger;
+        return true;
+    }
+    if (entry.action == SERVO_ACTION_ARM2_TOGGLE) {
+        if (!triggerSlotIsFree(working->rcArm2)) {
+            snprintf(error, errorSize, "conflict: arm2_toggle mapped more than once");
+            return false;
+        }
+        working->rcArm2 = trigger;
+        return true;
+    }
+    if (entry.action == SERVO_ACTION_AUX1_TOGGLE) {
+        if (!triggerSlotIsFree(working->rcAux1)) {
+            snprintf(error, errorSize, "conflict: aux1_toggle mapped more than once");
+            return false;
+        }
+        working->rcAux1 = trigger;
+        return true;
+    }
+    if (entry.action == SERVO_ACTION_AUX2_TOGGLE) {
+        if (!triggerSlotIsFree(working->rcAux2)) {
+            snprintf(error, errorSize, "conflict: aux2_toggle mapped more than once");
+            return false;
+        }
+        working->rcAux2 = trigger;
+        return true;
+    }
+    if (entry.action == SERVO_ACTION_AUX3_TOGGLE) {
+        if (!triggerSlotIsFree(working->rcAux3)) {
+            snprintf(error, errorSize, "conflict: aux3_toggle mapped more than once");
+            return false;
+        }
+        working->rcAux3 = trigger;
+        return true;
+    }
+    if (entry.action == SYSTEM_ACTION_OP_MODE) {
+        if (!triggerSlotIsFree(working->rcOpmode)) {
+            snprintf(error, errorSize, "conflict: op_mode mapped more than once");
+            return false;
+        }
+        working->rcOpmode = trigger;
+        return true;
+    }
+
+    RcTriggerBinding* spillSlots[] = {&working->rcSound, &working->rcFree0, &working->rcFree1,
+                                      &working->rcFree2, &working->rcFree3};
+    for (size_t i = 0; i < sizeof(spillSlots) / sizeof(spillSlots[0]); ++i) {
+        if (triggerSlotIsFree(*spillSlots[i])) {
+            *spillSlots[i] = trigger;
+            return true;
+        }
+    }
+
+    snprintf(error, errorSize, "conflict: no trigger slot available");
+    return false;
+}
+
 
 // -----------------------------------------------------------------------------
 // captureConfigSnapshot()
@@ -393,69 +658,11 @@ void captureConfigSnapshot(ConfigSnapshot* out) {
 //
 // Pure function — no global state, no FreeRTOS. Accepts a snapshot produced by
 // captureConfigSnapshot() and builds the ArduinoJson document field by field.
-// RC binding structs are serialised via formatRcBindingConfig /
-// triggerBindingToUiString (both in the anonymous namespace, same TU).
-// Returns false if any binding format call fails; caller should send HTTP 500.
+// Builds the JSON snapshot consumed by the web config UI and API clients.
+// Returns false only if the JsonDocument overflows.
 // -----------------------------------------------------------------------------
 bool populateConfigJson(JsonDocument& doc, const ConfigSnapshot& snap) {
     doc.clear();
-    // --- RC binding config strings (12 channels, 48 bytes each) ---
-    char rcPwmDriveSpeedStr[48] = {};
-    char rcPwmDriveSteerStr[48] = {};
-    char rcPwmDomeSpeedStr[48] = {};
-    char rcPwmArm1Str[48] = {};
-    char rcPwmArm2Str[48] = {};
-    char rcPwmSoundStr[48] = {};
-    char rcSbusDriveSpeedStr[48] = {};
-    char rcSbusDriveSteerStr[48] = {};
-    char rcSbusDomeSpeedStr[48] = {};
-    char rcSbusArm1Str[48] = {};
-    char rcSbusArm2Str[48] = {};
-    char rcSbusSoundStr[48] = {};
-
-    // --- Trigger binding strings (11 slots, 96 bytes each — wider for payload) ---
-    char rcArm1Str[96] = {};
-    char rcArm2Str[96] = {};
-    char rcAux1Str[96] = {};
-    char rcAux2Str[96] = {};
-    char rcAux3Str[96] = {};
-    char rcSoundStr[96] = {};
-    char rcOpmodeStr[96] = {};
-    char rcFree0Str[96] = {};
-    char rcFree1Str[96] = {};
-    char rcFree2Str[96] = {};
-    char rcFree3Str[96] = {};
-
-    if (!formatRcBindingConfig(rcPwmDriveSpeedStr, sizeof(rcPwmDriveSpeedStr),
-                               snap.rcPwmDriveSpeed) ||
-        !formatRcBindingConfig(rcPwmDriveSteerStr, sizeof(rcPwmDriveSteerStr),
-                               snap.rcPwmDriveSteer) ||
-        !formatRcBindingConfig(rcPwmDomeSpeedStr, sizeof(rcPwmDomeSpeedStr), snap.rcPwmDomeSpeed) ||
-        !formatRcBindingConfig(rcPwmArm1Str, sizeof(rcPwmArm1Str), snap.rcPwmArm1) ||
-        !formatRcBindingConfig(rcPwmArm2Str, sizeof(rcPwmArm2Str), snap.rcPwmArm2) ||
-        !formatRcBindingConfig(rcPwmSoundStr, sizeof(rcPwmSoundStr), snap.rcPwmSound) ||
-        !formatRcBindingConfig(rcSbusDriveSpeedStr, sizeof(rcSbusDriveSpeedStr),
-                               snap.rcSbusDriveSpeed) ||
-        !formatRcBindingConfig(rcSbusDriveSteerStr, sizeof(rcSbusDriveSteerStr),
-                               snap.rcSbusDriveSteer) ||
-        !formatRcBindingConfig(rcSbusDomeSpeedStr, sizeof(rcSbusDomeSpeedStr),
-                               snap.rcSbusDomeSpeed) ||
-        !formatRcBindingConfig(rcSbusArm1Str, sizeof(rcSbusArm1Str), snap.rcSbusArm1) ||
-        !formatRcBindingConfig(rcSbusArm2Str, sizeof(rcSbusArm2Str), snap.rcSbusArm2) ||
-        !formatRcBindingConfig(rcSbusSoundStr, sizeof(rcSbusSoundStr), snap.rcSbusSound) ||
-        !triggerBindingToUiString(rcArm1Str, sizeof(rcArm1Str), snap.rcArm1) ||
-        !triggerBindingToUiString(rcArm2Str, sizeof(rcArm2Str), snap.rcArm2) ||
-        !triggerBindingToUiString(rcAux1Str, sizeof(rcAux1Str), snap.rcAux1) ||
-        !triggerBindingToUiString(rcAux2Str, sizeof(rcAux2Str), snap.rcAux2) ||
-        !triggerBindingToUiString(rcAux3Str, sizeof(rcAux3Str), snap.rcAux3) ||
-        !triggerBindingToUiString(rcSoundStr, sizeof(rcSoundStr), snap.rcSound) ||
-        !triggerBindingToUiString(rcOpmodeStr, sizeof(rcOpmodeStr), snap.rcOpmode) ||
-        !triggerBindingToUiString(rcFree0Str, sizeof(rcFree0Str), snap.rcFree0) ||
-        !triggerBindingToUiString(rcFree1Str, sizeof(rcFree1Str), snap.rcFree1) ||
-        !triggerBindingToUiString(rcFree2Str, sizeof(rcFree2Str), snap.rcFree2) ||
-        !triggerBindingToUiString(rcFree3Str, sizeof(rcFree3Str), snap.rcFree3)) {
-        return false;
-    }
 
     JsonObject drive = doc["drive"].to<JsonObject>();
     drive["speedLimitMax"] = snap.speedLimitMax;
@@ -470,35 +677,8 @@ bool populateConfigJson(JsonDocument& doc, const ConfigSnapshot& snap) {
     rc["inputMode"] = rcModeToString(snap.rcInputMode);
     rc["sbusTimeoutMs"] = snap.sbusTimeoutMs;
 
-    JsonObject rcPwm = rc["pwm"].to<JsonObject>();
-    rcPwm["driveSpeed"] = rcPwmDriveSpeedStr;
-    rcPwm["driveSteer"] = rcPwmDriveSteerStr;
-    rcPwm["domeSpeed"] = rcPwmDomeSpeedStr;
-    rcPwm["arm1"] = rcPwmArm1Str;
-    rcPwm["arm2"] = rcPwmArm2Str;
-    rcPwm["sound"] = rcPwmSoundStr;
-
     JsonObject rcSbus = rc["sbus"].to<JsonObject>();
-    rcSbus["driveSpeed"] = rcSbusDriveSpeedStr;
-    rcSbus["driveSteer"] = rcSbusDriveSteerStr;
-    rcSbus["domeSpeed"] = rcSbusDomeSpeedStr;
-    rcSbus["arm1"] = rcSbusArm1Str;
-    rcSbus["arm2"] = rcSbusArm2Str;
-    rcSbus["sound"] = rcSbusSoundStr;
     rcSbus["recvCh2"] = snap.sbusRecvCh2;
-
-    JsonObject rcTriggers = rc["triggers"].to<JsonObject>();
-    rcTriggers["arm1"] = rcArm1Str;
-    rcTriggers["arm2"] = rcArm2Str;
-    rcTriggers["aux1"] = rcAux1Str;
-    rcTriggers["aux2"] = rcAux2Str;
-    rcTriggers["aux3"] = rcAux3Str;
-    rcTriggers["sound"] = rcSoundStr;
-    rcTriggers["opMode"] = rcOpmodeStr;
-    rcTriggers["free0"] = rcFree0Str;
-    rcTriggers["free1"] = rcFree1Str;
-    rcTriggers["free2"] = rcFree2Str;
-    rcTriggers["free3"] = rcFree3Str;
 
     JsonObject components = doc["components"].to<JsonObject>();
     components["arm1"]["enabled"] = snap.enableArm1;
@@ -550,6 +730,179 @@ bool populateConfigJson(JsonDocument& doc, const ConfigSnapshot& snap) {
 }
 
 void registerConfigRoutes(AsyncWebServer& server) {
+    server.on("/api/rc/map", HTTP_GET, [](AsyncWebServerRequest* req) {
+        ConfigSnapshot snap;
+        captureConfigSnapshot(&snap);
+        JsonDocument doc;
+        if (!populateRcMapJson(doc, snap)) {
+            req->send(500, "application/json",
+                      "{\"ok\":false,\"error\":\"rc map json build failed\"}");
+            return;
+        }
+        auto* stream = req->beginResponseStream("application/json");
+        if (stream == nullptr) {
+            req->send(500, "application/json",
+                      "{\"ok\":false,\"error\":\"response stream alloc failed\"}");
+            return;
+        }
+        serializeJson(doc, *stream);
+        req->send(stream);
+    });
+
+    server.on("/api/rc/map", HTTP_POST, [](AsyncWebServerRequest* req) {
+        auto sendValidationError = [&](const char* message, const RcMapEntry* entry) {
+            JsonDocument err;
+            err["ok"] = false;
+            err["error"] = message != nullptr ? message : "invalid map";
+            if (entry != nullptr) {
+                JsonObject at = err["entry"].to<JsonObject>();
+                at["source"] = rcMapSourceToString(entry->source);
+                at["channel"] = entry->channel;
+                at["action"] = robotActionIdToString(entry->action);
+                if (entry->payload[0] != '\0') {
+                    at["payload"] = entry->payload;
+                }
+            }
+            char payload[320] = {};
+            serializeJson(err, payload, sizeof(payload));
+            req->send(400, "application/json", payload);
+        };
+
+        if (!req->hasParam("plain", true)) {
+            sendValidationError("map body required", nullptr);
+            return;
+        }
+
+        JsonDocument body;
+        const String rawBody = req->getParam("plain", true)->value();
+        if (deserializeJson(body, rawBody.c_str())) {
+            sendValidationError("invalid json body", nullptr);
+            return;
+        }
+
+        JsonVariantConst mapVar = body["map"];
+        if (!mapVar.is<JsonArrayConst>()) {
+            sendValidationError("map must be array", nullptr);
+            return;
+        }
+
+        RcMapEntry entries[kRcMapMaxEntries] = {};
+        size_t count = 0;
+        bool seenDriveSpeed = false;
+        bool seenDriveSteer = false;
+        bool seenDomeSpeed = false;
+
+        JsonArrayConst map = mapVar.as<JsonArrayConst>();
+        for (JsonVariantConst itemVar : map) {
+            if (!itemVar.is<JsonObjectConst>()) {
+                sendValidationError("map entry must be object", nullptr);
+                return;
+            }
+            if (count >= kRcMapMaxEntries) {
+                sendValidationError("conflict: map exceeds capacity", nullptr);
+                return;
+            }
+
+            JsonObjectConst item = itemVar.as<JsonObjectConst>();
+            const char* sourceRaw = item["source"] | "";
+            const char* actionRaw = item["action"] | "";
+            uint32_t channelValue = item["channel"] | 0;
+            const char* payloadRaw = item["payload"] | "";
+
+            RcMapEntry entry = {};
+            if (!rcMapSourceFromString(sourceRaw, &entry.source)) {
+                sendValidationError("invalid source", nullptr);
+                return;
+            }
+            if (channelValue > 255) {
+                sendValidationError("invalid channel", nullptr);
+                return;
+            }
+            entry.channel = (uint8_t)channelValue;
+            if (!rcBindingChannelIsValid(entry.source, entry.channel)) {
+                sendValidationError("channel out of range", nullptr);
+                return;
+            }
+            if (!parseRobotActionId(actionRaw, &entry.action) ||
+                entry.action == ROBOT_ACTION_NONE) {
+                sendValidationError("invalid action token", nullptr);
+                return;
+            }
+            snprintf(entry.payload, sizeof(entry.payload), "%s", payloadRaw);
+
+            for (size_t i = 0; i < count; ++i) {
+                if (entries[i].source == entry.source && entries[i].channel == entry.channel) {
+                    sendValidationError("conflict: source+channel mapped more than once", &entry);
+                    return;
+                }
+            }
+
+            if (entry.action == DRIVE_ACTION_SPEED) {
+                if (seenDriveSpeed) {
+                    sendValidationError("conflict: drive_speed mapped more than once", &entry);
+                    return;
+                }
+                seenDriveSpeed = true;
+            } else if (entry.action == DRIVE_ACTION_STEER) {
+                if (seenDriveSteer) {
+                    sendValidationError("conflict: drive_steer mapped more than once", &entry);
+                    return;
+                }
+                seenDriveSteer = true;
+            } else if (entry.action == DOME_ACTION_SPEED) {
+                if (seenDomeSpeed) {
+                    sendValidationError("conflict: dome_speed mapped more than once", &entry);
+                    return;
+                }
+                seenDomeSpeed = true;
+            }
+
+            entries[count++] = entry;
+        }
+
+        ConfigSnapshot working;
+        captureConfigSnapshot(&working);
+        ConfigSnapshot existing = working;
+        clearRcMapSlots(&working);
+
+        for (size_t i = 0; i < count; ++i) {
+            char assignErr[96] = {};
+            if (!assignRcMapEntryToSnapshot(entries[i], existing, &working, assignErr,
+                                            sizeof(assignErr))) {
+                sendValidationError(assignErr, &entries[i]);
+                return;
+            }
+        }
+
+        taskENTER_CRITICAL(&robotStateMux);
+        robotState.cfg_rc_pwm_drive_speed = working.rcPwmDriveSpeed;
+        robotState.cfg_rc_pwm_drive_steer = working.rcPwmDriveSteer;
+        robotState.cfg_rc_pwm_dome_speed = working.rcPwmDomeSpeed;
+        robotState.cfg_rc_sbus_drive_speed = working.rcSbusDriveSpeed;
+        robotState.cfg_rc_sbus_drive_steer = working.rcSbusDriveSteer;
+        robotState.cfg_rc_sbus_dome_speed = working.rcSbusDomeSpeed;
+        robotState.cfg_rc_arm1 = working.rcArm1;
+        robotState.cfg_rc_arm2 = working.rcArm2;
+        robotState.cfg_rc_aux1 = working.rcAux1;
+        robotState.cfg_rc_aux2 = working.rcAux2;
+        robotState.cfg_rc_aux3 = working.rcAux3;
+        robotState.cfg_rc_sound = working.rcSound;
+        robotState.cfg_rc_opmode = working.rcOpmode;
+        robotState.cfg_rc_free0 = working.rcFree0;
+        robotState.cfg_rc_free1 = working.rcFree1;
+        robotState.cfg_rc_free2 = working.rcFree2;
+        robotState.cfg_rc_free3 = working.rcFree3;
+        taskEXIT_CRITICAL(&robotStateMux);
+
+        if (!saveConfigToNvs()) {
+            req->send(500, "application/json",
+                      "{\"ok\":false,\"error\":\"failed to persist config\"}");
+            return;
+        }
+
+        req->send(200, "application/json", "{\"ok\":true}");
+    });
+
     server.on("/api/config", HTTP_GET, [](AsyncWebServerRequest* req) {
         ConfigSnapshot snap;
         captureConfigSnapshot(&snap);
@@ -996,139 +1349,6 @@ void registerConfigRoutes(AsyncWebServer& server) {
             changed = true;
         }
 
-        struct BindingField {
-            const char* param;
-            RcBindingConfig* field;
-        };
-
-        BindingField bindingFields[] = {
-            {"rcPwmDriveSpeed", &working.rcPwmDriveSpeed},
-            {"rcPwmDriveSteer", &working.rcPwmDriveSteer},
-            {"rcPwmDomeSpeed", &working.rcPwmDomeSpeed},
-            {"rcPwmArm1", &working.rcPwmArm1},
-            {"rcPwmArm2", &working.rcPwmArm2},
-            {"rcPwmSound", &working.rcPwmSound},
-            {"rcSbusDriveSpeed", &working.rcSbusDriveSpeed},
-            {"rcSbusDriveSteer", &working.rcSbusDriveSteer},
-            {"rcSbusDomeSpeed", &working.rcSbusDomeSpeed},
-            {"rcSbusArm1", &working.rcSbusArm1},
-            {"rcSbusArm2", &working.rcSbusArm2},
-            {"rcSbusSound", &working.rcSbusSound},
-        };
-
-        for (size_t i = 0; i < sizeof(bindingFields) / sizeof(bindingFields[0]); ++i) {
-            if (!req->hasParam(bindingFields[i].param, true)) {
-                continue;
-            }
-
-            RcInputMode activeMode = working.rcInputMode;
-
-            RcBindingConfig parsed;
-            if (parseRcBindingParam(req, bindingFields[i].param, &parsed)) {
-                *bindingFields[i].field = parsed;
-                changed = true;
-                continue;
-            }
-
-            // Compatibility: arm/sound legacy fields may carry trigger-format values.
-            RcTriggerBinding triggerParsed;
-            if ((strcmp(bindingFields[i].param, "rcPwmArm1") == 0 ||
-                 strcmp(bindingFields[i].param, "rcSbusArm1") == 0) &&
-                parseRcTriggerParam(req, bindingFields[i].param, &triggerParsed)) {
-                working.rcArm1 = triggerParsed;
-                changed = true;
-                continue;
-            }
-
-            if ((strcmp(bindingFields[i].param, "rcPwmArm2") == 0 ||
-                 strcmp(bindingFields[i].param, "rcSbusArm2") == 0) &&
-                parseRcTriggerParam(req, bindingFields[i].param, &triggerParsed)) {
-                working.rcArm2 = triggerParsed;
-                changed = true;
-                continue;
-            }
-
-            if ((strcmp(bindingFields[i].param, "rcPwmSound") == 0 ||
-                 strcmp(bindingFields[i].param, "rcSbusSound") == 0) &&
-                parseRcTriggerParam(req, bindingFields[i].param, &triggerParsed)) {
-                working.rcSound = triggerParsed;
-                changed = true;
-                continue;
-            }
-
-            char err[180];
-            snprintf(err, sizeof(err), "{\"ok\":false,\"error\":\"invalid binding value for %s\"}",
-                     bindingFields[i].param);
-            req->send(400, "application/json", err);
-            return;
-        }
-
-        struct TriggerField {
-            const char* param;
-            RcTriggerBinding* field;
-        };
-
-        TriggerField triggerFields[] = {
-            {"rcArm1", &working.rcArm1},
-            {"rcArm2", &working.rcArm2},
-            {"rcAux1", &working.rcAux1},
-            {"rcAux2", &working.rcAux2},
-            {"rcAux3", &working.rcAux3},
-            {"rcSound", &working.rcSound},
-            {"rcOpMode", &working.rcOpmode},
-            {"rcFree0", &working.rcFree0},
-            {"rcFree1", &working.rcFree1},
-            {"rcFree2", &working.rcFree2},
-            {"rcFree3", &working.rcFree3},
-            // Compatibility aliases from in-flight UI names
-            {"rcPwmAux1", &working.rcAux1},
-            {"rcPwmAux2", &working.rcAux2},
-            {"rcPwmAux3", &working.rcAux3},
-            {"rcPwmOpMode", &working.rcOpmode},
-            {"rcPwmFree0", &working.rcFree0},
-            {"rcPwmFree1", &working.rcFree1},
-            {"rcPwmFree2", &working.rcFree2},
-            {"rcPwmFree3", &working.rcFree3},
-            {"rcSbusAux1", &working.rcAux1},
-            {"rcSbusAux2", &working.rcAux2},
-            {"rcSbusAux3", &working.rcAux3},
-            {"rcSbusOpMode", &working.rcOpmode},
-            {"rcSbusFree0", &working.rcFree0},
-            {"rcSbusFree1", &working.rcFree1},
-            {"rcSbusFree2", &working.rcFree2},
-            {"rcSbusFree3", &working.rcFree3},
-        };
-
-        for (size_t i = 0; i < sizeof(triggerFields) / sizeof(triggerFields[0]); ++i) {
-            if (!req->hasParam(triggerFields[i].param, true)) {
-                continue;
-            }
-
-            RcInputMode activeMode = working.rcInputMode;
-
-            RcTriggerBinding parsed;
-            if (!parseRcTriggerParam(req, triggerFields[i].param, &parsed)) {
-                char err[180];
-                snprintf(err, sizeof(err),
-                         "{\"ok\":false,\"error\":\"invalid trigger binding value for %s\"}",
-                         triggerFields[i].param);
-                req->send(400, "application/json", err);
-                return;
-            }
-
-            if (!triggerTargetAllowedByRuntime(parsed)) {
-                char err[220];
-                snprintf(
-                    err, sizeof(err),
-                    "{\"ok\":false,\"error\":\"dome_seq is not available until Phase 4 (%s)\"}",
-                    triggerFields[i].param);
-                req->send(400, "application/json", err);
-                return;
-            }
-
-            *triggerFields[i].field = parsed;
-            changed = true;
-        }
 
         if (!changed) {
             req->send(400, "application/json",

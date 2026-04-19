@@ -122,6 +122,14 @@ inline RcBindingConfig defaultSbusBinding(RcBindingSource source, uint8_t channe
                                RC_SBUS_DEFAULT_MAX, 0, false);
 }
 
+// DS-650 button channels (SBUS CH3-CH6) idle high and press low.
+// Default trigger polarity therefore needs reverse=true on those channels
+// so idle decodes as "not pressed" and press decodes as "pressed".
+inline bool rcTriggerDefaultReverse(RcBindingSource source, uint8_t channel) {
+    return (source == RC_BINDING_SBUS1 || source == RC_BINDING_SBUS2) &&
+           channel >= 3 && channel <= 6;
+}
+
 inline RcBindingConfig disabledRcBinding() {
     return makeRcBindingConfig(RC_BINDING_NONE, 0, 1000, 1500, 2000, 0, false);
 }
@@ -721,6 +729,27 @@ inline bool robotActionIsButton(RobotActionId target) {
            target == SOUND_ACTION_RANDOM_GENERAL || target == SOUND_ACTION_RANDOM_CHATTY ||
            target == SOUND_ACTION_RANDOM_HAPPY || target == SOUND_ACTION_RANDOM_PROCESSING ||
            target == SOUND_ACTION_RANDOM_SAD || target == SOUND_ACTION_RANDOM_SENTIMENTAL ||
+           target == SOUND_ACTION_RANDOM_HUMMING || target == SOUND_ACTION_RANDOM_SCREAM ||
+           target == SOUND_ACTION_RANDOM_SURPRISED || target == SOUND_ACTION_RANDOM_ALERT ||
+           target == SOUND_ACTION_RANDOM_SNARKY || target == SOUND_ACTION_RANDOM_WHISTLE ||
+           target == SYSTEM_ACTION_ESTOP || target == SYSTEM_ACTION_SLEEP_TOGGLE ||
+           target == DOME_ACTION_SEQ || target == DROID_SEQ_SCREAM ||
+           target == DROID_SEQ_WAVE || target == DROID_SEQ_FAST_WAVE ||
+           target == DROID_SEQ_OPEN_WAVE || target == DROID_SEQ_BEEP_CANTINA ||
+           target == DROID_SEQ_FAINT || target == DROID_SEQ_CANTINA ||
+           target == DROID_SEQ_LEIA || target == DROID_SEQ_DISCO ||
+           target == DROID_SEQ_SCREAMS || target == DROID_SEQ_WIGGLE ||
+           target == DRIVE_ACTION_SPEED_PRESET_CYCLE;
+}
+
+// One-shot actions should fire once per button click on latched channels.
+// For DS-650 CH3-CH6 this means triggering on either edge transition.
+inline bool robotActionIsOneShotButton(RobotActionId target) {
+    return target == DOME_ACTION_MARCDUINO_SEQ || target == DOME_ACTION_MARCDUINO_CMD ||
+           target == SOUND_ACTION_RANDOM_GENERAL || target == SOUND_ACTION_RANDOM_CHATTY ||
+           target == SOUND_ACTION_RANDOM_HAPPY || target == SOUND_ACTION_RANDOM_PROCESSING ||
+           target == SOUND_ACTION_RANDOM_SAD ||
+           target == SOUND_ACTION_RANDOM_SENTIMENTAL ||
            target == SOUND_ACTION_RANDOM_HUMMING || target == SOUND_ACTION_RANDOM_SCREAM ||
            target == SOUND_ACTION_RANDOM_SURPRISED || target == SOUND_ACTION_RANDOM_ALERT ||
            target == SOUND_ACTION_RANDOM_SNARKY || target == SOUND_ACTION_RANDOM_WHISTLE ||

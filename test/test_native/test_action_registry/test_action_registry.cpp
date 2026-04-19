@@ -110,6 +110,16 @@ void test_web_testable_action_logic() {
     TEST_ASSERT_TRUE(robotActionIsWebTestable(DROID_SEQ_SCREAM));
 }
 
+void test_one_shot_action_logic() {
+    TEST_ASSERT_FALSE(robotActionIsOneShotButton(DRIVE_ACTION_SPEED));
+    TEST_ASSERT_FALSE(robotActionIsOneShotButton(SYSTEM_ACTION_OP_MODE));
+    TEST_ASSERT_FALSE(robotActionIsOneShotButton(SERVO_ACTION_ARM1_TOGGLE));
+
+    TEST_ASSERT_TRUE(robotActionIsOneShotButton(SOUND_ACTION_RANDOM_GENERAL));
+    TEST_ASSERT_TRUE(robotActionIsOneShotButton(SYSTEM_ACTION_SLEEP_TOGGLE));
+    TEST_ASSERT_TRUE(robotActionIsOneShotButton(DRIVE_ACTION_SPEED_PRESET_CYCLE));
+}
+
 void test_action_test_guard_logic() {
     TEST_ASSERT_EQUAL(ACTION_TEST_SAFETY_CRITICAL_BLOCKED,
                       evaluateActionTestGuard(SYSTEM_ACTION_ESTOP, false));
@@ -135,6 +145,7 @@ void test_registry_json_payload_fits_budget() {
         obj["description"] = e.description;
         obj["safety_critical"] = e.safety_critical;
         obj["testable"] = robotActionIsWebTestable(e.id);
+        obj["one_shot"] = robotActionIsOneShotButton(e.id);
         obj["token"] = robotActionIdToString(e.id);
     }
 
@@ -154,6 +165,7 @@ int main() {
     RUN_TEST(test_registry_contains_sound_category_actions);
     RUN_TEST(test_registry_contains_droid_sequence_actions);
     RUN_TEST(test_web_testable_action_logic);
+    RUN_TEST(test_one_shot_action_logic);
     RUN_TEST(test_registry_contains_speed_preset_cycle_action);
     RUN_TEST(test_action_test_guard_logic);
     RUN_TEST(test_registry_json_payload_fits_budget);
