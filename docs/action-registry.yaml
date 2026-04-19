@@ -34,7 +34,7 @@
 ## - GET /api/actions returns bindable actions with token + testability metadata.
 ## - `token` maps to robotActionIdToString() and is accepted by POST /api/actions/test.
 ## - `testable` is false for analog actions, payload-required actions, and system.action.estop.
-
+## - POST /api/rc/map accepts the same token set except `none` and currently rejects `dome_seq` (runtime-gated in api_config.cpp).
 entries:
 # --- drive ---
 - name: drive.action.move
@@ -223,18 +223,18 @@ entries:
 
 # --- dome ---
 - name: dome.action.set-speed
-  display_name: Set Dome Speed
-  description: Rotate the dome at the given speed
+  display_name: Dome Speed
+  description: Dome rotation speed (analog axis)
   domain: dome
   type: action
   marcduino_cmd: null
-  api_path: /api/dome
+  api_path: null
   sse_event: null
   cpp_enum: DOME_ACTION_SPEED
   cpp_file: include/rc_mapping.h
-  sources: [ web_api, sbus ]
+  sources: [ sbus, pwm ]
   safety_critical: false
-  requires_web_control: true
+  requires_web_control: false
   nvs_key: null
 
 - name: dome.action.send-command
@@ -281,6 +281,9 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
+
+# NOTE: `dome_seq` remains listed for token completeness, but POST /api/rc/map
+# currently rejects it until runtime trigger routing support is enabled.
 
 - name: dome.action.dome-sequence
   display_name: Dome Sequence
