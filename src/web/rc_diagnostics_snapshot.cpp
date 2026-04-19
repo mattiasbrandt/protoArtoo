@@ -19,10 +19,10 @@ bool rcSourceEnabledForMode(RcBindingSource source, RcInputMode mode, bool enabl
         case RC_BINDING_PWM:
             return mode == RC_INPUT_STANDARD_PWM && anyPwmEnabled;
         case RC_BINDING_SBUS1:
-            if (mode == RC_INPUT_SINGLE_SBUS) return !useCh2;
+            if (mode == RC_INPUT_SINGLE_SBUS) return !useCh2 && enableRcCh1;
             return mode == RC_INPUT_DUAL_SBUS && enableRcCh1;
         case RC_BINDING_SBUS2:
-            if (mode == RC_INPUT_SINGLE_SBUS) return useCh2;
+            if (mode == RC_INPUT_SINGLE_SBUS) return useCh2 && enableRcCh2;
             return mode == RC_INPUT_DUAL_SBUS && enableRcCh2;
         case RC_BINDING_NONE:
         default:

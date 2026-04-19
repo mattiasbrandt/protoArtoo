@@ -25,13 +25,15 @@ const char* rcInputModeLabel(RcInputMode mode) {
 }
 
 bool rcSourceEnabledForMode(RcBindingSource source, RcInputMode mode, bool enableRcCh1, bool enableRcCh2,
-                            bool anyPwmEnabled) {
+                            bool anyPwmEnabled, bool useCh2) {
     switch (source) {
         case RC_BINDING_PWM:
             return mode == RC_INPUT_STANDARD_PWM && anyPwmEnabled;
         case RC_BINDING_SBUS1:
-            return mode != RC_INPUT_STANDARD_PWM && enableRcCh1;
+            if (mode == RC_INPUT_SINGLE_SBUS) return !useCh2 && enableRcCh1;
+            return mode == RC_INPUT_DUAL_SBUS && enableRcCh1;
         case RC_BINDING_SBUS2:
+            if (mode == RC_INPUT_SINGLE_SBUS) return useCh2 && enableRcCh2;
             return mode == RC_INPUT_DUAL_SBUS && enableRcCh2;
         case RC_BINDING_NONE:
         default:
@@ -101,6 +103,7 @@ void captureValidationSnapshot(ValidationSnapshot* out) {
     bool enableRcCh4;
     bool enableRcCh5;
     bool enableRcCh6;
+    bool sbusUseCh2;
     uint32_t lastPwmMs;
     uint32_t lastSbus1Ms;
     uint32_t lastSbus2Ms;
@@ -143,6 +146,7 @@ void captureValidationSnapshot(ValidationSnapshot* out) {
     enableRcCh4 = robotState.cfg_enable_rc_ch4;
     enableRcCh5 = robotState.cfg_enable_rc_ch5;
     enableRcCh6 = robotState.cfg_enable_rc_ch6;
+    sbusUseCh2 = robotState.cfg_single_sbus_use_ch2;
     lastPwmMs = robotState.lastPwmMs;
     lastSbus1Ms = robotState.lastSbus1Ms;
     lastSbus2Ms = robotState.lastSbus2Ms;
@@ -199,7 +203,7 @@ void captureValidationSnapshot(ValidationSnapshot* out) {
 
     ValidationRcSourceSnapshot& sbus1 = snap.rc.sources[0];
     sbus1.key = "sbus1";
-    sbus1.enabled = rcSourceEnabledForMode(RC_BINDING_SBUS1, rcMode, enableRcCh1, enableRcCh2, anyPwmEnabled);
+    sbus1.enabled = rcSourceEnabledForMode(RC_BINDING_SBUS1, rcMode, enableRcCh1, enableRcCh2, anyPwmEnabled, sbusUseCh2);
     sbus1.linked = sbus1.enabled && lastSbus1Ms > 0 && !sbusSignalLost && sbus1Age <= timeoutMs;
     sbus1.signalLost = sbus1.enabled ? sbusSignalLost : false;
     sbus1.failsafe = sbus1.enabled ? sbusHwFailsafe : false;
@@ -207,7 +211,7 @@ void captureValidationSnapshot(ValidationSnapshot* out) {
 
     ValidationRcSourceSnapshot& sbus2 = snap.rc.sources[1];
     sbus2.key = "sbus2";
-    sbus2.enabled = rcSourceEnabledForMode(RC_BINDING_SBUS2, rcMode, enableRcCh1, enableRcCh2, anyPwmEnabled);
+    sbus2.enabled = rcSourceEnabledForMode(RC_BINDING_SBUS2, rcMode, enableRcCh1, enableRcCh2, anyPwmEnabled, sbusUseCh2);
     sbus2.linked = sbus2.enabled && lastSbus2Ms > 0 && !sbus2SignalLost && sbus2Age <= timeoutMs;
     sbus2.signalLost = sbus2.enabled ? sbus2SignalLost : false;
     sbus2.failsafe = sbus2.enabled ? sbus2HwFailsafe : false;
@@ -215,7 +219,7 @@ void captureValidationSnapshot(ValidationSnapshot* out) {
 
     ValidationRcSourceSnapshot& pwm = snap.rc.sources[2];
     pwm.key = "pwm";
-    pwm.enabled = rcSourceEnabledForMode(RC_BINDING_PWM, rcMode, enableRcCh1, enableRcCh2, anyPwmEnabled);
+    pwm.enabled = rcSourceEnabledForMode(RC_BINDING_PWM, rcMode, enableRcCh1, enableRcCh2, anyPwmEnabled, sbusUseCh2);
     pwm.linked = pwm.enabled && lastPwmMs > 0 && pwmAge <= timeoutMs;
     pwm.signalLost = pwm.enabled && lastPwmMs > 0 && pwmAge > timeoutMs;
     pwm.failsafe = false;

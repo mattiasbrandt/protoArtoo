@@ -370,10 +370,6 @@ void loadConfigToState() {
     robotState.cfg_enable_dome = prefs.getBool("en_dome", false);
     robotState.cfg_enable_rc_ch1 = prefs.getBool("en_rc_ch1", false);
     robotState.cfg_enable_rc_ch2 = prefs.getBool("en_rc_ch2", false);
-    // single_sbus always requires the drive decoder; override any stale NVS false
-    if (robotState.cfg_rc_input_mode == RC_INPUT_SINGLE_SBUS) {
-        robotState.cfg_enable_rc_ch1 = true;
-    }
     robotState.cfg_enable_rc_ch3 = prefs.getBool("en_rc_ch3", false);
     robotState.cfg_enable_rc_ch4 = prefs.getBool("en_rc_ch4", false);
     robotState.cfg_enable_rc_ch5 = prefs.getBool("en_rc_ch5", false);

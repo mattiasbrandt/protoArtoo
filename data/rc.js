@@ -1870,11 +1870,12 @@
         body.set("rcArm1", "pwm:4:arm1_toggle::1000:1500:2000:0:0");
         body.set("rcArm2", "pwm:5:arm2_toggle::1000:1500:2000:0:0");
       } else if (mode === "single_sbus") {
-        body.set("rcSbusDriveSpeed", "sbus1:1:172:992:1811:0:0");
-        body.set("rcSbusDriveSteer", "sbus1:2:172:992:1811:0:0");
-        body.set("rcSbusDomeSpeed", "sbus1:3:172:992:1811:0:0");
-        body.set("rcArm1", "sbus1:4:arm1_toggle::172:992:1811:0:0");
-        body.set("rcArm2", "sbus1:5:arm2_toggle::172:992:1811:0:0");
+        const src = getSingleSbusRecvCh2(configCache) ? "sbus2" : "sbus1";
+        body.set("rcSbusDriveSpeed", `${src}:1:172:992:1811:0:0`);
+        body.set("rcSbusDriveSteer", `${src}:2:172:992:1811:0:0`);
+        body.set("rcSbusDomeSpeed", `${src}:3:172:992:1811:0:0`);
+        body.set("rcArm1", `${src}:4:arm1_toggle::172:992:1811:0:0`);
+        body.set("rcArm2", `${src}:5:arm2_toggle::172:992:1811:0:0`);
       } else {
         body.set("rcSbusDriveSpeed", "sbus1:1:172:992:1811:0:0");
         body.set("rcSbusDriveSteer", "sbus1:2:172:992:1811:0:0");

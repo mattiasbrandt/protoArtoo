@@ -244,18 +244,22 @@ void test_rc_diagnostics_source_name_returns_correct_names() {
 }
 
 void test_rcSourceEnabledForMode_single_sbus_ch1_selected() {
-    // useCh2=false: SBUS1 active, SBUS2 not
+    // useCh2=false, enableRcCh1=true: SBUS1 active, SBUS2 not
     TEST_ASSERT_TRUE(rcSourceEnabledForMode(RC_BINDING_SBUS1, RC_INPUT_SINGLE_SBUS, true, true, false, false));
     TEST_ASSERT_FALSE(rcSourceEnabledForMode(RC_BINDING_SBUS2, RC_INPUT_SINGLE_SBUS, true, true, false, false));
     TEST_ASSERT_FALSE(rcSourceEnabledForMode(RC_BINDING_PWM, RC_INPUT_SINGLE_SBUS, true, true, true, false));
+    // useCh2=false, enableRcCh1=false: SBUS1 disabled even though it is selected
+    TEST_ASSERT_FALSE(rcSourceEnabledForMode(RC_BINDING_SBUS1, RC_INPUT_SINGLE_SBUS, false, true, false, false));
 }
 
 void test_rcSourceEnabledForMode_single_sbus_ch2_selected() {
-    // useCh2=true: SBUS2 active, SBUS1 not — regardless of enableRcCh1/enableRcCh2
+    // useCh2=true, enableRcCh2=true: SBUS2 active, SBUS1 not
     TEST_ASSERT_FALSE(rcSourceEnabledForMode(RC_BINDING_SBUS1, RC_INPUT_SINGLE_SBUS, true, true, false, true));
     TEST_ASSERT_TRUE(rcSourceEnabledForMode(RC_BINDING_SBUS2, RC_INPUT_SINGLE_SBUS, true, true, false, true));
-    // enableRcCh2=false must not suppress it — single_sbus uses useCh2 only
-    TEST_ASSERT_TRUE(rcSourceEnabledForMode(RC_BINDING_SBUS2, RC_INPUT_SINGLE_SBUS, false, false, false, true));
+    // useCh2=true, enableRcCh2=false: SBUS2 disabled — enable flag is respected
+    TEST_ASSERT_FALSE(rcSourceEnabledForMode(RC_BINDING_SBUS2, RC_INPUT_SINGLE_SBUS, false, false, false, true));
+    // useCh2=true, enableRcCh2=true: SBUS2 active regardless of enableRcCh1
+    TEST_ASSERT_TRUE(rcSourceEnabledForMode(RC_BINDING_SBUS2, RC_INPUT_SINGLE_SBUS, false, true, false, true));
 }
 
 void test_rcSourceEnabledForMode_dual_sbus_follows_enable_flags() {

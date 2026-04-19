@@ -71,7 +71,8 @@ static bool bindingSourceActive(const RcBindingConfig& binding, RcInputMode mode
         case RC_BINDING_PWM:
             return mode == RC_INPUT_STANDARD_PWM && binding.channel >= 1 && binding.channel <= 6;
         case RC_BINDING_SBUS1:
-            return mode != RC_INPUT_STANDARD_PWM && enableRcCh1;
+            if (mode == RC_INPUT_SINGLE_SBUS) return !useCh2 && enableRcCh1;
+            return mode == RC_INPUT_DUAL_SBUS && enableRcCh1;
         case RC_BINDING_SBUS2:
             if (mode == RC_INPUT_SINGLE_SBUS) return useCh2 && enableRcCh2;
             return mode == RC_INPUT_DUAL_SBUS && enableRcCh2;
@@ -819,7 +820,9 @@ void rcInputTask(void* pvParameters) {
     taskEXIT_CRITICAL(&robotStateMux);
 
     bool driveSbusEnabled = is_drive_sbus_mode(rcInputMode) &&
-                               ((rcInputMode == RC_INPUT_SINGLE_SBUS && useCh2) || enableRcCh1);
+                               (rcInputMode == RC_INPUT_SINGLE_SBUS
+                                   ? (useCh2 ? enableRcCh2 : enableRcCh1)
+                                   : enableRcCh1);
     bool domeSbusEnabled = is_dome_sbus_mode(rcInputMode) && enableRcCh2;
 
     // Do not early-idle when SBUS channels are currently disabled:
@@ -851,8 +854,8 @@ void rcInputTask(void* pvParameters) {
                         useCh2 ? 2 : 1, sbusRxPin);
         } else {
             PA_LOG_INFO(TAG,
-                        "started — single_sbus mode, SBUS%d disabled (en_rc_ch1=false) — idle",
-                        useCh2 ? 2 : 1);
+                        "started — single_sbus mode, SBUS%d disabled (%s=false) — idle",
+                        useCh2 ? 2 : 1, useCh2 ? "en_rc_ch2" : "en_rc_ch1");
         }
     } else {
         if (!driveSbusEnabled)
