@@ -189,33 +189,57 @@ static bool resolveDomePeerIp(uint32_t nowMs, bool staConnected, bool cachedPeer
     return true;
 }
 
-static void appendUrlEncodedChar(String& out, char c) {
+static bool appendUrlEncodedChar(char* out, size_t outSize, size_t* pos, char c) {
+    if (out == nullptr || pos == nullptr || *pos >= outSize) {
+        return false;
+    }
+
     if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' ||
         c == '_' || c == '.' || c == '~') {
-        out += c;
-        return;
+        if (*pos + 1 >= outSize) {
+            return false;
+        }
+        out[(*pos)++] = c;
+        out[*pos] = '\0';
+        return true;
     }
     if (c == ' ') {
-        out += '+';
-        return;
+        if (*pos + 1 >= outSize) {
+            return false;
+        }
+        out[(*pos)++] = '+';
+        out[*pos] = '\0';
+        return true;
     }
 
     static const char* kHex = "0123456789ABCDEF";
-    out += '%';
-    out += kHex[(uint8_t)c >> 4];
-    out += kHex[(uint8_t)c & 0x0F];
+    if (*pos + 3 >= outSize) {
+        return false;
+    }
+    out[(*pos)++] = '%';
+    out[(*pos)++] = kHex[(uint8_t)c >> 4];
+    out[(*pos)++] = kHex[(uint8_t)c & 0x0F];
+    out[*pos] = '\0';
+    return true;
 }
 
-static String urlEncode(const char* input) {
-    String encoded;
+static bool urlEncodeInto(char* out, size_t outSize, const char* input, size_t* outLen) {
+    if (out == nullptr || outSize == 0 || outLen == nullptr) {
+        return false;
+    }
+
+    out[0] = '\0';
+    *outLen = 0;
     if (input == nullptr) {
-        return encoded;
+        return true;
     }
 
     for (size_t i = 0; input[i] != '\0'; ++i) {
-        appendUrlEncodedChar(encoded, input[i]);
+        if (!appendUrlEncodedChar(out, outSize, outLen, input[i])) {
+            return false;
+        }
     }
-    return encoded;
+    return true;
 }
 
 static bool sendCommandOverWifi(const IPAddress& peerIp, const char* cmd) {
@@ -223,19 +247,33 @@ static bool sendCommandOverWifi(const IPAddress& peerIp, const char* cmd) {
         return false;
     }
 
-    String url = "http://" + peerIp.toString() + String(kDomeCmdEndpoint);
-    String body = "cmd=" + urlEncode(cmd);
+    char url[80];
+    snprintf(url, sizeof(url), "http://%u.%u.%u.%u%s", (unsigned)peerIp[0], (unsigned)peerIp[1],
+             (unsigned)peerIp[2], (unsigned)peerIp[3], kDomeCmdEndpoint);
+
+    char body[128];
+    int prefixLen = snprintf(body, sizeof(body), "cmd=");
+    if (prefixLen < 0 || (size_t)prefixLen >= sizeof(body)) {
+        PA_LOG_WARN(TAG, "WiFi cmd body prefix overflow");
+        return false;
+    }
+    size_t bodyLen = (size_t)prefixLen;
+    if (!urlEncodeInto(body + bodyLen, sizeof(body) - bodyLen, cmd, &bodyLen)) {
+        PA_LOG_WARN(TAG, "WiFi cmd body overflow: %s", cmd);
+        return false;
+    }
+    bodyLen += (size_t)prefixLen;
 
     HTTPClient http;
     http.setConnectTimeout(250);
     http.setTimeout(250);
     if (!http.begin(url)) {
-        PA_LOG_WARN(TAG, "WiFi cmd begin failed: %s", url.c_str());
+        PA_LOG_WARN(TAG, "WiFi cmd begin failed: %s", url);
         return false;
     }
 
     http.addHeader("Content-Type", "application/x-www-form-urlencoded");
-    int status = http.POST(body);
+    int status = http.POST((uint8_t*)body, bodyLen);
     http.end();
 
     if (status >= 200 && status < 300) {
