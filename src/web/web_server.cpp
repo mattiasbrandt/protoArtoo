@@ -708,12 +708,15 @@ static JsonDocument s_sseRcDoc;
 static bool s_rcSseBuildWarned = false;
 static bool s_rcSseSizeWarned = false;
 static bool s_statusSseOverflowWarned = false;
-static volatile bool s_broadcastRequested = false;
+static portMUX_TYPE s_broadcastMux = portMUX_INITIALIZER_UNLOCKED;
+static bool s_broadcastRequested = false;
 static uint32_t s_lastLogSent = 0;
 static char s_sseLogLines[8][LOG_LINE_MAX];
 
 void requestStatusBroadcastNow() {
+    taskENTER_CRITICAL(&s_broadcastMux);
     s_broadcastRequested = true;
+    taskEXIT_CRITICAL(&s_broadcastMux);
 }
 
 void eventStreamTask(void*) {
@@ -729,8 +732,14 @@ void eventStreamTask(void*) {
         if (serverStarted && events.count() > 0) {
             uint32_t nowMs = millis();
 
-            if (s_broadcastRequested) {
+            taskENTER_CRITICAL(&s_broadcastMux);
+            bool broadcastRequested = s_broadcastRequested;
+            if (broadcastRequested) {
                 s_broadcastRequested = false;
+            }
+            taskEXIT_CRITICAL(&s_broadcastMux);
+
+            if (broadcastRequested) {
                 if (!buildStatusJson(s_sseStatusBody, sizeof(s_sseStatusBody))) {
                     if (!s_statusSseOverflowWarned) {
                         PA_LOG_WARN("WebEvents",

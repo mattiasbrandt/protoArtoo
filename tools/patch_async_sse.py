@@ -24,6 +24,13 @@ def patch_async_event_source_header(*_args, **_kwargs):
     for before, after in replacements.items():
         patched = patched.replace(before, after)
 
+    expected_guarded = all(after in patched for after in replacements.values())
+    if not expected_guarded:
+        raise RuntimeError(
+            "ESPAsyncWebServer AsyncEventSource.h SSE_MAX_INFLIGH definitions changed; "
+            "review tools/patch_async_sse.py before building with -D SSE_MAX_INFLIGH"
+        )
+
     if patched != text:
         header.write_text(patched, encoding="utf-8")
         print("[patch_async_sse.py] ESPAsyncWebServer SSE_MAX_INFLIGH made build-flag overridable")

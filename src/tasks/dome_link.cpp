@@ -28,6 +28,7 @@
 #include <freertos/queue.h>
 
 #include "config.h"
+#include "dome_link_encoding.h"
 #include "dome_rx_parser.h"
 #include "logging.h"
 #include "marcduino.h"
@@ -189,59 +190,6 @@ static bool resolveDomePeerIp(uint32_t nowMs, bool staConnected, bool cachedPeer
     return true;
 }
 
-static bool appendUrlEncodedChar(char* out, size_t outSize, size_t* pos, char c) {
-    if (out == nullptr || pos == nullptr || *pos >= outSize) {
-        return false;
-    }
-
-    if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' ||
-        c == '_' || c == '.' || c == '~') {
-        if (*pos + 1 >= outSize) {
-            return false;
-        }
-        out[(*pos)++] = c;
-        out[*pos] = '\0';
-        return true;
-    }
-    if (c == ' ') {
-        if (*pos + 1 >= outSize) {
-            return false;
-        }
-        out[(*pos)++] = '+';
-        out[*pos] = '\0';
-        return true;
-    }
-
-    static const char* kHex = "0123456789ABCDEF";
-    if (*pos + 3 >= outSize) {
-        return false;
-    }
-    out[(*pos)++] = '%';
-    out[(*pos)++] = kHex[(uint8_t)c >> 4];
-    out[(*pos)++] = kHex[(uint8_t)c & 0x0F];
-    out[*pos] = '\0';
-    return true;
-}
-
-static bool urlEncodeInto(char* out, size_t outSize, const char* input, size_t* outLen) {
-    if (out == nullptr || outSize == 0 || outLen == nullptr) {
-        return false;
-    }
-
-    out[0] = '\0';
-    *outLen = 0;
-    if (input == nullptr) {
-        return true;
-    }
-
-    for (size_t i = 0; input[i] != '\0'; ++i) {
-        if (!appendUrlEncodedChar(out, outSize, outLen, input[i])) {
-            return false;
-        }
-    }
-    return true;
-}
-
 static bool sendCommandOverWifi(const IPAddress& peerIp, const char* cmd) {
     if (cmd == nullptr || cmd[0] == '\0') {
         return false;
@@ -257,12 +205,13 @@ static bool sendCommandOverWifi(const IPAddress& peerIp, const char* cmd) {
         PA_LOG_WARN(TAG, "WiFi cmd body prefix overflow");
         return false;
     }
-    size_t bodyLen = (size_t)prefixLen;
-    if (!urlEncodeInto(body + bodyLen, sizeof(body) - bodyLen, cmd, &bodyLen)) {
+    const size_t prefixSize = (size_t)prefixLen;
+    size_t encodedLen = 0;
+    if (!domeLinkUrlEncodeInto(body + prefixSize, sizeof(body) - prefixSize, cmd, &encodedLen)) {
         PA_LOG_WARN(TAG, "WiFi cmd body overflow: %s", cmd);
         return false;
     }
-    bodyLen += (size_t)prefixLen;
+    const size_t bodyLen = prefixSize + encodedLen;
 
     HTTPClient http;
     http.setConnectTimeout(250);
