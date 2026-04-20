@@ -1030,8 +1030,8 @@ void setup() {
     xTaskCreatePinnedToCore(
         servoTask, "ServoTask", 3072, nullptr, 4, nullptr,
         1);  // HWM: ~728 B used; was 5120 (oversized for string formatting assumption)
-    xTaskCreatePinnedToCore(domeTask, "DomeTask", 2048, nullptr, 4, nullptr,
-                            1);  // HWM: ~764 B used
+    xTaskCreatePinnedToCore(domeTask, "DomeTask", 3072, nullptr, 4, nullptr,
+                            1);  // T24 R1: profiler HWM reached 108 B free at 2048 B.
 
     // AudioTask: Core 0 (non-RT) — software bit-bang TX blocks ~6 ms per command;
     // keeping off Core 1 avoids any interaction with DriveTask / ServoTask timing.

@@ -708,25 +708,12 @@ static JsonDocument s_sseRcDoc;
 static bool s_rcSseBuildWarned = false;
 static bool s_rcSseSizeWarned = false;
 static bool s_statusSseOverflowWarned = false;
+static volatile bool s_broadcastRequested = false;
 static uint32_t s_lastLogSent = 0;
 static char s_sseLogLines[8][LOG_LINE_MAX];
 
 void requestStatusBroadcastNow() {
-    if (!serverStarted || events.count() == 0) {
-        return;
-    }
-
-    char body[3072];
-    uint32_t nowMs = millis();
-    if (!buildStatusJson(body, sizeof(body))) {
-        if (!s_statusSseOverflowWarned) {
-            PA_LOG_WARN("WebEvents", "status SSE payload overflowed; sending fallback payload");
-            s_statusSseOverflowWarned = true;
-        }
-    } else {
-        s_statusSseOverflowWarned = false;
-    }
-    events.send(body, "status", nowMs);
+    s_broadcastRequested = true;
 }
 
 void eventStreamTask(void*) {
@@ -741,6 +728,20 @@ void eventStreamTask(void*) {
 
         if (serverStarted && events.count() > 0) {
             uint32_t nowMs = millis();
+
+            if (s_broadcastRequested) {
+                s_broadcastRequested = false;
+                if (!buildStatusJson(s_sseStatusBody, sizeof(s_sseStatusBody))) {
+                    if (!s_statusSseOverflowWarned) {
+                        PA_LOG_WARN("WebEvents",
+                                    "status SSE payload overflowed; sending fallback payload");
+                        s_statusSseOverflowWarned = true;
+                    }
+                } else {
+                    s_statusSseOverflowWarned = false;
+                }
+                events.send(s_sseStatusBody, "status", nowMs);
+            }
 
             if (!buildStatusJson(s_sseStatusBody, sizeof(s_sseStatusBody))) {
                 if (!s_statusSseOverflowWarned) {
