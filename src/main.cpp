@@ -1025,7 +1025,7 @@ void setup() {
     // RcInputTask: ~200 Hz RC poll (all modes), Layer 1+2 failsafe
     // ServoTask: 50 Hz servo PWM updates
     // DomeTask: 50 Hz ESC PWM updates
-    xTaskCreatePinnedToCore(driveTask, "DriveTask", 4096, nullptr, 5, nullptr, 1);
+    xTaskCreatePinnedToCore(driveTask, "DriveTask", 2560, nullptr, 5, nullptr, 1);
     xTaskCreatePinnedToCore(rcInputTask, "RCInputTask", 4096, nullptr, 5, nullptr, 1);
     xTaskCreatePinnedToCore(
         servoTask, "ServoTask", 3072, nullptr, 4, nullptr,
