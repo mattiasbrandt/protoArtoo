@@ -26,8 +26,18 @@
 
     <template id="topbar-actions-template">
       <div class="index-top-actions">
-        <button class="btn power-toggle accent" id="sleep-toggle" title="Toggle sleep mode" aria-label="Toggle sleep mode" aria-pressed="false">⏻ Sleep</button>
-        <div id="sleep-feedback" class="feedback compact-feedback" role="status" aria-live="polite" aria-atomic="true"></div>
+        <div class="top-action">
+          <button class="btn top-action-button" id="estop-toggle" title="Latch E-Stop" aria-label="Toggle emergency stop" aria-pressed="false">🛑 E-Stop</button>
+          <div id="estop-feedback" class="feedback compact-feedback" role="status" aria-live="polite" aria-atomic="true"></div>
+        </div>
+        <div class="top-action">
+          <button class="btn power-toggle accent top-action-button" id="sleep-toggle" title="Toggle sleep mode" aria-label="Toggle sleep mode" aria-pressed="false">💤 Sleep</button>
+          <div id="sleep-feedback" class="feedback compact-feedback" role="status" aria-live="polite" aria-atomic="true"></div>
+        </div>
+        <div class="top-action">
+          <button class="btn top-action-button" id="topbar-reboot" title="Reboot controller" aria-label="Reboot controller" type="button">🔄 Reboot</button>
+          <div id="reboot-feedback" class="feedback compact-feedback" role="status" aria-live="polite" aria-atomic="true"></div>
+        </div>
       </div>
     </template>
 
@@ -36,7 +46,6 @@
     <!-- Operation Mode -->
     <div class="card">
       <h3>🕹️ Operation Mode</h3>
-      <div class="desc">Switch between active driving and stationary performance mode.</div>
       <div class="opmode-grid">
         <button class="opmode-btn drive active" id="opmode-drive" title="Full movement control with tank-style steering" aria-label="Set operation mode to Driving" aria-pressed="true">
           <span class="opmode-icon">🏎️</span>
@@ -53,7 +62,6 @@
     <!-- Mood Selector -->
     <div class="card">
       <h3>🎭 Mood</h3>
-      <div class="desc">Set R2-D2's idle behavior — sound chatter, holo activity, and dome lights.</div>
       <div class="mood-grid">
         <button class="mood-btn quiet" id="mood-quiet" data-cmd=":SE10" title="Stop sound chatter. Holo projectors parked and off." aria-label="Set mood to Quiet" aria-pressed="false">
           <span class="mood-icon">🤐</span>
@@ -72,14 +80,12 @@
           <span>Awake+</span>
         </button>
       </div>
-      <div id="mood-dome-note" class="mood-dome-note">Dome visuals require an active dome link. Mood still controls body sounds when the dome is offline.</div>
       <div id="mood-feedback" class="feedback mt-8" role="status" aria-live="polite" aria-atomic="true"></div>
   
     </div>
     <!-- Components (shown only when hardware is enabled) -->
     <div class="card hidden" id="component-status-card">
       <h3>🔧 Components</h3>
-      <div class="desc">Active hardware modules and their current state.</div>
       <div id="component-status-grid" class="status-grid mt-12"></div>
     </div>
 

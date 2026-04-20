@@ -647,7 +647,7 @@
     renderSourceHealth();
 
     if (!selectedChannel) {
-      rcLivePreviewContent.innerHTML = '<div class="desc">Select a channel from the list to see live data.</div>';
+      rcLivePreviewContent.innerHTML = '';
       return;
     }
 
@@ -777,7 +777,7 @@
       actionPickerFeedback = null;
       actionPickerInFlightToken = null;
       actionPickerLastChannel = null;
-      rcEditorContent.innerHTML = '<div class="desc">Select a channel from the list to edit its mapping.</div>';
+      rcEditorContent.innerHTML = '';
       if (rcEditorApply) rcEditorApply.disabled = true;
       if (rcEditorRevert) rcEditorRevert.disabled = true;
       setEditorDirtyState('clean', 'Select a channel to edit');

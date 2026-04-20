@@ -16,13 +16,16 @@
   const opmodeStationary = document.getElementById("opmode-stationary");
   const opmodeFeedback = document.getElementById("opmode-feedback");
 
-  const moodDomeNote = document.getElementById("mood-dome-note");
   const moodFeedback = document.getElementById("mood-feedback");
 
+  const estopToggle = document.getElementById("estop-toggle");
+  const estopFeedback = document.getElementById("estop-feedback");
   const sleepToggle = document.getElementById("sleep-toggle");
   const sleepOverlay = document.getElementById("sleep-overlay");
   const sleepOverlayWake = document.getElementById("sleep-overlay-wake");
   const sleepFeedback = document.getElementById("sleep-feedback");
+  const topbarReboot = document.getElementById("topbar-reboot");
+  const rebootFeedback = document.getElementById("reboot-feedback");
   const staleBanner = document.getElementById('status-stale-banner');
   const setStale = (stale, options = {}) => {
     const rerender = options.rerender !== false;
@@ -40,8 +43,11 @@
   let modePending = false;
   let moodPending = false;
   let pollFailCount = 0;
+  let estopPending = false;
   let sleepPending = false;
   let isSleeping = false;
+  let isEstopLatched = false;
+  let rebootPending = false;
 
   const INDICATOR_TEXT = {
     'h-sbus':      'ht-sbus',
@@ -109,6 +115,22 @@
     el.className = level ? `${el.dataset.baseClass} ${level}` : el.dataset.baseClass;
   };
 
+  const setEstopPending = (pending) => {
+    estopPending = pending;
+    if (!estopToggle) return;
+    estopToggle.disabled = pending;
+    estopToggle.classList.toggle("is-pending", pending);
+    estopToggle.setAttribute("aria-disabled", pending ? "true" : "false");
+  };
+
+  const setEstopUi = (latched) => {
+    isEstopLatched = !!latched;
+    if (!estopToggle) return;
+    estopToggle.classList.toggle("danger", isEstopLatched);
+    estopToggle.title = isEstopLatched ? "Clear E-Stop" : "Latch E-Stop";
+    estopToggle.setAttribute("aria-pressed", isEstopLatched.toString());
+  };
+
   const setSleepPending = (pending) => {
     sleepPending = pending;
     [sleepToggle, sleepOverlayWake].forEach((el) => {
@@ -122,7 +144,7 @@
   const setSleepUi = (sleeping) => {
     isSleeping = !!sleeping;
     if (sleepToggle) {
-      sleepToggle.textContent = isSleeping ? "⏻ Wake" : "⏻ Sleep";
+      sleepToggle.textContent = isSleeping ? "💤 Wake" : "💤 Sleep";
       sleepToggle.title = isSleeping ? "Wake droid subsystems" : "Park droid subsystems";
       sleepToggle.classList.toggle("danger", isSleeping);
       sleepToggle.classList.toggle("accent", !isSleeping);
@@ -216,12 +238,6 @@
     });
   };
 
-  const renderMoodDomeNote = (payload) => {
-    if (!moodDomeNote) return;
-    const domeConnected = payload?.dome_link?.state === "connected";
-    moodDomeNote.classList.toggle("visible", !domeConnected);
-  };
-
   const setStatusPill = (el, text, state = "info", compact = true) => {
     if (!el) return;
     const sizeClass = compact ? "status-pill status-pill-compact" : "status-pill";
@@ -259,8 +275,8 @@
     renderComponentStatus(payload);
     renderMissionSnapshot(payload);
     renderOpMode(payload);
-    renderMoodDomeNote(payload);
     renderActiveMood(payload);
+    setEstopUi(!!payload.estop);
     setSleepUi(!!payload.sleepMode);
   };
 
@@ -289,6 +305,48 @@
       if (lastStatus) setSleepUi(!!lastStatus.sleepMode);
     } finally {
       setSleepPending(false);
+    }
+  };
+
+  const toggleEstop = async () => {
+    if (!window.PAApi || estopPending) return;
+    const targetLatched = !isEstopLatched;
+    setEstopPending(true);
+    showFeedback(estopFeedback, targetLatched ? "Latching E-Stop..." : "Clearing E-Stop...");
+
+    try {
+      await window.PAApi.postForm(targetLatched ? "/api/estop" : "/api/estop/clear", {}, { timeoutMs: 3000 });
+      await refreshStatusOnce();
+      showFeedback(estopFeedback, targetLatched ? "E-Stop latched" : "E-Stop clear", "success");
+    } catch (error) {
+      showFeedback(estopFeedback, `E-Stop failed: ${window.PAApi.messageFor(error)}`, "error");
+      if (lastStatus) setEstopUi(!!lastStatus.estop);
+    } finally {
+      setEstopPending(false);
+    }
+  };
+
+  const rebootController = async () => {
+    if (!window.PAApi || rebootPending) return;
+    rebootPending = true;
+    if (topbarReboot) {
+      topbarReboot.disabled = true;
+      topbarReboot.classList.add("is-pending");
+      topbarReboot.setAttribute("aria-disabled", "true");
+    }
+    showFeedback(rebootFeedback, "Rebooting...");
+
+    try {
+      await window.PAApi.postForm("/api/reboot", {}, { timeoutMs: 3000 });
+      showFeedback(rebootFeedback, "Rebooting...", "success");
+    } catch (error) {
+      showFeedback(rebootFeedback, `Reboot failed: ${window.PAApi.messageFor(error)}`, "error");
+      rebootPending = false;
+      if (topbarReboot) {
+        topbarReboot.disabled = false;
+        topbarReboot.classList.remove("is-pending");
+        topbarReboot.setAttribute("aria-disabled", "false");
+      }
     }
   };
 
@@ -424,8 +482,10 @@
     });
   });
 
+  estopToggle?.addEventListener("click", toggleEstop);
   sleepToggle?.addEventListener("click", () => toggleSleepWake(false));
   sleepOverlayWake?.addEventListener("click", () => toggleSleepWake(true));
+  topbarReboot?.addEventListener("click", rebootController);
 
 
   loadRecentLogs();
@@ -468,5 +528,6 @@
       }
     });
   }
+  setEstopUi(false);
   setSleepUi(false);
 })();

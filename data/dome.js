@@ -122,7 +122,7 @@
     } else if (!webControlStatusKnown) {
       showFeedback(domeFeedback, "Waiting for live status frame...");
     } else {
-      showFeedback(domeFeedback, "Dome ready (independent of drive web lock).");
+      showFeedback(domeFeedback, "Dome ready.");
     }
   };
 

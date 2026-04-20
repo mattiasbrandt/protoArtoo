@@ -1067,13 +1067,20 @@ body.sleep-mode-active {
 
 .index-top-actions {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: flex-end;
-  gap: 4px;
+  gap: 8px;
   margin: 0 0 0 auto;
 }
 
-.index-top-actions .power-toggle {
+.index-top-actions .top-action {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.index-top-actions .top-action-button {
   min-width: 0;
   padding: 8px 12px;
   font-size: 0.84rem;
@@ -2835,17 +2842,6 @@ label.sound-search-field {
 .mood-btn.mid.active      { border-color: var(--warning);  background: rgba(232,168,50,0.15);  }
 .mood-btn.full.active     { border-color: var(--accent);   background: rgba(74,144,217,0.15);  }
 .mood-btn.awakeplus.active { border-color: var(--success); background: rgba(84,200,122,0.15);  }
-
-.mood-dome-note {
-  font-size: 0.78rem;
-  color: var(--text-dim);
-  margin-top: 8px;
-  display: none;
-}
-
-.mood-dome-note.visible {
-  display: block;
-}
 
 /* ---- Operation Mode ---- */
 .opmode-grid {

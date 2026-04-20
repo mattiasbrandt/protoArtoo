@@ -22,7 +22,6 @@
 
     <div class="card">
       <h3>📡 Receiver Type</h3>
-      <div class="desc">Select how your RC receiver connects to the controller. This setting determines which bindings and calibration values apply.</div>
 
       <div class="rc-mode-grid mt-16">
         <div class="rc-mode-card" data-mode="standard_pwm" tabindex="0" role="button" aria-pressed="false">
@@ -47,11 +46,10 @@
       <input type="hidden" id="rc-input-mode" value="standard_pwm">
       <div id="single-sbus-recv-section" class="mt-16 hidden" aria-hidden="true">
         <label for="sbus-recv-sel">Single SBUS receiver</label>
-        <select id="sbus-recv-sel" aria-describedby="sbus-recv-note sbus-recv-feedback" title="Select which physical SBUS input is treated as the primary receiver.">
+        <select id="sbus-recv-sel" aria-describedby="sbus-recv-feedback" title="Select which physical SBUS input is treated as the primary receiver.">
           <option value="false">SBUS1 / CH1</option>
           <option value="true">SBUS2 / CH2</option>
         </select>
-        <div id="sbus-recv-note" class="desc mt-8">Selecting a different receiver does not change your channel mapping.</div>
         <div id="sbus-recv-feedback" class="feedback mt-8" role="status" aria-live="polite" aria-atomic="true"></div>
       </div>
 
@@ -66,7 +64,6 @@
     <!-- Binding Summary Table -->
     <div class="card">
       <h3>📋 Binding Summary</h3>
-      <div class="desc">Current active channel mappings.</div>
       
       <table class="rc-summary-table mt-16">
         <thead>
@@ -87,9 +84,7 @@
       <div class="rc-live-monitor-layout">
         <div>
           <h4 class="rc-panel-title">📈 Live Monitor</h4>
-          <div class="desc rc-panel-desc">Real-time values for the selected channel.</div>
           <div id="rc-live-preview-content">
-            <div class="desc">Select a channel from the list to see live data.</div>
           </div>
         </div>
         <div>
@@ -105,7 +100,6 @@
         <!-- Channel List (left) -->
         <div class="rc-channel-list">
           <h4 class="rc-panel-title">📻 Channels</h4>
-          <div class="desc rc-panel-desc">Live RC channel values. Click a channel to edit its mapping.</div>
           <div class="rc-learn-bar">
             <button id="rc-learn-btn" class="btn" type="button">🔍 Detect channel</button>
           </div>
@@ -126,7 +120,6 @@
           <h4 class="rc-panel-title">🛠️ Mapping Editor</h4>
           <div class="desc rc-panel-desc">Adjust the selected channel mapping, then apply to save.</div>
           <div id="rc-editor-content">
-            <div class="desc">Select a channel from the list to edit its mapping.</div>
           </div>
           
           <div class="rc-editor-status-row mt-20" role="status" aria-live="polite" aria-atomic="true">

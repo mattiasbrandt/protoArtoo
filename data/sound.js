@@ -256,7 +256,7 @@
     if (soundModeFeedback) {
       soundModeFeedback.textContent = normalizedMode === SOUND_VIEW_MODE_COMPACT
         ? "Compact mode active. Advanced tuning cards are hidden."
-        : "Advanced mode active. Full editing cards are visible.";
+        : "";
     }
 
     if (!persist) return;
@@ -340,7 +340,7 @@
       return;
     }
     if (supportsSafePlayingQuery) {
-      modQueryNote.textContent = "Module status auto-refreshes from firmware cache.";
+      modQueryNote.textContent = "";
       return;
     }
     modQueryNote.textContent = "Status is cached from boot. Use Poll to refresh — only poll when not playing.";
@@ -1535,7 +1535,7 @@
     namedDirtyTrackers.clear();
 
     if (trackNumberNote) {
-      trackNumberNote.textContent = "Track numbers are module-specific — set these to match your installed module's layout. T08 music rows allow 0 for silent/no-op play.";
+      trackNumberNote.textContent = "";
     }
 
     NAMED_SOUNDS.forEach((sound) => {

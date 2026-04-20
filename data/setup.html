@@ -16,8 +16,6 @@
     </div>
     <div class="card">
       <h3>🔧 Hardware Components</h3>
-      <div class="desc">Enable the hardware modules connected to your Artoo Controller.
-        Disabled components are hidden from all pages and not driven by the firmware.</div>
       <div class="setup-toolbar mt-16">
         <span id="setup-enabled-summary" class="status-pill pill-ok">✅ 0 enabled</span>
         <span id="setup-save-summary" class="status-pill pill-info">💾 Auto-save ready</span>
@@ -235,7 +233,6 @@
     <!-- Serial Connection Status -->
     <div class="card">
       <h3>🔌 Serial Status</h3>
-      <div class="desc">Live connection state for the three configurable serial ports.</div>
       <div class="status-grid mt-16">
         <div class="status-item">
           <dt>S1 — Hoverboard</dt>
@@ -259,8 +256,6 @@
     <!-- Diagnostics -->
     <div class="card">
       <h3>🩺 Diagnostics</h3>
-      <div class="desc">Controls what the firmware writes to the serial console and the live log
-        panel. Takes effect immediately — no reboot needed. The setting persists across reboots.</div>
       <form id="diag-form" class="form-grid mt-16">
         <label class="field" for="log-level-select">
           <span>Log verbosity</span>
