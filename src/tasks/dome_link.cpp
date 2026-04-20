@@ -417,11 +417,6 @@ void domeLinkTask(void* pvParameters) {
     acquireDomeUart();
     setTransportState(DOME_LINK_TRANSPORT_UART, true);
 
-    bool udpReady = s_domeUdp.begin(kDomeUdpPort) == 1;
-    if (!udpReady) {
-        PA_LOG_WARN(TAG, "UDP bind failed on port %u", (unsigned)kDomeUdpPort);
-    }
-
     uint32_t lastHeartbeatTxMs = 0;
     uint32_t lastUartHeartbeatMs = 0;
     uint32_t lastUartProbeMs = 0;
@@ -432,6 +427,7 @@ void domeLinkTask(void* pvParameters) {
     bool peerKnown = false;
     bool peerManual = false;
     bool mdnsReady = false;
+    bool udpReady = false;
 
     DomeTxCmd txCmd{};
 
@@ -444,6 +440,13 @@ void domeLinkTask(void* pvParameters) {
             mdnsReady = MDNS.begin(kBodyMdnsHost);
             if (!mdnsReady) {
                 PA_LOG_WARN(TAG, "mDNS init failed for host %s", kBodyMdnsHost);
+            }
+        }
+
+        if (staConnected && !udpReady) {
+            udpReady = s_domeUdp.begin(kDomeUdpPort) == 1;
+            if (!udpReady) {
+                PA_LOG_WARN(TAG, "UDP bind failed on port %u", (unsigned)kDomeUdpPort);
             }
         }
 
