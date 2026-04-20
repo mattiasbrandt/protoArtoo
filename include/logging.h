@@ -15,12 +15,13 @@
 #include <Arduino.h>
 
 #include "config.h"
+#include "log_buffer.h"
 #include "robot_state.h"
 
 // robotState and robotStateMux are declared extern in robot_state.h (included above).
 // No need to re-declare them here.
 
-void paLogLine(const char* tag, const char* message);
+void paLogLineRaw(const char* line);
 
 // Inline helper — reads cfg_logLevel under a brief critical section.
 // Used by every log macro to get the current runtime level without a full
@@ -29,11 +30,15 @@ inline uint8_t paCurrentLogLevel() {
     return robotState.cfg_logLevel;
 }
 
-#define _PA_LOG_FORMAT(tag, fmt, ...)                                   \
-    do {                                                                \
-        char _pa_log_buf[192];                                          \
-        snprintf(_pa_log_buf, sizeof(_pa_log_buf), fmt, ##__VA_ARGS__); \
-        paLogLine(tag, _pa_log_buf);                                    \
+#define _PA_LOG_FORMAT(tag, fmt, ...)                                             \
+    do {                                                                          \
+        char _pa_log_buf[LOG_LINE_MAX];                                           \
+        /* Retained SSE log lines are fixed-width; longer diagnostics truncate here. */ \
+        _Pragma("GCC diagnostic push")                                            \
+        _Pragma("GCC diagnostic ignored \"-Wformat-truncation\"")                 \
+        snprintf(_pa_log_buf, sizeof(_pa_log_buf), "[%s] " fmt, tag, ##__VA_ARGS__); \
+        _Pragma("GCC diagnostic pop")                                             \
+        paLogLineRaw(_pa_log_buf);                                                \
     } while (0)
 
 // Tag-based logging macros with runtime level check

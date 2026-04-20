@@ -153,10 +153,7 @@ void logBootHealth() {
 
 }  // namespace
 
-void paLogLine(const char* level, const char* message) {
-    char line[LOG_LINE_MAX];
-    snprintf(line, sizeof(line), "[%s] %s", level, message);
-
+void paLogLineRaw(const char* line) {
     taskENTER_CRITICAL(&logMux);
     logBufferAppend(&recentLogBuf, line);
     taskEXIT_CRITICAL(&logMux);

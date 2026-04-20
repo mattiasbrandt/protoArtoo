@@ -10,7 +10,7 @@
 #ifdef PA_NATIVE_TEST_STUBS
 
 #include "Arduino.h"      // SerialStub (from test/stubs/include)
-#include "logging.h"      // paLogLine declaration
+#include "logging.h"      // paLogLineRaw declaration
 #include "robot_state.h"  // RobotState, portMUX_TYPE, QueueHandle_t
 
 // Zero-initialised global state. Test cases populate cfg_* fields as needed
@@ -22,7 +22,7 @@ portMUX_TYPE robotStateMux = 0;
 SerialStub Serial;
 
 // Logging sink — no-op in native test builds
-void paLogLine(const char* /*tag*/, const char* /*message*/) {
+void paLogLineRaw(const char* /*line*/) {
 }
 
 // NVS save stub — not under test; POST handler calls it but tests call
