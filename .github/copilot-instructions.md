@@ -72,13 +72,31 @@ Do not duplicate large policy sections from those files in this adapter.
 - Use `tools/serial_monitor.py` for serial capture during verification workflows.
 - Keep operator-facing web copy free of internal phase/process language.
 
+## Espressif MCP Usage
+
+Use Espressif MCP servers for external ESP-IDF/component research when repo docs do
+not already answer the question.
+
+- `espressif-documentation`: ESP-IDF API/driver behavior, version notes, and hardware capability checks.
+- `esp-component-registry`: component discovery, metadata, and example lookup.
+
+Usage rules:
+- Query MCP before coding when behavior/component choices are unresolved in repo docs.
+- Prefer concise, targeted queries (API/peripheral/chip/IDF version).
+- Mark unresolved values as `UNKNOWN`; do not guess.
+- For SBUS/RMT and project contracts, repo docs stay authoritative (`docs/SBUS_protocol.md`, `docs/RMT_ESP32_IDF5.md`, `docs/hotrc-sbus-spec.md`).
+- RainMaker MCP is out of scope unless explicitly requested.
+
 ## Verification and Reporting
 
 Use AGENTS verification flow and classify status as one of:
 
-- `bench-tested`
+- `usb-standalone-verified`
 - `partial`
 - `full-hardware-required`
+
+`usb-standalone-verified` means validation on an ESP32 connected over USB only,
+without additional droid hardware/serial peripherals attached.
 
 When hardware validation is deferred, explicitly state blockers and remaining checks.
 
@@ -105,10 +123,16 @@ Regression troubleshooting test policy:
 - Do not switch to main-model solo execution after subagent timeout/cancel/usage-cap unless the user explicitly asks.
 - Preserve partial results and continue in a new delegated wave when interruptions occur.
 
+Delegation cues (auto-routing hints):
+- `backend-coder`: firmware/ESP32/PlatformIO/API/safety/failsafe/upload-debug prompts.
+- `frontend-designer`: UI/UX/layout/copy/operator flow/Playwright verification prompts.
+- `Explore`: read-only discovery/search/pattern-finding prompts.
+
 ## MemPalace Memory
 
-This project uses MemPalace for long-term memory (`mempalace` MCP server, 19 tools).
-GitHub Copilot does not currently support MCP tool calls, so this is advisory:
+This project uses MemPalace for long-term memory (`mempalace` MCP server).
+For agents/runtimes with MCP access: use MCP-first (`mempalace_status` then targeted search).
+For GitHub Copilot runtime: use CLI fallback commands (`mempalace status`, `mempalace search ...`) when memory lookup is needed.
 
 - Past design decisions, architectural rationale, and session history for this
   project are stored in the MemPalace palace. When another agent (Claude, Cursor)
@@ -120,3 +144,14 @@ GitHub Copilot does not currently support MCP tool calls, so this is advisory:
   Agent role definitions belong in the palace, not in this file.
 - The canonical memory protocol is in `AGENTS.md` under `## MemPalace Memory Protocol`.
 - Do not store memory content in this file — the palace is the memory layer.
+
+## Verification Status Labels
+
+Use AGENTS verification flow and classify status as one of:
+
+- `usb-standalone-verified`
+- `partial`
+- `full-hardware-required`
+
+`usb-standalone-verified` means validation on an ESP32 connected over USB only,
+without additional droid hardware/serial peripherals attached.

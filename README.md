@@ -147,7 +147,7 @@ streams live; errors are highlighted if something goes wrong.
 make ota              # OTA flash — DY-SV5W, default IP
 make ota-chirp        # OTA flash — CHIRP module
 make ota-mp3trigger   # OTA flash — MP3 Trigger module
-make flash            # USB flash (ESP32 must be unseated)
+make flash            # USB flash
 make uploadfs         # Upload web UI only via OTA
 make test             # Run native unit tests only
 make monitor          # Serial monitor (no reset on connect)

@@ -38,6 +38,9 @@ interactive workflow requirements.
 - ESP-IDF5 RMT driver truth: `docs/RMT_ESP32_IDF5.md`
 - HOTRC profile truth: `docs/hotrc-sbus-spec.md`
 - Long-term project memory: MemPalace MCP (`mempalace_search`, `mempalace_status`)
+- Espressif MCP servers (repo-level): `espressif-documentation`, `esp-component-registry`
+- Project custom subagent definitions: `.claude/agents/*.md`
+- Project reusable skills: `.claude/skills/*/SKILL.md`
 
 ## Spec Compliance Gate (SBUS/RMT)
 
@@ -50,6 +53,33 @@ or ESP-IDF5 RMT driver behavior, agents MUST:
 4. Avoid trial-and-error loops that retest previously rejected mechanisms unless new contradictory telemetry is captured.
 
 If HOTRC-specific behavior is involved, consult `docs/hotrc-sbus-spec.md` after the two protocol/driver docs above.
+
+## Espressif MCP Protocol
+
+Use Espressif MCP servers to speed up external ESP-IDF/component research, but keep
+repo docs as implementation authority.
+
+Available servers (repo-level):
+- `espressif-documentation` (`https://mcp.espressif.com/docs`)
+- `esp-component-registry` (`https://components.espressif.com/mcp`)
+
+When to use which server:
+- Use `espressif-documentation` for ESP-IDF API/driver behavior, version notes,
+  and hardware capability checks.
+- Use `esp-component-registry` for third-party/official component discovery,
+  metadata, and example lookup.
+
+Required usage pattern:
+1. If a task depends on ESP-IDF behavior or component choices not already proven
+   in repo docs, query the relevant Espressif MCP server before coding.
+2. Prefer concise, targeted queries (API name, peripheral, chip variant,
+   IDF major version).
+3. Record unresolved values as `UNKNOWN`; do not guess.
+4. For SBUS/RMT and project-specific contracts, repository docs remain primary:
+   `docs/SBUS_protocol.md`, `docs/RMT_ESP32_IDF5.md`, and `docs/hotrc-sbus-spec.md`.
+
+Not in scope:
+- Do not use RainMaker MCP in this repository workflow unless explicitly requested.
 
 ## MemPalace Memory Protocol
 
@@ -286,6 +316,10 @@ Clarification policy:
 
 ### Subagent Orchestration Policy
 
+Role-specific behavior belongs in project subagent files under `.claude/agents/`.
+Keep AGENTS.md as the canonical policy/invariant source and avoid duplicating
+full policy blocks across individual agent definitions.
+
 - Default mode for non-trivial work is planner-orchestrator:
   - Main model owns deep reasoning, architecture, risk checks, and a detailed TODO packet.
   - Subagents execute scoped tasks from that packet.
@@ -303,6 +337,11 @@ Clarification policy:
   - resume delegation in a new wave instead of shifting all remaining work to the main model,
   - ask the user before changing strategy from delegated to solo execution.
 
+Delegation cues (auto-routing hints):
+- Route to `backend-coder` when prompts mention firmware, ESP32 tasks, PlatformIO, API handlers, safety/failsafe logic, or upload/build/test tooling.
+- Route to `frontend-designer` when prompts mention UI/UX, layout/copy, operator workflow, responsive behavior, or Playwright/web validation.
+- Route to `Explore` for read-only discovery, codebase search, and pattern reconnaissance before edits.
+
 ## Flashing and Monitoring
 
 ### Quick reference
@@ -312,11 +351,11 @@ Clarification policy:
 pio run -e protoArtoo_ota --target upload    # firmware
 pio run -e protoArtoo_ota --target uploadfs  # filesystem (LittleFS web UI)
 ```
-- `protoArtoo_ota` defaults to `upload_port = 10.0.0.22` (STA client IP).
-- Override with `--upload-port <ip>`. Do **not** use `192.168.4.1` (AP IP) by default.
+- `protoArtoo_ota` defaults to `upload_port = artoo.local` (mDNS host).
+- Override with `--upload-port <host-or-ip>`. Do **not** use `192.168.4.1` (AP IP) by default.
 - ArduinoOTA starts automatically on Core 0 when WiFi comes up (port 3232).
 
-### USB flash (ESP32 unseated)
+### USB flash
 ```bash
 pio run -e protoArtoo --target upload --upload-port /dev/ttyUSB0
 ```
@@ -328,8 +367,8 @@ pio run -e protoArtoo --target upload --upload-port /dev/ttyUSB0
 ### Build Commands (Quick Reference)
 ```bash
 pio run -e protoArtoo           # compile firmware
-pio run -e protoArtoo -t upload # USB flash (ESP32 unseated; auto-reset, no button needed)
-pio run -e protoArtoo_ota -t upload    # OTA firmware (in-PCB, 10.0.0.22)
+pio run -e protoArtoo -t upload # USB flash (auto-reset, no button needed)
+pio run -e protoArtoo_ota -t upload    # OTA firmware (in-PCB, artoo.local)
 ```
 
 Detailed flashing troubleshooting and transport notes live in
@@ -357,9 +396,12 @@ its intended size budget.
 
 Always classify verification status explicitly:
 
-- `bench-tested`
+- `usb-standalone-verified`
 - `partial`
 - `full-hardware-required`
+
+`usb-standalone-verified` means validation on an ESP32 connected over USB only,
+without additional droid hardware/serial peripherals attached.
 
 If hardware validation is deferred, record blockers and closure checklist in
 planning/status docs.

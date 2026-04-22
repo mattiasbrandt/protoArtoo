@@ -134,7 +134,7 @@ The canonical MemPalace protocol is defined in `AGENTS.md` under
 ### Verification and Reporting
 
 - Use the [AGENTS.md](../AGENTS.md) verification sequence as applicable.
-- Explicitly classify validation status: `bench-tested`, `partial`, or `full-hardware-required`.
+- Explicitly classify validation status: `usb-standalone-verified`, `partial`, or `full-hardware-required`.
 - For hardware-touching changes, state what was and was not proven.
 
 ## References
