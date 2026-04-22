@@ -12,7 +12,7 @@
 #   make ota BUILD_ENV=protoArtoo_chirp
 # =============================================================================
 
-OTA_IP      ?= 10.0.0.22
+OTA_IP      ?= artoo.local
 BUILD_ENV   ?= protoArtoo
 UPLOAD_PORT ?= /dev/ttyUSB0
 
@@ -49,14 +49,10 @@ check: ## Static analysis with cppcheck
 
 # ── Flash: DY-SV5W (default) ─────────────────────────────────────────────────
 
-flash: test ## Flash via USB — ESP32 must be unseated  (UPLOAD_PORT=/dev/ttyUSB0)
-	@echo ""
-	@echo "WARNING: ESP32 must be UNSEATED from the Artoo PCB before USB flash."
-	@echo "         GPIO15 (SBUS receiver) is a strapping pin that blocks bootloader download mode."
-	@echo ""
+flash: test ## Flash via USB  (UPLOAD_PORT=/dev/ttyUSB0)
 	pio run -e $(BUILD_ENV) -t upload --upload-port $(UPLOAD_PORT)
 
-ota: test ## Flash via OTA  (OTA_IP=10.0.0.22 by default)
+ota: test ## Flash via OTA  (OTA_IP=artoo.local by default)
 	pio run -e $(BUILD_ENV)_ota -t upload --upload-port $(OTA_IP)
 
 uploadfs: ## Upload LittleFS web UI via OTA  (no test gate)
@@ -64,10 +60,7 @@ uploadfs: ## Upload LittleFS web UI via OTA  (no test gate)
 
 # ── Flash: CHIRP audio module ────────────────────────────────────────────────
 
-flash-chirp: test ## Flash CHIRP build via USB  (ESP32 must be unseated)
-	@echo ""
-	@echo "WARNING: ESP32 must be UNSEATED from the Artoo PCB before USB flash."
-	@echo ""
+flash-chirp: test ## Flash CHIRP build via USB
 	pio run -e protoArtoo_chirp -t upload --upload-port $(UPLOAD_PORT)
 
 ota-chirp: test ## Flash CHIRP build via OTA

@@ -15,11 +15,6 @@
 *.d
 build/
 
-# Libraries and dependencies (if not managed by PIO)
-lib/
-deps/
-libraries/
-
 
 # General temp and backup files
 *~
@@ -46,6 +41,14 @@ task.md
 # Agent working directories (environment-specific)
 .claude/*
 !.claude/CLAUDE.md
+!.claude/settings.json
+!.claude/agents/
+!.claude/agents/**
+!.claude/skills/
+!.claude/skills/**
+!.claude/hooks/
+!.claude/hooks/**
+!.claude/verification-playbook.md
 .clangd
 .omp/mcp.json
 .playwright-mcp/
@@ -62,7 +65,6 @@ __pycache__/
 *.pyd
 *.egg-info/
 dist/
-build/
 *.egg
 venv/
 .env
@@ -86,5 +88,3 @@ user.mk
 
 # Misc
 node_modules/  # If any JS tools are involved
-package-lock.json
-data/fs-version.json

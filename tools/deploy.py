@@ -148,7 +148,7 @@ AUDIO_MODULES: list[tuple[str, str, str]] = [
 
 ACTIONS: list[tuple[str, str]] = [
     ("📡  Flash via OTA   (WiFi — no cables needed)",  "ota"),
-    ("🔌  Flash via USB   (ESP32 must be unseated)",   "usb"),
+    ("🔌  Flash via USB",                              "usb"),
     ("🔨  Build only      (compile, no flash)",        "build"),
     ("🧪  Run tests only",                             "test"),
     ("🌐  Upload web UI   (OTA filesystem only)",      "uploadfs"),
@@ -213,20 +213,14 @@ def main() -> int:
         _, env_usb, env_ota = next(a for a in AUDIO_MODULES if a[0] == audio_label)
 
     # ── Q3: Connection details ──
-    ota_ip     = _user_mk("OTA_IP",      "10.0.0.22")
+    ota_ip     = _user_mk("OTA_IP",      "artoo.local")
     upload_port = _user_mk("UPLOAD_PORT", "/dev/ttyUSB0")
 
     if action in ("ota", "uploadfs"):
-        ota_ip = _text("OTA target IP:", default=ota_ip) or ota_ip
+        ota_ip = _text("OTA target (IP or mDNS host):", default=ota_ip) or ota_ip
 
     if action == "usb":
         upload_port = _text("USB port:", default=upload_port) or upload_port
-        print()
-        print(warn("⚠️  GPIO15 is a strapping pin — ESP32 must be UNSEATED before USB flash."))
-        unseated = _confirm("   ESP32 is unseated and ready?", default=False)
-        if not unseated:
-            print(dim("Cancelled."))
-            return 1
 
     # ── Q4: Gate tests before flash? ──
     run_tests = False
