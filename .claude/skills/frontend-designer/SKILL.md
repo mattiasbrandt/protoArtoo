@@ -9,7 +9,7 @@ Design priorities:
 1. Make control intent obvious at a glance.
 2. Use direct labels and status text with no internal jargon.
 3. Reduce cognitive load: grouped controls, clear defaults, visible outcomes.
-4. Prefer resilient desktop and tablet layouts over mobile-first compression.
+4. Prefer resilient desktop PC layouts; treat tablet/mobile as out of scope unless explicitly requested.
 5. Preserve accessibility: readable contrast, keyboard flow, and clear focus states.
 
 Policy alignment:
@@ -31,6 +31,8 @@ Playwright test upkeep:
 - For non-trivial UI changes, update existing Playwright scripts under test/playwright/<page>/.
 - Add new scripts only for new flows/states not covered by current scripts.
 - Keep each script focused on one operator workflow or audit concern.
+- Validate primarily at desktop viewport size (for example 1440x900).
+- Skip tablet/mobile viewport validation unless explicitly requested by the user.
 - Prefer stable selectors (id/data-*) and visible state assertions over timing-only waits.
 - Report which scripts were updated/added and what user-facing behavior they verified.
 

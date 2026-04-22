@@ -10,6 +10,25 @@ allowed-tools:
 
 Use this skill when validating operator-facing web flows in data/ pages.
 
+Startup protocol (required):
+1. Use `mcp__plugin_playwright_playwright__browser_navigate` first.
+2. Continue with MCP browser tools (`browser_snapshot`, `browser_click`, `browser_take_screenshot`).
+3. If MCP browser tools are unavailable, report the blocker and stop.
+4. Do not run CLI/runtime probes for Playwright (`npm`, `npx`, `node`, `find`, temporary JS scripts) unless explicitly requested.
+5. If MCP is unavailable, provide this operator command and stop: `claude mcp add playwright npx @playwright/mcp@latest`.
+
+Execution pattern (required):
+1. Navigate.
+2. Snapshot.
+3. Interact using element refs from the snapshot.
+4. Re-snapshot and verify state change.
+
+Defaults:
+- Headed mode is required by default so interactions remain visible.
+- Use headless mode only when explicitly requested.
+- Use desktop viewport validation by default (for example 1440x900).
+- Do not run tablet/mobile viewport checks unless explicitly requested.
+
 Execution checklist:
 1. Navigate to the target page and collect an initial snapshot.
 2. Perform the requested interactions with realistic operator behavior.
@@ -20,5 +39,5 @@ Execution checklist:
 Quality rules:
 - Prioritize clarity, legibility, and predictable interaction behavior.
 - Flag ambiguous labels, unclear feedback, and hidden state transitions.
-- Treat desktop and tablet layouts as first-class targets.
+- Treat desktop PC layout as the primary validation target.
 - When no issue is found, explicitly state the tested flow and evidence.
