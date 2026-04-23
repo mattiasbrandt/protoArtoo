@@ -2,8 +2,17 @@
 """PostToolUseFailure hook: emit concrete diagnostics for permission-denied failures."""
 
 import json
+import os
 import sys
 from typing import Any, Dict
+
+
+HOOK_PROFILE_ENV = "PROTOARTOO_HOOK_PROFILE"
+
+
+def _is_minimal_profile() -> bool:
+    profile = os.environ.get(HOOK_PROFILE_ENV, "standard").strip().lower()
+    return profile == "minimal"
 
 
 def _detect_permission_source(error_text: str) -> str:
@@ -68,6 +77,9 @@ def _suggest_remediation(tool_name: str, tool_input: Dict[str, Any], error_kind:
 
 
 def main() -> int:
+    if _is_minimal_profile():
+        return 0
+
     try:
         data = json.load(sys.stdin)
     except json.JSONDecodeError:

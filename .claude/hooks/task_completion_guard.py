@@ -2,6 +2,7 @@
 """TaskCompleted hook: require an explicit verification status label in task descriptions when present."""
 
 import json
+import os
 import sys
 
 
@@ -11,8 +12,14 @@ VALID_LABELS = (
     "full-hardware-required",
 )
 
+HOOK_PROFILE_ENV = "PROTOARTOO_HOOK_PROFILE"
+
 
 def main() -> int:
+    profile = os.environ.get(HOOK_PROFILE_ENV, "standard").strip().lower()
+    if profile == "minimal":
+        return 0
+
     try:
         data = json.load(sys.stdin)
     except json.JSONDecodeError:
