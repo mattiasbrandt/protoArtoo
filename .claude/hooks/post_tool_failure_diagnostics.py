@@ -17,7 +17,12 @@ def _detect_permission_source(error_text: str) -> str:
     return "UNKNOWN"
 
 
-_PLAYWRIGHT_PREFIX = "mcp__plugin_playwright_playwright__"
+_PLAYWRIGHT_PREFIX = "mcp__playwright__"  # canonical prefix from .mcp.json key; may differ per runtime
+
+
+def _is_playwright_tool(tool_name: str) -> bool:
+    """Match any Playwright MCP tool regardless of runtime-specific namespace prefix."""
+    return "playwright" in tool_name.lower() and tool_name.startswith("mcp__")
 _SCHEMA_PATTERNS = ("compile json schema", "no schema with key or ref")
 
 
@@ -31,7 +36,7 @@ def _classify_error(error_text: str) -> str:
 
 
 def _suggest_remediation(tool_name: str, tool_input: Dict[str, Any], error_kind: str) -> str:
-    if error_kind == "mcp_tooling_crash" and tool_name.startswith(_PLAYWRIGHT_PREFIX):
+    if error_kind == "mcp_tooling_crash" and _is_playwright_tool(tool_name):
         return (
             "MCP server crashed on tool call (JSON schema validation bug in @playwright/mcp). "
             "Do NOT retry MCP navigation — switch immediately to script-based fallback: "
@@ -47,10 +52,10 @@ def _suggest_remediation(tool_name: str, tool_input: Dict[str, Any], error_kind:
                     f"permissions.allow Bash({command})"
                 )
             return "Add an exact Bash allow rule in .claude/settings.local.json."
-        if tool_name.startswith(_PLAYWRIGHT_PREFIX):
+        if _is_playwright_tool(tool_name):
             return (
-                f"Add allow rule in .claude/settings.json: \"{tool_name}\", then retry once. "
-                "If already present, check that the project settings file is loaded in this scope."
+                f"Add allow rule for '{tool_name}' in .claude/settings.json permissions.allow, then retry once. "
+                "If already present, check that the project settings file is loaded in this runtime scope."
             )
 
     return "Check tool error; confirm applicable permission rule at local/project scope, then retry once."
@@ -66,7 +71,7 @@ def main() -> int:
         return 0
 
     tool_name = str(data.get("tool_name", ""))
-    if tool_name != "Bash" and not tool_name.startswith(_PLAYWRIGHT_PREFIX):
+    if tool_name != "Bash" and not _is_playwright_tool(tool_name):
         return 0
 
     error_text = str(data.get("error", ""))

@@ -8,10 +8,7 @@
     "allow": [
       "Bash(python3 -m http.server 4173 *)",
       "Bash(curl -s http://127.0.0.1:4173/*)",
-      "mcp__plugin_playwright_playwright__browser_navigate",
-      "mcp__plugin_playwright_playwright__browser_snapshot",
-      "mcp__plugin_playwright_playwright__browser_click",
-      "mcp__plugin_playwright_playwright__browser_take_screenshot"
+      "mcp__playwright__*"
     ]
   },
   "hooks": {
@@ -59,7 +56,7 @@
         ]
       },
       {
-        "matcher": "Bash|mcp__plugin_playwright_playwright__.*",
+        "matcher": "Bash|mcp__.*playwright.*",
         "hooks": [
           {
             "type": "command",

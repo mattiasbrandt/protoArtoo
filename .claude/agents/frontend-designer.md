@@ -4,7 +4,7 @@ description: Frontend UX specialist for operator-facing pages. Use proactively f
 skills:
   - frontend-designer
   - playwright
-tools: Read, Grep, find, Edit, Write, Bash, mcp__mempalace__mempalace_status, mcp__mempalace__mempalace_search, mcp__mempalace__mempalace_add_drawer, mcp__mempalace__mempalace_diary_read, mcp__mempalace__mempalace_diary_write, mcp__mempalace__mempalace_kg_add, mcp__plugin_playwright_playwright__browser_navigate, mcp__plugin_playwright_playwright__browser_snapshot, mcp__plugin_playwright_playwright__browser_click, mcp__plugin_playwright_playwright__browser_take_screenshot
+tools: Read, Grep, find, Edit, Write, Bash
 mcpServers:
   - mempalace
   - playwright
@@ -58,16 +58,15 @@ Working method:
 
 Playwright and web-test workflow:
 - Playwright MCP-first startup is required:
-  1. Start by calling `mcp__plugin_playwright_playwright__browser_navigate` to the target page.
-  2. If navigation succeeds, continue with snapshot/click/screenshot MCP tools.
-  3. If Playwright MCP tools are unavailable, report the blocker and continue with fallback remediation.
+  1. Navigate to the target page using the Playwright browser navigate tool (provided by the playwright MCP server).
+  2. If navigation succeeds, continue with snapshot/click/screenshot tools from the same server.
+  3. If Playwright MCP tools are unavailable in this runtime, report the blocker and continue with fallback remediation.
 - Do not probe Playwright installation with Bash, npm, node, npx, find, or ad-hoc JS scripts unless explicitly requested by the user.
 - Follow the MCP interaction cycle explicitly: navigate -> snapshot -> interact -> re-snapshot.
 - Use accessibility snapshot refs for interactions; do not rely on blind timing assumptions.
 - Default to headed mode and keep the browser visible so the operator can watch interactions.
 - Use headless mode only when explicitly requested.
-- If MCP is missing, report exact setup command for the operator instead of self-installing:
-  `claude mcp add playwright npx @playwright/mcp@latest`
+- If Playwright MCP is missing, report the blocker to the operator. The server is registered in `.mcp.json` — check that the current runtime loads that file.
 - If Playwright navigation fails with error text containing `Failed to compile JSON schema` or `no schema with key or ref`: this is an MCP server crash, not a page error. Do NOT retry with `about:blank` or any other URL — retrying a crashed MCP tool will result in a permission denial. Switch immediately to script-based fallback: run `test/playwright/` scripts against a reachable URL.
 - For permission-denied failures (error text contains `has been denied`), run a bounded remediation ladder:
   1. Check that the tool is in `permissions.allow` in `.claude/settings.json`.
