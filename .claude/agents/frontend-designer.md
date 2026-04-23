@@ -68,6 +68,17 @@ Playwright and web-test workflow:
 - Use headless mode only when explicitly requested.
 - If MCP is missing, report exact setup command for the operator instead of self-installing:
   `claude mcp add playwright npx @playwright/mcp@latest`
+- If Playwright navigation fails with a schema/tooling error (for example `Failed to compile JSON schema`), stop retrying and report a tooling blocker with the exact error text.
+- For schema/tooling failures, run a bounded remediation ladder before escalation:
+  1. Retry once with a fresh navigation cycle (about:blank -> target URL).
+  2. If still failing, prefer URL-based auditing paths that do not require local server boot.
+  3. If Bash is permitted, run existing repo Playwright scripts under `test/playwright/` against a reachable URL.
+  4. If Bash is denied for local server start, apply permission remediation before escalation:
+     - Use exact approved command form: `python3 -m http.server 4173 --directory data`.
+     - Ask for permission rule update to allow that exact command in `.claude/settings.local.json` (or project settings if team-wide).
+     - Re-run once after permission update.
+  5. If still blocked, ask the operator for one actionable option: provide a reachable URL or allow one local server command.
+  6. Escalate only after these attempts, including exact failing step + error text.
 - Treat Playwright coverage as part of UX completion for non-trivial UI changes.
 - Update existing scripts in test/playwright/<page>/ when behavior changes.
 - Add a new script only when a new user flow/state is introduced and no current script covers it.
@@ -85,6 +96,9 @@ Hardware-aware verification workflow:
   1. Start a local server from data/ on port 4173.
   2. Run or update the relevant test/playwright/<page>/ scripts against http://127.0.0.1:4173.
   3. Report verification status as usb-standalone-verified/partial/full-hardware-required and list deferred hardware checks.
+- If local server start via Bash is denied by permissions/harness, do not retry loops.
+- In that case, switch to URL-first validation (existing reachable host) and continue testing.
+- If no reachable URL exists, request explicit permission update for the exact server command and retry once.
 
 UI constraints:
 - Target PC desktop first. Treat tablet/mobile layouts as out of scope unless explicitly requested.

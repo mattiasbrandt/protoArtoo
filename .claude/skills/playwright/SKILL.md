@@ -13,9 +13,18 @@ Use this skill when validating operator-facing web flows in data/ pages.
 Startup protocol (required):
 1. Use `mcp__plugin_playwright_playwright__browser_navigate` first.
 2. Continue with MCP browser tools (`browser_snapshot`, `browser_click`, `browser_take_screenshot`).
-3. If MCP browser tools are unavailable, report the blocker and stop.
+3. If MCP browser tools are unavailable, report the blocker and continue with fallback remediation.
 4. Do not run CLI/runtime probes for Playwright (`npm`, `npx`, `node`, `find`, temporary JS scripts) unless explicitly requested.
-5. If MCP is unavailable, provide this operator command and stop: `claude mcp add playwright npx @playwright/mcp@latest`.
+5. If MCP is unavailable, provide this operator command and continue with allowed fallback paths: `claude mcp add playwright npx @playwright/mcp@latest`.
+
+Failure protocol (required):
+1. If navigation/tool execution fails with schema/tooling errors (for example `Failed to compile JSON schema`), stop and report a tooling blocker with exact error text.
+2. Retry once using a fresh session flow (`about:blank` then target URL).
+3. If still failing, continue with URL-first fallback (use reachable running host; avoid local server boot dependency).
+4. If Bash is permitted, run existing repo scripts under `test/playwright/` against that reachable URL to preserve audit progress.
+5. If Bash is denied for local server start, request/update permission for this exact safe command and retry once: `python3 -m http.server 4173 --directory data`.
+6. If no reachable URL and no permission update is possible, ask the operator for one explicit action: provide URL or allow one server-start command.
+7. Escalate only after the above attempts, including exact failed step and full error text.
 
 Execution pattern (required):
 1. Navigate.
