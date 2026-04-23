@@ -19,14 +19,13 @@ Startup protocol (required):
 6. Do not call Playwright resize/viewport tools in MCP validation flows. Validate using the runtime default viewport.
 
 Failure protocol (required):
-1. If any Playwright MCP tool fails with schema/tooling errors (for example `Failed to compile JSON schema` or `no schema with key or ref "https://json-schema.org/draft/2020-12/schema"`), treat this as a client-side schema-validator incompatibility.
-2. Do not retry additional Playwright MCP tools in that session. Switch immediately to script-based fallback.
-3. Use URL-first fallback (reachable running host preferred). If needed, start local server on port 4173.
-4. If Bash is permitted, run existing repo scripts under `test/playwright/` against that URL to preserve audit progress.
-5. If Bash is denied for local server start, request/update permission for this exact safe command and retry once: `python3 -m http.server 4173 --directory data`.
+1. If Playwright MCP tools are unavailable, report the blocker. The server is registered in `.mcp.json` as `playwright` using `npx @playwright/mcp@latest` — check that the runtime loads that file.
+2. Use URL-first fallback (reachable running host preferred). If needed, start local server on port 4173.
+3. If Bash is permitted, run existing repo scripts under `test/playwright/` against that URL to preserve audit progress.
+4. If Bash is denied for local server start, request/update permission for this exact safe command and retry once: `python3 -m http.server 4173 --directory data`.
    (Some runtimes use absolute paths — if the allow rule is path-sensitive, use `python3 -m http.server 4173 *` as the wildcard form.)
-6. If no reachable URL and no permission update is possible, ask the operator for one explicit action: provide URL or allow one server-start command.
-7. Escalate only after the above attempts, including exact failed step and full error text.
+5. If no reachable URL and no permission update is possible, ask the operator for one explicit action: provide URL or allow one server-start command.
+6. Escalate only after the above attempts, including exact failed step and full error text.
 
 Blocked-run report format (required):
 1. Failed tool call: exact tool name as reported by the runtime.

@@ -69,10 +69,7 @@ Playwright and web-test workflow:
 - Default to headed mode and keep the browser visible so the operator can watch interactions.
 - Use headless mode only when explicitly requested.
 - Do not call a Playwright resize/viewport tool in MCP flows. Some runtimes expose `browser_resize` with a schema that crashes validation. Keep the default runtime viewport and continue validation with navigate/snapshot/click/screenshot tools.
-- If Playwright MCP is missing, report the blocker to the operator. The server is registered in `.mcp.json` — check that the current runtime loads that file.
-- The project Playwright MCP entry uses a local schema-sanitizing proxy (`tools/mcp/playwright_schema_proxy.js`) that strips `$schema` from tool input schemas for client compatibility.
-- Do not use plugin-routed Playwright tools (`plugin:playwright:playwright` namespace). Use the `.mcp.json` `playwright` server route so schema sanitization is applied.
-- If any Playwright MCP tool fails with error text containing `Failed to compile JSON schema` or `no schema with key or ref`: this is a client-side schema-validator incompatibility with draft-2020-12. Do not retry further Playwright MCP calls in that session. Switch immediately to script-based fallback and continue verification.
+- If Playwright MCP is missing, report the blocker to the operator. The server is registered in `.mcp.json` as `playwright` using `npx @playwright/mcp@latest` — check that the current runtime loads that file.
 - Script-based fallback command pattern (when Bash is permitted): run the relevant script under `test/playwright/<page>/` with `TARGET_URL=<reachable-url>`.
 - For permission-denied failures (error text contains `has been denied`), run a bounded remediation ladder:
   1. Check that the tool is in `permissions.allow` in `.claude/settings.json`.
