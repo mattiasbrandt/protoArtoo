@@ -19,6 +19,8 @@ hooks:
         - type: command
           if: "Bash(pio run * -t uploadfs*)"
           command: "python3 \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/frontend_upload_gate.py"
+        - type: command
+          command: "python3 \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/ensure_local_server.py"
   PostToolUse:
     - matcher: "Edit|Write"
       hooks:
