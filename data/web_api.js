@@ -92,10 +92,24 @@
   const postForm = (path, form, opts = {}) => request(path, { ...opts, method: "POST", form });
   const postJson = (path, json, opts = {}) => request(path, { ...opts, method: "POST", json });
 
+  const HTTP_STATUS_MESSAGES = {
+    400: "Device rejected the request",
+    403: "Access denied by device",
+    404: "Not found on device",
+    500: "Device error",
+    501: "Not supported by device",
+    503: "Device unavailable",
+  };
+
   const messageFor = (error) => {
     if (!(error instanceof ApiError)) return "Request failed";
     if (error.kind === "timeout") return "Request timed out";
     if (error.kind === "network") return "Network error";
+    if (error.kind === "http") {
+      if (error.message && !error.message.startsWith("HTTP ")) return error.message;
+      return HTTP_STATUS_MESSAGES[error.status]
+        || (error.status >= 500 ? "Device error" : "Device rejected the request");
+    }
     return error.message || "Request failed";
   };
 
