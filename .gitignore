@@ -87,4 +87,5 @@ src/secrets.h
 user.mk
 
 # Misc
-node_modules/  # If any JS tools are involved
+# node_modules/ — ignored when JS tooling (e.g. playwright) is installed
+node_modules/
