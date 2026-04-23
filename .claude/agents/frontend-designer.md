@@ -68,8 +68,9 @@ Playwright and web-test workflow:
 - Use headless mode only when explicitly requested.
 - Do not call a Playwright resize/viewport tool in MCP flows. Some runtimes expose `browser_resize` with a schema that crashes validation. Keep the default runtime viewport and continue validation with navigate/snapshot/click/screenshot tools.
 - If Playwright MCP is missing, report the blocker to the operator. The server is registered in `.mcp.json` — check that the current runtime loads that file.
-- If Playwright navigation fails with error text containing `Failed to compile JSON schema` or `no schema with key or ref`: this is an MCP server crash, not a page error. Do NOT retry with `about:blank` or any other URL — retrying a crashed MCP tool will result in a permission denial. Switch immediately to script-based fallback: run `test/playwright/` scripts against a reachable URL.
-- If Playwright resize fails with error text containing `Failed to compile JSON schema` or `no schema with key or ref`: skip resize and continue with the default viewport. Do not classify the run as blocked if navigate/snapshot/click/screenshot still work.
+- The project Playwright MCP entry uses a local schema-sanitizing proxy (`tools/mcp/playwright_schema_proxy.js`) that strips `$schema` from tool input schemas for client compatibility.
+- If any Playwright MCP tool fails with error text containing `Failed to compile JSON schema` or `no schema with key or ref`: this is a client-side schema-validator incompatibility with draft-2020-12. Do not retry further Playwright MCP calls in that session. Switch immediately to script-based fallback and continue verification.
+- Script-based fallback command pattern (when Bash is permitted): run the relevant script under `test/playwright/<page>/` with `TARGET_URL=<reachable-url>`.
 - For permission-denied failures (error text contains `has been denied`), run a bounded remediation ladder:
   1. Check that the tool is in `permissions.allow` in `.claude/settings.json`.
   2. If allow rule is missing, add it and retry once.

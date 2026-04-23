@@ -9,9 +9,9 @@
       "url": "https://components.espressif.com/mcp"
     },
     "playwright": {
-      "command": "npx",
+      "command": "node",
       "args": [
-        "@playwright/mcp@latest"
+        "tools/mcp/playwright_schema_proxy.js"
       ]
     }
   }

@@ -19,10 +19,10 @@ Startup protocol (required):
 6. Do not call Playwright resize/viewport tools in MCP validation flows. Validate using the runtime default viewport.
 
 Failure protocol (required):
-1. If navigation/tool execution fails with schema/tooling errors (for example `Failed to compile JSON schema`), stop and report a tooling blocker with exact error text. Do NOT retry with `about:blank` — a crashed MCP tool will fail again and may produce a permission denial. Switch immediately to script-based fallback.
-2. If only the resize/viewport tool fails with a schema error, skip resize and continue with navigate/snapshot/click/screenshot. Treat this as degraded tooling, not a hard blocker.
-3. If still failing, continue with URL-first fallback (use reachable running host; avoid local server boot dependency).
-4. If Bash is permitted, run existing repo scripts under `test/playwright/` against that reachable URL to preserve audit progress.
+1. If any Playwright MCP tool fails with schema/tooling errors (for example `Failed to compile JSON schema` or `no schema with key or ref "https://json-schema.org/draft/2020-12/schema"`), treat this as a client-side schema-validator incompatibility.
+2. Do not retry additional Playwright MCP tools in that session. Switch immediately to script-based fallback.
+3. Use URL-first fallback (reachable running host preferred). If needed, start local server on port 4173.
+4. If Bash is permitted, run existing repo scripts under `test/playwright/` against that URL to preserve audit progress.
 5. If Bash is denied for local server start, request/update permission for this exact safe command and retry once: `python3 -m http.server 4173 --directory data`.
    (Some runtimes use absolute paths — if the allow rule is path-sensitive, use `python3 -m http.server 4173 *` as the wildcard form.)
 6. If no reachable URL and no permission update is possible, ask the operator for one explicit action: provide URL or allow one server-start command.

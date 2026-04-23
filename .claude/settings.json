@@ -8,6 +8,9 @@
     "allow": [
       "Bash(python3 -m http.server 4173 *)",
       "Bash(curl -s http://127.0.0.1:4173/*)",
+      "Bash(node test/playwright/*/*.js)",
+      "Bash(TARGET_URL=* node test/playwright/*/*.js)",
+      "Bash(TARGET_URL=* HEADLESS=* node test/playwright/*/*.js)",
       "mcp__playwright__*"
     ]
   },
