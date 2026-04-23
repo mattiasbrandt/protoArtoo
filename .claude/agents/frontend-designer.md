@@ -66,8 +66,10 @@ Playwright and web-test workflow:
 - Use accessibility snapshot refs for interactions; do not rely on blind timing assumptions.
 - Default to headed mode and keep the browser visible so the operator can watch interactions.
 - Use headless mode only when explicitly requested.
+- Do not call a Playwright resize/viewport tool in MCP flows. Some runtimes expose `browser_resize` with a schema that crashes validation. Keep the default runtime viewport and continue validation with navigate/snapshot/click/screenshot tools.
 - If Playwright MCP is missing, report the blocker to the operator. The server is registered in `.mcp.json` — check that the current runtime loads that file.
 - If Playwright navigation fails with error text containing `Failed to compile JSON schema` or `no schema with key or ref`: this is an MCP server crash, not a page error. Do NOT retry with `about:blank` or any other URL — retrying a crashed MCP tool will result in a permission denial. Switch immediately to script-based fallback: run `test/playwright/` scripts against a reachable URL.
+- If Playwright resize fails with error text containing `Failed to compile JSON schema` or `no schema with key or ref`: skip resize and continue with the default viewport. Do not classify the run as blocked if navigate/snapshot/click/screenshot still work.
 - For permission-denied failures (error text contains `has been denied`), run a bounded remediation ladder:
   1. Check that the tool is in `permissions.allow` in `.claude/settings.json`.
   2. If allow rule is missing, add it and retry once.
@@ -89,7 +91,7 @@ Playwright and web-test workflow:
 - Add a new script only when a new user flow/state is introduced and no current script covers it.
 - Keep scripts focused on one workflow or audit goal; avoid monolithic all-page scripts.
 - Prefer stable selectors (id/data-*) and observable state checks over brittle timing-only checks.
-- Run Playwright checks primarily at desktop resolution (for example 1440x900).
+- Run Playwright checks with desktop-first expectations, but keep the runtime's default viewport if resize is unavailable.
 - Do not run tablet/mobile viewport validation unless explicitly requested by the user.
 - Capture at least one before/after screenshot or equivalent structured evidence for significant UX changes.
 - In results, report: script names touched, what interaction was validated, and any remaining untested paths.

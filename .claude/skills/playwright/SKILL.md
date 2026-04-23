@@ -16,9 +16,11 @@ Startup protocol (required):
 3. If MCP browser tools are unavailable in this runtime, report the blocker and continue with fallback remediation.
 4. Do not run CLI/runtime probes for Playwright (`npm`, `npx`, `node`, `find`, temporary JS scripts) unless explicitly requested.
 5. If the Playwright MCP server is not exposed, report to the operator: the server is registered in `.mcp.json` — check that the current runtime loads that file.
+6. Do not call Playwright resize/viewport tools in MCP validation flows. Validate using the runtime default viewport.
 
 Failure protocol (required):
 1. If navigation/tool execution fails with schema/tooling errors (for example `Failed to compile JSON schema`), stop and report a tooling blocker with exact error text. Do NOT retry with `about:blank` — a crashed MCP tool will fail again and may produce a permission denial. Switch immediately to script-based fallback.
+2. If only the resize/viewport tool fails with a schema error, skip resize and continue with navigate/snapshot/click/screenshot. Treat this as degraded tooling, not a hard blocker.
 3. If still failing, continue with URL-first fallback (use reachable running host; avoid local server boot dependency).
 4. If Bash is permitted, run existing repo scripts under `test/playwright/` against that reachable URL to preserve audit progress.
 5. If Bash is denied for local server start, request/update permission for this exact safe command and retry once: `python3 -m http.server 4173 --directory data`.
@@ -49,7 +51,7 @@ Execution pattern (required):
 Defaults:
 - Headed mode is required by default so interactions remain visible.
 - Use headless mode only when explicitly requested.
-- Use desktop viewport validation by default (for example 1440x900).
+- Use desktop-first validation expectations with runtime default viewport.
 - Do not run tablet/mobile viewport checks unless explicitly requested.
 
 Execution checklist:

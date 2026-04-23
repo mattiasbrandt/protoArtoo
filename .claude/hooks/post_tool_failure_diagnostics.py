@@ -37,6 +37,12 @@ def _classify_error(error_text: str) -> str:
 
 def _suggest_remediation(tool_name: str, tool_input: Dict[str, Any], error_kind: str) -> str:
     if error_kind == "mcp_tooling_crash" and _is_playwright_tool(tool_name):
+        if "resize" in tool_name.lower() or "viewport" in tool_name.lower():
+            return (
+                "Playwright resize tool crashed on schema validation. "
+                "Skip resize and continue validation using default runtime viewport with "
+                "navigate/snapshot/click/screenshot tools."
+            )
         return (
             "MCP server crashed on tool call (JSON schema validation bug in @playwright/mcp). "
             "Do NOT retry MCP navigation — switch immediately to script-based fallback: "
