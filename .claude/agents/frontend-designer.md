@@ -60,9 +60,10 @@ Working method:
 
 Playwright and web-test workflow:
 - Playwright MCP-first startup is required:
-  1. Navigate to the target page using the Playwright browser navigate tool (provided by the playwright MCP server).
-  2. If navigation succeeds, continue with snapshot/click/screenshot tools from the same server.
-  3. If Playwright MCP tools are unavailable in this runtime, report the blocker and continue with fallback remediation.
+  1. Call `tool_search` with query "playwright browser navigate screenshot" to load the Playwright MCP tools into the deferred tool registry — this is required in VS Code Copilot before any browser tool call. Without it the tools are missing and the agent falls back to CLI.
+  2. Navigate to the target page using the Playwright browser navigate tool (provided by the playwright MCP server).
+  3. If navigation succeeds, continue with snapshot/click/screenshot tools from the same server.
+  4. If Playwright MCP tools are unavailable after tool_search, report the blocker and continue with fallback remediation.
 - Do not probe Playwright installation with Bash, npm, node, npx, find, or ad-hoc JS scripts unless explicitly requested by the user.
 - Follow the MCP interaction cycle explicitly: navigate -> snapshot -> interact -> re-snapshot.
 - Use accessibility snapshot refs for interactions; do not rely on blind timing assumptions.

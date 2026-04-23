@@ -11,12 +11,13 @@ in Claude Code, or a different prefix in other runtimes). Use whatever browser t
 runtime exposes from that server — do not hardcode the namespace prefix.
 
 Startup protocol (required):
-1. Navigate to the target page using the Playwright browser navigate tool.
-2. Continue with browser snapshot, click, and screenshot tools from the same server.
-3. If MCP browser tools are unavailable in this runtime, report the blocker and continue with fallback remediation.
-4. Do not run CLI/runtime probes for Playwright (`npm`, `npx`, `node`, `find`, temporary JS scripts) unless explicitly requested.
-5. If the Playwright MCP server is not exposed, report to the operator: the server is registered in `.mcp.json` — check that the current runtime loads that file.
-6. Do not call Playwright resize/viewport tools in MCP validation flows. Validate using the runtime default viewport.
+1. Call `tool_search` with query "playwright browser navigate screenshot" to load the Playwright MCP tools into the deferred tool registry before attempting any browser tool call. This is required in VS Code Copilot — skipping it causes the tools to be missing and triggers CLI fallback.
+2. Navigate to the target page using the Playwright browser navigate tool.
+3. Continue with browser snapshot, click, and screenshot tools from the same server.
+4. If MCP browser tools are unavailable after tool_search, report the blocker and continue with fallback remediation.
+5. Do not run CLI/runtime probes for Playwright (`npm`, `npx`, `node`, `find`, temporary JS scripts) unless explicitly requested.
+6. If the Playwright MCP server is not exposed, report to the operator: the server is registered in `.mcp.json` — check that the current runtime loads that file.
+7. Do not call Playwright resize/viewport tools in MCP validation flows. Validate using the runtime default viewport.
 
 Failure protocol (required):
 1. If Playwright MCP tools are unavailable, report the blocker. The server is registered in `.mcp.json` as `playwright` using `npx @playwright/mcp@latest` — check that the runtime loads that file.
