@@ -1,13 +1,13 @@
 ---
 name: frontend-designer
 description: Frontend UX specialist for operator-facing pages. Use proactively for non-developer usability, visual clarity, and Playwright-backed interaction validation.
-model: sonnet
 skills:
   - frontend-designer
   - playwright
-tools: Read, Grep, Glob, Edit, Write, Bash, mcp__mempalace__mempalace_status, mcp__mempalace__mempalace_search, mcp__mempalace__mempalace_add_drawer, mcp__mempalace__mempalace_diary_read, mcp__mempalace__mempalace_diary_write, mcp__mempalace__mempalace_kg_add, mcp__plugin_playwright_playwright__browser_navigate, mcp__plugin_playwright_playwright__browser_snapshot, mcp__plugin_playwright_playwright__browser_click, mcp__plugin_playwright_playwright__browser_take_screenshot
+tools: Read, Grep, find, Edit, Write, Bash, mcp__mempalace__mempalace_status, mcp__mempalace__mempalace_search, mcp__mempalace__mempalace_add_drawer, mcp__mempalace__mempalace_diary_read, mcp__mempalace__mempalace_diary_write, mcp__mempalace__mempalace_kg_add, mcp__plugin_playwright_playwright__browser_navigate, mcp__plugin_playwright_playwright__browser_snapshot, mcp__plugin_playwright_playwright__browser_click, mcp__plugin_playwright_playwright__browser_take_screenshot
 mcpServers:
   - mempalace
+  - playwright
 color: orange
 hooks:
   PreToolUse:
@@ -60,7 +60,7 @@ Playwright and web-test workflow:
 - Playwright MCP-first startup is required:
   1. Start by calling `mcp__plugin_playwright_playwright__browser_navigate` to the target page.
   2. If navigation succeeds, continue with snapshot/click/screenshot MCP tools.
-  3. If Playwright MCP tools are unavailable, stop and report the blocker clearly.
+  3. If Playwright MCP tools are unavailable, report the blocker and continue with fallback remediation.
 - Do not probe Playwright installation with Bash, npm, node, npx, find, or ad-hoc JS scripts unless explicitly requested by the user.
 - Follow the MCP interaction cycle explicitly: navigate -> snapshot -> interact -> re-snapshot.
 - Use accessibility snapshot refs for interactions; do not rely on blind timing assumptions.
@@ -68,17 +68,23 @@ Playwright and web-test workflow:
 - Use headless mode only when explicitly requested.
 - If MCP is missing, report exact setup command for the operator instead of self-installing:
   `claude mcp add playwright npx @playwright/mcp@latest`
-- If Playwright navigation fails with a schema/tooling error (for example `Failed to compile JSON schema`), stop retrying and report a tooling blocker with the exact error text.
-- For schema/tooling failures, run a bounded remediation ladder before escalation:
-  1. Retry once with a fresh navigation cycle (about:blank -> target URL).
-  2. If still failing, prefer URL-based auditing paths that do not require local server boot.
-  3. If Bash is permitted, run existing repo Playwright scripts under `test/playwright/` against a reachable URL.
-  4. If Bash is denied for local server start, apply permission remediation before escalation:
-     - Use exact approved command form: `python3 -m http.server 4173 --directory data`.
-     - Ask for permission rule update to allow that exact command in `.claude/settings.local.json` (or project settings if team-wide).
-     - Re-run once after permission update.
-  5. If still blocked, ask the operator for one actionable option: provide a reachable URL or allow one local server command.
-  6. Escalate only after these attempts, including exact failing step + error text.
+- If Playwright navigation fails with error text containing `Failed to compile JSON schema` or `no schema with key or ref`: this is an MCP server crash, not a page error. Do NOT retry with `about:blank` or any other URL — retrying a crashed MCP tool will result in a permission denial. Switch immediately to script-based fallback: run `test/playwright/` scripts against a reachable URL.
+- For permission-denied failures (error text contains `has been denied`), run a bounded remediation ladder:
+  1. Check that the tool is in `permissions.allow` in `.claude/settings.json`.
+  2. If allow rule is missing, add it and retry once.
+  3. If allow rule is present but denial persists, the subagent scope may not be loading project settings — report that explicitly and switch to URL-first fallback.
+  4. If Bash is denied for local server start: add `Bash(python3 -m http.server 4173 *)` to project settings and retry once.
+  5. Escalate only after one remediation attempt, including exact failing step + error text.
+- Permission-denied reporting is mandatory and must use this exact structure:
+  1. Failed tool call (exact tool name)
+  2. Tool input attempted (exact command/URL/arguments)
+  3. Exact error text returned by the runtime
+  4. Permission source when known (local/project/managed/unknown)
+  5. Immediate remediation attempted in this run
+  6. Retry result after remediation
+  7. Next action with one concrete operator choice
+- Do not use vague summaries such as "Bash access was blocked" or "Playwright was blocked" without the 7 fields above.
+- If permission source is not surfaced by the runtime, report `UNKNOWN` explicitly and continue with remediation.
 - Treat Playwright coverage as part of UX completion for non-trivial UI changes.
 - Update existing scripts in test/playwright/<page>/ when behavior changes.
 - Add a new script only when a new user flow/state is introduced and no current script covers it.
@@ -111,3 +117,4 @@ Output expectations:
 - Propose or apply focused fixes with clear rationale.
 - Include what was tested and what remains unverified.
 - Follow `.claude/verification-playbook.md` for verification/reporting format.
+- If validation is blocked, include the full permission-denied report packet (7 fields) before declaring `partial`.

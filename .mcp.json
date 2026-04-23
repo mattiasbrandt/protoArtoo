@@ -7,6 +7,12 @@
     "esp-component-registry": {
       "type": "http",
       "url": "https://components.espressif.com/mcp"
+    },
+    "playwright": {
+      "command": "npx",
+      "args": [
+        "@playwright/mcp@latest"
+      ]
     }
   }
 }

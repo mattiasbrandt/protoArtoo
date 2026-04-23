@@ -26,6 +26,20 @@ Failure protocol (required):
 6. If no reachable URL and no permission update is possible, ask the operator for one explicit action: provide URL or allow one server-start command.
 7. Escalate only after the above attempts, including exact failed step and full error text.
 
+Blocked-run report format (required):
+1. Failed tool call: exact tool name (for example `mcp__plugin_playwright_playwright__browser_navigate`).
+2. Attempted input: exact URL/command/arguments used for that failing call.
+3. Runtime error: exact returned text, unchanged.
+4. Permission source: `local`, `project`, `managed`, or `UNKNOWN`.
+5. Remediation attempted now: exact update/request/alternative path attempted.
+6. Retry result: success/fail with exact error text if fail.
+7. Operator next step: one concrete action only.
+
+Invalid blocker reports (forbidden):
+- "Bash access was blocked"
+- "Playwright validation was blocked"
+- Any blocker statement without exact tool input and exact runtime error text.
+
 Execution pattern (required):
 1. Navigate.
 2. Snapshot.

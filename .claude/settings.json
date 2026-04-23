@@ -1,13 +1,17 @@
 {
   "enabledPlugins": {
     "frontend-design@claude-plugins-official": true,
+    "playwright@claude-plugins-official": true,
     "mempalace@mempalaceofficial": true
   },
   "permissions": {
     "allow": [
-      "Bash(python3 -m http.server 4173 --directory data)",
-      "Bash(cd data && python3 -m http.server 4173)",
-      "Bash(curl -s http://127.0.0.1:4173/*)"
+      "Bash(python3 -m http.server 4173 *)",
+      "Bash(curl -s http://127.0.0.1:4173/*)",
+      "mcp__plugin_playwright_playwright__browser_navigate",
+      "mcp__plugin_playwright_playwright__browser_snapshot",
+      "mcp__plugin_playwright_playwright__browser_click",
+      "mcp__plugin_playwright_playwright__browser_take_screenshot"
     ]
   },
   "hooks": {
@@ -51,6 +55,15 @@
           {
             "type": "command",
             "command": "python3 \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/post_upload_failure_hint.py"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash|mcp__plugin_playwright_playwright__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/post_tool_failure_diagnostics.py"
           }
         ]
       }

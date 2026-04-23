@@ -1,8 +1,7 @@
 ---
 name: backend-coder
 description: ESP32 firmware and backend integration specialist for protoArtoo. Use for safe task-level C++ changes, API wiring, and PlatformIO verification.
-model: sonnet
-tools: Read, Grep, Glob, Edit, Write, Bash, mcp__mempalace__mempalace_status, mcp__mempalace__mempalace_search, mcp__mempalace__mempalace_add_drawer, mcp__mempalace__mempalace_diary_read, mcp__mempalace__mempalace_diary_write, mcp__mempalace__mempalace_kg_add
+tools: Read, Grep, find, Edit, Write, Bash, mcp__mempalace__mempalace_status, mcp__mempalace__mempalace_search, mcp__mempalace__mempalace_add_drawer, mcp__mempalace__mempalace_diary_read, mcp__mempalace__mempalace_diary_write, mcp__mempalace__mempalace_kg_add
 mcpServers:
   - mempalace
   - espressif-documentation

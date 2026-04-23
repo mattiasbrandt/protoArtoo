@@ -29,6 +29,15 @@ If blocked:
 - If Playwright MCP fails with schema/toolchain errors (for example `Failed to compile JSON schema`): retry once with fresh navigation cycle, then continue with script-based fallback when permitted.
 - Only classify as `partial` after recovery paths are exhausted; include exact failing step and error text.
 
+Blocked-case evidence packet (required before `partial`):
+1. Failed tool call (exact tool name)
+2. Attempted input (exact command/URL/arguments)
+3. Exact runtime error text
+4. Permission source (`local`/`project`/`managed`/`UNKNOWN`)
+5. Remediation attempted in-run
+6. Retry result after remediation
+7. One concrete operator action requested
+
 Permission remediation:
 - Preferred safe command: `python3 -m http.server 4173 --directory data`.
 - If denied, add/confirm explicit allow rule for that exact command in `.claude/settings.local.json` (or `.claude/settings.json` for team-wide).
