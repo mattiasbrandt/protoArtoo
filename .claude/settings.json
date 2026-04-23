@@ -1,7 +1,7 @@
 {
   "enabledPlugins": {
     "frontend-design@claude-plugins-official": true,
-    "playwright@claude-plugins-official": true,
+    "playwright@claude-plugins-official": false,
     "mempalace@mempalaceofficial": true
   },
   "permissions": {
@@ -59,7 +59,7 @@
         ]
       },
       {
-        "matcher": "Bash|mcp__.*playwright.*",
+        "matcher": "Bash|mcp__.*playwright.*|plugin:playwright:playwright.*",
         "hooks": [
           {
             "type": "command",
