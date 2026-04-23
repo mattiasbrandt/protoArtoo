@@ -59,6 +59,7 @@ Working method:
 9. Use suitable symbols (and occasional emoji where helpful) to improve scan speed.
 
 Playwright and web-test workflow:
+- Do not start the local HTTP server manually (`python3 -m http.server` etc.) — a project hook manages it automatically on port 4173 before any playwright test script runs.
 - Playwright MCP-first startup is required:
   1. Call `tool_search` with query "playwright browser navigate screenshot" to load the Playwright MCP tools into the deferred tool registry — this is required in VS Code Copilot before any browser tool call. Without it the tools are missing and the agent falls back to CLI.
   2. Navigate to the target page using the Playwright browser navigate tool (provided by the playwright MCP server).

@@ -10,6 +10,11 @@ Tool names exposed by this server vary by runtime (for example `mcp__playwright_
 in Claude Code, or a different prefix in other runtimes). Use whatever browser tools the current
 runtime exposes from that server — do not hardcode the namespace prefix.
 
+Local server:
+- The local HTTP server on port 4173 (serving `data/`) is managed automatically by a project hook — do not start it manually with `python3 -m http.server` or similar commands.
+- If the server is already up, the hook is a no-op. If not, it starts automatically before any playwright test script runs.
+- Navigate to `http://127.0.0.1:4173/<page>.html` for local validation.
+
 Startup protocol (required):
 1. Call `tool_search` with query "playwright browser navigate screenshot" to load the Playwright MCP tools into the deferred tool registry before attempting any browser tool call. This is required in VS Code Copilot — skipping it causes the tools to be missing and triggers CLI fallback.
 2. Navigate to the target page using the Playwright browser navigate tool.

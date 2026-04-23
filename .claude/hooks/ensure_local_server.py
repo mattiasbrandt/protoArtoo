@@ -20,8 +20,12 @@ PID_FILE = "/tmp/protoartoo-server.pid"
 TIMEOUT_S = 5.0
 
 
-def _is_playwright_command(cmd: str) -> bool:
-    return "test/playwright" in cmd
+def _is_playwright_relevant(cmd: str) -> bool:
+    return (
+        "test/playwright" in cmd
+        or "@playwright/mcp" in cmd
+        or "mcp__playwright" in cmd
+    )
 
 
 def _server_ready() -> bool:
@@ -57,7 +61,7 @@ def main() -> int:
         return 0
 
     cmd = str(data.get("tool_input", {}).get("command", ""))
-    if not _is_playwright_command(cmd):
+    if not _is_playwright_relevant(cmd):
         return 0
 
     if _server_ready():
