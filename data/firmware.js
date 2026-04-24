@@ -12,6 +12,14 @@
   }
 
   let uploadInProgress = false;
+
+  const setUploadBusy = (busy) => {
+    uploadInProgress = busy;
+    uploadButton.disabled = busy;
+    rebootButton.disabled = busy;
+    if (uploadFsButton) uploadFsButton.disabled = busy;
+  };
+
   const waitForReconnect = (feedbackEl, statusEl, onTimeout) => {
     let attempts = 0;
     const MAX_ATTEMPTS = 30;
@@ -53,13 +61,6 @@
 
     if (statusEl) statusEl.textContent = "Waiting for device to reboot…";
     window.setTimeout(poll, INITIAL_DELAY_MS);
-
-  const setUploadBusy = (busy) => {
-    uploadInProgress = busy;
-    uploadButton.disabled = busy;
-    rebootButton.disabled = busy;
-    if (uploadFsButton) uploadFsButton.disabled = busy;
-  };
   };
 
   const postReboot = async () => {
@@ -77,6 +78,41 @@
       feedback.textContent = "Reboot requested.";
     } catch (error) {
       feedback.textContent = `Reboot failed: ${window.PAApi.messageFor(error)}`;
+    }
+  };
+
+  // Shared upload helper using fetch().
+  // Note: Fetch does not provide upload progress tracking. To show progress,
+  // we would need ReadableStream / Blob.stream() which adds complexity.
+  // Instead, we show an indeterminate busy state and report completion/failure.
+  const doUpload = async (url, formData, statusEl, onSuccess, onFailure) => {
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        body: formData,
+      });
+
+      const contentType = response.headers.get("content-type") || "";
+      let errorMessage = null;
+
+      if (contentType.includes("application/json")) {
+        try {
+          const jsonData = await response.json();
+          errorMessage = jsonData.error || null;
+        } catch {
+          // ignore json parse errors
+        }
+      }
+
+      if (!response.ok) {
+        errorMessage = errorMessage || `HTTP ${response.status}`;
+        onFailure(errorMessage);
+        return;
+      }
+
+      onSuccess();
+    } catch (error) {
+      onFailure(error.message || "Upload error");
     }
   };
 
@@ -99,43 +135,21 @@
     }
 
     progressWrap.classList.remove("hidden");
-    progressBar.style.width = "0%";
+    progressBar.style.width = "50%";
     progressStatus.textContent = "Uploading...";
     feedback.textContent = `Uploading ${file.name}...`;
 
     setUploadBusy(true);
-    const xhr = new XMLHttpRequest();
-    xhr.open("POST", "/upload/firmware");
-
-    xhr.upload.onprogress = (event) => {
-      if (!event.lengthComputable) {
-        return;
-      }
-      const pct = Math.min(99, Math.round((event.loaded / event.total) * 100));
-      progressBar.style.width = `${pct}%`;
-      progressStatus.textContent = `Uploading... ${pct}%`;
-    };
-
-    xhr.onload = () => {
-      if (xhr.status === 200) {
-        progressBar.style.width = "100%";
-        waitForReconnect(feedback, progressStatus, () => setUploadBusy(false));
-      } else {
-        setUploadBusy(false);
-        progressStatus.textContent = "Upload failed";
-        feedback.textContent = xhr.responseText || `Upload failed (HTTP ${xhr.status}).`;
-      }
-    };
-
-    xhr.onerror = () => {
+    doUpload("/upload/firmware", formData, progressStatus, () => {
+      progressBar.style.width = "100%";
+      waitForReconnect(feedback, progressStatus, () => setUploadBusy(false));
+    }, (errorMessage) => {
       setUploadBusy(false);
       progressStatus.textContent = "Upload failed";
-      feedback.textContent = "Upload error.";
+      feedback.textContent = errorMessage || "Upload failed.";
       progressBar.style.width = "0%";
       progressWrap.classList.add("hidden");
-    };
-
-    xhr.send(formData);
+    });
   };
 
   // Filesystem upload
@@ -164,41 +178,21 @@
     }
 
     if (fsProgressWrap) fsProgressWrap.classList.remove("hidden");
-    if (fsProgressBar) fsProgressBar.style.width = "0%";
+    if (fsProgressBar) fsProgressBar.style.width = "50%";
     if (fsProgressStatus) fsProgressStatus.textContent = "Uploading...";
     feedback.textContent = `Uploading filesystem ${file.name}...`;
 
     setUploadBusy(true);
-    const xhr = new XMLHttpRequest();
-    xhr.open("POST", "/upload/filesystem");
-
-    xhr.upload.onprogress = (event) => {
-      if (!event.lengthComputable) return;
-      const pct = Math.min(99, Math.round((event.loaded / event.total) * 100));
-      if (fsProgressBar) fsProgressBar.style.width = `${pct}%`;
-      if (fsProgressStatus) fsProgressStatus.textContent = `Uploading... ${pct}%`;
-    };
-
-    xhr.onload = () => {
-      if (xhr.status === 200) {
-        if (fsProgressBar) fsProgressBar.style.width = "100%";
-        waitForReconnect(feedback, fsProgressStatus, () => setUploadBusy(false));
-      } else {
-        setUploadBusy(false);
-        if (fsProgressStatus) fsProgressStatus.textContent = "Upload failed";
-        feedback.textContent = xhr.responseText || `Filesystem upload failed (HTTP ${xhr.status}).`;
-      }
-    };
-
-    xhr.onerror = () => {
+    doUpload("/upload/filesystem", formData, fsProgressStatus, () => {
+      if (fsProgressBar) fsProgressBar.style.width = "100%";
+      waitForReconnect(feedback, fsProgressStatus, () => setUploadBusy(false));
+    }, (errorMessage) => {
       setUploadBusy(false);
       if (fsProgressStatus) fsProgressStatus.textContent = "Upload failed";
-      feedback.textContent = "Filesystem upload error.";
+      feedback.textContent = errorMessage || "Filesystem upload error.";
       if (fsProgressBar) fsProgressBar.style.width = "0%";
       if (fsProgressWrap) fsProgressWrap.classList.add("hidden");
-    };
-
-    xhr.send(formData);
+    });
   };
 
   uploadButton.addEventListener("click", uploadFirmware);
