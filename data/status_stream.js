@@ -22,7 +22,7 @@
       try {
         listener(eventType, payload);
       } catch (_error) {
-        // Listener errors must not break stream fan-out.
+        // swallow: listener errors must not break stream fan-out to other subscribers
       }
     });
   };
@@ -61,6 +61,7 @@
         emit("status", lastStatus);
         retryCount = 0;
       } catch (_error) {
+        // JSON parse failed — emit malformed payload error to subscribers
         emit("status_error", new Error("Malformed status event payload"));
       }
     });
@@ -97,7 +98,7 @@
         try {
           listener("status", lastStatus);
         } catch (_error) {
-          // Keep subscribe path resilient.
+          // swallow: listener error during initial status delivery — subscription succeeds
         }
       }
       connect();

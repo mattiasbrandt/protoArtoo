@@ -44,7 +44,7 @@
         fsVersion = String(result.data.fsVersion);
       }
     } catch (_error) {
-      // Keep fallback value.
+      // ignore: fetch error — keep fallback fsVersion value
     }
   };
 
@@ -57,6 +57,7 @@
       const result = await window.PAApi.get("/api/status", { timeoutMs: 3000, cache: "no-store" });
       renderFooter(result.data);
     } catch (_error) {
+      // fetch timeout/error — show unavailable message
       footer.textContent = "Firmware info unavailable";
     }
   };

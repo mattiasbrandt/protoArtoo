@@ -138,6 +138,7 @@
         .filter((token) => typeof token === 'string' && token.trim() !== '')
         .slice(0, ACTION_RECENTS_LIMIT);
     } catch (_error) {
+      // ignore: localStorage parse error — fall back to empty list
       recentActionTokens = [];
     }
   };
@@ -146,7 +147,7 @@
     try {
       window.localStorage.setItem(ACTION_RECENTS_KEY, JSON.stringify(recentActionTokens));
     } catch (_error) {
-      // Ignore localStorage persistence failures.
+      // ignore: localStorage write failed (e.g., private browsing) — not persisted
     }
   };
 
@@ -202,6 +203,7 @@
       }
       syncRecentActionTokensWithTargets();
     } catch (_err) {
+      // fetch error — fall back to hardcoded action targets
       console.warn('[RC] Failed to load action registry, using built-in list');
       syncRecentActionTokensWithTargets();
     }
