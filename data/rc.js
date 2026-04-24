@@ -6,6 +6,9 @@
   let triggerPulseState = {};
   
   // ── Learning mode state ───────────────────────────────────────────────────
+  // Flow: idle → learnActive (user clicks Learn) → await signal > threshold
+  //       → learnHit (candidate recorded) → selectedChannel (user confirms)
+  //       → editor opened. Timeout or user cancel returns to idle.
   let learnActive = false;
   let learnBaseline = null;    // raw snapshot taken when detect mode was entered
   let learnHit = null;         // { source:"sbus1"|"sbus2"|"pwm", channel:1-based, raw:value }
