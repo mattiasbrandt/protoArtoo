@@ -1196,6 +1196,7 @@
       return;
     }
 
+    // All row content inserted via textContent and createElement — XSS-safe.
     visibleEntries.forEach((entry) => {
       const tr = document.createElement("tr");
       tr.className = "sound-row-divider";
@@ -1538,6 +1539,7 @@
       trackNumberNote.textContent = "";
     }
 
+    // All row content inserted via textContent and createElement — XSS-safe.
     NAMED_SOUNDS.forEach((sound) => {
       const tr = document.createElement("tr");
       tr.className = "sound-row-divider";
@@ -1656,6 +1658,7 @@
     categoryTbody.innerHTML = "";
     categoryDirtyTrackers.clear();
 
+    // All row content inserted via textContent and createElement — XSS-safe.
     CATEGORY_SOUNDS.forEach((category) => {
       const tr = document.createElement("tr");
       tr.className = "sound-row-divider";
@@ -1772,6 +1775,7 @@
     if (!moodMapTbody) return;
     moodMapTbody.innerHTML = "";
 
+    // All row content inserted via textContent and createElement — XSS-safe.
     CATEGORY_SOUNDS.forEach((category, index) => {
       const tr = document.createElement("tr");
       tr.className = "sound-row-divider";
@@ -1801,6 +1805,7 @@
     systemTbody.innerHTML = "";
     systemDirtyTrackers.clear();
 
+    // All row content inserted via textContent and createElement — XSS-safe.
     SYSTEM_SOUNDS.forEach((sound) => {
       const tr = document.createElement("tr");
       tr.className = "sound-row-divider";
