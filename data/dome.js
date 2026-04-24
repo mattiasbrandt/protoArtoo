@@ -22,7 +22,6 @@
   const reloadEscButton = document.getElementById("reload-esc-button");
   const escFeedback = document.getElementById("esc-feedback");
 
-  let saveTimeout = null;
   let domeHardwareEnabled = true;
   let webControlEnabled = false;
   let webControlStatusKnown = false;

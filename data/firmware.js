@@ -85,7 +85,7 @@
   // Note: Fetch does not provide upload progress tracking. To show progress,
   // we would need ReadableStream / Blob.stream() which adds complexity.
   // Instead, we show an indeterminate busy state and report completion/failure.
-  const doUpload = async (url, formData, statusEl, onSuccess, onFailure) => {
+  const doUpload = async (url, formData, onSuccess, onFailure) => {
     try {
       const response = await fetch(url, {
         method: "POST",
@@ -140,7 +140,7 @@
     feedback.textContent = `Uploading ${file.name}...`;
 
     setUploadBusy(true);
-    doUpload("/upload/firmware", formData, progressStatus, () => {
+    doUpload("/upload/firmware", formData, () => {
       progressBar.style.width = "100%";
       waitForReconnect(feedback, progressStatus, () => setUploadBusy(false));
     }, (errorMessage) => {
@@ -183,7 +183,7 @@
     feedback.textContent = `Uploading filesystem ${file.name}...`;
 
     setUploadBusy(true);
-    doUpload("/upload/filesystem", formData, fsProgressStatus, () => {
+    doUpload("/upload/filesystem", formData, () => {
       if (fsProgressBar) fsProgressBar.style.width = "100%";
       waitForReconnect(feedback, fsProgressStatus, () => setUploadBusy(false));
     }, (errorMessage) => {

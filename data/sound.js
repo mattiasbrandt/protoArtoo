@@ -132,7 +132,6 @@
   // AudioDriver capability bits — must match audio_driver.h AUDIO_CAP_* constants
   const AUDIO_CAP_STATUS_QUERY = 0x01;
   const AUDIO_CAP_DEVICE_TYPE = 0x02;
-  const AUDIO_CAP_TRACK_COUNT = 0x04;
   const AUDIO_CAP_CURRENT_TRACK = 0x08;
   const AUDIO_CAP_QUERY_SAFE_PLAYING = 0x10;
 

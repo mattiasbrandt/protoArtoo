@@ -40,7 +40,6 @@
   const driveButtons = document.querySelectorAll("[data-drive-speed]");
   const presetButtons = document.querySelectorAll("[data-speed-preset]");
   let holdTimer = null;
-  let saveTimeout = null;
   let driveHardwareEnabled = true;
   let webControlEnabled = false;
   let estopLatched = false;

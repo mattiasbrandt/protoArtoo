@@ -1,7 +1,6 @@
 (() => {
   let selectedChannel = null;
   let rcSnapshot = null;
-  let configCache = null;
   let channelMap = {};
   let triggerPulseState = {};
   
@@ -395,8 +394,6 @@
       pressedLevel,
     };
   };
-
-  let saveTimeout = null;
 
   let debouncedSaveRcMode = () => {};
 
@@ -1105,7 +1102,6 @@
         card.classList.toggle('selected', selected);
         card.setAttribute('aria-pressed', selected ? 'true' : 'false');
       });
-      configCache = data;
       setSingleSbusRecvSelect(getSingleSbusRecvCh2(data));
       confirmedSbusRecvValue = sbusRecvSel?.value ?? null;
       updateRecvSel(mode);

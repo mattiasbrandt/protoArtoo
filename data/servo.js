@@ -27,7 +27,6 @@
   const aux2CalibSection     = document.getElementById("aux2-calib-section");
   const aux3CalibSection     = document.getElementById("aux3-calib-section");
 
-  const calibForm            = document.getElementById("calib-form");
   const arm1OpenUs           = document.getElementById("arm1-open-us");
   const arm1CloseUs          = document.getElementById("arm1-close-us");
   const arm2OpenUs           = document.getElementById("arm2-open-us");
