@@ -76,11 +76,6 @@
     if (source === undefined || source === null || source === "") return "--";
     return String(source);
   };
-  const showFeedback = (el, text, level = "") => {
-    if (!el) return;
-    el.textContent = text;
-    el.className = level ? `feedback ${level}` : "feedback";
-  };
 
   const parsePresetNumber = (value) => {
     const parsed = Number(value);
@@ -134,10 +129,6 @@
   };
 
 
-  const debounce = (fn, ms) => (...args) => {
-    window.clearTimeout(saveTimeout);
-    saveTimeout = window.setTimeout(() => fn(...args), ms);
-  };
 
   const setDriveHardwareEnabled = (enabled) => {
     driveHardwareEnabled = enabled;
@@ -167,52 +158,52 @@
   const postCommand = async (path, label) => {
     if (!window.PAApi) return;
     if (!driveHardwareEnabled && path.startsWith("/api/web-control")) {
-      showFeedback(controlFeedback, `Web control unavailable: ${s1EnableInSetup}.`, "warning");
+      window.PAUtils.showFeedback(controlFeedback, `Web control unavailable: ${s1EnableInSetup}.`, "warning");
       return;
     }
-    showFeedback(controlFeedback, `${label}...`);
+    window.PAUtils.showFeedback(controlFeedback, `${label}...`);
     try {
       await window.PAApi.postForm(path, {}, { timeoutMs: 3000 });
-      showFeedback(controlFeedback, `${label} sent at ${new Date().toLocaleTimeString()}`, "success");
+      window.PAUtils.showFeedback(controlFeedback, `${label} sent at ${new Date().toLocaleTimeString()}`, "success");
     } catch (error) {
-      showFeedback(controlFeedback, `${label} failed: ${window.PAApi.messageFor(error)}`, "error");
+      window.PAUtils.showFeedback(controlFeedback, `${label} failed: ${window.PAApi.messageFor(error)}`, "error");
     }
   };
 
   const postDriveCommand = async (speed, steer) => {
     if (!window.PAApi) return;
     if (!webControlEnabled) {
-      showFeedback(controlFeedback, "Drive unavailable: web control is disabled.", "warning");
+      window.PAUtils.showFeedback(controlFeedback, "Drive unavailable: web control is disabled.", "warning");
       return;
     }
     if (!driveHardwareEnabled) {
-      showFeedback(controlFeedback, `Drive controls unavailable: ${s1EnableInSetup}.`, "warning");
+      window.PAUtils.showFeedback(controlFeedback, `Drive controls unavailable: ${s1EnableInSetup}.`, "warning");
       return;
     }
     try {
       await window.PAApi.postForm("/api/drive", { speed: String(speed), steer: String(steer) }, { timeoutMs: 2500 });
     } catch (error) {
-      showFeedback(controlFeedback, `Drive command failed: ${window.PAApi.messageFor(error)}`, "error");
+      window.PAUtils.showFeedback(controlFeedback, `Drive command failed: ${window.PAApi.messageFor(error)}`, "error");
     }
   };
 
   const postSpeedPreset = async (preset) => {
     if (!window.PAApi) return;
     if (!webControlEnabled) {
-      showFeedback(presetFeedback, "Preset switch unavailable: web control is disabled.", "warning");
+      window.PAUtils.showFeedback(presetFeedback, "Preset switch unavailable: web control is disabled.", "warning");
       return;
     }
     if (!driveHardwareEnabled) {
-      showFeedback(presetFeedback, `Preset switch unavailable: ${s1EnableInSetup}.`, "warning");
+      window.PAUtils.showFeedback(presetFeedback, `Preset switch unavailable: ${s1EnableInSetup}.`, "warning");
       return;
     }
     if (estopLatched) {
-      showFeedback(presetFeedback, "Preset switch blocked while estop is latched.", "warning");
+      window.PAUtils.showFeedback(presetFeedback, "Preset switch blocked while estop is latched.", "warning");
       return;
     }
 
     const presetLabel = PRESET_LABELS[preset] || preset;
-    showFeedback(presetFeedback, `Applying ${presetLabel} preset...`);
+    window.PAUtils.showFeedback(presetFeedback, `Applying ${presetLabel} preset...`);
     try {
       const result = await window.PAApi.postForm("/api/drive/speed-preset", { preset }, { timeoutMs: 3000 });
       const applied = parsePresetNumber(result?.data?.speedLimitMax);
@@ -223,9 +214,9 @@
       }
       currentSpeedPreset = appliedPreset;
       updatePresetHighlight();
-      showFeedback(presetFeedback, `${presetLabel} preset applied${applied !== null ? ` (${applied})` : ""}.`, "success");
+      window.PAUtils.showFeedback(presetFeedback, `${presetLabel} preset applied${applied !== null ? ` (${applied})` : ""}.`, "success");
     } catch (error) {
-      showFeedback(presetFeedback, `Preset switch failed: ${window.PAApi.messageFor(error)}`, "error");
+      window.PAUtils.showFeedback(presetFeedback, `Preset switch failed: ${window.PAApi.messageFor(error)}`, "error");
     }
   };
 
@@ -331,17 +322,17 @@
     updatePresetDistinctHint();
     setDriveHardwareEnabled(Boolean(components.s1Hoverboard?.enabled));
 
-    showFeedback(configFeedback, `Settings loaded at ${new Date().toLocaleTimeString()}`, "success");
+    window.PAUtils.showFeedback(configFeedback, `Settings loaded at ${new Date().toLocaleTimeString()}`, "success");
   };
 
   const loadConfig = async () => {
     if (!window.PAApi) return;
-    showFeedback(configFeedback, "Loading settings...");
+    window.PAUtils.showFeedback(configFeedback, "Loading settings...");
     try {
       const result = await window.PAApi.get("/api/config", { timeoutMs: 3000 });
       renderConfig(result.data);
     } catch (error) {
-      showFeedback(configFeedback, `Failed to load settings: ${window.PAApi.messageFor(error)}`, "error");
+      window.PAUtils.showFeedback(configFeedback, `Failed to load settings: ${window.PAApi.messageFor(error)}`, "error");
     }
   };
 
@@ -354,11 +345,11 @@
 
     saveInFlight = true;
     if (!updatePresetDistinctHint()) {
-      showFeedback(configFeedback, "Speed presets must be distinct values.", "warning");
+      window.PAUtils.showFeedback(configFeedback, "Speed presets must be distinct values.", "warning");
       saveInFlight = false;
       return;
     }
-    showFeedback(configFeedback, "Saving...");
+    window.PAUtils.showFeedback(configFeedback, "Saving...");
     try {
       const result = await window.PAApi.postForm("/api/config", {
         speedLimitMax: speedLimitMax?.value ?? "600",
@@ -369,9 +360,9 @@
       }, { timeoutMs: 3000 });
 
       renderConfig(result.data);
-      showFeedback(configFeedback, `Saved at ${new Date().toLocaleTimeString()}`, "success");
+      window.PAUtils.showFeedback(configFeedback, `Saved at ${new Date().toLocaleTimeString()}`, "success");
     } catch (error) {
-      showFeedback(configFeedback, `Failed to save: ${window.PAApi.messageFor(error)}`, "error");
+      window.PAUtils.showFeedback(configFeedback, `Failed to save: ${window.PAApi.messageFor(error)}`, "error");
     } finally {
       saveInFlight = false;
       if (saveQueued) {
@@ -403,7 +394,7 @@
     });
   });
 
-  const debouncedSave = debounce(saveConfig, 300);
+  const debouncedSave = window.PAUtils.debounce(saveConfig, 300);
   speedLimitMax?.addEventListener("input", () => {
     currentSpeedLimitMax = parsePresetNumber(speedLimitMax?.value);
     updatePresetHighlight();
@@ -425,7 +416,7 @@
 
     if (!window.PAStatusStream.getLastStatus()) {
       refreshStatusOnce().catch((error) => {
-        showFeedback(controlFeedback, `Status load failed: ${window.PAApi?.messageFor(error) || "request failed"}`, "error");
+        window.PAUtils.showFeedback(controlFeedback, `Status load failed: ${window.PAApi?.messageFor(error) || "request failed"}`, "error");
       });
     }
   } else {

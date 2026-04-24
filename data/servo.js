@@ -50,14 +50,6 @@
   let auxTypes = { aux1: "none", aux2: "none", aux3: "none" };
   let auxConfigured = { aux1: false, aux2: false, aux3: false };
 
-  // Debounce utility for auto-save
-  let saveTimeout = null;
-  const debounce = (fn, ms) => {
-    return (...args) => {
-      clearTimeout(saveTimeout);
-      saveTimeout = setTimeout(() => fn(...args), ms);
-    };
-  };
 
 
   const escapeHtml = (value) => String(value ?? "")
@@ -365,7 +357,7 @@
     }
   };
 
-  const debouncedSave = debounce(saveCalib, 500);
+  const debouncedSave = window.PAUtils.debounce(saveCalib, 500);
 
   // Attach auto-save listeners to all calibration inputs
   const calibInputs = [arm1OpenUs, arm1CloseUs, arm2OpenUs, arm2CloseUs,

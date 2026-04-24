@@ -122,6 +122,21 @@
     });
   };
 
+  // Shared UI utilities
+  const showFeedback = (el, text, level = "") => {
+    if (!el) return;
+    el.textContent = text;
+    el.className = level ? `feedback ${level}` : "feedback";
+  };
+
+  const debounce = (fn, ms) => (...args) => {
+    const timeoutId = window.PAApi._debounceTimeouts?.get(fn);
+    if (timeoutId !== undefined) window.clearTimeout(timeoutId);
+    const newId = window.setTimeout(() => fn(...args), ms);
+    if (!window.PAApi._debounceTimeouts) window.PAApi._debounceTimeouts = new Map();
+    window.PAApi._debounceTimeouts.set(fn, newId);
+  };
+
   window.PAApi = {
     ApiError,
     request,
@@ -130,5 +145,10 @@
     postJson,
     messageFor,
     gateControls,
+  };
+
+  window.PAUtils = {
+    showFeedback,
+    debounce,
   };
 })();

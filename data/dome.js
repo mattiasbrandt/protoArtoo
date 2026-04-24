@@ -48,10 +48,6 @@
     el.className = `${sizeClass} ${classMap[state] || classMap.info}`;
   };
 
-  const debounce = (fn, ms) => (...args) => {
-    window.clearTimeout(saveTimeout);
-    saveTimeout = window.setTimeout(() => fn(...args), ms);
-  };
 
   const clampSpeed = (value) => {
     const parsed = Number(value);
@@ -275,7 +271,7 @@
     }
   };
 
-  const debouncedSave = debounce(saveEscConfig, 500);
+  const debouncedSave = window.PAUtils.debounce(saveEscConfig, 500);
 
   domeNeutral?.addEventListener("input", debouncedSave);
   domeMinPulse?.addEventListener("input", debouncedSave);

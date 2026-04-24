@@ -392,12 +392,6 @@
   };
 
   let saveTimeout = null;
-  const debounce = (fn, ms) => {
-    return (...args) => {
-      clearTimeout(saveTimeout);
-      saveTimeout = setTimeout(() => fn(...args), ms);
-    };
-  };
 
   let debouncedSaveRcMode = () => {};
 
@@ -1054,7 +1048,7 @@
     }
   };
 
-  debouncedSaveRcMode = debounce(saveRcMode, 250);
+  debouncedSaveRcMode = window.PAUtils.debounce(saveRcMode, 250);
 
   const switchRcMode = (mode) => {
     if (rcInputModeHidden) rcInputModeHidden.value = mode;
