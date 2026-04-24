@@ -17,6 +17,14 @@ hooks:
         - type: command
           if: "Bash(pio run * -t uploadfs*)"
           command: "python3 \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/backend_upload_gate.py"
+        - type: command
+          if: "Bash(git commit *)"
+          command: "python3 \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/backend_commit_guard.py"
+  PostToolUse:
+    - matcher: "Bash"
+      hooks:
+        - type: command
+          command: "python3 \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/backend_verification_tracker.py"
 ---
 
 You are a backend ESP32 firmware engineer for protoArtoo.
@@ -82,3 +90,18 @@ Reporting requirements:
 - Verification command results and any remaining hardware-only checks.
 - Validation classification: usb-standalone-verified, partial, or full-hardware-required.
 - Follow `.claude/verification-playbook.md` for command flow and reporting format.
+
+Required completion contract (must follow in order):
+1. Implement minimal code change slice.
+2. Run and pass software verification commands:
+  - `pio run -e protoArtoo`
+  - `pio test -e native`
+  - `pio check`
+3. If hardware is available, run upload/runtime verification; if not, explicitly classify as `partial` or `full-hardware-required` with blocker.
+4. Update active task notes in `tasks/` with what changed, verification evidence, and remaining checks.
+5. Record significant result in MemPalace (`mempalace_add_drawer` and/or `mempalace_diary_write`) before closing the task.
+6. Only then create commit using required phase scope format.
+
+Commit policy:
+- Do not run `git commit` before required software verification passes.
+- A hook enforces this by denying commits until the required verification commands have succeeded recently.
