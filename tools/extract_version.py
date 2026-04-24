@@ -68,6 +68,15 @@ version = _version_from_git() or _version_from_changelog() or "v0.0.0-dev"
 # Inject as PA_FIRMWARE_VERSION — must match the #ifndef guard in include/config.h
 env.Append(CPPDEFINES=[("PA_FIRMWARE_VERSION", f'\\"{version}\\"')])
 print(f"[extract_version.py] PA_FIRMWARE_VERSION={version}")
+
+# Write data/fw-version.json as a build artifact for quick git/reference checks.
+# Runtime firmware truth still comes from PA_FIRMWARE_VERSION in /api/status.
+fw_version_path = os.path.join(env.subst("$PROJECT_DIR"), "data", "fw-version.json")
+with open(fw_version_path, "w") as f:
+    json.dump({"firmwareVersion": version}, f, indent=2)
+    f.write("\n")
+print(f"[extract_version.py] fw-version.json -> {version}")
+
 # Write data/fs-version.json so the FS image carries the same version.
 # A stale FS will show a different string than FW on the footer, making
 # "forgot to uploadfs" immediately visible.

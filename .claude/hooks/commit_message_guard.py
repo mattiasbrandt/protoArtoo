@@ -21,7 +21,7 @@ COAUTHOR_LINE_PATTERN = re.compile(r"co-authored-by\s*:", re.IGNORECASE)
 COAUTHOR_TRAILER_PATTERN = re.compile(
     r"--trailer(?:=|\s+)[^\n]*co-authored-by", re.IGNORECASE
 )
-VERSION_GLOB = "data/*version*.json"
+VERSION_GLOBS = ("data/*version*.json",)
 
 
 def _deny(reason: str) -> None:
@@ -47,7 +47,7 @@ def _run_git(args: list[str], repo_dir: str) -> subprocess.CompletedProcess:
 
 
 def _version_file_issues(repo_dir: str) -> list[str]:
-    proc = _run_git(["status", "--porcelain", "--", VERSION_GLOB], repo_dir)
+    proc = _run_git(["status", "--porcelain", "--", *VERSION_GLOBS], repo_dir)
     if proc.returncode != 0:
         return []
 
@@ -98,7 +98,7 @@ def main() -> int:
         _deny(
             "Commit blocked: version metadata file(s) are not fully staged: "
             + "; ".join(version_issues)
-            + ". Stage them explicitly with 'git add data/*version*.json' (or revert) "
+                        + ". Stage them explicitly with 'git add data/*version*.json' (or revert) "
               "before committing to avoid leaving version metadata behind."
         )
         return 0
