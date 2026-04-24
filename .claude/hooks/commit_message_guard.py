@@ -6,6 +6,7 @@ import os
 import re
 import subprocess
 import sys
+from pathlib import Path
 
 ALLOWED_TYPES = "feat|fix|docs|refactor|chore|test|style|perf"
 ALLOWED_SCOPES = "drive|sbus|failsafe|dome|audio|servo|web|nvs|wifi|hw|plan|test|ci"
@@ -72,6 +73,39 @@ def _version_file_issues(repo_dir: str) -> list[str]:
     return issues
 
 
+def _version_pair_issue(repo_dir: str) -> str:
+    fw_path = Path(repo_dir) / "data" / "fw-version.json"
+    fs_path = Path(repo_dir) / "data" / "fs-version.json"
+
+    if not fw_path.exists() or not fs_path.exists():
+        return "data/fw-version.json and data/fs-version.json must both exist"
+
+    try:
+        fw_doc = json.loads(fw_path.read_text())
+        fs_doc = json.loads(fs_path.read_text())
+    except Exception:
+        return "version metadata JSON parse failed (fw-version.json or fs-version.json)"
+
+    fw = str(fw_doc.get("firmwareVersion", "")).strip()
+    fs = str(fs_doc.get("fsVersion", "")).strip()
+    expected_fs = f"fs-{fw}" if fw else ""
+
+    if not fw:
+        return "data/fw-version.json missing firmwareVersion"
+    if not fs:
+        return "data/fs-version.json missing fsVersion"
+    if fs != expected_fs:
+        return (
+            "version mismatch: expected data/fs-version.json fsVersion='"
+            + expected_fs
+            + "' to match data/fw-version.json firmwareVersion='"
+            + fw
+            + "'"
+        )
+
+    return ""
+
+
 def main() -> int:
     try:
         data = json.load(sys.stdin)
@@ -100,6 +134,15 @@ def main() -> int:
             + "; ".join(version_issues)
                         + ". Stage them explicitly with 'git add data/*version*.json' (or revert) "
               "before committing to avoid leaving version metadata behind."
+        )
+        return 0
+
+    pair_issue = _version_pair_issue(repo_dir)
+    if pair_issue:
+        _deny(
+            "Commit blocked: version metadata consistency check failed: "
+            + pair_issue
+            + ". Run the build/version generation step and stage both data version files."
         )
         return 0
 
