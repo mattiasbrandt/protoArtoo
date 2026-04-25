@@ -81,7 +81,7 @@
     ["rcCh6", "🕹️", "RC Channel 6"],
     ["s1Hoverboard", "🔌", "Hoverboard Drive"],
     ["s2Sound", "🔊", "Sound Module"],
-    ["s3DomeCtrl", "🔌", "Dome Controller"],
+    ["s3DomeCtrl", "🔌", "protoR2link"],
   ];
 
   const MOOD_LABELS = {

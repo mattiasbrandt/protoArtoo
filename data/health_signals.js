@@ -111,7 +111,7 @@
       return healthSignal(
         "off",
         "Disabled",
-        "state=disabled (dome controller disabled in config)"
+        "state=disabled (protoR2link disabled in config)"
       );
     }
     if (linkState === "connected") {

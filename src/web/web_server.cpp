@@ -611,7 +611,7 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
             const char* transportLabel = domeTransportLabel(domeActiveTransport);
             if (domeLastSeenMs == 0) {
                 snprintf(detail, sizeof(detail),
-                         "Heartbeat tx %lu, no dome heartbeat seen yet (transport %s)",
+                         "Heartbeat tx %lu, no protoR2link heartbeat seen yet (transport %s)",
                          (unsigned long)bodyHbTx, transportLabel);
                 ok = appendPeripheralStatus(pos, remaining, "s3DomeCtrl", "not_seen", detail) && ok;
             } else if ((uptimeMs - domeLastSeenMs) < 5000UL) {

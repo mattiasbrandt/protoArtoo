@@ -79,7 +79,7 @@ enum AuxLedEffect : uint8_t {
 };
 
 struct AuxLedState {
-    uint8_t pin;   // 0 when disabled; otherwise active GPIO number
+    uint8_t pin;  // 0 when disabled; otherwise active GPIO number
     uint8_t r;
     uint8_t g;
     uint8_t b;
@@ -153,6 +153,10 @@ struct RobotState {
     float dome_speed;
     bool sleepMode;
     uint32_t sleepSinceMs;
+    // Pending body->dome sleep sync frame (#PASL/#PAWU). Set by local sleep
+    // state transitions and consumed by DomeLinkTask when transport is available.
+    bool domeSleepSyncPending;
+    bool domeSleepSyncSleepMode;
 
     AuxLedState auxLed;
     // --- Failsafe state ---
@@ -208,14 +212,14 @@ struct RobotState {
     bool rcDebugMode;  // Enable verbose RC/SBUS logging when RC page is active
 
     // --- NVS-backed config (loaded at boot, written via web API) ---
-    int16_t cfg_speedLimitMax;      // Default: SPEED_LIMIT_MAX
-    int16_t cfg_speedPresetSlow;    // Default: SPEED_PRESET_SLOW
-    int16_t cfg_speedPresetNormal;  // Default: SPEED_PRESET_NORMAL
-    int16_t cfg_speedPresetTurbo;   // Default: SPEED_PRESET_TURBO
+    int16_t cfg_speedLimitMax;            // Default: SPEED_LIMIT_MAX
+    int16_t cfg_speedPresetSlow;          // Default: SPEED_PRESET_SLOW
+    int16_t cfg_speedPresetNormal;        // Default: SPEED_PRESET_NORMAL
+    int16_t cfg_speedPresetTurbo;         // Default: SPEED_PRESET_TURBO
     SpeedPresetId cfg_speedPresetActive;  // Default: Normal
-    uint32_t cfg_sbusTimeoutMs;     // Default: SBUS_TIMEOUT_MS
-    uint32_t cfg_webDriveTimeoutMs;  // Default: WEB_DRIVE_TIMEOUT_MS
-    uint8_t cfg_audioVolume;         // Default: 20 (0-30)
+    uint32_t cfg_sbusTimeoutMs;           // Default: SBUS_TIMEOUT_MS
+    uint32_t cfg_webDriveTimeoutMs;       // Default: WEB_DRIVE_TIMEOUT_MS
+    uint8_t cfg_audioVolume;              // Default: 20 (0-30)
     uint8_t cfg_logLevel;  // Runtime log verbosity: 1=Error 2=Info 3=Debug. NVS: log_level
 
     // NVS-backed named sound track indices (mirror AudioNamedTracks defaults).
@@ -338,7 +342,8 @@ struct RobotState {
     //
     // RC receiver inputs:
     RcInputMode cfg_rc_input_mode;
-    bool cfg_single_sbus_use_ch2;  // sbus_recv_ch2 — false=SBUS1 (GPIO15), true=SBUS2 (GPIO13); single_sbus mode only
+    bool cfg_single_sbus_use_ch2;  // sbus_recv_ch2 — false=SBUS1 (GPIO15), true=SBUS2 (GPIO13);
+                                   // single_sbus mode only
     bool cfg_enable_rc_ch1;  // en_rc_ch1 — CH1 (GPIO 15) — SBUS #1 (drive) OR Standard PWM CH1
     bool cfg_enable_rc_ch2;  // en_rc_ch2 — CH2 (GPIO 13) — SBUS #2 (dome) OR Standard PWM CH2
     bool
@@ -390,13 +395,13 @@ struct RobotState {
     // currentL/R = A × 100 from Gen2.x firmware only; 0 for FOC firmware.
     // feedbackValid is false until the first valid frame is received.
     // -------------------------------------------------------------------------
-    int16_t  hb_batteryRaw;
-    int16_t  hb_boardTempRaw;
-    int16_t  hb_speedR;
-    int16_t  hb_speedL;
-    int16_t  hb_currentL;
-    int16_t  hb_currentR;
-    bool     hb_feedbackValid;
+    int16_t hb_batteryRaw;
+    int16_t hb_boardTempRaw;
+    int16_t hb_speedR;
+    int16_t hb_speedL;
+    int16_t hb_currentL;
+    int16_t hb_currentR;
+    bool hb_feedbackValid;
     uint32_t hb_lastFeedbackMs;
 };
 

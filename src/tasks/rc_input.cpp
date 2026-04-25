@@ -21,23 +21,23 @@
 // =============================================================================
 
 #include <Arduino.h>
-#include <esp_task_wdt.h>
 #include <esp_system.h>
+#include <esp_task_wdt.h>
 
-#include "../../include/config.h"
 #include "../../include/audio_task.h"
-#include "../../include/system_sounds.h"
+#include "../../include/config.h"
+#include "../../include/dome_link.h"
+#include "../../include/dome_rx_parser.h"
+#include "../../include/drive_speed_preset.h"
 #include "../../include/ledc_pwm.h"
 #include "../../include/logging.h"
-#include "../../include/dome_rx_parser.h"
 #include "../../include/marcduino_helpers.h"
-#include "../../include/dome_link.h"
-#include "../../include/web_server.h"
-#include "../../include/drive_speed_preset.h"
 #include "../../include/rc_pwm_helpers.h"
 #include "../../include/robot_state.h"
 #include "../../include/sbus_decoder.h"
 #include "../../include/sbus_math.h"
+#include "../../include/system_sounds.h"
+#include "../../include/web_server.h"
 
 static const char* TAG = "RCInputTask";
 
@@ -71,10 +71,12 @@ static bool bindingSourceActive(const RcBindingConfig& binding, RcInputMode mode
         case RC_BINDING_PWM:
             return mode == RC_INPUT_STANDARD_PWM && binding.channel >= 1 && binding.channel <= 6;
         case RC_BINDING_SBUS1:
-            if (mode == RC_INPUT_SINGLE_SBUS) return !useCh2 && enableRcCh1;
+            if (mode == RC_INPUT_SINGLE_SBUS)
+                return !useCh2 && enableRcCh1;
             return mode == RC_INPUT_DUAL_SBUS && enableRcCh1;
         case RC_BINDING_SBUS2:
-            if (mode == RC_INPUT_SINGLE_SBUS) return useCh2 && enableRcCh2;
+            if (mode == RC_INPUT_SINGLE_SBUS)
+                return useCh2 && enableRcCh2;
             return mode == RC_INPUT_DUAL_SBUS && enableRcCh2;
         case RC_BINDING_NONE:
         default:
@@ -281,7 +283,6 @@ static bool setStationaryMode(bool stationary) {
     return audioQueuePlaySlot(AUDIO_SLOT_SYS_DRIVE_ON, SRC_INTERNAL);
 }
 
-
 static bool queueRandomTrackForAction(RobotActionId target) {
     const char* categoryLabel = randomSoundCategoryLabel(target);
     uint16_t lo = 0;
@@ -358,8 +359,7 @@ static bool queueRandomTrackForAction(RobotActionId target) {
                     categoryLabel, (unsigned)track);
         return false;
     }
-    PA_LOG_INFO(TAG, "random sound trigger: category=%s track=%u",
-                categoryLabel, (unsigned)track);
+    PA_LOG_INFO(TAG, "random sound trigger: category=%s track=%u", categoryLabel, (unsigned)track);
     return true;
 }
 
@@ -398,8 +398,8 @@ static void dispatchFullDroidSequence(int seqId) {
         taskEXIT_CRITICAL(&robotStateMux);
 
         if (estop) {
-            PA_LOG_WARN(TAG, "droid sequence servo blocked by estop: SE%02d -> body SE%d",
-                        seqId, bodyAction.bodySeqId);
+            PA_LOG_WARN(TAG, "droid sequence servo blocked by estop: SE%02d -> body SE%d", seqId,
+                        bodyAction.bodySeqId);
         } else if (!queueServoSequence((uint8_t)bodyAction.bodySeqId, SRC_SBUS)) {
             PA_LOG_WARN(TAG, "droid sequence servo queue full: SE%02d -> body SE%d", seqId,
                         bodyAction.bodySeqId);
@@ -526,12 +526,11 @@ static void processTriggerAction(RobotActionId target, const char* payload, bool
                 sleepMode = !robotState.sleepMode;
                 robotState.sleepMode = sleepMode;
                 robotState.sleepSinceMs = sleepMode ? nowMs : 0U;
+                robotState.domeSleepSyncPending = true;
+                robotState.domeSleepSyncSleepMode = sleepMode;
                 taskEXIT_CRITICAL(&robotStateMux);
 
                 requestStatusBroadcastNow();
-                if (domeConnected()) {
-                    domeQueueTx(sleepMode ? "#PASL" : "#PAWU");
-                }
             }
             break;
         case SYSTEM_ACTION_OP_MODE:
@@ -721,8 +720,8 @@ static void dispatchStandardPwmInputs() {
 
     int rawDome = 0;
     if (cfg.enableDome &&
-        bindingSourceActive(cfg.domeSpeed, RC_INPUT_STANDARD_PWM, cfg.enableRc[0],
-                            cfg.enableRc[1], false) &&
+        bindingSourceActive(cfg.domeSpeed, RC_INPUT_STANDARD_PWM, cfg.enableRc[0], cfg.enableRc[1],
+                            false) &&
         readPwmBindingRaw(cfg.domeSpeed, pulses, &rawDome) &&
         cfg.enableRc[cfg.domeSpeed.channel - 1]) {
         queueDomeCommand(applyRcAnalogCalibration(rawDome, cfg.domeSpeed, nullptr), SRC_SBUS);
@@ -736,17 +735,20 @@ static void dispatchStandardPwmInputs() {
     int rawArm2 = 0;
     int rawSound = 0;
     if (cfg.enableArm1 &&
-        bindingSourceActive(cfg.arm1, RC_INPUT_STANDARD_PWM, cfg.enableRc[0], cfg.enableRc[1], false) &&
+        bindingSourceActive(cfg.arm1, RC_INPUT_STANDARD_PWM, cfg.enableRc[0], cfg.enableRc[1],
+                            false) &&
         readPwmBindingRaw(cfg.arm1, pulses, &rawArm1) && cfg.enableRc[cfg.arm1.channel - 1]) {
         dispatchSwitchAction(cfg.arm1, rawArm1, 0, &lastArm1State);
     }
     if (cfg.enableArm2 &&
-        bindingSourceActive(cfg.arm2, RC_INPUT_STANDARD_PWM, cfg.enableRc[0], cfg.enableRc[1], false) &&
+        bindingSourceActive(cfg.arm2, RC_INPUT_STANDARD_PWM, cfg.enableRc[0], cfg.enableRc[1],
+                            false) &&
         readPwmBindingRaw(cfg.arm2, pulses, &rawArm2) && cfg.enableRc[cfg.arm2.channel - 1]) {
         dispatchSwitchAction(cfg.arm2, rawArm2, 1, &lastArm2State);
     }
     if (cfg.enableSound &&
-        bindingSourceActive(cfg.sound, RC_INPUT_STANDARD_PWM, cfg.enableRc[0], cfg.enableRc[1], false) &&
+        bindingSourceActive(cfg.sound, RC_INPUT_STANDARD_PWM, cfg.enableRc[0], cfg.enableRc[1],
+                            false) &&
         readPwmBindingRaw(cfg.sound, pulses, &rawSound) && cfg.enableRc[cfg.sound.channel - 1]) {
         handleSoundTrigger(rcAnalogToSwitchState(rawSound, cfg.sound) == RC_SWITCH_HIGH,
                            &lastSoundPressed);
@@ -893,10 +895,9 @@ void rcInputTask(void* pvParameters) {
     bool useCh2 = robotState.cfg_single_sbus_use_ch2;
     taskEXIT_CRITICAL(&robotStateMux);
 
-    bool driveSbusEnabled = is_drive_sbus_mode(rcInputMode) &&
-                               (rcInputMode == RC_INPUT_SINGLE_SBUS
-                                   ? (useCh2 ? enableRcCh2 : enableRcCh1)
-                                   : enableRcCh1);
+    bool driveSbusEnabled =
+        is_drive_sbus_mode(rcInputMode) &&
+        (rcInputMode == RC_INPUT_SINGLE_SBUS ? (useCh2 ? enableRcCh2 : enableRcCh1) : enableRcCh1);
     bool domeSbusEnabled = is_dome_sbus_mode(rcInputMode) && enableRcCh2;
 
     // Do not early-idle when SBUS channels are currently disabled:
@@ -924,11 +925,10 @@ void rcInputTask(void* pvParameters) {
     } else if (rcInputMode == RC_INPUT_SINGLE_SBUS) {
         if (driveSbusEnabled) {
             int sbusRxPin = useCh2 ? PIN_SBUS2_RX : PIN_SBUS1_RX;
-            PA_LOG_INFO(TAG, "started — single_sbus mode, SBUS%d GPIO%d active",
-                        useCh2 ? 2 : 1, sbusRxPin);
+            PA_LOG_INFO(TAG, "started — single_sbus mode, SBUS%d GPIO%d active", useCh2 ? 2 : 1,
+                        sbusRxPin);
         } else {
-            PA_LOG_INFO(TAG,
-                        "started — single_sbus mode, SBUS%d disabled (%s=false) — idle",
+            PA_LOG_INFO(TAG, "started — single_sbus mode, SBUS%d disabled (%s=false) — idle",
                         useCh2 ? 2 : 1, useCh2 ? "en_rc_ch2" : "en_rc_ch1");
         }
     } else {
@@ -974,11 +974,11 @@ void rcInputTask(void* pvParameters) {
         // Detect single_sbus receiver selection change BEFORE the reinit guard.
         // If change detection ran after reinit, we could init-then-teardown the decoder
         // in the same iteration when useCh2 changes while the decoder is uninitialized.
-        if (rcInputMode == RC_INPUT_SINGLE_SBUS && useCh2 != lastUseCh2
-                && sbus_drive.isInitialized()) {
+        if (rcInputMode == RC_INPUT_SINGLE_SBUS && useCh2 != lastUseCh2 &&
+            sbus_drive.isInitialized()) {
             sbus_drive.end();
             PA_LOG_INFO(TAG, "single_sbus receiver changed to SBUS%d \u2014 reinitializing",
-                         useCh2 ? 2 : 1);
+                        useCh2 ? 2 : 1);
         }
         // Only track lastUseCh2 while in single_sbus mode. Freezing the baseline across
         // mode transitions prevents a spurious reinit when returning to single_sbus after
@@ -1167,22 +1167,25 @@ void rcInputTask(void* pvParameters) {
                         taskEXIT_CRITICAL(&robotStateMux);
                         if (rcDebug) {
                             SbusDecoderDebugStats driveStats = sbus_drive.debugStats();
-                            PA_LOG_DEBUG(TAG,
-                                         "SBUS1 watchdog decode stats: rx_done=%lu queued=%lu short=%lu ok=%lu fail=%lu bitlow=%lu extract=%lu hdr=%lu ftr=%lu last_ftr=0x%02x rearm=%lu parity=%lu syms(last=%lu max=%lu)",
-                                         (unsigned long)driveStats.rxDoneCount,
-                                         (unsigned long)driveStats.queuedCount,
-                                         (unsigned long)driveStats.shortDropCount,
-                                         (unsigned long)driveStats.parseOkCount,
-                                         (unsigned long)driveStats.parseFailCount,
-                                         (unsigned long)driveStats.bitCountLowCount,
-                                         (unsigned long)driveStats.extractFailCount,
-                                         (unsigned long)driveStats.headerMismatchCount,
-                                         (unsigned long)driveStats.footerMismatchCount,
-                                         (unsigned int)driveStats.lastRejectedFooter,
-                                         (unsigned long)driveStats.rearmFailCount,
-                                         (unsigned long)driveStats.parityFailCount,
-                                         (unsigned long)driveStats.lastSymbolCount,
-                                         (unsigned long)driveStats.maxSymbolCount);
+                            PA_LOG_DEBUG(
+                                TAG,
+                                "SBUS1 watchdog decode stats: rx_done=%lu queued=%lu short=%lu "
+                                "ok=%lu fail=%lu bitlow=%lu extract=%lu hdr=%lu ftr=%lu "
+                                "last_ftr=0x%02x rearm=%lu parity=%lu syms(last=%lu max=%lu)",
+                                (unsigned long)driveStats.rxDoneCount,
+                                (unsigned long)driveStats.queuedCount,
+                                (unsigned long)driveStats.shortDropCount,
+                                (unsigned long)driveStats.parseOkCount,
+                                (unsigned long)driveStats.parseFailCount,
+                                (unsigned long)driveStats.bitCountLowCount,
+                                (unsigned long)driveStats.extractFailCount,
+                                (unsigned long)driveStats.headerMismatchCount,
+                                (unsigned long)driveStats.footerMismatchCount,
+                                (unsigned int)driveStats.lastRejectedFooter,
+                                (unsigned long)driveStats.rearmFailCount,
+                                (unsigned long)driveStats.parityFailCount,
+                                (unsigned long)driveStats.lastSymbolCount,
+                                (unsigned long)driveStats.maxSymbolCount);
                         }
                     }
                 }
@@ -1271,22 +1274,25 @@ void rcInputTask(void* pvParameters) {
                         taskEXIT_CRITICAL(&robotStateMux);
                         if (rcDebug) {
                             SbusDecoderDebugStats domeStats = sbus_dome.debugStats();
-                            PA_LOG_DEBUG(TAG,
-                                         "SBUS2 watchdog decode stats: rx_done=%lu queued=%lu short=%lu ok=%lu fail=%lu bitlow=%lu extract=%lu hdr=%lu ftr=%lu last_ftr=0x%02x rearm=%lu parity=%lu syms(last=%lu max=%lu)",
-                                         (unsigned long)domeStats.rxDoneCount,
-                                         (unsigned long)domeStats.queuedCount,
-                                         (unsigned long)domeStats.shortDropCount,
-                                         (unsigned long)domeStats.parseOkCount,
-                                         (unsigned long)domeStats.parseFailCount,
-                                         (unsigned long)domeStats.bitCountLowCount,
-                                         (unsigned long)domeStats.extractFailCount,
-                                         (unsigned long)domeStats.headerMismatchCount,
-                                         (unsigned long)domeStats.footerMismatchCount,
-                                         (unsigned int)domeStats.lastRejectedFooter,
-                                         (unsigned long)domeStats.rearmFailCount,
-                                         (unsigned long)domeStats.parityFailCount,
-                                         (unsigned long)domeStats.lastSymbolCount,
-                                         (unsigned long)domeStats.maxSymbolCount);
+                            PA_LOG_DEBUG(
+                                TAG,
+                                "SBUS2 watchdog decode stats: rx_done=%lu queued=%lu short=%lu "
+                                "ok=%lu fail=%lu bitlow=%lu extract=%lu hdr=%lu ftr=%lu "
+                                "last_ftr=0x%02x rearm=%lu parity=%lu syms(last=%lu max=%lu)",
+                                (unsigned long)domeStats.rxDoneCount,
+                                (unsigned long)domeStats.queuedCount,
+                                (unsigned long)domeStats.shortDropCount,
+                                (unsigned long)domeStats.parseOkCount,
+                                (unsigned long)domeStats.parseFailCount,
+                                (unsigned long)domeStats.bitCountLowCount,
+                                (unsigned long)domeStats.extractFailCount,
+                                (unsigned long)domeStats.headerMismatchCount,
+                                (unsigned long)domeStats.footerMismatchCount,
+                                (unsigned int)domeStats.lastRejectedFooter,
+                                (unsigned long)domeStats.rearmFailCount,
+                                (unsigned long)domeStats.parityFailCount,
+                                (unsigned long)domeStats.lastSymbolCount,
+                                (unsigned long)domeStats.maxSymbolCount);
                         }
                     }
 
@@ -1318,14 +1324,18 @@ void rcInputTask(void* pvParameters) {
                 taskENTER_CRITICAL(&robotStateMux);
                 bool rcDebug = robotState.rcDebugMode;
                 taskEXIT_CRITICAL(&robotStateMux);
-                if (waitingDrive) PA_LOG_INFO(TAG, "SBUS1 waiting for first frame");
-                if (waitingDome)  PA_LOG_INFO(TAG, "SBUS2 waiting for first frame");
+                if (waitingDrive)
+                    PA_LOG_INFO(TAG, "SBUS1 waiting for first frame");
+                if (waitingDome)
+                    PA_LOG_INFO(TAG, "SBUS2 waiting for first frame");
                 if (rcDebug) {
                     SbusDecoderDebugStats driveStats = sbus_drive.debugStats();
                     SbusDecoderDebugStats domeStats = sbus_dome.debugStats();
                     if (waitingDrive) {
                         PA_LOG_DEBUG(TAG,
-                                     "SBUS1 decode stats: rx_done=%lu queued=%lu short=%lu ok=%lu fail=%lu bitlow=%lu extract=%lu hdr=%lu ftr=%lu last_ftr=0x%02x rearm=%lu parity=%lu syms(last=%lu max=%lu)",
+                                     "SBUS1 decode stats: rx_done=%lu queued=%lu short=%lu ok=%lu "
+                                     "fail=%lu bitlow=%lu extract=%lu hdr=%lu ftr=%lu "
+                                     "last_ftr=0x%02x rearm=%lu parity=%lu syms(last=%lu max=%lu)",
                                      (unsigned long)driveStats.rxDoneCount,
                                      (unsigned long)driveStats.queuedCount,
                                      (unsigned long)driveStats.shortDropCount,
@@ -1343,7 +1353,9 @@ void rcInputTask(void* pvParameters) {
                     }
                     if (waitingDome) {
                         PA_LOG_DEBUG(TAG,
-                                     "SBUS2 decode stats: rx_done=%lu queued=%lu short=%lu ok=%lu fail=%lu bitlow=%lu extract=%lu hdr=%lu ftr=%lu last_ftr=0x%02x rearm=%lu parity=%lu syms(last=%lu max=%lu)",
+                                     "SBUS2 decode stats: rx_done=%lu queued=%lu short=%lu ok=%lu "
+                                     "fail=%lu bitlow=%lu extract=%lu hdr=%lu ftr=%lu "
+                                     "last_ftr=0x%02x rearm=%lu parity=%lu syms(last=%lu max=%lu)",
                                      (unsigned long)domeStats.rxDoneCount,
                                      (unsigned long)domeStats.queuedCount,
                                      (unsigned long)domeStats.shortDropCount,

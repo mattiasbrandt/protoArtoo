@@ -20,10 +20,10 @@
 #include "dome_link.h"
 
 #include <Arduino.h>
+#include <ESPmDNS.h>
 #include <HTTPClient.h>
 #include <WiFi.h>
 #include <WiFiUdp.h>
-#include <ESPmDNS.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
 
@@ -186,7 +186,8 @@ static bool resolveDomePeerIp(uint32_t nowMs, bool staConnected, bool cachedPeer
     }
 
     *inOutPeerIp = resolved;
-    PA_LOG_INFO(TAG, "mDNS resolved %s.local -> %s", kDomeMdnsHost, inOutPeerIp->toString().c_str());
+    PA_LOG_INFO(TAG, "mDNS resolved %s.local -> %s", kDomeMdnsHost,
+                inOutPeerIp->toString().c_str());
     return true;
 }
 
@@ -480,6 +481,40 @@ void domeLinkTask(void* pvParameters) {
 
         setTransportState(desiredTransport, s_uartOwned);
 
+        bool sleepSyncPending = false;
+        bool sleepSyncSleepMode = false;
+        taskENTER_CRITICAL(&robotStateMux);
+        sleepSyncPending = robotState.domeSleepSyncPending;
+        sleepSyncSleepMode = robotState.domeSleepSyncSleepMode;
+        taskEXIT_CRITICAL(&robotStateMux);
+
+        if (sleepSyncPending) {
+            const char* sleepSyncCmd = sleepSyncSleepMode ? MD_BODY_SLEEP : MD_BODY_WAKE;
+            bool syncSent = false;
+
+            if (desiredTransport == DOME_LINK_TRANSPORT_UART && s_uartOwned) {
+                s_domeSerial.print(sleepSyncCmd);
+                PA_LOG_INFO(TAG, "TX UART sleep sync: %s", sleepSyncSleepMode ? "sleep" : "wake");
+                syncSent = true;
+            } else if (desiredTransport == DOME_LINK_TRANSPORT_WIFI && staConnected && peerKnown) {
+                syncSent = sendCommandOverWifi(peerIp, sleepSyncCmd);
+                if (syncSent) {
+                    PA_LOG_INFO(TAG, "TX WiFi sleep sync (%s): %s",
+                                peerManual ? "manual-ip" : "mdns",
+                                sleepSyncSleepMode ? "sleep" : "wake");
+                }
+            }
+
+            if (syncSent) {
+                taskENTER_CRITICAL(&robotStateMux);
+                if (robotState.domeSleepSyncPending &&
+                    robotState.domeSleepSyncSleepMode == sleepSyncSleepMode) {
+                    robotState.domeSleepSyncPending = false;
+                }
+                taskEXIT_CRITICAL(&robotStateMux);
+            }
+        }
+
         while (xQueueReceive(domeTxQueue, &txCmd, 0) == pdTRUE) {
             if (desiredTransport == DOME_LINK_TRANSPORT_UART && s_uartOwned) {
                 s_domeSerial.print(txCmd.buf);
@@ -506,8 +541,7 @@ void domeLinkTask(void* pvParameters) {
             } else if (desiredTransport == DOME_LINK_TRANSPORT_WIFI && staConnected && peerKnown) {
                 if (sendHeartbeatOverUdp(peerIp)) {
                     incrementBodyHeartbeatTx();
-                    PA_LOG_DEBUG(TAG, "TX WiFi heartbeat (%s)",
-                                 peerManual ? "manual-ip" : "mdns");
+                    PA_LOG_DEBUG(TAG, "TX WiFi heartbeat (%s)", peerManual ? "manual-ip" : "mdns");
                 }
             }
         }

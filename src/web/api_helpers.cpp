@@ -7,13 +7,14 @@
 
 #include "api_helpers.h"
 
-#include "config.h"
 #include <cerrno>
 #include <climits>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+
+#include "config.h"
 
 bool parseDriveValue(const char* raw, int16_t* out) {
     if (raw == nullptr || raw[0] == '\0') {
@@ -74,10 +75,10 @@ bool parseBoolValue(const char* raw, bool* out) {
     return false;
 }
 
-
-void formatConfigJson(char* buf, size_t bufSize, int16_t speedLimitMax, uint32_t webDriveTimeoutMs) {
-    snprintf(buf, bufSize, "{\"speedLimitMax\":%d,\"webDriveTimeoutMs\":%lu}",
-             (int)speedLimitMax, (unsigned long)webDriveTimeoutMs);
+void formatConfigJson(char* buf, size_t bufSize, int16_t speedLimitMax,
+                      uint32_t webDriveTimeoutMs) {
+    snprintf(buf, bufSize, "{\"speedLimitMax\":%d,\"webDriveTimeoutMs\":%lu}", (int)speedLimitMax,
+             (unsigned long)webDriveTimeoutMs);
 }
 
 void formatWifiJson(char* buf, size_t bufSize, const char* apSsid, const char* apIp,
@@ -99,10 +100,10 @@ void formatSerialJson(char* buf, size_t bufSize, bool domeLinkActive, unsigned l
              "\"hardwareRequired\":true,\"note\":\"Firmware path active; full behavior needs Artoo "
              "PCB + hoverboard chain\"},"
              "\"sound\":{\"label\":\"S2\",\"name\":\"Sound\",\"active\":false,\"hardwareRequired\":"
-             "true,\"note\":\"Electrically defined, phase 4 audio integration\"},"
-             "\"dome\":{\"label\":\"S3\",\"name\":\"Dome "
-             "Control\",\"active\":%s,\"heartbeatRx\":%lu,\"heartbeatTx\":%lu,\"hardwareRequired\":"
-             "true,\"note\":\"Body-dome link reserved for later phase integration\"}"
+             "true,\"note\":\"Requires S2 wiring and a supported sound module\"},"
+             "\"dome\":{\"label\":\"S3\",\"name\":\"protoR2link\",\"active\":%s,\"heartbeatRx\":%"
+             "lu,\"heartbeatTx\":%lu,\"hardwareRequired\":"
+             "true,\"note\":\"Body-dome serial transport over S3 (GPIO 33/34)\"}"
              "}",
              domeLinkActive ? "true" : "false", domeHbRx, bodyHbTx);
 }
@@ -130,10 +131,9 @@ void formatHealthJson(char* buf, size_t bufSize, bool estop, bool sbusSignalLost
              fsReady ? "true" : "false", heapFree, heapMin, heapLargestBlock, wifiRssi);
 }
 
-void formatAudioStatusJson(char* buf, size_t bufSize, const char* driverName,
-                           uint8_t capabilities, bool linkOk, bool active,
-                           uint8_t playState, uint8_t device, uint16_t totalTracks,
-                           uint16_t currentTrack) {
+void formatAudioStatusJson(char* buf, size_t bufSize, const char* driverName, uint8_t capabilities,
+                           bool linkOk, bool active, uint8_t playState, uint8_t device,
+                           uint16_t totalTracks, uint16_t currentTrack) {
     // playState labels per datasheet: 0=stop 1=playing 2=paused 0xFF=unknown
     const char* playSt = (playState == 0x00)   ? "stop"
                          : (playState == 0x01) ? "playing"
@@ -155,14 +155,13 @@ void formatAudioStatusJson(char* buf, size_t bufSize, const char* driverName,
              (unsigned)currentTrack);
 }
 
-
 bool formatSleepControlJson(char* buf, size_t bufSize, bool sleepMode, bool changed) {
     if (buf == nullptr || bufSize == 0) {
         return false;
     }
 
     int written = snprintf(buf, bufSize, "{\"ok\":true,\"sleepMode\":%s,\"changed\":%s}",
-                         sleepMode ? "true" : "false", changed ? "true" : "false");
+                           sleepMode ? "true" : "false", changed ? "true" : "false");
     return written > 0 && (size_t)written < bufSize;
 }
 
@@ -178,20 +177,20 @@ bool formatSpeedPresetResponseJson(char* buf, size_t bufSize, SpeedPresetId pres
         return false;
     }
 
-    int written = snprintf(buf, bufSize,
-                         "{\"ok\":true,\"preset\":\"%s\",\"speedLimitMax\":%d}",
-                         speedPresetIdToString(preset), (int)speedLimitMax);
+    int written = snprintf(buf, bufSize, "{\"ok\":true,\"preset\":\"%s\",\"speedLimitMax\":%d}",
+                           speedPresetIdToString(preset), (int)speedLimitMax);
     return written > 0 && (size_t)written < bufSize;
 }
 
-bool formatAuxLedStateJson(char* buf, size_t bufSize, uint8_t pin, uint8_t r, uint8_t g,
-                           uint8_t b, const char* effect) {
+bool formatAuxLedStateJson(char* buf, size_t bufSize, uint8_t pin, uint8_t r, uint8_t g, uint8_t b,
+                           const char* effect) {
     if (buf == nullptr || bufSize == 0 || effect == nullptr) {
         return false;
     }
 
-    int written = snprintf(buf, bufSize,
-                         "{\"ok\":true,\"auxLed\":{\"pin\":%u,\"r\":%u,\"g\":%u,\"b\":%u,\"effect\":\"%s\"}}",
-                         (unsigned)pin, (unsigned)r, (unsigned)g, (unsigned)b, effect);
+    int written = snprintf(
+        buf, bufSize,
+        "{\"ok\":true,\"auxLed\":{\"pin\":%u,\"r\":%u,\"g\":%u,\"b\":%u,\"effect\":\"%s\"}}",
+        (unsigned)pin, (unsigned)r, (unsigned)g, (unsigned)b, effect);
     return written > 0 && (size_t)written < bufSize;
 }

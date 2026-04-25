@@ -19,7 +19,6 @@
 #include "api_drive.h"
 #include "api_helpers.h"
 #include "logging.h"
-#include "dome_link.h"
 #include "robot_state.h"
 #include "web_server.h"
 
@@ -52,6 +51,8 @@ static bool setSleepModeState(bool sleepMode, bool* changedOut) {
     if (robotState.sleepMode != sleepMode) {
         robotState.sleepMode = sleepMode;
         robotState.sleepSinceMs = sleepMode ? nowMs : 0U;
+        robotState.domeSleepSyncPending = true;
+        robotState.domeSleepSyncSleepMode = sleepMode;
         changed = true;
     }
     taskEXIT_CRITICAL(&robotStateMux);
@@ -82,9 +83,6 @@ void registerSystemRoutes(AsyncWebServer& server) {
 
         bool changed = false;
         setSleepModeState(true, &changed);
-        if (changed && domeConnected()) {
-            domeQueueTx("#PASL");
-        }
 
         char body[96];
         if (!formatSleepControlJson(body, sizeof(body), true, changed)) {
@@ -106,9 +104,6 @@ void registerSystemRoutes(AsyncWebServer& server) {
 
         bool changed = false;
         setSleepModeState(false, &changed);
-        if (changed && domeConnected()) {
-            domeQueueTx("#PAWU");
-        }
 
         char body[96];
         if (!formatSleepControlJson(body, sizeof(body), false, changed)) {
@@ -142,8 +137,9 @@ void registerSystemRoutes(AsyncWebServer& server) {
 
         if (sleepMode && rawCommand.length() > 0) {
             const char prefix = rawCommand[0];
-            bool blockedBySleep = prefix == '$' || prefix == ':' || prefix == '#' || prefix == '*' ||
-                                  prefix == '@' || prefix == '%' || prefix == '&' || prefix == '!';
+            bool blockedBySleep = prefix == '$' || prefix == ':' || prefix == '#' ||
+                                  prefix == '*' || prefix == '@' || prefix == '%' ||
+                                  prefix == '&' || prefix == '!';
             if (blockedBySleep) {
                 req->send(423, "application/json",
                           "{\"error\":\"sleeping\",\"hint\":\"POST /api/wake\"}");
@@ -202,8 +198,8 @@ void registerSystemRoutes(AsyncWebServer& server) {
                     setUploadState(req, UPLOAD_STATE_REJECT_OVERSIZE);
                     return;
                 }
-                PA_LOG_INFO(TAG, "OTA firmware upload started: %s (%u bytes)",
-                            filename.c_str(), (unsigned)contentLength);
+                PA_LOG_INFO(TAG, "OTA firmware upload started: %s (%u bytes)", filename.c_str(),
+                            (unsigned)contentLength);
                 // Use UPDATE_SIZE_UNKNOWN: req->contentLength() is the full multipart
                 // body (including boundary overhead), not the raw firmware binary size.
                 // Passing the exact content-length causes Update.end() to fail a size
@@ -237,8 +233,9 @@ void registerSystemRoutes(AsyncWebServer& server) {
             setUploadState(req, UPLOAD_STATE_NONE);
             if (uploadState == UPLOAD_STATE_REJECT_OVERSIZE) {
                 PA_LOG_ERROR(TAG, "POST /upload/filesystem - rejected: payload too large");
-                req->send(413, "application/json",
-                          "{\"ok\":false,\"error\":\"filesystem image exceeds upload size limit\"}");
+                req->send(
+                    413, "application/json",
+                    "{\"ok\":false,\"error\":\"filesystem image exceeds upload size limit\"}");
                 return;
             }
             if (uploadState == UPLOAD_STATE_REJECT_INTERNAL || Update.hasError()) {
@@ -248,8 +245,7 @@ void registerSystemRoutes(AsyncWebServer& server) {
                 return;
             }
 
-            PA_LOG_INFO(TAG,
-                        "[WEB] POST /upload/filesystem - update complete, reboot scheduled");
+            PA_LOG_INFO(TAG, "[WEB] POST /upload/filesystem - update complete, reboot scheduled");
             req->send(200, "application/json", "{\"ok\":true}");
             requestSystemRestart(1000);
         },
@@ -267,8 +263,8 @@ void registerSystemRoutes(AsyncWebServer& server) {
                     setUploadState(req, UPLOAD_STATE_REJECT_OVERSIZE);
                     return;
                 }
-                PA_LOG_INFO(TAG, "OTA filesystem upload started: %s (%u bytes)",
-                            filename.c_str(), (unsigned)contentLength);
+                PA_LOG_INFO(TAG, "OTA filesystem upload started: %s (%u bytes)", filename.c_str(),
+                            (unsigned)contentLength);
                 // Use UPDATE_SIZE_UNKNOWN for the same reason as firmware: multipart
                 // content-length includes boundary overhead that Update.end() would
                 // mismatch against written bytes, causing silent rollback.
