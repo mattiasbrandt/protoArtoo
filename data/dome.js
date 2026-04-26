@@ -97,8 +97,11 @@
 
   const updateDomeControlsEnabled = () => {
     const configEnabled = domeHardwareEnabled;
-    window.PAApi.gateControls([domeNeutral, domeMinPulse, domeMaxPulse, domeSpeedLimit, reloadEscButton],
-                              configEnabled);
+    window.PAApi.gateControls(
+      [domeNeutral, domeMinPulse, domeMaxPulse, domeSpeedLimit, reloadEscButton,
+       domeRndEnable, domeRndSpeed, domeRndPauseMin, domeRndPauseMax, domeRndMoveMs, reloadRndButton],
+      configEnabled,
+    );
 
     domeDisabledCard?.classList.toggle("hidden", domeHardwareEnabled);
 
@@ -194,7 +197,9 @@
     try {
       const result = await window.PAApi.get("/api/config", { timeoutMs: 3000 });
       renderEscConfigSnapshot(result.data);
-      showFeedback(escFeedback, `Motor settings loaded at ${new Date().toLocaleTimeString()}`, "success");
+      const ts = new Date().toLocaleTimeString();
+      showFeedback(escFeedback, `Motor settings loaded at ${ts}`, "success");
+      showFeedback(rndFeedback, `Loaded at ${ts}`, "success");
     } catch (error) {
       showFeedback(escFeedback, `Failed to load motor settings: ${window.PAApi.messageFor(error)}`, "error");
     }
@@ -390,5 +395,4 @@
   renderDomeTargetSpeed(0);
   updateDomeControlsEnabled();
   loadEscConfig();
-  loadRndDomeConfig();
 })();
