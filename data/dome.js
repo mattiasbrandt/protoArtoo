@@ -302,6 +302,10 @@
     const moveVal = parseEscField(domeRndMoveMs, 500, 10000, "Move duration");
     if (moveVal.error) return { ok: false, error: moveVal.error };
 
+    if (pauseMinVal.value > pauseMaxVal.value) {
+      return { ok: false, error: "Min pause must be less than or equal to max pause." };
+    }
+
     return {
       ok: true,
       payload: {
