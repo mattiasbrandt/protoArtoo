@@ -546,7 +546,17 @@ static void processTriggerAction(RobotActionId target, const char* payload, bool
             }
             break;
         case DOME_ACTION_SEQ:
-            // Phase 4: Route to DomeLinkTask
+            if (pressed && payload != nullptr && payload[0] != '\0') {
+                if (domeConnected()) {
+                    if (!domeQueueTx(payload)) {
+                        PA_LOG_WARN(TAG, "dome seq queue full: %s", payload);
+                    } else {
+                        PA_LOG_INFO(TAG, "dome seq trigger: %s", payload);
+                    }
+                } else {
+                    PA_LOG_DEBUG(TAG, "dome seq skipped (dome not connected): %s", payload);
+                }
+            }
             break;
         default:
             break;

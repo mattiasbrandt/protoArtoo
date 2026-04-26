@@ -75,7 +75,7 @@ enum RobotActionId : uint8_t {
     SOUND_ACTION_RANDOM_WHISTLE,
     SYSTEM_ACTION_ESTOP,          // Button: Latch estop (guarded)
     SYSTEM_ACTION_SLEEP_TOGGLE,   // Button: toggle sleep/wake mode
-    DOME_ACTION_SEQ,              // Button: Dome sequence SE10-SE16 (Phase 4)
+    DOME_ACTION_SEQ,              // Button: Forward DM:<NAME> sequence to dome (DM:VADER, DM:LEIA, etc.)
     DROID_SEQ_SCREAM,           // Button: SE01 scream + body + dome forward
     DROID_SEQ_WAVE,             // Button: SE02 wave sequence
     DROID_SEQ_FAST_WAVE,        // Button: SE03 fast wave sequence

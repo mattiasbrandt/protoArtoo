@@ -204,12 +204,24 @@ bool parseDomeWifiPeerIp(const char* raw, char* out, size_t outSize) {
 
 
 bool triggerTargetAllowedByRuntime(const RcTriggerBinding& binding) {
-    // Phase 4 deferred: DOME_ACTION_SEQ is intentionally blocked at API level
-    // until DomeLinkTask routing is implemented in runtime trigger handling.
-    return binding.target != DOME_ACTION_SEQ;
+    return true;
 }
 
+static const char* const kDomeSeqPayloads[] = {
+    "DM:PIES", "DM:LOW", "DM:OPENALL", "DM:FLUTTER", "DM:BLOOM",
+    "DM:SCREAM", "DM:OVERLOAD", "DM:HEART", "DM:ALARM", "DM:DISCO",
+    "DM:VADER", "DM:ROCKMARCH", "DM:HELLO", "DM:LEIA", "DM:CANTINA",
+    "DM:RESET", "DM:RANDOM",
+    nullptr
+};
 
+static bool isValidDomeSeqPayload(const char* payload) {
+    if (payload == nullptr || payload[0] == '\0') return false;
+    for (int i = 0; kDomeSeqPayloads[i] != nullptr; ++i) {
+        if (strcmp(payload, kDomeSeqPayloads[i]) == 0) return true;
+    }
+    return false;
+}
 
 bool rcMapSourceFromString(const char* raw, RcBindingSource* out) {
     if (raw == nullptr || out == nullptr) {
@@ -839,6 +851,11 @@ void registerConfigRoutes(AsyncWebServer& server) {
                 return;
             }
             snprintf(entry.payload, sizeof(entry.payload), "%s", payloadRaw);
+
+            if (entry.action == DOME_ACTION_SEQ && !isValidDomeSeqPayload(entry.payload)) {
+                sendValidationError("invalid dome sequence payload (expected DM:NAME)", &entry);
+                return;
+            }
 
             for (size_t i = 0; i < count; ++i) {
                 if (entries[i].source == entry.source && entries[i].channel == entry.channel) {
