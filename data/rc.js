@@ -64,7 +64,7 @@
     { token: 'aux2_toggle', label: 'AUX2 Toggle', group: 'Arms', description: 'Toggle aux 2 servo between open and closed', disabled: false, testable: true, safetyCritical: false, oneShot: false },
     { token: 'aux3_toggle', label: 'AUX3 Toggle', group: 'Arms', description: 'Toggle aux 3 servo between open and closed', disabled: false, testable: true, safetyCritical: false, oneShot: false },
     { token: 'seq', label: 'Marcduino Sequence', group: 'Sequences', description: 'Trigger a raw numbered body sequence payload (typically SE30-SE36)', disabled: false, testable: false, safetyCritical: false },
-    { token: 'dome_seq', label: 'Dome Sequence (Unavailable)', group: 'Sequences', description: 'Trigger a dome-side panel/light sequence by number', disabled: true, testable: false, safetyCritical: false },
+    { token: 'dome_seq', label: 'Dome Sequence', group: 'Sequences', description: 'Trigger a dome-side choreography sequence (DM: command forwarded to dome)', disabled: false, testable: false, safetyCritical: false },
     { token: 'cmd', label: 'Marcduino Command', group: 'Command', description: 'Send a specific Marcduino command string to the dome', disabled: false, testable: false, safetyCritical: false },
     { token: 'sleep_toggle', label: 'Sleep Toggle', group: 'System', description: 'Toggle cosmetic sleep mode while keeping drive safety active', disabled: false, testable: true, safetyCritical: false },
     { token: 'sound_rand_general', label: 'Random General', group: 'Sound', description: 'Play one random track from configured general range', disabled: false, testable: true, safetyCritical: false },
@@ -114,8 +114,8 @@
   const DEFAULT_COLLAPSED_GROUPS = new Set(['Sound', 'Sequences']);
   const NON_TESTABLE_TOKENS = new Set(['drive_speed', 'drive_steer', 'dome_speed', 'estop']);
 
-  // dome_seq is blocked at save time (api_config.cpp); show as unavailable.
-  const UNAVAILABLE_TOKENS = new Set(['dome_seq']);
+  // dome_seq is now enabled.
+  const UNAVAILABLE_TOKENS = new Set();
 
   const actionGroup = (entry) => {
     if (ACTION_GROUP_OVERRIDE[entry.name]) return ACTION_GROUP_OVERRIDE[entry.name];
@@ -218,6 +218,26 @@
     { id: 36, name: "BT-1 two-gripper sequence", description: "Run the BT-1 style dual-gripper body sequence." },
   ];
 
+  const DOME_SEQUENCES = [
+    { payload: 'DM:PIES',      label: 'Pie Panels',           description: 'Toggle pie panels open/close (12 s)' },
+    { payload: 'DM:LOW',       label: 'Lower Panels',         description: 'Toggle lower panels open/close (15 s)' },
+    { payload: 'DM:OPENALL',   label: 'Open All Panels',      description: 'Toggle all panels open/close (10 s)' },
+    { payload: 'DM:FLUTTER',   label: 'Flutter',              description: 'All panels flutter to 75%, snap closed (10 s)' },
+    { payload: 'DM:BLOOM',     label: 'Bloom',                description: 'Pie panels ease open, wiggle, close (8 s)' },
+    { payload: 'DM:SCREAM',    label: 'Scream',               description: 'All panels burst open, red alert (15 s)' },
+    { payload: 'DM:OVERLOAD',  label: 'Overload',             description: 'Failure logics, panels sluggishly drift (12 s)' },
+    { payload: 'DM:HEART',     label: 'Heart',                description: 'Rainbow holos, sweet logic message (10 s)' },
+    { payload: 'DM:ALARM',     label: 'Alarm',                description: 'Pulsing red holos and logics (10 s)' },
+    { payload: 'DM:DISCO',     label: 'Disco',                description: 'Disco sequence delegating to SE09 (46 s)' },
+    { payload: 'DM:VADER',     label: 'Imperial March',       description: 'Imperial March -- red logics/holos (47 s)' },
+    { payload: 'DM:ROCKMARCH', label: 'Rock March',           description: 'Imperial March alternate visual (47 s)' },
+    { payload: 'DM:HELLO',     label: 'Hello There',          description: 'Panel wave + logic scroll greeting (4 s)' },
+    { payload: 'DM:LEIA',      label: 'Leia',                 description: 'Front holo Leia effect, logic Leia mode (36 s)' },
+    { payload: 'DM:CANTINA',   label: 'Cantina',              description: '130 BPM alternating panel dance (17 s)' },
+    { payload: 'DM:RESET',     label: 'Reset All',            description: 'Close all panels, reset all subsystems (4 s)' },
+    { payload: 'DM:RANDOM',    label: 'Random',               description: 'Delegate to a random SE sequence' },
+  ];
+
   const normalizeMarcduinoSequencePayload = (payload) => {
     const raw = String(payload || "").trim().toUpperCase();
     if (/^\d{2}$/.test(raw)) return raw;
@@ -234,6 +254,14 @@
       const title = entry.description || "";
       return `<option value="${value}" title="${escapeHtml(title)}"${selected}>${escapeHtml(label)}</option>`;
     }).join("\n            ");
+  };
+
+  const renderDomeSequenceOptions = (selectedPayload) => {
+    const sel = String(selectedPayload || '').trim().toUpperCase();
+    return DOME_SEQUENCES.map((entry) => {
+      const selected = sel === entry.payload ? ' selected' : '';
+      return `<option value="${escapeHtml(entry.payload)}" title="${escapeHtml(entry.description)}"${selected}>${escapeHtml(entry.label)}</option>`;
+    }).join('\n            ');
   };
 
   const SOURCE_OPTIONS = {
@@ -815,6 +843,13 @@
           </select>
         </label>
       </div>
+      <div data-cond="dome_seq" class="rc-editor-cond ${displayToken === 'dome_seq' ? 'block' : 'hidden'}">
+        <label>Dome Sequence
+          <select data-field="payload">
+            ${renderDomeSequenceOptions(entry.payload)}
+          </select>
+        </label>
+      </div>
       <div data-cond="cmd" class="rc-editor-cond ${displayToken === 'cmd' ? 'block' : 'hidden'}">
         <label>Marcduino Command
           <input data-field="payload" type="text" value="${escapeHtml(entry.payload || '')}" placeholder=":OP01">
@@ -828,9 +863,11 @@
       const targetEl = rcEditorContent.querySelector('[data-field="target"]');
       const target = targetEl ? targetEl.value : displayToken;
       const seq = rcEditorContent.querySelector('[data-cond="seq"]');
+      const domeSeq = rcEditorContent.querySelector('[data-cond="dome_seq"]');
       const cmd = rcEditorContent.querySelector('[data-cond="cmd"]');
       const estop = rcEditorContent.querySelector('[data-cond="estop"]');
       if (seq) seq.className = `rc-editor-cond ${target === 'seq' ? 'block' : 'hidden'}`;
+      if (domeSeq) domeSeq.className = `rc-editor-cond ${target === 'dome_seq' ? 'block' : 'hidden'}`;
       if (cmd) cmd.className = `rc-editor-cond ${target === 'cmd' ? 'block' : 'hidden'}`;
       if (estop) estop.className = `rc-editor-cond ${target === 'estop' ? 'block' : 'hidden'}`;
     };
@@ -1353,10 +1390,6 @@
 
     if (target === 'cmd' && payload && !/^[:$#]/.test(payload)) {
       setEditorFeedback('Marcduino command must start with :, $, or #', 'error');
-      return;
-    }
-    if (target === 'dome_seq') {
-      setEditorFeedback('Dome sequence trigger mapping is not available in this firmware build.', 'warning');
       return;
     }
     if (target === 'estop') {
