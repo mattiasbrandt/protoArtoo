@@ -604,6 +604,11 @@ void captureConfigSnapshot(ConfigSnapshot* out) {
     out->domeMinPulseUs = robotState.cfg_dome_min_pulse_us;
     out->domeMaxPulseUs = robotState.cfg_dome_max_pulse_us;
     out->domeSpeedLimitPct = robotState.cfg_dome_speed_limit_pct;
+    out->domeRndEnable = robotState.cfg_dome_rnd_enable;
+    out->domeRndSpeedPct = robotState.cfg_dome_rnd_speed_pct;
+    out->domeRndPauseMin = robotState.cfg_dome_rnd_pause_min;
+    out->domeRndPauseMax = robotState.cfg_dome_rnd_pause_max;
+    out->domeRndMoveMs = robotState.cfg_dome_rnd_move_ms;
     snprintf(out->domeWifiPeerIp, sizeof(out->domeWifiPeerIp), "%s",
              robotState.cfg_dome_wifi_peer_ip);
 
@@ -721,6 +726,11 @@ bool populateConfigJson(JsonDocument& doc, const ConfigSnapshot& snap) {
     dome["minPulseUs"] = snap.domeMinPulseUs;
     dome["maxPulseUs"] = snap.domeMaxPulseUs;
     dome["speedLimitPct"] = snap.domeSpeedLimitPct;
+    dome["rndEnable"] = snap.domeRndEnable;
+    dome["rndSpeedPct"] = snap.domeRndSpeedPct;
+    dome["rndPauseMin"] = snap.domeRndPauseMin;
+    dome["rndPauseMax"] = snap.domeRndPauseMax;
+    dome["rndMoveMs"] = snap.domeRndMoveMs;
     dome["wifiPeerIp"] = snap.domeWifiPeerIp;
 
     JsonObject system = doc["system"].to<JsonObject>();
@@ -1275,6 +1285,61 @@ void registerConfigRoutes(AsyncWebServer& server) {
             changed = true;
         }
 
+        bool domeRndEnableBool;
+        if (parseBoolParam(req, "domeRndEnable", &domeRndEnableBool)) {
+            working.domeRndEnable = domeRndEnableBool;
+            PA_LOG_INFO(TAG, "[CFG] domeRndEnable updated to %s", domeRndEnableBool ? "true" : "false");
+            changed = true;
+        } else if (req->hasParam("domeRndEnable", true)) {
+            req->send(400, "application/json",
+                      "{\"ok\":false,\"error\":\"domeRndEnable must be true/false or 1/0\"}");
+            return;
+        }
+
+        uint8_t domeRndSpeedPct;
+        if (parseUint8Param(req, "domeRndSpeedPct", 5, 100, &domeRndSpeedPct)) {
+            working.domeRndSpeedPct = domeRndSpeedPct;
+            PA_LOG_INFO(TAG, "[CFG] domeRndSpeedPct updated to %u", (unsigned)domeRndSpeedPct);
+            changed = true;
+        } else if (req->hasParam("domeRndSpeedPct", true)) {
+            req->send(400, "application/json",
+                      "{\"ok\":false,\"error\":\"domeRndSpeedPct must be 5..100\"}");
+            return;
+        }
+
+        uint8_t domeRndPauseMin;
+        if (parseUint8Param(req, "domeRndPauseMin", 1, 120, &domeRndPauseMin)) {
+            working.domeRndPauseMin = domeRndPauseMin;
+            PA_LOG_INFO(TAG, "[CFG] domeRndPauseMin updated to %u", (unsigned)domeRndPauseMin);
+            changed = true;
+        } else if (req->hasParam("domeRndPauseMin", true)) {
+            req->send(400, "application/json",
+                      "{\"ok\":false,\"error\":\"domeRndPauseMin must be 1..120\"}");
+            return;
+        }
+
+        uint8_t domeRndPauseMax;
+        if (parseUint8Param(req, "domeRndPauseMax", 1, 120, &domeRndPauseMax)) {
+            working.domeRndPauseMax = domeRndPauseMax;
+            PA_LOG_INFO(TAG, "[CFG] domeRndPauseMax updated to %u", (unsigned)domeRndPauseMax);
+            changed = true;
+        } else if (req->hasParam("domeRndPauseMax", true)) {
+            req->send(400, "application/json",
+                      "{\"ok\":false,\"error\":\"domeRndPauseMax must be 1..120\"}");
+            return;
+        }
+
+        uint16_t domeRndMoveMs;
+        if (parseUint16Param(req, "domeRndMoveMs", 500, 10000, &domeRndMoveMs)) {
+            working.domeRndMoveMs = domeRndMoveMs;
+            PA_LOG_INFO(TAG, "[CFG] domeRndMoveMs updated to %u", (unsigned)domeRndMoveMs);
+            changed = true;
+        } else if (req->hasParam("domeRndMoveMs", true)) {
+            req->send(400, "application/json",
+                      "{\"ok\":false,\"error\":\"domeRndMoveMs must be 500..10000\"}");
+            return;
+        }
+
         struct ServoCalField {
             const char* param;
             uint16_t* field;
@@ -1399,6 +1464,11 @@ void registerConfigRoutes(AsyncWebServer& server) {
         robotState.cfg_dome_min_pulse_us = working.domeMinPulseUs;
         robotState.cfg_dome_max_pulse_us = working.domeMaxPulseUs;
         robotState.cfg_dome_speed_limit_pct = working.domeSpeedLimitPct;
+        robotState.cfg_dome_rnd_enable = working.domeRndEnable;
+        robotState.cfg_dome_rnd_speed_pct = working.domeRndSpeedPct;
+        robotState.cfg_dome_rnd_pause_min = working.domeRndPauseMin;
+        robotState.cfg_dome_rnd_pause_max = working.domeRndPauseMax;
+        robotState.cfg_dome_rnd_move_ms = working.domeRndMoveMs;
         snprintf(robotState.cfg_dome_wifi_peer_ip, sizeof(robotState.cfg_dome_wifi_peer_ip), "%s",
                  working.domeWifiPeerIp);
 

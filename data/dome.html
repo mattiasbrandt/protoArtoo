@@ -78,6 +78,44 @@
       <div id="esc-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true">Loading motor settings...</div>
     </div>
 
+    <!-- Random Dome Movement -->
+    <div class="card">
+      <h3>Random Dome Movement</h3>
+      <div class="desc">Autonomous idle dome rotation when no RC or web command is active.</div>
+      <form id="rnd-dome-form" class="form-grid dome-settings-grid mt-16">
+        <label class="field field-full">
+          <span>Enable random movement</span>
+          <input id="dome-rnd-enable" name="domeRndEnable" type="checkbox"
+            title="Enable autonomous idle dome rotation">
+        </label>
+        <label class="field">
+          <span>Speed (%)</span>
+          <input id="dome-rnd-speed" class="compact-number" name="domeRndSpeedPct"
+            type="number" min="5" max="100" step="1">
+        </label>
+        <label class="field">
+          <span>Min pause (s)</span>
+          <input id="dome-rnd-pause-min" class="compact-number" name="domeRndPauseMin"
+            type="number" min="1" max="120" step="1">
+        </label>
+        <label class="field">
+          <span>Max pause (s)</span>
+          <input id="dome-rnd-pause-max" class="compact-number" name="domeRndPauseMax"
+            type="number" min="1" max="120" step="1">
+        </label>
+        <label class="field">
+          <span>Move duration (ms)</span>
+          <input id="dome-rnd-move-ms" class="compact-number" name="domeRndMoveMs"
+            type="number" min="500" max="10000" step="100">
+        </label>
+        <div class="button-row">
+          <button id="reload-rnd-button" class="btn" type="button">Reload</button>
+        </div>
+      </form>
+      <div id="rnd-feedback" class="feedback mt-12" role="status"
+           aria-live="polite" aria-atomic="true">Loading random movement settings...</div>
+    </div>
+
     <div id="shell-status"></div>
 
     <script src="/web_api.js"></script>

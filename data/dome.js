@@ -22,6 +22,14 @@
   const reloadEscButton = document.getElementById("reload-esc-button");
   const escFeedback = document.getElementById("esc-feedback");
 
+  const domeRndEnable = document.getElementById("dome-rnd-enable");
+  const domeRndSpeed = document.getElementById("dome-rnd-speed");
+  const domeRndPauseMin = document.getElementById("dome-rnd-pause-min");
+  const domeRndPauseMax = document.getElementById("dome-rnd-pause-max");
+  const domeRndMoveMs = document.getElementById("dome-rnd-move-ms");
+  const reloadRndButton = document.getElementById("reload-rnd-button");
+  const rndFeedback = document.getElementById("rnd-feedback");
+
   let domeHardwareEnabled = true;
   let webControlEnabled = false;
   let webControlStatusKnown = false;
@@ -169,6 +177,12 @@
     if (domeMaxPulse && dome.maxPulseUs !== undefined) domeMaxPulse.value = dome.maxPulseUs;
     if (domeSpeedLimit && dome.speedLimitPct !== undefined) domeSpeedLimit.value = dome.speedLimitPct;
 
+    if (domeRndEnable && dome.rndEnable !== undefined) domeRndEnable.checked = dome.rndEnable;
+    if (domeRndSpeed && dome.rndSpeedPct !== undefined) domeRndSpeed.value = dome.rndSpeedPct;
+    if (domeRndPauseMin && dome.rndPauseMin !== undefined) domeRndPauseMin.value = dome.rndPauseMin;
+    if (domeRndPauseMax && dome.rndPauseMax !== undefined) domeRndPauseMax.value = dome.rndPauseMax;
+    if (domeRndMoveMs && dome.rndMoveMs !== undefined) domeRndMoveMs.value = dome.rndMoveMs;
+
     setDomeHardwareEnabled(Boolean(components.dome?.enabled));
   };
 
@@ -270,13 +284,87 @@
     }
   };
 
+  const validateRndDomeConfig = () => {
+    const speedVal = parseEscField(domeRndSpeed, 5, 100, "Speed");
+    if (speedVal.error) return { ok: false, error: speedVal.error };
+
+    const pauseMinVal = parseEscField(domeRndPauseMin, 1, 120, "Min pause");
+    if (pauseMinVal.error) return { ok: false, error: pauseMinVal.error };
+
+    const pauseMaxVal = parseEscField(domeRndPauseMax, 1, 120, "Max pause");
+    if (pauseMaxVal.error) return { ok: false, error: pauseMaxVal.error };
+
+    const moveVal = parseEscField(domeRndMoveMs, 500, 10000, "Move duration");
+    if (moveVal.error) return { ok: false, error: moveVal.error };
+
+    return {
+      ok: true,
+      payload: {
+        domeRndEnable: domeRndEnable?.checked ? "true" : "false",
+        domeRndSpeedPct: String(speedVal.value),
+        domeRndPauseMin: String(pauseMinVal.value),
+        domeRndPauseMax: String(pauseMaxVal.value),
+        domeRndMoveMs: String(moveVal.value),
+      },
+    };
+  };
+
+  const saveRndDomeConfig = async () => {
+    if (!window.PAApi) return;
+    if (!domeHardwareEnabled) {
+      showFeedback(rndFeedback, "Random dome controls unavailable: enable DOME in Setup.", "warning");
+      return;
+    }
+
+    const validation = validateRndDomeConfig();
+    if (!validation.ok) {
+      showFeedback(rndFeedback, validation.error, "warning");
+      return;
+    }
+
+    showFeedback(rndFeedback, "Saving...");
+
+    try {
+      await window.PAApi.postForm(
+        "/api/config",
+        validation.payload,
+        { timeoutMs: 3000 },
+      );
+
+      showFeedback(rndFeedback, `Saved at ${new Date().toLocaleTimeString()}`, "success");
+    } catch (error) {
+      showFeedback(rndFeedback, `Failed to save random movement settings: ${window.PAApi.messageFor(error)}`, "error");
+    }
+  };
+
+  const loadRndDomeConfig = async () => {
+    if (!window.PAApi) return;
+    showFeedback(rndFeedback, "Loading random movement settings...");
+
+    try {
+      const result = await window.PAApi.get("/api/config", { timeoutMs: 3000 });
+      renderEscConfigSnapshot(result.data);
+      showFeedback(rndFeedback, `Loaded at ${new Date().toLocaleTimeString()}`, "success");
+    } catch (error) {
+      showFeedback(rndFeedback, `Failed to load random movement settings: ${window.PAApi.messageFor(error)}`, "error");
+    }
+  };
+
   const debouncedSave = window.PAUtils.debounce(saveEscConfig, 500);
+  const debouncedRndSave = window.PAUtils.debounce(saveRndDomeConfig, 500);
 
   domeNeutral?.addEventListener("input", debouncedSave);
   domeMinPulse?.addEventListener("input", debouncedSave);
   domeMaxPulse?.addEventListener("input", debouncedSave);
   domeSpeedLimit?.addEventListener("input", debouncedSave);
   reloadEscButton?.addEventListener("click", loadEscConfig);
+
+  domeRndEnable?.addEventListener("input", debouncedRndSave);
+  domeRndSpeed?.addEventListener("input", debouncedRndSave);
+  domeRndPauseMin?.addEventListener("input", debouncedRndSave);
+  domeRndPauseMax?.addEventListener("input", debouncedRndSave);
+  domeRndMoveMs?.addEventListener("input", debouncedRndSave);
+  reloadRndButton?.addEventListener("click", loadRndDomeConfig);
 
   if (window.PAStatusStream?.isSupported()) {
     window.PAStatusStream.subscribe((eventType, payload) => {
@@ -302,4 +390,5 @@
   renderDomeTargetSpeed(0);
   updateDomeControlsEnabled();
   loadEscConfig();
+  loadRndDomeConfig();
 })();

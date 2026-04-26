@@ -207,11 +207,14 @@ void domeTask(void* pvParameters) {
             PA_LOG_WARN(TAG, "Estop active — dome neutral");
         }
 
+        bool manualCommandThisTick = false;
+
         // Process any pending commands (non-blocking), skip if estop
         while (!estop && xQueueReceive(domeCmdQueue, &cmd, 0) == pdTRUE) {
             currentSpeed = cmd.speed;
             lastCommandMs = millis();
             hasCommand = true;
+            manualCommandThisTick = true;
 
             setDomeSpeed(currentSpeed);
             if (currentSpeed != 0.0f) {
@@ -228,6 +231,64 @@ void domeTask(void* pvParameters) {
                 PA_LOG_INFO(TAG, "Command timeout — dome neutral");
             }
             hasCommand = false;
+        }
+
+        // Random dome idle rotation state machine
+        {
+            enum DomeRndState : uint8_t { DOME_RND_PAUSING = 0, DOME_RND_MOVING };
+            static DomeRndState rndState   = DOME_RND_PAUSING;
+            static uint32_t     rndNextMs  = 0;
+            static float        rndSpeed   = 0.0f;
+
+            bool     rndEnabled;
+            uint8_t  rndSpeedPct, rndPauseMin, rndPauseMax;
+            uint16_t rndMoveMs;
+            bool     domeSeqActive;
+            uint32_t now = millis();
+            taskENTER_CRITICAL(&robotStateMux);
+            rndEnabled    = robotState.cfg_dome_rnd_enable;
+            rndSpeedPct   = robotState.cfg_dome_rnd_speed_pct;
+            rndPauseMin   = robotState.cfg_dome_rnd_pause_min;
+            rndPauseMax   = robotState.cfg_dome_rnd_pause_max;
+            rndMoveMs     = robotState.cfg_dome_rnd_move_ms;
+            domeSeqActive = robotState.domeSeqActive;
+            taskEXIT_CRITICAL(&robotStateMux);
+
+            if (rndEnabled && enabled && !sleepMode && !estop && !domeSeqActive) {
+                const uint32_t rndPauseRangeMs =
+                    (rndPauseMax > rndPauseMin)
+                        ? (uint32_t)(rndPauseMax - rndPauseMin) * 1000UL
+                        : 0UL;
+
+                if (manualCommandThisTick) {
+                    rndState  = DOME_RND_PAUSING;
+                    rndNextMs = now + (uint32_t)rndPauseMin * 1000UL +
+                                (rndPauseRangeMs > 0 ? (esp_random() % rndPauseRangeMs) : 0UL);
+                } else if (rndState == DOME_RND_PAUSING && (int32_t)(now - rndNextMs) >= 0) {
+                    rndSpeed      = ((float)rndSpeedPct / 100.0f) * ((esp_random() & 1) ? 1.0f : -1.0f);
+                    currentSpeed  = rndSpeed;
+                    lastCommandMs = now;
+                    hasCommand    = true;
+                    rndState      = DOME_RND_MOVING;
+                    rndNextMs     = now + (uint32_t)rndMoveMs;
+                    setDomeSpeed(rndSpeed);
+                    PA_LOG_INFO(TAG, "dome rnd move: %d%%", (int)(rndSpeed * 100.0f));
+                } else if (rndState == DOME_RND_MOVING) {
+                    if ((int32_t)(now - rndNextMs) >= 0) {
+                        currentSpeed = 0.0f;
+                        setDomeNeutral();
+                        hasCommand = false;
+                        rndState   = DOME_RND_PAUSING;
+                        rndNextMs  = now + (uint32_t)rndPauseMin * 1000UL +
+                                     (rndPauseRangeMs > 0 ? (esp_random() % rndPauseRangeMs) : 0UL);
+                    } else {
+                        lastCommandMs = now;  // prevent 500 ms manual timeout during random move
+                    }
+                }
+            } else if (rndState == DOME_RND_MOVING) {
+                rndState  = DOME_RND_PAUSING;
+                rndNextMs = now;
+            }
         }
 
         // Feed watchdog

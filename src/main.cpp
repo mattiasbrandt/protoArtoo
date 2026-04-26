@@ -354,6 +354,11 @@ void loadConfigToState() {
     robotState.cfg_dome_min_pulse_us = prefs.getUShort("dome_minp", 1000);
     robotState.cfg_dome_max_pulse_us = prefs.getUShort("dome_maxp", 2000);
     robotState.cfg_dome_speed_limit_pct = prefs.getUChar("dome_pct", 100);
+    robotState.cfg_dome_rnd_enable    = prefs.getBool("dome_rnd_en",   false);
+    robotState.cfg_dome_rnd_speed_pct = prefs.getUChar("dome_rnd_spd", 30);
+    robotState.cfg_dome_rnd_pause_min = prefs.getUChar("dome_rnd_pmin", 6);
+    robotState.cfg_dome_rnd_pause_max = prefs.getUChar("dome_rnd_pmax", 12);
+    robotState.cfg_dome_rnd_move_ms   = prefs.getUShort("dome_rnd_ms",  2500);
     robotState.cfg_rc_input_mode = (RcInputMode)prefs.getUChar("rc_mode", RC_INPUT_DUAL_SBUS);
 
     // All component toggles default OFF — operator must explicitly enable each
@@ -629,6 +634,9 @@ bool saveConfigToNvs() {
     uint16_t seqOpenMs, seqCloseMs;
     uint16_t domeNeutralUs, domeMinPulseUs, domeMaxPulseUs;
     uint8_t domeSpeedLimitPct;
+    bool domeRndEnable;
+    uint8_t domeRndSpeedPct, domeRndPauseMin, domeRndPauseMax;
+    uint16_t domeRndMoveMs;
     RcInputMode rcInputMode;
     bool enableArm1, enableArm2, enableAux1, enableAux2, enableAux3, enableDome;
     bool enableRcCh1, enableRcCh2, enableRcCh3, enableRcCh4, enableRcCh5, enableRcCh6;
@@ -725,6 +733,11 @@ bool saveConfigToNvs() {
     domeMinPulseUs = robotState.cfg_dome_min_pulse_us;
     domeMaxPulseUs = robotState.cfg_dome_max_pulse_us;
     domeSpeedLimitPct = robotState.cfg_dome_speed_limit_pct;
+    domeRndEnable = robotState.cfg_dome_rnd_enable;
+    domeRndSpeedPct = robotState.cfg_dome_rnd_speed_pct;
+    domeRndPauseMin = robotState.cfg_dome_rnd_pause_min;
+    domeRndPauseMax = robotState.cfg_dome_rnd_pause_max;
+    domeRndMoveMs = robotState.cfg_dome_rnd_move_ms;
     rcInputMode = robotState.cfg_rc_input_mode;
     enableArm1 = robotState.cfg_enable_arm1;
     enableArm2 = robotState.cfg_enable_arm2;
@@ -899,6 +912,11 @@ bool saveConfigToNvs() {
     ok = prefs.putUShort("dome_minp", domeMinPulseUs) > 0 && ok;
     ok = prefs.putUShort("dome_maxp", domeMaxPulseUs) > 0 && ok;
     ok = prefs.putUChar("dome_pct", domeSpeedLimitPct) > 0 && ok;
+    ok = prefs.putBool("dome_rnd_en",    domeRndEnable) > 0 && ok;
+    ok = prefs.putUChar("dome_rnd_spd",  domeRndSpeedPct) > 0 && ok;
+    ok = prefs.putUChar("dome_rnd_pmin", domeRndPauseMin) > 0 && ok;
+    ok = prefs.putUChar("dome_rnd_pmax", domeRndPauseMax) > 0 && ok;
+    ok = prefs.putUShort("dome_rnd_ms",  domeRndMoveMs) > 0 && ok;
     ok = prefs.putUChar("rc_mode", (uint8_t)rcInputMode) > 0 && ok;
     ok = prefs.putBool("en_arm1", enableArm1) > 0 && ok;
     ok = prefs.putBool("en_arm2", enableArm2) > 0 && ok;
