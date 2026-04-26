@@ -34,7 +34,7 @@
 ## - GET /api/actions returns bindable actions with token + testability metadata.
 ## - `token` maps to robotActionIdToString() and is accepted by POST /api/actions/test.
 ## - `testable` is false for analog actions, payload-required actions, and system.action.estop.
-## - POST /api/rc/map accepts the same token set except `none` and currently rejects `dome_seq` (runtime-gated in api_config.cpp).
+## - POST /api/rc/map accepts the same token set except `none`. `dome_seq` requires a valid DM:<NAME> payload.
 entries:
 # --- drive ---
 - name: drive.action.move
@@ -282,15 +282,19 @@ entries:
   requires_web_control: false
   nvs_key: null
 
-# NOTE: `dome_seq` remains listed for token completeness, but POST /api/rc/map
-# currently rejects it until runtime trigger routing support is enabled.
-
 - name: dome.action.dome-sequence
   display_name: Dome Sequence
-  description: Trigger a dome-side panel/light sequence by number
+  description: >
+    Forward a DM:<NAME> choreography command to the dome (AstroPixelsPlus DomeSequences.h).
+    Payload is the full DM: string stored in marcduinoPayload[16]. Valid payloads:
+    DM:PIES, DM:LOW, DM:OPENALL, DM:FLUTTER, DM:BLOOM, DM:SCREAM, DM:OVERLOAD,
+    DM:HEART, DM:ALARM, DM:DISCO, DM:VADER, DM:ROCKMARCH, DM:HELLO, DM:LEIA,
+    DM:CANTINA, DM:RESET, DM:RANDOM.
+    The dome handles panels/holos/logics and sends dome=seqon/BD:/dome=seqoff back
+    to the body, which are handled by dome_link.cpp + dome_cue_handler.cpp (T27).
   domain: dome
   type: action
-  marcduino_cmd: :SE<nn>
+  marcduino_cmd: DM:<NAME>
   api_path: null
   sse_event: null
   cpp_enum: DOME_ACTION_SEQ
@@ -461,6 +465,175 @@ entries:
   cpp_enum: DROID_SEQ_WIGGLE
   cpp_file: include/rc_mapping.h
   sources: [ sbus, dome_rx ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+# BD: cue events — dispatched by the dome (AstroPixelsPlus DomeSequences.h) and handled
+# by dome_cue_handler.cpp (T27). Each cue triggers audio and/or body motion.
+# These are dome-initiated events, not operator-triggered RC actions.
+
+- name: dome.event.cue-scream
+  display_name: BD:SCREAM
+  description: Dome cue -- plays scream category audio (cfg_snd_cat_scrm), fallback AUDIO_SLOT_NAMED_SCREAM
+  domain: dome
+  type: event
+  marcduino_cmd: BD:SCREAM
+  api_path: null
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/drivers/dome_cue_handler.cpp
+  sources: [ dome_rx ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+- name: dome.event.cue-happy
+  display_name: BD:HAPPY
+  description: Dome cue -- plays happy category audio (cfg_snd_cat_hap); sent on every panel open/close toggle
+  domain: dome
+  type: event
+  marcduino_cmd: BD:HAPPY
+  api_path: null
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/drivers/dome_cue_handler.cpp
+  sources: [ dome_rx ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+- name: dome.event.cue-overload
+  display_name: BD:OVERLOAD
+  description: Dome cue -- plays sad/distressed category audio (cfg_snd_cat_sad), fallback AUDIO_SLOT_NAMED_FAINT
+  domain: dome
+  type: event
+  marcduino_cmd: BD:OVERLOAD
+  api_path: null
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/drivers/dome_cue_handler.cpp
+  sources: [ dome_rx ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+- name: dome.event.cue-alarm
+  display_name: BD:ALARM
+  description: Dome cue -- plays alarm category audio (cfg_snd_cat_alrm)
+  domain: dome
+  type: event
+  marcduino_cmd: BD:ALARM
+  api_path: null
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/drivers/dome_cue_handler.cpp
+  sources: [ dome_rx ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+- name: dome.event.cue-vader
+  display_name: BD:VADER
+  description: Dome cue -- plays AUDIO_SLOT_NAMED_IMP_MARCH (Imperial March, ~47 s)
+  domain: dome
+  type: event
+  marcduino_cmd: BD:VADER
+  api_path: null
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/drivers/dome_cue_handler.cpp
+  sources: [ dome_rx ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+- name: dome.event.cue-rockmarch
+  display_name: BD:ROCKMARCH
+  description: Dome cue -- plays AUDIO_SLOT_NAMED_IMP_MARCH (same as VADER; alternate visual on dome)
+  domain: dome
+  type: event
+  marcduino_cmd: BD:ROCKMARCH
+  api_path: null
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/drivers/dome_cue_handler.cpp
+  sources: [ dome_rx ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+- name: dome.event.cue-leia
+  display_name: BD:LEIA
+  description: Dome cue -- plays AUDIO_SLOT_NAMED_LEIA (Leia message track, ~36 s)
+  domain: dome
+  type: event
+  marcduino_cmd: BD:LEIA
+  api_path: null
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/drivers/dome_cue_handler.cpp
+  sources: [ dome_rx ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+- name: dome.event.cue-cantina
+  display_name: BD:CANTINA
+  description: Dome cue -- plays AUDIO_SLOT_NAMED_CANTINA_L (Cantina, 130 BPM, ~17 s)
+  domain: dome
+  type: event
+  marcduino_cmd: BD:CANTINA
+  api_path: null
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/drivers/dome_cue_handler.cpp
+  sources: [ dome_rx ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+- name: dome.event.cue-heart
+  display_name: BD:HEART
+  description: Dome cue -- plays sentimental category audio (cfg_snd_cat_sent)
+  domain: dome
+  type: event
+  marcduino_cmd: BD:HEART
+  api_path: null
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/drivers/dome_cue_handler.cpp
+  sources: [ dome_rx ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+- name: dome.event.cue-hello
+  display_name: BD:HELLO
+  description: Dome cue -- plays general category audio (cfg_snd_cat_gen)
+  domain: dome
+  type: event
+  marcduino_cmd: BD:HELLO
+  api_path: null
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/drivers/dome_cue_handler.cpp
+  sources: [ dome_rx ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+- name: dome.event.cue-reset
+  display_name: BD:RESET
+  description: Dome cue -- stops all audio (audioQueueStop); sent by DM:RESET sequence
+  domain: dome
+  type: event
+  marcduino_cmd: BD:RESET
+  api_path: null
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/drivers/dome_cue_handler.cpp
+  sources: [ dome_rx ]
   safety_critical: false
   requires_web_control: false
   nvs_key: null
