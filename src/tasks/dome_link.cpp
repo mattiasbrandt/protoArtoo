@@ -27,7 +27,9 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
 
+#include "audio_task.h"
 #include "config.h"
+#include "dome_cue_handler.h"
 #include "dome_link_encoding.h"
 #include "dome_rx_parser.h"
 #include "logging.h"
@@ -267,6 +269,30 @@ static bool parseDomeRxLine(const char* line, DomeRxSource source, uint32_t nowM
         return true;
     }
 
+    if (strncmp(line, "dome=seqon,", 11) == 0) {
+        unsigned int secs = (unsigned int)atoi(line + 11);
+        taskENTER_CRITICAL(&robotStateMux);
+        robotState.domeSeqActive  = true;
+        robotState.domeSeqUntilMs = nowMs + ((uint32_t)secs * 1000UL);
+        taskEXIT_CRITICAL(&robotStateMux);
+        audioQueueDollar("$O", SRC_INTERNAL);
+        PA_LOG_INFO(TAG, "dome seq start, timeout %u s", secs);
+        return true;
+    }
+    if (strcmp(line, "dome=seqoff") == 0) {
+        taskENTER_CRITICAL(&robotStateMux);
+        robotState.domeSeqActive  = false;
+        robotState.domeSeqUntilMs = 0;
+        taskEXIT_CRITICAL(&robotStateMux);
+        audioQueueDollar("$R", SRC_INTERNAL);
+        PA_LOG_INFO(TAG, "dome seq end");
+        return true;
+    }
+    if (strncmp(line, "BD:", 3) == 0) {
+        handleDomeCue(line + 3);
+        return true;
+    }
+
     bool handled = parseMarcduinoCommand(line);
     if (!handled) {
         incrementDomeRxUnknown();
@@ -444,6 +470,21 @@ void domeLinkTask(void* pvParameters) {
         processUartRx(now, &lastUartHeartbeatMs);
         if (udpReady) {
             processUdpRx(now, nullptr);
+        }
+
+        {
+            taskENTER_CRITICAL(&robotStateMux);
+            bool seqActive  = robotState.domeSeqActive;
+            uint32_t seqUntil = robotState.domeSeqUntilMs;
+            taskEXIT_CRITICAL(&robotStateMux);
+            if (seqActive && (int32_t)(now - seqUntil) >= 0) {
+                taskENTER_CRITICAL(&robotStateMux);
+                robotState.domeSeqActive  = false;
+                robotState.domeSeqUntilMs = 0;
+                taskEXIT_CRITICAL(&robotStateMux);
+                audioQueueDollar("$R", SRC_INTERNAL);
+                PA_LOG_WARN(TAG, "dome seq timeout -- resuming random");
+            }
         }
 
         const bool uartFresh =

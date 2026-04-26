@@ -201,6 +201,8 @@ struct RobotState {
     uint32_t domeRxUnknownCount;
     DomeLinkTransport domeActiveTransport;
     bool domeUartOwned;
+    bool     domeSeqActive;    // true while a dome sequence is running
+    uint32_t domeSeqUntilMs;   // safety timeout: auto-clear domeSeqActive at this millis()
 
     // --- Mood ---
     // Active mood SE1x index: 10=Quiet, 11=Full-Awake, 13=Mid-Awake, 14=Awake+.
@@ -324,6 +326,13 @@ struct RobotState {
     uint16_t cfg_dome_max_pulse_us;
     uint8_t cfg_dome_speed_limit_pct;
     char cfg_dome_wifi_peer_ip[16];  // dome_wip — fallback IPv4 peer for WiFi dome link
+
+    // Random dome idle rotation (NVS-backed)
+    bool     cfg_dome_rnd_enable;      // dome_rnd_en   default false
+    uint8_t  cfg_dome_rnd_speed_pct;   // dome_rnd_spd  default 30 (% of max speed)
+    uint8_t  cfg_dome_rnd_pause_min;   // dome_rnd_pmin default 6 (seconds)
+    uint8_t  cfg_dome_rnd_pause_max;   // dome_rnd_pmax default 12 (seconds)
+    uint16_t cfg_dome_rnd_move_ms;     // dome_rnd_ms   default 2500 (ms per random move)
 
     // Sequence timing (ms)
     uint16_t cfg_seq_open_ms;
