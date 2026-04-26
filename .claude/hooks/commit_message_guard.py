@@ -60,6 +60,8 @@ def _version_file_issues(repo_dir: str) -> list[str]:
 
         xy = line[:2]
         path = line[3:]
+        idx_status = xy[0]
+        wt_status = xy[1]
 
         # Untracked version metadata file.
         if xy == "??":
@@ -67,8 +69,13 @@ def _version_file_issues(repo_dir: str) -> list[str]:
             continue
 
         # Any non-space worktree status means unstaged/mixed state.
-        if xy[1] != " ":
-            issues.append(f"{path} has unstaged changes")
+        if wt_status != " ":
+            if idx_status != " ":
+                issues.append(
+                    f"{path} has mixed staged+unstaged changes (status '{xy}')"
+                )
+            else:
+                issues.append(f"{path} has unstaged changes (status '{xy}')")
 
     return issues
 
@@ -127,44 +134,43 @@ def main() -> int:
         return 0
 
     repo_dir = os.environ.get("CLAUDE_PROJECT_DIR", os.getcwd())
+    problems: list[str] = []
+
     version_issues = _version_file_issues(repo_dir)
     if version_issues:
-        _deny(
-            "Commit blocked: version metadata file(s) are not fully staged: "
+        problems.append(
+            "version metadata file(s) are not fully staged: "
             + "; ".join(version_issues)
-                        + ". Stage them explicitly with 'git add data/*version*.json' (or revert) "
-              "before committing to avoid leaving version metadata behind."
+            + ". Stage them explicitly with 'git add data/*version*.json' (or revert)."
         )
-        return 0
 
     pair_issue = _version_pair_issue(repo_dir)
     if pair_issue:
-        _deny(
-            "Commit blocked: version metadata consistency check failed: "
+        problems.append(
+            "version metadata consistency check failed: "
             + pair_issue
             + ". Run the build/version generation step and stage both data version files."
         )
-        return 0
 
     match = MESSAGE_ARG_PATTERN.search(cmd)
     if not match:
-        _deny(
-            "Commit blocked: use non-interactive git commit with -m and required format: "
-            "type(phase:vX.Y.Z/TNN): summary"
+        problems.append(
+            "commit message parse failed. Use a literal quoted -m argument, for example: "
+            "git commit -m \"type(phase:vX.Y.Z/TNN): summary\""
         )
-        return 0
+    else:
+        message = match.group(2).strip()
+        if not (PHASE_PATTERN.match(message) or LEGACY_SCOPE_PATTERN.match(message)):
+            problems.append(
+                "invalid commit scope/message. Expected one of: "
+                "type(phase:vX.Y.Z/TNN): summary, "
+                "type(phase:vX.Y.Z/TNN/slice:name): summary, "
+                "or type(scope): summary (scope from CONTRIBUTING). "
+                "Allowed types: feat|fix|docs|refactor|chore|test|style|perf."
+            )
 
-    message = match.group(2).strip()
-    if PHASE_PATTERN.match(message) or LEGACY_SCOPE_PATTERN.match(message):
-        return 0
-
-    _deny(
-        "Commit blocked: invalid commit scope/message. "
-        "Expected one of: type(phase:vX.Y.Z/TNN): summary, "
-        "type(phase:vX.Y.Z/TNN/slice:name): summary, "
-        "or type(scope): summary (scope from CONTRIBUTING). "
-        "Allowed types: feat|fix|docs|refactor|chore|test|style|perf."
-    )
+    if problems:
+        _deny("Commit blocked: " + " | ".join(problems))
     return 0
 
 
