@@ -17,6 +17,7 @@ LEGACY_SCOPE_PATTERN = re.compile(
     rf"^(?:{ALLOWED_TYPES})!?\((?:{ALLOWED_SCOPES})\): .+"
 )
 COMMIT_CMD_PATTERN = re.compile(r"(^|\s)git\s+commit(\s|$)")
+ADD_CMD_PATTERN = re.compile(r"(^|\s)git\s+add(\s|$)")
 MESSAGE_ARG_PATTERN = re.compile(r"(?:^|\s)-m\s+([\"'])(.*?)\1")
 COAUTHOR_LINE_PATTERN = re.compile(r"co-authored-by\s*:", re.IGNORECASE)
 COAUTHOR_TRAILER_PATTERN = re.compile(
@@ -113,6 +114,18 @@ def _version_pair_issue(repo_dir: str) -> str:
     return ""
 
 
+def _is_chained_add_then_commit(cmd: str) -> bool:
+    add_match = ADD_CMD_PATTERN.search(cmd)
+    commit_match = COMMIT_CMD_PATTERN.search(cmd)
+    if not add_match or not commit_match:
+        return False
+    if add_match.start() >= commit_match.start():
+        return False
+
+    between = cmd[add_match.end():commit_match.start()]
+    return bool(re.search(r"&&|;|\n", between))
+
+
 def main() -> int:
     try:
         data = json.load(sys.stdin)
@@ -134,6 +147,7 @@ def main() -> int:
         return 0
 
     repo_dir = os.environ.get("CLAUDE_PROJECT_DIR", os.getcwd())
+    chained_add_commit = _is_chained_add_then_commit(cmd)
     problems: list[str] = []
 
     version_issues = _version_file_issues(repo_dir)
@@ -154,20 +168,35 @@ def main() -> int:
 
     match = MESSAGE_ARG_PATTERN.search(cmd)
     if not match:
-        problems.append(
+        _deny(
+            "Commit blocked: "
             "commit message parse failed. Use a literal quoted -m argument, for example: "
             "git commit -m \"type(phase:vX.Y.Z/TNN): summary\""
         )
-    else:
-        message = match.group(2).strip()
-        if not (PHASE_PATTERN.match(message) or LEGACY_SCOPE_PATTERN.match(message)):
-            problems.append(
-                "invalid commit scope/message. Expected one of: "
-                "type(phase:vX.Y.Z/TNN): summary, "
-                "type(phase:vX.Y.Z/TNN/slice:name): summary, "
-                "or type(scope): summary (scope from CONTRIBUTING). "
-                "Allowed types: feat|fix|docs|refactor|chore|test|style|perf."
-            )
+        return 0
+
+    message = match.group(2).strip()
+    if not (PHASE_PATTERN.match(message) or LEGACY_SCOPE_PATTERN.match(message)):
+        _deny(
+            "Commit blocked: "
+            "invalid commit scope/message. Expected one of: "
+            "type(phase:vX.Y.Z/TNN): summary, "
+            "type(phase:vX.Y.Z/TNN/slice:name): summary, "
+            "or type(scope): summary (scope from CONTRIBUTING). "
+            "Allowed types: feat|fix|docs|refactor|chore|test|style|perf."
+        )
+        return 0
+
+    # PreToolUse runs before command execution, so staged state in chained
+    # commands cannot be trusted for validation.
+    if chained_add_commit:
+        _deny(
+            "Commit blocked: cannot validate staged version metadata in a chained command "
+            "before execution (for example, 'git add ... && git commit ...'). "
+            "Run staging and commit as separate commands: first "
+            "'git add data/*version*.json', then 'git commit -m \"...\"'."
+        )
+        return 0
 
     if problems:
         _deny("Commit blocked: " + " | ".join(problems))
