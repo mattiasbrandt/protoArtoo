@@ -346,19 +346,6 @@
     }
   };
 
-  const loadRndDomeConfig = async () => {
-    if (!window.PAApi) return;
-    showFeedback(rndFeedback, "Loading random movement settings...");
-
-    try {
-      const result = await window.PAApi.get("/api/config", { timeoutMs: 3000 });
-      renderEscConfigSnapshot(result.data);
-      showFeedback(rndFeedback, `Loaded at ${new Date().toLocaleTimeString()}`, "success");
-    } catch (error) {
-      showFeedback(rndFeedback, `Failed to load random movement settings: ${window.PAApi.messageFor(error)}`, "error");
-    }
-  };
-
   const debouncedSave = window.PAUtils.debounce(saveEscConfig, 500);
   const debouncedRndSave = window.PAUtils.debounce(saveRndDomeConfig, 500);
 
@@ -373,7 +360,7 @@
   domeRndPauseMin?.addEventListener("input", debouncedRndSave);
   domeRndPauseMax?.addEventListener("input", debouncedRndSave);
   domeRndMoveMs?.addEventListener("input", debouncedRndSave);
-  reloadRndButton?.addEventListener("click", loadRndDomeConfig);
+  reloadRndButton?.addEventListener("click", loadEscConfig);
 
   if (window.PAStatusStream?.isSupported()) {
     window.PAStatusStream.subscribe((eventType, payload) => {

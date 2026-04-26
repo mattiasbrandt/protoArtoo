@@ -236,9 +236,10 @@ void domeTask(void* pvParameters) {
         // Random dome idle rotation state machine
         {
             enum DomeRndState : uint8_t { DOME_RND_PAUSING = 0, DOME_RND_MOVING };
-            static DomeRndState rndState   = DOME_RND_PAUSING;
-            static uint32_t     rndNextMs  = 0;
-            static float        rndSpeed   = 0.0f;
+            static DomeRndState rndState    = DOME_RND_PAUSING;
+            static uint32_t     rndNextMs   = 0;
+            static float        rndSpeed    = 0.0f;
+            static bool         rndWasActive = false;
 
             bool     rndEnabled;
             uint8_t  rndSpeedPct, rndPauseMin, rndPauseMax;
@@ -260,7 +261,13 @@ void domeTask(void* pvParameters) {
                         ? (uint32_t)(rndPauseMax - rndPauseMin) * 1000UL
                         : 0UL;
 
-                if (manualCommandThisTick) {
+                if (!rndWasActive) {
+                    // Conditions just became active — set initial pause before first move.
+                    rndState    = DOME_RND_PAUSING;
+                    rndNextMs   = now + (uint32_t)rndPauseMin * 1000UL +
+                                  (rndPauseRangeMs > 0 ? (esp_random() % rndPauseRangeMs) : 0UL);
+                    rndWasActive = true;
+                } else if (manualCommandThisTick) {
                     rndState  = DOME_RND_PAUSING;
                     rndNextMs = now + (uint32_t)rndPauseMin * 1000UL +
                                 (rndPauseRangeMs > 0 ? (esp_random() % rndPauseRangeMs) : 0UL);
@@ -285,9 +292,12 @@ void domeTask(void* pvParameters) {
                         lastCommandMs = now;  // prevent 500 ms manual timeout during random move
                     }
                 }
-            } else if (rndState == DOME_RND_MOVING) {
-                rndState  = DOME_RND_PAUSING;
-                rndNextMs = now;
+            } else {
+                rndWasActive = false;
+                if (rndState == DOME_RND_MOVING) {
+                    rndState  = DOME_RND_PAUSING;
+                    rndNextMs = now;
+                }
             }
         }
 
