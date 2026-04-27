@@ -618,6 +618,315 @@
 })();
 
 // =============================================================================
+// Backup & Restore
+// =============================================================================
+(() => {
+  const downloadBtn = document.getElementById('backup-download-btn');
+  const fileInput = document.getElementById('backup-file-input');
+  const fileTrigger = document.getElementById('backup-file-trigger');
+  const summary = document.getElementById('backup-summary');
+  const restoreSections = document.getElementById('restore-sections');
+  const restoreBtnRow = document.getElementById('restore-btn-row');
+  const restoreBtn = document.getElementById('backup-restore-btn');
+  const feedback = document.getElementById('backup-feedback');
+
+  if (!downloadBtn || !fileInput || !feedback) return;
+
+  let parsedBackup = null;
+
+  const setFeedback = (msg, variant = '') => {
+    feedback.textContent = msg;
+    feedback.className = variant ? `feedback mt-12 ${variant}` : 'feedback mt-12';
+  };
+
+  const showRestorePanel = (show) => {
+    if (summary) summary.hidden = !show;
+    if (restoreSections) restoreSections.hidden = !show;
+    if (restoreBtnRow) restoreBtnRow.hidden = !show;
+  };
+
+  // ---- DOWNLOAD BACKUP ----
+  const downloadBackup = async () => {
+    if (!window.PAApi) return;
+    downloadBtn.disabled = true;
+    setFeedback('Downloading settings...');
+    try {
+      const [configRes, rcMapRes, tracksRes, moodMapRes, fwRes] = await Promise.allSettled([
+        window.PAApi.get('/api/config', { timeoutMs: 10000 }),
+        window.PAApi.get('/api/rc/map', { timeoutMs: 10000 }),
+        window.PAApi.get('/api/audio/tracks', { timeoutMs: 10000 }),
+        window.PAApi.get('/api/audio/mood-map', { timeoutMs: 10000 }),
+        fetch('/fw-version.json').then((r) => r.json()).catch(() => ({})),
+      ]);
+
+      const failed = [];
+      const extract = (res, label) => {
+        if (res.status === 'fulfilled') return res.value?.data ?? null;
+        failed.push(label);
+        return null;
+      };
+
+      const config = extract(configRes, 'config');
+      const rc_map = extract(rcMapRes, 'rc_map');
+      const audio_tracks = extract(tracksRes, 'audio_tracks');
+      const audio_mood_map = extract(moodMapRes, 'audio_mood_map');
+
+      if (failed.length > 0) {
+        setFeedback(`Failed to fetch: ${failed.join(', ')}. Backup aborted.`, 'error');
+        return;
+      }
+
+      const fw_version =
+        fwRes.status === 'fulfilled' ? (fwRes.value?.version || 'unknown') : 'unknown';
+
+      const backup = {
+        schema: 1,
+        generated: new Date().toISOString(),
+        fw_version,
+        config,
+        rc_map,
+        audio_tracks,
+        audio_mood_map,
+      };
+
+      const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `artoo-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      setFeedback(`Backup downloaded at ${new Date().toLocaleTimeString()}`, 'success');
+    } catch (err) {
+      setFeedback(`Backup failed: ${window.PAApi?.messageFor(err) || err.message}`, 'error');
+    } finally {
+      downloadBtn.disabled = false;
+    }
+  };
+
+  // ---- RESTORE: flatten GET /api/config nested JSON to POST form params ----
+  const configToFormParams = (cfg) => {
+    const p = new URLSearchParams();
+    const d = cfg?.drive || {};
+    const rc = cfg?.rc || {};
+    const components = cfg?.components || {};
+    const dome = cfg?.dome || {};
+    const sys = cfg?.system || {};
+
+    if (d.speedLimitMax !== undefined) p.set('speedLimitMax', d.speedLimitMax);
+    if (d.speedPresetSlow !== undefined) p.set('speedPresetSlow', d.speedPresetSlow);
+    if (d.speedPresetNormal !== undefined) p.set('speedPresetNormal', d.speedPresetNormal);
+    if (d.speedPresetTurbo !== undefined) p.set('speedPresetTurbo', d.speedPresetTurbo);
+    if (d.stationary !== undefined) p.set('stationary', d.stationary ? 'true' : 'false');
+    if (d.webDriveTimeoutMs !== undefined) p.set('webDriveTimeoutMs', d.webDriveTimeoutMs);
+
+    if (rc.sbusTimeoutMs !== undefined) p.set('sbusTimeoutMs', rc.sbusTimeoutMs);
+    if (rc.inputMode !== undefined) p.set('rcInputMode', rc.inputMode);
+    if (rc?.sbus?.recvCh2 !== undefined) p.set('sbusRecvCh2', rc.sbus.recvCh2 ? 'true' : 'false');
+
+    [
+      ['arm1', 'enableArm1'], ['arm2', 'enableArm2'],
+      ['aux1', 'enableAux1'], ['aux2', 'enableAux2'], ['aux3', 'enableAux3'],
+      ['dome', 'enableDome'],
+      ['rcCh1', 'enableRcCh1'], ['rcCh2', 'enableRcCh2'], ['rcCh3', 'enableRcCh3'],
+      ['rcCh4', 'enableRcCh4'], ['rcCh5', 'enableRcCh5'], ['rcCh6', 'enableRcCh6'],
+      ['s1Hoverboard', 'enableS1Hoverboard'],
+      ['s2Sound', 'enableS2Sound'],
+      ['s3DomeCtrl', 'enableS3DomeCtrl'],
+    ].forEach(([key, param]) => {
+      if (components[key]?.enabled !== undefined) {
+        p.set(param, components[key].enabled ? 'true' : 'false');
+      }
+    });
+
+    ['arm1', 'arm2', 'aux1', 'aux2', 'aux3'].forEach((key) => {
+      if (components[key]?.type !== undefined) p.set(`${key}Type`, components[key].type);
+    });
+
+    [
+      'arm1OpenUs', 'arm1CloseUs', 'arm2OpenUs', 'arm2CloseUs',
+      'aux1OpenUs', 'aux1CloseUs', 'aux2OpenUs', 'aux2CloseUs',
+      'aux3OpenUs', 'aux3CloseUs',
+    ].forEach((k) => { if (cfg[k] !== undefined) p.set(k, cfg[k]); });
+
+    if (cfg.aux_led_pin !== undefined) p.set('aux_led_pin', cfg.aux_led_pin);
+    if (cfg.aux_led_count !== undefined) p.set('aux_led_count', cfg.aux_led_count);
+
+    if (dome.neutralUs !== undefined) p.set('domeNeutralUs', dome.neutralUs);
+    if (dome.minPulseUs !== undefined) p.set('domeMinPulseUs', dome.minPulseUs);
+    if (dome.maxPulseUs !== undefined) p.set('domeMaxPulseUs', dome.maxPulseUs);
+    if (dome.speedLimitPct !== undefined) p.set('domeSpeedLimitPct', dome.speedLimitPct);
+    if (dome.rndEnable !== undefined) p.set('domeRndEnable', dome.rndEnable ? 'true' : 'false');
+    if (dome.rndSpeedPct !== undefined) p.set('domeRndSpeedPct', dome.rndSpeedPct);
+    if (dome.rndPauseMin !== undefined) p.set('domeRndPauseMin', dome.rndPauseMin);
+    if (dome.rndPauseMax !== undefined) p.set('domeRndPauseMax', dome.rndPauseMax);
+    if (dome.rndMoveMs !== undefined) p.set('domeRndMoveMs', dome.rndMoveMs);
+    if (dome.wifiPeerIp !== undefined) p.set('domeWifiPeerIp', dome.wifiPeerIp);
+
+    if (sys.logLevel !== undefined) p.set('logLevel', sys.logLevel);
+
+    return p;
+  };
+
+  // ---- RESTORE: audio tracks (one POST per key) ----
+  const TRACKS_SKIP = new Set(['volume', 'chirp_bindings', 'chirp_category_bindings']);
+
+  const restoreAudioTracks = async (tracks) => {
+    const failed = [];
+    for (const [key, value] of Object.entries(tracks)) {
+      if (TRACKS_SKIP.has(key) || typeof value !== 'number') continue;
+      const chirp = tracks.chirp_bindings?.[key];
+      try {
+        if (chirp) {
+          const form = new URLSearchParams({
+            key, track: chirp.index, bank: chirp.bank, page: chirp.page,
+          });
+          await window.PAApi.postForm('/api/audio/tracks', form, { timeoutMs: 5000 });
+        } else {
+          await window.PAApi.postForm('/api/audio/tracks',
+            new URLSearchParams({ key, track: value }), { timeoutMs: 5000 });
+        }
+      } catch {
+        failed.push(key);
+      }
+    }
+    if (typeof tracks.volume === 'number') {
+      try {
+        await window.PAApi.postForm('/api/audio',
+          new URLSearchParams({ action: 'volume', level: tracks.volume }), { timeoutMs: 5000 });
+      } catch {
+        failed.push('volume');
+      }
+    }
+    return failed;
+  };
+
+  // ---- RESTORE: apply all selected sections ----
+  const performRestore = async () => {
+    if (!parsedBackup || !window.PAApi) return;
+    restoreBtn.disabled = true;
+    setFeedback('Restoring...');
+
+    const lines = [];
+
+    const chkConfig = document.getElementById('restore-chk-config');
+    const chkRcMap = document.getElementById('restore-chk-rc-map');
+    const chkTracks = document.getElementById('restore-chk-audio-tracks');
+    const chkMoodMap = document.getElementById('restore-chk-mood-map');
+
+    if (chkConfig?.checked && parsedBackup.config) {
+      try {
+        await window.PAApi.postForm('/api/config', configToFormParams(parsedBackup.config),
+          { timeoutMs: 10000 });
+        lines.push('Core config: restored');
+      } catch (err) {
+        lines.push(`Core config: FAILED — ${window.PAApi.messageFor(err)}`);
+      }
+    }
+
+    if (chkRcMap?.checked && parsedBackup.rc_map) {
+      try {
+        await window.PAApi.postForm('/api/rc/map',
+          { plain: JSON.stringify(parsedBackup.rc_map) }, { timeoutMs: 10000 });
+        lines.push('RC mappings: restored');
+      } catch (err) {
+        lines.push(`RC mappings: FAILED — ${window.PAApi.messageFor(err)}`);
+      }
+    }
+
+    if (chkTracks?.checked && parsedBackup.audio_tracks) {
+      const failed = await restoreAudioTracks(parsedBackup.audio_tracks);
+      lines.push(
+        failed.length === 0
+          ? 'Audio tracks: restored'
+          : `Audio tracks: partial — ${failed.length} failed (${failed.join(', ')})`,
+      );
+    }
+
+    if (chkMoodMap?.checked && parsedBackup.audio_mood_map) {
+      try {
+        await window.PAApi.postJson('/api/audio/mood-map', parsedBackup.audio_mood_map,
+          { timeoutMs: 5000 });
+        lines.push('Audio mood map: restored');
+      } catch (err) {
+        lines.push(`Audio mood map: FAILED — ${window.PAApi.messageFor(err)}`);
+      }
+    }
+
+    lines.push('Reboot recommended to apply all restored settings.');
+    setFeedback(lines.join('\n'), 'success');
+    restoreBtn.disabled = false;
+  };
+
+  // ---- FILE PARSE ----
+  const handleFile = (file) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      let backup;
+      try {
+        backup = JSON.parse(e.target.result);
+      } catch {
+        setFeedback('Invalid file: not valid JSON.', 'error');
+        parsedBackup = null;
+        showRestorePanel(false);
+        return;
+      }
+
+      if (!backup.schema) {
+        setFeedback('Invalid backup: missing schema field. Restore blocked.', 'error');
+        parsedBackup = null;
+        showRestorePanel(false);
+        return;
+      }
+
+      parsedBackup = backup;
+
+      const date = backup.generated ? backup.generated.slice(0, 10) : 'unknown';
+      const fw = backup.fw_version || 'unknown';
+      const sections = ['config', 'rc_map', 'audio_tracks', 'audio_mood_map'].filter(
+        (k) => backup[k],
+      );
+
+      if (summary) {
+        summary.textContent =
+          `Backup from ${date}, firmware ${fw} — ${sections.length} section${sections.length !== 1 ? 's' : ''} found`;
+      }
+
+      [
+        ['restore-chk-config', 'config'],
+        ['restore-chk-rc-map', 'rc_map'],
+        ['restore-chk-audio-tracks', 'audio_tracks'],
+        ['restore-chk-mood-map', 'audio_mood_map'],
+      ].forEach(([id, key]) => {
+        const chk = document.getElementById(id);
+        if (chk) { chk.checked = Boolean(backup[key]); chk.disabled = !backup[key]; }
+      });
+
+      showRestorePanel(true);
+
+      if (backup.schema > 1) {
+        setFeedback(
+          `Warning: backup schema ${backup.schema} is newer than schema 1. Restore may be incomplete.`,
+          'warning',
+        );
+      } else {
+        setFeedback('');
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  downloadBtn.addEventListener('click', downloadBackup);
+  if (fileTrigger) fileTrigger.addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', () => handleFile(fileInput.files?.[0] ?? null));
+  if (restoreBtn) restoreBtn.addEventListener('click', performRestore);
+})();
+
+// =============================================================================
 // Memory Profiler UI (PA_HEAP_PROFILE=1 builds only)
 // Checks /api/profiler on load. If endpoint returns 200, shows the profiler
 // card and starts a 5-second refresh loop. If 404, card stays hidden.

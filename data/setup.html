@@ -382,6 +382,49 @@
       </div>
     </div>
 
+    <!-- Backup & Restore -->
+    <div class="card">
+      <h3>💾 Backup &amp; Restore</h3>
+      <div class="desc">Save all your droid settings to a file on your computer, or restore from a previous backup.</div>
+
+      <div class="button-row button-row-compact mt-16">
+        <button id="backup-download-btn" class="btn" type="button">Download Backup</button>
+      </div>
+
+      <div class="section-label mt-16">Restore from file</div>
+      <input type="file" id="backup-file-input" accept=".json" style="display:none" aria-label="Select backup file">
+      <div class="button-row button-row-compact mt-8">
+        <button id="backup-file-trigger" class="btn" type="button">Choose File</button>
+      </div>
+
+      <div id="backup-summary" class="desc mt-12" hidden></div>
+
+      <div id="restore-sections" class="mt-12" hidden>
+        <div class="component-row">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="checkbox" id="restore-chk-config"> Core config
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="checkbox" id="restore-chk-rc-map"> RC mappings
+          </label>
+        </div>
+        <div class="component-row mt-6">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="checkbox" id="restore-chk-audio-tracks"> Audio tracks
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="checkbox" id="restore-chk-mood-map"> Audio mood map
+          </label>
+        </div>
+      </div>
+
+      <div id="restore-btn-row" class="button-row button-row-compact mt-12" hidden>
+        <button id="backup-restore-btn" class="btn" type="button">Restore selected</button>
+      </div>
+
+      <div id="backup-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true"></div>
+    </div>
+
     <!-- System Controls -->
     <div class="card">
       <h3>🔄 System</h3>
