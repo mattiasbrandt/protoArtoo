@@ -5,6 +5,18 @@ from RC input, web API, dome serial `$` RX, or mood presets — route through th
 AudioTask queue and are dispatched through a pluggable driver backend. No other
 task or subsystem writes to the audio GPIO directly.
 
+## Table of Contents
+
+- [1. Backend Architecture](#1-backend-architecture)
+- [2. Backend Details](#2-backend-details)
+- [2.1 `AUDIO_SOFT_UART` - Software UART Binary Frame](#21-audio_soft_uart---software-uart-binary-frame)
+- [2.2 `AUDIO_CHIRP` - CHIRP Audio Trigger ASCII Backend](#22-audio_chirp---chirp-audio-trigger-ascii-backend)
+- [2.3 `AUDIO_MP3TRIGGER` - SparkFun MP3 Trigger](#23-audio_mp3trigger---sparkfun-mp3-trigger)
+- [3. MarcDuino `$` Command Mapping](#3-marcduino--command-mapping)
+- [4. Random Playback Mode](#4-random-playback-mode)
+- [5. Operator Frontend Surfaces](#5-operator-frontend-surfaces)
+- [6. Sources](#6-sources)
+
 ---
 
 ## 1. Backend Architecture
@@ -15,16 +27,9 @@ all details of the wire protocol, command format, and volume scaling for its
 module. The rest of the firmware is completely agnostic to which module is
 physically installed.
 
-```cpp
-// include/audio_driver.h
-class AudioDriver {
-public:
-    virtual void begin() = 0;
-    virtual void playTrack(uint16_t track) = 0;  // 1-based track index
-    virtual void stop() = 0;
-    virtual void setVolume(uint8_t vol) = 0;     // 0–30 normalised
-};
-```
+Interface reference:
+
+- `include/audio_driver.h`
 
 Volume is normalised to **0–30** at the interface boundary. Each backend maps
 this to its module's native range.
@@ -33,10 +38,10 @@ this to its module's native range.
 
 | `PA_AUDIO_DRIVER` | Backend | Protocol | Status |
 |---|---|---|---|
-| `AUDIO_SOFT_UART` | Software UART binary frame | Binary frames, 9600 baud | ✅ Implemented (T01) |
-| `AUDIO_CHIRP` | CHIRP Audio Trigger ASCII | ASCII commands, configurable baud | ✅ Implemented (T15) — TX+RX, live status queries |
+| `AUDIO_SOFT_UART` | Software UART binary frame | Binary frames, 9600 baud | ✅ Implemented |
+| `AUDIO_CHIRP` | CHIRP Audio Trigger ASCII | ASCII commands, configurable baud | ✅ Implemented — TX+RX, live status queries |
 | `AUDIO_DFPLAYER` | DFPlayer Mini | Binary frames, 9600 baud | 🔲 Not yet implemented |
-| `AUDIO_MP3TRIGGER` | SparkFun MP3 Trigger | Binary, 9600 baud (community standard; factory default 38400) | ✅ Implemented (T67) — hardware validation pending |
+| `AUDIO_MP3TRIGGER` | SparkFun MP3 Trigger | Binary, 9600 baud (community standard; factory default 38400) | ✅ Implemented — hardware validation pending |
 
 To switch backends: change `PA_AUDIO_DRIVER` in `platformio.ini`, wire up the
 new module, and flash. No other firmware changes required.
@@ -152,19 +157,9 @@ reference-only developer data and is not used as runtime catalog input.
 - Banks 2–6 use `NA_Label/` naming where `N` is bank and `A` is page, for
   example: `2A_SW-Music/`, `2B_StarWarsClips/`.
 
-**CHIRP SD card structure:**
+See the upstream CHIRP examples and folder conventions in the CHIRP project docs:
 
-```
-SD:/1A_R2D2/           Bank 1, Page A (primary vocals — flash-backed)
-    beep_01.wav        \  variant group — one picked at random
-    beep_02.wav        /
-    disagree.wav         standalone sound
-SD:/2A_SW-Music/       Bank 2, Page A
-    ImpMarch.mp3
-    Cantina.wav
-SD:/3A_Effects/        Bank 3, Page A
-    periscope01.mp3
-```
+- https://github.com/joymonkey/CHIRP
 
 #### Status queries
 
@@ -305,7 +300,7 @@ the wire.
 | `$W` | Play Star Wars theme | `playTrack(cfg_snd_sw_theme)` |
 | `$M` | Play Imperial March | `playTrack(cfg_snd_imp_march)` |
 | `$B` | Play startup sound | `playTrack(cfg_snd_startup)` |
-| `$D` | Disco (not implemented — see note below) | — |
+| `$D` | Disco | `playTrack(cfg_snd_disco)` when configured |
 | `$R` | Enable random playback mode | AudioTask state — no driver call |
 | `$O` | Disable random playback mode | AudioTask state — no driver call |
 | `$s` | Stop + disable random mode | `stop()` |
@@ -326,14 +321,11 @@ Random/category playback also consumes category bindings: when a valid `chr_cat_
 exists for the selected category, firmware uses `playTrackBanked(track,bank,page)`;
 otherwise it falls back to numeric playback from `snd_cat_*`/`snd_rand_*`.
 
-> **`$D` — Disco (unimplemented by design):**
-> `$D` is the standard MarcDuino disco command (default track 206 in community SD packs),
-> triggered by dome sequence SE09. It is intentionally omitted from protoArtoo's parser.
-> The Disco sequence plays non-Star Wars music (unrelated to the R2-D2 character) and
-> is not considered a fit for this build. If needed in the future, adding `$D` requires:
-> a new `AUDIO_TRACK_DISCO` constant, an NVS key `snd_disco`, a `parseAudioDollar()`
-> case, and a Sound page row — all small additions. The command currently arrives from
-> the dome as a no-op (parser returns `AUDIO_ACTION_NONE`, silent drop).
+`$D` behavior in current firmware:
+
+- `$D` is parsed and supported.
+- Playback uses the configurable `snd_disco` slot.
+- If `snd_disco` is `0`, `$D` resolves to no playback by design.
 
 ---
 
@@ -342,7 +334,7 @@ otherwise it falls back to numeric playback from `snd_cat_*`/`snd_rand_*`.
 AudioTask manages the random sound timer internally — no driver involvement.
 
 - `$R` → start timer; fire `playTrack(random in [snd_rand_min, snd_rand_max])`
-  at a random interval within `[snd_interval_min_s, snd_interval_max_s]`
+  using the current mood interval (`snd_int_quiet|mid|full|awake`)
 - `$O` or `$s` → stop random mode
 - Active mood (`:SE10`/`:SE11`/`:SE13`/`:SE14`) governs whether random is on
   (see `docs/goal.md §6.8`)
@@ -353,11 +345,52 @@ AudioTask manages the random sound timer internally — no driver involvement.
 |---|---|---|
 | `snd_rand_min` | 1 | First track in random pool |
 | `snd_rand_max` | 100 | Last track in random pool |
-| `snd_interval` | 10 | Seconds between random sounds |
+| `snd_int_quiet` | 0 | Quiet mode interval (`:SE10`) |
+| `snd_int_mid` | 30 | Mid-awake interval (`:SE13`) |
+| `snd_int_full` | 20 | Full-awake interval (`:SE11`) |
+| `snd_int_awake` | 10 | Awake+ interval (`:SE14`) |
 
 ---
 
-## 5. Sources
+## 5. Operator Frontend Surfaces
+
+The audio system is operated primarily through the Sound page, with Setup used
+to enable/disable the hardware path.
+
+### Sound page (`/sound.html`)
+
+Primary workflows:
+
+- Sound module status and driver capabilities
+- Global controls (volume, stop, random on/off)
+- Named sounds table (play and track remap)
+- System sounds table (boot/mode/drive/dome event sounds)
+- Category ranges and mood mapping
+- Mood interval timing controls
+- Direct track playback
+- CHIRP catalog tools (when backend supports catalog)
+
+Implementation references:
+
+- `data/sound.html`
+- `data/sound.js`
+
+### Setup page (`/setup.html`)
+
+Audio-related controls:
+
+- `S2 - Sound` enable/disable toggle
+- Active driver label visibility for S2
+- Sound serial state visibility in setup diagnostics
+
+Implementation references:
+
+- `data/setup.html`
+- `data/setup.js`
+
+---
+
+## 6. Sources
 
 1. [MarcDuino Command Reference](https://www.curiousmarc.com/r2-d2/marcduino-system/marcduino-software-reference/marcduino-command-reference)
 2. [BetterDuinoFirmwareV4 GitHub](https://github.com/RealNobser/BetterDuinoFirmwareV4)

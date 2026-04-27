@@ -4,6 +4,30 @@ GPIO assignments traced from a physical PCB v1.2 board (artoo.uk). Applies to PC
 as well — the only difference between revisions is a single corrected trace; all GPIO
 assignments are identical.
 
+## Table of Contents
+
+- [Source of Truth Contract](#source-of-truth-contract)
+- [Supported Hardware](#supported-hardware)
+- [Serial Ports](#serial-ports)
+- [GPIO Assignment Summary](#gpio-assignment-summary)
+    - [RC Receiver Wiring Modes](#rc-receiver-wiring-modes)
+    - [RC Binding Defaults](#rc-binding-defaults)
+    - [Battery Monitoring](#battery-monitoring)
+- [PCB Revisions](#pcb-revisions)
+- [artoo.uk Hardware Reference](#artoouk-hardware-reference)
+
+---
+
+## Source of Truth Contract
+
+This document is the canonical hardware mapping reference for Artoo Controller PCB pinouts.
+
+When pin information is needed during implementation or review, use this precedence:
+1. `docs/pin_map.md`
+2. `include/config.h`
+
+If these sources ever diverge, reconcile them in the same change.
+
 ---
 
 ## Supported Hardware

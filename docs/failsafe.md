@@ -1,13 +1,24 @@
 # Failsafe System
 
-protoArtoo Phase 1 implements five independent safety layers for drive control.
+protoArtoo implements five independent safety layers for drive control.
 The design goal is simple: loss of control input, stalled firmware, or hoverboard
 link failure must all converge on zero drive output.
+
+## Table of Contents
+
+- [Layer 1 - SBUS receiver hardware failsafe](#layer-1---sbus-receiver-hardware-failsafe)
+- [Layer 2 - SBUS software watchdog](#layer-2---sbus-software-watchdog)
+- [Layer 3 - Web drive command timeout](#layer-3---web-drive-command-timeout)
+- [Layer 4 - ESP32 Task Watchdog Timer](#layer-4---esp32-task-watchdog-timer)
+- [Layer 5 - Hoverboard UART timeout](#layer-5---hoverboard-uart-timeout)
+- [Latching estop behavior](#latching-estop-behavior)
+- [Boot safety defaults](#boot-safety-defaults)
+- [Implementation notes](#implementation-notes)
 
 ## Layer 1 - SBUS receiver hardware failsafe
 
 - Source: RC receiver firmware
-- Implementation: `src/tasks/sbus_input.cpp`
+- Implementation: `src/tasks/rc_input.cpp`
 - Trigger: decoded SBUS frame reports `failsafe=true`
 - Result: `driveSpeed=0`, `driveSteer=0`, `sbusHwFailsafe=true`,
   `failsafeSource=FS_SBUS_HW`
@@ -15,14 +26,15 @@ link failure must all converge on zero drive output.
 This is the fastest RC-side safety path. If the receiver itself detects radio
 loss, protoArtoo immediately zeros drive output on the next decoded frame.
 
-The Phase 3 diagnostics surfaces also report the current SBUS hardware-failsafe
+Diagnostics surfaces also report the current SBUS hardware-failsafe
 bit per source in `GET /api/rc` and `event: rc`.
 
 ## Layer 2 - SBUS software watchdog
 
 - Source: body firmware timeout
-- Implementation: `src/tasks/sbus_input.cpp`
-- Trigger: no valid drive-receiver frame for more than `SBUS_TIMEOUT_MS` (200 ms)
+- Implementation: `src/tasks/rc_input.cpp`
+- Trigger: no valid drive-receiver frame for more than `cfg_sbusTimeoutMs`
+  (default `SBUS_TIMEOUT_MS = 200 ms`)
 - Result: `sbusSignalLost=true`, `driveSpeed=0`, `driveSteer=0`,
   `failsafeSource=FS_SBUS_TIMEOUT`
 
@@ -76,21 +88,22 @@ silent intentionally. Even when stopped, it keeps transmitting zero commands.
 Emergency stop is separate from the automatic timeouts above.
 
 - `POST /api/estop` sets `estop=true`
-- `POST /api/estop/clear` is the only way to clear it
+- clear paths: `POST /api/estop/clear` and `POST /api/manual-command` with
+  `command=clear_estop`
 - `estop` does not auto-clear when RC or web input returns
 
 This prevents accidental restart after a serious safety event.
 
 ## Boot safety defaults
 
-Phase 1 boots with conservative defaults:
+The system boots with conservative defaults:
 
 - `sbusSignalLost = true` on boot; SBUS modes clear it after valid drive-receiver traffic is seen
 - watchdog-reset reboot sets `estop = true`
 - `cfg_speedLimitMax`, `cfg_sbusTimeoutMs`, and `cfg_webDriveTimeoutMs` are
   loaded into `RobotState` before tasks start
 
-## Phase 1 notes
+## Implementation notes
 
 - Drive SBUS: GPIO 15 via the custom RMT decoder
 - Dome SBUS: GPIO 13 via the custom RMT decoder when `dual_sbus` mode is selected
