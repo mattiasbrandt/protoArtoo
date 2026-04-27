@@ -65,7 +65,7 @@ Repository source-of-truth order for performance work:
 1. AGENTS.md (safety/workflow authority)
 2. docs/status.md and docs/goal.md (public planning baseline)
 3. CHANGELOG.md and committed code history for accepted remediation evidence
-4. docs/RMT_ESP32_IDF5.md and docs/SBUS_protocol.md when touching RC/SBUS paths
+4. docs/spec-sheets/rmt-esp32-idf5.md and docs/spec-sheets/sbus-protocol.md when touching RC/SBUS paths
 5. include/config.h and docs/pin_map.md for hardware truth
 
 Internal planning note:

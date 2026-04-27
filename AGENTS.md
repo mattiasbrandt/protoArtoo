@@ -34,9 +34,9 @@ interactive workflow requirements.
 - Hardware truth: `docs/pin_map.md`, `include/config.h`
 - Shared state truth: `include/robot_state.h`
 - Action registry: `docs/action-registry.yaml`
-- SBUS protocol truth: `docs/SBUS_protocol.md`
-- ESP-IDF5 RMT driver truth: `docs/RMT_ESP32_IDF5.md`
-- HOTRC profile truth: `docs/hotrc-sbus-spec.md`
+- SBUS protocol truth: `docs/spec-sheets/sbus-protocol.md`
+- ESP-IDF5 RMT driver truth: `docs/spec-sheets/rmt-esp32-idf5.md`
+- HOTRC profile truth: `docs/spec-sheets/hotrc-sbus-spec.md`
 - Long-term project memory: MemPalace MCP (`mempalace_search`, `mempalace_status`)
 - Espressif MCP servers (repo-level): `espressif-documentation`, `esp-component-registry`
 - Project custom subagent definitions: `.claude/agents/*.md`
@@ -47,12 +47,12 @@ interactive workflow requirements.
 For any task that touches SBUS parsing, SBUS framing/flags/timing acceptance,
 or ESP-IDF5 RMT driver behavior, agents MUST:
 
-1. Read `docs/SBUS_protocol.md` and `docs/RMT_ESP32_IDF5.md` before proposing code changes.
+1. Read `docs/spec-sheets/sbus-protocol.md` and `docs/spec-sheets/rmt-esp32-idf5.md` before proposing code changes.
 2. Treat those docs as implementation authority unless superseded by a higher-precedence source in this file.
 3. Mark unresolved values as `UNKNOWN` and stop dependent implementation changes rather than guessing.
 4. Avoid trial-and-error loops that retest previously rejected mechanisms unless new contradictory telemetry is captured.
 
-If HOTRC-specific behavior is involved, consult `docs/hotrc-sbus-spec.md` after the two protocol/driver docs above.
+If HOTRC-specific behavior is involved, consult `docs/spec-sheets/hotrc-sbus-spec.md` after the two protocol/driver docs above.
 
 ## Espressif MCP Protocol
 
@@ -76,7 +76,7 @@ Required usage pattern:
    IDF major version).
 3. Record unresolved values as `UNKNOWN`; do not guess.
 4. For SBUS/RMT and project-specific contracts, repository docs remain primary:
-   `docs/SBUS_protocol.md`, `docs/RMT_ESP32_IDF5.md`, and `docs/hotrc-sbus-spec.md`.
+   `docs/spec-sheets/sbus-protocol.md`, `docs/spec-sheets/rmt-esp32-idf5.md`, and `docs/spec-sheets/hotrc-sbus-spec.md`.
 
 Not in scope:
 - Do not use RainMaker MCP in this repository workflow unless explicitly requested.

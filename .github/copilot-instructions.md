@@ -84,7 +84,7 @@ Usage rules:
 - Query MCP before coding when behavior/component choices are unresolved in repo docs.
 - Prefer concise, targeted queries (API/peripheral/chip/IDF version).
 - Mark unresolved values as `UNKNOWN`; do not guess.
-- For SBUS/RMT and project contracts, repo docs stay authoritative (`docs/SBUS_protocol.md`, `docs/RMT_ESP32_IDF5.md`, `docs/hotrc-sbus-spec.md`).
+- For SBUS/RMT and project contracts, repo docs stay authoritative (`docs/spec-sheets/sbus-protocol.md`, `docs/spec-sheets/rmt-esp32-idf5.md`, `docs/spec-sheets/hotrc-sbus-spec.md`).
 - RainMaker MCP is out of scope unless explicitly requested.
 
 ## Verification and Reporting

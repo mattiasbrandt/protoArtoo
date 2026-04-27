@@ -50,7 +50,7 @@ Safety invariants to enforce:
 
 Source-of-truth precedence for hardware/protocol work:
 - docs/pin_map.md and include/config.h for pin/hardware truth.
-- docs/SBUS_protocol.md and docs/RMT_ESP32_IDF5.md for parser/driver truth.
+- docs/spec-sheets/sbus-protocol.md and docs/spec-sheets/rmt-esp32-idf5.md for parser/driver truth.
 - docs/action-registry.yaml for action naming/API consistency.
 
 Espressif MCP usage:

@@ -223,9 +223,9 @@ Regression troubleshooting policy (parser/protocol iterate-fix loops):
 
 SBUS/RMT spec compliance gate:
 - For any change touching SBUS parsing, SBUS framing/flags/timing acceptance, or ESP-IDF5 RMT behavior, review these docs before coding:
-  - `docs/RMT_ESP32_IDF5.md`
-  - `docs/SBUS_protocol.md`
-  - `docs/hotrc-sbus-spec.md` (when HOTRC profile behavior is in scope)
+  - `docs/spec-sheets/rmt-esp32-idf5.md`
+  - `docs/spec-sheets/sbus-protocol.md`
+  - `docs/spec-sheets/hotrc-sbus-spec.md` (when HOTRC profile behavior is in scope)
 - Resolution order: RMT driver-level -> SBUS protocol-level -> HOTRC profile-level.
 - If a required value is unresolved, mark it `UNKNOWN` and stop dependent implementation changes instead of guessing.
 - Do not reopen previously rejected parser mechanisms unless new contradictory telemetry is captured.
