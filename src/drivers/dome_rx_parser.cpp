@@ -11,9 +11,9 @@
 // - Scope: this parser handles the protoArtoo body-owned subset and explicitly
 //   ignores/delegates unsupported prefixes by topology design.
 //
-// Contract sources:
+// Reference sources:
 // - docs/goal.md (body-vs-dome ownership and routing)
-// - docs/marcduino_commands.md (command reference inventory)
+// - docs/commands.md (command surface inventory)
 //
 // Testing strategy:
 // - Pure mapping/conversion helpers are split into marcduino_helpers.h and
