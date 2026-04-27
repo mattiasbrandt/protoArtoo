@@ -28,7 +28,7 @@ tested, and designed to be understood and extended by the wider droid-building c
   SparkFun MP3 Trigger; abstract `AudioDriver` interface for future modules
 - **Moods** — 15 presets coordinating body sounds and dome lighting; per-mood random chatter rate
 - **Servo arms** — 2× MG996R utility arm servos via LEDC PWM
-- **AUX outputs** — 3× configurable outputs (ARM3–5): MG996R, MG90S, RGB LED, or disabled
+- **AUX outputs** — 3× configurable outputs (AUX1-3 on ARM3/ARM4/ARM5): MG996R, MG90S, RGB LED, or disabled
 - **Dome motor** — ESC signal via LEDC PWM (tested: ISDT ESC70)
 - **Dome link** — bidirectional Marcduino serial to AstroPixelsPlus over slip ring
 
@@ -99,10 +99,15 @@ protoArtoo/
 │   └── ...
 ├── test/
 │   ├── test_native/           # Pure-logic tests — run on dev machine, no hardware
-│   └── test_embedded/         # On-device tests — requires flashed ESP32
+│   ├── test_embedded/         # On-device tests — requires flashed ESP32
+│   ├── test_web/              # Node.js tests for web UI JavaScript
+│   ├── test_rc_learn/         # RC calibration fixture (HTML, not a pio suite)
+│   └── stubs/                 # Native-build stubs for ESP32 platform functions
 ├── tools/
+│   ├── configure.py           # First-time setup wizard (writes user.mk)
+│   ├── deploy.py              # Interactive build & deploy wizard (bare make)
 │   ├── serial_monitor.py      # Serial monitor (holds DTR/RTS low — no accidental reset)
-│   └── phase4_hw_check.py     # Hardware validation runner script
+│   └── ...                    # check_deps.py, extract_version.py, requirements.txt
 └── docs/
     ├── pin_map.md             # GPIO assignments and UART ownership
     ├── api.md                 # REST API reference
@@ -130,26 +135,31 @@ Open the repo in VS Code and accept the recommended extensions when prompted
 git clone https://github.com/mattiasbrandt/protoArtoo.git
 cd protoArtoo
 
+# First-time only: configure audio module, OTA IP, and USB port (writes user.mk)
+make setup
+
 # First-time only: WiFi credentials (writes src/secrets.h, gitignored)
 make setup-wifi
 
-# Interactive build & deploy wizard — answers questions, runs tests, flashes
+# Interactive build & deploy wizard — picks action, runs tests, flashes
 make
 ```
 
-The wizard asks what you want to do (OTA flash, USB flash, build-only, etc.),
-which audio module you have, and the target IP/port. All PlatformIO output
-streams live; errors are highlighted if something goes wrong.
+`make setup` asks which audio backend you have, your OTA IP, and USB port, then writes
+`user.mk`. All power-user shortcuts read from that file. All PlatformIO output streams
+live; errors are highlighted if something goes wrong.
 
 **Power-user shortcuts** (skip the wizard):
 
 ```bash
-make ota              # OTA flash — DY-SV5W, default IP
-make ota-chirp        # OTA flash — CHIRP module
-make ota-mp3trigger   # OTA flash — MP3 Trigger module
-make flash            # USB flash
-make uploadfs         # Upload web UI only via OTA
-make test             # Run native unit tests only
+make build            # Compile only (no flash)
+make ota              # Run tests + OTA flash — default audio module and IP
+make ota-chirp        # Run tests + OTA flash — CHIRP module
+make ota-mp3trigger   # Run tests + OTA flash — MP3 Trigger module
+make flash            # Run tests + USB flash
+make uploadfs         # Upload web UI only via OTA (no test gate)
+make test             # Run native unit tests
+make check            # Static analysis (cppcheck)
 make monitor          # Serial monitor (no reset on connect)
 make help             # List all named targets
 ```
@@ -174,35 +184,34 @@ pio check
 
 ## Companion project
 
-The dome controller is a fork of [reeltwo/AstroPixelsPlus](https://github.com/reeltwo/AstroPixelsPlus):
+The companion dome firmware is **[mattiasbrandt/AstroPixelsPlus](https://github.com/mattiasbrandt/AstroPixelsPlus)** — a fork of [reeltwo/AstroPixelsPlus](https://github.com/reeltwo/AstroPixelsPlus) extended with the **protoR2link** body-dome transport protocol.
 
-**[mattiasbrandt/AstroPixelsPlus](https://github.com/mattiasbrandt/AstroPixelsPlus)**
-
-Changes from upstream:
-- Sound player disabled (`PREFERENCE_MARCSOUND = kNone`) — audio is handled by protoArtoo body
-- `sendBodyCommand()` — dome sends arm/sound commands to body during coordinated sequences
-- `handleBodySerial()` — bidirectional body link with `#PAHB`/`#APHB` heartbeat protocol
-- 4-state body link badge in settings UI (Connected / Lost / Not seen / Disabled)
+Key changes from upstream:
+- Sound disabled (`PREFERENCE_MARCSOUND = kNone`) — audio handled entirely by protoArtoo body
+- Full-duplex **protoR2link** serial transport over slip ring (body ↔ dome, `#PAHB`/`#APHB` heartbeat at 1 Hz)
+- Dome can trigger body sounds and arm commands via `sendBodyCommand()` — coordinated cross-controller sequences
+- 4-state body link status badge in settings UI (Connected / Lost / Not seen / Disabled)
+- WiFi/UDP fallback transport when slip-ring serial is unavailable
 
 ---
 
 ## Architecture overview
 
 ```
-RC Transmitter ──SBUS──→  [protoArtoo — Artoo Controller PCB]  ←──WiFi── Phone browser
+RC Transmitter ──SBUS──→  [protoArtoo — Artoo Controller PCB]  ←──WiFi──  Browser
                                  │                    │
                             UART1 (115200)        UART2 (9600)
                                  │                    │ bidirectional
                                  ↓                 serial link
-                          Hoverboard              [AstroPixelsPlus — dome]
+                          Hoverboard              [protoR2link — dome]
                                                    • NeoPixel dome lights
                                                    • Panel servos
                                                    • Holoprojectors
                                                    • Logic displays
-                           ↑
-                      soft-UART (9600)
-                     Audio module
-                     (body = sole audio source)
+                                 ↓
+                          soft-UART (9600)
+                          Audio module
+                          (body = sole audio source)
 ```
 
 All Marcduino-compatible commands flow over the bidirectional serial link.
@@ -213,62 +222,71 @@ The dome has no local sound module. The body is the sole audio authority.
 ## Key Features
 
 **Audio System**
-- Three pluggable backends: DY-SV5W binary-frame (confirmed on hardware), CHIRP Audio Trigger
-  ASCII, and SparkFun MP3 Trigger
-- All audio routes through a single `AudioTask` queue — commands accepted from RC, web, and
-  dome serial simultaneously
+- Three supported audio modules: DY-SV5W (confirmed on hardware), CHIRP Audio Trigger,
+  and SparkFun MP3 Trigger — swap between them with a reflash, no rewiring
+- Audio commands from any source — RC transmitter, web browser, or dome controller —
+  are handled together without conflicts
 - Named sound cues (scream, Leia, Cantina, Star Wars, Imperial March, and more) with
-  NVS-configurable track assignments
-- Random ambient chatter with per-mood interval (Quiet: silent, Mid-Awake: 30 s,
-  Full-Awake: 20 s, Awake+: 10 s); all four intervals configurable from the web UI
+  track numbers configurable from the web UI
+- Random ambient chatter with per-mood rate (Quiet: off, Mid-Awake: 30 s,
+  Full-Awake: 20 s, Awake+: 10 s); all four intervals adjustable from the web UI
 
 **Sound Page**
-- Dedicated `/sound.html` with volume slider, named sound trigger buttons, direct track play,
-  random chatter range, mood sound intervals, and a live Audio Module Status card showing
-  link state, device type, play state, and track count from the module itself
+- Sound page with volume slider, named sound buttons, direct track play, random chatter
+  settings, mood sound intervals, and a live Audio Module status card showing connection
+  state, device type, play state, and track count from the module itself
 
 **Moods and Sequences**
 - 15 mood and sequence presets selectable from the dashboard or RC transmitter
-- Mood selection dispatches audio locally and forwards the dome lighting sequence when the
-  dome link is active
-- Last active mood restored on reboot (audio component only; dome TX deferred until link is up)
+- Mood selection plays audio on the body and forwards the matching dome lighting sequence
+  when the dome link is active
+- Last active mood restored on reboot
 
 **Bidirectional Dome Link**
-- Full-duplex serial over slip ring (body ↔ dome, not just body → dome)
-- Body sends `#PAHB` heartbeat at 1 Hz; dome responds with `#APHB`
-- Dome can trigger body sounds and arm sequences — coordinated cross-controller sequences
-- Connection state tracked (Connected / Lost / Not seen) and shown on the dashboard
+- Two-way serial over the slip ring (body ↔ dome, not just body → dome)
+- Keepalive heartbeat at 1 Hz; connection state (Connected / Lost / Not seen) shown on the dashboard
+- Dome can trigger body sounds and arm sequences — fully coordinated cross-controller choreography
+
+**Dome Rotation**
+- RC joystick control of dome motor speed and direction
+- Live speed slider on the Dome page for direct manual control from any browser
+- Speed limit cap configurable as a percentage — dial in how fast the dome is allowed to spin
+- Random idle rotation: dome turns autonomously when no RC or web command is active;
+  enable/disable and speed both adjustable from the Dome page
+- ESC calibration values (neutral, min, max pulse) saved per-build — no recalibration needed after reflash
+- Dome stops automatically on estop or sleep; resumes when cleared
 
 **Three RC Input Modes**
-- Runtime-selectable without reflashing: Standard PWM (6-channel), Single SBUS, or Dual SBUS
-- In Single SBUS mode, active receiver (sbus1/sbus2) selectable from the RC page without
-  touching existing channel mappings
-- Full channel remapping and calibration from the web UI; all bindings NVS-persisted
+- Switchable from the web UI without reflashing:
+  - Standard PWM (6-channel)
+  - Single SBUS
+  - Dual SBUS
+- In Single SBUS mode, active receiver switchable from the RC page without losing existing channel mappings
+- Full channel remapping and calibration from the web UI; all settings saved across reboots
 
 **Operator Web Interface**
-- Works on any phone, tablet, or laptop — no app required
+- Desktop-first and tablet-second browser workflow — no app required
 - Home dashboard with drive mode, mood selector, and live status
 - Sound page, RC diagnostics, servo control, dome control, setup, and firmware update pages
-- Real-time SSE updates — no polling; reconnects automatically on tab visibility restore
-- Shared API client (`PAApi`) and consistent error handling across all pages
-- Runtime log verbosity selector (Error / Info / Debug) on Setup page — no reflash required
+- Real-time page updates — reconnects automatically when switching back to the tab
+- Runtime log level selector (Error / Info / Debug) on Setup page — no reflash required
 
 **Safety-First Architecture**
 - Five independent failsafe layers from hardware through application
-- Latching estop requiring explicit `POST /api/estop/clear` — never auto-resets
-- Failsafe timing telemetry (`failsafeTriggerToZeroMs`) measurable in `/api/status`
+- Latching emergency stop — never auto-resets; must be cleared manually from the web UI
+- Failsafe response time is measurable and logged
 
 **Hardware Flexibility**
-- Abstract `AudioDriver` interface — swap audio modules without changing AudioTask or API
-- Component type system — AUX outputs configurable per-channel (servo types, RGB, or off)
-- Build-time WiFi mode: STA client (`protoArtoo`) or AP-only (`protoArtoo_prod`)
+- Audio module is swappable — changing modules requires only a reflash, no hardware rewiring
+- AUX outputs configurable per-channel: servo (MG996R or MG90S), RGB LED strip, or disabled
+- Build-time WiFi mode: join your existing network or run as a standalone access point
 
 **Modern Development Practices**
-- 488+ native unit tests covering audio parsers, frame protocols, SBUS, RC diagnostics,
-  API serialization, failsafe logic, and more
-- PlatformIO build system with static analysis (`pio check`)
-- FreeRTOS core isolation: Core 0 (network/web), Core 1 (real-time control)
-- ArduinoJson for all API serialization — no hand-sized static buffers
+- Hundreds of native unit tests covering audio parsers, RC input, SBUS, failsafe logic,
+  API responses, and more
+- PlatformIO build system with static analysis
+- Real-time control runs on a dedicated CPU core, isolated from network and web traffic
+- Designed for community readability and extension — not a black box
 
 ---
 
