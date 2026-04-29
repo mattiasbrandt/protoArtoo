@@ -389,6 +389,45 @@ void test_resync_slip_beyond_window_uses_fallback() {
     TEST_ASSERT_EQUAL_HEX8(kSbusDecodeHeader, frame[0]);
 }
 
+// =============================================================================
+// sbusEstimateBitPeriod tests — adaptive period estimation (total-ticks method)
+// =============================================================================
+
+// Helper: create a 2-symbol representation totaling frameTicks (active signal),
+// then append a gap marker symbol with gapTicks in duration0 and duration1=0.
+// This models the RMT end-of-capture structure: last symbol absorbs the idle gap.
+static std::vector<TestSymbol> makeSymbolsWithGap(uint32_t frameTicks,
+                                                   uint32_t gapTicks) {
+    std::vector<TestSymbol> syms;
+    uint16_t half = (uint16_t)(frameTicks / 2);
+    syms.push_back({half, (uint16_t)(frameTicks - half), 0, 1});
+    syms.push_back({(uint16_t)gapTicks, 0, 1, 0});  // gap sentinel (duration1==0)
+    return syms;
+}
+
+// 100 kbaud: 300 bits × 10 ticks/bit = 3000 frame ticks → period 10.
+void test_adaptive_period_100kbaud_returns_10() {
+    auto syms = makeSymbolsWithGap(3000, 300);
+    TEST_ASSERT_EQUAL_UINT32(10, sbusEstimateBitPeriod(syms.data(), syms.size()));
+}
+
+// 115 kbaud (HOTRC DS-650 measured): 300 bits × 8.68 ticks/bit ≈ 2604 frame ticks.
+// (2604 + 150) / 300 = 9.18 → truncated to 9.
+void test_adaptive_period_115kbaud_returns_9() {
+    auto syms = makeSymbolsWithGap(2604, 300);
+    TEST_ASSERT_EQUAL_UINT32(9, sbusEstimateBitPeriod(syms.data(), syms.size()));
+}
+
+// Gap ticks in the last symbol must NOT inflate the period estimate.
+// HOTRC 115 kbaud frame: 2604 frame ticks + 350 gap ticks in last symbol.
+//   Without exclusion: (2604 + 350 + 150) / 300 = 3104/300 = 10 (WRONG — causes
+//   near-total extract failures at 115 kbaud by under-counting multi-bit runs).
+//   With exclusion: (2604 + 150) / 300 = 2754/300 = 9 (correct).
+void test_adaptive_period_gap_ticks_excluded() {
+    auto syms = makeSymbolsWithGap(2604, 350);
+    TEST_ASSERT_EQUAL_UINT32(9, sbusEstimateBitPeriod(syms.data(), syms.size()));
+}
+
 
 int main() {
     UNITY_BEGIN();
@@ -410,5 +449,8 @@ int main() {
     RUN_TEST(test_resync_slip_beyond_window_uses_fallback);
     RUN_TEST(test_footer_exactly_9_bits_accepted);
     RUN_TEST(test_footer_only_8_bits_rejected);
+    RUN_TEST(test_adaptive_period_100kbaud_returns_10);
+    RUN_TEST(test_adaptive_period_115kbaud_returns_9);
+    RUN_TEST(test_adaptive_period_gap_ticks_excluded);
     return UNITY_END();
 }
