@@ -11,14 +11,25 @@ from pathlib import Path
 ALLOWED_TYPES = "feat|fix|docs|refactor|chore|test|style|perf"
 ALLOWED_SCOPES = "drive|sbus|failsafe|dome|audio|servo|web|nvs|wifi|hw|plan|test|ci"
 PHASE_PATTERN = re.compile(
-    rf"^(?:{ALLOWED_TYPES})!?\(phase:v\d+\.\d+\.\d+/T\d{{2}}(?:/slice:[a-z0-9-]+)?\): .+"
+    rf"^(?:{ALLOWED_TYPES})!?\(phase:v\d+\.\d+\.\d+/T\d{{2}}(?:/slice:[a-z0-9-]+)?\): .+",
+    re.DOTALL,
 )
 LEGACY_SCOPE_PATTERN = re.compile(
-    rf"^(?:{ALLOWED_TYPES})!?\((?:{ALLOWED_SCOPES})\): .+"
+    rf"^(?:{ALLOWED_TYPES})!?\((?:{ALLOWED_SCOPES})\): .+",
+    re.DOTALL,
 )
 COMMIT_CMD_PATTERN = re.compile(r"(^|\s)git\s+commit(\s|$)")
 ADD_CMD_PATTERN = re.compile(r"(^|\s)git\s+add(\s|$)")
-MESSAGE_ARG_PATTERN = re.compile(r"(?:^|\s)-m\s+([\"'])(.*?)\1")
+# Handles -m and --message, both = and space separators, single/double quotes.
+MESSAGE_ARG_PATTERN = re.compile(
+    r"""(?:^|\s)(?:-m|--message)(?:=|\s+)([\"'])(.*?)\1""",
+    re.DOTALL,
+)
+# Handles heredoc-style: -m "$(cat <<'EOF'\n...\nEOF\n)"
+HEREDOC_MSG_PATTERN = re.compile(
+    r"""(?:^|\s)(?:-m|--message)(?:=|\s+)"?\$\(cat\s+<<'?(\w+)'?[ \t]*\n(.*?)\n[ \t]*\1[ \t]*\n[ \t]*\)""",
+    re.DOTALL,
+)
 COAUTHOR_LINE_PATTERN = re.compile(r"co-authored-by\s*:", re.IGNORECASE)
 COAUTHOR_TRAILER_PATTERN = re.compile(
     r"--trailer(?:=|\s+)[^\n]*co-authored-by", re.IGNORECASE
@@ -48,6 +59,44 @@ def _run_git(args: list[str], repo_dir: str) -> subprocess.CompletedProcess:
     )
 
 
+def _extract_message(cmd: str) -> str | None:
+    """Return the commit message string, or None if it cannot be parsed."""
+    m = HEREDOC_MSG_PATTERN.search(cmd)
+    if m:
+        return m.group(2).strip()
+    m = MESSAGE_ARG_PATTERN.search(cmd)
+    if m:
+        return m.group(2).strip()
+    return None
+
+
+def _strip_message_content(cmd: str) -> str:
+    """Remove -m/--message values so their text cannot trigger false pattern matches."""
+    cmd = HEREDOC_MSG_PATTERN.sub(" ", cmd)
+    cmd = MESSAGE_ARG_PATTERN.sub(" ", cmd)
+    return cmd
+
+
+def _is_chained_add_then_commit(cmd: str) -> bool:
+    cmd = _strip_message_content(cmd)
+    add_match = ADD_CMD_PATTERN.search(cmd)
+    commit_match = COMMIT_CMD_PATTERN.search(cmd)
+    if not add_match or not commit_match:
+        return False
+    if add_match.start() >= commit_match.start():
+        return False
+    between = cmd[add_match.end():commit_match.start()]
+    return bool(re.search(r"&&|;|\n", between))
+
+
+def _version_files_staged(repo_dir: str) -> list[str]:
+    """Return staged version file paths; empty list means no version files are being committed."""
+    proc = _run_git(["diff", "--cached", "--name-only", "--", *VERSION_GLOBS], repo_dir)
+    if proc.returncode != 0:
+        return []
+    return [p for p in (proc.stdout or "").splitlines() if p.strip()]
+
+
 def _version_file_issues(repo_dir: str) -> list[str]:
     proc = _run_git(["status", "--porcelain", "--", *VERSION_GLOBS], repo_dir)
     if proc.returncode != 0:
@@ -64,12 +113,10 @@ def _version_file_issues(repo_dir: str) -> list[str]:
         idx_status = xy[0]
         wt_status = xy[1]
 
-        # Untracked version metadata file.
         if xy == "??":
             issues.append(f"{path} is untracked")
             continue
 
-        # Any non-space worktree status means unstaged/mixed state.
         if wt_status != " ":
             if idx_status != " ":
                 issues.append(
@@ -114,18 +161,6 @@ def _version_pair_issue(repo_dir: str) -> str:
     return ""
 
 
-def _is_chained_add_then_commit(cmd: str) -> bool:
-    add_match = ADD_CMD_PATTERN.search(cmd)
-    commit_match = COMMIT_CMD_PATTERN.search(cmd)
-    if not add_match or not commit_match:
-        return False
-    if add_match.start() >= commit_match.start():
-        return False
-
-    between = cmd[add_match.end():commit_match.start()]
-    return bool(re.search(r"&&|;|\n", between))
-
-
 def main() -> int:
     try:
         data = json.load(sys.stdin)
@@ -139,6 +174,7 @@ def main() -> int:
     if not COMMIT_CMD_PATTERN.search(cmd):
         return 0
 
+    # Co-author check scans full cmd including heredoc body.
     if COAUTHOR_LINE_PATTERN.search(cmd) or COAUTHOR_TRAILER_PATTERN.search(cmd):
         _deny(
             "Commit blocked: co-author trailers are not allowed in this repository. "
@@ -146,40 +182,20 @@ def main() -> int:
         )
         return 0
 
-    repo_dir = os.environ.get("CLAUDE_PROJECT_DIR", os.getcwd())
-    chained_add_commit = _is_chained_add_then_commit(cmd)
-    problems: list[str] = []
-
-    version_issues = _version_file_issues(repo_dir)
-    if version_issues:
-        problems.append(
-            "version metadata file(s) are not fully staged: "
-            + "; ".join(version_issues)
-            + ". Stage them explicitly with 'git add data/*version*.json' (or revert)."
-        )
-
-    pair_issue = _version_pair_issue(repo_dir)
-    if pair_issue:
-        problems.append(
-            "version metadata consistency check failed: "
-            + pair_issue
-            + ". Run the build/version generation step and stage both data version files."
-        )
-
-    match = MESSAGE_ARG_PATTERN.search(cmd)
-    if not match:
+    # Validate message format before anything else so format errors surface
+    # regardless of chaining or version state.
+    message = _extract_message(cmd)
+    if message is None:
         _deny(
-            "Commit blocked: "
-            "commit message parse failed. Use a literal quoted -m argument, for example: "
-            "git commit -m \"type(phase:vX.Y.Z/TNN): summary\""
+            "Commit blocked: could not parse commit message. "
+            "Use a literal quoted -m/--message argument, for example: "
+            'git commit -m "type(phase:vX.Y.Z/TNN): summary"'
         )
         return 0
 
-    message = match.group(2).strip()
     if not (PHASE_PATTERN.match(message) or LEGACY_SCOPE_PATTERN.match(message)):
         _deny(
-            "Commit blocked: "
-            "invalid commit scope/message. Expected one of: "
+            "Commit blocked: invalid commit message format. Expected one of: "
             "type(phase:vX.Y.Z/TNN): summary, "
             "type(phase:vX.Y.Z/TNN/slice:name): summary, "
             "or type(scope): summary (scope from CONTRIBUTING). "
@@ -187,19 +203,37 @@ def main() -> int:
         )
         return 0
 
-    # PreToolUse runs before command execution, so staged state in chained
-    # commands cannot be trusted for validation.
-    if chained_add_commit:
+    # Chained add+commit: staged state is untrustworthy before execution.
+    if _is_chained_add_then_commit(cmd):
         _deny(
             "Commit blocked: cannot validate staged version metadata in a chained command "
-            "before execution (for example, 'git add ... && git commit ...'). "
+            "(e.g. 'git add ... && git commit ...'). "
             "Run staging and commit as separate commands: first "
             "'git add data/*version*.json', then 'git commit -m \"...\"'."
         )
         return 0
 
-    if problems:
-        _deny("Commit blocked: " + " | ".join(problems))
+    # Version checks only apply when version files are actually being staged.
+    repo_dir = os.environ.get("CLAUDE_PROJECT_DIR", os.getcwd())
+    if _version_files_staged(repo_dir):
+        problems: list[str] = []
+        version_issues = _version_file_issues(repo_dir)
+        if version_issues:
+            problems.append(
+                "version metadata file(s) are not fully staged: "
+                + "; ".join(version_issues)
+                + ". Stage them explicitly with 'git add data/*version*.json' (or revert)."
+            )
+        pair_issue = _version_pair_issue(repo_dir)
+        if pair_issue:
+            problems.append(
+                "version metadata consistency check failed: "
+                + pair_issue
+                + ". Run the build/version generation step and stage both data version files."
+            )
+        if problems:
+            _deny("Commit blocked: " + " | ".join(problems))
+
     return 0
 
 
