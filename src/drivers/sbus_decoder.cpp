@@ -302,31 +302,9 @@ bool SbusDecoder::_parseSymbols(const RxBuf& buf) {
     static bool bits[kBitArraySize];
 
     // Estimate bit period from total frame ticks / 300 bits.
-    // This is robust to partial start-bit capture (ISR timing gap between re-arm and
-    // first edge): the per-symbol search for a 1-bit LOW run fails when the start bit
-    // duration is < 8 ticks or absent, but the total-ticks estimate uses all symbols
-    // and is unaffected by the partial leading edge.
-    //
-    // At 115 kbaud (8.68 ticks/bit): totalTicks ≈ 2604 → period = round(2604/300) = 9.
-    // At 100 kbaud (10 ticks/bit):   totalTicks ≈ 3000 → period = round(3000/300) = 10.
-    // Clamped to [8, 10] to reject bad frames (< 2400 ticks = < 80 kbaud equivalent).
-    //
-    // The last captured symbol (duration1==0) includes the ~300-tick inter-frame gap
-    // ticks in its duration0. Including it inflates totalTicks by ~300, pushing
-    // period from 9→10 for a 115 kbaud signal. With period=10 and actual 8.68
-    // ticks/bit, any run of ≥4 physical bits is under-counted, causing bc < 300 and
-    // near-total extract failures. Exclude the last symbol to get the correct estimate.
-    constexpr uint32_t kAdaptiveMin = 8;
-    uint32_t totalTicks = 0;
-    const size_t tickSymCount = buf.count > 1 ? buf.count - 1 : buf.count;
-    for (size_t i = 0; i < tickSymCount; ++i) {
-        totalTicks += buf.symbols[i].duration0;
-        if (buf.symbols[i].duration1 > 0) totalTicks += buf.symbols[i].duration1;
-    }
-    // 150 = 300/2 for round-nearest; clamp result to valid range.
-    uint32_t adaptivePeriod = (totalTicks + 150U) / 300U;
-    if (adaptivePeriod < kAdaptiveMin)       adaptivePeriod = kAdaptiveMin;
-    if (adaptivePeriod > kBitPeriodTicksStd) adaptivePeriod = kBitPeriodTicksStd;
+    // See sbusEstimateBitPeriod() in sbus_decode_helpers.h for full rationale
+    // (last-symbol gap exclusion, clamping, and HOTRC 115 kbaud behaviour).
+    uint32_t adaptivePeriod = sbusEstimateBitPeriod(buf.symbols, buf.count);
 
     // Only try the adaptive period with correct (non-inverted) polarity.
     // kBitPeriodTicksFast (200 kbaud) and invertBits=true are wrong for the

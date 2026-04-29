@@ -160,6 +160,33 @@ inline bool extractSbusBytes(const bool* bits, int bc, int startPos, bool invert
     return true;
 }
 
+// Estimate SBUS bit period (RMT ticks/bit) from a captured RMT symbol array.
+// Sums all symbol durations except the last symbol, then divides by 300 (bits
+// per SBUS frame), rounded to nearest integer.
+//
+// The last symbol is excluded because the ESP-IDF RMT driver merges the
+// inter-frame idle gap ticks into the last symbol's duration0 (with duration1=0
+// marking end-of-capture). Including those gap ticks inflates totalTicks by ~300,
+// which rounds 115 kbaud (8.68 ticks/bit → 2604 ticks) up to period=10 instead
+// of the correct 9 — causing near-total extract failures.
+//
+// Result is clamped to [8, 10] ticks/bit (covers ~80–125 kbaud range).
+template <typename SymbolT>
+inline uint32_t sbusEstimateBitPeriod(const SymbolT* syms, size_t count) {
+    constexpr uint32_t kAdaptiveMin = 8;
+    constexpr uint32_t kBitPeriodTicksStd = 10;
+    uint32_t totalTicks = 0;
+    const size_t tickSymCount = count > 1 ? count - 1 : count;
+    for (size_t i = 0; i < tickSymCount; ++i) {
+        totalTicks += syms[i].duration0;
+        if (syms[i].duration1 > 0) totalTicks += syms[i].duration1;
+    }
+    uint32_t period = (totalTicks + 150U) / 300U;  // round-nearest
+    if (period < kAdaptiveMin)       period = kAdaptiveMin;
+    if (period > kBitPeriodTicksStd) period = kBitPeriodTicksStd;
+    return period;
+}
+
 inline bool decodeFrameFromBits(const bool* bits, int bc, bool invertBits,
                                 uint8_t* frame, int frameLen,
                                 SbusDecodeAttemptStats* attemptStats,
