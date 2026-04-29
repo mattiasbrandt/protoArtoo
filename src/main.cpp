@@ -1050,7 +1050,7 @@ void setup() {
 
     // AudioTask: Core 0 (non-RT) — software bit-bang TX blocks ~6 ms per command;
     // keeping off Core 1 avoids any interaction with DriveTask / ServoTask timing.
-    xTaskCreatePinnedToCore(audioTask, "AudioTask", 3072, nullptr, 3, nullptr, 0);
+    xTaskCreatePinnedToCore(audioTask, "AudioTask", 4096, nullptr, 3, nullptr, 0);
 
     // AuxLedTask: Core 0 (non-RT) - WS2812B effects and API-driven color/effect updates.
     // Runs independently of Core 1 control loops.
@@ -1060,7 +1060,9 @@ void setup() {
 
     // DomeLinkTask: Core 1 — bidirectional Marcduino serial to AstroPixelsPlus.
     // UART2 TX/RX are non-blocking hardware operations; Core 1 at priority 3.
-    xTaskCreatePinnedToCore(domeLinkTask, "DomeLinkTask", 3072, nullptr, 3, nullptr, 1);
+    // 4096: profiler measured 988 B free at 3072 B without WiFi fallback active;
+    // HTTPClient call-chain in sendCommandOverWifi needs 3 KB+ of stack headroom.
+    xTaskCreatePinnedToCore(domeLinkTask, "DomeLinkTask", 4096, nullptr, 3, nullptr, 1);
 
     // SafetyMonitorTask: 10 Hz audit on Core 0 (non-RT, low priority).
     // HWM first-iteration: 476 B free — WARN path allocates 128 B format buffer +
