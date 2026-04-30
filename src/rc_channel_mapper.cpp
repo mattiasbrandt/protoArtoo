@@ -60,7 +60,15 @@ static bool readChannelRaw(const RcChannelSnapshot& snap, const RcBindingConfig&
 // ============================================================================
 // Helper: Check if a binding source is active for the current mode
 // ============================================================================
-
+//
+// NOTE: This function is similar to rcSourceEnabledForMode() in rc_diagnostics_snapshot.cpp,
+// but has a different purpose and signature:
+//   - bindingSourceActiveForMode: determines if a specific RcBindingConfig can be used in a snapshot
+//   - rcSourceEnabledForMode: determines if a source type is enabled in the current input mode
+//
+// For PWM, this function also validates channel range (1-6), while rcSourceEnabledForMode
+// checks an external anyPwmEnabled flag. They are not interchangeable.
+//
 static bool bindingSourceActiveForMode(const RcBindingConfig& binding, const RcChannelSnapshot& snap,
                                        bool enableRcCh1, bool enableRcCh2, bool useCh2) {
     switch (binding.source) {
