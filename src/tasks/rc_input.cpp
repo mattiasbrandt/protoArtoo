@@ -33,6 +33,7 @@
 #include "../../include/ledc_pwm.h"
 #include "../../include/logging.h"
 #include "../../include/marcduino_helpers.h"
+#include "../../include/rc_channel_mapper.h"
 #include "../../include/rc_pwm_helpers.h"
 #include "../../include/robot_state.h"
 #include "../../include/sbus_decoder.h"
@@ -86,6 +87,43 @@ static bool bindingSourceActive(const RcBindingConfig& binding, RcInputMode mode
 }
 
 static void loadRcRuntimeConfig(RcRuntimeConfig* cfg, RcInputMode mode) {
+    if (cfg == nullptr) {
+        return;
+    }
+
+    taskENTER_CRITICAL(&robotStateMux);
+    cfg->enableRc[0] = robotState.cfg_enable_rc_ch1;
+    cfg->enableRc[1] = robotState.cfg_enable_rc_ch2;
+    cfg->enableRc[2] = robotState.cfg_enable_rc_ch3;
+    cfg->enableRc[3] = robotState.cfg_enable_rc_ch4;
+    cfg->enableRc[4] = robotState.cfg_enable_rc_ch5;
+    cfg->enableRc[5] = robotState.cfg_enable_rc_ch6;
+    cfg->enableDome = robotState.cfg_enable_dome;
+    cfg->enableArm1 = robotState.cfg_enable_arm1;
+    cfg->enableArm2 = robotState.cfg_enable_arm2;
+    cfg->enableSound = robotState.cfg_enable_s2_sound;
+    cfg->maxOut = robotState.cfg_speedLimitMax;
+
+    if (mode == RC_INPUT_STANDARD_PWM) {
+        cfg->driveSpeed = robotState.cfg_rc_pwm_drive_speed;
+        cfg->driveSteer = robotState.cfg_rc_pwm_drive_steer;
+        cfg->domeSpeed = robotState.cfg_rc_pwm_dome_speed;
+        cfg->arm1 = robotState.cfg_rc_pwm_arm1;
+        cfg->arm2 = robotState.cfg_rc_pwm_arm2;
+        cfg->sound = robotState.cfg_rc_pwm_sound;
+    } else {
+        cfg->driveSpeed = robotState.cfg_rc_sbus_drive_speed;
+        cfg->driveSteer = robotState.cfg_rc_sbus_drive_steer;
+        cfg->domeSpeed = robotState.cfg_rc_sbus_dome_speed;
+        cfg->arm1 = robotState.cfg_rc_sbus_arm1;
+        cfg->arm2 = robotState.cfg_rc_sbus_arm2;
+        cfg->sound = robotState.cfg_rc_sbus_sound;
+    }
+    taskEXIT_CRITICAL(&robotStateMux);
+}
+
+// Helper: Load RcMappingConfig from RobotState (for use with pure mapper function)
+static void loadRcMappingConfig(RcMappingConfig* cfg, RcInputMode mode) {
     if (cfg == nullptr) {
         return;
     }
@@ -706,34 +744,34 @@ static void dispatchStandardPwmInputs() {
         return;
     }
 
-    int rawSpeed = 0;
-    int rawSteer = 0;
-    bool speedActive = bindingSourceActive(cfg.driveSpeed, RC_INPUT_STANDARD_PWM, cfg.enableRc[0],
-                                           cfg.enableRc[1], false) &&
-                       readPwmBindingRaw(cfg.driveSpeed, pulses, &rawSpeed) &&
-                       cfg.enableRc[cfg.driveSpeed.channel - 1];
-    bool steerActive = bindingSourceActive(cfg.driveSteer, RC_INPUT_STANDARD_PWM, cfg.enableRc[0],
-                                           cfg.enableRc[1], false) &&
-                       readPwmBindingRaw(cfg.driveSteer, pulses, &rawSteer) &&
-                       cfg.enableRc[cfg.driveSteer.channel - 1];
+    // Build channel snapshot from PWM pulses for pure mapper
+    RcChannelSnapshot snap = {};
+    snap.valid = true;
+    snap.mode = RC_INPUT_STANDARD_PWM;
+    for (int i = 0; i < 6; ++i) {
+        snap.channels[i] = (int16_t)pulses[i];  // Store PWM pulse in µs
+    }
 
-    if (speedActive && steerActive) {
-        int16_t maxOut = cfg.maxOut;
+    // Load mapping config from RobotState
+    RcMappingConfig mapCfg = {};
+    loadRcMappingConfig(&mapCfg, RC_INPUT_STANDARD_PWM);
+
+    // Map channel snapshot to control intent (pure function)
+    RcControlIntent intent = rcMapChannels(snap, mapCfg);
+
+    // Dispatch backbone controls (drive speed, steer, dome speed)
+    if (intent.driveSpeed != 0 || intent.driveSteer != 0) {
         setStationaryMode(false);
-        setDriveCommand(
-            (int16_t)(applyRcAnalogCalibration(rawSpeed, cfg.driveSpeed, nullptr) * maxOut),
-            (int16_t)(applyRcAnalogCalibration(rawSteer, cfg.driveSteer, nullptr) * maxOut),
-            SRC_SBUS);
+        setDriveCommand(intent.driveSpeed, intent.driveSteer, SRC_SBUS);
     }
 
-    int rawDome = 0;
-    if (cfg.enableDome &&
-        bindingSourceActive(cfg.domeSpeed, RC_INPUT_STANDARD_PWM, cfg.enableRc[0], cfg.enableRc[1],
-                            false) &&
-        readPwmBindingRaw(cfg.domeSpeed, pulses, &rawDome) &&
-        cfg.enableRc[cfg.domeSpeed.channel - 1]) {
-        queueDomeCommand(applyRcAnalogCalibration(rawDome, cfg.domeSpeed, nullptr), SRC_SBUS);
+    if (intent.domeSpeed != 0) {
+        float normalizedDomeSpeed = (float)intent.domeSpeed / (float)mapCfg.maxOut;
+        queueDomeCommand(normalizedDomeSpeed, SRC_SBUS);
     }
+
+    // Servo and audio triggers remain in the existing Tier 2 dispatch logic
+    // (deferred for future expansion; currently handled by separate trigger binding path)
 
     static RcSwitchState lastArm1State = RC_SWITCH_MID;
     static RcSwitchState lastArm2State = RC_SWITCH_MID;
@@ -1121,25 +1159,30 @@ void rcInputTask(void* pvParameters) {
                     taskENTER_CRITICAL(&robotStateMux);
                     taskEXIT_CRITICAL(&robotStateMux);
 
-                    int rawSpeed = 0;
-                    int rawSteer = 0;
-                    if (cfg.driveSpeed.source == RC_BINDING_SBUS1 &&
-                        cfg.driveSteer.source == RC_BINDING_SBUS1 &&
-                        readSbusAnalog(data, cfg.driveSpeed, &rawSpeed) &&
-                        readSbusAnalog(data, cfg.driveSteer, &rawSteer)) {
-                        int16_t maxOut = cfg.maxOut;
+                    // Build channel snapshot from SBUS data for pure mapper
+                    RcChannelSnapshot snap = {};
+                    snap.valid = true;
+                    snap.mode = rcInputMode;  // SINGLE_SBUS or DUAL_SBUS
+                    for (int i = 0; i < 16; ++i) {
+                        snap.channels[i] = (int16_t)data.ch[i];
+                    }
+                    snap.channels[16] = data.ch17 ? 1811 : 172;  // Digital ch17 as SBUS value
+                    snap.channels[17] = data.ch18 ? 1811 : 172;  // Digital ch18 as SBUS value
+
+                    // Load mapping config from RobotState
+                    RcMappingConfig mapCfg = {};
+                    loadRcMappingConfig(&mapCfg, rcInputMode);
+
+                    // Map channel snapshot to control intent (pure function)
+                    RcControlIntent intent = rcMapChannels(snap, mapCfg);
+
+                    // Dispatch backbone controls (drive speed, steer)
+                    if (intent.driveSpeed != 0 || intent.driveSteer != 0) {
                         setStationaryMode(false);
-                        setDriveCommand(constrain((int16_t)(applyRcAnalogCalibration(
-                                                                rawSpeed, cfg.driveSpeed, nullptr) *
-                                                            maxOut),
-                                                  (int16_t)(-maxOut), maxOut),
-                                        constrain((int16_t)(applyRcAnalogCalibration(
-                                                                rawSteer, cfg.driveSteer, nullptr) *
-                                                            maxOut),
-                                                  (int16_t)(-maxOut), maxOut),
-                                        SRC_SBUS);
+                        setDriveCommand(intent.driveSpeed, intent.driveSteer, SRC_SBUS);
                     }
 
+                    // Dome speed dispatch happens in dispatchSbusBindingsForSource for stabilization
                     dispatchSbusBindingsForSource(data, RC_BINDING_SBUS1, rcInputMode, enableRcCh1,
                                                   enableRcCh2, useCh2);
                 }
