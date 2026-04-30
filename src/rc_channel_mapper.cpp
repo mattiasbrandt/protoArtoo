@@ -221,19 +221,21 @@ RcControlIntent rcMapChannels(const RcChannelSnapshot& snap, const RcMappingConf
     // Token is a static Marcduino command string ("$87" = random general sound).
     // Edge detection state is maintained by caller in prevSoundPressed.
     intent.audioTrigger = nullptr;
+    intent.soundPressed = false;
     int rawSound = 0;
     if (cfg.enableSound && rcBindingIsValid(cfg.sound) &&
         bindingSourceActiveForMode(cfg.sound, snap, cfg.enableRc[0], cfg.enableRc[1], useCh2) &&
         readChannelRaw(snap, cfg.sound, &rawSound)) {
         RcSwitchState soundState = rcAnalogToSwitchState(rawSound, cfg.sound);
-        bool soundPressed = (soundState == RC_SWITCH_HIGH);
+        intent.soundPressed = (soundState == RC_SWITCH_HIGH);
         // Rising edge detection
-        if (soundPressed && !cfg.prevSoundPressed) {
+        if (intent.soundPressed && !cfg.prevSoundPressed) {
             intent.audioTrigger = "$87";  // Random general sound trigger
         }
     } else {
         // If binding invalid, reset state to prevent stuck trigger on re-enable
         intent.audioTrigger = nullptr;
+        intent.soundPressed = false;
     }
 
     // ========================================================================

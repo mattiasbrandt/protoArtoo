@@ -391,6 +391,62 @@ void test_dome_disabled() {
 }
 
 // =============================================================================
+// Test: Sound Switch State (soundPressed field)
+// =============================================================================
+
+void test_sound_pressed_true() {
+    RcChannelSnapshot snap = makePwmSnapshot(1500, 1500);
+    snap.channels[4] = 2000;  // CH5 = HIGH state (sound pressed)
+    RcMappingConfig cfg = makeDefaultPwmConfig();
+
+    // Enable sound on CH5
+    cfg.enableSound = true;
+    cfg.sound = defaultPwmBinding(5);
+    cfg.prevSoundPressed = false;  // No previous state
+
+    RcControlIntent intent = rcMapChannels(snap, cfg);
+
+    // soundPressed should be true when binding is HIGH
+    TEST_ASSERT_TRUE(intent.soundPressed);
+    // audioTrigger fires on rising edge (false -> true)
+    TEST_ASSERT_NOT_NULL(intent.audioTrigger);
+    TEST_ASSERT_EQUAL_STRING("$87", intent.audioTrigger);
+}
+
+void test_sound_pressed_false() {
+    RcChannelSnapshot snap = makePwmSnapshot(1500, 1500);
+    snap.channels[4] = 1500;  // CH5 = MID/LOW state (not pressed)
+    RcMappingConfig cfg = makeDefaultPwmConfig();
+
+    // Enable sound on CH5
+    cfg.enableSound = true;
+    cfg.sound = defaultPwmBinding(5);
+    cfg.prevSoundPressed = false;
+
+    RcControlIntent intent = rcMapChannels(snap, cfg);
+
+    // soundPressed should be false when binding is not HIGH
+    TEST_ASSERT_FALSE(intent.soundPressed);
+    // No trigger on non-rising edge
+    TEST_ASSERT_NULL(intent.audioTrigger);
+}
+
+void test_sound_disabled() {
+    RcChannelSnapshot snap = makePwmSnapshot(1500, 1500);
+    snap.channels[4] = 2000;
+    RcMappingConfig cfg = makeDefaultPwmConfig();
+
+    // Sound disabled (default)
+    cfg.enableSound = false;
+
+    RcControlIntent intent = rcMapChannels(snap, cfg);
+
+    // soundPressed should be false when sound is disabled
+    TEST_ASSERT_FALSE(intent.soundPressed);
+    TEST_ASSERT_NULL(intent.audioTrigger);
+}
+
+// =============================================================================
 // Test: Partial Input (only one of speed/steer available)
 // =============================================================================
 
@@ -508,6 +564,11 @@ int main() {
     // Dome speed
     RUN_TEST(test_dome_speed_mapping);
     RUN_TEST(test_dome_disabled);
+
+    // Sound switch state
+    RUN_TEST(test_sound_pressed_true);
+    RUN_TEST(test_sound_pressed_false);
+    RUN_TEST(test_sound_disabled);
 
     // Partial input
     RUN_TEST(test_partial_input_missing_speed);

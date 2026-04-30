@@ -37,8 +37,6 @@
 #include "../../include/rc_pwm_helpers.h"
 #include "../../include/robot_state.h"
 #include "../../include/sbus_decoder.h"
-#include "../../include/sbus_math.h"
-#include "../../include/system_sounds.h"
 #include "../../include/web_server.h"
 
 static const char* TAG = "RCInputTask";
@@ -739,28 +737,17 @@ static void dispatchStandardPwmInputs() {
         snap.channels[i] = (int16_t)pulses[i];  // Store PWM pulse in µs
     }
 
-    // Load mapping config from RobotState via runtime config (avoids code duplication)
-    RcRuntimeConfig rtCfg = {};
-    loadRcRuntimeConfig(&rtCfg, RC_INPUT_STANDARD_PWM);
-
     // Convert RcRuntimeConfig to RcMappingConfig
     RcMappingConfig mapCfg;
     static bool lastSoundPressed = false;
-    rcRuntimeConfigToMappingConfig(rtCfg, &mapCfg);
+    rcRuntimeConfigToMappingConfig(cfg, &mapCfg);
     mapCfg.prevSoundPressed = lastSoundPressed;
 
     // Map channel snapshot to control intent (pure function)
     RcControlIntent intent = rcMapChannels(snap, mapCfg);
 
     // Update sound state for next iteration
-    if (cfg.enableSound && rcBindingIsValid(cfg.sound)) {
-        int rawSound = 0;
-        if (bindingSourceActive(cfg.sound, RC_INPUT_STANDARD_PWM, cfg.enableRc[0], cfg.enableRc[1],
-                                false) &&
-            readPwmBindingRaw(cfg.sound, pulses, &rawSound) && cfg.enableRc[cfg.sound.channel - 1]) {
-            lastSoundPressed = (rcAnalogToSwitchState(rawSound, cfg.sound) == RC_SWITCH_HIGH);
-        }
-    }
+    lastSoundPressed = intent.soundPressed;
 
     // Dispatch backbone controls (drive speed, steer, dome speed)
     if (intent.driveSpeed != 0 || intent.driveSteer != 0) {
@@ -813,11 +800,6 @@ static void dispatchSbusBindingsForSource(const SbusData& data, RcBindingSource 
                                           bool useCh2) {
     RcRuntimeConfig cfg = {};
     loadRcRuntimeConfig(&cfg, mode);
-    static RcSwitchState lastArm1Switch = RC_SWITCH_MID;
-    static RcSwitchState lastArm2Switch = RC_SWITCH_MID;
-    static bool lastArm1Digital = false;
-    static bool lastArm2Digital = false;
-    static bool lastSoundPressed = false;
     static bool domeRawInit = false;
     static int lastDomeRaw = 0;
     static int pendingDomeRaw = 0;
@@ -866,31 +848,6 @@ static void dispatchSbusBindingsForSource(const SbusData& data, RcBindingSource 
             pendingDomeRaw = raw;
             lastDomeRaw = raw;
             queueDomeCommand(applyRcAnalogCalibration(raw, cfg.domeSpeed, nullptr), SRC_SBUS);
-        }
-    }
-
-    if (cfg.enableArm1 && sourceActive(cfg.arm1)) {
-        if (readSbusDigital(data, cfg.arm1, &pressed)) {
-            dispatchDigitalAction(pressed, 0, &lastArm1Digital);
-        } else if (readSbusAnalog(data, cfg.arm1, &raw)) {
-            dispatchSwitchAction(cfg.arm1, raw, 0, &lastArm1Switch);
-        }
-    }
-
-    if (cfg.enableArm2 && sourceActive(cfg.arm2)) {
-        if (readSbusDigital(data, cfg.arm2, &pressed)) {
-            dispatchDigitalAction(pressed, 1, &lastArm2Digital);
-        } else if (readSbusAnalog(data, cfg.arm2, &raw)) {
-            dispatchSwitchAction(cfg.arm2, raw, 1, &lastArm2Switch);
-        }
-    }
-
-    if (cfg.enableSound && sourceActive(cfg.sound)) {
-        if (readSbusDigital(data, cfg.sound, &pressed)) {
-            handleSoundTrigger(pressed, &lastSoundPressed);
-        } else if (readSbusAnalog(data, cfg.sound, &raw)) {
-            handleSoundTrigger(rcAnalogToSwitchState(raw, cfg.sound) == RC_SWITCH_HIGH,
-                               &lastSoundPressed);
         }
     }
 
@@ -1190,14 +1147,7 @@ void rcInputTask(void* pvParameters) {
                     RcControlIntent intent = rcMapChannels(snap, mapCfg);
 
                     // Update sound state for next iteration
-                    if (rtCfg.enableSound && rcBindingIsValid(rtCfg.sound)) {
-                        int rawSound = 0;
-                        if (readSbusAnalog(data, rtCfg.sound, &rawSound)) {
-                            lastSoundPressed = (rcAnalogToSwitchState(rawSound, rtCfg.sound) == RC_SWITCH_HIGH);
-                        } else if (readSbusDigital(data, rtCfg.sound, &lastSoundPressed)) {
-                            // Digital already reads the pressed state directly
-                        }
-                    }
+                    lastSoundPressed = intent.soundPressed;
 
                     // Dispatch backbone controls (drive speed, steer)
                     if (intent.driveSpeed != 0 || intent.driveSteer != 0) {

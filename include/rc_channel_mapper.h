@@ -62,6 +62,10 @@ struct RcControlIntent {
     // Points to a static token string if an audio trigger fired; nullptr otherwise
     const char* audioTrigger;
 
+    // Sound switch state (valid only if sound binding is active and enabled)
+    // Used by dispatch path to update lastSoundPressed for next iteration
+    bool soundPressed;
+
     // Whether this intent is valid (based on signal health and binding validity)
     bool valid;
 };
