@@ -281,6 +281,9 @@ Use this mode by default for parser/protocol regressions (for example T19 SBUS).
 5. If fail, stop, capture evidence, and switch to the next single hypothesis
 
 Rules:
+- **Diff-first**: before forming any hypothesis or writing any code, run
+  `git diff <last-known-good-sha> -- <relevant-files>` and read the diff.
+  Do not theorize from memory — compare against a concrete baseline.
 - One hypothesis per iteration; do not stack multiple parser changes in one slice.
 - Prefer 10-30 minute loops over long speculative analysis rounds.
 - After two failed iterations without new evidence, pause and require new telemetry before further edits.

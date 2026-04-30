@@ -40,6 +40,10 @@ Engineering rules:
 3. Validate web handler input and route via state/queues, not direct hardware writes.
 4. Keep Core 1 loops non-blocking and allocation-free after setup.
 5. Verify with the fastest relevant command before claiming completion.
+6. **Diff-first on regressions**: before any hypothesis or code change in a debug
+   session, run `git diff <last-known-good-sha> -- <relevant-files>` and read the
+   diff. Do not theorize — compare. If $DEVICE_FW_VERSION is set in the environment,
+   cross-check it against the built firmware version before claiming a fix is on-device.
 
 Safety invariants to enforce:
 - Zero-frame continuity at 50 Hz when stopped.
