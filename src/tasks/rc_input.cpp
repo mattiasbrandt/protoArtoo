@@ -255,6 +255,30 @@ static void handleSoundTrigger(bool pressed, bool* lastPressed) {
     *lastPressed = pressed;
 }
 
+static void rcRuntimeConfigToMappingConfig(const RcRuntimeConfig& rt, RcMappingConfig* out) {
+    if (out == nullptr) {
+        return;
+    }
+    out->enableRc[0] = rt.enableRc[0];
+    out->enableRc[1] = rt.enableRc[1];
+    out->enableRc[2] = rt.enableRc[2];
+    out->enableRc[3] = rt.enableRc[3];
+    out->enableRc[4] = rt.enableRc[4];
+    out->enableRc[5] = rt.enableRc[5];
+    out->enableDome = rt.enableDome;
+    out->enableArm1 = rt.enableArm1;
+    out->enableArm2 = rt.enableArm2;
+    out->enableSound = rt.enableSound;
+    out->maxOut = rt.maxOut;
+    out->driveSpeed = rt.driveSpeed;
+    out->driveSteer = rt.driveSteer;
+    out->domeSpeed = rt.domeSpeed;
+    out->arm1 = rt.arm1;
+    out->arm2 = rt.arm2;
+    out->sound = rt.sound;
+    out->prevSoundPressed = false;  // Caller will update with static state
+}
+
 // Tier 2 Trigger Binding Runtime State
 struct TriggerRuntimeState {
     bool lastPressed;
@@ -718,29 +742,25 @@ static void dispatchStandardPwmInputs() {
     // Load mapping config from RobotState via runtime config (avoids code duplication)
     RcRuntimeConfig rtCfg = {};
     loadRcRuntimeConfig(&rtCfg, RC_INPUT_STANDARD_PWM);
-    // Convert RcRuntimeConfig to RcMappingConfig (identical layout)
+
+    // Convert RcRuntimeConfig to RcMappingConfig
     RcMappingConfig mapCfg;
-    mapCfg.enableRc[0] = rtCfg.enableRc[0];
-    mapCfg.enableRc[1] = rtCfg.enableRc[1];
-    mapCfg.enableRc[2] = rtCfg.enableRc[2];
-    mapCfg.enableRc[3] = rtCfg.enableRc[3];
-    mapCfg.enableRc[4] = rtCfg.enableRc[4];
-    mapCfg.enableRc[5] = rtCfg.enableRc[5];
-    mapCfg.enableDome = rtCfg.enableDome;
-    mapCfg.enableArm1 = rtCfg.enableArm1;
-    mapCfg.enableArm2 = rtCfg.enableArm2;
-    mapCfg.enableSound = rtCfg.enableSound;
-    mapCfg.maxOut = rtCfg.maxOut;
-    mapCfg.driveSpeed = rtCfg.driveSpeed;
-    mapCfg.driveSteer = rtCfg.driveSteer;
-    mapCfg.domeSpeed = rtCfg.domeSpeed;
-    mapCfg.arm1 = rtCfg.arm1;
-    mapCfg.arm2 = rtCfg.arm2;
-    mapCfg.sound = rtCfg.sound;
-    mapCfg.prevSoundPressed = false;  // Initialize edge detection state
+    static bool lastSoundPressed = false;
+    rcRuntimeConfigToMappingConfig(rtCfg, &mapCfg);
+    mapCfg.prevSoundPressed = lastSoundPressed;
 
     // Map channel snapshot to control intent (pure function)
     RcControlIntent intent = rcMapChannels(snap, mapCfg);
+
+    // Update sound state for next iteration
+    if (cfg.enableSound && rcBindingIsValid(cfg.sound)) {
+        int rawSound = 0;
+        if (bindingSourceActive(cfg.sound, RC_INPUT_STANDARD_PWM, cfg.enableRc[0], cfg.enableRc[1],
+                                false) &&
+            readPwmBindingRaw(cfg.sound, pulses, &rawSound) && cfg.enableRc[cfg.sound.channel - 1]) {
+            lastSoundPressed = (rcAnalogToSwitchState(rawSound, cfg.sound) == RC_SWITCH_HIGH);
+        }
+    }
 
     // Dispatch backbone controls (drive speed, steer, dome speed)
     if (intent.driveSpeed != 0 || intent.driveSteer != 0) {
@@ -753,34 +773,38 @@ static void dispatchStandardPwmInputs() {
         queueDomeCommand(normalizedDomeSpeed, SRC_SBUS);
     }
 
-    // Servo and audio triggers remain in the existing Tier 2 dispatch logic
-    // (deferred for future expansion; currently handled by separate trigger binding path)
-
-    static RcSwitchState lastArm1State = RC_SWITCH_MID;
-    static RcSwitchState lastArm2State = RC_SWITCH_MID;
-    static bool lastSoundPressed = false;
-
-    int rawArm1 = 0;
-    int rawArm2 = 0;
-    int rawSound = 0;
-    if (cfg.enableArm1 &&
-        bindingSourceActive(cfg.arm1, RC_INPUT_STANDARD_PWM, cfg.enableRc[0], cfg.enableRc[1],
-                            false) &&
-        readPwmBindingRaw(cfg.arm1, pulses, &rawArm1) && cfg.enableRc[cfg.arm1.channel - 1]) {
-        dispatchSwitchAction(cfg.arm1, rawArm1, 0, &lastArm1State);
+    // Dispatch audio trigger if fired
+    if (intent.audioTrigger != nullptr) {
+        parseMarcduinoCommand(intent.audioTrigger);
     }
-    if (cfg.enableArm2 &&
-        bindingSourceActive(cfg.arm2, RC_INPUT_STANDARD_PWM, cfg.enableRc[0], cfg.enableRc[1],
-                            false) &&
-        readPwmBindingRaw(cfg.arm2, pulses, &rawArm2) && cfg.enableRc[cfg.arm2.channel - 1]) {
-        dispatchSwitchAction(cfg.arm2, rawArm2, 1, &lastArm2State);
+
+    // Dispatch servo commands if set
+    if (intent.arm1Cmd != RC_SERVO_NO_CHANGE) {
+        ServoCommandType servoType = SERVO_CMD_POSITION;
+        uint16_t positionUs = SERVO_PULSE_NEUTRAL_US;
+        if (intent.arm1Cmd == RC_SERVO_OPEN) {
+            servoType = SERVO_CMD_OPEN;
+        } else if (intent.arm1Cmd == RC_SERVO_CLOSE) {
+            servoType = SERVO_CMD_CLOSE;
+        } else if (intent.arm1Cmd == RC_SERVO_NEUTRAL) {
+            servoType = SERVO_CMD_POSITION;
+            positionUs = SERVO_PULSE_NEUTRAL_US;
+        }
+        queueServoCommand(0, servoType, positionUs, SRC_SBUS);
     }
-    if (cfg.enableSound &&
-        bindingSourceActive(cfg.sound, RC_INPUT_STANDARD_PWM, cfg.enableRc[0], cfg.enableRc[1],
-                            false) &&
-        readPwmBindingRaw(cfg.sound, pulses, &rawSound) && cfg.enableRc[cfg.sound.channel - 1]) {
-        handleSoundTrigger(rcAnalogToSwitchState(rawSound, cfg.sound) == RC_SWITCH_HIGH,
-                           &lastSoundPressed);
+
+    if (intent.arm2Cmd != RC_SERVO_NO_CHANGE) {
+        ServoCommandType servoType = SERVO_CMD_POSITION;
+        uint16_t positionUs = SERVO_PULSE_NEUTRAL_US;
+        if (intent.arm2Cmd == RC_SERVO_OPEN) {
+            servoType = SERVO_CMD_OPEN;
+        } else if (intent.arm2Cmd == RC_SERVO_CLOSE) {
+            servoType = SERVO_CMD_CLOSE;
+        } else if (intent.arm2Cmd == RC_SERVO_NEUTRAL) {
+            servoType = SERVO_CMD_POSITION;
+            positionUs = SERVO_PULSE_NEUTRAL_US;
+        }
+        queueServoCommand(1, servoType, positionUs, SRC_SBUS);
     }
 }
 
@@ -1155,34 +1179,64 @@ void rcInputTask(void* pvParameters) {
                     // Load mapping config from RobotState via runtime config (avoids code duplication)
                     RcRuntimeConfig rtCfg = {};
                     loadRcRuntimeConfig(&rtCfg, rcInputMode);
-                    // Convert RcRuntimeConfig to RcMappingConfig (identical layout)
+
+                    // Convert RcRuntimeConfig to RcMappingConfig
                     RcMappingConfig mapCfg;
-                    mapCfg.enableRc[0] = rtCfg.enableRc[0];
-                    mapCfg.enableRc[1] = rtCfg.enableRc[1];
-                    mapCfg.enableRc[2] = rtCfg.enableRc[2];
-                    mapCfg.enableRc[3] = rtCfg.enableRc[3];
-                    mapCfg.enableRc[4] = rtCfg.enableRc[4];
-                    mapCfg.enableRc[5] = rtCfg.enableRc[5];
-                    mapCfg.enableDome = rtCfg.enableDome;
-                    mapCfg.enableArm1 = rtCfg.enableArm1;
-                    mapCfg.enableArm2 = rtCfg.enableArm2;
-                    mapCfg.enableSound = rtCfg.enableSound;
-                    mapCfg.maxOut = rtCfg.maxOut;
-                    mapCfg.driveSpeed = rtCfg.driveSpeed;
-                    mapCfg.driveSteer = rtCfg.driveSteer;
-                    mapCfg.domeSpeed = rtCfg.domeSpeed;
-                    mapCfg.arm1 = rtCfg.arm1;
-                    mapCfg.arm2 = rtCfg.arm2;
-                    mapCfg.sound = rtCfg.sound;
-                    mapCfg.prevSoundPressed = false;  // Initialize edge detection state
+                    static bool lastSoundPressed = false;
+                    rcRuntimeConfigToMappingConfig(rtCfg, &mapCfg);
+                    mapCfg.prevSoundPressed = lastSoundPressed;
 
                     // Map channel snapshot to control intent (pure function)
                     RcControlIntent intent = rcMapChannels(snap, mapCfg);
+
+                    // Update sound state for next iteration
+                    if (rtCfg.enableSound && rcBindingIsValid(rtCfg.sound)) {
+                        int rawSound = 0;
+                        if (readSbusAnalog(data, rtCfg.sound, &rawSound)) {
+                            lastSoundPressed = (rcAnalogToSwitchState(rawSound, rtCfg.sound) == RC_SWITCH_HIGH);
+                        } else if (readSbusDigital(data, rtCfg.sound, &lastSoundPressed)) {
+                            // Digital already reads the pressed state directly
+                        }
+                    }
 
                     // Dispatch backbone controls (drive speed, steer)
                     if (intent.driveSpeed != 0 || intent.driveSteer != 0) {
                         setStationaryMode(false);
                         setDriveCommand(intent.driveSpeed, intent.driveSteer, SRC_SBUS);
+                    }
+
+                    // Dispatch audio trigger if fired
+                    if (intent.audioTrigger != nullptr) {
+                        parseMarcduinoCommand(intent.audioTrigger);
+                    }
+
+                    // Dispatch servo commands if set
+                    if (intent.arm1Cmd != RC_SERVO_NO_CHANGE) {
+                        ServoCommandType servoType = SERVO_CMD_POSITION;
+                        uint16_t positionUs = SERVO_PULSE_NEUTRAL_US;
+                        if (intent.arm1Cmd == RC_SERVO_OPEN) {
+                            servoType = SERVO_CMD_OPEN;
+                        } else if (intent.arm1Cmd == RC_SERVO_CLOSE) {
+                            servoType = SERVO_CMD_CLOSE;
+                        } else if (intent.arm1Cmd == RC_SERVO_NEUTRAL) {
+                            servoType = SERVO_CMD_POSITION;
+                            positionUs = SERVO_PULSE_NEUTRAL_US;
+                        }
+                        queueServoCommand(0, servoType, positionUs, SRC_SBUS);
+                    }
+
+                    if (intent.arm2Cmd != RC_SERVO_NO_CHANGE) {
+                        ServoCommandType servoType = SERVO_CMD_POSITION;
+                        uint16_t positionUs = SERVO_PULSE_NEUTRAL_US;
+                        if (intent.arm2Cmd == RC_SERVO_OPEN) {
+                            servoType = SERVO_CMD_OPEN;
+                        } else if (intent.arm2Cmd == RC_SERVO_CLOSE) {
+                            servoType = SERVO_CMD_CLOSE;
+                        } else if (intent.arm2Cmd == RC_SERVO_NEUTRAL) {
+                            servoType = SERVO_CMD_POSITION;
+                            positionUs = SERVO_PULSE_NEUTRAL_US;
+                        }
+                        queueServoCommand(1, servoType, positionUs, SRC_SBUS);
                     }
 
                     // Dome speed dispatch happens in dispatchSbusBindingsForSource for stabilization

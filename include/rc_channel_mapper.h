@@ -34,6 +34,16 @@ struct RcChannelSnapshot {
 };
 
 // ============================================================================
+// Servo command types for RC mapper output
+// ============================================================================
+enum RcServoCommand : uint8_t {
+    RC_SERVO_NO_CHANGE = 0,  // No command; skip dispatch
+    RC_SERVO_OPEN = 1,       // Open position (HIGH state)
+    RC_SERVO_CLOSE = 2,      // Close position (LOW state)
+    RC_SERVO_NEUTRAL = 3,    // Neutral/mid position
+};
+
+// ============================================================================
 // Output: Control intent (what the operator wants the robot to do)
 // ============================================================================
 
@@ -43,13 +53,10 @@ struct RcControlIntent {
     int16_t driveSteer;       // -1000 = full left, +1000 = full right, 0 = straight
     int16_t domeSpeed;        // -1000 = full reverse, +1000 = full forward, 0 = stop
 
-    // Servo position targets (0 = no change, else position in raw units for dispatch)
-    // These will be dispatched to the servo command queue by rc_input_task
-    int16_t arm1Pos;
-    int16_t arm2Pos;
-    int16_t aux1Pos;
-    int16_t aux2Pos;
-    int16_t aux3Pos;
+    // Servo command targets (enum; dispatched to servo command queue by rc_input_task)
+    // RC_SERVO_NO_CHANGE means skip dispatch; others translate to SERVO_CMD_* + positionUs
+    RcServoCommand arm1Cmd;
+    RcServoCommand arm2Cmd;
 
     // Audio trigger token (static const string or null)
     // Points to a static token string if an audio trigger fired; nullptr otherwise

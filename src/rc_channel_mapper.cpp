@@ -178,9 +178,9 @@ RcControlIntent rcMapChannels(const RcChannelSnapshot& snap, const RcMappingConf
     }
 
     // ========================================================================
-    // Servo Position Targets (arm1 and arm2)
+    // Servo Command Targets (arm1 and arm2)
     // ========================================================================
-    // Convert switch state to servo position: LOW/MID -> mapped positions; HIGH -> open
+    // Convert switch state to servo command: LOW -> close, MID -> neutral, HIGH -> open
     // For v1.0.0: aux1, aux2, aux3 remain unmapped (out of scope).
     int rawArm1 = 0;
     int rawArm2 = 0;
@@ -189,14 +189,14 @@ RcControlIntent rcMapChannels(const RcChannelSnapshot& snap, const RcMappingConf
         readChannelRaw(snap, cfg.arm1, &rawArm1)) {
         RcSwitchState arm1State = rcAnalogToSwitchState(rawArm1, cfg.arm1);
         if (arm1State == RC_SWITCH_HIGH) {
-            intent.arm1Pos = 1900;  // Open position (servo-specific; can be tuned)
+            intent.arm1Cmd = RC_SERVO_OPEN;
         } else if (arm1State == RC_SWITCH_LOW) {
-            intent.arm1Pos = 1100;  // Close position
+            intent.arm1Cmd = RC_SERVO_CLOSE;
         } else {
-            intent.arm1Pos = 1500;  // Neutral/mid position
+            intent.arm1Cmd = RC_SERVO_NEUTRAL;
         }
     } else {
-        intent.arm1Pos = 0;
+        intent.arm1Cmd = RC_SERVO_NO_CHANGE;
     }
 
     if (cfg.enableArm2 && rcBindingIsValid(cfg.arm2) &&
@@ -204,19 +204,15 @@ RcControlIntent rcMapChannels(const RcChannelSnapshot& snap, const RcMappingConf
         readChannelRaw(snap, cfg.arm2, &rawArm2)) {
         RcSwitchState arm2State = rcAnalogToSwitchState(rawArm2, cfg.arm2);
         if (arm2State == RC_SWITCH_HIGH) {
-            intent.arm2Pos = 1900;  // Open position
+            intent.arm2Cmd = RC_SERVO_OPEN;
         } else if (arm2State == RC_SWITCH_LOW) {
-            intent.arm2Pos = 1100;  // Close position
+            intent.arm2Cmd = RC_SERVO_CLOSE;
         } else {
-            intent.arm2Pos = 1500;  // Neutral/mid position
+            intent.arm2Cmd = RC_SERVO_NEUTRAL;
         }
     } else {
-        intent.arm2Pos = 0;
+        intent.arm2Cmd = RC_SERVO_NO_CHANGE;
     }
-
-    intent.aux1Pos = 0;
-    intent.aux2Pos = 0;
-    intent.aux3Pos = 0;
 
     // ========================================================================
     // Audio Trigger (Sound Channel)
