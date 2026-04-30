@@ -51,6 +51,12 @@ def main() -> int:
     if not key:
         return 0
 
+    # Only record when the command succeeded (exit 0).  A failed build or test
+    # run must not satisfy the commit gate.
+    tool_result = data.get("tool_result", {})
+    if isinstance(tool_result, dict) and tool_result.get("is_error", False):
+        return 0
+
     state = _load_state()
     state[key] = {
         "timestamp": int(time.time()),
