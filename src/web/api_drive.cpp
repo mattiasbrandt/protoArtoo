@@ -21,6 +21,7 @@
 #include "drive_speed_preset.h"
 #include "dome_link.h"
 #include "dome_rx_parser.h"
+#include "failsafe_gate.h"
 #include "mood.h"
 #include "logging.h"
 #include "robot_state.h"
@@ -144,19 +145,11 @@ bool executeManualCommand(const String& raw) {
 
     switch (cmd) {
         case MC_ESTOP:
-            taskENTER_CRITICAL(&robotStateMux);
-            robotState.estop = true;
-            recordFailsafeTriggerLocked(FS_ESTOP_CMD, millis());
-            taskEXIT_CRITICAL(&robotStateMux);
+            failsafeTrigger(FailsafeLayer::ESTOP);
             return true;
 
         case MC_CLEAR_ESTOP:
-            taskENTER_CRITICAL(&robotStateMux);
-            robotState.estop = false;
-            if (robotState.failsafeSource == FS_ESTOP_CMD) {
-                robotState.failsafeSource = FS_NONE;
-            }
-            taskEXIT_CRITICAL(&robotStateMux);
+            failsafeClearEstop();
             return true;
 
         case MC_ENABLE_WEB_CONTROL:
@@ -335,12 +328,8 @@ void registerDriveRoutes(AsyncWebServer& server) {
         int16_t clampedSteer = constrain(steer, (int)-maxOut, (int)maxOut);
         setDriveCommand(clampedSpeed, clampedSteer, SRC_WEB_API);
 
-        taskENTER_CRITICAL(&robotStateMux);
-        robotState.webDriveExpired = false;
-        if (robotState.failsafeSource == FS_WEB_TIMEOUT) {
-            robotState.failsafeSource = FS_NONE;
-        }
-        taskEXIT_CRITICAL(&robotStateMux);
+        // Clear web timeout on new drive command (FailsafeGate handles its own locking)
+        failsafeClear(FailsafeLayer::WEB_TIMEOUT);
 
         req->send(200, "application/json", "{\"ok\":true}");
     });

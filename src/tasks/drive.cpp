@@ -17,6 +17,7 @@
 #include <esp_task_wdt.h>
 
 #include "config.h"
+#include "failsafe_gate.h"
 #include "hoverboard_uart.h"
 #include "logging.h"
 #include "robot_state.h"
@@ -88,22 +89,23 @@ void driveTask(void* pvParameters) {
         taskENTER_CRITICAL(&robotStateMux);
         speed = robotState.driveSpeed;
         steer = robotState.driveSteer;
-        failsafeActive = robotState.estop || robotState.sbusSignalLost || robotState.sbusHwFailsafe;
         maxOut = robotState.cfg_speedLimitMax;
 
+        // Check web drive timeout and trigger failsafe if needed
         if (robotState.lastDriveSource == SRC_WEB_API &&
             (uint32_t)(nowMs - robotState.lastDriveCommandMs) > robotState.cfg_webDriveTimeoutMs) {
             if (!robotState.webDriveExpired) {
-                robotState.webDriveExpired = true;
-                recordFailsafeTriggerLocked(FS_WEB_TIMEOUT, nowMs);
+                failsafeTrigger(FailsafeLayer::WEB_TIMEOUT);
             }
             robotState.driveSpeed = 0;
             robotState.driveSteer = 0;
             speed = 0;
             steer = 0;
-            failsafeActive = true;
         }
         taskEXIT_CRITICAL(&robotStateMux);
+
+        // Check if any failsafe is active
+        failsafeActive = failsafeIsActive();
 
         // Apply SPEED_LIMIT_MAX cap unconditionally — never exceed hardware limit.
         speed = constrain(speed, (int16_t)(-maxOut), maxOut);

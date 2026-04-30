@@ -25,6 +25,11 @@ SerialStub Serial;
 void paLogLineRaw(const char* /*line*/) {
 }
 
+// millis() stub — used by failsafe gate for diagnostics
+unsigned long millis() {
+    return 0;
+}
+
 // NVS save stub — not under test; POST handler calls it but tests call
 // populateConfigJson() directly without going through registerConfigRoutes().
 bool saveConfigToNvs() {

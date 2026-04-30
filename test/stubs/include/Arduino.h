@@ -34,3 +34,6 @@ struct SerialStub {
     static void print(const char* /*s*/) {}
 };
 extern SerialStub Serial;
+
+// millis() stub — used by failsafe gate and other timing code
+unsigned long millis();

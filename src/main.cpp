@@ -15,6 +15,7 @@
 #include "dome_link.h"
 #include "dome_task.h"
 #include "drive.h"
+#include "failsafe_gate.h"
 #include "ledc_pwm.h"
 #include "log_buffer.h"
 #include "mood.h"
@@ -983,9 +984,6 @@ void setup() {
     Serial.setDebugOutput(false);
     delay(200);
 
-    // Safety: boot with drive locked until SBUS confirmed
-    robotState.sbusSignalLost = true;
-    robotState.estop = false;
     // Audio module state: 0xFF = "unknown/none" until AudioTask runs its init
     // query. Zero-init would show "USB" (0x00) before any query succeeds.
     robotState.audio_module_device = 0xFF;
@@ -1010,14 +1008,18 @@ void setup() {
     };
     esp_task_wdt_init(&twdt_config);
 
+    // Initialize FailsafeGate before task creation
+    failsafeInit(&robotStateMux);
+
+    // Safety: boot with drive locked until SBUS confirmed
+    // Use FailsafeGate's SBUS_WATCHDOG layer; RcInputTask will clear when frames arrive
+    failsafeTrigger(FailsafeLayer::SBUS_WATCHDOG);
+
     // Detect TWDT reset from previous boot — set estop so robot does not move
     // until operator explicitly clears via POST /api/estop/clear
     esp_reset_reason_t resetReason = esp_reset_reason();
     if (resetReason == ESP_RST_TASK_WDT) {
-        robotState.estop = true;
-        taskENTER_CRITICAL(&robotStateMux);
-        recordFailsafeTriggerLocked(FS_WATCHDOG_RESET, millis());
-        taskEXIT_CRITICAL(&robotStateMux);
+        failsafeTrigger(FailsafeLayer::TWDT_RESET);
         PA_LOG_ERROR("main", "task watchdog reset detected - estop set");
     }
 
