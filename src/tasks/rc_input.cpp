@@ -122,43 +122,6 @@ static void loadRcRuntimeConfig(RcRuntimeConfig* cfg, RcInputMode mode) {
     taskEXIT_CRITICAL(&robotStateMux);
 }
 
-// Helper: Load RcMappingConfig from RobotState (for use with pure mapper function)
-static void loadRcMappingConfig(RcMappingConfig* cfg, RcInputMode mode) {
-    if (cfg == nullptr) {
-        return;
-    }
-
-    taskENTER_CRITICAL(&robotStateMux);
-    cfg->enableRc[0] = robotState.cfg_enable_rc_ch1;
-    cfg->enableRc[1] = robotState.cfg_enable_rc_ch2;
-    cfg->enableRc[2] = robotState.cfg_enable_rc_ch3;
-    cfg->enableRc[3] = robotState.cfg_enable_rc_ch4;
-    cfg->enableRc[4] = robotState.cfg_enable_rc_ch5;
-    cfg->enableRc[5] = robotState.cfg_enable_rc_ch6;
-    cfg->enableDome = robotState.cfg_enable_dome;
-    cfg->enableArm1 = robotState.cfg_enable_arm1;
-    cfg->enableArm2 = robotState.cfg_enable_arm2;
-    cfg->enableSound = robotState.cfg_enable_s2_sound;
-    cfg->maxOut = robotState.cfg_speedLimitMax;
-
-    if (mode == RC_INPUT_STANDARD_PWM) {
-        cfg->driveSpeed = robotState.cfg_rc_pwm_drive_speed;
-        cfg->driveSteer = robotState.cfg_rc_pwm_drive_steer;
-        cfg->domeSpeed = robotState.cfg_rc_pwm_dome_speed;
-        cfg->arm1 = robotState.cfg_rc_pwm_arm1;
-        cfg->arm2 = robotState.cfg_rc_pwm_arm2;
-        cfg->sound = robotState.cfg_rc_pwm_sound;
-    } else {
-        cfg->driveSpeed = robotState.cfg_rc_sbus_drive_speed;
-        cfg->driveSteer = robotState.cfg_rc_sbus_drive_steer;
-        cfg->domeSpeed = robotState.cfg_rc_sbus_dome_speed;
-        cfg->arm1 = robotState.cfg_rc_sbus_arm1;
-        cfg->arm2 = robotState.cfg_rc_sbus_arm2;
-        cfg->sound = robotState.cfg_rc_sbus_sound;
-    }
-    taskEXIT_CRITICAL(&robotStateMux);
-}
-
 static bool readPwmBindingRaw(const RcBindingConfig& binding, const uint32_t pulses[6], int* raw) {
     if (raw == nullptr || binding.source != RC_BINDING_PWM || binding.channel < 1 ||
         binding.channel > 6) {
@@ -752,9 +715,29 @@ static void dispatchStandardPwmInputs() {
         snap.channels[i] = (int16_t)pulses[i];  // Store PWM pulse in µs
     }
 
-    // Load mapping config from RobotState
-    RcMappingConfig mapCfg = {};
-    loadRcMappingConfig(&mapCfg, RC_INPUT_STANDARD_PWM);
+    // Load mapping config from RobotState via runtime config (avoids code duplication)
+    RcRuntimeConfig rtCfg = {};
+    loadRcRuntimeConfig(&rtCfg, RC_INPUT_STANDARD_PWM);
+    // Convert RcRuntimeConfig to RcMappingConfig (identical layout)
+    RcMappingConfig mapCfg;
+    mapCfg.enableRc[0] = rtCfg.enableRc[0];
+    mapCfg.enableRc[1] = rtCfg.enableRc[1];
+    mapCfg.enableRc[2] = rtCfg.enableRc[2];
+    mapCfg.enableRc[3] = rtCfg.enableRc[3];
+    mapCfg.enableRc[4] = rtCfg.enableRc[4];
+    mapCfg.enableRc[5] = rtCfg.enableRc[5];
+    mapCfg.enableDome = rtCfg.enableDome;
+    mapCfg.enableArm1 = rtCfg.enableArm1;
+    mapCfg.enableArm2 = rtCfg.enableArm2;
+    mapCfg.enableSound = rtCfg.enableSound;
+    mapCfg.maxOut = rtCfg.maxOut;
+    mapCfg.driveSpeed = rtCfg.driveSpeed;
+    mapCfg.driveSteer = rtCfg.driveSteer;
+    mapCfg.domeSpeed = rtCfg.domeSpeed;
+    mapCfg.arm1 = rtCfg.arm1;
+    mapCfg.arm2 = rtCfg.arm2;
+    mapCfg.sound = rtCfg.sound;
+    mapCfg.prevSoundPressed = false;  // Initialize edge detection state
 
     // Map channel snapshot to control intent (pure function)
     RcControlIntent intent = rcMapChannels(snap, mapCfg);
@@ -1169,9 +1152,29 @@ void rcInputTask(void* pvParameters) {
                     snap.channels[16] = data.ch17 ? 1811 : 172;  // Digital ch17 as SBUS value
                     snap.channels[17] = data.ch18 ? 1811 : 172;  // Digital ch18 as SBUS value
 
-                    // Load mapping config from RobotState
-                    RcMappingConfig mapCfg = {};
-                    loadRcMappingConfig(&mapCfg, rcInputMode);
+                    // Load mapping config from RobotState via runtime config (avoids code duplication)
+                    RcRuntimeConfig rtCfg = {};
+                    loadRcRuntimeConfig(&rtCfg, rcInputMode);
+                    // Convert RcRuntimeConfig to RcMappingConfig (identical layout)
+                    RcMappingConfig mapCfg;
+                    mapCfg.enableRc[0] = rtCfg.enableRc[0];
+                    mapCfg.enableRc[1] = rtCfg.enableRc[1];
+                    mapCfg.enableRc[2] = rtCfg.enableRc[2];
+                    mapCfg.enableRc[3] = rtCfg.enableRc[3];
+                    mapCfg.enableRc[4] = rtCfg.enableRc[4];
+                    mapCfg.enableRc[5] = rtCfg.enableRc[5];
+                    mapCfg.enableDome = rtCfg.enableDome;
+                    mapCfg.enableArm1 = rtCfg.enableArm1;
+                    mapCfg.enableArm2 = rtCfg.enableArm2;
+                    mapCfg.enableSound = rtCfg.enableSound;
+                    mapCfg.maxOut = rtCfg.maxOut;
+                    mapCfg.driveSpeed = rtCfg.driveSpeed;
+                    mapCfg.driveSteer = rtCfg.driveSteer;
+                    mapCfg.domeSpeed = rtCfg.domeSpeed;
+                    mapCfg.arm1 = rtCfg.arm1;
+                    mapCfg.arm2 = rtCfg.arm2;
+                    mapCfg.sound = rtCfg.sound;
+                    mapCfg.prevSoundPressed = false;  // Initialize edge detection state
 
                     // Map channel snapshot to control intent (pure function)
                     RcControlIntent intent = rcMapChannels(snap, mapCfg);
