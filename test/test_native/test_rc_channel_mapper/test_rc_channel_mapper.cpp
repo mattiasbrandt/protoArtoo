@@ -51,6 +51,7 @@ static RcMappingConfig makeDefaultPwmConfig() {
     cfg.enableArm2 = false;
     cfg.enableSound = false;
     cfg.maxOut = 1000;
+    cfg.prevSoundPressed = false;
 
     // Drive speed on CH1, steer on CH2
     cfg.driveSpeed = defaultPwmBinding(1);
@@ -75,11 +76,52 @@ static RcMappingConfig makeDefaultSbusConfig() {
     cfg.enableArm2 = false;
     cfg.enableSound = false;
     cfg.maxOut = 1000;
+    cfg.prevSoundPressed = false;
 
     // Drive speed on SBUS CH1, steer on CH2
     cfg.driveSpeed = defaultSbusBinding(RC_BINDING_SBUS1, 1);
     cfg.driveSteer = defaultSbusBinding(RC_BINDING_SBUS1, 2);
     cfg.domeSpeed = disabledRcBinding();
+    cfg.arm1 = disabledRcBinding();
+    cfg.arm2 = disabledRcBinding();
+    cfg.sound = disabledRcBinding();
+    return cfg;
+}
+
+static RcChannelSnapshot makeDualSbusSnapshot(int ch1_raw, int ch2_raw, int dome_ch1_raw,
+                                               int dome_ch2_raw) {
+    RcChannelSnapshot snap = {};
+    snap.valid = true;
+    snap.mode = RC_INPUT_DUAL_SBUS;
+    // SBUS1 (drive): channels 0-15
+    snap.channels[0] = ch1_raw;   // Drive speed
+    snap.channels[1] = ch2_raw;   // Drive steer
+    // SBUS2 (dome): channels 16-17 map to logical 16-17 in the snapshot
+    snap.channels[16] = dome_ch1_raw;
+    snap.channels[17] = dome_ch2_raw;
+    return snap;
+}
+
+static RcMappingConfig makeDefaultDualSbusConfig() {
+    RcMappingConfig cfg = {};
+    cfg.enableRc[0] = true;  // SBUS1 (drive) enabled
+    cfg.enableRc[1] = true;  // SBUS2 (dome) enabled
+    cfg.enableRc[2] = false;
+    cfg.enableRc[3] = false;
+    cfg.enableRc[4] = false;
+    cfg.enableRc[5] = false;
+    cfg.enableDome = true;
+    cfg.enableArm1 = false;
+    cfg.enableArm2 = false;
+    cfg.enableSound = false;
+    cfg.maxOut = 1000;
+    cfg.prevSoundPressed = false;
+
+    // Drive: SBUS1 CH1 (speed), CH2 (steer)
+    cfg.driveSpeed = defaultSbusBinding(RC_BINDING_SBUS1, 1);
+    cfg.driveSteer = defaultSbusBinding(RC_BINDING_SBUS1, 2);
+    // Dome: SBUS2 CH1 (speed)
+    cfg.domeSpeed = defaultSbusBinding(RC_BINDING_SBUS2, 1);
     cfg.arm1 = disabledRcBinding();
     cfg.arm2 = disabledRcBinding();
     cfg.sound = disabledRcBinding();
@@ -383,6 +425,46 @@ void test_partial_input_missing_steer() {
 }
 
 // =============================================================================
+// Test: Dual-SBUS Mode
+// =============================================================================
+
+void test_dual_sbus_center_sticks() {
+    RcChannelSnapshot snap = makeDualSbusSnapshot(992, 992, 992, 992);
+    RcMappingConfig cfg = makeDefaultDualSbusConfig();
+
+    RcControlIntent intent = rcMapChannels(snap, cfg);
+
+    TEST_ASSERT_TRUE(intent.valid);
+    TEST_ASSERT_EQUAL_INT16(0, intent.driveSpeed);
+    TEST_ASSERT_EQUAL_INT16(0, intent.driveSteer);
+    TEST_ASSERT_EQUAL_INT16(0, intent.domeSpeed);
+}
+
+void test_dual_sbus_drive_forward_dome_speed() {
+    RcChannelSnapshot snap = makeDualSbusSnapshot(1811, 992, 1811, 992);
+    RcMappingConfig cfg = makeDefaultDualSbusConfig();
+
+    RcControlIntent intent = rcMapChannels(snap, cfg);
+
+    TEST_ASSERT_TRUE(intent.valid);
+    TEST_ASSERT_EQUAL_INT16(1000, intent.driveSpeed);    // SBUS1 CH1 full forward
+    TEST_ASSERT_EQUAL_INT16(0, intent.driveSteer);       // SBUS1 CH2 centered
+    TEST_ASSERT_EQUAL_INT16(1000, intent.domeSpeed);     // SBUS2 CH1 full forward
+}
+
+void test_dual_sbus_mode_mismatch() {
+    RcChannelSnapshot snap = makePwmSnapshot(1500, 1500);  // PWM mode, not dual-SBUS
+    RcMappingConfig cfg = makeDefaultDualSbusConfig();     // Config expects dual-SBUS
+
+    RcControlIntent intent = rcMapChannels(snap, cfg);
+
+    TEST_ASSERT_FALSE(intent.valid);
+    TEST_ASSERT_EQUAL_INT16(0, intent.driveSpeed);
+    TEST_ASSERT_EQUAL_INT16(0, intent.driveSteer);
+    TEST_ASSERT_EQUAL_INT16(0, intent.domeSpeed);
+}
+
+// =============================================================================
 // Run All Tests
 // =============================================================================
 
@@ -430,6 +512,11 @@ int main() {
     // Partial input
     RUN_TEST(test_partial_input_missing_speed);
     RUN_TEST(test_partial_input_missing_steer);
+
+    // Dual-SBUS mode
+    RUN_TEST(test_dual_sbus_center_sticks);
+    RUN_TEST(test_dual_sbus_drive_forward_dome_speed);
+    RUN_TEST(test_dual_sbus_mode_mismatch);
 
     return UNITY_END();
 }
