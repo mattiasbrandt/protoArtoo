@@ -6,8 +6,6 @@
 //
 // =============================================================================
 
-#include <cmath>
-
 #include "rc_channel_mapper.h"
 #include "rc_mapping.h"
 #include "rc_pwm_helpers.h"
@@ -172,23 +170,67 @@ RcControlIntent rcMapChannels(const RcChannelSnapshot& snap, const RcMappingConf
     }
 
     // ========================================================================
-    // Servo Position Targets (Future: Placeholder)
+    // Servo Position Targets (arm1 and arm2)
     // ========================================================================
-    // Servo position mapping is deferred to a later iteration.
-    // For v1.0.0, servo commands are issued via Tier 2 trigger bindings
-    // which are handled separately in rc_input_task.
-    intent.arm1Pos = 0;
-    intent.arm2Pos = 0;
+    // Convert switch state to servo position: LOW/MID -> mapped positions; HIGH -> open
+    // For v1.0.0: aux1, aux2, aux3 remain unmapped (out of scope).
+    int rawArm1 = 0;
+    int rawArm2 = 0;
+    if (cfg.enableArm1 && rcBindingIsValid(cfg.arm1) &&
+        bindingSourceActiveForMode(cfg.arm1, snap, cfg.enableRc[0], cfg.enableRc[1], useCh2) &&
+        readChannelRaw(snap, cfg.arm1, &rawArm1)) {
+        RcSwitchState arm1State = rcAnalogToSwitchState(rawArm1, cfg.arm1);
+        if (arm1State == RC_SWITCH_HIGH) {
+            intent.arm1Pos = 1900;  // Open position (servo-specific; can be tuned)
+        } else if (arm1State == RC_SWITCH_LOW) {
+            intent.arm1Pos = 1100;  // Close position
+        } else {
+            intent.arm1Pos = 1500;  // Neutral/mid position
+        }
+    } else {
+        intent.arm1Pos = 0;
+    }
+
+    if (cfg.enableArm2 && rcBindingIsValid(cfg.arm2) &&
+        bindingSourceActiveForMode(cfg.arm2, snap, cfg.enableRc[0], cfg.enableRc[1], useCh2) &&
+        readChannelRaw(snap, cfg.arm2, &rawArm2)) {
+        RcSwitchState arm2State = rcAnalogToSwitchState(rawArm2, cfg.arm2);
+        if (arm2State == RC_SWITCH_HIGH) {
+            intent.arm2Pos = 1900;  // Open position
+        } else if (arm2State == RC_SWITCH_LOW) {
+            intent.arm2Pos = 1100;  // Close position
+        } else {
+            intent.arm2Pos = 1500;  // Neutral/mid position
+        }
+    } else {
+        intent.arm2Pos = 0;
+    }
+
     intent.aux1Pos = 0;
     intent.aux2Pos = 0;
     intent.aux3Pos = 0;
 
     // ========================================================================
-    // Audio Trigger (Future: Placeholder)
+    // Audio Trigger (Sound Channel)
     // ========================================================================
-    // Audio trigger mapping is deferred to a later iteration.
-    // For v1.0.0, audio is triggered via Tier 2 trigger bindings.
+    // Audio fires on rising edge: transition from LOW/MID to HIGH.
+    // Token is a static Marcduino command string ("$87" = random general sound).
+    // Edge detection state is maintained by caller in prevSoundPressed.
     intent.audioTrigger = nullptr;
+    int rawSound = 0;
+    if (cfg.enableSound && rcBindingIsValid(cfg.sound) &&
+        bindingSourceActiveForMode(cfg.sound, snap, cfg.enableRc[0], cfg.enableRc[1], useCh2) &&
+        readChannelRaw(snap, cfg.sound, &rawSound)) {
+        RcSwitchState soundState = rcAnalogToSwitchState(rawSound, cfg.sound);
+        bool soundPressed = (soundState == RC_SWITCH_HIGH);
+        // Rising edge detection
+        if (soundPressed && !cfg.prevSoundPressed) {
+            intent.audioTrigger = "$87";  // Random general sound trigger
+        }
+    } else {
+        // If binding invalid, reset state to prevent stuck trigger on re-enable
+        intent.audioTrigger = nullptr;
+    }
 
     // ========================================================================
     // Validity

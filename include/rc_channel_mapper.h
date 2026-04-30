@@ -81,6 +81,9 @@ struct RcMappingConfig {
     RcBindingConfig arm1;
     RcBindingConfig arm2;
     RcBindingConfig sound;
+
+    // Edge detection state for audio trigger (caller maintains this across calls)
+    bool prevSoundPressed;
 };
 
 // ============================================================================
