@@ -7,6 +7,7 @@
 
 #include <Arduino.h>
 #include <Preferences.h>
+#include <cstddef>
 #include <esp_task_wdt.h>
 
 #include "audio_dollar_parser.h"

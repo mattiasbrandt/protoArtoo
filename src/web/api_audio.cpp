@@ -355,8 +355,8 @@ void registerMoodMapRoutes(AsyncWebServer& server) {
                     return false;
                 }
 
-                if (value.is<uint32_t>()) {
-                    uint32_t parsed = value.as<uint32_t>();
+                if (value.template is<uint32_t>()) {
+                    uint32_t parsed = value.template as<uint32_t>();
                     if (!isValidMoodCategoryMaskValue(parsed)) {
                         char err[96];
                         snprintf(err, sizeof(err),
@@ -368,8 +368,8 @@ void registerMoodMapRoutes(AsyncWebServer& server) {
                     return true;
                 }
 
-                if (value.is<int32_t>()) {
-                    int32_t parsed = value.as<int32_t>();
+                if (value.template is<int32_t>()) {
+                    int32_t parsed = value.template as<int32_t>();
                     if (parsed < 0 || !isValidMoodCategoryMaskValue((uint32_t)parsed)) {
                         char err[96];
                         snprintf(err, sizeof(err),
