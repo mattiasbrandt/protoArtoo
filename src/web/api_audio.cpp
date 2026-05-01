@@ -735,41 +735,46 @@ void registerAudioRoutes(AsyncWebServer& server) {
             return;
         }
 
-        // For simplicity and atomicity with configSave: restore values, re-capture, use configLoad
-        // to read current state, then if CHIRP binding write fails, we have both old and new configs.
-        // However, this is complex. Simpler approach: just persist the category range values
-        // via direct NVS puts since they're already updated in robotState. For now, skip persisting
-        // and rely on the main app path via saveConfigToNvs().
-        //
-        // Actually: the fields are updated in robotState above. If we want to persist immediately,
-        // we need to either:
-        // (a) Save only the category range fields (acceptable, but contradicts the goal)
-        // (b) Save the full config via configSave (requires full snapshot capture)
-        //
-        // Option (b) is the migration goal. For now, since this is an edge case handler,
-        // the robotState is updated and will be persisted on the next saveConfigToNvs() call
-        // from the API or periodic save. For the CHIRP binding, it must be written directly
-        // to NVS since it's not part of configSnapshot.
+        // Persist the full config (lo/hi already written to robotState above) then write
+        // the CHIRP binding key. On CHIRP failure, restore robotState and re-save old config.
+        ConfigSnapshot snap;
+        taskENTER_CRITICAL(&robotStateMux);
+        configSnapshotFromRobotState(&snap);
+        taskEXIT_CRITICAL(&robotStateMux);
 
         Preferences prefs;
         bool ok = false;
         if (prefs.begin(NVS_NAMESPACE, false)) {
+            bool wroteConfig = configSave(prefs, snap);
             bool wroteBinding = true;
-            if (hasBankedParams) {
+            if (wroteConfig && hasBankedParams) {
                 uint32_t packedBinding = packChirpCategoryBinding(categoryBank, categoryPage);
                 wroteBinding = prefs.putUInt(categoryBindingEntry->nvsKey, packedBinding) > 0;
-            } else if (clearBinding) {
+            } else if (wroteConfig && clearBinding) {
                 wroteBinding = prefs.putUInt(categoryBindingEntry->nvsKey, 0) > 0;
             }
-            if (!wroteBinding) {
-                // Rollback robotState fields
+            if (wroteConfig && !wroteBinding) {
+                // CHIRP write failed: restore robotState and re-save old config.
+                ConfigSnapshot oldSnap;
+                taskENTER_CRITICAL(&robotStateMux);
+                *loField = oldLo;
+                *hiField = oldHi;
+                configSnapshotFromRobotState(&oldSnap);
+                taskEXIT_CRITICAL(&robotStateMux);
+                configSave(prefs, oldSnap);
+            } else if (!wroteConfig) {
                 taskENTER_CRITICAL(&robotStateMux);
                 *loField = oldLo;
                 *hiField = oldHi;
                 taskEXIT_CRITICAL(&robotStateMux);
             }
-            ok = wroteBinding;
+            ok = wroteConfig && wroteBinding;
             prefs.end();
+        } else {
+            taskENTER_CRITICAL(&robotStateMux);
+            *loField = oldLo;
+            *hiField = oldHi;
+            taskEXIT_CRITICAL(&robotStateMux);
         }
 
         if (!ok) {
@@ -1023,84 +1028,16 @@ void registerAudioRoutes(AsyncWebServer& server) {
             return;
         }
 
-        // Update robotState field first (within the existing critical section below)
-        // Then capture full snapshot and save via configSave
+        // Apply new value to robotState, capture full snapshot, then persist.
+        ConfigSnapshot snap;
+        taskENTER_CRITICAL(&robotStateMux);
+        *fieldPtr = t;
+        configSnapshotFromRobotState(&snap);
+        taskEXIT_CRITICAL(&robotStateMux);
+
         Preferences prefs;
         bool ok = false;
         if (prefs.begin(NVS_NAMESPACE, false)) {
-            // Capture full config snapshot for configSave (fieldPtr already points to the cfg field)
-            // For efficiency, capture minimal cfg fields needed for this track, but configSave
-            // expects a full snapshot. We'll capture just this field from robotState.
-            // Note: This requires holding mutex during capture, so we do a full capture approach.
-            ConfigSnapshot snap;
-            taskENTER_CRITICAL(&robotStateMux);
-            // Capture all cfg_* fields for full snapshot
-            // To avoid massive duplication, we use the fact that fieldPtr points to *fieldPtr = t
-            // So we capture everything post-update.
-            snap.snd_scream = robotState.cfg_snd_scream;
-            snap.snd_faint = robotState.cfg_snd_faint;
-            snap.snd_leia = robotState.cfg_snd_leia;
-            snap.snd_cantina_s = robotState.cfg_snd_cantina_s;
-            snap.snd_sw_theme = robotState.cfg_snd_sw_theme;
-            snap.snd_imp_march = robotState.cfg_snd_imp_march;
-            snap.snd_cantina_l = robotState.cfg_snd_cantina_l;
-            snap.snd_startup = robotState.cfg_snd_startup;
-            snap.snd_doodoo = robotState.cfg_snd_doodoo;
-            snap.snd_failure = robotState.cfg_snd_failure;
-            snap.snd_disco = robotState.cfg_snd_disco;
-            snap.snd_mahna = robotState.cfg_snd_mahna;
-            snap.snd_inlove = robotState.cfg_snd_inlove;
-            snap.snd_macho = robotState.cfg_snd_macho;
-            snap.snd_gangnam = robotState.cfg_snd_gangnam;
-            snap.snd_uptown = robotState.cfg_snd_uptown;
-            snap.snd_celebr = robotState.cfg_snd_celebr;
-            snap.snd_stayin = robotState.cfg_snd_stayin;
-            snap.snd_harlem = robotState.cfg_snd_harlem;
-            snap.snd_pbjtime = robotState.cfg_snd_pbjtime;
-            snap.snd_sys_boot = robotState.cfg_snd_sys_boot;
-            snap.snd_sys_mode_n = robotState.cfg_snd_sys_mode_n;
-            snap.snd_sys_mode_s = robotState.cfg_snd_sys_mode_s;
-            snap.snd_sys_mode_t = robotState.cfg_snd_sys_mode_t;
-            snap.snd_sys_drv_on = robotState.cfg_snd_sys_drv_on;
-            snap.snd_sys_dome_on = robotState.cfg_snd_sys_dome_on;
-            snap.snd_rand_min = robotState.cfg_snd_rand_min;
-            snap.snd_rand_max = robotState.cfg_snd_rand_max;
-            snap.snd_int_quiet = robotState.cfg_snd_int_quiet;
-            snap.snd_int_mid = robotState.cfg_snd_int_mid;
-            snap.snd_int_full = robotState.cfg_snd_int_full;
-            snap.snd_int_awake = robotState.cfg_snd_int_awake;
-            snap.snd_moodcat_quiet = robotState.cfg_snd_moodcat_quiet;
-            snap.snd_moodcat_mid = robotState.cfg_snd_moodcat_mid;
-            snap.snd_moodcat_full = robotState.cfg_snd_moodcat_full;
-            snap.snd_moodcat_awakeplus = robotState.cfg_snd_moodcat_awakeplus;
-            snap.snd_cat_gen_lo = robotState.cfg_snd_cat_gen_lo;
-            snap.snd_cat_gen_hi = robotState.cfg_snd_cat_gen_hi;
-            snap.snd_cat_chat_lo = robotState.cfg_snd_cat_chat_lo;
-            snap.snd_cat_chat_hi = robotState.cfg_snd_cat_chat_hi;
-            snap.snd_cat_hap_lo = robotState.cfg_snd_cat_hap_lo;
-            snap.snd_cat_hap_hi = robotState.cfg_snd_cat_hap_hi;
-            snap.snd_cat_proc_lo = robotState.cfg_snd_cat_proc_lo;
-            snap.snd_cat_proc_hi = robotState.cfg_snd_cat_proc_hi;
-            snap.snd_cat_sad_lo = robotState.cfg_snd_cat_sad_lo;
-            snap.snd_cat_sad_hi = robotState.cfg_snd_cat_sad_hi;
-            snap.snd_cat_sent_lo = robotState.cfg_snd_cat_sent_lo;
-            snap.snd_cat_sent_hi = robotState.cfg_snd_cat_sent_hi;
-            snap.snd_cat_hum_lo = robotState.cfg_snd_cat_hum_lo;
-            snap.snd_cat_hum_hi = robotState.cfg_snd_cat_hum_hi;
-            snap.snd_cat_scrm_lo = robotState.cfg_snd_cat_scrm_lo;
-            snap.snd_cat_scrm_hi = robotState.cfg_snd_cat_scrm_hi;
-            snap.snd_cat_ooh_lo = robotState.cfg_snd_cat_ooh_lo;
-            snap.snd_cat_ooh_hi = robotState.cfg_snd_cat_ooh_hi;
-            snap.snd_cat_alrm_lo = robotState.cfg_snd_cat_alrm_lo;
-            snap.snd_cat_alrm_hi = robotState.cfg_snd_cat_alrm_hi;
-            snap.snd_cat_snarky_lo = robotState.cfg_snd_cat_snarky_lo;
-            snap.snd_cat_snarky_hi = robotState.cfg_snd_cat_snarky_hi;
-            snap.snd_cat_whis_lo = robotState.cfg_snd_cat_whis_lo;
-            snap.snd_cat_whis_hi = robotState.cfg_snd_cat_whis_hi;
-            // Store old track value in case we need to rollback
-            uint16_t snapOldTrack = oldTrack;
-            taskEXIT_CRITICAL(&robotStateMux);
-
             bool wroteTrack = configSave(prefs, snap);
             bool wroteChirp = true;
 
@@ -1110,79 +1047,24 @@ void registerAudioRoutes(AsyncWebServer& server) {
             }
 
             if (wroteTrack && !wroteChirp) {
-                // Rollback: restore old value in robotState and re-save
-                taskENTER_CRITICAL(&robotStateMux);
-                *fieldPtr = snapOldTrack;
-                taskEXIT_CRITICAL(&robotStateMux);
-                // Re-capture and save old snapshot
+                // CHIRP write failed: restore old value and re-save to roll back NVS.
                 ConfigSnapshot oldSnap;
                 taskENTER_CRITICAL(&robotStateMux);
-                oldSnap.snd_scream = robotState.cfg_snd_scream;
-                oldSnap.snd_faint = robotState.cfg_snd_faint;
-                oldSnap.snd_leia = robotState.cfg_snd_leia;
-                oldSnap.snd_cantina_s = robotState.cfg_snd_cantina_s;
-                oldSnap.snd_sw_theme = robotState.cfg_snd_sw_theme;
-                oldSnap.snd_imp_march = robotState.cfg_snd_imp_march;
-                oldSnap.snd_cantina_l = robotState.cfg_snd_cantina_l;
-                oldSnap.snd_startup = robotState.cfg_snd_startup;
-                oldSnap.snd_doodoo = robotState.cfg_snd_doodoo;
-                oldSnap.snd_failure = robotState.cfg_snd_failure;
-                oldSnap.snd_disco = robotState.cfg_snd_disco;
-                oldSnap.snd_mahna = robotState.cfg_snd_mahna;
-                oldSnap.snd_inlove = robotState.cfg_snd_inlove;
-                oldSnap.snd_macho = robotState.cfg_snd_macho;
-                oldSnap.snd_gangnam = robotState.cfg_snd_gangnam;
-                oldSnap.snd_uptown = robotState.cfg_snd_uptown;
-                oldSnap.snd_celebr = robotState.cfg_snd_celebr;
-                oldSnap.snd_stayin = robotState.cfg_snd_stayin;
-                oldSnap.snd_harlem = robotState.cfg_snd_harlem;
-                oldSnap.snd_pbjtime = robotState.cfg_snd_pbjtime;
-                oldSnap.snd_sys_boot = robotState.cfg_snd_sys_boot;
-                oldSnap.snd_sys_mode_n = robotState.cfg_snd_sys_mode_n;
-                oldSnap.snd_sys_mode_s = robotState.cfg_snd_sys_mode_s;
-                oldSnap.snd_sys_mode_t = robotState.cfg_snd_sys_mode_t;
-                oldSnap.snd_sys_drv_on = robotState.cfg_snd_sys_drv_on;
-                oldSnap.snd_sys_dome_on = robotState.cfg_snd_sys_dome_on;
-                oldSnap.snd_rand_min = robotState.cfg_snd_rand_min;
-                oldSnap.snd_rand_max = robotState.cfg_snd_rand_max;
-                oldSnap.snd_int_quiet = robotState.cfg_snd_int_quiet;
-                oldSnap.snd_int_mid = robotState.cfg_snd_int_mid;
-                oldSnap.snd_int_full = robotState.cfg_snd_int_full;
-                oldSnap.snd_int_awake = robotState.cfg_snd_int_awake;
-                oldSnap.snd_moodcat_quiet = robotState.cfg_snd_moodcat_quiet;
-                oldSnap.snd_moodcat_mid = robotState.cfg_snd_moodcat_mid;
-                oldSnap.snd_moodcat_full = robotState.cfg_snd_moodcat_full;
-                oldSnap.snd_moodcat_awakeplus = robotState.cfg_snd_moodcat_awakeplus;
-                oldSnap.snd_cat_gen_lo = robotState.cfg_snd_cat_gen_lo;
-                oldSnap.snd_cat_gen_hi = robotState.cfg_snd_cat_gen_hi;
-                oldSnap.snd_cat_chat_lo = robotState.cfg_snd_cat_chat_lo;
-                oldSnap.snd_cat_chat_hi = robotState.cfg_snd_cat_chat_hi;
-                oldSnap.snd_cat_hap_lo = robotState.cfg_snd_cat_hap_lo;
-                oldSnap.snd_cat_hap_hi = robotState.cfg_snd_cat_hap_hi;
-                oldSnap.snd_cat_proc_lo = robotState.cfg_snd_cat_proc_lo;
-                oldSnap.snd_cat_proc_hi = robotState.cfg_snd_cat_proc_hi;
-                oldSnap.snd_cat_sad_lo = robotState.cfg_snd_cat_sad_lo;
-                oldSnap.snd_cat_sad_hi = robotState.cfg_snd_cat_sad_hi;
-                oldSnap.snd_cat_sent_lo = robotState.cfg_snd_cat_sent_lo;
-                oldSnap.snd_cat_sent_hi = robotState.cfg_snd_cat_sent_hi;
-                oldSnap.snd_cat_hum_lo = robotState.cfg_snd_cat_hum_lo;
-                oldSnap.snd_cat_hum_hi = robotState.cfg_snd_cat_hum_hi;
-                oldSnap.snd_cat_scrm_lo = robotState.cfg_snd_cat_scrm_lo;
-                oldSnap.snd_cat_scrm_hi = robotState.cfg_snd_cat_scrm_hi;
-                oldSnap.snd_cat_ooh_lo = robotState.cfg_snd_cat_ooh_lo;
-                oldSnap.snd_cat_ooh_hi = robotState.cfg_snd_cat_ooh_hi;
-                oldSnap.snd_cat_alrm_lo = robotState.cfg_snd_cat_alrm_lo;
-                oldSnap.snd_cat_alrm_hi = robotState.cfg_snd_cat_alrm_hi;
-                oldSnap.snd_cat_snarky_lo = robotState.cfg_snd_cat_snarky_lo;
-                oldSnap.snd_cat_snarky_hi = robotState.cfg_snd_cat_snarky_hi;
-                oldSnap.snd_cat_whis_lo = robotState.cfg_snd_cat_whis_lo;
-                oldSnap.snd_cat_whis_hi = robotState.cfg_snd_cat_whis_hi;
+                *fieldPtr = oldTrack;
+                configSnapshotFromRobotState(&oldSnap);
                 taskEXIT_CRITICAL(&robotStateMux);
                 configSave(prefs, oldSnap);
             }
 
             ok = wroteTrack && wroteChirp;
             prefs.end();
+        }
+
+        if (!ok) {
+            // Ensure robotState reflects the rollback.
+            taskENTER_CRITICAL(&robotStateMux);
+            *fieldPtr = oldTrack;
+            taskEXIT_CRITICAL(&robotStateMux);
         }
 
         if (useBanked) {
@@ -1194,9 +1076,6 @@ void registerAudioRoutes(AsyncWebServer& server) {
         }
 
         if (ok) {
-            taskENTER_CRITICAL(&robotStateMux);
-            *fieldPtr = t;
-            taskEXIT_CRITICAL(&robotStateMux);
             if (chirpBindingKey != nullptr && !audioQueueRefreshBindings(SRC_WEB_API)) {
                 PA_LOG_WARN(TAG, "[AUDIO] binding cache refresh enqueue failed (queue full)");
             }

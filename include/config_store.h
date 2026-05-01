@@ -353,6 +353,11 @@ bool configLoad(Preferences& prefs, ConfigSnapshot* out);
 // Returns false if any write fails; true on success.
 bool configSave(Preferences& prefs, const ConfigSnapshot& snapshot);
 
+// configSnapshotFromRobotState: Fill a ConfigSnapshot from the live robotState.
+// Caller MUST hold robotStateMux before calling (taskENTER_CRITICAL or xSemaphoreTake).
+// Use this before every configSave call to ensure a complete, non-partial snapshot.
+void configSnapshotFromRobotState(ConfigSnapshot* out);
+
 // configValidate: Validate a scalar field value before writing.
 // Covers int, float, bool, and enum fields only.
 // Complex struct fields (RcBindingConfig, RcTriggerBinding) are validated in API layer.
