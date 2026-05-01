@@ -22,6 +22,14 @@ public:
     explicit String(const char* s) : _s(s ? s : "") {}
     const char* c_str() const { return _s.c_str(); }
     size_t length() const { return _s.length(); }
+    String& operator=(const char* s) {
+        _s = s ? s : "";
+        return *this;
+    }
+    String& operator=(const String& s) {
+        _s = s._s;
+        return *this;
+    }
 private:
     std::string _s;
 };
