@@ -213,9 +213,24 @@ def main() -> int:
         )
         return 0
 
-    # Version checks only apply when version files are actually being staged.
     repo_dir = os.environ.get("CLAUDE_PROJECT_DIR", os.getcwd())
-    if _version_files_staged(repo_dir):
+    staged = _version_files_staged(repo_dir)
+
+    if not staged:
+        # Block any commit when version files are dirty but not staged.
+        # extract_version.py updates them on every build; they must never be left
+        # out of the commit that follows a build run.
+        dirty_issues = _version_file_issues(repo_dir)
+        if dirty_issues:
+            _deny(
+                "Commit blocked: version metadata files have uncommitted changes and are not staged. "
+                "They must be included in this commit (or committed first as a separate chore commit). "
+                "Run: git add data/fw-version.json data/fs-version.json — then re-run this commit. "
+                "Issues: " + "; ".join(dirty_issues)
+            )
+            return 0
+    else:
+        # Version files are staged: validate they are fully staged and internally consistent.
         problems: list[str] = []
         version_issues = _version_file_issues(repo_dir)
         if version_issues:
