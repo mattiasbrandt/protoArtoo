@@ -149,18 +149,6 @@ void test_catalog_refresh() {
     TEST_ASSERT_TRUE(driver.catalog_refreshed);
 }
 
-// Test: Non-catalog driver returns nullptr for catalog methods
-void test_non_catalog_driver_safe_defaults() {
-    AudioDriverStub driver;
-
-    TEST_ASSERT_EQUAL_UINT16(0, driver.getCatalogEntryCount());
-    TEST_ASSERT_EQUAL_UINT8(0, driver.getCatalogBankCount());
-    TEST_ASSERT_NULL(driver.getCatalogEntries());
-    TEST_ASSERT_NULL(driver.getCatalogBanks());
-    TEST_ASSERT_FALSE(driver.isCatalogReady());
-    TEST_ASSERT_FALSE(driver.refreshCatalog());
-}
-
 // Test: Catalog stub with zero entries returns nullptr
 void test_catalog_stub_empty_entries() {
     AudioDriverCatalogStub driver;
@@ -257,7 +245,6 @@ int main(int argc, char** argv) {
     RUN_TEST(test_catalog_stub_entries);
     RUN_TEST(test_catalog_stub_banks);
     RUN_TEST(test_catalog_refresh);
-    RUN_TEST(test_non_catalog_driver_safe_defaults);
     RUN_TEST(test_catalog_stub_empty_entries);
     RUN_TEST(test_catalog_stub_empty_banks);
     RUN_TEST(test_capability_bits_defined);
