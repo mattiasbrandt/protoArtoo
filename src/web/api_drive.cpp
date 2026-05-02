@@ -13,7 +13,6 @@
 #include <Arduino.h>
 #include <ESPAsyncWebServer.h>
 #include <stdlib.h>
-#include <stdio.h>
 #include <string.h>
 
 #include "api_helpers.h"

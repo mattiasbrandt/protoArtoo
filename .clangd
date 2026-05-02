@@ -1,0 +1,22 @@
+# .clangd — project-level clangd configuration
+#
+# This project targets ESP32 via PlatformIO + Arduino framework. The Xtensa
+# cross-compiler toolchain and Arduino.h are only available inside the pio
+# build environment, so clangd cannot resolve them from the host system.
+#
+# PlatformIO's c_cpp_properties.json (via C_Cpp.default.configurationProvider)
+# is the authoritative IntelliSense source. Clangd is kept for navigation and
+# auto-complete but its diagnostics are suppressed to avoid false positives.
+
+Diagnostics:
+  Suppress:
+    - pp_file_not_found    # Arduino.h / ESP-IDF headers not on host include path
+    - unknown_typename     # uint8_t, uint16_t etc. from missing stdint.h chain
+    - missing_exception_spec
+    - undeclared_var_use   # enum values / symbols from ESP-IDF/Arduino/FreeRTOS chain invisible to host clangd
+    - expected_expression  # C-style cast (type*) fails when type is unknown due to missing ESP-IDF headers
+    - fatal_too_many_errors  # cascade sentinel; clang stops before suppressions apply without the limit removed
+
+CompileFlags:
+  Add:
+    - "-ferror-limit=0"  # prevent clang from bailing before individual false-positive suppressions apply

@@ -5,7 +5,6 @@
 // Tests arbitration logic, timeout handling, and failsafe interaction.
 // =============================================================================
 #include <unity.h>
-#include <cstring>
 
 #include "drive_arbiter.h"
 #include "failsafe_gate.h"
