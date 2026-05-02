@@ -66,6 +66,12 @@ constexpr uint8_t AUDIO_VOLUME_MID = 15;
 constexpr uint8_t AUDIO_VOLUME_MAX = 30;
 constexpr uint8_t AUDIO_VOLUME_MIN = 0;
 
+// Clamp volume to the valid range [0, AUDIO_VOLUME_MAX].
+// Pure function, no side effects, safe to use in unit tests.
+inline uint8_t audioClampVolume(uint8_t vol) {
+    return (vol > AUDIO_VOLUME_MAX) ? AUDIO_VOLUME_MAX : vol;
+}
+
 // -----------------------------------------------------------------------------
 // AudioNamedTracks — passed into parseAudioDollar() so callers can substitute
 // NVS-configured values without changing the parser itself.

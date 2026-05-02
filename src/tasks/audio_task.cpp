@@ -175,7 +175,7 @@ bool audioQueueSetVolume(uint8_t vol, CommandSource src) {
     AudioCommand msg{};
     msg.type = AUDIO_CMD_SET_VOLUME;
     msg.source = src;
-    msg.volume = (vol > AUDIO_VOLUME_MAX) ? AUDIO_VOLUME_MAX : vol;
+    msg.volume = audioClampVolume(vol);
     if (xQueueSend(audioCmdQueue, &msg, 0) != pdTRUE) {
         taskENTER_CRITICAL(&robotStateMux);
         robotState.queueOverflowCount++;
