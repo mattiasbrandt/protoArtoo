@@ -32,26 +32,26 @@ void test_configLoad_empty_nvs_returns_defaults() {
     prefs.end();
 
     TEST_ASSERT_TRUE(result);
-    TEST_ASSERT_EQUAL_INT16(SPEED_LIMIT_MAX, snap.speedLimitMax);
-    TEST_ASSERT_EQUAL_INT16(SPEED_PRESET_SLOW, snap.speedPresetSlow);
-    TEST_ASSERT_EQUAL_INT16(SPEED_PRESET_NORMAL, snap.speedPresetNormal);
-    TEST_ASSERT_EQUAL_INT16(SPEED_PRESET_TURBO, snap.speedPresetTurbo);
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)SpeedPresetId::Normal, (uint8_t)snap.speedPresetActive);
-    TEST_ASSERT_EQUAL_UINT32(SBUS_TIMEOUT_MS, snap.sbusTimeoutMs);
-    TEST_ASSERT_EQUAL_UINT32(WEB_DRIVE_TIMEOUT_MS, snap.webDriveTimeoutMs);
-    TEST_ASSERT_EQUAL_UINT8(20, snap.audioVolume);
+    TEST_ASSERT_EQUAL_INT16(SPEED_LIMIT_MAX, snap.drive.speedLimitMax);
+    TEST_ASSERT_EQUAL_INT16(SPEED_PRESET_SLOW, snap.drive.speedPresetSlow);
+    TEST_ASSERT_EQUAL_INT16(SPEED_PRESET_NORMAL, snap.drive.speedPresetNormal);
+    TEST_ASSERT_EQUAL_INT16(SPEED_PRESET_TURBO, snap.drive.speedPresetTurbo);
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)SpeedPresetId::Normal, (uint8_t)snap.drive.speedPresetActive);
+    TEST_ASSERT_EQUAL_UINT32(SBUS_TIMEOUT_MS, snap.drive.sbusTimeoutMs);
+    TEST_ASSERT_EQUAL_UINT32(WEB_DRIVE_TIMEOUT_MS, snap.drive.webDriveTimeoutMs);
+    TEST_ASSERT_EQUAL_UINT8(20, snap.audio.audioVolume);
 }
 
 // Test: Save and reload returns same snapshot
 void test_configLoad_save_roundtrip() {
     ConfigSnapshot snap1 = {};
-    snap1.speedLimitMax = 500;
-    snap1.speedPresetSlow = 150;
-    snap1.speedPresetNormal = 300;
-    snap1.speedPresetTurbo = 500;
-    snap1.sbusTimeoutMs = 150;
-    snap1.webDriveTimeoutMs = 400;
-    snap1.audioVolume = 25;
+    snap1.drive.speedLimitMax = 500;
+    snap1.drive.speedPresetSlow = 150;
+    snap1.drive.speedPresetNormal = 300;
+    snap1.drive.speedPresetTurbo = 500;
+    snap1.drive.sbusTimeoutMs = 150;
+    snap1.drive.webDriveTimeoutMs = 400;
+    snap1.audio.audioVolume = 25;
 
     Preferences prefs;
     prefs.begin("proto", false);
@@ -63,13 +63,13 @@ void test_configLoad_save_roundtrip() {
     prefs.end();
 
     TEST_ASSERT_TRUE(loadResult);
-    TEST_ASSERT_EQUAL_INT16(snap1.speedLimitMax, snap2.speedLimitMax);
-    TEST_ASSERT_EQUAL_INT16(snap1.speedPresetSlow, snap2.speedPresetSlow);
-    TEST_ASSERT_EQUAL_INT16(snap1.speedPresetNormal, snap2.speedPresetNormal);
-    TEST_ASSERT_EQUAL_INT16(snap1.speedPresetTurbo, snap2.speedPresetTurbo);
-    TEST_ASSERT_EQUAL_UINT32(snap1.sbusTimeoutMs, snap2.sbusTimeoutMs);
-    TEST_ASSERT_EQUAL_UINT32(snap1.webDriveTimeoutMs, snap2.webDriveTimeoutMs);
-    TEST_ASSERT_EQUAL_UINT8(snap1.audioVolume, snap2.audioVolume);
+    TEST_ASSERT_EQUAL_INT16(snap1.drive.speedLimitMax, snap2.drive.speedLimitMax);
+    TEST_ASSERT_EQUAL_INT16(snap1.drive.speedPresetSlow, snap2.drive.speedPresetSlow);
+    TEST_ASSERT_EQUAL_INT16(snap1.drive.speedPresetNormal, snap2.drive.speedPresetNormal);
+    TEST_ASSERT_EQUAL_INT16(snap1.drive.speedPresetTurbo, snap2.drive.speedPresetTurbo);
+    TEST_ASSERT_EQUAL_UINT32(snap1.drive.sbusTimeoutMs, snap2.drive.sbusTimeoutMs);
+    TEST_ASSERT_EQUAL_UINT32(snap1.drive.webDriveTimeoutMs, snap2.drive.webDriveTimeoutMs);
+    TEST_ASSERT_EQUAL_UINT8(snap1.audio.audioVolume, snap2.audio.audioVolume);
 }
 
 // Test: configValidate rejects out-of-range speed limit
@@ -194,7 +194,7 @@ void test_configLoad_legacy_schema_v0() {
     prefs.end();
 
     TEST_ASSERT_TRUE(result);
-    TEST_ASSERT_EQUAL_INT16(400, snap.speedLimitMax);
+    TEST_ASSERT_EQUAL_INT16(400, snap.drive.speedLimitMax);
 
     // Verify schema version was stamped
     prefs.begin("proto", true);
@@ -220,7 +220,7 @@ void test_configLoad_schema_mismatch() {
 
     // Should return false and fill with defaults, not the NVS value
     TEST_ASSERT_FALSE(result);
-    TEST_ASSERT_EQUAL_INT16(SPEED_LIMIT_MAX, snap.speedLimitMax);
+    TEST_ASSERT_EQUAL_INT16(SPEED_LIMIT_MAX, snap.drive.speedLimitMax);
 
     // Verify schema version was updated
     prefs.begin("proto", true);
@@ -232,15 +232,15 @@ void test_configLoad_schema_mismatch() {
 // Test: Save all audio track fields
 void test_configLoad_save_audio_tracks() {
     ConfigSnapshot snap1 = {};
-    snap1.snd_scream = 100;
-    snap1.snd_faint = 101;
-    snap1.snd_leia = 102;
-    snap1.snd_cantina_s = 103;
-    snap1.snd_sw_theme = 104;
-    snap1.snd_imp_march = 105;
-    snap1.snd_cantina_l = 106;
-    snap1.snd_startup = 107;
-    snap1.snd_doodoo = 108;
+    snap1.audio.snd_scream = 100;
+    snap1.audio.snd_faint = 101;
+    snap1.audio.snd_leia = 102;
+    snap1.audio.snd_cantina_s = 103;
+    snap1.audio.snd_sw_theme = 104;
+    snap1.audio.snd_imp_march = 105;
+    snap1.audio.snd_cantina_l = 106;
+    snap1.audio.snd_startup = 107;
+    snap1.audio.snd_doodoo = 108;
 
     Preferences prefs;
     prefs.begin("proto", false);
@@ -252,22 +252,22 @@ void test_configLoad_save_audio_tracks() {
     prefs.end();
 
     TEST_ASSERT_TRUE(loadResult);
-    TEST_ASSERT_EQUAL_UINT16(snap1.snd_scream, snap2.snd_scream);
-    TEST_ASSERT_EQUAL_UINT16(snap1.snd_faint, snap2.snd_faint);
-    TEST_ASSERT_EQUAL_UINT16(snap1.snd_leia, snap2.snd_leia);
-    TEST_ASSERT_EQUAL_UINT16(snap1.snd_doodoo, snap2.snd_doodoo);
+    TEST_ASSERT_EQUAL_UINT16(snap1.audio.snd_scream, snap2.audio.snd_scream);
+    TEST_ASSERT_EQUAL_UINT16(snap1.audio.snd_faint, snap2.audio.snd_faint);
+    TEST_ASSERT_EQUAL_UINT16(snap1.audio.snd_leia, snap2.audio.snd_leia);
+    TEST_ASSERT_EQUAL_UINT16(snap1.audio.snd_doodoo, snap2.audio.snd_doodoo);
 }
 
 // Test: Save all servo fields
 void test_configLoad_save_servo_config() {
     ConfigSnapshot snap1 = {};
-    snap1.arm1_open_us = 2100;
-    snap1.arm1_close_us = 900;
-    snap1.arm2_open_us = 2200;
-    snap1.arm2_close_us = 800;
-    snap1.arm1_type = SERVO_COMP_MG996R;
-    snap1.arm2_type = SERVO_COMP_MG90S;
-    snap1.aux1_type = SERVO_COMP_RGB;
+    snap1.servo.arm1_open_us = 2100;
+    snap1.servo.arm1_close_us = 900;
+    snap1.servo.arm2_open_us = 2200;
+    snap1.servo.arm2_close_us = 800;
+    snap1.servo.arm1_type = SERVO_COMP_MG996R;
+    snap1.servo.arm2_type = SERVO_COMP_MG90S;
+    snap1.servo.aux1_type = SERVO_COMP_RGB;
 
     Preferences prefs;
     prefs.begin("proto", false);
@@ -279,21 +279,21 @@ void test_configLoad_save_servo_config() {
     prefs.end();
 
     TEST_ASSERT_TRUE(loadResult);
-    TEST_ASSERT_EQUAL_UINT16(snap1.arm1_open_us, snap2.arm1_open_us);
-    TEST_ASSERT_EQUAL_UINT16(snap1.arm1_close_us, snap2.arm1_close_us);
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)snap1.arm1_type, (uint8_t)snap2.arm1_type);
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)snap1.aux1_type, (uint8_t)snap2.aux1_type);
+    TEST_ASSERT_EQUAL_UINT16(snap1.servo.arm1_open_us, snap2.servo.arm1_open_us);
+    TEST_ASSERT_EQUAL_UINT16(snap1.servo.arm1_close_us, snap2.servo.arm1_close_us);
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)snap1.servo.arm1_type, (uint8_t)snap2.servo.arm1_type);
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)snap1.servo.aux1_type, (uint8_t)snap2.servo.aux1_type);
 }
 
 // Test: Save all feature toggle fields
 void test_configLoad_save_feature_toggles() {
     ConfigSnapshot snap1 = {};
-    snap1.enable_arm1 = true;
-    snap1.enable_arm2 = true;
-    snap1.enable_dome = false;
-    snap1.enable_rc_ch1 = true;
-    snap1.enable_s1_hoverboard = true;
-    snap1.stationary = true;
+    snap1.system.enable_arm1 = true;
+    snap1.system.enable_arm2 = true;
+    snap1.system.enable_dome = false;
+    snap1.system.enable_rc_ch1 = true;
+    snap1.system.enable_s1_hoverboard = true;
+    snap1.system.stationary = true;
 
     Preferences prefs;
     prefs.begin("proto", false);
@@ -305,12 +305,12 @@ void test_configLoad_save_feature_toggles() {
     prefs.end();
 
     TEST_ASSERT_TRUE(loadResult);
-    TEST_ASSERT_EQUAL_INT(true, snap2.enable_arm1);
-    TEST_ASSERT_EQUAL_INT(true, snap2.enable_arm2);
-    TEST_ASSERT_EQUAL_INT(false, snap2.enable_dome);
-    TEST_ASSERT_EQUAL_INT(true, snap2.enable_rc_ch1);
-    TEST_ASSERT_EQUAL_INT(true, snap2.enable_s1_hoverboard);
-    TEST_ASSERT_EQUAL_INT(true, snap2.stationary);
+    TEST_ASSERT_EQUAL_INT(true, snap2.system.enable_arm1);
+    TEST_ASSERT_EQUAL_INT(true, snap2.system.enable_arm2);
+    TEST_ASSERT_EQUAL_INT(false, snap2.system.enable_dome);
+    TEST_ASSERT_EQUAL_INT(true, snap2.system.enable_rc_ch1);
+    TEST_ASSERT_EQUAL_INT(true, snap2.system.enable_s1_hoverboard);
+    TEST_ASSERT_EQUAL_INT(true, snap2.system.stationary);
 }
 
 // Test: configValidate dome speed percentage
@@ -367,7 +367,7 @@ void test_configValidate_rc_input_mode() {
 // Test: Save dome wifi peer IP
 void test_configLoad_save_dome_wifi_peer_ip() {
     ConfigSnapshot snap1 = {};
-    snprintf(snap1.dome_wifi_peer_ip, sizeof(snap1.dome_wifi_peer_ip), "192.168.1.42");
+    snprintf(snap1.dome.dome_wifi_peer_ip, sizeof(snap1.dome.dome_wifi_peer_ip), "192.168.1.42");
 
     Preferences prefs;
     prefs.begin("proto", false);
@@ -379,13 +379,13 @@ void test_configLoad_save_dome_wifi_peer_ip() {
     prefs.end();
 
     TEST_ASSERT_TRUE(loadResult);
-    TEST_ASSERT_EQUAL_STRING(snap1.dome_wifi_peer_ip, snap2.dome_wifi_peer_ip);
+    TEST_ASSERT_EQUAL_STRING(snap1.dome.dome_wifi_peer_ip, snap2.dome.dome_wifi_peer_ip);
 }
 
 // Test: Empty dome wifi IP is preserved
 void test_configLoad_save_dome_wifi_peer_ip_empty() {
     ConfigSnapshot snap1 = {};
-    snap1.dome_wifi_peer_ip[0] = '\0';
+    snap1.dome.dome_wifi_peer_ip[0] = '\0';
 
     Preferences prefs;
     prefs.begin("proto", false);
@@ -397,14 +397,14 @@ void test_configLoad_save_dome_wifi_peer_ip_empty() {
     prefs.end();
 
     TEST_ASSERT_TRUE(loadResult);
-    TEST_ASSERT_EQUAL_CHAR('\0', snap2.dome_wifi_peer_ip[0]);
+    TEST_ASSERT_EQUAL_CHAR('\0', snap2.dome.dome_wifi_peer_ip[0]);
 }
 
 // Test: Mood category masks are truncated to 12-bit
 void test_configLoad_save_moodcat_12bit_mask() {
     ConfigSnapshot snap1 = {};
-    snap1.snd_moodcat_quiet = 0x1234;  // Will be truncated to 0x0234
-    snap1.snd_moodcat_mid = 0xFFFF;    // Will be truncated to 0x0FFF
+    snap1.audio.snd_moodcat_quiet = 0x1234;  // Will be truncated to 0x0234
+    snap1.audio.snd_moodcat_mid = 0xFFFF;    // Will be truncated to 0x0FFF
 
     Preferences prefs;
     prefs.begin("proto", false);
@@ -416,8 +416,8 @@ void test_configLoad_save_moodcat_12bit_mask() {
     prefs.end();
 
     TEST_ASSERT_TRUE(loadResult);
-    TEST_ASSERT_EQUAL_UINT16(0x0234, snap2.snd_moodcat_quiet);
-    TEST_ASSERT_EQUAL_UINT16(0x0FFF, snap2.snd_moodcat_mid);
+    TEST_ASSERT_EQUAL_UINT16(0x0234, snap2.audio.snd_moodcat_quiet);
+    TEST_ASSERT_EQUAL_UINT16(0x0FFF, snap2.audio.snd_moodcat_mid);
 }
 
 // Test: configSnapshotFromRobotState captures one field from each category group.
@@ -508,85 +508,85 @@ void test_configSnapshotFromRobotState_captures_all_categories() {
     configSnapshotFromRobotState(&snap);
 
     // Speed
-    TEST_ASSERT_EQUAL_INT16(750, snap.speedLimitMax);
-    TEST_ASSERT_EQUAL_INT16(150, snap.speedPresetSlow);
-    TEST_ASSERT_EQUAL_INT16(350, snap.speedPresetNormal);
-    TEST_ASSERT_EQUAL_INT16(750, snap.speedPresetTurbo);
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)SpeedPresetId::Turbo, (uint8_t)snap.speedPresetActive);
+    TEST_ASSERT_EQUAL_INT16(750, snap.drive.speedLimitMax);
+    TEST_ASSERT_EQUAL_INT16(150, snap.drive.speedPresetSlow);
+    TEST_ASSERT_EQUAL_INT16(350, snap.drive.speedPresetNormal);
+    TEST_ASSERT_EQUAL_INT16(750, snap.drive.speedPresetTurbo);
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)SpeedPresetId::Turbo, (uint8_t)snap.drive.speedPresetActive);
 
     // Timeouts
-    TEST_ASSERT_EQUAL_UINT32(250, snap.sbusTimeoutMs);
-    TEST_ASSERT_EQUAL_UINT32(600, snap.webDriveTimeoutMs);
+    TEST_ASSERT_EQUAL_UINT32(250, snap.drive.sbusTimeoutMs);
+    TEST_ASSERT_EQUAL_UINT32(600, snap.drive.webDriveTimeoutMs);
 
     // Audio scalars
-    TEST_ASSERT_EQUAL_UINT8(22, snap.audioVolume);
-    TEST_ASSERT_EQUAL_UINT8(2, snap.logLevel);
+    TEST_ASSERT_EQUAL_UINT8(22, snap.audio.audioVolume);
+    TEST_ASSERT_EQUAL_UINT8(2, snap.system.logLevel);
 
     // Named audio tracks
-    TEST_ASSERT_EQUAL_UINT16(200, snap.snd_scream);
-    TEST_ASSERT_EQUAL_UINT16(201, snap.snd_faint);
-    TEST_ASSERT_EQUAL_UINT16(255, snap.snd_startup);
-    TEST_ASSERT_EQUAL_UINT16(5,  snap.snd_rand_min);
-    TEST_ASSERT_EQUAL_UINT16(80, snap.snd_rand_max);
+    TEST_ASSERT_EQUAL_UINT16(200, snap.audio.snd_scream);
+    TEST_ASSERT_EQUAL_UINT16(201, snap.audio.snd_faint);
+    TEST_ASSERT_EQUAL_UINT16(255, snap.audio.snd_startup);
+    TEST_ASSERT_EQUAL_UINT16(5,  snap.audio.snd_rand_min);
+    TEST_ASSERT_EQUAL_UINT16(80, snap.audio.snd_rand_max);
 
     // Mood category fields
-    TEST_ASSERT_EQUAL_UINT16(0x0ABC, snap.snd_moodcat_quiet);
-    TEST_ASSERT_EQUAL_UINT16(0x0FFF, snap.snd_moodcat_full);
-    TEST_ASSERT_EQUAL_UINT16(10, snap.snd_cat_gen_lo);
-    TEST_ASSERT_EQUAL_UINT16(20, snap.snd_cat_gen_hi);
-    TEST_ASSERT_EQUAL_UINT16(30, snap.snd_cat_whis_lo);
-    TEST_ASSERT_EQUAL_UINT16(40, snap.snd_cat_whis_hi);
+    TEST_ASSERT_EQUAL_UINT16(0x0ABC, snap.audio.snd_moodcat_quiet);
+    TEST_ASSERT_EQUAL_UINT16(0x0FFF, snap.audio.snd_moodcat_full);
+    TEST_ASSERT_EQUAL_UINT16(10, snap.audio.snd_cat_gen_lo);
+    TEST_ASSERT_EQUAL_UINT16(20, snap.audio.snd_cat_gen_hi);
+    TEST_ASSERT_EQUAL_UINT16(30, snap.audio.snd_cat_whis_lo);
+    TEST_ASSERT_EQUAL_UINT16(40, snap.audio.snd_cat_whis_hi);
 
     // Servo
-    TEST_ASSERT_EQUAL_UINT16(2100, snap.arm1_open_us);
-    TEST_ASSERT_EQUAL_UINT16(900,  snap.arm1_close_us);
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)SERVO_COMP_MG996R, (uint8_t)snap.arm1_type);
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)SERVO_COMP_RGB,    (uint8_t)snap.aux3_type);
-    TEST_ASSERT_EQUAL_UINT16(1800, snap.aux1_open_us);
-    TEST_ASSERT_EQUAL_UINT16(1200, snap.aux1_close_us);
+    TEST_ASSERT_EQUAL_UINT16(2100, snap.servo.arm1_open_us);
+    TEST_ASSERT_EQUAL_UINT16(900,  snap.servo.arm1_close_us);
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)SERVO_COMP_MG996R, (uint8_t)snap.servo.arm1_type);
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)SERVO_COMP_RGB,    (uint8_t)snap.servo.aux3_type);
+    TEST_ASSERT_EQUAL_UINT16(1800, snap.servo.aux1_open_us);
+    TEST_ASSERT_EQUAL_UINT16(1200, snap.servo.aux1_close_us);
 
     // Dome
-    TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.1f, snap.dome_min_speed);
-    TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.9f, snap.dome_max_speed);
-    TEST_ASSERT_EQUAL_UINT16(1510, snap.dome_neutral_us);
-    TEST_ASSERT_EQUAL_UINT8(75, snap.dome_speed_limit_pct);
-    TEST_ASSERT_EQUAL_INT(true, snap.dome_rnd_enable);
-    TEST_ASSERT_EQUAL_UINT8(35, snap.dome_rnd_speed_pct);
-    TEST_ASSERT_EQUAL_UINT8(4,  snap.dome_rnd_pause_min);
-    TEST_ASSERT_EQUAL_UINT8(10, snap.dome_rnd_pause_max);
-    TEST_ASSERT_EQUAL_UINT16(3000, snap.dome_rnd_move_ms);
-    TEST_ASSERT_EQUAL_STRING("10.0.0.5", snap.dome_wifi_peer_ip);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.1f, snap.dome.dome_min_speed);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.9f, snap.dome.dome_max_speed);
+    TEST_ASSERT_EQUAL_UINT16(1510, snap.dome.dome_neutral_us);
+    TEST_ASSERT_EQUAL_UINT8(75, snap.dome.dome_speed_limit_pct);
+    TEST_ASSERT_EQUAL_INT(true, snap.dome.dome_rnd_enable);
+    TEST_ASSERT_EQUAL_UINT8(35, snap.dome.dome_rnd_speed_pct);
+    TEST_ASSERT_EQUAL_UINT8(4,  snap.dome.dome_rnd_pause_min);
+    TEST_ASSERT_EQUAL_UINT8(10, snap.dome.dome_rnd_pause_max);
+    TEST_ASSERT_EQUAL_UINT16(3000, snap.dome.dome_rnd_move_ms);
+    TEST_ASSERT_EQUAL_STRING("10.0.0.5", snap.dome.dome_wifi_peer_ip);
 
     // Sequence timing
-    TEST_ASSERT_EQUAL_UINT16(400, snap.seq_open_ms);
-    TEST_ASSERT_EQUAL_UINT16(600, snap.seq_close_ms);
+    TEST_ASSERT_EQUAL_UINT16(400, snap.servo.seq_open_ms);
+    TEST_ASSERT_EQUAL_UINT16(600, snap.servo.seq_close_ms);
 
     // AUX LED
-    TEST_ASSERT_EQUAL_UINT8(2, snap.aux_led_pin);
-    TEST_ASSERT_EQUAL_UINT8(8, snap.aux_led_count);
+    TEST_ASSERT_EQUAL_UINT8(2, snap.servo.aux_led_pin);
+    TEST_ASSERT_EQUAL_UINT8(8, snap.servo.aux_led_count);
 
     // Feature toggles
-    TEST_ASSERT_EQUAL_INT(true, snap.enable_arm1);
-    TEST_ASSERT_EQUAL_INT(true, snap.enable_dome);
-    TEST_ASSERT_EQUAL_INT(true, snap.stationary);
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)RC_INPUT_DUAL_SBUS, (uint8_t)snap.rc_input_mode);
-    TEST_ASSERT_EQUAL_INT(true, snap.single_sbus_use_ch2);
-    TEST_ASSERT_EQUAL_INT(true, snap.enable_s1_hoverboard);
+    TEST_ASSERT_EQUAL_INT(true, snap.system.enable_arm1);
+    TEST_ASSERT_EQUAL_INT(true, snap.system.enable_dome);
+    TEST_ASSERT_EQUAL_INT(true, snap.system.stationary);
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)RC_INPUT_DUAL_SBUS, (uint8_t)snap.system.rc_input_mode);
+    TEST_ASSERT_EQUAL_INT(true, snap.system.single_sbus_use_ch2);
+    TEST_ASSERT_EQUAL_INT(true, snap.system.enable_s1_hoverboard);
 
     // RC backbone binding
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)RC_BINDING_SBUS1, (uint8_t)snap.rc_sbus_drive_speed.source);
-    TEST_ASSERT_EQUAL_UINT8(3,   snap.rc_sbus_drive_speed.channel);
-    TEST_ASSERT_EQUAL_UINT16(200, snap.rc_sbus_drive_speed.min);
-    TEST_ASSERT_EQUAL_INT(true,  snap.rc_sbus_drive_speed.reverse);
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)RC_BINDING_PWM, (uint8_t)snap.rc_pwm_drive_steer.source);
-    TEST_ASSERT_EQUAL_UINT8(2, snap.rc_pwm_drive_steer.channel);
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)RC_BINDING_SBUS1, (uint8_t)snap.system.rc_sbus_drive_speed.source);
+    TEST_ASSERT_EQUAL_UINT8(3,   snap.system.rc_sbus_drive_speed.channel);
+    TEST_ASSERT_EQUAL_UINT16(200, snap.system.rc_sbus_drive_speed.min);
+    TEST_ASSERT_EQUAL_INT(true,  snap.system.rc_sbus_drive_speed.reverse);
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)RC_BINDING_PWM, (uint8_t)snap.system.rc_pwm_drive_steer.source);
+    TEST_ASSERT_EQUAL_UINT8(2, snap.system.rc_pwm_drive_steer.channel);
 
     // RC trigger binding
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)RC_BINDING_SBUS1, (uint8_t)snap.rc_arm1.source);
-    TEST_ASSERT_EQUAL_UINT8(5, snap.rc_arm1.channel);
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)SERVO_ACTION_ARM1_TOGGLE, (uint8_t)snap.rc_arm1.target);
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)RC_BINDING_SBUS2, (uint8_t)snap.rc_free3.source);
-    TEST_ASSERT_EQUAL_UINT8(7, snap.rc_free3.channel);
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)RC_BINDING_SBUS1, (uint8_t)snap.system.rc_arm1.source);
+    TEST_ASSERT_EQUAL_UINT8(5, snap.system.rc_arm1.channel);
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)SERVO_ACTION_ARM1_TOGGLE, (uint8_t)snap.system.rc_arm1.target);
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)RC_BINDING_SBUS2, (uint8_t)snap.system.rc_free3.source);
+    TEST_ASSERT_EQUAL_UINT8(7, snap.system.rc_free3.channel);
 }
 
 // Test: full save path — robotState -> configSnapshotFromRobotState -> configSave -> configLoad
@@ -617,18 +617,18 @@ void test_configSnapshotFromRobotState_save_round_trip() {
     prefs.end();
     TEST_ASSERT_TRUE(loadOk);
 
-    TEST_ASSERT_EQUAL_INT16(600, snap2.speedLimitMax);
-    TEST_ASSERT_EQUAL_UINT8(18, snap2.audioVolume);
-    TEST_ASSERT_EQUAL_UINT16(55, snap2.snd_cat_alrm_lo);
-    TEST_ASSERT_EQUAL_UINT16(65, snap2.snd_cat_alrm_hi);
-    TEST_ASSERT_EQUAL_INT(true,  snap2.dome_rnd_enable);
-    TEST_ASSERT_EQUAL_UINT8(40,  snap2.dome_rnd_speed_pct);
-    TEST_ASSERT_EQUAL_INT(true,  snap2.enable_arm2);
-    TEST_ASSERT_EQUAL_INT(false, snap2.stationary);
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)RC_INPUT_SINGLE_SBUS, (uint8_t)snap2.rc_input_mode);
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)RC_BINDING_SBUS1, (uint8_t)snap2.rc_sbus_arm1.source);
-    TEST_ASSERT_EQUAL_UINT8(4,   snap2.rc_sbus_arm1.channel);
-    TEST_ASSERT_EQUAL_UINT16(10, snap2.rc_sbus_arm1.deadband);
+    TEST_ASSERT_EQUAL_INT16(600, snap2.drive.speedLimitMax);
+    TEST_ASSERT_EQUAL_UINT8(18, snap2.audio.audioVolume);
+    TEST_ASSERT_EQUAL_UINT16(55, snap2.audio.snd_cat_alrm_lo);
+    TEST_ASSERT_EQUAL_UINT16(65, snap2.audio.snd_cat_alrm_hi);
+    TEST_ASSERT_EQUAL_INT(true,  snap2.dome.dome_rnd_enable);
+    TEST_ASSERT_EQUAL_UINT8(40,  snap2.dome.dome_rnd_speed_pct);
+    TEST_ASSERT_EQUAL_INT(true,  snap2.system.enable_arm2);
+    TEST_ASSERT_EQUAL_INT(false, snap2.system.stationary);
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)RC_INPUT_SINGLE_SBUS, (uint8_t)snap2.system.rc_input_mode);
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)RC_BINDING_SBUS1, (uint8_t)snap2.system.rc_sbus_arm1.source);
+    TEST_ASSERT_EQUAL_UINT8(4,   snap2.system.rc_sbus_arm1.channel);
+    TEST_ASSERT_EQUAL_UINT16(10, snap2.system.rc_sbus_arm1.deadband);
 }
 
 // Test: configApplyToRobotState applies all categories of fields from snapshot
@@ -637,89 +637,89 @@ void test_configApplyToRobotState_applies_all_categories() {
     ConfigSnapshot snap = {};
 
     // Speed
-    snap.speedLimitMax      = 650;
-    snap.speedPresetSlow    = 120;
-    snap.speedPresetNormal  = 320;
-    snap.speedPresetTurbo   = 650;
-    snap.speedPresetActive  = SpeedPresetId::Slow;
+    snap.drive.speedLimitMax      = 650;
+    snap.drive.speedPresetSlow    = 120;
+    snap.drive.speedPresetNormal  = 320;
+    snap.drive.speedPresetTurbo   = 650;
+    snap.drive.speedPresetActive  = SpeedPresetId::Slow;
 
     // Timeouts
-    snap.sbusTimeoutMs      = 300;
-    snap.webDriveTimeoutMs  = 500;
+    snap.drive.sbusTimeoutMs      = 300;
+    snap.drive.webDriveTimeoutMs  = 500;
 
     // Audio
-    snap.audioVolume        = 15;
-    snap.logLevel           = 3;
+    snap.audio.audioVolume        = 15;
+    snap.system.logLevel           = 3;
 
     // Audio tracks (sample)
-    snap.snd_scream         = 250;
-    snap.snd_faint          = 251;
+    snap.audio.snd_scream         = 250;
+    snap.audio.snd_faint          = 251;
 
     // Servo pulse widths
-    snap.arm1_open_us       = 2050;
-    snap.arm1_close_us      = 950;
-    snap.arm2_open_us       = 2150;
-    snap.arm2_close_us      = 850;
-    snap.aux1_open_us       = 2000;
-    snap.aux1_close_us      = 1000;
-    snap.aux2_open_us       = 2100;
-    snap.aux2_close_us      = 900;
-    snap.aux3_open_us       = 2200;
-    snap.aux3_close_us      = 800;
+    snap.servo.arm1_open_us       = 2050;
+    snap.servo.arm1_close_us      = 950;
+    snap.servo.arm2_open_us       = 2150;
+    snap.servo.arm2_close_us      = 850;
+    snap.servo.aux1_open_us       = 2000;
+    snap.servo.aux1_close_us      = 1000;
+    snap.servo.aux2_open_us       = 2100;
+    snap.servo.aux2_close_us      = 900;
+    snap.servo.aux3_open_us       = 2200;
+    snap.servo.aux3_close_us      = 800;
 
     // Servo types
-    snap.arm1_type          = SERVO_COMP_MG996R;
-    snap.arm2_type          = SERVO_COMP_MG90S;
-    snap.aux1_type          = SERVO_COMP_RGB;
-    snap.aux2_type          = SERVO_COMP_NONE;
-    snap.aux3_type          = SERVO_COMP_MG90S;
+    snap.servo.arm1_type          = SERVO_COMP_MG996R;
+    snap.servo.arm2_type          = SERVO_COMP_MG90S;
+    snap.servo.aux1_type          = SERVO_COMP_RGB;
+    snap.servo.aux2_type          = SERVO_COMP_NONE;
+    snap.servo.aux3_type          = SERVO_COMP_MG90S;
 
     // Dome
-    snap.dome_min_speed     = 0.2f;
-    snap.dome_max_speed     = 0.95f;
-    snap.dome_neutral_us    = 1520;
-    snap.dome_min_pulse_us  = 1050;
-    snap.dome_max_pulse_us  = 1950;
-    snap.dome_speed_limit_pct = 85;
-    snap.dome_rnd_enable    = true;
-    snap.dome_rnd_speed_pct = 40;
-    snap.dome_rnd_pause_min = 5;
-    snap.dome_rnd_pause_max = 15;
-    snap.dome_rnd_move_ms   = 3500;
-    snprintf(snap.dome_wifi_peer_ip, sizeof(snap.dome_wifi_peer_ip), "192.168.0.99");
+    snap.dome.dome_min_speed     = 0.2f;
+    snap.dome.dome_max_speed     = 0.95f;
+    snap.dome.dome_neutral_us    = 1520;
+    snap.dome.dome_min_pulse_us  = 1050;
+    snap.dome.dome_max_pulse_us  = 1950;
+    snap.dome.dome_speed_limit_pct = 85;
+    snap.dome.dome_rnd_enable    = true;
+    snap.dome.dome_rnd_speed_pct = 40;
+    snap.dome.dome_rnd_pause_min = 5;
+    snap.dome.dome_rnd_pause_max = 15;
+    snap.dome.dome_rnd_move_ms   = 3500;
+    snprintf(snap.dome.dome_wifi_peer_ip, sizeof(snap.dome.dome_wifi_peer_ip), "192.168.0.99");
 
     // Sequence timing
-    snap.seq_open_ms        = 800;
-    snap.seq_close_ms       = 1200;
+    snap.servo.seq_open_ms        = 800;
+    snap.servo.seq_close_ms       = 1200;
 
     // AUX LED
-    snap.aux_led_pin        = 3;
-    snap.aux_led_count      = 12;
+    snap.servo.aux_led_pin        = 3;
+    snap.servo.aux_led_count      = 12;
 
     // Feature toggles
-    snap.enable_arm1        = true;
-    snap.enable_arm2        = false;
-    snap.enable_aux1        = true;
-    snap.enable_dome        = true;
-    snap.enable_rc_ch1      = true;
-    snap.enable_rc_ch2      = false;
-    snap.single_sbus_use_ch2 = true;
-    snap.enable_s1_hoverboard = true;
-    snap.enable_s2_sound    = false;
-    snap.enable_s3_dome_ctrl = true;
-    snap.stationary         = true;
-    snap.rc_input_mode      = RC_INPUT_DUAL_SBUS;
+    snap.system.enable_arm1        = true;
+    snap.system.enable_arm2        = false;
+    snap.system.enable_aux1        = true;
+    snap.system.enable_dome        = true;
+    snap.system.enable_rc_ch1      = true;
+    snap.system.enable_rc_ch2      = false;
+    snap.system.single_sbus_use_ch2 = true;
+    snap.system.enable_s1_hoverboard = true;
+    snap.system.enable_s2_sound    = false;
+    snap.system.enable_s3_dome_ctrl = true;
+    snap.system.stationary         = true;
+    snap.system.rc_input_mode      = RC_INPUT_DUAL_SBUS;
 
     // RC bindings (Tier 1)
-    snap.rc_pwm_drive_speed = defaultPwmBinding(1);
-    snap.rc_sbus_drive_speed = defaultSbusBinding(RC_BINDING_SBUS1, 1);
+    snap.system.rc_pwm_drive_speed = defaultPwmBinding(1);
+    snap.system.rc_sbus_drive_speed = defaultSbusBinding(RC_BINDING_SBUS1, 1);
 
     // RC bindings (Tier 2)
-    snap.rc_arm1 = makeRcTriggerBinding(RC_BINDING_SBUS1, 4, SERVO_ACTION_ARM1_TOGGLE, nullptr,
+    snap.system.rc_arm1 = makeRcTriggerBinding(RC_BINDING_SBUS1, 4, SERVO_ACTION_ARM1_TOGGLE, nullptr,
                                         RC_SBUS_DEFAULT_MIN, RC_SBUS_DEFAULT_CENTER,
                                         RC_SBUS_DEFAULT_MAX, 0,
                                         rcTriggerDefaultReverse(RC_BINDING_SBUS1, 4));
-    snap.rc_arm2 = disabledRcTriggerBinding();
+    snap.system.rc_arm2 = disabledRcTriggerBinding();
 
     // Pre-set a non-cfg sentinel to verify apply does not touch it
     robotState.driveSpeed = 999;
@@ -781,7 +781,7 @@ void test_configApplyToRobotState_does_not_touch_non_cfg_fields() {
 
     // Create a snapshot with different values for cfg fields
     ConfigSnapshot snap = {};
-    snap.stationary = true;
+    snap.system.stationary = true;
 
     // Apply the snapshot
     configApplyToRobotState(snap);
@@ -792,6 +792,61 @@ void test_configApplyToRobotState_does_not_touch_non_cfg_fields() {
     // But the non-cfg fields should NOT have changed
     TEST_ASSERT_EQUAL_INT(123, robotState.driveSpeed);
     TEST_ASSERT_EQUAL_INT(456, robotState.driveSteer);
+}
+
+void test_config_domain_load_functions_are_independently_callable() {
+    ConfigSnapshot snap = {};
+    snap.drive.speedLimitMax = 550;
+    snap.audio.audioVolume = 12;
+    snap.servo.arm1_open_us = 1900;
+    snap.dome.dome_speed_limit_pct = 75;
+    snap.system.enable_s2_sound = true;
+
+    Preferences prefs;
+    prefs.begin("proto", false);
+    TEST_ASSERT_TRUE(configSave(prefs, snap));
+
+    DriveConfig drive = {};
+    AudioConfig audio = {};
+    ServoConfig servo = {};
+    DomeConfig dome = {};
+    SystemConfig system = {};
+    configLoadDrive(prefs, &drive);
+    configLoadAudio(prefs, &audio);
+    configLoadServo(prefs, &servo);
+    configLoadDome(prefs, &dome);
+    configLoadSystem(prefs, &system);
+    prefs.end();
+
+    TEST_ASSERT_EQUAL_INT16(550, drive.speedLimitMax);
+    TEST_ASSERT_EQUAL_UINT8(12, audio.audioVolume);
+    TEST_ASSERT_EQUAL_UINT16(1900, servo.arm1_open_us);
+    TEST_ASSERT_EQUAL_UINT8(75, dome.dome_speed_limit_pct);
+    TEST_ASSERT_EQUAL_INT(true, system.enable_s2_sound);
+}
+
+void test_config_domain_save_preserves_other_domains() {
+    ConfigSnapshot snap = {};
+    snap.drive.speedLimitMax = 500;
+    snap.audio.audioVolume = 10;
+    snap.system.enable_s2_sound = true;
+
+    Preferences prefs;
+    prefs.begin("proto", false);
+    TEST_ASSERT_TRUE(configSave(prefs, snap));
+
+    AudioConfig audio = {};
+    configLoadAudio(prefs, &audio);
+    audio.audioVolume = 27;
+    TEST_ASSERT_TRUE(configSaveAudio(prefs, audio));
+
+    ConfigSnapshot loaded = {};
+    TEST_ASSERT_TRUE(configLoad(prefs, &loaded));
+    prefs.end();
+
+    TEST_ASSERT_EQUAL_INT16(500, loaded.drive.speedLimitMax);
+    TEST_ASSERT_EQUAL_UINT8(27, loaded.audio.audioVolume);
+    TEST_ASSERT_EQUAL_INT(true, loaded.system.enable_s2_sound);
 }
 
 int main() {
@@ -823,5 +878,7 @@ int main() {
     RUN_TEST(test_configSnapshotFromRobotState_save_round_trip);
     RUN_TEST(test_configApplyToRobotState_applies_all_categories);
     RUN_TEST(test_configApplyToRobotState_does_not_touch_non_cfg_fields);
+    RUN_TEST(test_config_domain_load_functions_are_independently_callable);
+    RUN_TEST(test_config_domain_save_preserves_other_domains);
     return UNITY_END();
 }

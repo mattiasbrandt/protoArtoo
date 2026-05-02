@@ -745,7 +745,7 @@ void registerAudioRoutes(AsyncWebServer& server) {
         Preferences prefs;
         bool ok = false;
         if (prefs.begin(NVS_NAMESPACE, false)) {
-            bool wroteConfig = configSave(prefs, snap);
+            bool wroteConfig = configSaveAudio(prefs, snap.audio);
             bool wroteBinding = true;
             if (wroteConfig && hasBankedParams) {
                 uint32_t packedBinding = packChirpCategoryBinding(categoryBank, categoryPage);
@@ -761,7 +761,7 @@ void registerAudioRoutes(AsyncWebServer& server) {
                 *hiField = oldHi;
                 configSnapshotFromRobotState(&oldSnap);
                 taskEXIT_CRITICAL(&robotStateMux);
-                configSave(prefs, oldSnap);
+                configSaveAudio(prefs, oldSnap.audio);
             } else if (!wroteConfig) {
                 taskENTER_CRITICAL(&robotStateMux);
                 *loField = oldLo;
@@ -1038,7 +1038,7 @@ void registerAudioRoutes(AsyncWebServer& server) {
         Preferences prefs;
         bool ok = false;
         if (prefs.begin(NVS_NAMESPACE, false)) {
-            bool wroteTrack = configSave(prefs, snap);
+            bool wroteTrack = configSaveAudio(prefs, snap.audio);
             bool wroteChirp = true;
 
             if (wroteTrack && chirpBindingKey != nullptr) {
@@ -1053,7 +1053,7 @@ void registerAudioRoutes(AsyncWebServer& server) {
                 *fieldPtr = oldTrack;
                 configSnapshotFromRobotState(&oldSnap);
                 taskEXIT_CRITICAL(&robotStateMux);
-                configSave(prefs, oldSnap);
+                configSaveAudio(prefs, oldSnap.audio);
             }
 
             ok = wroteTrack && wroteChirp;

@@ -276,10 +276,10 @@ bool rcMapTryReuseCalibration(const ConfigSnapshot& existing, RcBindingSource so
     }
 
     const RcBindingConfig backboneBindings[] = {
-        existing.rc_pwm_drive_speed, existing.rc_pwm_drive_steer, existing.rc_pwm_dome_speed,
-        existing.rc_pwm_arm1,       existing.rc_pwm_arm2,       existing.rc_pwm_sound,
-        existing.rc_sbus_drive_speed, existing.rc_sbus_drive_steer, existing.rc_sbus_dome_speed,
-        existing.rc_sbus_arm1,      existing.rc_sbus_arm2,      existing.rc_sbus_sound,
+        existing.system.rc_pwm_drive_speed, existing.system.rc_pwm_drive_steer, existing.system.rc_pwm_dome_speed,
+        existing.system.rc_pwm_arm1,       existing.system.rc_pwm_arm2,       existing.system.rc_pwm_sound,
+        existing.system.rc_sbus_drive_speed, existing.system.rc_sbus_drive_steer, existing.system.rc_sbus_dome_speed,
+        existing.system.rc_sbus_arm1,      existing.system.rc_sbus_arm2,      existing.system.rc_sbus_sound,
     };
     for (size_t i = 0; i < sizeof(backboneBindings) / sizeof(backboneBindings[0]); ++i) {
         const RcBindingConfig& binding = backboneBindings[i];
@@ -295,9 +295,9 @@ bool rcMapTryReuseCalibration(const ConfigSnapshot& existing, RcBindingSource so
     }
 
     const RcTriggerBinding triggerBindings[] = {
-        existing.rc_arm1, existing.rc_arm2, existing.rc_aux1, existing.rc_aux2, existing.rc_aux3,
-        existing.rc_sound, existing.rc_opmode, existing.rc_free0, existing.rc_free1, existing.rc_free2,
-        existing.rc_free3,
+        existing.system.rc_arm1, existing.system.rc_arm2, existing.system.rc_aux1, existing.system.rc_aux2, existing.system.rc_aux3,
+        existing.system.rc_sound, existing.system.rc_opmode, existing.system.rc_free0, existing.system.rc_free1, existing.system.rc_free2,
+        existing.system.rc_free3,
     };
     for (size_t i = 0; i < sizeof(triggerBindings) / sizeof(triggerBindings[0]); ++i) {
         const RcTriggerBinding& binding = triggerBindings[i];
@@ -371,7 +371,7 @@ bool rcMapBuildTriggerBinding(const RcMapEntry& entry, const ConfigSnapshot& exi
 
 RcBindingConfig rcMapSelectBackboneForMode(const ConfigSnapshot& snap, const RcBindingConfig& pwm,
                                            const RcBindingConfig& sbus) {
-    if (snap.rc_input_mode == RC_INPUT_STANDARD_PWM) {
+    if (snap.system.rc_input_mode == RC_INPUT_STANDARD_PWM) {
         return rcMapBindingIsMapped(pwm) ? pwm : sbus;
     }
     return rcMapBindingIsMapped(sbus) ? sbus : pwm;
@@ -391,16 +391,16 @@ void rcMapAppendEntry(JsonArray map, RcBindingSource source, uint8_t channel, Ro
 }  // namespace
 bool populateRcMapJson(JsonDocument& doc, const ConfigSnapshot& snap) {
     doc.clear();
-    doc["mode"] = rcModeToString(snap.rc_input_mode);
+    doc["mode"] = rcModeToString(snap.system.rc_input_mode);
 
     JsonArray map = doc["map"].to<JsonArray>();
 
     RcBindingConfig driveSpeed =
-        rcMapSelectBackboneForMode(snap, snap.rc_pwm_drive_speed, snap.rc_sbus_drive_speed);
+        rcMapSelectBackboneForMode(snap, snap.system.rc_pwm_drive_speed, snap.system.rc_sbus_drive_speed);
     RcBindingConfig driveSteer =
-        rcMapSelectBackboneForMode(snap, snap.rc_pwm_drive_steer, snap.rc_sbus_drive_steer);
+        rcMapSelectBackboneForMode(snap, snap.system.rc_pwm_drive_steer, snap.system.rc_sbus_drive_steer);
     RcBindingConfig domeSpeed =
-        rcMapSelectBackboneForMode(snap, snap.rc_pwm_dome_speed, snap.rc_sbus_dome_speed);
+        rcMapSelectBackboneForMode(snap, snap.system.rc_pwm_dome_speed, snap.system.rc_sbus_dome_speed);
 
     if (rcMapBindingIsMapped(driveSpeed)) {
         rcMapAppendEntry(map, driveSpeed.source, driveSpeed.channel, DRIVE_ACTION_SPEED, nullptr);
@@ -412,9 +412,9 @@ bool populateRcMapJson(JsonDocument& doc, const ConfigSnapshot& snap) {
         rcMapAppendEntry(map, domeSpeed.source, domeSpeed.channel, DOME_ACTION_SPEED, nullptr);
     }
 
-    const RcTriggerBinding namedSlots[] = {snap.rc_arm1, snap.rc_arm2, snap.rc_aux1, snap.rc_aux2,
-                                           snap.rc_aux3, snap.rc_opmode, snap.rc_sound, snap.rc_free0,
-                                           snap.rc_free1, snap.rc_free2, snap.rc_free3};
+    const RcTriggerBinding namedSlots[] = {snap.system.rc_arm1, snap.system.rc_arm2, snap.system.rc_aux1, snap.system.rc_aux2,
+                                           snap.system.rc_aux3, snap.system.rc_opmode, snap.system.rc_sound, snap.system.rc_free0,
+                                           snap.system.rc_free1, snap.system.rc_free2, snap.system.rc_free3};
 
     for (size_t i = 0; i < sizeof(namedSlots) / sizeof(namedSlots[0]); ++i) {
         const RcTriggerBinding& binding = namedSlots[i];
@@ -435,24 +435,24 @@ void clearRcMapSlots(ConfigSnapshot* working) {
         return;
     }
 
-    working->rc_pwm_drive_speed = disabledRcBinding();
-    working->rc_pwm_drive_steer = disabledRcBinding();
-    working->rc_pwm_dome_speed = disabledRcBinding();
-    working->rc_sbus_drive_speed = disabledRcBinding();
-    working->rc_sbus_drive_steer = disabledRcBinding();
-    working->rc_sbus_dome_speed = disabledRcBinding();
+    working->system.rc_pwm_drive_speed = disabledRcBinding();
+    working->system.rc_pwm_drive_steer = disabledRcBinding();
+    working->system.rc_pwm_dome_speed = disabledRcBinding();
+    working->system.rc_sbus_drive_speed = disabledRcBinding();
+    working->system.rc_sbus_drive_steer = disabledRcBinding();
+    working->system.rc_sbus_dome_speed = disabledRcBinding();
 
-    working->rc_arm1 = disabledRcTriggerBinding();
-    working->rc_arm2 = disabledRcTriggerBinding();
-    working->rc_aux1 = disabledRcTriggerBinding();
-    working->rc_aux2 = disabledRcTriggerBinding();
-    working->rc_aux3 = disabledRcTriggerBinding();
-    working->rc_opmode = disabledRcTriggerBinding();
-    working->rc_sound = disabledRcTriggerBinding();
-    working->rc_free0 = disabledRcTriggerBinding();
-    working->rc_free1 = disabledRcTriggerBinding();
-    working->rc_free2 = disabledRcTriggerBinding();
-    working->rc_free3 = disabledRcTriggerBinding();
+    working->system.rc_arm1 = disabledRcTriggerBinding();
+    working->system.rc_arm2 = disabledRcTriggerBinding();
+    working->system.rc_aux1 = disabledRcTriggerBinding();
+    working->system.rc_aux2 = disabledRcTriggerBinding();
+    working->system.rc_aux3 = disabledRcTriggerBinding();
+    working->system.rc_opmode = disabledRcTriggerBinding();
+    working->system.rc_sound = disabledRcTriggerBinding();
+    working->system.rc_free0 = disabledRcTriggerBinding();
+    working->system.rc_free1 = disabledRcTriggerBinding();
+    working->system.rc_free2 = disabledRcTriggerBinding();
+    working->system.rc_free3 = disabledRcTriggerBinding();
 }
 
 static bool triggerSlotIsFree(const RcTriggerBinding& binding) {
@@ -494,14 +494,14 @@ bool assignRcMapEntryToSnapshot(const RcMapEntry& entry, const ConfigSnapshot& e
             return false;
         }
         if (entry.action == DRIVE_ACTION_SPEED) {
-            working->rc_pwm_drive_speed = backbone;
-            working->rc_sbus_drive_speed = backbone;
+            working->system.rc_pwm_drive_speed = backbone;
+            working->system.rc_sbus_drive_speed = backbone;
         } else if (entry.action == DRIVE_ACTION_STEER) {
-            working->rc_pwm_drive_steer = backbone;
-            working->rc_sbus_drive_steer = backbone;
+            working->system.rc_pwm_drive_steer = backbone;
+            working->system.rc_sbus_drive_steer = backbone;
         } else {
-            working->rc_pwm_dome_speed = backbone;
-            working->rc_sbus_dome_speed = backbone;
+            working->system.rc_pwm_dome_speed = backbone;
+            working->system.rc_sbus_dome_speed = backbone;
         }
         return true;
     }
@@ -512,56 +512,56 @@ bool assignRcMapEntryToSnapshot(const RcMapEntry& entry, const ConfigSnapshot& e
     }
 
     if (entry.action == SERVO_ACTION_ARM1_TOGGLE) {
-        if (!triggerSlotIsFree(working->rc_arm1)) {
+        if (!triggerSlotIsFree(working->system.rc_arm1)) {
             snprintf(error, errorSize, "conflict: arm1_toggle mapped more than once");
             return false;
         }
-        working->rc_arm1 = trigger;
+        working->system.rc_arm1 = trigger;
         return true;
     }
     if (entry.action == SERVO_ACTION_ARM2_TOGGLE) {
-        if (!triggerSlotIsFree(working->rc_arm2)) {
+        if (!triggerSlotIsFree(working->system.rc_arm2)) {
             snprintf(error, errorSize, "conflict: arm2_toggle mapped more than once");
             return false;
         }
-        working->rc_arm2 = trigger;
+        working->system.rc_arm2 = trigger;
         return true;
     }
     if (entry.action == SERVO_ACTION_AUX1_TOGGLE) {
-        if (!triggerSlotIsFree(working->rc_aux1)) {
+        if (!triggerSlotIsFree(working->system.rc_aux1)) {
             snprintf(error, errorSize, "conflict: aux1_toggle mapped more than once");
             return false;
         }
-        working->rc_aux1 = trigger;
+        working->system.rc_aux1 = trigger;
         return true;
     }
     if (entry.action == SERVO_ACTION_AUX2_TOGGLE) {
-        if (!triggerSlotIsFree(working->rc_aux2)) {
+        if (!triggerSlotIsFree(working->system.rc_aux2)) {
             snprintf(error, errorSize, "conflict: aux2_toggle mapped more than once");
             return false;
         }
-        working->rc_aux2 = trigger;
+        working->system.rc_aux2 = trigger;
         return true;
     }
     if (entry.action == SERVO_ACTION_AUX3_TOGGLE) {
-        if (!triggerSlotIsFree(working->rc_aux3)) {
+        if (!triggerSlotIsFree(working->system.rc_aux3)) {
             snprintf(error, errorSize, "conflict: aux3_toggle mapped more than once");
             return false;
         }
-        working->rc_aux3 = trigger;
+        working->system.rc_aux3 = trigger;
         return true;
     }
     if (entry.action == SYSTEM_ACTION_OP_MODE) {
-        if (!triggerSlotIsFree(working->rc_opmode)) {
+        if (!triggerSlotIsFree(working->system.rc_opmode)) {
             snprintf(error, errorSize, "conflict: op_mode mapped more than once");
             return false;
         }
-        working->rc_opmode = trigger;
+        working->system.rc_opmode = trigger;
         return true;
     }
 
-    RcTriggerBinding* spillSlots[] = {&working->rc_sound, &working->rc_free0, &working->rc_free1,
-                                      &working->rc_free2, &working->rc_free3};
+    RcTriggerBinding* spillSlots[] = {&working->system.rc_sound, &working->system.rc_free0, &working->system.rc_free1,
+                                      &working->system.rc_free2, &working->system.rc_free3};
     for (size_t i = 0; i < sizeof(spillSlots) / sizeof(spillSlots[0]); ++i) {
         if (triggerSlotIsFree(*spillSlots[i])) {
             *spillSlots[i] = trigger;
@@ -587,71 +587,71 @@ bool populateConfigJson(JsonDocument& doc, const ConfigSnapshot& snap) {
     doc.clear();
 
     JsonObject drive = doc["drive"].to<JsonObject>();
-    drive["speedLimitMax"] = snap.speedLimitMax;
-    drive["speedPresetSlow"] = snap.speedPresetSlow;
-    drive["speedPresetNormal"] = snap.speedPresetNormal;
-    drive["speedPresetTurbo"] = snap.speedPresetTurbo;
-    drive["speedPreset"] = speedPresetIdToString(snap.speedPresetActive);
-    drive["webDriveTimeoutMs"] = snap.webDriveTimeoutMs;
-    drive["stationary"] = snap.stationary;
+    drive["speedLimitMax"] = snap.drive.speedLimitMax;
+    drive["speedPresetSlow"] = snap.drive.speedPresetSlow;
+    drive["speedPresetNormal"] = snap.drive.speedPresetNormal;
+    drive["speedPresetTurbo"] = snap.drive.speedPresetTurbo;
+    drive["speedPreset"] = speedPresetIdToString(snap.drive.speedPresetActive);
+    drive["webDriveTimeoutMs"] = snap.drive.webDriveTimeoutMs;
+    drive["stationary"] = snap.system.stationary;
 
     JsonObject rc = doc["rc"].to<JsonObject>();
-    rc["inputMode"] = rcModeToString(snap.rc_input_mode);
-    rc["sbusTimeoutMs"] = snap.sbusTimeoutMs;
+    rc["inputMode"] = rcModeToString(snap.system.rc_input_mode);
+    rc["sbusTimeoutMs"] = snap.drive.sbusTimeoutMs;
 
     JsonObject rcSbus = rc["sbus"].to<JsonObject>();
-    rcSbus["recvCh2"] = snap.single_sbus_use_ch2;
+    rcSbus["recvCh2"] = snap.system.single_sbus_use_ch2;
 
     JsonObject components = doc["components"].to<JsonObject>();
-    components["arm1"]["enabled"] = snap.enable_arm1;
-    components["arm1"]["type"] = servoCompTypeToString(snap.arm1_type);
-    components["arm2"]["enabled"] = snap.enable_arm2;
-    components["arm2"]["type"] = servoCompTypeToString(snap.arm2_type);
-    components["aux1"]["enabled"] = snap.enable_aux1;
-    components["aux1"]["type"] = servoCompTypeToString(snap.aux1_type);
-    components["aux2"]["enabled"] = snap.enable_aux2;
-    components["aux2"]["type"] = servoCompTypeToString(snap.aux2_type);
-    components["aux3"]["enabled"] = snap.enable_aux3;
-    components["aux3"]["type"] = servoCompTypeToString(snap.aux3_type);
-    components["dome"]["enabled"] = snap.enable_dome;
-    components["rcCh1"]["enabled"] = snap.enable_rc_ch1;
-    components["rcCh2"]["enabled"] = snap.enable_rc_ch2;
-    components["rcCh3"]["enabled"] = snap.enable_rc_ch3;
-    components["rcCh4"]["enabled"] = snap.enable_rc_ch4;
-    components["rcCh5"]["enabled"] = snap.enable_rc_ch5;
-    components["rcCh6"]["enabled"] = snap.enable_rc_ch6;
-    components["s1Hoverboard"]["enabled"] = snap.enable_s1_hoverboard;
-    components["s2Sound"]["enabled"] = snap.enable_s2_sound;
-    components["s3DomeCtrl"]["enabled"] = snap.enable_s3_dome_ctrl;
+    components["arm1"]["enabled"] = snap.system.enable_arm1;
+    components["arm1"]["type"] = servoCompTypeToString(snap.servo.arm1_type);
+    components["arm2"]["enabled"] = snap.system.enable_arm2;
+    components["arm2"]["type"] = servoCompTypeToString(snap.servo.arm2_type);
+    components["aux1"]["enabled"] = snap.system.enable_aux1;
+    components["aux1"]["type"] = servoCompTypeToString(snap.servo.aux1_type);
+    components["aux2"]["enabled"] = snap.system.enable_aux2;
+    components["aux2"]["type"] = servoCompTypeToString(snap.servo.aux2_type);
+    components["aux3"]["enabled"] = snap.system.enable_aux3;
+    components["aux3"]["type"] = servoCompTypeToString(snap.servo.aux3_type);
+    components["dome"]["enabled"] = snap.system.enable_dome;
+    components["rcCh1"]["enabled"] = snap.system.enable_rc_ch1;
+    components["rcCh2"]["enabled"] = snap.system.enable_rc_ch2;
+    components["rcCh3"]["enabled"] = snap.system.enable_rc_ch3;
+    components["rcCh4"]["enabled"] = snap.system.enable_rc_ch4;
+    components["rcCh5"]["enabled"] = snap.system.enable_rc_ch5;
+    components["rcCh6"]["enabled"] = snap.system.enable_rc_ch6;
+    components["s1Hoverboard"]["enabled"] = snap.system.enable_s1_hoverboard;
+    components["s2Sound"]["enabled"] = snap.system.enable_s2_sound;
+    components["s3DomeCtrl"]["enabled"] = snap.system.enable_s3_dome_ctrl;
 
     // Legacy top-level calibration fields consumed by data/servo.js
-    doc["arm1OpenUs"] = snap.arm1_open_us;
-    doc["arm1CloseUs"] = snap.arm1_close_us;
-    doc["arm2OpenUs"] = snap.arm2_open_us;
-    doc["arm2CloseUs"] = snap.arm2_close_us;
-    doc["aux1OpenUs"] = snap.aux1_open_us;
-    doc["aux1CloseUs"] = snap.aux1_close_us;
-    doc["aux2OpenUs"] = snap.aux2_open_us;
-    doc["aux2CloseUs"] = snap.aux2_close_us;
-    doc["aux3OpenUs"] = snap.aux3_open_us;
-    doc["aux3CloseUs"] = snap.aux3_close_us;
-    doc["aux_led_pin"] = snap.aux_led_pin;
-    doc["aux_led_count"] = snap.aux_led_count;
+    doc["arm1OpenUs"] = snap.servo.arm1_open_us;
+    doc["arm1CloseUs"] = snap.servo.arm1_close_us;
+    doc["arm2OpenUs"] = snap.servo.arm2_open_us;
+    doc["arm2CloseUs"] = snap.servo.arm2_close_us;
+    doc["aux1OpenUs"] = snap.servo.aux1_open_us;
+    doc["aux1CloseUs"] = snap.servo.aux1_close_us;
+    doc["aux2OpenUs"] = snap.servo.aux2_open_us;
+    doc["aux2CloseUs"] = snap.servo.aux2_close_us;
+    doc["aux3OpenUs"] = snap.servo.aux3_open_us;
+    doc["aux3CloseUs"] = snap.servo.aux3_close_us;
+    doc["aux_led_pin"] = snap.servo.aux_led_pin;
+    doc["aux_led_count"] = snap.servo.aux_led_count;
 
     JsonObject dome = doc["dome"].to<JsonObject>();
-    dome["neutralUs"] = snap.dome_neutral_us;
-    dome["minPulseUs"] = snap.dome_min_pulse_us;
-    dome["maxPulseUs"] = snap.dome_max_pulse_us;
-    dome["speedLimitPct"] = snap.dome_speed_limit_pct;
-    dome["rndEnable"] = snap.dome_rnd_enable;
-    dome["rndSpeedPct"] = snap.dome_rnd_speed_pct;
-    dome["rndPauseMin"] = snap.dome_rnd_pause_min;
-    dome["rndPauseMax"] = snap.dome_rnd_pause_max;
-    dome["rndMoveMs"] = snap.dome_rnd_move_ms;
-    dome["wifiPeerIp"] = snap.dome_wifi_peer_ip;
+    dome["neutralUs"] = snap.dome.dome_neutral_us;
+    dome["minPulseUs"] = snap.dome.dome_min_pulse_us;
+    dome["maxPulseUs"] = snap.dome.dome_max_pulse_us;
+    dome["speedLimitPct"] = snap.dome.dome_speed_limit_pct;
+    dome["rndEnable"] = snap.dome.dome_rnd_enable;
+    dome["rndSpeedPct"] = snap.dome.dome_rnd_speed_pct;
+    dome["rndPauseMin"] = snap.dome.dome_rnd_pause_min;
+    dome["rndPauseMax"] = snap.dome.dome_rnd_pause_max;
+    dome["rndMoveMs"] = snap.dome.dome_rnd_move_ms;
+    dome["wifiPeerIp"] = snap.dome.dome_wifi_peer_ip;
 
     JsonObject system = doc["system"].to<JsonObject>();
-    system["logLevel"] = snap.logLevel;
+    system["logLevel"] = snap.system.logLevel;
 
     return !doc.overflowed();
 }
@@ -826,7 +826,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
             return;
         }
 
-        if (!configSave(prefs, snap)) {
+        if (!configSaveSystem(prefs, snap.system)) {
             prefs.end();
             req->send(500, "application/json",
                       "{\"ok\":false,\"error\":\"failed to persist config\"}");
@@ -873,7 +873,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
         SpeedPresetId activePresetAfter = activePresetBefore;
         int16_t speedLimitMax;
         if (parseInt16Param(req, "speedLimitMax", 0, SPEED_LIMIT_MAX, &speedLimitMax)) {
-            working.speedLimitMax = speedLimitMax;
+            working.drive.speedLimitMax = speedLimitMax;
             speedLimitMaxProvided = true;
             PA_LOG_INFO(TAG, "[CFG] speedLimitMax updated to %d", (int)speedLimitMax);
             changed = true;
@@ -885,7 +885,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
 
         int16_t speedPresetSlow;
         if (parseInt16Param(req, "speedPresetSlow", 0, SPEED_LIMIT_MAX, &speedPresetSlow)) {
-            working.speedPresetSlow = speedPresetSlow;
+            working.drive.speedPresetSlow = speedPresetSlow;
             speedPresetValuesProvided = true;
             PA_LOG_INFO(TAG, "[CFG] speedPresetSlow updated to %d", (int)speedPresetSlow);
             changed = true;
@@ -897,7 +897,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
 
         int16_t speedPresetNormal;
         if (parseInt16Param(req, "speedPresetNormal", 0, SPEED_LIMIT_MAX, &speedPresetNormal)) {
-            working.speedPresetNormal = speedPresetNormal;
+            working.drive.speedPresetNormal = speedPresetNormal;
             speedPresetValuesProvided = true;
             PA_LOG_INFO(TAG, "[CFG] speedPresetNormal updated to %d", (int)speedPresetNormal);
             changed = true;
@@ -909,7 +909,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
 
         int16_t speedPresetTurbo;
         if (parseInt16Param(req, "speedPresetTurbo", 0, SPEED_LIMIT_MAX, &speedPresetTurbo)) {
-            working.speedPresetTurbo = speedPresetTurbo;
+            working.drive.speedPresetTurbo = speedPresetTurbo;
             speedPresetValuesProvided = true;
             PA_LOG_INFO(TAG, "[CFG] speedPresetTurbo updated to %d", (int)speedPresetTurbo);
             changed = true;
@@ -919,22 +919,22 @@ void registerConfigRoutes(AsyncWebServer& server) {
             return;
         }
         if (speedPresetValuesProvided &&
-            !speedPresetValuesAreUnique(working.speedPresetSlow, working.speedPresetNormal,
-                                        working.speedPresetTurbo)) {
+            !speedPresetValuesAreUnique(working.drive.speedPresetSlow, working.drive.speedPresetNormal,
+                                        working.drive.speedPresetTurbo)) {
             req->send(400, "application/json",
                       "{\"ok\":false,\"error\":\"speed presets must be distinct values\"}");
             return;
         }
         if (speedPresetValuesProvided && !speedLimitMaxProvided) {
-            working.speedLimitMax = speedPresetValueForId(
-                activePresetBefore, working.speedPresetSlow, working.speedPresetNormal,
-                working.speedPresetTurbo);
+            working.drive.speedLimitMax = speedPresetValueForId(
+                activePresetBefore, working.drive.speedPresetSlow, working.drive.speedPresetNormal,
+                working.drive.speedPresetTurbo);
             PA_LOG_INFO(TAG, "[CFG] speedLimitMax derived from active preset %s -> %d",
-                        speedPresetIdToString(activePresetBefore), (int)working.speedLimitMax);
+                        speedPresetIdToString(activePresetBefore), (int)working.drive.speedLimitMax);
         }
         if (speedLimitMaxProvided) {
-            if (!resolveSpeedPresetForLimit(working.speedLimitMax, working.speedPresetSlow,
-                                            working.speedPresetNormal, working.speedPresetTurbo,
+            if (!resolveSpeedPresetForLimit(working.drive.speedLimitMax, working.drive.speedPresetSlow,
+                                            working.drive.speedPresetNormal, working.drive.speedPresetTurbo,
                                             &activePresetAfter)) {
                 activePresetAfter = SpeedPresetId::Normal;
             }
@@ -942,7 +942,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
 
         uint32_t webDriveTimeoutMs;
         if (parseUint32Param(req, "webDriveTimeoutMs", 100, 5000, &webDriveTimeoutMs)) {
-            working.webDriveTimeoutMs = webDriveTimeoutMs;
+            working.drive.webDriveTimeoutMs = webDriveTimeoutMs;
             PA_LOG_INFO(TAG, "[CFG] webDriveTimeoutMs updated to %u", (unsigned)webDriveTimeoutMs);
             changed = true;
         } else if (req->hasParam("webDriveTimeoutMs", true)) {
@@ -953,7 +953,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
 
         uint32_t sbusTimeoutMs;
         if (parseUint32Param(req, "sbusTimeoutMs", 50, 5000, &sbusTimeoutMs)) {
-            working.sbusTimeoutMs = sbusTimeoutMs;
+            working.drive.sbusTimeoutMs = sbusTimeoutMs;
             PA_LOG_INFO(TAG, "[CFG] sbusTimeoutMs updated to %u", (unsigned)sbusTimeoutMs);
             changed = true;
         } else if (req->hasParam("sbusTimeoutMs", true)) {
@@ -967,7 +967,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
 
         if (parseBoolParam(req, "stationary", &boolValue)) {
             stationaryProvided = true;
-            working.stationary = boolValue;
+            working.system.stationary = boolValue;
             PA_LOG_INFO(TAG, "[CFG] stationary updated to %s", boolValue ? "true" : "false");
             changed = true;
         } else if (req->hasParam("stationary", true)) {
@@ -979,7 +979,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
         if (req->hasParam("logLevel", true)) {
             int16_t lvl = 0;
             if (parseInt16Param(req, "logLevel", 1, 3, &lvl)) {
-                working.logLevel = (uint8_t)lvl;
+                working.system.logLevel = (uint8_t)lvl;
                 PA_LOG_INFO(TAG, "[CFG] logLevel updated to %d", (int)lvl);
                 changed = true;
             } else {
@@ -998,13 +998,13 @@ void registerConfigRoutes(AsyncWebServer& server) {
                           "single_sbus, or dual_sbus\"}");
                 return;
             }
-            working.rc_input_mode = mode;
+            working.system.rc_input_mode = mode;
             PA_LOG_INFO(TAG, "[CFG] rcInputMode updated to %s", rcModeToString(mode));
             changed = true;
         }
 
         if (parseBoolParam(req, "sbusRecvCh2", &boolValue)) {
-            working.single_sbus_use_ch2 = boolValue;
+            working.system.single_sbus_use_ch2 = boolValue;
             changed = true;
         } else if (req->hasParam("sbusRecvCh2", true)) {
             req->send(400, "application/json",
@@ -1014,7 +1014,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
 
         uint8_t auxLedPin = 0;
         if (parseUint8Param(req, "aux_led_pin", AUX_LED_PIN_DISABLED, AUX_LED_PIN_MAX, &auxLedPin)) {
-            working.aux_led_pin = auxLedPin;
+            working.servo.aux_led_pin = auxLedPin;
             changed = true;
         } else if (req->hasParam("aux_led_pin", true)) {
             req->send(400, "application/json",
@@ -1025,7 +1025,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
         uint8_t auxLedCount = 0;
         if (parseUint8Param(req, "aux_led_count", AUX_LED_COUNT_DEFAULT, AUX_LED_COUNT_MAX,
                             &auxLedCount)) {
-            working.aux_led_count = auxLedCount;
+            working.servo.aux_led_count = auxLedCount;
             changed = true;
         } else if (req->hasParam("aux_led_count", true)) {
             req->send(400, "application/json",
@@ -1052,7 +1052,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
                                   "{\"ok\":false,\"error\":\"rc.sbusTimeoutMs must be 50..5000\"}");
                         return;
                     }
-                    working.sbusTimeoutMs = parsedSbusTimeout;
+                    working.drive.sbusTimeoutMs = parsedSbusTimeout;
                     changed = true;
                 } else if (!rcBody["sbusTimeoutMs"].isNull()) {
                     req->send(400, "application/json",
@@ -1064,7 +1064,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
             JsonVariantConst rcSbus = rcBody["sbus"];
             if (!rcSbus.isNull()) {
                 if (rcSbus["recvCh2"].is<bool>()) {
-                    working.single_sbus_use_ch2 = rcSbus["recvCh2"].as<bool>();
+                    working.system.single_sbus_use_ch2 = rcSbus["recvCh2"].as<bool>();
                     changed = true;
                 } else if (!rcSbus["recvCh2"].isNull()) {
                     req->send(400, "application/json",
@@ -1080,7 +1080,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
                               "{\"ok\":false,\"error\":\"aux_led_pin must be 0..3\"}");
                     return;
                 }
-                working.aux_led_pin = parsed;
+                working.servo.aux_led_pin = parsed;
                 changed = true;
             } else if (!bodyDoc["aux_led_pin"].isNull()) {
                 req->send(400, "application/json",
@@ -1095,7 +1095,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
                               "{\"ok\":false,\"error\":\"aux_led_count must be 1..255\"}");
                     return;
                 }
-                working.aux_led_count = parsed;
+                working.servo.aux_led_count = parsed;
                 changed = true;
             } else if (!bodyDoc["aux_led_count"].isNull()) {
                 req->send(400, "application/json",
@@ -1107,8 +1107,8 @@ void registerConfigRoutes(AsyncWebServer& server) {
             if (!domeCfg.isNull()) {
                 if (domeCfg["wifiPeerIp"].is<const char*>()) {
                     if (!parseDomeWifiPeerIp(domeCfg["wifiPeerIp"].as<const char*>(),
-                                            working.dome_wifi_peer_ip,
-                                            sizeof(working.dome_wifi_peer_ip))) {
+                                            working.dome.dome_wifi_peer_ip,
+                                            sizeof(working.dome.dome_wifi_peer_ip))) {
                         req->send(400, "application/json",
                                   "{\"ok\":false,\"error\":\"dome.wifiPeerIp must be empty or a valid IPv4 address\"}");
                         return;
@@ -1128,21 +1128,21 @@ void registerConfigRoutes(AsyncWebServer& server) {
         };
 
         BoolCfgField boolFields[] = {
-            {"enableArm1", &working.enable_arm1},
-            {"enableArm2", &working.enable_arm2},
-            {"enableAux1", &working.enable_aux1},
-            {"enableAux2", &working.enable_aux2},
-            {"enableAux3", &working.enable_aux3},
-            {"enableDome", &working.enable_dome},
-            {"enableRcCh1", &working.enable_rc_ch1},
-            {"enableRcCh2", &working.enable_rc_ch2},
-            {"enableRcCh3", &working.enable_rc_ch3},
-            {"enableRcCh4", &working.enable_rc_ch4},
-            {"enableRcCh5", &working.enable_rc_ch5},
-            {"enableRcCh6", &working.enable_rc_ch6},
-            {"enableS1Hoverboard", &working.enable_s1_hoverboard},
-            {"enableS2Sound", &working.enable_s2_sound},
-            {"enableS3DomeCtrl", &working.enable_s3_dome_ctrl},
+            {"enableArm1", &working.system.enable_arm1},
+            {"enableArm2", &working.system.enable_arm2},
+            {"enableAux1", &working.system.enable_aux1},
+            {"enableAux2", &working.system.enable_aux2},
+            {"enableAux3", &working.system.enable_aux3},
+            {"enableDome", &working.system.enable_dome},
+            {"enableRcCh1", &working.system.enable_rc_ch1},
+            {"enableRcCh2", &working.system.enable_rc_ch2},
+            {"enableRcCh3", &working.system.enable_rc_ch3},
+            {"enableRcCh4", &working.system.enable_rc_ch4},
+            {"enableRcCh5", &working.system.enable_rc_ch5},
+            {"enableRcCh6", &working.system.enable_rc_ch6},
+            {"enableS1Hoverboard", &working.system.enable_s1_hoverboard},
+            {"enableS2Sound", &working.system.enable_s2_sound},
+            {"enableS3DomeCtrl", &working.system.enable_s3_dome_ctrl},
         };
 
         for (size_t i = 0; i < sizeof(boolFields) / sizeof(boolFields[0]); ++i) {
@@ -1166,7 +1166,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
 
         uint16_t domeU16;
         if (parseUint16Param(req, "domeNeutralUs", 1000, 2000, &domeU16)) {
-            working.dome_neutral_us = domeU16;
+            working.dome.dome_neutral_us = domeU16;
             changed = true;
         } else if (req->hasParam("domeNeutralUs", true)) {
             req->send(400, "application/json",
@@ -1175,7 +1175,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
         }
 
         if (parseUint16Param(req, "domeMinPulseUs", 1000, 2000, &domeU16)) {
-            working.dome_min_pulse_us = domeU16;
+            working.dome.dome_min_pulse_us = domeU16;
             changed = true;
         } else if (req->hasParam("domeMinPulseUs", true)) {
             req->send(400, "application/json",
@@ -1184,7 +1184,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
         }
 
         if (parseUint16Param(req, "domeMaxPulseUs", 1000, 2000, &domeU16)) {
-            working.dome_max_pulse_us = domeU16;
+            working.dome.dome_max_pulse_us = domeU16;
             changed = true;
         } else if (req->hasParam("domeMaxPulseUs", true)) {
             req->send(400, "application/json",
@@ -1194,7 +1194,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
 
         uint8_t domePct;
         if (parseUint8Param(req, "domeSpeedLimitPct", 0, 100, &domePct)) {
-            working.dome_speed_limit_pct = domePct;
+            working.dome.dome_speed_limit_pct = domePct;
             changed = true;
         } else if (req->hasParam("domeSpeedLimitPct", true)) {
             req->send(400, "application/json",
@@ -1204,8 +1204,8 @@ void registerConfigRoutes(AsyncWebServer& server) {
 
         if (req->hasParam("domeWifiPeerIp", true)) {
             const char* rawPeerIp = req->getParam("domeWifiPeerIp", true)->value().c_str();
-            if (!parseDomeWifiPeerIp(rawPeerIp, working.dome_wifi_peer_ip,
-                                     sizeof(working.dome_wifi_peer_ip))) {
+            if (!parseDomeWifiPeerIp(rawPeerIp, working.dome.dome_wifi_peer_ip,
+                                     sizeof(working.dome.dome_wifi_peer_ip))) {
                 req->send(400, "application/json",
                           "{\"ok\":false,\"error\":\"domeWifiPeerIp must be empty or a valid IPv4 address\"}");
                 return;
@@ -1215,7 +1215,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
 
         bool domeRndEnableBool;
         if (parseBoolParam(req, "domeRndEnable", &domeRndEnableBool)) {
-            working.dome_rnd_enable = domeRndEnableBool;
+            working.dome.dome_rnd_enable = domeRndEnableBool;
             PA_LOG_INFO(TAG, "[CFG] domeRndEnable updated to %s", domeRndEnableBool ? "true" : "false");
             changed = true;
         } else if (req->hasParam("domeRndEnable", true)) {
@@ -1226,7 +1226,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
 
         uint8_t domeRndSpeedPct;
         if (parseUint8Param(req, "domeRndSpeedPct", 5, 100, &domeRndSpeedPct)) {
-            working.dome_rnd_speed_pct = domeRndSpeedPct;
+            working.dome.dome_rnd_speed_pct = domeRndSpeedPct;
             PA_LOG_INFO(TAG, "[CFG] domeRndSpeedPct updated to %u", (unsigned)domeRndSpeedPct);
             changed = true;
         } else if (req->hasParam("domeRndSpeedPct", true)) {
@@ -1237,7 +1237,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
 
         uint8_t domeRndPauseMin;
         if (parseUint8Param(req, "domeRndPauseMin", 1, 120, &domeRndPauseMin)) {
-            working.dome_rnd_pause_min = domeRndPauseMin;
+            working.dome.dome_rnd_pause_min = domeRndPauseMin;
             PA_LOG_INFO(TAG, "[CFG] domeRndPauseMin updated to %u", (unsigned)domeRndPauseMin);
             changed = true;
         } else if (req->hasParam("domeRndPauseMin", true)) {
@@ -1248,7 +1248,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
 
         uint8_t domeRndPauseMax;
         if (parseUint8Param(req, "domeRndPauseMax", 1, 120, &domeRndPauseMax)) {
-            working.dome_rnd_pause_max = domeRndPauseMax;
+            working.dome.dome_rnd_pause_max = domeRndPauseMax;
             PA_LOG_INFO(TAG, "[CFG] domeRndPauseMax updated to %u", (unsigned)domeRndPauseMax);
             changed = true;
         } else if (req->hasParam("domeRndPauseMax", true)) {
@@ -1259,7 +1259,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
 
         uint16_t domeRndMoveMs;
         if (parseUint16Param(req, "domeRndMoveMs", 500, 10000, &domeRndMoveMs)) {
-            working.dome_rnd_move_ms = domeRndMoveMs;
+            working.dome.dome_rnd_move_ms = domeRndMoveMs;
             PA_LOG_INFO(TAG, "[CFG] domeRndMoveMs updated to %u", (unsigned)domeRndMoveMs);
             changed = true;
         } else if (req->hasParam("domeRndMoveMs", true)) {
@@ -1274,16 +1274,16 @@ void registerConfigRoutes(AsyncWebServer& server) {
         };
 
         ServoCalField servoCalFields[] = {
-            {"arm1OpenUs", &working.arm1_open_us},
-            {"arm1CloseUs", &working.arm1_close_us},
-            {"arm2OpenUs", &working.arm2_open_us},
-            {"arm2CloseUs", &working.arm2_close_us},
-            {"aux1OpenUs", &working.aux1_open_us},
-            {"aux1CloseUs", &working.aux1_close_us},
-            {"aux2OpenUs", &working.aux2_open_us},
-            {"aux2CloseUs", &working.aux2_close_us},
-            {"aux3OpenUs", &working.aux3_open_us},
-            {"aux3CloseUs", &working.aux3_close_us},
+            {"arm1OpenUs", &working.servo.arm1_open_us},
+            {"arm1CloseUs", &working.servo.arm1_close_us},
+            {"arm2OpenUs", &working.servo.arm2_open_us},
+            {"arm2CloseUs", &working.servo.arm2_close_us},
+            {"aux1OpenUs", &working.servo.aux1_open_us},
+            {"aux1CloseUs", &working.servo.aux1_close_us},
+            {"aux2OpenUs", &working.servo.aux2_open_us},
+            {"aux2CloseUs", &working.servo.aux2_close_us},
+            {"aux3OpenUs", &working.servo.aux3_open_us},
+            {"aux3CloseUs", &working.servo.aux3_close_us},
         };
 
         for (size_t i = 0; i < sizeof(servoCalFields) / sizeof(servoCalFields[0]); ++i) {
@@ -1310,9 +1310,9 @@ void registerConfigRoutes(AsyncWebServer& server) {
         };
 
         ServoTypeField servoTypeFields[] = {
-            {"arm1Type", &working.arm1_type}, {"arm2Type", &working.arm2_type},
-            {"aux1Type", &working.aux1_type}, {"aux2Type", &working.aux2_type},
-            {"aux3Type", &working.aux3_type},
+            {"arm1Type", &working.servo.arm1_type}, {"arm2Type", &working.servo.arm2_type},
+            {"aux1Type", &working.servo.aux1_type}, {"aux2Type", &working.servo.aux2_type},
+            {"aux3Type", &working.servo.aux3_type},
         };
 
         for (size_t i = 0; i < sizeof(servoTypeFields) / sizeof(servoTypeFields[0]); ++i) {
@@ -1360,7 +1360,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
         // Apply working snapshot but preserve speedPresetActive to the special activePresetAfter value
         configApplyToRobotState(working);
         robotState.cfg_speedPresetActive = activePresetAfter;
-        robotState.stationary = working.stationary;  // sync both fields
+        robotState.stationary = working.system.stationary;  // sync both fields
         if (stationaryProvided && wasStationary && !robotState.stationary) {
             queueDriveOn = true;
         }

@@ -21,36 +21,36 @@ static ConfigSnapshot makeDefaultSnap() {
     ConfigSnapshot snap = {};
 
     // 12 RcBindingConfig fields
-    snap.rc_pwm_drive_speed = disabledRcBinding();
-    snap.rc_pwm_drive_steer = disabledRcBinding();
-    snap.rc_pwm_dome_speed = disabledRcBinding();
-    snap.rc_pwm_arm1 = disabledRcBinding();
-    snap.rc_pwm_arm2 = disabledRcBinding();
-    snap.rc_pwm_sound = disabledRcBinding();
-    snap.rc_sbus_drive_speed = disabledRcBinding();
-    snap.rc_sbus_drive_steer = disabledRcBinding();
-    snap.rc_sbus_dome_speed = disabledRcBinding();
-    snap.rc_sbus_arm1 = disabledRcBinding();
-    snap.rc_sbus_arm2 = disabledRcBinding();
-    snap.rc_sbus_sound = disabledRcBinding();
+    snap.system.rc_pwm_drive_speed = disabledRcBinding();
+    snap.system.rc_pwm_drive_steer = disabledRcBinding();
+    snap.system.rc_pwm_dome_speed = disabledRcBinding();
+    snap.system.rc_pwm_arm1 = disabledRcBinding();
+    snap.system.rc_pwm_arm2 = disabledRcBinding();
+    snap.system.rc_pwm_sound = disabledRcBinding();
+    snap.system.rc_sbus_drive_speed = disabledRcBinding();
+    snap.system.rc_sbus_drive_steer = disabledRcBinding();
+    snap.system.rc_sbus_dome_speed = disabledRcBinding();
+    snap.system.rc_sbus_arm1 = disabledRcBinding();
+    snap.system.rc_sbus_arm2 = disabledRcBinding();
+    snap.system.rc_sbus_sound = disabledRcBinding();
 
     // 11 RcTriggerBinding fields — zero-init is a valid disabled state
-    snap.rc_arm1 = {};
-    snap.rc_arm2 = {};
-    snap.rc_aux1 = {};
-    snap.rc_aux2 = {};
-    snap.rc_aux3 = {};
-    snap.rc_sound = {};
-    snap.rc_opmode = {};
-    snap.rc_free0 = {};
-    snap.rc_free1 = {};
-    snap.rc_free2 = {};
-    snap.rc_free3 = {};
+    snap.system.rc_arm1 = {};
+    snap.system.rc_arm2 = {};
+    snap.system.rc_aux1 = {};
+    snap.system.rc_aux2 = {};
+    snap.system.rc_aux3 = {};
+    snap.system.rc_sound = {};
+    snap.system.rc_opmode = {};
+    snap.system.rc_free0 = {};
+    snap.system.rc_free1 = {};
+    snap.system.rc_free2 = {};
+    snap.system.rc_free3 = {};
 
-    snap.aux_led_pin = AUX_LED_PIN_DISABLED;
-    snap.aux_led_count = AUX_LED_COUNT_DEFAULT;
-    snap.speedPresetActive = SpeedPresetId::Normal;
-    snap.sbusTimeoutMs = SBUS_TIMEOUT_MS;
+    snap.servo.aux_led_pin = AUX_LED_PIN_DISABLED;
+    snap.servo.aux_led_count = AUX_LED_COUNT_DEFAULT;
+    snap.drive.speedPresetActive = SpeedPresetId::Normal;
+    snap.drive.sbusTimeoutMs = SBUS_TIMEOUT_MS;
     return snap;
 }
 
@@ -59,10 +59,10 @@ static ConfigSnapshot makeWorstCaseSnap() {
     ConfigSnapshot snap = {};
 
     // Scalar extremes
-    snap.webDriveTimeoutMs = 0xFFFFFFFFUL;
-    snap.logLevel = 3;
-    snap.rc_input_mode = RC_INPUT_STANDARD_PWM;
-    snap.speedPresetActive = SpeedPresetId::Turbo;
+    snap.drive.webDriveTimeoutMs = 0xFFFFFFFFUL;
+    snap.system.logLevel = 3;
+    snap.system.rc_input_mode = RC_INPUT_STANDARD_PWM;
+    snap.drive.speedPresetActive = SpeedPresetId::Turbo;
 
     // Extreme binding config — SBUS2 ch18, long-format calibration values.
     // deadband must satisfy deadband < (max - min), per rcBindingIsValid().
@@ -75,18 +75,18 @@ static ConfigSnapshot makeWorstCaseSnap() {
     extreme.deadband = 0;
     extreme.reverse = true;
 
-    snap.rc_pwm_drive_speed = extreme;
-    snap.rc_pwm_drive_steer = extreme;
-    snap.rc_pwm_dome_speed = extreme;
-    snap.rc_pwm_arm1 = extreme;
-    snap.rc_pwm_arm2 = extreme;
-    snap.rc_pwm_sound = extreme;
-    snap.rc_sbus_drive_speed = extreme;
-    snap.rc_sbus_drive_steer = extreme;
-    snap.rc_sbus_dome_speed = extreme;
-    snap.rc_sbus_arm1 = extreme;
-    snap.rc_sbus_arm2 = extreme;
-    snap.rc_sbus_sound = extreme;
+    snap.system.rc_pwm_drive_speed = extreme;
+    snap.system.rc_pwm_drive_steer = extreme;
+    snap.system.rc_pwm_dome_speed = extreme;
+    snap.system.rc_pwm_arm1 = extreme;
+    snap.system.rc_pwm_arm2 = extreme;
+    snap.system.rc_pwm_sound = extreme;
+    snap.system.rc_sbus_drive_speed = extreme;
+    snap.system.rc_sbus_drive_steer = extreme;
+    snap.system.rc_sbus_dome_speed = extreme;
+    snap.system.rc_sbus_arm1 = extreme;
+    snap.system.rc_sbus_arm2 = extreme;
+    snap.system.rc_sbus_sound = extreme;
 
     // Extreme trigger binding — 15-char payload, extreme calibration
     RcTriggerBinding xtrig = {};
@@ -101,19 +101,19 @@ static ConfigSnapshot makeWorstCaseSnap() {
     xtrig.deadband = 0;  // must be < (max - min) per rcTriggerBindingIsValid()
     xtrig.reverse = true;
 
-    snap.rc_arm1 = xtrig;
-    snap.rc_arm2 = xtrig;
-    snap.rc_aux1 = xtrig;
-    snap.rc_aux2 = xtrig;
-    snap.rc_aux3 = xtrig;
-    snap.rc_sound = xtrig;
-    snap.rc_opmode = xtrig;
-    snap.rc_free0 = xtrig;
-    snap.rc_free1 = xtrig;
-    snap.rc_free2 = xtrig;
-    snap.rc_free3 = xtrig;
-    snap.aux_led_pin = AUX_LED_PIN_AUX3;
-    snap.aux_led_count = AUX_LED_COUNT_MAX;
+    snap.system.rc_arm1 = xtrig;
+    snap.system.rc_arm2 = xtrig;
+    snap.system.rc_aux1 = xtrig;
+    snap.system.rc_aux2 = xtrig;
+    snap.system.rc_aux3 = xtrig;
+    snap.system.rc_sound = xtrig;
+    snap.system.rc_opmode = xtrig;
+    snap.system.rc_free0 = xtrig;
+    snap.system.rc_free1 = xtrig;
+    snap.system.rc_free2 = xtrig;
+    snap.system.rc_free3 = xtrig;
+    snap.servo.aux_led_pin = AUX_LED_PIN_AUX3;
+    snap.servo.aux_led_count = AUX_LED_COUNT_MAX;
 
     return snap;
 }
@@ -211,8 +211,8 @@ void test_populateConfigJson_aux_led_round_trip(void) {
     for (size_t i = 0; i < sizeof(pins) / sizeof(pins[0]); ++i) {
         for (size_t j = 0; j < sizeof(counts) / sizeof(counts[0]); ++j) {
             ConfigSnapshot snap = makeDefaultSnap();
-            snap.aux_led_pin = pins[i];
-            snap.aux_led_count = counts[j];
+            snap.servo.aux_led_pin = pins[i];
+            snap.servo.aux_led_count = counts[j];
 
             JsonDocument doc;
             TEST_ASSERT_TRUE(populateConfigJson(doc, snap));

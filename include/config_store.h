@@ -171,23 +171,18 @@ enum class ConfigKey : uint8_t {
     _COUNT = 118,
 };
 
-// ConfigSnapshot — in-flight snapshot of all cfg_* fields, used only at
-// load/save boundaries. NOT persisted or shared with tasks at runtime.
-struct ConfigSnapshot {
-    // Speed control
+struct DriveConfig {
     int16_t speedLimitMax;
     int16_t speedPresetSlow;
     int16_t speedPresetNormal;
     int16_t speedPresetTurbo;
     SpeedPresetId speedPresetActive;
-
-    // Timeouts
     uint32_t sbusTimeoutMs;
     uint32_t webDriveTimeoutMs;
+};
 
-    // Audio
+struct AudioConfig {
     uint8_t audioVolume;
-    uint8_t logLevel;
     uint16_t snd_scream;
     uint16_t snd_faint;
     uint16_t snd_leia;
@@ -248,8 +243,9 @@ struct ConfigSnapshot {
     uint16_t snd_cat_snarky_hi;
     uint16_t snd_cat_whis_lo;
     uint16_t snd_cat_whis_hi;
+};
 
-    // Servo calibration
+struct ServoConfig {
     uint16_t arm1_open_us;
     uint16_t arm1_close_us;
     uint16_t arm2_open_us;
@@ -265,8 +261,13 @@ struct ConfigSnapshot {
     ServoComponentType aux1_type;
     ServoComponentType aux2_type;
     ServoComponentType aux3_type;
+    uint16_t seq_open_ms;
+    uint16_t seq_close_ms;
+    uint8_t aux_led_pin;
+    uint8_t aux_led_count;
+};
 
-    // Dome
+struct DomeConfig {
     float dome_min_speed;
     float dome_max_speed;
     uint16_t dome_neutral_us;
@@ -279,16 +280,10 @@ struct ConfigSnapshot {
     uint8_t dome_rnd_pause_max;
     uint16_t dome_rnd_move_ms;
     char dome_wifi_peer_ip[16];
+};
 
-    // Sequence timing
-    uint16_t seq_open_ms;
-    uint16_t seq_close_ms;
-
-    // AUX LED
-    uint8_t aux_led_pin;
-    uint8_t aux_led_count;
-
-    // Feature toggles
+struct SystemConfig {
+    uint8_t logLevel;
     bool enable_arm1;
     bool enable_arm2;
     bool enable_aux1;
@@ -307,8 +302,6 @@ struct ConfigSnapshot {
     bool enable_s3_dome_ctrl;
     bool stationary;
     RcInputMode rc_input_mode;
-
-    // RC Bindings — Tier 1 (Backbone)
     RcBindingConfig rc_pwm_drive_speed;
     RcBindingConfig rc_pwm_drive_steer;
     RcBindingConfig rc_pwm_dome_speed;
@@ -322,8 +315,6 @@ struct ConfigSnapshot {
     RcBindingConfig rc_sbus_arm1;
     RcBindingConfig rc_sbus_arm2;
     RcBindingConfig rc_sbus_sound;
-
-    // RC Bindings — Tier 2 (Trigger/Button)
     RcTriggerBinding rc_arm1;
     RcTriggerBinding rc_arm2;
     RcTriggerBinding rc_aux1;
@@ -337,6 +328,16 @@ struct ConfigSnapshot {
     RcTriggerBinding rc_free3;
 };
 
+// ConfigSnapshot — in-flight snapshot of all cfg_* fields, used only at
+// load/save boundaries. NOT persisted or shared with tasks at runtime.
+struct ConfigSnapshot {
+    DriveConfig drive;
+    AudioConfig audio;
+    ServoConfig servo;
+    DomeConfig dome;
+    SystemConfig system;
+};
+
 // =============================================================================
 // Public API
 // =============================================================================
@@ -347,11 +348,23 @@ struct ConfigSnapshot {
 // Returns false + logs warning on schema mismatch; true on success.
 bool configLoad(Preferences& prefs, ConfigSnapshot* out);
 
+void configLoadDrive(Preferences& prefs, DriveConfig* out);
+void configLoadAudio(Preferences& prefs, AudioConfig* out);
+void configLoadServo(Preferences& prefs, ServoConfig* out);
+void configLoadDome(Preferences& prefs, DomeConfig* out);
+void configLoadSystem(Preferences& prefs, SystemConfig* out);
+
 // configSave: Persist full ConfigSnapshot to NVS.
 // Caller opens Preferences with begin() before calling.
 // Holds no mutex and performs no robotState reads/writes.
 // Returns false if any write fails; true on success.
 bool configSave(Preferences& prefs, const ConfigSnapshot& snapshot);
+
+bool configSaveDrive(Preferences& prefs, const DriveConfig& config);
+bool configSaveAudio(Preferences& prefs, const AudioConfig& config);
+bool configSaveServo(Preferences& prefs, const ServoConfig& config);
+bool configSaveDome(Preferences& prefs, const DomeConfig& config);
+bool configSaveSystem(Preferences& prefs, const SystemConfig& config);
 
 // configSnapshotFromRobotState: Fill a ConfigSnapshot from the live robotState.
 // Caller MUST hold robotStateMux before calling (taskENTER_CRITICAL or xSemaphoreTake).
