@@ -51,21 +51,6 @@ static SbusDecoder sbus_dome;
 static const uint8_t kRcPwmPins[6] = {PIN_RC_CH1, PIN_RC_CH2, PIN_RC_CH3,
                                       PIN_RC_CH4, PIN_RC_CH5, PIN_RC_CH6};
 
-struct RcRuntimeConfig {
-    bool enableRc[6];
-    bool enableDome;
-    bool enableArm1;
-    bool enableArm2;
-    bool enableSound;
-    int16_t maxOut;
-    RcBindingConfig driveSpeed;
-    RcBindingConfig driveSteer;
-    RcBindingConfig domeSpeed;
-    RcBindingConfig arm1;
-    RcBindingConfig arm2;
-    RcBindingConfig sound;
-};
-
 static bool bindingSourceActive(const RcBindingConfig& binding, RcInputMode mode, bool enableRcCh1,
                                 bool enableRcCh2, bool useCh2) {
     switch (binding.source) {
@@ -83,42 +68,6 @@ static bool bindingSourceActive(const RcBindingConfig& binding, RcInputMode mode
         default:
             return false;
     }
-}
-
-static void loadRcRuntimeConfig(RcRuntimeConfig* cfg, RcInputMode mode) {
-    if (cfg == nullptr) {
-        return;
-    }
-
-    taskENTER_CRITICAL(&robotStateMux);
-    cfg->enableRc[0] = robotState.cfg_enable_rc_ch1;
-    cfg->enableRc[1] = robotState.cfg_enable_rc_ch2;
-    cfg->enableRc[2] = robotState.cfg_enable_rc_ch3;
-    cfg->enableRc[3] = robotState.cfg_enable_rc_ch4;
-    cfg->enableRc[4] = robotState.cfg_enable_rc_ch5;
-    cfg->enableRc[5] = robotState.cfg_enable_rc_ch6;
-    cfg->enableDome = robotState.cfg_enable_dome;
-    cfg->enableArm1 = robotState.cfg_enable_arm1;
-    cfg->enableArm2 = robotState.cfg_enable_arm2;
-    cfg->enableSound = robotState.cfg_enable_s2_sound;
-    cfg->maxOut = robotState.cfg_speedLimitMax;
-
-    if (mode == RC_INPUT_STANDARD_PWM) {
-        cfg->driveSpeed = robotState.cfg_rc_pwm_drive_speed;
-        cfg->driveSteer = robotState.cfg_rc_pwm_drive_steer;
-        cfg->domeSpeed = robotState.cfg_rc_pwm_dome_speed;
-        cfg->arm1 = robotState.cfg_rc_pwm_arm1;
-        cfg->arm2 = robotState.cfg_rc_pwm_arm2;
-        cfg->sound = robotState.cfg_rc_pwm_sound;
-    } else {
-        cfg->driveSpeed = robotState.cfg_rc_sbus_drive_speed;
-        cfg->driveSteer = robotState.cfg_rc_sbus_drive_steer;
-        cfg->domeSpeed = robotState.cfg_rc_sbus_dome_speed;
-        cfg->arm1 = robotState.cfg_rc_sbus_arm1;
-        cfg->arm2 = robotState.cfg_rc_sbus_arm2;
-        cfg->sound = robotState.cfg_rc_sbus_sound;
-    }
-    taskEXIT_CRITICAL(&robotStateMux);
 }
 
 static bool readPwmBindingRaw(const RcBindingConfig& binding, const uint32_t pulses[6], int* raw) {
@@ -254,28 +203,41 @@ static void handleSoundTrigger(bool pressed, bool* lastPressed) {
     *lastPressed = pressed;
 }
 
-static void rcRuntimeConfigToMappingConfig(const RcRuntimeConfig& rt, RcMappingConfig* out) {
-    if (out == nullptr) {
-        return;
+// Build an RcMappingConfig from RobotState for the given RC input mode.
+// Reads all relevant cfg_* fields under the robotStateMux critical section.
+// prevSoundPressed is left false; callers must set it from their static state.
+static RcMappingConfig rcBuildMappingConfig(RcInputMode mode) {
+    RcMappingConfig out = {};
+    taskENTER_CRITICAL(&robotStateMux);
+    out.enableRc[0] = robotState.cfg_enable_rc_ch1;
+    out.enableRc[1] = robotState.cfg_enable_rc_ch2;
+    out.enableRc[2] = robotState.cfg_enable_rc_ch3;
+    out.enableRc[3] = robotState.cfg_enable_rc_ch4;
+    out.enableRc[4] = robotState.cfg_enable_rc_ch5;
+    out.enableRc[5] = robotState.cfg_enable_rc_ch6;
+    out.enableDome = robotState.cfg_enable_dome;
+    out.enableArm1 = robotState.cfg_enable_arm1;
+    out.enableArm2 = robotState.cfg_enable_arm2;
+    out.enableSound = robotState.cfg_enable_s2_sound;
+    out.maxOut = robotState.cfg_speedLimitMax;
+    if (mode == RC_INPUT_STANDARD_PWM) {
+        out.driveSpeed = robotState.cfg_rc_pwm_drive_speed;
+        out.driveSteer = robotState.cfg_rc_pwm_drive_steer;
+        out.domeSpeed = robotState.cfg_rc_pwm_dome_speed;
+        out.arm1 = robotState.cfg_rc_pwm_arm1;
+        out.arm2 = robotState.cfg_rc_pwm_arm2;
+        out.sound = robotState.cfg_rc_pwm_sound;
+    } else {
+        out.driveSpeed = robotState.cfg_rc_sbus_drive_speed;
+        out.driveSteer = robotState.cfg_rc_sbus_drive_steer;
+        out.domeSpeed = robotState.cfg_rc_sbus_dome_speed;
+        out.arm1 = robotState.cfg_rc_sbus_arm1;
+        out.arm2 = robotState.cfg_rc_sbus_arm2;
+        out.sound = robotState.cfg_rc_sbus_sound;
     }
-    out->enableRc[0] = rt.enableRc[0];
-    out->enableRc[1] = rt.enableRc[1];
-    out->enableRc[2] = rt.enableRc[2];
-    out->enableRc[3] = rt.enableRc[3];
-    out->enableRc[4] = rt.enableRc[4];
-    out->enableRc[5] = rt.enableRc[5];
-    out->enableDome = rt.enableDome;
-    out->enableArm1 = rt.enableArm1;
-    out->enableArm2 = rt.enableArm2;
-    out->enableSound = rt.enableSound;
-    out->maxOut = rt.maxOut;
-    out->driveSpeed = rt.driveSpeed;
-    out->driveSteer = rt.driveSteer;
-    out->domeSpeed = rt.domeSpeed;
-    out->arm1 = rt.arm1;
-    out->arm2 = rt.arm2;
-    out->sound = rt.sound;
-    out->prevSoundPressed = false;  // Caller will update with static state
+    taskEXIT_CRITICAL(&robotStateMux);
+    out.prevSoundPressed = false;  // caller sets from static state
+    return out;
 }
 
 // Tier 2 Trigger Binding Runtime State
@@ -696,8 +658,7 @@ static bool readSbusDigitalTrigger(const SbusData& data, const RcTriggerBinding&
 
 static void dispatchStandardPwmInputs() {
     uint32_t pulses[6] = {};
-    RcRuntimeConfig cfg = {};
-    loadRcRuntimeConfig(&cfg, RC_INPUT_STANDARD_PWM);
+    RcMappingConfig cfg = rcBuildMappingConfig(RC_INPUT_STANDARD_PWM);
 
     // Time-bounded pulse reading: limit total time spent to maintain ~20ms loop cadence
     const uint32_t startMs = millis();
@@ -738,14 +699,11 @@ static void dispatchStandardPwmInputs() {
         snap.channels[i] = (int16_t)pulses[i];  // Store PWM pulse in µs
     }
 
-    // Convert RcRuntimeConfig to RcMappingConfig
-    RcMappingConfig mapCfg;
     static bool lastSoundPressed = false;
-    rcRuntimeConfigToMappingConfig(cfg, &mapCfg);
-    mapCfg.prevSoundPressed = lastSoundPressed;
+    cfg.prevSoundPressed = lastSoundPressed;
 
     // Map channel snapshot to control intent (pure function)
-    RcControlIntent intent = rcMapChannels(snap, mapCfg);
+    RcControlIntent intent = rcMapChannels(snap, cfg);
 
     // Update sound state for next iteration
     lastSoundPressed = intent.soundPressed;
@@ -757,7 +715,7 @@ static void dispatchStandardPwmInputs() {
     }
 
     if (intent.domeSpeed != 0) {
-        float normalizedDomeSpeed = (float)intent.domeSpeed / (float)mapCfg.maxOut;
+        float normalizedDomeSpeed = (float)intent.domeSpeed / (float)cfg.maxOut;
         queueDomeCommand(normalizedDomeSpeed, SRC_SBUS);
     }
 
@@ -799,8 +757,7 @@ static void dispatchStandardPwmInputs() {
 static void dispatchSbusBindingsForSource(const SbusData& data, RcBindingSource source,
                                           RcInputMode mode, bool enableRcCh1, bool enableRcCh2,
                                           bool useCh2) {
-    RcRuntimeConfig cfg = {};
-    loadRcRuntimeConfig(&cfg, mode);
+    RcMappingConfig cfg = rcBuildMappingConfig(mode);
     static bool domeRawInit = false;
     static int lastDomeRaw = 0;
     static int pendingDomeRaw = 0;
@@ -1056,8 +1013,6 @@ void rcInputTask(void* pvParameters) {
         // --- Drive receiver (SBUS #1, or SBUS2 GPIO when single_sbus+useCh2) ---
         if (driveSbusEnabled && sbus_drive.read()) {
             SbusData data = sbus_drive.data();
-            RcRuntimeConfig cfg = {};
-            loadRcRuntimeConfig(&cfg, rcInputMode);
 
             // single_sbus+useCh2=true: decoder reads GPIO13 (dome GPIO).
             // Treat as SBUS2 — store to sbus2 state and dispatch dome/aux bindings only.
@@ -1134,14 +1089,8 @@ void rcInputTask(void* pvParameters) {
                     snap.channels[16] = data.ch17 ? 1811 : 172;  // Digital ch17 as SBUS value
                     snap.channels[17] = data.ch18 ? 1811 : 172;  // Digital ch18 as SBUS value
 
-                    // Load mapping config from RobotState via runtime config (avoids code duplication)
-                    RcRuntimeConfig rtCfg = {};
-                    loadRcRuntimeConfig(&rtCfg, rcInputMode);
-
-                    // Convert RcRuntimeConfig to RcMappingConfig
-                    RcMappingConfig mapCfg;
+                    RcMappingConfig mapCfg = rcBuildMappingConfig(rcInputMode);
                     static bool lastSoundPressed = false;
-                    rcRuntimeConfigToMappingConfig(rtCfg, &mapCfg);
                     mapCfg.prevSoundPressed = lastSoundPressed;
 
                     // Map channel snapshot to control intent (pure function)
