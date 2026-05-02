@@ -233,6 +233,18 @@ nav a.active {
   background: linear-gradient(180deg, rgba(232, 168, 50, 0.10), rgba(232, 168, 50, 0.04));
 }
 
+.card-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.card-header-row h3 {
+  margin: 0;
+}
+
 .disabled-reason {
   margin-top: 8px;
   color: var(--silver-bright);
@@ -948,17 +960,59 @@ input.input-narrow:focus {
   border: 1px solid var(--border);
   border-radius: 8px;
   background: rgba(255, 255, 255, 0.02);
-  padding: 12px;
+  overflow: hidden;
 }
 
 .log-console {
   margin: 0;
-  max-height: 240px;
+  max-height: 60vh;
   overflow: auto;
   color: var(--silver-bright);
   font-size: 0.85rem;
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
   white-space: pre-wrap;
+  padding: 12px;
+}
+
+.log-line {
+  display: block;
+}
+
+.log-line-error {
+  color: var(--danger);
+}
+
+.log-line-warn {
+  color: var(--warning);
+}
+
+.log-line-debug {
+  color: var(--text-dim);
+}
+
+.log-line-command {
+  color: var(--accent-bright);
+}
+
+.log-line-command-error {
+  color: var(--danger);
+}
+
+.log-command-input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 0;
+  border-top: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.24);
+  color: var(--silver-bright);
+  font-size: 0.85rem;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  outline: none;
+  padding: 10px 12px;
+}
+
+.log-command-input:focus {
+  box-shadow: inset 0 2px 0 var(--accent);
 }
 
 .stale-banner {
@@ -972,6 +1026,9 @@ input.input-narrow:focus {
 
 .log-paused {
   display: none;
+  color: var(--warning);
+  font-size: 0.8rem;
+  white-space: nowrap;
 }
 
 .log-paused.visible {

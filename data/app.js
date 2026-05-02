@@ -9,6 +9,7 @@
 (() => {
   const logConsole = document.getElementById("log-console");
   const logPaused = document.getElementById("log-paused");
+  const logCommandInput = document.getElementById("log-command-input");
   const componentStatusCard = document.getElementById("component-status-card");
   const componentStatusGrid = document.getElementById("component-status-grid");
 
@@ -406,9 +407,44 @@
   const LOG_MAX_LINES = 250;
   const LOG_TRIM_LINES = 200;
   const LOG_EMPTY_TEXT = "No log history available yet.";
+  const COMMAND_HISTORY_MAX = 20;
   let logLines = [];
+  let commandTokens = [];
+  let commandHistory = [];
+  let commandHistoryIndex = -1;
+  let logSelectionActive = false;
 
-  const normalizeLogMessage = (line) => String(line ?? "").replace(/^\[t\+\d+ms\]\s*/i, "").trim();
+  const normalizeLogMessage = (line) => String(line ?? "").trim();
+
+  const timestampNow = () => new Date().toTimeString().slice(0, 8);
+
+  const levelClassForMessage = (message) => {
+    const match = String(message ?? "").match(/^\[([EWID])\]/);
+    if (!match) return "";
+    if (match[1] === "E") return " log-line-error";
+    if (match[1] === "W") return " log-line-warn";
+    if (match[1] === "D") return " log-line-debug";
+    return "";
+  };
+
+  const makeLogEntry = (message, { timestamp = timestampNow(), extraClass = "" } = {}) => ({
+    timestamp,
+    message: normalizeLogMessage(message),
+    extraClass,
+  });
+
+  const logEntryHtml = (line) => {
+    const classes = `log-line${levelClassForMessage(line.message)}${line.extraClass || ""}`;
+    return `<span class="${classes}">[${escapeHtml(line.timestamp)}] ${escapeHtml(line.message)}</span>`;
+  };
+
+  const hasActiveLogSelection = () => {
+    if (!logConsole || !window.getSelection) return false;
+    const selection = window.getSelection();
+    if (!selection || selection.isCollapsed || selection.rangeCount === 0) return false;
+    const range = selection.getRangeAt(0);
+    return logConsole.contains(range.commonAncestorContainer);
+  };
 
   const isLogAtBottom = () => {
     if (!logConsole) return true;
@@ -418,8 +454,12 @@
 
   const renderLogConsole = (stickToBottom = false) => {
     if (!logConsole) return;
-    logConsole.textContent = logLines.length > 0 ? logLines.join("\n") : LOG_EMPTY_TEXT;
-    if (stickToBottom) {
+    if (logLines.length === 0) {
+      logConsole.innerHTML = `<span class="log-line">${escapeHtml(LOG_EMPTY_TEXT)}</span>`;
+    } else {
+      logConsole.innerHTML = logLines.map((line) => logEntryHtml(line)).join("\n");
+    }
+    if (stickToBottom && !hasActiveLogSelection()) {
       logConsole.scrollTop = logConsole.scrollHeight;
       logPaused?.classList.remove("visible");
     } else {
@@ -428,23 +468,48 @@
   };
 
   const setLogLines = (lines, { forceBottom = true } = {}) => {
-    logLines = lines.slice(-LOG_MAX_LINES);
-    const stickToBottom = forceBottom || isLogAtBottom();
+    logLines = lines
+      .map((line) => makeLogEntry(line, { timestamp: "--:--:--" }))
+      .filter((line) => line.message.length > 0)
+      .slice(-LOG_MAX_LINES);
+    const stickToBottom = (forceBottom || isLogAtBottom()) && !hasActiveLogSelection();
     renderLogConsole(stickToBottom);
   };
 
-  const appendLogLine = (text) => {
+  const appendLogLine = (text, options = {}) => {
     if (!logConsole) return;
     const message = normalizeLogMessage(text);
     if (!message) return;
 
-    const stickToBottom = isLogAtBottom();
-    const line = message;
-    logLines.push(line);
+    const stickToBottom = isLogAtBottom() && !hasActiveLogSelection();
+    const entry = makeLogEntry(message, options);
+    const wasEmpty = logLines.length === 0;
+    logLines.push(entry);
+    let didTrim = false;
     if (logLines.length > LOG_MAX_LINES) {
       logLines = logLines.slice(logLines.length - LOG_TRIM_LINES);
+      didTrim = true;
     }
-    renderLogConsole(stickToBottom);
+    if (hasActiveLogSelection()) {
+      logSelectionActive = true;
+      logPaused?.classList.add("visible");
+      return;
+    }
+    if (didTrim) {
+      renderLogConsole(stickToBottom);
+      return;
+    }
+    if (wasEmpty) {
+      logConsole.innerHTML = logEntryHtml(entry);
+    } else {
+      logConsole.insertAdjacentHTML("beforeend", `\n${logEntryHtml(entry)}`);
+    }
+    if (stickToBottom) {
+      logConsole.scrollTop = logConsole.scrollHeight;
+      logPaused?.classList.remove("visible");
+    } else {
+      logPaused?.classList.add("visible");
+    }
   };
 
   const loadRecentLogs = async () => {
@@ -465,8 +530,152 @@
   };
 
   logConsole?.addEventListener("scroll", () => {
-    if (isLogAtBottom()) {
+    if (isLogAtBottom() && !hasActiveLogSelection()) {
       logPaused?.classList.remove("visible");
+    }
+  });
+
+  document.addEventListener("selectionchange", () => {
+    if (!logConsole) return;
+    if (hasActiveLogSelection()) {
+      logSelectionActive = true;
+      logPaused?.classList.add("visible");
+    } else if (logSelectionActive) {
+      logSelectionActive = false;
+      renderLogConsole(isLogAtBottom());
+    }
+  });
+
+  const loadCommandTokens = async () => {
+    if (!window.PAApi) return;
+    try {
+      const result = await window.PAApi.get("/api/actions", { cache: "no-store", timeoutMs: 5000 });
+      if (!Array.isArray(result.data)) return;
+      commandTokens = result.data
+        .filter((entry) => entry && entry.testable === true && typeof entry.token === "string")
+        .map((entry) => entry.token)
+        .sort((a, b) => a.localeCompare(b));
+    } catch (_error) {
+      commandTokens = [];
+    }
+  };
+
+  const appendCommandLine = (text, extraClass = " log-line-command") => {
+    appendLogLine(text, { extraClass });
+  };
+
+  const printCommandHelp = () => {
+    if (commandTokens.length === 0) {
+      appendCommandLine("[ERROR] action list unavailable", " log-line-command-error");
+      return;
+    }
+    appendCommandLine(`available commands: ${commandTokens.join(" ")}`);
+  };
+
+  const rememberCommand = (token) => {
+    if (!token) return;
+    if (commandHistory[commandHistory.length - 1] !== token) {
+      commandHistory.push(token);
+      if (commandHistory.length > COMMAND_HISTORY_MAX) {
+        commandHistory = commandHistory.slice(commandHistory.length - COMMAND_HISTORY_MAX);
+      }
+    }
+    commandHistoryIndex = commandHistory.length;
+  };
+
+  const dispatchConsoleCommand = async (rawToken) => {
+    const token = normalizeLogMessage(rawToken);
+    if (!token) return;
+    rememberCommand(token);
+    appendCommandLine(`> ${token}`);
+
+    if (token === "help" || token === "?") {
+      printCommandHelp();
+      return;
+    }
+
+    if (!commandTokens.includes(token)) {
+      appendCommandLine(`[ERROR] unknown command: ${token}`, " log-line-command-error");
+      return;
+    }
+
+    if (!window.PAApi) {
+      appendCommandLine("[ERROR] API unavailable", " log-line-command-error");
+      return;
+    }
+
+    try {
+      await window.PAApi.postForm("/api/actions/test", { token }, { timeoutMs: 5000 });
+      appendCommandLine(`[OK] ${token}`);
+    } catch (error) {
+      appendCommandLine(`[ERROR] ${window.PAApi.messageFor(error)}`, " log-line-command-error");
+    }
+  };
+
+  const commonPrefix = (values) => {
+    if (values.length === 0) return "";
+    let prefix = values[0];
+    for (let i = 1; i < values.length && prefix.length > 0; i += 1) {
+      while (!values[i].startsWith(prefix)) {
+        prefix = prefix.slice(0, -1);
+      }
+    }
+    return prefix;
+  };
+
+  const completeConsoleCommand = () => {
+    if (!logCommandInput) return;
+    const partial = normalizeLogMessage(logCommandInput.value);
+    if (!partial) {
+      printCommandHelp();
+      return;
+    }
+    const matches = commandTokens.filter((token) => token.startsWith(partial));
+    if (matches.length === 1) {
+      logCommandInput.value = matches[0];
+      return;
+    }
+    if (matches.length > 1) {
+      const shared = commonPrefix(matches);
+      if (shared.length > partial.length) {
+        logCommandInput.value = shared;
+        return;
+      }
+      appendCommandLine(matches.join(" "));
+      return;
+    }
+    appendCommandLine(`[ERROR] unknown command: ${partial}`, " log-line-command-error");
+  };
+
+  logCommandInput?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      const token = logCommandInput.value;
+      logCommandInput.value = "";
+      dispatchConsoleCommand(token);
+      return;
+    }
+    if (event.key === "Tab") {
+      event.preventDefault();
+      completeConsoleCommand();
+      return;
+    }
+    if (event.key === "ArrowUp") {
+      if (commandHistory.length === 0) return;
+      event.preventDefault();
+      commandHistoryIndex = Math.max(0, commandHistoryIndex - 1);
+      logCommandInput.value = commandHistory[commandHistoryIndex] || "";
+      logCommandInput.setSelectionRange(logCommandInput.value.length, logCommandInput.value.length);
+      return;
+    }
+    if (event.key === "ArrowDown") {
+      if (commandHistory.length === 0) return;
+      event.preventDefault();
+      commandHistoryIndex = Math.min(commandHistory.length, commandHistoryIndex + 1);
+      logCommandInput.value = commandHistoryIndex >= commandHistory.length
+        ? ""
+        : commandHistory[commandHistoryIndex];
+      logCommandInput.setSelectionRange(logCommandInput.value.length, logCommandInput.value.length);
     }
   });
 
@@ -489,6 +698,7 @@
 
 
   loadRecentLogs();
+  loadCommandTokens();
 
   if (window.PAStatusStream?.isSupported()) {
     window.PAStatusStream.subscribe((eventType, payload) => {

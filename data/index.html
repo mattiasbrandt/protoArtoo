@@ -132,11 +132,14 @@
     </div>
 
     <div class="card">
-      <h3>📋 Live Logs</h3>
+      <div class="card-header-row">
+        <h3>📋 Live Logs</h3>
+        <div class="log-paused" id="log-paused">⏸ Auto-scroll paused</div>
+      </div>
       <div class="log-wrap">
         <pre id="log-console" class="log-console"></pre>
+        <input id="log-command-input" class="log-command-input" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="> ...">
       </div>
-      <div class="log-paused" id="log-paused">⏸ Auto-scroll paused — scroll to bottom to resume</div>
     </div>
 
     <div id="shell-status"></div>
