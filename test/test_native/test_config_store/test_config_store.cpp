@@ -721,6 +721,9 @@ void test_configApplyToRobotState_applies_all_categories() {
                                         rcTriggerDefaultReverse(RC_BINDING_SBUS1, 4));
     snap.rc_arm2 = disabledRcTriggerBinding();
 
+    // Pre-set a non-cfg sentinel to verify apply does not touch it
+    robotState.driveSpeed = 999;
+
     // Apply the snapshot to robotState
     configApplyToRobotState(snap);
 
@@ -766,10 +769,8 @@ void test_configApplyToRobotState_applies_all_categories() {
     TEST_ASSERT_EQUAL_INT(true, robotState.cfg_enable_dome);
     TEST_ASSERT_EQUAL_INT(true, robotState.cfg_stationary);
 
-    // Also verify a non-cfg field was NOT modified (contract test)
-    // stationary is a cfg field, so check another runtime field
-    // Let's verify the robotState was initialized to zero, so non-cfg fields remain at their initial values
-    TEST_ASSERT_EQUAL_INT(0, robotState.driveSpeed);  // This is a non-cfg field
+    // Verify the pre-set non-cfg sentinel was not modified by the apply
+    TEST_ASSERT_EQUAL_INT(999, robotState.driveSpeed);
 }
 
 // Test: configApplyToRobotState does not touch non-cfg fields

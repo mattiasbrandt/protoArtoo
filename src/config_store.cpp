@@ -966,21 +966,22 @@ bool configLoad(Preferences& prefs, ConfigSnapshot* out) {
     }
 #endif
 
-    // Validate RC Tier 1 bindings
+    // Validate RC Tier 1 bindings — must match loadRcBindingFromPrefs call order above
     RcBindingConfig* bindings[] = {
-        &out->rc_pwm_drive_speed, &out->rc_pwm_drive_steer,
-        &out->rc_pwm_arm1,        &out->rc_pwm_arm2,
-        &out->rc_pwm_sound,       &out->rc_sbus_drive_speed,
-        &out->rc_sbus_dome_speed, &out->rc_sbus_arm1,
-        &out->rc_sbus_arm2,       &out->rc_sbus_sound,
+        &out->rc_pwm_drive_speed,  &out->rc_pwm_drive_steer,
+        &out->rc_pwm_dome_speed,   &out->rc_pwm_arm1,
+        &out->rc_pwm_arm2,         &out->rc_pwm_sound,
+        &out->rc_sbus_drive_speed, &out->rc_sbus_drive_steer,
+        &out->rc_sbus_dome_speed,  &out->rc_sbus_arm1,
+        &out->rc_sbus_arm2,        &out->rc_sbus_sound,
     };
     const RcBindingConfig defaults[] = {
-        defaultPwmBinding(1),                               defaultPwmBinding(2),
-        defaultPwmBinding(3),                               defaultPwmBinding(4),
-        defaultPwmBinding(5),                               defaultPwmBinding(6),
-        defaultSbusBinding(RC_BINDING_SBUS1, 1),            defaultSbusBinding(RC_BINDING_SBUS1, 2),
-        defaultSbusBinding(RC_BINDING_SBUS2, 1),            defaultSbusBinding(RC_BINDING_SBUS2, 2),
-        defaultSbusBinding(RC_BINDING_SBUS2, 3),            disabledRcBinding(),
+        defaultPwmBinding(1),                         defaultPwmBinding(2),
+        defaultPwmBinding(3),                         defaultPwmBinding(4),
+        defaultPwmBinding(5),                         defaultPwmBinding(6),
+        defaultSbusBinding(RC_BINDING_SBUS1, 1),      defaultSbusBinding(RC_BINDING_SBUS1, 2),
+        defaultSbusBinding(RC_BINDING_SBUS2, 1),      defaultSbusBinding(RC_BINDING_SBUS2, 2),
+        defaultSbusBinding(RC_BINDING_SBUS2, 3),      disabledRcBinding(),
     };
     for (size_t i = 0; i < sizeof(bindings) / sizeof(bindings[0]); ++i) {
         if (!rcBindingIsValid(*bindings[i])) {
