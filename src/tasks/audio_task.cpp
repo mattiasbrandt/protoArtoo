@@ -720,6 +720,8 @@ void audioTask(void* pvParameters) {
             named.startup = robotState.cfg_snd_startup;
             named.disco = robotState.cfg_snd_disco;
             taskEXIT_CRITICAL(&robotStateMux);
+            // Soft-UART drivers block for up to ~6 ms per command; AudioTask must run on Core 0.
+            configASSERT(xPortGetCoreID() == 0);
             driver->begin(currentVol);
             if (driver->capabilities() & AudioDriver::AUDIO_CAP_CATALOG) {
                 bool cacheLoaded = refreshChirpBindingCacheFromNvs();
