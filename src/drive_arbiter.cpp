@@ -100,6 +100,12 @@ void driveArbiterSubmit(DriveSource src,
         g_arbiter.webTimeoutEpisodeTriggered = false;
     }
 
+    // Mirror to robotState for status reporting (read by web_server.cpp SSE stream)
+    robotState.driveSpeed = speed;
+    robotState.driveSteer = steer;
+    robotState.lastDriveSource = (src == DriveSource::RC) ? SRC_SBUS : SRC_WEB_API;
+    robotState.lastDriveCommandMs = timestampMs;
+
     taskEXIT_CRITICAL(g_arbiterMux);
 }
 
@@ -155,15 +161,17 @@ DriveOutput driveArbiterResolve(const DriveArbiterConfig& cfg,
     }
 
     // Trigger web timeout failsafe on first expiry (transition)
+    bool justTriggered = false;
     if (webExpired && !g_arbiter.webTimeoutEpisodeTriggered) {
         g_arbiter.webTimeoutEpisodeTriggered = true;
-        // Failsafe trigger will be called after releasing the lock
+        justTriggered = true;
     }
 
     taskEXIT_CRITICAL(g_arbiterMux);
 
     // Trigger failsafe outside the critical section (failsafeTrigger may acquire locks)
-    if (webExpired && g_arbiter.webTimeoutEpisodeTriggered) {
+    // Only call once per web timeout episode, not every 50 Hz while timed out
+    if (justTriggered) {
         failsafeTrigger(FailsafeLayer::WEB_TIMEOUT);
     }
 

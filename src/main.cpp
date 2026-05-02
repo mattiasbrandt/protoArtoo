@@ -217,25 +217,6 @@ bool copyLogLineAt(size_t idx, char* out, size_t outSize) {
     taskEXIT_CRITICAL(&logMux);
     return valid;
 }
-
-// -----------------------------------------------------------------------------
-// setDriveCommand() — thread-safe drive command update
-// Called from RcInputTask, WebAPI handler, or safety zeroing.
-// -----------------------------------------------------------------------------
-void setDriveCommand(int16_t speed, int16_t steer, CommandSource src) {
-    taskENTER_CRITICAL(&robotStateMux);
-    robotState.driveSpeed = speed;
-    robotState.driveSteer = steer;
-    robotState.lastDriveSource = src;
-    robotState.lastDriveCommandMs = millis();
-    taskEXIT_CRITICAL(&robotStateMux);
-
-    if (speed != 0 || steer != 0) {
-        PA_LOG_INFO("DRIVE", "[%s] Drive command: speed=%d steer=%d", commandSourceToString(src),
-                    speed, steer);
-    }
-}
-
 // -----------------------------------------------------------------------------
 // loadConfigToState() — load NVS config into robotState.cfg_* fields
 // Called once at boot before tasks start.

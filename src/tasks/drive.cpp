@@ -6,7 +6,7 @@
 // Runs on Core 1 (real-time).
 //
 // Safety layers implemented here:
-//   Layer 3: Web API drive timeout (WEB_DRIVE_TIMEOUT_MS)
+//   Layer 3: Web API drive timeout (handled by DriveArbiter)
 //   Layer 4: TWDT feed (esp_task_wdt_reset every loop)
 //
 // SAFETY: SPEED_LIMIT_MAX cap applied unconditionally before every frame.

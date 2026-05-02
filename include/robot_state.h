@@ -427,9 +427,6 @@ extern QueueHandle_t domeTxQueue;
 // Helper function declarations (defined in main.cpp or a dedicated helpers.cpp)
 // -----------------------------------------------------------------------------
 
-// Set drive command under mutex and update lastDriveCommandMs
-void setDriveCommand(int16_t speed, int16_t steer, CommandSource src);
-
 // Load NVS config into robotState.cfg_* fields
 void loadConfigToState();
 
