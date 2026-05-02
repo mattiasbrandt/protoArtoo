@@ -64,41 +64,21 @@ uint8_t audioGetCapabilities() {
 }
 
 const ChirpCatalogEntry* audioGetCatalogEntries(uint16_t* count) {
-#if PA_AUDIO_DRIVER == AUDIO_CHIRP
-    AudioDriverChirp* chirp = static_cast<AudioDriverChirp*>(driver);
     if (count) {
-        *count = chirp->getCatalogEntryCount();
+        *count = driver->getCatalogEntryCount();
     }
-    return chirp->getCatalogEntries();
-#else
-    if (count) {
-        *count = 0;
-    }
-    return nullptr;
-#endif
+    return driver->getCatalogEntries();
 }
 
 const ChirpCatalogBank* audioGetCatalogBanks(uint8_t* count) {
-#if PA_AUDIO_DRIVER == AUDIO_CHIRP
-    AudioDriverChirp* chirp = static_cast<AudioDriverChirp*>(driver);
     if (count) {
-        *count = chirp->getCatalogBankCount();
+        *count = driver->getCatalogBankCount();
     }
-    return chirp->getCatalogBanks();
-#else
-    if (count) {
-        *count = 0;
-    }
-    return nullptr;
-#endif
+    return driver->getCatalogBanks();
 }
 
 bool audioIsCatalogReady() {
-#if PA_AUDIO_DRIVER == AUDIO_CHIRP
-    return static_cast<AudioDriverChirp*>(driver)->isCatalogReady();
-#else
-    return false;
-#endif
+    return driver->isCatalogReady();
 }
 
 static const char* TAG = "AudioTask";
@@ -896,14 +876,9 @@ void audioTask(void* pvParameters) {
                                      commandSourceToString(cmd.source));
                         break;
                     }
-#if PA_AUDIO_DRIVER == AUDIO_CHIRP
-                    bool ok = static_cast<AudioDriverChirp*>(driver)->refreshCatalog();
+                    bool ok = driver->refreshCatalog();
                     PA_LOG_INFO(TAG, "[%s] catalog refresh %s", commandSourceToString(cmd.source),
                                 ok ? "OK" : "FAILED");
-#else
-                    PA_LOG_DEBUG(TAG, "[%s] catalog refresh ignored (non-CHIRP build)",
-                                 commandSourceToString(cmd.source));
-#endif
                     break;
                 }
 

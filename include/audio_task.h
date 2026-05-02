@@ -23,7 +23,7 @@
 
 #include <stdint.h>
 
-#include "audio_chirp.h"
+#include "audio_driver.h"
 #include "robot_state.h"
 
 // -----------------------------------------------------------------------------

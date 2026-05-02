@@ -35,6 +35,28 @@
 #define AUDIO_MP3TRIGGER 3
 #define AUDIO_CHIRP 4  // CHIRP Audio Trigger — ASCII UART commands
 
+// CHIRP catalog constants — used by drivers and callers that support banked playback.
+// These are moved to the base interface so AudioTask can work with catalogs without
+// backend-specific downcasts.
+static constexpr uint8_t CHIRP_CATALOG_MAX_BANKS = 64;
+static constexpr uint16_t CHIRP_CATALOG_MAX_ENTRIES = 300;
+
+// Catalog entry — one track descriptor in a CHIRP catalog.
+struct ChirpCatalogEntry {
+    uint8_t bank = 0;
+    char page = 'A';
+    uint16_t index = 0;
+    char name[48] = {0};
+};
+
+// Catalog bank descriptor — one bank/page combination in a CHIRP catalog.
+struct ChirpCatalogBank {
+    uint8_t bank = 0;
+    char page = 'A';
+    char dirName[32] = {0};
+    uint16_t count = 0;
+};
+
 // -----------------------------------------------------------------------------
 // AudioModuleState — live state returned by queryModuleState().
 // Populated from live UART RX queries; reflects what the module actually reports.
@@ -110,5 +132,48 @@ class AudioDriver {
         out = AudioModuleState{};
         out.playState = 0xFF;
         out.device = 0xFF;
+    }
+
+    // Catalog support (AUDIO_CAP_CATALOG backends only).
+    // Drivers without catalog support return false/0/nullptr; these defaults apply to all.
+
+    // Refresh the catalog from the hardware module (blocking, Core 0 only).
+    // Returns true on success, false on timeout or error.
+    // Default returns false (no catalog support).
+    virtual bool refreshCatalog() {
+        return false;
+    }
+
+    // Query whether the catalog is ready (has been loaded and populated).
+    // Returns true if loaded, false otherwise or if catalog not supported.
+    // Safe to call from any context.
+    virtual bool isCatalogReady() const {
+        return false;
+    }
+
+    // Get the number of catalog entries currently loaded.
+    // Returns 0 if no catalog is loaded or if catalog not supported.
+    virtual uint16_t getCatalogEntryCount() const {
+        return 0;
+    }
+
+    // Get the catalog entry array (read-only).
+    // Returns nullptr if no catalog is loaded or if catalog not supported.
+    // Caller should iterate [0, getCatalogEntryCount()) if non-nullptr.
+    virtual const ChirpCatalogEntry* getCatalogEntries() const {
+        return nullptr;
+    }
+
+    // Get the number of catalog banks currently loaded.
+    // Returns 0 if no catalog is loaded or if catalog not supported.
+    virtual uint8_t getCatalogBankCount() const {
+        return 0;
+    }
+
+    // Get the catalog bank descriptor array (read-only).
+    // Returns nullptr if no catalog is loaded or if catalog not supported.
+    // Caller should iterate [0, getCatalogBankCount()) if non-nullptr.
+    virtual const ChirpCatalogBank* getCatalogBanks() const {
+        return nullptr;
     }
 };

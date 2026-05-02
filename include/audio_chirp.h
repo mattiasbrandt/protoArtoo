@@ -25,24 +25,6 @@
 
 // CHIRP native volume range (0 = silent, 99 = maximum)
 static constexpr uint8_t CHIRP_VOL_MAX = 99;
-// CHIRP can expose multiple pages per bank (A-Z). Keep this comfortably above
-// legacy 6-bank layouts so page-sharded catalogs are not truncated.
-static constexpr uint8_t CHIRP_CATALOG_MAX_BANKS = 64;
-static constexpr uint16_t CHIRP_CATALOG_MAX_ENTRIES = 300;
-
-struct ChirpCatalogEntry {
-    uint8_t bank = 0;
-    char page = 'A';
-    uint16_t index = 0;
-    char name[48] = {0};
-};
-
-struct ChirpCatalogBank {
-    uint8_t bank = 0;
-    char page = 'A';
-    char dirName[32] = {0};
-    uint16_t count = 0;
-};
 
 class AudioDriverChirp : public AudioDriver {
    public:
@@ -72,13 +54,13 @@ class AudioDriverChirp : public AudioDriver {
     bool queryModuleState(AudioModuleState& out) override;
     void getCachedState(AudioModuleState& out) const override;
 
-    // Blocking catalog refresh (Core 0 only).
-    bool refreshCatalog();
-    uint16_t getCatalogEntryCount() const;
-    const ChirpCatalogEntry* getCatalogEntries() const;
-    uint8_t getCatalogBankCount() const;
-    const ChirpCatalogBank* getCatalogBanks() const;
-    bool isCatalogReady() const;
+    // Catalog interface implementations (overrides).
+    bool refreshCatalog() override;
+    uint16_t getCatalogEntryCount() const override;
+    const ChirpCatalogEntry* getCatalogEntries() const override;
+    uint8_t getCatalogBankCount() const override;
+    const ChirpCatalogBank* getCatalogBanks() const override;
+    bool isCatalogReady() const override;
 
    private:
     uint16_t m_totalTracks = 0;
