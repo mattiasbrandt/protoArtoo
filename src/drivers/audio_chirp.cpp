@@ -90,7 +90,7 @@ static char derivePageFromDirName(const char* dirName) {
     return 'A';
 }
 
-static bool parseBankLine(const char* line, ChirpCatalogBank* out) {
+static bool parseBankLine(const char* line, AudioCatalogBank* out) {
     if (line == nullptr || out == nullptr) {
         return false;
     }
@@ -261,9 +261,9 @@ bool AudioDriverChirp::loadManifestBanks(uint32_t timeoutMs, bool keepTotalTrack
         gotValidGmanLine = true;
 
         if (strncmp(line, "BANK:", 5) == 0) {
-            ChirpCatalogBank bank{};
+            AudioCatalogBank bank{};
             if (parseBankLine(line, &bank)) {
-                if (catalogBankCount < CHIRP_CATALOG_MAX_BANKS) {
+                if (catalogBankCount < AUDIO_CATALOG_MAX_BANKS) {
                     m_catalogBanks[catalogBankCount++] = bank;
                 } else {
                     ++droppedBankLines;
@@ -293,7 +293,7 @@ bool AudioDriverChirp::loadManifestBanks(uint32_t timeoutMs, bool keepTotalTrack
     if (droppedBankLines > 0) {
         PA_LOG_WARN(TAG,
                     "GMAN reported more banks/pages than supported (max=%u). Ignoring %u extra BANK lines.",
-                    (unsigned)CHIRP_CATALOG_MAX_BANKS, (unsigned)droppedBankLines);
+                    (unsigned)AUDIO_CATALOG_MAX_BANKS, (unsigned)droppedBankLines);
     }
 
     m_catalogBankCount = catalogBankCount;
@@ -410,11 +410,11 @@ bool AudioDriverChirp::refreshCatalog() {
     uint16_t missingNameCount = 0;
 
     for (uint8_t bankIdx = 0; bankIdx < m_catalogBankCount; ++bankIdx) {
-        const ChirpCatalogBank& bank = m_catalogBanks[bankIdx];
+        const AudioCatalogBank& bank = m_catalogBanks[bankIdx];
         for (uint16_t soundIndex = 1; soundIndex <= bank.count; ++soundIndex) {
-            if (m_catalogCount >= CHIRP_CATALOG_MAX_ENTRIES) {
+            if (m_catalogCount >= AUDIO_CATALOG_MAX_ENTRIES) {
                 PA_LOG_WARN(TAG, "catalog entry cap reached (%u)",
-                            (unsigned)CHIRP_CATALOG_MAX_ENTRIES);
+                            (unsigned)AUDIO_CATALOG_MAX_ENTRIES);
                 m_catalogReady = true;
                 return true;
             }
@@ -446,7 +446,7 @@ bool AudioDriverChirp::refreshCatalog() {
                     continue;
                 }
 
-                ChirpCatalogEntry& entry = m_catalog[m_catalogCount++];
+                AudioCatalogEntry& entry = m_catalog[m_catalogCount++];
                 entry.bank = respBank;
                 entry.page = respPage;
                 entry.index = respIndex;
@@ -457,7 +457,7 @@ bool AudioDriverChirp::refreshCatalog() {
             }
 
             if (!gotName) {
-                ChirpCatalogEntry& entry = m_catalog[m_catalogCount++];
+                AudioCatalogEntry& entry = m_catalog[m_catalogCount++];
                 entry.bank = bank.bank;
                 entry.page = bank.page;
                 entry.index = soundIndex;
@@ -478,7 +478,7 @@ uint16_t AudioDriverChirp::getCatalogEntryCount() const {
     return m_catalogCount;
 }
 
-const ChirpCatalogEntry* AudioDriverChirp::getCatalogEntries() const {
+const AudioCatalogEntry* AudioDriverChirp::getCatalogEntries() const {
     return m_catalog;
 }
 
@@ -486,7 +486,7 @@ uint8_t AudioDriverChirp::getCatalogBankCount() const {
     return m_catalogBankCount;
 }
 
-const ChirpCatalogBank* AudioDriverChirp::getCatalogBanks() const {
+const AudioCatalogBank* AudioDriverChirp::getCatalogBanks() const {
     return m_catalogBanks;
 }
 

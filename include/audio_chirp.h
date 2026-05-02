@@ -57,9 +57,9 @@ class AudioDriverChirp : public AudioDriver {
     // Catalog interface implementations (overrides).
     bool refreshCatalog() override;
     uint16_t getCatalogEntryCount() const override;
-    const ChirpCatalogEntry* getCatalogEntries() const override;
+    const AudioCatalogEntry* getCatalogEntries() const override;
     uint8_t getCatalogBankCount() const override;
-    const ChirpCatalogBank* getCatalogBanks() const override;
+    const AudioCatalogBank* getCatalogBanks() const override;
     bool isCatalogReady() const override;
 
    private:
@@ -70,8 +70,8 @@ class AudioDriverChirp : public AudioDriver {
     bool m_catalogReady = false;
     uint16_t m_catalogCount = 0;
     uint8_t m_catalogBankCount = 0;
-    ChirpCatalogEntry m_catalog[CHIRP_CATALOG_MAX_ENTRIES] = {};
-    ChirpCatalogBank m_catalogBanks[CHIRP_CATALOG_MAX_BANKS] = {};
+    AudioCatalogEntry m_catalog[AUDIO_CATALOG_MAX_ENTRIES] = {};
+    AudioCatalogBank m_catalogBanks[AUDIO_CATALOG_MAX_BANKS] = {};
 
     bool loadManifestBanks(uint32_t timeoutMs, bool keepTotalTracks);
 

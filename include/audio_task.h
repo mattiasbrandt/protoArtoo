@@ -144,8 +144,8 @@ const char* audioGetDriverName();
 // Safe to call from any context after AudioTask has been created.
 uint8_t audioGetCapabilities();
 
-// CHIRP catalog accessors (Core 0 only). Non-CHIRP builds return empty values.
-const ChirpCatalogEntry* audioGetCatalogEntries(uint16_t* count);
-const ChirpCatalogBank* audioGetCatalogBanks(uint8_t* count);
+// Audio catalog accessors (Core 0 only). Non-catalog builds return empty values.
+const AudioCatalogEntry* audioGetCatalogEntries(uint16_t* count);
+const AudioCatalogBank* audioGetCatalogBanks(uint8_t* count);
 bool audioIsCatalogReady();
 

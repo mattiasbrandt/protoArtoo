@@ -50,7 +50,7 @@ class AudioDriverCatalogStub : public AudioDriver {
         return catalog_entry_count;
     }
 
-    const ChirpCatalogEntry* getCatalogEntries() const override {
+    const AudioCatalogEntry* getCatalogEntries() const override {
         return catalog_entry_count > 0 ? &test_entries[0] : nullptr;
     }
 
@@ -58,7 +58,7 @@ class AudioDriverCatalogStub : public AudioDriver {
         return catalog_bank_count;
     }
 
-    const ChirpCatalogBank* getCatalogBanks() const override {
+    const AudioCatalogBank* getCatalogBanks() const override {
         return catalog_bank_count > 0 ? &test_banks[0] : nullptr;
     }
 
@@ -71,13 +71,13 @@ class AudioDriverCatalogStub : public AudioDriver {
     uint8_t catalog_bank_count = 0;
 
     // Test data
-    ChirpCatalogEntry test_entries[3] = {
+    AudioCatalogEntry test_entries[3] = {
         {.bank = 1, .page = 'A', .index = 1, .name = "Entry1"},
         {.bank = 1, .page = 'A', .index = 2, .name = "Entry2"},
         {.bank = 1, .page = 'A', .index = 3, .name = "Entry3"},
     };
 
-    ChirpCatalogBank test_banks[2] = {
+    AudioCatalogBank test_banks[2] = {
         {.bank = 1, .page = 'A', .dirName = "Bank1A", .count = 10},
         {.bank = 1, .page = 'B', .dirName = "Bank1B", .count = 5},
     };
@@ -116,7 +116,7 @@ void test_catalog_stub_entries() {
     TEST_ASSERT_EQUAL_UINT16(3, driver.getCatalogEntryCount());
     TEST_ASSERT_TRUE(driver.isCatalogReady());
 
-    const ChirpCatalogEntry* entries = driver.getCatalogEntries();
+    const AudioCatalogEntry* entries = driver.getCatalogEntries();
     TEST_ASSERT_NOT_NULL(entries);
     TEST_ASSERT_EQUAL_UINT8(1, entries[0].bank);
     TEST_ASSERT_EQUAL_CHAR('A', entries[0].page);
@@ -131,7 +131,7 @@ void test_catalog_stub_banks() {
 
     TEST_ASSERT_EQUAL_UINT8(2, driver.getCatalogBankCount());
 
-    const ChirpCatalogBank* banks = driver.getCatalogBanks();
+    const AudioCatalogBank* banks = driver.getCatalogBanks();
     TEST_ASSERT_NOT_NULL(banks);
     TEST_ASSERT_EQUAL_UINT8(1, banks[0].bank);
     TEST_ASSERT_EQUAL_CHAR('A', banks[0].page);
@@ -192,7 +192,7 @@ void test_capability_bits_defined() {
 
 // Test: Catalog structs have correct size and field layout
 void test_catalog_struct_layout() {
-    ChirpCatalogEntry entry{};
+    AudioCatalogEntry entry{};
     entry.bank = 1;
     entry.page = 'A';
     entry.index = 42;
@@ -203,7 +203,7 @@ void test_catalog_struct_layout() {
     TEST_ASSERT_EQUAL_UINT16(42, entry.index);
     TEST_ASSERT_EQUAL_STRING("TestEntry", entry.name);
 
-    ChirpCatalogBank bank{};
+    AudioCatalogBank bank{};
     bank.bank = 2;
     bank.page = 'B';
     strncpy(bank.dirName, "TestBank", sizeof(bank.dirName) - 1);

@@ -63,14 +63,14 @@ uint8_t audioGetCapabilities() {
     return driver->capabilities();
 }
 
-const ChirpCatalogEntry* audioGetCatalogEntries(uint16_t* count) {
+const AudioCatalogEntry* audioGetCatalogEntries(uint16_t* count) {
     if (count) {
         *count = driver->getCatalogEntryCount();
     }
     return driver->getCatalogEntries();
 }
 
-const ChirpCatalogBank* audioGetCatalogBanks(uint8_t* count) {
+const AudioCatalogBank* audioGetCatalogBanks(uint8_t* count) {
     if (count) {
         *count = driver->getCatalogBankCount();
     }

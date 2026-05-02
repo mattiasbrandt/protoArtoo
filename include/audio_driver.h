@@ -35,22 +35,22 @@
 #define AUDIO_MP3TRIGGER 3
 #define AUDIO_CHIRP 4  // CHIRP Audio Trigger — ASCII UART commands
 
-// CHIRP catalog constants — used by drivers and callers that support banked playback.
+// Audio catalog constants — used by drivers and callers that support banked playback.
 // These are moved to the base interface so AudioTask can work with catalogs without
 // backend-specific downcasts.
-static constexpr uint8_t CHIRP_CATALOG_MAX_BANKS = 64;
-static constexpr uint16_t CHIRP_CATALOG_MAX_ENTRIES = 300;
+static constexpr uint8_t AUDIO_CATALOG_MAX_BANKS = 64;
+static constexpr uint16_t AUDIO_CATALOG_MAX_ENTRIES = 300;
 
-// Catalog entry — one track descriptor in a CHIRP catalog.
-struct ChirpCatalogEntry {
+// Catalog entry — one track descriptor in an audio catalog.
+struct AudioCatalogEntry {
     uint8_t bank = 0;
     char page = 'A';
     uint16_t index = 0;
     char name[48] = {0};
 };
 
-// Catalog bank descriptor — one bank/page combination in a CHIRP catalog.
-struct ChirpCatalogBank {
+// Catalog bank descriptor — one bank/page combination in an audio catalog.
+struct AudioCatalogBank {
     uint8_t bank = 0;
     char page = 'A';
     char dirName[32] = {0};
@@ -160,7 +160,7 @@ class AudioDriver {
     // Get the catalog entry array (read-only).
     // Returns nullptr if no catalog is loaded or if catalog not supported.
     // Caller should iterate [0, getCatalogEntryCount()) if non-nullptr.
-    virtual const ChirpCatalogEntry* getCatalogEntries() const {
+    virtual const AudioCatalogEntry* getCatalogEntries() const {
         return nullptr;
     }
 
@@ -173,7 +173,7 @@ class AudioDriver {
     // Get the catalog bank descriptor array (read-only).
     // Returns nullptr if no catalog is loaded or if catalog not supported.
     // Caller should iterate [0, getCatalogBankCount()) if non-nullptr.
-    virtual const ChirpCatalogBank* getCatalogBanks() const {
+    virtual const AudioCatalogBank* getCatalogBanks() const {
         return nullptr;
     }
 };

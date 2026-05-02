@@ -1150,8 +1150,8 @@ void registerAudioRoutes(AsyncWebServer& server) {
         bool ready = audioIsCatalogReady();
         uint8_t bankCount = 0;
         uint16_t entryCount = 0;
-        const ChirpCatalogBank* banks = audioGetCatalogBanks(&bankCount);
-        const ChirpCatalogEntry* entries = audioGetCatalogEntries(&entryCount);
+        const AudioCatalogBank* banks = audioGetCatalogBanks(&bankCount);
+        const AudioCatalogEntry* entries = audioGetCatalogEntries(&entryCount);
 
         auto* stream = req->beginResponseStream("application/json");
         if (stream == nullptr) {
