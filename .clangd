@@ -16,6 +16,7 @@ Diagnostics:
     - undeclared_var_use   # enum values / symbols from ESP-IDF/Arduino/FreeRTOS chain invisible to host clangd
     - expected_expression  # C-style cast (type*) fails when type is unknown due to missing ESP-IDF headers
     - fatal_too_many_errors  # cascade sentinel; clang stops before suppressions apply without the limit removed
+    - unused-includes        # false positive: Arduino.h/FreeRTOS headers missing on host hide inline fn bodies
 
 CompileFlags:
   Add:
