@@ -8,6 +8,7 @@
 #include <unity.h>
 #include <string.h>
 #include "../../../include/audio_driver.h"
+#include "../../../include/audio_dollar_parser.h"
 
 // Stub driver without catalog support.
 class AudioDriverStub : public AudioDriver {
@@ -224,6 +225,41 @@ void test_mixed_driver_capabilities() {
     TEST_ASSERT_TRUE(catalog_driver.capabilities() & AudioDriver::AUDIO_CAP_CATALOG);
 }
 
+// Test: Driver receives volume values in valid range (0–30).
+// AudioTask clamps before calling setVolume(); driver may assume input is valid.
+void test_volume_clamp_contract_valid_range() {
+    AudioDriverStub driver;
+
+    // Valid range: 0–30 (AUDIO_VOLUME_MAX)
+    driver.setVolume(0);
+    TEST_ASSERT_EQUAL_UINT8(0, driver.last_vol);
+
+    driver.setVolume(15);
+    TEST_ASSERT_EQUAL_UINT8(15, driver.last_vol);
+
+    driver.setVolume(AUDIO_VOLUME_MAX);
+    TEST_ASSERT_EQUAL_UINT8(AUDIO_VOLUME_MAX, driver.last_vol);
+    TEST_ASSERT_EQUAL_UINT8(30, driver.last_vol);
+}
+
+// Test: Driver contract — it trusts AudioTask to clamp, so out-of-range values
+// are NOT re-clamped by the driver itself. This test documents the boundary:
+// if a caller bypasses AudioTask's clamp, the driver receives the raw value.
+void test_volume_clamp_contract_boundary() {
+    AudioDriverStub driver;
+
+    // Out-of-range values: driver receives them as-is (no re-clamp).
+    // AudioTask is responsible for clamping before calling setVolume().
+    driver.setVolume(31);
+    TEST_ASSERT_EQUAL_UINT8(31, driver.last_vol);
+
+    driver.setVolume(100);
+    TEST_ASSERT_EQUAL_UINT8(100, driver.last_vol);
+
+    driver.setVolume(255);
+    TEST_ASSERT_EQUAL_UINT8(255, driver.last_vol);
+}
+
 void setUp(void) {
     // Set up before each test
 }
@@ -246,6 +282,8 @@ int main(int argc, char** argv) {
     RUN_TEST(test_capability_bits_defined);
     RUN_TEST(test_catalog_struct_layout);
     RUN_TEST(test_mixed_driver_capabilities);
+    RUN_TEST(test_volume_clamp_contract_valid_range);
+    RUN_TEST(test_volume_clamp_contract_boundary);
 
     return UNITY_END();
 }
