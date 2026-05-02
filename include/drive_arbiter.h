@@ -30,10 +30,11 @@ enum class DriveSource : uint8_t {
 
 // Final drive output for this tick
 struct DriveOutput {
-    int16_t speed;           // -speedLimitMax .. +speedLimitMax
-    int16_t steer;           // -speedLimitMax .. +speedLimitMax
-    bool failsafeActive;     // true if any failsafe layer is currently active
-    DriveSource activeSource;  // which source provided the current output (RC or WEB_API)
+    int16_t speed;              // -speedLimitMax .. +speedLimitMax
+    int16_t steer;              // -speedLimitMax .. +speedLimitMax
+    bool failsafeActive;        // true if any failsafe layer is currently active
+    DriveSource activeSource;   // which source provided the current output (RC or WEB_API)
+    uint32_t activeTimestampMs; // submit timestamp of the winning source (for status mirrors)
 };
 
 // Arbiter configuration (read from robotState at each resolve() call)

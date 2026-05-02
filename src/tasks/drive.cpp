@@ -93,6 +93,16 @@ void driveTask(void* pvParameters) {
         };
         DriveOutput driveOut = driveArbiterResolve(cfg, nowMs);
 
+        // Mirror resolved output to robotState for SSE status reporting.
+        // Written here (post-resolve) so the values match what is actually sent
+        // to the hoverboard, not what was last submitted by any one source.
+        taskENTER_CRITICAL(&robotStateMux);
+        robotState.driveSpeed = driveOut.speed;
+        robotState.driveSteer = driveOut.steer;
+        robotState.lastDriveSource = (driveOut.activeSource == DriveSource::RC) ? SRC_SBUS : SRC_WEB_API;
+        robotState.lastDriveCommandMs = driveOut.activeTimestampMs;
+        taskEXIT_CRITICAL(&robotStateMux);
+
         int16_t speed = driveOut.speed;
         int16_t steer = driveOut.steer;
         bool failsafeActive = driveOut.failsafeActive;

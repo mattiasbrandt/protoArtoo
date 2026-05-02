@@ -240,6 +240,43 @@ void test_negative_values() {
     assertDriveOutput(out, -300, -200, false, DriveSource::RC);
 }
 
+void test_active_timestamp_reflects_winner_not_last_submitted() {
+    // RC submits at t=1000, web submits later at t=1100 (web is last submitted).
+    // Web then times out — RC wins arbitration.
+    // activeTimestampMs must reflect RC's timestamp (1000), not web's (1100).
+    driveArbiterSubmit(DriveSource::RC, 300, 0, 1000);
+    driveArbiterSubmit(DriveSource::WEB_API, 500, 0, 1100);
+
+    DriveArbiterConfig cfg = {.speedLimitMax = 600, .webDriveTimeoutMs = 500};
+
+    // Web timed out (age = 1700 - 1100 = 600 > 500ms). RC wins.
+    DriveOutput out = driveArbiterResolve(cfg, 1700);
+    TEST_ASSERT_TRUE(out.failsafeActive);  // WEB_TIMEOUT failsafe active
+    TEST_ASSERT_EQUAL_INT((int)DriveSource::RC, (int)out.activeSource);
+    TEST_ASSERT_EQUAL_UINT32(1000, out.activeTimestampMs);  // RC's timestamp, not web's
+}
+
+void test_active_timestamp_follows_winning_source() {
+    // RC wins — activeTimestampMs must be RC's submit timestamp.
+    driveArbiterSubmit(DriveSource::RC, 300, 0, 2000);
+    driveArbiterSubmit(DriveSource::WEB_API, 500, 0, 1900);  // RC more recent
+
+    DriveArbiterConfig cfg = {.speedLimitMax = 600, .webDriveTimeoutMs = 500};
+    DriveOutput out = driveArbiterResolve(cfg, 2010);
+
+    assertDriveOutput(out, 300, 0, false, DriveSource::RC);
+    TEST_ASSERT_EQUAL_UINT32(2000, out.activeTimestampMs);
+
+    // Now web submits more recently — web wins.
+    driveArbiterReset();
+    driveArbiterSubmit(DriveSource::RC, 300, 0, 3000);
+    driveArbiterSubmit(DriveSource::WEB_API, 500, 0, 3100);  // Web more recent
+
+    DriveOutput out2 = driveArbiterResolve(cfg, 3110);
+    assertDriveOutput(out2, 500, 0, false, DriveSource::WEB_API);
+    TEST_ASSERT_EQUAL_UINT32(3100, out2.activeTimestampMs);
+}
+
 // =============================================================================
 // Test runner
 // =============================================================================
@@ -262,6 +299,8 @@ int main() {
     RUN_TEST(test_web_zero_command);
     RUN_TEST(test_source_priority_at_same_timestamp);
     RUN_TEST(test_negative_values);
+    RUN_TEST(test_active_timestamp_reflects_winner_not_last_submitted);
+    RUN_TEST(test_active_timestamp_follows_winning_source);
 
     return UNITY_END();
 }

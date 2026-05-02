@@ -100,12 +100,6 @@ void driveArbiterSubmit(DriveSource src,
         g_arbiter.webTimeoutEpisodeTriggered = false;
     }
 
-    // Mirror to robotState for status reporting (read by web_server.cpp SSE stream)
-    robotState.driveSpeed = speed;
-    robotState.driveSteer = steer;
-    robotState.lastDriveSource = (src == DriveSource::RC) ? SRC_SBUS : SRC_WEB_API;
-    robotState.lastDriveCommandMs = timestampMs;
-
     taskEXIT_CRITICAL(g_arbiterMux);
 }
 
@@ -117,12 +111,14 @@ DriveOutput driveArbiterResolve(const DriveArbiterConfig& cfg,
             .steer = 0,
             .failsafeActive = true,
             .activeSource = DriveSource::RC,
+            .activeTimestampMs = 0,
         };
     }
 
     int16_t outputSpeed = 0;
     int16_t outputSteer = 0;
     DriveSource activeSource = DriveSource::RC;
+    uint32_t activeTimestampMs = 0;
     bool webExpired = false;
 
     taskENTER_CRITICAL(g_arbiterMux);
@@ -148,16 +144,19 @@ DriveOutput driveArbiterResolve(const DriveArbiterConfig& cfg,
         activeSource = DriveSource::RC;
         outputSpeed = g_arbiter.rcSpeed;
         outputSteer = g_arbiter.rcSteer;
+        activeTimestampMs = g_arbiter.rcTimestampMs;
     } else if (webValid && !webTimedOut) {
         // Web wins: it's valid and more recent than RC
         activeSource = DriveSource::WEB_API;
         outputSpeed = g_arbiter.webSpeed;
         outputSteer = g_arbiter.webSteer;
+        activeTimestampMs = g_arbiter.webTimestampMs;
     } else {
         // No valid source: zero output
         activeSource = DriveSource::RC;
         outputSpeed = 0;
         outputSteer = 0;
+        activeTimestampMs = 0;
     }
 
     // Trigger web timeout failsafe on first expiry (transition)
@@ -199,5 +198,6 @@ DriveOutput driveArbiterResolve(const DriveArbiterConfig& cfg,
         .steer = outputSteer,
         .failsafeActive = failsafeActive,
         .activeSource = activeSource,
+        .activeTimestampMs = activeTimestampMs,
     };
 }
