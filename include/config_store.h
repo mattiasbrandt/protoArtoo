@@ -358,6 +358,13 @@ bool configSave(Preferences& prefs, const ConfigSnapshot& snapshot);
 // Use this before every configSave call to ensure a complete, non-partial snapshot.
 void configSnapshotFromRobotState(ConfigSnapshot* out);
 
+// configApplyToRobotState: Apply all cfg_* fields from snapshot into robotState.
+// Caller MUST hold robotStateMux when called from a multi-task context.
+// (No mutex needed at boot — call from loadConfigToState() before tasks start.)
+// No side effects: caller is responsible for reading pre-state and computing
+// any behavioral transitions (e.g. queueDriveOn, queueDomeOn) around this call.
+void configApplyToRobotState(const ConfigSnapshot& snap);
+
 // configValidate: Validate a scalar field value before writing.
 // Covers int, float, bool, and enum fields only.
 // Complex struct fields (RcBindingConfig, RcTriggerBinding) are validated in API layer.

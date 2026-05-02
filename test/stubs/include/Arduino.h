@@ -45,3 +45,11 @@ extern SerialStub Serial;
 
 // millis() stub — used by failsafe gate and other timing code
 unsigned long millis();
+
+// constrain() — Arduino helper function
+template<typename T>
+inline T constrain(T value, T min_val, T max_val) {
+    if (value < min_val) return min_val;
+    if (value > max_val) return max_val;
+    return value;
+}

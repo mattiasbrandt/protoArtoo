@@ -8,7 +8,7 @@
 // Notes:
 // - This route is the sole web entrypoint for config writes.
 // - Hardware access is not performed here; values are validated, written to
-//   RobotState cfg_* fields under robotStateMux, and persisted via saveConfigToNvs().
+//   RobotState cfg_* fields under robotStateMux, and persisted via configSave().
 // =============================================================================
 
 #include "api_config.h"
@@ -23,13 +23,14 @@
 #include "api_helpers.h"
 #include "audio_task.h"
 #include "config.h"
+#include "config_store.h"
 #include "logging.h"
 #include "robot_state.h"
 #include "servo_component_helpers.h"
 
-static const char* TAG = "WebServer";
+#include <Preferences.h>
 
-extern bool saveConfigToNvs();
+static const char* TAG = "WebServer";
 
 namespace {
 constexpr uint16_t kServoPulseMinUs = 500;
@@ -275,10 +276,10 @@ bool rcMapTryReuseCalibration(const ConfigSnapshot& existing, RcBindingSource so
     }
 
     const RcBindingConfig backboneBindings[] = {
-        existing.rcPwmDriveSpeed, existing.rcPwmDriveSteer, existing.rcPwmDomeSpeed,
-        existing.rcPwmArm1,       existing.rcPwmArm2,       existing.rcPwmSound,
-        existing.rcSbusDriveSpeed, existing.rcSbusDriveSteer, existing.rcSbusDomeSpeed,
-        existing.rcSbusArm1,      existing.rcSbusArm2,      existing.rcSbusSound,
+        existing.rc_pwm_drive_speed, existing.rc_pwm_drive_steer, existing.rc_pwm_dome_speed,
+        existing.rc_pwm_arm1,       existing.rc_pwm_arm2,       existing.rc_pwm_sound,
+        existing.rc_sbus_drive_speed, existing.rc_sbus_drive_steer, existing.rc_sbus_dome_speed,
+        existing.rc_sbus_arm1,      existing.rc_sbus_arm2,      existing.rc_sbus_sound,
     };
     for (size_t i = 0; i < sizeof(backboneBindings) / sizeof(backboneBindings[0]); ++i) {
         const RcBindingConfig& binding = backboneBindings[i];
@@ -294,9 +295,9 @@ bool rcMapTryReuseCalibration(const ConfigSnapshot& existing, RcBindingSource so
     }
 
     const RcTriggerBinding triggerBindings[] = {
-        existing.rcArm1, existing.rcArm2, existing.rcAux1, existing.rcAux2, existing.rcAux3,
-        existing.rcSound, existing.rcOpmode, existing.rcFree0, existing.rcFree1, existing.rcFree2,
-        existing.rcFree3,
+        existing.rc_arm1, existing.rc_arm2, existing.rc_aux1, existing.rc_aux2, existing.rc_aux3,
+        existing.rc_sound, existing.rc_opmode, existing.rc_free0, existing.rc_free1, existing.rc_free2,
+        existing.rc_free3,
     };
     for (size_t i = 0; i < sizeof(triggerBindings) / sizeof(triggerBindings[0]); ++i) {
         const RcTriggerBinding& binding = triggerBindings[i];
@@ -370,7 +371,7 @@ bool rcMapBuildTriggerBinding(const RcMapEntry& entry, const ConfigSnapshot& exi
 
 RcBindingConfig rcMapSelectBackboneForMode(const ConfigSnapshot& snap, const RcBindingConfig& pwm,
                                            const RcBindingConfig& sbus) {
-    if (snap.rcInputMode == RC_INPUT_STANDARD_PWM) {
+    if (snap.rc_input_mode == RC_INPUT_STANDARD_PWM) {
         return rcMapBindingIsMapped(pwm) ? pwm : sbus;
     }
     return rcMapBindingIsMapped(sbus) ? sbus : pwm;
@@ -390,16 +391,16 @@ void rcMapAppendEntry(JsonArray map, RcBindingSource source, uint8_t channel, Ro
 }  // namespace
 bool populateRcMapJson(JsonDocument& doc, const ConfigSnapshot& snap) {
     doc.clear();
-    doc["mode"] = rcModeToString(snap.rcInputMode);
+    doc["mode"] = rcModeToString(snap.rc_input_mode);
 
     JsonArray map = doc["map"].to<JsonArray>();
 
     RcBindingConfig driveSpeed =
-        rcMapSelectBackboneForMode(snap, snap.rcPwmDriveSpeed, snap.rcSbusDriveSpeed);
+        rcMapSelectBackboneForMode(snap, snap.rc_pwm_drive_speed, snap.rc_sbus_drive_speed);
     RcBindingConfig driveSteer =
-        rcMapSelectBackboneForMode(snap, snap.rcPwmDriveSteer, snap.rcSbusDriveSteer);
+        rcMapSelectBackboneForMode(snap, snap.rc_pwm_drive_steer, snap.rc_sbus_drive_steer);
     RcBindingConfig domeSpeed =
-        rcMapSelectBackboneForMode(snap, snap.rcPwmDomeSpeed, snap.rcSbusDomeSpeed);
+        rcMapSelectBackboneForMode(snap, snap.rc_pwm_dome_speed, snap.rc_sbus_dome_speed);
 
     if (rcMapBindingIsMapped(driveSpeed)) {
         rcMapAppendEntry(map, driveSpeed.source, driveSpeed.channel, DRIVE_ACTION_SPEED, nullptr);
@@ -411,9 +412,9 @@ bool populateRcMapJson(JsonDocument& doc, const ConfigSnapshot& snap) {
         rcMapAppendEntry(map, domeSpeed.source, domeSpeed.channel, DOME_ACTION_SPEED, nullptr);
     }
 
-    const RcTriggerBinding namedSlots[] = {snap.rcArm1, snap.rcArm2, snap.rcAux1, snap.rcAux2,
-                                           snap.rcAux3, snap.rcOpmode, snap.rcSound, snap.rcFree0,
-                                           snap.rcFree1, snap.rcFree2, snap.rcFree3};
+    const RcTriggerBinding namedSlots[] = {snap.rc_arm1, snap.rc_arm2, snap.rc_aux1, snap.rc_aux2,
+                                           snap.rc_aux3, snap.rc_opmode, snap.rc_sound, snap.rc_free0,
+                                           snap.rc_free1, snap.rc_free2, snap.rc_free3};
 
     for (size_t i = 0; i < sizeof(namedSlots) / sizeof(namedSlots[0]); ++i) {
         const RcTriggerBinding& binding = namedSlots[i];
@@ -434,24 +435,24 @@ void clearRcMapSlots(ConfigSnapshot* working) {
         return;
     }
 
-    working->rcPwmDriveSpeed = disabledRcBinding();
-    working->rcPwmDriveSteer = disabledRcBinding();
-    working->rcPwmDomeSpeed = disabledRcBinding();
-    working->rcSbusDriveSpeed = disabledRcBinding();
-    working->rcSbusDriveSteer = disabledRcBinding();
-    working->rcSbusDomeSpeed = disabledRcBinding();
+    working->rc_pwm_drive_speed = disabledRcBinding();
+    working->rc_pwm_drive_steer = disabledRcBinding();
+    working->rc_pwm_dome_speed = disabledRcBinding();
+    working->rc_sbus_drive_speed = disabledRcBinding();
+    working->rc_sbus_drive_steer = disabledRcBinding();
+    working->rc_sbus_dome_speed = disabledRcBinding();
 
-    working->rcArm1 = disabledRcTriggerBinding();
-    working->rcArm2 = disabledRcTriggerBinding();
-    working->rcAux1 = disabledRcTriggerBinding();
-    working->rcAux2 = disabledRcTriggerBinding();
-    working->rcAux3 = disabledRcTriggerBinding();
-    working->rcOpmode = disabledRcTriggerBinding();
-    working->rcSound = disabledRcTriggerBinding();
-    working->rcFree0 = disabledRcTriggerBinding();
-    working->rcFree1 = disabledRcTriggerBinding();
-    working->rcFree2 = disabledRcTriggerBinding();
-    working->rcFree3 = disabledRcTriggerBinding();
+    working->rc_arm1 = disabledRcTriggerBinding();
+    working->rc_arm2 = disabledRcTriggerBinding();
+    working->rc_aux1 = disabledRcTriggerBinding();
+    working->rc_aux2 = disabledRcTriggerBinding();
+    working->rc_aux3 = disabledRcTriggerBinding();
+    working->rc_opmode = disabledRcTriggerBinding();
+    working->rc_sound = disabledRcTriggerBinding();
+    working->rc_free0 = disabledRcTriggerBinding();
+    working->rc_free1 = disabledRcTriggerBinding();
+    working->rc_free2 = disabledRcTriggerBinding();
+    working->rc_free3 = disabledRcTriggerBinding();
 }
 
 static bool triggerSlotIsFree(const RcTriggerBinding& binding) {
@@ -493,14 +494,14 @@ bool assignRcMapEntryToSnapshot(const RcMapEntry& entry, const ConfigSnapshot& e
             return false;
         }
         if (entry.action == DRIVE_ACTION_SPEED) {
-            working->rcPwmDriveSpeed = backbone;
-            working->rcSbusDriveSpeed = backbone;
+            working->rc_pwm_drive_speed = backbone;
+            working->rc_sbus_drive_speed = backbone;
         } else if (entry.action == DRIVE_ACTION_STEER) {
-            working->rcPwmDriveSteer = backbone;
-            working->rcSbusDriveSteer = backbone;
+            working->rc_pwm_drive_steer = backbone;
+            working->rc_sbus_drive_steer = backbone;
         } else {
-            working->rcPwmDomeSpeed = backbone;
-            working->rcSbusDomeSpeed = backbone;
+            working->rc_pwm_dome_speed = backbone;
+            working->rc_sbus_dome_speed = backbone;
         }
         return true;
     }
@@ -511,56 +512,56 @@ bool assignRcMapEntryToSnapshot(const RcMapEntry& entry, const ConfigSnapshot& e
     }
 
     if (entry.action == SERVO_ACTION_ARM1_TOGGLE) {
-        if (!triggerSlotIsFree(working->rcArm1)) {
+        if (!triggerSlotIsFree(working->rc_arm1)) {
             snprintf(error, errorSize, "conflict: arm1_toggle mapped more than once");
             return false;
         }
-        working->rcArm1 = trigger;
+        working->rc_arm1 = trigger;
         return true;
     }
     if (entry.action == SERVO_ACTION_ARM2_TOGGLE) {
-        if (!triggerSlotIsFree(working->rcArm2)) {
+        if (!triggerSlotIsFree(working->rc_arm2)) {
             snprintf(error, errorSize, "conflict: arm2_toggle mapped more than once");
             return false;
         }
-        working->rcArm2 = trigger;
+        working->rc_arm2 = trigger;
         return true;
     }
     if (entry.action == SERVO_ACTION_AUX1_TOGGLE) {
-        if (!triggerSlotIsFree(working->rcAux1)) {
+        if (!triggerSlotIsFree(working->rc_aux1)) {
             snprintf(error, errorSize, "conflict: aux1_toggle mapped more than once");
             return false;
         }
-        working->rcAux1 = trigger;
+        working->rc_aux1 = trigger;
         return true;
     }
     if (entry.action == SERVO_ACTION_AUX2_TOGGLE) {
-        if (!triggerSlotIsFree(working->rcAux2)) {
+        if (!triggerSlotIsFree(working->rc_aux2)) {
             snprintf(error, errorSize, "conflict: aux2_toggle mapped more than once");
             return false;
         }
-        working->rcAux2 = trigger;
+        working->rc_aux2 = trigger;
         return true;
     }
     if (entry.action == SERVO_ACTION_AUX3_TOGGLE) {
-        if (!triggerSlotIsFree(working->rcAux3)) {
+        if (!triggerSlotIsFree(working->rc_aux3)) {
             snprintf(error, errorSize, "conflict: aux3_toggle mapped more than once");
             return false;
         }
-        working->rcAux3 = trigger;
+        working->rc_aux3 = trigger;
         return true;
     }
     if (entry.action == SYSTEM_ACTION_OP_MODE) {
-        if (!triggerSlotIsFree(working->rcOpmode)) {
+        if (!triggerSlotIsFree(working->rc_opmode)) {
             snprintf(error, errorSize, "conflict: op_mode mapped more than once");
             return false;
         }
-        working->rcOpmode = trigger;
+        working->rc_opmode = trigger;
         return true;
     }
 
-    RcTriggerBinding* spillSlots[] = {&working->rcSound, &working->rcFree0, &working->rcFree1,
-                                      &working->rcFree2, &working->rcFree3};
+    RcTriggerBinding* spillSlots[] = {&working->rc_sound, &working->rc_free0, &working->rc_free1,
+                                      &working->rc_free2, &working->rc_free3};
     for (size_t i = 0; i < sizeof(spillSlots) / sizeof(spillSlots[0]); ++i) {
         if (triggerSlotIsFree(*spillSlots[i])) {
             *spillSlots[i] = trigger;
@@ -574,103 +575,7 @@ bool assignRcMapEntryToSnapshot(const RcMapEntry& entry, const ConfigSnapshot& e
 
 
 // -----------------------------------------------------------------------------
-// captureConfigSnapshot()
-//
-// Copies all NVS-backed cfg_* fields out of robotState under portMUX.
-// Call this once; pass the result to populateConfigJson().
-// -----------------------------------------------------------------------------
-void captureConfigSnapshot(ConfigSnapshot* out) {
-    if (out == nullptr) {
-        return;
-    }
-    taskENTER_CRITICAL(&robotStateMux);
-    out->speedLimitMax = robotState.cfg_speedLimitMax;
-    out->speedPresetSlow = robotState.cfg_speedPresetSlow;
-    out->speedPresetNormal = robotState.cfg_speedPresetNormal;
-    out->speedPresetTurbo = robotState.cfg_speedPresetTurbo;
-    out->speedPresetActive = normalizeSpeedPresetId((uint8_t)robotState.cfg_speedPresetActive);
-    out->sbusTimeoutMs = robotState.cfg_sbusTimeoutMs;
-    out->webDriveTimeoutMs = robotState.cfg_webDriveTimeoutMs;
-    out->stationary = robotState.cfg_stationary;
-    out->logLevel = robotState.cfg_logLevel;
-    out->rcInputMode = robotState.cfg_rc_input_mode;
-    out->sbusRecvCh2 = robotState.cfg_single_sbus_use_ch2;
-
-    out->enableArm1 = robotState.cfg_enable_arm1;
-    out->enableArm2 = robotState.cfg_enable_arm2;
-    out->enableAux1 = robotState.cfg_enable_aux1;
-    out->enableAux2 = robotState.cfg_enable_aux2;
-    out->enableAux3 = robotState.cfg_enable_aux3;
-    out->enableDome = robotState.cfg_enable_dome;
-    out->enableRcCh1 = robotState.cfg_enable_rc_ch1;
-    out->enableRcCh2 = robotState.cfg_enable_rc_ch2;
-    out->enableRcCh3 = robotState.cfg_enable_rc_ch3;
-    out->enableRcCh4 = robotState.cfg_enable_rc_ch4;
-    out->enableRcCh5 = robotState.cfg_enable_rc_ch5;
-    out->enableRcCh6 = robotState.cfg_enable_rc_ch6;
-    out->enableS1Hoverboard = robotState.cfg_enable_s1_hoverboard;
-    out->enableS2Sound = robotState.cfg_enable_s2_sound;
-    out->enableS3DomeCtrl = robotState.cfg_enable_s3_dome_ctrl;
-
-    out->domeNeutralUs = robotState.cfg_dome_neutral_us;
-    out->domeMinPulseUs = robotState.cfg_dome_min_pulse_us;
-    out->domeMaxPulseUs = robotState.cfg_dome_max_pulse_us;
-    out->domeSpeedLimitPct = robotState.cfg_dome_speed_limit_pct;
-    out->domeRndEnable = robotState.cfg_dome_rnd_enable;
-    out->domeRndSpeedPct = robotState.cfg_dome_rnd_speed_pct;
-    out->domeRndPauseMin = robotState.cfg_dome_rnd_pause_min;
-    out->domeRndPauseMax = robotState.cfg_dome_rnd_pause_max;
-    out->domeRndMoveMs = robotState.cfg_dome_rnd_move_ms;
-    snprintf(out->domeWifiPeerIp, sizeof(out->domeWifiPeerIp), "%s",
-             robotState.cfg_dome_wifi_peer_ip);
-
-    out->arm1Type = robotState.cfg_arm1_type;
-    out->arm2Type = robotState.cfg_arm2_type;
-    out->aux1Type = robotState.cfg_aux1_type;
-    out->aux2Type = robotState.cfg_aux2_type;
-    out->aux3Type = robotState.cfg_aux3_type;
-    out->arm1OpenUs = robotState.cfg_arm1_open_us;
-    out->arm1CloseUs = robotState.cfg_arm1_close_us;
-    out->arm2OpenUs = robotState.cfg_arm2_open_us;
-    out->arm2CloseUs = robotState.cfg_arm2_close_us;
-    out->aux1OpenUs = robotState.cfg_aux1_open_us;
-    out->aux1CloseUs = robotState.cfg_aux1_close_us;
-    out->aux2OpenUs = robotState.cfg_aux2_open_us;
-    out->aux2CloseUs = robotState.cfg_aux2_close_us;
-    out->aux3OpenUs = robotState.cfg_aux3_open_us;
-    out->aux3CloseUs = robotState.cfg_aux3_close_us;
-    out->auxLedPin = robotState.cfg_aux_led_pin;
-    out->auxLedCount = robotState.cfg_aux_led_count;
-
-    out->rcPwmDriveSpeed = robotState.cfg_rc_pwm_drive_speed;
-    out->rcPwmDriveSteer = robotState.cfg_rc_pwm_drive_steer;
-    out->rcPwmDomeSpeed = robotState.cfg_rc_pwm_dome_speed;
-    out->rcPwmArm1 = robotState.cfg_rc_pwm_arm1;
-    out->rcPwmArm2 = robotState.cfg_rc_pwm_arm2;
-    out->rcPwmSound = robotState.cfg_rc_pwm_sound;
-
-    out->rcSbusDriveSpeed = robotState.cfg_rc_sbus_drive_speed;
-    out->rcSbusDriveSteer = robotState.cfg_rc_sbus_drive_steer;
-    out->rcSbusDomeSpeed = robotState.cfg_rc_sbus_dome_speed;
-    out->rcSbusArm1 = robotState.cfg_rc_sbus_arm1;
-    out->rcSbusArm2 = robotState.cfg_rc_sbus_arm2;
-    out->rcSbusSound = robotState.cfg_rc_sbus_sound;
-
-    out->rcArm1 = robotState.cfg_rc_arm1;
-    out->rcArm2 = robotState.cfg_rc_arm2;
-    out->rcAux1 = robotState.cfg_rc_aux1;
-    out->rcAux2 = robotState.cfg_rc_aux2;
-    out->rcAux3 = robotState.cfg_rc_aux3;
-    out->rcSound = robotState.cfg_rc_sound;
-    out->rcOpmode = robotState.cfg_rc_opmode;
-    out->rcFree0 = robotState.cfg_rc_free0;
-    out->rcFree1 = robotState.cfg_rc_free1;
-    out->rcFree2 = robotState.cfg_rc_free2;
-    out->rcFree3 = robotState.cfg_rc_free3;
-    taskEXIT_CRITICAL(&robotStateMux);
-}
-
-// -----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
 // populateConfigJson()
 //
 // Pure function — no global state, no FreeRTOS. Accepts a snapshot produced by
@@ -691,59 +596,59 @@ bool populateConfigJson(JsonDocument& doc, const ConfigSnapshot& snap) {
     drive["stationary"] = snap.stationary;
 
     JsonObject rc = doc["rc"].to<JsonObject>();
-    rc["inputMode"] = rcModeToString(snap.rcInputMode);
+    rc["inputMode"] = rcModeToString(snap.rc_input_mode);
     rc["sbusTimeoutMs"] = snap.sbusTimeoutMs;
 
     JsonObject rcSbus = rc["sbus"].to<JsonObject>();
-    rcSbus["recvCh2"] = snap.sbusRecvCh2;
+    rcSbus["recvCh2"] = snap.single_sbus_use_ch2;
 
     JsonObject components = doc["components"].to<JsonObject>();
-    components["arm1"]["enabled"] = snap.enableArm1;
-    components["arm1"]["type"] = servoCompTypeToString(snap.arm1Type);
-    components["arm2"]["enabled"] = snap.enableArm2;
-    components["arm2"]["type"] = servoCompTypeToString(snap.arm2Type);
-    components["aux1"]["enabled"] = snap.enableAux1;
-    components["aux1"]["type"] = servoCompTypeToString(snap.aux1Type);
-    components["aux2"]["enabled"] = snap.enableAux2;
-    components["aux2"]["type"] = servoCompTypeToString(snap.aux2Type);
-    components["aux3"]["enabled"] = snap.enableAux3;
-    components["aux3"]["type"] = servoCompTypeToString(snap.aux3Type);
-    components["dome"]["enabled"] = snap.enableDome;
-    components["rcCh1"]["enabled"] = snap.enableRcCh1;
-    components["rcCh2"]["enabled"] = snap.enableRcCh2;
-    components["rcCh3"]["enabled"] = snap.enableRcCh3;
-    components["rcCh4"]["enabled"] = snap.enableRcCh4;
-    components["rcCh5"]["enabled"] = snap.enableRcCh5;
-    components["rcCh6"]["enabled"] = snap.enableRcCh6;
-    components["s1Hoverboard"]["enabled"] = snap.enableS1Hoverboard;
-    components["s2Sound"]["enabled"] = snap.enableS2Sound;
-    components["s3DomeCtrl"]["enabled"] = snap.enableS3DomeCtrl;
+    components["arm1"]["enabled"] = snap.enable_arm1;
+    components["arm1"]["type"] = servoCompTypeToString(snap.arm1_type);
+    components["arm2"]["enabled"] = snap.enable_arm2;
+    components["arm2"]["type"] = servoCompTypeToString(snap.arm2_type);
+    components["aux1"]["enabled"] = snap.enable_aux1;
+    components["aux1"]["type"] = servoCompTypeToString(snap.aux1_type);
+    components["aux2"]["enabled"] = snap.enable_aux2;
+    components["aux2"]["type"] = servoCompTypeToString(snap.aux2_type);
+    components["aux3"]["enabled"] = snap.enable_aux3;
+    components["aux3"]["type"] = servoCompTypeToString(snap.aux3_type);
+    components["dome"]["enabled"] = snap.enable_dome;
+    components["rcCh1"]["enabled"] = snap.enable_rc_ch1;
+    components["rcCh2"]["enabled"] = snap.enable_rc_ch2;
+    components["rcCh3"]["enabled"] = snap.enable_rc_ch3;
+    components["rcCh4"]["enabled"] = snap.enable_rc_ch4;
+    components["rcCh5"]["enabled"] = snap.enable_rc_ch5;
+    components["rcCh6"]["enabled"] = snap.enable_rc_ch6;
+    components["s1Hoverboard"]["enabled"] = snap.enable_s1_hoverboard;
+    components["s2Sound"]["enabled"] = snap.enable_s2_sound;
+    components["s3DomeCtrl"]["enabled"] = snap.enable_s3_dome_ctrl;
 
     // Legacy top-level calibration fields consumed by data/servo.js
-    doc["arm1OpenUs"] = snap.arm1OpenUs;
-    doc["arm1CloseUs"] = snap.arm1CloseUs;
-    doc["arm2OpenUs"] = snap.arm2OpenUs;
-    doc["arm2CloseUs"] = snap.arm2CloseUs;
-    doc["aux1OpenUs"] = snap.aux1OpenUs;
-    doc["aux1CloseUs"] = snap.aux1CloseUs;
-    doc["aux2OpenUs"] = snap.aux2OpenUs;
-    doc["aux2CloseUs"] = snap.aux2CloseUs;
-    doc["aux3OpenUs"] = snap.aux3OpenUs;
-    doc["aux3CloseUs"] = snap.aux3CloseUs;
-    doc["aux_led_pin"] = snap.auxLedPin;
-    doc["aux_led_count"] = snap.auxLedCount;
+    doc["arm1OpenUs"] = snap.arm1_open_us;
+    doc["arm1CloseUs"] = snap.arm1_close_us;
+    doc["arm2OpenUs"] = snap.arm2_open_us;
+    doc["arm2CloseUs"] = snap.arm2_close_us;
+    doc["aux1OpenUs"] = snap.aux1_open_us;
+    doc["aux1CloseUs"] = snap.aux1_close_us;
+    doc["aux2OpenUs"] = snap.aux2_open_us;
+    doc["aux2CloseUs"] = snap.aux2_close_us;
+    doc["aux3OpenUs"] = snap.aux3_open_us;
+    doc["aux3CloseUs"] = snap.aux3_close_us;
+    doc["aux_led_pin"] = snap.aux_led_pin;
+    doc["aux_led_count"] = snap.aux_led_count;
 
     JsonObject dome = doc["dome"].to<JsonObject>();
-    dome["neutralUs"] = snap.domeNeutralUs;
-    dome["minPulseUs"] = snap.domeMinPulseUs;
-    dome["maxPulseUs"] = snap.domeMaxPulseUs;
-    dome["speedLimitPct"] = snap.domeSpeedLimitPct;
-    dome["rndEnable"] = snap.domeRndEnable;
-    dome["rndSpeedPct"] = snap.domeRndSpeedPct;
-    dome["rndPauseMin"] = snap.domeRndPauseMin;
-    dome["rndPauseMax"] = snap.domeRndPauseMax;
-    dome["rndMoveMs"] = snap.domeRndMoveMs;
-    dome["wifiPeerIp"] = snap.domeWifiPeerIp;
+    dome["neutralUs"] = snap.dome_neutral_us;
+    dome["minPulseUs"] = snap.dome_min_pulse_us;
+    dome["maxPulseUs"] = snap.dome_max_pulse_us;
+    dome["speedLimitPct"] = snap.dome_speed_limit_pct;
+    dome["rndEnable"] = snap.dome_rnd_enable;
+    dome["rndSpeedPct"] = snap.dome_rnd_speed_pct;
+    dome["rndPauseMin"] = snap.dome_rnd_pause_min;
+    dome["rndPauseMax"] = snap.dome_rnd_pause_max;
+    dome["rndMoveMs"] = snap.dome_rnd_move_ms;
+    dome["wifiPeerIp"] = snap.dome_wifi_peer_ip;
 
     JsonObject system = doc["system"].to<JsonObject>();
     system["logLevel"] = snap.logLevel;
@@ -754,7 +659,9 @@ bool populateConfigJson(JsonDocument& doc, const ConfigSnapshot& snap) {
 void registerConfigRoutes(AsyncWebServer& server) {
     server.on("/api/rc/map", HTTP_GET, [](AsyncWebServerRequest* req) {
         ConfigSnapshot snap;
-        captureConfigSnapshot(&snap);
+        taskENTER_CRITICAL(&robotStateMux);
+        configSnapshotFromRobotState(&snap);
+        taskEXIT_CRITICAL(&robotStateMux);
         JsonDocument doc;
         if (!populateRcMapJson(doc, snap)) {
             req->send(500, "application/json",
@@ -888,7 +795,9 @@ void registerConfigRoutes(AsyncWebServer& server) {
         }
 
         ConfigSnapshot working;
-        captureConfigSnapshot(&working);
+        taskENTER_CRITICAL(&robotStateMux);
+        configSnapshotFromRobotState(&working);
+        taskEXIT_CRITICAL(&robotStateMux);
         ConfigSnapshot existing = working;
         clearRcMapSlots(&working);
 
@@ -902,37 +811,37 @@ void registerConfigRoutes(AsyncWebServer& server) {
         }
 
         taskENTER_CRITICAL(&robotStateMux);
-        robotState.cfg_rc_pwm_drive_speed = working.rcPwmDriveSpeed;
-        robotState.cfg_rc_pwm_drive_steer = working.rcPwmDriveSteer;
-        robotState.cfg_rc_pwm_dome_speed = working.rcPwmDomeSpeed;
-        robotState.cfg_rc_sbus_drive_speed = working.rcSbusDriveSpeed;
-        robotState.cfg_rc_sbus_drive_steer = working.rcSbusDriveSteer;
-        robotState.cfg_rc_sbus_dome_speed = working.rcSbusDomeSpeed;
-        robotState.cfg_rc_arm1 = working.rcArm1;
-        robotState.cfg_rc_arm2 = working.rcArm2;
-        robotState.cfg_rc_aux1 = working.rcAux1;
-        robotState.cfg_rc_aux2 = working.rcAux2;
-        robotState.cfg_rc_aux3 = working.rcAux3;
-        robotState.cfg_rc_sound = working.rcSound;
-        robotState.cfg_rc_opmode = working.rcOpmode;
-        robotState.cfg_rc_free0 = working.rcFree0;
-        robotState.cfg_rc_free1 = working.rcFree1;
-        robotState.cfg_rc_free2 = working.rcFree2;
-        robotState.cfg_rc_free3 = working.rcFree3;
+        configApplyToRobotState(working);
         taskEXIT_CRITICAL(&robotStateMux);
 
-        if (!saveConfigToNvs()) {
+        ConfigSnapshot snap;
+        taskENTER_CRITICAL(&robotStateMux);
+        configSnapshotFromRobotState(&snap);
+        taskEXIT_CRITICAL(&robotStateMux);
+
+        Preferences prefs;
+        if (!prefs.begin(NVS_NAMESPACE, false)) {
             req->send(500, "application/json",
                       "{\"ok\":false,\"error\":\"failed to persist config\"}");
             return;
         }
+
+        if (!configSave(prefs, snap)) {
+            prefs.end();
+            req->send(500, "application/json",
+                      "{\"ok\":false,\"error\":\"failed to persist config\"}");
+            return;
+        }
+        prefs.end();
 
         req->send(200, "application/json", "{\"ok\":true}");
     });
 
     server.on("/api/config", HTTP_GET, [](AsyncWebServerRequest* req) {
         ConfigSnapshot snap;
-        captureConfigSnapshot(&snap);
+        taskENTER_CRITICAL(&robotStateMux);
+        configSnapshotFromRobotState(&snap);
+        taskEXIT_CRITICAL(&robotStateMux);
         JsonDocument doc;
         if (!populateConfigJson(doc, snap)) {
             req->send(500, "application/json",
@@ -951,7 +860,9 @@ void registerConfigRoutes(AsyncWebServer& server) {
 
     server.on("/api/config", HTTP_POST, [](AsyncWebServerRequest* req) {
         ConfigSnapshot working;
-        captureConfigSnapshot(&working);
+        taskENTER_CRITICAL(&robotStateMux);
+        configSnapshotFromRobotState(&working);
+        taskEXIT_CRITICAL(&robotStateMux);
         bool changed = false;
         bool speedLimitMaxProvided = false;
         bool speedPresetValuesProvided = false;
@@ -1087,13 +998,13 @@ void registerConfigRoutes(AsyncWebServer& server) {
                           "single_sbus, or dual_sbus\"}");
                 return;
             }
-            working.rcInputMode = mode;
+            working.rc_input_mode = mode;
             PA_LOG_INFO(TAG, "[CFG] rcInputMode updated to %s", rcModeToString(mode));
             changed = true;
         }
 
         if (parseBoolParam(req, "sbusRecvCh2", &boolValue)) {
-            working.sbusRecvCh2 = boolValue;
+            working.single_sbus_use_ch2 = boolValue;
             changed = true;
         } else if (req->hasParam("sbusRecvCh2", true)) {
             req->send(400, "application/json",
@@ -1103,7 +1014,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
 
         uint8_t auxLedPin = 0;
         if (parseUint8Param(req, "aux_led_pin", AUX_LED_PIN_DISABLED, AUX_LED_PIN_MAX, &auxLedPin)) {
-            working.auxLedPin = auxLedPin;
+            working.aux_led_pin = auxLedPin;
             changed = true;
         } else if (req->hasParam("aux_led_pin", true)) {
             req->send(400, "application/json",
@@ -1114,7 +1025,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
         uint8_t auxLedCount = 0;
         if (parseUint8Param(req, "aux_led_count", AUX_LED_COUNT_DEFAULT, AUX_LED_COUNT_MAX,
                             &auxLedCount)) {
-            working.auxLedCount = auxLedCount;
+            working.aux_led_count = auxLedCount;
             changed = true;
         } else if (req->hasParam("aux_led_count", true)) {
             req->send(400, "application/json",
@@ -1153,7 +1064,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
             JsonVariantConst rcSbus = rcBody["sbus"];
             if (!rcSbus.isNull()) {
                 if (rcSbus["recvCh2"].is<bool>()) {
-                    working.sbusRecvCh2 = rcSbus["recvCh2"].as<bool>();
+                    working.single_sbus_use_ch2 = rcSbus["recvCh2"].as<bool>();
                     changed = true;
                 } else if (!rcSbus["recvCh2"].isNull()) {
                     req->send(400, "application/json",
@@ -1169,7 +1080,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
                               "{\"ok\":false,\"error\":\"aux_led_pin must be 0..3\"}");
                     return;
                 }
-                working.auxLedPin = parsed;
+                working.aux_led_pin = parsed;
                 changed = true;
             } else if (!bodyDoc["aux_led_pin"].isNull()) {
                 req->send(400, "application/json",
@@ -1184,7 +1095,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
                               "{\"ok\":false,\"error\":\"aux_led_count must be 1..255\"}");
                     return;
                 }
-                working.auxLedCount = parsed;
+                working.aux_led_count = parsed;
                 changed = true;
             } else if (!bodyDoc["aux_led_count"].isNull()) {
                 req->send(400, "application/json",
@@ -1196,8 +1107,8 @@ void registerConfigRoutes(AsyncWebServer& server) {
             if (!domeCfg.isNull()) {
                 if (domeCfg["wifiPeerIp"].is<const char*>()) {
                     if (!parseDomeWifiPeerIp(domeCfg["wifiPeerIp"].as<const char*>(),
-                                            working.domeWifiPeerIp,
-                                            sizeof(working.domeWifiPeerIp))) {
+                                            working.dome_wifi_peer_ip,
+                                            sizeof(working.dome_wifi_peer_ip))) {
                         req->send(400, "application/json",
                                   "{\"ok\":false,\"error\":\"dome.wifiPeerIp must be empty or a valid IPv4 address\"}");
                         return;
@@ -1217,21 +1128,21 @@ void registerConfigRoutes(AsyncWebServer& server) {
         };
 
         BoolCfgField boolFields[] = {
-            {"enableArm1", &working.enableArm1},
-            {"enableArm2", &working.enableArm2},
-            {"enableAux1", &working.enableAux1},
-            {"enableAux2", &working.enableAux2},
-            {"enableAux3", &working.enableAux3},
-            {"enableDome", &working.enableDome},
-            {"enableRcCh1", &working.enableRcCh1},
-            {"enableRcCh2", &working.enableRcCh2},
-            {"enableRcCh3", &working.enableRcCh3},
-            {"enableRcCh4", &working.enableRcCh4},
-            {"enableRcCh5", &working.enableRcCh5},
-            {"enableRcCh6", &working.enableRcCh6},
-            {"enableS1Hoverboard", &working.enableS1Hoverboard},
-            {"enableS2Sound", &working.enableS2Sound},
-            {"enableS3DomeCtrl", &working.enableS3DomeCtrl},
+            {"enableArm1", &working.enable_arm1},
+            {"enableArm2", &working.enable_arm2},
+            {"enableAux1", &working.enable_aux1},
+            {"enableAux2", &working.enable_aux2},
+            {"enableAux3", &working.enable_aux3},
+            {"enableDome", &working.enable_dome},
+            {"enableRcCh1", &working.enable_rc_ch1},
+            {"enableRcCh2", &working.enable_rc_ch2},
+            {"enableRcCh3", &working.enable_rc_ch3},
+            {"enableRcCh4", &working.enable_rc_ch4},
+            {"enableRcCh5", &working.enable_rc_ch5},
+            {"enableRcCh6", &working.enable_rc_ch6},
+            {"enableS1Hoverboard", &working.enable_s1_hoverboard},
+            {"enableS2Sound", &working.enable_s2_sound},
+            {"enableS3DomeCtrl", &working.enable_s3_dome_ctrl},
         };
 
         for (size_t i = 0; i < sizeof(boolFields) / sizeof(boolFields[0]); ++i) {
@@ -1255,7 +1166,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
 
         uint16_t domeU16;
         if (parseUint16Param(req, "domeNeutralUs", 1000, 2000, &domeU16)) {
-            working.domeNeutralUs = domeU16;
+            working.dome_neutral_us = domeU16;
             changed = true;
         } else if (req->hasParam("domeNeutralUs", true)) {
             req->send(400, "application/json",
@@ -1264,7 +1175,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
         }
 
         if (parseUint16Param(req, "domeMinPulseUs", 1000, 2000, &domeU16)) {
-            working.domeMinPulseUs = domeU16;
+            working.dome_min_pulse_us = domeU16;
             changed = true;
         } else if (req->hasParam("domeMinPulseUs", true)) {
             req->send(400, "application/json",
@@ -1273,7 +1184,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
         }
 
         if (parseUint16Param(req, "domeMaxPulseUs", 1000, 2000, &domeU16)) {
-            working.domeMaxPulseUs = domeU16;
+            working.dome_max_pulse_us = domeU16;
             changed = true;
         } else if (req->hasParam("domeMaxPulseUs", true)) {
             req->send(400, "application/json",
@@ -1283,7 +1194,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
 
         uint8_t domePct;
         if (parseUint8Param(req, "domeSpeedLimitPct", 0, 100, &domePct)) {
-            working.domeSpeedLimitPct = domePct;
+            working.dome_speed_limit_pct = domePct;
             changed = true;
         } else if (req->hasParam("domeSpeedLimitPct", true)) {
             req->send(400, "application/json",
@@ -1293,8 +1204,8 @@ void registerConfigRoutes(AsyncWebServer& server) {
 
         if (req->hasParam("domeWifiPeerIp", true)) {
             const char* rawPeerIp = req->getParam("domeWifiPeerIp", true)->value().c_str();
-            if (!parseDomeWifiPeerIp(rawPeerIp, working.domeWifiPeerIp,
-                                     sizeof(working.domeWifiPeerIp))) {
+            if (!parseDomeWifiPeerIp(rawPeerIp, working.dome_wifi_peer_ip,
+                                     sizeof(working.dome_wifi_peer_ip))) {
                 req->send(400, "application/json",
                           "{\"ok\":false,\"error\":\"domeWifiPeerIp must be empty or a valid IPv4 address\"}");
                 return;
@@ -1304,7 +1215,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
 
         bool domeRndEnableBool;
         if (parseBoolParam(req, "domeRndEnable", &domeRndEnableBool)) {
-            working.domeRndEnable = domeRndEnableBool;
+            working.dome_rnd_enable = domeRndEnableBool;
             PA_LOG_INFO(TAG, "[CFG] domeRndEnable updated to %s", domeRndEnableBool ? "true" : "false");
             changed = true;
         } else if (req->hasParam("domeRndEnable", true)) {
@@ -1315,7 +1226,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
 
         uint8_t domeRndSpeedPct;
         if (parseUint8Param(req, "domeRndSpeedPct", 5, 100, &domeRndSpeedPct)) {
-            working.domeRndSpeedPct = domeRndSpeedPct;
+            working.dome_rnd_speed_pct = domeRndSpeedPct;
             PA_LOG_INFO(TAG, "[CFG] domeRndSpeedPct updated to %u", (unsigned)domeRndSpeedPct);
             changed = true;
         } else if (req->hasParam("domeRndSpeedPct", true)) {
@@ -1326,7 +1237,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
 
         uint8_t domeRndPauseMin;
         if (parseUint8Param(req, "domeRndPauseMin", 1, 120, &domeRndPauseMin)) {
-            working.domeRndPauseMin = domeRndPauseMin;
+            working.dome_rnd_pause_min = domeRndPauseMin;
             PA_LOG_INFO(TAG, "[CFG] domeRndPauseMin updated to %u", (unsigned)domeRndPauseMin);
             changed = true;
         } else if (req->hasParam("domeRndPauseMin", true)) {
@@ -1337,7 +1248,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
 
         uint8_t domeRndPauseMax;
         if (parseUint8Param(req, "domeRndPauseMax", 1, 120, &domeRndPauseMax)) {
-            working.domeRndPauseMax = domeRndPauseMax;
+            working.dome_rnd_pause_max = domeRndPauseMax;
             PA_LOG_INFO(TAG, "[CFG] domeRndPauseMax updated to %u", (unsigned)domeRndPauseMax);
             changed = true;
         } else if (req->hasParam("domeRndPauseMax", true)) {
@@ -1348,7 +1259,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
 
         uint16_t domeRndMoveMs;
         if (parseUint16Param(req, "domeRndMoveMs", 500, 10000, &domeRndMoveMs)) {
-            working.domeRndMoveMs = domeRndMoveMs;
+            working.dome_rnd_move_ms = domeRndMoveMs;
             PA_LOG_INFO(TAG, "[CFG] domeRndMoveMs updated to %u", (unsigned)domeRndMoveMs);
             changed = true;
         } else if (req->hasParam("domeRndMoveMs", true)) {
@@ -1363,16 +1274,16 @@ void registerConfigRoutes(AsyncWebServer& server) {
         };
 
         ServoCalField servoCalFields[] = {
-            {"arm1OpenUs", &working.arm1OpenUs},
-            {"arm1CloseUs", &working.arm1CloseUs},
-            {"arm2OpenUs", &working.arm2OpenUs},
-            {"arm2CloseUs", &working.arm2CloseUs},
-            {"aux1OpenUs", &working.aux1OpenUs},
-            {"aux1CloseUs", &working.aux1CloseUs},
-            {"aux2OpenUs", &working.aux2OpenUs},
-            {"aux2CloseUs", &working.aux2CloseUs},
-            {"aux3OpenUs", &working.aux3OpenUs},
-            {"aux3CloseUs", &working.aux3CloseUs},
+            {"arm1OpenUs", &working.arm1_open_us},
+            {"arm1CloseUs", &working.arm1_close_us},
+            {"arm2OpenUs", &working.arm2_open_us},
+            {"arm2CloseUs", &working.arm2_close_us},
+            {"aux1OpenUs", &working.aux1_open_us},
+            {"aux1CloseUs", &working.aux1_close_us},
+            {"aux2OpenUs", &working.aux2_open_us},
+            {"aux2CloseUs", &working.aux2_close_us},
+            {"aux3OpenUs", &working.aux3_open_us},
+            {"aux3CloseUs", &working.aux3_close_us},
         };
 
         for (size_t i = 0; i < sizeof(servoCalFields) / sizeof(servoCalFields[0]); ++i) {
@@ -1399,9 +1310,9 @@ void registerConfigRoutes(AsyncWebServer& server) {
         };
 
         ServoTypeField servoTypeFields[] = {
-            {"arm1Type", &working.arm1Type}, {"arm2Type", &working.arm2Type},
-            {"aux1Type", &working.aux1Type}, {"aux2Type", &working.aux2Type},
-            {"aux3Type", &working.aux3Type},
+            {"arm1Type", &working.arm1_type}, {"arm2Type", &working.arm2_type},
+            {"aux1Type", &working.aux1_type}, {"aux2Type", &working.aux2_type},
+            {"aux3Type", &working.aux3_type},
         };
 
         for (size_t i = 0; i < sizeof(servoTypeFields) / sizeof(servoTypeFields[0]); ++i) {
@@ -1446,90 +1357,10 @@ void registerConfigRoutes(AsyncWebServer& server) {
         taskENTER_CRITICAL(&robotStateMux);
         wasStationary = robotState.stationary;
         wasDomeEnabled = robotState.cfg_enable_dome;
-        robotState.cfg_speedLimitMax = working.speedLimitMax;
-        robotState.cfg_speedPresetSlow = working.speedPresetSlow;
-        robotState.cfg_speedPresetNormal = working.speedPresetNormal;
-        robotState.cfg_speedPresetTurbo = working.speedPresetTurbo;
+        // Apply working snapshot but preserve speedPresetActive to the special activePresetAfter value
+        configApplyToRobotState(working);
         robotState.cfg_speedPresetActive = activePresetAfter;
-        robotState.cfg_sbusTimeoutMs = working.sbusTimeoutMs;
-        robotState.cfg_webDriveTimeoutMs = working.webDriveTimeoutMs;
-        robotState.cfg_stationary = working.stationary;
-        robotState.stationary = working.stationary;
-        robotState.cfg_logLevel = working.logLevel;
-        robotState.cfg_rc_input_mode = working.rcInputMode;
-        robotState.cfg_single_sbus_use_ch2 = working.sbusRecvCh2;
-        robotState.cfg_aux_led_pin = working.auxLedPin;
-        robotState.cfg_aux_led_count = working.auxLedCount;
-
-        robotState.cfg_enable_arm1 = working.enableArm1;
-        robotState.cfg_enable_arm2 = working.enableArm2;
-        robotState.cfg_enable_aux1 = working.enableAux1;
-        robotState.cfg_enable_aux2 = working.enableAux2;
-        robotState.cfg_enable_aux3 = working.enableAux3;
-        robotState.cfg_enable_dome = working.enableDome;
-        robotState.cfg_enable_rc_ch1 = working.enableRcCh1;
-        robotState.cfg_enable_rc_ch2 = working.enableRcCh2;
-        robotState.cfg_enable_rc_ch3 = working.enableRcCh3;
-        robotState.cfg_enable_rc_ch4 = working.enableRcCh4;
-        robotState.cfg_enable_rc_ch5 = working.enableRcCh5;
-        robotState.cfg_enable_rc_ch6 = working.enableRcCh6;
-        robotState.cfg_enable_s1_hoverboard = working.enableS1Hoverboard;
-        robotState.cfg_enable_s2_sound = working.enableS2Sound;
-        robotState.cfg_enable_s3_dome_ctrl = working.enableS3DomeCtrl;
-
-        robotState.cfg_dome_neutral_us = working.domeNeutralUs;
-        robotState.cfg_dome_min_pulse_us = working.domeMinPulseUs;
-        robotState.cfg_dome_max_pulse_us = working.domeMaxPulseUs;
-        robotState.cfg_dome_speed_limit_pct = working.domeSpeedLimitPct;
-        robotState.cfg_dome_rnd_enable = working.domeRndEnable;
-        robotState.cfg_dome_rnd_speed_pct = working.domeRndSpeedPct;
-        robotState.cfg_dome_rnd_pause_min = working.domeRndPauseMin;
-        robotState.cfg_dome_rnd_pause_max = working.domeRndPauseMax;
-        robotState.cfg_dome_rnd_move_ms = working.domeRndMoveMs;
-        snprintf(robotState.cfg_dome_wifi_peer_ip, sizeof(robotState.cfg_dome_wifi_peer_ip), "%s",
-                 working.domeWifiPeerIp);
-
-        robotState.cfg_arm1_type = working.arm1Type;
-        robotState.cfg_arm2_type = working.arm2Type;
-        robotState.cfg_aux1_type = working.aux1Type;
-        robotState.cfg_aux2_type = working.aux2Type;
-        robotState.cfg_aux3_type = working.aux3Type;
-        robotState.cfg_arm1_open_us = working.arm1OpenUs;
-        robotState.cfg_arm1_close_us = working.arm1CloseUs;
-        robotState.cfg_arm2_open_us = working.arm2OpenUs;
-        robotState.cfg_arm2_close_us = working.arm2CloseUs;
-        robotState.cfg_aux1_open_us = working.aux1OpenUs;
-        robotState.cfg_aux1_close_us = working.aux1CloseUs;
-        robotState.cfg_aux2_open_us = working.aux2OpenUs;
-        robotState.cfg_aux2_close_us = working.aux2CloseUs;
-        robotState.cfg_aux3_open_us = working.aux3OpenUs;
-        robotState.cfg_aux3_close_us = working.aux3CloseUs;
-
-        robotState.cfg_rc_pwm_drive_speed = working.rcPwmDriveSpeed;
-        robotState.cfg_rc_pwm_drive_steer = working.rcPwmDriveSteer;
-        robotState.cfg_rc_pwm_dome_speed = working.rcPwmDomeSpeed;
-        robotState.cfg_rc_pwm_arm1 = working.rcPwmArm1;
-        robotState.cfg_rc_pwm_arm2 = working.rcPwmArm2;
-        robotState.cfg_rc_pwm_sound = working.rcPwmSound;
-
-        robotState.cfg_rc_sbus_drive_speed = working.rcSbusDriveSpeed;
-        robotState.cfg_rc_sbus_drive_steer = working.rcSbusDriveSteer;
-        robotState.cfg_rc_sbus_dome_speed = working.rcSbusDomeSpeed;
-        robotState.cfg_rc_sbus_arm1 = working.rcSbusArm1;
-        robotState.cfg_rc_sbus_arm2 = working.rcSbusArm2;
-        robotState.cfg_rc_sbus_sound = working.rcSbusSound;
-
-        robotState.cfg_rc_arm1 = working.rcArm1;
-        robotState.cfg_rc_arm2 = working.rcArm2;
-        robotState.cfg_rc_aux1 = working.rcAux1;
-        robotState.cfg_rc_aux2 = working.rcAux2;
-        robotState.cfg_rc_aux3 = working.rcAux3;
-        robotState.cfg_rc_sound = working.rcSound;
-        robotState.cfg_rc_opmode = working.rcOpmode;
-        robotState.cfg_rc_free0 = working.rcFree0;
-        robotState.cfg_rc_free1 = working.rcFree1;
-        robotState.cfg_rc_free2 = working.rcFree2;
-        robotState.cfg_rc_free3 = working.rcFree3;
+        robotState.stationary = working.stationary;  // sync both fields
         if (stationaryProvided && wasStationary && !robotState.stationary) {
             queueDriveOn = true;
         }
@@ -1545,14 +1376,25 @@ void registerConfigRoutes(AsyncWebServer& server) {
             audioQueuePlaySlot(AUDIO_SLOT_SYS_DOME_ON, SRC_INTERNAL);
         }
 
-        if (!saveConfigToNvs()) {
+        ConfigSnapshot snap;
+        taskENTER_CRITICAL(&robotStateMux);
+        configSnapshotFromRobotState(&snap);
+        taskEXIT_CRITICAL(&robotStateMux);
+
+        Preferences prefs;
+        if (!prefs.begin(NVS_NAMESPACE, false)) {
             req->send(500, "application/json",
                       "{\"ok\":false,\"error\":\"failed to persist config\"}");
             return;
         }
 
-        ConfigSnapshot snap;
-        captureConfigSnapshot(&snap);
+        if (!configSave(prefs, snap)) {
+            prefs.end();
+            req->send(500, "application/json",
+                      "{\"ok\":false,\"error\":\"failed to persist config\"}");
+            return;
+        }
+        prefs.end();
         JsonDocument doc;
         if (!populateConfigJson(doc, snap)) {
             req->send(500, "application/json",

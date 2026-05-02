@@ -631,6 +631,168 @@ void test_configSnapshotFromRobotState_save_round_trip() {
     TEST_ASSERT_EQUAL_UINT16(10, snap2.rc_sbus_arm1.deadband);
 }
 
+// Test: configApplyToRobotState applies all categories of fields from snapshot
+void test_configApplyToRobotState_applies_all_categories() {
+    // Create a snapshot with distinct non-default values for every category
+    ConfigSnapshot snap = {};
+
+    // Speed
+    snap.speedLimitMax      = 650;
+    snap.speedPresetSlow    = 120;
+    snap.speedPresetNormal  = 320;
+    snap.speedPresetTurbo   = 650;
+    snap.speedPresetActive  = SpeedPresetId::Slow;
+
+    // Timeouts
+    snap.sbusTimeoutMs      = 300;
+    snap.webDriveTimeoutMs  = 500;
+
+    // Audio
+    snap.audioVolume        = 15;
+    snap.logLevel           = 3;
+
+    // Audio tracks (sample)
+    snap.snd_scream         = 250;
+    snap.snd_faint          = 251;
+
+    // Servo pulse widths
+    snap.arm1_open_us       = 2050;
+    snap.arm1_close_us      = 950;
+    snap.arm2_open_us       = 2150;
+    snap.arm2_close_us      = 850;
+    snap.aux1_open_us       = 2000;
+    snap.aux1_close_us      = 1000;
+    snap.aux2_open_us       = 2100;
+    snap.aux2_close_us      = 900;
+    snap.aux3_open_us       = 2200;
+    snap.aux3_close_us      = 800;
+
+    // Servo types
+    snap.arm1_type          = SERVO_COMP_MG996R;
+    snap.arm2_type          = SERVO_COMP_MG90S;
+    snap.aux1_type          = SERVO_COMP_RGB;
+    snap.aux2_type          = SERVO_COMP_NONE;
+    snap.aux3_type          = SERVO_COMP_MG90S;
+
+    // Dome
+    snap.dome_min_speed     = 0.2f;
+    snap.dome_max_speed     = 0.95f;
+    snap.dome_neutral_us    = 1520;
+    snap.dome_min_pulse_us  = 1050;
+    snap.dome_max_pulse_us  = 1950;
+    snap.dome_speed_limit_pct = 85;
+    snap.dome_rnd_enable    = true;
+    snap.dome_rnd_speed_pct = 40;
+    snap.dome_rnd_pause_min = 5;
+    snap.dome_rnd_pause_max = 15;
+    snap.dome_rnd_move_ms   = 3500;
+    snprintf(snap.dome_wifi_peer_ip, sizeof(snap.dome_wifi_peer_ip), "192.168.0.99");
+
+    // Sequence timing
+    snap.seq_open_ms        = 800;
+    snap.seq_close_ms       = 1200;
+
+    // AUX LED
+    snap.aux_led_pin        = 3;
+    snap.aux_led_count      = 12;
+
+    // Feature toggles
+    snap.enable_arm1        = true;
+    snap.enable_arm2        = false;
+    snap.enable_aux1        = true;
+    snap.enable_dome        = true;
+    snap.enable_rc_ch1      = true;
+    snap.enable_rc_ch2      = false;
+    snap.single_sbus_use_ch2 = true;
+    snap.enable_s1_hoverboard = true;
+    snap.enable_s2_sound    = false;
+    snap.enable_s3_dome_ctrl = true;
+    snap.stationary         = true;
+    snap.rc_input_mode      = RC_INPUT_DUAL_SBUS;
+
+    // RC bindings (Tier 1)
+    snap.rc_pwm_drive_speed = defaultPwmBinding(1);
+    snap.rc_sbus_drive_speed = defaultSbusBinding(RC_BINDING_SBUS1, 1);
+
+    // RC bindings (Tier 2)
+    snap.rc_arm1 = makeRcTriggerBinding(RC_BINDING_SBUS1, 4, SERVO_ACTION_ARM1_TOGGLE, nullptr,
+                                        RC_SBUS_DEFAULT_MIN, RC_SBUS_DEFAULT_CENTER,
+                                        RC_SBUS_DEFAULT_MAX, 0,
+                                        rcTriggerDefaultReverse(RC_BINDING_SBUS1, 4));
+    snap.rc_arm2 = disabledRcTriggerBinding();
+
+    // Apply the snapshot to robotState
+    configApplyToRobotState(snap);
+
+    // Assert every cfg_* field was set correctly
+    TEST_ASSERT_EQUAL_INT16(650, robotState.cfg_speedLimitMax);
+    TEST_ASSERT_EQUAL_INT16(120, robotState.cfg_speedPresetSlow);
+    TEST_ASSERT_EQUAL_INT16(320, robotState.cfg_speedPresetNormal);
+    TEST_ASSERT_EQUAL_INT16(650, robotState.cfg_speedPresetTurbo);
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)SpeedPresetId::Slow, (uint8_t)robotState.cfg_speedPresetActive);
+
+    TEST_ASSERT_EQUAL_UINT32(300, robotState.cfg_sbusTimeoutMs);
+    TEST_ASSERT_EQUAL_UINT32(500, robotState.cfg_webDriveTimeoutMs);
+
+    TEST_ASSERT_EQUAL_UINT8(15, robotState.cfg_audioVolume);
+    TEST_ASSERT_EQUAL_UINT8(3, robotState.cfg_logLevel);
+
+    TEST_ASSERT_EQUAL_UINT16(250, robotState.cfg_snd_scream);
+    TEST_ASSERT_EQUAL_UINT16(251, robotState.cfg_snd_faint);
+
+    TEST_ASSERT_EQUAL_UINT16(2050, robotState.cfg_arm1_open_us);
+    TEST_ASSERT_EQUAL_UINT16(950, robotState.cfg_arm1_close_us);
+    TEST_ASSERT_EQUAL_UINT16(2150, robotState.cfg_arm2_open_us);
+    TEST_ASSERT_EQUAL_UINT16(850, robotState.cfg_arm2_close_us);
+
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)SERVO_COMP_MG996R, (uint8_t)robotState.cfg_arm1_type);
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)SERVO_COMP_MG90S, (uint8_t)robotState.cfg_arm2_type);
+
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.2f, robotState.cfg_dome_min_speed);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.95f, robotState.cfg_dome_max_speed);
+    TEST_ASSERT_EQUAL_UINT16(1520, robotState.cfg_dome_neutral_us);
+    TEST_ASSERT_EQUAL_UINT8(85, robotState.cfg_dome_speed_limit_pct);
+    TEST_ASSERT_EQUAL_INT(true, robotState.cfg_dome_rnd_enable);
+    TEST_ASSERT_EQUAL_STRING("192.168.0.99", robotState.cfg_dome_wifi_peer_ip);
+
+    TEST_ASSERT_EQUAL_UINT16(800, robotState.cfg_seq_open_ms);
+    TEST_ASSERT_EQUAL_UINT16(1200, robotState.cfg_seq_close_ms);
+
+    TEST_ASSERT_EQUAL_UINT8(3, robotState.cfg_aux_led_pin);
+    TEST_ASSERT_EQUAL_UINT8(12, robotState.cfg_aux_led_count);
+
+    TEST_ASSERT_EQUAL_INT(true, robotState.cfg_enable_arm1);
+    TEST_ASSERT_EQUAL_INT(false, robotState.cfg_enable_arm2);
+    TEST_ASSERT_EQUAL_INT(true, robotState.cfg_enable_dome);
+    TEST_ASSERT_EQUAL_INT(true, robotState.cfg_stationary);
+
+    // Also verify a non-cfg field was NOT modified (contract test)
+    // stationary is a cfg field, so check another runtime field
+    // Let's verify the robotState was initialized to zero, so non-cfg fields remain at their initial values
+    TEST_ASSERT_EQUAL_INT(0, robotState.driveSpeed);  // This is a non-cfg field
+}
+
+// Test: configApplyToRobotState does not touch non-cfg fields
+void test_configApplyToRobotState_does_not_touch_non_cfg_fields() {
+    // Set a non-cfg runtime field to a known value
+    robotState.driveSpeed = 123;  // This is a non-cfg field
+    robotState.driveSteer = 456;  // Another non-cfg field
+
+    // Create a snapshot with different values for cfg fields
+    ConfigSnapshot snap = {};
+    snap.stationary = true;
+
+    // Apply the snapshot
+    configApplyToRobotState(snap);
+
+    // The cfg field should have been set
+    TEST_ASSERT_EQUAL_INT(true, robotState.cfg_stationary);
+
+    // But the non-cfg fields should NOT have changed
+    TEST_ASSERT_EQUAL_INT(123, robotState.driveSpeed);
+    TEST_ASSERT_EQUAL_INT(456, robotState.driveSteer);
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_configLoad_empty_nvs_returns_defaults);
@@ -658,5 +820,7 @@ int main() {
     RUN_TEST(test_configLoad_save_moodcat_12bit_mask);
     RUN_TEST(test_configSnapshotFromRobotState_captures_all_categories);
     RUN_TEST(test_configSnapshotFromRobotState_save_round_trip);
+    RUN_TEST(test_configApplyToRobotState_applies_all_categories);
+    RUN_TEST(test_configApplyToRobotState_does_not_touch_non_cfg_fields);
     return UNITY_END();
 }

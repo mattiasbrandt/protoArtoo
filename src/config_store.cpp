@@ -9,6 +9,12 @@
 #include "audio_dollar_parser.h"
 #include "config.h"
 #include "logging.h"
+#include "rc_mapping.h"
+
+// IPAddress.h is only available in Arduino/ESP-IDF environments, not native tests
+#ifdef ARDUINO
+#include <IPAddress.h>
+#endif
 
 namespace {
 
@@ -526,6 +532,151 @@ void configSnapshotFromRobotState(ConfigSnapshot* out) {
     out->rc_free3             = robotState.cfg_rc_free3;
 }
 
+void configApplyToRobotState(const ConfigSnapshot& snap) {
+    robotState.cfg_speedLimitMax = snap.speedLimitMax;
+    robotState.cfg_speedPresetSlow = snap.speedPresetSlow;
+    robotState.cfg_speedPresetNormal = snap.speedPresetNormal;
+    robotState.cfg_speedPresetTurbo = snap.speedPresetTurbo;
+    robotState.cfg_speedPresetActive = snap.speedPresetActive;
+    robotState.cfg_sbusTimeoutMs = snap.sbusTimeoutMs;
+    robotState.cfg_webDriveTimeoutMs = snap.webDriveTimeoutMs;
+    robotState.cfg_audioVolume = snap.audioVolume;
+    robotState.cfg_logLevel = snap.logLevel;
+    robotState.cfg_snd_scream = snap.snd_scream;
+    robotState.cfg_snd_faint = snap.snd_faint;
+    robotState.cfg_snd_leia = snap.snd_leia;
+    robotState.cfg_snd_cantina_s = snap.snd_cantina_s;
+    robotState.cfg_snd_sw_theme = snap.snd_sw_theme;
+    robotState.cfg_snd_imp_march = snap.snd_imp_march;
+    robotState.cfg_snd_cantina_l = snap.snd_cantina_l;
+    robotState.cfg_snd_startup = snap.snd_startup;
+    robotState.cfg_snd_doodoo = snap.snd_doodoo;
+    robotState.cfg_snd_failure = snap.snd_failure;
+    robotState.cfg_snd_disco = snap.snd_disco;
+    robotState.cfg_snd_mahna = snap.snd_mahna;
+    robotState.cfg_snd_inlove = snap.snd_inlove;
+    robotState.cfg_snd_macho = snap.snd_macho;
+    robotState.cfg_snd_gangnam = snap.snd_gangnam;
+    robotState.cfg_snd_uptown = snap.snd_uptown;
+    robotState.cfg_snd_celebr = snap.snd_celebr;
+    robotState.cfg_snd_stayin = snap.snd_stayin;
+    robotState.cfg_snd_harlem = snap.snd_harlem;
+    robotState.cfg_snd_pbjtime = snap.snd_pbjtime;
+    robotState.cfg_snd_sys_boot = snap.snd_sys_boot;
+    robotState.cfg_snd_sys_mode_n = snap.snd_sys_mode_n;
+    robotState.cfg_snd_sys_mode_s = snap.snd_sys_mode_s;
+    robotState.cfg_snd_sys_mode_t = snap.snd_sys_mode_t;
+    robotState.cfg_snd_sys_drv_on = snap.snd_sys_drv_on;
+    robotState.cfg_snd_sys_dome_on = snap.snd_sys_dome_on;
+    robotState.cfg_snd_rand_min = snap.snd_rand_min;
+    robotState.cfg_snd_rand_max = snap.snd_rand_max;
+    robotState.cfg_snd_int_quiet = snap.snd_int_quiet;
+    robotState.cfg_snd_int_mid = snap.snd_int_mid;
+    robotState.cfg_snd_int_full = snap.snd_int_full;
+    robotState.cfg_snd_int_awake = snap.snd_int_awake;
+    robotState.cfg_snd_moodcat_quiet = snap.snd_moodcat_quiet;
+    robotState.cfg_snd_moodcat_mid = snap.snd_moodcat_mid;
+    robotState.cfg_snd_moodcat_full = snap.snd_moodcat_full;
+    robotState.cfg_snd_moodcat_awakeplus = snap.snd_moodcat_awakeplus;
+    robotState.cfg_snd_cat_gen_lo = snap.snd_cat_gen_lo;
+    robotState.cfg_snd_cat_gen_hi = snap.snd_cat_gen_hi;
+    robotState.cfg_snd_cat_chat_lo = snap.snd_cat_chat_lo;
+    robotState.cfg_snd_cat_chat_hi = snap.snd_cat_chat_hi;
+    robotState.cfg_snd_cat_hap_lo = snap.snd_cat_hap_lo;
+    robotState.cfg_snd_cat_hap_hi = snap.snd_cat_hap_hi;
+    robotState.cfg_snd_cat_proc_lo = snap.snd_cat_proc_lo;
+    robotState.cfg_snd_cat_proc_hi = snap.snd_cat_proc_hi;
+    robotState.cfg_snd_cat_sad_lo = snap.snd_cat_sad_lo;
+    robotState.cfg_snd_cat_sad_hi = snap.snd_cat_sad_hi;
+    robotState.cfg_snd_cat_sent_lo = snap.snd_cat_sent_lo;
+    robotState.cfg_snd_cat_sent_hi = snap.snd_cat_sent_hi;
+    robotState.cfg_snd_cat_hum_lo = snap.snd_cat_hum_lo;
+    robotState.cfg_snd_cat_hum_hi = snap.snd_cat_hum_hi;
+    robotState.cfg_snd_cat_scrm_lo = snap.snd_cat_scrm_lo;
+    robotState.cfg_snd_cat_scrm_hi = snap.snd_cat_scrm_hi;
+    robotState.cfg_snd_cat_ooh_lo = snap.snd_cat_ooh_lo;
+    robotState.cfg_snd_cat_ooh_hi = snap.snd_cat_ooh_hi;
+    robotState.cfg_snd_cat_alrm_lo = snap.snd_cat_alrm_lo;
+    robotState.cfg_snd_cat_alrm_hi = snap.snd_cat_alrm_hi;
+    robotState.cfg_snd_cat_snarky_lo = snap.snd_cat_snarky_lo;
+    robotState.cfg_snd_cat_snarky_hi = snap.snd_cat_snarky_hi;
+    robotState.cfg_snd_cat_whis_lo = snap.snd_cat_whis_lo;
+    robotState.cfg_snd_cat_whis_hi = snap.snd_cat_whis_hi;
+    robotState.cfg_arm1_open_us = snap.arm1_open_us;
+    robotState.cfg_arm1_close_us = snap.arm1_close_us;
+    robotState.cfg_arm2_open_us = snap.arm2_open_us;
+    robotState.cfg_arm2_close_us = snap.arm2_close_us;
+    robotState.cfg_arm1_type = snap.arm1_type;
+    robotState.cfg_arm2_type = snap.arm2_type;
+    robotState.cfg_aux1_open_us = snap.aux1_open_us;
+    robotState.cfg_aux1_close_us = snap.aux1_close_us;
+    robotState.cfg_aux2_open_us = snap.aux2_open_us;
+    robotState.cfg_aux2_close_us = snap.aux2_close_us;
+    robotState.cfg_aux3_open_us = snap.aux3_open_us;
+    robotState.cfg_aux3_close_us = snap.aux3_close_us;
+    robotState.cfg_aux1_type = snap.aux1_type;
+    robotState.cfg_aux2_type = snap.aux2_type;
+    robotState.cfg_aux3_type = snap.aux3_type;
+    robotState.cfg_dome_min_speed = snap.dome_min_speed;
+    robotState.cfg_dome_max_speed = snap.dome_max_speed;
+    robotState.cfg_seq_open_ms = snap.seq_open_ms;
+    robotState.cfg_seq_close_ms = snap.seq_close_ms;
+    robotState.cfg_dome_neutral_us = snap.dome_neutral_us;
+    robotState.cfg_dome_min_pulse_us = snap.dome_min_pulse_us;
+    robotState.cfg_dome_max_pulse_us = snap.dome_max_pulse_us;
+    robotState.cfg_dome_speed_limit_pct = snap.dome_speed_limit_pct;
+    robotState.cfg_dome_rnd_enable = snap.dome_rnd_enable;
+    robotState.cfg_dome_rnd_speed_pct = snap.dome_rnd_speed_pct;
+    robotState.cfg_dome_rnd_pause_min = snap.dome_rnd_pause_min;
+    robotState.cfg_dome_rnd_pause_max = snap.dome_rnd_pause_max;
+    robotState.cfg_dome_rnd_move_ms = snap.dome_rnd_move_ms;
+    robotState.cfg_rc_input_mode = snap.rc_input_mode;
+    robotState.cfg_enable_arm1 = snap.enable_arm1;
+    robotState.cfg_enable_arm2 = snap.enable_arm2;
+    robotState.cfg_enable_aux1 = snap.enable_aux1;
+    robotState.cfg_enable_aux2 = snap.enable_aux2;
+    robotState.cfg_enable_aux3 = snap.enable_aux3;
+    robotState.cfg_enable_dome = snap.enable_dome;
+    robotState.cfg_enable_rc_ch1 = snap.enable_rc_ch1;
+    robotState.cfg_enable_rc_ch2 = snap.enable_rc_ch2;
+    robotState.cfg_enable_rc_ch3 = snap.enable_rc_ch3;
+    robotState.cfg_enable_rc_ch4 = snap.enable_rc_ch4;
+    robotState.cfg_enable_rc_ch5 = snap.enable_rc_ch5;
+    robotState.cfg_enable_rc_ch6 = snap.enable_rc_ch6;
+    robotState.cfg_single_sbus_use_ch2 = snap.single_sbus_use_ch2;
+    robotState.cfg_enable_s1_hoverboard = snap.enable_s1_hoverboard;
+    robotState.cfg_enable_s2_sound = snap.enable_s2_sound;
+    robotState.cfg_enable_s3_dome_ctrl = snap.enable_s3_dome_ctrl;
+    snprintf(robotState.cfg_dome_wifi_peer_ip, sizeof(robotState.cfg_dome_wifi_peer_ip), "%s",
+             snap.dome_wifi_peer_ip);
+    robotState.cfg_stationary = snap.stationary;
+    robotState.cfg_aux_led_pin = snap.aux_led_pin;
+    robotState.cfg_aux_led_count = snap.aux_led_count;
+    robotState.cfg_rc_pwm_drive_speed = snap.rc_pwm_drive_speed;
+    robotState.cfg_rc_pwm_drive_steer = snap.rc_pwm_drive_steer;
+    robotState.cfg_rc_pwm_dome_speed = snap.rc_pwm_dome_speed;
+    robotState.cfg_rc_pwm_arm1 = snap.rc_pwm_arm1;
+    robotState.cfg_rc_pwm_arm2 = snap.rc_pwm_arm2;
+    robotState.cfg_rc_pwm_sound = snap.rc_pwm_sound;
+    robotState.cfg_rc_sbus_drive_speed = snap.rc_sbus_drive_speed;
+    robotState.cfg_rc_sbus_drive_steer = snap.rc_sbus_drive_steer;
+    robotState.cfg_rc_sbus_dome_speed = snap.rc_sbus_dome_speed;
+    robotState.cfg_rc_sbus_arm1 = snap.rc_sbus_arm1;
+    robotState.cfg_rc_sbus_arm2 = snap.rc_sbus_arm2;
+    robotState.cfg_rc_sbus_sound = snap.rc_sbus_sound;
+    robotState.cfg_rc_arm1 = snap.rc_arm1;
+    robotState.cfg_rc_arm2 = snap.rc_arm2;
+    robotState.cfg_rc_aux1 = snap.rc_aux1;
+    robotState.cfg_rc_aux2 = snap.rc_aux2;
+    robotState.cfg_rc_aux3 = snap.rc_aux3;
+    robotState.cfg_rc_sound = snap.rc_sound;
+    robotState.cfg_rc_opmode = snap.rc_opmode;
+    robotState.cfg_rc_free0 = snap.rc_free0;
+    robotState.cfg_rc_free1 = snap.rc_free1;
+    robotState.cfg_rc_free2 = snap.rc_free2;
+    robotState.cfg_rc_free3 = snap.rc_free3;
+}
+
 bool configLoad(Preferences& prefs, ConfigSnapshot* out) {
     if (out == nullptr) {
         return false;
@@ -728,6 +879,143 @@ bool configLoad(Preferences& prefs, ConfigSnapshot* out) {
     loadRcTriggerBindingFromPrefs(prefs, NVS_KEYS.rcFree1, disabledRcTriggerBinding(), &out->rc_free1);
     loadRcTriggerBindingFromPrefs(prefs, NVS_KEYS.rcFree2, disabledRcTriggerBinding(), &out->rc_free2);
     loadRcTriggerBindingFromPrefs(prefs, NVS_KEYS.rcFree3, disabledRcTriggerBinding(), &out->rc_free3);
+
+    // =========================================================================
+    // Validation and clamping phase — ensure all fields are within valid ranges
+    // =========================================================================
+
+    // Scalar constrain: speed limits and presets (0..SPEED_LIMIT_MAX)
+    out->speedLimitMax = constrain(out->speedLimitMax, (int16_t)0, (int16_t)SPEED_LIMIT_MAX);
+    out->speedPresetSlow = constrain(out->speedPresetSlow, (int16_t)0, (int16_t)SPEED_LIMIT_MAX);
+    out->speedPresetNormal = constrain(out->speedPresetNormal, (int16_t)0, (int16_t)SPEED_LIMIT_MAX);
+    out->speedPresetTurbo = constrain(out->speedPresetTurbo, (int16_t)0, (int16_t)SPEED_LIMIT_MAX);
+
+    // Timeout constraints
+    out->sbusTimeoutMs = constrain(out->sbusTimeoutMs, (uint32_t)50, (uint32_t)5000);
+    out->webDriveTimeoutMs = constrain(out->webDriveTimeoutMs, (uint32_t)100, (uint32_t)5000);
+
+    // Audio volume constraint (0..30)
+    out->audioVolume = constrain(out->audioVolume, (uint8_t)0, (uint8_t)30);
+
+    // Servo pulse width constraints (500..2500)
+    out->arm1_open_us = constrain(out->arm1_open_us, (uint16_t)500, (uint16_t)2500);
+    out->arm1_close_us = constrain(out->arm1_close_us, (uint16_t)500, (uint16_t)2500);
+    out->arm2_open_us = constrain(out->arm2_open_us, (uint16_t)500, (uint16_t)2500);
+    out->arm2_close_us = constrain(out->arm2_close_us, (uint16_t)500, (uint16_t)2500);
+    out->aux1_open_us = constrain(out->aux1_open_us, (uint16_t)500, (uint16_t)2500);
+    out->aux1_close_us = constrain(out->aux1_close_us, (uint16_t)500, (uint16_t)2500);
+    out->aux2_open_us = constrain(out->aux2_open_us, (uint16_t)500, (uint16_t)2500);
+    out->aux2_close_us = constrain(out->aux2_close_us, (uint16_t)500, (uint16_t)2500);
+    out->aux3_open_us = constrain(out->aux3_open_us, (uint16_t)500, (uint16_t)2500);
+    out->aux3_close_us = constrain(out->aux3_close_us, (uint16_t)500, (uint16_t)2500);
+
+    // Servo type enum guard
+    if (out->arm1_type > SERVO_COMP_RGB)
+        out->arm1_type = SERVO_COMP_MG996R;
+    if (out->arm2_type > SERVO_COMP_RGB)
+        out->arm2_type = SERVO_COMP_MG996R;
+    if (out->aux1_type > SERVO_COMP_RGB)
+        out->aux1_type = SERVO_COMP_NONE;
+    if (out->aux2_type > SERVO_COMP_RGB)
+        out->aux2_type = SERVO_COMP_NONE;
+    if (out->aux3_type > SERVO_COMP_RGB)
+        out->aux3_type = SERVO_COMP_NONE;
+
+    // Dome float guards
+    if (out->dome_min_speed < 0.0f)
+        out->dome_min_speed = 0.0f;
+    if (out->dome_max_speed > 1.0f)
+        out->dome_max_speed = 1.0f;
+
+    // Sequence timing guards (100..5000 ms)
+    if (out->seq_open_ms < 100)
+        out->seq_open_ms = 100;
+    if (out->seq_open_ms > 5000)
+        out->seq_open_ms = 5000;
+    if (out->seq_close_ms < 100)
+        out->seq_close_ms = 100;
+    if (out->seq_close_ms > 5000)
+        out->seq_close_ms = 5000;
+
+    // Dome pulse width constraints (1000..2000)
+    out->dome_neutral_us = constrain(out->dome_neutral_us, (uint16_t)1000, (uint16_t)2000);
+    out->dome_min_pulse_us = constrain(out->dome_min_pulse_us, (uint16_t)1000, (uint16_t)2000);
+    out->dome_max_pulse_us = constrain(out->dome_max_pulse_us, (uint16_t)1000, (uint16_t)2000);
+
+    // Dome speed limit percentage constraint (0..100)
+    out->dome_speed_limit_pct = constrain(out->dome_speed_limit_pct, (uint8_t)0, (uint8_t)100);
+
+    // RC input mode guard
+    if (out->rc_input_mode > RC_INPUT_DUAL_SBUS) {
+        out->rc_input_mode = RC_INPUT_DUAL_SBUS;
+    }
+
+    // AUX LED validation
+    if (!auxLedPinSettingValid(out->aux_led_pin)) {
+        out->aux_led_pin = AUX_LED_PIN_DISABLED;
+    }
+    out->aux_led_count = constrain(out->aux_led_count, AUX_LED_COUNT_DEFAULT, AUX_LED_COUNT_MAX);
+
+    // WiFi peer IP validation (only available in Arduino environments with IPAddress library)
+#ifdef ARDUINO
+    if (out->dome_wifi_peer_ip[0] != '\0') {
+        IPAddress parsedPeerIp;
+        if (!parsedPeerIp.fromString(out->dome_wifi_peer_ip)) {
+            out->dome_wifi_peer_ip[0] = '\0';
+        }
+    }
+#endif
+
+    // Validate RC Tier 1 bindings
+    RcBindingConfig* bindings[] = {
+        &out->rc_pwm_drive_speed, &out->rc_pwm_drive_steer,
+        &out->rc_pwm_arm1,        &out->rc_pwm_arm2,
+        &out->rc_pwm_sound,       &out->rc_sbus_drive_speed,
+        &out->rc_sbus_dome_speed, &out->rc_sbus_arm1,
+        &out->rc_sbus_arm2,       &out->rc_sbus_sound,
+    };
+    const RcBindingConfig defaults[] = {
+        defaultPwmBinding(1),                               defaultPwmBinding(2),
+        defaultPwmBinding(3),                               defaultPwmBinding(4),
+        defaultPwmBinding(5),                               defaultPwmBinding(6),
+        defaultSbusBinding(RC_BINDING_SBUS1, 1),            defaultSbusBinding(RC_BINDING_SBUS1, 2),
+        defaultSbusBinding(RC_BINDING_SBUS2, 1),            defaultSbusBinding(RC_BINDING_SBUS2, 2),
+        defaultSbusBinding(RC_BINDING_SBUS2, 3),            disabledRcBinding(),
+    };
+    for (size_t i = 0; i < sizeof(bindings) / sizeof(bindings[0]); ++i) {
+        if (!rcBindingIsValid(*bindings[i])) {
+            *bindings[i] = defaults[i];
+        }
+    }
+
+    // Validate RC Tier 2 Trigger bindings
+    RcTriggerBinding* triggerBindings[] = {
+        &out->rc_arm1,   &out->rc_arm2,  &out->rc_aux1,   &out->rc_aux2,   &out->rc_aux3,
+        &out->rc_sound,  &out->rc_opmode, &out->rc_free0, &out->rc_free1, &out->rc_free2,
+        &out->rc_free3,
+    };
+    const RcTriggerBinding triggerDefaults[] = {
+        makeRcTriggerBinding(RC_BINDING_SBUS1, 4, SERVO_ACTION_ARM1_TOGGLE, nullptr,
+                             RC_SBUS_DEFAULT_MIN, RC_SBUS_DEFAULT_CENTER, RC_SBUS_DEFAULT_MAX, 0,
+                             rcTriggerDefaultReverse(RC_BINDING_SBUS1, 4)),
+        makeRcTriggerBinding(RC_BINDING_SBUS1, 5, SERVO_ACTION_ARM2_TOGGLE, nullptr,
+                             RC_SBUS_DEFAULT_MIN, RC_SBUS_DEFAULT_CENTER, RC_SBUS_DEFAULT_MAX, 0,
+                             rcTriggerDefaultReverse(RC_BINDING_SBUS1, 5)),
+        disabledRcTriggerBinding(),
+        disabledRcTriggerBinding(),
+        disabledRcTriggerBinding(),
+        disabledRcTriggerBinding(),
+        disabledRcTriggerBinding(),
+        disabledRcTriggerBinding(),
+        disabledRcTriggerBinding(),
+        disabledRcTriggerBinding(),
+        disabledRcTriggerBinding(),
+    };
+    for (size_t i = 0; i < sizeof(triggerBindings) / sizeof(triggerBindings[0]); ++i) {
+        if (!rcTriggerBindingIsValid(*triggerBindings[i])) {
+            *triggerBindings[i] = triggerDefaults[i];
+        }
+    }
 
     // If legacy, stamp new schema version
     if (isLegacy) {

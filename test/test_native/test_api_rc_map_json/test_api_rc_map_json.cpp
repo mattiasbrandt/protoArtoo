@@ -18,7 +18,7 @@ RcMapEntry makeEntry(RcBindingSource source, uint8_t channel, RobotActionId acti
 
 ConfigSnapshot makeEmptySnapshot(RcInputMode mode = RC_INPUT_DUAL_SBUS) {
     ConfigSnapshot snap = {};
-    snap.rcInputMode = mode;
+    snap.rc_input_mode = mode;
     clearRcMapSlots(&snap);
     return snap;
 }
@@ -90,11 +90,11 @@ void test_assignRcMapEntryToSnapshot_spill_slots_fill_in_order(void) {
     TEST_ASSERT_TRUE(assignRcMapEntryToSnapshot(e3, existing, &working, err, sizeof(err)));
     TEST_ASSERT_TRUE(assignRcMapEntryToSnapshot(e4, existing, &working, err, sizeof(err)));
 
-    TEST_ASSERT_EQUAL_UINT8(SOUND_ACTION_RANDOM_WHISTLE, working.rcSound.target);
-    TEST_ASSERT_EQUAL_UINT8(SOUND_ACTION_RANDOM_HUMMING, working.rcFree0.target);
-    TEST_ASSERT_EQUAL_UINT8(SOUND_ACTION_RANDOM_ALERT, working.rcFree1.target);
-    TEST_ASSERT_EQUAL_UINT8(SOUND_ACTION_RANDOM_SNARKY, working.rcFree2.target);
-    TEST_ASSERT_EQUAL_UINT8(SOUND_ACTION_RANDOM_SAD, working.rcFree3.target);
+    TEST_ASSERT_EQUAL_UINT8(SOUND_ACTION_RANDOM_WHISTLE, working.rc_sound.target);
+    TEST_ASSERT_EQUAL_UINT8(SOUND_ACTION_RANDOM_HUMMING, working.rc_free0.target);
+    TEST_ASSERT_EQUAL_UINT8(SOUND_ACTION_RANDOM_ALERT, working.rc_free1.target);
+    TEST_ASSERT_EQUAL_UINT8(SOUND_ACTION_RANDOM_SNARKY, working.rc_free2.target);
+    TEST_ASSERT_EQUAL_UINT8(SOUND_ACTION_RANDOM_SAD, working.rc_free3.target);
 
     TEST_ASSERT_FALSE(assignRcMapEntryToSnapshot(e5, existing, &working, err, sizeof(err)));
     TEST_ASSERT_NOT_NULL(strstr(err, "no trigger slot available"));
@@ -111,14 +111,14 @@ void test_assignRcMapEntryToSnapshot_applies_sbus_button_reverse_default(void) {
     TEST_ASSERT_TRUE(assignRcMapEntryToSnapshot(ch6, existing, &working, err, sizeof(err)));
     TEST_ASSERT_TRUE(assignRcMapEntryToSnapshot(ch7, existing, &working, err, sizeof(err)));
 
-    TEST_ASSERT_TRUE(working.rcSound.reverse);
-    TEST_ASSERT_FALSE(working.rcFree0.reverse);
+    TEST_ASSERT_TRUE(working.rc_sound.reverse);
+    TEST_ASSERT_FALSE(working.rc_free0.reverse);
 }
 
 void test_assignRcMapEntryToSnapshot_reuses_existing_dome_calibration(void) {
     ConfigSnapshot existing = makeEmptySnapshot();
-    existing.rcSbusDomeSpeed = makeRcBindingConfig(RC_BINDING_SBUS2, 1, 260, 1180, 1860, 35, false);
-    existing.rcPwmDomeSpeed = disabledRcBinding();
+    existing.rc_sbus_dome_speed = makeRcBindingConfig(RC_BINDING_SBUS2, 1, 260, 1180, 1860, 35, false);
+    existing.rc_pwm_dome_speed = disabledRcBinding();
 
     ConfigSnapshot working = existing;
     clearRcMapSlots(&working);
@@ -127,16 +127,16 @@ void test_assignRcMapEntryToSnapshot_reuses_existing_dome_calibration(void) {
     RcMapEntry dome = makeEntry(RC_BINDING_SBUS2, 1, DOME_ACTION_SPEED);
     TEST_ASSERT_TRUE(assignRcMapEntryToSnapshot(dome, existing, &working, err, sizeof(err)));
 
-    TEST_ASSERT_EQUAL_UINT8(RC_BINDING_SBUS2, working.rcSbusDomeSpeed.source);
-    TEST_ASSERT_EQUAL_UINT8(1, working.rcSbusDomeSpeed.channel);
-    TEST_ASSERT_EQUAL_UINT16(260, working.rcSbusDomeSpeed.min);
-    TEST_ASSERT_EQUAL_UINT16(1180, working.rcSbusDomeSpeed.center);
-    TEST_ASSERT_EQUAL_UINT16(1860, working.rcSbusDomeSpeed.max);
-    TEST_ASSERT_EQUAL_UINT16(35, working.rcSbusDomeSpeed.deadband);
-    TEST_ASSERT_FALSE(working.rcSbusDomeSpeed.reverse);
+    TEST_ASSERT_EQUAL_UINT8(RC_BINDING_SBUS2, working.rc_sbus_dome_speed.source);
+    TEST_ASSERT_EQUAL_UINT8(1, working.rc_sbus_dome_speed.channel);
+    TEST_ASSERT_EQUAL_UINT16(260, working.rc_sbus_dome_speed.min);
+    TEST_ASSERT_EQUAL_UINT16(1180, working.rc_sbus_dome_speed.center);
+    TEST_ASSERT_EQUAL_UINT16(1860, working.rc_sbus_dome_speed.max);
+    TEST_ASSERT_EQUAL_UINT16(35, working.rc_sbus_dome_speed.deadband);
+    TEST_ASSERT_FALSE(working.rc_sbus_dome_speed.reverse);
 
-    TEST_ASSERT_EQUAL_UINT16(1180, working.rcPwmDomeSpeed.center);
-    TEST_ASSERT_EQUAL_UINT16(35, working.rcPwmDomeSpeed.deadband);
+    TEST_ASSERT_EQUAL_UINT16(1180, working.rc_pwm_dome_speed.center);
+    TEST_ASSERT_EQUAL_UINT16(35, working.rc_pwm_dome_speed.deadband);
 }
 
 int main(void) {

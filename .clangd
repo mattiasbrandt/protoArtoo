@@ -11,12 +11,14 @@
 Diagnostics:
   Suppress:
     - pp_file_not_found    # Arduino.h / ESP-IDF headers not on host include path
-    - unknown_typename     # uint8_t, uint16_t etc. from missing stdint.h chain
+    - unknown_typename        # uint8_t, uint16_t etc. from missing stdint.h chain
+    - unknown_typename_suggest  # same as above but clang emits a 'did you mean' suggestion variant
     - missing_exception_spec
     - undeclared_var_use   # enum values / symbols from ESP-IDF/Arduino/FreeRTOS chain invisible to host clangd
     - expected_expression  # C-style cast (type*) fails when type is unknown due to missing ESP-IDF headers
     - fatal_too_many_errors  # cascade sentinel; clang stops before suppressions apply without the limit removed
     - unused-includes        # false positive: Arduino.h/FreeRTOS headers missing on host hide inline fn bodies
+    - template_kw_missing    # false positive: ArduinoJson .add<T>()/.to<T>() template calls on dependent types
 
 CompileFlags:
   Add:
