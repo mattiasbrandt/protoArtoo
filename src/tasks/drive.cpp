@@ -17,6 +17,7 @@
 #include <esp_task_wdt.h>
 
 #include "config.h"
+#include "drive_arbiter.h"
 #include "failsafe_gate.h"
 #include "hoverboard_uart.h"
 #include "logging.h"
@@ -78,38 +79,23 @@ void driveTask(void* pvParameters) {
             hwmLogged = true;
         }
 
-        // Read current state under mutex
-        int16_t speed;
-        int16_t steer;
+        // Resolve drive output from arbiter
+        uint32_t nowMs = millis();
         int16_t maxOut;
-        bool failsafeActive;
-        uint32_t nowMs;
-
-        nowMs = millis();
         taskENTER_CRITICAL(&robotStateMux);
-        speed = robotState.driveSpeed;
-        steer = robotState.driveSteer;
         maxOut = robotState.cfg_speedLimitMax;
-
-        // Check web drive timeout and trigger failsafe if needed
-        if (robotState.lastDriveSource == SRC_WEB_API &&
-            (uint32_t)(nowMs - robotState.lastDriveCommandMs) > robotState.cfg_webDriveTimeoutMs) {
-            if (!robotState.webDriveExpired) {
-                failsafeTrigger(FailsafeLayer::WEB_TIMEOUT);
-            }
-            robotState.driveSpeed = 0;
-            robotState.driveSteer = 0;
-            speed = 0;
-            steer = 0;
-        }
+        uint32_t webTimeoutMs = robotState.cfg_webDriveTimeoutMs;
         taskEXIT_CRITICAL(&robotStateMux);
 
-        // Check if any failsafe is active
-        failsafeActive = failsafeIsActive();
+        DriveArbiterConfig cfg = {
+            .speedLimitMax = maxOut,
+            .webDriveTimeoutMs = webTimeoutMs,
+        };
+        DriveOutput driveOut = driveArbiterResolve(cfg, nowMs);
 
-        // Apply SPEED_LIMIT_MAX cap unconditionally — never exceed hardware limit.
-        speed = constrain(speed, (int16_t)(-maxOut), maxOut);
-        steer = constrain(steer, (int16_t)(-maxOut), maxOut);
+        int16_t speed = driveOut.speed;
+        int16_t steer = driveOut.steer;
+        bool failsafeActive = driveOut.failsafeActive;
 
         // Zero output if any failsafe active (estop, SBUS loss, HW failsafe, web timeout).
         // Record first zero assertion time once per failsafe episode for timing evidence.

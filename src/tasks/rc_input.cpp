@@ -28,6 +28,7 @@
 #include "../../include/config.h"
 #include "../../include/dome_link.h"
 #include "../../include/dome_rx_parser.h"
+#include "../../include/drive_arbiter.h"
 #include "../../include/drive_speed_preset.h"
 #include "../../include/failsafe_gate.h"
 #include "../../include/ledc_pwm.h"
@@ -752,7 +753,7 @@ static void dispatchStandardPwmInputs() {
     // Dispatch backbone controls (drive speed, steer, dome speed)
     if (intent.driveSpeed != 0 || intent.driveSteer != 0) {
         setStationaryMode(false);
-        setDriveCommand(intent.driveSpeed, intent.driveSteer, SRC_SBUS);
+        driveArbiterSubmit(DriveSource::RC, intent.driveSpeed, intent.driveSteer, millis());
     }
 
     if (intent.domeSpeed != 0) {
@@ -1152,7 +1153,7 @@ void rcInputTask(void* pvParameters) {
                     // Dispatch backbone controls (drive speed, steer)
                     if (intent.driveSpeed != 0 || intent.driveSteer != 0) {
                         setStationaryMode(false);
-                        setDriveCommand(intent.driveSpeed, intent.driveSteer, SRC_SBUS);
+                        driveArbiterSubmit(DriveSource::RC, intent.driveSpeed, intent.driveSteer, millis());
                     }
 
                     // Dispatch audio trigger if fired

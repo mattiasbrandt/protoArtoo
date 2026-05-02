@@ -18,6 +18,7 @@
 
 #include "api_helpers.h"
 #include "audio_task.h"
+#include "drive_arbiter.h"
 #include "drive_speed_preset.h"
 #include "dome_link.h"
 #include "dome_rx_parser.h"
@@ -162,7 +163,7 @@ bool executeManualCommand(const String& raw) {
             taskENTER_CRITICAL(&robotStateMux);
             robotState.webControlEnabled = false;
             taskEXIT_CRITICAL(&robotStateMux);
-            setDriveCommand(0, 0, SRC_INTERNAL);
+            driveArbiterSubmit(DriveSource::WEB_API, 0, 0, millis());
             return true;
 
         case MC_REBOOT:
@@ -282,7 +283,7 @@ void registerDriveRoutes(AsyncWebServer& server) {
         taskENTER_CRITICAL(&robotStateMux);
         robotState.webControlEnabled = false;
         taskEXIT_CRITICAL(&robotStateMux);
-        setDriveCommand(0, 0, SRC_INTERNAL);
+        driveArbiterSubmit(DriveSource::WEB_API, 0, 0, millis());
         PA_LOG_INFO(TAG, "[WEB] POST /api/web-control/disable - browser control disabled");
         req->send(200, "application/json", "{\"ok\":true}");
     });
@@ -326,10 +327,7 @@ void registerDriveRoutes(AsyncWebServer& server) {
 
         int16_t clampedSpeed = constrain(speed, (int)-maxOut, (int)maxOut);
         int16_t clampedSteer = constrain(steer, (int)-maxOut, (int)maxOut);
-        setDriveCommand(clampedSpeed, clampedSteer, SRC_WEB_API);
-
-        // Clear web timeout on new drive command (FailsafeGate handles its own locking)
-        failsafeClear(FailsafeLayer::WEB_TIMEOUT);
+        driveArbiterSubmit(DriveSource::WEB_API, clampedSpeed, clampedSteer, millis());
 
         req->send(200, "application/json", "{\"ok\":true}");
     });

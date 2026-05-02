@@ -17,6 +17,7 @@
 #include "dome_link.h"
 #include "dome_task.h"
 #include "drive.h"
+#include "drive_arbiter.h"
 #include "failsafe_gate.h"
 #include "ledc_pwm.h"
 #include "log_buffer.h"
@@ -603,8 +604,9 @@ void setup() {
     };
     esp_task_wdt_init(&twdt_config);
 
-    // Initialize FailsafeGate before task creation
+    // Initialize FailsafeGate and DriveArbiter before task creation
     failsafeInit(&robotStateMux);
+    driveArbiterInit(&robotStateMux);
 
     // Safety: boot with drive locked until SBUS confirmed
     // Use FailsafeGate's SBUS_WATCHDOG layer; RcInputTask will clear when frames arrive
