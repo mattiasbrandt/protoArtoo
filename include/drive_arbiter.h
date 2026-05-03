@@ -15,8 +15,7 @@
 //   - Most recent source (within timeout window) wins.
 //   - Web source times out after cfg_webDriveTimeoutMs.
 //   - Speed/steer are clamped to ±speedLimitMax before output.
-//   - If any failsafe layer is active, output is zeroed.
-//   - Web timeout triggers the FailsafeLayer::WEB_TIMEOUT failsafe layer once.
+//   - If any failsafe layer or web timeout is active, output is zeroed.
 // =============================================================================
 #pragma once
 
@@ -32,7 +31,8 @@ enum class DriveSource : uint8_t {
 struct DriveOutput {
     int16_t speed;              // -speedLimitMax .. +speedLimitMax
     int16_t steer;              // -speedLimitMax .. +speedLimitMax
-    bool failsafeActive;        // true if any failsafe layer is currently active
+    bool failsafeActive;        // true if FailsafeGate or web timeout requires zero output
+    bool webTimedOut;           // true when the latest web command is stale
     DriveSource activeSource;   // which source provided the current output (RC or WEB_API)
     uint32_t activeTimestampMs; // submit timestamp of the winning source (for status mirrors)
 };
@@ -60,7 +60,6 @@ void driveArbiterSubmit(DriveSource src,
 
 // Resolve final output for this tick.
 // Called only from DriveTask (Core 1), once per control loop.
-// Pure read of arbiter state and FailsafeGate; no side effects beyond
-// triggering WEB_TIMEOUT failsafe on first expiry.
+// Pure read of arbiter state and FailsafeGate; no side effects.
 DriveOutput driveArbiterResolve(const DriveArbiterConfig& cfg,
                                 uint32_t nowMs);

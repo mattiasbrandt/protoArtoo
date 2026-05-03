@@ -3,7 +3,6 @@
 //
 // Drive Output Arbiter — implementation.
 // Owns all drive command state (speed, steer, source, timestamp).
-// No external writes to robotState.driveSpeed/driveSteer allowed after init.
 // =============================================================================
 
 #include "drive_arbiter.h"
@@ -38,8 +37,6 @@ struct ArbiterState {
     int16_t webSteer;         // WEB: steer
     uint32_t webTimestampMs;  // WEB: timestamp of last command
 
-    // Web timeout tracking: has web timeout been triggered for the current episode?
-    bool webTimeoutEpisodeTriggered;  // set to false when web is fresh, true on first timeout
 };
 
 static ArbiterState g_arbiter = {
@@ -49,7 +46,6 @@ static ArbiterState g_arbiter = {
     .webSpeed = 0,
     .webSteer = 0,
     .webTimestampMs = 0,
-    .webTimeoutEpisodeTriggered = false,
 };
 
 // =============================================================================
@@ -58,7 +54,6 @@ static ArbiterState g_arbiter = {
 
 void driveArbiterInit(void* mux_ptr) {
     g_arbiterMux = (portMUX_TYPE*)mux_ptr;
-    // State is zero-initialized at module load; web timeout episode starts untriggered
 }
 
 void driveArbiterReset() {
@@ -73,7 +68,6 @@ void driveArbiterReset() {
     g_arbiter.webSpeed = 0;
     g_arbiter.webSteer = 0;
     g_arbiter.webTimestampMs = 0;
-    g_arbiter.webTimeoutEpisodeTriggered = false;
     taskEXIT_CRITICAL(g_arbiterMux);
 }
 
@@ -86,6 +80,8 @@ void driveArbiterSubmit(DriveSource src,
         return;
     }
 
+    bool freshWebCommand = false;
+
     taskENTER_CRITICAL(g_arbiterMux);
 
     if (src == DriveSource::RC) {
@@ -96,11 +92,14 @@ void driveArbiterSubmit(DriveSource src,
         g_arbiter.webSpeed = speed;
         g_arbiter.webSteer = steer;
         g_arbiter.webTimestampMs = timestampMs;
-        // Reset web timeout episode when new command is received
-        g_arbiter.webTimeoutEpisodeTriggered = false;
+        freshWebCommand = true;
     }
 
     taskEXIT_CRITICAL(g_arbiterMux);
+
+    if (freshWebCommand) {
+        failsafeClear(FailsafeLayer::WEB_TIMEOUT);
+    }
 }
 
 DriveOutput driveArbiterResolve(const DriveArbiterConfig& cfg,
@@ -110,6 +109,7 @@ DriveOutput driveArbiterResolve(const DriveArbiterConfig& cfg,
             .speed = 0,
             .steer = 0,
             .failsafeActive = true,
+            .webTimedOut = false,
             .activeSource = DriveSource::RC,
             .activeTimestampMs = 0,
         };
@@ -119,7 +119,7 @@ DriveOutput driveArbiterResolve(const DriveArbiterConfig& cfg,
     int16_t outputSteer = 0;
     DriveSource activeSource = DriveSource::RC;
     uint32_t activeTimestampMs = 0;
-    bool webExpired = false;
+    bool webTimedOut = false;
 
     taskENTER_CRITICAL(g_arbiterMux);
 
@@ -127,14 +127,11 @@ DriveOutput driveArbiterResolve(const DriveArbiterConfig& cfg,
     // Most recent timestamp (within timeout) wins
     bool rcValid = (g_arbiter.rcTimestampMs != 0);
     bool webValid = (g_arbiter.webTimestampMs != 0);
-    bool webTimedOut = false;
-
     if (webValid) {
         // Check if web command has timed out
         uint32_t webAge = (uint32_t)(nowMs - g_arbiter.webTimestampMs);
         if (webAge > cfg.webDriveTimeoutMs) {
             webTimedOut = true;
-            webExpired = true;
         }
     }
 
@@ -159,20 +156,7 @@ DriveOutput driveArbiterResolve(const DriveArbiterConfig& cfg,
         activeTimestampMs = 0;
     }
 
-    // Trigger web timeout failsafe on first expiry (transition)
-    bool justTriggered = false;
-    if (webExpired && !g_arbiter.webTimeoutEpisodeTriggered) {
-        g_arbiter.webTimeoutEpisodeTriggered = true;
-        justTriggered = true;
-    }
-
     taskEXIT_CRITICAL(g_arbiterMux);
-
-    // Trigger failsafe outside the critical section (failsafeTrigger may acquire locks)
-    // Only call once per web timeout episode, not every 50 Hz while timed out
-    if (justTriggered) {
-        failsafeTrigger(FailsafeLayer::WEB_TIMEOUT);
-    }
 
     // Clamp output to speed limit
     if (outputSpeed > cfg.speedLimitMax) {
@@ -186,8 +170,8 @@ DriveOutput driveArbiterResolve(const DriveArbiterConfig& cfg,
         outputSteer = (int16_t)(-cfg.speedLimitMax);
     }
 
-    // Check if any failsafe is active and zero output if so
-    bool failsafeActive = failsafeIsActive();
+    // Check if any failsafe is active and zero output if so.
+    bool failsafeActive = failsafeIsActive() || webTimedOut;
     if (failsafeActive) {
         outputSpeed = 0;
         outputSteer = 0;
@@ -197,6 +181,7 @@ DriveOutput driveArbiterResolve(const DriveArbiterConfig& cfg,
         .speed = outputSpeed,
         .steer = outputSteer,
         .failsafeActive = failsafeActive,
+        .webTimedOut = webTimedOut,
         .activeSource = activeSource,
         .activeTimestampMs = activeTimestampMs,
     };

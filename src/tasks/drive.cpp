@@ -18,6 +18,7 @@
 
 #include "config.h"
 #include "drive_arbiter.h"
+#include "drive.h"
 #include "failsafe_gate.h"
 #include "hoverboard_uart.h"
 #include "logging.h"
@@ -68,6 +69,7 @@ void driveTask(void* pvParameters) {
 
     bool zeroOutputRecorded = false;
     uint32_t zeroRecordedForTriggerMs = 0;
+    bool webTimeoutLayerActive = false;
     while (true) {
         // Feed TWDT — if this line is not reached within WATCHDOG_TIMEOUT_S, chip resets
         esp_task_wdt_reset();
@@ -93,14 +95,18 @@ void driveTask(void* pvParameters) {
         };
         DriveOutput driveOut = driveArbiterResolve(cfg, nowMs);
 
+        // Resolve stays side-effect-free; DriveTask bridges the resolved web
+        // timeout state into FailsafeGate once per 50 Hz control tick.
+        driveSyncWebTimeoutFailsafe(driveOut.webTimedOut, &webTimeoutLayerActive);
+
         // Mirror resolved output to robotState for SSE status reporting.
         // Written here (post-resolve) so the values match what is actually sent
         // to the hoverboard, not what was last submitted by any one source.
         taskENTER_CRITICAL(&robotStateMux);
-        robotState.driveSpeed = driveOut.speed;
-        robotState.driveSteer = driveOut.steer;
-        robotState.lastDriveSource = (driveOut.activeSource == DriveSource::RC) ? SRC_SBUS : SRC_WEB_API;
-        robotState.lastDriveCommandMs = driveOut.activeTimestampMs;
+        robotState.driveOutputSpeed = driveOut.speed;
+        robotState.driveOutputSteer = driveOut.steer;
+        robotState.driveOutputSource = (driveOut.activeSource == DriveSource::RC) ? SRC_SBUS : SRC_WEB_API;
+        robotState.driveOutputCommandMs = driveOut.activeTimestampMs;
         taskEXIT_CRITICAL(&robotStateMux);
 
         int16_t speed = driveOut.speed;

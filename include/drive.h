@@ -13,3 +13,7 @@
 // Feeds TWDT every iteration (esp_task_wdt_add called internally at start).
 // -----------------------------------------------------------------------------
 void driveTask(void* pvParameters);
+
+// Sync the resolved web-timeout state into FailsafeGate's WEB_TIMEOUT layer.
+// Exposed for native tests because driveTask() itself owns UART/FreeRTOS loops.
+void driveSyncWebTimeoutFailsafe(bool webTimedOut, bool* webTimeoutLayerActive);

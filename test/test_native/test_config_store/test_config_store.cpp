@@ -722,7 +722,7 @@ void test_configApplyToRobotState_applies_all_categories() {
     snap.system.rc_arm2 = disabledRcTriggerBinding();
 
     // Pre-set a non-cfg sentinel to verify apply does not touch it
-    robotState.driveSpeed = 999;
+    robotState.driveOutputSpeed = 999;
 
     // Apply the snapshot to robotState
     configApplyToRobotState(snap);
@@ -770,14 +770,14 @@ void test_configApplyToRobotState_applies_all_categories() {
     TEST_ASSERT_EQUAL_INT(true, robotState.cfg_stationary);
 
     // Verify the pre-set non-cfg sentinel was not modified by the apply
-    TEST_ASSERT_EQUAL_INT(999, robotState.driveSpeed);
+    TEST_ASSERT_EQUAL_INT(999, robotState.driveOutputSpeed);
 }
 
 // Test: configApplyToRobotState does not touch non-cfg fields
 void test_configApplyToRobotState_does_not_touch_non_cfg_fields() {
     // Set a non-cfg runtime field to a known value
-    robotState.driveSpeed = 123;  // This is a non-cfg field
-    robotState.driveSteer = 456;  // Another non-cfg field
+    robotState.driveOutputSpeed = 123;  // This is a non-cfg field
+    robotState.driveOutputSteer = 456;  // Another non-cfg field
 
     // Create a snapshot with different values for cfg fields
     ConfigSnapshot snap = {};
@@ -790,8 +790,8 @@ void test_configApplyToRobotState_does_not_touch_non_cfg_fields() {
     TEST_ASSERT_EQUAL_INT(true, robotState.cfg_stationary);
 
     // But the non-cfg fields should NOT have changed
-    TEST_ASSERT_EQUAL_INT(123, robotState.driveSpeed);
-    TEST_ASSERT_EQUAL_INT(456, robotState.driveSteer);
+    TEST_ASSERT_EQUAL_INT(123, robotState.driveOutputSpeed);
+    TEST_ASSERT_EQUAL_INT(456, robotState.driveOutputSteer);
 }
 
 void test_config_domain_load_functions_are_independently_callable() {

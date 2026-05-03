@@ -129,9 +129,9 @@ struct DomeCommand {
 // RobotState — shared state, all access under robotStateMux
 // -----------------------------------------------------------------------------
 struct RobotState {
-    // --- Drive output (written by SBUSInputTask/WebAPI, read by DriveTask) ---
-    int16_t driveSpeed;
-    int16_t driveSteer;
+    // --- Drive output status mirror (written after DriveArbiter resolve) ---
+    int16_t driveOutputSpeed;
+    int16_t driveOutputSteer;
     float domeTargetSpeed;  // -1.0 .. +1.0
 
     // --- Subsystem state ---
@@ -181,11 +181,11 @@ struct RobotState {
     uint32_t lastPwmMs;
     uint32_t lastSbus1Ms;
     uint32_t lastSbus2Ms;
-    uint32_t lastDriveCommandMs;
+    uint32_t driveOutputCommandMs;
     uint32_t domeLastSeenMs;
     uint32_t domeLastSeenUartMs;
     uint32_t domeLastSeenWifiMs;
-    CommandSource lastDriveSource;
+    CommandSource driveOutputSource;
 
     uint16_t rcPwmPulseUs[6];
     bool rcPwmPulseValid[6];
@@ -468,20 +468,20 @@ inline bool isEstopActive() {
     return estop;
 }
 
-// Read drive speed under mutex
+// Read resolved drive output speed under mutex
 inline int16_t getDriveSpeed() {
     int16_t speed;
     taskENTER_CRITICAL(&robotStateMux);
-    speed = robotState.driveSpeed;
+    speed = robotState.driveOutputSpeed;
     taskEXIT_CRITICAL(&robotStateMux);
     return speed;
 }
 
-// Read drive steer under mutex
+// Read resolved drive output steer under mutex
 inline int16_t getDriveSteer() {
     int16_t steer;
     taskENTER_CRITICAL(&robotStateMux);
-    steer = robotState.driveSteer;
+    steer = robotState.driveOutputSteer;
     taskEXIT_CRITICAL(&robotStateMux);
     return steer;
 }

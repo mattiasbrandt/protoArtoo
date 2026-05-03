@@ -688,6 +688,7 @@ static void dispatchStandardPwmInputs() {
 
     if (pwmSignalLost) {
         // Skip drive command processing when PWM signal is lost or stale
+        driveArbiterSubmit(DriveSource::RC, 0, 0, pwmCheckMs);
         return;
     }
 
@@ -711,8 +712,8 @@ static void dispatchStandardPwmInputs() {
     // Dispatch backbone controls (drive speed, steer, dome speed)
     if (intent.driveSpeed != 0 || intent.driveSteer != 0) {
         setStationaryMode(false);
-        driveArbiterSubmit(DriveSource::RC, intent.driveSpeed, intent.driveSteer, millis());
     }
+    driveArbiterSubmit(DriveSource::RC, intent.driveSpeed, intent.driveSteer, millis());
 
     if (intent.domeSpeed != 0) {
         float normalizedDomeSpeed = (float)intent.domeSpeed / (float)cfg.maxOut;
@@ -1059,11 +1060,7 @@ void rcInputTask(void* pvParameters) {
                     if (!hwFailsafeWasActive) {
                         PA_LOG_WARN(TAG, "SBUS1 hardware failsafe asserted");
                     }
-                    taskENTER_CRITICAL(&robotStateMux);
-                    robotState.driveSpeed = 0;
-                    robotState.driveSteer = 0;
-                    robotState.lastDriveSource = SRC_SBUS;
-                    taskEXIT_CRITICAL(&robotStateMux);
+                    driveArbiterSubmit(DriveSource::RC, 0, 0, millis());
                 } else if (data.lost_frame) {
                     robotState.sbus1LostFrameCount++;
                     uint32_t lostCount = robotState.sbus1LostFrameCount;
@@ -1102,8 +1099,8 @@ void rcInputTask(void* pvParameters) {
                     // Dispatch backbone controls (drive speed, steer)
                     if (intent.driveSpeed != 0 || intent.driveSteer != 0) {
                         setStationaryMode(false);
-                        driveArbiterSubmit(DriveSource::RC, intent.driveSpeed, intent.driveSteer, millis());
                     }
+                    driveArbiterSubmit(DriveSource::RC, intent.driveSpeed, intent.driveSteer, millis());
 
                     // Dispatch audio trigger if fired
                     if (intent.audioTrigger != nullptr) {
@@ -1162,10 +1159,7 @@ void rcInputTask(void* pvParameters) {
                 taskEXIT_CRITICAL(&robotStateMux);
                 if (!wasSignalLost) {
                     failsafeTrigger(FailsafeLayer::SBUS_WATCHDOG);
-                    taskENTER_CRITICAL(&robotStateMux);
-                    robotState.driveSpeed = 0;
-                    robotState.driveSteer = 0;
-                    taskEXIT_CRITICAL(&robotStateMux);
+                    driveArbiterSubmit(DriveSource::RC, 0, 0, nowMs);
                     watchdogFired = true;
                 }
                 if (watchdogFired) {

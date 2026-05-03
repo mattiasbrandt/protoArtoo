@@ -370,8 +370,8 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     sbusHwFailsafe = robotState.sbusHwFailsafe;
     webDriveExpired = robotState.webDriveExpired;
     failsafeSource = (int)robotState.failsafeSource;
-    driveSpeed = robotState.driveSpeed;
-    driveSteer = robotState.driveSteer;
+    driveSpeed = robotState.driveOutputSpeed;
+    driveSteer = robotState.driveOutputSteer;
     domeTargetSpeed = robotState.domeTargetSpeed;
     speedLimitMax = robotState.cfg_speedLimitMax;
     speedPresetActive = normalizeSpeedPresetId((uint8_t)robotState.cfg_speedPresetActive);

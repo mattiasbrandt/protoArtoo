@@ -8,6 +8,7 @@
 
 #include "drive_arbiter.h"
 #include "failsafe_gate.h"
+#include "robot_state.h"
 
 // =============================================================================
 // Test fixtures and mocks
@@ -37,10 +38,12 @@ void assertDriveOutput(DriveOutput out,
                        int16_t expectedSpeed,
                        int16_t expectedSteer,
                        bool expectedFailsafe,
-                       DriveSource expectedSource) {
+                       DriveSource expectedSource,
+                       bool expectedWebTimedOut = false) {
     TEST_ASSERT_EQUAL_INT16(expectedSpeed, out.speed);
     TEST_ASSERT_EQUAL_INT16(expectedSteer, out.steer);
     TEST_ASSERT_EQUAL(expectedFailsafe, out.failsafeActive);
+    TEST_ASSERT_EQUAL(expectedWebTimedOut, out.webTimedOut);
     TEST_ASSERT_EQUAL_INT((int)expectedSource, (int)out.activeSource);
 }
 
@@ -107,32 +110,40 @@ void test_web_timeout_after_threshold() {
     DriveOutput out1 = driveArbiterResolve(cfg, 1499);
     assertDriveOutput(out1, 200, 100, false, DriveSource::WEB_API);
 
-    // Just after timeout — failsafe should be triggered
+    // Just after timeout — output is zeroed, without mutating FailsafeGate.
     DriveOutput out2 = driveArbiterResolve(cfg, 1501);
     TEST_ASSERT_TRUE(out2.failsafeActive);
+    TEST_ASSERT_TRUE(out2.webTimedOut);
     TEST_ASSERT_EQUAL_INT16(0, out2.speed);
     TEST_ASSERT_EQUAL_INT16(0, out2.steer);
+    TEST_ASSERT_FALSE(failsafeIsActive());
+    TEST_ASSERT_FALSE(robotState.webDriveExpired);
 }
 
-void test_web_timeout_only_triggers_once_per_episode() {
-    // Web timeout should only trigger failsafe once per episode
+void test_web_timeout_resolve_has_no_side_effects() {
+    // Web timeout is reported by resolve(), but FailsafeGate is updated by DriveTask.
     driveArbiterSubmit(DriveSource::WEB_API, 200, 100, 1000);
 
     DriveArbiterConfig cfg = {.speedLimitMax = 600, .webDriveTimeoutMs = 500};
 
-    // First call after timeout — failsafe activates
+    uint32_t triggerCountBefore = robotState.failsafeTriggerCount;
+
+    // Calls after timeout return the same resolved state and do not trigger the gate.
     DriveOutput out1 = driveArbiterResolve(cfg, 1501);
     TEST_ASSERT_TRUE(out1.failsafeActive);
+    TEST_ASSERT_TRUE(out1.webTimedOut);
+    TEST_ASSERT_FALSE(failsafeIsActive());
+    TEST_ASSERT_EQUAL_UINT32(triggerCountBefore, robotState.failsafeTriggerCount);
 
-    // Second call — failsafe stays active (no new trigger)
     DriveOutput out2 = driveArbiterResolve(cfg, 2000);
     TEST_ASSERT_TRUE(out2.failsafeActive);
+    TEST_ASSERT_TRUE(out2.webTimedOut);
+    TEST_ASSERT_FALSE(failsafeIsActive());
+    TEST_ASSERT_EQUAL_UINT32(triggerCountBefore, robotState.failsafeTriggerCount);
 
-    // New web command resets the timeout episode
-    failsafeClear(FailsafeLayer::WEB_TIMEOUT);
+    // New web command is fresh again.
     driveArbiterSubmit(DriveSource::WEB_API, 200, 100, 2500);
 
-    // Now fresh web command should work
     DriveOutput out3 = driveArbiterResolve(cfg, 2510);
     TEST_ASSERT_FALSE(out3.failsafeActive);
     assertDriveOutput(out3, 200, 100, false, DriveSource::WEB_API);
@@ -204,7 +215,7 @@ void test_millis_overflow_handling() {
 
     // Now 600ms has elapsed (should timeout)
     DriveOutput out2 = driveArbiterResolve(cfg, 0xFFFFFFF0 + 600);
-    assertDriveOutput(out2, 0, 0, true, DriveSource::RC);
+    assertDriveOutput(out2, 0, 0, true, DriveSource::RC, true);
 }
 
 void test_web_zero_command() {
@@ -251,7 +262,8 @@ void test_active_timestamp_reflects_winner_not_last_submitted() {
 
     // Web timed out (age = 1700 - 1100 = 600 > 500ms). RC wins.
     DriveOutput out = driveArbiterResolve(cfg, 1700);
-    TEST_ASSERT_TRUE(out.failsafeActive);  // WEB_TIMEOUT failsafe active
+    TEST_ASSERT_TRUE(out.failsafeActive);
+    TEST_ASSERT_TRUE(out.webTimedOut);
     TEST_ASSERT_EQUAL_INT((int)DriveSource::RC, (int)out.activeSource);
     TEST_ASSERT_EQUAL_UINT32(1000, out.activeTimestampMs);  // RC's timestamp, not web's
 }
@@ -290,7 +302,7 @@ int main() {
     RUN_TEST(test_rc_overrides_stale_web);
     RUN_TEST(test_web_overrides_stale_rc);
     RUN_TEST(test_web_timeout_after_threshold);
-    RUN_TEST(test_web_timeout_only_triggers_once_per_episode);
+    RUN_TEST(test_web_timeout_resolve_has_no_side_effects);
     RUN_TEST(test_rc_does_not_timeout);
     RUN_TEST(test_speed_limit_clamping);
     RUN_TEST(test_failsafe_active_zeros_output);
