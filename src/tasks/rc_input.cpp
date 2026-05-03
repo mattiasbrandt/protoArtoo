@@ -26,6 +26,7 @@
 
 #include "../../include/audio_task.h"
 #include "../../include/config.h"
+#include "../../include/dome_input_filter.h"
 #include "../../include/dome_link.h"
 #include "../../include/dome_rx_parser.h"
 #include "../../include/drive_arbiter.h"
@@ -36,10 +37,12 @@
 #include "../../include/marcduino_helpers.h"
 #include "../../include/rc_action_dispatcher.h"
 #include "../../include/rc_channel_mapper.h"
+#include "../../include/rc_mapping_cache.h"
 #include "../../include/rc_pwm_helpers.h"
 #include "../../include/robot_state.h"
 #include "../../include/sbus_decoder.h"
 #include "../../include/sbus_watchdog.h"
+#include "../../include/trigger_debounce.h"
 #include "../../include/web_server.h"
 
 static const char* TAG = "RCInputTask";
@@ -242,12 +245,9 @@ static RcMappingConfig rcBuildMappingConfig(RcInputMode mode) {
     return out;
 }
 
-// Cached mapping config — rebuilt from RobotState only when rcConfigDirty is set.
-// prevSoundPressed is NOT cached; callers always set it on their local copy.
-static RcMappingConfig g_cachedMapCfg = {};
-static RcInputMode g_cachedMapMode = static_cast<RcInputMode>(0xFF);  // invalid sentinel
-
 static RcMappingConfig rcGetMappingConfig(RcInputMode mode) {
+    static RcMappingCache mappingCache = {};
+
     bool dirty;
     taskENTER_CRITICAL(&robotStateMux);
     dirty = robotState.rcConfigDirty;
@@ -256,24 +256,20 @@ static RcMappingConfig rcGetMappingConfig(RcInputMode mode) {
     }
     taskEXIT_CRITICAL(&robotStateMux);
 
-    if (dirty || mode != g_cachedMapMode) {
-        g_cachedMapCfg = rcBuildMappingConfig(mode);
-        g_cachedMapMode = mode;
+    if (dirty) {
+        rcMappingCacheInvalidate(&mappingCache);
     }
-    return g_cachedMapCfg;
+
+    RcMappingConfig cached = {};
+    if (rcMappingCacheGet(mappingCache, mode, &cached)) {
+        return cached;
+    }
+
+    cached = rcBuildMappingConfig(mode);
+    rcMappingCacheSet(&mappingCache, mode, cached);
+    return cached;
 }
 
-// Tier 2 Trigger Binding Runtime State
-struct TriggerRuntimeState {
-    bool lastPressed;
-    RcSwitchState lastSwitchState;
-    RcSwitchState pendingSwitchState;
-    bool switchStateInit;
-    uint8_t pendingCount;
-    uint32_t lastEdgeMs;
-};
-
-static TriggerRuntimeState g_triggerStates[11] = {};  // One per Tier 2 binding slot
 static constexpr uint32_t kOneShotEdgeDebounceMs = 120;
 static constexpr uint8_t kSwitchEdgeConfirmFrames = 2;
 
@@ -406,64 +402,12 @@ void dispatchRcTriggerActionTest(RobotActionId target, const char* payload, bool
 }
 
 static void processTier2Trigger(const RcTriggerBinding& binding, int rawValue,
-                                TriggerRuntimeState& state) {
-    if (binding.target == ROBOT_ACTION_NONE || binding.source == RC_BINDING_NONE) {
-        return;
+                                TriggerDebounceState& state) {
+    TriggerDebounceResult result = triggerDebounceAnalog(
+        &state, binding, rawValue, millis(), kSwitchEdgeConfirmFrames, kOneShotEdgeDebounceMs);
+    if (result.fired) {
+        processTriggerAction(binding.target, binding.marcduinoPayload, result.pressed);
     }
-
-    // Tier 2 only supports button/switch actions - analog targets are backbone-only
-    if (!robotActionValidForTier2(binding.target)) {
-        return;
-    }
-
-    if (!robotActionIsButton(binding.target)) {
-        return;
-    }
-
-    // Button targets use switch state with edge detection.
-    RcSwitchState switchState = rcTriggerToSwitchState(rawValue, binding);
-    if (switchState == RC_SWITCH_INVALID) {
-        return;
-    }
-
-    if (!state.switchStateInit) {
-        state.lastSwitchState = switchState;
-        state.pendingSwitchState = switchState;
-        state.switchStateInit = true;
-        state.pendingCount = 0;
-        return;
-    }
-    if (switchState == state.lastSwitchState) {
-        state.pendingCount = 0;
-        state.pendingSwitchState = switchState;
-        return;
-    }
-    if (state.pendingCount == 0 || state.pendingSwitchState != switchState) {
-        state.pendingSwitchState = switchState;
-        state.pendingCount = 1;
-        return;
-    }
-    state.pendingCount++;
-    if (state.pendingCount < kSwitchEdgeConfirmFrames) {
-        return;
-    }
-    state.pendingCount = 0;
-    state.lastSwitchState = switchState;
-
-    if (robotActionIsOneShotButton(binding.target)) {
-        uint32_t nowMs = millis();
-        if ((uint32_t)(nowMs - state.lastEdgeMs) < kOneShotEdgeDebounceMs) {
-            return;
-        }
-        state.lastEdgeMs = nowMs;
-        processTriggerAction(binding.target, binding.marcduinoPayload, true);
-        state.lastPressed = true;
-        return;
-    }
-
-    bool pressed = (switchState == RC_SWITCH_HIGH);
-    processTriggerAction(binding.target, binding.marcduinoPayload, pressed);
-    state.lastPressed = pressed;
 }
 
 static void loadTier2TriggerBindings(RcTriggerBinding* bindings, size_t* count) {
@@ -613,10 +557,8 @@ static void dispatchSbusBindingsForSource(const SbusData& data, RcBindingSource 
                                           RcInputMode mode, bool enableRcCh1, bool enableRcCh2,
                                           bool useCh2) {
     RcMappingConfig cfg = rcGetMappingConfig(mode);
-    static bool domeRawInit = false;
-    static int lastDomeRaw = 0;
-    static int pendingDomeRaw = 0;
-    static uint8_t pendingDomeCount = 0;
+    static DomeInputFilter domeInputFilter = {};
+    static TriggerDebounceState triggerStates[11] = {};
 
     auto sourceActive = [&](const RcBindingConfig& binding) {
         return binding.source == source &&
@@ -624,42 +566,13 @@ static void dispatchSbusBindingsForSource(const SbusData& data, RcBindingSource 
     };
 
     int raw = 0;
-    bool pressed = false;
 
     if (cfg.enableDome && sourceActive(cfg.domeSpeed) &&
         readSbusAnalog(data, cfg.domeSpeed, &raw)) {
-        const int center = (int)cfg.domeSpeed.center;
-        const int kDomeNeutralBand = 140;
-        const int kDomeStableBand = 90;
-
-        if (!domeRawInit) {
-            domeRawInit = true;
-            lastDomeRaw = raw;
-            pendingDomeRaw = raw;
-        }
-
-        bool wasNearNeutral = abs(lastDomeRaw - center) <= kDomeNeutralBand;
-        bool nowNearNeutral = abs(raw - center) <= kDomeNeutralBand;
-        bool acceptDomeSample = true;
-        if (wasNearNeutral && !nowNearNeutral) {
-            if (pendingDomeCount == 0 || abs(raw - pendingDomeRaw) > kDomeStableBand) {
-                pendingDomeRaw = raw;
-                pendingDomeCount = 1;
-                lastDomeRaw = raw;
-                acceptDomeSample = false;
-            } else {
-                pendingDomeCount++;
-                if (pendingDomeCount < kSwitchEdgeConfirmFrames) {
-                    lastDomeRaw = raw;
-                    acceptDomeSample = false;
-                }
-            }
-        }
-
-        if (acceptDomeSample) {
-            pendingDomeCount = 0;
-            pendingDomeRaw = raw;
-            lastDomeRaw = raw;
+        DomeInputFilterResult filterResult =
+            domeInputFilterUpdate(&domeInputFilter, raw, (int)cfg.domeSpeed.center, 140, 90,
+                                  kSwitchEdgeConfirmFrames);
+        if (filterResult.accepted) {
             queueDomeCommand(applyRcAnalogCalibration(raw, cfg.domeSpeed, nullptr), SRC_SBUS);
         }
     }
@@ -679,14 +592,15 @@ static void dispatchSbusBindingsForSource(const SbusData& data, RcBindingSource 
         if (rcBindingIsDigital(backbone)) {
             bool digitalPressed = false;
             if (readSbusDigitalTrigger(data, tier2Bindings[i], &digitalPressed)) {
-                if (digitalPressed != g_triggerStates[i].lastPressed) {
+                TriggerDebounceResult result =
+                    triggerDebounceDigital(&triggerStates[i], digitalPressed);
+                if (result.fired) {
                     processTriggerAction(tier2Bindings[i].target, tier2Bindings[i].marcduinoPayload,
-                                         digitalPressed);
-                    g_triggerStates[i].lastPressed = digitalPressed;
+                                         result.pressed);
                 }
             }
         } else if (readSbusAnalogTrigger(data, tier2Bindings[i], &rawValue)) {
-            processTier2Trigger(tier2Bindings[i], rawValue, g_triggerStates[i]);
+            processTier2Trigger(tier2Bindings[i], rawValue, triggerStates[i]);
         }
     }
 }
