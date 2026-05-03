@@ -34,6 +34,7 @@
 #include "../../include/ledc_pwm.h"
 #include "../../include/logging.h"
 #include "../../include/marcduino_helpers.h"
+#include "../../include/rc_action_dispatcher.h"
 #include "../../include/rc_channel_mapper.h"
 #include "../../include/rc_pwm_helpers.h"
 #include "../../include/robot_state.h"
@@ -291,85 +292,6 @@ static bool setStationaryMode(bool stationary) {
     return audioQueuePlaySlot(AUDIO_SLOT_SYS_DRIVE_ON, SRC_INTERNAL);
 }
 
-static bool queueRandomTrackForAction(RobotActionId target) {
-    const char* categoryLabel = randomSoundCategoryLabel(target);
-    uint16_t lo = 0;
-    uint16_t hi = 0;
-    taskENTER_CRITICAL(&robotStateMux);
-    switch (target) {
-        case SOUND_ACTION_RANDOM_GENERAL:
-            lo = robotState.cfg_snd_cat_gen_lo;
-            hi = robotState.cfg_snd_cat_gen_hi;
-            break;
-        case SOUND_ACTION_RANDOM_CHATTY:
-            lo = robotState.cfg_snd_cat_chat_lo;
-            hi = robotState.cfg_snd_cat_chat_hi;
-            break;
-        case SOUND_ACTION_RANDOM_HAPPY:
-            lo = robotState.cfg_snd_cat_hap_lo;
-            hi = robotState.cfg_snd_cat_hap_hi;
-            break;
-        case SOUND_ACTION_RANDOM_PROCESSING:
-            lo = robotState.cfg_snd_cat_proc_lo;
-            hi = robotState.cfg_snd_cat_proc_hi;
-            break;
-        case SOUND_ACTION_RANDOM_SAD:
-            lo = robotState.cfg_snd_cat_sad_lo;
-            hi = robotState.cfg_snd_cat_sad_hi;
-            break;
-        case SOUND_ACTION_RANDOM_SENTIMENTAL:
-            lo = robotState.cfg_snd_cat_sent_lo;
-            hi = robotState.cfg_snd_cat_sent_hi;
-            break;
-        case SOUND_ACTION_RANDOM_HUMMING:
-            lo = robotState.cfg_snd_cat_hum_lo;
-            hi = robotState.cfg_snd_cat_hum_hi;
-            break;
-        case SOUND_ACTION_RANDOM_SCREAM:
-            lo = robotState.cfg_snd_cat_scrm_lo;
-            hi = robotState.cfg_snd_cat_scrm_hi;
-            break;
-        case SOUND_ACTION_RANDOM_SURPRISED:
-            lo = robotState.cfg_snd_cat_ooh_lo;
-            hi = robotState.cfg_snd_cat_ooh_hi;
-            break;
-        case SOUND_ACTION_RANDOM_ALERT:
-            lo = robotState.cfg_snd_cat_alrm_lo;
-            hi = robotState.cfg_snd_cat_alrm_hi;
-            break;
-        case SOUND_ACTION_RANDOM_SNARKY:
-            lo = robotState.cfg_snd_cat_snarky_lo;
-            hi = robotState.cfg_snd_cat_snarky_hi;
-            break;
-        case SOUND_ACTION_RANDOM_WHISTLE:
-            lo = robotState.cfg_snd_cat_whis_lo;
-            hi = robotState.cfg_snd_cat_whis_hi;
-            break;
-        default:
-            break;
-    }
-    taskEXIT_CRITICAL(&robotStateMux);
-
-    if (categoryLabel == nullptr) {
-        PA_LOG_WARN(TAG, "random sound trigger ignored: unknown category action=%u",
-                    (unsigned)target);
-        return false;
-    }
-
-    uint16_t track = 0;
-    if (!selectRandomTrackInRange(lo, hi, esp_random(), &track)) {
-        PA_LOG_WARN(TAG, "random sound trigger ignored: category=%s range=%u..%u inactive",
-                    categoryLabel, (unsigned)lo, (unsigned)hi);
-        return false;
-    }
-    if (!audioQueuePlayTrack(track, SRC_SBUS)) {
-        PA_LOG_WARN(TAG, "random sound trigger dropped: category=%s track=%u queue full",
-                    categoryLabel, (unsigned)track);
-        return false;
-    }
-    PA_LOG_INFO(TAG, "random sound trigger: category=%s track=%u", categoryLabel, (unsigned)track);
-    return true;
-}
 
 static bool queueServoSequence(uint8_t sequenceId, CommandSource source) {
     ServoCommand cmd = {};
@@ -386,185 +308,95 @@ static bool queueServoSequence(uint8_t sequenceId, CommandSource source) {
     return true;
 }
 
-static void dispatchFullDroidSequence(int seqId) {
-    FullDroidBodyAction bodyAction = marcduino_full_droid_body_actions(seqId);
-    if (bodyAction.audioDollarCmd == nullptr && bodyAction.bodySeqId < 0) {
-        PA_LOG_WARN(TAG, "droid sequence ignored: no body mapping for SE%02d", seqId);
-        return;
-    }
-
-    if (bodyAction.audioDollarCmd != nullptr &&
-        !audioQueueDollar(bodyAction.audioDollarCmd, SRC_SBUS)) {
-        PA_LOG_WARN(TAG, "droid sequence audio dropped: %s", bodyAction.audioDollarCmd);
-    }
-
-    int queuedBodySeqId = -1;
-    if (bodyAction.bodySeqId >= 30) {
-        bool estop = false;
-        taskENTER_CRITICAL(&robotStateMux);
-        estop = robotState.estop;
-        taskEXIT_CRITICAL(&robotStateMux);
-
-        if (estop) {
-            PA_LOG_WARN(TAG, "droid sequence servo blocked by estop: SE%02d -> body SE%d", seqId,
-                        bodyAction.bodySeqId);
-        } else if (!queueServoSequence((uint8_t)bodyAction.bodySeqId, SRC_SBUS)) {
-            PA_LOG_WARN(TAG, "droid sequence servo queue full: SE%02d -> body SE%d", seqId,
-                        bodyAction.bodySeqId);
-        } else {
-            queuedBodySeqId = bodyAction.bodySeqId;
-        }
-    }
-
-    const char* domeStatus = "disconnected";
-    if (domeConnected()) {
-        char cmd[8];
-        snprintf(cmd, sizeof(cmd), ":SE%02d", seqId);
-        if (domeQueueTx(cmd)) {
-            domeStatus = "forwarded";
-        } else {
-            domeStatus = "queue_full";
-            PA_LOG_WARN(TAG, "droid sequence dome queue full: %s", cmd);
-        }
-    }
-
-    PA_LOG_INFO(TAG, "droid sequence trigger: SE%02d audio=%s body_seq=%d dome=%s", seqId,
-                bodyAction.audioDollarCmd != nullptr ? bodyAction.audioDollarCmd : "none",
-                queuedBodySeqId, domeStatus);
-}
 
 static void processTriggerAction(RobotActionId target, const char* payload, bool pressed) {
-    switch (target) {
-        case ROBOT_ACTION_NONE:
-            break;
-        case SERVO_ACTION_ARM1_TOGGLE:
-            if (pressed) {
-                queueServoCommand(0, SERVO_CMD_OPEN, 0, SRC_SBUS);
-            } else {
-                queueServoCommand(0, SERVO_CMD_CLOSE, 0, SRC_SBUS);
-            }
-            break;
-        case SERVO_ACTION_ARM2_TOGGLE:
-            if (pressed) {
-                queueServoCommand(1, SERVO_CMD_OPEN, 0, SRC_SBUS);
-            } else {
-                queueServoCommand(1, SERVO_CMD_CLOSE, 0, SRC_SBUS);
-            }
-            break;
-        case SERVO_ACTION_AUX1_TOGGLE:
-            if (pressed) {
-                queueServoCommand(2, SERVO_CMD_OPEN, 0, SRC_SBUS);
-            } else {
-                queueServoCommand(2, SERVO_CMD_CLOSE, 0, SRC_SBUS);
-            }
-            break;
-        case SERVO_ACTION_AUX2_TOGGLE:
-            if (pressed) {
-                queueServoCommand(3, SERVO_CMD_OPEN, 0, SRC_SBUS);
-            } else {
-                queueServoCommand(3, SERVO_CMD_CLOSE, 0, SRC_SBUS);
-            }
-            break;
-        case SERVO_ACTION_AUX3_TOGGLE:
-            if (pressed) {
-                queueServoCommand(4, SERVO_CMD_OPEN, 0, SRC_SBUS);
-            } else {
-                queueServoCommand(4, SERVO_CMD_CLOSE, 0, SRC_SBUS);
-            }
-            break;
-        case DOME_ACTION_MARCDUINO_SEQ:
-            if (pressed && rcPayloadValidForBodySequence(payload)) {
-                char cmd[20];
-                snprintf(cmd, sizeof(cmd), ":SE%s", payload);
-                parseMarcduinoCommand(cmd);
-            }
-            break;
-        case DOME_ACTION_MARCDUINO_CMD:
-            if (pressed && rcPayloadValidForMarcduinoCommand(payload)) {
-                parseMarcduinoCommand(payload);
-            }
-            break;
-        case SOUND_ACTION_RANDOM_GENERAL:
-        case SOUND_ACTION_RANDOM_CHATTY:
-        case SOUND_ACTION_RANDOM_HAPPY:
-        case SOUND_ACTION_RANDOM_PROCESSING:
-        case SOUND_ACTION_RANDOM_SAD:
-        case SOUND_ACTION_RANDOM_SENTIMENTAL:
-        case SOUND_ACTION_RANDOM_HUMMING:
-        case SOUND_ACTION_RANDOM_SCREAM:
-        case SOUND_ACTION_RANDOM_SURPRISED:
-        case SOUND_ACTION_RANDOM_ALERT:
-        case SOUND_ACTION_RANDOM_SNARKY:
-        case SOUND_ACTION_RANDOM_WHISTLE:
-            if (pressed) {
-                queueRandomTrackForAction(target);
-            }
-            break;
-        case DROID_SEQ_SCREAM:
-        case DROID_SEQ_WAVE:
-        case DROID_SEQ_FAST_WAVE:
-        case DROID_SEQ_OPEN_WAVE:
-        case DROID_SEQ_BEEP_CANTINA:
-        case DROID_SEQ_FAINT:
-        case DROID_SEQ_CANTINA:
-        case DROID_SEQ_LEIA:
-        case DROID_SEQ_DISCO:
-        case DROID_SEQ_SCREAMS:
-        case DROID_SEQ_WIGGLE:
-            if (pressed) {
-                int seqId = robotActionIdToDroidSeqId(target);
-                if (seqId > 0) {
-                    dispatchFullDroidSequence(seqId);
-                }
-            }
-            break;
-        case SYSTEM_ACTION_ESTOP:
-            if (pressed) {
-                failsafeTrigger(FailsafeLayer::ESTOP);
-            }
-            break;
-        case SYSTEM_ACTION_SLEEP_TOGGLE:
-            if (pressed) {
-                const uint32_t nowMs = millis();
-                bool sleepMode = false;
-                taskENTER_CRITICAL(&robotStateMux);
-                sleepMode = !robotState.sleepMode;
-                robotState.sleepMode = sleepMode;
-                robotState.sleepSinceMs = sleepMode ? nowMs : 0U;
-                robotState.domeSleepSyncPending = true;
-                robotState.domeSleepSyncSleepMode = sleepMode;
-                taskEXIT_CRITICAL(&robotStateMux);
+    RcActionPayload ap = {};
+    ap.target = target;
+    ap.bindingPayload = payload;
+    ap.pressed = pressed;
+    ap.randomSeed = (uint32_t)esp_random();
 
-                requestStatusBroadcastNow();
+    taskENTER_CRITICAL(&robotStateMux);
+    ap.categories.gen_lo = robotState.cfg_snd_cat_gen_lo;
+    ap.categories.gen_hi = robotState.cfg_snd_cat_gen_hi;
+    ap.categories.chat_lo = robotState.cfg_snd_cat_chat_lo;
+    ap.categories.chat_hi = robotState.cfg_snd_cat_chat_hi;
+    ap.categories.hap_lo = robotState.cfg_snd_cat_hap_lo;
+    ap.categories.hap_hi = robotState.cfg_snd_cat_hap_hi;
+    ap.categories.proc_lo = robotState.cfg_snd_cat_proc_lo;
+    ap.categories.proc_hi = robotState.cfg_snd_cat_proc_hi;
+    ap.categories.sad_lo = robotState.cfg_snd_cat_sad_lo;
+    ap.categories.sad_hi = robotState.cfg_snd_cat_sad_hi;
+    ap.categories.sent_lo = robotState.cfg_snd_cat_sent_lo;
+    ap.categories.sent_hi = robotState.cfg_snd_cat_sent_hi;
+    ap.categories.hum_lo = robotState.cfg_snd_cat_hum_lo;
+    ap.categories.hum_hi = robotState.cfg_snd_cat_hum_hi;
+    ap.categories.scrm_lo = robotState.cfg_snd_cat_scrm_lo;
+    ap.categories.scrm_hi = robotState.cfg_snd_cat_scrm_hi;
+    ap.categories.ooh_lo = robotState.cfg_snd_cat_ooh_lo;
+    ap.categories.ooh_hi = robotState.cfg_snd_cat_ooh_hi;
+    ap.categories.alrm_lo = robotState.cfg_snd_cat_alrm_lo;
+    ap.categories.alrm_hi = robotState.cfg_snd_cat_alrm_hi;
+    ap.categories.snarky_lo = robotState.cfg_snd_cat_snarky_lo;
+    ap.categories.snarky_hi = robotState.cfg_snd_cat_snarky_hi;
+    ap.categories.whis_lo = robotState.cfg_snd_cat_whis_lo;
+    ap.categories.whis_hi = robotState.cfg_snd_cat_whis_hi;
+    ap.estopActive = robotState.estop;
+    ap.currentSleepMode = robotState.sleepMode;
+    ap.currentSpeedPreset = normalizeSpeedPresetId((uint8_t)robotState.cfg_speedPresetActive);
+    taskEXIT_CRITICAL(&robotStateMux);
+
+    RcActionResult res = rcDispatchAction(ap);
+
+    if (res.audioTrack != 0) {
+        if (!audioQueuePlayTrack(res.audioTrack, SRC_SBUS)) {
+            PA_LOG_WARN(TAG, "audio track dropped: track=%u queue full", (unsigned)res.audioTrack);
+        }
+    }
+    if (res.audioDollarCmd[0] != '\0') {
+        if (!audioQueueDollar(res.audioDollarCmd, SRC_SBUS)) {
+            PA_LOG_WARN(TAG, "droid sequence audio dropped: %s", res.audioDollarCmd);
+        }
+    }
+    if (res.servoIndex >= 0) {
+        if (res.servoIsSequence) {
+            if (!queueServoSequence(res.servoSequenceId, SRC_SBUS)) {
+                PA_LOG_WARN(TAG, "droid sequence servo queue full: seq=%u",
+                            (unsigned)res.servoSequenceId);
             }
-            break;
-        case SYSTEM_ACTION_OP_MODE:
-            setStationaryMode(pressed);  // HIGH = Stationary, LOW = Driving
-            break;
-        case DRIVE_ACTION_SPEED_PRESET_CYCLE:
-            if (pressed) {
-                SpeedPresetId current = SpeedPresetId::Normal;
-                taskENTER_CRITICAL(&robotStateMux);
-                current = normalizeSpeedPresetId((uint8_t)robotState.cfg_speedPresetActive);
-                taskEXIT_CRITICAL(&robotStateMux);
-                applySpeedPresetRuntime(nextSpeedPreset(current));
+        } else {
+            ServoCommandType cmd = res.servoOpen ? SERVO_CMD_OPEN : SERVO_CMD_CLOSE;
+            queueServoCommand((uint8_t)res.servoIndex, cmd, 0, SRC_SBUS);
+        }
+    }
+    if (res.domeTxCmd[0] != '\0') {
+        if (domeConnected()) {
+            if (!domeQueueTx(res.domeTxCmd)) {
+                PA_LOG_WARN(TAG, "dome tx queue full: %s", res.domeTxCmd);
             }
-            break;
-        case DOME_ACTION_SEQ:
-            if (pressed && payload != nullptr && payload[0] != '\0') {
-                if (domeConnected()) {
-                    if (!domeQueueTx(payload)) {
-                        PA_LOG_WARN(TAG, "dome seq queue full: %s", payload);
-                    } else {
-                        PA_LOG_INFO(TAG, "dome seq trigger: %s", payload);
-                    }
-                } else {
-                    PA_LOG_DEBUG(TAG, "dome seq skipped (dome not connected): %s", payload);
-                }
-            }
-            break;
-        default:
-            break;
+        }
+    }
+    if (res.marcduinoCmd[0] != '\0') {
+        parseMarcduinoCommand(res.marcduinoCmd);
+    }
+    if (res.triggerEstop) {
+        failsafeTrigger(FailsafeLayer::ESTOP);
+    }
+    if (res.setSleep) {
+        const uint32_t nowMs = millis();
+        taskENTER_CRITICAL(&robotStateMux);
+        robotState.sleepMode = res.newSleepMode;
+        robotState.sleepSinceMs = res.newSleepMode ? nowMs : 0U;
+        robotState.domeSleepSyncPending = true;
+        robotState.domeSleepSyncSleepMode = res.newSleepMode;
+        taskEXIT_CRITICAL(&robotStateMux);
+        requestStatusBroadcastNow();
+    }
+    if (res.setStationary) {
+        setStationaryMode(res.newStationaryMode);
+    }
+    if (res.setSpeedPreset) {
+        applySpeedPresetRuntime(res.newSpeedPreset);
     }
 }
 
