@@ -354,6 +354,10 @@ void configLoadServo(Preferences& prefs, ServoConfig* out);
 void configLoadDome(Preferences& prefs, DomeConfig* out);
 void configLoadSystem(Preferences& prefs, SystemConfig* out);
 
+bool configAudioGetTrackByKey(const AudioConfig& config, const char* key, uint16_t* out);
+bool configAudioSetTrackByKey(AudioConfig* config, const char* key, uint16_t value);
+const char* configAudioCategoryCompanionKey(const char* key);
+
 // configSave: Persist full ConfigSnapshot to NVS.
 // Caller opens Preferences with begin() before calling.
 // Holds no mutex and performs no robotState reads/writes.

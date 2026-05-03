@@ -165,6 +165,82 @@ const struct {
     const char* rcFree3 = "rc_free3";
 } NVS_KEYS;
 
+struct AudioTrackKeyMapEntry {
+    const char* key;
+    uint16_t AudioConfig::*field;
+};
+
+constexpr AudioTrackKeyMapEntry AUDIO_TRACK_KEYS[] = {
+    {"scream", &AudioConfig::snd_scream},
+    {"faint", &AudioConfig::snd_faint},
+    {"leia", &AudioConfig::snd_leia},
+    {"cantina_s", &AudioConfig::snd_cantina_s},
+    {"sw_theme", &AudioConfig::snd_sw_theme},
+    {"imp_march", &AudioConfig::snd_imp_march},
+    {"cantina_l", &AudioConfig::snd_cantina_l},
+    {"startup", &AudioConfig::snd_startup},
+    {"doodoo", &AudioConfig::snd_doodoo},
+    {"failure", &AudioConfig::snd_failure},
+    {"disco", &AudioConfig::snd_disco},
+    {"mahna", &AudioConfig::snd_mahna},
+    {"inlove", &AudioConfig::snd_inlove},
+    {"macho", &AudioConfig::snd_macho},
+    {"gangnam", &AudioConfig::snd_gangnam},
+    {"uptown", &AudioConfig::snd_uptown},
+    {"celebr", &AudioConfig::snd_celebr},
+    {"stayin", &AudioConfig::snd_stayin},
+    {"harlem", &AudioConfig::snd_harlem},
+    {"pbjtime", &AudioConfig::snd_pbjtime},
+    {"sys_boot", &AudioConfig::snd_sys_boot},
+    {"sys_mode_n", &AudioConfig::snd_sys_mode_n},
+    {"sys_mode_s", &AudioConfig::snd_sys_mode_s},
+    {"sys_mode_t", &AudioConfig::snd_sys_mode_t},
+    {"sys_drv_on", &AudioConfig::snd_sys_drv_on},
+    {"sys_dome_on", &AudioConfig::snd_sys_dome_on},
+    {"rand_min", &AudioConfig::snd_rand_min},
+    {"rand_max", &AudioConfig::snd_rand_max},
+    {"snd_int_quiet", &AudioConfig::snd_int_quiet},
+    {"snd_int_mid", &AudioConfig::snd_int_mid},
+    {"snd_int_full", &AudioConfig::snd_int_full},
+    {"snd_int_awake", &AudioConfig::snd_int_awake},
+    {"snd_cat_gen_lo", &AudioConfig::snd_cat_gen_lo},
+    {"snd_cat_gen_hi", &AudioConfig::snd_cat_gen_hi},
+    {"snd_cat_chat_lo", &AudioConfig::snd_cat_chat_lo},
+    {"snd_cat_chat_hi", &AudioConfig::snd_cat_chat_hi},
+    {"snd_cat_hap_lo", &AudioConfig::snd_cat_hap_lo},
+    {"snd_cat_hap_hi", &AudioConfig::snd_cat_hap_hi},
+    {"snd_cat_proc_lo", &AudioConfig::snd_cat_proc_lo},
+    {"snd_cat_proc_hi", &AudioConfig::snd_cat_proc_hi},
+    {"snd_cat_sad_lo", &AudioConfig::snd_cat_sad_lo},
+    {"snd_cat_sad_hi", &AudioConfig::snd_cat_sad_hi},
+    {"snd_cat_sent_lo", &AudioConfig::snd_cat_sent_lo},
+    {"snd_cat_sent_hi", &AudioConfig::snd_cat_sent_hi},
+    {"snd_cat_hum_lo", &AudioConfig::snd_cat_hum_lo},
+    {"snd_cat_hum_hi", &AudioConfig::snd_cat_hum_hi},
+    {"snd_cat_scrm_lo", &AudioConfig::snd_cat_scrm_lo},
+    {"snd_cat_scrm_hi", &AudioConfig::snd_cat_scrm_hi},
+    {"snd_cat_ooh_lo", &AudioConfig::snd_cat_ooh_lo},
+    {"snd_cat_ooh_hi", &AudioConfig::snd_cat_ooh_hi},
+    {"snd_cat_alrm_lo", &AudioConfig::snd_cat_alrm_lo},
+    {"snd_cat_alrm_hi", &AudioConfig::snd_cat_alrm_hi},
+    {"snd_cat_snrk_lo", &AudioConfig::snd_cat_snarky_lo},
+    {"snd_cat_snrk_hi", &AudioConfig::snd_cat_snarky_hi},
+    {"snd_cat_whis_lo", &AudioConfig::snd_cat_whis_lo},
+    {"snd_cat_whis_hi", &AudioConfig::snd_cat_whis_hi},
+};
+
+const AudioTrackKeyMapEntry* audioTrackKeyEntry(const char* key) {
+    if (key == nullptr) {
+        return nullptr;
+    }
+    for (size_t i = 0; i < sizeof(AUDIO_TRACK_KEYS) / sizeof(AUDIO_TRACK_KEYS[0]); ++i) {
+        if (strcmp(AUDIO_TRACK_KEYS[i].key, key) == 0) {
+            return &AUDIO_TRACK_KEYS[i];
+        }
+    }
+    return nullptr;
+}
+
 // Helper: Load RC binding from NVS
 bool loadRcBindingFromPrefs(Preferences& prefs, const char* key,
                             const RcBindingConfig& defaultValue, RcBindingConfig* out) {
@@ -400,6 +476,60 @@ void configSnapshotDefaults(ConfigSnapshot* snap) {
 // =============================================================================
 // Public API Implementation
 // =============================================================================
+
+bool configAudioGetTrackByKey(const AudioConfig& config, const char* key, uint16_t* out) {
+    if (out == nullptr) {
+        return false;
+    }
+    const AudioTrackKeyMapEntry* entry = audioTrackKeyEntry(key);
+    if (entry == nullptr) {
+        return false;
+    }
+    *out = config.*(entry->field);
+    return true;
+}
+
+bool configAudioSetTrackByKey(AudioConfig* config, const char* key, uint16_t value) {
+    if (config == nullptr) {
+        return false;
+    }
+    const AudioTrackKeyMapEntry* entry = audioTrackKeyEntry(key);
+    if (entry == nullptr) {
+        return false;
+    }
+    config->*(entry->field) = value;
+    return true;
+}
+
+const char* configAudioCategoryCompanionKey(const char* key) {
+    if (key == nullptr) {
+        return nullptr;
+    }
+
+    constexpr const char* PAIRS[][2] = {
+        {"snd_cat_gen_lo", "snd_cat_gen_hi"},
+        {"snd_cat_chat_lo", "snd_cat_chat_hi"},
+        {"snd_cat_hap_lo", "snd_cat_hap_hi"},
+        {"snd_cat_proc_lo", "snd_cat_proc_hi"},
+        {"snd_cat_sad_lo", "snd_cat_sad_hi"},
+        {"snd_cat_sent_lo", "snd_cat_sent_hi"},
+        {"snd_cat_hum_lo", "snd_cat_hum_hi"},
+        {"snd_cat_scrm_lo", "snd_cat_scrm_hi"},
+        {"snd_cat_ooh_lo", "snd_cat_ooh_hi"},
+        {"snd_cat_alrm_lo", "snd_cat_alrm_hi"},
+        {"snd_cat_snrk_lo", "snd_cat_snrk_hi"},
+        {"snd_cat_whis_lo", "snd_cat_whis_hi"},
+    };
+    for (size_t i = 0; i < sizeof(PAIRS) / sizeof(PAIRS[0]); ++i) {
+        if (strcmp(key, PAIRS[i][0]) == 0) {
+            return PAIRS[i][1];
+        }
+        if (strcmp(key, PAIRS[i][1]) == 0) {
+            return PAIRS[i][0];
+        }
+    }
+    return nullptr;
+}
 
 void configSnapshotFromRobotState(ConfigSnapshot* out) {
     out->drive.speedLimitMax        = robotState.cfg_speedLimitMax;

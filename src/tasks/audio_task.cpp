@@ -31,6 +31,7 @@
 #include "audio_dollar_parser.h"
 #include "audio_driver.h"
 #include "config.h"
+#include "dome_link.h"
 #include "logging.h"
 #include "mood_sound_mapping.h"
 #include "robot_state.h"
@@ -878,7 +879,11 @@ void audioTask(void* pvParameters) {
                                      commandSourceToString(cmd.source));
                         break;
                     }
-                    bool ok = driver->refreshCatalog();
+                    bool acquired = domeUartAcquire(DOME_UART_AUDIO);
+                    bool ok = acquired && driver->refreshCatalog();
+                    if (acquired) {
+                        domeUartRelease(DOME_UART_AUDIO);
+                    }
                     PA_LOG_INFO(TAG, "[%s] catalog refresh %s", commandSourceToString(cmd.source),
                                 ok ? "OK" : "FAILED");
                     break;
@@ -902,7 +907,11 @@ void audioTask(void* pvParameters) {
                     // The 3-query sequence takes up to ~900 ms; this is acceptable
                     // since it is user-initiated and not in a real-time loop.
                     AudioModuleState ms{};
+                    bool acquired = domeUartAcquire(DOME_UART_AUDIO);
                     bool ok = driver->queryModuleState(ms);
+                    if (acquired) {
+                        domeUartRelease(DOME_UART_AUDIO);
+                    }
                     taskENTER_CRITICAL(&robotStateMux);
                     robotState.audio_module_link_ok = ms.linkOk;
                     robotState.audio_module_play_state = ms.playState;
@@ -1037,7 +1046,11 @@ void audioTask(void* pvParameters) {
             ((uint32_t)(millis() - lastAutoQueryMs) >= AUTO_STATUS_QUERY_INTERVAL_MS)) {
             lastAutoQueryMs = millis();
             AudioModuleState ms{};
+            bool acquired = domeUartAcquire(DOME_UART_AUDIO);
             bool ok = driver->queryModuleState(ms);
+            if (acquired) {
+                domeUartRelease(DOME_UART_AUDIO);
+            }
             taskENTER_CRITICAL(&robotStateMux);
             robotState.audio_module_link_ok = ms.linkOk;
             robotState.audio_module_play_state = ms.playState;

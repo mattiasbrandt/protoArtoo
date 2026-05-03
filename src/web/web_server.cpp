@@ -349,7 +349,7 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     uint32_t domeRxOverflowCount;
     uint32_t domeRxUnknownCount;
     DomeLinkTransport domeActiveTransport;
-    bool domeUartOwned;
+    DomeUartOwner domeUartOwner;
     int16_t hbBatteryRaw;
     int16_t hbBoardTempRaw;
     int16_t hbSpeedR;
@@ -394,7 +394,7 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     domeRxOverflowCount = robotState.domeRxOverflowCount;
     domeRxUnknownCount = robotState.domeRxUnknownCount;
     domeActiveTransport = robotState.domeActiveTransport;
-    domeUartOwned = robotState.domeUartOwned;
+    domeUartOwner = robotState.domeUartOwner;
     hbBatteryRaw = robotState.hb_batteryRaw;
     hbBoardTempRaw = robotState.hb_boardTempRaw;
     hbSpeedR = robotState.hb_speedR;
@@ -651,7 +651,7 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
                 lastRxMs = (int32_t)(uptimeMs - domeLastSeenMs);
             }
             snprintf(dlDetail, sizeof(dlDetail), "transport=%s, uart_owned=%s", dlTransport,
-                     domeUartOwned ? "true" : "false");
+                     domeUartOwner == DOME_UART_DOME ? "true" : "false");
             char dlBuf[320];
             snprintf(dlBuf, sizeof(dlBuf),
                      ",\"dome_link\":{\"state\":\"%s\",\"transport\":\"%s\",\"detail\":\"%s\",\"hb_tx\":%lu,\"hb_rx\":%lu"

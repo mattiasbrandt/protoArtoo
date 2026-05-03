@@ -61,10 +61,9 @@ enum DomeRxSource : uint8_t {
     DOME_RX_WIFI = 1,
 };
 
-static void setTransportState(DomeLinkTransport transport, bool uartOwned) {
+static void setTransportState(DomeLinkTransport transport) {
     taskENTER_CRITICAL(&robotStateMux);
     robotState.domeActiveTransport = transport;
-    robotState.domeUartOwned = uartOwned;
     taskEXIT_CRITICAL(&robotStateMux);
 }
 
@@ -106,10 +105,7 @@ static bool acquireDomeUart() {
     s_domeSerial.end();
     s_domeSerial.begin(9600, SERIAL_8N1, PIN_DOME_RX, PIN_DOME_TX);
     s_uartOwned = true;
-
-    taskENTER_CRITICAL(&robotStateMux);
-    robotState.domeUartOwned = true;
-    taskEXIT_CRITICAL(&robotStateMux);
+    domeUartAcquire(DOME_UART_DOME);
 
     PA_LOG_INFO(TAG, "UART2 ownership -> dome link (GPIO%d/GPIO%d)", PIN_DOME_TX, PIN_DOME_RX);
     return true;
@@ -124,10 +120,8 @@ static void releaseUartToAudioRx() {
     // Reconfigure UART2 RX to audio module status pin so AudioTask queries can run.
     s_domeSerial.begin(9600, SERIAL_8N1, PIN_AUDIO_RX, -1);
     s_uartOwned = false;
-
-    taskENTER_CRITICAL(&robotStateMux);
-    robotState.domeUartOwned = false;
-    taskEXIT_CRITICAL(&robotStateMux);
+    domeUartRelease(DOME_UART_DOME);
+    domeUartAcquire(DOME_UART_AUDIO);
 
     PA_LOG_INFO(TAG, "UART2 ownership -> audio RX (GPIO%d)", PIN_AUDIO_RX);
 }
@@ -379,6 +373,60 @@ static void processUdpRx(uint32_t nowMs, uint32_t* inOutLastWifiHeartbeatMs) {
 
 }  // namespace
 
+bool domeUartAcquire(DomeUartOwner requester) {
+    if (requester == DOME_UART_NONE) {
+        PA_LOG_WARN(TAG, "UART2 acquire ignored for NONE requester");
+        return false;
+    }
+
+    taskENTER_CRITICAL(&robotStateMux);
+    DomeUartOwner current = robotState.domeUartOwner;
+    if (current == requester) {
+        taskEXIT_CRITICAL(&robotStateMux);
+        PA_LOG_WARN(TAG, "UART2 acquire duplicate by owner=%u", (unsigned)requester);
+        return true;
+    }
+    if (current == DOME_UART_AUDIO && requester == DOME_UART_DOME) {
+        robotState.domeUartOwner = requester;
+        taskEXIT_CRITICAL(&robotStateMux);
+        return true;
+    }
+    if (current != DOME_UART_NONE) {
+        taskEXIT_CRITICAL(&robotStateMux);
+        PA_LOG_WARN(TAG, "UART2 acquire denied owner=%u requester=%u", (unsigned)current,
+                    (unsigned)requester);
+        return false;
+    }
+    robotState.domeUartOwner = requester;
+    taskEXIT_CRITICAL(&robotStateMux);
+    return true;
+}
+
+void domeUartRelease(DomeUartOwner requester) {
+    if (requester == DOME_UART_NONE) {
+        PA_LOG_WARN(TAG, "UART2 release ignored for NONE requester");
+        return;
+    }
+
+    taskENTER_CRITICAL(&robotStateMux);
+    DomeUartOwner current = robotState.domeUartOwner;
+    if (current == requester) {
+        robotState.domeUartOwner = DOME_UART_NONE;
+        taskEXIT_CRITICAL(&robotStateMux);
+        return;
+    }
+    taskEXIT_CRITICAL(&robotStateMux);
+    PA_LOG_WARN(TAG, "UART2 release ignored owner=%u requester=%u", (unsigned)current,
+                (unsigned)requester);
+}
+
+bool domeUartOwnedBy(DomeUartOwner owner) {
+    taskENTER_CRITICAL(&robotStateMux);
+    bool owned = robotState.domeUartOwner == owner;
+    taskEXIT_CRITICAL(&robotStateMux);
+    return owned;
+}
+
 // -----------------------------------------------------------------------------
 // domeQueueTx()
 // Non-blocking enqueue. Increments queueOverflowCount on full queue.
@@ -419,7 +467,8 @@ void domeLinkTask(void* pvParameters) {
     taskEXIT_CRITICAL(&robotStateMux);
 
     if (!enabled) {
-        setTransportState(DOME_LINK_TRANSPORT_DISCONNECTED, false);
+        setTransportState(DOME_LINK_TRANSPORT_DISCONNECTED);
+        domeUartRelease(DOME_UART_DOME);
         PA_LOG_INFO(TAG, "dome link disabled (en_s3=false) — task idle");
 
         DomeTxCmd cmd{};
@@ -429,7 +478,7 @@ void domeLinkTask(void* pvParameters) {
     }
 
     acquireDomeUart();
-    setTransportState(DOME_LINK_TRANSPORT_UART, true);
+    setTransportState(DOME_LINK_TRANSPORT_UART);
 
     uint32_t lastHeartbeatTxMs = 0;
     uint32_t lastUartHeartbeatMs = 0;
@@ -520,7 +569,7 @@ void domeLinkTask(void* pvParameters) {
             }
         }
 
-        setTransportState(desiredTransport, s_uartOwned);
+        setTransportState(desiredTransport);
 
         bool sleepSyncPending = false;
         bool sleepSyncSleepMode = false;

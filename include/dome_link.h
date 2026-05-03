@@ -59,3 +59,7 @@ bool domeQueueTx(const char* cmd);
 
 // True when a dome heartbeat has been seen within the timeout window.
 bool domeConnected();
+
+bool domeUartAcquire(DomeUartOwner requester);
+void domeUartRelease(DomeUartOwner requester);
+bool domeUartOwnedBy(DomeUartOwner owner);

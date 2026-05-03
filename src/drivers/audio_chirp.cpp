@@ -30,6 +30,7 @@
 
 #include "audio_soft_uart_tx.h"  // shared soft-UART bit-bang primitives
 #include "config.h"
+#include "dome_link.h"
 #include "logging.h"
 #include "robot_state.h"
 
@@ -390,10 +391,7 @@ void AudioDriverChirp::setVolume(uint8_t vol) {
 }
 
 bool AudioDriverChirp::refreshCatalog() {
-    bool uart2Contended;
-    taskENTER_CRITICAL(&robotStateMux);
-    uart2Contended = robotState.domeUartOwned;
-    taskEXIT_CRITICAL(&robotStateMux);
+    bool uart2Contended = domeUartOwnedBy(DOME_UART_DOME);
 
     if (uart2Contended) {
         PA_LOG_WARN(TAG, "catalog refresh skipped — UART2 contended by dome link");
@@ -531,10 +529,7 @@ static bool parseChirpStatusLine(const char* line, uint8_t* playStateOut) {
 }
 
 bool AudioDriverChirp::queryModuleState(AudioModuleState& out) {
-    bool uart2Contended;
-    taskENTER_CRITICAL(&robotStateMux);
-    uart2Contended = robotState.domeUartOwned;
-    taskEXIT_CRITICAL(&robotStateMux);
+    bool uart2Contended = domeUartOwnedBy(DOME_UART_DOME);
     if (uart2Contended) {
         PA_LOG_DEBUG(TAG, "UART2 contended — returning cached module state");
         getCachedState(out);

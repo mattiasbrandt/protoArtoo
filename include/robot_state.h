@@ -64,6 +64,12 @@ enum DomeLinkTransport : uint8_t {
     DOME_LINK_TRANSPORT_WIFI,
 };
 
+enum DomeUartOwner : uint8_t {
+    DOME_UART_NONE = 0,
+    DOME_UART_DOME,
+    DOME_UART_AUDIO,
+};
+
 enum ServoComponentType : uint8_t {
     SERVO_COMP_NONE = 0,    // Nothing connected / unassigned
     SERVO_COMP_MG996R = 1,  // Standard hobby servo, 1000-2000 µs range
@@ -200,7 +206,7 @@ struct RobotState {
     uint32_t domeRxOverflowCount;
     uint32_t domeRxUnknownCount;
     DomeLinkTransport domeActiveTransport;
-    bool domeUartOwned;
+    DomeUartOwner domeUartOwner;
     bool     domeSeqActive;    // true while a dome sequence is running
     uint32_t domeSeqUntilMs;   // safety timeout: auto-clear domeSeqActive at this millis()
 

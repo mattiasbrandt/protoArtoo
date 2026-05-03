@@ -48,6 +48,7 @@
 
 #include "audio_soft_uart_tx.h"
 #include "config.h"
+#include "dome_link.h"
 #include "logging.h"
 #include "robot_state.h"
 
@@ -225,10 +226,7 @@ void AudioDriverMp3Trigger::setVolume(uint8_t vol) {
 // Only call from AudioTask (Core 0). Blocking up to ~1 s in the worst case.
 // -----------------------------------------------------------------------------
 bool AudioDriverMp3Trigger::queryModuleState(AudioModuleState& out) {
-    bool uart2Contended;
-    taskENTER_CRITICAL(&robotStateMux);
-    uart2Contended = robotState.domeUartOwned;
-    taskEXIT_CRITICAL(&robotStateMux);
+    bool uart2Contended = domeUartOwnedBy(DOME_UART_DOME);
     if (uart2Contended) {
         PA_LOG_DEBUG(TAG, "UART2 contended — returning cached module state");
         getCachedState(out);

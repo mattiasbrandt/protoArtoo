@@ -934,6 +934,40 @@ void test_config_domain_round_trip_matrix() {
     prefs.end();
 }
 
+void test_configAudioTrackByKey_round_trips_named_track() {
+    AudioConfig audio = {};
+
+    TEST_ASSERT_TRUE(configAudioSetTrackByKey(&audio, "scream", 321));
+
+    uint16_t value = 0;
+    TEST_ASSERT_TRUE(configAudioGetTrackByKey(audio, "scream", &value));
+    TEST_ASSERT_EQUAL_UINT16(321, value);
+}
+
+void test_configAudioTrackByKey_round_trips_category_bound() {
+    AudioConfig audio = {};
+
+    TEST_ASSERT_TRUE(configAudioSetTrackByKey(&audio, "snd_cat_snrk_hi", 654));
+
+    uint16_t value = 0;
+    TEST_ASSERT_TRUE(configAudioGetTrackByKey(audio, "snd_cat_snrk_hi", &value));
+    TEST_ASSERT_EQUAL_UINT16(654, value);
+    TEST_ASSERT_EQUAL_STRING("snd_cat_snrk_lo",
+                             configAudioCategoryCompanionKey("snd_cat_snrk_hi"));
+}
+
+void test_configAudioTrackByKey_rejects_unknown_key() {
+    AudioConfig audio = {};
+    uint16_t value = 0xFFFF;
+
+    TEST_ASSERT_FALSE(configAudioSetTrackByKey(&audio, "unknown", 123));
+    TEST_ASSERT_FALSE(configAudioGetTrackByKey(audio, "unknown", &value));
+    TEST_ASSERT_FALSE(configAudioGetTrackByKey(audio, "scream", nullptr));
+    TEST_ASSERT_FALSE(configAudioSetTrackByKey(nullptr, "scream", 123));
+    TEST_ASSERT_NULL(configAudioCategoryCompanionKey("unknown"));
+    TEST_ASSERT_EQUAL_UINT16(0xFFFF, value);
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_configLoad_empty_nvs_returns_defaults);
@@ -966,5 +1000,8 @@ int main() {
     RUN_TEST(test_config_domain_load_functions_are_independently_callable);
     RUN_TEST(test_config_domain_save_preserves_other_domains);
     RUN_TEST(test_config_domain_round_trip_matrix);
+    RUN_TEST(test_configAudioTrackByKey_round_trips_named_track);
+    RUN_TEST(test_configAudioTrackByKey_round_trips_category_bound);
+    RUN_TEST(test_configAudioTrackByKey_rejects_unknown_key);
     return UNITY_END();
 }
