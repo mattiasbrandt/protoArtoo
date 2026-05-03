@@ -849,6 +849,91 @@ void test_config_domain_save_preserves_other_domains() {
     TEST_ASSERT_EQUAL_INT(true, loaded.system.enable_s2_sound);
 }
 
+static void seed_domain_round_trip_baseline(Preferences& prefs) {
+    prefs.clear();
+
+    ConfigSnapshot baseline = {};
+    TEST_ASSERT_TRUE(configLoad(prefs, &baseline));
+    baseline.drive.speedLimitMax = 500;
+    baseline.audio.audioVolume = 10;
+    baseline.servo.arm1_open_us = 1900;
+    baseline.dome.dome_speed_limit_pct = 75;
+    baseline.system.enable_s2_sound = true;
+    TEST_ASSERT_TRUE(configSave(prefs, baseline));
+}
+
+static void assert_domain_round_trip_baseline_preserved(const ConfigSnapshot& loaded) {
+    TEST_ASSERT_EQUAL_INT16(500, loaded.drive.speedLimitMax);
+    TEST_ASSERT_EQUAL_UINT8(10, loaded.audio.audioVolume);
+    TEST_ASSERT_EQUAL_UINT16(1900, loaded.servo.arm1_open_us);
+    TEST_ASSERT_EQUAL_UINT8(75, loaded.dome.dome_speed_limit_pct);
+    TEST_ASSERT_EQUAL_INT(true, loaded.system.enable_s2_sound);
+}
+
+void test_config_domain_round_trip_matrix() {
+    Preferences prefs;
+    prefs.begin("proto", false);
+
+    seed_domain_round_trip_baseline(prefs);
+    ConfigSnapshot loaded = {};
+    TEST_ASSERT_TRUE(configLoad(prefs, &loaded));
+    configApplyToRobotState(loaded);
+    robotState.cfg_speedLimitMax = 580;
+    ConfigSnapshot fromState = {};
+    configSnapshotFromRobotState(&fromState);
+    TEST_ASSERT_TRUE(configSaveDrive(prefs, fromState.drive));
+    TEST_ASSERT_TRUE(configLoad(prefs, &loaded));
+    TEST_ASSERT_EQUAL_INT16(580, loaded.drive.speedLimitMax);
+    loaded.drive.speedLimitMax = 500;
+    assert_domain_round_trip_baseline_preserved(loaded);
+
+    seed_domain_round_trip_baseline(prefs);
+    TEST_ASSERT_TRUE(configLoad(prefs, &loaded));
+    configApplyToRobotState(loaded);
+    robotState.cfg_audioVolume = 24;
+    configSnapshotFromRobotState(&fromState);
+    TEST_ASSERT_TRUE(configSaveAudio(prefs, fromState.audio));
+    TEST_ASSERT_TRUE(configLoad(prefs, &loaded));
+    TEST_ASSERT_EQUAL_UINT8(24, loaded.audio.audioVolume);
+    loaded.audio.audioVolume = 10;
+    assert_domain_round_trip_baseline_preserved(loaded);
+
+    seed_domain_round_trip_baseline(prefs);
+    TEST_ASSERT_TRUE(configLoad(prefs, &loaded));
+    configApplyToRobotState(loaded);
+    robotState.cfg_arm1_open_us = 2100;
+    configSnapshotFromRobotState(&fromState);
+    TEST_ASSERT_TRUE(configSaveServo(prefs, fromState.servo));
+    TEST_ASSERT_TRUE(configLoad(prefs, &loaded));
+    TEST_ASSERT_EQUAL_UINT16(2100, loaded.servo.arm1_open_us);
+    loaded.servo.arm1_open_us = 1900;
+    assert_domain_round_trip_baseline_preserved(loaded);
+
+    seed_domain_round_trip_baseline(prefs);
+    TEST_ASSERT_TRUE(configLoad(prefs, &loaded));
+    configApplyToRobotState(loaded);
+    robotState.cfg_dome_speed_limit_pct = 62;
+    configSnapshotFromRobotState(&fromState);
+    TEST_ASSERT_TRUE(configSaveDome(prefs, fromState.dome));
+    TEST_ASSERT_TRUE(configLoad(prefs, &loaded));
+    TEST_ASSERT_EQUAL_UINT8(62, loaded.dome.dome_speed_limit_pct);
+    loaded.dome.dome_speed_limit_pct = 75;
+    assert_domain_round_trip_baseline_preserved(loaded);
+
+    seed_domain_round_trip_baseline(prefs);
+    TEST_ASSERT_TRUE(configLoad(prefs, &loaded));
+    configApplyToRobotState(loaded);
+    robotState.cfg_enable_s2_sound = false;
+    configSnapshotFromRobotState(&fromState);
+    TEST_ASSERT_TRUE(configSaveSystem(prefs, fromState.system));
+    TEST_ASSERT_TRUE(configLoad(prefs, &loaded));
+    TEST_ASSERT_EQUAL_INT(false, loaded.system.enable_s2_sound);
+    loaded.system.enable_s2_sound = true;
+    assert_domain_round_trip_baseline_preserved(loaded);
+
+    prefs.end();
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_configLoad_empty_nvs_returns_defaults);
@@ -880,5 +965,6 @@ int main() {
     RUN_TEST(test_configApplyToRobotState_does_not_touch_non_cfg_fields);
     RUN_TEST(test_config_domain_load_functions_are_independently_callable);
     RUN_TEST(test_config_domain_save_preserves_other_domains);
+    RUN_TEST(test_config_domain_round_trip_matrix);
     return UNITY_END();
 }

@@ -11,6 +11,8 @@
 #include "logging.h"
 #include "rc_mapping.h"
 
+#include <cstring>
+
 // IPAddress.h is only available in Arduino/ESP-IDF environments, not native tests
 #ifdef ARDUINO
 #include <IPAddress.h>
@@ -220,6 +222,18 @@ bool saveRcTriggerBindingToPrefs(Preferences& prefs, const char* key,
         return false;
     }
     return prefs.putString(key, encoded) > 0;
+}
+
+float floatFromBits(uint32_t value) {
+    float result = 0.0f;
+    memcpy(&result, &value, sizeof(result));
+    return result;
+}
+
+uint32_t floatToBits(float value) {
+    uint32_t result = 0;
+    memcpy(&result, &value, sizeof(result));
+    return result;
 }
 
 // Helper: Populate ConfigSnapshot with defaults
@@ -682,10 +696,8 @@ bool configLoad(Preferences& prefs, ConfigSnapshot* out) {
         return false;
     }
 
-    // Start with defaults
     configSnapshotDefaults(out);
 
-    // Check schema version
     uint8_t storedVersion = prefs.getUChar(CONFIG_SCHEMA_VERSION_KEY, 0);
     bool isLegacy = (storedVersion == 0);
     bool schemaMismatch = (!isLegacy && storedVersion != CONFIG_SCHEMA_VERSION);
@@ -703,322 +715,12 @@ bool configLoad(Preferences& prefs, ConfigSnapshot* out) {
         PA_LOG_INFO("config", "legacy config detected (version 0); loading and stamping as v1");
     }
 
-    // Load all fields from NVS
-    out->drive.speedLimitMax = prefs.getShort(NVS_KEYS.speedLimitMax, SPEED_LIMIT_MAX);
-    out->drive.speedPresetSlow = prefs.getShort(NVS_KEYS.speedPresetSlow, SPEED_PRESET_SLOW);
-    out->drive.speedPresetNormal = prefs.getShort(NVS_KEYS.speedPresetNormal, SPEED_PRESET_NORMAL);
-    out->drive.speedPresetTurbo = prefs.getShort(NVS_KEYS.speedPresetTurbo, SPEED_PRESET_TURBO);
-    out->drive.speedPresetActive =
-        normalizeSpeedPresetId(prefs.getUChar(NVS_KEYS.speedPresetActive, (uint8_t)SpeedPresetId::Normal));
-    out->drive.sbusTimeoutMs = prefs.getULong(NVS_KEYS.sbusTimeoutMs, SBUS_TIMEOUT_MS);
-    out->drive.webDriveTimeoutMs = prefs.getULong(NVS_KEYS.webDriveTimeoutMs, WEB_DRIVE_TIMEOUT_MS);
-    out->audio.audioVolume = prefs.getUChar(NVS_KEYS.audioVolume, 20);
-    out->system.logLevel = prefs.getUChar(NVS_KEYS.logLevel, PA_LOG_LEVEL);
+    configLoadDrive(prefs, &out->drive);
+    configLoadAudio(prefs, &out->audio);
+    configLoadServo(prefs, &out->servo);
+    configLoadDome(prefs, &out->dome);
+    configLoadSystem(prefs, &out->system);
 
-    out->audio.snd_scream = prefs.getUShort(NVS_KEYS.sndScream, AUDIO_TRACK_SCREAM);
-    out->audio.snd_faint = prefs.getUShort(NVS_KEYS.sndFaint, AUDIO_TRACK_FAINT);
-    out->audio.snd_leia = prefs.getUShort(NVS_KEYS.sndLeia, AUDIO_TRACK_LEIA);
-    out->audio.snd_cantina_s = prefs.getUShort(NVS_KEYS.sndCantinaS, AUDIO_TRACK_CANTINA_S);
-    out->audio.snd_sw_theme = prefs.getUShort(NVS_KEYS.sndSwTheme, AUDIO_TRACK_SW_THEME);
-    out->audio.snd_imp_march = prefs.getUShort(NVS_KEYS.sndImpMarch, AUDIO_TRACK_IMP_MARCH);
-    out->audio.snd_cantina_l = prefs.getUShort(NVS_KEYS.sndCantinaL, AUDIO_TRACK_CANTINA_L);
-    out->audio.snd_startup = prefs.getUShort(NVS_KEYS.sndStartup, AUDIO_TRACK_STARTUP);
-    out->audio.snd_doodoo = prefs.getUShort(NVS_KEYS.sndDoodoo, 0);
-    out->audio.snd_failure = prefs.getUShort(NVS_KEYS.sndFailure, 0);
-    out->audio.snd_disco = prefs.getUShort(NVS_KEYS.sndDisco, 0);
-    out->audio.snd_mahna = prefs.getUShort(NVS_KEYS.sndMahna, 0);
-    out->audio.snd_inlove = prefs.getUShort(NVS_KEYS.sndInlove, 0);
-    out->audio.snd_macho = prefs.getUShort(NVS_KEYS.sndMacho, 0);
-    out->audio.snd_gangnam = prefs.getUShort(NVS_KEYS.sndGangnam, 0);
-    out->audio.snd_uptown = prefs.getUShort(NVS_KEYS.sndUptown, 0);
-    out->audio.snd_celebr = prefs.getUShort(NVS_KEYS.sndCelebr, 0);
-    out->audio.snd_stayin = prefs.getUShort(NVS_KEYS.sndStayin, 0);
-    out->audio.snd_harlem = prefs.getUShort(NVS_KEYS.sndHarlem, 0);
-    out->audio.snd_pbjtime = prefs.getUShort(NVS_KEYS.sndPbjtime, 0);
-    out->audio.snd_sys_boot = prefs.getUShort(NVS_KEYS.sndSysBoot, 0);
-    out->audio.snd_sys_mode_n = prefs.getUShort(NVS_KEYS.sndSysModeN, 0);
-    out->audio.snd_sys_mode_s = prefs.getUShort(NVS_KEYS.sndSysModeS, 0);
-    out->audio.snd_sys_mode_t = prefs.getUShort(NVS_KEYS.sndSysModeT, 0);
-    out->audio.snd_sys_drv_on = prefs.getUShort(NVS_KEYS.sndSysDrvOn, 0);
-    out->audio.snd_sys_dome_on = prefs.getUShort(NVS_KEYS.sndSysDomeOn, 0);
-    out->audio.snd_rand_min = prefs.getUShort(NVS_KEYS.sndRandMin, AUDIO_RAND_TRACK_MIN);
-    out->audio.snd_rand_max = prefs.getUShort(NVS_KEYS.sndRandMax, AUDIO_RAND_TRACK_MAX);
-    out->audio.snd_int_quiet = prefs.getUShort(NVS_KEYS.sndIntQuiet, AUDIO_RAND_INT_QUIET);
-    out->audio.snd_int_mid = prefs.getUShort(NVS_KEYS.sndIntMid, AUDIO_RAND_INT_MID);
-    out->audio.snd_int_full = prefs.getUShort(NVS_KEYS.sndIntFull, AUDIO_RAND_INT_FULL);
-    out->audio.snd_int_awake = prefs.getUShort(NVS_KEYS.sndIntAwake, AUDIO_RAND_INT_AWAKE);
-    out->audio.snd_moodcat_quiet = prefs.getUShort(NVS_KEYS.sndMoodcatQuiet, 0x0048);
-    out->audio.snd_moodcat_mid = prefs.getUShort(NVS_KEYS.sndMoodcatMid, 0x004F);
-    out->audio.snd_moodcat_full = prefs.getUShort(NVS_KEYS.sndMoodcatFull, 0x090F);
-    out->audio.snd_moodcat_awakeplus = prefs.getUShort(NVS_KEYS.sndMoodcatAwakeplus, 0x0F8F);
-
-    out->audio.snd_cat_gen_lo = prefs.getUShort(NVS_KEYS.sndCatGenLo, 0);
-    out->audio.snd_cat_gen_hi = prefs.getUShort(NVS_KEYS.sndCatGenHi, 0);
-    out->audio.snd_cat_chat_lo = prefs.getUShort(NVS_KEYS.sndCatChatLo, 0);
-    out->audio.snd_cat_chat_hi = prefs.getUShort(NVS_KEYS.sndCatChatHi, 0);
-    out->audio.snd_cat_hap_lo = prefs.getUShort(NVS_KEYS.sndCatHapLo, 0);
-    out->audio.snd_cat_hap_hi = prefs.getUShort(NVS_KEYS.sndCatHapHi, 0);
-    out->audio.snd_cat_proc_lo = prefs.getUShort(NVS_KEYS.sndCatProcLo, 0);
-    out->audio.snd_cat_proc_hi = prefs.getUShort(NVS_KEYS.sndCatProcHi, 0);
-    out->audio.snd_cat_sad_lo = prefs.getUShort(NVS_KEYS.sndCatSadLo, 0);
-    out->audio.snd_cat_sad_hi = prefs.getUShort(NVS_KEYS.sndCatSadHi, 0);
-    out->audio.snd_cat_sent_lo = prefs.getUShort(NVS_KEYS.sndCatSentLo, 0);
-    out->audio.snd_cat_sent_hi = prefs.getUShort(NVS_KEYS.sndCatSentHi, 0);
-    out->audio.snd_cat_hum_lo = prefs.getUShort(NVS_KEYS.sndCatHumLo, 0);
-    out->audio.snd_cat_hum_hi = prefs.getUShort(NVS_KEYS.sndCatHumHi, 0);
-    out->audio.snd_cat_scrm_lo = prefs.getUShort(NVS_KEYS.sndCatScrmLo, 0);
-    out->audio.snd_cat_scrm_hi = prefs.getUShort(NVS_KEYS.sndCatScrmHi, 0);
-    out->audio.snd_cat_ooh_lo = prefs.getUShort(NVS_KEYS.sndCatOohLo, 0);
-    out->audio.snd_cat_ooh_hi = prefs.getUShort(NVS_KEYS.sndCatOohHi, 0);
-    out->audio.snd_cat_alrm_lo = prefs.getUShort(NVS_KEYS.sndCatAlrmLo, 0);
-    out->audio.snd_cat_alrm_hi = prefs.getUShort(NVS_KEYS.sndCatAlrmHi, 0);
-    out->audio.snd_cat_snarky_lo = prefs.getUShort(NVS_KEYS.sndCatSnarkyLo, 0);
-    out->audio.snd_cat_snarky_hi = prefs.getUShort(NVS_KEYS.sndCatSnarkyHi, 0);
-    out->audio.snd_cat_whis_lo = prefs.getUShort(NVS_KEYS.sndCatWhisLo, 0);
-    out->audio.snd_cat_whis_hi = prefs.getUShort(NVS_KEYS.sndCatWhisHi, 0);
-
-    out->servo.arm1_open_us = prefs.getUShort(NVS_KEYS.arm1OpenUs, 2000);
-    out->servo.arm1_close_us = prefs.getUShort(NVS_KEYS.arm1CloseUs, 1000);
-    out->servo.arm2_open_us = prefs.getUShort(NVS_KEYS.arm2OpenUs, 2000);
-    out->servo.arm2_close_us = prefs.getUShort(NVS_KEYS.arm2CloseUs, 1000);
-    out->servo.arm1_type = (ServoComponentType)prefs.getUChar(NVS_KEYS.arm1Type, SERVO_COMP_MG996R);
-    out->servo.arm2_type = (ServoComponentType)prefs.getUChar(NVS_KEYS.arm2Type, SERVO_COMP_MG996R);
-    out->servo.aux1_open_us = prefs.getUShort(NVS_KEYS.aux1OpenUs, 2000);
-    out->servo.aux1_close_us = prefs.getUShort(NVS_KEYS.aux1CloseUs, 1000);
-    out->servo.aux2_open_us = prefs.getUShort(NVS_KEYS.aux2OpenUs, 2000);
-    out->servo.aux2_close_us = prefs.getUShort(NVS_KEYS.aux2CloseUs, 1000);
-    out->servo.aux3_open_us = prefs.getUShort(NVS_KEYS.aux3OpenUs, 2000);
-    out->servo.aux3_close_us = prefs.getUShort(NVS_KEYS.aux3CloseUs, 1000);
-    out->servo.aux1_type = (ServoComponentType)prefs.getUChar(NVS_KEYS.aux1Type, SERVO_COMP_NONE);
-    out->servo.aux2_type = (ServoComponentType)prefs.getUChar(NVS_KEYS.aux2Type, SERVO_COMP_NONE);
-    out->servo.aux3_type = (ServoComponentType)prefs.getUChar(NVS_KEYS.aux3Type, SERVO_COMP_NONE);
-
-    union {
-        float f;
-        uint32_t u;
-    } dome_conv;
-    dome_conv.u = prefs.getULong(NVS_KEYS.domeMin, 0);
-    out->dome.dome_min_speed = dome_conv.f;
-    dome_conv.u = prefs.getULong(NVS_KEYS.domeMax, 0x3F800000);
-    out->dome.dome_max_speed = dome_conv.f;
-
-    out->dome.dome_neutral_us = prefs.getUShort(NVS_KEYS.domeNeutralUs, 1500);
-    out->dome.dome_min_pulse_us = prefs.getUShort(NVS_KEYS.domeMinPulseUs, 1000);
-    out->dome.dome_max_pulse_us = prefs.getUShort(NVS_KEYS.domeMaxPulseUs, 2000);
-    out->dome.dome_speed_limit_pct = prefs.getUChar(NVS_KEYS.domeSpeedLimitPct, 100);
-    out->dome.dome_rnd_enable = prefs.getBool(NVS_KEYS.domeRndEnable, false);
-    out->dome.dome_rnd_speed_pct = prefs.getUChar(NVS_KEYS.domeRndSpeedPct, 30);
-    out->dome.dome_rnd_pause_min = prefs.getUChar(NVS_KEYS.domeRndPauseMin, 6);
-    out->dome.dome_rnd_pause_max = prefs.getUChar(NVS_KEYS.domeRndPauseMax, 12);
-    out->dome.dome_rnd_move_ms = prefs.getUShort(NVS_KEYS.domeRndMoveMs, 2500);
-
-    String domeWifiPeerIp = prefs.getString(NVS_KEYS.domeWifiPeerIp, "");
-    if (domeWifiPeerIp.length() >= sizeof(out->dome.dome_wifi_peer_ip)) {
-        domeWifiPeerIp = "";
-    }
-    snprintf(out->dome.dome_wifi_peer_ip, sizeof(out->dome.dome_wifi_peer_ip), "%s", domeWifiPeerIp.c_str());
-
-    out->servo.seq_open_ms = prefs.getUShort(NVS_KEYS.seqOpenMs, 1000);
-    out->servo.seq_close_ms = prefs.getUShort(NVS_KEYS.seqCloseMs, 1000);
-
-    out->servo.aux_led_pin = prefs.getUChar(NVS_KEYS.auxLedPin, AUX_LED_PIN_DISABLED);
-    out->servo.aux_led_count = prefs.getUChar(NVS_KEYS.auxLedCount, AUX_LED_COUNT_DEFAULT);
-
-    out->system.enable_arm1 = prefs.getBool(NVS_KEYS.enableArm1, false);
-    out->system.enable_arm2 = prefs.getBool(NVS_KEYS.enableArm2, false);
-    out->system.enable_aux1 = prefs.getBool(NVS_KEYS.enableAux1, false);
-    out->system.enable_aux2 = prefs.getBool(NVS_KEYS.enableAux2, false);
-    out->system.enable_aux3 = prefs.getBool(NVS_KEYS.enableAux3, false);
-    out->system.enable_dome = prefs.getBool(NVS_KEYS.enableDome, false);
-    out->system.enable_rc_ch1 = prefs.getBool(NVS_KEYS.enableRcCh1, false);
-    out->system.enable_rc_ch2 = prefs.getBool(NVS_KEYS.enableRcCh2, false);
-    out->system.enable_rc_ch3 = prefs.getBool(NVS_KEYS.enableRcCh3, false);
-    out->system.enable_rc_ch4 = prefs.getBool(NVS_KEYS.enableRcCh4, false);
-    out->system.enable_rc_ch5 = prefs.getBool(NVS_KEYS.enableRcCh5, false);
-    out->system.enable_rc_ch6 = prefs.getBool(NVS_KEYS.enableRcCh6, false);
-    out->system.single_sbus_use_ch2 = prefs.getBool(NVS_KEYS.singleSbusUseCh2, false);
-    out->system.enable_s1_hoverboard = prefs.getBool(NVS_KEYS.enableS1Hoverboard, false);
-    out->system.enable_s2_sound = prefs.getBool(NVS_KEYS.enableS2Sound, false);
-    out->system.enable_s3_dome_ctrl = prefs.getBool(NVS_KEYS.enableS3DomeCtrl, false);
-    out->system.stationary = prefs.getBool(NVS_KEYS.stationary, false);
-    out->system.rc_input_mode = (RcInputMode)prefs.getUChar(NVS_KEYS.rcInputMode, RC_INPUT_DUAL_SBUS);
-
-    // RC Bindings Tier 1
-    loadRcBindingFromPrefs(prefs, NVS_KEYS.rcPwmDriveSpeed, defaultPwmBinding(1), &out->system.rc_pwm_drive_speed);
-    loadRcBindingFromPrefs(prefs, NVS_KEYS.rcPwmDriveSteer, defaultPwmBinding(2), &out->system.rc_pwm_drive_steer);
-    loadRcBindingFromPrefs(prefs, NVS_KEYS.rcPwmDomeSpeed, defaultPwmBinding(3), &out->system.rc_pwm_dome_speed);
-    loadRcBindingFromPrefs(prefs, NVS_KEYS.rcPwmArm1, defaultPwmBinding(4), &out->system.rc_pwm_arm1);
-    loadRcBindingFromPrefs(prefs, NVS_KEYS.rcPwmArm2, defaultPwmBinding(5), &out->system.rc_pwm_arm2);
-    loadRcBindingFromPrefs(prefs, NVS_KEYS.rcPwmSound, defaultPwmBinding(6), &out->system.rc_pwm_sound);
-
-    loadRcBindingFromPrefs(prefs, NVS_KEYS.rcSbusDriveSpeed, defaultSbusBinding(RC_BINDING_SBUS1, 1),
-                           &out->system.rc_sbus_drive_speed);
-    loadRcBindingFromPrefs(prefs, NVS_KEYS.rcSbusDriveSteer, defaultSbusBinding(RC_BINDING_SBUS1, 2),
-                           &out->system.rc_sbus_drive_steer);
-    loadRcBindingFromPrefs(prefs, NVS_KEYS.rcSbusDomeSpeed, defaultSbusBinding(RC_BINDING_SBUS2, 1),
-                           &out->system.rc_sbus_dome_speed);
-    loadRcBindingFromPrefs(prefs, NVS_KEYS.rcSbusArm1, defaultSbusBinding(RC_BINDING_SBUS2, 2), &out->system.rc_sbus_arm1);
-    loadRcBindingFromPrefs(prefs, NVS_KEYS.rcSbusArm2, defaultSbusBinding(RC_BINDING_SBUS2, 3), &out->system.rc_sbus_arm2);
-    loadRcBindingFromPrefs(prefs, NVS_KEYS.rcSbusSound, disabledRcBinding(), &out->system.rc_sbus_sound);
-
-    // RC Bindings Tier 2
-    RcTriggerBinding arm1Default = makeRcTriggerBinding(RC_BINDING_SBUS1, 4, SERVO_ACTION_ARM1_TOGGLE, nullptr,
-                                                        RC_SBUS_DEFAULT_MIN, RC_SBUS_DEFAULT_CENTER,
-                                                        RC_SBUS_DEFAULT_MAX, 0, rcTriggerDefaultReverse(RC_BINDING_SBUS1, 4));
-    RcTriggerBinding arm2Default = makeRcTriggerBinding(RC_BINDING_SBUS1, 5, SERVO_ACTION_ARM2_TOGGLE, nullptr,
-                                                        RC_SBUS_DEFAULT_MIN, RC_SBUS_DEFAULT_CENTER,
-                                                        RC_SBUS_DEFAULT_MAX, 0, rcTriggerDefaultReverse(RC_BINDING_SBUS1, 5));
-    loadRcTriggerBindingFromPrefs(prefs, NVS_KEYS.rcArm1, arm1Default, &out->system.rc_arm1);
-    loadRcTriggerBindingFromPrefs(prefs, NVS_KEYS.rcArm2, arm2Default, &out->system.rc_arm2);
-    loadRcTriggerBindingFromPrefs(prefs, NVS_KEYS.rcAux1, disabledRcTriggerBinding(), &out->system.rc_aux1);
-    loadRcTriggerBindingFromPrefs(prefs, NVS_KEYS.rcAux2, disabledRcTriggerBinding(), &out->system.rc_aux2);
-    loadRcTriggerBindingFromPrefs(prefs, NVS_KEYS.rcAux3, disabledRcTriggerBinding(), &out->system.rc_aux3);
-    loadRcTriggerBindingFromPrefs(prefs, NVS_KEYS.rcSound, disabledRcTriggerBinding(), &out->system.rc_sound);
-    loadRcTriggerBindingFromPrefs(prefs, NVS_KEYS.rcOpmode, disabledRcTriggerBinding(), &out->system.rc_opmode);
-    loadRcTriggerBindingFromPrefs(prefs, NVS_KEYS.rcFree0, disabledRcTriggerBinding(), &out->system.rc_free0);
-    loadRcTriggerBindingFromPrefs(prefs, NVS_KEYS.rcFree1, disabledRcTriggerBinding(), &out->system.rc_free1);
-    loadRcTriggerBindingFromPrefs(prefs, NVS_KEYS.rcFree2, disabledRcTriggerBinding(), &out->system.rc_free2);
-    loadRcTriggerBindingFromPrefs(prefs, NVS_KEYS.rcFree3, disabledRcTriggerBinding(), &out->system.rc_free3);
-
-    // =========================================================================
-    // Validation and clamping phase — ensure all fields are within valid ranges
-    // =========================================================================
-
-    // Scalar constrain: speed limits and presets (0..SPEED_LIMIT_MAX)
-    out->drive.speedLimitMax = constrain(out->drive.speedLimitMax, (int16_t)0, (int16_t)SPEED_LIMIT_MAX);
-    out->drive.speedPresetSlow = constrain(out->drive.speedPresetSlow, (int16_t)0, (int16_t)SPEED_LIMIT_MAX);
-    out->drive.speedPresetNormal = constrain(out->drive.speedPresetNormal, (int16_t)0, (int16_t)SPEED_LIMIT_MAX);
-    out->drive.speedPresetTurbo = constrain(out->drive.speedPresetTurbo, (int16_t)0, (int16_t)SPEED_LIMIT_MAX);
-
-    // Timeout constraints
-    out->drive.sbusTimeoutMs = constrain(out->drive.sbusTimeoutMs, (uint32_t)50, (uint32_t)5000);
-    out->drive.webDriveTimeoutMs = constrain(out->drive.webDriveTimeoutMs, (uint32_t)100, (uint32_t)5000);
-
-    // Audio volume constraint (0..30)
-    out->audio.audioVolume = constrain(out->audio.audioVolume, (uint8_t)0, (uint8_t)30);
-
-    // Servo pulse width constraints (500..2500)
-    out->servo.arm1_open_us = constrain(out->servo.arm1_open_us, (uint16_t)500, (uint16_t)2500);
-    out->servo.arm1_close_us = constrain(out->servo.arm1_close_us, (uint16_t)500, (uint16_t)2500);
-    out->servo.arm2_open_us = constrain(out->servo.arm2_open_us, (uint16_t)500, (uint16_t)2500);
-    out->servo.arm2_close_us = constrain(out->servo.arm2_close_us, (uint16_t)500, (uint16_t)2500);
-    out->servo.aux1_open_us = constrain(out->servo.aux1_open_us, (uint16_t)500, (uint16_t)2500);
-    out->servo.aux1_close_us = constrain(out->servo.aux1_close_us, (uint16_t)500, (uint16_t)2500);
-    out->servo.aux2_open_us = constrain(out->servo.aux2_open_us, (uint16_t)500, (uint16_t)2500);
-    out->servo.aux2_close_us = constrain(out->servo.aux2_close_us, (uint16_t)500, (uint16_t)2500);
-    out->servo.aux3_open_us = constrain(out->servo.aux3_open_us, (uint16_t)500, (uint16_t)2500);
-    out->servo.aux3_close_us = constrain(out->servo.aux3_close_us, (uint16_t)500, (uint16_t)2500);
-
-    // Servo type enum guard
-    if (out->servo.arm1_type > SERVO_COMP_RGB)
-        out->servo.arm1_type = SERVO_COMP_MG996R;
-    if (out->servo.arm2_type > SERVO_COMP_RGB)
-        out->servo.arm2_type = SERVO_COMP_MG996R;
-    if (out->servo.aux1_type > SERVO_COMP_RGB)
-        out->servo.aux1_type = SERVO_COMP_NONE;
-    if (out->servo.aux2_type > SERVO_COMP_RGB)
-        out->servo.aux2_type = SERVO_COMP_NONE;
-    if (out->servo.aux3_type > SERVO_COMP_RGB)
-        out->servo.aux3_type = SERVO_COMP_NONE;
-
-    // Dome float guards
-    if (out->dome.dome_min_speed < 0.0f)
-        out->dome.dome_min_speed = 0.0f;
-    if (out->dome.dome_max_speed > 1.0f)
-        out->dome.dome_max_speed = 1.0f;
-
-    // Sequence timing guards (100..5000 ms)
-    if (out->servo.seq_open_ms < 100)
-        out->servo.seq_open_ms = 100;
-    if (out->servo.seq_open_ms > 5000)
-        out->servo.seq_open_ms = 5000;
-    if (out->servo.seq_close_ms < 100)
-        out->servo.seq_close_ms = 100;
-    if (out->servo.seq_close_ms > 5000)
-        out->servo.seq_close_ms = 5000;
-
-    // Dome pulse width constraints (1000..2000)
-    out->dome.dome_neutral_us = constrain(out->dome.dome_neutral_us, (uint16_t)1000, (uint16_t)2000);
-    out->dome.dome_min_pulse_us = constrain(out->dome.dome_min_pulse_us, (uint16_t)1000, (uint16_t)2000);
-    out->dome.dome_max_pulse_us = constrain(out->dome.dome_max_pulse_us, (uint16_t)1000, (uint16_t)2000);
-
-    // Dome speed limit percentage constraint (0..100)
-    out->dome.dome_speed_limit_pct = constrain(out->dome.dome_speed_limit_pct, (uint8_t)0, (uint8_t)100);
-
-    // RC input mode guard
-    if (out->system.rc_input_mode > RC_INPUT_DUAL_SBUS) {
-        out->system.rc_input_mode = RC_INPUT_DUAL_SBUS;
-    }
-
-    // AUX LED validation
-    if (!auxLedPinSettingValid(out->servo.aux_led_pin)) {
-        out->servo.aux_led_pin = AUX_LED_PIN_DISABLED;
-    }
-    out->servo.aux_led_count = constrain(out->servo.aux_led_count, AUX_LED_COUNT_DEFAULT, AUX_LED_COUNT_MAX);
-
-    // WiFi peer IP validation (only available in Arduino environments with IPAddress library)
-#ifdef ARDUINO
-    if (out->dome.dome_wifi_peer_ip[0] != '\0') {
-        IPAddress parsedPeerIp;
-        if (!parsedPeerIp.fromString(out->dome.dome_wifi_peer_ip)) {
-            out->dome.dome_wifi_peer_ip[0] = '\0';
-        }
-    }
-#endif
-
-    // Validate RC Tier 1 bindings — must match loadRcBindingFromPrefs call order above
-    RcBindingConfig* bindings[] = {
-        &out->system.rc_pwm_drive_speed,  &out->system.rc_pwm_drive_steer,
-        &out->system.rc_pwm_dome_speed,   &out->system.rc_pwm_arm1,
-        &out->system.rc_pwm_arm2,         &out->system.rc_pwm_sound,
-        &out->system.rc_sbus_drive_speed, &out->system.rc_sbus_drive_steer,
-        &out->system.rc_sbus_dome_speed,  &out->system.rc_sbus_arm1,
-        &out->system.rc_sbus_arm2,        &out->system.rc_sbus_sound,
-    };
-    const RcBindingConfig defaults[] = {
-        defaultPwmBinding(1),                         defaultPwmBinding(2),
-        defaultPwmBinding(3),                         defaultPwmBinding(4),
-        defaultPwmBinding(5),                         defaultPwmBinding(6),
-        defaultSbusBinding(RC_BINDING_SBUS1, 1),      defaultSbusBinding(RC_BINDING_SBUS1, 2),
-        defaultSbusBinding(RC_BINDING_SBUS2, 1),      defaultSbusBinding(RC_BINDING_SBUS2, 2),
-        defaultSbusBinding(RC_BINDING_SBUS2, 3),      disabledRcBinding(),
-    };
-    for (size_t i = 0; i < sizeof(bindings) / sizeof(bindings[0]); ++i) {
-        if (!rcBindingIsValid(*bindings[i])) {
-            *bindings[i] = defaults[i];
-        }
-    }
-
-    // Validate RC Tier 2 Trigger bindings
-    RcTriggerBinding* triggerBindings[] = {
-        &out->system.rc_arm1,   &out->system.rc_arm2,  &out->system.rc_aux1,   &out->system.rc_aux2,   &out->system.rc_aux3,
-        &out->system.rc_sound,  &out->system.rc_opmode, &out->system.rc_free0, &out->system.rc_free1, &out->system.rc_free2,
-        &out->system.rc_free3,
-    };
-    const RcTriggerBinding triggerDefaults[] = {
-        makeRcTriggerBinding(RC_BINDING_SBUS1, 4, SERVO_ACTION_ARM1_TOGGLE, nullptr,
-                             RC_SBUS_DEFAULT_MIN, RC_SBUS_DEFAULT_CENTER, RC_SBUS_DEFAULT_MAX, 0,
-                             rcTriggerDefaultReverse(RC_BINDING_SBUS1, 4)),
-        makeRcTriggerBinding(RC_BINDING_SBUS1, 5, SERVO_ACTION_ARM2_TOGGLE, nullptr,
-                             RC_SBUS_DEFAULT_MIN, RC_SBUS_DEFAULT_CENTER, RC_SBUS_DEFAULT_MAX, 0,
-                             rcTriggerDefaultReverse(RC_BINDING_SBUS1, 5)),
-        disabledRcTriggerBinding(),
-        disabledRcTriggerBinding(),
-        disabledRcTriggerBinding(),
-        disabledRcTriggerBinding(),
-        disabledRcTriggerBinding(),
-        disabledRcTriggerBinding(),
-        disabledRcTriggerBinding(),
-        disabledRcTriggerBinding(),
-        disabledRcTriggerBinding(),
-    };
-    for (size_t i = 0; i < sizeof(triggerBindings) / sizeof(triggerBindings[0]); ++i) {
-        if (!rcTriggerBindingIsValid(*triggerBindings[i])) {
-            *triggerBindings[i] = triggerDefaults[i];
-        }
-    }
-
-    // If legacy, stamp new schema version
     if (isLegacy) {
         prefs.putUChar(CONFIG_SCHEMA_VERSION_KEY, CONFIG_SCHEMA_VERSION);
     }
@@ -1031,8 +733,24 @@ void configLoadDrive(Preferences& prefs, DriveConfig* out) {
         return;
     }
     ConfigSnapshot snap = {};
-    configLoad(prefs, &snap);
+    configSnapshotDefaults(&snap);
     *out = snap.drive;
+
+    out->speedLimitMax = prefs.getShort(NVS_KEYS.speedLimitMax, SPEED_LIMIT_MAX);
+    out->speedPresetSlow = prefs.getShort(NVS_KEYS.speedPresetSlow, SPEED_PRESET_SLOW);
+    out->speedPresetNormal = prefs.getShort(NVS_KEYS.speedPresetNormal, SPEED_PRESET_NORMAL);
+    out->speedPresetTurbo = prefs.getShort(NVS_KEYS.speedPresetTurbo, SPEED_PRESET_TURBO);
+    out->speedPresetActive =
+        normalizeSpeedPresetId(prefs.getUChar(NVS_KEYS.speedPresetActive, (uint8_t)SpeedPresetId::Normal));
+    out->sbusTimeoutMs = prefs.getULong(NVS_KEYS.sbusTimeoutMs, SBUS_TIMEOUT_MS);
+    out->webDriveTimeoutMs = prefs.getULong(NVS_KEYS.webDriveTimeoutMs, WEB_DRIVE_TIMEOUT_MS);
+
+    out->speedLimitMax = constrain(out->speedLimitMax, (int16_t)0, (int16_t)SPEED_LIMIT_MAX);
+    out->speedPresetSlow = constrain(out->speedPresetSlow, (int16_t)0, (int16_t)SPEED_LIMIT_MAX);
+    out->speedPresetNormal = constrain(out->speedPresetNormal, (int16_t)0, (int16_t)SPEED_LIMIT_MAX);
+    out->speedPresetTurbo = constrain(out->speedPresetTurbo, (int16_t)0, (int16_t)SPEED_LIMIT_MAX);
+    out->sbusTimeoutMs = constrain(out->sbusTimeoutMs, (uint32_t)50, (uint32_t)5000);
+    out->webDriveTimeoutMs = constrain(out->webDriveTimeoutMs, (uint32_t)100, (uint32_t)5000);
 }
 
 void configLoadAudio(Preferences& prefs, AudioConfig* out) {
@@ -1040,8 +758,72 @@ void configLoadAudio(Preferences& prefs, AudioConfig* out) {
         return;
     }
     ConfigSnapshot snap = {};
-    configLoad(prefs, &snap);
+    configSnapshotDefaults(&snap);
     *out = snap.audio;
+
+    out->audioVolume = prefs.getUChar(NVS_KEYS.audioVolume, 20);
+    out->snd_scream = prefs.getUShort(NVS_KEYS.sndScream, AUDIO_TRACK_SCREAM);
+    out->snd_faint = prefs.getUShort(NVS_KEYS.sndFaint, AUDIO_TRACK_FAINT);
+    out->snd_leia = prefs.getUShort(NVS_KEYS.sndLeia, AUDIO_TRACK_LEIA);
+    out->snd_cantina_s = prefs.getUShort(NVS_KEYS.sndCantinaS, AUDIO_TRACK_CANTINA_S);
+    out->snd_sw_theme = prefs.getUShort(NVS_KEYS.sndSwTheme, AUDIO_TRACK_SW_THEME);
+    out->snd_imp_march = prefs.getUShort(NVS_KEYS.sndImpMarch, AUDIO_TRACK_IMP_MARCH);
+    out->snd_cantina_l = prefs.getUShort(NVS_KEYS.sndCantinaL, AUDIO_TRACK_CANTINA_L);
+    out->snd_startup = prefs.getUShort(NVS_KEYS.sndStartup, AUDIO_TRACK_STARTUP);
+    out->snd_doodoo = prefs.getUShort(NVS_KEYS.sndDoodoo, 0);
+    out->snd_failure = prefs.getUShort(NVS_KEYS.sndFailure, 0);
+    out->snd_disco = prefs.getUShort(NVS_KEYS.sndDisco, 0);
+    out->snd_mahna = prefs.getUShort(NVS_KEYS.sndMahna, 0);
+    out->snd_inlove = prefs.getUShort(NVS_KEYS.sndInlove, 0);
+    out->snd_macho = prefs.getUShort(NVS_KEYS.sndMacho, 0);
+    out->snd_gangnam = prefs.getUShort(NVS_KEYS.sndGangnam, 0);
+    out->snd_uptown = prefs.getUShort(NVS_KEYS.sndUptown, 0);
+    out->snd_celebr = prefs.getUShort(NVS_KEYS.sndCelebr, 0);
+    out->snd_stayin = prefs.getUShort(NVS_KEYS.sndStayin, 0);
+    out->snd_harlem = prefs.getUShort(NVS_KEYS.sndHarlem, 0);
+    out->snd_pbjtime = prefs.getUShort(NVS_KEYS.sndPbjtime, 0);
+    out->snd_sys_boot = prefs.getUShort(NVS_KEYS.sndSysBoot, 0);
+    out->snd_sys_mode_n = prefs.getUShort(NVS_KEYS.sndSysModeN, 0);
+    out->snd_sys_mode_s = prefs.getUShort(NVS_KEYS.sndSysModeS, 0);
+    out->snd_sys_mode_t = prefs.getUShort(NVS_KEYS.sndSysModeT, 0);
+    out->snd_sys_drv_on = prefs.getUShort(NVS_KEYS.sndSysDrvOn, 0);
+    out->snd_sys_dome_on = prefs.getUShort(NVS_KEYS.sndSysDomeOn, 0);
+    out->snd_rand_min = prefs.getUShort(NVS_KEYS.sndRandMin, AUDIO_RAND_TRACK_MIN);
+    out->snd_rand_max = prefs.getUShort(NVS_KEYS.sndRandMax, AUDIO_RAND_TRACK_MAX);
+    out->snd_int_quiet = prefs.getUShort(NVS_KEYS.sndIntQuiet, AUDIO_RAND_INT_QUIET);
+    out->snd_int_mid = prefs.getUShort(NVS_KEYS.sndIntMid, AUDIO_RAND_INT_MID);
+    out->snd_int_full = prefs.getUShort(NVS_KEYS.sndIntFull, AUDIO_RAND_INT_FULL);
+    out->snd_int_awake = prefs.getUShort(NVS_KEYS.sndIntAwake, AUDIO_RAND_INT_AWAKE);
+    out->snd_moodcat_quiet = prefs.getUShort(NVS_KEYS.sndMoodcatQuiet, 0x0048);
+    out->snd_moodcat_mid = prefs.getUShort(NVS_KEYS.sndMoodcatMid, 0x004F);
+    out->snd_moodcat_full = prefs.getUShort(NVS_KEYS.sndMoodcatFull, 0x090F);
+    out->snd_moodcat_awakeplus = prefs.getUShort(NVS_KEYS.sndMoodcatAwakeplus, 0x0F8F);
+    out->snd_cat_gen_lo = prefs.getUShort(NVS_KEYS.sndCatGenLo, 0);
+    out->snd_cat_gen_hi = prefs.getUShort(NVS_KEYS.sndCatGenHi, 0);
+    out->snd_cat_chat_lo = prefs.getUShort(NVS_KEYS.sndCatChatLo, 0);
+    out->snd_cat_chat_hi = prefs.getUShort(NVS_KEYS.sndCatChatHi, 0);
+    out->snd_cat_hap_lo = prefs.getUShort(NVS_KEYS.sndCatHapLo, 0);
+    out->snd_cat_hap_hi = prefs.getUShort(NVS_KEYS.sndCatHapHi, 0);
+    out->snd_cat_proc_lo = prefs.getUShort(NVS_KEYS.sndCatProcLo, 0);
+    out->snd_cat_proc_hi = prefs.getUShort(NVS_KEYS.sndCatProcHi, 0);
+    out->snd_cat_sad_lo = prefs.getUShort(NVS_KEYS.sndCatSadLo, 0);
+    out->snd_cat_sad_hi = prefs.getUShort(NVS_KEYS.sndCatSadHi, 0);
+    out->snd_cat_sent_lo = prefs.getUShort(NVS_KEYS.sndCatSentLo, 0);
+    out->snd_cat_sent_hi = prefs.getUShort(NVS_KEYS.sndCatSentHi, 0);
+    out->snd_cat_hum_lo = prefs.getUShort(NVS_KEYS.sndCatHumLo, 0);
+    out->snd_cat_hum_hi = prefs.getUShort(NVS_KEYS.sndCatHumHi, 0);
+    out->snd_cat_scrm_lo = prefs.getUShort(NVS_KEYS.sndCatScrmLo, 0);
+    out->snd_cat_scrm_hi = prefs.getUShort(NVS_KEYS.sndCatScrmHi, 0);
+    out->snd_cat_ooh_lo = prefs.getUShort(NVS_KEYS.sndCatOohLo, 0);
+    out->snd_cat_ooh_hi = prefs.getUShort(NVS_KEYS.sndCatOohHi, 0);
+    out->snd_cat_alrm_lo = prefs.getUShort(NVS_KEYS.sndCatAlrmLo, 0);
+    out->snd_cat_alrm_hi = prefs.getUShort(NVS_KEYS.sndCatAlrmHi, 0);
+    out->snd_cat_snarky_lo = prefs.getUShort(NVS_KEYS.sndCatSnarkyLo, 0);
+    out->snd_cat_snarky_hi = prefs.getUShort(NVS_KEYS.sndCatSnarkyHi, 0);
+    out->snd_cat_whis_lo = prefs.getUShort(NVS_KEYS.sndCatWhisLo, 0);
+    out->snd_cat_whis_hi = prefs.getUShort(NVS_KEYS.sndCatWhisHi, 0);
+
+    out->audioVolume = constrain(out->audioVolume, (uint8_t)0, (uint8_t)30);
 }
 
 void configLoadServo(Preferences& prefs, ServoConfig* out) {
@@ -1049,8 +831,64 @@ void configLoadServo(Preferences& prefs, ServoConfig* out) {
         return;
     }
     ConfigSnapshot snap = {};
-    configLoad(prefs, &snap);
+    configSnapshotDefaults(&snap);
     *out = snap.servo;
+
+    out->arm1_open_us = prefs.getUShort(NVS_KEYS.arm1OpenUs, 2000);
+    out->arm1_close_us = prefs.getUShort(NVS_KEYS.arm1CloseUs, 1000);
+    out->arm2_open_us = prefs.getUShort(NVS_KEYS.arm2OpenUs, 2000);
+    out->arm2_close_us = prefs.getUShort(NVS_KEYS.arm2CloseUs, 1000);
+    out->arm1_type = (ServoComponentType)prefs.getUChar(NVS_KEYS.arm1Type, SERVO_COMP_MG996R);
+    out->arm2_type = (ServoComponentType)prefs.getUChar(NVS_KEYS.arm2Type, SERVO_COMP_MG996R);
+    out->aux1_open_us = prefs.getUShort(NVS_KEYS.aux1OpenUs, 2000);
+    out->aux1_close_us = prefs.getUShort(NVS_KEYS.aux1CloseUs, 1000);
+    out->aux2_open_us = prefs.getUShort(NVS_KEYS.aux2OpenUs, 2000);
+    out->aux2_close_us = prefs.getUShort(NVS_KEYS.aux2CloseUs, 1000);
+    out->aux3_open_us = prefs.getUShort(NVS_KEYS.aux3OpenUs, 2000);
+    out->aux3_close_us = prefs.getUShort(NVS_KEYS.aux3CloseUs, 1000);
+    out->aux1_type = (ServoComponentType)prefs.getUChar(NVS_KEYS.aux1Type, SERVO_COMP_NONE);
+    out->aux2_type = (ServoComponentType)prefs.getUChar(NVS_KEYS.aux2Type, SERVO_COMP_NONE);
+    out->aux3_type = (ServoComponentType)prefs.getUChar(NVS_KEYS.aux3Type, SERVO_COMP_NONE);
+    out->seq_open_ms = prefs.getUShort(NVS_KEYS.seqOpenMs, 1000);
+    out->seq_close_ms = prefs.getUShort(NVS_KEYS.seqCloseMs, 1000);
+    out->aux_led_pin = prefs.getUChar(NVS_KEYS.auxLedPin, AUX_LED_PIN_DISABLED);
+    out->aux_led_count = prefs.getUChar(NVS_KEYS.auxLedCount, AUX_LED_COUNT_DEFAULT);
+
+    out->arm1_open_us = constrain(out->arm1_open_us, (uint16_t)500, (uint16_t)2500);
+    out->arm1_close_us = constrain(out->arm1_close_us, (uint16_t)500, (uint16_t)2500);
+    out->arm2_open_us = constrain(out->arm2_open_us, (uint16_t)500, (uint16_t)2500);
+    out->arm2_close_us = constrain(out->arm2_close_us, (uint16_t)500, (uint16_t)2500);
+    out->aux1_open_us = constrain(out->aux1_open_us, (uint16_t)500, (uint16_t)2500);
+    out->aux1_close_us = constrain(out->aux1_close_us, (uint16_t)500, (uint16_t)2500);
+    out->aux2_open_us = constrain(out->aux2_open_us, (uint16_t)500, (uint16_t)2500);
+    out->aux2_close_us = constrain(out->aux2_close_us, (uint16_t)500, (uint16_t)2500);
+    out->aux3_open_us = constrain(out->aux3_open_us, (uint16_t)500, (uint16_t)2500);
+    out->aux3_close_us = constrain(out->aux3_close_us, (uint16_t)500, (uint16_t)2500);
+
+    if (out->arm1_type > SERVO_COMP_RGB)
+        out->arm1_type = SERVO_COMP_MG996R;
+    if (out->arm2_type > SERVO_COMP_RGB)
+        out->arm2_type = SERVO_COMP_MG996R;
+    if (out->aux1_type > SERVO_COMP_RGB)
+        out->aux1_type = SERVO_COMP_NONE;
+    if (out->aux2_type > SERVO_COMP_RGB)
+        out->aux2_type = SERVO_COMP_NONE;
+    if (out->aux3_type > SERVO_COMP_RGB)
+        out->aux3_type = SERVO_COMP_NONE;
+
+    if (out->seq_open_ms < 100)
+        out->seq_open_ms = 100;
+    if (out->seq_open_ms > 5000)
+        out->seq_open_ms = 5000;
+    if (out->seq_close_ms < 100)
+        out->seq_close_ms = 100;
+    if (out->seq_close_ms > 5000)
+        out->seq_close_ms = 5000;
+
+    if (!auxLedPinSettingValid(out->aux_led_pin)) {
+        out->aux_led_pin = AUX_LED_PIN_DISABLED;
+    }
+    out->aux_led_count = constrain(out->aux_led_count, AUX_LED_COUNT_DEFAULT, AUX_LED_COUNT_MAX);
 }
 
 void configLoadDome(Preferences& prefs, DomeConfig* out) {
@@ -1058,8 +896,45 @@ void configLoadDome(Preferences& prefs, DomeConfig* out) {
         return;
     }
     ConfigSnapshot snap = {};
-    configLoad(prefs, &snap);
+    configSnapshotDefaults(&snap);
     *out = snap.dome;
+
+    out->dome_min_speed = floatFromBits(prefs.getULong(NVS_KEYS.domeMin, 0));
+    out->dome_max_speed = floatFromBits(prefs.getULong(NVS_KEYS.domeMax, 0x3F800000));
+
+    out->dome_neutral_us = prefs.getUShort(NVS_KEYS.domeNeutralUs, 1500);
+    out->dome_min_pulse_us = prefs.getUShort(NVS_KEYS.domeMinPulseUs, 1000);
+    out->dome_max_pulse_us = prefs.getUShort(NVS_KEYS.domeMaxPulseUs, 2000);
+    out->dome_speed_limit_pct = prefs.getUChar(NVS_KEYS.domeSpeedLimitPct, 100);
+    out->dome_rnd_enable = prefs.getBool(NVS_KEYS.domeRndEnable, false);
+    out->dome_rnd_speed_pct = prefs.getUChar(NVS_KEYS.domeRndSpeedPct, 30);
+    out->dome_rnd_pause_min = prefs.getUChar(NVS_KEYS.domeRndPauseMin, 6);
+    out->dome_rnd_pause_max = prefs.getUChar(NVS_KEYS.domeRndPauseMax, 12);
+    out->dome_rnd_move_ms = prefs.getUShort(NVS_KEYS.domeRndMoveMs, 2500);
+
+    String domeWifiPeerIp = prefs.getString(NVS_KEYS.domeWifiPeerIp, "");
+    if (domeWifiPeerIp.length() >= sizeof(out->dome_wifi_peer_ip)) {
+        domeWifiPeerIp = "";
+    }
+    snprintf(out->dome_wifi_peer_ip, sizeof(out->dome_wifi_peer_ip), "%s", domeWifiPeerIp.c_str());
+
+    if (out->dome_min_speed < 0.0f)
+        out->dome_min_speed = 0.0f;
+    if (out->dome_max_speed > 1.0f)
+        out->dome_max_speed = 1.0f;
+    out->dome_neutral_us = constrain(out->dome_neutral_us, (uint16_t)1000, (uint16_t)2000);
+    out->dome_min_pulse_us = constrain(out->dome_min_pulse_us, (uint16_t)1000, (uint16_t)2000);
+    out->dome_max_pulse_us = constrain(out->dome_max_pulse_us, (uint16_t)1000, (uint16_t)2000);
+    out->dome_speed_limit_pct = constrain(out->dome_speed_limit_pct, (uint8_t)0, (uint8_t)100);
+
+#ifdef ARDUINO
+    if (out->dome_wifi_peer_ip[0] != '\0') {
+        IPAddress parsedPeerIp;
+        if (!parsedPeerIp.fromString(out->dome_wifi_peer_ip)) {
+            out->dome_wifi_peer_ip[0] = '\0';
+        }
+    }
+#endif
 }
 
 void configLoadSystem(Preferences& prefs, SystemConfig* out) {
@@ -1067,227 +942,302 @@ void configLoadSystem(Preferences& prefs, SystemConfig* out) {
         return;
     }
     ConfigSnapshot snap = {};
-    configLoad(prefs, &snap);
+    configSnapshotDefaults(&snap);
     *out = snap.system;
+
+    out->logLevel = prefs.getUChar(NVS_KEYS.logLevel, PA_LOG_LEVEL);
+    out->enable_arm1 = prefs.getBool(NVS_KEYS.enableArm1, false);
+    out->enable_arm2 = prefs.getBool(NVS_KEYS.enableArm2, false);
+    out->enable_aux1 = prefs.getBool(NVS_KEYS.enableAux1, false);
+    out->enable_aux2 = prefs.getBool(NVS_KEYS.enableAux2, false);
+    out->enable_aux3 = prefs.getBool(NVS_KEYS.enableAux3, false);
+    out->enable_dome = prefs.getBool(NVS_KEYS.enableDome, false);
+    out->enable_rc_ch1 = prefs.getBool(NVS_KEYS.enableRcCh1, false);
+    out->enable_rc_ch2 = prefs.getBool(NVS_KEYS.enableRcCh2, false);
+    out->enable_rc_ch3 = prefs.getBool(NVS_KEYS.enableRcCh3, false);
+    out->enable_rc_ch4 = prefs.getBool(NVS_KEYS.enableRcCh4, false);
+    out->enable_rc_ch5 = prefs.getBool(NVS_KEYS.enableRcCh5, false);
+    out->enable_rc_ch6 = prefs.getBool(NVS_KEYS.enableRcCh6, false);
+    out->single_sbus_use_ch2 = prefs.getBool(NVS_KEYS.singleSbusUseCh2, false);
+    out->enable_s1_hoverboard = prefs.getBool(NVS_KEYS.enableS1Hoverboard, false);
+    out->enable_s2_sound = prefs.getBool(NVS_KEYS.enableS2Sound, false);
+    out->enable_s3_dome_ctrl = prefs.getBool(NVS_KEYS.enableS3DomeCtrl, false);
+    out->stationary = prefs.getBool(NVS_KEYS.stationary, false);
+    out->rc_input_mode = (RcInputMode)prefs.getUChar(NVS_KEYS.rcInputMode, RC_INPUT_DUAL_SBUS);
+
+    loadRcBindingFromPrefs(prefs, NVS_KEYS.rcPwmDriveSpeed, defaultPwmBinding(1), &out->rc_pwm_drive_speed);
+    loadRcBindingFromPrefs(prefs, NVS_KEYS.rcPwmDriveSteer, defaultPwmBinding(2), &out->rc_pwm_drive_steer);
+    loadRcBindingFromPrefs(prefs, NVS_KEYS.rcPwmDomeSpeed, defaultPwmBinding(3), &out->rc_pwm_dome_speed);
+    loadRcBindingFromPrefs(prefs, NVS_KEYS.rcPwmArm1, defaultPwmBinding(4), &out->rc_pwm_arm1);
+    loadRcBindingFromPrefs(prefs, NVS_KEYS.rcPwmArm2, defaultPwmBinding(5), &out->rc_pwm_arm2);
+    loadRcBindingFromPrefs(prefs, NVS_KEYS.rcPwmSound, defaultPwmBinding(6), &out->rc_pwm_sound);
+
+    loadRcBindingFromPrefs(prefs, NVS_KEYS.rcSbusDriveSpeed, defaultSbusBinding(RC_BINDING_SBUS1, 1),
+                           &out->rc_sbus_drive_speed);
+    loadRcBindingFromPrefs(prefs, NVS_KEYS.rcSbusDriveSteer, defaultSbusBinding(RC_BINDING_SBUS1, 2),
+                           &out->rc_sbus_drive_steer);
+    loadRcBindingFromPrefs(prefs, NVS_KEYS.rcSbusDomeSpeed, defaultSbusBinding(RC_BINDING_SBUS2, 1),
+                           &out->rc_sbus_dome_speed);
+    loadRcBindingFromPrefs(prefs, NVS_KEYS.rcSbusArm1, defaultSbusBinding(RC_BINDING_SBUS2, 2), &out->rc_sbus_arm1);
+    loadRcBindingFromPrefs(prefs, NVS_KEYS.rcSbusArm2, defaultSbusBinding(RC_BINDING_SBUS2, 3), &out->rc_sbus_arm2);
+    loadRcBindingFromPrefs(prefs, NVS_KEYS.rcSbusSound, disabledRcBinding(), &out->rc_sbus_sound);
+
+    RcTriggerBinding arm1Default = makeRcTriggerBinding(RC_BINDING_SBUS1, 4, SERVO_ACTION_ARM1_TOGGLE, nullptr,
+                                                        RC_SBUS_DEFAULT_MIN, RC_SBUS_DEFAULT_CENTER,
+                                                        RC_SBUS_DEFAULT_MAX, 0, rcTriggerDefaultReverse(RC_BINDING_SBUS1, 4));
+    RcTriggerBinding arm2Default = makeRcTriggerBinding(RC_BINDING_SBUS1, 5, SERVO_ACTION_ARM2_TOGGLE, nullptr,
+                                                        RC_SBUS_DEFAULT_MIN, RC_SBUS_DEFAULT_CENTER,
+                                                        RC_SBUS_DEFAULT_MAX, 0, rcTriggerDefaultReverse(RC_BINDING_SBUS1, 5));
+    loadRcTriggerBindingFromPrefs(prefs, NVS_KEYS.rcArm1, arm1Default, &out->rc_arm1);
+    loadRcTriggerBindingFromPrefs(prefs, NVS_KEYS.rcArm2, arm2Default, &out->rc_arm2);
+    loadRcTriggerBindingFromPrefs(prefs, NVS_KEYS.rcAux1, disabledRcTriggerBinding(), &out->rc_aux1);
+    loadRcTriggerBindingFromPrefs(prefs, NVS_KEYS.rcAux2, disabledRcTriggerBinding(), &out->rc_aux2);
+    loadRcTriggerBindingFromPrefs(prefs, NVS_KEYS.rcAux3, disabledRcTriggerBinding(), &out->rc_aux3);
+    loadRcTriggerBindingFromPrefs(prefs, NVS_KEYS.rcSound, disabledRcTriggerBinding(), &out->rc_sound);
+    loadRcTriggerBindingFromPrefs(prefs, NVS_KEYS.rcOpmode, disabledRcTriggerBinding(), &out->rc_opmode);
+    loadRcTriggerBindingFromPrefs(prefs, NVS_KEYS.rcFree0, disabledRcTriggerBinding(), &out->rc_free0);
+    loadRcTriggerBindingFromPrefs(prefs, NVS_KEYS.rcFree1, disabledRcTriggerBinding(), &out->rc_free1);
+    loadRcTriggerBindingFromPrefs(prefs, NVS_KEYS.rcFree2, disabledRcTriggerBinding(), &out->rc_free2);
+    loadRcTriggerBindingFromPrefs(prefs, NVS_KEYS.rcFree3, disabledRcTriggerBinding(), &out->rc_free3);
+
+    if (out->rc_input_mode > RC_INPUT_DUAL_SBUS) {
+        out->rc_input_mode = RC_INPUT_DUAL_SBUS;
+    }
+
+    RcBindingConfig* bindings[] = {
+        &out->rc_pwm_drive_speed,  &out->rc_pwm_drive_steer,
+        &out->rc_pwm_dome_speed,   &out->rc_pwm_arm1,
+        &out->rc_pwm_arm2,         &out->rc_pwm_sound,
+        &out->rc_sbus_drive_speed, &out->rc_sbus_drive_steer,
+        &out->rc_sbus_dome_speed,  &out->rc_sbus_arm1,
+        &out->rc_sbus_arm2,        &out->rc_sbus_sound,
+    };
+    const RcBindingConfig defaults[] = {
+        defaultPwmBinding(1),                    defaultPwmBinding(2),
+        defaultPwmBinding(3),                    defaultPwmBinding(4),
+        defaultPwmBinding(5),                    defaultPwmBinding(6),
+        defaultSbusBinding(RC_BINDING_SBUS1, 1), defaultSbusBinding(RC_BINDING_SBUS1, 2),
+        defaultSbusBinding(RC_BINDING_SBUS2, 1), defaultSbusBinding(RC_BINDING_SBUS2, 2),
+        defaultSbusBinding(RC_BINDING_SBUS2, 3), disabledRcBinding(),
+    };
+    for (size_t i = 0; i < sizeof(bindings) / sizeof(bindings[0]); ++i) {
+        if (!rcBindingIsValid(*bindings[i])) {
+            *bindings[i] = defaults[i];
+        }
+    }
+
+    RcTriggerBinding* triggerBindings[] = {
+        &out->rc_arm1,  &out->rc_arm2,  &out->rc_aux1,  &out->rc_aux2,  &out->rc_aux3, &out->rc_sound,
+        &out->rc_opmode, &out->rc_free0, &out->rc_free1, &out->rc_free2, &out->rc_free3,
+    };
+    const RcTriggerBinding triggerDefaults[] = {
+        makeRcTriggerBinding(RC_BINDING_SBUS1, 4, SERVO_ACTION_ARM1_TOGGLE, nullptr,
+                             RC_SBUS_DEFAULT_MIN, RC_SBUS_DEFAULT_CENTER, RC_SBUS_DEFAULT_MAX, 0,
+                             rcTriggerDefaultReverse(RC_BINDING_SBUS1, 4)),
+        makeRcTriggerBinding(RC_BINDING_SBUS1, 5, SERVO_ACTION_ARM2_TOGGLE, nullptr,
+                             RC_SBUS_DEFAULT_MIN, RC_SBUS_DEFAULT_CENTER, RC_SBUS_DEFAULT_MAX, 0,
+                             rcTriggerDefaultReverse(RC_BINDING_SBUS1, 5)),
+        disabledRcTriggerBinding(), disabledRcTriggerBinding(), disabledRcTriggerBinding(),
+        disabledRcTriggerBinding(), disabledRcTriggerBinding(), disabledRcTriggerBinding(),
+        disabledRcTriggerBinding(), disabledRcTriggerBinding(), disabledRcTriggerBinding(),
+    };
+    for (size_t i = 0; i < sizeof(triggerBindings) / sizeof(triggerBindings[0]); ++i) {
+        if (!rcTriggerBindingIsValid(*triggerBindings[i])) {
+            *triggerBindings[i] = triggerDefaults[i];
+        }
+    }
 }
 
 bool configSave(Preferences& prefs, const ConfigSnapshot& snapshot) {
     bool ok = true;
-
-    // Speed
-    ok = prefs.putShort(NVS_KEYS.speedLimitMax, snapshot.drive.speedLimitMax) > 0 && ok;
-    ok = prefs.putShort(NVS_KEYS.speedPresetSlow, snapshot.drive.speedPresetSlow) > 0 && ok;
-    ok = prefs.putShort(NVS_KEYS.speedPresetNormal, snapshot.drive.speedPresetNormal) > 0 && ok;
-    ok = prefs.putShort(NVS_KEYS.speedPresetTurbo, snapshot.drive.speedPresetTurbo) > 0 && ok;
-    ok = prefs.putUChar(NVS_KEYS.speedPresetActive, (uint8_t)snapshot.drive.speedPresetActive) > 0 && ok;
-
-    // Timeouts
-    ok = prefs.putULong(NVS_KEYS.sbusTimeoutMs, snapshot.drive.sbusTimeoutMs) > 0 && ok;
-    ok = prefs.putULong(NVS_KEYS.webDriveTimeoutMs, snapshot.drive.webDriveTimeoutMs) > 0 && ok;
-
-    // Audio
-    ok = prefs.putUChar(NVS_KEYS.audioVolume, snapshot.audio.audioVolume) > 0 && ok;
-    ok = prefs.putUChar(NVS_KEYS.logLevel, snapshot.system.logLevel) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.sndScream, snapshot.audio.snd_scream) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.sndFaint, snapshot.audio.snd_faint) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.sndLeia, snapshot.audio.snd_leia) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.sndCantinaS, snapshot.audio.snd_cantina_s) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.sndSwTheme, snapshot.audio.snd_sw_theme) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.sndImpMarch, snapshot.audio.snd_imp_march) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.sndCantinaL, snapshot.audio.snd_cantina_l) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.sndStartup, snapshot.audio.snd_startup) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.sndDoodoo, snapshot.audio.snd_doodoo) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.sndFailure, snapshot.audio.snd_failure) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.sndDisco, snapshot.audio.snd_disco) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.sndMahna, snapshot.audio.snd_mahna) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.sndInlove, snapshot.audio.snd_inlove) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.sndMacho, snapshot.audio.snd_macho) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.sndGangnam, snapshot.audio.snd_gangnam) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.sndUptown, snapshot.audio.snd_uptown) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.sndCelebr, snapshot.audio.snd_celebr) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.sndStayin, snapshot.audio.snd_stayin) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.sndHarlem, snapshot.audio.snd_harlem) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.sndPbjtime, snapshot.audio.snd_pbjtime) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.sndSysBoot, snapshot.audio.snd_sys_boot) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.sndSysModeN, snapshot.audio.snd_sys_mode_n) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.sndSysModeS, snapshot.audio.snd_sys_mode_s) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.sndSysModeT, snapshot.audio.snd_sys_mode_t) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.sndSysDrvOn, snapshot.audio.snd_sys_drv_on) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.sndSysDomeOn, snapshot.audio.snd_sys_dome_on) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.sndRandMin, snapshot.audio.snd_rand_min) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.sndRandMax, snapshot.audio.snd_rand_max) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.sndIntQuiet, snapshot.audio.snd_int_quiet) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.sndIntMid, snapshot.audio.snd_int_mid) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.sndIntFull, snapshot.audio.snd_int_full) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.sndIntAwake, snapshot.audio.snd_int_awake) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.sndMoodcatQuiet, snapshot.audio.snd_moodcat_quiet & 0x0FFF) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.sndMoodcatMid, snapshot.audio.snd_moodcat_mid & 0x0FFF) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.sndMoodcatFull, snapshot.audio.snd_moodcat_full & 0x0FFF) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.sndMoodcatAwakeplus, snapshot.audio.snd_moodcat_awakeplus & 0x0FFF) > 0 && ok;
-
-    ok = prefs.putUShort(NVS_KEYS.sndCatGenLo, snapshot.audio.snd_cat_gen_lo) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.sndCatGenHi, snapshot.audio.snd_cat_gen_hi) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.sndCatChatLo, snapshot.audio.snd_cat_chat_lo) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.sndCatChatHi, snapshot.audio.snd_cat_chat_hi) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.sndCatHapLo, snapshot.audio.snd_cat_hap_lo) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.sndCatHapHi, snapshot.audio.snd_cat_hap_hi) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.sndCatProcLo, snapshot.audio.snd_cat_proc_lo) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.sndCatProcHi, snapshot.audio.snd_cat_proc_hi) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.sndCatSadLo, snapshot.audio.snd_cat_sad_lo) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.sndCatSadHi, snapshot.audio.snd_cat_sad_hi) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.sndCatSentLo, snapshot.audio.snd_cat_sent_lo) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.sndCatSentHi, snapshot.audio.snd_cat_sent_hi) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.sndCatHumLo, snapshot.audio.snd_cat_hum_lo) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.sndCatHumHi, snapshot.audio.snd_cat_hum_hi) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.sndCatScrmLo, snapshot.audio.snd_cat_scrm_lo) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.sndCatScrmHi, snapshot.audio.snd_cat_scrm_hi) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.sndCatOohLo, snapshot.audio.snd_cat_ooh_lo) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.sndCatOohHi, snapshot.audio.snd_cat_ooh_hi) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.sndCatAlrmLo, snapshot.audio.snd_cat_alrm_lo) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.sndCatAlrmHi, snapshot.audio.snd_cat_alrm_hi) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.sndCatSnarkyLo, snapshot.audio.snd_cat_snarky_lo) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.sndCatSnarkyHi, snapshot.audio.snd_cat_snarky_hi) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.sndCatWhisLo, snapshot.audio.snd_cat_whis_lo) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.sndCatWhisHi, snapshot.audio.snd_cat_whis_hi) > 0 && ok;
-
-    // Servo
-    ok = prefs.putUShort(NVS_KEYS.arm1OpenUs, snapshot.servo.arm1_open_us) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.arm1CloseUs, snapshot.servo.arm1_close_us) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.arm2OpenUs, snapshot.servo.arm2_open_us) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.arm2CloseUs, snapshot.servo.arm2_close_us) > 0 && ok;
-    ok = prefs.putUChar(NVS_KEYS.arm1Type, (uint8_t)snapshot.servo.arm1_type) > 0 && ok;
-    ok = prefs.putUChar(NVS_KEYS.arm2Type, (uint8_t)snapshot.servo.arm2_type) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.aux1OpenUs, snapshot.servo.aux1_open_us) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.aux1CloseUs, snapshot.servo.aux1_close_us) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.aux2OpenUs, snapshot.servo.aux2_open_us) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.aux2CloseUs, snapshot.servo.aux2_close_us) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.aux3OpenUs, snapshot.servo.aux3_open_us) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.aux3CloseUs, snapshot.servo.aux3_close_us) > 0 && ok;
-    ok = prefs.putUChar(NVS_KEYS.aux1Type, (uint8_t)snapshot.servo.aux1_type) > 0 && ok;
-    ok = prefs.putUChar(NVS_KEYS.aux2Type, (uint8_t)snapshot.servo.aux2_type) > 0 && ok;
-    ok = prefs.putUChar(NVS_KEYS.aux3Type, (uint8_t)snapshot.servo.aux3_type) > 0 && ok;
-
-    // Dome
-    union {
-        float f;
-        uint32_t u;
-    } dome_conv;
-    dome_conv.f = snapshot.dome.dome_min_speed;
-    ok = prefs.putULong(NVS_KEYS.domeMin, dome_conv.u) > 0 && ok;
-    dome_conv.f = snapshot.dome.dome_max_speed;
-    ok = prefs.putULong(NVS_KEYS.domeMax, dome_conv.u) > 0 && ok;
-
-    ok = prefs.putUShort(NVS_KEYS.domeNeutralUs, snapshot.dome.dome_neutral_us) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.domeMinPulseUs, snapshot.dome.dome_min_pulse_us) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.domeMaxPulseUs, snapshot.dome.dome_max_pulse_us) > 0 && ok;
-    ok = prefs.putUChar(NVS_KEYS.domeSpeedLimitPct, snapshot.dome.dome_speed_limit_pct) > 0 && ok;
-    ok = prefs.putBool(NVS_KEYS.domeRndEnable, snapshot.dome.dome_rnd_enable) > 0 && ok;
-    ok = prefs.putUChar(NVS_KEYS.domeRndSpeedPct, snapshot.dome.dome_rnd_speed_pct) > 0 && ok;
-    ok = prefs.putUChar(NVS_KEYS.domeRndPauseMin, snapshot.dome.dome_rnd_pause_min) > 0 && ok;
-    ok = prefs.putUChar(NVS_KEYS.domeRndPauseMax, snapshot.dome.dome_rnd_pause_max) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.domeRndMoveMs, snapshot.dome.dome_rnd_move_ms) > 0 && ok;
-
-    if (snapshot.dome.dome_wifi_peer_ip[0] == '\0') {
-        prefs.remove(NVS_KEYS.domeWifiPeerIp);
-    } else {
-        ok = prefs.putString(NVS_KEYS.domeWifiPeerIp, snapshot.dome.dome_wifi_peer_ip) > 0 && ok;
-    }
-
-    // Sequence
-    ok = prefs.putUShort(NVS_KEYS.seqOpenMs, snapshot.servo.seq_open_ms) > 0 && ok;
-    ok = prefs.putUShort(NVS_KEYS.seqCloseMs, snapshot.servo.seq_close_ms) > 0 && ok;
-
-    // AUX LED
-    ok = prefs.putUChar(NVS_KEYS.auxLedPin, snapshot.servo.aux_led_pin) > 0 && ok;
-    ok = prefs.putUChar(NVS_KEYS.auxLedCount, snapshot.servo.aux_led_count) > 0 && ok;
-
-    // Feature toggles
-    ok = prefs.putBool(NVS_KEYS.enableArm1, snapshot.system.enable_arm1) > 0 && ok;
-    ok = prefs.putBool(NVS_KEYS.enableArm2, snapshot.system.enable_arm2) > 0 && ok;
-    ok = prefs.putBool(NVS_KEYS.enableAux1, snapshot.system.enable_aux1) > 0 && ok;
-    ok = prefs.putBool(NVS_KEYS.enableAux2, snapshot.system.enable_aux2) > 0 && ok;
-    ok = prefs.putBool(NVS_KEYS.enableAux3, snapshot.system.enable_aux3) > 0 && ok;
-    ok = prefs.putBool(NVS_KEYS.enableDome, snapshot.system.enable_dome) > 0 && ok;
-    ok = prefs.putBool(NVS_KEYS.enableRcCh1, snapshot.system.enable_rc_ch1) > 0 && ok;
-    ok = prefs.putBool(NVS_KEYS.enableRcCh2, snapshot.system.enable_rc_ch2) > 0 && ok;
-    ok = prefs.putBool(NVS_KEYS.enableRcCh3, snapshot.system.enable_rc_ch3) > 0 && ok;
-    ok = prefs.putBool(NVS_KEYS.enableRcCh4, snapshot.system.enable_rc_ch4) > 0 && ok;
-    ok = prefs.putBool(NVS_KEYS.enableRcCh5, snapshot.system.enable_rc_ch5) > 0 && ok;
-    ok = prefs.putBool(NVS_KEYS.enableRcCh6, snapshot.system.enable_rc_ch6) > 0 && ok;
-    ok = prefs.putBool(NVS_KEYS.singleSbusUseCh2, snapshot.system.single_sbus_use_ch2) > 0 && ok;
-    ok = prefs.putBool(NVS_KEYS.enableS1Hoverboard, snapshot.system.enable_s1_hoverboard) > 0 && ok;
-    ok = prefs.putBool(NVS_KEYS.enableS2Sound, snapshot.system.enable_s2_sound) > 0 && ok;
-    ok = prefs.putBool(NVS_KEYS.enableS3DomeCtrl, snapshot.system.enable_s3_dome_ctrl) > 0 && ok;
-    ok = prefs.putBool(NVS_KEYS.stationary, snapshot.system.stationary) > 0 && ok;
-    ok = prefs.putUChar(NVS_KEYS.rcInputMode, (uint8_t)snapshot.system.rc_input_mode) > 0 && ok;
-
-    // RC Bindings Tier 1
-    ok = saveRcBindingToPrefs(prefs, NVS_KEYS.rcPwmDriveSpeed, snapshot.system.rc_pwm_drive_speed) && ok;
-    ok = saveRcBindingToPrefs(prefs, NVS_KEYS.rcPwmDriveSteer, snapshot.system.rc_pwm_drive_steer) && ok;
-    ok = saveRcBindingToPrefs(prefs, NVS_KEYS.rcPwmDomeSpeed, snapshot.system.rc_pwm_dome_speed) && ok;
-    ok = saveRcBindingToPrefs(prefs, NVS_KEYS.rcPwmArm1, snapshot.system.rc_pwm_arm1) && ok;
-    ok = saveRcBindingToPrefs(prefs, NVS_KEYS.rcPwmArm2, snapshot.system.rc_pwm_arm2) && ok;
-    ok = saveRcBindingToPrefs(prefs, NVS_KEYS.rcPwmSound, snapshot.system.rc_pwm_sound) && ok;
-
-    ok = saveRcBindingToPrefs(prefs, NVS_KEYS.rcSbusDriveSpeed, snapshot.system.rc_sbus_drive_speed) && ok;
-    ok = saveRcBindingToPrefs(prefs, NVS_KEYS.rcSbusDriveSteer, snapshot.system.rc_sbus_drive_steer) && ok;
-    ok = saveRcBindingToPrefs(prefs, NVS_KEYS.rcSbusDomeSpeed, snapshot.system.rc_sbus_dome_speed) && ok;
-    ok = saveRcBindingToPrefs(prefs, NVS_KEYS.rcSbusArm1, snapshot.system.rc_sbus_arm1) && ok;
-    ok = saveRcBindingToPrefs(prefs, NVS_KEYS.rcSbusArm2, snapshot.system.rc_sbus_arm2) && ok;
-    ok = saveRcBindingToPrefs(prefs, NVS_KEYS.rcSbusSound, snapshot.system.rc_sbus_sound) && ok;
-
-    // RC Bindings Tier 2
-    ok = saveRcTriggerBindingToPrefs(prefs, NVS_KEYS.rcArm1, snapshot.system.rc_arm1) && ok;
-    ok = saveRcTriggerBindingToPrefs(prefs, NVS_KEYS.rcArm2, snapshot.system.rc_arm2) && ok;
-    ok = saveRcTriggerBindingToPrefs(prefs, NVS_KEYS.rcAux1, snapshot.system.rc_aux1) && ok;
-    ok = saveRcTriggerBindingToPrefs(prefs, NVS_KEYS.rcAux2, snapshot.system.rc_aux2) && ok;
-    ok = saveRcTriggerBindingToPrefs(prefs, NVS_KEYS.rcAux3, snapshot.system.rc_aux3) && ok;
-    ok = saveRcTriggerBindingToPrefs(prefs, NVS_KEYS.rcSound, snapshot.system.rc_sound) && ok;
-    ok = saveRcTriggerBindingToPrefs(prefs, NVS_KEYS.rcOpmode, snapshot.system.rc_opmode) && ok;
-    ok = saveRcTriggerBindingToPrefs(prefs, NVS_KEYS.rcFree0, snapshot.system.rc_free0) && ok;
-    ok = saveRcTriggerBindingToPrefs(prefs, NVS_KEYS.rcFree1, snapshot.system.rc_free1) && ok;
-    ok = saveRcTriggerBindingToPrefs(prefs, NVS_KEYS.rcFree2, snapshot.system.rc_free2) && ok;
-    ok = saveRcTriggerBindingToPrefs(prefs, NVS_KEYS.rcFree3, snapshot.system.rc_free3) && ok;
-
-    // Stamp schema version
+    ok = configSaveDrive(prefs, snapshot.drive) && ok;
+    ok = configSaveAudio(prefs, snapshot.audio) && ok;
+    ok = configSaveServo(prefs, snapshot.servo) && ok;
+    ok = configSaveDome(prefs, snapshot.dome) && ok;
+    ok = configSaveSystem(prefs, snapshot.system) && ok;
     ok = prefs.putUChar(CONFIG_SCHEMA_VERSION_KEY, CONFIG_SCHEMA_VERSION) > 0 && ok;
-
     return ok;
 }
 
 bool configSaveDrive(Preferences& prefs, const DriveConfig& config) {
-    ConfigSnapshot snap = {};
-    configLoad(prefs, &snap);
-    snap.drive = config;
-    return configSave(prefs, snap);
+    bool ok = true;
+    ok = prefs.putShort(NVS_KEYS.speedLimitMax, config.speedLimitMax) > 0 && ok;
+    ok = prefs.putShort(NVS_KEYS.speedPresetSlow, config.speedPresetSlow) > 0 && ok;
+    ok = prefs.putShort(NVS_KEYS.speedPresetNormal, config.speedPresetNormal) > 0 && ok;
+    ok = prefs.putShort(NVS_KEYS.speedPresetTurbo, config.speedPresetTurbo) > 0 && ok;
+    ok = prefs.putUChar(NVS_KEYS.speedPresetActive, (uint8_t)config.speedPresetActive) > 0 && ok;
+    ok = prefs.putULong(NVS_KEYS.sbusTimeoutMs, config.sbusTimeoutMs) > 0 && ok;
+    ok = prefs.putULong(NVS_KEYS.webDriveTimeoutMs, config.webDriveTimeoutMs) > 0 && ok;
+    ok = prefs.putUChar(CONFIG_SCHEMA_VERSION_KEY, CONFIG_SCHEMA_VERSION) > 0 && ok;
+    return ok;
 }
 
 bool configSaveAudio(Preferences& prefs, const AudioConfig& config) {
-    ConfigSnapshot snap = {};
-    configLoad(prefs, &snap);
-    snap.audio = config;
-    return configSave(prefs, snap);
+    bool ok = true;
+    ok = prefs.putUChar(NVS_KEYS.audioVolume, config.audioVolume) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.sndScream, config.snd_scream) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.sndFaint, config.snd_faint) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.sndLeia, config.snd_leia) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.sndCantinaS, config.snd_cantina_s) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.sndSwTheme, config.snd_sw_theme) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.sndImpMarch, config.snd_imp_march) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.sndCantinaL, config.snd_cantina_l) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.sndStartup, config.snd_startup) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.sndDoodoo, config.snd_doodoo) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.sndFailure, config.snd_failure) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.sndDisco, config.snd_disco) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.sndMahna, config.snd_mahna) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.sndInlove, config.snd_inlove) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.sndMacho, config.snd_macho) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.sndGangnam, config.snd_gangnam) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.sndUptown, config.snd_uptown) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.sndCelebr, config.snd_celebr) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.sndStayin, config.snd_stayin) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.sndHarlem, config.snd_harlem) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.sndPbjtime, config.snd_pbjtime) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.sndSysBoot, config.snd_sys_boot) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.sndSysModeN, config.snd_sys_mode_n) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.sndSysModeS, config.snd_sys_mode_s) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.sndSysModeT, config.snd_sys_mode_t) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.sndSysDrvOn, config.snd_sys_drv_on) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.sndSysDomeOn, config.snd_sys_dome_on) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.sndRandMin, config.snd_rand_min) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.sndRandMax, config.snd_rand_max) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.sndIntQuiet, config.snd_int_quiet) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.sndIntMid, config.snd_int_mid) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.sndIntFull, config.snd_int_full) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.sndIntAwake, config.snd_int_awake) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.sndMoodcatQuiet, config.snd_moodcat_quiet & 0x0FFF) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.sndMoodcatMid, config.snd_moodcat_mid & 0x0FFF) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.sndMoodcatFull, config.snd_moodcat_full & 0x0FFF) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.sndMoodcatAwakeplus, config.snd_moodcat_awakeplus & 0x0FFF) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.sndCatGenLo, config.snd_cat_gen_lo) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.sndCatGenHi, config.snd_cat_gen_hi) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.sndCatChatLo, config.snd_cat_chat_lo) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.sndCatChatHi, config.snd_cat_chat_hi) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.sndCatHapLo, config.snd_cat_hap_lo) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.sndCatHapHi, config.snd_cat_hap_hi) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.sndCatProcLo, config.snd_cat_proc_lo) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.sndCatProcHi, config.snd_cat_proc_hi) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.sndCatSadLo, config.snd_cat_sad_lo) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.sndCatSadHi, config.snd_cat_sad_hi) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.sndCatSentLo, config.snd_cat_sent_lo) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.sndCatSentHi, config.snd_cat_sent_hi) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.sndCatHumLo, config.snd_cat_hum_lo) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.sndCatHumHi, config.snd_cat_hum_hi) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.sndCatScrmLo, config.snd_cat_scrm_lo) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.sndCatScrmHi, config.snd_cat_scrm_hi) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.sndCatOohLo, config.snd_cat_ooh_lo) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.sndCatOohHi, config.snd_cat_ooh_hi) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.sndCatAlrmLo, config.snd_cat_alrm_lo) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.sndCatAlrmHi, config.snd_cat_alrm_hi) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.sndCatSnarkyLo, config.snd_cat_snarky_lo) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.sndCatSnarkyHi, config.snd_cat_snarky_hi) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.sndCatWhisLo, config.snd_cat_whis_lo) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.sndCatWhisHi, config.snd_cat_whis_hi) > 0 && ok;
+    ok = prefs.putUChar(CONFIG_SCHEMA_VERSION_KEY, CONFIG_SCHEMA_VERSION) > 0 && ok;
+    return ok;
 }
 
 bool configSaveServo(Preferences& prefs, const ServoConfig& config) {
-    ConfigSnapshot snap = {};
-    configLoad(prefs, &snap);
-    snap.servo = config;
-    return configSave(prefs, snap);
+    bool ok = true;
+    ok = prefs.putUShort(NVS_KEYS.arm1OpenUs, config.arm1_open_us) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.arm1CloseUs, config.arm1_close_us) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.arm2OpenUs, config.arm2_open_us) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.arm2CloseUs, config.arm2_close_us) > 0 && ok;
+    ok = prefs.putUChar(NVS_KEYS.arm1Type, (uint8_t)config.arm1_type) > 0 && ok;
+    ok = prefs.putUChar(NVS_KEYS.arm2Type, (uint8_t)config.arm2_type) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.aux1OpenUs, config.aux1_open_us) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.aux1CloseUs, config.aux1_close_us) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.aux2OpenUs, config.aux2_open_us) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.aux2CloseUs, config.aux2_close_us) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.aux3OpenUs, config.aux3_open_us) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.aux3CloseUs, config.aux3_close_us) > 0 && ok;
+    ok = prefs.putUChar(NVS_KEYS.aux1Type, (uint8_t)config.aux1_type) > 0 && ok;
+    ok = prefs.putUChar(NVS_KEYS.aux2Type, (uint8_t)config.aux2_type) > 0 && ok;
+    ok = prefs.putUChar(NVS_KEYS.aux3Type, (uint8_t)config.aux3_type) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.seqOpenMs, config.seq_open_ms) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.seqCloseMs, config.seq_close_ms) > 0 && ok;
+    ok = prefs.putUChar(NVS_KEYS.auxLedPin, config.aux_led_pin) > 0 && ok;
+    ok = prefs.putUChar(NVS_KEYS.auxLedCount, config.aux_led_count) > 0 && ok;
+    ok = prefs.putUChar(CONFIG_SCHEMA_VERSION_KEY, CONFIG_SCHEMA_VERSION) > 0 && ok;
+    return ok;
 }
 
 bool configSaveDome(Preferences& prefs, const DomeConfig& config) {
-    ConfigSnapshot snap = {};
-    configLoad(prefs, &snap);
-    snap.dome = config;
-    return configSave(prefs, snap);
+    bool ok = true;
+    ok = prefs.putULong(NVS_KEYS.domeMin, floatToBits(config.dome_min_speed)) > 0 && ok;
+    ok = prefs.putULong(NVS_KEYS.domeMax, floatToBits(config.dome_max_speed)) > 0 && ok;
+
+    ok = prefs.putUShort(NVS_KEYS.domeNeutralUs, config.dome_neutral_us) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.domeMinPulseUs, config.dome_min_pulse_us) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.domeMaxPulseUs, config.dome_max_pulse_us) > 0 && ok;
+    ok = prefs.putUChar(NVS_KEYS.domeSpeedLimitPct, config.dome_speed_limit_pct) > 0 && ok;
+    ok = prefs.putBool(NVS_KEYS.domeRndEnable, config.dome_rnd_enable) > 0 && ok;
+    ok = prefs.putUChar(NVS_KEYS.domeRndSpeedPct, config.dome_rnd_speed_pct) > 0 && ok;
+    ok = prefs.putUChar(NVS_KEYS.domeRndPauseMin, config.dome_rnd_pause_min) > 0 && ok;
+    ok = prefs.putUChar(NVS_KEYS.domeRndPauseMax, config.dome_rnd_pause_max) > 0 && ok;
+    ok = prefs.putUShort(NVS_KEYS.domeRndMoveMs, config.dome_rnd_move_ms) > 0 && ok;
+
+    if (config.dome_wifi_peer_ip[0] == '\0') {
+        prefs.remove(NVS_KEYS.domeWifiPeerIp);
+    } else {
+        ok = prefs.putString(NVS_KEYS.domeWifiPeerIp, config.dome_wifi_peer_ip) > 0 && ok;
+    }
+    ok = prefs.putUChar(CONFIG_SCHEMA_VERSION_KEY, CONFIG_SCHEMA_VERSION) > 0 && ok;
+    return ok;
 }
 
 bool configSaveSystem(Preferences& prefs, const SystemConfig& config) {
-    ConfigSnapshot snap = {};
-    configLoad(prefs, &snap);
-    snap.system = config;
-    return configSave(prefs, snap);
+    bool ok = true;
+    ok = prefs.putUChar(NVS_KEYS.logLevel, config.logLevel) > 0 && ok;
+    ok = prefs.putBool(NVS_KEYS.enableArm1, config.enable_arm1) > 0 && ok;
+    ok = prefs.putBool(NVS_KEYS.enableArm2, config.enable_arm2) > 0 && ok;
+    ok = prefs.putBool(NVS_KEYS.enableAux1, config.enable_aux1) > 0 && ok;
+    ok = prefs.putBool(NVS_KEYS.enableAux2, config.enable_aux2) > 0 && ok;
+    ok = prefs.putBool(NVS_KEYS.enableAux3, config.enable_aux3) > 0 && ok;
+    ok = prefs.putBool(NVS_KEYS.enableDome, config.enable_dome) > 0 && ok;
+    ok = prefs.putBool(NVS_KEYS.enableRcCh1, config.enable_rc_ch1) > 0 && ok;
+    ok = prefs.putBool(NVS_KEYS.enableRcCh2, config.enable_rc_ch2) > 0 && ok;
+    ok = prefs.putBool(NVS_KEYS.enableRcCh3, config.enable_rc_ch3) > 0 && ok;
+    ok = prefs.putBool(NVS_KEYS.enableRcCh4, config.enable_rc_ch4) > 0 && ok;
+    ok = prefs.putBool(NVS_KEYS.enableRcCh5, config.enable_rc_ch5) > 0 && ok;
+    ok = prefs.putBool(NVS_KEYS.enableRcCh6, config.enable_rc_ch6) > 0 && ok;
+    ok = prefs.putBool(NVS_KEYS.singleSbusUseCh2, config.single_sbus_use_ch2) > 0 && ok;
+    ok = prefs.putBool(NVS_KEYS.enableS1Hoverboard, config.enable_s1_hoverboard) > 0 && ok;
+    ok = prefs.putBool(NVS_KEYS.enableS2Sound, config.enable_s2_sound) > 0 && ok;
+    ok = prefs.putBool(NVS_KEYS.enableS3DomeCtrl, config.enable_s3_dome_ctrl) > 0 && ok;
+    ok = prefs.putBool(NVS_KEYS.stationary, config.stationary) > 0 && ok;
+    ok = prefs.putUChar(NVS_KEYS.rcInputMode, (uint8_t)config.rc_input_mode) > 0 && ok;
+
+    ok = saveRcBindingToPrefs(prefs, NVS_KEYS.rcPwmDriveSpeed, config.rc_pwm_drive_speed) && ok;
+    ok = saveRcBindingToPrefs(prefs, NVS_KEYS.rcPwmDriveSteer, config.rc_pwm_drive_steer) && ok;
+    ok = saveRcBindingToPrefs(prefs, NVS_KEYS.rcPwmDomeSpeed, config.rc_pwm_dome_speed) && ok;
+    ok = saveRcBindingToPrefs(prefs, NVS_KEYS.rcPwmArm1, config.rc_pwm_arm1) && ok;
+    ok = saveRcBindingToPrefs(prefs, NVS_KEYS.rcPwmArm2, config.rc_pwm_arm2) && ok;
+    ok = saveRcBindingToPrefs(prefs, NVS_KEYS.rcPwmSound, config.rc_pwm_sound) && ok;
+
+    ok = saveRcBindingToPrefs(prefs, NVS_KEYS.rcSbusDriveSpeed, config.rc_sbus_drive_speed) && ok;
+    ok = saveRcBindingToPrefs(prefs, NVS_KEYS.rcSbusDriveSteer, config.rc_sbus_drive_steer) && ok;
+    ok = saveRcBindingToPrefs(prefs, NVS_KEYS.rcSbusDomeSpeed, config.rc_sbus_dome_speed) && ok;
+    ok = saveRcBindingToPrefs(prefs, NVS_KEYS.rcSbusArm1, config.rc_sbus_arm1) && ok;
+    ok = saveRcBindingToPrefs(prefs, NVS_KEYS.rcSbusArm2, config.rc_sbus_arm2) && ok;
+    ok = saveRcBindingToPrefs(prefs, NVS_KEYS.rcSbusSound, config.rc_sbus_sound) && ok;
+
+    ok = saveRcTriggerBindingToPrefs(prefs, NVS_KEYS.rcArm1, config.rc_arm1) && ok;
+    ok = saveRcTriggerBindingToPrefs(prefs, NVS_KEYS.rcArm2, config.rc_arm2) && ok;
+    ok = saveRcTriggerBindingToPrefs(prefs, NVS_KEYS.rcAux1, config.rc_aux1) && ok;
+    ok = saveRcTriggerBindingToPrefs(prefs, NVS_KEYS.rcAux2, config.rc_aux2) && ok;
+    ok = saveRcTriggerBindingToPrefs(prefs, NVS_KEYS.rcAux3, config.rc_aux3) && ok;
+    ok = saveRcTriggerBindingToPrefs(prefs, NVS_KEYS.rcSound, config.rc_sound) && ok;
+    ok = saveRcTriggerBindingToPrefs(prefs, NVS_KEYS.rcOpmode, config.rc_opmode) && ok;
+    ok = saveRcTriggerBindingToPrefs(prefs, NVS_KEYS.rcFree0, config.rc_free0) && ok;
+    ok = saveRcTriggerBindingToPrefs(prefs, NVS_KEYS.rcFree1, config.rc_free1) && ok;
+    ok = saveRcTriggerBindingToPrefs(prefs, NVS_KEYS.rcFree2, config.rc_free2) && ok;
+    ok = saveRcTriggerBindingToPrefs(prefs, NVS_KEYS.rcFree3, config.rc_free3) && ok;
+
+    ok = prefs.putUChar(CONFIG_SCHEMA_VERSION_KEY, CONFIG_SCHEMA_VERSION) > 0 && ok;
+    return ok;
 }
 
 ConfigValidationResult configValidate(ConfigKey key, int32_t value) {
