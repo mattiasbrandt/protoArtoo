@@ -968,6 +968,29 @@ void test_configAudioTrackByKey_rejects_unknown_key() {
     TEST_ASSERT_EQUAL_UINT16(0xFFFF, value);
 }
 
+void test_configUpdateAudioMoodMasks_round_trips_through_audio_store() {
+    Preferences prefs;
+    prefs.begin("proto", false);
+    prefs.clear();
+
+    ConfigSnapshot snap = {};
+    TEST_ASSERT_TRUE(configLoad(prefs, &snap));
+    configApplyToRobotState(snap);
+
+    TEST_ASSERT_TRUE(configUpdateAudioMoodMasks(prefs, 0x0001, 0x0002, 0x0004, 0x0008));
+
+    AudioConfig audio = {};
+    configLoadAudio(prefs, &audio);
+    prefs.end();
+
+    TEST_ASSERT_EQUAL_UINT16(0x0001, audio.snd_moodcat_quiet);
+    TEST_ASSERT_EQUAL_UINT16(0x0002, audio.snd_moodcat_mid);
+    TEST_ASSERT_EQUAL_UINT16(0x0004, audio.snd_moodcat_full);
+    TEST_ASSERT_EQUAL_UINT16(0x0008, audio.snd_moodcat_awakeplus);
+    TEST_ASSERT_EQUAL_UINT16(0x0001, robotState.cfg_snd_moodcat_quiet);
+    TEST_ASSERT_EQUAL_UINT16(0x0008, robotState.cfg_snd_moodcat_awakeplus);
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_configLoad_empty_nvs_returns_defaults);
@@ -1003,5 +1026,6 @@ int main() {
     RUN_TEST(test_configAudioTrackByKey_round_trips_named_track);
     RUN_TEST(test_configAudioTrackByKey_round_trips_category_bound);
     RUN_TEST(test_configAudioTrackByKey_rejects_unknown_key);
+    RUN_TEST(test_configUpdateAudioMoodMasks_round_trips_through_audio_store);
     return UNITY_END();
 }

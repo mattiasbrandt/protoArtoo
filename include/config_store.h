@@ -357,6 +357,8 @@ void configLoadSystem(Preferences& prefs, SystemConfig* out);
 bool configAudioGetTrackByKey(const AudioConfig& config, const char* key, uint16_t* out);
 bool configAudioSetTrackByKey(AudioConfig* config, const char* key, uint16_t value);
 const char* configAudioCategoryCompanionKey(const char* key);
+bool configUpdateAudioMoodMasks(Preferences& prefs, uint16_t quiet, uint16_t mid, uint16_t full,
+                                uint16_t awakeplus);
 
 // configSave: Persist full ConfigSnapshot to NVS.
 // Caller opens Preferences with begin() before calling.

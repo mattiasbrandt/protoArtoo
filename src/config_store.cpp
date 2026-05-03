@@ -531,6 +531,39 @@ const char* configAudioCategoryCompanionKey(const char* key) {
     return nullptr;
 }
 
+bool configUpdateAudioMoodMasks(Preferences& prefs, uint16_t quiet, uint16_t mid, uint16_t full,
+                                uint16_t awakeplus) {
+    if (configValidate(ConfigKey::SND_MOODCAT_QUIET, quiet) != ConfigValidationResult::OK ||
+        configValidate(ConfigKey::SND_MOODCAT_MID, mid) != ConfigValidationResult::OK ||
+        configValidate(ConfigKey::SND_MOODCAT_FULL, full) != ConfigValidationResult::OK ||
+        configValidate(ConfigKey::SND_MOODCAT_AWAKEPLUS, awakeplus) !=
+            ConfigValidationResult::OK) {
+        return false;
+    }
+
+    ConfigSnapshot snap = {};
+    taskENTER_CRITICAL(&robotStateMux);
+    configSnapshotFromRobotState(&snap);
+    taskEXIT_CRITICAL(&robotStateMux);
+
+    snap.audio.snd_moodcat_quiet = quiet;
+    snap.audio.snd_moodcat_mid = mid;
+    snap.audio.snd_moodcat_full = full;
+    snap.audio.snd_moodcat_awakeplus = awakeplus;
+
+    if (!configSaveAudio(prefs, snap.audio)) {
+        return false;
+    }
+
+    taskENTER_CRITICAL(&robotStateMux);
+    robotState.cfg_snd_moodcat_quiet = snap.audio.snd_moodcat_quiet;
+    robotState.cfg_snd_moodcat_mid = snap.audio.snd_moodcat_mid;
+    robotState.cfg_snd_moodcat_full = snap.audio.snd_moodcat_full;
+    robotState.cfg_snd_moodcat_awakeplus = snap.audio.snd_moodcat_awakeplus;
+    taskEXIT_CRITICAL(&robotStateMux);
+    return true;
+}
+
 void configSnapshotFromRobotState(ConfigSnapshot* out) {
     out->drive.speedLimitMax        = robotState.cfg_speedLimitMax;
     out->drive.speedPresetSlow      = robotState.cfg_speedPresetSlow;

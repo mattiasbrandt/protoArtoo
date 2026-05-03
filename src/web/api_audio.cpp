@@ -343,14 +343,14 @@ void registerMoodMapRoutes(AsyncWebServer& server) {
             return;
         }
 
-        taskENTER_CRITICAL(&robotStateMux);
-        robotState.cfg_snd_moodcat_quiet = quiet;
-        robotState.cfg_snd_moodcat_mid = mid;
-        robotState.cfg_snd_moodcat_full = full;
-        robotState.cfg_snd_moodcat_awakeplus = awakeplus;
-        taskEXIT_CRITICAL(&robotStateMux);
+        Preferences prefs;
+        bool ok = false;
+        if (prefs.begin(NVS_NAMESPACE, false)) {
+            ok = configUpdateAudioMoodMasks(prefs, quiet, mid, full, awakeplus);
+            prefs.end();
+        }
 
-        if (!saveConfigToNvs()) {
+        if (!ok) {
             req->send(500, "application/json", "{\"ok\":false,\"error\":\"NVS write failed\"}");
             return;
         }

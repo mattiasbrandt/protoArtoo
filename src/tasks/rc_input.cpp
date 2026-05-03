@@ -39,6 +39,7 @@
 #include "../../include/rc_pwm_helpers.h"
 #include "../../include/robot_state.h"
 #include "../../include/sbus_decoder.h"
+#include "../../include/sbus_watchdog.h"
 #include "../../include/web_server.h"
 
 static const char* TAG = "RCInputTask";
@@ -765,8 +766,9 @@ void rcInputTask(void* pvParameters) {
                         PIN_SBUS1_RX, PIN_SBUS2_RX);
     }
 
-    // SBUS2 watchdog state
-    bool sbus2WatchdogFired = false;
+    // SBUS watchdog state
+    SbusWatchdog sbus1Watchdog = {};
+    SbusWatchdog sbus2Watchdog = {};
     bool hwmLogged = false;
 
     bool driveSbusInitWarned = false;
@@ -846,7 +848,7 @@ void rcInputTask(void* pvParameters) {
         if (!domeSbusEnabled && sbus_dome.isInitialized()) {
             sbus_dome.end();
             domeSbusInitWarned = false;
-            sbus2WatchdogFired = false;
+            sbusWatchdogReset(&sbus2Watchdog);
             PA_LOG_INFO(TAG, "SBUS2 disabled — RMT channel released");
         }
 
@@ -858,6 +860,8 @@ void rcInputTask(void* pvParameters) {
             robotState.sbus2SignalLost = false;
             robotState.sbus2HwFailsafe = false;
             taskEXIT_CRITICAL(&robotStateMux);
+            sbusWatchdogReset(&sbus1Watchdog);
+            sbusWatchdogReset(&sbus2Watchdog);
             dispatchStandardPwmInputs();
             esp_task_wdt_reset();
             vTaskDelay(pdMS_TO_TICKS(20));
@@ -1003,61 +1007,51 @@ void rcInputTask(void* pvParameters) {
         taskEXIT_CRITICAL(&robotStateMux);
 
         if (driveSbusEnabled) {
-            bool watchdogFired = false;
-            if ((uint32_t)(millis() - lastSbus1) > timeoutMs) {
-                uint32_t nowMs = millis();
-                bool wasSignalLost;
-                taskENTER_CRITICAL(&robotStateMux);
-                wasSignalLost = robotState.sbusSignalLost;
-                taskEXIT_CRITICAL(&robotStateMux);
-                if (!wasSignalLost) {
-                    failsafeTrigger(FailsafeLayer::SBUS_WATCHDOG);
-                    driveArbiterSubmit(DriveSource::RC, 0, 0, nowMs);
-                    watchdogFired = true;
-                }
-                if (watchdogFired) {
-                    PA_LOG_WARN(TAG, "SBUS1 watchdog fired - no frame for %lu ms (timeout=%lu ms)",
-                                (unsigned long)(nowMs - lastSbus1), (unsigned long)timeoutMs);
-                    if ((uint32_t)(nowMs - lastSbus1WatchdogDiagMs) >= kWatchdogDiagIntervalMs) {
-                        lastSbus1WatchdogDiagMs = nowMs;
-                        taskENTER_CRITICAL(&robotStateMux);
-                        bool rcDebug = robotState.rcDebugMode;
-                        taskEXIT_CRITICAL(&robotStateMux);
-                        if (rcDebug) {
-                            SbusDecoderDebugStats driveStats = sbus_drive.debugStats();
-                            PA_LOG_DEBUG(
-                                TAG,
-                                "SBUS1 watchdog decode stats: rx_done=%lu queued=%lu short=%lu "
-                                "ok=%lu fail=%lu bitlow=%lu extract=%lu hdr=%lu ftr=%lu "
-                                "last_ftr=0x%02x rearm=%lu parity=%lu syms(last=%lu max=%lu)",
-                                (unsigned long)driveStats.rxDoneCount,
-                                (unsigned long)driveStats.queuedCount,
-                                (unsigned long)driveStats.shortDropCount,
-                                (unsigned long)driveStats.parseOkCount,
-                                (unsigned long)driveStats.parseFailCount,
-                                (unsigned long)driveStats.bitCountLowCount,
-                                (unsigned long)driveStats.extractFailCount,
-                                (unsigned long)driveStats.headerMismatchCount,
-                                (unsigned long)driveStats.footerMismatchCount,
-                                (unsigned int)driveStats.lastRejectedFooter,
-                                (unsigned long)driveStats.rearmFailCount,
-                                (unsigned long)driveStats.parityFailCount,
-                                (unsigned long)driveStats.lastSymbolCount,
-                                (unsigned long)driveStats.maxSymbolCount);
-                        }
+            uint32_t nowMs = millis();
+            SbusWatchdogTransition transition =
+                sbusWatchdogCheck(&sbus1Watchdog, lastSbus1, nowMs, timeoutMs);
+            if (transition == SbusWatchdogTransition::JUST_LOST) {
+                failsafeTrigger(FailsafeLayer::SBUS_WATCHDOG);
+                driveArbiterSubmit(DriveSource::RC, 0, 0, nowMs);
+                PA_LOG_WARN(TAG, "SBUS1 watchdog fired - no frame for %lu ms (timeout=%lu ms)",
+                            (unsigned long)(nowMs - lastSbus1), (unsigned long)timeoutMs);
+                if ((uint32_t)(nowMs - lastSbus1WatchdogDiagMs) >= kWatchdogDiagIntervalMs) {
+                    lastSbus1WatchdogDiagMs = nowMs;
+                    taskENTER_CRITICAL(&robotStateMux);
+                    bool rcDebug = robotState.rcDebugMode;
+                    taskEXIT_CRITICAL(&robotStateMux);
+                    if (rcDebug) {
+                        SbusDecoderDebugStats driveStats = sbus_drive.debugStats();
+                        PA_LOG_DEBUG(
+                            TAG,
+                            "SBUS1 watchdog decode stats: rx_done=%lu queued=%lu short=%lu "
+                            "ok=%lu fail=%lu bitlow=%lu extract=%lu hdr=%lu ftr=%lu "
+                            "last_ftr=0x%02x rearm=%lu parity=%lu syms(last=%lu max=%lu)",
+                            (unsigned long)driveStats.rxDoneCount,
+                            (unsigned long)driveStats.queuedCount,
+                            (unsigned long)driveStats.shortDropCount,
+                            (unsigned long)driveStats.parseOkCount,
+                            (unsigned long)driveStats.parseFailCount,
+                            (unsigned long)driveStats.bitCountLowCount,
+                            (unsigned long)driveStats.extractFailCount,
+                            (unsigned long)driveStats.headerMismatchCount,
+                            (unsigned long)driveStats.footerMismatchCount,
+                            (unsigned int)driveStats.lastRejectedFooter,
+                            (unsigned long)driveStats.rearmFailCount,
+                            (unsigned long)driveStats.parityFailCount,
+                            (unsigned long)driveStats.lastSymbolCount,
+                            (unsigned long)driveStats.maxSymbolCount);
                     }
                 }
-            } else {
-                taskENTER_CRITICAL(&robotStateMux);
-                bool signalRestored = robotState.sbusSignalLost;
-                taskEXIT_CRITICAL(&robotStateMux);
-                if (signalRestored) {
-                    failsafeClear(FailsafeLayer::SBUS_WATCHDOG);
-                    PA_LOG_INFO(TAG, "SBUS1 signal restored");
-                }
+            } else if (transition == SbusWatchdogTransition::JUST_RESTORED) {
+                failsafeClear(FailsafeLayer::SBUS_WATCHDOG);
+                PA_LOG_INFO(TAG, "SBUS1 signal restored");
+                failsafeClear(FailsafeLayer::SBUS_HW);
+            } else if (transition == SbusWatchdogTransition::OK) {
                 failsafeClear(FailsafeLayer::SBUS_HW);
             }
         } else {
+            sbusWatchdogReset(&sbus1Watchdog);
             failsafeClear(FailsafeLayer::SBUS_WATCHDOG);
             failsafeClear(FailsafeLayer::SBUS_HW);
         }
@@ -1099,10 +1093,6 @@ void rcInputTask(void* pvParameters) {
             } else {
                 dispatchSbusBindingsForSource(data, RC_BINDING_SBUS2, rcInputMode, enableRcCh1,
                                               enableRcCh2, useCh2);
-                if (sbus2WatchdogFired) {
-                    sbus2WatchdogFired = false;
-                    PA_LOG_INFO(TAG, "SBUS2 signal restored");
-                }
             }
         }
 
@@ -1113,52 +1103,56 @@ void rcInputTask(void* pvParameters) {
 
         if (domeSbusEnabled) {
             uint32_t nowMs = millis();
-            if ((uint32_t)(nowMs - lastSbus2) > timeoutMs) {
-                if (!sbus2WatchdogFired) {
-                    sbus2WatchdogFired = true;
+            SbusWatchdogTransition transition =
+                sbusWatchdogCheck(&sbus2Watchdog, lastSbus2, nowMs, timeoutMs);
+            if (transition == SbusWatchdogTransition::JUST_LOST) {
+                taskENTER_CRITICAL(&robotStateMux);
+                recordFailsafeTriggerLocked(FS_SBUS2_TIMEOUT, nowMs);
+                robotState.sbus2SignalLost = true;
+                taskEXIT_CRITICAL(&robotStateMux);
+                PA_LOG_WARN(TAG, "SBUS2 watchdog fired - dome signal lost");
+                if ((uint32_t)(nowMs - lastSbus2WatchdogDiagMs) >= kWatchdogDiagIntervalMs) {
+                    lastSbus2WatchdogDiagMs = nowMs;
                     taskENTER_CRITICAL(&robotStateMux);
-                    recordFailsafeTriggerLocked(FS_SBUS2_TIMEOUT, nowMs);
-                    robotState.sbus2SignalLost = true;
+                    bool rcDebug = robotState.rcDebugMode;
                     taskEXIT_CRITICAL(&robotStateMux);
-                    PA_LOG_WARN(TAG, "SBUS2 watchdog fired - dome signal lost");
-                    if ((uint32_t)(nowMs - lastSbus2WatchdogDiagMs) >= kWatchdogDiagIntervalMs) {
-                        lastSbus2WatchdogDiagMs = nowMs;
-                        taskENTER_CRITICAL(&robotStateMux);
-                        bool rcDebug = robotState.rcDebugMode;
-                        taskEXIT_CRITICAL(&robotStateMux);
-                        if (rcDebug) {
-                            SbusDecoderDebugStats domeStats = sbus_dome.debugStats();
-                            PA_LOG_DEBUG(
-                                TAG,
-                                "SBUS2 watchdog decode stats: rx_done=%lu queued=%lu short=%lu "
-                                "ok=%lu fail=%lu bitlow=%lu extract=%lu hdr=%lu ftr=%lu "
-                                "last_ftr=0x%02x rearm=%lu parity=%lu syms(last=%lu max=%lu)",
-                                (unsigned long)domeStats.rxDoneCount,
-                                (unsigned long)domeStats.queuedCount,
-                                (unsigned long)domeStats.shortDropCount,
-                                (unsigned long)domeStats.parseOkCount,
-                                (unsigned long)domeStats.parseFailCount,
-                                (unsigned long)domeStats.bitCountLowCount,
-                                (unsigned long)domeStats.extractFailCount,
-                                (unsigned long)domeStats.headerMismatchCount,
-                                (unsigned long)domeStats.footerMismatchCount,
-                                (unsigned int)domeStats.lastRejectedFooter,
-                                (unsigned long)domeStats.rearmFailCount,
-                                (unsigned long)domeStats.parityFailCount,
-                                (unsigned long)domeStats.lastSymbolCount,
-                                (unsigned long)domeStats.maxSymbolCount);
-                        }
+                    if (rcDebug) {
+                        SbusDecoderDebugStats domeStats = sbus_dome.debugStats();
+                        PA_LOG_DEBUG(
+                            TAG,
+                            "SBUS2 watchdog decode stats: rx_done=%lu queued=%lu short=%lu "
+                            "ok=%lu fail=%lu bitlow=%lu extract=%lu hdr=%lu ftr=%lu "
+                            "last_ftr=0x%02x rearm=%lu parity=%lu syms(last=%lu max=%lu)",
+                            (unsigned long)domeStats.rxDoneCount,
+                            (unsigned long)domeStats.queuedCount,
+                            (unsigned long)domeStats.shortDropCount,
+                            (unsigned long)domeStats.parseOkCount,
+                            (unsigned long)domeStats.parseFailCount,
+                            (unsigned long)domeStats.bitCountLowCount,
+                            (unsigned long)domeStats.extractFailCount,
+                            (unsigned long)domeStats.headerMismatchCount,
+                            (unsigned long)domeStats.footerMismatchCount,
+                            (unsigned int)domeStats.lastRejectedFooter,
+                            (unsigned long)domeStats.rearmFailCount,
+                            (unsigned long)domeStats.parityFailCount,
+                            (unsigned long)domeStats.lastSymbolCount,
+                            (unsigned long)domeStats.maxSymbolCount);
                     }
-
-                    DomeCommand stopCmd = {};
-                    stopCmd.speed = 0.0f;
-                    stopCmd.source = SRC_INTERNAL;
-                    stopCmd.timestampMs = nowMs;
-                    xQueueSend(domeCmdQueue, &stopCmd, 0);
                 }
-            } else {
-                sbus2WatchdogFired = false;
+
+                DomeCommand stopCmd = {};
+                stopCmd.speed = 0.0f;
+                stopCmd.source = SRC_INTERNAL;
+                stopCmd.timestampMs = nowMs;
+                xQueueSend(domeCmdQueue, &stopCmd, 0);
+            } else if (transition == SbusWatchdogTransition::JUST_RESTORED) {
+                taskENTER_CRITICAL(&robotStateMux);
+                robotState.sbus2SignalLost = false;
+                taskEXIT_CRITICAL(&robotStateMux);
+                PA_LOG_INFO(TAG, "SBUS2 signal restored");
             }
+        } else {
+            sbusWatchdogReset(&sbus2Watchdog);
         }
 
         uint32_t nowMs = millis();
