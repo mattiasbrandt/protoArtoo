@@ -53,34 +53,64 @@ static bool isSleepModeActive() {
     return sleeping;
 }
 
-// Resolve a category-range key to the corresponding RobotState field.
+// Read a category-range field by key into *out. Returns false if key is unknown.
 // Caller MUST hold robotStateMux.
-static uint16_t* categoryTrackFieldForKeyLocked(const char* key) {
-    if (strcmp(key, "snd_cat_gen_lo") == 0) return &robotState.cfg_snd_cat_gen_lo;
-    if (strcmp(key, "snd_cat_gen_hi") == 0) return &robotState.cfg_snd_cat_gen_hi;
-    if (strcmp(key, "snd_cat_chat_lo") == 0) return &robotState.cfg_snd_cat_chat_lo;
-    if (strcmp(key, "snd_cat_chat_hi") == 0) return &robotState.cfg_snd_cat_chat_hi;
-    if (strcmp(key, "snd_cat_hap_lo") == 0) return &robotState.cfg_snd_cat_hap_lo;
-    if (strcmp(key, "snd_cat_hap_hi") == 0) return &robotState.cfg_snd_cat_hap_hi;
-    if (strcmp(key, "snd_cat_proc_lo") == 0) return &robotState.cfg_snd_cat_proc_lo;
-    if (strcmp(key, "snd_cat_proc_hi") == 0) return &robotState.cfg_snd_cat_proc_hi;
-    if (strcmp(key, "snd_cat_sad_lo") == 0) return &robotState.cfg_snd_cat_sad_lo;
-    if (strcmp(key, "snd_cat_sad_hi") == 0) return &robotState.cfg_snd_cat_sad_hi;
-    if (strcmp(key, "snd_cat_sent_lo") == 0) return &robotState.cfg_snd_cat_sent_lo;
-    if (strcmp(key, "snd_cat_sent_hi") == 0) return &robotState.cfg_snd_cat_sent_hi;
-    if (strcmp(key, "snd_cat_hum_lo") == 0) return &robotState.cfg_snd_cat_hum_lo;
-    if (strcmp(key, "snd_cat_hum_hi") == 0) return &robotState.cfg_snd_cat_hum_hi;
-    if (strcmp(key, "snd_cat_scrm_lo") == 0) return &robotState.cfg_snd_cat_scrm_lo;
-    if (strcmp(key, "snd_cat_scrm_hi") == 0) return &robotState.cfg_snd_cat_scrm_hi;
-    if (strcmp(key, "snd_cat_ooh_lo") == 0) return &robotState.cfg_snd_cat_ooh_lo;
-    if (strcmp(key, "snd_cat_ooh_hi") == 0) return &robotState.cfg_snd_cat_ooh_hi;
-    if (strcmp(key, "snd_cat_alrm_lo") == 0) return &robotState.cfg_snd_cat_alrm_lo;
-    if (strcmp(key, "snd_cat_alrm_hi") == 0) return &robotState.cfg_snd_cat_alrm_hi;
-    if (strcmp(key, "snd_cat_snrk_lo") == 0) return &robotState.cfg_snd_cat_snarky_lo;
-    if (strcmp(key, "snd_cat_snrk_hi") == 0) return &robotState.cfg_snd_cat_snarky_hi;
-    if (strcmp(key, "snd_cat_whis_lo") == 0) return &robotState.cfg_snd_cat_whis_lo;
-    if (strcmp(key, "snd_cat_whis_hi") == 0) return &robotState.cfg_snd_cat_whis_hi;
-    return nullptr;
+static bool getCategoryTrackLocked(const char* key, uint16_t* out) {
+    if (strcmp(key, "snd_cat_gen_lo") == 0)  { *out = robotState.cfg_snd_cat_gen_lo;    return true; }
+    if (strcmp(key, "snd_cat_gen_hi") == 0)  { *out = robotState.cfg_snd_cat_gen_hi;    return true; }
+    if (strcmp(key, "snd_cat_chat_lo") == 0) { *out = robotState.cfg_snd_cat_chat_lo;   return true; }
+    if (strcmp(key, "snd_cat_chat_hi") == 0) { *out = robotState.cfg_snd_cat_chat_hi;   return true; }
+    if (strcmp(key, "snd_cat_hap_lo") == 0)  { *out = robotState.cfg_snd_cat_hap_lo;    return true; }
+    if (strcmp(key, "snd_cat_hap_hi") == 0)  { *out = robotState.cfg_snd_cat_hap_hi;    return true; }
+    if (strcmp(key, "snd_cat_proc_lo") == 0) { *out = robotState.cfg_snd_cat_proc_lo;   return true; }
+    if (strcmp(key, "snd_cat_proc_hi") == 0) { *out = robotState.cfg_snd_cat_proc_hi;   return true; }
+    if (strcmp(key, "snd_cat_sad_lo") == 0)  { *out = robotState.cfg_snd_cat_sad_lo;    return true; }
+    if (strcmp(key, "snd_cat_sad_hi") == 0)  { *out = robotState.cfg_snd_cat_sad_hi;    return true; }
+    if (strcmp(key, "snd_cat_sent_lo") == 0) { *out = robotState.cfg_snd_cat_sent_lo;   return true; }
+    if (strcmp(key, "snd_cat_sent_hi") == 0) { *out = robotState.cfg_snd_cat_sent_hi;   return true; }
+    if (strcmp(key, "snd_cat_hum_lo") == 0)  { *out = robotState.cfg_snd_cat_hum_lo;    return true; }
+    if (strcmp(key, "snd_cat_hum_hi") == 0)  { *out = robotState.cfg_snd_cat_hum_hi;    return true; }
+    if (strcmp(key, "snd_cat_scrm_lo") == 0) { *out = robotState.cfg_snd_cat_scrm_lo;   return true; }
+    if (strcmp(key, "snd_cat_scrm_hi") == 0) { *out = robotState.cfg_snd_cat_scrm_hi;   return true; }
+    if (strcmp(key, "snd_cat_ooh_lo") == 0)  { *out = robotState.cfg_snd_cat_ooh_lo;    return true; }
+    if (strcmp(key, "snd_cat_ooh_hi") == 0)  { *out = robotState.cfg_snd_cat_ooh_hi;    return true; }
+    if (strcmp(key, "snd_cat_alrm_lo") == 0) { *out = robotState.cfg_snd_cat_alrm_lo;   return true; }
+    if (strcmp(key, "snd_cat_alrm_hi") == 0) { *out = robotState.cfg_snd_cat_alrm_hi;   return true; }
+    if (strcmp(key, "snd_cat_snrk_lo") == 0) { *out = robotState.cfg_snd_cat_snarky_lo; return true; }
+    if (strcmp(key, "snd_cat_snrk_hi") == 0) { *out = robotState.cfg_snd_cat_snarky_hi; return true; }
+    if (strcmp(key, "snd_cat_whis_lo") == 0) { *out = robotState.cfg_snd_cat_whis_lo;   return true; }
+    if (strcmp(key, "snd_cat_whis_hi") == 0) { *out = robotState.cfg_snd_cat_whis_hi;   return true; }
+    return false;
+}
+
+// Write a category-range field by key. Returns false if key is unknown.
+// Caller MUST hold robotStateMux.
+static bool setCategoryTrackLocked(const char* key, uint16_t value) {
+    if (strcmp(key, "snd_cat_gen_lo") == 0)  { robotState.cfg_snd_cat_gen_lo    = value; return true; }
+    if (strcmp(key, "snd_cat_gen_hi") == 0)  { robotState.cfg_snd_cat_gen_hi    = value; return true; }
+    if (strcmp(key, "snd_cat_chat_lo") == 0) { robotState.cfg_snd_cat_chat_lo   = value; return true; }
+    if (strcmp(key, "snd_cat_chat_hi") == 0) { robotState.cfg_snd_cat_chat_hi   = value; return true; }
+    if (strcmp(key, "snd_cat_hap_lo") == 0)  { robotState.cfg_snd_cat_hap_lo    = value; return true; }
+    if (strcmp(key, "snd_cat_hap_hi") == 0)  { robotState.cfg_snd_cat_hap_hi    = value; return true; }
+    if (strcmp(key, "snd_cat_proc_lo") == 0) { robotState.cfg_snd_cat_proc_lo   = value; return true; }
+    if (strcmp(key, "snd_cat_proc_hi") == 0) { robotState.cfg_snd_cat_proc_hi   = value; return true; }
+    if (strcmp(key, "snd_cat_sad_lo") == 0)  { robotState.cfg_snd_cat_sad_lo    = value; return true; }
+    if (strcmp(key, "snd_cat_sad_hi") == 0)  { robotState.cfg_snd_cat_sad_hi    = value; return true; }
+    if (strcmp(key, "snd_cat_sent_lo") == 0) { robotState.cfg_snd_cat_sent_lo   = value; return true; }
+    if (strcmp(key, "snd_cat_sent_hi") == 0) { robotState.cfg_snd_cat_sent_hi   = value; return true; }
+    if (strcmp(key, "snd_cat_hum_lo") == 0)  { robotState.cfg_snd_cat_hum_lo    = value; return true; }
+    if (strcmp(key, "snd_cat_hum_hi") == 0)  { robotState.cfg_snd_cat_hum_hi    = value; return true; }
+    if (strcmp(key, "snd_cat_scrm_lo") == 0) { robotState.cfg_snd_cat_scrm_lo   = value; return true; }
+    if (strcmp(key, "snd_cat_scrm_hi") == 0) { robotState.cfg_snd_cat_scrm_hi   = value; return true; }
+    if (strcmp(key, "snd_cat_ooh_lo") == 0)  { robotState.cfg_snd_cat_ooh_lo    = value; return true; }
+    if (strcmp(key, "snd_cat_ooh_hi") == 0)  { robotState.cfg_snd_cat_ooh_hi    = value; return true; }
+    if (strcmp(key, "snd_cat_alrm_lo") == 0) { robotState.cfg_snd_cat_alrm_lo   = value; return true; }
+    if (strcmp(key, "snd_cat_alrm_hi") == 0) { robotState.cfg_snd_cat_alrm_hi   = value; return true; }
+    if (strcmp(key, "snd_cat_snrk_lo") == 0) { robotState.cfg_snd_cat_snarky_lo = value; return true; }
+    if (strcmp(key, "snd_cat_snrk_hi") == 0) { robotState.cfg_snd_cat_snarky_hi = value; return true; }
+    if (strcmp(key, "snd_cat_whis_lo") == 0) { robotState.cfg_snd_cat_whis_lo   = value; return true; }
+    if (strcmp(key, "snd_cat_whis_hi") == 0) { robotState.cfg_snd_cat_whis_hi   = value; return true; }
+    return false;
 }
 
 // Return matching category-range partner key (lo<->hi).
@@ -713,24 +743,20 @@ void registerAudioRoutes(AsyncWebServer& server) {
             return;
         }
 
-        uint16_t* loField = nullptr;
-        uint16_t* hiField = nullptr;
         uint16_t oldLo = 0;
         uint16_t oldHi = 0;
         const uint16_t loValue = (uint16_t)loTrack;
         const uint16_t hiValue = (uint16_t)hiTrack;
+        bool keysFound = false;
         taskENTER_CRITICAL(&robotStateMux);
-        loField = categoryTrackFieldForKeyLocked(loKey);
-        hiField = categoryTrackFieldForKeyLocked(hiKey);
-        if (loField != nullptr && hiField != nullptr) {
-            oldLo = *loField;
-            oldHi = *hiField;
-            *loField = loValue;
-            *hiField = hiValue;
+        keysFound = getCategoryTrackLocked(loKey, &oldLo) && getCategoryTrackLocked(hiKey, &oldHi);
+        if (keysFound) {
+            setCategoryTrackLocked(loKey, loValue);
+            setCategoryTrackLocked(hiKey, hiValue);
         }
         taskEXIT_CRITICAL(&robotStateMux);
 
-        if (loField == nullptr || hiField == nullptr) {
+        if (!keysFound) {
             req->send(400, "application/json", "{\"ok\":false,\"error\":\"unknown category key\"}");
             return;
         }
@@ -757,23 +783,23 @@ void registerAudioRoutes(AsyncWebServer& server) {
                 // CHIRP write failed: restore robotState and re-save old config.
                 ConfigSnapshot oldSnap;
                 taskENTER_CRITICAL(&robotStateMux);
-                *loField = oldLo;
-                *hiField = oldHi;
+                setCategoryTrackLocked(loKey, oldLo);
+                setCategoryTrackLocked(hiKey, oldHi);
                 configSnapshotFromRobotState(&oldSnap);
                 taskEXIT_CRITICAL(&robotStateMux);
                 configSaveAudio(prefs, oldSnap.audio);
             } else if (!wroteConfig) {
                 taskENTER_CRITICAL(&robotStateMux);
-                *loField = oldLo;
-                *hiField = oldHi;
+                setCategoryTrackLocked(loKey, oldLo);
+                setCategoryTrackLocked(hiKey, oldHi);
                 taskEXIT_CRITICAL(&robotStateMux);
             }
             ok = wroteConfig && wroteBinding;
             prefs.end();
         } else {
             taskENTER_CRITICAL(&robotStateMux);
-            *loField = oldLo;
-            *hiField = oldHi;
+            setCategoryTrackLocked(loKey, oldLo);
+            setCategoryTrackLocked(hiKey, oldHi);
             taskEXIT_CRITICAL(&robotStateMux);
         }
 
