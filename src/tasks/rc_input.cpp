@@ -240,6 +240,27 @@ static RcMappingConfig rcBuildMappingConfig(RcInputMode mode) {
     return out;
 }
 
+// Cached mapping config — rebuilt from RobotState only when rcConfigDirty is set.
+// prevSoundPressed is NOT cached; callers always set it on their local copy.
+static RcMappingConfig g_cachedMapCfg = {};
+static RcInputMode g_cachedMapMode = static_cast<RcInputMode>(0xFF);  // invalid sentinel
+
+static RcMappingConfig rcGetMappingConfig(RcInputMode mode) {
+    bool dirty;
+    taskENTER_CRITICAL(&robotStateMux);
+    dirty = robotState.rcConfigDirty;
+    if (dirty) {
+        robotState.rcConfigDirty = false;
+    }
+    taskEXIT_CRITICAL(&robotStateMux);
+
+    if (dirty || mode != g_cachedMapMode) {
+        g_cachedMapCfg = rcBuildMappingConfig(mode);
+        g_cachedMapMode = mode;
+    }
+    return g_cachedMapCfg;
+}
+
 // Tier 2 Trigger Binding Runtime State
 struct TriggerRuntimeState {
     bool lastPressed;
@@ -658,7 +679,7 @@ static bool readSbusDigitalTrigger(const SbusData& data, const RcTriggerBinding&
 
 static void dispatchStandardPwmInputs() {
     uint32_t pulses[6] = {};
-    RcMappingConfig cfg = rcBuildMappingConfig(RC_INPUT_STANDARD_PWM);
+    RcMappingConfig cfg = rcGetMappingConfig(RC_INPUT_STANDARD_PWM);
 
     // Time-bounded pulse reading: limit total time spent to maintain ~20ms loop cadence
     const uint32_t startMs = millis();
@@ -758,7 +779,7 @@ static void dispatchStandardPwmInputs() {
 static void dispatchSbusBindingsForSource(const SbusData& data, RcBindingSource source,
                                           RcInputMode mode, bool enableRcCh1, bool enableRcCh2,
                                           bool useCh2) {
-    RcMappingConfig cfg = rcBuildMappingConfig(mode);
+    RcMappingConfig cfg = rcGetMappingConfig(mode);
     static bool domeRawInit = false;
     static int lastDomeRaw = 0;
     static int pendingDomeRaw = 0;
@@ -1086,7 +1107,7 @@ void rcInputTask(void* pvParameters) {
                     snap.channels[16] = data.ch17 ? 1811 : 172;  // Digital ch17 as SBUS value
                     snap.channels[17] = data.ch18 ? 1811 : 172;  // Digital ch18 as SBUS value
 
-                    RcMappingConfig mapCfg = rcBuildMappingConfig(rcInputMode);
+                    RcMappingConfig mapCfg = rcGetMappingConfig(rcInputMode);
                     static bool lastSoundPressed = false;
                     mapCfg.prevSoundPressed = lastSoundPressed;
 

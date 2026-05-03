@@ -211,7 +211,8 @@ struct RobotState {
 
     // --- Web control state ---
     bool webControlEnabled;
-    bool rcDebugMode;  // Enable verbose RC/SBUS logging when RC page is active
+    bool rcDebugMode;    // Enable verbose RC/SBUS logging when RC page is active
+    bool rcConfigDirty;  // Set by configSaveSystem/configApplyToRobotState; cleared by RcInputTask after rebuild
 
     // --- NVS-backed config (loaded at boot, written via web API) ---
     int16_t cfg_speedLimitMax;            // Default: SPEED_LIMIT_MAX

@@ -20,7 +20,8 @@ static const char* TAG = "FailsafeGate";
 
 // Internal state
 static portMUX_TYPE* _mux = nullptr;
-static uint8_t _activeMask = 0;  // one bit per FailsafeLayer (bits 0-4)
+static uint8_t _activeMask = 0;          // one bit per FailsafeLayer (bits 0-4)
+static bool _webTimeoutLayerActive = false;  // edge-detection state for WEB_TIMEOUT layer
 
 // Map FailsafeLayer enum to FailsafeSource for diagnostics.
 static FailsafeSource layerToSource(FailsafeLayer layer) {
@@ -63,6 +64,7 @@ void failsafeInit(portMUX_TYPE* mux) {
     }
     _mux = mux;
     _activeMask = 0;
+    _webTimeoutLayerActive = false;
 
     // Initialize mirrors with current state (should be zero at boot).
     taskENTER_CRITICAL(_mux);
@@ -182,5 +184,17 @@ void failsafeClearEstop() {
     }
     if (twdtWasActive) {
         PA_LOG_INFO(TAG, "twdt_reset cleared (explicit)");
+    }
+}
+
+void failsafeUpdateWebTimeout(bool webTimedOut) {
+    if (webTimedOut) {
+        if (!_webTimeoutLayerActive) {
+            failsafeTrigger(FailsafeLayer::WEB_TIMEOUT);
+            _webTimeoutLayerActive = true;
+        }
+    } else if (_webTimeoutLayerActive) {
+        failsafeClear(FailsafeLayer::WEB_TIMEOUT);
+        _webTimeoutLayerActive = false;
     }
 }

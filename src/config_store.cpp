@@ -689,6 +689,7 @@ void configApplyToRobotState(const ConfigSnapshot& snap) {
     robotState.cfg_rc_free1 = snap.system.rc_free1;
     robotState.cfg_rc_free2 = snap.system.rc_free2;
     robotState.cfg_rc_free3 = snap.system.rc_free3;
+    robotState.rcConfigDirty = true;
 }
 
 bool configLoad(Preferences& prefs, ConfigSnapshot* out) {
@@ -1237,6 +1238,11 @@ bool configSaveSystem(Preferences& prefs, const SystemConfig& config) {
     ok = saveRcTriggerBindingToPrefs(prefs, NVS_KEYS.rcFree3, config.rc_free3) && ok;
 
     ok = prefs.putUChar(CONFIG_SCHEMA_VERSION_KEY, CONFIG_SCHEMA_VERSION) > 0 && ok;
+
+    taskENTER_CRITICAL(&robotStateMux);
+    robotState.rcConfigDirty = true;
+    taskEXIT_CRITICAL(&robotStateMux);
+
     return ok;
 }
 

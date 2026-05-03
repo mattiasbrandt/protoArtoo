@@ -6,7 +6,7 @@
 // Runs on Core 1 (real-time).
 //
 // Safety layers implemented here:
-//   Layer 3: Web API drive timeout (handled by DriveArbiter)
+//   Layer 3: Web API drive timeout (DriveArbiter detects; FailsafeGate owns the state)
 //   Layer 4: TWDT feed (esp_task_wdt_reset every loop)
 //
 // SAFETY: SPEED_LIMIT_MAX cap applied unconditionally before every frame.
@@ -69,7 +69,6 @@ void driveTask(void* pvParameters) {
 
     bool zeroOutputRecorded = false;
     uint32_t zeroRecordedForTriggerMs = 0;
-    bool webTimeoutLayerActive = false;
     while (true) {
         // Feed TWDT — if this line is not reached within WATCHDOG_TIMEOUT_S, chip resets
         esp_task_wdt_reset();
@@ -95,9 +94,8 @@ void driveTask(void* pvParameters) {
         };
         DriveOutput driveOut = driveArbiterResolve(cfg, nowMs);
 
-        // Resolve stays side-effect-free; DriveTask bridges the resolved web
-        // timeout state into FailsafeGate once per 50 Hz control tick.
-        driveSyncWebTimeoutFailsafe(driveOut.webTimedOut, &webTimeoutLayerActive);
+        // Sync resolved web-timeout state into FailsafeGate once per 50 Hz tick.
+        failsafeUpdateWebTimeout(driveOut.webTimedOut);
 
         // Mirror resolved output to robotState for SSE status reporting.
         // Written here (post-resolve) so the values match what is actually sent

@@ -269,6 +269,41 @@ void test_estop_and_twdt_both_set_estop_mirror() {
     TEST_ASSERT_FALSE(robotState.estop);
 }
 
+// --- Test 9: failsafeUpdateWebTimeout() edge-detect behavior ---
+
+void test_update_web_timeout_true_triggers_layer() {
+    TEST_ASSERT_FALSE(failsafeIsActive());
+    failsafeUpdateWebTimeout(true);
+    TEST_ASSERT_TRUE(failsafeIsActive());
+    TEST_ASSERT_TRUE(robotState.webDriveExpired);
+    TEST_ASSERT_EQUAL_UINT32(1, robotState.failsafeTriggerCount);
+    TEST_ASSERT_EQUAL_INT((int)FS_WEB_TIMEOUT, (int)robotState.failsafeLastTriggerSource);
+}
+
+void test_update_web_timeout_repeated_true_does_not_retrigger() {
+    failsafeUpdateWebTimeout(true);
+    failsafeUpdateWebTimeout(true);
+    failsafeUpdateWebTimeout(true);
+    TEST_ASSERT_TRUE(failsafeIsActive());
+    TEST_ASSERT_EQUAL_UINT32(1, robotState.failsafeTriggerCount);
+}
+
+void test_update_web_timeout_false_when_active_clears_layer() {
+    failsafeUpdateWebTimeout(true);
+    TEST_ASSERT_TRUE(failsafeIsActive());
+
+    failsafeUpdateWebTimeout(false);
+    TEST_ASSERT_FALSE(failsafeIsActive());
+    TEST_ASSERT_FALSE(robotState.webDriveExpired);
+}
+
+void test_update_web_timeout_false_when_inactive_is_noop() {
+    TEST_ASSERT_FALSE(failsafeIsActive());
+    failsafeUpdateWebTimeout(false);
+    TEST_ASSERT_FALSE(failsafeIsActive());
+    TEST_ASSERT_EQUAL_UINT32(0, robotState.failsafeTriggerCount);
+}
+
 int main() {
     UNITY_BEGIN();
 
@@ -313,6 +348,12 @@ int main() {
     RUN_TEST(test_estop_mirror_updates);
     RUN_TEST(test_twdt_reset_mirror_updates);
     RUN_TEST(test_estop_and_twdt_both_set_estop_mirror);
+
+    // Test 9: failsafeUpdateWebTimeout edge-detect
+    RUN_TEST(test_update_web_timeout_true_triggers_layer);
+    RUN_TEST(test_update_web_timeout_repeated_true_does_not_retrigger);
+    RUN_TEST(test_update_web_timeout_false_when_active_clears_layer);
+    RUN_TEST(test_update_web_timeout_false_when_inactive_is_noop);
 
     return UNITY_END();
 }

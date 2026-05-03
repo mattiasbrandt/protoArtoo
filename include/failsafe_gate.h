@@ -60,3 +60,8 @@ FailsafeLayer failsafeActiveReason();
 // Explicit ESTOP clear: only this function can clear the ESTOP layer.
 // Called from api_estop.cpp when operator requests estop/clear.
 void failsafeClearEstop();
+
+// Edge-detect web-drive timeout state and sync into WEB_TIMEOUT layer.
+// Call once per DriveTask tick with the resolved webTimedOut bool from DriveArbiter.
+// Triggers WEB_TIMEOUT on first true; clears on first false. No-op on repeated same state.
+void failsafeUpdateWebTimeout(bool webTimedOut);
