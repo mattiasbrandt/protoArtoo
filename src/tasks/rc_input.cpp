@@ -798,12 +798,12 @@ void rcInputTask(void* pvParameters) {
 
             // single_sbus+useCh2=true: decoder reads GPIO13 (dome GPIO).
             // Treat as SBUS2 — store to sbus2 state and dispatch dome/aux bindings only.
-            // Drive bindings (SBUS1) never fire; no drive commands from the dome controller.
+            // Drive bindings (SBUS1) never fire, and SBUS2-only traffic must not feed
+            // the drive SBUS watchdog.
             bool asSbus2 = (rcInputMode == RC_INPUT_SINGLE_SBUS) && useCh2;
 
             if (asSbus2) {
                 taskENTER_CRITICAL(&robotStateMux);
-                robotState.lastSbus1Ms = millis();  // feed sbus1 watchdog
                 for (int i = 0; i < 16; ++i) {
                     robotState.rcSbus2Raw[i] = (uint16_t)data.ch[i];
                 }
