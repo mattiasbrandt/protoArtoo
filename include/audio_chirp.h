@@ -22,12 +22,16 @@
 #include <stdint.h>
 
 #include "audio_driver.h"
+#include "audio_serial_io.h"
 
 // CHIRP native volume range (0 = silent, 99 = maximum)
 static constexpr uint8_t CHIRP_VOL_MAX = 99;
 
 class AudioDriverChirp : public AudioDriver {
    public:
+    // Inject a custom I/O seam (call before begin() to override production IO).
+    void setIO(const AudioSerialIO& io) { m_io = io; }
+
     // Configures soft-UART TX and hardware UART RX; sends initial volume and
     // reads GMAN bank descriptors.
     void begin(uint8_t vol) override;
@@ -63,6 +67,8 @@ class AudioDriverChirp : public AudioDriver {
     bool isCatalogReady() const override;
 
    private:
+    AudioSerialIO m_io{};
+
     uint16_t m_totalTracks = 0;
     uint8_t m_playState = 0xFF;
     bool m_linkOk = false;
@@ -75,6 +81,9 @@ class AudioDriverChirp : public AudioDriver {
 
     bool loadManifestBanks(uint32_t timeoutMs, bool keepTotalTracks);
 
-    // Send a null-terminated ASCII command string followed by '\n'.
+    // Send a null-terminated ASCII command string followed by '\n' via m_io.
     void sendCommand(const char* cmd);
+
+    // Read one \r\n-terminated ASCII line via m_io.
+    uint8_t readLine(char* buf, uint8_t maxLen, uint32_t timeoutMs);
 };

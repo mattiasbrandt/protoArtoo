@@ -36,6 +36,7 @@
 #include <stdint.h>
 
 #include "audio_driver.h"
+#include "audio_serial_io.h"
 
 // Stop workaround: play the community-standard silent blank track 254.
 // Operator must have 254XXXX.MP3 in the SD root (all R2 packs include it).
@@ -46,6 +47,9 @@ static constexpr uint8_t MP3TRIGGER_VOL_MAX = 255;
 
 class AudioDriverMp3Trigger : public AudioDriver {
    public:
+    // Inject a custom I/O seam (call before begin() to override production IO).
+    void setIO(const AudioSerialIO& io) { m_io = io; }
+
     // Configures soft-UART TX and hardware UART RX; sends S0 version query to
     // verify the serial link, S1 track-count query to cache totalTracks, then
     // applies initial volume. Blocking — runs inside AudioTask on Core 0.
@@ -89,7 +93,16 @@ class AudioDriverMp3Trigger : public AudioDriver {
     void getCachedState(AudioModuleState& out) const override;
 
    private:
+    AudioSerialIO m_io{};
+
     uint16_t m_totalTracks = 0;      // populated from S1 query in begin()
     uint16_t m_lastTrack   = 0;      // last track index sent to playTrack()
     bool     m_linkOk      = false;  // true if S0 response received in begin()
+
+    // Read one \r\n-terminated ASCII response line via m_io.
+    uint8_t readLine(char* buf, uint8_t maxLen, uint32_t timeoutMs);
+
+    // Drain RX, send 2-byte query (b0, b1), read and return one response line.
+    uint8_t sendQuery(uint8_t b0, uint8_t b1, char* buf, uint8_t maxLen,
+                      uint32_t timeoutMs);
 };

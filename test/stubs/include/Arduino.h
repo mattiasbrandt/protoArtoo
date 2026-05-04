@@ -46,6 +46,33 @@ extern SerialStub Serial;
 // millis() stub — used by failsafe gate and other timing code
 unsigned long millis();
 
+// Blocking delay stubs — no-ops in native builds
+inline void delay(unsigned long) {}
+inline void delayMicroseconds(unsigned int) {}
+
+// GPIO stubs — no-ops; used by audio_soft_uart_tx.h inline functions
+static constexpr uint8_t OUTPUT = 1;
+static constexpr uint8_t INPUT  = 0;
+static constexpr uint8_t HIGH   = 1;
+static constexpr uint8_t LOW    = 0;
+inline void pinMode(uint8_t, uint8_t) {}
+inline void digitalWrite(uint8_t, uint8_t) {}
+
+// SERIAL_8N1 constant stub
+static constexpr uint8_t SERIAL_8N1 = 0x06;
+
+// HardwareSerial stub — used by audio driver sources in native builds.
+// RX methods return no-data defaults; begin() is a no-op.
+class HardwareSerial {
+   public:
+    explicit HardwareSerial(int /*uart_nr*/) {}
+    void begin(unsigned long /*baud*/, uint8_t /*config*/ = 0,
+               int /*rx*/ = -1, int /*tx*/ = -1) {}
+    int available() { return 0; }
+    int read() { return -1; }
+    void flush() {}
+};
+
 // constrain() — Arduino helper function
 template<typename T>
 inline T constrain(T value, T min_val, T max_val) {

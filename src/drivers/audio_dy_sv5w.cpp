@@ -45,73 +45,73 @@
 
 #include <Arduino.h>
 
-#include "config.h"
-#include "dome_link.h"
-#include "logging.h"
 #include "audio_soft_uart_tx.h"
-#include "robot_state.h"
+#include "config.h"
+#include "logging.h"
 
 static const char* TAG = "AudioDrv";
 static HardwareSerial s_audioSerial(2);
 
 // -----------------------------------------------------------------------------
+// Production IO adapters — file-scope statics wrapping hardware.
+// No-capture lambdas are legal here because s_audioSerial is a translation-unit
+// global; no capture needed.
+// -----------------------------------------------------------------------------
+static void dySv5wWriteByte(uint8_t b) { softUartTxByte(b); }
+static int  dySv5wRxAvailable()        { return s_audioSerial.available(); }
+static int  dySv5wRxRead()             { return s_audioSerial.read(); }
+static void dySv5wDelayMs(uint32_t ms) { vTaskDelay(pdMS_TO_TICKS(ms)); }
+static uint32_t dySv5wMillisNow()      { return (uint32_t)millis(); }
+
+static const AudioSerialIO kDySv5wProductionIO {
+    dySv5wWriteByte,
+    dySv5wRxAvailable,
+    dySv5wRxRead,
+    dySv5wDelayMs,
+    dySv5wMillisNow,
+};
+
+// -----------------------------------------------------------------------------
 // sendCommand()
-// Send one DY-SV5W frame: [payload bytes][SM] over soft-UART TX (GPIO26).
+// Send one DY-SV5W frame: [payload bytes][SM] via m_io.writeByte.
 // SM = low 8 bits of sum of all payload bytes (including 0xAA start byte).
 // A 100 ms delay follows each command for module processing time.
 // -----------------------------------------------------------------------------
-static void sendCommand(const uint8_t* payload, uint8_t len) {
+void AudioDriverDySv5w::sendCommand(const uint8_t* payload, uint8_t len) {
     uint8_t sum = 0;
     for (uint8_t i = 0; i < len; i++) {
         sum = (uint8_t)(sum + payload[i]);
     }
     for (uint8_t i = 0; i < len; i++) {
-        softUartTxByte(payload[i]);
+        m_io.writeByte(payload[i]);
     }
-    softUartTxByte(sum);
-    delay(100);
+    m_io.writeByte(sum);
+    m_io.delayMs(100);
 }
 
 // -----------------------------------------------------------------------------
 // sendQuery()
-// Send a 4-byte query frame (no data bytes) and wait for a response.
+// Send a 4-byte query frame then poll for a response via m_io.
 // query[]      — exactly 4 bytes: [0xAA, CMD, 0x00, SM].
-// expectedLen  — break once this many bytes have been received; avoids
-//               burning the full timeoutMs when the module responds quickly.
-//               Pass sizeof(response) for the expected response size.
+// expectedLen  — break once this many bytes have been received.
 // Returns number of bytes read into buf (max maxLen).
 // -----------------------------------------------------------------------------
-static uint8_t sendQuery(const uint8_t* query, uint8_t* buf, uint8_t maxLen, uint8_t expectedLen,
-                         uint32_t timeoutMs) {
-    // Drain stale RX bytes before sending
-    while (s_audioSerial.available()) {
-        (void)s_audioSerial.read();
-    }
-    // Send 4-byte query frame via soft-UART TX — s_audioSerial.write() cannot
-    // be used here: softUartTxBegin() called pinMode(OUTPUT) on PIN_AUDIO_TX,
-    // which severs UART2's GPIO matrix TX route to that pin.
-    for (uint8_t i = 0; i < 4; i++) {
-        softUartTxByte(query[i]);
-    }
-    uint32_t start = millis();
+uint8_t AudioDriverDySv5w::sendQuery(const uint8_t* query, uint8_t* buf,
+                                     uint8_t maxLen, uint8_t expectedLen,
+                                     uint32_t timeoutMs) {
+    while (m_io.rxAvailable()) { (void)m_io.rxRead(); }
+    for (uint8_t i = 0; i < 4; i++) { m_io.writeByte(query[i]); }
+    uint32_t start = m_io.millisNow();
     uint8_t count = 0;
-    while ((uint32_t)(millis() - start) < timeoutMs && count < maxLen) {
-        if (s_audioSerial.available()) {
-            buf[count++] = (uint8_t)s_audioSerial.read();
-            if (count >= expectedLen) {
-                break;  // got all expected bytes — don't burn the rest of timeoutMs
-            }
+    while ((uint32_t)(m_io.millisNow() - start) < timeoutMs && count < maxLen) {
+        if (m_io.rxAvailable()) {
+            buf[count++] = (uint8_t)m_io.rxRead();
+            if (count >= expectedLen) { break; }
         } else {
-            // Yield while waiting so Core 0 tasks (WiFi, web) stay responsive.
-            vTaskDelay(pdMS_TO_TICKS(1));
+            m_io.delayMs(1);
         }
     }
     return count;
-}
-
-// Wrapper satisfying AudioDriver private method signature
-void AudioDriverDySv5w::sendFrame(const uint8_t* data, uint8_t len) {
-    sendCommand(data, len);
 }
 
 // -----------------------------------------------------------------------------
@@ -124,16 +124,17 @@ void AudioDriverDySv5w::sendFrame(const uint8_t* data, uint8_t len) {
 // Runs inside AudioTask on Core 0 — blocking here is acceptable.
 // -----------------------------------------------------------------------------
 void AudioDriverDySv5w::begin(uint8_t vol) {
+    if (!m_io.writeByte) { m_io = kDySv5wProductionIO; }
+
+    // Hardware init — no-ops in native test builds.
     s_audioSerial.begin(9600, SERIAL_8N1, PIN_AUDIO_RX, -1);
+    softUartTxBegin();
 
     // DY-SV5W needs ~1.5 s after power-on to boot and enumerate storage.
-    softUartTxBegin();
-    delay(1500);
+    m_io.delayMs(1500);
 
     // Drain any bytes the module sent during boot (e.g. boot announcement).
-    while (s_audioSerial.available()) {
-        (void)s_audioSerial.read();
-    }
+    while (m_io.rxAvailable()) { (void)m_io.rxRead(); }
 
     // -------------------------------------------------------------------------
     // Pre-init diagnostic queries — run BEFORE sending any commands so we
@@ -239,12 +240,6 @@ void AudioDriverDySv5w::begin(uint8_t vol) {
 // Only call from AudioTask (Core 0).
 // -----------------------------------------------------------------------------
 bool AudioDriverDySv5w::queryModuleState(AudioModuleState& out) {
-    bool uart2Contended = domeUartOwnedBy(DOME_UART_DOME);
-    if (uart2Contended) {
-        PA_LOG_DEBUG(TAG, "UART2 contended — returning cached module state");
-        getCachedState(out);
-        return false;
-    }
 
     uint8_t rsp[8];
     uint8_t n;

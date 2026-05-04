@@ -15,3 +15,8 @@ inline int xPortGetCoreID() { return 0; }
 
 // FreeRTOS assert macro stub — no-op in native tests.
 #define configASSERT(x) ((void)(x))
+
+// Task delay stubs — no-ops in native builds.
+typedef uint32_t TickType_t;
+#define pdMS_TO_TICKS(ms) ((TickType_t)(ms))
+inline void vTaskDelay(TickType_t) {}

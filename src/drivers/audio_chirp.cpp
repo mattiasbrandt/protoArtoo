@@ -30,9 +30,7 @@
 
 #include "audio_soft_uart_tx.h"  // shared soft-UART bit-bang primitives
 #include "config.h"
-#include "dome_link.h"
 #include "logging.h"
-#include "robot_state.h"
 
 static HardwareSerial s_chirpSerial(2);
 static const char* TAG = "ChirpDrv";
@@ -40,27 +38,30 @@ static uint32_t s_lastNoRspDiagMs = 0;
 static constexpr uint32_t CHIRP_GNME_WAIT_MS = 450u;
 static constexpr uint32_t CHIRP_GNME_READLINE_MS = 120u;
 
-// Read one \r\n-terminated ASCII line from s_chirpSerial into buf (null-terminated).
-// Returns number of characters written (excluding null). Stops at '\n', '\r' discarded.
-// Yields Core 0 while waiting to keep WiFi/web tasks responsive.
-static uint8_t readLine(char* buf, uint8_t maxLen, uint32_t timeoutMs) {
-    if (maxLen == 0) {
-        return 0;
-    }
+// Production IO adapters
+static void chirpWriteByte(uint8_t b)    { softUartTxByte(b); }
+static int  chirpRxAvailable()           { return s_chirpSerial.available(); }
+static int  chirpRxRead()                { return s_chirpSerial.read(); }
+static void chirpDelayMs(uint32_t ms)    { vTaskDelay(pdMS_TO_TICKS(ms)); }
+static uint32_t chirpMillisNow()         { return (uint32_t)millis(); }
 
-    uint32_t start = millis();
+static const AudioSerialIO kChirpProductionIO {
+    chirpWriteByte, chirpRxAvailable, chirpRxRead, chirpDelayMs, chirpMillisNow,
+};
+
+// Read one \r\n-terminated ASCII line via m_io. Stops at '\n', '\r' discarded.
+// Yields Core 0 while waiting to keep WiFi/web tasks responsive.
+uint8_t AudioDriverChirp::readLine(char* buf, uint8_t maxLen, uint32_t timeoutMs) {
+    if (maxLen == 0) { return 0; }
+    uint32_t start = m_io.millisNow();
     uint8_t pos = 0;
-    while ((uint32_t)(millis() - start) < timeoutMs && pos < maxLen - 1u) {
-        if (s_chirpSerial.available()) {
-            char c = (char)s_chirpSerial.read();
-            if (c == '\n') {
-                break;
-            }
-            if (c != '\r') {
-                buf[pos++] = c;
-            }
+    while ((uint32_t)(m_io.millisNow() - start) < timeoutMs && pos < maxLen - 1u) {
+        if (m_io.rxAvailable()) {
+            char c = (char)m_io.rxRead();
+            if (c == '\n') { break; }
+            if (c != '\r') { buf[pos++] = c; }
         } else {
-            vTaskDelay(pdMS_TO_TICKS(1));
+            m_io.delayMs(1);
         }
     }
     buf[pos] = '\0';
@@ -232,13 +233,11 @@ static bool parseNameLine(const char* line, uint8_t* bankOut, char* pageOut, uin
 // Parse GMAN output and cache all BANK lines.
 // Returns true when any valid GMAN frame line was observed.
 bool AudioDriverChirp::loadManifestBanks(uint32_t timeoutMs, bool keepTotalTracks) {
-    while (s_chirpSerial.available()) {
-        s_chirpSerial.read();
-    }
+    while (m_io.rxAvailable()) { (void)m_io.rxRead(); }
 
     sendCommand("GMAN");
 
-    uint32_t startMs = millis();
+    uint32_t startMs = m_io.millisNow();
     bool gotValidGmanLine = false;
     uint32_t rxBytes = 0;
     uint16_t bank1Count = keepTotalTracks ? m_totalTracks : 0;
@@ -247,7 +246,7 @@ bool AudioDriverChirp::loadManifestBanks(uint32_t timeoutMs, bool keepTotalTrack
     memset(m_catalogBanks, 0, sizeof(m_catalogBanks));
     char line[96];
 
-    while ((uint32_t)(millis() - startMs) < timeoutMs) {
+    while ((uint32_t)(m_io.millisNow() - startMs) < timeoutMs) {
         uint8_t n = readLine(line, (uint8_t)sizeof(line), 80u);
         if (n == 0) {
             continue;
@@ -308,14 +307,15 @@ bool AudioDriverChirp::loadManifestBanks(uint32_t timeoutMs, bool keepTotalTrack
 // bank descriptors and Bank 1 sound count.
 // -----------------------------------------------------------------------------
 void AudioDriverChirp::begin(uint8_t vol) {
-    // same UART2 RX path as DY-SV5W; see T66 for dome-link contention handling.
-    // SBUS2 is now RMT-based; UART2 is only contended by dome link.
+    if (!m_io.writeByte) { m_io = kChirpProductionIO; }
+
+    // Hardware init — no-ops in native test builds.
     s_chirpSerial.begin(9600, SERIAL_8N1, PIN_AUDIO_RX, -1);
     softUartTxBegin();
 
     // CHIRP boots, mounts SD, and optionally syncs Bank 1 to flash; 2 s covers
     // most cases. First boot after SD card change may need more time.
-    delay(2000);
+    m_io.delayMs(2000);
 
     // Apply NVS-configured boot volume before any playback.
     setVolume(vol);
@@ -340,8 +340,8 @@ void AudioDriverChirp::begin(uint8_t vol) {
 // Transmit a null-terminated ASCII string followed by '\n'.
 // -----------------------------------------------------------------------------
 void AudioDriverChirp::sendCommand(const char* cmd) {
-    softUartTxString(cmd);
-    softUartTxByte('\n');
+    for (const char* p = cmd; p && *p; ++p) { m_io.writeByte((uint8_t)*p); }
+    m_io.writeByte('\n');
 }
 
 // -----------------------------------------------------------------------------
@@ -391,13 +391,6 @@ void AudioDriverChirp::setVolume(uint8_t vol) {
 }
 
 bool AudioDriverChirp::refreshCatalog() {
-    bool uart2Contended = domeUartOwnedBy(DOME_UART_DOME);
-
-    if (uart2Contended) {
-        PA_LOG_WARN(TAG, "catalog refresh skipped — UART2 contended by dome link");
-        return false;
-    }
-
     if (!loadManifestBanks(2500u, false)) {
         m_catalogReady = false;
         return false;
@@ -423,10 +416,10 @@ bool AudioDriverChirp::refreshCatalog() {
             sendCommand(cmd);
 
             bool gotName = false;
-            uint32_t startMs = millis();
+            uint32_t startMs = m_io.millisNow();
             char line[112];
 
-            while ((uint32_t)(millis() - startMs) < CHIRP_GNME_WAIT_MS) {
+            while ((uint32_t)(m_io.millisNow() - startMs) < CHIRP_GNME_WAIT_MS) {
                 uint8_t n = readLine(line, (uint8_t)sizeof(line), CHIRP_GNME_READLINE_MS);
                 if (n == 0) {
                     continue;
@@ -529,30 +522,21 @@ static bool parseChirpStatusLine(const char* line, uint8_t* playStateOut) {
 }
 
 bool AudioDriverChirp::queryModuleState(AudioModuleState& out) {
-    bool uart2Contended = domeUartOwnedBy(DOME_UART_DOME);
-    if (uart2Contended) {
-        PA_LOG_DEBUG(TAG, "UART2 contended — returning cached module state");
-        getCachedState(out);
-        return false;
-    }
-
     out.linkOk = false;
     out.playState = 0xFF;
     out.device = 0x03;          // CHIRP: Bank 1 on flash, Banks 2–6 on SD
     out.totalTracks = m_totalTracks;
     out.currentTrack = m_lastTrack;   // last index sent via playTrack()
 
-    while (s_chirpSerial.available()) {
-        s_chirpSerial.read();
-    }
+    while (m_io.rxAvailable()) { (void)m_io.rxRead(); }
 
     sendCommand("STAT:0");
 
-    uint32_t startMs = millis();
+    uint32_t startMs = m_io.millisNow();
     char line[64];
     uint32_t rxBytes = 0;
     uint16_t unparsableLines = 0;
-    while ((uint32_t)(millis() - startMs) < 300u) {
+    while ((uint32_t)(m_io.millisNow() - startMs) < 300u) {
         uint8_t n = readLine(line, (uint8_t)sizeof(line), 40u);
         if (n == 0) {
             continue;

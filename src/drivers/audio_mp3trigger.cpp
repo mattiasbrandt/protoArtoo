@@ -48,56 +48,49 @@
 
 #include "audio_soft_uart_tx.h"
 #include "config.h"
-#include "dome_link.h"
 #include "logging.h"
-#include "robot_state.h"
 
 static const char* TAG = "Mp3TrgDrv";
 static HardwareSerial s_mp3Serial(2);
 
-// -----------------------------------------------------------------------------
-// readLine()
-// Read one '\r\n'-terminated ASCII response line from s_mp3Serial into buf
-// (null-terminated). Returns number of characters written (excluding null).
-// '\r' is discarded; reading stops at '\n' or timeout.
-// Yields Core 0 (vTaskDelay(1)) while waiting to keep WiFi/web responsive.
-// -----------------------------------------------------------------------------
-static uint8_t readLine(char* buf, uint8_t maxLen, uint32_t timeoutMs) {
-    if (maxLen == 0) {
-        return 0;
-    }
-    uint32_t start = millis();
+// Production IO adapters
+static void mp3WriteByte(uint8_t b)    { softUartTxByte(b); }
+static int  mp3RxAvailable()           { return s_mp3Serial.available(); }
+static int  mp3RxRead()                { return s_mp3Serial.read(); }
+static void mp3DelayMs(uint32_t ms)    { vTaskDelay(pdMS_TO_TICKS(ms)); }
+static uint32_t mp3MillisNow()         { return (uint32_t)millis(); }
+
+static const AudioSerialIO kMp3ProductionIO {
+    mp3WriteByte, mp3RxAvailable, mp3RxRead, mp3DelayMs, mp3MillisNow,
+};
+
+// Read one '\r\n'-terminated ASCII response line via m_io. '\r' discarded;
+// reading stops at '\n' or timeout. Yields Core 0 while waiting.
+uint8_t AudioDriverMp3Trigger::readLine(char* buf, uint8_t maxLen,
+                                        uint32_t timeoutMs) {
+    if (maxLen == 0) { return 0; }
+    uint32_t start = m_io.millisNow();
     uint8_t  pos   = 0;
-    while ((uint32_t)(millis() - start) < timeoutMs && pos < maxLen - 1u) {
-        if (s_mp3Serial.available()) {
-            char c = (char)s_mp3Serial.read();
-            if (c == '\n') {
-                break;
-            }
-            if (c != '\r') {
-                buf[pos++] = c;
-            }
+    while ((uint32_t)(m_io.millisNow() - start) < timeoutMs && pos < maxLen - 1u) {
+        if (m_io.rxAvailable()) {
+            char c = (char)m_io.rxRead();
+            if (c == '\n') { break; }
+            if (c != '\r') { buf[pos++] = c; }
         } else {
-            vTaskDelay(pdMS_TO_TICKS(1));
+            m_io.delayMs(1);
         }
     }
     buf[pos] = '\0';
     return pos;
 }
 
-// -----------------------------------------------------------------------------
-// sendQuery()
-// Drain stale RX, transmit a 2-byte query sequence (b0, b1) over soft-UART,
-// then read and return one response line. Returns number of chars in line.
-// b0 = 'S', b1 = '0' (version) or '1' (track count).
-// -----------------------------------------------------------------------------
-static uint8_t sendQuery(uint8_t b0, uint8_t b1, char* buf, uint8_t maxLen,
-                         uint32_t timeoutMs) {
-    while (s_mp3Serial.available()) {
-        (void)s_mp3Serial.read();
-    }
-    softUartTxByte(b0);
-    softUartTxByte(b1);
+// Drain stale RX, transmit a 2-byte query (b0, b1) via m_io, read one line.
+uint8_t AudioDriverMp3Trigger::sendQuery(uint8_t b0, uint8_t b1,
+                                         char* buf, uint8_t maxLen,
+                                         uint32_t timeoutMs) {
+    while (m_io.rxAvailable()) { (void)m_io.rxRead(); }
+    m_io.writeByte(b0);
+    m_io.writeByte(b1);
     return readLine(buf, maxLen, timeoutMs);
 }
 
@@ -108,18 +101,17 @@ static uint8_t sendQuery(uint8_t b0, uint8_t b1, char* buf, uint8_t maxLen,
 // the NVS-configured boot volume. Blocking — runs in AudioTask on Core 0.
 // -----------------------------------------------------------------------------
 void AudioDriverMp3Trigger::begin(uint8_t vol) {
+    if (!m_io.writeByte) { m_io = kMp3ProductionIO; }
+
+    // Hardware init — no-ops in native test builds.
     s_mp3Serial.begin(9600, SERIAL_8N1, PIN_AUDIO_RX, -1);
     softUartTxBegin();
 
-    // MP3 Trigger mounts the SD card on power-on. 1 s covers cold boot; the
-    // module is typically ready faster than DY-SV5W (no storage enumeration
-    // delay on pre-formatted FAT32 cards).
-    delay(1000);
+    // MP3 Trigger mounts the SD card on power-on. 1 s covers cold boot.
+    m_io.delayMs(1000);
 
-    // Drain any bytes emitted during boot (status pushes, boot announcements).
-    while (s_mp3Serial.available()) {
-        (void)s_mp3Serial.read();
-    }
+    // Drain any bytes emitted during boot.
+    while (m_io.rxAvailable()) { (void)m_io.rxRead(); }
 
     // -------------------------------------------------------------------------
     // S0 — firmware version query. Response: "=MP3 Trigger v2.NN\r\n".
@@ -179,8 +171,8 @@ void AudioDriverMp3Trigger::playTrack(uint16_t track) {
         return;
     }
     m_lastTrack = track;
-    softUartTxByte('t');
-    softUartTxByte((uint8_t)track);
+    m_io.writeByte('t');
+    m_io.writeByte((uint8_t)track);
 }
 
 // -----------------------------------------------------------------------------
@@ -191,8 +183,8 @@ void AudioDriverMp3Trigger::playTrack(uint16_t track) {
 // SD root must contain 254XXXX.MP3 (all R2 community packs include it).
 // -----------------------------------------------------------------------------
 void AudioDriverMp3Trigger::stop() {
-    softUartTxByte('t');
-    softUartTxByte(MP3TRIGGER_STOP_TRACK);
+    m_io.writeByte('t');
+    m_io.writeByte(MP3TRIGGER_STOP_TRACK);
 }
 
 // -----------------------------------------------------------------------------
@@ -208,8 +200,8 @@ void AudioDriverMp3Trigger::stop() {
 void AudioDriverMp3Trigger::setVolume(uint8_t vol) {
     uint8_t nativeVol =
         (uint8_t)((uint32_t)(30u - vol) * MP3TRIGGER_VOL_MAX / 30u);
-    softUartTxByte('v');
-    softUartTxByte(nativeVol);
+    m_io.writeByte('v');
+    m_io.writeByte(nativeVol);
 }
 
 // -----------------------------------------------------------------------------
@@ -226,12 +218,6 @@ void AudioDriverMp3Trigger::setVolume(uint8_t vol) {
 // Only call from AudioTask (Core 0). Blocking up to ~1 s in the worst case.
 // -----------------------------------------------------------------------------
 bool AudioDriverMp3Trigger::queryModuleState(AudioModuleState& out) {
-    bool uart2Contended = domeUartOwnedBy(DOME_UART_DOME);
-    if (uart2Contended) {
-        PA_LOG_DEBUG(TAG, "UART2 contended — returning cached module state");
-        getCachedState(out);
-        return false;
-    }
 
     out.linkOk       = false;
     out.playState    = 0xFF;   // not queryable in this protocol

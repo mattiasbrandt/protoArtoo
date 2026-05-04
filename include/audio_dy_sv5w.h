@@ -22,9 +22,14 @@
 #include <stdint.h>
 
 #include "audio_driver.h"
+#include "audio_serial_io.h"
 
 class AudioDriverDySv5w : public AudioDriver {
    public:
+    // Inject a custom I/O seam (call before begin() to override production IO).
+    // If not called, begin() initialises production hardware adapters.
+    void setIO(const AudioSerialIO& io) { m_io = io; }
+
     void begin(uint8_t vol) override;
     void playTrack(uint16_t track) override;
     void stop() override;
@@ -49,13 +54,20 @@ class AudioDriverDySv5w : public AudioDriver {
     void getCachedState(AudioModuleState& out) const override;
 
    private:
+    AudioSerialIO m_io{};
+
     // Last known total tracks and device — populated during begin() and carried
     // forward when queryModuleState() is called (total-tracks query runs in begin
     // only, not on every periodic poll to keep poll overhead low).
     uint16_t m_totalTracks = 0;
     uint8_t m_device = 0xFF;  // 0xFF = unknown until first successful query
 
-    // Send one DY-SV5W checksum frame via UART2.
-    // data = [0xAA, CMD, LEN, DATA...]
-    void sendFrame(const uint8_t* data, uint8_t len);
+    // Send one DY-SV5W checksum frame: [payload...][SM] via m_io.writeByte.
+    // SM = low 8 bits of sum of all payload bytes. Posts 100 ms delay after frame.
+    void sendCommand(const uint8_t* payload, uint8_t len);
+
+    // Send a 4-byte query frame then poll for a response via m_io.
+    // Returns number of bytes read (up to maxLen).
+    uint8_t sendQuery(const uint8_t* query, uint8_t* buf, uint8_t maxLen,
+                      uint8_t expectedLen, uint32_t timeoutMs);
 };
