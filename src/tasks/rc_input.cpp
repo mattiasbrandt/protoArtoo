@@ -613,6 +613,17 @@ static bool is_dome_sbus_mode(RcInputMode mode) {
     return mode == RC_INPUT_DUAL_SBUS;
 }
 
+static bool driveSbusDecoderEnabledForMode(RcInputMode mode, bool enableRcCh1, bool enableRcCh2,
+                                           bool useCh2) {
+    if (!is_drive_sbus_mode(mode)) {
+        return false;
+    }
+    if (mode == RC_INPUT_SINGLE_SBUS) {
+        return useCh2 ? enableRcCh2 : enableRcCh1;
+    }
+    return enableRcCh1;
+}
+
 // -----------------------------------------------------------------------------
 // rcInputTask()
 // Handles all RC input modes: standard_pwm, single_sbus, dual_sbus.
@@ -633,8 +644,7 @@ void rcInputTask(void* pvParameters) {
     taskEXIT_CRITICAL(&robotStateMux);
 
     bool driveSbusEnabled =
-        is_drive_sbus_mode(rcInputMode) &&
-        (rcInputMode == RC_INPUT_SINGLE_SBUS ? (useCh2 ? enableRcCh2 : enableRcCh1) : enableRcCh1);
+        driveSbusDecoderEnabledForMode(rcInputMode, enableRcCh1, enableRcCh2, useCh2);
     bool domeSbusEnabled = is_dome_sbus_mode(rcInputMode) && enableRcCh2;
 
     // Do not early-idle when SBUS channels are currently disabled:
@@ -705,8 +715,8 @@ void rcInputTask(void* pvParameters) {
         enableRcCh2 = robotState.cfg_enable_rc_ch2;
         useCh2 = robotState.cfg_single_sbus_use_ch2;
         taskEXIT_CRITICAL(&robotStateMux);
-        driveSbusEnabled = is_drive_sbus_mode(rcInputMode) &&
-                           ((rcInputMode == RC_INPUT_SINGLE_SBUS && useCh2) || enableRcCh1);
+        driveSbusEnabled =
+            driveSbusDecoderEnabledForMode(rcInputMode, enableRcCh1, enableRcCh2, useCh2);
         domeSbusEnabled = is_dome_sbus_mode(rcInputMode) && enableRcCh2;
 
         // Detect single_sbus receiver selection change BEFORE the reinit guard.
