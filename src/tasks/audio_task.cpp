@@ -908,10 +908,13 @@ void audioTask(void* pvParameters) {
                     // since it is user-initiated and not in a real-time loop.
                     AudioModuleState ms{};
                     bool acquired = domeUartAcquire(DOME_UART_AUDIO);
-                    bool ok = driver->queryModuleState(ms);
-                    if (acquired) {
-                        domeUartRelease(DOME_UART_AUDIO);
+                    if (!acquired) {
+                        PA_LOG_INFO(TAG, "[%s] status poll skipped (UART2 owned by dome)",
+                                    commandSourceToString(cmd.source));
+                        break;
                     }
+                    bool ok = driver->queryModuleState(ms);
+                    domeUartRelease(DOME_UART_AUDIO);
                     taskENTER_CRITICAL(&robotStateMux);
                     robotState.audio_module_link_ok = ms.linkOk;
                     robotState.audio_module_play_state = ms.playState;
@@ -1047,10 +1050,12 @@ void audioTask(void* pvParameters) {
             lastAutoQueryMs = millis();
             AudioModuleState ms{};
             bool acquired = domeUartAcquire(DOME_UART_AUDIO);
-            bool ok = driver->queryModuleState(ms);
-            if (acquired) {
-                domeUartRelease(DOME_UART_AUDIO);
+            if (!acquired) {
+                PA_LOG_DEBUG(TAG, "auto-query skipped (UART2 owned by dome)");
+                continue;
             }
+            bool ok = driver->queryModuleState(ms);
+            domeUartRelease(DOME_UART_AUDIO);
             taskENTER_CRITICAL(&robotStateMux);
             robotState.audio_module_link_ok = ms.linkOk;
             robotState.audio_module_play_state = ms.playState;
