@@ -12,55 +12,22 @@
 #include "dome_cue_handler.h"
 
 #include <Arduino.h>
-#include <esp_system.h>
 #include <string.h>
 
 #include "audio_task.h"
-#include "config_store.h"
 #include "logging.h"
-#include "rc_mapping.h"
-#include "robot_state.h"
 
 static const char* TAG = "DomeCue";
 
-// Play one random track from [lo, hi]. Returns true if a track was queued.
-static bool playCategory(uint16_t lo, uint16_t hi) {
-    uint16_t track = 0;
-    if (!selectRandomTrackInRange(lo, hi, esp_random(), &track) || track == 0) {
-        return false;
-    }
-    return audioQueuePlayTrack(track, SRC_INTERNAL);
-}
-
 void handleDomeCue(const char* cue) {
     if (strcmp(cue, "SCREAM") == 0) {
-        ConfigSnapshot cfg = {};
-        configCacheRead(&cfg);
-        uint16_t lo = cfg.audio.snd_cat_scrm_lo;
-        uint16_t hi = cfg.audio.snd_cat_scrm_hi;
-        if (!playCategory(lo, hi)) {
-            audioQueuePlaySlot(AUDIO_SLOT_NAMED_SCREAM, SRC_INTERNAL);
-        }
+        audioQueuePlayCategory(AUDIO_CATEGORY_SCREAM, AUDIO_SLOT_NAMED_SCREAM, SRC_INTERNAL);
     } else if (strcmp(cue, "HAPPY") == 0) {
-        ConfigSnapshot cfg = {};
-        configCacheRead(&cfg);
-        uint16_t lo = cfg.audio.snd_cat_hap_lo;
-        uint16_t hi = cfg.audio.snd_cat_hap_hi;
-        playCategory(lo, hi);
+        audioQueuePlayCategory(AUDIO_CATEGORY_HAPPY, AUDIO_SLOT_NONE, SRC_INTERNAL);
     } else if (strcmp(cue, "OVERLOAD") == 0) {
-        ConfigSnapshot cfg = {};
-        configCacheRead(&cfg);
-        uint16_t lo = cfg.audio.snd_cat_sad_lo;
-        uint16_t hi = cfg.audio.snd_cat_sad_hi;
-        if (!playCategory(lo, hi)) {
-            audioQueuePlaySlot(AUDIO_SLOT_NAMED_FAINT, SRC_INTERNAL);
-        }
+        audioQueuePlayCategory(AUDIO_CATEGORY_SAD, AUDIO_SLOT_NAMED_FAINT, SRC_INTERNAL);
     } else if (strcmp(cue, "ALARM") == 0) {
-        ConfigSnapshot cfg = {};
-        configCacheRead(&cfg);
-        uint16_t lo = cfg.audio.snd_cat_alrm_lo;
-        uint16_t hi = cfg.audio.snd_cat_alrm_hi;
-        playCategory(lo, hi);
+        audioQueuePlayCategory(AUDIO_CATEGORY_ALERT, AUDIO_SLOT_NONE, SRC_INTERNAL);
     } else if (strcmp(cue, "VADER") == 0) {
         audioQueuePlaySlot(AUDIO_SLOT_NAMED_IMP_MARCH, SRC_INTERNAL);
     } else if (strcmp(cue, "ROCKMARCH") == 0) {
@@ -70,17 +37,9 @@ void handleDomeCue(const char* cue) {
     } else if (strcmp(cue, "CANTINA") == 0) {
         audioQueuePlaySlot(AUDIO_SLOT_NAMED_CANTINA_L, SRC_INTERNAL);
     } else if (strcmp(cue, "HEART") == 0) {
-        ConfigSnapshot cfg = {};
-        configCacheRead(&cfg);
-        uint16_t lo = cfg.audio.snd_cat_sent_lo;
-        uint16_t hi = cfg.audio.snd_cat_sent_hi;
-        playCategory(lo, hi);
+        audioQueuePlayCategory(AUDIO_CATEGORY_SENTIMENTAL, AUDIO_SLOT_NONE, SRC_INTERNAL);
     } else if (strcmp(cue, "HELLO") == 0) {
-        ConfigSnapshot cfg = {};
-        configCacheRead(&cfg);
-        uint16_t lo = cfg.audio.snd_cat_gen_lo;
-        uint16_t hi = cfg.audio.snd_cat_gen_hi;
-        playCategory(lo, hi);
+        audioQueuePlayCategory(AUDIO_CATEGORY_GENERAL, AUDIO_SLOT_NONE, SRC_INTERNAL);
     } else if (strcmp(cue, "RESET") == 0) {
         audioQueueStop(SRC_INTERNAL);
     } else {

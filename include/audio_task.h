@@ -23,6 +23,7 @@
 
 #include <stdint.h>
 
+#include "audio_playback_policy.h"
 #include "audio_driver.h"
 #include "robot_state.h"
 
@@ -39,30 +40,12 @@ enum AudioCommandType : uint8_t {
     AUDIO_CMD_PLAY_TRACK,    // play specific track number directly
     AUDIO_CMD_PLAY_TRACK_BANKED,  // play CHIRP bank/page/index tuple
     AUDIO_CMD_PLAY_SLOT,  // play named/system slot with backend-aware resolution
+    AUDIO_CMD_PLAY_CATEGORY,  // play random category track with optional fallback slot
     AUDIO_CMD_STOP,          // stop playback
     AUDIO_CMD_SET_VOLUME,    // set absolute volume 0–30
     AUDIO_CMD_QUERY_STATUS,  // on-demand status query (manual/fallback poll path)
     AUDIO_CMD_REFRESH_CATALOG,  // refresh CHIRP catalog cache
     AUDIO_CMD_REFRESH_BINDINGS,  // refresh cached CHIRP slot/category bindings from NVS
-};
-
-enum AudioPlaybackSlot : uint8_t {
-    AUDIO_SLOT_NONE = 0,
-    AUDIO_SLOT_NAMED_SCREAM,
-    AUDIO_SLOT_NAMED_FAINT,
-    AUDIO_SLOT_NAMED_LEIA,
-    AUDIO_SLOT_NAMED_CANTINA_S,
-    AUDIO_SLOT_NAMED_SW_THEME,
-    AUDIO_SLOT_NAMED_IMP_MARCH,
-    AUDIO_SLOT_NAMED_CANTINA_L,
-    AUDIO_SLOT_NAMED_STARTUP,
-    AUDIO_SLOT_NAMED_DISCO,
-    AUDIO_SLOT_SYS_BOOT,
-    AUDIO_SLOT_SYS_MODE_NORMAL,
-    AUDIO_SLOT_SYS_MODE_SLOW,
-    AUDIO_SLOT_SYS_MODE_TURBO,
-    AUDIO_SLOT_SYS_DRIVE_ON,
-    AUDIO_SLOT_SYS_DOME_ON,
 };
 
 // -----------------------------------------------------------------------------
@@ -77,6 +60,10 @@ struct AudioCommand {
         uint16_t track;   // AUDIO_CMD_PLAY_TRACK
         uint8_t volume;   // AUDIO_CMD_SET_VOLUME
         AudioPlaybackSlot slot;  // AUDIO_CMD_PLAY_SLOT
+        struct {          // AUDIO_CMD_PLAY_CATEGORY
+            AudioPlaybackCategory category;
+            AudioPlaybackSlot fallbackSlot;
+        } category;
         struct {          // AUDIO_CMD_PLAY_TRACK_BANKED
             uint16_t index;
             uint8_t bank;
@@ -119,6 +106,10 @@ bool audioQueuePlayTrackBanked(uint16_t index, uint8_t bank, char page, CommandS
 // Uses CHIRP bank/page/index binding when available; otherwise falls back to numeric snd_* track.
 bool audioQueuePlaySlot(AudioPlaybackSlot slot, CommandSource src);
 
+// Enqueue category playback with optional named/system fallback slot.
+bool audioQueuePlayCategory(AudioPlaybackCategory category, AudioPlaybackSlot fallbackSlot,
+                            CommandSource src);
+
 // Enqueue a stop command.
 bool audioQueueStop(CommandSource src);
 
@@ -148,4 +139,3 @@ uint8_t audioGetCapabilities();
 const AudioCatalogEntry* audioGetCatalogEntries(uint16_t* count);
 const AudioCatalogBank* audioGetCatalogBanks(uint8_t* count);
 bool audioIsCatalogReady();
-
