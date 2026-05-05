@@ -222,11 +222,14 @@ authoritative reference when adding, renaming, or cross-referencing any action.
   subset of the registry (entries with cpp_file: include/rc_mapping.h).
   Values follow DOMAIN_ACTION_VERB_NOUN: DRIVE_ACTION_SPEED, SERVO_ACTION_ARM1_TOGGLE.
 
-  When adding a new bindable action:
-  1. Add the YAML entry to docs/action-registry.yaml.
-  2. Add the enum value to RobotActionId in include/rc_mapping.h.
-  3. Add the ActionEntry row to ACTION_REGISTRY[] in include/action_registry.h.
-  4. Add dispatch handling in src/tasks/rc_input.cpp.
+When adding a new bindable action:
+1. Add the YAML entry to docs/action-registry.yaml.
+2. Add the enum value to RobotActionId in include/rc_mapping.h.
+3. Add the ActionEntry row to ACTION_REGISTRY[] in include/action_registry.h.
+4. Add dispatch handling in src/tasks/rc_input.cpp.
+5. Run `make check-action-drift` to verify YAML metadata, C++ token mapping,
+   runtime registry rows, and the RC page fallback list remain aligned. This is
+   a drift checker only; it must not generate or rewrite source files.
 
 ### Runtime registry
 

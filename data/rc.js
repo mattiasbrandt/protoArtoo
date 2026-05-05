@@ -64,7 +64,7 @@
     { token: 'aux2_toggle', label: 'AUX2 Toggle', group: 'Arms', description: 'Toggle aux 2 servo between open and closed', disabled: false, testable: true, safetyCritical: false, oneShot: false },
     { token: 'aux3_toggle', label: 'AUX3 Toggle', group: 'Arms', description: 'Toggle aux 3 servo between open and closed', disabled: false, testable: true, safetyCritical: false, oneShot: false },
     { token: 'seq', label: 'Marcduino Sequence', group: 'Sequences', description: 'Trigger a raw numbered body sequence payload (typically SE30-SE36)', disabled: false, testable: false, safetyCritical: false },
-    { token: 'dome_seq', label: 'Dome Sequence', group: 'Sequences', description: 'Trigger a dome-side choreography sequence (DM: command forwarded to dome)', disabled: false, testable: false, safetyCritical: false },
+    { token: 'dome_seq', label: 'Dome Sequence', group: 'Sequences', description: 'Trigger a dome-side panel/light sequence by number', disabled: false, testable: false, safetyCritical: false },
     { token: 'cmd', label: 'Marcduino Command', group: 'Command', description: 'Send a specific Marcduino command string to the dome', disabled: false, testable: false, safetyCritical: false },
     { token: 'sleep_toggle', label: 'Sleep Toggle', group: 'System', description: 'Toggle cosmetic sleep mode while keeping drive safety active', disabled: false, testable: true, safetyCritical: false },
     { token: 'sound_rand_general', label: 'Random General', group: 'Sound', description: 'Play one random track from configured general range', disabled: false, testable: true, safetyCritical: false },
@@ -80,6 +80,18 @@
     { token: 'sound_rand_snarky', label: 'Random Snarky', group: 'Sound', description: 'Play one random track from configured snarky range', disabled: false, testable: true, safetyCritical: false },
     { token: 'sound_rand_whistle', label: 'Random Whistle', group: 'Sound', description: 'Play one random track from configured whistle range', disabled: false, testable: true, safetyCritical: false },
     { token: 'estop', label: 'Emergency Stop', group: 'Safety', description: 'Immediately stop all drive output and latch estop', disabled: false, testable: false, safetyCritical: true },
+    { token: 'droid_seq_scream', label: 'Scream', group: 'Sequences', description: 'SE01 - scream audio and body sequence, then forward :SE01 to dome', disabled: false, testable: true, safetyCritical: false },
+    { token: 'droid_seq_wave', label: 'Wave', group: 'Sequences', description: 'SE02 - body wave sequence, then forward :SE02 to dome', disabled: false, testable: true, safetyCritical: false },
+    { token: 'droid_seq_fast_wave', label: 'Fast Wave', group: 'Sequences', description: 'SE03 - fast wave sequence, then forward :SE03 to dome', disabled: false, testable: true, safetyCritical: false },
+    { token: 'droid_seq_open_wave', label: 'Open Wave', group: 'Sequences', description: 'SE04 - open wave sequence, then forward :SE04 to dome', disabled: false, testable: true, safetyCritical: false },
+    { token: 'droid_seq_beep_cantina', label: 'Beep Cantina', group: 'Sequences', description: 'SE05 - short Cantina audio with body wave, then forward :SE05 to dome', disabled: false, testable: true, safetyCritical: false },
+    { token: 'droid_seq_faint', label: 'Faint', group: 'Sequences', description: 'SE06 - faint audio with body park sequence, then forward :SE06 to dome', disabled: false, testable: true, safetyCritical: false },
+    { token: 'droid_seq_cantina', label: 'Cantina Dance', group: 'Sequences', description: 'SE07 - long Cantina audio with body wave, then forward :SE07 to dome', disabled: false, testable: true, safetyCritical: false },
+    { token: 'droid_seq_leia', label: 'Leia Message', group: 'Sequences', description: 'SE08 - Leia audio with body sequence, then forward :SE08 to dome', disabled: false, testable: true, safetyCritical: false },
+    { token: 'droid_seq_disco', label: 'Disco', group: 'Sequences', description: 'SE09 - disco audio ($D) with body wave, then forward :SE09 to dome', disabled: false, testable: true, safetyCritical: false },
+    { token: 'droid_seq_screams', label: 'Screams', group: 'Sequences', description: 'SE15 - screams audio only on body side, then forward :SE15 to dome', disabled: false, testable: true, safetyCritical: false },
+    { token: 'droid_seq_wiggle', label: 'Panel Wiggle', group: 'Sequences', description: 'SE16 - body wave sequence, then forward :SE16 to dome', disabled: false, testable: true, safetyCritical: false },
+    { token: 'speed_preset_cycle', label: 'Speed Preset Cycle', group: 'Movement', description: 'Cycle drive speed preset Slow → Normal → Turbo', disabled: false, testable: true, safetyCritical: false },
   ];
 
   // Live action targets — replaced on load from GET /api/actions.

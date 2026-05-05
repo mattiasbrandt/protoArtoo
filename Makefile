@@ -18,7 +18,7 @@ UPLOAD_PORT ?= /dev/ttyUSB0
 
 -include user.mk
 
-.PHONY: all help build test check flash ota uploadfs \
+.PHONY: all help build test check check-action-drift flash ota uploadfs \
         flash-chirp ota-chirp ota-mp3trigger \
         check-chirp check-mp3trigger \
         setup setup-wifi clean monitor check-deps
@@ -46,6 +46,9 @@ test: ## Run native unit tests
 
 check: ## Static analysis with cppcheck
 	pio check -e protoArtoo
+
+check-action-drift: ## Ad hoc check that action YAML, C++, and RC fallback metadata align
+	python3 tools/check_action_registry_drift.py
 
 # ── Flash: DY-SV5W (default) ─────────────────────────────────────────────────
 

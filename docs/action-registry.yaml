@@ -15,11 +15,17 @@
 #
 # How to add a new entry:
 #   1. Add the YAML entry here first (docs/action-registry.yaml).
-#   2. If bindable (cpp_file: include/rc_mapping.h): add to RobotActionId enum
-#      in include/rc_mapping.h and to ACTION_REGISTRY[] in include/action_registry.h.
-#   3. Add the API handler or queue case as needed.
-#   4. Add a native test if the new action involves parsing or transformation logic.
-#   5. If safety_critical: true — verify all 5 failsafe layers still hold.
+#   2. If bindable (cpp_file: include/rc_mapping.h): add the RobotActionId enum value
+#      in include/rc_mapping.h and add rc_token here.
+#   3. Add/update C++ runtime registry, token parse/format, dispatch, and JS fallback
+#      rows as needed.
+#   4. Run `make check-action-drift` to verify YAML, C++, and RC fallback metadata align.
+#   5. Add a native test if the new action involves parsing or transformation logic.
+#   6. If safety_critical: true — verify all 5 failsafe layers still hold.
+#
+# Drift checker:
+#   `make check-action-drift` runs tools/check_action_registry_drift.py.
+#   It is an ad hoc verification tool; it reports drift and never rewrites files.
 #
 # C++ enum naming:
 #   RobotActionId values follow DOMAIN_ACTION_VERB_NOUN (e.g. DRIVE_ACTION_SPEED).
@@ -33,6 +39,7 @@
 ## Runtime action registry API notes:
 ## - GET /api/actions returns bindable actions with token + testability metadata.
 ## - `token` maps to robotActionIdToString() and is accepted by POST /api/actions/test.
+## - `rc_token` is required for entries with cpp_file: include/rc_mapping.h.
 ## - `testable` is false for analog actions, payload-required actions, and system.action.estop.
 ## - POST /api/rc/map accepts the same token set except `none`. `dome_seq` requires a valid DM:<NAME> payload.
 entries:
@@ -64,6 +71,7 @@ entries:
 - name: drive.action.speed
   display_name: Speed
   description: Forward/reverse drive speed (analog axis binding)
+  runtime_description: Forward/reverse drive speed (analog axis)
   domain: drive
   type: action
   marcduino_cmd: null
@@ -71,6 +79,7 @@ entries:
   sse_event: null
   cpp_enum: DRIVE_ACTION_SPEED
   cpp_file: include/rc_mapping.h
+  rc_token: drive_speed
   sources: [ sbus ]
   safety_critical: false
   requires_web_control: false
@@ -84,6 +93,7 @@ entries:
 - name: drive.action.steer
   display_name: Steer
   description: Left/right steering (analog axis binding)
+  runtime_description: Left/right steering (analog axis)
   domain: drive
   type: action
   marcduino_cmd: null
@@ -91,6 +101,7 @@ entries:
   sse_event: null
   cpp_enum: DRIVE_ACTION_STEER
   cpp_file: include/rc_mapping.h
+  rc_token: drive_steer
   sources: [ sbus ]
   safety_critical: false
   requires_web_control: false
@@ -164,6 +175,7 @@ entries:
 - name: drive.action.speed-preset-cycle
   display_name: Speed Preset Cycle
   description: Cycle speed preset Slow → Normal → Turbo
+  runtime_description: Cycle drive speed preset Slow → Normal → Turbo
   domain: drive
   type: action
   marcduino_cmd: null
@@ -171,6 +183,7 @@ entries:
   sse_event: null
   cpp_enum: DRIVE_ACTION_SPEED_PRESET_CYCLE
   cpp_file: include/rc_mapping.h
+  rc_token: speed_preset_cycle
   sources: [ sbus, pwm ]
   safety_critical: false
   requires_web_control: false
@@ -232,6 +245,7 @@ entries:
   sse_event: null
   cpp_enum: DOME_ACTION_SPEED
   cpp_file: include/rc_mapping.h
+  rc_token: dome_speed
   sources: [ sbus, pwm ]
   safety_critical: false
   requires_web_control: false
@@ -262,6 +276,7 @@ entries:
   sse_event: null
   cpp_enum: DOME_ACTION_MARCDUINO_SEQ
   cpp_file: include/rc_mapping.h
+  rc_token: seq
   sources: [ sbus ]
   safety_critical: false
   requires_web_control: false
@@ -277,6 +292,7 @@ entries:
   sse_event: null
   cpp_enum: DOME_ACTION_MARCDUINO_CMD
   cpp_file: include/rc_mapping.h
+  rc_token: cmd
   sources: [ sbus ]
   safety_critical: false
   requires_web_control: false
@@ -292,6 +308,7 @@ entries:
     DM:CANTINA, DM:RESET, DM:RANDOM.
     The dome handles panels/holos/logics and sends dome=seqon/BD:/dome=seqoff back
     to the body, which are handled by dome_link.cpp + dome_cue_handler.cpp (T27).
+  runtime_description: Trigger a dome-side panel/light sequence by number
   domain: dome
   type: action
   marcduino_cmd: DM:<NAME>
@@ -299,6 +316,7 @@ entries:
   sse_event: null
   cpp_enum: DOME_ACTION_SEQ
   cpp_file: include/rc_mapping.h
+  rc_token: dome_seq
   sources: [ sbus ]
   safety_critical: false
   requires_web_control: false
@@ -314,6 +332,7 @@ entries:
   sse_event: null
   cpp_enum: DROID_SEQ_SCREAM
   cpp_file: include/rc_mapping.h
+  rc_token: droid_seq_scream
   sources: [ sbus, dome_rx ]
   safety_critical: false
   requires_web_control: false
@@ -329,6 +348,7 @@ entries:
   sse_event: null
   cpp_enum: DROID_SEQ_WAVE
   cpp_file: include/rc_mapping.h
+  rc_token: droid_seq_wave
   sources: [ sbus, dome_rx ]
   safety_critical: false
   requires_web_control: false
@@ -344,6 +364,7 @@ entries:
   sse_event: null
   cpp_enum: DROID_SEQ_FAST_WAVE
   cpp_file: include/rc_mapping.h
+  rc_token: droid_seq_fast_wave
   sources: [ sbus, dome_rx ]
   safety_critical: false
   requires_web_control: false
@@ -359,6 +380,7 @@ entries:
   sse_event: null
   cpp_enum: DROID_SEQ_OPEN_WAVE
   cpp_file: include/rc_mapping.h
+  rc_token: droid_seq_open_wave
   sources: [ sbus, dome_rx ]
   safety_critical: false
   requires_web_control: false
@@ -374,6 +396,7 @@ entries:
   sse_event: null
   cpp_enum: DROID_SEQ_BEEP_CANTINA
   cpp_file: include/rc_mapping.h
+  rc_token: droid_seq_beep_cantina
   sources: [ sbus, dome_rx ]
   safety_critical: false
   requires_web_control: false
@@ -389,6 +412,7 @@ entries:
   sse_event: null
   cpp_enum: DROID_SEQ_FAINT
   cpp_file: include/rc_mapping.h
+  rc_token: droid_seq_faint
   sources: [ sbus, dome_rx ]
   safety_critical: false
   requires_web_control: false
@@ -404,6 +428,7 @@ entries:
   sse_event: null
   cpp_enum: DROID_SEQ_CANTINA
   cpp_file: include/rc_mapping.h
+  rc_token: droid_seq_cantina
   sources: [ sbus, dome_rx ]
   safety_critical: false
   requires_web_control: false
@@ -419,6 +444,7 @@ entries:
   sse_event: null
   cpp_enum: DROID_SEQ_LEIA
   cpp_file: include/rc_mapping.h
+  rc_token: droid_seq_leia
   sources: [ sbus, dome_rx ]
   safety_critical: false
   requires_web_control: false
@@ -434,6 +460,7 @@ entries:
   sse_event: null
   cpp_enum: DROID_SEQ_DISCO
   cpp_file: include/rc_mapping.h
+  rc_token: droid_seq_disco
   sources: [ sbus, dome_rx ]
   safety_critical: false
   requires_web_control: false
@@ -449,6 +476,7 @@ entries:
   sse_event: null
   cpp_enum: DROID_SEQ_SCREAMS
   cpp_file: include/rc_mapping.h
+  rc_token: droid_seq_screams
   sources: [ sbus, dome_rx ]
   safety_critical: false
   requires_web_control: false
@@ -464,6 +492,7 @@ entries:
   sse_event: null
   cpp_enum: DROID_SEQ_WIGGLE
   cpp_file: include/rc_mapping.h
+  rc_token: droid_seq_wiggle
   sources: [ sbus, dome_rx ]
   safety_critical: false
   requires_web_control: false
@@ -820,6 +849,7 @@ entries:
 - name: sound.action.random-general
   display_name: Random General
   description: Play one random track from the configured General category range
+  runtime_description: Play one random track from configured general range
   domain: sound
   type: action
   marcduino_cmd: null
@@ -827,6 +857,7 @@ entries:
   sse_event: null
   cpp_enum: SOUND_ACTION_RANDOM_GENERAL
   cpp_file: include/rc_mapping.h
+  rc_token: sound_rand_general
   sources: [ sbus ]
   safety_critical: false
   requires_web_control: false
@@ -835,6 +866,7 @@ entries:
 - name: sound.action.random-chatty
   display_name: Random Chatty
   description: Play one random track from the configured Chatty category range
+  runtime_description: Play one random track from configured chatty range
   domain: sound
   type: action
   marcduino_cmd: null
@@ -842,6 +874,7 @@ entries:
   sse_event: null
   cpp_enum: SOUND_ACTION_RANDOM_CHATTY
   cpp_file: include/rc_mapping.h
+  rc_token: sound_rand_chatty
   sources: [ sbus ]
   safety_critical: false
   requires_web_control: false
@@ -850,6 +883,7 @@ entries:
 - name: sound.action.random-happy
   display_name: Random Happy
   description: Play one random track from the configured Happy category range
+  runtime_description: Play one random track from configured happy range
   domain: sound
   type: action
   marcduino_cmd: null
@@ -857,6 +891,7 @@ entries:
   sse_event: null
   cpp_enum: SOUND_ACTION_RANDOM_HAPPY
   cpp_file: include/rc_mapping.h
+  rc_token: sound_rand_happy
   sources: [ sbus ]
   safety_critical: false
   requires_web_control: false
@@ -865,6 +900,7 @@ entries:
 - name: sound.action.random-processing
   display_name: Random Processing
   description: Play one random track from the configured Processing category range
+  runtime_description: Play one random track from configured processing range
   domain: sound
   type: action
   marcduino_cmd: null
@@ -872,6 +908,7 @@ entries:
   sse_event: null
   cpp_enum: SOUND_ACTION_RANDOM_PROCESSING
   cpp_file: include/rc_mapping.h
+  rc_token: sound_rand_processing
   sources: [ sbus ]
   safety_critical: false
   requires_web_control: false
@@ -880,6 +917,7 @@ entries:
 - name: sound.action.random-sad
   display_name: Random Sad
   description: Play one random track from the configured Sad category range
+  runtime_description: Play one random track from configured sad range
   domain: sound
   type: action
   marcduino_cmd: null
@@ -887,6 +925,7 @@ entries:
   sse_event: null
   cpp_enum: SOUND_ACTION_RANDOM_SAD
   cpp_file: include/rc_mapping.h
+  rc_token: sound_rand_sad
   sources: [ sbus ]
   safety_critical: false
   requires_web_control: false
@@ -895,6 +934,7 @@ entries:
 - name: sound.action.random-sentimental
   display_name: Random Sentimental
   description: Play one random track from the configured Sentimental category range
+  runtime_description: Play one random track from configured sentimental range
   domain: sound
   type: action
   marcduino_cmd: null
@@ -902,6 +942,7 @@ entries:
   sse_event: null
   cpp_enum: SOUND_ACTION_RANDOM_SENTIMENTAL
   cpp_file: include/rc_mapping.h
+  rc_token: sound_rand_sentimental
   sources: [ sbus ]
   safety_critical: false
   requires_web_control: false
@@ -910,6 +951,7 @@ entries:
 - name: sound.action.random-humming
   display_name: Random Humming
   description: Play one random track from the configured Humming category range
+  runtime_description: Play one random track from configured humming range
   domain: sound
   type: action
   marcduino_cmd: null
@@ -917,6 +959,7 @@ entries:
   sse_event: null
   cpp_enum: SOUND_ACTION_RANDOM_HUMMING
   cpp_file: include/rc_mapping.h
+  rc_token: sound_rand_humming
   sources: [ sbus ]
   safety_critical: false
   requires_web_control: false
@@ -925,6 +968,7 @@ entries:
 - name: sound.action.random-scream
   display_name: Random Scream
   description: Play one random track from the configured Scream category range
+  runtime_description: Play one random track from configured scream range
   domain: sound
   type: action
   marcduino_cmd: null
@@ -932,6 +976,7 @@ entries:
   sse_event: null
   cpp_enum: SOUND_ACTION_RANDOM_SCREAM
   cpp_file: include/rc_mapping.h
+  rc_token: sound_rand_scream
   sources: [ sbus ]
   safety_critical: false
   requires_web_control: false
@@ -940,6 +985,7 @@ entries:
 - name: sound.action.random-surprised
   display_name: Random Surprised
   description: Play one random track from the configured Surprised category range
+  runtime_description: Play one random track from configured surprised range
   domain: sound
   type: action
   marcduino_cmd: null
@@ -947,6 +993,7 @@ entries:
   sse_event: null
   cpp_enum: SOUND_ACTION_RANDOM_SURPRISED
   cpp_file: include/rc_mapping.h
+  rc_token: sound_rand_surprised
   sources: [ sbus ]
   safety_critical: false
   requires_web_control: false
@@ -955,6 +1002,7 @@ entries:
 - name: sound.action.random-alert
   display_name: Random Alert
   description: Play one random track from the configured Alert category range
+  runtime_description: Play one random track from configured alert range
   domain: sound
   type: action
   marcduino_cmd: null
@@ -962,6 +1010,7 @@ entries:
   sse_event: null
   cpp_enum: SOUND_ACTION_RANDOM_ALERT
   cpp_file: include/rc_mapping.h
+  rc_token: sound_rand_alert
   sources: [ sbus ]
   safety_critical: false
   requires_web_control: false
@@ -970,6 +1019,7 @@ entries:
 - name: sound.action.random-snarky
   display_name: Random Snarky
   description: Play one random track from the configured Snarky category range
+  runtime_description: Play one random track from configured snarky range
   domain: sound
   type: action
   marcduino_cmd: null
@@ -977,6 +1027,7 @@ entries:
   sse_event: null
   cpp_enum: SOUND_ACTION_RANDOM_SNARKY
   cpp_file: include/rc_mapping.h
+  rc_token: sound_rand_snarky
   sources: [ sbus ]
   safety_critical: false
   requires_web_control: false
@@ -985,6 +1036,7 @@ entries:
 - name: sound.action.random-whistle
   display_name: Random Whistle
   description: Play one random track from the configured Whistle category range
+  runtime_description: Play one random track from configured whistle range
   domain: sound
   type: action
   marcduino_cmd: null
@@ -992,6 +1044,7 @@ entries:
   sse_event: null
   cpp_enum: SOUND_ACTION_RANDOM_WHISTLE
   cpp_file: include/rc_mapping.h
+  rc_token: sound_rand_whistle
   sources: [ sbus ]
   safety_critical: false
   requires_web_control: false
@@ -1366,6 +1419,7 @@ entries:
 - name: servo.action.toggle-arm1
   display_name: ARM1 Toggle
   description: Toggle the arm 1 servo between open and closed
+  runtime_description: Toggle arm 1 servo between open and closed
   domain: servo
   type: action
   marcduino_cmd: null
@@ -1373,6 +1427,7 @@ entries:
   sse_event: null
   cpp_enum: SERVO_ACTION_ARM1_TOGGLE
   cpp_file: include/rc_mapping.h
+  rc_token: arm1_toggle
   sources: [ sbus ]
   safety_critical: false
   requires_web_control: false
@@ -1381,6 +1436,7 @@ entries:
 - name: servo.action.toggle-arm2
   display_name: ARM2 Toggle
   description: Toggle the arm 2 servo between open and closed
+  runtime_description: Toggle arm 2 servo between open and closed
   domain: servo
   type: action
   marcduino_cmd: null
@@ -1388,6 +1444,7 @@ entries:
   sse_event: null
   cpp_enum: SERVO_ACTION_ARM2_TOGGLE
   cpp_file: include/rc_mapping.h
+  rc_token: arm2_toggle
   sources: [ sbus ]
   safety_critical: false
   requires_web_control: false
@@ -1396,6 +1453,7 @@ entries:
 - name: servo.action.toggle-aux1
   display_name: AUX1 Toggle
   description: Toggle the aux 1 servo between open and closed
+  runtime_description: Toggle aux 1 servo between open and closed
   domain: servo
   type: action
   marcduino_cmd: null
@@ -1403,6 +1461,7 @@ entries:
   sse_event: null
   cpp_enum: SERVO_ACTION_AUX1_TOGGLE
   cpp_file: include/rc_mapping.h
+  rc_token: aux1_toggle
   sources: [ sbus ]
   safety_critical: false
   requires_web_control: false
@@ -1411,6 +1470,7 @@ entries:
 - name: servo.action.toggle-aux2
   display_name: AUX2 Toggle
   description: Toggle the aux 2 servo between open and closed
+  runtime_description: Toggle aux 2 servo between open and closed
   domain: servo
   type: action
   marcduino_cmd: null
@@ -1418,6 +1478,7 @@ entries:
   sse_event: null
   cpp_enum: SERVO_ACTION_AUX2_TOGGLE
   cpp_file: include/rc_mapping.h
+  rc_token: aux2_toggle
   sources: [ sbus ]
   safety_critical: false
   requires_web_control: false
@@ -1426,6 +1487,7 @@ entries:
 - name: servo.action.toggle-aux3
   display_name: AUX3 Toggle
   description: Toggle the aux 3 servo between open and closed
+  runtime_description: Toggle aux 3 servo between open and closed
   domain: servo
   type: action
   marcduino_cmd: null
@@ -1433,6 +1495,7 @@ entries:
   sse_event: null
   cpp_enum: SERVO_ACTION_AUX3_TOGGLE
   cpp_file: include/rc_mapping.h
+  rc_token: aux3_toggle
   sources: [ sbus ]
   safety_critical: false
   requires_web_control: false
@@ -1568,6 +1631,7 @@ entries:
   sse_event: null
   cpp_enum: SYSTEM_ACTION_OP_MODE
   cpp_file: include/rc_mapping.h
+  rc_token: op_mode
   sources: [ web_api, sbus ]
   safety_critical: false
   requires_web_control: false
@@ -1576,6 +1640,7 @@ entries:
 - name: system.action.estop
   display_name: Emergency Stop
   description: Immediately stop all drive output and latch the emergency stop
+  runtime_description: Immediately stop all drive output and latch estop
   domain: system
   type: action
   marcduino_cmd: null
@@ -1583,6 +1648,7 @@ entries:
   sse_event: null
   cpp_enum: SYSTEM_ACTION_ESTOP
   cpp_file: include/rc_mapping.h
+  rc_token: estop
   sources: [ web_api, sbus ]
   safety_critical: true
   requires_web_control: false
@@ -1703,6 +1769,8 @@ entries:
 - name: system.action.sleep-toggle
   display_name: Sleep / Wake Toggle
   description: Toggle sleep mode on/off. RC-bindable momentary or toggle.
+  runtime_display_name: Sleep Toggle
+  runtime_description: Toggle cosmetic sleep mode while keeping drive safety active
   domain: system
   type: action
   marcduino_cmd: null
@@ -1710,6 +1778,7 @@ entries:
   sse_event: null
   cpp_enum: SYSTEM_ACTION_SLEEP_TOGGLE
   cpp_file: include/rc_mapping.h
+  rc_token: sleep_toggle
   sources: [ sbus ]
   safety_critical: false
   requires_web_control: false

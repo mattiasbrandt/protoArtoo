@@ -127,6 +127,7 @@ The canonical MemPalace protocol is defined in `AGENTS.md` under
 ### Hardware and Tooling Reminders
 
 - Use [tools/serial_monitor.py](../tools/serial_monitor.py) for serial capture; avoid ad-hoc pyserial snippets.
+- After editing action registry metadata, RC action tokens, `ACTION_REGISTRY[]`, or the RC page fallback list, run `make check-action-drift`. The checker reports mismatches only; it does not generate or rewrite files.
 - Do not guess GPIO values. If a pin is unresolved, keep it as `TBD` and surface the blocker.
 - `initAsyncWeb()` must be initialized from the WiFi event callback path, not directly in `setup()`.
 - Core 1 real-time loops must avoid heap allocation. Core 0 web handlers may use bounded per-request `JsonDocument` allocations.
