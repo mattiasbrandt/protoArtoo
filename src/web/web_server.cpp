@@ -31,6 +31,7 @@
 #include "../../include/api_validation.h"
 #include "../../include/audio_task.h"
 #include "../../include/config.h"
+#include "../../include/config_store.h"
 #include "../../include/aux_led.h"
 #include "../../include/rc_diagnostics_snapshot.h"
 #include "../../include/robot_state.h"
@@ -362,6 +363,8 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
         return false;
     }
 
+    ConfigSnapshot cfg = {};
+    configCacheRead(&cfg);
     taskENTER_CRITICAL(&robotStateMux);
     estop = robotState.estop;
     webControlEnabled = robotState.webControlEnabled;
@@ -373,8 +376,8 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     driveSpeed = robotState.driveOutputSpeed;
     driveSteer = robotState.driveOutputSteer;
     domeTargetSpeed = robotState.domeTargetSpeed;
-    speedLimitMax = robotState.cfg_speedLimitMax;
-    speedPresetActive = normalizeSpeedPresetId((uint8_t)robotState.cfg_speedPresetActive);
+    speedLimitMax = cfg.drive.speedLimitMax;
+    speedPresetActive = normalizeSpeedPresetId((uint8_t)cfg.drive.speedPresetActive);
     stationary = robotState.stationary;
     failsafeCount = robotState.failsafeTriggerCount;
     failsafeTriggerMs = robotState.failsafeLastTriggerMs;
@@ -402,23 +405,23 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     hbCurrentL = robotState.hb_currentL;
     hbCurrentR = robotState.hb_currentR;
     hbFeedbackValid = robotState.hb_feedbackValid;
-    enableArm1 = robotState.cfg_enable_arm1;
-    enableArm2 = robotState.cfg_enable_arm2;
-    enableAux1 = robotState.cfg_enable_aux1;
-    enableAux2 = robotState.cfg_enable_aux2;
-    enableAux3 = robotState.cfg_enable_aux3;
-    enableDome = robotState.cfg_enable_dome;
-    enableRcCh1 = robotState.cfg_enable_rc_ch1;
-    enableRcCh2 = robotState.cfg_enable_rc_ch2;
-    enableRcCh3 = robotState.cfg_enable_rc_ch3;
-    enableRcCh4 = robotState.cfg_enable_rc_ch4;
-    enableRcCh5 = robotState.cfg_enable_rc_ch5;
-    enableRcCh6 = robotState.cfg_enable_rc_ch6;
-    rcInputMode = robotState.cfg_rc_input_mode;
-    singleSbusUseCh2 = robotState.cfg_single_sbus_use_ch2;
-    enableS1Hoverboard = robotState.cfg_enable_s1_hoverboard;
-    enableS2Sound = robotState.cfg_enable_s2_sound;
-    enableS3DomeCtrl = robotState.cfg_enable_s3_dome_ctrl;
+    enableArm1 = cfg.system.enable_arm1;
+    enableArm2 = cfg.system.enable_arm2;
+    enableAux1 = cfg.system.enable_aux1;
+    enableAux2 = cfg.system.enable_aux2;
+    enableAux3 = cfg.system.enable_aux3;
+    enableDome = cfg.system.enable_dome;
+    enableRcCh1 = cfg.system.enable_rc_ch1;
+    enableRcCh2 = cfg.system.enable_rc_ch2;
+    enableRcCh3 = cfg.system.enable_rc_ch3;
+    enableRcCh4 = cfg.system.enable_rc_ch4;
+    enableRcCh5 = cfg.system.enable_rc_ch5;
+    enableRcCh6 = cfg.system.enable_rc_ch6;
+    rcInputMode = cfg.system.rc_input_mode;
+    singleSbusUseCh2 = cfg.system.single_sbus_use_ch2;
+    enableS1Hoverboard = cfg.system.enable_s1_hoverboard;
+    enableS2Sound = cfg.system.enable_s2_sound;
+    enableS3DomeCtrl = cfg.system.enable_s3_dome_ctrl;
     audioActive = robotState.audioActive;
     activeMood = robotState.activeMood;
     sleepMode = robotState.sleepMode;

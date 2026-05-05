@@ -420,92 +420,95 @@ void test_configLoad_save_moodcat_12bit_mask() {
     TEST_ASSERT_EQUAL_UINT16(0x0FFF, snap2.audio.snd_moodcat_mid);
 }
 
-// Test: configSnapshotFromRobotState captures one field from each category group.
+// Test: configCacheRead captures one field from each category group.
 // This guards against a field silently missing from the function body, which
 // would cause configSave() to write zeros to NVS for that field.
-void test_configSnapshotFromRobotState_captures_all_categories() {
+void test_configCacheRead_captures_all_categories() {
+    ConfigSnapshot seeded = {};
+
     // Speed
-    robotState.cfg_speedLimitMax      = 750;
-    robotState.cfg_speedPresetSlow    = 150;
-    robotState.cfg_speedPresetNormal  = 350;
-    robotState.cfg_speedPresetTurbo   = 750;
-    robotState.cfg_speedPresetActive  = SpeedPresetId::Turbo;
+    seeded.drive.speedLimitMax      = 750;
+    seeded.drive.speedPresetSlow    = 150;
+    seeded.drive.speedPresetNormal  = 350;
+    seeded.drive.speedPresetTurbo   = 750;
+    seeded.drive.speedPresetActive  = SpeedPresetId::Turbo;
 
     // Timeouts
-    robotState.cfg_sbusTimeoutMs      = 250;
-    robotState.cfg_webDriveTimeoutMs  = 600;
+    seeded.drive.sbusTimeoutMs      = 250;
+    seeded.drive.webDriveTimeoutMs  = 600;
 
     // Audio scalars
-    robotState.cfg_audioVolume        = 22;
-    robotState.cfg_logLevel           = 2;
+    seeded.audio.audioVolume        = 22;
+    seeded.system.logLevel          = 2;
 
     // Named audio tracks
-    robotState.cfg_snd_scream         = 200;
-    robotState.cfg_snd_faint          = 201;
-    robotState.cfg_snd_startup        = 255;
-    robotState.cfg_snd_rand_min       = 5;
-    robotState.cfg_snd_rand_max       = 80;
+    seeded.audio.snd_scream         = 200;
+    seeded.audio.snd_faint          = 201;
+    seeded.audio.snd_startup        = 255;
+    seeded.audio.snd_rand_min       = 5;
+    seeded.audio.snd_rand_max       = 80;
 
     // Mood category fields — the ones most likely to be missed
-    robotState.cfg_snd_moodcat_quiet  = 0x0ABC;
-    robotState.cfg_snd_moodcat_full   = 0x0FFF;
-    robotState.cfg_snd_cat_gen_lo     = 10;
-    robotState.cfg_snd_cat_gen_hi     = 20;
-    robotState.cfg_snd_cat_whis_lo    = 30;
-    robotState.cfg_snd_cat_whis_hi    = 40;
+    seeded.audio.snd_moodcat_quiet  = 0x0ABC;
+    seeded.audio.snd_moodcat_full   = 0x0FFF;
+    seeded.audio.snd_cat_gen_lo     = 10;
+    seeded.audio.snd_cat_gen_hi     = 20;
+    seeded.audio.snd_cat_whis_lo    = 30;
+    seeded.audio.snd_cat_whis_hi    = 40;
 
     // Servo
-    robotState.cfg_arm1_open_us       = 2100;
-    robotState.cfg_arm1_close_us      = 900;
-    robotState.cfg_arm1_type          = SERVO_COMP_MG996R;
-    robotState.cfg_aux3_type          = SERVO_COMP_RGB;
-    robotState.cfg_aux1_open_us       = 1800;
-    robotState.cfg_aux1_close_us      = 1200;
+    seeded.servo.arm1_open_us       = 2100;
+    seeded.servo.arm1_close_us      = 900;
+    seeded.servo.arm1_type          = SERVO_COMP_MG996R;
+    seeded.servo.aux3_type          = SERVO_COMP_RGB;
+    seeded.servo.aux1_open_us       = 1800;
+    seeded.servo.aux1_close_us      = 1200;
 
     // Dome
-    robotState.cfg_dome_min_speed     = 0.1f;
-    robotState.cfg_dome_max_speed     = 0.9f;
-    robotState.cfg_dome_neutral_us    = 1510;
-    robotState.cfg_dome_speed_limit_pct = 75;
-    robotState.cfg_dome_rnd_enable    = true;
-    robotState.cfg_dome_rnd_speed_pct = 35;
-    robotState.cfg_dome_rnd_pause_min = 4;
-    robotState.cfg_dome_rnd_pause_max = 10;
-    robotState.cfg_dome_rnd_move_ms   = 3000;
-    snprintf(robotState.cfg_dome_wifi_peer_ip, sizeof(robotState.cfg_dome_wifi_peer_ip),
-             "10.0.0.5");
+    seeded.dome.dome_min_speed     = 0.1f;
+    seeded.dome.dome_max_speed     = 0.9f;
+    seeded.dome.dome_neutral_us    = 1510;
+    seeded.dome.dome_speed_limit_pct = 75;
+    seeded.dome.dome_rnd_enable    = true;
+    seeded.dome.dome_rnd_speed_pct = 35;
+    seeded.dome.dome_rnd_pause_min = 4;
+    seeded.dome.dome_rnd_pause_max = 10;
+    seeded.dome.dome_rnd_move_ms   = 3000;
+    snprintf(seeded.dome.dome_wifi_peer_ip, sizeof(seeded.dome.dome_wifi_peer_ip), "10.0.0.5");
 
     // Sequence timing
-    robotState.cfg_seq_open_ms        = 400;
-    robotState.cfg_seq_close_ms       = 600;
+    seeded.servo.seq_open_ms        = 400;
+    seeded.servo.seq_close_ms       = 600;
 
     // AUX LED
-    robotState.cfg_aux_led_pin        = 2;
-    robotState.cfg_aux_led_count      = 8;
+    seeded.servo.aux_led_pin        = 2;
+    seeded.servo.aux_led_count      = 8;
 
     // Feature toggles
-    robotState.cfg_enable_arm1        = true;
-    robotState.cfg_enable_dome        = true;
-    robotState.cfg_stationary         = true;
-    robotState.cfg_rc_input_mode      = RC_INPUT_DUAL_SBUS;
-    robotState.cfg_single_sbus_use_ch2 = true;
-    robotState.cfg_enable_s1_hoverboard = true;
+    seeded.system.enable_arm1        = true;
+    seeded.system.enable_dome        = true;
+    seeded.system.stationary         = true;
+    seeded.system.rc_input_mode      = RC_INPUT_DUAL_SBUS;
+    seeded.system.single_sbus_use_ch2 = true;
+    seeded.system.enable_s1_hoverboard = true;
 
     // RC backbone binding
-    robotState.cfg_rc_sbus_drive_speed =
+    seeded.system.rc_sbus_drive_speed =
         makeRcBindingConfig(RC_BINDING_SBUS1, 3, 200, 1000, 1800, 50, true);
-    robotState.cfg_rc_pwm_drive_steer  =
+    seeded.system.rc_pwm_drive_steer  =
         makeRcBindingConfig(RC_BINDING_PWM, 2, 1000, 1500, 2000, 0, false);
 
     // RC trigger binding
-    robotState.cfg_rc_arm1.source     = RC_BINDING_SBUS1;
-    robotState.cfg_rc_arm1.channel    = 5;
-    robotState.cfg_rc_arm1.target     = SERVO_ACTION_ARM1_TOGGLE;
-    robotState.cfg_rc_free3.source    = RC_BINDING_SBUS2;
-    robotState.cfg_rc_free3.channel   = 7;
+    seeded.system.rc_arm1.source     = RC_BINDING_SBUS1;
+    seeded.system.rc_arm1.channel    = 5;
+    seeded.system.rc_arm1.target     = SERVO_ACTION_ARM1_TOGGLE;
+    seeded.system.rc_free3.source    = RC_BINDING_SBUS2;
+    seeded.system.rc_free3.channel   = 7;
+
+    configCacheApply(seeded);
 
     ConfigSnapshot snap = {};
-    configSnapshotFromRobotState(&snap);
+    configCacheRead(&snap);
 
     // Speed
     TEST_ASSERT_EQUAL_INT16(750, snap.drive.speedLimitMax);
@@ -589,23 +592,25 @@ void test_configSnapshotFromRobotState_captures_all_categories() {
     TEST_ASSERT_EQUAL_UINT8(7, snap.system.rc_free3.channel);
 }
 
-// Test: full save path — robotState -> configSnapshotFromRobotState -> configSave -> configLoad
+// Test: full save path — config cache -> configSave -> configLoad
 // Verifies that the complete chain used by saveConfigToNvs() preserves values correctly.
-void test_configSnapshotFromRobotState_save_round_trip() {
-    robotState.cfg_speedLimitMax      = 600;
-    robotState.cfg_audioVolume        = 18;
-    robotState.cfg_snd_cat_alrm_lo   = 55;
-    robotState.cfg_snd_cat_alrm_hi   = 65;
-    robotState.cfg_dome_rnd_enable    = true;
-    robotState.cfg_dome_rnd_speed_pct = 40;
-    robotState.cfg_enable_arm2        = true;
-    robotState.cfg_stationary         = false;
-    robotState.cfg_rc_input_mode      = RC_INPUT_SINGLE_SBUS;
-    robotState.cfg_rc_sbus_arm1 =
+void test_configCacheRead_save_round_trip() {
+    ConfigSnapshot seeded = {};
+    seeded.drive.speedLimitMax      = 600;
+    seeded.audio.audioVolume        = 18;
+    seeded.audio.snd_cat_alrm_lo    = 55;
+    seeded.audio.snd_cat_alrm_hi    = 65;
+    seeded.dome.dome_rnd_enable     = true;
+    seeded.dome.dome_rnd_speed_pct  = 40;
+    seeded.system.enable_arm2       = true;
+    seeded.system.stationary        = false;
+    seeded.system.rc_input_mode     = RC_INPUT_SINGLE_SBUS;
+    seeded.system.rc_sbus_arm1 =
         makeRcBindingConfig(RC_BINDING_SBUS1, 4, 172, 992, 1811, 10, false);
+    configCacheApply(seeded);
 
     ConfigSnapshot snap1 = {};
-    configSnapshotFromRobotState(&snap1);
+    configCacheRead(&snap1);
 
     Preferences prefs;
     prefs.begin("proto", false);
@@ -631,8 +636,8 @@ void test_configSnapshotFromRobotState_save_round_trip() {
     TEST_ASSERT_EQUAL_UINT16(10, snap2.system.rc_sbus_arm1.deadband);
 }
 
-// Test: configApplyToRobotState applies all categories of fields from snapshot
-void test_configApplyToRobotState_applies_all_categories() {
+// Test: configCacheApply applies all categories of fields from snapshot
+void test_configCacheApply_applies_all_categories() {
     // Create a snapshot with distinct non-default values for every category
     ConfigSnapshot snap = {};
 
@@ -724,70 +729,71 @@ void test_configApplyToRobotState_applies_all_categories() {
     // Pre-set a non-cfg sentinel to verify apply does not touch it
     robotState.driveOutputSpeed = 999;
 
-    // Apply the snapshot to robotState
-    configApplyToRobotState(snap);
+    configCacheApply(snap);
 
-    // Assert every cfg_* field was set correctly
-    TEST_ASSERT_EQUAL_INT16(650, robotState.cfg_speedLimitMax);
-    TEST_ASSERT_EQUAL_INT16(120, robotState.cfg_speedPresetSlow);
-    TEST_ASSERT_EQUAL_INT16(320, robotState.cfg_speedPresetNormal);
-    TEST_ASSERT_EQUAL_INT16(650, robotState.cfg_speedPresetTurbo);
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)SpeedPresetId::Slow, (uint8_t)robotState.cfg_speedPresetActive);
+    ConfigSnapshot applied = {};
+    configCacheRead(&applied);
 
-    TEST_ASSERT_EQUAL_UINT32(300, robotState.cfg_sbusTimeoutMs);
-    TEST_ASSERT_EQUAL_UINT32(500, robotState.cfg_webDriveTimeoutMs);
+    TEST_ASSERT_EQUAL_INT16(650, applied.drive.speedLimitMax);
+    TEST_ASSERT_EQUAL_INT16(120, applied.drive.speedPresetSlow);
+    TEST_ASSERT_EQUAL_INT16(320, applied.drive.speedPresetNormal);
+    TEST_ASSERT_EQUAL_INT16(650, applied.drive.speedPresetTurbo);
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)SpeedPresetId::Slow, (uint8_t)applied.drive.speedPresetActive);
 
-    TEST_ASSERT_EQUAL_UINT8(15, robotState.cfg_audioVolume);
-    TEST_ASSERT_EQUAL_UINT8(3, robotState.cfg_logLevel);
+    TEST_ASSERT_EQUAL_UINT32(300, applied.drive.sbusTimeoutMs);
+    TEST_ASSERT_EQUAL_UINT32(500, applied.drive.webDriveTimeoutMs);
 
-    TEST_ASSERT_EQUAL_UINT16(250, robotState.cfg_snd_scream);
-    TEST_ASSERT_EQUAL_UINT16(251, robotState.cfg_snd_faint);
+    TEST_ASSERT_EQUAL_UINT8(15, applied.audio.audioVolume);
+    TEST_ASSERT_EQUAL_UINT8(3, applied.system.logLevel);
 
-    TEST_ASSERT_EQUAL_UINT16(2050, robotState.cfg_arm1_open_us);
-    TEST_ASSERT_EQUAL_UINT16(950, robotState.cfg_arm1_close_us);
-    TEST_ASSERT_EQUAL_UINT16(2150, robotState.cfg_arm2_open_us);
-    TEST_ASSERT_EQUAL_UINT16(850, robotState.cfg_arm2_close_us);
+    TEST_ASSERT_EQUAL_UINT16(250, applied.audio.snd_scream);
+    TEST_ASSERT_EQUAL_UINT16(251, applied.audio.snd_faint);
 
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)SERVO_COMP_MG996R, (uint8_t)robotState.cfg_arm1_type);
-    TEST_ASSERT_EQUAL_UINT8((uint8_t)SERVO_COMP_MG90S, (uint8_t)robotState.cfg_arm2_type);
+    TEST_ASSERT_EQUAL_UINT16(2050, applied.servo.arm1_open_us);
+    TEST_ASSERT_EQUAL_UINT16(950, applied.servo.arm1_close_us);
+    TEST_ASSERT_EQUAL_UINT16(2150, applied.servo.arm2_open_us);
+    TEST_ASSERT_EQUAL_UINT16(850, applied.servo.arm2_close_us);
 
-    TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.2f, robotState.cfg_dome_min_speed);
-    TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.95f, robotState.cfg_dome_max_speed);
-    TEST_ASSERT_EQUAL_UINT16(1520, robotState.cfg_dome_neutral_us);
-    TEST_ASSERT_EQUAL_UINT8(85, robotState.cfg_dome_speed_limit_pct);
-    TEST_ASSERT_EQUAL_INT(true, robotState.cfg_dome_rnd_enable);
-    TEST_ASSERT_EQUAL_STRING("192.168.0.99", robotState.cfg_dome_wifi_peer_ip);
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)SERVO_COMP_MG996R, (uint8_t)applied.servo.arm1_type);
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)SERVO_COMP_MG90S, (uint8_t)applied.servo.arm2_type);
 
-    TEST_ASSERT_EQUAL_UINT16(800, robotState.cfg_seq_open_ms);
-    TEST_ASSERT_EQUAL_UINT16(1200, robotState.cfg_seq_close_ms);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.2f, applied.dome.dome_min_speed);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.95f, applied.dome.dome_max_speed);
+    TEST_ASSERT_EQUAL_UINT16(1520, applied.dome.dome_neutral_us);
+    TEST_ASSERT_EQUAL_UINT8(85, applied.dome.dome_speed_limit_pct);
+    TEST_ASSERT_EQUAL_INT(true, applied.dome.dome_rnd_enable);
+    TEST_ASSERT_EQUAL_STRING("192.168.0.99", applied.dome.dome_wifi_peer_ip);
 
-    TEST_ASSERT_EQUAL_UINT8(3, robotState.cfg_aux_led_pin);
-    TEST_ASSERT_EQUAL_UINT8(12, robotState.cfg_aux_led_count);
+    TEST_ASSERT_EQUAL_UINT16(800, applied.servo.seq_open_ms);
+    TEST_ASSERT_EQUAL_UINT16(1200, applied.servo.seq_close_ms);
 
-    TEST_ASSERT_EQUAL_INT(true, robotState.cfg_enable_arm1);
-    TEST_ASSERT_EQUAL_INT(false, robotState.cfg_enable_arm2);
-    TEST_ASSERT_EQUAL_INT(true, robotState.cfg_enable_dome);
-    TEST_ASSERT_EQUAL_INT(true, robotState.cfg_stationary);
+    TEST_ASSERT_EQUAL_UINT8(3, applied.servo.aux_led_pin);
+    TEST_ASSERT_EQUAL_UINT8(12, applied.servo.aux_led_count);
+
+    TEST_ASSERT_EQUAL_INT(true, applied.system.enable_arm1);
+    TEST_ASSERT_EQUAL_INT(false, applied.system.enable_arm2);
+    TEST_ASSERT_EQUAL_INT(true, applied.system.enable_dome);
+    TEST_ASSERT_EQUAL_INT(true, applied.system.stationary);
 
     // Verify the pre-set non-cfg sentinel was not modified by the apply
     TEST_ASSERT_EQUAL_INT(999, robotState.driveOutputSpeed);
 }
 
-// Test: configApplyToRobotState does not touch non-cfg fields
-void test_configApplyToRobotState_does_not_touch_non_cfg_fields() {
+// Test: configCacheApply does not touch runtime fields
+void test_configCacheApply_does_not_touch_runtime_fields() {
     // Set a non-cfg runtime field to a known value
     robotState.driveOutputSpeed = 123;  // This is a non-cfg field
     robotState.driveOutputSteer = 456;  // Another non-cfg field
 
-    // Create a snapshot with different values for cfg fields
+    // Create a snapshot with different values for persisted config fields
     ConfigSnapshot snap = {};
     snap.system.stationary = true;
 
-    // Apply the snapshot
-    configApplyToRobotState(snap);
+    configCacheApply(snap);
 
-    // The cfg field should have been set
-    TEST_ASSERT_EQUAL_INT(true, robotState.cfg_stationary);
+    ConfigSnapshot applied = {};
+    configCacheRead(&applied);
+    TEST_ASSERT_EQUAL_INT(true, applied.system.stationary);
 
     // But the non-cfg fields should NOT have changed
     TEST_ASSERT_EQUAL_INT(123, robotState.driveOutputSpeed);
@@ -877,10 +883,12 @@ void test_config_domain_round_trip_matrix() {
     seed_domain_round_trip_baseline(prefs);
     ConfigSnapshot loaded = {};
     TEST_ASSERT_TRUE(configLoad(prefs, &loaded));
-    configApplyToRobotState(loaded);
-    robotState.cfg_speedLimitMax = 580;
+    configCacheApply(loaded);
     ConfigSnapshot fromState = {};
-    configSnapshotFromRobotState(&fromState);
+    configCacheRead(&fromState);
+    fromState.drive.speedLimitMax = 580;
+    configCacheApply(fromState);
+    configCacheRead(&fromState);
     TEST_ASSERT_TRUE(configSaveDrive(prefs, fromState.drive));
     TEST_ASSERT_TRUE(configLoad(prefs, &loaded));
     TEST_ASSERT_EQUAL_INT16(580, loaded.drive.speedLimitMax);
@@ -889,9 +897,11 @@ void test_config_domain_round_trip_matrix() {
 
     seed_domain_round_trip_baseline(prefs);
     TEST_ASSERT_TRUE(configLoad(prefs, &loaded));
-    configApplyToRobotState(loaded);
-    robotState.cfg_audioVolume = 24;
-    configSnapshotFromRobotState(&fromState);
+    configCacheApply(loaded);
+    configCacheRead(&fromState);
+    fromState.audio.audioVolume = 24;
+    configCacheApply(fromState);
+    configCacheRead(&fromState);
     TEST_ASSERT_TRUE(configSaveAudio(prefs, fromState.audio));
     TEST_ASSERT_TRUE(configLoad(prefs, &loaded));
     TEST_ASSERT_EQUAL_UINT8(24, loaded.audio.audioVolume);
@@ -900,9 +910,11 @@ void test_config_domain_round_trip_matrix() {
 
     seed_domain_round_trip_baseline(prefs);
     TEST_ASSERT_TRUE(configLoad(prefs, &loaded));
-    configApplyToRobotState(loaded);
-    robotState.cfg_arm1_open_us = 2100;
-    configSnapshotFromRobotState(&fromState);
+    configCacheApply(loaded);
+    configCacheRead(&fromState);
+    fromState.servo.arm1_open_us = 2100;
+    configCacheApply(fromState);
+    configCacheRead(&fromState);
     TEST_ASSERT_TRUE(configSaveServo(prefs, fromState.servo));
     TEST_ASSERT_TRUE(configLoad(prefs, &loaded));
     TEST_ASSERT_EQUAL_UINT16(2100, loaded.servo.arm1_open_us);
@@ -911,9 +923,11 @@ void test_config_domain_round_trip_matrix() {
 
     seed_domain_round_trip_baseline(prefs);
     TEST_ASSERT_TRUE(configLoad(prefs, &loaded));
-    configApplyToRobotState(loaded);
-    robotState.cfg_dome_speed_limit_pct = 62;
-    configSnapshotFromRobotState(&fromState);
+    configCacheApply(loaded);
+    configCacheRead(&fromState);
+    fromState.dome.dome_speed_limit_pct = 62;
+    configCacheApply(fromState);
+    configCacheRead(&fromState);
     TEST_ASSERT_TRUE(configSaveDome(prefs, fromState.dome));
     TEST_ASSERT_TRUE(configLoad(prefs, &loaded));
     TEST_ASSERT_EQUAL_UINT8(62, loaded.dome.dome_speed_limit_pct);
@@ -922,9 +936,11 @@ void test_config_domain_round_trip_matrix() {
 
     seed_domain_round_trip_baseline(prefs);
     TEST_ASSERT_TRUE(configLoad(prefs, &loaded));
-    configApplyToRobotState(loaded);
-    robotState.cfg_enable_s2_sound = false;
-    configSnapshotFromRobotState(&fromState);
+    configCacheApply(loaded);
+    configCacheRead(&fromState);
+    fromState.system.enable_s2_sound = false;
+    configCacheApply(fromState);
+    configCacheRead(&fromState);
     TEST_ASSERT_TRUE(configSaveSystem(prefs, fromState.system));
     TEST_ASSERT_TRUE(configLoad(prefs, &loaded));
     TEST_ASSERT_EQUAL_INT(false, loaded.system.enable_s2_sound);
@@ -975,7 +991,7 @@ void test_configUpdateAudioMoodMasks_round_trips_through_audio_store() {
 
     ConfigSnapshot snap = {};
     TEST_ASSERT_TRUE(configLoad(prefs, &snap));
-    configApplyToRobotState(snap);
+    configCacheApply(snap);
 
     TEST_ASSERT_TRUE(configUpdateAudioMoodMasks(prefs, 0x0001, 0x0002, 0x0004, 0x0008));
 
@@ -987,8 +1003,11 @@ void test_configUpdateAudioMoodMasks_round_trips_through_audio_store() {
     TEST_ASSERT_EQUAL_UINT16(0x0002, audio.snd_moodcat_mid);
     TEST_ASSERT_EQUAL_UINT16(0x0004, audio.snd_moodcat_full);
     TEST_ASSERT_EQUAL_UINT16(0x0008, audio.snd_moodcat_awakeplus);
-    TEST_ASSERT_EQUAL_UINT16(0x0001, robotState.cfg_snd_moodcat_quiet);
-    TEST_ASSERT_EQUAL_UINT16(0x0008, robotState.cfg_snd_moodcat_awakeplus);
+
+    ConfigSnapshot cached = {};
+    configCacheRead(&cached);
+    TEST_ASSERT_EQUAL_UINT16(0x0001, cached.audio.snd_moodcat_quiet);
+    TEST_ASSERT_EQUAL_UINT16(0x0008, cached.audio.snd_moodcat_awakeplus);
 }
 
 int main() {
@@ -1016,10 +1035,10 @@ int main() {
     RUN_TEST(test_configLoad_save_dome_wifi_peer_ip);
     RUN_TEST(test_configLoad_save_dome_wifi_peer_ip_empty);
     RUN_TEST(test_configLoad_save_moodcat_12bit_mask);
-    RUN_TEST(test_configSnapshotFromRobotState_captures_all_categories);
-    RUN_TEST(test_configSnapshotFromRobotState_save_round_trip);
-    RUN_TEST(test_configApplyToRobotState_applies_all_categories);
-    RUN_TEST(test_configApplyToRobotState_does_not_touch_non_cfg_fields);
+    RUN_TEST(test_configCacheRead_captures_all_categories);
+    RUN_TEST(test_configCacheRead_save_round_trip);
+    RUN_TEST(test_configCacheApply_applies_all_categories);
+    RUN_TEST(test_configCacheApply_does_not_touch_runtime_fields);
     RUN_TEST(test_config_domain_load_functions_are_independently_callable);
     RUN_TEST(test_config_domain_save_preserves_other_domains);
     RUN_TEST(test_config_domain_round_trip_matrix);

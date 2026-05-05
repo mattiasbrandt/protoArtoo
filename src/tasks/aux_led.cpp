@@ -13,6 +13,7 @@
 #include <string.h>
 
 #include "config.h"
+#include "config_store.h"
 #include "logging.h"
 #include "robot_state.h"
 #include "web_server.h"
@@ -203,10 +204,10 @@ bool auxLedTaskInit() {
 
     uint8_t selection = AUX_LED_PIN_DISABLED;
     uint8_t count = AUX_LED_COUNT_DEFAULT;
-    taskENTER_CRITICAL(&robotStateMux);
-    selection = robotState.cfg_aux_led_pin;
-    count = robotState.cfg_aux_led_count;
-    taskEXIT_CRITICAL(&robotStateMux);
+    ConfigSnapshot cfg = {};
+    configCacheRead(&cfg);
+    selection = cfg.servo.aux_led_pin;
+    count = cfg.servo.aux_led_count;
 
     const uint8_t gpio = auxLedSelectionToGpio(selection);
     const bool enabled = gpio != 0;
@@ -263,10 +264,10 @@ void auxLedTask(void* pvParameters) {
 
     uint8_t selection = AUX_LED_PIN_DISABLED;
     uint8_t ledCount = AUX_LED_COUNT_DEFAULT;
-    taskENTER_CRITICAL(&robotStateMux);
-    selection = robotState.cfg_aux_led_pin;
-    ledCount = robotState.cfg_aux_led_count;
-    taskEXIT_CRITICAL(&robotStateMux);
+    ConfigSnapshot cfg = {};
+    configCacheRead(&cfg);
+    selection = cfg.servo.aux_led_pin;
+    ledCount = cfg.servo.aux_led_count;
 
     ledCount = clampLedCount(ledCount);
 

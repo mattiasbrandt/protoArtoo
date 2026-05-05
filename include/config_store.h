@@ -372,17 +372,17 @@ bool configSaveServo(Preferences& prefs, const ServoConfig& config);
 bool configSaveDome(Preferences& prefs, const DomeConfig& config);
 bool configSaveSystem(Preferences& prefs, const SystemConfig& config);
 
-// configSnapshotFromRobotState: Fill a ConfigSnapshot from the live robotState.
-// Caller MUST hold robotStateMux before calling (taskENTER_CRITICAL or xSemaphoreTake).
-// Use this before every configSave call to ensure a complete, non-partial snapshot.
-void configSnapshotFromRobotState(ConfigSnapshot* out);
+// configCacheRead: Fill a ConfigSnapshot from the live config cache.
+// This uses configCacheMux, not robotStateMux. Runtime tasks should copy the
+// domain they need into stack locals, then release the cache lock before doing work.
+void configCacheRead(ConfigSnapshot* out);
 
-// configApplyToRobotState: Apply all cfg_* fields from snapshot into robotState.
-// Caller MUST hold robotStateMux when called from a multi-task context.
-// (No mutex needed at boot — call from loadConfigToState() before tasks start.)
-// No side effects: caller is responsible for reading pre-state and computing
-// any behavioral transitions (e.g. queueDriveOn, queueDomeOn) around this call.
-void configApplyToRobotState(const ConfigSnapshot& snap);
+// configCacheApply: Replace the live config cache with a full snapshot.
+// Marks RobotState.rcConfigDirty so RcInputTask rebuilds cached mapping config.
+void configCacheApply(const ConfigSnapshot& snap);
+
+// configCurrentLogLevel: lightweight runtime log-level accessor used by logging.h.
+uint8_t configCurrentLogLevel();
 
 // configValidate: Validate a scalar field value before writing.
 // Covers int, float, bool, and enum fields only.

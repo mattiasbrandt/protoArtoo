@@ -28,6 +28,7 @@
 #include <esp_task_wdt.h>
 
 #include "config.h"
+#include "config_store.h"
 #include "dome_math.h"
 #include "ledc_pwm.h"
 #include "logging.h"
@@ -49,12 +50,12 @@ static void setDomeSpeed(float speed) {
     uint16_t neutralUs, minPulseUs, maxPulseUs;
     uint8_t speedLimitPct;
 
-    taskENTER_CRITICAL(&robotStateMux);
-    neutralUs = robotState.cfg_dome_neutral_us;
-    minPulseUs = robotState.cfg_dome_min_pulse_us;
-    maxPulseUs = robotState.cfg_dome_max_pulse_us;
-    speedLimitPct = robotState.cfg_dome_speed_limit_pct;
-    taskEXIT_CRITICAL(&robotStateMux);
+    ConfigSnapshot cfg = {};
+    configCacheRead(&cfg);
+    neutralUs = cfg.dome.dome_neutral_us;
+    minPulseUs = cfg.dome.dome_min_pulse_us;
+    maxPulseUs = cfg.dome.dome_max_pulse_us;
+    speedLimitPct = cfg.dome.dome_speed_limit_pct;
 
     uint16_t pulseUs = domeSpeedToPulseUs(speed, neutralUs, minPulseUs, maxPulseUs, speedLimitPct);
 
@@ -76,9 +77,9 @@ static void setDomeSpeed(float speed) {
 // -----------------------------------------------------------------------------
 static void setDomeNeutral() {
     uint16_t neutralUs;
-    taskENTER_CRITICAL(&robotStateMux);
-    neutralUs = robotState.cfg_dome_neutral_us;
-    taskEXIT_CRITICAL(&robotStateMux);
+    ConfigSnapshot cfg = {};
+    configCacheRead(&cfg);
+    neutralUs = cfg.dome.dome_neutral_us;
 
     ledcPwmSetPulseWidth(LEDC_CH_DOME, neutralUs);
 
@@ -96,10 +97,10 @@ void domeTaskInit() {
     // Feature toggle: skip ESC arming entirely when dome is disabled.
     // No LEDC pulse is written; the channel stays at whatever neutral value
     // ledcPwmInit() set at boot.  domeTask() will also idle (see task body).
-    taskENTER_CRITICAL(&robotStateMux);
-    bool enabled = robotState.cfg_enable_dome;
-    uint16_t neutralUs = robotState.cfg_dome_neutral_us;
-    taskEXIT_CRITICAL(&robotStateMux);
+    ConfigSnapshot cfg = {};
+    configCacheRead(&cfg);
+    bool enabled = cfg.system.enable_dome;
+    uint16_t neutralUs = cfg.dome.dome_neutral_us;
 
     if (!enabled) {
         PA_LOG_INFO(TAG, "dome disabled (en_dome=false) — skipping ESC arming");
@@ -135,9 +136,9 @@ void domeTask(void* pvParameters) {
 
     // Start at neutral only when dome output is enabled. If disabled, LEDC may
     // be intentionally uninitialized (all outputs disabled configuration).
-    taskENTER_CRITICAL(&robotStateMux);
-    bool domeEnabledAtBoot = robotState.cfg_enable_dome;
-    taskEXIT_CRITICAL(&robotStateMux);
+    ConfigSnapshot bootCfg = {};
+    configCacheRead(&bootCfg);
+    bool domeEnabledAtBoot = bootCfg.system.enable_dome;
     if (domeEnabledAtBoot) {
         setDomeNeutral();
     }
@@ -155,9 +156,11 @@ void domeTask(void* pvParameters) {
         // Read safety state under mutex
         taskENTER_CRITICAL(&robotStateMux);
         bool estop = robotState.estop;
-        bool enabled = robotState.cfg_enable_dome;
         bool sleepMode = robotState.sleepMode;
         taskEXIT_CRITICAL(&robotStateMux);
+        ConfigSnapshot loopCfg = {};
+        configCacheRead(&loopCfg);
+        bool enabled = loopCfg.system.enable_dome;
 
         // Feature toggle: dome disabled — hold neutral, drain queue, do nothing
         if (!enabled) {
@@ -246,12 +249,14 @@ void domeTask(void* pvParameters) {
             uint16_t rndMoveMs;
             bool     domeSeqActive;
             uint32_t now = millis();
+            ConfigSnapshot rndCfg = {};
+            configCacheRead(&rndCfg);
+            rndEnabled    = rndCfg.dome.dome_rnd_enable;
+            rndSpeedPct   = rndCfg.dome.dome_rnd_speed_pct;
+            rndPauseMin   = rndCfg.dome.dome_rnd_pause_min;
+            rndPauseMax   = rndCfg.dome.dome_rnd_pause_max;
+            rndMoveMs     = rndCfg.dome.dome_rnd_move_ms;
             taskENTER_CRITICAL(&robotStateMux);
-            rndEnabled    = robotState.cfg_dome_rnd_enable;
-            rndSpeedPct   = robotState.cfg_dome_rnd_speed_pct;
-            rndPauseMin   = robotState.cfg_dome_rnd_pause_min;
-            rndPauseMax   = robotState.cfg_dome_rnd_pause_max;
-            rndMoveMs     = robotState.cfg_dome_rnd_move_ms;
             domeSeqActive = robotState.domeSeqActive;
             taskEXIT_CRITICAL(&robotStateMux);
 

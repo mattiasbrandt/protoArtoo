@@ -215,13 +215,13 @@ static void writeJsonEscaped(Print& out, const char* text) {
 void registerMoodMapRoutes(AsyncWebServer& server) {
     server.on("/api/audio/mood-map", HTTP_GET, [](AsyncWebServerRequest* req) {
         MoodCategoryMaskConfig masks{};
-        taskENTER_CRITICAL(&robotStateMux);
-        masks.quiet = (uint16_t)(robotState.cfg_snd_moodcat_quiet & MOOD_CATEGORY_MASK_MAX);
-        masks.mid = (uint16_t)(robotState.cfg_snd_moodcat_mid & MOOD_CATEGORY_MASK_MAX);
-        masks.full = (uint16_t)(robotState.cfg_snd_moodcat_full & MOOD_CATEGORY_MASK_MAX);
+        ConfigSnapshot snap = {};
+        configCacheRead(&snap);
+        masks.quiet = (uint16_t)(snap.audio.snd_moodcat_quiet & MOOD_CATEGORY_MASK_MAX);
+        masks.mid = (uint16_t)(snap.audio.snd_moodcat_mid & MOOD_CATEGORY_MASK_MAX);
+        masks.full = (uint16_t)(snap.audio.snd_moodcat_full & MOOD_CATEGORY_MASK_MAX);
         masks.awakeplus =
-            (uint16_t)(robotState.cfg_snd_moodcat_awakeplus & MOOD_CATEGORY_MASK_MAX);
-        taskEXIT_CRITICAL(&robotStateMux);
+            (uint16_t)(snap.audio.snd_moodcat_awakeplus & MOOD_CATEGORY_MASK_MAX);
 
         char body[128];
         size_t n = formatMoodCategoryMapJson(body, sizeof(body), masks);
@@ -380,9 +380,7 @@ void registerAudioRoutes(AsyncWebServer& server) {
         uint16_t intQuiet, intMid, intFull, intAwake;
         uint8_t volume;
         ConfigSnapshot snap;
-        taskENTER_CRITICAL(&robotStateMux);
-        configSnapshotFromRobotState(&snap);
-        taskEXIT_CRITICAL(&robotStateMux);
+        configCacheRead(&snap);
         const AudioConfig& audio = snap.audio;
         scream = audio.snd_scream;
         faint = audio.snd_faint;
@@ -662,9 +660,7 @@ void registerAudioRoutes(AsyncWebServer& server) {
         ConfigSnapshot snap;
         uint16_t oldLo = 0;
         uint16_t oldHi = 0;
-        taskENTER_CRITICAL(&robotStateMux);
-        configSnapshotFromRobotState(&snap);
-        taskEXIT_CRITICAL(&robotStateMux);
+        configCacheRead(&snap);
 
         if (!configAudioGetTrackByKey(snap.audio, loKey, &oldLo) ||
             !configAudioGetTrackByKey(snap.audio, hiKey, &oldHi) ||
@@ -674,9 +670,7 @@ void registerAudioRoutes(AsyncWebServer& server) {
             return;
         }
 
-        taskENTER_CRITICAL(&robotStateMux);
-        configApplyToRobotState(snap);
-        taskEXIT_CRITICAL(&robotStateMux);
+        configCacheApply(snap);
 
         Preferences prefs;
         bool ok = false;
@@ -692,33 +686,27 @@ void registerAudioRoutes(AsyncWebServer& server) {
             if (wroteConfig && !wroteBinding) {
                 // CHIRP write failed: restore robotState and re-save old config.
                 ConfigSnapshot oldSnap;
-                taskENTER_CRITICAL(&robotStateMux);
-                configSnapshotFromRobotState(&oldSnap);
+                configCacheRead(&oldSnap);
                 configAudioSetTrackByKey(&oldSnap.audio, loKey, oldLo);
                 configAudioSetTrackByKey(&oldSnap.audio, hiKey, oldHi);
-                configApplyToRobotState(oldSnap);
-                configSnapshotFromRobotState(&oldSnap);
-                taskEXIT_CRITICAL(&robotStateMux);
+                configCacheApply(oldSnap);
+                configCacheRead(&oldSnap);
                 configSaveAudio(prefs, oldSnap.audio);
             } else if (!wroteConfig) {
                 ConfigSnapshot oldSnap;
-                taskENTER_CRITICAL(&robotStateMux);
-                configSnapshotFromRobotState(&oldSnap);
+                configCacheRead(&oldSnap);
                 configAudioSetTrackByKey(&oldSnap.audio, loKey, oldLo);
                 configAudioSetTrackByKey(&oldSnap.audio, hiKey, oldHi);
-                configApplyToRobotState(oldSnap);
-                taskEXIT_CRITICAL(&robotStateMux);
+                configCacheApply(oldSnap);
             }
             ok = wroteConfig && wroteBinding;
             prefs.end();
         } else {
             ConfigSnapshot oldSnap;
-            taskENTER_CRITICAL(&robotStateMux);
-            configSnapshotFromRobotState(&oldSnap);
+            configCacheRead(&oldSnap);
             configAudioSetTrackByKey(&oldSnap.audio, loKey, oldLo);
             configAudioSetTrackByKey(&oldSnap.audio, hiKey, oldHi);
-            configApplyToRobotState(oldSnap);
-            taskEXIT_CRITICAL(&robotStateMux);
+            configCacheApply(oldSnap);
         }
 
         if (!ok) {
@@ -849,9 +837,7 @@ void registerAudioRoutes(AsyncWebServer& server) {
         uint16_t t = (uint16_t)track;
         uint16_t oldTrack = 0;
         ConfigSnapshot snap;
-        taskENTER_CRITICAL(&robotStateMux);
-        configSnapshotFromRobotState(&snap);
-        taskEXIT_CRITICAL(&robotStateMux);
+        configCacheRead(&snap);
 
         if (!configAudioGetTrackByKey(snap.audio, key, &oldTrack) ||
             !configAudioSetTrackByKey(&snap.audio, key, t)) {
@@ -859,9 +845,7 @@ void registerAudioRoutes(AsyncWebServer& server) {
             return;
         }
 
-        taskENTER_CRITICAL(&robotStateMux);
-        configApplyToRobotState(snap);
-        taskEXIT_CRITICAL(&robotStateMux);
+        configCacheApply(snap);
 
         Preferences prefs;
         bool ok = false;
@@ -877,12 +861,10 @@ void registerAudioRoutes(AsyncWebServer& server) {
             if (wroteTrack && !wroteChirp) {
                 // CHIRP write failed: restore old value and re-save to roll back NVS.
                 ConfigSnapshot oldSnap;
-                taskENTER_CRITICAL(&robotStateMux);
-                configSnapshotFromRobotState(&oldSnap);
+                configCacheRead(&oldSnap);
                 configAudioSetTrackByKey(&oldSnap.audio, key, oldTrack);
-                configApplyToRobotState(oldSnap);
-                configSnapshotFromRobotState(&oldSnap);
-                taskEXIT_CRITICAL(&robotStateMux);
+                configCacheApply(oldSnap);
+                configCacheRead(&oldSnap);
                 configSaveAudio(prefs, oldSnap.audio);
             }
 
@@ -893,11 +875,9 @@ void registerAudioRoutes(AsyncWebServer& server) {
         if (!ok) {
             // Ensure robotState reflects the rollback.
             ConfigSnapshot oldSnap;
-            taskENTER_CRITICAL(&robotStateMux);
-            configSnapshotFromRobotState(&oldSnap);
+            configCacheRead(&oldSnap);
             configAudioSetTrackByKey(&oldSnap.audio, key, oldTrack);
-            configApplyToRobotState(oldSnap);
-            taskEXIT_CRITICAL(&robotStateMux);
+            configCacheApply(oldSnap);
         }
 
         if (useBanked) {
@@ -1219,9 +1199,10 @@ void registerAudioRoutes(AsyncWebServer& server) {
                 return;
             }
             // Persist as the new default volume so it survives reboot
-            taskENTER_CRITICAL(&robotStateMux);
-            robotState.cfg_audioVolume = (uint8_t)level;
-            taskEXIT_CRITICAL(&robotStateMux);
+            ConfigSnapshot snap = {};
+            configCacheRead(&snap);
+            snap.audio.audioVolume = (uint8_t)level;
+            configCacheApply(snap);
             bool saved = saveConfigToNvs();
 
             PA_LOG_INFO(TAG, "[AUDIO] POST /api/audio volume level=%d saved=%s", level,

@@ -8,6 +8,7 @@
 
 #include <Arduino.h>
 
+#include "../../include/config_store.h"
 #include "../../include/robot_state.h"
 
 namespace {
@@ -108,6 +109,9 @@ void captureValidationSnapshot(ValidationSnapshot* out) {
     uint32_t lastSbus1Ms;
     uint32_t lastSbus2Ms;
 
+    ConfigSnapshot cfg = {};
+    configCacheRead(&cfg);
+
     taskENTER_CRITICAL(&robotStateMux);
     estop = robotState.estop;
     webDriveExpired = robotState.webDriveExpired;
@@ -123,30 +127,30 @@ void captureValidationSnapshot(ValidationSnapshot* out) {
     watchdogMs = robotState.failsafeLastWatchdogMs;
     triggerSource = robotState.failsafeLastTriggerSource;
 
-    enableS3DomeCtrl = robotState.cfg_enable_s3_dome_ctrl;
+    enableS3DomeCtrl = cfg.system.enable_s3_dome_ctrl;
     domeHbRx = robotState.domeHbRx;
     bodyHbTx = robotState.bodyHbTx;
     domeLastSeenMs = robotState.domeLastSeenMs;
 
-    enableS2Sound = robotState.cfg_enable_s2_sound;
+    enableS2Sound = cfg.system.enable_s2_sound;
     audioActive = robotState.audioActive;
     activeMood = robotState.activeMood;
-    randMin = robotState.cfg_snd_rand_min;
-    randMax = robotState.cfg_snd_rand_max;
-    intQuiet = robotState.cfg_snd_int_quiet;
-    intMid = robotState.cfg_snd_int_mid;
-    intFull = robotState.cfg_snd_int_full;
-    intAwake = robotState.cfg_snd_int_awake;
+    randMin = cfg.audio.snd_rand_min;
+    randMax = cfg.audio.snd_rand_max;
+    intQuiet = cfg.audio.snd_int_quiet;
+    intMid = cfg.audio.snd_int_mid;
+    intFull = cfg.audio.snd_int_full;
+    intAwake = cfg.audio.snd_int_awake;
 
-    rcMode = robotState.cfg_rc_input_mode;
-    timeoutMs = robotState.cfg_sbusTimeoutMs;
-    enableRcCh1 = robotState.cfg_enable_rc_ch1;
-    enableRcCh2 = robotState.cfg_enable_rc_ch2;
-    enableRcCh3 = robotState.cfg_enable_rc_ch3;
-    enableRcCh4 = robotState.cfg_enable_rc_ch4;
-    enableRcCh5 = robotState.cfg_enable_rc_ch5;
-    enableRcCh6 = robotState.cfg_enable_rc_ch6;
-    sbusUseCh2 = robotState.cfg_single_sbus_use_ch2;
+    rcMode = cfg.system.rc_input_mode;
+    timeoutMs = cfg.drive.sbusTimeoutMs;
+    enableRcCh1 = cfg.system.enable_rc_ch1;
+    enableRcCh2 = cfg.system.enable_rc_ch2;
+    enableRcCh3 = cfg.system.enable_rc_ch3;
+    enableRcCh4 = cfg.system.enable_rc_ch4;
+    enableRcCh5 = cfg.system.enable_rc_ch5;
+    enableRcCh6 = cfg.system.enable_rc_ch6;
+    sbusUseCh2 = cfg.system.single_sbus_use_ch2;
     lastPwmMs = robotState.lastPwmMs;
     lastSbus1Ms = robotState.lastSbus1Ms;
     lastSbus2Ms = robotState.lastSbus2Ms;

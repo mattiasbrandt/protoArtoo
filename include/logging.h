@@ -4,7 +4,7 @@
 // Logging macros for protoArtoo — shared between tasks, drivers, and web layer.
 // Centralizes log formatting to ensure consistent output across the system.
 //
-// Log level is checked at runtime against robotState.cfg_logLevel, which is
+// Log level is checked at runtime against the config cache log level, which is
 // NVS-backed and adjustable from the Setup page without a reboot. The
 // compile-time PA_LOG_LEVEL build flag sets the boot default and the maximum
 // ring buffer depth (see log_buffer.h), but does not gate output at compile
@@ -16,18 +16,13 @@
 
 #include "config.h"
 #include "log_buffer.h"
-#include "robot_state.h"
-
-// robotState and robotStateMux are declared extern in robot_state.h (included above).
-// No need to re-declare them here.
-
 void paLogLineRaw(const char* line);
+uint8_t configCurrentLogLevel();
 
-// Inline helper — reads cfg_logLevel under a brief critical section.
+// Inline helper — reads the live log level under the config cache lock.
 // Used by every log macro to get the current runtime level without a full
-// portMUX lock on every message (reading a single uint8_t is atomic on ESP32).
 inline uint8_t paCurrentLogLevel() {
-    return robotState.cfg_logLevel;
+    return configCurrentLogLevel();
 }
 
 #define _PA_LOG_FORMAT(level, tag, fmt, ...)                                      \

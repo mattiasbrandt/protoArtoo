@@ -16,6 +16,7 @@
 #include <string.h>
 
 #include "audio_task.h"
+#include "config_store.h"
 #include "logging.h"
 #include "rc_mapping.h"
 #include "robot_state.h"
@@ -33,36 +34,32 @@ static bool playCategory(uint16_t lo, uint16_t hi) {
 
 void handleDomeCue(const char* cue) {
     if (strcmp(cue, "SCREAM") == 0) {
-        uint16_t lo, hi;
-        taskENTER_CRITICAL(&robotStateMux);
-        lo = robotState.cfg_snd_cat_scrm_lo;
-        hi = robotState.cfg_snd_cat_scrm_hi;
-        taskEXIT_CRITICAL(&robotStateMux);
+        ConfigSnapshot cfg = {};
+        configCacheRead(&cfg);
+        uint16_t lo = cfg.audio.snd_cat_scrm_lo;
+        uint16_t hi = cfg.audio.snd_cat_scrm_hi;
         if (!playCategory(lo, hi)) {
             audioQueuePlaySlot(AUDIO_SLOT_NAMED_SCREAM, SRC_INTERNAL);
         }
     } else if (strcmp(cue, "HAPPY") == 0) {
-        uint16_t lo, hi;
-        taskENTER_CRITICAL(&robotStateMux);
-        lo = robotState.cfg_snd_cat_hap_lo;
-        hi = robotState.cfg_snd_cat_hap_hi;
-        taskEXIT_CRITICAL(&robotStateMux);
+        ConfigSnapshot cfg = {};
+        configCacheRead(&cfg);
+        uint16_t lo = cfg.audio.snd_cat_hap_lo;
+        uint16_t hi = cfg.audio.snd_cat_hap_hi;
         playCategory(lo, hi);
     } else if (strcmp(cue, "OVERLOAD") == 0) {
-        uint16_t lo, hi;
-        taskENTER_CRITICAL(&robotStateMux);
-        lo = robotState.cfg_snd_cat_sad_lo;
-        hi = robotState.cfg_snd_cat_sad_hi;
-        taskEXIT_CRITICAL(&robotStateMux);
+        ConfigSnapshot cfg = {};
+        configCacheRead(&cfg);
+        uint16_t lo = cfg.audio.snd_cat_sad_lo;
+        uint16_t hi = cfg.audio.snd_cat_sad_hi;
         if (!playCategory(lo, hi)) {
             audioQueuePlaySlot(AUDIO_SLOT_NAMED_FAINT, SRC_INTERNAL);
         }
     } else if (strcmp(cue, "ALARM") == 0) {
-        uint16_t lo, hi;
-        taskENTER_CRITICAL(&robotStateMux);
-        lo = robotState.cfg_snd_cat_alrm_lo;
-        hi = robotState.cfg_snd_cat_alrm_hi;
-        taskEXIT_CRITICAL(&robotStateMux);
+        ConfigSnapshot cfg = {};
+        configCacheRead(&cfg);
+        uint16_t lo = cfg.audio.snd_cat_alrm_lo;
+        uint16_t hi = cfg.audio.snd_cat_alrm_hi;
         playCategory(lo, hi);
     } else if (strcmp(cue, "VADER") == 0) {
         audioQueuePlaySlot(AUDIO_SLOT_NAMED_IMP_MARCH, SRC_INTERNAL);
@@ -73,18 +70,16 @@ void handleDomeCue(const char* cue) {
     } else if (strcmp(cue, "CANTINA") == 0) {
         audioQueuePlaySlot(AUDIO_SLOT_NAMED_CANTINA_L, SRC_INTERNAL);
     } else if (strcmp(cue, "HEART") == 0) {
-        uint16_t lo, hi;
-        taskENTER_CRITICAL(&robotStateMux);
-        lo = robotState.cfg_snd_cat_sent_lo;
-        hi = robotState.cfg_snd_cat_sent_hi;
-        taskEXIT_CRITICAL(&robotStateMux);
+        ConfigSnapshot cfg = {};
+        configCacheRead(&cfg);
+        uint16_t lo = cfg.audio.snd_cat_sent_lo;
+        uint16_t hi = cfg.audio.snd_cat_sent_hi;
         playCategory(lo, hi);
     } else if (strcmp(cue, "HELLO") == 0) {
-        uint16_t lo, hi;
-        taskENTER_CRITICAL(&robotStateMux);
-        lo = robotState.cfg_snd_cat_gen_lo;
-        hi = robotState.cfg_snd_cat_gen_hi;
-        taskEXIT_CRITICAL(&robotStateMux);
+        ConfigSnapshot cfg = {};
+        configCacheRead(&cfg);
+        uint16_t lo = cfg.audio.snd_cat_gen_lo;
+        uint16_t hi = cfg.audio.snd_cat_gen_hi;
         playCategory(lo, hi);
     } else if (strcmp(cue, "RESET") == 0) {
         audioQueueStop(SRC_INTERNAL);

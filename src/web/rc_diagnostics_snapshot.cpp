@@ -10,6 +10,7 @@
 
 #include <cmath>
 
+#include "../../include/config_store.h"
 #include "../../include/rc_diagnostics.h"
 #include "../../include/robot_state.h"
 
@@ -57,23 +58,23 @@ void loadModeBindingSpecs(RcInputMode mode,
         specs[i].name = names[i];
     }
 
-    taskENTER_CRITICAL(&robotStateMux);
+    ConfigSnapshot cfg = {};
+    configCacheRead(&cfg);
     if (mode == RC_INPUT_STANDARD_PWM) {
-        specs[0].binding = robotState.cfg_rc_pwm_drive_speed;
-        specs[1].binding = robotState.cfg_rc_pwm_drive_steer;
-        specs[2].binding = robotState.cfg_rc_pwm_dome_speed;
-        specs[3].binding = robotState.cfg_rc_pwm_arm1;
-        specs[4].binding = robotState.cfg_rc_pwm_arm2;
-        specs[5].binding = robotState.cfg_rc_pwm_sound;
+        specs[0].binding = cfg.system.rc_pwm_drive_speed;
+        specs[1].binding = cfg.system.rc_pwm_drive_steer;
+        specs[2].binding = cfg.system.rc_pwm_dome_speed;
+        specs[3].binding = cfg.system.rc_pwm_arm1;
+        specs[4].binding = cfg.system.rc_pwm_arm2;
+        specs[5].binding = cfg.system.rc_pwm_sound;
     } else {
-        specs[0].binding = robotState.cfg_rc_sbus_drive_speed;
-        specs[1].binding = robotState.cfg_rc_sbus_drive_steer;
-        specs[2].binding = robotState.cfg_rc_sbus_dome_speed;
-        specs[3].binding = robotState.cfg_rc_sbus_arm1;
-        specs[4].binding = robotState.cfg_rc_sbus_arm2;
-        specs[5].binding = robotState.cfg_rc_sbus_sound;
+        specs[0].binding = cfg.system.rc_sbus_drive_speed;
+        specs[1].binding = cfg.system.rc_sbus_drive_steer;
+        specs[2].binding = cfg.system.rc_sbus_dome_speed;
+        specs[3].binding = cfg.system.rc_sbus_arm1;
+        specs[4].binding = cfg.system.rc_sbus_arm2;
+        specs[5].binding = cfg.system.rc_sbus_sound;
     }
-    taskEXIT_CRITICAL(&robotStateMux);
 }
 
 uint32_t rcSourceAgeMs(uint32_t nowMs, uint32_t lastSeenMs) {
@@ -119,16 +120,18 @@ void captureRcDiagnosticsSnapshot(RcDiagnosticsSnapshot* out) {
     bool sbus1Digital[2];
     bool sbus2Digital[2];
 
+    ConfigSnapshot cfg = {};
+    configCacheRead(&cfg);
+    rcInputMode = cfg.system.rc_input_mode;
+    timeoutMs = cfg.drive.sbusTimeoutMs;
+    sbusUseCh2 = cfg.system.single_sbus_use_ch2;
+    enableRcCh1 = cfg.system.enable_rc_ch1;
+    enableRcCh2 = cfg.system.enable_rc_ch2;
+    enableRcCh3 = cfg.system.enable_rc_ch3;
+    enableRcCh4 = cfg.system.enable_rc_ch4;
+    enableRcCh5 = cfg.system.enable_rc_ch5;
+    enableRcCh6 = cfg.system.enable_rc_ch6;
     taskENTER_CRITICAL(&robotStateMux);
-    rcInputMode = robotState.cfg_rc_input_mode;
-    timeoutMs = robotState.cfg_sbusTimeoutMs;
-    sbusUseCh2 = robotState.cfg_single_sbus_use_ch2;
-    enableRcCh1 = robotState.cfg_enable_rc_ch1;
-    enableRcCh2 = robotState.cfg_enable_rc_ch2;
-    enableRcCh3 = robotState.cfg_enable_rc_ch3;
-    enableRcCh4 = robotState.cfg_enable_rc_ch4;
-    enableRcCh5 = robotState.cfg_enable_rc_ch5;
-    enableRcCh6 = robotState.cfg_enable_rc_ch6;
     sbusSignalLost = robotState.sbusSignalLost;
     sbus2SignalLost = robotState.sbus2SignalLost;
     sbusHwFailsafe = robotState.sbusHwFailsafe;

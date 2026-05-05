@@ -26,6 +26,7 @@
 
 #include "../../include/audio_task.h"
 #include "../../include/config.h"
+#include "../../include/config_store.h"
 #include "../../include/dome_input_filter.h"
 #include "../../include/dome_link.h"
 #include "../../include/dome_rx_parser.h"
@@ -208,39 +209,38 @@ static void handleSoundTrigger(bool pressed, bool* lastPressed) {
     *lastPressed = pressed;
 }
 
-// Build an RcMappingConfig from RobotState for the given RC input mode.
-// Reads all relevant cfg_* fields under the robotStateMux critical section.
+// Build an RcMappingConfig from the config cache for the given RC input mode.
 // prevSoundPressed is left false; callers must set it from their static state.
 static RcMappingConfig rcBuildMappingConfig(RcInputMode mode) {
     RcMappingConfig out = {};
-    taskENTER_CRITICAL(&robotStateMux);
-    out.enableRc[0] = robotState.cfg_enable_rc_ch1;
-    out.enableRc[1] = robotState.cfg_enable_rc_ch2;
-    out.enableRc[2] = robotState.cfg_enable_rc_ch3;
-    out.enableRc[3] = robotState.cfg_enable_rc_ch4;
-    out.enableRc[4] = robotState.cfg_enable_rc_ch5;
-    out.enableRc[5] = robotState.cfg_enable_rc_ch6;
-    out.enableDome = robotState.cfg_enable_dome;
-    out.enableArm1 = robotState.cfg_enable_arm1;
-    out.enableArm2 = robotState.cfg_enable_arm2;
-    out.enableSound = robotState.cfg_enable_s2_sound;
-    out.maxOut = robotState.cfg_speedLimitMax;
+    ConfigSnapshot cfg = {};
+    configCacheRead(&cfg);
+    out.enableRc[0] = cfg.system.enable_rc_ch1;
+    out.enableRc[1] = cfg.system.enable_rc_ch2;
+    out.enableRc[2] = cfg.system.enable_rc_ch3;
+    out.enableRc[3] = cfg.system.enable_rc_ch4;
+    out.enableRc[4] = cfg.system.enable_rc_ch5;
+    out.enableRc[5] = cfg.system.enable_rc_ch6;
+    out.enableDome = cfg.system.enable_dome;
+    out.enableArm1 = cfg.system.enable_arm1;
+    out.enableArm2 = cfg.system.enable_arm2;
+    out.enableSound = cfg.system.enable_s2_sound;
+    out.maxOut = cfg.drive.speedLimitMax;
     if (mode == RC_INPUT_STANDARD_PWM) {
-        out.driveSpeed = robotState.cfg_rc_pwm_drive_speed;
-        out.driveSteer = robotState.cfg_rc_pwm_drive_steer;
-        out.domeSpeed = robotState.cfg_rc_pwm_dome_speed;
-        out.arm1 = robotState.cfg_rc_pwm_arm1;
-        out.arm2 = robotState.cfg_rc_pwm_arm2;
-        out.sound = robotState.cfg_rc_pwm_sound;
+        out.driveSpeed = cfg.system.rc_pwm_drive_speed;
+        out.driveSteer = cfg.system.rc_pwm_drive_steer;
+        out.domeSpeed = cfg.system.rc_pwm_dome_speed;
+        out.arm1 = cfg.system.rc_pwm_arm1;
+        out.arm2 = cfg.system.rc_pwm_arm2;
+        out.sound = cfg.system.rc_pwm_sound;
     } else {
-        out.driveSpeed = robotState.cfg_rc_sbus_drive_speed;
-        out.driveSteer = robotState.cfg_rc_sbus_drive_steer;
-        out.domeSpeed = robotState.cfg_rc_sbus_dome_speed;
-        out.arm1 = robotState.cfg_rc_sbus_arm1;
-        out.arm2 = robotState.cfg_rc_sbus_arm2;
-        out.sound = robotState.cfg_rc_sbus_sound;
+        out.driveSpeed = cfg.system.rc_sbus_drive_speed;
+        out.driveSteer = cfg.system.rc_sbus_drive_steer;
+        out.domeSpeed = cfg.system.rc_sbus_dome_speed;
+        out.arm1 = cfg.system.rc_sbus_arm1;
+        out.arm2 = cfg.system.rc_sbus_arm2;
+        out.sound = cfg.system.rc_sbus_sound;
     }
-    taskEXIT_CRITICAL(&robotStateMux);
     out.prevSoundPressed = false;  // caller sets from static state
     return out;
 }
@@ -313,34 +313,36 @@ static void processTriggerAction(RobotActionId target, const char* payload, bool
     ap.pressed = pressed;
     ap.randomSeed = (uint32_t)esp_random();
 
+    ConfigSnapshot cfg = {};
+    configCacheRead(&cfg);
+    ap.categories.gen_lo = cfg.audio.snd_cat_gen_lo;
+    ap.categories.gen_hi = cfg.audio.snd_cat_gen_hi;
+    ap.categories.chat_lo = cfg.audio.snd_cat_chat_lo;
+    ap.categories.chat_hi = cfg.audio.snd_cat_chat_hi;
+    ap.categories.hap_lo = cfg.audio.snd_cat_hap_lo;
+    ap.categories.hap_hi = cfg.audio.snd_cat_hap_hi;
+    ap.categories.proc_lo = cfg.audio.snd_cat_proc_lo;
+    ap.categories.proc_hi = cfg.audio.snd_cat_proc_hi;
+    ap.categories.sad_lo = cfg.audio.snd_cat_sad_lo;
+    ap.categories.sad_hi = cfg.audio.snd_cat_sad_hi;
+    ap.categories.sent_lo = cfg.audio.snd_cat_sent_lo;
+    ap.categories.sent_hi = cfg.audio.snd_cat_sent_hi;
+    ap.categories.hum_lo = cfg.audio.snd_cat_hum_lo;
+    ap.categories.hum_hi = cfg.audio.snd_cat_hum_hi;
+    ap.categories.scrm_lo = cfg.audio.snd_cat_scrm_lo;
+    ap.categories.scrm_hi = cfg.audio.snd_cat_scrm_hi;
+    ap.categories.ooh_lo = cfg.audio.snd_cat_ooh_lo;
+    ap.categories.ooh_hi = cfg.audio.snd_cat_ooh_hi;
+    ap.categories.alrm_lo = cfg.audio.snd_cat_alrm_lo;
+    ap.categories.alrm_hi = cfg.audio.snd_cat_alrm_hi;
+    ap.categories.snarky_lo = cfg.audio.snd_cat_snarky_lo;
+    ap.categories.snarky_hi = cfg.audio.snd_cat_snarky_hi;
+    ap.categories.whis_lo = cfg.audio.snd_cat_whis_lo;
+    ap.categories.whis_hi = cfg.audio.snd_cat_whis_hi;
     taskENTER_CRITICAL(&robotStateMux);
-    ap.categories.gen_lo = robotState.cfg_snd_cat_gen_lo;
-    ap.categories.gen_hi = robotState.cfg_snd_cat_gen_hi;
-    ap.categories.chat_lo = robotState.cfg_snd_cat_chat_lo;
-    ap.categories.chat_hi = robotState.cfg_snd_cat_chat_hi;
-    ap.categories.hap_lo = robotState.cfg_snd_cat_hap_lo;
-    ap.categories.hap_hi = robotState.cfg_snd_cat_hap_hi;
-    ap.categories.proc_lo = robotState.cfg_snd_cat_proc_lo;
-    ap.categories.proc_hi = robotState.cfg_snd_cat_proc_hi;
-    ap.categories.sad_lo = robotState.cfg_snd_cat_sad_lo;
-    ap.categories.sad_hi = robotState.cfg_snd_cat_sad_hi;
-    ap.categories.sent_lo = robotState.cfg_snd_cat_sent_lo;
-    ap.categories.sent_hi = robotState.cfg_snd_cat_sent_hi;
-    ap.categories.hum_lo = robotState.cfg_snd_cat_hum_lo;
-    ap.categories.hum_hi = robotState.cfg_snd_cat_hum_hi;
-    ap.categories.scrm_lo = robotState.cfg_snd_cat_scrm_lo;
-    ap.categories.scrm_hi = robotState.cfg_snd_cat_scrm_hi;
-    ap.categories.ooh_lo = robotState.cfg_snd_cat_ooh_lo;
-    ap.categories.ooh_hi = robotState.cfg_snd_cat_ooh_hi;
-    ap.categories.alrm_lo = robotState.cfg_snd_cat_alrm_lo;
-    ap.categories.alrm_hi = robotState.cfg_snd_cat_alrm_hi;
-    ap.categories.snarky_lo = robotState.cfg_snd_cat_snarky_lo;
-    ap.categories.snarky_hi = robotState.cfg_snd_cat_snarky_hi;
-    ap.categories.whis_lo = robotState.cfg_snd_cat_whis_lo;
-    ap.categories.whis_hi = robotState.cfg_snd_cat_whis_hi;
     ap.estopActive = robotState.estop;
     ap.currentSleepMode = robotState.sleepMode;
-    ap.currentSpeedPreset = normalizeSpeedPresetId((uint8_t)robotState.cfg_speedPresetActive);
+    ap.currentSpeedPreset = normalizeSpeedPresetId((uint8_t)cfg.drive.speedPresetActive);
     taskEXIT_CRITICAL(&robotStateMux);
 
     RcActionResult res = rcDispatchAction(ap);
@@ -415,20 +417,20 @@ static void loadTier2TriggerBindings(RcTriggerBinding* bindings, size_t* count) 
         return;
     }
 
-    taskENTER_CRITICAL(&robotStateMux);
-    bindings[0] = robotState.cfg_rc_arm1;
-    bindings[1] = robotState.cfg_rc_arm2;
-    bindings[2] = robotState.cfg_rc_aux1;
-    bindings[3] = robotState.cfg_rc_aux2;
-    bindings[4] = robotState.cfg_rc_aux3;
-    bindings[5] = robotState.cfg_rc_sound;
-    bindings[6] = robotState.cfg_rc_opmode;
-    bindings[7] = robotState.cfg_rc_free0;
-    bindings[8] = robotState.cfg_rc_free1;
-    bindings[9] = robotState.cfg_rc_free2;
-    bindings[10] = robotState.cfg_rc_free3;
+    ConfigSnapshot cfg = {};
+    configCacheRead(&cfg);
+    bindings[0] = cfg.system.rc_arm1;
+    bindings[1] = cfg.system.rc_arm2;
+    bindings[2] = cfg.system.rc_aux1;
+    bindings[3] = cfg.system.rc_aux2;
+    bindings[4] = cfg.system.rc_aux3;
+    bindings[5] = cfg.system.rc_sound;
+    bindings[6] = cfg.system.rc_opmode;
+    bindings[7] = cfg.system.rc_free0;
+    bindings[8] = cfg.system.rc_free1;
+    bindings[9] = cfg.system.rc_free2;
+    bindings[10] = cfg.system.rc_free3;
     *count = 11;
-    taskEXIT_CRITICAL(&robotStateMux);
 }
 
 // Helper to convert RcTriggerBinding to RcBindingConfig for existing functions
@@ -479,9 +481,10 @@ static void dispatchStandardPwmInputs() {
 
     // PWM failsafe: check if we have recent valid PWM input before processing drive commands
     bool pwmSignalLost = false;
+    ConfigSnapshot cfgSnap = {};
+    configCacheRead(&cfgSnap);
     taskENTER_CRITICAL(&robotStateMux);
-    pwmSignalLost =
-        pwmSignalLostCheck(robotState.lastPwmMs, pwmCheckMs, robotState.cfg_sbusTimeoutMs);
+    pwmSignalLost = pwmSignalLostCheck(robotState.lastPwmMs, pwmCheckMs, cfgSnap.drive.sbusTimeoutMs);
     taskEXIT_CRITICAL(&robotStateMux);
 
     if (pwmSignalLost) {
@@ -636,12 +639,12 @@ void rcInputTask(void* pvParameters) {
     // regardless of which RC mode is active or what channels are enabled.
     esp_task_wdt_add(NULL);
 
-    taskENTER_CRITICAL(&robotStateMux);
-    RcInputMode rcInputMode = robotState.cfg_rc_input_mode;
-    bool enableRcCh1 = robotState.cfg_enable_rc_ch1;
-    bool enableRcCh2 = robotState.cfg_enable_rc_ch2;
-    bool useCh2 = robotState.cfg_single_sbus_use_ch2;
-    taskEXIT_CRITICAL(&robotStateMux);
+    ConfigSnapshot startupCfg = {};
+    configCacheRead(&startupCfg);
+    RcInputMode rcInputMode = startupCfg.system.rc_input_mode;
+    bool enableRcCh1 = startupCfg.system.enable_rc_ch1;
+    bool enableRcCh2 = startupCfg.system.enable_rc_ch2;
+    bool useCh2 = startupCfg.system.single_sbus_use_ch2;
 
     bool driveSbusEnabled =
         driveSbusDecoderEnabledForMode(rcInputMode, enableRcCh1, enableRcCh2, useCh2);
@@ -709,12 +712,12 @@ void rcInputTask(void* pvParameters) {
             hwmLogged = true;
         }
 
-        taskENTER_CRITICAL(&robotStateMux);
-        rcInputMode = robotState.cfg_rc_input_mode;
-        enableRcCh1 = robotState.cfg_enable_rc_ch1;
-        enableRcCh2 = robotState.cfg_enable_rc_ch2;
-        useCh2 = robotState.cfg_single_sbus_use_ch2;
-        taskEXIT_CRITICAL(&robotStateMux);
+        ConfigSnapshot loopCfg = {};
+        configCacheRead(&loopCfg);
+        rcInputMode = loopCfg.system.rc_input_mode;
+        enableRcCh1 = loopCfg.system.enable_rc_ch1;
+        enableRcCh2 = loopCfg.system.enable_rc_ch2;
+        useCh2 = loopCfg.system.single_sbus_use_ch2;
         driveSbusEnabled =
             driveSbusDecoderEnabledForMode(rcInputMode, enableRcCh1, enableRcCh2, useCh2);
         domeSbusEnabled = is_dome_sbus_mode(rcInputMode) && enableRcCh2;
@@ -925,10 +928,12 @@ void rcInputTask(void* pvParameters) {
         }
 
         // Layer 2: SBUS software watchdog — fires if no valid frame for SBUS_TIMEOUT_MS
+        ConfigSnapshot watchdogCfg = {};
+        configCacheRead(&watchdogCfg);
         taskENTER_CRITICAL(&robotStateMux);
         uint32_t lastSbus1 = robotState.lastSbus1Ms;
-        uint32_t timeoutMs = robotState.cfg_sbusTimeoutMs;
         taskEXIT_CRITICAL(&robotStateMux);
+        uint32_t timeoutMs = watchdogCfg.drive.sbusTimeoutMs;
 
         if (driveSbusEnabled) {
             uint32_t nowMs = millis();

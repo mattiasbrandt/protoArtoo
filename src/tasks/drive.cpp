@@ -17,6 +17,7 @@
 #include <esp_task_wdt.h>
 
 #include "config.h"
+#include "config_store.h"
 #include "drive_arbiter.h"
 #include "drive.h"
 #include "failsafe_gate.h"
@@ -46,9 +47,9 @@ void driveTask(void* pvParameters) {
     // UART1 or send any frames. Task idles here feeding TWDT only.
     // Mirrors the DomeLinkTask disabled path.
     {
-        taskENTER_CRITICAL(&robotStateMux);
-        bool enabled = robotState.cfg_enable_s1_hoverboard;
-        taskEXIT_CRITICAL(&robotStateMux);
+        ConfigSnapshot cfg = {};
+        configCacheRead(&cfg);
+        bool enabled = cfg.system.enable_s1_hoverboard;
         if (!enabled) {
             for (;;) {
                 esp_task_wdt_reset();
@@ -82,11 +83,10 @@ void driveTask(void* pvParameters) {
 
         // Resolve drive output from arbiter
         uint32_t nowMs = millis();
-        int16_t maxOut;
-        taskENTER_CRITICAL(&robotStateMux);
-        maxOut = robotState.cfg_speedLimitMax;
-        uint32_t webTimeoutMs = robotState.cfg_webDriveTimeoutMs;
-        taskEXIT_CRITICAL(&robotStateMux);
+        ConfigSnapshot runtimeCfg = {};
+        configCacheRead(&runtimeCfg);
+        int16_t maxOut = runtimeCfg.drive.speedLimitMax;
+        uint32_t webTimeoutMs = runtimeCfg.drive.webDriveTimeoutMs;
 
         DriveArbiterConfig cfg = {
             .speedLimitMax = maxOut,

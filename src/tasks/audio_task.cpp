@@ -31,6 +31,7 @@
 #include "audio_dollar_parser.h"
 #include "audio_driver.h"
 #include "config.h"
+#include "config_store.h"
 #include "dome_link.h"
 #include "logging.h"
 #include "mood_sound_mapping.h"
@@ -280,59 +281,59 @@ static bool readTrackForSlot(AudioPlaybackSlot slot, uint16_t* trackOut) {
 
     uint16_t track = 0;
     bool known = true;
-    taskENTER_CRITICAL(&robotStateMux);
+    ConfigSnapshot cfg = {};
+    configCacheRead(&cfg);
     switch (slot) {
         case AUDIO_SLOT_NAMED_SCREAM:
-            track = robotState.cfg_snd_scream;
+            track = cfg.audio.snd_scream;
             break;
         case AUDIO_SLOT_NAMED_FAINT:
-            track = robotState.cfg_snd_faint;
+            track = cfg.audio.snd_faint;
             break;
         case AUDIO_SLOT_NAMED_LEIA:
-            track = robotState.cfg_snd_leia;
+            track = cfg.audio.snd_leia;
             break;
         case AUDIO_SLOT_NAMED_CANTINA_S:
-            track = robotState.cfg_snd_cantina_s;
+            track = cfg.audio.snd_cantina_s;
             break;
         case AUDIO_SLOT_NAMED_SW_THEME:
-            track = robotState.cfg_snd_sw_theme;
+            track = cfg.audio.snd_sw_theme;
             break;
         case AUDIO_SLOT_NAMED_IMP_MARCH:
-            track = robotState.cfg_snd_imp_march;
+            track = cfg.audio.snd_imp_march;
             break;
         case AUDIO_SLOT_NAMED_CANTINA_L:
-            track = robotState.cfg_snd_cantina_l;
+            track = cfg.audio.snd_cantina_l;
             break;
         case AUDIO_SLOT_NAMED_STARTUP:
-            track = robotState.cfg_snd_startup;
+            track = cfg.audio.snd_startup;
             break;
         case AUDIO_SLOT_NAMED_DISCO:
-            track = robotState.cfg_snd_disco;
+            track = cfg.audio.snd_disco;
             break;
         case AUDIO_SLOT_SYS_BOOT:
-            track = robotState.cfg_snd_sys_boot;
+            track = cfg.audio.snd_sys_boot;
             break;
         case AUDIO_SLOT_SYS_MODE_NORMAL:
-            track = robotState.cfg_snd_sys_mode_n;
+            track = cfg.audio.snd_sys_mode_n;
             break;
         case AUDIO_SLOT_SYS_MODE_SLOW:
-            track = robotState.cfg_snd_sys_mode_s;
+            track = cfg.audio.snd_sys_mode_s;
             break;
         case AUDIO_SLOT_SYS_MODE_TURBO:
-            track = robotState.cfg_snd_sys_mode_t;
+            track = cfg.audio.snd_sys_mode_t;
             break;
         case AUDIO_SLOT_SYS_DRIVE_ON:
-            track = robotState.cfg_snd_sys_drv_on;
+            track = cfg.audio.snd_sys_drv_on;
             break;
         case AUDIO_SLOT_SYS_DOME_ON:
-            track = robotState.cfg_snd_sys_dome_on;
+            track = cfg.audio.snd_sys_dome_on;
             break;
         case AUDIO_SLOT_NONE:
         default:
             known = false;
             break;
     }
-    taskEXIT_CRITICAL(&robotStateMux);
 
     if (!known) {
         return false;
@@ -681,8 +682,10 @@ void audioTask(void* pvParameters) {
         // ----------------------------------------------------------------
         bool audioEnabled;
         bool sleepMode;
+        ConfigSnapshot cfg = {};
+        configCacheRead(&cfg);
+        audioEnabled = cfg.system.enable_s2_sound;
         taskENTER_CRITICAL(&robotStateMux);
-        audioEnabled = robotState.cfg_enable_s2_sound;
         sleepMode = robotState.sleepMode;
         taskEXIT_CRITICAL(&robotStateMux);
 
@@ -709,18 +712,18 @@ void audioTask(void* pvParameters) {
         // driver->begin(vol) is safe to call once; it configures GPIO and sets volume.
         // ----------------------------------------------------------------
         if (!driverInitialized) {
-            taskENTER_CRITICAL(&robotStateMux);
-            currentVol = robotState.cfg_audioVolume;
-            named.scream = robotState.cfg_snd_scream;
-            named.faint = robotState.cfg_snd_faint;
-            named.leia = robotState.cfg_snd_leia;
-            named.cantina_s = robotState.cfg_snd_cantina_s;
-            named.sw_theme = robotState.cfg_snd_sw_theme;
-            named.imp_march = robotState.cfg_snd_imp_march;
-            named.cantina_l = robotState.cfg_snd_cantina_l;
-            named.startup = robotState.cfg_snd_startup;
-            named.disco = robotState.cfg_snd_disco;
-            taskEXIT_CRITICAL(&robotStateMux);
+            ConfigSnapshot cfg = {};
+            configCacheRead(&cfg);
+            currentVol = cfg.audio.audioVolume;
+            named.scream = cfg.audio.snd_scream;
+            named.faint = cfg.audio.snd_faint;
+            named.leia = cfg.audio.snd_leia;
+            named.cantina_s = cfg.audio.snd_cantina_s;
+            named.sw_theme = cfg.audio.snd_sw_theme;
+            named.imp_march = cfg.audio.snd_imp_march;
+            named.cantina_l = cfg.audio.snd_cantina_l;
+            named.startup = cfg.audio.snd_startup;
+            named.disco = cfg.audio.snd_disco;
             // Soft-UART drivers block for up to ~6 ms per command; AudioTask must run on Core 0.
             configASSERT(xPortGetCoreID() == 0);
             driver->begin(currentVol);
@@ -778,17 +781,17 @@ void audioTask(void* pvParameters) {
                     // Refresh named tracks from RobotState so runtime changes
                     // via POST /api/audio/tracks take effect immediately without
                     // requiring a disable/enable cycle.
-                    taskENTER_CRITICAL(&robotStateMux);
-                    named.scream = robotState.cfg_snd_scream;
-                    named.faint = robotState.cfg_snd_faint;
-                    named.leia = robotState.cfg_snd_leia;
-                    named.cantina_s = robotState.cfg_snd_cantina_s;
-                    named.sw_theme = robotState.cfg_snd_sw_theme;
-                    named.imp_march = robotState.cfg_snd_imp_march;
-                    named.cantina_l = robotState.cfg_snd_cantina_l;
-                    named.startup = robotState.cfg_snd_startup;
-                    named.disco = robotState.cfg_snd_disco;
-                    taskEXIT_CRITICAL(&robotStateMux);
+                    ConfigSnapshot cfg = {};
+                    configCacheRead(&cfg);
+                    named.scream = cfg.audio.snd_scream;
+                    named.faint = cfg.audio.snd_faint;
+                    named.leia = cfg.audio.snd_leia;
+                    named.cantina_s = cfg.audio.snd_cantina_s;
+                    named.sw_theme = cfg.audio.snd_sw_theme;
+                    named.imp_march = cfg.audio.snd_imp_march;
+                    named.cantina_l = cfg.audio.snd_cantina_l;
+                    named.startup = cfg.audio.snd_startup;
+                    named.disco = cfg.audio.snd_disco;
                     bool wasRandom = randomMode;
                     AudioAction action = parseAudioDollar(cmd.dollar, named);
                     if (action.type == AUDIO_ACTION_PLAY_TRACK) {
@@ -943,44 +946,46 @@ void audioTask(void* pvParameters) {
         // An interval of 0 s suppresses random playback for that mood.
         // ----------------------------------------------------------------
         if (randomMode && !sleepMode) {
+            ConfigSnapshot cfg = {};
+            configCacheRead(&cfg);
             taskENTER_CRITICAL(&robotStateMux);
             uint8_t mood = robotState.activeMood;
-            uint16_t randMin = robotState.cfg_snd_rand_min;
-            uint16_t randMax = robotState.cfg_snd_rand_max;
-            MoodCategoryMaskConfig moodMasks = {robotState.cfg_snd_moodcat_quiet,
-                                                robotState.cfg_snd_moodcat_mid,
-                                                robotState.cfg_snd_moodcat_full,
-                                                robotState.cfg_snd_moodcat_awakeplus};
+            taskEXIT_CRITICAL(&robotStateMux);
+            uint16_t randMin = cfg.audio.snd_rand_min;
+            uint16_t randMax = cfg.audio.snd_rand_max;
+            MoodCategoryMaskConfig moodMasks = {cfg.audio.snd_moodcat_quiet,
+                                                cfg.audio.snd_moodcat_mid,
+                                                cfg.audio.snd_moodcat_full,
+                                                cfg.audio.snd_moodcat_awakeplus};
             SoundCategoryRange categoryRanges[SOUND_CATEGORY_COUNT] = {
-                {robotState.cfg_snd_cat_gen_lo, robotState.cfg_snd_cat_gen_hi},
-                {robotState.cfg_snd_cat_chat_lo, robotState.cfg_snd_cat_chat_hi},
-                {robotState.cfg_snd_cat_hap_lo, robotState.cfg_snd_cat_hap_hi},
-                {robotState.cfg_snd_cat_proc_lo, robotState.cfg_snd_cat_proc_hi},
-                {robotState.cfg_snd_cat_sad_lo, robotState.cfg_snd_cat_sad_hi},
-                {robotState.cfg_snd_cat_sent_lo, robotState.cfg_snd_cat_sent_hi},
-                {robotState.cfg_snd_cat_hum_lo, robotState.cfg_snd_cat_hum_hi},
-                {robotState.cfg_snd_cat_scrm_lo, robotState.cfg_snd_cat_scrm_hi},
-                {robotState.cfg_snd_cat_ooh_lo, robotState.cfg_snd_cat_ooh_hi},
-                {robotState.cfg_snd_cat_alrm_lo, robotState.cfg_snd_cat_alrm_hi},
-                {robotState.cfg_snd_cat_snarky_lo, robotState.cfg_snd_cat_snarky_hi},
-                {robotState.cfg_snd_cat_whis_lo, robotState.cfg_snd_cat_whis_hi},
+                {cfg.audio.snd_cat_gen_lo, cfg.audio.snd_cat_gen_hi},
+                {cfg.audio.snd_cat_chat_lo, cfg.audio.snd_cat_chat_hi},
+                {cfg.audio.snd_cat_hap_lo, cfg.audio.snd_cat_hap_hi},
+                {cfg.audio.snd_cat_proc_lo, cfg.audio.snd_cat_proc_hi},
+                {cfg.audio.snd_cat_sad_lo, cfg.audio.snd_cat_sad_hi},
+                {cfg.audio.snd_cat_sent_lo, cfg.audio.snd_cat_sent_hi},
+                {cfg.audio.snd_cat_hum_lo, cfg.audio.snd_cat_hum_hi},
+                {cfg.audio.snd_cat_scrm_lo, cfg.audio.snd_cat_scrm_hi},
+                {cfg.audio.snd_cat_ooh_lo, cfg.audio.snd_cat_ooh_hi},
+                {cfg.audio.snd_cat_alrm_lo, cfg.audio.snd_cat_alrm_hi},
+                {cfg.audio.snd_cat_snarky_lo, cfg.audio.snd_cat_snarky_hi},
+                {cfg.audio.snd_cat_whis_lo, cfg.audio.snd_cat_whis_hi},
             };
             uint16_t intSec;
             switch (mood) {
                 case 10:
-                    intSec = robotState.cfg_snd_int_quiet;
+                    intSec = cfg.audio.snd_int_quiet;
                     break;
                 case 13:
-                    intSec = robotState.cfg_snd_int_mid;
+                    intSec = cfg.audio.snd_int_mid;
                     break;
                 case 14:
-                    intSec = robotState.cfg_snd_int_awake;
+                    intSec = cfg.audio.snd_int_awake;
                     break;
                 default:
-                    intSec = robotState.cfg_snd_int_full;
+                    intSec = cfg.audio.snd_int_full;
                     break;  // SE11 + unset
             }
-            taskEXIT_CRITICAL(&robotStateMux);
             if (intSec == 0) {
                 // Interval of 0 suppresses random playback for this mood.
                 // Advance the timer so a mood change doesn't fire immediately.

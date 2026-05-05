@@ -43,78 +43,6 @@ static LogBuffer recentLogBuf = {};
 
 namespace {
 
-struct RcBindingNvsSpec {
-    const char* key;
-    RcBindingConfig* binding;
-    RcBindingConfig defaultValue;
-};
-
-bool loadRcBindingFromPrefs(Preferences& prefs, const char* key,
-                            const RcBindingConfig& defaultValue, RcBindingConfig* out) {
-    if (out == nullptr) {
-        return false;
-    }
-
-    char fallback[48] = {};
-    if (!formatRcBindingConfig(fallback, sizeof(fallback), defaultValue)) {
-        *out = defaultValue;
-        return false;
-    }
-
-    String stored = prefs.getString(key, fallback);
-    RcBindingConfig parsed = defaultValue;
-    if (!parseRcBindingConfig(stored.c_str(), &parsed)) {
-        parsed = defaultValue;
-    }
-    *out = parsed;
-    return true;
-}
-
-bool saveRcBindingToPrefs(Preferences& prefs, const char* key, const RcBindingConfig& binding) {
-    char encoded[48] = {};
-    if (!formatRcBindingConfig(encoded, sizeof(encoded), binding)) {
-        return false;
-    }
-    return prefs.putString(key, encoded) > 0;
-}
-
-// Tier 2 Trigger Binding NVS helpers
-struct RcTriggerBindingNvsSpec {
-    const char* key;
-    RcTriggerBinding* binding;
-    RcTriggerBinding defaultValue;
-};
-
-bool loadRcTriggerBindingFromPrefs(Preferences& prefs, const char* key,
-                                   const RcTriggerBinding& defaultValue, RcTriggerBinding* out) {
-    if (out == nullptr) {
-        return false;
-    }
-
-    char fallback[64] = {};
-    if (!formatRcTriggerBinding(fallback, sizeof(fallback), defaultValue)) {
-        *out = defaultValue;
-        return false;
-    }
-
-    String stored = prefs.getString(key, fallback);
-    RcTriggerBinding parsed = defaultValue;
-    if (!parseRcTriggerBinding(stored.c_str(), &parsed)) {
-        parsed = defaultValue;
-    }
-    *out = parsed;
-    return true;
-}
-
-bool saveRcTriggerBindingToPrefs(Preferences& prefs, const char* key,
-                                 const RcTriggerBinding& binding) {
-    char encoded[64] = {};
-    if (!formatRcTriggerBinding(encoded, sizeof(encoded), binding)) {
-        return false;
-    }
-    return prefs.putString(key, encoded) > 0;
-}
-
 const char* resetReasonName(esp_reset_reason_t reason) {
     switch (reason) {
         case ESP_RST_UNKNOWN:
@@ -145,13 +73,15 @@ const char* resetReasonName(esp_reset_reason_t reason) {
 }
 
 void logBootHealth() {
+    ConfigSnapshot cfg = {};
+    configCacheRead(&cfg);
     PA_LOG_INFO("main", "protoArtoo boot begin");
     PA_LOG_INFO("main", "reset_reason=%s (%d)", resetReasonName(esp_reset_reason()),
                 (int)esp_reset_reason());
     PA_LOG_INFO("main",
                 "config speed_limit_max=%d sbus_timeout_ms=%lu web_timeout_ms=%lu audio_volume=%u",
-                robotState.cfg_speedLimitMax, (unsigned long)robotState.cfg_sbusTimeoutMs,
-                (unsigned long)robotState.cfg_webDriveTimeoutMs, robotState.cfg_audioVolume);
+                cfg.drive.speedLimitMax, (unsigned long)cfg.drive.sbusTimeoutMs,
+                (unsigned long)cfg.drive.webDriveTimeoutMs, cfg.audio.audioVolume);
     PA_LOG_DEBUG("main", "heap_free=%lu", (unsigned long)ESP.getFreeHeap());
 }
 
@@ -218,7 +148,7 @@ bool copyLogLineAt(size_t idx, char* out, size_t outSize) {
     return valid;
 }
 // -----------------------------------------------------------------------------
-// loadConfigToState() — load NVS config into robotState.cfg_* fields
+// loadConfigToState() — load NVS config into the runtime config cache
 // Called once at boot before tasks start.
 // -----------------------------------------------------------------------------
 void loadConfigToState() {
@@ -231,19 +161,17 @@ void loadConfigToState() {
 
     // Apply all config fields to robotState (no mutex needed — called before tasks start)
     // All validation and clamping is now performed within configLoad()
-    configApplyToRobotState(snap);
+    configCacheApply(snap);
 
     robotState.activeMood = lastMood;
 
     // Initialize runtime state from config
-    robotState.stationary = robotState.cfg_stationary;
+    robotState.stationary = snap.system.stationary;
 }
 
 bool saveConfigToNvs() {
     ConfigSnapshot snap;
-    taskENTER_CRITICAL(&robotStateMux);
-    configSnapshotFromRobotState(&snap);
-    taskEXIT_CRITICAL(&robotStateMux);
+    configCacheRead(&snap);
 
     Preferences prefs;
     if (!prefs.begin(NVS_NAMESPACE, false)) {
@@ -271,11 +199,6 @@ void setup() {
     // query. Zero-init would show "USB" (0x00) before any query succeeds.
     robotState.audio_module_device = 0xFF;
     robotState.audio_module_play_state = 0xFF;
-    // Pre-init log level to compile-time default so any log calls added before
-    // loadConfigToState() in the future are not silently dropped (cfg_logLevel
-    // is zero-initialized by robotState = {} which would suppress all output).
-    robotState.cfg_logLevel = PA_LOG_LEVEL;
-
     // Load config from NVS — may override cfg_logLevel with the user's saved value.
     loadConfigToState();
     logBootHealth();
@@ -372,9 +295,9 @@ void setup() {
     webServerInit();
 
     uint16_t bootTrack = 0;
-    taskENTER_CRITICAL(&robotStateMux);
-    bootTrack = robotState.cfg_snd_sys_boot;
-    taskEXIT_CRITICAL(&robotStateMux);
+    ConfigSnapshot bootCfg = {};
+    configCacheRead(&bootCfg);
+    bootTrack = bootCfg.audio.snd_sys_boot;
     if (bootTrack != 0) {
         if (audioQueuePlaySlot(AUDIO_SLOT_SYS_BOOT, SRC_INTERNAL)) {
             PA_LOG_INFO("main", "system boot sound queued");

@@ -29,6 +29,7 @@
 
 #include "audio_task.h"
 #include "config.h"
+#include "config_store.h"
 #include "dome_cue_handler.h"
 #include "dome_link_encoding.h"
 #include "dome_rx_parser.h"
@@ -131,10 +132,10 @@ static bool readConfiguredPeerIp(IPAddress* out) {
         return false;
     }
 
+    ConfigSnapshot cfg = {};
+    configCacheRead(&cfg);
     char ipBuf[16] = {0};
-    taskENTER_CRITICAL(&robotStateMux);
-    snprintf(ipBuf, sizeof(ipBuf), "%s", robotState.cfg_dome_wifi_peer_ip);
-    taskEXIT_CRITICAL(&robotStateMux);
+    snprintf(ipBuf, sizeof(ipBuf), "%s", cfg.dome.dome_wifi_peer_ip);
 
     if (ipBuf[0] == '\0') {
         return false;
@@ -462,9 +463,9 @@ bool domeConnected() {
 void domeLinkTask(void* pvParameters) {
     (void)pvParameters;
 
-    taskENTER_CRITICAL(&robotStateMux);
-    bool enabled = robotState.cfg_enable_s3_dome_ctrl;
-    taskEXIT_CRITICAL(&robotStateMux);
+    ConfigSnapshot cfg = {};
+    configCacheRead(&cfg);
+    bool enabled = cfg.system.enable_s3_dome_ctrl;
 
     if (!enabled) {
         setTransportState(DOME_LINK_TRANSPORT_DISCONNECTED);

@@ -8,7 +8,7 @@
 // Notes:
 // - This route is the sole web entrypoint for config writes.
 // - Hardware access is not performed here; values are validated, written to
-//   RobotState cfg_* fields under robotStateMux, and persisted via configSave().
+//   the config cache, and persisted via configSave().
 // =============================================================================
 
 #include "api_config.h"
@@ -659,9 +659,7 @@ bool populateConfigJson(JsonDocument& doc, const ConfigSnapshot& snap) {
 void registerConfigRoutes(AsyncWebServer& server) {
     server.on("/api/rc/map", HTTP_GET, [](AsyncWebServerRequest* req) {
         ConfigSnapshot snap;
-        taskENTER_CRITICAL(&robotStateMux);
-        configSnapshotFromRobotState(&snap);
-        taskEXIT_CRITICAL(&robotStateMux);
+        configCacheRead(&snap);
         JsonDocument doc;
         if (!populateRcMapJson(doc, snap)) {
             req->send(500, "application/json",
@@ -795,9 +793,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
         }
 
         ConfigSnapshot working;
-        taskENTER_CRITICAL(&robotStateMux);
-        configSnapshotFromRobotState(&working);
-        taskEXIT_CRITICAL(&robotStateMux);
+        configCacheRead(&working);
         ConfigSnapshot existing = working;
         clearRcMapSlots(&working);
 
@@ -810,14 +806,10 @@ void registerConfigRoutes(AsyncWebServer& server) {
             }
         }
 
-        taskENTER_CRITICAL(&robotStateMux);
-        configApplyToRobotState(working);
-        taskEXIT_CRITICAL(&robotStateMux);
+        configCacheApply(working);
 
         ConfigSnapshot snap;
-        taskENTER_CRITICAL(&robotStateMux);
-        configSnapshotFromRobotState(&snap);
-        taskEXIT_CRITICAL(&robotStateMux);
+        configCacheRead(&snap);
 
         Preferences prefs;
         if (!prefs.begin(NVS_NAMESPACE, false)) {
@@ -839,9 +831,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
 
     server.on("/api/config", HTTP_GET, [](AsyncWebServerRequest* req) {
         ConfigSnapshot snap;
-        taskENTER_CRITICAL(&robotStateMux);
-        configSnapshotFromRobotState(&snap);
-        taskEXIT_CRITICAL(&robotStateMux);
+        configCacheRead(&snap);
         JsonDocument doc;
         if (!populateConfigJson(doc, snap)) {
             req->send(500, "application/json",
@@ -860,16 +850,13 @@ void registerConfigRoutes(AsyncWebServer& server) {
 
     server.on("/api/config", HTTP_POST, [](AsyncWebServerRequest* req) {
         ConfigSnapshot working;
-        taskENTER_CRITICAL(&robotStateMux);
-        configSnapshotFromRobotState(&working);
-        taskEXIT_CRITICAL(&robotStateMux);
+        configCacheRead(&working);
         bool changed = false;
         bool speedLimitMaxProvided = false;
         bool speedPresetValuesProvided = false;
-        SpeedPresetId activePresetBefore = SpeedPresetId::Normal;
-        taskENTER_CRITICAL(&robotStateMux);
-        activePresetBefore = normalizeSpeedPresetId((uint8_t)robotState.cfg_speedPresetActive);
-        taskEXIT_CRITICAL(&robotStateMux);
+        SpeedPresetId activePresetBefore =
+            normalizeSpeedPresetId((uint8_t)working.drive.speedPresetActive);
+        const bool domeEnabledBefore = working.system.enable_dome;
         SpeedPresetId activePresetAfter = activePresetBefore;
         int16_t speedLimitMax;
         if (parseInt16Param(req, "speedLimitMax", 0, SPEED_LIMIT_MAX, &speedLimitMax)) {
@@ -1356,18 +1343,20 @@ void registerConfigRoutes(AsyncWebServer& server) {
 
         taskENTER_CRITICAL(&robotStateMux);
         wasStationary = robotState.stationary;
-        wasDomeEnabled = robotState.cfg_enable_dome;
+        taskEXIT_CRITICAL(&robotStateMux);
+        wasDomeEnabled = domeEnabledBefore;
         // Apply working snapshot but preserve speedPresetActive to the special activePresetAfter value
-        configApplyToRobotState(working);
-        robotState.cfg_speedPresetActive = activePresetAfter;
+        working.drive.speedPresetActive = activePresetAfter;
+        configCacheApply(working);
+        taskENTER_CRITICAL(&robotStateMux);
         robotState.stationary = working.system.stationary;  // sync both fields
         if (stationaryProvided && wasStationary && !robotState.stationary) {
             queueDriveOn = true;
         }
-        if (!wasDomeEnabled && robotState.cfg_enable_dome) {
+        taskEXIT_CRITICAL(&robotStateMux);
+        if (!wasDomeEnabled && working.system.enable_dome) {
             queueDomeOn = true;
         }
-        taskEXIT_CRITICAL(&robotStateMux);
 
         if (queueDriveOn) {
             audioQueuePlaySlot(AUDIO_SLOT_SYS_DRIVE_ON, SRC_INTERNAL);
@@ -1377,9 +1366,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
         }
 
         ConfigSnapshot snap;
-        taskENTER_CRITICAL(&robotStateMux);
-        configSnapshotFromRobotState(&snap);
-        taskEXIT_CRITICAL(&robotStateMux);
+        configCacheRead(&snap);
 
         Preferences prefs;
         if (!prefs.begin(NVS_NAMESPACE, false)) {

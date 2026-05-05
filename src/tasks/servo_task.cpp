@@ -14,6 +14,7 @@
 #include <esp_task_wdt.h>
 
 #include "config.h"
+#include "config_store.h"
 #include "ledc_pwm.h"
 #include "logging.h"
 #include "robot_state.h"
@@ -82,34 +83,34 @@ static void setArmPosition(uint8_t armId, uint16_t pulseUs) {
 // ARM1/ARM2 use NVS-backed cal; AUX1-3 also use NVS-backed per-channel cal.
 // -----------------------------------------------------------------------------
 static void getOpenClosePositions(uint8_t armId, uint16_t& openUs, uint16_t& closeUs) {
-    taskENTER_CRITICAL(&robotStateMux);
+    ConfigSnapshot cfg = {};
+    configCacheRead(&cfg);
     switch (armId) {
         case 0:
-            openUs = robotState.cfg_arm1_open_us;
-            closeUs = robotState.cfg_arm1_close_us;
+            openUs = cfg.servo.arm1_open_us;
+            closeUs = cfg.servo.arm1_close_us;
             break;
         case 1:
-            openUs = robotState.cfg_arm2_open_us;
-            closeUs = robotState.cfg_arm2_close_us;
+            openUs = cfg.servo.arm2_open_us;
+            closeUs = cfg.servo.arm2_close_us;
             break;
         case 2:
-            openUs = robotState.cfg_aux1_open_us;
-            closeUs = robotState.cfg_aux1_close_us;
+            openUs = cfg.servo.aux1_open_us;
+            closeUs = cfg.servo.aux1_close_us;
             break;
         case 3:
-            openUs = robotState.cfg_aux2_open_us;
-            closeUs = robotState.cfg_aux2_close_us;
+            openUs = cfg.servo.aux2_open_us;
+            closeUs = cfg.servo.aux2_close_us;
             break;
         case 4:
-            openUs = robotState.cfg_aux3_open_us;
-            closeUs = robotState.cfg_aux3_close_us;
+            openUs = cfg.servo.aux3_open_us;
+            closeUs = cfg.servo.aux3_close_us;
             break;
         default:
             openUs = SERVO_PULSE_MAX_US;
             closeUs = SERVO_PULSE_MIN_US;
             break;
     }
-    taskEXIT_CRITICAL(&robotStateMux);
 }
 
 // -----------------------------------------------------------------------------
@@ -216,10 +217,10 @@ static void updateSequence() {
     uint32_t elapsed = millis() - seqState.stateStartMs;
     uint16_t openUs, closeUs;
 
-    taskENTER_CRITICAL(&robotStateMux);
-    uint16_t seqOpenMs = robotState.cfg_seq_open_ms;
-    uint16_t seqCloseMs = robotState.cfg_seq_close_ms;
-    taskEXIT_CRITICAL(&robotStateMux);
+    ConfigSnapshot cfg = {};
+    configCacheRead(&cfg);
+    uint16_t seqOpenMs = cfg.servo.seq_open_ms;
+    uint16_t seqCloseMs = cfg.servo.seq_close_ms;
 
     switch (seqState.state) {
         case SEQ_OPENING:
@@ -259,14 +260,14 @@ static void updateSequence() {
 // for servo commands to avoid pin ownership conflicts.
 // -----------------------------------------------------------------------------
 static bool isArmEnabled(uint8_t armId) {
-    taskENTER_CRITICAL(&robotStateMux);
-    bool arm1 = robotState.cfg_enable_arm1;
-    bool arm2 = robotState.cfg_enable_arm2;
-    bool aux1 = robotState.cfg_enable_aux1;
-    bool aux2 = robotState.cfg_enable_aux2;
-    bool aux3 = robotState.cfg_enable_aux3;
-    uint8_t auxLedPin = robotState.cfg_aux_led_pin;
-    taskEXIT_CRITICAL(&robotStateMux);
+    ConfigSnapshot cfg = {};
+    configCacheRead(&cfg);
+    bool arm1 = cfg.system.enable_arm1;
+    bool arm2 = cfg.system.enable_arm2;
+    bool aux1 = cfg.system.enable_aux1;
+    bool aux2 = cfg.system.enable_aux2;
+    bool aux3 = cfg.system.enable_aux3;
+    uint8_t auxLedPin = cfg.servo.aux_led_pin;
 
     return servo_arm_enabled(armId, arm1, arm2, aux1, aux2, aux3, auxLedPin);
 }
@@ -360,15 +361,15 @@ static void processCommand(const ServoCommand& cmd) {
 // Initialize servo hardware.
 // -----------------------------------------------------------------------------
 void servoTaskInit() {
-    taskENTER_CRITICAL(&robotStateMux);
-    bool enableArm1 = robotState.cfg_enable_arm1;
-    bool enableArm2 = robotState.cfg_enable_arm2;
-    bool enableAux1 = robotState.cfg_enable_aux1;
-    bool enableAux2 = robotState.cfg_enable_aux2;
-    bool enableAux3 = robotState.cfg_enable_aux3;
-    bool enableDome = robotState.cfg_enable_dome;
-    uint8_t auxLedPin = robotState.cfg_aux_led_pin;
-    taskEXIT_CRITICAL(&robotStateMux);
+    ConfigSnapshot cfg = {};
+    configCacheRead(&cfg);
+    bool enableArm1 = cfg.system.enable_arm1;
+    bool enableArm2 = cfg.system.enable_arm2;
+    bool enableAux1 = cfg.system.enable_aux1;
+    bool enableAux2 = cfg.system.enable_aux2;
+    bool enableAux3 = cfg.system.enable_aux3;
+    bool enableDome = cfg.system.enable_dome;
+    uint8_t auxLedPin = cfg.servo.aux_led_pin;
 
     bool anyServo = enableArm1 || enableArm2 || enableAux1 || enableAux2 || enableAux3;
     bool anyLedc = anyServo || enableDome;
@@ -424,11 +425,11 @@ void servoTask(void* pvParameters) {
     // channels to drive. Idle here feeding TWDT only — no queue processing,
     // no sequence updates.
     {
-        taskENTER_CRITICAL(&robotStateMux);
-        bool anyServo = robotState.cfg_enable_arm1 || robotState.cfg_enable_arm2 ||
-                        robotState.cfg_enable_aux1  || robotState.cfg_enable_aux2 ||
-                        robotState.cfg_enable_aux3;
-        taskEXIT_CRITICAL(&robotStateMux);
+        ConfigSnapshot cfg = {};
+        configCacheRead(&cfg);
+        bool anyServo = cfg.system.enable_arm1 || cfg.system.enable_arm2 ||
+                        cfg.system.enable_aux1  || cfg.system.enable_aux2 ||
+                        cfg.system.enable_aux3;
         if (!anyServo) {
             PA_LOG_INFO("ServoTask", "all arm/aux outputs disabled — task idle");
             for (;;) {

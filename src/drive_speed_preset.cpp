@@ -2,6 +2,7 @@
 
 #include "audio_task.h"
 #include "config.h"
+#include "config_store.h"
 #include "logging.h"
 #include "robot_state.h"
 
@@ -21,11 +22,11 @@ bool readSpeedPresetValueAndSlot(SpeedPresetId preset, int16_t* valueOut,
     int16_t normal;
     int16_t turbo;
 
-    taskENTER_CRITICAL(&robotStateMux);
-    slow = robotState.cfg_speedPresetSlow;
-    normal = robotState.cfg_speedPresetNormal;
-    turbo = robotState.cfg_speedPresetTurbo;
-    taskEXIT_CRITICAL(&robotStateMux);
+    ConfigSnapshot cfg = {};
+    configCacheRead(&cfg);
+    slow = cfg.drive.speedPresetSlow;
+    normal = cfg.drive.speedPresetNormal;
+    turbo = cfg.drive.speedPresetTurbo;
 
     if (slow < 0) slow = 0;
     if (normal < 0) normal = 0;
@@ -59,10 +60,11 @@ bool applySpeedPresetRuntime(SpeedPresetId preset) {
         return false;
     }
 
-    taskENTER_CRITICAL(&robotStateMux);
-    robotState.cfg_speedLimitMax = value;
-    robotState.cfg_speedPresetActive = preset;
-    taskEXIT_CRITICAL(&robotStateMux);
+    ConfigSnapshot cfg = {};
+    configCacheRead(&cfg);
+    cfg.drive.speedLimitMax = value;
+    cfg.drive.speedPresetActive = preset;
+    configCacheApply(cfg);
 
     audioQueuePlaySlot(slot, SRC_INTERNAL);
     return true;
@@ -77,18 +79,19 @@ bool applySpeedPresetPersisted(SpeedPresetId preset) {
 
     int16_t previousLimit = SPEED_PRESET_NORMAL;
     SpeedPresetId previousPreset = SpeedPresetId::Normal;
-    taskENTER_CRITICAL(&robotStateMux);
-    previousLimit = robotState.cfg_speedLimitMax;
-    previousPreset = robotState.cfg_speedPresetActive;
-    robotState.cfg_speedLimitMax = targetValue;
-    robotState.cfg_speedPresetActive = preset;
-    taskEXIT_CRITICAL(&robotStateMux);
+    ConfigSnapshot cfg = {};
+    configCacheRead(&cfg);
+    previousLimit = cfg.drive.speedLimitMax;
+    previousPreset = cfg.drive.speedPresetActive;
+    cfg.drive.speedLimitMax = targetValue;
+    cfg.drive.speedPresetActive = preset;
+    configCacheApply(cfg);
 
     if (!saveConfigToNvs()) {
-        taskENTER_CRITICAL(&robotStateMux);
-        robotState.cfg_speedLimitMax = previousLimit;
-        robotState.cfg_speedPresetActive = previousPreset;
-        taskEXIT_CRITICAL(&robotStateMux);
+        configCacheRead(&cfg);
+        cfg.drive.speedLimitMax = previousLimit;
+        cfg.drive.speedPresetActive = previousPreset;
+        configCacheApply(cfg);
         PA_LOG_WARN(TAG, "Failed to persist speed preset change; runtime reverted");
         return false;
     }

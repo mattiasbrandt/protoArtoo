@@ -17,6 +17,7 @@
 
 #include "api_helpers.h"
 #include "audio_task.h"
+#include "config_store.h"
 #include "drive_arbiter.h"
 #include "drive_speed_preset.h"
 #include "dome_link.h"
@@ -61,11 +62,14 @@ void setStationaryModeWithSound(bool stationary) {
     taskENTER_CRITICAL(&robotStateMux);
     wasStationary = robotState.stationary;
     robotState.stationary = stationary;
-    robotState.cfg_stationary = stationary;
     if (wasStationary && !stationary) {
         queueDriveOn = true;
     }
     taskEXIT_CRITICAL(&robotStateMux);
+    ConfigSnapshot cfg = {};
+    configCacheRead(&cfg);
+    cfg.system.stationary = stationary;
+    configCacheApply(cfg);
     if (queueDriveOn) {
         audioQueuePlaySlot(AUDIO_SLOT_SYS_DRIVE_ON, SRC_INTERNAL);
     }
@@ -256,10 +260,10 @@ void registerDriveRoutes(AsyncWebServer& server) {
 
         int16_t speedLimitMax = 0;
         SpeedPresetId activePreset = SpeedPresetId::Normal;
-        taskENTER_CRITICAL(&robotStateMux);
-        speedLimitMax = robotState.cfg_speedLimitMax;
-        activePreset = normalizeSpeedPresetId((uint8_t)robotState.cfg_speedPresetActive);
-        taskEXIT_CRITICAL(&robotStateMux);
+        ConfigSnapshot cfg = {};
+        configCacheRead(&cfg);
+        speedLimitMax = cfg.drive.speedLimitMax;
+        activePreset = normalizeSpeedPresetId((uint8_t)cfg.drive.speedPresetActive);
 
         char response[96];
         if (!formatSpeedPresetResponseJson(response, sizeof(response), activePreset, speedLimitMax)) {
@@ -310,12 +314,14 @@ void registerDriveRoutes(AsyncWebServer& server) {
         bool sbusHealthy;
         int16_t maxOut;
 
+        ConfigSnapshot cfg = {};
+        configCacheRead(&cfg);
         taskENTER_CRITICAL(&robotStateMux);
         sbusHealthy = !robotState.sbusSignalLost && !robotState.sbusHwFailsafe;
         blocked = robotState.estop || robotState.stationary ||
                   (!sbusHealthy && !robotState.webControlEnabled);
-        maxOut = robotState.cfg_speedLimitMax;
         taskEXIT_CRITICAL(&robotStateMux);
+        maxOut = cfg.drive.speedLimitMax;
 
         if (blocked) {
             PA_LOG_WARN(TAG, "[WEB] POST /api/drive - rejected: blocked by safety state");
@@ -352,9 +358,9 @@ void registerDriveRoutes(AsyncWebServer& server) {
             return;
         }
 
-        taskENTER_CRITICAL(&robotStateMux);
-        bool domeEnabled = robotState.cfg_enable_dome;
-        taskEXIT_CRITICAL(&robotStateMux);
+        ConfigSnapshot cfg = {};
+        configCacheRead(&cfg);
+        bool domeEnabled = cfg.system.enable_dome;
         if (!domeEnabled) {
             req->send(409, "application/json",
                       "{\"ok\":false,\"error\":\"dome output is disabled\"}");
