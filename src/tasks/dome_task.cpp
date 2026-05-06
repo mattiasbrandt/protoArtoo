@@ -300,8 +300,11 @@ void domeTask(void* pvParameters) {
             } else {
                 rndWasActive = false;
                 if (rndState == DOME_RND_MOVING) {
-                    rndState  = DOME_RND_PAUSING;
-                    rndNextMs = now;
+                    currentSpeed = 0.0f;
+                    setDomeNeutral();
+                    hasCommand = false;
+                    rndNextMs  = now;
+                    rndState   = DOME_RND_PAUSING;
                 }
             }
         }

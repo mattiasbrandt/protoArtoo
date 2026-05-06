@@ -31,7 +31,10 @@ _PLAYWRIGHT_PREFIX = "mcp__playwright__"  # canonical prefix from .mcp.json key;
 
 def _is_playwright_tool(tool_name: str) -> bool:
     """Match any Playwright MCP tool regardless of runtime-specific namespace prefix."""
-    return "playwright" in tool_name.lower() and tool_name.startswith("mcp__")
+    lower_name = tool_name.lower()
+    return "playwright" in lower_name and (
+        tool_name.startswith("mcp__") or tool_name.startswith("plugin:")
+    )
 _SCHEMA_PATTERNS = ("compile json schema", "no schema with key or ref")
 
 

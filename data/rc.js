@@ -1080,7 +1080,7 @@
       const token = mapEntryAction(entry);
       const cell = row.children[2];
       if (!cell) return;
-      cell.innerHTML = isAnalogAction(token) ? miniBarHtml(telemetry?.mapped || 0) : triggerStateHtml(telemetry);
+      cell.innerHTML = isAnalogAction(token) ? miniBarHtml(telemetry?.mapped || 0) : triggerStateHtml(token, channelKey, telemetry);
     });
   };
 

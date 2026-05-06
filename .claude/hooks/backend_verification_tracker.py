@@ -6,6 +6,7 @@ Stores timestamps for required software checks so commit gating can enforce
 """
 
 import json
+import re
 import time
 from pathlib import Path
 
@@ -19,7 +20,8 @@ def _classify_command(cmd: str) -> str:
     if "pio check" in text:
         return "static_check"
     # Accept compile-only firmware build; ignore upload/uploadfs commands.
-    if "pio run -e protoArtoo" in text and "upload" not in text:
+    # Use word-boundary check to avoid matching protoArtoo_test or other suffixed envs.
+    if re.search(r"pio run -e protoArtoo(?!\w)", text) and "upload" not in text:
         return "firmware_build"
     return ""
 
@@ -53,8 +55,7 @@ def main() -> int:
 
     # Only record when the command succeeded (exit 0).  A failed build or test
     # run must not satisfy the commit gate.
-    tool_result = data.get("tool_result", {})
-    if isinstance(tool_result, dict) and tool_result.get("is_error", False):
+    if data.get("error", ""):
         return 0
 
     state = _load_state()

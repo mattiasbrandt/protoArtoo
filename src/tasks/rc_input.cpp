@@ -273,6 +273,8 @@ static RcMappingConfig rcGetMappingConfig(RcInputMode mode) {
 static constexpr uint32_t kOneShotEdgeDebounceMs = 120;
 static constexpr uint8_t kSwitchEdgeConfirmFrames = 2;
 
+static bool s_stationaryLockedByTrigger = false;
+
 static bool setStationaryMode(bool stationary) {
     bool queueDriveOn = false;
     bool wasStationary = false;
@@ -393,6 +395,7 @@ static void processTriggerAction(RobotActionId target, const char* payload, bool
     }
     if (res.setStationary) {
         setStationaryMode(res.newStationaryMode);
+        s_stationaryLockedByTrigger = res.newStationaryMode;
     }
     if (res.setSpeedPreset) {
         applySpeedPresetRuntime(res.newSpeedPreset);
@@ -511,7 +514,7 @@ static void dispatchStandardPwmInputs() {
     lastSoundPressed = intent.soundPressed;
 
     // Dispatch backbone controls (drive speed, steer, dome speed)
-    if (intent.driveSpeed != 0 || intent.driveSteer != 0) {
+    if ((intent.driveSpeed != 0 || intent.driveSteer != 0) && !s_stationaryLockedByTrigger) {
         setStationaryMode(false);
     }
     driveArbiterSubmit(DriveSource::RC, intent.driveSpeed, intent.driveSteer, millis());
@@ -881,7 +884,7 @@ void rcInputTask(void* pvParameters) {
                     lastSoundPressed = intent.soundPressed;
 
                     // Dispatch backbone controls (drive speed, steer)
-                    if (intent.driveSpeed != 0 || intent.driveSteer != 0) {
+                    if ((intent.driveSpeed != 0 || intent.driveSteer != 0) && !s_stationaryLockedByTrigger) {
                         setStationaryMode(false);
                     }
                     driveArbiterSubmit(DriveSource::RC, intent.driveSpeed, intent.driveSteer, millis());

@@ -27,7 +27,7 @@ if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
         FW_VER="$(printf '%s' "$DEVICE_STATUS" | python3 -c \
             "import sys,json; d=json.load(sys.stdin); print(d.get('firmwareVersion','?'))" \
             2>/dev/null || echo '?')"
-        echo "export DEVICE_FW_VERSION=$FW_VER" >> "$CLAUDE_ENV_FILE"
+        echo "export DEVICE_FW_VERSION='$FW_VER'" >> "$CLAUDE_ENV_FILE"
         echo 'export DEVICE_REACHABLE=true' >> "$CLAUDE_ENV_FILE"
     else
         echo 'export DEVICE_REACHABLE=false' >> "$CLAUDE_ENV_FILE"
