@@ -1,0 +1,56 @@
+# protoArtoo issue label manifest
+#
+# This file documents the issue label set used by the repo. It is grouped by
+# domain labels and work-type labels, matching CONTEXT.md and the issue
+# templates. Keep labels lightweight and human-readable.
+
+labels:
+  # Domain labels
+  - name: drive
+    color: d97706
+    description: Drive, hoverboard, and motor hardware
+
+  - name: rc
+    color: 2563eb
+    description: RC input, mapping, and receiver behavior
+
+  - name: audio
+    color: 7c3aed
+    description: Audio playback, sound mapping, and module control
+
+  - name: dome
+    color: 059669
+    description: Dome controller, serial link, and motion integration
+
+  - name: config
+    color: 0f766e
+    description: Configuration, persistence, and setup flows
+
+  - name: ui
+    color: db2777
+    description: Web UI, dashboards, and operator-facing pages
+
+  - name: safety
+    color: dc2626
+    description: Failsafe, estop, watchdog, and boot safety
+
+  # Work-type labels
+  - name: bug
+    color: b91c1c
+    description: Something is broken or behaving unexpectedly
+
+  - name: verification
+    color: 0891b2
+    description: A hardware or controller check still needs closure
+
+  - name: cleanup
+    color: 6b7280
+    description: Refactor, polish, or maintenance work
+
+  - name: release
+    color: 16a34a
+    description: Release packaging, notes, or release-process work
+
+  - name: feature request
+    color: f59e0b
+    description: A requested improvement or new capability

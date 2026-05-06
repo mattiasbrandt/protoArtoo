@@ -15,6 +15,37 @@ Every semantic version release belongs here:
 
 ## [Unreleased]
 
+Release hardening continues across RC, audio, dome, config, and UI work, while drive hardware checks are still to be completed.
+
+### Added
+- Public `v1.0.0` release-status matrix in `docs/status.md`, with plain-language
+  evidence and remaining checks by subsystem.
+- Runtime action registry now powers RC bindings and the action picker in the web API/UI.
+- Sleep mode now keeps body and dome state in sync, with wake and sleep control from the web UI and RC bindings.
+- CHIRP playback got broader sound coverage: category ranges, named tracks, banked playback, and system sound mapping.
+- Full-droid sequence actions and dome sequence controls now support more complex show playback.
+- AUX LED strip support now includes configurable header selection and setup-page controls.
+- The setup page now supports NVS backup and restore.
+- Shell controls now include estop and reboot actions.
+- Random dome rotation now has web configuration and RC control support.
+
+### Changed
+- Public release wording now distinguishes automated checks, ESP32 controller testing, and full integrated hardware checks.
+- Drive and RC control paths now use a shared output arbiter, safer source handling, and latching safety behavior.
+- Configuration flows now separate save/apply, runtime use, and reboot survival through clearer state handling.
+- Audio now uses a shared driver interface and playback policy, with cleaner catalog ownership and volume handling.
+- Dome handling is now split into serial control, motion control, and body-link coordination.
+- Web and dashboard surfaces now have clearer live feedback, more reliable status derivation, and better log handling.
+- The public release-status page now carries a validation matrix with plain evidence and remaining checks for each major area.
+
+### Fixed
+- Audio control and playback regressions across supported backends.
+- RC mapping, config apply, and UI synchronization bugs.
+- Status and diagnostics issues that could hide the actual runtime state.
+
+### Still to verify
+- Drive hardware checks are still to be completed on the hoverboard and complete droid hardware. This is the remaining hardware verification item before release.
+
 ## [0.4.0] - 2026-03-29
 
 ### Added

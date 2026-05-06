@@ -329,6 +329,9 @@ Key rules:
 - All code passes `pio check` before commit
 - No WiFi credentials, no TBD GPIO guesses, no code that does not compile
 
+Feature requests and improvement ideas are welcome. We cannot guarantee anything,
+but we will review them honestly.
+
 ---
 
 ## Licence

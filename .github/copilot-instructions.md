@@ -91,12 +91,14 @@ Usage rules:
 
 Use AGENTS verification flow and classify status as one of:
 
-- `usb-standalone-verified`
+- `software-verified`
+- `controller-upload-verified`
+- `full-hardware-verified`
 - `partial`
 - `full-hardware-required`
 
-`usb-standalone-verified` means validation on an ESP32 connected over USB only,
-without additional droid hardware/serial peripherals attached.
+Do not use "bench verified" or "bench-tested" as a status. Public docs should use
+plain evidence phrases instead of these internal labels.
 
 When hardware validation is deferred, explicitly state blockers and remaining checks.
 
@@ -149,9 +151,11 @@ For GitHub Copilot runtime: use CLI fallback commands (`mempalace status`, `memp
 
 Use AGENTS verification flow and classify status as one of:
 
-- `usb-standalone-verified`
+- `software-verified`
+- `controller-upload-verified`
+- `full-hardware-verified`
 - `partial`
 - `full-hardware-required`
 
-`usb-standalone-verified` means validation on an ESP32 connected over USB only,
-without additional droid hardware/serial peripherals attached.
+Do not use "bench verified" or "bench-tested" as a status. Public docs should use
+plain evidence phrases instead of these internal labels.

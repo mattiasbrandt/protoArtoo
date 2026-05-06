@@ -29,6 +29,7 @@ interactive workflow requirements.
 ## Source of Truth Files
 
 - Public planning baseline (commit/push allowed): `docs/status.md`, `docs/goal.md`
+- Project language decisions (commit/push allowed): `CONTEXT.md`
 - Internal planning/agent working docs (local only, never commit/push): `tasks/**`
 - Phase 3 RC diagnostics/mapping contract: `tasks/rc_diagnostics_contract.md`
 - Hardware truth: `docs/pin_map.md`, `include/config.h`
@@ -402,15 +403,29 @@ its intended size budget.
 
 Always classify verification status explicitly:
 
-- `usb-standalone-verified`
-- `partial`
-- `full-hardware-required`
+- `software-verified`: build, native tests, static checks, browser/static checks,
+  or code review passed. No ESP32 upload is implied.
+- `controller-upload-verified`: firmware or filesystem was uploaded to an ESP32
+  controller on the bench and basic runtime, API, browser, serial, or connected-
+  module smoke checks passed.
+- `full-hardware-verified`: behavior was verified on the integrated droid
+  hardware for the affected subsystem.
+- `partial`: some evidence exists, but required controller or hardware checks are
+  still open.
+- `full-hardware-required`: physical hardware is required before the item can be
+  closed.
 
-`usb-standalone-verified` means validation on an ESP32 connected over USB only,
-without additional droid hardware/serial peripherals attached.
+Do not use "bench verified" or "bench-tested" as a verification status; it is too
+ambiguous and has previously been used for both automated checks and actual ESP32
+bench operation.
 
 If hardware validation is deferred, record blockers and closure checklist in
 planning/status docs.
+
+Public docs (`docs/status.md`, `docs/goal.md`, README-facing release notes) should
+not expose the internal labels directly. Use short evidence phrases instead, such
+as "Automated checks are passing", "Tested on an ESP32 controller", or "Tested on
+the complete droid hardware".
 
 ## Web/UI Target Platform
 

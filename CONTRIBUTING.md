@@ -12,7 +12,11 @@ This document covers:
 - What never goes in a commit
 
 For project-specific terms and abbreviations (for example `RobotState`, NVS,
-Marcduino, SBUS, AP/STA), see `docs/terminology.md`.
+Marcduino, SBUS, AP/STA), see `docs/terminology.md`. For resolved project
+language decisions and status wording, see `CONTEXT.md`.
+
+Issue labels live in `.github/labels.yml` and are split into domain labels and
+work-type labels. Keep new issues and PR notes in that same vocabulary.
 
 ## Getting started
 
@@ -214,6 +218,19 @@ Before opening a PR from your branch to the active `phase/vX.Y.Z` branch, confir
 **Tests**
 - [ ] `pio test -e native` — all native tests pass
 - [ ] `pio test -e protoArtoo` — all on-device tests pass (if hardware available)
+
+**Verification status**
+- [ ] PR notes classify verification using the project labels:
+  `software-verified`, `controller-upload-verified`, `full-hardware-verified`,
+  `partial`, or `full-hardware-required`
+- [ ] If hardware validation is deferred, blockers and remaining checks are stated
+- [ ] Public-facing docs use evidence phrases such as "Automated checks are passing"
+  or "Tested on an ESP32 controller" rather than internal verification labels
+
+Do not use "bench verified" or "bench-tested" as a status. It is ambiguous: a
+green build is `software-verified`; an ESP32 upload plus runtime smoke check is
+`controller-upload-verified`; integrated subsystem testing is
+`full-hardware-verified`.
 
 Regression troubleshooting policy (parser/protocol iterate-fix loops):
 - Precedence: this policy overrides any implied expectation to author/update tests on every micro-change.

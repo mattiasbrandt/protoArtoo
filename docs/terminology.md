@@ -18,7 +18,7 @@ This document explains common project terms used in code, docs, logs, and planni
 - [AP](#ap)
 - [SBUS](#sbus)
 - ["Native" Tests vs `protoArtoo` Tests](#native-tests-vs-protoartoo-tests)
-- [Common Phrase: Bench-Tested vs Full-Hardware-Validated](#common-phrase-bench-tested-vs-full-hardware-validated)
+- [Validation Language](#validation-language)
 
 ## Quick Glossary
 
@@ -295,28 +295,11 @@ When to use which:
 - Use `protoArtoo` before merging/releasing to catch target-specific issues
 - For hardware behavior (UART, PWM, failsafe timing), only target/hardware validation is authoritative
 
-## Common Phrase: Bench-Tested vs Full-Hardware-Validated
+## Validation Language
 
-This phrase has been used informally in older notes, but the canonical reporting
-format is now explicit verification status labels.
+Project verification labels and public-facing release wording live in
+`CONTEXT.md`, `AGENTS.md`, and `docs/status.md`.
 
-Use these labels in reports and completion notes:
-
-- `usb-standalone-verified`: validated on an ESP32 connected over USB only,
-  with no additional droid hardware/serial peripherals attached.
-- `partial`: some verification completed, but not all required checks are closed.
-  Always include blockers and remaining checks.
-- `full-hardware-required`: the change needs integrated droid hardware validation
-  before it can be considered fully proven.
-
-Legacy wording mapping (for readability only):
-
-- "bench-tested" usually maps to `usb-standalone-verified` or `partial`.
-- "full-hardware-validated" implies integrated hardware proof and should not be
-  used as a substitute for the required status labels above.
-
-Rule of thumb:
-
-- Safety and motion claims are not considered closed from USB-only validation.
-- When hardware validation is deferred, explicitly record blockers and what
-  remains to verify.
+Use this glossary for technical terms like SBUS, NVS, RMT, Marcduino, RobotState,
+and AP/STA. Use the validation docs for status wording and release-note evidence
+phrases.
