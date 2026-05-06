@@ -105,6 +105,7 @@ void driveArbiterSubmit(DriveSource src,
 DriveOutput driveArbiterResolve(const DriveArbiterConfig& cfg,
                                 uint32_t nowMs) {
     if (g_arbiterMux == nullptr) {
+        PA_LOG_ERROR(TAG, "driveArbiterResolve called before init");
         return DriveOutput{
             .speed = 0,
             .steer = 0,

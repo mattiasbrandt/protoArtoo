@@ -111,11 +111,9 @@ void driveTask(void* pvParameters) {
         int16_t steer = driveOut.steer;
         bool failsafeActive = driveOut.failsafeActive;
 
-        // Zero output if any failsafe active (estop, SBUS loss, HW failsafe, web timeout).
         // Record first zero assertion time once per failsafe episode for timing evidence.
+        // (DriveArbiter already zeroes speed/steer when failsafeActive.)
         if (failsafeActive) {
-            speed = 0;
-            steer = 0;
             uint32_t triggerMs;
             taskENTER_CRITICAL(&robotStateMux);
             triggerMs = robotState.failsafeLastTriggerMs;
