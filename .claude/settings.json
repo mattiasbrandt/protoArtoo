@@ -1,8 +1,7 @@
 {
   "enabledPlugins": {
     "frontend-design@claude-plugins-official": true,
-    "playwright@claude-plugins-official": false,
-    "mempalace@mempalaceofficial": true
+    "playwright@claude-plugins-official": false
   },
   "permissions": {
     "allow": [
