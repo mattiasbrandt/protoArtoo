@@ -252,8 +252,8 @@ void setup() {
     xTaskCreatePinnedToCore(driveTask, "DriveTask", 4096, nullptr, 5, nullptr, 1);
     xTaskCreatePinnedToCore(rcInputTask, "RCInputTask", 6144, nullptr, 5, nullptr, 1);
     xTaskCreatePinnedToCore(
-        servoTask, "ServoTask", 3072, nullptr, 4, nullptr,
-        1);  // HWM: code fix (ConfigSnapshot→ServoConfig in hot paths); stack kept at 3072
+        servoTask, "ServoTask", 4096, nullptr, 4, nullptr,
+        1);  // HWM: code fix (ConfigSnapshot→ServoConfig in hot paths) + 3072->4096
     xTaskCreatePinnedToCore(domeTask, "DomeTask", 3072, nullptr, 4, nullptr,
                             1);  // T24 R1: profiler HWM reached 108 B free at 2048 B.
 
