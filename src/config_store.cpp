@@ -489,6 +489,23 @@ void configCacheRead(ConfigSnapshot* out) {
     taskEXIT_CRITICAL(&configCacheMux);
 }
 
+void configCacheReadDome(DomeConfig* out) {
+    if (out == nullptr) {
+        return;
+    }
+    taskENTER_CRITICAL(&configCacheMux);
+    *out = configCache.dome;
+    taskEXIT_CRITICAL(&configCacheMux);
+}
+
+bool configCacheDomeEnabled() {
+    bool enabled;
+    taskENTER_CRITICAL(&configCacheMux);
+    enabled = configCache.system.enable_dome;
+    taskEXIT_CRITICAL(&configCacheMux);
+    return enabled;
+}
+
 void configCacheApply(const ConfigSnapshot& snap) {
     taskENTER_CRITICAL(&configCacheMux);
     configCache = snap;

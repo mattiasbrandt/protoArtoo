@@ -47,17 +47,11 @@ static const char* TAG = "DOME";
 // Read persisted ESC config, compute pulse width, and output via LEDC.
 // -----------------------------------------------------------------------------
 static void setDomeSpeed(float speed) {
-    uint16_t neutralUs, minPulseUs, maxPulseUs;
-    uint8_t speedLimitPct;
+    DomeConfig cfg = {};
+    configCacheReadDome(&cfg);
 
-    ConfigSnapshot cfg = {};
-    configCacheRead(&cfg);
-    neutralUs = cfg.dome.dome_neutral_us;
-    minPulseUs = cfg.dome.dome_min_pulse_us;
-    maxPulseUs = cfg.dome.dome_max_pulse_us;
-    speedLimitPct = cfg.dome.dome_speed_limit_pct;
-
-    uint16_t pulseUs = domeSpeedToPulseUs(speed, neutralUs, minPulseUs, maxPulseUs, speedLimitPct);
+    uint16_t pulseUs = domeSpeedToPulseUs(speed, cfg.dome_neutral_us, cfg.dome_min_pulse_us,
+                                          cfg.dome_max_pulse_us, cfg.dome_speed_limit_pct);
 
     ledcPwmSetPulseWidth(LEDC_CH_DOME, pulseUs);
 
@@ -66,8 +60,9 @@ static void setDomeSpeed(float speed) {
     taskEXIT_CRITICAL(&robotStateMux);
 
     PA_LOG_DEBUG(TAG, "Dome speed %d%% -> %d us (neutral=%d min=%d max=%d lim=%d%%)",
-                 (int)(speed * 100.0f), (int)pulseUs, (int)neutralUs,
-                 (int)minPulseUs, (int)maxPulseUs, (int)speedLimitPct);
+                 (int)(speed * 100.0f), (int)pulseUs, (int)cfg.dome_neutral_us,
+                 (int)cfg.dome_min_pulse_us, (int)cfg.dome_max_pulse_us,
+                 (int)cfg.dome_speed_limit_pct);
 }
 
 // -----------------------------------------------------------------------------
@@ -76,12 +71,10 @@ static void setDomeSpeed(float speed) {
 // Used on disable, estop, timeout, and startup.
 // -----------------------------------------------------------------------------
 static void setDomeNeutral() {
-    uint16_t neutralUs;
-    ConfigSnapshot cfg = {};
-    configCacheRead(&cfg);
-    neutralUs = cfg.dome.dome_neutral_us;
+    DomeConfig cfg = {};
+    configCacheReadDome(&cfg);
 
-    ledcPwmSetPulseWidth(LEDC_CH_DOME, neutralUs);
+    ledcPwmSetPulseWidth(LEDC_CH_DOME, cfg.dome_neutral_us);
 
     taskENTER_CRITICAL(&robotStateMux);
     robotState.domeTargetSpeed = 0.0f;
@@ -97,10 +90,10 @@ void domeTaskInit() {
     // Feature toggle: skip ESC arming entirely when dome is disabled.
     // No LEDC pulse is written; the channel stays at whatever neutral value
     // ledcPwmInit() set at boot.  domeTask() will also idle (see task body).
-    ConfigSnapshot cfg = {};
-    configCacheRead(&cfg);
-    bool enabled = cfg.system.enable_dome;
-    uint16_t neutralUs = cfg.dome.dome_neutral_us;
+    DomeConfig cfg = {};
+    configCacheReadDome(&cfg);
+    bool enabled = configCacheDomeEnabled();
+    uint16_t neutralUs = cfg.dome_neutral_us;
 
     if (!enabled) {
         PA_LOG_INFO(TAG, "dome disabled (en_dome=false) — skipping ESC arming");
@@ -136,9 +129,7 @@ void domeTask(void* pvParameters) {
 
     // Start at neutral only when dome output is enabled. If disabled, LEDC may
     // be intentionally uninitialized (all outputs disabled configuration).
-    ConfigSnapshot bootCfg = {};
-    configCacheRead(&bootCfg);
-    bool domeEnabledAtBoot = bootCfg.system.enable_dome;
+    bool domeEnabledAtBoot = configCacheDomeEnabled();
     if (domeEnabledAtBoot) {
         setDomeNeutral();
     }
@@ -158,9 +149,7 @@ void domeTask(void* pvParameters) {
         bool estop = robotState.estop;
         bool sleepMode = robotState.sleepMode;
         taskEXIT_CRITICAL(&robotStateMux);
-        ConfigSnapshot loopCfg = {};
-        configCacheRead(&loopCfg);
-        bool enabled = loopCfg.system.enable_dome;
+        bool enabled = configCacheDomeEnabled();
 
         // Feature toggle: dome disabled — hold neutral, drain queue, do nothing
         if (!enabled) {
@@ -249,13 +238,13 @@ void domeTask(void* pvParameters) {
             uint16_t rndMoveMs;
             bool     domeSeqActive;
             uint32_t now = millis();
-            ConfigSnapshot rndCfg = {};
-            configCacheRead(&rndCfg);
-            rndEnabled    = rndCfg.dome.dome_rnd_enable;
-            rndSpeedPct   = rndCfg.dome.dome_rnd_speed_pct;
-            rndPauseMin   = rndCfg.dome.dome_rnd_pause_min;
-            rndPauseMax   = rndCfg.dome.dome_rnd_pause_max;
-            rndMoveMs     = rndCfg.dome.dome_rnd_move_ms;
+            DomeConfig rndCfg = {};
+            configCacheReadDome(&rndCfg);
+            rndEnabled    = rndCfg.dome_rnd_enable;
+            rndSpeedPct   = rndCfg.dome_rnd_speed_pct;
+            rndPauseMin   = rndCfg.dome_rnd_pause_min;
+            rndPauseMax   = rndCfg.dome_rnd_pause_max;
+            rndMoveMs     = rndCfg.dome_rnd_move_ms;
             taskENTER_CRITICAL(&robotStateMux);
             domeSeqActive = robotState.domeSeqActive;
             taskEXIT_CRITICAL(&robotStateMux);

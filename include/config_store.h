@@ -376,6 +376,8 @@ bool configSaveSystem(Preferences& prefs, const SystemConfig& config);
 // This uses configCacheMux, not robotStateMux. Runtime tasks should copy the
 // domain they need into stack locals, then release the cache lock before doing work.
 void configCacheRead(ConfigSnapshot* out);
+void configCacheReadDome(DomeConfig* out);
+bool configCacheDomeEnabled();
 
 // configCacheApply: Replace the live config cache with a full snapshot.
 // Marks RobotState.rcConfigDirty so RcInputTask rebuilds cached mapping config.
