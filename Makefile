@@ -20,6 +20,7 @@ UPLOAD_PORT ?= /dev/ttyUSB0
 
 .PHONY: all help build test check check-action-drift flash ota uploadfs \
         flash-chirp ota-chirp ota-mp3trigger \
+        flash-monitor flash-chirp-monitor \
         check-chirp check-mp3trigger \
         setup setup-wifi clean monitor check-deps
 
@@ -65,6 +66,14 @@ uploadfs: ## Upload LittleFS web UI via OTA  (no test gate)
 
 flash-chirp: test ## Flash CHIRP build via USB
 	pio run -e protoArtoo_chirp -t upload --upload-port $(UPLOAD_PORT)
+
+flash-monitor: test ## Flash default build via USB then capture boot log
+	pio run -e $(BUILD_ENV) -t upload --upload-port $(UPLOAD_PORT)
+	python3 tools/serial_monitor.py --until "init complete" --timeout 30
+
+flash-chirp-monitor: test ## Flash CHIRP build via USB then capture boot log
+	pio run -e protoArtoo_chirp -t upload --upload-port $(UPLOAD_PORT)
+	python3 tools/serial_monitor.py --until "init complete" --timeout 30
 
 ota-chirp: test ## Flash CHIRP build via OTA
 	pio run -e protoArtoo_chirp_ota -t upload --upload-port $(OTA_IP)
