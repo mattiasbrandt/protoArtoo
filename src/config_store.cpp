@@ -506,6 +506,25 @@ bool configCacheDomeEnabled() {
     return enabled;
 }
 
+void configCacheReadServo(ServoConfig* out) {
+    if (out == nullptr) {
+        return;
+    }
+    taskENTER_CRITICAL(&configCacheMux);
+    *out = configCache.servo;
+    taskEXIT_CRITICAL(&configCacheMux);
+}
+
+bool configCacheServoAnyEnabled() {
+    bool result;
+    taskENTER_CRITICAL(&configCacheMux);
+    result = configCache.system.enable_arm1 || configCache.system.enable_arm2 ||
+             configCache.system.enable_aux1 || configCache.system.enable_aux2 ||
+             configCache.system.enable_aux3;
+    taskEXIT_CRITICAL(&configCacheMux);
+    return result;
+}
+
 void configCacheApply(const ConfigSnapshot& snap) {
     taskENTER_CRITICAL(&configCacheMux);
     configCache = snap;

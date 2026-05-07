@@ -83,28 +83,28 @@ static void setArmPosition(uint8_t armId, uint16_t pulseUs) {
 // ARM1/ARM2 use NVS-backed cal; AUX1-3 also use NVS-backed per-channel cal.
 // -----------------------------------------------------------------------------
 static void getOpenClosePositions(uint8_t armId, uint16_t& openUs, uint16_t& closeUs) {
-    ConfigSnapshot cfg = {};
-    configCacheRead(&cfg);
+    ServoConfig cfg = {};
+    configCacheReadServo(&cfg);
     switch (armId) {
         case 0:
-            openUs = cfg.servo.arm1_open_us;
-            closeUs = cfg.servo.arm1_close_us;
+            openUs = cfg.arm1_open_us;
+            closeUs = cfg.arm1_close_us;
             break;
         case 1:
-            openUs = cfg.servo.arm2_open_us;
-            closeUs = cfg.servo.arm2_close_us;
+            openUs = cfg.arm2_open_us;
+            closeUs = cfg.arm2_close_us;
             break;
         case 2:
-            openUs = cfg.servo.aux1_open_us;
-            closeUs = cfg.servo.aux1_close_us;
+            openUs = cfg.aux1_open_us;
+            closeUs = cfg.aux1_close_us;
             break;
         case 3:
-            openUs = cfg.servo.aux2_open_us;
-            closeUs = cfg.servo.aux2_close_us;
+            openUs = cfg.aux2_open_us;
+            closeUs = cfg.aux2_close_us;
             break;
         case 4:
-            openUs = cfg.servo.aux3_open_us;
-            closeUs = cfg.servo.aux3_close_us;
+            openUs = cfg.aux3_open_us;
+            closeUs = cfg.aux3_close_us;
             break;
         default:
             openUs = SERVO_PULSE_MAX_US;
@@ -217,10 +217,10 @@ static void updateSequence() {
     uint32_t elapsed = millis() - seqState.stateStartMs;
     uint16_t openUs, closeUs;
 
-    ConfigSnapshot cfg = {};
-    configCacheRead(&cfg);
-    uint16_t seqOpenMs = cfg.servo.seq_open_ms;
-    uint16_t seqCloseMs = cfg.servo.seq_close_ms;
+    ServoConfig cfg = {};
+    configCacheReadServo(&cfg);
+    uint16_t seqOpenMs = cfg.seq_open_ms;
+    uint16_t seqCloseMs = cfg.seq_close_ms;
 
     switch (seqState.state) {
         case SEQ_OPENING:
@@ -424,18 +424,11 @@ void servoTask(void* pvParameters) {
     // Feature toggle: if no arm/aux outputs are enabled, ServoTask has no
     // channels to drive. Idle here feeding TWDT only — no queue processing,
     // no sequence updates.
-    {
-        ConfigSnapshot cfg = {};
-        configCacheRead(&cfg);
-        bool anyServo = cfg.system.enable_arm1 || cfg.system.enable_arm2 ||
-                        cfg.system.enable_aux1  || cfg.system.enable_aux2 ||
-                        cfg.system.enable_aux3;
-        if (!anyServo) {
-            PA_LOG_INFO("ServoTask", "all arm/aux outputs disabled — task idle");
-            for (;;) {
-                esp_task_wdt_reset();
-                vTaskDelay(pdMS_TO_TICKS(20));
-            }
+    if (!configCacheServoAnyEnabled()) {
+        PA_LOG_INFO("ServoTask", "all arm/aux outputs disabled — task idle");
+        for (;;) {
+            esp_task_wdt_reset();
+            vTaskDelay(pdMS_TO_TICKS(20));
         }
     }
 

@@ -378,6 +378,8 @@ bool configSaveSystem(Preferences& prefs, const SystemConfig& config);
 void configCacheRead(ConfigSnapshot* out);
 void configCacheReadDome(DomeConfig* out);
 bool configCacheDomeEnabled();
+void configCacheReadServo(ServoConfig* out);
+bool configCacheServoAnyEnabled();
 
 // configCacheApply: Replace the live config cache with a full snapshot.
 // Marks RobotState.rcConfigDirty so RcInputTask rebuilds cached mapping config.

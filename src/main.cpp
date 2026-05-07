@@ -249,29 +249,29 @@ void setup() {
     // RcInputTask: ~200 Hz RC poll (all modes), Layer 1+2 failsafe
     // ServoTask: 50 Hz servo PWM updates
     // DomeTask: 50 Hz ESC PWM updates
-    xTaskCreatePinnedToCore(driveTask, "DriveTask", 2560, nullptr, 5, nullptr, 1);
+    xTaskCreatePinnedToCore(driveTask, "DriveTask", 4096, nullptr, 5, nullptr, 1);
     xTaskCreatePinnedToCore(rcInputTask, "RCInputTask", 6144, nullptr, 5, nullptr, 1);
     xTaskCreatePinnedToCore(
         servoTask, "ServoTask", 3072, nullptr, 4, nullptr,
-        1);  // HWM: ~728 B used; was 5120 (oversized for string formatting assumption)
+        1);  // HWM: code fix (ConfigSnapshot→ServoConfig in hot paths); stack kept at 3072
     xTaskCreatePinnedToCore(domeTask, "DomeTask", 3072, nullptr, 4, nullptr,
                             1);  // T24 R1: profiler HWM reached 108 B free at 2048 B.
 
     // AudioTask: Core 0 (non-RT) — software bit-bang TX blocks ~6 ms per command;
     // keeping off Core 1 avoids any interaction with DriveTask / ServoTask timing.
-    xTaskCreatePinnedToCore(audioTask, "AudioTask", 4096, nullptr, 3, nullptr, 0);
+    xTaskCreatePinnedToCore(audioTask, "AudioTask", 6144, nullptr, 3, nullptr, 0);
 
     // AuxLedTask: Core 0 (non-RT) - WS2812B effects and API-driven color/effect updates.
     // Runs independently of Core 1 control loops.
     if (auxLedTaskReady) {
-        xTaskCreatePinnedToCore(auxLedTask, "AuxLedTask", 3072, nullptr, 2, nullptr, 0);
+        xTaskCreatePinnedToCore(auxLedTask, "AuxLedTask", 4096, nullptr, 2, nullptr, 0);
     }
 
     // DomeLinkTask: Core 1 — bidirectional Marcduino serial to AstroPixelsPlus.
     // UART2 TX/RX are non-blocking hardware operations; Core 1 at priority 3.
     // 4096: profiler measured 988 B free at 3072 B without WiFi fallback active;
     // HTTPClient call-chain in sendCommandOverWifi needs 3 KB+ of stack headroom.
-    xTaskCreatePinnedToCore(domeLinkTask, "DomeLinkTask", 4096, nullptr, 3, nullptr, 1);
+    xTaskCreatePinnedToCore(domeLinkTask, "DomeLinkTask", 6144, nullptr, 3, nullptr, 1);
 
     // SafetyMonitorTask: 10 Hz audit on Core 0 (non-RT, low priority).
     // HWM first-iteration: 476 B free — WARN path allocates 128 B format buffer +
