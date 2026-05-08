@@ -469,7 +469,6 @@ void domeLinkTask(void* pvParameters) {
 
     if (!enabled) {
         setTransportState(DOME_LINK_TRANSPORT_DISCONNECTED);
-        domeUartRelease(DOME_UART_DOME);
         PA_LOG_INFO(TAG, "dome link disabled (en_s3=false) — task idle");
 
         DomeTxCmd cmd{};
