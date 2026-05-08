@@ -710,8 +710,8 @@ void rcInputTask(void* pvParameters) {
     uint32_t lastSbus2WatchdogDiagMs = 0;
     while (true) {
         if (!hwmLogged) {
-            PA_LOG_INFO(TAG, "stack HWM: %u words free",
-                        (unsigned)uxTaskGetStackHighWaterMark(NULL));
+            PA_LOG_DEBUG(TAG, "stack HWM: %u words free",
+                         (unsigned)uxTaskGetStackHighWaterMark(NULL));
             hwmLogged = true;
         }
 

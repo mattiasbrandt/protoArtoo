@@ -40,7 +40,7 @@ static bool lastSseConnected = false;
 // Does NOT set failsafe flags — read-only access to RobotState.
 // -----------------------------------------------------------------------------
 void safetyMonitorTask(void* pvParameters) {
-    PA_LOG_INFO(TAG, "started — 10 Hz audit on Core 0");
+    PA_LOG_INFO(TAG, "active");
 
     bool hwmLogged = false;
 #if PA_HEAP_PROFILE
@@ -50,8 +50,8 @@ void safetyMonitorTask(void* pvParameters) {
 
     while (true) {
         if (!hwmLogged) {
-            PA_LOG_INFO(TAG, "stack HWM: %u words free",
-                        (unsigned)uxTaskGetStackHighWaterMark(NULL));
+            PA_LOG_DEBUG(TAG, "stack HWM: %u words free",
+                         (unsigned)uxTaskGetStackHighWaterMark(NULL));
             hwmLogged = true;
         }
 

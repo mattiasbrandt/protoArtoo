@@ -469,7 +469,7 @@ void domeLinkTask(void* pvParameters) {
 
     if (!enabled) {
         setTransportState(DOME_LINK_TRANSPORT_DISCONNECTED);
-        PA_LOG_INFO(TAG, "dome link disabled (en_s3=false) — task idle");
+        PA_LOG_DEBUG(TAG, "dome link disabled (en_s3=false) — task idle");
 
         DomeTxCmd cmd{};
         for (;;) {

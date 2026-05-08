@@ -727,8 +727,8 @@ void eventStreamTask(void*) {
     bool hwmUnderLoadLogged = false;
     for (;;) {
         if (!hwmLogged) {
-            PA_LOG_INFO("WebEvents", "stack HWM: %u words free",
-                        (unsigned)uxTaskGetStackHighWaterMark(NULL));
+            PA_LOG_DEBUG("WebEvents", "stack HWM: %u words free",
+                         (unsigned)uxTaskGetStackHighWaterMark(NULL));
             hwmLogged = true;
         }
 
@@ -780,8 +780,8 @@ void eventStreamTask(void*) {
                 }
             }
             if (!hwmUnderLoadLogged) {
-                PA_LOG_INFO("WebEvents", "stack HWM under SSE load: %u words free",
-                            (unsigned)uxTaskGetStackHighWaterMark(NULL));
+                PA_LOG_DEBUG("WebEvents", "stack HWM under SSE load: %u words free",
+                             (unsigned)uxTaskGetStackHighWaterMark(NULL));
                 hwmUnderLoadLogged = true;
             }
 
@@ -898,7 +898,7 @@ void webServerInit() {
 
     littleFsReady = LittleFS.begin(true);
     if (littleFsReady) {
-        PA_LOG_INFO(TAG, "LittleFS mounted");
+        PA_LOG_INFO(TAG, "filesystem ready");
     } else {
         PA_LOG_ERROR(TAG, "LittleFS mount failed - API only mode");
     }

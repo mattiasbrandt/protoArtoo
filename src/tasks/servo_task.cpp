@@ -425,7 +425,7 @@ void servoTask(void* pvParameters) {
     // channels to drive. Idle here feeding TWDT only — no queue processing,
     // no sequence updates.
     if (!configCacheServoAnyEnabled()) {
-        PA_LOG_INFO("ServoTask", "all arm/aux outputs disabled — task idle");
+        PA_LOG_DEBUG("ServoTask", "all arm/aux outputs disabled — task idle");
         for (;;) {
             esp_task_wdt_reset();
             vTaskDelay(pdMS_TO_TICKS(20));
@@ -437,8 +437,8 @@ void servoTask(void* pvParameters) {
 
     while (true) {
         if (!hwmLogged) {
-            PA_LOG_INFO("ServoTask", "stack HWM: %u words free",
-                        (unsigned)uxTaskGetStackHighWaterMark(NULL));
+            PA_LOG_DEBUG("ServoTask", "stack HWM: %u words free",
+                         (unsigned)uxTaskGetStackHighWaterMark(NULL));
             hwmLogged = true;
         }
 

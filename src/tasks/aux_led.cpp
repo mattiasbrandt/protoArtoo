@@ -276,7 +276,7 @@ void auxLedTask(void* pvParameters) {
         if (setAuxLedStateLocked(0, 0, 0, 0, AUX_LED_EFFECT_OFF, false)) {
             requestStatusBroadcastNow();
         }
-        PA_LOG_INFO(TAG, "AUX LED disabled (aux_led_pin=0)");
+        PA_LOG_DEBUG(TAG, "AUX LED disabled (aux_led_pin=0)");
         for (;;) {
             vTaskDelay(pdMS_TO_TICKS(250));
         }

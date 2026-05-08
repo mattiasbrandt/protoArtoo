@@ -295,8 +295,7 @@ void setup() {
         const char* bootAudioCmd = moodAudioCommand(robotState.activeMood);
         if (bootAudioCmd) {
             audioQueueDollar(bootAudioCmd, SRC_INTERNAL);
-            PA_LOG_INFO("main", "boot mood restore: SE%u -> %s", (unsigned)robotState.activeMood,
-                        bootAudioCmd);
+            PA_LOG_INFO("main", "boot mood: %s", moodLabel(robotState.activeMood));
         }
     }
 

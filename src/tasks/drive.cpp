@@ -76,8 +76,8 @@ void driveTask(void* pvParameters) {
 
         // Log stack high-water mark once, after the first loop (captures init overhead).
         if (!hwmLogged) {
-            PA_LOG_INFO(TAG, "stack HWM: %u words free",
-                        (unsigned)uxTaskGetStackHighWaterMark(NULL));
+            PA_LOG_DEBUG(TAG, "stack HWM: %u words free",
+                         (unsigned)uxTaskGetStackHighWaterMark(NULL));
             hwmLogged = true;
         }
 

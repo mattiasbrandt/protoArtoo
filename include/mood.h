@@ -59,6 +59,21 @@ inline uint8_t moodIdFromSeCommand(const char* line) {
 }
 
 // -----------------------------------------------------------------------------
+// moodLabel()
+// Returns the human-readable name for a mood ID, or "unknown".
+// Pure function — safe to call from native tests.
+// -----------------------------------------------------------------------------
+inline const char* moodLabel(uint8_t moodId) {
+    switch (moodId) {
+        case 10: return "Quiet";
+        case 11: return "Full-Awake";
+        case 13: return "Mid-Awake";
+        case 14: return "Awake+";
+        default: return "unknown";
+    }
+}
+
+// -----------------------------------------------------------------------------
 // moodAudioCommand()
 // Returns the $ audio command for a given SE1x mood index, or nullptr if the
 // index is not a valid mood. Pure function — safe to call from native tests.
