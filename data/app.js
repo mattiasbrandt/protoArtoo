@@ -148,7 +148,7 @@
       sleepToggle.textContent = isSleeping ? "💤 Wake" : "💤 Sleep";
       sleepToggle.title = isSleeping ? "Wake droid subsystems" : "Park droid subsystems";
       sleepToggle.classList.toggle("danger", isSleeping);
-      sleepToggle.classList.toggle("accent", !isSleeping);
+      sleepToggle.classList.toggle("accent", isSleeping);
       sleepToggle.setAttribute("aria-pressed", isSleeping.toString());
     }
     if (sleepOverlay) {

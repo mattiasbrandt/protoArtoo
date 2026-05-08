@@ -66,21 +66,8 @@ static bool setSleepModeState(bool sleepMode, bool* changedOut) {
     return true;
 }
 
-static bool webControlEnabledForSleepApi() {
-    taskENTER_CRITICAL(&robotStateMux);
-    bool enabled = robotState.webControlEnabled;
-    taskEXIT_CRITICAL(&robotStateMux);
-    return enabled;
-}
-
 void registerSystemRoutes(AsyncWebServer& server) {
     server.on("/api/sleep", HTTP_POST, [](AsyncWebServerRequest* req) {
-        if (!webControlEnabledForSleepApi()) {
-            req->send(409, "application/json",
-                      "{\"ok\":false,\"error\":\"web control is not enabled\"}");
-            return;
-        }
-
         bool changed = false;
         setSleepModeState(true, &changed);
 
@@ -96,12 +83,6 @@ void registerSystemRoutes(AsyncWebServer& server) {
     });
 
     server.on("/api/wake", HTTP_POST, [](AsyncWebServerRequest* req) {
-        if (!webControlEnabledForSleepApi()) {
-            req->send(409, "application/json",
-                      "{\"ok\":false,\"error\":\"web control is not enabled\"}");
-            return;
-        }
-
         bool changed = false;
         setSleepModeState(false, &changed);
 
