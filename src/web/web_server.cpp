@@ -715,6 +715,8 @@ static portMUX_TYPE s_broadcastMux = portMUX_INITIALIZER_UNLOCKED;
 static bool s_broadcastRequested = false;
 static uint32_t s_lastLogSent = 0;
 static char s_sseLogLines[8][LOG_LINE_MAX];
+static char s_sseLogBatch[8 * (LOG_LINE_MAX + 8) + 1];
+static int s_logSendTick = 0;
 
 void requestStatusBroadcastNow() {
     taskENTER_CRITICAL(&s_broadcastMux);
@@ -785,10 +787,26 @@ void eventStreamTask(void*) {
                 hwmUnderLoadLogged = true;
             }
 
-            size_t linesCopied = 0;
-            s_lastLogSent = copyNewLogLinesSince(s_lastLogSent, s_sseLogLines, 8, &linesCopied);
-            for (size_t i = 0; i < linesCopied; ++i) {
-                events.send(s_sseLogLines[i], "log", nowMs);
+            if (++s_logSendTick >= 2) {
+                s_logSendTick = 0;
+                size_t linesCopied = 0;
+                s_lastLogSent = copyNewLogLinesSince(s_lastLogSent, s_sseLogLines, 8, &linesCopied);
+                if (linesCopied > 0) {
+                    size_t pos = 0;
+                    for (size_t i = 0; i < linesCopied && pos < sizeof(s_sseLogBatch) - 1; ++i) {
+                        if (i > 0) {
+                            memcpy(s_sseLogBatch + pos, "\ndata: ", 7);
+                            pos += 7;
+                        }
+                        size_t lineLen = strnlen(s_sseLogLines[i], LOG_LINE_MAX);
+                        size_t room = sizeof(s_sseLogBatch) - 1 - pos;
+                        size_t copy = lineLen < room ? lineLen : room;
+                        memcpy(s_sseLogBatch + pos, s_sseLogLines[i], copy);
+                        pos += copy;
+                    }
+                    s_sseLogBatch[pos] = '\0';
+                    events.send(s_sseLogBatch, "log", nowMs);
+                }
             }
         }
 
