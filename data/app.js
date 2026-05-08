@@ -435,7 +435,8 @@
 
   const logEntryHtml = (line) => {
     const classes = `log-line${levelClassForMessage(line.message)}${line.extraClass || ""}`;
-    return `<span class="${classes}">[${escapeHtml(line.timestamp)}] ${escapeHtml(line.message)}</span>`;
+    const ts = line.timestamp && line.timestamp !== "--:--:--" ? `[${escapeHtml(line.timestamp)}] ` : "";
+    return `<span class="${classes}">${ts}${escapeHtml(line.message)}</span>`;
   };
 
   const hasActiveLogSelection = () => {
