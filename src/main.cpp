@@ -218,9 +218,18 @@ void setup() {
     failsafeInit(&robotStateMux);
     driveArbiterInit(&robotStateMux);
 
-    // Safety: boot with drive locked until SBUS confirmed
-    // Use FailsafeGate's SBUS_WATCHDOG layer; RcInputTask will clear when frames arrive
-    failsafeTrigger(FailsafeLayer::SBUS_WATCHDOG);
+    // Safety: boot with drive locked until SBUS confirmed — only if SBUS is configured.
+    // If SBUS is disabled, skip the arm; RcInputTask will arm SBUS_WATCHDOG itself
+    // on first iteration if the operator enables SBUS at runtime via /api/config.
+    {
+        ConfigSnapshot bootCfg = {};
+        configCacheRead(&bootCfg);
+        bool sbusMode = bootCfg.system.rc_input_mode != RC_INPUT_STANDARD_PWM;
+        bool anyChannel = bootCfg.system.enable_rc_ch1 || bootCfg.system.enable_rc_ch2;
+        if (sbusMode && anyChannel) {
+            failsafeTrigger(FailsafeLayer::SBUS_WATCHDOG);
+        }
+    }
 
     // Detect TWDT reset from previous boot — set estop so robot does not move
     // until operator explicitly clears via POST /api/estop/clear
