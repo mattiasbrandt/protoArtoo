@@ -546,9 +546,9 @@
     const hasLargest = d.heapLargestBlock !== undefined && d.heapLargestBlock !== null;
     const heapLargestKb = hasLargest ? Math.round(d.heapLargestBlock / 1024) : null;
 
-    const heapFreeState = heapFreeKb < 80 ? "critical" : heapFreeKb < 120 ? "watch" : "good";
-    const heapMinState = heapMinKb < 64 ? "critical" : heapMinKb < 96 ? "watch" : "good";
-    const heapLargestState = !hasLargest ? "na" : heapLargestKb < 30 ? "critical" : heapLargestKb < 50 ? "watch" : "good";
+    const heapFreeState = heapFreeKb < 40 ? "critical" : heapFreeKb < 65 ? "watch" : "good";
+    const heapMinState = heapMinKb < 36 ? "critical" : heapMinKb < 52 ? "watch" : "good";
+    const heapLargestState = !hasLargest ? "na" : heapLargestKb < 20 ? "critical" : heapLargestKb < 36 ? "watch" : "good";
 
     const colorForState = (state) =>
       state === "critical" ? "var(--danger)"
