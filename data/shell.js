@@ -11,7 +11,8 @@
     home: {
       title: "protoArtoo - Dashboard",
       statusDot: "yellow",
-      statusText: "Dashboard connected",
+      statusText: "",
+      connectedText: "",
     },
     drive: {
       title: "Drive - protoArtoo",
