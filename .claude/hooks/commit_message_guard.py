@@ -18,8 +18,12 @@ LEGACY_SCOPE_PATTERN = re.compile(
     rf"^(?:{ALLOWED_TYPES})!?\((?:{ALLOWED_SCOPES})\): .+",
     re.DOTALL,
 )
-COMMIT_CMD_PATTERN = re.compile(r"(^|\s)git\s+commit(\s|$)")
-ADD_CMD_PATTERN = re.compile(r"(^|\s)git\s+add(\s|$)")
+# Match git global flags that may appear before the subcommand:
+#   short flags with optional value:  -C /path  -c key=val
+#   long flags with optional =value:  --git-dir=/path  --work-tree=/path
+_GIT_GLOBAL_FLAGS = r"(?:\s+(?:-\w+(?:\s+\S+)?|--[\w-]+(?:=\S+)?))*"
+COMMIT_CMD_PATTERN = re.compile(r"(^|\s)git" + _GIT_GLOBAL_FLAGS + r"\s+commit(\s|$)")
+ADD_CMD_PATTERN = re.compile(r"(^|\s)git" + _GIT_GLOBAL_FLAGS + r"\s+add(\s|$)")
 # Handles -m and --message, both = and space separators, single/double quotes.
 MESSAGE_ARG_PATTERN = re.compile(
     r"""(?:^|\s)(?:-m|--message)(?:=|\s+)([\"'])(.*?)\1""",
