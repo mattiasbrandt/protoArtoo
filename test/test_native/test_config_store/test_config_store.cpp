@@ -198,7 +198,7 @@ void test_configLoad_legacy_schema_v0() {
 
     // Verify schema version was stamped
     prefs.begin("proto", true);
-    uint8_t storedVersion = prefs.getUChar("proto.schema_ver", 0);
+    uint8_t storedVersion = prefs.getUChar(CONFIG_SCHEMA_VERSION_KEY, 0);
     prefs.end();
     TEST_ASSERT_EQUAL_UINT8(CONFIG_SCHEMA_VERSION, storedVersion);
 }
@@ -211,7 +211,7 @@ void test_configLoad_schema_mismatch() {
 
     // Write incompatible schema version
     uint8_t badVersion = CONFIG_SCHEMA_VERSION + 1;
-    prefs.putUChar("proto.schema_ver", badVersion);
+    prefs.putUChar(CONFIG_SCHEMA_VERSION_KEY, badVersion);
     prefs.putShort("spd_max", 400);
 
     ConfigSnapshot snap = {};
@@ -224,7 +224,7 @@ void test_configLoad_schema_mismatch() {
 
     // Verify schema version was updated
     prefs.begin("proto", true);
-    uint8_t storedVersion = prefs.getUChar("proto.schema_ver", 0);
+    uint8_t storedVersion = prefs.getUChar(CONFIG_SCHEMA_VERSION_KEY, 0);
     prefs.end();
     TEST_ASSERT_EQUAL_UINT8(CONFIG_SCHEMA_VERSION, storedVersion);
 }

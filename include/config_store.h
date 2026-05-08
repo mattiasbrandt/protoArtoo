@@ -22,7 +22,7 @@
 
 // NVS schema version
 constexpr uint8_t CONFIG_SCHEMA_VERSION = 1;
-constexpr char CONFIG_SCHEMA_VERSION_KEY[] = "proto.schema_ver";
+constexpr char CONFIG_SCHEMA_VERSION_KEY[] = "schema_ver";
 
 // Validation result
 enum class ConfigValidationResult : uint8_t {
