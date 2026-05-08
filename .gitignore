@@ -54,9 +54,9 @@ task.md
 .playwright-mcp/
 
 # Playwright/browser session temp files dumped in repo root
-*.png
-rc-snap*.md
-rc-snapshot.md
+/*.png
+/rc-snap*.md
+/rc-snapshot.md
 
 # Python/virtualenv (if using scripts or tools)
 __pycache__/

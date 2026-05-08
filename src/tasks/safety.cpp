@@ -27,6 +27,8 @@ static const char* TAG = "SafetyMonitor";
 static uint32_t lastFailsafeCount = 0;
 static bool lastDomeConnected = false;
 static bool lastSbusLost = true;
+static bool lastLowHeap = false;
+static bool lastFragmented = false;
 #if PA_HEAP_PROFILE
 static bool lastAudioActive = false;
 static bool lastSseConnected = false;
@@ -116,16 +118,26 @@ void safetyMonitorTask(void* pvParameters) {
         size_t largestBlock = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
         float fragRatio = (freeHeap > 0) ? (1.0f - (float)largestBlock / (float)freeHeap) : 0.0f;
 
-        if (freeHeap < 20480) {  // 20 KB threshold
-            PA_LOG_WARN(TAG, "low heap: %lu bytes free, largest block: %u bytes",
+        bool nowLowHeap = (freeHeap < 20480);
+        if (nowLowHeap && !lastLowHeap) {
+            PA_LOG_WARN(TAG, "low heap entered: %lu bytes free, largest block: %u bytes",
                         (unsigned long)freeHeap, (unsigned)largestBlock);
+        } else if (!nowLowHeap && lastLowHeap) {
+            PA_LOG_INFO(TAG, "low heap recovered: %lu bytes free", (unsigned long)freeHeap);
         }
+        lastLowHeap = nowLowHeap;
+
         // Warn when the largest contiguous block drops below 10 KB — at that point
         // large allocations (JSON docs, SSE buffers) will start failing.
-        if (largestBlock < 10240) {
+        bool nowFragmented = (largestBlock < 10240);
+        if (nowFragmented && !lastFragmented) {
             PA_LOG_WARN(TAG, "heap fragmented: largest block %u bytes, frag ratio %.2f",
                         (unsigned)largestBlock, (double)fragRatio);
+        } else if (!nowFragmented && lastFragmented) {
+            PA_LOG_INFO(TAG, "heap fragmentation cleared: largest block %u bytes",
+                        (unsigned)largestBlock);
         }
+        lastFragmented = nowFragmented;
 
         static int periodicCount = 0;
         if (++periodicCount >= 60) {  // ~6 s at 10 Hz

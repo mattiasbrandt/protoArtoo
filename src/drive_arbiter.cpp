@@ -137,7 +137,7 @@ DriveOutput driveArbiterResolve(const DriveArbiterConfig& cfg,
     }
 
     // Arbitration logic: most recent non-timed-out source wins
-    if (rcValid && (!webValid || webTimedOut || g_arbiter.rcTimestampMs >= g_arbiter.webTimestampMs)) {
+    if (rcValid && (!webValid || webTimedOut || (int32_t)(g_arbiter.rcTimestampMs - g_arbiter.webTimestampMs) >= 0)) {
         // RC wins: either it's the only valid source, or web is timed out, or RC is more recent
         activeSource = DriveSource::RC;
         outputSpeed = g_arbiter.rcSpeed;

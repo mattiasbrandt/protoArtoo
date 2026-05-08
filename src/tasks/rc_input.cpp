@@ -285,6 +285,12 @@ static bool setStationaryMode(bool stationary) {
         queueDriveOn = true;
     }
     taskEXIT_CRITICAL(&robotStateMux);
+    // Mirror web path: keep config cache in sync so the next /api/config save
+    // persists the RC-set mode rather than reverting it from the stale cache.
+    ConfigSnapshot cfg = {};
+    configCacheRead(&cfg);
+    cfg.system.stationary = stationary;
+    configCacheApply(cfg);
     if (!queueDriveOn) {
         return false;
     }
