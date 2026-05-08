@@ -120,7 +120,8 @@ void safetyMonitorTask(void* pvParameters) {
             PA_LOG_WARN(TAG, "low heap: %lu bytes free, largest block: %u bytes",
                         (unsigned long)freeHeap, (unsigned)largestBlock);
         }
-        if (largestBlock < 16384) {  // 16 KB fragmentation threshold (dual SBUS steady state ~24 KB)
+        // Skip during boot: WiFi/lwIP/SSE init causes transient fragmentation that resolves by ~20s.
+        if (largestBlock < 16384 && millis() > 20000) {
             PA_LOG_WARN(TAG, "heap fragmented: largest block %u bytes, frag ratio %.2f",
                         (unsigned)largestBlock, (double)fragRatio);
         }
