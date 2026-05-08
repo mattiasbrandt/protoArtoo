@@ -20,7 +20,15 @@
     if (uploadFsButton) uploadFsButton.disabled = busy;
   };
 
-  const waitForReconnect = (feedbackEl, statusEl, onTimeout) => {
+  const flashSuccess = sessionStorage.getItem('ota_flash_success');
+  if (flashSuccess) {
+    sessionStorage.removeItem('ota_flash_success');
+    const label = flashSuccess === 'filesystem' ? 'Filesystem' : 'Firmware';
+    feedback.textContent = `${label} updated successfully.`;
+    feedback.classList.add('success');
+  }
+
+  const waitForReconnect = (feedbackEl, statusEl, flashType, onTimeout) => {
     let attempts = 0;
     const MAX_ATTEMPTS = 30;
     const POLL_MS = 2000;
@@ -39,6 +47,7 @@
           if (r.ok) {
             if (statusEl) statusEl.textContent = "Device is back online.";
             if (feedbackEl) feedbackEl.textContent = "Upload complete — reloading page.";
+            sessionStorage.setItem('ota_flash_success', flashType || 'firmware');
             window.setTimeout(() => window.location.reload(), 1200);
           } else {
             schedule();
@@ -137,12 +146,13 @@
     progressWrap.classList.remove("hidden");
     progressBar.style.width = "50%";
     progressStatus.textContent = "Uploading...";
+    feedback.className = "feedback mt-12";
     feedback.textContent = `Uploading ${file.name}...`;
 
     setUploadBusy(true);
     doUpload("/upload/firmware", formData, () => {
       progressBar.style.width = "100%";
-      waitForReconnect(feedback, progressStatus, () => setUploadBusy(false));
+      waitForReconnect(feedback, progressStatus, 'firmware', () => setUploadBusy(false));
     }, (errorMessage) => {
       setUploadBusy(false);
       progressStatus.textContent = "Upload failed";
@@ -180,12 +190,13 @@
     if (fsProgressWrap) fsProgressWrap.classList.remove("hidden");
     if (fsProgressBar) fsProgressBar.style.width = "50%";
     if (fsProgressStatus) fsProgressStatus.textContent = "Uploading...";
+    feedback.className = "feedback mt-12";
     feedback.textContent = `Uploading filesystem ${file.name}...`;
 
     setUploadBusy(true);
     doUpload("/upload/filesystem", formData, () => {
       if (fsProgressBar) fsProgressBar.style.width = "100%";
-      waitForReconnect(feedback, fsProgressStatus, () => setUploadBusy(false));
+      waitForReconnect(feedback, fsProgressStatus, 'filesystem', () => setUploadBusy(false));
     }, (errorMessage) => {
       setUploadBusy(false);
       if (fsProgressStatus) fsProgressStatus.textContent = "Upload failed";
