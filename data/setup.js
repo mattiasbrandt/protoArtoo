@@ -678,7 +678,7 @@
       }
 
       const fw_version =
-        fwRes.status === 'fulfilled' ? (fwRes.value?.version || 'unknown') : 'unknown';
+        fwRes.status === 'fulfilled' ? (fwRes.value?.firmwareVersion || 'unknown') : 'unknown';
 
       const backup = {
         schema: 1,
@@ -782,10 +782,17 @@
       const chirp = tracks.chirp_bindings?.[key];
       try {
         if (chirp) {
-          const form = new URLSearchParams({
-            key, track: chirp.index, bank: chirp.bank, page: chirp.page,
-          });
-          await window.PAApi.postForm('/api/audio/tracks', form, { timeoutMs: 5000 });
+          let bankedOk = false;
+          try {
+            await window.PAApi.postForm('/api/audio/tracks',
+              new URLSearchParams({ key, track: chirp.index, bank: chirp.bank, page: chirp.page }),
+              { timeoutMs: 5000 });
+            bankedOk = true;
+          } catch { /* fall through to simple track */ }
+          if (!bankedOk) {
+            await window.PAApi.postForm('/api/audio/tracks',
+              new URLSearchParams({ key, track: value }), { timeoutMs: 5000 });
+          }
         } else {
           await window.PAApi.postForm('/api/audio/tracks',
             new URLSearchParams({ key, track: value }), { timeoutMs: 5000 });
@@ -849,7 +856,7 @@
 
     if (chkMoodMap?.checked && parsedBackup.audio_mood_map) {
       try {
-        await window.PAApi.postJson('/api/audio/mood-map', parsedBackup.audio_mood_map,
+        await window.PAApi.postForm('/api/audio/mood-map', parsedBackup.audio_mood_map,
           { timeoutMs: 5000 });
         lines.push('Audio mood map: restored');
       } catch (err) {
@@ -857,8 +864,10 @@
       }
     }
 
-    lines.push('Reboot recommended to apply all restored settings.');
-    setFeedback(lines.join('\n'), 'success');
+    const anyRestored = lines.some((l) => l.includes(': restored'));
+    const anyIssue = lines.some((l) => l.includes('FAILED') || l.includes('partial'));
+    if (anyRestored) lines.push('Reboot recommended to apply all restored settings.');
+    setFeedback(lines.join('\n'), anyIssue ? 'error' : 'success');
     restoreBtn.disabled = false;
   };
 
