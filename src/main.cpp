@@ -259,7 +259,7 @@ void setup() {
     // ServoTask: 50 Hz servo PWM updates
     // DomeTask: 50 Hz ESC PWM updates
     xTaskCreatePinnedToCore(driveTask, "DriveTask", 4096, nullptr, 5, nullptr, 1);
-    xTaskCreatePinnedToCore(rcInputTask, "RCInputTask", 6144, nullptr, 5, nullptr, 1);
+    xTaskCreatePinnedToCore(rcInputTask, "RCInputTask", 7168, nullptr, 5, nullptr, 1);
     xTaskCreatePinnedToCore(
         servoTask, "ServoTask", 4096, nullptr, 4, nullptr,
         1);  // HWM: code fix (ConfigSnapshot→ServoConfig in hot paths) + 3072->4096
