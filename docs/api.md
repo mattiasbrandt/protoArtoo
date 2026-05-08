@@ -23,6 +23,7 @@ including request shape, accepted parameters, and observed response contracts.
 - Success payload is usually `{"ok":true}` unless the endpoint returns a full JSON object.
 - Errors are returned as JSON with `ok:false` + `error` in most routes.
 - Base URL examples below use `http://artoo.local`.
+- The controller hostname is lowercase `artoo`; use `artoo.local` on STA networks.
 - If mDNS is unavailable on your host network, use the current device IP from `GET /api/wifi` (`staIp`) or your network lease table.
 
 ## Safety and Drive

@@ -706,7 +706,7 @@
       if (eventType === "status") {
         applyStatus(payload);
       }
-      if (eventType === "log") payload.split("\n").forEach((line) => appendLogLine(line));
+      if (eventType === "log") payload.split("\x01").forEach((line) => appendLogLine(line));
       if (eventType === "stream_error") {
         appendLogLine("[connection lost — retrying…]");
         setStale(true);

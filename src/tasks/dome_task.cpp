@@ -96,7 +96,7 @@ void domeTaskInit() {
     uint16_t neutralUs = cfg.dome_neutral_us;
 
     if (!enabled) {
-        PA_LOG_INFO(TAG, "dome disabled (en_dome=false) — skipping ESC arming");
+        PA_LOG_INFO(TAG, "dome disabled");
         return;
     }
 

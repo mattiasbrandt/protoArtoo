@@ -795,8 +795,7 @@ void eventStreamTask(void*) {
                     size_t pos = 0;
                     for (size_t i = 0; i < linesCopied && pos < sizeof(s_sseLogBatch) - 1; ++i) {
                         if (i > 0) {
-                            memcpy(s_sseLogBatch + pos, "\ndata: ", 7);
-                            pos += 7;
+                            s_sseLogBatch[pos++] = '\x01';
                         }
                         size_t lineLen = strnlen(s_sseLogLines[i], LOG_LINE_MAX);
                         size_t room = sizeof(s_sseLogBatch) - 1 - pos;
@@ -861,7 +860,7 @@ void startHttpServerOnce() {
                 // Delay OTA init to let WiFi event handler complete first
                 vTaskDelay(pdMS_TO_TICKS(500));
 
-                ArduinoOTA.setHostname("protoArtoo");
+                ArduinoOTA.setHostname(WIFI_MDNS_HOST);
                 ArduinoOTA.onStart([]() {
                     const char* type =
                         (ArduinoOTA.getCommand() == U_FLASH) ? "firmware" : "filesystem";

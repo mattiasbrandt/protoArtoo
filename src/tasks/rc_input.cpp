@@ -681,8 +681,8 @@ void rcInputTask(void* pvParameters) {
             PA_LOG_INFO(TAG, "started — single_sbus mode, SBUS%d GPIO%d active", useCh2 ? 2 : 1,
                         sbusRxPin);
         } else {
-            PA_LOG_INFO(TAG, "started — single_sbus mode, SBUS%d disabled (%s=false) — idle",
-                        useCh2 ? 2 : 1, useCh2 ? "en_rc_ch2" : "en_rc_ch1");
+            PA_LOG_INFO(TAG, "started — single_sbus mode, SBUS%d disabled",
+                        useCh2 ? 2 : 1);
         }
     } else {
         if (!driveSbusEnabled)

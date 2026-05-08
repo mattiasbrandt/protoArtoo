@@ -139,6 +139,13 @@ constexpr char NVS_KEY_AUX_LED_COUNT[] = "aux_led_count";
 // -----------------------------------------------------------------------------
 constexpr char WIFI_AP_SSID[] = "protoArtoo";
 constexpr char WIFI_AP_IP[] = "192.168.4.1";
+
+// -----------------------------------------------------------------------------
+// WiFi hostname / mDNS
+// -----------------------------------------------------------------------------
+// Keep the LAN hostname lowercase for resolver compatibility. AP mode does not
+// advertise mDNS; this hostname is used only when STA WiFi is active.
+constexpr char WIFI_MDNS_HOST[] = "artoo";
 #ifndef PA_FIRMWARE_VERSION
 constexpr char PA_FIRMWARE_VERSION[] = "v0.0.0-dev";
 #endif

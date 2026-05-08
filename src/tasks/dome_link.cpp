@@ -53,7 +53,7 @@ constexpr uint32_t kUartProbeIntervalMs = 1000;
 constexpr uint32_t kUartProbeWindowMs = 150;
 constexpr uint32_t kMdnsRefreshMs = 5000;
 constexpr const char* kDomeMdnsHost = "astropixelsplus";
-constexpr const char* kBodyMdnsHost = "protoartoo";
+constexpr const char* kBodyMdnsHost = WIFI_MDNS_HOST;
 constexpr const char* kDomeCmdEndpoint = "/api/cmd";
 constexpr uint8_t kRxBufLen = 64;
 

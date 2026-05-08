@@ -407,7 +407,7 @@ void servoTaskInit() {
     if (anyServo) {
         PA_LOG_INFO(TAG, "Servo outputs ready (ARM1/2/AUX1-3 channels armed at neutral)");
     } else {
-        PA_LOG_INFO(TAG, "all arm/aux outputs disabled (en_arm1/2/aux1-3=false) — servos idle");
+        PA_LOG_INFO(TAG, "arm/aux outputs disabled");
     }
 }
 
