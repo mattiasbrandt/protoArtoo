@@ -546,9 +546,10 @@
     const hasLargest = d.heapLargestBlock !== undefined && d.heapLargestBlock !== null;
     const heapLargestKb = hasLargest ? Math.round(d.heapLargestBlock / 1024) : null;
 
-    const heapFreeState = heapFreeKb < 40 ? "critical" : heapFreeKb < 65 ? "watch" : "good";
-    const heapMinState = heapMinKb < 36 ? "critical" : heapMinKb < 52 ? "watch" : "good";
-    const heapLargestState = !hasLargest ? "na" : heapLargestKb < 20 ? "critical" : heapLargestKb < 36 ? "watch" : "good";
+    const t = window.PA_HEAP || {};
+    const heapFreeState = heapFreeKb < Math.round((t.freeCritical || 40000) / 1024) ? "critical" : heapFreeKb < Math.round((t.freeWarn || 65000) / 1024) ? "watch" : "good";
+    const heapMinState = heapMinKb < Math.round((t.minCritical || 36864) / 1024) ? "critical" : heapMinKb < Math.round((t.minWarn || 53248) / 1024) ? "watch" : "good";
+    const heapLargestState = !hasLargest ? "na" : heapLargestKb < Math.round((t.largestCritical || 20480) / 1024) ? "critical" : heapLargestKb < Math.round((t.largestWarn || 36864) / 1024) ? "watch" : "good";
 
     const colorForState = (state) =>
       state === "critical" ? "var(--danger)"

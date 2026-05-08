@@ -91,9 +91,12 @@
       );
     }
 
-    const detail = `heapFree=${heapBytes} B (warn <= 120000 B, fail <= 80000 B)`;
-    if (heapBytes > 120000) return healthSignal("ok", "Normal", detail);
-    if (heapBytes > 80000) return healthSignal("warn", "Low", detail);
+    const t = window.PA_HEAP || {};
+    const warnAt = t.freeWarn || 65000;
+    const failAt = t.freeCritical || 40000;
+    const detail = `heapFree=${heapBytes} B (warn <=${warnAt} B, fail <=${failAt} B)`;
+    if (heapBytes > warnAt) return healthSignal("ok", "Normal", detail);
+    if (heapBytes > failAt) return healthSignal("warn", "Low", detail);
     return healthSignal("fail", "Critical", detail);
   };
 
