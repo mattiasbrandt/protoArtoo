@@ -9,55 +9,55 @@
 
   const PAGE_CONFIG = {
     home: {
-      title: "protoArtoo - Dashboard",
+      title: "{name} - Dashboard",
       statusDot: "yellow",
       statusText: "",
       connectedText: "",
     },
     drive: {
-      title: "Drive - protoArtoo",
+      title: "Drive - {name}",
       statusDot: "yellow",
       statusText: "Connecting…",
       connectedText: "Drive page connected",
     },
     dome: {
-      title: "Dome - protoArtoo",
+      title: "Dome - {name}",
       statusDot: "yellow",
       statusText: "Connecting…",
       connectedText: "Dome page connected",
     },
     sound: {
-      title: "protoArtoo - Sound",
+      title: "{name} - Sound",
       statusDot: "yellow",
       statusText: "Connecting…",
       connectedText: "Sound page connected",
     },
     servo: {
-      title: "Servos - protoArtoo",
+      title: "Servos - {name}",
       statusDot: "yellow",
       statusText: "Connecting…",
       connectedText: "Servos page connected",
     },
     rc: {
-      title: "RC Control - protoArtoo",
+      title: "RC Control - {name}",
       statusDot: "yellow",
       statusText: "Connecting…",
       connectedText: "RC page connected",
     },
     setup: {
-      title: "Setup - protoArtoo",
+      title: "Setup - {name}",
       statusDot: "yellow",
       statusText: "Connecting…",
       connectedText: "Setup page connected",
     },
     wifi: {
-      title: "WiFi - protoArtoo",
+      title: "WiFi - {name}",
       statusDot: "yellow",
       statusText: "Connecting…",
       connectedText: "WiFi page connected",
     },
     firmware: {
-      title: "Firmware - protoArtoo",
+      title: "Firmware - {name}",
       statusDot: "yellow",
       statusText: "Connecting…",
       connectedText: "Firmware page connected",
@@ -77,7 +77,14 @@
   ];
 
   const cfg = PAGE_CONFIG[page] || PAGE_CONFIG.home;
-  document.title = cfg.title;
+  const applyIdentityName = (name) => {
+    const droidName = String(name || "protoartoo");
+    document.title = cfg.title.replace("{name}", droidName);
+    document.querySelectorAll("[data-identity-name]").forEach((el) => {
+      el.textContent = droidName;
+    });
+  };
+  applyIdentityName("protoartoo");
 
 
   window.PAUi = window.PAUi || {};
@@ -100,7 +107,7 @@
         <a href="/" class="topbar-brand">
           <img src="/r2d2body.svg" alt="R2-D2 body icon" class="topbar-logo">
           <div>
-            <h1>protoArtoo</h1>
+            <h1 data-identity-name>protoartoo</h1>
             <div class="subtitle">R2-D2 Body Controller</div>
           </div>
         </a>
@@ -136,4 +143,20 @@
       }
     });
   }
+
+  const loadIdentity = async () => {
+    try {
+      const result = window.PAApi
+        ? await window.PAApi.get("/api/identity", { timeoutMs: 3000 })
+        : { data: await fetch("/api/identity", { cache: "no-store" }).then((r) => r.json()) };
+      applyIdentityName(result.data?.droidName);
+    } catch (error) {
+      console.warn("[shell] identity unavailable:", error);
+    }
+  };
+
+  window.addEventListener("pa:identity-updated", (event) => {
+    applyIdentityName(event.detail?.droidName);
+  });
+  loadIdentity();
 })();

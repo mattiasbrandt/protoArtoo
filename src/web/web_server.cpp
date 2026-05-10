@@ -10,6 +10,7 @@
 #include <ArduinoJson.h>
 #include <ArduinoOTA.h>
 #include <ESPAsyncWebServer.h>
+#include <ESPmDNS.h>
 #include <LittleFS.h>
 #include <WiFi.h>
 #include <stddef.h>
@@ -24,6 +25,7 @@
 #include "../../include/drive_speed_preset.h"
 #include "../../include/api_estop.h"
 #include "../../include/api_helpers.h"
+#include "../../include/api_identity.h"
 #include "../../include/api_rc.h"
 #include "../../include/api_servo.h"
 #include "../../include/api_status.h"
@@ -201,6 +203,7 @@ static bool routesRegistered = false;
 static bool serverStarted = false;
 static bool eventTaskStarted = false;
 static bool otaTaskStarted = false;
+static bool mdnsStarted = false;
 
 namespace {
 
@@ -837,6 +840,7 @@ void startHttpServerOnce() {
         registerStatusRoutes(server);
         registerValidationRoutes(server);
         registerSystemRoutes(server);
+        registerIdentityRoutes(server);
 #if PA_HEAP_PROFILE
         registerProfilerRoutes(server);
 #endif
@@ -853,6 +857,20 @@ void startHttpServerOnce() {
     serverStarted = true;
     PA_LOG_INFO(TAG, "HTTP server started on port 80");
 
+#if PA_ENABLE_STA_WIFI
+    if (!mdnsStarted && WiFi.status() == WL_CONNECTED) {
+        char hostname[DROID_NAME_MAX_LEN + 1] = {};
+        configCacheResolvedMdnsHostname(hostname, sizeof(hostname));
+        mdnsStarted = MDNS.begin(hostname);
+        if (mdnsStarted) {
+            MDNS.enableArduino(3232, false);
+            PA_LOG_INFO(TAG, "mDNS ready as %s.local", hostname);
+        } else {
+            PA_LOG_WARN(TAG, "mDNS init failed for host %s", hostname);
+        }
+    }
+#endif
+
     // Start OTA task in background — MUST NOT block WiFi event handler (causes TWDT)
     if (!otaTaskStarted) {
         xTaskCreatePinnedToCore(
@@ -860,7 +878,10 @@ void startHttpServerOnce() {
                 // Delay OTA init to let WiFi event handler complete first
                 vTaskDelay(pdMS_TO_TICKS(500));
 
-                ArduinoOTA.setHostname(WIFI_MDNS_HOST);
+                char hostname[DROID_NAME_MAX_LEN + 1] = {};
+                configCacheResolvedMdnsHostname(hostname, sizeof(hostname));
+                ArduinoOTA.setHostname(hostname);
+                ArduinoOTA.setMdnsEnabled(false);
                 ArduinoOTA.onStart([]() {
                     const char* type =
                         (ArduinoOTA.getCommand() == U_FLASH) ? "firmware" : "filesystem";
@@ -871,7 +892,7 @@ void startHttpServerOnce() {
                     PA_LOG_ERROR(TAG, "ArduinoOTA error: %d", (int)error);
                 });
                 ArduinoOTA.begin();
-                PA_LOG_INFO(TAG, "ArduinoOTA ready on port 3232");
+                PA_LOG_INFO(TAG, "ArduinoOTA ready on port 3232 as %s", hostname);
 
                 for (;;) {
                     ArduinoOTA.handle();

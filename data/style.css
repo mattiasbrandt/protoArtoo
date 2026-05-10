@@ -2142,6 +2142,44 @@ label.sound-search-field {
   flex-wrap: wrap;
 }
 
+.identity-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.identity-header h3 {
+  margin: 0;
+  white-space: nowrap;
+}
+
+.identity-feedback {
+  min-height: 20px;
+  text-align: right;
+}
+
+.identity-grid {
+  display: grid;
+  grid-template-columns: minmax(180px, 240px) minmax(270px, 1fr) minmax(96px, 112px);
+  gap: 12px;
+  align-items: center;
+}
+
+.identity-checkbox {
+  align-self: end;
+  min-height: 44px;
+  color: var(--silver-bright);
+}
+
+.identity-save-button {
+  align-self: end;
+  min-height: 44px;
+  padding-inline: 14px;
+  white-space: nowrap;
+}
+
 /* RC mapper class-based dynamic markup */
 .rc-mapper-grid {
   display: grid;

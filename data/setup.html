@@ -10,7 +10,6 @@
   <body data-page="setup">
     <div id="shell-top"></div>
 
-
     <div class="board-image-wrap">
       <img src="/artoo_board.jpg" alt="Artoo Controller PCB" title="Artoo Controller PCB">
     </div>
@@ -423,6 +422,24 @@
       </div>
 
       <div id="backup-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true"></div>
+    </div>
+
+    <div class="card">
+      <div class="identity-header">
+        <h3>🤖 Droid Identity</h3>
+        <div id="identity-feedback" class="feedback identity-feedback" role="status" aria-live="polite" aria-atomic="true"></div>
+      </div>
+      <div class="identity-grid">
+        <label class="field" for="droid-name-input">
+          <span>Droid name</span>
+          <input id="droid-name-input" type="text" maxlength="32" autocomplete="off" spellcheck="false" value="protoartoo">
+        </label>
+        <label class="field-checkbox identity-checkbox" for="mdns-use-name">
+          <input type="checkbox" id="mdns-use-name">
+          <span>Use as network hostname (mDNS)</span>
+        </label>
+        <button id="identity-save-button" class="btn identity-save-button" type="button">💾 Save</button>
+      </div>
     </div>
 
     <!-- System Controls -->

@@ -75,6 +75,44 @@ bool parseBoolValue(const char* raw, bool* out) {
     return false;
 }
 
+bool normalizeDroidName(const char* raw, char* out, size_t outSize) {
+    if (raw == nullptr || out == nullptr || outSize == 0) {
+        return false;
+    }
+
+    const char* first = raw;
+    while (*first == ' ' || *first == '\t' || *first == '\n' || *first == '\r') {
+        ++first;
+    }
+
+    const char* last = first + strlen(first);
+    while (last > first &&
+           (last[-1] == ' ' || last[-1] == '\t' || last[-1] == '\n' || last[-1] == '\r')) {
+        --last;
+    }
+
+    size_t len = 0;
+    for (const char* p = first; p < last; ++p) {
+        char c = *p;
+        if (c >= 'A' && c <= 'Z') {
+            c = (char)(c - 'A' + 'a');
+        } else if (c == ' ' || c == '\t' || c == '\n' || c == '\r') {
+            c = '-';
+        }
+
+        const bool allowed = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-';
+        if (!allowed) {
+            continue;
+        }
+        if (len + 1 >= outSize || len >= DROID_NAME_MAX_LEN) {
+            return false;
+        }
+        out[len++] = c;
+    }
+    out[len] = '\0';
+    return len > 0;
+}
+
 void formatConfigJson(char* buf, size_t bufSize, int16_t speedLimitMax,
                       uint32_t webDriveTimeoutMs) {
     snprintf(buf, bufSize, "{\"speedLimitMax\":%d,\"webDriveTimeoutMs\":%lu}", (int)speedLimitMax,
@@ -162,6 +200,16 @@ bool formatSleepControlJson(char* buf, size_t bufSize, bool sleepMode, bool chan
 
     int written = snprintf(buf, bufSize, "{\"ok\":true,\"sleepMode\":%s,\"changed\":%s}",
                            sleepMode ? "true" : "false", changed ? "true" : "false");
+    return written > 0 && (size_t)written < bufSize;
+}
+
+bool formatIdentityJson(char* buf, size_t bufSize, const char* droidName, bool mdnsUseName) {
+    if (buf == nullptr || bufSize == 0 || droidName == nullptr) {
+        return false;
+    }
+
+    int written = snprintf(buf, bufSize, "{\"droidName\":\"%s\",\"mdnsUseName\":%s}",
+                           droidName, mdnsUseName ? "true" : "false");
     return written > 0 && (size_t)written < bufSize;
 }
 

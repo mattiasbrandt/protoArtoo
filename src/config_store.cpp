@@ -6,6 +6,7 @@
 
 #include "config_store.h"
 
+#include "api_helpers.h"
 #include "audio_dollar_parser.h"
 #include "config.h"
 #include "logging.h"
@@ -22,6 +23,8 @@ namespace {
 
 // NVS key strings — all cfg_* keys are defined here and ONLY here
 const struct {
+    const char* droidName = "droid_name";
+    const char* mdnsUseName = "mdns_use_name";
     const char* speedLimitMax = "spd_max";
     const char* speedPresetSlow = "spd_pre_s";
     const char* speedPresetNormal = "spd_pre_n";
@@ -314,6 +317,8 @@ uint32_t floatToBits(float value) {
 
 // Helper: Populate ConfigSnapshot with defaults
 void configSnapshotDefaults(ConfigSnapshot* snap) {
+    snprintf(snap->system.droid_name, sizeof(snap->system.droid_name), "%s", DROID_NAME_DEFAULT);
+    snap->system.mdns_use_name = false;
     snap->drive.speedLimitMax = SPEED_LIMIT_MAX;
     snap->drive.speedPresetSlow = SPEED_PRESET_SLOW;
     snap->drive.speedPresetNormal = SPEED_PRESET_NORMAL;
@@ -541,6 +546,24 @@ uint8_t configCurrentLogLevel() {
     level = configCache.system.logLevel;
     taskEXIT_CRITICAL(&configCacheMux);
     return level == 0 ? PA_LOG_LEVEL : level;
+}
+
+void configResolvedMdnsHostname(const SystemConfig& system, char* out, size_t outSize) {
+    if (out == nullptr || outSize == 0) {
+        return;
+    }
+    const char* host =
+        (system.mdns_use_name && system.droid_name[0] != '\0') ? system.droid_name : WIFI_MDNS_HOST;
+    snprintf(out, outSize, "%s", host);
+}
+
+void configCacheResolvedMdnsHostname(char* out, size_t outSize) {
+    if (out == nullptr || outSize == 0) {
+        return;
+    }
+    ConfigSnapshot snap = {};
+    configCacheRead(&snap);
+    configResolvedMdnsHostname(snap.system, out, outSize);
 }
 
 bool configAudioGetTrackByKey(const AudioConfig& config, const char* key, uint16_t* out) {
@@ -877,6 +900,13 @@ void configLoadSystem(Preferences& prefs, SystemConfig* out) {
     configSnapshotDefaults(&snap);
     *out = snap.system;
 
+    String droidName = prefs.getString(NVS_KEYS.droidName, DROID_NAME_DEFAULT);
+    char normalizedName[DROID_NAME_MAX_LEN + 1] = {};
+    if (!normalizeDroidName(droidName.c_str(), normalizedName, sizeof(normalizedName))) {
+        snprintf(normalizedName, sizeof(normalizedName), "%s", DROID_NAME_DEFAULT);
+    }
+    snprintf(out->droid_name, sizeof(out->droid_name), "%s", normalizedName);
+    out->mdns_use_name = prefs.getBool(NVS_KEYS.mdnsUseName, false);
     out->logLevel = prefs.getUChar(NVS_KEYS.logLevel, PA_LOG_LEVEL);
     out->enable_arm1 = prefs.getBool(NVS_KEYS.enableArm1, false);
     out->enable_arm2 = prefs.getBool(NVS_KEYS.enableArm2, false);
@@ -1122,6 +1152,12 @@ bool configSaveDome(Preferences& prefs, const DomeConfig& config) {
 
 bool configSaveSystem(Preferences& prefs, const SystemConfig& config) {
     bool ok = true;
+    char droidName[DROID_NAME_MAX_LEN + 1] = {};
+    if (!normalizeDroidName(config.droid_name, droidName, sizeof(droidName))) {
+        snprintf(droidName, sizeof(droidName), "%s", DROID_NAME_DEFAULT);
+    }
+    ok = prefs.putString(NVS_KEYS.droidName, droidName) > 0 && ok;
+    ok = prefs.putBool(NVS_KEYS.mdnsUseName, config.mdns_use_name) > 0 && ok;
     ok = prefs.putUChar(NVS_KEYS.logLevel, config.logLevel) > 0 && ok;
     ok = prefs.putBool(NVS_KEYS.enableArm1, config.enable_arm1) > 0 && ok;
     ok = prefs.putBool(NVS_KEYS.enableArm2, config.enable_arm2) > 0 && ok;

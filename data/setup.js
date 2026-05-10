@@ -49,6 +49,10 @@
   const setupSaveSummary = document.getElementById("setup-save-summary");
   const rebootButton = document.getElementById("reboot-button");
   const rebootFeedback = document.getElementById("reboot-feedback");
+  const identityNameInput = document.getElementById("droid-name-input");
+  const identityMdnsCheckbox = document.getElementById("mdns-use-name");
+  const identitySaveButton = document.getElementById("identity-save-button");
+  const identityFeedback = document.getElementById("identity-feedback");
 
   // Map from API payload key to featureToggles key
   const TOGGLE_KEY_MAP = {
@@ -94,6 +98,70 @@
 
   const setDiagFeedback = (message, variant = "") => {
     setFeedbackState(diagFeedback, message, variant);
+  };
+
+  const normalizeIdentityInput = (value) => String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "-")
+    .replace(/[^a-z0-9-]/g, "")
+    .slice(0, 32);
+
+  const setIdentityFeedback = (message, variant = "") => {
+    setFeedbackState(identityFeedback, message, variant);
+  };
+
+  const renderIdentity = (identity) => {
+    if (identityNameInput) {
+      identityNameInput.value = normalizeIdentityInput(identity?.droidName || "protoartoo");
+    }
+    if (identityMdnsCheckbox) {
+      identityMdnsCheckbox.checked = Boolean(identity?.mdnsUseName);
+    }
+  };
+
+  const loadIdentity = async () => {
+    if (!window.PAApi || !identityNameInput) return;
+    setIdentityFeedback("Loading identity...");
+    try {
+      const result = await window.PAApi.get("/api/identity", { timeoutMs: 5000 });
+      renderIdentity(result.data);
+      setIdentityFeedback(`Identity loaded at ${new Date().toLocaleTimeString()}`, "success");
+    } catch (error) {
+      console.error("[setup] loadIdentity failed:", error);
+      setIdentityFeedback(`Failed to load identity: ${window.PAApi.messageFor(error)}`, "error");
+    }
+  };
+
+  const saveIdentity = async () => {
+    if (!window.PAApi || !identityNameInput) return;
+    const droidName = normalizeIdentityInput(identityNameInput.value);
+    identityNameInput.value = droidName;
+    if (!droidName) {
+      setIdentityFeedback("Droid name is required.", "error");
+      return;
+    }
+
+    if (identitySaveButton) {
+      identitySaveButton.disabled = true;
+    }
+    setIdentityFeedback("Saving identity...");
+    try {
+      const body = new URLSearchParams();
+      body.set("droidName", droidName);
+      body.set("mdnsUseName", identityMdnsCheckbox?.checked ? "true" : "false");
+      const result = await window.PAApi.postForm("/api/identity", body, { timeoutMs: 5000 });
+      renderIdentity(result.data);
+      window.dispatchEvent(new CustomEvent("pa:identity-updated", { detail: result.data }));
+      setIdentityFeedback(`Identity saved at ${new Date().toLocaleTimeString()}`, "success");
+    } catch (error) {
+      console.error("[setup] saveIdentity failed:", error);
+      setIdentityFeedback(window.PAApi.messageFor(error), "error");
+    } finally {
+      if (identitySaveButton) {
+        identitySaveButton.disabled = false;
+      }
+    }
   };
 
   const setSavePending = (pending) => {
@@ -391,6 +459,19 @@
     });
   }
 
+  if (identityNameInput) {
+    identityNameInput.addEventListener("input", () => {
+      const normalized = normalizeIdentityInput(identityNameInput.value);
+      if (identityNameInput.value !== normalized) {
+        identityNameInput.value = normalized;
+      }
+    });
+  }
+
+  if (identitySaveButton) {
+    identitySaveButton.addEventListener("click", saveIdentity);
+  }
+
 
   // Reboot functionality
 
@@ -452,6 +533,8 @@
   updateEnabledSummary();
   updateAuxLedConfigVisibility();
   setSaveSummary("💾 Auto-save ready", "info");
+  renderIdentity({ droidName: "protoartoo", mdnsUseName: false });
+  loadIdentity();
   loadFeatures();
   // --- Serial connection status ---
   const serialS1 = document.getElementById("serial-s1-state");

@@ -163,6 +163,30 @@ void test_parseBool_yes_fails() {
     TEST_ASSERT_FALSE(parseBoolValue("yes", &out));
 }
 
+// --- normalizeDroidName() tests ---
+
+void test_normalizeDroidName_lowercase_and_hyphenates() {
+    char out[33] = {};
+    TEST_ASSERT_TRUE(normalizeDroidName("  R2 Unit 07  ", out, sizeof(out)));
+    TEST_ASSERT_EQUAL_STRING("r2-unit-07", out);
+}
+
+void test_normalizeDroidName_strips_invalid_chars() {
+    char out[33] = {};
+    TEST_ASSERT_TRUE(normalizeDroidName("Artoo!@# Body", out, sizeof(out)));
+    TEST_ASSERT_EQUAL_STRING("artoo-body", out);
+}
+
+void test_normalizeDroidName_empty_after_trim_fails() {
+    char out[33] = {};
+    TEST_ASSERT_FALSE(normalizeDroidName("   ", out, sizeof(out)));
+}
+
+void test_normalizeDroidName_too_long_fails() {
+    char out[33] = {};
+    TEST_ASSERT_FALSE(normalizeDroidName("abcdefghijklmnopqrstuvwxyz1234567", out, sizeof(out)));
+}
+
 // --- formatSleepControlJson() tests ---
 
 void test_formatSleepControlJson_sleep_changed() {
@@ -184,6 +208,19 @@ void test_formatSleepControlJson_null_buffer_fails() {
 void test_formatSleepControlJson_small_buffer_fails() {
     char out[16] = {};
     TEST_ASSERT_FALSE(formatSleepControlJson(out, sizeof(out), true, true));
+}
+
+// --- formatIdentityJson() tests ---
+
+void test_formatIdentityJson_valid_payload() {
+    char out[96] = {};
+    TEST_ASSERT_TRUE(formatIdentityJson(out, sizeof(out), "r2-unit", true));
+    TEST_ASSERT_EQUAL_STRING("{\"droidName\":\"r2-unit\",\"mdnsUseName\":true}", out);
+}
+
+void test_formatIdentityJson_small_buffer_fails() {
+    char out[20] = {};
+    TEST_ASSERT_FALSE(formatIdentityJson(out, sizeof(out), "r2-unit", false));
 }
 
 // --- formatSpeedPresetResponseJson() tests ---
@@ -266,10 +303,16 @@ int main() {
     RUN_TEST(test_parseBool_null_fails);
     RUN_TEST(test_parseBool_uppercase_fails);
     RUN_TEST(test_parseBool_yes_fails);
+    RUN_TEST(test_normalizeDroidName_lowercase_and_hyphenates);
+    RUN_TEST(test_normalizeDroidName_strips_invalid_chars);
+    RUN_TEST(test_normalizeDroidName_empty_after_trim_fails);
+    RUN_TEST(test_normalizeDroidName_too_long_fails);
     RUN_TEST(test_formatSleepControlJson_sleep_changed);
     RUN_TEST(test_formatSleepControlJson_wake_unchanged);
     RUN_TEST(test_formatSleepControlJson_null_buffer_fails);
     RUN_TEST(test_formatSleepControlJson_small_buffer_fails);
+    RUN_TEST(test_formatIdentityJson_valid_payload);
+    RUN_TEST(test_formatIdentityJson_small_buffer_fails);
     RUN_TEST(test_formatSpeedPresetResponseJson_valid_payload);
     RUN_TEST(test_formatSpeedPresetResponseJson_null_buffer_fails);
     RUN_TEST(test_formatSpeedPresetResponseJson_small_buffer_fails);

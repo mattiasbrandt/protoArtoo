@@ -18,6 +18,7 @@
 
 #include <Preferences.h>
 
+#include "config.h"
 #include "robot_state.h"
 
 // NVS schema version
@@ -283,6 +284,8 @@ struct DomeConfig {
 };
 
 struct SystemConfig {
+    char droid_name[DROID_NAME_MAX_LEN + 1];
+    bool mdns_use_name;
     uint8_t logLevel;
     bool enable_arm1;
     bool enable_arm2;
@@ -387,6 +390,8 @@ void configCacheApply(const ConfigSnapshot& snap);
 
 // configCurrentLogLevel: lightweight runtime log-level accessor used by logging.h.
 uint8_t configCurrentLogLevel();
+void configResolvedMdnsHostname(const SystemConfig& system, char* out, size_t outSize);
+void configCacheResolvedMdnsHostname(char* out, size_t outSize);
 
 // configValidate: Validate a scalar field value before writing.
 // Covers int, float, bool, and enum fields only.

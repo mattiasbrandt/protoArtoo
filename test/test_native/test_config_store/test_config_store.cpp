@@ -6,6 +6,7 @@
 // =============================================================================
 
 #include <cstring>
+#include <cstdio>
 #include <stdint.h>
 
 #include <unity.h>
@@ -40,6 +41,8 @@ void test_configLoad_empty_nvs_returns_defaults() {
     TEST_ASSERT_EQUAL_UINT32(SBUS_TIMEOUT_MS, snap.drive.sbusTimeoutMs);
     TEST_ASSERT_EQUAL_UINT32(WEB_DRIVE_TIMEOUT_MS, snap.drive.webDriveTimeoutMs);
     TEST_ASSERT_EQUAL_UINT8(20, snap.audio.audioVolume);
+    TEST_ASSERT_EQUAL_STRING(DROID_NAME_DEFAULT, snap.system.droid_name);
+    TEST_ASSERT_FALSE(snap.system.mdns_use_name);
 }
 
 // Test: Save and reload returns same snapshot
@@ -52,6 +55,8 @@ void test_configLoad_save_roundtrip() {
     snap1.drive.sbusTimeoutMs = 150;
     snap1.drive.webDriveTimeoutMs = 400;
     snap1.audio.audioVolume = 25;
+    snprintf(snap1.system.droid_name, sizeof(snap1.system.droid_name), "%s", "r2-unit");
+    snap1.system.mdns_use_name = true;
 
     Preferences prefs;
     prefs.begin("proto", false);
@@ -70,6 +75,25 @@ void test_configLoad_save_roundtrip() {
     TEST_ASSERT_EQUAL_UINT32(snap1.drive.sbusTimeoutMs, snap2.drive.sbusTimeoutMs);
     TEST_ASSERT_EQUAL_UINT32(snap1.drive.webDriveTimeoutMs, snap2.drive.webDriveTimeoutMs);
     TEST_ASSERT_EQUAL_UINT8(snap1.audio.audioVolume, snap2.audio.audioVolume);
+    TEST_ASSERT_EQUAL_STRING(snap1.system.droid_name, snap2.system.droid_name);
+    TEST_ASSERT_TRUE(snap2.system.mdns_use_name);
+}
+
+void test_configLoad_save_identity_normalizes_name() {
+    ConfigSnapshot snap1 = {};
+    snprintf(snap1.system.droid_name, sizeof(snap1.system.droid_name), "%s", "R2 Unit");
+    snap1.system.mdns_use_name = true;
+
+    Preferences prefs;
+    prefs.begin("proto", false);
+    TEST_ASSERT_TRUE(configSave(prefs, snap1));
+
+    ConfigSnapshot snap2 = {};
+    TEST_ASSERT_TRUE(configLoad(prefs, &snap2));
+    prefs.end();
+
+    TEST_ASSERT_EQUAL_STRING("r2-unit", snap2.system.droid_name);
+    TEST_ASSERT_TRUE(snap2.system.mdns_use_name);
 }
 
 // Test: configValidate rejects out-of-range speed limit
@@ -1014,6 +1038,7 @@ int main() {
     UNITY_BEGIN();
     RUN_TEST(test_configLoad_empty_nvs_returns_defaults);
     RUN_TEST(test_configLoad_save_roundtrip);
+    RUN_TEST(test_configLoad_save_identity_normalizes_name);
     RUN_TEST(test_configValidate_speed_limit_out_of_range);
     RUN_TEST(test_configValidate_speed_limit_valid);
     RUN_TEST(test_configValidate_sbus_timeout_out_of_range);

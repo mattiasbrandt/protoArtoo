@@ -49,6 +49,12 @@ bool parseUint32Value(const char* raw, uint32_t* out);
 // -----------------------------------------------------------------------------
 bool parseBoolValue(const char* raw, bool* out);
 
+// Normalize an operator-facing droid name into the persisted DNS-safe form.
+// Leading/trailing whitespace is trimmed, A-Z becomes a-z, internal whitespace
+// becomes '-', and other non [a-z0-9-] characters are stripped.
+// Returns false if the normalized result is empty or does not fit in out.
+bool normalizeDroidName(const char* raw, char* out, size_t outSize);
+
 // -----------------------------------------------------------------------------
 // formatConfigJson()
 // Write a JSON config object into a caller-supplied buffer.
@@ -167,6 +173,11 @@ void formatAudioStatusJson(char* buf, size_t bufSize, const char* driverName,
 // Output: {"ok":true,"sleepMode":<bool>,"changed":<bool>}
 // Returns false if the payload does not fit in buf.
 bool formatSleepControlJson(char* buf, size_t bufSize, bool sleepMode, bool changed);
+
+// Format JSON response for identity endpoints.
+// Output: {"droidName":"...","mdnsUseName":<bool>}
+// Returns false if the payload does not fit in buf.
+bool formatIdentityJson(char* buf, size_t bufSize, const char* droidName, bool mdnsUseName);
 
 // Format JSON response for speed preset endpoint.
 // Output: {"ok":true,"preset":"slow|normal|turbo","speedLimitMax":<0..600>}

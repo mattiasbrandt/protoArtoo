@@ -13,6 +13,7 @@
 // =============================================================================
 #pragma once
 
+#include <stddef.h>
 #include <stdint.h>
 
 // -----------------------------------------------------------------------------
@@ -133,6 +134,8 @@ constexpr uint32_t WATCHDOG_TIMEOUT_S = 3;  // ESP32 TWDT timeout
 constexpr char NVS_NAMESPACE[] = "proto";
 constexpr char NVS_KEY_AUX_LED_PIN[] = "aux_led_pin";
 constexpr char NVS_KEY_AUX_LED_COUNT[] = "aux_led_count";
+constexpr char DROID_NAME_DEFAULT[] = "protoartoo";
+constexpr size_t DROID_NAME_MAX_LEN = 32;
 
 // -----------------------------------------------------------------------------
 // WiFi AP

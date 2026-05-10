@@ -53,7 +53,6 @@ constexpr uint32_t kUartProbeIntervalMs = 1000;
 constexpr uint32_t kUartProbeWindowMs = 150;
 constexpr uint32_t kMdnsRefreshMs = 5000;
 constexpr const char* kDomeMdnsHost = "astropixelsplus";
-constexpr const char* kBodyMdnsHost = WIFI_MDNS_HOST;
 constexpr const char* kDomeCmdEndpoint = "/api/cmd";
 constexpr uint8_t kRxBufLen = 64;
 
@@ -489,7 +488,6 @@ void domeLinkTask(void* pvParameters) {
     IPAddress peerIp;
     bool peerKnown = false;
     bool peerManual = false;
-    bool mdnsReady = false;
     bool udpReady = false;
 
     DomeTxCmd txCmd{};
@@ -497,14 +495,6 @@ void domeLinkTask(void* pvParameters) {
     for (;;) {
         const uint32_t now = millis();
         const bool staConnected = WiFi.status() == WL_CONNECTED;
-        if (!staConnected) {
-            mdnsReady = false;
-        } else if (!mdnsReady) {
-            mdnsReady = MDNS.begin(kBodyMdnsHost);
-            if (!mdnsReady) {
-                PA_LOG_WARN(TAG, "mDNS init failed for host %s", kBodyMdnsHost);
-            }
-        }
 
         if (staConnected && !udpReady) {
             udpReady = s_domeUdp.begin(kDomeUdpPort) == 1;
