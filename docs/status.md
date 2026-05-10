@@ -34,8 +34,8 @@ protoArtoo is currently being prepared for the `v1.0.0` release (internally trac
 | Dome-body link integration | Tested on an ESP32 controller. | Full slip-ring / integrated droid confirmation. |
 | Servo command logic | Tested on an ESP32 controller. | Physical servo motion on installed servos. |
 | Servo setup/persistence | Save/apply round-trips exist. | Reboot survival and physical actuation confirmation. |
-| Network connectivity | WiFi connectivity and OTA paths exist. | End-to-end recovery and upload behavior on the target controller. |
-| Web API/UI | Browser-accessible setup and control surfaces exist. | Live update and save/apply flows on deployed hardware. |
+| Network connectivity | WiFi connectivity, OTA paths, and configurable droid hostname have been tested on an ESP32 controller. | End-to-end recovery and upload behavior on the target controller. |
+| Web API/UI | Browser-accessible setup and control surfaces exist; droid identity save/apply has been tested on an ESP32 controller. | Live update and save/apply flows for remaining pages on deployed hardware. |
 | Firmware/filesystem update flow | OTA and filesystem upload surfaces exist. | Full recovery after failed or partial upload on target hardware. |
 | Drive failsafe | Safety logic is implemented and tested on an ESP32 controller. | Live motor reaction under drive hardware and RC loss. |
 | Estop | Latching estop is implemented and tested on an ESP32 controller. | End-to-end confirmation with all actuators connected. |
@@ -46,6 +46,7 @@ protoArtoo is currently being prepared for the `v1.0.0` release (internally trac
 
 - Core firmware architecture and task model are operational on the target controller platform.
 - Web UI, API surfaces, and persisted configuration workflows are operational.
+- Droid identity can be configured from the Setup page; lowercase names persist through reboot and can be used as the `.local` hostname.
 - RC modes, safety logic, and latching emergency-stop behavior are implemented and validated at controller level.
 - Body-owned audio model is implemented, including modular backend support and operator workflows.
 - Body-dome communication path is implemented; body-side handling is validated.

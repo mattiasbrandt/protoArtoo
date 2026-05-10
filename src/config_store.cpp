@@ -555,6 +555,11 @@ void configResolvedMdnsHostname(const SystemConfig& system, char* out, size_t ou
     const char* host =
         (system.mdns_use_name && system.droid_name[0] != '\0') ? system.droid_name : WIFI_MDNS_HOST;
     snprintf(out, outSize, "%s", host);
+    for (size_t i = 0; out[i] != '\0'; ++i) {
+        if (out[i] >= 'A' && out[i] <= 'Z') {
+            out[i] = (char)(out[i] - 'A' + 'a');
+        }
+    }
 }
 
 void configCacheResolvedMdnsHostname(char* out, size_t outSize) {

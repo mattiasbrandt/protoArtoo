@@ -101,9 +101,8 @@
   };
 
   const normalizeIdentityInput = (value) => String(value || "")
-    .trim()
     .toLowerCase()
-    .replace(/\s+/g, "-")
+    .replace(/\s+/g, "")
     .replace(/[^a-z0-9-]/g, "")
     .slice(0, 32);
 

@@ -49,10 +49,10 @@ bool parseUint32Value(const char* raw, uint32_t* out);
 // -----------------------------------------------------------------------------
 bool parseBoolValue(const char* raw, bool* out);
 
-// Normalize an operator-facing droid name into the persisted DNS-safe form.
-// Leading/trailing whitespace is trimmed, A-Z becomes a-z, internal whitespace
-// becomes '-', and other non [a-z0-9-] characters are stripped.
-// Returns false if the normalized result is empty or does not fit in out.
+// Validate and copy an operator-facing droid name into the persisted form.
+// Names may contain lowercase a-z, 0-9, and '-'. Uppercase, whitespace, and
+// other punctuation are rejected.
+// Returns false if the result is empty or does not fit in out.
 bool normalizeDroidName(const char* raw, char* out, size_t outSize);
 
 // -----------------------------------------------------------------------------

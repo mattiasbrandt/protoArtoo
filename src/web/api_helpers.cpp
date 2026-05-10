@@ -80,30 +80,17 @@ bool normalizeDroidName(const char* raw, char* out, size_t outSize) {
         return false;
     }
 
-    const char* first = raw;
-    while (*first == ' ' || *first == '\t' || *first == '\n' || *first == '\r') {
-        ++first;
-    }
-
-    const char* last = first + strlen(first);
-    while (last > first &&
-           (last[-1] == ' ' || last[-1] == '\t' || last[-1] == '\n' || last[-1] == '\r')) {
-        --last;
-    }
-
     size_t len = 0;
-    for (const char* p = first; p < last; ++p) {
-        char c = *p;
-        if (c >= 'A' && c <= 'Z') {
-            c = (char)(c - 'A' + 'a');
-        } else if (c == ' ' || c == '\t' || c == '\n' || c == '\r') {
-            c = '-';
+    for (const char* p = raw; *p != '\0'; ++p) {
+        const char c = *p;
+        if (c == ' ' || c == '\t' || c == '\n' || c == '\r') {
+            return false;
         }
-
         const bool allowed = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-';
         if (!allowed) {
-            continue;
+            return false;
         }
+
         if (len + 1 >= outSize || len >= DROID_NAME_MAX_LEN) {
             return false;
         }

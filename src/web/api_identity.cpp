@@ -3,7 +3,7 @@
 //
 // Droid identity API endpoints
 //   GET  /api/identity  — current cosmetic droid name and mDNS opt-in
-//   POST /api/identity  — persist normalized droid name and mDNS opt-in
+//   POST /api/identity  — persist validated droid name and mDNS opt-in
 // =============================================================================
 
 #include "api_identity.h"
@@ -52,7 +52,7 @@ void registerIdentityRoutes(AsyncWebServer& server) {
         const String rawName = nameParam->value();
         if (!normalizeDroidName(rawName.c_str(), normalized, sizeof(normalized))) {
             req->send(400, "application/json",
-                      "{\"ok\":false,\"error\":\"droidName must normalize to 1..32 DNS-safe characters\"}");
+                      "{\"ok\":false,\"error\":\"droidName must be 1..32 lowercase letters, numbers, or hyphens; spaces are not allowed\"}");
             return;
         }
 

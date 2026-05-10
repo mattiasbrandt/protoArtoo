@@ -79,9 +79,9 @@ void test_configLoad_save_roundtrip() {
     TEST_ASSERT_TRUE(snap2.system.mdns_use_name);
 }
 
-void test_configLoad_save_identity_normalizes_name() {
+void test_configLoad_save_identity_accepts_lowercase() {
     ConfigSnapshot snap1 = {};
-    snprintf(snap1.system.droid_name, sizeof(snap1.system.droid_name), "%s", "R2 Unit");
+    snprintf(snap1.system.droid_name, sizeof(snap1.system.droid_name), "%s", "r2-unit");
     snap1.system.mdns_use_name = true;
 
     Preferences prefs;
@@ -94,6 +94,34 @@ void test_configLoad_save_identity_normalizes_name() {
 
     TEST_ASSERT_EQUAL_STRING("r2-unit", snap2.system.droid_name);
     TEST_ASSERT_TRUE(snap2.system.mdns_use_name);
+}
+
+void test_configLoad_save_identity_rejects_uppercase_to_default() {
+    ConfigSnapshot snap1 = {};
+    snprintf(snap1.system.droid_name, sizeof(snap1.system.droid_name), "%s", "R2-Unit");
+    snap1.system.mdns_use_name = true;
+
+    Preferences prefs;
+    prefs.begin("proto", false);
+    TEST_ASSERT_TRUE(configSave(prefs, snap1));
+
+    ConfigSnapshot snap2 = {};
+    TEST_ASSERT_TRUE(configLoad(prefs, &snap2));
+    prefs.end();
+
+    TEST_ASSERT_EQUAL_STRING(DROID_NAME_DEFAULT, snap2.system.droid_name);
+    TEST_ASSERT_TRUE(snap2.system.mdns_use_name);
+}
+
+void test_configResolvedMdnsHostname_uses_identity_name() {
+    SystemConfig system = {};
+    snprintf(system.droid_name, sizeof(system.droid_name), "%s", "r2-unit");
+    system.mdns_use_name = true;
+
+    char hostname[33] = {};
+    configResolvedMdnsHostname(system, hostname, sizeof(hostname));
+
+    TEST_ASSERT_EQUAL_STRING("r2-unit", hostname);
 }
 
 // Test: configValidate rejects out-of-range speed limit
@@ -1038,7 +1066,9 @@ int main() {
     UNITY_BEGIN();
     RUN_TEST(test_configLoad_empty_nvs_returns_defaults);
     RUN_TEST(test_configLoad_save_roundtrip);
-    RUN_TEST(test_configLoad_save_identity_normalizes_name);
+    RUN_TEST(test_configLoad_save_identity_accepts_lowercase);
+    RUN_TEST(test_configLoad_save_identity_rejects_uppercase_to_default);
+    RUN_TEST(test_configResolvedMdnsHostname_uses_identity_name);
     RUN_TEST(test_configValidate_speed_limit_out_of_range);
     RUN_TEST(test_configValidate_speed_limit_valid);
     RUN_TEST(test_configValidate_sbus_timeout_out_of_range);

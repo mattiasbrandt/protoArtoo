@@ -165,21 +165,30 @@ void test_parseBool_yes_fails() {
 
 // --- normalizeDroidName() tests ---
 
-void test_normalizeDroidName_lowercase_and_hyphenates() {
+void test_normalizeDroidName_accepts_lowercase() {
     char out[33] = {};
-    TEST_ASSERT_TRUE(normalizeDroidName("  R2 Unit 07  ", out, sizeof(out)));
-    TEST_ASSERT_EQUAL_STRING("r2-unit-07", out);
+    TEST_ASSERT_TRUE(normalizeDroidName("r2-unit07", out, sizeof(out)));
+    TEST_ASSERT_EQUAL_STRING("r2-unit07", out);
 }
 
-void test_normalizeDroidName_strips_invalid_chars() {
+void test_normalizeDroidName_rejects_uppercase() {
     char out[33] = {};
-    TEST_ASSERT_TRUE(normalizeDroidName("Artoo!@# Body", out, sizeof(out)));
-    TEST_ASSERT_EQUAL_STRING("artoo-body", out);
+    TEST_ASSERT_FALSE(normalizeDroidName("R2-unit07", out, sizeof(out)));
 }
 
-void test_normalizeDroidName_empty_after_trim_fails() {
+void test_normalizeDroidName_rejects_spaces() {
     char out[33] = {};
-    TEST_ASSERT_FALSE(normalizeDroidName("   ", out, sizeof(out)));
+    TEST_ASSERT_FALSE(normalizeDroidName("Artoo Body", out, sizeof(out)));
+}
+
+void test_normalizeDroidName_rejects_invalid_chars() {
+    char out[33] = {};
+    TEST_ASSERT_FALSE(normalizeDroidName("Artoo!Body", out, sizeof(out)));
+}
+
+void test_normalizeDroidName_empty_fails() {
+    char out[33] = {};
+    TEST_ASSERT_FALSE(normalizeDroidName("", out, sizeof(out)));
 }
 
 void test_normalizeDroidName_too_long_fails() {
@@ -303,9 +312,11 @@ int main() {
     RUN_TEST(test_parseBool_null_fails);
     RUN_TEST(test_parseBool_uppercase_fails);
     RUN_TEST(test_parseBool_yes_fails);
-    RUN_TEST(test_normalizeDroidName_lowercase_and_hyphenates);
-    RUN_TEST(test_normalizeDroidName_strips_invalid_chars);
-    RUN_TEST(test_normalizeDroidName_empty_after_trim_fails);
+    RUN_TEST(test_normalizeDroidName_accepts_lowercase);
+    RUN_TEST(test_normalizeDroidName_rejects_uppercase);
+    RUN_TEST(test_normalizeDroidName_rejects_spaces);
+    RUN_TEST(test_normalizeDroidName_rejects_invalid_chars);
+    RUN_TEST(test_normalizeDroidName_empty_fails);
     RUN_TEST(test_normalizeDroidName_too_long_fails);
     RUN_TEST(test_formatSleepControlJson_sleep_changed);
     RUN_TEST(test_formatSleepControlJson_wake_unchanged);
