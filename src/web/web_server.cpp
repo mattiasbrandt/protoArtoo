@@ -102,9 +102,8 @@ class AsyncEventSource {
 
 class AsyncStaticWebHandler {
    public:
-    AsyncStaticWebHandler& setDefaultFile(const char*) {
-        return *this;
-    }
+    AsyncStaticWebHandler& setDefaultFile(const char*) { return *this; }
+    AsyncStaticWebHandler& setCacheControl(const char*) { return *this; }
 };
 
 class AsyncWebServer {
@@ -330,6 +329,7 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     bool enableRcCh1, enableRcCh2, enableRcCh3, enableRcCh4, enableRcCh5, enableRcCh6;
     bool enableS1Hoverboard, enableS2Sound, enableS3DomeCtrl;
     bool audioActive;
+    bool audioLinkOk;
     bool sleepMode;
     uint8_t activeMood;
     uint32_t sleepSinceMs;
@@ -426,6 +426,7 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     enableS2Sound = cfg.system.enable_s2_sound;
     enableS3DomeCtrl = cfg.system.enable_s3_dome_ctrl;
     audioActive = robotState.audioActive;
+    audioLinkOk = robotState.audio_module_link_ok;
     activeMood = robotState.activeMood;
     sleepMode = robotState.sleepMode;
     sleepSinceMs = robotState.sleepSinceMs;
@@ -602,10 +603,11 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
         }
         if (enableS2Sound) {
             int _n = snprintf(pos, remaining,
-                              ",\"s2Sound\":{\"state\":\"%s\",\"detail\":\"%s\",\"driver\":\"%s\"}",
+                              ",\"s2Sound\":{\"state\":\"%s\",\"detail\":\"%s\",\"driver\":\"%s\",\"link_ok\":%s}",
                               audioActive ? "playing" : "idle",
                               audioActive ? "Playback active" : "Ready, no active playback",
-                              audioGetDriverName());
+                              audioGetDriverName(),
+                              audioLinkOk ? "true" : "false");
             if (_n > 0 && _n < (int)remaining) {
                 pos += _n;
                 remaining -= (size_t)_n;
@@ -847,7 +849,7 @@ void startHttpServerOnce() {
         registerActionsRoutes(server);
 
         if (littleFsReady) {
-            server.serveStatic("/", LittleFS, "/").setDefaultFile("index.html");
+            server.serveStatic("/", LittleFS, "/").setDefaultFile("index.html").setCacheControl("no-cache");
         }
 
         routesRegistered = true;

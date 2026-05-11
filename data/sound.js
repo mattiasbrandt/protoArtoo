@@ -1990,14 +1990,20 @@
   const renderStatus = (data) => {
     const s2Enabled = Boolean(data.s2Sound);
     setSoundHardwareEnabled(s2Enabled);
-    // Note: the sound-state-badge is intentionally NOT updated here from
-    // data.s2Sound.state — that field reflects firmware's guess (audioActive),
-    // not confirmed module state. Badge is updated by updateModuleStatus()
-    // which uses the real module-reported play state from GET /api/audio.
     if (!soundStateBadge) return;
     if (!s2Enabled) {
       soundStateBadge.textContent = "Disabled";
       soundStateBadge.dataset.state = "disabled";
+      return;
+    }
+    if (data.s2Sound && typeof data.s2Sound.link_ok === "boolean") {
+      if (!data.s2Sound.link_ok) {
+        if (modLink) { modLink.textContent = "No response"; modLink.dataset.state = "error"; }
+        soundStateBadge.textContent = "No module response";
+        soundStateBadge.dataset.state = "error";
+      } else if (soundStateBadge.dataset.state === "error") {
+        updateModuleStatus();
+      }
     }
   };
 

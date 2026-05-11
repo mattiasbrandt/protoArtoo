@@ -615,6 +615,7 @@ void audioTask(void* pvParameters) {
     (void)pvParameters;
 
     bool driverInitialized = false;  // becomes true on first enable
+    bool lastAudioEnabled = true;   // tracks previous iteration's enabled state for stop-on-disable
     bool randomMode = false;
     uint32_t lastRandMs = 0;
     uint32_t lastPlayMs = 0;  // anti-spam: last playTrack() timestamp
@@ -660,7 +661,13 @@ void audioTask(void* pvParameters) {
         taskEXIT_CRITICAL(&robotStateMux);
 
         if (!audioEnabled) {
-            // Disabled: drain any queued commands silently, clear runtime state.
+            // Disabled: stop active playback on the enabled→disabled transition,
+            // then drain queued commands silently and clear runtime state.
+            if (lastAudioEnabled && driverInitialized) {
+                driver->stop();
+                PA_LOG_INFO(TAG, "audio disabled — stopping active playback");
+            }
+            lastAudioEnabled = false;
             // randomMode must be cleared here — if it stays true, the random
             // timer would fire the moment audio is re-enabled.
             if (randomMode) {
@@ -674,6 +681,7 @@ void audioTask(void* pvParameters) {
             wasSleeping = sleepMode;
             continue;
         }
+        lastAudioEnabled = true;
 
         // ----------------------------------------------------------------
         // Enabled: initialise driver on first enable.

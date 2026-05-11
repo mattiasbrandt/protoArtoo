@@ -153,6 +153,10 @@
       ? payload.s2Sound.detail
       : "n/a";
 
+    if (payload.s2Sound.link_ok === false) {
+      return healthSignal("fail", "No module response", `link_ok=false, state=${soundState}`);
+    }
+
     if (soundState === "playing") {
       return healthSignal("ok", "Playing", `state=playing, detail=${soundDetail}`);
     }
