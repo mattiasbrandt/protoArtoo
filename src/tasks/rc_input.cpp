@@ -944,7 +944,9 @@ void rcInputTask(void* pvParameters) {
         taskEXIT_CRITICAL(&robotStateMux);
         uint32_t timeoutMs = watchdogCfg.drive.sbusTimeoutMs;
 
-        if (driveSbusEnabled) {
+        bool sbus1TrackingActive =
+            driveSbusEnabled && !((rcInputMode == RC_INPUT_SINGLE_SBUS) && useCh2);
+        if (sbus1TrackingActive) {
             uint32_t nowMs = millis();
             SbusWatchdogTransition transition =
                 sbusWatchdogCheck(&sbus1Watchdog, lastSbus1, nowMs, timeoutMs);
@@ -1097,7 +1099,7 @@ void rcInputTask(void* pvParameters) {
         if ((driveSbusEnabled || domeSbusEnabled) &&
             (uint32_t)(nowMs - lastSbusDiagLogMs) >= 2000U) {
             lastSbusDiagLogMs = nowMs;
-            bool waitingDrive = driveSbusEnabled && (lastSbus1 == 0);
+            bool waitingDrive = sbus1TrackingActive && (lastSbus1 == 0);
             bool waitingDome = domeSbusEnabled && (lastSbus2 == 0);
             if (waitingDrive || waitingDome) {
                 taskENTER_CRITICAL(&robotStateMux);
