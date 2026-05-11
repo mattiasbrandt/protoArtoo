@@ -29,10 +29,14 @@ static bool lastDomeConnected = false;
 static bool lastSbusLost = true;
 static bool lastLowHeap = false;
 static bool lastFragmented = false;
+static uint8_t fragmentedSampleCount = 0;
 #if PA_HEAP_PROFILE
 static bool lastAudioActive = false;
 static bool lastSseConnected = false;
 #endif
+
+constexpr size_t HEAP_FRAGMENT_LARGEST_BLOCK_WARN_BYTES = 10240;
+constexpr uint8_t HEAP_FRAGMENT_WARN_SAMPLE_COUNT = 30;  // 3 s at 10 Hz
 
 // -----------------------------------------------------------------------------
 // safetyMonitorTask()
@@ -127,9 +131,16 @@ void safetyMonitorTask(void* pvParameters) {
         }
         lastLowHeap = nowLowHeap;
 
-        // Warn when the largest contiguous block drops below 10 KB — at that point
-        // large allocations (JSON docs, SSE buffers) will start failing.
-        bool nowFragmented = (largestBlock < 10240);
+        // Warn only after sustained pressure. WiFi/lwIP/SSE can cause short
+        // allocation churn, but a persistent <10 KB largest block is actionable.
+        if (largestBlock < HEAP_FRAGMENT_LARGEST_BLOCK_WARN_BYTES) {
+            if (fragmentedSampleCount < HEAP_FRAGMENT_WARN_SAMPLE_COUNT) {
+                fragmentedSampleCount++;
+            }
+        } else {
+            fragmentedSampleCount = 0;
+        }
+        bool nowFragmented = (fragmentedSampleCount >= HEAP_FRAGMENT_WARN_SAMPLE_COUNT);
         if (nowFragmented && !lastFragmented) {
             PA_LOG_WARN(TAG, "heap fragmented: largest block %u bytes, frag ratio %.2f",
                         (unsigned)largestBlock, (double)fragRatio);
