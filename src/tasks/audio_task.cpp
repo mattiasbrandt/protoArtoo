@@ -528,11 +528,16 @@ static void executePlaybackIntent(const AudioPlaybackIntent& intent, CommandSour
                 PA_LOG_INFO(TAG, "[%s] play slot=%u track=%u", commandSourceToString(source),
                             (unsigned)intent.slot, (unsigned)intent.track);
             } else if (intent.category != AUDIO_CATEGORY_NONE) {
-                PA_LOG_INFO(TAG, "[%s] play category=%u track=%u", commandSourceToString(source),
-                            (unsigned)intent.category, (unsigned)intent.track);
+                PA_LOG_INFO(TAG, "[%s] play category=%s track=%u", commandSourceToString(source),
+                            audioCategoryToString(intent.category), (unsigned)intent.track);
             } else {
-                PA_LOG_INFO(TAG, "[%s] play track %u", commandSourceToString(source),
-                            (unsigned)intent.track);
+                if (source == SRC_SBUS) {
+                    PA_LOG_DEBUG(TAG, "[%s] play track %u", commandSourceToString(source),
+                                 (unsigned)intent.track);
+                } else {
+                    PA_LOG_INFO(TAG, "[%s] play track %u", commandSourceToString(source),
+                                (unsigned)intent.track);
+                }
             }
             break;
 
@@ -549,9 +554,17 @@ static void executePlaybackIntent(const AudioPlaybackIntent& intent, CommandSour
                             commandSourceToString(source), (unsigned)intent.slot,
                             (unsigned)intent.bank, intent.page, (unsigned)intent.index);
             } else if (intent.category != AUDIO_CATEGORY_NONE) {
-                PA_LOG_INFO(TAG, "[%s] play category=%u bank=%u page=%c index=%u",
-                            commandSourceToString(source), (unsigned)intent.category,
-                            (unsigned)intent.bank, intent.page, (unsigned)intent.index);
+                // RANDOM_TICK = automatic background sound scheduler; log human-readable.
+                // Other category plays (e.g. dome cue) keep the raw bank/page/index format.
+                if (intent.requestKind == AUDIO_PLAYBACK_REQ_RANDOM_TICK) {
+                    PA_LOG_INFO(TAG, "[%s] sound random %s -> bank=%u page=%c index=%u",
+                                commandSourceToString(source), audioCategoryToString(intent.category),
+                                (unsigned)intent.bank, intent.page, (unsigned)intent.index);
+                } else {
+                    PA_LOG_INFO(TAG, "[%s] play category=%s bank=%u page=%c index=%u",
+                                commandSourceToString(source), audioCategoryToString(intent.category),
+                                (unsigned)intent.bank, intent.page, (unsigned)intent.index);
+                }
             } else {
                 PA_LOG_INFO(TAG, "[%s] play bank=%u page=%c index=%u",
                             commandSourceToString(source), (unsigned)intent.bank, intent.page,

@@ -84,6 +84,18 @@ inline const char* rcBindingSourceToString(RcBindingSource source) {
     }
 }
 
+// Display label for logs — uppercase. Use rcBindingSourceToString() for serialization
+// (parsing expects lowercase; changing that function would break config round-trips).
+inline const char* rcBindingSourceToLabel(RcBindingSource source) {
+    switch (source) {
+        case RC_BINDING_PWM:   return "PWM";
+        case RC_BINDING_SBUS1: return "SBUS1";
+        case RC_BINDING_SBUS2: return "SBUS2";
+        case RC_BINDING_NONE:
+        default:               return "NONE";
+    }
+}
+
 inline bool parseRcBindingSource(const char* raw, RcBindingSource* out) {
     if (raw == nullptr || out == nullptr) {
         return false;

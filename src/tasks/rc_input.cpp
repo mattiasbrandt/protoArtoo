@@ -264,7 +264,8 @@ static void buildRcProcessorConfig(RcInputMode mode, RcProcessorConfig* out) {
     taskEXIT_CRITICAL(&robotStateMux);
 }
 
-static void dispatchProcessorOutput(const RcProcessorOutput& output, const RcMappingConfig& mapping) {
+static void dispatchProcessorOutput(const RcProcessorOutput& output, const RcMappingConfig& mapping,
+                                     const RcTriggerBinding* triggers) {
     // Backbone: drive
     if ((output.backbone.driveSpeed != 0 || output.backbone.driveSteer != 0) &&
         !output.stationaryLockedByTrigger) {
@@ -300,10 +301,22 @@ static void dispatchProcessorOutput(const RcProcessorOutput& output, const RcMap
     for (size_t i = 0; i < RC_TRIGGER_MAX; ++i) {
         const RcActionResult& res = output.triggerResults[i];
         if (res.audioTrack != 0) {
+            const RcTriggerBinding& b = triggers[i];
+            const char* catLabel = randomSoundCategoryLabel(b.target);
+            // Log format: [RC] sound <BUS> CH<N> <category> -> track <N>
+            // Distinguishes operator-triggered sounds from droid-initiated ones ([INT]/[DOME]).
+            PA_LOG_INFO(TAG, "[RC] sound %s CH%u %s -> track %u",
+                        rcBindingSourceToLabel(b.source), (unsigned)b.channel,
+                        catLabel ? catLabel : robotActionIdToString(b.target),
+                        (unsigned)res.audioTrack);
             if (!audioQueuePlayTrack(res.audioTrack, SRC_SBUS))
                 PA_LOG_WARN(TAG, "audio track dropped: track=%u queue full", (unsigned)res.audioTrack);
         }
         if (res.audioDollarCmd[0] != '\0') {
+            const RcTriggerBinding& b = triggers[i];
+            PA_LOG_INFO(TAG, "[RC] sound %s CH%u %s -> seq %s",
+                        rcBindingSourceToLabel(b.source), (unsigned)b.channel,
+                        robotActionIdToString(b.target), res.audioDollarCmd);
             if (!audioQueueDollar(res.audioDollarCmd, SRC_SBUS))
                 PA_LOG_WARN(TAG, "droid sequence audio dropped: %s", res.audioDollarCmd);
         }
@@ -507,7 +520,7 @@ static void dispatchStandardPwmInputs() {
 
     static RcProcessorOutput output = {};
     rcInputProcessorTick(&s_rcProcessor, input, &output);
-    dispatchProcessorOutput(output, cfg_proc.mapping);
+    dispatchProcessorOutput(output, cfg_proc.mapping, cfg_proc.triggers);
 }
 
 static void dispatchSbusBindingsForSource(const SbusData& data, RcBindingSource source,
@@ -534,7 +547,7 @@ static void dispatchSbusBindingsForSource(const SbusData& data, RcBindingSource 
 
     static RcProcessorOutput output = {};
     rcInputProcessorTick(&s_rcProcessor, input, &output);
-    dispatchProcessorOutput(output, cfg.mapping);
+    dispatchProcessorOutput(output, cfg.mapping, cfg.triggers);
 }
 
 static bool is_drive_sbus_mode(RcInputMode mode) {

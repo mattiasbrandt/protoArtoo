@@ -50,6 +50,24 @@ enum AudioPlaybackCategory : uint8_t {
     AUDIO_CATEGORY_NONE = 0xFF,
 };
 
+inline const char* audioCategoryToString(AudioPlaybackCategory cat) {
+    switch (cat) {
+        case AUDIO_CATEGORY_GENERAL:     return "general";
+        case AUDIO_CATEGORY_CHATTY:      return "chatty";
+        case AUDIO_CATEGORY_HAPPY:       return "happy";
+        case AUDIO_CATEGORY_PROCESSING:  return "processing";
+        case AUDIO_CATEGORY_SAD:         return "sad";
+        case AUDIO_CATEGORY_SENTIMENTAL: return "sentimental";
+        case AUDIO_CATEGORY_HUMMING:     return "humming";
+        case AUDIO_CATEGORY_SCREAM:      return "scream";
+        case AUDIO_CATEGORY_SURPRISED:   return "surprised";
+        case AUDIO_CATEGORY_ALERT:       return "alert";
+        case AUDIO_CATEGORY_SNARKY:      return "snarky";
+        case AUDIO_CATEGORY_WHISTLE:     return "whistle";
+        default:                         return "unknown";
+    }
+}
+
 enum AudioPlaybackRequestKind : uint8_t {
     AUDIO_PLAYBACK_REQ_NONE = 0,
     AUDIO_PLAYBACK_REQ_DIRECT_TRACK,

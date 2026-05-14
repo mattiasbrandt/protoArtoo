@@ -42,7 +42,7 @@ enum CommandSource : uint8_t {
 inline const char* commandSourceToString(CommandSource src) {
     switch (src) {
         case SRC_SBUS:
-            return "SBUS";
+            return "RC";
         case SRC_WEB_API:
             return "WEB";
         case SRC_INTERNAL:
