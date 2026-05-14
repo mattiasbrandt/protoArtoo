@@ -27,7 +27,6 @@
 #include "../../include/audio_task.h"
 #include "../../include/config.h"
 #include "../../include/config_store.h"
-#include "../../include/dome_input_filter.h"
 #include "../../include/dome_link.h"
 #include "../../include/dome_rx_parser.h"
 #include "../../include/drive_arbiter.h"
@@ -36,14 +35,13 @@
 #include "../../include/ledc_pwm.h"
 #include "../../include/logging.h"
 #include "../../include/marcduino_helpers.h"
-#include "../../include/rc_action_dispatcher.h"
 #include "../../include/rc_channel_mapper.h"
+#include "../../include/rc_input_processor.h"
 #include "../../include/rc_mapping_cache.h"
 #include "../../include/rc_pwm_helpers.h"
 #include "../../include/robot_state.h"
 #include "../../include/sbus_decoder.h"
 #include "../../include/sbus_watchdog.h"
-#include "../../include/trigger_debounce.h"
 #include "../../include/web_server.h"
 
 static const char* TAG = "RCInputTask";
@@ -57,64 +55,7 @@ static SbusDecoder sbus_dome;
 static const uint8_t kRcPwmPins[6] = {PIN_RC_CH1, PIN_RC_CH2, PIN_RC_CH3,
                                       PIN_RC_CH4, PIN_RC_CH5, PIN_RC_CH6};
 
-static bool bindingSourceActive(const RcBindingConfig& binding, RcInputMode mode, bool enableRcCh1,
-                                bool enableRcCh2, bool useCh2) {
-    switch (binding.source) {
-        case RC_BINDING_PWM:
-            return mode == RC_INPUT_STANDARD_PWM && binding.channel >= 1 && binding.channel <= 6;
-        case RC_BINDING_SBUS1:
-            if (mode == RC_INPUT_SINGLE_SBUS)
-                return !useCh2 && enableRcCh1;
-            return mode == RC_INPUT_DUAL_SBUS && enableRcCh1;
-        case RC_BINDING_SBUS2:
-            if (mode == RC_INPUT_SINGLE_SBUS)
-                return useCh2 && enableRcCh2;
-            return mode == RC_INPUT_DUAL_SBUS && enableRcCh2;
-        case RC_BINDING_NONE:
-        default:
-            return false;
-    }
-}
-
-static bool readPwmBindingRaw(const RcBindingConfig& binding, const uint32_t pulses[6], int* raw) {
-    if (raw == nullptr || binding.source != RC_BINDING_PWM || binding.channel < 1 ||
-        binding.channel > 6) {
-        return false;
-    }
-
-    uint32_t pulse = pulses[binding.channel - 1];
-    if (!rcPwmPulseIsValid(pulse)) {
-        return false;
-    }
-
-    *raw = (int)pulse;
-    return true;
-}
-
-static bool readSbusAnalog(const SbusData& data, const RcBindingConfig& binding, int* raw) {
-    if (raw == nullptr || !rcBindingSupportsAnalog(binding)) {
-        return false;
-    }
-
-    *raw = data.ch[binding.channel - 1];
-    return true;
-}
-
-static bool readSbusDigital(const SbusData& data, const RcBindingConfig& binding, bool* pressed) {
-    if (pressed == nullptr || !rcBindingIsDigital(binding)) {
-        return false;
-    }
-
-    if (binding.channel == 17) {
-        *pressed = data.ch17;
-        return true;
-    }
-    if (binding.channel == 18) {
-        *pressed = data.ch18;
-        return true;
-    }
-    return false;
-}
+static RcInputProcessor s_rcProcessor = {};
 
 static void storePwmDiagnostics(const uint32_t pulses[6], const bool enabled[6]) {
     bool anyValid = false;
@@ -132,6 +73,43 @@ static void storePwmDiagnostics(const uint32_t pulses[6], const bool enabled[6])
         robotState.lastPwmMs = now;
     }
     taskEXIT_CRITICAL(&robotStateMux);
+}
+
+static bool setStationaryMode(bool stationary) {
+    bool queueDriveOn = false;
+    bool wasStationary = false;
+    taskENTER_CRITICAL(&robotStateMux);
+    wasStationary = robotState.stationary;
+    robotState.stationary = stationary;
+    if (wasStationary && !stationary) {
+        queueDriveOn = true;
+    }
+    taskEXIT_CRITICAL(&robotStateMux);
+    // Mirror web path: keep config cache in sync so the next /api/config save
+    // persists the RC-set mode rather than reverting it from the stale cache.
+    ConfigSnapshot cfg = {};
+    configCacheRead(&cfg);
+    cfg.system.stationary = stationary;
+    configCacheApply(cfg);
+    if (!queueDriveOn) {
+        return false;
+    }
+    return audioQueuePlaySlot(AUDIO_SLOT_SYS_DRIVE_ON, SRC_INTERNAL);
+}
+
+static bool queueServoSequence(uint8_t sequenceId, CommandSource source) {
+    ServoCommand cmd = {};
+    cmd.type = SERVO_CMD_SEQUENCE;
+    cmd.sequenceId = sequenceId;
+    cmd.source = source;
+    cmd.timestampMs = millis();
+    if (xQueueSend(servoCmdQueue, &cmd, 0) != pdTRUE) {
+        taskENTER_CRITICAL(&robotStateMux);
+        robotState.queueOverflowCount++;
+        taskEXIT_CRITICAL(&robotStateMux);
+        return false;
+    }
+    return true;
 }
 
 static bool queueDomeCommand(float speed, CommandSource source) {
@@ -163,50 +141,6 @@ static bool queueServoCommand(uint8_t armId, ServoCommandType type, uint16_t pos
         return false;
     }
     return true;
-}
-
-static void dispatchSwitchAction(const RcBindingConfig& binding, int raw, uint8_t armId,
-                                 RcSwitchState* lastState) {
-    if (lastState == nullptr) {
-        return;
-    }
-
-    RcSwitchState state = rcAnalogToSwitchState(raw, binding);
-    if (state == RC_SWITCH_INVALID || state == *lastState) {
-        return;
-    }
-
-    if (state == RC_SWITCH_HIGH) {
-        queueServoCommand(armId, SERVO_CMD_OPEN, 0, SRC_SBUS);
-    } else if (state == RC_SWITCH_LOW) {
-        queueServoCommand(armId, SERVO_CMD_CLOSE, 0, SRC_SBUS);
-    } else {
-        queueServoCommand(armId, SERVO_CMD_POSITION, SERVO_PULSE_NEUTRAL_US, SRC_SBUS);
-    }
-    *lastState = state;
-}
-
-static void dispatchDigitalAction(bool pressed, uint8_t armId, bool* lastPressed) {
-    if (lastPressed == nullptr || pressed == *lastPressed) {
-        return;
-    }
-
-    if (pressed) {
-        queueServoCommand(armId, SERVO_CMD_OPEN, 0, SRC_SBUS);
-    } else {
-        queueServoCommand(armId, SERVO_CMD_CLOSE, 0, SRC_SBUS);
-    }
-    *lastPressed = pressed;
-}
-
-static void handleSoundTrigger(bool pressed, bool* lastPressed) {
-    if (lastPressed == nullptr) {
-        return;
-    }
-    if (pressed && !*lastPressed) {
-        parseMarcduinoCommand("$87");
-    }
-    *lastPressed = pressed;
 }
 
 // Build an RcMappingConfig from the config cache for the given RC input mode.
@@ -270,49 +204,152 @@ static RcMappingConfig rcGetMappingConfig(RcInputMode mode) {
     return cached;
 }
 
-static constexpr uint32_t kOneShotEdgeDebounceMs = 120;
-static constexpr uint8_t kSwitchEdgeConfirmFrames = 2;
-
-static bool s_stationaryLockedByTrigger = false;
-
-static bool setStationaryMode(bool stationary) {
-    bool queueDriveOn = false;
-    bool wasStationary = false;
-    taskENTER_CRITICAL(&robotStateMux);
-    wasStationary = robotState.stationary;
-    robotState.stationary = stationary;
-    if (wasStationary && !stationary) {
-        queueDriveOn = true;
+static void loadTier2TriggerBindings(RcTriggerBinding* bindings, size_t* count) {
+    if (bindings == nullptr || count == nullptr) {
+        return;
     }
-    taskEXIT_CRITICAL(&robotStateMux);
-    // Mirror web path: keep config cache in sync so the next /api/config save
-    // persists the RC-set mode rather than reverting it from the stale cache.
+
     ConfigSnapshot cfg = {};
     configCacheRead(&cfg);
-    cfg.system.stationary = stationary;
-    configCacheApply(cfg);
-    if (!queueDriveOn) {
-        return false;
-    }
-    return audioQueuePlaySlot(AUDIO_SLOT_SYS_DRIVE_ON, SRC_INTERNAL);
+    bindings[0] = cfg.system.rc_arm1;
+    bindings[1] = cfg.system.rc_arm2;
+    bindings[2] = cfg.system.rc_aux1;
+    bindings[3] = cfg.system.rc_aux2;
+    bindings[4] = cfg.system.rc_aux3;
+    bindings[5] = cfg.system.rc_sound;
+    bindings[6] = cfg.system.rc_opmode;
+    bindings[7] = cfg.system.rc_free0;
+    bindings[8] = cfg.system.rc_free1;
+    bindings[9] = cfg.system.rc_free2;
+    bindings[10] = cfg.system.rc_free3;
+    *count = 11;
 }
 
+static void buildRcProcessorConfig(RcInputMode mode, RcProcessorConfig* out) {
+    *out = {};
+    out->mapping = rcGetMappingConfig(mode);
+    loadTier2TriggerBindings(out->triggers, &out->triggerCount);
 
-static bool queueServoSequence(uint8_t sequenceId, CommandSource source) {
-    ServoCommand cmd = {};
-    cmd.type = SERVO_CMD_SEQUENCE;
-    cmd.sequenceId = sequenceId;
-    cmd.source = source;
-    cmd.timestampMs = millis();
-    if (xQueueSend(servoCmdQueue, &cmd, 0) != pdTRUE) {
-        taskENTER_CRITICAL(&robotStateMux);
-        robotState.queueOverflowCount++;
-        taskEXIT_CRITICAL(&robotStateMux);
-        return false;
-    }
-    return true;
+    static ConfigSnapshot snap = {};
+    configCacheRead(&snap);
+    out->categories.gen_lo   = snap.audio.snd_cat_gen_lo;
+    out->categories.gen_hi   = snap.audio.snd_cat_gen_hi;
+    out->categories.chat_lo  = snap.audio.snd_cat_chat_lo;
+    out->categories.chat_hi  = snap.audio.snd_cat_chat_hi;
+    out->categories.hap_lo   = snap.audio.snd_cat_hap_lo;
+    out->categories.hap_hi   = snap.audio.snd_cat_hap_hi;
+    out->categories.proc_lo  = snap.audio.snd_cat_proc_lo;
+    out->categories.proc_hi  = snap.audio.snd_cat_proc_hi;
+    out->categories.sad_lo   = snap.audio.snd_cat_sad_lo;
+    out->categories.sad_hi   = snap.audio.snd_cat_sad_hi;
+    out->categories.sent_lo  = snap.audio.snd_cat_sent_lo;
+    out->categories.sent_hi  = snap.audio.snd_cat_sent_hi;
+    out->categories.hum_lo   = snap.audio.snd_cat_hum_lo;
+    out->categories.hum_hi   = snap.audio.snd_cat_hum_hi;
+    out->categories.scrm_lo  = snap.audio.snd_cat_scrm_lo;
+    out->categories.scrm_hi  = snap.audio.snd_cat_scrm_hi;
+    out->categories.ooh_lo   = snap.audio.snd_cat_ooh_lo;
+    out->categories.ooh_hi   = snap.audio.snd_cat_ooh_hi;
+    out->categories.alrm_lo  = snap.audio.snd_cat_alrm_lo;
+    out->categories.alrm_hi  = snap.audio.snd_cat_alrm_hi;
+    out->categories.snarky_lo = snap.audio.snd_cat_snarky_lo;
+    out->categories.snarky_hi = snap.audio.snd_cat_snarky_hi;
+    out->categories.whis_lo  = snap.audio.snd_cat_whis_lo;
+    out->categories.whis_hi  = snap.audio.snd_cat_whis_hi;
+
+    taskENTER_CRITICAL(&robotStateMux);
+    out->estopActive        = robotState.estop;
+    out->currentSleepMode   = robotState.sleepMode;
+    out->currentSpeedPreset = normalizeSpeedPresetId((uint8_t)snap.drive.speedPresetActive);
+    taskEXIT_CRITICAL(&robotStateMux);
 }
 
+static void dispatchProcessorOutput(const RcProcessorOutput& output, const RcMappingConfig& mapping) {
+    // Backbone: drive
+    if ((output.backbone.driveSpeed != 0 || output.backbone.driveSteer != 0) &&
+        !output.stationaryLockedByTrigger) {
+        setStationaryMode(false);
+    }
+    driveArbiterSubmit(DriveSource::RC, output.backbone.driveSpeed, output.backbone.driveSteer,
+                       millis());
+
+    // Backbone: dome (filtered raw value, re-calibrated)
+    if (output.domeFiltered) {
+        queueDomeCommand(applyRcAnalogCalibration(output.domeRawFiltered, mapping.domeSpeed, nullptr),
+                         SRC_SBUS);
+    }
+
+    // Backbone: audio trigger
+    if (output.backbone.audioTrigger != nullptr) {
+        parseMarcduinoCommand(output.backbone.audioTrigger);
+    }
+
+    // Backbone: servo commands (arm1 = index 0, arm2 = index 1)
+    auto dispatchServo = [](RcServoCommand cmd, uint8_t armId) {
+        if (cmd == RC_SERVO_NO_CHANGE) return;
+        ServoCommandType servoType = SERVO_CMD_POSITION;
+        uint16_t positionUs = SERVO_PULSE_NEUTRAL_US;
+        if (cmd == RC_SERVO_OPEN)    servoType = SERVO_CMD_OPEN;
+        else if (cmd == RC_SERVO_CLOSE) servoType = SERVO_CMD_CLOSE;
+        queueServoCommand(armId, servoType, positionUs, SRC_SBUS);
+    };
+    dispatchServo(output.backbone.arm1Cmd, 0);
+    dispatchServo(output.backbone.arm2Cmd, 1);
+
+    // Tier 2 trigger results
+    for (size_t i = 0; i < RC_TRIGGER_MAX; ++i) {
+        const RcActionResult& res = output.triggerResults[i];
+        if (res.audioTrack != 0) {
+            if (!audioQueuePlayTrack(res.audioTrack, SRC_SBUS))
+                PA_LOG_WARN(TAG, "audio track dropped: track=%u queue full", (unsigned)res.audioTrack);
+        }
+        if (res.audioDollarCmd[0] != '\0') {
+            if (!audioQueueDollar(res.audioDollarCmd, SRC_SBUS))
+                PA_LOG_WARN(TAG, "droid sequence audio dropped: %s", res.audioDollarCmd);
+        }
+        if (res.servoIndex >= 0) {
+            if (res.servoIsSequence) {
+                if (!queueServoSequence(res.servoSequenceId, SRC_SBUS))
+                    PA_LOG_WARN(TAG, "droid sequence servo queue full: seq=%u",
+                                (unsigned)res.servoSequenceId);
+            } else {
+                ServoCommandType cmd = res.servoOpen ? SERVO_CMD_OPEN : SERVO_CMD_CLOSE;
+                queueServoCommand((uint8_t)res.servoIndex, cmd, 0, SRC_SBUS);
+            }
+        }
+        if (res.domeTxCmd[0] != '\0') {
+            if (domeConnected()) {
+                if (!domeQueueTx(res.domeTxCmd))
+                    PA_LOG_WARN(TAG, "dome tx queue full: %s", res.domeTxCmd);
+            }
+        }
+        if (res.marcduinoCmd[0] != '\0') {
+            parseMarcduinoCommand(res.marcduinoCmd);
+        }
+        if (res.triggerEstop) {
+            failsafeTrigger(FailsafeLayer::ESTOP);
+        }
+        if (res.setSleep) {
+            const uint32_t nowMs = millis();
+            taskENTER_CRITICAL(&robotStateMux);
+            robotState.sleepMode            = res.newSleepMode;
+            robotState.sleepSinceMs         = res.newSleepMode ? nowMs : 0U;
+            robotState.domeSleepSyncPending = true;
+            robotState.domeSleepSyncSleepMode = res.newSleepMode;
+            taskEXIT_CRITICAL(&robotStateMux);
+            requestStatusBroadcastNow();
+        }
+        if (res.setStationary) {
+            setStationaryMode(res.newStationaryMode);
+        }
+        if (res.setSpeedPreset) {
+            applySpeedPresetRuntime(res.newSpeedPreset);
+        }
+    }
+}
+
+static constexpr uint32_t kOneShotEdgeDebounceMs = 120;
+static constexpr uint8_t kSwitchEdgeConfirmFrames = 2;
 
 static void processTriggerAction(RobotActionId target, const char* payload, bool pressed) {
     RcActionPayload ap = {};
@@ -401,7 +438,7 @@ static void processTriggerAction(RobotActionId target, const char* payload, bool
     }
     if (res.setStationary) {
         setStationaryMode(res.newStationaryMode);
-        s_stationaryLockedByTrigger = res.newStationaryMode;
+        s_rcProcessor.stationaryLocked = res.newStationaryMode;
     }
     if (res.setSpeedPreset) {
         applySpeedPresetRuntime(res.newSpeedPreset);
@@ -410,59 +447,6 @@ static void processTriggerAction(RobotActionId target, const char* payload, bool
 
 void dispatchRcTriggerActionTest(RobotActionId target, const char* payload, bool pressed) {
     processTriggerAction(target, payload, pressed);
-}
-
-static void processTier2Trigger(const RcTriggerBinding& binding, int rawValue,
-                                TriggerDebounceState& state) {
-    TriggerDebounceResult result = triggerDebounceAnalog(
-        &state, binding, rawValue, millis(), kSwitchEdgeConfirmFrames, kOneShotEdgeDebounceMs);
-    if (result.fired) {
-        processTriggerAction(binding.target, binding.marcduinoPayload, result.pressed);
-    }
-}
-
-static void loadTier2TriggerBindings(RcTriggerBinding* bindings, size_t* count) {
-    if (bindings == nullptr || count == nullptr) {
-        return;
-    }
-
-    ConfigSnapshot cfg = {};
-    configCacheRead(&cfg);
-    bindings[0] = cfg.system.rc_arm1;
-    bindings[1] = cfg.system.rc_arm2;
-    bindings[2] = cfg.system.rc_aux1;
-    bindings[3] = cfg.system.rc_aux2;
-    bindings[4] = cfg.system.rc_aux3;
-    bindings[5] = cfg.system.rc_sound;
-    bindings[6] = cfg.system.rc_opmode;
-    bindings[7] = cfg.system.rc_free0;
-    bindings[8] = cfg.system.rc_free1;
-    bindings[9] = cfg.system.rc_free2;
-    bindings[10] = cfg.system.rc_free3;
-    *count = 11;
-}
-
-// Helper to convert RcTriggerBinding to RcBindingConfig for existing functions
-static RcBindingConfig triggerToBackbone(const RcTriggerBinding& trigger) {
-    return makeRcBindingConfig(trigger.source, trigger.channel, trigger.min, trigger.center,
-                               trigger.max, trigger.deadband, trigger.reverse);
-}
-
-static bool readSbusAnalogTrigger(const SbusData& data, const RcTriggerBinding& binding, int* raw) {
-    if (raw == nullptr || binding.source == RC_BINDING_NONE) {
-        return false;
-    }
-    RcBindingConfig backbone = triggerToBackbone(binding);
-    return readSbusAnalog(data, backbone, raw);
-}
-
-static bool readSbusDigitalTrigger(const SbusData& data, const RcTriggerBinding& binding,
-                                   bool* pressed) {
-    if (pressed == nullptr || binding.source == RC_BINDING_NONE) {
-        return false;
-    }
-    RcBindingConfig backbone = triggerToBackbone(binding);
-    return readSbusDigital(data, backbone, pressed);
 }
 
 static void dispatchStandardPwmInputs() {
@@ -502,119 +486,55 @@ static void dispatchStandardPwmInputs() {
         return;
     }
 
-    // Build channel snapshot from PWM pulses for pure mapper
+    // Build channel snapshot from PWM pulses
     RcChannelSnapshot snap = {};
     snap.valid = true;
-    snap.mode = RC_INPUT_STANDARD_PWM;
-    for (int i = 0; i < 6; ++i) {
-        snap.channels[i] = (int16_t)pulses[i];  // Store PWM pulse in µs
-    }
+    snap.mode  = RC_INPUT_STANDARD_PWM;
+    for (int i = 0; i < 6; ++i) snap.channels[i] = (int16_t)pulses[i];
 
-    static bool lastSoundPressed = false;
-    cfg.prevSoundPressed = lastSoundPressed;
+    static RcProcessorConfig cfg_proc = {};
+    buildRcProcessorConfig(RC_INPUT_STANDARD_PWM, &cfg_proc);
+    cfg_proc.mapping.prevSoundPressed = s_rcProcessor.lastSoundPressed;
+    // PWM mode has no Tier 2 SBUS triggers — clear count so processor skips the loop
+    cfg_proc.triggerCount = 0;
 
-    // Map channel snapshot to control intent (pure function)
-    RcControlIntent intent = rcMapChannels(snap, cfg);
+    static RcProcessorInput input = {};
+    input.channels     = snap;
+    input.config       = cfg_proc;
+    input.nowMs        = millis();
+    input.randomSeed   = (uint32_t)esp_random();
+    input.sourceFilter = RC_BINDING_PWM;
 
-    // Update sound state for next iteration
-    lastSoundPressed = intent.soundPressed;
-
-    // Dispatch backbone controls (drive speed, steer, dome speed)
-    if ((intent.driveSpeed != 0 || intent.driveSteer != 0) && !s_stationaryLockedByTrigger) {
-        setStationaryMode(false);
-    }
-    driveArbiterSubmit(DriveSource::RC, intent.driveSpeed, intent.driveSteer, millis());
-
-    if (intent.domeSpeed != 0) {
-        float normalizedDomeSpeed = (float)intent.domeSpeed / (float)cfg.maxOut;
-        queueDomeCommand(normalizedDomeSpeed, SRC_SBUS);
-    }
-
-    // Dispatch audio trigger if fired
-    if (intent.audioTrigger != nullptr) {
-        parseMarcduinoCommand(intent.audioTrigger);
-    }
-
-    // Dispatch servo commands if set
-    if (intent.arm1Cmd != RC_SERVO_NO_CHANGE) {
-        ServoCommandType servoType = SERVO_CMD_POSITION;
-        uint16_t positionUs = SERVO_PULSE_NEUTRAL_US;
-        if (intent.arm1Cmd == RC_SERVO_OPEN) {
-            servoType = SERVO_CMD_OPEN;
-        } else if (intent.arm1Cmd == RC_SERVO_CLOSE) {
-            servoType = SERVO_CMD_CLOSE;
-        } else if (intent.arm1Cmd == RC_SERVO_NEUTRAL) {
-            servoType = SERVO_CMD_POSITION;
-            positionUs = SERVO_PULSE_NEUTRAL_US;
-        }
-        queueServoCommand(0, servoType, positionUs, SRC_SBUS);
-    }
-
-    if (intent.arm2Cmd != RC_SERVO_NO_CHANGE) {
-        ServoCommandType servoType = SERVO_CMD_POSITION;
-        uint16_t positionUs = SERVO_PULSE_NEUTRAL_US;
-        if (intent.arm2Cmd == RC_SERVO_OPEN) {
-            servoType = SERVO_CMD_OPEN;
-        } else if (intent.arm2Cmd == RC_SERVO_CLOSE) {
-            servoType = SERVO_CMD_CLOSE;
-        } else if (intent.arm2Cmd == RC_SERVO_NEUTRAL) {
-            servoType = SERVO_CMD_POSITION;
-            positionUs = SERVO_PULSE_NEUTRAL_US;
-        }
-        queueServoCommand(1, servoType, positionUs, SRC_SBUS);
-    }
+    static RcProcessorOutput output = {};
+    rcInputProcessorTick(&s_rcProcessor, input, &output);
+    dispatchProcessorOutput(output, cfg_proc.mapping);
 }
 
 static void dispatchSbusBindingsForSource(const SbusData& data, RcBindingSource source,
                                           RcInputMode mode, bool enableRcCh1, bool enableRcCh2,
                                           bool useCh2) {
-    RcMappingConfig cfg = rcGetMappingConfig(mode);
-    static DomeInputFilter domeInputFilter = {};
-    static TriggerDebounceState triggerStates[11] = {};
+    // Build channel snapshot from SBUS frame
+    RcChannelSnapshot snap = {};
+    snap.valid = true;
+    snap.mode  = mode;
+    for (int i = 0; i < 16; ++i) snap.channels[i] = data.ch[i];
+    snap.channels[16] = data.ch17 ? 1811 : 172;
+    snap.channels[17] = data.ch18 ? 1811 : 172;
 
-    auto sourceActive = [&](const RcBindingConfig& binding) {
-        return binding.source == source &&
-               bindingSourceActive(binding, mode, enableRcCh1, enableRcCh2, useCh2);
-    };
+    static RcProcessorConfig cfg = {};
+    buildRcProcessorConfig(mode, &cfg);
+    cfg.mapping.prevSoundPressed = s_rcProcessor.lastSoundPressed;
 
-    int raw = 0;
+    static RcProcessorInput input = {};
+    input.channels     = snap;
+    input.config       = cfg;
+    input.nowMs        = millis();
+    input.randomSeed   = (uint32_t)esp_random();
+    input.sourceFilter = source;
 
-    if (cfg.enableDome && sourceActive(cfg.domeSpeed) &&
-        readSbusAnalog(data, cfg.domeSpeed, &raw)) {
-        DomeInputFilterResult filterResult =
-            domeInputFilterUpdate(&domeInputFilter, raw, (int)cfg.domeSpeed.center, 140, 90,
-                                  kSwitchEdgeConfirmFrames);
-        if (filterResult.accepted) {
-            queueDomeCommand(applyRcAnalogCalibration(raw, cfg.domeSpeed, nullptr), SRC_SBUS);
-        }
-    }
-
-    // Process Tier 2 Trigger Bindings
-    RcTriggerBinding tier2Bindings[11];
-    size_t tier2Count = 0;
-    loadTier2TriggerBindings(tier2Bindings, &tier2Count);
-
-    for (size_t i = 0; i < tier2Count; ++i) {
-        if (tier2Bindings[i].source != source || tier2Bindings[i].target == ROBOT_ACTION_NONE) {
-            continue;
-        }
-
-        int rawValue = 0;
-        RcBindingConfig backbone = triggerToBackbone(tier2Bindings[i]);
-        if (rcBindingIsDigital(backbone)) {
-            bool digitalPressed = false;
-            if (readSbusDigitalTrigger(data, tier2Bindings[i], &digitalPressed)) {
-                TriggerDebounceResult result =
-                    triggerDebounceDigital(&triggerStates[i], digitalPressed);
-                if (result.fired) {
-                    processTriggerAction(tier2Bindings[i].target, tier2Bindings[i].marcduinoPayload,
-                                         result.pressed);
-                }
-            }
-        } else if (readSbusAnalogTrigger(data, tier2Bindings[i], &rawValue)) {
-            processTier2Trigger(tier2Bindings[i], rawValue, triggerStates[i]);
-        }
-    }
+    static RcProcessorOutput output = {};
+    rcInputProcessorTick(&s_rcProcessor, input, &output);
+    dispatchProcessorOutput(output, cfg.mapping);
 }
 
 static bool is_drive_sbus_mode(RcInputMode mode) {
@@ -647,6 +567,8 @@ void rcInputTask(void* pvParameters) {
     // Register with TWDT unconditionally — this task feeds the watchdog
     // regardless of which RC mode is active or what channels are enabled.
     esp_task_wdt_add(NULL);
+
+    rcInputProcessorInit(&s_rcProcessor);
 
     ConfigSnapshot startupCfg = {};
     configCacheRead(&startupCfg);
@@ -869,67 +791,6 @@ void rcInputTask(void* pvParameters) {
                     taskENTER_CRITICAL(&robotStateMux);
                     taskEXIT_CRITICAL(&robotStateMux);
 
-                    // Build channel snapshot from SBUS data for pure mapper
-                    RcChannelSnapshot snap = {};
-                    snap.valid = true;
-                    snap.mode = rcInputMode;  // SINGLE_SBUS or DUAL_SBUS
-                    for (int i = 0; i < 16; ++i) {
-                        snap.channels[i] = (int16_t)data.ch[i];
-                    }
-                    snap.channels[16] = data.ch17 ? 1811 : 172;  // Digital ch17 as SBUS value
-                    snap.channels[17] = data.ch18 ? 1811 : 172;  // Digital ch18 as SBUS value
-
-                    RcMappingConfig mapCfg = rcGetMappingConfig(rcInputMode);
-                    static bool lastSoundPressed = false;
-                    mapCfg.prevSoundPressed = lastSoundPressed;
-
-                    // Map channel snapshot to control intent (pure function)
-                    RcControlIntent intent = rcMapChannels(snap, mapCfg);
-
-                    // Update sound state for next iteration
-                    lastSoundPressed = intent.soundPressed;
-
-                    // Dispatch backbone controls (drive speed, steer)
-                    if ((intent.driveSpeed != 0 || intent.driveSteer != 0) && !s_stationaryLockedByTrigger) {
-                        setStationaryMode(false);
-                    }
-                    driveArbiterSubmit(DriveSource::RC, intent.driveSpeed, intent.driveSteer, millis());
-
-                    // Dispatch audio trigger if fired
-                    if (intent.audioTrigger != nullptr) {
-                        parseMarcduinoCommand(intent.audioTrigger);
-                    }
-
-                    // Dispatch servo commands if set
-                    if (intent.arm1Cmd != RC_SERVO_NO_CHANGE) {
-                        ServoCommandType servoType = SERVO_CMD_POSITION;
-                        uint16_t positionUs = SERVO_PULSE_NEUTRAL_US;
-                        if (intent.arm1Cmd == RC_SERVO_OPEN) {
-                            servoType = SERVO_CMD_OPEN;
-                        } else if (intent.arm1Cmd == RC_SERVO_CLOSE) {
-                            servoType = SERVO_CMD_CLOSE;
-                        } else if (intent.arm1Cmd == RC_SERVO_NEUTRAL) {
-                            servoType = SERVO_CMD_POSITION;
-                            positionUs = SERVO_PULSE_NEUTRAL_US;
-                        }
-                        queueServoCommand(0, servoType, positionUs, SRC_SBUS);
-                    }
-
-                    if (intent.arm2Cmd != RC_SERVO_NO_CHANGE) {
-                        ServoCommandType servoType = SERVO_CMD_POSITION;
-                        uint16_t positionUs = SERVO_PULSE_NEUTRAL_US;
-                        if (intent.arm2Cmd == RC_SERVO_OPEN) {
-                            servoType = SERVO_CMD_OPEN;
-                        } else if (intent.arm2Cmd == RC_SERVO_CLOSE) {
-                            servoType = SERVO_CMD_CLOSE;
-                        } else if (intent.arm2Cmd == RC_SERVO_NEUTRAL) {
-                            servoType = SERVO_CMD_POSITION;
-                            positionUs = SERVO_PULSE_NEUTRAL_US;
-                        }
-                        queueServoCommand(1, servoType, positionUs, SRC_SBUS);
-                    }
-
-                    // Dome speed dispatch happens in dispatchSbusBindingsForSource for stabilization
                     dispatchSbusBindingsForSource(data, RC_BINDING_SBUS1, rcInputMode, enableRcCh1,
                                                   enableRcCh2, useCh2);
                 }

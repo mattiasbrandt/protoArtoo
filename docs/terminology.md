@@ -259,6 +259,31 @@ Common SBUS terms in this repo:
 - `failsafe`: receiver-reported signal-loss condition
 - `sbusSignalLost`: project state field indicating SBUS availability for control logic
 
+## RcInputProcessor
+
+`RcInputProcessor` is the pure orchestration module that processes all RC inputs on each tick.
+
+- Defined in `include/rc_input_processor.h`
+- Instantiated once in `src/tasks/rc_input.cpp`
+
+What it owns:
+
+- `TriggerDebounceState triggerStates[RC_TRIGGER_MAX]` — per-trigger debounce state for all Tier 2 bindings
+- `DomeInputFilter domeInputFilter` — dome speed smoothing filter
+- `bool lastSoundPressed` — backbone sound edge detection state
+
+What it does not own:
+
+- Hardware (SBUS decoders, PWM reads) — stays in the task shell
+- Config loading and caching — task shell injects config per tick
+- Queue dispatch — task shell dispatches the output to audio, servo, dome queues
+
+Why it matters:
+
+- All stateful RC orchestration logic lives in one struct instead of scattered static locals inside task functions
+- The seam between "resolve what RC inputs mean" and "read hardware / write queues" becomes explicit and testable
+- `rcInputProcessorTick()` can be exercised in native unit tests without FreeRTOS or hardware
+
 ## "Native" Tests vs `protoArtoo` Tests
 
 This project has two distinct PlatformIO test/build environments.

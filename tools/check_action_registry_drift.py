@@ -14,6 +14,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 REGISTRY_PATH = ROOT / "docs" / "action-registry.yaml"
 RC_MAPPING_PATH = ROOT / "include" / "rc_mapping.h"
+RC_ACTION_TYPES_PATH = ROOT / "include" / "rc_action_types.h"
 ACTION_REGISTRY_PATH = ROOT / "src" / "web" / "action_registry.cpp"
 RC_JS_PATH = ROOT / "data" / "rc.js"
 BINDABLE_CPP_FILE = "include/rc_mapping.h"
@@ -71,7 +72,14 @@ def action_testable(token: str) -> bool:
 
 
 def robot_action_enum_order() -> dict[str, int]:
-    text = RC_MAPPING_PATH.read_text(encoding="utf-8")
+    # RobotActionId enum is defined in rc_action_types.h (split from rc_mapping.h)
+    # Try to read from rc_action_types.h first, fall back to rc_mapping.h for compatibility
+    text = None
+    if RC_ACTION_TYPES_PATH.exists():
+        text = RC_ACTION_TYPES_PATH.read_text(encoding="utf-8")
+    else:
+        text = RC_MAPPING_PATH.read_text(encoding="utf-8")
+
     match = re.search(r"enum\s+RobotActionId\s*:[^{]+{(?P<body>.*?)\n};", text, re.S)
     if not match:
         raise ValueError("could not find RobotActionId enum")
@@ -132,7 +140,13 @@ def load_expected_actions() -> list[ExpectedAction]:
 
 
 def parse_to_string_tokens() -> dict[str, str]:
-    text = RC_MAPPING_PATH.read_text(encoding="utf-8")
+    # robotActionIdToString is now in rc_action_types.h (split from rc_mapping.h)
+    text = None
+    if RC_ACTION_TYPES_PATH.exists():
+        text = RC_ACTION_TYPES_PATH.read_text(encoding="utf-8")
+    else:
+        text = RC_MAPPING_PATH.read_text(encoding="utf-8")
+
     body = re.search(
         r"robotActionIdToString\(RobotActionId target\).*?switch \(target\) {(?P<body>.*?)\n    }",
         text,
@@ -150,7 +164,13 @@ def parse_to_string_tokens() -> dict[str, str]:
 
 
 def parse_from_string_tokens() -> dict[str, str]:
-    text = RC_MAPPING_PATH.read_text(encoding="utf-8")
+    # parseRobotActionId is now in rc_action_types.h (split from rc_mapping.h)
+    text = None
+    if RC_ACTION_TYPES_PATH.exists():
+        text = RC_ACTION_TYPES_PATH.read_text(encoding="utf-8")
+    else:
+        text = RC_MAPPING_PATH.read_text(encoding="utf-8")
+
     body = re.search(
         r"parseRobotActionId\(const char\* raw, RobotActionId\* out\).*?(?P<body>if \(strcmp.*?)\n    return false;",
         text,
