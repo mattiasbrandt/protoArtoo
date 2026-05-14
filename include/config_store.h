@@ -367,6 +367,7 @@ bool configUpdateAudioMoodMasks(Preferences& prefs, uint16_t quiet, uint16_t mid
 // Caller opens Preferences with begin() before calling.
 // Holds no mutex and performs no robotState reads/writes.
 // Returns false if any write fails; true on success.
+void configSnapshotDefaults(ConfigSnapshot* snap);
 bool configSave(Preferences& prefs, const ConfigSnapshot& snapshot);
 
 bool configSaveDrive(Preferences& prefs, const DriveConfig& config);

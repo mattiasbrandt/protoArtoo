@@ -20,6 +20,9 @@ Diagnostics:
     - fatal_too_many_errors  # cascade sentinel; clang stops before suppressions apply without the limit removed
     - unused-includes        # false positive: Arduino.h/FreeRTOS headers missing on host hide inline fn bodies
     - template_kw_missing    # false positive: ArduinoJson .add<T>()/.to<T>() template calls on dependent types
+    - expected_class_name    # false positive: cascades from Arduino.h String not resolved in test stub path
+    - override_keyword_only_allowed_on_virtual_member_functions  # false positive: cascades from expected_class_name above
+    - sizeof_alignof_incomplete_or_sizeless_type  # false positive: constexpr array with deduced size in same TU
 
 CompileFlags:
   Add:

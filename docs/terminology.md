@@ -170,7 +170,8 @@ Rule of thumb:
 `NVS` means Non-Volatile Storage on ESP32. In Arduino/ESP32 here, it is accessed via `Preferences`.
 
 - Namespace used by this project: `proto` (`NVS_NAMESPACE`)
-- Main load/save path: `loadConfigToState()` and `saveConfigToNvs()` in `src/main.cpp`
+- Main load/save path: `configLoad()` and `configSave()` in `src/config_store.cpp`, which delegate to `configDeserialize()` / `configSerialize()` in `src/config_serializer.cpp`
+- All NVS key strings are centralized in `src/config_serializer.cpp` (single source of truth); `PrefsReader`/`PrefsWriter` in `src/config_nvsio.cpp` are the NVS adapters; `MapReader`/`MapWriter` in `test/stubs/config/map_config_io.h` are the test doubles
 
 What NVS stores in this repo:
 
