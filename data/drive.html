@@ -38,6 +38,11 @@
         <span class="desc">Recovery: only available when estop is latched</span>
         <button id="clear-estop-button" class="btn" type="button" aria-label="Clear Emergency Stop">🟢 Clear Estop</button>
       </div>
+      <div class="safety-status-strip mt-12">
+        <span>Estop: <span id="status-estop-badge">--</span></span>
+        <span>Web Control: <span id="status-webctrl-badge">--</span></span>
+        <span>Failsafe: <span id="status-failsafe-label">--</span></span>
+      </div>
     </div>
 
     <!-- Speed Preset -->
@@ -50,40 +55,43 @@
             <div class="rc-mode-icon" aria-hidden="true">🐌</div>
             <div class="rc-mode-title">Slow</div>
             <div class="rc-mode-desc">Precision / indoor pace</div>
+            <span class="preset-limit-value" id="preset-value-slow"></span>
           </button>
           <button class="rc-mode-card drive-preset-card preset-btn" data-speed-preset="normal" type="button" aria-label="Apply normal speed preset" aria-pressed="false">
             <div class="rc-mode-title">Normal</div>
             <div class="rc-mode-desc">Balanced default profile</div>
+            <span class="preset-limit-value" id="preset-value-normal"></span>
           </button>
           <button class="rc-mode-card drive-preset-card preset-btn" data-speed-preset="turbo" type="button" aria-label="Apply turbo speed preset" aria-pressed="false">
             <div class="rc-mode-icon" aria-hidden="true">⚡</div>
             <div class="rc-mode-title">Turbo</div>
             <div class="rc-mode-desc">Fast profile for open runs</div>
+            <span class="preset-limit-value" id="preset-value-turbo"></span>
           </button>
         </div>
       </div>
       <div id="preset-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true"></div>
     </div>
 
-    <!-- Movement Status -->
-    <div class="card">
-      <h3>🚗 Movement Status</h3>
-      <div class="status-grid">
-        <div class="status-item">
-          <dt>Estop State</dt>
-          <dd id="estop-state">--</dd>
+    <!-- Live Drive Output -->
+    <div class="card" id="live-output-card">
+      <h3>📊 Live Drive Output</h3>
+      <div class="drive-sliders-row">
+        <div class="drive-vslider-wrap">
+          <div class="drive-vslider-track">
+            <div class="drive-vslider-fill" id="steer-fill"></div>
+            <div class="drive-vslider-thumb" id="steer-thumb"></div>
+          </div>
+          <div class="drive-vslider-label">STEER</div>
+          <div class="drive-vslider-value" id="steer-value">0</div>
         </div>
-        <div class="status-item">
-          <dt>Web Control</dt>
-          <dd id="web-control-state">--</dd>
-        </div>
-        <div class="status-item">
-          <dt>Failsafe Source</dt>
-          <dd id="failsafe-source">--</dd>
-        </div>
-        <div class="status-item">
-          <dt>Drive Output</dt>
-          <dd id="drive-output">--</dd>
+        <div class="drive-vslider-wrap">
+          <div class="drive-vslider-track">
+            <div class="drive-vslider-fill" id="throttle-fill"></div>
+            <div class="drive-vslider-thumb" id="throttle-thumb"></div>
+          </div>
+          <div class="drive-vslider-label">THROTTLE</div>
+          <div class="drive-vslider-value" id="throttle-value">0</div>
         </div>
       </div>
     </div>
@@ -141,8 +149,11 @@
       <form id="config-form" class="form-grid mt-16">
         <label class="field">
           <span>Maximum Speed Limit</span>
-          <input id="speed-limit-max" name="speedLimitMax" type="number" min="0" max="600" step="1"
-            title="Maximum speed value sent to the hoverboard controller (0–600). Lower values make the droid slower and safer.">
+          <div class="slider-container">
+            <input id="speed-limit-max" name="speedLimitMax" type="range" min="0" max="600" step="1"
+              title="Maximum speed value sent to the hoverboard controller (0–600). Lower values make the droid slower and safer.">
+          </div>
+          <span class="drive-readout" id="speed-limit-max-readout">—</span>
         </label>
         <label class="field">
           <span>Web Control Timeout (ms)</span>
@@ -151,18 +162,27 @@
         </label>
         <label class="field">
           <span>Slow Preset Limit</span>
-          <input id="speed-preset-slow" name="speedPresetSlow" class="preset-input" aria-describedby="preset-distinct-hint" type="number" min="0" max="600" step="1"
-            title="Drive speed limit applied by Slow preset.">
+          <div class="slider-container">
+            <input id="speed-preset-slow" name="speedPresetSlow" class="preset-input" aria-describedby="preset-distinct-hint" type="range" min="0" max="600" step="1"
+              title="Drive speed limit applied by Slow preset.">
+          </div>
+          <span class="drive-readout" id="speed-preset-slow-readout">—</span>
         </label>
         <label class="field">
           <span>Normal Preset Limit</span>
-          <input id="speed-preset-normal" name="speedPresetNormal" class="preset-input" aria-describedby="preset-distinct-hint" type="number" min="0" max="600" step="1"
-            title="Drive speed limit applied by Normal preset.">
+          <div class="slider-container">
+            <input id="speed-preset-normal" name="speedPresetNormal" class="preset-input" aria-describedby="preset-distinct-hint" type="range" min="0" max="600" step="1"
+              title="Drive speed limit applied by Normal preset.">
+          </div>
+          <span class="drive-readout" id="speed-preset-normal-readout">—</span>
         </label>
         <label class="field">
           <span>Turbo Preset Limit</span>
-          <input id="speed-preset-turbo" name="speedPresetTurbo" class="preset-input" aria-describedby="preset-distinct-hint" type="number" min="0" max="600" step="1"
-            title="Drive speed limit applied by Turbo preset.">
+          <div class="slider-container">
+            <input id="speed-preset-turbo" name="speedPresetTurbo" class="preset-input" aria-describedby="preset-distinct-hint" type="range" min="0" max="600" step="1"
+              title="Drive speed limit applied by Turbo preset.">
+          </div>
+          <span class="drive-readout" id="speed-preset-turbo-readout">—</span>
         </label>
         <div id="preset-distinct-hint" class="feedback warning preset-distinct-hint hidden" role="status" aria-live="polite" aria-atomic="true">Preset limits must be distinct. Duplicate values make preset switching ambiguous.</div>
       </form>

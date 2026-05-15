@@ -14,10 +14,15 @@
   const disableWebControlButton = document.getElementById("disable-web-control-button");
   const controlFeedback = document.getElementById("control-feedback");
 
-  const estopState = document.getElementById("estop-state");
-  const webControlState = document.getElementById("web-control-state");
-  const failsafeSource = document.getElementById("failsafe-source");
-  const driveOutput = document.getElementById("drive-output");
+  const statusEstopBadge = document.getElementById("status-estop-badge");
+  const statusWebctrlBadge = document.getElementById("status-webctrl-badge");
+  const statusFailsafeLabel = document.getElementById("status-failsafe-label");
+  const steerFill = document.getElementById("steer-fill");
+  const steerThumb = document.getElementById("steer-thumb");
+  const steerValue = document.getElementById("steer-value");
+  const throttleFill = document.getElementById("throttle-fill");
+  const throttleThumb = document.getElementById("throttle-thumb");
+  const throttleValue = document.getElementById("throttle-value");
   const hbNoData    = document.getElementById("hb-no-data");
   const hbDataGrid  = document.getElementById("hb-data-grid");
   const hbBattery   = document.getElementById("hb-battery");
@@ -28,9 +33,16 @@
 
 
   const speedLimitMax = document.getElementById("speed-limit-max");
+  const speedLimitMaxReadout = document.getElementById("speed-limit-max-readout");
   const speedPresetSlow = document.getElementById("speed-preset-slow");
+  const speedPresetSlowReadout = document.getElementById("speed-preset-slow-readout");
   const speedPresetNormal = document.getElementById("speed-preset-normal");
+  const speedPresetNormalReadout = document.getElementById("speed-preset-normal-readout");
   const speedPresetTurbo = document.getElementById("speed-preset-turbo");
+  const speedPresetTurboReadout = document.getElementById("speed-preset-turbo-readout");
+  const presetValueSlow = document.getElementById("preset-value-slow");
+  const presetValueNormal = document.getElementById("preset-value-normal");
+  const presetValueTurbo = document.getElementById("preset-value-turbo");
   const webDriveTimeout = document.getElementById("web-drive-timeout");
   const configFeedback = document.getElementById("config-feedback");
   const presetFeedback = document.getElementById("preset-feedback");
@@ -210,6 +222,7 @@
       if (applied !== null) {
         currentSpeedLimitMax = applied;
         if (speedLimitMax) speedLimitMax.value = String(applied);
+        if (speedLimitMaxReadout) speedLimitMaxReadout.textContent = String(applied);
       }
       currentSpeedPreset = appliedPreset;
       updatePresetHighlight();
@@ -254,6 +267,34 @@
   });
 
 
+  const VSLIDER_TRACK_H = 160;
+  const VSLIDER_THUMB_H = 24;
+
+  const updateVSlider = (thumbEl, fillEl, valueEl, val, max) => {
+    const safeMax = max > 0 ? max : 600;
+    const clamped = Math.max(-safeMax, Math.min(safeMax, Number.isFinite(val) ? val : 0));
+    // pct: 0% = top (+max), 50% = center (0), 100% = bottom (-max)
+    const pct = 50 - (clamped / safeMax) * 50;
+    const thumbTop = Math.max(0, Math.min(VSLIDER_TRACK_H - VSLIDER_THUMB_H,
+      (pct / 100) * VSLIDER_TRACK_H - VSLIDER_THUMB_H / 2));
+    if (thumbEl) thumbEl.style.top = `${thumbTop}px`;
+    const thumbCenterPx = thumbTop + VSLIDER_THUMB_H / 2;
+    const centerPx = VSLIDER_TRACK_H / 2;
+    if (fillEl) {
+      const top = Math.min(centerPx, thumbCenterPx);
+      const height = Math.abs(thumbCenterPx - centerPx);
+      fillEl.style.top = `${top}px`;
+      fillEl.style.height = `${height}px`;
+    }
+    if (valueEl) valueEl.textContent = String(Math.round(clamped));
+  };
+
+  const updateDriveSliders = (steer, speed) => {
+    const max = currentSpeedLimitMax !== null ? currentSpeedLimitMax : 600;
+    updateVSlider(steerThumb, steerFill, steerValue, steer, max);
+    updateVSlider(throttleThumb, throttleFill, throttleValue, speed, max);
+  };
+
   const renderHoverboard = (hb) => {
     const batteryV = Number(hb?.batteryV);
     const boardTempC = Number(hb?.boardTempC);
@@ -290,19 +331,15 @@
 
   const renderStatus = (payload) => {
     estopLatched = !!payload.estop;
-    if (estopState) estopState.textContent = payload.estop ? "❌ Latched" : "✅ Clear";
+    if (statusEstopBadge) statusEstopBadge.textContent = payload.estop ? "❌ Latched" : "✅ Clear";
     if (clearEstopButton) clearEstopButton.disabled = !payload.estop;
-    if (webControlState) webControlState.textContent = payload.webControlEnabled ? "✅ Enabled" : "⏸️ Disabled";
+    if (statusWebctrlBadge) statusWebctrlBadge.textContent = payload.webControlEnabled ? "✅ Enabled" : "⏸️ Disabled";
     webControlEnabled = !!payload.webControlEnabled;
     updateDriveControlsEnabled();
-    if (failsafeSource) failsafeSource.textContent = formatFailsafeSource(payload.failsafeSource);
+    if (statusFailsafeLabel) statusFailsafeLabel.textContent = formatFailsafeSource(payload.failsafeSource);
     const driveSpeed = Number(payload.driveSpeed);
     const driveSteer = Number(payload.driveSteer);
-    if (driveOutput) {
-      const speedText = Number.isFinite(driveSpeed) ? Math.round(driveSpeed) : "--";
-      const steerText = Number.isFinite(driveSteer) ? Math.round(driveSteer) : "--";
-      driveOutput.textContent = `SPD ${speedText} · STR ${steerText}`;
-    }
+    updateDriveSliders(driveSteer, driveSpeed);
     renderHoverboard(payload.hoverboard);
     updatePresetHighlight();
   };
@@ -310,10 +347,17 @@
     const drive = payload?.drive || {};
     const components = payload?.components || {};
     if (speedLimitMax) speedLimitMax.value = drive.speedLimitMax;
+    if (speedLimitMaxReadout) speedLimitMaxReadout.textContent = drive.speedLimitMax ?? "—";
     if (speedPresetSlow) speedPresetSlow.value = drive.speedPresetSlow;
+    if (speedPresetSlowReadout) speedPresetSlowReadout.textContent = drive.speedPresetSlow ?? "—";
     if (speedPresetNormal) speedPresetNormal.value = drive.speedPresetNormal;
+    if (speedPresetNormalReadout) speedPresetNormalReadout.textContent = drive.speedPresetNormal ?? "—";
     if (speedPresetTurbo) speedPresetTurbo.value = drive.speedPresetTurbo;
+    if (speedPresetTurboReadout) speedPresetTurboReadout.textContent = drive.speedPresetTurbo ?? "—";
     if (webDriveTimeout) webDriveTimeout.value = drive.webDriveTimeoutMs;
+    if (presetValueSlow) presetValueSlow.textContent = drive.speedPresetSlow != null ? String(drive.speedPresetSlow) : "";
+    if (presetValueNormal) presetValueNormal.textContent = drive.speedPresetNormal != null ? String(drive.speedPresetNormal) : "";
+    if (presetValueTurbo) presetValueTurbo.textContent = drive.speedPresetTurbo != null ? String(drive.speedPresetTurbo) : "";
 
     currentSpeedLimitMax = parsePresetNumber(drive.speedLimitMax);
     currentSpeedPreset = parsePresetId(drive.speedPreset);
@@ -396,12 +440,19 @@
   const debouncedSave = window.PAUtils.debounce(saveConfig, 300);
   speedLimitMax?.addEventListener("input", () => {
     currentSpeedLimitMax = parsePresetNumber(speedLimitMax?.value);
+    if (speedLimitMaxReadout) speedLimitMaxReadout.textContent = speedLimitMax.value;
     updatePresetHighlight();
     debouncedSave();
   });
   const presetInputHandler = () => {
     updatePresetDistinctHint();
     updatePresetHighlight();
+    if (speedPresetSlowReadout) speedPresetSlowReadout.textContent = speedPresetSlow?.value ?? "—";
+    if (speedPresetNormalReadout) speedPresetNormalReadout.textContent = speedPresetNormal?.value ?? "—";
+    if (speedPresetTurboReadout) speedPresetTurboReadout.textContent = speedPresetTurbo?.value ?? "—";
+    if (presetValueSlow) presetValueSlow.textContent = speedPresetSlow?.value ?? "";
+    if (presetValueNormal) presetValueNormal.textContent = speedPresetNormal?.value ?? "";
+    if (presetValueTurbo) presetValueTurbo.textContent = speedPresetTurbo?.value ?? "";
     debouncedSave();
   };
   speedPresetSlow?.addEventListener("input", presetInputHandler);
@@ -441,4 +492,5 @@
 
   loadConfig();
   renderHoverboard(null);
+  updateDriveSliders(0, 0);
 })();

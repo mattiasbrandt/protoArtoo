@@ -449,6 +449,96 @@ nav a.active {
   transform: none;
 }
 
+.preset-limit-value {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  margin-top: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.drive-preset-card.preset-active .preset-limit-value,
+.drive-preset-card.selected .preset-limit-value {
+  color: var(--accent-bright);
+}
+
+/* Live drive output vertical sliders */
+.drive-sliders-row {
+  display: flex;
+  justify-content: space-around;
+  gap: 24px;
+  padding: 16px 0 8px;
+}
+
+.drive-vslider-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.drive-vslider-track {
+  position: relative;
+  width: 28px;
+  height: 160px;
+  background: var(--surface-alt);
+  border-radius: 14px;
+}
+
+.drive-vslider-fill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  background: var(--accent-bright);
+  opacity: 0.35;
+  border-radius: 4px;
+}
+
+.drive-vslider-thumb {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 24px;
+  height: 24px;
+  background: var(--accent-bright);
+  border-radius: 50%;
+  box-shadow: 0 2px 8px rgba(74, 144, 217, 0.45);
+  transition: top 0.08s ease;
+}
+
+.drive-vslider-label {
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.drive-vslider-value {
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+  min-width: 3ch;
+  text-align: center;
+  color: var(--silver-bright);
+}
+
+/* Safety card compact status strip */
+.safety-status-strip {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  font-size: 0.8rem;
+  color: var(--text-dim);
+}
+
+/* Drive settings slider readout */
+.drive-readout {
+  text-align: center;
+  font-size: 0.88rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--silver-bright);
+}
+
 .form-grid {
   display: grid;
   gap: 16px;
