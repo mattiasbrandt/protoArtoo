@@ -40,3 +40,8 @@ updates:
     open-pull-requests-limit: 3
     labels:
       - dependencies
+    groups:
+      patch-and-minor:
+        update-types:
+          - minor
+          - patch
