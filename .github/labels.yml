@@ -54,3 +54,7 @@ labels:
   - name: feature request
     color: f59e0b
     description: A requested improvement or new capability
+
+  - name: dependencies
+    color: 0075ca
+    description: Dependency updates from Dependabot or manual bumps

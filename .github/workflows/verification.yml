@@ -1,0 +1,158 @@
+name: Verification
+
+on:
+  pull_request:
+    branches:
+      - 'phase/v*'
+      - main
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+# Workflow-level default: read-only. Pull-requests: write is scoped to the job
+# that posts the sticky comment, not applied globally.
+permissions:
+  contents: read
+
+jobs:
+  verification:
+    name: verification
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: ⬇️ Checkout
+        uses: actions/checkout@v4
+
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+          cache: pip
+          cache-dependency-path: tools/requirements.txt
+
+      - name: 🔧 Install cppcheck
+        run: sudo apt-get install -y --no-install-recommends cppcheck
+
+      - name: 📦 Install PlatformIO and Python tools
+        run: pip install platformio && pip install -r tools/requirements.txt
+
+      - name: 💾 Cache PlatformIO library downloads
+        uses: actions/cache@v4
+        with:
+          # Cache library downloads only — build artifacts (.pio/build/) are not cached
+          # and must not be treated as verification evidence.
+          path: ~/.platformio/.cache
+          key: ${{ runner.os }}-pio-${{ hashFiles('platformio.ini') }}
+          restore-keys: ${{ runner.os }}-pio-
+
+      - name: 🟢 Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: 📦 Install npm dependencies
+        run: npm ci
+
+      # ── Checks ───────────────────────────────────────────────────────────────
+      # All check steps use continue-on-error: true so every check runs
+      # regardless of earlier failures. The gate step at the end fails the job
+      # if any check did not succeed. steps.<id>.outcome reflects the actual
+      # pass/fail even when continue-on-error is set.
+
+      - name: 🏗️ Firmware build
+        id: firmware-build
+        continue-on-error: true
+        run: pio run -e protoArtoo
+
+      - name: 🧪 Native tests
+        id: native-tests
+        continue-on-error: true
+        run: pio test -e native
+
+      - name: 🔍 Static analysis
+        id: static-analysis
+        continue-on-error: true
+        run: pio check -e protoArtoo
+
+      - name: 📋 Action registry drift
+        id: action-drift
+        continue-on-error: true
+        run: make check-action-drift
+
+      - name: 🌐 Web logic tests
+        id: web-tests
+        continue-on-error: true
+        run: node --test test/test_web/*.js
+
+      # ── Summary ──────────────────────────────────────────────────────────────
+
+      - name: 📊 Write run summary
+        if: always()
+        env:
+          BUILD_OUTCOME: ${{ steps.firmware-build.outcome }}
+          TESTS_OUTCOME: ${{ steps.native-tests.outcome }}
+          ANALYSIS_OUTCOME: ${{ steps.static-analysis.outcome }}
+          DRIFT_OUTCOME: ${{ steps.action-drift.outcome }}
+          WEB_OUTCOME: ${{ steps.web-tests.outcome }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          row() {
+            local outcome="$1" label="$2" cmd="$3"
+            if [ "$outcome" = "success" ]; then
+              echo "| ✅ | $label | \`$cmd\` | Passed |"
+            else
+              echo "| ❌ | $label | \`$cmd\` | **Failed** |"
+            fi
+          }
+
+          {
+            echo "## 🤖 Verification"
+            echo ""
+            echo "| | Check | Command | Status |"
+            echo "|---|---|---|---|"
+            row "$BUILD_OUTCOME"    "Firmware build"       "pio run -e protoArtoo"
+            row "$TESTS_OUTCOME"   "Native tests"          "pio test -e native"
+            row "$ANALYSIS_OUTCOME" "Static analysis"      "pio check -e protoArtoo"
+            row "$DRIFT_OUTCOME"   "Action registry drift" "make check-action-drift"
+            row "$WEB_OUTCOME"     "Web logic tests"       "node --test test/test_web/*.js"
+            echo ""
+            echo "Run: [$(date -u '+%Y-%m-%d %H:%M UTC')]($RUN_URL)"
+          } | tee .ci-summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 💬 Post PR comment
+        if: always() && github.event_name == 'pull_request'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: verification
+          path: .ci-summary.md
+
+      # ── Gate ─────────────────────────────────────────────────────────────────
+      # Fail the job (and therefore the required status check) if any check
+      # did not succeed. Runs after summary so the findings are always visible.
+
+      - name: 🚦 Gate — fail if any check failed
+        if: always()
+        env:
+          BUILD_OUTCOME: ${{ steps.firmware-build.outcome }}
+          TESTS_OUTCOME: ${{ steps.native-tests.outcome }}
+          ANALYSIS_OUTCOME: ${{ steps.static-analysis.outcome }}
+          DRIFT_OUTCOME: ${{ steps.action-drift.outcome }}
+          WEB_OUTCOME: ${{ steps.web-tests.outcome }}
+        run: |
+          failed=()
+          [ "$BUILD_OUTCOME"    != "success" ] && failed+=("firmware-build")
+          [ "$TESTS_OUTCOME"    != "success" ] && failed+=("native-tests")
+          [ "$ANALYSIS_OUTCOME" != "success" ] && failed+=("static-analysis")
+          [ "$DRIFT_OUTCOME"    != "success" ] && failed+=("action-drift")
+          [ "$WEB_OUTCOME"      != "success" ] && failed+=("web-tests")
+          if [ ${#failed[@]} -gt 0 ]; then
+            echo "Failed checks: ${failed[*]}"
+            exit 1
+          fi
+          echo "All checks passed."

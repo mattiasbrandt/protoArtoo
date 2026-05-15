@@ -73,3 +73,18 @@ protoArtoo firmware is feature-complete for `v1.0.0`. Automated checks are passi
 | `v1.0.0` _(pending drive hardware validation)_ | Full architecture, audio confirmed on hardware, OTA and backup confirmed, configurable droid identity, drive hardware validation pending |
 
 For detailed per-change history, see `CHANGELOG.md`.
+
+## PlatformIO Dependency Freshness
+
+Dependabot does not support PlatformIO as a package ecosystem. PlatformIO platform and library
+freshness must be checked manually:
+
+```bash
+pio pkg outdated -e protoArtoo
+pio pkg outdated -e native
+```
+
+The platform ZIP (`pioarduino platform-espressif32`) is pinned in `platformio.ini`. Updates to
+`lib_deps` or the platform ZIP are treated as normal PRs and must pass the full `verification` gate.
+Runtime-affecting dependency changes may need controller or hardware validation beyond
+`software-verified` closure, depending on which packages change.

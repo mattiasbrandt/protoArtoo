@@ -1,0 +1,42 @@
+version: 2
+updates:
+  # GitHub Actions — workflow action version pins
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    labels:
+      - dependencies
+    groups:
+      patch-and-minor:
+        update-types:
+          - minor
+          - patch
+
+  # npm — Playwright and other dev dependencies (package-lock.json at root)
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    labels:
+      - dependencies
+    groups:
+      patch-and-minor:
+        update-types:
+          - minor
+          - patch
+
+  # pip — developer tools in tools/requirements.txt
+  # Note: tools/requirements.txt uses lower-bound ranges (>=), so Dependabot
+  # can open PRs but fully deterministic review would require pinned versions.
+  # PlatformIO itself (lib_deps, platform ZIP) is not a supported Dependabot
+  # ecosystem. Track PlatformIO freshness manually with `pio pkg outdated`.
+  - package-ecosystem: pip
+    directory: /tools
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    labels:
+      - dependencies
