@@ -14,8 +14,6 @@
   const disableWebControlButton = document.getElementById("disable-web-control-button");
   const controlFeedback = document.getElementById("control-feedback");
 
-  const statusEstopBadge = document.getElementById("status-estop-badge");
-  const statusWebctrlBadge = document.getElementById("status-webctrl-badge");
   const statusFailsafeLabel = document.getElementById("status-failsafe-label");
   const steerFill = document.getElementById("steer-fill");
   const steerThumb = document.getElementById("steer-thumb");
@@ -331,9 +329,7 @@
 
   const renderStatus = (payload) => {
     estopLatched = !!payload.estop;
-    if (statusEstopBadge) statusEstopBadge.textContent = payload.estop ? "❌ Latched" : "✅ Clear";
     if (clearEstopButton) clearEstopButton.disabled = !payload.estop;
-    if (statusWebctrlBadge) statusWebctrlBadge.textContent = payload.webControlEnabled ? "✅ Enabled" : "⏸️ Disabled";
     webControlEnabled = !!payload.webControlEnabled;
     updateDriveControlsEnabled();
     if (statusFailsafeLabel) statusFailsafeLabel.textContent = formatFailsafeSource(payload.failsafeSource);

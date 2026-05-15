@@ -491,7 +491,7 @@ nav a.active {
   right: 0;
   background: var(--accent-bright);
   opacity: 0.35;
-  border-radius: 4px;
+  border-radius: 14px;
 }
 
 .drive-vslider-thumb {
