@@ -107,7 +107,7 @@ static bool acquireDomeUart() {
     s_uartOwned = true;
     domeUartAcquire(DOME_UART_DOME);
 
-    PA_LOG_INFO(TAG, "UART2 ownership -> dome link (GPIO%d/GPIO%d)", PIN_DOME_TX, PIN_DOME_RX);
+    PA_LOG_DEBUG(TAG, "UART2 ownership -> dome link (GPIO%d/GPIO%d)", PIN_DOME_TX, PIN_DOME_RX);
     return true;
 }
 
@@ -123,7 +123,7 @@ static void releaseUartToAudioRx() {
     domeUartRelease(DOME_UART_DOME);
     domeUartAcquire(DOME_UART_AUDIO);
 
-    PA_LOG_INFO(TAG, "UART2 ownership -> audio RX (GPIO%d)", PIN_AUDIO_RX);
+    PA_LOG_DEBUG(TAG, "UART2 ownership -> audio RX (GPIO%d)", PIN_AUDIO_RX);
 }
 
 static bool readConfiguredPeerIp(IPAddress* out) {
@@ -546,8 +546,11 @@ void domeLinkTask(void* pvParameters) {
                 lastUartProbeMs = now;
                 if (acquireDomeUart()) {
                     uartProbeWindowUntilMs = now + kUartProbeWindowMs;
-                    // Probe ping for failback detection; not counted as active transport heartbeat.
-                    s_domeSerial.print(MD_BODY_HB);
+                    // RX-only probe window: do NOT transmit #PAHB via GPIO33 when WiFi is
+                    // the active transport. The dome counts any #PAHB on Serial2 as evidence
+                    // of UART transport and routes sendBodyCommand() via UART TX, which the
+                    // body never receives during the brief probe window. UART failback is
+                    // detected by receiving an unsolicited #APHB from the dome via UART RX.
                 }
             }
 
