@@ -48,6 +48,7 @@
   let sleepPending = false;
   let isSleeping = false;
   let isEstopLatched = false;
+  let estopStateKnown = false;
   let rebootPending = false;
 
   const INDICATOR_TEXT = {
@@ -130,6 +131,10 @@
     estopToggle.classList.toggle("danger", isEstopLatched);
     estopToggle.title = isEstopLatched ? "Clear E-Stop" : "Latch E-Stop";
     estopToggle.setAttribute("aria-pressed", isEstopLatched.toString());
+    if (!estopStateKnown) {
+      estopStateKnown = true;
+      estopToggle.disabled = false;
+    }
   };
 
   const setSleepPending = (pending) => {

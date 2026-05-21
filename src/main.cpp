@@ -330,6 +330,9 @@ void loop() {
     if (shouldRestart) {
         PA_LOG_INFO("main", "restarting controller");
         Serial.flush();
+        // Deinit TWDT before restart — prevents esp_restart() from being
+        // misclassified as ESP_RST_TASK_WDT and triggering a boot-time estop.
+        esp_task_wdt_deinit();
         delay(100);
         ESP.restart();
     }
