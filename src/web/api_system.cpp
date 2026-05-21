@@ -47,18 +47,11 @@ static inline void setUploadState(AsyncWebServerRequest* req, uintptr_t state) {
 static bool setSleepModeState(bool sleepMode, bool* changedOut) {
     uint32_t nowMs = millis();
     bool changed = false;
-    ConfigSnapshot cfg = {};
-    configCacheRead(&cfg);
-    bool domeSleepSyncEnabled = cfg.system.enable_s3_dome_ctrl;
 
     taskENTER_CRITICAL(&robotStateMux);
     if (robotState.sleepMode != sleepMode) {
         robotState.sleepMode = sleepMode;
         robotState.sleepSinceMs = sleepMode ? nowMs : 0U;
-        if (domeSleepSyncEnabled) {
-            robotState.domeSleepSyncPending = true;
-            robotState.domeSleepSyncSleepMode = sleepMode;
-        }
         changed = true;
     }
     taskEXIT_CRITICAL(&robotStateMux);

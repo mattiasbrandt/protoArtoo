@@ -345,10 +345,8 @@ static void dispatchProcessorOutput(const RcProcessorOutput& output, const RcMap
         if (res.setSleep) {
             const uint32_t nowMs = millis();
             taskENTER_CRITICAL(&robotStateMux);
-            robotState.sleepMode            = res.newSleepMode;
-            robotState.sleepSinceMs         = res.newSleepMode ? nowMs : 0U;
-            robotState.domeSleepSyncPending = true;
-            robotState.domeSleepSyncSleepMode = res.newSleepMode;
+            robotState.sleepMode    = res.newSleepMode;
+            robotState.sleepSinceMs = res.newSleepMode ? nowMs : 0U;
             taskEXIT_CRITICAL(&robotStateMux);
             requestStatusBroadcastNow();
         }
@@ -444,8 +442,6 @@ static void processTriggerAction(RobotActionId target, const char* payload, bool
         taskENTER_CRITICAL(&robotStateMux);
         robotState.sleepMode = res.newSleepMode;
         robotState.sleepSinceMs = res.newSleepMode ? nowMs : 0U;
-        robotState.domeSleepSyncPending = true;
-        robotState.domeSleepSyncSleepMode = res.newSleepMode;
         taskEXIT_CRITICAL(&robotStateMux);
         requestStatusBroadcastNow();
     }

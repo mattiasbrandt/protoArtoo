@@ -159,11 +159,6 @@ struct RobotState {
     float dome_speed;
     bool sleepMode;
     uint32_t sleepSinceMs;
-    // Pending body->dome sleep sync frame (#PASL/#PAWU). Set by local sleep
-    // state transitions and consumed by DomeLinkTask when transport is available.
-    bool domeSleepSyncPending;
-    bool domeSleepSyncSleepMode;
-
     AuxLedState auxLed;
     // --- Failsafe state ---
     bool estop;

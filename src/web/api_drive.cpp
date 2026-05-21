@@ -337,6 +337,32 @@ void registerDriveRoutes(AsyncWebServer& server) {
         req->send(200, "application/json", "{\"ok\":true}");
     });
 
+    // POST /api/dome/cmd — forward a raw Marcduino command verbatim to the dome
+    // over the dome link TX queue (UART2 or WiFi/UDP), bypassing the body's
+    // Marcduino prefix router. Use this for dome-native prefixes (:, *, @, etc.)
+    // that the body would otherwise consume or reject.
+    server.on("/api/dome/cmd", HTTP_POST, [](AsyncWebServerRequest* req) {
+        const AsyncWebParameter* cmdParam = req->getParam("cmd", true);
+        if (cmdParam == nullptr || cmdParam->value().length() == 0) {
+            req->send(400, "application/json",
+                      "{\"ok\":false,\"error\":\"missing cmd parameter\"}");
+            return;
+        }
+        const String& raw = cmdParam->value();
+        if (raw.length() > 127) {
+            req->send(400, "application/json",
+                      "{\"ok\":false,\"error\":\"cmd too long (max 127)\"}");
+            return;
+        }
+        if (!domeQueueTx(raw.c_str())) {
+            req->send(503, "application/json",
+                      "{\"ok\":false,\"error\":\"dome TX queue full or link not ready\"}");
+            return;
+        }
+        PA_LOG_INFO(TAG, "[WEB] POST /api/dome/cmd cmd=%s", raw.c_str());
+        req->send(200, "application/json", "{\"ok\":true}");
+    });
+
     server.on("/api/dome", HTTP_POST, [](AsyncWebServerRequest* req) {
         const AsyncWebParameter* speedParam = req->getParam("speed", true);
         if (speedParam == nullptr) {

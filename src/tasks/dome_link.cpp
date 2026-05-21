@@ -489,6 +489,8 @@ void domeLinkTask(void* pvParameters) {
     bool peerKnown = false;
     bool peerManual = false;
     bool udpReady = false;
+    bool sleepSynced = false;
+    bool lastSyncedSleepMode = false;
 
     DomeTxCmd txCmd{};
 
@@ -561,37 +563,42 @@ void domeLinkTask(void* pvParameters) {
 
         setTransportState(desiredTransport);
 
-        bool sleepSyncPending = false;
-        bool sleepSyncSleepMode = false;
-        taskENTER_CRITICAL(&robotStateMux);
-        sleepSyncPending = robotState.domeSleepSyncPending;
-        sleepSyncSleepMode = robotState.domeSleepSyncSleepMode;
-        taskEXIT_CRITICAL(&robotStateMux);
-
-        if (sleepSyncPending) {
-            const char* sleepSyncCmd = sleepSyncSleepMode ? MD_BODY_SLEEP : MD_BODY_WAKE;
-            bool syncSent = false;
-
-            if (desiredTransport == DOME_LINK_TRANSPORT_UART && s_uartOwned) {
-                s_domeSerial.print(sleepSyncCmd);
-                PA_LOG_INFO(TAG, "TX UART sleep sync: %s", sleepSyncSleepMode ? "sleep" : "wake");
-                syncSent = true;
-            } else if (desiredTransport == DOME_LINK_TRANSPORT_WIFI && staConnected && peerKnown) {
-                syncSent = sendCommandOverWifi(peerIp, sleepSyncCmd);
-                if (syncSent) {
-                    PA_LOG_INFO(TAG, "TX WiFi sleep sync (%s): %s",
-                                peerManual ? "manual-ip" : "mdns",
-                                sleepSyncSleepMode ? "sleep" : "wake");
-                }
-            }
-
-            if (syncSent) {
+        // Sleep state sync: current body sleep state is ground truth.
+        // Send #PASL/#PAWU on every connect (sleepSynced resets on disconnect)
+        // and whenever the body's sleep mode changes while connected.
+        // No pending flag — polling avoids stale #PASL firing on reconnect.
+        {
+            bool domeNowConnected = domeConnected();
+            if (!domeNowConnected) {
+                sleepSynced = false;
+            } else {
                 taskENTER_CRITICAL(&robotStateMux);
-                if (robotState.domeSleepSyncPending &&
-                    robotState.domeSleepSyncSleepMode == sleepSyncSleepMode) {
-                    robotState.domeSleepSyncPending = false;
-                }
+                bool bodySleeping = robotState.sleepMode;
                 taskEXIT_CRITICAL(&robotStateMux);
+
+                if (!sleepSynced || bodySleeping != lastSyncedSleepMode) {
+                    const char* cmd = bodySleeping ? MD_BODY_SLEEP : MD_BODY_WAKE;
+                    bool sent = false;
+
+                    if (desiredTransport == DOME_LINK_TRANSPORT_UART && s_uartOwned) {
+                        s_domeSerial.print(cmd);
+                        sent = true;
+                        PA_LOG_INFO(TAG, "TX UART sleep sync: %s", bodySleeping ? "sleep" : "wake");
+                    } else if (desiredTransport == DOME_LINK_TRANSPORT_WIFI && staConnected &&
+                               peerKnown) {
+                        sent = sendCommandOverWifi(peerIp, cmd);
+                        if (sent) {
+                            PA_LOG_INFO(TAG, "TX WiFi sleep sync (%s): %s",
+                                        peerManual ? "manual-ip" : "mdns",
+                                        bodySleeping ? "sleep" : "wake");
+                        }
+                    }
+
+                    if (sent) {
+                        sleepSynced = true;
+                        lastSyncedSleepMode = bodySleeping;
+                    }
+                }
             }
         }
 
