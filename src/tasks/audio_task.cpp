@@ -697,10 +697,10 @@ void audioTask(void* pvParameters) {
         lastAudioEnabled = true;
 
         // ----------------------------------------------------------------
-        // Enabled: initialise driver on first enable.
-        // Covers both the boot case (enabled from the start) and the
-        // runtime case (user enables audio after boot via Setup page).
-        // driver->begin(vol) is safe to call once; it configures GPIO and sets volume.
+        // Enabled: initialise driver on first enable, or retry if a previous
+        // begin() was deferred (e.g. UART2 held by dome probe at boot time).
+        // begin() returns false when deferred; driverInitialized stays false
+        // so the block re-runs on the next poll cycle until init completes.
         // ----------------------------------------------------------------
         if (!driverInitialized) {
             ConfigSnapshot cfg = {};
@@ -711,7 +711,13 @@ void audioTask(void* pvParameters) {
             buildNamedTracks(playback, &named);
             // Soft-UART drivers block for up to ~6 ms per command; AudioTask must run on Core 0.
             configASSERT(xPortGetCoreID() == 0);
-            driver->begin(currentVol);
+            const bool initOk = driver->begin(currentVol);
+            if (!initOk) {
+                // begin() was deferred (e.g. UART2 held by dome probe).
+                // Leave driverInitialized=false; retry on next poll cycle.
+                PA_LOG_DEBUG(TAG, "audio driver begin deferred — will retry");
+                continue;
+            }
             if (driver->capabilities() & AudioDriver::AUDIO_CAP_CATALOG) {
                 bool cacheLoaded = refreshChirpBindingCacheFromNvs();
                 PA_LOG_INFO(TAG, "CHIRP binding cache %s", cacheLoaded ? "loaded" : "load failed");

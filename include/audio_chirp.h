@@ -34,7 +34,7 @@ class AudioDriverChirp : public AudioDriver {
 
     // Configures soft-UART TX and hardware UART RX; sends initial volume and
     // reads GMAN bank descriptors.
-    void begin(uint8_t vol) override;
+    bool begin(uint8_t vol) override;
 
     // Play track by 1-based index in Bank 1, Page A.
     // Track 0 is silently ignored.

@@ -13,7 +13,7 @@
 // Stub driver without catalog support.
 class AudioDriverStub : public AudioDriver {
    public:
-    void begin(uint8_t vol) override { last_vol = vol; }
+    bool begin(uint8_t vol) override { last_vol = vol; return true; }
     void playTrack(uint16_t track) override { last_track = track; }
     void stop() override { stopped = true; }
     void setVolume(uint8_t vol) override { last_vol = vol; }
@@ -27,7 +27,7 @@ class AudioDriverStub : public AudioDriver {
 // Stub driver WITH catalog support (simulates CHIRP).
 class AudioDriverCatalogStub : public AudioDriver {
    public:
-    void begin(uint8_t vol) override { last_vol = vol; }
+    bool begin(uint8_t vol) override { last_vol = vol; return true; }
     void playTrack(uint16_t track) override { last_track = track; }
     void stop() override { stopped = true; }
     void setVolume(uint8_t vol) override { last_vol = vol; }

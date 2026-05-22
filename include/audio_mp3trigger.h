@@ -53,7 +53,7 @@ class AudioDriverMp3Trigger : public AudioDriver {
     // Configures soft-UART TX and hardware UART RX; sends S0 version query to
     // verify the serial link, S1 track-count query to cache totalTracks, then
     // applies initial volume. Blocking — runs inside AudioTask on Core 0.
-    void begin(uint8_t vol) override;
+    bool begin(uint8_t vol) override;
 
     // Play a track by 1-based filename-prefix index (NNNxxxx.MP3).
     // Track 0 is silently ignored. Track > 255 is logged and dropped: VS1053

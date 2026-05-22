@@ -95,26 +95,30 @@ void test_query_emits_stat_command_when_uart_available() {
 // begin() guard
 // =============================================================================
 
-void test_begin_skips_delay_and_tx_when_dome_owns_uart() {
+void test_begin_returns_false_and_skips_io_when_dome_owns_uart() {
     AudioDriverChirp drv;
     drv.setIO(makeIO());
 
     g_test_dome_uart_owned = true;
-    drv.begin(15);
+    bool result = drv.begin(15);
 
+    TEST_ASSERT_FALSE_MESSAGE(result,
+        "begin must return false when dome owns UART2 (deferred init)");
     TEST_ASSERT_EQUAL_INT_MESSAGE(0, g_rec.delayCallCount,
         "begin must not call delayMs when dome owns UART2");
     TEST_ASSERT_EQUAL_INT_MESSAGE(0, g_rec.txCount,
         "begin must not emit any bytes when dome owns UART2");
 }
 
-void test_begin_calls_delay_when_uart_available() {
+void test_begin_returns_true_and_calls_delay_when_uart_available() {
     AudioDriverChirp drv;
     drv.setIO(makeIO());
 
     g_test_dome_uart_owned = false;
-    drv.begin(15);
+    bool result = drv.begin(15);
 
+    TEST_ASSERT_TRUE_MESSAGE(result,
+        "begin must return true when UART2 is available (init complete)");
     TEST_ASSERT_GREATER_THAN_INT_MESSAGE(0, g_rec.delayCallCount,
         "begin must call delayMs when UART2 is available");
 }
@@ -125,7 +129,7 @@ int main(int argc, char** argv) {
     UNITY_BEGIN();
     RUN_TEST(test_query_emits_no_bytes_when_dome_owns_uart);
     RUN_TEST(test_query_emits_stat_command_when_uart_available);
-    RUN_TEST(test_begin_skips_delay_and_tx_when_dome_owns_uart);
-    RUN_TEST(test_begin_calls_delay_when_uart_available);
+    RUN_TEST(test_begin_returns_false_and_skips_io_when_dome_owns_uart);
+    RUN_TEST(test_begin_returns_true_and_calls_delay_when_uart_available);
     return UNITY_END();
 }

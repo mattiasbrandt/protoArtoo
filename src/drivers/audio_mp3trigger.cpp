@@ -100,7 +100,7 @@ uint8_t AudioDriverMp3Trigger::sendQuery(uint8_t b0, uint8_t b1,
 // boot, then query firmware version (S0) and track count (S1) before applying
 // the NVS-configured boot volume. Blocking — runs in AudioTask on Core 0.
 // -----------------------------------------------------------------------------
-void AudioDriverMp3Trigger::begin(uint8_t vol) {
+bool AudioDriverMp3Trigger::begin(uint8_t vol) {
     if (!m_io.writeByte) { m_io = kMp3ProductionIO; }
 
     // Hardware init — no-ops in native test builds.
@@ -150,6 +150,7 @@ void AudioDriverMp3Trigger::begin(uint8_t vol) {
     setVolume(vol);
     PA_LOG_INFO(TAG, "init done — vol=%u link=%s tracks=%u", (unsigned)vol,
                 m_linkOk ? "OK" : "no response", (unsigned)m_totalTracks);
+    return true;
 }
 
 // -----------------------------------------------------------------------------

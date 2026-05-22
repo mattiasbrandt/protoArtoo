@@ -30,7 +30,7 @@ class AudioDriverDySv5w : public AudioDriver {
     // If not called, begin() initialises production hardware adapters.
     void setIO(const AudioSerialIO& io) { m_io = io; }
 
-    void begin(uint8_t vol) override;
+    bool begin(uint8_t vol) override;
     void playTrack(uint16_t track) override;
     void stop() override;
     void setVolume(uint8_t vol) override;

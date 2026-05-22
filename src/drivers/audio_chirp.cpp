@@ -307,19 +307,29 @@ bool AudioDriverChirp::loadManifestBanks(uint32_t timeoutMs, bool keepTotalTrack
 // Configures CHIRP TX/RX, applies boot volume, then queries GMAN to cache
 // bank descriptors and Bank 1 sound count.
 // -----------------------------------------------------------------------------
-void AudioDriverChirp::begin(uint8_t vol) {
+bool AudioDriverChirp::begin(uint8_t vol) {
     if (!m_io.writeByte) { m_io = kChirpProductionIO; }
 
     // Hardware init — no-ops in native test builds.
     s_chirpSerial.begin(9600, SERIAL_8N1, PIN_AUDIO_RX, -1);
     softUartTxBegin();
 
+    // Reset to known sentinel values before any early return so cached state
+    // is unambiguously "uninitialized" rather than defaulting to "idle" (0x00).
+    m_totalTracks = 0;
+    m_linkOk = false;
+    m_playState = 0xFF;
+    m_lastTrack = 0;
+    m_catalogReady = false;
+    m_catalogCount = 0;
+    m_catalogBankCount = 0;
+
     // Guard: if dome probe window owns UART2, skip blocking boot sequence.
-    // AudioTask will retry via queryModuleState() on its next poll cycle.
+    // Return false so AudioTask leaves driverInitialized=false and retries
+    // begin() on the next poll cycle.
     if (domeUartOwnedBy(DOME_UART_DOME)) {
-        m_linkOk = false;
         PA_LOG_DEBUG(TAG, "begin deferred — UART2 held by dome probe");
-        return;
+        return false;
     }
 
     // CHIRP boots, mounts SD, and optionally syncs Bank 1 to flash; 2 s covers
@@ -329,19 +339,12 @@ void AudioDriverChirp::begin(uint8_t vol) {
     // Apply NVS-configured boot volume before any playback.
     setVolume(vol);
 
-    m_totalTracks = 0;
-    m_linkOk = false;
-    m_playState = 0xFF;
-    m_lastTrack = 0;
-    m_catalogReady = false;
-    m_catalogCount = 0;
-    m_catalogBankCount = 0;
-
     m_linkOk = loadManifestBanks(1500u, false);
 
     PA_LOG_INFO(TAG, "init — vol=%u Bank1 sounds=%u banks=%u link=%s", (unsigned)vol,
                 (unsigned)m_totalTracks, (unsigned)m_catalogBankCount,
                 m_linkOk ? "OK" : "no response");
+    return true;
 }
 
 // -----------------------------------------------------------------------------

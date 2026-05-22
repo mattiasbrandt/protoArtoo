@@ -84,7 +84,9 @@ class AudioDriver {
 
     // Initialise hardware (GPIO, serial pin) and set initial volume — called once
     // during AudioTask init. vol is the NVS-configured volume (0–30).
-    virtual void begin(uint8_t vol) = 0;
+    // Returns true if fully initialised; false if deferred (e.g. UART contention).
+    // AudioTask only sets driverInitialized=true on a true return, allowing retry.
+    virtual bool begin(uint8_t vol) = 0;
 
     // Play a specific track by 1-based index (maps directly to SD card file number).
     // Track 0 is invalid; driver should silently ignore it.

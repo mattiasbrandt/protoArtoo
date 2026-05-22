@@ -123,7 +123,7 @@ uint8_t AudioDriverDySv5w::sendQuery(const uint8_t* query, uint8_t* buf,
 // is not reaching the module (check DIP: CON3=1 CON2=0 CON1=0 for UART mode).
 // Runs inside AudioTask on Core 0 — blocking here is acceptable.
 // -----------------------------------------------------------------------------
-void AudioDriverDySv5w::begin(uint8_t vol) {
+bool AudioDriverDySv5w::begin(uint8_t vol) {
     if (!m_io.writeByte) { m_io = kDySv5wProductionIO; }
 
     // Hardware init — no-ops in native test builds.
@@ -228,6 +228,7 @@ void AudioDriverDySv5w::begin(uint8_t vol) {
 
     PA_LOG_INFO(TAG, "init done — vol=%u device=0x%02X tracks=%u", (unsigned)vol,
                 (unsigned)m_device, (unsigned)m_totalTracks);
+    return true;
 }
 
 // -----------------------------------------------------------------------------
