@@ -215,11 +215,21 @@
       const stateText = String(state).replace(/_/g, " ");
       const safeState = escapeHtml(stateText);
       const safeDetail = escapeHtml(detail);
+      let transportLine = "";
+      if (key === "s3DomeCtrl" && payload.dome_link?.state === "connected") {
+        const transport = payload.dome_link?.transport;
+        const transportText = transport === "uart" ? "via UART (slip ring)"
+          : transport === "wifi" ? "via WiFi (fallback)"
+          : "";
+        if (transportText) {
+          transportLine = `<div class="desc mt-6">${escapeHtml(transportText)}</div>`;
+        }
+      }
       return `
         <div class="status-item">
           <dt>${icon} ${label}</dt>
           <dd>${safeState}</dd>
-          <div class="desc mt-6">${safeDetail}</div>
+          <div class="desc mt-6">${safeDetail}</div>${transportLine}
         </div>`;
     }).join("");
   };

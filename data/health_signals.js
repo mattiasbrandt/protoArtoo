@@ -118,7 +118,11 @@
       );
     }
     if (linkState === "connected") {
-      return healthSignal("ok", "Connected", `state=connected, detail=${linkDetail}`);
+      const transport = payload.dome_link.transport;
+      const transportLabel = transport === "uart" ? " - UART (slip ring)"
+        : transport === "wifi" ? " - WiFi (fallback)"
+        : "";
+      return healthSignal("ok", `Connected${transportLabel}`, `state=connected, detail=${linkDetail}`);
     }
     if (linkState === "lost") {
       return healthSignal("fail", "Heartbeat lost", `state=lost, detail=${linkDetail}`);

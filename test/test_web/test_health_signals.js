@@ -47,6 +47,20 @@ test("dome link reports OFF when backend marks link disabled", () => {
   assert.match(disabled["h-dome-link"].detail, /state=disabled/);
 });
 
+test("dome link connected includes transport label in reason", () => {
+  const uart = toSignalMap({ dome_link: { state: "connected", transport: "uart" } });
+  assert.equal(uart["h-dome-link"].state, "ok");
+  assert.equal(uart["h-dome-link"].reason, "Connected - UART (slip ring)");
+
+  const wifi = toSignalMap({ dome_link: { state: "connected", transport: "wifi" } });
+  assert.equal(wifi["h-dome-link"].state, "ok");
+  assert.equal(wifi["h-dome-link"].reason, "Connected - WiFi (fallback)");
+
+  const noTransport = toSignalMap({ dome_link: { state: "connected" } });
+  assert.equal(noTransport["h-dome-link"].state, "ok");
+  assert.equal(noTransport["h-dome-link"].reason, "Connected");
+});
+
 test("heap unknown data is WARN instead of OFF", () => {
   const missing = toSignalMap({});
   assert.equal(missing["h-heap"].state, "warn");
