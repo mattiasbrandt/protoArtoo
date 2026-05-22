@@ -122,6 +122,9 @@ static void releaseUartToAudioRx() {
     s_domeSerial.begin(9600, SERIAL_8N1, PIN_AUDIO_RX, -1);
     s_uartOwned = false;
     domeUartRelease(DOME_UART_DOME);
+    // Intentionally leave owner at DOME_UART_NONE. AudioTask acquires
+    // DOME_UART_AUDIO before each query and releases after — pre-acquiring
+    // here caused a spurious duplicate-acquire WARN on every audio poll cycle.
 
     PA_LOG_DEBUG(TAG, "UART2 ownership -> audio RX (GPIO%d)", PIN_AUDIO_RX);
 }
