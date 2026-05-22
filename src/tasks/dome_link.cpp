@@ -586,6 +586,9 @@ void domeLinkTask(void* pvParameters) {
             PA_LOG_INFO(TAG, "transport fallback: UART unavailable, using WiFi UDP to %u.%u.%u.%u",
                         (unsigned)peerIp[0], (unsigned)peerIp[1],
                         (unsigned)peerIp[2], (unsigned)peerIp[3]);
+        } else if (desiredTransport == DOME_LINK_TRANSPORT_UART &&
+                   lastLoggedTransport == DOME_LINK_TRANSPORT_WIFI) {
+            PA_LOG_INFO(TAG, "transport recovery: UART heartbeat restored, switching from WiFi UDP");
         }
         lastLoggedTransport = desiredTransport;
 
