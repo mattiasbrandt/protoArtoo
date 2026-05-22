@@ -72,6 +72,24 @@ _Avoid_: internal verification labels, task checklist dump
 Use plain release-note language such as "drive hardware checks are still to be completed" rather than internal process labels like "deferred" or "bench verified".
 _Avoid_: deferred, bench verified, bench-tested
 
+**protoR2link**:
+The dome-body link subsystem. The canonical operator-facing name for the connection between the body controller and the dome controller. Used in the web UI component label and in task/issue language.
+_Avoid_: dome link, dome serial, dome wifi, dome connection
+
+**protoR2link Primary Transport**:
+The UART slip ring connection (physical serial over GPIO33/34) is the intended primary channel for dome-body communication. When the slip ring is connected and the dome is reachable, the system uses this path.
+_Operator label_: "UART (slip ring)"
+_Avoid_: UART2, serial transport, preferred transport
+
+**protoR2link Fallback Transport**:
+WiFi UDP is the fallback channel used when the UART slip ring is unavailable or the dome is unreachable over serial. The firmware probes periodically for the slip ring and promotes it back to primary when recovered.
+_Operator label_: "WiFi (fallback)"
+_Avoid_: WiFi transport, primary WiFi, preferred WiFi
+
+**protoR2link Transport Visibility**:
+The active transport (UART slip ring or WiFi fallback) must be surfaced to the operator in the main dashboard dome status badge and the protoR2link component panel. The transport field is available in the `/api/status` `dome_link.transport` response field.
+_Avoid_: logging-only transport indication, setup-page-only visibility
+
 ## Relationships
 
 - **Phase 5** can include work that is not yet covered by **Full Hardware Validation**.
@@ -86,7 +104,7 @@ _Avoid_: deferred, bench verified, bench-tested
 - The release matrix should split **Drive command and safety logic** from **Hoverboard motor integration**.
 - The release matrix should split **RC decoding and diagnostics** from **RC-to-action dispatch and live controls**.
 - The release matrix should split **Audio backend and control logic** from **audible playback on real sound modules**, and sound-module families may have different support levels.
-- The release matrix should split **Dome serial/control logic**, **Dome motion/ESC**, and **Dome-body link integration**.
+- The release matrix should split **Dome serial/control logic**, **Dome motion/ESC**, and **protoR2link integration**.
 - The release matrix should split **Servo command logic**, **Servo setup/persistence**, and **physical servo actuation**; AUX outputs are secondary capability, not the primary servo surface.
 - The release matrix should split **Network connectivity**, **Web API/UI**, and **Firmware/filesystem update flow**.
 - The release matrix should split **Drive failsafe**, **Estop**, **Watchdog recovery**, and **Boot safety defaults**.
@@ -147,3 +165,4 @@ _Avoid_: deferred, bench verified, bench-tested
 ## Flagged Ambiguities
 
 - "bench verified" was used for both clean software verification and actual ESP32 bench upload/testing; resolved by replacing it with **Software Verified**, **Controller Upload Verified**, or **Full Hardware Verified**.
+- "dome link" / "dome serial" / "dome WiFi" were used inconsistently across task notes; resolved by using **protoR2link** for the subsystem name and **UART (slip ring)** / **WiFi (fallback)** for transport labels in operator-facing text.

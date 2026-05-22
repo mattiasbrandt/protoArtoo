@@ -58,3 +58,24 @@ labels:
   - name: dependencies
     color: 0075ca
     description: Dependency updates from Dependabot or manual bumps
+
+  # Triage labels
+  - name: needs-triage
+    color: 8b5cf6
+    description: Maintainer needs to evaluate this issue
+
+  - name: needs-info
+    color: f97316
+    description: Waiting on reporter for more information
+
+  - name: ready-for-agent
+    color: 10b981
+    description: Fully specified, ready for an AFK agent to pick up
+
+  - name: ready-for-human
+    color: 3b82f6
+    description: Requires human implementation
+
+  - name: wontfix
+    color: 94a3b8
+    description: Will not be actioned

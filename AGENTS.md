@@ -500,3 +500,17 @@ type(phase:vX.Y.Z/T<NN>): summary
 - One active phase at a time — do not begin a new phase until the current one merges to `main`
 - Phase branch merges to `main` require PM approval; merge method is non-fast-forward
 - Ad-hoc incidental improvements are permitted commits without plan amendment; formal scope additions require PM approval
+
+## Agent skills
+
+### Issue tracker
+
+Issues are tracked in GitHub Issues on `github.com/mattiasbrandt/protoArtoo`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+All five canonical triage labels use their default names. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context layout — one `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
