@@ -141,6 +141,38 @@ void test_begin_returns_true_calls_delay_and_queries_gman_when_uart_available() 
 }
 
 // =============================================================================
+// classifyRxStatus() CHIRP override
+// =============================================================================
+
+void test_classify_rx_status_available_when_link_ok() {
+    AudioDriverChirp drv;
+    drv.setIO(makeIO());
+
+    // linkOk=true must return AVAILABLE regardless of UART ownership
+    g_test_dome_uart_owner = DOME_UART_DOME;
+    TEST_ASSERT_EQUAL_UINT8(AUDIO_RX_AVAILABLE, drv.classifyRxStatus(true));
+
+    g_test_dome_uart_owner = DOME_UART_NONE;
+    TEST_ASSERT_EQUAL_UINT8(AUDIO_RX_AVAILABLE, drv.classifyRxStatus(true));
+}
+
+void test_classify_rx_status_blocked_when_dome_owns_uart() {
+    AudioDriverChirp drv;
+    drv.setIO(makeIO());
+
+    g_test_dome_uart_owner = DOME_UART_DOME;
+    TEST_ASSERT_EQUAL_UINT8(AUDIO_RX_BLOCKED_BY_DOME_UART, drv.classifyRxStatus(false));
+}
+
+void test_classify_rx_status_no_response_when_uart_available() {
+    AudioDriverChirp drv;
+    drv.setIO(makeIO());
+
+    g_test_dome_uart_owner = DOME_UART_NONE;
+    TEST_ASSERT_EQUAL_UINT8(AUDIO_RX_NO_RESPONSE, drv.classifyRxStatus(false));
+}
+
+// =============================================================================
 
 int main(int argc, char** argv) {
     UNITY_BEGIN();
@@ -148,5 +180,8 @@ int main(int argc, char** argv) {
     RUN_TEST(test_query_emits_stat_command_when_uart_available);
     RUN_TEST(test_begin_returns_true_sends_volume_and_skips_gman_when_dome_owns_uart);
     RUN_TEST(test_begin_returns_true_calls_delay_and_queries_gman_when_uart_available);
+    RUN_TEST(test_classify_rx_status_available_when_link_ok);
+    RUN_TEST(test_classify_rx_status_blocked_when_dome_owns_uart);
+    RUN_TEST(test_classify_rx_status_no_response_when_uart_available);
     return UNITY_END();
 }

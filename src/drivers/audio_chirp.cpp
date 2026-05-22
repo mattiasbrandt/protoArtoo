@@ -621,3 +621,18 @@ void AudioDriverChirp::getCachedState(AudioModuleState& out) const {
     out.totalTracks = m_totalTracks;
     out.currentTrack = m_lastTrack;   // last track index sent to playTrack()
 }
+
+// -----------------------------------------------------------------------------
+// classifyRxStatus()
+// CHIRP RX shares UART2 with DomeLink. When DomeLink owns the bus, a false
+// linkOk is BLOCKED rather than NO_RESPONSE.
+// -----------------------------------------------------------------------------
+AudioRxStatus AudioDriverChirp::classifyRxStatus(bool linkOk) const {
+    if (linkOk) {
+        return AUDIO_RX_AVAILABLE;
+    }
+    if (domeUartOwnedBy(DOME_UART_DOME)) {
+        return AUDIO_RX_BLOCKED_BY_DOME_UART;
+    }
+    return AUDIO_RX_NO_RESPONSE;
+}

@@ -661,7 +661,9 @@ static void executePlaybackIntent(const AudioPlaybackIntent& intent, CommandSour
 void audioTask(void* pvParameters) {
     (void)pvParameters;
 
-    bool driverInitialized = false;  // becomes true on first enable
+    bool driverInitialized = false;  // becomes true on first enable or after retry ceiling hit
+    uint8_t beginRetryCount = 0;
+    static constexpr uint8_t kBeginMaxRetries = 20;  // ~5 s at 250 ms/retry
     bool lastAudioEnabled = true;   // tracks previous iteration's enabled state for stop-on-disable
     bool randomMode = false;
     uint32_t lastRandMs = 0;
@@ -745,14 +747,22 @@ void audioTask(void* pvParameters) {
             configASSERT(xPortGetCoreID() == 0);
             const bool initOk = driver->begin(currentVol);
             if (!initOk) {
-                // Leave driverInitialized=false; retry on next poll cycle.
-                // No current driver returns false from begin() — this path is
-                // reserved for future drivers that cannot complete TX-side init
-                // (e.g., hardware not yet ready at boot).
-                PA_LOG_DEBUG(TAG, "audio driver begin incomplete — will retry");
+                ++beginRetryCount;
+                if (beginRetryCount >= kBeginMaxRetries) {
+                    PA_LOG_WARN(TAG,
+                                "audio driver begin() failed %u times — giving up; driver inoperative",
+                                (unsigned)beginRetryCount);
+                    setAudioRxStatus(AUDIO_RX_NO_RESPONSE);
+                    driverInitialized = true;
+                    beginRetryCount = 0;
+                } else {
+                    PA_LOG_DEBUG(TAG, "audio driver begin incomplete (%u/%u) — will retry",
+                                 (unsigned)beginRetryCount, (unsigned)kBeginMaxRetries);
+                }
                 vTaskDelay(pdMS_TO_TICKS(250));
                 continue;
             }
+            beginRetryCount = 0;
             if (driver->capabilities() & AudioDriver::AUDIO_CAP_CATALOG) {
                 bool cacheLoaded = refreshChirpBindingCacheFromNvs();
                 PA_LOG_INFO(TAG, "CHIRP binding cache %s", cacheLoaded ? "loaded" : "load failed");
@@ -767,13 +777,7 @@ void audioTask(void* pvParameters) {
             {
                 AudioModuleState ms{};
                 driver->getCachedState(ms);
-                AudioRxStatus rxStatus = AUDIO_RX_NO_RESPONSE;
-                if (ms.linkOk) {
-                    rxStatus = AUDIO_RX_AVAILABLE;
-                } else if (driver->sharesUart2WithDomeLink() &&
-                           domeUartOwnedBy(DOME_UART_DOME)) {
-                    rxStatus = AUDIO_RX_BLOCKED_BY_DOME_UART;
-                }
+                AudioRxStatus rxStatus = driver->classifyRxStatus(ms.linkOk);
                 taskENTER_CRITICAL(&robotStateMux);
                 robotState.audio_module_link_ok = ms.linkOk;
                 robotState.audio_module_play_state = ms.playState;

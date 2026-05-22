@@ -14,6 +14,7 @@
 #include <freertos/queue.h>
 #include <freertos/semphr.h>
 
+#include "audio_rx_status.h"
 #include "config.h"
 #include "drive_speed_preset.h"
 #include "rc_mapping.h"
@@ -68,13 +69,6 @@ enum DomeUartOwner : uint8_t {
     DOME_UART_NONE = 0,
     DOME_UART_DOME,
     DOME_UART_AUDIO,
-};
-
-enum AudioRxStatus : uint8_t {
-    AUDIO_RX_UNKNOWN = 0,
-    AUDIO_RX_AVAILABLE,
-    AUDIO_RX_BLOCKED_BY_DOME_UART,
-    AUDIO_RX_NO_RESPONSE,
 };
 
 enum ServoComponentType : uint8_t {

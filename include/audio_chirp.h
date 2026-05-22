@@ -55,9 +55,7 @@ class AudioDriverChirp : public AudioDriver {
                AUDIO_CAP_CURRENT_TRACK | AUDIO_CAP_QUERY_SAFE_PLAYING | AUDIO_CAP_CATALOG;  // 0x3F
     }
 
-    bool sharesUart2WithDomeLink() const override {
-        return true;
-    }
+    AudioRxStatus classifyRxStatus(bool linkOk) const override;
 
     bool queryModuleState(AudioModuleState& out) override;
     void getCachedState(AudioModuleState& out) const override;

@@ -213,6 +213,25 @@ void test_mixed_driver_capabilities() {
     TEST_ASSERT_TRUE(catalog_driver.capabilities() & AudioDriver::AUDIO_CAP_CATALOG);
 }
 
+// Test: default classifyRxStatus returns AVAILABLE when linkOk=true
+void test_default_classify_rx_status_available() {
+    AudioDriverStub driver;
+    TEST_ASSERT_EQUAL_UINT8(AUDIO_RX_AVAILABLE, driver.classifyRxStatus(true));
+}
+
+// Test: default classifyRxStatus returns NO_RESPONSE when linkOk=false
+void test_default_classify_rx_status_no_response() {
+    AudioDriverStub driver;
+    TEST_ASSERT_EQUAL_UINT8(AUDIO_RX_NO_RESPONSE, driver.classifyRxStatus(false));
+}
+
+// Test: default classifyRxStatus never returns BLOCKED (that requires override)
+void test_default_classify_rx_status_never_blocked() {
+    AudioDriverStub driver;
+    AudioRxStatus s = driver.classifyRxStatus(false);
+    TEST_ASSERT_NOT_EQUAL(AUDIO_RX_BLOCKED_BY_DOME_UART, s);
+}
+
 // Test: audioClampVolume() pure function clamps to valid range
 void test_audioClampVolume() {
     // Valid range unchanged
@@ -250,6 +269,9 @@ int main(int argc, char** argv) {
     RUN_TEST(test_capability_bits_defined);
     RUN_TEST(test_catalog_struct_layout);
     RUN_TEST(test_mixed_driver_capabilities);
+    RUN_TEST(test_default_classify_rx_status_available);
+    RUN_TEST(test_default_classify_rx_status_no_response);
+    RUN_TEST(test_default_classify_rx_status_never_blocked);
     RUN_TEST(test_audioClampVolume);
 
     return UNITY_END();

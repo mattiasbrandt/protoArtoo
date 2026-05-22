@@ -26,6 +26,8 @@
 
 #include <stdint.h>
 
+#include "audio_rx_status.h"
+
 // -----------------------------------------------------------------------------
 // Build-flag constants — match values used in platformio.ini build_flags.
 // PA_AUDIO_DRIVER must be set to one of these at compile time.
@@ -119,12 +121,13 @@ class AudioDriver {
         return 0;
     }
 
-    // Returns true if this driver's RX path shares UART2 with DomeLink.
-    // AudioTask uses this to classify a link_ok=false result as BLOCKED rather
-    // than NO_RESPONSE when DomeLink currently owns the bus.
-    // Override in any driver whose RX path uses HardwareSerial(2) / GPIO34-35.
-    virtual bool sharesUart2WithDomeLink() const {
-        return false;
+    // Classifies the RX availability state from a begin() or queryModuleState() outcome.
+    // Default: AVAILABLE if linkOk, NO_RESPONSE otherwise.
+    // Override in drivers whose RX path shares UART2 with DomeLink to return
+    // BLOCKED_BY_DOME_UART when DomeLink owns the bus — forgetting to override
+    // in such a driver causes false "No module response" errors in the UI.
+    virtual AudioRxStatus classifyRxStatus(bool linkOk) const {
+        return linkOk ? AUDIO_RX_AVAILABLE : AUDIO_RX_NO_RESPONSE;
     }
 
     // Query the module for live state. Returns true and populates 'out' if the
