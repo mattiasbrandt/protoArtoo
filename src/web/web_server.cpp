@@ -330,6 +330,7 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     bool enableS1Hoverboard, enableS2Sound, enableS3DomeCtrl;
     bool audioActive;
     bool audioLinkOk;
+    AudioRxStatus audioRxStatus;
     bool sleepMode;
     uint8_t activeMood;
     uint32_t sleepSinceMs;
@@ -427,6 +428,7 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     enableS3DomeCtrl = cfg.system.enable_s3_dome_ctrl;
     audioActive = robotState.audioActive;
     audioLinkOk = robotState.audio_module_link_ok;
+    audioRxStatus = robotState.audio_module_rx_status;
     activeMood = robotState.activeMood;
     sleepMode = robotState.sleepMode;
     sleepSinceMs = robotState.sleepSinceMs;
@@ -602,12 +604,15 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
             }
         }
         if (enableS2Sound) {
+            const char* rxStatusText = audioRxStatusToken(audioRxStatus);
+            const char* rxDetail = audioRxStatusDetail(audioRxStatus);
             int _n = snprintf(pos, remaining,
-                              ",\"s2Sound\":{\"state\":\"%s\",\"detail\":\"%s\",\"driver\":\"%s\",\"link_ok\":%s}",
+                              ",\"s2Sound\":{\"state\":\"%s\",\"detail\":\"%s\",\"driver\":\"%s\",\"link_ok\":%s,\"rx_status\":\"%s\",\"rx_detail\":\"%s\"}",
                               audioActive ? "playing" : "idle",
-                              audioActive ? "Playback active" : "Ready, no active playback",
+                              audioRxStatus == AUDIO_RX_BLOCKED_BY_DOME_UART ? rxDetail :
+                                  (audioActive ? "Playback active" : "Ready, no active playback"),
                               audioGetDriverName(),
-                              audioLinkOk ? "true" : "false");
+                              audioLinkOk ? "true" : "false", rxStatusText, rxDetail);
             if (_n > 0 && _n < (int)remaining) {
                 pos += _n;
                 remaining -= (size_t)_n;
@@ -644,8 +649,20 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
         {
             const char* dlState;
             const char* dlTransport = domeTransportLabel(domeActiveTransport);
+            const char* dlUartOwner = "none";
             int32_t lastRxMs = -1;
             char dlDetail[96];
+            switch (domeUartOwner) {
+                case DOME_UART_DOME:
+                    dlUartOwner = "dome";
+                    break;
+                case DOME_UART_AUDIO:
+                    dlUartOwner = "audio";
+                    break;
+                case DOME_UART_NONE:
+                default:
+                    break;
+            }
             if (!enableS3DomeCtrl) {
                 dlState = "disabled";
                 dlTransport = "none";
@@ -660,13 +677,14 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
             }
             snprintf(dlDetail, sizeof(dlDetail), "transport=%s, uart_owned=%s", dlTransport,
                      domeUartOwner == DOME_UART_DOME ? "true" : "false");
-            char dlBuf[320];
+            char dlBuf[384];
             snprintf(dlBuf, sizeof(dlBuf),
                      ",\"dome_link\":{\"state\":\"%s\",\"transport\":\"%s\",\"detail\":\"%s\",\"hb_tx\":%lu,\"hb_rx\":%lu"
-                     ",\"rx_overflow\":%lu,\"rx_unknown\":%lu,\"last_rx_ms\":%ld}",
+                     ",\"rx_overflow\":%lu,\"rx_unknown\":%lu,\"last_rx_ms\":%ld,\"uart_owner\":\"%s\",\"uart_owned_by_dome\":%s}",
                      dlState, dlTransport, dlDetail, (unsigned long)bodyHbTx,
                      (unsigned long)domeHbRx, (unsigned long)domeRxOverflowCount,
-                     (unsigned long)domeRxUnknownCount, (long)lastRxMs);
+                     (unsigned long)domeRxUnknownCount, (long)lastRxMs, dlUartOwner,
+                     domeUartOwner == DOME_UART_DOME ? "true" : "false");
             ok = appendJsonChunk(pos, remaining, dlBuf) && ok;
         }
 

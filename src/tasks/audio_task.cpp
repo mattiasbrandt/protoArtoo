@@ -64,6 +64,40 @@ uint8_t audioGetCapabilities() {
     return driver->capabilities();
 }
 
+const char* audioRxStatusToken(AudioRxStatus status) {
+    switch (status) {
+        case AUDIO_RX_AVAILABLE:
+            return "available";
+        case AUDIO_RX_BLOCKED_BY_DOME_UART:
+            return "blocked_by_dome_uart";
+        case AUDIO_RX_NO_RESPONSE:
+            return "no_response";
+        case AUDIO_RX_UNKNOWN:
+        default:
+            return "unknown";
+    }
+}
+
+const char* audioRxStatusDetail(AudioRxStatus status) {
+    switch (status) {
+        case AUDIO_RX_AVAILABLE:
+            return "Sound module RX is available";
+        case AUDIO_RX_BLOCKED_BY_DOME_UART:
+            return "Status unavailable: DomeLink is using UART";
+        case AUDIO_RX_NO_RESPONSE:
+            return "Sound module did not respond on RX";
+        case AUDIO_RX_UNKNOWN:
+        default:
+            return "Sound module RX status unknown";
+    }
+}
+
+static void setAudioRxStatus(AudioRxStatus status) {
+    taskENTER_CRITICAL(&robotStateMux);
+    robotState.audio_module_rx_status = status;
+    taskEXIT_CRITICAL(&robotStateMux);
+}
+
 const AudioCatalogEntry* audioGetCatalogEntries(uint16_t* count) {
     if (count) {
         *count = driver->getCatalogEntryCount();
@@ -697,10 +731,8 @@ void audioTask(void* pvParameters) {
         lastAudioEnabled = true;
 
         // ----------------------------------------------------------------
-        // Enabled: initialise driver on first enable, or retry if a previous
-        // begin() was deferred (e.g. UART2 held by dome probe at boot time).
-        // begin() returns false when deferred; driverInitialized stays false
-        // so the block re-runs on the next poll cycle until init completes.
+        // Enabled: initialise driver on first enable. If a driver reports a
+        // transient init failure, retry through a delay instead of spinning.
         // ----------------------------------------------------------------
         if (!driverInitialized) {
             ConfigSnapshot cfg = {};
@@ -713,9 +745,9 @@ void audioTask(void* pvParameters) {
             configASSERT(xPortGetCoreID() == 0);
             const bool initOk = driver->begin(currentVol);
             if (!initOk) {
-                // begin() was deferred (e.g. UART2 held by dome probe).
                 // Leave driverInitialized=false; retry on next poll cycle.
-                PA_LOG_DEBUG(TAG, "audio driver begin deferred — will retry");
+                PA_LOG_DEBUG(TAG, "audio driver begin incomplete — will retry");
+                vTaskDelay(pdMS_TO_TICKS(250));
                 continue;
             }
             if (driver->capabilities() & AudioDriver::AUDIO_CAP_CATALOG) {
@@ -732,12 +764,20 @@ void audioTask(void* pvParameters) {
             {
                 AudioModuleState ms{};
                 driver->getCachedState(ms);
+                AudioRxStatus rxStatus = AUDIO_RX_NO_RESPONSE;
+                if (ms.linkOk) {
+                    rxStatus = AUDIO_RX_AVAILABLE;
+                } else if ((driver->capabilities() & AudioDriver::AUDIO_CAP_CATALOG) &&
+                           domeUartOwnedBy(DOME_UART_DOME)) {
+                    rxStatus = AUDIO_RX_BLOCKED_BY_DOME_UART;
+                }
                 taskENTER_CRITICAL(&robotStateMux);
                 robotState.audio_module_link_ok = ms.linkOk;
                 robotState.audio_module_play_state = ms.playState;
                 robotState.audio_module_device = ms.device;
                 robotState.audio_module_total_tracks = ms.totalTracks;
                 robotState.audio_module_current_track = ms.currentTrack;
+                robotState.audio_module_rx_status = rxStatus;
                 taskEXIT_CRITICAL(&robotStateMux);
                 PA_LOG_INFO(TAG, "module init cached: link=%s device=0x%02X tracks=%u",
                             ms.linkOk ? "OK" : "NO_DEVICE", (unsigned)ms.device,
@@ -936,9 +976,12 @@ void audioTask(void* pvParameters) {
                     bool ok = acquired && driver->refreshCatalog();
                     if (acquired) {
                         domeUartRelease(DOME_UART_AUDIO);
+                        setAudioRxStatus(ok ? AUDIO_RX_AVAILABLE : AUDIO_RX_NO_RESPONSE);
+                    } else {
+                        setAudioRxStatus(AUDIO_RX_BLOCKED_BY_DOME_UART);
                     }
                     PA_LOG_INFO(TAG, "[%s] catalog refresh %s", commandSourceToString(cmd.source),
-                                ok ? "OK" : "FAILED");
+                                ok ? "OK" : (acquired ? "FAILED" : "skipped: DomeLink using UART"));
                     break;
                 }
 
@@ -962,6 +1005,7 @@ void audioTask(void* pvParameters) {
                     AudioModuleState ms{};
                     bool acquired = domeUartAcquire(DOME_UART_AUDIO);
                     if (!acquired) {
+                        setAudioRxStatus(AUDIO_RX_BLOCKED_BY_DOME_UART);
                         PA_LOG_INFO(TAG, "[%s] status poll skipped (UART2 owned by dome)",
                                     commandSourceToString(cmd.source));
                         break;
@@ -974,6 +1018,7 @@ void audioTask(void* pvParameters) {
                     robotState.audio_module_device = ms.device;
                     robotState.audio_module_total_tracks = ms.totalTracks;
                     robotState.audio_module_current_track = ms.currentTrack;
+                    robotState.audio_module_rx_status = ok ? AUDIO_RX_AVAILABLE : AUDIO_RX_NO_RESPONSE;
                     taskEXIT_CRITICAL(&robotStateMux);
                     PA_LOG_INFO(TAG, "[%s] status poll: link=%s device=0x%02X play=0x%02X",
                                 commandSourceToString(cmd.source), ok ? "OK" : "NO_RSP",
@@ -1031,6 +1076,7 @@ void audioTask(void* pvParameters) {
             AudioModuleState ms{};
             bool acquired = domeUartAcquire(DOME_UART_AUDIO);
             if (!acquired) {
+                setAudioRxStatus(AUDIO_RX_BLOCKED_BY_DOME_UART);
                 PA_LOG_DEBUG(TAG, "auto-query skipped (UART2 owned by dome)");
                 continue;
             }
@@ -1042,6 +1088,7 @@ void audioTask(void* pvParameters) {
             robotState.audio_module_device = ms.device;
             robotState.audio_module_total_tracks = ms.totalTracks;
             robotState.audio_module_current_track = ms.currentTrack;
+            robotState.audio_module_rx_status = ok ? AUDIO_RX_AVAILABLE : AUDIO_RX_NO_RESPONSE;
             taskEXIT_CRITICAL(&robotStateMux);
             PA_LOG_DEBUG(TAG, "auto-query: link=%s play=0x%02X", ok ? "OK" : "no-rsp",
                          (unsigned)ms.playState);

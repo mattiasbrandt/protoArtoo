@@ -199,6 +199,7 @@ void setup() {
     // query. Zero-init would show "USB" (0x00) before any query succeeds.
     robotState.audio_module_device = 0xFF;
     robotState.audio_module_play_state = 0xFF;
+    robotState.audio_module_rx_status = AUDIO_RX_UNKNOWN;
     // Load config from NVS — may override cfg_logLevel with the user's saved value.
     loadConfigToState();
     logBootHealth();

@@ -32,8 +32,8 @@ class AudioDriverChirp : public AudioDriver {
     // Inject a custom I/O seam (call before begin() to override production IO).
     void setIO(const AudioSerialIO& io) { m_io = io; }
 
-    // Configures soft-UART TX and hardware UART RX; sends initial volume and
-    // reads GMAN bank descriptors.
+    // Configures soft-UART TX and sends initial volume. Reads GMAN bank
+    // descriptors only when shared UART2 RX is available to audio.
     bool begin(uint8_t vol) override;
 
     // Play track by 1-based index in Bank 1, Page A.

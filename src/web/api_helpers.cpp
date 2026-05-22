@@ -158,7 +158,8 @@ void formatHealthJson(char* buf, size_t bufSize, bool estop, bool sbusSignalLost
 
 void formatAudioStatusJson(char* buf, size_t bufSize, const char* driverName, uint8_t capabilities,
                            bool linkOk, bool active, uint8_t playState, uint8_t device,
-                           uint16_t totalTracks, uint16_t currentTrack) {
+                           uint16_t totalTracks, uint16_t currentTrack, const char* rxStatus,
+                           const char* rxDetail) {
     // playState labels per datasheet: 0=stop 1=playing 2=paused 0xFF=unknown
     const char* playSt = (playState == 0x00)   ? "stop"
                          : (playState == 0x01) ? "playing"
@@ -174,10 +175,11 @@ void formatAudioStatusJson(char* buf, size_t bufSize, const char* driverName, ui
     snprintf(buf, bufSize,
              "{\"driver\":\"%s\",\"capabilities\":%u,\"link_ok\":%s,\"active\":%s,"
              "\"play_state\":\"%s\",\"device\":\"%s\","
-             "\"total_tracks\":%u,\"current_track\":%u}",
+             "\"total_tracks\":%u,\"current_track\":%u,"
+             "\"rx_status\":\"%s\",\"rx_detail\":\"%s\"}",
              driverName, (unsigned)capabilities, linkOk ? "true" : "false",
              active ? "true" : "false", playSt, devStr, (unsigned)totalTracks,
-             (unsigned)currentTrack);
+             (unsigned)currentTrack, rxStatus, rxDetail);
 }
 
 bool formatSleepControlJson(char* buf, size_t bufSize, bool sleepMode, bool changed) {

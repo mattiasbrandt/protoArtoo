@@ -77,6 +77,9 @@ struct AudioCommand {
 static_assert(sizeof(AudioCommand) >= 10 + 2,
               "AudioCommand too small — dollar[] union member may be truncated");
 
+const char* audioRxStatusToken(AudioRxStatus status);
+const char* audioRxStatusDetail(AudioRxStatus status);
+
 // -----------------------------------------------------------------------------
 // audioTask() — FreeRTOS task entry point.
 // Pinned to Core 0 (non-RT side). Software bit-bang TX blocks for up to ~6 ms

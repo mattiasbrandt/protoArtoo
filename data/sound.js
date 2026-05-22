@@ -375,7 +375,14 @@
       // false the user needs to see "No module response", not a stale "Idle".
       if (soundStateBadge && soundHardwareEnabled) {
         const linkOk = Boolean(d.link_ok);
-        if (!linkOk) {
+        if (d.rx_status === "blocked_by_dome_uart") {
+          soundStateBadge.textContent = "Status unavailable: DomeLink is using UART";
+          soundStateBadge.dataset.state = "idle";
+          if (modLink) {
+            modLink.textContent = "DomeLink using UART";
+            modLink.dataset.state = "warn";
+          }
+        } else if (!linkOk) {
           soundStateBadge.textContent = "No module response";
           soundStateBadge.dataset.state = "error";
         } else if (d.play_state === "playing") {
@@ -1997,7 +2004,11 @@
       return;
     }
     if (data.s2Sound && typeof data.s2Sound.link_ok === "boolean") {
-      if (!data.s2Sound.link_ok) {
+      if (data.s2Sound.rx_status === "blocked_by_dome_uart") {
+        if (modLink) { modLink.textContent = "DomeLink using UART"; modLink.dataset.state = "warn"; }
+        soundStateBadge.textContent = "Status unavailable: DomeLink is using UART";
+        soundStateBadge.dataset.state = "idle";
+      } else if (!data.s2Sound.link_ok) {
         if (modLink) { modLink.textContent = "No response"; modLink.dataset.state = "error"; }
         soundStateBadge.textContent = "No module response";
         soundStateBadge.dataset.state = "error";

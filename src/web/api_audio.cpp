@@ -1110,6 +1110,7 @@ void registerAudioRoutes(AsyncWebServer& server) {
         uint8_t playState, device;
         uint16_t totalTracks, currentTrack;
         bool active;
+        AudioRxStatus rxStatus;
         taskENTER_CRITICAL(&robotStateMux);
         linkOk = robotState.audio_module_link_ok;
         playState = robotState.audio_module_play_state;
@@ -1117,12 +1118,14 @@ void registerAudioRoutes(AsyncWebServer& server) {
         totalTracks = robotState.audio_module_total_tracks;
         currentTrack = robotState.audio_module_current_track;
         active = robotState.audioActive;
+        rxStatus = robotState.audio_module_rx_status;
         taskEXIT_CRITICAL(&robotStateMux);
 
         uint8_t caps = audioGetCapabilities();
-        char body[192];
+        char body[256];
         formatAudioStatusJson(body, sizeof(body), audioGetDriverName(), caps, linkOk, active,
-                              playState, device, totalTracks, currentTrack);
+                              playState, device, totalTracks, currentTrack,
+                              audioRxStatusToken(rxStatus), audioRxStatusDetail(rxStatus));
         req->send(200, "application/json", body);
     });
 

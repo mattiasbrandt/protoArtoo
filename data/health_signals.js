@@ -91,7 +91,7 @@
       );
     }
 
-    const t = window.PA_HEAP || {};
+    const t = (typeof window !== "undefined" && window.PA_HEAP) || {};
     const warnAt = t.freeWarn || 65000;
     const failAt = t.freeCritical || 40000;
     const detail = `heapFree=${heapBytes} B (warn <=${warnAt} B, fail <=${failAt} B)`;
@@ -122,7 +122,14 @@
       const transportLabel = transport === "uart" ? " - UART (slip ring)"
         : transport === "wifi" ? " - WiFi (fallback)"
         : "";
-      return healthSignal("ok", `Connected${transportLabel}`, `state=connected, detail=${linkDetail}`);
+      const ownerDetail = payload.dome_link.uart_owned_by_dome === true
+        ? ", UART2 owned by DomeLink"
+        : "";
+      return healthSignal(
+        "ok",
+        `Connected${transportLabel}`,
+        `state=connected, detail=${linkDetail}${ownerDetail}`
+      );
     }
     if (linkState === "lost") {
       return healthSignal("fail", "Heartbeat lost", `state=lost, detail=${linkDetail}`);
@@ -156,9 +163,21 @@
     const soundDetail = typeof payload.s2Sound.detail === "string" && payload.s2Sound.detail.length > 0
       ? payload.s2Sound.detail
       : "n/a";
+    const soundRxStatus = payload.s2Sound.rx_status;
+    const soundRxDetail = typeof payload.s2Sound.rx_detail === "string" && payload.s2Sound.rx_detail.length > 0
+      ? payload.s2Sound.rx_detail
+      : soundDetail;
+
+    if (soundRxStatus === "blocked_by_dome_uart") {
+      return healthSignal("warn", "Status unavailable", soundRxDetail);
+    }
 
     if (payload.s2Sound.link_ok === false) {
-      return healthSignal("fail", "No module response", `link_ok=false, state=${soundState}`);
+      return healthSignal(
+        "fail",
+        "No module response",
+        `link_ok=false, state=${soundState}, rx_status=${soundRxStatus ?? "unknown"}`
+      );
     }
 
     if (soundState === "playing") {

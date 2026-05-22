@@ -3,9 +3,8 @@
 //
 // Tests for AudioDriverChirp UART2 ownership guard (T49 Slice C).
 //
-// Verifies that begin() and queryModuleState() bail out cleanly when the dome
-// probe window holds UART2, rather than issuing commands into a driver that may
-// be mid-teardown on the other core.
+// Verifies that CHIRP RX work bails out cleanly when DomeLink owns UART2,
+// while TX-side startup still completes so playback commands remain available.
 //
 // Test seam: g_test_dome_uart_owned in native_test_stubs.cpp controls the
 // return value of domeUartOwnedBy() without requiring FreeRTOS or robotState.
@@ -19,8 +18,8 @@
 #include "../../../include/audio_serial_io.h"
 #include "../../../include/audio_chirp.h"
 
-// Seam declared in native_test_stubs.cpp — set true to simulate an active
-// dome probe window holding UART2.
+// Seam declared in native_test_stubs.cpp — set true to simulate DomeLink
+// holding UART2.
 extern bool g_test_dome_uart_owned;
 
 // =============================================================================
@@ -54,6 +53,19 @@ static uint32_t r_millisNow()           { return (g_rec.fakeTimeMs += 200); }
 
 static AudioSerialIO makeIO() {
     return AudioSerialIO{r_writeByte, r_rxAvailable, r_rxRead, r_delayMs, r_millisNow};
+}
+
+static bool txContains(const char* needle) {
+    const size_t needleLen = strlen(needle);
+    if (needleLen == 0 || g_rec.txCount < (int)needleLen) {
+        return false;
+    }
+    for (int i = 0; i <= g_rec.txCount - (int)needleLen; ++i) {
+        if (memcmp(&g_rec.txBuf[i], needle, needleLen) == 0) {
+            return true;
+        }
+    }
+    return false;
 }
 
 void setUp()    { g_rec.reset(); g_test_dome_uart_owned = false; }
@@ -92,25 +104,27 @@ void test_query_emits_stat_command_when_uart_available() {
 }
 
 // =============================================================================
-// begin() guard
+// begin() RX guard
 // =============================================================================
 
-void test_begin_returns_false_and_skips_io_when_dome_owns_uart() {
+void test_begin_returns_true_sends_volume_and_skips_gman_when_dome_owns_uart() {
     AudioDriverChirp drv;
     drv.setIO(makeIO());
 
     g_test_dome_uart_owned = true;
     bool result = drv.begin(15);
 
-    TEST_ASSERT_FALSE_MESSAGE(result,
-        "begin must return false when dome owns UART2 (deferred init)");
-    TEST_ASSERT_EQUAL_INT_MESSAGE(0, g_rec.delayCallCount,
-        "begin must not call delayMs when dome owns UART2");
-    TEST_ASSERT_EQUAL_INT_MESSAGE(0, g_rec.txCount,
-        "begin must not emit any bytes when dome owns UART2");
+    TEST_ASSERT_TRUE_MESSAGE(result,
+        "begin must complete TX-side init when DomeLink owns UART2");
+    TEST_ASSERT_GREATER_THAN_INT_MESSAGE(0, g_rec.delayCallCount,
+        "begin must still wait for CHIRP boot before applying volume");
+    TEST_ASSERT_GREATER_THAN_INT_MESSAGE(0, g_rec.txCount,
+        "begin must send boot volume when DomeLink owns UART2");
+    TEST_ASSERT_FALSE_MESSAGE(txContains("GMAN"),
+        "begin must skip GMAN when DomeLink owns UART2");
 }
 
-void test_begin_returns_true_and_calls_delay_when_uart_available() {
+void test_begin_returns_true_calls_delay_and_queries_gman_when_uart_available() {
     AudioDriverChirp drv;
     drv.setIO(makeIO());
 
@@ -121,6 +135,8 @@ void test_begin_returns_true_and_calls_delay_when_uart_available() {
         "begin must return true when UART2 is available (init complete)");
     TEST_ASSERT_GREATER_THAN_INT_MESSAGE(0, g_rec.delayCallCount,
         "begin must call delayMs when UART2 is available");
+    TEST_ASSERT_TRUE_MESSAGE(txContains("GMAN"),
+        "begin must query GMAN when UART2 is available");
 }
 
 // =============================================================================
@@ -129,7 +145,7 @@ int main(int argc, char** argv) {
     UNITY_BEGIN();
     RUN_TEST(test_query_emits_no_bytes_when_dome_owns_uart);
     RUN_TEST(test_query_emits_stat_command_when_uart_available);
-    RUN_TEST(test_begin_returns_false_and_skips_io_when_dome_owns_uart);
-    RUN_TEST(test_begin_returns_true_and_calls_delay_when_uart_available);
+    RUN_TEST(test_begin_returns_true_sends_volume_and_skips_gman_when_dome_owns_uart);
+    RUN_TEST(test_begin_returns_true_calls_delay_and_queries_gman_when_uart_available);
     return UNITY_END();
 }

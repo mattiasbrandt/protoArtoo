@@ -15,7 +15,7 @@
 //   playTrackBanked()   -> "PLAY:n,bank,page\n"
 //   stop()              -> "STOP\n"
 //   setVolume(v)        -> "VOL:N\n" where N = v * 99 / 30
-//   begin() bootstrap   -> "GMAN\n" for bank summary
+//   begin() bootstrap   -> optional "GMAN\n" for bank summary when UART2 RX is available
 //   refreshCatalog()    -> "GMAN\n" + per-entry "GNME:bank,page,index\n"
 //   queryModuleState()  -> "STAT:0\n" for stream activity
 // =============================================================================
@@ -45,6 +45,10 @@ static int  chirpRxAvailable()           { return s_chirpSerial.available(); }
 static int  chirpRxRead()                { return s_chirpSerial.read(); }
 static void chirpDelayMs(uint32_t ms)    { vTaskDelay(pdMS_TO_TICKS(ms)); }
 static uint32_t chirpMillisNow()         { return (uint32_t)millis(); }
+
+static void configureChirpRx() {
+    s_chirpSerial.begin(9600, SERIAL_8N1, PIN_AUDIO_RX, -1);
+}
 
 static const AudioSerialIO kChirpProductionIO {
     chirpWriteByte, chirpRxAvailable, chirpRxRead, chirpDelayMs, chirpMillisNow,
@@ -304,17 +308,16 @@ bool AudioDriverChirp::loadManifestBanks(uint32_t timeoutMs, bool keepTotalTrack
 
 // -----------------------------------------------------------------------------
 // begin()
-// Configures CHIRP TX/RX, applies boot volume, then queries GMAN to cache
-// bank descriptors and Bank 1 sound count.
+// Configures CHIRP TX and applies boot volume. RX catalog discovery is
+// opportunistic because UART2 is shared with the higher-priority DomeLink.
 // -----------------------------------------------------------------------------
 bool AudioDriverChirp::begin(uint8_t vol) {
     if (!m_io.writeByte) { m_io = kChirpProductionIO; }
 
-    // Hardware init — no-ops in native test builds.
-    s_chirpSerial.begin(9600, SERIAL_8N1, PIN_AUDIO_RX, -1);
+    // Hardware TX init — no-op in native test builds.
     softUartTxBegin();
 
-    // Reset to known sentinel values before any early return so cached state
+    // Reset to known sentinel values before optional RX work so cached state
     // is unambiguously "uninitialized" rather than defaulting to "idle" (0x00).
     m_totalTracks = 0;
     m_linkOk = false;
@@ -324,14 +327,6 @@ bool AudioDriverChirp::begin(uint8_t vol) {
     m_catalogCount = 0;
     m_catalogBankCount = 0;
 
-    // Guard: if dome probe window owns UART2, skip blocking boot sequence.
-    // Return false so AudioTask leaves driverInitialized=false and retries
-    // begin() on the next poll cycle.
-    if (domeUartOwnedBy(DOME_UART_DOME)) {
-        PA_LOG_DEBUG(TAG, "begin deferred — UART2 held by dome probe");
-        return false;
-    }
-
     // CHIRP boots, mounts SD, and optionally syncs Bank 1 to flash; 2 s covers
     // most cases. First boot after SD card change may need more time.
     m_io.delayMs(2000);
@@ -339,7 +334,14 @@ bool AudioDriverChirp::begin(uint8_t vol) {
     // Apply NVS-configured boot volume before any playback.
     setVolume(vol);
 
-    m_linkOk = loadManifestBanks(1500u, false);
+    if (domeUartAcquire(DOME_UART_AUDIO)) {
+        configureChirpRx();
+        m_linkOk = loadManifestBanks(1500u, false);
+        domeUartRelease(DOME_UART_AUDIO);
+    } else {
+        PA_LOG_INFO(TAG,
+                    "CHIRP RX catalog discovery skipped: DomeLink is using UART2; playback commands remain available");
+    }
 
     PA_LOG_INFO(TAG, "init — vol=%u Bank1 sounds=%u banks=%u link=%s", (unsigned)vol,
                 (unsigned)m_totalTracks, (unsigned)m_catalogBankCount,
@@ -403,6 +405,11 @@ void AudioDriverChirp::setVolume(uint8_t vol) {
 }
 
 bool AudioDriverChirp::refreshCatalog() {
+    if (domeUartOwnedBy(DOME_UART_DOME)) {
+        return false;
+    }
+    configureChirpRx();
+
     if (!loadManifestBanks(2500u, false)) {
         m_catalogReady = false;
         return false;
@@ -540,12 +547,14 @@ bool AudioDriverChirp::queryModuleState(AudioModuleState& out) {
     out.totalTracks = m_totalTracks;
     out.currentTrack = m_lastTrack;   // last index sent via playTrack()
 
-    // Guard: dome probe window owns UART2 — return cached state unchanged.
+    // Guard: DomeLink has priority on UART2; return cached state unchanged.
     if (domeUartOwnedBy(DOME_UART_DOME)) {
         out.linkOk = m_linkOk;
         out.playState = m_playState;
         return out.linkOk;
     }
+
+    configureChirpRx();
 
     while (m_io.rxAvailable()) { (void)m_io.rxRead(); }
 

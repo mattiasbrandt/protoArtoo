@@ -224,6 +224,12 @@
         if (transportText) {
           transportLine = `<div class="desc mt-6">${escapeHtml(transportText)}</div>`;
         }
+        if (payload.dome_link?.uart_owned_by_dome === true) {
+          transportLine += `<div class="desc mt-6">${escapeHtml("UART2 owned by DomeLink")}</div>`;
+        }
+      }
+      if (key === "s2Sound" && entry?.rx_status === "blocked_by_dome_uart") {
+        transportLine += `<div class="desc mt-6">${escapeHtml("CHIRP RX unavailable while DomeLink owns UART2")}</div>`;
       }
       return `
         <div class="status-item">

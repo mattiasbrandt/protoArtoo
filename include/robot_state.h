@@ -70,6 +70,13 @@ enum DomeUartOwner : uint8_t {
     DOME_UART_AUDIO,
 };
 
+enum AudioRxStatus : uint8_t {
+    AUDIO_RX_UNKNOWN = 0,
+    AUDIO_RX_AVAILABLE,
+    AUDIO_RX_BLOCKED_BY_DOME_UART,
+    AUDIO_RX_NO_RESPONSE,
+};
+
 enum ServoComponentType : uint8_t {
     SERVO_COMP_NONE = 0,    // Nothing connected / unassigned
     SERVO_COMP_MG996R = 1,  // Standard hobby servo, 1000-2000 µs range
@@ -152,6 +159,7 @@ struct RobotState {
     uint8_t audio_module_device;
     uint16_t audio_module_total_tracks;
     uint16_t audio_module_current_track;
+    AudioRxStatus audio_module_rx_status;
 
     bool armOpen[2];
     uint16_t arm1TargetUs;

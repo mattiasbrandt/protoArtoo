@@ -48,9 +48,12 @@ test("dome link reports OFF when backend marks link disabled", () => {
 });
 
 test("dome link connected includes transport label in reason", () => {
-  const uart = toSignalMap({ dome_link: { state: "connected", transport: "uart" } });
+  const uart = toSignalMap({
+    dome_link: { state: "connected", transport: "uart", uart_owned_by_dome: true },
+  });
   assert.equal(uart["h-dome-link"].state, "ok");
   assert.equal(uart["h-dome-link"].reason, "Connected - UART (slip ring)");
+  assert.match(uart["h-dome-link"].detail, /UART2 owned by DomeLink/);
 
   const wifi = toSignalMap({ dome_link: { state: "connected", transport: "wifi" } });
   assert.equal(wifi["h-dome-link"].state, "ok");
@@ -104,4 +107,32 @@ test("stale mode preserves OFF indicators as OFF", () => {
   assert.equal(stale["h-dome-link"].state, "off");
   assert.equal(stale["h-sound"].state, "off");
   assert.equal(stale["h-dome-esc"].state, "off");
+});
+
+test("sound RX blocked by DomeLink is warning, not module failure", () => {
+  const signals = toSignalMap({
+    s2Sound: {
+      state: "idle",
+      link_ok: false,
+      rx_status: "blocked_by_dome_uart",
+      rx_detail: "Status unavailable: DomeLink is using UART",
+    },
+  });
+
+  assert.equal(signals["h-sound"].state, "warn");
+  assert.equal(signals["h-sound"].reason, "Status unavailable");
+  assert.equal(signals["h-sound"].detail, "Status unavailable: DomeLink is using UART");
+});
+
+test("sound no response remains a failure", () => {
+  const signals = toSignalMap({
+    s2Sound: {
+      state: "idle",
+      link_ok: false,
+      rx_status: "no_response",
+    },
+  });
+
+  assert.equal(signals["h-sound"].state, "fail");
+  assert.equal(signals["h-sound"].reason, "No module response");
 });
