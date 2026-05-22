@@ -6,7 +6,7 @@
 // Verifies that CHIRP RX work bails out cleanly when DomeLink owns UART2,
 // while TX-side startup still completes so playback commands remain available.
 //
-// Test seam: g_test_dome_uart_owned in native_test_stubs.cpp controls the
+// Test seam: g_test_dome_uart_owner in native_test_stubs.cpp controls the
 // return value of domeUartOwnedBy() without requiring FreeRTOS or robotState.
 // =============================================================================
 
@@ -17,10 +17,11 @@
 
 #include "../../../include/audio_serial_io.h"
 #include "../../../include/audio_chirp.h"
+#include "../../../include/dome_link.h"
 
-// Seam declared in native_test_stubs.cpp — set true to simulate DomeLink
-// holding UART2.
-extern bool g_test_dome_uart_owned;
+// Seam declared in native_test_stubs.cpp — set DOME_UART_DOME to simulate
+// DomeLink holding UART2; reset to DOME_UART_NONE in tearDown.
+extern DomeUartOwner g_test_dome_uart_owner;
 
 // =============================================================================
 // Minimal recording IO
@@ -68,8 +69,8 @@ static bool txContains(const char* needle) {
     return false;
 }
 
-void setUp()    { g_rec.reset(); g_test_dome_uart_owned = false; }
-void tearDown() { g_test_dome_uart_owned = false; }
+void setUp()    { g_rec.reset(); g_test_dome_uart_owner = DOME_UART_NONE; }
+void tearDown() { g_test_dome_uart_owner = DOME_UART_NONE; }
 
 // =============================================================================
 // queryModuleState() guard
@@ -79,7 +80,7 @@ void test_query_emits_no_bytes_when_dome_owns_uart() {
     AudioDriverChirp drv;
     drv.setIO(makeIO());
 
-    g_test_dome_uart_owned = true;
+    g_test_dome_uart_owner = DOME_UART_DOME;
     AudioModuleState ms{};
     drv.queryModuleState(ms);
 
@@ -91,7 +92,7 @@ void test_query_emits_stat_command_when_uart_available() {
     AudioDriverChirp drv;
     drv.setIO(makeIO());
 
-    g_test_dome_uart_owned = false;
+    g_test_dome_uart_owner = DOME_UART_NONE;
     AudioModuleState ms{};
     drv.queryModuleState(ms);
 
@@ -111,7 +112,7 @@ void test_begin_returns_true_sends_volume_and_skips_gman_when_dome_owns_uart() {
     AudioDriverChirp drv;
     drv.setIO(makeIO());
 
-    g_test_dome_uart_owned = true;
+    g_test_dome_uart_owner = DOME_UART_DOME;
     bool result = drv.begin(15);
 
     TEST_ASSERT_TRUE_MESSAGE(result,
@@ -128,7 +129,7 @@ void test_begin_returns_true_calls_delay_and_queries_gman_when_uart_available() 
     AudioDriverChirp drv;
     drv.setIO(makeIO());
 
-    g_test_dome_uart_owned = false;
+    g_test_dome_uart_owner = DOME_UART_NONE;
     bool result = drv.begin(15);
 
     TEST_ASSERT_TRUE_MESSAGE(result,

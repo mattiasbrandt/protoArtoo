@@ -39,23 +39,15 @@ bool saveConfigToNvs() {
 
 // dome_link.cpp is excluded from the native build. Provide a controllable stub
 // so audio_chirp.cpp's UART2 ownership guard can be exercised in tests.
-// Default: dome does not own UART2. Tests that need to simulate DomeLink
-// owning UART2 set g_test_dome_uart_owned to true in setUp and clear it in
-// tearDown.
+// Default: DOME_UART_NONE (no owner). Tests set g_test_dome_uart_owner in
+// setUp() and reset it in tearDown().
 #include "dome_link.h"
-bool g_test_dome_uart_owned = false;
-static DomeUartOwner g_test_dome_uart_owner = DOME_UART_NONE;
+DomeUartOwner g_test_dome_uart_owner = DOME_UART_NONE;
 bool domeUartOwnedBy(DomeUartOwner owner) {
-    if (owner == DOME_UART_DOME && g_test_dome_uart_owned) {
-        return true;
-    }
     return g_test_dome_uart_owner == owner;
 }
 bool domeUartAcquire(DomeUartOwner requester) {
     if (requester == DOME_UART_NONE) {
-        return false;
-    }
-    if (g_test_dome_uart_owned && requester != DOME_UART_DOME) {
         return false;
     }
     if (g_test_dome_uart_owner != DOME_UART_NONE && g_test_dome_uart_owner != requester) {

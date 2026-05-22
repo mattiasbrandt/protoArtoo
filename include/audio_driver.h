@@ -119,6 +119,14 @@ class AudioDriver {
         return 0;
     }
 
+    // Returns true if this driver's RX path shares UART2 with DomeLink.
+    // AudioTask uses this to classify a link_ok=false result as BLOCKED rather
+    // than NO_RESPONSE when DomeLink currently owns the bus.
+    // Override in any driver whose RX path uses HardwareSerial(2) / GPIO34-35.
+    virtual bool sharesUart2WithDomeLink() const {
+        return false;
+    }
+
     // Query the module for live state. Returns true and populates 'out' if the
     // module responds. Default returns false (driver has no RX path).
     // Must only be called from the AudioTask (Core 0). Blocking up to ~300 ms.

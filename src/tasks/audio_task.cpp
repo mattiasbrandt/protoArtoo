@@ -746,6 +746,9 @@ void audioTask(void* pvParameters) {
             const bool initOk = driver->begin(currentVol);
             if (!initOk) {
                 // Leave driverInitialized=false; retry on next poll cycle.
+                // No current driver returns false from begin() — this path is
+                // reserved for future drivers that cannot complete TX-side init
+                // (e.g., hardware not yet ready at boot).
                 PA_LOG_DEBUG(TAG, "audio driver begin incomplete — will retry");
                 vTaskDelay(pdMS_TO_TICKS(250));
                 continue;
@@ -767,7 +770,7 @@ void audioTask(void* pvParameters) {
                 AudioRxStatus rxStatus = AUDIO_RX_NO_RESPONSE;
                 if (ms.linkOk) {
                     rxStatus = AUDIO_RX_AVAILABLE;
-                } else if ((driver->capabilities() & AudioDriver::AUDIO_CAP_CATALOG) &&
+                } else if (driver->sharesUart2WithDomeLink() &&
                            domeUartOwnedBy(DOME_UART_DOME)) {
                     rxStatus = AUDIO_RX_BLOCKED_BY_DOME_UART;
                 }

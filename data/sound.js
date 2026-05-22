@@ -7,6 +7,7 @@
 // =============================================================================
 (() => {
   const TRACK_MAX = 999;
+  const RX_STATUS_BLOCKED_BY_DOME = "blocked_by_dome_uart";
   const NAMED_SOUNDS = [
     { label: "Scream", cmd: "$S", key: "scream", editable: true },
     { label: "Short Circuit", cmd: "$F", key: "faint", editable: true },
@@ -375,7 +376,7 @@
       // false the user needs to see "No module response", not a stale "Idle".
       if (soundStateBadge && soundHardwareEnabled) {
         const linkOk = Boolean(d.link_ok);
-        if (d.rx_status === "blocked_by_dome_uart") {
+        if (d.rx_status === RX_STATUS_BLOCKED_BY_DOME) {
           soundStateBadge.textContent = "Status unavailable: DomeLink is using UART";
           soundStateBadge.dataset.state = "idle";
           if (modLink) {
@@ -2004,7 +2005,7 @@
       return;
     }
     if (data.s2Sound && typeof data.s2Sound.link_ok === "boolean") {
-      if (data.s2Sound.rx_status === "blocked_by_dome_uart") {
+      if (data.s2Sound.rx_status === RX_STATUS_BLOCKED_BY_DOME) {
         if (modLink) { modLink.textContent = "DomeLink using UART"; modLink.dataset.state = "warn"; }
         soundStateBadge.textContent = "Status unavailable: DomeLink is using UART";
         soundStateBadge.dataset.state = "idle";
