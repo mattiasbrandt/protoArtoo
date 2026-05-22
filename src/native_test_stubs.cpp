@@ -1,8 +1,9 @@
 // =============================================================================
 // src/native_test_stubs.cpp
 //
-// Stub definitions for extern symbols referenced by src/web/api_config.cpp
-// when it is compiled as part of the [env:native] test build.
+// Stub definitions for extern symbols referenced by native-build source files
+// (src/web/api_config.cpp, src/drivers/audio_chirp.cpp, etc.) that depend on
+// hardware or task-level facilities not available in [env:native].
 //
 // This file is only listed in [env:native] build_src_filter.
 // It is never compiled for device (ESP32) firmware builds.
