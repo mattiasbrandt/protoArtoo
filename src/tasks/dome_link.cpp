@@ -43,13 +43,14 @@ static const char* TAG = "DomeLink";
 static HardwareSerial s_domeSerial(2);
 static WiFiUDP s_domeUdp;
 static bool s_uartOwned = false;
+static IPAddress s_lastMdnsResolvedIp;
 
 namespace {
 
 constexpr uint16_t kDomeUdpPort = 4901;
 constexpr uint32_t kHeartbeatIntervalMs = 1000;
 constexpr uint32_t kHeartbeatTimeoutMs = 5000;
-constexpr uint32_t kUartProbeIntervalMs = 1000;
+constexpr uint32_t kUartProbeIntervalMs = 30000;
 constexpr uint32_t kUartProbeWindowMs = 150;
 constexpr uint32_t kMdnsRefreshMs = 5000;
 constexpr const char* kDomeMdnsHost = "astropixelsplus";
@@ -121,7 +122,6 @@ static void releaseUartToAudioRx() {
     s_domeSerial.begin(9600, SERIAL_8N1, PIN_AUDIO_RX, -1);
     s_uartOwned = false;
     domeUartRelease(DOME_UART_DOME);
-    domeUartAcquire(DOME_UART_AUDIO);
 
     PA_LOG_DEBUG(TAG, "UART2 ownership -> audio RX (GPIO%d)", PIN_AUDIO_RX);
 }
@@ -182,8 +182,14 @@ static bool resolveDomePeerIp(uint32_t nowMs, bool staConnected, bool cachedPeer
     }
 
     *inOutPeerIp = resolved;
-    PA_LOG_INFO(TAG, "mDNS resolved %s.local -> %s", kDomeMdnsHost,
-                inOutPeerIp->toString().c_str());
+    if (resolved != s_lastMdnsResolvedIp) {
+        s_lastMdnsResolvedIp = resolved;
+        PA_LOG_INFO(TAG, "mDNS resolved %s.local -> %s", kDomeMdnsHost,
+                    inOutPeerIp->toString().c_str());
+    } else {
+        PA_LOG_DEBUG(TAG, "mDNS re-resolved %s.local -> %s (unchanged)", kDomeMdnsHost,
+                     inOutPeerIp->toString().c_str());
+    }
     return true;
 }
 
@@ -383,7 +389,7 @@ bool domeUartAcquire(DomeUartOwner requester) {
     DomeUartOwner current = robotState.domeUartOwner;
     if (current == requester) {
         taskEXIT_CRITICAL(&robotStateMux);
-        PA_LOG_WARN(TAG, "UART2 acquire duplicate by owner=%u", (unsigned)requester);
+        PA_LOG_DEBUG(TAG, "UART2 acquire duplicate by owner=%u", (unsigned)requester);
         return true;
     }
     if (current == DOME_UART_AUDIO && requester == DOME_UART_DOME) {
@@ -393,8 +399,13 @@ bool domeUartAcquire(DomeUartOwner requester) {
     }
     if (current != DOME_UART_NONE) {
         taskEXIT_CRITICAL(&robotStateMux);
-        PA_LOG_WARN(TAG, "UART2 acquire denied owner=%u requester=%u", (unsigned)current,
-                    (unsigned)requester);
+        if (requester == DOME_UART_AUDIO) {
+            PA_LOG_DEBUG(TAG, "UART2 acquire denied owner=%u requester=%u", (unsigned)current,
+                         (unsigned)requester);
+        } else {
+            PA_LOG_WARN(TAG, "UART2 acquire denied owner=%u requester=%u", (unsigned)current,
+                        (unsigned)requester);
+        }
         return false;
     }
     robotState.domeUartOwner = requester;
@@ -491,6 +502,7 @@ void domeLinkTask(void* pvParameters) {
     bool udpReady = false;
     bool sleepSynced = false;
     bool lastSyncedSleepMode = false;
+    DomeLinkTransport lastLoggedTransport = DOME_LINK_TRANSPORT_UART;
 
     DomeTxCmd txCmd{};
 
@@ -565,6 +577,14 @@ void domeLinkTask(void* pvParameters) {
         }
 
         setTransportState(desiredTransport);
+
+        if (desiredTransport == DOME_LINK_TRANSPORT_WIFI &&
+            lastLoggedTransport != DOME_LINK_TRANSPORT_WIFI) {
+            PA_LOG_INFO(TAG, "transport fallback: UART unavailable, using WiFi UDP to %u.%u.%u.%u",
+                        (unsigned)peerIp[0], (unsigned)peerIp[1],
+                        (unsigned)peerIp[2], (unsigned)peerIp[3]);
+        }
+        lastLoggedTransport = desiredTransport;
 
         // Sleep state sync: current body sleep state is ground truth.
         // Send #PASL/#PAWU on every connect (sleepSynced resets on disconnect)

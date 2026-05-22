@@ -21,6 +21,7 @@
 // =============================================================================
 
 #include "audio_chirp.h"
+#include "dome_link.h"
 
 #include <Arduino.h>
 #include <ctype.h>   // isalpha, isdigit, toupper
@@ -313,6 +314,14 @@ void AudioDriverChirp::begin(uint8_t vol) {
     s_chirpSerial.begin(9600, SERIAL_8N1, PIN_AUDIO_RX, -1);
     softUartTxBegin();
 
+    // Guard: if dome probe window owns UART2, skip blocking boot sequence.
+    // AudioTask will retry via queryModuleState() on its next poll cycle.
+    if (domeUartOwnedBy(DOME_UART_DOME)) {
+        m_linkOk = false;
+        PA_LOG_DEBUG(TAG, "begin deferred — UART2 held by dome probe");
+        return;
+    }
+
     // CHIRP boots, mounts SD, and optionally syncs Bank 1 to flash; 2 s covers
     // most cases. First boot after SD card change may need more time.
     m_io.delayMs(2000);
@@ -527,6 +536,13 @@ bool AudioDriverChirp::queryModuleState(AudioModuleState& out) {
     out.device = 0x03;          // CHIRP: Bank 1 on flash, Banks 2–6 on SD
     out.totalTracks = m_totalTracks;
     out.currentTrack = m_lastTrack;   // last index sent via playTrack()
+
+    // Guard: dome probe window owns UART2 — return cached state unchanged.
+    if (domeUartOwnedBy(DOME_UART_DOME)) {
+        out.linkOk = m_linkOk;
+        out.playState = m_playState;
+        return out.linkOk;
+    }
 
     while (m_io.rxAvailable()) { (void)m_io.rxRead(); }
 
