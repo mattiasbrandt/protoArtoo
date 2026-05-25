@@ -238,10 +238,11 @@ bool parseMarcduinoCommand(const char* line) {
                 return true;
             }
 
-            PA_LOG_INFO(TAG,
-                        "[CONFIG] body-local setup command reserved for future handling; "
-                        "no ConfigTask in Phase 3: %s",
-                        line);
+            if (strcmp(line, "#PAHB") == 0) {
+                PA_LOG_DEBUG(TAG, "[HB] body heartbeat echo ignored");
+                return true;
+            }
+            PA_LOG_DEBUG(TAG, "[CONFIG] unhandled body command: %s", line);
             return true;
         }
 
