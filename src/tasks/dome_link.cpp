@@ -291,6 +291,25 @@ static bool parseDomeRxLine(const char* line, DomeRxSource source, uint32_t nowM
         PA_LOG_INFO(TAG, "dome seq end");
         return true;
     }
+    if (strncmp(line, "dome=rot,", 9) == 0) {
+        int speedPct = 0;
+        unsigned int durMs = 0;
+        if (sscanf(line + 9, "%d,%u", &speedPct, &durMs) == 2) {
+            if (speedPct > 100) speedPct = 100;
+            if (speedPct < -100) speedPct = -100;
+            DomeCommand rotCmd = {};
+            rotCmd.speed      = (float)speedPct / 100.0f;
+            rotCmd.durationMs = (uint32_t)durMs;
+            rotCmd.source     = SRC_INTERNAL;
+            rotCmd.timestampMs = nowMs;
+            if (xQueueSend(domeCmdQueue, &rotCmd, 0) != pdTRUE) {
+                PA_LOG_WARN(TAG, "dome=rot dropped: queue full");
+            } else {
+                PA_LOG_INFO(TAG, "dome seq rot: %d%% for %u ms", speedPct, durMs);
+            }
+        }
+        return true;
+    }
     if (strncmp(line, "BD:", 3) == 0) {
         handleDomeCue(line + 3);
         return true;
@@ -548,6 +567,11 @@ void domeLinkTask(void* pvParameters) {
         const bool initialUartGrace =
             lastUartHeartbeatMs == 0 && (uint32_t)now < kHeartbeatTimeoutMs;
 
+        // KNOWN DEVIATION: UART is intended as the primary transport (slip ring present),
+        // WiFi as fallback only when the dome is not physically wired. In practice the
+        // 5-second UART timeout causes WiFi to become the steady-state transport whenever
+        // both peers are on the same network. Accepted for v1.0.0; a cleaner model would
+        // gate WiFi fallback on UART never having established contact on this boot.
         DomeLinkTransport desiredTransport = DOME_LINK_TRANSPORT_UART;
         if (!uartFresh && !initialUartGrace && staConnected && peerKnown) {
             desiredTransport = DOME_LINK_TRANSPORT_WIFI;
@@ -561,11 +585,12 @@ void domeLinkTask(void* pvParameters) {
                 lastUartProbeMs = now;
                 if (acquireDomeUart()) {
                     uartProbeWindowUntilMs = now + kUartProbeWindowMs;
-                    // RX-only probe window: do NOT transmit #PAHB via GPIO33 when WiFi is
-                    // the active transport. The dome counts any #PAHB on Serial2 as evidence
-                    // of UART transport and routes sendBodyCommand() via UART TX, which the
-                    // body never receives during the brief probe window. UART failback is
-                    // detected by receiving an unsolicited #APHB from the dome via UART RX.
+                    // Send one #PAHB to trigger an #APHB response from the dome.
+                    // The dome only sends #APHB on its active transport, so a passive
+                    // RX-only probe never sees anything while the dome is on WiFi.
+                    s_domeSerial.print(MD_BODY_HB);
+                    PA_LOG_DEBUG(TAG, "UART probe: sent #PAHB, waiting %u ms for #APHB",
+                                 (unsigned)kUartProbeWindowMs);
                 }
             }
 

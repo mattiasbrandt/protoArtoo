@@ -127,7 +127,8 @@ struct ServoCommand {
 // Dome command message (sent via domeCmdQueue)
 // -----------------------------------------------------------------------------
 struct DomeCommand {
-    float speed;  // -1.0 (full reverse) .. +1.0 (full forward), 0 = stop
+    float speed;         // -1.0 (full reverse) .. +1.0 (full forward), 0 = stop
+    uint32_t durationMs; // 0 = indefinite (RC/web), >0 = auto-stop after this many ms
     CommandSource source;
     uint32_t timestampMs;
 };

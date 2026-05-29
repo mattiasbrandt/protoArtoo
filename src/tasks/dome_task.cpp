@@ -136,6 +136,7 @@ void domeTask(void* pvParameters) {
 
     bool hwmLogged = false;
     bool sleepHolding = false;
+    uint32_t seqMoveUntilMs = 0;
 
     while (true) {
         if (!hwmLogged) {
@@ -158,6 +159,7 @@ void domeTask(void* pvParameters) {
                 setDomeNeutral();
                 PA_LOG_INFO(TAG, "Dome disabled — holding neutral");
             }
+            seqMoveUntilMs = 0;
             // Drain any queued commands so they don't accumulate
             while (xQueueReceive(domeCmdQueue, &cmd, 0) == pdTRUE) {
                 // discard
@@ -170,6 +172,7 @@ void domeTask(void* pvParameters) {
         }
 
         if (sleepMode) {
+            seqMoveUntilMs = 0;
             if (!sleepHolding || currentSpeed != 0.0f) {
                 currentSpeed = 0.0f;
                 setDomeNeutral();
@@ -196,6 +199,7 @@ void domeTask(void* pvParameters) {
         if (estop && currentSpeed != 0.0f) {
             currentSpeed = 0.0f;
             setDomeNeutral();
+            seqMoveUntilMs = 0;
             PA_LOG_WARN(TAG, "Estop active — dome neutral");
         }
 
@@ -206,6 +210,7 @@ void domeTask(void* pvParameters) {
             currentSpeed = cmd.speed;
             lastCommandMs = millis();
             hasCommand = true;
+            seqMoveUntilMs = (cmd.durationMs > 0) ? (millis() + cmd.durationMs) : 0;
             if (cmd.speed != 0.0f) {
                 manualCommandThisTick = true;
             }
@@ -214,6 +219,21 @@ void domeTask(void* pvParameters) {
             if (currentSpeed != 0.0f) {
                 PA_LOG_INFO(TAG, "[%s] Dome command: speed %d%%",
                             commandSourceToString(cmd.source), (int)(cmd.speed * 100.0f));
+            }
+        }
+
+        // Timed dome-seq rotation: keep lastCommandMs fresh (prevents 500 ms timeout)
+        // and auto-stop when duration expires.
+        if (seqMoveUntilMs > 0) {
+            uint32_t tNow = millis();
+            if ((int32_t)(tNow - seqMoveUntilMs) >= 0) {
+                currentSpeed  = 0.0f;
+                hasCommand    = false;
+                seqMoveUntilMs = 0;
+                setDomeNeutral();
+                PA_LOG_INFO(TAG, "dome seq rot complete");
+            } else {
+                lastCommandMs = tNow;
             }
         }
 
