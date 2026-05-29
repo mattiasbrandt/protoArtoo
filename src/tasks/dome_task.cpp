@@ -206,7 +206,9 @@ void domeTask(void* pvParameters) {
             currentSpeed = cmd.speed;
             lastCommandMs = millis();
             hasCommand = true;
-            manualCommandThisTick = true;
+            if (cmd.speed != 0.0f) {
+                manualCommandThisTick = true;
+            }
 
             setDomeSpeed(currentSpeed);
             if (currentSpeed != 0.0f) {
