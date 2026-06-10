@@ -2013,3 +2013,48 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: cfg_rcMode
+
+- name: dome.seq.vader
+  display_name: DM:VADER — Imperial March
+  description: "47-second Imperial March visual mode: holos red, MARCH logics and PSI. Body-owned flat sequence."
+  domain: dome
+  type: action
+  marcduino_cmd: "DM:VADER"
+  api_path: /api/dome/cmd
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/tasks/sequence_dispatcher.cpp
+  sources: [ sbus, web_api ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+- name: dome.seq.hello
+  display_name: DM:HELLO — Hello There
+  description: "4-second greeting: logic text + P1 panel wave. Body-owned flat sequence."
+  domain: dome
+  type: action
+  marcduino_cmd: "DM:HELLO"
+  api_path: /api/dome/cmd
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/tasks/sequence_dispatcher.cpp
+  sources: [ sbus, web_api ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+- name: dome.seq.nod
+  display_name: DM:NOD — Acknowledgment nod
+  description: "3-second ack gesture: happy sound + logic text Yes + P1 wave. New sound-synced flat sequence."
+  domain: dome
+  type: action
+  marcduino_cmd: "DM:NOD"
+  api_path: /api/dome/cmd
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/tasks/sequence_dispatcher.cpp
+  sources: [ sbus, web_api ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
