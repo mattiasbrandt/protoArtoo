@@ -21,16 +21,17 @@ DomeLinkArbiterActions domeLinkArbiterStep(DomeLinkArbiterState&        s,
 
     if (in.uartHeartbeatSeen) {
         s.lastUartHeartbeatMs = in.nowMs;
+        s.uartEverSeen        = true;
     }
 
     // -----------------------------------------------------------------------
     // 2. Transport selection
     //
-    // KNOWN DEVIATION: the 5 s UART heartbeat timeout makes WiFi the
-    // steady-state transport whenever both peers share a network, even though
-    // the UART slip ring is the intended primary path (ADR 0003).  Accepted
-    // for v1.0.0; resolved in the next arbiter slice (issue #5) by gating
-    // WiFi fallback on UART never having established contact this boot.
+    // WiFi fallback is allowed only when UART has never established contact
+    // this boot. Once UART contact is seen, a heartbeat loss means the dome
+    // is off or rebooting — stay on UART and keep probing (via the normal
+    // 1 Hz heartbeat) rather than silently migrating to WiFi (ADR 0005,
+    // resolves the WiFi-steady-state deviation accepted for v1.0.0).
     // -----------------------------------------------------------------------
 
     const bool uartFresh =
@@ -40,8 +41,9 @@ DomeLinkArbiterActions domeLinkArbiterStep(DomeLinkArbiterState&        s,
     const bool initialUartGrace =
         s.lastUartHeartbeatMs == 0 && in.nowMs < kDomeLinkHeartbeatTimeoutMs;
 
-    const bool wantWifi =
-        !uartFresh && !initialUartGrace && in.staConnected && in.peerKnown;
+    const bool wantWifi = !uartFresh && !initialUartGrace &&
+                          in.staConnected && in.peerKnown &&
+                          !s.uartEverSeen;
 
     if (!wantWifi) {
         s.uartProbeWindowUntilMs = 0;

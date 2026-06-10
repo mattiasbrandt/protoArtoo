@@ -51,6 +51,7 @@ struct DomeLinkArbiterState {
     uint32_t lastHeartbeatTxMs;      // 0 = never sent
     bool     sleepSynced;            // reset on dome disconnect
     bool     lastSyncedSleepMode;    // last sleep mode sent to the dome
+    bool     uartEverSeen;           // true once UART #APHB received this boot
 };
 
 // ---------------------------------------------------------------------------

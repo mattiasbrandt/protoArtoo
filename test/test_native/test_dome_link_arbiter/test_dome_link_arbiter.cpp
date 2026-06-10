@@ -5,6 +5,7 @@
 //
 // Slice 1 (issue #3): transport selection, probe cadence, and heartbeat gate.
 // Slice 2 (issue #4): sleep-sync state machine.
+// Slice 3 (issue #5): WiFi-fallback gating on UART boot contact.
 // =============================================================================
 
 #include <unity.h>
@@ -78,21 +79,27 @@ void test_uart_steady_state_while_heartbeat_fresh() {
 }
 
 // =============================================================================
-// WiFi fallback (the known deviation, pinned by issue #3)
+// WiFi fallback — UART never contacted this boot (uartEverSeen=false)
 //
-// KNOWN DEVIATION: when UART was never seen this boot and WiFi peers are
-// reachable, the 5 s timeout causes WiFi to become the steady-state transport.
-// Resolved in slice 2 (issue #5) by gating WiFi fallback on uartEverSeen.
+// Old behaviour (slice 1 pin, updated by slice 3 issue #5):
+//   The 5 s UART timeout caused WiFi to become the steady-state transport
+//   whenever WiFi peers were reachable, regardless of UART history.  This was
+//   the known deviation accepted for v1.0.0.
+//
+// New behaviour (slice 3):
+//   WiFi fallback is now allowed only when UART was never seen this boot.
+//   This test still passes because uartEverSeen=false in a zero-init state.
 // =============================================================================
 
 void test_wifi_fallback_after_heartbeat_timeout() {
     DomeLinkArbiterState s = {};
 
-    // Grace ends at kDomeLinkHeartbeatTimeoutMs — fallback to WiFi.
+    // Grace ends, UART never seen, WiFi available — fallback allowed.
     DomeLinkArbiterActions a = domeLinkArbiterStep(
         s, makeInputs(kDomeLinkHeartbeatTimeoutMs, false, /*sta=*/true, /*peer=*/true));
     TEST_ASSERT_EQUAL_INT(DOME_LINK_TRANSPORT_WIFI, (int)a.txRoute);
     TEST_ASSERT_FALSE(a.acquireUart);
+    TEST_ASSERT_FALSE(s.uartEverSeen);
 }
 
 void test_wifi_not_used_without_sta_connection() {
@@ -275,6 +282,58 @@ void test_sleep_sync_not_sent_while_dome_disconnected() {
 }
 
 // =============================================================================
+// WiFi-fallback gating on UART boot contact (issue #5)
+//
+// Once UART establishes contact this boot, WiFi fallback is suppressed. The
+// arbiter stays on UART and probes via the normal 1 Hz heartbeat rather than
+// switching to WiFi.
+// =============================================================================
+
+void test_wifi_fallback_suppressed_after_uart_contact() {
+    DomeLinkArbiterState s = {};
+
+    // UART heartbeat received at t=1000 — contact established.
+    domeLinkArbiterStep(s, makeInputs(1000, /*uartHbSeen=*/true, true, true));
+    TEST_ASSERT_TRUE(s.uartEverSeen);
+
+    // UART goes stale at t=7000 (7000-1000=6000 > 5000 timeout).
+    // WiFi peers available — fallback must be suppressed.
+    DomeLinkArbiterActions a = domeLinkArbiterStep(
+        s, makeInputs(7000, false, /*sta=*/true, /*peer=*/true));
+    TEST_ASSERT_EQUAL_INT(DOME_LINK_TRANSPORT_UART, (int)a.txRoute);
+    TEST_ASSERT_TRUE(a.acquireUart);
+}
+
+void test_wifi_fallback_allowed_when_uart_never_seen() {
+    // uartEverSeen=false (zero-init) — WiFi fallback unchanged.
+    DomeLinkArbiterState s = {};
+
+    DomeLinkArbiterActions a = domeLinkArbiterStep(
+        s, makeInputs(kDomeLinkHeartbeatTimeoutMs, false, true, true));
+    TEST_ASSERT_EQUAL_INT(DOME_LINK_TRANSPORT_WIFI, (int)a.txRoute);
+}
+
+void test_uart_recovery_from_wifi_probe_sets_uart_ever_seen() {
+    DomeLinkArbiterState s = {};
+
+    // Enter WiFi fallback (UART never seen), probe fires at t=30000.
+    domeLinkArbiterStep(s, makeInputs(5000, false, true, true));
+    domeLinkArbiterStep(s, makeInputs(kDomeLinkUartProbeIntervalMs, false, true, true));
+
+    // #APHB arrives — recovery to UART, uartEverSeen latches.
+    DomeLinkArbiterActions a = domeLinkArbiterStep(
+        s, makeInputs(kDomeLinkUartProbeIntervalMs + 50, /*uartHbSeen=*/true, true, true));
+    TEST_ASSERT_EQUAL_INT(DOME_LINK_TRANSPORT_UART, (int)a.txRoute);
+    TEST_ASSERT_TRUE(s.uartEverSeen);
+
+    // UART goes stale again — WiFi fallback suppressed because uartEverSeen.
+    a = domeLinkArbiterStep(
+        s, makeInputs(kDomeLinkUartProbeIntervalMs + 50 + kDomeLinkHeartbeatTimeoutMs + 1,
+                      false, true, true));
+    TEST_ASSERT_EQUAL_INT(DOME_LINK_TRANSPORT_UART, (int)a.txRoute);
+}
+
+// =============================================================================
 // Test runner
 // =============================================================================
 
@@ -298,6 +357,11 @@ int main() {
     RUN_TEST(test_sleep_sync_resent_on_reconnect);
     RUN_TEST(test_sleep_sync_resent_on_mode_change);
     RUN_TEST(test_sleep_sync_not_sent_while_dome_disconnected);
+
+    // Slice 3 — WiFi fallback gating on UART boot contact
+    RUN_TEST(test_wifi_fallback_suppressed_after_uart_contact);
+    RUN_TEST(test_wifi_fallback_allowed_when_uart_never_seen);
+    RUN_TEST(test_uart_recovery_from_wifi_probe_sets_uart_ever_seen);
 
     return UNITY_END();
 }
