@@ -5,26 +5,11 @@ Agent-focused instructions for the `protoArtoo` firmware repository.
 This file is the model-agnostic canonical instruction source for mixed-agent
 workflows.
 
-## Instruction Precedence
-
-1. Explicit user request in chat
-2. Nearest `AGENTS.md` in directory tree
-3. Tool-specific adapter files (`.claude/CLAUDE.md`, `.github/copilot-instructions.md`)
-4. Other project docs
-
-If instructions conflict, follow the highest-precedence source and document the
-assumption briefly.
-
-External profile tips (for example token-efficiency profiles) may be adopted only
-when they do not conflict with AGENTS safety invariants, verification gates, or
-interactive workflow requirements.
-
 ## Project Context
 
 - Project: `protoArtoo` (ESP32 body controller firmware for MK4 astromech droids)
 - Build system: PlatformIO (`protoArtoo` target + `native` tests)
 - Companion dome firmware: `mattiasbrandt/AstroPixelsPlus`
-- Safety-critical domain: drive/failsafe changes require conservative handling
 
 ## Source of Truth Files
 
@@ -42,45 +27,6 @@ interactive workflow requirements.
 - Espressif MCP servers (repo-level): `espressif-documentation`, `esp-component-registry`
 - Project custom subagent definitions: `.claude/agents/*.md`
 - Project reusable skills: `.claude/skills/*/SKILL.md`
-
-## Spec Compliance Gate (SBUS/RMT)
-
-For any task that touches SBUS parsing, SBUS framing/flags/timing acceptance,
-or ESP-IDF5 RMT driver behavior, agents MUST:
-
-1. Read `docs/spec-sheets/sbus-protocol.md` and `docs/spec-sheets/rmt-esp32-idf5.md` before proposing code changes.
-2. Treat those docs as implementation authority unless superseded by a higher-precedence source in this file.
-3. Mark unresolved values as `UNKNOWN` and stop dependent implementation changes rather than guessing.
-4. Avoid trial-and-error loops that retest previously rejected mechanisms unless new contradictory telemetry is captured.
-
-If HOTRC-specific behavior is involved, consult `docs/spec-sheets/hotrc-sbus-spec.md` after the two protocol/driver docs above.
-
-## Espressif MCP Protocol
-
-Use Espressif MCP servers to speed up external ESP-IDF/component research, but keep
-repo docs as implementation authority.
-
-Available servers (repo-level):
-- `espressif-documentation` (`https://mcp.espressif.com/docs`)
-- `esp-component-registry` (`https://components.espressif.com/mcp`)
-
-When to use which server:
-- Use `espressif-documentation` for ESP-IDF API/driver behavior, version notes,
-  and hardware capability checks.
-- Use `esp-component-registry` for third-party/official component discovery,
-  metadata, and example lookup.
-
-Required usage pattern:
-1. If a task depends on ESP-IDF behavior or component choices not already proven
-   in repo docs, query the relevant Espressif MCP server before coding.
-2. Prefer concise, targeted queries (API name, peripheral, chip variant,
-   IDF major version).
-3. Record unresolved values as `UNKNOWN`; do not guess.
-4. For SBUS/RMT and project-specific contracts, repository docs remain primary:
-   `docs/spec-sheets/sbus-protocol.md`, `docs/spec-sheets/rmt-esp32-idf5.md`, and `docs/spec-sheets/hotrc-sbus-spec.md`.
-
-Not in scope:
-- Do not use RainMaker MCP in this repository workflow unless explicitly requested.
 
 ## MemPalace Memory Protocol
 
@@ -115,13 +61,12 @@ The MCP server exposes 19 tools. Agents with MCP access MUST follow this protoco
 ### Saving memories
 
 - Use `mempalace_add_drawer` to persist significant findings, decisions, or
-  constraints discovered during a session that are not already captured in
-  `tasks/lessons.md` or a task spec.
+  constraints discovered during a session.
 - Save at natural checkpoints: after resolving a non-obvious bug, after a design
   decision that has cross-task implications, or when the user explicitly confirms
   a conclusion worth keeping.
 - Do NOT save routine implementation steps, intermediate errors, or content that
-  is already captured verbatim in `tasks/phase5-tasks.md` or other task files.
+  is already captured verbatim.
 - Filing format: use the wing for this project (from `mempalace_status`) and the
   most relevant room (hall) — `hall_facts` for locked decisions, `hall_discoveries`
   for breakthroughs, `hall_events` for notable sessions.
@@ -152,18 +97,6 @@ agent memory layer.
 - Diary entries are compressed in AAAK — keep them structured and entity-coded
   per the AAAK spec from `mempalace_status`.
 
-### What NOT to do
-
-- Do not store MemPalace facts or agent definitions in `AGENTS.md`, `CLAUDE.md`,
-  or `copilot-instructions.md` — the palace is the memory layer.
-- Do not call `mempalace_search` for facts that are clearly in the current
-  session context — this wastes tokens and latency.
-- Do not use MemPalace as a substitute for reading the actual source files;
-  search results are closet pointers — always verify against the drawer (source).
-
-Do not treat `.sisyphus/plans/` as authoritative when equivalent local task docs
-exist in `tasks/`.
-
 Documentation publication rule:
 - Only `docs/goal.md` and `docs/status.md` are public planning docs.
 - `docs/goal.md` and `docs/status.md` must not contain agent/tool/model wording
@@ -171,81 +104,11 @@ Documentation publication rule:
 - Any `tasks/*.md` file is internal operator/agent working context and must remain
   untracked in git.
 
-## Safety Invariants (Never Violate)
-
-1. Zero-frame rule: Drive frames continue at 50 Hz; send zero frames when stopped.
-2. `SPEED_LIMIT_MAX` cap is always enforced in DriveTask before transmit.
-3. SBUS-safe boot default (`sbusSignalLost=true`) is preserved.
-4. Estop is latching and must not auto-clear.
-5. TWDT reset recovery sets estop on boot.
-6. No `portMAX_DELAY` in real-time control loops.
-
-## Runtime Contracts
-
-- RC input modes: `standard_pwm`, `single_sbus`, `dual_sbus`
-- Default intent parity:
-  - `single_sbus` + `standard_pwm`: CH1 speed, CH2 steer, CH3 dome,
-    CH4 ARM1 trigger, CH5 ARM2 trigger, CH6 AUX/sound
-  - `dual_sbus`: RX1 CH1/CH2/CH8 for drive + speed-limit, RX2 CH1 dome;
-    remaining RX2 channels configurable
-- RC bindings/calibration must be NVS-backed and editable from webpage
-- RC mapping UX must remain modern/responsive: source badges, inline validation,
-  live mapped preview, explicit apply/save feedback
-
-
 ## Action Registry
 
 All robot actions, API endpoints, SSE events, and RC-bindable targets are defined in
 `docs/action-registry.yaml`. That file is the source of truth for naming and the
 authoritative reference when adding, renaming, or cross-referencing any action.
-
-### Naming convention
-
-  {domain}.{type}.{verb-noun}     e.g.  sound.action.play-track
-                                        drive.action.move
-                                        system.action.estop
-
-  Domains:  drive | dome | sound | servo | system | rc
-  Types:    action (command/intent) | status (observable state) |
-            event (SSE) | config (NVS-backed setting)
-  Format:   dots between structural segments; kebab-case within segments
-
-### audio <-> sound naming boundary
-
-  - Registry names, display labels, web UI copy: use "sound"
-  - C++ symbols (enums, class names, file names): use "audio"
-    Rationale: the Arduino/IDF library layer uses "audio"; renaming C++ symbols
-    would diverge from the library vocabulary without user-visible benefit.
-
-### C++ bindable-action enum
-
-  `RobotActionId` in `include/rc_mapping.h` is the C++ form of the bindable-action
-  subset of the registry (entries with cpp_file: include/rc_mapping.h).
-  Values follow DOMAIN_ACTION_VERB_NOUN: DRIVE_ACTION_SPEED, SERVO_ACTION_ARM1_TOGGLE.
-
-When adding a new bindable action:
-1. Add the YAML entry to docs/action-registry.yaml.
-2. Add the enum value to RobotActionId in include/rc_mapping.h.
-3. Add the ActionEntry row to ACTION_REGISTRY[] in include/action_registry.h.
-4. Add dispatch handling in src/tasks/rc_input.cpp.
-5. Run `make check-action-drift` to verify YAML metadata, C++ token mapping,
-   runtime registry rows, and the RC page fallback list remain aligned. This is
-   a drift checker only; it must not generate or rewrite source files.
-
-### Runtime registry
-
-  `GET /api/actions` returns all bindable actions as JSON (id, name, display_name,
-  domain, description, safety_critical). The RC mapping UI uses this to build
-  action dropdowns dynamically — do not hardcode action lists in the frontend.
-
-### What NOT to do
-
-  - Do not introduce a new action, command type, or RC target without a registry entry.
-  - Do not use ad-hoc names (soft_uart, manual_command, MC_*-style prefixes) for
-    symbols that represent user-visible actions — derive the symbol from the registry name.
-  - Do not rename NVS keys to match registry names — migration cost outweighs gain.
-    Document the nvs_key mapping in the registry entry instead.
-
 
 ## Architecture Guardrails
 
@@ -273,53 +136,6 @@ For non-trivial tasks:
   - inspect changed files
   - run relevant checks
 4. Iterate until acceptance + verification both pass
-
-### Regression Debug Mode (Iterate, Commit, Fail Fast)
-
-Use this mode by default for parser/protocol regressions (for example T19 SBUS).
-
-1. Start from latest known-good baseline + one clear hypothesis
-2. Apply the smallest change that tests only that hypothesis
-3. Run the fastest relevant verification immediately (build/tests + targeted runtime probe)
-4. If pass, commit the slice immediately with the observed effect
-5. If fail, stop, capture evidence, and switch to the next single hypothesis
-
-Rules:
-- **Diff-first**: before forming any hypothesis or writing any code, run
-  `git diff <last-known-good-sha> -- <relevant-files>` and read the diff.
-  Do not theorize from memory — compare against a concrete baseline.
-- One hypothesis per iteration; do not stack multiple parser changes in one slice.
-- Prefer 10-30 minute loops over long speculative analysis rounds.
-- After two failed iterations without new evidence, pause and require new telemetry before further edits.
-- Keep each commit reversible and scoped to one mechanism (timing, alignment, calibration, telemetry, etc.).
-- Preserve safety invariants and do not bypass watchdog/failsafe gates as a workaround.
-- Do not retry previously rejected mechanisms unless new telemetry directly contradicts the original rejection evidence.
-- Maintain an explicit rejected-approaches list in the active task notes; treat that list as blocked scope for future micro-iterations.
-
-Mandatory test-effort policy for this mode:
-- Precedence: while Regression Debug Mode is active, this policy overrides generic guidance that might otherwise imply test authoring/updates on every small code change.
-- Do not require new/updated tests for every micro-iteration during active regression troubleshooting.
-- Each micro-iteration must still run the fastest relevant verification check (targeted existing test, focused build, or runtime probe).
-- Add or update tests when a fix is confirmed and committed, when a larger feature/task slice is completed, or when safety-critical behavior changes.
-- For larger feature implementations, tests and coverage updates are required before marking the task complete.
-- If two iterations fail without new telemetry, stop expanding tests and gather fresh runtime evidence first.
-
-Parallelization rules:
-
-- Parallelize only independent tasks with no file/contract conflicts
-- Run sequentially when tasks share modules, APIs, or safety-critical state
-
-Clarification policy:
-
-- Ask concise multi-choice questions only when ambiguity materially affects
-  correctness/safety/design
-- If multiple valid interpretations exist, present them — do not pick silently
-- For minor details, state assumptions and proceed
-- **Always use the tool's structured ask/questions mechanism** (e.g. `vscode_askQuestions`,
-  `ask_followup_question`, or equivalent) when posing choices to the user — never
-  print lettered/numbered option lists ("A:", "B:", "1.", "2.") in plain text and
-  expect a typed reply. Structured questions surface as native UI pickers; plain-text
-  lists force the user to type manually and break the interaction contract.
 
 ### Subagent Orchestration Policy
 
@@ -353,95 +169,61 @@ Delegation cues (auto-routing hints):
 
 ### Quick reference
 
-### OTA — standard in-PCB flash path (preferred)
+Running bare `make` launches the interactive deploy wizard (`tools/deploy.py`) — the
+recommended path for day-to-day flashing. It guides build environment selection,
+port/IP entry, and runs the upload gate automatically.
+
+Named targets for scripted or power-user use (all run `pio test -e native` first
+unless noted):
+
 ```bash
-pio run -e protoArtoo_ota --target upload    # firmware
-pio run -e protoArtoo_ota --target uploadfs  # filesystem (LittleFS web UI)
+make flash                          # USB firmware — default build, /dev/ttyUSB0
+make ota                            # OTA firmware — default build, artoo.local
+make uploadfs                       # OTA filesystem (LittleFS web UI) — no test gate
+
+make flash-chirp                    # USB — CHIRP audio build
+make ota-chirp                      # OTA — CHIRP audio build
+make ota-mp3trigger                 # OTA — MP3 Trigger build
+
+make flash-monitor                  # USB flash + capture boot log until "init complete"
+make flash-chirp-monitor            # USB CHIRP flash + boot log capture
 ```
-- `protoArtoo_ota` defaults to `upload_port = artoo.local` (mDNS host).
-- Override with `--upload-port <host-or-ip>`. Do **not** use `192.168.4.1` (AP IP) by default.
+
+**Overrides** (CLI or `user.mk` for persistence):
+```bash
+make ota OTA_IP=10.0.0.22           # use IP when mDNS is unavailable
+make flash UPLOAD_PORT=/dev/ttyUSB1
+make ota BUILD_ENV=protoArtoo_chirp # override build env
+```
+
 - ArduinoOTA starts automatically on Core 0 when WiFi comes up (port 3232).
-
-### USB flash
-```bash
-pio run -e protoArtoo --target upload --upload-port /dev/ttyUSB0
-```
-
-### Web UI OTA
-- Firmware: `POST /upload/firmware` — filesystem: `POST /upload/filesystem`
-- Both available on the Firmware page (`/firmware.html`).
-
-### Build Commands (Quick Reference)
-```bash
-pio run -e protoArtoo           # compile firmware
-pio run -e protoArtoo -t upload # USB flash (auto-reset, no button needed)
-pio run -e protoArtoo_ota -t upload    # OTA firmware (in-PCB, artoo.local)
-```
-
-Detailed flashing troubleshooting and transport notes live in
-`tasks/lessons.md` and `docs/pin_map.md`.
+- Do **not** use `192.168.4.1` (AP IP) as `OTA_IP` by default.
 
 ## Verification and Reporting
 
-Before marking complete (as applicable):
+Before marking complete: `make build` → `make test`. Add `make check-action-drift`
+when action registry, RC tokens, or `ACTION_REGISTRY[]` changed. `make test` is also
+enforced automatically by `make flash` and `make ota`.
 
-1. `pio run -e protoArtoo`
-2. `pio test -e native`
-3. `pio check`
-4. Hardware checks for hardware-touching behavior
+`make check` (cppcheck) is slow — CI runs it on every PR automatically. Only run it
+locally when specifically investigating a static analysis issue.
 
-**Upload gate:** `pio test -e native` MUST pass and all tests must be green before
-issuing any `upload` or `uploadfs` command. A compile-only build does not qualify
-as a pre-upload verification step.
+**CI gate:** `verification` workflow runs on every PR to `main` — do not bypass it.
 
-**JSON response test rule:** Any function that builds a JSON API response — whether
-via `snprintf` into a fixed buffer or via `JsonDocument` — MUST have a corresponding
-native test covering the typical case and confirming the serialized output fits within
-its intended size budget.
+**JSON API test rule:** Every JSON API response builder needs a native test covering
+the typical case and confirming the output fits its size budget.
 
-**Static analysis suppression rule:** Any `pio check` suppression or analysis-only build flag (for example in `platformio.ini`) MUST include an adjacent inline comment that explains why it is needed and how its scope is constrained. Prefer file-targeted suppressions over global suppressions.
+Classify verification status explicitly — use only these labels:
 
-Always classify verification status explicitly:
+- `software-verified` — build/tests/checks passed; no upload implied
+- `controller-upload-verified` — flashed to ESP32 controller; smoke checks passed
+- `full-hardware-verified` — verified on integrated droid hardware
+- `partial` — some evidence exists; controller or hardware checks still open
+- `full-hardware-required` — physical hardware needed before closure
 
-- `software-verified`: build, native tests, static checks, browser/static checks,
-  or code review passed. No ESP32 upload is implied.
-- `controller-upload-verified`: firmware or filesystem was uploaded to an ESP32
-  controller on the bench and basic runtime, API, browser, serial, or connected-
-  module smoke checks passed.
-- `full-hardware-verified`: behavior was verified on the integrated droid
-  hardware for the affected subsystem.
-- `partial`: some evidence exists, but required controller or hardware checks are
-  still open.
-- `full-hardware-required`: physical hardware is required before the item can be
-  closed.
+Never use "bench verified" or "bench-tested" — too ambiguous. Public docs use plain
+evidence phrases ("Automated checks are passing", "Tested on an ESP32 controller").
 
-Do not use "bench verified" or "bench-tested" as a verification status; it is too
-ambiguous and has previously been used for both automated checks and actual ESP32
-bench operation.
-
-If hardware validation is deferred, record blockers and closure checklist in
-planning/status docs.
-
-Public docs (`docs/status.md`, `docs/goal.md`, README-facing release notes) should
-not expose the internal labels directly. Use short evidence phrases instead, such
-as "Automated checks are passing", "Tested on an ESP32 controller", or "Tested on
-the complete droid hardware".
-
-## Web/UI Target Platform
-
-The web UI targets **PC desktop first, tablet second.**
-Small-screen mobile phone support is explicitly out of scope.
-
-- Do NOT constrain layout, component size, whitespace, or information density to
-  accommodate narrow phone viewports.
-- Do NOT add mobile-first breakpoints, collapse menus for small screens, or
-  reduce functionality to fit a phone form factor.
-- Minimum supported viewport is a modern tablet in landscape (~1024 px wide).
-  Any responsive behavior below that is unintentional and should not be defended.
-- The operator uses this UI seated at a PC or with a tablet on a bench — design
-  for that context: data-dense, direct controls, no large-tap-target padding.
-- If a CSS framework or snippet introduces mobile-first defaults that compromise
-  the desktop layout, override them — do not accept the mobile-first default.
 
 ## Web/UI Copy Rules
 
@@ -451,24 +233,13 @@ Small-screen mobile phone support is explicitly out of scope.
 
 ## Change Hygiene
 
-- Use smallest safe change that solves the task
-- Every changed line should trace directly to the user's request; if it can't, remove it
-- When your changes leave orphaned imports, variables, or functions unused, remove them;
-  do not remove pre-existing dead code unless asked
-- Preserve existing patterns unless a change is required for correctness/safety
-- Avoid broad refactors during targeted fixes
-- Preserve useful code comments by default. Do not remove inline/function/file
-  comments just to reduce verbosity.
-- Remove/update comments only when they are factually incorrect, stale after a
-  code change, or duplicated by clearer nearby documentation.
-- LSP/lint fixes (for example `forEach` callback return style or symbol
-  redeclaration warnings) must be resolved by changing the flagged code, not by
-  deleting nearby comments.
+- Write proper, quality code — not quick fixes. If the right solution is larger, do it right.
+- Clean up after yourself: remove orphaned imports, variables, and functions your changes leave unused.
+  Do not remove pre-existing dead code unless asked.
+- Preserve useful code comments. Remove or update them only when factually incorrect,
+  stale after a code change, or duplicated by clearer nearby documentation.
+- LSP/lint fixes must be resolved by changing the flagged code, not by deleting nearby comments.
 
-## Git Workflow
-
-All development from Phase v0.4.0 onward follows the phase-branch model
-defined in `tasks/dev-workflow-change-spec.md`. The canonical rules:
 
 ### Branch model
 
