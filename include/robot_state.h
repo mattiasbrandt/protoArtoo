@@ -39,6 +39,7 @@ enum CommandSource : uint8_t {
     SRC_SBUS,      // RC transmitter via SBUS receiver
     SRC_WEB_API,   // Browser / REST API
     SRC_INTERNAL,  // Internal (safety zeroing, boot defaults)
+    SRC_SEQ,       // Sequence coordinator (SequenceDispatcherTask)
 };
 
 inline const char* commandSourceToString(CommandSource src) {
@@ -49,6 +50,8 @@ inline const char* commandSourceToString(CommandSource src) {
             return "WEB";
         case SRC_INTERNAL:
             return "INT";
+        case SRC_SEQ:
+            return "SEQ";
         default:
             return "?";
     }
@@ -238,6 +241,7 @@ extern QueueHandle_t servoCmdQueue;
 extern QueueHandle_t domeCmdQueue;
 extern QueueHandle_t audioCmdQueue;
 extern QueueHandle_t domeTxQueue;
+extern QueueHandle_t sequenceQueue;
 // -----------------------------------------------------------------------------
 // Helper function declarations (defined in main.cpp or a dedicated helpers.cpp)
 // -----------------------------------------------------------------------------
