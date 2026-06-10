@@ -125,6 +125,7 @@ void configSnapshotDefaults(ConfigSnapshot* snap) {
     snap->audio.snd_doodoo = 0;
     snap->audio.snd_failure = 0;
     snap->audio.snd_disco = 0;
+    snap->audio.snd_happy = AUDIO_TRACK_HAPPY;
     snap->audio.snd_mahna = 0;
     snap->audio.snd_inlove = 0;
     snap->audio.snd_macho = 0;

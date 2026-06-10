@@ -293,6 +293,7 @@ static const char* chirpBindingKeyForSlot(AudioPlaybackSlot slot) {
         case AUDIO_SLOT_NAMED_CANTINA_L: return "chr_cantina_l";
         case AUDIO_SLOT_NAMED_STARTUP: return "chr_startup";
         case AUDIO_SLOT_NAMED_DISCO: return "chr_disco";
+        case AUDIO_SLOT_NAMED_HAPPY: return "chr_happy";
         case AUDIO_SLOT_SYS_BOOT: return "chr_sys_boot";
         case AUDIO_SLOT_SYS_MODE_NORMAL: return "chr_sys_mode_n";
         case AUDIO_SLOT_SYS_MODE_SLOW: return "chr_sys_mode_s";
@@ -338,6 +339,7 @@ static void buildPlaybackConfig(const ConfigSnapshot& cfg, AudioPlaybackConfig* 
     out->slotTracks[AUDIO_SLOT_NAMED_CANTINA_L] = cfg.audio.snd_cantina_l;
     out->slotTracks[AUDIO_SLOT_NAMED_STARTUP] = cfg.audio.snd_startup;
     out->slotTracks[AUDIO_SLOT_NAMED_DISCO] = cfg.audio.snd_disco;
+    out->slotTracks[AUDIO_SLOT_NAMED_HAPPY] = cfg.audio.snd_happy;
     out->slotTracks[AUDIO_SLOT_SYS_BOOT] = cfg.audio.snd_sys_boot;
     out->slotTracks[AUDIO_SLOT_SYS_MODE_NORMAL] = cfg.audio.snd_sys_mode_n;
     out->slotTracks[AUDIO_SLOT_SYS_MODE_SLOW] = cfg.audio.snd_sys_mode_s;
@@ -379,6 +381,7 @@ static void buildNamedTracks(const AudioPlaybackConfig& playback, AudioNamedTrac
     out->cantina_l = playback.slotTracks[AUDIO_SLOT_NAMED_CANTINA_L];
     out->startup = playback.slotTracks[AUDIO_SLOT_NAMED_STARTUP];
     out->disco = playback.slotTracks[AUDIO_SLOT_NAMED_DISCO];
+    out->happy = playback.slotTracks[AUDIO_SLOT_NAMED_HAPPY];
 }
 
 static void readPlaybackConfig(AudioPlaybackConfig* playback, AudioNamedTracks* named = nullptr) {
@@ -404,6 +407,7 @@ static AudioPlaybackSlot slotForDollarCommand(const char* cmd) {
         case 'M': return AUDIO_SLOT_NAMED_IMP_MARCH;
         case 'B': return AUDIO_SLOT_NAMED_STARTUP;
         case 'D': return AUDIO_SLOT_NAMED_DISCO;
+        case 'H': return AUDIO_SLOT_NAMED_HAPPY;
         default:
             return AUDIO_SLOT_NONE;
     }

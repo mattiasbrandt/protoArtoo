@@ -431,7 +431,10 @@ static void processTriggerAction(RobotActionId target, const char* payload, bool
         }
     }
     if (res.domeTxCmd[0] != '\0') {
-        if (domeConnected()) {
+        if (strncmp(res.domeTxCmd, "DM:", 3) == 0) {
+            if (!sequenceStart(res.domeTxCmd, SRC_SBUS))
+                PA_LOG_WARN(TAG, "sequence start failed: %s", res.domeTxCmd);
+        } else if (domeConnected()) {
             if (!domeQueueTx(res.domeTxCmd)) {
                 PA_LOG_WARN(TAG, "dome tx queue full: %s", res.domeTxCmd);
             }

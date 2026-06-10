@@ -48,6 +48,7 @@ constexpr uint16_t AUDIO_TRACK_IMP_MARCH = 178;  // $M — Imperial March
 constexpr uint16_t AUDIO_TRACK_CANTINA_L = 180;  // $C — long Cantina
 constexpr uint16_t AUDIO_TRACK_STARTUP   = 255;  // $B — startup / boot sound
 constexpr uint16_t AUDIO_TRACK_DISCO     = 0;    // $D — disco (NVS snd_disco, 0=disabled)
+constexpr uint16_t AUDIO_TRACK_HAPPY     = 3;    // $H — happy/greeting clip (R2 community track 3 default)
 
 // Random playback pool defaults (NVS-configurable in T07)
 constexpr uint16_t AUDIO_RAND_TRACK_MIN   = 1;
@@ -87,6 +88,7 @@ struct AudioNamedTracks {
     uint16_t cantina_l = AUDIO_TRACK_CANTINA_L;
     uint16_t startup   = AUDIO_TRACK_STARTUP;
     uint16_t disco     = AUDIO_TRACK_DISCO;
+    uint16_t happy     = AUDIO_TRACK_HAPPY;
 };
 
 // -----------------------------------------------------------------------------

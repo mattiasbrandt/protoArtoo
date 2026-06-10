@@ -72,6 +72,7 @@ void deserializeAudio(const ConfigReader& r, AudioConfig* out, const AudioConfig
     out->snd_doodoo = r.readU16("snd_doodoo", def.snd_doodoo);
     out->snd_failure = r.readU16("snd_failure", def.snd_failure);
     out->snd_disco = r.readU16("snd_disco", def.snd_disco);
+    out->snd_happy = r.readU16("snd_happy", def.snd_happy);
     out->snd_mahna = r.readU16("snd_mahna", def.snd_mahna);
     out->snd_inlove = r.readU16("snd_inlove", def.snd_inlove);
     out->snd_macho = r.readU16("snd_macho", def.snd_macho);

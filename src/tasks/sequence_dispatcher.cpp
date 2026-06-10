@@ -39,7 +39,7 @@ static const SeqStep kVaderSteps[] = {
 // DM:HELLO — "Hello There" greeting (4 s).
 // Front and rear logic text, then a six-pulse P1 panel wave.
 static const SeqStep kHelloSteps[] = {
-    {   0, STEP_AUDIO,    FX_NONE,  "$3"              },  // happy/greeting clip
+    {   0, STEP_AUDIO,    FX_NONE,  "$H"              },  // happy/greeting clip
     {   0, STEP_DOME_CMD, FX_NONE,  "@1MHello There"  },  // front logic text
     {   0, STEP_DOME_CMD, FX_NONE,  "@3MGeneral Kenobi" },
     {   0, STEP_DOME_CMD, FX_NONE,  ":SM0,2200,150"   },  // P1 open
@@ -55,7 +55,7 @@ static const SeqStep kHelloSteps[] = {
 // DM:NOD — short acknowledgment: sound + logic text + P1 wave.
 // Demonstrates sound-to-motion sync from a single body clock (issue #2 § new sequence).
 static const SeqStep kNodSteps[] = {
-    {   0, STEP_AUDIO,    FX_NONE,  "$3"             },  // ack/happy clip
+    {   0, STEP_AUDIO,    FX_NONE,  "$H"             },  // ack/happy clip
     {   0, STEP_DOME_CMD, FX_NONE,  "@1MYes"         },  // logic text
     {   0, STEP_DOME_CMD, FX_NONE,  ":SM0,2200,150"  },  // P1 open
     { 150, STEP_DOME_CMD, FX_PANEL, ":SM0,800,150"   },  // P1 close
@@ -243,6 +243,7 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
     uint8_t              cursor    = 0;
     uint32_t             seqStart  = 0;
     uint8_t              activeFx  = 0;
+    bool                 prevEstop = false;
 
     while (true) {
         esp_task_wdt_reset();
@@ -290,6 +291,15 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
             active   = nullptr;
             activeFx = 0;
         }
+
+        // Estop-clear resync: when estop releases, return dome to a known safe state.
+        if (!estopActive && prevEstop) {
+            PA_LOG_INFO(TAG, "estop cleared — dome resync");
+            domeQueueTx(":CL00");
+            domeQueueTx("@0T1");
+            domeQueueTx("@0P1");
+        }
+        prevEstop = estopActive;
 
         // Advance cursor.
         if (active != nullptr) {

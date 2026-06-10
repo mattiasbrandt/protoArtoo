@@ -195,6 +195,7 @@ struct AudioConfig {
     uint16_t snd_doodoo;
     uint16_t snd_failure;
     uint16_t snd_disco;
+    uint16_t snd_happy;
     uint16_t snd_mahna;
     uint16_t snd_inlove;
     uint16_t snd_macho;
