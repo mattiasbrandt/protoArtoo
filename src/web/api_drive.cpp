@@ -23,6 +23,7 @@
 #include "dome_link.h"
 #include "dome_rx_parser.h"
 #include "failsafe_gate.h"
+#include "sequence_dispatcher.h"
 #include "mood.h"
 #include "logging.h"
 #include "robot_state.h"
@@ -354,7 +355,13 @@ void registerDriveRoutes(AsyncWebServer& server) {
                       "{\"ok\":false,\"error\":\"cmd too long (max 127)\"}");
             return;
         }
-        if (!domeQueueTx(raw.c_str())) {
+        if (strncmp(raw.c_str(), "DM:", 3) == 0) {
+            if (!sequenceStart(raw.c_str(), SRC_WEB_API)) {
+                req->send(503, "application/json",
+                          "{\"ok\":false,\"error\":\"sequence queue full\"}");
+                return;
+            }
+        } else if (!domeQueueTx(raw.c_str())) {
             req->send(503, "application/json",
                       "{\"ok\":false,\"error\":\"dome TX queue full or link not ready\"}");
             return;

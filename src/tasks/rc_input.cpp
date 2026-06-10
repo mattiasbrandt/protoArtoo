@@ -25,6 +25,7 @@
 #include <esp_task_wdt.h>
 
 #include "../../include/audio_task.h"
+#include "../../include/sequence_dispatcher.h"
 #include "../../include/config.h"
 #include "../../include/config_store.h"
 #include "../../include/dome_link.h"
@@ -331,7 +332,12 @@ static void dispatchProcessorOutput(const RcProcessorOutput& output, const RcMap
             }
         }
         if (res.domeTxCmd[0] != '\0') {
-            if (domeConnected()) {
+            if (strncmp(res.domeTxCmd, "DM:", 3) == 0) {
+                // DM:* — route through sequence choke point regardless of dome link state.
+                // sequenceStart() handles catalog, alias, and fallback dispatch.
+                if (!sequenceStart(res.domeTxCmd, SRC_SBUS))
+                    PA_LOG_WARN(TAG, "sequence start failed: %s", res.domeTxCmd);
+            } else if (domeConnected()) {
                 if (!domeQueueTx(res.domeTxCmd))
                     PA_LOG_WARN(TAG, "dome tx queue full: %s", res.domeTxCmd);
             }

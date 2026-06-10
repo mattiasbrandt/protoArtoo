@@ -25,6 +25,7 @@
 #include "rc_input.h"
 #include "robot_state.h"
 #include "safety.h"
+#include "sequence_dispatcher.h"
 #include "servo_task.h"
 #include "web_server.h"
 
@@ -245,6 +246,7 @@ void setup() {
     domeCmdQueue = xQueueCreate(8, sizeof(DomeCommand));
     audioCmdQueue = xQueueCreate(8, sizeof(AudioCommand));
     domeTxQueue = xQueueCreate(16, sizeof(DomeTxCmd));
+    sequenceDispatcherInit();
 
     // ServoTask owns LEDC hardware init and applies AUX LED channel skip policy.
     servoTaskInit();
@@ -287,6 +289,11 @@ void setup() {
     // HWM first-iteration: 476 B free — WARN path allocates 128 B format buffer +
     // printf; bumped to 3072 to ensure adequate headroom for all log paths.
     xTaskCreatePinnedToCore(safetyMonitorTask, "SafetyMonitor", 3072, nullptr, 2, nullptr, 0);
+
+    // SequenceDispatcherTask: Core 0 (non-RT) — body-side DM:* sequence coordinator.
+    // 10 ms tick. Dispatches to domeQueueTx / audioQueueDollar / domeCmdQueue.
+    // Core 0 keeps the 50 Hz safety loops on Core 1 unburdened (ADR 0004).
+    xTaskCreatePinnedToCore(sequenceDispatcherTask, "SeqDisp", 4096, nullptr, 3, nullptr, 0);
 
     // Restore last mood — audio component only.
     // - Dome link is not yet established at boot, so dome TX is intentionally skipped.
