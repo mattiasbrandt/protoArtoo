@@ -90,8 +90,8 @@
     0: "Idle 😐",
     10: "Quiet 🤐",
     11: "Full-Awake 😄",
-    13: "Mid-Awake 🙂",
-    14: "Awake+ ✨",
+    13: "Mid-Awake 😐",
+    14: "Awake+ 🤩",
   };
 
   const PILL_CLASS_MAP = {
@@ -217,15 +217,8 @@
       const safeDetail = escapeHtml(detail);
       let transportLine = "";
       if (key === "s3DomeCtrl" && payload.dome_link?.state === "connected") {
-        const transport = payload.dome_link?.transport;
-        const transportText = transport === "uart" ? "via UART (slip ring)"
-          : transport === "wifi" ? "via WiFi (fallback)"
-          : "";
-        if (transportText) {
-          transportLine = `<div class="desc mt-6">${escapeHtml(transportText)}</div>`;
-        }
         if (payload.dome_link?.uart_owned_by_dome === true) {
-          transportLine += `<div class="desc mt-6">${escapeHtml("UART2 owned by DomeLink")}</div>`;
+          transportLine = `<div class="desc mt-6">${escapeHtml("UART2 owned by DomeLink")}</div>`;
         }
       }
       if (key === "s2Sound" && entry?.rx_status === "blocked_by_dome_uart") {
