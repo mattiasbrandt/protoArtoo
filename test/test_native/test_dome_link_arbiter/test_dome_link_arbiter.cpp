@@ -4,6 +4,7 @@
 // Native timeline tests for the protoR2link Arbiter (ADR 0005).
 //
 // Slice 1 (issue #3): transport selection, probe cadence, and heartbeat gate.
+// Slice 2 (issue #4): sleep-sync state machine.
 // =============================================================================
 
 #include <unity.h>
@@ -15,14 +16,18 @@
 // =============================================================================
 
 static DomeLinkArbiterInputs makeInputs(uint32_t nowMs,
-                                        bool uartHbSeen   = false,
-                                        bool staConnected = false,
-                                        bool peerKnown    = false) {
+                                        bool uartHbSeen    = false,
+                                        bool staConnected  = false,
+                                        bool peerKnown     = false,
+                                        bool bodySleeping  = false,
+                                        bool domeConnected = false) {
     DomeLinkArbiterInputs in = {};
     in.nowMs             = nowMs;
     in.uartHeartbeatSeen = uartHbSeen;
     in.staConnected      = staConnected;
     in.peerKnown         = peerKnown;
+    in.bodySleeping      = bodySleeping;
+    in.domeConnected     = domeConnected;
     return in;
 }
 
@@ -200,12 +205,83 @@ void test_heartbeat_fires_at_1hz() {
 }
 
 // =============================================================================
+// Sleep-sync state machine (issue #4)
+// =============================================================================
+
+void test_sleep_sync_sent_on_first_connect_awake() {
+    DomeLinkArbiterState s = {};
+
+    // Dome connects while body is awake — SendWake fires.
+    DomeLinkArbiterActions a = domeLinkArbiterStep(
+        s, makeInputs(1000, true, false, false, /*sleeping=*/false, /*domeConn=*/true));
+    TEST_ASSERT_EQUAL_INT((int)SleepSyncAction::SendWake, (int)a.sleepSync);
+    TEST_ASSERT_TRUE(s.sleepSynced);
+    TEST_ASSERT_FALSE(s.lastSyncedSleepMode);
+
+    // Already synced — no re-send next tick.
+    a = domeLinkArbiterStep(s, makeInputs(1010, false, false, false, false, true));
+    TEST_ASSERT_EQUAL_INT((int)SleepSyncAction::None, (int)a.sleepSync);
+}
+
+void test_sleep_sync_sent_on_first_connect_sleeping() {
+    DomeLinkArbiterState s = {};
+
+    DomeLinkArbiterActions a = domeLinkArbiterStep(
+        s, makeInputs(1000, true, false, false, /*sleeping=*/true, /*domeConn=*/true));
+    TEST_ASSERT_EQUAL_INT((int)SleepSyncAction::SendSleep, (int)a.sleepSync);
+    TEST_ASSERT_TRUE(s.lastSyncedSleepMode);
+}
+
+void test_sleep_sync_resent_on_reconnect() {
+    DomeLinkArbiterState s = {};
+
+    // Connect and sync.
+    domeLinkArbiterStep(s, makeInputs(1000, true, false, false, false, true));
+    TEST_ASSERT_TRUE(s.sleepSynced);
+
+    // Disconnect — sleepSynced resets.
+    domeLinkArbiterStep(s, makeInputs(2000, false, false, false, false, /*domeConn=*/false));
+    TEST_ASSERT_FALSE(s.sleepSynced);
+
+    // Reconnect — sync fires again.
+    DomeLinkArbiterActions a = domeLinkArbiterStep(
+        s, makeInputs(3000, false, false, false, false, true));
+    TEST_ASSERT_EQUAL_INT((int)SleepSyncAction::SendWake, (int)a.sleepSync);
+}
+
+void test_sleep_sync_resent_on_mode_change() {
+    DomeLinkArbiterState s = {};
+
+    // Synced awake.
+    domeLinkArbiterStep(s, makeInputs(1000, true, false, false, false, true));
+
+    // Body goes to sleep — resend.
+    DomeLinkArbiterActions a = domeLinkArbiterStep(
+        s, makeInputs(2000, false, false, false, /*sleeping=*/true, true));
+    TEST_ASSERT_EQUAL_INT((int)SleepSyncAction::SendSleep, (int)a.sleepSync);
+    TEST_ASSERT_TRUE(s.lastSyncedSleepMode);
+
+    // Same mode next tick — no re-send.
+    a = domeLinkArbiterStep(s, makeInputs(3000, false, false, false, true, true));
+    TEST_ASSERT_EQUAL_INT((int)SleepSyncAction::None, (int)a.sleepSync);
+}
+
+void test_sleep_sync_not_sent_while_dome_disconnected() {
+    DomeLinkArbiterState s = {};
+
+    DomeLinkArbiterActions a = domeLinkArbiterStep(
+        s, makeInputs(1000, false, false, false, true, /*domeConn=*/false));
+    TEST_ASSERT_EQUAL_INT((int)SleepSyncAction::None, (int)a.sleepSync);
+}
+
+// =============================================================================
 // Test runner
 // =============================================================================
 
 int main() {
     UNITY_BEGIN();
 
+    // Slice 1 — transport selection + probe + heartbeat
     RUN_TEST(test_boot_grace_stays_uart_before_timeout);
     RUN_TEST(test_uart_steady_state_while_heartbeat_fresh);
     RUN_TEST(test_wifi_fallback_after_heartbeat_timeout);
@@ -215,6 +291,13 @@ int main() {
     RUN_TEST(test_probe_interval_repeats_after_30s);
     RUN_TEST(test_aphb_recovery_switches_back_to_uart);
     RUN_TEST(test_heartbeat_fires_at_1hz);
+
+    // Slice 2 — sleep-sync state machine
+    RUN_TEST(test_sleep_sync_sent_on_first_connect_awake);
+    RUN_TEST(test_sleep_sync_sent_on_first_connect_sleeping);
+    RUN_TEST(test_sleep_sync_resent_on_reconnect);
+    RUN_TEST(test_sleep_sync_resent_on_mode_change);
+    RUN_TEST(test_sleep_sync_not_sent_while_dome_disconnected);
 
     return UNITY_END();
 }

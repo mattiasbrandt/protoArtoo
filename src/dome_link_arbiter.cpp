@@ -1,8 +1,8 @@
 // =============================================================================
 // src/dome_link_arbiter.cpp
 //
-// protoR2link Arbiter — transport selection and probe cadence as a pure step
-// function over explicit state.
+// protoR2link Arbiter — transport selection, probe cadence, and sleep-sync
+// decisions as a pure step function over explicit state.
 //
 // See include/dome_link_arbiter.h and docs/adr/0005-protor2link-arbiter-
 // functional-core.md for design rationale.
@@ -44,12 +44,10 @@ DomeLinkArbiterActions domeLinkArbiterStep(DomeLinkArbiterState&        s,
         !uartFresh && !initialUartGrace && in.staConnected && in.peerKnown;
 
     if (!wantWifi) {
-        // UART primary path: boot grace, UART active, or heartbeat recovery.
         s.uartProbeWindowUntilMs = 0;
         a.acquireUart            = true;
         a.txRoute                = DOME_LINK_TRANSPORT_UART;
     } else {
-        // WiFi fallback path: manage the 30 s / 150 ms slip-ring probe cadence.
         if ((in.nowMs - s.lastUartProbeMs) >= kDomeLinkUartProbeIntervalMs) {
             s.lastUartProbeMs        = in.nowMs;
             s.uartProbeWindowUntilMs = in.nowMs + kDomeLinkUartProbeWindowMs;
@@ -57,7 +55,6 @@ DomeLinkArbiterActions domeLinkArbiterStep(DomeLinkArbiterState&        s,
             a.sendUartProbe          = true;
         } else if (s.uartProbeWindowUntilMs != 0 &&
                    (int32_t)(in.nowMs - s.uartProbeWindowUntilMs) >= 0) {
-            // Probe window expired — release UART back to audio RX.
             a.releaseUartToAudio     = true;
             s.uartProbeWindowUntilMs = 0;
         }
@@ -71,6 +68,23 @@ DomeLinkArbiterActions domeLinkArbiterStep(DomeLinkArbiterState&        s,
     if ((in.nowMs - s.lastHeartbeatTxMs) >= kDomeLinkHeartbeatIntervalMs) {
         s.lastHeartbeatTxMs = in.nowMs;
         a.sendHeartbeat     = true;
+    }
+
+    // -----------------------------------------------------------------------
+    // 4. Sleep-sync state machine
+    //
+    // Body sleep state is ground truth. Send #PASL/#PAWU on every fresh dome
+    // connect (sleepSynced resets on disconnect) and on sleep-mode change
+    // while connected. Polling avoids a stale #PASL firing on reconnect.
+    // -----------------------------------------------------------------------
+
+    if (!in.domeConnected) {
+        s.sleepSynced = false;
+    } else if (!s.sleepSynced || in.bodySleeping != s.lastSyncedSleepMode) {
+        a.sleepSync           = in.bodySleeping ? SleepSyncAction::SendSleep
+                                                : SleepSyncAction::SendWake;
+        s.sleepSynced         = true;
+        s.lastSyncedSleepMode = in.bodySleeping;
     }
 
     return a;
