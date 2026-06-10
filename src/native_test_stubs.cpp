@@ -61,5 +61,19 @@ void domeUartRelease(DomeUartOwner requester) {
         g_test_dome_uart_owner = DOME_UART_NONE;
     }
 }
+bool domeConnected() { return true; }
+
+// sequence_dispatcher.cpp needs domeQueueTx and audioQueueDollar.
+// No-op stubs: routing tests use sequenceLookup() directly and do not need
+// side-effect capture from these functions.
+bool domeQueueTx(const char* /*cmd*/) { return true; }
+
+#include "audio_task.h"
+bool audioQueueDollar(const char* /*cmd*/, CommandSource /*src*/) { return true; }
+
+// sequenceQueue — defined here so sequence_dispatcher.cpp can reference the
+// extern without main.cpp being in the native build.
+#include "sequence_dispatcher.h"
+QueueHandle_t sequenceQueue = nullptr;
 
 #endif
