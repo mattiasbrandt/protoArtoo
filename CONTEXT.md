@@ -90,6 +90,34 @@ _Avoid_: WiFi transport, primary WiFi, preferred WiFi
 The active transport (UART slip ring or WiFi fallback) must be surfaced to the operator in the main dashboard dome status badge and the protoR2link component panel. The transport field is available in the `/api/status` `dome_link.transport` response field.
 _Avoid_: logging-only transport indication, setup-page-only visibility
 
+**protoR2link Arbiter**:
+The body-side decision module that owns protoR2link transport selection: it promotes the UART slip ring, falls back to WiFi, schedules slip-ring probes, gates the heartbeat cadence, and decides sleep-sync sends. Pure logic — it consumes time and link-liveness inputs and emits transport actions; the concrete transports execute those actions. Named after the drive arbiter convention (a module that picks one winner among competing sources).
+_Avoid_: transport manager, link state machine, connection manager
+
+**DM:* Sequence**:
+A named, time-ordered choreography (for example DM:VADER, DM:CANTINA) that combines sound, dome rotation, body and dome panel motion, and dome light/logic effects under one timeline.
+_Avoid_: macro, script, dome animation (a dome animation is one effect inside a sequence, not the whole sequence)
+
+**Sequence Coordinator**:
+The body-side owner of DM:* choreography. It holds the sequence catalog, advances a non-blocking timing cursor, and dispatches each step to the correct effector at the correct time. The dome acts as a command executor for the steps routed to it.
+_Avoid_: dome sequencer, dome-side sequence player
+
+**Catalog Authority**:
+The principle that the body owns the DM:* namespace and definitions (which sequences exist, their names, routing, and timing) while execution stays split per the ownership table. Dome-intrinsic light, logic, and PSI animation stays dome-executed.
+_Avoid_: body owns all execution, dome owns the sequences
+
+**Suppression Window**:
+The interval during an active sequence in which the body holds its own idle-random behavior (random dome rotation and random audio) without changing those subsystems' configured modes. Replaces the dome's former seqon/seqoff signalling.
+_Avoid_: random disable, seqon/seqoff
+
+**Sequence Preemption**:
+The rule that a new DM:* request cancels the active sequence (with minimal safety cleanup) and starts the new one immediately. Estop always aborts.
+_Avoid_: queueing sequences, ignore-while-busy
+
+**Named Track (authoring)**:
+A canonical, config-backed sound role (the AudioNamedTracks namespace, for example scream, leia, cantina) used as the authoring surface for a sequence's sound steps, so a sequence references a sound by role and follows the operator's configured track number. The Marcduino $NNN and $-letter dialect stays valid at command boundaries for interoperability.
+_Avoid_: raw track-number authoring, dollar-command-only authoring
+
 ## Relationships
 
 - **Phase 5** can include work that is not yet covered by **Full Hardware Validation**.
@@ -100,6 +128,7 @@ _Avoid_: logging-only transport indication, setup-page-only visibility
 - The **v1.0.0 Release Boundary** allows deferred drive hardware validation only when the gap is clearly documented and not presented as complete integrated validation.
 - **Phase 5** closes immediately when `v1.0.0` is tagged; subsequent work moves to the normal branch/PR workflow.
 - After release, docs/chore/agent maintenance commits may land directly on `main`; firmware changes should still prefer PRs.
+- The **protoR2link Arbiter** decides when the **protoR2link Primary Transport** is promoted and when the **protoR2link Fallback Transport** carries traffic; the transports execute its actions but make no selection decisions of their own.
 - The **Release Validation Matrix** is the public form of deferred validation tracking for a tagged release.
 - The release matrix should split **Drive command and safety logic** from **Hoverboard motor integration**.
 - The release matrix should split **RC decoding and diagnostics** from **RC-to-action dispatch and live controls**.
