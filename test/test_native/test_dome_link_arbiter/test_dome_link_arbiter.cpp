@@ -281,6 +281,22 @@ void test_sleep_sync_not_sent_while_dome_disconnected() {
     TEST_ASSERT_EQUAL_INT((int)SleepSyncAction::None, (int)a.sleepSync);
 }
 
+void test_sleep_sync_not_resent_while_already_synced() {
+    DomeLinkArbiterState s = {};
+
+    // Connect and sync awake.
+    domeLinkArbiterStep(s, makeInputs(1000, true, false, false, false, true));
+    TEST_ASSERT_TRUE(s.sleepSynced);
+
+    // Same mode, still connected — no re-send on subsequent ticks.
+    DomeLinkArbiterActions a = domeLinkArbiterStep(
+        s, makeInputs(2000, false, false, false, false, true));
+    TEST_ASSERT_EQUAL_INT((int)SleepSyncAction::None, (int)a.sleepSync);
+
+    a = domeLinkArbiterStep(s, makeInputs(3000, false, false, false, false, true));
+    TEST_ASSERT_EQUAL_INT((int)SleepSyncAction::None, (int)a.sleepSync);
+}
+
 // =============================================================================
 // WiFi-fallback gating on UART boot contact (issue #5)
 //
@@ -298,10 +314,12 @@ void test_wifi_fallback_suppressed_after_uart_contact() {
 
     // UART goes stale at t=7000 (7000-1000=6000 > 5000 timeout).
     // WiFi peers available — fallback must be suppressed.
+    // sendHeartbeat verifies the arbiter continues probing via 1 Hz heartbeat.
     DomeLinkArbiterActions a = domeLinkArbiterStep(
         s, makeInputs(7000, false, /*sta=*/true, /*peer=*/true));
     TEST_ASSERT_EQUAL_INT(DOME_LINK_TRANSPORT_UART, (int)a.txRoute);
     TEST_ASSERT_TRUE(a.acquireUart);
+    TEST_ASSERT_TRUE(a.sendHeartbeat);
 }
 
 void test_wifi_fallback_allowed_when_uart_never_seen() {
@@ -354,6 +372,7 @@ int main() {
     // Slice 2 — sleep-sync state machine
     RUN_TEST(test_sleep_sync_sent_on_first_connect_awake);
     RUN_TEST(test_sleep_sync_sent_on_first_connect_sleeping);
+    RUN_TEST(test_sleep_sync_not_resent_while_already_synced);
     RUN_TEST(test_sleep_sync_resent_on_reconnect);
     RUN_TEST(test_sleep_sync_resent_on_mode_change);
     RUN_TEST(test_sleep_sync_not_sent_while_dome_disconnected);
