@@ -16,6 +16,7 @@
 
 #include "audio_rx_status.h"
 #include "config.h"
+#include "dome_link_transport.h"
 #include "drive_speed_preset.h"
 #include "rc_mapping.h"
 
@@ -57,12 +58,6 @@ enum RcInputMode : uint8_t {
     RC_INPUT_STANDARD_PWM = 0,
     RC_INPUT_SINGLE_SBUS,
     RC_INPUT_DUAL_SBUS,
-};
-
-enum DomeLinkTransport : uint8_t {
-    DOME_LINK_TRANSPORT_DISCONNECTED = 0,
-    DOME_LINK_TRANSPORT_UART,
-    DOME_LINK_TRANSPORT_WIFI,
 };
 
 enum DomeUartOwner : uint8_t {

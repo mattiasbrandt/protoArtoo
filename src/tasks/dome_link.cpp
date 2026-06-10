@@ -3,14 +3,19 @@
 //
 // DomeLinkTask — body-side protoR2link transport.
 //
+// This file is the imperative shell: it gathers inputs, calls
+// domeLinkArbiterStep(), and executes the returned actions through the
+// concrete transport functions below. All transport-selection policy
+// lives in dome_link_arbiter.cpp / include/dome_link_arbiter.h.
+//
 // Transport model:
 //   - Primary: UART2 over slip ring (GPIO 33 TX / GPIO 34 RX)
 //   - Fallback: WiFi (UDP heartbeat + HTTP command forwarding)
 //
 // UART2 ownership model:
 //   - UART transport active: DomeLinkTask owns UART2 on S3 pins.
-//   - WiFi transport active: UART2 is released/reconfigured for audio RX (GPIO 35)
-//     so audio status queries can reclaim the peripheral.
+//   - WiFi transport active: UART2 is released/reconfigured for audio RX
+//     (GPIO 35) so audio status queries can reclaim the peripheral.
 //
 // Real-time safety:
 //   - Non-blocking queue receive and bounded poll loop
@@ -31,6 +36,7 @@
 #include "config.h"
 #include "config_store.h"
 #include "dome_cue_handler.h"
+#include "dome_link_arbiter.h"
 #include "dome_link_encoding.h"
 #include "dome_rx_parser.h"
 #include "logging.h"
@@ -47,15 +53,11 @@ static IPAddress s_lastMdnsResolvedIp;
 
 namespace {
 
-constexpr uint16_t kDomeUdpPort = 4901;
-constexpr uint32_t kHeartbeatIntervalMs = 1000;
-constexpr uint32_t kHeartbeatTimeoutMs = 5000;
-constexpr uint32_t kUartProbeIntervalMs = 30000;
-constexpr uint32_t kUartProbeWindowMs = 150;
-constexpr uint32_t kMdnsRefreshMs = 5000;
-constexpr const char* kDomeMdnsHost = "astropixelsplus";
-constexpr const char* kDomeCmdEndpoint = "/api/cmd";
-constexpr uint8_t kRxBufLen = 64;
+constexpr uint16_t    kDomeUdpPort      = 4901;
+constexpr uint32_t    kMdnsRefreshMs    = 5000;
+constexpr const char* kDomeMdnsHost     = "astropixelsplus";
+constexpr const char* kDomeCmdEndpoint  = "/api/cmd";
+constexpr uint8_t     kRxBufLen         = 64;
 
 enum DomeRxSource : uint8_t {
     DOME_RX_UART = 0,
@@ -486,7 +488,7 @@ bool domeConnected() {
     taskENTER_CRITICAL(&robotStateMux);
     uint32_t lastSeen = robotState.domeLastSeenMs;
     taskEXIT_CRITICAL(&robotStateMux);
-    return lastSeen > 0 && (millis() - lastSeen) < kHeartbeatTimeoutMs;
+    return lastSeen > 0 && (millis() - lastSeen) < kDomeLinkHeartbeatTimeoutMs;
 }
 
 // -----------------------------------------------------------------------------
@@ -512,19 +514,17 @@ void domeLinkTask(void* pvParameters) {
     acquireDomeUart();
     setTransportState(DOME_LINK_TRANSPORT_UART);
 
-    uint32_t lastHeartbeatTxMs = 0;
-    uint32_t lastUartHeartbeatMs = 0;
-    uint32_t lastUartProbeMs = 0;
-    uint32_t uartProbeWindowUntilMs = 0;
-    uint32_t lastMdnsLookupMs = 0;
+    DomeLinkArbiterState arbiter    = {};
+    uint32_t lastUartHeartbeatMs    = 0;
+    uint32_t lastMdnsLookupMs       = 0;
+    DomeLinkTransport lastLoggedTransport = DOME_LINK_TRANSPORT_UART;
 
     IPAddress peerIp;
-    bool peerKnown = false;
-    bool peerManual = false;
-    bool udpReady = false;
-    bool sleepSynced = false;
+    bool peerKnown      = false;
+    bool peerManual     = false;
+    bool udpReady       = false;
+    bool sleepSynced    = false;
     bool lastSyncedSleepMode = false;
-    DomeLinkTransport lastLoggedTransport = DOME_LINK_TRANSPORT_UART;
 
     DomeTxCmd txCmd{};
 
@@ -542,14 +542,16 @@ void domeLinkTask(void* pvParameters) {
         peerKnown = resolveDomePeerIp(now, staConnected, peerKnown, &lastMdnsLookupMs, &peerIp,
                                       &peerManual);
 
+        const uint32_t prevUartHbMs = lastUartHeartbeatMs;
         processUartRx(now, &lastUartHeartbeatMs);
         if (udpReady) {
             processUdpRx(now, nullptr);
         }
 
+        // Dome sequence timeout watchdog — untouched; ADR 0004 replaces these.
         {
             taskENTER_CRITICAL(&robotStateMux);
-            bool seqActive  = robotState.domeSeqActive;
+            bool seqActive    = robotState.domeSeqActive;
             uint32_t seqUntil = robotState.domeSeqUntilMs;
             taskEXIT_CRITICAL(&robotStateMux);
             if (seqActive && (int32_t)(now - seqUntil) >= 0) {
@@ -562,60 +564,39 @@ void domeLinkTask(void* pvParameters) {
             }
         }
 
-        const bool uartFresh =
-            lastUartHeartbeatMs > 0 && (uint32_t)(now - lastUartHeartbeatMs) < kHeartbeatTimeoutMs;
-        const bool initialUartGrace =
-            lastUartHeartbeatMs == 0 && (uint32_t)now < kHeartbeatTimeoutMs;
+        // Gather arbiter inputs and step.
+        DomeLinkArbiterInputs inp = {};
+        inp.nowMs             = now;
+        inp.uartHeartbeatSeen = (lastUartHeartbeatMs != prevUartHbMs);
+        inp.staConnected      = staConnected;
+        inp.peerKnown         = peerKnown;
 
-        // KNOWN DEVIATION: UART is intended as the primary transport (slip ring present),
-        // WiFi as fallback only when the dome is not physically wired. In practice the
-        // 5-second UART timeout causes WiFi to become the steady-state transport whenever
-        // both peers are on the same network. Accepted for v1.0.0; a cleaner model would
-        // gate WiFi fallback on UART never having established contact on this boot.
-        DomeLinkTransport desiredTransport = DOME_LINK_TRANSPORT_UART;
-        if (!uartFresh && !initialUartGrace && staConnected && peerKnown) {
-            desiredTransport = DOME_LINK_TRANSPORT_WIFI;
-        }
+        DomeLinkArbiterActions act = domeLinkArbiterStep(arbiter, inp);
 
-        if (desiredTransport == DOME_LINK_TRANSPORT_UART) {
-            uartProbeWindowUntilMs = 0;
+        // Execute transport actions.
+        if (act.acquireUart) {
             acquireDomeUart();
-        } else {
-            if ((uint32_t)(now - lastUartProbeMs) >= kUartProbeIntervalMs) {
-                lastUartProbeMs = now;
-                if (acquireDomeUart()) {
-                    uartProbeWindowUntilMs = now + kUartProbeWindowMs;
-                    // Send one #PAHB to trigger an #APHB response from the dome.
-                    // The dome only sends #APHB on its active transport, so a passive
-                    // RX-only probe never sees anything while the dome is on WiFi.
-                    s_domeSerial.print(MD_BODY_HB);
-                    PA_LOG_DEBUG(TAG, "UART probe: sent #PAHB, waiting %u ms for #APHB",
-                                 (unsigned)kUartProbeWindowMs);
-                }
-            }
-
-            if (uartFresh) {
-                desiredTransport = DOME_LINK_TRANSPORT_UART;
-                uartProbeWindowUntilMs = 0;
-            } else if (s_uartOwned && uartProbeWindowUntilMs != 0 &&
-                       (int32_t)(now - uartProbeWindowUntilMs) >= 0) {
-                releaseUartToAudioRx();
-                uartProbeWindowUntilMs = 0;
-            }
+        }
+        if (act.sendUartProbe) {
+            s_domeSerial.print(MD_BODY_HB);
+            PA_LOG_DEBUG(TAG, "UART probe: sent #PAHB, waiting %u ms for #APHB",
+                         (unsigned)kDomeLinkUartProbeWindowMs);
+        }
+        if (act.releaseUartToAudio) {
+            releaseUartToAudioRx();
         }
 
-        setTransportState(desiredTransport);
-
-        if (desiredTransport == DOME_LINK_TRANSPORT_WIFI &&
+        setTransportState(act.txRoute);
+        if (act.txRoute == DOME_LINK_TRANSPORT_WIFI &&
             lastLoggedTransport != DOME_LINK_TRANSPORT_WIFI) {
             PA_LOG_INFO(TAG, "transport fallback: UART unavailable, using WiFi UDP to %u.%u.%u.%u",
                         (unsigned)peerIp[0], (unsigned)peerIp[1],
                         (unsigned)peerIp[2], (unsigned)peerIp[3]);
-        } else if (desiredTransport == DOME_LINK_TRANSPORT_UART &&
+        } else if (act.txRoute == DOME_LINK_TRANSPORT_UART &&
                    lastLoggedTransport == DOME_LINK_TRANSPORT_WIFI) {
             PA_LOG_INFO(TAG, "transport recovery: UART heartbeat restored, switching from WiFi UDP");
         }
-        lastLoggedTransport = desiredTransport;
+        lastLoggedTransport = act.txRoute;
 
         // Sleep state sync: current body sleep state is ground truth.
         // Send #PASL/#PAWU on every connect (sleepSynced resets on disconnect)
@@ -631,16 +612,16 @@ void domeLinkTask(void* pvParameters) {
                 taskEXIT_CRITICAL(&robotStateMux);
 
                 if (!sleepSynced || bodySleeping != lastSyncedSleepMode) {
-                    const char* cmd = bodySleeping ? MD_BODY_SLEEP : MD_BODY_WAKE;
+                    const char* sleepCmd = bodySleeping ? MD_BODY_SLEEP : MD_BODY_WAKE;
                     bool sent = false;
 
-                    if (desiredTransport == DOME_LINK_TRANSPORT_UART && s_uartOwned) {
-                        s_domeSerial.print(cmd);
+                    if (act.txRoute == DOME_LINK_TRANSPORT_UART && s_uartOwned) {
+                        s_domeSerial.print(sleepCmd);
                         sent = true;
                         PA_LOG_INFO(TAG, "TX UART sleep sync: %s", bodySleeping ? "sleep" : "wake");
-                    } else if (desiredTransport == DOME_LINK_TRANSPORT_WIFI && staConnected &&
+                    } else if (act.txRoute == DOME_LINK_TRANSPORT_WIFI && staConnected &&
                                peerKnown) {
-                        sent = sendCommandOverWifi(peerIp, cmd);
+                        sent = sendCommandOverWifi(peerIp, sleepCmd);
                         if (sent) {
                             PA_LOG_INFO(TAG, "TX WiFi sleep sync (%s): %s",
                                         peerManual ? "manual-ip" : "mdns",
@@ -656,30 +637,28 @@ void domeLinkTask(void* pvParameters) {
             }
         }
 
+        // Queue drain.
         while (xQueueReceive(domeTxQueue, &txCmd, 0) == pdTRUE) {
-            if (desiredTransport == DOME_LINK_TRANSPORT_UART && s_uartOwned) {
+            if (act.txRoute == DOME_LINK_TRANSPORT_UART && s_uartOwned) {
                 s_domeSerial.print(txCmd.buf);
                 s_domeSerial.print('\r');
                 PA_LOG_DEBUG(TAG, "TX UART: %s", txCmd.buf);
                 continue;
             }
-
-            if (desiredTransport == DOME_LINK_TRANSPORT_WIFI && staConnected && peerKnown) {
+            if (act.txRoute == DOME_LINK_TRANSPORT_WIFI && staConnected && peerKnown) {
                 sendCommandOverWifi(peerIp, txCmd.buf);
                 continue;
             }
-
             PA_LOG_WARN(TAG, "TX dropped (no active transport): %s", txCmd.buf);
         }
 
-        if ((uint32_t)(now - lastHeartbeatTxMs) >= kHeartbeatIntervalMs) {
-            lastHeartbeatTxMs = now;
-
-            if (desiredTransport == DOME_LINK_TRANSPORT_UART && s_uartOwned) {
+        // Heartbeat TX.
+        if (act.sendHeartbeat) {
+            if (act.txRoute == DOME_LINK_TRANSPORT_UART && s_uartOwned) {
                 s_domeSerial.print(MD_BODY_HB);
                 incrementBodyHeartbeatTx();
                 PA_LOG_DEBUG(TAG, "TX UART heartbeat");
-            } else if (desiredTransport == DOME_LINK_TRANSPORT_WIFI && staConnected && peerKnown) {
+            } else if (act.txRoute == DOME_LINK_TRANSPORT_WIFI && staConnected && peerKnown) {
                 if (sendHeartbeatOverUdp(peerIp)) {
                     incrementBodyHeartbeatTx();
                     PA_LOG_DEBUG(TAG, "TX WiFi heartbeat (%s)", peerManual ? "manual-ip" : "mdns");
