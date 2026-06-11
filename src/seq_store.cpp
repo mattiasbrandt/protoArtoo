@@ -47,14 +47,12 @@ static ProtocolCheckResult sfail(const char* field, const char* msg) {
 }
 
 // "DM:MYSEQ" -> "/seq/DM_MYSEQ.json". Returns false if name is implausible.
+// File-name mapping is the pure seqStoreNameToFile(); this prefixes the dir.
 static bool nameToPath(const char* name, char* out, size_t cap) {
-    if (name == nullptr || strncmp(name, "DM:", 3) != 0) return false;
-    int n = snprintf(out, cap, "%s/%s.json", SEQ_DIR, name);
-    if (n <= 0 || (size_t)n >= cap) return false;
-    for (size_t i = 0; out[i] != '\0'; ++i) {
-        if (out[i] == ':') out[i] = '_';
-    }
-    return true;
+    char file[40];
+    if (!seqStoreNameToFile(name, file, sizeof(file))) return false;
+    int n = snprintf(out, cap, "%s/%s", SEQ_DIR, file);
+    return n > 0 && (size_t)n < cap;
 }
 
 static bool lock() {
@@ -230,21 +228,13 @@ ProtocolCheckResult seqStoreSave(const char* json, size_t len) {
 
     // Capacity: 16-file cap (new names only), per-file size, free-space floor.
     const bool isNew = (seqStoreIndexFind(d.name) == nullptr);
-    if (isNew && seqStoreIndexCount() >= SEQ_STORE_MAX) {
+    const size_t freeBytes = LittleFS.totalBytes() - LittleFS.usedBytes();
+    ProtocolCheckResult cap =
+        seqStoreCapacityCheck(isNew, seqStoreIndexCount(), len, freeBytes);
+    if (!cap.ok) {
         unlock();
         free(tmp);
-        return sfail("name", "store full (16 sequences max)");
-    }
-    if (len > SEQ_FILE_MAX_BYTES) {
-        unlock();
-        free(tmp);
-        return sfail("json", "file too large (12 KB max)");
-    }
-    size_t freeBytes = LittleFS.totalBytes() - LittleFS.usedBytes();
-    if (freeBytes < SEQ_FS_FREE_FLOOR + len) {
-        unlock();
-        free(tmp);
-        return sfail("json", "insufficient filesystem space");
+        return cap;
     }
 
     // Capture meta before we drop the transient buffer; then write temp+rename.

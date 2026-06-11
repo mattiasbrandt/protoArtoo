@@ -24,13 +24,10 @@
 #include <stdint.h>
 
 #include "protocol_check.h"   // ProtocolCheckResult
+#include "seq_store_util.h"    // SEQ_FILE_MAX_BYTES, SEQ_FS_FREE_FLOOR, helpers
 #include "sequence_engine.h"  // SequenceEntry
 
 class Print;  // Arduino print target (seqStoreStreamFile); full def in the .cpp
-
-// Capacity guards (issue #2 grill decision 5).
-static const size_t SEQ_FILE_MAX_BYTES = 12 * 1024;   // per-file cap
-static const size_t SEQ_FS_FREE_FLOOR  = 24 * 1024;   // LittleFS free-space floor
 
 // Mount LittleFS (idempotent), ensure /seq exists, and index every valid
 // Learned Sequence file. Invalid files are skipped with a warning. Call once at
