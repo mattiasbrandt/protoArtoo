@@ -26,6 +26,8 @@
 #include "protocol_check.h"   // ProtocolCheckResult
 #include "sequence_engine.h"  // SequenceEntry
 
+class Print;  // Arduino print target (seqStoreStreamFile); full def in the .cpp
+
 // Capacity guards (issue #2 grill decision 5).
 static const size_t SEQ_FILE_MAX_BYTES = 12 * 1024;   // per-file cap
 static const size_t SEQ_FS_FREE_FLOOR  = 24 * 1024;   // LittleFS free-space floor
@@ -50,3 +52,7 @@ ProtocolCheckResult seqStoreSave(const char* json, size_t len);
 // Delete a Learned Sequence and its index entry (Memory Wipe). Returns true if
 // a file/entry was removed.
 bool seqStoreDelete(const char* name);
+
+// Stream a Learned Sequence file's raw JSON to `out` (GET /api/seq?name=).
+// Returns false if the name is not indexed or the file is missing.
+bool seqStoreStreamFile(const char* name, Print& out);

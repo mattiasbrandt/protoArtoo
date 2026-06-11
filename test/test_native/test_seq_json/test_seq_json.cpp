@@ -251,6 +251,43 @@ static void test_audiocat_roundtrip() {
 }
 
 // -----------------------------------------------------------------------------
+// Catalog iteration + /builtins serialization
+// -----------------------------------------------------------------------------
+static void test_catalog_iteration_bounds() {
+    uint8_t n = sequenceCatalogCount();
+    TEST_ASSERT_GREATER_THAN(0, n);
+    TEST_ASSERT_NOT_NULL(sequenceCatalogAt(0));
+    TEST_ASSERT_NOT_NULL(sequenceCatalogAt((uint8_t)(n - 1)));
+    TEST_ASSERT_NULL(sequenceCatalogAt(n));
+}
+
+static void test_all_builtins_serialize_and_reparse() {
+    // Every factory entry must serialize to valid JSON v1 that parses back to the
+    // same name and step count (proves GET /api/seq/builtins yields clonable
+    // editor starting points). NOTE: factory tables are the PR-reviewed expert
+    // surface and are intentionally exempt from Protocol Check's meta rules
+    // (e.g. DM:ROCKMARCH authors STEP_END 300 ms past its suppress window); a
+    // *cloned* copy is Protocol-Checked on save, which is where suppress>=end is
+    // enforced. So this asserts parse fidelity + per-branch validity, not meta.
+    uint8_t n = sequenceCatalogCount();
+    char json[8192];
+    for (uint8_t i = 0; i < n; ++i) {
+        const SequenceEntry* e = sequenceCatalogAt(i);
+        TEST_ASSERT_NOT_NULL(e);
+        size_t w = seqJsonSerialize(*e, "factory", json, sizeof(json));
+        TEST_ASSERT_GREATER_THAN_MESSAGE(0, w, e->name);
+        SeqDraft d;
+        ProtocolCheckResult r = seqJsonParse(json, gSteps, 96, gClose, 96, d);
+        TEST_ASSERT_TRUE_MESSAGE(r.ok, e->name);
+        TEST_ASSERT_EQUAL_STRING(e->name, d.name);
+        TEST_ASSERT_EQUAL_UINT8(e->stepCount, d.stepCount);
+        // Per-branch structure/commands must validate (meta rules excluded).
+        r = protocolCheckBranch("steps", d.steps, d.stepCount);
+        TEST_ASSERT_TRUE_MESSAGE(r.ok, r.message);
+    }
+}
+
+// -----------------------------------------------------------------------------
 int main(int /*argc*/, char** /*argv*/) {
     UNITY_BEGIN();
 
@@ -269,6 +306,9 @@ int main(int /*argc*/, char** /*argv*/) {
     RUN_TEST(test_steps_overflow_rejected);
 
     RUN_TEST(test_audiocat_roundtrip);
+
+    RUN_TEST(test_catalog_iteration_bounds);
+    RUN_TEST(test_all_builtins_serialize_and_reparse);
 
     return UNITY_END();
 }

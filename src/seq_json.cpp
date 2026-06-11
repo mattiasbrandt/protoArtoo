@@ -330,29 +330,33 @@ static void serializeBranch(JsonArray arr, const SeqStep* steps, uint8_t count) 
 // -----------------------------------------------------------------------------
 // Serialize
 // -----------------------------------------------------------------------------
-size_t seqJsonSerialize(const SequenceEntry& entry, const char* source,
-                        char* outBuf, size_t outCap) {
-    JsonDocument doc;
-    doc["format"] = SEQ_JSON_FORMAT;
-    doc["name"] = entry.name;
-    doc["suppressMs"] = entry.suppressMs;
-    doc["toggleGroup"] = seqToggleGroupToString(entry.toggleGroup);
+void seqJsonSerializeObject(JsonObject obj, const SequenceEntry& entry,
+                            const char* source) {
+    obj["format"] = SEQ_JSON_FORMAT;
+    obj["name"] = entry.name;
+    obj["suppressMs"] = entry.suppressMs;
+    obj["toggleGroup"] = seqToggleGroupToString(entry.toggleGroup);
 
-    JsonObject meta = doc["meta"].to<JsonObject>();
+    JsonObject meta = obj["meta"].to<JsonObject>();
     meta["source"] = (source != nullptr) ? source : "factory";
     meta["origin"] = "";
     meta["license"] = "";
     meta["notes"] = "";
     meta["modified"] = false;
 
-    JsonArray steps = doc["steps"].to<JsonArray>();
+    JsonArray steps = obj["steps"].to<JsonArray>();
     serializeBranch(steps, entry.steps, entry.stepCount);
 
-    JsonArray closeArr = doc["closeSteps"].to<JsonArray>();
+    JsonArray closeArr = obj["closeSteps"].to<JsonArray>();
     if (entry.toggleGroup != TOGGLE_NONE && entry.closeSteps != nullptr) {
         serializeBranch(closeArr, entry.closeSteps, entry.closeStepCount);
     }
+}
 
+size_t seqJsonSerialize(const SequenceEntry& entry, const char* source,
+                        char* outBuf, size_t outCap) {
+    JsonDocument doc;
+    seqJsonSerializeObject(doc.to<JsonObject>(), entry, source);
     size_t n = serializeJson(doc, outBuf, outCap);
     // serializeJson returns 0 if it could not write (overflow) for a non-empty doc.
     return n;

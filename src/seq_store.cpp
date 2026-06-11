@@ -297,3 +297,30 @@ bool seqStoreDelete(const char* name) {
     unlock();
     return removedFile || removedIdx;
 }
+
+// -----------------------------------------------------------------------------
+// Stream a stored file's raw JSON (GET /api/seq?name=)
+// -----------------------------------------------------------------------------
+bool seqStoreStreamFile(const char* name, Print& out) {
+    if (!lock()) return false;
+    const SeqIndexEntry* idx = seqStoreIndexFind(name);
+    if (idx == nullptr) {
+        unlock();
+        return false;
+    }
+    char path[64];
+    snprintf(path, sizeof(path), "%s/%s", SEQ_DIR, idx->file);
+    File f = LittleFS.open(path, "r");
+    if (!f) {
+        unlock();
+        return false;
+    }
+    uint8_t buf[256];
+    size_t n;
+    while ((n = f.read(buf, sizeof(buf))) > 0) {
+        out.write(buf, n);
+    }
+    f.close();
+    unlock();
+    return true;
+}

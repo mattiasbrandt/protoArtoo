@@ -27,6 +27,7 @@
 #include "../../include/api_helpers.h"
 #include "../../include/api_identity.h"
 #include "../../include/api_rc.h"
+#include "../../include/api_seq.h"
 #include "../../include/api_servo.h"
 #include "../../include/api_status.h"
 #include "../../include/api_system.h"
@@ -865,6 +866,7 @@ void startHttpServerOnce() {
         registerProfilerRoutes(server);
 #endif
         registerActionsRoutes(server);
+        registerSeqRoutes(server);
 
         if (littleFsReady) {
             server.serveStatic("/", LittleFS, "/").setDefaultFile("index.html").setCacheControl("no-cache");

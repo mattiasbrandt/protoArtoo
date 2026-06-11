@@ -610,6 +610,14 @@ const SequenceEntry* sequenceCatalogFind(const char* name) {
     return nullptr;
 }
 
+uint8_t sequenceCatalogCount() {
+    return kCatalogSize;
+}
+
+const SequenceEntry* sequenceCatalogAt(uint8_t i) {
+    return (i < kCatalogSize) ? &kCatalog[i] : nullptr;
+}
+
 SequenceLookupResult sequenceLookup(const char* name) {
     SequenceLookupResult r = { SEQ_FALLBACK, {} };
 

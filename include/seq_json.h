@@ -61,6 +61,11 @@ ProtocolCheckResult seqJsonParseVariant(JsonVariantConst root,
                                         SeqStep* closeBuf, uint8_t closeCap,
                                         SeqDraft& out);
 
+// Serialize an entry into an existing JsonObject (for building arrays such as
+// GET /api/seq/builtins without an intermediate text buffer).
+void seqJsonSerializeObject(JsonObject obj, const SequenceEntry& entry,
+                            const char* source);
+
 // Serialize an entry to JSON v1 text. `source` populates meta.source
 // ("factory" for builtins, "user"/"guild" for runtime). Returns the number of
 // bytes written (excluding NUL), or 0 on buffer overflow.

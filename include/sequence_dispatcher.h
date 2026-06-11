@@ -68,3 +68,7 @@ SequenceLookupResult sequenceLookup(const char* name);
 
 // Catalog lookup — returns the body-owned entry or nullptr.
 const SequenceEntry* sequenceCatalogFind(const char* name);
+
+// Catalog iteration — for GET /api/seq/builtins (clone-to-retrain) and tests.
+uint8_t sequenceCatalogCount();
+const SequenceEntry* sequenceCatalogAt(uint8_t i);
