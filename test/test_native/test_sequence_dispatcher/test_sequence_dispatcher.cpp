@@ -44,6 +44,18 @@ void test_slice2_flat_sequences_are_catalog() {
     }
 }
 
+void test_slice2_toggle_loop_random_sequences_are_catalog() {
+    static const char* const names[] = {
+        "DM:PIES", "DM:LOW", "DM:OPENALL",
+        "DM:CANTINA", "DM:ROCKMARCH",
+        "DM:SCREAM", "DM:OVERLOAD",
+    };
+    for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); ++i) {
+        SequenceLookupResult r = sequenceLookup(names[i]);
+        TEST_ASSERT_EQUAL_INT_MESSAGE(SEQ_CATALOG, (int)r.kind, names[i]);
+    }
+}
+
 // =============================================================================
 // Alias entries — forward to dome via :SE## or $NNN
 // =============================================================================
@@ -134,6 +146,7 @@ int main(int /*argc*/, char** /*argv*/) {
     RUN_TEST(test_hello_is_catalog);
     RUN_TEST(test_nod_is_catalog);
     RUN_TEST(test_slice2_flat_sequences_are_catalog);
+    RUN_TEST(test_slice2_toggle_loop_random_sequences_are_catalog);
 
     RUN_TEST(test_wave_alias_resolves_to_se02);
     RUN_TEST(test_stop_alias_resolves_to_se00);

@@ -10,9 +10,16 @@
 // resolved in later slice-2 commits; until then they are skipped.
 // =============================================================================
 
+#include <stdio.h>
 #include <string.h>
 
 #include "sequence_engine.h"
+
+// Dome panel slot sets (issue #2 spec). Pie order matches the dome's wave
+// order PP1,PP2,PP3,PP4,PP5,PP6 = slots 8,9,12,10,7,11.
+static const uint8_t kRingSlots[] = { 0, 1, 2, 3, 4, 5, 6 };
+static const uint8_t kPieSlots[]  = { 8, 9, 12, 10, 7, 11 };
+static const uint8_t kAllSlots[]  = { 0, 1, 2, 3, 4, 5, 6, 8, 9, 12, 10, 7, 11 };
 
 // -----------------------------------------------------------------------------
 // Helpers
@@ -122,16 +129,53 @@ static uint32_t stepFireAt(const SeqEngineState& st, const SeqStep& step) {
     return st.startMs + step.tMs;
 }
 
+// Pick a panel slot for a STEP_RANDOM step. SLOTSET_HOLD reuses the previous
+// pick (SCREAM flutters one panel through several moves). pickDistinct
+// re-rolls a bounded number of times to avoid slots already picked this run
+// (OVERLOAD drifts a distinct panel set), then accepts a repeat rather than
+// looping forever on an exhausted set.
+static uint8_t pickSlot(SeqEngineState& st, const SeqStep& step, SeqRandFn rnd) {
+    if (step.params.slotSet == SLOTSET_HOLD) {
+        return st.heldSlot;
+    }
+
+    const uint8_t* set = kAllSlots;
+    uint8_t n = (uint8_t)(sizeof(kAllSlots) / sizeof(kAllSlots[0]));
+    switch (step.params.slotSet) {
+        case SLOTSET_RING:
+            set = kRingSlots;
+            n = (uint8_t)(sizeof(kRingSlots) / sizeof(kRingSlots[0]));
+            break;
+        case SLOTSET_PIE:
+            set = kPieSlots;
+            n = (uint8_t)(sizeof(kPieSlots) / sizeof(kPieSlots[0]));
+            break;
+        default:
+            break;
+    }
+
+    uint8_t slot = set[rnd() % n];
+    if (step.params.pickDistinct) {
+        for (uint8_t attempt = 0;
+             attempt < 8 && (st.pickedMask & (uint16_t)(1u << slot)) != 0;
+             ++attempt) {
+            slot = set[rnd() % n];
+        }
+    }
+    st.pickedMask |= (uint16_t)(1u << slot);
+    st.heldSlot = slot;
+    return slot;
+}
+
 // Resolve the step under the cursor into a pending action with an absolute
 // fire time. Returns false for step types that emit nothing (skipped).
 static bool resolveStep(SeqEngineState& st, const SeqStep& step, SeqRandFn rnd) {
-    (void)rnd;  // used by STEP_RANDOM (later slice-2 commit)
-
     SeqAction a;
     a.kind = SEQ_ACT_NONE;
     a.audioCategory = 0;
     a.audioFallbackSlot = 0;
     a.payload[0] = '\0';
+    uint32_t jitter = 0;
 
     switch (step.type) {
         case STEP_DOME_CMD:
@@ -147,12 +191,27 @@ static bool resolveStep(SeqEngineState& st, const SeqStep& step, SeqRandFn rnd) 
             a.audioCategory = step.params.audioCategory;
             a.audioFallbackSlot = step.params.audioFallbackSlot;
             break;
+        case STEP_RANDOM: {
+            const uint8_t slot = pickSlot(st, step, rnd);
+            uint16_t pulse = step.params.pulseMin;
+            if (step.params.pulseMax > step.params.pulseMin) {
+                pulse = (uint16_t)(pulse +
+                    rnd() % (uint32_t)(step.params.pulseMax - step.params.pulseMin + 1));
+            }
+            a.kind = SEQ_ACT_DOME_CMD;
+            snprintf(a.payload, sizeof(a.payload), ":SM%u,%u,%u",
+                     (unsigned)slot, (unsigned)pulse, (unsigned)step.params.moveMs);
+            if (step.params.jitterMs > 0) {
+                jitter = rnd() % (uint32_t)(step.params.jitterMs + 1);
+            }
+            break;
+        }
         default:
-            return false;  // STEP_RANDOM: later slice-2 commit
+            return false;
     }
 
     st.pending = a;
-    st.pendingFireAt = stepFireAt(st, step);
+    st.pendingFireAt = stepFireAt(st, step) + jitter;
     st.pendingComputed = true;
     return true;
 }

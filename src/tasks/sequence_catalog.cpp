@@ -276,6 +276,68 @@ static const SeqStep kRockmarchSteps[] = {
 };
 
 // =============================================================================
+// Random sequences — STEP_RANDOM resolves a panel slot (and optionally pulse
+// and timing jitter) at fire time. SLOTSET_HOLD reuses the previous pick;
+// pickDistinct avoids slots already picked this run.
+// =============================================================================
+
+// DM:SCREAM — panels burst open, red alert, random one-panel flutter, close
+// (15 s window). Flutter: 10 iterations of a 380 ms 4-move pattern on a
+// randomly picked panel (repeats across iterations allowed, as in the dome's
+// original code). Audio: random scream-category track (fallback named scream).
+static const SeqStep kScreamSteps[] = {
+    SEQ_AUDIO_CAT(0, AUDIO_CATEGORY_SCREAM, AUDIO_SLOT_NAMED_SCREAM),
+    SEQ_DOME(0, FX_HOLO, "@HPA0070"),            // all holos short-circuit color
+    SEQ_DOME(0, FX_HOLO, "@HPA105|5"),           // all holos wag 5 times
+    SEQ_DOME(0, FX_LOGIC_PSI, "@0T5"),           // red alert logics
+    SEQ_DOME(0, FX_LOGIC_PSI, "@0P5"),           // red alert PSI
+    // burst open: all pies then all ring panels together
+    SEQ_DOME(0, FX_PANEL, ":SM8,2200,150"),
+    SEQ_DOME(0, FX_NONE, ":SM9,2200,150"),
+    SEQ_DOME(0, FX_NONE, ":SM12,2200,150"),
+    SEQ_DOME(0, FX_NONE, ":SM10,2200,150"),
+    SEQ_DOME(0, FX_NONE, ":SM7,2200,150"),
+    SEQ_DOME(0, FX_NONE, ":SM11,2200,150"),
+    SEQ_DOME(0, FX_NONE, ":SM0,2200,100"),
+    SEQ_DOME(0, FX_NONE, ":SM1,2200,100"),
+    SEQ_DOME(0, FX_NONE, ":SM2,2200,100"),
+    SEQ_DOME(0, FX_NONE, ":SM3,2200,100"),
+    SEQ_DOME(0, FX_NONE, ":SM4,2200,100"),
+    SEQ_DOME(0, FX_NONE, ":SM5,2200,100"),
+    SEQ_DOME(0, FX_NONE, ":SM6,2200,100"),
+    // random flutter: pick a panel, half-close/reopen it twice per iteration
+    SEQ_LOOP(200, 4, 380, 3800),
+    SEQ_RAND(0, SLOTSET_ALL, 1500, 1500, 100, 0, 0),
+    SEQ_RAND(100, SLOTSET_HOLD, 2200, 2200, 100, 0, 0),
+    SEQ_RAND(180, SLOTSET_HOLD, 1500, 1500, 100, 0, 0),
+    SEQ_RAND(280, SLOTSET_HOLD, 2200, 2200, 100, 0, 0),
+    // happy all-clear cue before the auto-reset closes everything
+    SEQ_AUDIO(6800, "$H"),
+    SEQ_TERM(7450),                              // auto @0T1/@0P1/*ST00/:CL00
+};
+
+// DM:OVERLOAD — failure logics/PSI, holos short-circuit, six panels drift
+// sluggishly to random part-open positions, then everything resets (12 s
+// window). Drift gaps are randomized as 0..500 ms jitter on fixed 650 ms
+// offsets (issue #2: gap randomness, absolute schedule preserved). Audio:
+// random sad-category track (fallback named faint).
+static const SeqStep kOverloadSteps[] = {
+    SEQ_AUDIO_CAT(0, AUDIO_CATEGORY_SAD, AUDIO_SLOT_NAMED_FAINT),
+    SEQ_DOME(0, FX_LOGIC_PSI, "@1T4"),           // FLD failure
+    SEQ_DOME(0, FX_LOGIC_PSI, "@2T4"),           // RLD failure
+    SEQ_DOME(0, FX_HOLO, "@HPA0070"),            // all holos short circuit
+    SEQ_DOME(0, FX_LOGIC_PSI, "@0P4"),           // PSI failure
+    // four distinct ring panels + two distinct pies drift to 1150..1500
+    SEQ_RAND(400, SLOTSET_RING, 1150, 1500, 300, 500, 1),
+    SEQ_RAND(1050, SLOTSET_RING, 1150, 1500, 300, 500, 1),
+    SEQ_RAND(1700, SLOTSET_RING, 1150, 1500, 300, 500, 1),
+    SEQ_RAND(2350, SLOTSET_RING, 1150, 1500, 300, 500, 1),
+    SEQ_RAND(3000, SLOTSET_PIE, 1150, 1500, 300, 500, 1),
+    SEQ_RAND(3650, SLOTSET_PIE, 1150, 1500, 300, 500, 1),
+    SEQ_TERM(7000),                              // auto @0T1/@0P1/*ST00/:CL00
+};
+
+// =============================================================================
 // Toggle sequences (ADR 0004 decision 8) — `steps` is the open branch,
 // `closeSteps` the close branch; the engine picks by latched group state and
 // flips the latch on normal completion. Close branches end without a release;
@@ -480,6 +542,8 @@ static const SequenceEntry kCatalog[] = {
     { "DM:RESET",   kResetSteps,   SEQ_STEPCOUNT(kResetSteps),   4000,  TOGGLE_NONE, nullptr, 0 },
     { "DM:CANTINA",   kCantinaSteps,   SEQ_STEPCOUNT(kCantinaSteps),   17000, TOGGLE_NONE, nullptr, 0 },
     { "DM:ROCKMARCH", kRockmarchSteps, SEQ_STEPCOUNT(kRockmarchSteps), 47000, TOGGLE_NONE, nullptr, 0 },
+    { "DM:SCREAM",    kScreamSteps,    SEQ_STEPCOUNT(kScreamSteps),    15000, TOGGLE_NONE, nullptr, 0 },
+    { "DM:OVERLOAD",  kOverloadSteps,  SEQ_STEPCOUNT(kOverloadSteps),  12000, TOGGLE_NONE, nullptr, 0 },
     { "DM:PIES",    kPiesOpenSteps,    SEQ_STEPCOUNT(kPiesOpenSteps),    12000,
       TOGGLE_PIES, kPiesCloseSteps,    SEQ_STEPCOUNT(kPiesCloseSteps) },
     { "DM:LOW",     kLowOpenSteps,     SEQ_STEPCOUNT(kLowOpenSteps),     15000,

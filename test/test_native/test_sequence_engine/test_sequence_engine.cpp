@@ -550,6 +550,153 @@ void test_real_toggle_entries_are_catalog_with_branches() {
 }
 
 // -----------------------------------------------------------------------------
+// STEP_RANDOM resolution
+// -----------------------------------------------------------------------------
+
+// Scripted RNG: returns successive values for deterministic pick testing.
+static uint32_t s_rndSeq[16];
+static uint8_t s_rndLen;
+static uint8_t s_rndIdx;
+static uint32_t scriptedRand() {
+    uint32_t v = s_rndSeq[s_rndIdx % (s_rndLen ? s_rndLen : 1)];
+    if (s_rndIdx < 255) s_rndIdx++;
+    return v;
+}
+static void scriptRand(const uint32_t* vals, uint8_t n) {
+    for (uint8_t i = 0; i < n && i < 16; ++i) s_rndSeq[i] = vals[i];
+    s_rndLen = n;
+    s_rndIdx = 0;
+}
+
+static const SeqStep kRandomSteps[] = {
+    SEQ_RAND(0, SLOTSET_RING, 1150, 1500, 300, 0, 1),
+    SEQ_RAND(100, SLOTSET_RING, 1150, 1500, 300, 0, 1),
+    SEQ_RAND(200, SLOTSET_HOLD, 2200, 2200, 100, 0, 0),
+    SEQ_TERM(500),
+};
+static const SequenceEntry kRandomEntry = {
+    "TEST:RANDOM", kRandomSteps,
+    (uint8_t)(sizeof(kRandomSteps) / sizeof(kRandomSteps[0])),
+    2000, TOGGLE_NONE, nullptr, 0,
+};
+
+void test_random_step_resolves_slot_and_pulse_from_rng() {
+    SeqEngineState st;
+    seqEngineInit(st);
+    // slot pick: ring[2] = slot 2; pulse: 1150 + (57 % 351) = 1207
+    const uint32_t script[] = { 2, 57 };
+    scriptRand(script, 2);
+
+    seqEngineStart(st, &kRandomEntry, 0);
+    SeqAction act = {};
+    TEST_ASSERT_TRUE(seqEnginePeek(st, 0, scriptedRand, act));
+    TEST_ASSERT_EQUAL_INT(SEQ_ACT_DOME_CMD, (int)act.kind);
+    TEST_ASSERT_EQUAL_STRING(":SM2,1207,300", act.payload);
+}
+
+void test_random_pick_distinct_rerolls_and_hold_reuses() {
+    SeqEngineState st;
+    seqEngineInit(st);
+    // Step 1: pick ring[0]=slot0 (pulse roll 0 -> 1150).
+    // Step 2: rolls ring[0] again -> distinct re-roll -> ring[3]=slot3.
+    // Step 3: SLOTSET_HOLD reuses slot3 (pulse fixed 2200, no rolls).
+    const uint32_t script[] = { 0, 0, 0, 3, 0 };
+    scriptRand(script, 5);
+
+    seqEngineStart(st, &kRandomEntry, 0);
+    SeqAction act = {};
+    TEST_ASSERT_TRUE(seqEnginePeek(st, 0, scriptedRand, act));
+    TEST_ASSERT_EQUAL_STRING(":SM0,1150,300", act.payload);
+    seqEngineCommit(st);
+
+    TEST_ASSERT_TRUE(seqEnginePeek(st, 100, scriptedRand, act));
+    TEST_ASSERT_EQUAL_STRING(":SM3,1150,300", act.payload);
+    seqEngineCommit(st);
+
+    TEST_ASSERT_TRUE(seqEnginePeek(st, 200, scriptedRand, act));
+    TEST_ASSERT_EQUAL_STRING(":SM3,2200,100", act.payload);
+}
+
+void test_random_peek_retry_keeps_same_resolution() {
+    SeqEngineState st;
+    seqEngineInit(st);
+    const uint32_t script[] = { 4, 100 };
+    scriptRand(script, 2);
+
+    seqEngineStart(st, &kRandomEntry, 0);
+    SeqAction a = {};
+    SeqAction b = {};
+    TEST_ASSERT_TRUE(seqEnginePeek(st, 0, scriptedRand, a));
+    TEST_ASSERT_TRUE(seqEnginePeek(st, 10, scriptedRand, b));
+    // Uncommitted retry must not re-roll slot or pulse.
+    TEST_ASSERT_EQUAL_STRING(a.payload, b.payload);
+}
+
+void test_random_jitter_delays_fire_time() {
+    static const SeqStep kJitterSteps[] = {
+        SEQ_RAND(100, SLOTSET_RING, 1200, 1200, 300, 500, 0),
+        SEQ_TERM(1500),
+    };
+    static const SequenceEntry kJitterEntry = {
+        "TEST:JITTER", kJitterSteps,
+        (uint8_t)(sizeof(kJitterSteps) / sizeof(kJitterSteps[0])),
+        2000, TOGGLE_NONE, nullptr, 0,
+    };
+
+    SeqEngineState st;
+    seqEngineInit(st);
+    // slot roll 0 -> slot0; jitter roll 300 % 501 = 300 -> fires at 400.
+    const uint32_t script[] = { 0, 300 };
+    scriptRand(script, 2);
+
+    seqEngineStart(st, &kJitterEntry, 0);
+    SeqAction act = {};
+    TEST_ASSERT_FALSE(seqEnginePeek(st, 399, scriptedRand, act));
+    TEST_ASSERT_TRUE(seqEnginePeek(st, 400, scriptedRand, act));
+    TEST_ASSERT_EQUAL_STRING(":SM0,1200,300", act.payload);
+}
+
+void test_real_random_entries_are_catalog() {
+    const SequenceEntry* scream = sequenceCatalogFind("DM:SCREAM");
+    TEST_ASSERT_NOT_NULL(scream);
+    // Flutter loop: header at index 18, 4-step body, 10 iterations of 380 ms.
+    TEST_ASSERT_EQUAL_INT(STEP_LOOP, (int)scream->steps[18].type);
+    TEST_ASSERT_EQUAL_UINT8(4, scream->steps[18].params.bodyCount);
+    TEST_ASSERT_EQUAL_INT(STEP_RANDOM, (int)scream->steps[19].type);
+    TEST_ASSERT_EQUAL_UINT8(SLOTSET_ALL, scream->steps[19].params.slotSet);
+    TEST_ASSERT_EQUAL_UINT8(SLOTSET_HOLD, scream->steps[20].params.slotSet);
+
+    const SequenceEntry* overload = sequenceCatalogFind("DM:OVERLOAD");
+    TEST_ASSERT_NOT_NULL(overload);
+    TEST_ASSERT_EQUAL_INT(STEP_RANDOM, (int)overload->steps[5].type);
+    TEST_ASSERT_EQUAL_UINT8(1, overload->steps[5].params.pickDistinct);
+    TEST_ASSERT_EQUAL_UINT16(500, overload->steps[5].params.jitterMs);
+}
+
+// Full OVERLOAD run with a scripted RNG: six drift commands, all within
+// bounds, ring slots distinct, then the auto-reset for all effect classes.
+void test_real_overload_runs_end_to_end() {
+    const SequenceEntry* e = sequenceCatalogFind("DM:OVERLOAD");
+    TEST_ASSERT_NOT_NULL(e);
+
+    SeqEngineState st;
+    seqEngineInit(st);
+    const uint32_t script[] = { 1, 0, 0 };  // varied picks, zero pulse/jitter rolls
+    scriptRand(script, 3);
+
+    seqEngineStart(st, e, 0);
+    char log[512] = "";
+    int n = drainAt(st, 8000, log, sizeof(log));
+    // 1 audio category (empty payload) + 4 fx + 6 drifts + 4 auto-reset
+    // (@0T1, @0P1, *ST00, :CL00) + audio stop is NOT expected (normal end).
+    TEST_ASSERT_EQUAL_INT(15, n);
+    TEST_ASSERT_NOT_NULL(strstr(log, "@1T4"));
+    TEST_ASSERT_NOT_NULL(strstr(log, ":CL00"));
+    TEST_ASSERT_NULL(strstr(log, "<stop>"));
+    TEST_ASSERT_FALSE(seqEngineActive(st));
+}
+
+// -----------------------------------------------------------------------------
 // Latches
 // -----------------------------------------------------------------------------
 
@@ -610,6 +757,13 @@ int main(int /*argc*/, char** /*argv*/) {
     RUN_TEST(test_loop_abort_mid_iteration_finishes_clean);
     RUN_TEST(test_real_loop_entries_have_loop_headers);
     RUN_TEST(test_real_rockmarch_second_pass_timing);
+
+    RUN_TEST(test_random_step_resolves_slot_and_pulse_from_rng);
+    RUN_TEST(test_random_pick_distinct_rerolls_and_hold_reuses);
+    RUN_TEST(test_random_peek_retry_keeps_same_resolution);
+    RUN_TEST(test_random_jitter_delays_fire_time);
+    RUN_TEST(test_real_random_entries_are_catalog);
+    RUN_TEST(test_real_overload_runs_end_to_end);
 
     RUN_TEST(test_toggle_first_press_runs_open_branch_and_latches_open);
     RUN_TEST(test_toggle_second_press_runs_close_branch_and_releases);
