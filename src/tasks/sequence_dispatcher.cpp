@@ -138,6 +138,7 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
     seqEngineInit(engine);
 
     bool prevEstop = false;
+    bool prevDomeConn = false;
     bool retryLogged = false;
     char activeName[24] = "";
 
@@ -189,6 +190,25 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
             seqEngineClearLatches(engine);
         }
         prevEstop = estopActive;
+
+        // Dome (re)connect resync (ADR 0004 decision 8): panel state on the
+        // dome is unknown after boot or a link gap, so assume closed — abort
+        // any running sequence, close/release everything, clear the latches.
+        const bool domeConn = domeConnected();
+        if (domeConn && !prevDomeConn) {
+            PA_LOG_INFO(TAG, "dome (re)connected — panel state resync");
+            if (seqEngineActive(engine)) {
+                seqEngineAbort(engine);
+                drainBestEffort(engine, now);
+                clearSuppression();
+                activeName[0] = '\0';
+            }
+            domeQueueTx(":CL00");
+            domeQueueTx("@0T1");
+            domeQueueTx("@0P1");
+            seqEngineClearLatches(engine);
+        }
+        prevDomeConn = domeConn;
 
         // Advance the cursor: dispatch due actions, retry on queue-full.
         if (seqEngineActive(engine)) {

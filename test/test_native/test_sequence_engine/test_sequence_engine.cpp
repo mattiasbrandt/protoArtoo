@@ -324,6 +324,120 @@ void test_real_reset_entry_clears_latches_and_resets() {
 }
 
 // -----------------------------------------------------------------------------
+// Toggle sequences (ADR 0004 decision 8)
+// -----------------------------------------------------------------------------
+
+static const SeqStep kToggleOpenSteps[] = {
+    SEQ_DOME(0, FX_PANEL, ":SM8,2200,100"),
+    SEQ_DOME(100, FX_NONE, ":SM9,2200,100"),
+    SEQ_TERM(500),
+};
+static const SeqStep kToggleCloseSteps[] = {
+    SEQ_DOME(0, FX_NONE, ":SM8,800,100"),
+    SEQ_DOME(100, FX_NONE, ":SM9,800,100"),
+    SEQ_TERM(500),
+};
+static const SequenceEntry kToggleEntry = {
+    "TEST:TOGGLE", kToggleOpenSteps,
+    (uint8_t)(sizeof(kToggleOpenSteps) / sizeof(kToggleOpenSteps[0])),
+    5000, TOGGLE_PIES, kToggleCloseSteps,
+    (uint8_t)(sizeof(kToggleCloseSteps) / sizeof(kToggleCloseSteps[0])),
+};
+static const SequenceEntry kToggleAllEntry = {
+    "TEST:TOGGLEALL", kToggleOpenSteps,
+    (uint8_t)(sizeof(kToggleOpenSteps) / sizeof(kToggleOpenSteps[0])),
+    5000, TOGGLE_ALL, kToggleCloseSteps,
+    (uint8_t)(sizeof(kToggleCloseSteps) / sizeof(kToggleCloseSteps[0])),
+};
+
+void test_toggle_first_press_runs_open_branch_and_latches_open() {
+    SeqEngineState st;
+    seqEngineInit(st);
+    seqEngineStart(st, &kToggleEntry, 0);
+
+    char log[256] = "";
+    TEST_ASSERT_EQUAL_INT(2, drainAt(st, 500, log, sizeof(log)));
+    // Open branch ends with panels open: no :CL00 despite FX_PANEL.
+    TEST_ASSERT_EQUAL_STRING(":SM8,2200,100|:SM9,2200,100", log);
+    TEST_ASSERT_FALSE(seqEngineActive(st));
+    TEST_ASSERT_TRUE(st.latches.piesOpen);
+}
+
+void test_toggle_second_press_runs_close_branch_and_releases() {
+    SeqEngineState st;
+    seqEngineInit(st);
+    seqEngineStart(st, &kToggleEntry, 0);
+    drainAt(st, 500, nullptr, 0);  // open; latch set
+
+    seqEngineStart(st, &kToggleEntry, 1000);
+    char log[256] = "";
+    TEST_ASSERT_EQUAL_INT(3, drainAt(st, 1500, log, sizeof(log)));
+    // Close branch, then :CL00 release (no other group latched open).
+    TEST_ASSERT_EQUAL_STRING(":SM8,800,100|:SM9,800,100|:CL00", log);
+    TEST_ASSERT_FALSE(st.latches.piesOpen);
+}
+
+void test_toggle_close_skips_release_while_another_group_open() {
+    SeqEngineState st;
+    seqEngineInit(st);
+    st.latches.lowOpen = true;  // ring panels latched open by DM:LOW
+
+    seqEngineStart(st, &kToggleEntry, 0);
+    drainAt(st, 500, nullptr, 0);  // pies open
+
+    seqEngineStart(st, &kToggleEntry, 1000);
+    char log[256] = "";
+    TEST_ASSERT_EQUAL_INT(2, drainAt(st, 1500, log, sizeof(log)));
+    // No :CL00 — it would slam the ring panels DM:LOW left open.
+    TEST_ASSERT_EQUAL_STRING(":SM8,800,100|:SM9,800,100", log);
+    TEST_ASSERT_FALSE(st.latches.piesOpen);
+    TEST_ASSERT_TRUE(st.latches.lowOpen);
+}
+
+void test_toggle_all_carries_pie_and_ring_latches() {
+    SeqEngineState st;
+    seqEngineInit(st);
+    seqEngineStart(st, &kToggleAllEntry, 0);
+    drainAt(st, 500, nullptr, 0);
+    TEST_ASSERT_TRUE(st.latches.allOpen);
+    TEST_ASSERT_TRUE(st.latches.piesOpen);
+    TEST_ASSERT_TRUE(st.latches.lowOpen);
+
+    seqEngineStart(st, &kToggleAllEntry, 1000);
+    char log[256] = "";
+    TEST_ASSERT_EQUAL_INT(3, drainAt(st, 1500, log, sizeof(log)));
+    TEST_ASSERT_EQUAL_STRING(":SM8,800,100|:SM9,800,100|:CL00", log);
+    TEST_ASSERT_FALSE(st.latches.allOpen);
+    TEST_ASSERT_FALSE(st.latches.piesOpen);
+    TEST_ASSERT_FALSE(st.latches.lowOpen);
+}
+
+void test_toggle_abort_mid_open_closes_and_clears_latches() {
+    SeqEngineState st;
+    seqEngineInit(st);
+    seqEngineStart(st, &kToggleEntry, 0);
+    drainAt(st, 100, nullptr, 0);  // both opens fired, END not reached
+
+    seqEngineAbort(st);
+    char log[256] = "";
+    TEST_ASSERT_EQUAL_INT(1, drainAt(st, 200, log, sizeof(log)));
+    // Abnormal termination: FX_PANEL close-all fires, latch stays closed.
+    TEST_ASSERT_EQUAL_STRING(":CL00", log);
+    TEST_ASSERT_FALSE(st.latches.piesOpen);
+}
+
+void test_real_toggle_entries_are_catalog_with_branches() {
+    static const char* const names[] = { "DM:PIES", "DM:LOW", "DM:OPENALL" };
+    for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); ++i) {
+        const SequenceEntry* e = sequenceCatalogFind(names[i]);
+        TEST_ASSERT_NOT_NULL_MESSAGE(e, names[i]);
+        TEST_ASSERT_NOT_EQUAL_MESSAGE(TOGGLE_NONE, e->toggleGroup, names[i]);
+        TEST_ASSERT_NOT_NULL_MESSAGE(e->closeSteps, names[i]);
+        TEST_ASSERT_GREATER_THAN_MESSAGE(0, e->closeStepCount, names[i]);
+    }
+}
+
+// -----------------------------------------------------------------------------
 // Latches
 // -----------------------------------------------------------------------------
 
@@ -378,6 +492,13 @@ int main(int /*argc*/, char** /*argv*/) {
     RUN_TEST(test_real_vader_abort_stops_audio_and_resets_holos);
     RUN_TEST(test_audio_category_step_emits_category_action);
     RUN_TEST(test_real_reset_entry_clears_latches_and_resets);
+
+    RUN_TEST(test_toggle_first_press_runs_open_branch_and_latches_open);
+    RUN_TEST(test_toggle_second_press_runs_close_branch_and_releases);
+    RUN_TEST(test_toggle_close_skips_release_while_another_group_open);
+    RUN_TEST(test_toggle_all_carries_pie_and_ring_latches);
+    RUN_TEST(test_toggle_abort_mid_open_closes_and_clears_latches);
+    RUN_TEST(test_real_toggle_entries_are_catalog_with_branches);
 
     RUN_TEST(test_cl00_step_clears_latches);
     RUN_TEST(test_clear_latches_helper);

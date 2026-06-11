@@ -203,6 +203,195 @@ static const SeqStep kResetSteps[] = {
 };
 
 // =============================================================================
+// Toggle sequences (ADR 0004 decision 8) — `steps` is the open branch,
+// `closeSteps` the close branch; the engine picks by latched group state and
+// flips the latch on normal completion. Close branches end without a release;
+// the engine emits :CL00 once no group remains latched open (issue #2 gap #1).
+// =============================================================================
+
+// DM:PIES open — pie wave: open PP1->PP6, close PP6->PP1, reopen, twice (12 s).
+static const SeqStep kPiesOpenSteps[] = {
+    SEQ_AUDIO(100, "$H"),
+    // cycle 1: open PP1->PP6
+    SEQ_DOME(100, FX_PANEL, ":SM8,2200,100"),
+    SEQ_DOME(200, FX_NONE, ":SM9,2200,100"),
+    SEQ_DOME(300, FX_NONE, ":SM12,2200,100"),
+    SEQ_DOME(400, FX_NONE, ":SM10,2200,100"),
+    SEQ_DOME(500, FX_NONE, ":SM7,2200,100"),
+    SEQ_DOME(600, FX_NONE, ":SM11,2200,100"),
+    // cycle 1: close PP6->PP1
+    SEQ_DOME(700, FX_NONE, ":SM11,800,100"),
+    SEQ_DOME(800, FX_NONE, ":SM7,800,100"),
+    SEQ_DOME(900, FX_NONE, ":SM10,800,100"),
+    SEQ_DOME(1000, FX_NONE, ":SM12,800,100"),
+    SEQ_DOME(1100, FX_NONE, ":SM9,800,100"),
+    SEQ_DOME(1200, FX_NONE, ":SM8,800,100"),
+    // cycle 1: reopen PP1->PP6
+    SEQ_DOME(1300, FX_NONE, ":SM8,2200,100"),
+    SEQ_DOME(1400, FX_NONE, ":SM9,2200,100"),
+    SEQ_DOME(1500, FX_NONE, ":SM12,2200,100"),
+    SEQ_DOME(1600, FX_NONE, ":SM10,2200,100"),
+    SEQ_DOME(1700, FX_NONE, ":SM7,2200,100"),
+    SEQ_DOME(1800, FX_NONE, ":SM11,2200,100"),
+    // cycle 2: open PP1->PP6
+    SEQ_DOME(1900, FX_NONE, ":SM8,2200,100"),
+    SEQ_DOME(2000, FX_NONE, ":SM9,2200,100"),
+    SEQ_DOME(2100, FX_NONE, ":SM12,2200,100"),
+    SEQ_DOME(2200, FX_NONE, ":SM10,2200,100"),
+    SEQ_DOME(2300, FX_NONE, ":SM7,2200,100"),
+    SEQ_DOME(2400, FX_NONE, ":SM11,2200,100"),
+    // cycle 2: close PP6->PP1
+    SEQ_DOME(2500, FX_NONE, ":SM11,800,100"),
+    SEQ_DOME(2600, FX_NONE, ":SM7,800,100"),
+    SEQ_DOME(2700, FX_NONE, ":SM10,800,100"),
+    SEQ_DOME(2800, FX_NONE, ":SM12,800,100"),
+    SEQ_DOME(2900, FX_NONE, ":SM9,800,100"),
+    SEQ_DOME(3000, FX_NONE, ":SM8,800,100"),
+    // cycle 2: reopen PP1->PP6 — pies end open
+    SEQ_DOME(3100, FX_NONE, ":SM8,2200,100"),
+    SEQ_DOME(3200, FX_NONE, ":SM9,2200,100"),
+    SEQ_DOME(3300, FX_NONE, ":SM12,2200,100"),
+    SEQ_DOME(3400, FX_NONE, ":SM10,2200,100"),
+    SEQ_DOME(3500, FX_NONE, ":SM7,2200,100"),
+    SEQ_DOME(3600, FX_NONE, ":SM11,2200,100"),
+    SEQ_TERM(4600),
+};
+
+// DM:PIES close — reset holos, close PP1->PP6 serially.
+static const SeqStep kPiesCloseSteps[] = {
+    SEQ_DOME(0, FX_NONE, "*ST00"),
+    SEQ_AUDIO(0, "$H"),
+    SEQ_DOME(0, FX_NONE, ":SM8,800,150"),
+    SEQ_DOME(150, FX_NONE, ":SM9,800,150"),
+    SEQ_DOME(300, FX_NONE, ":SM12,800,150"),
+    SEQ_DOME(450, FX_NONE, ":SM10,800,150"),
+    SEQ_DOME(600, FX_NONE, ":SM7,800,150"),
+    SEQ_DOME(750, FX_NONE, ":SM11,800,150"),
+    SEQ_TERM(1700),
+};
+
+// DM:LOW open — ring wave twice, then all ring panels open (15 s).
+static const SeqStep kLowOpenSteps[] = {
+    SEQ_AUDIO(0, "$H"),
+    // cycle 1: open P1,P13,P11,P2,P3,P4,P7
+    SEQ_DOME(0, FX_PANEL, ":SM0,2200,150"),
+    SEQ_DOME(150, FX_NONE, ":SM6,2200,150"),
+    SEQ_DOME(300, FX_NONE, ":SM5,2200,150"),
+    SEQ_DOME(450, FX_NONE, ":SM1,2200,150"),
+    SEQ_DOME(600, FX_NONE, ":SM2,2200,150"),
+    SEQ_DOME(750, FX_NONE, ":SM3,2200,150"),
+    SEQ_DOME(900, FX_NONE, ":SM4,2200,150"),
+    // cycle 1: close P7,P4,P3,P2,P1, then P13, then P11 (50 ms breaths)
+    SEQ_DOME(1050, FX_NONE, ":SM4,800,150"),
+    SEQ_DOME(1200, FX_NONE, ":SM3,800,150"),
+    SEQ_DOME(1350, FX_NONE, ":SM2,800,150"),
+    SEQ_DOME(1500, FX_NONE, ":SM1,800,150"),
+    SEQ_DOME(1650, FX_NONE, ":SM0,800,150"),
+    SEQ_DOME(1850, FX_NONE, ":SM6,800,150"),
+    SEQ_DOME(2050, FX_NONE, ":SM5,800,150"),
+    // cycle 2: open
+    SEQ_DOME(2200, FX_NONE, ":SM0,2200,150"),
+    SEQ_DOME(2350, FX_NONE, ":SM6,2200,150"),
+    SEQ_DOME(2500, FX_NONE, ":SM5,2200,150"),
+    SEQ_DOME(2650, FX_NONE, ":SM1,2200,150"),
+    SEQ_DOME(2800, FX_NONE, ":SM2,2200,150"),
+    SEQ_DOME(2950, FX_NONE, ":SM3,2200,150"),
+    SEQ_DOME(3100, FX_NONE, ":SM4,2200,150"),
+    // cycle 2: close
+    SEQ_DOME(3250, FX_NONE, ":SM4,800,150"),
+    SEQ_DOME(3400, FX_NONE, ":SM3,800,150"),
+    SEQ_DOME(3550, FX_NONE, ":SM2,800,150"),
+    SEQ_DOME(3700, FX_NONE, ":SM1,800,150"),
+    SEQ_DOME(3850, FX_NONE, ":SM0,800,150"),
+    SEQ_DOME(4050, FX_NONE, ":SM6,800,150"),
+    SEQ_DOME(4250, FX_NONE, ":SM5,800,150"),
+    // final open: P11/P13/P1 together, then P2,P3,P4,P7 — ring ends open
+    SEQ_DOME(4400, FX_NONE, ":SM5,2200,100"),
+    SEQ_DOME(4400, FX_NONE, ":SM6,2200,100"),
+    SEQ_DOME(4400, FX_NONE, ":SM0,2200,100"),
+    SEQ_DOME(4500, FX_NONE, ":SM1,2200,100"),
+    SEQ_DOME(4600, FX_NONE, ":SM2,2200,100"),
+    SEQ_DOME(4700, FX_NONE, ":SM3,2200,100"),
+    SEQ_DOME(4800, FX_NONE, ":SM4,2200,100"),
+    SEQ_TERM(5900),
+};
+
+// DM:LOW close — reset holos, close P4,P2,P1,P3,P13,P7,P11 serially.
+static const SeqStep kLowCloseSteps[] = {
+    SEQ_DOME(0, FX_NONE, "*ST00"),
+    SEQ_AUDIO(0, "$H"),
+    SEQ_DOME(0, FX_NONE, ":SM3,800,150"),
+    SEQ_DOME(150, FX_NONE, ":SM1,800,150"),
+    SEQ_DOME(300, FX_NONE, ":SM0,800,150"),
+    SEQ_DOME(450, FX_NONE, ":SM2,800,150"),
+    SEQ_DOME(600, FX_NONE, ":SM6,800,150"),
+    SEQ_DOME(750, FX_NONE, ":SM4,800,150"),
+    SEQ_DOME(900, FX_NONE, ":SM5,800,150"),
+    SEQ_TERM(2050),
+};
+
+// DM:OPENALL open — pie sweep, ring panels together, then P1/P2 + PP2/PP4
+// twinkle twice (10 s).
+static const SeqStep kOpenallOpenSteps[] = {
+    SEQ_AUDIO(0, "$H"),
+    // open pies PP1->PP6
+    SEQ_DOME(0, FX_PANEL, ":SM8,2200,150"),
+    SEQ_DOME(150, FX_NONE, ":SM9,2200,150"),
+    SEQ_DOME(300, FX_NONE, ":SM12,2200,150"),
+    SEQ_DOME(450, FX_NONE, ":SM10,2200,150"),
+    SEQ_DOME(600, FX_NONE, ":SM7,2200,150"),
+    SEQ_DOME(750, FX_NONE, ":SM11,2200,150"),
+    // open ring panels together
+    SEQ_DOME(900, FX_NONE, ":SM5,2200,100"),
+    SEQ_DOME(900, FX_NONE, ":SM6,2200,100"),
+    SEQ_DOME(900, FX_NONE, ":SM0,2200,100"),
+    SEQ_DOME(900, FX_NONE, ":SM1,2200,100"),
+    SEQ_DOME(900, FX_NONE, ":SM2,2200,100"),
+    SEQ_DOME(900, FX_NONE, ":SM3,2200,100"),
+    SEQ_DOME(900, FX_NONE, ":SM4,2200,100"),
+    // twinkle cycle 1: P1, P2, PP2, PP4
+    SEQ_DOME(1000, FX_NONE, ":SM0,1850,100"),
+    SEQ_DOME(1100, FX_NONE, ":SM0,2200,100"),
+    SEQ_DOME(1180, FX_NONE, ":SM1,2200,100"),
+    SEQ_DOME(1280, FX_NONE, ":SM1,1850,100"),
+    SEQ_DOME(1360, FX_NONE, ":SM1,2200,100"),
+    SEQ_DOME(1460, FX_NONE, ":SM9,1850,100"),
+    SEQ_DOME(1560, FX_NONE, ":SM9,2200,100"),
+    SEQ_DOME(1740, FX_NONE, ":SM10,1850,100"),
+    SEQ_DOME(1840, FX_NONE, ":SM10,2200,100"),
+    // twinkle cycle 2
+    SEQ_DOME(1940, FX_NONE, ":SM0,1850,100"),
+    SEQ_DOME(2040, FX_NONE, ":SM0,2200,100"),
+    SEQ_DOME(2120, FX_NONE, ":SM1,2200,100"),
+    SEQ_DOME(2220, FX_NONE, ":SM1,1850,100"),
+    SEQ_DOME(2300, FX_NONE, ":SM1,2200,100"),
+    SEQ_DOME(2400, FX_NONE, ":SM9,1850,100"),
+    SEQ_DOME(2500, FX_NONE, ":SM9,2200,100"),
+    SEQ_DOME(2680, FX_NONE, ":SM10,1850,100"),
+    SEQ_DOME(2780, FX_NONE, ":SM10,2200,100"),
+    SEQ_TERM(3680),
+};
+
+// DM:OPENALL close — close every panel serially in all-panels order.
+static const SeqStep kOpenallCloseSteps[] = {
+    SEQ_AUDIO(0, "$H"),
+    SEQ_DOME(0, FX_NONE, ":SM0,800,150"),
+    SEQ_DOME(150, FX_NONE, ":SM1,800,150"),
+    SEQ_DOME(300, FX_NONE, ":SM2,800,150"),
+    SEQ_DOME(450, FX_NONE, ":SM3,800,150"),
+    SEQ_DOME(600, FX_NONE, ":SM4,800,150"),
+    SEQ_DOME(750, FX_NONE, ":SM5,800,150"),
+    SEQ_DOME(900, FX_NONE, ":SM6,800,150"),
+    SEQ_DOME(1050, FX_NONE, ":SM8,800,150"),
+    SEQ_DOME(1200, FX_NONE, ":SM9,800,150"),
+    SEQ_DOME(1350, FX_NONE, ":SM12,800,150"),
+    SEQ_DOME(1500, FX_NONE, ":SM10,800,150"),
+    SEQ_DOME(1650, FX_NONE, ":SM7,800,150"),
+    SEQ_DOME(1800, FX_NONE, ":SM11,800,150"),
+    SEQ_TERM(2450),
+};
+
+// =============================================================================
 // Catalog table
 // =============================================================================
 
@@ -216,6 +405,12 @@ static const SequenceEntry kCatalog[] = {
     { "DM:ALARM",   kAlarmSteps,   SEQ_STEPCOUNT(kAlarmSteps),   10000, TOGGLE_NONE, nullptr, 0 },
     { "DM:HEART",   kHeartSteps,   SEQ_STEPCOUNT(kHeartSteps),   10000, TOGGLE_NONE, nullptr, 0 },
     { "DM:RESET",   kResetSteps,   SEQ_STEPCOUNT(kResetSteps),   4000,  TOGGLE_NONE, nullptr, 0 },
+    { "DM:PIES",    kPiesOpenSteps,    SEQ_STEPCOUNT(kPiesOpenSteps),    12000,
+      TOGGLE_PIES, kPiesCloseSteps,    SEQ_STEPCOUNT(kPiesCloseSteps) },
+    { "DM:LOW",     kLowOpenSteps,     SEQ_STEPCOUNT(kLowOpenSteps),     15000,
+      TOGGLE_LOW,  kLowCloseSteps,     SEQ_STEPCOUNT(kLowCloseSteps) },
+    { "DM:OPENALL", kOpenallOpenSteps, SEQ_STEPCOUNT(kOpenallOpenSteps), 10000,
+      TOGGLE_ALL,  kOpenallCloseSteps, SEQ_STEPCOUNT(kOpenallCloseSteps) },
 };
 static constexpr uint8_t kCatalogSize =
     (uint8_t)(sizeof(kCatalog) / sizeof(kCatalog[0]));

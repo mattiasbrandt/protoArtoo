@@ -42,6 +42,28 @@ static void addFinal(SeqEngineState& st, SeqActionKind kind, const char* payload
     setPayload(a, payload);
 }
 
+// Flip the latched group state for the branch that just completed normally
+// (ADR 0004 decision 8). OPENALL acts on every panel, so its latch carries
+// the pie and ring groups with it in both directions.
+static void applyToggleLatch(SeqEngineState& st) {
+    const bool open = st.openBranch;
+    switch (st.entry->toggleGroup) {
+        case TOGGLE_PIES:
+            st.latches.piesOpen = open;
+            break;
+        case TOGGLE_LOW:
+            st.latches.lowOpen = open;
+            break;
+        case TOGGLE_ALL:
+            st.latches.allOpen = open;
+            st.latches.piesOpen = open;
+            st.latches.lowOpen = open;
+            break;
+        default:
+            break;
+    }
+}
+
 // Build the terminal auto-reset queue from activeFx (ADR 0004 decision 7).
 // FX_PANEL close-all is suppressed on the normal end of a toggle open branch
 // (panels are meant to stay open); FX_AUDIO stops playback only on abnormal
@@ -67,6 +89,18 @@ static void beginFinish(SeqEngineState& st, bool abnormal) {
     }
     if ((st.activeFx & FX_AUDIO) && abnormal) {
         addFinal(st, SEQ_ACT_AUDIO_STOP, nullptr);
+    }
+
+    // Toggle bookkeeping on normal completion. Close branches finish their
+    // per-slot :SM closes without a release (issue #2 gap #1: only :CL00
+    // group-releases), so emit :CL00 once no group remains latched open —
+    // releasing earlier would slam panels another sequence left open.
+    if (!abnormal && st.entry->toggleGroup != TOGGLE_NONE) {
+        applyToggleLatch(st);
+        if (!st.openBranch &&
+            !st.latches.piesOpen && !st.latches.lowOpen && !st.latches.allOpen) {
+            addFinal(st, SEQ_ACT_DOME_CMD, ":CL00");
+        }
     }
 }
 
