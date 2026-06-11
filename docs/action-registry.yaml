@@ -2023,7 +2023,7 @@ entries:
   api_path: /api/dome/cmd
   sse_event: null
   cpp_enum: null
-  cpp_file: src/tasks/sequence_dispatcher.cpp
+  cpp_file: src/tasks/sequence_catalog.cpp
   sources: [ sbus, web_api ]
   safety_critical: false
   requires_web_control: false
@@ -2038,7 +2038,7 @@ entries:
   api_path: /api/dome/cmd
   sse_event: null
   cpp_enum: null
-  cpp_file: src/tasks/sequence_dispatcher.cpp
+  cpp_file: src/tasks/sequence_catalog.cpp
   sources: [ sbus, web_api ]
   safety_critical: false
   requires_web_control: false
@@ -2053,7 +2053,202 @@ entries:
   api_path: /api/dome/cmd
   sse_event: null
   cpp_enum: null
-  cpp_file: src/tasks/sequence_dispatcher.cpp
+  cpp_file: src/tasks/sequence_catalog.cpp
+  sources: [ sbus, web_api ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+- name: dome.seq.flutter
+  display_name: DM:FLUTTER — Panel flutter
+  description: "4-second ring and pie sweep to 75 percent, then close. Body-owned flat sequence."
+  domain: dome
+  type: action
+  marcduino_cmd: "DM:FLUTTER"
+  api_path: /api/dome/cmd
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/tasks/sequence_catalog.cpp
+  sources: [ sbus, web_api ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+- name: dome.seq.bloom
+  display_name: DM:BLOOM — Pie bloom
+  description: "6-second pie bloom: slow open together, triple wiggle, close. Body-owned flat sequence (linear easing)."
+  domain: dome
+  type: action
+  marcduino_cmd: "DM:BLOOM"
+  api_path: /api/dome/cmd
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/tasks/sequence_catalog.cpp
+  sources: [ sbus, web_api ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+- name: dome.seq.leia
+  display_name: DM:LEIA — Leia message
+  description: "36-second Leia message: front holo Leia effect, Leia logics/PSI, $L audio. Body-owned flat sequence."
+  domain: dome
+  type: action
+  marcduino_cmd: "DM:LEIA"
+  api_path: /api/dome/cmd
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/tasks/sequence_catalog.cpp
+  sources: [ sbus, web_api ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+- name: dome.seq.alarm
+  display_name: DM:ALARM — Alarm
+  description: "10-second alarm: red holo flashes, alarm logics/PSI, alert-category audio. Body-owned flat sequence."
+  domain: dome
+  type: action
+  marcduino_cmd: "DM:ALARM"
+  api_path: /api/dome/cmd
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/tasks/sequence_catalog.cpp
+  sources: [ sbus, web_api ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+- name: dome.seq.heart
+  display_name: DM:HEART — Heart
+  description: "10-second sweetheart mode: rainbow holos, logic message, sentimental-category audio. Body-owned flat sequence."
+  domain: dome
+  type: action
+  marcduino_cmd: "DM:HEART"
+  api_path: /api/dome/cmd
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/tasks/sequence_catalog.cpp
+  sources: [ sbus, web_api ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+- name: dome.seq.reset
+  display_name: DM:RESET — Reset all
+  description: "Stop audio, close and release all panels, reset holos/logics/PSI; clears toggle latches. Body-owned flat sequence."
+  domain: dome
+  type: action
+  marcduino_cmd: "DM:RESET"
+  api_path: /api/dome/cmd
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/tasks/sequence_catalog.cpp
+  sources: [ sbus, web_api ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+- name: dome.seq.pies
+  display_name: DM:PIES — Pie panels toggle
+  description: "Pie panel toggle with latched state: wave-open twice or serial close. Body-owned toggle sequence (12 s window)."
+  domain: dome
+  type: action
+  marcduino_cmd: "DM:PIES"
+  api_path: /api/dome/cmd
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/tasks/sequence_catalog.cpp
+  sources: [ sbus, web_api ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+- name: dome.seq.low
+  display_name: DM:LOW — Ring panels toggle
+  description: "Ring panel toggle with latched state: wave twice then open, or serial close. Body-owned toggle sequence (15 s window)."
+  domain: dome
+  type: action
+  marcduino_cmd: "DM:LOW"
+  api_path: /api/dome/cmd
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/tasks/sequence_catalog.cpp
+  sources: [ sbus, web_api ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+- name: dome.seq.openall
+  display_name: DM:OPENALL — All panels toggle
+  description: "All-panel toggle with latched state: pie sweep + ring burst + twinkle, or serial close-all. Body-owned toggle sequence (10 s window)."
+  domain: dome
+  type: action
+  marcduino_cmd: "DM:OPENALL"
+  api_path: /api/dome/cmd
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/tasks/sequence_catalog.cpp
+  sources: [ sbus, web_api ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+- name: dome.seq.cantina
+  display_name: DM:CANTINA — Cantina dance
+  description: "15-second 130 BPM alternating panel dance with white holo flashes, long Cantina track. Body-owned loop sequence."
+  domain: dome
+  type: action
+  marcduino_cmd: "DM:CANTINA"
+  api_path: /api/dome/cmd
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/tasks/sequence_catalog.cpp
+  sources: [ sbus, web_api ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+- name: dome.seq.rockmarch
+  display_name: DM:ROCKMARCH — Rock march
+  description: "45-second Imperial March with one ring panel stepping per 923 ms beat. Body-owned loop sequence."
+  domain: dome
+  type: action
+  marcduino_cmd: "DM:ROCKMARCH"
+  api_path: /api/dome/cmd
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/tasks/sequence_catalog.cpp
+  sources: [ sbus, web_api ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+- name: dome.seq.scream
+  display_name: DM:SCREAM — Scream
+  description: "7-second scream: burst-open panels, red alert logics/PSI, random one-panel flutter, scream-category audio. Body-owned random sequence (15 s window)."
+  domain: dome
+  type: action
+  marcduino_cmd: "DM:SCREAM"
+  api_path: /api/dome/cmd
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/tasks/sequence_catalog.cpp
+  sources: [ sbus, web_api ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+- name: dome.seq.overload
+  display_name: DM:OVERLOAD — Overload
+  description: "7-second overload: failure logics/PSI, holos short-circuit, six panels drift to random positions, sad-category audio. Body-owned random sequence (12 s window)."
+  domain: dome
+  type: action
+  marcduino_cmd: "DM:OVERLOAD"
+  api_path: /api/dome/cmd
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/tasks/sequence_catalog.cpp
   sources: [ sbus, web_api ]
   safety_critical: false
   requires_web_control: false
