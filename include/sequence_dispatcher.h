@@ -28,9 +28,11 @@
 // SequenceLookupResult — returned by sequenceLookup() for test-observable routing.
 // -----------------------------------------------------------------------------
 enum SequenceLookupKind : uint8_t {
-    SEQ_CATALOG  = 0,  // in body catalog
+    SEQ_CATALOG  = 0,  // in body catalog (Factory Sequence)
     SEQ_ALIAS    = 1,  // known alias -> aliasTarget forwarded to dome
     SEQ_FALLBACK = 2,  // unknown; forward name as-is to dome
+    SEQ_RUNTIME  = 3,  // in the runtime store (Learned Sequence); runs in the
+                       // dispatcher like SEQ_CATALOG, loaded on demand from FS
 };
 
 struct SequenceLookupResult {

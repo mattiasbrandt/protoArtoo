@@ -54,6 +54,7 @@ bool sequenceStart(const char* name, CommandSource src) {
     SequenceLookupResult r = sequenceLookup(name);
 
     switch (r.kind) {
+        case SEQ_RUNTIME:   // Learned Sequence — loaded on demand in the task
         case SEQ_CATALOG: {
             if (sequenceQueue == nullptr) {
                 return false;

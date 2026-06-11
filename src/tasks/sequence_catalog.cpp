@@ -12,6 +12,7 @@
 #include <string.h>
 
 #include "audio_playback_policy.h"  // AudioPlaybackCategory / AudioPlaybackSlot
+#include "seq_store_index.h"        // runtime (Learned Sequence) name index
 #include "sequence_dispatcher.h"
 #include "sequence_engine.h"
 
@@ -613,6 +614,14 @@ SequenceLookupResult sequenceLookup(const char* name) {
     SequenceLookupResult r = { SEQ_FALLBACK, {} };
 
     if (name == nullptr || name[0] == '\0') {
+        return r;
+    }
+
+    // Runtime-first precedence (ADR 0006): a Learned Sequence shadows a Factory
+    // one of the same name (Retrained Sequence). Memory Wipe (delete) removes
+    // the index entry and the factory entry resurfaces below.
+    if (seqStoreIndexFind(name) != nullptr) {
+        r.kind = SEQ_RUNTIME;
         return r;
     }
 
