@@ -118,6 +118,34 @@ _Avoid_: queueing sequences, ignore-while-busy
 A canonical, config-backed sound role (the AudioNamedTracks namespace, for example scream, leia, cantina) used as the authoring surface for a sequence's sound steps, so a sequence references a sound by role and follows the operator's configured track number. The Marcduino $NNN and $-letter dialect stays valid at command boundaries for interoperability.
 _Avoid_: raw track-number authoring, dollar-command-only authoring
 
+**Factory Sequence**:
+A built-in DM:* sequence compiled into the firmware (the C++ catalog). The trusted, PR-reviewed expert surface; exempt from Protocol Check's meta rules.
+_Avoid_: default sequence, stock sequence
+
+**Learned Sequence**:
+A DM:* sequence defined as a JSON file on the controller filesystem (/seq/), created or edited without reflashing, accepted only after passing Protocol Check, and executed by the same coordinator engine as a Factory Sequence.
+_Avoid_: custom sequence, user macro, script
+
+**Retrained Sequence**:
+A Learned Sequence bearing a Factory Sequence's name. It shadows the factory one on every trigger path (RC, web, dome RX) via runtime-first lookup precedence (runtime -> catalog -> alias -> fallback).
+_Avoid_: override sequence, patched sequence
+
+**Memory Wipe**:
+Deleting a Retrained Sequence, after which the Factory Sequence programming returns instantly (its catalog entry resurfaces in lookup).
+_Avoid_: reset, restore, revert
+
+**Guild Sequence**:
+A Learned Sequence translated from another community project (a nod to the R2 Builders Guild), shipped in the filesystem image with Lineage. Delivered in slice 5.
+_Avoid_: imported macro, ported sequence
+
+**Lineage**:
+The provenance meta block on a Learned Sequence: source project, origin URL/commit, license, and a modified flag.
+_Avoid_: metadata, attribution, credits
+
+**Protocol Check**:
+The pure safety validator every Learned Sequence passes on save: name/command/structure bounds, retrain coherence, and conservative effect-class inference. Estop, suppression, and auto-reset remain engine-level invariants the format cannot express a bypass for.
+_Avoid_: linter, schema check, sanitizer
+
 ## Relationships
 
 - **Phase 5** can include work that is not yet covered by **Full Hardware Validation**.
