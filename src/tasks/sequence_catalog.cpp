@@ -11,24 +11,28 @@
 
 #include <string.h>
 
+#include "audio_playback_policy.h"  // AudioPlaybackCategory / AudioPlaybackSlot
 #include "sequence_dispatcher.h"
 #include "sequence_engine.h"
 
 #define SEQ_STEPCOUNT(arr) ((uint8_t)(sizeof(arr) / sizeof((arr)[0])))
 
+// Effect-class convention: tag the FIRST step that activates each persistent
+// effect (panel open, logic/PSI mode, holo effect, long audio). The engine
+// auto-emits the matching resets (@0T1/@0P1, *ST00, :CL00, audio stop) on
+// terminal transitions, so tables do not repeat standard cleanup steps.
+
 // =============================================================================
-// Flat sequences (slice 1)
+// Flat sequences
 // =============================================================================
 
 // DM:VADER — Imperial March visual mode (47 s).
-// Holos, logics, and PSI set to MARCH mode; reset at sequence end.
+// Holos, logics, and PSI set to MARCH mode; auto-reset at sequence end.
 static const SeqStep kVaderSteps[] = {
-    SEQ_AUDIO(0, "$M"),                          // Imperial March
-    SEQ_DOME(0, FX_LOGIC_PSI, "@HPA0021|47"),    // all holos red 47 s
+    SEQ_AUDIO_FX(0, FX_AUDIO, "$M"),             // Imperial March (stops on abort)
+    SEQ_DOME(0, FX_HOLO, "@HPA0021|47"),         // all holos red 47 s
     SEQ_DOME(0, FX_LOGIC_PSI, "@0T11"),          // MARCH logics
     SEQ_DOME(0, FX_LOGIC_PSI, "@0P11"),          // MARCH PSI
-    SEQ_DOME(47000, FX_NONE, "@0T1"),            // reset logics
-    SEQ_DOME(47000, FX_NONE, "@0P1"),            // reset PSI
     SEQ_TERM(47000),
 };
 
@@ -38,14 +42,13 @@ static const SeqStep kHelloSteps[] = {
     SEQ_AUDIO(0, "$H"),                          // happy/greeting clip
     SEQ_DOME(0, FX_NONE, "@1MHello There"),      // front logic text
     SEQ_DOME(0, FX_NONE, "@3MGeneral Kenobi"),
-    SEQ_DOME(0, FX_NONE, ":SM0,2200,150"),       // P1 open
+    SEQ_DOME(0, FX_PANEL, ":SM0,2200,150"),      // P1 open
     SEQ_DOME(160, FX_NONE, ":SM0,1500,150"),     // P1 half
     SEQ_DOME(320, FX_NONE, ":SM0,2200,150"),     // P1 open
     SEQ_DOME(480, FX_NONE, ":SM0,1500,150"),     // P1 half
     SEQ_DOME(640, FX_NONE, ":SM0,2200,150"),     // P1 open
-    SEQ_DOME(800, FX_PANEL, ":SM0,800,150"),     // P1 close
-    SEQ_DOME(950, FX_NONE, ":CL00"),             // release panels
-    SEQ_TERM(950),
+    SEQ_DOME(800, FX_NONE, ":SM0,800,150"),      // P1 close
+    SEQ_TERM(950),                               // auto :CL00 (close + release)
 };
 
 // DM:NOD — short acknowledgment: sound + logic text + P1 wave.
@@ -53,10 +56,150 @@ static const SeqStep kHelloSteps[] = {
 static const SeqStep kNodSteps[] = {
     SEQ_AUDIO(0, "$H"),                          // ack/happy clip
     SEQ_DOME(0, FX_NONE, "@1MYes"),              // logic text
-    SEQ_DOME(0, FX_NONE, ":SM0,2200,150"),       // P1 open
-    SEQ_DOME(150, FX_PANEL, ":SM0,800,150"),     // P1 close
-    SEQ_DOME(300, FX_NONE, ":CL00"),             // release
-    SEQ_TERM(300),
+    SEQ_DOME(0, FX_PANEL, ":SM0,2200,150"),      // P1 open
+    SEQ_DOME(150, FX_NONE, ":SM0,800,150"),      // P1 close
+    SEQ_TERM(300),                               // auto :CL00 (close + release)
+};
+
+// DM:FLUTTER — ring then pie panels sweep to 75%, then close (10 s window).
+// Serial :SM moves at 150 ms intervals reproduce the dome's original wave.
+static const SeqStep kFlutterSteps[] = {
+    // ring to 75% — P1,P2,P3,P4,P7,P11,P13
+    SEQ_DOME(0, FX_PANEL, ":SM0,1850,150"),
+    SEQ_DOME(150, FX_NONE, ":SM1,1850,150"),
+    SEQ_DOME(300, FX_NONE, ":SM2,1850,150"),
+    SEQ_DOME(450, FX_NONE, ":SM3,1850,150"),
+    SEQ_DOME(600, FX_NONE, ":SM4,1850,150"),
+    SEQ_DOME(750, FX_NONE, ":SM5,1850,150"),
+    SEQ_DOME(900, FX_NONE, ":SM6,1850,150"),
+    // pies to 75% — PP1,PP2,PP3,PP4,PP5,PP6
+    SEQ_DOME(1050, FX_NONE, ":SM8,1850,150"),
+    SEQ_DOME(1200, FX_NONE, ":SM9,1850,150"),
+    SEQ_DOME(1350, FX_NONE, ":SM12,1850,150"),
+    SEQ_DOME(1500, FX_NONE, ":SM10,1850,150"),
+    SEQ_DOME(1650, FX_NONE, ":SM7,1850,150"),
+    SEQ_DOME(1800, FX_NONE, ":SM11,1850,150"),
+    // close ring
+    SEQ_DOME(1950, FX_NONE, ":SM0,800,150"),
+    SEQ_DOME(2100, FX_NONE, ":SM1,800,150"),
+    SEQ_DOME(2250, FX_NONE, ":SM2,800,150"),
+    SEQ_DOME(2400, FX_NONE, ":SM3,800,150"),
+    SEQ_DOME(2550, FX_NONE, ":SM4,800,150"),
+    SEQ_DOME(2700, FX_NONE, ":SM5,800,150"),
+    SEQ_DOME(2850, FX_NONE, ":SM6,800,150"),
+    // close pies
+    SEQ_DOME(3000, FX_NONE, ":SM8,800,150"),
+    SEQ_DOME(3150, FX_NONE, ":SM9,800,150"),
+    SEQ_DOME(3300, FX_NONE, ":SM12,800,150"),
+    SEQ_DOME(3450, FX_NONE, ":SM10,800,150"),
+    SEQ_DOME(3600, FX_NONE, ":SM7,800,150"),
+    SEQ_DOME(3750, FX_NONE, ":SM11,800,150"),
+    SEQ_TERM(4250),                              // auto :CL00 (release)
+};
+
+// DM:BLOOM — pies open together over 1.2 s, wiggle three times, close (8 s).
+// Linear :SM moves stand in for the dome's sine easing (issue #2 gap #4).
+static const SeqStep kBloomSteps[] = {
+    SEQ_DOME(0, FX_PANEL, ":SM8,2200,1200"),
+    SEQ_DOME(0, FX_NONE, ":SM9,2200,1200"),
+    SEQ_DOME(0, FX_NONE, ":SM12,2200,1200"),
+    SEQ_DOME(0, FX_NONE, ":SM10,2200,1200"),
+    SEQ_DOME(0, FX_NONE, ":SM7,2200,1200"),
+    SEQ_DOME(0, FX_NONE, ":SM11,2200,1200"),
+    // wiggle cycle 1 (bloom hold ends at 3250)
+    SEQ_DOME(3250, FX_NONE, ":SM8,1900,130"),
+    SEQ_DOME(3250, FX_NONE, ":SM9,1900,130"),
+    SEQ_DOME(3250, FX_NONE, ":SM12,1900,130"),
+    SEQ_DOME(3250, FX_NONE, ":SM10,1900,130"),
+    SEQ_DOME(3250, FX_NONE, ":SM7,1900,130"),
+    SEQ_DOME(3250, FX_NONE, ":SM11,1900,130"),
+    SEQ_DOME(3430, FX_NONE, ":SM8,2200,130"),
+    SEQ_DOME(3430, FX_NONE, ":SM9,2200,130"),
+    SEQ_DOME(3430, FX_NONE, ":SM12,2200,130"),
+    SEQ_DOME(3430, FX_NONE, ":SM10,2200,130"),
+    SEQ_DOME(3430, FX_NONE, ":SM7,2200,130"),
+    SEQ_DOME(3430, FX_NONE, ":SM11,2200,130"),
+    // wiggle cycle 2
+    SEQ_DOME(3610, FX_NONE, ":SM8,1900,130"),
+    SEQ_DOME(3610, FX_NONE, ":SM9,1900,130"),
+    SEQ_DOME(3610, FX_NONE, ":SM12,1900,130"),
+    SEQ_DOME(3610, FX_NONE, ":SM10,1900,130"),
+    SEQ_DOME(3610, FX_NONE, ":SM7,1900,130"),
+    SEQ_DOME(3610, FX_NONE, ":SM11,1900,130"),
+    SEQ_DOME(3790, FX_NONE, ":SM8,2200,130"),
+    SEQ_DOME(3790, FX_NONE, ":SM9,2200,130"),
+    SEQ_DOME(3790, FX_NONE, ":SM12,2200,130"),
+    SEQ_DOME(3790, FX_NONE, ":SM10,2200,130"),
+    SEQ_DOME(3790, FX_NONE, ":SM7,2200,130"),
+    SEQ_DOME(3790, FX_NONE, ":SM11,2200,130"),
+    // wiggle cycle 3
+    SEQ_DOME(3970, FX_NONE, ":SM8,1900,130"),
+    SEQ_DOME(3970, FX_NONE, ":SM9,1900,130"),
+    SEQ_DOME(3970, FX_NONE, ":SM12,1900,130"),
+    SEQ_DOME(3970, FX_NONE, ":SM10,1900,130"),
+    SEQ_DOME(3970, FX_NONE, ":SM7,1900,130"),
+    SEQ_DOME(3970, FX_NONE, ":SM11,1900,130"),
+    SEQ_DOME(4150, FX_NONE, ":SM8,2200,130"),
+    SEQ_DOME(4150, FX_NONE, ":SM9,2200,130"),
+    SEQ_DOME(4150, FX_NONE, ":SM12,2200,130"),
+    SEQ_DOME(4150, FX_NONE, ":SM10,2200,130"),
+    SEQ_DOME(4150, FX_NONE, ":SM7,2200,130"),
+    SEQ_DOME(4150, FX_NONE, ":SM11,2200,130"),
+    // close pies together after a 1 s hold
+    SEQ_DOME(5150, FX_NONE, ":SM8,800,100"),
+    SEQ_DOME(5150, FX_NONE, ":SM9,800,100"),
+    SEQ_DOME(5150, FX_NONE, ":SM12,800,100"),
+    SEQ_DOME(5150, FX_NONE, ":SM10,800,100"),
+    SEQ_DOME(5150, FX_NONE, ":SM7,800,100"),
+    SEQ_DOME(5150, FX_NONE, ":SM11,800,100"),
+    SEQ_TERM(5650),                              // auto :CL00 (release)
+};
+
+// DM:LEIA — Leia message mode (36 s): front holo Leia, other holos off,
+// Leia logics/PSI; everything resets via effect classes at the end.
+static const SeqStep kLeiaSteps[] = {
+    SEQ_AUDIO_FX(0, FX_AUDIO, "$L"),             // Leia message (stops on abort)
+    SEQ_DOME(0, FX_HOLO, "@HPS101|36"),          // front holo Leia sequence 36 s
+    SEQ_DOME(0, FX_HOLO, "@HPR02|36"),           // rear holo off 36 s
+    SEQ_DOME(0, FX_HOLO, "@HPT02|36"),           // top holo off 36 s
+    SEQ_DOME(0, FX_LOGIC_PSI, "@0T6"),           // Leia logics
+    SEQ_DOME(0, FX_LOGIC_PSI, "@0P6"),           // Leia PSI
+    SEQ_TERM(36000),                             // auto @0T1/@0P1/*ST00
+};
+
+// DM:ALARM — pulsing red holos/logics/PSI (10 s). Audio: random track from
+// the alert category, falling back to the named scream track.
+static const SeqStep kAlarmSteps[] = {
+    SEQ_AUDIO_CAT(0, AUDIO_CATEGORY_ALERT, AUDIO_SLOT_NAMED_SCREAM),
+    SEQ_DOME(0, FX_HOLO, "@HPA0021|10"),         // all holos red flashes 10 s
+    SEQ_DOME(0, FX_LOGIC_PSI, "@0T3"),           // alarm logics
+    SEQ_DOME(0, FX_LOGIC_PSI, "@0P3"),           // alarm PSI
+    SEQ_TERM(10000),                             // auto @0T1/@0P1/*ST00
+};
+
+// DM:HEART — rainbow holos and a sweet logic message (10 s). Audio: random
+// track from the sentimental category, falling back to the named happy track.
+// Logic text is single-line per issue #2 gap #3 (no wire escaping scheme yet).
+static const SeqStep kHeartSteps[] = {
+    SEQ_AUDIO_CAT(0, AUDIO_CATEGORY_SENTIMENTAL, AUDIO_SLOT_NAMED_HAPPY),
+    SEQ_DOME(0, FX_HOLO, "@HPF006|10"),          // front holo rainbow 10 s
+    SEQ_DOME(0, FX_HOLO, "@HPR006|10"),          // rear holo rainbow 10 s
+    SEQ_DOME(0, FX_HOLO, "@HPT006|10"),          // top holo rainbow 10 s
+    SEQ_DOME(0, FX_NONE, "@1MYou're Wonderful"), // front logic text
+    SEQ_DOME(0, FX_LOGIC_PSI, "@1P2"),           // front PSI flash-color
+    SEQ_TERM(10000),                             // auto @0T1/@0P1/*ST00
+};
+
+// DM:RESET — stop audio, close and release all panels, reset holos/logics/PSI.
+// The resets ARE the choreography here, so they are explicit steps; the :CL00
+// also clears all body-side toggle latches.
+static const SeqStep kResetSteps[] = {
+    SEQ_AUDIO(0, "$s"),                          // stop playback
+    SEQ_DOME(0, FX_NONE, ":CL00"),               // close + release all panels
+    SEQ_DOME(1150, FX_NONE, "*ST00"),            // reset holos
+    SEQ_DOME(1150, FX_NONE, "@0T1"),             // reset logics
+    SEQ_DOME(1150, FX_NONE, "@0P1"),             // reset PSI
+    SEQ_TERM(1500),
 };
 
 // =============================================================================
@@ -64,9 +207,15 @@ static const SeqStep kNodSteps[] = {
 // =============================================================================
 
 static const SequenceEntry kCatalog[] = {
-    { "DM:VADER", kVaderSteps, SEQ_STEPCOUNT(kVaderSteps), 47000, TOGGLE_NONE, nullptr, 0 },
-    { "DM:HELLO", kHelloSteps, SEQ_STEPCOUNT(kHelloSteps), 4000,  TOGGLE_NONE, nullptr, 0 },
-    { "DM:NOD",   kNodSteps,   SEQ_STEPCOUNT(kNodSteps),   3000,  TOGGLE_NONE, nullptr, 0 },
+    { "DM:VADER",   kVaderSteps,   SEQ_STEPCOUNT(kVaderSteps),   47000, TOGGLE_NONE, nullptr, 0 },
+    { "DM:HELLO",   kHelloSteps,   SEQ_STEPCOUNT(kHelloSteps),   4000,  TOGGLE_NONE, nullptr, 0 },
+    { "DM:NOD",     kNodSteps,     SEQ_STEPCOUNT(kNodSteps),     3000,  TOGGLE_NONE, nullptr, 0 },
+    { "DM:FLUTTER", kFlutterSteps, SEQ_STEPCOUNT(kFlutterSteps), 10000, TOGGLE_NONE, nullptr, 0 },
+    { "DM:BLOOM",   kBloomSteps,   SEQ_STEPCOUNT(kBloomSteps),   8000,  TOGGLE_NONE, nullptr, 0 },
+    { "DM:LEIA",    kLeiaSteps,    SEQ_STEPCOUNT(kLeiaSteps),    36000, TOGGLE_NONE, nullptr, 0 },
+    { "DM:ALARM",   kAlarmSteps,   SEQ_STEPCOUNT(kAlarmSteps),   10000, TOGGLE_NONE, nullptr, 0 },
+    { "DM:HEART",   kHeartSteps,   SEQ_STEPCOUNT(kHeartSteps),   10000, TOGGLE_NONE, nullptr, 0 },
+    { "DM:RESET",   kResetSteps,   SEQ_STEPCOUNT(kResetSteps),   4000,  TOGGLE_NONE, nullptr, 0 },
 };
 static constexpr uint8_t kCatalogSize =
     (uint8_t)(sizeof(kCatalog) / sizeof(kCatalog[0]));

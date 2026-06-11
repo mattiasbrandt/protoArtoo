@@ -12,6 +12,7 @@
 
 #include <unity.h>
 
+#include "audio_playback_policy.h"
 #include "sequence_dispatcher.h"
 #include "sequence_engine.h"
 
@@ -264,9 +265,61 @@ void test_real_vader_entry_runs_through_engine() {
     TEST_ASSERT_EQUAL_STRING("$M|@HPA0021|47|@0T11|@0P11", log);
 
     log[0] = '\0';
-    // END at 47000: explicit resets plus the FX_LOGIC_PSI auto-reset.
-    TEST_ASSERT_EQUAL_INT(4, drainAt(st, 47000, log, sizeof(log)));
-    TEST_ASSERT_EQUAL_STRING("@0T1|@0P1|@0T1|@0P1", log);
+    // Normal END at 47000: logic/PSI + holo auto-reset; audio plays out.
+    TEST_ASSERT_EQUAL_INT(3, drainAt(st, 47000, log, sizeof(log)));
+    TEST_ASSERT_EQUAL_STRING("@0T1|@0P1|*ST00", log);
+    TEST_ASSERT_FALSE(seqEngineActive(st));
+}
+
+// Abnormal termination of DM:VADER additionally stops the long audio track.
+void test_real_vader_abort_stops_audio_and_resets_holos() {
+    const SequenceEntry* e = sequenceCatalogFind("DM:VADER");
+    TEST_ASSERT_NOT_NULL(e);
+
+    SeqEngineState st;
+    seqEngineInit(st);
+    seqEngineStart(st, e, 0);
+    drainAt(st, 0, nullptr, 0);
+
+    seqEngineAbort(st);
+    char log[256] = "";
+    TEST_ASSERT_EQUAL_INT(4, drainAt(st, 5000, log, sizeof(log)));
+    TEST_ASSERT_EQUAL_STRING("@0T1|@0P1|*ST00|<stop>", log);
+    TEST_ASSERT_FALSE(seqEngineActive(st));
+}
+
+// STEP_AUDIO_CATEGORY resolves into a category action with the fallback slot.
+void test_audio_category_step_emits_category_action() {
+    const SequenceEntry* e = sequenceCatalogFind("DM:ALARM");
+    TEST_ASSERT_NOT_NULL(e);
+
+    SeqEngineState st;
+    seqEngineInit(st);
+    seqEngineStart(st, e, 0);
+
+    SeqAction act = {};
+    TEST_ASSERT_TRUE(seqEnginePeek(st, 0, stubRand, act));
+    TEST_ASSERT_EQUAL_INT(SEQ_ACT_AUDIO_CATEGORY, (int)act.kind);
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)AUDIO_CATEGORY_ALERT, act.audioCategory);
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)AUDIO_SLOT_NAMED_SCREAM, act.audioFallbackSlot);
+}
+
+// DM:RESET runs its explicit cleanup steps; the :CL00 clears toggle latches.
+void test_real_reset_entry_clears_latches_and_resets() {
+    const SequenceEntry* e = sequenceCatalogFind("DM:RESET");
+    TEST_ASSERT_NOT_NULL(e);
+
+    SeqEngineState st;
+    seqEngineInit(st);
+    st.latches.piesOpen = true;
+    st.latches.lowOpen = true;
+    seqEngineStart(st, e, 0);
+
+    char log[256] = "";
+    TEST_ASSERT_EQUAL_INT(5, drainAt(st, 2000, log, sizeof(log)));
+    TEST_ASSERT_EQUAL_STRING("$s|:CL00|*ST00|@0T1|@0P1", log);
+    TEST_ASSERT_FALSE(st.latches.piesOpen);
+    TEST_ASSERT_FALSE(st.latches.lowOpen);
     TEST_ASSERT_FALSE(seqEngineActive(st));
 }
 
@@ -322,6 +375,9 @@ int main(int /*argc*/, char** /*argv*/) {
     RUN_TEST(test_catalog_find_returns_entry_for_vader);
     RUN_TEST(test_catalog_find_returns_null_for_unknown);
     RUN_TEST(test_real_vader_entry_runs_through_engine);
+    RUN_TEST(test_real_vader_abort_stops_audio_and_resets_holos);
+    RUN_TEST(test_audio_category_step_emits_category_action);
+    RUN_TEST(test_real_reset_entry_clears_latches_and_resets);
 
     RUN_TEST(test_cl00_step_clears_latches);
     RUN_TEST(test_clear_latches_helper);

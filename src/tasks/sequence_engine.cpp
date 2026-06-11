@@ -99,8 +99,13 @@ static bool resolveStep(SeqEngineState& st, const SeqStep& step, SeqRandFn rnd) 
             a.kind = SEQ_ACT_AUDIO_DOLLAR;
             setPayload(a, step.payload);
             break;
+        case STEP_AUDIO_CATEGORY:
+            a.kind = SEQ_ACT_AUDIO_CATEGORY;
+            a.audioCategory = step.params.audioCategory;
+            a.audioFallbackSlot = step.params.audioFallbackSlot;
+            break;
         default:
-            return false;  // STEP_LOOP / STEP_RANDOM / STEP_AUDIO_CATEGORY: later commits
+            return false;  // STEP_LOOP / STEP_RANDOM: later slice-2 commits
     }
 
     st.pending = a;
