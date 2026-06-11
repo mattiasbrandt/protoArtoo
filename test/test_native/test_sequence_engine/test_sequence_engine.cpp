@@ -324,6 +324,118 @@ void test_real_reset_entry_clears_latches_and_resets() {
 }
 
 // -----------------------------------------------------------------------------
+// STEP_LOOP scheduling
+// -----------------------------------------------------------------------------
+
+// Loop at t=100: body = A (rel 0) + B (rel 50), period 200, duration 600
+// -> iterations start at rel 0, 200, 400; post-loop step at 800, END 900.
+static const SeqStep kLoopSteps[] = {
+    SEQ_DOME(0, FX_NONE, "@PRE"),
+    SEQ_LOOP(100, 2, 200, 600),
+    SEQ_DOME(0, FX_NONE, "@A"),
+    SEQ_DOME(50, FX_NONE, "@B"),
+    SEQ_DOME(800, FX_NONE, "@POST"),
+    SEQ_TERM(900),
+};
+static const SequenceEntry kLoopEntry = {
+    "TEST:LOOP", kLoopSteps,
+    (uint8_t)(sizeof(kLoopSteps) / sizeof(kLoopSteps[0])),
+    2000, TOGGLE_NONE, nullptr, 0,
+};
+
+void test_loop_iterations_fire_at_period_offsets() {
+    SeqEngineState st;
+    seqEngineInit(st);
+    seqEngineStart(st, &kLoopEntry, 1000);
+
+    char log[256] = "";
+    drainAt(st, 1000, log, sizeof(log));
+    TEST_ASSERT_EQUAL_STRING("@PRE", log);
+
+    // Iteration 1 at abs 1100/1150.
+    TEST_ASSERT_EQUAL_INT(0, drainAt(st, 1099, nullptr, 0));
+    log[0] = '\0';
+    TEST_ASSERT_EQUAL_INT(1, drainAt(st, 1100, log, sizeof(log)));
+    TEST_ASSERT_EQUAL_STRING("@A", log);
+    log[0] = '\0';
+    TEST_ASSERT_EQUAL_INT(1, drainAt(st, 1150, log, sizeof(log)));
+    TEST_ASSERT_EQUAL_STRING("@B", log);
+
+    // Iteration 2 at abs 1300/1350; iteration 3 at abs 1500/1550.
+    log[0] = '\0';
+    TEST_ASSERT_EQUAL_INT(2, drainAt(st, 1350, log, sizeof(log)));
+    TEST_ASSERT_EQUAL_STRING("@A|@B", log);
+    log[0] = '\0';
+    TEST_ASSERT_EQUAL_INT(2, drainAt(st, 1550, log, sizeof(log)));
+    TEST_ASSERT_EQUAL_STRING("@A|@B", log);
+
+    // No iteration 4 (rel 600 not < duration 600); post-loop at abs 1800.
+    TEST_ASSERT_EQUAL_INT(0, drainAt(st, 1799, nullptr, 0));
+    log[0] = '\0';
+    TEST_ASSERT_EQUAL_INT(1, drainAt(st, 1800, log, sizeof(log)));
+    TEST_ASSERT_EQUAL_STRING("@POST", log);
+
+    TEST_ASSERT_EQUAL_INT(0, drainAt(st, 1900, nullptr, 0));
+    TEST_ASSERT_FALSE(seqEngineActive(st));
+}
+
+void test_loop_late_tick_catches_up_all_iterations() {
+    SeqEngineState st;
+    seqEngineInit(st);
+    seqEngineStart(st, &kLoopEntry, 0);
+
+    char log[256] = "";
+    TEST_ASSERT_EQUAL_INT(8, drainAt(st, 5000, log, sizeof(log)));
+    TEST_ASSERT_EQUAL_STRING("@PRE|@A|@B|@A|@B|@A|@B|@POST", log);
+    TEST_ASSERT_FALSE(seqEngineActive(st));
+}
+
+void test_loop_abort_mid_iteration_finishes_clean() {
+    SeqEngineState st;
+    seqEngineInit(st);
+    seqEngineStart(st, &kLoopEntry, 0);
+    drainAt(st, 150, nullptr, 0);  // @PRE + iteration 1
+
+    seqEngineAbort(st);
+    TEST_ASSERT_EQUAL_INT(0, drainAt(st, 200, nullptr, 0));  // no FX set
+    TEST_ASSERT_FALSE(seqEngineActive(st));
+}
+
+void test_real_loop_entries_have_loop_headers() {
+    const SequenceEntry* cantina = sequenceCatalogFind("DM:CANTINA");
+    TEST_ASSERT_NOT_NULL(cantina);
+    TEST_ASSERT_EQUAL_INT(STEP_LOOP, (int)cantina->steps[4].type);
+    TEST_ASSERT_EQUAL_UINT8(26, cantina->steps[4].params.bodyCount);
+    TEST_ASSERT_EQUAL_UINT16(1846, cantina->steps[4].params.periodMs);
+
+    const SequenceEntry* rock = sequenceCatalogFind("DM:ROCKMARCH");
+    TEST_ASSERT_NOT_NULL(rock);
+    TEST_ASSERT_EQUAL_INT(STEP_LOOP, (int)rock->steps[4].type);
+    TEST_ASSERT_EQUAL_UINT8(14, rock->steps[4].params.bodyCount);
+    TEST_ASSERT_EQUAL_UINT32(45000, rock->steps[4].params.durationMs);
+
+    // Loop header + body + END must fit the table exactly.
+    TEST_ASSERT_EQUAL_UINT8(4 + 1 + 26 + 1, cantina->stepCount);
+    TEST_ASSERT_EQUAL_UINT8(4 + 1 + 14 + 1, rock->stepCount);
+}
+
+// ROCKMARCH timing: first beat of iteration 2 lands at period offset 6461.
+void test_real_rockmarch_second_pass_timing() {
+    const SequenceEntry* e = sequenceCatalogFind("DM:ROCKMARCH");
+    TEST_ASSERT_NOT_NULL(e);
+
+    SeqEngineState st;
+    seqEngineInit(st);
+    seqEngineStart(st, e, 0);
+    drainAt(st, 6311, nullptr, 0);  // setup + full first ring pass
+
+    SeqAction act = {};
+    TEST_ASSERT_FALSE(seqEnginePeek(st, 6460, stubRand, act));
+    TEST_ASSERT_TRUE(seqEnginePeek(st, 6461, stubRand, act));
+    TEST_ASSERT_EQUAL_STRING(":SM0,2200,150", act.payload);
+}
+
+// -----------------------------------------------------------------------------
 // Toggle sequences (ADR 0004 decision 8)
 // -----------------------------------------------------------------------------
 
@@ -492,6 +604,12 @@ int main(int /*argc*/, char** /*argv*/) {
     RUN_TEST(test_real_vader_abort_stops_audio_and_resets_holos);
     RUN_TEST(test_audio_category_step_emits_category_action);
     RUN_TEST(test_real_reset_entry_clears_latches_and_resets);
+
+    RUN_TEST(test_loop_iterations_fire_at_period_offsets);
+    RUN_TEST(test_loop_late_tick_catches_up_all_iterations);
+    RUN_TEST(test_loop_abort_mid_iteration_finishes_clean);
+    RUN_TEST(test_real_loop_entries_have_loop_headers);
+    RUN_TEST(test_real_rockmarch_second_pass_timing);
 
     RUN_TEST(test_toggle_first_press_runs_open_branch_and_latches_open);
     RUN_TEST(test_toggle_second_press_runs_close_branch_and_releases);

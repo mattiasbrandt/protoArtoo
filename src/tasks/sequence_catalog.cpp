@@ -203,6 +203,79 @@ static const SeqStep kResetSteps[] = {
 };
 
 // =============================================================================
+// Loop sequences — a STEP_LOOP header repeats the following bodyCount steps
+// every periodMs while the iteration start is inside durationMs. Body step
+// times are relative to the iteration start. Post-loop steps are authored
+// past the worst-case loop end (the final iteration may overhang durationMs).
+// =============================================================================
+
+// DM:CANTINA — 130 BPM alternating panel dance for ~15 s (17 s window).
+// Two beats per iteration: group A open / group B closed, then inverted.
+// 8 iterations x 1846 ms from t=100 -> loop ends at ~14868 ms.
+static const SeqStep kCantinaSteps[] = {
+    SEQ_AUDIO_FX(0, FX_AUDIO, "$C"),             // long Cantina (stops on abort)
+    SEQ_DOME(0, FX_HOLO, "@HPA0029|15"),         // all holos white flashes 15 s
+    SEQ_DOME(0, FX_LOGIC_PSI, "@0T2"),           // flash/color logics
+    SEQ_DOME(0, FX_LOGIC_PSI, "@0P2"),           // flash/color PSI
+    SEQ_LOOP(100, 26, 1846, 14000),
+    // beat A: pies PP1/PP4/PP3 + ring P1/P3/P7/P13 open, the rest closed
+    SEQ_DOME(0, FX_PANEL, ":SM8,2200,150"),
+    SEQ_DOME(0, FX_NONE, ":SM10,2200,150"),
+    SEQ_DOME(0, FX_NONE, ":SM12,2200,150"),
+    SEQ_DOME(0, FX_NONE, ":SM9,800,150"),
+    SEQ_DOME(0, FX_NONE, ":SM7,800,150"),
+    SEQ_DOME(0, FX_NONE, ":SM11,800,150"),
+    SEQ_DOME(0, FX_NONE, ":SM0,2200,150"),
+    SEQ_DOME(0, FX_NONE, ":SM2,2200,150"),
+    SEQ_DOME(0, FX_NONE, ":SM4,2200,150"),
+    SEQ_DOME(0, FX_NONE, ":SM6,2200,150"),
+    SEQ_DOME(0, FX_NONE, ":SM1,800,150"),
+    SEQ_DOME(0, FX_NONE, ":SM3,800,150"),
+    SEQ_DOME(0, FX_NONE, ":SM5,800,150"),
+    // beat B: inverted groups
+    SEQ_DOME(923, FX_NONE, ":SM8,800,150"),
+    SEQ_DOME(923, FX_NONE, ":SM10,800,150"),
+    SEQ_DOME(923, FX_NONE, ":SM12,800,150"),
+    SEQ_DOME(923, FX_NONE, ":SM9,2200,150"),
+    SEQ_DOME(923, FX_NONE, ":SM7,2200,150"),
+    SEQ_DOME(923, FX_NONE, ":SM11,2200,150"),
+    SEQ_DOME(923, FX_NONE, ":SM0,800,150"),
+    SEQ_DOME(923, FX_NONE, ":SM2,800,150"),
+    SEQ_DOME(923, FX_NONE, ":SM4,800,150"),
+    SEQ_DOME(923, FX_NONE, ":SM6,800,150"),
+    SEQ_DOME(923, FX_NONE, ":SM1,2200,150"),
+    SEQ_DOME(923, FX_NONE, ":SM3,2200,150"),
+    SEQ_DOME(923, FX_NONE, ":SM5,2200,150"),
+    SEQ_TERM(15400),                             // auto @0T1/@0P1/*ST00/:CL00
+};
+
+// DM:ROCKMARCH — Imperial March with one ring panel stepping per beat
+// (923 ms) for ~45 s (47 s window). One iteration = one full ring pass:
+// open slot k at k*923, close it 773 ms later. 7 iterations x 6461 ms.
+static const SeqStep kRockmarchSteps[] = {
+    SEQ_AUDIO_FX(0, FX_AUDIO, "$M"),             // Imperial March (stops on abort)
+    SEQ_DOME(0, FX_HOLO, "@HPA0021|47"),         // all holos red flashes 47 s
+    SEQ_DOME(0, FX_LOGIC_PSI, "@0T11"),          // MARCH logics
+    SEQ_DOME(0, FX_LOGIC_PSI, "@0P11"),          // MARCH PSI
+    SEQ_LOOP(0, 14, 6461, 45000),
+    SEQ_DOME(0, FX_PANEL, ":SM0,2200,150"),
+    SEQ_DOME(773, FX_NONE, ":SM0,800,150"),
+    SEQ_DOME(923, FX_NONE, ":SM1,2200,150"),
+    SEQ_DOME(1696, FX_NONE, ":SM1,800,150"),
+    SEQ_DOME(1846, FX_NONE, ":SM2,2200,150"),
+    SEQ_DOME(2619, FX_NONE, ":SM2,800,150"),
+    SEQ_DOME(2769, FX_NONE, ":SM3,2200,150"),
+    SEQ_DOME(3542, FX_NONE, ":SM3,800,150"),
+    SEQ_DOME(3692, FX_NONE, ":SM4,2200,150"),
+    SEQ_DOME(4465, FX_NONE, ":SM4,800,150"),
+    SEQ_DOME(4615, FX_NONE, ":SM5,2200,150"),
+    SEQ_DOME(5388, FX_NONE, ":SM5,800,150"),
+    SEQ_DOME(5538, FX_NONE, ":SM6,2200,150"),
+    SEQ_DOME(6311, FX_NONE, ":SM6,800,150"),
+    SEQ_TERM(47300),                             // auto @0T1/@0P1/*ST00/:CL00
+};
+
+// =============================================================================
 // Toggle sequences (ADR 0004 decision 8) — `steps` is the open branch,
 // `closeSteps` the close branch; the engine picks by latched group state and
 // flips the latch on normal completion. Close branches end without a release;
@@ -405,6 +478,8 @@ static const SequenceEntry kCatalog[] = {
     { "DM:ALARM",   kAlarmSteps,   SEQ_STEPCOUNT(kAlarmSteps),   10000, TOGGLE_NONE, nullptr, 0 },
     { "DM:HEART",   kHeartSteps,   SEQ_STEPCOUNT(kHeartSteps),   10000, TOGGLE_NONE, nullptr, 0 },
     { "DM:RESET",   kResetSteps,   SEQ_STEPCOUNT(kResetSteps),   4000,  TOGGLE_NONE, nullptr, 0 },
+    { "DM:CANTINA",   kCantinaSteps,   SEQ_STEPCOUNT(kCantinaSteps),   17000, TOGGLE_NONE, nullptr, 0 },
+    { "DM:ROCKMARCH", kRockmarchSteps, SEQ_STEPCOUNT(kRockmarchSteps), 47000, TOGGLE_NONE, nullptr, 0 },
     { "DM:PIES",    kPiesOpenSteps,    SEQ_STEPCOUNT(kPiesOpenSteps),    12000,
       TOGGLE_PIES, kPiesCloseSteps,    SEQ_STEPCOUNT(kPiesCloseSteps) },
     { "DM:LOW",     kLowOpenSteps,     SEQ_STEPCOUNT(kLowOpenSteps),     15000,

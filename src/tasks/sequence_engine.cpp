@@ -113,6 +113,15 @@ static void finishIdle(SeqEngineState& st) {
     st.pendingComputed = false;
 }
 
+// Absolute fire time of the step under the cursor. Steps inside a STEP_LOOP
+// body are scheduled relative to the current iteration start.
+static uint32_t stepFireAt(const SeqEngineState& st, const SeqStep& step) {
+    if (st.inLoop) {
+        return st.startMs + st.steps[st.loopHeader].tMs + st.iterStartRel + step.tMs;
+    }
+    return st.startMs + step.tMs;
+}
+
 // Resolve the step under the cursor into a pending action with an absolute
 // fire time. Returns false for step types that emit nothing (skipped).
 static bool resolveStep(SeqEngineState& st, const SeqStep& step, SeqRandFn rnd) {
@@ -139,11 +148,11 @@ static bool resolveStep(SeqEngineState& st, const SeqStep& step, SeqRandFn rnd) 
             a.audioFallbackSlot = step.params.audioFallbackSlot;
             break;
         default:
-            return false;  // STEP_LOOP / STEP_RANDOM: later slice-2 commits
+            return false;  // STEP_RANDOM: later slice-2 commit
     }
 
     st.pending = a;
-    st.pendingFireAt = st.startMs + step.tMs;
+    st.pendingFireAt = stepFireAt(st, step);
     st.pendingComputed = true;
     return true;
 }
@@ -234,6 +243,26 @@ bool seqEnginePeek(SeqEngineState& st, uint32_t nowMs, SeqRandFn rnd, SeqAction&
                 beginFinish(st, false);
                 break;
             }
+
+            // Loop body exhausted: start the next iteration if its start time
+            // is still inside the loop duration, else fall through to the
+            // post-loop steps (the final iteration may overhang durationMs;
+            // post-loop tMs values are authored past the worst-case end).
+            if (st.inLoop) {
+                const SeqStepParams& lp = st.steps[st.loopHeader].params;
+                const uint8_t bodyEnd = (uint8_t)(st.loopHeader + 1 + lp.bodyCount);
+                if (st.cursor >= bodyEnd) {
+                    const uint32_t nextIter = st.iterStartRel + lp.periodMs;
+                    if (nextIter < lp.durationMs) {
+                        st.iterStartRel = nextIter;
+                        st.cursor = (uint8_t)(st.loopHeader + 1);
+                    } else {
+                        st.inLoop = false;
+                    }
+                    continue;
+                }
+            }
+
             const SeqStep& step = st.steps[st.cursor];
 
             if (step.type == STEP_END) {
@@ -242,6 +271,21 @@ bool seqEnginePeek(SeqEngineState& st, uint32_t nowMs, SeqRandFn rnd, SeqAction&
                 }
                 beginFinish(st, false);
                 break;
+            }
+
+            if (step.type == STEP_LOOP) {
+                if (!timeReached(nowMs, st.startMs + step.tMs)) {
+                    return false;
+                }
+                if (step.params.bodyCount == 0) {
+                    st.cursor++;  // degenerate loop — skip
+                    continue;
+                }
+                st.inLoop = true;
+                st.loopHeader = st.cursor;
+                st.iterStartRel = 0;
+                st.cursor++;
+                continue;
             }
 
             if (!st.pendingComputed) {
