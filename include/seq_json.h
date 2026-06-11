@@ -30,6 +30,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <ArduinoJson.h>
+
 #include "protocol_check.h"   // SeqDraft, ProtocolCheckResult
 #include "sequence_engine.h"  // SeqStep, SeqToggleGroup, SeqSlotSet
 
@@ -50,6 +52,14 @@ ProtocolCheckResult seqJsonParse(const char* json,
                                  SeqStep* stepBuf, uint8_t stepCap,
                                  SeqStep* closeBuf, uint8_t closeCap,
                                  SeqDraft& out);
+
+// Same, from an already-deserialized JSON root — lets the runtime store parse
+// straight from a LittleFS File stream (deserializeJson(doc, file)) without a
+// large intermediate text buffer.
+ProtocolCheckResult seqJsonParseVariant(JsonVariantConst root,
+                                        SeqStep* stepBuf, uint8_t stepCap,
+                                        SeqStep* closeBuf, uint8_t closeCap,
+                                        SeqDraft& out);
 
 // Serialize an entry to JSON v1 text. `source` populates meta.source
 // ("factory" for builtins, "user"/"guild" for runtime). Returns the number of

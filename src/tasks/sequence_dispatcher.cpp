@@ -25,6 +25,7 @@
 #include "dome_link.h"
 #include "logging.h"
 #include "robot_state.h"
+#include "seq_store.h"
 #include "sequence_dispatcher.h"
 #include "sequence_engine.h"
 
@@ -142,6 +143,7 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
     bool prevDomeConn = false;
     bool retryLogged = false;
     char activeName[24] = "";
+    static SequenceEntry runtimeEntry;  // storage for a loaded Learned Sequence
 
     while (true) {
         esp_task_wdt_reset();
@@ -150,21 +152,41 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
         // Check for a new request (preempt current sequence if one is running).
         SequenceRequest req = {};
         if (xQueueReceive(sequenceQueue, &req, 0) == pdTRUE) {
-            const SequenceEntry* entry = sequenceCatalogFind(req.name);
-            if (entry != nullptr) {
+            // Decide whether this name will start BEFORE touching the engine or
+            // the runtime staging buffers — a runtime load overwrites the buffers
+            // the current sequence may still be running from.
+            const bool isRuntime = (sequenceLookup(req.name).kind == SEQ_RUNTIME);
+            const SequenceEntry* catalogEntry =
+                isRuntime ? nullptr : sequenceCatalogFind(req.name);
+            const bool willStart = isRuntime || (catalogEntry != nullptr);
+
+            if (willStart) {
                 if (seqEngineActive(engine)) {
                     PA_LOG_INFO(TAG, "preempt %s -> %s", activeName, req.name);
                     seqEngineAbort(engine);
-                    drainBestEffort(engine, now);
+                    drainBestEffort(engine, now);  // drain old run from buffers
                 }
-                seqEngineStart(engine, entry, now);
-                strncpy(activeName, req.name, sizeof(activeName) - 1);
-                activeName[sizeof(activeName) - 1] = '\0';
-                retryLogged = false;
-                setSuppression(now + entry->suppressMs);
-                PA_LOG_INFO(TAG, "[%s] start %s suppress=%u ms",
-                            commandSourceToString(req.src),
-                            entry->name, (unsigned)entry->suppressMs);
+                const SequenceEntry* entry = catalogEntry;
+                if (isRuntime) {
+                    // Load-on-demand: parse the file into the run buffers now
+                    // that the previous sequence has been fully drained.
+                    ProtocolCheckResult lr = seqStoreLoad(req.name, runtimeEntry);
+                    entry = lr.ok ? &runtimeEntry : nullptr;
+                    if (!lr.ok) {
+                        PA_LOG_WARN(TAG, "runtime load failed %s: %s (%s)",
+                                    req.name, lr.message, lr.field);
+                    }
+                }
+                if (entry != nullptr) {
+                    seqEngineStart(engine, entry, now);
+                    strncpy(activeName, req.name, sizeof(activeName) - 1);
+                    activeName[sizeof(activeName) - 1] = '\0';
+                    retryLogged = false;
+                    setSuppression(now + entry->suppressMs);
+                    PA_LOG_INFO(TAG, "[%s] start %s suppress=%u ms",
+                                commandSourceToString(req.src),
+                                entry->name, (unsigned)entry->suppressMs);
+                }
             } else {
                 PA_LOG_WARN(TAG, "request not in catalog: %s", req.name);
             }

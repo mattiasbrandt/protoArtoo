@@ -25,6 +25,7 @@
 #include "rc_input.h"
 #include "robot_state.h"
 #include "safety.h"
+#include "seq_store.h"
 #include "sequence_dispatcher.h"
 #include "servo_task.h"
 #include "web_server.h"
@@ -289,6 +290,11 @@ void setup() {
     // HWM first-iteration: 476 B free — WARN path allocates 128 B format buffer +
     // printf; bumped to 3072 to ensure adequate headroom for all log paths.
     xTaskCreatePinnedToCore(safetyMonitorTask, "SafetyMonitor", 3072, nullptr, 2, nullptr, 0);
+
+    // Index Learned Sequences from LittleFS before the dispatcher can run one.
+    // Mounts LittleFS (idempotent) and scans /seq/. Boot scan reuses the run
+    // staging buffers, so it must complete before SeqDisp starts (ADR 0006).
+    seqStoreInit();
 
     // SequenceDispatcherTask: Core 0 (non-RT) — body-side DM:* sequence coordinator.
     // 10 ms tick. Dispatches to domeQueueTx / audioQueueDollar / domeCmdQueue.

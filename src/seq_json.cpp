@@ -218,42 +218,36 @@ static ProtocolCheckResult parseBranch(const char* label, JsonArrayConst arr,
 // -----------------------------------------------------------------------------
 // Parse
 // -----------------------------------------------------------------------------
-ProtocolCheckResult seqJsonParse(const char* json,
-                                 SeqStep* stepBuf, uint8_t stepCap,
-                                 SeqStep* closeBuf, uint8_t closeCap,
-                                 SeqDraft& out) {
-    JsonDocument doc;
-    DeserializationError err = deserializeJson(doc, json);
-    if (err) {
-        return jfail("json", err.c_str());
-    }
-
-    int format = doc["format"] | 0;
+ProtocolCheckResult seqJsonParseVariant(JsonVariantConst root,
+                                        SeqStep* stepBuf, uint8_t stepCap,
+                                        SeqStep* closeBuf, uint8_t closeCap,
+                                        SeqDraft& out) {
+    int format = root["format"] | 0;
     if (format != SEQ_JSON_FORMAT) {
         return jfail("format", "unsupported format version");
     }
 
-    const char* name = doc["name"] | (const char*)nullptr;
+    const char* name = root["name"] | (const char*)nullptr;
     if (name == nullptr || strnlen(name, sizeof(out.name)) >= sizeof(out.name)) {
         return jfail("name", "missing or too long");
     }
     memset(&out, 0, sizeof(out));
     strncpy(out.name, name, sizeof(out.name) - 1);
 
-    out.suppressMs = doc["suppressMs"] | 0u;
+    out.suppressMs = root["suppressMs"] | 0u;
 
     SeqToggleGroup grp = TOGGLE_NONE;
-    const char* grpStr = doc["toggleGroup"] | "none";
+    const char* grpStr = root["toggleGroup"] | "none";
     if (!seqToggleGroupFromString(grpStr, grp)) {
         return jfail("toggleGroup", "unknown toggle group");
     }
     out.toggleGroup = grp;
 
-    if (!doc["steps"].is<JsonArrayConst>()) {
+    if (!root["steps"].is<JsonArrayConst>()) {
         return jfail("steps", "missing steps array");
     }
     uint8_t stepCount = 0;
-    ProtocolCheckResult r = parseBranch("steps", doc["steps"].as<JsonArrayConst>(),
+    ProtocolCheckResult r = parseBranch("steps", root["steps"].as<JsonArrayConst>(),
                                         stepBuf, stepCap, &stepCount);
     if (!r.ok) return r;
     out.steps = stepBuf;
@@ -261,8 +255,8 @@ ProtocolCheckResult seqJsonParse(const char* json,
 
     out.closeSteps = nullptr;
     out.closeStepCount = 0;
-    if (doc["closeSteps"].is<JsonArrayConst>()) {
-        JsonArrayConst carr = doc["closeSteps"].as<JsonArrayConst>();
+    if (root["closeSteps"].is<JsonArrayConst>()) {
+        JsonArrayConst carr = root["closeSteps"].as<JsonArrayConst>();
         if (carr.size() > 0) {
             uint8_t closeCount = 0;
             r = parseBranch("closeSteps", carr, closeBuf, closeCap, &closeCount);
@@ -272,6 +266,19 @@ ProtocolCheckResult seqJsonParse(const char* json,
         }
     }
     return jok();
+}
+
+ProtocolCheckResult seqJsonParse(const char* json,
+                                 SeqStep* stepBuf, uint8_t stepCap,
+                                 SeqStep* closeBuf, uint8_t closeCap,
+                                 SeqDraft& out) {
+    JsonDocument doc;
+    DeserializationError err = deserializeJson(doc, json);
+    if (err) {
+        return jfail("json", err.c_str());
+    }
+    return seqJsonParseVariant(doc.as<JsonVariantConst>(),
+                               stepBuf, stepCap, closeBuf, closeCap, out);
 }
 
 // -----------------------------------------------------------------------------
