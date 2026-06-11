@@ -119,10 +119,18 @@ struct SeqStep {
 // Toggle groups (ADR 0004 decision 8) — body-authoritative latched panel state.
 // -----------------------------------------------------------------------------
 enum SeqToggleGroup : uint8_t {
-    TOGGLE_NONE = 0,
-    TOGGLE_PIES = 1,
-    TOGGLE_LOW  = 2,
-    TOGGLE_ALL  = 3,
+    TOGGLE_NONE  = 0,
+    TOGGLE_PIES  = 1,
+    TOGGLE_LOW   = 2,
+    TOGGLE_ALL   = 3,
+    // User latches for non-shadowing Learned toggle sequences (issue #2 slice 3,
+    // grill decision 4). Branch-pick + latch execution are wired with the
+    // runtime store (slice 3c); the values exist now so Protocol Check can
+    // validate them and the engine's switch defaults treat them as open-branch.
+    TOGGLE_USER1 = 4,
+    TOGGLE_USER2 = 5,
+    TOGGLE_USER3 = 6,
+    TOGGLE_USER4 = 7,
 };
 
 // -----------------------------------------------------------------------------
