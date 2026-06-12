@@ -182,6 +182,22 @@ static void test_unknown_command_rejected() {
     TEST_ASSERT_FALSE(r.ok);
 }
 
+// :SE accepts only the canonical two-digit Marcduino form (:SE09, :SE10).
+static void test_se_digit_count_enforced() {
+    static SeqStep one[] = { SEQ_DOME(0, FX_NONE, ":SE9"), SEQ_TERM(100) };
+    ProtocolCheckResult r = protocolCheckBranch("steps", one, 2);
+    TEST_ASSERT_FALSE(r.ok);
+    TEST_ASSERT_EQUAL_STRING("steps[0].cmd", r.field);
+
+    static SeqStep three[] = { SEQ_DOME(0, FX_NONE, ":SE123"), SEQ_TERM(100) };
+    r = protocolCheckBranch("steps", three, 2);
+    TEST_ASSERT_FALSE(r.ok);
+
+    static SeqStep two[] = { SEQ_DOME(0, FX_NONE, ":SE10"), SEQ_TERM(100) };
+    r = protocolCheckBranch("steps", two, 2);
+    TEST_ASSERT_TRUE_MESSAGE(r.ok, r.message);
+}
+
 static void test_audio_dollar_charset_rejected() {
     static SeqStep s[] = {
         SEQ_AUDIO(0, "$bad!"),  // '!' not alnum
@@ -326,7 +342,7 @@ static void test_toggle_without_close_branch_rejected() {
     resetNod();
     SeqDraft d = makeNodDraft();
     strcpy(d.name, "DM:MYTOG");
-    d.toggleGroup = TOGGLE_USER1;
+    d.toggleGroup = TOGGLE_PIES;
     d.closeSteps = nullptr;  // missing close branch
     ProtocolCheckResult r = protocolCheck(d);
     TEST_ASSERT_FALSE(r.ok);
@@ -345,7 +361,10 @@ static void test_nontoggle_with_close_branch_rejected() {
     TEST_ASSERT_EQUAL_STRING("closeSteps", r.field);
 }
 
-static void test_user_toggle_with_close_accepts() {
+// User latches are reserved until the engine wires branch-pick/latch for them
+// (the engine's switch defaults would run such a toggle open-branch-only and
+// never latch), so Protocol Check rejects them even with a valid close branch.
+static void test_user_toggle_rejected_until_engine_wired() {
     resetNod();
     static SeqStep openB[] = {
         SEQ_DOME(0, FX_NONE, ":SM0,2200,150"), SEQ_TERM(200),
@@ -362,7 +381,13 @@ static void test_user_toggle_with_close_accepts() {
     d.closeSteps = closeB;
     d.closeStepCount = 2;
     ProtocolCheckResult r = protocolCheck(d);
-    TEST_ASSERT_TRUE_MESSAGE(r.ok, r.message);
+    TEST_ASSERT_FALSE(r.ok);
+    TEST_ASSERT_EQUAL_STRING("toggleGroup", r.field);
+
+    d.toggleGroup = TOGGLE_USER4;
+    r = protocolCheck(d);
+    TEST_ASSERT_FALSE(r.ok);
+    TEST_ASSERT_EQUAL_STRING("toggleGroup", r.field);
 }
 
 // -----------------------------------------------------------------------------
@@ -373,7 +398,7 @@ static void test_retrain_factory_nontoggle_with_group_rejected() {
     resetNod();
     SeqDraft d = makeNodDraft();
     strcpy(d.name, "DM:VADER");   // factory non-toggle
-    d.toggleGroup = TOGGLE_USER1; // must be none
+    d.toggleGroup = TOGGLE_PIES;  // must be none
     ProtocolCheckResult r = protocolCheck(d);
     TEST_ASSERT_FALSE(r.ok);
     TEST_ASSERT_EQUAL_STRING("toggleGroup", r.field);
@@ -455,6 +480,7 @@ int main(int /*argc*/, char** /*argv*/) {
     RUN_TEST(test_sm_bad_pulse_rejected);
     RUN_TEST(test_sm_malformed_rejected);
     RUN_TEST(test_unknown_command_rejected);
+    RUN_TEST(test_se_digit_count_enforced);
     RUN_TEST(test_audio_dollar_charset_rejected);
 
     RUN_TEST(test_missing_terminal_end_rejected);
@@ -474,7 +500,7 @@ int main(int /*argc*/, char** /*argv*/) {
 
     RUN_TEST(test_toggle_without_close_branch_rejected);
     RUN_TEST(test_nontoggle_with_close_branch_rejected);
-    RUN_TEST(test_user_toggle_with_close_accepts);
+    RUN_TEST(test_user_toggle_rejected_until_engine_wired);
 
     RUN_TEST(test_retrain_factory_nontoggle_with_group_rejected);
     RUN_TEST(test_retrain_factory_nontoggle_with_none_accepts);

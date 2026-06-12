@@ -13,28 +13,7 @@
 #include "audio_playback_policy.h"   // AUDIO_CATEGORY_COUNT, AUDIO_SLOT_COUNT
 #include "sequence_dispatcher.h"     // sequenceCatalogFind()
 
-// -----------------------------------------------------------------------------
-// Result helpers
-// -----------------------------------------------------------------------------
-static ProtocolCheckResult ok() {
-    ProtocolCheckResult r = { true, "", "" };
-    return r;
-}
-
-static ProtocolCheckResult fail(const char* field, const char* message) {
-    ProtocolCheckResult r = { false, "", "" };
-    strncpy(r.field, field, sizeof(r.field) - 1);
-    strncpy(r.message, message, sizeof(r.message) - 1);
-    return r;
-}
-
-// fail() with an indexed field path: "<label>[<idx>].<suffix>".
-static ProtocolCheckResult failAt(const char* label, uint8_t idx,
-                                  const char* suffix, const char* message) {
-    char field[24];
-    snprintf(field, sizeof(field), "%s[%u].%s", label, (unsigned)idx, suffix);
-    return fail(field, message);
-}
+// Result constructors (pcOk/pcFail/pcFailAt) are shared inlines in the header.
 
 // -----------------------------------------------------------------------------
 // Small parsers (no libc locale surprises; pure ASCII)
@@ -131,7 +110,7 @@ static ProtocolCheckResult classifyDome(const char* label, uint8_t idx,
     fxOut = FX_NONE;
 
     if (!charsetOk(cmd)) {
-        return failAt(label, idx, "cmd", "empty, too long, or non-printable");
+        return pcFailAt(label, idx, "cmd", "empty, too long, or non-printable");
     }
 
     // :SM<slot>,<pulse>,<move>
@@ -139,71 +118,72 @@ static ProtocolCheckResult classifyDome(const char* label, uint8_t idx,
         const char* p = cmd + 3;
         uint32_t slot = 0, pulse = 0, move = 0;
         if (parseUint(&p, slot) == 0 || *p != ',') {
-            return failAt(label, idx, "cmd", ":SM missing slot");
+            return pcFailAt(label, idx, "cmd", ":SM missing slot");
         }
         ++p;
         if (parseUint(&p, pulse) == 0 || *p != ',') {
-            return failAt(label, idx, "cmd", ":SM missing pulse");
+            return pcFailAt(label, idx, "cmd", ":SM missing pulse");
         }
         ++p;
         if (parseUint(&p, move) == 0 || *p != '\0') {
-            return failAt(label, idx, "cmd", ":SM malformed (want slot,pulse,move)");
+            return pcFailAt(label, idx, "cmd", ":SM malformed (want slot,pulse,move)");
         }
         if (slot > PC_SM_SLOT_MAX) {
-            return failAt(label, idx, "cmd", ":SM slot out of range (0..12)");
+            return pcFailAt(label, idx, "cmd", ":SM slot out of range (0..12)");
         }
         if (pulse < PC_SM_PULSE_MIN || pulse > PC_SM_PULSE_MAX) {
-            return failAt(label, idx, "cmd", ":SM pulse out of range (800..2200)");
+            return pcFailAt(label, idx, "cmd", ":SM pulse out of range (800..2200)");
         }
         if (move < PC_SM_MOVE_MIN || move > PC_SM_MOVE_MAX) {
-            return failAt(label, idx, "cmd", ":SM move out of range (50..5000)");
+            return pcFailAt(label, idx, "cmd", ":SM move out of range (50..5000)");
         }
         fxOut = (pulse > PC_SM_PULSE_MIN) ? FX_PANEL : FX_NONE;
-        return ok();
+        return pcOk();
     }
 
     // :CL00 (the only accepted close-all form)
     if (strcmp(cmd, ":CL00") == 0) {
         fxOut = FX_NONE;
-        return ok();
+        return pcOk();
     }
 
-    // :SE<digits>
+    // :SE<dd> — exactly two digits (the Marcduino zero-padded form, e.g.
+    // :SE09), so every dome sequence has a single canonical spelling.
     if (strncmp(cmd, ":SE", 3) == 0) {
         const char* p = cmd + 3;
         uint32_t n = 0;
-        if (parseUint(&p, n) == 0 || *p != '\0' || (p - (cmd + 3)) > 2) {
-            return failAt(label, idx, "cmd", ":SE want 1-2 digits");
+        if (parseUint(&p, n) != 2 || *p != '\0') {
+            return pcFailAt(label, idx, "cmd", ":SE want exactly 2 digits");
         }
         fxOut = FX_NONE;
-        return ok();
+        return pcOk();
     }
 
     // @... logic / PSI / text / holo
     if (cmd[0] == '@') {
         if (strcmp(cmd, "@0T1") == 0 || strcmp(cmd, "@0P1") == 0) {
             fxOut = FX_NONE;  // explicit reset
-            return ok();
+            return pcOk();
         }
         if (cmd[1] == 'H' && cmd[2] == 'P') {
             fxOut = FX_HOLO;  // @HP... holo
-            return ok();
+            return pcOk();
         }
         if (isDigit(cmd[1]) &&
             (cmd[2] == 'T' || cmd[2] == 'P' || cmd[2] == 'M')) {
             fxOut = FX_LOGIC_PSI;
-            return ok();
+            return pcOk();
         }
-        return failAt(label, idx, "cmd", "unrecognised @ command");
+        return pcFailAt(label, idx, "cmd", "unrecognised @ command");
     }
 
     // *... holo (with *ST00 as the reset)
     if (cmd[0] == '*') {
         fxOut = (strcmp(cmd, "*ST00") == 0) ? FX_NONE : FX_HOLO;
-        return ok();
+        return pcOk();
     }
 
-    return failAt(label, idx, "cmd", "unknown command prefix");
+    return pcFailAt(label, idx, "cmd", "unknown command prefix");
 }
 
 // $<1..6 alnum>
@@ -211,14 +191,14 @@ static ProtocolCheckResult classifyAudio(const char* label, uint8_t idx,
                                          const char* cmd) {
     size_t len = strnlen(cmd, 8);
     if (cmd[0] != '$' || len < 2 || len > 7) {
-        return failAt(label, idx, "cmd", "audio want $ + 1-6 chars");
+        return pcFailAt(label, idx, "cmd", "audio want $ + 1-6 chars");
     }
     for (size_t i = 1; i < len; ++i) {
         if (!isAlnum(cmd[i])) {
-            return failAt(label, idx, "cmd", "audio chars must be alphanumeric");
+            return pcFailAt(label, idx, "cmd", "audio chars must be alphanumeric");
         }
     }
-    return ok();
+    return pcOk();
 }
 
 // -----------------------------------------------------------------------------
@@ -228,16 +208,23 @@ ProtocolCheckResult protocolCheckMeta(const char* name, uint32_t suppressMs,
                                       SeqToggleGroup toggleGroup,
                                       uint32_t endTimeMs) {
     if (!nameValid(name)) {
-        return fail("name", "must match DM:[A-Z0-9_]{1,18}");
+        return pcFail("name", "must match DM:[A-Z0-9_]{1,18}");
     }
     if (!protocolCheckToggleGroupValid(toggleGroup)) {
-        return fail("toggleGroup", "unknown toggle group");
+        return pcFail("toggleGroup", "unknown toggle group");
+    }
+    if (toggleGroup >= TOGGLE_USER1 && toggleGroup <= TOGGLE_USER4) {
+        // The engine's branch-pick/latch switches are not wired for the user
+        // latches yet — such a toggle would run open-branch-only and never
+        // latch. Reject on save so a Learned toggle cannot execute silently
+        // wrong; lift this when the engine gains user-latch state.
+        return pcFail("toggleGroup", "user toggle groups are not supported yet");
     }
     if (suppressMs < PC_SUPPRESS_MIN_MS || suppressMs > PC_SUPPRESS_MAX_MS) {
-        return fail("suppressMs", "out of range (1000..120000)");
+        return pcFail("suppressMs", "out of range (1000..120000)");
     }
     if (suppressMs < endTimeMs) {
-        return fail("suppressMs", "must be >= sequence end time");
+        return pcFail("suppressMs", "must be >= sequence end time");
     }
 
     // Retrain (shadowing) rules: a Learned Sequence bearing a Factory name must
@@ -246,15 +233,15 @@ ProtocolCheckResult protocolCheckMeta(const char* name, uint32_t suppressMs,
     if (factory != nullptr) {
         if (factory->toggleGroup != TOGGLE_NONE) {
             if (toggleGroup != factory->toggleGroup) {
-                return fail("toggleGroup",
+                return pcFail("toggleGroup",
                             "retraining a factory toggle requires the same group");
             }
         } else if (toggleGroup != TOGGLE_NONE) {
-            return fail("toggleGroup",
+            return pcFail("toggleGroup",
                         "retraining a factory non-toggle requires group none");
         }
     }
-    return ok();
+    return pcOk();
 }
 
 // -----------------------------------------------------------------------------
@@ -263,19 +250,19 @@ ProtocolCheckResult protocolCheckMeta(const char* name, uint32_t suppressMs,
 ProtocolCheckResult protocolCheckBranch(const char* label, SeqStep* steps,
                                         uint8_t count) {
     if (steps == nullptr || count == 0) {
-        return fail(label, "branch is empty");
+        return pcFail(label, "branch is empty");
     }
     if (count > PC_MAX_STEPS) {
-        return fail(label, "too many steps (max 96)");
+        return pcFail(label, "too many steps (max 96)");
     }
     // Exactly one terminal STEP_END, and it must be last.
     for (uint8_t i = 0; i < count; ++i) {
         if (steps[i].type == STEP_END && i != (uint8_t)(count - 1)) {
-            return failAt(label, i, "type", "STEP_END only allowed as last step");
+            return pcFailAt(label, i, "type", "STEP_END only allowed as last step");
         }
     }
     if (steps[count - 1].type != STEP_END) {
-        return failAt(label, (uint8_t)(count - 1), "type",
+        return pcFailAt(label, (uint8_t)(count - 1), "type",
                       "branch must end with STEP_END");
     }
 
@@ -285,21 +272,21 @@ ProtocolCheckResult protocolCheckBranch(const char* label, SeqStep* steps,
         if (steps[i].type != STEP_LOOP) continue;
         const SeqStepParams& lp = steps[i].params;
         if (lp.bodyCount == 0) {
-            return failAt(label, i, "bodyCount", "loop body is empty");
+            return pcFailAt(label, i, "bodyCount", "loop body is empty");
         }
         uint16_t last = (uint16_t)i + lp.bodyCount;  // last body index
         if (last >= count || (uint16_t)(last) >= PC_MAX_STEPS) {
-            return failAt(label, i, "bodyCount", "loop body overruns the branch");
+            return pcFailAt(label, i, "bodyCount", "loop body overruns the branch");
         }
         if (lp.periodMs < PC_LOOP_PERIOD_MIN || lp.periodMs > PC_LOOP_PERIOD_MAX) {
-            return failAt(label, i, "periodMs", "out of range (100..60000)");
+            return pcFailAt(label, i, "periodMs", "out of range (100..60000)");
         }
         if (lp.durationMs == 0 || lp.durationMs > PC_LOOP_DUR_MAX) {
-            return failAt(label, i, "durationMs", "out of range (1..120000)");
+            return pcFailAt(label, i, "durationMs", "out of range (1..120000)");
         }
         for (uint8_t j = (uint8_t)(i + 1); j <= (uint8_t)last; ++j) {
             if (steps[j].type == STEP_LOOP) {
-                return failAt(label, j, "type", "nested loops are not allowed");
+                return pcFailAt(label, j, "type", "nested loops are not allowed");
             }
             inBody[j] = true;
         }
@@ -312,7 +299,7 @@ ProtocolCheckResult protocolCheckBranch(const char* label, SeqStep* steps,
 
         if (!inBody[i]) {
             if (s.tMs < prevT) {
-                return failAt(label, i, "t", "t must be non-decreasing");
+                return pcFailAt(label, i, "t", "t must be non-decreasing");
             }
             prevT = s.tMs;
         }
@@ -333,10 +320,10 @@ ProtocolCheckResult protocolCheckBranch(const char* label, SeqStep* steps,
             }
             case STEP_AUDIO_CATEGORY: {
                 if (s.params.audioCategory >= AUDIO_CATEGORY_COUNT) {
-                    return failAt(label, i, "category", "unknown audio category");
+                    return pcFailAt(label, i, "category", "unknown audio category");
                 }
                 if (s.params.audioFallbackSlot >= AUDIO_SLOT_COUNT) {
-                    return failAt(label, i, "fallback", "unknown fallback slot");
+                    return pcFailAt(label, i, "fallback", "unknown fallback slot");
                 }
                 s.effectClass = FX_AUDIO;
                 break;
@@ -344,17 +331,17 @@ ProtocolCheckResult protocolCheckBranch(const char* label, SeqStep* steps,
             case STEP_RANDOM: {
                 const SeqStepParams& p = s.params;
                 if (p.slotSet > SLOTSET_HOLD) {
-                    return failAt(label, i, "set", "unknown slot set");
+                    return pcFailAt(label, i, "set", "unknown slot set");
                 }
                 if (p.pulseMin < PC_SM_PULSE_MIN || p.pulseMax > PC_SM_PULSE_MAX ||
                     p.pulseMin > p.pulseMax) {
-                    return failAt(label, i, "pulse", "random pulse out of range");
+                    return pcFailAt(label, i, "pulse", "random pulse out of range");
                 }
                 if (p.moveMs < PC_SM_MOVE_MIN || p.moveMs > PC_SM_MOVE_MAX) {
-                    return failAt(label, i, "moveMs", "random move out of range");
+                    return pcFailAt(label, i, "moveMs", "random move out of range");
                 }
                 if (p.jitterMs > PC_RAND_JITTER_MAX) {
-                    return failAt(label, i, "jitterMs", "jitter too large (max 2000)");
+                    return pcFailAt(label, i, "jitterMs", "jitter too large (max 2000)");
                 }
                 s.effectClass = FX_PANEL;
                 break;
@@ -366,10 +353,10 @@ ProtocolCheckResult protocolCheckBranch(const char* label, SeqStep* steps,
                 s.effectClass = FX_NONE;
                 break;
             default:
-                return failAt(label, i, "type", "unknown step type");
+                return pcFailAt(label, i, "type", "unknown step type");
         }
     }
-    return ok();
+    return pcOk();
 }
 
 // -----------------------------------------------------------------------------
@@ -377,7 +364,7 @@ ProtocolCheckResult protocolCheckBranch(const char* label, SeqStep* steps,
 // -----------------------------------------------------------------------------
 ProtocolCheckResult protocolCheck(SeqDraft& draft) {
     if (draft.steps == nullptr || draft.stepCount == 0) {
-        return fail("steps", "main branch is empty");
+        return pcFail("steps", "main branch is empty");
     }
     // End time = terminal STEP_END of the main branch.
     uint32_t endTimeMs = draft.steps[draft.stepCount - 1].tMs;
@@ -393,14 +380,14 @@ ProtocolCheckResult protocolCheck(SeqDraft& draft) {
     const bool isToggle = (draft.toggleGroup != TOGGLE_NONE);
     const bool hasClose = (draft.closeSteps != nullptr && draft.closeStepCount > 0);
     if (isToggle && !hasClose) {
-        return fail("closeSteps", "toggle sequence needs a close branch");
+        return pcFail("closeSteps", "toggle sequence needs a close branch");
     }
     if (!isToggle && hasClose) {
-        return fail("closeSteps", "non-toggle sequence must not have a close branch");
+        return pcFail("closeSteps", "non-toggle sequence must not have a close branch");
     }
     if (hasClose) {
         r = protocolCheckBranch("closeSteps", draft.closeSteps, draft.closeStepCount);
         if (!r.ok) return r;
     }
-    return ok();
+    return pcOk();
 }

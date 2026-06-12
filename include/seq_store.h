@@ -13,10 +13,14 @@
 // operation, so the in-memory index and the filesystem never diverge under
 // concurrent web-handler / dispatcher access.
 //
-// Copy semantics (ADR 0004 decision 3): seqStoreLoad() parses into the store's
-// static staging buffers and the dispatcher runs from them; a later save/delete
-// rewrites files and the index but never the buffers of a running sequence.
-// Save validation uses a transient heap buffer, never the run buffers.
+// Copy semantics (ADR 0004 decision 3): loading is two-phase. seqStorePrepare()
+// parses + validates into a transient heap staging pair (never the run
+// buffers), so a failed load cannot disturb a running sequence; after the
+// dispatcher drains the previous run, seqStoreCommit() copies the staged
+// sequence into the static run buffers the engine executes from. A later
+// save/delete rewrites files and the index but never the run buffers, and a
+// sequence whose file is deleted mid-run finishes from its RAM copy.
+// Save validation likewise uses a transient heap buffer.
 // =============================================================================
 #pragma once
 
@@ -34,11 +38,19 @@ class Print;  // Arduino print target (seqStoreStreamFile); full def in the .cpp
 // boot BEFORE the dispatcher task starts (the boot scan reuses the run buffers).
 void seqStoreInit();
 
-// Load a Learned Sequence by name into the store's static staging buffers and
-// build `out` (pointers into those buffers, valid until the next load). Parses +
-// runs Protocol Check (stamps effectClass). Only the dispatcher calls this, one
-// sequence at a time. Returns ok on success.
-ProtocolCheckResult seqStoreLoad(const char* name, SequenceEntry& out);
+// Phase 1 of a load: parse a Learned Sequence by name into a transient heap
+// staging pair and run Protocol Check (stamps effectClass). The run buffers
+// and any running sequence are untouched. Only the dispatcher task calls
+// this, one load at a time; a successful prepare stays staged until
+// seqStoreCommit(). Calling prepare again discards a previous staging.
+ProtocolCheckResult seqStorePrepare(const char* name);
+
+// Phase 2: copy the staged sequence into the static run buffers and build
+// `out` (pointers into those buffers, valid until the next commit or boot
+// scan). Call only after a successful seqStorePrepare(), once the previous
+// run has been drained from the buffers. Frees the staging. Returns false
+// if nothing is staged.
+bool seqStoreCommit(SequenceEntry& out);
 
 // Validate + persist a Learned Sequence from JSON text. Runs Protocol Check
 // (transient heap staging), enforces capacity (16-file cap + free-space floor +
@@ -46,8 +58,10 @@ ProtocolCheckResult seqStoreLoad(const char* name, SequenceEntry& out);
 // field-level error on rejection (nothing written), ok on success.
 ProtocolCheckResult seqStoreSave(const char* json, size_t len);
 
-// Delete a Learned Sequence and its index entry (Memory Wipe). Returns true if
-// a file/entry was removed.
+// Delete a Learned Sequence and its index entry (Memory Wipe). Returns true
+// only if the file is actually gone (removed, or index-only entry cleaned
+// up); a failed file removal keeps the index entry so the store and the
+// filesystem cannot diverge.
 bool seqStoreDelete(const char* name);
 
 // Stream a Learned Sequence file's raw JSON to `out` (GET /api/seq?name=).

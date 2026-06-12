@@ -25,6 +25,9 @@ viable: LittleFS ~209 KB free; app flash ~121 KB free; DRAM ~45 KB heap free.
 1. **Runtime tier, not an engine fork.** A Learned Sequence parses into the existing
    `SequenceEntry`/`SeqStep` model and runs through the existing engine. The only engine
    change is four `TOGGLE_USER1..4` latch values for non-shadowing Learned toggles.
+   The values are reserved for now: the engine's branch-pick/latch switches are not
+   wired for them yet, so Protocol Check rejects `user1..4` on save until that lands
+   (otherwise such a toggle would run open-branch-only and never latch).
 
 2. **Runtime-first lookup precedence.** `sequenceLookup()` resolves
    **runtime -> catalog -> alias -> fallback**. A Learned Sequence bearing a Factory name
@@ -37,11 +40,14 @@ viable: LittleFS ~209 KB free; app flash ~121 KB free; DRAM ~45 KB heap free.
    native-testable. The LittleFS scan/load/save/delete (`seq_store`) is firmware-only and
    guards every index mutation together with its file operation under a mutex.
 
-4. **Load-on-demand into static run buffers.** The dispatcher parses the selected file into
-   static staging buffers at sequence start. **Copy semantics:** the running sequence is a
-   parsed copy, so a later save/delete never disturbs it. Two 96-step run buffers (~17.6 KB
-   BSS) let the engine run toggle close branches unchanged (correct-by-construction); save
-   validation uses a transient heap buffer so it can never corrupt a running sequence.
+4. **Load-on-demand into static run buffers, staged two-phase.** At sequence start the
+   dispatcher first *prepares* the selected file (parse + Protocol Check into a transient
+   heap pair), and only commits it into the static run buffers after the previous run is
+   drained — so a load that fails (corrupt file, concurrent Memory Wipe) never costs the
+   running sequence. **Copy semantics:** the running sequence is a parsed copy, so a later
+   save/delete never disturbs it (a wipe mid-run finishes from RAM). Two 96-step run
+   buffers (~17.6 KB BSS) let the engine run toggle close branches unchanged
+   (correct-by-construction); save validation uses the same transient-heap discipline.
 
 5. **Protocol Check validates the parsed staging model, not raw JSON.** It runs one branch
    at a time (a single 96-step scratch suffices), enforcing name `DM:[A-Z0-9_]{1,18}`,
@@ -86,6 +92,8 @@ viable: LittleFS ~209 KB free; app flash ~121 KB free; DRAM ~45 KB heap free.
 - `sequenceLookup()` gains `SEQ_RUNTIME`; `sequenceStart()` routes it like `SEQ_CATALOG`.
 - `isValidDomeSeqPayload()` (RC binding) accepts runtime-indexed names; a deleted Learned
   Sequence leaves the binding valid but inert (falls through to dome fallback).
+  `DELETE /api/seq` reports such bindings in a `danglingBindings` response field and the
+  inert trigger logs a warning when fired, so the no-op is never silent.
 - `check-action-drift` is unaffected -- runtime names are data, not registry actions.
 - The slice-3 hardware gate joins the v1.0.0 closure checklist: an editor-authored Learned
   Sequence, RC-triggered, with estop-abort honored, proven on the integrated droid.

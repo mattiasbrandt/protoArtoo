@@ -105,11 +105,13 @@ the format cannot express a bypass for.
 | Field | Rule |
 |---|---|
 | `name` | `^DM:[A-Z0-9_]{1,18}$` |
+| `toggleGroup` | `none|pies|low|all`; `user1..4` are reserved and rejected until the engine wires their latches |
 | retrain | factory toggle name -> identical `toggleGroup`; factory non-toggle name -> `none` |
 | `suppressMs` | 1000..120000 and `>=` sequence end time |
 | branch | `<=96` steps; ends with an explicit `end`; `t` non-decreasing outside loop bodies |
 | `:SM` | slot 0..12, pulse 800..2200, move 50..5000 |
-| `@`/`*`/`$`/`:SE`/`:CL00` | length- and charset-bounded; recognised prefix |
+| `:SE` | exactly 2 digits (the canonical Marcduino zero-padded form, e.g. `:SE09`) |
+| `@`/`*`/`$`/`:CL00` | length- and charset-bounded; recognised prefix |
 | `loop` | period 100..60000, duration `<=120000`, no nesting, body within branch |
 | `random` | pulse 800..2200, jitter `<=2000`, move 50..5000, known slot set |
 | capacity | 16 files max, 12 KB per file, 24 KB LittleFS free-space floor |
@@ -120,4 +122,6 @@ A sequence runs via `sequenceStart("DM:NAME", source)` from RC, web (`POST /api/
 or `/api/dome/cmd`), or dome RX. Lookup precedence is **runtime -> catalog -> alias ->
 fallback**, so a Learned Sequence shadows a Factory one of the same name (Retrained); a
 Memory Wipe restores the factory programming. RC trigger bindings accept any indexed
-Learned name.
+Learned name. Wiping a non-shadowing name leaves any RC binding to it inert:
+`DELETE /api/seq` lists those bindings in a `danglingBindings` response field, and the
+trigger logs a warning each time it fires into the void.

@@ -13,25 +13,8 @@
 
 #include "audio_playback_policy.h"  // AudioPlaybackCategory/Slot + audioCategoryToString
 
-// -----------------------------------------------------------------------------
-// Result helpers (mirror protocol_check.cpp so callers get one error shape)
-// -----------------------------------------------------------------------------
-static ProtocolCheckResult jok() {
-    ProtocolCheckResult r = { true, "", "" };
-    return r;
-}
-static ProtocolCheckResult jfail(const char* field, const char* msg) {
-    ProtocolCheckResult r = { false, "", "" };
-    strncpy(r.field, field, sizeof(r.field) - 1);
-    strncpy(r.message, msg, sizeof(r.message) - 1);
-    return r;
-}
-static ProtocolCheckResult jfailAt(const char* label, uint8_t idx,
-                                   const char* suffix, const char* msg) {
-    char field[24];
-    snprintf(field, sizeof(field), "%s[%u].%s", label, (unsigned)idx, suffix);
-    return jfail(field, msg);
-}
+// Result constructors (pcOk/pcFail/pcFailAt) are shared inlines in
+// protocol_check.h so callers get one error shape.
 
 // -----------------------------------------------------------------------------
 // Enum <-> string
@@ -139,34 +122,34 @@ static ProtocolCheckResult parseStep(const char* label, JsonObjectConst obj,
 
     const char* type = obj["type"] | (const char*)nullptr;
     if (type == nullptr) {
-        return jfailAt(label, idx, "type", "missing type");
+        return pcFailAt(label, idx, "type", "missing type");
     }
 
     if (strcmp(type, "dome") == 0 || strcmp(type, "audio") == 0) {
         const char* cmd = obj["cmd"] | (const char*)nullptr;
         if (cmd == nullptr) {
-            return jfailAt(label, idx, "cmd", "missing cmd");
+            return pcFailAt(label, idx, "cmd", "missing cmd");
         }
         if (strnlen(cmd, sizeof(s.payload)) >= sizeof(s.payload)) {
-            return jfailAt(label, idx, "cmd", "command too long");
+            return pcFailAt(label, idx, "cmd", "command too long");
         }
         strncpy(s.payload, cmd, sizeof(s.payload) - 1);
         s.type = (strcmp(type, "dome") == 0) ? STEP_DOME_CMD : STEP_AUDIO;
-        return jok();
+        return pcOk();
     }
     if (strcmp(type, "loop") == 0) {
         s.type = STEP_LOOP;
         s.params.bodyCount  = (uint8_t)(obj["body"] | 0);
         s.params.periodMs   = (uint16_t)(obj["periodMs"] | 0);
         s.params.durationMs = (uint32_t)(obj["durationMs"] | 0u);
-        return jok();
+        return pcOk();
     }
     if (strcmp(type, "random") == 0) {
         s.type = STEP_RANDOM;
         SeqSlotSet set = SLOTSET_RING;
         const char* setStr = obj["set"] | (const char*)nullptr;
         if (setStr == nullptr || !seqSlotSetFromString(setStr, set)) {
-            return jfailAt(label, idx, "set", "missing or unknown slot set");
+            return pcFailAt(label, idx, "set", "missing or unknown slot set");
         }
         s.params.slotSet      = (uint8_t)set;
         s.params.pulseMin     = (uint16_t)(obj["pulseMin"] | 0);
@@ -174,28 +157,28 @@ static ProtocolCheckResult parseStep(const char* label, JsonObjectConst obj,
         s.params.moveMs       = (uint16_t)(obj["moveMs"] | 0);
         s.params.jitterMs     = (uint16_t)(obj["jitterMs"] | 0);
         s.params.pickDistinct = (obj["distinct"] | false) ? 1 : 0;
-        return jok();
+        return pcOk();
     }
     if (strcmp(type, "audioCat") == 0) {
         s.type = STEP_AUDIO_CATEGORY;
         uint8_t cat = 0, fb = AUDIO_SLOT_NONE;
         const char* catStr = obj["category"] | (const char*)nullptr;
         if (catStr == nullptr || !categoryFromString(catStr, cat)) {
-            return jfailAt(label, idx, "category", "missing or unknown category");
+            return pcFailAt(label, idx, "category", "missing or unknown category");
         }
         const char* fbStr = obj["fallback"] | "none";
         if (!slotFromString(fbStr, fb)) {
-            return jfailAt(label, idx, "fallback", "unknown fallback slot");
+            return pcFailAt(label, idx, "fallback", "unknown fallback slot");
         }
         s.params.audioCategory     = cat;
         s.params.audioFallbackSlot = fb;
-        return jok();
+        return pcOk();
     }
     if (strcmp(type, "end") == 0) {
         s.type = STEP_END;
-        return jok();
+        return pcOk();
     }
-    return jfailAt(label, idx, "type", "unknown step type");
+    return pcFailAt(label, idx, "type", "unknown step type");
 }
 
 // Parse a JSON steps array into a SeqStep buffer. Sets *outCount.
@@ -205,14 +188,14 @@ static ProtocolCheckResult parseBranch(const char* label, JsonArrayConst arr,
     uint8_t n = 0;
     for (JsonVariantConst v : arr) {
         if (n >= cap) {
-            return jfail(label, "too many steps");
+            return pcFail(label, "too many steps");
         }
         ProtocolCheckResult r = parseStep(label, v.as<JsonObjectConst>(), n, buf[n]);
         if (!r.ok) return r;
         ++n;
     }
     *outCount = n;
-    return jok();
+    return pcOk();
 }
 
 // -----------------------------------------------------------------------------
@@ -224,12 +207,12 @@ ProtocolCheckResult seqJsonParseVariant(JsonVariantConst root,
                                         SeqDraft& out) {
     int format = root["format"] | 0;
     if (format != SEQ_JSON_FORMAT) {
-        return jfail("format", "unsupported format version");
+        return pcFail("format", "unsupported format version");
     }
 
     const char* name = root["name"] | (const char*)nullptr;
     if (name == nullptr || strnlen(name, sizeof(out.name)) >= sizeof(out.name)) {
-        return jfail("name", "missing or too long");
+        return pcFail("name", "missing or too long");
     }
     memset(&out, 0, sizeof(out));
     strncpy(out.name, name, sizeof(out.name) - 1);
@@ -239,12 +222,12 @@ ProtocolCheckResult seqJsonParseVariant(JsonVariantConst root,
     SeqToggleGroup grp = TOGGLE_NONE;
     const char* grpStr = root["toggleGroup"] | "none";
     if (!seqToggleGroupFromString(grpStr, grp)) {
-        return jfail("toggleGroup", "unknown toggle group");
+        return pcFail("toggleGroup", "unknown toggle group");
     }
     out.toggleGroup = grp;
 
     if (!root["steps"].is<JsonArrayConst>()) {
-        return jfail("steps", "missing steps array");
+        return pcFail("steps", "missing steps array");
     }
     uint8_t stepCount = 0;
     ProtocolCheckResult r = parseBranch("steps", root["steps"].as<JsonArrayConst>(),
@@ -265,7 +248,7 @@ ProtocolCheckResult seqJsonParseVariant(JsonVariantConst root,
             out.closeStepCount = closeCount;
         }
     }
-    return jok();
+    return pcOk();
 }
 
 ProtocolCheckResult seqJsonParse(const char* json,
@@ -275,7 +258,7 @@ ProtocolCheckResult seqJsonParse(const char* json,
     JsonDocument doc;
     DeserializationError err = deserializeJson(doc, json);
     if (err) {
-        return jfail("json", err.c_str());
+        return pcFail("json", err.c_str());
     }
     return seqJsonParseVariant(doc.as<JsonVariantConst>(),
                                stepBuf, stepCap, closeBuf, closeCap, out);

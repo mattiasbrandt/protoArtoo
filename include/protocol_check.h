@@ -21,6 +21,8 @@
 #pragma once
 
 #include <stdint.h>
+#include <stdio.h>
+#include <string.h>
 
 #include "sequence_engine.h"  // SeqStep, SeqStepParams, SeqToggleGroup, SeqEffectClass
 
@@ -33,6 +35,31 @@ struct ProtocolCheckResult {
     char field[24];    // e.g. "name", "suppressMs", "steps[3].cmd"
     char message[96];  // human-readable reason
 };
+
+// -----------------------------------------------------------------------------
+// Result constructors — shared by every module that produces a
+// ProtocolCheckResult (validator, JSON codec, runtime store) so the error
+// shape and truncation rules stay identical everywhere.
+// -----------------------------------------------------------------------------
+inline ProtocolCheckResult pcOk() {
+    ProtocolCheckResult r = { true, "", "" };
+    return r;
+}
+
+inline ProtocolCheckResult pcFail(const char* field, const char* message) {
+    ProtocolCheckResult r = { false, "", "" };
+    strncpy(r.field, field, sizeof(r.field) - 1);
+    strncpy(r.message, message, sizeof(r.message) - 1);
+    return r;
+}
+
+// pcFail() with an indexed field path: "<label>[<idx>].<suffix>".
+inline ProtocolCheckResult pcFailAt(const char* label, uint8_t idx,
+                                    const char* suffix, const char* message) {
+    char field[24];
+    snprintf(field, sizeof(field), "%s[%u].%s", label, (unsigned)idx, suffix);
+    return pcFail(field, message);
+}
 
 // -----------------------------------------------------------------------------
 // Bounds (single source of truth; mirrored in docs/sequence-authoring.md).
@@ -68,6 +95,8 @@ struct SeqDraft {
 };
 
 // True if `g` is a recognised SeqToggleGroup value (incl. the user latches).
+// Note: protocolCheckMeta() additionally REJECTS the user latches for now —
+// the engine's branch-pick/latch execution is not wired for them yet.
 bool protocolCheckToggleGroupValid(SeqToggleGroup g);
 
 // Validate sequence-level metadata and retrain (shadowing) rules. `endTimeMs`

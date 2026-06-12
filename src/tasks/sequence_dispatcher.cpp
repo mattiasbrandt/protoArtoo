@@ -78,8 +78,17 @@ bool sequenceStart(const char* name, CommandSource src) {
 
         case SEQ_FALLBACK:
         default:
-            PA_LOG_DEBUG(TAG, "[%s] fallback -> dome: %s",
-                         commandSourceToString(src), name);
+            if (strncmp(name, "DM:", 3) == 0) {
+                // A DM:* name that is neither catalog, runtime, nor alias is
+                // almost certainly a deleted Learned Sequence still referenced
+                // by an RC binding. The dome ignores it, so make the no-op
+                // visible to the operator instead of failing silently.
+                PA_LOG_WARN(TAG, "[%s] unknown DM:* (deleted Learned Sequence?) -> dome: %s",
+                            commandSourceToString(src), name);
+            } else {
+                PA_LOG_DEBUG(TAG, "[%s] fallback -> dome: %s",
+                             commandSourceToString(src), name);
+            }
             return domeQueueTx(name);
     }
 }
@@ -152,14 +161,24 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
         // Check for a new request (preempt current sequence if one is running).
         SequenceRequest req = {};
         if (xQueueReceive(sequenceQueue, &req, 0) == pdTRUE) {
-            // Decide whether this name will start BEFORE touching the engine or
-            // the runtime staging buffers — a runtime load overwrites the buffers
-            // the current sequence may still be running from.
             const bool isRuntime = (sequenceLookup(req.name).kind == SEQ_RUNTIME);
             const SequenceEntry* catalogEntry =
                 isRuntime ? nullptr : sequenceCatalogFind(req.name);
-            const bool willStart = isRuntime || (catalogEntry != nullptr);
+            bool willStart = isRuntime || (catalogEntry != nullptr);
 
+            if (isRuntime) {
+                // Stage the Learned Sequence (parse + Protocol Check into a
+                // transient heap pair) BEFORE touching the engine, so a load
+                // that fails — corrupt file, concurrent Memory Wipe — never
+                // costs the currently running sequence.
+                ProtocolCheckResult lr = seqStorePrepare(req.name);
+                if (!lr.ok) {
+                    PA_LOG_WARN(TAG, "[%s] runtime load failed %s: %s (%s)",
+                                commandSourceToString(req.src), req.name,
+                                lr.message, lr.field);
+                    willStart = false;
+                }
+            }
             if (willStart) {
                 if (seqEngineActive(engine)) {
                     PA_LOG_INFO(TAG, "preempt %s -> %s", activeName, req.name);
@@ -168,26 +187,20 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
                 }
                 const SequenceEntry* entry = catalogEntry;
                 if (isRuntime) {
-                    // Load-on-demand: parse the file into the run buffers now
-                    // that the previous sequence has been fully drained.
-                    ProtocolCheckResult lr = seqStoreLoad(req.name, runtimeEntry);
-                    entry = lr.ok ? &runtimeEntry : nullptr;
-                    if (!lr.ok) {
-                        PA_LOG_WARN(TAG, "runtime load failed %s: %s (%s)",
-                                    req.name, lr.message, lr.field);
-                    }
+                    // Copy the staged sequence into the run buffers now that
+                    // the previous sequence has been fully drained.
+                    seqStoreCommit(runtimeEntry);
+                    entry = &runtimeEntry;
                 }
-                if (entry != nullptr) {
-                    seqEngineStart(engine, entry, now);
-                    strncpy(activeName, req.name, sizeof(activeName) - 1);
-                    activeName[sizeof(activeName) - 1] = '\0';
-                    retryLogged = false;
-                    setSuppression(now + entry->suppressMs);
-                    PA_LOG_INFO(TAG, "[%s] start %s suppress=%u ms",
-                                commandSourceToString(req.src),
-                                entry->name, (unsigned)entry->suppressMs);
-                }
-            } else {
+                seqEngineStart(engine, entry, now);
+                strncpy(activeName, req.name, sizeof(activeName) - 1);
+                activeName[sizeof(activeName) - 1] = '\0';
+                retryLogged = false;
+                setSuppression(now + entry->suppressMs);
+                PA_LOG_INFO(TAG, "[%s] start %s suppress=%u ms",
+                            commandSourceToString(req.src),
+                            entry->name, (unsigned)entry->suppressMs);
+            } else if (!isRuntime) {
                 PA_LOG_WARN(TAG, "request not in catalog: %s", req.name);
             }
         }

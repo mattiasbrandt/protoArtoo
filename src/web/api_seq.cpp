@@ -13,7 +13,10 @@
 #include <ESPAsyncWebServer.h>
 
 #include "api_helpers.h"
+#include "config_store.h"         // ConfigSnapshot, configCacheRead
 #include "logging.h"
+#include "rc_action_types.h"      // RcTriggerBinding, DOME_ACTION_SEQ
+#include "rc_binding_types.h"     // rcBindingSourceToString
 #include "robot_state.h"          // CommandSource
 #include "seq_json.h"
 #include "seq_store.h"
@@ -91,15 +94,24 @@ void handleGetOne(AsyncWebServerRequest* req) {
                   "{\"ok\":false,\"error\":\"missing name parameter\"}");
         return;
     }
+    // Look up before allocating the stream so a miss is a clean 404.
+    if (seqStoreIndexFind(p->value().c_str()) == nullptr) {
+        req->send(404, "application/json",
+                  "{\"ok\":false,\"error\":\"not found\"}");
+        return;
+    }
     auto* stream = req->beginResponseStream("application/json");
     if (stream == nullptr) {
         req->send(500, "application/json", "{\"ok\":false,\"error\":\"alloc\"}");
         return;
     }
     if (!seqStoreStreamFile(p->value().c_str(), *stream)) {
-        // The stream may already hold partial output; safest is a fresh 404.
-        req->send(404, "application/json",
-                  "{\"ok\":false,\"error\":\"not found\"}");
+        // The handler owns the stream until send(): beginResponseStream()
+        // only allocates it, and nothing reaches the client before send().
+        // Discard it and report the (rare) read failure.
+        delete stream;
+        req->send(500, "application/json",
+                  "{\"ok\":false,\"error\":\"read failed\"}");
         return;
     }
     req->send(stream);
@@ -131,13 +143,58 @@ void handleDelete(AsyncWebServerRequest* req) {
                   "{\"ok\":false,\"error\":\"missing name parameter\"}");
         return;
     }
-    if (!seqStoreDelete(p->value().c_str())) {
+    const char* name = p->value().c_str();
+    if (seqStoreIndexFind(name) == nullptr) {
         req->send(404, "application/json",
                   "{\"ok\":false,\"error\":\"not found\"}");
         return;
     }
-    PA_LOG_INFO(TAG, "[WEB] Memory Wipe %s", p->value().c_str());
-    req->send(200, "application/json", "{\"ok\":true}");
+    if (!seqStoreDelete(name)) {
+        req->send(500, "application/json",
+                  "{\"ok\":false,\"error\":\"delete failed\"}");
+        return;
+    }
+    PA_LOG_INFO(TAG, "[WEB] Memory Wipe %s", name);
+
+    // Report RC trigger bindings the wipe leaves dangling: unless a Factory
+    // Sequence shadows the name, those triggers are silent no-ops from now on
+    // (the editor surfaces this; the log keeps it visible regardless).
+    JsonDocument doc;
+    doc["ok"] = true;
+    if (sequenceCatalogFind(name) == nullptr) {
+        ConfigSnapshot snap;
+        configCacheRead(&snap);
+        const RcTriggerBinding* slots[] = {
+            &snap.system.rc_arm1,  &snap.system.rc_arm2,  &snap.system.rc_aux1,
+            &snap.system.rc_aux2,  &snap.system.rc_aux3,  &snap.system.rc_sound,
+            &snap.system.rc_opmode, &snap.system.rc_free0, &snap.system.rc_free1,
+            &snap.system.rc_free2, &snap.system.rc_free3,
+        };
+        JsonArray dangling;
+        for (size_t i = 0; i < sizeof(slots) / sizeof(slots[0]); ++i) {
+            const RcTriggerBinding& b = *slots[i];
+            if (b.target != DOME_ACTION_SEQ ||
+                strcmp(b.marcduinoPayload, name) != 0) {
+                continue;
+            }
+            if (dangling.isNull()) {
+                dangling = doc["danglingBindings"].to<JsonArray>();
+            }
+            JsonObject o = dangling.add<JsonObject>();
+            o["source"] = rcBindingSourceToString(b.source);
+            o["channel"] = b.channel;
+            PA_LOG_WARN(TAG, "Memory Wipe %s leaves RC binding %s ch%u dangling",
+                        name, rcBindingSourceToString(b.source),
+                        (unsigned)b.channel);
+        }
+    }
+    auto* stream = req->beginResponseStream("application/json");
+    if (stream == nullptr) {
+        req->send(200, "application/json", "{\"ok\":true}");
+        return;
+    }
+    serializeJson(doc, *stream);
+    req->send(stream);
 }
 
 // POST /api/seq/test  — run a sequence by name (same ungated path as dome/cmd).

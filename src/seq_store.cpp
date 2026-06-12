@@ -25,26 +25,24 @@ static const char* TAG = "SEQST";
 static const char* SEQ_DIR = "/seq";
 
 // Run/boot-scan staging buffers (the dispatcher runs from these via the entry
-// returned by seqStoreLoad). One sequence at a time; the boot scan completes
+// built by seqStoreCommit). One sequence at a time; the boot scan completes
 // before the dispatcher task starts. Save validation never uses these.
 static SeqStep s_main[96];
 static SeqStep s_close[96];
 
+// Two-phase load staging (dispatcher task only). seqStorePrepare() parses and
+// validates into this transient heap pair; seqStoreCommit() copies it into the
+// run buffers once the previous run is drained. s_runName gives the running
+// entry a name whose lifetime does not depend on the (mutable) index.
+static SeqStep* s_staged = nullptr;  // malloc'd [192]: main at [0], close at [96]
+static SeqDraft s_stagedDraft;       // step pointers into s_staged
+static char     s_runName[24];
+
 static SemaphoreHandle_t s_mutex = nullptr;
 
 // -----------------------------------------------------------------------------
-// Helpers
+// Helpers (result constructors pcOk/pcFail are shared inlines in the header)
 // -----------------------------------------------------------------------------
-static ProtocolCheckResult sok() {
-    ProtocolCheckResult r = { true, "", "" };
-    return r;
-}
-static ProtocolCheckResult sfail(const char* field, const char* msg) {
-    ProtocolCheckResult r = { false, "", "" };
-    strncpy(r.field, field, sizeof(r.field) - 1);
-    strncpy(r.message, msg, sizeof(r.message) - 1);
-    return r;
-}
 
 // "DM:MYSEQ" -> "/seq/DM_MYSEQ.json". Returns false if name is implausible.
 // File-name mapping is the pure seqStoreNameToFile(); this prefixes the dir.
@@ -61,18 +59,6 @@ static bool lock() {
 }
 static void unlock() {
     if (s_mutex != nullptr) xSemaphoreGive(s_mutex);
-}
-
-// Build a SequenceEntry over the supplied (already validated) staging branches.
-static void buildEntry(const SeqDraft& d, SequenceEntry& out,
-                       const char* nameStore) {
-    out.name           = nameStore;  // stable storage (index entry name)
-    out.steps          = d.steps;
-    out.stepCount      = d.stepCount;
-    out.suppressMs     = d.suppressMs;
-    out.toggleGroup    = d.toggleGroup;
-    out.closeSteps     = d.closeSteps;
-    out.closeStepCount = d.closeStepCount;
 }
 
 // Index a validated draft with its meta. Returns false if the index is full.
@@ -148,15 +134,19 @@ void seqStoreInit() {
 }
 
 // -----------------------------------------------------------------------------
-// Load (dispatcher run path)
+// Load (dispatcher run path) — two-phase: prepare into heap, commit to buffers
 // -----------------------------------------------------------------------------
-ProtocolCheckResult seqStoreLoad(const char* name, SequenceEntry& out) {
-    if (!lock()) return sfail("name", "store busy");
+ProtocolCheckResult seqStorePrepare(const char* name) {
+    if (s_staged != nullptr) {  // a previous prepare was never committed
+        free(s_staged);
+        s_staged = nullptr;
+    }
+    if (!lock()) return pcFail("name", "store busy");
 
     const SeqIndexEntry* idx = seqStoreIndexFind(name);
     if (idx == nullptr) {
         unlock();
-        return sfail("name", "not a Learned Sequence");
+        return pcFail("name", "not a Learned Sequence");
     }
     char path[64];
     snprintf(path, sizeof(path), "%s/%s", SEQ_DIR, idx->file);
@@ -164,25 +154,62 @@ ProtocolCheckResult seqStoreLoad(const char* name, SequenceEntry& out) {
     File f = LittleFS.open(path, "r");
     if (!f) {
         unlock();
-        return sfail("name", "file missing");
+        return pcFail("name", "file missing");
     }
     JsonDocument doc;
     DeserializationError err = deserializeJson(doc, f);
     f.close();
     if (err) {
         unlock();
-        return sfail("json", err.c_str());
+        return pcFail("json", err.c_str());
     }
 
+    SeqStep* tmp = (SeqStep*)malloc(sizeof(SeqStep) * 192);
+    if (tmp == nullptr) {
+        unlock();
+        return pcFail("json", "out of memory");
+    }
     SeqDraft d;
     ProtocolCheckResult r = seqJsonParseVariant(doc.as<JsonVariantConst>(),
-                                                s_main, 96, s_close, 96, d);
-    if (r.ok) r = protocolCheck(d);  // stamps effectClass into s_main/s_close
-    if (r.ok) {
-        buildEntry(d, out, idx->name);  // entry name -> stable index storage
-    }
+                                                tmp, 96, tmp + 96, 96, d);
+    if (r.ok) r = protocolCheck(d);  // stamps effectClass into the staging
     unlock();
-    return r;
+    if (!r.ok) {
+        free(tmp);
+        return r;
+    }
+    s_staged = tmp;
+    s_stagedDraft = d;
+    return pcOk();
+}
+
+bool seqStoreCommit(SequenceEntry& out) {
+    if (s_staged == nullptr) {
+        return false;
+    }
+    const SeqDraft& d = s_stagedDraft;
+    // The run buffers are written only here and in the boot scan; the caller
+    // (dispatcher task) drains the engine before committing, so this cannot
+    // race a running sequence.
+    memcpy(s_main, d.steps, sizeof(SeqStep) * d.stepCount);
+    const bool hasClose = (d.closeSteps != nullptr && d.closeStepCount > 0);
+    if (hasClose) {
+        memcpy(s_close, d.closeSteps, sizeof(SeqStep) * d.closeStepCount);
+    }
+    strncpy(s_runName, d.name, sizeof(s_runName) - 1);
+    s_runName[sizeof(s_runName) - 1] = '\0';
+
+    out.name           = s_runName;
+    out.steps          = s_main;
+    out.stepCount      = d.stepCount;
+    out.suppressMs     = d.suppressMs;
+    out.toggleGroup    = d.toggleGroup;
+    out.closeSteps     = hasClose ? s_close : nullptr;
+    out.closeStepCount = hasClose ? d.closeStepCount : 0;
+
+    free(s_staged);
+    s_staged = nullptr;
+    return true;
 }
 
 // -----------------------------------------------------------------------------
@@ -193,7 +220,7 @@ ProtocolCheckResult seqStoreSave(const char* json, size_t len) {
     // buffers (s_main/s_close) are never disturbed.
     SeqStep* tmp = (SeqStep*)malloc(sizeof(SeqStep) * 192);
     if (tmp == nullptr) {
-        return sfail("json", "out of memory");
+        return pcFail("json", "out of memory");
     }
 
     JsonDocument doc;
@@ -201,7 +228,7 @@ ProtocolCheckResult seqStoreSave(const char* json, size_t len) {
     ProtocolCheckResult r;
     SeqDraft d;
     if (err) {
-        r = sfail("json", err.c_str());
+        r = pcFail("json", err.c_str());
     } else {
         r = seqJsonParseVariant(doc.as<JsonVariantConst>(), tmp, 96, tmp + 96, 96, d);
         if (r.ok) r = protocolCheck(d);
@@ -214,7 +241,7 @@ ProtocolCheckResult seqStoreSave(const char* json, size_t len) {
     char path[64];
     if (!nameToPath(d.name, path, sizeof(path))) {
         free(tmp);
-        return sfail("name", "invalid name");
+        return pcFail("name", "invalid name");
     }
     char file[40];
     const char* base = strrchr(path, '/');
@@ -223,7 +250,7 @@ ProtocolCheckResult seqStoreSave(const char* json, size_t len) {
 
     if (!lock()) {
         free(tmp);
-        return sfail("name", "store busy");
+        return pcFail("name", "store busy");
     }
 
     // Capacity: 16-file cap (new names only), per-file size, free-space floor.
@@ -253,25 +280,25 @@ ProtocolCheckResult seqStoreSave(const char* json, size_t len) {
     File wf = LittleFS.open(tmpPath, "w");
     if (!wf) {
         unlock();
-        return sfail("json", "cannot open temp file");
+        return pcFail("json", "cannot open temp file");
     }
     size_t wrote = wf.write((const uint8_t*)json, len);
     wf.close();
     if (wrote != len) {
         LittleFS.remove(tmpPath);
         unlock();
-        return sfail("json", "write failed");
+        return pcFail("json", "write failed");
     }
     LittleFS.remove(path);  // ignore result; rename needs the slot free
     if (!LittleFS.rename(tmpPath, path)) {
         LittleFS.remove(tmpPath);
         unlock();
-        return sfail("json", "rename failed");
+        return pcFail("json", "rename failed");
     }
 
     seqStoreIndexAdd(entry);  // insert or update in place
     unlock();
-    return sok();
+    return pcOk();
 }
 
 // -----------------------------------------------------------------------------
@@ -282,10 +309,18 @@ bool seqStoreDelete(const char* name) {
     if (!nameToPath(name, path, sizeof(path))) return false;
 
     if (!lock()) return false;
-    bool removedFile = LittleFS.remove(path);
-    bool removedIdx = seqStoreIndexRemove(name);
+    const bool fileExisted = LittleFS.exists(path);
+    if (fileExisted && !LittleFS.remove(path)) {
+        // Keep the index entry: the file is still on flash and would be
+        // re-indexed at the next boot scan, so reporting success here would
+        // let a "deleted" sequence silently resurrect.
+        unlock();
+        PA_LOG_ERROR(TAG, "Memory Wipe failed: cannot remove %s", path);
+        return false;
+    }
+    const bool removedIdx = seqStoreIndexRemove(name);
     unlock();
-    return removedFile || removedIdx;
+    return fileExisted || removedIdx;
 }
 
 // -----------------------------------------------------------------------------
