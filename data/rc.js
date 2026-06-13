@@ -230,7 +230,8 @@
     { id: 36, name: "BT-1 two-gripper sequence", description: "Run the BT-1 style dual-gripper body sequence." },
   ];
 
-  const DOME_SEQUENCES = [
+  // Factory dome sequences (fallback when /api/seq/list is unavailable)
+  const FACTORY_DOME_SEQUENCES = [
     { payload: 'DM:PIES',      label: 'Pie Panels',           description: 'Toggle pie panels open/close (12 s)' },
     { payload: 'DM:LOW',       label: 'Lower Panels',         description: 'Toggle lower panels open/close (15 s)' },
     { payload: 'DM:OPENALL',   label: 'Open All Panels',      description: 'Toggle all panels open/close (10 s)' },
@@ -249,6 +250,9 @@
     { payload: 'DM:RESET',     label: 'Reset All',            description: 'Close all panels, reset all subsystems (4 s)' },
     { payload: 'DM:RANDOM',    label: 'Random',               description: 'Delegate to a random SE sequence' },
   ];
+
+  // Cached learned sequences (fetched on demand)
+  let cachedLearnedSequences = null;
 
   const normalizeMarcduinoSequencePayload = (payload) => {
     const raw = String(payload || "").trim().toUpperCase();
@@ -270,10 +274,46 @@
 
   const renderDomeSequenceOptions = (selectedPayload) => {
     const sel = String(selectedPayload || '').trim().toUpperCase();
-    return DOME_SEQUENCES.map((entry) => {
+    // Use factory sequences only for initial render
+    // Learned sequences will be fetched asynchronously
+    return FACTORY_DOME_SEQUENCES.map((entry) => {
       const selected = sel === entry.payload ? ' selected' : '';
       return `<option value="${escapeHtml(entry.payload)}" title="${escapeHtml(entry.description)}"${selected}>${escapeHtml(entry.label)}</option>`;
     }).join('\n            ');
+  };
+
+  const updateDomeSequenceOptions = async (selectedPayload) => {
+    const sel = String(selectedPayload || '').trim().toUpperCase();
+
+    // Fetch learned sequences if not cached
+    if (cachedLearnedSequences === null) {
+      try {
+        const result = await PAApi.get('/api/seq/list');
+        if (result.ok && Array.isArray(result.data)) {
+          cachedLearnedSequences = result.data.map((seq) => ({
+            payload: seq.name,
+            label: seq.name,
+            description: `Learned sequence (${seq.stepCount || 0} steps, ${seq.suppressMs}ms suppress)`,
+          }));
+        } else {
+          cachedLearnedSequences = [];
+        }
+      } catch {
+        cachedLearnedSequences = [];
+      }
+    }
+
+    // Combine factory + learned sequences
+    const allSequences = [...FACTORY_DOME_SEQUENCES, ...cachedLearnedSequences];
+
+    // Find the dome_seq select element and update it
+    const domeSeqSelect = rcEditorContent.querySelector('[data-cond="dome_seq"] select');
+    if (domeSeqSelect) {
+      domeSeqSelect.innerHTML = allSequences.map((entry) => {
+        const selected = sel === entry.payload ? ' selected' : '';
+        return `<option value="${escapeHtml(entry.payload)}" title="${escapeHtml(entry.description)}"${selected}>${escapeHtml(entry.label)}</option>`;
+      }).join('\n            ');
+    }
   };
 
   const SOURCE_OPTIONS = {
@@ -934,6 +974,11 @@
       markEditorDirty();
       if (keepFocus) {
         rcEditorContent.querySelector('.rc-action-picker')?.focus();
+      }
+      // Fetch learned sequences if dome_seq is selected
+      if (token === 'dome_seq') {
+        const currentPayload = rcEditorContent.querySelector('[data-cond="dome_seq"] select')?.value || '';
+        updateDomeSequenceOptions(currentPayload);
       }
     };
 
