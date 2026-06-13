@@ -127,7 +127,8 @@
       els.cardsContainer.querySelectorAll(".seq-card-actions button").forEach((btn) => {
         const action = btn.dataset.action;
         const seqName = btn.dataset.seqName;
-        btn.addEventListener("click", () => handleSeqAction(action, seqName));
+        const cardEl = btn.closest(".seq-card");
+        btn.addEventListener("click", () => handleSeqAction(action, seqName, cardEl));
       });
     }
   };
@@ -167,6 +168,7 @@
           <button class="btn btn-sm btn-action" data-action="memory-wipe" data-seq-name="${escapeAttr(seq.name)}">Memory Wipe</button>
           <button class="btn btn-sm btn-action" data-action="export" data-seq-name="${escapeAttr(seq.name)}">Export</button>
         </div>
+        <div class="seq-card-test-feedback feedback hidden"></div>
       </div>
     `;
   };
@@ -612,15 +614,11 @@
     const cancelBtn = document.getElementById("seq-editor-cancel");
 
     if (testBtn) {
-      testBtn.addEventListener("click", () => {
-        showEditorFeedback("Test on droid — placeholder (Slice D)", "info");
-      });
+      testBtn.addEventListener("click", handleTestOnDroid);
     }
 
     if (saveBtn) {
-      saveBtn.addEventListener("click", () => {
-        showEditorFeedback("Save — placeholder (Slice D)", "info");
-      });
+      saveBtn.addEventListener("click", handleSave);
     }
 
     if (revertBtn) {
@@ -709,17 +707,59 @@
     feedbackEl.classList.remove("hidden");
   };
 
+  const handleSave = async () => {
+    const validation = SeqProtocolCheck.validateSequence(editorState.current);
+    if (!validation.ok) {
+      showEditorFeedback(validation.error || "Fix validation errors before saving.", "error");
+      return;
+    }
+    if (editorState.isNew && sequences.length >= 16) {
+      showEditorFeedback("Capacity limit: 16 sequences on device. Delete one first.", "error");
+      return;
+    }
+    const saveBtn = document.getElementById("seq-editor-save");
+    if (saveBtn) saveBtn.disabled = true;
+    showEditorFeedback("Saving...", "info");
+    try {
+      await PAApi.postJson("/api/seq", editorState.current);
+      showEditorFeedback("Saved.", "ok");
+      editorState.isNew = false;
+      editorState.original = JSON.parse(JSON.stringify(editorState.current));
+      await loadSequenceList();
+    } catch (error) {
+      showEditorFeedback("Save failed: " + PAApi.messageFor(error), "error");
+    } finally {
+      if (saveBtn) saveBtn.disabled = false;
+    }
+  };
+
+  const handleTestOnDroid = async () => {
+    const seqName = editorState.current?.name;
+    if (!seqName) return;
+    const testBtn = document.getElementById("seq-editor-test");
+    if (testBtn) testBtn.disabled = true;
+    showEditorFeedback(`Sending ${escapeHtml(seqName)} to droid...`, "info");
+    try {
+      await PAApi.postJson("/api/seq/test", { name: seqName });
+      showEditorFeedback(`${escapeHtml(seqName)} dispatched.`, "ok");
+    } catch (error) {
+      showEditorFeedback("Test failed: " + PAApi.messageFor(error), "error");
+    } finally {
+      if (testBtn) testBtn.disabled = false;
+    }
+  };
+
   // =========================================================================
   // Action Handlers (Edit, Test, Duplicate, Memory Wipe, Export)
   // =========================================================================
 
-  const handleSeqAction = async (action, seqName) => {
+  const handleSeqAction = async (action, seqName, cardEl) => {
     switch (action) {
       case "edit":
         await handleEditSequence(seqName);
         break;
       case "test":
-        await handleTestSequence(seqName);
+        await handleTestSequence(seqName, cardEl);
         break;
       case "duplicate":
         await handleDuplicateSequence(seqName);
@@ -755,19 +795,24 @@
     }
   };
 
-  const handleTestSequence = async (seqName) => {
+  const handleTestSequence = async (seqName, cardEl) => {
+    const feedbackEl = cardEl?.querySelector(".seq-card-test-feedback");
+    if (feedbackEl) {
+      feedbackEl.textContent = "Running...";
+      feedbackEl.className = "seq-card-test-feedback feedback info";
+      feedbackEl.classList.remove("hidden");
+    }
     try {
-      const result = await PAApi.postJson("/api/seq/test", {
-        name: seqName,
-      });
-      if (result.ok) {
-        console.log("Test triggered for", seqName);
-        alert(`${seqName} is now running on the droid.`);
-      } else {
-        alert("Failed to test sequence: " + (result.data?.error || "Unknown error"));
+      await PAApi.postJson("/api/seq/test", { name: seqName });
+      if (feedbackEl) {
+        feedbackEl.textContent = "Dispatched.";
+        feedbackEl.className = "seq-card-test-feedback feedback ok";
       }
     } catch (error) {
-      alert("Error testing sequence: " + PAApi.messageFor(error));
+      if (feedbackEl) {
+        feedbackEl.textContent = PAApi.messageFor(error);
+        feedbackEl.className = "seq-card-test-feedback feedback error";
+      }
     }
   };
 
@@ -862,7 +907,7 @@
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${seqJson.name}.json`;
+      a.download = `${seqJson.name.replace(/:/g, "_")}.json`;
       a.click();
       URL.revokeObjectURL(url);
     } catch (error) {
@@ -873,6 +918,40 @@
   // =========================================================================
   // Import Modal (Placeholder for Slice F)
   // =========================================================================
+
+  const handleImportConfirm = async () => {
+    let parsed;
+    try {
+      if (els.importFileInput.files.length > 0) {
+        const fileText = await els.importFileInput.files[0].text();
+        parsed = JSON.parse(fileText);
+      } else {
+        const text = els.importTextarea.value.trim();
+        parsed = JSON.parse(text);
+      }
+    } catch {
+      PAUtils.showFeedback(els.importFeedback, "Invalid JSON — check the format.", "error");
+      els.importFeedback.classList.remove("hidden");
+      return;
+    }
+
+    const validation = SeqProtocolCheck.validateSequence(parsed);
+    if (!validation.ok) {
+      PAUtils.showFeedback(els.importFeedback, validation.error || "Sequence failed validation.", "error");
+      els.importFeedback.classList.remove("hidden");
+      return;
+    }
+
+    hideModal(els.modalImport);
+    editorState.isNew = true;
+    editorState.original = JSON.parse(JSON.stringify(parsed));
+    editorState.current = JSON.parse(JSON.stringify(parsed));
+    currentEditingSeq = editorState.current;
+    els.emptyState.classList.add("hidden");
+    els.populatedState.classList.add("hidden");
+    els.editorView.classList.remove("hidden");
+    renderEditorView(editorState.current);
+  };
 
   const showImportModal = () => {
     els.importFileInput.value = "";
@@ -902,9 +981,31 @@
     // Import modal
     els.modalImportCancel.addEventListener("click", () => hideModal(els.modalImport));
     els.modalImportClose.addEventListener("click", () => hideModal(els.modalImport));
-    els.modalImportConfirm.addEventListener("click", () => {
-      // Placeholder for Slice F
-    });
+    els.modalImportConfirm.addEventListener("click", handleImportConfirm);
+
+    // Enable/disable import confirm button reactively
+    const updateImportConfirmButton = () => {
+      let isValidJson = false;
+      if (els.importFileInput.files.length > 0) {
+        // File is selected; we'll parse it on confirm
+        isValidJson = true;
+      } else {
+        // Try to parse textarea
+        const text = els.importTextarea.value.trim();
+        if (text) {
+          try {
+            JSON.parse(text);
+            isValidJson = true;
+          } catch {
+            isValidJson = false;
+          }
+        }
+      }
+      els.modalImportConfirm.disabled = !isValidJson;
+    };
+
+    els.importFileInput.addEventListener("change", updateImportConfirmButton);
+    els.importTextarea.addEventListener("input", updateImportConfirmButton);
 
     // Memory wipe modal
     els.modalWipeCancel.addEventListener("click", () => hideModal(els.modalWipe));
