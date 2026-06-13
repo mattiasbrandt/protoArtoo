@@ -20,6 +20,9 @@
     isNew: false,     // true for blank/clone/duplicate (unsaved)
   };
 
+  let _pendingWipeSeqName = null; // sequence name pending deletion (avoids placeholder coupling)
+  let _wipeInputListener = null;  // stored to enable removeEventListener on modal reopen
+
   const els = {
     // List view
     mainCard: document.getElementById("seq-main-card"),
@@ -85,20 +88,10 @@
   const loadSequenceList = async () => {
     try {
       const result = await PAApi.get("/api/seq/list");
-      if (!result.ok) {
-        // Show error in console; don't destroy the page
-        console.error("Failed to load sequences:", result);
-        // In a real scenario, the device API would return data
-        // For now, show empty state as safe default
-        sequences = [];
-        renderListView();
-        return;
-      }
       sequences = result.data || [];
       renderListView();
     } catch (error) {
       console.error("Error loading sequences:", error);
-      // Safe default: show empty state
       sequences = [];
       renderListView();
     }
@@ -191,10 +184,6 @@
     if (builtins.length > 0) return; // Already cached
     try {
       const result = await PAApi.get("/api/seq/builtins");
-      if (!result.ok) {
-        console.error("Failed to load builtins");
-        return;
-      }
       builtins = result.data || [];
     } catch (error) {
       console.error("Error loading builtins:", error);
@@ -345,10 +334,9 @@
   };
 
   const renderEditorView = (seq) => {
-    // Initialize editor state
+    // isNew must be set by the caller before calling renderEditorView
     editorState.original = JSON.parse(JSON.stringify(seq));
     editorState.current = JSON.parse(JSON.stringify(seq));
-    editorState.isNew = !seq.name || seq.name.startsWith("_"); // Mark as new if name is missing or placeholder
 
     const stepRows = (seq.steps || [])
       .map((step, idx) => renderStepRow(step, idx))
@@ -420,8 +408,9 @@
       renderStepFields(editorState.current.steps[idx], container);
     });
 
-    // Attach event listeners
-    attachEditorEventListeners();
+    // Attach event listeners (metadata/footer once; step rows on every rerender)
+    attachMetadataListeners();
+    attachStepListeners();
     updateValidationSummary();
   };
 
@@ -496,8 +485,9 @@
     updateValidationSummary();
   };
 
-  const attachEditorEventListeners = () => {
-    // Metadata field changes
+  // Called once from renderEditorView — persistent metadata + footer elements only.
+  // These elements are NOT re-created on rerenderStepTable, so listeners must not accumulate.
+  const attachMetadataListeners = () => {
     const nameInput = document.getElementById("seq-editor-name");
     const suppressInput = document.getElementById("seq-editor-suppress");
     const suppressValue = document.querySelector(".seq-editor-slider-value");
@@ -534,6 +524,53 @@
       });
     }
 
+    const addStepBtn = document.getElementById("seq-editor-add-step");
+    if (addStepBtn) {
+      addStepBtn.addEventListener("click", () => {
+        const newStep = { t: 0, type: "audio", cmd: "$H" };
+        editorState.current.steps.push(newStep);
+        rerenderStepTable();
+        updateValidationSummary();
+      });
+    }
+
+    const testBtn = document.getElementById("seq-editor-test");
+    const saveBtn = document.getElementById("seq-editor-save");
+    const revertBtn = document.getElementById("seq-editor-revert");
+    const cancelBtn = document.getElementById("seq-editor-cancel");
+
+    if (testBtn) testBtn.addEventListener("click", handleTestOnDroid);
+    if (saveBtn) saveBtn.addEventListener("click", handleSave);
+
+    if (revertBtn) {
+      revertBtn.addEventListener("click", () => {
+        editorState.current = JSON.parse(JSON.stringify(editorState.original));
+        renderEditorView(editorState.original);
+      });
+    }
+
+    if (cancelBtn) {
+      cancelBtn.addEventListener("click", () => {
+        els.editorView.classList.add("hidden");
+        currentEditingSeq = null;
+        editorState = { original: null, current: null, isNew: false };
+        loadSequenceList();
+      });
+    }
+  };
+
+  // Called from renderEditorView (initial) and rerenderStepTable (after any step change).
+  // Step rows are re-created on every rerender, so fresh listeners are needed each time.
+  const attachStepListeners = () => {
+    const stepTypeDefaults = {
+      audio: { cmd: "$H" },
+      dome: { cmd: ":SM0,2200,150" },
+      loop: { body: 2, periodMs: 1846, durationMs: 14000 },
+      random: { set: "ring", pulseMin: 1150, pulseMax: 1500, moveMs: 300, jitterMs: 500, distinct: true },
+      audioCat: { category: "alert", fallback: "$H" },
+      end: {},
+    };
+
     // Step type chip selection
     document.querySelectorAll(".step-type-chip").forEach((chip) => {
       chip.addEventListener("click", (e) => {
@@ -542,33 +579,19 @@
         if (!row) return;
         const stepIdx = parseInt(row.dataset.stepIndex, 10);
 
-        // Update active chip
         row.querySelectorAll(".step-type-chip").forEach((c) => {
           c.classList.toggle("active", c === chip);
           c.setAttribute("aria-pressed", c === chip ? "true" : "false");
         });
 
-        // Change step type and re-render fields
         const newType = chip.dataset.type;
-        editorState.current.steps[stepIdx].type = newType;
+        // Clear all old type-specific fields; keep only t, assign new type + defaults
+        const { t } = editorState.current.steps[stepIdx];
+        editorState.current.steps[stepIdx] = { t, type: newType, ...(stepTypeDefaults[newType] || {}) };
 
-        // Create default fields for new type
-        const defaults = {
-          audio: { cmd: "$H" },
-          dome: { cmd: ":SM0,2200,150" },
-          loop: { body: 2, periodMs: 1846, durationMs: 14000 },
-          random: { set: "ring", pulseMin: 1150, pulseMax: 1500, moveMs: 300, jitterMs: 500, distinct: true },
-          audioCat: { category: "alert", fallback: "$H" },
-          end: {},
-        };
-
-        Object.assign(editorState.current.steps[stepIdx], defaults[newType] || {});
-
-        // Re-render fields
         const fieldsContainer = row.querySelector(".step-fields");
         renderStepFields(editorState.current.steps[stepIdx], fieldsContainer);
 
-        // Re-attach input listeners to new fields
         fieldsContainer.querySelectorAll("[data-field]").forEach((input) => {
           input.addEventListener("input", () => validateAndUpdateStep(stepIdx));
           input.addEventListener("change", () => validateAndUpdateStep(stepIdx));
@@ -596,48 +619,7 @@
       });
     });
 
-    // Add step button
-    const addStepBtn = document.getElementById("seq-editor-add-step");
-    if (addStepBtn) {
-      addStepBtn.addEventListener("click", () => {
-        const newStep = { t: 0, type: "audio", cmd: "$H" };
-        editorState.current.steps.push(newStep);
-        rerenderStepTable();
-        updateValidationSummary();
-      });
-    }
-
-    // Footer buttons
-    const testBtn = document.getElementById("seq-editor-test");
-    const saveBtn = document.getElementById("seq-editor-save");
-    const revertBtn = document.getElementById("seq-editor-revert");
-    const cancelBtn = document.getElementById("seq-editor-cancel");
-
-    if (testBtn) {
-      testBtn.addEventListener("click", handleTestOnDroid);
-    }
-
-    if (saveBtn) {
-      saveBtn.addEventListener("click", handleSave);
-    }
-
-    if (revertBtn) {
-      revertBtn.addEventListener("click", () => {
-        editorState.current = JSON.parse(JSON.stringify(editorState.original));
-        renderEditorView(editorState.original);
-      });
-    }
-
-    if (cancelBtn) {
-      cancelBtn.addEventListener("click", () => {
-        els.editorView.classList.add("hidden");
-        currentEditingSeq = null;
-        editorState = { original: null, current: null, isNew: false };
-        loadSequenceList();
-      });
-    }
-
-    // Drag-and-drop reordering
+    // Drag-and-drop reordering (local draggedIndex; fresh per rerender)
     let draggedIndex = null;
     document.querySelectorAll(".step-row").forEach((row, idx) => {
       row.addEventListener("dragstart", (e) => {
@@ -671,10 +653,9 @@
 
       row.addEventListener("drop", (e) => {
         e.preventDefault();
-        const dropIdx = idx;
-        if (draggedIndex !== null && draggedIndex !== dropIdx) {
+        if (draggedIndex !== null && draggedIndex !== idx) {
           const [movedStep] = editorState.current.steps.splice(draggedIndex, 1);
-          const insertIdx = draggedIndex < dropIdx ? dropIdx - 1 : dropIdx;
+          const insertIdx = draggedIndex < idx ? idx - 1 : idx;
           editorState.current.steps.splice(insertIdx, 0, movedStep);
           rerenderStepTable();
         }
@@ -696,8 +677,8 @@
       renderStepFields(editorState.current.steps[idx], container);
     });
 
-    // Re-attach all listeners
-    attachEditorEventListeners();
+    // Re-attach only step-row listeners (metadata/footer listeners persist)
+    attachStepListeners();
   };
 
   const showEditorFeedback = (message, kind = "info") => {
@@ -776,13 +757,8 @@
   const handleEditSequence = async (seqName) => {
     try {
       const result = await PAApi.get(`/api/seq?name=${encodeURIComponent(seqName)}`);
-      if (!result.ok) {
-        console.error("Failed to load sequence for editing");
-        return;
-      }
-
       currentEditingSeq = result.data;
-      editorState.isNew = false; // Editing existing sequence
+      editorState.isNew = false;
 
       // Hide list, show editor
       els.emptyState.classList.add("hidden");
@@ -819,11 +795,6 @@
   const handleDuplicateSequence = async (seqName) => {
     try {
       const result = await PAApi.get(`/api/seq?name=${encodeURIComponent(seqName)}`);
-      if (!result.ok) {
-        console.error("Failed to load sequence for duplication");
-        return;
-      }
-
       const original = result.data;
       // Auto-rename to NAME_copy (avoid _copy_copy by removing existing suffix)
       const baseName = seqName.replace(/_copy(\d*)$/, "");
@@ -844,50 +815,55 @@
   };
 
   const handleMemoryWipePrompt = (seqName) => {
-    els.wipeSeqName.textContent = `Delete sequence: ${escapeHtml(seqName)}`;
+    _pendingWipeSeqName = seqName;
+    els.wipeSeqName.textContent = `Delete sequence: ${seqName}`;
     els.wipeConfirmInput.value = "";
     els.wipeConfirmInput.placeholder = seqName;
+    els.wipeConfirmInput.disabled = false;
     els.wipeDanglingInfo.classList.add("hidden");
     els.modalWipeConfirm.disabled = true;
+    els.modalWipeCancel.textContent = "Cancel";
 
-    // Update confirm button state as user types
     const updateWipeButton = () => {
-      const matches = els.wipeConfirmInput.value === seqName;
-      els.modalWipeConfirm.disabled = !matches;
+      els.modalWipeConfirm.disabled = els.wipeConfirmInput.value !== _pendingWipeSeqName;
     };
 
+    // Remove previous listener before adding to avoid accumulation on reopen
+    if (_wipeInputListener) {
+      els.wipeConfirmInput.removeEventListener("input", _wipeInputListener);
+    }
+    _wipeInputListener = updateWipeButton;
     els.wipeConfirmInput.addEventListener("input", updateWipeButton);
 
     showModal(els.modalWipe);
   };
 
   const handleMemoryWipeConfirm = async () => {
-    const seqName = els.wipeConfirmInput.placeholder;
+    const seqName = _pendingWipeSeqName;
+    els.modalWipeConfirm.disabled = true;
     try {
       const result = await PAApi.request(`/api/seq?name=${encodeURIComponent(seqName)}`, {
         method: "DELETE",
       });
 
-      if (!result.ok) {
-        alert("Failed to delete sequence: " + PAApi.messageFor(new PAApi.ApiError("Delete failed", { status: result.status })));
-        return;
-      }
-
-      // Show dangling bindings if any
-      const response = result.data;
-      if (response.danglingBindings && response.danglingBindings.length > 0) {
-        let html = "<p><strong>Dangling bindings (now inert):</strong></p><ul>";
-        response.danglingBindings.forEach((binding) => {
-          html += `<li>${escapeHtml(binding.source)} CH${binding.channel}</li>`;
+      const dangling = (result.data && result.data.danglingBindings) || [];
+      if (dangling.length > 0) {
+        // Keep modal open so the operator reads which bindings are now inert
+        let html = "<p><strong>Deleted. These RC bindings are now inert:</strong></p><ul>";
+        dangling.forEach((b) => {
+          html += `<li>${escapeHtml(b.source)} CH${b.channel}</li>`;
         });
         html += "</ul>";
         els.wipeDanglingInfo.innerHTML = html;
         els.wipeDanglingInfo.classList.remove("hidden");
+        els.wipeConfirmInput.disabled = true;
+        els.modalWipeCancel.textContent = "Close";
+      } else {
+        hideModal(els.modalWipe);
       }
-
-      hideModal(els.modalWipe);
-      loadSequenceList(); // Refresh list
+      await loadSequenceList();
     } catch (error) {
+      els.modalWipeConfirm.disabled = false;
       alert("Error deleting sequence: " + PAApi.messageFor(error));
     }
   };
@@ -895,11 +871,6 @@
   const handleExportSequence = async (seqName) => {
     try {
       const result = await PAApi.get(`/api/seq?name=${encodeURIComponent(seqName)}`);
-      if (!result.ok) {
-        alert("Failed to load sequence for export");
-        return;
-      }
-
       const seqJson = result.data;
       const blob = new Blob([JSON.stringify(seqJson, null, 2)], {
         type: "application/json",

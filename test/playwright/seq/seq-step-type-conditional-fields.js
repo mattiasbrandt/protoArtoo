@@ -118,6 +118,12 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
       const count = await steps.count();
       const lastStep = steps.nth(count - 1);
 
+      // Set t >= previous step's t=500 so non-decreasing check doesn't fire before body check
+      const tInput = lastStep.locator('.step-t');
+      await tInput.fill('500');
+      await tInput.dispatchEvent('change');
+      await page.waitForTimeout(50);
+
       // Set type to 'loop' (has numeric fields with bounds)
       const typeChip = lastStep.locator('[data-type="loop"]');
       await typeChip.click();

@@ -416,16 +416,48 @@
         return { ok: false, error: "Sequence must end with an 'end' type step" };
       }
 
-      // Validate each step
+      // Identify loop body step indices so we can skip the non-decreasing time check
+      // for them — body step t values are relative to the loop iteration, not absolute.
+      const bodyStepIndices = new Set();
+      {
+        let j = 0;
+        while (j < steps.length) {
+          const s = steps[j];
+          if (s.type === "loop" && typeof s.body === "number" && s.body > 0) {
+            const count = Math.min(s.body, steps.length - j - 1);
+            for (let k = 1; k <= count; k++) bodyStepIndices.add(j + k);
+            j += count + 1;
+          } else {
+            j++;
+          }
+        }
+      }
+
+      // Validate each step. Non-decreasing time check is applied only to
+      // outer-sequence steps; body steps have their own per-iteration timing.
       const warnings = [];
+      let lastOuterT = -1;
       for (let i = 0; i < steps.length; i++) {
-        const stepVal = this.validateStep(steps[i], i, steps, false);
+        const isBody = bodyStepIndices.has(i);
+        // Pass isBranchRoot=true to suppress validateStep's built-in non-decreasing
+        // check; we enforce it below for outer steps only.
+        const stepVal = this.validateStep(steps[i], i, steps, true);
         if (!stepVal.ok) {
           return {
             ok: false,
             field: stepVal.field || `steps[${i}]`,
             error: stepVal.error,
           };
+        }
+        if (!isBody) {
+          if (lastOuterT >= 0 && steps[i].t < lastOuterT) {
+            return {
+              ok: false,
+              field: `steps[${i}].t`,
+              error: `Step time must be >= previous step (${lastOuterT}ms)`,
+            };
+          }
+          lastOuterT = steps[i].t;
         }
       }
 
