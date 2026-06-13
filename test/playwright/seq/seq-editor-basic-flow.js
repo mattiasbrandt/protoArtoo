@@ -62,9 +62,6 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
     // Modify suppress value
     await test('Modify suppressMs via slider', async () => {
       const suppressInput = await page.locator('#seq-editor-suppress');
-      const value = await suppressInput.getAttribute('value');
-      const oldValue = parseInt(value, 10);
-
       await suppressInput.fill('9000');
       await suppressInput.blur();
       await page.waitForTimeout(100);

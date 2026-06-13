@@ -47,9 +47,6 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
       await page.waitForSelector('#seq-editor-view:not(.hidden)', { timeout: 5000 });
 
       // Save it so it appears in the list
-      const saveBtn = await page.locator('#seq-editor-save');
-      // Note: save may fail in test env but we just want a sequence in the list
-      // For now, just return to list
       const cancelBtn = await page.locator('#seq-editor-cancel');
       await cancelBtn.click();
       await page.waitForTimeout(100);
