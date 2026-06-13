@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Sequences — protoArtoo</title>
+    <link rel="stylesheet" href="/style.css">
+    <link rel="icon" type="image/png" href="/r2d2body-favicon.png">
+  </head>
+  <body data-page="seq">
+    <div id="shell-top"></div>
+
+    <!-- Main Learned Sequences Card -->
+    <div id="seq-main-card" class="card">
+      <div class="seq-card-header-row">
+        <h3>🎭 Learned Sequences</h3>
+        <div class="seq-card-actions-top">
+          <button id="seq-btn-clone-factory" class="btn btn-sm" title="Clone a factory entry and retrain it">Clone Factory</button>
+          <button id="seq-btn-import" class="btn btn-sm" title="Import a sequence from file or paste">Import</button>
+        </div>
+      </div>
+
+      <!-- Empty state (shown initially) -->
+      <div id="seq-empty-state" class="seq-empty-state">
+        <div class="seq-empty-icon">✓</div>
+        <h4>No learned sequences yet</h4>
+        <p>Get started by cloning a factory entry or importing a previously exported sequence.</p>
+        <div class="seq-entry-points">
+          <button class="btn" id="seq-empty-clone">Clone Factory Entry</button>
+          <button class="btn" id="seq-empty-import">Import From File</button>
+        </div>
+      </div>
+
+      <!-- Populated state: Capacity indicator + list (hidden initially) -->
+      <div id="seq-populated-state" class="hidden">
+        <div class="seq-capacity-row">
+          <span id="seq-capacity-display">0 / 16 sequences</span>
+        </div>
+
+        <div id="seq-cards-container" class="seq-cards-list">
+          <!-- seq-card elements inserted here -->
+        </div>
+      </div>
+    </div>
+
+    <!-- Clone Factory Modal (hidden initially) -->
+    <div id="seq-modal-clone-factory" class="seq-modal hidden" role="dialog" aria-modal="true" aria-labelledby="seq-modal-clone-title">
+      <div class="seq-modal-overlay"></div>
+      <div class="seq-modal-content">
+        <div class="seq-modal-header">
+          <h4 id="seq-modal-clone-title">Clone a Factory Entry</h4>
+          <button id="seq-modal-clone-close" class="btn-close" aria-label="Close">✕</button>
+        </div>
+        <div class="seq-modal-body">
+          <p class="seq-modal-desc">Factory sequences provide tested choreography. Edit the copy to retrain an existing sequence or create a variant.</p>
+          <input
+            id="seq-clone-search"
+            type="text"
+            placeholder="Search by name..."
+            class="seq-modal-search"
+            aria-label="Search factory sequences"
+          >
+          <div id="seq-clone-results-info" class="seq-clone-results-info"></div>
+          <div id="seq-clone-builtins-list" class="seq-clone-builtins-list">
+            <!-- builtin-rows inserted here -->
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Import Modal (hidden initially) -->
+    <div id="seq-modal-import" class="seq-modal hidden" role="dialog" aria-modal="true" aria-labelledby="seq-modal-import-title">
+      <div class="seq-modal-overlay"></div>
+      <div class="seq-modal-content">
+        <div class="seq-modal-header">
+          <h4 id="seq-modal-import-title">Import Sequence</h4>
+          <button id="seq-modal-import-close" class="btn-close" aria-label="Close">✕</button>
+        </div>
+        <div class="seq-modal-body">
+          <p>Choose a JSON file from your computer:</p>
+          <div class="seq-import-file-picker">
+            <input id="seq-import-file-input" type="file" accept=".json" aria-label="Choose JSON file">
+            <label for="seq-import-file-input" class="btn btn-sm">📂 Choose File...</label>
+          </div>
+          <p class="seq-import-divider">OR paste JSON directly:</p>
+          <textarea
+            id="seq-import-textarea"
+            class="seq-import-textarea"
+            placeholder="Paste JSON here..."
+            aria-label="Paste JSON directly"
+          ></textarea>
+          <div id="seq-import-feedback" class="feedback hidden"></div>
+        </div>
+        <div class="seq-modal-footer">
+          <button id="seq-modal-import-cancel" class="btn btn-secondary">Cancel</button>
+          <button id="seq-modal-import-confirm" class="btn" disabled>Import & Edit</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Editor View (hidden initially) -->
+    <div id="seq-editor-view" class="hidden">
+      <!-- Editor content loaded here by seq.js -->
+    </div>
+
+    <!-- Modals for editor (Memory Wipe, etc.) loaded by seq.js -->
+    <div id="seq-modal-memory-wipe" class="seq-modal hidden" role="dialog" aria-modal="true" aria-labelledby="seq-modal-wipe-title">
+      <div class="seq-modal-overlay"></div>
+      <div class="seq-modal-content">
+        <div class="seq-modal-header">
+          <h4 id="seq-modal-wipe-title">Confirm Memory Wipe</h4>
+        </div>
+        <div class="seq-modal-body">
+          <p id="seq-wipe-seq-name"></p>
+          <div class="seq-wipe-warning">
+            <p><strong>This will permanently delete</strong> the sequence from the droid and cannot be undone.</p>
+            <p>If this sequence matches a factory sequence name, deleting it will restore the factory programming. Otherwise, any RC trigger bindings pointing to this name will become inert.</p>
+            <p class="seq-wipe-confirm-prompt">Type the sequence name to confirm:</p>
+            <input
+              id="seq-wipe-confirm-input"
+              type="text"
+              placeholder="Sequence name"
+              class="seq-wipe-confirm-input"
+              aria-label="Type sequence name to confirm deletion"
+            >
+          </div>
+          <div id="seq-wipe-dangling-info" class="seq-wipe-dangling-info hidden"></div>
+        </div>
+        <div class="seq-modal-footer">
+          <button id="seq-modal-wipe-cancel" class="btn btn-secondary">Cancel</button>
+          <button id="seq-modal-wipe-confirm" class="btn btn-danger" disabled>Confirm Deletion</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="shell-status"></div>
+
+    <script src="/web_api.js"></script>
+    <script src="/status_stream.js"></script>
+    <script src="/shell.js"></script>
+    <script src="/seq_protocol_check.js"></script>
+    <script src="/seq.js"></script>
+    <script src="/footer.js"></script>
+  </body>
+</html>

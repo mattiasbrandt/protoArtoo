@@ -62,6 +62,12 @@
       statusText: "Connecting…",
       connectedText: "Firmware page connected",
     },
+    seq: {
+      title: "Sequences - {name}",
+      statusDot: "yellow",
+      statusText: "Connecting…",
+      connectedText: "Sequences page connected",
+    },
   };
 
   const NAV = [
@@ -70,6 +76,7 @@
     { key: "dome", href: "/dome.html", label: "🔄 Dome" },
     { key: "sound", href: "/sound.html", label: "🔊 Sound" },
     { key: "servo", href: "/servo.html", label: "🦾 Servos" },
+    { key: "seq", href: "/seq.html", label: "🎭 Sequences" },
     { key: "rc", href: "/rc.html", label: "🕹️ RC" },
     { key: "setup", href: "/setup.html", label: "⚙️ Setup" },
     { key: "wifi", href: "/wifi.html", label: "📶 WiFi" },
