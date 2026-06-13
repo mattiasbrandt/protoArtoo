@@ -25,34 +25,39 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
     }
   };
 
-  const browser = await chromium.launch({ headless: process.env.HEADLESS !== 'false' });
-  const context = await browser.createContext();
+  const browser = await chromium.launch({ headless: process.env.HEADLESS === 'true' });
+  const context = await browser.newContext();
   const page = await context.newPage();
 
   try {
     // Navigate to seq.html
     await page.goto(TARGET_URL, { waitUntil: 'networkidle' });
-
-    // Wait for page to be ready
     await page.waitForSelector('#seq-main-card', { timeout: 5000 });
 
-    // First, clone a factory entry to open the editor
-    await test('Clone factory entry to open editor', async () => {
-      const cloneBtn = await page.locator('#seq-btn-clone-factory');
-      await cloneBtn.click();
-      await page.waitForSelector('.seq-clone-builtins-list', { timeout: 5000 });
-
-      const firstCloneBtn = await page.locator('.builtin-clone-btn').first();
-      await firstCloneBtn.click();
-      await page.waitForSelector('#seq-editor-view:not(.hidden)', { timeout: 5000 });
-    });
+    // Inject a test sequence directly — avoids needing the live /api/seq/builtins endpoint
+    const testSeq = {
+      format: 1, name: 'DM:TEST', suppressMs: 8000, toggleGroup: 'none',
+      meta: { source: 'test', notes: '' },
+      steps: [
+        { t: 0, type: 'audio', cmd: '$H' },
+        { t: 1000, type: 'end' },
+      ],
+      closeSteps: [],
+    };
+    await page.evaluate((seq) => {
+      if (window.__seqEditorForTesting && window.__seqEditorForTesting.renderEditorView) {
+        window.__seqEditorForTesting.renderEditorView(seq);
+        document.getElementById('seq-editor-view').classList.remove('hidden');
+      }
+    }, testSeq);
+    await page.waitForSelector('#seq-editor-view:not(.hidden)', { timeout: 5000 });
 
     // Test name validation
     await test('Name validation: valid DM:XXXX format passes', async () => {
-      const nameInput = await page.locator('#seq-editor-name');
+      const nameInput = page.locator('#seq-editor-name');
       await nameInput.fill('DM:VALID');
 
-      const summaryEl = await page.locator('#seq-editor-validation-summary');
+      const summaryEl = page.locator('#seq-editor-validation-summary');
       const text = await summaryEl.textContent();
       if (text.includes('✓') && text.includes('valid')) {
         // Good, validation passed
@@ -62,12 +67,12 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
     });
 
     await test('Name validation: invalid format shows error', async () => {
-      const nameInput = await page.locator('#seq-editor-name');
+      const nameInput = page.locator('#seq-editor-name');
       await nameInput.fill('dm:invalid'); // lowercase prefix
       await nameInput.blur();
       await page.waitForTimeout(100);
 
-      const summaryEl = await page.locator('#seq-editor-validation-summary');
+      const summaryEl = page.locator('#seq-editor-validation-summary');
       const text = await summaryEl.textContent();
       if (text.includes('⚠') || text.includes('error') || text.includes('must match')) {
         // Good, validation failed as expected
@@ -78,15 +83,18 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
 
     // Test suppressMs validation
     await test('suppressMs validation: value < 1000ms shows error', async () => {
-      const nameInput = await page.locator('#seq-editor-name');
+      const nameInput = page.locator('#seq-editor-name');
       await nameInput.fill('DM:TEST');
 
-      const suppressInput = await page.locator('#seq-editor-suppress');
-      await suppressInput.fill('500');
-      await suppressInput.blur();
+      // Range inputs clamp to [min, max], so values below min can't be set via DOM events.
+      // Set editorState directly and call updateValidationSummary via the testing API.
+      await page.evaluate(() => {
+        window.__seqEditorForTesting.editorState.current.suppressMs = 500;
+        window.__seqEditorForTesting.updateValidationSummary();
+      });
       await page.waitForTimeout(100);
 
-      const summaryEl = await page.locator('#seq-editor-validation-summary');
+      const summaryEl = page.locator('#seq-editor-validation-summary');
       const text = await summaryEl.textContent();
       if (text.includes('⚠') || text.includes('1000')) {
         // Good, validation failed as expected
@@ -96,12 +104,13 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
     });
 
     await test('suppressMs validation: valid value clears error', async () => {
-      const suppressInput = await page.locator('#seq-editor-suppress');
-      await suppressInput.fill('8000');
-      await suppressInput.blur();
+      await page.evaluate(() => {
+        window.__seqEditorForTesting.editorState.current.suppressMs = 8000;
+        window.__seqEditorForTesting.updateValidationSummary();
+      });
       await page.waitForTimeout(100);
 
-      const summaryEl = await page.locator('#seq-editor-validation-summary');
+      const summaryEl = page.locator('#seq-editor-validation-summary');
       const text = await summaryEl.textContent();
       if (text.includes('✓') && text.includes('valid')) {
         // Good, validation passed
@@ -113,11 +122,11 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
     // Test suppressMs vs end time constraint
     await test('suppressMs vs end time: shows error if suppressMs < end-t', async () => {
       // Add an end step with t=10000
-      const addStepBtn = await page.locator('#seq-editor-add-step');
+      const addStepBtn = page.locator('#seq-editor-add-step');
       await addStepBtn.click();
       await page.waitForTimeout(100);
 
-      const steps = await page.locator('.step-row');
+      const steps = page.locator('.step-row');
       const count = await steps.count();
       const lastStep = steps.nth(count - 1);
 
@@ -133,12 +142,12 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
       await page.waitForTimeout(100);
 
       // Now set suppressMs to 8000 (less than 10000)
-      const suppressInput = await page.locator('#seq-editor-suppress');
+      const suppressInput = page.locator('#seq-editor-suppress');
       await suppressInput.fill('8000');
       await suppressInput.blur();
       await page.waitForTimeout(100);
 
-      const summaryEl = await page.locator('#seq-editor-validation-summary');
+      const summaryEl = page.locator('#seq-editor-validation-summary');
       const text = await summaryEl.textContent();
       if (text.includes('⚠') || text.includes('>=')) {
         // Good, validation failed as expected

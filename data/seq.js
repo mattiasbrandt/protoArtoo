@@ -1050,5 +1050,5 @@
   }
 
   // Expose for testing
-  window.__seqEditorForTesting = { renderEditorView, editorState };
+  window.__seqEditorForTesting = { renderEditorView, editorState, updateValidationSummary };
 })();

@@ -25,49 +25,44 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
     }
   };
 
-  const browser = await chromium.launch({ headless: process.env.HEADLESS !== 'false' });
-  const context = await browser.createContext();
+  const browser = await chromium.launch({ headless: process.env.HEADLESS === 'true' });
+  const context = await browser.newContext();
   const page = await context.newPage();
 
   try {
     // Navigate to seq.html
     await page.goto(TARGET_URL, { waitUntil: 'networkidle' });
-
-    // Wait for page to be ready
     await page.waitForSelector('#seq-main-card', { timeout: 5000 });
 
-    // First, clone a factory entry to open the editor
-    await test('Clone factory entry to open editor', async () => {
-      const cloneBtn = await page.locator('#seq-btn-clone-factory');
-      if (!(await cloneBtn.isVisible())) {
-        throw new Error('Clone button not visible');
+    // Inject a test sequence directly — avoids needing the live /api/seq/builtins endpoint
+    const testSeq = {
+      format: 1, name: 'DM:TEST', suppressMs: 8000, toggleGroup: 'none',
+      meta: { source: 'test', notes: '' },
+      steps: [
+        { t: 0, type: 'audio', cmd: '$H' },
+        { t: 0, type: 'dome', cmd: ':SM0,2200,150' },
+        { t: 500, type: 'end' },
+      ],
+      closeSteps: [],
+    };
+    await page.evaluate((seq) => {
+      if (window.__seqEditorForTesting && window.__seqEditorForTesting.renderEditorView) {
+        window.__seqEditorForTesting.renderEditorView(seq);
+        document.getElementById('seq-editor-view').classList.remove('hidden');
       }
-      await cloneBtn.click();
-
-      // Wait for modal to appear
-      await page.waitForSelector('.seq-clone-builtins-list', { timeout: 5000 });
-
-      // Click first Clone button in the list
-      const firstCloneBtn = await page.locator('.builtin-clone-btn').first();
-      if (!(await firstCloneBtn.isVisible())) {
-        throw new Error('First clone button not visible');
-      }
-      await firstCloneBtn.click();
-
-      // Wait for editor to appear
-      await page.waitForSelector('#seq-editor-view:not(.hidden)', { timeout: 5000 });
-    });
+    }, testSeq);
+    await page.waitForSelector('#seq-editor-view:not(.hidden)', { timeout: 5000 });
 
     // Test each step type's conditional fields
     const testStepType = async (type, expectedFields) => {
       await test(`Step type '${type}' renders correct fields`, async () => {
         // Click "Add Step" to create a new step
-        const addStepBtn = await page.locator('#seq-editor-add-step');
+        const addStepBtn = page.locator('#seq-editor-add-step');
         await addStepBtn.click();
         await page.waitForTimeout(100);
 
         // Get the last step row
-        const steps = await page.locator('.step-row');
+        const steps = page.locator('.step-row');
         const count = await steps.count();
         const lastStep = steps.nth(count - 1);
 
@@ -115,11 +110,11 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
 
     // Test that out-of-range values trigger error highlighting
     await test('Out-of-range value shows .field-error class', async () => {
-      const addStepBtn = await page.locator('#seq-editor-add-step');
+      const addStepBtn = page.locator('#seq-editor-add-step');
       await addStepBtn.click();
       await page.waitForTimeout(100);
 
-      const steps = await page.locator('.step-row');
+      const steps = page.locator('.step-row');
       const count = await steps.count();
       const lastStep = steps.nth(count - 1);
 
