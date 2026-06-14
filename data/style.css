@@ -3239,12 +3239,6 @@ label.sound-search-field {
   color: var(--accent-bright);
 }
 
-.seq-badge-guild {
-  background: var(--warning);
-  color: var(--bg);
-  font-weight: 600;
-}
-
 .seq-card-meta {
   display: flex;
   flex-wrap: wrap;

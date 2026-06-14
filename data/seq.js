@@ -133,14 +133,14 @@
         `<span class="seq-badge seq-badge-retrained" title="This sequence shadows the factory ${seq.name}">Retrained</span>`
       );
     }
-    if (seq.source && seq.source !== "user") {
-      badges.push(
-        `<span class="seq-badge seq-badge-guild" title="Imported from ${seq.source}">Guild</span>`
-      );
-    }
-
     const stepCount = seq.stepCount || 0;
     const modifiedDate = seq.modified ? new Date(seq.modified).toLocaleString() : "Unknown";
+
+    // Share to project: only the operator's own custom sequences (not factory-derived).
+    const isCustom = !seq.source || seq.source === "user";
+    const shareBtn = isCustom
+      ? `<button class="btn btn-sm btn-action" data-action="share" data-seq-name="${escapeAttr(seq.name)}" title="Open a pre-filled GitHub issue to share this sequence with the project">Share to project</button>`
+      : "";
 
     return `
       <div class="seq-card">
@@ -160,6 +160,7 @@
           <button class="btn btn-sm btn-action" data-action="duplicate" data-seq-name="${escapeAttr(seq.name)}">Duplicate</button>
           <button class="btn btn-sm btn-action" data-action="memory-wipe" data-seq-name="${escapeAttr(seq.name)}">Memory Wipe</button>
           <button class="btn btn-sm btn-action" data-action="export" data-seq-name="${escapeAttr(seq.name)}">Export</button>
+          ${shareBtn}
         </div>
         <div class="seq-card-test-feedback feedback hidden"></div>
       </div>
@@ -751,6 +752,9 @@
       case "export":
         await handleExportSequence(seqName);
         break;
+      case "share":
+        await handleShareToProject(seqName);
+        break;
     }
   };
 
@@ -884,6 +888,91 @@
     } catch (error) {
       alert("Error exporting sequence: " + PAApi.messageFor(error));
     }
+  };
+
+  // =========================================================================
+  // Share to project (contribution funnel — ADR 0007)
+  // =========================================================================
+
+  const SEQ_REPO_SLUG = "mattiasbrandt/protoArtoo";
+
+  // The editor is served over HTTP on the LAN, where navigator.clipboard is
+  // often unavailable (secure-context only). Try the async API, then fall back
+  // to a legacy textarea + execCommand so copy still works off a plain-HTTP device.
+  const copyToClipboard = async (text) => {
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+    } catch {
+      /* fall through to the legacy path */
+    }
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      const ok = document.execCommand("copy");
+      document.body.removeChild(ta);
+      return ok;
+    } catch {
+      return false;
+    }
+  };
+
+  const handleShareToProject = async (seqName) => {
+    // Open the pre-filled contribution issue synchronously, inside the click
+    // gesture, so the popup is not blocked. The title needs only the name (which
+    // we already have); the JSON travels via the clipboard because it can exceed
+    // the URL length limit, and GitHub ignores ?body= when ?template= is set.
+    const params = new URLSearchParams({
+      template: "sequence-contribution.md",
+      title: `Sequence: ${seqName}`,
+      labels: "dome,feature request",
+    });
+    window.open(
+      `https://github.com/${SEQ_REPO_SLUG}/issues/new?${params.toString()}`,
+      "_blank",
+      "noopener"
+    );
+
+    const showShareFeedback = (msg, level) => {
+      const card = [...els.cardsContainer.querySelectorAll(".seq-card")].find(
+        (c) => c.querySelector("h4")?.textContent === seqName
+      );
+      // showFeedback() rewrites className to "feedback <level>", dropping the
+      // seq-card-test-feedback class — match either so repeat clicks still resolve it.
+      const fb = card?.querySelector(".seq-card-test-feedback, .feedback");
+      if (fb) {
+        PAUtils.showFeedback(fb, msg, level);
+        fb.classList.remove("hidden");
+      }
+    };
+
+    let seqJson;
+    try {
+      const result = await PAApi.get(`/api/seq?name=${encodeURIComponent(seqName)}`);
+      seqJson = result.data;
+    } catch (error) {
+      showShareFeedback(
+        "Opened the GitHub issue, but could not load the sequence to copy: " +
+          PAApi.messageFor(error),
+        "error"
+      );
+      return;
+    }
+
+    const copied = await copyToClipboard(JSON.stringify(seqJson, null, 2));
+    showShareFeedback(
+      copied
+        ? "Sequence copied to clipboard — paste it into the GitHub issue that opened."
+        : "Could not copy automatically — use Export, then attach the file to the GitHub issue that opened.",
+      copied ? "success" : "warning"
+    );
   };
 
   // =========================================================================
@@ -1021,5 +1110,13 @@
   }
 
   // Expose for testing
-  window.__seqEditorForTesting = { renderEditorView, editorState, updateValidationSummary };
+  window.__seqEditorForTesting = {
+    renderEditorView,
+    editorState,
+    updateValidationSummary,
+    renderListWith: (seqs) => {
+      sequences = seqs || [];
+      renderListView();
+    },
+  };
 })();

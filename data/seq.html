@@ -16,7 +16,7 @@
         <h3>🎭 Learned Sequences</h3>
         <div class="seq-card-actions-top">
           <button id="seq-btn-clone-factory" class="btn btn-sm" title="Clone a factory entry and retrain it">Clone Factory</button>
-          <button id="seq-btn-import" class="btn btn-sm" title="Import a sequence from file or paste">Import</button>
+          <button id="seq-btn-import" class="btn btn-sm" title="Restore a sequence you previously exported">Restore Backup</button>
         </div>
       </div>
 
@@ -24,10 +24,10 @@
       <div id="seq-empty-state" class="seq-empty-state">
         <div class="seq-empty-icon">✓</div>
         <h4>No learned sequences yet</h4>
-        <p>Get started by cloning a factory entry or importing a previously exported sequence.</p>
+        <p>Get started by cloning a factory entry, or restoring a sequence you previously exported.</p>
         <div class="seq-entry-points">
           <button class="btn" id="seq-empty-clone">Clone Factory Entry</button>
-          <button class="btn" id="seq-empty-import">Import From File</button>
+          <button class="btn" id="seq-empty-import">Restore Backup</button>
         </div>
       </div>
 
@@ -73,11 +73,11 @@
       <div class="seq-modal-overlay"></div>
       <div class="seq-modal-content">
         <div class="seq-modal-header">
-          <h4 id="seq-modal-import-title">Import Sequence</h4>
+          <h4 id="seq-modal-import-title">Restore Backup</h4>
           <button id="seq-modal-import-close" class="btn-close" aria-label="Close">✕</button>
         </div>
         <div class="seq-modal-body">
-          <p>Choose a JSON file from your computer:</p>
+          <p>Restore a sequence you previously exported. Choose its JSON file:</p>
           <div class="seq-import-file-picker">
             <input id="seq-import-file-input" type="file" accept=".json" aria-label="Choose JSON file">
             <label for="seq-import-file-input" class="btn btn-sm">📂 Choose File...</label>
@@ -93,7 +93,7 @@
         </div>
         <div class="seq-modal-footer">
           <button id="seq-modal-import-cancel" class="btn btn-secondary">Cancel</button>
-          <button id="seq-modal-import-confirm" class="btn" disabled>Import & Edit</button>
+          <button id="seq-modal-import-confirm" class="btn" disabled>Restore & Edit</button>
         </div>
       </div>
     </div>

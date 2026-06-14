@@ -117,7 +117,7 @@ async function runTest() {
     // =====================================================================
     // Test 6: Import modal opens
     // =====================================================================
-    console.log('Test 6: Testing Import modal...');
+    console.log('Test 6: Testing Restore Backup modal...');
 
     await page.click('#seq-btn-import');
     await page.waitForTimeout(300);
@@ -127,12 +127,12 @@ async function runTest() {
       title: document.querySelector('#seq-modal-import-title')?.textContent ?? '',
     }));
 
-    assert.strictEqual(importState.modalHidden, false, 'Import modal should be visible');
-    assert.ok(importState.title.includes('Import'), 'Import modal title should mention Import');
+    assert.strictEqual(importState.modalHidden, false, 'Restore Backup modal should be visible');
+    assert.ok(importState.title.includes('Restore'), 'Restore Backup modal title should mention Restore');
 
     await page.screenshot({ path: '/tmp/seq-import-modal.png', fullPage: true });
 
-    console.log('✓ Import modal opens correctly');
+    console.log('✓ Restore Backup modal opens correctly');
 
     // =====================================================================
     // Test 7: Import modal can be closed via cancel button
