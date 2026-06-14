@@ -100,3 +100,16 @@ viable: LittleFS ~209 KB free; app flash ~121 KB free; DRAM ~45 KB heap free.
 - Factory `DM:ROCKMARCH` authors `STEP_END` 300 ms past its suppress window; a cloned copy
   is rejected on save until the user raises `suppressMs`. A later slice-2 touch-up may align
   the factory value.
+- An FS-OTA replaces the whole LittleFS partition (`Update.begin(..., U_SPIFFS)`), so it
+  **erases user-authored Learned Sequences**. v1.0.0 mitigates with an export-first warning at
+  the filesystem-update control plus the editor's self-restore import (per-sequence Export
+  already exists); relocating runtime `/seq/` to a partition the FS image does not overwrite
+  is deferred to a post-v1.0.0 issue.
+- **The Guild runtime-import tier (decisions 5 and 7, insofar as they describe a shipped
+  `data/seq/` Guild batch and runtime Lineage) is superseded by
+  [ADR 0007](0007-community-sequence-migration.md).** A 2026-06-14 grill found the
+  novel-choreography pool empty and that translation is a developer task, not an operator one:
+  community sequences now migrate via GitHub issue into the Factory C++ catalog, and the
+  runtime tier here is scoped to **operator self-authoring**. No Guild batch ships in
+  `data/seq/`; provenance moves to code comments + `docs/sequence-credits.md`. The rest of
+  this ADR (the runtime tier, Protocol Check, load-on-demand, copy semantics) stands.

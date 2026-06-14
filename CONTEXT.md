@@ -134,13 +134,13 @@ _Avoid_: override sequence, patched sequence
 Deleting a Retrained Sequence, after which the Factory Sequence programming returns instantly (its catalog entry resurfaces in lookup).
 _Avoid_: reset, restore, revert
 
-**Guild Sequence**:
-A Learned Sequence translated from another community project (a nod to the R2 Builders Guild), shipped in the filesystem image with Lineage. Delivered in slice 5.
-_Avoid_: imported macro, ported sequence
+**Migrated Sequence**:
+A Factory Sequence translated from another community project (a nod to the R2 Builders Guild) and committed into the C++ catalog via the GitHub issue -> PR migration workflow. Not an operator runtime import (see ADR 0007).
+_Avoid_: Guild Sequence (the retired runtime-import tier), imported macro, ported sequence
 
 **Lineage**:
-The provenance meta block on a Learned Sequence: source project, origin URL/commit, license, and a modified flag.
-_Avoid_: metadata, attribution, credits
+The provenance of a Migrated Sequence -- source project, origin URL/commit, and license -- recorded in a catalog code comment and docs/sequence-credits.md. Not a runtime meta block.
+_Avoid_: runtime meta block, metadata, credits
 
 **Protocol Check**:
 The pure safety validator every Learned Sequence passes on save: name/command/structure bounds, retrain coherence, and conservative effect-class inference. Estop, suppression, and auto-reset remain engine-level invariants the format cannot express a bypass for.
