@@ -4,8 +4,6 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>protoArtoo - Dashboard</title>
-    <link rel="stylesheet" href="/style.css">
-    <link rel="icon" type="image/png" href="/r2d2body-favicon.png">
   </head>
   <body data-page="home">
     <div id="shell-top"></div>
@@ -152,12 +150,26 @@
       </div>
     </div>
 
-    <script src="/web_api.js"></script>
-    <script src="/diagnostics.js"></script>
-    <script src="/status_stream.js"></script>
-    <script src="/shell.js"></script>
-    <script src="/health_signals.js"></script>
-    <script src="/app.js"></script>
-    <script src="/footer.js"></script>
+    <script data-scripts="/web_api.js,/diagnostics.js,/status_stream.js,/shell.js,/health_signals.js,/app.js,/footer.js">
+      (() => {
+        const sources = document.currentScript.dataset.scripts.split(",");
+        const loadNext = (index) => {
+          if (index >= sources.length) {
+            window.PAAssetsReady = true;
+            window.dispatchEvent(new Event("pa:assets-ready"));
+            return;
+          }
+          const script = document.createElement("script");
+          script.src = sources[index];
+          script.onload = () => loadNext(index + 1);
+          document.body.appendChild(script);
+        };
+        const stylesheet = document.createElement("link");
+        stylesheet.rel = "stylesheet";
+        stylesheet.href = "/style.css";
+        stylesheet.onload = () => loadNext(0);
+        document.head.appendChild(stylesheet);
+      })();
+    </script>
   </body>
 </html>

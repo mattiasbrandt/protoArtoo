@@ -15,6 +15,7 @@
   let reconnectTimer = null;
   let lastStatus = null;
   let visible = document.visibilityState !== "hidden";
+  let assetsReady = window.PAAssetsReady === true;
   const listeners = new Set();
 
   const emit = (eventType, payload) => {
@@ -51,7 +52,7 @@
   };
 
   const connect = () => {
-    if (source || !visible || typeof EventSource === "undefined") return;
+    if (!assetsReady || source || !visible || typeof EventSource === "undefined") return;
 
     source = new EventSource("/api/events");
 
@@ -90,6 +91,10 @@
   };
 
   document.addEventListener("visibilitychange", onVisibilityChange);
+  window.addEventListener("pa:assets-ready", () => {
+    assetsReady = true;
+    if (listeners.size > 0) connect();
+  }, { once: true });
 
   window.PAStatusStream = {
     subscribe(listener) {

@@ -10,6 +10,10 @@
 #include <ArduinoJson.h>
 #include <ESPAsyncWebServer.h>
 
+#include <algorithm>
+#include <cstdio>
+#include <cstring>
+
 #include "../../include/action_registry.h"
 #include "../../include/logging.h"
 #include "../../include/rc_input.h"
@@ -40,35 +44,128 @@ const char* actionDomainForId(RobotActionId id) {
     return entry != nullptr ? entry->domain : "unknown";
 }
 
+class JsonSliceWriter {
+public:
+    JsonSliceWriter(uint8_t* output, size_t capacity, size_t offset)
+        : output_(output), capacity_(capacity), offset_(offset) {}
+
+    void append(const char* text) {
+        append(text, std::strlen(text));
+    }
+
+    void append(const char* text, size_t length) {
+        if (written_ >= capacity_) {
+            logicalOffset_ += length;
+            return;
+        }
+
+        const size_t segmentEnd = logicalOffset_ + length;
+        if (offset_ < segmentEnd) {
+            const size_t start = offset_ > logicalOffset_ ? offset_ - logicalOffset_ : 0;
+            const size_t count = std::min(length - start, capacity_ - written_);
+            std::memcpy(output_ + written_, text + start, count);
+            written_ += count;
+        }
+        logicalOffset_ = segmentEnd;
+    }
+
+    void append(char value) {
+        append(&value, 1);
+    }
+
+    void appendJsonString(const char* value) {
+        append('"');
+        for (const unsigned char* p = reinterpret_cast<const unsigned char*>(value); *p != '\0'; ++p) {
+            switch (*p) {
+                case '"': append("\\\""); break;
+                case '\\': append("\\\\"); break;
+                case '\b': append("\\b"); break;
+                case '\f': append("\\f"); break;
+                case '\n': append("\\n"); break;
+                case '\r': append("\\r"); break;
+                case '\t': append("\\t"); break;
+                default:
+                    if (*p < 0x20) {
+                        char escaped[7];
+                        std::snprintf(escaped, sizeof(escaped), "\\u%04x", *p);
+                        append(escaped);
+                    } else {
+                        append(reinterpret_cast<const char*>(p), 1);
+                    }
+                    break;
+            }
+        }
+        append('"');
+    }
+
+    size_t written() const {
+        return written_;
+    }
+
+private:
+    uint8_t* output_;
+    size_t capacity_;
+    size_t offset_;
+    size_t logicalOffset_ = 0;
+    size_t written_ = 0;
+};
+
+void appendActionJson(JsonSliceWriter& writer, const ActionEntry& entry) {
+    char id[12];
+    std::snprintf(id, sizeof(id), "%d", static_cast<int>(entry.id));
+
+    writer.append("{\"id\":");
+    writer.append(id);
+    writer.append(",\"name\":");
+    writer.appendJsonString(entry.name);
+    writer.append(",\"display_name\":");
+    writer.appendJsonString(entry.display_name);
+    writer.append(",\"domain\":");
+    writer.appendJsonString(entry.domain);
+    writer.append(",\"description\":");
+    writer.appendJsonString(entry.description);
+    writer.append(",\"safety_critical\":");
+    writer.append(entry.safety_critical ? "true" : "false");
+    writer.append(",\"testable\":");
+    writer.append(robotActionIsWebTestable(entry.id) ? "true" : "false");
+    writer.append(",\"one_shot\":");
+    writer.append(robotActionIsOneShotButton(entry.id) ? "true" : "false");
+    writer.append(",\"token\":");
+    writer.appendJsonString(robotActionIdToString(entry.id));
+    writer.append('}');
+}
+
+size_t fillActionsResponse(uint8_t* output, size_t capacity, size_t offset) {
+    JsonSliceWriter writer(output, capacity, offset);
+    writer.append('[');
+    for (size_t i = 0; i < ACTION_REGISTRY_SIZE; ++i) {
+        if (i > 0) {
+            writer.append(',');
+        }
+        appendActionJson(writer, ACTION_REGISTRY[i]);
+    }
+    writer.append(']');
+    return writer.written();
+}
+
 }  // namespace
 
 void registerActionsRoutes(AsyncWebServer& server) {
     server.on("/api/actions", HTTP_GET, [](AsyncWebServerRequest* req) {
-        JsonDocument doc;
-        JsonArray arr = doc.to<JsonArray>();
-
-        for (size_t i = 0; i < ACTION_REGISTRY_SIZE; ++i) {
-            const ActionEntry& e = ACTION_REGISTRY[i];
-            JsonObject obj = arr.add<JsonObject>();
-            obj["id"] = static_cast<int>(e.id);
-            obj["name"] = e.name;
-            obj["display_name"] = e.display_name;
-            obj["domain"] = e.domain;
-            obj["description"] = e.description;
-            obj["safety_critical"] = e.safety_critical;
-            obj["testable"] = robotActionIsWebTestable(e.id);
-            obj["one_shot"] = robotActionIsOneShotButton(e.id);
-            obj["token"] = robotActionIdToString(e.id);
-        }
-
-        auto* stream = req->beginResponseStream("application/json");
-        if (stream == nullptr) {
+        // Generate directly into AsyncTCP's outgoing chunk. The previous
+        // JsonDocument + AsyncResponseStream implementation buffered the full
+        // registry and exhausted fragmented heap during dashboard startup.
+        auto* response = req->beginChunkedResponse(
+            "application/json",
+            [](uint8_t* output, size_t capacity, size_t offset) {
+                return fillActionsResponse(output, capacity, offset);
+            });
+        if (response == nullptr) {
             req->send(500, "application/json",
-                      "{\"ok\":false,\"error\":\"response stream alloc failed\"}");
+                      "{\"ok\":false,\"error\":\"response alloc failed\"}");
             return;
         }
-        serializeJson(doc, *stream);
-        req->send(stream);
+        req->send(response);
         PA_LOG_DEBUG(TAG, "GET /api/actions (%zu entries)", ACTION_REGISTRY_SIZE);
     });
 

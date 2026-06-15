@@ -4,14 +4,12 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Setup - protoArtoo</title>
-    <link rel="stylesheet" href="/style.css">
-    <link rel="icon" type="image/png" href="/r2d2body-favicon.png">
   </head>
   <body data-page="setup">
     <div id="shell-top"></div>
 
     <div class="board-image-wrap">
-      <img src="/artoo_board.jpg" alt="Artoo Controller PCB" title="Artoo Controller PCB">
+      <img data-deferred-src="/artoo_board.jpg" alt="Artoo Controller PCB" title="Artoo Controller PCB">
     </div>
     <div class="card">
       <h3>🔧 Hardware Components</h3>
@@ -454,11 +452,30 @@
 
     <div id="shell-status"></div>
 
-    <script src="/web_api.js"></script>
-    <script src="/diagnostics.js"></script>
-    <script src="/status_stream.js"></script>
-    <script src="/shell.js"></script>
-    <script src="/setup.js"></script>
-    <script src="/footer.js"></script>
+    <script data-scripts="/web_api.js,/diagnostics.js,/status_stream.js,/shell.js,/setup.js,/footer.js">
+      (() => {
+        const sources = document.currentScript.dataset.scripts.split(",");
+        const loadNext = (index) => {
+          if (index >= sources.length) {
+            document.querySelectorAll("[data-deferred-src]").forEach((element) => {
+              element.src = element.dataset.deferredSrc;
+              delete element.dataset.deferredSrc;
+            });
+            window.PAAssetsReady = true;
+            window.dispatchEvent(new Event("pa:assets-ready"));
+            return;
+          }
+          const script = document.createElement("script");
+          script.src = sources[index];
+          script.onload = () => loadNext(index + 1);
+          document.body.appendChild(script);
+        };
+        const stylesheet = document.createElement("link");
+        stylesheet.rel = "stylesheet";
+        stylesheet.href = "/style.css";
+        stylesheet.onload = () => loadNext(0);
+        document.head.appendChild(stylesheet);
+      })();
+    </script>
   </body>
 </html>

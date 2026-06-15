@@ -151,7 +151,7 @@ void test_registry_json_payload_fits_budget() {
 
     const size_t bytes = measureJson(doc);
     TEST_ASSERT_GREATER_THAN(0u, bytes);
-    TEST_ASSERT_LESS_THAN_MESSAGE(10240u, bytes,
+    TEST_ASSERT_LESS_THAN_MESSAGE(4096u, bytes,
                                   "GET /api/actions JSON payload exceeded expected budget");
 }
 
