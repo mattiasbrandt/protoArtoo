@@ -68,14 +68,50 @@ void handleList(AsyncWebServerRequest* req) {
     req->send(stream);
 }
 
-// GET /api/seq/builtins — factory catalog serialized to JSON v1.
+// GET /api/seq/builtins         — lightweight factory catalog (metadata only).
+// GET /api/seq/builtins?name=X   — full JSON v1 of one factory sequence.
+//
+// The list form carries no step data, so the whole-catalog response stays a few
+// hundred bytes and cannot exhaust the fragmented heap mid-send. Serializing all
+// factory sequences with their steps into one buffered response was large enough
+// to OOM AsyncTCP during delivery, and ESP32's exceptions-disabled libstdc++
+// turns the failed allocation into terminate()/abort() (panic reboot). The
+// editor fetches full steps per-name only when the operator clones a sequence.
 void handleBuiltins(AsyncWebServerRequest* req) {
+    const AsyncWebParameter* p = req->getParam("name");
+    if (p != nullptr && p->value().length() > 0) {
+        // Full single factory sequence (clone source). Always the Factory
+        // definition, even if a Retrained Learned Sequence shadows the name.
+        const SequenceEntry* e = sequenceCatalogFind(p->value().c_str());
+        if (e == nullptr) {
+            req->send(404, "application/json",
+                      "{\"ok\":false,\"error\":\"not found\"}");
+            return;
+        }
+        auto* stream = req->beginResponseStream("application/json");
+        if (stream == nullptr) {
+            req->send(500, "application/json",
+                      "{\"ok\":false,\"error\":\"alloc\"}");
+            return;
+        }
+        JsonDocument doc;
+        seqJsonSerializeObject(doc.to<JsonObject>(), *e, "factory");
+        serializeJson(doc, *stream);
+        req->send(stream);
+        return;
+    }
+
+    // Lightweight list: one small row per factory sequence (no step data).
     JsonDocument doc;
     JsonArray arr = doc.to<JsonArray>();
     for (uint8_t i = 0; i < sequenceCatalogCount(); ++i) {
         const SequenceEntry* e = sequenceCatalogAt(i);
         if (e == nullptr) continue;
-        seqJsonSerializeObject(arr.add<JsonObject>(), *e, "factory");
+        JsonObject o = arr.add<JsonObject>();
+        o["name"] = e->name;
+        o["toggleGroup"] = seqToggleGroupToString(e->toggleGroup);
+        o["suppressMs"] = e->suppressMs;
+        o["stepCount"] = e->stepCount;
     }
     auto* stream = req->beginResponseStream("application/json");
     if (stream == nullptr) {

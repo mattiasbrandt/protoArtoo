@@ -222,7 +222,8 @@
   };
 
   const renderBuiltinRow = (builtin) => {
-    const stepCount = (builtin.steps || []).length;
+    // The builtins list carries metadata only (stepCount), not full steps.
+    const stepCount = builtin.stepCount ?? (builtin.steps || []).length;
     const toggleGroup = builtin.toggleGroup || "none";
     const suppressMs = builtin.suppressMs || 0;
     const notes = builtin.meta?.notes || "";
@@ -243,12 +244,26 @@
     `;
   };
 
-  const handleCloneBuiltin = (builtinName) => {
-    const builtin = builtins.find((b) => b.name === builtinName);
-    if (!builtin) return;
+  const handleCloneBuiltin = async (builtinName) => {
+    // The builtins list carries metadata only; fetch the one factory
+    // sequence's full step data on demand (keeps the catalog response small).
+    let full = null;
+    try {
+      const result = await PAApi.get(
+        `/api/seq/builtins?name=${encodeURIComponent(builtinName)}`
+      );
+      full = result.data;
+    } catch (error) {
+      console.error("Error loading factory sequence:", error);
+      if (els.cloneResultsInfo) {
+        els.cloneResultsInfo.textContent = `Could not load ${builtinName}`;
+      }
+      return;
+    }
+    if (!full) return;
 
     // Store for editor to load
-    currentEditingSeq = JSON.parse(JSON.stringify(builtin));
+    currentEditingSeq = JSON.parse(JSON.stringify(full));
     editorState.isNew = true; // Cloning is treated as new sequence
     hideModal(els.modalClone);
 
