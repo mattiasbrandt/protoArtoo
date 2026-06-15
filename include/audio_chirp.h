@@ -19,6 +19,7 @@
 // =============================================================================
 #pragma once
 
+#include <new>
 #include <stdint.h>
 
 #include "audio_driver.h"
@@ -78,10 +79,18 @@ class AudioDriverChirp : public AudioDriver {
     bool m_catalogReady = false;
     uint16_t m_catalogCount = 0;
     uint8_t m_catalogBankCount = 0;
-    AudioCatalogEntry m_catalog[AUDIO_CATALOG_MAX_ENTRIES] = {};
-    AudioCatalogBank m_catalogBanks[AUDIO_CATALOG_MAX_BANKS] = {};
+    // Catalog storage is heap-allocated on first discovery and reused after.
+    // When CHIRP RX is unavailable (e.g. the dome link owns UART2) discovery
+    // never runs, so these stay null and the ~16 KB they would hold statically
+    // stays as free, contiguous heap — easing DRAM fragmentation.
+    AudioCatalogEntry* m_catalog = nullptr;
+    AudioCatalogBank* m_catalogBanks = nullptr;
 
     bool loadManifestBanks(uint32_t timeoutMs, bool keepTotalTracks);
+
+    // Lazily heap-allocate m_catalog/m_catalogBanks on first use. Returns false
+    // if allocation fails so the caller aborts discovery gracefully.
+    bool ensureCatalogStorage();
 
     // Send a null-terminated ASCII command string followed by '\n' via m_io.
     void sendCommand(const char* cmd);

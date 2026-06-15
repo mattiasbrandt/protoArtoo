@@ -237,7 +237,26 @@ static bool parseNameLine(const char* line, uint8_t* bankOut, char* pageOut, uin
 
 // Parse GMAN output and cache all BANK lines.
 // Returns true when any valid GMAN frame line was observed.
+bool AudioDriverChirp::ensureCatalogStorage() {
+    if (m_catalog == nullptr) {
+        m_catalog = new (std::nothrow) AudioCatalogEntry[AUDIO_CATALOG_MAX_ENTRIES];
+    }
+    if (m_catalogBanks == nullptr) {
+        m_catalogBanks = new (std::nothrow) AudioCatalogBank[AUDIO_CATALOG_MAX_BANKS];
+    }
+    if (m_catalog == nullptr || m_catalogBanks == nullptr) {
+        PA_LOG_WARN(TAG, "catalog storage alloc failed (~%u bytes); discovery skipped",
+                    (unsigned)(sizeof(AudioCatalogEntry) * AUDIO_CATALOG_MAX_ENTRIES +
+                               sizeof(AudioCatalogBank) * AUDIO_CATALOG_MAX_BANKS));
+        return false;
+    }
+    return true;
+}
+
 bool AudioDriverChirp::loadManifestBanks(uint32_t timeoutMs, bool keepTotalTracks) {
+    if (!ensureCatalogStorage()) {
+        return false;
+    }
     while (m_io.rxAvailable()) { (void)m_io.rxRead(); }
 
     sendCommand("GMAN");
@@ -248,7 +267,7 @@ bool AudioDriverChirp::loadManifestBanks(uint32_t timeoutMs, bool keepTotalTrack
     uint16_t bank1Count = keepTotalTracks ? m_totalTracks : 0;
     uint8_t catalogBankCount = 0;
     uint16_t droppedBankLines = 0;
-    memset(m_catalogBanks, 0, sizeof(m_catalogBanks));
+    memset(m_catalogBanks, 0, sizeof(AudioCatalogBank) * AUDIO_CATALOG_MAX_BANKS);
     char line[96];
 
     while ((uint32_t)(m_io.millisNow() - startMs) < timeoutMs) {
