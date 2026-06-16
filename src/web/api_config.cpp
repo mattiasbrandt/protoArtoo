@@ -767,6 +767,11 @@ void registerConfigRoutes(AsyncWebServer& server) {
                 sendValidationError("invalid dome sequence payload (expected DM:NAME)", &entry);
                 return;
             }
+            if (entry.action == DOME_ACTION_MARCDUINO_CMD &&
+                strncmp(entry.payload, ":SM", 3) == 0) {
+                sendValidationError(":SM is diagnostic only and cannot be saved as an RC binding", &entry);
+                return;
+            }
 
             for (size_t i = 0; i < count; ++i) {
                 if (entries[i].source == entry.source && entries[i].channel == entry.channel) {
