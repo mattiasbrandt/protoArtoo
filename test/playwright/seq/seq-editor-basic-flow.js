@@ -40,7 +40,7 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
       meta: { source: 'test', notes: '' },
       steps: [
         { t: 0, type: 'audio', cmd: '$H' },
-        { t: 0, type: 'dome', cmd: ':SM0,2200,150' },
+        { t: 0, type: 'dome', cmd: ':SM0,150,2200' },
         { t: 500, type: 'end' },
       ],
       closeSteps: [],

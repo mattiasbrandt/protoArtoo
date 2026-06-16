@@ -62,8 +62,8 @@ static const char* kNodJson =
     "\"toggleGroup\":\"none\",\"steps\":["
     "{\"t\":0,\"type\":\"audio\",\"cmd\":\"$H\"},"
     "{\"t\":0,\"type\":\"dome\",\"cmd\":\"@1MYes\"},"
-    "{\"t\":0,\"type\":\"dome\",\"cmd\":\":SM0,2200,150\"},"
-    "{\"t\":150,\"type\":\"dome\",\"cmd\":\":SM0,800,150\"},"
+    "{\"t\":0,\"type\":\"dome\",\"cmd\":\":SM0,150,2200\"},"
+    "{\"t\":150,\"type\":\"dome\",\"cmd\":\":SM0,150,800\"},"
     "{\"t\":300,\"type\":\"end\"}]}";
 
 static void test_nod_json_parses_to_builtin_steps() {
@@ -99,8 +99,8 @@ static void test_nod_parsed_runs_through_engine() {
     // The choreography dispatch must be present and ordered.
     TEST_ASSERT_NOT_NULL(strstr(log, "$H"));
     TEST_ASSERT_NOT_NULL(strstr(log, "@1MYes"));
-    TEST_ASSERT_NOT_NULL(strstr(log, ":SM0,2200,150"));
-    TEST_ASSERT_NOT_NULL(strstr(log, ":SM0,800,150"));
+    TEST_ASSERT_NOT_NULL(strstr(log, ":SM0,150,2200"));
+    TEST_ASSERT_NOT_NULL(strstr(log, ":SM0,150,800"));
     TEST_ASSERT_NOT_NULL(strstr(log, ":CL00"));  // FX_PANEL auto-reset
 }
 

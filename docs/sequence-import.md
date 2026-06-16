@@ -54,7 +54,7 @@ slot 7=PP5 8=PP1 9=PP2 10=PP4 11=PP6 12=PP3  (pie)
 CLOSE=800  25%=1150  50%=1500  75%=1850  OPEN=2200
 ```
 
-Map each source panel to the nearest protoArtoo slot by physical role. `:SM<slot>,<pulse>,<ms>`
+Map each source panel to the nearest protoArtoo slot by physical role. `:SM<slot>,<move>,<pulse>`
 is non-blocking -- compose motion by *when* moves are issued (same `t` = simultaneous;
 staggered `t` = wave). Re-pulse any source that uses a different travel range onto 800..2200.
 

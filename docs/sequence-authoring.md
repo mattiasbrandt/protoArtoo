@@ -25,7 +25,7 @@ Every choreography is built from four step kinds:
 | structured | `loop` (beat/BPM iteration) and `random` (runtime slot/pulse pick) |
 
 Timing is **absolute** from sequence start (`tMs`). Steps inside a `loop` body use times
-relative to the iteration start. `:SM<slot>,<pulse>,<ms>` starts a non-blocking move and
+relative to the iteration start. `:SM<slot>,<move>,<pulse>` starts a non-blocking move and
 returns immediately -- compose motion by *when* you issue moves (simultaneous = same `t`;
 serial wave = stagger `t` by the move time).
 
@@ -55,8 +55,8 @@ the first step that activates each persistent effect; the engine auto-resets the
 static const SeqStep kNodSteps[] = {
     SEQ_AUDIO(0, "$H"),                      // ack clip
     SEQ_DOME(0, FX_NONE, "@1MYes"),          // logic text
-    SEQ_DOME(0, FX_PANEL, ":SM0,2200,150"),  // P1 open  -> auto :CL00 at end
-    SEQ_DOME(150, FX_NONE, ":SM0,800,150"),  // P1 close
+    SEQ_DOME(0, FX_PANEL, ":SM0,150,2200"),  // P1 open  -> auto :CL00 at end
+    SEQ_DOME(150, FX_NONE, ":SM0,150,800"),  // P1 close
     SEQ_TERM(300),
 };
 // catalog row: { "DM:NOD", kNodSteps, SEQ_STEPCOUNT(kNodSteps), 3000, TOGGLE_NONE, nullptr, 0 }
@@ -74,7 +74,7 @@ engine model -- no `fx` field (inferred), no manual cleanup steps (automatic).
   "meta": { "source": "user", "origin": "", "license": "", "notes": "", "modified": false },
   "steps": [
     {"t": 0,   "type": "audio",    "cmd": "$H"},
-    {"t": 0,   "type": "dome",     "cmd": ":SM0,2200,150"},
+    {"t": 0,   "type": "dome",     "cmd": ":SM0,150,2200"},
     {"t": 100, "type": "loop",     "body": 2, "periodMs": 1846, "durationMs": 14000},
     {"t": 0,   "type": "random",   "set": "ring", "pulseMin": 1150, "pulseMax": 1500,
                                    "moveMs": 300, "jitterMs": 500, "distinct": true},
@@ -109,7 +109,7 @@ the format cannot express a bypass for.
 | retrain | factory toggle name -> identical `toggleGroup`; factory non-toggle name -> `none` |
 | `suppressMs` | 1000..120000 and `>=` sequence end time |
 | branch | `<=96` steps; ends with an explicit `end`; `t` non-decreasing outside loop bodies |
-| `:SM` | slot 0..12, pulse 800..2200, move 50..5000 |
+| `:SM` | slot 0..12, move 50..5000, pulse 800..2200 |
 | `:SE` | exactly 2 digits (the canonical Marcduino zero-padded form, e.g. `:SE09`) |
 | `@`/`*`/`$`/`:CL00` | length- and charset-bounded; recognised prefix |
 | `loop` | period 100..60000, duration `<=120000`, no nesting, body within branch |

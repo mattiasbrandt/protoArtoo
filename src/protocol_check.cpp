@@ -95,7 +95,7 @@ static bool nameValid(const char* name) {
 
 // -----------------------------------------------------------------------------
 // Dome command whitelist + effect-class inference.
-//   :SM<slot>,<pulse>,<move>   panel move    -> FX_PANEL when pulse>CLOSE
+//   :SM<slot>,<move>,<pulse>   panel move    -> FX_PANEL when pulse>CLOSE
 //   :CL00                       close+release -> FX_NONE (is itself a reset)
 //   :SE<dd>                     dome sequence -> FX_NONE (dome-owned)
 //   @0T1 / @0P1                 logic/PSI reset -> FX_NONE
@@ -113,29 +113,29 @@ static ProtocolCheckResult classifyDome(const char* label, uint8_t idx,
         return pcFailAt(label, idx, "cmd", "empty, too long, or non-printable");
     }
 
-    // :SM<slot>,<pulse>,<move>
+    // :SM<slot>,<move>,<pulse>  — dome parses to moveToPulse(slot, moveTime, pulse)
     if (strncmp(cmd, ":SM", 3) == 0) {
         const char* p = cmd + 3;
-        uint32_t slot = 0, pulse = 0, move = 0;
+        uint32_t slot = 0, move = 0, pulse = 0;
         if (parseUint(&p, slot) == 0 || *p != ',') {
             return pcFailAt(label, idx, "cmd", ":SM missing slot");
         }
         ++p;
-        if (parseUint(&p, pulse) == 0 || *p != ',') {
-            return pcFailAt(label, idx, "cmd", ":SM missing pulse");
+        if (parseUint(&p, move) == 0 || *p != ',') {
+            return pcFailAt(label, idx, "cmd", ":SM missing move");
         }
         ++p;
-        if (parseUint(&p, move) == 0 || *p != '\0') {
-            return pcFailAt(label, idx, "cmd", ":SM malformed (want slot,pulse,move)");
+        if (parseUint(&p, pulse) == 0 || *p != '\0') {
+            return pcFailAt(label, idx, "cmd", ":SM malformed (want slot,move,pulse)");
         }
         if (slot > PC_SM_SLOT_MAX) {
             return pcFailAt(label, idx, "cmd", ":SM slot out of range (0..12)");
         }
-        if (pulse < PC_SM_PULSE_MIN || pulse > PC_SM_PULSE_MAX) {
-            return pcFailAt(label, idx, "cmd", ":SM pulse out of range (800..2200)");
-        }
         if (move < PC_SM_MOVE_MIN || move > PC_SM_MOVE_MAX) {
             return pcFailAt(label, idx, "cmd", ":SM move out of range (50..5000)");
+        }
+        if (pulse < PC_SM_PULSE_MIN || pulse > PC_SM_PULSE_MAX) {
+            return pcFailAt(label, idx, "cmd", ":SM pulse out of range (800..2200)");
         }
         fxOut = (pulse > PC_SM_PULSE_MIN) ? FX_PANEL : FX_NONE;
         return pcOk();

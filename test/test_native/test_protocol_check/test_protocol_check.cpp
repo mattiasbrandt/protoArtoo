@@ -26,8 +26,8 @@ void tearDown() {}
 static SeqStep gNod[] = {
     SEQ_AUDIO(0, "$H"),
     SEQ_DOME(0, FX_NONE, "@1MYes"),
-    SEQ_DOME(0, FX_NONE, ":SM0,2200,150"),
-    SEQ_DOME(150, FX_NONE, ":SM0,800,150"),
+    SEQ_DOME(0, FX_NONE, ":SM0,150,2200"),
+    SEQ_DOME(150, FX_NONE, ":SM0,150,800"),
     SEQ_TERM(300),
 };
 
@@ -48,8 +48,8 @@ static void resetNod() {
     SeqStep fresh[] = {
         SEQ_AUDIO(0, "$H"),
         SEQ_DOME(0, FX_NONE, "@1MYes"),
-        SEQ_DOME(0, FX_NONE, ":SM0,2200,150"),
-        SEQ_DOME(150, FX_NONE, ":SM0,800,150"),
+        SEQ_DOME(0, FX_NONE, ":SM0,150,2200"),
+        SEQ_DOME(150, FX_NONE, ":SM0,150,800"),
         SEQ_TERM(300),
     };
     memcpy(gNod, fresh, sizeof(fresh));
@@ -147,7 +147,7 @@ static void test_suppress_below_end_time_rejected() {
 
 static void test_sm_bad_slot_rejected() {
     static SeqStep s[] = {
-        SEQ_DOME(0, FX_NONE, ":SM13,2200,150"),  // slot > 12
+        SEQ_DOME(0, FX_NONE, ":SM13,150,2200"),  // slot > 12
         SEQ_TERM(100),
     };
     ProtocolCheckResult r = protocolCheckBranch("steps", s, 2);
@@ -157,7 +157,7 @@ static void test_sm_bad_slot_rejected() {
 
 static void test_sm_bad_pulse_rejected() {
     static SeqStep s[] = {
-        SEQ_DOME(0, FX_NONE, ":SM0,3000,150"),  // pulse > 2200
+        SEQ_DOME(0, FX_NONE, ":SM0,150,3000"),  // pulse > 2200
         SEQ_TERM(100),
     };
     ProtocolCheckResult r = protocolCheckBranch("steps", s, 2);
@@ -214,7 +214,7 @@ static void test_audio_dollar_charset_rejected() {
 static void test_missing_terminal_end_rejected() {
     static SeqStep s[] = {
         SEQ_AUDIO(0, "$H"),
-        SEQ_DOME(0, FX_NONE, ":SM0,2200,150"),  // no STEP_END
+        SEQ_DOME(0, FX_NONE, ":SM0,150,2200"),  // no STEP_END
     };
     ProtocolCheckResult r = protocolCheckBranch("steps", s, 2);
     TEST_ASSERT_FALSE(r.ok);
@@ -232,8 +232,8 @@ static void test_mid_branch_end_rejected() {
 
 static void test_non_monotonic_t_rejected() {
     static SeqStep s[] = {
-        SEQ_DOME(500, FX_NONE, ":SM0,2200,150"),
-        SEQ_DOME(100, FX_NONE, ":SM0,800,150"),  // t goes backwards
+        SEQ_DOME(500, FX_NONE, ":SM0,150,2200"),
+        SEQ_DOME(100, FX_NONE, ":SM0,150,800"),  // t goes backwards
         SEQ_TERM(600),
     };
     ProtocolCheckResult r = protocolCheckBranch("steps", s, 3);
@@ -248,8 +248,8 @@ static void test_non_monotonic_t_rejected() {
 static void test_valid_loop_accepts() {
     static SeqStep s[] = {
         SEQ_LOOP(0, 2, 1846, 14000),
-        SEQ_DOME(0, FX_NONE, ":SM0,2200,150"),    // body t relative
-        SEQ_DOME(623, FX_NONE, ":SM0,800,150"),
+        SEQ_DOME(0, FX_NONE, ":SM0,150,2200"),    // body t relative
+        SEQ_DOME(623, FX_NONE, ":SM0,150,800"),
         SEQ_TERM(14000),
     };
     ProtocolCheckResult r = protocolCheckBranch("steps", s, 4);
@@ -259,7 +259,7 @@ static void test_valid_loop_accepts() {
 static void test_loop_body_overrun_rejected() {
     static SeqStep s[] = {
         SEQ_LOOP(0, 5, 1846, 14000),  // bodyCount 5 overruns
-        SEQ_DOME(0, FX_NONE, ":SM0,2200,150"),
+        SEQ_DOME(0, FX_NONE, ":SM0,150,2200"),
         SEQ_TERM(14000),
     };
     ProtocolCheckResult r = protocolCheckBranch("steps", s, 3);
@@ -269,9 +269,9 @@ static void test_loop_body_overrun_rejected() {
 static void test_nested_loop_rejected() {
     static SeqStep s[] = {
         SEQ_LOOP(0, 3, 1846, 14000),
-        SEQ_DOME(0, FX_NONE, ":SM0,2200,150"),
+        SEQ_DOME(0, FX_NONE, ":SM0,150,2200"),
         SEQ_LOOP(0, 1, 1000, 5000),   // nested
-        SEQ_DOME(0, FX_NONE, ":SM1,2200,150"),
+        SEQ_DOME(0, FX_NONE, ":SM1,150,2200"),
         SEQ_TERM(14000),
     };
     ProtocolCheckResult r = protocolCheckBranch("steps", s, 5);
@@ -281,7 +281,7 @@ static void test_nested_loop_rejected() {
 static void test_loop_bad_period_rejected() {
     static SeqStep s[] = {
         SEQ_LOOP(0, 1, 50, 14000),  // period < 100
-        SEQ_DOME(0, FX_NONE, ":SM0,2200,150"),
+        SEQ_DOME(0, FX_NONE, ":SM0,150,2200"),
         SEQ_TERM(14000),
     };
     ProtocolCheckResult r = protocolCheckBranch("steps", s, 3);
@@ -367,10 +367,10 @@ static void test_nontoggle_with_close_branch_rejected() {
 static void test_user_toggle_rejected_until_engine_wired() {
     resetNod();
     static SeqStep openB[] = {
-        SEQ_DOME(0, FX_NONE, ":SM0,2200,150"), SEQ_TERM(200),
+        SEQ_DOME(0, FX_NONE, ":SM0,150,2200"), SEQ_TERM(200),
     };
     static SeqStep closeB[] = {
-        SEQ_DOME(0, FX_NONE, ":SM0,800,150"), SEQ_TERM(200),
+        SEQ_DOME(0, FX_NONE, ":SM0,150,800"), SEQ_TERM(200),
     };
     SeqDraft d = {};
     strcpy(d.name, "DM:MYTOG");
@@ -416,10 +416,10 @@ static void test_retrain_factory_nontoggle_with_none_accepts() {
 
 static void test_retrain_factory_toggle_wrong_group_rejected() {
     static SeqStep openB[] = {
-        SEQ_DOME(0, FX_NONE, ":SM8,2200,150"), SEQ_TERM(200),
+        SEQ_DOME(0, FX_NONE, ":SM8,150,2200"), SEQ_TERM(200),
     };
     static SeqStep closeB[] = {
-        SEQ_DOME(0, FX_NONE, ":SM8,800,150"), SEQ_TERM(200),
+        SEQ_DOME(0, FX_NONE, ":SM8,150,800"), SEQ_TERM(200),
     };
     SeqDraft d = {};
     strcpy(d.name, "DM:PIES");    // factory toggle (TOGGLE_PIES)
@@ -436,10 +436,10 @@ static void test_retrain_factory_toggle_wrong_group_rejected() {
 
 static void test_retrain_factory_toggle_same_group_accepts() {
     static SeqStep openB[] = {
-        SEQ_DOME(0, FX_NONE, ":SM8,2200,150"), SEQ_TERM(200),
+        SEQ_DOME(0, FX_NONE, ":SM8,150,2200"), SEQ_TERM(200),
     };
     static SeqStep closeB[] = {
-        SEQ_DOME(0, FX_NONE, ":SM8,800,150"), SEQ_TERM(200),
+        SEQ_DOME(0, FX_NONE, ":SM8,150,800"), SEQ_TERM(200),
     };
     SeqDraft d = {};
     strcpy(d.name, "DM:PIES");

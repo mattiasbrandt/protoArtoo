@@ -155,7 +155,7 @@
 
       // Recognized dome commands: :SM..., @, *, :SE##, :CL00
       const validPatterns = [
-        /^:SM\d{1,2},\d{3,4},\d{1,4}$/, // :SM<slot>,<pulse>,<ms>
+        /^:SM\d{1,2},\d{1,4},\d{3,4}$/, // :SM<slot>,<move>,<pulse>
         /^@$/, // Sweep
         /^\*$/, // Random pulse
         /^:SE\d{2}$/, // Sound effect :SE##
@@ -167,17 +167,17 @@
         return {
           ok: false,
           field: "cmd",
-          error: "Dome command not recognized (valid: :SM<slot>,<pulse>,<ms>, @, *, :SE##, :CL00)",
+          error: "Dome command not recognized (valid: :SM<slot>,<move>,<pulse>, @, *, :SE##, :CL00)",
         };
       }
 
       // If :SM, validate components
       if (cmd.startsWith(":SM")) {
-        const match = cmd.match(/^:SM(\d{1,2}),(\d{3,4}),(\d{1,4})$/);
+        const match = cmd.match(/^:SM(\d{1,2}),(\d{1,4}),(\d{3,4})$/);
         if (match) {
           const slot = parseInt(match[1], 10);
-          const pulse = parseInt(match[2], 10);
-          const ms = parseInt(match[3], 10);
+          const ms = parseInt(match[2], 10);
+          const pulse = parseInt(match[3], 10);
 
           if (slot < 0 || slot > 12) {
             return {

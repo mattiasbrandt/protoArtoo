@@ -30,8 +30,8 @@ static uint32_t stubRand() { return 0; }
 static const SeqStep kFlatSteps[] = {
     SEQ_AUDIO(0, "$H"),
     SEQ_DOME(0, FX_NONE, "@1MYes"),
-    SEQ_DOME(0, FX_NONE, ":SM0,2200,150"),
-    SEQ_DOME(150, FX_PANEL, ":SM0,800,150"),
+    SEQ_DOME(0, FX_NONE, ":SM0,150,2200"),
+    SEQ_DOME(150, FX_PANEL, ":SM0,150,800"),
     SEQ_DOME(300, FX_NONE, ":CL00"),
     SEQ_TERM(300),
 };
@@ -110,14 +110,14 @@ void test_flat_steps_fire_in_order_at_their_times() {
 
     char log[256] = "";
     TEST_ASSERT_EQUAL_INT(3, drainAt(st, 1000, log, sizeof(log)));
-    TEST_ASSERT_EQUAL_STRING("$H|@1MYes|:SM0,2200,150", log);
+    TEST_ASSERT_EQUAL_STRING("$H|@1MYes|:SM0,150,2200", log);
 
     // Nothing due between scheduled times.
     TEST_ASSERT_EQUAL_INT(0, drainAt(st, 1100, nullptr, 0));
 
     log[0] = '\0';
     TEST_ASSERT_EQUAL_INT(1, drainAt(st, 1150, log, sizeof(log)));
-    TEST_ASSERT_EQUAL_STRING(":SM0,800,150", log);
+    TEST_ASSERT_EQUAL_STRING(":SM0,150,800", log);
 
     // t=300: release step, then STEP_END fires the FX_PANEL auto-reset.
     log[0] = '\0';
@@ -134,7 +134,7 @@ void test_late_tick_catches_up_all_overdue_steps() {
     // One late tick past the END time drains the whole sequence.
     char log[256] = "";
     TEST_ASSERT_EQUAL_INT(6, drainAt(st, 9000, log, sizeof(log)));
-    TEST_ASSERT_EQUAL_STRING("$H|@1MYes|:SM0,2200,150|:SM0,800,150|:CL00|:CL00", log);
+    TEST_ASSERT_EQUAL_STRING("$H|@1MYes|:SM0,150,2200|:SM0,150,800|:CL00|:CL00", log);
     TEST_ASSERT_FALSE(seqEngineActive(st));
 }
 
@@ -182,7 +182,7 @@ void test_retry_does_not_drift_later_steps() {
 
     char log[256] = "";
     TEST_ASSERT_EQUAL_INT(4, drainAt(st, 1150, log, sizeof(log)));
-    TEST_ASSERT_EQUAL_STRING("$H|@1MYes|:SM0,2200,150|:SM0,800,150", log);
+    TEST_ASSERT_EQUAL_STRING("$H|@1MYes|:SM0,150,2200|:SM0,150,800", log);
 }
 
 // -----------------------------------------------------------------------------
@@ -230,7 +230,7 @@ void test_restart_after_abort_runs_fresh() {
     seqEngineStart(st, &kFlatEntry, 5000);
     char log[256] = "";
     TEST_ASSERT_EQUAL_INT(3, drainAt(st, 5000, log, sizeof(log)));
-    TEST_ASSERT_EQUAL_STRING("$H|@1MYes|:SM0,2200,150", log);
+    TEST_ASSERT_EQUAL_STRING("$H|@1MYes|:SM0,150,2200", log);
 }
 
 // -----------------------------------------------------------------------------
@@ -432,7 +432,7 @@ void test_real_rockmarch_second_pass_timing() {
     SeqAction act = {};
     TEST_ASSERT_FALSE(seqEnginePeek(st, 6460, stubRand, act));
     TEST_ASSERT_TRUE(seqEnginePeek(st, 6461, stubRand, act));
-    TEST_ASSERT_EQUAL_STRING(":SM0,2200,150", act.payload);
+    TEST_ASSERT_EQUAL_STRING(":SM0,150,2200", act.payload);
 }
 
 // -----------------------------------------------------------------------------
@@ -440,13 +440,13 @@ void test_real_rockmarch_second_pass_timing() {
 // -----------------------------------------------------------------------------
 
 static const SeqStep kToggleOpenSteps[] = {
-    SEQ_DOME(0, FX_PANEL, ":SM8,2200,100"),
-    SEQ_DOME(100, FX_NONE, ":SM9,2200,100"),
+    SEQ_DOME(0, FX_PANEL, ":SM8,100,2200"),
+    SEQ_DOME(100, FX_NONE, ":SM9,100,2200"),
     SEQ_TERM(500),
 };
 static const SeqStep kToggleCloseSteps[] = {
-    SEQ_DOME(0, FX_NONE, ":SM8,800,100"),
-    SEQ_DOME(100, FX_NONE, ":SM9,800,100"),
+    SEQ_DOME(0, FX_NONE, ":SM8,100,800"),
+    SEQ_DOME(100, FX_NONE, ":SM9,100,800"),
     SEQ_TERM(500),
 };
 static const SequenceEntry kToggleEntry = {
@@ -470,7 +470,7 @@ void test_toggle_first_press_runs_open_branch_and_latches_open() {
     char log[256] = "";
     TEST_ASSERT_EQUAL_INT(2, drainAt(st, 500, log, sizeof(log)));
     // Open branch ends with panels open: no :CL00 despite FX_PANEL.
-    TEST_ASSERT_EQUAL_STRING(":SM8,2200,100|:SM9,2200,100", log);
+    TEST_ASSERT_EQUAL_STRING(":SM8,100,2200|:SM9,100,2200", log);
     TEST_ASSERT_FALSE(seqEngineActive(st));
     TEST_ASSERT_TRUE(st.latches.piesOpen);
 }
@@ -485,7 +485,7 @@ void test_toggle_second_press_runs_close_branch_and_releases() {
     char log[256] = "";
     TEST_ASSERT_EQUAL_INT(3, drainAt(st, 1500, log, sizeof(log)));
     // Close branch, then :CL00 release (no other group latched open).
-    TEST_ASSERT_EQUAL_STRING(":SM8,800,100|:SM9,800,100|:CL00", log);
+    TEST_ASSERT_EQUAL_STRING(":SM8,100,800|:SM9,100,800|:CL00", log);
     TEST_ASSERT_FALSE(st.latches.piesOpen);
 }
 
@@ -501,7 +501,7 @@ void test_toggle_close_skips_release_while_another_group_open() {
     char log[256] = "";
     TEST_ASSERT_EQUAL_INT(2, drainAt(st, 1500, log, sizeof(log)));
     // No :CL00 — it would slam the ring panels DM:LOW left open.
-    TEST_ASSERT_EQUAL_STRING(":SM8,800,100|:SM9,800,100", log);
+    TEST_ASSERT_EQUAL_STRING(":SM8,100,800|:SM9,100,800", log);
     TEST_ASSERT_FALSE(st.latches.piesOpen);
     TEST_ASSERT_TRUE(st.latches.lowOpen);
 }
@@ -518,7 +518,7 @@ void test_toggle_all_carries_pie_and_ring_latches() {
     seqEngineStart(st, &kToggleAllEntry, 1000);
     char log[256] = "";
     TEST_ASSERT_EQUAL_INT(3, drainAt(st, 1500, log, sizeof(log)));
-    TEST_ASSERT_EQUAL_STRING(":SM8,800,100|:SM9,800,100|:CL00", log);
+    TEST_ASSERT_EQUAL_STRING(":SM8,100,800|:SM9,100,800|:CL00", log);
     TEST_ASSERT_FALSE(st.latches.allOpen);
     TEST_ASSERT_FALSE(st.latches.piesOpen);
     TEST_ASSERT_FALSE(st.latches.lowOpen);
@@ -591,7 +591,7 @@ void test_random_step_resolves_slot_and_pulse_from_rng() {
     SeqAction act = {};
     TEST_ASSERT_TRUE(seqEnginePeek(st, 0, scriptedRand, act));
     TEST_ASSERT_EQUAL_INT(SEQ_ACT_DOME_CMD, (int)act.kind);
-    TEST_ASSERT_EQUAL_STRING(":SM2,1207,300", act.payload);
+    TEST_ASSERT_EQUAL_STRING(":SM2,300,1207", act.payload);
 }
 
 void test_random_pick_distinct_rerolls_and_hold_reuses() {
@@ -606,15 +606,15 @@ void test_random_pick_distinct_rerolls_and_hold_reuses() {
     seqEngineStart(st, &kRandomEntry, 0);
     SeqAction act = {};
     TEST_ASSERT_TRUE(seqEnginePeek(st, 0, scriptedRand, act));
-    TEST_ASSERT_EQUAL_STRING(":SM0,1150,300", act.payload);
+    TEST_ASSERT_EQUAL_STRING(":SM0,300,1150", act.payload);
     seqEngineCommit(st);
 
     TEST_ASSERT_TRUE(seqEnginePeek(st, 100, scriptedRand, act));
-    TEST_ASSERT_EQUAL_STRING(":SM3,1150,300", act.payload);
+    TEST_ASSERT_EQUAL_STRING(":SM3,300,1150", act.payload);
     seqEngineCommit(st);
 
     TEST_ASSERT_TRUE(seqEnginePeek(st, 200, scriptedRand, act));
-    TEST_ASSERT_EQUAL_STRING(":SM3,2200,100", act.payload);
+    TEST_ASSERT_EQUAL_STRING(":SM3,100,2200", act.payload);
 }
 
 void test_random_peek_retry_keeps_same_resolution() {
@@ -653,7 +653,7 @@ void test_random_jitter_delays_fire_time() {
     SeqAction act = {};
     TEST_ASSERT_FALSE(seqEnginePeek(st, 399, scriptedRand, act));
     TEST_ASSERT_TRUE(seqEnginePeek(st, 400, scriptedRand, act));
-    TEST_ASSERT_EQUAL_STRING(":SM0,1200,300", act.payload);
+    TEST_ASSERT_EQUAL_STRING(":SM0,300,1200", act.payload);
 }
 
 void test_real_random_entries_are_catalog() {

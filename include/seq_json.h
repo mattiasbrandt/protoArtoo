@@ -17,7 +17,7 @@
 //   { "format":1, "name":"DM:X", "suppressMs":8000, "toggleGroup":"none",
 //     "meta":{...},
 //     "steps":[ {"t":0,"type":"audio","cmd":"$H"},
-//               {"t":0,"type":"dome","cmd":":SM0,2200,150"},
+//               {"t":0,"type":"dome","cmd":":SM0,150,2200"},
 //               {"t":0,"type":"loop","body":2,"periodMs":1846,"durationMs":14000},
 //               {"t":0,"type":"random","set":"ring","pulseMin":1150,"pulseMax":1500,
 //                "moveMs":300,"jitterMs":500,"distinct":true},

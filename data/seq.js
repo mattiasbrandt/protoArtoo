@@ -309,7 +309,7 @@
         html = `<input class="step-field step-field-cmd" type="text" data-field="cmd" value="${escapeHtml(step.cmd || "")}" placeholder="$H, $N, $D, $A..." aria-label="Audio command">`;
         break;
       case "dome":
-        html = `<input class="step-field step-field-cmd" type="text" data-field="cmd" value="${escapeHtml(step.cmd || "")}" placeholder=":SM0,2200,150" aria-label="Dome command">`;
+        html = `<input class="step-field step-field-cmd" type="text" data-field="cmd" value="${escapeHtml(step.cmd || "")}" placeholder=":SM0,150,2200" aria-label="Dome command">`;
         break;
       case "loop":
         html = `
@@ -580,7 +580,7 @@
   const attachStepListeners = () => {
     const stepTypeDefaults = {
       audio: { cmd: "$H" },
-      dome: { cmd: ":SM0,2200,150" },
+      dome: { cmd: ":SM0,150,2200" },
       loop: { body: 2, periodMs: 1846, durationMs: 14000 },
       random: { set: "ring", pulseMin: 1150, pulseMax: 1500, moveMs: 300, jitterMs: 500, distinct: true },
       audioCat: { category: "alert", fallback: "$H" },

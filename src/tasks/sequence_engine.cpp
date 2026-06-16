@@ -199,8 +199,9 @@ static bool resolveStep(SeqEngineState& st, const SeqStep& step, SeqRandFn rnd) 
                     rnd() % (uint32_t)(step.params.pulseMax - step.params.pulseMin + 1));
             }
             a.kind = SEQ_ACT_DOME_CMD;
+            // :SM<slot>,<moveMs>,<pulse> — dome moveToPulse(slot, moveTime, pulse).
             snprintf(a.payload, sizeof(a.payload), ":SM%u,%u,%u",
-                     (unsigned)slot, (unsigned)pulse, (unsigned)step.params.moveMs);
+                     (unsigned)slot, (unsigned)step.params.moveMs, (unsigned)pulse);
             if (step.params.jitterMs > 0) {
                 jitter = rnd() % (uint32_t)(step.params.jitterMs + 1);
             }

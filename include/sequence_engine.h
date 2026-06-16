@@ -29,7 +29,7 @@ enum SeqStepType : uint8_t {
     STEP_AUDIO          = 2,  // payload -> audio $-command queue
     STEP_LOOP           = 3,  // repeat next params.bodyCount steps every
                               // params.periodMs while iteration start < durationMs
-    STEP_RANDOM         = 4,  // emit ":SM<slot>,<pulse>,<moveMs>" with random
+    STEP_RANDOM         = 4,  // emit ":SM<slot>,<moveMs>,<pulse>" with random
                               // slot/pulse resolved at fire time
     STEP_AUDIO_CATEGORY = 5,  // random track from a config-backed sound category
 };
