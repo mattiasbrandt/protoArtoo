@@ -19,25 +19,69 @@ Every choreography is built from four step kinds:
 
 | Primitive | Meaning |
 |---|---|
-| `dome("...")` | send a Marcduino string to the dome (`:SM`, `:CL00`, `@...`, `*...`, `:SE...`) |
+| `dome("...")` | send a dome command (`:OP`/`:CL`/`:OF` panel intent, `@...` logic/PSI, `*...` holo, `:SE##`) |
 | `audio("$X")` | play a body sound ($-command; named roles preferred -- see below) |
 | `wait(ms)` | advance the cursor; expressed as the absolute `t` of the next step |
-| structured | `loop` (beat/BPM iteration) and `random` (runtime slot/pulse pick) |
+| structured | `loop` (beat/BPM iteration) and `random` (runtime panel pick) |
 
 Timing is **absolute** from sequence start (`tMs`). Steps inside a `loop` body use times
-relative to the iteration start. `:SM<slot>,<move>,<pulse>` starts a non-blocking move and
-returns immediately -- compose motion by *when* you issue moves (simultaneous = same `t`;
-serial wave = stagger `t` by the move time).
+relative to the iteration start.
 
-### Panel slot map and pulse constants
+## Panel intent vocabulary
 
-```
-slot 0=P1 1=P2 2=P3 3=P4 4=P7 5=P11 6=P13   (ring)
-slot 7=PP5 8=PP1 9=PP2 10=PP4 11=PP6 12=PP3  (pie)
-CLOSE=800  25%=1150  50%=1500  75%=1850  OPEN=2200
-```
+Body-authored panel movement uses high-level panel intent commands only. The dome owns
+calibrated servo execution; the body commands the intent.
 
-### Cleanup is automatic
+| Command family | Effect |
+|---|---|
+| `:OP<target>` | open a panel or group |
+| `:CL<target>` | close a panel or group |
+| `:OF<target>` | one-shot flutter effect (panel state after is undefined -- requires explicit close) |
+
+**Allowed targets:**
+
+| Target | Panel |
+|---|---|
+| `00` | all panels (group) |
+| `14` | pie / top panel group |
+| `15` | ring / bottom panel group |
+| `01` `02` `03` `04` `07` `11` `13` | ring panels P1, P2, P3, P4, P7, P11, P13 |
+| `P1` `P2` `P3` `P4` `P5` `P6` | pie / top panels PP1 -- PP6 |
+
+Do not use numeric IDs 08-10 or 12 as pie panel references. AstroPixelsPlus maps those
+compatibility IDs to a mixed set; use the explicit `P1`-`P6` aliases instead.
+
+### `:OF` cleanup rule
+
+`:OF` flutter does not leave a defined final panel state. Any branch that issues
+`:OF<target>` must later issue a matching close in the same branch:
+
+| Flutter | Valid close |
+|---|---|
+| `:OF01`-`:OF04`, `:OF07`, `:OF11`, `:OF13` (ring) | `:CL<same>`, `:CL15`, or `:CL00` |
+| `:OFP1`-`:OFP6` (pie) | `:CLP<same>`, `:CL14`, or `:CL00` |
+| `:OF14` (pie group) | `:CL14` or `:CL00` |
+| `:OF15` (ring group) | `:CL15` or `:CL00` |
+| `:OF00` (all) | `:CL00` |
+
+`:OP` does not require an explicit same-branch close; terminal/abort cleanup handles it.
+
+### Non-panel dome commands
+
+These are allowed in Advanced/raw steps and are not panel intent commands:
+
+- `@0T...` / `@0P...` / `@1M...` -- logic / PSI / text display
+- `*HP...` / `*ST00` -- holo / HP commands
+- `:SE##` -- legacy Marcduino sequence trigger (2-digit zero-padded, e.g. `:SE07`);
+  advanced only; not for panel control; rejected inside loops and random steps
+
+### `:SM` is not available in sequences
+
+`:SM<slot>,<move>,<pulse>` is diagnostic / calibration only. It is rejected by Protocol
+Check in Learned Sequences and is not present in Factory catalog tables. Use the panel
+intent commands above for all panel choreography.
+
+## Cleanup is automatic
 
 You do **not** author teardown. The engine tracks which persistent effects fired (panel
 open, logic/PSI, holo, long audio) and emits the matching resets (`:CL00`, `@0T1`/`@0P1`,
@@ -46,17 +90,21 @@ Sequences the effect class is *inferred* by Protocol Check from each command, so
 correct-by-construction; in Factory tables you tag the first activating step explicitly
 (`FX_PANEL`, `FX_LOGIC_PSI`, `FX_HOLO`, `FX_AUDIO`).
 
+The `:OF` cleanup rule is the one exception where Protocol Check requires explicit same-branch
+close authorship. Auto-reset is a safety net, not a substitute for authored flutter cleanup.
+
 ## Authoring a Factory Sequence (C++)
 
 Use the `SEQ_*` macros so the positional `SeqStepParams` ordering lives in one place. Tag
 the first step that activates each persistent effect; the engine auto-resets the rest.
+Use panel intent commands (`:OP`/`:CL`/`:OF`) for all panel choreography.
 
 ```cpp
 static const SeqStep kNodSteps[] = {
-    SEQ_AUDIO(0, "$H"),                      // ack clip
-    SEQ_DOME(0, FX_NONE, "@1MYes"),          // logic text
-    SEQ_DOME(0, FX_PANEL, ":SM0,150,2200"),  // P1 open  -> auto :CL00 at end
-    SEQ_DOME(150, FX_NONE, ":SM0,150,800"),  // P1 close
+    SEQ_AUDIO(0, "$H"),                       // ack clip
+    SEQ_DOME(0, FX_NONE, "@1MYes"),           // logic text
+    SEQ_DOME(0, FX_PANEL, ":OP01"),           // P1 open  -> auto :CL00 at end
+    SEQ_DOME(150, FX_NONE, ":CL01"),          // P1 close (explicit timed close)
     SEQ_TERM(300),
 };
 // catalog row: { "DM:NOD", kNodSteps, SEQ_STEPCOUNT(kNodSteps), 3000, TOGGLE_NONE, nullptr, 0 }
@@ -66,25 +114,30 @@ static const SeqStep kNodSteps[] = {
 
 ## Authoring a Learned Sequence (JSON v1)
 
-Saved via `POST /api/seq`; the editor (slice 4) writes this format. It maps 1:1 onto the
-engine model -- no `fx` field (inferred), no manual cleanup steps (automatic).
+Saved via `POST /api/seq`; the editor writes this format. It maps 1:1 onto the engine
+model -- no `fx` field (inferred), no manual cleanup steps (automatic).
 
 ```json
 { "format": 1, "name": "DM:MYSEQ", "suppressMs": 8000, "toggleGroup": "none",
   "meta": { "source": "user", "origin": "", "license": "", "notes": "", "modified": false },
   "steps": [
     {"t": 0,   "type": "audio",    "cmd": "$H"},
-    {"t": 0,   "type": "dome",     "cmd": ":SM0,150,2200"},
-    {"t": 100, "type": "loop",     "body": 2, "periodMs": 1846, "durationMs": 14000},
-    {"t": 0,   "type": "random",   "set": "ring", "pulseMin": 1150, "pulseMax": 1500,
+    {"t": 0,   "type": "dome",     "cmd": ":OP14"},
+    {"t": 100, "type": "dome",     "cmd": ":OFP3"},
+    {"t": 600, "type": "dome",     "cmd": ":CLP3"},
+    {"t": 800, "type": "loop",     "body": 2, "periodMs": 1846, "durationMs": 14000},
+    {"t": 0,   "type": "random",   "set": "ring", "mode": "flutter",
                                    "moveMs": 300, "jitterMs": 500, "distinct": true},
-    {"t": 0,   "type": "audioCat", "category": "alert", "fallback": "scream"},
+    {"t": 0,   "type": "audioCat", "category": "alert", "fallback": "$S"},
     {"t": 500, "type": "end"} ],
   "closeSteps": [] }
 ```
 
 - `type` is one of `dome | audio | loop | random | audioCat | end`.
+- `dome` steps carry a single panel intent or Advanced dome command string.
 - A `loop` header is followed by its `body` steps (relative `t`); no nesting.
+- `random` steps pick from a logical target set (`ring`, `pie`, `all`, `hold`) and emit
+  panel intent commands according to `mode` (`flutter`, `open`, `close`).
 - A toggle sequence (`toggleGroup` != `none`) carries a `closeSteps` branch; a non-toggle
   must not. `GET /api/seq/builtins` returns every Factory Sequence in this format as a
   starting point for cloning (clone-to-retrain).
@@ -105,15 +158,17 @@ the format cannot express a bypass for.
 | Field | Rule |
 |---|---|
 | `name` | `^DM:[A-Z0-9_]{1,18}$` |
-| `toggleGroup` | `none|pies|low|all`; `user1..4` are reserved and rejected until the engine wires their latches |
+| `toggleGroup` | `none|pies|low|all`; `user1..4` reserved |
 | retrain | factory toggle name -> identical `toggleGroup`; factory non-toggle name -> `none` |
 | `suppressMs` | 1000..120000 and `>=` sequence end time |
-| branch | `<=96` steps; ends with an explicit `end`; `t` non-decreasing outside loop bodies |
-| `:SM` | slot 0..12, move 50..5000, pulse 800..2200 |
-| `:SE` | exactly 2 digits (the canonical Marcduino zero-padded form, e.g. `:SE09`) |
-| `@`/`*`/`$`/`:CL00` | length- and charset-bounded; recognised prefix |
+| branch | `<=96` steps; ends with explicit `end`; `t` non-decreasing outside loop bodies |
+| `:OP`/`:CL`/`:OF` | target must be in the allowed set (see Panel intent vocabulary) |
+| `:SM` | **rejected** -- diagnostic only, not allowed in sequences |
+| `:OF` | same-branch explicit close required for every flutter target |
+| `:SE` | exactly 2 digits (e.g. `:SE09`); not allowed inside loops or random |
+| `@`/`*`/`$` | length- and charset-bounded; recognised prefix |
 | `loop` | period 100..60000, duration `<=120000`, no nesting, body within branch |
-| `random` | pulse 800..2200, jitter `<=2000`, move 50..5000, known slot set |
+| `random` | set: ring/pie/all/hold; mode: flutter/open/close; jitter `<=2000`, move `<=5000` |
 | capacity | 16 files max, 12 KB per file, 24 KB LittleFS free-space floor |
 
 ## Triggering

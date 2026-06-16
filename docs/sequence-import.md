@@ -35,28 +35,47 @@ Accept a sequence only if all hold; otherwise decline with a written reason.
 2. **Plays to protoArtoo's strength.** Prefer choreographies that pair a body sound with
    synced dome and body motion. A panel-only wave with no sound is almost always already an
    alias.
-3. **Maps cleanly.** Panels map onto our 13-slot dome map; the signature sound maps onto an
-   existing named role or `audioCat` category (a brand-new named track is a separate
-   factory-side change, not part of a migration).
+3. **Maps cleanly.** Panels map onto the allowed panel intent targets; the signature sound
+   maps onto an existing named role or `audioCat` category (a brand-new named track is a
+   separate factory-side change, not part of a migration).
 4. **License permits redistribution.** See the table below; record provenance.
 
 ## Migration steps
 
-A migration is **adaptation, not replication** -- the source targets different hardware
-(panel count and map, sound board, easing). Reproduce the recognizable intent and the
-sound-to-motion sync; adapt the mechanics; note deviations in the catalog comment.
+A migration is **adaptation of choreography intent, not replication of servo mechanics**.
+The source targets different hardware (panel count and map, sound board, easing). Reproduce
+the recognizable intent and the sound-to-motion sync; adapt the mechanics; note deviations
+in the catalog comment.
 
-### 1. Panels -> protoArtoo slots
+### 1. Panels -> panel intent commands
 
-```
-slot 0=P1 1=P2 2=P3 3=P4 4=P7 5=P11 6=P13   (ring)
-slot 7=PP5 8=PP1 9=PP2 10=PP4 11=PP6 12=PP3  (pie)
-CLOSE=800  25%=1150  50%=1500  75%=1850  OPEN=2200
-```
+Map each source panel to the nearest protoArtoo equivalent by physical role, then express
+the motion as a panel intent command:
 
-Map each source panel to the nearest protoArtoo slot by physical role. `:SM<slot>,<move>,<pulse>`
-is non-blocking -- compose motion by *when* moves are issued (same `t` = simultaneous;
-staggered `t` = wave). Re-pulse any source that uses a different travel range onto 800..2200.
+| Source motion | protoArtoo command |
+|---|---|
+| Full open | `:OP<target>` |
+| Full close | `:CL<target>` |
+| Flutter / wiggle / nervous | `:OF<target>` (requires explicit close in same branch) |
+| Partial open / easing | approximate with `:OP`/`:CL` pairs or `:OF`; note deviation |
+
+**Allowed targets** (see `sequence-authoring.md` for the full reference):
+
+| Group | Individual ring | Individual pie |
+|---|---|---|
+| `00` (all), `14` (pie), `15` (ring) | `01` `02` `03` `04` `07` `11` `13` | `P1` `P2` `P3` `P4` `P5` `P6` |
+
+Use the explicit `P1`-`P6` aliases for pie panels. Do not use numeric IDs 08-10 or 12.
+
+Timing remains **absolute** from sequence start (`tMs`). Compose simultaneous motion by
+issuing steps at the same `t`; staggered motion by incrementing `t`.
+
+**Partial-open motion:** `:SM` pulse ranges are not available in body-authored sequences.
+If the source depends on exact partial-open percentages or calibrated easing, either:
+- approximate with `:OF` flutter, or with an `:OP` + short hold + `:CL` pair, or
+- defer migration until dome-side calibrated commands exist for that motion.
+
+Note any fidelity deviation in the catalog comment.
 
 ### 2. Sounds -> named roles / categories
 
@@ -80,14 +99,25 @@ If the source's signature sound has no matching role, the sequence is not a clea
 
 ### 3. Dome dialect normalization
 
-Map source Marcduino commands onto protoArtoo's whitelisted set: `:SM`, `:CL00`, `@...`
-(logic/PSI), `*...` (holo/HP), `$...` (sound), `:SE##` (2-digit, zero-padded). Drop anything
-outside that set.
+Map source Marcduino commands onto protoArtoo's panel intent vocabulary and non-panel dome
+effects. Drop anything outside the allowed set.
 
-- **Holo / logic / PSI are dome-executed.** Keep the *trigger* (e.g. `@0T6`, `*HPF...`);
-  never author per-frame LED content -- the 9600-baud slip ring cannot carry it.
-- **Easing.** protoArtoo issues linear `:SM` moves; approximate a source's easing with
-  staggered linear moves and note it.
+**Panel movement** -- use panel intent commands only:
+
+- Full open -> `:OP<target>`
+- Full close -> `:CL<target>`
+- Flutter / wiggle -> `:OF<target>` (add explicit close in same branch)
+- Partial open / easing -> approximate (see step 1); `:SM` is **not allowed**
+
+**Non-panel dome effects** -- keep the trigger, not per-frame content:
+
+- Logic / PSI / display: `@0T...`, `@0P...`, `@1M...` (pass through the trigger; the dome
+  executes the effect -- never author per-frame LED content over the 9600-baud slip ring)
+- Holos / HPs: `*HP...`, `*ST00` etc.
+- Legacy Marcduino sequence: `:SE##` (2-digit zero-padded; Advanced only; not inside loops)
+
+`:SM` may appear in source code or explanatory comments to document the original project's
+approach. It is never valid migration output.
 
 ### 4. Write the Factory catalog entry
 
@@ -99,8 +129,17 @@ a Factory table **tags** the first step that activates each persistent effect (`
 
 ```cpp
 // DM:EXAMPLE -- migrated from <project> (<url-or-commit>), <license>.
-// Adapted: <deviations, e.g. linear easing, pie remap>. See docs/sequence-credits.md.
-static const SeqStep kExampleSteps[] = { /* ... */ SEQ_TERM(<endMs>) };
+// Adapted: <deviations, e.g. OF approximates source partial-open, pie remap>. See docs/sequence-credits.md.
+// Intent-adapted from original pulse choreography; partial-open/easing fidelity intentionally
+// not preserved in body-authored form.
+static const SeqStep kExampleSteps[] = {
+    SEQ_AUDIO(0, "$H"),
+    SEQ_DOME(0, FX_PANEL, ":OP14"),     // open all pies
+    SEQ_DOME(500, FX_NONE, ":OFP3"),    // PP3 flutter accent
+    SEQ_DOME(800, FX_NONE, ":CLP3"),    // close PP3 (explicit :OF cleanup)
+    SEQ_DOME(1200, FX_NONE, ":CL14"),   // close all pies
+    SEQ_TERM(1500),
+};
 // catalog row: { "DM:EXAMPLE", kExampleSteps, SEQ_STEPCOUNT(kExampleSteps), <suppressMs>, TOGGLE_NONE, nullptr, 0 }
 ```
 
@@ -143,12 +182,14 @@ source. Hardware fidelity joins the existing v1.0.0 hardware gate.
 ## Per-migration checklist
 
 - [ ] Behavior is novel (not a Factory sequence or alias) and sound-synced
-- [ ] Panels mapped to protoArtoo slots; pulses on the 800..2200 scale
+- [ ] Panel motion mapped to `:OP`/`:CL`/`:OF` panel intent commands; no `:SM`
+- [ ] Partial-open / easing approximated or deferred; deviation noted in catalog comment
 - [ ] Sound resolves to an existing named role or `audioCat` category
-- [ ] Dialect normalized to the whitelist; holo/logic kept as triggers; easing noted
+- [ ] Non-panel dome effects kept as triggers (`@...`, `*...`); no per-frame LED content
 - [ ] Additive `DM:` name (no Factory/alias collision)
 - [ ] License permits redistribution; provenance in catalog comment + `sequence-credits.md`
 - [ ] `SeqStep[]` table + catalog row with explicit `FX_*` tags; `suppressMs >= STEP_END`
+- [ ] `:OF` steps have matching explicit close in the same branch
 - [ ] `action-registry.yaml` entry; `make check-action-drift` clean
 - [ ] Native engine-timeline test added; `software-verified`
 - [ ] Hardware fidelity added to the v1.0.0 hardware gate
