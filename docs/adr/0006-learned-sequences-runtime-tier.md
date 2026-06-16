@@ -12,6 +12,11 @@ serializable-ready step model (ADR 0004 decision 2) is realized here: the JSON f
 
 accepted
 
+Superseded in part by [ADR 0008](0008-body-sequences-use-panel-intent.md): Learned
+Sequences still run through the body-owned sequence engine, but panel authoring and
+Protocol Check now use dome panel intent commands (`:OP`, `:CL`, `:OF`) rather than
+`:SM` slot/pulse commands.
+
 ## Context
 
 ADR 0004 locked the body as **Catalog Authority** and shipped Factory Sequences as C++

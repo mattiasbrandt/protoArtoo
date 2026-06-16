@@ -99,12 +99,16 @@ A named, time-ordered choreography (for example DM:VADER, DM:CANTINA) that combi
 _Avoid_: macro, script, dome animation (a dome animation is one effect inside a sequence, not the whole sequence)
 
 **Sequence Coordinator**:
-The body-side owner of DM:* choreography. It holds the sequence catalog, advances a non-blocking timing cursor, and dispatches each step to the correct effector at the correct time. The dome acts as a command executor for the steps routed to it.
-_Avoid_: dome sequencer, dome-side sequence player
+The body-side owner of DM:* choreography. It applies lookup precedence, advances the timing cursor, and dispatches each step; dome panel steps use calibrated panel-intent commands rather than raw servo-slot pulses.
+_Avoid_: dome sequencer, raw-pulse panel choreography
 
 **Catalog Authority**:
-The principle that the body owns the DM:* namespace and definitions (which sequences exist, their names, routing, and timing) while execution stays split per the ownership table. Dome-intrinsic light, logic, and PSI animation stays dome-executed.
-_Avoid_: body owns all execution, dome owns the sequences
+The principle that the body owns the operator-facing DM:* namespace, sequence definitions, trigger routing, timing, and Learned Sequence override precedence, while the dome owns calibrated execution of panel intent.
+_Avoid_: raw servo pulse authority, dome owns all routing
+
+**Panel Intent Command**:
+A high-level dome panel command (`:OP`, `:CL`, or `:OF`) that addresses a logical panel or group and lets the dome apply its calibrated movement behavior.
+_Avoid_: raw servo pulse command, `:SM` sequence authoring
 
 **Suppression Window**:
 The interval during an active sequence in which the body holds its own idle-random behavior (random dome rotation and random audio) without changing those subsystems' configured modes. Replaces the dome's former seqon/seqoff signalling.

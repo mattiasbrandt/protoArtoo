@@ -18,6 +18,11 @@ which closed the pre-implementation gate.
 
 accepted
 
+Superseded in part by [ADR 0008](0008-body-sequences-use-panel-intent.md): the body
+still owns the DM:* sequence timeline and routing, but body-authored panel movement now
+uses dome panel intent commands (`:OP`, `:CL`, `:OF`) instead of raw `:SM` servo-slot
+pulse commands.
+
 ## Scope and boundary (catalog authority vs execution)
 
 - The body owns the `DM:*` namespace and definitions (**catalog authority**). One place
