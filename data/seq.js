@@ -89,20 +89,26 @@
     try {
       const result = await PAApi.get("/api/seq/list");
       sequences = result.data || [];
+      await loadBuiltins();
       renderListView();
     } catch (error) {
       console.error("Error loading sequences:", error);
       sequences = [];
+      await loadBuiltins();
       renderListView();
     }
   };
 
   const renderListView = () => {
-    // Update capacity
-    els.capacityDisplay.textContent = `${sequences.length} / 16 sequences`;
+    // Update capacity (Learned sequences only)
+    els.capacityDisplay.textContent = `${sequences.length} / 16 saved`;
 
-    if (sequences.length === 0) {
-      // Show empty state
+    // Compute untuned Factory sequences (those without a Learned override)
+    const learnedNames = new Set(sequences.map(s => s.name));
+    const untunedFactory = builtins.filter(b => !learnedNames.has(b.name));
+
+    // If no learned sequences AND no factory sequences, show empty state
+    if (sequences.length === 0 && untunedFactory.length === 0) {
       els.emptyState.classList.remove("hidden");
       els.populatedState.classList.add("hidden");
       els.cardsContainer.innerHTML = "";
@@ -111,17 +117,39 @@
       els.emptyState.classList.add("hidden");
       els.populatedState.classList.remove("hidden");
 
-      // Render seq-cards
-      els.cardsContainer.innerHTML = sequences
-        .map((seq) => renderSeqCard(seq))
-        .join("");
+      let html = "";
 
-      // Attach event listeners to action buttons
-      els.cardsContainer.querySelectorAll(".seq-card-actions button").forEach((btn) => {
+      // "Your sequences" section
+      if (sequences.length > 0) {
+        html += '<h3 class="seq-section-heading">Your sequences</h3>';
+        html += sequences.map((seq) => renderSeqCard(seq)).join("");
+      } else {
+        html += '<h3 class="seq-section-heading">Your sequences</h3>';
+        html += '<div style="color: #999; font-size: 0.95rem; margin-bottom: 2rem;">No custom or retrained sequences yet</div>';
+      }
+
+      // "Factory sequences" section
+      if (untunedFactory.length > 0) {
+        html += '<h3 class="seq-section-heading">Factory sequences</h3>';
+        html += untunedFactory.map((builtin) => renderFactoryCard(builtin)).join("");
+      }
+
+      els.cardsContainer.innerHTML = html;
+
+      // Attach event listeners to Learned sequence action buttons
+      els.cardsContainer.querySelectorAll('.seq-card-actions button:not([data-action="tune"])').forEach((btn) => {
         const action = btn.dataset.action;
         const seqName = btn.dataset.seqName;
         const cardEl = btn.closest(".seq-card");
         btn.addEventListener("click", () => handleSeqAction(action, seqName, cardEl));
+      });
+
+      // Attach event listeners to Factory "Tune" buttons
+      els.cardsContainer.querySelectorAll('[data-action="tune"]').forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const builtinName = btn.dataset.builtinName;
+          handleCloneBuiltin(builtinName);
+        });
       });
     }
   };
@@ -170,6 +198,31 @@
           ${shareBtn}
         </div>
         <div class="seq-card-test-feedback feedback hidden"></div>
+      </div>
+    `;
+  };
+
+  const renderFactoryCard = (builtin) => {
+    const stepCount = builtin.stepCount || 0;
+    const toggleGroup = builtin.toggleGroup || "none";
+    const suppressMs = builtin.suppressMs || 0;
+
+    return `
+      <div class="seq-card seq-card-factory">
+        <div class="seq-card-header">
+          <h4>${escapeHtml(builtin.name)}</h4>
+          <div class="seq-badges">
+            <span class="seq-badge seq-badge-factory" title="Built-in Factory sequence">Factory</span>
+          </div>
+        </div>
+        <div class="seq-card-meta">
+          <span class="seq-meta-item">Toggle: ${escapeHtml(toggleGroup)}</span>
+          <span class="seq-meta-item">Suppress: ${suppressMs}ms</span>
+          <span class="seq-meta-item">Steps: ${stepCount}</span>
+        </div>
+        <div class="seq-card-actions">
+          <button class="btn btn-sm btn-action" data-action="tune" data-builtin-name="${escapeAttr(builtin.name)}" title="Open for editing — save under the same name to retrain this sequence">Tune</button>
+        </div>
       </div>
     `;
   };
@@ -1289,6 +1342,11 @@
     updateValidationSummary,
     renderListWith: (seqs) => {
       sequences = seqs || [];
+      renderListView();
+    },
+    renderListWithMocks: (seqs, buitlins) => {
+      sequences = seqs || [];
+      builtins = buitlins || [];
       renderListView();
     },
   };
