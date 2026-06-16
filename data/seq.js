@@ -18,6 +18,7 @@
     original: null,   // snapshot at open time (for Revert)
     current: null,    // live edited copy
     isNew: false,     // true for blank/clone/duplicate (unsaved)
+    tuningFactory: null, // Factory sequence name when opened via Tune (e.g. "DM:VADER"), or null
   };
 
   let _pendingWipeSeqName = null; // sequence name pending deletion (avoids placeholder coupling)
@@ -325,6 +326,7 @@
     // Store for editor to load
     currentEditingSeq = JSON.parse(JSON.stringify(full));
     editorState.isNew = true; // Cloning is treated as new sequence
+    editorState.tuningFactory = full.name; // Mark that we're tuning this Factory sequence
     hideModal(els.modalClone);
 
     // Hide list, show editor
@@ -490,9 +492,16 @@
       .map((step, idx) => renderStepRow(step, idx))
       .join("");
 
+    const tuneNotice = editorState.tuningFactory
+      ? `<div class="card warning" style="margin-bottom: 1rem; font-size: 0.9rem;">
+           Tuning <strong>${escapeHtml(editorState.tuningFactory)}</strong> — save under the same name to create a Retrained version that overrides the Factory sequence at runtime. <em>Memory Wipe</em> restores the original.
+         </div>`
+      : "";
+
     els.editorView.innerHTML = `
       <div class="card">
         <h3>Edit — ${escapeHtml(seq.name || "New Sequence")}</h3>
+        ${tuneNotice}
 
         <div class="seq-editor-metadata">
           <div class="seq-editor-field">
@@ -701,7 +710,7 @@
       cancelBtn.addEventListener("click", () => {
         els.editorView.classList.add("hidden");
         currentEditingSeq = null;
-        editorState = { original: null, current: null, isNew: false };
+        editorState = { original: null, current: null, isNew: false, tuningFactory: null };
         loadSequenceList();
       });
     }
@@ -932,6 +941,7 @@
       await PAApi.postJson("/api/seq", editorState.current);
       showEditorFeedback("Saved.", "ok");
       editorState.isNew = false;
+      editorState.tuningFactory = null;
       editorState.original = JSON.parse(JSON.stringify(editorState.current));
       await loadSequenceList();
     } catch (error) {
