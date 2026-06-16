@@ -63,6 +63,22 @@ const char* seqSlotSetToString(SeqSlotSet s) {
     }
 }
 
+static bool randomModeFromString(const char* s, uint8_t& out) {
+    if (s == nullptr) return false;
+    if (strcmp(s, "flutter") == 0) { out = RAND_FLUTTER; return true; }
+    if (strcmp(s, "open") == 0)    { out = RAND_OPEN;    return true; }
+    if (strcmp(s, "close") == 0)   { out = RAND_CLOSE;   return true; }
+    return false;
+}
+static const char* randomModeToString(uint8_t mode) {
+    switch (mode) {
+        case RAND_OPEN:    return "open";
+        case RAND_CLOSE:   return "close";
+        case RAND_FLUTTER:
+        default:           return "flutter";
+    }
+}
+
 // Audio category label <-> enum (reuse the canonical audioCategoryToString).
 static bool categoryFromString(const char* s, uint8_t& out) {
     if (s == nullptr) return false;
@@ -151,9 +167,17 @@ static ProtocolCheckResult parseStep(const char* label, JsonObjectConst obj,
         if (setStr == nullptr || !seqSlotSetFromString(setStr, set)) {
             return pcFailAt(label, idx, "set", "missing or unknown slot set");
         }
+        uint8_t mode = RAND_FLUTTER;
+        const char* modeStr = obj["mode"] | "flutter";
+        if (!randomModeFromString(modeStr, mode)) {
+            return pcFailAt(label, idx, "mode", "missing or unknown random mode");
+        }
+        if (obj["pulseMin"].is<int>() || obj["pulseMax"].is<int>()) {
+            return pcFailAt(label, idx, "pulse", "random pulse ranges are not supported");
+        }
         s.params.slotSet      = (uint8_t)set;
-        s.params.pulseMin     = (uint16_t)(obj["pulseMin"] | 0);
-        s.params.pulseMax     = (uint16_t)(obj["pulseMax"] | 0);
+        s.params.pulseMin     = mode;
+        s.params.pulseMax     = 0;
         s.params.moveMs       = (uint16_t)(obj["moveMs"] | 0);
         s.params.jitterMs     = (uint16_t)(obj["jitterMs"] | 0);
         s.params.pickDistinct = (obj["distinct"] | false) ? 1 : 0;
@@ -290,8 +314,7 @@ static void serializeBranch(JsonArray arr, const SeqStep* steps, uint8_t count) 
             case STEP_RANDOM:
                 o["type"] = "random";
                 o["set"] = seqSlotSetToString((SeqSlotSet)s.params.slotSet);
-                o["pulseMin"] = s.params.pulseMin;
-                o["pulseMax"] = s.params.pulseMax;
+                o["mode"] = randomModeToString(s.params.pulseMin);
                 o["moveMs"] = s.params.moveMs;
                 o["jitterMs"] = s.params.jitterMs;
                 o["distinct"] = s.params.pickDistinct != 0;

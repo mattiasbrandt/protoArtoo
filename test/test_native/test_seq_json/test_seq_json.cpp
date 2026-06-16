@@ -62,8 +62,8 @@ static const char* kNodJson =
     "\"toggleGroup\":\"none\",\"steps\":["
     "{\"t\":0,\"type\":\"audio\",\"cmd\":\"$H\"},"
     "{\"t\":0,\"type\":\"dome\",\"cmd\":\"@1MYes\"},"
-    "{\"t\":0,\"type\":\"dome\",\"cmd\":\":SM0,150,2200\"},"
-    "{\"t\":150,\"type\":\"dome\",\"cmd\":\":SM0,150,800\"},"
+    "{\"t\":0,\"type\":\"dome\",\"cmd\":\":OP01\"},"
+    "{\"t\":150,\"type\":\"dome\",\"cmd\":\":CL01\"},"
     "{\"t\":300,\"type\":\"end\"}]}";
 
 static void test_nod_json_parses_to_builtin_steps() {
@@ -99,8 +99,8 @@ static void test_nod_parsed_runs_through_engine() {
     // The choreography dispatch must be present and ordered.
     TEST_ASSERT_NOT_NULL(strstr(log, "$H"));
     TEST_ASSERT_NOT_NULL(strstr(log, "@1MYes"));
-    TEST_ASSERT_NOT_NULL(strstr(log, ":SM0,150,2200"));
-    TEST_ASSERT_NOT_NULL(strstr(log, ":SM0,150,800"));
+    TEST_ASSERT_NOT_NULL(strstr(log, ":OP01"));
+    TEST_ASSERT_NOT_NULL(strstr(log, ":CL01"));
     TEST_ASSERT_NOT_NULL(strstr(log, ":CL00"));  // FX_PANEL auto-reset
 }
 
@@ -171,6 +171,9 @@ static void test_serialize_roundtrip_scream_random() {
     char json[8192];
     size_t n = seqJsonSerialize(*scream, "factory", json, sizeof(json));
     TEST_ASSERT_GREATER_THAN(0, n);
+    TEST_ASSERT_NULL(strstr(json, "pulseMin"));
+    TEST_ASSERT_NULL(strstr(json, "pulseMax"));
+    TEST_ASSERT_NOT_NULL(strstr(json, "\"mode\":\"flutter\""));
     SeqDraft d;
     ProtocolCheckResult r = seqJsonParse(json, gSteps, 96, gClose, 96, d);
     TEST_ASSERT_TRUE_MESSAGE(r.ok, r.message);
@@ -276,6 +279,7 @@ static void test_all_builtins_serialize_and_reparse() {
         TEST_ASSERT_NOT_NULL(e);
         size_t w = seqJsonSerialize(*e, "factory", json, sizeof(json));
         TEST_ASSERT_GREATER_THAN_MESSAGE(0, w, e->name);
+        TEST_ASSERT_NULL_MESSAGE(strstr(json, ":SM"), e->name);
         SeqDraft d;
         ProtocolCheckResult r = seqJsonParse(json, gSteps, 96, gClose, 96, d);
         TEST_ASSERT_TRUE_MESSAGE(r.ok, e->name);

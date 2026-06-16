@@ -43,12 +43,12 @@ static const SeqStep kHelloSteps[] = {
     SEQ_AUDIO(0, "$H"),                          // happy/greeting clip
     SEQ_DOME(0, FX_NONE, "@1MHello There"),      // front logic text
     SEQ_DOME(0, FX_NONE, "@3MGeneral Kenobi"),
-    SEQ_DOME(0, FX_PANEL, ":SM0,150,2200"),      // P1 open
-    SEQ_DOME(160, FX_NONE, ":SM0,150,1500"),     // P1 half
-    SEQ_DOME(320, FX_NONE, ":SM0,150,2200"),     // P1 open
-    SEQ_DOME(480, FX_NONE, ":SM0,150,1500"),     // P1 half
-    SEQ_DOME(640, FX_NONE, ":SM0,150,2200"),     // P1 open
-    SEQ_DOME(800, FX_NONE, ":SM0,150,800"),      // P1 close
+    SEQ_DOME(0, FX_PANEL, ":OP01"),      // P1 open
+    SEQ_DOME(160, FX_NONE, ":OP01"),     // P1 half
+    SEQ_DOME(320, FX_NONE, ":OP01"),     // P1 open
+    SEQ_DOME(480, FX_NONE, ":OP01"),     // P1 half
+    SEQ_DOME(640, FX_NONE, ":OP01"),     // P1 open
+    SEQ_DOME(800, FX_NONE, ":CL01"),      // P1 close
     SEQ_TERM(950),                               // auto :CL00 (close + release)
 };
 
@@ -57,102 +57,104 @@ static const SeqStep kHelloSteps[] = {
 static const SeqStep kNodSteps[] = {
     SEQ_AUDIO(0, "$H"),                          // ack/happy clip
     SEQ_DOME(0, FX_NONE, "@1MYes"),              // logic text
-    SEQ_DOME(0, FX_PANEL, ":SM0,150,2200"),      // P1 open
-    SEQ_DOME(150, FX_NONE, ":SM0,150,800"),      // P1 close
+    SEQ_DOME(0, FX_PANEL, ":OP01"),      // P1 open
+    SEQ_DOME(150, FX_NONE, ":CL01"),      // P1 close
     SEQ_TERM(300),                               // auto :CL00 (close + release)
 };
 
 // DM:FLUTTER — ring then pie panels sweep to 75%, then close (10 s window).
-// Serial :SM moves at 150 ms intervals reproduce the dome's original wave.
+// Intent-adapted from previous pulse choreography; partial-open fidelity is
+// intentionally not preserved in body-authored form.
 static const SeqStep kFlutterSteps[] = {
     // ring to 75% — P1,P2,P3,P4,P7,P11,P13
-    SEQ_DOME(0, FX_PANEL, ":SM0,150,1850"),
-    SEQ_DOME(150, FX_NONE, ":SM1,150,1850"),
-    SEQ_DOME(300, FX_NONE, ":SM2,150,1850"),
-    SEQ_DOME(450, FX_NONE, ":SM3,150,1850"),
-    SEQ_DOME(600, FX_NONE, ":SM4,150,1850"),
-    SEQ_DOME(750, FX_NONE, ":SM5,150,1850"),
-    SEQ_DOME(900, FX_NONE, ":SM6,150,1850"),
+    SEQ_DOME(0, FX_PANEL, ":OP01"),
+    SEQ_DOME(150, FX_NONE, ":OP02"),
+    SEQ_DOME(300, FX_NONE, ":OP03"),
+    SEQ_DOME(450, FX_NONE, ":OP04"),
+    SEQ_DOME(600, FX_NONE, ":OP07"),
+    SEQ_DOME(750, FX_NONE, ":OP11"),
+    SEQ_DOME(900, FX_NONE, ":OP13"),
     // pies to 75% — PP1,PP2,PP3,PP4,PP5,PP6
-    SEQ_DOME(1050, FX_NONE, ":SM8,150,1850"),
-    SEQ_DOME(1200, FX_NONE, ":SM9,150,1850"),
-    SEQ_DOME(1350, FX_NONE, ":SM12,150,1850"),
-    SEQ_DOME(1500, FX_NONE, ":SM10,150,1850"),
-    SEQ_DOME(1650, FX_NONE, ":SM7,150,1850"),
-    SEQ_DOME(1800, FX_NONE, ":SM11,150,1850"),
+    SEQ_DOME(1050, FX_NONE, ":OPP1"),
+    SEQ_DOME(1200, FX_NONE, ":OPP2"),
+    SEQ_DOME(1350, FX_NONE, ":OPP3"),
+    SEQ_DOME(1500, FX_NONE, ":OPP4"),
+    SEQ_DOME(1650, FX_NONE, ":OPP5"),
+    SEQ_DOME(1800, FX_NONE, ":OPP6"),
     // close ring
-    SEQ_DOME(1950, FX_NONE, ":SM0,150,800"),
-    SEQ_DOME(2100, FX_NONE, ":SM1,150,800"),
-    SEQ_DOME(2250, FX_NONE, ":SM2,150,800"),
-    SEQ_DOME(2400, FX_NONE, ":SM3,150,800"),
-    SEQ_DOME(2550, FX_NONE, ":SM4,150,800"),
-    SEQ_DOME(2700, FX_NONE, ":SM5,150,800"),
-    SEQ_DOME(2850, FX_NONE, ":SM6,150,800"),
+    SEQ_DOME(1950, FX_NONE, ":CL01"),
+    SEQ_DOME(2100, FX_NONE, ":CL02"),
+    SEQ_DOME(2250, FX_NONE, ":CL03"),
+    SEQ_DOME(2400, FX_NONE, ":CL04"),
+    SEQ_DOME(2550, FX_NONE, ":CL07"),
+    SEQ_DOME(2700, FX_NONE, ":CL11"),
+    SEQ_DOME(2850, FX_NONE, ":CL13"),
     // close pies
-    SEQ_DOME(3000, FX_NONE, ":SM8,150,800"),
-    SEQ_DOME(3150, FX_NONE, ":SM9,150,800"),
-    SEQ_DOME(3300, FX_NONE, ":SM12,150,800"),
-    SEQ_DOME(3450, FX_NONE, ":SM10,150,800"),
-    SEQ_DOME(3600, FX_NONE, ":SM7,150,800"),
-    SEQ_DOME(3750, FX_NONE, ":SM11,150,800"),
+    SEQ_DOME(3000, FX_NONE, ":CLP1"),
+    SEQ_DOME(3150, FX_NONE, ":CLP2"),
+    SEQ_DOME(3300, FX_NONE, ":CLP3"),
+    SEQ_DOME(3450, FX_NONE, ":CLP4"),
+    SEQ_DOME(3600, FX_NONE, ":CLP5"),
+    SEQ_DOME(3750, FX_NONE, ":CLP6"),
     SEQ_TERM(4250),                              // auto :CL00 (release)
 };
 
 // DM:BLOOM — pies open together over 1.2 s, wiggle three times, close (8 s).
-// Linear :SM moves stand in for the dome's sine easing (issue #2 gap #4).
+// Intent-adapted from previous pulse choreography; sine/easing fidelity is
+// intentionally not preserved in body-authored form.
 static const SeqStep kBloomSteps[] = {
-    SEQ_DOME(0, FX_PANEL, ":SM8,1200,2200"),
-    SEQ_DOME(0, FX_NONE, ":SM9,1200,2200"),
-    SEQ_DOME(0, FX_NONE, ":SM12,1200,2200"),
-    SEQ_DOME(0, FX_NONE, ":SM10,1200,2200"),
-    SEQ_DOME(0, FX_NONE, ":SM7,1200,2200"),
-    SEQ_DOME(0, FX_NONE, ":SM11,1200,2200"),
+    SEQ_DOME(0, FX_PANEL, ":OPP1"),
+    SEQ_DOME(0, FX_NONE, ":OPP2"),
+    SEQ_DOME(0, FX_NONE, ":OPP3"),
+    SEQ_DOME(0, FX_NONE, ":OPP4"),
+    SEQ_DOME(0, FX_NONE, ":OPP5"),
+    SEQ_DOME(0, FX_NONE, ":OPP6"),
     // wiggle cycle 1 (bloom hold ends at 3250)
-    SEQ_DOME(3250, FX_NONE, ":SM8,130,1900"),
-    SEQ_DOME(3250, FX_NONE, ":SM9,130,1900"),
-    SEQ_DOME(3250, FX_NONE, ":SM12,130,1900"),
-    SEQ_DOME(3250, FX_NONE, ":SM10,130,1900"),
-    SEQ_DOME(3250, FX_NONE, ":SM7,130,1900"),
-    SEQ_DOME(3250, FX_NONE, ":SM11,130,1900"),
-    SEQ_DOME(3430, FX_NONE, ":SM8,130,2200"),
-    SEQ_DOME(3430, FX_NONE, ":SM9,130,2200"),
-    SEQ_DOME(3430, FX_NONE, ":SM12,130,2200"),
-    SEQ_DOME(3430, FX_NONE, ":SM10,130,2200"),
-    SEQ_DOME(3430, FX_NONE, ":SM7,130,2200"),
-    SEQ_DOME(3430, FX_NONE, ":SM11,130,2200"),
+    SEQ_DOME(3250, FX_NONE, ":OPP1"),
+    SEQ_DOME(3250, FX_NONE, ":OPP2"),
+    SEQ_DOME(3250, FX_NONE, ":OPP3"),
+    SEQ_DOME(3250, FX_NONE, ":OPP4"),
+    SEQ_DOME(3250, FX_NONE, ":OPP5"),
+    SEQ_DOME(3250, FX_NONE, ":OPP6"),
+    SEQ_DOME(3430, FX_NONE, ":OPP1"),
+    SEQ_DOME(3430, FX_NONE, ":OPP2"),
+    SEQ_DOME(3430, FX_NONE, ":OPP3"),
+    SEQ_DOME(3430, FX_NONE, ":OPP4"),
+    SEQ_DOME(3430, FX_NONE, ":OPP5"),
+    SEQ_DOME(3430, FX_NONE, ":OPP6"),
     // wiggle cycle 2
-    SEQ_DOME(3610, FX_NONE, ":SM8,130,1900"),
-    SEQ_DOME(3610, FX_NONE, ":SM9,130,1900"),
-    SEQ_DOME(3610, FX_NONE, ":SM12,130,1900"),
-    SEQ_DOME(3610, FX_NONE, ":SM10,130,1900"),
-    SEQ_DOME(3610, FX_NONE, ":SM7,130,1900"),
-    SEQ_DOME(3610, FX_NONE, ":SM11,130,1900"),
-    SEQ_DOME(3790, FX_NONE, ":SM8,130,2200"),
-    SEQ_DOME(3790, FX_NONE, ":SM9,130,2200"),
-    SEQ_DOME(3790, FX_NONE, ":SM12,130,2200"),
-    SEQ_DOME(3790, FX_NONE, ":SM10,130,2200"),
-    SEQ_DOME(3790, FX_NONE, ":SM7,130,2200"),
-    SEQ_DOME(3790, FX_NONE, ":SM11,130,2200"),
+    SEQ_DOME(3610, FX_NONE, ":OPP1"),
+    SEQ_DOME(3610, FX_NONE, ":OPP2"),
+    SEQ_DOME(3610, FX_NONE, ":OPP3"),
+    SEQ_DOME(3610, FX_NONE, ":OPP4"),
+    SEQ_DOME(3610, FX_NONE, ":OPP5"),
+    SEQ_DOME(3610, FX_NONE, ":OPP6"),
+    SEQ_DOME(3790, FX_NONE, ":OPP1"),
+    SEQ_DOME(3790, FX_NONE, ":OPP2"),
+    SEQ_DOME(3790, FX_NONE, ":OPP3"),
+    SEQ_DOME(3790, FX_NONE, ":OPP4"),
+    SEQ_DOME(3790, FX_NONE, ":OPP5"),
+    SEQ_DOME(3790, FX_NONE, ":OPP6"),
     // wiggle cycle 3
-    SEQ_DOME(3970, FX_NONE, ":SM8,130,1900"),
-    SEQ_DOME(3970, FX_NONE, ":SM9,130,1900"),
-    SEQ_DOME(3970, FX_NONE, ":SM12,130,1900"),
-    SEQ_DOME(3970, FX_NONE, ":SM10,130,1900"),
-    SEQ_DOME(3970, FX_NONE, ":SM7,130,1900"),
-    SEQ_DOME(3970, FX_NONE, ":SM11,130,1900"),
-    SEQ_DOME(4150, FX_NONE, ":SM8,130,2200"),
-    SEQ_DOME(4150, FX_NONE, ":SM9,130,2200"),
-    SEQ_DOME(4150, FX_NONE, ":SM12,130,2200"),
-    SEQ_DOME(4150, FX_NONE, ":SM10,130,2200"),
-    SEQ_DOME(4150, FX_NONE, ":SM7,130,2200"),
-    SEQ_DOME(4150, FX_NONE, ":SM11,130,2200"),
+    SEQ_DOME(3970, FX_NONE, ":OPP1"),
+    SEQ_DOME(3970, FX_NONE, ":OPP2"),
+    SEQ_DOME(3970, FX_NONE, ":OPP3"),
+    SEQ_DOME(3970, FX_NONE, ":OPP4"),
+    SEQ_DOME(3970, FX_NONE, ":OPP5"),
+    SEQ_DOME(3970, FX_NONE, ":OPP6"),
+    SEQ_DOME(4150, FX_NONE, ":OPP1"),
+    SEQ_DOME(4150, FX_NONE, ":OPP2"),
+    SEQ_DOME(4150, FX_NONE, ":OPP3"),
+    SEQ_DOME(4150, FX_NONE, ":OPP4"),
+    SEQ_DOME(4150, FX_NONE, ":OPP5"),
+    SEQ_DOME(4150, FX_NONE, ":OPP6"),
     // close pies together after a 1 s hold
-    SEQ_DOME(5150, FX_NONE, ":SM8,100,800"),
-    SEQ_DOME(5150, FX_NONE, ":SM9,100,800"),
-    SEQ_DOME(5150, FX_NONE, ":SM12,100,800"),
-    SEQ_DOME(5150, FX_NONE, ":SM10,100,800"),
-    SEQ_DOME(5150, FX_NONE, ":SM7,100,800"),
-    SEQ_DOME(5150, FX_NONE, ":SM11,100,800"),
+    SEQ_DOME(5150, FX_NONE, ":CLP1"),
+    SEQ_DOME(5150, FX_NONE, ":CLP2"),
+    SEQ_DOME(5150, FX_NONE, ":CLP3"),
+    SEQ_DOME(5150, FX_NONE, ":CLP4"),
+    SEQ_DOME(5150, FX_NONE, ":CLP5"),
+    SEQ_DOME(5150, FX_NONE, ":CLP6"),
     SEQ_TERM(5650),                              // auto :CL00 (release)
 };
 
@@ -220,33 +222,33 @@ static const SeqStep kCantinaSteps[] = {
     SEQ_DOME(0, FX_LOGIC_PSI, "@0P2"),           // flash/color PSI
     SEQ_LOOP(100, 26, 1846, 14000),
     // beat A: pies PP1/PP4/PP3 + ring P1/P3/P7/P13 open, the rest closed
-    SEQ_DOME(0, FX_PANEL, ":SM8,150,2200"),
-    SEQ_DOME(0, FX_NONE, ":SM10,150,2200"),
-    SEQ_DOME(0, FX_NONE, ":SM12,150,2200"),
-    SEQ_DOME(0, FX_NONE, ":SM9,150,800"),
-    SEQ_DOME(0, FX_NONE, ":SM7,150,800"),
-    SEQ_DOME(0, FX_NONE, ":SM11,150,800"),
-    SEQ_DOME(0, FX_NONE, ":SM0,150,2200"),
-    SEQ_DOME(0, FX_NONE, ":SM2,150,2200"),
-    SEQ_DOME(0, FX_NONE, ":SM4,150,2200"),
-    SEQ_DOME(0, FX_NONE, ":SM6,150,2200"),
-    SEQ_DOME(0, FX_NONE, ":SM1,150,800"),
-    SEQ_DOME(0, FX_NONE, ":SM3,150,800"),
-    SEQ_DOME(0, FX_NONE, ":SM5,150,800"),
+    SEQ_DOME(0, FX_PANEL, ":OPP1"),
+    SEQ_DOME(0, FX_NONE, ":OPP4"),
+    SEQ_DOME(0, FX_NONE, ":OPP3"),
+    SEQ_DOME(0, FX_NONE, ":CLP2"),
+    SEQ_DOME(0, FX_NONE, ":CLP5"),
+    SEQ_DOME(0, FX_NONE, ":CLP6"),
+    SEQ_DOME(0, FX_NONE, ":OP01"),
+    SEQ_DOME(0, FX_NONE, ":OP03"),
+    SEQ_DOME(0, FX_NONE, ":OP07"),
+    SEQ_DOME(0, FX_NONE, ":OP13"),
+    SEQ_DOME(0, FX_NONE, ":CL02"),
+    SEQ_DOME(0, FX_NONE, ":CL04"),
+    SEQ_DOME(0, FX_NONE, ":CL11"),
     // beat B: inverted groups
-    SEQ_DOME(923, FX_NONE, ":SM8,150,800"),
-    SEQ_DOME(923, FX_NONE, ":SM10,150,800"),
-    SEQ_DOME(923, FX_NONE, ":SM12,150,800"),
-    SEQ_DOME(923, FX_NONE, ":SM9,150,2200"),
-    SEQ_DOME(923, FX_NONE, ":SM7,150,2200"),
-    SEQ_DOME(923, FX_NONE, ":SM11,150,2200"),
-    SEQ_DOME(923, FX_NONE, ":SM0,150,800"),
-    SEQ_DOME(923, FX_NONE, ":SM2,150,800"),
-    SEQ_DOME(923, FX_NONE, ":SM4,150,800"),
-    SEQ_DOME(923, FX_NONE, ":SM6,150,800"),
-    SEQ_DOME(923, FX_NONE, ":SM1,150,2200"),
-    SEQ_DOME(923, FX_NONE, ":SM3,150,2200"),
-    SEQ_DOME(923, FX_NONE, ":SM5,150,2200"),
+    SEQ_DOME(923, FX_NONE, ":CLP1"),
+    SEQ_DOME(923, FX_NONE, ":CLP4"),
+    SEQ_DOME(923, FX_NONE, ":CLP3"),
+    SEQ_DOME(923, FX_NONE, ":OPP2"),
+    SEQ_DOME(923, FX_NONE, ":OPP5"),
+    SEQ_DOME(923, FX_NONE, ":OPP6"),
+    SEQ_DOME(923, FX_NONE, ":CL01"),
+    SEQ_DOME(923, FX_NONE, ":CL03"),
+    SEQ_DOME(923, FX_NONE, ":CL07"),
+    SEQ_DOME(923, FX_NONE, ":CL13"),
+    SEQ_DOME(923, FX_NONE, ":OP02"),
+    SEQ_DOME(923, FX_NONE, ":OP04"),
+    SEQ_DOME(923, FX_NONE, ":OP11"),
     SEQ_TERM(15400),                             // auto @0T1/@0P1/*ST00/:CL00
 };
 
@@ -259,26 +261,26 @@ static const SeqStep kRockmarchSteps[] = {
     SEQ_DOME(0, FX_LOGIC_PSI, "@0T11"),          // MARCH logics
     SEQ_DOME(0, FX_LOGIC_PSI, "@0P11"),          // MARCH PSI
     SEQ_LOOP(0, 14, 6461, 45000),
-    SEQ_DOME(0, FX_PANEL, ":SM0,150,2200"),
-    SEQ_DOME(773, FX_NONE, ":SM0,150,800"),
-    SEQ_DOME(923, FX_NONE, ":SM1,150,2200"),
-    SEQ_DOME(1696, FX_NONE, ":SM1,150,800"),
-    SEQ_DOME(1846, FX_NONE, ":SM2,150,2200"),
-    SEQ_DOME(2619, FX_NONE, ":SM2,150,800"),
-    SEQ_DOME(2769, FX_NONE, ":SM3,150,2200"),
-    SEQ_DOME(3542, FX_NONE, ":SM3,150,800"),
-    SEQ_DOME(3692, FX_NONE, ":SM4,150,2200"),
-    SEQ_DOME(4465, FX_NONE, ":SM4,150,800"),
-    SEQ_DOME(4615, FX_NONE, ":SM5,150,2200"),
-    SEQ_DOME(5388, FX_NONE, ":SM5,150,800"),
-    SEQ_DOME(5538, FX_NONE, ":SM6,150,2200"),
-    SEQ_DOME(6311, FX_NONE, ":SM6,150,800"),
+    SEQ_DOME(0, FX_PANEL, ":OP01"),
+    SEQ_DOME(773, FX_NONE, ":CL01"),
+    SEQ_DOME(923, FX_NONE, ":OP02"),
+    SEQ_DOME(1696, FX_NONE, ":CL02"),
+    SEQ_DOME(1846, FX_NONE, ":OP03"),
+    SEQ_DOME(2619, FX_NONE, ":CL03"),
+    SEQ_DOME(2769, FX_NONE, ":OP04"),
+    SEQ_DOME(3542, FX_NONE, ":CL04"),
+    SEQ_DOME(3692, FX_NONE, ":OP07"),
+    SEQ_DOME(4465, FX_NONE, ":CL07"),
+    SEQ_DOME(4615, FX_NONE, ":OP11"),
+    SEQ_DOME(5388, FX_NONE, ":CL11"),
+    SEQ_DOME(5538, FX_NONE, ":OP13"),
+    SEQ_DOME(6311, FX_NONE, ":CL13"),
     SEQ_TERM(47300),                             // auto @0T1/@0P1/*ST00/:CL00
 };
 
 // =============================================================================
-// Random sequences — STEP_RANDOM resolves a panel slot (and optionally pulse
-// and timing jitter) at fire time. SLOTSET_HOLD reuses the previous pick;
+// Random sequences — STEP_RANDOM resolves a logical panel target and optional
+// timing jitter at fire time. SLOTSET_HOLD reuses the previous pick;
 // pickDistinct avoids slots already picked this run.
 // =============================================================================
 
@@ -293,32 +295,32 @@ static const SeqStep kScreamSteps[] = {
     SEQ_DOME(0, FX_LOGIC_PSI, "@0T5"),           // red alert logics
     SEQ_DOME(0, FX_LOGIC_PSI, "@0P5"),           // red alert PSI
     // burst open: all pies then all ring panels together
-    SEQ_DOME(0, FX_PANEL, ":SM8,150,2200"),
-    SEQ_DOME(0, FX_NONE, ":SM9,150,2200"),
-    SEQ_DOME(0, FX_NONE, ":SM12,150,2200"),
-    SEQ_DOME(0, FX_NONE, ":SM10,150,2200"),
-    SEQ_DOME(0, FX_NONE, ":SM7,150,2200"),
-    SEQ_DOME(0, FX_NONE, ":SM11,150,2200"),
-    SEQ_DOME(0, FX_NONE, ":SM0,100,2200"),
-    SEQ_DOME(0, FX_NONE, ":SM1,100,2200"),
-    SEQ_DOME(0, FX_NONE, ":SM2,100,2200"),
-    SEQ_DOME(0, FX_NONE, ":SM3,100,2200"),
-    SEQ_DOME(0, FX_NONE, ":SM4,100,2200"),
-    SEQ_DOME(0, FX_NONE, ":SM5,100,2200"),
-    SEQ_DOME(0, FX_NONE, ":SM6,100,2200"),
+    SEQ_DOME(0, FX_PANEL, ":OPP1"),
+    SEQ_DOME(0, FX_NONE, ":OPP2"),
+    SEQ_DOME(0, FX_NONE, ":OPP3"),
+    SEQ_DOME(0, FX_NONE, ":OPP4"),
+    SEQ_DOME(0, FX_NONE, ":OPP5"),
+    SEQ_DOME(0, FX_NONE, ":OPP6"),
+    SEQ_DOME(0, FX_NONE, ":OP01"),
+    SEQ_DOME(0, FX_NONE, ":OP02"),
+    SEQ_DOME(0, FX_NONE, ":OP03"),
+    SEQ_DOME(0, FX_NONE, ":OP04"),
+    SEQ_DOME(0, FX_NONE, ":OP07"),
+    SEQ_DOME(0, FX_NONE, ":OP11"),
+    SEQ_DOME(0, FX_NONE, ":OP13"),
     // random flutter: pick a panel, half-close/reopen it twice per iteration
     SEQ_LOOP(200, 4, 380, 3800),
-    SEQ_RAND(0, SLOTSET_ALL, 1500, 1500, 100, 0, 0),
-    SEQ_RAND(100, SLOTSET_HOLD, 2200, 2200, 100, 0, 0),
-    SEQ_RAND(180, SLOTSET_HOLD, 1500, 1500, 100, 0, 0),
-    SEQ_RAND(280, SLOTSET_HOLD, 2200, 2200, 100, 0, 0),
+    SEQ_RAND(0, SLOTSET_ALL, RAND_FLUTTER, 0, 100, 0, 0),
+    SEQ_RAND(100, SLOTSET_HOLD, RAND_OPEN, 0, 100, 0, 0),
+    SEQ_RAND(180, SLOTSET_HOLD, RAND_FLUTTER, 0, 100, 0, 0),
+    SEQ_RAND(280, SLOTSET_HOLD, RAND_OPEN, 0, 100, 0, 0),
     // happy all-clear cue before the auto-reset closes everything
     SEQ_AUDIO(6800, "$H"),
     SEQ_TERM(7450),                              // auto @0T1/@0P1/*ST00/:CL00
 };
 
-// DM:OVERLOAD — failure logics/PSI, holos short-circuit, six panels drift
-// sluggishly to random part-open positions, then everything resets (12 s
+// DM:OVERLOAD — failure logics/PSI, holos short-circuit, six panels flutter
+// on random logical targets, then everything resets (12 s
 // window). Drift gaps are randomized as 0..500 ms jitter on fixed 650 ms
 // offsets (issue #2: gap randomness, absolute schedule preserved). Audio:
 // random sad-category track (fallback named faint).
@@ -328,13 +330,13 @@ static const SeqStep kOverloadSteps[] = {
     SEQ_DOME(0, FX_LOGIC_PSI, "@2T4"),           // RLD failure
     SEQ_DOME(0, FX_HOLO, "@HPA0070"),            // all holos short circuit
     SEQ_DOME(0, FX_LOGIC_PSI, "@0P4"),           // PSI failure
-    // four distinct ring panels + two distinct pies drift to 1150..1500
-    SEQ_RAND(400, SLOTSET_RING, 1150, 1500, 300, 500, 1),
-    SEQ_RAND(1050, SLOTSET_RING, 1150, 1500, 300, 500, 1),
-    SEQ_RAND(1700, SLOTSET_RING, 1150, 1500, 300, 500, 1),
-    SEQ_RAND(2350, SLOTSET_RING, 1150, 1500, 300, 500, 1),
-    SEQ_RAND(3000, SLOTSET_PIE, 1150, 1500, 300, 500, 1),
-    SEQ_RAND(3650, SLOTSET_PIE, 1150, 1500, 300, 500, 1),
+    // four distinct ring panels + two distinct pies flutter with timing jitter
+    SEQ_RAND(400, SLOTSET_RING, RAND_FLUTTER, 0, 300, 500, 1),
+    SEQ_RAND(1050, SLOTSET_RING, RAND_FLUTTER, 0, 300, 500, 1),
+    SEQ_RAND(1700, SLOTSET_RING, RAND_FLUTTER, 0, 300, 500, 1),
+    SEQ_RAND(2350, SLOTSET_RING, RAND_FLUTTER, 0, 300, 500, 1),
+    SEQ_RAND(3000, SLOTSET_PIE, RAND_FLUTTER, 0, 300, 500, 1),
+    SEQ_RAND(3650, SLOTSET_PIE, RAND_FLUTTER, 0, 300, 500, 1),
     SEQ_TERM(7000),                              // auto @0T1/@0P1/*ST00/:CL00
 };
 
@@ -349,47 +351,47 @@ static const SeqStep kOverloadSteps[] = {
 static const SeqStep kPiesOpenSteps[] = {
     SEQ_AUDIO(100, "$H"),
     // cycle 1: open PP1->PP6
-    SEQ_DOME(100, FX_PANEL, ":SM8,100,2200"),
-    SEQ_DOME(200, FX_NONE, ":SM9,100,2200"),
-    SEQ_DOME(300, FX_NONE, ":SM12,100,2200"),
-    SEQ_DOME(400, FX_NONE, ":SM10,100,2200"),
-    SEQ_DOME(500, FX_NONE, ":SM7,100,2200"),
-    SEQ_DOME(600, FX_NONE, ":SM11,100,2200"),
+    SEQ_DOME(100, FX_PANEL, ":OPP1"),
+    SEQ_DOME(200, FX_NONE, ":OPP2"),
+    SEQ_DOME(300, FX_NONE, ":OPP3"),
+    SEQ_DOME(400, FX_NONE, ":OPP4"),
+    SEQ_DOME(500, FX_NONE, ":OPP5"),
+    SEQ_DOME(600, FX_NONE, ":OPP6"),
     // cycle 1: close PP6->PP1
-    SEQ_DOME(700, FX_NONE, ":SM11,100,800"),
-    SEQ_DOME(800, FX_NONE, ":SM7,100,800"),
-    SEQ_DOME(900, FX_NONE, ":SM10,100,800"),
-    SEQ_DOME(1000, FX_NONE, ":SM12,100,800"),
-    SEQ_DOME(1100, FX_NONE, ":SM9,100,800"),
-    SEQ_DOME(1200, FX_NONE, ":SM8,100,800"),
+    SEQ_DOME(700, FX_NONE, ":CLP6"),
+    SEQ_DOME(800, FX_NONE, ":CLP5"),
+    SEQ_DOME(900, FX_NONE, ":CLP4"),
+    SEQ_DOME(1000, FX_NONE, ":CLP3"),
+    SEQ_DOME(1100, FX_NONE, ":CLP2"),
+    SEQ_DOME(1200, FX_NONE, ":CLP1"),
     // cycle 1: reopen PP1->PP6
-    SEQ_DOME(1300, FX_NONE, ":SM8,100,2200"),
-    SEQ_DOME(1400, FX_NONE, ":SM9,100,2200"),
-    SEQ_DOME(1500, FX_NONE, ":SM12,100,2200"),
-    SEQ_DOME(1600, FX_NONE, ":SM10,100,2200"),
-    SEQ_DOME(1700, FX_NONE, ":SM7,100,2200"),
-    SEQ_DOME(1800, FX_NONE, ":SM11,100,2200"),
+    SEQ_DOME(1300, FX_NONE, ":OPP1"),
+    SEQ_DOME(1400, FX_NONE, ":OPP2"),
+    SEQ_DOME(1500, FX_NONE, ":OPP3"),
+    SEQ_DOME(1600, FX_NONE, ":OPP4"),
+    SEQ_DOME(1700, FX_NONE, ":OPP5"),
+    SEQ_DOME(1800, FX_NONE, ":OPP6"),
     // cycle 2: open PP1->PP6
-    SEQ_DOME(1900, FX_NONE, ":SM8,100,2200"),
-    SEQ_DOME(2000, FX_NONE, ":SM9,100,2200"),
-    SEQ_DOME(2100, FX_NONE, ":SM12,100,2200"),
-    SEQ_DOME(2200, FX_NONE, ":SM10,100,2200"),
-    SEQ_DOME(2300, FX_NONE, ":SM7,100,2200"),
-    SEQ_DOME(2400, FX_NONE, ":SM11,100,2200"),
+    SEQ_DOME(1900, FX_NONE, ":OPP1"),
+    SEQ_DOME(2000, FX_NONE, ":OPP2"),
+    SEQ_DOME(2100, FX_NONE, ":OPP3"),
+    SEQ_DOME(2200, FX_NONE, ":OPP4"),
+    SEQ_DOME(2300, FX_NONE, ":OPP5"),
+    SEQ_DOME(2400, FX_NONE, ":OPP6"),
     // cycle 2: close PP6->PP1
-    SEQ_DOME(2500, FX_NONE, ":SM11,100,800"),
-    SEQ_DOME(2600, FX_NONE, ":SM7,100,800"),
-    SEQ_DOME(2700, FX_NONE, ":SM10,100,800"),
-    SEQ_DOME(2800, FX_NONE, ":SM12,100,800"),
-    SEQ_DOME(2900, FX_NONE, ":SM9,100,800"),
-    SEQ_DOME(3000, FX_NONE, ":SM8,100,800"),
+    SEQ_DOME(2500, FX_NONE, ":CLP6"),
+    SEQ_DOME(2600, FX_NONE, ":CLP5"),
+    SEQ_DOME(2700, FX_NONE, ":CLP4"),
+    SEQ_DOME(2800, FX_NONE, ":CLP3"),
+    SEQ_DOME(2900, FX_NONE, ":CLP2"),
+    SEQ_DOME(3000, FX_NONE, ":CLP1"),
     // cycle 2: reopen PP1->PP6 — pies end open
-    SEQ_DOME(3100, FX_NONE, ":SM8,100,2200"),
-    SEQ_DOME(3200, FX_NONE, ":SM9,100,2200"),
-    SEQ_DOME(3300, FX_NONE, ":SM12,100,2200"),
-    SEQ_DOME(3400, FX_NONE, ":SM10,100,2200"),
-    SEQ_DOME(3500, FX_NONE, ":SM7,100,2200"),
-    SEQ_DOME(3600, FX_NONE, ":SM11,100,2200"),
+    SEQ_DOME(3100, FX_NONE, ":OPP1"),
+    SEQ_DOME(3200, FX_NONE, ":OPP2"),
+    SEQ_DOME(3300, FX_NONE, ":OPP3"),
+    SEQ_DOME(3400, FX_NONE, ":OPP4"),
+    SEQ_DOME(3500, FX_NONE, ":OPP5"),
+    SEQ_DOME(3600, FX_NONE, ":OPP6"),
     SEQ_TERM(4600),
 };
 
@@ -397,12 +399,12 @@ static const SeqStep kPiesOpenSteps[] = {
 static const SeqStep kPiesCloseSteps[] = {
     SEQ_DOME(0, FX_NONE, "*ST00"),
     SEQ_AUDIO(0, "$H"),
-    SEQ_DOME(0, FX_NONE, ":SM8,150,800"),
-    SEQ_DOME(150, FX_NONE, ":SM9,150,800"),
-    SEQ_DOME(300, FX_NONE, ":SM12,150,800"),
-    SEQ_DOME(450, FX_NONE, ":SM10,150,800"),
-    SEQ_DOME(600, FX_NONE, ":SM7,150,800"),
-    SEQ_DOME(750, FX_NONE, ":SM11,150,800"),
+    SEQ_DOME(0, FX_NONE, ":CLP1"),
+    SEQ_DOME(150, FX_NONE, ":CLP2"),
+    SEQ_DOME(300, FX_NONE, ":CLP3"),
+    SEQ_DOME(450, FX_NONE, ":CLP4"),
+    SEQ_DOME(600, FX_NONE, ":CLP5"),
+    SEQ_DOME(750, FX_NONE, ":CLP6"),
     SEQ_TERM(1700),
 };
 
@@ -410,45 +412,45 @@ static const SeqStep kPiesCloseSteps[] = {
 static const SeqStep kLowOpenSteps[] = {
     SEQ_AUDIO(0, "$H"),
     // cycle 1: open P1,P13,P11,P2,P3,P4,P7
-    SEQ_DOME(0, FX_PANEL, ":SM0,150,2200"),
-    SEQ_DOME(150, FX_NONE, ":SM6,150,2200"),
-    SEQ_DOME(300, FX_NONE, ":SM5,150,2200"),
-    SEQ_DOME(450, FX_NONE, ":SM1,150,2200"),
-    SEQ_DOME(600, FX_NONE, ":SM2,150,2200"),
-    SEQ_DOME(750, FX_NONE, ":SM3,150,2200"),
-    SEQ_DOME(900, FX_NONE, ":SM4,150,2200"),
+    SEQ_DOME(0, FX_PANEL, ":OP01"),
+    SEQ_DOME(150, FX_NONE, ":OP13"),
+    SEQ_DOME(300, FX_NONE, ":OP11"),
+    SEQ_DOME(450, FX_NONE, ":OP02"),
+    SEQ_DOME(600, FX_NONE, ":OP03"),
+    SEQ_DOME(750, FX_NONE, ":OP04"),
+    SEQ_DOME(900, FX_NONE, ":OP07"),
     // cycle 1: close P7,P4,P3,P2,P1, then P13, then P11 (50 ms breaths)
-    SEQ_DOME(1050, FX_NONE, ":SM4,150,800"),
-    SEQ_DOME(1200, FX_NONE, ":SM3,150,800"),
-    SEQ_DOME(1350, FX_NONE, ":SM2,150,800"),
-    SEQ_DOME(1500, FX_NONE, ":SM1,150,800"),
-    SEQ_DOME(1650, FX_NONE, ":SM0,150,800"),
-    SEQ_DOME(1850, FX_NONE, ":SM6,150,800"),
-    SEQ_DOME(2050, FX_NONE, ":SM5,150,800"),
+    SEQ_DOME(1050, FX_NONE, ":CL07"),
+    SEQ_DOME(1200, FX_NONE, ":CL04"),
+    SEQ_DOME(1350, FX_NONE, ":CL03"),
+    SEQ_DOME(1500, FX_NONE, ":CL02"),
+    SEQ_DOME(1650, FX_NONE, ":CL01"),
+    SEQ_DOME(1850, FX_NONE, ":CL13"),
+    SEQ_DOME(2050, FX_NONE, ":CL11"),
     // cycle 2: open
-    SEQ_DOME(2200, FX_NONE, ":SM0,150,2200"),
-    SEQ_DOME(2350, FX_NONE, ":SM6,150,2200"),
-    SEQ_DOME(2500, FX_NONE, ":SM5,150,2200"),
-    SEQ_DOME(2650, FX_NONE, ":SM1,150,2200"),
-    SEQ_DOME(2800, FX_NONE, ":SM2,150,2200"),
-    SEQ_DOME(2950, FX_NONE, ":SM3,150,2200"),
-    SEQ_DOME(3100, FX_NONE, ":SM4,150,2200"),
+    SEQ_DOME(2200, FX_NONE, ":OP01"),
+    SEQ_DOME(2350, FX_NONE, ":OP13"),
+    SEQ_DOME(2500, FX_NONE, ":OP11"),
+    SEQ_DOME(2650, FX_NONE, ":OP02"),
+    SEQ_DOME(2800, FX_NONE, ":OP03"),
+    SEQ_DOME(2950, FX_NONE, ":OP04"),
+    SEQ_DOME(3100, FX_NONE, ":OP07"),
     // cycle 2: close
-    SEQ_DOME(3250, FX_NONE, ":SM4,150,800"),
-    SEQ_DOME(3400, FX_NONE, ":SM3,150,800"),
-    SEQ_DOME(3550, FX_NONE, ":SM2,150,800"),
-    SEQ_DOME(3700, FX_NONE, ":SM1,150,800"),
-    SEQ_DOME(3850, FX_NONE, ":SM0,150,800"),
-    SEQ_DOME(4050, FX_NONE, ":SM6,150,800"),
-    SEQ_DOME(4250, FX_NONE, ":SM5,150,800"),
+    SEQ_DOME(3250, FX_NONE, ":CL07"),
+    SEQ_DOME(3400, FX_NONE, ":CL04"),
+    SEQ_DOME(3550, FX_NONE, ":CL03"),
+    SEQ_DOME(3700, FX_NONE, ":CL02"),
+    SEQ_DOME(3850, FX_NONE, ":CL01"),
+    SEQ_DOME(4050, FX_NONE, ":CL13"),
+    SEQ_DOME(4250, FX_NONE, ":CL11"),
     // final open: P11/P13/P1 together, then P2,P3,P4,P7 — ring ends open
-    SEQ_DOME(4400, FX_NONE, ":SM5,100,2200"),
-    SEQ_DOME(4400, FX_NONE, ":SM6,100,2200"),
-    SEQ_DOME(4400, FX_NONE, ":SM0,100,2200"),
-    SEQ_DOME(4500, FX_NONE, ":SM1,100,2200"),
-    SEQ_DOME(4600, FX_NONE, ":SM2,100,2200"),
-    SEQ_DOME(4700, FX_NONE, ":SM3,100,2200"),
-    SEQ_DOME(4800, FX_NONE, ":SM4,100,2200"),
+    SEQ_DOME(4400, FX_NONE, ":OP11"),
+    SEQ_DOME(4400, FX_NONE, ":OP13"),
+    SEQ_DOME(4400, FX_NONE, ":OP01"),
+    SEQ_DOME(4500, FX_NONE, ":OP02"),
+    SEQ_DOME(4600, FX_NONE, ":OP03"),
+    SEQ_DOME(4700, FX_NONE, ":OP04"),
+    SEQ_DOME(4800, FX_NONE, ":OP07"),
     SEQ_TERM(5900),
 };
 
@@ -456,13 +458,13 @@ static const SeqStep kLowOpenSteps[] = {
 static const SeqStep kLowCloseSteps[] = {
     SEQ_DOME(0, FX_NONE, "*ST00"),
     SEQ_AUDIO(0, "$H"),
-    SEQ_DOME(0, FX_NONE, ":SM3,150,800"),
-    SEQ_DOME(150, FX_NONE, ":SM1,150,800"),
-    SEQ_DOME(300, FX_NONE, ":SM0,150,800"),
-    SEQ_DOME(450, FX_NONE, ":SM2,150,800"),
-    SEQ_DOME(600, FX_NONE, ":SM6,150,800"),
-    SEQ_DOME(750, FX_NONE, ":SM4,150,800"),
-    SEQ_DOME(900, FX_NONE, ":SM5,150,800"),
+    SEQ_DOME(0, FX_NONE, ":CL04"),
+    SEQ_DOME(150, FX_NONE, ":CL02"),
+    SEQ_DOME(300, FX_NONE, ":CL01"),
+    SEQ_DOME(450, FX_NONE, ":CL03"),
+    SEQ_DOME(600, FX_NONE, ":CL13"),
+    SEQ_DOME(750, FX_NONE, ":CL07"),
+    SEQ_DOME(900, FX_NONE, ":CL11"),
     SEQ_TERM(2050),
 };
 
@@ -471,59 +473,59 @@ static const SeqStep kLowCloseSteps[] = {
 static const SeqStep kOpenallOpenSteps[] = {
     SEQ_AUDIO(0, "$H"),
     // open pies PP1->PP6
-    SEQ_DOME(0, FX_PANEL, ":SM8,150,2200"),
-    SEQ_DOME(150, FX_NONE, ":SM9,150,2200"),
-    SEQ_DOME(300, FX_NONE, ":SM12,150,2200"),
-    SEQ_DOME(450, FX_NONE, ":SM10,150,2200"),
-    SEQ_DOME(600, FX_NONE, ":SM7,150,2200"),
-    SEQ_DOME(750, FX_NONE, ":SM11,150,2200"),
+    SEQ_DOME(0, FX_PANEL, ":OPP1"),
+    SEQ_DOME(150, FX_NONE, ":OPP2"),
+    SEQ_DOME(300, FX_NONE, ":OPP3"),
+    SEQ_DOME(450, FX_NONE, ":OPP4"),
+    SEQ_DOME(600, FX_NONE, ":OPP5"),
+    SEQ_DOME(750, FX_NONE, ":OPP6"),
     // open ring panels together
-    SEQ_DOME(900, FX_NONE, ":SM5,100,2200"),
-    SEQ_DOME(900, FX_NONE, ":SM6,100,2200"),
-    SEQ_DOME(900, FX_NONE, ":SM0,100,2200"),
-    SEQ_DOME(900, FX_NONE, ":SM1,100,2200"),
-    SEQ_DOME(900, FX_NONE, ":SM2,100,2200"),
-    SEQ_DOME(900, FX_NONE, ":SM3,100,2200"),
-    SEQ_DOME(900, FX_NONE, ":SM4,100,2200"),
+    SEQ_DOME(900, FX_NONE, ":OP11"),
+    SEQ_DOME(900, FX_NONE, ":OP13"),
+    SEQ_DOME(900, FX_NONE, ":OP01"),
+    SEQ_DOME(900, FX_NONE, ":OP02"),
+    SEQ_DOME(900, FX_NONE, ":OP03"),
+    SEQ_DOME(900, FX_NONE, ":OP04"),
+    SEQ_DOME(900, FX_NONE, ":OP07"),
     // twinkle cycle 1: P1, P2, PP2, PP4
-    SEQ_DOME(1000, FX_NONE, ":SM0,100,1850"),
-    SEQ_DOME(1100, FX_NONE, ":SM0,100,2200"),
-    SEQ_DOME(1180, FX_NONE, ":SM1,100,2200"),
-    SEQ_DOME(1280, FX_NONE, ":SM1,100,1850"),
-    SEQ_DOME(1360, FX_NONE, ":SM1,100,2200"),
-    SEQ_DOME(1460, FX_NONE, ":SM9,100,1850"),
-    SEQ_DOME(1560, FX_NONE, ":SM9,100,2200"),
-    SEQ_DOME(1740, FX_NONE, ":SM10,100,1850"),
-    SEQ_DOME(1840, FX_NONE, ":SM10,100,2200"),
+    SEQ_DOME(1000, FX_NONE, ":OP01"),
+    SEQ_DOME(1100, FX_NONE, ":OP01"),
+    SEQ_DOME(1180, FX_NONE, ":OP02"),
+    SEQ_DOME(1280, FX_NONE, ":OP02"),
+    SEQ_DOME(1360, FX_NONE, ":OP02"),
+    SEQ_DOME(1460, FX_NONE, ":OPP2"),
+    SEQ_DOME(1560, FX_NONE, ":OPP2"),
+    SEQ_DOME(1740, FX_NONE, ":OPP4"),
+    SEQ_DOME(1840, FX_NONE, ":OPP4"),
     // twinkle cycle 2
-    SEQ_DOME(1940, FX_NONE, ":SM0,100,1850"),
-    SEQ_DOME(2040, FX_NONE, ":SM0,100,2200"),
-    SEQ_DOME(2120, FX_NONE, ":SM1,100,2200"),
-    SEQ_DOME(2220, FX_NONE, ":SM1,100,1850"),
-    SEQ_DOME(2300, FX_NONE, ":SM1,100,2200"),
-    SEQ_DOME(2400, FX_NONE, ":SM9,100,1850"),
-    SEQ_DOME(2500, FX_NONE, ":SM9,100,2200"),
-    SEQ_DOME(2680, FX_NONE, ":SM10,100,1850"),
-    SEQ_DOME(2780, FX_NONE, ":SM10,100,2200"),
+    SEQ_DOME(1940, FX_NONE, ":OP01"),
+    SEQ_DOME(2040, FX_NONE, ":OP01"),
+    SEQ_DOME(2120, FX_NONE, ":OP02"),
+    SEQ_DOME(2220, FX_NONE, ":OP02"),
+    SEQ_DOME(2300, FX_NONE, ":OP02"),
+    SEQ_DOME(2400, FX_NONE, ":OPP2"),
+    SEQ_DOME(2500, FX_NONE, ":OPP2"),
+    SEQ_DOME(2680, FX_NONE, ":OPP4"),
+    SEQ_DOME(2780, FX_NONE, ":OPP4"),
     SEQ_TERM(3680),
 };
 
 // DM:OPENALL close — close every panel serially in all-panels order.
 static const SeqStep kOpenallCloseSteps[] = {
     SEQ_AUDIO(0, "$H"),
-    SEQ_DOME(0, FX_NONE, ":SM0,150,800"),
-    SEQ_DOME(150, FX_NONE, ":SM1,150,800"),
-    SEQ_DOME(300, FX_NONE, ":SM2,150,800"),
-    SEQ_DOME(450, FX_NONE, ":SM3,150,800"),
-    SEQ_DOME(600, FX_NONE, ":SM4,150,800"),
-    SEQ_DOME(750, FX_NONE, ":SM5,150,800"),
-    SEQ_DOME(900, FX_NONE, ":SM6,150,800"),
-    SEQ_DOME(1050, FX_NONE, ":SM8,150,800"),
-    SEQ_DOME(1200, FX_NONE, ":SM9,150,800"),
-    SEQ_DOME(1350, FX_NONE, ":SM12,150,800"),
-    SEQ_DOME(1500, FX_NONE, ":SM10,150,800"),
-    SEQ_DOME(1650, FX_NONE, ":SM7,150,800"),
-    SEQ_DOME(1800, FX_NONE, ":SM11,150,800"),
+    SEQ_DOME(0, FX_NONE, ":CL01"),
+    SEQ_DOME(150, FX_NONE, ":CL02"),
+    SEQ_DOME(300, FX_NONE, ":CL03"),
+    SEQ_DOME(450, FX_NONE, ":CL04"),
+    SEQ_DOME(600, FX_NONE, ":CL07"),
+    SEQ_DOME(750, FX_NONE, ":CL11"),
+    SEQ_DOME(900, FX_NONE, ":CL13"),
+    SEQ_DOME(1050, FX_NONE, ":CLP1"),
+    SEQ_DOME(1200, FX_NONE, ":CLP2"),
+    SEQ_DOME(1350, FX_NONE, ":CLP3"),
+    SEQ_DOME(1500, FX_NONE, ":CLP4"),
+    SEQ_DOME(1650, FX_NONE, ":CLP5"),
+    SEQ_DOME(1800, FX_NONE, ":CLP6"),
     SEQ_TERM(2450),
 };
 

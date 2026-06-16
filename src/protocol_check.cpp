@@ -58,6 +58,88 @@ static bool charsetOk(const char* s) {
     return true;
 }
 
+enum PanelTargetGroup : uint8_t {
+    PANEL_TARGET_NONE = 0,
+    PANEL_TARGET_RING,
+    PANEL_TARGET_PIE,
+    PANEL_TARGET_ALL,
+};
+
+struct PanelIntent {
+    bool valid;
+    char action;  // O=open, C=close, F=flutter
+    PanelTargetGroup group;
+    char target[3];
+};
+
+static bool isAllowedRingTarget(const char* t) {
+    return strcmp(t, "01") == 0 || strcmp(t, "02") == 0 ||
+           strcmp(t, "03") == 0 || strcmp(t, "04") == 0 ||
+           strcmp(t, "07") == 0 || strcmp(t, "11") == 0 ||
+           strcmp(t, "13") == 0;
+}
+
+static bool isAllowedPieTarget(const char* t) {
+    return t[0] == 'P' && t[1] >= '1' && t[1] <= '6' && t[2] == '\0';
+}
+
+static PanelIntent parsePanelIntent(const char* cmd) {
+    PanelIntent pi = { false, 0, PANEL_TARGET_NONE, "" };
+    if (cmd == nullptr || cmd[0] != ':' ||
+        (strncmp(cmd + 1, "OP", 2) != 0 &&
+         strncmp(cmd + 1, "CL", 2) != 0 &&
+         strncmp(cmd + 1, "OF", 2) != 0)) {
+        return pi;
+    }
+
+    pi.action = cmd[2];  // P, L, or F
+    const char* t = cmd + 3;
+    const size_t len = strnlen(t, 4);
+    if (len != 2) {
+        return pi;
+    }
+    strncpy(pi.target, t, sizeof(pi.target) - 1);
+    pi.target[sizeof(pi.target) - 1] = '\0';
+
+    if (strcmp(t, "00") == 0) {
+        pi.group = PANEL_TARGET_ALL;
+        pi.valid = true;
+    } else if (strcmp(t, "14") == 0) {
+        pi.group = PANEL_TARGET_PIE;
+        pi.valid = true;
+    } else if (strcmp(t, "15") == 0) {
+        pi.group = PANEL_TARGET_RING;
+        pi.valid = true;
+    } else if (isAllowedRingTarget(t)) {
+        pi.group = PANEL_TARGET_RING;
+        pi.valid = true;
+    } else if (isAllowedPieTarget(t)) {
+        pi.group = PANEL_TARGET_PIE;
+        pi.valid = true;
+    }
+    return pi;
+}
+
+static bool panelCloseCleansFlutter(const PanelIntent& flutter,
+                                    const PanelIntent& close) {
+    if (!flutter.valid || !close.valid || close.action != 'L') {
+        return false;
+    }
+    if (strcmp(close.target, "00") == 0) {
+        return true;
+    }
+    if (strcmp(flutter.target, close.target) == 0) {
+        return true;
+    }
+    if (flutter.group == PANEL_TARGET_PIE && strcmp(close.target, "14") == 0) {
+        return true;
+    }
+    if (flutter.group == PANEL_TARGET_RING && strcmp(close.target, "15") == 0) {
+        return true;
+    }
+    return false;
+}
+
 // -----------------------------------------------------------------------------
 // Toggle group
 // -----------------------------------------------------------------------------
@@ -95,9 +177,8 @@ static bool nameValid(const char* name) {
 
 // -----------------------------------------------------------------------------
 // Dome command whitelist + effect-class inference.
-//   :SM<slot>,<move>,<pulse>   panel move    -> FX_PANEL when pulse>CLOSE
-//   :CL00                       close+release -> FX_NONE (is itself a reset)
-//   :SE<dd>                     dome sequence -> FX_NONE (dome-owned)
+//   :OP/:CL/:OF<target>          panel intent -> FX_PANEL except close-all reset
+//   :SE<dd>                      dome sequence -> FX_DOME_SEQUENCE
 //   @0T1 / @0P1                 logic/PSI reset -> FX_NONE
 //   @<d>{T,P,M}...              logic/PSI/text  -> FX_LOGIC_PSI
 //   @HP...                      holo            -> FX_HOLO
@@ -113,37 +194,19 @@ static ProtocolCheckResult classifyDome(const char* label, uint8_t idx,
         return pcFailAt(label, idx, "cmd", "empty, too long, or non-printable");
     }
 
-    // :SM<slot>,<move>,<pulse>  — dome parses to moveToPulse(slot, moveTime, pulse)
-    if (strncmp(cmd, ":SM", 3) == 0) {
-        const char* p = cmd + 3;
-        uint32_t slot = 0, move = 0, pulse = 0;
-        if (parseUint(&p, slot) == 0 || *p != ',') {
-            return pcFailAt(label, idx, "cmd", ":SM missing slot");
-        }
-        ++p;
-        if (parseUint(&p, move) == 0 || *p != ',') {
-            return pcFailAt(label, idx, "cmd", ":SM missing move");
-        }
-        ++p;
-        if (parseUint(&p, pulse) == 0 || *p != '\0') {
-            return pcFailAt(label, idx, "cmd", ":SM malformed (want slot,move,pulse)");
-        }
-        if (slot > PC_SM_SLOT_MAX) {
-            return pcFailAt(label, idx, "cmd", ":SM slot out of range (0..12)");
-        }
-        if (move < PC_SM_MOVE_MIN || move > PC_SM_MOVE_MAX) {
-            return pcFailAt(label, idx, "cmd", ":SM move out of range (50..5000)");
-        }
-        if (pulse < PC_SM_PULSE_MIN || pulse > PC_SM_PULSE_MAX) {
-            return pcFailAt(label, idx, "cmd", ":SM pulse out of range (800..2200)");
-        }
-        fxOut = (pulse > PC_SM_PULSE_MIN) ? FX_PANEL : FX_NONE;
-        return pcOk();
+    if (strncmp(cmd, "DM:", 3) == 0) {
+        return pcFailAt(label, idx, "cmd", "DM:* is a sequence trigger, not a step");
     }
 
-    // :CL00 (the only accepted close-all form)
-    if (strcmp(cmd, ":CL00") == 0) {
-        fxOut = FX_NONE;
+    // :SM is manual diagnostic/calibration only. Learned sequences, clone JSON,
+    // imports, editor raw steps, and saved actions must not persist it.
+    if (strncmp(cmd, ":SM", 3) == 0) {
+        return pcFailAt(label, idx, "cmd", ":SM is diagnostic only");
+    }
+
+    const PanelIntent panel = parsePanelIntent(cmd);
+    if (panel.valid) {
+        fxOut = (strcmp(cmd, ":CL00") == 0) ? FX_NONE : FX_PANEL;
         return pcOk();
     }
 
@@ -155,7 +218,7 @@ static ProtocolCheckResult classifyDome(const char* label, uint8_t idx,
         if (parseUint(&p, n) != 2 || *p != '\0') {
             return pcFailAt(label, idx, "cmd", ":SE want exactly 2 digits");
         }
-        fxOut = FX_NONE;
+        fxOut = FX_DOME_SEQUENCE;
         return pcOk();
     }
 
@@ -294,6 +357,8 @@ ProtocolCheckResult protocolCheckBranch(const char* label, SeqStep* steps,
 
     // Per-step validation + effect-class stamping + monotonic t (top level only).
     uint32_t prevT = 0;
+    PanelIntent pendingFlutter[PC_MAX_STEPS];
+    uint8_t pendingFlutterCount = 0;
     for (uint8_t i = 0; i < count; ++i) {
         SeqStep& s = steps[i];
 
@@ -309,6 +374,26 @@ ProtocolCheckResult protocolCheckBranch(const char* label, SeqStep* steps,
                 uint8_t fx = FX_NONE;
                 ProtocolCheckResult r = classifyDome(label, i, s.payload, fx);
                 if (!r.ok) return r;
+                if (strncmp(s.payload, ":SE", 3) == 0 && inBody[i]) {
+                    return pcFailAt(label, i, "cmd", ":SE not allowed inside loops");
+                }
+                const PanelIntent panel = parsePanelIntent(s.payload);
+                if (panel.valid) {
+                    if (panel.action == 'F') {
+                        if (pendingFlutterCount >= PC_MAX_STEPS) {
+                            return pcFailAt(label, i, "cmd", "too many panel flutter steps");
+                        }
+                        pendingFlutter[pendingFlutterCount++] = panel;
+                    } else if (panel.action == 'L') {
+                        uint8_t write = 0;
+                        for (uint8_t p = 0; p < pendingFlutterCount; ++p) {
+                            if (!panelCloseCleansFlutter(pendingFlutter[p], panel)) {
+                                pendingFlutter[write++] = pendingFlutter[p];
+                            }
+                        }
+                        pendingFlutterCount = write;
+                    }
+                }
                 s.effectClass = fx;
                 break;
             }
@@ -333,9 +418,8 @@ ProtocolCheckResult protocolCheckBranch(const char* label, SeqStep* steps,
                 if (p.slotSet > SLOTSET_HOLD) {
                     return pcFailAt(label, i, "set", "unknown slot set");
                 }
-                if (p.pulseMin < PC_SM_PULSE_MIN || p.pulseMax > PC_SM_PULSE_MAX ||
-                    p.pulseMin > p.pulseMax) {
-                    return pcFailAt(label, i, "pulse", "random pulse out of range");
+                if (p.pulseMin > RAND_CLOSE || p.pulseMax != 0) {
+                    return pcFailAt(label, i, "mode", "unknown random panel mode");
                 }
                 if (p.moveMs < PC_SM_MOVE_MIN || p.moveMs > PC_SM_MOVE_MAX) {
                     return pcFailAt(label, i, "moveMs", "random move out of range");
@@ -355,6 +439,9 @@ ProtocolCheckResult protocolCheckBranch(const char* label, SeqStep* steps,
             default:
                 return pcFailAt(label, i, "type", "unknown step type");
         }
+    }
+    if (pendingFlutterCount > 0) {
+        return pcFail(label, ":OF requires a later matching :CL in the same branch");
     }
     return pcOk();
 }

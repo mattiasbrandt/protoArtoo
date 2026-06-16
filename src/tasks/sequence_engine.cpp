@@ -5,9 +5,8 @@
 // logging, or RNG dependencies — fully natively testable. See header for the
 // peek/commit execution model.
 //
-// Slice 2 commit 1: flat steps (STEP_DOME_CMD / STEP_AUDIO / STEP_END) plus
-// terminal auto-reset. STEP_LOOP, STEP_RANDOM, and STEP_AUDIO_CATEGORY are
-// resolved in later slice-2 commits; until then they are skipped.
+// Panel movement is authored as logical dome panel intent; raw servo-pulse
+// commands are reserved for manual diagnostics outside body-owned sequences.
 // =============================================================================
 
 #include <stdio.h>
@@ -15,11 +14,12 @@
 
 #include "sequence_engine.h"
 
-// Dome panel slot sets (issue #2 spec). Pie order matches the dome's wave
-// order PP1,PP2,PP3,PP4,PP5,PP6 = slots 8,9,12,10,7,11.
-static const uint8_t kRingSlots[] = { 0, 1, 2, 3, 4, 5, 6 };
-static const uint8_t kPieSlots[]  = { 8, 9, 12, 10, 7, 11 };
-static const uint8_t kAllSlots[]  = { 0, 1, 2, 3, 4, 5, 6, 8, 9, 12, 10, 7, 11 };
+static const char* const kRingTargets[] = { "01", "02", "03", "04", "07", "11", "13" };
+static const char* const kPieTargets[]  = { "P1", "P2", "P3", "P4", "P5", "P6" };
+static const char* const kAllTargets[]  = {
+    "01", "02", "03", "04", "07", "11", "13",
+    "P1", "P2", "P3", "P4", "P5", "P6",
+};
 
 // -----------------------------------------------------------------------------
 // Helpers
@@ -59,12 +59,11 @@ static void applyToggleLatch(SeqEngineState& st) {
             st.latches.piesOpen = open;
             break;
         case TOGGLE_LOW:
-            st.latches.lowOpen = open;
+            st.latches.ringOpen = open;
             break;
         case TOGGLE_ALL:
-            st.latches.allOpen = open;
             st.latches.piesOpen = open;
-            st.latches.lowOpen = open;
+            st.latches.ringOpen = open;
             break;
         default:
             break;
@@ -89,7 +88,12 @@ static void beginFinish(SeqEngineState& st, bool abnormal) {
     if (st.activeFx & FX_HOLO) {
         addFinal(st, SEQ_ACT_DOME_CMD, "*ST00");
     }
-    if (st.activeFx & FX_PANEL) {
+    if (st.activeFx & FX_DOME_SEQUENCE) {
+        addFinal(st, SEQ_ACT_DOME_CMD, "@0T1");
+        addFinal(st, SEQ_ACT_DOME_CMD, "@0P1");
+        addFinal(st, SEQ_ACT_DOME_CMD, "*ST00");
+        addFinal(st, SEQ_ACT_DOME_CMD, ":CL00");
+    } else if (st.activeFx & FX_PANEL) {
         if (abnormal || !st.openBranch) {
             addFinal(st, SEQ_ACT_DOME_CMD, ":CL00");
         }
@@ -99,13 +103,12 @@ static void beginFinish(SeqEngineState& st, bool abnormal) {
     }
 
     // Toggle bookkeeping on normal completion. Close branches finish their
-    // per-slot :SM closes without a release (issue #2 gap #1: only :CL00
-    // group-releases), so emit :CL00 once no group remains latched open —
-    // releasing earlier would slam panels another sequence left open.
+    // per-target closes without a release, so emit :CL00 once no group remains
+    // latched open; releasing earlier would close panels another sequence left open.
     if (!abnormal && st.entry->toggleGroup != TOGGLE_NONE) {
         applyToggleLatch(st);
         if (!st.openBranch &&
-            !st.latches.piesOpen && !st.latches.lowOpen && !st.latches.allOpen) {
+            !st.latches.piesOpen && !st.latches.ringOpen) {
             addFinal(st, SEQ_ACT_DOME_CMD, ":CL00");
         }
     }
@@ -134,37 +137,48 @@ static uint32_t stepFireAt(const SeqEngineState& st, const SeqStep& step) {
 // re-rolls a bounded number of times to avoid slots already picked this run
 // (OVERLOAD drifts a distinct panel set), then accepts a repeat rather than
 // looping forever on an exhausted set.
-static uint8_t pickSlot(SeqEngineState& st, const SeqStep& step, SeqRandFn rnd) {
+static uint8_t pickTarget(SeqEngineState& st, const SeqStep& step, SeqRandFn rnd) {
     if (step.params.slotSet == SLOTSET_HOLD) {
-        return st.heldSlot;
+        return st.heldTarget;
     }
 
-    const uint8_t* set = kAllSlots;
-    uint8_t n = (uint8_t)(sizeof(kAllSlots) / sizeof(kAllSlots[0]));
+    uint8_t base = 0;
+    uint8_t n = (uint8_t)(sizeof(kAllTargets) / sizeof(kAllTargets[0]));
     switch (step.params.slotSet) {
         case SLOTSET_RING:
-            set = kRingSlots;
-            n = (uint8_t)(sizeof(kRingSlots) / sizeof(kRingSlots[0]));
+            n = (uint8_t)(sizeof(kRingTargets) / sizeof(kRingTargets[0]));
             break;
         case SLOTSET_PIE:
-            set = kPieSlots;
-            n = (uint8_t)(sizeof(kPieSlots) / sizeof(kPieSlots[0]));
+            base = (uint8_t)(sizeof(kRingTargets) / sizeof(kRingTargets[0]));
+            n = (uint8_t)(sizeof(kPieTargets) / sizeof(kPieTargets[0]));
             break;
         default:
             break;
     }
 
-    uint8_t slot = set[rnd() % n];
+    uint8_t target = (uint8_t)(base + (rnd() % n));
     if (step.params.pickDistinct) {
         for (uint8_t attempt = 0;
-             attempt < 8 && (st.pickedMask & (uint16_t)(1u << slot)) != 0;
+             attempt < 8 && (st.pickedMask & (uint16_t)(1u << target)) != 0;
              ++attempt) {
-            slot = set[rnd() % n];
+            target = (uint8_t)(base + (rnd() % n));
         }
     }
-    st.pickedMask |= (uint16_t)(1u << slot);
-    st.heldSlot = slot;
-    return slot;
+    st.pickedMask |= (uint16_t)(1u << target);
+    st.heldTarget = target;
+    return target;
+}
+
+static const char* targetName(uint8_t target) {
+    const uint8_t ringCount = (uint8_t)(sizeof(kRingTargets) / sizeof(kRingTargets[0]));
+    if (target < ringCount) {
+        return kRingTargets[target];
+    }
+    const uint8_t pieIdx = (uint8_t)(target - ringCount);
+    if (pieIdx < (uint8_t)(sizeof(kPieTargets) / sizeof(kPieTargets[0]))) {
+        return kPieTargets[pieIdx];
+    }
+    return "00";
 }
 
 // Resolve the step under the cursor into a pending action with an absolute
@@ -192,16 +206,15 @@ static bool resolveStep(SeqEngineState& st, const SeqStep& step, SeqRandFn rnd) 
             a.audioFallbackSlot = step.params.audioFallbackSlot;
             break;
         case STEP_RANDOM: {
-            const uint8_t slot = pickSlot(st, step, rnd);
-            uint16_t pulse = step.params.pulseMin;
-            if (step.params.pulseMax > step.params.pulseMin) {
-                pulse = (uint16_t)(pulse +
-                    rnd() % (uint32_t)(step.params.pulseMax - step.params.pulseMin + 1));
+            const uint8_t target = pickTarget(st, step, rnd);
+            const char* prefix = ":OF";
+            if (step.params.pulseMin == RAND_OPEN) {
+                prefix = ":OP";
+            } else if (step.params.pulseMin == RAND_CLOSE) {
+                prefix = ":CL";
             }
             a.kind = SEQ_ACT_DOME_CMD;
-            // :SM<slot>,<moveMs>,<pulse> — dome moveToPulse(slot, moveTime, pulse).
-            snprintf(a.payload, sizeof(a.payload), ":SM%u,%u,%u",
-                     (unsigned)slot, (unsigned)step.params.moveMs, (unsigned)pulse);
+            snprintf(a.payload, sizeof(a.payload), "%s%s", prefix, targetName(target));
             if (step.params.jitterMs > 0) {
                 jitter = rnd() % (uint32_t)(step.params.jitterMs + 1);
             }
@@ -235,8 +248,7 @@ const char* seqEngineName(const SeqEngineState& st) {
 
 void seqEngineClearLatches(SeqEngineState& st) {
     st.latches.piesOpen = false;
-    st.latches.lowOpen = false;
-    st.latches.allOpen = false;
+    st.latches.ringOpen = false;
 }
 
 void seqEngineStart(SeqEngineState& st, const SequenceEntry* entry, uint32_t nowMs) {
@@ -252,8 +264,8 @@ void seqEngineStart(SeqEngineState& st, const SequenceEntry* entry, uint32_t now
         bool groupOpen = false;
         switch (entry->toggleGroup) {
             case TOGGLE_PIES: groupOpen = st.latches.piesOpen; break;
-            case TOGGLE_LOW:  groupOpen = st.latches.lowOpen;  break;
-            case TOGGLE_ALL:  groupOpen = st.latches.allOpen;  break;
+            case TOGGLE_LOW:  groupOpen = st.latches.ringOpen; break;
+            case TOGGLE_ALL:  groupOpen = st.latches.piesOpen && st.latches.ringOpen; break;
             default: break;
         }
         if (groupOpen) {
@@ -274,7 +286,7 @@ void seqEngineStart(SeqEngineState& st, const SequenceEntry* entry, uint32_t now
     st.inLoop = false;
     st.loopHeader = 0;
     st.iterStartRel = 0;
-    st.heldSlot = 0;
+    st.heldTarget = 0;
     st.pickedMask = 0;
     st.pendingComputed = false;
     st.pendingFireAt = 0;

@@ -29,8 +29,8 @@ enum SeqStepType : uint8_t {
     STEP_AUDIO          = 2,  // payload -> audio $-command queue
     STEP_LOOP           = 3,  // repeat next params.bodyCount steps every
                               // params.periodMs while iteration start < durationMs
-    STEP_RANDOM         = 4,  // emit ":SM<slot>,<moveMs>,<pulse>" with random
-                              // slot/pulse resolved at fire time
+    STEP_RANDOM         = 4,  // emit a random logical panel intent command
+                              // resolved at fire time
     STEP_AUDIO_CATEGORY = 5,  // random track from a config-backed sound category
 };
 
@@ -46,20 +46,27 @@ enum SeqEffectClass : uint8_t {
     FX_PANEL     = 1 << 1,  // panel opens   — reset with :CL00 (close + release)
     FX_HOLO      = 1 << 2,  // holo effects  — reset with *ST00
     FX_AUDIO     = 1 << 3,  // long audio    — stop on ABNORMAL termination only
+    FX_DOME_SEQUENCE = 1 << 4, // legacy :SE## — conservatively reset dome effects
 };
 
 // -----------------------------------------------------------------------------
-// Random slot sets (dome panel slot map from issue #2 spec).
-//   RING = P1,P2,P3,P4,P7,P11,P13   = slots 0..6
-//   PIE  = PP1,PP2,PP3,PP4,PP5,PP6  = slots 8,9,12,10,7,11
+// Random logical target sets.
+//   RING = P1,P2,P3,P4,P7,P11,P13
+//   PIE  = PP1,PP2,PP3,PP4,PP5,PP6
 //   ALL  = ring + pie
-//   HOLD = reuse the slot picked by the previous STEP_RANDOM (SCREAM flutter)
+//   HOLD = reuse the target picked by the previous STEP_RANDOM
 // -----------------------------------------------------------------------------
 enum SeqSlotSet : uint8_t {
     SLOTSET_RING = 0,
     SLOTSET_PIE  = 1,
     SLOTSET_ALL  = 2,
     SLOTSET_HOLD = 3,
+};
+
+enum SeqRandomMode : uint8_t {
+    RAND_FLUTTER   = 0,
+    RAND_OPEN      = 1,
+    RAND_CLOSE     = 2,
 };
 
 // -----------------------------------------------------------------------------
@@ -72,8 +79,8 @@ struct SeqStepParams {
     uint16_t periodMs;          // LOOP: iteration period
     uint8_t  bodyCount;         // LOOP: number of body steps following the header
     uint8_t  slotSet;           // RANDOM: SeqSlotSet
-    uint16_t pulseMin;          // RANDOM: inclusive pulse range
-    uint16_t pulseMax;
+    uint16_t pulseMin;          // RANDOM: SeqRandomMode (legacy field name)
+    uint16_t pulseMax;          // RANDOM: reserved, must be 0
     uint16_t moveMs;            // RANDOM: servo travel time
     uint16_t jitterMs;          // RANDOM: random 0..jitterMs added to fire time
     uint8_t  pickDistinct;      // RANDOM: avoid slots already picked this run
@@ -110,9 +117,9 @@ struct SeqStep {
 #define SEQ_LOOP(t, body, period, dur) \
     { (t), STEP_LOOP, FX_NONE, "", \
       { (dur), (period), (body), 0, 0, 0, 0, 0, 0, 0, 0 } }
-#define SEQ_RAND(t, set, pmin, pmax, mv, jit, distinct) \
+#define SEQ_RAND(t, set, mode, _unused, mv, jit, distinct) \
     { (t), STEP_RANDOM, FX_PANEL, "", \
-      { 0, 0, 0, (uint8_t)(set), (pmin), (pmax), (mv), (jit), (distinct), 0, 0 } }
+      { 0, 0, 0, (uint8_t)(set), (uint16_t)(mode), 0, (mv), (jit), (distinct), 0, 0 } }
 #define SEQ_TERM(t)           { (t), STEP_END, FX_NONE, "", {} }
 
 // -----------------------------------------------------------------------------
@@ -171,8 +178,7 @@ struct SeqAction {
 // resets it on estop-clear and dome-reconnect resync via seqEngineClearLatches().
 struct SeqToggleState {
     bool piesOpen;
-    bool lowOpen;
-    bool allOpen;
+    bool ringOpen;
 };
 
 // Injected RNG (esp_random on target, deterministic stub in native tests).
@@ -196,8 +202,8 @@ struct SeqEngineState {
     uint32_t iterStartRel;     // current iteration start, relative to loop start
 
     // STEP_RANDOM runtime
-    uint8_t  heldSlot;         // last picked slot (SLOTSET_HOLD reuse)
-    uint16_t pickedMask;       // slots already picked this run (pickDistinct)
+    uint8_t  heldTarget;       // last picked target (SLOTSET_HOLD reuse)
+    uint16_t pickedMask;       // targets already picked this run (pickDistinct)
 
     // Peeked-but-uncommitted action cache (stable across queue-full retries)
     bool      pendingComputed;
@@ -207,7 +213,7 @@ struct SeqEngineState {
     // Terminal auto-reset drain
     bool      finishing;
     bool      finishAbnormal;
-    SeqAction finalQ[5];
+    SeqAction finalQ[8];
     uint8_t   finalCount;
     uint8_t   finalCursor;
 

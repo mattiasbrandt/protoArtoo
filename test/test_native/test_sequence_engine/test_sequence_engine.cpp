@@ -30,8 +30,8 @@ static uint32_t stubRand() { return 0; }
 static const SeqStep kFlatSteps[] = {
     SEQ_AUDIO(0, "$H"),
     SEQ_DOME(0, FX_NONE, "@1MYes"),
-    SEQ_DOME(0, FX_NONE, ":SM0,150,2200"),
-    SEQ_DOME(150, FX_PANEL, ":SM0,150,800"),
+    SEQ_DOME(0, FX_PANEL, ":OP01"),
+    SEQ_DOME(150, FX_NONE, ":CL01"),
     SEQ_DOME(300, FX_NONE, ":CL00"),
     SEQ_TERM(300),
 };
@@ -110,14 +110,14 @@ void test_flat_steps_fire_in_order_at_their_times() {
 
     char log[256] = "";
     TEST_ASSERT_EQUAL_INT(3, drainAt(st, 1000, log, sizeof(log)));
-    TEST_ASSERT_EQUAL_STRING("$H|@1MYes|:SM0,150,2200", log);
+    TEST_ASSERT_EQUAL_STRING("$H|@1MYes|:OP01", log);
 
     // Nothing due between scheduled times.
     TEST_ASSERT_EQUAL_INT(0, drainAt(st, 1100, nullptr, 0));
 
     log[0] = '\0';
     TEST_ASSERT_EQUAL_INT(1, drainAt(st, 1150, log, sizeof(log)));
-    TEST_ASSERT_EQUAL_STRING(":SM0,150,800", log);
+    TEST_ASSERT_EQUAL_STRING(":CL01", log);
 
     // t=300: release step, then STEP_END fires the FX_PANEL auto-reset.
     log[0] = '\0';
@@ -134,7 +134,7 @@ void test_late_tick_catches_up_all_overdue_steps() {
     // One late tick past the END time drains the whole sequence.
     char log[256] = "";
     TEST_ASSERT_EQUAL_INT(6, drainAt(st, 9000, log, sizeof(log)));
-    TEST_ASSERT_EQUAL_STRING("$H|@1MYes|:SM0,150,2200|:SM0,150,800|:CL00|:CL00", log);
+    TEST_ASSERT_EQUAL_STRING("$H|@1MYes|:OP01|:CL01|:CL00|:CL00", log);
     TEST_ASSERT_FALSE(seqEngineActive(st));
 }
 
@@ -182,7 +182,7 @@ void test_retry_does_not_drift_later_steps() {
 
     char log[256] = "";
     TEST_ASSERT_EQUAL_INT(4, drainAt(st, 1150, log, sizeof(log)));
-    TEST_ASSERT_EQUAL_STRING("$H|@1MYes|:SM0,150,2200|:SM0,150,800", log);
+    TEST_ASSERT_EQUAL_STRING("$H|@1MYes|:OP01|:CL01", log);
 }
 
 // -----------------------------------------------------------------------------
@@ -230,7 +230,7 @@ void test_restart_after_abort_runs_fresh() {
     seqEngineStart(st, &kFlatEntry, 5000);
     char log[256] = "";
     TEST_ASSERT_EQUAL_INT(3, drainAt(st, 5000, log, sizeof(log)));
-    TEST_ASSERT_EQUAL_STRING("$H|@1MYes|:SM0,150,2200", log);
+    TEST_ASSERT_EQUAL_STRING("$H|@1MYes|:OP01", log);
 }
 
 // -----------------------------------------------------------------------------
@@ -312,14 +312,14 @@ void test_real_reset_entry_clears_latches_and_resets() {
     SeqEngineState st;
     seqEngineInit(st);
     st.latches.piesOpen = true;
-    st.latches.lowOpen = true;
+    st.latches.ringOpen = true;
     seqEngineStart(st, e, 0);
 
     char log[256] = "";
     TEST_ASSERT_EQUAL_INT(5, drainAt(st, 2000, log, sizeof(log)));
     TEST_ASSERT_EQUAL_STRING("$s|:CL00|*ST00|@0T1|@0P1", log);
     TEST_ASSERT_FALSE(st.latches.piesOpen);
-    TEST_ASSERT_FALSE(st.latches.lowOpen);
+    TEST_ASSERT_FALSE(st.latches.ringOpen);
     TEST_ASSERT_FALSE(seqEngineActive(st));
 }
 
@@ -432,7 +432,7 @@ void test_real_rockmarch_second_pass_timing() {
     SeqAction act = {};
     TEST_ASSERT_FALSE(seqEnginePeek(st, 6460, stubRand, act));
     TEST_ASSERT_TRUE(seqEnginePeek(st, 6461, stubRand, act));
-    TEST_ASSERT_EQUAL_STRING(":SM0,150,2200", act.payload);
+    TEST_ASSERT_EQUAL_STRING(":OP01", act.payload);
 }
 
 // -----------------------------------------------------------------------------
@@ -440,13 +440,13 @@ void test_real_rockmarch_second_pass_timing() {
 // -----------------------------------------------------------------------------
 
 static const SeqStep kToggleOpenSteps[] = {
-    SEQ_DOME(0, FX_PANEL, ":SM8,100,2200"),
-    SEQ_DOME(100, FX_NONE, ":SM9,100,2200"),
+    SEQ_DOME(0, FX_PANEL, ":OPP1"),
+    SEQ_DOME(100, FX_NONE, ":OPP2"),
     SEQ_TERM(500),
 };
 static const SeqStep kToggleCloseSteps[] = {
-    SEQ_DOME(0, FX_NONE, ":SM8,100,800"),
-    SEQ_DOME(100, FX_NONE, ":SM9,100,800"),
+    SEQ_DOME(0, FX_NONE, ":CLP1"),
+    SEQ_DOME(100, FX_NONE, ":CLP2"),
     SEQ_TERM(500),
 };
 static const SequenceEntry kToggleEntry = {
@@ -470,7 +470,7 @@ void test_toggle_first_press_runs_open_branch_and_latches_open() {
     char log[256] = "";
     TEST_ASSERT_EQUAL_INT(2, drainAt(st, 500, log, sizeof(log)));
     // Open branch ends with panels open: no :CL00 despite FX_PANEL.
-    TEST_ASSERT_EQUAL_STRING(":SM8,100,2200|:SM9,100,2200", log);
+    TEST_ASSERT_EQUAL_STRING(":OPP1|:OPP2", log);
     TEST_ASSERT_FALSE(seqEngineActive(st));
     TEST_ASSERT_TRUE(st.latches.piesOpen);
 }
@@ -485,14 +485,14 @@ void test_toggle_second_press_runs_close_branch_and_releases() {
     char log[256] = "";
     TEST_ASSERT_EQUAL_INT(3, drainAt(st, 1500, log, sizeof(log)));
     // Close branch, then :CL00 release (no other group latched open).
-    TEST_ASSERT_EQUAL_STRING(":SM8,100,800|:SM9,100,800|:CL00", log);
+    TEST_ASSERT_EQUAL_STRING(":CLP1|:CLP2|:CL00", log);
     TEST_ASSERT_FALSE(st.latches.piesOpen);
 }
 
 void test_toggle_close_skips_release_while_another_group_open() {
     SeqEngineState st;
     seqEngineInit(st);
-    st.latches.lowOpen = true;  // ring panels latched open by DM:LOW
+    st.latches.ringOpen = true;  // ring panels latched open by DM:LOW
 
     seqEngineStart(st, &kToggleEntry, 0);
     drainAt(st, 500, nullptr, 0);  // pies open
@@ -501,9 +501,9 @@ void test_toggle_close_skips_release_while_another_group_open() {
     char log[256] = "";
     TEST_ASSERT_EQUAL_INT(2, drainAt(st, 1500, log, sizeof(log)));
     // No :CL00 — it would slam the ring panels DM:LOW left open.
-    TEST_ASSERT_EQUAL_STRING(":SM8,100,800|:SM9,100,800", log);
+    TEST_ASSERT_EQUAL_STRING(":CLP1|:CLP2", log);
     TEST_ASSERT_FALSE(st.latches.piesOpen);
-    TEST_ASSERT_TRUE(st.latches.lowOpen);
+    TEST_ASSERT_TRUE(st.latches.ringOpen);
 }
 
 void test_toggle_all_carries_pie_and_ring_latches() {
@@ -511,17 +511,15 @@ void test_toggle_all_carries_pie_and_ring_latches() {
     seqEngineInit(st);
     seqEngineStart(st, &kToggleAllEntry, 0);
     drainAt(st, 500, nullptr, 0);
-    TEST_ASSERT_TRUE(st.latches.allOpen);
     TEST_ASSERT_TRUE(st.latches.piesOpen);
-    TEST_ASSERT_TRUE(st.latches.lowOpen);
+    TEST_ASSERT_TRUE(st.latches.ringOpen);
 
     seqEngineStart(st, &kToggleAllEntry, 1000);
     char log[256] = "";
     TEST_ASSERT_EQUAL_INT(3, drainAt(st, 1500, log, sizeof(log)));
-    TEST_ASSERT_EQUAL_STRING(":SM8,100,800|:SM9,100,800|:CL00", log);
-    TEST_ASSERT_FALSE(st.latches.allOpen);
+    TEST_ASSERT_EQUAL_STRING(":CLP1|:CLP2|:CL00", log);
     TEST_ASSERT_FALSE(st.latches.piesOpen);
-    TEST_ASSERT_FALSE(st.latches.lowOpen);
+    TEST_ASSERT_FALSE(st.latches.ringOpen);
 }
 
 void test_toggle_abort_mid_open_closes_and_clears_latches() {
@@ -569,9 +567,9 @@ static void scriptRand(const uint32_t* vals, uint8_t n) {
 }
 
 static const SeqStep kRandomSteps[] = {
-    SEQ_RAND(0, SLOTSET_RING, 1150, 1500, 300, 0, 1),
-    SEQ_RAND(100, SLOTSET_RING, 1150, 1500, 300, 0, 1),
-    SEQ_RAND(200, SLOTSET_HOLD, 2200, 2200, 100, 0, 0),
+    SEQ_RAND(0, SLOTSET_RING, RAND_FLUTTER, 0, 300, 0, 1),
+    SEQ_RAND(100, SLOTSET_RING, RAND_OPEN, 0, 300, 0, 1),
+    SEQ_RAND(200, SLOTSET_HOLD, RAND_CLOSE, 0, 100, 0, 0),
     SEQ_TERM(500),
 };
 static const SequenceEntry kRandomEntry = {
@@ -580,41 +578,41 @@ static const SequenceEntry kRandomEntry = {
     2000, TOGGLE_NONE, nullptr, 0,
 };
 
-void test_random_step_resolves_slot_and_pulse_from_rng() {
+void test_random_step_resolves_target_and_mode_from_rng() {
     SeqEngineState st;
     seqEngineInit(st);
-    // slot pick: ring[2] = slot 2; pulse: 1150 + (57 % 351) = 1207
-    const uint32_t script[] = { 2, 57 };
-    scriptRand(script, 2);
+    // target pick: ring[2] = P3 -> :OF03 for flutter mode.
+    const uint32_t script[] = { 2 };
+    scriptRand(script, 1);
 
     seqEngineStart(st, &kRandomEntry, 0);
     SeqAction act = {};
     TEST_ASSERT_TRUE(seqEnginePeek(st, 0, scriptedRand, act));
     TEST_ASSERT_EQUAL_INT(SEQ_ACT_DOME_CMD, (int)act.kind);
-    TEST_ASSERT_EQUAL_STRING(":SM2,300,1207", act.payload);
+    TEST_ASSERT_EQUAL_STRING(":OF03", act.payload);
 }
 
 void test_random_pick_distinct_rerolls_and_hold_reuses() {
     SeqEngineState st;
     seqEngineInit(st);
-    // Step 1: pick ring[0]=slot0 (pulse roll 0 -> 1150).
-    // Step 2: rolls ring[0] again -> distinct re-roll -> ring[3]=slot3.
-    // Step 3: SLOTSET_HOLD reuses slot3 (pulse fixed 2200, no rolls).
-    const uint32_t script[] = { 0, 0, 0, 3, 0 };
-    scriptRand(script, 5);
+    // Step 1: pick ring[0]=P1.
+    // Step 2: rolls ring[0] again -> distinct re-roll -> ring[3]=P4.
+    // Step 3: SLOTSET_HOLD reuses P4 with close mode.
+    const uint32_t script[] = { 0, 0, 3 };
+    scriptRand(script, 3);
 
     seqEngineStart(st, &kRandomEntry, 0);
     SeqAction act = {};
     TEST_ASSERT_TRUE(seqEnginePeek(st, 0, scriptedRand, act));
-    TEST_ASSERT_EQUAL_STRING(":SM0,300,1150", act.payload);
+    TEST_ASSERT_EQUAL_STRING(":OF01", act.payload);
     seqEngineCommit(st);
 
     TEST_ASSERT_TRUE(seqEnginePeek(st, 100, scriptedRand, act));
-    TEST_ASSERT_EQUAL_STRING(":SM3,300,1150", act.payload);
+    TEST_ASSERT_EQUAL_STRING(":OP04", act.payload);
     seqEngineCommit(st);
 
     TEST_ASSERT_TRUE(seqEnginePeek(st, 200, scriptedRand, act));
-    TEST_ASSERT_EQUAL_STRING(":SM3,100,2200", act.payload);
+    TEST_ASSERT_EQUAL_STRING(":CL04", act.payload);
 }
 
 void test_random_peek_retry_keeps_same_resolution() {
@@ -628,13 +626,13 @@ void test_random_peek_retry_keeps_same_resolution() {
     SeqAction b = {};
     TEST_ASSERT_TRUE(seqEnginePeek(st, 0, scriptedRand, a));
     TEST_ASSERT_TRUE(seqEnginePeek(st, 10, scriptedRand, b));
-    // Uncommitted retry must not re-roll slot or pulse.
+    // Uncommitted retry must not re-roll target or mode.
     TEST_ASSERT_EQUAL_STRING(a.payload, b.payload);
 }
 
 void test_random_jitter_delays_fire_time() {
     static const SeqStep kJitterSteps[] = {
-        SEQ_RAND(100, SLOTSET_RING, 1200, 1200, 300, 500, 0),
+        SEQ_RAND(100, SLOTSET_RING, RAND_FLUTTER, 0, 300, 500, 0),
         SEQ_TERM(1500),
     };
     static const SequenceEntry kJitterEntry = {
@@ -645,7 +643,7 @@ void test_random_jitter_delays_fire_time() {
 
     SeqEngineState st;
     seqEngineInit(st);
-    // slot roll 0 -> slot0; jitter roll 300 % 501 = 300 -> fires at 400.
+    // target roll 0 -> P1; jitter roll 300 % 501 = 300 -> fires at 400.
     const uint32_t script[] = { 0, 300 };
     scriptRand(script, 2);
 
@@ -653,7 +651,7 @@ void test_random_jitter_delays_fire_time() {
     SeqAction act = {};
     TEST_ASSERT_FALSE(seqEnginePeek(st, 399, scriptedRand, act));
     TEST_ASSERT_TRUE(seqEnginePeek(st, 400, scriptedRand, act));
-    TEST_ASSERT_EQUAL_STRING(":SM0,300,1200", act.payload);
+    TEST_ASSERT_EQUAL_STRING(":OF01", act.payload);
 }
 
 void test_real_random_entries_are_catalog() {
@@ -673,21 +671,21 @@ void test_real_random_entries_are_catalog() {
     TEST_ASSERT_EQUAL_UINT16(500, overload->steps[5].params.jitterMs);
 }
 
-// Full OVERLOAD run with a scripted RNG: six drift commands, all within
-// bounds, ring slots distinct, then the auto-reset for all effect classes.
+// Full OVERLOAD run with a scripted RNG: six flutter commands, ring targets
+// distinct, then the auto-reset for all effect classes.
 void test_real_overload_runs_end_to_end() {
     const SequenceEntry* e = sequenceCatalogFind("DM:OVERLOAD");
     TEST_ASSERT_NOT_NULL(e);
 
     SeqEngineState st;
     seqEngineInit(st);
-    const uint32_t script[] = { 1, 0, 0 };  // varied picks, zero pulse/jitter rolls
+    const uint32_t script[] = { 1, 0, 0 };  // varied picks, zero jitter rolls
     scriptRand(script, 3);
 
     seqEngineStart(st, e, 0);
     char log[512] = "";
     int n = drainAt(st, 8000, log, sizeof(log));
-    // 1 audio category (empty payload) + 4 fx + 6 drifts + 4 auto-reset
+    // 1 audio category (empty payload) + 4 fx + 6 flutters + 4 auto-reset
     // (@0T1, @0P1, *ST00, :CL00) + audio stop is NOT expected (normal end).
     TEST_ASSERT_EQUAL_INT(15, n);
     TEST_ASSERT_NOT_NULL(strstr(log, "@1T4"));
@@ -704,15 +702,13 @@ void test_cl00_step_clears_latches() {
     SeqEngineState st;
     seqEngineInit(st);
     st.latches.piesOpen = true;
-    st.latches.lowOpen = true;
-    st.latches.allOpen = true;
+    st.latches.ringOpen = true;
 
     seqEngineStart(st, &kFlatEntry, 1000);
     drainAt(st, 1300, nullptr, 0);  // includes the :CL00 release step
 
     TEST_ASSERT_FALSE(st.latches.piesOpen);
-    TEST_ASSERT_FALSE(st.latches.lowOpen);
-    TEST_ASSERT_FALSE(st.latches.allOpen);
+    TEST_ASSERT_FALSE(st.latches.ringOpen);
 }
 
 void test_clear_latches_helper() {
@@ -758,7 +754,7 @@ int main(int /*argc*/, char** /*argv*/) {
     RUN_TEST(test_real_loop_entries_have_loop_headers);
     RUN_TEST(test_real_rockmarch_second_pass_timing);
 
-    RUN_TEST(test_random_step_resolves_slot_and_pulse_from_rng);
+    RUN_TEST(test_random_step_resolves_target_and_mode_from_rng);
     RUN_TEST(test_random_pick_distinct_rerolls_and_hold_reuses);
     RUN_TEST(test_random_peek_retry_keeps_same_resolution);
     RUN_TEST(test_random_jitter_delays_fire_time);
