@@ -26,6 +26,7 @@ struct SeqIndexEntry {
     char           source[8];     // "user" | "guild"
     bool           modified;      // a guild file edited in place
     char           file[40];      // basename under /data/seq/
+    bool           valid;         // false if file fails Protocol Check at boot
 };
 
 // Empty the index.

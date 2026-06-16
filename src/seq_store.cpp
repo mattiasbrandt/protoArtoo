@@ -71,6 +71,7 @@ static bool indexDraft(const SeqDraft& d, JsonVariantConst root, const char* fil
     strncpy(e.source, src, sizeof(e.source) - 1);
     e.modified = root["meta"]["modified"] | false;
     strncpy(e.file, file, sizeof(e.file) - 1);
+    e.valid = true;
     return seqStoreIndexAdd(e);
 }
 
@@ -115,15 +116,37 @@ void seqStoreInit() {
             continue;
         }
         SeqDraft d;
-        ProtocolCheckResult r = seqJsonParseVariant(doc.as<JsonVariantConst>(),
-                                                    s_main, 96, s_close, 96, d);
-        if (r.ok) r = protocolCheck(d);
-        if (!r.ok) {
-            PA_LOG_WARN(TAG, "skip %s: %s (%s)", file, r.message, r.field);
+        JsonVariantConst root = doc.as<JsonVariantConst>();
+        ProtocolCheckResult parseResult = seqJsonParseVariant(root, s_main, 96, s_close, 96, d);
+        if (!parseResult.ok) {
+            // Unreadable format — cannot extract reliable metadata; skip entirely.
+            PA_LOG_WARN(TAG, "skip %s: %s (%s)", file, parseResult.message, parseResult.field);
             ++skipped;
             continue;
         }
-        if (!indexDraft(d, doc.as<JsonVariantConst>(), file)) {
+        ProtocolCheckResult checkResult = protocolCheck(d);
+        if (!checkResult.ok) {
+            // Parseable but fails current contract (e.g. pre-Slice-1 :SM usage).
+            // Index as invalid so the UI can surface it for repair/export/delete.
+            PA_LOG_WARN(TAG, "index invalid %s: %s (%s)", file,
+                        checkResult.message, checkResult.field);
+            SeqIndexEntry inv = {};
+            strncpy(inv.name, d.name, sizeof(inv.name) - 1);
+            inv.toggleGroup = d.toggleGroup;
+            inv.suppressMs  = d.suppressMs;
+            const char* src = root["meta"]["source"] | "user";
+            strncpy(inv.source, src, sizeof(inv.source) - 1);
+            inv.modified = root["meta"]["modified"] | false;
+            strncpy(inv.file, file, sizeof(inv.file) - 1);
+            inv.valid = false;
+            if (!seqStoreIndexAdd(inv)) {
+                PA_LOG_WARN(TAG, "index full at %s (invalid)", file);
+                break;
+            }
+            ++indexed;
+            continue;
+        }
+        if (!indexDraft(d, root, file)) {
             PA_LOG_WARN(TAG, "index full at %s", file);
             break;
         }

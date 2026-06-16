@@ -56,6 +56,7 @@ void handleList(AsyncWebServerRequest* req) {
         o["suppressMs"] = e->suppressMs;
         o["source"] = e->source;
         o["modified"] = e->modified;
+        o["valid"] = e->valid;
         // A Learned Sequence that shadows a Factory one is "Retrained".
         o["retrained"] = (sequenceCatalogFind(e->name) != nullptr);
     }

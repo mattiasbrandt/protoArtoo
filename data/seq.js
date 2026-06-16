@@ -133,6 +133,11 @@
         `<span class="seq-badge seq-badge-retrained" title="This sequence shadows the factory ${seq.name}">Retrained</span>`
       );
     }
+    if (seq.valid === false) {
+      badges.push(
+        `<span class="seq-badge seq-badge-invalid" title="This sequence fails Protocol Check and cannot be run until repaired">Invalid</span>`
+      );
+    }
     const stepCount = seq.stepCount || 0;
     const modifiedDate = seq.modified ? new Date(seq.modified).toLocaleString() : "Unknown";
 
@@ -141,6 +146,8 @@
     const shareBtn = isCustom
       ? `<button class="btn btn-sm btn-action" data-action="share" data-seq-name="${escapeAttr(seq.name)}" title="Open a pre-filled GitHub issue to share this sequence with the project">Share to project</button>`
       : "";
+
+    const testBtnDisabled = seq.valid === false ? 'disabled title="Invalid sequence cannot be run — edit to repair"' : `data-seq-name="${escapeAttr(seq.name)}"`;
 
     return `
       <div class="seq-card">
@@ -156,7 +163,7 @@
         </div>
         <div class="seq-card-actions">
           <button class="btn btn-sm btn-action" data-action="edit" data-seq-name="${escapeAttr(seq.name)}">Edit</button>
-          <button class="btn btn-sm btn-action" data-action="test" data-seq-name="${escapeAttr(seq.name)}">Test</button>
+          <button class="btn btn-sm btn-action" data-action="test" ${testBtnDisabled}>Test</button>
           <button class="btn btn-sm btn-action" data-action="duplicate" data-seq-name="${escapeAttr(seq.name)}">Duplicate</button>
           <button class="btn btn-sm btn-action" data-action="memory-wipe" data-seq-name="${escapeAttr(seq.name)}">Memory Wipe</button>
           <button class="btn btn-sm btn-action" data-action="export" data-seq-name="${escapeAttr(seq.name)}">Export</button>
