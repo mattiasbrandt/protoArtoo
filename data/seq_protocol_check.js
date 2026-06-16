@@ -25,7 +25,40 @@
     "surprised",
     "whistle",
   ];
-  const RANDOM_SETS = ["ring", "pie"];
+  const RANDOM_SETS  = ["ring", "pie", "all", "hold"];
+  const RANDOM_MODES = ["flutter", "open", "close"];
+
+  // Allowed panel intent targets for :OP/:CL/:OF commands.
+  // Ring panels: numeric slot IDs present on a standard astromech ring.
+  // Pie / top panels: PP1-PP6 use the explicit "P1"-"P6" aliases (not numeric 08-13).
+  // Groups: 00=all, 14=pie/top group, 15=ring/bottom group.
+  const PANEL_INTENT_TARGETS = new Set([
+    "00", "14", "15",
+    "01", "02", "03", "04", "07", "11", "13",
+    "P1", "P2", "P3", "P4", "P5", "P6",
+  ]);
+
+  // Classify a panel intent target into its group for :OF cleanup tracking.
+  function panelGroup(target) {
+    if (target === "00") return "all";
+    if (target === "14") return "pie_group";
+    if (target === "15") return "ring_group";
+    if (["01", "02", "03", "04", "07", "11", "13"].indexOf(target) !== -1) return "ring";
+    if (["P1", "P2", "P3", "P4", "P5", "P6"].indexOf(target) !== -1) return "pie";
+    return "unknown";
+  }
+
+  // Returns true if a :CL<closeTarget> satisfies the cleanup requirement for
+  // a :OF<flutterTarget> step with the given group classification.
+  function closeSatisfiesFlutter(flutterTarget, flutterGroup, closeTarget) {
+    if (closeTarget === "00") return true;               // all-close satisfies everything
+    if (closeTarget === flutterTarget) return true;      // exact same target
+    if (flutterGroup === "ring"       && closeTarget === "15") return true;
+    if (flutterGroup === "pie"        && closeTarget === "14") return true;
+    if (flutterGroup === "pie_group"  && closeTarget === "14") return true;
+    if (flutterGroup === "ring_group" && closeTarget === "15") return true;
+    return false;
+  }
 
   const SeqProtocolCheck = {
     /**
@@ -72,7 +105,7 @@
      * @param {object} step
      * @param {number} stepIndex
      * @param {array} allSteps
-     * @param {boolean} isBranchRoot - whether step is in a loop body
+     * @param {boolean} isBranchRoot - true inside a loop body (skip outer non-decreasing check)
      * @returns {{ok: boolean, field?: string, error?: string}}
      */
     validateStep(step, stepIndex, allSteps = [], isBranchRoot = false) {
@@ -91,7 +124,7 @@
         };
       }
 
-      // Non-decreasing check (outside loop bodies)
+      // Non-decreasing check (outer sequence only; loop body steps use relative time)
       if (!isBranchRoot && stepIndex > 0) {
         const prevT = allSteps[stepIndex - 1]?.t || 0;
         if (t < prevT) {
@@ -112,22 +145,14 @@
         };
       }
 
-      // Type-specific validation
       switch (type) {
-        case "audio":
-          return this._validateAudioStep(step);
-        case "dome":
-          return this._validateDomeStep(step);
-        case "loop":
-          return this._validateLoopStep(step, allSteps);
-        case "random":
-          return this._validateRandomStep(step);
-        case "audioCat":
-          return this._validateAudioCatStep(step);
-        case "end":
-          return this._validateEndStep(step);
-        default:
-          return { ok: true };
+        case "audio":    return this._validateAudioStep(step);
+        case "dome":     return this._validateDomeStep(step);
+        case "loop":     return this._validateLoopStep(step, allSteps);
+        case "random":   return this._validateRandomStep(step);
+        case "audioCat": return this._validateAudioCatStep(step);
+        case "end":      return { ok: true };
+        default:         return { ok: true };
       }
     },
 
@@ -136,12 +161,11 @@
       if (!cmd || typeof cmd !== "string") {
         return { ok: false, field: "cmd", error: "Audio command required" };
       }
-      // Basic check: starts with $ or is a named track reference
       if (!cmd.startsWith("$")) {
         return {
           ok: false,
           field: "cmd",
-          error: "Audio command must start with $ (e.g., $H for Hello)",
+          error: "Audio command must start with $ (e.g., $H for Happy)",
         };
       }
       return { ok: true };
@@ -153,57 +177,65 @@
         return { ok: false, field: "cmd", error: "Dome command required" };
       }
 
-      // Recognized dome commands: :SM..., @, *, :SE##, :CL00
-      const validPatterns = [
-        /^:SM\d{1,2},\d{1,4},\d{3,4}$/, // :SM<slot>,<move>,<pulse>
-        /^@$/, // Sweep
-        /^\*$/, // Random pulse
-        /^:SE\d{2}$/, // Sound effect :SE##
-        /^:CL00$/, // Center light reset
-      ];
-
-      const isValid = validPatterns.some((pattern) => pattern.test(cmd));
-      if (!isValid) {
+      // Explicit rejection with clear actionable message
+      if (cmd.startsWith(":SM")) {
         return {
           ok: false,
           field: "cmd",
-          error: "Dome command not recognized (valid: :SM<slot>,<move>,<pulse>, @, *, :SE##, :CL00)",
+          error:
+            ":SM is diagnostic/calibration only — use :OP/:CL/:OF panel intent commands in sequences",
+        };
+      }
+      if (/^DM:/.test(cmd)) {
+        return {
+          ok: false,
+          field: "cmd",
+          error: "DM:* is a sequence trigger, not a step command",
         };
       }
 
-      // If :SM, validate components
-      if (cmd.startsWith(":SM")) {
-        const match = cmd.match(/^:SM(\d{1,2}),(\d{1,4}),(\d{3,4})$/);
-        if (match) {
-          const slot = parseInt(match[1], 10);
-          const ms = parseInt(match[2], 10);
-          const pulse = parseInt(match[3], 10);
-
-          if (slot < 0 || slot > 12) {
-            return {
-              ok: false,
-              field: "cmd",
-              error: "Dome slot must be 0–12",
-            };
-          }
-          if (pulse < 800 || pulse > 2200) {
-            return {
-              ok: false,
-              field: "cmd",
-              error: "Dome pulse must be 800–2200",
-            };
-          }
-          if (ms < 50 || ms > 5000) {
-            return {
-              ok: false,
-              field: "cmd",
-              error: "Dome move time must be 50–5000ms",
-            };
-          }
+      // Panel intent: :OP<target>, :CL<target>, :OF<target>
+      if (cmd.startsWith(":OP") || cmd.startsWith(":CL") || cmd.startsWith(":OF")) {
+        const target = cmd.slice(3);
+        if (!PANEL_INTENT_TARGETS.has(target)) {
+          const numericAmbiguous = /^\d{2}$/.test(target);
+          const hint = numericAmbiguous
+            ? " (targets 08-10 and 12 are ambiguous pie/ring IDs — use explicit aliases P1-P6 for pie panels)"
+            : "";
+          return {
+            ok: false,
+            field: "cmd",
+            error:
+              `Panel target "${target}" not in allowed set${hint}. ` +
+              "Use ring (01-04,07,11,13), pie (P1-P6), or group (00=all, 14=pie, 15=ring)",
+          };
         }
+        return { ok: true };
       }
 
-      return { ok: true };
+      // Non-panel dome effects (Advanced mode only)
+      if (cmd.startsWith("@")) return { ok: true };  // logic / PSI commands
+      if (cmd.startsWith("*")) return { ok: true };  // holo / HP commands
+
+      // :SE## — legacy Marcduino sequence trigger (Advanced only, not for panel control)
+      if (cmd.startsWith(":SE")) {
+        const seNum = cmd.slice(3);
+        if (!/^\d{2}$/.test(seNum)) {
+          return {
+            ok: false,
+            field: "cmd",
+            error: ":SE requires exactly 2 digits (e.g., :SE07)",
+          };
+        }
+        return { ok: true };
+      }
+
+      return {
+        ok: false,
+        field: "cmd",
+        error:
+          "Dome command not recognized. Use :OP/:CL/:OF for panels, @... for logic/PSI, *... for holos, or :SE## for Marcduino sequences",
+      };
     },
 
     _validateLoopStep(step, _allSteps) {
@@ -217,11 +249,7 @@
         };
       }
 
-      if (
-        typeof periodMs !== "number" ||
-        periodMs < 100 ||
-        periodMs > 60000
-      ) {
+      if (typeof periodMs !== "number" || periodMs < 100 || periodMs > 60000) {
         return {
           ok: false,
           field: "periodMs",
@@ -229,11 +257,7 @@
         };
       }
 
-      if (
-        typeof durationMs !== "number" ||
-        durationMs < 100 ||
-        durationMs > 120000
-      ) {
+      if (typeof durationMs !== "number" || durationMs < 100 || durationMs > 120000) {
         return {
           ok: false,
           field: "durationMs",
@@ -241,7 +265,6 @@
         };
       }
 
-      // Period must be <= duration
       if (periodMs > durationMs) {
         return {
           ok: false,
@@ -254,7 +277,17 @@
     },
 
     _validateRandomStep(step) {
-      const { set, pulseMin, pulseMax, moveMs, jitterMs, distinct } = step;
+      const { set, mode, moveMs, jitterMs, distinct } = step;
+
+      // Reject legacy pulse fields from old random step format
+      if (typeof step.pulseMin !== "undefined" || typeof step.pulseMax !== "undefined") {
+        return {
+          ok: false,
+          field: "pulseMin",
+          error:
+            "Random pulse ranges are not supported — use mode (flutter/open/close) with a logical target set instead",
+        };
+      }
 
       if (!RANDOM_SETS.includes(set)) {
         return {
@@ -264,43 +297,19 @@
         };
       }
 
-      if (
-        typeof pulseMin !== "number" ||
-        pulseMin < 800 ||
-        pulseMin > 2200
-      ) {
+      if (!RANDOM_MODES.includes(mode)) {
         return {
           ok: false,
-          field: "pulseMin",
-          error: "Min pulse must be 800–2200",
+          field: "mode",
+          error: `Random mode must be one of: ${RANDOM_MODES.join(", ")}`,
         };
       }
 
-      if (
-        typeof pulseMax !== "number" ||
-        pulseMax < 800 ||
-        pulseMax > 2200
-      ) {
-        return {
-          ok: false,
-          field: "pulseMax",
-          error: "Max pulse must be 800–2200",
-        };
-      }
-
-      if (pulseMin > pulseMax) {
-        return {
-          ok: false,
-          field: "pulseMin",
-          error: "Min pulse must be <= max pulse",
-        };
-      }
-
-      if (typeof moveMs !== "number" || moveMs < 50 || moveMs > 5000) {
+      if (typeof moveMs !== "number" || moveMs < 0 || moveMs > 5000) {
         return {
           ok: false,
           field: "moveMs",
-          error: "Move time must be 50–5000ms",
+          error: "Move time must be 0–5000ms",
         };
       }
 
@@ -335,11 +344,7 @@
       }
 
       if (!fallback || typeof fallback !== "string") {
-        return {
-          ok: false,
-          field: "fallback",
-          error: "Fallback track required",
-        };
+        return { ok: false, field: "fallback", error: "Fallback track required" };
       }
 
       if (!fallback.startsWith("$")) {
@@ -353,7 +358,40 @@
       return { ok: true };
     },
 
-    _validateEndStep(_step) {
+    // Check :OF cleanup within a single branch (flat list of steps).
+    // Every :OF<target> step must be followed by a matching :CL command in
+    // the same branch. See the panel intent contract in docs/adr/0008.
+    _checkBranchOfCleanup(steps) {
+      const pending = []; // { target, group }
+
+      for (const step of steps) {
+        if (step.type !== "dome" || !step.cmd) continue;
+        const cmd = step.cmd;
+
+        if (cmd.startsWith(":OF")) {
+          const target = cmd.slice(3);
+          if (PANEL_INTENT_TARGETS.has(target)) {
+            pending.push({ target, group: panelGroup(target) });
+          }
+        } else if (cmd.startsWith(":CL")) {
+          const closeTarget = cmd.slice(3);
+          for (let i = pending.length - 1; i >= 0; i--) {
+            const f = pending[i];
+            if (closeSatisfiesFlutter(f.target, f.group, closeTarget)) {
+              pending.splice(i, 1);
+            }
+          }
+        }
+      }
+
+      if (pending.length > 0) {
+        const targets = pending.map((f) => `:OF${f.target}`).join(", ");
+        return {
+          ok: false,
+          field: "steps",
+          error: `Panel flutter without cleanup: ${targets} — each :OF step must be followed by a matching :CL in the same branch`,
+        };
+      }
       return { ok: true };
     },
 
@@ -373,7 +411,7 @@
       const nameVal = this.validateName(name);
       if (!nameVal.ok) return { ok: false, field: "name", error: nameVal.error };
 
-      // Suppress
+      // Suppress window
       let endT = 0;
       if (steps && steps.length > 0) {
         const endStep = steps.find((s) => s.type === "end");
@@ -381,11 +419,7 @@
       }
       const suppressVal = this.validateSuppressMs(suppressMs, endT);
       if (!suppressVal.ok) {
-        return {
-          ok: false,
-          field: "suppressMs",
-          error: suppressVal.error,
-        };
+        return { ok: false, field: "suppressMs", error: suppressVal.error };
       }
 
       // Toggle group
@@ -397,15 +431,13 @@
         };
       }
 
-      // Steps
+      // Steps array
       if (!Array.isArray(steps)) {
         return { ok: false, field: "steps", error: "Steps must be an array" };
       }
-
       if (steps.length === 0) {
         return { ok: false, error: "Sequence must have at least one step" };
       }
-
       if (steps.length > 96) {
         return { ok: false, error: "Sequence cannot exceed 96 steps" };
       }
@@ -416,8 +448,8 @@
         return { ok: false, error: "Sequence must end with an 'end' type step" };
       }
 
-      // Identify loop body step indices so we can skip the non-decreasing time check
-      // for them — body step t values are relative to the loop iteration, not absolute.
+      // Identify loop body step indices so we can skip outer non-decreasing time
+      // check for them — body step times are relative to the loop iteration.
       const bodyStepIndices = new Set();
       {
         let j = 0;
@@ -433,14 +465,13 @@
         }
       }
 
-      // Validate each step. Non-decreasing time check is applied only to
-      // outer-sequence steps; body steps have their own per-iteration timing.
+      // Validate each step individually
       const warnings = [];
       let lastOuterT = -1;
       for (let i = 0; i < steps.length; i++) {
         const isBody = bodyStepIndices.has(i);
         // Pass isBranchRoot=true to suppress validateStep's built-in non-decreasing
-        // check; we enforce it below for outer steps only.
+        // check; outer-sequence ordering is enforced below instead.
         const stepVal = this.validateStep(steps[i], i, steps, true);
         if (!stepVal.ok) {
           return {
@@ -461,6 +492,28 @@
         }
       }
 
+      // :OF cleanup check — outer branch (all non-body steps)
+      const outerSteps = steps.filter((_, i) => !bodyStepIndices.has(i));
+      const outerCleanup = this._checkBranchOfCleanup(outerSteps);
+      if (!outerCleanup.ok) return outerCleanup;
+
+      // :OF cleanup check — each loop body independently
+      {
+        let j = 0;
+        while (j < steps.length) {
+          const s = steps[j];
+          if (s.type === "loop" && typeof s.body === "number" && s.body > 0) {
+            const count = Math.min(s.body, steps.length - j - 1);
+            const bodySteps = steps.slice(j + 1, j + 1 + count);
+            const bodyCleanup = this._checkBranchOfCleanup(bodySteps);
+            if (!bodyCleanup.ok) return bodyCleanup;
+            j += count + 1;
+          } else {
+            j++;
+          }
+        }
+      }
+
       return { ok: true, warnings };
     },
 
@@ -473,9 +526,7 @@
       if (!Array.isArray(steps) || steps.length === 0) return 0;
       let maxT = 0;
       steps.forEach((step) => {
-        if (typeof step.t === "number") {
-          maxT = Math.max(maxT, step.t);
-        }
+        if (typeof step.t === "number") maxT = Math.max(maxT, step.t);
       });
       return maxT;
     },

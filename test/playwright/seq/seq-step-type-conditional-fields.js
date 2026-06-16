@@ -40,7 +40,7 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
       meta: { source: 'test', notes: '' },
       steps: [
         { t: 0, type: 'audio', cmd: '$H' },
-        { t: 0, type: 'dome', cmd: ':SM0,150,2200' },
+        { t: 0, type: 'dome', cmd: ':OP00' },
         { t: 500, type: 'end' },
       ],
       closeSteps: [],
@@ -104,7 +104,7 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
     await testStepType('audio', ['cmd']);
     await testStepType('dome', ['cmd']);
     await testStepType('loop', ['body', 'periodMs', 'durationMs']);
-    await testStepType('random', ['set', 'pulseMin', 'pulseMax', 'moveMs', 'jitterMs', 'distinct']);
+    await testStepType('random', ['set', 'mode', 'moveMs', 'jitterMs', 'distinct']);
     await testStepType('audioCat', ['category', 'fallback']);
     await testStepType('end', []); // end has no fields (except empty span)
 

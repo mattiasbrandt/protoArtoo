@@ -37,7 +37,7 @@ async function test() {
       meta: { source: "test", notes: "" },
       steps: [
         { t: 0, type: "audio", cmd: "$H" },
-        { t: 0, type: "dome", cmd: ":SM0,150,2200" },
+        { t: 0, type: "dome", cmd: ":OP00" },
         { t: 100, type: "loop", body: 2, periodMs: 1846, durationMs: 14000 },
         { t: 500, type: "end" },
       ],

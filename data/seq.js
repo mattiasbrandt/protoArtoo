@@ -309,7 +309,74 @@
         html = `<input class="step-field step-field-cmd" type="text" data-field="cmd" value="${escapeHtml(step.cmd || "")}" placeholder="$H, $N, $D, $A..." aria-label="Audio command">`;
         break;
       case "dome":
-        html = `<input class="step-field step-field-cmd" type="text" data-field="cmd" value="${escapeHtml(step.cmd || "")}" placeholder=":SM0,150,2200" aria-label="Dome command">`;
+        // Detect mode from step.cmd: panel intent if starts with :OP, :CL, :OF; otherwise advanced
+        const domeCmd = step.cmd || "";
+        // Check for forced mode attribute (used during toggle)
+        const forcedMode = fieldsContainer.dataset.domeMode;
+        let isPanelMode;
+        if (forcedMode) {
+          isPanelMode = forcedMode === "panel";
+          // Clear the forced mode after use
+          delete fieldsContainer.dataset.domeMode;
+        } else {
+          isPanelMode = /^(:|)(OP|CL|OF)/.test(domeCmd);
+        }
+
+        if (isPanelMode) {
+          // Parse action and target from cmd, e.g., ":OP01" -> action="OP", target="01"
+          let action = "";
+          let target = "";
+          const match = domeCmd.match(/^:?(OP|CL|OF)(.+)$/);
+          if (match) {
+            action = match[1];
+            target = match[2];
+          }
+
+          html = `
+            <div class="dome-panel-mode">
+              <select class="step-field dome-action-select" aria-label="Panel action">
+                <option value="OP" ${action === "OP" ? "selected" : ""}>Open (:OP)</option>
+                <option value="CL" ${action === "CL" ? "selected" : ""}>Close (:CL)</option>
+                <option value="OF" ${action === "OF" ? "selected" : ""}>Flutter (:OF)</option>
+              </select>
+              <select class="step-field dome-target-select" aria-label="Panel target">
+                <optgroup label="Groups">
+                  <option value="00" ${target === "00" ? "selected" : ""}>All panels (00)</option>
+                  <option value="14" ${target === "14" ? "selected" : ""}>Pie / top group (14)</option>
+                  <option value="15" ${target === "15" ? "selected" : ""}>Ring / bottom group (15)</option>
+                </optgroup>
+                <optgroup label="Ring panels">
+                  <option value="01" ${target === "01" ? "selected" : ""}>P1 → 01</option>
+                  <option value="02" ${target === "02" ? "selected" : ""}>P2 → 02</option>
+                  <option value="03" ${target === "03" ? "selected" : ""}>P3 → 03</option>
+                  <option value="04" ${target === "04" ? "selected" : ""}>P4 → 04</option>
+                  <option value="07" ${target === "07" ? "selected" : ""}>P7 → 07</option>
+                  <option value="11" ${target === "11" ? "selected" : ""}>P11 → 11</option>
+                  <option value="13" ${target === "13" ? "selected" : ""}>P13 → 13</option>
+                </optgroup>
+                <optgroup label="Pie / top panels">
+                  <option value="P1" ${target === "P1" ? "selected" : ""}>PP1 → P1</option>
+                  <option value="P2" ${target === "P2" ? "selected" : ""}>PP2 → P2</option>
+                  <option value="P3" ${target === "P3" ? "selected" : ""}>PP3 → P3</option>
+                  <option value="P4" ${target === "P4" ? "selected" : ""}>PP4 → P4</option>
+                  <option value="P5" ${target === "P5" ? "selected" : ""}>PP5 → P5</option>
+                  <option value="P6" ${target === "P6" ? "selected" : ""}>PP6 → P6</option>
+                </optgroup>
+              </select>
+              <span class="dome-cmd-preview">:${action}${target}</span>
+              <button class="dome-mode-toggle" aria-label="Switch to advanced mode">Advanced</button>
+              <input type="hidden" class="step-field" data-field="cmd" value="${escapeHtml(domeCmd)}">
+            </div>
+          `;
+        } else {
+          // Advanced mode: raw text input
+          html = `
+            <div class="dome-advanced-mode">
+              <input class="step-field step-field-cmd" type="text" data-field="cmd" value="${escapeHtml(domeCmd)}" placeholder="@0T6, *HP0, :SE07" aria-label="Dome command (advanced)">
+              <button class="dome-mode-toggle" aria-label="Switch to panel mode">Panel</button>
+            </div>
+          `;
+        }
         break;
       case "loop":
         html = `
@@ -320,14 +387,19 @@
         break;
       case "random":
         html = `
-          <select class="step-field step-field-set" data-field="set" aria-label="Random set">
+          <select class="step-field step-field-set" data-field="set" aria-label="Random target set">
             <option value="ring" ${step.set === "ring" ? "selected" : ""}>ring</option>
             <option value="pie" ${step.set === "pie" ? "selected" : ""}>pie</option>
+            <option value="all" ${step.set === "all" ? "selected" : ""}>all</option>
+            <option value="hold" ${step.set === "hold" ? "selected" : ""}>hold</option>
           </select>
-          <input class="step-field step-field-pulseMin" type="number" data-field="pulseMin" value="${step.pulseMin || 1150}" min="800" max="2200" aria-label="Min pulse" placeholder="pulseMin">
-          <input class="step-field step-field-pulseMax" type="number" data-field="pulseMax" value="${step.pulseMax || 1500}" min="800" max="2200" aria-label="Max pulse" placeholder="pulseMax">
-          <input class="step-field step-field-moveMs" type="number" data-field="moveMs" value="${step.moveMs || 300}" min="50" max="5000" aria-label="Move time (ms)" placeholder="moveMs">
-          <input class="step-field step-field-jitterMs" type="number" data-field="jitterMs" value="${step.jitterMs || 0}" min="0" max="2000" aria-label="Jitter (ms)" placeholder="jitterMs">
+          <select class="step-field step-field-mode" data-field="mode" aria-label="Random mode">
+            <option value="flutter" ${(step.mode || "flutter") === "flutter" ? "selected" : ""}>flutter</option>
+            <option value="open" ${step.mode === "open" ? "selected" : ""}>open</option>
+            <option value="close" ${step.mode === "close" ? "selected" : ""}>close</option>
+          </select>
+          <input class="step-field step-field-moveMs" type="number" data-field="moveMs" value="${step.moveMs ?? 300}" min="0" max="5000" aria-label="Move time (ms)" placeholder="moveMs">
+          <input class="step-field step-field-jitterMs" type="number" data-field="jitterMs" value="${step.jitterMs ?? 0}" min="0" max="2000" aria-label="Jitter (ms)" placeholder="jitterMs">
           <label class="step-field-checkbox"><input type="checkbox" data-field="distinct" ${step.distinct ? "checked" : ""} aria-label="Distinct"> Distinct</label>
         `;
         break;
@@ -469,7 +541,7 @@
       let value = input.value;
       if (input.type === "checkbox") {
         value = input.checked;
-      } else if (field === "t" || field === "body" || field === "periodMs" || field === "durationMs" || field === "pulseMin" || field === "pulseMax" || field === "moveMs" || field === "jitterMs") {
+      } else if (field === "t" || field === "body" || field === "periodMs" || field === "durationMs" || field === "moveMs" || field === "jitterMs") {
         value = parseInt(value, 10);
       }
       step[field] = value;
@@ -577,12 +649,76 @@
 
   // Called from renderEditorView (initial) and rerenderStepTable (after any step change).
   // Step rows are re-created on every rerender, so fresh listeners are needed each time.
+  // Helper: Attach dome panel intent listeners to a specific fields container
+  const attachDomePanelIntentListeners = (fieldsContainer, stepIdx) => {
+    // Dome panel intent action/target selects update the hidden cmd field
+    fieldsContainer.querySelectorAll(".dome-action-select, .dome-target-select").forEach((select) => {
+      select.addEventListener("change", () => {
+        const actionSelect = fieldsContainer.querySelector(".dome-action-select");
+        const targetSelect = fieldsContainer.querySelector(".dome-target-select");
+        const hiddenInput = fieldsContainer.querySelector('input[data-field="cmd"]');
+        const preview = fieldsContainer.querySelector(".dome-cmd-preview");
+
+        if (actionSelect && targetSelect && hiddenInput) {
+          const action = actionSelect.value;
+          const target = targetSelect.value;
+          const cmd = `:${action}${target}`;
+          hiddenInput.value = cmd;
+          if (preview) preview.textContent = cmd;
+          editorState.current.steps[stepIdx].cmd = cmd;
+          validateAndUpdateStep(stepIdx);
+        }
+      });
+    });
+
+    // Dome panel intent mode toggle
+    const toggleBtn = fieldsContainer.querySelector(".dome-mode-toggle");
+    if (toggleBtn) {
+      toggleBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+
+        // Determine current mode by checking what UI is visible (panel selects exist = panel mode)
+        const isPanelMode = !!fieldsContainer.querySelector(".dome-action-select");
+
+        // Toggle to the opposite mode
+        if (isPanelMode) {
+          // Currently in panel mode; switch to advanced mode
+          // Keep the current cmd as-is (it's a valid panel intent command)
+          fieldsContainer.dataset.domeMode = "advanced";
+        } else {
+          // Currently in advanced mode; switch to panel mode
+          // Try to parse the cmd; if it's not a panel intent, default to :OP00
+          const hiddenInput = fieldsContainer.querySelector('input[data-field="cmd"]');
+          const currentCmd = hiddenInput ? hiddenInput.value : "";
+          const match = currentCmd.match(/^:?(OP|CL|OF)(.+)$/);
+          if (!match) {
+            // Not a panel intent; default to :OP00
+            editorState.current.steps[stepIdx].cmd = ":OP00";
+          }
+          // If it IS a panel intent, keep cmd as-is
+          fieldsContainer.dataset.domeMode = "panel";
+        }
+
+        renderStepFields(editorState.current.steps[stepIdx], fieldsContainer);
+
+        // Re-attach listeners for the newly rendered fields
+        fieldsContainer.querySelectorAll("[data-field]").forEach((input) => {
+          input.addEventListener("input", () => validateAndUpdateStep(stepIdx));
+          input.addEventListener("change", () => validateAndUpdateStep(stepIdx));
+        });
+
+        attachDomePanelIntentListeners(fieldsContainer, stepIdx);
+        validateAndUpdateStep(stepIdx);
+      });
+    }
+  };
+
   const attachStepListeners = () => {
     const stepTypeDefaults = {
       audio: { cmd: "$H" },
-      dome: { cmd: ":SM0,150,2200" },
+      dome: { cmd: ":OP00" },
       loop: { body: 2, periodMs: 1846, durationMs: 14000 },
-      random: { set: "ring", pulseMin: 1150, pulseMax: 1500, moveMs: 300, jitterMs: 500, distinct: true },
+      random: { set: "ring", mode: "flutter", moveMs: 300, jitterMs: 500, distinct: true },
       audioCat: { category: "alert", fallback: "$H" },
       end: {},
     };
@@ -613,6 +749,11 @@
           input.addEventListener("change", () => validateAndUpdateStep(stepIdx));
         });
 
+        // If switching to dome type, attach dome-specific listeners
+        if (newType === "dome") {
+          attachDomePanelIntentListeners(fieldsContainer, stepIdx);
+        }
+
         validateAndUpdateStep(stepIdx);
       });
     });
@@ -623,6 +764,16 @@
       const stepIdx = parseInt(row.dataset.stepIndex, 10);
       input.addEventListener("input", () => validateAndUpdateStep(stepIdx));
       input.addEventListener("change", () => validateAndUpdateStep(stepIdx));
+    });
+
+    // Attach dome-specific listeners for each dome step
+    document.querySelectorAll(".step-row").forEach((row) => {
+      const stepIdx = parseInt(row.dataset.stepIndex, 10);
+      const fieldsContainer = row.querySelector(".step-fields");
+      const typeChip = row.querySelector(".step-type-chip.active");
+      if (typeChip && typeChip.dataset.type === "dome" && fieldsContainer) {
+        attachDomePanelIntentListeners(fieldsContainer, stepIdx);
+      }
     });
 
     // Step remove buttons
