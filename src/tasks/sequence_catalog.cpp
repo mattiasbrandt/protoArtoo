@@ -455,18 +455,26 @@ static const SeqStep kLowOpenSteps[] = {
     SEQ_TERM(5900),
 };
 
-// DM:LOW close — reset holos, close P4,P2,P1,P3,P13,P7,P11 serially.
+// DM:LOW close — reset holos, then close ring panels ONE AT A TIME with ~500 ms
+// settle between each. The wide cadence is deliberate, not cosmetic: closing all 7
+// ring servos in the original tight 150 ms burst from a fully-open state browned out
+// the dome (esp_reset_reason=BROWNOUT, code 9, 2026-06-17 hardware repro) -- the dome
+// dropped by ~the 3rd close, so overlapping servo inrush current exceeded the dome
+// supply. The holo reset (*ST00) is isolated at t=0 so its draw does not stack with
+// the first panel close, and the terminal scoped :CL15 (emitted at SEQ_TERM) is
+// staggered ~1 s after the last individual close. See
+// tasks/issue2-panel-intent-rewrite-plan.md "Hardware regression 2026-06-17".
 static const SeqStep kLowCloseSteps[] = {
     SEQ_DOME(0, FX_NONE, "*ST00"),
     SEQ_AUDIO(0, "$H"),
-    SEQ_DOME(0, FX_NONE, ":CL04"),
-    SEQ_DOME(150, FX_NONE, ":CL02"),
-    SEQ_DOME(300, FX_NONE, ":CL01"),
-    SEQ_DOME(450, FX_NONE, ":CL03"),
-    SEQ_DOME(600, FX_NONE, ":CL13"),
-    SEQ_DOME(750, FX_NONE, ":CL07"),
-    SEQ_DOME(900, FX_NONE, ":CL11"),
-    SEQ_TERM(2050),
+    SEQ_DOME(500, FX_NONE, ":CL04"),
+    SEQ_DOME(1000, FX_NONE, ":CL02"),
+    SEQ_DOME(1500, FX_NONE, ":CL01"),
+    SEQ_DOME(2000, FX_NONE, ":CL03"),
+    SEQ_DOME(2500, FX_NONE, ":CL13"),
+    SEQ_DOME(3000, FX_NONE, ":CL07"),
+    SEQ_DOME(3500, FX_NONE, ":CL11"),
+    SEQ_TERM(4500),
 };
 
 // DM:OPENALL open — pie sweep, ring panels together, then P1/P2 + PP2/PP4
