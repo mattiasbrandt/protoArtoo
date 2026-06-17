@@ -264,3 +264,12 @@ bool seqEnginePeek(SeqEngineState& st, uint32_t nowMs, SeqRandFn rnd, SeqAction&
 
 // Consume the previously peeked action after successful dispatch.
 void seqEngineCommit(SeqEngineState& st);
+
+// Physical ring panel count, and the individual close command (":CLnn") for ring
+// panel index i (0..count-1). Lets callers outside the engine (the dispatcher's
+// estop-clear / dome-reconnect resync) stage a ring-only close one panel at a
+// time instead of a brownout-prone group :CL15. `buf` needs >= 6 bytes; returns
+// false for an out-of-range index or too-small buffer. Single source of truth
+// for the ring panel set lives in sequence_engine.cpp.
+uint8_t seqEngineRingPanelCount(void);
+bool    seqEngineRingCloseCmd(uint8_t i, char* buf, uint8_t bufLen);

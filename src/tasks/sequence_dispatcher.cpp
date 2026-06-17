@@ -154,6 +154,15 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
     char activeName[24] = "";
     static SequenceEntry runtimeEntry;  // storage for a loaded Learned Sequence
 
+    // Staged ring-only resync close (estop-clear / dome-reconnect): emit one
+    // individual ring close per kResyncCloseSpacingMs so single-servo inrush
+    // never overlaps. A group :CL15 closes every ring servo at once and browns
+    // out the dome from a loaded ring (2026-06-17 hardware finding), so resync
+    // must never send it. resyncCloseIdx == 0xFF means no staged close pending.
+    const uint32_t kResyncCloseSpacingMs = 500;
+    uint8_t        resyncCloseIdx = 0xFF;
+    uint32_t       resyncCloseDueMs = 0;
+
     while (true) {
         esp_task_wdt_reset();
         const uint32_t now = millis();
@@ -193,6 +202,7 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
                     entry = &runtimeEntry;
                 }
                 seqEngineStart(engine, entry, now);
+                resyncCloseIdx = 0xFF;  // a new run supersedes any staged resync close
                 strncpy(activeName, req.name, sizeof(activeName) - 1);
                 activeName[sizeof(activeName) - 1] = '\0';
                 retryLogged = false;
@@ -219,12 +229,14 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
             activeName[0] = '\0';
         }
         if (!estopActive && prevEstop) {
-            PA_LOG_INFO(TAG, "estop cleared — dome resync");
-            // Ring-scoped close only: :CL00 closes the pie group too, which
-            // stalls the pie servos on this droid (issue #2 hardware finding).
-            // No automatic/replayable path may emit :CL00 until dome pie-close
-            // is proven safe. Ring close is proven safe.
-            domeQueueTx(":CL15");
+            PA_LOG_INFO(TAG, "estop cleared — dome resync (staged ring close)");
+            // Stage an individual ring-only close (drained below), never a group
+            // :CL15/:CL00: a group close drives every ring servo simultaneously
+            // and browns out the dome from a loaded ring (issue #2 hardware
+            // finding). Pies are never auto-closed on resync. Logic/PSI reset is
+            // a single non-servo command, so it stays immediate.
+            resyncCloseIdx = 0;
+            resyncCloseDueMs = now;
             domeQueueTx("@0T1");
             domeQueueTx("@0P1");
             seqEngineClearLatches(engine);
@@ -232,25 +244,43 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
         prevEstop = estopActive;
 
         // Dome (re)connect resync (ADR 0004 decision 8): panel state on the
-        // dome is unknown after boot or a link gap, so assume closed — abort
-        // any running sequence, close/release the ring group, clear the latches.
-        // Ring-scoped (:CL15) not :CL00: see the estop-clear resync above —
-        // :CL00 stalls the pie servos on this droid.
+        // dome is unknown after boot or a link gap, so assume closed — abort any
+        // running sequence, stage an individual ring-only close (drained below),
+        // and clear the latches. Never a group :CL15/:CL00 (see the estop-clear
+        // resync above — a group close browns out the dome from a loaded ring);
+        // pies are never auto-closed on resync.
         const bool domeConn = domeConnected();
         if (domeConn && !prevDomeConn) {
-            PA_LOG_INFO(TAG, "dome (re)connected — panel state resync");
+            PA_LOG_INFO(TAG, "dome (re)connected — panel state resync (staged ring close)");
             if (seqEngineActive(engine)) {
                 seqEngineAbort(engine);
                 drainBestEffort(engine, now);
                 clearSuppression();
                 activeName[0] = '\0';
             }
-            domeQueueTx(":CL15");
+            resyncCloseIdx = 0;
+            resyncCloseDueMs = now;
             domeQueueTx("@0T1");
             domeQueueTx("@0P1");
             seqEngineClearLatches(engine);
         }
         prevDomeConn = domeConn;
+
+        // Drain the staged ring-only resync close: one individual :CLnn per
+        // kResyncCloseSpacingMs (best-effort — hold the index on a full TX queue
+        // and retry next tick). Never a group close; never a pie close.
+        if (resyncCloseIdx != 0xFF && (int32_t)(now - resyncCloseDueMs) >= 0) {
+            char closeCmd[8];
+            if (!seqEngineRingCloseCmd(resyncCloseIdx, closeCmd, sizeof(closeCmd))) {
+                resyncCloseIdx = 0xFF;  // defensive: out-of-range index
+            } else if (domeQueueTx(closeCmd)) {
+                resyncCloseIdx++;
+                resyncCloseDueMs = now + kResyncCloseSpacingMs;
+                if (resyncCloseIdx >= seqEngineRingPanelCount()) {
+                    resyncCloseIdx = 0xFF;  // staged close complete
+                }
+            }
+        }
 
         // Advance the cursor: dispatch due actions, retry on queue-full.
         if (seqEngineActive(engine)) {

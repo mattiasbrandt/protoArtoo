@@ -163,6 +163,24 @@ static void addRingClose(SeqEngineState& st) {
     }
 }
 
+uint8_t seqEngineRingPanelCount(void) {
+    return kRingPanelCount;
+}
+
+bool seqEngineRingCloseCmd(uint8_t i, char* buf, uint8_t bufLen) {
+    if (i >= kRingPanelCount || buf == nullptr || bufLen < 6) {
+        return false;
+    }
+    const uint8_t n = kRingPanels[i];
+    buf[0] = ':';
+    buf[1] = 'C';
+    buf[2] = 'L';
+    buf[3] = (char)('0' + n / 10);
+    buf[4] = (char)('0' + n % 10);
+    buf[5] = '\0';
+    return true;
+}
+
 // Build the terminal auto-reset queue from activeFx (ADR 0004 decision 7).
 // FX_PANEL close-all is suppressed on the normal end of a toggle open branch
 // (panels are meant to stay open); FX_AUDIO stops playback only on abnormal
