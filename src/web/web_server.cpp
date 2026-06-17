@@ -33,6 +33,7 @@
 #include "../../include/api_system.h"
 #include "../../include/api_validation.h"
 #include "../../include/audio_task.h"
+#include "../../include/reset_reason.h"
 #include "../../include/config.h"
 #include "../../include/config_store.h"
 #include "../../include/aux_led.h"
@@ -458,7 +459,7 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     // Build the fixed system-health fields first.
     int written = snprintf(
         buffer, bufferSize,
-        "{\"estop\":%s,\"webControlEnabled\":%s,\"sbusSignalLost\":%s,\"sbusHwFailsafe\":%s,\"webDriveExpired\":%s,\"failsafeSource\":%d,\"driveSpeed\":%d,\"driveSteer\":%d,\"domeTargetSpeed\":%.3f,\"domeEnabled\":%s,\"speedLimitMax\":%d,\"speedPreset\":\"%s\",\"stationary\":%s,\"failsafeCount\":%lu,\"failsafeTriggerMs\":%lu,\"failsafeZeroMs\":%lu,\"failsafeTriggerToZeroMs\":%lu,\"failsafeWatchdogMs\":%lu,\"failsafeTriggerSource\":%d,\"uptimeMs\":%lu,\"firmwareVersion\":\"%s\",\"fsVersion\":\"%s\",\"heapFree\":%lu,\"heapMin\":%lu,\"heapLargestBlock\":%lu,\"wifiRssi\":%ld,\"wifiConnected\":%s,\"wifiClientConnected\":%s,\"littleFsReady\":%s,\"sleepMode\":%s,\"sleepSinceMs\":%lu,\"activeMood\":%u,\"auxLed\":{\"pin\":%u,\"r\":%u,\"g\":%u,\"b\":%u,\"effect\":\"%s\",\"available\":%s}",
+        "{\"estop\":%s,\"webControlEnabled\":%s,\"sbusSignalLost\":%s,\"sbusHwFailsafe\":%s,\"webDriveExpired\":%s,\"failsafeSource\":%d,\"driveSpeed\":%d,\"driveSteer\":%d,\"domeTargetSpeed\":%.3f,\"domeEnabled\":%s,\"speedLimitMax\":%d,\"speedPreset\":\"%s\",\"stationary\":%s,\"failsafeCount\":%lu,\"failsafeTriggerMs\":%lu,\"failsafeZeroMs\":%lu,\"failsafeTriggerToZeroMs\":%lu,\"failsafeWatchdogMs\":%lu,\"failsafeTriggerSource\":%d,\"uptimeMs\":%lu,\"firmwareVersion\":\"%s\",\"fsVersion\":\"%s\",\"resetReason\":\"%s\",\"heapFree\":%lu,\"heapMin\":%lu,\"heapLargestBlock\":%lu,\"wifiRssi\":%ld,\"wifiConnected\":%s,\"wifiClientConnected\":%s,\"littleFsReady\":%s,\"sleepMode\":%s,\"sleepSinceMs\":%lu,\"activeMood\":%u,\"auxLed\":{\"pin\":%u,\"r\":%u,\"g\":%u,\"b\":%u,\"effect\":\"%s\",\"available\":%s}",
         estop ? "true" : "false", webControlEnabled ? "true" : "false",
         sbusSignalLost ? "true" : "false", sbusHwFailsafe ? "true" : "false",
         webDriveExpired ? "true" : "false", failsafeSource, driveSpeed, driveSteer,
@@ -466,6 +467,7 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
         speedLimitMax, speedPresetIdToString(speedPresetActive), stationary ? "true" : "false",
         failsafeCount, failsafeTriggerMs, failsafeZeroMs, failsafeTriggerToZeroMs,
         failsafeWatchdogMs, failsafeTriggerSource, uptimeMs, PA_FIRMWARE_VERSION, s_fsVersion,
+        resetReasonName(esp_reset_reason()),
         heapFree, heapMin, (unsigned long)heapLargestBlock, wifiRssi,
         wifiConnected ? "true" : "false",
         wifiClientConnected ? "true" : "false", littleFsReady ? "true" : "false",
