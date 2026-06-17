@@ -59,7 +59,7 @@ static const SeqStep kNodSteps[] = {
     SEQ_DOME(0, FX_NONE, "@1MYes"),              // logic text
     SEQ_DOME(0, FX_PANEL, ":OP01"),      // P1 open
     SEQ_DOME(150, FX_NONE, ":CL01"),      // P1 close
-    SEQ_TERM(300),                               // auto :CL00 (close + release)
+    SEQ_TERM(300),                               // auto scoped :CL15 (ring-only close + release)
 };
 
 // DM:FLUTTER — ring then pie panels sweep to 75%, then close (10 s window).
@@ -275,7 +275,8 @@ static const SeqStep kRockmarchSteps[] = {
     SEQ_DOME(5388, FX_NONE, ":CL11"),
     SEQ_DOME(5538, FX_NONE, ":OP13"),
     SEQ_DOME(6311, FX_NONE, ":CL13"),
-    SEQ_TERM(47300),                             // auto @0T1/@0P1/*ST00/:CL00
+    SEQ_AUDIO(47000, "$s"),                      // stop the march; $M outlives the sequence otherwise
+    SEQ_TERM(47300),                             // auto @0T1/@0P1/*ST00 + scoped :CL15 (ring-only)
 };
 
 // =============================================================================
@@ -544,7 +545,7 @@ static const SequenceEntry kCatalog[] = {
     { "DM:HEART",   kHeartSteps,   SEQ_STEPCOUNT(kHeartSteps),   10000, TOGGLE_NONE, nullptr, 0 },
     { "DM:RESET",   kResetSteps,   SEQ_STEPCOUNT(kResetSteps),   4000,  TOGGLE_NONE, nullptr, 0 },
     { "DM:CANTINA",   kCantinaSteps,   SEQ_STEPCOUNT(kCantinaSteps),   17000, TOGGLE_NONE, nullptr, 0 },
-    { "DM:ROCKMARCH", kRockmarchSteps, SEQ_STEPCOUNT(kRockmarchSteps), 47000, TOGGLE_NONE, nullptr, 0 },
+    { "DM:ROCKMARCH", kRockmarchSteps, SEQ_STEPCOUNT(kRockmarchSteps), 48000, TOGGLE_NONE, nullptr, 0 },
     { "DM:SCREAM",    kScreamSteps,    SEQ_STEPCOUNT(kScreamSteps),    15000, TOGGLE_NONE, nullptr, 0 },
     { "DM:OVERLOAD",  kOverloadSteps,  SEQ_STEPCOUNT(kOverloadSteps),  12000, TOGGLE_NONE, nullptr, 0 },
     { "DM:PIES",    kPiesOpenSteps,    SEQ_STEPCOUNT(kPiesOpenSteps),    12000,

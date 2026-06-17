@@ -70,6 +70,70 @@ static void applyToggleLatch(SeqEngineState& st) {
     }
 }
 
+// Panel-intent command scope, for scoped terminal cleanup (issue #2). On this
+// hardware :CL00 is a real "close every physical panel group" action, not a
+// harmless safe-reset, so terminal cleanup must close only the groups the run
+// touched. :CL and :OF count as touched scope too: a scoped repeat close is
+// safe, whereas closing an untouched group is exactly the hazard we avoid.
+static const uint8_t PANEL_RING = 1 << 0;
+static const uint8_t PANEL_PIE  = 1 << 1;
+
+// Map a panel-intent command (:OP/:CL/:OF<target>) to the group(s) it touches.
+// Returns 0 for non-panel commands (@..., *..., :SE##, ...).
+static uint8_t panelTouchBits(const char* cmd) {
+    if (cmd == nullptr || cmd[0] != ':') {
+        return 0;
+    }
+    const bool isPanel = (cmd[1] == 'O' && cmd[2] == 'P') ||   // open
+                         (cmd[1] == 'C' && cmd[2] == 'L') ||   // close
+                         (cmd[1] == 'O' && cmd[2] == 'F');     // flutter
+    if (!isPanel) {
+        return 0;
+    }
+    const char* t = cmd + 3;
+    if (t[0] == 'P')                  return PANEL_PIE;              // P1..P6 pie aliases
+    if (t[0] == '1' && t[1] == '4')  return PANEL_PIE;              // 14 = pie/top group
+    if (t[0] == '1' && t[1] == '5')  return PANEL_RING;             // 15 = ring/bottom group
+    if (t[0] == '0' && t[1] == '0')  return PANEL_RING | PANEL_PIE; // 00 = all panels
+    return PANEL_RING;  // 01,02,03,04,07,11,13 = ring panels
+}
+
+// Record the touched scope of a dispatched dome command (no-op for non-panel).
+static void recordPanelTouch(SeqEngineState& st, const char* cmd) {
+    const uint8_t bits = panelTouchBits(cmd);
+    if (bits & PANEL_RING) st.panelTouchedRing = true;
+    if (bits & PANEL_PIE)  st.panelTouchedPie  = true;
+}
+
+// Body-authoritative latch update: an explicit group/all close on the wire means
+// that group is now closed, regardless of which sequence sent it.
+static void updateLatchesForClose(SeqEngineState& st, const char* cmd) {
+    if (cmd == nullptr || cmd[0] != ':' || cmd[1] != 'C' || cmd[2] != 'L') {
+        return;
+    }
+    const char* t = cmd + 3;
+    if (t[0] == '0' && t[1] == '0') {            // :CL00 close-all
+        st.latches.piesOpen = false;
+        st.latches.ringOpen = false;
+    } else if (t[0] == '1' && t[1] == '4') {     // :CL14 pie/top group
+        st.latches.piesOpen = false;
+    } else if (t[0] == '1' && t[1] == '5') {     // :CL15 ring/bottom group
+        st.latches.ringOpen = false;
+    }
+}
+
+// Queue the terminal panel close scoped to what the run touched: :CL00 only when
+// both groups were touched, ring-only -> :CL15, pie-only -> :CL14, none -> skip.
+static void addScopedPanelClose(SeqEngineState& st) {
+    if (st.panelTouchedRing && st.panelTouchedPie) {
+        addFinal(st, SEQ_ACT_DOME_CMD, ":CL00");
+    } else if (st.panelTouchedRing) {
+        addFinal(st, SEQ_ACT_DOME_CMD, ":CL15");
+    } else if (st.panelTouchedPie) {
+        addFinal(st, SEQ_ACT_DOME_CMD, ":CL14");
+    }
+}
+
 // Build the terminal auto-reset queue from activeFx (ADR 0004 decision 7).
 // FX_PANEL close-all is suppressed on the normal end of a toggle open branch
 // (panels are meant to stay open); FX_AUDIO stops playback only on abnormal
@@ -95,7 +159,7 @@ static void beginFinish(SeqEngineState& st, bool abnormal) {
         addFinal(st, SEQ_ACT_DOME_CMD, ":CL00");
     } else if (st.activeFx & FX_PANEL) {
         if (abnormal || !st.openBranch) {
-            addFinal(st, SEQ_ACT_DOME_CMD, ":CL00");
+            addScopedPanelClose(st);
         }
     }
     if ((st.activeFx & FX_AUDIO) && abnormal) {
@@ -109,7 +173,7 @@ static void beginFinish(SeqEngineState& st, bool abnormal) {
         applyToggleLatch(st);
         if (!st.openBranch &&
             !st.latches.piesOpen && !st.latches.ringOpen) {
-            addFinal(st, SEQ_ACT_DOME_CMD, ":CL00");
+            addScopedPanelClose(st);
         }
     }
 }
@@ -283,6 +347,8 @@ void seqEngineStart(SeqEngineState& st, const SequenceEntry* entry, uint32_t now
     st.cursor = 0;
     st.startMs = nowMs;
     st.activeFx = 0;
+    st.panelTouchedRing = false;
+    st.panelTouchedPie = false;
     st.inLoop = false;
     st.loopHeader = 0;
     st.iterStartRel = 0;
@@ -391,8 +457,8 @@ void seqEngineCommit(SeqEngineState& st) {
     if (st.finishing) {
         if (st.finalCursor < st.finalCount) {
             const SeqAction& a = st.finalQ[st.finalCursor];
-            if (a.kind == SEQ_ACT_DOME_CMD && strcmp(a.payload, ":CL00") == 0) {
-                seqEngineClearLatches(st);
+            if (a.kind == SEQ_ACT_DOME_CMD) {
+                updateLatchesForClose(st, a.payload);
             }
             st.finalCursor++;
         }
@@ -409,10 +475,12 @@ void seqEngineCommit(SeqEngineState& st) {
     const SeqStep& step = st.steps[st.cursor];
     st.activeFx |= step.effectClass;
 
-    // Body-authoritative latched panel state: any close-all on the wire means
-    // every panel group is closed, regardless of which sequence sent it.
-    if (st.pending.kind == SEQ_ACT_DOME_CMD && strcmp(st.pending.payload, ":CL00") == 0) {
-        seqEngineClearLatches(st);
+    // Record touched panel scope for scoped terminal cleanup, and keep the
+    // body-authoritative latches in step with explicit group/all closes on the
+    // wire, regardless of which sequence sent them (issue #2).
+    if (st.pending.kind == SEQ_ACT_DOME_CMD) {
+        recordPanelTouch(st, st.pending.payload);
+        updateLatchesForClose(st, st.pending.payload);
     }
 
     st.pendingComputed = false;

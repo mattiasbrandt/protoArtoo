@@ -414,9 +414,10 @@ void test_real_loop_entries_have_loop_headers() {
     TEST_ASSERT_EQUAL_UINT8(14, rock->steps[4].params.bodyCount);
     TEST_ASSERT_EQUAL_UINT32(45000, rock->steps[4].params.durationMs);
 
-    // Loop header + body + END must fit the table exactly.
+    // Loop header + body + post-loop steps + END must fit the table exactly.
+    // ROCKMARCH adds a post-loop "$s" music-stop step before the terminal.
     TEST_ASSERT_EQUAL_UINT8(4 + 1 + 26 + 1, cantina->stepCount);
-    TEST_ASSERT_EQUAL_UINT8(4 + 1 + 14 + 1, rock->stepCount);
+    TEST_ASSERT_EQUAL_UINT8(4 + 1 + 14 + 1 + 1, rock->stepCount);
 }
 
 // ROCKMARCH timing: first beat of iteration 2 lands at period offset 6461.
@@ -484,8 +485,9 @@ void test_toggle_second_press_runs_close_branch_and_releases() {
     seqEngineStart(st, &kToggleEntry, 1000);
     char log[256] = "";
     TEST_ASSERT_EQUAL_INT(3, drainAt(st, 1500, log, sizeof(log)));
-    // Close branch, then :CL00 release (no other group latched open).
-    TEST_ASSERT_EQUAL_STRING(":CLP1|:CLP2|:CL00", log);
+    // Close branch, then scoped pie release :CL14 (pie-only sequence; never
+    // :CL00, which would slam untouched panel groups on this hardware).
+    TEST_ASSERT_EQUAL_STRING(":CLP1|:CLP2|:CL14", log);
     TEST_ASSERT_FALSE(st.latches.piesOpen);
 }
 
@@ -517,7 +519,9 @@ void test_toggle_all_carries_pie_and_ring_latches() {
     seqEngineStart(st, &kToggleAllEntry, 1000);
     char log[256] = "";
     TEST_ASSERT_EQUAL_INT(3, drainAt(st, 1500, log, sizeof(log)));
-    TEST_ASSERT_EQUAL_STRING(":CLP1|:CLP2|:CL00", log);
+    // Close branch touched only pies, so the scoped release is :CL14; the
+    // TOGGLE_ALL latch still carries both groups closed via applyToggleLatch.
+    TEST_ASSERT_EQUAL_STRING(":CLP1|:CLP2|:CL14", log);
     TEST_ASSERT_FALSE(st.latches.piesOpen);
     TEST_ASSERT_FALSE(st.latches.ringOpen);
 }
@@ -531,8 +535,9 @@ void test_toggle_abort_mid_open_closes_and_clears_latches() {
     seqEngineAbort(st);
     char log[256] = "";
     TEST_ASSERT_EQUAL_INT(1, drainAt(st, 200, log, sizeof(log)));
-    // Abnormal termination: FX_PANEL close-all fires, latch stays closed.
-    TEST_ASSERT_EQUAL_STRING(":CL00", log);
+    // Abnormal termination: scoped FX_PANEL close fires for the touched pie
+    // group (:CL14, not :CL00); the :CL14 also drops the pies latch.
+    TEST_ASSERT_EQUAL_STRING(":CL14", log);
     TEST_ASSERT_FALSE(st.latches.piesOpen);
 }
 
@@ -695,6 +700,92 @@ void test_real_overload_runs_end_to_end() {
 }
 
 // -----------------------------------------------------------------------------
+// Scoped terminal panel cleanup (issue #2). :CL00 closes every physical panel
+// group on this hardware, so terminal cleanup must close only the scope the run
+// touched: ring-only -> :CL15, pie-only -> :CL14, both -> :CL00, none -> skip.
+// -----------------------------------------------------------------------------
+
+static const SeqStep kRingOnlySteps[] = {
+    SEQ_DOME(0, FX_PANEL, ":OP01"),
+    SEQ_DOME(100, FX_NONE, ":OP07"),
+    SEQ_TERM(300),
+};
+static const SequenceEntry kRingOnlyEntry = {
+    "TEST:RING", kRingOnlySteps,
+    (uint8_t)(sizeof(kRingOnlySteps) / sizeof(kRingOnlySteps[0])),
+    1000, TOGGLE_NONE, nullptr, 0,
+};
+static const SeqStep kPieOnlySteps[] = {
+    SEQ_DOME(0, FX_PANEL, ":OPP1"),
+    SEQ_DOME(100, FX_NONE, ":OPP3"),
+    SEQ_TERM(300),
+};
+static const SequenceEntry kPieOnlyEntry = {
+    "TEST:PIE", kPieOnlySteps,
+    (uint8_t)(sizeof(kPieOnlySteps) / sizeof(kPieOnlySteps[0])),
+    1000, TOGGLE_NONE, nullptr, 0,
+};
+static const SeqStep kAllPanelSteps[] = {
+    SEQ_DOME(0, FX_PANEL, ":OP01"),    // ring
+    SEQ_DOME(100, FX_NONE, ":OPP1"),   // pie
+    SEQ_TERM(300),
+};
+static const SequenceEntry kAllPanelEntry = {
+    "TEST:ALLPANEL", kAllPanelSteps,
+    (uint8_t)(sizeof(kAllPanelSteps) / sizeof(kAllPanelSteps[0])),
+    1000, TOGGLE_NONE, nullptr, 0,
+};
+static const SeqStep kNonPanelSteps[] = {
+    SEQ_DOME(0, FX_LOGIC_PSI, "@0T11"),
+    SEQ_TERM(300),
+};
+static const SequenceEntry kNonPanelEntry = {
+    "TEST:NONPANEL", kNonPanelSteps,
+    (uint8_t)(sizeof(kNonPanelSteps) / sizeof(kNonPanelSteps[0])),
+    1000, TOGGLE_NONE, nullptr, 0,
+};
+
+void test_scoped_cleanup_ring_only_closes_ring_group() {
+    SeqEngineState st;
+    seqEngineInit(st);
+    seqEngineStart(st, &kRingOnlyEntry, 0);
+    char log[256] = "";
+    drainAt(st, 400, log, sizeof(log));
+    TEST_ASSERT_EQUAL_STRING(":OP01|:OP07|:CL15", log);
+    TEST_ASSERT_NULL(strstr(log, ":CL00"));
+}
+
+void test_scoped_cleanup_pie_only_closes_pie_group() {
+    SeqEngineState st;
+    seqEngineInit(st);
+    seqEngineStart(st, &kPieOnlyEntry, 0);
+    char log[256] = "";
+    drainAt(st, 400, log, sizeof(log));
+    TEST_ASSERT_EQUAL_STRING(":OPP1|:OPP3|:CL14", log);
+    TEST_ASSERT_NULL(strstr(log, ":CL00"));
+}
+
+void test_scoped_cleanup_both_groups_closes_all() {
+    SeqEngineState st;
+    seqEngineInit(st);
+    seqEngineStart(st, &kAllPanelEntry, 0);
+    char log[256] = "";
+    drainAt(st, 400, log, sizeof(log));
+    TEST_ASSERT_EQUAL_STRING(":OP01|:OPP1|:CL00", log);
+}
+
+void test_scoped_cleanup_non_panel_emits_no_panel_close() {
+    SeqEngineState st;
+    seqEngineInit(st);
+    seqEngineStart(st, &kNonPanelEntry, 0);
+    char log[256] = "";
+    drainAt(st, 400, log, sizeof(log));
+    // FX_LOGIC_PSI reset only; no panel close of any scope.
+    TEST_ASSERT_EQUAL_STRING("@0T11|@0T1|@0P1", log);
+    TEST_ASSERT_NULL(strstr(log, ":CL"));
+}
+
+// -----------------------------------------------------------------------------
 // Latches
 // -----------------------------------------------------------------------------
 
@@ -767,6 +858,11 @@ int main(int /*argc*/, char** /*argv*/) {
     RUN_TEST(test_toggle_all_carries_pie_and_ring_latches);
     RUN_TEST(test_toggle_abort_mid_open_closes_and_clears_latches);
     RUN_TEST(test_real_toggle_entries_are_catalog_with_branches);
+
+    RUN_TEST(test_scoped_cleanup_ring_only_closes_ring_group);
+    RUN_TEST(test_scoped_cleanup_pie_only_closes_pie_group);
+    RUN_TEST(test_scoped_cleanup_both_groups_closes_all);
+    RUN_TEST(test_scoped_cleanup_non_panel_emits_no_panel_close);
 
     RUN_TEST(test_cl00_step_clears_latches);
     RUN_TEST(test_clear_latches_helper);

@@ -196,6 +196,12 @@ struct SeqEngineState {
     uint32_t             startMs;
     uint8_t              activeFx;
 
+    // Scoped terminal cleanup (issue #2): which physical panel groups the run
+    // actually touched. :CL00 on this hardware closes every group, so terminal
+    // cleanup must close only what was opened/closed/fluttered during the run.
+    bool                 panelTouchedRing;
+    bool                 panelTouchedPie;
+
     // STEP_LOOP runtime
     bool     inLoop;
     uint8_t  loopHeader;       // index of the STEP_LOOP step
