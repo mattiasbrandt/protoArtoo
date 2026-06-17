@@ -156,7 +156,10 @@ static void beginFinish(SeqEngineState& st, bool abnormal) {
         addFinal(st, SEQ_ACT_DOME_CMD, "@0T1");
         addFinal(st, SEQ_ACT_DOME_CMD, "@0P1");
         addFinal(st, SEQ_ACT_DOME_CMD, "*ST00");
-        addFinal(st, SEQ_ACT_DOME_CMD, ":CL00");
+        // Scoped, not blanket :CL00: a :SE## dome-native sequence manages its own
+        // panels, so close only groups the body itself touched (none for a pure
+        // :SE## step). :CL00 would stall the pies on this droid.
+        addScopedPanelClose(st);
     } else if (st.activeFx & FX_PANEL) {
         if (abnormal || !st.openBranch) {
             addScopedPanelClose(st);

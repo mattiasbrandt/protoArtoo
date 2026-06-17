@@ -220,7 +220,11 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
         }
         if (!estopActive && prevEstop) {
             PA_LOG_INFO(TAG, "estop cleared — dome resync");
-            domeQueueTx(":CL00");
+            // Ring-scoped close only: :CL00 closes the pie group too, which
+            // stalls the pie servos on this droid (issue #2 hardware finding).
+            // No automatic/replayable path may emit :CL00 until dome pie-close
+            // is proven safe. Ring close is proven safe.
+            domeQueueTx(":CL15");
             domeQueueTx("@0T1");
             domeQueueTx("@0P1");
             seqEngineClearLatches(engine);
@@ -229,7 +233,9 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
 
         // Dome (re)connect resync (ADR 0004 decision 8): panel state on the
         // dome is unknown after boot or a link gap, so assume closed — abort
-        // any running sequence, close/release everything, clear the latches.
+        // any running sequence, close/release the ring group, clear the latches.
+        // Ring-scoped (:CL15) not :CL00: see the estop-clear resync above —
+        // :CL00 stalls the pie servos on this droid.
         const bool domeConn = domeConnected();
         if (domeConn && !prevDomeConn) {
             PA_LOG_INFO(TAG, "dome (re)connected — panel state resync");
@@ -239,7 +245,7 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
                 clearSuppression();
                 activeName[0] = '\0';
             }
-            domeQueueTx(":CL00");
+            domeQueueTx(":CL15");
             domeQueueTx("@0T1");
             domeQueueTx("@0P1");
             seqEngineClearLatches(engine);
