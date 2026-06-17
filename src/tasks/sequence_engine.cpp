@@ -38,15 +38,22 @@ static void setPayload(SeqAction& a, const char* payload) {
     }
 }
 
-static void addFinal(SeqEngineState& st, SeqActionKind kind, const char* payload) {
-    if (st.finalCount >= (uint8_t)(sizeof(st.finalQ) / sizeof(st.finalQ[0]))) {
+// dueRel is the fire offset (ms) relative to finishStartMs. Instant resets pass
+// 0; staggered individual ring closes pass increasing offsets so only one ring
+// servo actuates at a time (group closes brown out the dome — see addRingClose).
+static void addFinal(SeqEngineState& st, SeqActionKind kind, const char* payload,
+                     uint16_t dueRel = 0) {
+    const uint8_t cap = (uint8_t)(sizeof(st.finalQ) / sizeof(st.finalQ[0]));
+    if (st.finalCount >= cap) {
         return;
     }
-    SeqAction& a = st.finalQ[st.finalCount++];
+    const uint8_t idx = st.finalCount++;
+    SeqAction& a = st.finalQ[idx];
     a.kind = kind;
     a.audioCategory = 0;
     a.audioFallbackSlot = 0;
     setPayload(a, payload);
+    st.finalDueRel[idx] = dueRel;
 }
 
 // Flip the latched group state for the branch that just completed normally
@@ -70,39 +77,52 @@ static void applyToggleLatch(SeqEngineState& st) {
     }
 }
 
-// Panel-intent command scope, for scoped terminal cleanup (issue #2). On this
-// hardware :CL00 is a real "close every physical panel group" action, not a
-// harmless safe-reset, so terminal cleanup must close only the groups the run
-// touched. :CL and :OF count as touched scope too: a scoped repeat close is
-// safe, whereas closing an untouched group is exactly the hazard we avoid.
-static const uint8_t PANEL_RING = 1 << 0;
-static const uint8_t PANEL_PIE  = 1 << 1;
+// Physical ring (bottom) panels in bit order. Pie panels are tracked separately
+// and never auto-closed by engine cleanup (pie-close mechanical safety is a
+// separate open item). kRingPanels[i] maps to ringOpenMask bit i.
+static const uint8_t  kRingPanels[]     = {1, 2, 3, 4, 7, 11, 13};
+static const uint8_t  kRingPanelCount   = (uint8_t)(sizeof(kRingPanels) / sizeof(kRingPanels[0]));
+static const uint16_t kRingAllMask      = (uint16_t)((1u << kRingPanelCount) - 1u);
+// Per-panel cadence for staggered cleanup closes: only one ring servo actuates
+// at a time, so single-servo inrush never overlaps (a simultaneous group close
+// browns out the dome from a loaded ring — 2026-06-17 hardware repro).
+static const uint16_t kRingCloseSpacingMs = 500;
 
-// Map a panel-intent command (:OP/:CL/:OF<target>) to the group(s) it touches.
-// Returns 0 for non-panel commands (@..., *..., :SE##, ...).
-static uint8_t panelTouchBits(const char* cmd) {
-    if (cmd == nullptr || cmd[0] != ':') {
-        return 0;
+// ringOpenMask bit index for ring panel number n, or -1 if not a ring panel.
+static int ringPanelBit(int n) {
+    for (uint8_t i = 0; i < kRingPanelCount; i++) {
+        if ((int)kRingPanels[i] == n) return (int)i;
     }
-    const bool isPanel = (cmd[1] == 'O' && cmd[2] == 'P') ||   // open
-                         (cmd[1] == 'C' && cmd[2] == 'L') ||   // close
-                         (cmd[1] == 'O' && cmd[2] == 'F');     // flutter
-    if (!isPanel) {
-        return 0;
-    }
-    const char* t = cmd + 3;
-    if (t[0] == 'P')                  return PANEL_PIE;              // P1..P6 pie aliases
-    if (t[0] == '1' && t[1] == '4')  return PANEL_PIE;              // 14 = pie/top group
-    if (t[0] == '1' && t[1] == '5')  return PANEL_RING;             // 15 = ring/bottom group
-    if (t[0] == '0' && t[1] == '0')  return PANEL_RING | PANEL_PIE; // 00 = all panels
-    return PANEL_RING;  // 01,02,03,04,07,11,13 = ring panels
+    return -1;
 }
 
-// Record the touched scope of a dispatched dome command (no-op for non-panel).
-static void recordPanelTouch(SeqEngineState& st, const char* cmd) {
-    const uint8_t bits = panelTouchBits(cmd);
-    if (bits & PANEL_RING) st.panelTouchedRing = true;
-    if (bits & PANEL_PIE)  st.panelTouchedPie  = true;
+static void setAllRingOpen(SeqEngineState& st, bool open) {
+    if (open) st.ringOpenMask |= kRingAllMask;
+    else      st.ringOpenMask  = (uint16_t)(st.ringOpenMask & ~kRingAllMask);
+}
+
+// Update the per-run net-open RING mask from a dispatched dome command. Only
+// :OP/:CL change logical open state; :OF leaves it uncertain (no mark — the
+// authored branch must clean up its own flutters). Pie targets (14 group, P*
+// individual) do not affect the ring mask.
+static void recordRingOpenState(SeqEngineState& st, const char* cmd) {
+    if (cmd == nullptr || cmd[0] != ':') {
+        return;
+    }
+    bool open;
+    if (cmd[1] == 'O' && cmd[2] == 'P')      open = true;   // :OP — open
+    else if (cmd[1] == 'C' && cmd[2] == 'L') open = false;  // :CL — close
+    else return;                                            // :OF / non-panel — no change
+    const char* t = cmd + 3;
+    if (t[0] == '0' && t[1] == '0') { setAllRingOpen(st, open); return; } // 00 = all
+    if (t[0] == '1' && t[1] == '5') { setAllRingOpen(st, open); return; } // 15 = ring group
+    if (t[0] == '1' && t[1] == '4') return;                              // 14 = pie group
+    if (t[0] == 'P') return;                                             // P* = pie individual
+    if (t[0] < '0' || t[0] > '9' || t[1] < '0' || t[1] > '9') return;
+    const int bit = ringPanelBit((t[0] - '0') * 10 + (t[1] - '0'));
+    if (bit < 0) return;
+    if (open) st.ringOpenMask |= (uint16_t)(1u << bit);
+    else      st.ringOpenMask  = (uint16_t)(st.ringOpenMask & ~(1u << bit));
 }
 
 // Body-authoritative latch update: an explicit group/all close on the wire means
@@ -122,15 +142,24 @@ static void updateLatchesForClose(SeqEngineState& st, const char* cmd) {
     }
 }
 
-// Queue the terminal panel close scoped to what the run touched: :CL00 only when
-// both groups were touched, ring-only -> :CL15, pie-only -> :CL14, none -> skip.
-static void addScopedPanelClose(SeqEngineState& st) {
-    if (st.panelTouchedRing && st.panelTouchedPie) {
-        addFinal(st, SEQ_ACT_DOME_CMD, ":CL00");
-    } else if (st.panelTouchedRing) {
-        addFinal(st, SEQ_ACT_DOME_CMD, ":CL15");
-    } else if (st.panelTouchedPie) {
-        addFinal(st, SEQ_ACT_DOME_CMD, ":CL14");
+// Queue load-shaped terminal ring cleanup: NEVER a group close (:CL15/:CL14/
+// :CL00) and NEVER an automatic pie close. A group close drives every servo in
+// the group simultaneously, which browns out the dome from a loaded ring
+// (2026-06-17 hardware repro: reset_reason=BROWNOUT at terminal :CL15). So close
+// only the ring panels this run left logically OPEN, one at a time at
+// kRingCloseSpacingMs cadence. No-op when nothing is left open. Pie panels left
+// open are NOT auto-closed here (pie-close safety is a separate open item) — an
+// authored sequence that opens pies must close them in its own branch.
+static void addRingClose(SeqEngineState& st) {
+    uint16_t emitted = 0;
+    for (uint8_t i = 0; i < kRingPanelCount; i++) {
+        if (!(st.ringOpenMask & (uint16_t)(1u << i))) {
+            continue;
+        }
+        const uint8_t n = kRingPanels[i];
+        char cmd[6] = { ':', 'C', 'L', (char)('0' + n / 10), (char)('0' + n % 10), '\0' };
+        emitted++;
+        addFinal(st, SEQ_ACT_DOME_CMD, cmd, (uint16_t)(kRingCloseSpacingMs * emitted));
     }
 }
 
@@ -141,9 +170,12 @@ static void addScopedPanelClose(SeqEngineState& st) {
 static void beginFinish(SeqEngineState& st, bool abnormal) {
     st.finishing = true;
     st.finishAbnormal = abnormal;
+    st.finishStartSet = false;
     st.finalCount = 0;
     st.finalCursor = 0;
     st.pendingComputed = false;
+
+    bool wantRingClose = false;
 
     if (st.activeFx & FX_LOGIC_PSI) {
         addFinal(st, SEQ_ACT_DOME_CMD, "@0T1");
@@ -156,28 +188,36 @@ static void beginFinish(SeqEngineState& st, bool abnormal) {
         addFinal(st, SEQ_ACT_DOME_CMD, "@0T1");
         addFinal(st, SEQ_ACT_DOME_CMD, "@0P1");
         addFinal(st, SEQ_ACT_DOME_CMD, "*ST00");
-        // Scoped, not blanket :CL00: a :SE## dome-native sequence manages its own
-        // panels, so close only groups the body itself touched (none for a pure
-        // :SE## step). :CL00 would stall the pies on this droid.
-        addScopedPanelClose(st);
+        // A :SE## dome-native sequence manages its own panels; ring cleanup
+        // closes only the ring panels the body itself left open (none for a pure
+        // :SE## step). Never a group close.
+        wantRingClose = true;
     } else if (st.activeFx & FX_PANEL) {
         if (abnormal || !st.openBranch) {
-            addScopedPanelClose(st);
+            wantRingClose = true;
         }
     }
     if ((st.activeFx & FX_AUDIO) && abnormal) {
         addFinal(st, SEQ_ACT_AUDIO_STOP, nullptr);
     }
 
-    // Toggle bookkeeping on normal completion. Close branches finish their
-    // per-target closes without a release, so emit :CL00 once no group remains
-    // latched open; releasing earlier would close panels another sequence left open.
+    // Toggle bookkeeping on normal completion. A close branch runs its own
+    // per-target closes; once no group remains latched open we still request ring
+    // cleanup, which is a no-op when the branch already closed every ring panel
+    // (e.g. DM:LOW) — that is exactly why the brownout-prone terminal group close
+    // is gone: addRingClose closes only ring panels actually left open, staggered.
     if (!abnormal && st.entry->toggleGroup != TOGGLE_NONE) {
         applyToggleLatch(st);
         if (!st.openBranch &&
             !st.latches.piesOpen && !st.latches.ringOpen) {
-            addScopedPanelClose(st);
+            wantRingClose = true;
         }
+    }
+
+    // Enqueue staggered individual ring closes LAST so the instant effect resets
+    // and audio stop above are not delayed behind the spaced closes.
+    if (wantRingClose) {
+        addRingClose(st);
     }
 }
 
@@ -350,8 +390,7 @@ void seqEngineStart(SeqEngineState& st, const SequenceEntry* entry, uint32_t now
     st.cursor = 0;
     st.startMs = nowMs;
     st.activeFx = 0;
-    st.panelTouchedRing = false;
-    st.panelTouchedPie = false;
+    st.ringOpenMask = 0;
     st.inLoop = false;
     st.loopHeader = 0;
     st.iterStartRel = 0;
@@ -443,8 +482,20 @@ bool seqEnginePeek(SeqEngineState& st, uint32_t nowMs, SeqRandFn rnd, SeqAction&
         }
     }
 
-    // Finishing: drain terminal auto-reset actions, then go idle.
+    // Finishing: drain terminal auto-reset actions at their scheduled offsets,
+    // then go idle. finishStartMs is anchored lazily on the first finishing peek
+    // (seqEngineAbort carries no nowMs). Staggered ring closes carry increasing
+    // finalDueRel offsets so only one ring servo actuates at a time; instant
+    // resets (offset 0) fire immediately. Returning false when the next action is
+    // not yet due keeps the engine active so the dispatcher ticks back.
     if (st.finalCursor < st.finalCount) {
+        if (!st.finishStartSet) {
+            st.finishStartMs = nowMs;
+            st.finishStartSet = true;
+        }
+        if (!timeReached(nowMs, st.finishStartMs + st.finalDueRel[st.finalCursor])) {
+            return false;
+        }
         out = st.finalQ[st.finalCursor];
         return true;
     }
@@ -482,7 +533,7 @@ void seqEngineCommit(SeqEngineState& st) {
     // body-authoritative latches in step with explicit group/all closes on the
     // wire, regardless of which sequence sent them (issue #2).
     if (st.pending.kind == SEQ_ACT_DOME_CMD) {
-        recordPanelTouch(st, st.pending.payload);
+        recordRingOpenState(st, st.pending.payload);
         updateLatchesForClose(st, st.pending.payload);
     }
 

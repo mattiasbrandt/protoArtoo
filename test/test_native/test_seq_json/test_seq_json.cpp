@@ -100,9 +100,11 @@ static void test_nod_parsed_runs_through_engine() {
     TEST_ASSERT_NOT_NULL(strstr(log, "$H"));
     TEST_ASSERT_NOT_NULL(strstr(log, "@1MYes"));
     TEST_ASSERT_NOT_NULL(strstr(log, ":OP01"));
-    TEST_ASSERT_NOT_NULL(strstr(log, ":CL01"));
-    TEST_ASSERT_NOT_NULL(strstr(log, ":CL15"));  // FX_PANEL scoped auto-reset (ring-only NOD)
-    TEST_ASSERT_NULL(strstr(log, ":CL00"));      // never close-all for a ring-only sequence
+    TEST_ASSERT_NOT_NULL(strstr(log, ":CL01"));  // ring panel 1 is closed individually
+    // Engine cleanup never emits a group close (brownout-prone): the ring panel
+    // is closed individually, never via :CL15/:CL00.
+    TEST_ASSERT_NULL(strstr(log, ":CL15"));
+    TEST_ASSERT_NULL(strstr(log, ":CL00"));
 }
 
 // -----------------------------------------------------------------------------

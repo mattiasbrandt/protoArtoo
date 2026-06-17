@@ -196,11 +196,15 @@ struct SeqEngineState {
     uint32_t             startMs;
     uint8_t              activeFx;
 
-    // Scoped terminal cleanup (issue #2): which physical panel groups the run
-    // actually touched. :CL00 on this hardware closes every group, so terminal
-    // cleanup must close only what was opened/closed/fluttered during the run.
-    bool                 panelTouchedRing;
-    bool                 panelTouchedPie;
+    // Net-open RING panel tracking for load-shaped terminal cleanup (issue #2).
+    // A group close (:CL15/:CL00) drives every ring servo simultaneously, which
+    // browns out the dome from a loaded ring (2026-06-17 hardware repro). So the
+    // engine tracks exactly which ring panels this run left logically OPEN and
+    // closes only those, one at a time, at a safe cadence. Bit i corresponds to
+    // kRingPanels[i] in sequence_engine.cpp. :OP/:CL set/clear bits; :OF does NOT
+    // mark a panel open (uncertain state -> authored cleanup); pies are never
+    // auto-closed by engine cleanup.
+    uint16_t             ringOpenMask;
 
     // STEP_LOOP runtime
     bool     inLoop;
@@ -216,10 +220,18 @@ struct SeqEngineState {
     SeqAction pending;
     uint32_t  pendingFireAt;   // absolute ms
 
-    // Terminal auto-reset drain
+    // Terminal auto-reset drain. finalDueRel[i] is finalQ[i]'s fire offset (ms)
+    // relative to finishStartMs, so staggered individual ring closes drain at a
+    // safe cadence while instant resets use 0. finishStartMs is set lazily on the
+    // first finishing peek (seqEngineAbort carries no nowMs). The queue is sized
+    // for the worst case: a few effect resets plus one individual close per ring
+    // panel (7) with margin.
     bool      finishing;
     bool      finishAbnormal;
-    SeqAction finalQ[8];
+    bool      finishStartSet;
+    uint32_t  finishStartMs;
+    SeqAction finalQ[16];
+    uint16_t  finalDueRel[16];
     uint8_t   finalCount;
     uint8_t   finalCursor;
 

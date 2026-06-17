@@ -119,10 +119,12 @@ void test_flat_steps_fire_in_order_at_their_times() {
     TEST_ASSERT_EQUAL_INT(1, drainAt(st, 1150, log, sizeof(log)));
     TEST_ASSERT_EQUAL_STRING(":CL01", log);
 
-    // t=300: release step, then STEP_END fires the FX_PANEL auto-reset.
+    // t=300: authored :CL00 step fires, then STEP_END runs terminal cleanup.
+    // The ring is already closed (:CL01 then the :CL00 step cleared the net-open
+    // mask), so terminal cleanup emits nothing — never a group close.
     log[0] = '\0';
-    TEST_ASSERT_EQUAL_INT(2, drainAt(st, 1300, log, sizeof(log)));
-    TEST_ASSERT_EQUAL_STRING(":CL00|:CL00", log);
+    TEST_ASSERT_EQUAL_INT(1, drainAt(st, 1300, log, sizeof(log)));
+    TEST_ASSERT_EQUAL_STRING(":CL00", log);
     TEST_ASSERT_FALSE(seqEngineActive(st));
 }
 
@@ -131,10 +133,11 @@ void test_late_tick_catches_up_all_overdue_steps() {
     seqEngineInit(st);
     seqEngineStart(st, &kFlatEntry, 1000);
 
-    // One late tick past the END time drains the whole sequence.
+    // One late tick past the END time drains the whole sequence. The ring ends
+    // closed (steps :CL01 + :CL00), so terminal cleanup adds no panel close.
     char log[256] = "";
-    TEST_ASSERT_EQUAL_INT(6, drainAt(st, 9000, log, sizeof(log)));
-    TEST_ASSERT_EQUAL_STRING("$H|@1MYes|:OP01|:CL01|:CL00|:CL00", log);
+    TEST_ASSERT_EQUAL_INT(5, drainAt(st, 9000, log, sizeof(log)));
+    TEST_ASSERT_EQUAL_STRING("$H|@1MYes|:OP01|:CL01|:CL00", log);
     TEST_ASSERT_FALSE(seqEngineActive(st));
 }
 
@@ -484,10 +487,11 @@ void test_toggle_second_press_runs_close_branch_and_releases() {
 
     seqEngineStart(st, &kToggleEntry, 1000);
     char log[256] = "";
-    TEST_ASSERT_EQUAL_INT(3, drainAt(st, 1500, log, sizeof(log)));
-    // Close branch, then scoped pie release :CL14 (pie-only sequence; never
-    // :CL00, which would slam untouched panel groups on this hardware).
-    TEST_ASSERT_EQUAL_STRING(":CLP1|:CLP2|:CL14", log);
+    TEST_ASSERT_EQUAL_INT(2, drainAt(st, 1500, log, sizeof(log)));
+    // Close branch runs its own per-pie closes. No terminal pie close: engine
+    // cleanup never auto-closes pies (and never a group :CL14/:CL00). The pies
+    // latch still drops via applyToggleLatch on normal close-branch completion.
+    TEST_ASSERT_EQUAL_STRING(":CLP1|:CLP2", log);
     TEST_ASSERT_FALSE(st.latches.piesOpen);
 }
 
@@ -518,10 +522,11 @@ void test_toggle_all_carries_pie_and_ring_latches() {
 
     seqEngineStart(st, &kToggleAllEntry, 1000);
     char log[256] = "";
-    TEST_ASSERT_EQUAL_INT(3, drainAt(st, 1500, log, sizeof(log)));
-    // Close branch touched only pies, so the scoped release is :CL14; the
-    // TOGGLE_ALL latch still carries both groups closed via applyToggleLatch.
-    TEST_ASSERT_EQUAL_STRING(":CLP1|:CLP2|:CL14", log);
+    TEST_ASSERT_EQUAL_INT(2, drainAt(st, 1500, log, sizeof(log)));
+    // Close branch runs its own per-pie closes; no terminal pie close (engine
+    // cleanup never auto-closes pies). The TOGGLE_ALL latch still carries both
+    // groups closed via applyToggleLatch on normal completion.
+    TEST_ASSERT_EQUAL_STRING(":CLP1|:CLP2", log);
     TEST_ASSERT_FALSE(st.latches.piesOpen);
     TEST_ASSERT_FALSE(st.latches.ringOpen);
 }
@@ -534,11 +539,14 @@ void test_toggle_abort_mid_open_closes_and_clears_latches() {
 
     seqEngineAbort(st);
     char log[256] = "";
-    TEST_ASSERT_EQUAL_INT(1, drainAt(st, 200, log, sizeof(log)));
-    // Abnormal termination: scoped FX_PANEL close fires for the touched pie
-    // group (:CL14, not :CL00); the :CL14 also drops the pies latch.
-    TEST_ASSERT_EQUAL_STRING(":CL14", log);
+    // Abnormal termination of a pie open: engine cleanup never auto-closes pies,
+    // so NO panel close is emitted (the ring mask is empty — only pies were
+    // touched). The pies latch was never set true (applyToggleLatch only runs on
+    // normal completion, and the open branch had not finished).
+    TEST_ASSERT_EQUAL_INT(0, drainAt(st, 200, log, sizeof(log)));
+    TEST_ASSERT_EQUAL_STRING("", log);
     TEST_ASSERT_FALSE(st.latches.piesOpen);
+    TEST_ASSERT_FALSE(seqEngineActive(st));
 }
 
 void test_real_toggle_entries_are_catalog_with_branches() {
@@ -690,19 +698,25 @@ void test_real_overload_runs_end_to_end() {
     seqEngineStart(st, e, 0);
     char log[512] = "";
     int n = drainAt(st, 8000, log, sizeof(log));
-    // 1 audio category (empty payload) + 4 fx + 6 flutters + 4 auto-reset
-    // (@0T1, @0P1, *ST00, :CL00) + audio stop is NOT expected (normal end).
-    TEST_ASSERT_EQUAL_INT(15, n);
+    // 1 audio category (empty payload) + 4 fx + 6 flutters + 3 auto-reset
+    // (@0T1, @0P1, *ST00). NO panel close: the choreography is all flutters
+    // (:OF), which leave panel state uncertain and do NOT mark panels open, so
+    // the net-open ring mask is empty and terminal cleanup emits nothing — and
+    // never a group close. Audio stop is NOT expected (normal end).
+    TEST_ASSERT_EQUAL_INT(14, n);
     TEST_ASSERT_NOT_NULL(strstr(log, "@1T4"));
-    TEST_ASSERT_NOT_NULL(strstr(log, ":CL00"));
+    TEST_ASSERT_NULL(strstr(log, ":CL"));
     TEST_ASSERT_NULL(strstr(log, "<stop>"));
     TEST_ASSERT_FALSE(seqEngineActive(st));
 }
 
 // -----------------------------------------------------------------------------
-// Scoped terminal panel cleanup (issue #2). :CL00 closes every physical panel
-// group on this hardware, so terminal cleanup must close only the scope the run
-// touched: ring-only -> :CL15, pie-only -> :CL14, both -> :CL00, none -> skip.
+// Load-shaped terminal panel cleanup (issue #2, 2026-06-17 brownout fix). A group
+// close (:CL15/:CL14/:CL00) drives every servo in the group simultaneously, which
+// browns out the dome from a loaded ring. So engine cleanup NEVER emits a group
+// close: it closes only the ring panels the run left logically open, one at a
+// time at ~500 ms spacing, and never auto-closes pies (pie-close safety is a
+// separate open item). :OF flutters do not mark a panel open.
 // -----------------------------------------------------------------------------
 
 static const SeqStep kRingOnlySteps[] = {
@@ -745,33 +759,55 @@ static const SequenceEntry kNonPanelEntry = {
     1000, TOGGLE_NONE, nullptr, 0,
 };
 
-void test_scoped_cleanup_ring_only_closes_ring_group() {
+void test_scoped_cleanup_ring_only_closes_open_panels_staggered() {
     SeqEngineState st;
     seqEngineInit(st);
     seqEngineStart(st, &kRingOnlyEntry, 0);
     char log[256] = "";
-    drainAt(st, 400, log, sizeof(log));
-    TEST_ASSERT_EQUAL_STRING(":OP01|:OP07|:CL15", log);
-    TEST_ASSERT_NULL(strstr(log, ":CL00"));
+    // Steps fire; terminal cleanup is now staggered individual closes (never a
+    // group :CL15). Anchored at the first finishing peek (t=400), the two open
+    // ring panels close at +500 ms and +1000 ms.
+    TEST_ASSERT_EQUAL_INT(2, drainAt(st, 400, log, sizeof(log)));
+    TEST_ASSERT_EQUAL_STRING(":OP01|:OP07", log);
+    TEST_ASSERT_EQUAL_INT(0, drainAt(st, 800, nullptr, 0));   // first close not due yet
+    log[0] = '\0';
+    TEST_ASSERT_EQUAL_INT(1, drainAt(st, 900, log, sizeof(log)));
+    TEST_ASSERT_EQUAL_STRING(":CL01", log);
+    log[0] = '\0';
+    TEST_ASSERT_EQUAL_INT(1, drainAt(st, 1400, log, sizeof(log)));
+    TEST_ASSERT_EQUAL_STRING(":CL07", log);
+    TEST_ASSERT_FALSE(seqEngineActive(st));
 }
 
-void test_scoped_cleanup_pie_only_closes_pie_group() {
+void test_scoped_cleanup_pie_only_never_auto_closes_pies() {
     SeqEngineState st;
     seqEngineInit(st);
     seqEngineStart(st, &kPieOnlyEntry, 0);
     char log[256] = "";
-    drainAt(st, 400, log, sizeof(log));
-    TEST_ASSERT_EQUAL_STRING(":OPP1|:OPP3|:CL14", log);
-    TEST_ASSERT_NULL(strstr(log, ":CL00"));
+    // Pies opened but never auto-closed by engine cleanup; the ring mask is empty
+    // so nothing is queued and the engine goes idle immediately (no group :CL14).
+    TEST_ASSERT_EQUAL_INT(2, drainAt(st, 400, log, sizeof(log)));
+    TEST_ASSERT_EQUAL_STRING(":OPP1|:OPP3", log);
+    TEST_ASSERT_FALSE(seqEngineActive(st));
+    TEST_ASSERT_EQUAL_INT(0, drainAt(st, 5000, nullptr, 0));  // nothing later either
+    TEST_ASSERT_NULL(strstr(log, ":CL"));
 }
 
-void test_scoped_cleanup_both_groups_closes_all() {
+void test_scoped_cleanup_both_groups_closes_only_ring() {
     SeqEngineState st;
     seqEngineInit(st);
     seqEngineStart(st, &kAllPanelEntry, 0);
     char log[256] = "";
-    drainAt(st, 400, log, sizeof(log));
-    TEST_ASSERT_EQUAL_STRING(":OP01|:OPP1|:CL00", log);
+    // Only the open RING panel is closed (staggered); the open pie is left alone
+    // (never auto-closed); never a group :CL00.
+    TEST_ASSERT_EQUAL_INT(2, drainAt(st, 400, log, sizeof(log)));
+    TEST_ASSERT_EQUAL_STRING(":OP01|:OPP1", log);
+    log[0] = '\0';
+    TEST_ASSERT_EQUAL_INT(1, drainAt(st, 900, log, sizeof(log)));
+    TEST_ASSERT_EQUAL_STRING(":CL01", log);
+    TEST_ASSERT_FALSE(seqEngineActive(st));
+    TEST_ASSERT_NULL(strstr(log, ":CL00"));
+    TEST_ASSERT_NULL(strstr(log, ":CLP"));
 }
 
 void test_scoped_cleanup_non_panel_emits_no_panel_close() {
@@ -859,9 +895,9 @@ int main(int /*argc*/, char** /*argv*/) {
     RUN_TEST(test_toggle_abort_mid_open_closes_and_clears_latches);
     RUN_TEST(test_real_toggle_entries_are_catalog_with_branches);
 
-    RUN_TEST(test_scoped_cleanup_ring_only_closes_ring_group);
-    RUN_TEST(test_scoped_cleanup_pie_only_closes_pie_group);
-    RUN_TEST(test_scoped_cleanup_both_groups_closes_all);
+    RUN_TEST(test_scoped_cleanup_ring_only_closes_open_panels_staggered);
+    RUN_TEST(test_scoped_cleanup_pie_only_never_auto_closes_pies);
+    RUN_TEST(test_scoped_cleanup_both_groups_closes_only_ring);
     RUN_TEST(test_scoped_cleanup_non_panel_emits_no_panel_close);
 
     RUN_TEST(test_cl00_step_clears_latches);
