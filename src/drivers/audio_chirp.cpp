@@ -245,12 +245,31 @@ bool AudioDriverChirp::ensureCatalogStorage() {
         m_catalogBanks = new (std::nothrow) AudioCatalogBank[AUDIO_CATALOG_MAX_BANKS];
     }
     if (m_catalog == nullptr || m_catalogBanks == nullptr) {
-        PA_LOG_WARN(TAG, "catalog storage alloc failed (~%u bytes); discovery skipped",
+        // All-or-nothing: if only one array allocated, release it rather than
+        // hold ~15 KB (entries) or ~2 KB (banks) of unusable storage on a heap
+        // that is already under pressure. A later attempt retries cleanly.
+        delete[] m_catalog;
+        m_catalog = nullptr;
+        delete[] m_catalogBanks;
+        m_catalogBanks = nullptr;
+        m_catalogCount = 0;
+        m_catalogBankCount = 0;
+        PA_LOG_WARN(TAG, "catalog storage alloc failed (~%u bytes); released, discovery skipped",
                     (unsigned)(sizeof(AudioCatalogEntry) * AUDIO_CATALOG_MAX_ENTRIES +
                                sizeof(AudioCatalogBank) * AUDIO_CATALOG_MAX_BANKS));
         return false;
     }
     return true;
+}
+
+void AudioDriverChirp::freeCatalogStorage() {
+    delete[] m_catalog;
+    m_catalog = nullptr;
+    delete[] m_catalogBanks;
+    m_catalogBanks = nullptr;
+    m_catalogCount = 0;
+    m_catalogBankCount = 0;
+    m_catalogReady = false;
 }
 
 bool AudioDriverChirp::loadManifestBanks(uint32_t timeoutMs, bool keepTotalTracks) {
@@ -312,6 +331,10 @@ bool AudioDriverChirp::loadManifestBanks(uint32_t timeoutMs, bool keepTotalTrack
                         "CHIRP RX activity seen (%u bytes) but no valid GMAN frame.",
                         (unsigned)rxBytes);
         }
+        // No usable catalog (no module, contested UART2, or garbled RX): release
+        // the ~18 KB storage rather than hold it idle on a tight heap. Playback
+        // PLAY commands are TX-only and do not need it; a later discovery retries.
+        freeCatalogStorage();
         return false;
     }
     if (droppedBankLines > 0) {

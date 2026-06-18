@@ -92,6 +92,12 @@ class AudioDriverChirp : public AudioDriver {
     // if allocation fails so the caller aborts discovery gracefully.
     bool ensureCatalogStorage();
 
+    // Release the ~18 KB catalog storage and reset catalog state. Called when
+    // discovery yields nothing usable (no module / UART2 owned by DomeLink / no
+    // valid GMAN response) so CHIRP never holds catalog heap it cannot populate —
+    // playback (TX-only PLAY commands) does not need the catalog.
+    void freeCatalogStorage();
+
     // Send a null-terminated ASCII command string followed by '\n' via m_io.
     void sendCommand(const char* cmd);
 

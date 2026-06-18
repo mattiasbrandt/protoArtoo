@@ -20,12 +20,17 @@
 
 #include "sequence_engine.h"  // SeqAction
 
-// Bounded buffers. Per the operator's review: prefer a deeper TX ring (64) since
-// tail-only evidence can miss the important bit (ROCKMARCH P1). Entries are
-// capped at the dome/audio command size (SeqAction.payload is 64).
-#define SEQ_EVID_CMD_LEN      64
-#define SEQ_EVID_TX_CAP       64   // recent TX ring depth
-#define SEQ_EVID_CLEANUP_CAP  16   // terminal/abort cleanup commands (separate)
+// Bounded buffers. The record is held as TWO static copies (the live record on
+// the dispatcher task + a snapshot the API handler serializes from), so every
+// byte here costs ~2x static RAM. On this heap-constrained ESP32 (steady-state
+// free heap is tight — see the 2026-06-18 heap-exhaustion fix) the ring is sized
+// at the operator-sanctioned minimum of 32 entries, each capped at 48 bytes
+// (longer than any real dome command, e.g. "@HPS101/HPR02/HPT02|36"). Overflow
+// is signalled via txOverflowCount / cleanupTruncated so partial capture is
+// never silent. ~2.2 KB per copy vs ~5.3 KB at 64x64.
+#define SEQ_EVID_CMD_LEN      48
+#define SEQ_EVID_TX_CAP       32   // recent TX ring depth
+#define SEQ_EVID_CLEANUP_CAP  12   // terminal/abort cleanup commands (separate)
 #define SEQ_EVID_NAME_LEN     32
 #define SEQ_EVID_REASON_LEN   24
 
