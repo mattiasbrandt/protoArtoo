@@ -418,9 +418,10 @@ void test_real_loop_entries_have_loop_headers() {
     TEST_ASSERT_EQUAL_UINT32(45000, rock->steps[4].params.durationMs);
 
     // Loop header + body + post-loop steps + END must fit the table exactly.
-    // ROCKMARCH adds a post-loop "$s" music-stop step before the terminal.
+    // ROCKMARCH post-loop: a 7-panel physical-assurance close pass (individual
+    // :CLnn, staggered) + the "$s" music-stop step, before the terminal.
     TEST_ASSERT_EQUAL_UINT8(4 + 1 + 26 + 1, cantina->stepCount);
-    TEST_ASSERT_EQUAL_UINT8(4 + 1 + 14 + 1 + 1, rock->stepCount);
+    TEST_ASSERT_EQUAL_UINT8(4 + 1 + 14 + 7 + 1 + 1, rock->stepCount);
 }
 
 // ROCKMARCH timing: first beat of iteration 2 lands at period offset 6461.

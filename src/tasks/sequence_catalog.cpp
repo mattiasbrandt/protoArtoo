@@ -282,8 +282,22 @@ static const SeqStep kRockmarchSteps[] = {
     SEQ_DOME(5285, FX_NONE, ":CL11"),
     SEQ_DOME(5538, FX_NONE, ":OP13"),
     SEQ_DOME(6208, FX_NONE, ":CL13"),
+    // Physical-assurance close pass (2026-06-18 hardware finding). The rapid
+    // in-loop open/close cycling can dispatch a panel's close without it
+    // physically seating by sequence end (observed: P1 left open even though the
+    // dome received AND dispatched the in-wave :CL01; a single manual :CL01 then
+    // closed it). Logical-closed != physically-seated. So after the wave, re-close
+    // every touched ring panel once more, staggered individual at ~450-500 ms
+    // (brownout-safe; never :CL15/:CL00), leaving the ring physically closed.
+    SEQ_DOME(45200, FX_NONE, ":CL01"),
+    SEQ_DOME(45650, FX_NONE, ":CL02"),
+    SEQ_DOME(46100, FX_NONE, ":CL03"),
+    SEQ_DOME(46550, FX_NONE, ":CL04"),
     SEQ_AUDIO(47000, "$s"),                      // stop the march; $M outlives the sequence otherwise
-    SEQ_TERM(47300),                             // auto @0T1/@0P1/*ST00; ring closed in-steps -> no terminal panel close
+    SEQ_DOME(47050, FX_NONE, ":CL07"),
+    SEQ_DOME(47500, FX_NONE, ":CL11"),
+    SEQ_DOME(47950, FX_NONE, ":CL13"),
+    SEQ_TERM(48250),                             // auto @0T1/@0P1/*ST00; ring already closed by the assurance pass
 };
 
 // =============================================================================
@@ -560,7 +574,7 @@ static const SequenceEntry kCatalog[] = {
     { "DM:HEART",   kHeartSteps,   SEQ_STEPCOUNT(kHeartSteps),   10000, TOGGLE_NONE, nullptr, 0 },
     { "DM:RESET",   kResetSteps,   SEQ_STEPCOUNT(kResetSteps),   4000,  TOGGLE_NONE, nullptr, 0 },
     { "DM:CANTINA",   kCantinaSteps,   SEQ_STEPCOUNT(kCantinaSteps),   17000, TOGGLE_NONE, nullptr, 0 },
-    { "DM:ROCKMARCH", kRockmarchSteps, SEQ_STEPCOUNT(kRockmarchSteps), 48000, TOGGLE_NONE, nullptr, 0 },
+    { "DM:ROCKMARCH", kRockmarchSteps, SEQ_STEPCOUNT(kRockmarchSteps), 49000, TOGGLE_NONE, nullptr, 0 },
     { "DM:SCREAM",    kScreamSteps,    SEQ_STEPCOUNT(kScreamSteps),    15000, TOGGLE_NONE, nullptr, 0 },
     { "DM:OVERLOAD",  kOverloadSteps,  SEQ_STEPCOUNT(kOverloadSteps),  12000, TOGGLE_NONE, nullptr, 0 },
     { "DM:PIES",    kPiesOpenSteps,    SEQ_STEPCOUNT(kPiesOpenSteps),    12000,
