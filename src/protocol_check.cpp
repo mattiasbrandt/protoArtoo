@@ -198,6 +198,26 @@ static ProtocolCheckResult classifyDome(const char* label, uint8_t idx,
         return pcFailAt(label, idx, "cmd", "DM:* is a sequence trigger, not a step");
     }
 
+    // DV:<NAME> — dome visual preset (logic/PSI/holo only; issue #2 task #5). The
+    // name set is closed and owned by the dome; persisted/replayable sequences may
+    // only carry a known preset so an unknown name can never reach the wire. DV:
+    // is visual-only and does not participate in panel cleanup semantics.
+    if (strncmp(cmd, "DV:", 3) == 0) {
+        static const char* const kDvPresets[] = {
+            "ROCKMARCH", "VADER", "ALARM", "LEIA", "HEART", "CANTINA",
+            "SCREAM", "OVERLOAD", "HELLO", "RESET_VISUALS",
+        };
+        const char* name = cmd + 3;
+        const uint8_t kDvCount = (uint8_t)(sizeof(kDvPresets) / sizeof(kDvPresets[0]));
+        for (uint8_t i = 0; i < kDvCount; ++i) {
+            if (strcmp(name, kDvPresets[i]) == 0) {
+                fxOut = (uint8_t)(FX_LOGIC_PSI | FX_HOLO);  // visual reset at term
+                return pcOk();
+            }
+        }
+        return pcFailAt(label, idx, "cmd", "unknown DV: visual preset");
+    }
+
     // :SM is manual diagnostic/calibration only. Learned sequences, clone JSON,
     // imports, editor raw steps, and saved actions must not persist it.
     if (strncmp(cmd, ":SM", 3) == 0) {

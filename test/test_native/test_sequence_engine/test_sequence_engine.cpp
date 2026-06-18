@@ -427,15 +427,17 @@ void test_real_loop_entries_have_loop_headers() {
 
     const SequenceEntry* rock = sequenceCatalogFind("DM:ROCKMARCH");
     TEST_ASSERT_NOT_NULL(rock);
-    TEST_ASSERT_EQUAL_INT(STEP_LOOP, (int)rock->steps[4].type);
-    TEST_ASSERT_EQUAL_UINT8(14, rock->steps[4].params.bodyCount);
-    TEST_ASSERT_EQUAL_UINT32(45000, rock->steps[4].params.durationMs);
+    // Pre-loop steps: $M + DV:ROCKMARCH (the visual preset replaced the three raw
+    // @0T11/@0P11/@HPA0021 lines, task #5), so the loop header is at index 2.
+    TEST_ASSERT_EQUAL_INT(STEP_LOOP, (int)rock->steps[2].type);
+    TEST_ASSERT_EQUAL_UINT8(14, rock->steps[2].params.bodyCount);
+    TEST_ASSERT_EQUAL_UINT32(45000, rock->steps[2].params.durationMs);
 
     // Loop header + body + post-loop steps + END must fit the table exactly.
     // ROCKMARCH post-loop: a 7-panel physical-assurance close pass (individual
     // :CLnn, staggered) + the "$s" music-stop step, before the terminal.
     TEST_ASSERT_EQUAL_UINT8(4 + 1 + 26 + 1, cantina->stepCount);
-    TEST_ASSERT_EQUAL_UINT8(4 + 1 + 14 + 7 + 1 + 1, rock->stepCount);
+    TEST_ASSERT_EQUAL_UINT8(2 + 1 + 14 + 7 + 1 + 1, rock->stepCount);
 }
 
 // ROCKMARCH timing: first beat of iteration 2 lands at period offset 6461.

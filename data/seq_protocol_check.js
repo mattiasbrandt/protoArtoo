@@ -38,6 +38,13 @@
     "P1", "P2", "P3", "P4", "P5", "P6",
   ]);
 
+  // Dome visual presets (DV:<NAME>) — logic/PSI/holo only, closed set owned by
+  // the dome. Mirrors the server whitelist in src/protocol_check.cpp.
+  const DV_PRESETS = new Set([
+    "ROCKMARCH", "VADER", "ALARM", "LEIA", "HEART", "CANTINA",
+    "SCREAM", "OVERLOAD", "HELLO", "RESET_VISUALS",
+  ]);
+
   // Classify a panel intent target into its group for :OF cleanup tracking.
   function panelGroup(target) {
     if (target === "00") return "all";
@@ -194,6 +201,21 @@
         };
       }
 
+      // DV:<NAME> — dome visual preset (logic/PSI/holo only). Closed name set
+      // owned by the dome; only a known preset may persist in a sequence.
+      if (cmd.startsWith("DV:")) {
+        if (!DV_PRESETS.has(cmd.slice(3))) {
+          return {
+            ok: false,
+            field: "cmd",
+            error:
+              `Unknown DV: visual preset "${cmd.slice(3)}". ` +
+              "Allowed: " + Array.from(DV_PRESETS).join(", "),
+          };
+        }
+        return { ok: true };
+      }
+
       // Panel intent: :OP<target>, :CL<target>, :OF<target>
       if (cmd.startsWith(":OP") || cmd.startsWith(":CL") || cmd.startsWith(":OF")) {
         const target = cmd.slice(3);
@@ -234,7 +256,7 @@
         ok: false,
         field: "cmd",
         error:
-          "Dome command not recognized. Use :OP/:CL/:OF for panels, @... for logic/PSI, *... for holos, or :SE## for Marcduino sequences",
+          "Dome command not recognized. Use :OP/:CL/:OF for panels, @... for logic/PSI, *... for holos, DV:<name> for dome visual presets, or :SE## for Marcduino sequences",
       };
     },
 

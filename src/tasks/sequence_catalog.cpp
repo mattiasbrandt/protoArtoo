@@ -273,9 +273,13 @@ static const SeqStep kCantinaSteps[] = {
 // open slot k at k*923, close it 773 ms later. 7 iterations x 6461 ms.
 static const SeqStep kRockmarchSteps[] = {
     SEQ_AUDIO_FX(0, FX_AUDIO, "$M"),             // Imperial March (stops on abort)
-    SEQ_DOME(0, FX_HOLO, "@HPA0021|47"),         // all holos red flashes 47 s
-    SEQ_DOME(0, FX_LOGIC_PSI, "@0T11"),          // MARCH logics
-    SEQ_DOME(0, FX_LOGIC_PSI, "@0P11"),          // MARCH PSI
+    // Dome-native red MARCH visual preset (logic/PSI/holo) via the DV: surface
+    // (issue #2 task #5, first acceptance case). Replaces the raw @0T11/@0P11/
+    // @HPA0021|47 approximation, which rendered default blue on hardware — the
+    // dome owns the typed red MARCH rendering. Tagged FX_LOGIC_PSI|FX_HOLO so the
+    // engine's terminal cleanup still emits the body-owned visual teardown
+    // (@0T1/@0P1/*ST00). Body keeps music + the ring wave + settle close below.
+    SEQ_DOME(0, (uint8_t)(FX_LOGIC_PSI | FX_HOLO), "DV:ROCKMARCH"),
     // Ring march wave on the ~923 ms beat. Hold is 670 ms (was 773) so every dome
     // command dispatches >= ~253 ms apart: open->close 670, close->next-open 253,
     // loop-wrap :CL13->:OP01 253. The original 150 ms close->next-open gaps could

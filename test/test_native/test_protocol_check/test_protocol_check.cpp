@@ -236,6 +236,21 @@ static void test_se_digit_count_enforced() {
     TEST_ASSERT_TRUE_MESSAGE(r.ok, r.message);
 }
 
+// DV:<NAME> dome visual preset — a known preset passes, an unknown one is
+// rejected so it can never persist in a replayable sequence (issue #2 task #5).
+static void test_dv_known_preset_accepted() {
+    static SeqStep s[] = { SEQ_DOME(0, FX_NONE, "DV:ROCKMARCH"), SEQ_TERM(100) };
+    ProtocolCheckResult r = protocolCheckBranch("steps", s, 2);
+    TEST_ASSERT_TRUE_MESSAGE(r.ok, r.message);
+}
+
+static void test_dv_unknown_preset_rejected() {
+    static SeqStep s[] = { SEQ_DOME(0, FX_NONE, "DV:BOGUS"), SEQ_TERM(100) };
+    ProtocolCheckResult r = protocolCheckBranch("steps", s, 2);
+    TEST_ASSERT_FALSE(r.ok);
+    TEST_ASSERT_EQUAL_STRING("steps[0].cmd", r.field);
+}
+
 static void test_audio_dollar_charset_rejected() {
     static SeqStep s[] = {
         SEQ_AUDIO(0, "$bad!"),  // '!' not alnum
@@ -521,6 +536,8 @@ int main(int /*argc*/, char** /*argv*/) {
 
     RUN_TEST(test_unknown_command_rejected);
     RUN_TEST(test_se_digit_count_enforced);
+    RUN_TEST(test_dv_known_preset_accepted);
+    RUN_TEST(test_dv_unknown_preset_rejected);
     RUN_TEST(test_audio_dollar_charset_rejected);
 
     RUN_TEST(test_missing_terminal_end_rejected);
