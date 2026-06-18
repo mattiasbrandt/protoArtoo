@@ -88,15 +88,14 @@ class AudioDriverChirp : public AudioDriver {
 
     bool loadManifestBanks(uint32_t timeoutMs, bool keepTotalTracks);
 
-    // Lazily heap-allocate m_catalog/m_catalogBanks on first use. Returns false
-    // if allocation fails so the caller aborts discovery gracefully.
-    bool ensureCatalogStorage();
-
-    // Release the ~18 KB catalog storage and reset catalog state. Called when
-    // discovery yields nothing usable (no module / UART2 owned by DomeLink / no
-    // valid GMAN response) so CHIRP never holds catalog heap it cannot populate —
-    // playback (TX-only PLAY commands) does not need the catalog.
-    void freeCatalogStorage();
+    // Split, lazy catalog allocation (heap-exhaustion fix). The bank summary
+    // array (~2.3 KB) is needed by the boot/link path; the per-track entry array
+    // (~15.6 KB) is needed only when the full catalog is filled (refreshCatalog,
+    // a UI action with a live module). Keeping the 15.6 KB out of the boot/link
+    // path is what stops the heap collapsing during audio_play / discovery on a
+    // tight heap. Each returns false if its allocation fails.
+    bool ensureBankStorage();
+    bool ensureEntryStorage();
 
     // Send a null-terminated ASCII command string followed by '\n' via m_io.
     void sendCommand(const char* cmd);

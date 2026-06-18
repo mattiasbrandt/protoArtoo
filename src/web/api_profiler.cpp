@@ -38,6 +38,7 @@
 
 #include <Arduino.h>
 #include <ESPAsyncWebServer.h>
+#include <esp_debug_helpers.h>   // esp_backtrace_get_start/next_frame (failed-alloc backtrace)
 #include <esp_heap_caps.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -130,10 +131,22 @@ static portMUX_TYPE s_hwmMux = portMUX_INITIALIZER_UNLOCKED;
 static uint32_t s_failedAllocCount = 0;
 
 static void failedAllocCb(size_t requested_size, uint32_t caps, const char* function_name) {
-    (void)caps;
-    (void)function_name;
     __atomic_fetch_add(&s_failedAllocCount, 1U, __ATOMIC_RELAXED);
-    PA_LOG_ERROR(TAG, "alloc_failed: %u bytes requested", (unsigned)requested_size);
+
+    // Walk the caller chain into a log string so the failing allocation site is
+    // visible over /api/logs (no serial reset needed). Decode the addresses with:
+    //   xtensa-esp32-elf-addr2line -e .pio/build/protoArtoo_profiler/firmware.elf <pc...>
+    char bt[288];
+    int off = snprintf(bt, sizeof(bt), "alloc_failed: %u bytes caps=0x%x by=%s bt:",
+                       (unsigned)requested_size, (unsigned)caps,
+                       function_name ? function_name : "?");
+    esp_backtrace_frame_t frame;
+    esp_backtrace_get_start(&frame.pc, &frame.sp, &frame.next_pc);
+    for (int depth = 0; depth < 16 && off > 0 && off < (int)sizeof(bt); ++depth) {
+        off += snprintf(bt + off, sizeof(bt) - off, " 0x%08x", (unsigned)frame.pc);
+        if (!esp_backtrace_get_next_frame(&frame)) break;
+    }
+    PA_LOG_ERROR(TAG, "%s", bt);
 }
 
 // =============================================================================

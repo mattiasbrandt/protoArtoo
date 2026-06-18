@@ -237,43 +237,29 @@ static bool parseNameLine(const char* line, uint8_t* bankOut, char* pageOut, uin
 
 // Parse GMAN output and cache all BANK lines.
 // Returns true when any valid GMAN frame line was observed.
-bool AudioDriverChirp::ensureCatalogStorage() {
-    if (m_catalog == nullptr) {
-        m_catalog = new (std::nothrow) AudioCatalogEntry[AUDIO_CATALOG_MAX_ENTRIES];
-    }
+// Bank summary storage only (~2.3 KB). Needed by the bank/link path
+// (loadManifestBanks), which runs at boot and is cheap to keep allocated, so it
+// is held once allocated (no alloc/free churn on repeated link checks).
+bool AudioDriverChirp::ensureBankStorage() {
     if (m_catalogBanks == nullptr) {
         m_catalogBanks = new (std::nothrow) AudioCatalogBank[AUDIO_CATALOG_MAX_BANKS];
     }
-    if (m_catalog == nullptr || m_catalogBanks == nullptr) {
-        // All-or-nothing: if only one array allocated, release it rather than
-        // hold ~15 KB (entries) or ~2 KB (banks) of unusable storage on a heap
-        // that is already under pressure. A later attempt retries cleanly.
-        delete[] m_catalog;
-        m_catalog = nullptr;
-        delete[] m_catalogBanks;
-        m_catalogBanks = nullptr;
-        m_catalogCount = 0;
-        m_catalogBankCount = 0;
-        PA_LOG_WARN(TAG, "catalog storage alloc failed (~%u bytes); released, discovery skipped",
-                    (unsigned)(sizeof(AudioCatalogEntry) * AUDIO_CATALOG_MAX_ENTRIES +
-                               sizeof(AudioCatalogBank) * AUDIO_CATALOG_MAX_BANKS));
-        return false;
-    }
-    return true;
+    return m_catalogBanks != nullptr;
 }
 
-void AudioDriverChirp::freeCatalogStorage() {
-    delete[] m_catalog;
-    m_catalog = nullptr;
-    delete[] m_catalogBanks;
-    m_catalogBanks = nullptr;
-    m_catalogCount = 0;
-    m_catalogBankCount = 0;
-    m_catalogReady = false;
+// Per-track entry storage (~15.6 KB). Allocated ONLY when the full catalog is
+// actually being filled (refreshCatalog, an explicit UI action with a live
+// module). Keeping this out of the boot/link path is the heap-exhaustion fix:
+// the bank/link path no longer transiently allocates 15.6 KB on a tight heap.
+bool AudioDriverChirp::ensureEntryStorage() {
+    if (m_catalog == nullptr) {
+        m_catalog = new (std::nothrow) AudioCatalogEntry[AUDIO_CATALOG_MAX_ENTRIES];
+    }
+    return m_catalog != nullptr;
 }
 
 bool AudioDriverChirp::loadManifestBanks(uint32_t timeoutMs, bool keepTotalTracks) {
-    if (!ensureCatalogStorage()) {
+    if (!ensureBankStorage()) {
         return false;
     }
     while (m_io.rxAvailable()) { (void)m_io.rxRead(); }
@@ -331,10 +317,9 @@ bool AudioDriverChirp::loadManifestBanks(uint32_t timeoutMs, bool keepTotalTrack
                         "CHIRP RX activity seen (%u bytes) but no valid GMAN frame.",
                         (unsigned)rxBytes);
         }
-        // No usable catalog (no module, contested UART2, or garbled RX): release
-        // the ~18 KB storage rather than hold it idle on a tight heap. Playback
-        // PLAY commands are TX-only and do not need it; a later discovery retries.
-        freeCatalogStorage();
+        // No usable bank summary (no module, contested UART2, or garbled RX).
+        // The bank array (~2.3 KB) is small and held to avoid alloc/free churn on
+        // repeated link checks; the large entry array is never touched here.
         return false;
     }
     if (droppedBankLines > 0) {
@@ -454,6 +439,16 @@ bool AudioDriverChirp::refreshCatalog() {
 
     if (!loadManifestBanks(2500u, false)) {
         m_catalogReady = false;
+        return false;
+    }
+
+    // Now that a live module + bank summary is confirmed, allocate the large
+    // per-track entry array (~15.6 KB). This is the only path that needs it, so
+    // it never burdens the boot/link path on a tight heap.
+    if (!ensureEntryStorage()) {
+        m_catalogReady = false;
+        PA_LOG_WARN(TAG, "catalog entry storage alloc failed (~%u bytes); refresh skipped",
+                    (unsigned)(sizeof(AudioCatalogEntry) * AUDIO_CATALOG_MAX_ENTRIES));
         return false;
     }
 
