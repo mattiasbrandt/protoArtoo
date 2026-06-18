@@ -46,7 +46,7 @@ Neither path emits group closes or auto-closes pies; `:OF` flutters do not mark 
 | **DM:HEART** | category | none | `@1MYou're Wonderful` | `@1P2` | `@HPF/HPR/HPT006\|10` rainbow | effect resets only | typed visuals vs native | software-expected, needs-visual-parity-work |
 | **DM:RESET** | `$s` stop | **authored `:CL00`** (close+release all) | `@0T1` | `@0P1` | `*ST00` | the `:CL00` IS the choreography | **authored group `:CL00` = brownout hazard** (Slice 3 / task #3 re-author + latch-clear) | **do-not-test-yet** |
 | **DM:CANTINA** | `$C` | LOOP: ring+pie open/close mix | `@0T2` | `@0P2` | `@HPA0029\|15` | in-steps closes | opens pies; dense loop cadence (queue risk) | do-not-test-yet (pie movement) |
-| **DM:ROCKMARCH** | `$M` (+ `$s` stop @47s) | LOOP: ring wave open/close ×7 | `@0T11` MARCH | `@0P11` MARCH | `@HPA0021\|47` | ring closed in-steps → none | **P1 can stay open (final-iter `:CL01` dropped, queue/cadence — task #4)**; visual lacks native MARCH/red/47s | hardware-verified: brownout-safe panel regression + music-stop ONLY — NOT visual/cadence complete (P1 → task #4; visual → task #5) |
+| **DM:ROCKMARCH** | `$M` (+ `$s` stop @47s) | LOOP: ring wave open/close ×7 | `@0T11` MARCH | `@0P11` MARCH | `@HPA0021\|47` | ring closed in-steps + **authored staggered settle re-close pass** (`:CL01…:CL13`, physical assurance) → all panels seated | visual lacks native MARCH/red/47s (→ task #5 `DV:`) | hardware-verified: brownout-safe + **P1/all panels physically closed (settle pass)** + music-stop; visual parity pending (task #5) |
 | **DM:SCREAM** | category | opens ALL pies+ring, LOOP random flutter/open | `@0T5` | `@0P5` | `@HPA0070`, `@HPA105\|5` | in-steps / mask | opens pies; dense + random | do-not-test-yet (pie movement) |
 | **DM:OVERLOAD** | category | random ring+pie **flutter** (`:OF`) | `@1T4`,`@2T4` | `@0P4` | `@HPA0070` | flutters don't mark open → **no terminal close** (native-test verified) | flutters pies (movement) | cleanup software-verified; do-not-test-yet on hw (pie movement) |
 | **DM:PIES** (toggle) | `$H` | pie open wave (open branch) / `:CLP*` (close) | — | — | `*ST00` on close | open branch latches pies open; close runs per-pie `:CLP*` | pie open/close; pie-close mechanical safety unverified | do-not-test-yet (pie movement) |
@@ -69,14 +69,18 @@ all panel + visual behavior; the body does not choreograph them. Not body-parity
 `DM:FAINT :SE56` · `DM:RYTHMIC :SE57` · `DM:HARLEMSHAKE $815` · `DM:GIRLONFIRE $821` ·
 `DM:YODA $720` · `DM:TOPPANELS :SE12` · `DM:WIGGLE :SE16` · `DM:BYEBYE :SE58`
 
-## Today's hardware results (2026-06-18, fw 357-g3b77028)
+## Hardware results (2026-06-18, fw 360-g9b44f62)
 
 - **DM:LOW** — hardware-verified: ring open/close, brownout-safe cleanup (no terminal group
   close), estop abort closes only open panels staggered, estop-clear/reconnect resync staged
   individual closes. No automatic pie movement.
-- **DM:ROCKMARCH** — panel-safety regression passed (no brownout, music stops at end, no group
-  close). Open follow-ups: P1 can remain open (queue/cadence — task #4, fix = space cadence, NOT
-  a close-all); visual parity incomplete (task #5 `DV:<name>`).
+- **DM:ROCKMARCH** — hardware-verified for panels: no brownout, music stops at end, no group
+  close, and **all panels (incl. P1) physically closed at end** via the authored settle pass.
+  Progression this session: cadence respaced 773→670 ms (task #4, removed dome queue-full) →
+  P1 still open because a dispatched close didn't physically seat (diagnosed: single manual
+  `:CL01` closed it) → authored staggered physical-assurance close pass added (task #8) →
+  P1/all panels now seated. **Remaining: FLD/PSI/holo visual parity** (`@0T11` ≠ native
+  MARCH/red/47 s) → task #5 `DV:<name>`.
 
 ## How to use this in testing
 
