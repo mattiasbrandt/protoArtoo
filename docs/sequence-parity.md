@@ -5,7 +5,8 @@ audio / panels / logic / PSI / holo / cleanup, plus known deviations from the do
 version and a verification status. Purpose: write expected behavior down **once** so neither
 the operator nor the agents have to re-derive it live during testing (see
 `feedback_dont_make_operator_the_diff_engine`). Pairs with the machine-readable run-evidence
-work (task #6) and the `DV:<name>` visual-preset surface (task #5).
+work (task #6) and the `DV:<name>` visual-preset surface (task #5, contract +
+visual parity table in [dome-visual-presets.md](dome-visual-presets.md)).
 
 Source of truth: `src/tasks/sequence_catalog.cpp`. Keep this in sync when sequences change.
 
