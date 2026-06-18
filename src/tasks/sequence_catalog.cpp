@@ -260,23 +260,30 @@ static const SeqStep kRockmarchSteps[] = {
     SEQ_DOME(0, FX_HOLO, "@HPA0021|47"),         // all holos red flashes 47 s
     SEQ_DOME(0, FX_LOGIC_PSI, "@0T11"),          // MARCH logics
     SEQ_DOME(0, FX_LOGIC_PSI, "@0P11"),          // MARCH PSI
+    // Ring march wave on the ~923 ms beat. Hold is 670 ms (was 773) so every dome
+    // command dispatches >= ~253 ms apart: open->close 670, close->next-open 253,
+    // loop-wrap :CL13->:OP01 253. The original 150 ms close->next-open gaps could
+    // overflow the dome's 8-entry command queue and drop the FINAL iteration's
+    // :CL01, leaving P1 open (2026-06-18 hardware finding). Keep dispatch spacing
+    // >= ~200 ms in any ring wave; the ~923 ms beat (opens) is unchanged so march
+    // sync to $M is preserved.
     SEQ_LOOP(0, 14, 6461, 45000),
     SEQ_DOME(0, FX_PANEL, ":OP01"),
-    SEQ_DOME(773, FX_NONE, ":CL01"),
+    SEQ_DOME(670, FX_NONE, ":CL01"),
     SEQ_DOME(923, FX_NONE, ":OP02"),
-    SEQ_DOME(1696, FX_NONE, ":CL02"),
+    SEQ_DOME(1593, FX_NONE, ":CL02"),
     SEQ_DOME(1846, FX_NONE, ":OP03"),
-    SEQ_DOME(2619, FX_NONE, ":CL03"),
+    SEQ_DOME(2516, FX_NONE, ":CL03"),
     SEQ_DOME(2769, FX_NONE, ":OP04"),
-    SEQ_DOME(3542, FX_NONE, ":CL04"),
+    SEQ_DOME(3439, FX_NONE, ":CL04"),
     SEQ_DOME(3692, FX_NONE, ":OP07"),
-    SEQ_DOME(4465, FX_NONE, ":CL07"),
+    SEQ_DOME(4362, FX_NONE, ":CL07"),
     SEQ_DOME(4615, FX_NONE, ":OP11"),
-    SEQ_DOME(5388, FX_NONE, ":CL11"),
+    SEQ_DOME(5285, FX_NONE, ":CL11"),
     SEQ_DOME(5538, FX_NONE, ":OP13"),
-    SEQ_DOME(6311, FX_NONE, ":CL13"),
+    SEQ_DOME(6208, FX_NONE, ":CL13"),
     SEQ_AUDIO(47000, "$s"),                      // stop the march; $M outlives the sequence otherwise
-    SEQ_TERM(47300),                             // auto @0T1/@0P1/*ST00 + scoped :CL15 (ring-only)
+    SEQ_TERM(47300),                             // auto @0T1/@0P1/*ST00; ring closed in-steps -> no terminal panel close
 };
 
 // =============================================================================
