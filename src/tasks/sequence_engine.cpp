@@ -181,6 +181,17 @@ bool seqEngineRingCloseCmd(uint8_t i, char* buf, uint8_t bufLen) {
     return true;
 }
 
+int seqEngineRingPanelNumber(uint8_t i) {
+    if (i >= kRingPanelCount) {
+        return -1;
+    }
+    return (int)kRingPanels[i];
+}
+
+bool seqEngineFinishing(const SeqEngineState& st) {
+    return st.finishing;
+}
+
 // Build the terminal auto-reset queue from activeFx (ADR 0004 decision 7).
 // FX_PANEL close-all is suppressed on the normal end of a toggle open branch
 // (panels are meant to stay open); FX_AUDIO stops playback only on abnormal

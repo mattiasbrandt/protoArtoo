@@ -280,3 +280,13 @@ void seqEngineCommit(SeqEngineState& st);
 // for the ring panel set lives in sequence_engine.cpp.
 uint8_t seqEngineRingPanelCount(void);
 bool    seqEngineRingCloseCmd(uint8_t i, char* buf, uint8_t bufLen);
+
+// Ring panel NUMBER (e.g. 1, 2, 13) for ring index i (0..count-1), or -1 if out
+// of range. Single source of the ring panel set for callers that need to map a
+// ringOpenMask/touched-mask bit back to a panel number (e.g. run-evidence).
+int seqEngineRingPanelNumber(uint8_t i);
+
+// True while the engine is draining terminal/abort auto-reset actions. Lets the
+// dispatcher classify a peeked action as cleanup (vs normal choreography) for
+// run-evidence capture. False when idle or running normal steps.
+bool seqEngineFinishing(const SeqEngineState& st);

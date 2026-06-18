@@ -28,6 +28,7 @@
 #include "seq_store.h"
 #include "sequence_dispatcher.h"
 #include "sequence_engine.h"
+#include "sequence_run_evidence.h"
 
 static const char* TAG = "SEQ";
 
@@ -117,14 +118,25 @@ static bool dispatchAction(const SeqAction& act) {
     }
 }
 
+// Current dome-TX-queue overflow count (run-evidence drop baseline/delta).
+static uint32_t domeDropCount() {
+    uint32_t c;
+    taskENTER_CRITICAL(&robotStateMux);
+    c = robotState.queueOverflowCount;
+    taskEXIT_CRITICAL(&robotStateMux);
+    return c;
+}
+
 // Best-effort drain of remaining engine actions (abort/preempt cleanup).
 // Commits regardless of dispatch result so a full queue cannot stall cleanup.
+// These are all terminal/abort cleanup, so they are recorded as cleanup evidence.
 static void drainBestEffort(SeqEngineState& engine, uint32_t now) {
     SeqAction act;
     while (seqEnginePeek(engine, now, esp_random, act)) {
         if (!dispatchAction(act)) {
             PA_LOG_WARN(TAG, "cleanup action dropped (queue full): %s", act.payload);
         }
+        seqEvidenceRecordTx(act, /*cleanup=*/true);
         seqEngineCommit(engine);
     }
 }
@@ -193,6 +205,7 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
                     PA_LOG_INFO(TAG, "preempt %s -> %s", activeName, req.name);
                     seqEngineAbort(engine);
                     drainBestEffort(engine, now);  // drain old run from buffers
+                    seqEvidenceEnd(SEQ_RUN_PREEMPTED, "preempt", now, domeDropCount());
                 }
                 const SequenceEntry* entry = catalogEntry;
                 if (isRuntime) {
@@ -202,6 +215,7 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
                     entry = &runtimeEntry;
                 }
                 seqEngineStart(engine, entry, now);
+                seqEvidenceBegin(req.name, (uint8_t)req.src, now, domeDropCount());
                 resyncCloseIdx = 0xFF;  // a new run supersedes any staged resync close
                 strncpy(activeName, req.name, sizeof(activeName) - 1);
                 activeName[sizeof(activeName) - 1] = '\0';
@@ -225,6 +239,7 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
             PA_LOG_INFO(TAG, "abort %s (estop)", activeName);
             seqEngineAbort(engine);
             drainBestEffort(engine, now);
+            seqEvidenceEnd(SEQ_RUN_ESTOP, "estop", now, domeDropCount());
             clearSuppression();
             activeName[0] = '\0';
         }
@@ -255,6 +270,7 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
             if (seqEngineActive(engine)) {
                 seqEngineAbort(engine);
                 drainBestEffort(engine, now);
+                seqEvidenceEnd(SEQ_RUN_RECONNECT, "dome reconnect", now, domeDropCount());
                 clearSuppression();
                 activeName[0] = '\0';
             }
@@ -291,13 +307,20 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
                         PA_LOG_WARN(TAG, "queue full, retrying: %s", act.payload);
                         retryLogged = true;
                     }
+                    seqEvidenceNoteRetry();
                     break;  // retry same action next tick
                 }
+                // seqEnginePeek flips to finishing when it hits STEP_END, so the
+                // finishing flag here classifies this action as terminal cleanup.
+                seqEvidenceRecordTx(act, seqEngineFinishing(engine));
                 retryLogged = false;
                 seqEngineCommit(engine);
             }
             if (!seqEngineActive(engine)) {
                 PA_LOG_INFO(TAG, "end %s", activeName);
+                // No-op if an abort path already finalized this run (guarded on
+                // RUNNING); otherwise records the normal completion.
+                seqEvidenceEnd(SEQ_RUN_COMPLETED, "", now, domeDropCount());
                 clearSuppression();
                 activeName[0] = '\0';
             }
