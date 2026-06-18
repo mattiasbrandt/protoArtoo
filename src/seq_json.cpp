@@ -294,6 +294,12 @@ ProtocolCheckResult seqJsonParse(const char* json,
 static void serializeBranch(JsonArray arr, const SeqStep* steps, uint8_t count) {
     for (uint8_t i = 0; i < count; ++i) {
         const SeqStep& s = steps[i];
+        // STEP_CLEAR_LATCHES is body-internal with no JSON/wire form. Omit it
+        // entirely so a cloned/exported sequence is not truncated (the generic
+        // unknown-type fallthrough below emits "end").
+        if (s.type == STEP_CLEAR_LATCHES) {
+            continue;
+        }
         JsonObject o = arr.add<JsonObject>();
         o["t"] = s.tMs;
         switch (s.type) {

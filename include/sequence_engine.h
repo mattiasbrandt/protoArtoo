@@ -32,6 +32,12 @@ enum SeqStepType : uint8_t {
     STEP_RANDOM         = 4,  // emit a random logical panel intent command
                               // resolved at fire time
     STEP_AUDIO_CATEGORY = 5,  // random track from a config-backed sound category
+    STEP_CLEAR_LATCHES  = 6,  // body-internal: reset toggle latches (piesOpen/
+                              // ringOpen) at this step's fire time. Factory-only —
+                              // there is no JSON/wire form, the seq_json parser
+                              // cannot produce it, and serialization omits it, so
+                              // it never reaches Protocol Check. Used by DM:RESET
+                              // to clear latch state without a group close.
 };
 
 // -----------------------------------------------------------------------------
@@ -121,6 +127,7 @@ struct SeqStep {
     { (t), STEP_RANDOM, FX_PANEL, "", \
       { 0, 0, 0, (uint8_t)(set), (uint16_t)(mode), 0, (mv), (jit), (distinct), 0, 0 } }
 #define SEQ_TERM(t)           { (t), STEP_END, FX_NONE, "", {} }
+#define SEQ_CLEAR_LATCHES(t)  { (t), STEP_CLEAR_LATCHES, FX_NONE, "", {} }
 
 // -----------------------------------------------------------------------------
 // Toggle groups (ADR 0004 decision 8) — body-authoritative latched panel state.

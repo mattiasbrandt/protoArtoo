@@ -307,7 +307,9 @@ void test_audio_category_step_emits_category_action() {
     TEST_ASSERT_EQUAL_UINT8((uint8_t)AUDIO_SLOT_NAMED_SCREAM, act.audioFallbackSlot);
 }
 
-// DM:RESET runs its explicit cleanup steps; the :CL00 clears toggle latches.
+// DM:RESET closes the ring with staggered individual closes (never a group
+// close, never a pie close) and clears the toggle latches via an explicit
+// STEP_CLEAR_LATCHES — not via a :CL00 side effect (2026-06-18 brownout fix).
 void test_real_reset_entry_clears_latches_and_resets() {
     const SequenceEntry* e = sequenceCatalogFind("DM:RESET");
     TEST_ASSERT_NOT_NULL(e);
@@ -318,9 +320,21 @@ void test_real_reset_entry_clears_latches_and_resets() {
     st.latches.ringOpen = true;
     seqEngineStart(st, e, 0);
 
+    // Drain past the authored end (~3900 ms). The inline STEP_CLEAR_LATCHES emits
+    // no action, so it is absent from the log but still clears the latches.
     char log[256] = "";
-    TEST_ASSERT_EQUAL_INT(5, drainAt(st, 2000, log, sizeof(log)));
-    TEST_ASSERT_EQUAL_STRING("$s|:CL00|*ST00|@0T1|@0P1", log);
+    TEST_ASSERT_EQUAL_INT(11, drainAt(st, 5000, log, sizeof(log)));
+    TEST_ASSERT_EQUAL_STRING(
+        "$s|:CL01|:CL02|:CL03|:CL04|:CL07|:CL11|:CL13|*ST00|@0T1|@0P1", log);
+
+    // Safety invariant: no group close and no pie command anywhere in the stream.
+    TEST_ASSERT_NULL(strstr(log, ":CL00"));
+    TEST_ASSERT_NULL(strstr(log, ":CL14"));
+    TEST_ASSERT_NULL(strstr(log, ":CL15"));
+    TEST_ASSERT_NULL(strstr(log, ":CLP"));   // no individual pie close (:CLPn)
+    TEST_ASSERT_NULL(strstr(log, ":OP"));    // reset never opens anything
+
+    // Latches cleared by the explicit step, and a clean terminal (no group close).
     TEST_ASSERT_FALSE(st.latches.piesOpen);
     TEST_ASSERT_FALSE(st.latches.ringOpen);
     TEST_ASSERT_FALSE(seqEngineActive(st));

@@ -20,6 +20,11 @@ from a loaded ring. Precision differs by path:
 - **Reconnect / estop-clear resync** is **blind ring-only staged cleanup** — it closes all ring
   panels individually (`:CL01 :CL02 :CL03 :CL04 :CL07 :CL11 :CL13`, one per ~500 ms) because the
   dome's panel state is unknown after a boot/link gap.
+- **Authored `DM:RESET`** (Slice 3a, 2026-06-18) follows the same rule: its old `:CL00` close-all
+  step was a brownout hazard, so it now closes the ring with the same staggered individual
+  `:CL01…:CL13` (~450 ms) and clears the toggle latches with an explicit `STEP_CLEAR_LATCHES`
+  step instead of relying on the `:CL00` latch side effect. **Behavior change:** DM:RESET no
+  longer closes pies — pies stay as they are until dome-side pie-close mechanical safety is verified.
 
 Neither path emits group closes or auto-closes pies; `:OF` flutters do not mark a panel open.
 
@@ -44,7 +49,7 @@ Neither path emits group closes or auto-closes pies; `:OF` flutters do not mark 
 | **DM:LEIA** | `$L` | none | `@0T6` | `@0P6` | `@HPS101/HPR02/HPT02 \|36` | effect resets only | typed holo/logic vs native | software-expected, needs-visual-parity-work |
 | **DM:ALARM** | category | none | `@0T3` | `@0P3` | `@HPA0021\|10` | effect resets only | color/duration vs native | software-expected, needs-visual-parity-work |
 | **DM:HEART** | category | none | `@1MYou're Wonderful` | `@1P2` | `@HPF/HPR/HPT006\|10` rainbow | effect resets only | typed visuals vs native | software-expected, needs-visual-parity-work |
-| **DM:RESET** | `$s` stop | **authored `:CL00`** (close+release all) | `@0T1` | `@0P1` | `*ST00` | the `:CL00` IS the choreography | **authored group `:CL00` = brownout hazard** (Slice 3 / task #3 re-author + latch-clear) | **do-not-test-yet** |
+| **DM:RESET** | `$s` stop | **staggered ring `:CL01…:CL13`** (~450 ms apart) + explicit latch-clear; **pies NOT auto-closed** | `@0T1` | `@0P1` | `*ST00` | the staggered ring closes ARE the choreography; net-open mask → 0 so terminal emits nothing | **re-authored (Slice 3a)**: no `:CL00/:CL14/:CL15`, never a group/pie close; latches cleared via `STEP_CLEAR_LATCHES` not `:CL00` side effect. Pies left open until dome-side pie-close safety verified (documented deviation) | software-verified (981/981); **safe to hardware-test** |
 | **DM:CANTINA** | `$C` | LOOP: ring+pie open/close mix | `@0T2` | `@0P2` | `@HPA0029\|15` | in-steps closes | opens pies; dense loop cadence (queue risk) | do-not-test-yet (pie movement) |
 | **DM:ROCKMARCH** | `$M` (+ `$s` stop @47s) | LOOP: ring wave open/close ×7 | `@0T11` MARCH | `@0P11` MARCH | `@HPA0021\|47` | ring closed in-steps + **authored staggered settle re-close pass** (`:CL01…:CL13`, physical assurance) → all panels seated | visual lacks native MARCH/red/47s (→ task #5 `DV:`) | hardware-verified: brownout-safe + **P1/all panels physically closed (settle pass)** + music-stop; visual parity pending (task #5) |
 | **DM:SCREAM** | category | opens ALL pies+ring, LOOP random flutter/open | `@0T5` | `@0P5` | `@HPA0070`, `@HPA105\|5` | in-steps / mask | opens pies; dense + random | do-not-test-yet (pie movement) |

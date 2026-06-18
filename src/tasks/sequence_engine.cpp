@@ -471,6 +471,18 @@ bool seqEnginePeek(SeqEngineState& st, uint32_t nowMs, SeqRandFn rnd, SeqAction&
                 break;
             }
 
+            if (step.type == STEP_CLEAR_LATCHES) {
+                // Body-internal latch reset (no dome/audio output). Honor the
+                // authored fire time so it lands after the staggered closes that
+                // precede it, then advance without emitting an action.
+                if (!timeReached(nowMs, st.startMs + step.tMs)) {
+                    return false;
+                }
+                seqEngineClearLatches(st);
+                st.cursor++;
+                continue;
+            }
+
             if (step.type == STEP_LOOP) {
                 if (!timeReached(nowMs, st.startMs + step.tMs)) {
                     return false;

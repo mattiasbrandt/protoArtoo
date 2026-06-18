@@ -193,16 +193,32 @@ static const SeqStep kHeartSteps[] = {
     SEQ_TERM(10000),                             // auto @0T1/@0P1/*ST00
 };
 
-// DM:RESET — stop audio, close and release all panels, reset holos/logics/PSI.
-// The resets ARE the choreography here, so they are explicit steps; the :CL00
-// also clears all body-side toggle latches.
+// DM:RESET — safe ring-panel reset + body latch clear, then reset holos/logics/
+// PSI. Pie panels are NOT auto-closed: on this droid pie-close mechanical safety
+// is still unverified, and the systemic invariant (2026-06-17/-18 brownout fix)
+// is that the body never auto-emits a group close (:CL00/:CL14/:CL15) nor an
+// automatic pie close. The old :CL00 here drove every group servo at once
+// (brownout) and cleared the toggle latches as a side effect. This re-author
+// closes only the ring panels, individually and staggered at the proven safe
+// ~450 ms cadence (one servo actuating at a time), and clears the latches with
+// an explicit STEP_CLEAR_LATCHES instead of relying on the :CL00 side effect.
+// The closes are unconditional physical assurance: DM:RESET seats the ring
+// regardless of what this sequence opened, so the closes set the per-run net-open
+// mask to 0 and the terminal cleanup emits no further panel commands.
 static const SeqStep kResetSteps[] = {
     SEQ_AUDIO(0, "$s"),                          // stop playback
-    SEQ_DOME(0, FX_NONE, ":CL00"),               // close + release all panels
-    SEQ_DOME(1150, FX_NONE, "*ST00"),            // reset holos
-    SEQ_DOME(1150, FX_NONE, "@0T1"),             // reset logics
-    SEQ_DOME(1150, FX_NONE, "@0P1"),             // reset PSI
-    SEQ_TERM(1500),
+    SEQ_DOME(0,    FX_NONE, ":CL01"),            // staggered ring closes, ~450 ms
+    SEQ_DOME(450,  FX_NONE, ":CL02"),            // apart (brownout-safe; never a
+    SEQ_DOME(900,  FX_NONE, ":CL03"),            // group close, never a pie close)
+    SEQ_DOME(1350, FX_NONE, ":CL04"),
+    SEQ_DOME(1800, FX_NONE, ":CL07"),
+    SEQ_DOME(2250, FX_NONE, ":CL11"),
+    SEQ_DOME(2700, FX_NONE, ":CL13"),
+    SEQ_CLEAR_LATCHES(3200),                     // clear piesOpen/ringOpen latches
+    SEQ_DOME(3200, FX_NONE, "*ST00"),            // reset holos
+    SEQ_DOME(3400, FX_NONE, "@0T1"),             // reset logics
+    SEQ_DOME(3600, FX_NONE, "@0P1"),             // reset PSI
+    SEQ_TERM(3900),
 };
 
 // =============================================================================
@@ -572,7 +588,7 @@ static const SequenceEntry kCatalog[] = {
     { "DM:LEIA",    kLeiaSteps,    SEQ_STEPCOUNT(kLeiaSteps),    36000, TOGGLE_NONE, nullptr, 0 },
     { "DM:ALARM",   kAlarmSteps,   SEQ_STEPCOUNT(kAlarmSteps),   10000, TOGGLE_NONE, nullptr, 0 },
     { "DM:HEART",   kHeartSteps,   SEQ_STEPCOUNT(kHeartSteps),   10000, TOGGLE_NONE, nullptr, 0 },
-    { "DM:RESET",   kResetSteps,   SEQ_STEPCOUNT(kResetSteps),   4000,  TOGGLE_NONE, nullptr, 0 },
+    { "DM:RESET",   kResetSteps,   SEQ_STEPCOUNT(kResetSteps),   4500,  TOGGLE_NONE, nullptr, 0 },
     { "DM:CANTINA",   kCantinaSteps,   SEQ_STEPCOUNT(kCantinaSteps),   17000, TOGGLE_NONE, nullptr, 0 },
     { "DM:ROCKMARCH", kRockmarchSteps, SEQ_STEPCOUNT(kRockmarchSteps), 49000, TOGGLE_NONE, nullptr, 0 },
     { "DM:SCREAM",    kScreamSteps,    SEQ_STEPCOUNT(kScreamSteps),    15000, TOGGLE_NONE, nullptr, 0 },
