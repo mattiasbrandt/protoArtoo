@@ -20,6 +20,8 @@ workflows.
 - Hardware truth: `docs/pin_map.md`, `include/config.h`
 - Shared state truth: `include/robot_state.h`
 - Action registry: `docs/action-registry.yaml`
+- REST API contracts: `docs/api.md`
+- Crash/coredump + heap troubleshooting procedures: `docs/troubleshooting.md`
 - SBUS protocol truth: `docs/spec-sheets/sbus-protocol.md`
 - ESP-IDF5 RMT driver truth: `docs/spec-sheets/rmt-esp32-idf5.md`
 - HOTRC profile truth: `docs/spec-sheets/hotrc-sbus-spec.md`
@@ -198,6 +200,10 @@ make ota BUILD_ENV=protoArtoo_chirp # override build env
 
 - ArduinoOTA starts automatically on Core 0 when WiFi comes up (port 3232).
 - Do **not** use `192.168.4.1` (AP IP) as `OTA_IP` by default.
+- **Seated controller: OTA + HTTP only.** USB flash/read fails in-PCB (GPIO15/SBUS
+  strapping); unseat the ESP32 for USB flashing. Collect crash/heap evidence over
+  HTTP (`/api/coredump`, `/api/profiler`, `/api/logs`). Full procedures incl.
+  coredump decode: `docs/troubleshooting.md`.
 
 ## Verification and Reporting
 

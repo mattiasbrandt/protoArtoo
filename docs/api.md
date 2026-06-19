@@ -1230,6 +1230,66 @@ curl -s -X POST http://artoo.local/upload/filesystem \
 {"ok":true}
 ```
 
+### GET /api/coredump/status
+
+Reports whether a crash coredump is stored in the `coredump` flash partition. The
+firmware saves an ELF coredump on a PANIC (`abort()`, watchdog, exception). Use
+this to discover a crash to retrieve after a reboot. See
+[troubleshooting.md](troubleshooting.md) for the full decode procedure.
+
+- Success: `200` `{"present":<bool>,"size":<bytes>}`
+
+#### Example request
+
+```bash
+curl -s http://artoo.local/api/coredump/status
+```
+
+#### Example response
+
+```json
+{"present":true,"size":18432}
+```
+
+### GET /api/coredump
+
+Streams the raw ELF coredump from flash (chunked, no large heap buffer). Empty
+when no coredump is present. Retrieval works on the seated controller over WiFi —
+USB read is blocked when the ESP32 is in the PCB (GPIO15/SBUS strapping).
+
+- Success: `200` `application/octet-stream` (ELF), `Content-Disposition: attachment; filename=coredump.elf`
+- Errors:
+- `404` `{"ok":false,"error":"no coredump"}`
+- `500` `{"ok":false,"error":"no coredump partition"}`
+
+#### Example request
+
+```bash
+curl -s http://artoo.local/api/coredump -o coredump.elf
+# decode against the firmware.elf for the deployed version (keyed by fw-version.json):
+esp-coredump info_corefile -c coredump.elf .pio/build/protoArtoo_chirp/firmware.elf
+```
+
+### POST /api/coredump/erase
+
+Erases the stored coredump so the next crash is captured. Do this after
+retrieving a coredump.
+
+- Success: `200` `{"ok":true}`
+- Errors: `500` `{"ok":false,"error":"erase failed"}`
+
+#### Example request
+
+```bash
+curl -s -X POST http://artoo.local/api/coredump/erase
+```
+
+#### Example response
+
+```json
+{"ok":true}
+```
+
 ## SSE Events
 
 ### GET /api/events
