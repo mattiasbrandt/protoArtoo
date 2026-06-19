@@ -130,23 +130,49 @@ static portMUX_TYPE s_hwmMux = portMUX_INITIALIZER_UNLOCKED;
 
 static uint32_t s_failedAllocCount = 0;
 
+// Last failed allocation, captured ALLOCATION-FREE for /api/profiler to report.
+//
+// This hook runs IN the context of the failing allocation, on the stack of
+// whichever task hit it (IDF heap_caps.c: heap_caps_alloc_failed calls the hook
+// inline, then optionally aborts). It MUST NOT allocate: a previous version
+// logged via Arduino Print::printf, which mallocs its own buffer — so under heap
+// exhaustion that malloc ALSO failed and re-entered this hook, recursing until a
+// task stack overflowed (a 64-byte mDNS alloc on the lwIP 'tiT' task crashed it;
+// found by decoding the coredump, issue #8). IDF's own abort path
+// (fmt_abort_str/hex_to_str) likewise formats with manual hex + memcpy, never
+// printf. So: only count, capture raw values + backtrace PCs (esp_backtrace_*
+// walks the stack and does not allocate), guard against re-entry, and let the
+// /api/profiler handler format them where allocation is safe.
+#define PROF_FAIL_BT_MAX 12
+static volatile bool     s_inFailedAllocCb = false;
+static volatile uint32_t s_lastFailSize    = 0;
+static volatile uint32_t s_lastFailCaps    = 0;
+static uint32_t          s_lastFailBt[PROF_FAIL_BT_MAX];
+static volatile uint8_t  s_lastFailBtDepth = 0;
+
 static void failedAllocCb(size_t requested_size, uint32_t caps, const char* function_name) {
+    (void)function_name;
     __atomic_fetch_add(&s_failedAllocCount, 1U, __ATOMIC_RELAXED);
 
-    // Walk the caller chain into a log string so the failing allocation site is
-    // visible over /api/logs (no serial reset needed). Decode the addresses with:
-    //   xtensa-esp32-elf-addr2line -e .pio/build/protoArtoo_profiler/firmware.elf <pc...>
-    char bt[288];
-    int off = snprintf(bt, sizeof(bt), "alloc_failed: %u bytes caps=0x%x by=%s bt:",
-                       (unsigned)requested_size, (unsigned)caps,
-                       function_name ? function_name : "?");
+    // Reentrancy guard — belt-and-suspenders now that nothing below allocates.
+    if (s_inFailedAllocCb) {
+        return;
+    }
+    s_inFailedAllocCb = true;
+    s_lastFailSize = (uint32_t)requested_size;
+    s_lastFailCaps = caps;
     esp_backtrace_frame_t frame;
     esp_backtrace_get_start(&frame.pc, &frame.sp, &frame.next_pc);
-    for (int depth = 0; depth < 16 && off > 0 && off < (int)sizeof(bt); ++depth) {
-        off += snprintf(bt + off, sizeof(bt) - off, " 0x%08x", (unsigned)frame.pc);
-        if (!esp_backtrace_get_next_frame(&frame)) break;
+    uint8_t depth = 0;
+    for (; depth < PROF_FAIL_BT_MAX; ++depth) {
+        s_lastFailBt[depth] = frame.pc;
+        if (!esp_backtrace_get_next_frame(&frame)) {
+            ++depth;
+            break;
+        }
     }
-    PA_LOG_ERROR(TAG, "%s", bt);
+    s_lastFailBtDepth = depth;
+    s_inFailedAllocCb = false;
 }
 
 // =============================================================================
@@ -372,6 +398,19 @@ static void buildProfilerJson(char* buf, size_t bufSize) {
     APPEND(",\"freeBlocks\":%lu", (unsigned long)info.free_blocks);
     APPEND(",\"totalBlocks\":%lu", (unsigned long)info.total_blocks);
     APPEND(",\"failedAllocs\":%lu", (unsigned long)failedAllocs);
+
+    // Last failed allocation (raw values + backtrace PCs captured by the hook).
+    // Decode the PCs against the matching firmware.elf:
+    //   xtensa-esp32-elf-addr2line -e .pio/build/<env>/firmware.elf <pc...>
+    if (failedAllocs > 0U) {
+        APPEND(",\"lastFail\":{\"size\":%lu,\"caps\":%lu,\"bt\":[",
+               (unsigned long)s_lastFailSize, (unsigned long)s_lastFailCaps);
+        uint8_t btDepth = s_lastFailBtDepth;
+        for (uint8_t i = 0; i < btDepth; ++i) {
+            APPEND("%s\"0x%08x\"", (i == 0) ? "" : ",", (unsigned)s_lastFailBt[i]);
+        }
+        APPEND("]}");
+    }
 
     // Task stack HWM array
     APPEND(",\"taskStacks\":[");
