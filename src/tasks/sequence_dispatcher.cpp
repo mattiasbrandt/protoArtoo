@@ -206,24 +206,33 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
                     seqEngineAbort(engine);
                     drainBestEffort(engine, now);  // drain old run from buffers
                     seqEvidenceEnd(SEQ_RUN_PREEMPTED, "preempt", now, domeDropCount());
+                    seqStoreReleaseRun();  // free the preempted Learned run's buffers
                 }
                 const SequenceEntry* entry = catalogEntry;
                 if (isRuntime) {
-                    // Copy the staged sequence into the run buffers now that
-                    // the previous sequence has been fully drained.
-                    seqStoreCommit(runtimeEntry);
-                    entry = &runtimeEntry;
+                    // Commit copies the staged sequence into freshly allocated,
+                    // right-sized run buffers. This can fail on a tight heap, so
+                    // refuse the run gracefully rather than start on a stale entry.
+                    if (seqStoreCommit(runtimeEntry)) {
+                        entry = &runtimeEntry;
+                    } else {
+                        PA_LOG_WARN(TAG, "[%s] %s run refused (run-buffer alloc failed)",
+                                    commandSourceToString(req.src), req.name);
+                        entry = nullptr;
+                    }
                 }
-                seqEngineStart(engine, entry, now);
-                seqEvidenceBegin(req.name, (uint8_t)req.src, now, domeDropCount());
-                resyncCloseIdx = 0xFF;  // a new run supersedes any staged resync close
-                strncpy(activeName, req.name, sizeof(activeName) - 1);
-                activeName[sizeof(activeName) - 1] = '\0';
-                retryLogged = false;
-                setSuppression(now + entry->suppressMs);
-                PA_LOG_INFO(TAG, "[%s] start %s suppress=%u ms",
-                            commandSourceToString(req.src),
-                            entry->name, (unsigned)entry->suppressMs);
+                if (entry != nullptr) {
+                    seqEngineStart(engine, entry, now);
+                    seqEvidenceBegin(req.name, (uint8_t)req.src, now, domeDropCount());
+                    resyncCloseIdx = 0xFF;  // a new run supersedes any staged resync close
+                    strncpy(activeName, req.name, sizeof(activeName) - 1);
+                    activeName[sizeof(activeName) - 1] = '\0';
+                    retryLogged = false;
+                    setSuppression(now + entry->suppressMs);
+                    PA_LOG_INFO(TAG, "[%s] start %s suppress=%u ms",
+                                commandSourceToString(req.src),
+                                entry->name, (unsigned)entry->suppressMs);
+                }
             } else if (!isRuntime) {
                 PA_LOG_WARN(TAG, "request not in catalog: %s", req.name);
             }
@@ -240,6 +249,7 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
             seqEngineAbort(engine);
             drainBestEffort(engine, now);
             seqEvidenceEnd(SEQ_RUN_ESTOP, "estop", now, domeDropCount());
+            seqStoreReleaseRun();  // reclaim any Learned-run buffers
             clearSuppression();
             activeName[0] = '\0';
         }
@@ -271,6 +281,7 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
                 seqEngineAbort(engine);
                 drainBestEffort(engine, now);
                 seqEvidenceEnd(SEQ_RUN_RECONNECT, "dome reconnect", now, domeDropCount());
+                seqStoreReleaseRun();  // reclaim any Learned-run buffers
                 clearSuppression();
                 activeName[0] = '\0';
             }
@@ -321,6 +332,7 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
                 // No-op if an abort path already finalized this run (guarded on
                 // RUNNING); otherwise records the normal completion.
                 seqEvidenceEnd(SEQ_RUN_COMPLETED, "", now, domeDropCount());
+                seqStoreReleaseRun();  // reclaim any Learned-run buffers now idle
                 clearSuppression();
                 activeName[0] = '\0';
             }

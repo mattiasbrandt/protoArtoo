@@ -17,10 +17,13 @@
 // parses + validates into a transient heap staging pair (never the run
 // buffers), so a failed load cannot disturb a running sequence; after the
 // dispatcher drains the previous run, seqStoreCommit() copies the staged
-// sequence into the static run buffers the engine executes from. A later
+// sequence into heap run buffers RIGHT-SIZED to its step counts, which the
+// engine executes from, and seqStoreReleaseRun() frees them at run end. A later
 // save/delete rewrites files and the index but never the run buffers, and a
 // sequence whose file is deleted mid-run finishes from its RAM copy.
-// Save validation likewise uses a transient heap buffer.
+// Save validation likewise uses a transient heap buffer. (Run buffers were a
+// fixed 2 x 96-step static block (~17 KB) before issue #8; making them dynamic
+// + right-sized reclaims that RAM whenever no Learned Sequence is running.)
 // =============================================================================
 #pragma once
 
@@ -35,7 +38,8 @@ class Print;  // Arduino print target (seqStoreStreamFile); full def in the .cpp
 
 // Mount LittleFS (idempotent), ensure /seq exists, and index every valid
 // Learned Sequence file. Invalid files are skipped with a warning. Call once at
-// boot BEFORE the dispatcher task starts (the boot scan reuses the run buffers).
+// boot BEFORE the dispatcher task starts (the boot scan uses a transient heap
+// buffer freed before the dispatcher runs).
 void seqStoreInit();
 
 // Phase 1 of a load: parse a Learned Sequence by name into a transient heap
@@ -45,12 +49,19 @@ void seqStoreInit();
 // seqStoreCommit(). Calling prepare again discards a previous staging.
 ProtocolCheckResult seqStorePrepare(const char* name);
 
-// Phase 2: copy the staged sequence into the static run buffers and build
-// `out` (pointers into those buffers, valid until the next commit or boot
-// scan). Call only after a successful seqStorePrepare(), once the previous
-// run has been drained from the buffers. Frees the staging. Returns false
-// if nothing is staged.
+// Phase 2: copy the staged sequence into heap run buffers RIGHT-SIZED to its
+// step counts and build `out` (pointers into those buffers, valid until the
+// next commit or seqStoreReleaseRun()). Call only after a successful
+// seqStorePrepare(), once the previous run has been drained. Frees the staging.
+// Returns false if nothing is staged OR a run-buffer allocation fails (the run
+// is refused gracefully rather than crashing on a tight heap).
 bool seqStoreCommit(SequenceEntry& out);
+
+// Free the heap run buffers after a Learned Sequence run has fully drained.
+// The dispatcher calls this at sequence end/abort so an idle body (or a
+// Factory-only run — Factory steps live in flash) holds zero run-buffer RAM.
+// No-op / safe to call when nothing is allocated. Dispatcher task only.
+void seqStoreReleaseRun();
 
 // Validate + persist a Learned Sequence from JSON text. Runs Protocol Check
 // (transient heap staging), enforces capacity (16-file cap + free-space floor +

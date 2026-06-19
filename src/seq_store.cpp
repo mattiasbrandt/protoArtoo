@@ -24,11 +24,16 @@
 static const char* TAG = "SEQST";
 static const char* SEQ_DIR = "/seq";
 
-// Run/boot-scan staging buffers (the dispatcher runs from these via the entry
-// built by seqStoreCommit). One sequence at a time; the boot scan completes
-// before the dispatcher task starts. Save validation never uses these.
-static SeqStep s_main[96];
-static SeqStep s_close[96];
+// Run buffers — heap-allocated, RIGHT-SIZED to the committed sequence's step
+// counts, and freed when the run ends (seqStoreReleaseRun) so an idle body or a
+// Factory-only run (Factory steps live in flash) holds ZERO staging RAM. This
+// reclaims the former fixed 2 x 96 x sizeof(SeqStep) (~17 KB) static block on a
+// heap-constrained board; a 96-step Learned sequence still works but only
+// allocates what it uses, and a failed allocation refuses the run gracefully
+// (issue #8). Learned Sequences are a minor feature with typically small/few
+// uses, so the steady-state win is large. Only the dispatcher task touches these.
+static SeqStep* s_runMain  = nullptr;
+static SeqStep* s_runClose = nullptr;
 
 // Two-phase load staging (dispatcher task only). seqStorePrepare() parses and
 // validates into this transient heap pair; seqStoreCommit() copies it into the
@@ -97,6 +102,16 @@ void seqStoreInit() {
         return;
     }
 
+    // Transient validation buffer for the boot scan (one file at a time). Heap
+    // is plentiful at boot, and this is freed before the dispatcher starts, so
+    // it never competes with the runtime run buffers. main at [0], close at [96].
+    SeqStep* scanBuf = (SeqStep*)malloc(sizeof(SeqStep) * 192);
+    if (scanBuf == nullptr) {
+        PA_LOG_ERROR(TAG, "scan buffer alloc failed; Learned Sequences not indexed");
+        dir.close();
+        return;
+    }
+
     uint8_t indexed = 0, skipped = 0;
     for (File f = dir.openNextFile(); f; f = dir.openNextFile()) {
         if (f.isDirectory()) { f.close(); continue; }
@@ -117,7 +132,8 @@ void seqStoreInit() {
         }
         SeqDraft d;
         JsonVariantConst root = doc.as<JsonVariantConst>();
-        ProtocolCheckResult parseResult = seqJsonParseVariant(root, s_main, 96, s_close, 96, d);
+        ProtocolCheckResult parseResult =
+            seqJsonParseVariant(root, scanBuf, 96, scanBuf + 96, 96, d);
         if (!parseResult.ok) {
             // Unreadable format — cannot extract reliable metadata; skip entirely.
             PA_LOG_WARN(TAG, "skip %s: %s (%s)", file, parseResult.message, parseResult.field);
@@ -153,6 +169,7 @@ void seqStoreInit() {
         ++indexed;
     }
     dir.close();
+    free(scanBuf);
     PA_LOG_INFO(TAG, "indexed %u Learned Sequence(s), skipped %u", indexed, skipped);
 }
 
@@ -211,28 +228,62 @@ bool seqStoreCommit(SequenceEntry& out) {
         return false;
     }
     const SeqDraft& d = s_stagedDraft;
-    // The run buffers are written only here and in the boot scan; the caller
-    // (dispatcher task) drains the engine before committing, so this cannot
-    // race a running sequence.
-    memcpy(s_main, d.steps, sizeof(SeqStep) * d.stepCount);
     const bool hasClose = (d.closeSteps != nullptr && d.closeStepCount > 0);
+
+    // Free the previous run's buffers (the caller drained that run before
+    // committing a new one) and allocate fresh, RIGHT-SIZED buffers for this
+    // sequence. Only the dispatcher task runs commit/run/release, so the engine
+    // cannot be reading these while we reallocate. A failed allocation refuses
+    // the run gracefully — the staging is freed and the caller does not start it.
+    seqStoreReleaseRun();
+    s_runMain = (SeqStep*)malloc(sizeof(SeqStep) * d.stepCount);
+    if (s_runMain == nullptr) {
+        PA_LOG_WARN(TAG, "run buffer alloc failed (%u steps, ~%u bytes); run refused",
+                    (unsigned)d.stepCount, (unsigned)(sizeof(SeqStep) * d.stepCount));
+        free(s_staged);
+        s_staged = nullptr;
+        return false;
+    }
     if (hasClose) {
-        memcpy(s_close, d.closeSteps, sizeof(SeqStep) * d.closeStepCount);
+        s_runClose = (SeqStep*)malloc(sizeof(SeqStep) * d.closeStepCount);
+        if (s_runClose == nullptr) {
+            PA_LOG_WARN(TAG, "close-branch alloc failed; run refused");
+            seqStoreReleaseRun();  // frees s_runMain
+            free(s_staged);
+            s_staged = nullptr;
+            return false;
+        }
+    }
+
+    memcpy(s_runMain, d.steps, sizeof(SeqStep) * d.stepCount);
+    if (hasClose) {
+        memcpy(s_runClose, d.closeSteps, sizeof(SeqStep) * d.closeStepCount);
     }
     strncpy(s_runName, d.name, sizeof(s_runName) - 1);
     s_runName[sizeof(s_runName) - 1] = '\0';
 
     out.name           = s_runName;
-    out.steps          = s_main;
+    out.steps          = s_runMain;
     out.stepCount      = d.stepCount;
     out.suppressMs     = d.suppressMs;
     out.toggleGroup    = d.toggleGroup;
-    out.closeSteps     = hasClose ? s_close : nullptr;
+    out.closeSteps     = hasClose ? s_runClose : nullptr;
     out.closeStepCount = hasClose ? d.closeStepCount : 0;
 
     free(s_staged);
     s_staged = nullptr;
     return true;
+}
+
+// Free the run buffers once a Learned Sequence run has fully drained (the
+// dispatcher calls this at sequence end / abort). No-op when idle or after a
+// Factory run (Factory steps live in flash, so these stay nullptr). Safe to
+// call repeatedly. Only the dispatcher task calls this.
+void seqStoreReleaseRun() {
+    free(s_runMain);
+    s_runMain = nullptr;
+    free(s_runClose);
+    s_runClose = nullptr;
 }
 
 // -----------------------------------------------------------------------------
