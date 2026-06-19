@@ -52,6 +52,8 @@ static void addFinal(SeqEngineState& st, SeqActionKind kind, const char* payload
     a.kind = kind;
     a.audioCategory = 0;
     a.audioFallbackSlot = 0;
+    a.domeSpeedPct = 0;
+    a.domeDurationMs = 0;
     setPayload(a, payload);
     st.finalDueRel[idx] = dueRel;
 }
@@ -324,6 +326,8 @@ static bool resolveStep(SeqEngineState& st, const SeqStep& step, SeqRandFn rnd) 
     a.kind = SEQ_ACT_NONE;
     a.audioCategory = 0;
     a.audioFallbackSlot = 0;
+    a.domeSpeedPct = 0;
+    a.domeDurationMs = 0;
     a.payload[0] = '\0';
     uint32_t jitter = 0;
 
@@ -340,6 +344,11 @@ static bool resolveStep(SeqEngineState& st, const SeqStep& step, SeqRandFn rnd) 
             a.kind = SEQ_ACT_AUDIO_CATEGORY;
             a.audioCategory = step.params.audioCategory;
             a.audioFallbackSlot = step.params.audioFallbackSlot;
+            break;
+        case STEP_DOME_ROTATE:
+            a.kind = SEQ_ACT_DOME_ROTATE;
+            a.domeSpeedPct = step.params.speedPct;
+            a.domeDurationMs = step.params.durationMs;
             break;
         case STEP_RANDOM: {
             const uint8_t target = pickTarget(st, step, rnd);

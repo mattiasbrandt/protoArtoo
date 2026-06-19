@@ -122,16 +122,16 @@ struct SeqStep {
 #define SEQ_AUDIO_FX(t, fx, cmd) { (t), STEP_AUDIO, (uint8_t)(fx), cmd, {} }
 #define SEQ_AUDIO_CAT(t, cat, fb) \
     { (t), STEP_AUDIO_CATEGORY, FX_AUDIO, "", \
-      { 0, 0, 0, 0, 0, 0, 0, 0, 0, (uint8_t)(cat), (uint8_t)(fb) } }
+      { 0, 0, 0, 0, 0, 0, 0, 0, 0, (uint8_t)(cat), (uint8_t)(fb), 0 } }
 #define SEQ_DOME_ROTATE(t, speed, dur) \
     { (t), STEP_DOME_ROTATE, FX_NONE, "", \
       { (dur), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, (int8_t)(speed) } }
 #define SEQ_LOOP(t, body, period, dur) \
     { (t), STEP_LOOP, FX_NONE, "", \
-      { (dur), (period), (body), 0, 0, 0, 0, 0, 0, 0, 0 } }
+      { (dur), (period), (body), 0, 0, 0, 0, 0, 0, 0, 0, 0 } }
 #define SEQ_RAND(t, set, mode, _unused, mv, jit, distinct) \
     { (t), STEP_RANDOM, FX_PANEL, "", \
-      { 0, 0, 0, (uint8_t)(set), (uint16_t)(mode), 0, (mv), (jit), (distinct), 0, 0 } }
+      { 0, 0, 0, (uint8_t)(set), (uint16_t)(mode), 0, (mv), (jit), (distinct), 0, 0, 0 } }
 #define SEQ_TERM(t)           { (t), STEP_END, FX_NONE, "", {} }
 #define SEQ_CLEAR_LATCHES(t)  { (t), STEP_CLEAR_LATCHES, FX_NONE, "", {} }
 
@@ -178,6 +178,7 @@ enum SeqActionKind : uint8_t {
     SEQ_ACT_AUDIO_DOLLAR   = 2,  // payload -> audioQueueDollar()
     SEQ_ACT_AUDIO_CATEGORY = 3,  // audioCategory/audioFallbackSlot -> audioQueuePlayCategory()
     SEQ_ACT_AUDIO_STOP     = 4,  // audioQueueStop()
+    SEQ_ACT_DOME_ROTATE    = 5,  // domeSpeedPct/domeDurationMs -> domeCmdQueue
 };
 
 struct SeqAction {
@@ -185,6 +186,8 @@ struct SeqAction {
     char          payload[64];
     uint8_t       audioCategory;
     uint8_t       audioFallbackSlot;
+    int8_t        domeSpeedPct;
+    uint32_t      domeDurationMs;
 };
 
 // Latched per-group panel state. Owned by the engine; the dispatcher task

@@ -307,6 +307,28 @@ void test_audio_category_step_emits_category_action() {
     TEST_ASSERT_EQUAL_UINT8((uint8_t)AUDIO_SLOT_NAMED_SCREAM, act.audioFallbackSlot);
 }
 
+void test_dome_rotate_step_emits_typed_rotation_action() {
+    static const SeqStep steps[] = {
+        SEQ_DOME_ROTATE(1200, -35, 900),
+        SEQ_TERM(2200),
+    };
+    static const SequenceEntry entry = {
+        "TEST:ROTATE", steps, (uint8_t)(sizeof(steps) / sizeof(steps[0])),
+        3000, TOGGLE_NONE, nullptr, 0,
+    };
+
+    SeqEngineState st;
+    seqEngineInit(st);
+    seqEngineStart(st, &entry, 1000);
+
+    SeqAction act = {};
+    TEST_ASSERT_FALSE(seqEnginePeek(st, 2199, stubRand, act));
+    TEST_ASSERT_TRUE(seqEnginePeek(st, 2200, stubRand, act));
+    TEST_ASSERT_EQUAL_INT(SEQ_ACT_DOME_ROTATE, (int)act.kind);
+    TEST_ASSERT_EQUAL_INT8(-35, act.domeSpeedPct);
+    TEST_ASSERT_EQUAL_UINT32(900, act.domeDurationMs);
+}
+
 // DM:RESET closes the ring with staggered individual closes (never a group
 // close, never a pie close) and clears the toggle latches via an explicit
 // STEP_CLEAR_LATCHES — not via a :CL00 side effect (2026-06-18 brownout fix).
@@ -890,6 +912,7 @@ int main(int /*argc*/, char** /*argv*/) {
     RUN_TEST(test_real_vader_entry_runs_through_engine);
     RUN_TEST(test_real_vader_abort_stops_audio_and_resets_holos);
     RUN_TEST(test_audio_category_step_emits_category_action);
+    RUN_TEST(test_dome_rotate_step_emits_typed_rotation_action);
     RUN_TEST(test_real_reset_entry_clears_latches_and_resets);
 
     RUN_TEST(test_loop_iterations_fire_at_period_offsets);
