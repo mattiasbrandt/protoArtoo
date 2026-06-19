@@ -251,10 +251,20 @@ bool AudioDriverChirp::ensureBankStorage() {
 // actually being filled (refreshCatalog, an explicit UI action with a live
 // module). Keeping this out of the boot/link path is the heap-exhaustion fix:
 // the bank/link path no longer transiently allocates 15.6 KB on a tight heap.
-bool AudioDriverChirp::ensureEntryStorage() {
-    if (m_catalog == nullptr) {
-        m_catalog = new (std::nothrow) AudioCatalogEntry[AUDIO_CATALOG_MAX_ENTRIES];
+bool AudioDriverChirp::ensureEntryStorage(uint16_t needed) {
+    if (needed == 0) needed = 1;
+    if (needed > AUDIO_CATALOG_MAX_ENTRIES) needed = AUDIO_CATALOG_MAX_ENTRIES;
+    // Reuse an existing allocation that already fits (a re-refresh of the same
+    // module). Only (re)allocate to grow — sized to the module's actual track
+    // count, not the fixed 300-entry worst case (~15.6 KB). Callers set
+    // m_catalogCount = 0 before this, so a concurrent reader sees no entries
+    // while the array is swapped.
+    if (m_catalog != nullptr && m_catalogCapacity >= needed) {
+        return true;
     }
+    delete[] m_catalog;
+    m_catalog = new (std::nothrow) AudioCatalogEntry[needed];
+    m_catalogCapacity = (m_catalog != nullptr) ? needed : 0;
     return m_catalog != nullptr;
 }
 
@@ -442,26 +452,32 @@ bool AudioDriverChirp::refreshCatalog() {
         return false;
     }
 
-    // Now that a live module + bank summary is confirmed, allocate the large
-    // per-track entry array (~15.6 KB). This is the only path that needs it, so
-    // it never burdens the boot/link path on a tight heap.
-    if (!ensureEntryStorage()) {
-        m_catalogReady = false;
-        PA_LOG_WARN(TAG, "catalog entry storage alloc failed (~%u bytes); refresh skipped",
-                    (unsigned)(sizeof(AudioCatalogEntry) * AUDIO_CATALOG_MAX_ENTRIES));
+    // Size the entry array to the module's ACTUAL track count (sum of bank
+    // counts), not the fixed 300-entry worst case — a typical module has far
+    // fewer, so this allocates only what it needs (issue #8 heap hardening).
+    uint32_t total = 0;
+    for (uint8_t i = 0; i < m_catalogBankCount; ++i) {
+        total += m_catalogBanks[i].count;
+    }
+    // Mark empty before (re)allocating so a concurrent /api/audio/catalog reader
+    // sees no entries while the array is swapped.
+    m_catalogCount = 0;
+    m_catalogReady = false;
+    if (!ensureEntryStorage((uint16_t)(total > AUDIO_CATALOG_MAX_ENTRIES
+                                           ? AUDIO_CATALOG_MAX_ENTRIES : total))) {
+        PA_LOG_WARN(TAG, "catalog entry storage alloc failed (%u entries); refresh skipped",
+                    (unsigned)total);
         return false;
     }
 
-    m_catalogCount = 0;
-    m_catalogReady = false;
     uint16_t missingNameCount = 0;
 
     for (uint8_t bankIdx = 0; bankIdx < m_catalogBankCount; ++bankIdx) {
         const AudioCatalogBank& bank = m_catalogBanks[bankIdx];
         for (uint16_t soundIndex = 1; soundIndex <= bank.count; ++soundIndex) {
-            if (m_catalogCount >= AUDIO_CATALOG_MAX_ENTRIES) {
+            if (m_catalogCount >= m_catalogCapacity) {
                 PA_LOG_WARN(TAG, "catalog entry cap reached (%u)",
-                            (unsigned)AUDIO_CATALOG_MAX_ENTRIES);
+                            (unsigned)m_catalogCapacity);
                 m_catalogReady = true;
                 return true;
             }

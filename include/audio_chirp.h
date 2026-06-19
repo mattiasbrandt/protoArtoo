@@ -78,6 +78,7 @@ class AudioDriverChirp : public AudioDriver {
     uint16_t m_lastTrack = 0;   // last track index sent to playTrack(); reported as currentTrack
     bool m_catalogReady = false;
     uint16_t m_catalogCount = 0;
+    uint16_t m_catalogCapacity = 0;  // allocated m_catalog entry count (right-sized)
     uint8_t m_catalogBankCount = 0;
     // Catalog storage is heap-allocated on first discovery and reused after.
     // When CHIRP RX is unavailable (e.g. the dome link owns UART2) discovery
@@ -90,12 +91,14 @@ class AudioDriverChirp : public AudioDriver {
 
     // Split, lazy catalog allocation (heap-exhaustion fix). The bank summary
     // array (~2.3 KB) is needed by the boot/link path; the per-track entry array
-    // (~15.6 KB) is needed only when the full catalog is filled (refreshCatalog,
-    // a UI action with a live module). Keeping the 15.6 KB out of the boot/link
-    // path is what stops the heap collapsing during audio_play / discovery on a
-    // tight heap. Each returns false if its allocation fails.
+    // is needed only when the full catalog is filled (refreshCatalog, a UI action
+    // with a live module). Keeping it out of the boot/link path is what stops the
+    // heap collapsing during audio_play / discovery on a tight heap.
+    // ensureEntryStorage right-sizes the entry array to `needed` (the module's
+    // actual track count, capped at AUDIO_CATALOG_MAX_ENTRIES) and only grows.
+    // Each returns false if its allocation fails.
     bool ensureBankStorage();
-    bool ensureEntryStorage();
+    bool ensureEntryStorage(uint16_t needed);
 
     // Send a null-terminated ASCII command string followed by '\n' via m_io.
     void sendCommand(const char* cmd);
