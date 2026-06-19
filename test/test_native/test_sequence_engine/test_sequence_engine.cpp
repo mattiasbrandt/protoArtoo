@@ -8,6 +8,7 @@
 // peek/commit retry contract.
 // =============================================================================
 
+#include <stdio.h>
 #include <string.h>
 
 #include <unity.h>
@@ -68,6 +69,14 @@ static int drainAt(SeqEngineState& st, uint32_t now, char* log, size_t logSize) 
             const char* tag = act.payload;
             if (act.kind == SEQ_ACT_AUDIO_STOP) {
                 tag = "<stop>";
+            } else if (act.kind == SEQ_ACT_DOME_ROTATE) {
+                char rot[32];
+                snprintf(rot, sizeof(rot), "<rot:%d:%u>",
+                         (int)act.domeSpeedPct, (unsigned)act.domeDurationMs);
+                strncat(log, rot, logSize - strlen(log) - 1);
+                seqEngineCommit(st);
+                ++n;
+                continue;
             }
             strncat(log, tag, logSize - strlen(log) - 1);
         }
@@ -327,6 +336,78 @@ void test_dome_rotate_step_emits_typed_rotation_action() {
     TEST_ASSERT_EQUAL_INT(SEQ_ACT_DOME_ROTATE, (int)act.kind);
     TEST_ASSERT_EQUAL_INT8(-35, act.domeSpeedPct);
     TEST_ASSERT_EQUAL_UINT32(900, act.domeDurationMs);
+}
+
+void test_abort_after_dome_rotate_emits_neutral_rotation_stop() {
+    static const SeqStep steps[] = {
+        SEQ_DOME_ROTATE(0, 35, 900),
+        SEQ_TERM(2000),
+    };
+    static const SequenceEntry entry = {
+        "TEST:ROT_ABORT", steps, (uint8_t)(sizeof(steps) / sizeof(steps[0])),
+        3000, TOGGLE_NONE, nullptr, 0,
+    };
+
+    SeqEngineState st;
+    seqEngineInit(st);
+    seqEngineStart(st, &entry, 0);
+
+    char log[128] = "";
+    TEST_ASSERT_EQUAL_INT(1, drainAt(st, 0, log, sizeof(log)));
+    TEST_ASSERT_EQUAL_STRING("<rot:35:900>", log);
+
+    seqEngineAbort(st);
+    log[0] = '\0';
+    TEST_ASSERT_EQUAL_INT(1, drainAt(st, 100, log, sizeof(log)));
+    TEST_ASSERT_EQUAL_STRING("<rot:0:0>", log);
+    TEST_ASSERT_FALSE(seqEngineActive(st));
+}
+
+void test_terminal_cleanup_after_dome_rotate_emits_neutral_rotation_stop() {
+    static const SeqStep steps[] = {
+        SEQ_DOME_ROTATE(0, -20, 5000),
+        SEQ_TERM(100),
+    };
+    static const SequenceEntry entry = {
+        "TEST:ROT_TERM", steps, (uint8_t)(sizeof(steps) / sizeof(steps[0])),
+        3000, TOGGLE_NONE, nullptr, 0,
+    };
+
+    SeqEngineState st;
+    seqEngineInit(st);
+    seqEngineStart(st, &entry, 0);
+
+    char log[128] = "";
+    TEST_ASSERT_EQUAL_INT(1, drainAt(st, 0, log, sizeof(log)));
+    TEST_ASSERT_EQUAL_STRING("<rot:-20:5000>", log);
+
+    log[0] = '\0';
+    TEST_ASSERT_EQUAL_INT(1, drainAt(st, 100, log, sizeof(log)));
+    TEST_ASSERT_EQUAL_STRING("<rot:0:0>", log);
+    TEST_ASSERT_FALSE(seqEngineActive(st));
+}
+
+void test_zero_speed_dome_rotate_does_not_emit_cleanup_stop() {
+    static const SeqStep steps[] = {
+        SEQ_DOME_ROTATE(0, 0, 100),
+        SEQ_TERM(100),
+    };
+    static const SequenceEntry entry = {
+        "TEST:ROT_ZERO", steps, (uint8_t)(sizeof(steps) / sizeof(steps[0])),
+        3000, TOGGLE_NONE, nullptr, 0,
+    };
+
+    SeqEngineState st;
+    seqEngineInit(st);
+    seqEngineStart(st, &entry, 0);
+
+    char log[128] = "";
+    TEST_ASSERT_EQUAL_INT(1, drainAt(st, 0, log, sizeof(log)));
+    TEST_ASSERT_EQUAL_STRING("<rot:0:100>", log);
+
+    log[0] = '\0';
+    TEST_ASSERT_EQUAL_INT(0, drainAt(st, 100, log, sizeof(log)));
+    TEST_ASSERT_FALSE(seqEngineActive(st));
 }
 
 // DM:RESET closes the ring with staggered individual closes (never a group
@@ -913,6 +994,9 @@ int main(int /*argc*/, char** /*argv*/) {
     RUN_TEST(test_real_vader_abort_stops_audio_and_resets_holos);
     RUN_TEST(test_audio_category_step_emits_category_action);
     RUN_TEST(test_dome_rotate_step_emits_typed_rotation_action);
+    RUN_TEST(test_abort_after_dome_rotate_emits_neutral_rotation_stop);
+    RUN_TEST(test_terminal_cleanup_after_dome_rotate_emits_neutral_rotation_stop);
+    RUN_TEST(test_zero_speed_dome_rotate_does_not_emit_cleanup_stop);
     RUN_TEST(test_real_reset_entry_clears_latches_and_resets);
 
     RUN_TEST(test_loop_iterations_fire_at_period_offsets);

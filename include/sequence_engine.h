@@ -252,6 +252,10 @@ struct SeqEngineState {
     uint8_t   finalCursor;
 
     SeqToggleState latches;
+
+    // True after a committed non-zero STEP_DOME_ROTATE. Terminal and abnormal
+    // cleanup emit a neutral rotation action through the same body-owned path.
+    bool      domeRotateActive;
 };
 
 // Zero the engine to idle with all latches closed.

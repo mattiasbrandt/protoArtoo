@@ -58,6 +58,22 @@ static void addFinal(SeqEngineState& st, SeqActionKind kind, const char* payload
     st.finalDueRel[idx] = dueRel;
 }
 
+static void addFinalDomeRotateStop(SeqEngineState& st) {
+    const uint8_t cap = (uint8_t)(sizeof(st.finalQ) / sizeof(st.finalQ[0]));
+    if (st.finalCount >= cap) {
+        return;
+    }
+    const uint8_t idx = st.finalCount++;
+    SeqAction& a = st.finalQ[idx];
+    a.kind = SEQ_ACT_DOME_ROTATE;
+    a.audioCategory = 0;
+    a.audioFallbackSlot = 0;
+    a.domeSpeedPct = 0;
+    a.domeDurationMs = 0;
+    a.payload[0] = '\0';
+    st.finalDueRel[idx] = 0;
+}
+
 // Flip the latched group state for the branch that just completed normally
 // (ADR 0004 decision 8). OPENALL acts on every panel, so its latch carries
 // the pie and ring groups with it in both directions.
@@ -231,6 +247,9 @@ static void beginFinish(SeqEngineState& st, bool abnormal) {
     if ((st.activeFx & FX_AUDIO) && abnormal) {
         addFinal(st, SEQ_ACT_AUDIO_STOP, nullptr);
     }
+    if (st.domeRotateActive) {
+        addFinalDomeRotateStop(st);
+    }
 
     // Toggle bookkeeping on normal completion. A close branch runs its own
     // per-target closes; once no group remains latched open we still request ring
@@ -257,6 +276,7 @@ static void finishIdle(SeqEngineState& st) {
     st.steps = nullptr;
     st.stepCount = 0;
     st.activeFx = 0;
+    st.domeRotateActive = false;
     st.finishing = false;
     st.pendingComputed = false;
 }
@@ -440,6 +460,7 @@ void seqEngineStart(SeqEngineState& st, const SequenceEntry* entry, uint32_t now
     st.finishAbnormal = false;
     st.finalCount = 0;
     st.finalCursor = 0;
+    st.domeRotateActive = false;
 }
 
 void seqEngineAbort(SeqEngineState& st) {
@@ -585,6 +606,9 @@ void seqEngineCommit(SeqEngineState& st) {
     if (st.pending.kind == SEQ_ACT_DOME_CMD) {
         recordRingOpenState(st, st.pending.payload);
         updateLatchesForClose(st, st.pending.payload);
+    } else if (st.pending.kind == SEQ_ACT_DOME_ROTATE &&
+               st.pending.domeSpeedPct != 0) {
+        st.domeRotateActive = true;
     }
 
     st.pendingComputed = false;
