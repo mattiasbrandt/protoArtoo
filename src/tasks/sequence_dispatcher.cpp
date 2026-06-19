@@ -44,6 +44,20 @@ void sequenceDispatcherInit() {
     sequenceQueue = xQueueCreate(4, sizeof(SequenceRequest));
 }
 
+bool sequenceActionToDomeCommand(const SeqAction& act, uint32_t nowMs,
+                                 DomeCommand& out) {
+    if (act.kind != SEQ_ACT_DOME_ROTATE) {
+        return false;
+    }
+
+    out = {};
+    out.speed = (float)act.domeSpeedPct / 100.0f;
+    out.durationMs = act.domeDurationMs;
+    out.source = SRC_SEQ;
+    out.timestampMs = nowMs;
+    return true;
+}
+
 // =============================================================================
 // sequenceStart — choke point called from RC and web paths.
 // =============================================================================
@@ -105,6 +119,13 @@ static bool dispatchAction(const SeqAction& act) {
     switch (act.kind) {
         case SEQ_ACT_DOME_CMD:
             return domeQueueTx(act.payload);
+        case SEQ_ACT_DOME_ROTATE: {
+            DomeCommand cmd = {};
+            if (!sequenceActionToDomeCommand(act, millis(), cmd)) {
+                return true;
+            }
+            return xQueueSend(domeCmdQueue, &cmd, 0) == pdTRUE;
+        }
         case SEQ_ACT_AUDIO_DOLLAR:
             return audioQueueDollar(act.payload, SRC_SEQ);
         case SEQ_ACT_AUDIO_CATEGORY:

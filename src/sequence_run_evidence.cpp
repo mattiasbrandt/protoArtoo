@@ -97,6 +97,10 @@ static void actionToString(const SeqAction& act, char* out, size_t cap) {
             strncpy(out, "<stop>", cap - 1);
             out[cap - 1] = '\0';
             break;
+        case SEQ_ACT_DOME_ROTATE:
+            snprintf(out, cap, "<domeRotate:%d:%u>",
+                     (int)act.domeSpeedPct, (unsigned)act.domeDurationMs);
+            break;
         default:
             strncpy(out, "<none>", cap - 1);
             out[cap - 1] = '\0';
@@ -135,7 +139,8 @@ void seqEvidenceBegin(const char* name, uint8_t source, uint32_t startMs,
 void seqEvidenceRecordTx(const SeqAction& act, bool cleanup) {
     char rep[SEQ_EVID_CMD_LEN];
     actionToString(act, rep, sizeof(rep));
-    const bool isDome = (act.kind == SEQ_ACT_DOME_CMD);
+    const bool isDome = (act.kind == SEQ_ACT_DOME_CMD ||
+                         act.kind == SEQ_ACT_DOME_ROTATE);
 
     taskENTER_CRITICAL(&seqEvidenceMux);
     if (g.outcome == SEQ_RUN_RUNNING) {
@@ -157,10 +162,10 @@ void seqEvidenceRecordTx(const SeqAction& act, bool cleanup) {
             }
         }
 
-        if (isDome) {
+        if (act.kind == SEQ_ACT_DOME_CMD) {
             applyScope(g, rep);
             applyRing(g, rep);
-        } else {
+        } else if (!isDome) {
             g.fxScopes |= SEQ_EVID_FX_AUDIO;
         }
     }

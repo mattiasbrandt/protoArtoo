@@ -8,6 +8,8 @@
 // catalog dispatch, alias forward, and dome fallback.
 // =============================================================================
 
+#include <string.h>
+
 #include <unity.h>
 
 #include "sequence_dispatcher.h"
@@ -136,6 +138,33 @@ void test_alias_match_is_case_sensitive() {
 }
 
 // =============================================================================
+// Engine action dispatch mapping
+// =============================================================================
+
+void test_dome_rotate_action_maps_to_sequence_dome_command() {
+    SeqAction act = {};
+    act.kind = SEQ_ACT_DOME_ROTATE;
+    act.domeSpeedPct = -35;
+    act.domeDurationMs = 900;
+
+    DomeCommand cmd = {};
+    TEST_ASSERT_TRUE(sequenceActionToDomeCommand(act, 123456, cmd));
+    TEST_ASSERT_FLOAT_WITHIN(0.0001f, -0.35f, cmd.speed);
+    TEST_ASSERT_EQUAL_UINT32(900, cmd.durationMs);
+    TEST_ASSERT_EQUAL_INT(SRC_SEQ, (int)cmd.source);
+    TEST_ASSERT_EQUAL_UINT32(123456, cmd.timestampMs);
+}
+
+void test_non_rotate_action_does_not_map_to_dome_command() {
+    SeqAction act = {};
+    act.kind = SEQ_ACT_DOME_CMD;
+    strncpy(act.payload, "@0T1", sizeof(act.payload) - 1);
+
+    DomeCommand cmd = {};
+    TEST_ASSERT_FALSE(sequenceActionToDomeCommand(act, 1, cmd));
+}
+
+// =============================================================================
 // Runner
 // =============================================================================
 
@@ -162,6 +191,9 @@ int main(int /*argc*/, char** /*argv*/) {
 
     RUN_TEST(test_catalog_match_is_case_sensitive);
     RUN_TEST(test_alias_match_is_case_sensitive);
+
+    RUN_TEST(test_dome_rotate_action_maps_to_sequence_dome_command);
+    RUN_TEST(test_non_rotate_action_does_not_map_to_dome_command);
 
     return UNITY_END();
 }

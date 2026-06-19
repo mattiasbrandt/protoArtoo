@@ -66,6 +66,12 @@ bool sequenceStart(const char* name, CommandSource src);
 // including native tests. Returns SEQ_FALLBACK for non-DM:* names.
 SequenceLookupResult sequenceLookup(const char* name);
 
+// Testable dispatcher mapping for body-owned dome rotation. Returns true only
+// for SEQ_ACT_DOME_ROTATE and fills the DomeCommand that production dispatch
+// sends to domeCmdQueue.
+bool sequenceActionToDomeCommand(const SeqAction& act, uint32_t nowMs,
+                                 DomeCommand& out);
+
 // Catalog lookup — returns the body-owned entry or nullptr.
 const SequenceEntry* sequenceCatalogFind(const char* name);
 
