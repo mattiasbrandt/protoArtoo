@@ -14,6 +14,8 @@
 #include <ESPAsyncWebServer.h>
 #include <LittleFS.h>
 #include <Update.h>
+#include <esp_core_dump.h>   // coredump fetch/erase (issue #8 observability)
+#include <esp_partition.h>
 #include <stdint.h>
 
 #include "api_drive.h"
@@ -261,4 +263,55 @@ void registerSystemRoutes(AsyncWebServer& server) {
                 setUploadState(req, UPLOAD_STATE_REJECT_INTERNAL);
             }
         });
+
+    // ---- Coredump (issue #8 observability) ----
+    // The framework saves an ELF coredump to the `coredump` data partition on a
+    // PANIC. These let an agent fetch + clear it over HTTP — the seated controller
+    // cannot be USB-read (GPIO15/SBUS strapping). Decode with:
+    //   esp-coredump info_corefile -c coredump.elf .pio/build/<env>/firmware.elf
+    server.on("/api/coredump/status", HTTP_GET, [](AsyncWebServerRequest* req) {
+        size_t addr = 0, size = 0;
+        const bool present = (esp_core_dump_image_get(&addr, &size) == ESP_OK && size > 0);
+        char body[80];
+        snprintf(body, sizeof(body), "{\"present\":%s,\"size\":%u}",
+                 present ? "true" : "false", (unsigned)size);
+        req->send(200, "application/json", body);
+    });
+
+    server.on("/api/coredump", HTTP_GET, [](AsyncWebServerRequest* req) {
+        size_t addr = 0, size = 0;
+        if (esp_core_dump_image_get(&addr, &size) != ESP_OK || size == 0) {
+            req->send(404, "application/json", "{\"ok\":false,\"error\":\"no coredump\"}");
+            return;
+        }
+        const esp_partition_t* part = esp_partition_find_first(
+            ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_COREDUMP, nullptr);
+        if (part == nullptr) {
+            req->send(500, "application/json",
+                      "{\"ok\":false,\"error\":\"no coredump partition\"}");
+            return;
+        }
+        // Stream straight from flash in chunks — no large heap buffer (the device
+        // is heap-constrained, #8). The coredump image starts at partition offset 0.
+        AsyncWebServerResponse* resp = req->beginChunkedResponse(
+            "application/octet-stream",
+            [part, size](uint8_t* buf, size_t maxLen, size_t index) -> size_t {
+                if (index >= size) return 0;
+                size_t toRead = size - index;
+                if (toRead > maxLen) toRead = maxLen;
+                if (esp_partition_read(part, index, buf, toRead) != ESP_OK) return 0;
+                return toRead;
+            });
+        resp->addHeader("Content-Disposition", "attachment; filename=coredump.elf");
+        req->send(resp);
+    });
+
+    server.on("/api/coredump/erase", HTTP_POST, [](AsyncWebServerRequest* req) {
+        if (esp_core_dump_image_erase() != ESP_OK) {
+            req->send(500, "application/json", "{\"ok\":false,\"error\":\"erase failed\"}");
+            return;
+        }
+        PA_LOG_INFO(TAG, "[WEB] coredump erased");
+        req->send(200, "application/json", "{\"ok\":true}");
+    });
 }
