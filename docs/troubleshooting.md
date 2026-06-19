@@ -20,23 +20,46 @@ retrievable over HTTP. This works seated (no USB needed).
 # 1. Is there a coredump waiting?
 curl -s http://artoo.local/api/coredump/status            # {"present":true,"size":...}
 
-# 2. Fetch it (raw ELF).
+# 2. Fetch it (raw coredump-partition image).
 curl -s http://artoo.local/api/coredump -o coredump.elf
 
-# 3. Decode against the firmware.elf for the DEPLOYED version.
-#    The deployed version is in GET /api/status -> firmwareVersion, which matches
-#    the committed data/fw-version.json git hash; build/checkout that commit's elf.
-esp-coredump info_corefile -c coredump.elf .pio/build/protoArtoo_chirp/firmware.elf
-#    (esp-coredump ships with esp-idf / `pip install esp-coredump`.)
+# 3. Decode. Put a WORKING xtensa GDB on PATH first (see gotcha below), then:
+GDB_DIR="$HOME/.platformio/packages/tool-xtensa-esp-elf-gdb/bin"
+PATH="$GDB_DIR:$PATH" ~/.platformio/penv/bin/esp-coredump \
+  --chip esp32 \
+  info_corefile --core coredump.elf --core-format raw \
+  .pio/build/protoArtoo_chirp/firmware.elf
 
 # 4. After analysing, clear it so the NEXT crash is captured.
 curl -s -X POST http://artoo.local/api/coredump/erase
 ```
 
-The decode prints the panic reason, the crashed task, and per-task backtraces.
-Decode each backtrace address against the same `firmware.elf`. The
-`firmware.elf` MUST match the running firmware (same git hash) or addresses
-mislead. Endpoints: see [api.md](api.md) (System and OTA).
+The decode prints the panic reason, the crashed task, registers, and per-task
+backtraces. Endpoints: see [api.md](api.md) (System and OTA).
+
+### Decode gotchas (tested 2026-06-19 — these cost real time)
+
+- **`--chip esp32` is a GLOBAL option** — it goes BEFORE the `info_corefile`
+  subcommand, not after. Wrong order: `esp-coredump: error: unrecognized
+  arguments: --chip ...`.
+- **`--core-format raw`** — the bytes from `/api/coredump` are the raw
+  coredump-partition image (not a host ELF), so pass `raw`, not the default.
+- **Use the modern GDB, not the old toolchain one.** esp-coredump shells out to
+  `xtensa-esp32-elf-gdb`. The one in `toolchain-xtensa-esp32/` is python2.7-linked
+  and dies on a modern host with `error while loading shared libraries:
+  libpython2.7.so.1.0` → esp-coredump then reports a confusing `BrokenPipeError`
+  in `pygdbmi` (NOT a Python-3 / pygdbmi bug — gdb just never started). The
+  working one is `tool-xtensa-esp-elf-gdb/bin/xtensa-esp32-elf-gdb` (esp-gdb 16.3,
+  no python2.7 dep) — put its dir first on `PATH` as shown above.
+- **The `firmware.elf` MUST be the exact crash-time build** (same git hash as
+  `GET /api/status` firmwareVersion / the committed `data/fw-version.json`).
+  A mismatch shows as a GDB/TCB evaluation error in `print_crashed_task_info`
+  (symbols/addresses don't resolve). Keep the elf for each deployed version, or
+  `git checkout` that commit and rebuild.
+
+If you cannot run GDB at all, `/api/profiler` (profiler build) reports
+`lastFail.bt` (raw PCs) which you can decode statically with
+`xtensa-esp32-elf-addr2line -e <firmware.elf> <pc...>`.
 
 If `/api/coredump/status` returns `{"present":false}` after a crash: either the
 crash predates the coredump partition (added 2026-06-19, issue #8), or the reset
@@ -64,15 +87,26 @@ curl -s http://artoo.local/api/status | grep -oE '"(heapFree|heapMin|heapLargest
 
 Flash `protoArtoo_profiler` (CHIRP + `PA_HEAP_PROFILE`; same code as
 `protoArtoo_chirp` plus instrumentation). `GET /api/profiler` adds: per-task stack
-high-water marks, a failed-allocation **counter + backtrace** (logged to
-`/api/logs`, decode addresses with `xtensa-esp32-elf-addr2line`), mode-scoped
-low-water snapshots (`boot`, `rc_linked`, `audio_play`), and largest-block/frag.
-Watch over **minutes**, not one snapshot — `heapMin`/`failedAllocs` evolve.
+high-water marks, a failed-allocation **counter + `lastFail`** (size, caps, and a
+backtrace of raw PCs — decode with `xtensa-esp32-elf-addr2line -e <firmware.elf>
+<pc...>`), mode-scoped low-water snapshots (`boot`, `rc_linked`, `audio_play`),
+and largest-block/frag. Watch over **minutes**, not one snapshot — `heapMin`/
+`failedAllocs` evolve.
 
 ```bash
 curl -s http://artoo.local/api/profiler | grep -oE '"(heapFree|heapMin|heapLargest|fragRatio|failedAllocs)":[0-9.]*'
-curl -s "http://artoo.local/api/logs" | grep alloc_failed     # size + caller backtrace
+curl -s http://artoo.local/api/profiler | grep -oE '"lastFail":\{[^]]*\]\}'   # size/caps + bt PCs
 ```
+
+> **Heap-hook safety (learned the hard way, #8):** the alloc-failed hook runs IN
+> the failing allocation's context, on that task's stack. It must be
+> **allocation-free** — an earlier version logged via `Print::printf`, which
+> mallocs; under heap exhaustion that malloc also failed and re-entered the hook,
+> recursing until a task stack overflowed (decoded from a coredump: a 64-byte
+> mDNS alloc on the lwIP `tiT` task — `tiT` was the victim, not the cause). The
+> hook now only counts + captures raw PCs behind a reentrancy guard; the handler
+> formats them. Same rule for any future heap/ISR hook: no malloc, no
+> `Print::printf`, no `String`.
 
 Method (from issue #8 / Codex review): **remove project-owned heap pressure and
 attribute before tuning system/WiFi buffers.** Use the failed-alloc backtrace to
