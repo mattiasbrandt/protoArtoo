@@ -4,19 +4,27 @@ Use this checklist when reporting completion.
 
 ## Status labels
 
-- `usb-standalone-verified`: Verified on an ESP32 connected over USB only, with no additional droid hardware/serial peripherals attached.
+- `software-verified`: Build/tests/checks passed; no upload implied.
+- `controller-upload-verified`: Flashed to ESP32 controller; smoke checks passed.
+- `full-hardware-verified`: Verified on integrated droid hardware.
 - `partial`: Some checks passed, but key checks are deferred.
 - `full-hardware-required`: Validation requires full droid hardware integration and remains pending.
 
-## Backend baseline checks
+## Risk-based backend checks
 
-1. `pio run -e protoArtoo`
-2. `pio test -e native`
-3. `pio check`
+Automated tests are evidence, not the goal. Choose checks based on the risk touched:
+
+- Firmware behavior change: start with `pio run -e protoArtoo`.
+- Safety invariants, protocol parsing, shared state transitions, config persistence,
+  JSON/API contracts, or prior regression paths: add `pio test -e native`.
+- Action registry, RC tokens, or `ACTION_REGISTRY[]`: add `make check-action-drift`.
+- Static-analysis investigation: add `pio check`; do not run it by default.
+- Docs, comments, copy, agent definitions, UI styling, or low-risk cleanup with no
+  behavior change: inspection and targeted checks are acceptable.
 
 If upload is requested and hardware is available:
 
-4. `pio run -e <env> -t upload --upload-port <port-or-host>`
+- `pio run -e <env> -t upload --upload-port <port-or-host>`
 
 ## Frontend fallback checks (hardware unavailable)
 

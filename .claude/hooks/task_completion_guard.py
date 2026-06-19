@@ -7,7 +7,9 @@ import sys
 
 
 VALID_LABELS = (
-    "usb-standalone-verified",
+    "software-verified",
+    "controller-upload-verified",
+    "full-hardware-verified",
     "partial",
     "full-hardware-required",
 )
@@ -38,7 +40,8 @@ def main() -> int:
 
     sys.stderr.write(
         "Task completion blocked: include verification status in task_description "
-        "(usb-standalone-verified | partial | full-hardware-required).\n"
+        "(software-verified | controller-upload-verified | full-hardware-verified | "
+        "partial | full-hardware-required).\n"
     )
     return 2
 

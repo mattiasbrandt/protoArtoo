@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""PreToolUse hook: block backend commits until required verification has passed."""
+"""PreToolUse hook: block backend commits until baseline firmware build passed."""
 
 import json
 import re
@@ -10,8 +10,6 @@ STATE_FILE = Path("/tmp/protoartoo_backend_verify.json")
 MAX_AGE_SECONDS = 6 * 60 * 60
 REQUIRED = (
     "firmware_build",
-    "native_tests",
-    "static_check",
 )
 
 
@@ -70,15 +68,13 @@ def main() -> int:
 
     label_map = {
         "firmware_build": "pio run -e protoArtoo",
-        "native_tests": "pio test -e native",
-        "static_check": "pio check",
     }
     missing_cmds = [label_map[m] for m in missing]
     _print_deny(
-        "Commit blocked: run and pass required verification first: "
+        "Commit blocked: run and pass the baseline firmware build first: "
         + "; ".join(missing_cmds)
-        + ". After software checks pass, perform upload/runtime verification when hardware is available, "
-          "or classify status as partial/full-hardware-required before completion."
+        + ". Add native tests, action-drift checks, static analysis, or upload/runtime verification "
+          "when the change risk justifies them; otherwise report why the chosen evidence is sufficient."
     )
     return 0
 

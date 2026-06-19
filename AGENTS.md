@@ -163,8 +163,10 @@ full policy blocks across individual agent definitions.
   - ask the user before changing strategy from delegated to solo execution.
 
 Delegation cues (auto-routing hints):
-- Route to `backend-coder` when prompts mention firmware, ESP32 tasks, PlatformIO, API handlers, safety/failsafe logic, or upload/build/test tooling.
-- Route to `frontend-designer` when prompts mention UI/UX, layout/copy, operator workflow, responsive behavior, or Playwright/web validation.
+- Route to `backend-coder` when prompts mention bounded firmware/backend implementation: ESP32/Arduino code, PlatformIO build/upload plumbing, API handlers, FreeRTOS tasks, `RobotState`/queues, config/NVS, action registry wiring, SBUS/RC, dome/audio backend control, or safety/failsafe logic.
+- Route to `frontend-designer` when prompts mention anything visible to operators: UI/UX, dashboard layout, copy, controls/selectors, visual design, accessibility, responsive/tablet behavior, or Playwright/web validation.
+- Route to `performance-optimizer` when prompts mention performance, heap, stack, OOM, PANIC, coredump, crash, reset reason, profiler, failed allocations, fragmentation, OTA failures, sluggish HTTP, SSE pressure, CHIRP catalog memory, Learned-sequence buffers, or runtime memory evidence.
+- Route to `code-reviewer` after implementation for independent safety/security/architecture/data-flow/maintainability/stale-comment/regression review.
 - Route to `Explore` for read-only discovery, codebase search, and pattern reconnaissance before edits.
 
 ## Flashing and Monitoring
@@ -207,17 +209,33 @@ make ota BUILD_ENV=protoArtoo_chirp # override build env
 
 ## Verification and Reporting
 
-Before marking complete: `make build` → `make test`. Add `make check-action-drift`
-when action registry, RC tokens, or `ACTION_REGISTRY[]` changed. `make test` is also
-enforced automatically by `make flash` and `make ota`.
+Use risk-based verification. Automated tests are evidence, not the goal. Prefer
+high-signal checks for behavior that can create unsafe motion, hard-to-debug field
+failures, API contract drift, or repeated regressions. Maintenance cost matters:
+do not add or demand brittle tests that mostly encode implementation details.
+
+Default completion evidence:
+- Firmware behavior changes: `make build`, then `make test` when safety,
+  protocol parsing, shared state, config persistence, JSON/API contracts, or prior
+  regression paths are touched.
+- UI/web asset changes: relevant local server + Playwright/manual interaction
+  evidence is usually higher value than native tests unless API builders changed.
+- Docs, comments, copy, agent definitions, and low-risk cleanup: inspection and
+  targeted checks are acceptable; do not require PlatformIO tests unless behavior
+  changed.
+
+Add `make check-action-drift` when action registry, RC tokens, or
+`ACTION_REGISTRY[]` changed. `make test` is still enforced automatically by
+`make flash` and `make ota`.
 
 `make check` (cppcheck) is slow — CI runs it on every PR automatically. Only run it
 locally when specifically investigating a static analysis issue.
 
 **CI gate:** `verification` workflow runs on every PR to `main` — do not bypass it.
 
-**JSON API test rule:** Every JSON API response builder needs a native test covering
-the typical case and confirming the output fits its size budget.
+**JSON API test rule:** JSON API response builders that are new or materially
+changed should have high-signal native coverage for the typical case and serialized
+size budget. Avoid low-value tests that only mirror implementation details.
 
 Classify verification status explicitly — use only these labels:
 

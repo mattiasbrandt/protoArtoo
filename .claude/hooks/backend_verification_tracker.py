@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """PostToolUse hook: track successful backend verification commands.
 
-Stores timestamps for required software checks so commit gating can enforce
-"verify before commit" behavior for the backend-coder agent.
+Stores timestamps for baseline and optional checks so commit gating can enforce
+a recent firmware build while still allowing risk-based verification judgment.
 """
 
 import json
