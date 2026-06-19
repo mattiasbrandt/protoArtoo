@@ -38,6 +38,8 @@ enum SeqStepType : uint8_t {
                               // cannot produce it, and serialization omits it, so
                               // it never reaches Protocol Check. Used by DM:RESET
                               // to clear latch state without a group close.
+    STEP_DOME_ROTATE    = 7,  // body-owned dome ESC timed rotation. Separate
+                              // from STEP_DOME_CMD, which is dome serial/TX.
 };
 
 // -----------------------------------------------------------------------------
@@ -92,6 +94,7 @@ struct SeqStepParams {
     uint8_t  pickDistinct;      // RANDOM: avoid slots already picked this run
     uint8_t  audioCategory;     // AUDIO_CATEGORY: AudioPlaybackCategory value
     uint8_t  audioFallbackSlot; // AUDIO_CATEGORY: AudioPlaybackSlot fallback
+    int8_t   speedPct;          // DOME_ROTATE: signed -100..100 speed percentage
 };
 
 // -----------------------------------------------------------------------------
@@ -120,6 +123,9 @@ struct SeqStep {
 #define SEQ_AUDIO_CAT(t, cat, fb) \
     { (t), STEP_AUDIO_CATEGORY, FX_AUDIO, "", \
       { 0, 0, 0, 0, 0, 0, 0, 0, 0, (uint8_t)(cat), (uint8_t)(fb) } }
+#define SEQ_DOME_ROTATE(t, speed, dur) \
+    { (t), STEP_DOME_ROTATE, FX_NONE, "", \
+      { (dur), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, (int8_t)(speed) } }
 #define SEQ_LOOP(t, body, period, dur) \
     { (t), STEP_LOOP, FX_NONE, "", \
       { (dur), (period), (body), 0, 0, 0, 0, 0, 0, 0, 0 } }
