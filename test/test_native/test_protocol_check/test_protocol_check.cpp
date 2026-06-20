@@ -388,6 +388,77 @@ static void test_audio_category_out_of_range_rejected() {
 }
 
 // -----------------------------------------------------------------------------
+// domeRotate validation (issue #7 step 6)
+// -------
+static void test_dome_rotate_valid_positive() {
+    static SeqStep s[] = {
+        SEQ_DOME_ROTATE(0, 50, 1000),
+        SEQ_TERM(1000),
+    };
+    ProtocolCheckResult r = protocolCheckBranch("steps", s, 2);
+    TEST_ASSERT_TRUE_MESSAGE(r.ok, r.message);
+    TEST_ASSERT_EQUAL_UINT8(FX_NONE, s[0].effectClass);
+}
+
+static void test_dome_rotate_valid_negative() {
+    static SeqStep s[] = {
+        SEQ_DOME_ROTATE(0, -75, 2000),
+        SEQ_TERM(2000),
+    };
+    ProtocolCheckResult r = protocolCheckBranch("steps", s, 2);
+    TEST_ASSERT_TRUE_MESSAGE(r.ok, r.message);
+}
+
+static void test_dome_rotate_valid_neutral_stop() {
+    static SeqStep s[] = {
+        SEQ_DOME_ROTATE(1000, 0, 0),
+        SEQ_TERM(1000),
+    };
+    ProtocolCheckResult r = protocolCheckBranch("steps", s, 2);
+    TEST_ASSERT_TRUE_MESSAGE(r.ok, r.message);
+}
+
+static void test_dome_rotate_reject_speedpct_too_high() {
+    static SeqStep s[] = {
+        SEQ_DOME_ROTATE(0, 101, 1000),
+        SEQ_TERM(1000),
+    };
+    ProtocolCheckResult r = protocolCheckBranch("steps", s, 2);
+    TEST_ASSERT_FALSE(r.ok);
+    TEST_ASSERT_EQUAL_STRING("steps[0].speedPct", r.field);
+}
+
+static void test_dome_rotate_reject_speedpct_too_low() {
+    static SeqStep s[] = {
+        SEQ_DOME_ROTATE(0, -101, 1000),
+        SEQ_TERM(1000),
+    };
+    ProtocolCheckResult r = protocolCheckBranch("steps", s, 2);
+    TEST_ASSERT_FALSE(r.ok);
+    TEST_ASSERT_EQUAL_STRING("steps[0].speedPct", r.field);
+}
+
+static void test_dome_rotate_reject_nonzero_speed_zero_duration() {
+    static SeqStep s[] = {
+        SEQ_DOME_ROTATE(0, 50, 0),
+        SEQ_TERM(1000),
+    };
+    ProtocolCheckResult r = protocolCheckBranch("steps", s, 2);
+    TEST_ASSERT_FALSE(r.ok);
+    TEST_ASSERT_EQUAL_STRING("steps[0].durationMs", r.field);
+}
+
+static void test_dome_rotate_reject_zero_speed_positive_duration() {
+    static SeqStep s[] = {
+        SEQ_DOME_ROTATE(0, 0, 1000),
+        SEQ_TERM(1000),
+    };
+    ProtocolCheckResult r = protocolCheckBranch("steps", s, 2);
+    TEST_ASSERT_FALSE(r.ok);
+    TEST_ASSERT_EQUAL_STRING("steps[0].speedPct", r.field);
+}
+
+// -----------------------------------------------------------------------------
 // Toggle structure
 // -----------------------------------------------------------------------------
 
@@ -554,6 +625,14 @@ int main(int /*argc*/, char** /*argv*/) {
     RUN_TEST(test_random_mode_out_of_range_rejected);
 
     RUN_TEST(test_audio_category_out_of_range_rejected);
+
+    RUN_TEST(test_dome_rotate_valid_positive);
+    RUN_TEST(test_dome_rotate_valid_negative);
+    RUN_TEST(test_dome_rotate_valid_neutral_stop);
+    RUN_TEST(test_dome_rotate_reject_speedpct_too_high);
+    RUN_TEST(test_dome_rotate_reject_speedpct_too_low);
+    RUN_TEST(test_dome_rotate_reject_nonzero_speed_zero_duration);
+    RUN_TEST(test_dome_rotate_reject_zero_speed_positive_duration);
 
     RUN_TEST(test_toggle_without_close_branch_rejected);
     RUN_TEST(test_nontoggle_with_close_branch_rejected);

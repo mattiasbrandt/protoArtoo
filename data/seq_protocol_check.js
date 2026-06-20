@@ -11,7 +11,7 @@
   const SUPPRESS_MS_MIN = 1000;
   const SUPPRESS_MS_MAX = 120000;
   const TOGGLE_GROUPS = ["none", "pies", "low", "all"];
-  const STEP_TYPES = ["audio", "dome", "loop", "random", "audioCat", "end"];
+  const STEP_TYPES = ["audio", "dome", "loop", "random", "audioCat", "domeRotate", "end"];
   const AUDIO_CATEGORIES = [
     "alert",
     "chatty",
@@ -158,6 +158,7 @@
         case "loop":     return this._validateLoopStep(step, allSteps);
         case "random":   return this._validateRandomStep(step);
         case "audioCat": return this._validateAudioCatStep(step);
+        case "domeRotate": return this._validateDomeRotateStep(step);
         case "end":      return { ok: true };
         default:         return { ok: true };
       }
@@ -374,6 +375,57 @@
           ok: false,
           field: "fallback",
           error: "Fallback must be a named track (e.g., $H)",
+        };
+      }
+
+      return { ok: true };
+    },
+
+    _validateDomeRotateStep(step) {
+      const { speedPct, durationMs } = step;
+
+      // Validate speedPct: must be in -100..100
+      if (typeof speedPct !== "number" || speedPct < -100 || speedPct > 100) {
+        return {
+          ok: false,
+          field: "speedPct",
+          error: "Speed percentage must be -100..100",
+        };
+      }
+
+      // Validate durationMs: must be positive, EXCEPT the explicit neutral stop
+      // (speedPct == 0 && durationMs == 0 is the only valid zero case)
+      if (typeof durationMs !== "number") {
+        return {
+          ok: false,
+          field: "durationMs",
+          error: "Duration must be a number",
+        };
+      }
+
+      if (speedPct === 0 && durationMs === 0) {
+        // Explicit neutral stop — valid
+      } else if (durationMs === 0) {
+        // Non-zero speed with zero duration — reject
+        return {
+          ok: false,
+          field: "durationMs",
+          error:
+            "Duration must be positive (or use speedPct=0, durationMs=0 for explicit neutral stop)",
+        };
+      } else if (speedPct === 0 && durationMs > 0) {
+        // Zero speed with positive duration — reject (ambiguous intent)
+        return {
+          ok: false,
+          field: "speedPct",
+          error:
+            "Non-zero speed required when durationMs > 0 (or use speedPct=0, durationMs=0 for neutral stop)",
+        };
+      } else if (durationMs < 0) {
+        return {
+          ok: false,
+          field: "durationMs",
+          error: "Duration must be non-negative",
         };
       }
 

@@ -450,6 +450,28 @@ ProtocolCheckResult protocolCheckBranch(const char* label, SeqStep* steps,
                 s.effectClass = FX_PANEL;
                 break;
             }
+            case STEP_DOME_ROTATE: {
+                const SeqStepParams& p = s.params;
+                // speedPct must be in -100..100
+                if (p.speedPct < -100 || p.speedPct > 100) {
+                    return pcFailAt(label, i, "speedPct", "must be -100..100");
+                }
+                // durationMs must be positive, EXCEPT the explicit neutral stop
+                // (speedPct == 0 && durationMs == 0 is the only valid zero case)
+                if (p.speedPct == 0 && p.durationMs == 0) {
+                    // Explicit neutral stop — valid
+                } else if (p.durationMs == 0) {
+                    // Non-zero speed with zero duration — reject
+                    return pcFailAt(label, i, "durationMs",
+                                  "must be positive (or both speedPct and durationMs must be 0 for neutral stop)");
+                } else if (p.speedPct == 0 && p.durationMs > 0) {
+                    // Zero speed with positive duration — reject (ambiguous intent)
+                    return pcFailAt(label, i, "speedPct",
+                                  "non-zero speed required when durationMs > 0 (or use speedPct=0, durationMs=0 for neutral stop)");
+                }
+                s.effectClass = FX_NONE;
+                break;
+            }
             case STEP_LOOP:
                 s.effectClass = FX_NONE;  // body steps carry their own classes
                 break;
