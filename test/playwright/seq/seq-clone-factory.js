@@ -108,7 +108,7 @@ async function test() {
     assert.strictEqual(firstStep.exists, true, "First step should exist");
     assert.strictEqual(firstStep.type, "audio", "First step should be audio type");
     assert.strictEqual(firstStep.tValue, "0", "First step time should be 0");
-    assert.strictEqual(firstStep.typeChipsCount, 6, "Should have 6 type chips");
+    assert.strictEqual(firstStep.typeChipsCount, 7, "Should have 7 type chips (audio, dome, domeRotate, loop, random, audioCat, end)");
     console.log(`First step is ${firstStep.type}, ${firstStep.fieldsCount} conditional fields`);
 
     // 7. Verify validation summary

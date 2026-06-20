@@ -103,6 +103,7 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
     // Test field specs for each type
     await testStepType('audio', ['cmd']);
     await testStepType('dome', ['cmd']);
+    await testStepType('domeRotate', ['direction', 'speed', 'durationMs']);
     await testStepType('loop', ['body', 'periodMs', 'durationMs']);
     await testStepType('random', ['set', 'mode', 'moveMs', 'jitterMs', 'distinct']);
     await testStepType('audioCat', ['category', 'fallback']);

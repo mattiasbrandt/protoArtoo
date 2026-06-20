@@ -343,7 +343,7 @@
   // =========================================================================
 
   const renderStepRow = (step, idx) => {
-    const stepTypeButtons = ["audio", "dome", "loop", "random", "audioCat", "end"]
+    const stepTypeButtons = ["audio", "dome", "domeRotate", "loop", "random", "audioCat", "end"]
       .map((type) =>
         `<button class="step-type-chip ${step.type === type ? "active" : ""}" data-type="${type}" aria-pressed="${step.type === type ? "true" : "false"}">${type}</button>`
       )
@@ -439,6 +439,32 @@
             </div>
           `;
         }
+        break;
+      case "domeRotate":
+        // Ergonomic operator UI for dome rotation: direction (Left/Right/Stop) + speed + duration
+        // Internal storage: speedPct (signed -100..100), durationMs
+        // Direction is derived from speedPct sign: negative=left, positive=right, 0=stop
+        const rotateSpeedPct = step.speedPct ?? 0;
+        const rotateDurationMs = step.durationMs ?? 0;
+
+        // Determine direction from speedPct
+        let direction = "stop";
+        if (rotateSpeedPct < 0) direction = "left";
+        else if (rotateSpeedPct > 0) direction = "right";
+
+        html = `
+          <div class="dome-rotate-controls">
+            <select class="step-field step-field-direction" data-field="direction" aria-label="Rotation direction">
+              <option value="stop" ${direction === "stop" ? "selected" : ""}>Stop (neutral)</option>
+              <option value="left" ${direction === "left" ? "selected" : ""}>Left (reverse)</option>
+              <option value="right" ${direction === "right" ? "selected" : ""}>Right (forward)</option>
+            </select>
+            <input class="step-field step-field-speed" type="number" data-field="speed" value="${Math.abs(rotateSpeedPct)}" min="0" max="100" step="1" aria-label="Rotation speed (0-100%)" placeholder="0-100">
+            <span class="dome-rotate-label">%</span>
+            <input class="step-field step-field-durationMs" type="number" data-field="durationMs" value="${rotateDurationMs}" min="0" max="120000" step="1" aria-label="Duration (milliseconds)" placeholder="duration ms">
+            <span class="dome-rotate-label">ms</span>
+          </div>
+        `;
         break;
       case "loop":
         html = `
@@ -610,11 +636,32 @@
       let value = input.value;
       if (input.type === "checkbox") {
         value = input.checked;
-      } else if (field === "t" || field === "body" || field === "periodMs" || field === "durationMs" || field === "moveMs" || field === "jitterMs") {
+      } else if (field === "t" || field === "body" || field === "periodMs" || field === "durationMs" || field === "moveMs" || field === "jitterMs" || field === "speed") {
         value = parseInt(value, 10);
       }
       step[field] = value;
     });
+
+    // Convert domeRotate UI fields (direction + speed) to signed speedPct
+    if (step.type === "domeRotate") {
+      const direction = step.direction || "stop";
+      const speed = step.speed ?? 0;
+      const absSpeed = Math.abs(speed) || 0;
+
+      // Compute signed speedPct from direction and speed
+      if (direction === "stop") {
+        step.speedPct = 0;
+        step.durationMs = 0;  // Stop always has 0 duration
+      } else if (direction === "left") {
+        step.speedPct = -absSpeed;
+      } else if (direction === "right") {
+        step.speedPct = absSpeed;
+      }
+
+      // Clean up UI-only fields
+      delete step.direction;
+      delete step.speed;
+    }
 
     // Validate
     const validation = SeqProtocolCheck.validateStep(step, stepIdx, editorState.current.steps);
@@ -786,6 +833,7 @@
     const stepTypeDefaults = {
       audio: { cmd: "$H" },
       dome: { cmd: ":OP00" },
+      domeRotate: { speedPct: 0, durationMs: 0 },
       loop: { body: 2, periodMs: 1846, durationMs: 14000 },
       random: { set: "ring", mode: "flutter", moveMs: 300, jitterMs: 500, distinct: true },
       audioCat: { category: "alert", fallback: "$H" },
@@ -823,6 +871,22 @@
           attachDomePanelIntentListeners(fieldsContainer, stepIdx);
         }
 
+        // If switching to domeRotate type, attach domeRotate-specific listeners
+        if (newType === "domeRotate") {
+          const directionSelect = fieldsContainer.querySelector(".step-field-direction");
+          if (directionSelect) {
+            directionSelect.addEventListener("change", () => {
+              const direction = directionSelect.value;
+              const durationInput = fieldsContainer.querySelector(".step-field-durationMs");
+              // If direction is "stop", force duration to 0
+              if (direction === "stop" && durationInput) {
+                durationInput.value = "0";
+              }
+              validateAndUpdateStep(stepIdx);
+            });
+          }
+        }
+
         validateAndUpdateStep(stepIdx);
       });
     });
@@ -842,6 +906,27 @@
       const typeChip = row.querySelector(".step-type-chip.active");
       if (typeChip && typeChip.dataset.type === "dome" && fieldsContainer) {
         attachDomePanelIntentListeners(fieldsContainer, stepIdx);
+      }
+    });
+
+    // Attach domeRotate-specific listeners for direction changes
+    document.querySelectorAll(".step-row").forEach((row) => {
+      const stepIdx = parseInt(row.dataset.stepIndex, 10);
+      const fieldsContainer = row.querySelector(".step-fields");
+      const typeChip = row.querySelector(".step-type-chip.active");
+      if (typeChip && typeChip.dataset.type === "domeRotate" && fieldsContainer) {
+        const directionSelect = fieldsContainer.querySelector(".step-field-direction");
+        if (directionSelect) {
+          directionSelect.addEventListener("change", () => {
+            const direction = directionSelect.value;
+            const durationInput = fieldsContainer.querySelector(".step-field-durationMs");
+            // If direction is "stop", force duration to 0 and trigger validation
+            if (direction === "stop" && durationInput) {
+              durationInput.value = "0";
+            }
+            validateAndUpdateStep(stepIdx);
+          });
+        }
       }
     });
 
@@ -1349,6 +1434,7 @@
   window.__seqEditorForTesting = {
     renderEditorView,
     editorState,
+    getEditorState: () => editorState,
     updateValidationSummary,
     renderListWith: (seqs) => {
       sequences = seqs || [];
