@@ -198,6 +198,32 @@ static ProtocolCheckResult parseStep(const char* label, JsonObjectConst obj,
         s.params.audioFallbackSlot = fb;
         return pcOk();
     }
+    if (strcmp(type, "domeRotate") == 0) {
+        s.type = STEP_DOME_ROTATE;
+        int32_t speedPct = obj["speedPct"] | 0;
+        uint32_t durationMs = obj["durationMs"] | 0u;
+
+        // Validate speedPct: must be in -100..100
+        if (speedPct < -100 || speedPct > 100) {
+            return pcFailAt(label, idx, "speedPct", "must be -100..100");
+        }
+
+        // Validate durationMs: must be positive, EXCEPT the explicit neutral stop
+        // (speedPct == 0 && durationMs == 0 is the only valid zero case)
+        if (speedPct == 0 && durationMs == 0) {
+            // Explicit neutral stop — valid
+        } else if (durationMs == 0) {
+            // Non-zero speed with zero duration — reject
+            return pcFailAt(label, idx, "durationMs", "must be positive (or both speedPct and durationMs must be 0 for neutral stop)");
+        } else if (speedPct == 0 && durationMs > 0) {
+            // Zero speed with positive duration — reject (ambiguous intent)
+            return pcFailAt(label, idx, "speedPct", "non-zero speed required when durationMs > 0 (or use speedPct=0, durationMs=0 for neutral stop)");
+        }
+
+        s.params.speedPct   = (int8_t)speedPct;
+        s.params.durationMs = durationMs;
+        return pcOk();
+    }
     if (strcmp(type, "end") == 0) {
         s.type = STEP_END;
         return pcOk();
@@ -330,6 +356,11 @@ static void serializeBranch(JsonArray arr, const SeqStep* steps, uint8_t count) 
                 o["category"] =
                     audioCategoryToString((AudioPlaybackCategory)s.params.audioCategory);
                 o["fallback"] = slotToString(s.params.audioFallbackSlot);
+                break;
+            case STEP_DOME_ROTATE:
+                o["type"] = "domeRotate";
+                o["speedPct"] = s.params.speedPct;
+                o["durationMs"] = s.params.durationMs;
                 break;
             case STEP_END:
             default:

@@ -302,6 +302,120 @@ static void test_all_builtins_serialize_and_reparse() {
 }
 
 // -----------------------------------------------------------------------------
+// domeRotate step tests (issue #7 step 5)
+// -----------------------------------------------------------------------------
+static void test_domerotate_parse_positive() {
+    // Parse a simple positive dome rotation step
+    SeqDraft d;
+    ProtocolCheckResult r = seqJsonParse(
+        "{\"format\":1,\"name\":\"DM:ROTTEST\",\"suppressMs\":5000,\"steps\":["
+        "{\"t\":0,\"type\":\"domeRotate\",\"speedPct\":50,\"durationMs\":1000},"
+        "{\"t\":1000,\"type\":\"end\"}]}",
+        gSteps, 96, gClose, 96, d);
+    TEST_ASSERT_TRUE_MESSAGE(r.ok, r.message);
+    TEST_ASSERT_EQUAL_UINT8(STEP_DOME_ROTATE, d.steps[0].type);
+    TEST_ASSERT_EQUAL_INT8(50, d.steps[0].params.speedPct);
+    TEST_ASSERT_EQUAL_UINT32(1000, d.steps[0].params.durationMs);
+}
+
+static void test_domerotate_parse_negative() {
+    // Parse a negative dome rotation step (left/reverse)
+    SeqDraft d;
+    ProtocolCheckResult r = seqJsonParse(
+        "{\"format\":1,\"name\":\"DM:ROTTEST\",\"suppressMs\":5000,\"steps\":["
+        "{\"t\":0,\"type\":\"domeRotate\",\"speedPct\":-75,\"durationMs\":2000},"
+        "{\"t\":2000,\"type\":\"end\"}]}",
+        gSteps, 96, gClose, 96, d);
+    TEST_ASSERT_TRUE_MESSAGE(r.ok, r.message);
+    TEST_ASSERT_EQUAL_INT8(-75, d.steps[0].params.speedPct);
+    TEST_ASSERT_EQUAL_UINT32(2000, d.steps[0].params.durationMs);
+}
+
+static void test_domerotate_parse_neutral_stop() {
+    // Parse explicit neutral stop (speedPct=0, durationMs=0)
+    SeqDraft d;
+    ProtocolCheckResult r = seqJsonParse(
+        "{\"format\":1,\"name\":\"DM:ROTTEST\",\"suppressMs\":5000,\"steps\":["
+        "{\"t\":1000,\"type\":\"domeRotate\",\"speedPct\":0,\"durationMs\":0},"
+        "{\"t\":1000,\"type\":\"end\"}]}",
+        gSteps, 96, gClose, 96, d);
+    TEST_ASSERT_TRUE_MESSAGE(r.ok, r.message);
+    TEST_ASSERT_EQUAL_INT8(0, d.steps[0].params.speedPct);
+    TEST_ASSERT_EQUAL_UINT32(0, d.steps[0].params.durationMs);
+}
+
+static void test_domerotate_reject_speedpct_too_high() {
+    // Reject speedPct > 100
+    SeqDraft d;
+    ProtocolCheckResult r = seqJsonParse(
+        "{\"format\":1,\"name\":\"DM:ROTTEST\",\"suppressMs\":5000,\"steps\":["
+        "{\"t\":0,\"type\":\"domeRotate\",\"speedPct\":101,\"durationMs\":1000},"
+        "{\"t\":1000,\"type\":\"end\"}]}",
+        gSteps, 96, gClose, 96, d);
+    TEST_ASSERT_FALSE(r.ok);
+    TEST_ASSERT_EQUAL_STRING("steps[0].speedPct", r.field);
+}
+
+static void test_domerotate_reject_speedpct_too_low() {
+    // Reject speedPct < -100
+    SeqDraft d;
+    ProtocolCheckResult r = seqJsonParse(
+        "{\"format\":1,\"name\":\"DM:ROTTEST\",\"suppressMs\":5000,\"steps\":["
+        "{\"t\":0,\"type\":\"domeRotate\",\"speedPct\":-101,\"durationMs\":1000},"
+        "{\"t\":1000,\"type\":\"end\"}]}",
+        gSteps, 96, gClose, 96, d);
+    TEST_ASSERT_FALSE(r.ok);
+    TEST_ASSERT_EQUAL_STRING("steps[0].speedPct", r.field);
+}
+
+static void test_domerotate_reject_zero_speed_with_duration() {
+    // Reject zero speed with positive duration (ambiguous intent)
+    SeqDraft d;
+    ProtocolCheckResult r = seqJsonParse(
+        "{\"format\":1,\"name\":\"DM:ROTTEST\",\"suppressMs\":5000,\"steps\":["
+        "{\"t\":0,\"type\":\"domeRotate\",\"speedPct\":0,\"durationMs\":1000},"
+        "{\"t\":1000,\"type\":\"end\"}]}",
+        gSteps, 96, gClose, 96, d);
+    TEST_ASSERT_FALSE(r.ok);
+    TEST_ASSERT_EQUAL_STRING("steps[0].speedPct", r.field);
+}
+
+static void test_domerotate_reject_nonzero_speed_with_zero_duration() {
+    // Reject nonzero speed with zero duration (incomplete rotation)
+    SeqDraft d;
+    ProtocolCheckResult r = seqJsonParse(
+        "{\"format\":1,\"name\":\"DM:ROTTEST\",\"suppressMs\":5000,\"steps\":["
+        "{\"t\":0,\"type\":\"domeRotate\",\"speedPct\":50,\"durationMs\":0},"
+        "{\"t\":1000,\"type\":\"end\"}]}",
+        gSteps, 96, gClose, 96, d);
+    TEST_ASSERT_FALSE(r.ok);
+    TEST_ASSERT_EQUAL_STRING("steps[0].durationMs", r.field);
+}
+
+static void test_domerotate_serialize_roundtrip() {
+    // Create a step, serialize, reparse, compare
+    static const SeqStep steps[] = {
+        SEQ_DOME_ROTATE(0, 35, 900),
+        SEQ_TERM(900),
+    };
+    SequenceEntry e = { "DM:ROTTEST", steps, 2, 5000, TOGGLE_NONE, nullptr, 0 };
+
+    char json[1024];
+    size_t n = seqJsonSerialize(e, "user", json, sizeof(json));
+    TEST_ASSERT_GREATER_THAN(0, n);
+    TEST_ASSERT_NOT_NULL(strstr(json, "\"type\":\"domeRotate\""));
+    TEST_ASSERT_NOT_NULL(strstr(json, "\"speedPct\":35"));
+    TEST_ASSERT_NOT_NULL(strstr(json, "\"durationMs\":900"));
+
+    SeqDraft d;
+    ProtocolCheckResult r = seqJsonParse(json, gSteps, 96, gClose, 96, d);
+    TEST_ASSERT_TRUE_MESSAGE(r.ok, r.message);
+    TEST_ASSERT_EQUAL_UINT8(STEP_DOME_ROTATE, d.steps[0].type);
+    TEST_ASSERT_EQUAL_INT8(35, d.steps[0].params.speedPct);
+    TEST_ASSERT_EQUAL_UINT32(900, d.steps[0].params.durationMs);
+}
+
+// -----------------------------------------------------------------------------
 int main(int /*argc*/, char** /*argv*/) {
     UNITY_BEGIN();
 
@@ -320,6 +434,15 @@ int main(int /*argc*/, char** /*argv*/) {
     RUN_TEST(test_steps_overflow_rejected);
 
     RUN_TEST(test_audiocat_roundtrip);
+
+    RUN_TEST(test_domerotate_parse_positive);
+    RUN_TEST(test_domerotate_parse_negative);
+    RUN_TEST(test_domerotate_parse_neutral_stop);
+    RUN_TEST(test_domerotate_reject_speedpct_too_high);
+    RUN_TEST(test_domerotate_reject_speedpct_too_low);
+    RUN_TEST(test_domerotate_reject_zero_speed_with_duration);
+    RUN_TEST(test_domerotate_reject_nonzero_speed_with_zero_duration);
+    RUN_TEST(test_domerotate_serialize_roundtrip);
 
     RUN_TEST(test_catalog_iteration_bounds);
     RUN_TEST(test_all_builtins_serialize_and_reparse);
