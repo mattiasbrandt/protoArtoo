@@ -28,6 +28,14 @@
   const RANDOM_SETS  = ["ring", "pie", "all", "hold"];
   const RANDOM_MODES = ["flutter", "open", "close"];
 
+  // audioCat "fallback" is a NAMED SLOT (the clip played when the chosen category
+  // has no available track), not a "$" sound. Values mirror the server slot table
+  // in src/seq_json.cpp (slotToString/slotFromString); "none" = no fallback clip.
+  const AUDIO_FALLBACK_SLOTS = [
+    "none", "scream", "faint", "leia", "cantina_s", "sw_theme",
+    "imp_march", "cantina_l", "startup", "disco", "happy",
+  ];
+
   // Allowed panel intent targets for :OP/:CL/:OF commands.
   // Ring panels: numeric slot IDs present on a standard astromech ring.
   // Pie / top panels: PP1-PP6 use the explicit "P1"-"P6" aliases (not numeric 08-13).
@@ -366,15 +374,11 @@
         };
       }
 
-      if (!fallback || typeof fallback !== "string") {
-        return { ok: false, field: "fallback", error: "Choose a backup sound" };
-      }
-
-      if (!fallback.startsWith("$")) {
+      if (typeof fallback !== "string" || !AUDIO_FALLBACK_SLOTS.includes(fallback)) {
         return {
           ok: false,
           field: "fallback",
-          error: "The backup sound must be a named sound, like $H",
+          error: `Choose a backup sound from the list (${AUDIO_FALLBACK_SLOTS.join(", ")})`,
         };
       }
 

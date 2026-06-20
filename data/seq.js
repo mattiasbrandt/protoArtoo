@@ -25,6 +25,26 @@
   let _pendingWipeSeqName = null; // sequence name pending deletion (avoids placeholder coupling)
   let _wipeInputListener = null;  // stored to enable removeEventListener on modal reopen
 
+  // Audio fallback slots — the named clips usable as an audioCat "fallback"
+  // (played when the chosen category has no available track). VALUES must match
+  // the server slot table in src/seq_json.cpp (slotToString/slotFromString) and
+  // the client validator set in seq_protocol_check.js. Labels are operator-facing.
+  const AUDIO_FALLBACK_SLOTS = [
+    { value: "none",      label: "None" },
+    { value: "scream",    label: "Scream" },
+    { value: "faint",     label: "Faint" },
+    { value: "leia",      label: "Leia message" },
+    { value: "cantina_s", label: "Cantina (short)" },
+    { value: "sw_theme",  label: "Star Wars theme" },
+    { value: "imp_march", label: "Imperial March" },
+    { value: "cantina_l", label: "Cantina (long)" },
+    { value: "startup",   label: "Startup" },
+    { value: "disco",     label: "Disco" },
+    { value: "happy",     label: "Happy" },
+  ];
+  const audioFallbackLabel = (value) =>
+    (AUDIO_FALLBACK_SLOTS.find((s) => s.value === value) || {}).label || value || "None";
+
   const els = {
     // List view
     mainCard: document.getElementById("seq-main-card"),
@@ -394,8 +414,7 @@
       }
       case "audioCat": {
         const category = step.category || "alert";
-        const fallback = step.fallback || "$H";
-        return `Play a ${category} sound (fallback ${fallback})`;
+        return `Play a ${category} sound (fallback ${audioFallbackLabel(step.fallback)})`;
       }
       case "end":
         return "End of sequence";
@@ -761,7 +780,9 @@
           <select class="step-field step-field-category" data-field="category" aria-label="Category">
             ${audioCategories.map((cat) => `<option value="${cat}" ${step.category === cat ? "selected" : ""}>${cat}</option>`).join("")}
           </select>
-          <input class="step-field step-field-fallback" type="text" data-field="fallback" value="${escapeHtml(step.fallback || "")}" placeholder="$H (fallback)" aria-label="Fallback track">
+          <select class="step-field step-field-fallback" data-field="fallback" aria-label="Fallback sound">
+            ${AUDIO_FALLBACK_SLOTS.map((s) => `<option value="${s.value}" ${(step.fallback || "none") === s.value ? "selected" : ""}>${s.label}</option>`).join("")}
+          </select>
         `;
         break;
 
@@ -1160,7 +1181,7 @@
       domeRotate: { speedPct: 0, durationMs: 0 },
       loop: { body: 2, periodMs: 1846, durationMs: 14000 },
       random: { set: "ring", mode: "flutter", moveMs: 300, jitterMs: 500, distinct: true },
-      audioCat: { category: "alert", fallback: "$H" },
+      audioCat: { category: "alert", fallback: "scream" },
       end: {},
     };
 

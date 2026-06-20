@@ -173,6 +173,28 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
       await page.waitForTimeout(100);
     });
 
+    // Regression: audioCat "fallback" is a NAMED SLOT, not a "$" sound. Factory
+    // sequences ALARM/HEART/SCREAM/OVERLOAD serialize fallback as e.g. "scream",
+    // which previously tripped the client validator (it demanded a "$" prefix) and
+    // painted those factory cards red. The validator must accept known slots
+    // (incl. "none") and reject "$"-prefixed or unknown values.
+    await test('audioCat fallback: named slot passes, $-sound and unknown rejected', async () => {
+      const r = await page.evaluate(() => {
+        const V = window.SeqProtocolCheck;
+        const mk = (fallback) => ({ t: 0, type: 'audioCat', category: 'alert', fallback });
+        return {
+          slotOk:   V.validateStep(mk('scream'), 0, [], true).ok,
+          noneOk:   V.validateStep(mk('none'),   0, [], true).ok,
+          dollarOk: V.validateStep(mk('$H'),     0, [], true).ok,
+          bogusOk:  V.validateStep(mk('nope'),   0, [], true).ok,
+        };
+      });
+      if (!r.slotOk) throw new Error('expected named slot "scream" to pass');
+      if (!r.noneOk) throw new Error('expected "none" to pass');
+      if (r.dollarOk) throw new Error('expected "$H" to be rejected (not a slot)');
+      if (r.bogusOk) throw new Error('expected unknown slot "nope" to be rejected');
+    });
+
   } finally {
     await browser.close();
   }

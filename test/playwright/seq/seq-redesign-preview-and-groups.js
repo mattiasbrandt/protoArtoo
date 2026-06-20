@@ -43,7 +43,7 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
       { t: 300, type: 'domeRotate', speedPct: 0, durationMs: 0 },
       { t: 400, type: 'loop', body: 14, periodMs: 6461, durationMs: 45000 },
       { t: 500, type: 'random', set: 'all', mode: 'flutter', moveMs: 300, jitterMs: 0, distinct: false },
-      { t: 600, type: 'audioCat', category: 'happy', fallback: '$H' },
+      { t: 600, type: 'audioCat', category: 'happy', fallback: 'happy' },
       { t: 700, type: 'end' },
     ],
     closeSteps: [],
@@ -56,7 +56,7 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
     'Stop dome (neutral)',
     'Repeat next 14 steps every 6461ms for 45000ms',
     'Random flutter on all panels (move 300ms)',
-    'Play a happy sound (fallback $H)',
+    'Play a happy sound (fallback Happy)',
     'End of sequence',
   ];
 
