@@ -79,7 +79,7 @@
         return {
           ok: false,
           error:
-            "Name must match DM:[A-Z0-9_]{1,18} (uppercase alphanumeric + underscore, 1-18 chars after DM:)",
+            "The name must start with DM: then 1-18 capital letters, numbers, or underscores (for example, DM:ROCKMARCH)",
         };
       }
       return { ok: true };
@@ -95,13 +95,13 @@
       if (suppressMs < SUPPRESS_MS_MIN || suppressMs > SUPPRESS_MS_MAX) {
         return {
           ok: false,
-          error: `suppressMs must be between ${SUPPRESS_MS_MIN} and ${SUPPRESS_MS_MAX}ms`,
+          error: `The mute time must be between ${SUPPRESS_MS_MIN} and ${SUPPRESS_MS_MAX} milliseconds`,
         };
       }
       if (suppressMs < endT) {
         return {
           ok: false,
-          error: `suppressMs (${suppressMs}ms) must be >= end time (${endT}ms)`,
+          error: `The mute time (${suppressMs}ms) must be at least as long as the whole sequence (${endT}ms)`,
         };
       }
       return { ok: true };
@@ -117,7 +117,7 @@
      */
     validateStep(step, stepIndex, allSteps = [], isBranchRoot = false) {
       if (!step || typeof step !== "object") {
-        return { ok: false, error: "Step must be an object" };
+        return { ok: false, error: "This step is missing its details" };
       }
 
       const { t, type } = step;
@@ -127,7 +127,7 @@
         return {
           ok: false,
           field: "t",
-          error: "Step time must be 0–120000ms",
+          error: "Step time must be between 0 and 120000 milliseconds",
         };
       }
 
@@ -138,7 +138,7 @@
           return {
             ok: false,
             field: "t",
-            error: `Step time must be >= previous step (${prevT}ms)`,
+            error: `This step must happen at or after the previous step (${prevT}ms)`,
           };
         }
       }
@@ -148,7 +148,7 @@
         return {
           ok: false,
           field: "type",
-          error: `Type must be one of: ${STEP_TYPES.join(", ")}`,
+          error: `Choose a valid step type: ${STEP_TYPES.join(", ")}`,
         };
       }
 
@@ -167,13 +167,13 @@
     _validateAudioStep(step) {
       const { cmd } = step;
       if (!cmd || typeof cmd !== "string") {
-        return { ok: false, field: "cmd", error: "Audio command required" };
+        return { ok: false, field: "cmd", error: "Choose a sound for this step" };
       }
       if (!cmd.startsWith("$")) {
         return {
           ok: false,
           field: "cmd",
-          error: "Audio command must start with $ (e.g., $H for Happy)",
+          error: "A sound name must start with $ (for example, $H for the Happy sound)",
         };
       }
       return { ok: true };
@@ -182,7 +182,7 @@
     _validateDomeStep(step) {
       const { cmd } = step;
       if (!cmd || typeof cmd !== "string") {
-        return { ok: false, field: "cmd", error: "Dome command required" };
+        return { ok: false, field: "cmd", error: "Choose a dome action for this step" };
       }
 
       // Explicit rejection with clear actionable message
@@ -191,14 +191,14 @@
           ok: false,
           field: "cmd",
           error:
-            ":SM is diagnostic/calibration only — use :OP/:CL/:OF panel intent commands in sequences",
+            ":SM is only for calibration. To move panels in a sequence, use an Open, Close, or Flutter panel action instead.",
         };
       }
       if (/^DM:/.test(cmd)) {
         return {
           ok: false,
           field: "cmd",
-          error: "DM:* is a sequence trigger, not a step command",
+          error: "DM:... names a whole sequence, so it can't be used as a single step",
         };
       }
 
@@ -210,8 +210,8 @@
             ok: false,
             field: "cmd",
             error:
-              `Unknown DV: visual preset "${cmd.slice(3)}". ` +
-              "Allowed: " + Array.from(DV_PRESETS).join(", "),
+              `"${cmd.slice(3)}" is not a known dome visual preset. ` +
+              "Choose one of: " + Array.from(DV_PRESETS).join(", "),
           };
         }
         return { ok: true };
@@ -223,14 +223,14 @@
         if (!PANEL_INTENT_TARGETS.has(target)) {
           const numericAmbiguous = /^\d{2}$/.test(target);
           const hint = numericAmbiguous
-            ? " (targets 08-10 and 12 are ambiguous pie/ring IDs — use explicit aliases P1-P6 for pie panels)"
+            ? " (08-10 and 12 are unclear - use P1-P6 to pick a pie panel)"
             : "";
           return {
             ok: false,
             field: "cmd",
             error:
-              `Panel target "${target}" not in allowed set${hint}. ` +
-              "Use ring (01-04,07,11,13), pie (P1-P6), or group (00=all, 14=pie, 15=ring)",
+              `"${target}" is not a panel I can target${hint}. ` +
+              "Pick a ring (01-04, 07, 11, 13), a pie (P1-P6), or a group (00 = all, 14 = pies, 15 = rings)",
           };
         }
         return { ok: true };
@@ -247,7 +247,7 @@
           return {
             ok: false,
             field: "cmd",
-            error: ":SE requires exactly 2 digits (e.g., :SE07)",
+            error: "A Marcduino sequence needs exactly two digits, like :SE07",
           };
         }
         return { ok: true };
@@ -257,7 +257,7 @@
         ok: false,
         field: "cmd",
         error:
-          "Dome command not recognized. Use :OP/:CL/:OF for panels, @... for logic/PSI, *... for holos, DV:<name> for dome visual presets, or :SE## for Marcduino sequences",
+          "That dome command isn't recognized. Use a panel action (Open, Close, Flutter), a dome visual preset (DV:...), or an advanced code (@ for logic/PSI, * for holos, :SE## for Marcduino).",
       };
     },
 
@@ -268,7 +268,7 @@
         return {
           ok: false,
           field: "body",
-          error: "Loop body must be 1–96 steps",
+          error: "A loop must repeat between 1 and 96 steps",
         };
       }
 
@@ -276,7 +276,7 @@
         return {
           ok: false,
           field: "periodMs",
-          error: "Loop period must be 100–60000ms",
+          error: "The loop's repeat interval must be between 100 and 60000 milliseconds",
         };
       }
 
@@ -284,7 +284,7 @@
         return {
           ok: false,
           field: "durationMs",
-          error: "Loop duration must be 100–120000ms",
+          error: "The loop must run for between 100 and 120000 milliseconds",
         };
       }
 
@@ -292,7 +292,7 @@
         return {
           ok: false,
           field: "periodMs",
-          error: "Loop period must be <= duration",
+          error: "The repeat interval can't be longer than the loop's total run time",
         };
       }
 
@@ -308,7 +308,7 @@
           ok: false,
           field: "pulseMin",
           error:
-            "Random pulse ranges are not supported — use mode (flutter/open/close) with a logical target set instead",
+            "This older random format is no longer supported. Choose a motion (flutter, open, or close) and which panels to move.",
         };
       }
 
@@ -316,7 +316,7 @@
         return {
           ok: false,
           field: "set",
-          error: `Random set must be one of: ${RANDOM_SETS.join(", ")}`,
+          error: `Choose which panels move: ${RANDOM_SETS.join(", ")}`,
         };
       }
 
@@ -324,7 +324,7 @@
         return {
           ok: false,
           field: "mode",
-          error: `Random mode must be one of: ${RANDOM_MODES.join(", ")}`,
+          error: `Choose a motion type: ${RANDOM_MODES.join(", ")}`,
         };
       }
 
@@ -332,7 +332,7 @@
         return {
           ok: false,
           field: "moveMs",
-          error: "Move time must be 0–5000ms",
+          error: "Move time must be between 0 and 5000 milliseconds",
         };
       }
 
@@ -340,7 +340,7 @@
         return {
           ok: false,
           field: "jitterMs",
-          error: "Jitter must be 0–2000ms",
+          error: "Jitter must be between 0 and 2000 milliseconds",
         };
       }
 
@@ -348,7 +348,7 @@
         return {
           ok: false,
           field: "distinct",
-          error: "Distinct must be true or false",
+          error: "The distinct option must be on or off",
         };
       }
 
@@ -362,19 +362,19 @@
         return {
           ok: false,
           field: "category",
-          error: `Category must be one of: ${AUDIO_CATEGORIES.join(", ")}`,
+          error: `Choose a sound category: ${AUDIO_CATEGORIES.join(", ")}`,
         };
       }
 
       if (!fallback || typeof fallback !== "string") {
-        return { ok: false, field: "fallback", error: "Fallback track required" };
+        return { ok: false, field: "fallback", error: "Choose a backup sound" };
       }
 
       if (!fallback.startsWith("$")) {
         return {
           ok: false,
           field: "fallback",
-          error: "Fallback must be a named track (e.g., $H)",
+          error: "The backup sound must be a named sound, like $H",
         };
       }
 
@@ -389,7 +389,7 @@
         return {
           ok: false,
           field: "speedPct",
-          error: "Speed percentage must be -100..100",
+          error: "Speed must be between -100% and 100%",
         };
       }
 
@@ -399,7 +399,7 @@
         return {
           ok: false,
           field: "durationMs",
-          error: "Duration must be a number",
+          error: "Enter how long the dome should spin, in milliseconds",
         };
       }
 
@@ -411,7 +411,7 @@
           ok: false,
           field: "durationMs",
           error:
-            "Duration must be positive (or use speedPct=0, durationMs=0 for explicit neutral stop)",
+            "Enter a spin time greater than 0, or set both speed and time to 0 to stop the dome",
         };
       } else if (speedPct === 0 && durationMs > 0) {
         // Zero speed with positive duration — reject (ambiguous intent)
@@ -419,13 +419,13 @@
           ok: false,
           field: "speedPct",
           error:
-            "Non-zero speed required when durationMs > 0 (or use speedPct=0, durationMs=0 for neutral stop)",
+            "Set a speed for the dome to spin, or set both speed and time to 0 to stop it",
         };
       } else if (durationMs < 0) {
         return {
           ok: false,
           field: "durationMs",
-          error: "Duration must be non-negative",
+          error: "Spin time can't be negative",
         };
       }
 
@@ -463,7 +463,7 @@
         return {
           ok: false,
           field: "steps",
-          error: `Panel flutter without cleanup: ${targets} — each :OF step must be followed by a matching :CL in the same branch`,
+          error: `These panels are left fluttering and never closed: ${targets}. Add a Close action for each one later in the sequence.`,
         };
       }
       return { ok: true };
@@ -476,7 +476,7 @@
      */
     validateSequence(seq) {
       if (!seq || typeof seq !== "object") {
-        return { ok: false, error: "Sequence must be an object" };
+        return { ok: false, error: "This sequence is missing its details" };
       }
 
       const { name, suppressMs, toggleGroup, steps } = seq;
@@ -501,25 +501,25 @@
         return {
           ok: false,
           field: "toggleGroup",
-          error: `Toggle group must be one of: ${TOGGLE_GROUPS.join(", ")}`,
+          error: `Choose a valid interrupt group: ${TOGGLE_GROUPS.join(", ")}`,
         };
       }
 
       // Steps array
       if (!Array.isArray(steps)) {
-        return { ok: false, field: "steps", error: "Steps must be an array" };
+        return { ok: false, field: "steps", error: "This sequence has no steps" };
       }
       if (steps.length === 0) {
-        return { ok: false, error: "Sequence must have at least one step" };
+        return { ok: false, error: "Add at least one step to the sequence" };
       }
       if (steps.length > 96) {
-        return { ok: false, error: "Sequence cannot exceed 96 steps" };
+        return { ok: false, error: "A sequence can have at most 96 steps" };
       }
 
       // Must end with 'end' type
       const lastStep = steps[steps.length - 1];
       if (lastStep.type !== "end") {
-        return { ok: false, error: "Sequence must end with an 'end' type step" };
+        return { ok: false, error: "The sequence must finish with a Sequence End step" };
       }
 
       // Identify loop body step indices so we can skip outer non-decreasing time
@@ -559,7 +559,7 @@
             return {
               ok: false,
               field: `steps[${i}].t`,
-              error: `Step time must be >= previous step (${lastOuterT}ms)`,
+              error: `This step must happen at or after the previous step (${lastOuterT}ms)`,
             };
           }
           lastOuterT = steps[i].t;
