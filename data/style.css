@@ -3736,9 +3736,15 @@ label.sound-search-field {
 }
 
 .seq-editor-steps h4 {
-  margin-bottom: 12px;
+  margin-bottom: 8px;
   color: var(--silver-bright);
   font-size: 0.95rem;
+}
+
+.seq-editor-steps-helper {
+  margin-bottom: 12px;
+  color: var(--text-dim);
+  font-size: 0.85rem;
 }
 
 .seq-editor-step-table {
@@ -3853,6 +3859,20 @@ label.sound-search-field {
   flex-shrink: 0;
   font-size: 1.2rem;
   line-height: 1;
+}
+
+.step-number-label {
+  flex-shrink: 0;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  font-weight: 500;
+}
+
+.step-time-label {
+  flex-shrink: 0;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  font-family: monospace;
 }
 
 .step-card-type {

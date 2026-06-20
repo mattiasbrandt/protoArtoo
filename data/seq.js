@@ -362,12 +362,12 @@
             const action = match[1];
             const target = match[2];
             const actionLabel = action === "OP" ? "Open" : action === "CL" ? "Close" : "Flutter";
-            const targetLabel = target === "00" ? "all panels" : target === "14" ? "top group" : target === "15" ? "bottom group" : `P${target}`;
+            const targetLabel = target === "00" ? "all panels" : target === "14" ? "top group" : target === "15" ? "bottom group" : target.startsWith("P") ? `pie ${target}` : `ring ${target}`;
             return `${actionLabel} ${targetLabel} (:${action}${target})`;
           }
         }
         // Advanced mode
-        return `Dome command (${cmd || "@0T6"})`;
+        return `Dome command ${cmd || "@0T6"}`;
       }
       case "domeRotate": {
         const speedPct = step.speedPct ?? 0;
@@ -386,9 +386,11 @@
         return `Repeat next ${body} steps every ${periodMs}ms for ${durationMs}ms`;
       }
       case "random": {
+        const setMap = { ring: "ring panels", pie: "pie panels", all: "all panels", hold: "hold" };
         const set = step.set || "ring";
         const moveMs = step.moveMs ?? 300;
-        return `Random flutter on ${set} (move ${moveMs}ms)`;
+        const setLabel = setMap[set] || set;
+        return `Random flutter on ${setLabel} (move ${moveMs}ms)`;
       }
       case "audioCat": {
         const category = step.category || "alert";
@@ -475,6 +477,8 @@
     const headerHtml = `
       <div class="step-card-header" role="button" aria-expanded="${isExpanded}" tabindex="0" ${isInvalid ? `aria-invalid="true" aria-describedby="${errorId}"` : ""}>
         <span class="step-handle" title="Drag to reorder steps">⋯</span>
+        <span class="step-number-label">Step ${idx + 1}</span>
+        <span class="step-time-label">t=${step.t || 0}ms</span>
         <span class="step-card-emoji">${emoji}</span>
         <span class="step-card-type">${escapeHtml(typeName)}</span>
         <span class="step-card-preview">${escapeHtml(preview)}</span>
@@ -853,7 +857,8 @@
         </div>
 
         <div class="seq-editor-steps">
-          <h4>Steps</h4>
+          <h4>Sequence Behavior (${seq.steps.length} Steps)</h4>
+          <p class="seq-editor-steps-helper">All steps are collapsed. Click to expand for editing.</p>
           <div class="seq-editor-step-table" id="seq-editor-step-table">
             ${stepRows}
           </div>

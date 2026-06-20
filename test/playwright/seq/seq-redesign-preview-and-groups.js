@@ -55,7 +55,7 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
     'Rotate left at 40% for 2000ms',
     'Stop dome (neutral)',
     'Repeat next 14 steps every 6461ms for 45000ms',
-    'Random flutter on all (move 300ms)',
+    'Random flutter on all panels (move 300ms)',
     'Play a happy sound (fallback $H)',
     'End of sequence',
   ];
