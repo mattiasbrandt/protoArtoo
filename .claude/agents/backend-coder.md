@@ -159,3 +159,4 @@ Completion contract:
 Commit policy:
 - Do not run `git commit` before appropriate risk-based verification is complete and reported.
 - A hook enforces a recent firmware build for backend commits; additional tests/checks remain judgment-based unless the change risk requires them.
+- Follow AGENTS.md Change Hygiene > Incremental slice workflow: commit each verified slice (explicit per-file `git add`), confirm the tree (git status/log + grep the new symbol, do not trust your own summary), and post the commit ref to the tracking issue before starting the next slice. Never leave a finished slice uncommitted or run a second pass over uncommitted work.

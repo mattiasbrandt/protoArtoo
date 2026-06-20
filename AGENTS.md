@@ -161,6 +161,10 @@ full policy blocks across individual agent definitions.
   - preserve completed results and checkpoint remaining TODOs,
   - resume delegation in a new wave instead of shifting all remaining work to the main model,
   - ask the user before changing strategy from delegated to solo execution.
+- Each subagent MUST commit its completed slice (per-file `git add`, commit scope format) before
+  the next subagent runs in the same tree - see Change Hygiene > Incremental slice workflow.
+  Never start a second subagent over another subagent's uncommitted work; it has been silently
+  wiped in the past. Verify the tree (git status/log + grep the new symbol), not the summary.
 
 Delegation cues (auto-routing hints):
 - Route to `backend-coder` when prompts mention bounded firmware/backend implementation: ESP32/Arduino code, PlatformIO build/upload plumbing, API handlers, FreeRTOS tasks, `RobotState`/queues, config/NVS, action registry wiring, SBUS/RC, dome/audio backend control, or safety/failsafe logic.
@@ -287,6 +291,28 @@ type(phase:vX.Y.Z/T<NN>): summary
 - `T00` = phase scaffolding or admin commits not tied to a specific task
 - `type` follows [Conventional Commits](https://www.conventionalcommits.org): `feat`, `fix`, `docs`, `refactor`, `chore`, `test`, `style`, `perf`
 - Slice notation: `type(phase:vX.Y.Z/T<NN>/slice:a): summary`
+
+### Incremental slice workflow (required)
+
+Work non-trivial tasks as thin slices, and treat each slice as durable before moving on.
+Prior work was lost when a later agent run executed over an uncommitted slice in the same tree
+(it git-restored "stray" files). Every slice MUST complete this loop, in order:
+
+1. Implement the slice.
+2. Verify it (targeted test/build/Playwright; live-device smoke for device-visible UI).
+   Do not proceed on a red slice.
+3. Commit immediately - explicit per-file `git add` of the changed files, using the commit
+   scope format above. Never leave a completed slice uncommitted.
+4. Confirm the tree, not the summary: `git status` clean for the slice, `git log -1` shows the
+   commit, and the new symbol is grepped on disk.
+5. Record the commit ref on the tracking issue (a checklist comment:
+   `Slice N - <short SHA> <subject> - verified <how>`). The issue is the running ledger of
+   completed slices.
+6. Only then start the next slice.
+
+Hard rules: one slice = one (or few) atomic commit(s); never run a second implementation pass
+over uncommitted work; never `git checkout`/`restore`/`stash`/`clean` another slice's files.
+If a slice must be split, commit the safe part first.
 
 ### Invariants
 

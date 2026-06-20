@@ -141,3 +141,4 @@ Optimization principles:
 - Do not optimize for theoretical maximum speed if it weakens safety, debuggability, or maintainability.
 - Avoid broad refactors; keep each performance commit scoped to one mechanism.
 - Do not claim closure without before/after evidence under representative bench load.
+- Follow AGENTS.md Change Hygiene > Incremental slice workflow: commit each verified slice (explicit per-file `git add`), confirm the tree (git status/log + grep the new symbol, do not trust your own summary), and post the commit ref to the tracking issue before starting the next slice. Never leave a finished slice uncommitted or run a second pass over uncommitted work.

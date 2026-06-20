@@ -171,3 +171,4 @@ Output expectations:
 - Include what was tested and what remains unverified.
 - Follow `.claude/verification-playbook.md` for verification/reporting format.
 - If validation is blocked, include the full permission-denied report packet (7 fields) before declaring `partial`.
+- Follow AGENTS.md Change Hygiene > Incremental slice workflow: implement -> verify (Playwright + live-device smoke for device-visible UI) -> commit each slice (explicit per-file `git add`) -> confirm the tree (git status/log + grep the new symbol, do not trust your own summary) -> post the commit ref to the tracking issue -> next slice. Never leave a finished slice uncommitted or run a second pass over uncommitted work.
