@@ -61,10 +61,15 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
         await addStepBtn.click();
         await page.waitForTimeout(100);
 
-        // Get the last step row
-        const steps = page.locator('.step-row');
+        // Get the last step card
+        const steps = page.locator('.step-card');
         const count = await steps.count();
         const lastStep = steps.nth(count - 1);
+
+        // Expand the card
+        const header = lastStep.locator('.step-card-header');
+        await header.click();
+        await page.waitForTimeout(100);
 
         // Click the type chip for this type
         const typeChip = lastStep.locator(`[data-type="${type}"]`);
@@ -94,6 +99,9 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
         }
 
         // Clean up: remove the step
+        page.once('dialog', async (dialog) => {
+          await dialog.accept();
+        });
         const removeBtn = lastStep.locator('.step-remove');
         await removeBtn.click();
         await page.waitForTimeout(100);
@@ -115,9 +123,14 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
       await addStepBtn.click();
       await page.waitForTimeout(100);
 
-      const steps = page.locator('.step-row');
+      const steps = page.locator('.step-card');
       const count = await steps.count();
       const lastStep = steps.nth(count - 1);
+
+      // Expand the card
+      const header = lastStep.locator('.step-card-header');
+      await header.click();
+      await page.waitForTimeout(100);
 
       // Set t >= previous step's t=500 so non-decreasing check doesn't fire before body check
       const tInput = lastStep.locator('.step-t');
@@ -153,6 +166,9 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
       }
 
       // Clean up
+      page.once('dialog', async (dialog) => {
+        await dialog.accept();
+      });
       const removeBtn = lastStep.locator('.step-remove');
       await removeBtn.click();
       await page.waitForTimeout(100);

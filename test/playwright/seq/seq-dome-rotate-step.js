@@ -57,9 +57,14 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
       await addStepBtn.click();
       await page.waitForTimeout(100);
 
-      const steps = page.locator('.step-row');
+      const steps = page.locator('.step-card');
       const count = await steps.count();
       const lastStep = steps.nth(count - 1);
+
+      // Expand the card
+      const header = lastStep.locator('.step-card-header');
+      await header.click();
+      await page.waitForTimeout(100);
 
       // Click domeRotate type
       const typeChip = lastStep.locator('[data-type="domeRotate"]');
@@ -91,7 +96,7 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
 
     // Test 2: Set direction to Right with speed 50 and duration 1000
     await test('Right direction with speed 50 converts to speedPct +50', async () => {
-      const steps = page.locator('.step-row');
+      const steps = page.locator('.step-card');
       const count = await steps.count();
       const targetStep = steps.nth(count - 1);
 
@@ -130,7 +135,7 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
 
     // Test 3: Change to Left direction with speed 75
     await test('Left direction with speed 75 converts to speedPct -75', async () => {
-      const steps = page.locator('.step-row');
+      const steps = page.locator('.step-card');
       const count = await steps.count();
       const targetStep = steps.nth(count - 1);
 
@@ -162,7 +167,7 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
 
     // Test 4: Change to Stop direction forces durationMs to 0
     await test('Stop direction forces durationMs to 0', async () => {
-      const steps = page.locator('.step-row');
+      const steps = page.locator('.step-card');
       const count = await steps.count();
       const targetStep = steps.nth(count - 1);
 
@@ -197,7 +202,7 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
 
     // Test 5: Maximum speed boundary (100%) works correctly
     await test('Maximum speed 100% with Right direction converts to speedPct +100', async () => {
-      const steps = page.locator('.step-row');
+      const steps = page.locator('.step-card');
       const count = await steps.count();
       const targetStep = steps.nth(count - 1);
 
@@ -232,7 +237,7 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
 
     // Test 6: Non-zero speed with zero duration triggers validation error
     await test('Non-zero speed with zero durationMs shows validation error', async () => {
-      const steps = page.locator('.step-row');
+      const steps = page.locator('.step-card');
       const count = await steps.count();
       const targetStep = steps.nth(count - 1);
 

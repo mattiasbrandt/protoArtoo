@@ -65,7 +65,7 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
       await addStepBtn.click();
       await page.waitForTimeout(100);
 
-      const steps = page.locator('.step-row');
+      const steps = page.locator('.step-card');
       const count = await steps.count();
       const lastStep = steps.nth(count - 1);
 
@@ -85,7 +85,7 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
 
     // Test 2: Panel mode UI renders with action and target selects
     await test('Panel mode renders action and target selects', async () => {
-      const steps = page.locator('.step-row');
+      const steps = page.locator('.step-card');
       const count = await steps.count();
       const lastStep = steps.nth(count - 1);
       const fieldsContainer = lastStep.locator('.step-fields');
@@ -114,7 +114,7 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
 
     // Test 3: Changing action/target updates the command
     await test('Panel mode action/target selects update command', async () => {
-      const steps = page.locator('.step-row');
+      const steps = page.locator('.step-card');
       const count = await steps.count();
       const lastStep = steps.nth(count - 1);
       const fieldsContainer = lastStep.locator('.step-fields');
@@ -146,7 +146,7 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
 
     // Test 4: Toggle to advanced mode shows text input
     await test('Dome advanced mode toggle works', async () => {
-      const steps = page.locator('.step-row');
+      const steps = page.locator('.step-card');
       const count = await steps.count();
       const lastStep = steps.nth(count - 1);
       const fieldsContainer = lastStep.locator('.step-fields');
@@ -182,7 +182,7 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
       await addStepBtn.click();
       await page.waitForTimeout(100);
 
-      const steps = page.locator('.step-row');
+      const steps = page.locator('.step-card');
       const count = await steps.count();
       const lastStep = steps.nth(count - 1);
 
@@ -223,7 +223,7 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
 
     // Test 6: Random step has new set options (all, hold)
     await test('Random step set select has all, hold options', async () => {
-      const steps = page.locator('.step-row');
+      const steps = page.locator('.step-card');
       const count = await steps.count();
       const lastStep = steps.nth(count - 1);
       const fieldsContainer = lastStep.locator('.step-fields');

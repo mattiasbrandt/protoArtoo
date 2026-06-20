@@ -126,9 +126,14 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
       await addStepBtn.click();
       await page.waitForTimeout(100);
 
-      const steps = page.locator('.step-row');
+      const steps = page.locator('.step-card');
       const count = await steps.count();
       const lastStep = steps.nth(count - 1);
+
+      // Expand the last card to see the type chips
+      const header = lastStep.locator('.step-card-header');
+      await header.click();
+      await page.waitForTimeout(100);
 
       // Set type to 'end'
       const typeChip = lastStep.locator('[data-type="end"]');
@@ -156,6 +161,9 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
       }
 
       // Clean up: remove the end step and reset suppressMs
+      page.once('dialog', async (dialog) => {
+        await dialog.accept();
+      });
       const removeBtn = lastStep.locator('.step-remove');
       await removeBtn.click();
       await page.waitForTimeout(100);

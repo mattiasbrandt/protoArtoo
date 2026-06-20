@@ -84,7 +84,7 @@ async function test() {
     // 5. Verify step table renders
     console.log("Verifying step table");
     const stepState = await page.evaluate(() => ({
-      stepRowCount: document.querySelectorAll("#seq-editor-step-table .step-row").length,
+      stepRowCount: document.querySelectorAll("#seq-editor-step-table \.step-card").length,
       addStepBtn: !!document.querySelector("#seq-editor-add-step"),
     }));
 
@@ -95,7 +95,7 @@ async function test() {
     // 6. Verify first step details
     console.log("Verifying first step details");
     const firstStep = await page.evaluate(() => {
-      const row = document.querySelector("#seq-editor-step-table .step-row:first-child");
+      const row = document.querySelector("#seq-editor-step-table \.step-card:first-child");
       return {
         exists: !!row,
         type: row?.dataset?.stepType,
@@ -139,11 +139,11 @@ async function test() {
 
     // 9. Test step type chip switching
     console.log("Testing step type chip switching");
-    await page.click("#seq-editor-step-table .step-row:first-child [data-type='dome']");
+    await page.click("#seq-editor-step-table \.step-card:first-child [data-type='dome']");
     await page.waitForTimeout(300);
 
     const stepAfterSwitch = await page.evaluate(() => {
-      const row = document.querySelector("#seq-editor-step-table .step-row:first-child");
+      const row = document.querySelector("#seq-editor-step-table \.step-card:first-child");
       return {
         type: row?.dataset?.stepType,
         activeChip: row?.querySelector(".step-type-chip.active")?.dataset?.type,

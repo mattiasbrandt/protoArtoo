@@ -99,12 +99,12 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
 
     // Add a step
     await test('Add a new step', async () => {
-      const stepsCountBefore = await page.locator('.step-row').count();
+      const stepsCountBefore = await page.locator('.step-card').count();
       const addStepBtn = page.locator('#seq-editor-add-step');
       await addStepBtn.click();
       await page.waitForTimeout(100);
 
-      const stepsCountAfter = await page.locator('.step-row').count();
+      const stepsCountAfter = await page.locator('.step-card').count();
       if (stepsCountAfter !== stepsCountBefore + 1) {
         throw new Error(`Expected step count to increase, was ${stepsCountBefore}, now ${stepsCountAfter}`);
       }
@@ -112,12 +112,18 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
 
     // Remove the last step
     await test('Remove a step', async () => {
-      const stepsCountBefore = await page.locator('.step-row').count();
+      const stepsCountBefore = await page.locator('.step-card').count();
+
+      // Handle confirm dialogs by accepting them
+      page.once('dialog', async (dialog) => {
+        await dialog.accept();
+      });
+
       const lastRemoveBtn = page.locator('.step-remove').last();
       await lastRemoveBtn.click();
       await page.waitForTimeout(100);
 
-      const stepsCountAfter = await page.locator('.step-row').count();
+      const stepsCountAfter = await page.locator('.step-card').count();
       if (stepsCountAfter !== stepsCountBefore - 1) {
         throw new Error(`Expected step count to decrease, was ${stepsCountBefore}, now ${stepsCountAfter}`);
       }

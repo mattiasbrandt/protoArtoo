@@ -19,6 +19,7 @@
     current: null,    // live edited copy
     isNew: false,     // true for blank/clone/duplicate (unsaved)
     tuningFactory: null, // Factory sequence name when opened via Tune (e.g. "DM:VADER"), or null
+    expanded: new Set(), // Slice 1: Set of step indices that are expanded (presentation-only)
   };
 
   let _pendingWipeSeqName = null; // sequence name pending deletion (avoids placeholder coupling)
@@ -342,24 +343,125 @@
   // Slice B: Full Editor View
   // =========================================================================
 
+  // Slice 1: Plain-English preview text for each step type
+  const stepPreview = (step) => {
+    switch (step.type) {
+      case "audio":
+        return `Play sound (${step.cmd || "$H"})`;
+      case "dome": {
+        const cmd = step.cmd || "";
+        if (/^(:|)(OP|CL|OF)/.test(cmd)) {
+          // Panel intent mode: parse action and target
+          const match = cmd.match(/^:?(OP|CL|OF)(.+)$/);
+          if (match) {
+            const action = match[1];
+            const target = match[2];
+            const actionLabel = action === "OP" ? "Open" : action === "CL" ? "Close" : "Flutter";
+            const targetLabel = target === "00" ? "all panels" : target === "14" ? "top group" : target === "15" ? "bottom group" : `P${target}`;
+            return `${actionLabel} ${targetLabel} (:${action}${target})`;
+          }
+        }
+        // Advanced mode
+        return `Dome command (${cmd || "@0T6"})`;
+      }
+      case "domeRotate": {
+        const speedPct = step.speedPct ?? 0;
+        const durationMs = step.durationMs ?? 0;
+        if (speedPct === 0) {
+          return "Stop dome (neutral)";
+        }
+        const direction = speedPct < 0 ? "left" : "right";
+        const speed = Math.abs(speedPct);
+        return `Rotate ${direction} at ${speed}% for ${durationMs}ms`;
+      }
+      case "loop": {
+        const body = step.body || 1;
+        const periodMs = step.periodMs || 1000;
+        const durationMs = step.durationMs || 10000;
+        return `Repeat next ${body} steps every ${periodMs}ms for ${durationMs}ms`;
+      }
+      case "random": {
+        const set = step.set || "ring";
+        const moveMs = step.moveMs ?? 300;
+        return `Random flutter on ${set} (move ${moveMs}ms)`;
+      }
+      case "audioCat": {
+        const category = step.category || "alert";
+        const fallback = step.fallback || "$H";
+        return `Play a ${category} sound (fallback ${fallback})`;
+      }
+      case "end":
+        return "End of sequence";
+      default:
+        return "Unknown step";
+    }
+  };
+
+  // Slice 1: Emoji->type mapping (using project's existing emoji set)
+  const stepTypeEmoji = {
+    audio: "🔊",
+    dome: "🧩",
+    domeRotate: "🔄",
+    loop: "🔁",
+    random: "🎲",
+    audioCat: "📚",
+    end: "🛑",
+  };
+
+  // Slice 1: Plain-English type names
+  const stepTypeName = {
+    audio: "Sound",
+    dome: "Panel Action",
+    domeRotate: "Spin Dome",
+    loop: "Servo Loop",
+    random: "Random Flutter",
+    audioCat: "Sound Category",
+    end: "Sequence End",
+  };
+
   const renderStepRow = (step, idx) => {
-    const stepTypeButtons = ["audio", "dome", "domeRotate", "loop", "random", "audioCat", "end"]
-      .map((type) =>
-        `<button class="step-type-chip ${step.type === type ? "active" : ""}" data-type="${type}" aria-pressed="${step.type === type ? "true" : "false"}">${type}</button>`
-      )
-      .join("");
+    const isExpanded = editorState.expanded.has(idx);
+    const emoji = stepTypeEmoji[step.type] || "•";
+    const typeName = stepTypeName[step.type] || step.type;
+    const preview = stepPreview(step);
+
+    // Collapsed header (always visible)
+    const headerHtml = `
+      <div class="step-card-header" role="button" aria-expanded="${isExpanded}" tabindex="0">
+        <span class="step-handle" title="Drag to reorder steps">⋯</span>
+        <span class="step-card-emoji">${emoji}</span>
+        <span class="step-card-type">${escapeHtml(typeName)}</span>
+        <span class="step-card-preview">${escapeHtml(preview)}</span>
+        <button class="step-card-toggle" aria-label="${isExpanded ? "Collapse" : "Expand"} step" type="button" tabindex="-1">
+          ${isExpanded ? "▼" : "▶"}
+        </button>
+        <button class="step-remove" aria-label="Remove this step" type="button" tabindex="-1">×</button>
+      </div>
+    `;
+
+    // Expanded content (shown only when expanded)
+    const expandedHtml = isExpanded ? `
+      <div class="step-card-expanded">
+        <div class="step-card-expanded-content">
+          <input class="step-t" type="number" value="${step.t || 0}" min="0" max="120000" aria-label="Step time offset (ms)" placeholder="t (ms)">
+          <div class="step-type-chips" role="group" aria-label="Step type">
+            ${["audio", "dome", "domeRotate", "loop", "random", "audioCat", "end"]
+              .map((type) =>
+                `<button class="step-type-chip ${step.type === type ? "active" : ""}" data-type="${type}" aria-pressed="${step.type === type ? "true" : "false"}">${stepTypeEmoji[type] || ""} ${stepTypeName[type]}</button>`
+              )
+              .join("")}
+          </div>
+          <div class="step-fields" data-fields-for-type="${step.type}">
+            <!-- Conditional fields populated by renderStepFields -->
+          </div>
+        </div>
+      </div>
+    ` : "";
 
     return `
-      <div class="step-row" data-step-index="${idx}" data-step-type="${step.type}" draggable="true">
-        <span class="step-handle" title="Drag to reorder steps">⋯</span>
-        <input class="step-t" type="number" value="${step.t || 0}" min="0" max="120000" aria-label="Step time offset (ms)" placeholder="t (ms)">
-        <div class="step-type-chips" role="group" aria-label="Step type">
-          ${stepTypeButtons}
-        </div>
-        <div class="step-fields" data-fields-for-type="${step.type}">
-          <!-- Conditional fields populated by renderStepFields -->
-        </div>
-        <button class="step-remove" aria-label="Remove this step" data-step-index="${idx}">×</button>
+      <div class="step-card" data-step-index="${idx}" data-step-type="${step.type}" draggable="true">
+        ${headerHtml}
+        ${expandedHtml}
       </div>
     `;
   };
@@ -840,15 +942,56 @@
       end: {},
     };
 
+    // Slice 1: Card expand/collapse listeners
+    document.querySelectorAll(".step-card").forEach((card) => {
+      const stepIdx = parseInt(card.dataset.stepIndex, 10);
+      const header = card.querySelector(".step-card-header");
+      const toggle = card.querySelector(".step-card-toggle");
+      const removeBtn = card.querySelector(".step-remove");
+
+      // Handle header click/keyboard to toggle expand
+      const toggleExpanded = () => {
+        if (editorState.expanded.has(stepIdx)) {
+          editorState.expanded.delete(stepIdx);
+        } else {
+          editorState.expanded.add(stepIdx);
+        }
+        rerenderStepTable();
+      };
+
+      if (header) {
+        header.addEventListener("click", toggleExpanded);
+        header.addEventListener("keydown", (e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            toggleExpanded();
+          }
+        });
+      }
+
+      // Remove button listener
+      if (removeBtn) {
+        removeBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          if (confirm("Remove this step?")) {
+            editorState.current.steps.splice(stepIdx, 1);
+            editorState.expanded.delete(stepIdx);
+            rerenderStepTable();
+            updateValidationSummary();
+          }
+        });
+      }
+    });
+
     // Step type chip selection
     document.querySelectorAll(".step-type-chip").forEach((chip) => {
       chip.addEventListener("click", (e) => {
         e.preventDefault();
-        const row = chip.closest(".step-row");
-        if (!row) return;
-        const stepIdx = parseInt(row.dataset.stepIndex, 10);
+        const card = chip.closest(".step-card");
+        if (!card) return;
+        const stepIdx = parseInt(card.dataset.stepIndex, 10);
 
-        row.querySelectorAll(".step-type-chip").forEach((c) => {
+        card.querySelectorAll(".step-type-chip").forEach((c) => {
           c.classList.toggle("active", c === chip);
           c.setAttribute("aria-pressed", c === chip ? "true" : "false");
         });
@@ -858,7 +1001,7 @@
         const { t } = editorState.current.steps[stepIdx];
         editorState.current.steps[stepIdx] = { t, type: newType, ...(stepTypeDefaults[newType] || {}) };
 
-        const fieldsContainer = row.querySelector(".step-fields");
+        const fieldsContainer = card.querySelector(".step-fields");
         renderStepFields(editorState.current.steps[stepIdx], fieldsContainer);
 
         fieldsContainer.querySelectorAll("[data-field]").forEach((input) => {
@@ -893,27 +1036,27 @@
 
     // Step field inputs
     document.querySelectorAll(".step-fields [data-field]").forEach((input) => {
-      const row = input.closest(".step-row");
-      const stepIdx = parseInt(row.dataset.stepIndex, 10);
+      const card = input.closest(".step-card");
+      const stepIdx = parseInt(card.dataset.stepIndex, 10);
       input.addEventListener("input", () => validateAndUpdateStep(stepIdx));
       input.addEventListener("change", () => validateAndUpdateStep(stepIdx));
     });
 
     // Attach dome-specific listeners for each dome step
-    document.querySelectorAll(".step-row").forEach((row) => {
-      const stepIdx = parseInt(row.dataset.stepIndex, 10);
-      const fieldsContainer = row.querySelector(".step-fields");
-      const typeChip = row.querySelector(".step-type-chip.active");
+    document.querySelectorAll(".step-card").forEach((card) => {
+      const stepIdx = parseInt(card.dataset.stepIndex, 10);
+      const fieldsContainer = card.querySelector(".step-fields");
+      const typeChip = card.querySelector(".step-type-chip.active");
       if (typeChip && typeChip.dataset.type === "dome" && fieldsContainer) {
         attachDomePanelIntentListeners(fieldsContainer, stepIdx);
       }
     });
 
     // Attach domeRotate-specific listeners for direction changes
-    document.querySelectorAll(".step-row").forEach((row) => {
-      const stepIdx = parseInt(row.dataset.stepIndex, 10);
-      const fieldsContainer = row.querySelector(".step-fields");
-      const typeChip = row.querySelector(".step-type-chip.active");
+    document.querySelectorAll(".step-card").forEach((card) => {
+      const stepIdx = parseInt(card.dataset.stepIndex, 10);
+      const fieldsContainer = card.querySelector(".step-fields");
+      const typeChip = card.querySelector(".step-type-chip.active");
       if (typeChip && typeChip.dataset.type === "domeRotate" && fieldsContainer) {
         const directionSelect = fieldsContainer.querySelector(".step-field-direction");
         if (directionSelect) {
@@ -930,49 +1073,39 @@
       }
     });
 
-    // Step remove buttons
-    document.querySelectorAll(".step-remove").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const stepIdx = parseInt(btn.dataset.stepIndex, 10);
-        editorState.current.steps.splice(stepIdx, 1);
-        rerenderStepTable();
-        updateValidationSummary();
-      });
-    });
-
     // Drag-and-drop reordering (local draggedIndex; fresh per rerender)
     let draggedIndex = null;
-    document.querySelectorAll(".step-row").forEach((row, idx) => {
-      row.addEventListener("dragstart", (e) => {
+    document.querySelectorAll(".step-card").forEach((card, idx) => {
+      card.addEventListener("dragstart", (e) => {
         draggedIndex = idx;
-        row.classList.add("dragging");
+        card.classList.add("dragging");
         e.dataTransfer.effectAllowed = "move";
       });
 
-      row.addEventListener("dragend", () => {
-        row.classList.remove("dragging");
+      card.addEventListener("dragend", () => {
+        card.classList.remove("dragging");
         draggedIndex = null;
       });
 
-      row.addEventListener("dragover", (e) => {
+      card.addEventListener("dragover", (e) => {
         e.preventDefault();
         e.dataTransfer.dropEffect = "move";
-        const rect = row.getBoundingClientRect();
+        const rect = card.getBoundingClientRect();
         const midpoint = rect.top + rect.height / 2;
         if (e.clientY < midpoint) {
-          row.classList.add("drop-above");
-          row.classList.remove("drop-below");
+          card.classList.add("drop-above");
+          card.classList.remove("drop-below");
         } else {
-          row.classList.add("drop-below");
-          row.classList.remove("drop-above");
+          card.classList.add("drop-below");
+          card.classList.remove("drop-above");
         }
       });
 
-      row.addEventListener("dragleave", () => {
-        row.classList.remove("drop-above", "drop-below");
+      card.addEventListener("dragleave", () => {
+        card.classList.remove("drop-above", "drop-below");
       });
 
-      row.addEventListener("drop", (e) => {
+      card.addEventListener("drop", (e) => {
         e.preventDefault();
         if (draggedIndex !== null && draggedIndex !== idx) {
           const [movedStep] = editorState.current.steps.splice(draggedIndex, 1);
@@ -980,7 +1113,7 @@
           editorState.current.steps.splice(insertIdx, 0, movedStep);
           rerenderStepTable();
         }
-        row.classList.remove("drop-above", "drop-below");
+        card.classList.remove("drop-above", "drop-below");
       });
     });
   };

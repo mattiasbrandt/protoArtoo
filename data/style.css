@@ -3703,6 +3703,104 @@ label.sound-search-field {
   margin-bottom: 12px;
 }
 
+/* Slice 1: Collapsed step cards */
+.step-card {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  position: relative;
+  draggable: true;
+}
+
+.step-card.dragging {
+  opacity: 0.5;
+}
+
+.step-card.drop-above {
+  border-top: 3px solid var(--accent);
+}
+
+.step-card.drop-below {
+  border-bottom: 3px solid var(--accent);
+}
+
+.step-card.step-row-error-state {
+  border-color: var(--danger);
+  background: rgba(232, 84, 84, 0.05);
+}
+
+.step-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.2s;
+}
+
+.step-card-header:hover {
+  background-color: var(--surface-alt);
+}
+
+.step-card-header:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.step-card-emoji {
+  flex-shrink: 0;
+  font-size: 1.2rem;
+  line-height: 1;
+}
+
+.step-card-type {
+  flex-shrink: 0;
+  color: var(--accent);
+  font-weight: 500;
+  font-size: 0.95rem;
+}
+
+.step-card-preview {
+  flex: 1;
+  color: var(--text-dim);
+  font-size: 0.9rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.step-card-toggle {
+  flex-shrink: 0;
+  padding: 4px 8px;
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: color 0.2s;
+}
+
+.step-card-toggle:hover {
+  color: var(--accent);
+}
+
+.step-card-expanded {
+  border-top: 1px solid var(--border);
+  padding: 12px;
+  background: var(--surface-alt);
+}
+
+.step-card-expanded-content {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Keep old .step-row styles for backward compatibility during transition */
 .step-row {
   display: flex;
   align-items: flex-start;
