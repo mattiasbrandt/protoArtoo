@@ -13,16 +13,18 @@ Both run through the same engine (`sequence_engine.cpp`). See
 [ADR 0004](adr/0004-body-centric-dm-sequence-coordinator.md) and
 [ADR 0006](adr/0006-learned-sequences-runtime-tier.md) for the architecture.
 
-## The four primitives
+## The core step types
 
-Every choreography is built from four step kinds:
+Every choreography is built from core step kinds:
 
-| Primitive | Meaning |
+| Step type | Meaning |
 |---|---|
-| `dome("...")` | send a dome command (`:OP`/`:CL`/`:OF` panel intent, `@...` logic/PSI, `*...` holo, `:SE##`) |
-| `audio("$X")` | play a body sound ($-command; named roles preferred -- see below) |
-| `wait(ms)` | advance the cursor; expressed as the absolute `t` of the next step |
-| structured | `loop` (beat/BPM iteration) and `random` (runtime panel pick) |
+| `dome` | send a dome command (`:OP`/`:CL`/`:OF` panel intent, `@...` logic/PSI, `*...` holo, `:SE##`) |
+| `audio` | play a body sound ($-command; named roles preferred -- see below) |
+| `domeRotate` | body-owned timed dome rotation (speed -100..100%, duration in ms) |
+| `loop` | beat/BPM iteration; repeats a body of steps |
+| `random` | runtime panel pick; emits a random panel intent command |
+| `audioCat` | random track from a sound category with fallback |
 
 Timing is **absolute** from sequence start (`tMs`). Steps inside a `loop` body use times
 relative to the iteration start.
@@ -80,6 +82,24 @@ These are allowed in Advanced/raw steps and are not panel intent commands:
 `:SM<slot>,<move>,<pulse>` is diagnostic / calibration only. It is rejected by Protocol
 Check in Learned Sequences and is not present in Factory catalog tables. Use the panel
 intent commands above for all panel choreography.
+
+## Dome rotation
+
+Body-owned dome motor rotation is a first-class timed step, separate from dome serial commands.
+A rotation step specifies a target speed and duration:
+
+```json
+{ "t": 1200, "type": "domeRotate", "speedPct": 35, "durationMs": 900 }
+```
+
+- `speedPct`: signed integer -100..100 (negative = left/reverse, positive = right/forward)
+- `durationMs`: rotation duration in milliseconds; must be positive except for explicit neutral stop (see below)
+- A **neutral stop** uses `speedPct: 0, durationMs: 0` and may appear anywhere; any other zero value is rejected
+
+Dome rotation does **not** depend on RC/SBUS input and requires no manual cleanup — the engine stops
+the motor automatically on terminal, abort, preempt, or estop.
+
+In Factory Sequences, use the `SEQ_DOME_ROTATE(t, speedPct, durationMs)` macro.
 
 ## Cleanup is automatic
 
@@ -167,6 +187,7 @@ the format cannot express a bypass for.
 | `:OF` | same-branch explicit close required for every flutter target |
 | `:SE` | exactly 2 digits (e.g. `:SE09`); not allowed inside loops or random |
 | `@`/`*`/`$` | length- and charset-bounded; recognised prefix |
+| `domeRotate` | speedPct -100..100; durationMs positive (or 0 paired with speedPct=0 for neutral stop) |
 | `loop` | period 100..60000, duration `<=120000`, no nesting, body within branch |
 | `random` | set: ring/pie/all/hold; mode: flutter/open/close; jitter `<=2000`, move `<=5000` |
 | capacity | 16 files max, 12 KB per file, 24 KB LittleFS free-space floor |
