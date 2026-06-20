@@ -115,8 +115,8 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
 
       // Verify the step in editorState has speedPct = 50 (positive)
       const stepData = await page.evaluate(() => {
-        if (window.__seqEditorForTesting && window.__seqEditorForTesting.getEditorState) {
-          const state = window.__seqEditorForTesting.getEditorState();
+        if (window.__seqEditorForTesting && window.__seqEditorForTesting.editorState) {
+          const state = window.__seqEditorForTesting.editorState;
           return state.current.steps[state.current.steps.length - 1];
         }
         return null;
@@ -148,8 +148,8 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
 
       // Verify speedPct = -75
       const stepData = await page.evaluate(() => {
-        if (window.__seqEditorForTesting && window.__seqEditorForTesting.getEditorState) {
-          const state = window.__seqEditorForTesting.getEditorState();
+        if (window.__seqEditorForTesting && window.__seqEditorForTesting.editorState) {
+          const state = window.__seqEditorForTesting.editorState;
           return state.current.steps[state.current.steps.length - 1];
         }
         return null;
@@ -184,8 +184,8 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
 
       // Verify speedPct = 0 and durationMs = 0 in stored state
       const stepData = await page.evaluate(() => {
-        if (window.__seqEditorForTesting && window.__seqEditorForTesting.getEditorState) {
-          const state = window.__seqEditorForTesting.getEditorState();
+        if (window.__seqEditorForTesting && window.__seqEditorForTesting.editorState) {
+          const state = window.__seqEditorForTesting.editorState;
           return state.current.steps[state.current.steps.length - 1];
         }
         return null;
@@ -219,8 +219,8 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
 
       // Verify speedPct = 100
       const stepData = await page.evaluate(() => {
-        if (window.__seqEditorForTesting && window.__seqEditorForTesting.getEditorState) {
-          const state = window.__seqEditorForTesting.getEditorState();
+        if (window.__seqEditorForTesting && window.__seqEditorForTesting.editorState) {
+          const state = window.__seqEditorForTesting.editorState;
           return state.current.steps[state.current.steps.length - 1];
         }
         return null;
@@ -264,8 +264,8 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
 
       // Verify the stored state shows the invalid condition
       const stepDataWithError = await page.evaluate(() => {
-        if (window.__seqEditorForTesting && window.__seqEditorForTesting.getEditorState) {
-          const state = window.__seqEditorForTesting.getEditorState();
+        if (window.__seqEditorForTesting && window.__seqEditorForTesting.editorState) {
+          const state = window.__seqEditorForTesting.editorState;
           return state.current.steps[state.current.steps.length - 1];
         }
         return null;

@@ -1434,7 +1434,6 @@
   window.__seqEditorForTesting = {
     renderEditorView,
     editorState,
-    getEditorState: () => editorState,
     updateValidationSummary,
     renderListWith: (seqs) => {
       sequences = seqs || [];
