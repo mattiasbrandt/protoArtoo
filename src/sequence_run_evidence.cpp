@@ -166,6 +166,7 @@ void seqEvidenceRecordTx(const SeqAction& act, bool cleanup) {
             applyScope(g, rep);
             applyRing(g, rep);
         } else if (!isDome) {
+            // SEQ_ACT_DOME_ROTATE has no Marcduino payload, no scope/ring tracking.
             g.fxScopes |= SEQ_EVID_FX_AUDIO;
         }
     }

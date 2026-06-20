@@ -155,6 +155,46 @@ void test_dome_rotate_action_maps_to_sequence_dome_command() {
     TEST_ASSERT_EQUAL_UINT32(123456, cmd.timestampMs);
 }
 
+void test_dome_rotate_max_positive_speed() {
+    // Test max positive: 100% -> 1.0f
+    SeqAction act = {};
+    act.kind = SEQ_ACT_DOME_ROTATE;
+    act.domeSpeedPct = 100;
+    act.domeDurationMs = 1000;
+
+    DomeCommand cmd = {};
+    TEST_ASSERT_TRUE(sequenceActionToDomeCommand(act, 0, cmd));
+    TEST_ASSERT_FLOAT_WITHIN(0.0001f, 1.0f, cmd.speed);
+    TEST_ASSERT_EQUAL_UINT32(1000, cmd.durationMs);
+}
+
+void test_dome_rotate_max_negative_speed() {
+    // Test max negative: -100% -> -1.0f
+    SeqAction act = {};
+    act.kind = SEQ_ACT_DOME_ROTATE;
+    act.domeSpeedPct = -100;
+    act.domeDurationMs = 2000;
+
+    DomeCommand cmd = {};
+    TEST_ASSERT_TRUE(sequenceActionToDomeCommand(act, 0, cmd));
+    TEST_ASSERT_FLOAT_WITHIN(0.0001f, -1.0f, cmd.speed);
+    TEST_ASSERT_EQUAL_UINT32(2000, cmd.durationMs);
+}
+
+void test_dome_rotate_neutral_stop() {
+    // Test neutral stop: speedPct=0, durationMs=0
+    SeqAction act = {};
+    act.kind = SEQ_ACT_DOME_ROTATE;
+    act.domeSpeedPct = 0;
+    act.domeDurationMs = 0;
+
+    DomeCommand cmd = {};
+    TEST_ASSERT_TRUE(sequenceActionToDomeCommand(act, 500, cmd));
+    TEST_ASSERT_FLOAT_WITHIN(0.0001f, 0.0f, cmd.speed);
+    TEST_ASSERT_EQUAL_UINT32(0, cmd.durationMs);
+    TEST_ASSERT_EQUAL_INT(SRC_SEQ, (int)cmd.source);
+}
+
 void test_non_rotate_action_does_not_map_to_dome_command() {
     SeqAction act = {};
     act.kind = SEQ_ACT_DOME_CMD;
@@ -193,6 +233,9 @@ int main(int /*argc*/, char** /*argv*/) {
     RUN_TEST(test_alias_match_is_case_sensitive);
 
     RUN_TEST(test_dome_rotate_action_maps_to_sequence_dome_command);
+    RUN_TEST(test_dome_rotate_max_positive_speed);
+    RUN_TEST(test_dome_rotate_max_negative_speed);
+    RUN_TEST(test_dome_rotate_neutral_stop);
     RUN_TEST(test_non_rotate_action_does_not_map_to_dome_command);
 
     return UNITY_END();
