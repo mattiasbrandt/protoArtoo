@@ -343,6 +343,11 @@
   // Slice B: Full Editor View
   // =========================================================================
 
+  // Slice 5: Validate a step and return validation result
+  const validateStepForCard = (step, stepIdx) => {
+    return SeqProtocolCheck.validateStep(step, stepIdx, editorState.current.steps);
+  };
+
   // Slice 1: Plain-English preview text for each step type
   const stepPreview = (step) => {
     switch (step.type) {
@@ -461,13 +466,19 @@
     const typeName = stepTypeName[step.type] || step.type;
     const preview = stepPreview(step);
 
+    // Slice 5: Get validation state for this step
+    const validation = validateStepForCard(step, idx);
+    const isInvalid = !validation.ok;
+    const errorId = `step-card-error-${idx}`;
+
     // Collapsed header (always visible)
     const headerHtml = `
-      <div class="step-card-header" role="button" aria-expanded="${isExpanded}" tabindex="0">
+      <div class="step-card-header" role="button" aria-expanded="${isExpanded}" tabindex="0" ${isInvalid ? `aria-invalid="true" aria-describedby="${errorId}"` : ""}>
         <span class="step-handle" title="Drag to reorder steps">⋯</span>
         <span class="step-card-emoji">${emoji}</span>
         <span class="step-card-type">${escapeHtml(typeName)}</span>
         <span class="step-card-preview">${escapeHtml(preview)}</span>
+        ${isInvalid ? `<span class="step-card-error-badge" aria-hidden="true">!</span>` : ""}
         <button class="step-card-toggle" aria-label="${isExpanded ? "Collapse" : "Expand"} step" type="button" tabindex="-1">
           ${isExpanded ? "▼" : "▶"}
         </button>
@@ -478,8 +489,12 @@
     // Expanded content (shown only when expanded)
     const expandedHtml = isExpanded ? `
       <div class="step-card-expanded">
+        ${isInvalid ? `<div class="step-card-error-message" id="${errorId}" role="alert" aria-live="polite">
+          <span class="step-card-error-icon">!</span>
+          <span class="step-card-error-text">${escapeHtml(validation.error || "Invalid step")}</span>
+        </div>` : ""}
         <div class="step-card-expanded-content">
-          <input class="step-t" type="number" value="${step.t || 0}" min="0" max="120000" aria-label="Step time offset (ms)" placeholder="t (ms)">
+          <input class="step-t" type="number" value="${step.t || 0}" min="0" max="120000" aria-label="Step time offset (ms)" placeholder="t (ms)" ${isInvalid && validation.field === "t" ? `aria-invalid="true"` : ""}>
 
           <!-- Slice 4: Grouped icon cards (Common + Advanced) -->
           <div class="step-type-picker">
@@ -524,7 +539,7 @@
     ` : "";
 
     return `
-      <div class="step-card" data-step-index="${idx}" data-step-type="${step.type}" draggable="true">
+      <div class="step-card ${isInvalid ? "step-card-invalid" : ""}" data-step-index="${idx}" data-step-type="${step.type}" draggable="true" ${isInvalid ? `aria-invalid="true"` : ""}>
         ${headerHtml}
         ${expandedHtml}
       </div>

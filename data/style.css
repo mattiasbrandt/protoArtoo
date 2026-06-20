@@ -3776,6 +3776,60 @@ label.sound-search-field {
   background: rgba(232, 84, 84, 0.05);
 }
 
+/* Slice 5: Per-card validation surfacing */
+.step-card.step-card-invalid {
+  border-color: var(--danger);
+  border-width: 2px;
+  background: rgba(232, 84, 84, 0.05);
+}
+
+.step-card-error-badge {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--danger);
+  color: white;
+  font-size: 0.85rem;
+  font-weight: 700;
+  margin-left: 4px;
+}
+
+.step-card-error-message {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  border-radius: 4px;
+  background: rgba(232, 84, 84, 0.1);
+  border: 1px solid var(--danger);
+  font-size: 0.9rem;
+  color: var(--danger);
+}
+
+.step-card-error-icon {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--danger);
+  color: white;
+  font-weight: 700;
+  font-size: 0.8rem;
+}
+
+.step-card-error-text {
+  flex: 1;
+  line-height: 1.4;
+}
+
 .step-card-header {
   display: flex;
   align-items: center;
