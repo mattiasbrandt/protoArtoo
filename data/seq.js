@@ -419,6 +419,42 @@
     end: "Sequence End",
   };
 
+  // Slice 4: Step type descriptions for reference panel
+  const stepTypeDescriptions = {
+    audio: "Play a sound or cue",
+    dome: "Open or close dome panels",
+    domeRotate: "Rotate the dome left or right",
+    loop: "Repeat a group of steps at an interval",
+    random: "Randomized panel motion",
+    audioCat: "Play a random sound from a category",
+    end: "Mark the end of the sequence",
+  };
+
+  // Slice 4: Render the reference panel (What Each Step Type Does)
+  const renderStepTypeReference = () => {
+    return `
+      <div class="step-type-reference">
+        <button class="step-type-reference-toggle" aria-expanded="false" aria-controls="step-type-reference-panel">
+          What does each step type do? ▼
+        </button>
+        <div id="step-type-reference-panel" class="step-type-reference-panel hidden">
+          <div class="step-type-reference-list">
+            ${["audio", "dome", "domeRotate", "loop", "random", "audioCat", "end"]
+              .map(
+                (type) =>
+                  `<div class="step-type-reference-item">
+                    <span class="step-type-reference-emoji">${stepTypeEmoji[type]}</span>
+                    <span class="step-type-reference-name">${escapeHtml(stepTypeName[type])}</span>
+                    <span class="step-type-reference-desc">${escapeHtml(stepTypeDescriptions[type])}</span>
+                  </div>`
+              )
+              .join("")}
+          </div>
+        </div>
+      </div>
+    `;
+  };
+
   const renderStepRow = (step, idx) => {
     const isExpanded = editorState.expanded.has(idx);
     const emoji = stepTypeEmoji[step.type] || "•";
@@ -444,13 +480,42 @@
       <div class="step-card-expanded">
         <div class="step-card-expanded-content">
           <input class="step-t" type="number" value="${step.t || 0}" min="0" max="120000" aria-label="Step time offset (ms)" placeholder="t (ms)">
-          <div class="step-type-chips" role="group" aria-label="Step type">
-            ${["audio", "dome", "domeRotate", "loop", "random", "audioCat", "end"]
-              .map((type) =>
-                `<button class="step-type-chip ${step.type === type ? "active" : ""}" data-type="${type}" aria-pressed="${step.type === type ? "true" : "false"}">${stepTypeEmoji[type] || ""} ${stepTypeName[type]}</button>`
-              )
-              .join("")}
+
+          <!-- Slice 4: Grouped icon cards (Common + Advanced) -->
+          <div class="step-type-picker">
+            <div class="step-type-group">
+              <div class="step-type-group-label">Common</div>
+              <div class="step-type-cards">
+                ${["audio", "domeRotate", "dome", "loop"]
+                  .map(
+                    (type) =>
+                      `<button class="step-type-chip step-type-card ${step.type === type ? "active" : ""}" data-type="${type}" aria-pressed="${step.type === type ? "true" : "false"}" title="${stepTypeName[type]}">
+                        <span class="step-type-card-emoji">${stepTypeEmoji[type]}</span>
+                        <span class="step-type-card-name">${escapeHtml(stepTypeName[type])}</span>
+                      </button>`
+                  )
+                  .join("")}
+              </div>
+            </div>
+
+            <div class="step-type-group">
+              <div class="step-type-group-label">Advanced</div>
+              <div class="step-type-cards">
+                ${["random", "audioCat", "end"]
+                  .map(
+                    (type) =>
+                      `<button class="step-type-chip step-type-card ${step.type === type ? "active" : ""}" data-type="${type}" aria-pressed="${step.type === type ? "true" : "false"}" title="${stepTypeName[type]}">
+                        <span class="step-type-card-emoji">${stepTypeEmoji[type]}</span>
+                        <span class="step-type-card-name">${escapeHtml(stepTypeName[type])}</span>
+                      </button>`
+                  )
+                  .join("")}
+              </div>
+            </div>
           </div>
+
+          ${renderStepTypeReference()}
+
           <div class="step-fields" data-fields-for-type="${step.type}">
             <!-- Conditional fields populated by renderStepFields -->
           </div>
@@ -1176,6 +1241,18 @@
       const stepIdx = parseInt(card.dataset.stepIndex, 10);
       input.addEventListener("input", () => validateAndUpdateStep(stepIdx));
       input.addEventListener("change", () => validateAndUpdateStep(stepIdx));
+    });
+
+    // Slice 4: Reference panel toggle (What Each Step Type Does)
+    document.querySelectorAll(".step-type-reference-toggle").forEach((toggle) => {
+      toggle.addEventListener("click", (e) => {
+        e.preventDefault();
+        const panel = toggle.nextElementSibling;
+        if (!panel) return;
+        const isExpanded = toggle.getAttribute("aria-expanded") === "true";
+        toggle.setAttribute("aria-expanded", !isExpanded);
+        panel.classList.toggle("hidden");
+      });
     });
 
     // Attach dome-specific listeners for each dome step

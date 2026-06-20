@@ -3934,6 +3934,153 @@ label.sound-search-field {
   color: var(--white);
 }
 
+/* Slice 4: Grouped icon card picker (Common + Advanced sections) */
+.step-type-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 8px 0;
+}
+
+.step-type-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.step-type-group-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.step-type-cards {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Slice 4: Icon card styling (richer than flat buttons) */
+.step-type-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 12px 14px;
+  background: var(--surface-alt);
+  border: 2px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 0.75rem;
+  font-weight: 500;
+  transition: all 0.2s;
+  min-width: 70px;
+  text-align: center;
+}
+
+.step-type-card:hover {
+  border-color: var(--accent);
+  background: rgba(74, 144, 217, 0.1);
+  color: var(--accent-bright);
+}
+
+.step-type-card.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--white);
+  box-shadow: 0 0 8px rgba(74, 144, 217, 0.4);
+}
+
+.step-type-card-emoji {
+  font-size: 1.2rem;
+  display: block;
+  line-height: 1;
+}
+
+.step-type-card-name {
+  display: block;
+  line-height: 1.2;
+}
+
+/* Slice 4: Reference panel (What Each Step Type Does) */
+.step-type-reference {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+  margin-top: 8px;
+}
+
+.step-type-reference-toggle {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 0.75rem;
+  font-weight: 500;
+  padding: 4px 0;
+  text-align: left;
+  transition: color 0.2s;
+}
+
+.step-type-reference-toggle:hover {
+  color: var(--accent);
+}
+
+.step-type-reference-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  background: rgba(21, 34, 56, 0.5);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.step-type-reference-panel.hidden {
+  display: none;
+}
+
+.step-type-reference-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.step-type-reference-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 0.75rem;
+}
+
+.step-type-reference-emoji {
+  display: block;
+  flex-shrink: 0;
+  width: 20px;
+  text-align: center;
+  line-height: 1.2;
+}
+
+.step-type-reference-name {
+  display: block;
+  flex-shrink: 0;
+  font-weight: 600;
+  color: var(--text);
+  min-width: 80px;
+}
+
+.step-type-reference-desc {
+  display: block;
+  color: var(--text-dim);
+  line-height: 1.2;
+}
+
 .step-fields {
   display: flex;
   flex-direction: column;
