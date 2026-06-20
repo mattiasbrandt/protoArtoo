@@ -721,34 +721,50 @@
         ${tuneNotice}
 
         <div class="seq-editor-metadata">
-          <div class="seq-editor-field">
-            <label for="seq-editor-name">Name</label>
-            <input id="seq-editor-name" type="text" value="${escapeHtml(seq.name || "DM:")}" placeholder="DM:MYSEQ" aria-label="Sequence name (DM:XXXX format)" maxlength="20">
-            <div class="seq-editor-error-text" id="seq-editor-name-error" aria-live="polite"></div>
-          </div>
-
-          <div class="seq-editor-field">
-            <label for="seq-editor-suppress">Suppress Window (ms)</label>
-            <div class="seq-editor-slider-row">
-              <input id="seq-editor-suppress" type="range" class="seq-editor-slider" value="${seq.suppressMs || 8000}" min="1000" max="120000" step="100" aria-label="Suppress window milliseconds">
-              <span class="seq-editor-slider-value">${seq.suppressMs || 8000}</span>
+          <!-- Sequence Info (always visible) -->
+          <div class="seq-metadata-section seq-metadata-info">
+            <div class="seq-editor-field">
+              <label for="seq-editor-name">Name</label>
+              <input id="seq-editor-name" type="text" value="${escapeHtml(seq.name || "DM:")}" placeholder="DM:MYSEQ" aria-label="Sequence name (DM:XXXX format)" maxlength="20">
+              <div class="seq-editor-error-text" id="seq-editor-name-error" aria-live="polite"></div>
             </div>
-            <div class="seq-editor-error-text" id="seq-editor-suppress-error" aria-live="polite"></div>
+
+            <div class="seq-editor-field">
+              <label for="seq-editor-purpose">Purpose (optional)</label>
+              <input id="seq-editor-purpose" type="text" value="${escapeHtml(seq.meta?.purpose || "")}" placeholder="What this sequence does..." aria-label="Purpose of the sequence">
+            </div>
+
+            <div class="seq-editor-field">
+              <label for="seq-editor-toggle">Interrupt group</label>
+              <select id="seq-editor-toggle" aria-label="Interrupt group for conflict management">
+                <option value="none" ${(seq.toggleGroup || "none") === "none" ? "selected" : ""}>none</option>
+                <option value="pies" ${seq.toggleGroup === "pies" ? "selected" : ""}>pies</option>
+                <option value="low" ${seq.toggleGroup === "low" ? "selected" : ""}>low</option>
+                <option value="all" ${seq.toggleGroup === "all" ? "selected" : ""}>all</option>
+              </select>
+            </div>
           </div>
 
-          <div class="seq-editor-field">
-            <label for="seq-editor-toggle">Toggle Group</label>
-            <select id="seq-editor-toggle" aria-label="Toggle group for conflict management">
-              <option value="none" ${(seq.toggleGroup || "none") === "none" ? "selected" : ""}>none</option>
-              <option value="pies" ${seq.toggleGroup === "pies" ? "selected" : ""}>pies</option>
-              <option value="low" ${seq.toggleGroup === "low" ? "selected" : ""}>low</option>
-              <option value="all" ${seq.toggleGroup === "all" ? "selected" : ""}>all</option>
-            </select>
-          </div>
+          <!-- Advanced Settings (collapsed by default) -->
+          <div class="seq-metadata-section seq-metadata-advanced">
+            <button id="seq-editor-advanced-toggle" class="seq-advanced-toggle" aria-expanded="false" aria-controls="seq-editor-advanced-fields">
+              Advanced Settings ▼
+            </button>
+            <div id="seq-editor-advanced-fields" class="seq-advanced-fields hidden">
+              <div class="seq-editor-field">
+                <label for="seq-editor-suppress">Mute period after this runs (ms)</label>
+                <div class="seq-editor-slider-row">
+                  <input id="seq-editor-suppress" type="range" class="seq-editor-slider" value="${seq.suppressMs || 8000}" min="1000" max="120000" step="100" aria-label="Mute period milliseconds">
+                  <span class="seq-editor-slider-value">${seq.suppressMs || 8000}</span>
+                </div>
+                <div class="seq-editor-error-text" id="seq-editor-suppress-error" aria-live="polite"></div>
+              </div>
 
-          <div class="seq-editor-field">
-            <label for="seq-editor-notes">Notes (optional)</label>
-            <textarea id="seq-editor-notes" placeholder="Add any notes about this sequence..." aria-label="Optional notes about the sequence">${escapeHtml((seq.meta?.notes || ""))}</textarea>
+              <div class="seq-editor-field">
+                <label for="seq-editor-notes">Notes (optional)</label>
+                <textarea id="seq-editor-notes" placeholder="Add any notes about this sequence..." aria-label="Optional notes about the sequence">${escapeHtml((seq.meta?.notes || ""))}</textarea>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -889,15 +905,25 @@
   // These elements are NOT re-created on rerenderStepTable, so listeners must not accumulate.
   const attachMetadataListeners = () => {
     const nameInput = document.getElementById("seq-editor-name");
+    const purposeInput = document.getElementById("seq-editor-purpose");
     const suppressInput = document.getElementById("seq-editor-suppress");
     const suppressValue = document.querySelector(".seq-editor-slider-value");
     const toggleSelect = document.getElementById("seq-editor-toggle");
     const notesInput = document.getElementById("seq-editor-notes");
+    const advancedToggle = document.getElementById("seq-editor-advanced-toggle");
+    const advancedFields = document.getElementById("seq-editor-advanced-fields");
 
     if (nameInput) {
       nameInput.addEventListener("input", () => {
         editorState.current.name = nameInput.value;
         updateValidationSummary();
+      });
+    }
+
+    if (purposeInput) {
+      purposeInput.addEventListener("input", () => {
+        if (!editorState.current.meta) editorState.current.meta = {};
+        editorState.current.meta.purpose = purposeInput.value;
       });
     }
 
@@ -921,6 +947,23 @@
       notesInput.addEventListener("input", () => {
         if (!editorState.current.meta) editorState.current.meta = {};
         editorState.current.meta.notes = notesInput.value;
+      });
+    }
+
+    // Advanced Settings collapse toggle
+    if (advancedToggle && advancedFields) {
+      advancedToggle.addEventListener("click", () => {
+        const isExpanded = advancedToggle.getAttribute("aria-expanded") === "true";
+        advancedToggle.setAttribute("aria-expanded", !isExpanded);
+        advancedFields.classList.toggle("hidden");
+      });
+
+      // Keyboard support: Space and Enter to toggle
+      advancedToggle.addEventListener("keydown", (e) => {
+        if (e.key === " " || e.key === "Enter") {
+          e.preventDefault();
+          advancedToggle.click();
+        }
       });
     }
 

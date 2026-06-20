@@ -3566,16 +3566,61 @@ label.sound-search-field {
    ======================================================================== */
 
 .seq-editor-metadata {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
   margin-bottom: 24px;
   padding-bottom: 16px;
   border-bottom: 1px solid var(--border);
 }
 
-.seq-editor-metadata > div:nth-child(4) {
+.seq-metadata-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.seq-metadata-info {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.seq-metadata-info > .seq-editor-field:nth-child(3) {
   grid-column: 1 / -1;
+}
+
+.seq-advanced-toggle {
+  padding: 8px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--silver-bright);
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+  transition: background-color 0.2s, border-color 0.2s;
+}
+
+.seq-advanced-toggle:hover {
+  background: rgba(150, 150, 150, 0.1);
+  border-color: var(--accent);
+}
+
+.seq-advanced-toggle:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.seq-advanced-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.seq-advanced-fields.hidden {
+  display: none;
 }
 
 .seq-editor-field {
