@@ -94,6 +94,10 @@ async function test() {
 
     // 6. Verify first step details
     console.log("Verifying first step details");
+    // Expand the first card so its time input, type chips, and fields render
+    await page.locator("#seq-editor-step-table .step-card").first()
+      .locator(".step-card-header").click();
+    await page.waitForTimeout(100);
     const firstStep = await page.evaluate(() => {
       const row = document.querySelector("#seq-editor-step-table \.step-card:first-child");
       return {

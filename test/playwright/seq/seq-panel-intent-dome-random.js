@@ -69,6 +69,10 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
       const count = await steps.count();
       const lastStep = steps.nth(count - 1);
 
+      // Expand the card so its type chips + fields are rendered
+      await lastStep.locator('.step-card-header').click();
+      await page.waitForTimeout(100);
+
       // Click dome type chip
       const domeChip = lastStep.locator('[data-type="dome"]');
       await domeChip.click();
@@ -185,6 +189,10 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
       const steps = page.locator('.step-card');
       const count = await steps.count();
       const lastStep = steps.nth(count - 1);
+
+      // Expand the card so its type chips + fields are rendered
+      await lastStep.locator('.step-card-header').click();
+      await page.waitForTimeout(100);
 
       // Click random type chip
       const randomChip = lastStep.locator('[data-type="random"]');
