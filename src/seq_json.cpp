@@ -201,7 +201,13 @@ static ProtocolCheckResult parseStep(const char* label, JsonObjectConst obj,
     if (strcmp(type, "domeRotate") == 0) {
         s.type = STEP_DOME_ROTATE;
         int32_t speedPct = obj["speedPct"] | 0;
-        uint32_t durationMs = obj["durationMs"] | 0u;
+        // Read durationMs wide+signed so a malformed negative (or a value past
+        // uint32_t) is rejected here instead of silently wrapping to a huge ms.
+        long long durationMsSigned = obj["durationMs"] | 0LL;
+        if (durationMsSigned < 0 || durationMsSigned > 0xFFFFFFFFLL) {
+            return pcFailAt(label, idx, "durationMs", "must be 0..4294967295");
+        }
+        uint32_t durationMs = (uint32_t)durationMsSigned;
 
         // Validate speedPct: must be in -100..100
         if (speedPct < -100 || speedPct > 100) {

@@ -392,6 +392,19 @@ static void test_domerotate_reject_nonzero_speed_with_zero_duration() {
     TEST_ASSERT_EQUAL_STRING("steps[0].durationMs", r.field);
 }
 
+static void test_domerotate_reject_negative_duration() {
+    // Reject malformed negative durationMs at the parse boundary (must match the
+    // client check) instead of letting it wrap to a huge uint32_t ms.
+    SeqDraft d;
+    ProtocolCheckResult r = seqJsonParse(
+        "{\"format\":1,\"name\":\"DM:ROTTEST\",\"suppressMs\":5000,\"steps\":["
+        "{\"t\":0,\"type\":\"domeRotate\",\"speedPct\":50,\"durationMs\":-100},"
+        "{\"t\":1000,\"type\":\"end\"}]}",
+        gSteps, 96, gClose, 96, d);
+    TEST_ASSERT_FALSE(r.ok);
+    TEST_ASSERT_EQUAL_STRING("steps[0].durationMs", r.field);
+}
+
 static void test_domerotate_serialize_roundtrip() {
     // Create a step, serialize, reparse, compare
     static const SeqStep steps[] = {
@@ -442,6 +455,7 @@ int main(int /*argc*/, char** /*argv*/) {
     RUN_TEST(test_domerotate_reject_speedpct_too_low);
     RUN_TEST(test_domerotate_reject_zero_speed_with_duration);
     RUN_TEST(test_domerotate_reject_nonzero_speed_with_zero_duration);
+    RUN_TEST(test_domerotate_reject_negative_duration);
     RUN_TEST(test_domerotate_serialize_roundtrip);
 
     RUN_TEST(test_catalog_iteration_bounds);
