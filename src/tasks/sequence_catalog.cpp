@@ -31,9 +31,12 @@
 // Holos, logics, and PSI set to MARCH mode; auto-reset at sequence end.
 static const SeqStep kVaderSteps[] = {
     SEQ_AUDIO_FX(0, FX_AUDIO, "$M"),             // Imperial March (stops on abort)
-    SEQ_DOME(0, FX_HOLO, "@HPA0021|47"),         // all holos red 47 s
-    SEQ_DOME(0, FX_LOGIC_PSI, "@0T11"),          // MARCH logics
-    SEQ_DOME(0, FX_LOGIC_PSI, "@0P11"),          // MARCH PSI
+    // Dome-native red MARCH visual preset via the DV: surface (issue #2 task #5).
+    // Dome-source-confirmed to share ROCKMARCH's red MARCH shape. Replaces the raw
+    // @HPA0021|47/@0T11/@0P11 approximation, which rendered default blue on hardware
+    // (the dome owns the typed rendering). Tagged FX_LOGIC_PSI|FX_HOLO so the
+    // engine's terminal cleanup still emits the body-owned reset (@0T1/@0P1/*ST00).
+    SEQ_DOME(0, (uint8_t)(FX_LOGIC_PSI | FX_HOLO), "DV:VADER"),
     SEQ_TERM(47000),
 };
 
@@ -162,11 +165,11 @@ static const SeqStep kBloomSteps[] = {
 // Leia logics/PSI; everything resets via effect classes at the end.
 static const SeqStep kLeiaSteps[] = {
     SEQ_AUDIO_FX(0, FX_AUDIO, "$L"),             // Leia message (stops on abort)
-    SEQ_DOME(0, FX_HOLO, "@HPS101|36"),          // front holo Leia sequence 36 s
-    SEQ_DOME(0, FX_HOLO, "@HPR02|36"),           // rear holo off 36 s
-    SEQ_DOME(0, FX_HOLO, "@HPT02|36"),           // top holo off 36 s
-    SEQ_DOME(0, FX_LOGIC_PSI, "@0T6"),           // Leia logics
-    SEQ_DOME(0, FX_LOGIC_PSI, "@0P6"),           // Leia PSI
+    // Dome-native Leia visual preset via the DV: surface (issue #2 task #5).
+    // Replaces the raw @HPS101/@HPR02/@HPT02|36 holos + @0T6/@0P6 logic/PSI; the
+    // dome owns the typed rendering. Authority body-inferred until codex confirms
+    // against DomeSequences.h. FX_LOGIC_PSI|FX_HOLO -> terminal cleanup reset.
+    SEQ_DOME(0, (uint8_t)(FX_LOGIC_PSI | FX_HOLO), "DV:LEIA"),
     SEQ_TERM(36000),                             // auto @0T1/@0P1/*ST00
 };
 
@@ -174,9 +177,11 @@ static const SeqStep kLeiaSteps[] = {
 // the alert category, falling back to the named scream track.
 static const SeqStep kAlarmSteps[] = {
     SEQ_AUDIO_CAT(0, AUDIO_CATEGORY_ALERT, AUDIO_SLOT_NAMED_SCREAM),
-    SEQ_DOME(0, FX_HOLO, "@HPA0021|10"),         // all holos red flashes 10 s
-    SEQ_DOME(0, FX_LOGIC_PSI, "@0T3"),           // alarm logics
-    SEQ_DOME(0, FX_LOGIC_PSI, "@0P3"),           // alarm PSI
+    // Dome-native alarm visual preset via the DV: surface (issue #2 task #5).
+    // Replaces the raw @HPA0021|10 holo + @0T3/@0P3 logic/PSI; the dome owns the
+    // typed rendering. Authority body-inferred until codex confirms against
+    // DomeSequences.h. FX_LOGIC_PSI|FX_HOLO -> terminal cleanup reset.
+    SEQ_DOME(0, (uint8_t)(FX_LOGIC_PSI | FX_HOLO), "DV:ALARM"),
     SEQ_TERM(10000),                             // auto @0T1/@0P1/*ST00
 };
 
@@ -185,11 +190,14 @@ static const SeqStep kAlarmSteps[] = {
 // Logic text is single-line per issue #2 gap #3 (no wire escaping scheme yet).
 static const SeqStep kHeartSteps[] = {
     SEQ_AUDIO_CAT(0, AUDIO_CATEGORY_SENTIMENTAL, AUDIO_SLOT_NAMED_HAPPY),
-    SEQ_DOME(0, FX_HOLO, "@HPF006|10"),          // front holo rainbow 10 s
-    SEQ_DOME(0, FX_HOLO, "@HPR006|10"),          // rear holo rainbow 10 s
-    SEQ_DOME(0, FX_HOLO, "@HPT006|10"),          // top holo rainbow 10 s
-    SEQ_DOME(0, FX_NONE, "@1MYou're Wonderful"), // front logic text
-    SEQ_DOME(0, FX_LOGIC_PSI, "@1P2"),           // front PSI flash-color
+    // Dome-native heart visual preset via the DV: surface (issue #2 task #5):
+    // covers the rainbow holos + PSI. Replaces @HPF006/@HPR006/@HPT006|10 + @1P2;
+    // the dome owns the typed rendering. Authority body-inferred until codex
+    // confirms against DomeSequences.h. FX_LOGIC_PSI|FX_HOLO -> terminal cleanup.
+    // The front logic TEXT stays body-owned raw and is sent AFTER the preset so the
+    // preset does not clobber it (single-line per issue #2 gap #3, no wire escaping).
+    SEQ_DOME(0, (uint8_t)(FX_LOGIC_PSI | FX_HOLO), "DV:HEART"),
+    SEQ_DOME(0, FX_NONE, "@1MYou're Wonderful"), // front logic text (body-owned raw)
     SEQ_TERM(10000),                             // auto @0T1/@0P1/*ST00
 };
 
@@ -233,9 +241,12 @@ static const SeqStep kResetSteps[] = {
 // 8 iterations x 1846 ms from t=100 -> loop ends at ~14868 ms.
 static const SeqStep kCantinaSteps[] = {
     SEQ_AUDIO_FX(0, FX_AUDIO, "$C"),             // long Cantina (stops on abort)
-    SEQ_DOME(0, FX_HOLO, "@HPA0029|15"),         // all holos white flashes 15 s
-    SEQ_DOME(0, FX_LOGIC_PSI, "@0T2"),           // flash/color logics
-    SEQ_DOME(0, FX_LOGIC_PSI, "@0P2"),           // flash/color PSI
+    // Dome-native cantina visual preset via the DV: surface (issue #2 task #5).
+    // Replaces the raw @HPA0029|15 holo + @0T2/@0P2 logic/PSI; the dome owns the
+    // typed rendering. Authority body-inferred until codex confirms against
+    // DomeSequences.h. FX_LOGIC_PSI|FX_HOLO -> terminal cleanup reset. The panel
+    // loop and its timeline are unchanged; the loop header is now at step index 2.
+    SEQ_DOME(0, (uint8_t)(FX_LOGIC_PSI | FX_HOLO), "DV:CANTINA"),
     SEQ_LOOP(100, 26, 1846, 14000),
     // beat A: pies PP1/PP4/PP3 + ring P1/P3/P7/P13 open, the rest closed
     SEQ_DOME(0, FX_PANEL, ":OPP1"),
@@ -332,10 +343,13 @@ static const SeqStep kRockmarchSteps[] = {
 // original code). Audio: random scream-category track (fallback named scream).
 static const SeqStep kScreamSteps[] = {
     SEQ_AUDIO_CAT(0, AUDIO_CATEGORY_SCREAM, AUDIO_SLOT_NAMED_SCREAM),
-    SEQ_DOME(0, FX_HOLO, "@HPA0070"),            // all holos short-circuit color
-    SEQ_DOME(0, FX_HOLO, "@HPA105|5"),           // all holos wag 5 times
-    SEQ_DOME(0, FX_LOGIC_PSI, "@0T5"),           // red alert logics
-    SEQ_DOME(0, FX_LOGIC_PSI, "@0P5"),           // red alert PSI
+    // Dome-native scream visual preset via the DV: surface (issue #2 task #5):
+    // red-alert logic/PSI + short-circuit/wag holos. Replaces @HPA0070/@HPA105|5 +
+    // @0T5/@0P5; the dome owns the typed rendering. Authority body-inferred until
+    // codex confirms against DomeSequences.h. FX_LOGIC_PSI|FX_HOLO -> terminal
+    // cleanup reset. The burst-open + flutter loop are unchanged; the loop header
+    // is now at step index 15.
+    SEQ_DOME(0, (uint8_t)(FX_LOGIC_PSI | FX_HOLO), "DV:SCREAM"),
     // burst open: all pies then all ring panels together
     SEQ_DOME(0, FX_PANEL, ":OPP1"),
     SEQ_DOME(0, FX_NONE, ":OPP2"),
@@ -368,10 +382,12 @@ static const SeqStep kScreamSteps[] = {
 // random sad-category track (fallback named faint).
 static const SeqStep kOverloadSteps[] = {
     SEQ_AUDIO_CAT(0, AUDIO_CATEGORY_SAD, AUDIO_SLOT_NAMED_FAINT),
-    SEQ_DOME(0, FX_LOGIC_PSI, "@1T4"),           // FLD failure
-    SEQ_DOME(0, FX_LOGIC_PSI, "@2T4"),           // RLD failure
-    SEQ_DOME(0, FX_HOLO, "@HPA0070"),            // all holos short circuit
-    SEQ_DOME(0, FX_LOGIC_PSI, "@0P4"),           // PSI failure
+    // Dome-native overload visual preset via the DV: surface (issue #2 task #5):
+    // front/rear FLD/RLD failure logics + PSI failure + short-circuit holos.
+    // Replaces @1T4/@2T4/@HPA0070/@0P4; the dome owns the typed rendering. Authority
+    // body-inferred until codex confirms against DomeSequences.h. FX_LOGIC_PSI|
+    // FX_HOLO -> terminal cleanup reset. The flutter schedule is unchanged.
+    SEQ_DOME(0, (uint8_t)(FX_LOGIC_PSI | FX_HOLO), "DV:OVERLOAD"),
     // four distinct ring panels + two distinct pies flutter with timing jitter
     SEQ_RAND(400, SLOTSET_RING, RAND_FLUTTER, 0, 300, 500, 1),
     SEQ_RAND(1050, SLOTSET_RING, RAND_FLUTTER, 0, 300, 500, 1),

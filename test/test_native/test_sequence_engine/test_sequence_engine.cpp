@@ -273,8 +273,11 @@ void test_real_vader_entry_runs_through_engine() {
     seqEngineStart(st, e, 0);
 
     char log[256] = "";
-    TEST_ASSERT_EQUAL_INT(4, drainAt(st, 0, log, sizeof(log)));
-    TEST_ASSERT_EQUAL_STRING("$M|@HPA0021|47|@0T11|@0P11", log);
+    // VADER's visual identity is now the dome-native DV:VADER preset (task #5),
+    // replacing the raw @HPA0021|47/@0T11/@0P11 lines. FX_LOGIC_PSI|FX_HOLO so the
+    // terminal reset below is unchanged.
+    TEST_ASSERT_EQUAL_INT(2, drainAt(st, 0, log, sizeof(log)));
+    TEST_ASSERT_EQUAL_STRING("$M|DV:VADER", log);
 
     log[0] = '\0';
     // Normal END at 47000: logic/PSI + holo auto-reset; audio plays out.
@@ -524,9 +527,11 @@ void test_loop_abort_mid_iteration_finishes_clean() {
 void test_real_loop_entries_have_loop_headers() {
     const SequenceEntry* cantina = sequenceCatalogFind("DM:CANTINA");
     TEST_ASSERT_NOT_NULL(cantina);
-    TEST_ASSERT_EQUAL_INT(STEP_LOOP, (int)cantina->steps[4].type);
-    TEST_ASSERT_EQUAL_UINT8(26, cantina->steps[4].params.bodyCount);
-    TEST_ASSERT_EQUAL_UINT16(1846, cantina->steps[4].params.periodMs);
+    // Pre-loop steps: $C + DV:CANTINA (the visual preset replaced the three raw
+    // @HPA0029|15/@0T2/@0P2 lines, task #5), so the loop header is at index 2.
+    TEST_ASSERT_EQUAL_INT(STEP_LOOP, (int)cantina->steps[2].type);
+    TEST_ASSERT_EQUAL_UINT8(26, cantina->steps[2].params.bodyCount);
+    TEST_ASSERT_EQUAL_UINT16(1846, cantina->steps[2].params.periodMs);
 
     const SequenceEntry* rock = sequenceCatalogFind("DM:ROCKMARCH");
     TEST_ASSERT_NOT_NULL(rock);
@@ -539,7 +544,7 @@ void test_real_loop_entries_have_loop_headers() {
     // Loop header + body + post-loop steps + END must fit the table exactly.
     // ROCKMARCH post-loop: a 7-panel physical-assurance close pass (individual
     // :CLnn, staggered) + the "$s" music-stop step, before the terminal.
-    TEST_ASSERT_EQUAL_UINT8(4 + 1 + 26 + 1, cantina->stepCount);
+    TEST_ASSERT_EQUAL_UINT8(2 + 1 + 26 + 1, cantina->stepCount);
     TEST_ASSERT_EQUAL_UINT8(2 + 1 + 14 + 7 + 1 + 1, rock->stepCount);
 }
 
@@ -790,18 +795,22 @@ void test_random_jitter_delays_fire_time() {
 void test_real_random_entries_are_catalog() {
     const SequenceEntry* scream = sequenceCatalogFind("DM:SCREAM");
     TEST_ASSERT_NOT_NULL(scream);
-    // Flutter loop: header at index 18, 4-step body, 10 iterations of 380 ms.
-    TEST_ASSERT_EQUAL_INT(STEP_LOOP, (int)scream->steps[18].type);
-    TEST_ASSERT_EQUAL_UINT8(4, scream->steps[18].params.bodyCount);
-    TEST_ASSERT_EQUAL_INT(STEP_RANDOM, (int)scream->steps[19].type);
-    TEST_ASSERT_EQUAL_UINT8(SLOTSET_ALL, scream->steps[19].params.slotSet);
-    TEST_ASSERT_EQUAL_UINT8(SLOTSET_HOLD, scream->steps[20].params.slotSet);
+    // The four raw visual lines (@HPA0070/@HPA105|5/@0T5/@0P5) collapsed into one
+    // DV:SCREAM preset (task #5), so the 13-panel burst + flutter loop shifted up by
+    // three: flutter loop header now at index 15, 4-step body, 10 iterations of 380 ms.
+    TEST_ASSERT_EQUAL_INT(STEP_LOOP, (int)scream->steps[15].type);
+    TEST_ASSERT_EQUAL_UINT8(4, scream->steps[15].params.bodyCount);
+    TEST_ASSERT_EQUAL_INT(STEP_RANDOM, (int)scream->steps[16].type);
+    TEST_ASSERT_EQUAL_UINT8(SLOTSET_ALL, scream->steps[16].params.slotSet);
+    TEST_ASSERT_EQUAL_UINT8(SLOTSET_HOLD, scream->steps[17].params.slotSet);
 
     const SequenceEntry* overload = sequenceCatalogFind("DM:OVERLOAD");
     TEST_ASSERT_NOT_NULL(overload);
-    TEST_ASSERT_EQUAL_INT(STEP_RANDOM, (int)overload->steps[5].type);
-    TEST_ASSERT_EQUAL_UINT8(1, overload->steps[5].params.pickDistinct);
-    TEST_ASSERT_EQUAL_UINT16(500, overload->steps[5].params.jitterMs);
+    // The four raw visual lines (@1T4/@2T4/@HPA0070/@0P4) collapsed into one
+    // DV:OVERLOAD preset (task #5), so the first flutter is now at index 2.
+    TEST_ASSERT_EQUAL_INT(STEP_RANDOM, (int)overload->steps[2].type);
+    TEST_ASSERT_EQUAL_UINT8(1, overload->steps[2].params.pickDistinct);
+    TEST_ASSERT_EQUAL_UINT16(500, overload->steps[2].params.jitterMs);
 }
 
 // Full OVERLOAD run with a scripted RNG: six flutter commands, ring targets
@@ -818,13 +827,14 @@ void test_real_overload_runs_end_to_end() {
     seqEngineStart(st, e, 0);
     char log[512] = "";
     int n = drainAt(st, 8000, log, sizeof(log));
-    // 1 audio category (empty payload) + 4 fx + 6 flutters + 3 auto-reset
+    // 1 audio category (empty payload) + 1 DV:OVERLOAD visual preset (replaced the
+    // four raw @1T4/@2T4/@HPA0070/@0P4 lines, task #5) + 6 flutters + 3 auto-reset
     // (@0T1, @0P1, *ST00). NO panel close: the choreography is all flutters
     // (:OF), which leave panel state uncertain and do NOT mark panels open, so
     // the net-open ring mask is empty and terminal cleanup emits nothing — and
     // never a group close. Audio stop is NOT expected (normal end).
-    TEST_ASSERT_EQUAL_INT(14, n);
-    TEST_ASSERT_NOT_NULL(strstr(log, "@1T4"));
+    TEST_ASSERT_EQUAL_INT(11, n);
+    TEST_ASSERT_NOT_NULL(strstr(log, "DV:OVERLOAD"));
     TEST_ASSERT_NULL(strstr(log, ":CL"));
     TEST_ASSERT_NULL(strstr(log, "<stop>"));
     TEST_ASSERT_FALSE(seqEngineActive(st));
