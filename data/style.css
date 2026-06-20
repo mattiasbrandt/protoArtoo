@@ -3891,11 +3891,41 @@ label.sound-search-field {
 
 .step-fields {
   display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 1;
+  padding-left: 8px;
+}
+
+/* Slice 2: Grouped field containers (Target / Behavior / Timing) */
+.step-field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.step-field-group-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.step-field-group-content {
+  display: flex;
   gap: 8px;
   flex-wrap: wrap;
-  flex: 1;
   align-items: center;
-  padding-left: 8px;
+}
+
+/* Slice 2: Per-card contextual help line */
+.step-help-line {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  font-style: italic;
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
 }
 
 .step-field {

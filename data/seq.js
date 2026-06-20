@@ -466,12 +466,73 @@
     `;
   };
 
-  const renderStepFields = (step, fieldsContainer) => {
-    let html = "";
+  // Slice 2: Helper to render a grouped field section with optional label
+  const renderFieldGroup = (label, fieldsHtml) => {
+    if (!fieldsHtml || fieldsHtml.trim() === "") return "";
+    return `
+      <div class="step-field-group">
+        <div class="step-field-group-label">${escapeHtml(label)}</div>
+        <div class="step-field-group-content">
+          ${fieldsHtml}
+        </div>
+      </div>
+    `;
+  };
+
+  // Slice 2: Helper to generate a contextual help line for a step
+  const stepHelpLine = (step) => {
     switch (step.type) {
       case "audio":
-        html = `<input class="step-field step-field-cmd" type="text" data-field="cmd" value="${escapeHtml(step.cmd || "")}" placeholder="$H, $N, $D, $A..." aria-label="Audio command">`;
+        return "Plays a sound";
+      case "dome": {
+        const cmd = step.cmd || "";
+        if (/^(:|)(OP|CL|OF)/.test(cmd)) {
+          return "Operates dome panels";
+        }
+        return "Dome command";
+      }
+      case "domeRotate": {
+        const speedPct = step.speedPct ?? 0;
+        const durationMs = step.durationMs ?? 0;
+        if (speedPct === 0) {
+          return "Stops dome rotation";
+        }
+        const direction = speedPct < 0 ? "left" : "right";
+        const speed = Math.abs(speedPct);
+        return `Rotates ${direction} at ${speed}% speed for ${durationMs}ms total`;
+      }
+      case "loop": {
+        const body = step.body || 1;
+        const periodMs = step.periodMs || 1000;
+        const totalMs = (periodMs * (step.durationMs || 10000)) / periodMs || step.durationMs || 10000;
+        return `Repeats ${body} step(s) every ${periodMs}ms for ~${totalMs}ms total`;
+      }
+      case "random": {
+        const set = step.set || "ring";
+        const moveMs = step.moveMs ?? 300;
+        return `Randomly moves ${set} panels with ${moveMs}ms move time`;
+      }
+      case "audioCat": {
+        const category = step.category || "alert";
+        return `Plays a ${category} sound`;
+      }
+      case "end":
+        return "Marks the end of the sequence";
+      default:
+        return "";
+    }
+  };
+
+  const renderStepFields = (step, fieldsContainer) => {
+    let behaviorHtml = "";
+    let targetHtml = "";
+    let timingHtml = "";
+
+    switch (step.type) {
+      case "audio":
+        behaviorHtml = `<input class="step-field step-field-cmd" type="text" data-field="cmd" value="${escapeHtml(step.cmd || "")}" placeholder="$H, $N, $D, $A..." aria-label="Sound command">`;
         break;
+
       case "dome":
         // Detect mode from step.cmd: panel intent if starts with :OP, :CL, :OF; otherwise advanced
         const domeCmd = step.cmd || "";
@@ -496,53 +557,53 @@
             target = match[2];
           }
 
-          html = `
-            <div class="dome-panel-mode">
-              <select class="step-field dome-action-select" aria-label="Panel action">
-                <option value="OP" ${action === "OP" ? "selected" : ""}>Open (:OP)</option>
-                <option value="CL" ${action === "CL" ? "selected" : ""}>Close (:CL)</option>
-                <option value="OF" ${action === "OF" ? "selected" : ""}>Flutter (:OF)</option>
-              </select>
-              <select class="step-field dome-target-select" aria-label="Panel target">
-                <optgroup label="Groups">
-                  <option value="00" ${target === "00" ? "selected" : ""}>All panels (00)</option>
-                  <option value="14" ${target === "14" ? "selected" : ""}>Pie / top group (14)</option>
-                  <option value="15" ${target === "15" ? "selected" : ""}>Ring / bottom group (15)</option>
-                </optgroup>
-                <optgroup label="Ring panels">
-                  <option value="01" ${target === "01" ? "selected" : ""}>P1 → 01</option>
-                  <option value="02" ${target === "02" ? "selected" : ""}>P2 → 02</option>
-                  <option value="03" ${target === "03" ? "selected" : ""}>P3 → 03</option>
-                  <option value="04" ${target === "04" ? "selected" : ""}>P4 → 04</option>
-                  <option value="07" ${target === "07" ? "selected" : ""}>P7 → 07</option>
-                  <option value="11" ${target === "11" ? "selected" : ""}>P11 → 11</option>
-                  <option value="13" ${target === "13" ? "selected" : ""}>P13 → 13</option>
-                </optgroup>
-                <optgroup label="Pie / top panels">
-                  <option value="P1" ${target === "P1" ? "selected" : ""}>PP1 → P1</option>
-                  <option value="P2" ${target === "P2" ? "selected" : ""}>PP2 → P2</option>
-                  <option value="P3" ${target === "P3" ? "selected" : ""}>PP3 → P3</option>
-                  <option value="P4" ${target === "P4" ? "selected" : ""}>PP4 → P4</option>
-                  <option value="P5" ${target === "P5" ? "selected" : ""}>PP5 → P5</option>
-                  <option value="P6" ${target === "P6" ? "selected" : ""}>PP6 → P6</option>
-                </optgroup>
-              </select>
-              <span class="dome-cmd-preview">:${action}${target}</span>
-              <button class="dome-mode-toggle" aria-label="Switch to advanced mode">Advanced</button>
-              <input type="hidden" class="step-field" data-field="cmd" value="${escapeHtml(domeCmd)}">
-            </div>
+          targetHtml = `
+            <select class="step-field dome-target-select" aria-label="Target">
+              <optgroup label="Groups">
+                <option value="00" ${target === "00" ? "selected" : ""}>All panels (00)</option>
+                <option value="14" ${target === "14" ? "selected" : ""}>Pie / top group (14)</option>
+                <option value="15" ${target === "15" ? "selected" : ""}>Ring / bottom group (15)</option>
+              </optgroup>
+              <optgroup label="Ring panels">
+                <option value="01" ${target === "01" ? "selected" : ""}>P1 → 01</option>
+                <option value="02" ${target === "02" ? "selected" : ""}>P2 → 02</option>
+                <option value="03" ${target === "03" ? "selected" : ""}>P3 → 03</option>
+                <option value="04" ${target === "04" ? "selected" : ""}>P4 → 04</option>
+                <option value="07" ${target === "07" ? "selected" : ""}>P7 → 07</option>
+                <option value="11" ${target === "11" ? "selected" : ""}>P11 → 11</option>
+                <option value="13" ${target === "13" ? "selected" : ""}>P13 → 13</option>
+              </optgroup>
+              <optgroup label="Pie / top panels">
+                <option value="P1" ${target === "P1" ? "selected" : ""}>PP1 → P1</option>
+                <option value="P2" ${target === "P2" ? "selected" : ""}>PP2 → P2</option>
+                <option value="P3" ${target === "P3" ? "selected" : ""}>PP3 → P3</option>
+                <option value="P4" ${target === "P4" ? "selected" : ""}>PP4 → P4</option>
+                <option value="P5" ${target === "P5" ? "selected" : ""}>PP5 → P5</option>
+                <option value="P6" ${target === "P6" ? "selected" : ""}>PP6 → P6</option>
+              </optgroup>
+            </select>
+          `;
+
+          behaviorHtml = `
+            <select class="step-field dome-action-select" aria-label="Action">
+              <option value="OP" ${action === "OP" ? "selected" : ""}>Open (:OP)</option>
+              <option value="CL" ${action === "CL" ? "selected" : ""}>Close (:CL)</option>
+              <option value="OF" ${action === "OF" ? "selected" : ""}>Flutter (:OF)</option>
+            </select>
+            <span class="dome-cmd-preview">:${action}${target}</span>
+            <button class="dome-mode-toggle" aria-label="Switch to advanced mode">Advanced</button>
+            <input type="hidden" class="step-field" data-field="cmd" value="${escapeHtml(domeCmd)}">
           `;
         } else {
           // Advanced mode: raw text input
-          html = `
-            <div class="dome-advanced-mode">
-              <input class="step-field step-field-cmd" type="text" data-field="cmd" value="${escapeHtml(domeCmd)}" placeholder="@0T6, *HP0, :SE07" aria-label="Dome command (advanced)">
-              <button class="dome-mode-toggle" aria-label="Switch to panel mode">Panel</button>
-            </div>
+          behaviorHtml = `
+            <input class="step-field step-field-cmd" type="text" data-field="cmd" value="${escapeHtml(domeCmd)}" placeholder="@0T6, *HP0, :SE07" aria-label="Dome command (advanced)">
+            <button class="dome-mode-toggle" aria-label="Switch to panel mode">Panel</button>
           `;
         }
         break;
-      case "domeRotate":
+
+      case "domeRotate": {
         // Ergonomic operator UI for dome rotation: direction (Left/Right/Stop) + speed + duration
         // Internal storage: speedPct (signed -100..100), durationMs
         // Direction is derived from speedPct sign: negative=left, positive=right, 0=stop
@@ -554,61 +615,89 @@
         if (rotateSpeedPct < 0) direction = "left";
         else if (rotateSpeedPct > 0) direction = "right";
 
-        html = `
-          <div class="dome-rotate-controls">
-            <select class="step-field step-field-direction" data-field="direction" aria-label="Rotation direction">
-              <option value="stop" ${direction === "stop" ? "selected" : ""}>Stop (neutral)</option>
-              <option value="left" ${direction === "left" ? "selected" : ""}>Left (reverse)</option>
-              <option value="right" ${direction === "right" ? "selected" : ""}>Right (forward)</option>
-            </select>
-            <input class="step-field step-field-speed" type="number" data-field="speed" value="${Math.abs(rotateSpeedPct)}" min="0" max="100" step="1" aria-label="Rotation speed (0-100%)" placeholder="0-100">
-            <span class="dome-rotate-label">%</span>
-            <input class="step-field step-field-durationMs" type="number" data-field="durationMs" value="${rotateDurationMs}" min="0" max="120000" step="1" aria-label="Duration (milliseconds)" placeholder="duration ms">
-            <span class="dome-rotate-label">ms</span>
-          </div>
-        `;
-        break;
-      case "loop":
-        html = `
-          <input class="step-field step-field-body" type="number" data-field="body" value="${step.body || 1}" min="1" max="96" aria-label="Loop body step count" placeholder="body">
-          <input class="step-field step-field-periodMs" type="number" data-field="periodMs" value="${step.periodMs || 1000}" min="100" max="60000" aria-label="Loop period (ms)" placeholder="periodMs">
-          <input class="step-field step-field-durationMs" type="number" data-field="durationMs" value="${step.durationMs || 10000}" min="100" max="120000" aria-label="Loop duration (ms)" placeholder="durationMs">
-        `;
-        break;
-      case "random":
-        html = `
-          <select class="step-field step-field-set" data-field="set" aria-label="Random target set">
-            <option value="ring" ${step.set === "ring" ? "selected" : ""}>ring</option>
-            <option value="pie" ${step.set === "pie" ? "selected" : ""}>pie</option>
-            <option value="all" ${step.set === "all" ? "selected" : ""}>all</option>
-            <option value="hold" ${step.set === "hold" ? "selected" : ""}>hold</option>
+        behaviorHtml = `
+          <select class="step-field step-field-direction" data-field="direction" aria-label="Direction">
+            <option value="stop" ${direction === "stop" ? "selected" : ""}>Stop (neutral)</option>
+            <option value="left" ${direction === "left" ? "selected" : ""}>Left (reverse)</option>
+            <option value="right" ${direction === "right" ? "selected" : ""}>Right (forward)</option>
           </select>
-          <select class="step-field step-field-mode" data-field="mode" aria-label="Random mode">
+          <input class="step-field step-field-speed" type="number" data-field="speed" value="${Math.abs(rotateSpeedPct)}" min="0" max="100" step="1" aria-label="Speed (0-100%)" placeholder="0-100">
+          <span class="dome-rotate-label">%</span>
+        `;
+
+        timingHtml = `
+          <input class="step-field step-field-durationMs" type="number" data-field="durationMs" value="${rotateDurationMs}" min="0" max="120000" step="1" aria-label="Run for (ms)" placeholder="duration ms">
+          <span class="dome-rotate-label">ms</span>
+        `;
+        break;
+      }
+
+      case "loop": {
+        const body = step.body || 1;
+        behaviorHtml = `<input class="step-field step-field-body" type="number" data-field="body" value="${body}" min="1" max="96" aria-label="Steps to repeat" placeholder="body">`;
+
+        timingHtml = `
+          <input class="step-field step-field-periodMs" type="number" data-field="periodMs" value="${step.periodMs || 1000}" min="100" max="60000" aria-label="Every (ms)" placeholder="periodMs">
+          <span class="dome-rotate-label">ms</span>
+          <input class="step-field step-field-durationMs" type="number" data-field="durationMs" value="${step.durationMs || 10000}" min="100" max="120000" aria-label="For (ms)" placeholder="durationMs">
+          <span class="dome-rotate-label">ms total</span>
+        `;
+        break;
+      }
+
+      case "random": {
+        targetHtml = `<select class="step-field step-field-set" data-field="set" aria-label="Target">
+          <option value="ring" ${step.set === "ring" ? "selected" : ""}>ring</option>
+          <option value="pie" ${step.set === "pie" ? "selected" : ""}>pie</option>
+          <option value="all" ${step.set === "all" ? "selected" : ""}>all</option>
+          <option value="hold" ${step.set === "hold" ? "selected" : ""}>hold</option>
+        </select>`;
+
+        behaviorHtml = `
+          <select class="step-field step-field-mode" data-field="mode" aria-label="Action">
             <option value="flutter" ${(step.mode || "flutter") === "flutter" ? "selected" : ""}>flutter</option>
             <option value="open" ${step.mode === "open" ? "selected" : ""}>open</option>
             <option value="close" ${step.mode === "close" ? "selected" : ""}>close</option>
           </select>
-          <input class="step-field step-field-moveMs" type="number" data-field="moveMs" value="${step.moveMs ?? 300}" min="0" max="5000" aria-label="Move time (ms)" placeholder="moveMs">
-          <input class="step-field step-field-jitterMs" type="number" data-field="jitterMs" value="${step.jitterMs ?? 0}" min="0" max="2000" aria-label="Jitter (ms)" placeholder="jitterMs">
           <label class="step-field-checkbox"><input type="checkbox" data-field="distinct" ${step.distinct ? "checked" : ""} aria-label="Distinct"> Distinct</label>
         `;
-        break;
-      case "audioCat":
-        const audioCategories = ["alert", "chatty", "general", "happy", "humming", "processing", "sad", "sentimental", "scream", "surprised", "whistle"];
-        html = `
-          <select class="step-field step-field-category" data-field="category" aria-label="Audio category">
-            ${audioCategories.map((cat) => `<option value="${cat}" ${step.category === cat ? "selected" : ""}>${cat}</option>`).join("")}
-          </select>
-          <input class="step-field step-field-fallback" type="text" data-field="fallback" value="${escapeHtml(step.fallback || "")}" placeholder="$H (fallback track)" aria-label="Fallback track">
+
+        timingHtml = `
+          <input class="step-field step-field-moveMs" type="number" data-field="moveMs" value="${step.moveMs ?? 300}" min="0" max="5000" aria-label="Move time (ms)" placeholder="moveMs">
+          <span class="dome-rotate-label">ms</span>
+          <input class="step-field step-field-jitterMs" type="number" data-field="jitterMs" value="${step.jitterMs ?? 0}" min="0" max="2000" aria-label="Jitter (ms)" placeholder="jitterMs">
+          <span class="dome-rotate-label">ms</span>
         `;
         break;
+      }
+
+      case "audioCat":
+        const audioCategories = ["alert", "chatty", "general", "happy", "humming", "processing", "sad", "sentimental", "scream", "surprised", "whistle"];
+        behaviorHtml = `
+          <select class="step-field step-field-category" data-field="category" aria-label="Category">
+            ${audioCategories.map((cat) => `<option value="${cat}" ${step.category === cat ? "selected" : ""}>${cat}</option>`).join("")}
+          </select>
+          <input class="step-field step-field-fallback" type="text" data-field="fallback" value="${escapeHtml(step.fallback || "")}" placeholder="$H (fallback)" aria-label="Fallback track">
+        `;
+        break;
+
       case "end":
         html = `<span class="step-field-empty">(terminal step)</span>`;
-        break;
-      default:
-        html = "";
+        fieldsContainer.innerHTML = html;
+        return; // No groups for end step
     }
-    fieldsContainer.innerHTML = html;
+
+    // Assemble the grouped HTML structure
+    let groupedHtml = "";
+    if (targetHtml) groupedHtml += renderFieldGroup("Target", targetHtml);
+    if (behaviorHtml) groupedHtml += renderFieldGroup("Behavior", behaviorHtml);
+    if (timingHtml) groupedHtml += renderFieldGroup("Timing", timingHtml);
+
+    // Add the help line
+    const helpLine = stepHelpLine(step);
+    const helpHtml = helpLine ? `<div class="step-help-line">${escapeHtml(helpLine)}</div>` : "";
+
+    fieldsContainer.innerHTML = groupedHtml + helpHtml;
   };
 
   const renderEditorView = (seq) => {
@@ -946,7 +1035,6 @@
     document.querySelectorAll(".step-card").forEach((card) => {
       const stepIdx = parseInt(card.dataset.stepIndex, 10);
       const header = card.querySelector(".step-card-header");
-      const toggle = card.querySelector(".step-card-toggle");
       const removeBtn = card.querySelector(".step-remove");
 
       // Handle header click/keyboard to toggle expand
