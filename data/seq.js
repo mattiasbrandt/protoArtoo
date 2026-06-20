@@ -777,9 +777,14 @@
       </div>
     `;
 
-    // Populate conditional fields for each step
-    document.querySelectorAll(".step-fields").forEach((container, idx) => {
-      renderStepFields(editorState.current.steps[idx], container);
+    // Populate conditional fields for each step. Only expanded cards have a
+    // .step-fields container, so derive the real step index from the card's
+    // data-step-index instead of the enumeration order (which is expanded-rank).
+    document.querySelectorAll(".step-fields").forEach((container) => {
+      const card = container.closest(".step-card");
+      if (!card) return;
+      const stepIdx = parseInt(card.dataset.stepIndex, 10);
+      renderStepFields(editorState.current.steps[stepIdx], container);
     });
 
     // Attach event listeners (metadata/footer once; step rows on every rerender)
@@ -1214,9 +1219,14 @@
       .join("");
     table.innerHTML = stepRows;
 
-    // Populate conditional fields
-    document.querySelectorAll(".step-fields").forEach((container, idx) => {
-      renderStepFields(editorState.current.steps[idx], container);
+    // Populate conditional fields. Only expanded cards have a .step-fields
+    // container, so derive the real step index from the card's data-step-index
+    // instead of the enumeration order (which is expanded-rank, not step index).
+    document.querySelectorAll(".step-fields").forEach((container) => {
+      const card = container.closest(".step-card");
+      if (!card) return;
+      const stepIdx = parseInt(card.dataset.stepIndex, 10);
+      renderStepFields(editorState.current.steps[stepIdx], container);
     });
 
     // Re-attach only step-row listeners (metadata/footer listeners persist)
