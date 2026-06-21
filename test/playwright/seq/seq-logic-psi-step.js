@@ -134,7 +134,6 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
       await page.waitForTimeout(200);
 
       const steps = page.locator('.step-card');
-      const count = await steps.count();
       const firstStep = steps.nth(0);
 
       // Expand the first step
@@ -173,7 +172,6 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
     // Test 6: Collapsed preview shows friendly English
     await test('dome DL: collapsed preview shows friendly English (Both logic: March, red, 47s)', async () => {
       const steps = page.locator('.step-card');
-      const count = await steps.count();
       const firstStep = steps.nth(0);
 
       // Collapse the card
@@ -192,7 +190,6 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
     // Test 7: Changing target updates cmd
     await test('changing target updates cmd correctly', async () => {
       const steps = page.locator('.step-card');
-      const count = await steps.count();
       const firstStep = steps.nth(0);
 
       // Expand
@@ -216,7 +213,6 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
     // Test 8: Changing mode updates cmd
     await test('changing mode updates cmd correctly', async () => {
       const steps = page.locator('.step-card');
-      const count = await steps.count();
       const firstStep = steps.nth(0);
 
       const modeSelect = firstStep.locator('.dl-mode-select');
@@ -233,7 +229,6 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
     // Test 9: Changing duration updates cmd
     await test('changing duration updates cmd correctly', async () => {
       const steps = page.locator('.step-card');
-      const count = await steps.count();
       const firstStep = steps.nth(0);
 
       const durationInput = firstStep.locator('.dl-duration-input');
@@ -250,7 +245,6 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
     // Test 10: Changing color without duration preserves DEFAULT format
     await test('changing color to DEFAULT preserves command format', async () => {
       const steps = page.locator('.step-card');
-      const count = await steps.count();
       const firstStep = steps.nth(0);
 
       const colorSelect = firstStep.locator('.dl-color-select');
@@ -271,7 +265,6 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
     // Test 11: Target dropdown contains all 7 targets
     await test('target dropdown contains all 7 DL targets', async () => {
       const steps = page.locator('.step-card');
-      const count = await steps.count();
       const firstStep = steps.nth(0);
 
       const targetSelect = firstStep.locator('.dl-target-select');
@@ -295,7 +288,6 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
     // Test 12: Mode dropdown contains all 9 modes
     await test('mode dropdown contains all 9 DL modes', async () => {
       const steps = page.locator('.step-card');
-      const count = await steps.count();
       const firstStep = steps.nth(0);
 
       const modeSelect = firstStep.locator('.dl-mode-select');
@@ -319,7 +311,6 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
     // Test 13: Color dropdown contains all 8 colors
     await test('color dropdown contains all 8 DL colors', async () => {
       const steps = page.locator('.step-card');
-      const count = await steps.count();
       const firstStep = steps.nth(0);
 
       const colorSelect = firstStep.locator('.dl-color-select');

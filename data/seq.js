@@ -534,10 +534,10 @@
   // Helper: derive dome sub-mode identity from cmd (emoji + name for collapsed card)
   const domeSubmodeLabel = (cmd) => {
     if ((cmd || "").startsWith("DV:")) {
-      return { emoji: "🖼️", name: "Visual Preset" };
+      return { emoji: "🎬", name: "Visual Preset" };
     }
     if ((cmd || "").startsWith("DL:")) {
-      return { emoji: "🎬", name: "Logic / PSI Mode" };
+      return { emoji: "🎭", name: "Logic / PSI Mode" };
     }
     return { emoji: "🧩", name: "Panel Action" };
   };
