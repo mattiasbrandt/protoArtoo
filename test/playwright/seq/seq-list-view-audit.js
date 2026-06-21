@@ -66,7 +66,7 @@ async function runTest() {
       return {
         exists: !!link,
         text: link?.textContent ?? '',
-        hasEmoji: link?.textContent?.includes('🎭') ?? false,
+        hasEmoji: link?.textContent?.includes('🎬') ?? false,
         isActive: link?.classList.contains('active') ?? false,
       };
     });

@@ -279,7 +279,7 @@
       payload.estop ? "🛑 E-Stop: Latched" : "🛑 E-Stop: Clear",
       payload.estop ? "error" : "ok",
     );
-    setStatusPill(snapshotMood, `🎭 Mood: ${moodText}`, "info");
+    setStatusPill(snapshotMood, `🎬 Mood: ${moodText}`, "info");
   };
 
   const applyStatus = (payload) => {

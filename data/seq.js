@@ -531,6 +531,17 @@
     end: "Sequence End",
   };
 
+  // Helper: derive dome sub-mode identity from cmd (emoji + name for collapsed card)
+  const domeSubmodeLabel = (cmd) => {
+    if ((cmd || "").startsWith("DV:")) {
+      return { emoji: "🖼️", name: "Visual Preset" };
+    }
+    if ((cmd || "").startsWith("DL:")) {
+      return { emoji: "🎬", name: "Logic / PSI Mode" };
+    }
+    return { emoji: "🧩", name: "Panel Action" };
+  };
+
   // Slice 4: Step type descriptions for reference panel
   const stepTypeDescriptions = {
     audio: "Play a sound or cue",
@@ -569,8 +580,14 @@
 
   const renderStepRow = (step, idx) => {
     const isExpanded = editorState.expanded.has(idx);
-    const emoji = stepTypeEmoji[step.type] || "•";
-    const typeName = stepTypeName[step.type] || step.type;
+    let emoji = stepTypeEmoji[step.type] || "•";
+    let typeName = stepTypeName[step.type] || step.type;
+    // For dome steps, derive identity from cmd sub-mode (DV:, DL:)
+    if (step.type === "dome") {
+      const label = domeSubmodeLabel(step.cmd);
+      emoji = label.emoji;
+      typeName = label.name;
+    }
     const preview = stepPreview(step);
 
     // Slice 5: Get validation state for this step
@@ -623,7 +640,7 @@
             </div>
             <div class="step-type-subgroup">
               <button class="step-type-chip step-type-card step-type-dome-sub ${step.type === "dome" && (step.cmd || "").startsWith("DL:") ? "active" : ""}" data-type="dome" data-dome-mode="logic" aria-pressed="${step.type === "dome" && (step.cmd || "").startsWith("DL:") ? "true" : "false"}" title="Logic / PSI Mode">
-                <span class="step-type-card-emoji">🎭</span>
+                <span class="step-type-card-emoji">🎬</span>
                 <span class="step-type-card-name">Logic / PSI Mode</span>
               </button>
             </div>

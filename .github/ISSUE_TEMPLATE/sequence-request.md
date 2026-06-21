@@ -6,7 +6,7 @@ labels: "dome, feature request"
 
 Thanks for the suggestion! 🤖
 
-## Which sequence, and from where? 🎭
+## Which sequence, and from where? 🎬
 
 Name the choreography and the project it comes from (ReelTwo, Padawan360, ShadowMD, a
 Marcduino sketch, a video clip...). A link to the source is a big help.
