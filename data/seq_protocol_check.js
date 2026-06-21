@@ -11,7 +11,7 @@
   const SUPPRESS_MS_MIN = 1000;
   const SUPPRESS_MS_MAX = 120000;
   const TOGGLE_GROUPS = ["none", "pies", "low", "all"];
-  const STEP_TYPES = ["audio", "dome", "loop", "random", "audioCat", "domeRotate", "end"];
+  const STEP_TYPES = ["audio", "dome", "domeLogic", "loop", "random", "audioCat", "domeRotate", "end"];
   const AUDIO_CATEGORIES = [
     "alert",
     "chatty",
@@ -51,6 +51,20 @@
   const DV_PRESETS = new Set([
     "ROCKMARCH", "VADER", "ALARM", "LEIA", "HEART", "CANTINA",
     "SCREAM", "OVERLOAD", "HELLO", "RESET_VISUALS",
+  ]);
+
+  // Logic/PSI Mode (DL:) — structured control for dome logic/PSI animations.
+  // Grammar: DL:<target>:<mode>[:<color>[:<durationSec>]]
+  // Mirrors src/protocol_check.cpp validation.
+  const DL_TARGETS = new Set([
+    "FLD", "RLD", "LOGIC", "FPSI", "RPSI", "PSI", "ALL",
+  ]);
+  const DL_MODES = new Set([
+    "NORMAL", "ALARM", "FAILURE", "LEIA", "MARCH", "FLASHCOLOR",
+    "REDALERT", "RAINBOW", "LIGHTSOUT",
+  ]);
+  const DL_COLORS = new Set([
+    "DEFAULT", "RED", "BLUE", "GREEN", "WHITE", "YELLOW", "ORANGE", "PURPLE",
   ]);
 
   // Classify a panel intent target into its group for :OF cleanup tracking.
@@ -163,6 +177,7 @@
       switch (type) {
         case "audio":    return this._validateAudioStep(step);
         case "dome":     return this._validateDomeStep(step);
+        case "domeLogic": return this._validateDomeLogicStep(step);
         case "loop":     return this._validateLoopStep(step, allSteps);
         case "random":   return this._validateRandomStep(step);
         case "audioCat": return this._validateAudioCatStep(step);
@@ -225,6 +240,11 @@
         return { ok: true };
       }
 
+      // DL:<target>:<mode>[:<color>[:<durationSec>]] — Logic/PSI mode
+      if (cmd.startsWith("DL:")) {
+        return this._validateDLLogicCommand(cmd);
+      }
+
       // Panel intent: :OP<target>, :CL<target>, :OF<target>
       if (cmd.startsWith(":OP") || cmd.startsWith(":CL") || cmd.startsWith(":OF")) {
         const target = cmd.slice(3);
@@ -267,6 +287,15 @@
         error:
           "That dome command isn't recognized. Use a panel action (Open, Close, Flutter), a dome visual preset (DV:...), or an advanced code (@ for logic/PSI, * for holos, :SE## for Marcduino).",
       };
+    },
+
+    _validateDomeLogicStep(step) {
+      const { cmd } = step;
+      if (!cmd || typeof cmd !== "string") {
+        return { ok: false, field: "cmd", error: "Choose a logic/PSI mode for this step" };
+      }
+
+      return this._validateDLLogicCommand(cmd);
     },
 
     _validateLoopStep(step, _allSteps) {
@@ -430,6 +459,83 @@
           ok: false,
           field: "durationMs",
           error: "Spin time can't be negative",
+        };
+      }
+
+      return { ok: true };
+    },
+
+    _validateDLLogicCommand(cmd) {
+      // DL:<target>:<mode>[:<color>[:<durationSec>]]
+      // Parse the command into its components
+      const parts = cmd.split(":");
+      if (parts.length < 3 || parts[0] !== "DL") {
+        return {
+          ok: false,
+          field: "cmd",
+          error: "Logic/PSI command must be in the format DL:TARGET:MODE[:COLOR[:DURATION]]",
+        };
+      }
+
+      const target = parts[1];
+      const mode = parts[2];
+      const color = parts[3] || "DEFAULT";
+      const durationStr = parts[4];
+
+      // Validate command length (must be <= 63)
+      if (cmd.length > 63) {
+        return {
+          ok: false,
+          field: "cmd",
+          error: "Logic/PSI command is too long (must be 63 characters or less)",
+        };
+      }
+
+      // Validate target
+      if (!DL_TARGETS.has(target)) {
+        return {
+          ok: false,
+          field: "cmd",
+          error: `"${target}" is not a valid target. Choose one of: ${Array.from(DL_TARGETS).join(", ")}`,
+        };
+      }
+
+      // Validate mode
+      if (!DL_MODES.has(mode)) {
+        return {
+          ok: false,
+          field: "cmd",
+          error: `"${mode}" is not a valid mode. Choose one of: ${Array.from(DL_MODES).join(", ")}`,
+        };
+      }
+
+      // Validate color (optional, default DEFAULT)
+      if (color && !DL_COLORS.has(color)) {
+        return {
+          ok: false,
+          field: "cmd",
+          error: `"${color}" is not a valid color. Choose one of: ${Array.from(DL_COLORS).join(", ")}`,
+        };
+      }
+
+      // Validate duration (optional, 0-99 seconds)
+      if (durationStr !== undefined) {
+        const duration = parseInt(durationStr, 10);
+        if (isNaN(duration) || duration < 0 || duration > 99) {
+          return {
+            ok: false,
+            field: "cmd",
+            error: "Duration must be a number between 0 and 99 seconds",
+          };
+        }
+      }
+
+      // Reject extra fields
+      if (parts.length > 5) {
+        return {
+          ok: false,
+          field: "cmd",
+          error: "Logic/PSI command has too many fields",
         };
       }
 
