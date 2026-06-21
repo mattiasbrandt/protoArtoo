@@ -44,6 +44,71 @@ static int parseUint(const char** p, uint32_t& out) {
     return n;
 }
 
+// Percent-decode a string (similar to decodeURIComponent in JS).
+// Returns the decoded length, or -1 on error (invalid escape, bad hex).
+// Rejects: carriage return (%0D), literal colons (confuse field parsing).
+// Decoded output goes into 'out' buffer (must be at least decodedLenMax+1).
+static int percentDecode(const char* encoded, size_t encodedLen,
+                          char* out, size_t decodedLenMax) {
+    if (out == nullptr || decodedLenMax == 0) {
+        return -1;
+    }
+    size_t outLen = 0;
+    for (size_t i = 0; i < encodedLen; ++i) {
+        if (outLen >= decodedLenMax) {
+            // Decoded text would exceed maximum length
+            return -1;
+        }
+        if (encoded[i] == '%') {
+            // Must have at least 2 more chars for hex digits
+            if (i + 2 >= encodedLen) {
+                return -1;
+            }
+            char h1 = encoded[i + 1];
+            char h2 = encoded[i + 2];
+            // Convert hex digits to value (case-insensitive)
+            int hex = -1;
+            if (isDigit(h1) && isDigit(h2)) {
+                hex = (h1 - '0') * 16 + (h2 - '0');
+            } else if ((h1 >= 'A' && h1 <= 'F') && (h2 >= '0' && h2 <= '9')) {
+                hex = (h1 - 'A' + 10) * 16 + (h2 - '0');
+            } else if ((h1 >= 'A' && h1 <= 'F') && (h2 >= 'A' && h2 <= 'F')) {
+                hex = (h1 - 'A' + 10) * 16 + (h2 - 'A' + 10);
+            } else if (isDigit(h1) && (h2 >= 'A' && h2 <= 'F')) {
+                hex = (h1 - '0') * 16 + (h2 - 'A' + 10);
+            } else if ((h1 >= 'a' && h1 <= 'f') && (h2 >= '0' && h2 <= '9')) {
+                hex = (h1 - 'a' + 10) * 16 + (h2 - '0');
+            } else if ((h1 >= 'a' && h1 <= 'f') && (h2 >= 'a' && h2 <= 'f')) {
+                hex = (h1 - 'a' + 10) * 16 + (h2 - 'a' + 10);
+            } else if (isDigit(h1) && (h2 >= 'a' && h2 <= 'f')) {
+                hex = (h1 - '0') * 16 + (h2 - 'a' + 10);
+            } else if ((h1 >= 'a' && h1 <= 'f') && isDigit(h2)) {
+                hex = (h1 - 'a' + 10) * 16 + (h2 - '0');
+            } else {
+                // Invalid hex
+                return -1;
+            }
+            // Reject carriage return (%0D)
+            if (hex == 0x0D) {
+                return -1;
+            }
+            out[outLen++] = (char)hex;
+            i += 2;
+        } else if (encoded[i] == ':') {
+            // Literal colon is not allowed in encoded text (confuses field parsing).
+            return -1;
+        } else {
+            // Literal character (must be printable)
+            if (!isPrintable(encoded[i])) {
+                return -1;
+            }
+            out[outLen++] = encoded[i];
+        }
+    }
+    out[outLen] = '\0';
+    return (int)outLen;
+}
+
 // Extract the next colon-separated field from *p and advance *p past the delimiter.
 // Returns a pointer to the start of the field, or nullptr if delimiter not found.
 // The returned field is NOT NUL-terminated; use returned length.
@@ -326,6 +391,136 @@ static ProtocolCheckResult classifyDome(const char* label, uint8_t idx,
         // Check for extra fields (too many colons)
         if (*p != '\0') {
             return pcFailAt(label, idx, "cmd", "DL: too many fields");
+        }
+
+        fxOut = (uint8_t)(FX_LOGIC_PSI | FX_HOLO);  // visual effect at term
+        return pcOk();
+    }
+
+    // DT:<target>:<color>:<durationSec>:<speed>:<encodedText> — Logic Text (issue #11).
+    // Multi-line text display on FLD/RLD. Text is percent-encoded; only valid escapes
+    // are %0A (newline), %25 (%), %3A (:). Encoded text <= 40 chars; decoded <= 32;
+    // max one newline; reject if final command length > 63. Mirrors client validation
+    // in data/seq_protocol_check.js exactly.
+    if (strncmp(cmd, "DT:", 3) == 0) {
+        static const char* const kDtTargets[] = {
+            "FLD", "RLD", "LOGIC",
+        };
+        static const char* const kDtColors[] = {
+            "DEFAULT", "RED", "BLUE", "GREEN", "WHITE", "YELLOW", "ORANGE", "PURPLE",
+        };
+        const uint8_t kDtTargetCount = (uint8_t)(sizeof(kDtTargets) / sizeof(kDtTargets[0]));
+        const uint8_t kDtColorCount = (uint8_t)(sizeof(kDtColors) / sizeof(kDtColors[0]));
+
+        // Parse DT:<target>:<color>:<durationSec>:<speed>:<encodedText>
+        const char* p = cmd + 3;
+        size_t fieldLen = 0;
+
+        // Parse target (required)
+        const char* targetStart = parseField(&p, fieldLen);
+        bool targetOk = false;
+        for (uint8_t i = 0; i < kDtTargetCount; ++i) {
+            size_t tlen = strlen(kDtTargets[i]);
+            if (fieldLen == tlen && strncmp(targetStart, kDtTargets[i], tlen) == 0) {
+                targetOk = true;
+                break;
+            }
+        }
+        if (!targetOk) {
+            return pcFailAt(label, idx, "cmd", "unknown DT: target");
+        }
+        if (*p == '\0') {
+            return pcFailAt(label, idx, "cmd", "DT: requires target:color:duration:speed:text");
+        }
+
+        // Parse color (required)
+        const char* colorStart = parseField(&p, fieldLen);
+        bool colorOk = false;
+        for (uint8_t i = 0; i < kDtColorCount; ++i) {
+            size_t clen = strlen(kDtColors[i]);
+            if (fieldLen == clen && strncmp(colorStart, kDtColors[i], clen) == 0) {
+                colorOk = true;
+                break;
+            }
+        }
+        if (!colorOk) {
+            return pcFailAt(label, idx, "cmd", "unknown DT: color");
+        }
+        if (*p == '\0') {
+            return pcFailAt(label, idx, "cmd", "DT: requires target:color:duration:speed:text");
+        }
+
+        // Parse duration (required, 0..99)
+        const char* durationStart = parseField(&p, fieldLen);
+        if (fieldLen == 0) {
+            return pcFailAt(label, idx, "cmd", "invalid DT: duration");
+        }
+        uint32_t duration = 0;
+        const char* durationPtr = durationStart;
+        int digitsConsumed = parseUint(&durationPtr, duration);
+        // parseUint must consume exactly all fieldLen chars (field is not NUL-terminated)
+        if (digitsConsumed != (int)fieldLen) {
+            return pcFailAt(label, idx, "cmd", "DT: duration must be 0-99");
+        }
+        if (duration > 99) {
+            return pcFailAt(label, idx, "cmd", "DT: duration must be 0-99");
+        }
+        if (*p == '\0') {
+            return pcFailAt(label, idx, "cmd", "DT: requires target:color:duration:speed:text");
+        }
+
+        // Parse speed (required, 0..9)
+        const char* speedStart = parseField(&p, fieldLen);
+        if (fieldLen == 0) {
+            return pcFailAt(label, idx, "cmd", "invalid DT: speed");
+        }
+        uint32_t speed = 0;
+        const char* speedPtr = speedStart;
+        int speedDigits = parseUint(&speedPtr, speed);
+        // parseUint must consume exactly all fieldLen chars (field is not NUL-terminated)
+        if (speedDigits != (int)fieldLen) {
+            return pcFailAt(label, idx, "cmd", "DT: speed must be 0-9");
+        }
+        if (speed > 9) {
+            return pcFailAt(label, idx, "cmd", "DT: speed must be 0-9");
+        }
+
+        // Parse encoded text (everything after the fifth colon)
+        // Note: p is already pointing to the start of the text field after the last
+        // parseField call for speed. We need to get what remains.
+        const char* encodedStart = p;
+        size_t encodedLen = strnlen(encodedStart, PC_CMD_MAX + 1);
+        if (encodedLen == 0) {
+            return pcFailAt(label, idx, "cmd", "DT: text cannot be empty");
+        }
+        if (encodedLen > 40) {
+            return pcFailAt(label, idx, "cmd", "DT: encoded text too long (max 40)");
+        }
+
+        // Decode the text and validate
+        char decodedBuf[33];  // max 32 chars + NUL
+        int decodedLen = percentDecode(encodedStart, encodedLen, decodedBuf, 32);
+        if (decodedLen < 0) {
+            return pcFailAt(label, idx, "cmd", "DT: invalid percent-encoding");
+        }
+        if (decodedLen == 0) {
+            return pcFailAt(label, idx, "cmd", "DT: text cannot be empty");
+        }
+
+        // Count newlines
+        int newlineCount = 0;
+        for (int i = 0; i < decodedLen; ++i) {
+            if (decodedBuf[i] == '\n') {
+                newlineCount++;
+            }
+        }
+        if (newlineCount > 1) {
+            return pcFailAt(label, idx, "cmd", "DT: max one newline");
+        }
+
+        // Verify final command length <= 63
+        if (strnlen(cmd, PC_CMD_MAX + 1) > PC_CMD_MAX) {
+            return pcFailAt(label, idx, "cmd", "DT: command too long (max 63)");
         }
 
         fxOut = (uint8_t)(FX_LOGIC_PSI | FX_HOLO);  // visual effect at term
