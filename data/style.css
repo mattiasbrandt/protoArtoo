@@ -3256,6 +3256,13 @@ label.sound-search-field {
   opacity: 0.92;
 }
 
+.seq-card-purpose {
+  font-size: 0.9rem;
+  color: var(--text-dim);
+  margin-bottom: 8px;
+  line-height: 1.4;
+}
+
 .seq-card-meta {
   display: flex;
   flex-wrap: wrap;

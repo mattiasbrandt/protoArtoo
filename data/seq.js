@@ -336,6 +336,9 @@
     const stepCount = builtin.stepCount || 0;
     const toggleGroup = builtin.toggleGroup || "none";
     const suppressMs = builtin.suppressMs || 0;
+    const purpose = builtin.purpose || "";
+
+    const purposeHtml = purpose ? `<p class="seq-card-purpose">${escapeHtml(purpose)}</p>` : "";
 
     return `
       <div class="seq-card seq-card-factory">
@@ -345,6 +348,7 @@
             <span class="seq-badge seq-badge-factory" title="Built-in Factory sequence">Factory</span>
           </div>
         </div>
+        ${purposeHtml}
         <div class="seq-card-meta">
           <span class="seq-meta-item">Toggle: ${escapeHtml(toggleGroup)}</span>
           <span class="seq-meta-item">Suppress: ${suppressMs}ms</span>
