@@ -1126,7 +1126,15 @@
     if (addStepBtn) {
       addStepBtn.addEventListener("click", () => {
         const newStep = { t: 0, type: "audio", cmd: "$H" };
-        editorState.current.steps.push(newStep);
+        const steps = editorState.current.steps;
+        const terminalIdx = steps.findIndex((step) => step.type === "end");
+        if (terminalIdx >= 0) {
+          const terminalT = steps[terminalIdx].t || 0;
+          newStep.t = terminalT;
+          steps.splice(terminalIdx, 0, newStep);
+        } else {
+          steps.push(newStep);
+        }
         rerenderStepTable();
         updateValidationSummary();
       });
