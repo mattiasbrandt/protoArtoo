@@ -45,6 +45,23 @@
   const audioFallbackLabel = (value) =>
     (AUDIO_FALLBACK_SLOTS.find((s) => s.value === value) || {}).label || value || "None";
 
+  // Map DV: preset names to friendly operator labels
+  const dvPresetLabel = (name) => {
+    const labels = {
+      "ROCKMARCH": "Rock March",
+      "VADER": "Vader",
+      "ALARM": "Alarm",
+      "LEIA": "Leia",
+      "HEART": "Heart",
+      "CANTINA": "Cantina",
+      "SCREAM": "Scream",
+      "OVERLOAD": "Overload",
+      "HELLO": "Hello",
+      "RESET_VISUALS": "Reset Visuals",
+    };
+    return labels[name] || name || "Unknown";
+  };
+
   const els = {
     // List view
     mainCard: document.getElementById("seq-main-card"),
@@ -389,6 +406,10 @@
         // Advanced mode
         return `Dome command ${cmd || "@0T6"}`;
       }
+      case "visualPreset": {
+        const presetName = (step.cmd || "").slice(3); // Extract NAME from "DV:NAME"
+        return `Visual preset: ${dvPresetLabel(presetName)}`;
+      }
       case "domeRotate": {
         const speedPct = step.speedPct ?? 0;
         const durationMs = step.durationMs ?? 0;
@@ -427,6 +448,7 @@
   const stepTypeEmoji = {
     audio: "🔊",
     dome: "🧩",
+    visualPreset: "🎬",
     domeRotate: "🔄",
     loop: "🔁",
     random: "🎲",
@@ -438,6 +460,7 @@
   const stepTypeName = {
     audio: "Sound",
     dome: "Panel Action",
+    visualPreset: "Visual Preset",
     domeRotate: "Spin Dome",
     loop: "Servo Loop",
     random: "Random Flutter",
@@ -449,6 +472,7 @@
   const stepTypeDescriptions = {
     audio: "Play a sound or cue",
     dome: "Open or close dome panels",
+    visualPreset: "Apply a named dome visual preset",
     domeRotate: "Rotate the dome left or right",
     loop: "Repeat a group of steps at an interval",
     random: "Randomized panel motion",
@@ -465,7 +489,7 @@
         </button>
         <div id="step-type-reference-panel" class="step-type-reference-panel hidden">
           <div class="step-type-reference-list">
-            ${["audio", "dome", "domeRotate", "loop", "random", "audioCat", "end"]
+            ${["audio", "dome", "visualPreset", "domeRotate", "loop", "random", "audioCat", "end"]
               .map(
                 (type) =>
                   `<div class="step-type-reference-item">
@@ -524,7 +548,7 @@
             <div class="step-type-group">
               <div class="step-type-group-label">Common</div>
               <div class="step-type-cards">
-                ${["audio", "domeRotate", "dome", "loop"]
+                ${["audio", "domeRotate", "dome", "visualPreset", "loop"]
                   .map(
                     (type) =>
                       `<button class="step-type-chip step-type-card ${step.type === type ? "active" : ""}" data-type="${type}" aria-pressed="${step.type === type ? "true" : "false"}" title="${stepTypeName[type]}">
@@ -594,6 +618,8 @@
         }
         return "Dome command";
       }
+      case "visualPreset":
+        return "Applies a dome visual preset";
       case "domeRotate": {
         const speedPct = step.speedPct ?? 0;
         const durationMs = step.durationMs ?? 0;
@@ -635,6 +661,24 @@
       case "audio":
         behaviorHtml = `<input class="step-field step-field-cmd" type="text" data-field="cmd" value="${escapeHtml(step.cmd || "")}" placeholder="$H, $N, $D, $A..." aria-label="Sound command">`;
         break;
+
+      case "visualPreset": {
+        // Visual preset selector: dropdown of DV_PRESETS names
+        // Reads/writes to step.cmd as "DV:<NAME>"
+        const presetName = (step.cmd || "").slice(3); // Extract from "DV:NAME"
+        behaviorHtml = `
+          <select class="step-field step-field-preset" data-field="preset" aria-label="Visual preset">
+            ${["ROCKMARCH", "VADER", "ALARM", "LEIA", "HEART", "CANTINA", "SCREAM", "OVERLOAD", "HELLO", "RESET_VISUALS"]
+              .map(
+                (preset) =>
+                  `<option value="${preset}" ${presetName === preset ? "selected" : ""}>${escapeHtml(dvPresetLabel(preset))}</option>`
+              )
+              .join("")}
+          </select>
+          <input type="hidden" class="step-field" data-field="cmd" value="${escapeHtml(step.cmd || "DV:ROCKMARCH")}">
+        `;
+        break;
+      }
 
       case "dome":
         // Detect mode from step.cmd: panel intent if starts with :OP, :CL, :OF; otherwise advanced
@@ -1178,6 +1222,7 @@
     const stepTypeDefaults = {
       audio: { cmd: "$H" },
       dome: { cmd: ":OP00" },
+      visualPreset: { cmd: "DV:ROCKMARCH" },
       domeRotate: { speedPct: 0, durationMs: 0 },
       loop: { body: 2, periodMs: 1846, durationMs: 14000 },
       random: { set: "ring", mode: "flutter", moveMs: 300, jitterMs: 500, distinct: true },
@@ -1272,6 +1317,21 @@
           }
         }
 
+        // If switching to visualPreset type, attach visualPreset-specific listeners
+        if (newType === "visualPreset") {
+          const presetSelect = fieldsContainer.querySelector(".step-field-preset");
+          const hiddenCmdInput = fieldsContainer.querySelector('input[data-field="cmd"]');
+          if (presetSelect && hiddenCmdInput) {
+            presetSelect.addEventListener("change", () => {
+              const preset = presetSelect.value;
+              const cmd = `DV:${preset}`;
+              hiddenCmdInput.value = cmd;
+              editorState.current.steps[stepIdx].cmd = cmd;
+              validateAndUpdateStep(stepIdx);
+            });
+          }
+        }
+
         validateAndUpdateStep(stepIdx);
       });
     });
@@ -1321,6 +1381,26 @@
             if (direction === "stop" && durationInput) {
               durationInput.value = "0";
             }
+            validateAndUpdateStep(stepIdx);
+          });
+        }
+      }
+    });
+
+    // Attach visualPreset-specific listeners for preset selection changes
+    document.querySelectorAll(".step-card").forEach((card) => {
+      const stepIdx = parseInt(card.dataset.stepIndex, 10);
+      const fieldsContainer = card.querySelector(".step-fields");
+      const typeChip = card.querySelector(".step-type-chip.active");
+      if (typeChip && typeChip.dataset.type === "visualPreset" && fieldsContainer) {
+        const presetSelect = fieldsContainer.querySelector(".step-field-preset");
+        const hiddenCmdInput = fieldsContainer.querySelector('input[data-field="cmd"]');
+        if (presetSelect && hiddenCmdInput) {
+          presetSelect.addEventListener("change", () => {
+            const preset = presetSelect.value;
+            const cmd = `DV:${preset}`;
+            hiddenCmdInput.value = cmd;
+            editorState.current.steps[stepIdx].cmd = cmd;
             validateAndUpdateStep(stepIdx);
           });
         }
