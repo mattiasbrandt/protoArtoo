@@ -527,6 +527,106 @@ static ProtocolCheckResult classifyDome(const char* label, uint8_t idx,
         return pcOk();
     }
 
+    // DH:<target>:<effect>[:<color>[:<durationOrCount>]] — Holo Effect (issue #11).
+    // Holoprojector effects: OFF, ON, RESET, RANDOM, WAG, NOD, PULSE, RAINBOW, FLASH,
+    // SHORTCIRCUIT, SOLID. Targets: F (front), R (rear), T (top), A (all). Colors are
+    // optional and effect-dependent; validation does NOT enforce a color→effect matrix
+    // (dome is the authority). Command length must be <= 63. Mirrors client validation
+    // in data/seq_protocol_check.js exactly.
+    if (strncmp(cmd, "DH:", 3) == 0) {
+        static const char* const kDhTargets[] = {
+            "F", "R", "T", "A",
+        };
+        static const char* const kDhEffects[] = {
+            "OFF", "ON", "RESET", "RANDOM", "WAG", "NOD", "PULSE", "RAINBOW",
+            "FLASH", "SHORTCIRCUIT", "SOLID",
+        };
+        static const char* const kDhColors[] = {
+            "DEFAULT", "RED", "BLUE", "GREEN", "WHITE", "YELLOW", "ORANGE", "PURPLE", "RANDOM",
+        };
+        const uint8_t kDhTargetCount = (uint8_t)(sizeof(kDhTargets) / sizeof(kDhTargets[0]));
+        const uint8_t kDhEffectCount = (uint8_t)(sizeof(kDhEffects) / sizeof(kDhEffects[0]));
+        const uint8_t kDhColorCount = (uint8_t)(sizeof(kDhColors) / sizeof(kDhColors[0]));
+
+        // Parse using same field-splitting logic as client: split by ':' and check bounds.
+        // Grammar: DH:target:effect[:color[:durationOrCount]]
+        const char* p = cmd + 3;
+        size_t fieldLen = 0;
+
+        // Parse target (required)
+        const char* targetStart = parseField(&p, fieldLen);
+        bool targetOk = false;
+        for (uint8_t i = 0; i < kDhTargetCount; ++i) {
+            size_t tlen = strlen(kDhTargets[i]);
+            if (fieldLen == tlen && strncmp(targetStart, kDhTargets[i], tlen) == 0) {
+                targetOk = true;
+                break;
+            }
+        }
+        if (!targetOk) {
+            return pcFailAt(label, idx, "cmd", "unknown DH: target");
+        }
+        if (*p == '\0') {
+            return pcFailAt(label, idx, "cmd", "DH: requires target:effect[:color[:durationOrCount]]");
+        }
+
+        // Parse effect (required)
+        const char* effectStart = parseField(&p, fieldLen);
+        bool effectOk = false;
+        for (uint8_t i = 0; i < kDhEffectCount; ++i) {
+            size_t elen = strlen(kDhEffects[i]);
+            if (fieldLen == elen && strncmp(effectStart, kDhEffects[i], elen) == 0) {
+                effectOk = true;
+                break;
+            }
+        }
+        if (!effectOk) {
+            return pcFailAt(label, idx, "cmd", "unknown DH: effect");
+        }
+
+        // Parse color (optional) — if present, validate against whitelist
+        if (*p != '\0') {
+            const char* colorStart = parseField(&p, fieldLen);
+            bool colorOk = false;
+            for (uint8_t i = 0; i < kDhColorCount; ++i) {
+                size_t clen = strlen(kDhColors[i]);
+                if (fieldLen == clen && strncmp(colorStart, kDhColors[i], clen) == 0) {
+                    colorOk = true;
+                    break;
+                }
+            }
+            if (!colorOk) {
+                return pcFailAt(label, idx, "cmd", "unknown DH: color");
+            }
+        }
+
+        // Parse durationOrCount (optional, 0..99)
+        if (*p != '\0') {
+            const char* durationStart = parseField(&p, fieldLen);
+            if (fieldLen == 0) {
+                return pcFailAt(label, idx, "cmd", "invalid DH: durationOrCount");
+            }
+            // Parse as uint and verify we consumed exactly fieldLen digits
+            uint32_t duration = 0;
+            const char* durationPtr = durationStart;
+            int digitsConsumed = parseUint(&durationPtr, duration);
+            if (digitsConsumed != (int)fieldLen || *durationPtr != '\0') {
+                return pcFailAt(label, idx, "cmd", "DH: durationOrCount must be 0-99");
+            }
+            if (duration > 99) {
+                return pcFailAt(label, idx, "cmd", "DH: durationOrCount must be 0-99");
+            }
+        }
+
+        // Check for extra fields (too many colons)
+        if (*p != '\0') {
+            return pcFailAt(label, idx, "cmd", "DH: too many fields");
+        }
+
+        fxOut = (uint8_t)(FX_LOGIC_PSI | FX_HOLO);  // visual effect at term
+        return pcOk();
+    }
+
     // :SM is manual diagnostic/calibration only. Learned sequences, clone JSON,
     // imports, editor raw steps, and saved actions must not persist it.
     if (strncmp(cmd, ":SM", 3) == 0) {
