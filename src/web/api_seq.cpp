@@ -11,6 +11,8 @@
 
 #include <ArduinoJson.h>
 #include <ESPAsyncWebServer.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "api_helpers.h"
 #include "config_store.h"         // ConfigSnapshot, configCacheRead
@@ -26,8 +28,63 @@
 #include "sequence_run_evidence.h"  // GET /api/seq/last-run
 
 static const char* TAG = "APISEQ";
+static constexpr size_t SEQ_TEST_BODY_MAX = 512;
 
 namespace {
+
+typedef void (*SeqBodyHandler)(AsyncWebServerRequest* req, const char* body, size_t len);
+
+void captureJsonBody(AsyncWebServerRequest* req, uint8_t* data, size_t len, size_t index,
+                     size_t total, size_t maxBytes, SeqBodyHandler handler) {
+    if (index == 0) {
+        if (total == 0) {
+            req->send(400, "application/json",
+                      "{\"ok\":false,\"error\":\"missing JSON body\"}");
+            req->_tempObject = nullptr;
+            return;
+        }
+        if (total > maxBytes) {
+            req->send(413, "application/json",
+                      "{\"ok\":false,\"error\":\"payload too large\"}");
+            req->_tempObject = nullptr;
+            return;
+        }
+        char* body = (char*)malloc(total + 1);
+        if (body == nullptr) {
+            req->send(500, "application/json",
+                      "{\"ok\":false,\"error\":\"request buffer alloc failed\"}");
+            req->_tempObject = nullptr;
+            return;
+        }
+        req->_tempObject = body;
+    }
+
+    char* body = (char*)req->_tempObject;
+    if (body == nullptr) {
+        return;
+    }
+
+    if ((index + len) > total) {
+        free(body);
+        req->_tempObject = nullptr;
+        req->send(400, "application/json",
+                  "{\"ok\":false,\"error\":\"invalid body chunks\"}");
+        return;
+    }
+
+    if (len > 0) {
+        memcpy(body + index, data, len);
+    }
+
+    if ((index + len) != total) {
+        return;
+    }
+
+    body[total] = '\0';
+    handler(req, body, total);
+    free(body);
+    req->_tempObject = nullptr;
+}
 
 // Send a Protocol Check / store failure as a field-level 400.
 void sendCheckError(AsyncWebServerRequest* req, const ProtocolCheckResult& r) {
@@ -157,20 +214,14 @@ void handleGetOne(AsyncWebServerRequest* req) {
 }
 
 // POST /api/seq  — body: JSON v1; validate + persist.
-void handleSave(AsyncWebServerRequest* req) {
-    if (!req->hasParam("plain", true)) {
-        req->send(400, "application/json",
-                  "{\"ok\":false,\"error\":\"missing JSON body\"}");
-        return;
-    }
-    const String& body = req->getParam("plain", true)->value();
-    ProtocolCheckResult r = seqStoreSave(body.c_str(), body.length());
+void handleSaveBody(AsyncWebServerRequest* req, const char* body, size_t len) {
+    ProtocolCheckResult r = seqStoreSave(body, len);
     if (!r.ok) {
         sendCheckError(req, r);
         return;
     }
     PA_LOG_INFO(TAG, "[WEB] saved Learned Sequence (%u bytes)",
-                (unsigned)body.length());
+                (unsigned)len);
     req->send(200, "application/json", "{\"ok\":true}");
 }
 
@@ -237,20 +288,7 @@ void handleDelete(AsyncWebServerRequest* req) {
 }
 
 // POST /api/seq/test  — run a sequence by name (same ungated path as dome/cmd).
-void handleTest(AsyncWebServerRequest* req) {
-    String name;
-    const AsyncWebParameter* nameParam = req->getParam("name", true);
-    if (nameParam != nullptr) {
-        name = nameParam->value();
-    } else if (req->hasParam("plain", true)) {
-        JsonDocument doc;
-        if (deserializeJson(doc, req->getParam("plain", true)->value().c_str())) {
-            req->send(400, "application/json",
-                      "{\"ok\":false,\"error\":\"invalid json body\"}");
-            return;
-        }
-        name = (const char*)(doc["name"] | "");
-    }
+void handleTestName(AsyncWebServerRequest* req, String name) {
     name.trim();
     if (name.length() == 0 || strncmp(name.c_str(), "DM:", 3) != 0) {
         req->send(400, "application/json",
@@ -264,6 +302,32 @@ void handleTest(AsyncWebServerRequest* req) {
     }
     PA_LOG_INFO(TAG, "[WEB] test %s", name.c_str());
     req->send(200, "application/json", "{\"ok\":true}");
+}
+
+void handleTestBody(AsyncWebServerRequest* req, const char* body, size_t len) {
+    JsonDocument doc;
+    if (deserializeJson(doc, body, len)) {
+        req->send(400, "application/json",
+                  "{\"ok\":false,\"error\":\"invalid json body\"}");
+        return;
+    }
+    String name = (const char*)(doc["name"] | "");
+    handleTestName(req, name);
+}
+
+void handleTestNoBody(AsyncWebServerRequest* req) {
+    String name;
+    const AsyncWebParameter* nameParam = req->getParam("name", true);
+    if (nameParam != nullptr) {
+        name = nameParam->value();
+    }
+    name.trim();
+    if (name.length() == 0 || strncmp(name.c_str(), "DM:", 3) != 0) {
+        req->send(400, "application/json",
+                  "{\"ok\":false,\"error\":\"missing or invalid DM:* name\"}");
+        return;
+    }
+    handleTestName(req, name);
 }
 
 // GET /api/seq/last-run — machine-readable evidence of the most recent body-owned
@@ -352,9 +416,30 @@ void handleLastRun(AsyncWebServerRequest* req) {
 void registerSeqRoutes(AsyncWebServer& server) {
     server.on("/api/seq/list", HTTP_GET, handleList);
     server.on("/api/seq/builtins", HTTP_GET, handleBuiltins);
-    server.on("/api/seq/test", HTTP_POST, handleTest);
+    server.on(
+        "/api/seq/test", HTTP_POST,
+        [](AsyncWebServerRequest* req) {
+            if (req->contentLength() == 0) {
+                handleTestNoBody(req);
+            }
+        },
+        NULL,
+        [](AsyncWebServerRequest* req, uint8_t* data, size_t len, size_t index, size_t total) {
+            captureJsonBody(req, data, len, index, total, SEQ_TEST_BODY_MAX, handleTestBody);
+        });
     server.on("/api/seq/last-run", HTTP_GET, handleLastRun);
     server.on("/api/seq", HTTP_GET, handleGetOne);
-    server.on("/api/seq", HTTP_POST, handleSave);
+    server.on(
+        "/api/seq", HTTP_POST,
+        [](AsyncWebServerRequest* req) {
+            if (req->contentLength() == 0) {
+                req->send(400, "application/json",
+                          "{\"ok\":false,\"error\":\"missing JSON body\"}");
+            }
+        },
+        NULL,
+        [](AsyncWebServerRequest* req, uint8_t* data, size_t len, size_t index, size_t total) {
+            captureJsonBody(req, data, len, index, total, SEQ_FILE_MAX_BYTES, handleSaveBody);
+        });
     server.on("/api/seq", HTTP_DELETE, handleDelete);
 }
