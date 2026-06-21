@@ -171,17 +171,8 @@
     cardsContainer: document.getElementById("seq-cards-container"),
 
     // Top buttons
-    btnCloneFactory: document.getElementById("seq-btn-clone-factory"),
     btnImport: document.getElementById("seq-btn-import"),
-    emptyClone: document.getElementById("seq-empty-clone"),
     emptyImport: document.getElementById("seq-empty-import"),
-
-    // Clone factory modal
-    modalClone: document.getElementById("seq-modal-clone-factory"),
-    cloneSearch: document.getElementById("seq-clone-search"),
-    cloneResultsInfo: document.getElementById("seq-clone-results-info"),
-    cloneBuiltinsList: document.getElementById("seq-clone-builtins-list"),
-    modalCloneClose: document.getElementById("seq-modal-clone-close"),
 
     // Import modal
     modalImport: document.getElementById("seq-modal-import"),
@@ -377,7 +368,7 @@
   };
 
   // =========================================================================
-  // Clone Factory Modal
+  // Load Factory Sequences
   // =========================================================================
 
   const loadBuiltins = async () => {
@@ -388,59 +379,6 @@
     } catch (error) {
       console.error("Error loading builtins:", error);
     }
-  };
-
-  const showCloneFactoryModal = async () => {
-    await loadBuiltins();
-    els.cloneSearch.value = "";
-    renderCloneFactoryList();
-    showModal(els.modalClone);
-  };
-
-  const renderCloneFactoryList = () => {
-    const query = els.cloneSearch.value.toLowerCase();
-    const filtered = builtins.filter((b) =>
-      (b.name || "").toLowerCase().includes(query)
-    );
-
-    const total = builtins.length;
-    const shown = filtered.length;
-    els.cloneResultsInfo.textContent = `${shown} of ${total} shown`;
-
-    els.cloneBuiltinsList.innerHTML = filtered
-      .map((builtin) => renderBuiltinRow(builtin))
-      .join("");
-
-    // Attach clone buttons
-    els.cloneBuiltinsList.querySelectorAll(".builtin-clone-btn").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const name = btn.dataset.builtinName;
-        handleCloneBuiltin(name);
-      });
-    });
-  };
-
-  const renderBuiltinRow = (builtin) => {
-    // The builtins list carries metadata only (stepCount), not full steps.
-    const stepCount = builtin.stepCount ?? (builtin.steps || []).length;
-    const toggleGroup = builtin.toggleGroup || "none";
-    const suppressMs = builtin.suppressMs || 0;
-    const notes = builtin.meta?.notes || "";
-
-    return `
-      <div class="builtin-row">
-        <div class="builtin-info">
-          <h5>${escapeHtml(builtin.name)}</h5>
-          <div class="builtin-meta">
-            <span>${stepCount} steps</span>
-            <span>Toggle: ${escapeHtml(toggleGroup)}</span>
-            <span>${suppressMs}ms suppress</span>
-          </div>
-          ${notes ? `<div class="builtin-notes">${escapeHtml(notes)}</div>` : ""}
-        </div>
-        <button class="btn btn-sm builtin-clone-btn" data-builtin-name="${escapeAttr(builtin.name)}">Clone</button>
-      </div>
-    `;
   };
 
   const handleCloneBuiltin = async (builtinName) => {
@@ -454,9 +392,6 @@
       full = result.data;
     } catch (error) {
       console.error("Error loading factory sequence:", error);
-      if (els.cloneResultsInfo) {
-        els.cloneResultsInfo.textContent = `Could not load ${builtinName}`;
-      }
       return;
     }
     if (!full) return;
@@ -465,7 +400,6 @@
     currentEditingSeq = JSON.parse(JSON.stringify(full));
     editorState.isNew = true; // Cloning is treated as new sequence
     editorState.tuningFactory = full.name; // Mark that we're tuning this Factory sequence
-    hideModal(els.modalClone);
 
     // Hide list, show editor
     els.emptyState.classList.add("hidden");
@@ -2343,16 +2277,10 @@
 
   const attachEventListeners = () => {
     // Top buttons
-    els.btnCloneFactory.addEventListener("click", showCloneFactoryModal);
     els.btnImport.addEventListener("click", showImportModal);
 
     // Empty state buttons
-    els.emptyClone.addEventListener("click", showCloneFactoryModal);
     els.emptyImport.addEventListener("click", showImportModal);
-
-    // Clone modal
-    els.modalCloneClose.addEventListener("click", () => hideModal(els.modalClone));
-    els.cloneSearch.addEventListener("input", renderCloneFactoryList);
 
     // Import modal
     els.modalImportCancel.addEventListener("click", () => hideModal(els.modalImport));
@@ -2400,7 +2328,7 @@
     // Escape key closes modals
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape") {
-        [els.modalClone, els.modalImport, els.modalWipe].forEach((modal) => {
+        [els.modalImport, els.modalWipe].forEach((modal) => {
           if (modal && !modal.classList.contains("hidden")) {
             hideModal(modal);
           }

@@ -15,7 +15,6 @@
       <div class="seq-card-header-row">
         <h3>🎬 Learned Sequences</h3>
         <div class="seq-card-actions-top">
-          <button id="seq-btn-clone-factory" class="btn btn-sm" title="Clone a factory entry and retrain it">Clone Factory</button>
           <button id="seq-btn-import" class="btn btn-sm" title="Restore a sequence you previously exported">Restore Backup</button>
         </div>
       </div>
@@ -24,9 +23,8 @@
       <div id="seq-empty-state" class="seq-empty-state">
         <div class="seq-empty-icon">✓</div>
         <h4>No learned sequences yet</h4>
-        <p>Get started by cloning a factory entry, or restoring a sequence you previously exported.</p>
+        <p>Tune a Factory sequence below, or restore a sequence you previously exported.</p>
         <div class="seq-entry-points">
-          <button class="btn" id="seq-empty-clone">Clone Factory Entry</button>
           <button class="btn" id="seq-empty-import">Restore Backup</button>
         </div>
       </div>
@@ -39,31 +37,6 @@
 
         <div id="seq-cards-container" class="seq-cards-list">
           <!-- seq-card elements inserted here -->
-        </div>
-      </div>
-    </div>
-
-    <!-- Clone Factory Modal (hidden initially) -->
-    <div id="seq-modal-clone-factory" class="seq-modal hidden" role="dialog" aria-modal="true" aria-labelledby="seq-modal-clone-title">
-      <div class="seq-modal-overlay"></div>
-      <div class="seq-modal-content">
-        <div class="seq-modal-header">
-          <h4 id="seq-modal-clone-title">Clone a Factory Entry</h4>
-          <button id="seq-modal-clone-close" class="btn-close" aria-label="Close">✕</button>
-        </div>
-        <div class="seq-modal-body">
-          <p class="seq-modal-desc">Factory sequences provide tested choreography. Edit the copy to retrain an existing sequence or create a variant.</p>
-          <input
-            id="seq-clone-search"
-            type="text"
-            placeholder="Search by name..."
-            class="seq-modal-search"
-            aria-label="Search factory sequences"
-          >
-          <div id="seq-clone-results-info" class="seq-clone-results-info"></div>
-          <div id="seq-clone-builtins-list" class="seq-clone-builtins-list">
-            <!-- builtin-rows inserted here -->
-          </div>
         </div>
       </div>
     </div>
