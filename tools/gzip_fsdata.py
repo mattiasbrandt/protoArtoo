@@ -18,7 +18,8 @@ Excluded from gzip:
     (not via serveStatic), so a .gz would break the reported fsVersion.
   - images and other binaries — already compressed; copied verbatim.
 
-Runs after extract_version.py so the freshly-written fs-version.json is staged.
+Runs after extract_version.py so the freshly-written fs-version.json is included
+in the LittleFS staging directory.
 """
 
 import gzip

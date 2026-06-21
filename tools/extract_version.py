@@ -69,7 +69,8 @@ version = _version_from_git() or _version_from_changelog() or "v0.0.0-dev"
 env.Append(CPPDEFINES=[("PA_FIRMWARE_VERSION", f'\\"{version}\\"')])
 print(f"[extract_version.py] PA_FIRMWARE_VERSION={version}")
 
-# Write data/fw-version.json as a build artifact for quick git/reference checks.
+# Write data/fw-version.json as a tracked generated web asset for version display
+# and release traceability.
 # Runtime firmware truth still comes from PA_FIRMWARE_VERSION in /api/status.
 fw_version_path = os.path.join(env.subst("$PROJECT_DIR"), "data", "fw-version.json")
 with open(fw_version_path, "w") as f:

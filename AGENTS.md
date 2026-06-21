@@ -314,6 +314,27 @@ Hard rules: one slice = one (or few) atomic commit(s); never run a second implem
 over uncommitted work; never `git checkout`/`restore`/`stash`/`clean` another slice's files.
 If a slice must be split, commit the safe part first.
 
+### Version JSON workflow
+
+`data/fw-version.json` and `data/fs-version.json` are tracked generated web assets.
+They are not optional scratch build output. `pio run` refreshes them from the current
+Git version string so the board UI can show the deployed firmware/filesystem version,
+and so committed source has matching version metadata for later release traceability.
+
+For any code, firmware, web, or `data/` slice where `pio run`/`make build` is part of
+the actual work, verification, upload, or release preparation:
+
+1. Run the relevant PlatformIO build.
+2. Stage the source/web/data changes for the slice.
+3. Stage `data/fw-version.json` and `data/fs-version.json` from that same build.
+4. Commit the source changes and both version JSON files together.
+5. Do not run another PlatformIO build after the commit unless you are starting a new
+   slice, upload, or release-prep commit.
+
+If a PlatformIO build is run only incidentally outside the active code slice, upload,
+or release-prep workflow, any resulting version JSON changes are dangling metadata.
+Discard those stale version JSON changes to keep the Git state clean.
+
 ### Invariants
 
 - Never commit directly to `main`
