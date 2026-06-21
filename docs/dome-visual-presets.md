@@ -123,17 +123,15 @@ fact; body guesses must not become requirements.
 | Seq | body_current_visual_cmds | expected_visual_identity | FLD/RLD anim | FLD/RLD color | PSI anim/color | Holo behavior/color | Duration | reset/teardown | authority | verification_status | notes / known deviations |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | **ROCKMARCH** | **`DV:ROCKMARCH`** (was `@0T11`/`@0P11`/`@HPA0021\|47`) | red MARCH logics + MARCH PSI + red holo flashes ~47 s | MARCH | red (`kRed`) | MARCH front+rear, 47 s | `HPA0021` red flashes, 47 s | ~47 s | body `@0T1`/`@0P1`/`*ST00` | **dome-source-confirmed + operator-confirmed** | **DV swap applied + software-verified** (995/995, build OK); dome surface verified by codex; awaiting on-droid visual confirm via the body-owned run | **first acceptance case — body swap DONE** |
-| **VADER** | **`DV:VADER`** (was `@0T11`/`@0P11`/`@HPA0021\|47`) | red MARCH logics + MARCH PSI + red holo ~47 s (shares ROCKMARCH preset shape) | MARCH | red (`kRed`) | MARCH, 47 s | `HPA0021` red, 47 s | ~47 s | body `@0T1`/`@0P1`/`*ST00` | **dome-source-confirmed** | **DV swap applied + software-verified** (1020/1020, build OK); awaiting on-droid confirm after the ROCKMARCH gate | codex to confirm whether VADER preset is identical to ROCKMARCH or distinct |
-| **CANTINA** | **`DV:CANTINA`** (was `@0T2`/`@0P2`/`@HPA0029\|15`) | logic/PSI mode 2 + `HPA0029` white flashes ~15 s | TBD | TBD | TBD | TBD | ~15 s | body `@0T1`/`@0P1`/`*ST00` | body-inferred, needs dome confirmation | **DV swap applied + software-verified**; not visually verified | loop header moved to step index 2; confirm against `DomeSequences.h`; pie-involving (panels DO-NOT-TEST) |
-| **LEIA** | **`DV:LEIA`** (was `@0T6`/`@0P6`/`@HPS101/HPR02/HPT02\|36`) | logic/PSI mode 6 + Leia-message holo ~36 s | TBD | TBD | TBD | TBD | ~36 s | body `@0T1`/`@0P1`/`*ST00` | body-inferred, needs dome confirmation | **DV swap applied + software-verified**; not visually verified | confirm against `DomeSequences.h` |
-| **ALARM** | **`DV:ALARM`** (was `@0T3`/`@0P3`/`@HPA0021\|10`) | logic/PSI mode 3 + `HPA0021` ~10 s | TBD | TBD | TBD | TBD | ~10 s | body `@0T1`/`@0P1`/`*ST00` | body-inferred, needs dome confirmation | **DV swap applied + software-verified**; not visually verified | confirm against `DomeSequences.h` |
-| **HEART** | **`DV:HEART`** + raw `@1MYou're Wonderful` (was `@1P2`/`@HPF/HPR/HPT006\|10` + text) | front text + PSI mode 2 + rainbow holos ~10 s | TBD | TBD | TBD | TBD | ~10 s | body `@0T1`/`@0P1`/`*ST00` | body-inferred, needs dome confirmation | **DV swap applied + software-verified**; not visually verified | text stays body-owned raw, sent AFTER `DV:HEART` so the preset does not clobber it; `DV:HEART` covers PSI/holo only |
-| **SCREAM** | **`DV:SCREAM`** (was `@0T5`/`@0P5`/`@HPA0070`/`@HPA105\|5`) | logic/PSI mode 5 + alarm/holo, random | TBD | TBD | TBD | TBD | random | body `@0T1`/`@0P1`/`*ST00` | body-inferred, needs dome confirmation | **DV swap applied + software-verified**; not visually verified | flutter loop header moved to step index 15; confirm against `DomeSequences.h`; gated by pie-movement do-not-test (upper pie panels have known mechanical linkage issues, need repair) |
-| **OVERLOAD** | **`DV:OVERLOAD`** (was `@1T4`/`@2T4`/`@0P4`/`@HPA0070`) | logic mode 4 (front/rear) + PSI mode 4 + `HPA0070`, random | TBD | TBD | TBD | TBD | random | body `@0T1`/`@0P1`/`*ST00` | body-inferred, needs dome confirmation | **DV swap applied + software-verified**; not visually verified | confirm against `DomeSequences.h`; pie-involving (panels DO-NOT-TEST) |
+| **VADER** | **`DV:VADER`** (was `@0T11`/`@0P11`/`@HPA0021\|47`) | red MARCH logics + MARCH PSI + red holo ~47 s | MARCH (FLD+RLD) | red (`kRed`) | MARCH front+rear, `kDefault`, 47 s | `HPA0021\|47` red flashes | ~47 s | body `@0T1`/`@0P1`/`*ST00` | **dome-source-confirmed** | **DV swap applied + software-verified**; awaiting on-droid confirm after the ROCKMARCH gate | codex 2026-06-21: `DV:VADER` is **visually identical to `DV:ROCKMARCH`** — both call `domeApplyMarchVisuals()` |
+| **CANTINA** | **`DV:CANTINA`** (was `@0T2`/`@0P2`/`@HPA0029\|15`) | FLASHCOLOR blue logics + flashcolor PSI + white holo flashes ~15 s | FLASHCOLOR (FLD+RLD) | **blue (`kBlue`)** | FLASHCOLOR front+rear, `kDefault`, 15 s | `HPA0029\|15` all holos white flashes | 15 s | body `@0T1`/`@0P1`/`*ST00` | **dome-source-confirmed** (codex 2026-06-21) | DV swap applied + software-verified; not visually verified | loop header at step index 2; logic is **blue**, holos white; pie-involving (panels DO-NOT-TEST) |
+| **LEIA** | **`DV:LEIA`** (was `@0T6`/`@0P6`/`@HPS101/HPR02/HPT02\|36`) | LEIA logics + LEIA PSI + Leia-message holo ~36 s | LEIA (FLD+RLD) | `kDefault` | LEIA front+rear, `kDefault`, 36 s | `HPS101\|36` front Leia seq, `HPR02\|36` rear off, `HPT02\|36` top off | 36 s | body `@0T1`/`@0P1`/`*ST00` | **dome-source-confirmed** (codex 2026-06-21) | DV swap applied + software-verified; not visually verified | — |
+| **ALARM** | **`DV:ALARM`** (was `@0T3`/`@0P3`/`@HPA0021\|10`) | ALARM logics + ALARM PSI + red holo flashes ~10 s | ALARM (FLD+RLD) | `kDefault` | ALARM front+rear, `kDefault`, 10 s | `HPA0021\|10` all holos red flashes | 10 s | body `@0T1`/`@0P1`/`*ST00` | **dome-source-confirmed** (codex 2026-06-21) | DV swap applied + software-verified; not visually verified | — |
+| **HEART** | **`DV:HEART`** (was `@1P2`/`@HPF/HPR/HPT006\|10` + raw `@1MYou're Wonderful`) | FLD scroll text "You're\nWonderful" + front PSI flashcolor + rainbow holos ~10 s | **FLD: scroll text** "You're\nWonderful"; **RLD untouched** | FLD `kDefault` | **front** PSI FLASHCOLOR `kDefault` 10 s; **rear PSI untouched** | `HPF006/HPR006/HPT006\|10` rainbow | 10 s | body `@0T1`/`@0P1`/`*ST00` | **dome-source-confirmed** (codex 2026-06-21) | DV swap applied + software-verified; not visually verified | **`DV:HEART` owns the FLD text natively (two-line); the body has NO structured text step (only raw single-line `@1M`), so the body's raw text was removed — `DV:HEART` is the FULL HEART visual identity. RLD + rear PSI intentionally untouched.** |
+| **SCREAM** | **`DV:SCREAM`** (was `@0T5`/`@0P5`/`@HPA0070`/`@HPA105\|5`) | REDALERT logics + REDALERT PSI + short-circuit/wag holos | REDALERT (FLD+RLD) | `kDefault` | REDALERT front+rear, `kDefault`, 15 s | `HPA0070` short-circuit random color + `HPA105\|5` wag x5 | 15 s (logic/PSI); holos are effect cmds (only wag has count) | body `@0T1`/`@0P1`/`*ST00` | **dome-source-confirmed** (codex 2026-06-21) | DV swap applied + software-verified; not visually verified | flutter loop header at step index 15; pie-involving (panels DO-NOT-TEST) |
+| **OVERLOAD** | **`DV:OVERLOAD`** (was `@1T4`/`@2T4`/`@0P4`/`@HPA0070`) | FAILURE logics + FAILURE PSI + short-circuit holos ~12 s | FAILURE (FLD+RLD) | no explicit color/duration in source | FAILURE front+rear, `kDefault`, 12 s | `HPA0070` short-circuit random color | PSI 12 s; logic has no explicit duration in source | body `@0T1`/`@0P1`/`*ST00` | **dome-source-confirmed** (codex 2026-06-21) | DV swap applied + software-verified; not visually verified | pie-involving (panels DO-NOT-TEST) |
 
-Codex confirms `body-inferred` rows by extracting the visual-only portion of each
-native `DM:*` in `DomeSequences.h` (or by hardware), then flips `authority` and
-fills the real anim/color/duration. Until then those targets are not requirements.
+All `body-inferred` rows were **confirmed against `DomeSequences.h` by codex (2026-06-21)** and flipped to `dome-source-confirmed`; the anim/color/duration cells above are now authority. Corrections folded in: CANTINA logics are **blue** (holos white); HEART is FLD-text + front-PSI + holos (NOT PSI/holo-only — and RLD/rear-PSI are untouched); OVERLOAD logic carries no explicit color/duration; SCREAM holos are two effect commands, not one timed preset. Remaining status on these is on-droid **visual** confirmation (gated, and pie-DO-NOT-TEST for CANTINA/SCREAM/OVERLOAD).
 
 Sequences with no distinctive visual identity (`DM:NOD`, `DM:HELLO`,
 `DM:FLUTTER`, `DM:BLOOM`, panel/text-only) do **not** need a `DV:` preset.
@@ -246,14 +244,26 @@ When body-owned Factory/Learned sequences carry `DV:`:
 - ROCKMARCH first acceptance case: **yes**.
 - Operator burden reduction is a **requirement**, not a nice-to-have.
 
-## 12. Open questions for codex
+## 12. Questions for codex — RESOLVED (2026-06-21)
 
-1. `DV:` framing/length constraints on the body->dome link for `DV:<NAME>`?
-2. Is the `DV:` name set strictly closed (reject unknown) — confirmed casing?
-3. Can a preset render with **no** implicit `seqon/seqoff` and **no** dome
-   sequence-state ownership?
-4. Is the VADER preset identical to ROCKMARCH or distinct (per `DomeSequences.h`)?
-5. Extract + confirm the `body-inferred` rows (CANTINA/LEIA/ALARM/HEART/SCREAM/
-   OVERLOAD) from `DomeSequences.h`.
-6. Teardown preference long-term: keep body `@0T1`/`@0P1`/`*ST00`, or add a
-   dome-side `DV:RESET_VISUALS`?
+3. **Visual-only, no sequence-state ownership?** Confirmed: every `DV:<name>`
+   handler is a visual-only direct-apply helper — no panels, no body audio, no
+   `DM:*` forwarding, no `domeBeginSequence`/`domeEndSequence`, no
+   `dome_seqRunning`/`dome_pendingAnim`. `DV:` owns no sequence timer/window; the
+   durations in §5 are the explicit durations passed to the visual engines.
+4. **VADER vs ROCKMARCH:** **identical** — both call `domeApplyMarchVisuals()`
+   (`HPA0021|47`, FLD/RLD MARCH `kRed` 47 s, front/rear PSI MARCH 47 s).
+5. **`body-inferred` rows:** all six extracted + confirmed against
+   `DomeSequences.h`; §5 cells are now authority (see corrections noted there).
+6. **Teardown:** body `@0T1`/`@0P1`/`*ST00` is expected to clear a DV preset
+   *enough* for the ROCKMARCH test (`@0T1`→logics NORMAL, `@0P1`→PSIs NORMAL,
+   `*ST00`→holos `HPA0000`). It is **not identical** to `DV:RESET_VISUALS`, which
+   uses the dome-native reset helpers (`domeResetHolos()`→`HPS9`,
+   `domeResetLogics()`→NORMAL, `domeResetPSIs()`→NORMAL). Decision: keep body
+   teardown for now; if the ROCKMARCH hardware test shows the holo reset target
+   (`HPA0000` vs `HPS9`) is not the desired default, switch DV-backed sequence
+   teardown to `DV:RESET_VISUALS`. Remains a hardware/visual acceptance gate.
+
+Originally-open framing questions (1 `DV:` link framing/length, 2 strict closed
+uppercase name set) are implicitly answered by the shipped dome `DV:` surface and
+the body-side whitelist (`protocol_check.cpp` + `seq_protocol_check.js`).

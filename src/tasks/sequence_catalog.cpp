@@ -187,17 +187,17 @@ static const SeqStep kAlarmSteps[] = {
 
 // DM:HEART — rainbow holos and a sweet logic message (10 s). Audio: random
 // track from the sentimental category, falling back to the named happy track.
-// Logic text is single-line per issue #2 gap #3 (no wire escaping scheme yet).
 static const SeqStep kHeartSteps[] = {
     SEQ_AUDIO_CAT(0, AUDIO_CATEGORY_SENTIMENTAL, AUDIO_SLOT_NAMED_HAPPY),
-    // Dome-native heart visual preset via the DV: surface (issue #2 task #5):
-    // covers the rainbow holos + PSI. Replaces @HPF006/@HPR006/@HPT006|10 + @1P2;
-    // the dome owns the typed rendering. Authority body-inferred until codex
-    // confirms against DomeSequences.h. FX_LOGIC_PSI|FX_HOLO -> terminal cleanup.
-    // The front logic TEXT stays body-owned raw and is sent AFTER the preset so the
-    // preset does not clobber it (single-line per issue #2 gap #3, no wire escaping).
+    // Dome-native heart visual preset via the DV: surface (issue #2 task #5),
+    // dome-source-confirmed: DV:HEART renders the FLD scroll text "You're\nWonderful"
+    // + front PSI flash-color + rainbow holos (HPF/HPR/HPT006|10). Replaces the raw
+    // @HPF006/@HPR006/@HPT006|10 + @1P2 AND the body's old single-line
+    // @1MYou're Wonderful text -- the dome owns the (two-line) message natively, which
+    // the body's wire could not express (issue #2 gap #3, no escaping). Sending the
+    // body text too would be a redundant double-write. FX_LOGIC_PSI|FX_HOLO so the
+    // terminal cleanup still emits the body-owned reset (@0T1/@0P1/*ST00).
     SEQ_DOME(0, (uint8_t)(FX_LOGIC_PSI | FX_HOLO), "DV:HEART"),
-    SEQ_DOME(0, FX_NONE, "@1MYou're Wonderful"), // front logic text (body-owned raw)
     SEQ_TERM(10000),                             // auto @0T1/@0P1/*ST00
 };
 
