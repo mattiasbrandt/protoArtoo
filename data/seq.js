@@ -392,8 +392,13 @@
         return `Play sound (${step.cmd || "$H"})`;
       case "dome": {
         const cmd = step.cmd || "";
+        // Visual preset mode
+        if (cmd.startsWith("DV:")) {
+          const presetName = cmd.slice(3);
+          return `Visual preset: ${dvPresetLabel(presetName)}`;
+        }
+        // Panel intent mode: parse action and target
         if (/^(:|)(OP|CL|OF)/.test(cmd)) {
-          // Panel intent mode: parse action and target
           const match = cmd.match(/^:?(OP|CL|OF)(.+)$/);
           if (match) {
             const action = match[1];
@@ -405,10 +410,6 @@
         }
         // Advanced mode
         return `Dome command ${cmd || "@0T6"}`;
-      }
-      case "visualPreset": {
-        const presetName = (step.cmd || "").slice(3); // Extract NAME from "DV:NAME"
-        return `Visual preset: ${dvPresetLabel(presetName)}`;
       }
       case "domeRotate": {
         const speedPct = step.speedPct ?? 0;
@@ -448,7 +449,6 @@
   const stepTypeEmoji = {
     audio: "🔊",
     dome: "🧩",
-    visualPreset: "🎬",
     domeRotate: "🔄",
     loop: "🔁",
     random: "🎲",
@@ -460,7 +460,6 @@
   const stepTypeName = {
     audio: "Sound",
     dome: "Panel Action",
-    visualPreset: "Visual Preset",
     domeRotate: "Spin Dome",
     loop: "Servo Loop",
     random: "Random Flutter",
@@ -471,8 +470,7 @@
   // Slice 4: Step type descriptions for reference panel
   const stepTypeDescriptions = {
     audio: "Play a sound or cue",
-    dome: "Open or close dome panels",
-    visualPreset: "Apply a named dome visual preset",
+    dome: "Open, close, or apply visual presets to dome panels",
     domeRotate: "Rotate the dome left or right",
     loop: "Repeat a group of steps at an interval",
     random: "Randomized panel motion",
@@ -489,7 +487,7 @@
         </button>
         <div id="step-type-reference-panel" class="step-type-reference-panel hidden">
           <div class="step-type-reference-list">
-            ${["audio", "dome", "visualPreset", "domeRotate", "loop", "random", "audioCat", "end"]
+            ${["audio", "dome", "domeRotate", "loop", "random", "audioCat", "end"]
               .map(
                 (type) =>
                   `<div class="step-type-reference-item">
@@ -548,7 +546,7 @@
             <div class="step-type-group">
               <div class="step-type-group-label">Common</div>
               <div class="step-type-cards">
-                ${["audio", "domeRotate", "dome", "visualPreset", "loop"]
+                ${["audio", "domeRotate", "dome", "loop"]
                   .map(
                     (type) =>
                       `<button class="step-type-chip step-type-card ${step.type === type ? "active" : ""}" data-type="${type}" aria-pressed="${step.type === type ? "true" : "false"}" title="${stepTypeName[type]}">
@@ -662,39 +660,45 @@
         behaviorHtml = `<input class="step-field step-field-cmd" type="text" data-field="cmd" value="${escapeHtml(step.cmd || "")}" placeholder="$H, $N, $D, $A..." aria-label="Sound command">`;
         break;
 
-      case "visualPreset": {
-        // Visual preset selector: dropdown of DV_PRESETS names
-        // Reads/writes to step.cmd as "DV:<NAME>"
-        const presetName = (step.cmd || "").slice(3); // Extract from "DV:NAME"
-        behaviorHtml = `
-          <select class="step-field step-field-preset" data-field="preset" aria-label="Visual preset">
-            ${["ROCKMARCH", "VADER", "ALARM", "LEIA", "HEART", "CANTINA", "SCREAM", "OVERLOAD", "HELLO", "RESET_VISUALS"]
-              .map(
-                (preset) =>
-                  `<option value="${preset}" ${presetName === preset ? "selected" : ""}>${escapeHtml(dvPresetLabel(preset))}</option>`
-              )
-              .join("")}
-          </select>
-          <input type="hidden" class="step-field" data-field="cmd" value="${escapeHtml(step.cmd || "DV:ROCKMARCH")}">
-        `;
-        break;
-      }
-
-      case "dome":
-        // Detect mode from step.cmd: panel intent if starts with :OP, :CL, :OF; otherwise advanced
+      case "dome": {
+        // Detect mode from step.cmd:
+        // - Visual preset if starts with DV: → preset picker
+        // - Panel intent if starts with :OP, :CL, :OF → panel action UI
+        // - Otherwise advanced mode → raw text input
         const domeCmd = step.cmd || "";
         // Check for forced mode attribute (used during toggle)
         const forcedMode = fieldsContainer.dataset.domeMode;
-        let isPanelMode;
+        let domeMode; // "panel", "preset", or "advanced"
         if (forcedMode) {
-          isPanelMode = forcedMode === "panel";
+          domeMode = forcedMode; // panel, preset, or advanced
           // Clear the forced mode after use
           delete fieldsContainer.dataset.domeMode;
         } else {
-          isPanelMode = /^(:|)(OP|CL|OF)/.test(domeCmd);
+          if (domeCmd.startsWith("DV:")) {
+            domeMode = "preset";
+          } else if (/^(:|)(OP|CL|OF)/.test(domeCmd)) {
+            domeMode = "panel";
+          } else {
+            domeMode = "advanced";
+          }
         }
 
-        if (isPanelMode) {
+        if (domeMode === "preset") {
+          // Visual preset mode: dropdown of DV_PRESETS names
+          const presetName = (step.cmd || "").slice(3); // Extract from "DV:NAME"
+          behaviorHtml = `
+            <select class="step-field step-field-preset" data-field="preset" aria-label="Visual preset">
+              ${["ROCKMARCH", "VADER", "ALARM", "LEIA", "HEART", "CANTINA", "SCREAM", "OVERLOAD", "HELLO", "RESET_VISUALS"]
+                .map(
+                  (preset) =>
+                    `<option value="${preset}" ${presetName === preset ? "selected" : ""}>${escapeHtml(dvPresetLabel(preset))}</option>`
+                )
+                .join("")}
+            </select>
+            <input type="hidden" class="step-field" data-field="cmd" value="${escapeHtml(step.cmd || "DV:ROCKMARCH")}">
+            <button class="dome-mode-toggle" aria-label="Switch to panel mode">Panel</button>
+          `;
+        } else if (domeMode === "panel") {
           // Parse action and target from cmd, e.g., ":OP01" -> action="OP", target="01"
           let action = "";
           let target = "";
@@ -749,6 +753,7 @@
           `;
         }
         break;
+      }
 
       case "domeRotate": {
         // Ergonomic operator UI for dome rotation: direction (Left/Right/Stop) + speed + duration
@@ -1154,7 +1159,7 @@
 
   // Called from renderEditorView (initial) and rerenderStepTable (after any step change).
   // Step rows are re-created on every rerender, so fresh listeners are needed each time.
-  // Helper: Attach dome panel intent listeners to a specific fields container
+  // Helper: Attach dome-related listeners (panel, preset, advanced) to a specific fields container
   const attachDomePanelIntentListeners = (fieldsContainer, stepIdx) => {
     // Dome panel intent action/target selects update the hidden cmd field
     fieldsContainer.querySelectorAll(".dome-action-select, .dome-target-select").forEach((select) => {
@@ -1176,23 +1181,47 @@
       });
     });
 
-    // Dome panel intent mode toggle
+    // Dome visual preset selector updates the hidden cmd field
+    const presetSelect = fieldsContainer.querySelector(".step-field-preset");
+    if (presetSelect) {
+      presetSelect.addEventListener("change", () => {
+        const preset = presetSelect.value;
+        const cmd = `DV:${preset}`;
+        const hiddenInput = fieldsContainer.querySelector('input[data-field="cmd"]');
+        if (hiddenInput) {
+          hiddenInput.value = cmd;
+        }
+        editorState.current.steps[stepIdx].cmd = cmd;
+        validateAndUpdateStep(stepIdx);
+      });
+    }
+
+    // Dome mode toggle (panel ↔ preset ↔ advanced)
     const toggleBtn = fieldsContainer.querySelector(".dome-mode-toggle");
     if (toggleBtn) {
       toggleBtn.addEventListener("click", (e) => {
         e.preventDefault();
 
-        // Determine current mode by checking what UI is visible (panel selects exist = panel mode)
-        const isPanelMode = !!fieldsContainer.querySelector(".dome-action-select");
+        // Determine current mode by checking what UI is visible
+        let currentMode = "advanced";
+        if (fieldsContainer.querySelector(".dome-action-select")) {
+          currentMode = "panel";
+        } else if (fieldsContainer.querySelector(".step-field-preset")) {
+          currentMode = "preset";
+        }
 
-        // Toggle to the opposite mode
-        if (isPanelMode) {
-          // Currently in panel mode; switch to advanced mode
-          // Keep the current cmd as-is (it's a valid panel intent command)
-          fieldsContainer.dataset.domeMode = "advanced";
+        // Toggle to the next mode in the cycle: panel → preset → advanced → panel
+        let nextMode = "panel";
+        if (currentMode === "panel") {
+          nextMode = "preset";
+        } else if (currentMode === "preset") {
+          nextMode = "advanced";
         } else {
-          // Currently in advanced mode; switch to panel mode
-          // Try to parse the cmd; if it's not a panel intent, default to :OP00
+          nextMode = "panel";
+        }
+
+        // If toggling to panel from preset/advanced, ensure a valid panel cmd
+        if (nextMode === "panel") {
           const hiddenInput = fieldsContainer.querySelector('input[data-field="cmd"]');
           const currentCmd = hiddenInput ? hiddenInput.value : "";
           const match = currentCmd.match(/^:?(OP|CL|OF)(.+)$/);
@@ -1200,10 +1229,18 @@
             // Not a panel intent; default to :OP00
             editorState.current.steps[stepIdx].cmd = ":OP00";
           }
-          // If it IS a panel intent, keep cmd as-is
-          fieldsContainer.dataset.domeMode = "panel";
+        }
+        // If toggling to preset from panel/advanced, ensure a valid DV: cmd
+        else if (nextMode === "preset") {
+          const hiddenInput = fieldsContainer.querySelector('input[data-field="cmd"]');
+          const currentCmd = hiddenInput ? hiddenInput.value : "";
+          if (!currentCmd.startsWith("DV:")) {
+            // Not a preset; default to ROCKMARCH
+            editorState.current.steps[stepIdx].cmd = "DV:ROCKMARCH";
+          }
         }
 
+        fieldsContainer.dataset.domeMode = nextMode;
         renderStepFields(editorState.current.steps[stepIdx], fieldsContainer);
 
         // Re-attach listeners for the newly rendered fields
@@ -1222,7 +1259,6 @@
     const stepTypeDefaults = {
       audio: { cmd: "$H" },
       dome: { cmd: ":OP00" },
-      visualPreset: { cmd: "DV:ROCKMARCH" },
       domeRotate: { speedPct: 0, durationMs: 0 },
       loop: { body: 2, periodMs: 1846, durationMs: 14000 },
       random: { set: "ring", mode: "flutter", moveMs: 300, jitterMs: 500, distinct: true },
@@ -1312,21 +1348,6 @@
               if (direction === "stop" && durationInput) {
                 durationInput.value = "0";
               }
-              validateAndUpdateStep(stepIdx);
-            });
-          }
-        }
-
-        // If switching to visualPreset type, attach visualPreset-specific listeners
-        if (newType === "visualPreset") {
-          const presetSelect = fieldsContainer.querySelector(".step-field-preset");
-          const hiddenCmdInput = fieldsContainer.querySelector('input[data-field="cmd"]');
-          if (presetSelect && hiddenCmdInput) {
-            presetSelect.addEventListener("change", () => {
-              const preset = presetSelect.value;
-              const cmd = `DV:${preset}`;
-              hiddenCmdInput.value = cmd;
-              editorState.current.steps[stepIdx].cmd = cmd;
               validateAndUpdateStep(stepIdx);
             });
           }
