@@ -534,7 +534,7 @@
   // Helper: derive dome sub-mode identity from cmd (emoji + name for collapsed card)
   const domeSubmodeLabel = (cmd) => {
     if ((cmd || "").startsWith("DV:")) {
-      return { emoji: "🎬", name: "Visual Preset" };
+      return { emoji: "🎨", name: "Visual Preset" };
     }
     if ((cmd || "").startsWith("DL:")) {
       return { emoji: "🎭", name: "Logic / PSI Mode" };
@@ -640,7 +640,7 @@
             </div>
             <div class="step-type-subgroup">
               <button class="step-type-chip step-type-card step-type-dome-sub ${step.type === "dome" && (step.cmd || "").startsWith("DL:") ? "active" : ""}" data-type="dome" data-dome-mode="logic" aria-pressed="${step.type === "dome" && (step.cmd || "").startsWith("DL:") ? "true" : "false"}" title="Logic / PSI Mode">
-                <span class="step-type-card-emoji">🎬</span>
+                <span class="step-type-card-emoji">🎭</span>
                 <span class="step-type-card-name">Logic / PSI Mode</span>
               </button>
             </div>
