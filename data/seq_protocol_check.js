@@ -78,6 +78,19 @@
     "DEFAULT", "RED", "BLUE", "GREEN", "WHITE", "YELLOW", "ORANGE", "PURPLE",
   ]);
 
+  // Holo Effect (DH:) — holoprojector effects.
+  // Grammar: DH:<target>:<effect>[:<color>[:<durationOrCount>]]
+  const DH_TARGETS = new Set([
+    "F", "R", "T", "A",
+  ]);
+  const DH_EFFECTS = new Set([
+    "OFF", "ON", "RESET", "RANDOM", "WAG", "NOD", "PULSE", "RAINBOW",
+    "FLASH", "SHORTCIRCUIT", "SOLID",
+  ]);
+  const DH_COLORS = new Set([
+    "DEFAULT", "RED", "BLUE", "GREEN", "WHITE", "YELLOW", "ORANGE", "PURPLE", "RANDOM",
+  ]);
+
   // Classify a panel intent target into its group for :OF cleanup tracking.
   function panelGroup(target) {
     if (target === "00") return "all";
@@ -258,6 +271,11 @@
       // DT:<target>:<color>:<durationSec>:<speed>:<encodedText> — Logic Text
       if (cmd.startsWith("DT:")) {
         return this._validateDTTextCommand(cmd);
+      }
+
+      // DH:<target>:<effect>[:<color>[:<durationOrCount>]] — Holo Effect
+      if (cmd.startsWith("DH:")) {
+        return this._validateDHHoloCommand(cmd);
       }
 
       // Panel intent: :OP<target>, :CL<target>, :OF<target>
@@ -682,6 +700,83 @@
           ok: false,
           field: "cmd",
           error: "Text can contain at most one line break",
+        };
+      }
+
+      return { ok: true };
+    },
+
+    _validateDHHoloCommand(cmd) {
+      // DH:<target>:<effect>[:<color>[:<durationOrCount>]]
+      // Parse the command into its components
+      const parts = cmd.split(":");
+      if (parts.length < 3 || parts[0] !== "DH") {
+        return {
+          ok: false,
+          field: "cmd",
+          error: "Holo Effect command must be in the format DH:TARGET:EFFECT[:COLOR[:DURATION_OR_COUNT]]",
+        };
+      }
+
+      const target = parts[1];
+      const effect = parts[2];
+      const color = parts[3] || "DEFAULT";
+      const durationOrCountStr = parts[4];
+
+      // Validate command length (must be <= 63)
+      if (cmd.length > 63) {
+        return {
+          ok: false,
+          field: "cmd",
+          error: "Holo Effect command is too long (must be 63 characters or less)",
+        };
+      }
+
+      // Validate target
+      if (!DH_TARGETS.has(target)) {
+        return {
+          ok: false,
+          field: "cmd",
+          error: `"${target}" is not a valid holo target. Choose one of: ${Array.from(DH_TARGETS).join(", ")}`,
+        };
+      }
+
+      // Validate effect
+      if (!DH_EFFECTS.has(effect)) {
+        return {
+          ok: false,
+          field: "cmd",
+          error: `"${effect}" is not a valid holo effect. Choose one of: ${Array.from(DH_EFFECTS).join(", ")}`,
+        };
+      }
+
+      // Validate color (optional, default DEFAULT)
+      if (color && !DH_COLORS.has(color)) {
+        return {
+          ok: false,
+          field: "cmd",
+          error: `"${color}" is not a valid color. Choose one of: ${Array.from(DH_COLORS).join(", ")}`,
+        };
+      }
+
+      // Validate durationOrCount (optional, 0-99)
+      if (durationOrCountStr !== undefined) {
+        const durationOrCount = parseInt(durationOrCountStr, 10);
+        if (isNaN(durationOrCount) || durationOrCount < 0 || durationOrCount > 99) {
+          return {
+            ok: false,
+            field: "cmd",
+            error: "Duration or count must be a number between 0 and 99",
+          };
+        }
+      }
+
+      // Reject extra fields
+      if (parts.length > 5) {
+        return {
+          ok: false,
+          field: "cmd",
+          error: "Holo Effect command has too many fields",
         };
       }
 

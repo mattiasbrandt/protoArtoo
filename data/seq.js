@@ -117,6 +117,51 @@
     return labels[target] || target || "Unknown";
   };
 
+  // Map DH: targets to friendly operator labels
+  const dhTargetLabel = (target) => {
+    const labels = {
+      "F": "Front holo",
+      "R": "Rear holo",
+      "T": "Top holo",
+      "A": "All holos",
+    };
+    return labels[target] || target || "Unknown";
+  };
+
+  // Map DH: effects to friendly operator labels
+  const dhEffectLabel = (effect) => {
+    const labels = {
+      "OFF": "Off",
+      "ON": "On",
+      "RESET": "Reset",
+      "RANDOM": "Random",
+      "WAG": "Wag",
+      "NOD": "Nod",
+      "PULSE": "Pulse",
+      "RAINBOW": "Rainbow",
+      "FLASH": "Flash",
+      "SHORTCIRCUIT": "Short Circuit",
+      "SOLID": "Solid",
+    };
+    return labels[effect] || effect || "Unknown";
+  };
+
+  // Map DH: colors to friendly operator labels (same as DL:)
+  const dhColorLabel = (color) => {
+    const labels = {
+      "DEFAULT": "Default",
+      "RED": "Red",
+      "BLUE": "Blue",
+      "GREEN": "Green",
+      "WHITE": "White",
+      "YELLOW": "Yellow",
+      "ORANGE": "Orange",
+      "PURPLE": "Purple",
+      "RANDOM": "Random",
+    };
+    return labels[color] || color || "Default";
+  };
+
   const els = {
     // List view
     mainCard: document.getElementById("seq-main-card"),
@@ -493,6 +538,25 @@
           }
           return `Logic text: ${cmd.slice(3)}`;
         }
+        // Holo Effect mode
+        if (cmd.startsWith("DH:")) {
+          const parts = cmd.split(":");
+          if (parts.length >= 3) {
+            const target = parts[1];
+            const effect = parts[2];
+            const color = parts[3] || "";
+            const durationOrCount = parts[4] || "";
+            let preview = `${dhTargetLabel(target)}: ${dhEffectLabel(effect)}`;
+            if (color && color !== "DEFAULT") {
+              preview += `, ${dhColorLabel(color)}`;
+            }
+            if (durationOrCount) {
+              preview += `, ${durationOrCount}`;
+            }
+            return preview;
+          }
+          return `Holo: ${cmd.slice(3)}`;
+        }
         // Panel intent mode: parse action and target
         if (/^(:|)(OP|CL|OF)/.test(cmd)) {
           const match = cmd.match(/^:?(OP|CL|OF)(.+)$/);
@@ -573,6 +637,9 @@
     }
     if ((cmd || "").startsWith("DT:")) {
       return { emoji: "💬", name: "Logic Text" };
+    }
+    if ((cmd || "").startsWith("DH:")) {
+      return { emoji: "🔦", name: "Holo Effect" };
     }
     return { emoji: "🧩", name: "Panel Action" };
   };
@@ -681,6 +748,10 @@
               <button class="step-type-chip step-type-card step-type-dome-sub ${step.type === "dome" && (step.cmd || "").startsWith("DT:") ? "active" : ""}" data-type="dome" data-dome-mode="text" aria-pressed="${step.type === "dome" && (step.cmd || "").startsWith("DT:") ? "true" : "false"}" title="Logic Text">
                 <span class="step-type-card-emoji">💬</span>
                 <span class="step-type-card-name">Logic Text</span>
+              </button>
+              <button class="step-type-chip step-type-card step-type-dome-sub ${step.type === "dome" && (step.cmd || "").startsWith("DH:") ? "active" : ""}" data-type="dome" data-dome-mode="holo" aria-pressed="${step.type === "dome" && (step.cmd || "").startsWith("DH:") ? "true" : "false"}" title="Holo Effect">
+                <span class="step-type-card-emoji">🔦</span>
+                <span class="step-type-card-name">Holo Effect</span>
               </button>
             </div>
 
@@ -934,6 +1005,58 @@
             <span class="dome-rotate-label">s</span>
             <input class="step-field dt-speed-input" type="number" data-field="speed" value="${speed}" min="0" max="9" aria-label="Scroll speed (0-9)" placeholder="0-9">
             <span class="dome-rotate-label">speed</span>
+          `;
+
+          // Store hidden cmd field for serialization
+          behaviorHtml += `<input type="hidden" class="step-field" data-field="cmd" value="${escapeHtml(cmd)}">`;
+        } else if (domeMode === "holo") {
+          // Holo Effect Mode (DH:) structured step
+          // Grammar: DH:<target>:<effect>[:<color>[:<durationOrCount>]]
+          const cmd = step.cmd || "DH:A:FLASH";
+          const parts = cmd.split(":");
+          const target = parts[1] || "A";
+          const effect = parts[2] || "FLASH";
+          const color = parts[3] || "DEFAULT";
+          const durationOrCount = parts[4] || "";
+
+          targetHtml = `
+            <select class="step-field dh-target-select" data-field="target" aria-label="Target">
+              <option value="F" ${target === "F" ? "selected" : ""}>Front holo (F)</option>
+              <option value="R" ${target === "R" ? "selected" : ""}>Rear holo (R)</option>
+              <option value="T" ${target === "T" ? "selected" : ""}>Top holo (T)</option>
+              <option value="A" ${target === "A" ? "selected" : ""}>All holos (A)</option>
+            </select>
+          `;
+
+          behaviorHtml = `
+            <select class="step-field dh-effect-select" data-field="effect" aria-label="Effect">
+              <option value="OFF" ${effect === "OFF" ? "selected" : ""}>Off</option>
+              <option value="ON" ${effect === "ON" ? "selected" : ""}>On</option>
+              <option value="RESET" ${effect === "RESET" ? "selected" : ""}>Reset</option>
+              <option value="RANDOM" ${effect === "RANDOM" ? "selected" : ""}>Random</option>
+              <option value="WAG" ${effect === "WAG" ? "selected" : ""}>Wag</option>
+              <option value="NOD" ${effect === "NOD" ? "selected" : ""}>Nod</option>
+              <option value="PULSE" ${effect === "PULSE" ? "selected" : ""}>Pulse</option>
+              <option value="RAINBOW" ${effect === "RAINBOW" ? "selected" : ""}>Rainbow</option>
+              <option value="FLASH" ${effect === "FLASH" ? "selected" : ""}>Flash</option>
+              <option value="SHORTCIRCUIT" ${effect === "SHORTCIRCUIT" ? "selected" : ""}>Short Circuit</option>
+              <option value="SOLID" ${effect === "SOLID" ? "selected" : ""}>Solid</option>
+            </select>
+            <select class="step-field dh-color-select" data-field="color" aria-label="Color">
+              <option value="DEFAULT" ${color === "DEFAULT" ? "selected" : ""}>Default</option>
+              <option value="RED" ${color === "RED" ? "selected" : ""}>Red</option>
+              <option value="BLUE" ${color === "BLUE" ? "selected" : ""}>Blue</option>
+              <option value="GREEN" ${color === "GREEN" ? "selected" : ""}>Green</option>
+              <option value="WHITE" ${color === "WHITE" ? "selected" : ""}>White</option>
+              <option value="YELLOW" ${color === "YELLOW" ? "selected" : ""}>Yellow</option>
+              <option value="ORANGE" ${color === "ORANGE" ? "selected" : ""}>Orange</option>
+              <option value="PURPLE" ${color === "PURPLE" ? "selected" : ""}>Purple</option>
+              <option value="RANDOM" ${color === "RANDOM" ? "selected" : ""}>Random</option>
+            </select>
+          `;
+
+          timingHtml = `
+            <input class="step-field dh-duration-input" type="number" data-field="durationOrCount" value="${durationOrCount}" min="0" max="99" aria-label="Duration / count (0-99)" placeholder="duration/count (0-99)">
           `;
 
           // Store hidden cmd field for serialization
@@ -1572,6 +1695,39 @@
     });
   };
 
+  // Helper: Attach Holo Effect listeners to a specific fields container
+  const attachDomeHoloListeners = (fieldsContainer, stepIdx) => {
+    const targetSelect = fieldsContainer.querySelector(".dh-target-select");
+    const effectSelect = fieldsContainer.querySelector(".dh-effect-select");
+    const colorSelect = fieldsContainer.querySelector(".dh-color-select");
+    const durationInput = fieldsContainer.querySelector(".dh-duration-input");
+    const hiddenCmd = fieldsContainer.querySelector('input[data-field="cmd"]');
+
+    const updateCmd = () => {
+      if (!targetSelect || !effectSelect || !hiddenCmd) return;
+      let cmd = `DH:${targetSelect.value}:${effectSelect.value}`;
+      if (colorSelect && colorSelect.value !== "DEFAULT") {
+        cmd += `:${colorSelect.value}`;
+        if (durationInput && durationInput.value) {
+          cmd += `:${durationInput.value}`;
+        }
+      } else if (durationInput && durationInput.value) {
+        // If durationOrCount is set but color is DEFAULT, we still need to include DEFAULT
+        cmd += `:DEFAULT:${durationInput.value}`;
+      }
+      hiddenCmd.value = cmd;
+      editorState.current.steps[stepIdx].cmd = cmd;
+      validateAndUpdateStep(stepIdx);
+    };
+
+    [targetSelect, effectSelect, colorSelect, durationInput].forEach((el) => {
+      if (el) {
+        el.addEventListener("change", updateCmd);
+        el.addEventListener("input", updateCmd);
+      }
+    });
+  };
+
   const attachStepListeners = () => {
     const stepTypeDefaults = {
       audio: { cmd: "$H" },
@@ -1650,10 +1806,17 @@
         const { t } = editorState.current.steps[stepIdx];
         let newDefaults = stepTypeDefaults[newType] || {};
 
-        // Special handling for Logic/PSI: it's a dome step with DL: cmd
+        // Special handling for Logic/PSI/Text/Holo: all dome sub-modes
         if (isLogicChip) {
           const isTextChip = chip.dataset.domeMode === "text";
-          newDefaults = isTextChip ? { cmd: "DT:LOGIC:DEFAULT:5:0:" } : { cmd: "DL:LOGIC:NORMAL" };
+          const isHoloChip = chip.dataset.domeMode === "holo";
+          if (isTextChip) {
+            newDefaults = { cmd: "DT:LOGIC:DEFAULT:5:0:" };
+          } else if (isHoloChip) {
+            newDefaults = { cmd: "DH:A:FLASH" };
+          } else {
+            newDefaults = { cmd: "DL:LOGIC:NORMAL" };
+          }
         }
 
         editorState.current.steps[stepIdx] = { t, type: newType, ...newDefaults };
@@ -1670,8 +1833,11 @@
         if (newType === "dome") {
           if (isLogicChip) {
             const isTextChip = chip.dataset.domeMode === "text";
+            const isHoloChip = chip.dataset.domeMode === "holo";
             if (isTextChip) {
               attachDomeTextListeners(fieldsContainer, stepIdx);
+            } else if (isHoloChip) {
+              attachDomeHoloListeners(fieldsContainer, stepIdx);
             } else {
               attachDomeLogicListeners(fieldsContainer, stepIdx);
             }
@@ -1733,6 +1899,9 @@
         } else if (step && (step.cmd || "").startsWith("DL:")) {
           // Check if this is a Logic/PSI step (DL: command)
           attachDomeLogicListeners(fieldsContainer, stepIdx);
+        } else if (step && (step.cmd || "").startsWith("DH:")) {
+          // Check if this is a Holo Effect step (DH: command)
+          attachDomeHoloListeners(fieldsContainer, stepIdx);
         } else {
           attachDomePanelIntentListeners(fieldsContainer, stepIdx);
         }
