@@ -44,6 +44,22 @@ static int parseUint(const char** p, uint32_t& out) {
     return n;
 }
 
+// Extract the next colon-separated field from *p and advance *p past the delimiter.
+// Returns a pointer to the start of the field, or nullptr if delimiter not found.
+// The returned field is NOT NUL-terminated; use returned length.
+static const char* parseField(const char** p, size_t& len) {
+    const char* start = *p;
+    const char* end = strchr(start, ':');
+    if (end == nullptr) {
+        len = strnlen(start, PC_CMD_MAX + 1);
+        *p = start + len;
+        return start;
+    }
+    len = (size_t)(end - start);
+    *p = end + 1;
+    return start;
+}
+
 // Bounded printable-charset check for a NUL-terminated command payload.
 static bool charsetOk(const char* s) {
     size_t len = strnlen(s, PC_CMD_MAX + 1);
@@ -216,6 +232,104 @@ static ProtocolCheckResult classifyDome(const char* label, uint8_t idx,
             }
         }
         return pcFailAt(label, idx, "cmd", "unknown DV: visual preset");
+    }
+
+    // DL:<target>:<mode>[:<color>[:<durationSec>]] — Logic/PSI Mode (issue #11).
+    // Structured control for dome logic/PSI animations. Mirrors client validation
+    // in data/seq_protocol_check.js exactly. Grammar enforces uppercase tokens,
+    // full-string match, known enums, and command length <= 63.
+    if (strncmp(cmd, "DL:", 3) == 0) {
+        static const char* const kDlTargets[] = {
+            "FLD", "RLD", "LOGIC", "FPSI", "RPSI", "PSI", "ALL",
+        };
+        static const char* const kDlModes[] = {
+            "NORMAL", "ALARM", "FAILURE", "LEIA", "MARCH", "FLASHCOLOR",
+            "REDALERT", "RAINBOW", "LIGHTSOUT",
+        };
+        static const char* const kDlColors[] = {
+            "DEFAULT", "RED", "BLUE", "GREEN", "WHITE", "YELLOW", "ORANGE", "PURPLE",
+        };
+        const uint8_t kDlTargetCount = (uint8_t)(sizeof(kDlTargets) / sizeof(kDlTargets[0]));
+        const uint8_t kDlModeCount = (uint8_t)(sizeof(kDlModes) / sizeof(kDlModes[0]));
+        const uint8_t kDlColorCount = (uint8_t)(sizeof(kDlColors) / sizeof(kDlColors[0]));
+
+        // Parse using same field-splitting logic as client: split by ':' and check bounds.
+        // Grammar: DL:target:mode[:color[:duration]]
+        const char* p = cmd + 3;
+        size_t fieldLen = 0;
+
+        // Parse target (required)
+        const char* targetStart = parseField(&p, fieldLen);
+        bool targetOk = false;
+        for (uint8_t i = 0; i < kDlTargetCount; ++i) {
+            size_t tlen = strlen(kDlTargets[i]);
+            if (fieldLen == tlen && strncmp(targetStart, kDlTargets[i], tlen) == 0) {
+                targetOk = true;
+                break;
+            }
+        }
+        if (!targetOk) {
+            return pcFailAt(label, idx, "cmd", "unknown DL: target");
+        }
+        if (*p == '\0') {
+            return pcFailAt(label, idx, "cmd", "DL: requires target:mode[:color[:duration]]");
+        }
+
+        // Parse mode (required)
+        const char* modeStart = parseField(&p, fieldLen);
+        bool modeOk = false;
+        for (uint8_t i = 0; i < kDlModeCount; ++i) {
+            size_t mlen = strlen(kDlModes[i]);
+            if (fieldLen == mlen && strncmp(modeStart, kDlModes[i], mlen) == 0) {
+                modeOk = true;
+                break;
+            }
+        }
+        if (!modeOk) {
+            return pcFailAt(label, idx, "cmd", "unknown DL: mode");
+        }
+
+        // Parse color (optional) — if present, validate against whitelist
+        if (*p != '\0') {
+            const char* colorStart = parseField(&p, fieldLen);
+            bool colorOk = false;
+            for (uint8_t i = 0; i < kDlColorCount; ++i) {
+                size_t clen = strlen(kDlColors[i]);
+                if (fieldLen == clen && strncmp(colorStart, kDlColors[i], clen) == 0) {
+                    colorOk = true;
+                    break;
+                }
+            }
+            if (!colorOk) {
+                return pcFailAt(label, idx, "cmd", "unknown DL: color");
+            }
+        }
+
+        // Parse duration (optional, 0..99)
+        if (*p != '\0') {
+            const char* durationStart = parseField(&p, fieldLen);
+            if (fieldLen == 0) {
+                return pcFailAt(label, idx, "cmd", "invalid DL: duration");
+            }
+            // Parse as uint and verify we consumed exactly fieldLen digits
+            uint32_t duration = 0;
+            const char* durationPtr = durationStart;
+            int digitsConsumed = parseUint(&durationPtr, duration);
+            if (digitsConsumed != (int)fieldLen || *durationPtr != '\0') {
+                return pcFailAt(label, idx, "cmd", "DL: duration must be 0-99");
+            }
+            if (duration > 99) {
+                return pcFailAt(label, idx, "cmd", "DL: duration must be 0-99");
+            }
+        }
+
+        // Check for extra fields (too many colons)
+        if (*p != '\0') {
+            return pcFailAt(label, idx, "cmd", "DL: too many fields");
+        }
+
+        fxOut = (uint8_t)(FX_LOGIC_PSI | FX_HOLO);  // visual effect at term
+        return pcOk();
     }
 
     // :SM is manual diagnostic/calibration only. Learned sequences, clone JSON,
