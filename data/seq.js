@@ -1408,25 +1408,6 @@
       }
     });
 
-    // Attach visualPreset-specific listeners for preset selection changes
-    document.querySelectorAll(".step-card").forEach((card) => {
-      const stepIdx = parseInt(card.dataset.stepIndex, 10);
-      const fieldsContainer = card.querySelector(".step-fields");
-      const typeChip = card.querySelector(".step-type-chip.active");
-      if (typeChip && typeChip.dataset.type === "visualPreset" && fieldsContainer) {
-        const presetSelect = fieldsContainer.querySelector(".step-field-preset");
-        const hiddenCmdInput = fieldsContainer.querySelector('input[data-field="cmd"]');
-        if (presetSelect && hiddenCmdInput) {
-          presetSelect.addEventListener("change", () => {
-            const preset = presetSelect.value;
-            const cmd = `DV:${preset}`;
-            hiddenCmdInput.value = cmd;
-            editorState.current.steps[stepIdx].cmd = cmd;
-            validateAndUpdateStep(stepIdx);
-          });
-        }
-      }
-    });
 
     // Drag-and-drop reordering (local draggedIndex; fresh per rerender)
     let draggedIndex = null;
