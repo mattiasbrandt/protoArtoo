@@ -1,12 +1,12 @@
 /**
  * test/playwright/seq/seq-logic-psi-step.js
  *
- * Test Logic/PSI Mode (DL:) step: a new domeLogic step type with structured UI.
+ * Test Logic/PSI Mode (DL:) step: dome steps with cmd starting with "DL:".
  * Validates that:
- * - Logic/PSI step is stored as type="domeLogic" with cmd="DL:..."
- * - SeqProtocolCheck validates DL: commands with correct target/mode/color/duration
- * - Step picker shows domeLogic option in Common group
- * - Expanding a domeLogic step shows Target/Mode/Color/Duration grouped controls
+ * - Logic/PSI step is stored as type="dome" with cmd="DL:..." (not domeLogic)
+ * - SeqProtocolCheck validates DL: commands via dome branch with correct target/mode/color/duration
+ * - Step picker shows Logic/PSI chip that creates dome steps
+ * - Expanding a dome step with DL: cmd shows Target/Mode/Color/Duration grouped controls
  * - Changing any field rebuilds the DL: cmd string correctly
  * - Collapsed preview shows friendly English (e.g., "Both logic: March, red, 47s")
  * - Invalid DL: commands are rejected with clear error messages
@@ -41,10 +41,10 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
     await page.goto(TARGET_URL, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => window.__seqEditorForTesting, { timeout: 5000 });
 
-    // Test 1: Protocol validation passes for valid DL: steps
-    await test('SeqProtocolCheck.validateStep passes for valid DL: logic steps', async () => {
+    // Test 1: Protocol validation passes for valid DL: steps (dome type)
+    await test('SeqProtocolCheck.validateStep passes for valid DL: logic steps (type=dome)', async () => {
       const validationResult = await page.evaluate(() => {
-        const step = { t: 0, type: 'domeLogic', cmd: 'DL:LOGIC:MARCH:RED:47' };
+        const step = { t: 0, type: 'dome', cmd: 'DL:LOGIC:MARCH:RED:47' };
         return window.SeqProtocolCheck && window.SeqProtocolCheck.validateStep
           ? window.SeqProtocolCheck.validateStep(step, 0, [step])
           : null;
@@ -60,9 +60,9 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
     });
 
     // Test 2: Protocol validation rejects invalid target
-    await test('SeqProtocolCheck rejects invalid DL target', async () => {
+    await test('SeqProtocolCheck rejects invalid DL target (via dome type)', async () => {
       const validationResult = await page.evaluate(() => {
-        const step = { t: 0, type: 'domeLogic', cmd: 'DL:INVALID:MARCH' };
+        const step = { t: 0, type: 'dome', cmd: 'DL:INVALID:MARCH' };
         return window.SeqProtocolCheck && window.SeqProtocolCheck.validateStep
           ? window.SeqProtocolCheck.validateStep(step, 0, [step])
           : null;
@@ -78,9 +78,9 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
     });
 
     // Test 3: Protocol validation rejects invalid mode
-    await test('SeqProtocolCheck rejects invalid DL mode', async () => {
+    await test('SeqProtocolCheck rejects invalid DL mode (via dome type)', async () => {
       const validationResult = await page.evaluate(() => {
-        const step = { t: 0, type: 'domeLogic', cmd: 'DL:LOGIC:BADMODE' };
+        const step = { t: 0, type: 'dome', cmd: 'DL:LOGIC:BADMODE' };
         return window.SeqProtocolCheck && window.SeqProtocolCheck.validateStep
           ? window.SeqProtocolCheck.validateStep(step, 0, [step])
           : null;
@@ -96,9 +96,9 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
     });
 
     // Test 4: Protocol validation rejects duration out of range
-    await test('SeqProtocolCheck rejects duration > 99', async () => {
+    await test('SeqProtocolCheck rejects duration > 99 (via dome type)', async () => {
       const validationResult = await page.evaluate(() => {
-        const step = { t: 0, type: 'domeLogic', cmd: 'DL:LOGIC:MARCH:RED:100' };
+        const step = { t: 0, type: 'dome', cmd: 'DL:LOGIC:MARCH:RED:100' };
         return window.SeqProtocolCheck && window.SeqProtocolCheck.validateStep
           ? window.SeqProtocolCheck.validateStep(step, 0, [step])
           : null;
@@ -113,13 +113,13 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
       }
     });
 
-    // Test 5: Load a domeLogic step and render as structured card
-    await test('loading a domeLogic step renders as structured card with grouped controls', async () => {
+    // Test 5: Load a dome step with DL: cmd and render as structured card
+    await test('loading a dome step with DL: cmd renders as structured card with grouped controls', async () => {
       const preloadSeq = {
         format: 1, name: 'DM:LOGICTEST', suppressMs: 8000, toggleGroup: 'none',
         meta: { source: 'test', notes: '' },
         steps: [
-          { t: 0, type: 'domeLogic', cmd: 'DL:LOGIC:MARCH:RED:47' },
+          { t: 0, type: 'dome', cmd: 'DL:LOGIC:MARCH:RED:47' },
           { t: 100, type: 'end' },
         ],
         closeSteps: [],
@@ -171,7 +171,7 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
     });
 
     // Test 6: Collapsed preview shows friendly English
-    await test('domeLogic collapsed preview shows friendly English (Both logic: March, red, 47s)', async () => {
+    await test('dome DL: collapsed preview shows friendly English (Both logic: March, red, 47s)', async () => {
       const steps = page.locator('.step-card');
       const count = await steps.count();
       const firstStep = steps.nth(0);
