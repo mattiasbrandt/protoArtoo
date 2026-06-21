@@ -475,25 +475,6 @@
         // Advanced mode
         return `Dome command ${cmd || "@0T6"}`;
       }
-      case "domeLogic": {
-        const cmd = step.cmd || "DL:LOGIC:NORMAL";
-        const parts = cmd.split(":");
-        if (parts.length >= 3) {
-          const target = parts[1];
-          const mode = parts[2];
-          const color = parts[3] || "";
-          const duration = parts[4] || "";
-          let preview = `${dlTargetLabel(target)}: ${dlModeLabel(mode)}`;
-          if (color && color !== "DEFAULT") {
-            preview += `, ${dlColorLabel(color)}`;
-          }
-          if (duration) {
-            preview += `, ${duration}s`;
-          }
-          return preview;
-        }
-        return "Logic/PSI mode";
-      }
       case "domeRotate": {
         const speedPct = step.speedPct ?? 0;
         const durationMs = step.durationMs ?? 0;
@@ -532,7 +513,6 @@
   const stepTypeEmoji = {
     audio: "🔊",
     dome: "🧩",
-    domeLogic: "🎭",
     domeRotate: "🔄",
     loop: "🔁",
     random: "🎲",
@@ -544,7 +524,6 @@
   const stepTypeName = {
     audio: "Sound",
     dome: "Panel Action",
-    domeLogic: "Logic / PSI Mode",
     domeRotate: "Spin Dome",
     loop: "Servo Loop",
     random: "Random Flutter",
@@ -555,8 +534,7 @@
   // Slice 4: Step type descriptions for reference panel
   const stepTypeDescriptions = {
     audio: "Play a sound or cue",
-    dome: "Open, close, or apply visual presets to dome panels",
-    domeLogic: "Set logic or PSI dome mood, color, and duration",
+    dome: "Open, close, apply visual presets, or control logic/PSI mood on dome panels",
     domeRotate: "Rotate the dome left or right",
     loop: "Repeat a group of steps at an interval",
     random: "Randomized panel motion",
@@ -573,7 +551,7 @@
         </button>
         <div id="step-type-reference-panel" class="step-type-reference-panel hidden">
           <div class="step-type-reference-list">
-            ${["audio", "dome", "domeLogic", "domeRotate", "loop", "random", "audioCat", "end"]
+            ${["audio", "dome", "domeRotate", "loop", "random", "audioCat", "end"]
               .map(
                 (type) =>
                   `<div class="step-type-reference-item">
@@ -632,7 +610,7 @@
             <div class="step-type-group">
               <div class="step-type-group-label">Common</div>
               <div class="step-type-cards">
-                ${["audio", "domeRotate", "dome", "domeLogic", "loop"]
+                ${["audio", "domeRotate", "dome", "loop"]
                   .map(
                     (type) =>
                       `<button class="step-type-chip step-type-card ${step.type === type ? "active" : ""}" data-type="${type}" aria-pressed="${step.type === type ? "true" : "false"}" title="${stepTypeName[type]}">
@@ -642,6 +620,12 @@
                   )
                   .join("")}
               </div>
+            </div>
+            <div class="step-type-subgroup">
+              <button class="step-type-chip step-type-card step-type-dome-sub ${step.type === "dome" && (step.cmd || "").startsWith("DL:") ? "active" : ""}" data-type="dome" data-dome-mode="logic" aria-pressed="${step.type === "dome" && (step.cmd || "").startsWith("DL:") ? "true" : "false"}" title="Logic / PSI Mode">
+                <span class="step-type-card-emoji">🎭</span>
+                <span class="step-type-card-name">Logic / PSI Mode</span>
+              </button>
             </div>
 
             <div class="step-type-group">
@@ -697,20 +681,19 @@
         return "Plays a sound";
       case "dome": {
         const cmd = step.cmd || "";
+        if (cmd.startsWith("DL:")) {
+          const parts = cmd.split(":");
+          if (parts.length >= 3) {
+            const target = dlTargetLabel(parts[1]);
+            const mode = dlModeLabel(parts[2]);
+            return `Sets ${target} to ${mode}`;
+          }
+          return "Sets logic/PSI mood";
+        }
         if (/^(:|)(OP|CL|OF)/.test(cmd)) {
           return "Operates dome panels";
         }
         return "Dome command";
-      }
-      case "domeLogic": {
-        const cmd = step.cmd || "DL:LOGIC:NORMAL";
-        const parts = cmd.split(":");
-        if (parts.length >= 3) {
-          const target = dlTargetLabel(parts[1]);
-          const mode = dlModeLabel(parts[2]);
-          return `Sets ${target} to ${mode}`;
-        }
-        return "Sets logic/PSI mood";
       }
       case "visualPreset":
         return "Applies a dome visual preset";
@@ -759,19 +742,22 @@
       case "dome": {
         // Detect mode from step.cmd:
         // - Visual preset if starts with DV: → preset picker
+        // - Logic/PSI if starts with DL: → structured DL: controls
         // - Panel intent if starts with :OP, :CL, :OF → panel action UI
         // - Otherwise advanced mode → raw text input
         const domeCmd = step.cmd || "";
         // Check for forced mode attribute (used during toggle)
         const forcedMode = fieldsContainer.dataset.domeMode;
-        let domeMode; // "panel", "preset", or "advanced"
+        let domeMode; // "panel", "preset", "logic", or "advanced"
         if (forcedMode) {
-          domeMode = forcedMode; // panel, preset, or advanced
+          domeMode = forcedMode; // panel, preset, logic, or advanced
           // Clear the forced mode after use
           delete fieldsContainer.dataset.domeMode;
         } else {
           if (domeCmd.startsWith("DV:")) {
             domeMode = "preset";
+          } else if (domeCmd.startsWith("DL:")) {
+            domeMode = "logic";
           } else if (/^(:|)(OP|CL|OF)/.test(domeCmd)) {
             domeMode = "panel";
           } else {
@@ -794,6 +780,59 @@
             <input type="hidden" class="step-field" data-field="cmd" value="${escapeHtml(step.cmd || "DV:ROCKMARCH")}">
             <button class="dome-mode-toggle" aria-label="Switch to panel mode">Panel</button>
           `;
+        } else if (domeMode === "logic") {
+          // Logic/PSI Mode (DL:) structured step
+          // Grammar: DL:<target>:<mode>[:<color>[:<durationSec>]]
+          const cmd = step.cmd || "DL:LOGIC:NORMAL";
+          const parts = cmd.split(":");
+          const target = parts[1] || "LOGIC";
+          const mode = parts[2] || "NORMAL";
+          const color = parts[3] || "DEFAULT";
+          const duration = parts[4] || "";
+
+          targetHtml = `
+            <select class="step-field dl-target-select" data-field="target" aria-label="Target">
+              <option value="FLD" ${target === "FLD" ? "selected" : ""}>Front logic (FLD)</option>
+              <option value="RLD" ${target === "RLD" ? "selected" : ""}>Rear logic (RLD)</option>
+              <option value="LOGIC" ${target === "LOGIC" ? "selected" : ""}>Both logic (LOGIC)</option>
+              <option value="FPSI" ${target === "FPSI" ? "selected" : ""}>Front PSI (FPSI)</option>
+              <option value="RPSI" ${target === "RPSI" ? "selected" : ""}>Rear PSI (RPSI)</option>
+              <option value="PSI" ${target === "PSI" ? "selected" : ""}>Both PSI (PSI)</option>
+              <option value="ALL" ${target === "ALL" ? "selected" : ""}>All logic + PSI (ALL)</option>
+            </select>
+          `;
+
+          behaviorHtml = `
+            <select class="step-field dl-mode-select" data-field="mode" aria-label="Mode">
+              <option value="NORMAL" ${mode === "NORMAL" ? "selected" : ""}>Normal</option>
+              <option value="ALARM" ${mode === "ALARM" ? "selected" : ""}>Alarm</option>
+              <option value="FAILURE" ${mode === "FAILURE" ? "selected" : ""}>Failure</option>
+              <option value="LEIA" ${mode === "LEIA" ? "selected" : ""}>Leia</option>
+              <option value="MARCH" ${mode === "MARCH" ? "selected" : ""}>March</option>
+              <option value="FLASHCOLOR" ${mode === "FLASHCOLOR" ? "selected" : ""}>Flash Color</option>
+              <option value="REDALERT" ${mode === "REDALERT" ? "selected" : ""}>Red Alert</option>
+              <option value="RAINBOW" ${mode === "RAINBOW" ? "selected" : ""}>Rainbow</option>
+              <option value="LIGHTSOUT" ${mode === "LIGHTSOUT" ? "selected" : ""}>Lights Out</option>
+            </select>
+            <select class="step-field dl-color-select" data-field="color" aria-label="Color">
+              <option value="DEFAULT" ${color === "DEFAULT" ? "selected" : ""}>Default</option>
+              <option value="RED" ${color === "RED" ? "selected" : ""}>Red</option>
+              <option value="BLUE" ${color === "BLUE" ? "selected" : ""}>Blue</option>
+              <option value="GREEN" ${color === "GREEN" ? "selected" : ""}>Green</option>
+              <option value="WHITE" ${color === "WHITE" ? "selected" : ""}>White</option>
+              <option value="YELLOW" ${color === "YELLOW" ? "selected" : ""}>Yellow</option>
+              <option value="ORANGE" ${color === "ORANGE" ? "selected" : ""}>Orange</option>
+              <option value="PURPLE" ${color === "PURPLE" ? "selected" : ""}>Purple</option>
+            </select>
+          `;
+
+          timingHtml = `
+            <input class="step-field dl-duration-input" type="number" data-field="duration" value="${duration}" min="0" max="99" aria-label="Duration (seconds)" placeholder="duration (0-99s)">
+            <span class="dome-rotate-label">s</span>
+          `;
+
+          // Store hidden cmd field for serialization
+          behaviorHtml += `<input type="hidden" class="step-field" data-field="cmd" value="${escapeHtml(cmd)}">`;
         } else if (domeMode === "panel") {
           // Parse action and target from cmd, e.g., ":OP01" -> action="OP", target="01"
           let action = "";
@@ -848,62 +887,6 @@
             <button class="dome-mode-toggle" aria-label="Switch to panel mode">Panel</button>
           `;
         }
-        break;
-      }
-
-      case "domeLogic": {
-        // Logic/PSI Mode (DL:) structured step
-        // Grammar: DL:<target>:<mode>[:<color>[:<durationSec>]]
-        const cmd = step.cmd || "DL:LOGIC:NORMAL";
-        const parts = cmd.split(":");
-        const target = parts[1] || "LOGIC";
-        const mode = parts[2] || "NORMAL";
-        const color = parts[3] || "DEFAULT";
-        const duration = parts[4] || "";
-
-        targetHtml = `
-          <select class="step-field dl-target-select" data-field="target" aria-label="Target">
-            <option value="FLD" ${target === "FLD" ? "selected" : ""}>Front logic (FLD)</option>
-            <option value="RLD" ${target === "RLD" ? "selected" : ""}>Rear logic (RLD)</option>
-            <option value="LOGIC" ${target === "LOGIC" ? "selected" : ""}>Both logic (LOGIC)</option>
-            <option value="FPSI" ${target === "FPSI" ? "selected" : ""}>Front PSI (FPSI)</option>
-            <option value="RPSI" ${target === "RPSI" ? "selected" : ""}>Rear PSI (RPSI)</option>
-            <option value="PSI" ${target === "PSI" ? "selected" : ""}>Both PSI (PSI)</option>
-            <option value="ALL" ${target === "ALL" ? "selected" : ""}>All logic + PSI (ALL)</option>
-          </select>
-        `;
-
-        behaviorHtml = `
-          <select class="step-field dl-mode-select" data-field="mode" aria-label="Mode">
-            <option value="NORMAL" ${mode === "NORMAL" ? "selected" : ""}>Normal</option>
-            <option value="ALARM" ${mode === "ALARM" ? "selected" : ""}>Alarm</option>
-            <option value="FAILURE" ${mode === "FAILURE" ? "selected" : ""}>Failure</option>
-            <option value="LEIA" ${mode === "LEIA" ? "selected" : ""}>Leia</option>
-            <option value="MARCH" ${mode === "MARCH" ? "selected" : ""}>March</option>
-            <option value="FLASHCOLOR" ${mode === "FLASHCOLOR" ? "selected" : ""}>Flash Color</option>
-            <option value="REDALERT" ${mode === "REDALERT" ? "selected" : ""}>Red Alert</option>
-            <option value="RAINBOW" ${mode === "RAINBOW" ? "selected" : ""}>Rainbow</option>
-            <option value="LIGHTSOUT" ${mode === "LIGHTSOUT" ? "selected" : ""}>Lights Out</option>
-          </select>
-          <select class="step-field dl-color-select" data-field="color" aria-label="Color">
-            <option value="DEFAULT" ${color === "DEFAULT" ? "selected" : ""}>Default</option>
-            <option value="RED" ${color === "RED" ? "selected" : ""}>Red</option>
-            <option value="BLUE" ${color === "BLUE" ? "selected" : ""}>Blue</option>
-            <option value="GREEN" ${color === "GREEN" ? "selected" : ""}>Green</option>
-            <option value="WHITE" ${color === "WHITE" ? "selected" : ""}>White</option>
-            <option value="YELLOW" ${color === "YELLOW" ? "selected" : ""}>Yellow</option>
-            <option value="ORANGE" ${color === "ORANGE" ? "selected" : ""}>Orange</option>
-            <option value="PURPLE" ${color === "PURPLE" ? "selected" : ""}>Purple</option>
-          </select>
-        `;
-
-        timingHtml = `
-          <input class="step-field dl-duration-input" type="number" data-field="duration" value="${duration}" min="0" max="99" aria-label="Duration (seconds)" placeholder="duration (0-99s)">
-          <span class="dome-rotate-label">s</span>
-        `;
-
-        // Store hidden cmd field for serialization
-        behaviorHtml += `<input type="hidden" class="step-field" data-field="cmd" value="${escapeHtml(cmd)}">`;
         break;
       }
 
@@ -1452,7 +1435,6 @@
     const stepTypeDefaults = {
       audio: { cmd: "$H" },
       dome: { cmd: ":OP00" },
-      domeLogic: { cmd: "DL:LOGIC:NORMAL" },
       domeRotate: { speedPct: 0, durationMs: 0 },
       loop: { body: 2, periodMs: 1846, durationMs: 14000 },
       random: { set: "ring", mode: "flutter", moveMs: 300, jitterMs: 500, distinct: true },
@@ -1508,15 +1490,31 @@
         if (!card) return;
         const stepIdx = parseInt(card.dataset.stepIndex, 10);
 
-        card.querySelectorAll(".step-type-chip").forEach((c) => {
-          c.classList.toggle("active", c === chip);
-          c.setAttribute("aria-pressed", c === chip ? "true" : "false");
-        });
+        // For Logic/PSI sub-mode chips, only toggle within their group
+        const isLogicChip = chip.dataset.domeMode === "logic";
+        if (isLogicChip) {
+          card.querySelectorAll(".step-type-dome-sub").forEach((c) => {
+            c.classList.toggle("active", c === chip);
+            c.setAttribute("aria-pressed", c === chip ? "true" : "false");
+          });
+        } else {
+          card.querySelectorAll(".step-type-chip").forEach((c) => {
+            c.classList.toggle("active", c === chip);
+            c.setAttribute("aria-pressed", c === chip ? "true" : "false");
+          });
+        }
 
         const newType = chip.dataset.type;
         // Clear all old type-specific fields; keep only t, assign new type + defaults
         const { t } = editorState.current.steps[stepIdx];
-        editorState.current.steps[stepIdx] = { t, type: newType, ...(stepTypeDefaults[newType] || {}) };
+        let newDefaults = stepTypeDefaults[newType] || {};
+
+        // Special handling for Logic/PSI: it's a dome step with DL: cmd
+        if (isLogicChip) {
+          newDefaults = { cmd: "DL:LOGIC:NORMAL" };
+        }
+
+        editorState.current.steps[stepIdx] = { t, type: newType, ...newDefaults };
 
         const fieldsContainer = card.querySelector(".step-fields");
         renderStepFields(editorState.current.steps[stepIdx], fieldsContainer);
@@ -1526,14 +1524,13 @@
           input.addEventListener("change", () => validateAndUpdateStep(stepIdx));
         });
 
-        // If switching to dome type, attach dome-specific listeners
+        // If switching to dome type, attach appropriate listeners
         if (newType === "dome") {
-          attachDomePanelIntentListeners(fieldsContainer, stepIdx);
-        }
-
-        // If switching to domeLogic type, attach Logic/PSI mode listeners
-        if (newType === "domeLogic") {
-          attachDomeLogicListeners(fieldsContainer, stepIdx);
+          if (isLogicChip) {
+            attachDomeLogicListeners(fieldsContainer, stepIdx);
+          } else {
+            attachDomePanelIntentListeners(fieldsContainer, stepIdx);
+          }
         }
 
         // If switching to domeRotate type, attach domeRotate-specific listeners
@@ -1580,19 +1577,15 @@
     document.querySelectorAll(".step-card").forEach((card) => {
       const stepIdx = parseInt(card.dataset.stepIndex, 10);
       const fieldsContainer = card.querySelector(".step-fields");
+      const step = editorState.current.steps[stepIdx];
       const typeChip = card.querySelector(".step-type-chip.active");
       if (typeChip && typeChip.dataset.type === "dome" && fieldsContainer) {
-        attachDomePanelIntentListeners(fieldsContainer, stepIdx);
-      }
-    });
-
-    // Attach domeLogic-specific listeners for Logic/PSI mode steps
-    document.querySelectorAll(".step-card").forEach((card) => {
-      const stepIdx = parseInt(card.dataset.stepIndex, 10);
-      const fieldsContainer = card.querySelector(".step-fields");
-      const typeChip = card.querySelector(".step-type-chip.active");
-      if (typeChip && typeChip.dataset.type === "domeLogic" && fieldsContainer) {
-        attachDomeLogicListeners(fieldsContainer, stepIdx);
+        // Check if this is a Logic/PSI step (DL: command)
+        if (step && (step.cmd || "").startsWith("DL:")) {
+          attachDomeLogicListeners(fieldsContainer, stepIdx);
+        } else {
+          attachDomePanelIntentListeners(fieldsContainer, stepIdx);
+        }
       }
     });
 

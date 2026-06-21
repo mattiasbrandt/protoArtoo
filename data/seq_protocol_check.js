@@ -11,7 +11,7 @@
   const SUPPRESS_MS_MIN = 1000;
   const SUPPRESS_MS_MAX = 120000;
   const TOGGLE_GROUPS = ["none", "pies", "low", "all"];
-  const STEP_TYPES = ["audio", "dome", "domeLogic", "loop", "random", "audioCat", "domeRotate", "end"];
+  const STEP_TYPES = ["audio", "dome", "loop", "random", "audioCat", "domeRotate", "end"];
   const AUDIO_CATEGORIES = [
     "alert",
     "chatty",
@@ -177,7 +177,6 @@
       switch (type) {
         case "audio":    return this._validateAudioStep(step);
         case "dome":     return this._validateDomeStep(step);
-        case "domeLogic": return this._validateDomeLogicStep(step);
         case "loop":     return this._validateLoopStep(step, allSteps);
         case "random":   return this._validateRandomStep(step);
         case "audioCat": return this._validateAudioCatStep(step);
@@ -287,15 +286,6 @@
         error:
           "That dome command isn't recognized. Use a panel action (Open, Close, Flutter), a dome visual preset (DV:...), or an advanced code (@ for logic/PSI, * for holos, :SE## for Marcduino).",
       };
-    },
-
-    _validateDomeLogicStep(step) {
-      const { cmd } = step;
-      if (!cmd || typeof cmd !== "string") {
-        return { ok: false, field: "cmd", error: "Choose a logic/PSI mode for this step" };
-      }
-
-      return this._validateDLLogicCommand(cmd);
     },
 
     _validateLoopStep(step, _allSteps) {
