@@ -67,6 +67,17 @@
     "DEFAULT", "RED", "BLUE", "GREEN", "WHITE", "YELLOW", "ORANGE", "PURPLE",
   ]);
 
+  // Logic Text (DT:) — multi-line text display on FLD/RLD.
+  // Grammar: DT:<target>:<color>:<durationSec>:<speed>:<encodedText>
+  // Text is percent-encoded; newline=%0A, %=%25, :=%3A; spaces literal.
+  // Encoded text <= 40 chars; decoded text <= 32 chars; max one newline.
+  const DT_TARGETS = new Set([
+    "FLD", "RLD", "LOGIC",
+  ]);
+  const DT_COLORS = new Set([
+    "DEFAULT", "RED", "BLUE", "GREEN", "WHITE", "YELLOW", "ORANGE", "PURPLE",
+  ]);
+
   // Classify a panel intent target into its group for :OF cleanup tracking.
   function panelGroup(target) {
     if (target === "00") return "all";
@@ -242,6 +253,11 @@
       // DL:<target>:<mode>[:<color>[:<durationSec>]] — Logic/PSI mode
       if (cmd.startsWith("DL:")) {
         return this._validateDLLogicCommand(cmd);
+      }
+
+      // DT:<target>:<color>:<durationSec>:<speed>:<encodedText> — Logic Text
+      if (cmd.startsWith("DT:")) {
+        return this._validateDTTextCommand(cmd);
       }
 
       // Panel intent: :OP<target>, :CL<target>, :OF<target>
@@ -526,6 +542,146 @@
           ok: false,
           field: "cmd",
           error: "Logic/PSI command has too many fields",
+        };
+      }
+
+      return { ok: true };
+    },
+
+    _validateDTTextCommand(cmd) {
+      // DT:<target>:<color>:<durationSec>:<speed>:<encodedText>
+      // Text is percent-encoded; newline=%0A, %=%25, :=%3A; spaces literal
+      // Encoded text <= 40 chars; decoded text <= 32 chars; max one newline
+      const parts = cmd.split(":");
+      if (parts.length < 5 || parts[0] !== "DT") {
+        return {
+          ok: false,
+          field: "cmd",
+          error: "Logic Text command must be in the format DT:TARGET:COLOR:DURATION:SPEED:TEXT",
+        };
+      }
+
+      const target = parts[1];
+      const color = parts[2];
+      const durationStr = parts[3];
+      const speedStr = parts[4];
+      const encodedText = parts.slice(5).join(":");
+
+      // Validate command length (must be <= 63)
+      if (cmd.length > 63) {
+        return {
+          ok: false,
+          field: "cmd",
+          error: "Logic Text command is too long (must be 63 characters or less)",
+        };
+      }
+
+      // Validate target
+      if (!DT_TARGETS.has(target)) {
+        return {
+          ok: false,
+          field: "cmd",
+          error: `"${target}" is not a valid target. Choose one of: ${Array.from(DT_TARGETS).join(", ")}`,
+        };
+      }
+
+      // Validate color
+      if (!DT_COLORS.has(color)) {
+        return {
+          ok: false,
+          field: "cmd",
+          error: `"${color}" is not a valid color. Choose one of: ${Array.from(DT_COLORS).join(", ")}`,
+        };
+      }
+
+      // Validate duration (0-99 seconds)
+      const duration = parseInt(durationStr, 10);
+      if (isNaN(duration) || duration < 0 || duration > 99) {
+        return {
+          ok: false,
+          field: "cmd",
+          error: "Duration must be a number between 0 and 99 seconds",
+        };
+      }
+
+      // Validate speed (0-9)
+      const speed = parseInt(speedStr, 10);
+      if (isNaN(speed) || speed < 0 || speed > 9) {
+        return {
+          ok: false,
+          field: "cmd",
+          error: "Scroll speed must be a number between 0 and 9",
+        };
+      }
+
+      // Validate encoded text length (max 40 chars encoded)
+      if (encodedText.length > 40) {
+        return {
+          ok: false,
+          field: "cmd",
+          error: "Text is too long when encoded (max 40 characters)",
+        };
+      }
+
+      // Decode and validate the text
+      let decodedText = "";
+      try {
+        decodedText = decodeURIComponent(encodedText);
+      } catch (e) {
+        return {
+          ok: false,
+          field: "cmd",
+          error: "Text encoding is invalid; use percent-encoding for special characters",
+        };
+      }
+
+      // Validate decoded text length (max 32 chars)
+      if (decodedText.length > 32) {
+        return {
+          ok: false,
+          field: "cmd",
+          error: "Text is too long when decoded (max 32 characters)",
+        };
+      }
+
+      // Reject empty text
+      if (decodedText.length === 0) {
+        return {
+          ok: false,
+          field: "cmd",
+          error: "Text can't be empty",
+        };
+      }
+
+      // Check for control characters (except newline)
+      for (let i = 0; i < decodedText.length; i++) {
+        const ch = decodedText.charCodeAt(i);
+        if (ch < 32 && ch !== 10) {
+          // < 32 is control char; 10 is newline (allowed)
+          return {
+            ok: false,
+            field: "cmd",
+            error: "Text contains invalid control characters",
+          };
+        }
+      }
+
+      // Check for carriage return (explicitly disallowed)
+      if (decodedText.includes("\r")) {
+        return {
+          ok: false,
+          field: "cmd",
+          error: "Text contains carriage return (CR); use only newlines",
+        };
+      }
+
+      // Check for max one newline
+      const newlineCount = (decodedText.match(/\n/g) || []).length;
+      if (newlineCount > 1) {
+        return {
+          ok: false,
+          field: "cmd",
+          error: "Text can contain at most one line break",
         };
       }
 

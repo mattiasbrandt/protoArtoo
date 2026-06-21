@@ -107,6 +107,16 @@
     return labels[color] || color || "Default";
   };
 
+  // Map DT: targets to friendly operator labels
+  const dtTargetLabel = (target) => {
+    const labels = {
+      "FLD": "Front display",
+      "RLD": "Rear display",
+      "LOGIC": "Both displays",
+    };
+    return labels[target] || target || "Unknown";
+  };
+
   const els = {
     // List view
     mainCard: document.getElementById("seq-main-card"),
@@ -461,6 +471,28 @@
           }
           return `Logic/PSI: ${cmd.slice(3)}`;
         }
+        // Logic Text mode
+        if (cmd.startsWith("DT:")) {
+          const parts = cmd.split(":");
+          if (parts.length >= 5) {
+            const target = parts[1];
+            const color = parts[2];
+            const duration = parts[3];
+            const speed = parts[4];
+            const encodedText = parts.slice(5).join(":");
+            // Decode percent-encoded text
+            let decodedText = "";
+            try {
+              decodedText = decodeURIComponent(encodedText);
+            } catch (e) {
+              decodedText = encodedText;
+            }
+            // Render newline visibly for preview
+            const displayText = decodedText.replace(/\n/g, " / ");
+            return `${dtTargetLabel(target)} text: "${displayText}"`;
+          }
+          return `Logic text: ${cmd.slice(3)}`;
+        }
         // Panel intent mode: parse action and target
         if (/^(:|)(OP|CL|OF)/.test(cmd)) {
           const match = cmd.match(/^:?(OP|CL|OF)(.+)$/);
@@ -538,6 +570,9 @@
     }
     if ((cmd || "").startsWith("DL:")) {
       return { emoji: "🎭", name: "Logic / PSI Mode" };
+    }
+    if ((cmd || "").startsWith("DT:")) {
+      return { emoji: "💬", name: "Logic Text" };
     }
     return { emoji: "🧩", name: "Panel Action" };
   };
@@ -642,6 +677,10 @@
               <button class="step-type-chip step-type-card step-type-dome-sub ${step.type === "dome" && (step.cmd || "").startsWith("DL:") ? "active" : ""}" data-type="dome" data-dome-mode="logic" aria-pressed="${step.type === "dome" && (step.cmd || "").startsWith("DL:") ? "true" : "false"}" title="Logic / PSI Mode">
                 <span class="step-type-card-emoji">🎭</span>
                 <span class="step-type-card-name">Logic / PSI Mode</span>
+              </button>
+              <button class="step-type-chip step-type-card step-type-dome-sub ${step.type === "dome" && (step.cmd || "").startsWith("DT:") ? "active" : ""}" data-type="dome" data-dome-mode="text" aria-pressed="${step.type === "dome" && (step.cmd || "").startsWith("DT:") ? "true" : "false"}" title="Logic Text">
+                <span class="step-type-card-emoji">💬</span>
+                <span class="step-type-card-name">Logic Text</span>
               </button>
             </div>
 
@@ -846,6 +885,55 @@
           timingHtml = `
             <input class="step-field dl-duration-input" type="number" data-field="duration" value="${duration}" min="0" max="99" aria-label="Duration (seconds)" placeholder="duration (0-99s)">
             <span class="dome-rotate-label">s</span>
+          `;
+
+          // Store hidden cmd field for serialization
+          behaviorHtml += `<input type="hidden" class="step-field" data-field="cmd" value="${escapeHtml(cmd)}">`;
+        } else if (domeMode === "text") {
+          // Logic Text Mode (DT:) structured step
+          // Grammar: DT:<target>:<color>:<durationSec>:<speed>:<encodedText>
+          const cmd = step.cmd || "DT:LOGIC:DEFAULT:5:0:";
+          const parts = cmd.split(":");
+          const target = parts[1] || "LOGIC";
+          const color = parts[2] || "DEFAULT";
+          const duration = parts[3] || "5";
+          const speed = parts[4] || "0";
+          const encodedText = parts.slice(5).join(":") || "";
+          // Decode text for display
+          let decodedText = "";
+          try {
+            decodedText = decodeURIComponent(encodedText);
+          } catch (e) {
+            decodedText = encodedText;
+          }
+
+          targetHtml = `
+            <select class="step-field dt-target-select" data-field="target" aria-label="Target">
+              <option value="FLD" ${target === "FLD" ? "selected" : ""}>Front display (FLD)</option>
+              <option value="RLD" ${target === "RLD" ? "selected" : ""}>Rear display (RLD)</option>
+              <option value="LOGIC" ${target === "LOGIC" ? "selected" : ""}>Both displays (LOGIC)</option>
+            </select>
+          `;
+
+          behaviorHtml = `
+            <select class="step-field dt-color-select" data-field="color" aria-label="Color">
+              <option value="DEFAULT" ${color === "DEFAULT" ? "selected" : ""}>Default</option>
+              <option value="RED" ${color === "RED" ? "selected" : ""}>Red</option>
+              <option value="BLUE" ${color === "BLUE" ? "selected" : ""}>Blue</option>
+              <option value="GREEN" ${color === "GREEN" ? "selected" : ""}>Green</option>
+              <option value="WHITE" ${color === "WHITE" ? "selected" : ""}>White</option>
+              <option value="YELLOW" ${color === "YELLOW" ? "selected" : ""}>Yellow</option>
+              <option value="ORANGE" ${color === "ORANGE" ? "selected" : ""}>Orange</option>
+              <option value="PURPLE" ${color === "PURPLE" ? "selected" : ""}>Purple</option>
+            </select>
+            <textarea class="step-field dt-text-input" data-field="text" placeholder="Enter text (max 32 chars, one line break allowed)" aria-label="Display text">${escapeHtml(decodedText)}</textarea>
+          `;
+
+          timingHtml = `
+            <input class="step-field dt-duration-input" type="number" data-field="duration" value="${duration}" min="0" max="99" aria-label="Duration (seconds)" placeholder="0-99s">
+            <span class="dome-rotate-label">s</span>
+            <input class="step-field dt-speed-input" type="number" data-field="speed" value="${speed}" min="0" max="9" aria-label="Scroll speed (0-9)" placeholder="0-9">
+            <span class="dome-rotate-label">speed</span>
           `;
 
           // Store hidden cmd field for serialization
@@ -1448,6 +1536,42 @@
     });
   };
 
+  // Helper: Attach Logic Text listeners to a specific fields container
+  const attachDomeTextListeners = (fieldsContainer, stepIdx) => {
+    const targetSelect = fieldsContainer.querySelector(".dt-target-select");
+    const colorSelect = fieldsContainer.querySelector(".dt-color-select");
+    const textInput = fieldsContainer.querySelector(".dt-text-input");
+    const durationInput = fieldsContainer.querySelector(".dt-duration-input");
+    const speedInput = fieldsContainer.querySelector(".dt-speed-input");
+    const hiddenCmd = fieldsContainer.querySelector('input[data-field="cmd"]');
+
+    const updateCmd = () => {
+      if (!targetSelect || !colorSelect || !hiddenCmd) return;
+      const plainText = textInput ? textInput.value : "";
+      let encodedText = "";
+      try {
+        // Percent-encode the text: newline=%0A, %=%25, :=%3A, space stays literal
+        encodedText = encodeURIComponent(plainText)
+          .replace(/%20/g, " ");  // Keep spaces literal
+      } catch (e) {
+        encodedText = plainText;
+      }
+      const duration = durationInput ? durationInput.value : "5";
+      const speed = speedInput ? speedInput.value : "0";
+      const cmd = `DT:${targetSelect.value}:${colorSelect.value}:${duration}:${speed}:${encodedText}`;
+      hiddenCmd.value = cmd;
+      editorState.current.steps[stepIdx].cmd = cmd;
+      validateAndUpdateStep(stepIdx);
+    };
+
+    [targetSelect, colorSelect, textInput, durationInput, speedInput].forEach((el) => {
+      if (el) {
+        el.addEventListener("change", updateCmd);
+        el.addEventListener("input", updateCmd);
+      }
+    });
+  };
+
   const attachStepListeners = () => {
     const stepTypeDefaults = {
       audio: { cmd: "$H" },
@@ -1528,7 +1652,8 @@
 
         // Special handling for Logic/PSI: it's a dome step with DL: cmd
         if (isLogicChip) {
-          newDefaults = { cmd: "DL:LOGIC:NORMAL" };
+          const isTextChip = chip.dataset.domeMode === "text";
+          newDefaults = isTextChip ? { cmd: "DT:LOGIC:DEFAULT:5:0:" } : { cmd: "DL:LOGIC:NORMAL" };
         }
 
         editorState.current.steps[stepIdx] = { t, type: newType, ...newDefaults };
@@ -1544,7 +1669,12 @@
         // If switching to dome type, attach appropriate listeners
         if (newType === "dome") {
           if (isLogicChip) {
-            attachDomeLogicListeners(fieldsContainer, stepIdx);
+            const isTextChip = chip.dataset.domeMode === "text";
+            if (isTextChip) {
+              attachDomeTextListeners(fieldsContainer, stepIdx);
+            } else {
+              attachDomeLogicListeners(fieldsContainer, stepIdx);
+            }
           } else {
             attachDomePanelIntentListeners(fieldsContainer, stepIdx);
           }
@@ -1597,8 +1727,11 @@
       const step = editorState.current.steps[stepIdx];
       const typeChip = card.querySelector(".step-type-chip.active");
       if (typeChip && typeChip.dataset.type === "dome" && fieldsContainer) {
-        // Check if this is a Logic/PSI step (DL: command)
-        if (step && (step.cmd || "").startsWith("DL:")) {
+        // Check if this is a Logic Text step (DT: command)
+        if (step && (step.cmd || "").startsWith("DT:")) {
+          attachDomeTextListeners(fieldsContainer, stepIdx);
+        } else if (step && (step.cmd || "").startsWith("DL:")) {
+          // Check if this is a Logic/PSI step (DL: command)
           attachDomeLogicListeners(fieldsContainer, stepIdx);
         } else {
           attachDomePanelIntentListeners(fieldsContainer, stepIdx);
