@@ -391,6 +391,7 @@ void seqJsonSerializeObject(JsonObject obj, const SequenceEntry& entry,
     meta["origin"] = "";
     meta["license"] = "";
     meta["notes"] = "";
+    meta["purpose"] = (entry.purpose != nullptr) ? entry.purpose : "";
     meta["modified"] = false;
 
     JsonArray steps = obj["steps"].to<JsonArray>();

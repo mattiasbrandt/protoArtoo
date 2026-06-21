@@ -172,6 +172,7 @@ void handleBuiltins(AsyncWebServerRequest* req) {
         o["toggleGroup"] = seqToggleGroupToString(e->toggleGroup);
         o["suppressMs"] = e->suppressMs;
         o["stepCount"] = e->stepCount;
+        o["purpose"] = (e->purpose != nullptr) ? e->purpose : "";
     }
     auto* stream = req->beginResponseStream("application/json");
     if (stream == nullptr) {

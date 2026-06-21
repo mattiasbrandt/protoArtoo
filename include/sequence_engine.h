@@ -167,6 +167,7 @@ struct SequenceEntry {
     SeqToggleGroup toggleGroup; // TOGGLE_NONE for non-toggle sequences
     const SeqStep* closeSteps;  // toggle close branch (nullptr otherwise)
     uint8_t        closeStepCount;
+    const char*    purpose;     // optional operator-facing description (nullptr if none)
 };
 
 // -----------------------------------------------------------------------------

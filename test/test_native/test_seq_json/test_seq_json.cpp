@@ -92,7 +92,7 @@ static void test_nod_parsed_runs_through_engine() {
     TEST_ASSERT_TRUE_MESSAGE(r.ok, r.message);
 
     SequenceEntry e = { d.name, d.steps, d.stepCount, d.suppressMs,
-                        d.toggleGroup, d.closeSteps, d.closeStepCount };
+                        d.toggleGroup, d.closeSteps, d.closeStepCount, nullptr };
     char log[256];
     runToLog(e, log, sizeof(log));
 
@@ -242,7 +242,7 @@ static void test_audiocat_roundtrip() {
         SEQ_AUDIO_CAT(0, AUDIO_CATEGORY_ALERT, AUDIO_SLOT_NAMED_SCREAM),
         SEQ_TERM(100),
     };
-    SequenceEntry e = { "DM:CATTEST", s, 2, 4000, TOGGLE_NONE, nullptr, 0 };
+    SequenceEntry e = { "DM:CATTEST", s, 2, 4000, TOGGLE_NONE, nullptr, 0, nullptr };
     char json[1024];
     size_t n = seqJsonSerialize(e, "user", json, sizeof(json));
     TEST_ASSERT_GREATER_THAN(0, n);
@@ -411,7 +411,7 @@ static void test_domerotate_serialize_roundtrip() {
         SEQ_DOME_ROTATE(0, 35, 900),
         SEQ_TERM(900),
     };
-    SequenceEntry e = { "DM:ROTTEST", steps, 2, 5000, TOGGLE_NONE, nullptr, 0 };
+    SequenceEntry e = { "DM:ROTTEST", steps, 2, 5000, TOGGLE_NONE, nullptr, 0, nullptr };
 
     char json[1024];
     size_t n = seqJsonSerialize(e, "user", json, sizeof(json));

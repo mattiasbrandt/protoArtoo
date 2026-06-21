@@ -39,7 +39,7 @@ static const SeqStep kFlatSteps[] = {
 static const SequenceEntry kFlatEntry = {
     "TEST:FLAT", kFlatSteps,
     (uint8_t)(sizeof(kFlatSteps) / sizeof(kFlatSteps[0])),
-    3000, TOGGLE_NONE, nullptr, 0,
+    3000, TOGGLE_NONE, nullptr, 0, nullptr,
 };
 
 // Mirrors DM:VADER's shape: persistent logic/PSI effects, long tail.
@@ -54,7 +54,7 @@ static const SeqStep kFxSteps[] = {
 static const SequenceEntry kFxEntry = {
     "TEST:FX", kFxSteps,
     (uint8_t)(sizeof(kFxSteps) / sizeof(kFxSteps[0])),
-    47000, TOGGLE_NONE, nullptr, 0,
+    47000, TOGGLE_NONE, nullptr, 0, nullptr,
 };
 
 // Drain every action due at `now`, appending payloads to `log` (pipe-separated).
@@ -326,7 +326,7 @@ void test_dome_rotate_step_emits_typed_rotation_action() {
     };
     static const SequenceEntry entry = {
         "TEST:ROTATE", steps, (uint8_t)(sizeof(steps) / sizeof(steps[0])),
-        3000, TOGGLE_NONE, nullptr, 0,
+        3000, TOGGLE_NONE, nullptr, 0, nullptr,
     };
 
     SeqEngineState st;
@@ -463,7 +463,7 @@ static const SeqStep kLoopSteps[] = {
 static const SequenceEntry kLoopEntry = {
     "TEST:LOOP", kLoopSteps,
     (uint8_t)(sizeof(kLoopSteps) / sizeof(kLoopSteps[0])),
-    2000, TOGGLE_NONE, nullptr, 0,
+    2000, TOGGLE_NONE, nullptr, 0, nullptr,
 };
 
 void test_loop_iterations_fire_at_period_offsets() {
@@ -582,13 +582,13 @@ static const SequenceEntry kToggleEntry = {
     "TEST:TOGGLE", kToggleOpenSteps,
     (uint8_t)(sizeof(kToggleOpenSteps) / sizeof(kToggleOpenSteps[0])),
     5000, TOGGLE_PIES, kToggleCloseSteps,
-    (uint8_t)(sizeof(kToggleCloseSteps) / sizeof(kToggleCloseSteps[0])),
+    (uint8_t)(sizeof(kToggleCloseSteps) / sizeof(kToggleCloseSteps[0])), nullptr,
 };
 static const SequenceEntry kToggleAllEntry = {
     "TEST:TOGGLEALL", kToggleOpenSteps,
     (uint8_t)(sizeof(kToggleOpenSteps) / sizeof(kToggleOpenSteps[0])),
     5000, TOGGLE_ALL, kToggleCloseSteps,
-    (uint8_t)(sizeof(kToggleCloseSteps) / sizeof(kToggleCloseSteps[0])),
+    (uint8_t)(sizeof(kToggleCloseSteps) / sizeof(kToggleCloseSteps[0])), nullptr,
 };
 
 void test_toggle_first_press_runs_open_branch_and_latches_open() {
@@ -713,7 +713,7 @@ static const SeqStep kRandomSteps[] = {
 static const SequenceEntry kRandomEntry = {
     "TEST:RANDOM", kRandomSteps,
     (uint8_t)(sizeof(kRandomSteps) / sizeof(kRandomSteps[0])),
-    2000, TOGGLE_NONE, nullptr, 0,
+    2000, TOGGLE_NONE, nullptr, 0, nullptr,
 };
 
 void test_random_step_resolves_target_and_mode_from_rng() {
@@ -776,7 +776,7 @@ void test_random_jitter_delays_fire_time() {
     static const SequenceEntry kJitterEntry = {
         "TEST:JITTER", kJitterSteps,
         (uint8_t)(sizeof(kJitterSteps) / sizeof(kJitterSteps[0])),
-        2000, TOGGLE_NONE, nullptr, 0,
+        2000, TOGGLE_NONE, nullptr, 0, nullptr,
     };
 
     SeqEngineState st;
@@ -857,7 +857,7 @@ static const SeqStep kRingOnlySteps[] = {
 static const SequenceEntry kRingOnlyEntry = {
     "TEST:RING", kRingOnlySteps,
     (uint8_t)(sizeof(kRingOnlySteps) / sizeof(kRingOnlySteps[0])),
-    1000, TOGGLE_NONE, nullptr, 0,
+    1000, TOGGLE_NONE, nullptr, 0, nullptr,
 };
 static const SeqStep kPieOnlySteps[] = {
     SEQ_DOME(0, FX_PANEL, ":OPP1"),
@@ -867,7 +867,7 @@ static const SeqStep kPieOnlySteps[] = {
 static const SequenceEntry kPieOnlyEntry = {
     "TEST:PIE", kPieOnlySteps,
     (uint8_t)(sizeof(kPieOnlySteps) / sizeof(kPieOnlySteps[0])),
-    1000, TOGGLE_NONE, nullptr, 0,
+    1000, TOGGLE_NONE, nullptr, 0, nullptr,
 };
 static const SeqStep kAllPanelSteps[] = {
     SEQ_DOME(0, FX_PANEL, ":OP01"),    // ring
@@ -877,7 +877,7 @@ static const SeqStep kAllPanelSteps[] = {
 static const SequenceEntry kAllPanelEntry = {
     "TEST:ALLPANEL", kAllPanelSteps,
     (uint8_t)(sizeof(kAllPanelSteps) / sizeof(kAllPanelSteps[0])),
-    1000, TOGGLE_NONE, nullptr, 0,
+    1000, TOGGLE_NONE, nullptr, 0, nullptr,
 };
 static const SeqStep kNonPanelSteps[] = {
     SEQ_DOME(0, FX_LOGIC_PSI, "@0T11"),
@@ -886,7 +886,7 @@ static const SeqStep kNonPanelSteps[] = {
 static const SequenceEntry kNonPanelEntry = {
     "TEST:NONPANEL", kNonPanelSteps,
     (uint8_t)(sizeof(kNonPanelSteps) / sizeof(kNonPanelSteps[0])),
-    1000, TOGGLE_NONE, nullptr, 0,
+    1000, TOGGLE_NONE, nullptr, 0, nullptr,
 };
 
 void test_scoped_cleanup_ring_only_closes_open_panels_staggered() {
