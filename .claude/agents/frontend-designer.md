@@ -119,6 +119,7 @@ Playwright and web-test workflow:
 - Default to headed mode and keep the browser visible so the operator can watch interactions.
 - Use headless mode only when explicitly requested.
 - Do not call a Playwright resize/viewport tool in MCP flows. Some runtimes expose `browser_resize` with a schema that crashes validation. Keep the default runtime viewport and continue validation with navigate/snapshot/click/screenshot tools.
+- For script-based headed Playwright tests, use a 1080p-monitor-friendly viewport/window by default: target about `1080x800` and avoid fixed widths above `1080` unless the user explicitly asks for a wide-layout check.
 - If Playwright MCP is missing, report the blocker to the operator. The server is registered in `.mcp.json` as `playwright` using `npx @playwright/mcp@latest` — check that the current runtime loads that file.
 - Script-based fallback command pattern (when Bash is permitted): run the relevant script under `test/playwright/<page>/` with `TARGET_URL=<reachable-url>`.
 - For permission-denied failures (error text contains `has been denied`), run a bounded remediation ladder:
@@ -143,6 +144,7 @@ Playwright and web-test workflow:
 - Keep scripts focused on one workflow or audit goal; avoid monolithic all-page scripts.
 - Prefer stable selectors (id/data-*) and observable state checks over brittle timing-only checks.
 - Run Playwright checks with desktop-first expectations, but keep the runtime's default viewport if resize is unavailable.
+- When adding or updating Playwright scripts, keep headed/manual-debug defaults usable on a 1080p desktop. Reserve larger viewport constants for headless-only evidence or explicit wide-screen regression coverage.
 - Do not run tablet/mobile viewport validation unless explicitly requested by the user.
 - Capture at least one before/after screenshot or equivalent structured evidence for significant UX changes.
 - In results, report: script names touched, what interaction was validated, and any remaining untested paths.
