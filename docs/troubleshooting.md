@@ -153,6 +153,9 @@ PCB. With the ESP32 unseated and only USB connected, a second
 the ROM boot banner (`rst:0x1 (POWERON_RESET)`). A month-plus earlier, USB serial
 monitor attach worked without rebooting. Treat current USB-open resets as a
 regression in the host/USB-UART/reset-line path until the change is explained.
+The project monitor now defaults to a POSIX `O_NOCTTY`/`termios` backend that
+does not touch DTR/RTS; use `--pyserial` only when intentionally comparing the
+older pyserial path, which can toggle modem-control lines on open.
 
 ---
 
