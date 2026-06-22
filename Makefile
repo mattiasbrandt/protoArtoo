@@ -15,6 +15,8 @@
 OTA_IP      ?= artoo.local
 BUILD_ENV   ?= protoArtoo
 UPLOAD_PORT ?= /dev/ttyUSB0
+OTA_TIMEOUT ?= 60
+OTA_TRANSFER_TIMEOUT ?= 60
 
 -include user.mk
 
@@ -57,7 +59,8 @@ flash: test ## Flash via USB  (UPLOAD_PORT=/dev/ttyUSB0)
 	pio run -e $(BUILD_ENV) -t upload --upload-port $(UPLOAD_PORT)
 
 ota: test ## Flash via OTA  (OTA_IP=artoo.local by default)
-	pio run -e $(BUILD_ENV)_ota -t upload --upload-port $(OTA_IP)
+	pio run -e $(BUILD_ENV)_ota
+	python3 tools/ota_upload.py --env $(BUILD_ENV)_ota --host $(OTA_IP) --timeout $(OTA_TIMEOUT) --transfer-timeout $(OTA_TRANSFER_TIMEOUT)
 
 uploadfs: ## Upload LittleFS web UI via OTA  (no test gate)
 	pio run -e $(BUILD_ENV)_ota -t uploadfs --upload-port $(OTA_IP)
@@ -76,12 +79,14 @@ flash-chirp-monitor: test ## Flash CHIRP build via USB then capture boot log
 	python3 tools/serial_monitor.py --until "init complete" --timeout 30
 
 ota-chirp: test ## Flash CHIRP build via OTA
-	pio run -e protoArtoo_chirp_ota -t upload --upload-port $(OTA_IP)
+	pio run -e protoArtoo_chirp_ota
+	python3 tools/ota_upload.py --env protoArtoo_chirp_ota --host $(OTA_IP) --timeout $(OTA_TIMEOUT) --transfer-timeout $(OTA_TRANSFER_TIMEOUT)
 
 # ── Flash: MP3 Trigger ───────────────────────────────────────────────────────
 
 ota-mp3trigger: test ## Flash MP3 Trigger build via OTA
-	pio run -e protoArtoo_mp3trigger_ota -t upload --upload-port $(OTA_IP)
+	pio run -e protoArtoo_mp3trigger_ota
+	python3 tools/ota_upload.py --env protoArtoo_mp3trigger_ota --host $(OTA_IP) --timeout $(OTA_TIMEOUT) --transfer-timeout $(OTA_TRANSFER_TIMEOUT)
 
 # ── Compile-check only ───────────────────────────────────────────────────────
 

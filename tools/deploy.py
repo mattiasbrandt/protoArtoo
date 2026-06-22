@@ -18,6 +18,8 @@ import sys
 import threading
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+OTA_TIMEOUT_SECONDS = "60"
+OTA_TRANSFER_TIMEOUT_SECONDS = "60"
 
 # ── ANSI helpers ─────────────────────────────────────────────────────────────
 
@@ -284,9 +286,28 @@ def main() -> int:
     # OTA flash
     if action == "ota":
         print()
+        print(bold(f"📡  Building OTA firmware  [{env_ota}]…"))
+        print()
+        rc = run_cmd(["pio", "run", "-e", env_ota])
+        if rc != 0:
+            print()
+            print(err(f"✗  OTA build failed  (exit {rc})"))
+            return rc
+        print()
         print(bold(f"📡  Flashing via OTA  [{env_ota}]  →  {ota_ip}…"))
         print()
-        rc = run_cmd(["pio", "run", "-e", env_ota, "-t", "upload", "--upload-port", ota_ip])
+        rc = run_cmd([
+            sys.executable,
+            "tools/ota_upload.py",
+            "--env",
+            env_ota,
+            "--host",
+            ota_ip,
+            "--timeout",
+            OTA_TIMEOUT_SECONDS,
+            "--transfer-timeout",
+            OTA_TRANSFER_TIMEOUT_SECONDS,
+        ])
         if rc != 0:
             print()
             print(err(f"✗  OTA flash failed  (exit {rc})"))
