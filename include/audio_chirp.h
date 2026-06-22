@@ -103,6 +103,9 @@ class AudioDriverChirp : public AudioDriver {
     // Send a null-terminated ASCII command string followed by '\n' via m_io.
     void sendCommand(const char* cmd);
 
+    // Yield Core 0 during long catalog walks so WiFi/OTA/SSE and IDLE0 run.
+    void cooperativeCatalogYield();
+
     // Read one \r\n-terminated ASCII line via m_io.
     uint8_t readLine(char* buf, uint8_t maxLen, uint32_t timeoutMs);
 };

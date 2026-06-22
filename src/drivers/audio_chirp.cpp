@@ -38,6 +38,7 @@ static const char* TAG = "ChirpDrv";
 static uint32_t s_lastNoRspDiagMs = 0;
 static constexpr uint32_t CHIRP_GNME_WAIT_MS = 450u;
 static constexpr uint32_t CHIRP_GNME_READLINE_MS = 120u;
+static constexpr uint8_t CHIRP_RX_DRAIN_YIELD_BYTES = 32u;
 
 // Production IO adapters
 static void chirpWriteByte(uint8_t b)    { softUartTxByte(b); }
@@ -272,9 +273,17 @@ bool AudioDriverChirp::loadManifestBanks(uint32_t timeoutMs, bool keepTotalTrack
     if (!ensureBankStorage()) {
         return false;
     }
-    while (m_io.rxAvailable()) { (void)m_io.rxRead(); }
+    uint8_t drainedBytes = 0;
+    while (m_io.rxAvailable()) {
+        (void)m_io.rxRead();
+        if (++drainedBytes >= CHIRP_RX_DRAIN_YIELD_BYTES) {
+            cooperativeCatalogYield();
+            drainedBytes = 0;
+        }
+    }
 
     sendCommand("GMAN");
+    cooperativeCatalogYield();
 
     uint32_t startMs = m_io.millisNow();
     bool gotValidGmanLine = false;
@@ -291,6 +300,7 @@ bool AudioDriverChirp::loadManifestBanks(uint32_t timeoutMs, bool keepTotalTrack
             continue;
         }
         rxBytes += n;
+        cooperativeCatalogYield();
 
         bool isGmanLine = (strncmp(line, "MDAT:", 5) == 0) || (strncmp(line, "BANK:", 5) == 0) ||
                           (strncmp(line, "MSUM:", 5) == 0) || (strcmp(line, "MEND") == 0);
@@ -395,6 +405,12 @@ void AudioDriverChirp::sendCommand(const char* cmd) {
     m_io.writeByte('\n');
 }
 
+void AudioDriverChirp::cooperativeCatalogYield() {
+    if (m_io.delayMs != nullptr) {
+        m_io.delayMs(1);
+    }
+}
+
 // -----------------------------------------------------------------------------
 // playTrack()
 // Play a track by 1-based index in Bank 1, Page A on stream 0.
@@ -486,6 +502,7 @@ bool AudioDriverChirp::refreshCatalog() {
             snprintf(cmd, sizeof(cmd), "GNME:%u,%c,%u", (unsigned)bank.bank, bank.page,
                      (unsigned)soundIndex);
             sendCommand(cmd);
+            cooperativeCatalogYield();
 
             bool gotName = false;
             uint32_t startMs = m_io.millisNow();
@@ -496,6 +513,7 @@ bool AudioDriverChirp::refreshCatalog() {
                 if (n == 0) {
                     continue;
                 }
+                cooperativeCatalogYield();
 
                 uint8_t respBank = 0;
                 char respPage = 'A';
@@ -527,6 +545,7 @@ bool AudioDriverChirp::refreshCatalog() {
                 snprintf(entry.name, sizeof(entry.name), "index_%u", (unsigned)soundIndex);
                 ++missingNameCount;
             }
+            cooperativeCatalogYield();
         }
     }
 
