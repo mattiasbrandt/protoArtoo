@@ -231,6 +231,15 @@ static void beginFinish(SeqEngineState& st, bool abnormal) {
     if (st.activeFx & FX_HOLO) {
         addFinal(st, SEQ_ACT_DOME_CMD, "*ST00");
     }
+    // DV-backed sequences explicitly close the DV lifecycle. The raw resets
+    // above stay as compatibility primitives but do not clear the dome's DV
+    // preset field, so without this the dome's visual_preset telemetry stays
+    // stale at the run's preset name (issue #9 §2). Emitted after the raw
+    // resets so DV:RESET_VISUALS is the final visual word and telemetry settles
+    // to the RESET_VISUALS idle marker, making teardown machine-verifiable.
+    if (st.dvPresetActive) {
+        addFinal(st, SEQ_ACT_DOME_CMD, "DV:RESET_VISUALS");
+    }
     if (st.activeFx & FX_DOME_SEQUENCE) {
         addFinal(st, SEQ_ACT_DOME_CMD, "@0T1");
         addFinal(st, SEQ_ACT_DOME_CMD, "@0P1");
@@ -277,6 +286,7 @@ static void finishIdle(SeqEngineState& st) {
     st.stepCount = 0;
     st.activeFx = 0;
     st.domeRotateActive = false;
+    st.dvPresetActive = false;
     st.finishing = false;
     st.pendingComputed = false;
 }
@@ -448,6 +458,7 @@ void seqEngineStart(SeqEngineState& st, const SequenceEntry* entry, uint32_t now
     st.cursor = 0;
     st.startMs = nowMs;
     st.activeFx = 0;
+    st.dvPresetActive = false;
     st.ringOpenMask = 0;
     st.inLoop = false;
     st.loopHeader = 0;
@@ -606,6 +617,11 @@ void seqEngineCommit(SeqEngineState& st) {
     if (st.pending.kind == SEQ_ACT_DOME_CMD) {
         recordRingOpenState(st, st.pending.payload);
         updateLatchesForClose(st, st.pending.payload);
+        // Note a DV:<name> preset so terminal cleanup closes its lifecycle with
+        // DV:RESET_VISUALS (issue #9 §2 teardown decision).
+        if (strncmp(st.pending.payload, "DV:", 3) == 0) {
+            st.dvPresetActive = true;
+        }
     } else if (st.pending.kind == SEQ_ACT_DOME_ROTATE &&
                st.pending.domeSpeedPct != 0) {
         st.domeRotateActive = true;

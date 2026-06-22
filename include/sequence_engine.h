@@ -257,6 +257,13 @@ struct SeqEngineState {
     // True after a committed non-zero STEP_DOME_ROTATE. Terminal and abnormal
     // cleanup emit a neutral rotation action through the same body-owned path.
     bool      domeRotateActive;
+
+    // True once this run dispatched any DV:<name> dome visual preset. Terminal
+    // cleanup then explicitly closes the DV lifecycle with DV:RESET_VISUALS so
+    // the dome's visual_preset telemetry settles to RESET_VISUALS (machine-
+    // verifiable teardown) and the named rendering is deterministically reset.
+    // Raw @0T1/@0P1/*ST00 do not clear the dome's DV preset field (issue #9 §2).
+    bool      dvPresetActive;
 };
 
 // Zero the engine to idle with all latches closed.

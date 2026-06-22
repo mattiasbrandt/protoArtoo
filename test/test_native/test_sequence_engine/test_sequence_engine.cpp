@@ -280,9 +280,11 @@ void test_real_vader_entry_runs_through_engine() {
     TEST_ASSERT_EQUAL_STRING("$M|DV:VADER", log);
 
     log[0] = '\0';
-    // Normal END at 47000: logic/PSI + holo auto-reset; audio plays out.
-    TEST_ASSERT_EQUAL_INT(3, drainAt(st, 47000, log, sizeof(log)));
-    TEST_ASSERT_EQUAL_STRING("@0T1|@0P1|*ST00", log);
+    // Normal END at 47000: logic/PSI + holo auto-reset, then DV:RESET_VISUALS
+    // closes the DV lifecycle so dome visual_preset telemetry settles to the
+    // RESET_VISUALS idle marker (issue #9 §2); audio plays out.
+    TEST_ASSERT_EQUAL_INT(4, drainAt(st, 47000, log, sizeof(log)));
+    TEST_ASSERT_EQUAL_STRING("@0T1|@0P1|*ST00|DV:RESET_VISUALS", log);
     TEST_ASSERT_FALSE(seqEngineActive(st));
 }
 
@@ -298,8 +300,10 @@ void test_real_vader_abort_stops_audio_and_resets_holos() {
 
     seqEngineAbort(st);
     char log[256] = "";
-    TEST_ASSERT_EQUAL_INT(4, drainAt(st, 5000, log, sizeof(log)));
-    TEST_ASSERT_EQUAL_STRING("@0T1|@0P1|*ST00|<stop>", log);
+    // DV:RESET_VISUALS closes the DV lifecycle after the raw holo/logic resets
+    // and before the abnormal audio stop (issue #9 §2).
+    TEST_ASSERT_EQUAL_INT(5, drainAt(st, 5000, log, sizeof(log)));
+    TEST_ASSERT_EQUAL_STRING("@0T1|@0P1|*ST00|DV:RESET_VISUALS|<stop>", log);
     TEST_ASSERT_FALSE(seqEngineActive(st));
 }
 
@@ -829,12 +833,14 @@ void test_real_overload_runs_end_to_end() {
     int n = drainAt(st, 8000, log, sizeof(log));
     // 1 audio category (empty payload) + 1 DV:OVERLOAD visual preset (replaced the
     // four raw @1T4/@2T4/@HPA0070/@0P4 lines, task #5) + 6 flutters + 3 auto-reset
-    // (@0T1, @0P1, *ST00). NO panel close: the choreography is all flutters
-    // (:OF), which leave panel state uncertain and do NOT mark panels open, so
-    // the net-open ring mask is empty and terminal cleanup emits nothing — and
-    // never a group close. Audio stop is NOT expected (normal end).
-    TEST_ASSERT_EQUAL_INT(11, n);
+    // (@0T1, @0P1, *ST00) + 1 DV:RESET_VISUALS closing the DV lifecycle (issue #9
+    // §2). NO panel close: the choreography is all flutters (:OF), which leave
+    // panel state uncertain and do NOT mark panels open, so the net-open ring
+    // mask is empty and no ring close is emitted — and never a group close.
+    // Audio stop is NOT expected (normal end).
+    TEST_ASSERT_EQUAL_INT(12, n);
     TEST_ASSERT_NOT_NULL(strstr(log, "DV:OVERLOAD"));
+    TEST_ASSERT_NOT_NULL(strstr(log, "DV:RESET_VISUALS"));
     TEST_ASSERT_NULL(strstr(log, ":CL"));
     TEST_ASSERT_NULL(strstr(log, "<stop>"));
     TEST_ASSERT_FALSE(seqEngineActive(st));
