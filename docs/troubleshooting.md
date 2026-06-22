@@ -147,6 +147,13 @@ path. Use `tools/serial_monitor.py` (holds DTR/RTS low — though on this board 
 connect can still reset). `resetReason` distinguishes: `PANIC` = real crash;
 `POWERON`/`EXT` = external/serial reset.
 
+2026-06-22 regression note: this reset is no longer limited to the seated Artoo
+PCB. With the ESP32 unseated and only USB connected, a second
+`tools/serial_monitor.py --port /dev/ttyUSB0 --duration 10` attach still printed
+the ROM boot banner (`rst:0x1 (POWERON_RESET)`). A month-plus earlier, USB serial
+monitor attach worked without rebooting. Treat current USB-open resets as a
+regression in the host/USB-UART/reset-line path until the change is explained.
+
 ---
 
 ## References
