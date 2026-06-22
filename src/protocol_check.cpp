@@ -529,10 +529,11 @@ static ProtocolCheckResult classifyDome(const char* label, uint8_t idx,
 
     // DH:<target>:<effect>[:<color>[:<durationOrCount>]] — Holo Effect (issue #11).
     // Holoprojector effects: OFF, ON, RESET, RANDOM, WAG, NOD, PULSE, RAINBOW, FLASH,
-    // SHORTCIRCUIT, SOLID. Targets: F (front), R (rear), T (top), A (all). Colors are
-    // optional and effect-dependent; validation does NOT enforce a color→effect matrix
-    // (dome is the authority). Command length must be <= 63. Mirrors client validation
-    // in data/seq_protocol_check.js exactly.
+    // SHORTCIRCUIT, SOLID. Targets: F (front), R (rear), T (top), A (all). Color and
+    // duration are effect-dependent: validation enforces the AstroPixelsPlus dome's
+    // effect/color + duration matrix (docs/dome-visual-authoring-contract.md) so
+    // unsupported combos (e.g. DH:A:RAINBOW:RED) are rejected before send. Command
+    // length must be <= 63. Mirrors client validation in data/seq_protocol_check.js.
     if (strncmp(cmd, "DH:", 3) == 0) {
         static const char* const kDhTargets[] = {
             "F", "R", "T", "A",
@@ -543,6 +544,37 @@ static ProtocolCheckResult classifyDome(const char* label, uint8_t idx,
         };
         static const char* const kDhColors[] = {
             "DEFAULT", "RED", "BLUE", "GREEN", "WHITE", "YELLOW", "ORANGE", "PURPLE", "RANDOM",
+        };
+        // Per-effect color + duration policy, aligned index-for-index with kDhEffects.
+        // Color: 0 = DEFAULT only, 1 = DEFAULT or RANDOM, 2 = DEFAULT/WHITE/RED (FLASH),
+        // 3 = any color. Duration: 0 = none (omit or 0), 1 = range 0..99.
+        enum { DH_C_DEFAULT_ONLY = 0, DH_C_DEFAULT_RANDOM = 1, DH_C_FLASH = 2, DH_C_ANY = 3 };
+        enum { DH_D_NONE = 0, DH_D_RANGE = 1 };
+        static const uint8_t kDhColorPolicy[] = {
+            DH_C_DEFAULT_ONLY,    // OFF
+            DH_C_ANY,             // ON
+            DH_C_DEFAULT_ONLY,    // RESET
+            DH_C_DEFAULT_ONLY,    // RANDOM
+            DH_C_DEFAULT_ONLY,    // WAG
+            DH_C_DEFAULT_ONLY,    // NOD
+            DH_C_DEFAULT_RANDOM,  // PULSE
+            DH_C_DEFAULT_ONLY,    // RAINBOW
+            DH_C_FLASH,           // FLASH
+            DH_C_DEFAULT_RANDOM,  // SHORTCIRCUIT
+            DH_C_ANY,             // SOLID
+        };
+        static const uint8_t kDhDurPolicy[] = {
+            DH_D_NONE,   // OFF
+            DH_D_NONE,   // ON
+            DH_D_NONE,   // RESET
+            DH_D_NONE,   // RANDOM
+            DH_D_RANGE,  // WAG
+            DH_D_RANGE,  // NOD
+            DH_D_NONE,   // PULSE
+            DH_D_NONE,   // RAINBOW
+            DH_D_RANGE,  // FLASH
+            DH_D_NONE,   // SHORTCIRCUIT
+            DH_D_NONE,   // SOLID
         };
         const uint8_t kDhTargetCount = (uint8_t)(sizeof(kDhTargets) / sizeof(kDhTargets[0]));
         const uint8_t kDhEffectCount = (uint8_t)(sizeof(kDhEffects) / sizeof(kDhEffects[0]));
@@ -572,10 +604,12 @@ static ProtocolCheckResult classifyDome(const char* label, uint8_t idx,
 
         // Parse effect (required)
         const char* effectStart = parseField(&p, fieldLen);
+        uint8_t effectIdx = 0;
         bool effectOk = false;
         for (uint8_t i = 0; i < kDhEffectCount; ++i) {
             size_t elen = strlen(kDhEffects[i]);
             if (fieldLen == elen && strncmp(effectStart, kDhEffects[i], elen) == 0) {
+                effectIdx = i;
                 effectOk = true;
                 break;
             }
@@ -584,19 +618,39 @@ static ProtocolCheckResult classifyDome(const char* label, uint8_t idx,
             return pcFailAt(label, idx, "cmd", "unknown DH: effect");
         }
 
-        // Parse color (optional) — if present, validate against whitelist
+        // Parse color (optional) — if present, validate against whitelist. Omitted
+        // color defaults to DEFAULT (colorIdx 0), which passes every effect's matrix.
+        uint8_t colorIdx = 0;  // 0 == DEFAULT
         if (*p != '\0') {
             const char* colorStart = parseField(&p, fieldLen);
             bool colorOk = false;
             for (uint8_t i = 0; i < kDhColorCount; ++i) {
                 size_t clen = strlen(kDhColors[i]);
                 if (fieldLen == clen && strncmp(colorStart, kDhColors[i], clen) == 0) {
+                    colorIdx = i;
                     colorOk = true;
                     break;
                 }
             }
             if (!colorOk) {
                 return pcFailAt(label, idx, "cmd", "unknown DH: color");
+            }
+        }
+
+        // Effect-specific color matrix (mirrors the dome). DEFAULT (colorIdx 0) is
+        // always allowed; otherwise the effect's policy gates which colors are valid.
+        if (colorIdx != 0) {
+            const uint8_t cp = kDhColorPolicy[effectIdx];
+            bool colorAllowed = false;
+            if (cp == DH_C_ANY) {
+                colorAllowed = true;
+            } else if (cp == DH_C_DEFAULT_RANDOM) {
+                colorAllowed = (colorIdx == 8);  // RANDOM
+            } else if (cp == DH_C_FLASH) {
+                colorAllowed = (colorIdx == 4 || colorIdx == 1);  // WHITE or RED
+            }  // DH_C_DEFAULT_ONLY: only DEFAULT (already excluded above)
+            if (!colorAllowed) {
+                return pcFailAt(label, idx, "cmd", "DH: color not supported for this effect");
             }
         }
 
@@ -615,6 +669,11 @@ static ProtocolCheckResult classifyDome(const char* label, uint8_t idx,
             }
             if (duration > 99) {
                 return pcFailAt(label, idx, "cmd", "DH: durationOrCount must be 0-99");
+            }
+            // Effect-specific duration matrix: effects with no timed behavior take no
+            // duration/count (must be omitted or 0). Only WAG/NOD/FLASH accept non-zero.
+            if (kDhDurPolicy[effectIdx] == DH_D_NONE && duration != 0) {
+                return pcFailAt(label, idx, "cmd", "DH: this effect takes no duration/count");
             }
         }
 

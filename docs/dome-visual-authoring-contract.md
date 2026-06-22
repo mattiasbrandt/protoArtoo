@@ -29,9 +29,14 @@ length caps rather than being a general message transport.
 | Feature | Owner | Status |
 |---|---|---|
 | `DV:<NAME>` Visual Preset | **body-only** wrapper (closed whitelisted name set) | done, frontend-only |
-| `DL:` Logic/PSI Mode | requires AstroPixelsPlus support | contract below |
-| `DH:` Holo Effect | requires AstroPixelsPlus support | contract below |
-| `DT:` Logic Text (multi-line) | requires AstroPixelsPlus support | contract below |
+| `DL:` Logic/PSI Mode | requires AstroPixelsPlus support | implemented (body + dome), hardware-verified |
+| `DH:` Holo Effect | requires AstroPixelsPlus support | implemented (body + dome), hardware-verified; strict effect/color matrix below |
+| `DT:` Logic Text (multi-line) | requires AstroPixelsPlus support | implemented (body + dome), hardware-verified |
+
+None of `DL:`/`DH:`/`DT:` are body-only: the body validates + serializes + forwards
+the typed command, but **AstroPixelsPlus renders it**. On a dome without this build
+the commands are inert. `DV:` is the only body-side wrapper (it selects an
+already-dome-resident named preset).
 
 ## Grammar
 
@@ -71,10 +76,34 @@ DH:<target>:<effect>[:<color>[:<durationOrCount>]]
 ```
 - **Targets:** `F` (front), `R` (rear), `T` (top), `A` (all)
 - **Effects (initial):** `OFF`, `ON`, `RESET`, `RANDOM`, `WAG`, `NOD`, `PULSE`, `RAINBOW`, `FLASH`, `SHORTCIRCUIT`, `SOLID`
-- **Color (optional, effect-dependent):** `DEFAULT`, `RED`, `BLUE`, `GREEN`, `WHITE`, `YELLOW`, `ORANGE`, `PURPLE`, `RANDOM`. Effects that don't use color => Protocol Check rejects the unsupported combination.
+- **Color (optional, effect-dependent):** global enum `DEFAULT`, `RED`, `BLUE`, `GREEN`, `WHITE`, `YELLOW`, `ORANGE`, `PURPLE`, `RANDOM`, then the **per-effect matrix below**.
 - **Duration/count (optional):** timed LED effects = seconds; `WAG`/`NOD` = count. Range `0..99`.
-- **Examples:** `DH:A:FLASH:RED:10`, `DH:F:RAINBOW:DEFAULT:10`, `DH:A:WAG:DEFAULT:5`, `DH:A:RESET`
+- **Examples:** `DH:A:FLASH:RED:10`, `DH:F:RAINBOW`, `DH:A:WAG:DEFAULT:5`, `DH:A:RESET`, `DH:T:PULSE:RANDOM`
 - **Dome behavior:** translate to existing `HPF`/`HPR`/`HPT`/`HPA` and `*` internally.
+
+#### Effect/color + duration matrix (strict — mirrored in both Protocol Checks)
+
+Both `data/seq_protocol_check.js` and `src/protocol_check.cpp` enforce this matrix
+identically, so unsupported combinations (e.g. `DH:A:RAINBOW:RED`) are rejected
+**before send** rather than relying on the dome to reject. `DEFAULT` (or omitted
+color) is always accepted; an omitted duration is treated as `0`.
+
+| Effect | Allowed colors | Duration/count |
+|---|---|---|
+| `RESET` | `DEFAULT` only | none (omit or `0`) |
+| `OFF` | `DEFAULT` only | none |
+| `ON` | any color | none |
+| `SOLID` | any color | none |
+| `RANDOM` | `DEFAULT` only | none |
+| `WAG` | `DEFAULT` only | count `0..99` (`0` => dome default 5) |
+| `NOD` | `DEFAULT` only | count `0..99` (`0` => dome default 5) |
+| `PULSE` | `DEFAULT`, `RANDOM` | none |
+| `RAINBOW` | `DEFAULT` only | none |
+| `FLASH` | `DEFAULT`, `WHITE`, `RED` | seconds `0..99` (`0` => dome default 5) |
+| `SHORTCIRCUIT` | `DEFAULT`, `RANDOM` | none |
+
+Rejected examples: `DH:A:RAINBOW:RED`, `DH:F:SHORTCIRCUIT:BLUE`, `DH:T:PULSE:GREEN`,
+`DH:A:WAG:RED:5`, `DH:A:RESET:RED`, `DH:A:OFF:WHITE`, `DH:A:FLASH:BLUE:5`.
 
 ### 3. `DT` — Logic Text (multi-line)
 
@@ -107,15 +136,20 @@ Dome exposes per-step-type applied state + counters, parallel to the existing
 Dome logs: `[DL] applied …`, `[DT] applied …`, `[DH] applied …`, and
 `[DL][reject] reason …` / `[DT][reject] …` / `[DH][reject] …`.
 
-## Implementation order (agreed)
+## Implementation order (agreed) — COMPLETE
 
-1. **Body** finishes the structured UI model + command serialization against this draft.
-2. **Dome** implements `DL`/`DT`/`DH` with telemetry.
-3. **Body** enables Protocol Check whitelist for generated commands.
-4. **Hardware verify** one small case per family:
-   - `DL:LOGIC:MARCH:RED:5`
-   - `DT:FLD:DEFAULT:5:0:TEST%0ATEXT`
-   - `DH:A:FLASH:RED:5`
+1. ✅ **Body** structured UI model + command serialization (editor cards for DV/DL/DT/DH).
+2. ✅ **Dome** implements `DL`/`DT`/`DH` with telemetry (AstroPixelsPlus).
+3. ✅ **Body** Protocol Check whitelist + strict grammar; `DH` effect/color matrix mirrored.
+4. ✅ **Hardware-verified** one case per family via body-driven `DM:VISTEST` (2026-06-22):
+   - `DL:LOGIC:MARCH:RED:5` — applied, reject 0
+   - `DT:FLD:DEFAULT:5:0:TEST%0ATEXT` — applied, reject 0
+   - `DH:A:FLASH:RED:5` — applied, reject 0
+   - `DV:RESET_VISUALS` — applied (cleanup)
+
+   Body emitted all cmds over body-link UART (`overflow=0`), dome `visual_authoring`
+   apply counts incremented with `reject_count` 0; operator visually confirmed FLD
+   logic + text; codex confirmed dome-side `[DL]/[DT]/[DH]/[DV] applied`.
 
 ## Open items to confirm during implementation
 - `DT` default `speed` (0 vs 1) — confirm against AstroPixelsPlus renderer.

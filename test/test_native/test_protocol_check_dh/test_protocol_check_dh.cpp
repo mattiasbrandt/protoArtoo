@@ -151,6 +151,72 @@ void test_dh_extra_field() {
 }
 
 // =============================================================================
+// INVALID: effect/color + duration matrix (issue #11, mirrors dome)
+// =============================================================================
+
+// RAINBOW only supports DEFAULT — a fixed color must be rejected.
+void test_dh_reject_color_for_rainbow() {
+    SeqStep steps[] = {
+        createDomeStep("DH:A:RAINBOW:RED"),
+        createEndStep(),
+    };
+    ProtocolCheckResult r = protocolCheckBranch("steps", steps, 2);
+    TEST_ASSERT_FALSE(r.ok);
+    TEST_ASSERT_TRUE(strstr(r.message, "support") != NULL || strstr(r.message, "color") != NULL);
+}
+
+// WAG only supports DEFAULT — a fixed color must be rejected.
+void test_dh_reject_color_for_wag() {
+    SeqStep steps[] = {
+        createDomeStep("DH:A:WAG:RED:5"),
+        createEndStep(),
+    };
+    ProtocolCheckResult r = protocolCheckBranch("steps", steps, 2);
+    TEST_ASSERT_FALSE(r.ok);
+}
+
+// FLASH only supports DEFAULT/WHITE/RED — BLUE must be rejected.
+void test_dh_reject_flash_blue() {
+    SeqStep steps[] = {
+        createDomeStep("DH:A:FLASH:BLUE:5"),
+        createEndStep(),
+    };
+    ProtocolCheckResult r = protocolCheckBranch("steps", steps, 2);
+    TEST_ASSERT_FALSE(r.ok);
+}
+
+// RAINBOW has no timed behavior — a non-zero duration must be rejected.
+void test_dh_reject_duration_for_static_effect() {
+    SeqStep steps[] = {
+        createDomeStep("DH:A:RAINBOW:DEFAULT:5"),
+        createEndStep(),
+    };
+    ProtocolCheckResult r = protocolCheckBranch("steps", steps, 2);
+    TEST_ASSERT_FALSE(r.ok);
+    TEST_ASSERT_TRUE(strstr(r.message, "duration") != NULL || strstr(r.message, "count") != NULL);
+}
+
+// PULSE supports DEFAULT or RANDOM — RANDOM must be accepted.
+void test_dh_accept_pulse_random() {
+    SeqStep steps[] = {
+        createDomeStep("DH:T:PULSE:RANDOM"),
+        createEndStep(),
+    };
+    ProtocolCheckResult r = protocolCheckBranch("steps", steps, 2);
+    TEST_ASSERT_TRUE(r.ok);
+}
+
+// FLASH supports WHITE — must be accepted with a duration.
+void test_dh_accept_flash_white() {
+    SeqStep steps[] = {
+        createDomeStep("DH:A:FLASH:WHITE:5"),
+        createEndStep(),
+    };
+    ProtocolCheckResult r = protocolCheckBranch("steps", steps, 2);
+    TEST_ASSERT_TRUE(r.ok);
+}
+
+// =============================================================================
 // Main — Unity test runner
 // =============================================================================
 
@@ -174,6 +240,14 @@ int main(int argc, char* argv[]) {
     RUN_TEST(test_dh_bad_color);
     RUN_TEST(test_dh_duration_out_of_range);
     RUN_TEST(test_dh_extra_field);
+
+    // Effect/color + duration matrix (issue #11)
+    RUN_TEST(test_dh_reject_color_for_rainbow);
+    RUN_TEST(test_dh_reject_color_for_wag);
+    RUN_TEST(test_dh_reject_flash_blue);
+    RUN_TEST(test_dh_reject_duration_for_static_effect);
+    RUN_TEST(test_dh_accept_pulse_random);
+    RUN_TEST(test_dh_accept_flash_white);
 
     return UNITY_END();
 }

@@ -90,6 +90,26 @@
   const DH_COLORS = new Set([
     "DEFAULT", "RED", "BLUE", "GREEN", "WHITE", "YELLOW", "ORANGE", "PURPLE", "RANDOM",
   ]);
+  // Per-effect color + duration matrix — mirrors the AstroPixelsPlus dome
+  // (docs/dome-visual-authoring-contract.md, issue #11). The dome accepts the
+  // global color enum, then applies these effect-specific constraints; the body
+  // mirrors them so unsupported combos (e.g. DH:A:RAINBOW:RED) are rejected before
+  // send rather than relying on the dome to reject. colors = allowed color set for
+  // the effect; duration "none" = must be omitted or 0; "range" = 0..99 allowed
+  // (WAG/NOD count, FLASH seconds).
+  const DH_EFFECT_RULES = {
+    RESET:        { colors: new Set(["DEFAULT"]),                 duration: "none" },
+    OFF:          { colors: new Set(["DEFAULT"]),                 duration: "none" },
+    ON:           { colors: DH_COLORS,                            duration: "none" },
+    SOLID:        { colors: DH_COLORS,                            duration: "none" },
+    RANDOM:       { colors: new Set(["DEFAULT"]),                 duration: "none" },
+    WAG:          { colors: new Set(["DEFAULT"]),                 duration: "range" },
+    NOD:          { colors: new Set(["DEFAULT"]),                 duration: "range" },
+    PULSE:        { colors: new Set(["DEFAULT", "RANDOM"]),       duration: "none" },
+    RAINBOW:      { colors: new Set(["DEFAULT"]),                 duration: "none" },
+    FLASH:        { colors: new Set(["DEFAULT", "WHITE", "RED"]), duration: "range" },
+    SHORTCIRCUIT: { colors: new Set(["DEFAULT", "RANDOM"]),       duration: "none" },
+  };
 
   // Classify a panel intent target into its group for :OF cleanup tracking.
   function panelGroup(target) {
@@ -759,6 +779,18 @@
         };
       }
 
+      // Effect-specific color matrix — the dome rejects unsupported effect/color
+      // combinations (e.g. DH:A:RAINBOW:RED). Mirror that here so authors get a
+      // plain-language error before the command ever reaches the dome.
+      const rule = DH_EFFECT_RULES[effect];
+      if (rule && !rule.colors.has(color)) {
+        return {
+          ok: false,
+          field: "cmd",
+          error: `${color} is not supported for the ${effect} holo effect. Allowed: ${Array.from(rule.colors).join(", ")}.`,
+        };
+      }
+
       // Validate durationOrCount (optional, 0-99)
       if (durationOrCountStr !== undefined) {
         const durationOrCount = parseInt(durationOrCountStr, 10);
@@ -767,6 +799,16 @@
             ok: false,
             field: "cmd",
             error: "Duration or count must be a number between 0 and 99",
+          };
+        }
+        // Effect-specific duration matrix — effects with no timed behavior take no
+        // duration/count (must be omitted or 0); only WAG/NOD (count) and FLASH
+        // (seconds) accept a non-zero value.
+        if (rule && rule.duration === "none" && durationOrCount !== 0) {
+          return {
+            ok: false,
+            field: "cmd",
+            error: `The ${effect} holo effect does not take a duration or count.`,
           };
         }
       }
