@@ -12,6 +12,9 @@
 #include <ESPAsyncWebServer.h>
 #include <ESPmDNS.h>
 #include <LittleFS.h>
+#ifdef ARDUINO
+#include <Update.h>
+#endif
 #include <WiFi.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -168,6 +171,9 @@ class ESPClass {
     unsigned long getMinFreeHeap() const {
         return 0;
     }
+    unsigned long getMaxAllocHeap() const {
+        return 0;
+    }
 };
 
 static WiFiClass WiFi;
@@ -186,13 +192,6 @@ inline int xTaskCreatePinnedToCore(void (*)(void*), const char*, unsigned int, v
                                    void*, int) {
     return 0;
 }
-inline size_t heap_caps_get_largest_free_block(uint32_t) {
-    return 0;
-}
-static const uint32_t MALLOC_CAP_8BIT = 4;
-#endif
-#ifdef ARDUINO
-#include <esp_heap_caps.h>
 #endif
 
 static const char* TAG = "WebServer";
@@ -205,8 +204,24 @@ static bool serverStarted = false;
 static bool eventTaskStarted = false;
 static bool otaTaskStarted = false;
 static bool mdnsStarted = false;
+static volatile bool s_otaActive = false;
+static volatile uint8_t s_otaProgressPct = 255;
+static uint8_t s_lastOtaLoggedPct = 255;
+static char s_otaLastError[64] = "none";
 
 namespace {
+
+static uint32_t webHeapMaxAlloc() {
+    return (uint32_t)ESP.getMaxAllocHeap();
+}
+
+static void logOtaHeapCheckpoint(const char* label) {
+    PA_LOG_INFO("ArduinoOTA", "%s heap free=%lu min=%lu largest=%lu",
+                label,
+                (unsigned long)ESP.getFreeHeap(),
+                (unsigned long)ESP.getMinFreeHeap(),
+                (unsigned long)webHeapMaxAlloc());
+}
 
 const char* rcInputModeLabel(RcInputMode mode) {
     switch (mode) {
@@ -326,6 +341,9 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     unsigned long heapFree;
     unsigned long heapMin;
     uint32_t heapLargestBlock;
+    bool otaActive;
+    uint8_t otaProgressPct;
+    char otaLastError[64];
     long wifiRssi;
     bool enableArm1, enableArm2, enableAux1, enableAux2, enableAux3, enableDome;
     bool enableRcCh1, enableRcCh2, enableRcCh3, enableRcCh4, enableRcCh5, enableRcCh6;
@@ -444,7 +462,10 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     uptimeMs = millis();
     heapFree = ESP.getFreeHeap();
     heapMin = ESP.getMinFreeHeap();
-    heapLargestBlock = (uint32_t)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+    heapLargestBlock = webHeapMaxAlloc();
+    otaActive = s_otaActive;
+    otaProgressPct = s_otaProgressPct;
+    snprintf(otaLastError, sizeof(otaLastError), "%s", s_otaLastError);
     int wifiMode = WiFi.getMode();
     bool apEnabled = wifiMode == WIFI_AP || wifiMode == WIFI_AP_STA;
     bool staConnected = WiFi.status() == WL_CONNECTED;
@@ -459,7 +480,7 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     // Build the fixed system-health fields first.
     int written = snprintf(
         buffer, bufferSize,
-        "{\"estop\":%s,\"webControlEnabled\":%s,\"sbusSignalLost\":%s,\"sbusHwFailsafe\":%s,\"webDriveExpired\":%s,\"failsafeSource\":%d,\"driveSpeed\":%d,\"driveSteer\":%d,\"domeTargetSpeed\":%.3f,\"domeEnabled\":%s,\"speedLimitMax\":%d,\"speedPreset\":\"%s\",\"stationary\":%s,\"failsafeCount\":%lu,\"failsafeTriggerMs\":%lu,\"failsafeZeroMs\":%lu,\"failsafeTriggerToZeroMs\":%lu,\"failsafeWatchdogMs\":%lu,\"failsafeTriggerSource\":%d,\"uptimeMs\":%lu,\"firmwareVersion\":\"%s\",\"fsVersion\":\"%s\",\"resetReason\":\"%s\",\"heapFree\":%lu,\"heapMin\":%lu,\"heapLargestBlock\":%lu,\"wifiRssi\":%ld,\"wifiConnected\":%s,\"wifiClientConnected\":%s,\"littleFsReady\":%s,\"sleepMode\":%s,\"sleepSinceMs\":%lu,\"activeMood\":%u,\"auxLed\":{\"pin\":%u,\"r\":%u,\"g\":%u,\"b\":%u,\"effect\":\"%s\",\"available\":%s}",
+        "{\"estop\":%s,\"webControlEnabled\":%s,\"sbusSignalLost\":%s,\"sbusHwFailsafe\":%s,\"webDriveExpired\":%s,\"failsafeSource\":%d,\"driveSpeed\":%d,\"driveSteer\":%d,\"domeTargetSpeed\":%.3f,\"domeEnabled\":%s,\"speedLimitMax\":%d,\"speedPreset\":\"%s\",\"stationary\":%s,\"failsafeCount\":%lu,\"failsafeTriggerMs\":%lu,\"failsafeZeroMs\":%lu,\"failsafeTriggerToZeroMs\":%lu,\"failsafeWatchdogMs\":%lu,\"failsafeTriggerSource\":%d,\"uptimeMs\":%lu,\"firmwareVersion\":\"%s\",\"fsVersion\":\"%s\",\"resetReason\":\"%s\",\"heapFree\":%lu,\"heapMin\":%lu,\"heapLargestBlock\":%lu,\"otaActive\":%s,\"otaProgress\":%u,\"otaLastError\":\"%s\",\"wifiRssi\":%ld,\"wifiConnected\":%s,\"wifiClientConnected\":%s,\"littleFsReady\":%s,\"sleepMode\":%s,\"sleepSinceMs\":%lu,\"activeMood\":%u,\"auxLed\":{\"pin\":%u,\"r\":%u,\"g\":%u,\"b\":%u,\"effect\":\"%s\",\"available\":%s}",
         estop ? "true" : "false", webControlEnabled ? "true" : "false",
         sbusSignalLost ? "true" : "false", sbusHwFailsafe ? "true" : "false",
         webDriveExpired ? "true" : "false", failsafeSource, driveSpeed, driveSteer,
@@ -468,7 +489,8 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
         failsafeCount, failsafeTriggerMs, failsafeZeroMs, failsafeTriggerToZeroMs,
         failsafeWatchdogMs, failsafeTriggerSource, uptimeMs, PA_FIRMWARE_VERSION, s_fsVersion,
         resetReasonName(esp_reset_reason()),
-        heapFree, heapMin, (unsigned long)heapLargestBlock, wifiRssi,
+        heapFree, heapMin, (unsigned long)heapLargestBlock,
+        otaActive ? "true" : "false", (unsigned)otaProgressPct, otaLastError, wifiRssi,
         wifiConnected ? "true" : "false",
         wifiClientConnected ? "true" : "false", littleFsReady ? "true" : "false",
         sleepMode ? "true" : "false", (unsigned long)sleepSinceMs, (unsigned)activeMood,
@@ -717,6 +739,10 @@ bool webLittleFsMounted() {
     return littleFsReady;
 }
 
+bool webOtaActive() {
+    return s_otaActive;
+}
+
 bool webServerHasSSEClients() {
     return events.count() > 0;
 }
@@ -758,6 +784,11 @@ void eventStreamTask(void*) {
             PA_LOG_DEBUG("WebEvents", "stack HWM: %u words free",
                          (unsigned)uxTaskGetStackHighWaterMark(NULL));
             hwmLogged = true;
+        }
+
+        if (s_otaActive) {
+            vTaskDelay(pdMS_TO_TICKS(250));
+            continue;
         }
 
         if (serverStarted && events.count() > 0) {
@@ -909,11 +940,55 @@ void startHttpServerOnce() {
                 ArduinoOTA.onStart([]() {
                     const char* type =
                         (ArduinoOTA.getCommand() == U_FLASH) ? "firmware" : "filesystem";
+                    s_otaActive = true;
+                    s_otaProgressPct = 0;
+                    s_lastOtaLoggedPct = 255;
+                    snprintf(s_otaLastError, sizeof(s_otaLastError), "%s", "none");
                     PA_LOG_INFO(TAG, "ArduinoOTA start: %s", type);
+                    logOtaHeapCheckpoint("start");
                 });
-                ArduinoOTA.onEnd([]() { PA_LOG_INFO(TAG, "ArduinoOTA complete"); });
+                ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+                    if (total == 0) {
+                        return;
+                    }
+                    uint8_t pct = (uint8_t)((progress * 100U) / total);
+                    if (pct > 100U) {
+                        pct = 100U;
+                    }
+                    s_otaProgressPct = pct;
+                    if (s_lastOtaLoggedPct == 255 || pct == 100U ||
+                        pct >= (uint8_t)(s_lastOtaLoggedPct + 10U)) {
+                        s_lastOtaLoggedPct = pct;
+                        PA_LOG_INFO("ArduinoOTA",
+                                    "progress %u%% heap free=%lu min=%lu largest=%lu",
+                                    (unsigned)pct,
+                                    (unsigned long)ESP.getFreeHeap(),
+                                    (unsigned long)ESP.getMinFreeHeap(),
+                                    (unsigned long)webHeapMaxAlloc());
+                    }
+                });
+                ArduinoOTA.onEnd([]() {
+                    logOtaHeapCheckpoint("complete");
+                    s_otaProgressPct = 100;
+                    s_otaActive = false;
+                    s_lastOtaLoggedPct = 255;
+                    snprintf(s_otaLastError, sizeof(s_otaLastError), "%s", "none");
+                    PA_LOG_INFO(TAG, "ArduinoOTA complete");
+                });
                 ArduinoOTA.onError([](ota_error_t error) {
-                    PA_LOG_ERROR(TAG, "ArduinoOTA error: %d", (int)error);
+                    unsigned int updateError = 0;
+                    const char* updateErrorText = "unavailable";
+#ifdef ARDUINO
+                    updateError = Update.getError();
+                    updateErrorText = Update.errorString();
+#endif
+                    logOtaHeapCheckpoint("error");
+                    snprintf(s_otaLastError, sizeof(s_otaLastError), "arduino:%d update:%u",
+                             (int)error, updateError);
+                    s_otaActive = false;
+                    s_lastOtaLoggedPct = 255;
+                    PA_LOG_ERROR(TAG, "ArduinoOTA error: %d update=%u %s", (int)error,
+                                 updateError, updateErrorText);
                 });
                 ArduinoOTA.begin();
                 PA_LOG_INFO(TAG, "ArduinoOTA ready on port 3232 as %s", hostname);

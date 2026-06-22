@@ -35,6 +35,7 @@
 #include "dome_link.h"
 #include "logging.h"
 #include "robot_state.h"
+#include "web_server.h"
 
 // -----------------------------------------------------------------------------
 // Driver instantiation — one concrete driver per build
@@ -1081,7 +1082,8 @@ void audioTask(void* pvParameters) {
         // can corrupt some module RX state machines during playback),
         // status is updated only via the manual Poll button
         // ----------------------------------------------------------------
-        if ((driver->capabilities() & AudioDriver::AUDIO_CAP_QUERY_SAFE_PLAYING) &&
+        if (!webOtaActive() &&
+            (driver->capabilities() & AudioDriver::AUDIO_CAP_QUERY_SAFE_PLAYING) &&
             ((uint32_t)(millis() - lastAutoQueryMs) >= AUTO_STATUS_QUERY_INTERVAL_MS)) {
             lastAutoQueryMs = millis();
             AudioModuleState ms{};

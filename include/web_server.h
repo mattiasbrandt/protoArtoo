@@ -23,6 +23,7 @@ uint32_t copyNewLogLinesSince(uint32_t lastSent, char out[][LOG_LINE_MAX], size_
 size_t getLogBufferCount();
 bool copyLogLineAt(size_t idx, char* out, size_t outSize);
 bool webLittleFsMounted();
+bool webOtaActive();
 void requestSystemRestart(uint32_t delayMs);
 void webServerInit();
 // Returns true when at least one client is connected to the SSE event stream.
