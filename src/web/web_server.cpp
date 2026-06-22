@@ -204,6 +204,7 @@ static bool serverStarted = false;
 static bool eventTaskStarted = false;
 static bool otaTaskStarted = false;
 static bool mdnsStarted = false;
+static constexpr int OTA_RECEIVE_TIMEOUT_MS = 15000;
 static volatile bool s_otaActive = false;
 static volatile uint8_t s_otaProgressPct = 255;
 static uint8_t s_lastOtaLoggedPct = 255;
@@ -937,6 +938,7 @@ void startHttpServerOnce() {
                 configCacheResolvedMdnsHostname(hostname, sizeof(hostname));
                 ArduinoOTA.setHostname(hostname);
                 ArduinoOTA.setMdnsEnabled(false);
+                ArduinoOTA.setTimeout(OTA_RECEIVE_TIMEOUT_MS);
                 ArduinoOTA.onStart([]() {
                     const char* type =
                         (ArduinoOTA.getCommand() == U_FLASH) ? "firmware" : "filesystem";
