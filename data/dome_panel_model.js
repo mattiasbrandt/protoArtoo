@@ -61,29 +61,29 @@ window.DOME_PANEL_MAP_SVG = `<svg viewBox="0 0 480 480" xmlns="http://www.w3.org
 .pbg{fill:#c4c9d4}
 .pr{fill:#1e3a8a;stroke:#3b82f6;stroke-width:1;cursor:pointer;transition:fill .15s;pointer-events:auto}
 .pr:hover,.pr.open{fill:#ea580c}
-.pr.selected{fill:#ea580c;stroke:#fff;stroke-width:2.5;filter:drop-shadow(0 0 6px rgba(106, 176, 255, 0.8))}
+.pr.selected{fill:#ea580c;stroke:#fff;stroke-width:2;filter:drop-shadow(0 0 3px rgba(234, 88, 12, 0.9))}
 .pp{fill:#1e3a6e;stroke:#60a5fa;stroke-width:1;cursor:pointer;transition:fill .15s;pointer-events:auto}
 .pp:hover,.pp.open{fill:#ea580c}
-.pp.selected{fill:#ea580c;stroke:#fff;stroke-width:2.5;filter:drop-shadow(0 0 6px rgba(106, 176, 255, 0.8))}
+.pp.selected{fill:#ea580c;stroke:#fff;stroke-width:2;filter:drop-shadow(0 0 3px rgba(234, 88, 12, 0.9))}
 .pe{fill:#c4c9d4;stroke:#9ca3af;stroke-width:.5}
-.pu{fill:#b0b8c8;stroke:#9ca3af;stroke-width:.8;cursor:pointer;transition:fill .15s;pointer-events:auto}
-.pu:hover,.pu.open{fill:#6b7280}
-.pu.selected{fill:#6b7280;stroke:#fff;stroke-width:2.5;filter:drop-shadow(0 0 6px rgba(176, 184, 200, 0.8))}
-.pf{fill:#a0a8b4;stroke:#6b7280;stroke-width:.8;pointer-events:none}
+.pu{fill:#cdd3dd;stroke:#6b7280;stroke-width:1;cursor:pointer;transition:fill .15s;pointer-events:auto}
+.pu:hover,.pu.open{fill:#9aa3b2}
+.pu.selected{fill:#7b8494;stroke:#fff;stroke-width:2;filter:drop-shadow(0 0 3px rgba(123, 132, 148, 0.9))}
+.pf{fill:#aeb6c2;stroke:#4b5563;stroke-width:1;pointer-events:none}
 .rl{stroke:#6b7280;stroke-width:.8;fill:none;pointer-events:none}
-.cr{fill:#111827;stroke:#3b82f6;stroke-width:1.5;cursor:pointer;pointer-events:auto}
+.cr{fill:#0b1220;stroke:#3b82f6;stroke-width:2;cursor:pointer;pointer-events:auto}
 .cr:hover{fill:#0f1e40}
-.cr.selected{fill:#0f1e40;stroke:#fff;stroke-width:2.5;filter:drop-shadow(0 0 6px rgba(59, 130, 246, 0.8))}
-.cf{fill:#8a9ab0;stroke:#6b7280;stroke-width:1;pointer-events:none}
-.conn-r{stroke:#3b82f6;stroke-width:.6;opacity:.5;pointer-events:none}
-.conn-f{stroke:#4b5563;stroke-width:.5;opacity:.4;pointer-events:none}
-.lt{font:bold 7.5px monospace;fill:#fff;text-anchor:middle;dominant-baseline:middle;pointer-events:none}
-.lp{font:bold 8.5px monospace;fill:#bfdbfe;text-anchor:middle;dominant-baseline:middle;pointer-events:none}
-.lpf{font:bold 8.5px monospace;fill:#374151;text-anchor:middle;dominant-baseline:middle;pointer-events:none}
-.lf{font:6.5px sans-serif;fill:#374151;text-anchor:middle;dominant-baseline:middle;pointer-events:none}
-.lf2{font:5.5px sans-serif;fill:#374151;text-anchor:middle;dominant-baseline:middle;pointer-events:none}
+.cr.selected{fill:#0f1e40;stroke:#fff;stroke-width:2.5;filter:drop-shadow(0 0 3px rgba(59, 130, 246, 0.9))}
+.cf{fill:#7e8aa0;stroke:#3a4250;stroke-width:1.2;pointer-events:none}
+.conn-r{stroke:#3b82f6;stroke-width:.8;opacity:.6;pointer-events:none}
+.conn-f{stroke:#4b5563;stroke-width:.7;opacity:.5;pointer-events:none}
+.lt{font:bold 11px monospace;fill:#fff;text-anchor:middle;dominant-baseline:middle;pointer-events:none}
+.lp{font:bold 12px monospace;fill:#eaf2ff;text-anchor:middle;dominant-baseline:middle;pointer-events:none}
+.lpf{font:bold 12px monospace;fill:#0b1220;text-anchor:middle;dominant-baseline:middle;pointer-events:none}
+.lf{font:bold 10px sans-serif;fill:#0b1220;text-anchor:middle;dominant-baseline:middle;pointer-events:none}
+.lf2{font:bold 9px sans-serif;fill:#0b1220;text-anchor:middle;dominant-baseline:middle;pointer-events:none}
 .hp{fill:#16a34a;stroke:#fff;stroke-width:.6;pointer-events:none}
-.lh{font:bold 5.5px monospace;fill:#fff;text-anchor:middle;dominant-baseline:middle;pointer-events:none}
+.lh{font:bold 8px monospace;fill:#fff;text-anchor:middle;dominant-baseline:middle;pointer-events:none}
 </style>
 <circle class="dbg" cx="240" cy="240" r="172"/>
 <circle class="pbg" cx="240" cy="240" r="119"/>
@@ -171,9 +171,10 @@ window.DOME_PANEL_MAP_SVG = `<svg viewBox="0 0 480 480" xmlns="http://www.w3.org
 <circle class="hp" cx="320.4" cy="172.5" r="6"><title>HP3 — Top Holo on PP3</title></circle>
 <text class="lh" x="320.4" y="172.5">HP3</text>
 <!-- Legend -->
-<g transform="translate(10,462)">
-  <rect x="0" y="0" width="10" height="8" fill="#1e3a8a" rx="1"/><text x="13" y="7" style="font:7.5px sans-serif;fill:#9ca3af">Ring servo</text>
-  <rect x="82" y="0" width="10" height="8" fill="#1e3a6e" rx="1"/><text x="95" y="7" style="font:7.5px sans-serif;fill:#9ca3af">Pie servo</text>
-  <rect x="148" y="0" width="10" height="8" fill="#a0a8b4" rx="1"/><text x="161" y="7" style="font:7.5px sans-serif;fill:#9ca3af">Fixed</text>
+<g transform="translate(8,460)" style="font:bold 12px sans-serif;fill:#d5dbe6">
+  <rect x="0" y="0" width="14" height="11" fill="#1e3a8a" rx="1"/><text x="18" y="9">Ring servo</text>
+  <rect x="88" y="0" width="14" height="11" fill="#1e3a6e" rx="1"/><text x="106" y="9">Pie servo</text>
+  <rect x="175" y="0" width="14" height="11" fill="#cdd3dd" rx="1"/><text x="193" y="9">Unserviced</text>
+  <rect x="295" y="0" width="14" height="11" fill="#aeb6c2" rx="1"/><text x="313" y="9">Fixed</text>
 </g>
 </svg>`;
