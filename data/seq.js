@@ -1009,32 +1009,17 @@
             target = match[2];
           }
 
-          // SVG dome picker: inject ported AstroPixelsPlus dome map verbatim
-          // Check if target is pie (pie panels or pie group)
-          const isPieTarget = ["14", "P1", "P2", "P3", "P4", "P5", "P6"].includes(target);
-
+          // SVG dome picker: inject ported AstroPixelsPlus dome map verbatim.
+          // All panels (ring and pie) are directly selectable.
           const svgPickerHtml = `
             <div class="dome-picker-container">
               ${window.DOME_PANEL_MAP_SVG}
             </div>
           `;
 
-          // Pie safety gate. Always rendered in the DOM (hidden for ring targets)
-          // so selecting a pie panel from a ring-target start can reveal it;
-          // updatePieGate() toggles visibility on every target change.
-          const pieGateHtml = `
-            <div class="dome-pie-gate" style="display:${isPieTarget ? "block" : "none"}">
-              <label class="dome-pie-gate-label">
-                <input type="checkbox" class="dome-pie-gate-confirm" aria-label="Acknowledge pie panels are unverified">
-                <span>I understand pie panels are mechanically unverified</span>
-              </label>
-            </div>
-          `;
-
           targetHtml = `
             <div class="dome-target-wrapper">
               ${svgPickerHtml}
-              ${pieGateHtml}
               <select class="step-field dome-target-select" aria-label="Target dropdown (alternative to SVG picker)">
                 <optgroup label="Groups">
                   <option value="00" ${target === "00" ? "selected" : ""}>All panels (00)</option>
@@ -1510,33 +1495,8 @@
         if (targetSelect) targetSelect.value = newTarget;
         if (preview) preview.textContent = cmd;
         editorState.current.steps[stepIdx].cmd = cmd;
-        updatePieGate(newTarget);
         validateAndUpdateStep(stepIdx);
       }
-    };
-
-    // Helper: Update pie safety gate visibility and state
-    const updatePieGate = (target) => {
-      const isPieTarget = ["14", "P1", "P2", "P3", "P4", "P5", "P6"].includes(target);
-      const gateContainer = fieldsContainer.querySelector(".dome-pie-gate");
-      const gateCheckbox = fieldsContainer.querySelector(".dome-pie-gate-confirm");
-
-      if (isPieTarget) {
-        // Show the gate and require confirmation.
-        if (gateContainer) gateContainer.style.display = "block";
-      } else {
-        // Hide the gate for ring targets and clear any prior acknowledgement so
-        // the operator must re-confirm before the next pie selection.
-        if (gateContainer) gateContainer.style.display = "none";
-        if (gateCheckbox) gateCheckbox.checked = false;
-      }
-    };
-
-    // Helper: Check if pie gate is satisfied (if needed)
-    const isPieGateSatisfied = () => {
-      const gateCheckbox = fieldsContainer.querySelector(".dome-pie-gate-confirm");
-      if (!gateCheckbox) return true; // No gate needed
-      return gateCheckbox.checked;
     };
 
     // SVG panel clicks — use event delegation on the SVG
@@ -1550,18 +1510,7 @@
         const targetValue = target.dataset.target;
         if (!targetValue) return;
 
-        // If pie target, require gate to be checked. Reveal the gate on the
-        // blocked click so the operator sees what to acknowledge (a second
-        // click, once checked, commits the target).
-        const isPieTarget = ["14", "P1", "P2", "P3", "P4", "P5", "P6"].includes(targetValue);
-        if (isPieTarget && !isPieGateSatisfied()) {
-          updatePieGate(targetValue);
-          const gateCheckbox = fieldsContainer.querySelector(".dome-pie-gate-confirm");
-          if (gateCheckbox) gateCheckbox.focus();
-          return;
-        }
-
-        // Update target and highlight
+        // Update target and highlight (ring and pie both directly selectable)
         setTarget(targetValue);
         highlightSelectedPanel(targetValue);
       });
@@ -1574,14 +1523,6 @@
         e.preventDefault();
         const targetValue = target.dataset.target;
         if (!targetValue) return;
-
-        const isPieTarget = ["14", "P1", "P2", "P3", "P4", "P5", "P6"].includes(targetValue);
-        if (isPieTarget && !isPieGateSatisfied()) {
-          updatePieGate(targetValue);
-          const gateCheckbox = fieldsContainer.querySelector(".dome-pie-gate-confirm");
-          if (gateCheckbox) gateCheckbox.focus();
-          return;
-        }
 
         setTarget(targetValue);
         highlightSelectedPanel(targetValue);
@@ -1623,13 +1564,6 @@
       });
     });
 
-    // Pie safety gate checkbox
-    const gateCheckbox = fieldsContainer.querySelector(".dome-pie-gate-confirm");
-    if (gateCheckbox) {
-      gateCheckbox.addEventListener("change", () => {
-        // Gate state changed; no action needed beyond displaying/hiding it
-      });
-    }
 
     // Dome visual preset selector updates the hidden cmd field
     const presetSelect = fieldsContainer.querySelector(".step-field-preset");

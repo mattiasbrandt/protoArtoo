@@ -124,7 +124,7 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
       }
     });
 
-    // Test 6: Pie panels have correct SVG structure (gate blocking proven in test 9)
+    // Test 6: Pie panels have correct SVG structure
     await test('Pie panel SVG structure is correct', async () => {
       // All pie panels should have data-target attributes
       const pp1 = page.locator('#pp1');
@@ -141,31 +141,15 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
       }
     });
 
-    // Test 7: Pie panel commits :OPPn AFTER the gate is acknowledged (positive path)
-    await test('Pie panel PP2 commits :OPP2 after gate confirmed', async () => {
-      // First click is blocked (gate not yet acknowledged) and reveals the gate
+    // Test 7: Pie panel commits :OPPn directly (no gate)
+    await test('Pie panel PP2 commits :OPP2 directly', async () => {
       const pp2 = page.locator('#pp2');
-      await pp2.click();
-      await page.waitForTimeout(100);
-
-      const gate = page.locator('.dome-pie-gate');
-      if (!(await gate.isVisible())) {
-        throw new Error('Gate should be visible after clicking a pie panel');
-      }
-      const blockedCmd = await page.locator('[data-field="cmd"]').first().inputValue();
-      if (blockedCmd.includes(':OPP2')) {
-        throw new Error('Pie target committed before gate was acknowledged');
-      }
-
-      // Acknowledge the gate, then click the pie panel again -> should commit
-      await page.locator('.dome-pie-gate-confirm').check();
-      await page.waitForTimeout(50);
       await pp2.click();
       await page.waitForTimeout(100);
 
       const cmd = await page.locator('[data-field="cmd"]').first().inputValue();
       if (!cmd.includes(':OPP2')) {
-        throw new Error(`Expected :OPP2 after gate confirmed, got ${cmd}`);
+        throw new Error(`Expected :OPP2, got ${cmd}`);
       }
     });
 
@@ -185,29 +169,23 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
       }
     });
 
-    // Test 9: Pie gate blocks selection until confirmed
-    await test('Pie gate blocks pie panel selection until confirmed', async () => {
-      // Select a ring panel first: this hides the gate AND clears any prior
-      // acknowledgement, so the next pie click must be blocked.
-      const p4 = page.locator('#p4');
-      await p4.click();
+    // Test 9: No pie safety gate exists; pie selects directly after a ring select
+    await test('No pie gate; pie selectable directly after ring select', async () => {
+      // Select a ring panel, then a pie panel — both commit with no gate
+      await page.locator('#p4').click();
       await page.waitForTimeout(100);
 
-      // Gate should be hidden for a ring target
-      const gate = page.locator('.dome-pie-gate');
-      if (await gate.isVisible()) {
-        throw new Error('Gate should be hidden for ring target');
+      const gateCount = await page.locator('.dome-pie-gate').count();
+      if (gateCount !== 0) {
+        throw new Error('Pie safety gate should no longer exist in the DOM');
       }
 
-      // Click a pie panel with the gate unacknowledged — must NOT commit
-      const pp2 = page.locator('#pp2');
-      await pp2.click();
+      await page.locator('#pp1').click();
       await page.waitForTimeout(100);
 
-      // Command should NOT have changed to :OPP2
-      const currentCmd = await page.locator('[data-field="cmd"]').first().inputValue();
-      if (currentCmd.includes(':OPP2')) {
-        throw new Error('Pie panel should not be selectable without gate confirmation');
+      const cmd = await page.locator('[data-field="cmd"]').first().inputValue();
+      if (!cmd.includes(':OPP1')) {
+        throw new Error(`Expected :OPP1 after direct pie select, got ${cmd}`);
       }
     });
 

@@ -4284,36 +4284,6 @@ label.sound-search-field {
   border-color: var(--text-dim);
 }
 
-/* Pie panel safety gate */
-.dome-pie-gate {
-  padding: 8px 12px;
-  background: rgba(232, 84, 84, 0.1);
-  border: 1px solid var(--danger);
-  border-radius: 3px;
-  display: none;
-}
-
-.dome-pie-gate-label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  cursor: pointer;
-  color: var(--text);
-  font-size: 0.9rem;
-}
-
-.dome-pie-gate-label input {
-  cursor: pointer;
-  width: 16px;
-  height: 16px;
-  accent-color: var(--warning);
-}
-
-.dome-pie-gate-label input:focus {
-  outline: 2px solid var(--accent-bright);
-  outline-offset: 2px;
-}
-
 /* Dome target wrapper layout */
 .dome-target-select {
   flex: 1;
