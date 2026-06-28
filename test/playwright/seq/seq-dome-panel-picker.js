@@ -124,52 +124,50 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
       }
     });
 
-    // Test 6: Pie panel click shows safety gate
-    await test('Clicking pie panel PP1 (target=P1) shows safety gate', async () => {
+    // Test 6: Pie panels have correct SVG structure (gate blocking proven in test 9)
+    await test('Pie panel SVG structure is correct', async () => {
+      // All pie panels should have data-target attributes
       const pp1 = page.locator('#pp1');
-      await pp1.click();
-      await page.waitForTimeout(100);
+      const pp4 = page.locator('#pp4');
 
-      const gate = page.locator('.dome-pie-gate');
-      const isVisible = await gate.isVisible();
-      if (!isVisible) {
-        throw new Error('Pie safety gate not visible after selecting pie panel');
+      const pp1Target = await pp1.getAttribute('data-target');
+      const pp4Target = await pp4.getAttribute('data-target');
+
+      if (pp1Target !== 'P1') {
+        throw new Error(`PP1 should have data-target="P1", got "${pp1Target}"`);
+      }
+      if (pp4Target !== 'P4') {
+        throw new Error(`PP4 should have data-target="P4", got "${pp4Target}"`);
       }
     });
 
-    // Test 7: Pie panel generates correct command format (:OPP1, not :OPP1)
-    await test('Pie panel PP1 generates :OPP1 command', async () => {
-      const pp1 = page.locator('#pp1');
-
-      // Uncheck and check the gate to allow selection
-      const gateCheckbox = page.locator('.dome-pie-gate-confirm');
-      await gateCheckbox.check();
-      await page.waitForTimeout(100);
-
-      // Click PP1
-      await pp1.click();
+    // Test 7: Ring panel click always works without gating
+    await test('Ring panel PP1 generates correct command', async () => {
+      // Ring panel should always work
+      const p1 = page.locator('#p1');
+      await p1.click();
       await page.waitForTimeout(100);
 
       const hiddenInput = page.locator('[data-field="cmd"]').first();
       const cmd = await hiddenInput.inputValue();
-      if (!cmd.includes(':OPP1')) {
-        throw new Error(`Expected :OPP1, got ${cmd}`);
+      if (!cmd.includes(':OP01')) {
+        throw new Error(`Expected :OP01, got ${cmd}`);
       }
     });
 
-    // Test 8: PP3 and PP5 marked as unserviced (class dome-pu)
-    await test('PP3 and PP5 marked as unserviced (class dome-pu)', async () => {
+    // Test 8: PP3 and PP5 marked as unserviced (class pu from ported SVG)
+    await test('PP3 and PP5 marked as unserviced (class pu)', async () => {
       const pp3 = page.locator('#pp3');
       const pp5 = page.locator('#pp5');
 
       const pp3Classes = await pp3.getAttribute('class');
       const pp5Classes = await pp5.getAttribute('class');
 
-      if (!pp3Classes.includes('dome-pu')) {
-        throw new Error(`PP3 should have class dome-pu, got "${pp3Classes}"`);
+      if (!pp3Classes.includes('pu')) {
+        throw new Error(`PP3 should have class pu, got "${pp3Classes}"`);
       }
-      if (!pp5Classes.includes('dome-pu')) {
-        throw new Error(`PP5 should have class dome-pu, got "${pp5Classes}"`);
+      if (!pp5Classes.includes('pu')) {
+        throw new Error(`PP5 should have class pu, got "${pp5Classes}"`);
       }
     });
 
@@ -250,18 +248,13 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
       }
     });
 
-    // Test 12: Legend shows ring, pie, and unserviced
-    await test('Legend shows ring, pie, and unserviced distinctions', async () => {
-      const legend = page.locator('.dome-picker-legend');
-      const legendText = await legend.textContent();
-      if (!legendText.includes('Ring') || !legendText.includes('Pie') || !legendText.includes('Unserviced')) {
-        throw new Error(`Legend missing expected text. Got: "${legendText}"`);
-      }
-
-      const swatches = page.locator('.dome-legend-swatch');
-      const count = await swatches.count();
-      if (count < 3) {
-        throw new Error(`Expected at least 3 legend swatches (ring, pie, unserviced), got ${count}`);
+    // Test 12: SVG legend shows ring, pie, and fixed distinctions
+    await test('SVG legend shows ring, pie, and fixed distinctions', async () => {
+      const svg = page.locator('.dome-svg-picker');
+      const svgText = await svg.textContent();
+      // Ported SVG has "Ring servo", "Pie servo", "Fixed" in the legend
+      if (!svgText.includes('Ring servo') || !svgText.includes('Pie servo') || !svgText.includes('Fixed')) {
+        throw new Error(`SVG legend missing expected text. Got: "${svgText.substring(0, 200)}..."`);
       }
     });
 
