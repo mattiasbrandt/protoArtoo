@@ -1012,7 +1012,6 @@
           // SVG dome picker with pie panel gating
           // Check if target is pie (pie panels or pie group)
           const isPieTarget = ["14", "P1", "P2", "P3", "P4", "P5", "P6"].includes(target);
-          const isUnservicedTarget = ["P3", "P5"].includes(target); // PP3, PP5 are unserviced
 
           const svgPickerHtml = `
             <div class="dome-picker-container">
@@ -1088,15 +1087,17 @@
             </div>
           `;
 
-          // Pie safety gate
-          const pieGateHtml = isPieTarget ? `
-            <div class="dome-pie-gate">
+          // Pie safety gate. Always rendered in the DOM (hidden for ring targets)
+          // so selecting a pie panel from a ring-target start can reveal it;
+          // updatePieGate() toggles visibility on every target change.
+          const pieGateHtml = `
+            <div class="dome-pie-gate" style="display:${isPieTarget ? "block" : "none"}">
               <label class="dome-pie-gate-label">
                 <input type="checkbox" class="dome-pie-gate-confirm" aria-label="Acknowledge pie panels are unverified">
                 <span>I understand pie panels are mechanically unverified</span>
               </label>
             </div>
-          ` : '';
+          `;
 
           targetHtml = `
             <div class="dome-target-wrapper">
