@@ -1010,37 +1010,80 @@
           }
 
           // SVG dome picker with pie panel gating
+          // Check if target is pie (pie panels or pie group)
           const isPieTarget = ["14", "P1", "P2", "P3", "P4", "P5", "P6"].includes(target);
+          const isUnservicedTarget = ["P3", "P5"].includes(target); // PP3, PP5 are unserviced
+
           const svgPickerHtml = `
             <div class="dome-picker-container">
-              <svg class="dome-svg-picker" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Dome panel picker: outer ring for bottom panels, inner pie for top panels">
-                <!-- All panels group (center dot, clickable) -->
-                <circle class="dome-panel-group" cx="100" cy="100" r="8" data-group="00" aria-label="All panels" role="button" tabindex="0" title="All panels (00)"/>
-                <!-- Ring group outer region -->
-                <circle class="dome-panel-group" cx="100" cy="100" r="45" data-group="15" fill="none" stroke="var(--border)" stroke-width="2" stroke-dasharray="2,2" aria-label="Ring panels group" role="button" tabindex="0" title="Ring / bottom group (15)"/>
-                <!-- Pie group inner region -->
-                <circle class="dome-panel-group" cx="100" cy="100" r="28" data-group="14" fill="none" stroke="var(--danger)" stroke-width="2" stroke-dasharray="2,2" aria-label="Pie panels group (unverified)" role="button" tabindex="0" title="Pie / top group (14) - UNVERIFIED"/>
-                <!-- Ring panels (bottom/outer): 01, 02, 03, 04, 07, 11, 13 -->
-                <circle class="dome-ring-panel" cx="100" cy="65" r="7" data-target="01" aria-label="Ring panel P1 (01)" role="button" tabindex="0" title="P1 → 01"/>
-                <circle class="dome-ring-panel" cx="130" cy="80" r="7" data-target="02" aria-label="Ring panel P2 (02)" role="button" tabindex="0" title="P2 → 02"/>
-                <circle class="dome-ring-panel" cx="135" cy="110" r="7" data-target="03" aria-label="Ring panel P3 (03)" role="button" tabindex="0" title="P3 → 03"/>
-                <circle class="dome-ring-panel" cx="130" cy="140" r="7" data-target="04" aria-label="Ring panel P4 (04)" role="button" tabindex="0" title="P4 → 04"/>
-                <circle class="dome-ring-panel" cx="100" cy="155" r="7" data-target="07" aria-label="Ring panel P7 (07)" role="button" tabindex="0" title="P7 → 07"/>
-                <circle class="dome-ring-panel" cx="70" cy="140" r="7" data-target="11" aria-label="Ring panel P11 (11)" role="button" tabindex="0" title="P11 → 11"/>
-                <circle class="dome-ring-panel" cx="65" cy="80" r="7" data-target="13" aria-label="Ring panel P13 (13)" role="button" tabindex="0" title="P13 → 13"/>
-                <!-- Pie panels (top/inner): P1-P6, marked as unverified -->
-                <circle class="dome-pie-panel" cx="100" cy="80" r="6" data-target="P1" aria-label="Pie panel PP1 (P1) - unverified" role="button" tabindex="0" title="PP1 → P1 (UNVERIFIED)"/>
-                <circle class="dome-pie-panel" cx="117" cy="90" r="6" data-target="P2" aria-label="Pie panel PP2 (P2) - unverified" role="button" tabindex="0" title="PP2 → P2 (UNVERIFIED)"/>
-                <circle class="dome-pie-panel" cx="117" cy="110" r="6" data-target="P3" aria-label="Pie panel PP3 (P3) - unverified" role="button" tabindex="0" title="PP3 → P3 (UNVERIFIED)"/>
-                <circle class="dome-pie-panel" cx="100" cy="120" r="6" data-target="P4" aria-label="Pie panel PP4 (P4) - unverified" role="button" tabindex="0" title="PP4 → P4 (UNVERIFIED)"/>
-                <circle class="dome-pie-panel" cx="83" cy="110" r="6" data-target="P5" aria-label="Pie panel PP5 (P5) - unverified" role="button" tabindex="0" title="PP5 → P5 (UNVERIFIED)"/>
-                <circle class="dome-pie-panel" cx="83" cy="90" r="6" data-target="P6" aria-label="Pie panel PP6 (P6) - unverified" role="button" tabindex="0" title="PP6 → P6 (UNVERIFIED)"/>
-                <!-- Selected panel highlight circle (drawn on top, starts hidden) -->
-                <circle class="dome-panel-selected-ring" cx="100" cy="100" r="10" fill="none" stroke="var(--accent-bright)" stroke-width="2" style="display: none;"/>
+              <svg class="dome-svg-picker" viewBox="0 0 480 480" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Dome top-down map. Ring panels bottom, pie panels top. Click to select.">
+                <style>
+                  .dome-bg { fill: var(--surface-alt); stroke: var(--border); stroke-width: 1.5; pointer-events: none; }
+                  .dome-inner-bg { fill: var(--surface); pointer-events: none; }
+                  .dome-pr { fill: var(--accent-dim); stroke: var(--accent); stroke-width: 1; cursor: pointer; transition: fill 0.15s, stroke 0.15s; pointer-events: auto; }
+                  .dome-pr:hover { fill: var(--accent); stroke: var(--accent-bright); }
+                  .dome-pr.selected { fill: var(--accent-bright); stroke: var(--white); stroke-width: 2.5; filter: drop-shadow(0 0 6px rgba(106, 176, 255, 0.8)); }
+                  .dome-pp { fill: var(--danger-bg); stroke: var(--danger); stroke-width: 1; cursor: pointer; transition: fill 0.15s, stroke 0.15s; pointer-events: auto; }
+                  .dome-pp:hover { fill: rgba(232, 84, 84, 0.4); stroke: var(--danger); }
+                  .dome-pp.selected { fill: var(--danger); stroke: var(--white); stroke-width: 2.5; filter: drop-shadow(0 0 6px rgba(232, 84, 84, 0.8)); }
+                  .dome-pu { fill: var(--text-dim); stroke: var(--text-dim); stroke-width: 0.8; cursor: pointer; transition: fill 0.15s, stroke 0.15s; pointer-events: auto; }
+                  .dome-pu:hover { fill: var(--silver); stroke: var(--silver); }
+                  .dome-pu.selected { fill: var(--silver); stroke: var(--white); stroke-width: 2.5; filter: drop-shadow(0 0 6px rgba(212, 221, 232, 0.8)); }
+                  .dome-pf { fill: var(--text-dim); stroke: var(--border); stroke-width: 0.8; pointer-events: none; }
+                  .dome-fixed-label { font: 7.5px monospace; fill: var(--border); text-anchor: middle; dominant-baseline: middle; pointer-events: none; }
+                  .dome-label { font: bold 8.5px monospace; fill: var(--accent-bright); text-anchor: middle; dominant-baseline: middle; pointer-events: none; }
+                  .dome-label-unserv { font: bold 8.5px monospace; fill: var(--text-dim); text-anchor: middle; dominant-baseline: middle; pointer-events: none; }
+                  .dome-hp { fill: var(--success); stroke: var(--white); stroke-width: 0.6; pointer-events: none; }
+                  .dome-hp-label { font: bold 5.5px monospace; fill: var(--white); text-anchor: middle; dominant-baseline: middle; pointer-events: none; }
+                  .dome-center { pointer-events: none; }
+                </style>
+                <!-- Background circles -->
+                <circle class="dome-bg" cx="240" cy="240" r="172"/>
+                <circle class="dome-inner-bg" cx="240" cy="240" r="119"/>
+                <!-- Pie wedges: PP4 (top), PP3 (upper-right, unserved), PP2 (right), PP1 (bottom), PP6 (lower-left), PP5 (upper-left, unserved) -->
+                <path class="dome-pp" id="pp4" data-panel-id="PP4" data-target="P4" role="button" tabindex="0" aria-label="PP4 pie panel" d="M 184.6,135.8 A 118,118 0 0 1 293.6,134.9 L 264.5,191.9 A 54,54 0 0 0 214.6,192.3 Z"><title>PP4</title></path>
+                <path class="dome-pu" id="pp3" data-panel-id="PP3" data-target="P3" role="button" tabindex="0" aria-label="PP3 pie panel (unserviced)" d="M 302.5,139.9 A 118,118 0 0 1 357.8,233.8 L 293.9,237.2 A 54,54 0 0 0 268.6,194.2 Z"><title>PP3 (unserviced)</title></path>
+                <path class="dome-pp" id="pp2" data-panel-id="PP2" data-target="P2" role="button" tabindex="0" aria-label="PP2 pie panel" d="M 357.9,244.1 A 118,118 0 0 1 304.3,339.0 L 269.4,285.3 A 54,54 0 0 0 294.0,241.9 Z"><title>PP2</title></path>
+                <path class="dome-pp" id="pp1" data-panel-id="PP1" data-target="P1" role="button" tabindex="0" aria-label="PP1 pie panel" d="M 295.4,344.2 A 118,118 0 0 1 186.4,345.1 L 215.5,288.1 A 54,54 0 0 0 265.4,287.7 Z"><title>PP1</title></path>
+                <path class="dome-pp" id="pp6" data-panel-id="PP6" data-target="P6" role="button" tabindex="0" aria-label="PP6 pie panel" d="M 177.5,340.1 A 118,118 0 0 1 122.2,246.2 L 186.1,242.8 A 54,54 0 0 0 211.4,285.8 Z"><title>PP6</title></path>
+                <path class="dome-pu" id="pp5" data-panel-id="PP5" data-target="P5" role="button" tabindex="0" aria-label="PP5 pie panel (unserviced)" d="M 122.1,235.9 A 118,118 0 0 1 175.7,141.0 L 210.6,194.7 A 54,54 0 0 0 186.0,238.1 Z"><title>PP5 (unserviced)</title></path>
+                <!-- Ring panels and fixed features -->
+                <path class="dome-pf" id="r_p8" d="M 272.8,71.2 A 172,172 0 0 1 318.1,86.7 L 306.3,109.9 A 146,146 0 0 0 267.9,96.7 Z"><title>P8 fixed (RPSI)</title></path>
+                <path class="dome-pr" id="p7" data-panel-id="P7" data-target="07" role="button" tabindex="0" aria-label="P7 ring panel (wide)" d="M 331.1,94.1 A 172,172 0 0 1 391.9,159.3 L 368.9,171.5 A 146,146 0 0 0 317.4,116.2 Z"><title>P7</title></path>
+                <path class="dome-pf" id="r_merge" d="M 398.3,172.8 A 172,172 0 0 1 409.4,210.1 L 383.8,214.6 A 146,146 0 0 0 374.4,183.0 Z"><title>P6/MP/P5 merged</title></path>
+                <path class="dome-pr" id="p4" data-panel-id="P4" data-target="04" role="button" tabindex="0" aria-label="P4 ring panel (wide)" d="M 411.3,225.0 A 172,172 0 0 1 395.9,312.7 L 372.3,301.7 A 146,146 0 0 0 385.4,227.3 Z"><title>P4</title></path>
+                <path class="dome-pr" id="p3" data-panel-id="P3" data-target="03" role="button" tabindex="0" aria-label="P3 ring panel" d="M 389.0,326.0 A 172,172 0 0 1 365.8,357.3 L 346.8,339.6 A 146,146 0 0 0 366.4,313.0 Z"><title>P3</title></path>
+                <path class="dome-pr" id="p2" data-panel-id="P2" data-target="02" role="button" tabindex="0" aria-label="P2 ring panel" d="M 355.1,367.8 A 172,172 0 0 1 323.4,390.4 L 310.8,367.7 A 146,146 0 0 0 337.7,348.5 Z"><title>P2</title></path>
+                <path class="dome-pr" id="p1" data-panel-id="P1" data-target="01" role="button" tabindex="0" aria-label="P1 ring panel" d="M 310.0,397.1 A 172,172 0 0 1 272.8,408.8 L 267.9,383.3 A 146,146 0 0 0 299.4,373.4 Z"><title>P1</title></path>
+                <path class="dome-pf" id="r_p14" d="M 198.4,406.9 A 172,172 0 0 1 154.0,389.0 L 167.0,366.4 A 146,146 0 0 0 204.7,381.7 Z"><title>P14 fixed (FPSI)</title></path>
+                <path class="dome-pr" id="p13" data-panel-id="P13" data-target="13" role="button" tabindex="0" aria-label="P13 ring panel (narrow)" d="M 138.9,379.2 A 172,172 0 0 1 124.9,367.8 L 142.3,348.5 A 146,146 0 0 0 154.2,358.1 Z"><title>P13</title></path>
+                <path class="dome-pf" id="r_p12" d="M 112.2,355.1 A 172,172 0 0 1 88.1,320.7 L 111.1,308.5 A 146,146 0 0 0 131.5,337.7 Z"><title>P12 fixed (FLDs)</title></path>
+                <path class="dome-pr" id="p11" data-panel-id="P11" data-target="11" role="button" tabindex="0" aria-label="P11 ring panel (narrow)" d="M 80.5,304.4 A 172,172 0 0 1 74.7,287.4 L 99.7,280.2 A 146,146 0 0 0 104.6,294.7 Z"><title>P11</title></path>
+                <path class="dome-pf" id="r_p10" d="M 70.6,269.9 A 172,172 0 0 1 88.1,159.3 L 111.1,171.5 A 146,146 0 0 0 96.2,265.4 Z"><title>P10 fixed</title></path>
+                <path class="dome-pf" id="r_p9" d="M 97.4,143.8 A 172,172 0 0 1 192.6,74.7 L 199.8,99.7 A 146,146 0 0 0 119.0,158.4 Z"><title>P9 fixed (RLD)</title></path>
+                <!-- Center dome -->
+                <circle class="dome-center" cx="240" cy="240" r="22" fill: var(--bg); stroke: var(--border); stroke-width: 1; />
+                <!-- Grid circles (decorative) -->
+                <circle class="dome-center" cx="240" cy="240" r="172" fill="none" stroke="var(--border)" stroke-width: 1; />
+                <circle class="dome-center" cx="240" cy="240" r="146" fill="none" stroke="var(--border)" stroke-width: 1; stroke-dasharray: 3,2; />
+                <circle class="dome-center" cx="240" cy="240" r="54" fill="none" stroke="var(--border)" stroke-width: 1; />
+                <!-- Holo projectors -->
+                <ellipse class="dome-hp" cx="240.0" cy="81.0" rx="14.1" ry="10.9"><title>HP2 (Rear Holo)</title></ellipse>
+                <ellipse class="dome-hp" cx="237.2" cy="399.0" rx="16.5" ry="10.9"><title>HP1 (Front Holo)</title></ellipse>
+                <circle class="dome-hp" cx="320.4" cy="172.5" r="6"><title>HP3 (Top Holo, on PP3)</title></circle>
+                <!-- Pie wedge labels -->
+                <text class="dome-label" x="240.0" y="154.0">PP4</text>
+                <text class="dome-label-unserv" x="296.0" y="216.0">PP3</text>
+                <text class="dome-label" x="314.9" y="282.3">PP2</text>
+                <text class="dome-label" x="240.8" y="326.0">PP1</text>
+                <text class="dome-label" x="165.9" y="283.6">PP6</text>
+                <text class="dome-label-unserv" x="165.1" y="197.7">PP5</text>
+                <!-- Ring panel callout labels (not shown for space; relying on SVG title) -->
               </svg>
               <div class="dome-picker-legend">
-                <div class="dome-legend-item"><span class="dome-legend-swatch ring"></span> Ring (bottom) — safe</div>
-                <div class="dome-legend-item"><span class="dome-legend-swatch pie"></span> Pie (top) — unverified</div>
+                <div class="dome-legend-item"><span class="dome-legend-swatch ring"></span> Ring (safe)</div>
+                <div class="dome-legend-item"><span class="dome-legend-swatch pie"></span> Pie (unverified)</div>
+                <div class="dome-legend-item"><span class="dome-legend-swatch unserved"></span> Unserviced</div>
               </div>
             </div>
           `;
@@ -1568,16 +1611,19 @@
       return gateCheckbox.checked;
     };
 
-    // SVG panel clicks
-    const svgPanels = fieldsContainer.querySelectorAll(".dome-ring-panel, .dome-pie-panel, [data-group]");
-    svgPanels.forEach((panel) => {
-      const handlePanelClick = (e) => {
-        e.preventDefault();
-        const target = panel.dataset.target || panel.dataset.group;
+    // SVG panel clicks — use event delegation on the SVG
+    const svg = fieldsContainer.querySelector(".dome-svg-picker");
+    if (svg) {
+      svg.addEventListener("click", (e) => {
+        const target = e.target.closest("[data-target]");
         if (!target) return;
 
+        e.preventDefault();
+        const targetValue = target.dataset.target;
+        if (!targetValue) return;
+
         // If pie target, require gate to be checked
-        const isPieTarget = ["14", "P1", "P2", "P3", "P4", "P5", "P6"].includes(target);
+        const isPieTarget = ["14", "P1", "P2", "P3", "P4", "P5", "P6"].includes(targetValue);
         if (isPieTarget && !isPieGateSatisfied()) {
           const gateCheckbox = fieldsContainer.querySelector(".dome-pie-gate-confirm");
           if (gateCheckbox) gateCheckbox.focus();
@@ -1585,18 +1631,30 @@
         }
 
         // Update target and highlight
-        setTarget(target);
-        highlightSelectedPanel(target);
-      };
-
-      panel.addEventListener("click", handlePanelClick);
-      panel.addEventListener("keydown", (e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          handlePanelClick(e);
-        }
+        setTarget(targetValue);
+        highlightSelectedPanel(targetValue);
       });
-    });
+
+      svg.addEventListener("keydown", (e) => {
+        if (e.key !== "Enter" && e.key !== " ") return;
+        const target = e.target.closest("[data-target]");
+        if (!target) return;
+
+        e.preventDefault();
+        const targetValue = target.dataset.target;
+        if (!targetValue) return;
+
+        const isPieTarget = ["14", "P1", "P2", "P3", "P4", "P5", "P6"].includes(targetValue);
+        if (isPieTarget && !isPieGateSatisfied()) {
+          const gateCheckbox = fieldsContainer.querySelector(".dome-pie-gate-confirm");
+          if (gateCheckbox) gateCheckbox.focus();
+          return;
+        }
+
+        setTarget(targetValue);
+        highlightSelectedPanel(targetValue);
+      });
+    }
 
     // Helper: Highlight the selected panel in the SVG
     const highlightSelectedPanel = (target) => {
@@ -1605,33 +1663,16 @@
 
       // Find the panel element
       let selectedPanel = null;
-      if (target === "00" || target === "14" || target === "15") {
-        // For groups, highlight the group circle
-        selectedPanel = svg.querySelector(`[data-group="${target}"]`);
-      } else {
-        selectedPanel = svg.querySelector(`[data-target="${target}"]`);
-      }
+      selectedPanel = svg.querySelector(`[data-target="${target}"]`);
 
       // Remove highlight from all panels
-      svg.querySelectorAll(".dome-ring-panel, .dome-pie-panel, [data-group]").forEach((p) => {
+      svg.querySelectorAll("[data-target]").forEach((p) => {
         p.classList.remove("selected");
       });
 
       // Add highlight to selected panel
       if (selectedPanel) {
         selectedPanel.classList.add("selected");
-
-        // Also show the highlight ring around the selected panel
-        const highlightRing = svg.querySelector(".dome-panel-selected-ring");
-        if (highlightRing && selectedPanel.dataset.target) {
-          const cx = selectedPanel.getAttribute("cx");
-          const cy = selectedPanel.getAttribute("cy");
-          highlightRing.setAttribute("cx", cx);
-          highlightRing.setAttribute("cy", cy);
-          highlightRing.style.display = "block";
-        } else if (highlightRing) {
-          highlightRing.style.display = "none";
-        }
       }
     };
 
