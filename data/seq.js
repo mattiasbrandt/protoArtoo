@@ -1009,31 +1009,81 @@
             target = match[2];
           }
 
+          // SVG dome picker with pie panel gating
+          const isPieTarget = ["14", "P1", "P2", "P3", "P4", "P5", "P6"].includes(target);
+          const svgPickerHtml = `
+            <div class="dome-picker-container">
+              <svg class="dome-svg-picker" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Dome panel picker: outer ring for bottom panels, inner pie for top panels">
+                <!-- All panels group (center dot, clickable) -->
+                <circle class="dome-panel-group" cx="100" cy="100" r="8" data-group="00" aria-label="All panels" role="button" tabindex="0" title="All panels (00)"/>
+                <!-- Ring group outer region -->
+                <circle class="dome-panel-group" cx="100" cy="100" r="45" data-group="15" fill="none" stroke="var(--border)" stroke-width="2" stroke-dasharray="2,2" aria-label="Ring panels group" role="button" tabindex="0" title="Ring / bottom group (15)"/>
+                <!-- Pie group inner region -->
+                <circle class="dome-panel-group" cx="100" cy="100" r="28" data-group="14" fill="none" stroke="var(--danger)" stroke-width="2" stroke-dasharray="2,2" aria-label="Pie panels group (unverified)" role="button" tabindex="0" title="Pie / top group (14) - UNVERIFIED"/>
+                <!-- Ring panels (bottom/outer): 01, 02, 03, 04, 07, 11, 13 -->
+                <circle class="dome-ring-panel" cx="100" cy="65" r="7" data-target="01" aria-label="Ring panel P1 (01)" role="button" tabindex="0" title="P1 → 01"/>
+                <circle class="dome-ring-panel" cx="130" cy="80" r="7" data-target="02" aria-label="Ring panel P2 (02)" role="button" tabindex="0" title="P2 → 02"/>
+                <circle class="dome-ring-panel" cx="135" cy="110" r="7" data-target="03" aria-label="Ring panel P3 (03)" role="button" tabindex="0" title="P3 → 03"/>
+                <circle class="dome-ring-panel" cx="130" cy="140" r="7" data-target="04" aria-label="Ring panel P4 (04)" role="button" tabindex="0" title="P4 → 04"/>
+                <circle class="dome-ring-panel" cx="100" cy="155" r="7" data-target="07" aria-label="Ring panel P7 (07)" role="button" tabindex="0" title="P7 → 07"/>
+                <circle class="dome-ring-panel" cx="70" cy="140" r="7" data-target="11" aria-label="Ring panel P11 (11)" role="button" tabindex="0" title="P11 → 11"/>
+                <circle class="dome-ring-panel" cx="65" cy="80" r="7" data-target="13" aria-label="Ring panel P13 (13)" role="button" tabindex="0" title="P13 → 13"/>
+                <!-- Pie panels (top/inner): P1-P6, marked as unverified -->
+                <circle class="dome-pie-panel" cx="100" cy="80" r="6" data-target="P1" aria-label="Pie panel PP1 (P1) - unverified" role="button" tabindex="0" title="PP1 → P1 (UNVERIFIED)"/>
+                <circle class="dome-pie-panel" cx="117" cy="90" r="6" data-target="P2" aria-label="Pie panel PP2 (P2) - unverified" role="button" tabindex="0" title="PP2 → P2 (UNVERIFIED)"/>
+                <circle class="dome-pie-panel" cx="117" cy="110" r="6" data-target="P3" aria-label="Pie panel PP3 (P3) - unverified" role="button" tabindex="0" title="PP3 → P3 (UNVERIFIED)"/>
+                <circle class="dome-pie-panel" cx="100" cy="120" r="6" data-target="P4" aria-label="Pie panel PP4 (P4) - unverified" role="button" tabindex="0" title="PP4 → P4 (UNVERIFIED)"/>
+                <circle class="dome-pie-panel" cx="83" cy="110" r="6" data-target="P5" aria-label="Pie panel PP5 (P5) - unverified" role="button" tabindex="0" title="PP5 → P5 (UNVERIFIED)"/>
+                <circle class="dome-pie-panel" cx="83" cy="90" r="6" data-target="P6" aria-label="Pie panel PP6 (P6) - unverified" role="button" tabindex="0" title="PP6 → P6 (UNVERIFIED)"/>
+                <!-- Selected panel highlight circle (drawn on top, starts hidden) -->
+                <circle class="dome-panel-selected-ring" cx="100" cy="100" r="10" fill="none" stroke="var(--accent-bright)" stroke-width="2" style="display: none;"/>
+              </svg>
+              <div class="dome-picker-legend">
+                <div class="dome-legend-item"><span class="dome-legend-swatch ring"></span> Ring (bottom) — safe</div>
+                <div class="dome-legend-item"><span class="dome-legend-swatch pie"></span> Pie (top) — unverified</div>
+              </div>
+            </div>
+          `;
+
+          // Pie safety gate
+          const pieGateHtml = isPieTarget ? `
+            <div class="dome-pie-gate">
+              <label class="dome-pie-gate-label">
+                <input type="checkbox" class="dome-pie-gate-confirm" aria-label="Acknowledge pie panels are unverified">
+                <span>I understand pie panels are mechanically unverified</span>
+              </label>
+            </div>
+          ` : '';
+
           targetHtml = `
-            <select class="step-field dome-target-select" aria-label="Target">
-              <optgroup label="Groups">
-                <option value="00" ${target === "00" ? "selected" : ""}>All panels (00)</option>
-                <option value="14" ${target === "14" ? "selected" : ""}>Pie / top group (14)</option>
-                <option value="15" ${target === "15" ? "selected" : ""}>Ring / bottom group (15)</option>
-              </optgroup>
-              <optgroup label="Ring panels">
-                <option value="01" ${target === "01" ? "selected" : ""}>P1 → 01</option>
-                <option value="02" ${target === "02" ? "selected" : ""}>P2 → 02</option>
-                <option value="03" ${target === "03" ? "selected" : ""}>P3 → 03</option>
-                <option value="04" ${target === "04" ? "selected" : ""}>P4 → 04</option>
-                <option value="07" ${target === "07" ? "selected" : ""}>P7 → 07</option>
-                <option value="11" ${target === "11" ? "selected" : ""}>P11 → 11</option>
-                <option value="13" ${target === "13" ? "selected" : ""}>P13 → 13</option>
-              </optgroup>
-              <optgroup label="Pie / top panels">
-                <option value="P1" ${target === "P1" ? "selected" : ""}>PP1 → P1</option>
-                <option value="P2" ${target === "P2" ? "selected" : ""}>PP2 → P2</option>
-                <option value="P3" ${target === "P3" ? "selected" : ""}>PP3 → P3</option>
-                <option value="P4" ${target === "P4" ? "selected" : ""}>PP4 → P4</option>
-                <option value="P5" ${target === "P5" ? "selected" : ""}>PP5 → P5</option>
-                <option value="P6" ${target === "P6" ? "selected" : ""}>PP6 → P6</option>
-              </optgroup>
-            </select>
+            <div class="dome-target-wrapper">
+              ${svgPickerHtml}
+              ${pieGateHtml}
+              <select class="step-field dome-target-select" aria-label="Target dropdown (alternative to SVG picker)">
+                <optgroup label="Groups">
+                  <option value="00" ${target === "00" ? "selected" : ""}>All panels (00)</option>
+                  <option value="14" ${target === "14" ? "selected" : ""}>Pie / top group (14)</option>
+                  <option value="15" ${target === "15" ? "selected" : ""}>Ring / bottom group (15)</option>
+                </optgroup>
+                <optgroup label="Ring panels">
+                  <option value="01" ${target === "01" ? "selected" : ""}>P1 → 01</option>
+                  <option value="02" ${target === "02" ? "selected" : ""}>P2 → 02</option>
+                  <option value="03" ${target === "03" ? "selected" : ""}>P3 → 03</option>
+                  <option value="04" ${target === "04" ? "selected" : ""}>P4 → 04</option>
+                  <option value="07" ${target === "07" ? "selected" : ""}>P7 → 07</option>
+                  <option value="11" ${target === "11" ? "selected" : ""}>P11 → 11</option>
+                  <option value="13" ${target === "13" ? "selected" : ""}>P13 → 13</option>
+                </optgroup>
+                <optgroup label="Pie / top panels">
+                  <option value="P1" ${target === "P1" ? "selected" : ""}>PP1 → P1</option>
+                  <option value="P2" ${target === "P2" ? "selected" : ""}>PP2 → P2</option>
+                  <option value="P3" ${target === "P3" ? "selected" : ""}>PP3 → P3</option>
+                  <option value="P4" ${target === "P4" ? "selected" : ""}>PP4 → P4</option>
+                  <option value="P5" ${target === "P5" ? "selected" : ""}>PP5 → P5</option>
+                  <option value="P6" ${target === "P6" ? "selected" : ""}>PP6 → P6</option>
+                </optgroup>
+              </select>
+            </div>
           `;
 
           behaviorHtml = `
@@ -1470,25 +1520,143 @@
   // Step rows are re-created on every rerender, so fresh listeners are needed each time.
   // Helper: Attach dome-related listeners (panel, preset, advanced) to a specific fields container
   const attachDomePanelIntentListeners = (fieldsContainer, stepIdx) => {
-    // Dome panel intent action/target selects update the hidden cmd field
-    fieldsContainer.querySelectorAll(".dome-action-select, .dome-target-select").forEach((select) => {
-      select.addEventListener("change", () => {
-        const actionSelect = fieldsContainer.querySelector(".dome-action-select");
-        const targetSelect = fieldsContainer.querySelector(".dome-target-select");
-        const hiddenInput = fieldsContainer.querySelector('input[data-field="cmd"]');
-        const preview = fieldsContainer.querySelector(".dome-cmd-preview");
+    // Helper: Update the command, target select, and preview from a new target value
+    const setTarget = (newTarget) => {
+      const actionSelect = fieldsContainer.querySelector(".dome-action-select");
+      const targetSelect = fieldsContainer.querySelector(".dome-target-select");
+      const hiddenInput = fieldsContainer.querySelector('input[data-field="cmd"]');
+      const preview = fieldsContainer.querySelector(".dome-cmd-preview");
 
-        if (actionSelect && targetSelect && hiddenInput) {
-          const action = actionSelect.value;
-          const target = targetSelect.value;
-          const cmd = `:${action}${target}`;
-          hiddenInput.value = cmd;
-          if (preview) preview.textContent = cmd;
-          editorState.current.steps[stepIdx].cmd = cmd;
-          validateAndUpdateStep(stepIdx);
+      if (actionSelect && hiddenInput) {
+        const action = actionSelect.value;
+        const cmd = `:${action}${newTarget}`;
+        hiddenInput.value = cmd;
+        if (targetSelect) targetSelect.value = newTarget;
+        if (preview) preview.textContent = cmd;
+        editorState.current.steps[stepIdx].cmd = cmd;
+        updatePieGate(newTarget);
+        validateAndUpdateStep(stepIdx);
+      }
+    };
+
+    // Helper: Update pie safety gate visibility and state
+    const updatePieGate = (target) => {
+      const isPieTarget = ["14", "P1", "P2", "P3", "P4", "P5", "P6"].includes(target);
+      const gateContainer = fieldsContainer.querySelector(".dome-pie-gate");
+      const gateCheckbox = fieldsContainer.querySelector(".dome-pie-gate-confirm");
+
+      if (isPieTarget) {
+        // Show the gate and require confirmation
+        if (gateContainer) {
+          gateContainer.style.display = "block";
+          if (!gateCheckbox) {
+            // Re-render might have removed the checkbox; this is handled by renderStepFields
+          }
+        }
+      } else {
+        // Hide the gate for ring targets
+        if (gateContainer) {
+          gateContainer.style.display = "none";
+        }
+      }
+    };
+
+    // Helper: Check if pie gate is satisfied (if needed)
+    const isPieGateSatisfied = () => {
+      const gateCheckbox = fieldsContainer.querySelector(".dome-pie-gate-confirm");
+      if (!gateCheckbox) return true; // No gate needed
+      return gateCheckbox.checked;
+    };
+
+    // SVG panel clicks
+    const svgPanels = fieldsContainer.querySelectorAll(".dome-ring-panel, .dome-pie-panel, [data-group]");
+    svgPanels.forEach((panel) => {
+      const handlePanelClick = (e) => {
+        e.preventDefault();
+        const target = panel.dataset.target || panel.dataset.group;
+        if (!target) return;
+
+        // If pie target, require gate to be checked
+        const isPieTarget = ["14", "P1", "P2", "P3", "P4", "P5", "P6"].includes(target);
+        if (isPieTarget && !isPieGateSatisfied()) {
+          const gateCheckbox = fieldsContainer.querySelector(".dome-pie-gate-confirm");
+          if (gateCheckbox) gateCheckbox.focus();
+          return;
+        }
+
+        // Update target and highlight
+        setTarget(target);
+        highlightSelectedPanel(target);
+      };
+
+      panel.addEventListener("click", handlePanelClick);
+      panel.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          handlePanelClick(e);
         }
       });
     });
+
+    // Helper: Highlight the selected panel in the SVG
+    const highlightSelectedPanel = (target) => {
+      const svg = fieldsContainer.querySelector(".dome-svg-picker");
+      if (!svg) return;
+
+      // Find the panel element
+      let selectedPanel = null;
+      if (target === "00" || target === "14" || target === "15") {
+        // For groups, highlight the group circle
+        selectedPanel = svg.querySelector(`[data-group="${target}"]`);
+      } else {
+        selectedPanel = svg.querySelector(`[data-target="${target}"]`);
+      }
+
+      // Remove highlight from all panels
+      svg.querySelectorAll(".dome-ring-panel, .dome-pie-panel, [data-group]").forEach((p) => {
+        p.classList.remove("selected");
+      });
+
+      // Add highlight to selected panel
+      if (selectedPanel) {
+        selectedPanel.classList.add("selected");
+
+        // Also show the highlight ring around the selected panel
+        const highlightRing = svg.querySelector(".dome-panel-selected-ring");
+        if (highlightRing && selectedPanel.dataset.target) {
+          const cx = selectedPanel.getAttribute("cx");
+          const cy = selectedPanel.getAttribute("cy");
+          highlightRing.setAttribute("cx", cx);
+          highlightRing.setAttribute("cy", cy);
+          highlightRing.style.display = "block";
+        } else if (highlightRing) {
+          highlightRing.style.display = "none";
+        }
+      }
+    };
+
+    // Highlight the initial target on render
+    const targetSelect = fieldsContainer.querySelector(".dome-target-select");
+    if (targetSelect) {
+      highlightSelectedPanel(targetSelect.value);
+    }
+
+    // Dome panel intent action/target selects update the hidden cmd field
+    fieldsContainer.querySelectorAll(".dome-action-select, .dome-target-select").forEach((select) => {
+      select.addEventListener("change", () => {
+        const newTarget = fieldsContainer.querySelector(".dome-target-select").value;
+        setTarget(newTarget);
+        highlightSelectedPanel(newTarget);
+      });
+    });
+
+    // Pie safety gate checkbox
+    const gateCheckbox = fieldsContainer.querySelector(".dome-pie-gate-confirm");
+    if (gateCheckbox) {
+      gateCheckbox.addEventListener("change", () => {
+        // Gate state changed; no action needed beyond displaying/hiding it
+      });
+    }
 
     // Dome visual preset selector updates the hidden cmd field
     const presetSelect = fieldsContainer.querySelector(".step-field-preset");

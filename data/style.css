@@ -4218,3 +4218,190 @@ label.sound-search-field {
 .seq-editor-feedback.hidden {
   display: none;
 }
+
+/* Dome SVG Panel Picker */
+.dome-target-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.dome-picker-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: rgba(42, 74, 122, 0.15);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.dome-svg-picker {
+  width: 100%;
+  max-width: 220px;
+  height: auto;
+  margin: 0 auto;
+  display: block;
+}
+
+.dome-svg-picker circle {
+  cursor: pointer;
+  transition: all 0.2s ease;
+  stroke-width: 2;
+}
+
+.dome-ring-panel {
+  fill: var(--accent-dim);
+  stroke: var(--accent);
+  stroke-width: 1;
+}
+
+.dome-ring-panel:hover {
+  fill: var(--accent);
+  stroke: var(--accent-bright);
+  filter: drop-shadow(0 0 3px rgba(106, 176, 255, 0.5));
+}
+
+.dome-ring-panel:focus {
+  outline: none;
+  stroke: var(--accent-bright);
+  stroke-width: 2;
+  filter: drop-shadow(0 0 4px rgba(106, 176, 255, 0.7));
+}
+
+.dome-ring-panel.selected {
+  fill: var(--accent-bright);
+  stroke: var(--white);
+  stroke-width: 2;
+}
+
+.dome-pie-panel {
+  fill: var(--danger-bg);
+  stroke: var(--danger);
+  stroke-width: 1;
+}
+
+.dome-pie-panel:hover {
+  fill: rgba(232, 84, 84, 0.4);
+  stroke: var(--danger);
+  filter: drop-shadow(0 0 3px rgba(232, 84, 84, 0.6));
+}
+
+.dome-pie-panel:focus {
+  outline: none;
+  stroke: var(--white);
+  stroke-width: 2;
+  filter: drop-shadow(0 0 4px rgba(232, 84, 84, 0.8));
+}
+
+.dome-pie-panel.selected {
+  fill: var(--danger);
+  stroke: var(--white);
+  stroke-width: 2;
+}
+
+.dome-panel-group {
+  fill: none;
+  stroke: var(--border);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.dome-panel-group:hover {
+  stroke: var(--accent);
+  stroke-width: 2.5;
+}
+
+.dome-panel-group:focus {
+  outline: none;
+  stroke: var(--accent-bright);
+  stroke-width: 2.5;
+}
+
+.dome-panel-group.selected {
+  stroke: var(--accent-bright);
+  stroke-width: 2.5;
+  filter: drop-shadow(0 0 3px rgba(106, 176, 255, 0.6));
+}
+
+.dome-panel-group[data-group="14"]:hover,
+.dome-panel-group[data-group="14"]:focus {
+  stroke: var(--danger);
+}
+
+.dome-panel-group[data-group="14"].selected {
+  stroke: var(--danger);
+  filter: drop-shadow(0 0 3px rgba(232, 84, 84, 0.6));
+}
+
+.dome-panel-selected-ring {
+  pointer-events: none;
+}
+
+.dome-picker-legend {
+  display: flex;
+  gap: 12px;
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.dome-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dome-legend-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  border: 1px solid var(--border);
+}
+
+.dome-legend-swatch.ring {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+}
+
+.dome-legend-swatch.pie {
+  background: var(--danger-bg);
+  border-color: var(--danger);
+}
+
+/* Pie panel safety gate */
+.dome-pie-gate {
+  padding: 8px 12px;
+  background: rgba(232, 84, 84, 0.1);
+  border: 1px solid var(--danger);
+  border-radius: 3px;
+  display: none;
+}
+
+.dome-pie-gate-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
+.dome-pie-gate-label input {
+  cursor: pointer;
+  width: 16px;
+  height: 16px;
+  accent-color: var(--warning);
+}
+
+.dome-pie-gate-label input:focus {
+  outline: 2px solid var(--accent-bright);
+  outline-offset: 2px;
+}
+
+/* Dome target wrapper layout */
+.dome-target-select {
+  flex: 1;
+  min-width: 200px;
+}
