@@ -141,17 +141,31 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
       }
     });
 
-    // Test 7: Ring panel click always works without gating
-    await test('Ring panel PP1 generates correct command', async () => {
-      // Ring panel should always work
-      const p1 = page.locator('#p1');
-      await p1.click();
+    // Test 7: Pie panel commits :OPPn AFTER the gate is acknowledged (positive path)
+    await test('Pie panel PP2 commits :OPP2 after gate confirmed', async () => {
+      // First click is blocked (gate not yet acknowledged) and reveals the gate
+      const pp2 = page.locator('#pp2');
+      await pp2.click();
       await page.waitForTimeout(100);
 
-      const hiddenInput = page.locator('[data-field="cmd"]').first();
-      const cmd = await hiddenInput.inputValue();
-      if (!cmd.includes(':OP01')) {
-        throw new Error(`Expected :OP01, got ${cmd}`);
+      const gate = page.locator('.dome-pie-gate');
+      if (!(await gate.isVisible())) {
+        throw new Error('Gate should be visible after clicking a pie panel');
+      }
+      const blockedCmd = await page.locator('[data-field="cmd"]').first().inputValue();
+      if (blockedCmd.includes(':OPP2')) {
+        throw new Error('Pie target committed before gate was acknowledged');
+      }
+
+      // Acknowledge the gate, then click the pie panel again -> should commit
+      await page.locator('.dome-pie-gate-confirm').check();
+      await page.waitForTimeout(50);
+      await pp2.click();
+      await page.waitForTimeout(100);
+
+      const cmd = await page.locator('[data-field="cmd"]').first().inputValue();
+      if (!cmd.includes(':OPP2')) {
+        throw new Error(`Expected :OPP2 after gate confirmed, got ${cmd}`);
       }
     });
 
@@ -173,32 +187,20 @@ const TARGET_URL = process.env.TARGET_URL || 'http://127.0.0.1:4173/seq.html';
 
     // Test 9: Pie gate blocks selection until confirmed
     await test('Pie gate blocks pie panel selection until confirmed', async () => {
-      // First, select a ring panel to clear the gate
+      // Select a ring panel first: this hides the gate AND clears any prior
+      // acknowledgement, so the next pie click must be blocked.
       const p4 = page.locator('#p4');
       await p4.click();
       await page.waitForTimeout(100);
 
-      // Gate should be hidden
-      let gate = page.locator('.dome-pie-gate');
-      let isVisible = await gate.isVisible();
-      if (isVisible) {
+      // Gate should be hidden for a ring target
+      const gate = page.locator('.dome-pie-gate');
+      if (await gate.isVisible()) {
         throw new Error('Gate should be hidden for ring target');
       }
 
-      // Uncheck the gate (if it exists)
-      const gateCheckbox = page.locator('.dome-pie-gate-confirm');
-      const gateCheckboxCount = await gateCheckbox.count();
-      if (gateCheckboxCount > 0) {
-        const isChecked = await gateCheckbox.isChecked();
-        if (isChecked) {
-          await gateCheckbox.click();
-          await page.waitForTimeout(50);
-        }
-      }
-
-      // Click pie panel without gate checked
+      // Click a pie panel with the gate unacknowledged — must NOT commit
       const pp2 = page.locator('#pp2');
-      const previousCmd = await page.locator('[data-field="cmd"]').first().inputValue();
       await pp2.click();
       await page.waitForTimeout(100);
 

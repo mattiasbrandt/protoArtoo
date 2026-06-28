@@ -1522,18 +1522,13 @@
       const gateCheckbox = fieldsContainer.querySelector(".dome-pie-gate-confirm");
 
       if (isPieTarget) {
-        // Show the gate and require confirmation
-        if (gateContainer) {
-          gateContainer.style.display = "block";
-          if (!gateCheckbox) {
-            // Re-render might have removed the checkbox; this is handled by renderStepFields
-          }
-        }
+        // Show the gate and require confirmation.
+        if (gateContainer) gateContainer.style.display = "block";
       } else {
-        // Hide the gate for ring targets
-        if (gateContainer) {
-          gateContainer.style.display = "none";
-        }
+        // Hide the gate for ring targets and clear any prior acknowledgement so
+        // the operator must re-confirm before the next pie selection.
+        if (gateContainer) gateContainer.style.display = "none";
+        if (gateCheckbox) gateCheckbox.checked = false;
       }
     };
 
@@ -1555,9 +1550,12 @@
         const targetValue = target.dataset.target;
         if (!targetValue) return;
 
-        // If pie target, require gate to be checked
+        // If pie target, require gate to be checked. Reveal the gate on the
+        // blocked click so the operator sees what to acknowledge (a second
+        // click, once checked, commits the target).
         const isPieTarget = ["14", "P1", "P2", "P3", "P4", "P5", "P6"].includes(targetValue);
         if (isPieTarget && !isPieGateSatisfied()) {
+          updatePieGate(targetValue);
           const gateCheckbox = fieldsContainer.querySelector(".dome-pie-gate-confirm");
           if (gateCheckbox) gateCheckbox.focus();
           return;
@@ -1579,6 +1577,7 @@
 
         const isPieTarget = ["14", "P1", "P2", "P3", "P4", "P5", "P6"].includes(targetValue);
         if (isPieTarget && !isPieGateSatisfied()) {
+          updatePieGate(targetValue);
           const gateCheckbox = fieldsContainer.querySelector(".dome-pie-gate-confirm");
           if (gateCheckbox) gateCheckbox.focus();
           return;
