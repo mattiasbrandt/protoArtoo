@@ -6,6 +6,23 @@
  * - Full ported SVG from AstroPixelsPlus (viewBox 0 0 480 480)
  *
  * Loaded before seq.js by page_loader.
+ *
+ * SCOPE / CONTRACT (v1.0.0): this is a STATIC MK4 model, a vendored copy of the
+ * AstroPixelsPlus fork's `data/panels.html` dome map (the `serviced` flags below
+ * are the standard-MK4 defaults: PP3/PP5 unserviced). It is a pragmatic shortcut,
+ * NOT the long-term contract. The dome is the real source of truth for panel
+ * geometry, identity, and wired/active state.
+ *
+ * Drift: because this is a copy, it can silently diverge from the fork. Run
+ * `tools/check_dome_panel_drift.py` (defaults to the live dome's served
+ * panels.html) to compare. Drift checking is a developer/operator aid, not a
+ * build gate.
+ *
+ * Future (post-v1.0.0): replace this static copy with a runtime fetch of a
+ * dome-served `GET /api/panels/model` (geometry + identity + wired/active +
+ * safe-for-body-sequences), falling back to this vendored MK4 model when the
+ * dome is unavailable, and treating unknown/unreachable conservatively for pies.
+ * Tracked in the dome-served-panel-model issue (cross-repo with AstroPixelsPlus).
  */
 
 window.DOME_PANEL_MODEL = {
