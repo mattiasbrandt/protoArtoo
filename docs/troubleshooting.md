@@ -159,6 +159,36 @@ older pyserial path, which can toggle modem-control lines on open.
 
 ---
 
+## 4. Estop-clear dome resync (expected ring "park" — not a crash)
+
+Clearing estop (`POST /api/estop/clear`) makes the body **resync the dome to a
+known safe state**. You will hear the dome **ring panels "park" (drive closed)**,
+even if they were already closed. This is by design, not a reboot or crash.
+
+On the estop-clear edge, `src/tasks/sequence_dispatcher.cpp` emits, over the body
+link:
+
+```
+#PAWU                              # wake state re-sent (sleep-sync arbiter)
+@0T1  @0P1                         # logic + PSI reset (immediate, non-servo)
+:CL01 :CL02 :CL03 :CL04 :CL07 :CL11 :CL13   # staggered ring close, 500 ms apart
+```
+
+Why: after an estop the dome's panel state is **unknown**, so the body assumes
+closed and resyncs to a safe state (same pattern as the dome-reconnect resync,
+ADR 0004 dec. 8). It is **brownout-safe by design** — individual staggered
+closes only, **never a group `:CL00`/`:CL15`** (a group close drives every ring
+servo at once and browns out a loaded ring — 2026-06-17 hardware finding). Pies
+are never auto-closed on resync.
+
+Verify it was the resync and not a fault: dome `/api/health` `reset_reason` stays
+`POWERON`, `coredump_present=false`, and the dome RX log shows the inbound
+`#PAWU`/`@0T1`/`@0P1`/`:CLnn` above with **no** group close. The dome has no
+internal panel-home/park handler — panel servos move only on actual inbound
+`:OP`/`:CL`/`:OF`/`:SM`/DM commands (confirmed body + dome 2026-06-29).
+
+---
+
 ## References
 
 - API: [api.md](api.md) — `/api/coredump*`, `/api/profiler`, `/api/status`, `/api/logs`, `/api/seq/last-run`.
