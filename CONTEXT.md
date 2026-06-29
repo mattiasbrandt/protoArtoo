@@ -150,6 +150,42 @@ _Avoid_: runtime meta block, metadata, credits
 The pure safety validator every Learned Sequence passes on save: name/command/structure bounds, retrain coherence, and conservative effect-class inference. Estop, suppression, and auto-reset remain engine-level invariants the format cannot express a bypass for.
 _Avoid_: linter, schema check, sanitizer
 
+**Dome Layout View Model**:
+The canonical element IDs and generic capabilities the body editor and Sequence Coordinator use to reason about what exists on the connected dome and what an operator may select. Sourced from the dome's `/api/dome/layout` when connected, with the vendored MK4 model as offline fallback. It is a reasoning and rendering surface, not a saved-sequence storage format.
+_Avoid_: panel model storage, structured step format, persisted canonical IDs
+
+**Saved-Sequence Storage**:
+Learned Sequence dome steps persist as Panel Intent Command strings (`{ "type": "dome", "cmd": ":OP01" }`) per ADR 0008. The Dome Layout View Model does not change this: canonical element IDs and capabilities are resolved to command strings before save and run. Structured per-step storage stays deferred until a separate protoArtoo ADR supersedes ADR 0008.
+_Avoid_: persist by canonical element ID, structured step JSON, dual-write storage
+
+**Coordinator Resolution**:
+The body-owned translation between the Dome Layout View Model (canonical element ID + capability, for example `P1 + open`) and the persisted and executed Panel Intent Command string (for example `:OP01`). The dome layout contract never exposes command strings, servo slots, or channels; the command mapping lives only in the protoArtoo coordinator.
+_Avoid_: dome owns command mapping, raw command strings in the layout contract
+
+**Panel Command Target**:
+The body-owned value (ring numeric such as `01`, or pie alias such as `P1`) held in the static `PANEL_COMMAND_TARGETS` map keyed by canonical panel ID and panel kind. Combined with a capability prefix (`:OP`/`:CL`/`:OF`) it forms a Panel Intent Command. The map is bounded to the MK4 commandable set; a layout element marked commandable but absent from the map is shown as unmapped, non-actionable, with a diagnostic, and never authored.
+_Avoid_: deriving command targets from aliases, guessing unmapped commands
+
+**Element Alias**:
+An alternate name for a dome element (for example `FHP` for `HP1`) used only for vocabulary, display, and search. Aliases never carry command semantics; deriving any behavior from an alias re-introduces the hidden coupling removed from the dome layout contract.
+_Avoid_: alias as command source, alias-driven behavior
+
+**Layout Read-Model Boundary**:
+The Dome Layout is an editor-time read-model artifact: it is parsed, validated, and cached only in the browser. The body firmware relays its bytes without parsing, and runtime sequence execution (RC, web, dome RX triggers) never depends on the layout or the browser cache. Saved sequences stay command-string based and run unchanged whether or not a layout was ever fetched. Runtime availability awareness, if ever needed, is a future compact non-geometry status summary, not firmware layout parsing.
+_Avoid_: firmware parses layout geometry, runtime gated on layout cache, layout as a control protocol
+
+**Editor Availability Gate**:
+The browser-editor rule that the connected dome layout gates new authoring but never invalidates existing saved content. New picker authoring requires `in_layout && commandable && mapped && active && !disabled`; otherwise the element is visible-but-not-actionable, or hidden when `in_layout:false`. Existing saved steps always load, edit, and save, carrying non-blocking advisory warnings by severity tier: `inactive` (advisory, not currently commandable), `disabled` (maintenance, operator-suppressed), `in_layout:false` (layout mismatch), `unmapped` (coordinator cannot author new steps). Protocol Check never gains an availability dependency.
+_Avoid_: hard-block save on unavailable target, availability inside Protocol Check, disabled invalidates saved step
+
+**Panel Group**:
+A body-owned coarse authoring concept (All, Pie, Ring) that resolves to group Panel Intent Commands (`:OP00`/`:OP14`/`:OP15` and their `:CL`/`:OF` forms) and drives the `piesOpen`/`ringOpen` latches from ADR 0008. Groups are not Dome Layout elements; the picker derives visible group membership from each element's `panel_kind`. Group availability stays coarse: controls are offered whenever the panel picker is available, are never blocked by inactive or disabled members, and show an advisory only when zero members are currently available.
+_Avoid_: group as a layout element, per-group safety gating, dome-owned groups
+
+**Layout Fallback Hierarchy**:
+The browser's ordered choice of which Dome Layout to render, separating geometry freshness from runtime-state freshness. (1) Live: body proxy returns `200` with a supported `schema_revision` -> use geometry and runtime availability. (2) Cached live: live fetch fails (`503`, timeout, invalid JSON) but `localStorage` holds a prior live layout with a supported schema -> reuse the cached geometry but mark runtime availability stale/unverified. (3) Vendored MK4 fallback: no usable cache -> render the offline MK4 model with runtime availability unverified. (4) Unsupported schema -> vendored fallback plus a visible warning; never partially trust geometry or state from an unsupported schema, including anything cached from one. Geometry may be cached or stale; runtime availability is trusted only when freshly live.
+_Avoid_: trusting stale runtime availability, partial trust of unsupported-schema data
+
 ## Relationships
 
 - **Phase 5** can include work that is not yet covered by **Full Hardware Validation**.
