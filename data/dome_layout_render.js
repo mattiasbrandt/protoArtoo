@@ -141,17 +141,29 @@ window.DomeLayoutRender = (() => {
       return "";
     }
 
-    // Determine if element is selectable
-    const isSelectable =
-      elem.element_type === "panel" &&
-      elem.selectableForNewStep;
+    // Identity and selectability are SEPARATE concerns:
+    //  - Every commandable, mapped panel gets data-element-id so seq.js can
+    //    reverse-highlight a saved step's target and surface a non-actionable
+    //    advisory EVEN when the panel is currently disabled/inactive/unverified.
+    //    (A saved ":OPP3" step must still find PP3 in the live picker.)
+    //  - data-selectable reflects whether a NEW step may be authored right now
+    //    (the editor availability gate); seq.js blocks authoring when "false".
+    const isCommandablePanel = elem.element_type === "panel" && elem.mapped;
 
     const classes = stateClasses(elem);
 
     // For path/circle/ellipse, inherit classes from wrapper; for point, apply to circle
     let elementAttrs = "";
-    if (isSelectable) {
-      elementAttrs = ` data-element-id="${escapeAttr(elem.id)}" role="button" tabindex="0"`;
+    if (isCommandablePanel) {
+      elementAttrs =
+        ` data-element-id="${escapeAttr(elem.id)}"` +
+        ` data-selectable="${elem.selectableForNewStep ? "true" : "false"}"` +
+        ` role="button" tabindex="0"`;
+      // Non-actionable-but-identified panels (disabled/inactive/unverified) are
+      // still focusable so the operator can read the advisory, but marked disabled.
+      if (!elem.selectableForNewStep) {
+        elementAttrs += ` aria-disabled="true"`;
+      }
     }
     if (classes) {
       elementAttrs += ` class="${classes}"`;
@@ -249,10 +261,12 @@ window.DomeLayoutRender = (() => {
       return "";
     }
 
-    // Sort by render_order (ascending)
-    const sortedElements = [...model.elements].sort(
-      (a, b) => (a.render_order || 0) - (b.render_order || 0)
-    );
+    // Drop in_layout:false elements up front so BOTH the geometry and label
+    // layers skip them uniformly (a missed label layer would otherwise leak an
+    // excluded element's text), then sort by render_order (ascending).
+    const sortedElements = [...model.elements]
+      .filter((elem) => elem.in_layout)
+      .sort((a, b) => (a.render_order || 0) - (b.render_order || 0));
 
     // Render geometry layer (sorted by render_order)
     let geometryLayer = "";
