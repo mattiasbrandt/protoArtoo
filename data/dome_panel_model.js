@@ -1,74 +1,27 @@
 /**
  * data/dome_panel_model.js
  *
- * Dome panel model and SVG map.
- * - Panel definitions: identity, target, selectable state
- * - Full ported SVG from AstroPixelsPlus (viewBox 0 0 480 480)
+ * FALLBACK GEOMETRY ONLY — Vendored MK4 dome panel SVG map.
  *
- * Loaded before seq.js by page_loader.
+ * This module contains only the static SVG rendering of the AstroPixelsPlus fork's
+ * MK4 dome layout (viewBox 0 0 480 480). It serves as the offline fallback when
+ * the dome's `/api/dome/layout` is unavailable.
  *
- * SCOPE / CONTRACT (v1.0.0): this is a STATIC MK4 model, a vendored copy of the
- * AstroPixelsPlus fork's `data/panels.html` dome map (the `serviced` flags below
- * are the standard-MK4 defaults: PP3/PP5 unserviced). It is a pragmatic shortcut,
- * NOT the long-term contract. The dome is the real source of truth for panel
- * geometry, identity, and wired/active state.
+ * Command mapping (forward/reverse) has been split into data/dome_command_map.js,
+ * per ADR 0009. See that module for resolving canonical element IDs + capabilities
+ * to Panel Intent command strings and vice versa.
  *
- * Drift: because this is a copy, it can silently diverge from the fork. Run
- * `tools/check_dome_panel_drift.py` (defaults to the live dome's served
- * panels.html) to compare. Drift checking is a developer/operator aid, not a
- * build gate.
+ * SCOPE / CONTRACT (v1.0.0): this SVG is a pragmatic static copy, NOT the long-term
+ * source of truth. The dome is the real source of truth for panel geometry, identity,
+ * and wired/active state. Drift checking: run `tools/check_dome_panel_drift.py`
+ * to compare against the live dome's served panels.html. Drift checking is a
+ * developer/operator aid, not a build gate.
  *
  * Future (post-v1.0.0): replace this static copy with a runtime fetch of a
- * dome-served `GET /api/panels/model` (geometry + identity + wired/active +
- * safe-for-body-sequences), falling back to this vendored MK4 model when the
- * dome is unavailable, and treating unknown/unreachable conservatively for pies.
- * Tracked in the dome-served-panel-model issue (cross-repo with AstroPixelsPlus).
+ * dome-served `GET /api/dome/layout` (geometry + identity + wired/active +
+ * safe-for-body-sequences), falling back to this vendored MK4 SVG when the
+ * dome is unavailable. Tracked in issue #17 (cross-repo with AstroPixelsPlus).
  */
-
-window.DOME_PANEL_MODEL = {
-  pie: [
-    { id: 'PP1', target: 'P1', kind: 'pie', group: 14, serviced: true, selectable: true },
-    { id: 'PP2', target: 'P2', kind: 'pie', group: 14, serviced: true, selectable: true },
-    { id: 'PP3', target: 'P3', kind: 'pie', group: 14, serviced: false, selectable: true },
-    { id: 'PP4', target: 'P4', kind: 'pie', group: 14, serviced: true, selectable: true },
-    { id: 'PP5', target: 'P5', kind: 'pie', group: 14, serviced: false, selectable: true },
-    { id: 'PP6', target: 'P6', kind: 'pie', group: 14, serviced: true, selectable: true },
-  ],
-
-  ring: [
-    { id: 'P1', target: '01', kind: 'ring', group: 15, serviced: true, selectable: true },
-    { id: 'P2', target: '02', kind: 'ring', group: 15, serviced: true, selectable: true },
-    { id: 'P3', target: '03', kind: 'ring', group: 15, serviced: true, selectable: true },
-    { id: 'P4', target: '04', kind: 'ring', group: 15, serviced: true, selectable: true },
-    { id: 'P7', target: '07', kind: 'ring', group: 15, serviced: true, selectable: true },
-    { id: 'P11', target: '11', kind: 'ring', group: 15, serviced: true, selectable: true },
-    { id: 'P13', target: '13', kind: 'ring', group: 15, serviced: true, selectable: true },
-  ],
-
-  groups: [
-    { id: 'all', target: '00', label: 'All panels' },
-    { id: 'pie', target: '14', label: 'Pie / top group' },
-    { id: 'ring', target: '15', label: 'Ring / bottom group' },
-  ],
-
-  getAllSelectable() {
-    return [...this.pie, ...this.ring].filter(p => p.selectable);
-  },
-
-  getPanelByTarget(target) {
-    const all = [...this.pie, ...this.ring];
-    return all.find(p => p.target === target);
-  },
-
-  isPieTarget(target) {
-    return this.pie.some(p => p.target === target) || target === '14';
-  },
-
-  isUnserviced(target) {
-    const panel = this.getPanelByTarget(target);
-    return panel && !panel.serviced;
-  },
-};
 
 // Full AstroPixelsPlus dome SVG — ported verbatim from AstroPixelsPlus/data/panels.html lines 63-202
 // Selectable elements (ring, pie, callouts) will have data-panel-id and data-target added by seq.js
