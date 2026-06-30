@@ -57,12 +57,23 @@ constexpr uint16_t    kDomeUdpPort      = 4901;
 constexpr uint32_t    kMdnsRefreshMs    = 5000;
 constexpr const char* kDomeMdnsHost     = "astropixelsplus";
 constexpr const char* kDomeCmdEndpoint  = "/api/cmd";
+constexpr const char* kDomeLayoutEndpoint = "/api/dome/layout";
 constexpr uint8_t     kRxBufLen         = 64;
+constexpr size_t      kDomeLayoutCacheCapacity = 24576;  // ~24 KB
+constexpr uint32_t    kDomeLayoutRefreshMinIntervalMs = 30000;  // Don't refresh more than every 30s
 
 enum DomeRxSource : uint8_t {
     DOME_RX_UART = 0,
     DOME_RX_WIFI = 1,
 };
+
+// Dome layout cache: stores the JSON response from /api/dome/layout
+// Thread-safe access protected by cacheMux
+static uint8_t s_domeLayoutCache[kDomeLayoutCacheCapacity];
+static DomeLayoutCacheStatus s_domeLayoutCacheStatus = {false, 0, 0, 0};
+static portMUX_TYPE s_domeLayoutCacheMux = portMUX_INITIALIZER_UNLOCKED;
+static bool s_domeLayoutRefreshRequested = false;
+static uint32_t s_domeLayoutLastFetchMs = 0;
 
 static void setTransportState(DomeLinkTransport transport) {
     taskENTER_CRITICAL(&robotStateMux);
@@ -492,6 +503,141 @@ bool domeConnected() {
 }
 
 // -----------------------------------------------------------------------------
+// domeLayoutCacheGet()
+// Copies cached dome layout JSON to the provided buffer.
+// Returns the number of bytes copied (0 if cache is empty or too large for buffer).
+// Thread-safe via s_domeLayoutCacheMux.
+// -----------------------------------------------------------------------------
+size_t domeLayoutCacheGet(uint8_t* outBuffer, size_t bufferCapacity) {
+    if (outBuffer == nullptr || bufferCapacity == 0) {
+        return 0;
+    }
+
+    taskENTER_CRITICAL(&s_domeLayoutCacheMux);
+    size_t bytesToCopy = 0;
+    if (s_domeLayoutCacheStatus.has_data && s_domeLayoutCacheStatus.length <= bufferCapacity) {
+        bytesToCopy = s_domeLayoutCacheStatus.length;
+        memcpy(outBuffer, s_domeLayoutCache, bytesToCopy);
+    }
+    taskEXIT_CRITICAL(&s_domeLayoutCacheMux);
+
+    return bytesToCopy;
+}
+
+// -----------------------------------------------------------------------------
+// domeLayoutCacheGetStatus()
+// Returns the current cache status (has_data, length, fetched_at_ms, last_http_status).
+// Thread-safe via s_domeLayoutCacheMux.
+// -----------------------------------------------------------------------------
+DomeLayoutCacheStatus domeLayoutCacheGetStatus() {
+    taskENTER_CRITICAL(&s_domeLayoutCacheMux);
+    DomeLayoutCacheStatus status = s_domeLayoutCacheStatus;
+    taskEXIT_CRITICAL(&s_domeLayoutCacheMux);
+    return status;
+}
+
+// -----------------------------------------------------------------------------
+// domeLayoutCacheRefreshRequested()
+// Called by web handler to request an on-demand refresh.
+// Returns true if a refresh should be initiated; false if throttled.
+// Thread-safe.
+// -----------------------------------------------------------------------------
+bool domeLayoutCacheRefreshRequested() {
+    uint32_t now = millis();
+    if ((uint32_t)(now - s_domeLayoutLastFetchMs) < kDomeLayoutRefreshMinIntervalMs) {
+        // Throttle: don't refresh more than every 30s
+        return false;
+    }
+    s_domeLayoutRefreshRequested = true;
+    return true;
+}
+
+// Internal function: mark refresh as not pending (called by domeLinkTask after fetch attempt)
+static void clearDomeLayoutRefreshRequested() {
+    s_domeLayoutRefreshRequested = false;
+    s_domeLayoutLastFetchMs = millis();
+}
+
+// Internal function: store cache response
+static void storeDomeLayoutCache(const uint8_t* data, size_t length, int httpStatus) {
+    if (data == nullptr || length == 0 || length > kDomeLayoutCacheCapacity) {
+        taskENTER_CRITICAL(&s_domeLayoutCacheMux);
+        s_domeLayoutCacheStatus.has_data = false;
+        s_domeLayoutCacheStatus.length = 0;
+        s_domeLayoutCacheStatus.last_http_status = httpStatus;
+        s_domeLayoutCacheStatus.fetched_at_ms = millis();
+        taskEXIT_CRITICAL(&s_domeLayoutCacheMux);
+        PA_LOG_WARN(TAG, "dome layout cache: rejected (len=%u > cap=%u or null)",
+                    (unsigned)length, (unsigned)kDomeLayoutCacheCapacity);
+        return;
+    }
+
+    taskENTER_CRITICAL(&s_domeLayoutCacheMux);
+    memcpy(s_domeLayoutCache, data, length);
+    s_domeLayoutCacheStatus.has_data = true;
+    s_domeLayoutCacheStatus.length = length;
+    s_domeLayoutCacheStatus.last_http_status = httpStatus;
+    s_domeLayoutCacheStatus.fetched_at_ms = millis();
+    taskEXIT_CRITICAL(&s_domeLayoutCacheMux);
+
+    PA_LOG_INFO(TAG, "dome layout cache: stored %u bytes (status=%d)", (unsigned)length, httpStatus);
+}
+
+// Internal function: attempt to fetch dome layout over WiFi
+static bool fetchDomeLayoutOverWifi(const IPAddress& peerIp) {
+    char url[96];
+    snprintf(url, sizeof(url), "http://%u.%u.%u.%u%s", (unsigned)peerIp[0], (unsigned)peerIp[1],
+             (unsigned)peerIp[2], (unsigned)peerIp[3], kDomeLayoutEndpoint);
+
+    HTTPClient http;
+    http.setConnectTimeout(250);
+    http.setTimeout(250);
+
+    if (!http.begin(url)) {
+        PA_LOG_WARN(TAG, "dome layout fetch begin failed: %s", url);
+        storeDomeLayoutCache(nullptr, 0, 0);
+        return false;
+    }
+
+    int status = http.GET();
+    PA_LOG_DEBUG(TAG, "dome layout fetch: HTTP %d from %s", status, url);
+
+    if (status >= 200 && status < 300) {
+        // Success: read the response body into the cache
+        WiFiClient* stream = http.getStreamPtr();
+        if (stream == nullptr) {
+            PA_LOG_WARN(TAG, "dome layout fetch: no stream for status %d", status);
+            http.end();
+            storeDomeLayoutCache(nullptr, 0, status);
+            return false;
+        }
+
+        // Read response into cache buffer; cap at kDomeLayoutCacheCapacity
+        size_t bytesRead = 0;
+        uint8_t readBuf[256];
+        while (stream->available() && bytesRead < kDomeLayoutCacheCapacity) {
+            size_t toRead = sizeof(readBuf);
+            if (bytesRead + toRead > kDomeLayoutCacheCapacity) {
+                toRead = kDomeLayoutCacheCapacity - bytesRead;
+            }
+            int n = stream->readBytes(readBuf, toRead);
+            if (n <= 0) break;
+            memcpy(s_domeLayoutCache + bytesRead, readBuf, n);
+            bytesRead += n;
+        }
+
+        http.end();
+        storeDomeLayoutCache(s_domeLayoutCache, bytesRead, status);
+        return true;
+    }
+
+    PA_LOG_WARN(TAG, "dome layout fetch failed: status %d", status);
+    http.end();
+    storeDomeLayoutCache(nullptr, 0, status);
+    return false;
+}
+
+// -----------------------------------------------------------------------------
 // domeLinkTask()
 // -----------------------------------------------------------------------------
 void domeLinkTask(void* pvParameters) {
@@ -596,11 +742,21 @@ void domeLinkTask(void* pvParameters) {
             PA_LOG_INFO(TAG, "transport fallback: UART unavailable, using WiFi UDP to %u.%u.%u.%u",
                         (unsigned)peerIp[0], (unsigned)peerIp[1],
                         (unsigned)peerIp[2], (unsigned)peerIp[3]);
+            // Fetch dome layout on WiFi transition
+            fetchDomeLayoutOverWifi(peerIp);
+            clearDomeLayoutRefreshRequested();
         } else if (act.txRoute == DOME_LINK_TRANSPORT_UART &&
                    lastLoggedTransport == DOME_LINK_TRANSPORT_WIFI) {
             PA_LOG_INFO(TAG, "transport recovery: UART heartbeat restored, switching from WiFi UDP");
         }
         lastLoggedTransport = act.txRoute;
+
+        // On-demand dome layout refresh (if requested by web handler)
+        if (s_domeLayoutRefreshRequested && act.txRoute == DOME_LINK_TRANSPORT_WIFI &&
+            staConnected && peerKnown) {
+            fetchDomeLayoutOverWifi(peerIp);
+            clearDomeLayoutRefreshRequested();
+        }
 
         // Sleep-sync action from arbiter.
         if (act.sleepSync != SleepSyncAction::None) {

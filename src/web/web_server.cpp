@@ -24,6 +24,7 @@
 #include "../../include/api_audio.h"
 #include "../../include/api_aux_led.h"
 #include "../../include/api_config.h"
+#include "../../include/api_dome.h"
 #include "../../include/api_drive.h"
 #include "../../include/drive_speed_preset.h"
 #include "../../include/api_estop.h"
@@ -888,6 +889,7 @@ void startHttpServerOnce() {
         registerDriveRoutes(server);
         registerMoodMapRoutes(server);
         registerAudioRoutes(server);
+        registerDomeRoutes(server);
         registerConfigRoutes(server);
         registerAuxLedRoutes(server);
         registerRcRoutes(server);
