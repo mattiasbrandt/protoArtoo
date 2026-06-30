@@ -1000,6 +1000,7 @@
           // Store hidden cmd field for serialization
           behaviorHtml += `<input type="hidden" class="step-field" data-field="cmd" value="${escapeHtml(cmd)}">`;
         } else if (domeMode === "panel") {
+          // Slice E: Render live picker from DomeLayout if available, fall back to vendored.
           // Parse action and target from cmd, e.g., ":OP01" -> action="OP", target="01"
           let action = "";
           let target = "";
@@ -1009,40 +1010,114 @@
             target = match[2];
           }
 
-          // SVG dome picker: inject ported AstroPixelsPlus dome map verbatim.
-          // All panels (ring and pie) are directly selectable.
-          const svgPickerHtml = `
-            <div class="dome-picker-container">
-              ${window.DOME_PANEL_MAP_SVG}
-            </div>
-          `;
+          // Get the layout model to determine picker source (live, cached, vendored, unsupported)
+          const domeLayout = window.DomeLayout?.getModel?.();
+          const layoutSource = domeLayout?.source || 'vendored';
+          const hasLiveElements = domeLayout?.elements?.length > 0;
+
+          // Build the SVG picker: use live layout if available, otherwise fallback to vendored
+          let svgPickerHtml = "";
+          let sourceNotice = "";
+
+          if (hasLiveElements && window.DomeLayoutRender?.renderPicker) {
+            // Render the live picker from dome-served layout
+            const pickerSvg = window.DomeLayoutRender.renderPicker(domeLayout);
+            svgPickerHtml = `
+              <div class="dome-svg-picker-container">
+                ${pickerSvg}
+              </div>
+            `;
+
+            // Add source banner above the picker
+            if (layoutSource === 'live') {
+              // No banner for fresh live layout (implicit success)
+              sourceNotice = "";
+            } else if (layoutSource === 'cached') {
+              sourceNotice = `<div class="dome-layout-notice dome-layout-cached">Showing last known dome layout — runtime availability unverified</div>`;
+            } else if (layoutSource === 'unsupported') {
+              sourceNotice = `<div class="dome-layout-notice dome-layout-error">${escapeHtml(domeLayout.warning || "Layout schema not supported")}</div>`;
+            }
+          } else {
+            // Fallback to vendored MK4 SVG when layout is unavailable
+            svgPickerHtml = `
+              <div class="dome-picker-container">
+                ${window.DOME_PANEL_MAP_SVG}
+              </div>
+            `;
+            sourceNotice = `<div class="dome-layout-notice dome-layout-vendored">Dome not reachable — showing built-in MK4 layout</div>`;
+          }
+
+          // Build the target dropdown, populating from live layout if available
+          let targetOptions = "";
+          if (hasLiveElements) {
+            // Populate from live layout: groups first, then commandable panels
+            targetOptions = `
+              <optgroup label="Groups">
+                <option value="00" ${target === "00" ? "selected" : ""}>All panels (00)</option>
+                <option value="14" ${target === "14" ? "selected" : ""}>Pie / top group (14)</option>
+                <option value="15" ${target === "15" ? "selected" : ""}>Ring / bottom group (15)</option>
+              </optgroup>
+            `;
+
+            // Extract commandable panels from layout, grouped by panel_kind
+            const commandableRings = domeLayout.elements.filter(
+              (e) => e.element_type === "panel" && e.panel_kind === "ring" && e.in_layout && e.commandable && e.mapped
+            );
+            const commandablePies = domeLayout.elements.filter(
+              (e) => e.element_type === "panel" && e.panel_kind === "pie" && e.in_layout && e.commandable && e.mapped
+            );
+
+            if (commandableRings.length > 0) {
+              targetOptions += "<optgroup label='Ring panels'>";
+              commandableRings.forEach((e) => {
+                const ringTarget = window.DomeCommandMap?.PANEL_COMMAND_TARGETS?.ring?.[e.id] || e.id;
+                targetOptions += `<option value="${ringTarget}" ${target === ringTarget ? "selected" : ""}>${escapeHtml(e.label)} → ${ringTarget}</option>`;
+              });
+              targetOptions += "</optgroup>";
+            }
+
+            if (commandablePies.length > 0) {
+              targetOptions += "<optgroup label='Pie / top panels'>";
+              commandablePies.forEach((e) => {
+                const pieTarget = window.DomeCommandMap?.PANEL_COMMAND_TARGETS?.pie?.[e.id] || e.id;
+                targetOptions += `<option value="${pieTarget}" ${target === pieTarget ? "selected" : ""}>${escapeHtml(e.label)} → ${pieTarget}</option>`;
+              });
+              targetOptions += "</optgroup>";
+            }
+          } else {
+            // Fallback: use legacy static list
+            targetOptions = `
+              <optgroup label="Groups">
+                <option value="00" ${target === "00" ? "selected" : ""}>All panels (00)</option>
+                <option value="14" ${target === "14" ? "selected" : ""}>Pie / top group (14)</option>
+                <option value="15" ${target === "15" ? "selected" : ""}>Ring / bottom group (15)</option>
+              </optgroup>
+              <optgroup label="Ring panels">
+                <option value="01" ${target === "01" ? "selected" : ""}>P1 → 01</option>
+                <option value="02" ${target === "02" ? "selected" : ""}>P2 → 02</option>
+                <option value="03" ${target === "03" ? "selected" : ""}>P3 → 03</option>
+                <option value="04" ${target === "04" ? "selected" : ""}>P4 → 04</option>
+                <option value="07" ${target === "07" ? "selected" : ""}>P7 → 07</option>
+                <option value="11" ${target === "11" ? "selected" : ""}>P11 → 11</option>
+                <option value="13" ${target === "13" ? "selected" : ""}>P13 → 13</option>
+              </optgroup>
+              <optgroup label="Pie / top panels">
+                <option value="P1" ${target === "P1" ? "selected" : ""}>PP1 → P1</option>
+                <option value="P2" ${target === "P2" ? "selected" : ""}>PP2 → P2</option>
+                <option value="P3" ${target === "P3" ? "selected" : ""}>PP3 → P3</option>
+                <option value="P4" ${target === "P4" ? "selected" : ""}>PP4 → P4</option>
+                <option value="P5" ${target === "P5" ? "selected" : ""}>PP5 → P5</option>
+                <option value="P6" ${target === "P6" ? "selected" : ""}>PP6 → P6</option>
+              </optgroup>
+            `;
+          }
 
           targetHtml = `
             <div class="dome-target-wrapper">
+              ${sourceNotice}
               ${svgPickerHtml}
               <select class="step-field dome-target-select" aria-label="Target dropdown (alternative to SVG picker)">
-                <optgroup label="Groups">
-                  <option value="00" ${target === "00" ? "selected" : ""}>All panels (00)</option>
-                  <option value="14" ${target === "14" ? "selected" : ""}>Pie / top group (14)</option>
-                  <option value="15" ${target === "15" ? "selected" : ""}>Ring / bottom group (15)</option>
-                </optgroup>
-                <optgroup label="Ring panels">
-                  <option value="01" ${target === "01" ? "selected" : ""}>P1 → 01</option>
-                  <option value="02" ${target === "02" ? "selected" : ""}>P2 → 02</option>
-                  <option value="03" ${target === "03" ? "selected" : ""}>P3 → 03</option>
-                  <option value="04" ${target === "04" ? "selected" : ""}>P4 → 04</option>
-                  <option value="07" ${target === "07" ? "selected" : ""}>P7 → 07</option>
-                  <option value="11" ${target === "11" ? "selected" : ""}>P11 → 11</option>
-                  <option value="13" ${target === "13" ? "selected" : ""}>P13 → 13</option>
-                </optgroup>
-                <optgroup label="Pie / top panels">
-                  <option value="P1" ${target === "P1" ? "selected" : ""}>PP1 → P1</option>
-                  <option value="P2" ${target === "P2" ? "selected" : ""}>PP2 → P2</option>
-                  <option value="P3" ${target === "P3" ? "selected" : ""}>PP3 → P3</option>
-                  <option value="P4" ${target === "P4" ? "selected" : ""}>PP4 → P4</option>
-                  <option value="P5" ${target === "P5" ? "selected" : ""}>PP5 → P5</option>
-                  <option value="P6" ${target === "P6" ? "selected" : ""}>PP6 → P6</option>
-                </optgroup>
+                ${targetOptions}
               </select>
             </div>
           `;
@@ -1170,6 +1245,19 @@
     // isNew must be set by the caller before calling renderEditorView
     editorState.original = JSON.parse(JSON.stringify(seq));
     editorState.current = JSON.parse(JSON.stringify(seq));
+
+    // Slice E: Load DomeLayout if available and subscribe to changes.
+    // This ensures the live picker in panel-intent steps can render from the
+    // connected dome's layout, with automatic refresh on dome reconnect.
+    if (window.DomeLayout) {
+      window.DomeLayout.load().catch(() => {
+        // Silent fallback: if layout fetch fails, the picker will use vendored/cached
+      });
+      // Refresh panel-intent pickers when the layout changes (dome reconnect)
+      window.DomeLayout.onChange(() => {
+        rerenderPanelIntentPickers();
+      });
+    }
 
     const stepRows = (seq.steps || [])
       .map((step, idx) => renderStepRow(step, idx))
@@ -1499,60 +1587,173 @@
       }
     };
 
+    // Slice E: Handle both live (data-element-id) and legacy (data-target) pickers
     // SVG panel clicks — use event delegation on the SVG
     const svg = fieldsContainer.querySelector(".dome-svg-picker");
+    const hasLiveLayout = svg && svg.closest(".dome-svg-picker-container");
+
     if (svg) {
       svg.addEventListener("click", (e) => {
-        const target = e.target.closest("[data-target]");
-        if (!target) return;
+        // Try to find element in live picker (data-element-id)
+        let element = e.target.closest("[data-element-id]");
+        let target = null;
+        let elementId = null;
+
+        if (element && hasLiveLayout) {
+          // Live picker: check selectability and show advisory if needed
+          elementId = element.dataset.elementId;
+          const isSelectable = element.dataset.selectable === "true";
+
+          if (!isSelectable) {
+            // Non-actionable: show advisory (find severity from layout model)
+            const model = window.DomeLayout?.getModel?.();
+            const elem = model?.elements?.find((e) => e.id === elementId);
+            const severity = elem?.severity || "disabled";
+            const reasons = {
+              "disabled": "Panel is disabled (operator-suppressed) — cannot author new steps",
+              "inactive": "Panel is inactive — cannot author new steps",
+              "in_layout_false": "Panel not in current layout — cannot author new steps",
+              "unverified": "Panel availability unverified — cannot author new steps",
+              "unmapped": "Panel is unmapped to command targets — cannot author new steps",
+            };
+            const message = reasons[severity] || "Panel is not actionable";
+            alert(message);
+            return;
+          }
+
+          // Selectable: resolve to command via DomeCommandMap
+          const actionSelect = fieldsContainer.querySelector(".dome-action-select");
+          if (actionSelect && window.DomeCommandMap?.resolvePanelCommand) {
+            const action = actionSelect.value;
+            const capabilityMap = { "OP": "open", "CL": "close", "OF": "flutter" };
+            const capability = capabilityMap[action] || "open";
+            target = window.DomeCommandMap.resolvePanelCommand(elementId, capability);
+
+            if (target) {
+              setTarget(target);
+              highlightSelectedPanel(elementId, "live");
+            }
+          }
+          return;
+        }
+
+        // Legacy picker: try data-target
+        element = e.target.closest("[data-target]");
+        if (!element) return;
 
         e.preventDefault();
-        const targetValue = target.dataset.target;
-        if (!targetValue) return;
+        target = element.dataset.target;
+        if (!target) return;
 
         // Update target and highlight (ring and pie both directly selectable)
-        setTarget(targetValue);
-        highlightSelectedPanel(targetValue);
+        setTarget(target);
+        highlightSelectedPanel(target, "legacy");
       });
 
       svg.addEventListener("keydown", (e) => {
         if (e.key !== "Enter" && e.key !== " ") return;
-        const target = e.target.closest("[data-target]");
-        if (!target) return;
+
+        // Try live picker (data-element-id)
+        let element = e.target.closest("[data-element-id]");
+        if (element && hasLiveLayout) {
+          const elementId = element.dataset.elementId;
+          const isSelectable = element.dataset.selectable === "true";
+
+          if (!isSelectable) {
+            // Non-actionable: show advisory
+            const model = window.DomeLayout?.getModel?.();
+            const elem = model?.elements?.find((e) => e.id === elementId);
+            const severity = elem?.severity || "disabled";
+            const reasons = {
+              "disabled": "Panel is disabled (operator-suppressed) — cannot author new steps",
+              "inactive": "Panel is inactive — cannot author new steps",
+              "in_layout_false": "Panel not in current layout — cannot author new steps",
+              "unverified": "Panel availability unverified — cannot author new steps",
+              "unmapped": "Panel is unmapped to command targets — cannot author new steps",
+            };
+            const message = reasons[severity] || "Panel is not actionable";
+            alert(message);
+            return;
+          }
+
+          const actionSelect = fieldsContainer.querySelector(".dome-action-select");
+          if (actionSelect && window.DomeCommandMap?.resolvePanelCommand) {
+            const action = actionSelect.value;
+            const capabilityMap = { "OP": "open", "CL": "close", "OF": "flutter" };
+            const capability = capabilityMap[action] || "open";
+            const target = window.DomeCommandMap.resolvePanelCommand(elementId, capability);
+
+            if (target) {
+              e.preventDefault();
+              setTarget(target);
+              highlightSelectedPanel(elementId, "live");
+            }
+          }
+          return;
+        }
+
+        // Legacy picker (data-target)
+        element = e.target.closest("[data-target]");
+        if (!element) return;
 
         e.preventDefault();
-        const targetValue = target.dataset.target;
-        if (!targetValue) return;
+        const target = element.dataset.target;
+        if (!target) return;
 
-        setTarget(targetValue);
-        highlightSelectedPanel(targetValue);
+        setTarget(target);
+        highlightSelectedPanel(target, "legacy");
       });
     }
 
-    // Helper: Highlight the selected panel in the SVG
-    const highlightSelectedPanel = (target) => {
+    // Helper: Highlight the selected panel in the SVG (both live and legacy)
+    // mode = "live" (data-element-id) or "legacy" (data-target)
+    const highlightSelectedPanel = (target, mode = "legacy") => {
       const svg = fieldsContainer.querySelector(".dome-svg-picker");
       if (!svg) return;
 
-      // Find the panel element
-      let selectedPanel = null;
-      selectedPanel = svg.querySelector(`[data-target="${target}"]`);
-
-      // Remove highlight from all panels
-      svg.querySelectorAll("[data-target]").forEach((p) => {
-        p.classList.remove("selected");
-      });
-
-      // Add highlight to selected panel
-      if (selectedPanel) {
-        selectedPanel.classList.add("selected");
+      if (mode === "live") {
+        // Live picker: highlight by data-element-id
+        svg.querySelectorAll("[data-element-id]").forEach((p) => {
+          p.classList.remove("selected");
+        });
+        const selectedElement = svg.querySelector(`[data-element-id="${target}"]`);
+        if (selectedElement) {
+          selectedElement.classList.add("selected");
+        }
+      } else {
+        // Legacy picker: highlight by data-target
+        svg.querySelectorAll("[data-target]").forEach((p) => {
+          p.classList.remove("selected");
+        });
+        const selectedElement = svg.querySelector(`[data-target="${target}"]`);
+        if (selectedElement) {
+          selectedElement.classList.add("selected");
+        }
       }
     };
 
-    // Highlight the initial target on render
+    // Highlight the initial target on render: decode existing cmd and highlight
     const targetSelect = fieldsContainer.querySelector(".dome-target-select");
-    if (targetSelect) {
-      highlightSelectedPanel(targetSelect.value);
+    if (targetSelect && editorState.current.steps[stepIdx]) {
+      const step = editorState.current.steps[stepIdx];
+      const cmd = step.cmd || "";
+
+      if (hasLiveLayout && window.DomeCommandMap?.decodeCommandToElement) {
+        // Try to decode as a panel command
+        const decoded = window.DomeCommandMap.decodeCommandToElement(cmd);
+        if (decoded && decoded.kind === "ring" || decoded.kind === "pie") {
+          highlightSelectedPanel(decoded.id, "live");
+        } else {
+          // Not a panel command or decode failed; no highlight
+        }
+      } else {
+        // Legacy picker: extract target from cmd
+        const match = cmd.match(/^:?(OP|CL|OF)(.+)$/);
+        if (match) {
+          const targetValue = match[2];
+          highlightSelectedPanel(targetValue, "legacy");
+        }
+      }
     }
 
     // Dome panel intent action/target selects update the hidden cmd field
@@ -1560,7 +1761,7 @@
       select.addEventListener("change", () => {
         const newTarget = fieldsContainer.querySelector(".dome-target-select").value;
         setTarget(newTarget);
-        highlightSelectedPanel(newTarget);
+        highlightSelectedPanel(newTarget, hasLiveLayout ? "live" : "legacy");
       });
     });
 
@@ -2008,6 +2209,46 @@
 
     // Re-attach only step-row listeners (metadata/footer listeners persist)
     attachStepListeners();
+  };
+
+  // Slice E: Re-render only the panel-intent pickers when the dome layout changes.
+  // This refreshes the live picker SVG without re-rendering the entire step table.
+  // Called via DomeLayout.onChange() when the dome reconnects.
+  const rerenderPanelIntentPickers = () => {
+    document.querySelectorAll(".dome-svg-picker-container").forEach((container) => {
+      const card = container.closest(".step-card");
+      if (!card) return;
+      const stepIdx = parseInt(card.dataset.stepIndex, 10);
+      const step = editorState.current.steps[stepIdx];
+      if (!step || step.type !== "dome") return;
+
+      // Detect the current dome mode
+      const domeCmd = step.cmd || "";
+      let domeMode;
+      if (domeCmd.startsWith("DV:")) {
+        domeMode = "preset";
+      } else if (domeCmd.startsWith("DL:")) {
+        domeMode = "logic";
+      } else if (domeCmd.startsWith("DH:")) {
+        domeMode = "holo";
+      } else if (domeCmd.startsWith("DT:")) {
+        domeMode = "text";
+      } else if (/^(:|)(OP|CL|OF)/.test(domeCmd)) {
+        domeMode = "panel";
+      } else {
+        domeMode = "advanced";
+      }
+
+      // Only re-render if currently in panel mode (live picker mode)
+      if (domeMode === "panel") {
+        const fieldsContainer = card.querySelector(".step-fields");
+        if (fieldsContainer) {
+          renderStepFields(step, fieldsContainer);
+          // Re-attach panel-intent listeners
+          attachDomePanelIntentListeners(fieldsContainer, stepIdx);
+        }
+      }
+    });
   };
 
   const showEditorFeedback = (message, kind = "info") => {
