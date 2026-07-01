@@ -55,29 +55,6 @@
   }
 
   /**
-   * Retrieve cached layout from localStorage.
-   * @param {string} templateId
-   * @param {number} templateRevision
-   * @param {number} schemaRevision
-   * @returns {object|null} cached layout or null if not found or corrupted
-   */
-  function getCachedLayout(templateId, templateRevision, schemaRevision) {
-    try {
-      const key = computeCacheKey(templateId, templateRevision, schemaRevision);
-      const stored = window.localStorage.getItem(key);
-      if (!stored) return null;
-      const parsed = JSON.parse(stored);
-      // Validate that it has the required fields
-      if (parsed.rawLayout && parsed.savedAt) {
-        return parsed;
-      }
-    } catch (_error) {
-      // Ignore JSON parse or access errors; cache is best-effort
-    }
-    return null;
-  }
-
-  /**
    * Store layout to localStorage cache.
    * @param {string} templateId
    * @param {number} templateRevision
