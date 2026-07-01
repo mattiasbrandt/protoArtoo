@@ -243,7 +243,12 @@ window.DomeLayoutRender = (() => {
     let labelClass = "lf";
     if (elem.element_type === "panel") {
       if (elem.panel_kind === "pie") {
-        labelClass = elem.severity === "unverified" ? "lpf" : "lp";
+        // Use dark text (.lpf) for unserviced pies (unverified, disabled, inactive)
+        // Use light text (.lp) for normal pies
+        labelClass =
+          elem.severity === "unverified" || elem.severity === "disabled" || elem.severity === "inactive"
+            ? "lpf"
+            : "lp";
       } else if (elem.panel_kind === "fixed") {
         labelClass = "lf2";
       }
