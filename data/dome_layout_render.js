@@ -84,7 +84,8 @@ window.DomeLayoutRender = (() => {
 
   /**
    * Determine CSS class string for element state.
-   * Encodes element_type, panel_kind, and severity.
+   * Maps to vendored MK4 SVG class names: .pr (ring), .pp (pie), .pf (fixed), .hp (holo).
+   * Severity modifiers (.is-inactive, etc.) layer on top.
    *
    * @param {Object} elem - element from model
    * @returns {string} space-separated class names
@@ -92,24 +93,24 @@ window.DomeLayoutRender = (() => {
   function stateClasses(elem) {
     const classes = [];
 
-    // Element type classes
+    // Element type classes — VENDORED NAMES
     if (elem.element_type === "panel") {
       if (elem.panel_kind === "ring") {
-        classes.push("is-ring");
+        classes.push("pr");  // ring panel — blue, selectable
       } else if (elem.panel_kind === "pie") {
-        classes.push("is-pie");
+        classes.push("pp");  // pie panel — darker blue, selectable
       } else if (elem.panel_kind === "fixed") {
-        classes.push("is-fixed");
+        classes.push("pf");  // fixed panel — gray, non-selectable
       }
     } else if (elem.element_type === "holo") {
-      classes.push("is-holo");
+      classes.push("hp");  // holo marker — green
     } else if (elem.element_type === "psi") {
-      classes.push("is-psi");
+      classes.push("pf");  // PSI marker — use fixed styling
     } else if (elem.element_type === "logic") {
-      classes.push("is-logic");
+      classes.push("pf");  // Logic marker — use fixed styling
     }
 
-    // Severity state classes
+    // Severity state classes — modifiers layered on base classes
     if (elem.severity === "inactive") {
       classes.push("is-inactive");
     } else if (elem.severity === "disabled") {
@@ -126,6 +127,7 @@ window.DomeLayoutRender = (() => {
   /**
    * Render a single element's geometry with state-driven styling.
    * Selectable panels get data-element-id; non-selectable get context classes.
+   * INLINE construction: all attributes built in one pass (no string-splice injection).
    *
    * @param {Object} elem - element from model
    * @returns {string} SVG markup for the element
@@ -136,8 +138,8 @@ window.DomeLayoutRender = (() => {
       return "";
     }
 
-    const geomSvg = geometryToSvg(elem.geometry);
-    if (!geomSvg) {
+    const geom = elem.geometry;
+    if (!geom || !geom.type) {
       return "";
     }
 
@@ -152,46 +154,75 @@ window.DomeLayoutRender = (() => {
 
     const classes = stateClasses(elem);
 
-    // For path/circle/ellipse, inherit classes from wrapper; for point, apply to circle
-    let elementAttrs = "";
+    // Build attribute string
+    let attrs = "";
+
+    // Geometry attributes (type-specific)
+    if (geom.type === "svg_path") {
+      attrs += ` d="${escapeAttr(geom.d)}"`;
+    } else if (geom.type === "circle") {
+      attrs += ` cx="${geom.cx}" cy="${geom.cy}" r="${geom.r}"`;
+    } else if (geom.type === "ellipse") {
+      const rx = geom.rx || 0;
+      const ry = geom.ry || 0;
+      const rotation = geom.rotation || 0;
+      attrs += ` cx="${geom.cx}" cy="${geom.cy}" rx="${rx}" ry="${ry}"`;
+      if (rotation !== 0) {
+        attrs += ` transform="rotate(${rotation} ${geom.cx} ${geom.cy})"`;
+      }
+    } else if (geom.type === "point") {
+      const r = geom.r !== undefined ? geom.r : MARKER_RADIUS;
+      attrs += ` cx="${geom.cx}" cy="${geom.cy}" r="${r}"`;
+    }
+
+    // Identity + selectability
     if (isCommandablePanel) {
-      elementAttrs =
+      attrs +=
         ` data-element-id="${escapeAttr(elem.id)}"` +
         ` data-selectable="${elem.selectableForNewStep ? "true" : "false"}"` +
         ` role="button" tabindex="0"`;
       // Non-actionable-but-identified panels (disabled/inactive/unverified) are
       // still focusable so the operator can read the advisory, but marked disabled.
       if (!elem.selectableForNewStep) {
-        elementAttrs += ` aria-disabled="true"`;
+        attrs += ` aria-disabled="true"`;
       }
     }
+
+    // CSS classes
     if (classes) {
-      elementAttrs += ` class="${classes}"`;
-    }
-    if (elem.id) {
-      elementAttrs += ` id="${escapeAttr(elem.id)}"`;
+      attrs += ` class="${classes}"`;
     }
 
-    // Add title for accessibility
-    let title = `<title>${escapeAttr(elem.id)}`;
+    // Element ID
+    if (elem.id) {
+      attrs += ` id="${escapeAttr(elem.id)}"`;
+    }
+
+    // Build title for accessibility
+    let titleText = escapeAttr(elem.id);
     if (elem.label && elem.label !== elem.id) {
-      title += ` — ${escapeAttr(elem.label)}`;
+      titleText += ` — ${escapeAttr(elem.label)}`;
     }
     if (elem.severity && elem.severity !== "null") {
-      title += ` (${elem.severity})`;
-    }
-    title += "</title>";
-
-    // Inject attributes into the geometry SVG
-    // Simple approach: insert after the opening tag
-    const tagEndIdx = geomSvg.indexOf(">");
-    if (tagEndIdx > 0) {
-      const openTag = geomSvg.substring(0, tagEndIdx);
-      const rest = geomSvg.substring(tagEndIdx);
-      return openTag + elementAttrs + ">" + title + rest.substring(1);
+      titleText += ` (${elem.severity})`;
     }
 
-    return "";
+    // Build the complete element tag (inline, no injection)
+    let tag = "";
+    switch (geom.type) {
+      case "svg_path":
+        tag = `<path${attrs}><title>${titleText}</title></path>`;
+        break;
+      case "circle":
+      case "point":
+        tag = `<circle${attrs}><title>${titleText}</title></circle>`;
+        break;
+      case "ellipse":
+        tag = `<ellipse${attrs}><title>${titleText}</title></ellipse>`;
+        break;
+    }
+
+    return tag;
   }
 
   /**
@@ -250,7 +281,7 @@ window.DomeLayoutRender = (() => {
 
   /**
    * Main renderer: convert layout model to SVG string.
-   * Sorts elements by render_order for correct paint order.
+   * Renders in layers: scaffolding (background) → geometry (sorted) → labels.
    * Skips elements with in_layout:false.
    *
    * @param {Object} model - {source, runtimeVerified, warning, viewBox, elements: [...]}
@@ -260,6 +291,31 @@ window.DomeLayoutRender = (() => {
     if (!model || !model.elements || !model.viewBox) {
       return "";
     }
+
+    // Parse viewBox to derive dome center and radii for scaffolding
+    // For the MK4 dome: "0 0 480 480" → center (240, 240)
+    const vbParts = model.viewBox.split(/[\s,]+/).map(Number);
+    let centerX = 240, centerY = 240;
+    if (vbParts.length >= 4) {
+      centerX = vbParts[0] + vbParts[2] / 2;
+      centerY = vbParts[1] + vbParts[3] / 2;
+    }
+
+    // Scaffolding radii (from vendored SVG)
+    const r_dbg = 172;    // dome background circle
+    const r_pbg = 119;    // pie backing circle
+    const r_rl_outer = 172;  // outer ring guide
+    const r_rl_inner_dashed = 146;  // inner dashed ring guide
+    const r_rl_inner = 54;   // inner circle guide
+    const r_hub = 22;     // center hub
+
+    // Render scaffolding layer (before elements, so it sits in background)
+    const scaffolding = `<circle class="dbg" cx="${centerX}" cy="${centerY}" r="${r_dbg}"/>
+<circle class="pbg" cx="${centerX}" cy="${centerY}" r="${r_pbg}"/>
+<circle class="rl" cx="${centerX}" cy="${centerY}" r="${r_rl_outer}"/>
+<circle class="rl" cx="${centerX}" cy="${centerY}" r="${r_rl_inner_dashed}" stroke-dasharray="3,2"/>
+<circle class="rl" cx="${centerX}" cy="${centerY}" r="${r_rl_inner}"/>
+<circle class="pf" cx="${centerX}" cy="${centerY}" r="${r_hub}"/>`;
 
     // Drop in_layout:false elements up front so BOTH the geometry and label
     // layers skip them uniformly (a missed label layer would otherwise leak an
@@ -280,7 +336,7 @@ window.DomeLayoutRender = (() => {
       labelLayer += renderLabel(elem);
     }
 
-    // Inline CSS styling (adapted from vendored SVG)
+    // Inline CSS styling (vendored MK4 palette + state modifiers)
     const css = `
 .dbg{fill:#b8bec8;stroke:#6b7280;stroke-width:1.5}
 .pbg{fill:#c4c9d4}
@@ -314,11 +370,12 @@ window.DomeLayoutRender = (() => {
 .is-unmapped,.is-unverified{opacity:.4}
     `.trim();
 
-    // Assemble final SVG
+    // Assemble final SVG: scaffolding → geometry → labels
     const svg = `<svg viewBox="${model.viewBox}" xmlns="http://www.w3.org/2000/svg" class="dome-svg-picker" style="width:100%;max-width:100%;display:block;margin:0 auto">
 <style>
 ${css}
 </style>
+${scaffolding}
 ${geometryLayer}
 ${labelLayer}
 </svg>`;
