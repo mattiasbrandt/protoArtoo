@@ -1131,6 +1131,7 @@
             <span class="dome-cmd-preview">:${action}${target}</span>
             <button class="dome-mode-toggle" aria-label="Switch to advanced mode">Advanced</button>
             <input type="hidden" class="step-field" data-field="cmd" value="${escapeHtml(domeCmd)}">
+            <div class="dome-panel-advisory hidden" style="margin-top: 0.5rem; padding: 0.5rem; background-color: #fff8e1; border-left: 3px solid #ffc107; color: #856404; font-size: 0.9rem; line-height: 1.4;"></div>
           `;
         } else {
           // Advanced mode: raw text input
@@ -1565,6 +1566,68 @@
     }
   };
 
+  // =========================================================================
+  // Panel-Intent Availability Advisory System
+  // =========================================================================
+  // Passive inline advisory for dome panel-intent steps: shown when a saved step
+  // targets an unavailable panel (disabled, inactive, excluded, unmapped, unverified).
+  // Reusable for both passive (on expand) and click-time advisory updates.
+
+  // Helper: Build an advisory message for an element, or null if available
+  const buildAdvisoryMessage = (elementId) => {
+    if (!elementId) return null;
+
+    const model = window.DomeLayout?.getModel?.();
+    const elem = model?.elements?.find((e) => e.id === elementId);
+    if (!elem) return null; // Element not found; no advisory
+
+    // Check availability conditions:
+    // severity is one of: null (available), 'inactive', 'disabled', 'in_layout_false',
+    // 'unmapped', 'unverified'
+    const severity = elem.severity;
+    if (!severity) return null; // Element is available; no advisory needed
+
+    // Build message by severity tier, including disabled_reason if present
+    let message = "";
+    if (severity === "disabled") {
+      const reason = elem.disabled_reason ? ` (${elem.disabled_reason})` : "";
+      message = `⚠ ${elementId} is disabled on the connected dome${reason} — this step still runs, but the dome may ignore it.`;
+    } else if (severity === "inactive") {
+      message = `⚠ ${elementId} is not currently active — this step still runs, but the dome may ignore it.`;
+    } else if (severity === "in_layout_false") {
+      message = `⚠ ${elementId} is not in the selected layout — this step still runs, but may not be available.`;
+    } else if (severity === "unverified") {
+      message = `⚠ ${elementId} availability unverified — this step still runs, but the dome state is unknown.`;
+    } else if (severity === "unmapped") {
+      message = `⚠ ${elementId} is unmapped to command targets — this step cannot be authored.`;
+    } else {
+      message = `⚠ ${elementId} is not available — this step may not execute as expected.`;
+    }
+
+    // Special case: excluded-but-active diagnostic
+    if (elem.in_layout === false && elem.active === true) {
+      message = `⚠ ${elementId} is excluded from the selected layout but the dome reports it active (layout/runtime mismatch) — this step may behave unexpectedly.`;
+    }
+
+    return message;
+  };
+
+  // Helper: Update the advisory element in a fields container
+  // Call this after rendering (passive) or after click/keyboard on non-selectable panel
+  const updatePanelAdvisory = (fieldsContainer, elementId) => {
+    const advisoryEl = fieldsContainer?.querySelector?.(".dome-panel-advisory");
+    if (!advisoryEl) return; // Advisory element not present; skip
+
+    const message = buildAdvisoryMessage(elementId);
+    if (message) {
+      advisoryEl.textContent = message;
+      advisoryEl.classList.remove("hidden");
+    } else {
+      advisoryEl.textContent = "";
+      advisoryEl.classList.add("hidden");
+    }
+  };
+
   // Called from renderEditorView (initial) and rerenderStepTable (after any step change).
   // Step rows are re-created on every rerender, so fresh listeners are needed each time.
   // Helper: Attach dome-related listeners (panel, preset, advanced) to a specific fields container
@@ -1623,19 +1686,8 @@
           const isSelectable = element.dataset.selectable === "true";
 
           if (!isSelectable) {
-            // Non-actionable: show advisory (find severity from layout model)
-            const model = window.DomeLayout?.getModel?.();
-            const elem = model?.elements?.find((e) => e.id === elementId);
-            const severity = elem?.severity || "disabled";
-            const reasons = {
-              "disabled": "Panel is disabled (operator-suppressed) — cannot author new steps",
-              "inactive": "Panel is inactive — cannot author new steps",
-              "in_layout_false": "Panel not in current layout — cannot author new steps",
-              "unverified": "Panel availability unverified — cannot author new steps",
-              "unmapped": "Panel is unmapped to command targets — cannot author new steps",
-            };
-            const message = reasons[severity] || "Panel is not actionable";
-            alert(message);
+            // Non-actionable: show advisory inline instead of alert modal
+            updatePanelAdvisory(fieldsContainer, elementId);
             return;
           }
 
@@ -1650,6 +1702,8 @@
             if (fullCmd) {
               setCommand(fullCmd);
               highlightSelectedPanel(elementId, "live");
+              // Clear advisory since this panel is selectable (no issues)
+              updatePanelAdvisory(fieldsContainer, elementId);
             }
           }
           return;
@@ -1678,19 +1732,8 @@
           const isSelectable = element.dataset.selectable === "true";
 
           if (!isSelectable) {
-            // Non-actionable: show advisory
-            const model = window.DomeLayout?.getModel?.();
-            const elem = model?.elements?.find((e) => e.id === elementId);
-            const severity = elem?.severity || "disabled";
-            const reasons = {
-              "disabled": "Panel is disabled (operator-suppressed) — cannot author new steps",
-              "inactive": "Panel is inactive — cannot author new steps",
-              "in_layout_false": "Panel not in current layout — cannot author new steps",
-              "unverified": "Panel availability unverified — cannot author new steps",
-              "unmapped": "Panel is unmapped to command targets — cannot author new steps",
-            };
-            const message = reasons[severity] || "Panel is not actionable";
-            alert(message);
+            // Non-actionable: show advisory inline instead of alert modal
+            updatePanelAdvisory(fieldsContainer, elementId);
             return;
           }
 
@@ -1705,6 +1748,8 @@
               e.preventDefault();
               setCommand(fullCmd);
               highlightSelectedPanel(elementId, "live");
+              // Clear advisory since this panel is selectable (no issues)
+              updatePanelAdvisory(fieldsContainer, elementId);
             }
           }
           return;
@@ -1759,10 +1804,16 @@
       if (hasLiveLayout && window.DomeCommandMap?.decodeCommandToElement) {
         // Try to decode as a panel command
         const decoded = window.DomeCommandMap.decodeCommandToElement(cmd);
-        if (decoded && decoded.kind === "ring" || decoded.kind === "pie") {
+        // decoded is null for group steps (:OP14/:OP15/:OP00) or non-panel commands (advanced mode).
+        // Only highlight if decoded is a real panel (ring or pie).
+        if (decoded && (decoded.kind === "ring" || decoded.kind === "pie")) {
           highlightSelectedPanel(decoded.id, "live");
+          // Show passive advisory if this panel has availability issues
+          updatePanelAdvisory(fieldsContainer, decoded.id);
         } else {
-          // Not a panel command or decode failed; no highlight
+          // Not a panel command or decode failed; no highlight (groups, advanced, non-panel)
+          // Clear advisory for non-panel commands
+          updatePanelAdvisory(fieldsContainer, null);
         }
       } else {
         // Legacy picker: extract target from cmd
@@ -1771,6 +1822,8 @@
           const targetValue = match[2];
           highlightSelectedPanel(targetValue, "legacy");
         }
+        // Clear advisory for legacy picker (no live availability data)
+        updatePanelAdvisory(fieldsContainer, null);
       }
     }
 
@@ -1780,6 +1833,26 @@
         const newTarget = fieldsContainer.querySelector(".dome-target-select").value;
         setTarget(newTarget);
         highlightSelectedPanel(newTarget, hasLiveLayout ? "live" : "legacy");
+        // Update advisory for the newly selected target (live mode only)
+        if (hasLiveLayout && window.DomeCommandMap?.PANEL_COMMAND_TARGETS) {
+          // Decode the new target back to element ID for availability check
+          const actionSelect = fieldsContainer.querySelector(".dome-action-select");
+          const action = actionSelect?.value || "OP";
+          const capabilityMap = { "OP": "open", "CL": "close", "OF": "flutter" };
+          const capability = capabilityMap[action] || "open";
+          // Try to find the element by resolving the command in reverse
+          // For pie targets (P1..P6), decode directly; for ring targets (01..13), find element
+          let elementId = newTarget;
+          if (/^\d+$/.test(newTarget)) {
+            // Numeric target (ring); find element by id/command
+            const model = window.DomeLayout?.getModel?.();
+            const elem = model?.elements?.find((e) => e.element_type === "panel" && e.panel_kind === "ring" && window.DomeCommandMap?.PANEL_COMMAND_TARGETS?.ring?.[e.id] === newTarget);
+            elementId = elem?.id || newTarget;
+          }
+          updatePanelAdvisory(fieldsContainer, elementId);
+        } else {
+          updatePanelAdvisory(fieldsContainer, null);
+        }
       });
     });
 
