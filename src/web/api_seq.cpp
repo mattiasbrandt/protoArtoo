@@ -412,6 +412,21 @@ void handleLastRun(AsyncWebServerRequest* req) {
     req->send(stream);
 }
 
+// POST /api/seq/stop — non-latching sequence stop (issue #17).
+// Aborts the currently running DM:* sequence via the dispatcher's existing
+// abort path (seqEngineAbort + safe staggered dome cleanup). Returns idempotently
+// 200 OK even if no sequence is running (no-op). Does not latch or affect other
+// subsystems (unlike estop). The web handler signals the dispatcher via a
+// transient flag in robotState; the dispatcher clears it after processing.
+void handleStop(AsyncWebServerRequest* req) {
+    taskENTER_CRITICAL(&robotStateMux);
+    robotState.seqStopRequested = true;
+    taskEXIT_CRITICAL(&robotStateMux);
+
+    PA_LOG_INFO(TAG, "[WEB] stop requested");
+    req->send(200, "application/json", "{\"ok\":true}");
+}
+
 }  // namespace
 
 void registerSeqRoutes(AsyncWebServer& server) {
@@ -428,6 +443,7 @@ void registerSeqRoutes(AsyncWebServer& server) {
         [](AsyncWebServerRequest* req, uint8_t* data, size_t len, size_t index, size_t total) {
             captureJsonBody(req, data, len, index, total, SEQ_TEST_BODY_MAX, handleTestBody);
         });
+    server.on("/api/seq/stop", HTTP_POST, handleStop);
     server.on("/api/seq/last-run", HTTP_GET, handleLastRun);
     server.on("/api/seq", HTTP_GET, handleGetOne);
     server.on(

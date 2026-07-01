@@ -289,6 +289,29 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
         }
         prevEstop = estopActive;
 
+        // Web-initiated non-latching stop (POST /api/seq/stop, issue #17).
+        // The flag is transient — set by the web handler, cleared here after abort processing.
+        // Unlike estop (which latches), a stop does not affect other subsystems or boot state.
+        bool stopRequested = false;
+        taskENTER_CRITICAL(&robotStateMux);
+        stopRequested = robotState.seqStopRequested;
+        if (stopRequested) {
+            robotState.seqStopRequested = false;  // clear the transient flag
+        }
+        taskEXIT_CRITICAL(&robotStateMux);
+
+        if (stopRequested && seqEngineActive(engine)) {
+            PA_LOG_INFO(TAG, "abort %s (web stop)", activeName);
+            seqEngineAbort(engine);
+            drainBestEffort(engine, now);
+            // Record as SEQ_RUN_ABORTED with "web stop" reason (distinguishes from
+            // estop/preempt/reconnect). Operator can see the reason in GET /api/seq/last-run.
+            seqEvidenceEnd(SEQ_RUN_ABORTED, "web stop", now, domeDropCount());
+            seqStoreReleaseRun();  // reclaim any Learned-run buffers
+            clearSuppression();
+            activeName[0] = '\0';
+        }
+
         // Dome (re)connect resync (ADR 0004 decision 8): panel state on the
         // dome is unknown after boot or a link gap, so assume closed — abort any
         // running sequence, stage an individual ring-only close (drained below),

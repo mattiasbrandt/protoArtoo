@@ -215,6 +215,8 @@ struct RobotState {
     bool webControlEnabled;
     bool rcDebugMode;    // Enable verbose RC/SBUS logging when RC page is active
     bool rcConfigDirty;  // Set by configSaveSystem/configCacheApply; cleared by RcInputTask after rebuild
+    bool seqStopRequested;  // Non-latching web stop signal (POST /api/seq/stop);
+                            // dispatcher clears after abort processing
 
     // -------------------------------------------------------------------------
     // Hoverboard controller feedback — populated by DriveTask from UART1 RX.

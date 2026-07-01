@@ -7,6 +7,7 @@
 //   POST   /api/seq            — validate (Protocol Check) + persist
 //   DELETE /api/seq?name=      — Memory Wipe
 //   POST   /api/seq/test       — run a sequence by name (same path as dome/cmd)
+//   POST   /api/seq/stop       — abort current sequence (non-latching, idempotent)
 //   GET    /api/seq/builtins   — factory catalog serialized to JSON v1
 // =============================================================================
 #pragma once
