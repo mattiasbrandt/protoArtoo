@@ -4289,3 +4289,157 @@ label.sound-search-field {
   flex: 1;
   min-width: 200px;
 }
+
+/* Dome Control Card (Home Page) */
+.dome-control-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  font-size: inherit;
+  font-weight: inherit;
+  color: inherit;
+  min-height: auto;
+  box-shadow: none;
+  transition: opacity 0.2s ease;
+}
+
+.dome-control-header:hover {
+  opacity: 0.8;
+}
+
+.dome-control-header:focus-visible {
+  outline: 2px solid var(--accent-bright);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.dome-control-toggle {
+  display: inline-block;
+  transition: transform 0.2s ease;
+  font-size: 0.9rem;
+  color: var(--text-dim);
+}
+
+.dome-control-header[aria-expanded="true"] .dome-control-toggle {
+  transform: rotate(180deg);
+}
+
+.dome-control-body {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.dome-control-body.hidden {
+  display: none;
+}
+
+.dome-control-feedback {
+  margin-bottom: 12px;
+}
+
+.dome-source-banner {
+  padding: 10px 12px;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  margin-bottom: 12px;
+}
+
+.dome-source-banner.info {
+  background: rgba(74, 144, 217, 0.15);
+  border-left: 3px solid var(--accent);
+  color: var(--accent-bright);
+}
+
+.dome-source-banner.warn {
+  background: rgba(232, 168, 50, 0.12);
+  border-left: 3px solid var(--warning);
+  color: var(--warning);
+}
+
+.dome-svg-container {
+  /* Constrain + centre the dome so it renders at a comfortable size with
+     breathing room around the P1-P13 callouts, rather than filling the full
+     card width (which reads as "zoomed in"). */
+  max-width: 400px;
+  margin: 0 auto 16px;
+}
+
+.dome-svg-container svg {
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+
+/* Panel interaction states */
+.dome-svg-container .pr,
+.dome-svg-container .pp {
+  cursor: pointer;
+  transition: fill 0.2s ease, stroke 0.2s ease;
+}
+
+.dome-svg-container [data-element-id][data-selectable="true"],
+.dome-svg-container [data-target] {
+  cursor: pointer;
+}
+
+/* Visual feedback for open panels */
+.dome-svg-container .pr.open,
+.dome-svg-container .pp.open {
+  fill: #ff9f43;
+  stroke: #ff7f00;
+}
+
+/* Quick sequence control row */
+.dome-sequence-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.dome-seq-select {
+  flex: 1;
+  min-width: 200px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.95rem;
+  min-height: 44px;
+  transition: border-color 0.2s ease;
+}
+
+.dome-seq-select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(74, 144, 217, 0.2);
+}
+
+.dome-seq-select:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.dome-sequence-row .btn {
+  min-width: 90px;
+  padding: 10px 14px;
+  font-size: 0.9rem;
+}
+
+.mt-12 {
+  margin-top: 12px;
+}
+
+.mt-8 {
+  margin-top: 8px;
+}

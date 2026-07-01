@@ -21,6 +21,17 @@
       </div>
     </div>
 
+    <!-- Dome Control Card (Collapsible) -->
+    <div class="card" id="dome-control-card">
+      <button id="dome-control-header" class="dome-control-header" aria-expanded="false" aria-controls="dome-control-body">
+        <h3 style="margin: 0;">Dome Control</h3>
+        <span class="dome-control-toggle">▼</span>
+      </button>
+      <div id="dome-control-body" class="dome-control-body hidden">
+        <div class="dome-control-feedback feedback hidden" role="status" aria-live="polite" aria-atomic="true"></div>
+        <!-- Dome SVG and sequence controls injected here -->
+      </div>
+    </div>
 
     <template id="topbar-actions-template">
       <div class="index-top-actions">
@@ -150,7 +161,7 @@
       </div>
     </div>
 
-    <script data-scripts="/web_api.js,/diagnostics.js,/status_stream.js,/shell.js,/health_signals.js,/app.js,/footer.js">
+    <script data-scripts="/web_api.js,/diagnostics.js,/status_stream.js,/shell.js,/health_signals.js,/dome_command_map.js,/dome_layout.js,/dome_layout_render.js,/dome_control.js,/app.js,/footer.js">
       (() => {
         const sources = document.currentScript.dataset.scripts.split(",");
         const loadNext = (index) => {
