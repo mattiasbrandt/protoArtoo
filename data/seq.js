@@ -1587,6 +1587,24 @@
       }
     };
 
+    // Live picker: DomeCommandMap.resolvePanelCommand() returns a COMPLETE command
+    // string (e.g. ":OP07"), so assign it directly. Do NOT route it through
+    // setTarget(), which prepends ":<action>" and would double the prefix
+    // (":OP:OP07"). The legacy picker path keeps setTarget() (bare target + prefix).
+    const setCommand = (fullCmd) => {
+      const targetSelect = fieldsContainer.querySelector(".dome-target-select");
+      const hiddenInput = fieldsContainer.querySelector('input[data-field="cmd"]');
+      const preview = fieldsContainer.querySelector(".dome-cmd-preview");
+      if (!hiddenInput) return;
+      hiddenInput.value = fullCmd;
+      if (preview) preview.textContent = fullCmd;
+      // Keep the target dropdown in sync by recovering the bare command target
+      // from the full command (":OP07" -> "07", ":OPP1" -> "P1").
+      if (targetSelect) targetSelect.value = fullCmd.replace(/^:(OP|CL|OF)/, "");
+      editorState.current.steps[stepIdx].cmd = fullCmd;
+      validateAndUpdateStep(stepIdx);
+    };
+
     // Slice E: Handle both live (data-element-id) and legacy (data-target) pickers
     // SVG panel clicks — use event delegation on the SVG
     const svg = fieldsContainer.querySelector(".dome-svg-picker");
@@ -1627,10 +1645,10 @@
             const action = actionSelect.value;
             const capabilityMap = { "OP": "open", "CL": "close", "OF": "flutter" };
             const capability = capabilityMap[action] || "open";
-            target = window.DomeCommandMap.resolvePanelCommand(elementId, capability);
+            const fullCmd = window.DomeCommandMap.resolvePanelCommand(elementId, capability);
 
-            if (target) {
-              setTarget(target);
+            if (fullCmd) {
+              setCommand(fullCmd);
               highlightSelectedPanel(elementId, "live");
             }
           }
@@ -1681,11 +1699,11 @@
             const action = actionSelect.value;
             const capabilityMap = { "OP": "open", "CL": "close", "OF": "flutter" };
             const capability = capabilityMap[action] || "open";
-            const target = window.DomeCommandMap.resolvePanelCommand(elementId, capability);
+            const fullCmd = window.DomeCommandMap.resolvePanelCommand(elementId, capability);
 
-            if (target) {
+            if (fullCmd) {
               e.preventDefault();
-              setTarget(target);
+              setCommand(fullCmd);
               highlightSelectedPanel(elementId, "live");
             }
           }
