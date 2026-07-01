@@ -1835,11 +1835,6 @@
         highlightSelectedPanel(newTarget, hasLiveLayout ? "live" : "legacy");
         // Update advisory for the newly selected target (live mode only)
         if (hasLiveLayout && window.DomeCommandMap?.PANEL_COMMAND_TARGETS) {
-          // Decode the new target back to element ID for availability check
-          const actionSelect = fieldsContainer.querySelector(".dome-action-select");
-          const action = actionSelect?.value || "OP";
-          const capabilityMap = { "OP": "open", "CL": "close", "OF": "flutter" };
-          const capability = capabilityMap[action] || "open";
           // Try to find the element by resolving the command in reverse
           // For pie targets (P1..P6), decode directly; for ring targets (01..13), find element
           let elementId = newTarget;
