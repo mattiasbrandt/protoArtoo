@@ -173,3 +173,31 @@ vendored MK4 SVG remains the offline fallback look.
   live source; it remains useful only while the vendored copy is the primary path.
 - Issue #17's body scope wording is corrected so "persist by canonical element ID" reads as the
   editor/coordinator view-model, not the saved-sequence storage format.
+
+## Implementation notes (landed 2026-07-01, phase/v1.0.0)
+
+The body scope shipped as `data/dome_command_map.js` (forward `resolvePanelCommand` + reverse
+`decodeCommandToElement`), `data/dome_layout.js` (fetch/cache/4-tier fallback/view-model),
+`data/dome_layout_render.js` (SVG picker from geometry), `data/seq.js` editor integration, and
+`src/web/api_dome.cpp` + `src/tasks/dome_link.cpp` for the firmware proxy. Two refinements to the
+design above, discovered against the live dome (`GET http://astropixelsplus.local/api/dome/layout`,
+28 elements, `schema_revision: 1`):
+
+- **The proxy is cache-and-serve, not a synchronous byte-relay.** AsyncWebServer handlers run on
+  the shared AsyncTCP loop and must not block; an outbound HTTPClient GET of the ~12.5 KB layout
+  blocks ~0.3-1s and can trip the watchdog. So a background task fetches the layout into one
+  reused heap buffer (WiFi transport only), and the web handler serves those cached bytes
+  non-blocking (503 when absent / dome on UART-only). It still never parses geometry, so the
+  "thin, no-parse" intent holds; it is just not a live passthrough.
+- **`runtime_state_ts` is a numeric `millis()` freshness token, not an ISO timestamp** (the dome
+  ESP32 has no reliable wall clock). Consumers treat it as an opaque freshness token.
+- **Real element shapes** (vs the illustrative examples): `element_type` is
+  `panel|holo|logic|psi`; `panel_kind` is `ring|pie|fixed|null`; `active` is `null` for
+  non-commandable elements. `label_anchor` is dome-owned; a mis-placed anchor (e.g. `PP3`) is a
+  dome-template data fix, not a body renderer change.
+
+Verified software-side via Playwright against the live dome fixture: picker renders the MK4 dome,
+click authors correct command strings (`P1`->`:OP01`, `PP1`->`:OPP1`), saved steps reverse-highlight,
+the availability gate blocks authoring on disabled/inactive panels while keeping saved steps
+editable, and groups author `:OP00`/`:OP14`/`:OP15`. Full-hardware verification (device flash +
+on-droid check) remains outstanding.
