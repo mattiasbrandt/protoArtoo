@@ -1028,23 +1028,28 @@
               </div>
             `;
 
-            // Add source banner above the picker
-            if (layoutSource === 'live') {
-              // No banner for fresh live layout (implicit success)
-              sourceNotice = "";
-            } else if (layoutSource === 'cached') {
+            // Add source banner above the picker.
+            // 'live' shows no banner (implicit success).
+            if (layoutSource === 'cached') {
               sourceNotice = `<div class="dome-layout-notice dome-layout-cached">Showing last known dome layout — runtime availability unverified</div>`;
-            } else if (layoutSource === 'unsupported') {
-              sourceNotice = `<div class="dome-layout-notice dome-layout-error">${escapeHtml(domeLayout.warning || "Layout schema not supported")}</div>`;
             }
           } else {
-            // Fallback to vendored MK4 SVG when layout is unavailable
+            // Fallback to the vendored MK4 SVG when no live/cached elements exist:
+            // either the dome is unreachable, or it is reachable but on an unsupported
+            // schema (whose geometry we deliberately do not trust, so elements is empty).
             svgPickerHtml = `
               <div class="dome-picker-container">
                 ${window.DOME_PANEL_MAP_SVG}
               </div>
             `;
-            sourceNotice = `<div class="dome-layout-notice dome-layout-vendored">Dome not reachable — showing built-in MK4 layout</div>`;
+            // Distinguish the two: an unsupported-schema dome IS reachable (wrong
+            // version), so "not reachable" would send the operator chasing the wrong
+            // problem. Show the schema warning for that case.
+            if (layoutSource === 'unsupported') {
+              sourceNotice = `<div class="dome-layout-notice dome-layout-error">${escapeHtml(domeLayout.warning || "Dome layout schema not supported")} — showing built-in MK4 layout</div>`;
+            } else {
+              sourceNotice = `<div class="dome-layout-notice dome-layout-vendored">Dome not reachable — showing built-in MK4 layout</div>`;
+            }
           }
 
           // Build the target dropdown, populating from live layout if available
