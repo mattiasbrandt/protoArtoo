@@ -44,6 +44,10 @@ def _firmware_path(env_name: str) -> Path:
     return REPO_ROOT / ".pio" / "build" / env_name / "firmware.bin"
 
 
+def _filesystem_path(env_name: str) -> Path:
+    return REPO_ROOT / ".pio" / "build" / env_name / "littlefs.bin"
+
+
 def _patched_espota_main(espota_path: Path, transfer_timeout: int):
     source = espota_path.read_text(encoding="utf-8")
     needle = "connection.settimeout(10)"
@@ -73,7 +77,14 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "-f",
         "--file",
         dest="firmware",
-        help="Firmware image path. Defaults to .pio/build/<env>/firmware.bin.",
+        help="Image path. Defaults to .pio/build/<env>/firmware.bin, or "
+        ".pio/build/<env>/littlefs.bin with --spiffs.",
+    )
+    parser.add_argument(
+        "-s",
+        "--spiffs",
+        action="store_true",
+        help="Upload the LittleFS filesystem image instead of firmware.",
     )
     parser.add_argument(
         "--espota-path",
@@ -105,10 +116,13 @@ def main(argv: list[str]) -> int:
     args = parse_args(argv)
 
     espota_path = Path(args.espota_path) if args.espota_path else _default_espota_path()
-    firmware = Path(args.firmware) if args.firmware else _firmware_path(args.env)
-    if not firmware.exists():
-        sys.stderr.write(f"Firmware image not found: {firmware}\n")
-        sys.stderr.write(f"Build it first with: pio run -e {args.env}\n")
+    default_path = _filesystem_path(args.env) if args.spiffs else _firmware_path(args.env)
+    image = Path(args.firmware) if args.firmware else default_path
+    if not image.exists():
+        kind = "Filesystem" if args.spiffs else "Firmware"
+        build_target = "buildfs" if args.spiffs else "build"
+        sys.stderr.write(f"{kind} image not found: {image}\n")
+        sys.stderr.write(f"Build it first with: pio run -e {args.env} -t {build_target}\n")
         return 2
 
     espota_args = [
@@ -121,8 +135,10 @@ def main(argv: list[str]) -> int:
         "-t",
         str(args.timeout),
         "-f",
-        str(firmware),
+        str(image),
     ]
+    if args.spiffs:
+        espota_args.append("-s")
     if args.host_port is not None:
         espota_args.extend(["-P", str(args.host_port)])
     if args.auth:
@@ -135,7 +151,7 @@ def main(argv: list[str]) -> int:
         espota_args.append("--progress")
 
     print(
-        f"OTA upload: env={args.env} host={args.host} "
+        f"OTA upload: env={args.env} host={args.host} spiffs={args.spiffs} "
         f"timeout={args.timeout}s transfer_timeout={args.transfer_timeout}s",
         flush=True,
     )
