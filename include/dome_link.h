@@ -24,7 +24,8 @@
 //
 // Dome Layout Cache:
 //   DomeLinkTask maintains a cache of the dome's /api/dome/layout JSON (~24KB).
-//   Web handlers call domeLayoutCacheGet() to retrieve cached bytes (non-blocking).
+//   Web handlers call domeLayoutCacheReadChunk() to stream cached bytes out in
+//   small pieces (non-blocking, no per-request buffer).
 //   Call domeLayoutCacheRefreshRequested() to trigger an on-demand refresh.
 // =============================================================================
 #pragma once
@@ -75,11 +76,18 @@ bool domeQueueTx(const char* cmd);
 bool domeConnected();
 
 // Dome layout cache accessors (thread-safe, non-blocking).
-// Copy cached dome layout JSON to outBuffer. Returns bytes copied (0 if cache empty).
-size_t domeLayoutCacheGet(uint8_t* outBuffer, size_t bufferCapacity);
 
 // Get current cache status (has_data, length, fetched_at_ms, last_http_status).
 DomeLayoutCacheStatus domeLayoutCacheGetStatus();
+
+// Copy up to maxLen bytes starting at offset from the cached layout into outBuf.
+// fetchedAtMs pins the read to the cache generation observed via
+// domeLayoutCacheGetStatus(): if the cache has since been refreshed (a
+// different fetched_at_ms), this returns 0 rather than mixing bytes from two
+// different fetches. Returns 0 if offset is out of range or the cache is empty.
+// Intended for chunked response fillers (small maxLen per call) so no
+// per-request buffer is needed. Thread-safe.
+size_t domeLayoutCacheReadChunk(uint8_t* outBuf, size_t maxLen, size_t offset, uint32_t fetchedAtMs);
 
 // Request an on-demand cache refresh. Returns false if throttled (within 30s of last fetch).
 // DomeLinkTask will fetch on next WiFi-connected loop iteration if refresh is pending.

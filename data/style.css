@@ -4443,3 +4443,14 @@ label.sound-search-field {
 .mt-8 {
   margin-top: 8px;
 }
+
+.dome-panel-advisory {
+  margin-top: 0.5rem;
+  padding: 0.5rem;
+  background: color-mix(in srgb, var(--warning) 15%, transparent);
+  border-left: 3px solid var(--warning);
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 0.9rem;
+  line-height: 1.4;
+}

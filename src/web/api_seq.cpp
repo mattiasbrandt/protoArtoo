@@ -412,7 +412,7 @@ void handleLastRun(AsyncWebServerRequest* req) {
     req->send(stream);
 }
 
-// POST /api/seq/stop — non-latching sequence stop (issue #17).
+// POST /api/seq/stop — non-latching sequence stop.
 // Aborts the currently running DM:* sequence via the dispatcher's existing
 // abort path (seqEngineAbort + safe staggered dome cleanup). Returns idempotently
 // 200 OK even if no sequence is running (no-op). Does not latch or affect other

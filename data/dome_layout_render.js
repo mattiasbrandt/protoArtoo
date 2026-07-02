@@ -2,8 +2,9 @@
  * data/dome_layout_render.js
  *
  * SVG renderer for dome layout picker from structured geometry.
- * Converts the dome-served layout view-model (from Slice C window.DomeLayout)
- * into an interactive SVG picker matching data/panels.html visual language.
+ * Converts the dome-served layout view-model (window.DomeLayout, see
+ * data/dome_layout.js) into an interactive SVG picker matching data/panels.html
+ * visual language.
  *
  * Exported: window.DomeLayoutRender
  * Main API: renderPicker(model) -> SVG string
@@ -193,10 +194,10 @@ window.DomeLayoutRender = (() => {
       attrs += ` class="${classes}"`;
     }
 
-    // Element ID
-    if (elem.id) {
-      attrs += ` id="${escapeAttr(elem.id)}"`;
-    }
+    // Note: no bare `id` attribute here — a step's fields container can render
+    // more than one instance of this picker at once (multiple expanded panel
+    // steps), and SVG element ids must be unique per document. data-element-id
+    // already carries identity for selection/highlighting.
 
     // Build title for accessibility
     let titleText = escapeAttr(elem.id);
@@ -297,22 +298,28 @@ window.DomeLayoutRender = (() => {
       return "";
     }
 
-    // Parse viewBox to derive dome center and radii for scaffolding
-    // For the MK4 dome: "0 0 480 480" → center (240, 240)
+    // Parse viewBox to derive dome center and a scale factor for scaffolding.
+    // For the MK4 dome: "0 0 480 480" → center (240, 240), scale 1.
+    // Per ADR 0009, custom dome layout templates (layout_source "custom") are
+    // a real schema-1 feature, not just MK4 — a differently sized viewBox must
+    // scale scaffolding proportionally rather than draw fixed MK4 pixel radii
+    // into whatever space the template declares.
     const vbParts = model.viewBox.split(/[\s,]+/).map(Number);
-    let centerX = 240, centerY = 240;
-    if (vbParts.length >= 4) {
+    let centerX = 240, centerY = 240, scale = 1;
+    if (vbParts.length >= 4 && vbParts[2] > 0 && vbParts[3] > 0) {
       centerX = vbParts[0] + vbParts[2] / 2;
       centerY = vbParts[1] + vbParts[3] / 2;
+      scale = Math.min(vbParts[2], vbParts[3]) / 480;
     }
 
-    // Scaffolding radii (from vendored SVG)
-    const r_dbg = 172;    // dome background circle
-    const r_pbg = 119;    // pie backing circle
-    const r_rl_outer = 172;  // outer ring guide
-    const r_rl_inner_dashed = 146;  // inner dashed ring guide
-    const r_rl_inner = 54;   // inner circle guide
-    const r_hub = 22;     // center hub
+    // Scaffolding radii, expressed as MK4-reference pixel values (480x480
+    // viewBox) and scaled to the model's actual viewBox above.
+    const r_dbg = 172 * scale;    // dome background circle
+    const r_pbg = 119 * scale;    // pie backing circle
+    const r_rl_outer = 172 * scale;  // outer ring guide
+    const r_rl_inner_dashed = 146 * scale;  // inner dashed ring guide
+    const r_rl_inner = 54 * scale;   // inner circle guide
+    const r_hub = 22 * scale;     // center hub
 
     // Render scaffolding layer (before elements, so it sits in background)
     const scaffolding = `<circle class="dbg" cx="${centerX}" cy="${centerY}" r="${r_dbg}"/>

@@ -81,12 +81,17 @@
   /**
    * Compute element severity and selectability for a single element.
    * Severity precedence:
-   *   1. in_layout === false         -> 'in_layout_false'
-   *   2. commandable && !mapped      -> 'unmapped'
-   *   3. disabled === true           -> 'disabled'
-   *   4. commandable && !runtimeVerified -> 'unverified'
-   *   5. commandable && active !== true -> 'inactive'
-   *   6. (otherwise)                 -> null
+   *   1. in_layout === false             -> 'in_layout_false'
+   *   2. commandable && !mapped          -> 'unmapped'
+   *   3. !runtimeVerified && commandable -> 'unverified'
+   *   4. disabled === true               -> 'disabled'
+   *   5. commandable && active !== true  -> 'inactive'
+   *   6. (otherwise)                     -> null
+   *
+   * `disabled` and `active` are dome-composed runtime state (ADR 0009: "trust
+   * active/disabled only from a live fetch"), so they are only consulted once
+   * runtimeVerified is true — a cached-tier element must not assert stale
+   * disabled/inactive state as current fact; it reports 'unverified' instead.
    *
    * selectableForNewStep is true ONLY when:
    *   in_layout && commandable && mapped && runtimeVerified && active === true && !disabled
@@ -107,10 +112,14 @@
       severity = 'in_layout_false';
     } else if (commandable && !mapped) {
       severity = 'unmapped';
+    } else if (!runtimeVerified) {
+      if (commandable) {
+        severity = 'unverified';
+      }
+      // Non-commandable (decorative) elements have no v1 availability display
+      // when runtime state isn't fresh; they render for spatial context only.
     } else if (disabled) {
       severity = 'disabled';
-    } else if (commandable && !runtimeVerified) {
-      severity = 'unverified';
     } else if (commandable && active !== true) {
       severity = 'inactive';
     }
@@ -128,7 +137,7 @@
   }
 
   /**
-   * Normalize raw layout from API into the Slice D contract model.
+   * Normalize raw layout from API into the view-model consumed by the picker.
    * @param {object} rawLayout - raw layout from /api/dome/layout or cache
    * @param {boolean} runtimeVerified - whether active/disabled state is trusted
    * @param {string} source - 'live', 'cached', 'vendored', or 'unsupported'
@@ -233,11 +242,11 @@
         source = 'unsupported';
       }
     } else if (liveLayout === null) {
-      // Live fetch failed. Try Tier 2: cached-live fallback
-      // Heuristic: use the most recently cached live layout (not the unsupported ones)
+      // Live fetch failed. Try Tier 2: cached-live fallback.
+      // Scan all cached layouts (one per template_id/revision/schema_revision
+      // seen) and keep the most recently saved one with a supported schema.
       let cachedLayout = null;
       try {
-        // Iterate localStorage looking for any cached live layouts
         for (let i = 0; i < window.localStorage.length; i++) {
           const key = window.localStorage.key(i);
           if (key && key.startsWith(cacheKeyPrefix)) {
@@ -246,11 +255,11 @@
               const parsed = JSON.parse(stored);
               if (parsed.rawLayout) {
                 const schemaRev = parsed.rawLayout.schema_revision;
-                // Only consider layouts with supported schemas
-                if (SUPPORTED_DOME_LAYOUT_SCHEMAS.has(schemaRev)) {
-                  // Found a usable cached layout (we could rank by savedAt if multiple exist)
+                if (
+                  SUPPORTED_DOME_LAYOUT_SCHEMAS.has(schemaRev) &&
+                  (!cachedLayout || (parsed.savedAt || 0) > (cachedLayout.savedAt || 0))
+                ) {
                   cachedLayout = parsed;
-                  break;
                 }
               }
             }

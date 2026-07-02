@@ -5,7 +5,10 @@
 //   GET /api/dome/layout  — fetch dome layout JSON from cache (non-blocking relay)
 //
 // The dome layout is cached by DomeLinkTask on WiFi transport.
-// The web handler retrieves from cache without blocking the AsyncTCP loop.
+// The web handler streams the cached bytes out via a chunked response filler
+// (domeLayoutCacheReadChunk), so no per-request buffer is needed on the
+// AsyncTCP task stack — each fill call copies only the small slice AsyncTCP
+// asks for under a brief cache-mutex hold.
 // If cache is empty or transport != WiFi, handler returns 503 Service Unavailable
 // and sets a refresh flag for the background task to fetch on next loop.
 // =============================================================================
@@ -42,29 +45,29 @@ void registerDomeRoutes(AsyncWebServer& server) {
         // Attempt to get cached data
         DomeLayoutCacheStatus status = domeLayoutCacheGetStatus();
 
-        if (status.has_data) {
-            // Cache hit: copy bytes to response buffer and send
-            const size_t bufCapacity = 25000;  // Slightly larger than cache cap to be safe
-            uint8_t responseBuf[bufCapacity];
-            size_t bytesRead = domeLayoutCacheGet(responseBuf, bufCapacity);
-
-            if (bytesRead > 0) {
-                uint32_t ageMs = millis() - status.fetched_at_ms;
-                // Create response with X-Dome-Layout-Age-Ms header to indicate cache freshness
-                AsyncWebServerResponse* response =
-                    req->beginResponse(200, "application/json", responseBuf, bytesRead);
-                response->addHeader("X-Dome-Layout-Age-Ms", String(ageMs).c_str());
-                req->send(response);
-                PA_LOG_DEBUG(TAG, "GET /api/dome/layout: served %u bytes (age=%u ms)", (unsigned)bytesRead,
-                             (unsigned)ageMs);
-                return;
-            }
+        if (!status.has_data) {
+            // Cache miss or empty: request a background fetch and return 503
+            PA_LOG_DEBUG(TAG, "GET /api/dome/layout: cache miss, requesting refresh");
+            domeLayoutCacheRefreshRequested();
+            req->send(503, "application/json",
+                      "{\"error\":\"dome layout unavailable\",\"retry\":true}");
+            return;
         }
 
-        // Cache miss or empty: request a background fetch and return 503
-        PA_LOG_DEBUG(TAG, "GET /api/dome/layout: cache miss, requesting refresh");
-        domeLayoutCacheRefreshRequested();
-        req->send(503, "application/json",
-                  "{\"error\":\"dome layout unavailable\",\"retry\":true}");
+        // Cache hit: stream via a chunked filler pinned to this fetch's
+        // generation (fetched_at_ms). If a background refresh replaces the
+        // cache mid-send, domeLayoutCacheReadChunk() returns 0 (clean early
+        // end) rather than splicing bytes from two different fetches.
+        const uint32_t fetchedAtMs = status.fetched_at_ms;
+        const uint32_t ageMs = millis() - fetchedAtMs;
+        AsyncWebServerResponse* response = req->beginResponse(
+            "application/json", status.length,
+            [fetchedAtMs](uint8_t* buf, size_t maxLen, size_t index) -> size_t {
+                return domeLayoutCacheReadChunk(buf, maxLen, index, fetchedAtMs);
+            });
+        response->addHeader("X-Dome-Layout-Age-Ms", String(ageMs).c_str());
+        req->send(response);
+        PA_LOG_DEBUG(TAG, "GET /api/dome/layout: serving %u bytes (age=%u ms)", (unsigned)status.length,
+                     (unsigned)ageMs);
     });
 }

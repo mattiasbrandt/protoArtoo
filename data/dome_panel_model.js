@@ -17,14 +17,14 @@
  * to compare against the live dome's served panels.html. Drift checking is a
  * developer/operator aid, not a build gate.
  *
- * Future (post-v1.0.0): replace this static copy with a runtime fetch of a
- * dome-served `GET /api/dome/layout` (geometry + identity + wired/active +
- * safe-for-body-sequences), falling back to this vendored MK4 SVG when the
- * dome is unavailable. Tracked in issue #17 (cross-repo with AstroPixelsPlus).
+ * The primary path is the runtime `GET /api/dome/layout` fetch (data/dome_layout.js
+ * + data/dome_layout_render.js, per ADR 0009); this module is only the fallback
+ * used when that fetch is unavailable or the dome reports an unsupported schema.
  */
 
 // Full AstroPixelsPlus dome SVG — ported verbatim from AstroPixelsPlus/data/panels.html lines 63-202
-// Selectable elements (ring, pie, callouts) will have data-panel-id and data-target added by seq.js
+// Selectable elements (ring, pie, callouts) already carry data-target in this
+// markup (see below); nothing adds it at runtime.
 window.DOME_PANEL_MAP_SVG = `<svg viewBox="0 0 480 480" xmlns="http://www.w3.org/2000/svg" class="dome-svg-picker" style="width:100%;max-width:100%;display:block;margin:0 auto">
 <style>
 .dbg{fill:#b8bec8;stroke:#6b7280;stroke-width:1.5}

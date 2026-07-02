@@ -12,8 +12,9 @@
   let sequences = []; // Current list of learned sequences
   let builtins = []; // Factory sequences (cached after first load)
   let currentEditingSeq = null; // The sequence being edited (or null)
+  let domeLayoutChangeSubscribed = false; // guards a single DomeLayout.onChange registration
 
-  // Editor state tracking (Slice B onwards)
+  // Editor state tracking
   let editorState = {
     original: null,   // snapshot at open time (for Revert)
     current: null,    // live edited copy
@@ -1000,7 +1001,7 @@
           // Store hidden cmd field for serialization
           behaviorHtml += `<input type="hidden" class="step-field" data-field="cmd" value="${escapeHtml(cmd)}">`;
         } else if (domeMode === "panel") {
-          // Slice E: Render live picker from DomeLayout if available, fall back to vendored.
+          // Render the live picker from DomeLayout if available, fall back to vendored.
           // Parse action and target from cmd, e.g., ":OP01" -> action="OP", target="01"
           let action = "";
           let target = "";
@@ -1136,7 +1137,7 @@
             <span class="dome-cmd-preview">:${action}${target}</span>
             <button class="dome-mode-toggle" aria-label="Switch to advanced mode">Advanced</button>
             <input type="hidden" class="step-field" data-field="cmd" value="${escapeHtml(domeCmd)}">
-            <div class="dome-panel-advisory hidden" style="margin-top: 0.5rem; padding: 0.5rem; background-color: #fff8e1; border-left: 3px solid #ffc107; color: #856404; font-size: 0.9rem; line-height: 1.4;"></div>
+            <div class="dome-panel-advisory hidden"></div>
           `;
         } else {
           // Advanced mode: raw text input
@@ -1252,17 +1253,20 @@
     editorState.original = JSON.parse(JSON.stringify(seq));
     editorState.current = JSON.parse(JSON.stringify(seq));
 
-    // Slice E: Load DomeLayout if available and subscribe to changes.
-    // This ensures the live picker in panel-intent steps can render from the
-    // connected dome's layout, with automatic refresh on dome reconnect.
+    // Load DomeLayout if available so the live picker in panel-intent steps can
+    // render from the connected dome's layout, with automatic refresh on dome
+    // reconnect. Subscribe once per page load (renderEditorView runs on every
+    // editor open) so repeated opens don't stack duplicate onChange listeners.
     if (window.DomeLayout) {
       window.DomeLayout.load().catch(() => {
         // Silent fallback: if layout fetch fails, the picker will use vendored/cached
       });
-      // Refresh panel-intent pickers when the layout changes (dome reconnect)
-      window.DomeLayout.onChange(() => {
-        rerenderPanelIntentPickers();
-      });
+      if (!domeLayoutChangeSubscribed) {
+        window.DomeLayout.onChange(() => {
+          rerenderPanelIntentPickers();
+        });
+        domeLayoutChangeSubscribed = true;
+      }
     }
 
     const stepRows = (seq.steps || [])
@@ -1673,7 +1677,7 @@
       validateAndUpdateStep(stepIdx);
     };
 
-    // Slice E: Handle both live (data-element-id) and legacy (data-target) pickers
+    // Handle both live (data-element-id) and legacy (data-target) pickers
     // SVG panel clicks — use event delegation on the SVG
     const svg = fieldsContainer.querySelector(".dome-svg-picker");
     const hasLiveLayout = svg && svg.closest(".dome-svg-picker-container");
@@ -2302,7 +2306,7 @@
     attachStepListeners();
   };
 
-  // Slice E: Re-render only the panel-intent pickers when the dome layout changes.
+  // Re-render only the panel-intent pickers when the dome layout changes.
   // This refreshes the live picker SVG without re-rendering the entire step table.
   // Called via DomeLayout.onChange() when the dome reconnects.
   const rerenderPanelIntentPickers = () => {

@@ -63,6 +63,49 @@
     // after the keydown handler already ran). Rely on the click event alone.
     headerBtn.addEventListener('click', toggleExpand);
 
+    let bannerEl = null;
+    let pickerContainer = null;
+
+    // Build the picker SVG for the current model. Live/cached tiers have real
+    // elements and render through DomeLayoutRender; vendored/unsupported tiers
+    // have an empty elements[] (geometry from an unsupported schema is never
+    // trusted), so fall back to the vendored MK4 SVG — same fallback seq.js
+    // uses for the sequence editor picker.
+    function pickerHtmlFor(model) {
+      const hasLiveElements = model?.elements?.length > 0;
+      if (hasLiveElements && window.DomeLayoutRender?.renderPicker) {
+        return window.DomeLayoutRender.renderPicker(model);
+      }
+      return window.DOME_PANEL_MAP_SVG || '';
+    }
+
+    // Re-render the picker + banner in place, re-attach handlers, and restore
+    // any panels the operator has toggled open so a layout refresh (dome
+    // reconnect) doesn't silently drop visible open state.
+    function renderInto(model, source) {
+      if (bannerEl) {
+        bannerEl.remove();
+        bannerEl = null;
+      }
+      const bannerHtml = renderSourceBanner(source);
+      if (bannerHtml) {
+        bodyEl.insertAdjacentHTML('afterbegin', bannerHtml);
+        bannerEl = bodyEl.firstElementChild;
+      }
+
+      pickerContainer.innerHTML = pickerHtmlFor(model);
+      attachPanelClickHandlers(pickerContainer, model);
+
+      const svg = pickerContainer.querySelector('svg');
+      if (svg) {
+        openPanels.forEach((id) => {
+          const el =
+            svg.querySelector(`[data-element-id="${id}"]`) || svg.querySelector(`[data-target="${id}"]`);
+          if (el) el.classList.add('open');
+        });
+      }
+    }
+
     // Render the dome SVG and attach click handlers
     async function renderDomePanel() {
       try {
@@ -73,33 +116,16 @@
           });
         }
 
-        const model = window.DomeLayout?.getModel?.();
-        const source = window.DomeLayout?.getSource?.() || 'vendored';
-
-        // Render the source banner (live, cached, unsupported, vendored)
-        const sourceBanner = renderSourceBanner(source);
-        if (sourceBanner) {
-          bodyEl.insertAdjacentHTML('afterbegin', sourceBanner);
-        }
-
-        // Render the SVG dome
-        const pickerHtml = window.DomeLayoutRender?.renderPicker?.(model) || '';
-        const pickerContainer = document.createElement('div');
+        pickerContainer = document.createElement('div');
         pickerContainer.className = 'dome-svg-container';
-        pickerContainer.innerHTML = pickerHtml;
         bodyEl.appendChild(pickerContainer);
 
-        // Attach click handlers to commandable panels
-        attachPanelClickHandlers(pickerContainer, model);
+        renderInto(window.DomeLayout?.getModel?.(), window.DomeLayout?.getSource?.() || 'vendored');
 
         // Subscribe to layout changes for live reconnect
         if (window.DomeLayout) {
           window.DomeLayout.onChange(() => {
-            // Refresh the picker on layout change (dome reconnect)
-            const newModel = window.DomeLayout.getModel();
-            const newPickerHtml = window.DomeLayoutRender?.renderPicker?.(newModel) || '';
-            pickerContainer.innerHTML = newPickerHtml;
-            attachPanelClickHandlers(pickerContainer, newModel);
+            renderInto(window.DomeLayout.getModel(), window.DomeLayout.getSource());
           });
         }
 
@@ -136,7 +162,7 @@
           }
 
           // Selectable: resolve to command and toggle
-          await togglePanel(elementId, element, model);
+          await togglePanel(elementId, element);
         } else {
           // Try legacy vendored picker (data-target)
           element = e.target.closest('[data-target]');
@@ -153,7 +179,7 @@
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
             const elementId = el.dataset.elementId;
-            togglePanel(elementId, el, model);
+            togglePanel(elementId, el);
           }
         });
       });
@@ -170,7 +196,7 @@
       });
     }
 
-    async function togglePanel(elementId, svgElement, model) {
+    async function togglePanel(elementId, svgElement) {
       try {
         const isOpen = openPanels.has(elementId);
         const capability = isOpen ? 'close' : 'open';
@@ -201,17 +227,20 @@
 
     async function togglePanelVendored(target, svgElement) {
       try {
-        const isOpen = svgElement.classList.contains('open');
+        const isOpen = openPanels.has(target);
         const action = isOpen ? 'CL' : 'OP';
         const cmd = `:${action}${target}`;
 
         // Send command to device
         await PAApi.postForm('/api/dome/cmd', { cmd });
 
-        // Update visual feedback
+        // Update local state (openPanels is the durable source of truth,
+        // reapplied by renderInto() after a layout refresh) and visual feedback
         if (isOpen) {
+          openPanels.delete(target);
           svgElement.classList.remove('open');
         } else {
+          openPanels.add(target);
           svgElement.classList.add('open');
         }
 

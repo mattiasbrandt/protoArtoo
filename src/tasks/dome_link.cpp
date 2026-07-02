@@ -72,6 +72,7 @@ enum DomeRxSource : uint8_t {
 static uint8_t s_domeLayoutCache[kDomeLayoutCacheCapacity];
 static DomeLayoutCacheStatus s_domeLayoutCacheStatus = {false, 0, 0, 0};
 static portMUX_TYPE s_domeLayoutCacheMux = portMUX_INITIALIZER_UNLOCKED;
+
 static bool s_domeLayoutRefreshRequested = false;
 static uint32_t s_domeLayoutLastFetchMs = 0;
 
@@ -503,25 +504,31 @@ bool domeConnected() {
 }
 
 // -----------------------------------------------------------------------------
-// domeLayoutCacheGet()
-// Copies cached dome layout JSON to the provided buffer.
-// Returns the number of bytes copied (0 if cache is empty or too large for buffer).
+// domeLayoutCacheReadChunk()
+// Copies up to maxLen bytes starting at offset from the cache into outBuf.
+// fetchedAtMs pins the read to a specific cache generation: if the cache has
+// been overwritten by a newer fetch since the caller observed it via
+// domeLayoutCacheGetStatus(), this returns 0 instead of splicing bytes from
+// two different fetches. Designed for small per-call maxLen (chunked response
+// filler), so callers never need a full-size buffer of their own.
 // Thread-safe via s_domeLayoutCacheMux.
 // -----------------------------------------------------------------------------
-size_t domeLayoutCacheGet(uint8_t* outBuffer, size_t bufferCapacity) {
-    if (outBuffer == nullptr || bufferCapacity == 0) {
+size_t domeLayoutCacheReadChunk(uint8_t* outBuf, size_t maxLen, size_t offset, uint32_t fetchedAtMs) {
+    if (outBuf == nullptr || maxLen == 0) {
         return 0;
     }
 
     taskENTER_CRITICAL(&s_domeLayoutCacheMux);
-    size_t bytesToCopy = 0;
-    if (s_domeLayoutCacheStatus.has_data && s_domeLayoutCacheStatus.length <= bufferCapacity) {
-        bytesToCopy = s_domeLayoutCacheStatus.length;
-        memcpy(outBuffer, s_domeLayoutCache, bytesToCopy);
+    size_t copied = 0;
+    if (s_domeLayoutCacheStatus.has_data && s_domeLayoutCacheStatus.fetched_at_ms == fetchedAtMs &&
+        offset < s_domeLayoutCacheStatus.length) {
+        size_t remaining = s_domeLayoutCacheStatus.length - offset;
+        copied = remaining < maxLen ? remaining : maxLen;
+        memcpy(outBuf, s_domeLayoutCache + offset, copied);
     }
     taskEXIT_CRITICAL(&s_domeLayoutCacheMux);
 
-    return bytesToCopy;
+    return copied;
 }
 
 // -----------------------------------------------------------------------------
@@ -558,29 +565,40 @@ static void clearDomeLayoutRefreshRequested() {
     s_domeLayoutLastFetchMs = millis();
 }
 
-// Internal function: store cache response
-static void storeDomeLayoutCache(const uint8_t* data, size_t length, int httpStatus) {
-    if (data == nullptr || length == 0 || length > kDomeLayoutCacheCapacity) {
-        taskENTER_CRITICAL(&s_domeLayoutCacheMux);
-        s_domeLayoutCacheStatus.has_data = false;
-        s_domeLayoutCacheStatus.length = 0;
-        s_domeLayoutCacheStatus.last_http_status = httpStatus;
-        s_domeLayoutCacheStatus.fetched_at_ms = millis();
-        taskEXIT_CRITICAL(&s_domeLayoutCacheMux);
-        PA_LOG_WARN(TAG, "dome layout cache: rejected (len=%u > cap=%u or null)",
-                    (unsigned)length, (unsigned)kDomeLayoutCacheCapacity);
-        return;
-    }
-
+// Internal function: invalidate the cache before a fetch touches any bytes.
+// domeLayoutCacheReadChunk() checks has_data before ever reading
+// s_domeLayoutCache, so once this critical section exits, any reader that
+// acquires the mutex afterward bails out immediately instead of reading a
+// buffer that's about to be overwritten in place. A reader that already
+// completed its critical section before this call is unaffected -- it read
+// the complete previous fetch. This makes it safe for fetchDomeLayoutOverWifi()
+// to stream new bytes directly into s_domeLayoutCache without a private
+// staging buffer (there isn't DRAM budget for a second ~24KB copy) and without
+// holding the mutex across the network read (a spinlock must never be held
+// across a blocking call).
+static void invalidateDomeLayoutCache() {
     taskENTER_CRITICAL(&s_domeLayoutCacheMux);
-    memcpy(s_domeLayoutCache, data, length);
-    s_domeLayoutCacheStatus.has_data = true;
+    s_domeLayoutCacheStatus.has_data = false;
+    taskEXIT_CRITICAL(&s_domeLayoutCacheMux);
+}
+
+// Internal function: publish a fetch result. On success (length > 0), bytes
+// must already be written into s_domeLayoutCache by the caller, after a prior
+// invalidateDomeLayoutCache() call. On failure (length == 0), the cache stays
+// empty/invalidated and the client-facing endpoint returns 503 -- the browser
+// falls back to its own localStorage cache (ADR 0009 tier 2), so this does not
+// need to preserve a stale body-side copy.
+static void publishDomeLayoutCache(size_t length, int httpStatus) {
+    taskENTER_CRITICAL(&s_domeLayoutCacheMux);
+    s_domeLayoutCacheStatus.has_data = (length > 0);
     s_domeLayoutCacheStatus.length = length;
     s_domeLayoutCacheStatus.last_http_status = httpStatus;
     s_domeLayoutCacheStatus.fetched_at_ms = millis();
     taskEXIT_CRITICAL(&s_domeLayoutCacheMux);
 
-    PA_LOG_INFO(TAG, "dome layout cache: stored %u bytes (status=%d)", (unsigned)length, httpStatus);
+    if (length > 0) {
+        PA_LOG_INFO(TAG, "dome layout cache: stored %u bytes (status=%d)", (unsigned)length, httpStatus);
+    }
 }
 
 // Internal function: attempt to fetch dome layout over WiFi
@@ -589,33 +607,49 @@ static bool fetchDomeLayoutOverWifi(const IPAddress& peerIp) {
     snprintf(url, sizeof(url), "http://%u.%u.%u.%u%s", (unsigned)peerIp[0], (unsigned)peerIp[1],
              (unsigned)peerIp[2], (unsigned)peerIp[3], kDomeLayoutEndpoint);
 
+    // Layout fetch is off the hot control path (WiFi-fallback transport only,
+    // on-demand and throttled to once per 30s), unlike sendCommandOverWifi's
+    // latency-sensitive 250ms budget, so it can afford a more generous window
+    // for the dome to compose and send the ~12.5KB payload.
     HTTPClient http;
-    http.setConnectTimeout(250);
-    http.setTimeout(250);
+    http.setConnectTimeout(500);
+    http.setTimeout(2000);
 
     if (!http.begin(url)) {
         PA_LOG_WARN(TAG, "dome layout fetch begin failed: %s", url);
-        storeDomeLayoutCache(nullptr, 0, 0);
+        publishDomeLayoutCache(0, 0);
         return false;
     }
+
+    // Invalidate before touching any bytes: see invalidateDomeLayoutCache()
+    // comment. Safe from here on to write s_domeLayoutCache directly without a
+    // private staging buffer or holding the mutex across the network read.
+    invalidateDomeLayoutCache();
 
     int status = http.GET();
     PA_LOG_DEBUG(TAG, "dome layout fetch: HTTP %d from %s", status, url);
 
     if (status >= 200 && status < 300) {
-        // Success: read the response body into the cache
         WiFiClient* stream = http.getStreamPtr();
         if (stream == nullptr) {
             PA_LOG_WARN(TAG, "dome layout fetch: no stream for status %d", status);
             http.end();
-            storeDomeLayoutCache(nullptr, 0, status);
+            publishDomeLayoutCache(0, status);
             return false;
         }
 
-        // Read response into cache buffer; cap at kDomeLayoutCacheCapacity
+        // stream->available() alone under-reports mid-transfer: the next TCP
+        // segment may not have arrived yet even though the connection is still
+        // open, so a loop keyed only on available() can stop early with a
+        // truncated body. readBytes() blocks internally up to the WiFiClient
+        // timeout (set via http.setTimeout above) waiting for requested bytes,
+        // so keep reading as long as there is buffered data OR the connection
+        // is still open; a read that returns nothing (genuine stall or the
+        // peer closing after the last byte) ends the loop.
         size_t bytesRead = 0;
         uint8_t readBuf[256];
-        while (stream->available() && bytesRead < kDomeLayoutCacheCapacity) {
+        while (bytesRead < kDomeLayoutCacheCapacity &&
+               (stream->available() > 0 || http.connected())) {
             size_t toRead = sizeof(readBuf);
             if (bytesRead + toRead > kDomeLayoutCacheCapacity) {
                 toRead = kDomeLayoutCacheCapacity - bytesRead;
@@ -626,14 +660,36 @@ static bool fetchDomeLayoutOverWifi(const IPAddress& peerIp) {
             bytesRead += n;
         }
 
+        const int contentLength = http.getSize();  // -1 if unknown (e.g. chunked)
         http.end();
-        storeDomeLayoutCache(s_domeLayoutCache, bytesRead, status);
+
+        if (bytesRead == 0) {
+            PA_LOG_WARN(TAG, "dome layout fetch: empty body (status=%d)", status);
+            publishDomeLayoutCache(0, status);
+            return false;
+        }
+
+        // Reject a body that looks truncated rather than publishing a partial/
+        // corrupt payload: either it fell short of the declared Content-Length,
+        // or it filled the cache exactly (the observed live payload is ~12.5KB
+        // against a 24KB cap, so hitting the cap means real bytes were dropped,
+        // not that the layout legitimately needs the full capacity).
+        const bool shortOfContentLength = contentLength >= 0 && (size_t)contentLength != bytesRead;
+        const bool filledCapacity = bytesRead >= kDomeLayoutCacheCapacity;
+        if (shortOfContentLength || filledCapacity) {
+            PA_LOG_WARN(TAG, "dome layout fetch: truncated body (got %u bytes, content-length %d, cap %u)",
+                        (unsigned)bytesRead, contentLength, (unsigned)kDomeLayoutCacheCapacity);
+            publishDomeLayoutCache(0, status);
+            return false;
+        }
+
+        publishDomeLayoutCache(bytesRead, status);
         return true;
     }
 
     PA_LOG_WARN(TAG, "dome layout fetch failed: status %d", status);
     http.end();
-    storeDomeLayoutCache(nullptr, 0, status);
+    publishDomeLayoutCache(0, status);
     return false;
 }
 

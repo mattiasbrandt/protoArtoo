@@ -289,7 +289,7 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
         }
         prevEstop = estopActive;
 
-        // Web-initiated non-latching stop (POST /api/seq/stop, issue #17).
+        // Web-initiated non-latching stop (POST /api/seq/stop).
         // The flag is transient — set by the web handler, cleared here after abort processing.
         // Unlike estop (which latches), a stop does not affect other subsystems or boot state.
         bool stopRequested = false;
