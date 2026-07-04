@@ -1841,20 +1841,22 @@
       select.addEventListener("change", () => {
         const newTarget = fieldsContainer.querySelector(".dome-target-select").value;
         setTarget(newTarget);
-        highlightSelectedPanel(newTarget, hasLiveLayout ? "live" : "legacy");
-        // Update advisory for the newly selected target (live mode only)
-        if (hasLiveLayout && window.DomeCommandMap?.PANEL_COMMAND_TARGETS) {
-          // Try to find the element by resolving the command in reverse
-          // For pie targets (P1..P6), decode directly; for ring targets (01..13), find element
-          let elementId = newTarget;
-          if (/^\d+$/.test(newTarget)) {
-            // Numeric target (ring); find element by id/command
-            const model = window.DomeLayout?.getModel?.();
-            const elem = model?.elements?.find((e) => e.element_type === "panel" && e.panel_kind === "ring" && window.DomeCommandMap?.PANEL_COMMAND_TARGETS?.ring?.[e.id] === newTarget);
-            elementId = elem?.id || newTarget;
+        // Update advisory and highlight for the newly selected target
+        if (hasLiveLayout && window.DomeCommandMap?.decodeCommandToElement) {
+          // Decode the command that was just built by setTarget to get the element ID
+          const cmd = editorState.current.steps[stepIdx].cmd;
+          const decoded = window.DomeCommandMap.decodeCommandToElement(cmd);
+          // Only highlight and advise if decoded is a real panel (ring or pie)
+          if (decoded && (decoded.kind === "ring" || decoded.kind === "pie")) {
+            highlightSelectedPanel(decoded.id, "live");
+            updatePanelAdvisory(fieldsContainer, decoded.id);
+          } else {
+            // Not a panel command or decode failed; clear advisory (groups, advanced, non-panel)
+            updatePanelAdvisory(fieldsContainer, null);
           }
-          updatePanelAdvisory(fieldsContainer, elementId);
         } else {
+          // Legacy picker: use the bare target value
+          highlightSelectedPanel(newTarget, "legacy");
           updatePanelAdvisory(fieldsContainer, null);
         }
       });
@@ -2310,7 +2312,7 @@
   // This refreshes the live picker SVG without re-rendering the entire step table.
   // Called via DomeLayout.onChange() when the dome reconnects.
   const rerenderPanelIntentPickers = () => {
-    document.querySelectorAll(".dome-svg-picker-container").forEach((container) => {
+    document.querySelectorAll(".dome-svg-picker-container, .dome-picker-container").forEach((container) => {
       const card = container.closest(".step-card");
       if (!card) return;
       const stepIdx = parseInt(card.dataset.stepIndex, 10);
