@@ -215,7 +215,7 @@
         // Resolve the open command first to get the canonical key for openPanels
         const openCmd = window.DomeCommandMap?.resolvePanelCommand?.(elementId, 'open');
         if (!openCmd) {
-          showFeedback(`Cannot ${elementId}`, 'error');
+          showFeedback(`Cannot resolve ${elementId}`, 'error');
           return;
         }
 
