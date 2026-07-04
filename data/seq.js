@@ -1741,6 +1741,7 @@
           const isSelectable = element.dataset.selectable === "true";
 
           if (!isSelectable) {
+            e.preventDefault();
             // Non-actionable: show advisory inline instead of alert modal
             updatePanelAdvisory(fieldsContainer, elementId);
             return;
