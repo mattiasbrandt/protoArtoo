@@ -59,23 +59,40 @@ window.DomeLayoutRender = (() => {
       case "svg_path":
         return `<path d="${escapeAttr(geometry.d)}"/>`;
 
-      case "circle":
-        return `<circle cx="${geometry.cx}" cy="${geometry.cy}" r="${geometry.r}"/>`;
+      case "circle": {
+        const cx = Number(geometry.cx);
+        const cy = Number(geometry.cy);
+        const r = Number(geometry.r);
+        if (!Number.isFinite(cx) || !Number.isFinite(cy) || !Number.isFinite(r)) {
+          return "";
+        }
+        return `<circle cx="${cx}" cy="${cy}" r="${r}"/>`;
+      }
 
       case "ellipse": {
-        const rx = geometry.rx || 0;
-        const ry = geometry.ry || 0;
-        const rotation = geometry.rotation || 0;
+        const cx = Number(geometry.cx);
+        const cy = Number(geometry.cy);
+        const rxVal = geometry.rx !== undefined ? Number(geometry.rx) : 0;
+        const ryVal = geometry.ry !== undefined ? Number(geometry.ry) : 0;
+        const rotationVal = geometry.rotation !== undefined ? Number(geometry.rotation) : 0;
+        if (!Number.isFinite(cx) || !Number.isFinite(cy) || !Number.isFinite(rxVal) || !Number.isFinite(ryVal) || !Number.isFinite(rotationVal)) {
+          return "";
+        }
         const transform =
-          rotation !== 0
-            ? ` transform="rotate(${rotation} ${geometry.cx} ${geometry.cy})"`
+          rotationVal !== 0
+            ? ` transform="rotate(${rotationVal} ${cx} ${cy})"`
             : "";
-        return `<ellipse cx="${geometry.cx}" cy="${geometry.cy}" rx="${rx}" ry="${ry}"${transform}/>`;
+        return `<ellipse cx="${cx}" cy="${cy}" rx="${rxVal}" ry="${ryVal}"${transform}/>`;
       }
 
       case "point": {
-        const r = geometry.r !== undefined ? geometry.r : MARKER_RADIUS;
-        return `<circle cx="${geometry.cx}" cy="${geometry.cy}" r="${r}"/>`;
+        const cx = Number(geometry.cx);
+        const cy = Number(geometry.cy);
+        const rVal = geometry.r !== undefined ? Number(geometry.r) : MARKER_RADIUS;
+        if (!Number.isFinite(cx) || !Number.isFinite(cy) || !Number.isFinite(rVal)) {
+          return "";
+        }
+        return `<circle cx="${cx}" cy="${cy}" r="${rVal}"/>`;
       }
 
       default:
@@ -162,18 +179,34 @@ window.DomeLayoutRender = (() => {
     if (geom.type === "svg_path") {
       attrs += ` d="${escapeAttr(geom.d)}"`;
     } else if (geom.type === "circle") {
-      attrs += ` cx="${geom.cx}" cy="${geom.cy}" r="${geom.r}"`;
+      const cx = Number(geom.cx);
+      const cy = Number(geom.cy);
+      const r = Number(geom.r);
+      if (!Number.isFinite(cx) || !Number.isFinite(cy) || !Number.isFinite(r)) {
+        return "";
+      }
+      attrs += ` cx="${cx}" cy="${cy}" r="${r}"`;
     } else if (geom.type === "ellipse") {
-      const rx = geom.rx || 0;
-      const ry = geom.ry || 0;
-      const rotation = geom.rotation || 0;
-      attrs += ` cx="${geom.cx}" cy="${geom.cy}" rx="${rx}" ry="${ry}"`;
-      if (rotation !== 0) {
-        attrs += ` transform="rotate(${rotation} ${geom.cx} ${geom.cy})"`;
+      const cx = Number(geom.cx);
+      const cy = Number(geom.cy);
+      const rxVal = geom.rx !== undefined ? Number(geom.rx) : 0;
+      const ryVal = geom.ry !== undefined ? Number(geom.ry) : 0;
+      const rotationVal = geom.rotation !== undefined ? Number(geom.rotation) : 0;
+      if (!Number.isFinite(cx) || !Number.isFinite(cy) || !Number.isFinite(rxVal) || !Number.isFinite(ryVal) || !Number.isFinite(rotationVal)) {
+        return "";
+      }
+      attrs += ` cx="${cx}" cy="${cy}" rx="${rxVal}" ry="${ryVal}"`;
+      if (rotationVal !== 0) {
+        attrs += ` transform="rotate(${rotationVal} ${cx} ${cy})"`;
       }
     } else if (geom.type === "point") {
-      const r = geom.r !== undefined ? geom.r : MARKER_RADIUS;
-      attrs += ` cx="${geom.cx}" cy="${geom.cy}" r="${r}"`;
+      const cx = Number(geom.cx);
+      const cy = Number(geom.cy);
+      const rVal = geom.r !== undefined ? Number(geom.r) : MARKER_RADIUS;
+      if (!Number.isFinite(cx) || !Number.isFinite(cy) || !Number.isFinite(rVal)) {
+        return "";
+      }
+      attrs += ` cx="${cx}" cy="${cy}" r="${rVal}"`;
     }
 
     // Identity + selectability
@@ -238,7 +271,11 @@ window.DomeLayoutRender = (() => {
       return "";
     }
 
-    const { x, y } = elem.label_anchor;
+    const xVal = Number(elem.label_anchor.x);
+    const yVal = Number(elem.label_anchor.y);
+    if (!Number.isFinite(xVal) || !Number.isFinite(yVal)) {
+      return "";
+    }
 
     // Determine label CSS class based on element type and state
     let labelClass = "lf";
@@ -260,8 +297,18 @@ window.DomeLayoutRender = (() => {
     let svg = "";
 
     if (elem.callout) {
-      const { x: cx_callout, y: cy_callout, r: r_callout } = elem.callout;
-      const { x: cx_connector, y: cy_connector } = elem.callout.connector_to || {};
+      const cx_callout = Number(elem.callout.x);
+      const cy_callout = Number(elem.callout.y);
+      const r_callout = Number(elem.callout.r);
+      const connectorTo = elem.callout.connector_to || {};
+      const cx_connector = Number(connectorTo.x);
+      const cy_connector = Number(connectorTo.y);
+
+      // Validate all callout coordinates
+      if (!Number.isFinite(cx_callout) || !Number.isFinite(cy_callout) || !Number.isFinite(r_callout) ||
+          !Number.isFinite(cx_connector) || !Number.isFinite(cy_connector)) {
+        return "";
+      }
 
       // Determine line and bubble classes based on element type
       let lineClass = "conn-f";
@@ -280,7 +327,7 @@ window.DomeLayoutRender = (() => {
     }
 
     // Draw label text
-    svg += `<text class="${labelClass}" x="${x}" y="${y}">${escapeAttr(elem.label)}</text>`;
+    svg += `<text class="${labelClass}" x="${xVal}" y="${yVal}">${escapeAttr(elem.label)}</text>`;
 
     return svg;
   }
@@ -306,7 +353,12 @@ window.DomeLayoutRender = (() => {
     // into whatever space the template declares.
     const vbParts = model.viewBox.split(/[\s,]+/).map(Number);
     let centerX = 240, centerY = 240, scale = 1;
-    if (vbParts.length >= 4 && vbParts[2] > 0 && vbParts[3] > 0) {
+    let safeViewBox = model.viewBox;
+    // Validate viewBox: must be exactly 4 finite numbers
+    if (vbParts.length !== 4 || !vbParts.every(Number.isFinite) || vbParts[2] <= 0 || vbParts[3] <= 0) {
+      // Use safe default if viewBox is invalid
+      safeViewBox = "0 0 480 480";
+    } else {
       centerX = vbParts[0] + vbParts[2] / 2;
       centerY = vbParts[1] + vbParts[3] / 2;
       scale = Math.min(vbParts[2], vbParts[3]) / 480;
@@ -383,7 +435,7 @@ window.DomeLayoutRender = (() => {
     `.trim();
 
     // Assemble final SVG: scaffolding → geometry → labels
-    const svg = `<svg viewBox="${model.viewBox}" xmlns="http://www.w3.org/2000/svg" class="dome-svg-picker" style="width:100%;max-width:100%;display:block;margin:0 auto">
+    const svg = `<svg viewBox="${safeViewBox}" xmlns="http://www.w3.org/2000/svg" class="dome-svg-picker" style="width:100%;max-width:100%;display:block;margin:0 auto">
 <style>
 ${css}
 </style>
