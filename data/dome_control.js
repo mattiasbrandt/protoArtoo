@@ -98,9 +98,23 @@
 
       const svg = pickerContainer.querySelector('svg');
       if (svg) {
-        openPanels.forEach((id) => {
-          const el =
-            svg.querySelector(`[data-element-id="${id}"]`) || svg.querySelector(`[data-target="${id}"]`);
+        openPanels.forEach((openCmd) => {
+          let el = null;
+
+          // Try to decode the command to get element id/kind (live tier)
+          if (window.DomeCommandMap?.decodeCommandToElement) {
+            const decoded = window.DomeCommandMap.decodeCommandToElement(openCmd);
+            if (decoded && (decoded.kind === 'ring' || decoded.kind === 'pie')) {
+              el = svg.querySelector(`[data-element-id="${decoded.id}"]`);
+            }
+          }
+
+          // Fall back to vendored tier: extract bare target from :OP prefix
+          if (!el) {
+            const target = openCmd.replace(/^:OP/, '');
+            el = svg.querySelector(`[data-target="${target}"]`);
+          }
+
           if (el) el.classList.add('open');
         });
       }
@@ -198,7 +212,14 @@
 
     async function togglePanel(elementId, svgElement) {
       try {
-        const isOpen = openPanels.has(elementId);
+        // Resolve the open command first to get the canonical key for openPanels
+        const openCmd = window.DomeCommandMap?.resolvePanelCommand?.(elementId, 'open');
+        if (!openCmd) {
+          showFeedback(`Cannot ${elementId}`, 'error');
+          return;
+        }
+
+        const isOpen = openPanels.has(openCmd);
         const capability = isOpen ? 'close' : 'open';
         const cmd = window.DomeCommandMap?.resolvePanelCommand?.(elementId, capability);
 
@@ -210,12 +231,12 @@
         // Send command to device
         await PAApi.postForm('/api/dome/cmd', { cmd });
 
-        // Update local state and visual feedback
+        // Update local state and visual feedback (using canonical openCmd as key)
         if (isOpen) {
-          openPanels.delete(elementId);
+          openPanels.delete(openCmd);
           svgElement.classList.remove('open');
         } else {
-          openPanels.add(elementId);
+          openPanels.add(openCmd);
           svgElement.classList.add('open');
         }
 
@@ -227,7 +248,9 @@
 
     async function togglePanelVendored(target, svgElement) {
       try {
-        const isOpen = openPanels.has(target);
+        // Canonical key for openPanels is the open command
+        const openCmd = `:OP${target}`;
+        const isOpen = openPanels.has(openCmd);
         const action = isOpen ? 'CL' : 'OP';
         const cmd = `:${action}${target}`;
 
@@ -237,10 +260,10 @@
         // Update local state (openPanels is the durable source of truth,
         // reapplied by renderInto() after a layout refresh) and visual feedback
         if (isOpen) {
-          openPanels.delete(target);
+          openPanels.delete(openCmd);
           svgElement.classList.remove('open');
         } else {
-          openPanels.add(target);
+          openPanels.add(openCmd);
           svgElement.classList.add('open');
         }
 
@@ -407,7 +430,11 @@
     }
 
     function escapeAttr(str) {
-      return str.replace(/"/g, '&quot;');
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
     }
   }
 })();
