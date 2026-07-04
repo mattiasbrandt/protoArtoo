@@ -163,6 +163,29 @@ static void test_inference_holo_and_reset() {
     TEST_ASSERT_EQUAL_UINT8(FX_DOME_SEQUENCE, s[3].effectClass);
 }
 
+static void test_inference_audio_bounded() {
+    // ADR 0010: STEP_AUDIO with params.audioBounded=1 stamps FX_AUDIO_BOUNDED
+    // (simulating Learned Sequence parse with boundAudio:true)
+    static SeqStep s[] = {
+        {0, STEP_AUDIO, FX_NONE, "$H", {.audioBounded = 1}},
+        SEQ_TERM(100),
+    };
+    ProtocolCheckResult r = protocolCheckBranch("steps", s, 2);
+    TEST_ASSERT_TRUE_MESSAGE(r.ok, r.message);
+    TEST_ASSERT_EQUAL_UINT8(FX_AUDIO_BOUNDED, s[0].effectClass);
+}
+
+static void test_inference_audio_not_bounded() {
+    // STEP_AUDIO with params.audioBounded=0 (boundAudio:false) stamps FX_AUDIO
+    static SeqStep s[] = {
+        {0, STEP_AUDIO, FX_NONE, "$H", {.audioBounded = 0}},
+        SEQ_TERM(100),
+    };
+    ProtocolCheckResult r = protocolCheckBranch("steps", s, 2);
+    TEST_ASSERT_TRUE_MESSAGE(r.ok, r.message);
+    TEST_ASSERT_EQUAL_UINT8(FX_AUDIO, s[0].effectClass);
+}
+
 // -----------------------------------------------------------------------------
 // Name + metadata
 // -----------------------------------------------------------------------------
@@ -599,6 +622,8 @@ int main(int /*argc*/, char** /*argv*/) {
     RUN_TEST(test_sm_rejected_as_diagnostic_only);
     RUN_TEST(test_close_all_is_reset);
     RUN_TEST(test_inference_holo_and_reset);
+    RUN_TEST(test_inference_audio_bounded);
+    RUN_TEST(test_inference_audio_not_bounded);
 
     RUN_TEST(test_bad_name_rejected);
     RUN_TEST(test_name_lowercase_rejected);

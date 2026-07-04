@@ -14,9 +14,13 @@
 //              editor's clone-to-retrain).
 //
 // Format v1:
+//   boundAudio (STEP_AUDIO only, optional, default true): Track Stop this track on
+//   normal sequence completion too (ADR 0010 Bounded Audio); set false to let it ring
+//   out past SEQ_TERM like SEQ_AUDIO_CAT does.
+//
 //   { "format":1, "name":"DM:X", "suppressMs":8000, "toggleGroup":"none",
 //     "meta":{...},
-//     "steps":[ {"t":0,"type":"audio","cmd":"$H"},
+//     "steps":[ {"t":0,"type":"audio","cmd":"$H","boundAudio":true},
 //               {"t":0,"type":"dome","cmd":":SM0,150,2200"},
 //               {"t":0,"type":"loop","body":2,"periodMs":1846,"durationMs":14000},
 //               {"t":0,"type":"random","set":"ring","pulseMin":1150,"pulseMax":1500,

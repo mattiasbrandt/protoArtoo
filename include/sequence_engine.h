@@ -53,8 +53,13 @@ enum SeqEffectClass : uint8_t {
     FX_LOGIC_PSI = 1 << 0,  // @0T* / @0P*  — reset with @0T1 + @0P1
     FX_PANEL     = 1 << 1,  // panel opens   — reset with :CL00 (close + release)
     FX_HOLO      = 1 << 2,  // holo effects  — reset with *ST00
-    FX_AUDIO     = 1 << 3,  // long audio    — stop on ABNORMAL termination only
+    FX_AUDIO     = 1 << 3,  // long audio    — Track Stop on ABNORMAL termination only
+                            // (ring-out preserved on normal completion)
     FX_DOME_SEQUENCE = 1 << 4, // legacy :SE## — conservatively reset dome effects
+    FX_AUDIO_BOUNDED = 1 << 5, // long NAMED TRACK (opt-in, ADR 0010 Bounded Audio) —
+                               // Track Stop on normal termination as well as abnormal.
+                               // Sibling to FX_AUDIO; SEQ_AUDIO_CAT keeps plain FX_AUDIO
+                               // so short category vocalizations always ring out.
 };
 
 // -----------------------------------------------------------------------------
@@ -95,6 +100,14 @@ struct SeqStepParams {
     uint8_t  audioCategory;     // AUDIO_CATEGORY: AudioPlaybackCategory value
     uint8_t  audioFallbackSlot; // AUDIO_CATEGORY: AudioPlaybackSlot fallback
     int8_t   speedPct;          // DOME_ROTATE: signed -100..100 speed percentage
+    uint8_t  audioBounded;      // AUDIO (STEP_AUDIO), Learned Sequences only: parsed
+                                 // JSON boundAudio carrier, consumed by
+                                 // protocolCheckBranch() to stamp FX_AUDIO_BOUNDED vs
+                                 // FX_AUDIO (ADR 0010). Factory catalog entries set
+                                 // effectClass directly via SEQ_AUDIO_FX and ignore
+                                 // this field. Appended last so existing positional
+                                 // catalog-macro initializers stay valid (aggregate
+                                 // init zero-fills trailing members).
 };
 
 // -----------------------------------------------------------------------------
@@ -116,22 +129,25 @@ struct SeqStep {
 // -----------------------------------------------------------------------------
 // Catalog authoring macros — keep the positional SeqStepParams ordering in one
 // place. The firmware toolchain cannot rely on C++20 designated initializers.
+// All explicit initializer lists include audioBounded (new field, ADR 0010) as the
+// last element, initialized to 0. Factory catalog entries ignore this field and set
+// effectClass directly via SEQ_AUDIO_FX.
 // -----------------------------------------------------------------------------
 #define SEQ_DOME(t, fx, cmd)  { (t), STEP_DOME_CMD, (uint8_t)(fx), cmd, {} }
 #define SEQ_AUDIO(t, cmd)     { (t), STEP_AUDIO, FX_NONE, cmd, {} }
 #define SEQ_AUDIO_FX(t, fx, cmd) { (t), STEP_AUDIO, (uint8_t)(fx), cmd, {} }
 #define SEQ_AUDIO_CAT(t, cat, fb) \
     { (t), STEP_AUDIO_CATEGORY, FX_AUDIO, "", \
-      { 0, 0, 0, 0, 0, 0, 0, 0, 0, (uint8_t)(cat), (uint8_t)(fb), 0 } }
+      { 0, 0, 0, 0, 0, 0, 0, 0, 0, (uint8_t)(cat), (uint8_t)(fb), 0, 0 } }
 #define SEQ_DOME_ROTATE(t, speed, dur) \
     { (t), STEP_DOME_ROTATE, FX_NONE, "", \
-      { (dur), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, (int8_t)(speed) } }
+      { (dur), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, (int8_t)(speed), 0 } }
 #define SEQ_LOOP(t, body, period, dur) \
     { (t), STEP_LOOP, FX_NONE, "", \
-      { (dur), (period), (body), 0, 0, 0, 0, 0, 0, 0, 0, 0 } }
+      { (dur), (period), (body), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 } }
 #define SEQ_RAND(t, set, mode, _unused, mv, jit, distinct) \
     { (t), STEP_RANDOM, FX_PANEL, "", \
-      { 0, 0, 0, (uint8_t)(set), (uint16_t)(mode), 0, (mv), (jit), (distinct), 0, 0, 0 } }
+      { 0, 0, 0, (uint8_t)(set), (uint16_t)(mode), 0, (mv), (jit), (distinct), 0, 0, 0, 0 } }
 #define SEQ_TERM(t)           { (t), STEP_END, FX_NONE, "", {} }
 #define SEQ_CLEAR_LATCHES(t)  { (t), STEP_CLEAR_LATCHES, FX_NONE, "", {} }
 

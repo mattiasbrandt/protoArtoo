@@ -42,6 +42,18 @@ void test_slot_prefers_valid_chirp_binding_when_catalog_capable() {
     TEST_ASSERT_TRUE(intent.updateLastRandMs);
 }
 
+void test_track_stop_resolves_with_clear_audio_active_and_cadence_bump() {
+    AudioPlaybackContext ctx{nullptr, nullptr, false, 1000, 0};
+    AudioPlaybackRequest req{};
+    req.kind = AUDIO_PLAYBACK_REQ_TRACK_STOP;
+
+    AudioPlaybackIntent intent = audioPlaybackResolveRequest(ctx, req);
+
+    TEST_ASSERT_EQUAL(AUDIO_PLAYBACK_INTENT_TRACK_STOP, intent.kind);
+    TEST_ASSERT_TRUE(intent.clearAudioActive);
+    TEST_ASSERT_TRUE(intent.updateLastPlayMs);
+}
+
 void test_slot_invalid_chirp_binding_falls_back_to_flat_track() {
     AudioPlaybackConfig cfg = baseConfig();
     AudioBindingCache bindings{};
@@ -158,6 +170,7 @@ int main(int argc, char** argv) {
     (void)argv;
     UNITY_BEGIN();
     RUN_TEST(test_slot_prefers_valid_chirp_binding_when_catalog_capable);
+    RUN_TEST(test_track_stop_resolves_with_clear_audio_active_and_cadence_bump);
     RUN_TEST(test_slot_invalid_chirp_binding_falls_back_to_flat_track);
     RUN_TEST(test_category_empty_uses_explicit_fallback_slot_not_global_random_range);
     RUN_TEST(test_category_empty_without_fallback_is_explicit_none);

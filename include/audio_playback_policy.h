@@ -76,6 +76,9 @@ enum AudioPlaybackRequestKind : uint8_t {
     AUDIO_PLAYBACK_REQ_SLOT,
     AUDIO_PLAYBACK_REQ_CATEGORY,
     AUDIO_PLAYBACK_REQ_STOP,
+    AUDIO_PLAYBACK_REQ_TRACK_STOP,  // Track Stop (ADR 0010): stop current playback
+                                    // only, preserve randomMode — every non-mood
+                                    // stop surface uses this instead of REQ_STOP.
     AUDIO_PLAYBACK_REQ_SET_VOLUME,
     AUDIO_PLAYBACK_REQ_RANDOM_ON,
     AUDIO_PLAYBACK_REQ_RANDOM_OFF,
@@ -87,6 +90,8 @@ enum AudioPlaybackIntentKind : uint8_t {
     AUDIO_PLAYBACK_INTENT_PLAY_FLAT,
     AUDIO_PLAYBACK_INTENT_PLAY_BANKED,
     AUDIO_PLAYBACK_INTENT_STOP,
+    AUDIO_PLAYBACK_INTENT_TRACK_STOP,  // Track Stop (ADR 0010): driver->stop() only,
+                                       // randomMode left untouched.
     AUDIO_PLAYBACK_INTENT_SET_VOLUME,
     AUDIO_PLAYBACK_INTENT_RANDOM_ON,
     AUDIO_PLAYBACK_INTENT_RANDOM_OFF,

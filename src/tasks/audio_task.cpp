@@ -226,6 +226,19 @@ bool audioQueueStop(CommandSource src) {
     return true;
 }
 
+bool audioQueueTrackStop(CommandSource src) {
+    AudioCommand msg{};
+    msg.type = AUDIO_CMD_TRACK_STOP;
+    msg.source = src;
+    if (xQueueSend(audioCmdQueue, &msg, 0) != pdTRUE) {
+        taskENTER_CRITICAL(&robotStateMux);
+        robotState.queueOverflowCount++;
+        taskEXIT_CRITICAL(&robotStateMux);
+        return false;
+    }
+    return true;
+}
+
 bool audioQueueSetVolume(uint8_t vol, CommandSource src) {
     AudioCommand msg{};
     msg.type = AUDIO_CMD_SET_VOLUME;
@@ -617,6 +630,12 @@ static void executePlaybackIntent(const AudioPlaybackIntent& intent, CommandSour
             PA_LOG_INFO(TAG, "[%s] stop", commandSourceToString(source));
             break;
 
+        case AUDIO_PLAYBACK_INTENT_TRACK_STOP:
+            driver->stop();
+            // randomMode intentionally untouched — Track Stop preserves idle mood (ADR 0010)
+            PA_LOG_INFO(TAG, "[%s] track stop", commandSourceToString(source));
+            break;
+
         case AUDIO_PLAYBACK_INTENT_SET_VOLUME:
             currentVol = intent.volume;
             driver->setVolume(currentVol);
@@ -958,6 +977,17 @@ void audioTask(void* pvParameters) {
                 case AUDIO_CMD_STOP: {
                     AudioPlaybackRequest request{};
                     request.kind = AUDIO_PLAYBACK_REQ_STOP;
+                    uint32_t now = millis();
+                    AudioPlaybackContext context{nullptr, nullptr, false, now, lastPlayMs};
+                    AudioPlaybackIntent intent = audioPlaybackResolveRequest(context, request);
+                    executePlaybackIntent(intent, cmd.source, now, lastPlayMs, lastRandMs,
+                                          currentVol, randomMode);
+                    break;
+                }
+
+                case AUDIO_CMD_TRACK_STOP: {
+                    AudioPlaybackRequest request{};
+                    request.kind = AUDIO_PLAYBACK_REQ_TRACK_STOP;
                     uint32_t now = millis();
                     AudioPlaybackContext context{nullptr, nullptr, false, now, lastPlayMs};
                     AudioPlaybackIntent intent = audioPlaybackResolveRequest(context, request);

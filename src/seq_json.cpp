@@ -150,7 +150,15 @@ static ProtocolCheckResult parseStep(const char* label, JsonObjectConst obj,
             return pcFailAt(label, idx, "cmd", "command too long");
         }
         strncpy(s.payload, cmd, sizeof(s.payload) - 1);
-        s.type = (strcmp(type, "dome") == 0) ? STEP_DOME_CMD : STEP_AUDIO;
+        bool isAudio = strcmp(type, "audio") == 0;
+        s.type = isAudio ? STEP_AUDIO : STEP_DOME_CMD;
+        if (isAudio) {
+            JsonVariantConst boundAudio = obj["boundAudio"];
+            if (!boundAudio.isNull() && !boundAudio.is<bool>()) {
+                return pcFailAt(label, idx, "boundAudio", "must be a boolean");
+            }
+            s.params.audioBounded = (boundAudio.is<bool>() ? boundAudio.as<bool>() : true) ? 1 : 0;
+        }
         return pcOk();
     }
     if (strcmp(type, "loop") == 0) {
@@ -342,6 +350,7 @@ static void serializeBranch(JsonArray arr, const SeqStep* steps, uint8_t count) 
             case STEP_AUDIO:
                 o["type"] = "audio";
                 o["cmd"] = s.payload;
+                o["boundAudio"] = (s.effectClass & FX_AUDIO_BOUNDED) != 0;
                 break;
             case STEP_LOOP:
                 o["type"] = "loop";

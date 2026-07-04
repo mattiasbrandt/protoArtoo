@@ -133,7 +133,7 @@ static bool dispatchAction(const SeqAction& act) {
                                           (AudioPlaybackSlot)act.audioFallbackSlot,
                                           SRC_SEQ);
         case SEQ_ACT_AUDIO_STOP:
-            return audioQueueStop(SRC_SEQ);
+            return audioQueueTrackStop(SRC_SEQ);
         default:
             return true;
     }

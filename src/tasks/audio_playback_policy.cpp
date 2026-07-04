@@ -215,6 +215,15 @@ AudioPlaybackIntent audioPlaybackResolveRequest(const AudioPlaybackContext& cont
             return intent;
         }
 
+        case AUDIO_PLAYBACK_REQ_TRACK_STOP: {
+            AudioPlaybackIntent intent{};
+            intent.kind = AUDIO_PLAYBACK_INTENT_TRACK_STOP;
+            intent.requestKind = request.kind;
+            intent.clearAudioActive = true;
+            intent.updateLastPlayMs = true;  // anti-spam cadence bump (ADR 0010 Track Stop)
+            return intent;
+        }
+
         case AUDIO_PLAYBACK_REQ_SET_VOLUME: {
             AudioPlaybackIntent intent{};
             intent.kind = AUDIO_PLAYBACK_INTENT_SET_VOLUME;

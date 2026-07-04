@@ -888,7 +888,10 @@ ProtocolCheckResult protocolCheckBranch(const char* label, SeqStep* steps,
             case STEP_AUDIO: {
                 ProtocolCheckResult r = classifyAudio(label, i, s.payload);
                 if (!r.ok) return r;
-                s.effectClass = FX_AUDIO;  // stop on abnormal termination
+                // ADR 0010: Learned Sequence audio steps default to Bounded (stop on normal
+                // termination too); s.params.audioBounded was populated by seqJsonParse() from
+                // the optional JSON boundAudio field (default true when omitted).
+                s.effectClass = s.params.audioBounded ? FX_AUDIO_BOUNDED : FX_AUDIO;
                 break;
             }
             case STEP_AUDIO_CATEGORY: {

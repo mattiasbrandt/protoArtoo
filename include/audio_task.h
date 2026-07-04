@@ -41,7 +41,9 @@ enum AudioCommandType : uint8_t {
     AUDIO_CMD_PLAY_TRACK_BANKED,  // play CHIRP bank/page/index tuple
     AUDIO_CMD_PLAY_SLOT,  // play named/system slot with backend-aware resolution
     AUDIO_CMD_PLAY_CATEGORY,  // play random category track with optional fallback slot
-    AUDIO_CMD_STOP,          // stop playback
+    AUDIO_CMD_STOP,          // stop playback (mood Quiet only — disables random mode)
+    AUDIO_CMD_TRACK_STOP,    // Track Stop (ADR 0010): stop current playback only,
+                             // preserve random/idle mood
     AUDIO_CMD_SET_VOLUME,    // set absolute volume 0–30
     AUDIO_CMD_QUERY_STATUS,  // on-demand status query (manual/fallback poll path)
     AUDIO_CMD_REFRESH_CATALOG,  // refresh CHIRP catalog cache
@@ -113,8 +115,14 @@ bool audioQueuePlaySlot(AudioPlaybackSlot slot, CommandSource src);
 bool audioQueuePlayCategory(AudioPlaybackCategory category, AudioPlaybackSlot fallbackSlot,
                             CommandSource src);
 
-// Enqueue a stop command.
+// Enqueue a stop command. Full stop: also disables random/idle mood. Reserved for
+// the mood system's Quiet path ($s / SE10) — do not call from any other surface.
 bool audioQueueStop(CommandSource src);
+
+// Enqueue a Track Stop (ADR 0010): stops current playback only, preserves
+// random/idle mood, and bumps the anti-spam cadence so idle chatter resumes after
+// a natural beat. Use this everywhere except the mood system's Quiet path.
+bool audioQueueTrackStop(CommandSource src);
 
 // Enqueue an absolute volume set (clamped to 0–30 before enqueue).
 bool audioQueueSetVolume(uint8_t vol, CommandSource src);

@@ -28,12 +28,19 @@ static uint32_t stubRand() { return 0; }
 static SeqStep gSteps[96];
 static SeqStep gClose[96];
 
-// Compare two steps ignoring effectClass (which is derived, not serialized).
+// Compare two steps ignoring effectClass (which is derived, not serialized) and
+// params.audioBounded (a seqJsonParse()-only carrier, ADR 0010: Factory builtins
+// never populate it — they set effectClass directly via SEQ_AUDIO_FX — so a freshly
+// parsed step legitimately differs from its compile-time builtin counterpart there).
 static bool stepEqIgnoringFx(const SeqStep& a, const SeqStep& b) {
     if (a.tMs != b.tMs) return false;
     if (a.type != b.type) return false;
     if (strncmp(a.payload, b.payload, sizeof(a.payload)) != 0) return false;
-    return memcmp(&a.params, &b.params, sizeof(SeqStepParams)) == 0;
+    SeqStepParams pa = a.params;
+    SeqStepParams pb = b.params;
+    pa.audioBounded = 0;
+    pb.audioBounded = 0;
+    return memcmp(&pa, &pb, sizeof(SeqStepParams)) == 0;
 }
 
 // Drain the full engine action log into a pipe-separated string.
@@ -428,6 +435,78 @@ static void test_domerotate_serialize_roundtrip() {
     TEST_ASSERT_EQUAL_UINT32(900, d.steps[0].params.durationMs);
 }
 
+// =============================================================================
+// boundAudio field (ADR 0010 Bounded Audio)
+// =============================================================================
+
+static void test_audio_boundaudio_default_true_when_omitted() {
+    SeqDraft d;
+    ProtocolCheckResult r = seqJsonParse(
+        "{\"format\":1,\"name\":\"DM:AUDTEST\",\"suppressMs\":5000,\"steps\":["
+        "{\"t\":0,\"type\":\"audio\",\"cmd\":\"$H\"},"
+        "{\"t\":100,\"type\":\"end\"}]}",
+        gSteps, 96, gClose, 96, d);
+    TEST_ASSERT_TRUE_MESSAGE(r.ok, r.message);
+    TEST_ASSERT_EQUAL_UINT8(STEP_AUDIO, d.steps[0].type);
+    TEST_ASSERT_EQUAL_UINT8(1, d.steps[0].params.audioBounded);  // default true
+}
+
+static void test_audio_boundaudio_explicit_true() {
+    SeqDraft d;
+    ProtocolCheckResult r = seqJsonParse(
+        "{\"format\":1,\"name\":\"DM:AUDTEST\",\"suppressMs\":5000,\"steps\":["
+        "{\"t\":0,\"type\":\"audio\",\"cmd\":\"$H\",\"boundAudio\":true},"
+        "{\"t\":100,\"type\":\"end\"}]}",
+        gSteps, 96, gClose, 96, d);
+    TEST_ASSERT_TRUE_MESSAGE(r.ok, r.message);
+    TEST_ASSERT_EQUAL_UINT8(STEP_AUDIO, d.steps[0].type);
+    TEST_ASSERT_EQUAL_UINT8(1, d.steps[0].params.audioBounded);
+}
+
+static void test_audio_boundaudio_explicit_false() {
+    SeqDraft d;
+    ProtocolCheckResult r = seqJsonParse(
+        "{\"format\":1,\"name\":\"DM:AUDTEST\",\"suppressMs\":5000,\"steps\":["
+        "{\"t\":0,\"type\":\"audio\",\"cmd\":\"$H\",\"boundAudio\":false},"
+        "{\"t\":100,\"type\":\"end\"}]}",
+        gSteps, 96, gClose, 96, d);
+    TEST_ASSERT_TRUE_MESSAGE(r.ok, r.message);
+    TEST_ASSERT_EQUAL_UINT8(STEP_AUDIO, d.steps[0].type);
+    TEST_ASSERT_EQUAL_UINT8(0, d.steps[0].params.audioBounded);
+}
+
+static void test_audio_boundaudio_wrong_type_rejected() {
+    SeqDraft d;
+    ProtocolCheckResult r = seqJsonParse(
+        "{\"format\":1,\"name\":\"DM:AUDTEST\",\"suppressMs\":5000,\"steps\":["
+        "{\"t\":0,\"type\":\"audio\",\"cmd\":\"$H\",\"boundAudio\":\"yes\"},"
+        "{\"t\":100,\"type\":\"end\"}]}",
+        gSteps, 96, gClose, 96, d);
+    TEST_ASSERT_FALSE(r.ok);
+    TEST_ASSERT_EQUAL_STRING("steps[0].boundAudio", r.field);
+}
+
+static void test_audio_serialize_roundtrip_with_bounded() {
+    // Build a STEP_AUDIO with FX_AUDIO_BOUNDED, serialize, reparse, and verify
+    // boundAudio field is present and true in JSON
+    static SeqStep steps[] = {
+        {0, STEP_AUDIO, FX_AUDIO_BOUNDED, "$H", {}},
+        SEQ_TERM(100),
+    };
+    SequenceEntry e = { "DM:AUDTEST", steps, 2, 5000, TOGGLE_NONE, nullptr, 0, nullptr };
+
+    char json[1024];
+    size_t n = seqJsonSerialize(e, "user", json, sizeof(json));
+    TEST_ASSERT_GREATER_THAN(0, n);
+    TEST_ASSERT_NOT_NULL(strstr(json, "\"boundAudio\":true"));
+
+    SeqDraft d;
+    ProtocolCheckResult r = seqJsonParse(json, gSteps, 96, gClose, 96, d);
+    TEST_ASSERT_TRUE_MESSAGE(r.ok, r.message);
+    TEST_ASSERT_EQUAL_UINT8(STEP_AUDIO, d.steps[0].type);
+    TEST_ASSERT_EQUAL_UINT8(1, d.steps[0].params.audioBounded);
+}
+
 // -----------------------------------------------------------------------------
 int main(int /*argc*/, char** /*argv*/) {
     UNITY_BEGIN();
@@ -457,6 +536,12 @@ int main(int /*argc*/, char** /*argv*/) {
     RUN_TEST(test_domerotate_reject_nonzero_speed_with_zero_duration);
     RUN_TEST(test_domerotate_reject_negative_duration);
     RUN_TEST(test_domerotate_serialize_roundtrip);
+
+    RUN_TEST(test_audio_boundaudio_default_true_when_omitted);
+    RUN_TEST(test_audio_boundaudio_explicit_true);
+    RUN_TEST(test_audio_boundaudio_explicit_false);
+    RUN_TEST(test_audio_boundaudio_wrong_type_rejected);
+    RUN_TEST(test_audio_serialize_roundtrip_with_bounded);
 
     RUN_TEST(test_catalog_iteration_bounds);
     RUN_TEST(test_all_builtins_serialize_and_reparse);

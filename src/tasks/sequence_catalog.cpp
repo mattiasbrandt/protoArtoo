@@ -30,7 +30,7 @@
 // DM:VADER — Imperial March visual mode (47 s).
 // Holos, logics, and PSI set to MARCH mode; auto-reset at sequence end.
 static const SeqStep kVaderSteps[] = {
-    SEQ_AUDIO_FX(0, FX_AUDIO, "$M"),             // Imperial March (stops on abort)
+    SEQ_AUDIO_FX(0, FX_AUDIO_BOUNDED, "$M"),     // Imperial March (Bounded Audio: Track Stop at terminal cleanup)
     // Dome-native red MARCH visual preset via the DV: surface (issue #2 task #5).
     // Dome-source-confirmed to share ROCKMARCH's red MARCH shape. Replaces the raw
     // @HPA0021|47/@0T11/@0P11 approximation, which rendered default blue on hardware
@@ -164,7 +164,7 @@ static const SeqStep kBloomSteps[] = {
 // DM:LEIA — Leia message mode (36 s): front holo Leia, other holos off,
 // Leia logics/PSI; everything resets via effect classes at the end.
 static const SeqStep kLeiaSteps[] = {
-    SEQ_AUDIO_FX(0, FX_AUDIO, "$L"),             // Leia message (stops on abort)
+    SEQ_AUDIO_FX(0, FX_AUDIO_BOUNDED, "$L"),     // Leia message (Bounded Audio: Track Stop at terminal cleanup)
     // Dome-native Leia visual preset via the DV: surface (issue #2 task #5).
     // Replaces the raw @HPS101/@HPR02/@HPT02|36 holos + @0T6/@0P6 logic/PSI; the
     // dome owns the typed rendering. Authority body-inferred until codex confirms
@@ -240,7 +240,7 @@ static const SeqStep kResetSteps[] = {
 // Two beats per iteration: group A open / group B closed, then inverted.
 // 8 iterations x 1846 ms from t=100 -> loop ends at ~14868 ms.
 static const SeqStep kCantinaSteps[] = {
-    SEQ_AUDIO_FX(0, FX_AUDIO, "$C"),             // long Cantina (stops on abort)
+    SEQ_AUDIO_FX(0, FX_AUDIO_BOUNDED, "$C"),     // long Cantina (Bounded Audio: Track Stop at terminal cleanup)
     // Dome-native cantina visual preset via the DV: surface (issue #2 task #5).
     // Replaces the raw @HPA0029|15 holo + @0T2/@0P2 logic/PSI; the dome owns the
     // typed rendering. Authority body-inferred until codex confirms against
@@ -283,7 +283,7 @@ static const SeqStep kCantinaSteps[] = {
 // (923 ms) for ~45 s (47 s window). One iteration = one full ring pass:
 // open slot k at k*923, close it 773 ms later. 7 iterations x 6461 ms.
 static const SeqStep kRockmarchSteps[] = {
-    SEQ_AUDIO_FX(0, FX_AUDIO, "$M"),             // Imperial March (stops on abort)
+    SEQ_AUDIO_FX(0, FX_AUDIO_BOUNDED, "$M"),     // Imperial March (Bounded Audio: Track Stop at terminal cleanup)
     // Dome-native red MARCH visual preset (logic/PSI/holo) via the DV: surface
     // (issue #2 task #5, first acceptance case). Replaces the raw @0T11/@0P11/
     // @HPA0021|47 approximation, which rendered default blue on hardware — the
@@ -324,7 +324,6 @@ static const SeqStep kRockmarchSteps[] = {
     SEQ_DOME(45650, FX_NONE, ":CL02"),
     SEQ_DOME(46100, FX_NONE, ":CL03"),
     SEQ_DOME(46550, FX_NONE, ":CL04"),
-    SEQ_AUDIO(47000, "$s"),                      // stop the march; $M outlives the sequence otherwise
     SEQ_DOME(47050, FX_NONE, ":CL07"),
     SEQ_DOME(47500, FX_NONE, ":CL11"),
     SEQ_DOME(47950, FX_NONE, ":CL13"),

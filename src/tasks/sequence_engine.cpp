@@ -214,6 +214,8 @@ bool seqEngineFinishing(const SeqEngineState& st) {
 // FX_PANEL close-all is suppressed on the normal end of a toggle open branch
 // (panels are meant to stay open); FX_AUDIO stops playback only on abnormal
 // termination so tracks that outlive their sequence end naturally.
+// FX_AUDIO_BOUNDED (ADR 0010 Bounded Audio) stops on both normal and abnormal
+// termination, allowing opt-in hard cuts for long named tracks.
 static void beginFinish(SeqEngineState& st, bool abnormal) {
     st.finishing = true;
     st.finishAbnormal = abnormal;
@@ -253,7 +255,12 @@ static void beginFinish(SeqEngineState& st, bool abnormal) {
             wantRingClose = true;
         }
     }
-    if ((st.activeFx & FX_AUDIO) && abnormal) {
+    // FX_AUDIO stops only on abnormal termination (ring-out preserved on normal end,
+    // e.g. SEQ_AUDIO_CAT screams/alarms). FX_AUDIO_BOUNDED (ADR 0010, opt-in per named
+    // track) stops on BOTH normal and abnormal termination — it is a hard cut, not a
+    // fade; sequences wanting a musical ending author the bound earlier in the timeline
+    // (see DM:ROCKMARCH's pre-TERM close pass).
+    if (((st.activeFx & FX_AUDIO) && abnormal) || (st.activeFx & FX_AUDIO_BOUNDED)) {
         addFinal(st, SEQ_ACT_AUDIO_STOP, nullptr);
     }
     if (st.domeRotateActive) {

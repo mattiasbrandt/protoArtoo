@@ -1170,7 +1170,7 @@ void registerAudioRoutes(AsyncWebServer& server) {
 
         // ---- stop ----
         if (action == "stop") {
-            if (!audioQueueStop(SRC_WEB_API)) {
+            if (!audioQueueTrackStop(SRC_WEB_API)) {
                 req->send(503, "application/json",
                           "{\"ok\":false,\"error\":\"audio command queue full\"}");
                 return;

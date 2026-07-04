@@ -231,7 +231,7 @@
     },
 
     _validateAudioStep(step) {
-      const { cmd } = step;
+      const { cmd, boundAudio } = step;
       if (!cmd || typeof cmd !== "string") {
         return { ok: false, field: "cmd", error: "Choose a sound for this step" };
       }
@@ -241,6 +241,9 @@
           field: "cmd",
           error: "A sound name must start with $ (for example, $H for the Happy sound)",
         };
+      }
+      if (boundAudio !== undefined && typeof boundAudio !== "boolean") {
+        return { ok: false, field: "boundAudio", error: "Must be a boolean (true or false)" };
       }
       return { ok: true };
     },

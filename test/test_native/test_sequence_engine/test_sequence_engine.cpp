@@ -274,17 +274,17 @@ void test_real_vader_entry_runs_through_engine() {
 
     char log[256] = "";
     // VADER's visual identity is now the dome-native DV:VADER preset (task #5),
-    // replacing the raw @HPA0021|47/@0T11/@0P11 lines. FX_LOGIC_PSI|FX_HOLO so the
-    // terminal reset below is unchanged.
+    // replacing the raw @HPA0021|47/@0T11/@0P11 lines.
     TEST_ASSERT_EQUAL_INT(2, drainAt(st, 0, log, sizeof(log)));
     TEST_ASSERT_EQUAL_STRING("$M|DV:VADER", log);
 
     log[0] = '\0';
     // Normal END at 47000: logic/PSI + holo auto-reset, then DV:RESET_VISUALS
     // closes the DV lifecycle so dome visual_preset telemetry settles to the
-    // RESET_VISUALS idle marker (issue #9 §2); audio plays out.
-    TEST_ASSERT_EQUAL_INT(4, drainAt(st, 47000, log, sizeof(log)));
-    TEST_ASSERT_EQUAL_STRING("@0T1|@0P1|*ST00|DV:RESET_VISUALS", log);
+    // RESET_VISUALS idle marker (issue #9 §2). VADER uses FX_AUDIO_BOUNDED (ADR 0010),
+    // so the audio stop is emitted on normal termination (hard cut, not ring-out).
+    TEST_ASSERT_EQUAL_INT(5, drainAt(st, 47000, log, sizeof(log)));
+    TEST_ASSERT_EQUAL_STRING("@0T1|@0P1|*ST00|DV:RESET_VISUALS|<stop>", log);
     TEST_ASSERT_FALSE(seqEngineActive(st));
 }
 
@@ -304,6 +304,59 @@ void test_real_vader_abort_stops_audio_and_resets_holos() {
     // and before the abnormal audio stop (issue #9 §2).
     TEST_ASSERT_EQUAL_INT(5, drainAt(st, 5000, log, sizeof(log)));
     TEST_ASSERT_EQUAL_STRING("@0T1|@0P1|*ST00|DV:RESET_VISUALS|<stop>", log);
+    TEST_ASSERT_FALSE(seqEngineActive(st));
+}
+
+// FX_AUDIO_BOUNDED stops the audio on normal termination (ADR 0010).
+void test_bounded_audio_emits_stop_on_normal_termination() {
+    static const SeqStep steps[] = {
+        SEQ_AUDIO_FX(0, FX_AUDIO_BOUNDED, "$X"),  // synthetic bounded audio track
+        SEQ_DOME(0, FX_NONE, "@0T11"),             // just set logic flag, not FX_LOGIC_PSI
+        SEQ_TERM(5000),
+    };
+    static const SequenceEntry entry = {
+        "TEST:BOUNDED", steps, (uint8_t)(sizeof(steps) / sizeof(steps[0])),
+        5000, TOGGLE_NONE, nullptr, 0, nullptr,
+    };
+
+    SeqEngineState st;
+    seqEngineInit(st);
+    seqEngineStart(st, &entry, 1000);
+
+    char log[256] = "";
+    TEST_ASSERT_EQUAL_INT(2, drainAt(st, 1000, log, sizeof(log)));
+    TEST_ASSERT_EQUAL_STRING("$X|@0T11", log);
+
+    // Normal end at 6000: audio stop is emitted due to FX_AUDIO_BOUNDED, no other FX.
+    log[0] = '\0';
+    TEST_ASSERT_EQUAL_INT(1, drainAt(st, 6000, log, sizeof(log)));
+    TEST_ASSERT_EQUAL_STRING("<stop>", log);
+    TEST_ASSERT_FALSE(seqEngineActive(st));
+}
+
+// Plain FX_AUDIO does NOT stop on normal termination (ring-out preserved).
+void test_plain_audio_no_stop_on_normal_termination() {
+    static const SeqStep steps[] = {
+        SEQ_AUDIO_FX(0, FX_AUDIO, "$X"),  // plain long audio track
+        SEQ_DOME(0, FX_NONE, "@0T11"),     // just set logic flag, not FX_LOGIC_PSI
+        SEQ_TERM(5000),
+    };
+    static const SequenceEntry entry = {
+        "TEST:PLAIN", steps, (uint8_t)(sizeof(steps) / sizeof(steps[0])),
+        5000, TOGGLE_NONE, nullptr, 0, nullptr,
+    };
+
+    SeqEngineState st;
+    seqEngineInit(st);
+    seqEngineStart(st, &entry, 1000);
+
+    char log[256] = "";
+    TEST_ASSERT_EQUAL_INT(2, drainAt(st, 1000, log, sizeof(log)));
+    TEST_ASSERT_EQUAL_STRING("$X|@0T11", log);
+
+    // Normal end at 6000: no audio stop emitted for plain FX_AUDIO (ring-out).
+    log[0] = '\0';
+    TEST_ASSERT_EQUAL_INT(0, drainAt(st, 6000, log, sizeof(log)));
     TEST_ASSERT_FALSE(seqEngineActive(st));
 }
 
@@ -547,9 +600,10 @@ void test_real_loop_entries_have_loop_headers() {
 
     // Loop header + body + post-loop steps + END must fit the table exactly.
     // ROCKMARCH post-loop: a 7-panel physical-assurance close pass (individual
-    // :CLnn, staggered) + the "$s" music-stop step, before the terminal.
+    // :CLnn, staggered) before the terminal. The authored "$s" music-stop step
+    // was removed (ADR 0010); FX_AUDIO_BOUNDED now emits the terminal stop automatically.
     TEST_ASSERT_EQUAL_UINT8(2 + 1 + 26 + 1, cantina->stepCount);
-    TEST_ASSERT_EQUAL_UINT8(2 + 1 + 14 + 7 + 1 + 1, rock->stepCount);
+    TEST_ASSERT_EQUAL_UINT8(2 + 1 + 14 + 7 + 1, rock->stepCount);
 }
 
 // ROCKMARCH timing: first beat of iteration 2 lands at period offset 6461.
@@ -1008,6 +1062,8 @@ int main(int /*argc*/, char** /*argv*/) {
     RUN_TEST(test_catalog_find_returns_null_for_unknown);
     RUN_TEST(test_real_vader_entry_runs_through_engine);
     RUN_TEST(test_real_vader_abort_stops_audio_and_resets_holos);
+    RUN_TEST(test_bounded_audio_emits_stop_on_normal_termination);
+    RUN_TEST(test_plain_audio_no_stop_on_normal_termination);
     RUN_TEST(test_audio_category_step_emits_category_action);
     RUN_TEST(test_dome_rotate_step_emits_typed_rotation_action);
     RUN_TEST(test_abort_after_dome_rotate_emits_neutral_rotation_stop);

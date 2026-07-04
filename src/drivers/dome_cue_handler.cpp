@@ -41,7 +41,7 @@ void handleDomeCue(const char* cue) {
     } else if (strcmp(cue, "HELLO") == 0) {
         audioQueuePlayCategory(AUDIO_CATEGORY_GENERAL, AUDIO_SLOT_NONE, SRC_INTERNAL);
     } else if (strcmp(cue, "RESET") == 0) {
-        audioQueueStop(SRC_INTERNAL);
+        audioQueueTrackStop(SRC_INTERNAL);
     } else {
         PA_LOG_DEBUG(TAG, "BD:%s -- unknown cue ignored", cue);
         return;
