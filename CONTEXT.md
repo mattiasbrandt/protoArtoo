@@ -118,6 +118,18 @@ _Avoid_: random disable, seqon/seqoff
 The rule that a new DM:* request cancels the active sequence (with minimal safety cleanup) and starts the new one immediately. Estop always aborts.
 _Avoid_: queueing sequences, ignore-while-busy
 
+**Track Stop**:
+Stopping the current audio playback only, preserving the configured random/idle mood and bumping the idle cadence so chatter resumes after the normal anti-spam beat. The stop semantics for every non-mood surface: sequence terminal/abort cleanup, the web stop action, and the dome BD:RESET cue (ADR 0010).
+_Avoid_: stop everything, bare "stop"
+
+**Quiet (mood stop)**:
+Stopping playback and disabling random/idle mood, owned exclusively by the mood system (`$s`, SE10). The only surface allowed to change the configured idle mood; never used for sequence cleanup.
+_Avoid_: sequence terminal `$s` authoring, hard stop
+
+**Bounded Audio**:
+A sequence audio step whose track is Track-Stopped at any sequence termination, normal or abnormal (`FX_AUDIO_BOUNDED`). Distinguishes long named tracks (bounded to the show) from short category vocalizations, whose ring-out past sequence end is preserved. Factory catalog opts in per step; Learned Sequence audio steps default to bounded with a JSON opt-out (`boundAudio: false`).
+_Avoid_: global stop-on-end audio semantics, clipping category ring-out
+
 **Named Track (authoring)**:
 A canonical, config-backed sound role (the AudioNamedTracks namespace, for example scream, leia, cantina) used as the authoring surface for a sequence's sound steps, so a sequence references a sound by role and follows the operator's configured track number. The Marcduino $NNN and $-letter dialect stays valid at command boundaries for interoperability.
 _Avoid_: raw track-number authoring, dollar-command-only authoring
