@@ -294,12 +294,16 @@ static void test_all_builtins_serialize_and_reparse() {
         ProtocolCheckResult r = seqJsonParse(json, gSteps, 96, gClose, 96, d);
         TEST_ASSERT_TRUE_MESSAGE(r.ok, e->name);
         TEST_ASSERT_EQUAL_STRING(e->name, d.name);
-        // STEP_CLEAR_LATCHES is body-internal with no JSON/wire form and is
-        // intentionally omitted from serialization (the editor cannot represent
-        // it), so a serialized branch carries one fewer step per latch-clear.
+        // STEP_CLEAR_LATCHES and STEP_AUDIO_STOP are body-internal with no
+        // JSON/wire form and are intentionally omitted from serialization (the
+        // editor cannot represent them), so a serialized branch carries one
+        // fewer step per such step.
         uint8_t expectSteps = e->stepCount;
         for (uint8_t s = 0; s < e->stepCount; ++s) {
-            if (e->steps[s].type == STEP_CLEAR_LATCHES) expectSteps--;
+            if (e->steps[s].type == STEP_CLEAR_LATCHES ||
+                e->steps[s].type == STEP_AUDIO_STOP) {
+                expectSteps--;
+            }
         }
         TEST_ASSERT_EQUAL_UINT8(expectSteps, d.stepCount);
         // Per-branch structure/commands must validate (meta rules excluded).

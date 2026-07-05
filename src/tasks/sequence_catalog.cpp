@@ -324,6 +324,10 @@ static const SeqStep kRockmarchSteps[] = {
     SEQ_DOME(45650, FX_NONE, ":CL02"),
     SEQ_DOME(46100, FX_NONE, ":CL03"),
     SEQ_DOME(46550, FX_NONE, ":CL04"),
+    SEQ_AUDIO_STOP(47000),                       // early Track Stop (ADR 0010): same
+                                                  // 47000 ms cutoff the removed $s step
+                                                  // used to author, now via Track Stop
+                                                  // so idle mood is preserved.
     SEQ_DOME(47050, FX_NONE, ":CL07"),
     SEQ_DOME(47500, FX_NONE, ":CL11"),
     SEQ_DOME(47950, FX_NONE, ":CL13"),

@@ -40,6 +40,16 @@ enum SeqStepType : uint8_t {
                               // to clear latch state without a group close.
     STEP_DOME_ROTATE    = 7,  // body-owned dome ESC timed rotation. Separate
                               // from STEP_DOME_CMD, which is dome serial/TX.
+    STEP_AUDIO_STOP     = 8,  // body-internal: emit a Track Stop (SEQ_ACT_AUDIO_STOP)
+                              // at this step's fire time, mid-sequence — for an
+                              // author who wants a musically sensible cutoff earlier
+                              // than the natural SEQ_TERM (ADR 0010), e.g. ROCKMARCH's
+                              // 47000 ms cutoff before its 48250 ms TERM. Track Stop,
+                              // not the mood-disabling full stop, so it never needs a
+                              // dollar command. Factory-only — same as
+                              // STEP_CLEAR_LATCHES: no JSON/wire form, the seq_json
+                              // parser cannot produce it, and serialization omits it,
+                              // so it never reaches Protocol Check.
 };
 
 // -----------------------------------------------------------------------------
@@ -150,6 +160,7 @@ struct SeqStep {
       { 0, 0, 0, (uint8_t)(set), (uint16_t)(mode), 0, (mv), (jit), (distinct), 0, 0, 0, 0 } }
 #define SEQ_TERM(t)           { (t), STEP_END, FX_NONE, "", {} }
 #define SEQ_CLEAR_LATCHES(t)  { (t), STEP_CLEAR_LATCHES, FX_NONE, "", {} }
+#define SEQ_AUDIO_STOP(t)     { (t), STEP_AUDIO_STOP, FX_NONE, "", {} }
 
 // -----------------------------------------------------------------------------
 // Toggle groups (ADR 0004 decision 8) — body-authoritative latched panel state.

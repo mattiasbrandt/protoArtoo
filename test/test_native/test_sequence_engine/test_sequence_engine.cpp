@@ -360,6 +360,52 @@ void test_plain_audio_no_stop_on_normal_termination() {
     TEST_ASSERT_FALSE(seqEngineActive(st));
 }
 
+// STEP_AUDIO_STOP (ADR 0010) emits a Track Stop at its own authored mid-sequence
+// time, independent of terminal cleanup — lets an author bound a long track
+// earlier than SEQ_TERM (e.g. ROCKMARCH's 47000 ms cutoff before its 48250 ms
+// TERM) without the mood-disabling dollar "$s" stop.
+void test_audio_stop_step_emits_stop_at_authored_time() {
+    static const SeqStep steps[] = {
+        SEQ_AUDIO_FX(0, FX_AUDIO_BOUNDED, "$X"),  // synthetic bounded audio track
+        SEQ_AUDIO_STOP(2000),                      // early Track Stop, well before TERM
+        SEQ_DOME(2500, FX_NONE, "@0T11"),
+        SEQ_TERM(5000),
+    };
+    static const SequenceEntry entry = {
+        "TEST:AUDIOSTOP", steps, (uint8_t)(sizeof(steps) / sizeof(steps[0])),
+        5000, TOGGLE_NONE, nullptr, 0, nullptr,
+    };
+
+    SeqEngineState st;
+    seqEngineInit(st);
+    seqEngineStart(st, &entry, 1000);
+
+    char log[256] = "";
+    TEST_ASSERT_EQUAL_INT(1, drainAt(st, 1000, log, sizeof(log)));
+    TEST_ASSERT_EQUAL_STRING("$X", log);
+
+    // Not yet due just before the authored stop time.
+    log[0] = '\0';
+    TEST_ASSERT_EQUAL_INT(0, drainAt(st, 2999, log, sizeof(log)));
+
+    // The authored Track Stop fires at 3000 (1000 start + 2000 tMs).
+    log[0] = '\0';
+    TEST_ASSERT_EQUAL_INT(1, drainAt(st, 3000, log, sizeof(log)));
+    TEST_ASSERT_EQUAL_STRING("<stop>", log);
+
+    // The rest of the choreography still runs normally afterward.
+    log[0] = '\0';
+    TEST_ASSERT_EQUAL_INT(1, drainAt(st, 3500, log, sizeof(log)));
+    TEST_ASSERT_EQUAL_STRING("@0T11", log);
+
+    // Normal termination still fires its own (redundant, harmless) Track Stop
+    // via FX_AUDIO_BOUNDED.
+    log[0] = '\0';
+    TEST_ASSERT_EQUAL_INT(1, drainAt(st, 6000, log, sizeof(log)));
+    TEST_ASSERT_EQUAL_STRING("<stop>", log);
+    TEST_ASSERT_FALSE(seqEngineActive(st));
+}
+
 // STEP_AUDIO_CATEGORY resolves into a category action with the fallback slot.
 void test_audio_category_step_emits_category_action() {
     const SequenceEntry* e = sequenceCatalogFind("DM:ALARM");
@@ -600,10 +646,11 @@ void test_real_loop_entries_have_loop_headers() {
 
     // Loop header + body + post-loop steps + END must fit the table exactly.
     // ROCKMARCH post-loop: a 7-panel physical-assurance close pass (individual
-    // :CLnn, staggered) before the terminal. The authored "$s" music-stop step
-    // was removed (ADR 0010); FX_AUDIO_BOUNDED now emits the terminal stop automatically.
+    // :CLnn, staggered) plus one STEP_AUDIO_STOP at 47000 ms (ADR 0010 Track
+    // Stop, replacing the old mood-disabling "$s" step at the same timestamp)
+    // before the terminal.
     TEST_ASSERT_EQUAL_UINT8(2 + 1 + 26 + 1, cantina->stepCount);
-    TEST_ASSERT_EQUAL_UINT8(2 + 1 + 14 + 7 + 1, rock->stepCount);
+    TEST_ASSERT_EQUAL_UINT8(2 + 1 + 14 + 7 + 1 + 1, rock->stepCount);
 }
 
 // ROCKMARCH timing: first beat of iteration 2 lands at period offset 6461.
@@ -1064,6 +1111,7 @@ int main(int /*argc*/, char** /*argv*/) {
     RUN_TEST(test_real_vader_abort_stops_audio_and_resets_holos);
     RUN_TEST(test_bounded_audio_emits_stop_on_normal_termination);
     RUN_TEST(test_plain_audio_no_stop_on_normal_termination);
+    RUN_TEST(test_audio_stop_step_emits_stop_at_authored_time);
     RUN_TEST(test_audio_category_step_emits_category_action);
     RUN_TEST(test_dome_rotate_step_emits_typed_rotation_action);
     RUN_TEST(test_abort_after_dome_rotate_emits_neutral_rotation_stop);

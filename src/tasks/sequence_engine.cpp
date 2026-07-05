@@ -387,6 +387,9 @@ static bool resolveStep(SeqEngineState& st, const SeqStep& step, SeqRandFn rnd) 
             a.domeSpeedPct = step.params.speedPct;
             a.domeDurationMs = step.params.durationMs;
             break;
+        case STEP_AUDIO_STOP:
+            a.kind = SEQ_ACT_AUDIO_STOP;
+            break;
         case STEP_RANDOM: {
             const uint8_t target = pickTarget(st, step, rnd);
             const char* prefix = ":OF";
