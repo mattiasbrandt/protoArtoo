@@ -198,6 +198,10 @@ _Avoid_: group as a layout element, per-group safety gating, dome-owned groups
 The browser's ordered choice of which Dome Layout to render, separating geometry freshness from runtime-state freshness. (1) Live: body proxy returns `200` with a supported `schema_revision` -> use geometry and runtime availability. (2) Cached live: live fetch fails (`503`, timeout, invalid JSON) but `localStorage` holds a prior live layout with a supported schema -> reuse the cached geometry but mark runtime availability stale/unverified. (3) Vendored MK4 fallback: no usable cache -> render the offline MK4 model with runtime availability unverified. (4) Unsupported schema -> vendored fallback plus a visible warning; never partially trust geometry or state from an unsupported schema, including anything cached from one. Geometry may be cached or stale; runtime availability is trusted only when freshly live.
 _Avoid_: trusting stale runtime availability, partial trust of unsupported-schema data
 
+**Apply Core**:
+A pure module behind an API write handler: it reads POST parameters through a Param Source (a function-pointer name lookup), validates and applies them onto a working snapshot, and returns field-level errors, an applied-fields record, and plain-data actions. The HTTP handler is its adapter and owns every side effect (state sync, queues, persistence, response). The write-path counterpart of the pure GET JSON builders (ADR 0011); cores: `api_config_apply`, `api_rc_map_apply`, `api_audio_apply`.
+_Avoid_: handler helper, inline lambda validation, validation util
+
 ## Relationships
 
 - **Phase 5** can include work that is not yet covered by **Full Hardware Validation**.
@@ -226,6 +230,7 @@ _Avoid_: trusting stale runtime availability, partial trust of unsupported-schem
 - If an issue is rejected, the reason should be written out honestly instead of relying on a tag-only close.
 - Issue submission should stay lightweight rather than forcing rigid forms or templates.
 - Issue templates should be minimal Markdown with a friendly tone and light emoji.
+- An **Apply Core** carries the write path the way the pure JSON builders carry the read path; both exist so the web API surface is natively testable (ADR 0011).
 
 ## Example Dialogue
 
