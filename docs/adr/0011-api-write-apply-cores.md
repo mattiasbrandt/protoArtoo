@@ -77,3 +77,12 @@ full write-handler campaign by owner decision)
   pass** — both were the review's recommendation and both were declined by the
   owner in the design session; the full campaign proceeds now on `phase/v1.0.0`
   with the #16 interaction recorded above.
+
+## Amendment (2026-07-07, via ADR 0012)
+
+ADR 0012's Commanded Mode zone owns the stationary release rule:
+`ConfigApplyActions` drops `playDriveOnCue`, and the config shell instead calls
+`commandedSetStationary()`, which detects the release edge and queues the drive-on
+cue at the state write. `playDomeOnCue` remains a core action — that transition is
+config-derived, not state-derived. Whichever lands second of Apply Core slice 1
+and the `commanded_modes` module adopts the setter call in the config shell.

@@ -202,6 +202,18 @@ _Avoid_: trusting stale runtime availability, partial trust of unsupported-schem
 A pure module behind an API write handler: it reads POST parameters through a Param Source (a function-pointer name lookup), validates and applies them onto a working snapshot, and returns field-level errors, an applied-fields record, and plain-data actions. The HTTP handler is its adapter and owns every side effect (state sync, queues, persistence, response). The write-path counterpart of the pure GET JSON builders (ADR 0011); cores: `api_config_apply`, `api_rc_map_apply`, `api_audio_apply`.
 _Avoid_: handler helper, inline lambda validation, validation util
 
+**State Zone**:
+A commented block of `RobotState` fields with exactly one owning writer (a task or the failsafe gate). The owner writes its fields directly; every multi-field read crosses the seam through the zone's snapshot (ADR 0012). Zones make the shared struct navigable: to change a field, find its zone; to read related fields consistently, capture its snapshot.
+_Avoid_: global blackboard access, ad hoc multi-field reads
+
+**Commanded Mode**:
+A `RobotState` field legitimately written from multiple surfaces (RC binding, web page, dome cue, boot init): stationary, sleep, active mood, web control. Commanded Modes are written only through `commanded_modes` setter helpers, which own the transition rules (for example the stationary-release drive-on cue) and the config-cache sync. Live toggles sync the cache, not NVS.
+_Avoid_: inline mode writes, per-surface transition rules
+
+**Zone Snapshot**:
+The atomic multi-field read for a State Zone: a plain struct plus `copy<Zone>Locked()` (caller holds the mux) and `capture<Zone>()` (takes the mux). Consumer captures compose several zone copies inside one critical section, so a page response reads one generation of state. First instance: `FailsafeDiagnostics` (ADR 0012).
+_Avoid_: field-by-field reads across separate critical sections
+
 ## Relationships
 
 - **Phase 5** can include work that is not yet covered by **Full Hardware Validation**.
@@ -231,6 +243,7 @@ _Avoid_: handler helper, inline lambda validation, validation util
 - Issue submission should stay lightweight rather than forcing rigid forms or templates.
 - Issue templates should be minimal Markdown with a friendly tone and light emoji.
 - An **Apply Core** carries the write path the way the pure JSON builders carry the read path; both exist so the web API surface is natively testable (ADR 0011).
+- A **Commanded Mode** is written through its setter; a **State Zone** is written by its owner; every multi-field read uses a **Zone Snapshot** (ADR 0012).
 
 ## Example Dialogue
 
