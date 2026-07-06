@@ -17,6 +17,9 @@ RC_MAPPING_PATH = ROOT / "include" / "rc_mapping.h"
 RC_ACTION_TYPES_PATH = ROOT / "include" / "rc_action_types.h"
 ACTION_REGISTRY_PATH = ROOT / "src" / "web" / "action_registry.cpp"
 RC_JS_PATH = ROOT / "data" / "rc.js"
+WEB_DIR = ROOT / "src" / "web"
+DOME_CUE_HANDLER_PATH = ROOT / "src" / "drivers" / "dome_cue_handler.cpp"
+AUDIO_DOLLAR_PARSER_PATH = ROOT / "src" / "tasks" / "audio_dollar_parser.cpp"
 BINDABLE_CPP_FILE = "include/rc_mapping.h"
 
 DOMAIN_GROUP = {
@@ -95,10 +98,12 @@ def robot_action_enum_order() -> dict[str, int]:
     return order
 
 
-def load_expected_actions() -> list[ExpectedAction]:
+def load_registry_doc() -> dict:
     with REGISTRY_PATH.open("r", encoding="utf-8") as handle:
-        doc = yaml.safe_load(handle)
+        return yaml.safe_load(handle)
 
+
+def load_expected_actions(doc: dict) -> list[ExpectedAction]:
     enum_order = robot_action_enum_order()
     expected: list[ExpectedAction] = []
     seen_enums: set[str] = set()
@@ -227,6 +232,96 @@ def parse_js_fallback() -> dict[str, tuple[str, str, str, bool, bool]]:
     return rows
 
 
+def find_registered_routes() -> set[str]:
+    """All literal paths passed to server.on(...) across src/web/*.cpp."""
+    routes: set[str] = set()
+    for path in sorted(WEB_DIR.glob("*.cpp")):
+        text = path.read_text(encoding="utf-8")
+        for match in re.finditer(r'server\.on\(\s*"([^"]+)"', text):
+            routes.add(match.group(1))
+    return routes
+
+
+def find_documented_api_paths(doc: dict) -> set[str]:
+    return {
+        entry["api_path"]
+        for entry in doc.get("entries", [])
+        if entry.get("api_path")
+    }
+
+
+def check_api_endpoints(doc: dict, errors: list[str]) -> None:
+    """Bidirectional check: every server.on(...) route <-> every registry api_path.
+
+    Covers the full API surface (not just RC-bindable actions), so a new
+    endpoint added in src/web/*.cpp without a matching registry entry — or a
+    registry entry left behind after a route is removed/renamed — is caught.
+    """
+    routes = find_registered_routes()
+    documented = find_documented_api_paths(doc)
+    for route in sorted(routes - documented):
+        errors.append(f"{route} registered via server.on(...) but missing from the registry (api_path)")
+    for path in sorted(documented - routes):
+        errors.append(f"{path} documented as api_path but no matching server.on(...) route exists")
+
+
+def find_dome_cues() -> set[str]:
+    """BD:<CUE> names handled by dome_cue_handler.cpp's strcmp(cue, "...") chain."""
+    text = DOME_CUE_HANDLER_PATH.read_text(encoding="utf-8")
+    return set(re.findall(r'strcmp\(cue,\s*"([A-Z_]+)"\)', text))
+
+
+def find_documented_cues(doc: dict) -> set[str]:
+    cues: set[str] = set()
+    for entry in doc.get("entries", []):
+        cmd = entry.get("marcduino_cmd")
+        if isinstance(cmd, str) and cmd.startswith("BD:"):
+            cues.add(cmd[3:])
+    return cues
+
+
+def check_dome_cues(doc: dict, errors: list[str]) -> None:
+    """Bidirectional check: dome_cue_handler.cpp cues <-> registry BD:<CUE> entries."""
+    implemented = find_dome_cues()
+    documented = find_documented_cues(doc)
+    for cue in sorted(implemented - documented):
+        errors.append(f"BD:{cue} handled in dome_cue_handler.cpp but missing from the registry (marcduino_cmd)")
+    for cue in sorted(documented - implemented):
+        errors.append(f"BD:{cue} documented in the registry but no longer handled in dome_cue_handler.cpp")
+
+
+def find_dollar_tokens() -> set[str]:
+    """Single-char $ tokens handled by audio_dollar_parser.cpp's switch, plus $nnn."""
+    text = AUDIO_DOLLAR_PARSER_PATH.read_text(encoding="utf-8")
+    match = re.search(r"switch \(\*arg\) \{(?P<body>.*?)\n    \}", text, re.S)
+    if not match:
+        raise ValueError("could not find dollar-command switch in audio_dollar_parser.cpp")
+    tokens = set(re.findall(r"case '(.)':", match.group("body")))
+    tokens.add("nnn")  # numeric $nnn branch, handled before the switch
+    return tokens
+
+
+def find_documented_dollar_tokens(doc: dict) -> set[str]:
+    tokens: set[str] = set()
+    for entry in doc.get("entries", []):
+        cmd = entry.get("marcduino_cmd")
+        # `$...` is the generic raw-passthrough entry (any dollar string), not a
+        # specific token — exclude it from the per-token diff.
+        if isinstance(cmd, str) and cmd.startswith("$") and cmd != "$...":
+            tokens.add(cmd[1:])
+    return tokens
+
+
+def check_dollar_commands(doc: dict, errors: list[str]) -> None:
+    """Bidirectional check: audio_dollar_parser.cpp tokens <-> registry $<token> entries."""
+    implemented = find_dollar_tokens()
+    documented = find_documented_dollar_tokens(doc)
+    for token in sorted(implemented - documented):
+        errors.append(f"${token} handled in audio_dollar_parser.cpp but missing from the registry (marcduino_cmd)")
+    for token in sorted(documented - implemented):
+        errors.append(f"${token} documented in the registry but no longer handled in audio_dollar_parser.cpp")
+
+
 def add_mismatch(errors: list[str], label: str, expected: object, actual: object) -> None:
     if expected != actual:
         errors.append(f"{label}: expected {expected!r}, got {actual!r}")
@@ -234,7 +329,8 @@ def add_mismatch(errors: list[str], label: str, expected: object, actual: object
 
 def main() -> int:
     errors: list[str] = []
-    expected = load_expected_actions()
+    doc = load_registry_doc()
+    expected = load_expected_actions(doc)
     expected_by_enum = {action.enum: action for action in expected}
     expected_by_token = {action.token: action for action in expected}
 
@@ -274,13 +370,24 @@ def main() -> int:
     for token in sorted(set(js_fallback) - set(expected_by_token)):
         errors.append(f"{token} appears in HARDCODED_ACTION_TARGETS but not bindable YAML")
 
+    # Full-registry checks (not limited to RC-bindable actions): every API
+    # endpoint, BD:<CUE> dome event, and $<token> dollar command implemented
+    # in firmware must have a registry entry, and vice versa.
+    check_api_endpoints(doc, errors)
+    check_dome_cues(doc, errors)
+    check_dollar_commands(doc, errors)
+
     if errors:
         print("Action registry drift detected:", file=sys.stderr)
         for error in errors:
             print(f"  - {error}", file=sys.stderr)
         return 1
 
-    print(f"Action registry drift check passed ({len(expected)} bindable actions).")
+    print(f"Action registry drift check passed "
+          f"({len(expected)} bindable actions, "
+          f"{len(find_registered_routes())} API endpoints, "
+          f"{len(find_dome_cues())} dome cues, "
+          f"{len(find_dollar_tokens())} dollar tokens).")
     return 0
 
 

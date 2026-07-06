@@ -205,7 +205,7 @@ enum SeqActionKind : uint8_t {
     SEQ_ACT_DOME_CMD       = 1,  // payload -> domeQueueTx()
     SEQ_ACT_AUDIO_DOLLAR   = 2,  // payload -> audioQueueDollar()
     SEQ_ACT_AUDIO_CATEGORY = 3,  // audioCategory/audioFallbackSlot -> audioQueuePlayCategory()
-    SEQ_ACT_AUDIO_STOP     = 4,  // audioQueueStop()
+    SEQ_ACT_AUDIO_STOP     = 4,  // audioQueueTrackStop() (ADR 0010)
     SEQ_ACT_DOME_ROTATE    = 5,  // domeSpeedPct/domeDurationMs -> domeCmdQueue
 };
 

@@ -498,6 +498,47 @@ entries:
   requires_web_control: false
   nvs_key: null
 
+# Dome layout / sequence-control API (issue #17, ADR 0009) — browser-facing
+# endpoints added alongside the RC-bindable dome.action.* entries above.
+
+- name: dome.api.get-layout
+  display_name: Get Dome Layout
+  description: >
+    Body proxy for the dome's composed layout view-model (ADR 0009): a cached,
+    non-blocking relay of GET /api/dome/layout on the dome. Requires WiFi as
+    the active dome transport; returns 503 on cache miss or non-WiFi transport
+    and triggers a background refresh.
+  domain: dome
+  type: action
+  marcduino_cmd: null
+  api_path: /api/dome/layout
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/web/api_dome.cpp
+  sources: [ web_api ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+- name: dome.action.sequence-stop
+  display_name: Stop Sequence
+  description: >
+    Non-latching abort of the currently running DM:* sequence, reusing the
+    dispatcher's existing abort path (seqEngineAbort + staggered dome
+    cleanup). Idempotent 200 OK even when nothing is running; does not latch
+    or affect estop.
+  domain: dome
+  type: action
+  marcduino_cmd: null
+  api_path: /api/seq/stop
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/web/api_seq.cpp
+  sources: [ web_api ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
 # BD: cue events — dispatched by the dome (AstroPixelsPlus DomeSequences.h) and handled
 # by dome_cue_handler.cpp (T27). Each cue triggers audio and/or body motion.
 # These are dome-initiated events, not operator-triggered RC actions.
@@ -654,7 +695,9 @@ entries:
 
 - name: dome.event.cue-reset
   display_name: BD:RESET
-  description: Dome cue -- stops all audio (audioQueueStop); sent by DM:RESET sequence
+  description: >
+    Dome cue -- Track Stop (audioQueueTrackStop, ADR 0010): stops current audio
+    playback only, preserves random/idle mood; sent by DM:RESET sequence
   domain: dome
   type: event
   marcduino_cmd: BD:RESET
@@ -682,6 +725,164 @@ entries:
   requires_web_control: false
   nvs_key: null
 
+- name: dome.action.move
+  display_name: Dome Speed (Web)
+  description: >
+    Set dome rotation speed from the browser. Gated by sleep mode (423) and the
+    enable_dome config flag (409); distinct from dome.action.set-speed, which is
+    the SBUS/PWM RC-bindable axis.
+  domain: dome
+  type: action
+  marcduino_cmd: null
+  api_path: /api/dome
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/web/api_drive.cpp
+  sources: [ web_api ]
+  safety_critical: false
+  requires_web_control: false
+  params:
+  - name: speed
+    type: float
+    range: [ -1.0, 1.0 ]
+    required: true
+  nvs_key: null
+
+# Learned/Factory sequence editor API (issue #2/#10, ADR 0006) — REST surface
+# over seq_store (LittleFS-backed Learned Sequences) and the Factory catalog.
+
+- name: dome.api.list-sequences
+  display_name: List Learned Sequences
+  description: Index of stored Learned Sequences (name, toggle group, suppress window, validity, Retrained flag)
+  domain: dome
+  type: action
+  marcduino_cmd: null
+  api_path: /api/seq/list
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/web/api_seq.cpp
+  sources: [ web_api ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+- name: dome.api.list-builtin-sequences
+  display_name: List Factory Sequences
+  description: >
+    Lightweight Factory catalog metadata (no step data), or the full JSON v1 of
+    one Factory sequence when a name parameter is given (used as the clone
+    source in the editor).
+  domain: dome
+  type: action
+  marcduino_cmd: null
+  api_path: /api/seq/builtins
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/web/api_seq.cpp
+  sources: [ web_api ]
+  safety_critical: false
+  requires_web_control: false
+  params:
+  - name: name
+    type: string
+    required: false
+  nvs_key: null
+
+- name: dome.api.get-sequence
+  display_name: Get Learned Sequence
+  description: Raw stored JSON v1 of one Learned Sequence by name
+  domain: dome
+  type: action
+  marcduino_cmd: null
+  api_path: /api/seq
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/web/api_seq.cpp
+  sources: [ web_api ]
+  safety_critical: false
+  requires_web_control: false
+  params:
+  - name: name
+    type: string
+    required: true
+  nvs_key: null
+
+- name: dome.action.save-sequence
+  display_name: Save Learned Sequence
+  description: Validate (Protocol Check) and persist a Learned Sequence JSON v1 body to LittleFS
+  domain: dome
+  type: action
+  marcduino_cmd: null
+  api_path: /api/seq
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/web/api_seq.cpp
+  sources: [ web_api ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+- name: dome.action.delete-sequence
+  display_name: Memory Wipe
+  description: >
+    Delete a Learned Sequence by name. Reports any RC trigger bindings the wipe
+    leaves dangling (silent no-ops) unless a Factory sequence shadows the name.
+  domain: dome
+  type: action
+  marcduino_cmd: null
+  api_path: /api/seq
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/web/api_seq.cpp
+  sources: [ web_api ]
+  safety_critical: false
+  requires_web_control: false
+  params:
+  - name: name
+    type: string
+    required: true
+  nvs_key: null
+
+- name: dome.action.test-sequence
+  display_name: Test Sequence
+  description: >
+    Run a DM:* sequence by name (Learned or Factory) via the same ungated path
+    as POST /api/dome/cmd. Accepts a JSON body { "name": "DM:..." } or a form
+    "name" parameter.
+  domain: dome
+  type: action
+  marcduino_cmd: null
+  api_path: /api/seq/test
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/web/api_seq.cpp
+  sources: [ web_api ]
+  safety_critical: false
+  requires_web_control: false
+  params:
+  - name: name
+    type: string
+    required: true
+  nvs_key: null
+
+- name: dome.api.get-sequence-last-run
+  display_name: Get Last Sequence Run
+  description: >
+    Machine-readable evidence of the most recent body-owned sequence run:
+    outcome, bounded TX stream, cleanup commands, inferred FX scopes and ring
+    masks, and drop/retry warning counters (issue #2 task #6).
+  domain: dome
+  type: action
+  marcduino_cmd: null
+  api_path: /api/seq/last-run
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/web/api_seq.cpp
+  sources: [ web_api ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
 # --- sound ---
 - name: sound.action.play-track
   display_name: Play Track
@@ -703,6 +904,145 @@ entries:
     required: true
   nvs_key: null
 
+# Named dollar-command track shortcuts (audio_dollar_parser.cpp single-char
+# switch). Each plays a fixed named track index (compile-time default, T07
+# NVS-overridable); distinct from the BD:<CUE> dome-cue equivalents above,
+# which are a separate trigger path even when they play the same track.
+
+- name: sound.action.play-track-scream
+  display_name: Play Scream
+  description: Play the scream track (AUDIO_TRACK_SCREAM)
+  domain: sound
+  type: action
+  marcduino_cmd: $S
+  api_path: null
+  sse_event: null
+  cpp_enum: null
+  cpp_file: include/audio_task.h
+  sources: [ dome_rx ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+- name: sound.action.play-track-faint
+  display_name: Play Short Circuit
+  description: Play the short circuit / faint track (AUDIO_TRACK_FAINT)
+  domain: sound
+  type: action
+  marcduino_cmd: $F
+  api_path: null
+  sse_event: null
+  cpp_enum: null
+  cpp_file: include/audio_task.h
+  sources: [ dome_rx ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+- name: sound.action.play-track-leia
+  display_name: Play Leia Message
+  description: Play the Leia message track (AUDIO_TRACK_LEIA)
+  domain: sound
+  type: action
+  marcduino_cmd: $L
+  api_path: null
+  sse_event: null
+  cpp_enum: null
+  cpp_file: include/audio_task.h
+  sources: [ dome_rx ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+- name: sound.action.play-track-cantina-short
+  display_name: Play Short Cantina
+  description: Play the short Cantina track (AUDIO_TRACK_CANTINA_S)
+  domain: sound
+  type: action
+  marcduino_cmd: $c
+  api_path: null
+  sse_event: null
+  cpp_enum: null
+  cpp_file: include/audio_task.h
+  sources: [ dome_rx ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+- name: sound.action.play-track-cantina-long
+  display_name: Play Long Cantina
+  description: Play the long Cantina track (AUDIO_TRACK_CANTINA_L, 130 BPM)
+  domain: sound
+  type: action
+  marcduino_cmd: $C
+  api_path: null
+  sse_event: null
+  cpp_enum: null
+  cpp_file: include/audio_task.h
+  sources: [ dome_rx ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+- name: sound.action.play-track-sw-theme
+  display_name: Play Star Wars Theme
+  description: Play the Star Wars main theme track (AUDIO_TRACK_SW_THEME)
+  domain: sound
+  type: action
+  marcduino_cmd: $W
+  api_path: null
+  sse_event: null
+  cpp_enum: null
+  cpp_file: include/audio_task.h
+  sources: [ dome_rx ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+- name: sound.action.play-track-imperial-march
+  display_name: Play Imperial March
+  description: Play the Imperial March track (AUDIO_TRACK_IMP_MARCH)
+  domain: sound
+  type: action
+  marcduino_cmd: $M
+  api_path: null
+  sse_event: null
+  cpp_enum: null
+  cpp_file: include/audio_task.h
+  sources: [ dome_rx ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+- name: sound.action.play-track-startup
+  display_name: Play Startup Sound
+  description: Play the startup / boot track (AUDIO_TRACK_STARTUP)
+  domain: sound
+  type: action
+  marcduino_cmd: $B
+  api_path: null
+  sse_event: null
+  cpp_enum: null
+  cpp_file: include/audio_task.h
+  sources: [ dome_rx ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+- name: sound.action.play-track-disco
+  display_name: Play Disco
+  description: Play the disco track (AUDIO_TRACK_DISCO, NVS key snd_disco; no-op when 0/disabled)
+  domain: sound
+  type: action
+  marcduino_cmd: $D
+  api_path: null
+  sse_event: null
+  cpp_enum: null
+  cpp_file: include/audio_task.h
+  sources: [ dome_rx ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: snd_disco
 
 - name: sound.api.get-catalog
   display_name: Get Catalog
@@ -766,9 +1106,128 @@ entries:
     range: [ 1, 65535 ]
     required: true
   nvs_key: null
-- name: sound.action.stop
-  display_name: Stop
-  description: Stop audio playback
+
+- name: sound.api.get-mood-map
+  display_name: Get Mood Category Map
+  description: Current per-mood CHIRP category bitmasks (Quiet/Mid/Full/Awake+)
+  domain: sound
+  type: action
+  marcduino_cmd: null
+  api_path: /api/audio/mood-map
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/web/api_audio.cpp
+  sources: [ web_api ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+- name: sound.action.set-mood-map
+  display_name: Set Mood Category Map
+  description: Set the per-mood CHIRP category bitmasks (Quiet/Mid/Full/Awake+), each 0..4095
+  domain: sound
+  type: action
+  marcduino_cmd: null
+  api_path: /api/audio/mood-map
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/web/api_audio.cpp
+  sources: [ web_api ]
+  safety_critical: false
+  requires_web_control: false
+  params:
+  - name: quiet
+    type: uint16
+    range: [ 0, 4095 ]
+    required: true
+  - name: mid
+    type: uint16
+    range: [ 0, 4095 ]
+    required: true
+  - name: full
+    type: uint16
+    range: [ 0, 4095 ]
+    required: true
+  - name: awakeplus
+    type: uint16
+    range: [ 0, 4095 ]
+    required: true
+  nvs_keys: [ snd_moodcat_quiet, snd_moodcat_mid, snd_moodcat_full, snd_moodcat_awakeplus ]
+
+- name: sound.action.set-category-range
+  display_name: Set Category Range
+  description: >
+    Atomic update of one CHIRP category's lo/hi track range (and optional
+    bank/page/index binding), avoiding a partial two-request save.
+  domain: sound
+  type: action
+  marcduino_cmd: null
+  api_path: /api/audio/category-range
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/web/api_audio.cpp
+  sources: [ web_api ]
+  safety_critical: false
+  requires_web_control: false
+  params:
+  - name: lo_key
+    type: string
+    required: true
+  - name: hi_key
+    type: string
+    required: true
+  - name: lo
+    type: uint16
+    required: true
+  - name: hi
+    type: uint16
+    required: true
+  nvs_key: null
+
+- name: sound.action.query-status
+  display_name: Query Module Status
+  description: >
+    Enqueue an on-demand audio module status query; result becomes available
+    via GET /api/audio after ~1.5 s (query timeout + queue latency).
+  domain: sound
+  type: action
+  marcduino_cmd: null
+  api_path: /api/audio/query
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/web/api_audio.cpp
+  sources: [ web_api ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+- name: sound.action.track-stop
+  display_name: Track Stop
+  description: >
+    Stop current audio playback only; preserves random/idle mood, bumping the
+    anti-spam cadence instead of disabling it (ADR 0010). Used by the web Stop
+    button, the sequence engine's terminal/abort cleanup, and the dome
+    BD:RESET cue (dome.event.cue-reset). Distinct from Quiet
+    (sound.action.quiet), which also disables idle mood.
+  domain: sound
+  type: action
+  marcduino_cmd: null # no dollar-command equivalent; see dome.event.cue-reset (BD:RESET) for the dome-cue path
+  api_path: /api/audio
+  sse_event: null
+  cpp_enum: null
+  cpp_file: include/audio_task.h
+  sources: [ web_api ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+- name: sound.action.quiet
+  display_name: Quiet
+  description: >
+    Stop playback and disable random/idle mood until reboot or Random On
+    (ADR 0010 term: Quiet). Exclusive to the mood system; unlike Track Stop
+    (sound.action.track-stop), this changes standing idle-chatter behavior,
+    not just the current track.
   domain: sound
   type: action
   marcduino_cmd: $s
@@ -783,15 +1242,15 @@ entries:
 
 - name: sound.action.set-volume
   display_name: Set Volume
-  description: Set the audio output volume
+  description: Set the audio output volume to an absolute level
   domain: sound
   type: action
-  marcduino_cmd: $vnn
+  marcduino_cmd: null # no dollar-command equivalent for an absolute set; see the $+/$-/$m/$f/$p shortcuts below
   api_path: /api/audio
   sse_event: null
   cpp_enum: null
   cpp_file: include/audio_task.h
-  sources: [ web_api, dome_rx ]
+  sources: [ web_api ]
   safety_critical: false
   requires_web_control: false
   params:
@@ -799,6 +1258,81 @@ entries:
     type: uint8
     range: [ 0, 30 ]
     required: true
+  nvs_key: null
+
+- name: sound.action.volume-up
+  display_name: Volume Up
+  description: Increase volume by 1 step (0-30 scale)
+  domain: sound
+  type: action
+  marcduino_cmd: $+
+  api_path: null
+  sse_event: null
+  cpp_enum: null
+  cpp_file: include/audio_task.h
+  sources: [ dome_rx ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+- name: sound.action.volume-down
+  display_name: Volume Down
+  description: Decrease volume by 1 step (0-30 scale)
+  domain: sound
+  type: action
+  marcduino_cmd: $-
+  api_path: null
+  sse_event: null
+  cpp_enum: null
+  cpp_file: include/audio_task.h
+  sources: [ dome_rx ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+- name: sound.action.volume-preset-mid
+  display_name: Volume Preset Mid
+  description: Set volume to the mid preset (15)
+  domain: sound
+  type: action
+  marcduino_cmd: $m
+  api_path: null
+  sse_event: null
+  cpp_enum: null
+  cpp_file: include/audio_task.h
+  sources: [ dome_rx ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+- name: sound.action.volume-preset-max
+  display_name: Volume Preset Max
+  description: Set volume to the max preset (30)
+  domain: sound
+  type: action
+  marcduino_cmd: $f
+  api_path: null
+  sse_event: null
+  cpp_enum: null
+  cpp_file: include/audio_task.h
+  sources: [ dome_rx ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+- name: sound.action.volume-preset-min
+  display_name: Volume Preset Min
+  description: Set volume to the min preset (0)
+  domain: sound
+  type: action
+  marcduino_cmd: $p
+  api_path: null
+  sse_event: null
+  cpp_enum: null
+  cpp_file: include/audio_task.h
+  sources: [ dome_rx ]
+  safety_critical: false
+  requires_web_control: false
   nvs_key: null
 
 - name: sound.action.dollar-command
@@ -1949,6 +2483,189 @@ entries:
   requires_web_control: false
   nvs_key: null
 
+- name: system.api.get-identity
+  display_name: Get Droid Identity
+  description: Current cosmetic droid name and mDNS opt-in
+  domain: system
+  type: action
+  marcduino_cmd: null
+  api_path: /api/identity
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/web/api_identity.cpp
+  sources: [ web_api ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+- name: system.action.set-identity
+  display_name: Set Droid Identity
+  description: Persist a validated cosmetic droid name (1..32 lowercase letters/numbers/hyphens) and mDNS opt-in
+  domain: system
+  type: action
+  marcduino_cmd: null
+  api_path: /api/identity
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/web/api_identity.cpp
+  sources: [ web_api ]
+  safety_critical: false
+  requires_web_control: false
+  params:
+  - name: droidName
+    type: string
+    required: true
+  - name: mdnsUseName
+    type: bool
+    required: false
+  nvs_keys: [ droid_name, mdns_use_name ]
+
+- name: system.api.get-profiler
+  display_name: Get Heap Profiler Snapshot
+  description: >
+    Heap/stack diagnostics snapshot: global heap free/min/largest-block,
+    fragmentation ratio, per-task stack high-water marks, mode-scoped
+    low-water-mark windows, and (if CONFIG_HEAP_TASK_TRACKING) per-task heap
+    stats. Compiled in only when PA_HEAP_PROFILE=1 (issue #8 observability).
+  domain: system
+  type: action
+  marcduino_cmd: null
+  api_path: /api/profiler
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/web/api_profiler.cpp
+  sources: [ web_api ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+- name: system.action.profiler-trace-start
+  display_name: Start Heap Trace
+  description: >
+    Start a Tier 3 heap leak trace (200 records, standalone buffer). One-session
+    diagnostic; compiled in only when CONFIG_HEAP_TRACING is set.
+  domain: system
+  type: action
+  marcduino_cmd: null
+  api_path: /api/profiler/trace/start
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/web/api_profiler.cpp
+  sources: [ web_api ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+- name: system.action.profiler-trace-stop
+  display_name: Stop Heap Trace
+  description: Stop the running Tier 3 heap leak trace and dump results to the serial log
+  domain: system
+  type: action
+  marcduino_cmd: null
+  api_path: /api/profiler/trace/stop
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/web/api_profiler.cpp
+  sources: [ web_api ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+- name: system.api.get-coredump-status
+  display_name: Get Coredump Status
+  description: Whether a PANIC coredump image is present in the coredump partition, and its size
+  domain: system
+  type: action
+  marcduino_cmd: null
+  api_path: /api/coredump/status
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/web/api_system.cpp
+  sources: [ web_api ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+- name: system.api.get-coredump
+  display_name: Download Coredump
+  description: >
+    Stream the raw ELF coredump image from the coredump partition (issue #8
+    observability; the seated controller cannot be USB-read due to
+    GPIO15/SBUS strapping).
+  domain: system
+  type: action
+  marcduino_cmd: null
+  api_path: /api/coredump
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/web/api_system.cpp
+  sources: [ web_api ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+- name: system.action.erase-coredump
+  display_name: Erase Coredump
+  description: Erase the coredump image from the coredump partition
+  domain: system
+  type: action
+  marcduino_cmd: null
+  api_path: /api/coredump/erase
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/web/api_system.cpp
+  sources: [ web_api ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+- name: system.api.get-validation
+  display_name: Get Validation Snapshot
+  description: Consolidated hardware-validation snapshot (Phase 4 closure checks)
+  domain: system
+  type: action
+  marcduino_cmd: null
+  api_path: /api/validation
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/web/api_validation.cpp
+  sources: [ web_api ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+- name: system.action.upload-firmware
+  display_name: Upload Firmware
+  description: OTA upload of a new firmware image (U_FLASH), applied on next boot
+  domain: system
+  type: action
+  marcduino_cmd: null
+  api_path: /upload/firmware
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/web/api_system.cpp
+  sources: [ web_api ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+- name: system.action.upload-filesystem
+  display_name: Upload Filesystem
+  description: >
+    OTA upload of a new LittleFS/SPIFFS image (U_SPIFFS) to the data partition;
+    LittleFS is unmounted by the Update library during write.
+  domain: system
+  type: action
+  marcduino_cmd: null
+  api_path: /upload/filesystem
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/web/api_system.cpp
+  sources: [ web_api ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
 # --- rc ---
 - name: rc.status.snapshot
   display_name: RC Snapshot
@@ -1975,6 +2692,54 @@ entries:
   sse_event: null
   cpp_enum: null
   cpp_file: null
+  sources: [ web_api ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+- name: rc.api.get-bindable-actions
+  display_name: List Bindable Actions
+  description: JSON array of all RC-bindable robot actions with token + testability metadata
+  domain: rc
+  type: action
+  marcduino_cmd: null
+  api_path: /api/actions
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/web/api_actions.cpp
+  sources: [ web_api ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+- name: rc.api.get-map
+  display_name: Get RC Map
+  description: Current RC channel-to-action binding map
+  domain: rc
+  type: action
+  marcduino_cmd: null
+  api_path: /api/rc/map
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/web/api_config.cpp
+  sources: [ web_api ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
+- name: rc.action.set-map
+  display_name: Set RC Map
+  description: >
+    Set the RC channel-to-action binding map. Accepts the same token set as
+    POST /api/actions/test except none; dome_seq requires a valid DM:<NAME>
+    payload.
+  domain: rc
+  type: action
+  marcduino_cmd: null
+  api_path: /api/rc/map
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/web/api_config.cpp
   sources: [ web_api ]
   safety_critical: false
   requires_web_control: false
