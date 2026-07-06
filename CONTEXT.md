@@ -214,6 +214,10 @@ _Avoid_: inline mode writes, per-surface transition rules
 The atomic multi-field read for a State Zone: a plain struct plus `copy<Zone>Locked()` (caller holds the mux) and `capture<Zone>()` (takes the mux). Consumer captures compose several zone copies inside one critical section, so a page response reads one generation of state. First instance: `FailsafeDiagnostics` (ADR 0012).
 _Avoid_: field-by-field reads across separate critical sections
 
+**Audio Config Map**:
+The canonical home of the config-to-audio schema knowledge: the ConfigSnapshot to AudioPlaybackConfig mapping, named-track projection, chirp NVS-key tables, `$`-command table, binding unpackers, and the ConfigReader-seamed binding refresh (ADR 0013). Both the audio task middle and the api_audio Apply Core consume it; adding a sound slot or category starts here. The playback policy stays config-free behind it.
+_Avoid_: per-surface mapping copies, mapping tables in task files or handlers
+
 ## Relationships
 
 - **Phase 5** can include work that is not yet covered by **Full Hardware Validation**.
@@ -244,6 +248,7 @@ _Avoid_: field-by-field reads across separate critical sections
 - Issue templates should be minimal Markdown with a friendly tone and light emoji.
 - An **Apply Core** carries the write path the way the pure JSON builders carry the read path; both exist so the web API surface is natively testable (ADR 0011).
 - A **Commanded Mode** is written through its setter; a **State Zone** is written by its owner; every multi-field read uses a **Zone Snapshot** (ADR 0012).
+- The **Audio Config Map** is the single schema home consumed by both the audio task and the api_audio **Apply Core** (ADR 0013); the playback policy stays config-free behind it.
 
 ## Example Dialogue
 
