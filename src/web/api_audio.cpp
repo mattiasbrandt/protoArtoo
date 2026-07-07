@@ -36,6 +36,7 @@
 
 #include "api_audio_category_range_apply.h"
 #include "api_audio_mood_map_apply.h"
+#include "api_audio_tracks_apply.h"
 #include "api_helpers.h"
 #include "audio_dollar_parser.h"
 #include "audio_task.h"
@@ -103,18 +104,6 @@ static constexpr ChirpCategoryBindingMapEntry CHIRP_CATEGORY_BINDING_KEYS[] = {
     {"snd_cat_snrk_lo", "snd_cat_snrk_hi", "chr_cat_snrk"},
     {"snd_cat_whis_lo", "snd_cat_whis_hi", "chr_cat_whis"},
 };
-
-static const char* chirpBindingNvsKey(const char* key) {
-    if (key == nullptr) {
-        return nullptr;
-    }
-    for (size_t i = 0; i < (sizeof(CHIRP_BINDING_KEYS) / sizeof(CHIRP_BINDING_KEYS[0])); ++i) {
-        if (strcmp(CHIRP_BINDING_KEYS[i].key, key) == 0) {
-            return CHIRP_BINDING_KEYS[i].nvsKey;
-        }
-    }
-    return nullptr;
-}
 
 static uint32_t packChirpBinding(uint16_t index, uint8_t bank, char page) {
     const uint8_t pageByte = (uint8_t)toupper((unsigned char)page);
@@ -559,114 +548,35 @@ void registerAudioRoutes(AsyncWebServer& server) {
 
     // ---- POST /api/audio/tracks ----
     server.on("/api/audio/tracks", HTTP_POST, [](AsyncWebServerRequest* req) {
-        const AsyncWebParameter* keyParam = req->getParam("key", true);
-        const AsyncWebParameter* trackParam = req->getParam("track", true);
-        if (!keyParam || !trackParam) {
-            req->send(400, "application/json",
-                      "{\"ok\":false,\"error\":\"requires key and track parameters\"}");
-            return;
-        }
+        ConfigParamSource params;
+        params.ctx = req;
+        params.get = [](void* ctx, const char* name) -> const char* {
+            auto* r = static_cast<AsyncWebServerRequest*>(ctx);
+            if (!r->hasParam(name, true)) {
+                return nullptr;
+            }
+            return r->getParam(name, true)->value().c_str();
+        };
 
-        String keyValue = keyParam->value();
-        const char* key = keyValue.c_str();
-        bool isInterval = (strncmp(key, "snd_int_", 8) == 0);
-        bool isCategoryRangeKey = (strncmp(key, "snd_cat_", 8) == 0);
-        bool isZeroAllowedTrackKey =
-            isCategoryRangeKey || strcmp(key, "doodoo") == 0 || strcmp(key, "failure") == 0 ||
-            strcmp(key, "disco") == 0 || strcmp(key, "mahna") == 0 ||
-            strcmp(key, "inlove") == 0 || strcmp(key, "macho") == 0 ||
-            strcmp(key, "gangnam") == 0 || strcmp(key, "uptown") == 0 ||
-            strcmp(key, "celebr") == 0 || strcmp(key, "stayin") == 0 ||
-            strcmp(key, "harlem") == 0 || strcmp(key, "pbjtime") == 0 ||
-            strcmp(key, "sys_boot") == 0 || strcmp(key, "sys_mode_n") == 0 ||
-            strcmp(key, "sys_mode_s") == 0 || strcmp(key, "sys_mode_t") == 0 ||
-            strcmp(key, "sys_drv_on") == 0 || strcmp(key, "sys_dome_on") == 0;
-
-        const AsyncWebParameter* bankParam = req->getParam("bank", true);
-        const AsyncWebParameter* pageParam = req->getParam("page", true);
-        const bool hasBankedParams = (bankParam != nullptr) || (pageParam != nullptr);
-
-        uint8_t bank = 0;
-        char page = 'A';
-        bool useBanked = false;
-        const char* chirpBindingKey = chirpBindingNvsKey(key);
-
-        if (hasBankedParams) {
-            if (!(bankParam && pageParam)) {
-                req->send(400, "application/json",
-                          "{\"ok\":false,\"error\":\"bank and page must be provided together\"}");
-                return;
-            }
-            if (!audioCatalogSupported()) {
-                req->send(404, "application/json",
-                          "{\"ok\":false,\"error\":\"catalog unsupported by active backend\"}");
-                return;
-            }
-            if (chirpBindingKey == nullptr || isInterval) {
-                req->send(400, "application/json",
-                          "{\"ok\":false,\"error\":\"key does not support CHIRP binding\"}");
-                return;
-            }
-
-            uint32_t bankValue = 0;
-            if (!parseUint32Value(bankParam->value().c_str(), &bankValue) || bankValue < 1 ||
-                bankValue > 6) {
-                req->send(400, "application/json",
-                          "{\"ok\":false,\"error\":\"bank must be 1-6\"}");
-                return;
-            }
-            if (!parseChirpPage(pageParam->value(), &page)) {
-                req->send(400, "application/json",
-                          "{\"ok\":false,\"error\":\"page must be a single letter A-Z\"}");
-                return;
-            }
-            bank = (uint8_t)bankValue;
-            useBanked = true;
-        }
-
-        String trackValue = trackParam->value();
-        uint32_t track = 0;
-        if (!parseUint32Value(trackValue.c_str(), &track)) {
-            req->send(400, "application/json",
-                      "{\"ok\":false,\"error\":\"track must be a non-negative integer\"}");
-            return;
-        }
-
-        if (isInterval) {
-            if (track > 3600U) {
-                req->send(400, "application/json",
-                          "{\"ok\":false,\"error\":\"interval must be 0-3600 s\"}");
-                return;
-            }
-        } else if (useBanked) {
-            if (track < 1U || track > 65535U) {
-                req->send(400, "application/json",
-                          "{\"ok\":false,\"error\":\"banked index must be 1-65535\"}");
-                return;
-            }
-        } else {
-            if (track > 999U) {
-                req->send(400, "application/json",
-                          "{\"ok\":false,\"error\":\"track must be 0-999\"}");
-                return;
-            }
-            if (track == 0U && !isZeroAllowedTrackKey) {
-                req->send(400, "application/json",
-                          "{\"ok\":false,\"error\":\"track must be 1-999\"}");
-                return;
-            }
-        }
-
-        uint16_t t = (uint16_t)track;
-        uint16_t oldTrack = 0;
         ConfigSnapshot snap;
         configCacheRead(&snap);
 
-        if (!configAudioGetTrackByKey(snap.audio, key, &oldTrack) ||
-            !configAudioSetTrackByKey(&snap.audio, key, t)) {
-            req->send(400, "application/json", "{\"ok\":false,\"error\":\"unknown key\"}");
+        static AudioTracksApplyResult result;
+        audioTracksApply(params, audioCatalogSupported(), &snap, &result);
+        if (result.error.hasError) {
+            char err[192];
+            snprintf(err, sizeof(err), "{\"ok\":false,\"error\":\"%s\"}", result.error.message);
+            req->send(result.error.notFound ? 404 : 400, "application/json", err);
             return;
         }
+
+        const char* key = result.key;
+        const uint16_t t = result.track;
+        const uint16_t oldTrack = result.oldTrack;
+        const bool useBanked = result.useBanked;
+        const uint8_t bank = result.bank;
+        const char page = result.page;
+        const char* chirpBindingKey = result.chirpBindingKey[0] != '\0' ? result.chirpBindingKey : nullptr;
 
         configCacheApply(snap);
 
