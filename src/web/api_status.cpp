@@ -49,9 +49,7 @@ static void buildSerialJson(char* buffer, size_t bufferSize) {
 }
 
 static void buildHealthJson(char* buffer, size_t bufferSize) {
-    bool estop;
-    bool sbusSignalLost;
-    bool sbusHwFailsafe;
+    FailsafeDiagnostics diag = {};
     bool webControlEnabled;
     bool wifiConnected;
     bool wifiClientConnected;
@@ -62,9 +60,7 @@ static void buildHealthJson(char* buffer, size_t bufferSize) {
     long wifiRssi;
 
     taskENTER_CRITICAL(&robotStateMux);
-    estop = robotState.estop;
-    sbusSignalLost = robotState.sbusSignalLost;
-    sbusHwFailsafe = robotState.sbusHwFailsafe;
+    copyFailsafeDiagnosticsLocked(&diag);
     webControlEnabled = robotState.webControlEnabled;
     taskEXIT_CRITICAL(&robotStateMux);
 
@@ -82,8 +78,9 @@ static void buildHealthJson(char* buffer, size_t bufferSize) {
     heapFree = ESP.getFreeHeap();
     heapMin = ESP.getMinFreeHeap();
     heapLargestBlock = (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
-    formatHealthJson(buffer, bufferSize, estop, sbusSignalLost, sbusHwFailsafe, webControlEnabled,
-                     wifiConnected, wifiClientConnected, fsReady, heapFree, heapMin, heapLargestBlock, wifiRssi);
+    formatHealthJson(buffer, bufferSize, diag.estop, diag.sbusSignalLost, diag.sbusHwFailsafe,
+                     webControlEnabled, wifiConnected, wifiClientConnected, fsReady, heapFree, heapMin,
+                     heapLargestBlock, wifiRssi);
 }
 
 void registerStatusRoutes(AsyncWebServer& server) {
