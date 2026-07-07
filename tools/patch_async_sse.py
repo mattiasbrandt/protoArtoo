@@ -409,6 +409,58 @@ void AsyncEventSource::handleRequest(AsyncWebServerRequest *request) {
 }
 """
 
+# Issue #21, round 4: ESPAsyncWebServer's static handler opens files inside
+# canHandle(), before server.addMiddleware() runs. Under the 14x reload stress
+# repro, this let already-admitted static asset work call into LittleFS while
+# the largest free block had collapsed, and esp_littlefs aborted directly while
+# allocating its FD tracking structure. Guard the static file open path at the
+# actual _fs.open() seam; no C++ exception boundary can catch a raw abort().
+STATIC_OPEN_GUARD_INCLUDES_BEFORE = """\
+#include <cstdio>
+#include <new>
+#include <utility>
+"""
+
+STATIC_OPEN_GUARD_INCLUDES_AFTER = """\
+#include <cstdio>
+#ifdef ESP32
+#include <esp_heap_caps.h>
+#endif
+#include <new>
+#include <utility>
+"""
+
+STATIC_OPEN_GUARD_BEFORE = """\
+  bool fileFound = false;
+  bool gzipFound = false;
+
+  String gzip = path + T__gz;
+"""
+
+STATIC_OPEN_GUARD_AFTER = """\
+  bool fileFound = false;
+  bool gzipFound = false;
+
+#ifdef ESP32
+#ifndef ASYNC_STATIC_MIN_LARGEST_FREE_BLOCK
+#define ASYNC_STATIC_MIN_LARGEST_FREE_BLOCK 20000
+#endif
+#if ASYNC_STATIC_MIN_LARGEST_FREE_BLOCK > 0
+  const size_t largestBlock = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+  if (largestBlock < (size_t)ASYNC_STATIC_MIN_LARGEST_FREE_BLOCK) {
+    async_ws_log_w(
+      "Skipping static file open: largest free block %u < %u",
+      (unsigned)largestBlock, (unsigned)ASYNC_STATIC_MIN_LARGEST_FREE_BLOCK
+    );
+    request->abort();
+    return false;
+  }
+#endif
+#endif
+
+  String gzip = path + T__gz;
+"""
+
 
 def patch_sse_header(text):
     if text.count(SSE_PREAMBLE_START) != 1 or text.count(SSE_PREAMBLE_END) != 1:
@@ -453,6 +505,26 @@ def patch_static_handler_alloc(text):
                 "review tools/patch_async_sse.py"
             )
         text = text.replace(STATIC_ALLOC_INCLUDES_BEFORE, STATIC_ALLOC_INCLUDES_AFTER)
+
+    return text
+
+
+def patch_static_handler_open_guard(text):
+    if STATIC_OPEN_GUARD_AFTER not in text:
+        if text.count(STATIC_OPEN_GUARD_BEFORE) != 1:
+            raise RuntimeError(
+                "ESPAsyncWebServer WebHandlers.cpp static-file open block changed; "
+                "review tools/patch_async_sse.py"
+            )
+        text = text.replace(STATIC_OPEN_GUARD_BEFORE, STATIC_OPEN_GUARD_AFTER)
+
+    if STATIC_OPEN_GUARD_INCLUDES_AFTER not in text:
+        if text.count(STATIC_OPEN_GUARD_INCLUDES_BEFORE) != 1:
+            raise RuntimeError(
+                "ESPAsyncWebServer WebHandlers.cpp include block changed for static-file open guard; "
+                "review tools/patch_async_sse.py"
+            )
+        text = text.replace(STATIC_OPEN_GUARD_INCLUDES_BEFORE, STATIC_OPEN_GUARD_INCLUDES_AFTER)
 
     return text
 
@@ -553,6 +625,11 @@ def patch_async_webserver(env):
         source_dir / "WebHandlers.cpp",
         patch_static_handler_alloc,
         "made static-file response allocation non-throwing (issue #21)",
+    )
+    patch_file(
+        source_dir / "WebHandlers.cpp",
+        patch_static_handler_open_guard,
+        "guarded static-file opens before LittleFS FD allocation under critical heap (issue #21)",
     )
     patch_file(
         source_dir / "WebRequest.cpp",

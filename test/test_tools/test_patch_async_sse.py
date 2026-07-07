@@ -59,6 +59,27 @@ class PatchAsyncWebServerTest(unittest.TestCase):
         self.assertIn("new (std::nothrow) AsyncFileResponse", patched)
         self.assertEqual(PATCH.patch_static_handler_alloc(patched), patched)
 
+    def test_static_handler_open_guard_runs_before_file_open_and_is_idempotent(self):
+        source = (
+            "prefix\n"
+            + PATCH.STATIC_OPEN_GUARD_INCLUDES_BEFORE
+            + "middle\n"
+            + PATCH.STATIC_OPEN_GUARD_BEFORE
+            + "suffix\n"
+        )
+
+        patched = PATCH.patch_static_handler_open_guard(source)
+
+        self.assertIn("#include <esp_heap_caps.h>", patched)
+        self.assertIn("ASYNC_STATIC_MIN_LARGEST_FREE_BLOCK", patched)
+        self.assertIn("heap_caps_get_largest_free_block(MALLOC_CAP_8BIT)", patched)
+        self.assertIn("request->abort();", patched)
+        self.assertLess(
+            patched.index("heap_caps_get_largest_free_block"),
+            patched.index("String gzip = path + T__gz;"),
+        )
+        self.assertEqual(PATCH.patch_static_handler_open_guard(patched), patched)
+
     def test_async_event_dispatch_patch_catches_exceptions_and_is_idempotent(self):
         source = (
             "prefix\n"
