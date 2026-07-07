@@ -16,6 +16,7 @@
 #include <Update.h>
 #endif
 #include <WiFi.h>
+#include <esp_heap_caps.h>
 #include <stddef.h>
 #include <stdio.h>
 
@@ -199,6 +200,36 @@ static const char* TAG = "WebServer";
 static AsyncWebServer server(80);
 static AsyncEventSource events("/api/events");
 static bool littleFsReady = false;
+
+// Admission control against heap exhaustion under bursty concurrent load. A
+// burst of long-lived SSE connections plus overlapping page-reload traffic
+// can drop the largest contiguous free block low enough that
+// ESPAsyncWebServer's own response-construction allocations fail (see
+// tools/patch_async_sse.py for the vendor-side hardening applied to that
+// failure path). These two gates keep heap out of that danger zone in the
+// first place instead of only reacting to it after the fact.
+
+// Concurrent /api/events (SSE) clients. Real operator use is 1-2 tabs; this
+// leaves room for a couple of legitimate low-traffic viewers without letting
+// an unbounded number of tabs/reloads pile up long-lived connections.
+static constexpr size_t kMaxSseClients = 3;
+
+// Below this, prefer rejecting new non-essential requests over constructing
+// more response objects. Chosen with wide margin above the ~2-10 KB
+// largest-block range where allocation failures were actually observed
+// while reproducing the crash under load, so a rejection response can still
+// be built safely.
+static constexpr size_t kMinLargestFreeBlockForNewWork = 20000;
+
+#ifdef ARDUINO
+static size_t largestFreeBlock8Bit() {
+    return heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+}
+#else
+static size_t largestFreeBlock8Bit() {
+    return SIZE_MAX;
+}
+#endif
 static char s_fsVersion[48] = "unknown";
 static bool routesRegistered = false;
 static bool serverStarted = false;
@@ -881,9 +912,56 @@ void startHttpServerOnce() {
         events.onConnect([](AsyncEventSourceClient* client) {
             // Keep AsyncTCP callback light. Heavy JSON/log formatting runs in
             // eventStreamTask on Core 0 to avoid async_tcp stack pressure.
-            (void)client;
+            // This callback fires before the client is added to the internal
+            // list, so >= (not >) correctly rejects the client that would
+            // push the count past the cap.
+            if (events.count() >= kMaxSseClients) {
+                PA_LOG_WARN(TAG, "SSE client cap (%u) reached; rejecting new connection",
+                            (unsigned)kMaxSseClients);
+                client->close();
+                return;
+            }
+            size_t largestBlock = largestFreeBlock8Bit();
+            if (largestBlock < kMinLargestFreeBlockForNewWork) {
+                PA_LOG_WARN(TAG, "rejecting new SSE connection: largest free block %u < %u",
+                            (unsigned)largestBlock, (unsigned)kMinLargestFreeBlockForNewWork);
+                client->close();
+            }
         });
         server.addHandler(&events);
+
+        // Reject non-essential requests while heap is critically fragmented,
+        // instead of letting every handler construct response objects that
+        // may fail deep inside ESPAsyncWebServer. Estop and read-only
+        // diagnostics (status/profiler) must always go through regardless of
+        // heap state -- those are exactly what's needed to see what's
+        // happening during a rejection window, and they're cheap enough not
+        // to meaningfully add to the pressure.
+        server.addMiddleware([](AsyncWebServerRequest* request, ArMiddlewareNext next) {
+            const String& url = request->url();
+            if (url.startsWith("/api/estop") || url == "/api/status" || url == "/api/profiler") {
+                next();
+                return;
+            }
+            size_t largestBlock = largestFreeBlock8Bit();
+            if (largestBlock < kMinLargestFreeBlockForNewWork) {
+                PA_LOG_WARN(TAG, "rejecting %s: largest free block %u < %u",
+                            url.c_str(), (unsigned)largestBlock,
+                            (unsigned)kMinLargestFreeBlockForNewWork);
+                // A 503 with a JSON body still constructs a full
+                // AsyncWebServerResponse, whose constructor unconditionally
+                // adds a Connection header via a std::list<AsyncWebHeader>
+                // node allocation -- a separate allocation site from the
+                // response object itself, not covered by the vendor's
+                // nothrow fixes, and observed to crash on exactly this path
+                // under critical heap. abort() just closes the socket with
+                // no allocation at all, which is the only rejection that is
+                // actually safe at this heap level.
+                request->abort();
+                return;
+            }
+            next();
+        });
 
         registerEstopRoutes(server);
         registerDriveRoutes(server);
