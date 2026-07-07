@@ -584,7 +584,6 @@ void registerConfigRoutes(AsyncWebServer& server) {
             }
             return r->getParam(name, true)->value().c_str();
         };
-        const bool stationaryProvided = configParamHas(params, "stationary");
 
         // ConfigApplyResult is ~2.5 KB (dominated by the applied-fields log
         // record) — static avoids a large stack frame on the AsyncTCP task,
@@ -605,11 +604,13 @@ void registerConfigRoutes(AsyncWebServer& server) {
         // Apply working snapshot but preserve speedPresetActive to the special activePresetAfter value
         configCacheApply(working);
 
-        // Sync stationary mode with edge detection and drive-on cue, only if explicitly
-        // provided in the request (preserves the original gating on field presence).
-        if (stationaryProvided) {
-            commandedSetStationary(working.system.stationary, SRC_WEB_API);
-        }
+        // Sync stationary mode with edge detection and drive-on cue. Safe to call
+        // unconditionally: when the request omits "stationary", configApply() leaves
+        // working.system.stationary at the cache value read above, which always
+        // matches robotState.stationary (commandedSetStationary is the only runtime
+        // writer of both, keeping them in lockstep) — so the edge-detect inside it
+        // is a no-op and no cue fires.
+        commandedSetStationary(working.system.stationary, SRC_WEB_API);
 
         if (result.actions.playDomeOnCue) {
             audioQueuePlaySlot(AUDIO_SLOT_SYS_DOME_ON, SRC_INTERNAL);
