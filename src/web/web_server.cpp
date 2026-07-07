@@ -939,7 +939,8 @@ void startHttpServerOnce() {
         // to meaningfully add to the pressure.
         server.addMiddleware([](AsyncWebServerRequest* request, ArMiddlewareNext next) {
             const String& url = request->url();
-            if (url.startsWith("/api/estop") || url == "/api/status" || url == "/api/profiler") {
+            if (url.startsWith("/api/estop") || url == "/api/status" || url == "/api/profiler" ||
+                url == "/api/coredump") {
                 next();
                 return;
             }
