@@ -148,6 +148,32 @@ ASYNC_EVENT_INCLUDES_AFTER = """\
 #include <exception>
 """
 
+# Issue #21, round 6: raw TCP accept runs on lwIP's tiT task before a
+# connection becomes an AsyncClient or HTTP request, so neither request
+# admission control nor handle_async_event's try/catch can protect it. The
+# observed crash was already using `new (std::nothrow) AsyncClient(pcb)`, but
+# this toolchain's nothrow new wraps throwing new and can still terminate if
+# __cxa_allocate_exception itself cannot allocate a bad_alloc object. Guard the
+# accept path before it enters any C++ allocation machinery.
+TCP_ACCEPT_HEAP_GUARD_INCLUDES_BEFORE = """\
+#include "AsyncTCP.h"
+#include "AsyncTCPLogging.h"
+#include "AsyncTCPSimpleIntrusiveList.h"
+
+#include <exception>
+"""
+
+TCP_ACCEPT_HEAP_GUARD_INCLUDES_AFTER = """\
+#include "AsyncTCP.h"
+#include "AsyncTCPLogging.h"
+#include "AsyncTCPSimpleIntrusiveList.h"
+
+#if defined(ESP32)
+#include <esp_heap_caps.h>
+#endif
+#include <exception>
+"""
+
 ASYNC_EVENT_DISPATCH_BEFORE = """\
 void AsyncTCP_detail::handle_async_event(lwip_tcp_event_packet_t *e) {
   if (e->client == NULL) {
@@ -225,6 +251,33 @@ void AsyncTCP_detail::handle_async_event(lwip_tcp_event_packet_t *e) {
   }
   _free_event(e);
 }
+"""
+
+TCP_ACCEPT_HEAP_GUARD_BEFORE = """\
+  if (server->_connect_cb) {
+    AsyncClient *c = new (std::nothrow) AsyncClient(pcb);
+"""
+
+TCP_ACCEPT_HEAP_GUARD_AFTER = """\
+  if (server->_connect_cb) {
+#if defined(ESP32)
+#ifndef ASYNC_TCP_ACCEPT_MIN_LARGEST_FREE_BLOCK
+#define ASYNC_TCP_ACCEPT_MIN_LARGEST_FREE_BLOCK 20000
+#endif
+#if ASYNC_TCP_ACCEPT_MIN_LARGEST_FREE_BLOCK > 0
+    const size_t largestBlock = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+    if (largestBlock < (size_t)ASYNC_TCP_ACCEPT_MIN_LARGEST_FREE_BLOCK) {
+      async_tcp_log_w(
+        "_accept failed: largest free block %u < %u",
+        (unsigned)largestBlock, (unsigned)ASYNC_TCP_ACCEPT_MIN_LARGEST_FREE_BLOCK
+      );
+      tcp_abort(pcb);
+      return ERR_ABRT;
+    }
+#endif
+#endif
+
+    AsyncClient *c = new (std::nothrow) AsyncClient(pcb);
 """
 
 # Issue #21, round 3: a simple req->send(200, ...) route crashed in
@@ -549,6 +602,26 @@ def patch_async_event_dispatch(text):
     return text
 
 
+def patch_tcp_accept_heap_guard(text):
+    if TCP_ACCEPT_HEAP_GUARD_AFTER not in text:
+        if text.count(TCP_ACCEPT_HEAP_GUARD_BEFORE) != 1:
+            raise RuntimeError(
+                "AsyncTCP.cpp tcp_accept client allocation changed; "
+                "review tools/patch_async_sse.py"
+            )
+        text = text.replace(TCP_ACCEPT_HEAP_GUARD_BEFORE, TCP_ACCEPT_HEAP_GUARD_AFTER)
+
+    if TCP_ACCEPT_HEAP_GUARD_INCLUDES_AFTER not in text:
+        if text.count(TCP_ACCEPT_HEAP_GUARD_INCLUDES_BEFORE) != 1:
+            raise RuntimeError(
+                "AsyncTCP.cpp include block changed for tcp_accept heap guard; "
+                "review tools/patch_async_sse.py"
+            )
+        text = text.replace(TCP_ACCEPT_HEAP_GUARD_INCLUDES_BEFORE, TCP_ACCEPT_HEAP_GUARD_INCLUDES_AFTER)
+
+    return text
+
+
 def patch_webrequest_response_alloc(text):
     if WEBREQUEST_FACTORY_ALLOC_AFTER not in text:
         if text.count(WEBREQUEST_FACTORY_ALLOC_BEFORE) != 1:
@@ -647,6 +720,11 @@ def patch_async_webserver(env):
         asynctcp_source_dir / "AsyncTCP.cpp",
         patch_async_event_dispatch,
         "contained uncaught exceptions in handle_async_event to one request instead of crashing (issue #21)",
+    )
+    patch_file(
+        asynctcp_source_dir / "AsyncTCP.cpp",
+        patch_tcp_accept_heap_guard,
+        "guarded tcp_accept before AsyncClient allocation under critical heap (issue #21)",
     )
 
 

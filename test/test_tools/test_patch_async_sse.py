@@ -96,6 +96,28 @@ class PatchAsyncWebServerTest(unittest.TestCase):
         self.assertIn("catch (const std::exception &ex)", patched)
         self.assertEqual(PATCH.patch_async_event_dispatch(patched), patched)
 
+    def test_tcp_accept_heap_guard_runs_before_client_alloc_and_is_idempotent(self):
+        source = (
+            "prefix\n"
+            + PATCH.TCP_ACCEPT_HEAP_GUARD_INCLUDES_BEFORE
+            + "middle\n"
+            + PATCH.TCP_ACCEPT_HEAP_GUARD_BEFORE
+            + "suffix\n"
+        )
+
+        patched = PATCH.patch_tcp_accept_heap_guard(source)
+
+        self.assertIn("#include <esp_heap_caps.h>", patched)
+        self.assertIn("ASYNC_TCP_ACCEPT_MIN_LARGEST_FREE_BLOCK", patched)
+        self.assertIn("heap_caps_get_largest_free_block(MALLOC_CAP_8BIT)", patched)
+        self.assertIn("tcp_abort(pcb);", patched)
+        self.assertIn("return ERR_ABRT;", patched)
+        self.assertLess(
+            patched.index("heap_caps_get_largest_free_block"),
+            patched.index("new (std::nothrow) AsyncClient(pcb)"),
+        )
+        self.assertEqual(PATCH.patch_tcp_accept_heap_guard(patched), patched)
+
     def test_webrequest_response_alloc_patch_uses_nothrow_and_is_idempotent(self):
         source = (
             "prefix\n"
