@@ -10,6 +10,7 @@
 #include <Preferences.h>
 
 #include "audio_task.h"
+#include "commanded_modes.h"
 #include "config.h"
 #include "dome_link.h"
 #include "logging.h"
@@ -42,9 +43,7 @@ void applyMood(uint8_t moodId, bool fromDome) {
     }
 
     // --- Update shared state ---
-    taskENTER_CRITICAL(&robotStateMux);
-    robotState.activeMood = moodId;
-    taskEXIT_CRITICAL(&robotStateMux);
+    commandedSetActiveMood(moodId, fromDome ? SRC_INTERNAL : SRC_WEB_API);
 
     // --- Persist to NVS ---
     // Dedicated mini-write — avoids saving entire config for a mood change.

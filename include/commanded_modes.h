@@ -8,3 +8,19 @@
 // setters; currently not used in logging but accepted for consistent module
 // interface across Z3+ setters.
 void commandedSetStationary(bool stationary, CommandSource source);
+
+// Sets robotState.sleepMode and sleepSinceMs under critical section.
+// Returns true if sleepMode actually changed (false->true or true->false).
+// Sets sleepSinceMs = now on entry, 0 on exit. Does not broadcast status or log —
+// caller decides what to do with the changed result (some callers unconditionally
+// broadcast regardless).
+bool commandedSetSleep(bool sleep, CommandSource source);
+
+// Sets robotState.webControlEnabled under critical section.
+void commandedSetWebControl(bool enabled, CommandSource source);
+
+// Sets robotState.rcDebugMode under critical section.
+void commandedSetRcDebug(bool enabled, CommandSource source);
+
+// Sets robotState.activeMood under critical section.
+void commandedSetActiveMood(uint8_t moodId, CommandSource source);

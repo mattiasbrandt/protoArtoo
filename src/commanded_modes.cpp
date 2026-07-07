@@ -37,3 +37,44 @@ void commandedSetStationary(bool stationary, CommandSource source) {
         audioQueuePlaySlot(AUDIO_SLOT_SYS_DRIVE_ON, SRC_INTERNAL);
     }
 }
+
+bool commandedSetSleep(bool sleep, CommandSource source) {
+    (void)source;  // Reserved for future logging/telemetry; currently unused
+
+    uint32_t nowMs = millis();
+    bool changed = false;
+
+    taskENTER_CRITICAL(&robotStateMux);
+    if (robotState.sleepMode != sleep) {
+        robotState.sleepMode = sleep;
+        robotState.sleepSinceMs = sleep ? nowMs : 0U;
+        changed = true;
+    }
+    taskEXIT_CRITICAL(&robotStateMux);
+
+    return changed;
+}
+
+void commandedSetWebControl(bool enabled, CommandSource source) {
+    (void)source;  // Reserved for future logging/telemetry; currently unused
+
+    taskENTER_CRITICAL(&robotStateMux);
+    robotState.webControlEnabled = enabled;
+    taskEXIT_CRITICAL(&robotStateMux);
+}
+
+void commandedSetRcDebug(bool enabled, CommandSource source) {
+    (void)source;  // Reserved for future logging/telemetry; currently unused
+
+    taskENTER_CRITICAL(&robotStateMux);
+    robotState.rcDebugMode = enabled;
+    taskEXIT_CRITICAL(&robotStateMux);
+}
+
+void commandedSetActiveMood(uint8_t moodId, CommandSource source) {
+    (void)source;  // Reserved for future logging/telemetry; currently unused
+
+    taskENTER_CRITICAL(&robotStateMux);
+    robotState.activeMood = moodId;
+    taskEXIT_CRITICAL(&robotStateMux);
+}

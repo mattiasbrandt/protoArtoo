@@ -25,6 +25,7 @@
 #include <string.h>
 
 #include "audio_task.h"
+#include "commanded_modes.h"
 #include "ledc_pwm.h"
 #include "logging.h"
 #include "marcduino_helpers.h"
@@ -219,21 +220,12 @@ bool parseMarcduinoCommand(const char* line) {
             }
 
             if (syncSleep || syncWake) {
-                bool changed = false;
-                const bool sleepMode = syncSleep;
-                const uint32_t nowMs = millis();
-                taskENTER_CRITICAL(&robotStateMux);
-                if (robotState.sleepMode != sleepMode) {
-                    robotState.sleepMode = sleepMode;
-                    robotState.sleepSinceMs = sleepMode ? nowMs : 0U;
-                    changed = true;
-                }
-                taskEXIT_CRITICAL(&robotStateMux);
+                bool changed = commandedSetSleep(syncSleep, SRC_INTERNAL);
 
                 if (changed) {
                     requestStatusBroadcastNow();
                     PA_LOG_INFO(TAG, "[SYSTEM] sleep sync from dome: %s",
-                                sleepMode ? "sleep" : "wake");
+                                syncSleep ? "sleep" : "wake");
                 }
                 return true;
             }

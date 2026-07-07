@@ -328,11 +328,7 @@ static void dispatchProcessorOutput(const RcProcessorOutput& output, const RcMap
             failsafeTrigger(FailsafeLayer::ESTOP);
         }
         if (res.setSleep) {
-            const uint32_t nowMs = millis();
-            taskENTER_CRITICAL(&robotStateMux);
-            robotState.sleepMode    = res.newSleepMode;
-            robotState.sleepSinceMs = res.newSleepMode ? nowMs : 0U;
-            taskEXIT_CRITICAL(&robotStateMux);
+            commandedSetSleep(res.newSleepMode, SRC_SBUS);
             requestStatusBroadcastNow();
         }
         if (res.setStationary) {
@@ -426,11 +422,7 @@ static void processTriggerAction(RobotActionId target, const char* payload, bool
         failsafeTrigger(FailsafeLayer::ESTOP);
     }
     if (res.setSleep) {
-        const uint32_t nowMs = millis();
-        taskENTER_CRITICAL(&robotStateMux);
-        robotState.sleepMode = res.newSleepMode;
-        robotState.sleepSinceMs = res.newSleepMode ? nowMs : 0U;
-        taskEXIT_CRITICAL(&robotStateMux);
+        commandedSetSleep(res.newSleepMode, SRC_SBUS);
         requestStatusBroadcastNow();
     }
     if (res.setStationary) {

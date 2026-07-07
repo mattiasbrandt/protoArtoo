@@ -20,6 +20,7 @@
 
 #include "api_drive.h"
 #include "api_helpers.h"
+#include "commanded_modes.h"
 #include "config_store.h"
 #include "logging.h"
 #include "robot_state.h"
@@ -47,16 +48,7 @@ static inline void setUploadState(AsyncWebServerRequest* req, uintptr_t state) {
 }
 
 static bool setSleepModeState(bool sleepMode, bool* changedOut) {
-    uint32_t nowMs = millis();
-    bool changed = false;
-
-    taskENTER_CRITICAL(&robotStateMux);
-    if (robotState.sleepMode != sleepMode) {
-        robotState.sleepMode = sleepMode;
-        robotState.sleepSinceMs = sleepMode ? nowMs : 0U;
-        changed = true;
-    }
-    taskEXIT_CRITICAL(&robotStateMux);
+    bool changed = commandedSetSleep(sleepMode, SRC_WEB_API);
 
     if (changedOut != nullptr) {
         *changedOut = changed;

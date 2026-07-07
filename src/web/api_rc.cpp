@@ -14,6 +14,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "commanded_modes.h"
 #include "logging.h"
 #include "robot_state.h"
 #include "rc_diagnostics_snapshot.h"
@@ -93,9 +94,7 @@ void registerRcRoutes(AsyncWebServer& server) {
 
             bool enabled = doc["enabled"] | false;
 
-            taskENTER_CRITICAL(&robotStateMux);
-            robotState.rcDebugMode = enabled;
-            taskEXIT_CRITICAL(&robotStateMux);
+            commandedSetRcDebug(enabled, SRC_WEB_API);
 
             PA_LOG_INFO(TAG, "RC debug mode %s", enabled ? "enabled" : "disabled");
 

@@ -140,15 +140,11 @@ bool executeManualCommand(const String& raw) {
             return true;
 
         case MC_ENABLE_WEB_CONTROL:
-            taskENTER_CRITICAL(&robotStateMux);
-            robotState.webControlEnabled = true;
-            taskEXIT_CRITICAL(&robotStateMux);
+            commandedSetWebControl(true, SRC_WEB_API);
             return true;
 
         case MC_DISABLE_WEB_CONTROL:
-            taskENTER_CRITICAL(&robotStateMux);
-            robotState.webControlEnabled = false;
-            taskEXIT_CRITICAL(&robotStateMux);
+            commandedSetWebControl(false, SRC_WEB_API);
             driveArbiterSubmit(DriveSource::WEB_API, 0, 0, millis());
             return true;
 
@@ -260,17 +256,13 @@ void registerDriveRoutes(AsyncWebServer& server) {
     });
 
     server.on("/api/web-control/enable", HTTP_POST, [](AsyncWebServerRequest* req) {
-        taskENTER_CRITICAL(&robotStateMux);
-        robotState.webControlEnabled = true;
-        taskEXIT_CRITICAL(&robotStateMux);
+        commandedSetWebControl(true, SRC_WEB_API);
         PA_LOG_INFO(TAG, "[WEB] POST /api/web-control/enable - browser control enabled");
         req->send(200, "application/json", "{\"ok\":true}");
     });
 
     server.on("/api/web-control/disable", HTTP_POST, [](AsyncWebServerRequest* req) {
-        taskENTER_CRITICAL(&robotStateMux);
-        robotState.webControlEnabled = false;
-        taskEXIT_CRITICAL(&robotStateMux);
+        commandedSetWebControl(false, SRC_WEB_API);
         driveArbiterSubmit(DriveSource::WEB_API, 0, 0, millis());
         PA_LOG_INFO(TAG, "[WEB] POST /api/web-control/disable - browser control disabled");
         req->send(200, "application/json", "{\"ok\":true}");
