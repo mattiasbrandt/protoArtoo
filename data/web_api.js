@@ -40,6 +40,12 @@
     return response.text();
   };
 
+  // ESP32 has few concurrent AsyncTCP socket slots; a GET racing the page's
+  // persistent SSE connection can occasionally receive a truncated response
+  // body. That's a transient transport fault, not a real client/server
+  // error, so it's worth one quiet retry before surfacing it.
+  const BAD_JSON_RETRY_DELAY_MS = 150;
+
   const request = async (path, {
     method = "GET",
     timeoutMs = DEFAULT_TIMEOUT_MS,
@@ -48,44 +54,53 @@
     form = null,
     json = null,
   } = {}) => {
-    const controller = new AbortController();
-    const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+    const attempt = async (isRetry) => {
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
 
-    try {
-      const requestHeaders = { ...headers };
-      let body;
-      if (form) {
-        body = form instanceof URLSearchParams ? form : new URLSearchParams(form);
-        requestHeaders["Content-Type"] = "application/x-www-form-urlencoded;charset=UTF-8";
-      } else if (json !== null) {
-        body = JSON.stringify(json);
-        requestHeaders["Content-Type"] = "application/json";
-      }
+      try {
+        const requestHeaders = { ...headers };
+        let body;
+        if (form) {
+          body = form instanceof URLSearchParams ? form : new URLSearchParams(form);
+          requestHeaders["Content-Type"] = "application/x-www-form-urlencoded;charset=UTF-8";
+        } else if (json !== null) {
+          body = JSON.stringify(json);
+          requestHeaders["Content-Type"] = "application/json";
+        }
 
-      const response = await fetch(path, {
-        method,
-        cache,
-        headers: requestHeaders,
-        body,
-        signal: controller.signal,
-      });
-
-      const payload = await parseResponse(response);
-
-      if (!response.ok) {
-        const apiMessage = payload && typeof payload === "object" ? payload.error : "";
-        throw new ApiError(apiMessage || `HTTP ${response.status}`, {
-          kind: "http",
-          status: response.status,
+        const response = await fetch(path, {
+          method,
+          cache,
+          headers: requestHeaders,
+          body,
+          signal: controller.signal,
         });
-      }
 
-      return { ok: true, status: response.status, data: payload };
-    } catch (error) {
-      throw normalizeError(error);
-    } finally {
-      window.clearTimeout(timeoutId);
-    }
+        const payload = await parseResponse(response);
+
+        if (!response.ok) {
+          const apiMessage = payload && typeof payload === "object" ? payload.error : "";
+          throw new ApiError(apiMessage || `HTTP ${response.status}`, {
+            kind: "http",
+            status: response.status,
+          });
+        }
+
+        return { ok: true, status: response.status, data: payload };
+      } catch (error) {
+        const apiError = normalizeError(error);
+        if (!isRetry && method === "GET" && apiError.kind === "bad-json") {
+          await new Promise((resolve) => window.setTimeout(resolve, BAD_JSON_RETRY_DELAY_MS));
+          return attempt(true);
+        }
+        throw apiError;
+      } finally {
+        window.clearTimeout(timeoutId);
+      }
+    };
+
+    return attempt(false);
   };
 
   const get = (path, opts = {}) => request(path, { ...opts, method: "GET" });
