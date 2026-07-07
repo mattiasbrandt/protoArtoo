@@ -38,6 +38,7 @@
 #include "api_audio_mood_map_apply.h"
 #include "api_audio_tracks_apply.h"
 #include "api_helpers.h"
+#include "chirp_binding_keys.h"
 #include "audio_dollar_parser.h"
 #include "audio_task.h"
 #include "config.h"
@@ -57,53 +58,9 @@ static bool isSleepModeActive() {
     return sleeping;
 }
 
-struct ChirpBindingKeyMapEntry {
-    const char* key;
-    const char* nvsKey;
-};
-
-struct ChirpCategoryBindingMapEntry {
-    const char* loKey;
-    const char* hiKey;
-    const char* nvsKey;
-};
-
-static constexpr ChirpBindingKeyMapEntry CHIRP_BINDING_KEYS[] = {
-    {"scream", "chr_scream"},       {"faint", "chr_faint"},
-    {"leia", "chr_leia"},           {"cantina_s", "chr_cantina_s"},
-    {"sw_theme", "chr_sw_theme"},   {"imp_march", "chr_imp_march"},
-    {"cantina_l", "chr_cantina_l"}, {"startup", "chr_startup"},
-    {"doodoo", "chr_doodoo"},       {"failure", "chr_failure"},
-    {"disco", "chr_disco"},         {"mahna", "chr_mahna"},
-    {"inlove", "chr_inlove"},       {"macho", "chr_macho"},
-    {"gangnam", "chr_gangnam"},     {"uptown", "chr_uptown"},
-    {"celebr", "chr_celebr"},       {"stayin", "chr_stayin"},
-    {"harlem", "chr_harlem"},       {"pbjtime", "chr_pbjtime"},
-    {"sys_boot", "chr_sys_boot"},   {"sys_mode_n", "chr_sys_mode_n"},
-    {"sys_mode_s", "chr_sys_mode_s"},
-    {"sys_mode_t", "chr_sys_mode_t"},
-    {"sys_drv_on", "chr_sys_drv_on"},
-    {"sys_dome_on", "chr_sys_dome_on"},
-};
-
 static bool audioCatalogSupported() {
     return (audioGetCapabilities() & AudioDriver::AUDIO_CAP_CATALOG) != 0;
 }
-
-static constexpr ChirpCategoryBindingMapEntry CHIRP_CATEGORY_BINDING_KEYS[] = {
-    {"snd_cat_gen_lo", "snd_cat_gen_hi", "chr_cat_gen"},
-    {"snd_cat_chat_lo", "snd_cat_chat_hi", "chr_cat_chat"},
-    {"snd_cat_hap_lo", "snd_cat_hap_hi", "chr_cat_hap"},
-    {"snd_cat_proc_lo", "snd_cat_proc_hi", "chr_cat_proc"},
-    {"snd_cat_sad_lo", "snd_cat_sad_hi", "chr_cat_sad"},
-    {"snd_cat_sent_lo", "snd_cat_sent_hi", "chr_cat_sent"},
-    {"snd_cat_hum_lo", "snd_cat_hum_hi", "chr_cat_hum"},
-    {"snd_cat_scrm_lo", "snd_cat_scrm_hi", "chr_cat_scrm"},
-    {"snd_cat_ooh_lo", "snd_cat_ooh_hi", "chr_cat_ooh"},
-    {"snd_cat_alrm_lo", "snd_cat_alrm_hi", "chr_cat_alrm"},
-    {"snd_cat_snrk_lo", "snd_cat_snrk_hi", "chr_cat_snrk"},
-    {"snd_cat_whis_lo", "snd_cat_whis_hi", "chr_cat_whis"},
-};
 
 static uint32_t packChirpBinding(uint16_t index, uint8_t bank, char page) {
     const uint8_t pageByte = (uint8_t)toupper((unsigned char)page);

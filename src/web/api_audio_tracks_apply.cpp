@@ -12,43 +12,9 @@
 #include <string.h>
 
 #include "api_helpers.h"
+#include "chirp_binding_keys.h"
 
 namespace {
-
-struct ChirpBindingKeyMapEntry {
-    const char* key;
-    const char* nvsKey;
-};
-
-constexpr ChirpBindingKeyMapEntry CHIRP_BINDING_KEYS[] = {
-    {"scream", "chr_scream"},       {"faint", "chr_faint"},
-    {"leia", "chr_leia"},           {"cantina_s", "chr_cantina_s"},
-    {"sw_theme", "chr_sw_theme"},   {"imp_march", "chr_imp_march"},
-    {"cantina_l", "chr_cantina_l"}, {"startup", "chr_startup"},
-    {"doodoo", "chr_doodoo"},       {"failure", "chr_failure"},
-    {"disco", "chr_disco"},         {"mahna", "chr_mahna"},
-    {"inlove", "chr_inlove"},       {"macho", "chr_macho"},
-    {"gangnam", "chr_gangnam"},     {"uptown", "chr_uptown"},
-    {"celebr", "chr_celebr"},       {"stayin", "chr_stayin"},
-    {"harlem", "chr_harlem"},       {"pbjtime", "chr_pbjtime"},
-    {"sys_boot", "chr_sys_boot"},   {"sys_mode_n", "chr_sys_mode_n"},
-    {"sys_mode_s", "chr_sys_mode_s"},
-    {"sys_mode_t", "chr_sys_mode_t"},
-    {"sys_drv_on", "chr_sys_drv_on"},
-    {"sys_dome_on", "chr_sys_dome_on"},
-};
-
-const char* chirpBindingNvsKey(const char* key) {
-    if (key == nullptr) {
-        return nullptr;
-    }
-    for (size_t i = 0; i < (sizeof(CHIRP_BINDING_KEYS) / sizeof(CHIRP_BINDING_KEYS[0])); ++i) {
-        if (strcmp(CHIRP_BINDING_KEYS[i].key, key) == 0) {
-            return CHIRP_BINDING_KEYS[i].nvsKey;
-        }
-    }
-    return nullptr;
-}
 
 bool parseChirpPage(const char* raw, char* pageOut) {
     if (raw == nullptr || pageOut == nullptr || strlen(raw) != 1) {

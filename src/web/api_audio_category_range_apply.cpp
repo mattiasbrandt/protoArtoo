@@ -12,44 +12,9 @@
 #include <string.h>
 
 #include "api_helpers.h"
+#include "chirp_binding_keys.h"
 
 namespace {
-
-struct ChirpCategoryBindingMapEntry {
-    const char* loKey;
-    const char* hiKey;
-    const char* nvsKey;
-};
-
-constexpr ChirpCategoryBindingMapEntry CHIRP_CATEGORY_BINDING_KEYS[] = {
-    {"snd_cat_gen_lo", "snd_cat_gen_hi", "chr_cat_gen"},
-    {"snd_cat_chat_lo", "snd_cat_chat_hi", "chr_cat_chat"},
-    {"snd_cat_hap_lo", "snd_cat_hap_hi", "chr_cat_hap"},
-    {"snd_cat_proc_lo", "snd_cat_proc_hi", "chr_cat_proc"},
-    {"snd_cat_sad_lo", "snd_cat_sad_hi", "chr_cat_sad"},
-    {"snd_cat_sent_lo", "snd_cat_sent_hi", "chr_cat_sent"},
-    {"snd_cat_hum_lo", "snd_cat_hum_hi", "chr_cat_hum"},
-    {"snd_cat_scrm_lo", "snd_cat_scrm_hi", "chr_cat_scrm"},
-    {"snd_cat_ooh_lo", "snd_cat_ooh_hi", "chr_cat_ooh"},
-    {"snd_cat_alrm_lo", "snd_cat_alrm_hi", "chr_cat_alrm"},
-    {"snd_cat_snrk_lo", "snd_cat_snrk_hi", "chr_cat_snrk"},
-    {"snd_cat_whis_lo", "snd_cat_whis_hi", "chr_cat_whis"},
-};
-
-const ChirpCategoryBindingMapEntry* chirpCategoryBindingEntryForRangeKeys(const char* loKey,
-                                                                            const char* hiKey) {
-    if (loKey == nullptr || hiKey == nullptr) {
-        return nullptr;
-    }
-    for (size_t i = 0; i < (sizeof(CHIRP_CATEGORY_BINDING_KEYS) / sizeof(CHIRP_CATEGORY_BINDING_KEYS[0]));
-         ++i) {
-        const ChirpCategoryBindingMapEntry& entry = CHIRP_CATEGORY_BINDING_KEYS[i];
-        if (strcmp(entry.loKey, loKey) == 0 && strcmp(entry.hiKey, hiKey) == 0) {
-            return &entry;
-        }
-    }
-    return nullptr;
-}
 
 bool parseChirpPage(const char* raw, char* pageOut) {
     if (raw == nullptr || pageOut == nullptr || strlen(raw) != 1) {
