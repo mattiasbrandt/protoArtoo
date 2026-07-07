@@ -356,27 +356,18 @@ bool appendPeripheralStatus(char*& pos, size_t& remaining, const char* key, cons
 }  // namespace
 
 bool buildStatusJson(char* buffer, size_t bufferSize) {
-    bool estop;
+    FailsafeDiagnostics diag = {};
     bool webControlEnabled;
     bool sbusSignalLost;
     bool sbus2SignalLost;
-    bool sbusHwFailsafe;
-    bool webDriveExpired;
     bool wifiConnected;
     bool wifiClientConnected;
-    int failsafeSource;
     int driveSpeed;
     int driveSteer;
     float domeTargetSpeed;
     int speedLimitMax;
     SpeedPresetId speedPresetActive;
     bool stationary;
-    unsigned long failsafeCount;
-    unsigned long failsafeTriggerMs;
-    unsigned long failsafeZeroMs;
-    unsigned long failsafeTriggerToZeroMs;
-    unsigned long failsafeWatchdogMs;
-    int failsafeTriggerSource;
     unsigned long uptimeMs;
     unsigned long heapFree;
     unsigned long heapMin;
@@ -430,25 +421,16 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     ConfigSnapshot cfg = {};
     configCacheRead(&cfg);
     taskENTER_CRITICAL(&robotStateMux);
-    estop = robotState.estop;
+    copyFailsafeDiagnosticsLocked(&diag);
+    sbusSignalLost = diag.sbusSignalLost;
     webControlEnabled = robotState.webControlEnabled;
-    sbusSignalLost = robotState.sbusSignalLost;
     sbus2SignalLost = robotState.sbus2SignalLost;
-    sbusHwFailsafe = robotState.sbusHwFailsafe;
-    webDriveExpired = robotState.webDriveExpired;
-    failsafeSource = (int)robotState.failsafeSource;
     driveSpeed = robotState.driveOutputSpeed;
     driveSteer = robotState.driveOutputSteer;
     domeTargetSpeed = robotState.domeTargetSpeed;
     speedLimitMax = cfg.drive.speedLimitMax;
     speedPresetActive = normalizeSpeedPresetId((uint8_t)cfg.drive.speedPresetActive);
     stationary = robotState.stationary;
-    failsafeCount = robotState.failsafeTriggerCount;
-    failsafeTriggerMs = robotState.failsafeLastTriggerMs;
-    failsafeZeroMs = robotState.failsafeLastZeroOutputMs;
-    failsafeTriggerToZeroMs = robotState.failsafeLastTriggerToZeroMs;
-    failsafeWatchdogMs = robotState.failsafeLastWatchdogMs;
-    failsafeTriggerSource = (int)robotState.failsafeLastTriggerSource;
     arm1TargetUs = robotState.arm1TargetUs;
     arm2TargetUs = robotState.arm2TargetUs;
     lastSbus1Ms = robotState.lastSbus1Ms;
@@ -521,13 +503,13 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     int written = snprintf(
         buffer, bufferSize,
         "{\"estop\":%s,\"webControlEnabled\":%s,\"sbusSignalLost\":%s,\"sbusHwFailsafe\":%s,\"webDriveExpired\":%s,\"failsafeSource\":%d,\"driveSpeed\":%d,\"driveSteer\":%d,\"domeTargetSpeed\":%.3f,\"domeEnabled\":%s,\"speedLimitMax\":%d,\"speedPreset\":\"%s\",\"stationary\":%s,\"failsafeCount\":%lu,\"failsafeTriggerMs\":%lu,\"failsafeZeroMs\":%lu,\"failsafeTriggerToZeroMs\":%lu,\"failsafeWatchdogMs\":%lu,\"failsafeTriggerSource\":%d,\"uptimeMs\":%lu,\"firmwareVersion\":\"%s\",\"fsVersion\":\"%s\",\"resetReason\":\"%s\",\"heapFree\":%lu,\"heapMin\":%lu,\"heapLargestBlock\":%lu,\"otaActive\":%s,\"otaProgress\":%u,\"otaLastError\":\"%s\",\"wifiRssi\":%ld,\"wifiConnected\":%s,\"wifiClientConnected\":%s,\"littleFsReady\":%s,\"sleepMode\":%s,\"sleepSinceMs\":%lu,\"activeMood\":%u,\"auxLed\":{\"pin\":%u,\"r\":%u,\"g\":%u,\"b\":%u,\"effect\":\"%s\",\"available\":%s}",
-        estop ? "true" : "false", webControlEnabled ? "true" : "false",
-        sbusSignalLost ? "true" : "false", sbusHwFailsafe ? "true" : "false",
-        webDriveExpired ? "true" : "false", failsafeSource, driveSpeed, driveSteer,
+        diag.estop ? "true" : "false", webControlEnabled ? "true" : "false",
+        diag.sbusSignalLost ? "true" : "false", diag.sbusHwFailsafe ? "true" : "false",
+        diag.webDriveExpired ? "true" : "false", (int)diag.failsafeSource, driveSpeed, driveSteer,
         (double)domeTargetSpeed, enableDome ? "true" : "false",
         speedLimitMax, speedPresetIdToString(speedPresetActive), stationary ? "true" : "false",
-        failsafeCount, failsafeTriggerMs, failsafeZeroMs, failsafeTriggerToZeroMs,
-        failsafeWatchdogMs, failsafeTriggerSource, uptimeMs, PA_FIRMWARE_VERSION, s_fsVersion,
+        (unsigned long)diag.failsafeTriggerCount, (unsigned long)diag.failsafeLastTriggerMs, (unsigned long)diag.failsafeLastZeroOutputMs, (unsigned long)diag.failsafeLastTriggerToZeroMs,
+        (unsigned long)diag.failsafeLastWatchdogMs, (int)diag.failsafeLastTriggerSource, uptimeMs, PA_FIRMWARE_VERSION, s_fsVersion,
         resetReasonName(esp_reset_reason()),
         heapFree, heapMin, (unsigned long)heapLargestBlock,
         otaActive ? "true" : "false", (unsigned)otaProgressPct, otaLastError, wifiRssi,

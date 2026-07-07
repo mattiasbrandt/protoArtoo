@@ -135,95 +135,22 @@ struct DomeCommand {
 // RobotState — shared state, all access under robotStateMux
 // -----------------------------------------------------------------------------
 struct RobotState {
-    // --- Drive output status mirror (written after DriveArbiter resolve) ---
+    // --- Zone 1: Drive output + hoverboard feedback + failsafe gate (DriveTask) ---
     int16_t driveOutputSpeed;
     int16_t driveOutputSteer;
-    float domeTargetSpeed;  // -1.0 .. +1.0
-
-    // --- Subsystem state ---
-    bool audioActive;
-
-    // Audio module state — populated by AudioTask from DY-SV5W query responses.
-    // link_ok: false until the module responds to at least one query.
-    // play_state: 0=stop 1=playing 2=paused 0xFF=unknown
-    // device:     0=USB  1=SD/TF  2=FLASH  0xFF=unknown/none
-    bool audio_module_link_ok;
-    uint8_t audio_module_play_state;
-    uint8_t audio_module_device;
-    uint16_t audio_module_total_tracks;
-    uint16_t audio_module_current_track;
-    AudioRxStatus audio_module_rx_status;
-
-    bool armOpen[2];
-    uint16_t arm1TargetUs;
-    uint16_t arm2TargetUs;
-    float dome_speed;
-    bool sleepMode;
-    uint32_t sleepSinceMs;
-    AuxLedState auxLed;
-    // --- Failsafe state ---
+    CommandSource driveOutputSource;
+    uint32_t driveOutputCommandMs;
     bool estop;
     bool sbusSignalLost;
-    bool sbus2SignalLost;
     bool sbusHwFailsafe;
-    bool stationary;
     bool webDriveExpired;
     FailsafeSource failsafeSource;
     uint32_t failsafeTriggerCount;
-    uint32_t queueOverflowCount;
-    uint32_t sbus1LostFrameCount;  // cumulative lost_frame events (not failsafe)
-    uint32_t sbus2LostFrameCount;  // cumulative lost_frame events (not failsafe)
-    bool sbus2HwFailsafe;
     uint32_t failsafeLastTriggerMs;        // millis() when last failsafe trigger latched
     uint32_t failsafeLastWatchdogMs;       // millis() when last SBUS watchdog trigger fired
     uint32_t failsafeLastZeroOutputMs;     // millis() when DriveTask first asserted zero output
     uint32_t failsafeLastTriggerToZeroMs;  // latency from trigger to first zero output (ms)
     FailsafeSource failsafeLastTriggerSource;
-    // --- Timing state ---
-    uint32_t lastPwmMs;
-    uint32_t lastSbus1Ms;
-    uint32_t lastSbus2Ms;
-    uint32_t driveOutputCommandMs;
-    uint32_t domeLastSeenMs;
-    uint32_t domeLastSeenUartMs;
-    uint32_t domeLastSeenWifiMs;
-    CommandSource driveOutputSource;
-
-    uint16_t rcPwmPulseUs[6];
-    bool rcPwmPulseValid[6];
-    uint16_t rcSbus1Raw[16];
-    uint16_t rcSbus2Raw[16];
-    bool rcSbus1Digital[2];
-    bool rcSbus2Digital[2];
-
-    // --- Dome link diagnostics / transport state ---
-    uint32_t domeHbRx;
-    uint32_t bodyHbTx;
-    uint32_t domeRxOverflowCount;
-    uint32_t domeRxUnknownCount;
-    DomeLinkTransport domeActiveTransport;
-    DomeUartOwner domeUartOwner;
-    bool     domeSeqActive;    // true while a dome sequence is running
-    uint32_t domeSeqUntilMs;   // safety timeout: auto-clear domeSeqActive at this millis()
-
-    // --- Mood ---
-    // Active mood SE1x index: 10=Quiet, 11=Full-Awake, 13=Mid-Awake, 14=Awake+.
-    // 0 = unset (no mood applied this session). NVS key: "last_mood".
-    uint8_t activeMood;
-
-    // --- Web control state ---
-    bool webControlEnabled;
-    bool rcDebugMode;    // Enable verbose RC/SBUS logging when RC page is active
-    bool rcConfigDirty;  // Set by configSaveSystem/configCacheApply; cleared by RcInputTask after rebuild
-    bool seqStopRequested;  // Non-latching web stop signal (POST /api/seq/stop);
-                            // dispatcher clears after abort processing
-
-    // -------------------------------------------------------------------------
-    // Hoverboard controller feedback — populated by DriveTask from UART1 RX.
-    // batteryRaw = V × 100; boardTempRaw = °C × 10.
-    // currentL/R = A × 100 from Gen2.x firmware only; 0 for FOC firmware.
-    // feedbackValid is false until the first valid frame is received.
-    // -------------------------------------------------------------------------
     int16_t hb_batteryRaw;
     int16_t hb_boardTempRaw;
     int16_t hb_speedR;
@@ -232,6 +159,68 @@ struct RobotState {
     int16_t hb_currentR;
     bool hb_feedbackValid;
     uint32_t hb_lastFeedbackMs;
+
+    // --- Zone 2: RC input (RcInputTask) ---
+    uint16_t rcPwmPulseUs[6];
+    bool rcPwmPulseValid[6];
+    uint16_t rcSbus1Raw[16];
+    uint16_t rcSbus2Raw[16];
+    bool rcSbus1Digital[2];
+    bool rcSbus2Digital[2];
+    uint32_t lastPwmMs;
+    uint32_t lastSbus1Ms;
+    uint32_t lastSbus2Ms;
+    uint32_t sbus1LostFrameCount;  // cumulative lost_frame events (not failsafe)
+    uint32_t sbus2LostFrameCount;  // cumulative lost_frame events (not failsafe)
+    bool sbus2SignalLost;
+    bool sbus2HwFailsafe;
+
+    // --- Zone 3: Commanded Modes (multi-writer by design; ADR 0012) ---
+    bool stationary;
+    bool sleepMode;
+    uint32_t sleepSinceMs;
+    uint8_t activeMood;
+    bool webControlEnabled;
+    bool rcDebugMode;
+
+    // --- Zone 4: Dome link (DomeLinkTask) ---
+    float domeTargetSpeed;  // -1.0 .. +1.0
+    float dome_speed;
+    uint32_t domeHbRx;
+    uint32_t bodyHbTx;
+    uint32_t domeRxOverflowCount;
+    uint32_t domeRxUnknownCount;
+    DomeLinkTransport domeActiveTransport;
+    DomeUartOwner domeUartOwner;
+    uint32_t domeLastSeenMs;
+    uint32_t domeLastSeenUartMs;
+    uint32_t domeLastSeenWifiMs;
+
+    // --- Zone 5: Audio (AudioTask) ---
+    bool audioActive;
+    bool audio_module_link_ok;
+    uint8_t audio_module_play_state;
+    uint8_t audio_module_device;
+    uint16_t audio_module_total_tracks;
+    uint16_t audio_module_current_track;
+    AudioRxStatus audio_module_rx_status;
+
+    // --- Zone 6: Servo (ServoTask) ---
+    bool armOpen[2];
+    uint16_t arm1TargetUs;
+    uint16_t arm2TargetUs;
+
+    // --- Zone 7: Aux LED ---
+    AuxLedState auxLed;
+
+    // --- Zone 8: Sequence dispatcher (SequenceDispatcherTask; dome_link.cpp co-writes for coordination) ---
+    bool domeSeqActive;    // true while a dome sequence is running
+    uint32_t domeSeqUntilMs;   // safety timeout: auto-clear domeSeqActive at this millis()
+
+    // --- Zone 9: Shared telemetry / documented handshake flags (multi-writer by design) ---
+    uint32_t queueOverflowCount;  // shared telemetry counter, incremented by many tasks
+    bool rcConfigDirty;  // Set by config apply, cleared by RcInputTask after rebuild
+    bool seqStopRequested;  // Non-latching web stop signal (POST /api/seq/stop), cleared by SequenceDispatcherTask
 };
 
 // -----------------------------------------------------------------------------
@@ -273,6 +262,47 @@ inline void recordFailsafeZeroOutputLocked(uint32_t nowMs) {
         return;
     }
     robotState.failsafeLastTriggerToZeroMs = (uint32_t)(nowMs - robotState.failsafeLastTriggerMs);
+}
+
+// -----------------------------------------------------------------------------
+// FailsafeDiagnostics — canonical multi-field zone snapshot (ADR 0012)
+// -----------------------------------------------------------------------------
+struct FailsafeDiagnostics {
+    bool estop;
+    bool sbusSignalLost;
+    bool sbusHwFailsafe;
+    bool webDriveExpired;
+    FailsafeSource failsafeSource;
+    uint32_t failsafeTriggerCount;
+    uint32_t failsafeLastTriggerMs;
+    uint32_t failsafeLastZeroOutputMs;
+    uint32_t failsafeLastTriggerToZeroMs;
+    uint32_t failsafeLastWatchdogMs;
+    FailsafeSource failsafeLastTriggerSource;
+};
+
+// Caller already holds robotStateMux (e.g. composing several zones in one
+// critical section). Does not take/release the mutex itself.
+inline void copyFailsafeDiagnosticsLocked(FailsafeDiagnostics* out) {
+    out->estop = robotState.estop;
+    out->sbusSignalLost = robotState.sbusSignalLost;
+    out->sbusHwFailsafe = robotState.sbusHwFailsafe;
+    out->webDriveExpired = robotState.webDriveExpired;
+    out->failsafeSource = robotState.failsafeSource;
+    out->failsafeTriggerCount = robotState.failsafeTriggerCount;
+    out->failsafeLastTriggerMs = robotState.failsafeLastTriggerMs;
+    out->failsafeLastZeroOutputMs = robotState.failsafeLastZeroOutputMs;
+    out->failsafeLastTriggerToZeroMs = robotState.failsafeLastTriggerToZeroMs;
+    out->failsafeLastWatchdogMs = robotState.failsafeLastWatchdogMs;
+    out->failsafeLastTriggerSource = robotState.failsafeLastTriggerSource;
+}
+
+// Standalone capture: takes robotStateMux itself. Do not call while already
+// holding the mutex.
+inline void captureFailsafeDiagnostics(FailsafeDiagnostics* out) {
+    taskENTER_CRITICAL(&robotStateMux);
+    copyFailsafeDiagnosticsLocked(out);
+    taskEXIT_CRITICAL(&robotStateMux);
 }
 
 // -----------------------------------------------------------------------------

@@ -62,29 +62,28 @@ void safetyMonitorTask(void* pvParameters) {
         }
 
         // Read state snapshot under mutex
-        taskENTER_CRITICAL(&robotStateMux);
-        uint32_t fsCount = robotState.failsafeTriggerCount;
-        bool estop = robotState.estop;
-        bool sbusLost = robotState.sbusSignalLost;
-        bool sbusHw = robotState.sbusHwFailsafe;
-        uint32_t domeLastMs = robotState.domeLastSeenMs;
-        FailsafeSource fsSrc = robotState.failsafeSource;
-        uint32_t triggerMs = robotState.failsafeLastTriggerMs;
-        uint32_t zeroMs = robotState.failsafeLastZeroOutputMs;
-        uint32_t triggerToZeroMs = robotState.failsafeLastTriggerToZeroMs;
-        FailsafeSource triggerSrc = robotState.failsafeLastTriggerSource;
+        FailsafeDiagnostics diag = {};
+        uint32_t domeLastMs;
+        bool sbusLost;
 #if PA_HEAP_PROFILE
-        bool audioActive = robotState.audioActive;
+        bool audioActive;
+#endif
+        taskENTER_CRITICAL(&robotStateMux);
+        copyFailsafeDiagnosticsLocked(&diag);
+        domeLastMs = robotState.domeLastSeenMs;
+        sbusLost = diag.sbusSignalLost;
+#if PA_HEAP_PROFILE
+        audioActive = robotState.audioActive;
 #endif
         taskEXIT_CRITICAL(&robotStateMux);
         // Log new failsafe triggers
-        if (fsCount > lastFailsafeCount) {
+        if (diag.failsafeTriggerCount > lastFailsafeCount) {
             PA_LOG_WARN(TAG,
                         "failsafe triggered — count:%lu source:%d estop:%d sbus:%d hw:%d trigger_ms:%lu zero_ms:%lu trigger_to_zero_ms:%lu trigger_src:%d",
-                        (unsigned long)fsCount, (int)fsSrc, (int)estop, (int)sbusLost, (int)sbusHw,
-                        (unsigned long)triggerMs, (unsigned long)zeroMs,
-                        (unsigned long)triggerToZeroMs, (int)triggerSrc);
-            lastFailsafeCount = fsCount;
+                        (unsigned long)diag.failsafeTriggerCount, (int)diag.failsafeSource, (int)diag.estop, (int)diag.sbusSignalLost, (int)diag.sbusHwFailsafe,
+                        (unsigned long)diag.failsafeLastTriggerMs, (unsigned long)diag.failsafeLastZeroOutputMs,
+                        (unsigned long)diag.failsafeLastTriggerToZeroMs, (int)diag.failsafeLastTriggerSource);
+            lastFailsafeCount = diag.failsafeTriggerCount;
         }
 
         // Log dome connection state transitions

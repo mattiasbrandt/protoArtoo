@@ -119,20 +119,16 @@ void driveTask(void* pvParameters) {
             triggerMs = robotState.failsafeLastTriggerMs;
             taskEXIT_CRITICAL(&robotStateMux);
             if (!zeroOutputRecorded || triggerMs != zeroRecordedForTriggerMs) {
-                FailsafeSource triggerSource;
-                uint32_t triggerToZeroMs;
-                uint32_t recordedTriggerMs;
+                FailsafeDiagnostics diag = {};
                 taskENTER_CRITICAL(&robotStateMux);
                 recordFailsafeZeroOutputLocked(nowMs);
-                triggerSource = robotState.failsafeLastTriggerSource;
-                triggerToZeroMs = robotState.failsafeLastTriggerToZeroMs;
-                recordedTriggerMs = robotState.failsafeLastTriggerMs;
+                copyFailsafeDiagnosticsLocked(&diag);
                 taskEXIT_CRITICAL(&robotStateMux);
                 PA_LOG_INFO(TAG,
                             "failsafe zero output asserted — source:%d trigger_to_zero:%lu ms",
-                            (int)triggerSource, (unsigned long)triggerToZeroMs);
+                            (int)diag.failsafeLastTriggerSource, (unsigned long)diag.failsafeLastTriggerToZeroMs);
                 zeroOutputRecorded = true;
-                zeroRecordedForTriggerMs = recordedTriggerMs;
+                zeroRecordedForTriggerMs = diag.failsafeLastTriggerMs;
             }
         } else {
             zeroOutputRecorded = false;

@@ -67,19 +67,9 @@ void captureValidationSnapshot(ValidationSnapshot* out) {
     ValidationSnapshot snap = {};
     const uint32_t nowMs = currentMillis();
 
-    bool estop;
-    bool webDriveExpired;
-    bool sbusSignalLost;
+    FailsafeDiagnostics diag = {};
     bool sbus2SignalLost;
-    bool sbusHwFailsafe;
     bool sbus2HwFailsafe;
-    FailsafeSource failsafeSource;
-    uint32_t failsafeCount;
-    uint32_t triggerMs;
-    uint32_t zeroMs;
-    uint32_t triggerToZeroMs;
-    uint32_t watchdogMs;
-    FailsafeSource triggerSource;
 
     bool enableS3DomeCtrl;
     uint32_t domeHbRx;
@@ -113,19 +103,9 @@ void captureValidationSnapshot(ValidationSnapshot* out) {
     configCacheRead(&cfg);
 
     taskENTER_CRITICAL(&robotStateMux);
-    estop = robotState.estop;
-    webDriveExpired = robotState.webDriveExpired;
-    sbusSignalLost = robotState.sbusSignalLost;
+    copyFailsafeDiagnosticsLocked(&diag);
     sbus2SignalLost = robotState.sbus2SignalLost;
-    sbusHwFailsafe = robotState.sbusHwFailsafe;
     sbus2HwFailsafe = robotState.sbus2HwFailsafe;
-    failsafeSource = robotState.failsafeSource;
-    failsafeCount = robotState.failsafeTriggerCount;
-    triggerMs = robotState.failsafeLastTriggerMs;
-    zeroMs = robotState.failsafeLastZeroOutputMs;
-    triggerToZeroMs = robotState.failsafeLastTriggerToZeroMs;
-    watchdogMs = robotState.failsafeLastWatchdogMs;
-    triggerSource = robotState.failsafeLastTriggerSource;
 
     enableS3DomeCtrl = cfg.system.enable_s3_dome_ctrl;
     domeHbRx = robotState.domeHbRx;
@@ -158,17 +138,17 @@ void captureValidationSnapshot(ValidationSnapshot* out) {
 
     snap.updatedMs = nowMs;
 
-    snap.drive.estop = estop;
-    snap.drive.webDriveExpired = webDriveExpired;
-    snap.drive.sbusSignalLost = sbusSignalLost;
-    snap.drive.sbusHwFailsafe = sbusHwFailsafe;
-    snap.drive.failsafeSource = failsafeSource;
-    snap.drive.failsafeCount = failsafeCount;
-    snap.drive.triggerMs = triggerMs;
-    snap.drive.zeroMs = zeroMs;
-    snap.drive.triggerToZeroMs = triggerToZeroMs;
-    snap.drive.watchdogMs = watchdogMs;
-    snap.drive.triggerSource = triggerSource;
+    snap.drive.estop = diag.estop;
+    snap.drive.webDriveExpired = diag.webDriveExpired;
+    snap.drive.sbusSignalLost = diag.sbusSignalLost;
+    snap.drive.sbusHwFailsafe = diag.sbusHwFailsafe;
+    snap.drive.failsafeSource = diag.failsafeSource;
+    snap.drive.failsafeCount = diag.failsafeTriggerCount;
+    snap.drive.triggerMs = diag.failsafeLastTriggerMs;
+    snap.drive.zeroMs = diag.failsafeLastZeroOutputMs;
+    snap.drive.triggerToZeroMs = diag.failsafeLastTriggerToZeroMs;
+    snap.drive.watchdogMs = diag.failsafeLastWatchdogMs;
+    snap.drive.triggerSource = diag.failsafeLastTriggerSource;
 
     snap.domeLink.hbTx = bodyHbTx;
     snap.domeLink.hbRx = domeHbRx;
@@ -208,9 +188,9 @@ void captureValidationSnapshot(ValidationSnapshot* out) {
     ValidationRcSourceSnapshot& sbus1 = snap.rc.sources[0];
     sbus1.key = "sbus1";
     sbus1.enabled = rcSourceEnabledForMode(RC_BINDING_SBUS1, rcMode, enableRcCh1, enableRcCh2, anyPwmEnabled, sbusUseCh2);
-    sbus1.linked = sbus1.enabled && lastSbus1Ms > 0 && !sbusSignalLost && sbus1Age <= timeoutMs;
-    sbus1.signalLost = sbus1.enabled ? sbusSignalLost : false;
-    sbus1.failsafe = sbus1.enabled ? sbusHwFailsafe : false;
+    sbus1.linked = sbus1.enabled && lastSbus1Ms > 0 && !diag.sbusSignalLost && sbus1Age <= timeoutMs;
+    sbus1.signalLost = sbus1.enabled ? diag.sbusSignalLost : false;
+    sbus1.failsafe = sbus1.enabled ? diag.sbusHwFailsafe : false;
     sbus1.ageMs = sbus1Age;
 
     ValidationRcSourceSnapshot& sbus2 = snap.rc.sources[1];
