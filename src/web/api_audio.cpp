@@ -34,6 +34,7 @@
 #include <ctype.h>
 #include <string.h>
 
+#include "api_audio_category_range_apply.h"
 #include "api_audio_mood_map_apply.h"
 #include "api_helpers.h"
 #include "audio_dollar_parser.h"
@@ -102,22 +103,6 @@ static constexpr ChirpCategoryBindingMapEntry CHIRP_CATEGORY_BINDING_KEYS[] = {
     {"snd_cat_snrk_lo", "snd_cat_snrk_hi", "chr_cat_snrk"},
     {"snd_cat_whis_lo", "snd_cat_whis_hi", "chr_cat_whis"},
 };
-
-static const ChirpCategoryBindingMapEntry* chirpCategoryBindingEntryForRangeKeys(const char* loKey,
-                                                                                   const char* hiKey) {
-    if (loKey == nullptr || hiKey == nullptr) {
-        return nullptr;
-    }
-    for (size_t i = 0;
-         i < (sizeof(CHIRP_CATEGORY_BINDING_KEYS) / sizeof(CHIRP_CATEGORY_BINDING_KEYS[0])); ++i) {
-        const ChirpCategoryBindingMapEntry& entry = CHIRP_CATEGORY_BINDING_KEYS[i];
-        if (strcmp(entry.loKey, loKey) == 0 && strcmp(entry.hiKey, hiKey) == 0) {
-            return &entry;
-        }
-    }
-    return nullptr;
-}
-
 
 static const char* chirpBindingNvsKey(const char* key) {
     if (key == nullptr) {
@@ -474,115 +459,39 @@ void registerAudioRoutes(AsyncWebServer& server) {
     // ---- POST /api/audio/category-range ----
     // Atomic update for one category lo/hi pair to avoid partial two-request saves.
     server.on("/api/audio/category-range", HTTP_POST, [](AsyncWebServerRequest* req) {
-        const AsyncWebParameter* loKeyParam = req->getParam("lo_key", true);
-        const AsyncWebParameter* hiKeyParam = req->getParam("hi_key", true);
-        const AsyncWebParameter* loParam = req->getParam("lo", true);
-        const AsyncWebParameter* hiParam = req->getParam("hi", true);
-        if (!loKeyParam || !hiKeyParam || !loParam || !hiParam) {
-            req->send(400, "application/json",
-                      "{\"ok\":false,\"error\":\"requires lo_key, hi_key, lo, hi parameters\"}");
-            return;
-        }
-
-        String loKeyValue = loKeyParam->value();
-        String hiKeyValue = hiKeyParam->value();
-        const char* loKey = loKeyValue.c_str();
-        const char* hiKey = hiKeyValue.c_str();
-
-        const char* loCompanion = configAudioCategoryCompanionKey(loKey);
-        const char* hiCompanion = configAudioCategoryCompanionKey(hiKey);
-        const ChirpCategoryBindingMapEntry* categoryBindingEntry =
-            chirpCategoryBindingEntryForRangeKeys(loKey, hiKey);
-        if (loCompanion == nullptr || hiCompanion == nullptr || strcmp(loCompanion, hiKey) != 0 ||
-            strcmp(hiCompanion, loKey) != 0 || categoryBindingEntry == nullptr) {
-            req->send(400, "application/json",
-                      "{\"ok\":false,\"error\":\"invalid category key pair\"}");
-            return;
-        }
-
-        const AsyncWebParameter* bankParam = req->getParam("bank", true);
-        const AsyncWebParameter* pageParam = req->getParam("page", true);
-        const AsyncWebParameter* clearBindingParam = req->getParam("clear_binding", true);
-        const bool hasBankedParams = (bankParam != nullptr) || (pageParam != nullptr);
-        bool clearBinding = false;
-        if (clearBindingParam != nullptr &&
-            !parseBoolValue(clearBindingParam->value().c_str(), &clearBinding)) {
-            req->send(400, "application/json",
-                      "{\"ok\":false,\"error\":\"clear_binding must be true/false/1/0\"}");
-            return;
-        }
-        if (hasBankedParams && clearBinding) {
-            req->send(400, "application/json",
-                      "{\"ok\":false,\"error\":\"clear_binding cannot be combined with bank/page\"}");
-            return;
-        }
-
-        uint8_t categoryBank = 0;
-        char categoryPage = 'A';
-        if (hasBankedParams) {
-            if (!(bankParam && pageParam)) {
-                req->send(400, "application/json",
-                          "{\"ok\":false,\"error\":\"bank and page must be provided together\"}");
-                return;
+        ConfigParamSource params;
+        params.ctx = req;
+        params.get = [](void* ctx, const char* name) -> const char* {
+            auto* r = static_cast<AsyncWebServerRequest*>(ctx);
+            if (!r->hasParam(name, true)) {
+                return nullptr;
             }
-            if (!audioCatalogSupported()) {
-                req->send(404, "application/json",
-                          "{\"ok\":false,\"error\":\"catalog unsupported by active backend\"}");
-                return;
-            }
-            uint32_t bankValue = 0;
-            if (!parseUint32Value(bankParam->value().c_str(), &bankValue) || bankValue < 1 ||
-                bankValue > 6) {
-                req->send(400, "application/json",
-                          "{\"ok\":false,\"error\":\"bank must be 1-6\"}");
-                return;
-            }
-            if (!parseChirpPage(pageParam->value(), &categoryPage)) {
-                req->send(400, "application/json",
-                          "{\"ok\":false,\"error\":\"page must be a single letter A-Z\"}");
-                return;
-            }
-            categoryBank = (uint8_t)bankValue;
-        } else if (clearBinding && !audioCatalogSupported()) {
-            req->send(404, "application/json",
-                      "{\"ok\":false,\"error\":\"catalog unsupported by active backend\"}");
-            return;
-        }
+            return r->getParam(name, true)->value().c_str();
+        };
 
-        uint32_t loTrack = 0;
-        uint32_t hiTrack = 0;
-        if (!parseUint32Value(loParam->value().c_str(), &loTrack) ||
-            !parseUint32Value(hiParam->value().c_str(), &hiTrack)) {
-            req->send(400, "application/json",
-                      "{\"ok\":false,\"error\":\"range values must be non-negative integers\"}");
-            return;
-        }
-        if (loTrack > 999U || hiTrack > 999U) {
-            req->send(400, "application/json",
-                      "{\"ok\":false,\"error\":\"range values must be 0–999\"}");
-            return;
-        }
-        if (!((loTrack == 0U && hiTrack == 0U) ||
-              (loTrack >= 1U && hiTrack >= 1U && loTrack <= hiTrack))) {
-            req->send(400, "application/json",
-                      "{\"ok\":false,\"error\":\"range must be 0/0 or 1–999 with lo <= hi\"}");
-            return;
-        }
-
-        const uint16_t loValue = (uint16_t)loTrack;
-        const uint16_t hiValue = (uint16_t)hiTrack;
         ConfigSnapshot snap;
-        uint16_t oldLo = 0;
-        uint16_t oldHi = 0;
         configCacheRead(&snap);
 
-        if (!configAudioGetTrackByKey(snap.audio, loKey, &oldLo) ||
-            !configAudioGetTrackByKey(snap.audio, hiKey, &oldHi) ||
-            !configAudioSetTrackByKey(&snap.audio, loKey, loValue) ||
-            !configAudioSetTrackByKey(&snap.audio, hiKey, hiValue)) {
-            req->send(400, "application/json", "{\"ok\":false,\"error\":\"unknown category key\"}");
+        static AudioCategoryRangeApplyResult result;
+        audioCategoryRangeApply(params, audioCatalogSupported(), &snap, &result);
+        if (result.error.hasError) {
+            char err[192];
+            snprintf(err, sizeof(err), "{\"ok\":false,\"error\":\"%s\"}", result.error.message);
+            req->send(result.error.notFound ? 404 : 400, "application/json", err);
             return;
         }
+
+        const char* loKey = result.loKey;
+        const char* hiKey = result.hiKey;
+        const uint16_t loValue = result.loValue;
+        const uint16_t hiValue = result.hiValue;
+        const uint16_t oldLo = result.oldLo;
+        const uint16_t oldHi = result.oldHi;
+        const bool hasBankedParams = result.hasBankedParams;
+        const bool clearBinding = result.clearBinding;
+        const uint8_t categoryBank = result.categoryBank;
+        const char categoryPage = result.categoryPage;
+        const char* categoryNvsKey = result.categoryNvsKey;
 
         configCacheApply(snap);
 
@@ -593,9 +502,9 @@ void registerAudioRoutes(AsyncWebServer& server) {
             bool wroteBinding = true;
             if (wroteConfig && hasBankedParams) {
                 uint32_t packedBinding = packChirpCategoryBinding(categoryBank, categoryPage);
-                wroteBinding = prefs.putUInt(categoryBindingEntry->nvsKey, packedBinding) > 0;
+                wroteBinding = prefs.putUInt(categoryNvsKey, packedBinding) > 0;
             } else if (wroteConfig && clearBinding) {
-                wroteBinding = prefs.putUInt(categoryBindingEntry->nvsKey, 0) > 0;
+                wroteBinding = prefs.putUInt(categoryNvsKey, 0) > 0;
             }
             if (wroteConfig && !wroteBinding) {
                 // CHIRP write failed: restore robotState and re-save old config.
