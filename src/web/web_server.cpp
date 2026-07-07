@@ -1135,9 +1135,12 @@ void webServerInit() {
     WiFi.onEvent(handleWiFiEvent);
 
     if (!eventTaskStarted) {
-        // Keep 4096 bytes for status/rc/log SSE work and JSON serialization headroom.
-        // A previous 2048-byte reduction overflowed on client connect.
-        xTaskCreatePinnedToCore(eventStreamTask, "WebEvents", 4096, nullptr, 1, nullptr, 0);
+        // Keep 6144 bytes for status/rc/log SSE work and JSON serialization headroom.
+        // A previous 2048-byte reduction overflowed on client connect; 4096 also
+        // overflowed (DoubleException in _dtoa_r float formatting) once
+        // requestStatusBroadcastNow() call sites grew from rare hardware edges to
+        // every web write handler, raising buildStatusJson() call frequency here.
+        xTaskCreatePinnedToCore(eventStreamTask, "WebEvents", 6144, nullptr, 1, nullptr, 0);
         eventTaskStarted = true;
     }
 

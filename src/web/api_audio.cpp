@@ -43,6 +43,7 @@
 #include "mood.h"
 #include "mood_sound_mapping.h"
 #include "robot_state.h"
+#include "web_server.h"
 
 static const char* TAG = "WebServer";
 
@@ -920,6 +921,7 @@ void registerAudioRoutes(AsyncWebServer& server) {
             return;
         }
         applyMood((uint8_t)mood);
+        requestStatusBroadcastNow();
         PA_LOG_INFO(TAG, "[MOOD] POST /api/mood mood=%d", mood);
         req->send(200, "application/json", "{\"ok\":true}");
     });

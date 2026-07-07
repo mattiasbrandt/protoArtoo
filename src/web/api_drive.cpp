@@ -223,11 +223,13 @@ void registerDriveRoutes(AsyncWebServer& server) {
         if (mode == "stationary") {
             setStationaryModeWithSound(true);
             saveConfigToNvs();
+            requestStatusBroadcastNow();
             PA_LOG_INFO(TAG, "[WEB] Mode set to stationary");
             req->send(200, "application/json", "{\"ok\":true}");
         } else if (mode == "driving") {
             setStationaryModeWithSound(false);
             saveConfigToNvs();
+            requestStatusBroadcastNow();
             PA_LOG_INFO(TAG, "[WEB] Mode set to driving");
             req->send(200, "application/json", "{\"ok\":true}");
         } else {

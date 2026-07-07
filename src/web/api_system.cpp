@@ -76,6 +76,9 @@ void registerSystemRoutes(AsyncWebServer& server) {
             return;
         }
 
+        if (changed) {
+            requestStatusBroadcastNow();
+        }
         PA_LOG_INFO(TAG, "[WEB] POST /api/sleep changed=%s", changed ? "true" : "false");
         req->send(200, "application/json", body);
     });
@@ -91,6 +94,9 @@ void registerSystemRoutes(AsyncWebServer& server) {
             return;
         }
 
+        if (changed) {
+            requestStatusBroadcastNow();
+        }
         PA_LOG_INFO(TAG, "[WEB] POST /api/wake changed=%s", changed ? "true" : "false");
         req->send(200, "application/json", body);
     });
@@ -138,6 +144,7 @@ void registerSystemRoutes(AsyncWebServer& server) {
 
     server.on("/api/reboot", HTTP_POST, [](AsyncWebServerRequest* req) {
         PA_LOG_INFO(TAG, "[WEB] POST /api/reboot - restart requested");
+        requestStatusBroadcastNow();
         req->send(200, "application/json", "{\"ok\":true}");
         requestSystemRestart(500);
     });

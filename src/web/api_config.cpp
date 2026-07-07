@@ -28,6 +28,7 @@
 #include "robot_state.h"
 #include "seq_store_index.h"   // Learned Sequence names accepted for RC binding
 #include "servo_component_helpers.h"
+#include "web_server.h"
 
 #include <Preferences.h>
 
@@ -1393,6 +1394,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
             return;
         }
         prefs.end();
+        requestStatusBroadcastNow();
         JsonDocument doc;
         if (!populateConfigJson(doc, snap)) {
             req->send(500, "application/json",
