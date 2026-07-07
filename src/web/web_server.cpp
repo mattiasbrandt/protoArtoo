@@ -212,14 +212,21 @@ static bool littleFsReady = false;
 // Concurrent /api/events (SSE) clients. Real operator use is 1-2 tabs; this
 // leaves room for a couple of legitimate low-traffic viewers without letting
 // an unbounded number of tabs/reloads pile up long-lived connections.
-static constexpr size_t kMaxSseClients = 3;
+#ifndef PA_ADMISSION_MAX_SSE_CLIENTS
+#define PA_ADMISSION_MAX_SSE_CLIENTS 3
+#endif
+static constexpr size_t kMaxSseClients = PA_ADMISSION_MAX_SSE_CLIENTS;
 
 // Below this, prefer rejecting new non-essential requests over constructing
 // more response objects. Chosen with wide margin above the ~2-10 KB
 // largest-block range where allocation failures were actually observed
 // while reproducing the crash under load, so a rejection response can still
-// be built safely.
-static constexpr size_t kMinLargestFreeBlockForNewWork = 20000;
+// be built safely. Matches the threshold used by the vendor-side guards in
+// tools/patch_async_sse.py (LittleFS static-file open, AsyncTCP accept).
+#ifndef PA_ADMISSION_MIN_LARGEST_FREE_BLOCK
+#define PA_ADMISSION_MIN_LARGEST_FREE_BLOCK 20000
+#endif
+static constexpr size_t kMinLargestFreeBlockForNewWork = PA_ADMISSION_MIN_LARGEST_FREE_BLOCK;
 
 #ifdef ARDUINO
 static size_t largestFreeBlock8Bit() {
