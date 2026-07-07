@@ -43,6 +43,75 @@ class PatchAsyncWebServerTest(unittest.TestCase):
         self.assertNotIn("_fs.exists", patched)
         self.assertEqual(PATCH.patch_static_handler(patched), patched)
 
+    def test_static_handler_alloc_patch_uses_nothrow_and_is_idempotent(self):
+        source = (
+            "prefix\n"
+            + PATCH.STATIC_ALLOC_INCLUDES_BEFORE
+            + "middle\n"
+            + PATCH.STATIC_ALLOC_SEARCH_BEFORE
+            + "suffix\n"
+        )
+
+        patched = PATCH.patch_static_handler_alloc(source)
+
+        self.assertIn("#include <new>", patched)
+        self.assertIn("new (std::nothrow) AsyncBasicResponse(304)", patched)
+        self.assertIn("new (std::nothrow) AsyncFileResponse", patched)
+        self.assertEqual(PATCH.patch_static_handler_alloc(patched), patched)
+
+    def test_async_event_dispatch_patch_catches_exceptions_and_is_idempotent(self):
+        source = (
+            "prefix\n"
+            + PATCH.ASYNC_EVENT_INCLUDES_BEFORE
+            + "middle\n"
+            + PATCH.ASYNC_EVENT_DISPATCH_BEFORE
+            + "suffix\n"
+        )
+
+        patched = PATCH.patch_async_event_dispatch(source)
+
+        self.assertIn("#include <exception>", patched)
+        self.assertIn("try {", patched)
+        self.assertIn("catch (const std::exception &ex)", patched)
+        self.assertEqual(PATCH.patch_async_event_dispatch(patched), patched)
+
+    def test_webrequest_response_alloc_patch_uses_nothrow_and_is_idempotent(self):
+        source = (
+            "prefix\n"
+            + PATCH.WEBREQUEST_ALLOC_INCLUDES_BEFORE
+            + "middle\n"
+            + PATCH.WEBREQUEST_FACTORY_ALLOC_BEFORE
+            + "\n"
+            + PATCH.WEBREQUEST_SEND_NULL_BEFORE
+            + "  delete _response;\n"
+            + "}\n"
+            + "suffix\n"
+        )
+
+        patched = PATCH.patch_webrequest_response_alloc(source)
+
+        self.assertIn("#include <new>", patched)
+        self.assertIn("new (std::nothrow) AsyncBasicResponse", patched)
+        self.assertIn("new (std::nothrow) AsyncResponseStream", patched)
+        self.assertIn("if (response == nullptr)", patched)
+        self.assertIn("abort();", patched)
+        self.assertEqual(PATCH.patch_webrequest_response_alloc(patched), patched)
+
+    def test_eventsource_response_alloc_patch_uses_nothrow_and_is_idempotent(self):
+        source = (
+            "prefix\n"
+            + PATCH.EVENTSOURCE_ALLOC_INCLUDES_BEFORE
+            + "middle\n"
+            + PATCH.EVENTSOURCE_RESPONSE_ALLOC_BEFORE
+            + "suffix\n"
+        )
+
+        patched = PATCH.patch_eventsource_response_alloc(source)
+
+        self.assertIn("#include <new>", patched)
+        self.assertIn("new (std::nothrow) AsyncEventSourceResponse", patched)
+        self.assertEqual(PATCH.patch_eventsource_response_alloc(patched), patched)
+
 
 if __name__ == "__main__":
     unittest.main()
