@@ -17,6 +17,7 @@
 
 #include "api_helpers.h"
 #include "audio_task.h"
+#include "commanded_modes.h"
 #include "config_store.h"
 #include "drive_arbiter.h"
 #include "drive_speed_preset.h"
@@ -56,25 +57,6 @@ enum ManualCommand : uint8_t {
     MC_DRIVING_MODE,
 };
 
-
-void setStationaryModeWithSound(bool stationary) {
-    bool queueDriveOn = false;
-    bool wasStationary = false;
-    taskENTER_CRITICAL(&robotStateMux);
-    wasStationary = robotState.stationary;
-    robotState.stationary = stationary;
-    if (wasStationary && !stationary) {
-        queueDriveOn = true;
-    }
-    taskEXIT_CRITICAL(&robotStateMux);
-    ConfigSnapshot cfg = {};
-    configCacheRead(&cfg);
-    cfg.system.stationary = stationary;
-    configCacheApply(cfg);
-    if (queueDriveOn) {
-        audioQueuePlaySlot(AUDIO_SLOT_SYS_DRIVE_ON, SRC_INTERNAL);
-    }
-}
 
 ManualCommand resolveManualCommand(const char* command) {
     if (command == nullptr) {
@@ -175,12 +157,12 @@ bool executeManualCommand(const String& raw) {
             return true;
 
         case MC_STATIONARY_MODE:
-            setStationaryModeWithSound(true);
+            commandedSetStationary(true, SRC_WEB_API);
             saveConfigToNvs();
             return true;
 
         case MC_DRIVING_MODE:
-            setStationaryModeWithSound(false);
+            commandedSetStationary(false, SRC_WEB_API);
             saveConfigToNvs();
             return true;
 
@@ -221,13 +203,13 @@ void registerDriveRoutes(AsyncWebServer& server) {
         mode.toLowerCase();
 
         if (mode == "stationary") {
-            setStationaryModeWithSound(true);
+            commandedSetStationary(true, SRC_WEB_API);
             saveConfigToNvs();
             requestStatusBroadcastNow();
             PA_LOG_INFO(TAG, "[WEB] Mode set to stationary");
             req->send(200, "application/json", "{\"ok\":true}");
         } else if (mode == "driving") {
-            setStationaryModeWithSound(false);
+            commandedSetStationary(false, SRC_WEB_API);
             saveConfigToNvs();
             requestStatusBroadcastNow();
             PA_LOG_INFO(TAG, "[WEB] Mode set to driving");

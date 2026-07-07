@@ -24,6 +24,7 @@
 #include "api_rc_map_apply.h"
 #include "api_helpers.h"
 #include "audio_task.h"
+#include "commanded_modes.h"
 #include "config.h"
 #include "config_store.h"
 #include "logging.h"
@@ -601,24 +602,15 @@ void registerConfigRoutes(AsyncWebServer& server) {
             PA_LOG_INFO(TAG, "%s", result.applied.lines[i]);
         }
 
-        bool queueDriveOn = false;
-        bool wasStationary = false;
-
-        taskENTER_CRITICAL(&robotStateMux);
-        wasStationary = robotState.stationary;
-        taskEXIT_CRITICAL(&robotStateMux);
         // Apply working snapshot but preserve speedPresetActive to the special activePresetAfter value
         configCacheApply(working);
-        taskENTER_CRITICAL(&robotStateMux);
-        robotState.stationary = working.system.stationary;  // sync both fields
-        if (stationaryProvided && wasStationary && !robotState.stationary) {
-            queueDriveOn = true;
-        }
-        taskEXIT_CRITICAL(&robotStateMux);
 
-        if (queueDriveOn) {
-            audioQueuePlaySlot(AUDIO_SLOT_SYS_DRIVE_ON, SRC_INTERNAL);
+        // Sync stationary mode with edge detection and drive-on cue, only if explicitly
+        // provided in the request (preserves the original gating on field presence).
+        if (stationaryProvided) {
+            commandedSetStationary(working.system.stationary, SRC_WEB_API);
         }
+
         if (result.actions.playDomeOnCue) {
             audioQueuePlaySlot(AUDIO_SLOT_SYS_DOME_ON, SRC_INTERNAL);
         }

@@ -26,6 +26,7 @@
 
 #include "../../include/audio_task.h"
 #include "../../include/sequence_dispatcher.h"
+#include "../../include/commanded_modes.h"
 #include "../../include/config.h"
 #include "../../include/config_store.h"
 #include "../../include/dome_link.h"
@@ -74,28 +75,6 @@ static void storePwmDiagnostics(const uint32_t pulses[6], const bool enabled[6])
         robotState.lastPwmMs = now;
     }
     taskEXIT_CRITICAL(&robotStateMux);
-}
-
-static bool setStationaryMode(bool stationary) {
-    bool queueDriveOn = false;
-    bool wasStationary = false;
-    taskENTER_CRITICAL(&robotStateMux);
-    wasStationary = robotState.stationary;
-    robotState.stationary = stationary;
-    if (wasStationary && !stationary) {
-        queueDriveOn = true;
-    }
-    taskEXIT_CRITICAL(&robotStateMux);
-    // Mirror web path: keep config cache in sync so the next /api/config save
-    // persists the RC-set mode rather than reverting it from the stale cache.
-    ConfigSnapshot cfg = {};
-    configCacheRead(&cfg);
-    cfg.system.stationary = stationary;
-    configCacheApply(cfg);
-    if (!queueDriveOn) {
-        return false;
-    }
-    return audioQueuePlaySlot(AUDIO_SLOT_SYS_DRIVE_ON, SRC_INTERNAL);
 }
 
 static bool queueServoSequence(uint8_t sequenceId, CommandSource source) {
@@ -270,7 +249,7 @@ static void dispatchProcessorOutput(const RcProcessorOutput& output, const RcMap
     // Backbone: drive
     if ((output.backbone.driveSpeed != 0 || output.backbone.driveSteer != 0) &&
         !output.stationaryLockedByTrigger) {
-        setStationaryMode(false);
+        commandedSetStationary(false, SRC_SBUS);
     }
     driveArbiterSubmit(DriveSource::RC, output.backbone.driveSpeed, output.backbone.driveSteer,
                        millis());
@@ -357,7 +336,7 @@ static void dispatchProcessorOutput(const RcProcessorOutput& output, const RcMap
             requestStatusBroadcastNow();
         }
         if (res.setStationary) {
-            setStationaryMode(res.newStationaryMode);
+            commandedSetStationary(res.newStationaryMode, SRC_SBUS);
         }
         if (res.setSpeedPreset) {
             applySpeedPresetRuntime(res.newSpeedPreset);
@@ -455,7 +434,7 @@ static void processTriggerAction(RobotActionId target, const char* payload, bool
         requestStatusBroadcastNow();
     }
     if (res.setStationary) {
-        setStationaryMode(res.newStationaryMode);
+        commandedSetStationary(res.newStationaryMode, SRC_SBUS);
         s_rcProcessor.stationaryLocked = res.newStationaryMode;
     }
     if (res.setSpeedPreset) {
