@@ -10,6 +10,7 @@
   const logConsole = document.getElementById("log-console");
   const logPaused = document.getElementById("log-paused");
   const logCommandInput = document.getElementById("log-command-input");
+  const logLevelPill = document.getElementById("log-level-pill");
   const componentStatusCard = document.getElementById("component-status-card");
   const componentStatusGrid = document.getElementById("component-status-grid");
 
@@ -544,6 +545,71 @@
     }
   };
 
+  const LOG_LEVELS = {
+    1: { label: "Error", icon: "🪵", cls: "pill-error", hint: "Faults only" },
+    2: { label: "Info", icon: "🪵", cls: "pill-info", hint: "Boot + service health" },
+    3: { label: "Debug", icon: "🪵", cls: "pill-warn", hint: "Verbose" },
+  };
+  let currentLogLevel = null;
+  let logLevelPending = false;
+
+  const renderLogLevelPill = (level) => {
+    if (!logLevelPill) return;
+    const info = LOG_LEVELS[level];
+    if (!info) {
+      logLevelPill.textContent = "🪵 ...";
+      logLevelPill.title = "Log level unknown — click to retry";
+      logLevelPill.setAttribute("aria-label", "Log level unknown. Click to retry.");
+      return;
+    }
+    logLevelPill.className = `status-pill status-pill-compact ${info.cls}`;
+    logLevelPill.textContent = `${info.icon} ${info.label}`;
+    logLevelPill.title = `Log level: ${info.label} (${info.hint}) — click to cycle`;
+    logLevelPill.setAttribute("aria-label", `Log level: ${info.label}. Click to cycle to the next level.`);
+  };
+
+  const loadLogLevel = async () => {
+    if (!window.PAApi || !logLevelPill) return;
+    try {
+      const result = await window.PAApi.get("/api/config", { cache: "no-store", timeoutMs: 3000 });
+      const level = Number(result.data?.system?.logLevel);
+      if (LOG_LEVELS[level]) {
+        currentLogLevel = level;
+        renderLogLevelPill(level);
+      }
+    } catch (error) {
+      // leave placeholder; user can still click to attempt a cycle once level is known
+    }
+  };
+
+  const cycleLogLevel = async () => {
+    if (!window.PAApi || !logLevelPill || logLevelPending) return;
+    if (!LOG_LEVELS[currentLogLevel]) {
+      await loadLogLevel();
+      if (!LOG_LEVELS[currentLogLevel]) return;
+    }
+    const nextLevel = currentLogLevel >= 3 ? 1 : currentLogLevel + 1;
+    const previousLevel = currentLogLevel;
+    logLevelPending = true;
+    currentLogLevel = nextLevel;
+    renderLogLevelPill(nextLevel);
+    try {
+      await window.PAApi.postForm("/api/config", { logLevel: String(nextLevel) }, { timeoutMs: 3000 });
+      appendCommandLine(`[UI] Log level set to ${LOG_LEVELS[nextLevel].label}`, " log-line-command");
+    } catch (error) {
+      currentLogLevel = previousLevel;
+      renderLogLevelPill(previousLevel);
+      appendCommandLine(
+        `[ERROR] log level change failed: ${window.PAApi.messageFor(error)}`,
+        " log-line-command-error"
+      );
+    } finally {
+      logLevelPending = false;
+    }
+  };
+
+  logLevelPill?.addEventListener("click", cycleLogLevel);
+
   logConsole?.addEventListener("scroll", () => {
     if (isLogAtBottom() && !hasActiveLogSelection()) {
       logPaused?.classList.remove("visible");
@@ -713,6 +779,7 @@
 
 
   loadRecentLogs();
+  loadLogLevel();
   loadCommandTokens();
 
   if (window.PAStatusStream?.isSupported()) {

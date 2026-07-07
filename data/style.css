@@ -143,6 +143,19 @@ code {
   font-weight: 700;
 }
 
+button.status-pill {
+  cursor: pointer;
+  font-family: inherit;
+  transition: filter 0.15s ease;
+}
+button.status-pill:hover {
+  filter: brightness(1.15);
+}
+button.status-pill:focus-visible {
+  outline: 2px solid var(--accent-bright);
+  outline-offset: 2px;
+}
+
 .home-snapshot-card {
   border-left-color: color-mix(in srgb, var(--accent-bright) 70%, var(--border));
 }
@@ -243,6 +256,13 @@ nav a.active {
 
 .card-header-row h3 {
   margin: 0;
+}
+
+.card-header-title-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
 }
 
 .disabled-reason {
