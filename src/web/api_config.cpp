@@ -21,6 +21,7 @@
 
 #include "api_config_apply.h"
 #include "api_config_snapshot.h"
+#include "api_rc_map_apply.h"
 #include "api_helpers.h"
 #include "audio_task.h"
 #include "config.h"
@@ -54,46 +55,6 @@ const char* rcModeToString(RcInputMode mode) {
 
 bool triggerTargetAllowedByRuntime(const RcTriggerBinding& binding) {
     return true;
-}
-
-static const char* const kDomeSeqPayloads[] = {
-    "DM:PIES", "DM:LOW", "DM:OPENALL", "DM:FLUTTER", "DM:BLOOM",
-    "DM:SCREAM", "DM:OVERLOAD", "DM:HEART", "DM:ALARM", "DM:DISCO",
-    "DM:VADER", "DM:ROCKMARCH", "DM:HELLO", "DM:LEIA", "DM:CANTINA",
-    "DM:RESET", "DM:RANDOM",
-    nullptr
-};
-
-static bool isValidDomeSeqPayload(const char* payload) {
-    if (payload == nullptr || payload[0] == '\0') return false;
-    for (int i = 0; kDomeSeqPayloads[i] != nullptr; ++i) {
-        if (strcmp(payload, kDomeSeqPayloads[i]) == 0) return true;
-    }
-    // Learned Sequences (issue #2 slice 3): accept any DM:* name currently in the
-    // runtime index so an RC trigger can bind to a runtime-defined sequence. If
-    // the Learned Sequence is later deleted, sequenceStart() falls through to the
-    // dome fallback; the binding stays valid but inert.
-    if (seqStoreIndexFind(payload) != nullptr) return true;
-    return false;
-}
-
-bool rcMapSourceFromString(const char* raw, RcBindingSource* out) {
-    if (raw == nullptr || out == nullptr) {
-        return false;
-    }
-    if (strcmp(raw, "pwm") == 0) {
-        *out = RC_BINDING_PWM;
-        return true;
-    }
-    if (strcmp(raw, "sbus1") == 0) {
-        *out = RC_BINDING_SBUS1;
-        return true;
-    }
-    if (strcmp(raw, "sbus2") == 0) {
-        *out = RC_BINDING_SBUS2;
-        return true;
-    }
-    return false;
 }
 
 const char* rcMapSourceToString(RcBindingSource source) {
@@ -530,138 +491,40 @@ void registerConfigRoutes(AsyncWebServer& server) {
     });
 
     server.on("/api/rc/map", HTTP_POST, [](AsyncWebServerRequest* req) {
-        auto sendValidationError = [&](const char* message, const RcMapEntry* entry) {
+        ConfigParamSource params;
+        params.ctx = req;
+        params.get = [](void* ctx, const char* name) -> const char* {
+            auto* r = static_cast<AsyncWebServerRequest*>(ctx);
+            if (!r->hasParam(name, true)) {
+                return nullptr;
+            }
+            return r->getParam(name, true)->value().c_str();
+        };
+
+        ConfigSnapshot working;
+        configCacheRead(&working);
+
+        // RcMapApplyResult is small (~150 bytes); static kept for consistency
+        // with the ADR 0011 slice 1 out-parameter convention.
+        static RcMapApplyResult result;
+        rcMapApply(params, &working, &result);
+        if (!result.ok) {
             JsonDocument err;
             err["ok"] = false;
-            err["error"] = message != nullptr ? message : "invalid map";
-            if (entry != nullptr) {
+            err["error"] = result.errorMessage;
+            if (result.errorEntry.present) {
                 JsonObject at = err["entry"].to<JsonObject>();
-                at["source"] = rcMapSourceToString(entry->source);
-                at["channel"] = entry->channel;
-                at["action"] = robotActionIdToString(entry->action);
-                if (entry->payload[0] != '\0') {
-                    at["payload"] = entry->payload;
+                at["source"] = result.errorEntry.source;
+                at["channel"] = result.errorEntry.channel;
+                at["action"] = result.errorEntry.action;
+                if (result.errorEntry.payload[0] != '\0') {
+                    at["payload"] = result.errorEntry.payload;
                 }
             }
             char payload[320] = {};
             serializeJson(err, payload, sizeof(payload));
             req->send(400, "application/json", payload);
-        };
-
-        if (!req->hasParam("plain", true)) {
-            sendValidationError("map body required", nullptr);
             return;
-        }
-
-        JsonDocument body;
-        const String rawBody = req->getParam("plain", true)->value();
-        if (deserializeJson(body, rawBody.c_str())) {
-            sendValidationError("invalid json body", nullptr);
-            return;
-        }
-
-        JsonVariantConst mapVar = body["map"];
-        if (!mapVar.is<JsonArrayConst>()) {
-            sendValidationError("map must be array", nullptr);
-            return;
-        }
-
-        RcMapEntry entries[kRcMapMaxEntries] = {};
-        size_t count = 0;
-        bool seenDriveSpeed = false;
-        bool seenDriveSteer = false;
-        bool seenDomeSpeed = false;
-
-        JsonArrayConst map = mapVar.as<JsonArrayConst>();
-        for (JsonVariantConst itemVar : map) {
-            if (!itemVar.is<JsonObjectConst>()) {
-                sendValidationError("map entry must be object", nullptr);
-                return;
-            }
-            if (count >= kRcMapMaxEntries) {
-                sendValidationError("conflict: map exceeds capacity", nullptr);
-                return;
-            }
-
-            JsonObjectConst item = itemVar.as<JsonObjectConst>();
-            const char* sourceRaw = item["source"] | "";
-            const char* actionRaw = item["action"] | "";
-            uint32_t channelValue = item["channel"] | 0;
-            const char* payloadRaw = item["payload"] | "";
-
-            RcMapEntry entry = {};
-            if (!rcMapSourceFromString(sourceRaw, &entry.source)) {
-                sendValidationError("invalid source", nullptr);
-                return;
-            }
-            if (channelValue > 255) {
-                sendValidationError("invalid channel", nullptr);
-                return;
-            }
-            entry.channel = (uint8_t)channelValue;
-            if (!rcBindingChannelIsValid(entry.source, entry.channel)) {
-                sendValidationError("channel out of range", nullptr);
-                return;
-            }
-            if (!parseRobotActionId(actionRaw, &entry.action) ||
-                entry.action == ROBOT_ACTION_NONE) {
-                sendValidationError("invalid action token", nullptr);
-                return;
-            }
-            snprintf(entry.payload, sizeof(entry.payload), "%s", payloadRaw);
-
-            if (entry.action == DOME_ACTION_SEQ && !isValidDomeSeqPayload(entry.payload)) {
-                sendValidationError("invalid dome sequence payload (expected DM:NAME)", &entry);
-                return;
-            }
-            if (entry.action == DOME_ACTION_MARCDUINO_CMD &&
-                strncmp(entry.payload, ":SM", 3) == 0) {
-                sendValidationError(":SM is diagnostic only and cannot be saved as an RC binding", &entry);
-                return;
-            }
-
-            for (size_t i = 0; i < count; ++i) {
-                if (entries[i].source == entry.source && entries[i].channel == entry.channel) {
-                    sendValidationError("conflict: source+channel mapped more than once", &entry);
-                    return;
-                }
-            }
-
-            if (entry.action == DRIVE_ACTION_SPEED) {
-                if (seenDriveSpeed) {
-                    sendValidationError("conflict: drive_speed mapped more than once", &entry);
-                    return;
-                }
-                seenDriveSpeed = true;
-            } else if (entry.action == DRIVE_ACTION_STEER) {
-                if (seenDriveSteer) {
-                    sendValidationError("conflict: drive_steer mapped more than once", &entry);
-                    return;
-                }
-                seenDriveSteer = true;
-            } else if (entry.action == DOME_ACTION_SPEED) {
-                if (seenDomeSpeed) {
-                    sendValidationError("conflict: dome_speed mapped more than once", &entry);
-                    return;
-                }
-                seenDomeSpeed = true;
-            }
-
-            entries[count++] = entry;
-        }
-
-        ConfigSnapshot working;
-        configCacheRead(&working);
-        ConfigSnapshot existing = working;
-        clearRcMapSlots(&working);
-
-        for (size_t i = 0; i < count; ++i) {
-            char assignErr[96] = {};
-            if (!assignRcMapEntryToSnapshot(entries[i], existing, &working, assignErr,
-                                            sizeof(assignErr))) {
-                sendValidationError(assignErr, &entries[i]);
-                return;
-            }
         }
 
         configCacheApply(working);
