@@ -42,6 +42,7 @@
 #include <esp_heap_caps.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+#include <new>
 
 #ifdef CONFIG_HEAP_TASK_TRACKING
 #include <esp_heap_task_info.h>
@@ -478,8 +479,16 @@ static void buildProfilerJson(char* buf, size_t bufSize) {
 
 void registerProfilerRoutes(AsyncWebServer& server) {
     server.on("/api/profiler", HTTP_GET, [](AsyncWebServerRequest* req) {
-        static char body[4096];
-        buildProfilerJson(body, sizeof(body));
+        static constexpr size_t kProfilerBodySize = 4096;
+        static char* body = nullptr;
+        if (body == nullptr) {
+            body = new (std::nothrow) char[kProfilerBodySize];
+        }
+        if (body == nullptr) {
+            req->abort();
+            return;
+        }
+        buildProfilerJson(body, kProfilerBodySize);
         req->send(200, "application/json", body);
     });
 
