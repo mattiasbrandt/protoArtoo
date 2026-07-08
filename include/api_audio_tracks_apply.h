@@ -1,8 +1,7 @@
 // =============================================================================
 // include/api_audio_tracks_apply.h
 //
-// Apply Core for POST /api/audio/tracks (ADR 0011 audio wave, family 3 —
-// issue #18 finding 1, final piece of the campaign).
+// Apply Core for POST /api/audio/tracks (ADR 0011 audio wave, family 3).
 //
 // audioTracksApply(): pure function — no FreeRTOS, no AsyncWebServerRequest,
 //   no NVS, no logging. Reads key/track and the optional bank/page through

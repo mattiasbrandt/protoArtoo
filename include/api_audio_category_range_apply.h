@@ -2,7 +2,7 @@
 // include/api_audio_category_range_apply.h
 //
 // Apply Core for POST /api/audio/category-range (ADR 0011 audio wave,
-// family 2 — issue #18 finding 1).
+// family 2).
 //
 // audioCategoryRangeApply(): pure function — no FreeRTOS, no
 //   AsyncWebServerRequest, no NVS, no logging. Reads lo_key/hi_key/lo/hi

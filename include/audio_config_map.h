@@ -2,7 +2,7 @@
 // include/audio_config_map.h
 //
 // audio_config_map — canonical home for the config-to-audio schema mapping
-// (ADR 0013, issue #18 finding 3). Pure functions: no FreeRTOS, no
+// (ADR 0013). Pure functions: no FreeRTOS, no
 // AudioDriver, no raw Preferences, no logging.
 //
 // Owns:

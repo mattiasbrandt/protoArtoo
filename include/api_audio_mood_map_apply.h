@@ -1,8 +1,7 @@
 // =============================================================================
 // include/api_audio_mood_map_apply.h
 //
-// Apply Core for POST /api/audio/mood-map (ADR 0011 audio wave, family 1 —
-// issue #18 finding 1).
+// Apply Core for POST /api/audio/mood-map (ADR 0011 audio wave, family 1).
 //
 // audioMoodMapApply(): pure function — no FreeRTOS, no AsyncWebServerRequest,
 //   no NVS, no logging. Reads the four mood-category masks (quiet, mid,

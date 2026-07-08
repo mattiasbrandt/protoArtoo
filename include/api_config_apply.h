@@ -2,7 +2,7 @@
 // include/api_config_apply.h
 //
 // Apply Core for POST /api/config (ADR 0011, slice 1 of the write-path
-// campaign, issue #18 finding 1).
+// campaign).
 //
 // configApply(): pure function — no FreeRTOS, no AsyncWebServerRequest, no
 //   logging, no NVS. Reads parameters through a ConfigParamSource, validates

@@ -2,7 +2,7 @@
 // include/api_rc_map_apply.h
 //
 // Apply Core for POST /api/rc/map (ADR 0011, slice 2 of the write-path
-// campaign, issue #18 finding 1).
+// campaign).
 //
 // rcMapApply(): pure function — no FreeRTOS, no AsyncWebServerRequest, no
 //   NVS. Reads the JSON map body through a ConfigParamSource, validates
