@@ -14,8 +14,8 @@
 #include "robot_state.h"  // portMUX_TYPE
 
 static portMUX_TYPE seqEvidenceMux = portMUX_INITIALIZER_UNLOCKED;
-static SeqRunEvidence g;                 // the live record (zero-initialized)
-static uint32_t       gDropBaseline = 0; // queueOverflowCount at run start
+static SeqRunEvidence g;                         // the live record (zero-initialized)
+static uint32_t       gBodyQueueFullBaseline = 0; // queueOverflowCount at run start
 
 // ---- ring panel set helpers (single source = sequence_engine) ----------------
 static uint16_t ringAllMask() {
@@ -123,7 +123,7 @@ const char* seqRunOutcomeName(SeqRunOutcome o) {
 }
 
 void seqEvidenceBegin(const char* name, uint8_t source, uint32_t startMs,
-                      uint32_t domeQueueDropBaseline) {
+                      uint32_t bodyQueueFullBaseline) {
     taskENTER_CRITICAL(&seqEvidenceMux);
     memset(&g, 0, sizeof(g));
     g.outcome = SEQ_RUN_RUNNING;
@@ -132,7 +132,7 @@ void seqEvidenceBegin(const char* name, uint8_t source, uint32_t startMs,
     g.name[SEQ_EVID_NAME_LEN - 1] = '\0';
     g.source = source;
     g.startMs = startMs;
-    gDropBaseline = domeQueueDropBaseline;
+    gBodyQueueFullBaseline = bodyQueueFullBaseline;
     taskEXIT_CRITICAL(&seqEvidenceMux);
 }
 
@@ -145,7 +145,7 @@ void seqEvidenceRecordTx(const SeqAction& act, bool cleanup) {
     taskENTER_CRITICAL(&seqEvidenceMux);
     if (g.outcome == SEQ_RUN_RUNNING) {
         // General TX ring (oldest entry overwritten once full).
-        if (g.txTotalCount >= SEQ_EVID_TX_CAP) g.txOverflowCount++;
+        if (g.txTotalCount >= SEQ_EVID_TX_CAP) g.txOmittedRecentCount++;
         strncpy(g.tx[g.txHead], rep, SEQ_EVID_CMD_LEN - 1);
         g.tx[g.txHead][SEQ_EVID_CMD_LEN - 1] = '\0';
         g.txHead = (uint8_t)((g.txHead + 1) % SEQ_EVID_TX_CAP);
@@ -183,15 +183,17 @@ void seqEvidenceNoteRetry(void) {
 // RUNNING), so an abort path that ends the run wins over the COMPLETED fallback
 // the dispatcher emits at its later idle transition.
 void seqEvidenceEnd(SeqRunOutcome outcome, const char* reason, uint32_t endMs,
-                    uint32_t domeQueueDropNow) {
+                    uint32_t bodyQueueFullNow) {
     taskENTER_CRITICAL(&seqEvidenceMux);
     if (g.outcome == SEQ_RUN_RUNNING) {
         g.outcome = outcome;
         strncpy(g.reason, reason != nullptr ? reason : "", SEQ_EVID_REASON_LEN - 1);
         g.reason[SEQ_EVID_REASON_LEN - 1] = '\0';
         g.endMs = endMs;
-        g.domeQueueDropDelta =
-            (domeQueueDropNow >= gDropBaseline) ? (domeQueueDropNow - gDropBaseline) : 0;
+        g.bodyQueueFullDelta =
+            (bodyQueueFullNow >= gBodyQueueFullBaseline)
+                ? (bodyQueueFullNow - gBodyQueueFullBaseline)
+                : 0;
     }
     taskEXIT_CRITICAL(&seqEvidenceMux);
 }

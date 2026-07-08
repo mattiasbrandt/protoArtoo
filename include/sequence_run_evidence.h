@@ -25,8 +25,8 @@
 // byte here costs ~2x static RAM. On this heap-constrained ESP32 (steady-state
 // free heap is tight — see the 2026-06-18 heap-exhaustion fix) the ring is sized
 // at the operator-sanctioned minimum of 32 entries, each capped at 48 bytes
-// (longer than any real dome command, e.g. "@HPS101/HPR02/HPT02|36"). Overflow
-// is signalled via txOverflowCount / cleanupTruncated so partial capture is
+// (longer than any real dome command, e.g. "@HPS101/HPR02/HPT02|36"). Truncation
+// is signalled via txOmittedRecentCount / cleanupTruncated so partial capture is
 // never silent. ~2.2 KB per copy vs ~5.3 KB at 64x64.
 #define SEQ_EVID_CMD_LEN      48
 #define SEQ_EVID_TX_CAP       32   // recent TX ring depth
@@ -75,7 +75,7 @@ struct SeqRunEvidence {
     char     tx[SEQ_EVID_TX_CAP][SEQ_EVID_CMD_LEN];
     uint8_t  txHead;                     // next write index (ring)
     uint16_t txTotalCount;               // total commands emitted this run
-    uint16_t txOverflowCount;            // commands dropped from the ring (total>cap)
+    uint16_t txOmittedRecentCount;       // commands omitted from retained recent ring
 
     // Cleanup commands captured SEPARATELY from the general stream.
     char     cleanup[SEQ_EVID_CLEANUP_CAP][SEQ_EVID_CMD_LEN];
@@ -84,22 +84,22 @@ struct SeqRunEvidence {
     bool     cleanupTruncated;           // total > cap
 
     // "Did it know anything went wrong" — counter deltas over the run window.
-    uint32_t domeQueueDropDelta;         // robotState.queueOverflowCount delta
-    uint32_t dispatchRetryCount;         // queue-full retries during this run
+    uint32_t bodyQueueFullDelta;         // robotState.queueOverflowCount delta
+    uint32_t dispatchRetryCount;         // downstream queue-full retries this run
 };
 
 // Lifecycle (called from the dispatcher task). All allocation-free.
-//   seqEvidenceBegin    — start a new record (captures the drop baseline).
+//   seqEvidenceBegin    — start a new record (captures body queue-full baseline).
 //   seqEvidenceRecordTx — append one emitted command; cleanup=true routes it to
 //                         the cleanup buffer too and infers no extra scope.
 //   seqEvidenceNoteRetry— a dispatch hit a full queue and will retry.
-//   seqEvidenceEnd      — finalize outcome/reason/endMs and the drop delta.
+//   seqEvidenceEnd      — finalize outcome/reason/endMs and queue-full delta.
 void seqEvidenceBegin(const char* name, uint8_t source, uint32_t startMs,
-                      uint32_t domeQueueDropBaseline);
+                      uint32_t bodyQueueFullBaseline);
 void seqEvidenceRecordTx(const SeqAction& act, bool cleanup);
 void seqEvidenceNoteRetry(void);
 void seqEvidenceEnd(SeqRunOutcome outcome, const char* reason, uint32_t endMs,
-                    uint32_t domeQueueDropNow);
+                    uint32_t bodyQueueFullNow);
 
 // Copy the current record under lock for the API handler. Returns false (and an
 // out.valid==false record) when no run has been recorded yet.

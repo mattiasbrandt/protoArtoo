@@ -196,7 +196,7 @@ confirmation.
 - cleanup emitted
 - inferred panel/effect scopes
 - net-open / touched ring masks
-- dome-link drop/retry counts
+- body-local queue-full/retry counts
 
 This evidence validates against the parity table so the operator is not the diff
 engine.

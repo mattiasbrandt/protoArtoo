@@ -870,7 +870,8 @@ entries:
   description: >
     Machine-readable evidence of the most recent body-owned sequence run:
     outcome, bounded TX stream, cleanup commands, inferred FX scopes and ring
-    masks, and drop/retry warning counters (issue #2 task #6).
+    masks, retained-TX truncation, and body-local queue-full/retry counters
+    (issue #2 task #6).
   domain: dome
   type: action
   marcduino_cmd: null

@@ -118,8 +118,9 @@ not a final-margin measurement.
 
 For a misbehaving body-owned `DM:*` run, `GET /api/seq/last-run` gives the TX
 stream, cleanup emitted, net-open/touched ring masks, inferred effect scopes,
-outcome+reason, and dome-link drop/retry counts — diff it against
-[sequence-parity.md](sequence-parity.md) instead of eyeballing.
+outcome+reason, retained-TX truncation, and body-local queue-full/retry counts.
+It does not sample the dome controller's `/api/health.cmd_queue.queue_full_count`;
+compare that value separately when diagnosing remote dome ingress drops.
 
 ---
 

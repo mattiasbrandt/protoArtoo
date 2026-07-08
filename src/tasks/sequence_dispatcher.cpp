@@ -139,8 +139,8 @@ static bool dispatchAction(const SeqAction& act) {
     }
 }
 
-// Current dome-TX-queue overflow count (run-evidence drop baseline/delta).
-static uint32_t domeDropCount() {
+// Current shared body queue-full count (run-evidence baseline/delta).
+static uint32_t bodyQueueFullCount() {
     uint32_t c;
     taskENTER_CRITICAL(&robotStateMux);
     c = robotState.queueOverflowCount;
@@ -226,7 +226,7 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
                     PA_LOG_INFO(TAG, "preempt %s -> %s", activeName, req.name);
                     seqEngineAbort(engine);
                     drainBestEffort(engine, now);  // drain old run from buffers
-                    seqEvidenceEnd(SEQ_RUN_PREEMPTED, "preempt", now, domeDropCount());
+                    seqEvidenceEnd(SEQ_RUN_PREEMPTED, "preempt", now, bodyQueueFullCount());
                     seqStoreReleaseRun();  // free the preempted Learned run's buffers
                 }
                 const SequenceEntry* entry = catalogEntry;
@@ -244,7 +244,7 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
                 }
                 if (entry != nullptr) {
                     seqEngineStart(engine, entry, now);
-                    seqEvidenceBegin(req.name, (uint8_t)req.src, now, domeDropCount());
+                    seqEvidenceBegin(req.name, (uint8_t)req.src, now, bodyQueueFullCount());
                     resyncCloseIdx = 0xFF;  // a new run supersedes any staged resync close
                     strncpy(activeName, req.name, sizeof(activeName) - 1);
                     activeName[sizeof(activeName) - 1] = '\0';
@@ -269,7 +269,7 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
             PA_LOG_INFO(TAG, "abort %s (estop)", activeName);
             seqEngineAbort(engine);
             drainBestEffort(engine, now);
-            seqEvidenceEnd(SEQ_RUN_ESTOP, "estop", now, domeDropCount());
+            seqEvidenceEnd(SEQ_RUN_ESTOP, "estop", now, bodyQueueFullCount());
             seqStoreReleaseRun();  // reclaim any Learned-run buffers
             clearSuppression();
             activeName[0] = '\0';
@@ -306,7 +306,7 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
             drainBestEffort(engine, now);
             // Record as SEQ_RUN_ABORTED with "web stop" reason (distinguishes from
             // estop/preempt/reconnect). Operator can see the reason in GET /api/seq/last-run.
-            seqEvidenceEnd(SEQ_RUN_ABORTED, "web stop", now, domeDropCount());
+            seqEvidenceEnd(SEQ_RUN_ABORTED, "web stop", now, bodyQueueFullCount());
             seqStoreReleaseRun();  // reclaim any Learned-run buffers
             clearSuppression();
             activeName[0] = '\0';
@@ -324,7 +324,7 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
             if (seqEngineActive(engine)) {
                 seqEngineAbort(engine);
                 drainBestEffort(engine, now);
-                seqEvidenceEnd(SEQ_RUN_RECONNECT, "dome reconnect", now, domeDropCount());
+                seqEvidenceEnd(SEQ_RUN_RECONNECT, "dome reconnect", now, bodyQueueFullCount());
                 seqStoreReleaseRun();  // reclaim any Learned-run buffers
                 clearSuppression();
                 activeName[0] = '\0';
@@ -375,7 +375,7 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
                 PA_LOG_INFO(TAG, "end %s", activeName);
                 // No-op if an abort path already finalized this run (guarded on
                 // RUNNING); otherwise records the normal completion.
-                seqEvidenceEnd(SEQ_RUN_COMPLETED, "", now, domeDropCount());
+                seqEvidenceEnd(SEQ_RUN_COMPLETED, "", now, bodyQueueFullCount());
                 seqStoreReleaseRun();  // reclaim any Learned-run buffers now idle
                 clearSuppression();
                 activeName[0] = '\0';

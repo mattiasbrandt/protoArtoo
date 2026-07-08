@@ -10,8 +10,10 @@
 // =============================================================================
 #include <string.h>
 
+#include <ArduinoJson.h>
 #include <unity.h>
 
+#include "seq_last_run_json.h"
 #include "sequence_run_evidence.h"
 
 void setUp()    {}
@@ -122,14 +124,14 @@ static void test_cleanup_separate_from_general_stream() {
     TEST_ASSERT_EQUAL_STRING("@0T1", ev.cleanup[1]);
 }
 
-static void test_tx_ring_overflow_and_truncation() {
+static void test_tx_ring_omitted_recent_and_truncation() {
     seqEvidenceBegin("X", 0, 0, 0);
     const uint16_t n = SEQ_EVID_TX_CAP + 5;
     for (uint16_t i = 0; i < n; ++i) seqEvidenceRecordTx(dome(":OP01"), false);
     SeqRunEvidence ev;
     seqEvidenceSnapshot(ev);
     TEST_ASSERT_EQUAL_UINT16(n, ev.txTotalCount);
-    TEST_ASSERT_EQUAL_UINT16(5, ev.txOverflowCount);  // 5 dropped from the ring
+    TEST_ASSERT_EQUAL_UINT16(5, ev.txOmittedRecentCount);
 }
 
 static void test_cleanup_overflow_truncation() {
@@ -144,14 +146,14 @@ static void test_cleanup_overflow_truncation() {
 }
 
 static void test_end_completed_and_drop_delta() {
-    seqEvidenceBegin("X", 0, 100, 7);          // drop baseline = 7
+    seqEvidenceBegin("X", 0, 100, 7);          // body queue-full baseline = 7
     seqEvidenceRecordTx(dome(":OP01"), false);
     seqEvidenceEnd(SEQ_RUN_COMPLETED, "", 200, 10);  // now = 10 -> delta 3
     SeqRunEvidence ev;
     seqEvidenceSnapshot(ev);
     TEST_ASSERT_EQUAL_INT(SEQ_RUN_COMPLETED, (int)ev.outcome);
     TEST_ASSERT_EQUAL_UINT32(200, ev.endMs);
-    TEST_ASSERT_EQUAL_UINT32(3, ev.domeQueueDropDelta);
+    TEST_ASSERT_EQUAL_UINT32(3, ev.bodyQueueFullDelta);
 }
 
 static void test_retry_count() {
@@ -183,6 +185,36 @@ static void test_recordtx_ignored_when_not_running() {
     TEST_ASSERT_EQUAL_UINT16(0, ev.txTotalCount);
 }
 
+static void test_last_run_json_uses_unambiguous_counter_names() {
+    seqEvidenceBegin("DM:CANTINA", 4, 1000, 20);
+    const uint16_t n = SEQ_EVID_TX_CAP + 3;
+    for (uint16_t i = 0; i < n; ++i) seqEvidenceRecordTx(dome(":OP01"), false);
+    seqEvidenceNoteRetry();
+    seqEvidenceEnd(SEQ_RUN_COMPLETED, "", 2000, 37);
+
+    SeqRunEvidence ev;
+    TEST_ASSERT_TRUE(seqEvidenceSnapshot(ev));
+
+    JsonDocument doc;
+    TEST_ASSERT_TRUE(populateSeqLastRunJson(doc, ev, true));
+    TEST_ASSERT_TRUE(doc["valid"].as<bool>());
+    TEST_ASSERT_EQUAL_STRING("DM:CANTINA", doc["name"].as<const char*>());
+    TEST_ASSERT_EQUAL_UINT16(n, doc["tx"]["total"].as<unsigned>());
+    TEST_ASSERT_EQUAL_UINT16(SEQ_EVID_TX_CAP, doc["tx"]["capacity"].as<unsigned>());
+    TEST_ASSERT_EQUAL_UINT16(SEQ_EVID_TX_CAP, doc["tx"]["retained"].as<unsigned>());
+    TEST_ASSERT_EQUAL_UINT16(3, doc["tx"]["omittedFromRecent"].as<unsigned>());
+    TEST_ASSERT_TRUE(doc["tx"]["truncated"].as<bool>());
+    TEST_ASSERT_EQUAL_UINT32(17, doc["warnings"]["bodyQueueFullDelta"].as<uint32_t>());
+    TEST_ASSERT_EQUAL_UINT32(1, doc["warnings"]["dispatchRetryCount"].as<uint32_t>());
+    TEST_ASSERT_FALSE(doc["warnings"]["remoteDomeQueue"]["sampled"].as<bool>());
+    TEST_ASSERT_TRUE(doc["warnings"]["remoteDomeQueue"]["queueFullDelta"].isNull());
+
+    char out[1600];
+    serializeJson(doc, out, sizeof(out));
+    TEST_ASSERT_NULL(strstr(out, "\"overflow\""));
+    TEST_ASSERT_NULL(strstr(out, "domeQueueDropDelta"));
+}
+
 int main(int /*argc*/, char** /*argv*/) {
     UNITY_BEGIN();
     RUN_TEST(test_initial_snapshot_is_invalid);  // first: pristine record
@@ -191,11 +223,12 @@ int main(int /*argc*/, char** /*argv*/) {
     RUN_TEST(test_ring_masks_open_close_flutter);
     RUN_TEST(test_group_close_clears_net_open);
     RUN_TEST(test_cleanup_separate_from_general_stream);
-    RUN_TEST(test_tx_ring_overflow_and_truncation);
+    RUN_TEST(test_tx_ring_omitted_recent_and_truncation);
     RUN_TEST(test_cleanup_overflow_truncation);
     RUN_TEST(test_end_completed_and_drop_delta);
     RUN_TEST(test_retry_count);
     RUN_TEST(test_abort_outcome_wins_over_completed_fallback);
     RUN_TEST(test_recordtx_ignored_when_not_running);
+    RUN_TEST(test_last_run_json_uses_unambiguous_counter_names);
     return UNITY_END();
 }
