@@ -218,6 +218,14 @@ _Avoid_: field-by-field reads across separate critical sections
 The canonical home of the config-to-audio schema knowledge: the ConfigSnapshot to AudioPlaybackConfig mapping, named-track projection, chirp NVS-key tables, `$`-command table, binding unpackers, and the ConfigReader-seamed binding refresh (ADR 0013). Both the audio task middle and the api_audio Apply Core consume it; adding a sound slot or category starts here. The playback policy stays config-free behind it.
 _Avoid_: per-surface mapping copies, mapping tables in task files or handlers
 
+**Step Core**:
+A pure `step(state, inputs) -> actions` module that owns a task's per-tick decisions: the task loop gathers inputs, calls the step, and executes the returned plain-data actions. Decisions live in the core; execution outcomes stay in the loop adapter. Instances: the protoR2link Arbiter (ADR 0005) and the Audio Step Core.
+_Avoid_: state machine class, task helper, manager
+
+**Audio Step Core**:
+The audio task's Step Core (`audio_task_step`): it owns the enable/disable/sleep/init-retry lifecycle transitions, command-to-playback-request translation with sleep gating and relative volume, playback-policy invocation, and the gating of status/catalog work. The task loop is its adapter and owns driver calls, dome-UART arbitration, and RobotState audio-zone writes.
+_Avoid_: audio lifecycle manager, audio coordinator, dispatch switch
+
 ## Relationships
 
 - **Phase 5** can include work that is not yet covered by **Full Hardware Validation**.
@@ -249,6 +257,7 @@ _Avoid_: per-surface mapping copies, mapping tables in task files or handlers
 - An **Apply Core** carries the write path the way the pure JSON builders carry the read path; both exist so the web API surface is natively testable (ADR 0011).
 - A **Commanded Mode** is written through its setter; a **State Zone** is written by its owner; every multi-field read uses a **Zone Snapshot** (ADR 0012).
 - The **Audio Config Map** is the single schema home consumed by both the audio task and the api_audio **Apply Core** (ADR 0013); the playback policy stays config-free behind it.
+- A **Step Core** decides, its task-loop adapter executes; the **Audio Step Core** calls the playback policy internally, so the policy stays its own tested module behind the step seam.
 
 ## Example Dialogue
 
