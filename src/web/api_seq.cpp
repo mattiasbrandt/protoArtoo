@@ -335,14 +335,15 @@ void handleLastRun(AsyncWebServerRequest* req) {
     static SeqRunEvidence ev;  // ~5 KB snapshot target; static avoids a large stack frame
     const bool have = seqEvidenceSnapshot(ev);
 
-    auto* stream = req->beginResponseStream("application/json");
-    if (stream == nullptr) {
-        req->send(500, "application/json", "{\"ok\":false,\"error\":\"alloc\"}");
-        return;
-    }
     JsonDocument doc;
     if (!populateSeqLastRunJson(doc, ev, have)) {
         req->send(500, "application/json", "{\"ok\":false,\"error\":\"last-run response overflow\"}");
+        return;
+    }
+
+    auto* stream = req->beginResponseStream("application/json");
+    if (stream == nullptr) {
+        req->send(500, "application/json", "{\"ok\":false,\"error\":\"alloc\"}");
         return;
     }
     serializeJson(doc, *stream);

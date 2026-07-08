@@ -288,6 +288,54 @@ void test_random_tick_gated_on_mode_and_sleep() {
     TEST_ASSERT_EQUAL_UINT32(20000, s.lastRandMs);
 }
 
+void test_random_tick_does_not_replay_before_interval() {
+    AudioStepState s = initializedState();
+    s.randomMode = true;
+
+    AudioPlaybackConfig cfg = playbackConfig();
+    cfg.moodMasks.full = (uint16_t)(1U << AUDIO_CATEGORY_PROCESSING);
+    cfg.categoryRanges[AUDIO_CATEGORY_PROCESSING] = {8, 8};
+
+    AudioBindingCache bindings{};
+    bindings.categories[AUDIO_CATEGORY_PROCESSING].valid = true;
+    bindings.categories[AUDIO_CATEGORY_PROCESSING].bank = 2;
+    bindings.categories[AUDIO_CATEGORY_PROCESSING].page = 'E';
+
+    AudioStepIdleInputs in{};
+    in.nowMs = 20000;
+    in.catalogCapable = true;
+    in.activeMood = 11;
+    in.randomValue = 0;
+    in.playback = &cfg;
+    in.bindings = &bindings;
+
+    AudioStepIdleActions a = audioStepIdle(s, in);
+    TEST_ASSERT_TRUE(a.hasIntent);
+    TEST_ASSERT_EQUAL(AUDIO_PLAYBACK_INTENT_PLAY_BANKED, a.intent.kind);
+    TEST_ASSERT_EQUAL_UINT16(8, a.intent.index);
+    TEST_ASSERT_EQUAL_UINT8(2, a.intent.bank);
+    TEST_ASSERT_EQUAL('E', a.intent.page);
+    TEST_ASSERT_EQUAL_UINT32(20000, s.lastRandMs);
+
+    in.nowMs = 20001;
+    a = audioStepIdle(s, in);
+    TEST_ASSERT_TRUE(a.hasIntent);
+    TEST_ASSERT_EQUAL(AUDIO_PLAYBACK_INTENT_NONE, a.intent.kind);
+    TEST_ASSERT_EQUAL(AUDIO_PLAYBACK_NONE_INTERVAL_NOT_READY, a.intent.reason);
+    TEST_ASSERT_EQUAL_UINT32(20000, s.lastRandMs);
+
+    in.nowMs = 29999;
+    a = audioStepIdle(s, in);
+    TEST_ASSERT_EQUAL(AUDIO_PLAYBACK_INTENT_NONE, a.intent.kind);
+    TEST_ASSERT_EQUAL(AUDIO_PLAYBACK_NONE_INTERVAL_NOT_READY, a.intent.reason);
+    TEST_ASSERT_EQUAL_UINT32(20000, s.lastRandMs);
+
+    in.nowMs = 30000;
+    a = audioStepIdle(s, in);
+    TEST_ASSERT_EQUAL(AUDIO_PLAYBACK_INTENT_PLAY_BANKED, a.intent.kind);
+    TEST_ASSERT_EQUAL_UINT32(30000, s.lastRandMs);
+}
+
 // --- idle: auto-query cadence ---------------------------------------------------------
 
 void test_auto_query_cadence_and_ota_gate() {
@@ -336,6 +384,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_quiet_stop_disables_random_mode);
     RUN_TEST(test_catalog_commands_gated_on_capability);
     RUN_TEST(test_random_tick_gated_on_mode_and_sleep);
+    RUN_TEST(test_random_tick_does_not_replay_before_interval);
     RUN_TEST(test_auto_query_cadence_and_ota_gate);
     return UNITY_END();
 }
