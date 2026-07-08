@@ -28,6 +28,7 @@
 #include "audio_config_map.h"
 #include "audio_dollar_parser.h"
 #include "audio_driver.h"
+#include "audio_task_step.h"
 #include "config.h"
 #include "config_nvsio.h"
 #include "config_store.h"
@@ -294,17 +295,7 @@ bool audioQueueRefreshBindings(CommandSource src) {
 // -----------------------------------------------------------------------------
 // Playback policy adapters.
 // -----------------------------------------------------------------------------
-static constexpr uint32_t AUTO_STATUS_QUERY_INTERVAL_MS = 10000;  // 10 s
 static AudioBindingCache s_audioBindings = {};
-
-static void readPlaybackConfig(AudioPlaybackConfig* playback, AudioNamedTracks* named = nullptr) {
-    ConfigSnapshot cfg = {};
-    configCacheRead(&cfg);
-    audioConfigMapBuild(cfg, playback);
-    if (playback != nullptr && named != nullptr) {
-        audioConfigMapNamedTracks(*playback, named);
-    }
-}
 
 static bool refreshChirpBindingCacheFromNvs() {
     const bool catalogCapable = (driver->capabilities() & AudioDriver::AUDIO_CAP_CATALOG) != 0;
@@ -357,9 +348,10 @@ static void applyAudioActiveFlags(const AudioPlaybackIntent& intent) {
     taskEXIT_CRITICAL(&robotStateMux);
 }
 
-static void executePlaybackIntent(const AudioPlaybackIntent& intent, CommandSource source,
-                                  uint32_t now, uint32_t& lastPlayMs, uint32_t& lastRandMs,
-                                  uint8_t& currentVol, bool& randomMode) {
+// Executes a resolved intent on the driver and applies its RobotState flags.
+// State effects (randomMode, currentVol, cadence timestamps) are owned by the
+// Audio Step Core and already applied by the phase that produced the intent.
+static void executePlaybackIntent(const AudioPlaybackIntent& intent, CommandSource source) {
     switch (intent.kind) {
         case AUDIO_PLAYBACK_INTENT_PLAY_FLAT:
             if (intent.track == 0) {
@@ -421,32 +413,25 @@ static void executePlaybackIntent(const AudioPlaybackIntent& intent, CommandSour
 
         case AUDIO_PLAYBACK_INTENT_STOP:
             driver->stop();
-            randomMode = false;
             PA_LOG_INFO(TAG, "[%s] stop", commandSourceToString(source));
             break;
 
         case AUDIO_PLAYBACK_INTENT_TRACK_STOP:
             driver->stop();
-            // randomMode intentionally untouched — Track Stop preserves idle mood (ADR 0010)
             PA_LOG_INFO(TAG, "[%s] track stop", commandSourceToString(source));
             break;
 
         case AUDIO_PLAYBACK_INTENT_SET_VOLUME:
-            currentVol = intent.volume;
-            driver->setVolume(currentVol);
-            PA_LOG_INFO(TAG, "[%s] volume %u", commandSourceToString(source), (unsigned)currentVol);
+            driver->setVolume(intent.volume);
+            PA_LOG_INFO(TAG, "[%s] volume %u", commandSourceToString(source),
+                        (unsigned)intent.volume);
             break;
 
         case AUDIO_PLAYBACK_INTENT_RANDOM_ON:
-            if (!randomMode) {
-                lastRandMs = now;
-            }
-            randomMode = true;
             PA_LOG_INFO(TAG, "[%s] random mode on", commandSourceToString(source));
             break;
 
         case AUDIO_PLAYBACK_INTENT_RANDOM_OFF:
-            randomMode = false;
             PA_LOG_INFO(TAG, "[%s] random mode off", commandSourceToString(source));
             break;
 
@@ -457,53 +442,52 @@ static void executePlaybackIntent(const AudioPlaybackIntent& intent, CommandSour
             break;
     }
 
-    if (intent.updateLastPlayMs) {
-        lastPlayMs = now;
-    }
-    if (intent.updateLastRandMs) {
-        lastRandMs = now;
-    }
     applyAudioActiveFlags(intent);
+}
+
+// One writer for the module-state RobotState block (Audio zone, ADR 0012).
+static void writeModuleState(const AudioModuleState& ms, AudioRxStatus rxStatus) {
+    taskENTER_CRITICAL(&robotStateMux);
+    robotState.audio_module_link_ok = ms.linkOk;
+    robotState.audio_module_play_state = ms.playState;
+    robotState.audio_module_device = ms.device;
+    robotState.audio_module_total_tracks = ms.totalTracks;
+    robotState.audio_module_current_track = ms.currentTrack;
+    robotState.audio_module_rx_status = rxStatus;
+    taskEXIT_CRITICAL(&robotStateMux);
+}
+
+// Human-readable command names for the step core's ignore-reason logs.
+static const char* playCommandName(AudioCommandType type) {
+    switch (type) {
+        case AUDIO_CMD_DOLLAR:            return "dollar command";
+        case AUDIO_CMD_PLAY_TRACK:        return "play track";
+        case AUDIO_CMD_PLAY_SLOT:         return "slot play";
+        case AUDIO_CMD_PLAY_TRACK_BANKED: return "banked play";
+        case AUDIO_CMD_PLAY_CATEGORY:     return "category play";
+        case AUDIO_CMD_REFRESH_CATALOG:   return "catalog refresh";
+        case AUDIO_CMD_REFRESH_BINDINGS:  return "binding cache refresh";
+        default:                          return "command";
+    }
 }
 
 // -----------------------------------------------------------------------------
 // audioTask()
 //
-// Unified single-loop design — audioEnabled is read at the top of every
-// iteration so the task responds immediately to enable/disable changes from
-// the Setup page without requiring a reboot.
+// Imperative adapter for the Audio Step Core (ADR 0014): gathers one
+// generation of inputs per iteration, calls the step phases in loop order,
+// and executes the returned plain-data actions on the driver, the dome-UART
+// arbitration, and the RobotState audio zone.
 //
-// Disabled state: drains the queue silently, clears randomMode, never touches
-// the audio GPIO. The driver is re-initialized on the first iteration after
-// being enabled.
+// Disabled state: drains the queue silently, never touches the audio GPIO.
+// The driver is re-initialized on the first iteration after being enabled.
 // -----------------------------------------------------------------------------
 void audioTask(void* pvParameters) {
     (void)pvParameters;
 
-    bool driverInitialized = false;  // becomes true on first enable or after retry ceiling hit
-    uint8_t beginRetryCount = 0;
-    static constexpr uint8_t kBeginMaxRetries = 20;  // ~5 s at 250 ms/retry
-    bool lastAudioEnabled = true;   // tracks previous iteration's enabled state for stop-on-disable
-    bool randomMode = false;
-    uint32_t lastRandMs = 0;
-    uint32_t lastPlayMs = 0;  // anti-spam: last playTrack() timestamp
-    uint32_t lastAutoQueryMs = 0;  // periodic status poll timer for safe-polling modules
-    uint8_t currentVol = 20;  // updated from config on first enable
-    bool wasSleeping = false;
-
-    // Minimum interval between successive playTrack() calls (ms).
-    // Application-level anti-bounce guard for rapid-fire play commands
-    // (e.g. UI double-tap, RC switch bounce). Driver-level timing
-    // constraints, if any, are enforced inside the driver's
-    // playTrack() implementation.
-    // The constant is owned by audio_playback_policy.h so command-driven play
-    // requests share one anti-spam rule.
-
-    // Named tracks populated from NVS-backed robotState fields.
-    // Updated at runtime via POST /api/audio/tracks.
-    // Refreshed on each enable cycle so changes take effect without reboot.
+    AudioStepState step{};
     AudioNamedTracks named{};
-
+    AudioPlaybackConfig playback{};
     AudioCommand cmd{};
     bool hwmLogged = false;
 
@@ -515,421 +499,196 @@ void audioTask(void* pvParameters) {
         }
 
         // ----------------------------------------------------------------
-        // Read enabled state fresh every iteration.
-        // The user can toggle S2 Sound in the Setup page at any time;
-        // we must not require a reboot for the change to take effect.
+        // Gather this iteration's inputs. Config is read fresh so a Setup
+        // page toggle (S2 Sound, tracks, moods) takes effect without a
+        // reboot; every step phase sees this one generation.
         // ----------------------------------------------------------------
-        bool audioEnabled;
-        bool sleepMode;
         ConfigSnapshot cfg = {};
         configCacheRead(&cfg);
-        audioEnabled = cfg.system.enable_s2_sound;
+        audioConfigMapBuild(cfg, &playback);
+        audioConfigMapNamedTracks(playback, &named);
+        bool sleepMode;
         taskENTER_CRITICAL(&robotStateMux);
         sleepMode = robotState.sleepMode;
         taskEXIT_CRITICAL(&robotStateMux);
+        const uint8_t caps = driver->capabilities();
+        const bool catalogCapable = (caps & AudioDriver::AUDIO_CAP_CATALOG) != 0;
 
-        if (!audioEnabled) {
-            // Disabled: stop active playback on the enabled→disabled transition,
-            // then drain queued commands silently and clear runtime state.
-            if (lastAudioEnabled && driverInitialized) {
-                driver->stop();
+        AudioStepTickInputs tickIn{};
+        tickIn.audioEnabled = cfg.system.enable_s2_sound;
+        tickIn.sleepMode = sleepMode;
+        tickIn.configVolume = cfg.audio.audioVolume;
+        const AudioStepTickActions tick = audioStepTick(step, tickIn);
+
+        if (tick.stopDriver) {
+            driver->stop();
+            if (tick.stopReason == AUDIO_STEP_STOP_DISABLED) {
                 PA_LOG_INFO(TAG, "audio disabled — stopping active playback");
             }
-            lastAudioEnabled = false;
-            // randomMode must be cleared here — if it stays true, the random
-            // timer would fire the moment audio is re-enabled.
-            if (randomMode) {
-                randomMode = false;
-                taskENTER_CRITICAL(&robotStateMux);
-                robotState.audioActive = false;
-                taskEXIT_CRITICAL(&robotStateMux);
+        }
+        if (tick.stopReason == AUDIO_STEP_STOP_SLEEP_ENTRY) {
+            PA_LOG_INFO(TAG, "sleep mode active — audio playback suppressed");
+        }
+        if (tick.clearAudioActive) {
+            taskENTER_CRITICAL(&robotStateMux);
+            robotState.audioActive = false;
+            taskEXIT_CRITICAL(&robotStateMux);
+            if (tick.drainQueue) {
                 PA_LOG_INFO(TAG, "audio disabled — random mode cleared");
             }
+        }
+        if (tick.drainQueue) {
             xQueueReceive(audioCmdQueue, &cmd, pdMS_TO_TICKS(500));
-            wasSleeping = sleepMode;
             continue;
         }
-        lastAudioEnabled = true;
 
-        // ----------------------------------------------------------------
-        // Enabled: initialise driver on first enable. If a driver reports a
-        // transient init failure, retry through a delay instead of spinning.
-        // ----------------------------------------------------------------
-        if (!driverInitialized) {
-            ConfigSnapshot cfg = {};
-            configCacheRead(&cfg);
-            currentVol = cfg.audio.audioVolume;
-            AudioPlaybackConfig playback = {};
-            audioConfigMapBuild(cfg, &playback);
-            audioConfigMapNamedTracks(playback, &named);
+        if (tick.initDriver) {
             // Soft-UART drivers block for up to ~6 ms per command; AudioTask must run on Core 0.
             configASSERT(xPortGetCoreID() == 0);
-            const bool initOk = driver->begin(currentVol);
-            if (!initOk) {
-                ++beginRetryCount;
-                if (beginRetryCount >= kBeginMaxRetries) {
-                    PA_LOG_WARN(TAG,
-                                "audio driver begin() failed %u times — giving up; driver inoperative",
-                                (unsigned)beginRetryCount);
-                    setAudioRxStatus(AUDIO_RX_NO_RESPONSE);
-                    driverInitialized = true;
-                    beginRetryCount = 0;
-                } else {
+            const bool initOk = driver->begin(step.currentVol);
+            const AudioStepInitResultActions ir =
+                audioStepInitResult(step, initOk, catalogCapable);
+            if (ir.giveUp) {
+                PA_LOG_WARN(TAG,
+                            "audio driver begin() failed %u times — giving up; driver inoperative",
+                            (unsigned)AUDIO_STEP_INIT_MAX_RETRIES);
+                setAudioRxStatus(AUDIO_RX_NO_RESPONSE);
+            }
+            if (ir.skipRestOfTick) {
+                if (!ir.giveUp) {
                     PA_LOG_DEBUG(TAG, "audio driver begin incomplete (%u/%u) — will retry",
-                                 (unsigned)beginRetryCount, (unsigned)kBeginMaxRetries);
+                                 (unsigned)step.beginRetryCount,
+                                 (unsigned)AUDIO_STEP_INIT_MAX_RETRIES);
                 }
-                vTaskDelay(pdMS_TO_TICKS(250));
+                vTaskDelay(pdMS_TO_TICKS(AUDIO_STEP_INIT_RETRY_DELAY_MS));
                 continue;
             }
-            beginRetryCount = 0;
-            if (driver->capabilities() & AudioDriver::AUDIO_CAP_CATALOG) {
+            if (ir.refreshBindings) {
                 bool cacheLoaded = refreshChirpBindingCacheFromNvs();
                 PA_LOG_INFO(TAG, "CHIRP binding cache %s", cacheLoaded ? "loaded" : "load failed");
             }
-            driverInitialized = true;
             PA_LOG_INFO(TAG, "audio driver init — PA_AUDIO_DRIVER=%d vol=%u", PA_AUDIO_DRIVER,
-                        (unsigned)currentVol);
-
-            // Seed RobotState from getCachedState() — begin() now runs
-            // pre-init queries so m_device and m_totalTracks may already
-            // be populated (non-0xFF/0) if the module responded.
-            {
+                        (unsigned)step.currentVol);
+            if (ir.seedModuleState) {
+                // Seed RobotState from getCachedState() — begin() runs pre-init
+                // queries so m_device and m_totalTracks may already be populated
+                // (non-0xFF/0) if the module responded.
                 AudioModuleState ms{};
                 driver->getCachedState(ms);
-                AudioRxStatus rxStatus = driver->classifyRxStatus(ms.linkOk);
-                taskENTER_CRITICAL(&robotStateMux);
-                robotState.audio_module_link_ok = ms.linkOk;
-                robotState.audio_module_play_state = ms.playState;
-                robotState.audio_module_device = ms.device;
-                robotState.audio_module_total_tracks = ms.totalTracks;
-                robotState.audio_module_current_track = ms.currentTrack;
-                robotState.audio_module_rx_status = rxStatus;
-                taskEXIT_CRITICAL(&robotStateMux);
+                writeModuleState(ms, driver->classifyRxStatus(ms.linkOk));
                 PA_LOG_INFO(TAG, "module init cached: link=%s device=0x%02X tracks=%u",
                             ms.linkOk ? "OK" : "NO_DEVICE", (unsigned)ms.device,
                             (unsigned)ms.totalTracks);
             }
         }
 
-        if (sleepMode && !wasSleeping) {
-            if (driverInitialized) {
-                driver->stop();
-            }
-            randomMode = false;
-            taskENTER_CRITICAL(&robotStateMux);
-            robotState.audioActive = false;
-            taskEXIT_CRITICAL(&robotStateMux);
-            PA_LOG_INFO(TAG, "sleep mode active — audio playback suppressed");
-        }
-        wasSleeping = sleepMode;
-
         // ----------------------------------------------------------------
-        // Process one command from the queue (500 ms timeout so the random
-        // timer below can fire even when the queue is idle).
+        // Process one command from the queue (500 ms timeout so the idle
+        // phase below can run even when the queue is quiet).
         // ----------------------------------------------------------------
         if (xQueueReceive(audioCmdQueue, &cmd, pdMS_TO_TICKS(500)) == pdTRUE) {
-            switch (cmd.type) {
-                case AUDIO_CMD_DOLLAR: {
-                    if (sleepMode) {
-                        PA_LOG_INFO(TAG, "[%s] dollar command ignored — sleep mode active",
-                                    commandSourceToString(cmd.source));
-                        break;
-                    }
-                    AudioPlaybackConfig playback = {};
-                    readPlaybackConfig(&playback, &named);
-                    AudioAction action = parseAudioDollar(cmd.dollar, named);
-                    AudioPlaybackRequest request{};
-                    if (action.type == AUDIO_ACTION_PLAY_TRACK) {
-                        AudioPlaybackSlot slot = audioSlotForDollar(cmd.dollar);
-                        if (slot != AUDIO_SLOT_NONE) {
-                            request.kind = AUDIO_PLAYBACK_REQ_SLOT;
-                            request.slot = slot;
-                        } else {
-                            request.kind = AUDIO_PLAYBACK_REQ_DIRECT_TRACK;
-                            request.track = action.track;
-                        }
-                    } else if (action.type == AUDIO_ACTION_STOP) {
-                        request.kind = AUDIO_PLAYBACK_REQ_STOP;
-                    } else if (action.type == AUDIO_ACTION_RANDOM_ON) {
-                        request.kind = AUDIO_PLAYBACK_REQ_RANDOM_ON;
-                    } else if (action.type == AUDIO_ACTION_RANDOM_OFF) {
-                        request.kind = AUDIO_PLAYBACK_REQ_RANDOM_OFF;
-                    } else if (action.type == AUDIO_ACTION_VOLUME_SET) {
-                        request.kind = AUDIO_PLAYBACK_REQ_SET_VOLUME;
-                        request.volume = action.volume;
-                    } else if (action.type == AUDIO_ACTION_VOLUME_UP) {
-                        request.kind = AUDIO_PLAYBACK_REQ_SET_VOLUME;
-                        request.volume = audioClampVolume(currentVol + 1);
-                    } else if (action.type == AUDIO_ACTION_VOLUME_DOWN) {
-                        request.kind = AUDIO_PLAYBACK_REQ_SET_VOLUME;
-                        request.volume = (currentVol > AUDIO_VOLUME_MIN) ? (uint8_t)(currentVol - 1)
-                                                                          : AUDIO_VOLUME_MIN;
-                    } else {
-                        request.kind = AUDIO_PLAYBACK_REQ_NONE;
-                    }
-                    uint32_t now = millis();
-                    AudioPlaybackContext context{&playback, &s_audioBindings,
-                                                 (driver->capabilities() &
-                                                  AudioDriver::AUDIO_CAP_CATALOG) != 0,
-                                                 now, lastPlayMs};
-                    AudioPlaybackIntent intent = audioPlaybackResolveRequest(context, request);
-                    executePlaybackIntent(intent, cmd.source, now, lastPlayMs, lastRandMs,
-                                          currentVol, randomMode);
-                    break;
-                }
+            AudioStepCommandInputs cmdIn{};
+            cmdIn.nowMs = millis();
+            cmdIn.sleepMode = sleepMode;
+            cmdIn.catalogCapable = catalogCapable;
+            cmdIn.playback = &playback;
+            cmdIn.named = &named;
+            cmdIn.bindings = &s_audioBindings;
+            cmdIn.randomValue = esp_random();
+            const AudioStepCommandActions ca = audioStepCommand(step, cmdIn, cmd);
 
-                case AUDIO_CMD_PLAY_TRACK: {
-                    if (sleepMode) {
-                        PA_LOG_INFO(TAG, "[%s] play track ignored — sleep mode active",
-                                    commandSourceToString(cmd.source));
-                        break;
-                    }
-                    AudioPlaybackConfig playback = {};
-                    readPlaybackConfig(&playback);
-                    AudioPlaybackRequest request{};
-                    request.kind = AUDIO_PLAYBACK_REQ_DIRECT_TRACK;
-                    request.track = cmd.track;
-                    uint32_t now = millis();
-                    AudioPlaybackContext context{&playback, &s_audioBindings,
-                                                 (driver->capabilities() &
-                                                  AudioDriver::AUDIO_CAP_CATALOG) != 0,
-                                                 now, lastPlayMs};
-                    AudioPlaybackIntent intent = audioPlaybackResolveRequest(context, request);
-                    executePlaybackIntent(intent, cmd.source, now, lastPlayMs, lastRandMs,
-                                          currentVol, randomMode);
-                    break;
+            if (ca.ignored == AUDIO_STEP_IGNORE_SLEEP) {
+                PA_LOG_INFO(TAG, "[%s] %s ignored — sleep mode active",
+                            commandSourceToString(cmd.source), playCommandName(cmd.type));
+            } else if (ca.ignored == AUDIO_STEP_IGNORE_UNSUPPORTED_BACKEND) {
+                PA_LOG_DEBUG(TAG, "[%s] %s ignored (unsupported backend)",
+                             commandSourceToString(cmd.source), playCommandName(cmd.type));
+            }
+            if (ca.hasIntent) {
+                executePlaybackIntent(ca.intent, cmd.source);
+            }
+            if (ca.refreshCatalog) {
+                bool acquired = domeUartAcquire(DOME_UART_AUDIO);
+                bool ok = acquired && driver->refreshCatalog();
+                if (acquired) {
+                    domeUartRelease(DOME_UART_AUDIO);
+                    setAudioRxStatus(ok ? AUDIO_RX_AVAILABLE : AUDIO_RX_NO_RESPONSE);
+                } else {
+                    setAudioRxStatus(AUDIO_RX_BLOCKED_BY_DOME_UART);
                 }
-                case AUDIO_CMD_PLAY_SLOT: {
-                    if (sleepMode) {
-                        PA_LOG_INFO(TAG, "[%s] slot play ignored — sleep mode active",
-                                    commandSourceToString(cmd.source));
-                        break;
-                    }
-                    AudioPlaybackConfig playback = {};
-                    readPlaybackConfig(&playback);
-                    AudioPlaybackRequest request{};
-                    request.kind = AUDIO_PLAYBACK_REQ_SLOT;
-                    request.slot = cmd.slot;
-                    uint32_t now = millis();
-                    AudioPlaybackContext context{&playback, &s_audioBindings,
-                                                 (driver->capabilities() &
-                                                  AudioDriver::AUDIO_CAP_CATALOG) != 0,
-                                                 now, lastPlayMs};
-                    AudioPlaybackIntent intent = audioPlaybackResolveRequest(context, request);
-                    executePlaybackIntent(intent, cmd.source, now, lastPlayMs, lastRandMs,
-                                          currentVol, randomMode);
-                    break;
-                }
-
-                case AUDIO_CMD_PLAY_TRACK_BANKED: {
-                    if (sleepMode) {
-                        PA_LOG_INFO(TAG, "[%s] banked play ignored — sleep mode active",
-                                    commandSourceToString(cmd.source));
-                        break;
-                    }
-                    AudioPlaybackConfig playback = {};
-                    readPlaybackConfig(&playback);
-                    AudioPlaybackRequest request{};
-                    request.kind = AUDIO_PLAYBACK_REQ_DIRECT_BANKED;
-                    request.banked.index = cmd.banked.index;
-                    request.banked.bank = cmd.banked.bank;
-                    request.banked.page = cmd.banked.page;
-                    uint32_t now = millis();
-                    AudioPlaybackContext context{&playback, &s_audioBindings,
-                                                 (driver->capabilities() &
-                                                  AudioDriver::AUDIO_CAP_CATALOG) != 0,
-                                                 now, lastPlayMs};
-                    AudioPlaybackIntent intent = audioPlaybackResolveRequest(context, request);
-                    executePlaybackIntent(intent, cmd.source, now, lastPlayMs, lastRandMs,
-                                          currentVol, randomMode);
-                    break;
-                }
-
-                case AUDIO_CMD_PLAY_CATEGORY: {
-                    if (sleepMode) {
-                        PA_LOG_INFO(TAG, "[%s] category play ignored — sleep mode active",
-                                    commandSourceToString(cmd.source));
-                        break;
-                    }
-                    AudioPlaybackConfig playback = {};
-                    readPlaybackConfig(&playback);
-                    AudioPlaybackRequest request{};
-                    request.kind = AUDIO_PLAYBACK_REQ_CATEGORY;
-                    request.categoryRequest.category = cmd.category.category;
-                    request.categoryRequest.fallbackSlot = cmd.category.fallbackSlot;
-                    request.categoryRequest.randomValue = esp_random();
-                    uint32_t now = millis();
-                    AudioPlaybackContext context{&playback, &s_audioBindings,
-                                                 (driver->capabilities() &
-                                                  AudioDriver::AUDIO_CAP_CATALOG) != 0,
-                                                 now, lastPlayMs};
-                    AudioPlaybackIntent intent = audioPlaybackResolveRequest(context, request);
-                    executePlaybackIntent(intent, cmd.source, now, lastPlayMs, lastRandMs,
-                                          currentVol, randomMode);
-                    break;
-                }
-
-                case AUDIO_CMD_STOP: {
-                    AudioPlaybackRequest request{};
-                    request.kind = AUDIO_PLAYBACK_REQ_STOP;
-                    uint32_t now = millis();
-                    AudioPlaybackContext context{nullptr, nullptr, false, now, lastPlayMs};
-                    AudioPlaybackIntent intent = audioPlaybackResolveRequest(context, request);
-                    executePlaybackIntent(intent, cmd.source, now, lastPlayMs, lastRandMs,
-                                          currentVol, randomMode);
-                    break;
-                }
-
-                case AUDIO_CMD_TRACK_STOP: {
-                    AudioPlaybackRequest request{};
-                    request.kind = AUDIO_PLAYBACK_REQ_TRACK_STOP;
-                    uint32_t now = millis();
-                    AudioPlaybackContext context{nullptr, nullptr, false, now, lastPlayMs};
-                    AudioPlaybackIntent intent = audioPlaybackResolveRequest(context, request);
-                    executePlaybackIntent(intent, cmd.source, now, lastPlayMs, lastRandMs,
-                                          currentVol, randomMode);
-                    break;
-                }
-
-                case AUDIO_CMD_SET_VOLUME: {
-                    AudioPlaybackRequest request{};
-                    request.kind = AUDIO_PLAYBACK_REQ_SET_VOLUME;
-                    request.volume = cmd.volume;  // clamped by helper before enqueue
-                    uint32_t now = millis();
-                    AudioPlaybackContext context{nullptr, nullptr, false, now, lastPlayMs};
-                    AudioPlaybackIntent intent = audioPlaybackResolveRequest(context, request);
-                    executePlaybackIntent(intent, cmd.source, now, lastPlayMs, lastRandMs,
-                                          currentVol, randomMode);
-                    break;
-                }
-
-                case AUDIO_CMD_REFRESH_CATALOG: {
-                    if (!(driver->capabilities() & AudioDriver::AUDIO_CAP_CATALOG)) {
-                        PA_LOG_DEBUG(TAG, "[%s] catalog refresh ignored (unsupported backend)",
-                                     commandSourceToString(cmd.source));
-                        break;
-                    }
-                    bool acquired = domeUartAcquire(DOME_UART_AUDIO);
-                    bool ok = acquired && driver->refreshCatalog();
-                    if (acquired) {
-                        domeUartRelease(DOME_UART_AUDIO);
-                        setAudioRxStatus(ok ? AUDIO_RX_AVAILABLE : AUDIO_RX_NO_RESPONSE);
-                    } else {
-                        setAudioRxStatus(AUDIO_RX_BLOCKED_BY_DOME_UART);
-                    }
-                    PA_LOG_INFO(TAG, "[%s] catalog refresh %s", commandSourceToString(cmd.source),
-                                ok ? "OK" : (acquired ? "FAILED" : "skipped: DomeLink using UART"));
-                    break;
-                }
-
-                case AUDIO_CMD_REFRESH_BINDINGS: {
-                    if (!(driver->capabilities() & AudioDriver::AUDIO_CAP_CATALOG)) {
-                        PA_LOG_DEBUG(TAG, "[%s] binding cache refresh ignored (unsupported backend)",
-                                     commandSourceToString(cmd.source));
-                        break;
-                    }
-                    bool ok = refreshChirpBindingCacheFromNvs();
-                    PA_LOG_INFO(TAG, "[%s] binding cache refresh %s",
-                                commandSourceToString(cmd.source), ok ? "OK" : "FAILED");
-                    break;
-                }
-
-                case AUDIO_CMD_QUERY_STATUS: {
-                    // On-demand query triggered by the web UI poll button.
-                    // Runs only when explicitly requested — never automatically.
-                    // The 3-query sequence takes up to ~900 ms; this is acceptable
-                    // since it is user-initiated and not in a real-time loop.
-                    AudioModuleState ms{};
-                    bool acquired = domeUartAcquire(DOME_UART_AUDIO);
-                    if (!acquired) {
-                        setAudioRxStatus(AUDIO_RX_BLOCKED_BY_DOME_UART);
-                        PA_LOG_INFO(TAG, "[%s] status poll skipped (UART2 owned by dome)",
-                                    commandSourceToString(cmd.source));
-                        break;
-                    }
+                PA_LOG_INFO(TAG, "[%s] catalog refresh %s", commandSourceToString(cmd.source),
+                            ok ? "OK" : (acquired ? "FAILED" : "skipped: DomeLink using UART"));
+            }
+            if (ca.refreshBindings) {
+                bool ok = refreshChirpBindingCacheFromNvs();
+                PA_LOG_INFO(TAG, "[%s] binding cache refresh %s",
+                            commandSourceToString(cmd.source), ok ? "OK" : "FAILED");
+            }
+            if (ca.queryStatus) {
+                // On-demand query triggered by the web UI poll button. The 3-query
+                // sequence takes up to ~900 ms; acceptable because it is
+                // user-initiated and not in a real-time loop.
+                AudioModuleState ms{};
+                bool acquired = domeUartAcquire(DOME_UART_AUDIO);
+                if (acquired) {
                     bool ok = driver->queryModuleState(ms);
                     domeUartRelease(DOME_UART_AUDIO);
-                    taskENTER_CRITICAL(&robotStateMux);
-                    robotState.audio_module_link_ok = ms.linkOk;
-                    robotState.audio_module_play_state = ms.playState;
-                    robotState.audio_module_device = ms.device;
-                    robotState.audio_module_total_tracks = ms.totalTracks;
-                    robotState.audio_module_current_track = ms.currentTrack;
-                    robotState.audio_module_rx_status = ok ? AUDIO_RX_AVAILABLE : AUDIO_RX_NO_RESPONSE;
-                    taskEXIT_CRITICAL(&robotStateMux);
+                    writeModuleState(ms, ok ? AUDIO_RX_AVAILABLE : AUDIO_RX_NO_RESPONSE);
                     PA_LOG_INFO(TAG, "[%s] status poll: link=%s device=0x%02X play=0x%02X",
                                 commandSourceToString(cmd.source), ok ? "OK" : "NO_RSP",
                                 (unsigned)ms.device, (unsigned)ms.playState);
-                    break;
+                } else {
+                    setAudioRxStatus(AUDIO_RX_BLOCKED_BY_DOME_UART);
+                    PA_LOG_INFO(TAG, "[%s] status poll skipped (UART2 owned by dome)",
+                                commandSourceToString(cmd.source));
                 }
             }
         }
 
         // ----------------------------------------------------------------
-        // Random playback timer.
-        // randomMode is only true when audio is enabled and a $R command
-        // was received. audioEnabled is guaranteed true here (we continued
-        // at the top of the loop if it was false).
-        //
-        // Interval is per-mood and NVS-configurable (T18). AudioTask reads
-        // activeMood + cfg_snd_int_* on every timer check, so a mood change
-        // takes effect on the next tick after the current interval expires.
-        // Mood 0 (unset) falls back to the Full-Awake interval.
-        // An interval of 0 s suppresses random playback for that mood.
+        // Idle phase: random playback tick + periodic status auto-query.
+        // Random interval semantics are unchanged (per-mood, NVS-configurable;
+        // mood 0 falls back to the Full-Awake interval, 0 s suppresses).
+        // Background polling can corrupt some module RX state machines, so
+        // the auto-query still runs only for AUDIO_CAP_QUERY_SAFE_PLAYING.
         // ----------------------------------------------------------------
-        if (randomMode && !sleepMode) {
-            AudioPlaybackConfig playback = {};
-            readPlaybackConfig(&playback);
-            taskENTER_CRITICAL(&robotStateMux);
-            uint8_t mood = robotState.activeMood;
-            bool domeSeqActive = robotState.domeSeqActive;
-            taskEXIT_CRITICAL(&robotStateMux);
-            uint32_t now = millis();
-            AudioPlaybackRandomContext context{&playback,
-                                               &s_audioBindings,
-                                               (driver->capabilities() &
-                                                AudioDriver::AUDIO_CAP_CATALOG) != 0,
-                                               randomMode,
-                                               domeSeqActive,
-                                               now,
-                                               lastRandMs,
-                                               mood,
-                                               esp_random()};
-            AudioPlaybackIntent intent = audioPlaybackResolveRandomTick(context);
-            executePlaybackIntent(intent, SRC_INTERNAL, now, lastPlayMs, lastRandMs, currentVol,
-                                  randomMode);
-        }
+        uint8_t activeMood;
+        bool domeSeqActive;
+        taskENTER_CRITICAL(&robotStateMux);
+        activeMood = robotState.activeMood;
+        domeSeqActive = robotState.domeSeqActive;
+        taskEXIT_CRITICAL(&robotStateMux);
 
-        // ----------------------------------------------------------------
-        // Periodic auto-query runs only for modules reporting
-        // AUDIO_CAP_QUERY_SAFE_PLAYING at AUTO_STATUS_QUERY_INTERVAL_MS
-        // cadence. For modules without that capability (background polling
-        // can corrupt some module RX state machines during playback),
-        // status is updated only via the manual Poll button
-        // ----------------------------------------------------------------
-        if (!webOtaActive() &&
-            (driver->capabilities() & AudioDriver::AUDIO_CAP_QUERY_SAFE_PLAYING) &&
-            ((uint32_t)(millis() - lastAutoQueryMs) >= AUTO_STATUS_QUERY_INTERVAL_MS)) {
-            lastAutoQueryMs = millis();
+        AudioStepIdleInputs idleIn{};
+        idleIn.nowMs = millis();
+        idleIn.sleepMode = sleepMode;
+        idleIn.catalogCapable = catalogCapable;
+        idleIn.querySafePlayingCapable = (caps & AudioDriver::AUDIO_CAP_QUERY_SAFE_PLAYING) != 0;
+        idleIn.webOtaActive = webOtaActive();
+        idleIn.activeMood = activeMood;
+        idleIn.domeSeqActive = domeSeqActive;
+        idleIn.randomValue = esp_random();
+        idleIn.playback = &playback;
+        idleIn.bindings = &s_audioBindings;
+        const AudioStepIdleActions idle = audioStepIdle(step, idleIn);
+
+        if (idle.hasIntent) {
+            executePlaybackIntent(idle.intent, SRC_INTERNAL);
+        }
+        if (idle.autoQuery) {
             AudioModuleState ms{};
             bool acquired = domeUartAcquire(DOME_UART_AUDIO);
-            if (!acquired) {
+            if (acquired) {
+                bool ok = driver->queryModuleState(ms);
+                domeUartRelease(DOME_UART_AUDIO);
+                writeModuleState(ms, ok ? AUDIO_RX_AVAILABLE : AUDIO_RX_NO_RESPONSE);
+                PA_LOG_DEBUG(TAG, "auto-query: link=%s play=0x%02X", ok ? "OK" : "no-rsp",
+                             (unsigned)ms.playState);
+            } else {
                 setAudioRxStatus(AUDIO_RX_BLOCKED_BY_DOME_UART);
                 PA_LOG_DEBUG(TAG, "auto-query skipped (UART2 owned by dome)");
-                continue;
             }
-            bool ok = driver->queryModuleState(ms);
-            domeUartRelease(DOME_UART_AUDIO);
-            taskENTER_CRITICAL(&robotStateMux);
-            robotState.audio_module_link_ok = ms.linkOk;
-            robotState.audio_module_play_state = ms.playState;
-            robotState.audio_module_device = ms.device;
-            robotState.audio_module_total_tracks = ms.totalTracks;
-            robotState.audio_module_current_track = ms.currentTrack;
-            robotState.audio_module_rx_status = ok ? AUDIO_RX_AVAILABLE : AUDIO_RX_NO_RESPONSE;
-            taskEXIT_CRITICAL(&robotStateMux);
-            PA_LOG_DEBUG(TAG, "auto-query: link=%s play=0x%02X", ok ? "OK" : "no-rsp",
-                         (unsigned)ms.playState);
         }
     }
 }
+
