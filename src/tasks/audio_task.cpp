@@ -3,12 +3,14 @@
 //
 // AudioTask — sole writer to the audio serial GPIO (PIN_AUDIO_TX, GPIO 26).
 //
-// Responsibilities:
-//   - Initialise the compiled-in AudioDriver backend on boot.
-//   - Drain audioCmdQueue and dispatch each command to the driver.
-//   - Parse '$' command strings via parseAudioDollar().
-//   - Manage random playback mode timer.
-//   - Track and clamp current volume (0–30).
+// Imperative adapter for the Audio Step Core (audio_task_step, ADR 0014):
+//   - Gathers one generation of inputs per loop iteration (config, RobotState).
+//   - Calls the step phases in loop order and executes their plain-data actions.
+//   - Owns every side effect: driver init and playback calls, dome-UART
+//     arbitration, NVS binding-cache refresh, RobotState audio-zone writes.
+// Decision logic (lifecycle transitions, '$'/command translation, playback
+// policy invocation, volume and random-mode state, status/catalog gating)
+// lives in the step core.
 //
 // Core assignment: Core 0 (non-RT).
 // Reason: software bit-bang TX blocks for up to ~6 ms per command; keeping
