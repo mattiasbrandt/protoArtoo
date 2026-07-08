@@ -86,3 +86,26 @@ ADR 0012's Commanded Mode zone owns the stationary release rule:
 cue at the state write. `playDomeOnCue` remains a core action — that transition is
 config-derived, not state-derived. Whichever lands second of Apply Core slice 1
 and the `commanded_modes` module adopts the setter call in the config shell.
+
+## Amendment (2026-07-08): compliance criterion; POST /api/seq dissolved
+
+The campaign's completion test is a criterion, not a mechanism: a write handler
+is compliant when its decision logic is natively reachable. An Apply Core is
+the standard means, but an existing pure decomposition satisfies the campaign
+without one, and handlers with no decision logic (estop, reboot, seq/stop and
+peers) are compliant as thin adapters.
+
+Judged against that criterion, `POST /api/seq` needs no Apply Core. The
+2026-07-08 architecture review proposed one (working name SeqApplyCore); the
+grilled design session dissolved the finding. The handler is already a ten-line
+adapter over `seqStoreSave`, whose decisions sit behind pure natively-tested
+modules — `seq_json`, `protocol_check`, `seq_store_util`, `seq_store_index`
+(ADR 0006's decomposition). The untested residue is side-effect glue (LittleFS
+temp+rename, store mutex, error-string mapping), exactly what this ADR leaves
+in shells; an extracted core would be a shallow one-caller module.
+
+The same session extracted the file's one genuinely untested decision:
+`DELETE /api/seq`'s dangling RC-trigger report is now the pure
+`seq_dangling_bindings` module (Factory-shadow suppression rule included), and
+the 11-slot trigger enumeration it shares with the RC input task moved to the
+single `rcTriggerSlotsCopy` helper next to the slot fields in `config_store.h`.
