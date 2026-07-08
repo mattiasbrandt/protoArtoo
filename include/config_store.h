@@ -332,6 +332,25 @@ struct SystemConfig {
     RcTriggerBinding rc_free3;
 };
 
+// Canonical enumeration of the RC trigger binding slots above, in tier-2
+// dispatch order. Every consumer that scans "all trigger slots" (the RC input
+// task, the sequence dangling-binding scan) copies through here, so adding a
+// slot field is a one-place change plus this list.
+static constexpr size_t RC_TRIGGER_SLOT_COUNT = 11;
+
+inline size_t rcTriggerSlotsCopy(const SystemConfig& sys, RcTriggerBinding* out, size_t cap) {
+    const RcTriggerBinding* slots[RC_TRIGGER_SLOT_COUNT] = {
+        &sys.rc_arm1,  &sys.rc_arm2,  &sys.rc_aux1,  &sys.rc_aux2,
+        &sys.rc_aux3,  &sys.rc_sound, &sys.rc_opmode, &sys.rc_free0,
+        &sys.rc_free1, &sys.rc_free2, &sys.rc_free3,
+    };
+    const size_t n = (cap < RC_TRIGGER_SLOT_COUNT) ? cap : RC_TRIGGER_SLOT_COUNT;
+    for (size_t i = 0; i < n; ++i) {
+        out[i] = *slots[i];
+    }
+    return n;
+}
+
 // ConfigSnapshot — in-flight snapshot of all cfg_* fields, used only at
 // load/save boundaries. NOT persisted or shared with tasks at runtime.
 struct ConfigSnapshot {

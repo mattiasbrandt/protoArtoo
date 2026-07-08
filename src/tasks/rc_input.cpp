@@ -191,18 +191,9 @@ static void loadTier2TriggerBindings(RcTriggerBinding* bindings, size_t* count) 
 
     ConfigSnapshot cfg = {};
     configCacheRead(&cfg);
-    bindings[0] = cfg.system.rc_arm1;
-    bindings[1] = cfg.system.rc_arm2;
-    bindings[2] = cfg.system.rc_aux1;
-    bindings[3] = cfg.system.rc_aux2;
-    bindings[4] = cfg.system.rc_aux3;
-    bindings[5] = cfg.system.rc_sound;
-    bindings[6] = cfg.system.rc_opmode;
-    bindings[7] = cfg.system.rc_free0;
-    bindings[8] = cfg.system.rc_free1;
-    bindings[9] = cfg.system.rc_free2;
-    bindings[10] = cfg.system.rc_free3;
-    *count = 11;
+    static_assert(RC_TRIGGER_MAX >= RC_TRIGGER_SLOT_COUNT,
+                  "trigger buffer must hold every config slot");
+    *count = rcTriggerSlotsCopy(cfg.system, bindings, RC_TRIGGER_MAX);
 }
 
 static void buildRcProcessorConfig(RcInputMode mode, RcProcessorConfig* out) {

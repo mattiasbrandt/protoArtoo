@@ -15,11 +15,12 @@
 #include <string.h>
 
 #include "api_helpers.h"
-#include "config_store.h"         // ConfigSnapshot, configCacheRead
+#include "config_store.h"          // ConfigSnapshot, configCacheRead, rcTriggerSlotsCopy
 #include "logging.h"
-#include "rc_action_types.h"      // RcTriggerBinding, DOME_ACTION_SEQ
-#include "rc_binding_types.h"     // rcBindingSourceToString
-#include "robot_state.h"          // CommandSource
+#include "rc_action_types.h"       // RcTriggerBinding
+#include "rc_binding_types.h"      // rcBindingSourceToString
+#include "robot_state.h"           // CommandSource
+#include "seq_dangling_bindings.h"
 #include "seq_json.h"
 #include "seq_store.h"
 #include "seq_store_index.h"
@@ -249,34 +250,28 @@ void handleDelete(AsyncWebServerRequest* req) {
 
     // Report RC trigger bindings the wipe leaves dangling: unless a Factory
     // Sequence shadows the name, those triggers are silent no-ops from now on
-    // (the editor surfaces this; the log keeps it visible regardless).
+    // (the editor surfaces this; the log keeps it visible regardless). The
+    // scan rules live in seqDanglingBindings(); this shell shapes the JSON
+    // and replays the warnings.
     JsonDocument doc;
     doc["ok"] = true;
-    if (sequenceCatalogFind(name) == nullptr) {
-        ConfigSnapshot snap;
-        configCacheRead(&snap);
-        const RcTriggerBinding* slots[] = {
-            &snap.system.rc_arm1,  &snap.system.rc_arm2,  &snap.system.rc_aux1,
-            &snap.system.rc_aux2,  &snap.system.rc_aux3,  &snap.system.rc_sound,
-            &snap.system.rc_opmode, &snap.system.rc_free0, &snap.system.rc_free1,
-            &snap.system.rc_free2, &snap.system.rc_free3,
-        };
-        JsonArray dangling;
-        for (size_t i = 0; i < sizeof(slots) / sizeof(slots[0]); ++i) {
-            const RcTriggerBinding& b = *slots[i];
-            if (b.target != DOME_ACTION_SEQ ||
-                strcmp(b.marcduinoPayload, name) != 0) {
-                continue;
-            }
-            if (dangling.isNull()) {
-                dangling = doc["danglingBindings"].to<JsonArray>();
-            }
-            JsonObject o = dangling.add<JsonObject>();
-            o["source"] = rcBindingSourceToString(b.source);
-            o["channel"] = b.channel;
+    ConfigSnapshot snap;
+    configCacheRead(&snap);
+    RcTriggerBinding slots[RC_TRIGGER_SLOT_COUNT];
+    const size_t slotCount = rcTriggerSlotsCopy(snap.system, slots, RC_TRIGGER_SLOT_COUNT);
+    SeqDanglingBinding dangling[RC_TRIGGER_SLOT_COUNT];
+    const size_t danglingCount =
+        seqDanglingBindings(name, sequenceCatalogFind(name) != nullptr, slots,
+                            slotCount, dangling, RC_TRIGGER_SLOT_COUNT);
+    if (danglingCount > 0) {
+        JsonArray arr = doc["danglingBindings"].to<JsonArray>();
+        for (size_t i = 0; i < danglingCount; ++i) {
+            JsonObject o = arr.add<JsonObject>();
+            o["source"] = rcBindingSourceToString(dangling[i].source);
+            o["channel"] = dangling[i].channel;
             PA_LOG_WARN(TAG, "Memory Wipe %s leaves RC binding %s ch%u dangling",
-                        name, rcBindingSourceToString(b.source),
-                        (unsigned)b.channel);
+                        name, rcBindingSourceToString(dangling[i].source),
+                        (unsigned)dangling[i].channel);
         }
     }
     auto* stream = req->beginResponseStream("application/json");
