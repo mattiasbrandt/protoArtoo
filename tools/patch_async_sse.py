@@ -170,6 +170,15 @@ TCP_ACCEPT_HEAP_GUARD_INCLUDES_AFTER = """\
 
 #if defined(ESP32)
 #include <esp_heap_caps.h>
+// Accept-guard telemetry, readable by the application (e.g. /api/status).
+// The guard's own log_w is compiled out at CORE_DEBUG_LEVEL=0, so these
+// counters are the only always-on evidence that accepts are being rejected.
+// Written only from the lwIP task inside tcp_accept.
+extern "C" {
+volatile uint32_t g_asyncTcpAcceptRejectHeap = 0;
+volatile uint32_t g_asyncTcpAcceptRejectRate = 0;
+volatile uint32_t g_asyncTcpAcceptRejectLastMs = 0;
+}
 #endif
 #include <exception>
 """
@@ -264,6 +273,37 @@ TCP_ACCEPT_HEAP_GUARD_AFTER = """\
 #ifndef ASYNC_TCP_ACCEPT_MIN_LARGEST_FREE_BLOCK
 #define ASYNC_TCP_ACCEPT_MIN_LARGEST_FREE_BLOCK 20000
 #endif
+#ifndef ASYNC_TCP_ACCEPT_BURST
+#define ASYNC_TCP_ACCEPT_BURST 6
+#endif
+#ifndef ASYNC_TCP_ACCEPT_PER_SECOND
+#define ASYNC_TCP_ACCEPT_PER_SECOND 8
+#endif
+#if ASYNC_TCP_ACCEPT_PER_SECOND > 0
+    // Token-bucket accept pacing. Connections already accepted keep
+    // allocating (request, response, headers) while the heap falls, so a
+    // heap threshold alone cannot stop a dense burst from exhausting the
+    // heap between samples. Bounding the admission rate caps how much
+    // allocation pressure can pile up regardless of heap state. Static
+    // state is safe: tcp_accept runs only on the lwIP task.
+    {
+      static uint32_t s_tokens_m = (uint32_t)ASYNC_TCP_ACCEPT_BURST * 1000u;
+      static uint32_t s_last_ms = 0;
+      const uint32_t now_ms = millis();
+      const uint32_t cap_m = (uint32_t)ASYNC_TCP_ACCEPT_BURST * 1000u;
+      const uint64_t refill_m = (uint64_t)s_tokens_m
+          + (uint64_t)(uint32_t)(now_ms - s_last_ms) * (uint64_t)ASYNC_TCP_ACCEPT_PER_SECOND;
+      s_last_ms = now_ms;
+      s_tokens_m = refill_m > cap_m ? cap_m : (uint32_t)refill_m;
+      if (s_tokens_m < 1000u) {
+        g_asyncTcpAcceptRejectRate = g_asyncTcpAcceptRejectRate + 1u;
+        g_asyncTcpAcceptRejectLastMs = now_ms;
+        tcp_abort(pcb);
+        return ERR_ABRT;
+      }
+      s_tokens_m -= 1000u;
+    }
+#endif
 #if ASYNC_TCP_ACCEPT_MIN_LARGEST_FREE_BLOCK > 0
     const size_t largestBlock = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
     if (largestBlock < (size_t)ASYNC_TCP_ACCEPT_MIN_LARGEST_FREE_BLOCK) {
@@ -271,6 +311,8 @@ TCP_ACCEPT_HEAP_GUARD_AFTER = """\
         "_accept failed: largest free block %u < %u",
         (unsigned)largestBlock, (unsigned)ASYNC_TCP_ACCEPT_MIN_LARGEST_FREE_BLOCK
       );
+      g_asyncTcpAcceptRejectHeap = g_asyncTcpAcceptRejectHeap + 1u;
+      g_asyncTcpAcceptRejectLastMs = millis();
       tcp_abort(pcb);
       return ERR_ABRT;
     }
