@@ -670,6 +670,28 @@ def patch_eventsource_response_alloc(text):
     return text
 
 
+LISTEN_BACKLOG_BEFORE = "  static uint8_t backlog = 5;\n"
+
+LISTEN_BACKLOG_AFTER = """\
+#ifndef ASYNC_TCP_LISTEN_BACKLOG
+#define ASYNC_TCP_LISTEN_BACKLOG 5
+#endif
+  static uint8_t backlog = ASYNC_TCP_LISTEN_BACKLOG;
+"""
+
+
+def patch_listen_backlog(text):
+    if LISTEN_BACKLOG_AFTER not in text:
+        if text.count(LISTEN_BACKLOG_BEFORE) != 1:
+            raise RuntimeError(
+                "AsyncTCP.cpp AsyncServer::begin listen backlog changed; "
+                "review tools/patch_async_sse.py"
+            )
+        text = text.replace(LISTEN_BACKLOG_BEFORE, LISTEN_BACKLOG_AFTER)
+
+    return text
+
+
 def patch_file(path, patcher, description):
     if not path.exists():
         return
@@ -725,6 +747,11 @@ def patch_async_webserver(env):
         asynctcp_source_dir / "AsyncTCP.cpp",
         patch_tcp_accept_heap_guard,
         "guarded tcp_accept before AsyncClient allocation under critical heap (issue #21)",
+    )
+    patch_file(
+        asynctcp_source_dir / "AsyncTCP.cpp",
+        patch_listen_backlog,
+        "made TCP listen backlog build-flag overridable (issue #22)",
     )
 
 
