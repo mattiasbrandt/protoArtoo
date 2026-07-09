@@ -228,6 +228,33 @@ static constexpr size_t kMaxSseClients = PA_ADMISSION_MAX_SSE_CLIENTS;
 #endif
 static constexpr size_t kMinLargestFreeBlockForNewWork = PA_ADMISSION_MIN_LARGEST_FREE_BLOCK;
 
+// Read-only diagnostics (status/profiler/coredump) stay reachable far deeper
+// into heap pressure than normal work -- they are what an operator needs to
+// see a rejection window -- but they must not be exempt entirely: response
+// construction itself allocates (headers, body copy), and letting it run
+// with a critically depressed heap aborts the firmware on an unpatched
+// std::list node allocation inside addHeader (coredump-proven, three times).
+// Floor sits just above the 2-10 KB largest-block range where those
+// allocations were observed to fail.
+#ifndef PA_ADMISSION_MIN_LARGEST_FREE_BLOCK_DIAG
+#define PA_ADMISSION_MIN_LARGEST_FREE_BLOCK_DIAG 10000
+#endif
+static constexpr size_t kMinLargestFreeBlockForDiagnostics =
+    PA_ADMISSION_MIN_LARGEST_FREE_BLOCK_DIAG;
+
+// Deterministic bound on parked-request memory. Every accepted request holds
+// its parsed request object and header list while it waits for the single
+// async_tcp task to serve it; a dense connection burst can park enough of
+// them to exhaust the heap before any of them respond, no matter what the
+// heap looked like when each was admitted. Browsers open at most 6 parallel
+// connections per host, so a cap of 6 is invisible to legitimate clients.
+// Single-writer: touched only from the async_tcp task.
+#ifndef PA_ADMISSION_MAX_INFLIGHT_REQUESTS
+#define PA_ADMISSION_MAX_INFLIGHT_REQUESTS 6
+#endif
+static constexpr int kMaxInflightRequests = PA_ADMISSION_MAX_INFLIGHT_REQUESTS;
+static int s_inflightRequests = 0;
+
 #ifdef ARDUINO
 static size_t largestFreeBlock8Bit() {
     return heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
@@ -237,6 +264,17 @@ static size_t largestFreeBlock8Bit() {
     return SIZE_MAX;
 }
 #endif
+
+// Accept-guard telemetry, defined inside the patched AsyncTCP tcp_accept
+// path (tools/patch_async_sse.py). Always-on visibility for rejected
+// accepts: the guard's own debug log is compiled out in normal builds, and
+// its invisibility previously cost two diagnosis rounds.
+extern "C" {
+extern volatile uint32_t g_asyncTcpAcceptRejectHeap;
+extern volatile uint32_t g_asyncTcpAcceptRejectRate;
+extern volatile uint32_t g_asyncTcpAcceptRejectLastMs;
+}
+
 static char s_fsVersion[48] = "unknown";
 static bool routesRegistered = false;
 static bool serverStarted = false;
@@ -502,7 +540,7 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     // Build the fixed system-health fields first.
     int written = snprintf(
         buffer, bufferSize,
-        "{\"estop\":%s,\"webControlEnabled\":%s,\"sbusSignalLost\":%s,\"sbusHwFailsafe\":%s,\"webDriveExpired\":%s,\"failsafeSource\":%d,\"driveSpeed\":%d,\"driveSteer\":%d,\"domeTargetSpeed\":%.3f,\"domeEnabled\":%s,\"speedLimitMax\":%d,\"speedPreset\":\"%s\",\"stationary\":%s,\"failsafeCount\":%lu,\"failsafeTriggerMs\":%lu,\"failsafeZeroMs\":%lu,\"failsafeTriggerToZeroMs\":%lu,\"failsafeWatchdogMs\":%lu,\"failsafeTriggerSource\":%d,\"uptimeMs\":%lu,\"firmwareVersion\":\"%s\",\"fsVersion\":\"%s\",\"resetReason\":\"%s\",\"heapFree\":%lu,\"heapMin\":%lu,\"heapLargestBlock\":%lu,\"otaActive\":%s,\"otaProgress\":%u,\"otaLastError\":\"%s\",\"wifiRssi\":%ld,\"wifiConnected\":%s,\"wifiClientConnected\":%s,\"littleFsReady\":%s,\"sleepMode\":%s,\"sleepSinceMs\":%lu,\"activeMood\":%u,\"auxLed\":{\"pin\":%u,\"r\":%u,\"g\":%u,\"b\":%u,\"effect\":\"%s\",\"available\":%s}",
+        "{\"estop\":%s,\"webControlEnabled\":%s,\"sbusSignalLost\":%s,\"sbusHwFailsafe\":%s,\"webDriveExpired\":%s,\"failsafeSource\":%d,\"driveSpeed\":%d,\"driveSteer\":%d,\"domeTargetSpeed\":%.3f,\"domeEnabled\":%s,\"speedLimitMax\":%d,\"speedPreset\":\"%s\",\"stationary\":%s,\"failsafeCount\":%lu,\"failsafeTriggerMs\":%lu,\"failsafeZeroMs\":%lu,\"failsafeTriggerToZeroMs\":%lu,\"failsafeWatchdogMs\":%lu,\"failsafeTriggerSource\":%d,\"uptimeMs\":%lu,\"firmwareVersion\":\"%s\",\"fsVersion\":\"%s\",\"resetReason\":\"%s\",\"heapFree\":%lu,\"heapMin\":%lu,\"heapLargestBlock\":%lu,\"heapLargest8bit\":%lu,\"tcpAcceptRejectHeap\":%lu,\"tcpAcceptRejectRate\":%lu,\"tcpAcceptRejectAgeMs\":%ld,\"otaActive\":%s,\"otaProgress\":%u,\"otaLastError\":\"%s\",\"wifiRssi\":%ld,\"wifiConnected\":%s,\"wifiClientConnected\":%s,\"littleFsReady\":%s,\"sleepMode\":%s,\"sleepSinceMs\":%lu,\"activeMood\":%u,\"auxLed\":{\"pin\":%u,\"r\":%u,\"g\":%u,\"b\":%u,\"effect\":\"%s\",\"available\":%s}",
         diag.estop ? "true" : "false", webControlEnabled ? "true" : "false",
         diag.sbusSignalLost ? "true" : "false", diag.sbusHwFailsafe ? "true" : "false",
         diag.webDriveExpired ? "true" : "false", (int)diag.failsafeSource, driveSpeed, driveSteer,
@@ -512,6 +550,15 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
         (unsigned long)diag.failsafeLastWatchdogMs, (int)diag.failsafeLastTriggerSource, uptimeMs, PA_FIRMWARE_VERSION, s_fsVersion,
         resetReasonName(esp_reset_reason()),
         heapFree, heapMin, (unsigned long)heapLargestBlock,
+        // Same capability mask as every admission guard (MALLOC_CAP_8BIT).
+        // heapLargestBlock above uses MALLOC_CAP_DEFAULT and can diverge
+        // wildly from what the guards actually see; both are emitted so the
+        // divergence itself is observable.
+        (unsigned long)largestFreeBlock8Bit(),
+        (unsigned long)g_asyncTcpAcceptRejectHeap, (unsigned long)g_asyncTcpAcceptRejectRate,
+        g_asyncTcpAcceptRejectLastMs == 0
+            ? -1L
+            : (long)(uint32_t)((uint32_t)uptimeMs - g_asyncTcpAcceptRejectLastMs),
         otaActive ? "true" : "false", (unsigned)otaProgressPct, otaLastError, wifiRssi,
         wifiConnected ? "true" : "false",
         wifiClientConnected ? "true" : "false", littleFsReady ? "true" : "false",
@@ -928,27 +975,50 @@ void startHttpServerOnce() {
         // to meaningfully add to the pressure.
         server.addMiddleware([](AsyncWebServerRequest* request, ArMiddlewareNext next) {
             const String& url = request->url();
-            if (url.startsWith("/api/estop") || url == "/api/status" || url == "/api/profiler" ||
-                url == "/api/coredump") {
+            // Estop is the safety path: never rejected, never counted.
+            if (url.startsWith("/api/estop")) {
                 next();
                 return;
             }
-            size_t largestBlock = largestFreeBlock8Bit();
-            if (largestBlock < kMinLargestFreeBlockForNewWork) {
-                PA_LOG_WARN(TAG, "rejecting %s: largest free block %u < %u",
-                            url.c_str(), (unsigned)largestBlock,
-                            (unsigned)kMinLargestFreeBlockForNewWork);
-                // A 503 with a JSON body still constructs a full
-                // AsyncWebServerResponse, whose constructor unconditionally
-                // adds a Connection header via a std::list<AsyncWebHeader>
-                // node allocation -- a separate allocation site from the
-                // response object itself, not covered by the vendor's
-                // nothrow fixes, and observed to crash on exactly this path
-                // under critical heap. abort() just closes the socket with
-                // no allocation at all, which is the only rejection that is
-                // actually safe at this heap level.
+            // Long-lived SSE stream: capped separately in events.onConnect
+            // (client count + heap floor); counting it here would pin
+            // in-flight slots for the connection's whole lifetime.
+            const bool sse = url == "/api/events";
+            if (!sse && s_inflightRequests >= kMaxInflightRequests) {
+                // abort() is the only rejection that is safe under pressure:
+                // a 503 with a body still constructs a full response, whose
+                // constructor unconditionally adds a Connection header via a
+                // std::list<AsyncWebHeader> node allocation -- a separate
+                // allocation site from the response object itself, not
+                // covered by the vendor's nothrow fixes, and the proven
+                // abort() site of the burst crashes. Closing the socket
+                // allocates nothing.
                 request->abort();
                 return;
+            }
+            const bool diagnostic = url == "/api/status" || url == "/api/profiler" ||
+                                    url == "/api/coredump";
+            size_t largestBlock = largestFreeBlock8Bit();
+            const size_t floor =
+                diagnostic ? kMinLargestFreeBlockForDiagnostics : kMinLargestFreeBlockForNewWork;
+            if (largestBlock < floor) {
+                if (!diagnostic) {
+                    // Diagnostic rejections stay silent: they only occur
+                    // during a pressure storm, exactly when log volume
+                    // itself is unwelcome.
+                    PA_LOG_WARN(TAG, "rejecting %s: largest free block %u < %u",
+                                url.c_str(), (unsigned)largestBlock, (unsigned)floor);
+                }
+                request->abort();
+                return;
+            }
+            if (!sse) {
+                s_inflightRequests++;
+                request->onDisconnect([]() {
+                    if (s_inflightRequests > 0) {
+                        s_inflightRequests--;
+                    }
+                });
             }
             next();
         });
