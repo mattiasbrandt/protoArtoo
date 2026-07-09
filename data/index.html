@@ -164,26 +164,11 @@
       </div>
     </div>
 
-    <script data-scripts="/web_api.js,/diagnostics.js,/status_stream.js,/shell.js,/health_signals.js,/dome_command_map.js,/dome_panel_model.js,/dome_layout.js,/dome_layout_render.js,/dome_control.js,/app.js,/footer.js">
-      (() => {
-        const sources = document.currentScript.dataset.scripts.split(",");
-        const loadNext = (index) => {
-          if (index >= sources.length) {
-            window.PAAssetsReady = true;
-            window.dispatchEvent(new Event("pa:assets-ready"));
-            return;
-          }
-          const script = document.createElement("script");
-          script.src = sources[index];
-          script.onload = () => loadNext(index + 1);
-          document.body.appendChild(script);
-        };
-        const stylesheet = document.createElement("link");
-        stylesheet.rel = "stylesheet";
-        stylesheet.href = "/style.css";
-        stylesheet.onload = () => loadNext(0);
-        document.head.appendChild(stylesheet);
-      })();
-    </script>
+    <!-- Shared loader (same as every other page): serialized script loading
+         with retry on transient connection loss. This page previously
+         inlined a copy without any error handling, so a single shed
+         connection silently killed the rest of the chain, including the
+         status stream. -->
+    <script src="/page_loader.js" data-scripts="/web_api.js,/diagnostics.js,/status_stream.js,/shell.js,/health_signals.js,/dome_command_map.js,/dome_panel_model.js,/dome_layout.js,/dome_layout_render.js,/dome_control.js,/app.js,/footer.js"></script>
   </body>
 </html>

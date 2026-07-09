@@ -37,7 +37,11 @@
 
   const scheduleReconnect = () => {
     if (reconnectTimer !== null || !visible || typeof EventSource === "undefined") return;
-    const delay = Math.min(RETRY_BASE_MS * Math.pow(2, retryCount), RETRY_MAX_MS);
+    // Half-to-full jitter: multiple open pages/tabs losing the stream at the
+    // same moment (device reboot, guard rejection storm) must not reconnect
+    // in lockstep and re-burst a recovering device.
+    const ceiling = Math.min(RETRY_BASE_MS * Math.pow(2, retryCount), RETRY_MAX_MS);
+    const delay = ceiling / 2 + Math.random() * (ceiling / 2);
     retryCount++;
     reconnectTimer = window.setTimeout(() => {
       reconnectTimer = null;

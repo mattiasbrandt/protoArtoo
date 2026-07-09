@@ -7,7 +7,10 @@
     .map((source) => source.trim())
     .filter(Boolean);
 
-  const loadNext = (index) => {
+  const MAX_SCRIPT_ATTEMPTS = 3;
+  const RETRY_DELAY_MS = 400;
+
+  const loadNext = (index, attempt = 1) => {
     if (index >= sources.length) {
       loadDeferredAssets();
       window.PAAssetsReady = true;
@@ -20,7 +23,18 @@
     script.async = false;
     script.onload = () => loadNext(index + 1);
     script.onerror = () => {
-      console.error(`[page-loader] Failed to load ${sources[index]}`);
+      // The device sheds connections under load, so a failed script load is
+      // usually transient. Retry with a pause; only after repeated failures
+      // continue the chain so the page still reaches pa:assets-ready and
+      // later scripts (and the status stream) are not silently abandoned.
+      script.remove();
+      if (attempt < MAX_SCRIPT_ATTEMPTS) {
+        console.warn(`[page-loader] Retrying ${sources[index]} (attempt ${attempt + 1})`);
+        window.setTimeout(() => loadNext(index, attempt + 1), RETRY_DELAY_MS * attempt);
+        return;
+      }
+      console.error(`[page-loader] Failed to load ${sources[index]} after ${attempt} attempts`);
+      loadNext(index + 1);
     };
     document.body.appendChild(script);
   };

@@ -46,7 +46,44 @@
   // error, so it's worth one quiet retry before surfacing it.
   const BAD_JSON_RETRY_DELAY_MS = 150;
 
-  const request = async (path, {
+  // The device serves without HTTP keep-alive, so every request is its own
+  // TCP connection, and its accept-time admission control rejects connection
+  // bursts outright. Page code that fires many calls at once
+  // (Promise.all/allSettled) would open them all as parallel sockets; this
+  // FIFO caps in-flight requests so a page load presents as a short paced
+  // trickle instead of a burst. Queue wait does not consume the request
+  // timeout — the timeout timer starts when the request actually goes out.
+  const MAX_CONCURRENT_REQUESTS = 2;
+  let inFlightCount = 0;
+  const requestWaiters = [];
+
+  const acquireRequestSlot = () => {
+    if (inFlightCount < MAX_CONCURRENT_REQUESTS) {
+      inFlightCount += 1;
+      return Promise.resolve();
+    }
+    return new Promise((resolve) => requestWaiters.push(resolve));
+  };
+
+  const releaseRequestSlot = () => {
+    const next = requestWaiters.shift();
+    if (next) {
+      next(); // hand the slot to the next queued request
+    } else {
+      inFlightCount -= 1;
+    }
+  };
+
+  const request = async (path, opts = {}) => {
+    await acquireRequestSlot();
+    try {
+      return await performRequest(path, opts);
+    } finally {
+      releaseRequestSlot();
+    }
+  };
+
+  const performRequest = async (path, {
     method = "GET",
     timeoutMs = DEFAULT_TIMEOUT_MS,
     cache = "no-store",
@@ -90,7 +127,12 @@
         return { ok: true, status: response.status, data: payload };
       } catch (error) {
         const apiError = normalizeError(error);
-        if (!isRetry && method === "GET" && apiError.kind === "bad-json") {
+        // Network errors on GETs are usually the device shedding a
+        // connection under load (admission control closes the socket);
+        // like the truncated-JSON case, one quiet retry beats surfacing a
+        // transient. POSTs are never retried — they may not be idempotent.
+        if (!isRetry && method === "GET"
+            && (apiError.kind === "bad-json" || apiError.kind === "network")) {
           await new Promise((resolve) => window.setTimeout(resolve, BAD_JSON_RETRY_DELAY_MS));
           return attempt(true);
         }
