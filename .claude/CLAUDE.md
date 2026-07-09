@@ -105,13 +105,14 @@ Mandatory test-effort policy in this mode:
 The canonical MemPalace protocol is defined in `AGENTS.md` under
 `## MemPalace Memory Protocol`. Follow that. Claude-specific additions:
 
-- Claude Code auto-save hooks (Stop + PreCompact) are configured in `.claude/settings.json`
-  and run automatically — you do not need to manually trigger saves at session end.
+- Auto-save is handled by the user-level MemPalace daemon (`mempalace-daemon.service`,
+  `hooks.auto_save: true` in `~/.mempalace/config.json`), not by Stop/PreCompact hooks in
+  `.claude/settings.json` — this project defines none. Writes persist continuously through
+  the daemon regardless of session end or context compaction; you do not need to manually
+  trigger saves.
 - `mempalace_status` is your first MCP call every session, before any tool use.
   The response self-teaches the AAAK dialect and reveals the palace structure:
   use the wing name it returns for all subsequent scoped searches.
-- When context compression is imminent (PreCompact hook fires), the hook saves
-  automatically — you do not need to take any extra action.
 - Prefer `mempalace_search` over re-reading large files when looking for a past
   decision or rationale. Only fall back to file reads when you need the
   exact current source of truth (code, config, task spec).
