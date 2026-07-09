@@ -117,7 +117,12 @@ void registerStatusRoutes(AsyncWebServer& server) {
     });
 
     server.on("/api/status", HTTP_GET, [](AsyncWebServerRequest* req) {
-        char body[3072];
+        // Static, not stack: 3 KB on the 8 KB async_tcp stack left too little
+        // headroom for the snprintf float-formatting frames plus nested
+        // interrupt frames under network load (stack-watchpoint panic proven
+        // by coredump). Handlers serialize on the async_tcp task, so one
+        // shared buffer is race-free — same pattern as /api/logs above.
+        static char body[3072];
         if (!buildStatusJson(body, sizeof(body))) {
             PA_LOG_WARN("StatusAPI", "status payload overflowed; returning fallback payload");
         }
