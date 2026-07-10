@@ -540,7 +540,7 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     // Build the fixed system-health fields first.
     int written = snprintf(
         buffer, bufferSize,
-        "{\"estop\":%s,\"webControlEnabled\":%s,\"sbusSignalLost\":%s,\"sbusHwFailsafe\":%s,\"webDriveExpired\":%s,\"failsafeSource\":%d,\"driveSpeed\":%d,\"driveSteer\":%d,\"domeTargetSpeed\":%.3f,\"domeEnabled\":%s,\"speedLimitMax\":%d,\"speedPreset\":\"%s\",\"stationary\":%s,\"failsafeCount\":%lu,\"failsafeTriggerMs\":%lu,\"failsafeZeroMs\":%lu,\"failsafeTriggerToZeroMs\":%lu,\"failsafeWatchdogMs\":%lu,\"failsafeTriggerSource\":%d,\"uptimeMs\":%lu,\"firmwareVersion\":\"%s\",\"fsVersion\":\"%s\",\"resetReason\":\"%s\",\"heapFree\":%lu,\"heapMin\":%lu,\"heapLargestBlock\":%lu,\"heapLargest8bit\":%lu,\"tcpAcceptRejectHeap\":%lu,\"tcpAcceptRejectRate\":%lu,\"tcpAcceptRejectAgeMs\":%ld,\"otaActive\":%s,\"otaProgress\":%u,\"otaLastError\":\"%s\",\"wifiRssi\":%ld,\"wifiConnected\":%s,\"wifiClientConnected\":%s,\"littleFsReady\":%s,\"sleepMode\":%s,\"sleepSinceMs\":%lu,\"activeMood\":%u,\"auxLed\":{\"pin\":%u,\"r\":%u,\"g\":%u,\"b\":%u,\"effect\":\"%s\",\"available\":%s}",
+        "{\"estop\":%s,\"webControlEnabled\":%s,\"sbusSignalLost\":%s,\"sbusHwFailsafe\":%s,\"webDriveExpired\":%s,\"failsafeSource\":%d,\"driveSpeed\":%d,\"driveSteer\":%d,\"domeTargetSpeed\":%.3f,\"domeEnabled\":%s,\"speedLimitMax\":%d,\"speedPreset\":\"%s\",\"stationary\":%s,\"failsafeCount\":%lu,\"failsafeTriggerMs\":%lu,\"failsafeZeroMs\":%lu,\"failsafeTriggerToZeroMs\":%lu,\"failsafeWatchdogMs\":%lu,\"failsafeTriggerSource\":%d,\"uptimeMs\":%lu,\"firmwareVersion\":\"%s\",\"fsVersion\":\"%s\",\"resetReason\":\"%s\",\"heapFree\":%lu,\"heapMin\":%lu,\"heapLargestBlock\":%lu,\"heapLargest8bit\":%lu,\"sseClients\":%u,\"tcpAcceptRejectHeap\":%lu,\"tcpAcceptRejectRate\":%lu,\"tcpAcceptRejectAgeMs\":%ld,\"otaActive\":%s,\"otaProgress\":%u,\"otaLastError\":\"%s\",\"wifiRssi\":%ld,\"wifiConnected\":%s,\"wifiClientConnected\":%s,\"littleFsReady\":%s,\"sleepMode\":%s,\"sleepSinceMs\":%lu,\"activeMood\":%u,\"auxLed\":{\"pin\":%u,\"r\":%u,\"g\":%u,\"b\":%u,\"effect\":\"%s\",\"available\":%s}",
         diag.estop ? "true" : "false", webControlEnabled ? "true" : "false",
         diag.sbusSignalLost ? "true" : "false", diag.sbusHwFailsafe ? "true" : "false",
         diag.webDriveExpired ? "true" : "false", (int)diag.failsafeSource, driveSpeed, driveSteer,
@@ -551,10 +551,13 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
         resetReasonName(esp_reset_reason()),
         heapFree, heapMin, (unsigned long)heapLargestBlock,
         // Same capability mask as every admission guard (MALLOC_CAP_8BIT).
-        // heapLargestBlock above uses MALLOC_CAP_DEFAULT and can diverge
+        // heapLargestBlock above uses MALLOC_CAP_INTERNAL and can diverge
         // wildly from what the guards actually see; both are emitted so the
         // divergence itself is observable.
         (unsigned long)largestFreeBlock8Bit(),
+        // Registered SSE clients; the admission cap keys on this, so stuck
+        // or leaked entries become visible instead of silently denying SSE.
+        (unsigned)events.count(),
         (unsigned long)g_asyncTcpAcceptRejectHeap, (unsigned long)g_asyncTcpAcceptRejectRate,
         g_asyncTcpAcceptRejectLastMs == 0
             ? -1L
@@ -946,22 +949,21 @@ void startHttpServerOnce() {
 
     if (!routesRegistered) {
         events.onConnect([](AsyncEventSourceClient* client) {
-            // Keep AsyncTCP callback light. Heavy JSON/log formatting runs in
-            // eventStreamTask on Core 0 to avoid async_tcp stack pressure.
-            // This callback fires before the client is added to the internal
-            // list, so >= (not >) correctly rejects the client that would
-            // push the count past the cap.
+            (void)client;
+            // MUST NOT call client->close() here: this callback runs inside
+            // AsyncEventSourceClient's constructor (via _addClient), and a
+            // synchronous close runs the disconnect path that nulls the
+            // connection the constructor is still using -- panic, proven by
+            // coredump twice -- and then leaks the half-dead client as a
+            // permanent zombie entry in the client list, silently consuming
+            // the SSE cap. Cap and heap admission for /api/events happen in
+            // the middleware below, before the upgrade machinery ever runs.
+            // Over-cap is still possible in a narrow race (a second upgrade
+            // completing before the first registers); it is bounded to +1
+            // and transient, which is preferable to a crash.
             if (events.count() >= kMaxSseClients) {
-                PA_LOG_WARN(TAG, "SSE client cap (%u) reached; rejecting new connection",
+                PA_LOG_WARN(TAG, "SSE clients above cap (%u) after race; tolerating extra client",
                             (unsigned)kMaxSseClients);
-                client->close();
-                return;
-            }
-            size_t largestBlock = largestFreeBlock8Bit();
-            if (largestBlock < kMinLargestFreeBlockForNewWork) {
-                PA_LOG_WARN(TAG, "rejecting new SSE connection: largest free block %u < %u",
-                            (unsigned)largestBlock, (unsigned)kMinLargestFreeBlockForNewWork);
-                client->close();
             }
         });
         server.addHandler(&events);
@@ -980,10 +982,19 @@ void startHttpServerOnce() {
                 next();
                 return;
             }
-            // Long-lived SSE stream: capped separately in events.onConnect
-            // (client count + heap floor); counting it here would pin
-            // in-flight slots for the connection's whole lifetime.
+            // Long-lived SSE stream: not counted against the in-flight cap
+            // (it would pin a slot for the connection's whole lifetime), but
+            // its client cap is enforced here -- rejecting pre-upgrade with
+            // abort() is safe, whereas closing the client from
+            // events.onConnect crashes mid-constructor (see the onConnect
+            // comment above).
             const bool sse = url == "/api/events";
+            if (sse && events.count() >= kMaxSseClients) {
+                PA_LOG_WARN(TAG, "SSE client cap (%u) reached; rejecting new connection",
+                            (unsigned)kMaxSseClients);
+                request->abort();
+                return;
+            }
             if (!sse && s_inflightRequests >= kMaxInflightRequests) {
                 // abort() is the only rejection that is safe under pressure:
                 // a 503 with a body still constructs a full response, whose
@@ -996,7 +1007,12 @@ void startHttpServerOnce() {
                 request->abort();
                 return;
             }
-            const bool diagnostic = url == "/api/status" || url == "/api/profiler" ||
+            // SSE counts as diagnostic: it is the operator's primary
+            // liveness/telemetry channel, one long-lived connection bounded
+            // by its own client cap, and shedding it during warm-heap dips
+            // left dashboards without live data while plain status polls
+            // still worked.
+            const bool diagnostic = sse || url == "/api/status" || url == "/api/profiler" ||
                                     url == "/api/coredump";
             size_t largestBlock = largestFreeBlock8Bit();
             const size_t floor =
