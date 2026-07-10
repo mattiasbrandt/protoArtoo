@@ -60,6 +60,15 @@
 
     source = new EventSource("/api/events");
 
+    // Status events are delta-triggered: after a reconnect, an idle device
+    // may push nothing for a long time, which left pages showing a stale
+    // "connection lost" state despite a live stream. Re-emitting the last
+    // known status on open lets existing page logic clear that state.
+    source.onopen = () => {
+      retryCount = 0;
+      if (lastStatus) emit("status", lastStatus);
+    };
+
     source.addEventListener("status", (event) => {
       try {
         lastStatus = JSON.parse(event.data);

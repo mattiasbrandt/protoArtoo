@@ -83,6 +83,25 @@
 
   const evaluateHeap = (payload) => {
     const heapBytes = Number(payload.heapFree);
+    const t = (typeof window !== "undefined" && window.PA_HEAP) || {};
+
+    // Judge memory health by the largest allocatable DRAM block — the value
+    // the device's admission control keys on (requests are shed below its
+    // floors: 14000 for new work, 12000 at accept). heapLargestBlock is NOT
+    // used here: it reads a capability mask dominated by leftover IRAM that
+    // malloc can never allocate, so it sits frozen regardless of pressure.
+    const largest = Number(payload.heapLargest8bit);
+    if (Number.isFinite(largest) && largest >= 0) {
+      const warnAt = t.largestWarn || 16000;
+      const failAt = t.largestCritical || 12000;
+      const free = Number.isFinite(heapBytes) ? `, heapFree=${heapBytes} B` : "";
+      const detail = `heapLargest8bit=${largest} B (warn <=${warnAt} B, fail <=${failAt} B${free})`;
+      if (largest > warnAt) return healthSignal("ok", "Normal", detail);
+      if (largest > failAt) return healthSignal("warn", "Low", detail);
+      return healthSignal("fail", "Critical", detail);
+    }
+
+    // Older firmware without heapLargest8bit: fall back to total free heap.
     if (!Number.isFinite(heapBytes) || heapBytes < 0) {
       return healthSignal(
         "warn",
@@ -91,7 +110,6 @@
       );
     }
 
-    const t = (typeof window !== "undefined" && window.PA_HEAP) || {};
     const warnAt = t.freeWarn || 65000;
     const failAt = t.freeCritical || 40000;
     const detail = `heapFree=${heapBytes} B (warn <=${warnAt} B, fail <=${failAt} B)`;
