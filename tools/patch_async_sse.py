@@ -1,10 +1,10 @@
 from pathlib import Path
 
 
-SSE_PREAMBLE_START = "#if defined(ESP32) || defined(LIBRETINY)\n"
+SSE_PREAMBLE_START = "#if defined(ESP32) || defined(LIBRETINY) || defined(HOST)\n"
 SSE_PREAMBLE_END = "#include <ESPAsyncWebServer.h>\n"
 SSE_PREAMBLE = """\
-#if defined(ESP32) || defined(LIBRETINY)
+#if defined(ESP32) || defined(LIBRETINY) || defined(HOST)
 #include <AsyncTCP.h>
 #ifdef LIBRETINY
 #ifdef round
@@ -108,7 +108,7 @@ STATIC_ALLOC_SEARCH_BEFORE = """\
     request->_tempFile.close();
     response = new AsyncBasicResponse(304);  // Not modified
   } else {
-    response = new AsyncFileResponse(request->_tempFile, filename, emptyString, false, _callback);
+    response = new AsyncFileResponse(request->_tempFile, filename, asyncsrv::emptyString, false, _callback);
   }
 """
 
@@ -117,7 +117,7 @@ STATIC_ALLOC_SEARCH_AFTER = """\
     request->_tempFile.close();
     response = new (std::nothrow) AsyncBasicResponse(304);  // Not modified
   } else {
-    response = new (std::nothrow) AsyncFileResponse(request->_tempFile, filename, emptyString, false, _callback);
+    response = new (std::nothrow) AsyncFileResponse(request->_tempFile, filename, asyncsrv::emptyString, false, _callback);
   }
 """
 
@@ -492,6 +492,64 @@ EVENTSOURCE_ALLOC_INCLUDES_AFTER = """\
 #include <utility>
 """
 
+# The SSE upgrade path constructs AsyncEventSourceClient when the response
+# head is ACKed, and the constructor immediately dereferences the request's
+# client connection. If the connection dies between the ACK and the upgrade
+# (observed live: connection churn during a filesystem OTA), the client
+# pointer is already null and the constructor panics on it -- coredump-proven
+# on 3.10.3, and 3.11.x's clientRelease() rework still returns the null
+# unchecked. Guard the handover: per the library's own ownership rules,
+# deleting the request also deletes the bound response. The construction is
+# also made non-throwing to match the rest of the issue #21 hardening.
+EVENTSOURCE_SWITCH_GUARD_BEFORE = """\
+void AsyncEventSourceResponse::_switchClient() {
+  // AsyncEventSourceClient c-tor will take the ownership of AsyncTCP's client connection
+  new AsyncEventSourceClient(_request, _server);
+  // AsyncEventSourceClient c-tor would also delete _request and *this
+};
+"""
+
+EVENTSOURCE_SWITCH_GUARD_AFTER = """\
+void AsyncEventSourceResponse::_switchClient() {
+  if (_request->client() == nullptr) {
+    // Connection died between the header ACK and this upgrade; the client
+    // constructor would dereference the null connection. Deleting the
+    // request also deletes this bound response.
+    async_ws_log_e("SSE handover raced connection teardown; dropping client");
+    delete _request;
+    return;
+  }
+  // AsyncEventSourceClient c-tor will take the ownership of AsyncTCP's client connection
+  if (new (std::nothrow) AsyncEventSourceClient(_request, _server) == nullptr) {
+    delete _request;
+  }
+  // AsyncEventSourceClient c-tor would also delete _request and *this
+};
+"""
+
+
+# Part two of the handover hardening: _addClient() invokes the application's
+# onConnect callback while the AsyncEventSourceClient constructor is still
+# running. If that callback rejects the client with close(), the disconnect
+# path runs synchronously, nulls _client, and the constructor tail then
+# dereferences it (coredump-proven twice: AsyncClient::setNoDelay(this=0x0)).
+# The application side must not close() from onConnect, but the constructor
+# must also not trust _client across the callback.
+EVENTSOURCE_CTOR_TAIL_BEFORE = """\
+  _server->_addClient(this);
+  _client->setNoDelay(true);
+"""
+
+EVENTSOURCE_CTOR_TAIL_AFTER = """\
+  _server->_addClient(this);
+  if (_client != nullptr) {
+    // _addClient runs the application's onConnect callback; if it closed
+    // the connection, the disconnect path already nulled _client.
+    _client->setNoDelay(true);
+  }
+"""
+
+
 EVENTSOURCE_RESPONSE_ALLOC_BEFORE = """\
 void AsyncEventSource::handleRequest(AsyncWebServerRequest *request) {
   request->send(new AsyncEventSourceResponse(this));
@@ -692,6 +750,26 @@ def patch_webrequest_response_alloc(text):
     return text
 
 
+def patch_eventsource_switch_guard(text):
+    if EVENTSOURCE_SWITCH_GUARD_AFTER not in text:
+        if text.count(EVENTSOURCE_SWITCH_GUARD_BEFORE) != 1:
+            raise RuntimeError(
+                "ESPAsyncWebServer AsyncEventSource.cpp _switchClient changed; "
+                "review tools/patch_async_sse.py"
+            )
+        text = text.replace(EVENTSOURCE_SWITCH_GUARD_BEFORE, EVENTSOURCE_SWITCH_GUARD_AFTER)
+
+    if EVENTSOURCE_CTOR_TAIL_AFTER not in text:
+        if text.count(EVENTSOURCE_CTOR_TAIL_BEFORE) != 1:
+            raise RuntimeError(
+                "ESPAsyncWebServer AsyncEventSource.cpp client constructor tail changed; "
+                "review tools/patch_async_sse.py"
+            )
+        text = text.replace(EVENTSOURCE_CTOR_TAIL_BEFORE, EVENTSOURCE_CTOR_TAIL_AFTER)
+
+    return text
+
+
 def patch_eventsource_response_alloc(text):
     if EVENTSOURCE_RESPONSE_ALLOC_AFTER not in text:
         if text.count(EVENTSOURCE_RESPONSE_ALLOC_BEFORE) != 1:
@@ -736,7 +814,14 @@ def patch_listen_backlog(text):
 
 def patch_file(path, patcher, description):
     if not path.exists():
-        return
+        # A missing target means a library upgrade moved or renamed the file:
+        # silently skipping would drop the hardening this patch carries
+        # (heap guards, nothrow allocation, exception containment) without
+        # any build-time signal. Fail the build instead.
+        raise RuntimeError(
+            f"patch target missing: {path} ({description}); "
+            "a library update likely moved this file - review tools/patch_async_sse.py"
+        )
 
     text = path.read_text(encoding="utf-8")
     patched = patcher(text)
@@ -777,6 +862,11 @@ def patch_async_webserver(env):
         source_dir / "AsyncEventSource.cpp",
         patch_eventsource_response_alloc,
         "made SSE response allocation non-throwing (issue #21)",
+    )
+    patch_file(
+        source_dir / "AsyncEventSource.cpp",
+        patch_eventsource_switch_guard,
+        "guarded the SSE client handover against racing connection teardown (issue #22)",
     )
 
     asynctcp_source_dir = libdeps_dir / env["PIOENV"] / "AsyncTCP" / "src"
