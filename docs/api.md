@@ -971,7 +971,18 @@ Returns controller status snapshot.
 - `driveSpeed`, `driveSteer`, `domeTargetSpeed`, `domeEnabled`
 - `speedLimitMax`, `speedPreset`, `stationary`
 - `uptimeMs`, `firmwareVersion`, `webVersion`
-- `heapFree`, `heapMin`, `heapLargestBlock`
+- `heapFree`, `heapMin`, `heapLargestBlock`, `heapLargest8bit`
+  - `heapLargest8bit` is the largest allocatable DRAM block (`MALLOC_CAP_8BIT`) —
+    the pool `malloc` and the admission guards actually use. `heapLargestBlock`
+    is legacy: it reads `MALLOC_CAP_INTERNAL`, which is dominated by a constant
+    ~36 KB leftover-IRAM region that can never be allocated, so it stays near
+    36 KB regardless of real heap pressure. Use `heapLargest8bit` for any
+    heap-health judgement. (Note: `/api/health` has always reported the 8-bit
+    value under the `heapLargestBlock` name.)
+- `sseClients` — registered `/api/events` clients (admission cap is 3)
+- `tcpAcceptRejectHeap`, `tcpAcceptRejectRate`, `tcpAcceptRejectAgeMs` —
+  accept-guard rejection counters (heap floor / rate pacing) and milliseconds
+  since the last rejection (`-1` if none since boot)
 - `wifiRssi`, `wifiConnected`, `wifiClientConnected`, `littleFsReady`
 - `sleepMode`, `sleepSinceMs`, `activeMood`
 - `auxLed` object (`pin`, `r`, `g`, `b`, `effect`, `available`)

@@ -78,10 +78,19 @@ class on this board is **internal-heap exhaustion** → failed allocation →
 ### Quick read (any build, over HTTP)
 
 ```bash
-curl -s http://artoo.local/api/status | grep -oE '"(heapFree|heapMin|heapLargestBlock|resetReason)":[^,}]*'
+curl -s http://artoo.local/api/status | grep -oE '"(heapFree|heapMin|heapLargest8bit|sseClients|tcpAcceptRejectHeap|tcpAcceptRejectRate|resetReason)":[^,}]*'
 ```
 - `heapMin` is the all-time low-water. A floor below ~10-20 KB is unsafe.
-- `heapLargestBlock` much smaller than `heapFree` = fragmentation.
+- `heapLargest8bit` is the number that matters: the largest allocatable DRAM
+  block. Healthy rest is ~20 KB on a fresh boot and ~12-14 KB after any heavy
+  connection churn (a bounded one-time warm-up, not a leak). The admission
+  floors sit at 7.5-9 KB; sustained readings near them mean requests are
+  being shed.
+- Do NOT judge heap by `heapLargestBlock` in `/api/status`: it reads a pool
+  dominated by unusable leftover IRAM and sits near 36 KB no matter what
+  (kept only for backward compatibility).
+- `tcpAcceptRejectHeap`/`tcpAcceptRejectRate` climbing during normal use =
+  the accept guards are shedding; check what is generating connection churn.
 
 ### Deep read (profiler build)
 

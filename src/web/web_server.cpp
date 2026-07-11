@@ -65,6 +65,12 @@ class String {
     const char* c_str() const {
         return "";
     }
+    bool startsWith(const char*) const {
+        return false;
+    }
+    bool operator==(const char*) const {
+        return false;
+    }
 };
 
 class IPAddress {
@@ -113,11 +119,29 @@ class AsyncStaticWebHandler {
     AsyncStaticWebHandler& setCacheControl(const char*) { return *this; }
 };
 
+class AsyncWebServerRequest {
+   public:
+    const String& url() const {
+        static String s;
+        return s;
+    }
+    void abort() {
+    }
+    template <typename Callback>
+    void onDisconnect(Callback) {
+    }
+};
+
+using ArMiddlewareNext = void (*)();
+
 class AsyncWebServer {
    public:
     explicit AsyncWebServer(int) {
     }
     void addHandler(AsyncEventSource*) {
+    }
+    template <typename Middleware>
+    void addMiddleware(Middleware) {
     }
     template <typename FsType>
     AsyncStaticWebHandler& serveStatic(const char*, FsType&, const char*) {
@@ -289,16 +313,20 @@ static char s_otaLastError[64] = "none";
 
 namespace {
 
+// MALLOC_CAP_INTERNAL — dominated by a constant ~36 KB leftover-IRAM block
+// that malloc can never allocate. Kept ONLY to keep the legacy
+// heapLargestBlock status field stable for existing consumers; never use it
+// for heap-health decisions. The real pool is largestFreeBlock8Bit().
 static uint32_t webHeapMaxAlloc() {
     return (uint32_t)ESP.getMaxAllocHeap();
 }
 
 static void logOtaHeapCheckpoint(const char* label) {
-    PA_LOG_INFO("ArduinoOTA", "%s heap free=%lu min=%lu largest=%lu",
+    PA_LOG_INFO("ArduinoOTA", "%s heap free=%lu min=%lu largest8bit=%lu",
                 label,
                 (unsigned long)ESP.getFreeHeap(),
                 (unsigned long)ESP.getMinFreeHeap(),
-                (unsigned long)webHeapMaxAlloc());
+                (unsigned long)largestFreeBlock8Bit());
 }
 
 const char* rcInputModeLabel(RcInputMode mode) {
@@ -1118,11 +1146,11 @@ void startHttpServerOnce() {
                         pct >= (uint8_t)(s_lastOtaLoggedPct + 10U)) {
                         s_lastOtaLoggedPct = pct;
                         PA_LOG_INFO("ArduinoOTA",
-                                    "progress %u%% heap free=%lu min=%lu largest=%lu",
+                                    "progress %u%% heap free=%lu min=%lu largest8bit=%lu",
                                     (unsigned)pct,
                                     (unsigned long)ESP.getFreeHeap(),
                                     (unsigned long)ESP.getMinFreeHeap(),
-                                    (unsigned long)webHeapMaxAlloc());
+                                    (unsigned long)largestFreeBlock8Bit());
                     }
                 });
                 ArduinoOTA.onEnd([]() {
