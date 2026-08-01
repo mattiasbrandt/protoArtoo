@@ -11,7 +11,7 @@
 #ifdef PA_NATIVE_TEST_STUBS
 
 #include "Arduino.h"      // SerialStub (from test/stubs/include)
-#include "logging.h"      // paLogLineRaw declaration
+#include "logging.h"      // logging sink declarations
 #include "robot_state.h"  // RobotState, portMUX_TYPE, QueueHandle_t
 
 // Zero-initialised global state. Test cases populate cfg_* fields as needed
@@ -19,10 +19,16 @@
 RobotState robotState = {};
 portMUX_TYPE robotStateMux = 0;
 
-// Arduino Serial instance (referenced by PA_LOG_* macros via logging.h)
+// Arduino Serial instance (referenced by code compiled in native tests)
 SerialStub Serial;
 
-// Logging sink — no-op in native test builds
+// Logging sinks — no-op in native test builds
+void paLogInit() {
+}
+
+void paLogLine(const char* /*line*/) {
+}
+
 void paLogLineRaw(const char* /*line*/) {
 }
 

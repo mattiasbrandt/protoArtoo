@@ -167,6 +167,26 @@ The project monitor now defaults to a POSIX `O_NOCTTY`/`termios` backend that
 does not touch DTR/RTS; use `--pyserial` only when intentionally comparing the
 older pyserial path, which can toggle modem-control lines on open.
 
+### Serial log integrity caveat
+
+Treat USB serial as a convenience stream, not the only diagnostic record. The
+project-owned `PA_LOG_*` path writes each line through one serialized sink and
+retains the same line in the `/api/logs` ring/SSE console. Prefer `/api/logs`,
+`/api/status`, `/api/profiler`, and `/api/coredump` for evidence that must
+survive USB monitor resets or ambiguous serial captures.
+
+Normal repo builds leave `CORE_DEBUG_LEVEL` unset and call
+`Serial.setDebugOutput(false)` during setup, so Arduino core `log_*` output is
+compiled out or detached from UART0. If a focused debug build enables
+`CORE_DEBUG_LEVEL` or re-enables Arduino/IDF serial debug output, treat framework
+serial logs as best-effort unless that build also deliberately funnels the
+framework log path through the project sink. Boot ROM and panic output can still
+write below the application logging layer.
+
+This caveat was checked against the pinned pioarduino platform `55.03.37`
+(arduino-esp32 `3.3.7`). Re-check Arduino core `log_printf` locking and
+`HardwareSerial` debug-output behavior when changing the platform/framework pin.
+
 ---
 
 ## 4. Estop-clear dome resync (expected ring "park" — not a crash)

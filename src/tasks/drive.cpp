@@ -174,7 +174,7 @@ void driveTask(void* pvParameters) {
         }
 
 #ifdef PA_VERBOSE_DRIVE
-        Serial.printf("[%s] frame spd:%d str:%d fs:%d\n", TAG, speed, steer, (int)failsafeActive);
+        PA_LOG_DEBUG(TAG, "frame spd:%d str:%d fs:%d", speed, steer, (int)failsafeActive);
 #endif
 
         vTaskDelay(period);

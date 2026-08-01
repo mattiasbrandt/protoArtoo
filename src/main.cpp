@@ -9,6 +9,7 @@
 #include <Preferences.h>
 #include <cstddef>
 #include <esp_task_wdt.h>
+#include <freertos/semphr.h>
 
 #include "audio_dollar_parser.h"
 #include "audio_task.h"
@@ -42,6 +43,8 @@ static volatile bool restartRequested = false;
 static volatile uint32_t restartAtMs = 0;
 static portMUX_TYPE restartMux = portMUX_INITIALIZER_UNLOCKED;
 static portMUX_TYPE logMux = portMUX_INITIALIZER_UNLOCKED;
+static StaticSemaphore_t logSerialMutexStorage = {};
+static SemaphoreHandle_t logSerialMutex = nullptr;
 static LogBuffer recentLogBuf = {};
 
 namespace {
@@ -61,10 +64,39 @@ void logBootHealth() {
 
 }  // namespace
 
+void paLogInit() {
+    if (logSerialMutex == nullptr) {
+        logSerialMutex = xSemaphoreCreateMutexStatic(&logSerialMutexStorage);
+    }
+}
+
 void paLogLineRaw(const char* line) {
     taskENTER_CRITICAL(&logMux);
     logBufferAppend(&recentLogBuf, line);
     taskEXIT_CRITICAL(&logMux);
+}
+
+void paLogLine(const char* line) {
+    if (line == nullptr) {
+        return;
+    }
+
+    size_t lineLen = 0;
+    while (line[lineLen] != '\0' && lineLen < PA_LOG_SERIAL_LINE_MAX) {
+        ++lineLen;
+    }
+
+    SemaphoreHandle_t serialMutex = logSerialMutex;
+    if (serialMutex != nullptr) {
+        xSemaphoreTake(serialMutex, portMAX_DELAY);
+    }
+    Serial.write((const uint8_t*)line, lineLen);
+    Serial.write('\n');
+    if (serialMutex != nullptr) {
+        xSemaphoreGive(serialMutex);
+    }
+
+    paLogLineRaw(line);
 }
 
 size_t copyRecentLogs(char* buffer, size_t bufferSize) {
@@ -167,6 +199,7 @@ void requestSystemRestart(uint32_t delayMs) {
 void setup() {
     Serial.begin(115200);
     Serial.setDebugOutput(false);
+    paLogInit();
     delay(200);
 
     // Audio module state: 0xFF = "unknown/none" until AudioTask runs its init

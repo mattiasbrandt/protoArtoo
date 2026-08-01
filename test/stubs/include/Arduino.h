@@ -34,7 +34,7 @@ private:
     std::string _s;
 };
 
-// Serial stub — PA_LOG_* macros call Serial.printf(...)
+// Serial stub — used by code compiled in native host tests.
 struct SerialStub {
     template<typename... Args>
     static void printf(const char* /*fmt*/, Args... /*args*/) {}
