@@ -323,6 +323,8 @@ evidence phrases ("Automated checks are passing", "Tested on an ESP32 controller
 
 ### Branch model
 
+Through the `v1.0.0` release, protoArtoo uses a phase-oriented branch model:
+
 | Branch | Purpose |
 |---|---|
 | `main` | Stable, released state only. Updated at phase completion via PM-approved non-fast-forward merge. |
@@ -331,7 +333,16 @@ evidence phrases ("Automated checks are passing", "Tested on an ESP32 controller
 
 `dev`, `feature/<phase>-<what>`, and `fix/<what>` branches are retired as of Phase v0.4.0.
 
-### Commit scope format (required)
+**Starting after `v1.0.0`, protoArtoo moves to a short-lived feature-branch
+model** (branch off `main`, PR back into `main`, delete after merge) instead
+of one long-lived phase branch. The exact naming and merge convention is
+not yet decided — see
+[issue #31](https://github.com/mattiasbrandt/protoArtoo/issues/31). This
+section, the commit scope format below, and the phase-specific Invariants
+below apply through `v1.0.0` and will be rewritten once the new model is
+settled.
+
+### Commit scope format (required, through v1.0.0)
 
 All commits within a phase branch must use:
 
@@ -390,10 +401,12 @@ Discard those stale version JSON changes to keep the Git state clean.
 ### Invariants
 
 - Never commit directly to `main`
+- Ad-hoc incidental improvements are permitted commits without plan amendment; formal scope additions require PM approval
+
+Through `v1.0.0` (phase model in force — see "Branch model" above):
 - Always identify the active phase branch before making changes
 - One active phase at a time — do not begin a new phase until the current one merges to `main`
 - Phase branch merges to `main` require PM approval; merge method is non-fast-forward
-- Ad-hoc incidental improvements are permitted commits without plan amendment; formal scope additions require PM approval
 
 ## Agent skills
 
