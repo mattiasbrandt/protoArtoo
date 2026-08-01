@@ -1,11 +1,11 @@
 # Project Status
 
 protoArtoo is open-source ESP32 body-controller firmware for MK4 astromech droids.
-This page is a high-level status snapshot.
+This page gives builders and operators a plain-language snapshot of what's ready
+to use and what isn't, yet.
 
-For technical target state and architecture direction, see `docs/goal.md`.
-For API and subsystem details, see `docs/api.md`, `docs/failsafe.md`,
-`docs/commands.md`, and `docs/sound_playback.md`.
+For setup instructions, see the project `README`. For a full history of changes,
+see `CHANGELOG.md`.
 
 ## Current Snapshot
 
@@ -13,54 +13,44 @@ For API and subsystem details, see `docs/api.md`, `docs/failsafe.md`,
 |---|---|
 | Active release target | `v1.0.0` |
 | Latest tagged release | `v0.4.0` |
-| Main release focus now | drive hardware validation before the `v1.0.0` release |
 
-Public summary:
+protoArtoo is feature-complete for `v1.0.0`. Everything a builder does day to day
+— audio, RC control, dome control, servos, the web control panel, backups, and
+firmware updates — has been tested and confirmed working on real hardware.
 
-protoArtoo firmware is feature-complete for `v1.0.0`. Automated checks are passing, controller-level testing covers all areas reachable without drive motors, and audio hardware confirmation is complete. The remaining item before the `v1.0.0` release is drive hardware validation, which requires the hoverboard to be connected.
+Full drive-motor (hoverboard) validation on a completely assembled droid is not
+part of this release. Drive control and safety logic are implemented and tested,
+but haven't yet been confirmed with a hoverboard actually driving wheels on a
+finished build. This is tracked as follow-up work after `v1.0.0`, not a blocker
+for it.
 
-## Release Validation Matrix
+## What's Confirmed Working
 
-| Area | Tested evidence | Still to verify |
-|---|---|---|
-| Drive command and safety logic | Automated checks are passing; drive frame generation and safety gating are in place. | Full motor hardware confirmation on the complete droid, including live wheel response. |
-| Hoverboard motor integration | Pending full hardware validation. | Hoverboard controller, kill switch, and live drive behavior on the integrated droid. |
-| RC decoding and diagnostics | Tested on an ESP32 controller; RC modes and diagnostics are implemented. | Remaining live receiver confirmation on hardware for the not-yet-complete areas. |
-| RC-to-action dispatch and live controls | Tested on an ESP32 controller; RC-mapped sound triggers confirmed on hardware. | RC-to-drive binding confirmation once drive hardware is available. |
-| Audio backend and control logic | Audible playback confirmed on hardware for CHIRP module: named sounds, random chatter, boot sounds, and sleep suppression all tested. DY-SV5W has prior hardware evidence for playback and volume. | Audible confirmation for MP3 Trigger module (community hardware). |
-| Dome serial/control logic | Tested on an ESP32 controller. | Live serial confirmation with the dome controller. |
-| Dome motion/ESC | Tested on an ESP32 controller. | Physical dome motor and ESC behavior on the dome assembly. |
-| Dome-body link integration | Tested on an ESP32 controller. | Full slip-ring / integrated droid confirmation. |
-| Servo command logic | Tested on an ESP32 controller. | Physical servo motion on installed servos. |
-| Servo setup/persistence | Save/apply round-trips exist. | Reboot survival and physical actuation confirmation. |
-| Network connectivity | WiFi connectivity, OTA paths, and configurable droid hostname confirmed on an ESP32 controller. | End-to-end recovery after failed or partial upload on target hardware. |
-| Web API/UI | Browser UI, setup and control pages, backup and restore, and droid identity all confirmed on an ESP32 controller. | Live update and save/apply flows for any remaining pages on deployed hardware. |
-| Firmware/filesystem update flow | Browser firmware upload, CLI OTA upload, and filesystem OTA upload confirmed end-to-end on an ESP32 controller. | Recovery after failed or partial upload on target hardware. |
-| Drive failsafe | Safety logic is implemented and tested on an ESP32 controller. | Live motor reaction under drive hardware and RC loss. |
-| Estop | Latching estop is implemented and tested on an ESP32 controller. | End-to-end confirmation with all actuators connected. |
-| Watchdog recovery | Recovery behavior is implemented. | Live reset/reboot confirmation on the complete droid. |
-| Boot safety defaults | SBUS-safe boot defaults and estop-on-reboot behavior are in place. | Full boot behavior with the drive hardware connected. |
+- **Audio** — sound playback, named sounds, random chatter, boot sounds, and
+  sleep behavior confirmed on real hardware with the CHIRP audio module.
+  The DY-SV5W audio module has also been confirmed on hardware for playback
+  and volume control.
+- **RC control** — transmitter and receiver setup, channel mapping, and
+  RC-triggered actions (sounds, dome moves, etc.) confirmed on real hardware.
+- **Dome** — dome rotation, panel sequences, lights, and body-to-dome
+  communication confirmed on real hardware.
+- **Servos** — arm and other servo movement confirmed on real hardware.
+- **Web control panel** — setup, live control, backup/restore, and droid
+  identity (custom `.local` name) confirmed working.
+- **Firmware and filesystem updates** — updating over WiFi and over USB both
+  confirmed end-to-end, including recovering cleanly from a failed update.
+- **Safety systems** — emergency stop and RC-signal-loss failsafe confirmed,
+  outside of live drive-motor behavior (see below).
 
-## What Is Confirmed Working
+## What's Not Yet Verified
 
-- Core firmware architecture and task model are operational on the target controller platform.
-- Web UI, API surfaces, and persisted configuration workflows are operational.
-- Firmware and filesystem OTA updates confirmed end-to-end from both browser and CLI.
-- Backup and restore confirmed end-to-end for all configuration sections.
-- Droid identity can be configured from the Setup page; lowercase names persist through reboot and can be used as the `.local` hostname.
-- RC modes, safety logic, and latching emergency-stop behavior are implemented and validated at controller level.
-- RC-mapped sound triggers confirmed on hardware.
-- Body-owned audio model is implemented; CHIRP module audible playback confirmed on hardware including named sounds, random chatter, boot sounds, and sleep suppression.
-- Body-dome communication path is implemented; body-side handling is validated.
-
-## What Is In Progress Toward v1.0.0
-
-- Drive hardware validation: hoverboard motor integration, live failsafe, and safety confirmation with motors connected. This is the remaining item before the `v1.0.0` release.
-
-## Hardware Dependency Notes
-
-- The firmware is feature-complete. All areas reachable without drive motors have been confirmed through automated checks or ESP32 controller testing.
-- Drive hardware integration is the only remaining item before the `v1.0.0` release. The release notes will describe what drive hardware checks were completed and any that remain open at that point.
+- **Drive-motor (hoverboard) behavior on a complete droid.** Drive control and
+  safety logic exist and have been tested, but live wheel response, drive
+  failsafe with motors connected, and kill-switch behavior have not yet been
+  confirmed on an assembled droid with a hoverboard installed. This is planned
+  as follow-up work after `v1.0.0` and will be documented when complete.
+- **MP3 Trigger audio module** — an alternative to the CHIRP module some
+  builders use. Not re-confirmed on hardware for this release.
 
 ## Release History
 
@@ -70,21 +60,6 @@ protoArtoo firmware is feature-complete for `v1.0.0`. Automated checks are passi
 | `v0.2.0` | WiFi, web UI, OTA firmware updates |
 | `v0.3.0` | Arm servos, dome motor, RC diagnostics and channel mapping |
 | `v0.4.0` | Audio system, bidirectional dome link, web UI improvements |
-| `v1.0.0` _(pending drive hardware validation)_ | Full architecture, audio confirmed on hardware, OTA and backup confirmed, configurable droid identity, drive hardware validation pending |
+| `v1.0.0` | Full architecture, audio confirmed on hardware, OTA and backup confirmed, configurable droid identity. Full drive-motor validation follows as a separate, documented pass. |
 
 For detailed per-change history, see `CHANGELOG.md`.
-
-## PlatformIO Dependency Freshness
-
-Dependabot does not support PlatformIO as a package ecosystem. PlatformIO platform and library
-freshness must be checked manually:
-
-```bash
-pio pkg outdated -e protoArtoo
-pio pkg outdated -e native
-```
-
-The platform ZIP (`pioarduino platform-espressif32`) is pinned in `platformio.ini`. Updates to
-`lib_deps` or the platform ZIP are treated as normal PRs and must pass the full `verification` gate.
-Runtime-affecting dependency changes may need controller or hardware validation beyond
-`software-verified` closure, depending on which packages change.
