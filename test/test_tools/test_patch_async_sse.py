@@ -1,4 +1,5 @@
 import importlib.util
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -10,6 +11,55 @@ SPEC.loader.exec_module(PATCH)
 
 
 class PatchAsyncWebServerTest(unittest.TestCase):
+    def test_lib_source_dir_prefers_versioned_library_dir(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            libdeps = Path(tmp)
+            unversioned = libdeps / "AsyncTCP" / "src"
+            versioned = libdeps / "AsyncTCP@3.4.10" / "src"
+            unversioned.mkdir(parents=True)
+            versioned.mkdir(parents=True)
+            (unversioned / "AsyncTCP.cpp").write_text("// unversioned\n", encoding="utf-8")
+            (versioned / "AsyncTCP.cpp").write_text("// versioned\n", encoding="utf-8")
+
+            self.assertEqual(
+                PATCH.lib_source_dir(libdeps, "AsyncTCP", "AsyncTCP.cpp"),
+                versioned,
+            )
+
+    def test_lib_source_dir_uses_unversioned_when_no_versioned_dir_exists(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            libdeps = Path(tmp)
+            unversioned = libdeps / "ESPAsyncWebServer" / "src"
+            unversioned.mkdir(parents=True)
+            (unversioned / "AsyncEventSource.h").write_text("// unversioned\n", encoding="utf-8")
+
+            self.assertEqual(
+                PATCH.lib_source_dir(libdeps, "ESPAsyncWebServer", "AsyncEventSource.h"),
+                unversioned,
+            )
+
+    def test_lib_source_dir_fails_when_required_source_is_missing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            libdeps = Path(tmp)
+            (libdeps / "AsyncTCP@3.4.10" / "src").mkdir(parents=True)
+
+            with self.assertRaisesRegex(RuntimeError, "AsyncTCP/src/AsyncTCP.cpp"):
+                PATCH.lib_source_dir(libdeps, "AsyncTCP", "AsyncTCP.cpp")
+
+    def test_lib_source_dir_fails_on_multiple_versioned_candidates(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            libdeps = Path(tmp)
+            first = libdeps / "AsyncTCP@3.4.10" / "src"
+            second = libdeps / "AsyncTCP@3.4.11" / "src"
+            first.mkdir(parents=True)
+            second.mkdir(parents=True)
+            (first / "AsyncTCP.cpp").write_text("// first\n", encoding="utf-8")
+            (second / "AsyncTCP.cpp").write_text("// second\n", encoding="utf-8")
+
+            with self.assertRaisesRegex(RuntimeError, "ambiguous library dependency dirs"):
+                PATCH.lib_source_dir(libdeps, "AsyncTCP", "AsyncTCP.cpp")
+
+
     def test_sse_patch_collapses_nested_guards_and_is_idempotent(self):
         source = (
             "header\n"
@@ -107,6 +157,7 @@ class PatchAsyncWebServerTest(unittest.TestCase):
 
         patched = PATCH.patch_tcp_accept_heap_guard(source)
 
+        self.assertIn("#if defined(ESP32)", patched)
         self.assertIn("#include <esp_heap_caps.h>", patched)
         self.assertIn("ASYNC_TCP_ACCEPT_MIN_LARGEST_FREE_BLOCK", patched)
         self.assertIn("heap_caps_get_largest_free_block(MALLOC_CAP_8BIT)", patched)

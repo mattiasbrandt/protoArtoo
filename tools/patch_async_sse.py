@@ -830,9 +830,32 @@ def patch_file(path, patcher, description):
         print(f"[patch_async_sse.py] {description}")
 
 
+def lib_source_dir(libdeps_env_dir, lib_name, required_file):
+    versioned_source_dirs = [
+        candidate / "src"
+        for candidate in sorted(libdeps_env_dir.glob(f"{lib_name}@*"))
+        if (candidate / "src" / required_file).exists()
+    ]
+    if len(versioned_source_dirs) > 1:
+        raise RuntimeError(
+            f"ambiguous library dependency dirs for {lib_name}; "
+            "remove stale libdeps or review tools/patch_async_sse.py"
+        )
+    if versioned_source_dirs:
+        return versioned_source_dirs[0]
+
+    source_dir = libdeps_env_dir / lib_name / "src"
+    if not (source_dir / required_file).exists():
+        raise RuntimeError(
+            f"library dependency missing: {lib_name}/src/{required_file}; "
+            "review platformio.ini and tools/patch_async_sse.py"
+        )
+    return source_dir
+
+
 def patch_async_webserver(env):
-    libdeps_dir = Path(env.subst("$PROJECT_LIBDEPS_DIR"))
-    source_dir = libdeps_dir / env["PIOENV"] / "ESPAsyncWebServer" / "src"
+    libdeps_env_dir = Path(env.subst("$PROJECT_LIBDEPS_DIR")) / env["PIOENV"]
+    source_dir = lib_source_dir(libdeps_env_dir, "ESPAsyncWebServer", "AsyncEventSource.h")
     patch_file(
         source_dir / "AsyncEventSource.h",
         patch_sse_header,
@@ -869,7 +892,7 @@ def patch_async_webserver(env):
         "guarded the SSE client handover against racing connection teardown (issue #22)",
     )
 
-    asynctcp_source_dir = libdeps_dir / env["PIOENV"] / "AsyncTCP" / "src"
+    asynctcp_source_dir = lib_source_dir(libdeps_env_dir, "AsyncTCP", "AsyncTCP.cpp")
     patch_file(
         asynctcp_source_dir / "AsyncTCP.cpp",
         patch_async_event_dispatch,
