@@ -130,6 +130,57 @@ class PatchAsyncWebServerTest(unittest.TestCase):
         )
         self.assertEqual(PATCH.patch_static_handler_open_guard(patched), patched)
 
+    def test_abstract_response_zero_read_state_is_per_response_and_idempotent(self):
+        source = (
+            "prefix\n"
+            + PATCH.ABSTRACT_RESPONSE_ZERO_READ_STATE_BEFORE
+            + "suffix\n"
+        )
+
+        patched = PATCH.patch_abstract_response_zero_read_state(source)
+
+        self.assertIn(
+            "static constexpr uint8_t MAX_PREMATURE_ZERO_READ_RETRIES = 2;",
+            patched,
+        )
+        self.assertIn("uint8_t _prematureZeroReadRetries{0};", patched)
+        self.assertEqual(
+            PATCH.patch_abstract_response_zero_read_state(patched),
+            patched,
+        )
+
+    def test_abstract_response_zero_read_patch_distinguishes_eof_retry_and_exhaustion(self):
+        source = (
+            "prefix\n"
+            + PATCH.ABSTRACT_RESPONSE_ZERO_READ_BEFORE
+            + "suffix\n"
+        )
+
+        patched = PATCH.patch_abstract_response_zero_read(source)
+
+        self.assertIn(
+            "if (!_sendContentLength || (_sentLength == _contentLength))",
+            patched,
+        )
+        self.assertIn(
+            "_prematureZeroReadRetries < MAX_PREMATURE_ZERO_READ_RETRIES",
+            patched,
+        )
+        self.assertIn("++_prematureZeroReadRetries;", patched)
+        self.assertEqual(patched.count("_prematureZeroReadRetries = 0;"), 1)
+        self.assertIn(
+            "} else if (readLen != RESPONSE_TRY_AGAIN) {\n"
+            "          _prematureZeroReadRetries = 0;",
+            patched,
+        )
+        self.assertIn("_state = RESPONSE_FAILED;", patched)
+        self.assertIn("request->client()->close();", patched)
+        self.assertLess(
+            patched.index("++_prematureZeroReadRetries;"),
+            patched.index("_state = RESPONSE_FAILED;"),
+        )
+        self.assertEqual(PATCH.patch_abstract_response_zero_read(patched), patched)
+
     def test_async_event_dispatch_patch_catches_exceptions_and_is_idempotent(self):
         source = (
             "prefix\n"

@@ -614,6 +614,67 @@ STATIC_OPEN_GUARD_AFTER = """\
   String gzip = path + T__gz;
 """
 
+# Issue #60: AsyncAbstractResponse treats every zero-length non-chunked fill as
+# successful EOF, even when a declared Content-Length still has bytes missing.
+# A transient LittleFS read failure can therefore truncate an admitted static
+# response after its headers are already on the wire. Keep a fixed,
+# allocation-free consecutive-failure count on the response itself so the same
+# response can retry from later ack/poll callbacks before failing honestly.
+ABSTRACT_RESPONSE_ZERO_READ_STATE_BEFORE = """\
+  // buffer data size specifiers
+  size_t _send_buffer_offset{0}, _send_buffer_len{0};
+  size_t _readDataFromCacheOrContent(uint8_t *data, const size_t len);
+"""
+
+ABSTRACT_RESPONSE_ZERO_READ_STATE_AFTER = """\
+  // buffer data size specifiers
+  size_t _send_buffer_offset{0}, _send_buffer_len{0};
+  static constexpr uint8_t MAX_PREMATURE_ZERO_READ_RETRIES = 2;
+  uint8_t _prematureZeroReadRetries{0};
+  size_t _readDataFromCacheOrContent(uint8_t *data, const size_t len);
+"""
+
+ABSTRACT_RESPONSE_ZERO_READ_BEFORE = """\
+        if (readLen == 0) {
+          // no more data to send
+          _state = RESPONSE_END;
+        } else if (readLen != RESPONSE_TRY_AGAIN) {
+          _send_buffer_len += readLen;  // set buffers's size to match added data
+          _sentLength += readLen;       // data is not sent yet, but we need it to understand that it would be last block
+          if (_sendContentLength && (_sentLength == _contentLength)) {
+            // it was last piece of content
+            _state = RESPONSE_END;
+          }
+        }
+"""
+
+ABSTRACT_RESPONSE_ZERO_READ_AFTER = """\
+        if (readLen == 0) {
+          if (!_sendContentLength || (_sentLength == _contentLength)) {
+            // The source reached true EOF (or has no declared length).
+            _state = RESPONSE_END;
+          } else if (_prematureZeroReadRetries < MAX_PREMATURE_ZERO_READ_RETRIES) {
+            // A declared body is still incomplete. Keep this admitted response
+            // in RESPONSE_CONTENT and retry from a later ack/poll callback.
+            ++_prematureZeroReadRetries;
+            break;
+          } else {
+            // The bounded same-response recovery budget is exhausted.
+            _state = RESPONSE_FAILED;
+            request->client()->close();
+            return payloadlen;
+          }
+        } else if (readLen != RESPONSE_TRY_AGAIN) {
+          _prematureZeroReadRetries = 0;
+          _send_buffer_len += readLen;  // set buffers's size to match added data
+          _sentLength += readLen;       // data is not sent yet, but we need it to understand that it would be last block
+          if (_sendContentLength && (_sentLength == _contentLength)) {
+            // it was last piece of content
+            _state = RESPONSE_END;
+          }
+        }
+"""
+
 
 def patch_sse_header(text):
     if text.count(SSE_PREAMBLE_START) != 1 or text.count(SSE_PREAMBLE_END) != 1:
@@ -680,6 +741,34 @@ def patch_static_handler_open_guard(text):
         text = text.replace(STATIC_OPEN_GUARD_INCLUDES_BEFORE, STATIC_OPEN_GUARD_INCLUDES_AFTER)
 
     return text
+
+
+def patch_abstract_response_zero_read_state(text):
+    if ABSTRACT_RESPONSE_ZERO_READ_STATE_AFTER in text:
+        return text
+    if text.count(ABSTRACT_RESPONSE_ZERO_READ_STATE_BEFORE) != 1:
+        raise RuntimeError(
+            "ESPAsyncWebServer WebResponseImpl.h response buffer state changed; "
+            "review tools/patch_async_sse.py"
+        )
+    return text.replace(
+        ABSTRACT_RESPONSE_ZERO_READ_STATE_BEFORE,
+        ABSTRACT_RESPONSE_ZERO_READ_STATE_AFTER,
+    )
+
+
+def patch_abstract_response_zero_read(text):
+    if ABSTRACT_RESPONSE_ZERO_READ_AFTER in text:
+        return text
+    if text.count(ABSTRACT_RESPONSE_ZERO_READ_BEFORE) != 1:
+        raise RuntimeError(
+            "ESPAsyncWebServer WebResponses.cpp non-chunked fill handling changed; "
+            "review tools/patch_async_sse.py"
+        )
+    return text.replace(
+        ABSTRACT_RESPONSE_ZERO_READ_BEFORE,
+        ABSTRACT_RESPONSE_ZERO_READ_AFTER,
+    )
 
 
 def patch_async_event_dispatch(text):
@@ -875,6 +964,16 @@ def patch_async_webserver(env):
         source_dir / "WebHandlers.cpp",
         patch_static_handler_open_guard,
         "guarded static-file opens before LittleFS FD allocation under critical heap (issue #21)",
+    )
+    patch_file(
+        source_dir / "WebResponseImpl.h",
+        patch_abstract_response_zero_read_state,
+        "tracked bounded non-chunked fill retries per response (issue #60)",
+    )
+    patch_file(
+        source_dir / "WebResponses.cpp",
+        patch_abstract_response_zero_read,
+        "retried premature non-chunked zero reads before honest fail-close (issue #60)",
     )
     patch_file(
         source_dir / "WebRequest.cpp",
