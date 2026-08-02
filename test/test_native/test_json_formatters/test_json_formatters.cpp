@@ -18,85 +18,102 @@ void tearDown() {
 
 void test_formatWifiJson_contains_apSsid() {
     char out[192];
-    formatWifiJson(out, sizeof(out), "protoArtoo", "192.168.4.1", false, false, "", 0, false);
+    formatWifiJson(out, sizeof(out), "protoArtoo", "192.168.4.1", false, false, "", "", 0, false);
     TEST_ASSERT_NOT_NULL(strstr(out, "\"apSsid\":\"protoArtoo\""));
 }
 
 void test_formatWifiJson_contains_apIp() {
     char out[192];
-    formatWifiJson(out, sizeof(out), "protoArtoo", "192.168.4.1", false, false, "", 0, false);
+    formatWifiJson(out, sizeof(out), "protoArtoo", "192.168.4.1", false, false, "", "", 0, false);
     TEST_ASSERT_NOT_NULL(strstr(out, "\"apIp\":\"192.168.4.1\""));
 }
 
 void test_formatWifiJson_staEnabled_true() {
     char out[192];
-    formatWifiJson(out, sizeof(out), "protoArtoo", "192.168.4.1", true, false, "", 0, false);
+    formatWifiJson(out, sizeof(out), "protoArtoo", "192.168.4.1", true, false, "", "", 0, false);
     TEST_ASSERT_NOT_NULL(strstr(out, "\"staEnabled\":true"));
 }
 
 void test_formatWifiJson_staEnabled_false() {
     char out[192];
-    formatWifiJson(out, sizeof(out), "protoArtoo", "192.168.4.1", false, false, "", 0, false);
+    formatWifiJson(out, sizeof(out), "protoArtoo", "192.168.4.1", false, false, "", "", 0, false);
     TEST_ASSERT_NOT_NULL(strstr(out, "\"staEnabled\":false"));
 }
 
 void test_formatWifiJson_staConnected_true() {
     char out[192];
-    formatWifiJson(out, sizeof(out), "protoArtoo", "192.168.4.1", true, true, "10.0.0.42", -65, false);
+    formatWifiJson(out, sizeof(out), "protoArtoo", "192.168.4.1", true, true, "10.0.0.42", "", -65, false);
     TEST_ASSERT_NOT_NULL(strstr(out, "\"staConnected\":true"));
 }
 
 void test_formatWifiJson_staConnected_false() {
     char out[192];
-    formatWifiJson(out, sizeof(out), "protoArtoo", "192.168.4.1", false, false, "", 0, false);
+    formatWifiJson(out, sizeof(out), "protoArtoo", "192.168.4.1", false, false, "", "", 0, false);
     TEST_ASSERT_NOT_NULL(strstr(out, "\"staConnected\":false"));
 }
 
 void test_formatWifiJson_staIp_present_when_connected() {
     char out[192];
-    formatWifiJson(out, sizeof(out), "protoArtoo", "192.168.4.1", true, true, "10.0.0.42", -65, false);
+    formatWifiJson(out, sizeof(out), "protoArtoo", "192.168.4.1", true, true, "10.0.0.42", "", -65, false);
     TEST_ASSERT_NOT_NULL(strstr(out, "\"staIp\":\"10.0.0.42\""));
 }
 
 void test_formatWifiJson_staIp_empty_when_disconnected() {
     char out[192];
-    formatWifiJson(out, sizeof(out), "protoArtoo", "192.168.4.1", false, false, "", 0, false);
+    formatWifiJson(out, sizeof(out), "protoArtoo", "192.168.4.1", false, false, "", "", 0, false);
     TEST_ASSERT_NOT_NULL(strstr(out, "\"staIp\":\"\""));
 }
 
 void test_formatWifiJson_wifiRssi_present() {
     char out[192];
-    formatWifiJson(out, sizeof(out), "protoArtoo", "192.168.4.1", true, true, "10.0.0.42", -72, false);
+    formatWifiJson(out, sizeof(out), "protoArtoo", "192.168.4.1", true, true, "10.0.0.42", "", -72, false);
     TEST_ASSERT_NOT_NULL(strstr(out, "\"wifiRssi\":-72"));
 }
 
 void test_formatWifiJson_is_valid_json_object() {
     char out[192];
-    formatWifiJson(out, sizeof(out), "protoArtoo", "192.168.4.1", false, false, "", 0, false);
+    formatWifiJson(out, sizeof(out), "protoArtoo", "192.168.4.1", false, false, "", "", 0, false);
     TEST_ASSERT_EQUAL_CHAR('{', out[0]);
     TEST_ASSERT_EQUAL_CHAR('}', out[strlen(out) - 1]);
 }
 
 void test_formatWifiJson_networkRecovery_false_by_default() {
     char out[192];
-    formatWifiJson(out, sizeof(out), "protoArtoo", "192.168.4.1", true, true, "10.0.0.42", -65, false);
+    formatWifiJson(out, sizeof(out), "protoArtoo", "192.168.4.1", true, true, "10.0.0.42", "", -65, false);
     TEST_ASSERT_NOT_NULL(strstr(out, "\"networkRecovery\":false"));
 }
 
 void test_formatWifiJson_networkRecovery_true_when_recovering() {
     char out[192];
-    formatWifiJson(out, sizeof(out), "protoArtoo", "192.168.4.1", false, false, "", 0, true);
+    formatWifiJson(out, sizeof(out), "protoArtoo", "192.168.4.1", false, false, "", "", 0, true);
     TEST_ASSERT_NOT_NULL(strstr(out, "\"networkRecovery\":true"));
 }
 
-// Worst-case field sizes (32-char SSID, 15-char IPv4 addresses) must still
-// fit comfortably inside the /api/wifi 224-byte buffer (src/web/api_status.cpp).
+// Worst-case field sizes (32-char SSIDs, 15-char IPv4 addresses) must still
+// fit comfortably inside the /api/wifi 256-byte buffer (src/web/api_status.cpp).
 void test_formatWifiJson_worst_case_size_fits_status_buffer() {
-    char out[224];
+    char out[256];
     formatWifiJson(out, sizeof(out), "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "255.255.255.255", true,
-                   true, "255.255.255.255", -100, true);
+                   true, "255.255.255.255", "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB", -100, true);
     TEST_ASSERT_LESS_THAN(sizeof(out), strlen(out));
     TEST_ASSERT_EQUAL_CHAR('}', out[strlen(out) - 1]);
+}
+
+void test_formatWifiJson_staSsid_present_when_connected() {
+    char out[256];
+    formatWifiJson(out, sizeof(out), "protoArtoo", "192.168.4.1", true, true, "10.0.0.42",
+                   "HomeNetwork", -65, false);
+    TEST_ASSERT_NOT_NULL(strstr(out, "\"staSsid\":\"HomeNetwork\""));
+}
+
+// Developer WiFi Shortcut (ADR 0015): an unprovisioned controller can boot
+// straight into a real client connection from secrets.h. staSsid exposes
+// which network that actually is, distinct from Device WiFi Settings
+// (never a password — that stays write-only via /api/config).
+void test_formatWifiJson_staSsid_empty_when_disconnected() {
+    char out[256];
+    formatWifiJson(out, sizeof(out), "protoArtoo", "192.168.4.1", false, false, "", "", 0, false);
+    TEST_ASSERT_NOT_NULL(strstr(out, "\"staSsid\":\"\""));
 }
 
 void test_wifiStatusApSsid_prefers_active_saved_ap_ssid() {
@@ -311,6 +328,8 @@ int main() {
     RUN_TEST(test_formatWifiJson_networkRecovery_false_by_default);
     RUN_TEST(test_formatWifiJson_networkRecovery_true_when_recovering);
     RUN_TEST(test_formatWifiJson_worst_case_size_fits_status_buffer);
+    RUN_TEST(test_formatWifiJson_staSsid_present_when_connected);
+    RUN_TEST(test_formatWifiJson_staSsid_empty_when_disconnected);
     RUN_TEST(test_wifiStatusApSsid_prefers_active_saved_ap_ssid);
     RUN_TEST(test_wifiStatusApSsid_falls_back_to_default_when_active_empty);
 

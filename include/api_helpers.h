@@ -84,8 +84,8 @@ void formatConfigJson(char* buf, size_t bufSize, int16_t speedLimitMax, uint32_t
 // thread-safe: yes (pure function, no globals)
 // -----------------------------------------------------------------------------
 void formatWifiJson(char* buf, size_t bufSize, const char* apSsid, const char* apIp,
-                    bool staEnabled, bool staConnected, const char* staIp, long wifiRssi,
-                    bool networkRecovery);
+                    bool staEnabled, bool staConnected, const char* staIp, const char* staSsid,
+                    long wifiRssi, bool networkRecovery);
 
 // Select the AP SSID that diagnostics should report. Active saved Standalone AP
 // settings own the operator-facing AP name; fallback protects startup/default

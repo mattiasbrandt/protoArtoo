@@ -146,19 +146,29 @@
     const networkRecovery = Boolean(diag.networkRecovery);
     const staEnabled = Boolean(diag.staEnabled);
     const staConnected = Boolean(diag.staConnected);
+    // Developer WiFi Shortcut (ADR 0015, self-build only): the firmware can boot
+    // straight into WiFi Client Mode from compiled secrets.h defaults on an
+    // Unprovisioned Controller, without ever writing Device WiFi Settings. That
+    // shows up here as connected-but-unprovisioned — distinct from WiFi
+    // Provisioning, which never actually connects as a client.
+    const developerShortcut = !networkRecovery && !provisioned && staEnabled && staConnected;
     const stateName = networkRecovery
       ? "recovery"
-      : !provisioned
-        ? "provisioning"
-        : staEnabled
-          ? (staConnected ? "client" : "client-failure")
-          : "standalone-ap";
+      : developerShortcut
+        ? "developer-shortcut"
+        : !provisioned
+          ? "provisioning"
+          : staEnabled
+            ? (staConnected ? "client" : "client-failure")
+            : "standalone-ap";
     const modeText = networkRecovery
       ? "Network Recovery Mode"
-      : !provisioned
-        ? "WiFi Provisioning"
-        : staEnabled ? "WiFi Client Mode" : "Standalone AP Mode";
-    return { provisioned, networkRecovery, staEnabled, staConnected, stateName, modeText };
+      : developerShortcut
+        ? "Developer Shortcut"
+        : !provisioned
+          ? "WiFi Provisioning"
+          : staEnabled ? "WiFi Client Mode" : "Standalone AP Mode";
+    return { provisioned, networkRecovery, staEnabled, staConnected, developerShortcut, stateName, modeText };
   };
 
   const apUrl = (diag = {}, preferPostRebootDefault = false) => {
@@ -209,7 +219,7 @@
     const staAddress = posture.staConnected && diag.staIp ? `http://${diag.staIp}` : "--";
     const hostAddress = `http://${mdnsHost()}`;
     const activeNetwork = posture.staEnabled
-      ? (posture.staConnected ? "Connected client" : "Client not connected")
+      ? (posture.staConnected ? (diag.staSsid || "Connected client") : "Client not connected")
       : (diag.apSsid || wifi.apSsid || "--");
 
     if (activeSummaryMode) {
@@ -254,7 +264,9 @@
     if (provisioningState) {
       provisioningState.textContent = posture.networkRecovery
         ? "🛠️ Network Recovery Mode"
-        : posture.provisioned ? "✅ Provisioned" : "⚠️ WiFi Provisioning";
+        : posture.developerShortcut
+          ? "🧑‍💻 Developer Shortcut"
+          : posture.provisioned ? "✅ Provisioned" : "⚠️ WiFi Provisioning";
     }
     if (activeMode) {
       activeMode.textContent = posture.modeText;
@@ -282,6 +294,11 @@
       setPendingSummary("Recovery", "error");
       if (postureDesc) {
         postureDesc.textContent = "Network Recovery Mode: a local power-cycle gesture temporarily opened WiFi Provisioning. Your saved Device WiFi Settings below are untouched — fix them, save, then reboot to return to your normal posture.";
+      }
+    } else if (posture.developerShortcut) {
+      setPendingSummary("Dev shortcut", "info");
+      if (postureDesc) {
+        postureDesc.textContent = `Connected to ${diag.staSsid || "a network"} — WiFi settings from secrets.h at build time, not saved Device WiFi Settings. Save below to provision the controller.`;
       }
     } else if (!posture.provisioned) {
       setPendingSummary("Provisioning", "warn");
@@ -336,6 +353,12 @@
       applyGuidance.textContent = wifi.pendingApply
         ? `Network Recovery Mode is active. Corrected Device WiFi Settings are saved — connect to ${provisioningApName}, open ${apAddress}, then use Reboot to Apply below to return to ${modeLabel(wifi.mode)}.`
         : `Network Recovery Mode is active from a local power-cycle gesture. Your saved Device WiFi Settings are unchanged — connect to ${provisioningApName}, open ${apAddress}, fix Client network / AP settings below, save, then reboot to return to them.`;
+      return;
+    }
+
+    if (posture.developerShortcut) {
+      applyGuidance.textContent =
+        `Already reachable at ${hostAddress} or ${staAddress} — from secrets.h at build time, not saved settings. Save below, then Reboot to Apply, to provision the controller.`;
       return;
     }
 

@@ -1199,7 +1199,8 @@ body[data-page="wifi"] .wifi-mode-title {
   font-weight: 700;
 }
 
-body[data-page="wifi"] #wifi-posture-card[data-posture="standalone-ap"] {
+body[data-page="wifi"] #wifi-posture-card[data-posture="standalone-ap"],
+body[data-page="wifi"] #wifi-posture-card[data-posture="developer-shortcut"] {
   border-left-color: var(--warning);
 }
 
