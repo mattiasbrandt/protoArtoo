@@ -379,24 +379,27 @@ If a slice must be split, commit the safe part first.
 
 ### Version JSON workflow
 
-`data/fw-version.json` and `data/fs-version.json` are tracked generated web assets.
-They are not optional scratch build output. `pio run` refreshes them from the current
-Git version string so the board UI can show the deployed firmware/filesystem version,
-and so committed source has matching version metadata for later release traceability.
+`data/fw-version.json` and `data/fs-version.json` are tracked, 100% generated web
+assets — they are never hand-edited, on any branch. A PreToolUse hook
+(`.claude/hooks/version_json_edit_guard.py`) hard-blocks Edit/Write/MultiEdit against
+either file to make this structurally impossible for an agent to violate.
 
-For any code, firmware, web, or `data/` slice where `pio run`/`make build` is part of
-the actual work, verification, upload, or release preparation:
+Two independent regeneration paths, both authoritative for their scope:
 
-1. Run the relevant PlatformIO build.
-2. Stage the source/web/data changes for the slice.
-3. Stage `data/fw-version.json` and `data/fs-version.json` from that same build.
-4. Commit the source changes and both version JSON files together.
-5. Do not run another PlatformIO build after the commit unless you are starting a new
-   slice, upload, or release-prep commit.
+- **Local dev builds**: `tools/extract_version.py` runs on every `pio run` and
+  writes both files from `git describe --tags --always --long --dirty` for the
+  current local `HEAD`. Non-`main` branches get a `+<branch>` semver
+  build-metadata suffix (slashes replaced with dashes); `main` builds stay bare.
+  You do not need to stage or commit these files as part of feature-branch work —
+  just build normally.
+- **`main` is the single source of truth**: a CI step on every push to `main`
+  regenerates both files from the actual merge commit and bot-commits them back.
+  This replaces any per-commit judgment call about whether a build "belongs to
+  the active slice" — there is no such judgment call anymore.
 
-If a PlatformIO build is run only incidentally outside the active code slice, upload,
-or release-prep workflow, any resulting version JSON changes are dangling metadata.
-Discard those stale version JSON changes to keep the Git state clean.
+Files downloaded via GitHub's "Download ZIP" (no `.git` directory) still carry a
+correct, CI-regenerated value from the last `main` push, instead of falling back
+to a meaningless default.
 
 ### Invariants
 

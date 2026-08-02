@@ -2,6 +2,10 @@
 """
 PlatformIO pre-build script: inject PA_FIRMWARE_VERSION as a build flag.
 
+Also runnable standalone (`python3 tools/extract_version.py`) outside a
+PlatformIO build — used by CI to regenerate data/fw-version.json and
+data/fs-version.json on push to main without running a full firmware build.
+
 Version string format:
   Released tag:   v0.3.0
   Between tags:   v0.3.0-N-gABCDEF   (N commits ahead, short hash)
@@ -20,14 +24,20 @@ import os
 import re
 import subprocess
 
-Import("env")  # noqa: F821  (PlatformIO injects this)
+try:
+    Import("env")  # noqa: F821  (PlatformIO injects this in a build context)
+    PROJECT_DIR = env.subst("$PROJECT_DIR")  # noqa: F821
+    _PIO_CONTEXT = True
+except NameError:
+    PROJECT_DIR = os.getcwd()
+    _PIO_CONTEXT = False
 
 
 def _run(cmd):
     """Run a shell command; return stdout stripped, or '' on error."""
     try:
         return subprocess.check_output(
-            cmd, stderr=subprocess.DEVNULL, cwd=env.subst("$PROJECT_DIR")
+            cmd, stderr=subprocess.DEVNULL, cwd=PROJECT_DIR
         ).decode().strip()
     except Exception:
         return ""
@@ -67,7 +77,7 @@ def _version_from_git():
 def _version_from_changelog():
     """Extract latest version from CHANGELOG.md, append short git hash."""
     try:
-        with open("CHANGELOG.md", "r") as f:
+        with open(os.path.join(PROJECT_DIR, "CHANGELOG.md"), "r") as f:
             content = f.read()
         match = re.search(r"##\s*\[?(\d+\.\d+\.\d+)\]?", content)
         if match:
@@ -81,14 +91,15 @@ def _version_from_changelog():
 
 version = _version_from_git() or _version_from_changelog() or "v0.0.0-dev"
 
-# Inject as PA_FIRMWARE_VERSION — must match the #ifndef guard in include/config.h
-env.Append(CPPDEFINES=[("PA_FIRMWARE_VERSION", f'\\"{version}\\"')])
+if _PIO_CONTEXT:
+    # Inject as PA_FIRMWARE_VERSION — must match the #ifndef guard in include/config.h
+    env.Append(CPPDEFINES=[("PA_FIRMWARE_VERSION", f'\\"{version}\\"')])  # noqa: F821
 print(f"[extract_version.py] PA_FIRMWARE_VERSION={version}")
 
 # Write data/fw-version.json as a tracked generated web asset for version display
 # and release traceability.
 # Runtime firmware truth still comes from PA_FIRMWARE_VERSION in /api/status.
-fw_version_path = os.path.join(env.subst("$PROJECT_DIR"), "data", "fw-version.json")
+fw_version_path = os.path.join(PROJECT_DIR, "data", "fw-version.json")
 with open(fw_version_path, "w") as f:
     json.dump({"firmwareVersion": version}, f, indent=2)
     f.write("\n")
@@ -97,7 +108,7 @@ print(f"[extract_version.py] fw-version.json -> {version}")
 # Write data/fs-version.json so the FS image carries the same version.
 # A stale FS will show a different string than FW on the footer, making
 # "forgot to uploadfs" immediately visible.
-fs_version_path = os.path.join(env.subst("$PROJECT_DIR"), "data", "fs-version.json")
+fs_version_path = os.path.join(PROJECT_DIR, "data", "fs-version.json")
 fs_version_str = f"fs-{version}"
 with open(fs_version_path, "w") as f:
     json.dump({"fsVersion": fs_version_str}, f, indent=2)
