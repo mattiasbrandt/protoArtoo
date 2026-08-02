@@ -41,10 +41,12 @@ jobs:
       - name: 📦 Install PlatformIO and Python tools
         run: pip install platformio && pip install -r tools/requirements.txt
 
-      - name: 💾 Cache PlatformIO library downloads
+      - name: 💾 Cache PlatformIO packages and toolchains
         uses: actions/cache@v4
         with:
-          path: ~/.platformio/.cache
+          # Cache the whole ~/.platformio tree, matching verification.yml — skips
+          # re-downloading/re-unpacking the ESP-IDF toolchain on a warm cache.
+          path: ~/.platformio
           key: ${{ runner.os }}-pio-${{ hashFiles('platformio.ini') }}
           restore-keys: ${{ runner.os }}-pio-
 

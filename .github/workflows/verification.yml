@@ -40,12 +40,15 @@ jobs:
       - name: 📦 Install PlatformIO and Python tools
         run: pip install platformio && pip install -r tools/requirements.txt
 
-      - name: 💾 Cache PlatformIO library downloads
+      - name: 💾 Cache PlatformIO packages and toolchains
         uses: actions/cache@v4
         with:
-          # Cache library downloads only — build artifacts (.pio/build/) are not cached
-          # and must not be treated as verification evidence.
-          path: ~/.platformio/.cache
+          # Cache the whole ~/.platformio tree (platforms, packages, toolchains,
+          # library downloads) — not just the download cache — so a warm run
+          # skips re-downloading and re-unpacking the ESP-IDF toolchain, cppcheck,
+          # etc. Build artifacts (.pio/build/) are never cached and must not be
+          # treated as verification evidence.
+          path: ~/.platformio
           key: ${{ runner.os }}-pio-${{ hashFiles('platformio.ini') }}
           restore-keys: ${{ runner.os }}-pio-
 
