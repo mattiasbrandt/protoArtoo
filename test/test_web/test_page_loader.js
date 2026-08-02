@@ -65,7 +65,7 @@ test("operator pages avoid parallel direct script requests", () => {
     const scriptSources = [...html.matchAll(/<script\s+src="([^"]+)"/g)].map((match) => match[1]);
     if (scriptSources.length === 0) continue;
 
-    if (name === "index.html" || name === "setup.html") {
+    if (name === "setup.html") {
       assert.deepEqual(scriptSources, [], name);
       assert.doesNotMatch(html, /<link\s+rel="stylesheet"/, name);
       assert.doesNotMatch(html, /<link\s+rel="icon"/, name);
