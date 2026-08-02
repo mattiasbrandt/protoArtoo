@@ -36,7 +36,8 @@ static void buildWifiJson(char* buffer, size_t bufferSize) {
 
     formatWifiJson(buffer, bufferSize, wifiStatusApSsid(activeWifi.ap_ssid),
                    WiFi.softAPIP().toString().c_str(), staEnabled, staConnected,
-                   staConnected ? WiFi.localIP().toString().c_str() : "", wifiRssi);
+                   staConnected ? WiFi.localIP().toString().c_str() : "", wifiRssi,
+                   configCacheReadActiveWifiRecovery());
 }
 
 static void buildSerialJson(char* buffer, size_t bufferSize) {
@@ -89,7 +90,11 @@ static void buildHealthJson(char* buffer, size_t bufferSize) {
 
 void registerStatusRoutes(AsyncWebServer& server) {
     server.on("/api/wifi", HTTP_GET, [](AsyncWebServerRequest* req) {
-        char body[160];
+        // Worst case: apSsid/staSsid at WIFI_SSID_MAX_LEN (32), apIp/staIp at
+        // 15 chars ("255.255.255.255"), plus fixed JSON literal overhead
+        // (~114 bytes including the networkRecovery field). 224 bytes keeps
+        // headroom above the observed worst case.
+        char body[224];
         buildWifiJson(body, sizeof(body));
         req->send(200, "application/json", body);
     });

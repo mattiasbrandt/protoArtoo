@@ -480,9 +480,10 @@ bool populateConfigJson(JsonDocument& doc, const ConfigSnapshot& snap) {
     system["logLevel"] = snap.system.logLevel;
 
     // Device WiFi Settings (ADR 0015): password-safe read shape only. The
-    // "pendingApply" flag (active-vs-pending for a Staged Network Switch) is
-    // runtime state, not part of this pure snapshot — the caller adds it
-    // after calling populateConfigJson().
+    // "pendingApply" flag (active-vs-pending for a Staged Network Switch) and
+    // "networkRecovery" flag (was Network Recovery Mode the posture actually
+    // entered at boot) are runtime state, not part of this
+    // pure snapshot — the caller adds them after calling populateConfigJson().
     WifiConfigView wifiView = wifiConfigToView(snap.wifi);
     JsonObject wifi = doc["wifi"].to<JsonObject>();
     wifi["provisioned"] = wifiView.provisioned;
@@ -587,6 +588,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
         WifiConfig activeWifi = {};
         configCacheReadActiveWifi(&activeWifi);
         doc["wifi"]["pendingApply"] = wifiConfigsDiffer(snap.wifi, activeWifi);
+        doc["wifi"]["networkRecovery"] = configCacheReadActiveWifiRecovery();
         auto* stream = req->beginResponseStream("application/json");
         if (stream == nullptr) {
             req->send(500, "application/json",
@@ -670,6 +672,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
         WifiConfig activeWifiAfterPost = {};
         configCacheReadActiveWifi(&activeWifiAfterPost);
         doc["wifi"]["pendingApply"] = wifiConfigsDiffer(snap.wifi, activeWifiAfterPost);
+        doc["wifi"]["networkRecovery"] = configCacheReadActiveWifiRecovery();
         auto* stream = req->beginResponseStream("application/json");
         if (stream == nullptr) {
             req->send(500, "application/json",
@@ -745,6 +748,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
         WifiConfig activeWifi = {};
         configCacheReadActiveWifi(&activeWifi);
         wifi["pendingApply"] = wifiConfigsDiffer(working, activeWifi);
+        wifi["networkRecovery"] = configCacheReadActiveWifiRecovery();
 
         char payload[512];
         serializeJson(doc, payload, sizeof(payload));

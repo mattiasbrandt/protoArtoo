@@ -12,6 +12,7 @@
 #include <ESPAsyncWebServer.h>
 #include <ESPmDNS.h>
 #include <LittleFS.h>
+#include <Preferences.h>
 #ifdef ARDUINO
 #include <Update.h>
 #endif
@@ -45,6 +46,7 @@
 #include "../../include/rc_diagnostics_snapshot.h"
 #include "../../include/robot_state.h"
 #include "../../include/wifi_boot_decision.h"
+#include "../../include/wifi_recovery_gesture.h"
 
 // src/secrets.h is the Developer WiFi Shortcut (ADR 0015): local/self-build-only
 // compile-time WiFi defaults. It is never required to compile or boot — public
@@ -315,6 +317,14 @@ static volatile bool s_otaActive = false;
 static volatile uint8_t s_otaProgressPct = 255;
 static uint8_t s_lastOtaLoggedPct = 255;
 static char s_otaLastError[64] = "none";
+
+// Network Recovery Mode local entry gesture (ADR 0015). See
+// include/wifi_recovery_gesture.h for the pure decision rule. The count is
+// persisted under NVS_NAMESPACE so it survives the reboot(s) the gesture
+// itself requires; it is cleared once uptime confirms the boot was not part
+// of a rapid power-cycle sequence.
+static const char* kWifiRecoveryCycleKey = "wifiRecovN";
+static constexpr uint32_t WIFI_RECOVERY_GESTURE_STABLE_MS = 20000;
 
 namespace {
 
@@ -884,11 +894,28 @@ void requestStatusBroadcastNow() {
 void eventStreamTask(void*) {
     bool hwmLogged = false;
     bool hwmUnderLoadLogged = false;
+    bool recoveryGestureCleared = false;
     for (;;) {
         if (!hwmLogged) {
             PA_LOG_DEBUG("WebEvents", "stack HWM: %u words free",
                          (unsigned)uxTaskGetStackHighWaterMark(NULL));
             hwmLogged = true;
+        }
+
+        // Network Recovery Mode gesture: once this boot has run
+        // stably past the gesture window, clear the persisted power-cycle
+        // count so a single ordinary power cycle days from now does not
+        // silently accumulate toward the next rapid-cycle gesture.
+        if (!recoveryGestureCleared && millis() >= WIFI_RECOVERY_GESTURE_STABLE_MS) {
+            recoveryGestureCleared = true;
+            Preferences recoveryPrefs;
+            if (recoveryPrefs.begin(NVS_NAMESPACE, false)) {
+                if (recoveryPrefs.getUChar(kWifiRecoveryCycleKey, 0) != 0) {
+                    recoveryPrefs.putUChar(kWifiRecoveryCycleKey, 0);
+                    PA_LOG_DEBUG("WebEvents", "recovery gesture cycle count cleared after stable uptime");
+                }
+                recoveryPrefs.end();
+            }
         }
 
         if (s_otaActive) {
@@ -1281,6 +1308,40 @@ static void executeWifiBootPosture(WifiBootPosture posture, const WifiConfig& se
     }
 }
 
+// evaluateNetworkRecoveryGesture: reads the persisted power-cycle count,
+// runs it through the pure gesture rule (wifi_recovery_gesture.h), and
+// persists the updated count. Only a true power-on reset advances the
+// gesture; watchdog/panic/brownout/software resets fall through to
+// wifiEvaluateRecoveryGesture()'s "reset the count" branch. Returns true
+// only on the boot that latches Network Recovery Mode.
+static bool evaluateNetworkRecoveryGesture() {
+    Preferences recoveryPrefs;
+    if (!recoveryPrefs.begin(NVS_NAMESPACE, false)) {
+        PA_LOG_WARN(TAG, "recovery gesture NVS open failed; gesture unavailable this boot");
+        return false;
+    }
+
+    WifiRecoveryGestureInput gestureInput;
+    gestureInput.wasPowerOnReset = (esp_reset_reason() == ESP_RST_POWERON);
+    gestureInput.priorCycleCount = recoveryPrefs.getUChar(kWifiRecoveryCycleKey, 0);
+
+    WifiRecoveryGestureResult gestureResult = wifiEvaluateRecoveryGesture(gestureInput);
+    recoveryPrefs.putUChar(kWifiRecoveryCycleKey, gestureResult.nextCycleCount);
+    recoveryPrefs.end();
+
+    if (gestureResult.recoveryRequested) {
+        PA_LOG_WARN(TAG,
+                    "Network Recovery Mode gesture detected (%u power cycles) - "
+                    "starting WiFi Provisioning",
+                    (unsigned)WIFI_RECOVERY_GESTURE_THRESHOLD);
+    } else if (gestureInput.wasPowerOnReset && gestureResult.nextCycleCount > 0) {
+        PA_LOG_DEBUG(TAG, "power-on reset cycle count = %u/%u",
+                     (unsigned)gestureResult.nextCycleCount,
+                     (unsigned)WIFI_RECOVERY_GESTURE_THRESHOLD);
+    }
+    return gestureResult.recoveryRequested;
+}
+
 void webServerInit() {
     if (routesRegistered || serverStarted) {
         PA_LOG_DEBUG(TAG, "web bootstrap already initialised");
@@ -1310,15 +1371,17 @@ void webServerInit() {
 
     // ADR 0015: boot posture is decided once from Device WiFi Settings plus the
     // Developer WiFi Shortcut, through the same pure decision layer the native
-    // tests exercise (test_wifi_boot_decision). Network Recovery Mode's local
-    // entry gesture is issue #48 — networkRecoveryRequested stays false here
-    // until that gesture exists; this shell does not infer it.
+    // tests exercise (test_wifi_boot_decision). networkRecoveryRequested comes
+    // from the explicit local power-cycle gesture (wifi_recovery_gesture.h)
+    // — this shell classifies the reset reason and
+    // owns the persisted counter, but never infers recovery from ordinary STA
+    // connection trouble.
     WifiConfig wifiSettings = {};
     configCacheReadWifi(&wifiSettings);
 
     WifiBootDecisionInput decisionInput;
     decisionInput.settings = wifiSettings;
-    decisionInput.networkRecoveryRequested = false;
+    decisionInput.networkRecoveryRequested = evaluateNetworkRecoveryGesture();
     decisionInput.developerShortcut = buildDeveloperShortcut();
 
     WifiBootPosture posture = wifiDecideBootPosture(decisionInput);
@@ -1328,4 +1391,5 @@ void webServerInit() {
     // active settings from any pending (saved-but-not-yet-applied) settings
     // for a Staged Network Switch (ADR 0015).
     configCacheSetActiveWifi(wifiSettings);
+    configCacheSetActiveWifiRecovery(posture == WifiBootPosture::NETWORK_RECOVERY);
 }

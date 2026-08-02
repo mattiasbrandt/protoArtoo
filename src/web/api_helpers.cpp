@@ -107,12 +107,13 @@ void formatConfigJson(char* buf, size_t bufSize, int16_t speedLimitMax,
 }
 
 void formatWifiJson(char* buf, size_t bufSize, const char* apSsid, const char* apIp,
-                    bool staEnabled, bool staConnected, const char* staIp, long wifiRssi) {
+                    bool staEnabled, bool staConnected, const char* staIp, long wifiRssi,
+                    bool networkRecovery) {
     snprintf(buf, bufSize,
              "{\"apSsid\":\"%s\",\"apIp\":\"%s\",\"staEnabled\":%s,\"staConnected\":%s,\"staIp\":"
-             "\"%s\",\"wifiRssi\":%ld}",
+             "\"%s\",\"wifiRssi\":%ld,\"networkRecovery\":%s}",
              apSsid, apIp, staEnabled ? "true" : "false", staConnected ? "true" : "false", staIp,
-             wifiRssi);
+             wifiRssi, networkRecovery ? "true" : "false");
 }
 
 const char* wifiStatusApSsid(const char* activeApSsid) {

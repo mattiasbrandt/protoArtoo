@@ -469,6 +469,16 @@ void configCacheReadWifi(WifiConfig* out);
 void configCacheSetActiveWifi(const WifiConfig& cfg);
 void configCacheReadActiveWifi(WifiConfig* out);
 
+// configCacheSetActiveWifiRecovery / configCacheReadActiveWifiRecovery: was
+// Network Recovery Mode (ADR 0015) the posture actually entered at the last
+// boot? Recovery temporarily exposes WiFi Provisioning without
+// touching Device WiFi Settings, so this flag — not activeWifiConfig — is
+// the read surface's source of truth for "the controller is in recovery
+// right now." Set once by the WiFi bootstrap shell alongside
+// configCacheSetActiveWifi().
+void configCacheSetActiveWifiRecovery(bool recovering);
+bool configCacheReadActiveWifiRecovery();
+
 // configCacheApply: Replace the live config cache with a full snapshot.
 // Marks RobotState.rcConfigDirty so RcInputTask rebuilds cached mapping config.
 void configCacheApply(const ConfigSnapshot& snap);

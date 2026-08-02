@@ -1204,7 +1204,8 @@ body[data-page="wifi"] #wifi-posture-card[data-posture="standalone-ap"] {
 }
 
 body[data-page="wifi"] #wifi-posture-card[data-posture="provisioning"],
-body[data-page="wifi"] #wifi-posture-card[data-posture="client-failure"] {
+body[data-page="wifi"] #wifi-posture-card[data-posture="client-failure"],
+body[data-page="wifi"] #wifi-posture-card[data-posture="recovery"] {
   border-left-color: var(--danger);
 }
 

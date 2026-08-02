@@ -296,6 +296,7 @@ bool wifiConfigsDiffer(const WifiConfig& a, const WifiConfig& b) {
 
 ConfigSnapshot configCache = {};
 WifiConfig activeWifiConfig = {};
+bool activeWifiRecovery = false;
 portMUX_TYPE configCacheMux = portMUX_INITIALIZER_UNLOCKED;
 
 void configCacheRead(ConfigSnapshot* out) {
@@ -365,6 +366,22 @@ void configCacheReadActiveWifi(WifiConfig* out) {
     taskENTER_CRITICAL(&configCacheMux);
     *out = activeWifiConfig;
     taskEXIT_CRITICAL(&configCacheMux);
+}
+
+// See declaration comment in config_store.h.
+void configCacheSetActiveWifiRecovery(bool recovering) {
+    taskENTER_CRITICAL(&configCacheMux);
+    activeWifiRecovery = recovering;
+    taskEXIT_CRITICAL(&configCacheMux);
+}
+
+// See declaration comment in config_store.h.
+bool configCacheReadActiveWifiRecovery() {
+    bool result;
+    taskENTER_CRITICAL(&configCacheMux);
+    result = activeWifiRecovery;
+    taskEXIT_CRITICAL(&configCacheMux);
+    return result;
 }
 
 void configCacheApply(const ConfigSnapshot& snap) {

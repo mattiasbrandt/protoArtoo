@@ -139,17 +139,26 @@
 
   const currentPosture = (wifi, diag = {}) => {
     const provisioned = Boolean(wifi?.provisioned);
+    // Network Recovery Mode always wins, matching the firmware's
+    // boot decision precedence: a local power-cycle gesture temporarily
+    // exposes WiFi Provisioning without touching saved Device WiFi Settings,
+    // so `provisioned` can still read true while recovery is active.
+    const networkRecovery = Boolean(diag.networkRecovery);
     const staEnabled = Boolean(diag.staEnabled);
     const staConnected = Boolean(diag.staConnected);
-    const stateName = !provisioned
-      ? "provisioning"
-      : staEnabled
-        ? (staConnected ? "client" : "client-failure")
-        : "standalone-ap";
-    const modeText = !provisioned
-      ? "WiFi Provisioning"
-      : staEnabled ? "WiFi Client Mode" : "Standalone AP Mode";
-    return { provisioned, staEnabled, staConnected, stateName, modeText };
+    const stateName = networkRecovery
+      ? "recovery"
+      : !provisioned
+        ? "provisioning"
+        : staEnabled
+          ? (staConnected ? "client" : "client-failure")
+          : "standalone-ap";
+    const modeText = networkRecovery
+      ? "Network Recovery Mode"
+      : !provisioned
+        ? "WiFi Provisioning"
+        : staEnabled ? "WiFi Client Mode" : "Standalone AP Mode";
+    return { provisioned, networkRecovery, staEnabled, staConnected, stateName, modeText };
   };
 
   const apUrl = (diag = {}, preferPostRebootDefault = false) => {
@@ -243,7 +252,9 @@
     }
 
     if (provisioningState) {
-      provisioningState.textContent = posture.provisioned ? "✅ Provisioned" : "⚠️ WiFi Provisioning";
+      provisioningState.textContent = posture.networkRecovery
+        ? "🛠️ Network Recovery Mode"
+        : posture.provisioned ? "✅ Provisioned" : "⚠️ WiFi Provisioning";
     }
     if (activeMode) {
       activeMode.textContent = posture.modeText;
@@ -267,7 +278,12 @@
     }
     renderActiveVsSaved(posture.modeText);
 
-    if (!posture.provisioned) {
+    if (posture.networkRecovery) {
+      setPendingSummary("Recovery", "error");
+      if (postureDesc) {
+        postureDesc.textContent = "Network Recovery Mode: a local power-cycle gesture temporarily opened WiFi Provisioning. Your saved Device WiFi Settings below are untouched — fix them, save, then reboot to return to your normal posture.";
+      }
+    } else if (!posture.provisioned) {
       setPendingSummary("Provisioning", "warn");
       if (postureDesc) {
         postureDesc.textContent = "WiFi Provisioning is temporary setup; the controller is waiting for saved Device WiFi Settings.";
@@ -306,14 +322,26 @@
     const apAddress = apUrl(diag);
     const pendingApAddress = apUrl(diag, true);
     const apName = wifi.apSsid || diag.apSsid || "the controller AP";
+    // WiFi Provisioning and Network Recovery Mode both broadcast the
+    // documented Default AP Credential (WIFI_AP_SSID), never the operator's
+    // saved Standalone AP Mode SSID — diag.apSsid reflects what is actually
+    // running, so it (not wifi.apSsid) is the right name to point at here.
+    const provisioningApName = diag.apSsid || "the controller AP";
     const activeOtaApTarget = apAddress.replace(/^http:\/\//, "");
     const pendingOtaApTarget = pendingApAddress.replace(/^http:\/\//, "");
     const staAddress = diag.staIp ? `http://${diag.staIp}` : "the controller IP from your router";
     const hostAddress = `http://${mdnsHost()}`;
 
+    if (posture.networkRecovery) {
+      applyGuidance.textContent = wifi.pendingApply
+        ? `Network Recovery Mode is active. Corrected Device WiFi Settings are saved — connect to ${provisioningApName}, open ${apAddress}, then use Reboot to Apply below to return to ${modeLabel(wifi.mode)}.`
+        : `Network Recovery Mode is active from a local power-cycle gesture. Your saved Device WiFi Settings are unchanged — connect to ${provisioningApName}, open ${apAddress}, fix Client network / AP settings below, save, then reboot to return to them.`;
+      return;
+    }
+
     if (!wifi.provisioned) {
       applyGuidance.textContent =
-        `WiFi Provisioning is temporary setup, not saved Standalone AP Mode. Save Device WiFi Settings, then reboot. Until then, connect to ${apName} and open ${apAddress}.`;
+        `WiFi Provisioning is temporary setup, not saved Standalone AP Mode. Save Device WiFi Settings, then reboot. Until then, connect to ${provisioningApName} and open ${apAddress}.`;
       return;
     }
 
