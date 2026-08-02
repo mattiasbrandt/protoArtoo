@@ -160,6 +160,10 @@ _Avoid_: hidden polling, hidden retry loop, aborting a useful response only beca
 The bounded lifetime assigned to one kind of controller request. Ordinary page work uses a short measured deadline; known longer operations use an appropriate longer deadline and visible progress. A deadline extends only when measurable forward progress occurs.
 _Avoid_: one timeout for every operation, indefinite request, extending on meaningless activity, stopping healthy long work while progress is visible
 
+**Page Load Memory Recovery**:
+The controller condition after page-loading activity stops: request and connection counts return to their resting values, usable heap settles within a measured warmed range, failed allocations stop increasing, and the controller remains responsive without a panic, reboot, or power cycle.
+_Avoid_: judging only whether a page appeared, comparing only with cold boot, accepting a lower heap level after every cycle, hiding recovery behind a restart
+
 **Supported ESP32 Board**:
 The dual-header ESP32 D1 Mini clone required by the current Artoo Controller PCB. Firmware and web reliability must work within this board's memory limits; possible support for newer controllers does not relax the current requirement.
 _Avoid_: official Wemos board, temporary development board, waiting for newer hardware
@@ -364,6 +368,7 @@ _Avoid_: audio lifecycle manager, audio coordinator, dispatch switch
 - **Browser Request Priority** prevents background page work from delaying operator commands and lets latching Estop bypass queued requests.
 - **Hidden Tab Pause** stops new controller work without abandoning the one bounded request or user command already in progress.
 - Every request in a **Bounded Page Attempt** has an **Operation Deadline** suited to its work and visible progress.
+- **Page Load Recovery** includes **Page Load Memory Recovery** after repeated page and retry activity on the **Supported ESP32 Board**.
 - The **Web Server Library** may change to meet **Page Load Recovery** within the limits of the **Supported ESP32 Board**; future controller plans do not defer that requirement.
 - **Live Page Updates** keep their current `/api/events` contract while alternatives are measured; changing it requires controller evidence of better memory behavior and recovery with equivalent operator behavior.
 - The release matrix should split **Drive command and safety logic** from **Hoverboard motor integration**.
