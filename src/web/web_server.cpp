@@ -1094,8 +1094,14 @@ void startHttpServerOnce() {
     if (!routesRegistered) {
         events.onConnect([](AsyncEventSourceClient* client) {
             (void)client;
-            if (events.count() > s_peakSseClients) {
-                s_peakSseClients = events.count();
+            // AsyncEventSource::_addClient() invokes this connect callback
+            // before appending the new client to its internal list (see
+            // _addClient() in AsyncEventSource.cpp: _connectcb(client) runs,
+            // then _clients.emplace_back(client)) -- events.count() here is
+            // therefore the count BEFORE this client is registered, so the
+            // peak must account for the one being added now.
+            if (events.count() + 1 > s_peakSseClients) {
+                s_peakSseClients = events.count() + 1;
             }
             // MUST NOT call client->close() here: this callback runs inside
             // AsyncEventSourceClient's constructor (via _addClient), and a
