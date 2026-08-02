@@ -286,6 +286,83 @@ static constexpr size_t kMinLargestFreeBlockForDiagnostics =
 static constexpr int kMaxInflightRequests = PA_ADMISSION_MAX_INFLIGHT_REQUESTS;
 static int s_inflightRequests = 0;
 
+// Lifecycle evidence (issue #54): admission counters by the same broad
+// classes the middleware already gates on (inflight, SSE, heap-floor
+// diagnostic/non-diagnostic). Cheap int increments only -- safe to keep in
+// the always-on /api/status snapshot. Single-writer (async_tcp task), same
+// convention as s_inflightRequests above; read cross-task (eventTask SSE
+// broadcast, /api/status handler) without a mutex, same as that field.
+static int s_peakInflightRequests = 0;
+static uint32_t s_peakSseClients = 0;
+static uint32_t s_refusedInflightCap = 0;
+static uint32_t s_refusedSseCap = 0;
+static uint32_t s_refusedHeapFloor = 0;
+static uint32_t s_refusedHeapFloorDiag = 0;
+
+#if PA_HEAP_PROFILE
+// Bounded request-lifecycle trace (issue #54 evidence, profiler-gated so it
+// costs nothing in normal builds). Read after an experiment via
+// /api/profiler, not polled during the workload. Covers only admitted,
+// non-SSE requests -- SSE's own lifetime is already visible via the
+// sseClients/sseClientsPeak counters above, and its "disconnect" is a tab
+// closing, not a per-request event this ring is meant to capture.
+//
+// handlerDoneMs marks when next() returned, i.e. when the matched handler's
+// call into send() returned control to the middleware. Under this stack's
+// synchronous per-request dispatch (single async_tcp task, matching the
+// single-writer property already relied on for s_inflightRequests above),
+// that is the best available proxy for "response ready" -- actual socket
+// write/flush still happens later via AsyncTCP polling, up to disconnectMs.
+//
+// Single-writer (async_tcp task) for both the initial record and the two
+// updates below; read from the same task via /api/profiler. A slot may be
+// overwritten by a newer entry before a very long-lived request's
+// disconnectMs update reaches it -- acceptable for a bounded evidence trace,
+// not a correctness-bearing structure.
+//
+// RequestLifecycleEntry and PA_REQUEST_TRACE_MAX are declared in
+// web_server.h so api_profiler.cpp can size its copy buffer identically.
+static RequestLifecycleEntry s_requestTrace[PA_REQUEST_TRACE_MAX];
+static uint8_t s_requestTraceHead = 0;
+static uint8_t s_requestTraceCount = 0;
+
+// Opens a new lifecycle-trace entry for one admitted request, called from
+// the admission middleware below at the moment a non-SSE request is counted
+// against the inflight cap. Overwrites the oldest ring slot once full; the
+// returned index is captured by the request's onDisconnect closure so
+// disconnectMs can be filled in later without a second lookup.
+static uint8_t pushRequestTraceEntry(const char* cls, uint32_t startMs) {
+    uint8_t idx = s_requestTraceHead;
+    RequestLifecycleEntry& e = s_requestTrace[idx];
+    strncpy(e.requestClass, cls, sizeof(e.requestClass) - 1);
+    e.requestClass[sizeof(e.requestClass) - 1] = '\0';
+    e.startMs = startMs;
+    e.handlerDoneMs = 0;
+    e.disconnectMs = 0;
+    s_requestTraceHead = (uint8_t)((s_requestTraceHead + 1U) % PA_REQUEST_TRACE_MAX);
+    if (s_requestTraceCount < PA_REQUEST_TRACE_MAX) {
+        s_requestTraceCount++;
+    }
+    return idx;
+}
+
+// Copies the trace ring oldest-first into out, for the /api/profiler handler
+// (api_profiler.cpp) to read once after an experiment. Read-only; does not
+// clear or rotate the ring, so repeated reads during a warm-up are safe.
+size_t copyRequestLifecycleTrace(RequestLifecycleEntry* out, size_t maxEntries) {
+    uint8_t count = s_requestTraceCount;
+    if (count > maxEntries) {
+        count = (uint8_t)maxEntries;
+    }
+    uint8_t oldest = (uint8_t)((s_requestTraceHead + PA_REQUEST_TRACE_MAX - s_requestTraceCount) %
+                                PA_REQUEST_TRACE_MAX);
+    for (uint8_t i = 0; i < count; i++) {
+        out[i] = s_requestTrace[(uint8_t)((oldest + i) % PA_REQUEST_TRACE_MAX)];
+    }
+    return count;
+}
+#endif  // PA_HEAP_PROFILE
+
 #ifdef ARDUINO
 static size_t largestFreeBlock8Bit() {
     return heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
@@ -583,7 +660,7 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     // Build the fixed system-health fields first.
     int written = snprintf(
         buffer, bufferSize,
-        "{\"estop\":%s,\"webControlEnabled\":%s,\"sbusSignalLost\":%s,\"sbusHwFailsafe\":%s,\"webDriveExpired\":%s,\"failsafeSource\":%d,\"driveSpeed\":%d,\"driveSteer\":%d,\"domeTargetSpeed\":%.3f,\"domeEnabled\":%s,\"speedLimitMax\":%d,\"speedPreset\":\"%s\",\"stationary\":%s,\"failsafeCount\":%lu,\"failsafeTriggerMs\":%lu,\"failsafeZeroMs\":%lu,\"failsafeTriggerToZeroMs\":%lu,\"failsafeWatchdogMs\":%lu,\"failsafeTriggerSource\":%d,\"uptimeMs\":%lu,\"firmwareVersion\":\"%s\",\"fsVersion\":\"%s\",\"resetReason\":\"%s\",\"heapFree\":%lu,\"heapMin\":%lu,\"heapLargestBlock\":%lu,\"heapLargest8bit\":%lu,\"sseClients\":%u,\"tcpAcceptRejectHeap\":%lu,\"tcpAcceptRejectRate\":%lu,\"tcpAcceptRejectAgeMs\":%ld,\"otaActive\":%s,\"otaProgress\":%u,\"otaLastError\":\"%s\",\"wifiRssi\":%ld,\"wifiConnected\":%s,\"wifiClientConnected\":%s,\"littleFsReady\":%s,\"sleepMode\":%s,\"sleepSinceMs\":%lu,\"activeMood\":%u,\"auxLed\":{\"pin\":%u,\"r\":%u,\"g\":%u,\"b\":%u,\"effect\":\"%s\",\"available\":%s}",
+        "{\"estop\":%s,\"webControlEnabled\":%s,\"sbusSignalLost\":%s,\"sbusHwFailsafe\":%s,\"webDriveExpired\":%s,\"failsafeSource\":%d,\"driveSpeed\":%d,\"driveSteer\":%d,\"domeTargetSpeed\":%.3f,\"domeEnabled\":%s,\"speedLimitMax\":%d,\"speedPreset\":\"%s\",\"stationary\":%s,\"failsafeCount\":%lu,\"failsafeTriggerMs\":%lu,\"failsafeZeroMs\":%lu,\"failsafeTriggerToZeroMs\":%lu,\"failsafeWatchdogMs\":%lu,\"failsafeTriggerSource\":%d,\"uptimeMs\":%lu,\"firmwareVersion\":\"%s\",\"fsVersion\":\"%s\",\"resetReason\":\"%s\",\"heapFree\":%lu,\"heapMin\":%lu,\"heapLargestBlock\":%lu,\"heapLargest8bit\":%lu,\"sseClients\":%u,\"sseClientsPeak\":%lu,\"tcpAcceptRejectHeap\":%lu,\"tcpAcceptRejectRate\":%lu,\"tcpAcceptRejectAgeMs\":%ld,\"inflightRequests\":%d,\"inflightRequestsPeak\":%d,\"refusedInflightCap\":%lu,\"refusedSseCap\":%lu,\"refusedHeapFloor\":%lu,\"refusedHeapFloorDiag\":%lu,\"otaActive\":%s,\"otaProgress\":%u,\"otaLastError\":\"%s\",\"wifiRssi\":%ld,\"wifiConnected\":%s,\"wifiClientConnected\":%s,\"littleFsReady\":%s,\"sleepMode\":%s,\"sleepSinceMs\":%lu,\"activeMood\":%u,\"auxLed\":{\"pin\":%u,\"r\":%u,\"g\":%u,\"b\":%u,\"effect\":\"%s\",\"available\":%s}",
         diag.estop ? "true" : "false", webControlEnabled ? "true" : "false",
         diag.sbusSignalLost ? "true" : "false", diag.sbusHwFailsafe ? "true" : "false",
         diag.webDriveExpired ? "true" : "false", (int)diag.failsafeSource, driveSpeed, driveSteer,
@@ -600,11 +677,18 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
         (unsigned long)largestFreeBlock8Bit(),
         // Registered SSE clients; the admission cap keys on this, so stuck
         // or leaked entries become visible instead of silently denying SSE.
-        (unsigned)events.count(),
+        (unsigned)events.count(), (unsigned long)s_peakSseClients,
         (unsigned long)g_asyncTcpAcceptRejectHeap, (unsigned long)g_asyncTcpAcceptRejectRate,
         g_asyncTcpAcceptRejectLastMs == 0
             ? -1L
             : (long)(uint32_t)((uint32_t)uptimeMs - g_asyncTcpAcceptRejectLastMs),
+        // Lifecycle admission evidence (issue #54): live + peak inflight
+        // depth and refusal counts by the same broad classes the middleware
+        // gates on above -- current/peak/refused evidence needed before any
+        // cap, floor, or weight is retuned.
+        s_inflightRequests, s_peakInflightRequests,
+        (unsigned long)s_refusedInflightCap, (unsigned long)s_refusedSseCap,
+        (unsigned long)s_refusedHeapFloor, (unsigned long)s_refusedHeapFloorDiag,
         otaActive ? "true" : "false", (unsigned)otaProgressPct, otaLastError, wifiRssi,
         wifiConnected ? "true" : "false",
         wifiClientConnected ? "true" : "false", littleFsReady ? "true" : "false",
@@ -1010,6 +1094,9 @@ void startHttpServerOnce() {
     if (!routesRegistered) {
         events.onConnect([](AsyncEventSourceClient* client) {
             (void)client;
+            if (events.count() > s_peakSseClients) {
+                s_peakSseClients = events.count();
+            }
             // MUST NOT call client->close() here: this callback runs inside
             // AsyncEventSourceClient's constructor (via _addClient), and a
             // synchronous close runs the disconnect path that nulls the
@@ -1052,6 +1139,7 @@ void startHttpServerOnce() {
             if (sse && events.count() >= kMaxSseClients) {
                 PA_LOG_WARN(TAG, "SSE client cap (%u) reached; rejecting new connection",
                             (unsigned)kMaxSseClients);
+                s_refusedSseCap++;
                 request->abort();
                 return;
             }
@@ -1064,6 +1152,7 @@ void startHttpServerOnce() {
                 // covered by the vendor's nothrow fixes, and the proven
                 // abort() site of the burst crashes. Closing the socket
                 // allocates nothing.
+                s_refusedInflightCap++;
                 request->abort();
                 return;
             }
@@ -1078,25 +1167,60 @@ void startHttpServerOnce() {
             const size_t floor =
                 diagnostic ? kMinLargestFreeBlockForDiagnostics : kMinLargestFreeBlockForNewWork;
             if (largestBlock < floor) {
-                if (!diagnostic) {
+                if (diagnostic) {
+                    s_refusedHeapFloorDiag++;
+                } else {
                     // Diagnostic rejections stay silent: they only occur
                     // during a pressure storm, exactly when log volume
                     // itself is unwelcome.
                     PA_LOG_WARN(TAG, "rejecting %s: largest free block %u < %u",
                                 url.c_str(), (unsigned)largestBlock, (unsigned)floor);
+                    s_refusedHeapFloor++;
                 }
                 request->abort();
                 return;
             }
+#if PA_HEAP_PROFILE
+            uint32_t traceStartMs = 0;
+            bool traced = false;
+            uint8_t traceIdx = 0;
+#endif
             if (!sse) {
                 s_inflightRequests++;
-                request->onDisconnect([]() {
+                if (s_inflightRequests > s_peakInflightRequests) {
+                    s_peakInflightRequests = s_inflightRequests;
+                }
+#if PA_HEAP_PROFILE
+                traceStartMs = millis();
+                // Broad class matches the admission gates above: diagnostic
+                // reads, dynamic /api/* handlers, and everything else (the
+                // LittleFS static-file handler, matched later in the chain).
+                const char* traceClass =
+                    diagnostic ? "diag" : (url.startsWith("/api/") ? "api" : "static");
+                traceIdx = pushRequestTraceEntry(traceClass, traceStartMs);
+                traced = true;
+#endif
+                request->onDisconnect([
+#if PA_HEAP_PROFILE
+                                           traced, traceIdx
+#endif
+                ]() {
                     if (s_inflightRequests > 0) {
                         s_inflightRequests--;
                     }
+#if PA_HEAP_PROFILE
+                    if (traced) {
+                        s_requestTrace[traceIdx].disconnectMs = millis();
+                    }
+#endif
                 });
             }
             next();
+#if PA_HEAP_PROFILE
+            if (traced) {
+                s_requestTrace[traceIdx].handlerDoneMs = millis();
+            }
+#endif
         });
 
         registerEstopRoutes(server);

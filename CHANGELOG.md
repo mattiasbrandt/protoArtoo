@@ -15,6 +15,14 @@ Every semantic version release belongs here:
 
 ## [Unreleased]
 
+### Added
+- Request-lifecycle evidence instrumentation for issue #52/#54: `/api/status` now
+  reports live/peak inflight request depth, peak SSE clients, and refusal counts
+  by admission class (inflight cap, SSE cap, heap floor diagnostic/non-diagnostic);
+  `/api/profiler` (PA_HEAP_PROFILE builds) additionally reports a bounded
+  request-start/handler-done/disconnect trace. Evidence-gathering only — no
+  admission caps, floors, or weights were changed.
+
 ## [1.0.0] - 2026-08-01
 
 First stable release. Feature-complete for day-to-day operation — audio, RC

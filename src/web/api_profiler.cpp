@@ -53,6 +53,7 @@
 #endif
 
 #include "logging.h"
+#include "web_server.h"
 
 static const char* TAG = "Profiler";
 
@@ -471,6 +472,20 @@ static void buildProfilerJson(char* buf, size_t bufSize) {
                    (unsigned long)snapCopy[idx].largestBlockAtClose,
                    (unsigned long)snapCopy[idx].windowOpenTs);
         }
+    }
+    APPEND("]");
+
+    // Bounded request-lifecycle trace (issue #54 evidence) -- oldest first.
+    // Read here, once, after an experiment; never polled during the
+    // workload. See web_server.cpp for field semantics.
+    RequestLifecycleEntry traceCopy[PA_REQUEST_TRACE_MAX];
+    size_t traceCount = copyRequestLifecycleTrace(traceCopy, PA_REQUEST_TRACE_MAX);
+    APPEND(",\"requestTrace\":[");
+    for (size_t i = 0; i < traceCount; i++) {
+        if (i > 0) APPEND(",");
+        APPEND("{\"class\":\"%s\",\"startMs\":%lu,\"handlerDoneMs\":%lu,\"disconnectMs\":%lu}",
+               traceCopy[i].requestClass, (unsigned long)traceCopy[i].startMs,
+               (unsigned long)traceCopy[i].handlerDoneMs, (unsigned long)traceCopy[i].disconnectMs);
     }
     APPEND("]}");
 
