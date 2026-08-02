@@ -109,7 +109,7 @@ An explicit local recovery posture that temporarily starts WiFi Provisioning so 
 _Avoid_: automatic STA fallback, guessed credential failure, source-build recovery
 
 **Page Load Recovery**:
-The web UI expectation that opening or refreshing a page does not make the controller progressively harder to reach. Normal use includes one or two browser tabs; development and browser testing may briefly use three. If memory protection rejects work, the page must recover or show a working retry path without requiring a controller power cycle.
+The web UI expectation that opening or refreshing a page does not make the controller progressively harder to reach. Normal use includes one or two browser tabs; development and browser testing may briefly use three. If loading takes longer or memory protection rejects work, the page must visibly show that it is loading or retrying, then recover or offer a working retry path without requiring a controller power cycle. A longer wait is acceptable when the UI clearly remains active.
 _Avoid_: endless Loading state, refresh makes it worse, power-cycle recovery, telling the operator to limit normal tab use
 
 **Supported ESP32 Board**:
@@ -303,7 +303,7 @@ _Avoid_: audio lifecycle manager, audio coordinator, dispatch switch
 - A **Default AP Credential** bootstraps access for public releases and should be replaceable through **Device WiFi Settings**.
 - A **Developer WiFi Shortcut** may prefill local source builds, but public releases rely on **Device WiFi Settings**.
 - **Network Recovery Mode** is entered by explicit local action, not by interpreting ordinary **WiFi Client Mode** connection trouble.
-- **Page Load Recovery** covers ordinary page opens and refreshes; heap protection may delay or reject work, but it must not leave the UI permanently loading or require a controller power cycle.
+- **Page Load Recovery** covers ordinary page opens and refreshes; heap protection may delay or reject work, but the UI must visibly remain active and must not require a controller power cycle.
 - The **Web Server Library** may change to meet **Page Load Recovery** within the limits of the **Supported ESP32 Board**; future controller plans do not defer that requirement.
 - **Live Page Updates** keep their current `/api/events` contract while alternatives are measured; changing it requires controller evidence of better memory behavior and recovery with equivalent operator behavior.
 - The release matrix should split **Drive command and safety logic** from **Hoverboard motor integration**.
