@@ -115,6 +115,13 @@ void formatWifiJson(char* buf, size_t bufSize, const char* apSsid, const char* a
              wifiRssi);
 }
 
+const char* wifiStatusApSsid(const char* activeApSsid) {
+    if (activeApSsid != nullptr && activeApSsid[0] != '\0') {
+        return activeApSsid;
+    }
+    return WIFI_AP_SSID;
+}
+
 void formatSerialJson(char* buf, size_t bufSize, bool domeLinkActive, unsigned long domeHbRx,
                       unsigned long bodyHbTx) {
     snprintf(buf, bufSize,

@@ -13,6 +13,7 @@
   const WIFI_MODE_CLIENT = "client";
   const WIFI_MODE_STANDALONE_AP = "standalone_ap";
   const DEFAULT_HOSTNAME = "artoo";
+  const DEFAULT_AP_IP = "192.168.4.1";
 
   const form = document.getElementById("wifi-settings-form");
   const reloadButton = document.getElementById("reload-wifi-button");
@@ -21,6 +22,9 @@
   const pendingSummary = document.getElementById("wifi-pending-summary");
   const postureDesc = document.getElementById("wifi-posture-desc");
   const applyGuidance = document.getElementById("wifi-apply-guidance");
+  const applyButton = document.getElementById("wifi-apply-reboot-button");
+  const applyFeedback = document.getElementById("wifi-apply-feedback");
+  const postureCard = document.getElementById("wifi-posture-card");
 
   const provisioningState = document.getElementById("wifi-provisioning-state");
   const activeMode = document.getElementById("wifi-active-mode");
@@ -58,6 +62,7 @@
     identity: { droidName: DEFAULT_HOSTNAME, mdnsUseName: false },
     wifiConfig: null,
     diagnostics: null,
+    rebootRequestPending: false,
   };
 
   const signalLabel = (rssi) => {
@@ -84,6 +89,20 @@
     if (!settingsFeedback) return;
     settingsFeedback.textContent = message;
     settingsFeedback.className = variant ? `feedback mt-12 ${variant}` : "feedback mt-12";
+  };
+
+  const setApplyFeedback = (message, variant = "") => {
+    if (!applyFeedback) return;
+    applyFeedback.textContent = message;
+    applyFeedback.className = variant ? `feedback mt-12 ${variant}` : "feedback mt-12";
+  };
+
+  const setApplyButtonState = () => {
+    if (!applyButton) return;
+    const canApply = Boolean(state.wifiConfig?.pendingApply) && !state.rebootRequestPending;
+    applyButton.disabled = !canApply;
+    applyButton.setAttribute("aria-disabled", canApply ? "false" : "true");
+    applyButton.classList.toggle("is-pending", state.rebootRequestPending);
   };
 
   const setPendingSummary = (text, stateName = "info") => {
@@ -117,6 +136,26 @@
 
   const selectedMode = () =>
     modeStandaloneAp?.checked ? WIFI_MODE_STANDALONE_AP : WIFI_MODE_CLIENT;
+
+  const currentPosture = (wifi, diag = {}) => {
+    const provisioned = Boolean(wifi?.provisioned);
+    const staEnabled = Boolean(diag.staEnabled);
+    const staConnected = Boolean(diag.staConnected);
+    const stateName = !provisioned
+      ? "provisioning"
+      : staEnabled
+        ? (staConnected ? "client" : "client-failure")
+        : "standalone-ap";
+    const modeText = !provisioned
+      ? "WiFi Provisioning"
+      : staEnabled ? "WiFi Client Mode" : "Standalone AP Mode";
+    return { provisioned, staEnabled, staConnected, stateName, modeText };
+  };
+
+  const apUrl = (diag = {}, preferPostRebootDefault = false) => {
+    const ip = preferPostRebootDefault ? DEFAULT_AP_IP : (diag.apIp || DEFAULT_AP_IP);
+    return `http://${ip}`;
+  };
 
   const syncModeOptions = () => {
     document.querySelectorAll(".wifi-mode-option").forEach((option) => {
@@ -156,13 +195,12 @@
   const renderActiveVsSaved = (activeModeText) => {
     const wifi = state.wifiConfig || {};
     const diag = state.diagnostics || {};
-    const staConnected = Boolean(diag.staConnected);
-    const staEnabled = Boolean(diag.staEnabled);
-    const apAddress = diag.apIp ? `http://${diag.apIp}` : "--";
-    const staAddress = staConnected && diag.staIp ? `http://${diag.staIp}` : "--";
+    const posture = currentPosture(wifi, diag);
+    const apAddress = apUrl(diag);
+    const staAddress = posture.staConnected && diag.staIp ? `http://${diag.staIp}` : "--";
     const hostAddress = `http://${mdnsHost()}`;
-    const activeNetwork = staEnabled
-      ? (staConnected ? "Connected client" : "Client not connected")
+    const activeNetwork = posture.staEnabled
+      ? (posture.staConnected ? "Connected client" : "Client not connected")
       : (diag.apSsid || wifi.apSsid || "--");
 
     if (activeSummaryMode) {
@@ -172,7 +210,7 @@
       activeSummaryNetwork.textContent = activeNetwork;
     }
     if (activeSummaryAddress) {
-      activeSummaryAddress.textContent = staConnected ? `${hostAddress} / ${staAddress}` : apAddress;
+      activeSummaryAddress.textContent = posture.staConnected ? `${hostAddress} / ${staAddress}` : apAddress;
     }
     if (savedSummaryTitle) {
       savedSummaryTitle.textContent = wifi.pendingApply ? "Saved after reboot" : "Saved settings";
@@ -197,48 +235,52 @@
       return;
     }
 
-    const provisioned = Boolean(wifi.provisioned);
     const pendingApply = Boolean(wifi.pendingApply);
-    const staEnabled = Boolean(diag.staEnabled);
-    const staConnected = Boolean(diag.staConnected);
-    const activeModeText = !provisioned
-      ? "WiFi Provisioning"
-      : staEnabled ? "WiFi Client Mode" : "Standalone AP Mode";
+    const posture = currentPosture(wifi, diag);
+
+    if (postureCard) {
+      postureCard.dataset.posture = posture.stateName;
+    }
 
     if (provisioningState) {
-      provisioningState.textContent = provisioned ? "✅ Provisioned" : "⚠️ WiFi Provisioning";
+      provisioningState.textContent = posture.provisioned ? "✅ Provisioned" : "⚠️ WiFi Provisioning";
     }
     if (activeMode) {
-      activeMode.textContent = activeModeText;
+      activeMode.textContent = posture.modeText;
     }
     if (clientState) {
-      clientState.textContent = staEnabled
-        ? (staConnected ? "✅ Connected" : "⏸️ Not connected")
+      clientState.textContent = posture.staEnabled
+        ? (posture.staConnected ? "✅ Connected" : "⏸️ Not connected")
         : "Not active";
     }
     if (staIp) {
-      staIp.textContent = staConnected && diag.staIp ? diag.staIp : "--";
+      staIp.textContent = posture.staConnected && diag.staIp ? diag.staIp : "--";
     }
     if (apIp) {
       apIp.textContent = diag.apIp || "--";
     }
     if (wifiSignal) {
-      wifiSignal.textContent = staConnected ? signalLabel(diag.wifiRssi) : "--";
+      wifiSignal.textContent = posture.staConnected ? signalLabel(diag.wifiRssi) : "--";
     }
     if (wifiRssi) {
-      wifiRssi.textContent = staConnected && diag.wifiRssi ? diag.wifiRssi : "--";
+      wifiRssi.textContent = posture.staConnected && diag.wifiRssi ? diag.wifiRssi : "--";
     }
-    renderActiveVsSaved(activeModeText);
+    renderActiveVsSaved(posture.modeText);
 
-    if (!provisioned) {
+    if (!posture.provisioned) {
       setPendingSummary("Provisioning", "warn");
       if (postureDesc) {
-        postureDesc.textContent = "The controller is waiting for Device WiFi Settings.";
+        postureDesc.textContent = "WiFi Provisioning is temporary setup; the controller is waiting for saved Device WiFi Settings.";
       }
     } else if (pendingApply) {
       setPendingSummary("Pending apply", "warn");
       if (postureDesc) {
         postureDesc.textContent = `Saved ${modeLabel(wifi.mode)} settings are staged but not active yet.`;
+      }
+    } else if (posture.stateName === "client-failure") {
+      setPendingSummary("Client not connected", "error");
+      if (postureDesc) {
+        postureDesc.textContent = "WiFi Client Mode is active, but the controller is not connected to the saved network.";
       }
     } else {
       setPendingSummary("Active", "ok");
@@ -248,6 +290,7 @@
     }
 
     renderGuidance();
+    setApplyButtonState();
   };
 
   const renderGuidance = () => {
@@ -259,21 +302,25 @@
       return;
     }
 
-    const apAddress = diag.apIp ? `http://${diag.apIp}` : "the AP address";
+    const posture = currentPosture(wifi, diag);
+    const apAddress = apUrl(diag);
+    const pendingApAddress = apUrl(diag, true);
     const apName = wifi.apSsid || diag.apSsid || "the controller AP";
+    const activeOtaApTarget = apAddress.replace(/^http:\/\//, "");
+    const pendingOtaApTarget = pendingApAddress.replace(/^http:\/\//, "");
     const staAddress = diag.staIp ? `http://${diag.staIp}` : "the controller IP from your router";
     const hostAddress = `http://${mdnsHost()}`;
 
     if (!wifi.provisioned) {
       applyGuidance.textContent =
-        `Save Device WiFi Settings, then reboot. Until then, connect to ${apName} and open ${apAddress}.`;
+        `WiFi Provisioning is temporary setup, not saved Standalone AP Mode. Save Device WiFi Settings, then reboot. Until then, connect to ${apName} and open ${apAddress}.`;
       return;
     }
 
     if (wifi.pendingApply) {
       if (wifi.mode === WIFI_MODE_STANDALONE_AP) {
         applyGuidance.textContent =
-          `Saved Standalone AP Mode is pending. Reboot the controller to apply it, then connect to ${apName} and open ${apAddress}.`;
+          `Saved Standalone AP Mode is pending. Reboot the controller to apply it, then connect to ${apName}, open ${pendingApAddress}, and use ${pendingOtaApTarget} for OTA while your computer is on that AP.`;
       } else {
         applyGuidance.textContent =
           `Saved WiFi Client Mode is pending. Reboot the controller to apply it, then reconnect from the WiFi network at ${hostAddress} or ${staAddress}.`;
@@ -283,7 +330,13 @@
 
     if (wifi.mode === WIFI_MODE_STANDALONE_AP) {
       applyGuidance.textContent =
-        `Standalone AP Mode is active. Connect to ${apName} and open ${apAddress}.`;
+        `Standalone AP Mode is active. Connect to ${apName}, open ${apAddress}, and use ${activeOtaApTarget} for OTA while your computer is on that AP.`;
+      return;
+    }
+
+    if (posture.stateName === "client-failure") {
+      applyGuidance.textContent =
+        `WiFi Client Mode is active but not connected. This is a client-mode connection problem, not Standalone AP Mode; check the saved network or use Network Recovery Mode to repair settings.`;
       return;
     }
 
@@ -321,6 +374,9 @@
       return;
     }
     clearFieldErrors();
+    state.rebootRequestPending = false;
+    setApplyFeedback("");
+    setApplyButtonState();
     setFeedback("Loading WiFi settings...");
     try {
       await loadIdentity();
@@ -367,6 +423,7 @@
       const result = await window.PAApi.postForm("/api/wifi", buildSaveBody(), { timeoutMs: 5000 });
       renderSettings(result.data?.wifi || null);
       renderPosture();
+      setApplyFeedback("");
       setFeedback("WiFi settings saved. Reboot the controller to apply the staged network switch.", "success");
     } catch (error) {
       const message = error?.message || window.PAApi.messageFor(error);
@@ -396,6 +453,21 @@
     }, POLL_INTERVAL_MS);
   };
 
+  const rebootToApply = async () => {
+    if (!window.PAApi || state.rebootRequestPending || !state.wifiConfig?.pendingApply) return;
+    state.rebootRequestPending = true;
+    setApplyButtonState();
+    setApplyFeedback("Sending reboot command...");
+    try {
+      await window.PAApi.postForm("/api/reboot", {}, { timeoutMs: 3000 });
+      setApplyFeedback("Reboot command sent. After it restarts, reconnect using the guidance above.", "success");
+    } catch (error) {
+      state.rebootRequestPending = false;
+      setApplyFeedback(`Reboot failed: ${window.PAApi.messageFor(error)}`, "error");
+      setApplyButtonState();
+    }
+  };
+
   const onVisibilityChange = () => {
     if (document.visibilityState !== "hidden") {
       refreshDiagnostics("refresh");
@@ -403,6 +475,7 @@
   };
 
   if (form) form.addEventListener("submit", saveSettings);
+  if (applyButton) applyButton.addEventListener("click", rebootToApply);
   if (reloadButton) reloadButton.addEventListener("click", loadPageData);
   [modeClient, modeStandaloneAp].forEach((input) => {
     if (input) input.addEventListener("change", syncModeOptions);

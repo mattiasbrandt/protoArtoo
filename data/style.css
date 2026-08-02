@@ -1199,6 +1199,15 @@ body[data-page="wifi"] .wifi-mode-title {
   font-weight: 700;
 }
 
+body[data-page="wifi"] #wifi-posture-card[data-posture="standalone-ap"] {
+  border-left-color: var(--warning);
+}
+
+body[data-page="wifi"] #wifi-posture-card[data-posture="provisioning"],
+body[data-page="wifi"] #wifi-posture-card[data-posture="client-failure"] {
+  border-left-color: var(--danger);
+}
+
 body[data-page="wifi"] .wifi-compare-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(220px, 1fr));

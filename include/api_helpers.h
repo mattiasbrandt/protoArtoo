@@ -84,6 +84,11 @@ void formatConfigJson(char* buf, size_t bufSize, int16_t speedLimitMax, uint32_t
 void formatWifiJson(char* buf, size_t bufSize, const char* apSsid, const char* apIp,
                     bool staEnabled, bool staConnected, const char* staIp, long wifiRssi);
 
+// Select the AP SSID that diagnostics should report. Active saved Standalone AP
+// settings own the operator-facing AP name; fallback protects startup/default
+// paths that have not captured an active AP SSID yet.
+const char* wifiStatusApSsid(const char* activeApSsid);
+
 // -----------------------------------------------------------------------------
 // formatSerialJson()
 // Write a JSON serial-port status object into a caller-supplied buffer.

@@ -77,6 +77,14 @@ void test_formatWifiJson_is_valid_json_object() {
     TEST_ASSERT_EQUAL_CHAR('}', out[strlen(out) - 1]);
 }
 
+void test_wifiStatusApSsid_prefers_active_saved_ap_ssid() {
+    TEST_ASSERT_EQUAL_STRING("FieldArtoo", wifiStatusApSsid("FieldArtoo"));
+}
+
+void test_wifiStatusApSsid_falls_back_to_default_when_active_empty() {
+    TEST_ASSERT_EQUAL_STRING("protoArtoo", wifiStatusApSsid(""));
+}
+
 // --- formatSerialJson() tests ---
 
 void test_formatSerialJson_dome_active_true() {
@@ -278,6 +286,8 @@ int main() {
     RUN_TEST(test_formatWifiJson_staIp_present_when_connected);
     RUN_TEST(test_formatWifiJson_staIp_empty_when_disconnected);
     RUN_TEST(test_formatWifiJson_is_valid_json_object);
+    RUN_TEST(test_wifiStatusApSsid_prefers_active_saved_ap_ssid);
+    RUN_TEST(test_wifiStatusApSsid_falls_back_to_default_when_active_empty);
 
     RUN_TEST(test_formatSerialJson_dome_active_true);
     RUN_TEST(test_formatSerialJson_dome_active_false);

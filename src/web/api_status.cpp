@@ -18,6 +18,7 @@
 
 #include "api_helpers.h"
 #include "config.h"
+#include "config_store.h"
 #include "dome_link.h"
 #include "dome_task.h"
 #include "log_buffer.h"
@@ -30,9 +31,12 @@ static void buildWifiJson(char* buffer, size_t bufferSize) {
     bool staConnected = staStatus == WL_CONNECTED;
     bool staEnabled = WiFi.getMode() == WIFI_STA || WiFi.getMode() == WIFI_AP_STA;
     long wifiRssi = staConnected ? WiFi.RSSI() : 0;
+    WifiConfig activeWifi = {};
+    configCacheReadActiveWifi(&activeWifi);
 
-    formatWifiJson(buffer, bufferSize, WIFI_AP_SSID, WiFi.softAPIP().toString().c_str(), staEnabled,
-                   staConnected, staConnected ? WiFi.localIP().toString().c_str() : "", wifiRssi);
+    formatWifiJson(buffer, bufferSize, wifiStatusApSsid(activeWifi.ap_ssid),
+                   WiFi.softAPIP().toString().c_str(), staEnabled, staConnected,
+                   staConnected ? WiFi.localIP().toString().c_str() : "", wifiRssi);
 }
 
 static void buildSerialJson(char* buffer, size_t bufferSize) {
