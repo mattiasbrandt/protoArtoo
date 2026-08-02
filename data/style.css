@@ -602,6 +602,7 @@ nav a.active {
 
 .field input[type="number"],
 .field input[type="text"],
+.field input[type="password"],
 .field select {
   width: 100%;
   padding: 12px 14px;
@@ -628,10 +629,22 @@ input[type="number"]::-webkit-inner-spin-button {
 
 .field input[type="number"]:focus,
 .field input[type="text"]:focus,
+.field input[type="password"]:focus,
 .field select:focus {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(74, 144, 217, 0.2);
+}
+
+.field input[aria-invalid="true"] {
+  border-color: color-mix(in srgb, var(--danger) 70%, var(--border));
+  box-shadow: 0 0 0 2px rgba(232, 84, 84, 0.22);
+}
+
+.field-error-message {
+  min-height: 1.2em;
+  color: var(--danger);
+  font-size: 0.82rem;
 }
 
 .field input.preset-input[aria-invalid="true"] {
@@ -1143,6 +1156,84 @@ input.input-narrow:focus {
 
 .log-paused.visible {
   display: block;
+}
+
+body[data-page="wifi"] .wifi-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+body[data-page="wifi"] .wifi-mode-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+body[data-page="wifi"] .wifi-mode-option {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: start;
+  gap: 10px;
+  min-height: 72px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+body[data-page="wifi"] .wifi-mode-option.is-selected {
+  border-color: var(--accent-bright);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+body[data-page="wifi"] .wifi-mode-option input {
+  margin-top: 3px;
+}
+
+body[data-page="wifi"] .wifi-mode-title {
+  display: block;
+  color: var(--silver-bright);
+  font-weight: 700;
+}
+
+body[data-page="wifi"] .wifi-compare-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+body[data-page="wifi"] .wifi-summary-list {
+  display: grid;
+  grid-template-columns: minmax(90px, auto) minmax(0, 1fr);
+  gap: 8px 12px;
+  align-content: start;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+body[data-page="wifi"] .wifi-summary-list dt {
+  color: var(--text-dim);
+  font-size: 0.84rem;
+}
+
+body[data-page="wifi"] .wifi-summary-list dd {
+  min-width: 0;
+  color: var(--silver-bright);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 720px) {
+  body[data-page="wifi"] .wifi-settings-grid,
+  body[data-page="wifi"] .wifi-mode-options,
+  body[data-page="wifi"] .wifi-compare-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .btn {
