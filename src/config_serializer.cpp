@@ -36,6 +36,7 @@ void deserializeAudio(const ConfigReader& r, AudioConfig* out, const AudioConfig
 void deserializeServo(const ConfigReader& r, ServoConfig* out, const ServoConfig& def);
 void deserializeDome(const ConfigReader& r, DomeConfig* out, const DomeConfig& def);
 void deserializeSystem(const ConfigReader& r, SystemConfig* out, const SystemConfig& def);
+void deserializeWifi(const ConfigReader& r, WifiConfig* out, const WifiConfig& def);
 
 void deserializeDrive(const ConfigReader& r, DriveConfig* out, const DriveConfig& def) {
     *out = def;
@@ -307,6 +308,40 @@ void deserializeSystem(const ConfigReader& r, SystemConfig* out, const SystemCon
     }
 }
 
+void deserializeWifi(const ConfigReader& r, WifiConfig* out, const WifiConfig& def) {
+    *out = def;
+    out->provisioned = r.readBool("wifi_prov", def.provisioned);
+
+    uint8_t modeRaw = r.readU8("wifi_mode", (uint8_t)def.mode);
+    out->mode = (modeRaw <= (uint8_t)WifiMode::STANDALONE_AP) ? (WifiMode)modeRaw : def.mode;
+
+    // Reject overlong/invalid stored strings before copying into fixed-size buffers.
+    String staSsid = r.readStr("wifi_sta_ssid", def.sta_ssid);
+    if (staSsid.length() > WIFI_SSID_MAX_LEN) {
+        staSsid = String(def.sta_ssid);
+    }
+    snprintf(out->sta_ssid, sizeof(out->sta_ssid), "%s", staSsid.c_str());
+
+    String staPassword = r.readStr("wifi_sta_pw", def.sta_password);
+    if (staPassword.length() > WIFI_PASSWORD_MAX_LEN) {
+        staPassword = String(def.sta_password);
+    }
+    snprintf(out->sta_password, sizeof(out->sta_password), "%s", staPassword.c_str());
+
+    // AP SSID must stay non-empty — an empty SSID would make Standalone AP Mode unusable.
+    String apSsid = r.readStr("wifi_ap_ssid", def.ap_ssid);
+    if (apSsid.length() == 0 || apSsid.length() > WIFI_SSID_MAX_LEN) {
+        apSsid = String(def.ap_ssid);
+    }
+    snprintf(out->ap_ssid, sizeof(out->ap_ssid), "%s", apSsid.c_str());
+
+    String apPassword = r.readStr("wifi_ap_pw", def.ap_password);
+    if (apPassword.length() > WIFI_PASSWORD_MAX_LEN) {
+        apPassword = String(def.ap_password);
+    }
+    snprintf(out->ap_password, sizeof(out->ap_password), "%s", apPassword.c_str());
+}
+
 }  // namespace
 
 // =============================================================================
@@ -339,6 +374,7 @@ bool configDeserialize(const ConfigReader& reader, ConfigSnapshot* out) {
     deserializeServo(reader, &out->servo, defaults.servo);
     deserializeDome(reader, &out->dome, defaults.dome);
     deserializeSystem(reader, &out->system, defaults.system);
+    deserializeWifi(reader, &out->wifi, defaults.wifi);
     return true;
 }
 
@@ -349,6 +385,7 @@ bool configSerialize(const ConfigSnapshot& snap, ConfigWriter& writer) {
     ok = configSerializeServo(snap.servo, writer) && ok;
     ok = configSerializeDome(snap.dome, writer) && ok;
     ok = configSerializeSystem(snap.system, writer) && ok;
+    ok = configSerializeWifi(snap.wifi, writer) && ok;
     ok = writer.writeSchemaVersion(CONFIG_SCHEMA_VERSION) && ok;
     return ok;
 }
@@ -577,6 +614,17 @@ bool configSerializeSystem(const SystemConfig& cfg, ConfigWriter& w) {
     return ok;
 }
 
+bool configSerializeWifi(const WifiConfig& cfg, ConfigWriter& w) {
+    bool ok = true;
+    ok = w.writeBool("wifi_prov", cfg.provisioned) && ok;
+    ok = w.writeU8("wifi_mode", (uint8_t)cfg.mode) && ok;
+    ok = w.writeStr("wifi_sta_ssid", cfg.sta_ssid) && ok;
+    ok = w.writeStr("wifi_sta_pw", cfg.sta_password) && ok;
+    ok = w.writeStr("wifi_ap_ssid", cfg.ap_ssid) && ok;
+    ok = w.writeStr("wifi_ap_pw", cfg.ap_password) && ok;
+    return ok;
+}
+
 // =============================================================================
 // Domain-level deserializers — each loads only its own domain keys
 // =============================================================================
@@ -599,4 +647,8 @@ void configDeserializeDome(const ConfigReader& r, DomeConfig* out) {
 
 void configDeserializeSystem(const ConfigReader& r, SystemConfig* out) {
     deserializeSystem(r, out, getDefaults().system);
+}
+
+void configDeserializeWifi(const ConfigReader& r, WifiConfig* out) {
+    deserializeWifi(r, out, getDefaults().wifi);
 }

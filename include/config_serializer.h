@@ -30,6 +30,7 @@ bool configSerializeAudio(const AudioConfig& cfg, ConfigWriter& w);
 bool configSerializeServo(const ServoConfig& cfg, ConfigWriter& w);
 bool configSerializeDome(const DomeConfig& cfg, ConfigWriter& w);
 bool configSerializeSystem(const SystemConfig& cfg, ConfigWriter& w);
+bool configSerializeWifi(const WifiConfig& cfg, ConfigWriter& w);
 
 // Domain-level deserializers (used by domain-specific load functions in config_store)
 // Each fills *out with defaults then overwrites with stored values.
@@ -38,3 +39,4 @@ void configDeserializeAudio(const ConfigReader& r, AudioConfig* out);
 void configDeserializeServo(const ConfigReader& r, ServoConfig* out);
 void configDeserializeDome(const ConfigReader& r, DomeConfig* out);
 void configDeserializeSystem(const ConfigReader& r, SystemConfig* out);
+void configDeserializeWifi(const ConfigReader& r, WifiConfig* out);

@@ -269,6 +269,49 @@ struct ServoConfig {
     uint8_t aux_led_count;
 };
 
+// -----------------------------------------------------------------------------
+// Device WiFi Settings (ADR 0015 — runtime WiFi provisioning)
+// -----------------------------------------------------------------------------
+
+// WifiMode is the ongoing operator-selected posture once provisioned.
+// It is meaningless while wifi.provisioned == false (Unprovisioned Controller).
+enum class WifiMode : uint8_t {
+    CLIENT = 0,         // WiFi Client Mode — join an existing network
+    STANDALONE_AP = 1,  // Standalone AP Mode — host the controller's own network
+};
+
+constexpr size_t WIFI_SSID_MAX_LEN = 32;      // 802.11 SSID length limit
+constexpr size_t WIFI_PASSWORD_MAX_LEN = 63;  // WPA2-PSK passphrase length limit
+constexpr size_t WIFI_PASSWORD_MIN_LEN = 8;   // ESP32 SoftAP / WPA2 minimum (empty = open network)
+
+// WifiConfig is Device WiFi Settings: the operator-selected WiFi posture and
+// network credentials retained by the controller after provisioning. Default
+// value (provisioned == false) represents an Unprovisioned Controller.
+struct WifiConfig {
+    bool provisioned;
+    WifiMode mode;
+    char sta_ssid[WIFI_SSID_MAX_LEN + 1];
+    char sta_password[WIFI_PASSWORD_MAX_LEN + 1];
+    char ap_ssid[WIFI_SSID_MAX_LEN + 1];
+    char ap_password[WIFI_PASSWORD_MAX_LEN + 1];
+};
+
+// WifiConfigView is the normal-read shape of Device WiFi Settings: it carries
+// password-set flags instead of plaintext passwords, so API/status snapshots
+// never echo saved WiFi credentials.
+struct WifiConfigView {
+    bool provisioned;
+    WifiMode mode;
+    char sta_ssid[WIFI_SSID_MAX_LEN + 1];
+    bool sta_password_set;
+    char ap_ssid[WIFI_SSID_MAX_LEN + 1];
+    bool ap_password_set;
+};
+
+// wifiConfigToView: pure projection from persisted settings to the
+// password-safe read shape. No plaintext password ever reaches the result.
+WifiConfigView wifiConfigToView(const WifiConfig& cfg);
+
 struct DomeConfig {
     float dome_min_speed;
     float dome_max_speed;
@@ -359,6 +402,7 @@ struct ConfigSnapshot {
     ServoConfig servo;
     DomeConfig dome;
     SystemConfig system;
+    WifiConfig wifi;
 };
 
 // =============================================================================
@@ -376,6 +420,7 @@ void configLoadAudio(Preferences& prefs, AudioConfig* out);
 void configLoadServo(Preferences& prefs, ServoConfig* out);
 void configLoadDome(Preferences& prefs, DomeConfig* out);
 void configLoadSystem(Preferences& prefs, SystemConfig* out);
+void configLoadWifi(Preferences& prefs, WifiConfig* out);
 
 bool configAudioGetTrackByKey(const AudioConfig& config, const char* key, uint16_t* out);
 bool configAudioSetTrackByKey(AudioConfig* config, const char* key, uint16_t value);
@@ -395,6 +440,7 @@ bool configSaveAudio(Preferences& prefs, const AudioConfig& config);
 bool configSaveServo(Preferences& prefs, const ServoConfig& config);
 bool configSaveDome(Preferences& prefs, const DomeConfig& config);
 bool configSaveSystem(Preferences& prefs, const SystemConfig& config);
+bool configSaveWifi(Preferences& prefs, const WifiConfig& config);
 
 // configCacheRead: Fill a ConfigSnapshot from the live config cache.
 // This uses configCacheMux, not robotStateMux. Runtime tasks should copy the
@@ -404,6 +450,7 @@ void configCacheReadDome(DomeConfig* out);
 bool configCacheDomeEnabled();
 void configCacheReadServo(ServoConfig* out);
 bool configCacheServoAnyEnabled();
+void configCacheReadWifi(WifiConfig* out);
 
 // configCacheApply: Replace the live config cache with a full snapshot.
 // Marks RobotState.rcConfigDirty so RcInputTask rebuilds cached mapping config.

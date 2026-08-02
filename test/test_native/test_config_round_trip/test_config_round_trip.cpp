@@ -4,6 +4,8 @@
 // Round-trip tests for config persistence seam.
 // Tests configDeserialize/configSerialize against MapReader/MapWriter.
 // =============================================================================
+#include <string>
+
 #include <unity.h>
 
 #include "config_store.h"
@@ -206,6 +208,99 @@ void test_moodcat_mask_round_trip(void) {
     TEST_ASSERT_EQUAL_INT(0x0FFF, loaded.audio.snd_moodcat_awakeplus);
 }
 
+// Test 8: Default Device WiFi Settings represent an Unprovisioned Controller
+void test_wifi_defaults_are_unprovisioned(void) {
+    ConfigSnapshot defaults = {};
+    configSnapshotDefaults(&defaults);
+
+    TEST_ASSERT_FALSE(defaults.wifi.provisioned);
+    TEST_ASSERT_EQUAL_STRING("", defaults.wifi.sta_ssid);
+    TEST_ASSERT_EQUAL_STRING("", defaults.wifi.sta_password);
+    TEST_ASSERT_EQUAL_STRING(WIFI_AP_SSID, defaults.wifi.ap_ssid);
+    TEST_ASSERT_EQUAL_STRING(WIFI_DEFAULT_AP_PASSWORD, defaults.wifi.ap_password);
+}
+
+// Test 9: Valid WiFi Client Mode settings round-trip through persistence
+void test_wifi_client_mode_round_trip(void) {
+    ConfigSnapshot snap = {};
+    configSnapshotDefaults(&snap);
+    snap.wifi.provisioned = true;
+    snap.wifi.mode = WifiMode::CLIENT;
+    snprintf(snap.wifi.sta_ssid, sizeof(snap.wifi.sta_ssid), "%s", "HomeNetwork");
+    snprintf(snap.wifi.sta_password, sizeof(snap.wifi.sta_password), "%s", "correcthorsebattery");
+
+    MapWriter writer;
+    TEST_ASSERT_TRUE(configSerialize(snap, writer));
+
+    MapReader reader;
+    reader.setSchemaVersion(writer.schemaVersion());
+    for (const auto& pair : writer.data()) {
+        reader.set(pair.first.c_str(), pair.second);
+    }
+
+    ConfigSnapshot loaded = {};
+    TEST_ASSERT_TRUE(configDeserialize(reader, &loaded));
+
+    TEST_ASSERT_TRUE(loaded.wifi.provisioned);
+    TEST_ASSERT_EQUAL_INT((int)WifiMode::CLIENT, (int)loaded.wifi.mode);
+    TEST_ASSERT_EQUAL_STRING("HomeNetwork", loaded.wifi.sta_ssid);
+    TEST_ASSERT_EQUAL_STRING("correcthorsebattery", loaded.wifi.sta_password);
+}
+
+// Test 10: Valid Standalone AP Mode settings round-trip through persistence
+void test_wifi_standalone_ap_mode_round_trip(void) {
+    ConfigSnapshot snap = {};
+    configSnapshotDefaults(&snap);
+    snap.wifi.provisioned = true;
+    snap.wifi.mode = WifiMode::STANDALONE_AP;
+    snprintf(snap.wifi.ap_ssid, sizeof(snap.wifi.ap_ssid), "%s", "r2-field-unit");
+    snprintf(snap.wifi.ap_password, sizeof(snap.wifi.ap_password), "%s", "fieldPassword1");
+
+    MapWriter writer;
+    TEST_ASSERT_TRUE(configSerialize(snap, writer));
+
+    MapReader reader;
+    reader.setSchemaVersion(writer.schemaVersion());
+    for (const auto& pair : writer.data()) {
+        reader.set(pair.first.c_str(), pair.second);
+    }
+
+    ConfigSnapshot loaded = {};
+    TEST_ASSERT_TRUE(configDeserialize(reader, &loaded));
+
+    TEST_ASSERT_TRUE(loaded.wifi.provisioned);
+    TEST_ASSERT_EQUAL_INT((int)WifiMode::STANDALONE_AP, (int)loaded.wifi.mode);
+    TEST_ASSERT_EQUAL_STRING("r2-field-unit", loaded.wifi.ap_ssid);
+    TEST_ASSERT_EQUAL_STRING("fieldPassword1", loaded.wifi.ap_password);
+}
+
+// Test 11: Schema/default fill — corrupt/overlong stored WiFi values fall back to defaults
+void test_wifi_corrupt_values_fall_back_to_defaults(void) {
+    ConfigSnapshot defaults = {};
+    configSnapshotDefaults(&defaults);
+
+    std::string overlongSsid(WIFI_SSID_MAX_LEN + 10, 'x');
+    std::string overlongPassword(WIFI_PASSWORD_MAX_LEN + 10, 'y');
+
+    MapReader reader;
+    reader.setSchemaVersion(1);
+    reader.set("wifi_prov", true);
+    reader.set("wifi_mode", (uint32_t)9);  // out-of-range enum value
+    reader.set("wifi_sta_ssid", overlongSsid);
+    reader.set("wifi_ap_ssid", std::string(""));  // empty AP SSID is invalid
+    reader.set("wifi_ap_pw", overlongPassword);
+
+    ConfigSnapshot loaded = {};
+    TEST_ASSERT_TRUE(configDeserialize(reader, &loaded));
+
+    TEST_ASSERT_EQUAL_INT((int)defaults.wifi.mode, (int)loaded.wifi.mode);
+    TEST_ASSERT_EQUAL_STRING(defaults.wifi.sta_ssid, loaded.wifi.sta_ssid);
+    TEST_ASSERT_EQUAL_STRING(defaults.wifi.ap_ssid, loaded.wifi.ap_ssid);
+    TEST_ASSERT_EQUAL_STRING(defaults.wifi.ap_password, loaded.wifi.ap_password);
+    // provisioned is a plain bool — no invalid encoding to reject, loads through
+    TEST_ASSERT_TRUE(loaded.wifi.provisioned);
+}
+
 // Test initialization function for Unity
 int main(void) {
     UNITY_BEGIN();
@@ -216,5 +311,9 @@ int main(void) {
     RUN_TEST(test_schema_v0_migration);
     RUN_TEST(test_unknown_key_tolerance);
     RUN_TEST(test_moodcat_mask_round_trip);
+    RUN_TEST(test_wifi_defaults_are_unprovisioned);
+    RUN_TEST(test_wifi_client_mode_round_trip);
+    RUN_TEST(test_wifi_standalone_ap_mode_round_trip);
+    RUN_TEST(test_wifi_corrupt_values_fall_back_to_defaults);
     return UNITY_END();
 }

@@ -1062,6 +1062,64 @@ void test_configUpdateAudioMoodMasks_round_trips_through_audio_store() {
     TEST_ASSERT_EQUAL_UINT16(0x0008, cached.audio.snd_moodcat_awakeplus);
 }
 
+void test_wifiConfigToView_sets_password_flags_not_plaintext() {
+    WifiConfig wifi = {};
+    wifi.provisioned = true;
+    wifi.mode = WifiMode::CLIENT;
+    snprintf(wifi.sta_ssid, sizeof(wifi.sta_ssid), "%s", "HomeNetwork");
+    snprintf(wifi.sta_password, sizeof(wifi.sta_password), "%s", "supersecret");
+    snprintf(wifi.ap_ssid, sizeof(wifi.ap_ssid), "%s", "protoArtoo");
+    snprintf(wifi.ap_password, sizeof(wifi.ap_password), "%s", "apsecret1");
+
+    WifiConfigView view = wifiConfigToView(wifi);
+
+    TEST_ASSERT_TRUE(view.provisioned);
+    TEST_ASSERT_EQUAL_INT((int)WifiMode::CLIENT, (int)view.mode);
+    TEST_ASSERT_EQUAL_STRING("HomeNetwork", view.sta_ssid);
+    TEST_ASSERT_TRUE(view.sta_password_set);
+    TEST_ASSERT_EQUAL_STRING("protoArtoo", view.ap_ssid);
+    TEST_ASSERT_TRUE(view.ap_password_set);
+}
+
+void test_wifiConfigToView_reports_unset_empty_passwords() {
+    WifiConfig wifi = {};
+    wifi.provisioned = false;
+    wifi.sta_ssid[0] = '\0';
+    wifi.sta_password[0] = '\0';
+    wifi.ap_password[0] = '\0';
+
+    WifiConfigView view = wifiConfigToView(wifi);
+
+    TEST_ASSERT_FALSE(view.sta_password_set);
+    TEST_ASSERT_FALSE(view.ap_password_set);
+}
+
+void test_configLoad_save_wifi_round_trip() {
+    Preferences prefs;
+    prefs.begin("proto", false);
+    prefs.clear();
+
+    ConfigSnapshot snap = {};
+    TEST_ASSERT_TRUE(configLoad(prefs, &snap));
+    // Unprovisioned by default (empty NVS)
+    TEST_ASSERT_FALSE(snap.wifi.provisioned);
+
+    snap.wifi.provisioned = true;
+    snap.wifi.mode = WifiMode::STANDALONE_AP;
+    snprintf(snap.wifi.ap_ssid, sizeof(snap.wifi.ap_ssid), "%s", "r2-field");
+    snprintf(snap.wifi.ap_password, sizeof(snap.wifi.ap_password), "%s", "fieldpass1");
+    TEST_ASSERT_TRUE(configSave(prefs, snap));
+
+    ConfigSnapshot loaded = {};
+    TEST_ASSERT_TRUE(configLoad(prefs, &loaded));
+    prefs.end();
+
+    TEST_ASSERT_TRUE(loaded.wifi.provisioned);
+    TEST_ASSERT_EQUAL_INT((int)WifiMode::STANDALONE_AP, (int)loaded.wifi.mode);
+    TEST_ASSERT_EQUAL_STRING("r2-field", loaded.wifi.ap_ssid);
+    TEST_ASSERT_EQUAL_STRING("fieldpass1", loaded.wifi.ap_password);
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_configLoad_empty_nvs_returns_defaults);
@@ -1101,5 +1159,8 @@ int main() {
     RUN_TEST(test_configAudioTrackByKey_round_trips_category_bound);
     RUN_TEST(test_configAudioTrackByKey_rejects_unknown_key);
     RUN_TEST(test_configUpdateAudioMoodMasks_round_trips_through_audio_store);
+    RUN_TEST(test_wifiConfigToView_sets_password_flags_not_plaintext);
+    RUN_TEST(test_wifiConfigToView_reports_unset_empty_passwords);
+    RUN_TEST(test_configLoad_save_wifi_round_trip);
     return UNITY_END();
 }

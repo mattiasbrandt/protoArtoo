@@ -143,6 +143,12 @@ constexpr size_t DROID_NAME_MAX_LEN = 32;
 constexpr char WIFI_AP_SSID[] = "protoArtoo";
 constexpr char WIFI_AP_IP[] = "192.168.4.1";
 
+// Default AP Credential (ADR 0015): the documented bootstrap password an
+// Unprovisioned Controller uses for WiFi Provisioning and Network Recovery
+// Mode. Public and shared by design — it is a bootstrap credential, not a
+// security boundary — and operator-changeable through Device WiFi Settings.
+constexpr char WIFI_DEFAULT_AP_PASSWORD[] = "protoArtoo1";
+
 // -----------------------------------------------------------------------------
 // WiFi hostname / mDNS
 // -----------------------------------------------------------------------------

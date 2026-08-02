@@ -205,6 +205,16 @@ void configSnapshotDefaults(ConfigSnapshot* snap) {
     snap->dome.dome_rnd_move_ms = 2500;
     snap->dome.dome_wifi_peer_ip[0] = '\0';
 
+    // Device WiFi Settings default to an Unprovisioned Controller (ADR 0015):
+    // no saved posture yet, AP identity pre-filled with the documented,
+    // operator-changeable Default AP Credential.
+    snap->wifi.provisioned = false;
+    snap->wifi.mode = WifiMode::CLIENT;
+    snap->wifi.sta_ssid[0] = '\0';
+    snap->wifi.sta_password[0] = '\0';
+    snprintf(snap->wifi.ap_ssid, sizeof(snap->wifi.ap_ssid), "%s", WIFI_AP_SSID);
+    snprintf(snap->wifi.ap_password, sizeof(snap->wifi.ap_password), "%s", WIFI_DEFAULT_AP_PASSWORD);
+
     snap->servo.seq_open_ms = 1000;
     snap->servo.seq_close_ms = 1000;
 
@@ -267,6 +277,17 @@ void configSnapshotDefaults(ConfigSnapshot* snap) {
 // Public API Implementation
 // =============================================================================
 
+WifiConfigView wifiConfigToView(const WifiConfig& cfg) {
+    WifiConfigView view = {};
+    view.provisioned = cfg.provisioned;
+    view.mode = cfg.mode;
+    snprintf(view.sta_ssid, sizeof(view.sta_ssid), "%s", cfg.sta_ssid);
+    view.sta_password_set = cfg.sta_password[0] != '\0';
+    snprintf(view.ap_ssid, sizeof(view.ap_ssid), "%s", cfg.ap_ssid);
+    view.ap_password_set = cfg.ap_password[0] != '\0';
+    return view;
+}
+
 ConfigSnapshot configCache = {};
 portMUX_TYPE configCacheMux = portMUX_INITIALIZER_UNLOCKED;
 
@@ -313,6 +334,15 @@ bool configCacheServoAnyEnabled() {
              configCache.system.enable_aux3;
     taskEXIT_CRITICAL(&configCacheMux);
     return result;
+}
+
+void configCacheReadWifi(WifiConfig* out) {
+    if (out == nullptr) {
+        return;
+    }
+    taskENTER_CRITICAL(&configCacheMux);
+    *out = configCache.wifi;
+    taskEXIT_CRITICAL(&configCacheMux);
 }
 
 void configCacheApply(const ConfigSnapshot& snap) {
@@ -496,6 +526,12 @@ void configLoadSystem(Preferences& prefs, SystemConfig* out) {
     configDeserializeSystem(reader, out);
 }
 
+void configLoadWifi(Preferences& prefs, WifiConfig* out) {
+    if (out == nullptr) return;
+    PrefsReader reader(prefs);
+    configDeserializeWifi(reader, out);
+}
+
 bool configSave(Preferences& prefs, const ConfigSnapshot& snapshot) {
     PrefsWriter writer(prefs);
     return configSerialize(snapshot, writer);
@@ -519,6 +555,11 @@ bool configSaveServo(Preferences& prefs, const ServoConfig& config) {
 bool configSaveDome(Preferences& prefs, const DomeConfig& config) {
     PrefsWriter writer(prefs);
     return configSerializeDome(config, writer);
+}
+
+bool configSaveWifi(Preferences& prefs, const WifiConfig& config) {
+    PrefsWriter writer(prefs);
+    return configSerializeWifi(config, writer);
 }
 
 bool configSaveSystem(Preferences& prefs, const SystemConfig& config) {
