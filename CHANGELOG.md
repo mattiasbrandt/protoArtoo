@@ -15,11 +15,15 @@ Every semantic version release belongs here:
 
 ## [Unreleased]
 
-Release hardening continues across RC, audio, dome, config, and UI work, while drive hardware checks are still to be completed.
+## [1.0.0] - 2026-08-01
+
+First stable release. Feature-complete for day-to-day operation — audio, RC
+control, dome control, servos, the web control panel, backups, and firmware
+updates are all confirmed working on real hardware. Full drive-motor
+(hoverboard) validation on a completely assembled droid is tracked as
+follow-up work, not a blocker for this release (see `docs/status.md`).
 
 ### Added
-- Public `v1.0.0` release-status matrix in `docs/status.md`, with plain-language
-  evidence and remaining checks by subsystem.
 - Runtime action registry now powers RC bindings and the action picker in the web API/UI.
 - Sleep mode now keeps body and dome state in sync, with wake and sleep control from the web UI and RC bindings.
 - CHIRP playback got broader sound coverage: category ranges, named tracks, banked playback, and system sound mapping.
@@ -28,22 +32,74 @@ Release hardening continues across RC, audio, dome, config, and UI work, while d
 - The setup page now supports NVS backup and restore.
 - Shell controls now include estop and reboot actions.
 - Random dome rotation now has web configuration and RC control support.
+- Coredump partition and HTTP retrieval (`/api/coredump`) lets operators download
+  crash dumps for offline analysis alongside the live serial log.
+- Static web assets are now gzip-compressed at build time, reducing dashboard load size.
+- The sequence editor's dome panel picker is now an SVG rendering of real dome
+  geometry, matching the live dome render on the home page, with pie panels
+  directly selectable.
+- The home page now has quick-access controls for dome commands and recently-used sequences.
+- New `POST /api/seq/stop` provides a non-latching way to abort a running
+  sequence, distinct from estop.
+- The dashboard now shows which dome link transport (WiFi or serial UART) is active.
+- Dome visual commands (Holo Effect, Logic/PSI, Logic Text, Visual Preset) are
+  now validated server-side before dispatch, catching malformed dome commands
+  before they reach the dome.
+- The sequence editor now supports authoring `DV:<name>` visual presets and
+  Holo Effect / Logic-PSI / Logic-Text steps, completing the dome sequence vocabulary.
+- Every built-in sequence now shows its intended use on the Factory card.
+- Operators can now set a custom droid name from the web UI, shown on the status page and in logs.
+- GitHub Actions now gate pull requests with build, test, static-analysis, and
+  dependency-review checks.
 
 ### Changed
-- Public release wording now distinguishes automated checks, ESP32 controller testing, and full integrated hardware checks.
 - Drive and RC control paths now use a shared output arbiter, safer source handling, and latching safety behavior.
 - Configuration flows now separate save/apply, runtime use, and reboot survival through clearer state handling.
 - Audio now uses a shared driver interface and playback policy, with cleaner catalog ownership and volume handling.
 - Dome handling is now split into serial control, motion control, and body-link coordination.
 - Web and dashboard surfaces now have clearer live feedback, more reliable status derivation, and better log handling.
-- The public release-status page now carries a validation matrix with plain evidence and remaining checks for each major area.
+- The public status page (`docs/status.md`) was rewritten for a plain-language
+  operator audience, with per-subsystem evidence and a clear list of what's
+  still unverified.
+- CHIRP audio and the dome serial link now coexist reliably on a shared UART,
+  instead of intermittently dropping audio or dome commands.
+- Sequence and CHIRP catalog memory is now allocated based on actual data size
+  instead of static worst-case buffers, reducing baseline heap usage.
+- AsyncTCP and AsyncWebServer were upgraded to the actively maintained
+  `ESP32Async/` fork, fixing SSE memory leaks and TCP teardown issues.
+- The dome panel picker UX is more direct (fewer confirmation steps for pie
+  panels) and more readable (contrast, label sizing) for low-light operation.
+- SSE connections are now rate-limited and paced to avoid overloading the
+  device under dense dashboard polling.
+- OTA update timeouts were extended for reliability over slow connections.
 
 ### Fixed
 - Audio control and playback regressions across supported backends.
 - RC mapping, config apply, and UI synchronization bugs.
 - Status and diagnostics issues that could hide the actual runtime state.
+- A heap-exhaustion crash (OOM) affecting CHIRP and Learned Sequences under
+  larger catalogs/libraries — memory is now right-sized on demand instead of
+  over-allocated up front.
+- CHIRP audio could silently fail to initialize when the dome serial link held
+  the shared UART; it now retries instead of falling back permanently.
+- Dome link UART recovery — reconnects now clear stale errors and no longer
+  hang indefinitely contending for the shared UART.
+- Server-side crashes and connection issues under live-status (SSE) load, and
+  under general API load.
+- Dome panel availability messages now correctly explain *why* a panel is
+  unavailable instead of a generic "not reachable".
+- The dome panel picker no longer renders blank on first load.
+- Pie panel label contrast now meets accessibility guidelines for low-light use.
+- A spurious failsafe trigger in single-SBUS mode with a secondary channel enabled.
+- Sequence save no longer drops the sequence body, fixing a save/round-trip regression.
 
 ### Still to verify
+- Drive-motor (hoverboard) behavior on a completely assembled droid. Drive control,
+  safety logic, and failsafe are implemented and tested, but live wheel response
+  has not yet been confirmed on a finished build. This is planned as follow-up
+  work after `v1.0.0` and will be documented when complete.
+- The MP3 Trigger audio module (an alternative to CHIRP) is implemented but has
+  not been re-confirmed on hardware for this release.
 - Drive hardware checks are still to be completed on the hoverboard and complete droid hardware. This is the remaining hardware verification item before release.
 
 ## [0.4.0] - 2026-03-29
