@@ -86,25 +86,30 @@
           </label>
         </div>
 
-        <div class="wifi-settings-grid mt-16">
+        <div class="section-label">🌐 WiFi Client Settings</div>
+        <div class="wifi-settings-grid mt-12">
           <label class="field" for="wifi-sta-ssid">
-            <span>Client network name</span>
+            <span>Network name</span>
             <input id="wifi-sta-ssid" name="staSsid" type="text" maxlength="32" autocomplete="off" spellcheck="false">
             <span id="wifi-sta-ssid-error" class="field-error-message" role="alert"></span>
           </label>
           <label class="field" for="wifi-sta-password">
-            <span>Client password</span>
+            <span>Password</span>
             <input id="wifi-sta-password" name="staPassword" type="password" maxlength="63" autocomplete="new-password">
             <span id="wifi-sta-password-hint" class="desc">Blank keeps the saved password.</span>
             <span id="wifi-sta-password-error" class="field-error-message" role="alert"></span>
           </label>
+        </div>
+
+        <div class="section-label mt-16">📡 Standalone AP Settings</div>
+        <div class="wifi-settings-grid mt-12">
           <label class="field" for="wifi-ap-ssid">
-            <span>AP network name</span>
+            <span>Network name</span>
             <input id="wifi-ap-ssid" name="apSsid" type="text" maxlength="32" autocomplete="off" spellcheck="false">
             <span id="wifi-ap-ssid-error" class="field-error-message" role="alert"></span>
           </label>
           <label class="field" for="wifi-ap-password">
-            <span>AP password</span>
+            <span>Password</span>
             <input id="wifi-ap-password" name="apPassword" type="password" maxlength="63" autocomplete="new-password">
             <span id="wifi-ap-password-hint" class="desc">Blank keeps the saved password.</span>
             <span id="wifi-ap-password-error" class="field-error-message" role="alert"></span>

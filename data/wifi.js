@@ -196,8 +196,8 @@
     }
     if (apPasswordHint) {
       apPasswordHint.textContent = wifi.apPasswordSet
-        ? "Saved AP password present; blank keeps it."
-        : "Blank leaves the AP open; 8..63 characters enables WPA2.";
+        ? "Saved password present; blank keeps it."
+        : "Blank leaves AP open to anyone; 8–63 characters to require a password.";
     }
   };
 
