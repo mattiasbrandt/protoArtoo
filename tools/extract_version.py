@@ -33,9 +33,18 @@ def _run(cmd):
         return ""
 
 
+def _current_branch():
+    """Return the current branch name, using CI ref info when HEAD is detached."""
+    if os.environ.get("GITHUB_REF_TYPE") == "branch":
+        ref_name = os.environ.get("GITHUB_REF_NAME")
+        if ref_name:
+            return ref_name
+    return _run(["git", "rev-parse", "--abbrev-ref", "HEAD"])
+
+
 def _version_from_git():
     """Return version string from `git describe`, normalised to v-prefix."""
-    raw = _run(["git", "describe", "--tags", "--always", "--long"])
+    raw = _run(["git", "describe", "--tags", "--always", "--long", "--dirty"])
     if not raw:
         return None
     # git describe output: "v0.3.0-0-gabcdef" or "v0.3.0-5-gabcdef"
@@ -44,7 +53,14 @@ def _version_from_git():
         raw = "v" + raw
     # Strip the trailing "-0-gHASH" when there are 0 commits since tag
     # so a clean tagged commit reports "v0.3.0" not "v0.3.0-0-gabcdef".
+    # A dirty tree appends "-dirty" after the hash, so this leaves the full
+    # descriptor (never collapsing to a clean-looking bare tag) in that case.
     clean = re.sub(r"-0-g[0-9a-f]+$", "", raw)
+    # Non-main builds carry a semver build-metadata suffix so concurrent
+    # feature branches never collide on version identity.
+    branch = _current_branch()
+    if branch and branch not in ("main", "HEAD"):
+        clean = f"{clean}+{branch.replace('/', '-')}"
     return clean
 
 
