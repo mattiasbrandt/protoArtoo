@@ -108,6 +108,10 @@ _Avoid_: live WiFi toggle, automatic fallback, hidden reconnect
 An explicit local recovery posture that temporarily starts WiFi Provisioning so an operator can repair Device WiFi Settings when the normal network path is unreachable.
 _Avoid_: automatic STA fallback, guessed credential failure, source-build recovery
 
+**Page Load Recovery**:
+The web UI expectation that opening or refreshing a page does not make the controller progressively harder to reach. Normal use includes one or two browser tabs; development and browser testing may briefly use three. If memory protection rejects work, the page must recover or show a working retry path without requiring a controller power cycle.
+_Avoid_: endless Loading state, refresh makes it worse, power-cycle recovery, telling the operator to limit normal tab use
+
 **Unprovisioned Controller**:
 A controller that has no valid Device WiFi Settings and therefore cannot yet choose its ongoing WiFi posture.
 _Avoid_: fresh public release, first-time binary, factory firmware
@@ -287,6 +291,7 @@ _Avoid_: audio lifecycle manager, audio coordinator, dispatch switch
 - A **Default AP Credential** bootstraps access for public releases and should be replaceable through **Device WiFi Settings**.
 - A **Developer WiFi Shortcut** may prefill local source builds, but public releases rely on **Device WiFi Settings**.
 - **Network Recovery Mode** is entered by explicit local action, not by interpreting ordinary **WiFi Client Mode** connection trouble.
+- **Page Load Recovery** covers ordinary page opens and refreshes; heap protection may delay or reject work, but it must not leave the UI permanently loading or require a controller power cycle.
 - The release matrix should split **Drive command and safety logic** from **Hoverboard motor integration**.
 - The release matrix should split **RC decoding and diagnostics** from **RC-to-action dispatch and live controls**.
 - The release matrix should split **Audio backend and control logic** from **audible playback on real sound modules**, and sound-module families may have different support levels.
