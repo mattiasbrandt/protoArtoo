@@ -120,6 +120,10 @@ _Avoid_: official Wemos board, temporary development board, waiting for newer ha
 A replaceable implementation choice, not a compatibility promise. It may be patched or replaced when needed to provide Page Load Recovery and protect memory on the Supported ESP32 Board.
 _Avoid_: preserving ESPAsyncWebServer at the expense of reliability, treating the current library as part of the public API
 
+**Live Page Updates**:
+The status, RC, and log updates currently delivered through `/api/events`. Keep this interface working while server and transport alternatives are measured. It may change only when tests on the Supported ESP32 Board show that a replacement improves memory behavior and Page Load Recovery without losing equivalent page behavior or silently breaking integrations.
+_Avoid_: removing SSE on suspicion, replacing one long-lived connection with rapid polling, breaking the endpoint without measured benefit
+
 **Unprovisioned Controller**:
 A controller that has no valid Device WiFi Settings and therefore cannot yet choose its ongoing WiFi posture.
 _Avoid_: fresh public release, first-time binary, factory firmware
@@ -301,6 +305,7 @@ _Avoid_: audio lifecycle manager, audio coordinator, dispatch switch
 - **Network Recovery Mode** is entered by explicit local action, not by interpreting ordinary **WiFi Client Mode** connection trouble.
 - **Page Load Recovery** covers ordinary page opens and refreshes; heap protection may delay or reject work, but it must not leave the UI permanently loading or require a controller power cycle.
 - The **Web Server Library** may change to meet **Page Load Recovery** within the limits of the **Supported ESP32 Board**; future controller plans do not defer that requirement.
+- **Live Page Updates** keep their current `/api/events` contract while alternatives are measured; changing it requires controller evidence of better memory behavior and recovery with equivalent operator behavior.
 - The release matrix should split **Drive command and safety logic** from **Hoverboard motor integration**.
 - The release matrix should split **RC decoding and diagnostics** from **RC-to-action dispatch and live controls**.
 - The release matrix should split **Audio backend and control logic** from **audible playback on real sound modules**, and sound-module families may have different support levels.
