@@ -168,6 +168,10 @@ _Avoid_: judging only whether a page appeared, comparing only with cold boot, ac
 The expectation that a normal browser refresh completes or visibly recovers, while rapid repeated refreshes may shed intermediate attempts without harming the controller. After refreshing stops, the final page recovers and the controller returns to Page Load Memory Recovery.
 _Avoid_: promising every overload attempt completes, retaining abandoned refreshes, crash or reboot under refresh pressure, requiring a power cycle after the pressure ends
 
+**Common Page Bootstrap**:
+The single shared loading and recovery behavior used by every controller page. Each page declares its required resources and sections, while the bootstrap provides the same Page Recovery View, ordering, retry, and visibility rules without requesting a required resource more than once.
+_Avoid_: page-specific loader copy, external-only recovery dependency, duplicated stylesheet request, different recovery behavior between pages
+
 **Supported ESP32 Board**:
 The dual-header ESP32 D1 Mini clone required by the current Artoo Controller PCB. Firmware and web reliability must work within this board's memory limits; possible support for newer controllers does not relax the current requirement.
 _Avoid_: official Wemos board, temporary development board, waiting for newer hardware
@@ -374,6 +378,7 @@ _Avoid_: audio lifecycle manager, audio coordinator, dispatch switch
 - Every request in a **Bounded Page Attempt** has an **Operation Deadline** suited to its work and visible progress.
 - **Page Load Recovery** includes **Page Load Memory Recovery** after repeated page and retry activity on the **Supported ESP32 Board**.
 - **Refresh Resilience** may shed excess rapid attempts, but the final page must regain **Page Load Recovery** and the controller must regain **Page Load Memory Recovery**.
+- The **Common Page Bootstrap** applies the agreed loading and recovery behavior consistently to every controller page.
 - The **Web Server Library** may change to meet **Page Load Recovery** within the limits of the **Supported ESP32 Board**; future controller plans do not defer that requirement.
 - **Live Page Updates** keep their current `/api/events` contract while alternatives are measured; changing it requires controller evidence of better memory behavior and recovery with equivalent operator behavior.
 - The release matrix should split **Drive command and safety logic** from **Hoverboard motor integration**.
