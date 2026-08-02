@@ -120,6 +120,10 @@ _Avoid_: blank page, spinner-only state, recovery controls that require the fail
 One finite try to load a page and its resources. A visible tab has at most one active attempt. Every request and queued item has a deadline; when the attempt fails, is replaced, or becomes unnecessary, its active and queued work is cancelled and released before a later retry starts. Waiting between retries creates no controller load.
 _Avoid_: overlapping retries, abandoned requests, unbounded client queues, holding controller capacity during retry delays, relying on refresh to clean up old work
 
+**Immediate Request Refusal**:
+The controller-side outcome when a new page request cannot safely start. The controller does not queue or retain the request: it returns the smallest safe busy result and releases the attempt immediately. The Page Recovery View owns the wait and retry, and tells the operator whether the controller reported busy or did not respond.
+_Avoid_: controller-side wait queue, silent failure, indefinite request lifetime, starting expensive work before admission, treating every failed response as proof that the controller is busy
+
 **Supported ESP32 Board**:
 The dual-header ESP32 D1 Mini clone required by the current Artoo Controller PCB. Firmware and web reliability must work within this board's memory limits; possible support for newer controllers does not relax the current requirement.
 _Avoid_: official Wemos board, temporary development board, waiting for newer hardware
@@ -314,6 +318,7 @@ _Avoid_: audio lifecycle manager, audio coordinator, dispatch switch
 - **Page Load Recovery** covers ordinary page opens and refreshes; heap protection may delay or reject work, but the UI must visibly remain active, show automatic retry attempts, and not require a controller power cycle.
 - The **Page Recovery View** provides the operator-visible part of **Page Load Recovery** as soon as the first page response arrives, before the rest of the page is available.
 - A **Page Recovery View** runs one **Bounded Page Attempt** at a time; it releases failed work before waiting or retrying so recovery does not create the pressure it is responding to.
+- **Immediate Request Refusal** keeps rejected work off the controller while the **Page Recovery View** explains the outcome and controls later retries.
 - The **Web Server Library** may change to meet **Page Load Recovery** within the limits of the **Supported ESP32 Board**; future controller plans do not defer that requirement.
 - **Live Page Updates** keep their current `/api/events` contract while alternatives are measured; changing it requires controller evidence of better memory behavior and recovery with equivalent operator behavior.
 - The release matrix should split **Drive command and safety logic** from **Hoverboard motor integration**.
