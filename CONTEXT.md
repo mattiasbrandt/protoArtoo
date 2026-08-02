@@ -72,6 +72,46 @@ _Avoid_: internal verification labels, task checklist dump
 Use plain release-note language such as "drive hardware checks are still to be completed" rather than internal process labels like "deferred" or "bench verified".
 _Avoid_: deferred, bench verified, bench-tested
 
+**Public Release Operator**:
+A non-developer who installs and runs protoArtoo from downloadable release artifacts and a browser-accessible control surface, without editing firmware source, providing private build-time credentials, or building locally.
+_Avoid_: developer user, self-build operator, contributor
+
+**WiFi Provisioning**:
+The operator-facing onboarding flow that lets a Public Release Operator reach a newly flashed controller without private build-time credentials and choose the controller's ongoing WiFi mode.
+_Avoid_: editing `secrets.h`, CI-provided WiFi credentials, source-build setup
+
+**WiFi Client Mode**:
+The recommended ongoing WiFi mode where the controller joins the operator's own WiFi network and is reached as a client on that network.
+_Avoid_: compile-time-only STA, developer-only client mode
+
+**Standalone AP Mode**:
+An operator-selected WiFi mode where the controller hosts its own WiFi network, either as its normal ongoing posture or as a temporary field posture away from the home network.
+_Avoid_: provisioning-only AP, failed setup state, developer-only production build
+
+**Default AP Credential**:
+The shared, documented bootstrap password used by public release firmware until the operator changes the controller's AP password.
+_Avoid_: secret default, per-build credential, permanent security boundary
+
+**Device WiFi Settings**:
+The operator-selected WiFi posture and network credentials retained by the controller after provisioning.
+_Avoid_: release-binary credentials, source-code credentials, CI credentials
+
+**Developer WiFi Shortcut**:
+A source-build convenience that lets a developer compile preferred WiFi defaults into a local firmware image without defining the public release networking contract.
+_Avoid_: public release provisioning, operator setup path, required release credential
+
+**Staged Network Switch**:
+An operator-requested WiFi mode change that is saved first and takes effect through an explicit apply/reboot handoff rather than an in-place live toggle.
+_Avoid_: live WiFi toggle, automatic fallback, hidden reconnect
+
+**Network Recovery Mode**:
+An explicit local recovery posture that temporarily starts WiFi Provisioning so an operator can repair Device WiFi Settings when the normal network path is unreachable.
+_Avoid_: automatic STA fallback, guessed credential failure, source-build recovery
+
+**Unprovisioned Controller**:
+A controller that has no valid Device WiFi Settings and therefore cannot yet choose its ongoing WiFi posture.
+_Avoid_: fresh public release, first-time binary, factory firmware
+
 **protoR2link**:
 The dome-body link subsystem. The canonical operator-facing name for the connection between the body controller and the dome controller. Used in the web UI component label and in task/issue language.
 _Avoid_: dome link, dome serial, dome wifi, dome connection
@@ -238,6 +278,15 @@ _Avoid_: audio lifecycle manager, audio coordinator, dispatch switch
 - After release, docs/chore/agent maintenance commits may land directly on `main`; firmware changes should still prefer PRs.
 - The **protoR2link Arbiter** decides when the **protoR2link Primary Transport** is promoted and when the **protoR2link Fallback Transport** carries traffic; the transports execute its actions but make no selection decisions of their own.
 - The **Release Validation Matrix** is the public form of deferred validation tracking for a tagged release.
+- A **Public Release Operator** reaches a newly flashed controller through **WiFi Provisioning** before choosing **WiFi Client Mode** or **Standalone AP Mode** as the ongoing network posture.
+- **WiFi Client Mode** is the recommended ongoing mode, but **Standalone AP Mode** remains a valid operator-selected mode beyond onboarding.
+- **Device WiFi Settings** are created or changed through **WiFi Provisioning**, not baked into public release artifacts.
+- An **Unprovisioned Controller** enters **WiFi Provisioning**; a firmware upgrade with valid **Device WiFi Settings** preserves the existing WiFi posture.
+- Operators may switch between **WiFi Client Mode** and **Standalone AP Mode** for different operating contexts, such as home network use versus field use.
+- A **Staged Network Switch** is a normal operator workflow for moving between **WiFi Client Mode** and **Standalone AP Mode**.
+- A **Default AP Credential** bootstraps access for public releases and should be replaceable through **Device WiFi Settings**.
+- A **Developer WiFi Shortcut** may prefill local source builds, but public releases rely on **Device WiFi Settings**.
+- **Network Recovery Mode** is entered by explicit local action, not by interpreting ordinary **WiFi Client Mode** connection trouble.
 - The release matrix should split **Drive command and safety logic** from **Hoverboard motor integration**.
 - The release matrix should split **RC decoding and diagnostics** from **RC-to-action dispatch and live controls**.
 - The release matrix should split **Audio backend and control logic** from **audible playback on real sound modules**, and sound-module families may have different support levels.
@@ -307,3 +356,6 @@ _Avoid_: audio lifecycle manager, audio coordinator, dispatch switch
 
 - "bench verified" was used for both clean software verification and actual ESP32 bench upload/testing; resolved by replacing it with **Software Verified**, **Controller Upload Verified**, or **Full Hardware Verified**.
 - "dome link" / "dome serial" / "dome WiFi" were used inconsistently across task notes; resolved by using **protoR2link** for the subsystem name and **UART (slip ring)** / **WiFi (fallback)** for transport labels in operator-facing text.
+- "AP mode" was used for both first-boot onboarding and ongoing hotspot operation; resolved by using **WiFi Provisioning** for onboarding and **Standalone AP Mode** for the ongoing operator-selected posture.
+- "Fresh public release" blurred download source with controller state; resolved by using **Unprovisioned Controller** for the no-settings state.
+- "Switch WiFi from the setup page" is resolved as a **Staged Network Switch**, not a fragile live toggle.
