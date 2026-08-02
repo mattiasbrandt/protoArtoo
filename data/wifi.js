@@ -146,29 +146,28 @@
     const networkRecovery = Boolean(diag.networkRecovery);
     const staEnabled = Boolean(diag.staEnabled);
     const staConnected = Boolean(diag.staConnected);
-    // Developer WiFi Shortcut (ADR 0015, self-build only): the firmware can boot
-    // straight into WiFi Client Mode from compiled secrets.h defaults on an
-    // Unprovisioned Controller, without ever writing Device WiFi Settings. That
-    // shows up here as connected-but-unprovisioned — distinct from WiFi
-    // Provisioning, which never actually connects as a client.
-    const developerShortcut = !networkRecovery && !provisioned && staEnabled && staConnected;
+    // Live connection state wins over the persisted `provisioned` flag: a
+    // controller can be genuinely connected as a WiFi client (e.g. the
+    // Developer WiFi Shortcut, ADR 0015 — self-build only, compiled from
+    // secrets.h) without Device WiFi Settings ever being saved. That is still
+    // WiFi Client Mode, not WiFi Provisioning (which never actually connects
+    // as a client) — "not provisioned yet" is a saved-settings fact shown
+    // separately in the Saved vs Active comparison, not a distinct posture.
     const stateName = networkRecovery
       ? "recovery"
-      : developerShortcut
-        ? "developer-shortcut"
+      : staEnabled
+        ? (staConnected ? "client" : (provisioned ? "client-failure" : "provisioning"))
         : !provisioned
           ? "provisioning"
-          : staEnabled
-            ? (staConnected ? "client" : "client-failure")
-            : "standalone-ap";
+          : "standalone-ap";
     const modeText = networkRecovery
       ? "Network Recovery Mode"
-      : developerShortcut
-        ? "Developer Shortcut"
+      : staEnabled && staConnected
+        ? "WiFi Client Mode"
         : !provisioned
           ? "WiFi Provisioning"
           : staEnabled ? "WiFi Client Mode" : "Standalone AP Mode";
-    return { provisioned, networkRecovery, staEnabled, staConnected, developerShortcut, stateName, modeText };
+    return { provisioned, networkRecovery, staEnabled, staConnected, stateName, modeText };
   };
 
   const apUrl = (diag = {}, preferPostRebootDefault = false) => {
@@ -264,9 +263,7 @@
     if (provisioningState) {
       provisioningState.textContent = posture.networkRecovery
         ? "🛠️ Network Recovery Mode"
-        : posture.developerShortcut
-          ? "🧑‍💻 Developer Shortcut"
-          : posture.provisioned ? "✅ Provisioned" : "⚠️ WiFi Provisioning";
+        : posture.provisioned ? "✅ Provisioned" : "⚠️ WiFi Provisioning";
     }
     if (activeMode) {
       activeMode.textContent = posture.modeText;
@@ -295,12 +292,7 @@
       if (postureDesc) {
         postureDesc.textContent = "Network Recovery Mode: a local power-cycle gesture temporarily opened WiFi Provisioning. Your saved Device WiFi Settings below are untouched — fix them, save, then reboot to return to your normal posture.";
       }
-    } else if (posture.developerShortcut) {
-      setPendingSummary("Dev shortcut", "info");
-      if (postureDesc) {
-        postureDesc.textContent = `Connected to ${diag.staSsid || "a network"} — WiFi settings from secrets.h at build time, not saved Device WiFi Settings. Save below to provision the controller.`;
-      }
-    } else if (!posture.provisioned) {
+    } else if (posture.stateName === "provisioning") {
       setPendingSummary("Provisioning", "warn");
       if (postureDesc) {
         postureDesc.textContent = "WiFi Provisioning is temporary setup; the controller is waiting for saved Device WiFi Settings.";
@@ -318,7 +310,13 @@
     } else {
       setPendingSummary("Active", "ok");
       if (postureDesc) {
-        postureDesc.textContent = `${modeLabel(wifi.mode)} settings are applied.`;
+        // Connected as a client without Device WiFi Settings ever being saved
+        // (`provisioned` false) only happens via the Developer WiFi Shortcut
+        // (ADR 0015, self-build only) — compiled from secrets.h at build time.
+        postureDesc.textContent =
+          posture.staConnected && !posture.provisioned
+            ? `WiFi Client Mode is active (from secrets.h at build time, dev only) — not saved Device WiFi Settings.`
+            : `${modeLabel(wifi.mode)} settings are applied.`;
       }
     }
 
@@ -356,13 +354,7 @@
       return;
     }
 
-    if (posture.developerShortcut) {
-      applyGuidance.textContent =
-        `Already reachable at ${hostAddress} or ${staAddress} — from secrets.h at build time, not saved settings. Save below, then Reboot to Apply, to provision the controller.`;
-      return;
-    }
-
-    if (!wifi.provisioned) {
+    if (posture.stateName === "provisioning") {
       applyGuidance.textContent =
         `WiFi Provisioning is temporary setup, not saved Standalone AP Mode. Save Device WiFi Settings, then reboot. Until then, connect to ${provisioningApName} and open ${apAddress}.`;
       return;
