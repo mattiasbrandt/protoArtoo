@@ -1,0 +1,105 @@
+name: Release
+
+# Purely additive to verification.yml — triggers only on a vX.Y.Z tag push,
+# never on branch push/PR, so the existing PR/merge gate is unaffected.
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build (${{ matrix.env }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        # Flashable, user-relevant sound-backend envs only. Adding a future
+        # backend is a one-line addition here — do not hand-roll more jobs.
+        # Excluded on purpose: protoArtoo_prod (self-build-only), *_check
+        # (compile-only), *_profiler* (dev tooling), *_ota (identical
+        # firmware.bin to its non-OTA counterpart, just a different
+        # upload_protocol).
+        env:
+          - protoArtoo_chirp
+          - protoArtoo_mp3trigger
+    steps:
+      - name: ⬇️ Checkout
+        uses: actions/checkout@v4
+
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+          cache: pip
+          cache-dependency-path: tools/requirements.txt
+
+      - name: 📦 Install PlatformIO and Python tools
+        run: pip install platformio && pip install -r tools/requirements.txt
+
+      - name: 💾 Cache PlatformIO library downloads
+        uses: actions/cache@v4
+        with:
+          path: ~/.platformio/.cache
+          key: ${{ runner.os }}-pio-${{ hashFiles('platformio.ini') }}
+          restore-keys: ${{ runner.os }}-pio-
+
+      - name: 🏗️ Build firmware
+        run: pio run -e ${{ matrix.env }}
+
+      - name: 🗂️ Build filesystem image
+        run: pio run -e ${{ matrix.env }} -t buildfs
+
+      - name: 📦 Stage release artifacts
+        run: |
+          mkdir -p release-artifacts
+          cp .pio/build/${{ matrix.env }}/firmware.bin \
+             release-artifacts/${{ matrix.env }}-firmware.bin
+          cp .pio/build/${{ matrix.env }}/littlefs.bin \
+             release-artifacts/${{ matrix.env }}-filesystem.bin
+
+      - name: ⬆️ Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-artifacts-${{ matrix.env }}
+          path: release-artifacts/
+          retention-days: 1
+
+  publish:
+    name: publish release
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: ⬇️ Checkout
+        uses: actions/checkout@v4
+
+      - name: ⬇️ Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-artifacts-*
+          path: release-artifacts
+          merge-multiple: true
+
+      - name: 📝 Extract CHANGELOG section for this tag
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="${TAG#v}"
+          python3 tools/extract_changelog_section.py "$version" > release-notes.md
+
+      - name: 🚀 Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --notes-file release-notes.md \
+            release-artifacts/*
