@@ -149,10 +149,19 @@ class PatchAsyncWebServerTest(unittest.TestCase):
             patched,
         )
 
+    def test_abstract_response_zero_read_state_patch_rejects_vendor_drift(self):
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "WebResponseImpl.h response buffer state changed",
+        ):
+            PATCH.patch_abstract_response_zero_read_state("changed vendor state")
+
     def test_abstract_response_zero_read_patch_distinguishes_eof_retry_and_exhaustion(self):
         source = (
             "prefix\n"
             + PATCH.ABSTRACT_RESPONSE_ZERO_READ_BEFORE
+            + "middle\n"
+            + PATCH.ABSTRACT_RESPONSE_BUFFER_RELEASE_BEFORE
             + "suffix\n"
         )
 
@@ -175,11 +184,27 @@ class PatchAsyncWebServerTest(unittest.TestCase):
         )
         self.assertIn("_state = RESPONSE_FAILED;", patched)
         self.assertIn("request->client()->close();", patched)
+        self.assertIn(
+            "if (_send_buffer_len == 0 && _prematureZeroReadRetries == 0)",
+            patched,
+        )
         self.assertLess(
             patched.index("++_prematureZeroReadRetries;"),
             patched.index("_state = RESPONSE_FAILED;"),
         )
         self.assertEqual(PATCH.patch_abstract_response_zero_read(patched), patched)
+
+    def test_abstract_response_zero_read_patch_rejects_vendor_drift(self):
+        source = (
+            PATCH.ABSTRACT_RESPONSE_ZERO_READ_BEFORE
+            + "changed vendor buffer release"
+        )
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "WebResponses.cpp response buffer release changed",
+        ):
+            PATCH.patch_abstract_response_zero_read(source)
 
     def test_async_event_dispatch_patch_catches_exceptions_and_is_idempotent(self):
         source = (

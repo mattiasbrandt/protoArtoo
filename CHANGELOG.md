@@ -23,6 +23,10 @@ Every semantic version release belongs here:
   request-start/handler-done/disconnect trace. Evidence-gathering only — no
   admission caps, floors, or weights were changed.
 
+### Fixed
+- Static files with a declared content length now retry bounded transient zero
+  reads on the same response instead of ending early with a truncated body.
+
 ## [1.0.0] - 2026-08-01
 
 First stable release. Feature-complete for day-to-day operation — audio, RC

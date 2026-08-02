@@ -675,6 +675,21 @@ ABSTRACT_RESPONSE_ZERO_READ_AFTER = """\
         }
 """
 
+ABSTRACT_RESPONSE_BUFFER_RELEASE_BEFORE = """\
+    if (_send_buffer_len == 0) {
+      // buffer empty, we can release mem, otherwise need to keep it till next run (should not happen under normal conditions)
+      _send_buffer.reset();
+    }
+"""
+
+ABSTRACT_RESPONSE_BUFFER_RELEASE_AFTER = """\
+    if (_send_buffer_len == 0 && _prematureZeroReadRetries == 0) {
+      // Release an empty buffer unless this response must reuse it for a
+      // bounded premature-zero retry under heap pressure.
+      _send_buffer.reset();
+    }
+"""
+
 
 def patch_sse_header(text):
     if text.count(SSE_PREAMBLE_START) != 1 or text.count(SSE_PREAMBLE_END) != 1:
@@ -743,6 +758,10 @@ def patch_static_handler_open_guard(text):
     return text
 
 
+# Add the fixed retry budget and counter to each AsyncAbstractResponse instance.
+# The input is the complete vendor header text; the returned text is patched or
+# unchanged when already patched. A moved/changed anchor raises instead of
+# silently dropping the response-recovery contract. This function has no I/O.
 def patch_abstract_response_zero_read_state(text):
     if ABSTRACT_RESPONSE_ZERO_READ_STATE_AFTER in text:
         return text
@@ -757,18 +776,35 @@ def patch_abstract_response_zero_read_state(text):
     )
 
 
+# Make declared-length zero reads retry twice and retain the existing response
+# buffer across those retries. The input is complete vendor implementation text;
+# the returned text is idempotently patched. Either changed anchor raises so a
+# dependency upgrade cannot silently restore truncation or retry-time allocation.
+# This function has no I/O.
 def patch_abstract_response_zero_read(text):
-    if ABSTRACT_RESPONSE_ZERO_READ_AFTER in text:
-        return text
-    if text.count(ABSTRACT_RESPONSE_ZERO_READ_BEFORE) != 1:
-        raise RuntimeError(
-            "ESPAsyncWebServer WebResponses.cpp non-chunked fill handling changed; "
-            "review tools/patch_async_sse.py"
+    if ABSTRACT_RESPONSE_ZERO_READ_AFTER not in text:
+        if text.count(ABSTRACT_RESPONSE_ZERO_READ_BEFORE) != 1:
+            raise RuntimeError(
+                "ESPAsyncWebServer WebResponses.cpp non-chunked fill handling changed; "
+                "review tools/patch_async_sse.py"
+            )
+        text = text.replace(
+            ABSTRACT_RESPONSE_ZERO_READ_BEFORE,
+            ABSTRACT_RESPONSE_ZERO_READ_AFTER,
         )
-    return text.replace(
-        ABSTRACT_RESPONSE_ZERO_READ_BEFORE,
-        ABSTRACT_RESPONSE_ZERO_READ_AFTER,
-    )
+
+    if ABSTRACT_RESPONSE_BUFFER_RELEASE_AFTER not in text:
+        if text.count(ABSTRACT_RESPONSE_BUFFER_RELEASE_BEFORE) != 1:
+            raise RuntimeError(
+                "ESPAsyncWebServer WebResponses.cpp response buffer release changed; "
+                "review tools/patch_async_sse.py"
+            )
+        text = text.replace(
+            ABSTRACT_RESPONSE_BUFFER_RELEASE_BEFORE,
+            ABSTRACT_RESPONSE_BUFFER_RELEASE_AFTER,
+        )
+
+    return text
 
 
 def patch_async_event_dispatch(text):
