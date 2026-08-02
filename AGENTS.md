@@ -323,37 +323,58 @@ evidence phrases ("Automated checks are passing", "Tested on an ESP32 controller
 
 ### Branch model
 
-Through the `v1.0.0` release, protoArtoo uses a phase-oriented branch model:
+Through the `v1.0.0` release, protoArtoo used a phase-oriented branch model —
+one long-lived `phase/vX.Y.Z` branch carrying all work for a development
+phase, merged to `main` (PM-approved, non-fast-forward) at phase completion.
+That model is retired as of `v1.0.0`. It's documented here only as history;
+it does not describe current practice.
+
+**Current model (post-`v1.0.0`): short-lived feature branches.**
 
 | Branch | Purpose |
 |---|---|
-| `main` | Stable, released state only. Updated at phase completion via PM-approved non-fast-forward merge. |
-| `phase/vX.Y.Z` | All work for the active phase (e.g. `phase/v0.4.0`). One active phase at a time. |
+| `main` | Stable, released state only. Tagged at every version. Updated only via a Mattias-approved PR merge. |
+| `feature/<what>` | New user-facing functionality. |
+| `fix/<what>` | Bug fixes. |
+| `refactor/<what>` | Code restructuring, no behavior change. |
+| `chore/<what>` | Build config, deps, CI, tooling. |
+| `docs/<what>` | Documentation only. |
 | `exp/<topic>` | Disposable experiments. Never merged directly to `main`. |
 
-`dev`, `feature/<phase>-<what>`, and `fix/<what>` branches are retired as of Phase v0.4.0.
+Multiple independent feature branches may coexist — the phase model's "one
+active phase at a time" constraint has no replacement; it simply no longer
+applies. Branch off `main`, PR back into `main`, delete after merge.
 
-**Starting after `v1.0.0`, protoArtoo moves to a short-lived feature-branch
-model** (branch off `main`, PR back into `main`, delete after merge) instead
-of one long-lived phase branch. The exact naming and merge convention is
-not yet decided — see
-[issue #31](https://github.com/mattiasbrandt/protoArtoo/issues/31). This
-section, the commit scope format below, and the phase-specific Invariants
-below apply through `v1.0.0` and will be rewritten once the new model is
-settled.
+**Merge strategy:** "Rebase and merge" for this ongoing feature-branch
+workflow. This is distinct from the one-time `phase/v1.0.0` -> `main` merge,
+which used "Create a merge commit" specifically to satisfy the
+non-fast-forward invariant for that historical branch (squash flattens
+history; rebase replays as fast-forward — neither preserves it). Don't reuse
+that mechanism for ongoing feature-branch PRs.
 
-### Commit scope format (required, through v1.0.0)
+**Approval:** Mattias approves every PR merge to `main`, unconditionally — no
+agent self-merge under any circumstance, regardless of how low-risk a change
+appears.
 
-All commits within a phase branch must use:
+### Commit scope format (required)
+
+All commits use plain [Conventional Commits](https://www.conventionalcommits.org)
+format:
 
 ```
-type(phase:vX.Y.Z/T<NN>): summary
+type(scope): summary
 ```
 
-- `T<NN>` is the zero-padded task number from the phase plan (`T01`, `T02`, ...)
-- `T00` = phase scaffolding or admin commits not tied to a specific task
-- `type` follows [Conventional Commits](https://www.conventionalcommits.org): `feat`, `fix`, `docs`, `refactor`, `chore`, `test`, `style`, `perf`
-- Slice notation: `type(phase:vX.Y.Z/T<NN>/slice:a): summary`
+- `type`: `feat`, `fix`, `docs`, `refactor`, `chore`, `test`, `style`, `perf`
+- `scope`: from CONTRIBUTING.md's domain-scope table (`drive`, `sbus`,
+  `failsafe`, `dome`, `audio`, `servo`, `web`, `nvs`, `wifi`, `hw`, `plan`,
+  `test`, `ci`)
+
+The phase-era `type(phase:vX.Y.Z/T<NN>): summary` token (and its
+`/slice:a` variant) is dropped entirely going forward — it will still appear
+throughout this repo's git history through `v1.0.0` as a historical artifact.
+Per-slice tracking now lives entirely in the Incremental slice workflow's
+per-issue checklist comment (below), not in the commit scope.
 
 ### Incremental slice workflow (required)
 
@@ -405,11 +426,8 @@ to a meaningless default.
 
 - Never commit directly to `main`
 - Ad-hoc incidental improvements are permitted commits without plan amendment; formal scope additions require PM approval
-
-Through `v1.0.0` (phase model in force — see "Branch model" above):
-- Always identify the active phase branch before making changes
-- One active phase at a time — do not begin a new phase until the current one merges to `main`
-- Phase branch merges to `main` require PM approval; merge method is non-fast-forward
+- Mattias approves every PR merge to `main`, unconditionally — no agent self-merge regardless of change size or risk
+- Merge method for ongoing feature-branch PRs is "Rebase and merge" (see "Branch model" above for the one-time historical exception)
 
 ## Agent skills
 

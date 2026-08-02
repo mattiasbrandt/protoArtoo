@@ -170,56 +170,64 @@ These will not be accepted in a pull request.
 Through the `v1.0.0` release, protoArtoo used a phase-oriented branch model:
 all work for a development phase landed on a single long-lived
 `phase/vX.Y.Z` branch, merged into `main` (non-fast-forward, PM-approved) at
-phase completion. `AGENTS.md`'s "Branch model" and "Commit scope format"
-sections are canonical for that model's detail.
+phase completion. That model is retired as of `v1.0.0` — documented below
+only as history, not current practice.
 
 ```
 main
-└── phase/v1.0.0        ← phase branch (v1.0.0 and earlier work)
+└── phase/v1.0.0        ← phase branch (v1.0.0 and earlier work, historical)
     ├── (feat commits)
     └── (fix/docs/chore commits)
-
-exp/<topic>            ← disposable experiments (never merged to main)
 ```
 
-**Starting after `v1.0.0`, protoArtoo is moving to a more typical
-short-lived feature-branch workflow** (branch off `main`, PR back into
-`main`, delete after merge) instead of one long-lived phase branch. The
-exact naming and merge convention isn't finalized yet — check
-`docs/status.md` or ask if you're unsure which model is currently in
-effect for a given contribution.
+**Current model (post-`v1.0.0`): short-lived feature branches.** Branch off
+`main`, PR back into `main`, delete after merge. Multiple independent
+branches may coexist — there's no "one active line of work at a time"
+constraint anymore. `AGENTS.md`'s "Branch model" section is canonical for
+full detail; summary here:
 
-### Branch naming (through v1.0.0)
+### Branch naming
 
 | Branch | Purpose |
 |---|---|
-| `main` | Stable, released state only. Tagged at every version. Updated only via a PM-approved, non-fast-forward merge at phase completion. |
-| `phase/vX.Y.Z` | All work for the active development phase. |
-| `exp/<topic>` | Exploratory or speculative work. Start here if you\'re not sure where your contribution fits. |
+| `main` | Stable, released state only. Tagged at every version. Updated only via a Mattias-approved PR merge. |
+| `feature/<what>` | New user-facing functionality. |
+| `fix/<what>` | Bug fixes. |
+| `refactor/<what>` | Code restructuring, no behavior change. |
+| `chore/<what>` | Build config, deps, CI, tooling. |
+| `docs/<what>` | Documentation only. |
+| `exp/<topic>` | Exploratory or speculative work. Start here if you're not sure where your contribution fits. Never merged directly to `main`. |
 
-`dev`, `feature/<phase>-<what>`, and `fix/<what>` branches are retired as of
-the phase model (see above for what replaces them post-`v1.0.0`).
+`phase/vX.Y.Z` and `dev` branches are retired as of `v1.0.0`.
+
+### Merge strategy
+
+"Rebase and merge" into `main` for feature-branch PRs — matches the
+historical linear/no-merge-commit pattern. (The one-time `phase/v1.0.0` ->
+`main` merge used "Create a merge commit" instead, specifically to satisfy
+the non-fast-forward invariant for that historical branch; that mechanism
+doesn't apply to ongoing feature-branch PRs.)
 
 ### Current practice
 
 In practice, protoArtoo is maintained solo, with AI coding agents doing much
-of the implementation work under human review directly on the active
-branch — there is no fork-and-PR-into-phase-branch workflow in active use
-today.
+of the implementation work under human review directly on feature branches.
+Mattias approves and merges every PR into `main`, unconditionally — no
+agent self-merge regardless of how low-risk a change appears.
 
 If you're an external contributor: fork the repository, branch from
-`main`, and open a PR against it. `main` is protected — check
-`docs/status.md` if you're unsure what's currently expected before opening
-one. After your work is merged, your branch will be deleted.
+`main`, and open a PR against it. `main` is protected. After your work is
+merged, your branch will be deleted.
 
 ### Commit scope
 
 All commits use Conventional Commits format with a scope (see "Scopes"
-above). Through `v1.0.0`, that scope also carried a phase/task tag —
-`type(phase:vX.Y.Z/T<NN>): summary` — visible throughout this repo's git
-history if you need a reference. The post-`v1.0.0` feature-branch model's
-commit scope convention isn't finalized yet; this section will be updated
-once it is.
+above): `type(scope): summary`. Through `v1.0.0`, that scope also carried a
+phase/task tag — `type(phase:vX.Y.Z/T<NN>): summary` — visible throughout
+this repo's git history through that release if you need a reference. That
+token is dropped entirely going forward; the post-`v1.0.0` commit scope is
+just the plain Conventional Commits form above, using the domain scopes from
+the "Scopes" table.
 
 ---
 
