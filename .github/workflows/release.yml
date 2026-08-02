@@ -27,6 +27,7 @@ jobs:
         env:
           - protoArtoo_chirp
           - protoArtoo_mp3trigger
+          - protoArtoo_dysv5w
     steps:
       - name: ⬇️ Checkout
         uses: actions/checkout@v4

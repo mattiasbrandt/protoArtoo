@@ -22,6 +22,7 @@ OTA_TRANSFER_TIMEOUT ?= 60
 
 .PHONY: all help build test check check-action-drift flash ota uploadfs \
         flash-chirp ota-chirp ota-mp3trigger \
+        flash-dysv5w ota-dysv5w \
         flash-monitor flash-chirp-monitor \
         check-chirp check-mp3trigger \
         setup setup-wifi clean monitor check-deps
@@ -87,6 +88,17 @@ ota-chirp: test ## Flash CHIRP build via OTA
 ota-mp3trigger: test ## Flash MP3 Trigger build via OTA
 	pio run -e protoArtoo_mp3trigger_ota
 	python3 tools/ota_upload.py --env protoArtoo_mp3trigger_ota --host $(OTA_IP) --timeout $(OTA_TIMEOUT) --transfer-timeout $(OTA_TRANSFER_TIMEOUT)
+
+# ── Flash: DY-SV5W (named env) ───────────────────────────────────────────────
+# Same driver as the default protoArtoo env — these targets exist so DY-SV5W
+# has the same explicit, discoverable build/flash surface as CHIRP and MP3 Trigger.
+
+flash-dysv5w: test ## Flash DY-SV5W build via USB
+	pio run -e protoArtoo_dysv5w -t upload --upload-port $(UPLOAD_PORT)
+
+ota-dysv5w: test ## Flash DY-SV5W build via OTA
+	pio run -e protoArtoo_dysv5w_ota
+	python3 tools/ota_upload.py --env protoArtoo_dysv5w_ota --host $(OTA_IP) --timeout $(OTA_TIMEOUT) --transfer-timeout $(OTA_TRANSFER_TIMEOUT)
 
 # ── Compile-check only ───────────────────────────────────────────────────────
 
