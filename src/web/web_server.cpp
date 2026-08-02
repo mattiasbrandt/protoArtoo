@@ -44,17 +44,22 @@
 #include "../../include/aux_led.h"
 #include "../../include/rc_diagnostics_snapshot.h"
 #include "../../include/robot_state.h"
+#include "../../include/wifi_boot_decision.h"
 
+// src/secrets.h is the Developer WiFi Shortcut (ADR 0015): local/self-build-only
+// compile-time WiFi defaults. It is never required to compile or boot — public
+// release binaries (protoArtoo_chirp, protoArtoo_mp3trigger) ship without it and
+// boot into WiFi Provisioning via wifiDecideBootPosture() instead.
 #if __has_include("secrets.h")
 #include "secrets.h"
+#define PA_HAS_SECRETS_HEADER 1
+#else
+#define PA_HAS_SECRETS_HEADER 0
 #endif
 
-// PA_ENABLE_STA_WIFI=1 (default): WiFi client mode — connects to an existing network.
-//   Credentials (PA_STA_SSID, PA_STA_PASSWORD) must be in src/secrets.h.
-//   Server starts when the connection is established.
-// PA_ENABLE_STA_WIFI=0 (protoArtoo_prod): hotspot mode — device creates its own
-//   access point. No external network needed.
-// These are mutually exclusive — never both active simultaneously.
+// PA_ENABLE_STA_WIFI selects which posture the Developer WiFi Shortcut resolves to
+// when secrets.h is present: 1 (default) = WiFi Client Mode, 0 = Standalone AP Mode.
+// It has no effect once Device WiFi Settings are provisioned (runtime settings win).
 #ifndef PA_ENABLE_STA_WIFI
 #define PA_ENABLE_STA_WIFI 1
 #endif
@@ -1097,7 +1102,6 @@ void startHttpServerOnce() {
     serverStarted = true;
     PA_LOG_INFO(TAG, "HTTP server started on port 80");
 
-#if PA_ENABLE_STA_WIFI
     if (!mdnsStarted && WiFi.status() == WL_CONNECTED) {
         char hostname[DROID_NAME_MAX_LEN + 1] = {};
         configCacheResolvedMdnsHostname(hostname, sizeof(hostname));
@@ -1109,7 +1113,6 @@ void startHttpServerOnce() {
             PA_LOG_WARN(TAG, "mDNS init failed for host %s", hostname);
         }
     }
-#endif
 
     // Start OTA task in background — MUST NOT block WiFi event handler (causes TWDT)
     if (!otaTaskStarted) {
@@ -1192,11 +1195,10 @@ void startHttpServerOnce() {
 void handleWiFiEvent(WiFiEvent_t event) {
     switch (event) {
         case ARDUINO_EVENT_WIFI_AP_START:
-            PA_LOG_INFO(TAG, "Hotspot started - SSID: %s  IP: %s", WIFI_AP_SSID,
+            PA_LOG_INFO(TAG, "Hotspot started - SSID: %s  IP: %s", WiFi.softAPSSID().c_str(),
                         WiFi.softAPIP().toString().c_str());
             startHttpServerOnce();
             break;
-#if PA_ENABLE_STA_WIFI
         case ARDUINO_EVENT_WIFI_STA_START:
             PA_LOG_INFO(TAG, "Connecting to WiFi network...");
             break;
@@ -1205,10 +1207,76 @@ void handleWiFiEvent(WiFiEvent_t event) {
             startHttpServerOnce();
             break;
         case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
+            // Ordinary WiFi Client Mode connection trouble stays visible as a
+            // client-mode problem (ADR 0015). It must never trigger automatic
+            // AP fallback here — wifiDecideBootPosture() has no connectivity
+            // input, so there is nothing to re-decide on disconnect.
             PA_LOG_INFO(TAG, "WiFi connection lost");
             break;
-#endif  // PA_ENABLE_STA_WIFI
         default:
+            break;
+    }
+}
+
+// buildDeveloperShortcut: the Developer WiFi Shortcut (ADR 0015) resolved from
+// src/secrets.h, source-build-only. Never populated in public release binaries —
+// `available` stays false whenever secrets.h is absent or leaves its expected
+// macros undefined, which is always true for protoArtoo_chirp/protoArtoo_mp3trigger.
+static WifiDeveloperShortcut buildDeveloperShortcut() {
+    WifiDeveloperShortcut shortcut;
+#if PA_HAS_SECRETS_HEADER
+#if PA_ENABLE_STA_WIFI
+#if defined(PA_STA_SSID) && defined(PA_STA_PASSWORD)
+    shortcut.available = true;
+    shortcut.mode = WifiMode::CLIENT;
+#endif
+#else
+#if defined(PA_AP_PASSWORD)
+    shortcut.available = true;
+    shortcut.mode = WifiMode::STANDALONE_AP;
+#endif
+#endif  // PA_ENABLE_STA_WIFI
+#endif  // PA_HAS_SECRETS_HEADER
+    return shortcut;
+}
+
+// executeWifiBootPosture: enters the posture wifiDecideBootPosture() returned.
+// This function decides HOW to enter a posture; it never re-derives WHICH
+// posture to enter (that decision already happened, and stays pure/testable).
+static void executeWifiBootPosture(WifiBootPosture posture, const WifiConfig& settings) {
+    switch (posture) {
+        case WifiBootPosture::PROVISIONING:
+        case WifiBootPosture::NETWORK_RECOVERY:
+            // Both postures expose WiFi Provisioning with the documented Default AP
+            // Credential — recovery must stay reachable even if the operator no
+            // longer remembers a custom Standalone AP Mode password.
+            WiFi.mode(WIFI_AP);
+            WiFi.softAP(WIFI_AP_SSID, WIFI_DEFAULT_AP_PASSWORD);
+            PA_LOG_INFO(TAG, "WiFi bootstrap: %s (AP %s)",
+                        posture == WifiBootPosture::NETWORK_RECOVERY ? "network recovery"
+                                                                      : "provisioning",
+                        WIFI_AP_SSID);
+            break;
+        case WifiBootPosture::CLIENT_MODE: {
+            const char* ssid = settings.sta_ssid;
+            const char* password = settings.sta_password;
+#if PA_HAS_SECRETS_HEADER && defined(PA_STA_SSID) && defined(PA_STA_PASSWORD)
+            // Developer WiFi Shortcut: an unprovisioned controller has no saved
+            // STA credentials, so a self-build falls back to secrets.h defaults.
+            if (ssid[0] == '\0') {
+                ssid = PA_STA_SSID;
+                password = PA_STA_PASSWORD;
+            }
+#endif
+            WiFi.mode(WIFI_STA);
+            WiFi.begin(ssid, password);
+            PA_LOG_INFO(TAG, "WiFi bootstrap: client mode (SSID %s)", ssid);
+            break;
+        }
+        case WifiBootPosture::STANDALONE_AP_MODE:
+            WiFi.mode(WIFI_AP);
+            WiFi.softAP(settings.ap_ssid, settings.ap_password);
+            PA_LOG_INFO(TAG, "WiFi bootstrap: standalone AP mode (SSID %s)", settings.ap_ssid);
             break;
     }
 }
@@ -1240,30 +1308,19 @@ void webServerInit() {
         eventTaskStarted = true;
     }
 
-#if PA_ENABLE_STA_WIFI
-    // Compile-time guard: credentials must be present when WiFi client mode is enabled.
-#if !__has_include("secrets.h")
-#error "PA_ENABLE_STA_WIFI=1 requires src/secrets.h defining PA_STA_SSID and PA_STA_PASSWORD"
-#endif
-#ifndef PA_STA_SSID
-#error "PA_ENABLE_STA_WIFI=1: PA_STA_SSID not defined in secrets.h"
-#endif
-#ifndef PA_STA_PASSWORD
-#error "PA_ENABLE_STA_WIFI=1: PA_STA_PASSWORD not defined in secrets.h"
-#endif
-    WiFi.mode(WIFI_STA);
-    WiFi.begin(PA_STA_SSID, PA_STA_PASSWORD);
-    PA_LOG_INFO(TAG, "WiFi bootstrap: client mode");
-#else
-#if !__has_include("secrets.h")
-#error "PA_ENABLE_STA_WIFI=0 requires src/secrets.h defining PA_AP_PASSWORD"
-#endif
-#ifndef PA_AP_PASSWORD
-#error "PA_ENABLE_STA_WIFI=0: PA_AP_PASSWORD not defined in secrets.h"
-#endif
-    static_assert(sizeof(PA_AP_PASSWORD) >= 9, "PA_AP_PASSWORD must be at least 8 characters");
-    WiFi.mode(WIFI_AP);
-    WiFi.softAP(WIFI_AP_SSID, PA_AP_PASSWORD);
-    PA_LOG_INFO(TAG, "WiFi bootstrap: hotspot mode (secured)");
-#endif  // PA_ENABLE_STA_WIFI
+    // ADR 0015: boot posture is decided once from Device WiFi Settings plus the
+    // Developer WiFi Shortcut, through the same pure decision layer the native
+    // tests exercise (test_wifi_boot_decision). Network Recovery Mode's local
+    // entry gesture is issue #48 — networkRecoveryRequested stays false here
+    // until that gesture exists; this shell does not infer it.
+    WifiConfig wifiSettings = {};
+    configCacheReadWifi(&wifiSettings);
+
+    WifiBootDecisionInput decisionInput;
+    decisionInput.settings = wifiSettings;
+    decisionInput.networkRecoveryRequested = false;
+    decisionInput.developerShortcut = buildDeveloperShortcut();
+
+    WifiBootPosture posture = wifiDecideBootPosture(decisionInput);
+    executeWifiBootPosture(posture, wifiSettings);
 }
