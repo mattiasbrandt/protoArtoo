@@ -288,7 +288,14 @@ WifiConfigView wifiConfigToView(const WifiConfig& cfg) {
     return view;
 }
 
+bool wifiConfigsDiffer(const WifiConfig& a, const WifiConfig& b) {
+    return a.provisioned != b.provisioned || a.mode != b.mode ||
+           strcmp(a.sta_ssid, b.sta_ssid) != 0 || strcmp(a.sta_password, b.sta_password) != 0 ||
+           strcmp(a.ap_ssid, b.ap_ssid) != 0 || strcmp(a.ap_password, b.ap_password) != 0;
+}
+
 ConfigSnapshot configCache = {};
+WifiConfig activeWifiConfig = {};
 portMUX_TYPE configCacheMux = portMUX_INITIALIZER_UNLOCKED;
 
 void configCacheRead(ConfigSnapshot* out) {
@@ -342,6 +349,21 @@ void configCacheReadWifi(WifiConfig* out) {
     }
     taskENTER_CRITICAL(&configCacheMux);
     *out = configCache.wifi;
+    taskEXIT_CRITICAL(&configCacheMux);
+}
+
+void configCacheSetActiveWifi(const WifiConfig& cfg) {
+    taskENTER_CRITICAL(&configCacheMux);
+    activeWifiConfig = cfg;
+    taskEXIT_CRITICAL(&configCacheMux);
+}
+
+void configCacheReadActiveWifi(WifiConfig* out) {
+    if (out == nullptr) {
+        return;
+    }
+    taskENTER_CRITICAL(&configCacheMux);
+    *out = activeWifiConfig;
     taskEXIT_CRITICAL(&configCacheMux);
 }
 

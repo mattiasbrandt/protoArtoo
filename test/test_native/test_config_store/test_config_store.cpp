@@ -1094,6 +1094,28 @@ void test_wifiConfigToView_reports_unset_empty_passwords() {
     TEST_ASSERT_FALSE(view.ap_password_set);
 }
 
+void test_wifiConfigsDiffer_true_when_mode_or_ssid_or_password_changes() {
+    WifiConfig a = {};
+    a.provisioned = true;
+    a.mode = WifiMode::CLIENT;
+    snprintf(a.sta_ssid, sizeof(a.sta_ssid), "%s", "HomeNetwork");
+    snprintf(a.sta_password, sizeof(a.sta_password), "%s", "secret1");
+
+    WifiConfig b = a;
+    TEST_ASSERT_FALSE(wifiConfigsDiffer(a, b));
+
+    b.mode = WifiMode::STANDALONE_AP;
+    TEST_ASSERT_TRUE(wifiConfigsDiffer(a, b));
+
+    b = a;
+    snprintf(b.sta_ssid, sizeof(b.sta_ssid), "%s", "OtherNetwork");
+    TEST_ASSERT_TRUE(wifiConfigsDiffer(a, b));
+
+    b = a;
+    snprintf(b.sta_password, sizeof(b.sta_password), "%s", "secret2");
+    TEST_ASSERT_TRUE(wifiConfigsDiffer(a, b));
+}
+
 void test_configLoad_save_wifi_round_trip() {
     Preferences prefs;
     prefs.begin("proto", false);
@@ -1161,6 +1183,7 @@ int main() {
     RUN_TEST(test_configUpdateAudioMoodMasks_round_trips_through_audio_store);
     RUN_TEST(test_wifiConfigToView_sets_password_flags_not_plaintext);
     RUN_TEST(test_wifiConfigToView_reports_unset_empty_passwords);
+    RUN_TEST(test_wifiConfigsDiffer_true_when_mode_or_ssid_or_password_changes);
     RUN_TEST(test_configLoad_save_wifi_round_trip);
     return UNITY_END();
 }

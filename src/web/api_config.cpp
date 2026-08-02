@@ -22,6 +22,7 @@
 #include "api_config_apply.h"
 #include "api_config_snapshot.h"
 #include "api_rc_map_apply.h"
+#include "api_wifi_apply.h"
 #include "api_helpers.h"
 #include "audio_task.h"
 #include "commanded_modes.h"
@@ -69,6 +70,16 @@ const char* rcMapSourceToString(RcBindingSource source) {
         case RC_BINDING_NONE:
         default:
             return "none";
+    }
+}
+
+const char* wifiModeToString(WifiMode mode) {
+    switch (mode) {
+        case WifiMode::STANDALONE_AP:
+            return "standalone_ap";
+        case WifiMode::CLIENT:
+        default:
+            return "client";
     }
 }
 
@@ -468,6 +479,19 @@ bool populateConfigJson(JsonDocument& doc, const ConfigSnapshot& snap) {
     JsonObject system = doc["system"].to<JsonObject>();
     system["logLevel"] = snap.system.logLevel;
 
+    // Device WiFi Settings (ADR 0015): password-safe read shape only. The
+    // "pendingApply" flag (active-vs-pending for a Staged Network Switch) is
+    // runtime state, not part of this pure snapshot — the caller adds it
+    // after calling populateConfigJson().
+    WifiConfigView wifiView = wifiConfigToView(snap.wifi);
+    JsonObject wifi = doc["wifi"].to<JsonObject>();
+    wifi["provisioned"] = wifiView.provisioned;
+    wifi["mode"] = wifiModeToString(wifiView.mode);
+    wifi["staSsid"] = wifiView.sta_ssid;
+    wifi["staPasswordSet"] = wifiView.sta_password_set;
+    wifi["apSsid"] = wifiView.ap_ssid;
+    wifi["apPasswordSet"] = wifiView.ap_password_set;
+
     return !doc.overflowed();
 }
 
@@ -560,6 +584,9 @@ void registerConfigRoutes(AsyncWebServer& server) {
                       "{\"ok\":false,\"error\":\"config json build failed\"}");
             return;
         }
+        WifiConfig activeWifi = {};
+        configCacheReadActiveWifi(&activeWifi);
+        doc["wifi"]["pendingApply"] = wifiConfigsDiffer(snap.wifi, activeWifi);
         auto* stream = req->beginResponseStream("application/json");
         if (stream == nullptr) {
             req->send(500, "application/json",
@@ -640,6 +667,9 @@ void registerConfigRoutes(AsyncWebServer& server) {
                       "{\"ok\":false,\"error\":\"config json build failed\"}");
             return;
         }
+        WifiConfig activeWifiAfterPost = {};
+        configCacheReadActiveWifi(&activeWifiAfterPost);
+        doc["wifi"]["pendingApply"] = wifiConfigsDiffer(snap.wifi, activeWifiAfterPost);
         auto* stream = req->beginResponseStream("application/json");
         if (stream == nullptr) {
             req->send(500, "application/json",
@@ -648,5 +678,76 @@ void registerConfigRoutes(AsyncWebServer& server) {
         }
         serializeJson(doc, *stream);
         req->send(stream);
+    });
+
+    server.on("/api/wifi", HTTP_POST, [](AsyncWebServerRequest* req) {
+        ConfigParamSource params;
+        params.ctx = req;
+        params.get = [](void* ctx, const char* name) -> const char* {
+            auto* r = static_cast<AsyncWebServerRequest*>(ctx);
+            if (!r->hasParam(name, true)) {
+                return nullptr;
+            }
+            return r->getParam(name, true)->value().c_str();
+        };
+
+        WifiConfig working = {};
+        configCacheReadWifi(&working);
+
+        // WifiApplyResult is small; static kept for consistency with the
+        // ADR 0011 slice 1 out-parameter convention.
+        static WifiApplyResult result;
+        wifiApply(params, &working, &result);
+        if (!result.ok) {
+            char errPayload[224];
+            snprintf(errPayload, sizeof(errPayload), "{\"ok\":false,\"error\":\"%s\"}",
+                     result.errorMessage);
+            req->send(400, "application/json", errPayload);
+            return;
+        }
+
+        Preferences prefs;
+        if (!prefs.begin(NVS_NAMESPACE, false)) {
+            req->send(500, "application/json",
+                      "{\"ok\":false,\"error\":\"failed to persist wifi settings\"}");
+            return;
+        }
+        if (!configSaveWifi(prefs, working)) {
+            prefs.end();
+            req->send(500, "application/json",
+                      "{\"ok\":false,\"error\":\"failed to persist wifi settings\"}");
+            return;
+        }
+        prefs.end();
+
+        // Stage only: update the persisted cache so reads see the new
+        // settings, but do not touch WiFi hardware here (ADR 0015 Staged
+        // Network Switch — apply happens through an explicit reboot/restart
+        // handoff, not as a side effect of saving this form).
+        ConfigSnapshot snap;
+        configCacheRead(&snap);
+        snap.wifi = working;
+        configCacheApply(snap);
+
+        requestStatusBroadcastNow();
+
+        JsonDocument doc;
+        WifiConfigView view = wifiConfigToView(working);
+        doc["ok"] = true;
+        JsonObject wifi = doc["wifi"].to<JsonObject>();
+        wifi["provisioned"] = view.provisioned;
+        wifi["mode"] = wifiModeToString(view.mode);
+        wifi["staSsid"] = view.sta_ssid;
+        wifi["staPasswordSet"] = view.sta_password_set;
+        wifi["apSsid"] = view.ap_ssid;
+        wifi["apPasswordSet"] = view.ap_password_set;
+
+        WifiConfig activeWifi = {};
+        configCacheReadActiveWifi(&activeWifi);
+        wifi["pendingApply"] = wifiConfigsDiffer(working, activeWifi);
+
+        char payload[512];
+        serializeJson(doc, payload, sizeof(payload));
+        req->send(200, "application/json", payload);
     });
 }

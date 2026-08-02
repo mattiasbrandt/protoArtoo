@@ -312,6 +312,13 @@ struct WifiConfigView {
 // password-safe read shape. No plaintext password ever reaches the result.
 WifiConfigView wifiConfigToView(const WifiConfig& cfg);
 
+// wifiConfigsDiffer: true if any operator-relevant field (provisioned state,
+// mode, SSIDs, or password content) differs between two Device WiFi Settings
+// snapshots. Used to report active-vs-pending state for a Staged Network
+// Switch (ADR 0015): compare the settings actually applied at last WiFi
+// bootstrap against the currently persisted settings.
+bool wifiConfigsDiffer(const WifiConfig& a, const WifiConfig& b);
+
 struct DomeConfig {
     float dome_min_speed;
     float dome_max_speed;
@@ -451,6 +458,16 @@ bool configCacheDomeEnabled();
 void configCacheReadServo(ServoConfig* out);
 bool configCacheServoAnyEnabled();
 void configCacheReadWifi(WifiConfig* out);
+
+// configCacheSetActiveWifi / configCacheReadActiveWifi: the Device WiFi
+// Settings snapshot actually applied to WiFi hardware at the last boot or
+// restart, as opposed to configCacheReadWifi() which reflects the latest
+// persisted (possibly not-yet-applied) settings. The web read surface
+// compares the two via wifiConfigsDiffer() to report active-vs-pending state
+// for a Staged Network Switch (ADR 0015). Set once by the WiFi bootstrap
+// shell after it decides and enters a boot posture.
+void configCacheSetActiveWifi(const WifiConfig& cfg);
+void configCacheReadActiveWifi(WifiConfig* out);
 
 // configCacheApply: Replace the live config cache with a full snapshot.
 // Marks RobotState.rcConfigDirty so RcInputTask rebuilds cached mapping config.

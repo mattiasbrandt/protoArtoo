@@ -700,6 +700,7 @@ Returns current config snapshot.
 - top-level servo calibration fields (`arm*OpenUs`, `aux*CloseUs`, etc.)
 - `aux_led_pin`, `aux_led_count`
 - `system.logLevel`
+- `wifi`: Device WiFi Settings (ADR 0015) — `provisioned`, `mode` (`client`|`standalone_ap`), `staSsid`, `staPasswordSet`, `apSsid`, `apPasswordSet`, `pendingApply` (true when persisted settings differ from what is currently applied to WiFi hardware — a Staged Network Switch awaiting reboot/restart). Plaintext passwords are never returned.
 
 #### Example request
 
@@ -1036,6 +1037,40 @@ curl -s http://artoo.local/api/wifi
 
 ```json
 {"apSsid":"protoArtoo","apIp":"192.168.4.1","staEnabled":true,"staConnected":true,"staIp":"10.0.0.22","wifiRssi":-70}
+```
+
+### POST /api/wifi
+
+Validates, stages, and persists Device WiFi Settings (ADR 0015). This is a Staged
+Network Switch: settings are saved to NVS, but WiFi hardware is not touched here —
+the new posture takes effect on the next reboot or WiFi restart. Only supplied
+fields are changed.
+
+- Supported form fields:
+- `wifiMode` (`client`|`standalone_ap`)
+- `staSsid` (string, 0..32 chars)
+- `staPassword` (string, 0..63 chars — write-only, omit to keep the existing saved password)
+- `apSsid` (string, 0..32 chars)
+- `apPassword` (string, empty for an open network or 8..63 chars — write-only, omit to keep the existing saved password)
+- Validation:
+- `wifiMode` must be `client` or `standalone_ap`
+- `staSsid` is required (non-empty) once the resulting mode is `client`
+- `apSsid` is required (non-empty) once the resulting mode is `standalone_ap`
+- `apPassword` must be empty or 8..63 characters (ESP32 SoftAP/WPA2 requirement)
+- Success: `200` with `{"ok":true,"wifi":{...}}` (same password-safe `wifi` shape as `GET /api/config`'s `wifi` block) and marks the settings provisioned
+- Errors: `400` with `{"ok":false,"error":"..."}` on invalid/missing fields; `500` on persistence failure
+
+#### Example request
+
+```bash
+curl -s -X POST http://artoo.local/api/wifi \
+  -d 'wifiMode=client&staSsid=HomeNetwork&staPassword=supersecret'
+```
+
+#### Example response
+
+```json
+{"ok":true,"wifi":{"provisioned":true,"mode":"client","staSsid":"HomeNetwork","staPasswordSet":true,"apSsid":"protoArtoo","apPasswordSet":true,"pendingApply":true}}
 ```
 
 ### GET /api/serial

@@ -115,6 +115,14 @@ static ConfigSnapshot makeWorstCaseSnap() {
     snap.servo.aux_led_pin = AUX_LED_PIN_AUX3;
     snap.servo.aux_led_count = AUX_LED_COUNT_MAX;
 
+    // Max-length Device WiFi Settings (32-char SSIDs, 63-char passwords).
+    snap.wifi.provisioned = true;
+    snap.wifi.mode = WifiMode::STANDALONE_AP;
+    std::memset(snap.wifi.sta_ssid, 'a', sizeof(snap.wifi.sta_ssid) - 1);
+    std::memset(snap.wifi.sta_password, 'b', sizeof(snap.wifi.sta_password) - 1);
+    std::memset(snap.wifi.ap_ssid, 'c', sizeof(snap.wifi.ap_ssid) - 1);
+    std::memset(snap.wifi.ap_password, 'd', sizeof(snap.wifi.ap_password) - 1);
+
     return snap;
 }
 
@@ -270,12 +278,42 @@ void test_populateConfigJson_overflow_is_measurable(void) {
     TEST_ASSERT_TRUE(full_size > written);
 }
 
+// --- Test 7 ---
+// The "wifi" block exposes password-set flags, never plaintext passwords,
+// and reports provisioned/mode/SSIDs (ADR 0015 / issue #45).
+void test_populateConfigJson_wifi_block_exposes_password_flags_not_plaintext(void) {
+    ConfigSnapshot snap = makeDefaultSnap();
+    snap.wifi.provisioned = true;
+    snap.wifi.mode = WifiMode::CLIENT;
+    snprintf(snap.wifi.sta_ssid, sizeof(snap.wifi.sta_ssid), "HomeNetwork");
+    snprintf(snap.wifi.sta_password, sizeof(snap.wifi.sta_password), "supersecret");
+    snprintf(snap.wifi.ap_ssid, sizeof(snap.wifi.ap_ssid), "protoArtoo");
+    snap.wifi.ap_password[0] = '\0';
+
+    JsonDocument doc;
+    TEST_ASSERT_TRUE(populateConfigJson(doc, snap));
+
+    JsonObject wifi = doc["wifi"].as<JsonObject>();
+    TEST_ASSERT_TRUE(!wifi.isNull());
+    TEST_ASSERT_TRUE(wifi["provisioned"].as<bool>());
+    TEST_ASSERT_EQUAL_STRING("client", wifi["mode"] | "");
+    TEST_ASSERT_EQUAL_STRING("HomeNetwork", wifi["staSsid"] | "");
+    TEST_ASSERT_TRUE(wifi["staPasswordSet"].as<bool>());
+    TEST_ASSERT_EQUAL_STRING("protoArtoo", wifi["apSsid"] | "");
+    TEST_ASSERT_FALSE(wifi["apPasswordSet"].as<bool>());
+
+    char out[kConfigJsonBudget] = {};
+    serializeJson(doc, out, sizeof(out));
+    TEST_ASSERT_NULL(strstr(out, "supersecret"));
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_populateConfigJson_typical_valid_json);
     RUN_TEST(test_populateConfigJson_worst_case_fits_buffer);
     RUN_TEST(test_populateConfigJson_expected_keys_present);
     RUN_TEST(test_populateConfigJson_aux_led_round_trip);
+    RUN_TEST(test_populateConfigJson_wifi_block_exposes_password_flags_not_plaintext);
     RUN_TEST(test_populateConfigJson_disabled_trigger_binding_serializes);
     RUN_TEST(test_populateConfigJson_clears_existing_document);
     RUN_TEST(test_populateConfigJson_overflow_is_measurable);

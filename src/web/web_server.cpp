@@ -1323,4 +1323,9 @@ void webServerInit() {
 
     WifiBootPosture posture = wifiDecideBootPosture(decisionInput);
     executeWifiBootPosture(posture, wifiSettings);
+
+    // Record what was actually applied so the read surface can distinguish
+    // active settings from any pending (saved-but-not-yet-applied) settings
+    // for a Staged Network Switch (ADR 0015).
+    configCacheSetActiveWifi(wifiSettings);
 }
