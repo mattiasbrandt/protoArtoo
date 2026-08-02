@@ -1023,9 +1023,22 @@ curl -s http://artoo.local/api/health
 
 ### GET /api/wifi
 
-Returns AP/STA connectivity JSON.
+Returns AP/STA connectivity JSON — the diagnostics/readiness surface for
+active WiFi state. For saved Device WiFi Settings (mode, SSIDs,
+password-set flags, staged-apply state), see the `wifi` block on
+`GET /api/config` below. See also
+[docs/wifi-provisioning.md](wifi-provisioning.md) for the operator-facing
+provisioning/recovery flow (ADR 0015).
 
 - Success: `200` JSON
+- `apSsid`: SSID currently broadcast by the AP radio. During WiFi
+  Provisioning or Network Recovery Mode this is the Default AP Credential's
+  SSID (`protoArtoo`), not necessarily the operator's saved Standalone AP
+  Mode SSID.
+- `networkRecovery`: `true` only while Network Recovery Mode is active for
+  this boot (entered via the local power-cycle gesture — see
+  [docs/wifi-provisioning.md](wifi-provisioning.md)). It does not indicate
+  ordinary WiFi Client Mode connection trouble.
 
 #### Example request
 
@@ -1036,7 +1049,7 @@ curl -s http://artoo.local/api/wifi
 #### Example response
 
 ```json
-{"apSsid":"protoArtoo","apIp":"192.168.4.1","staEnabled":true,"staConnected":true,"staIp":"10.0.0.22","wifiRssi":-70}
+{"apSsid":"protoArtoo","apIp":"192.168.4.1","staEnabled":true,"staConnected":true,"staIp":"10.0.0.22","wifiRssi":-70,"networkRecovery":false}
 ```
 
 ### POST /api/wifi
@@ -1044,7 +1057,8 @@ curl -s http://artoo.local/api/wifi
 Validates, stages, and persists Device WiFi Settings (ADR 0015). This is a Staged
 Network Switch: settings are saved to NVS, but WiFi hardware is not touched here —
 the new posture takes effect on the next reboot or WiFi restart. Only supplied
-fields are changed.
+fields are changed. See [docs/wifi-provisioning.md](wifi-provisioning.md) for
+the end-to-end operator flow this endpoint backs.
 
 - Supported form fields:
 - `wifiMode` (`client`|`standalone_ap`)

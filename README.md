@@ -112,6 +112,7 @@ protoArtoo/
     ├── pin_map.md             # GPIO assignments and UART ownership
     ├── api.md                 # REST API reference
     ├── sound_playback.md      # Audio backend details and SD card layout
+    ├── wifi-provisioning.md   # Runtime WiFi setup, mode switching, recovery (ADR 0015)
     ├── terminology.md         # Project glossary
     └── topology.md            # Classic MarcDuino vs protoArtoo architecture
 ```
@@ -148,6 +149,13 @@ make
 `make setup` asks which audio backend you have, your OTA IP, and USB port, then writes
 `user.mk`. All power-user shortcuts read from that file. All PlatformIO output streams
 live; errors are highlighted if something goes wrong.
+
+`make setup-wifi` is a **developer convenience only** (writes `src/secrets.h`,
+gitignored) — it lets a self-built firmware image skip straight to a known
+WiFi posture during local development. It is never required for a downloaded
+release binary: those boot into runtime WiFi Provisioning instead. See
+[`docs/wifi-provisioning.md`](./docs/wifi-provisioning.md) for the operator
+setup flow (first boot, choosing a WiFi mode, and recovery).
 
 **Power-user shortcuts** (skip the wizard):
 
@@ -279,7 +287,10 @@ The dome has no local sound module. The body is the sole audio authority.
 **Hardware Flexibility**
 - Audio module is swappable — changing modules requires only a reflash, no hardware rewiring
 - AUX outputs configurable per-channel: servo (MG996R or MG90S), RGB LED strip, or disabled
-- Build-time WiFi mode: join your existing network or run as a standalone access point
+- Runtime WiFi provisioning: a newly flashed controller hosts its own setup
+  network at first boot, then the operator picks WiFi Client Mode or
+  Standalone AP Mode from the browser — no source edits or build-time
+  credentials required. See [`docs/wifi-provisioning.md`](./docs/wifi-provisioning.md)
 
 **Modern Development Practices**
 - Hundreds of native unit tests covering audio parsers, RC input, SBUS, failsafe logic,

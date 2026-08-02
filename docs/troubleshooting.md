@@ -219,9 +219,21 @@ internal panel-home/park handler — panel servos move only on actual inbound
 
 ---
 
+## 5. Can't reach the controller over WiFi at all
+
+Not a crash — see [wifi-provisioning.md](wifi-provisioning.md) instead. Saved
+WiFi Client Mode settings that no longer work (wrong password, network
+unreachable) do **not** auto-fall-back to an AP; that would hide the real
+problem. Use the documented **Network Recovery Mode** local gesture (3 rapid
+power cycles) to temporarily re-open WiFi Provisioning and fix the saved
+settings without erasing them.
+
+---
+
 ## References
 
 - API: [api.md](api.md) — `/api/coredump*`, `/api/profiler`, `/api/status`, `/api/logs`, `/api/seq/last-run`.
+- WiFi setup, mode switching, recovery: [wifi-provisioning.md](wifi-provisioning.md) (ADR 0015).
 - Heap root-cause + fixes: GitHub issue #8 and `tasks/heap-exhaustion-and-flash-findings-2026-06-19.md`.
 - In-PCB USB flash limitation: `tasks/lessons.md` (2026-03-15 entry).
 - ESP-IDF coredump guide: <https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-guides/core_dump.html>
