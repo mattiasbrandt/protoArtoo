@@ -136,6 +136,10 @@ _Avoid_: dependency on shared CSS or scripts, full application shell, claiming t
 A small, fixed, measured controller allowance kept available for one Busy Recovery Page when normal work is refused. Its cost is part of the normal memory baseline and does not grow with failures or retain refused requests.
 _Avoid_: per-failure growth, general request queue, unmeasured reserve, more than one recovery response at a time
 
+**Resource Step Recovery**:
+The page-loading behavior that keeps completed resource work, pauses dependent work at the first failed required step, and retries only that step. A page is ready only after every required step succeeds.
+_Avoid_: whole-page reload for one failed resource, skipping a required resource, continuing dependent work after failure, reporting a partial page as ready
+
 **Supported ESP32 Board**:
 The dual-header ESP32 D1 Mini clone required by the current Artoo Controller PCB. Firmware and web reliability must work within this board's memory limits; possible support for newer controllers does not relax the current requirement.
 _Avoid_: official Wemos board, temporary development board, waiting for newer hardware
@@ -334,6 +338,7 @@ _Avoid_: audio lifecycle manager, audio coordinator, dispatch switch
 - **Page Recovery Status** distinguishes a confirmed **Immediate Request Refusal** from a request that received no response.
 - A **Busy Recovery Page** carries the **Page Recovery View** when a full page is refused; no custom recovery page is possible when the browser receives no first response.
 - **Recovery Capacity** keeps one **Busy Recovery Page** available without allowing failure handling to create unbounded memory pressure.
+- **Resource Step Recovery** lets a **Bounded Page Attempt** retry one failed requirement without repeating completed work or exposing an incomplete page.
 - The **Web Server Library** may change to meet **Page Load Recovery** within the limits of the **Supported ESP32 Board**; future controller plans do not defer that requirement.
 - **Live Page Updates** keep their current `/api/events` contract while alternatives are measured; changing it requires controller evidence of better memory behavior and recovery with equivalent operator behavior.
 - The release matrix should split **Drive command and safety logic** from **Hoverboard motor integration**.
