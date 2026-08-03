@@ -165,8 +165,8 @@ The bounded lifetime assigned to one kind of controller request. Ordinary page w
 _Avoid_: one timeout for every operation, indefinite request, extending on meaningless activity, stopping healthy long work while progress is visible
 
 **Page Load Memory Recovery**:
-The controller condition after page-loading activity stops: request and connection counts return to their resting values, usable heap settles within a measured warmed range, failed allocations stop increasing, and the controller remains responsive without a panic, reboot, or power cycle.
-_Avoid_: judging only whether a page appeared, comparing only with cold boot, accepting a lower heap level after every cycle, hiding recovery behind a restart
+The controller condition after page-loading activity stops: request and connection counts return to their resting values, usable heap settles within a measured warmed range, failed allocations stop increasing, and the controller remains responsive without a panic, reboot, or power cycle. The concrete pass/fail envelope (heap/largest-block range, cooldown timing, resting-count definitions, failed-allocation rule, stop conditions) is locked in ADR 0017, scoped to production builds only; the rapid-refresh/3-tab-burst and Mobile Safari scenario classes remain explicitly open pending further evidence rather than carrying invented numbers.
+_Avoid_: judging only whether a page appeared, comparing only with cold boot, accepting a lower heap level after every cycle, hiding recovery behind a restart, applying the same envelope to the profiler build
 
 **Refresh Resilience**:
 The expectation that a normal browser refresh completes or visibly recovers, while rapid repeated refreshes may shed intermediate attempts without harming the controller. After refreshing stops, the final page recovers and the controller returns to Page Load Memory Recovery.
