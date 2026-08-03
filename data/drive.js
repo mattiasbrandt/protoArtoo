@@ -164,7 +164,7 @@
     }
   };
 
-  const postCommand = async (path, label) => {
+  const postCommand = async (path, label, priority) => {
     if (!window.PAApi) return;
     if (!driveHardwareEnabled && path.startsWith("/api/web-control")) {
       window.PAUtils.showFeedback(controlFeedback, `Web control unavailable: ${s1EnableInSetup}.`, "warning");
@@ -172,7 +172,7 @@
     }
     window.PAUtils.showFeedback(controlFeedback, `${label}...`);
     try {
-      await window.PAApi.postForm(path, {}, { timeoutMs: 3000 });
+      await window.PAApi.postForm(path, {}, { timeoutMs: 3000, priority });
       window.PAUtils.showFeedback(controlFeedback, `${label} sent at ${new Date().toLocaleTimeString()}`, "success");
     } catch (error) {
       window.PAUtils.showFeedback(controlFeedback, `${label} failed: ${window.PAApi.messageFor(error)}`, "error");

@@ -51,34 +51,64 @@
   // TCP connection, and its accept-time admission control rejects connection
   // bursts outright. Page code that fires many calls at once
   // (Promise.all/allSettled) would open them all as parallel sockets; this
-  // FIFO caps in-flight requests so a page load presents as a short paced
+  // caps in-flight requests so a page load presents as a short paced
   // trickle instead of a burst. Queue wait does not consume the request
   // timeout — the timeout timer starts when the request actually goes out.
   // ADR 0019: narrowed from 2 to 1 for single active request slot
-  // (Bounded Page Attempt). The Common Page Bootstrap manages the queue.
+  // (Bounded Page Attempt).
   const MAX_CONCURRENT_REQUESTS = 1;
-  let inFlightCount = 0;
-  const requestWaiters = [];
 
-  const acquireRequestSlot = () => {
+  // Browser Request Priority (#52 Stories 32-34, mirrors
+  // window.PageBootstrap.PRIORITY but defined independently here so
+  // web_api.js has no load-order dependency on page_bootstrap.js -- most
+  // pages don't load the bootstrap yet). Lower number = higher priority.
+  const PRIORITY = { ESTOP: 0, COMMAND: 1, STARTUP: 2, BACKGROUND: 3 };
+
+  let inFlightCount = 0;
+  const requestWaiters = []; // { priority, resolve }, kept priority-ordered
+
+  const acquireRequestSlot = (priority) => {
+    // Estop bypasses admission and the browser queue entirely -- the
+    // safety action must never be delayed by reads, resources, retries, or
+    // background work (Story #32). It is allowed to exceed
+    // MAX_CONCURRENT_REQUESTS rather than wait for one to free up.
+    if (priority === PRIORITY.ESTOP) {
+      inFlightCount += 1;
+      return Promise.resolve();
+    }
+
     if (inFlightCount < MAX_CONCURRENT_REQUESTS) {
       inFlightCount += 1;
       return Promise.resolve();
     }
-    return new Promise((resolve) => requestWaiters.push(resolve));
+
+    return new Promise((resolve) => {
+      // Stable priority insert: ahead of any strictly-lower-priority
+      // (higher-number) waiter already queued, behind everything at or
+      // above this priority -- so user commands (Story #33) jump ahead of
+      // already-queued background work without starving same-tier FIFO order.
+      const index = requestWaiters.findIndex((waiter) => waiter.priority > priority);
+      const entry = { priority, resolve };
+      if (index === -1) {
+        requestWaiters.push(entry);
+      } else {
+        requestWaiters.splice(index, 0, entry);
+      }
+    });
   };
 
   const releaseRequestSlot = () => {
     const next = requestWaiters.shift();
     if (next) {
-      next(); // hand the slot to the next queued request
+      next.resolve(); // hand the slot to the next queued request
     } else {
       inFlightCount -= 1;
     }
   };
 
   const request = async (path, opts = {}) => {
-    await acquireRequestSlot();
+    const priority = opts.priority ?? PRIORITY.BACKGROUND;
+    await acquireRequestSlot(priority);
     try {
       return await performRequest(path, opts);
     } finally {
@@ -151,9 +181,20 @@
     return attempt(false);
   };
 
-  const get = (path, opts = {}) => request(path, { ...opts, method: "GET" });
-  const postForm = (path, form, opts = {}) => request(path, { ...opts, method: "POST", form });
-  const postJson = (path, json, opts = {}) => request(path, { ...opts, method: "POST", json });
+  // GETs default to background priority (typical automatic loads/polls);
+  // POSTs default to command priority (typically an explicit user action --
+  // Story #33). Callers pass an explicit `priority` in opts to override
+  // either default, e.g. Estop passes PRIORITY.ESTOP. The `??` fallback
+  // must be applied AFTER spreading opts -- callers that pass
+  // `priority: undefined` (an unset local variable forwarded as an arg,
+  // e.g. drive.js's postCommand) must still get the real default, not have
+  // it silently clobbered by object-spread key ordering.
+  const get = (path, opts = {}) =>
+    request(path, { ...opts, method: "GET", priority: opts.priority ?? PRIORITY.BACKGROUND });
+  const postForm = (path, form, opts = {}) =>
+    request(path, { ...opts, method: "POST", form, priority: opts.priority ?? PRIORITY.COMMAND });
+  const postJson = (path, json, opts = {}) =>
+    request(path, { ...opts, method: "POST", json, priority: opts.priority ?? PRIORITY.COMMAND });
 
   const HTTP_STATUS_MESSAGES = {
     400: "Device rejected the request",
@@ -202,6 +243,7 @@
 
   window.PAApi = {
     ApiError,
+    PRIORITY,
     request,
     get,
     postForm,
