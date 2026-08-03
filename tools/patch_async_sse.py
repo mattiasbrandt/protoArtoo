@@ -762,6 +762,8 @@ def patch_static_handler_open_guard(text):
 # The input is the complete vendor header text; the returned text is patched or
 # unchanged when already patched. A moved/changed anchor raises instead of
 # silently dropping the response-recovery contract. This function has no I/O.
+# Called by patch_async_webserver() from the PlatformIO pre-build hook; see
+# GitHub issue #60.
 def patch_abstract_response_zero_read_state(text):
     if ABSTRACT_RESPONSE_ZERO_READ_STATE_AFTER in text:
         return text
@@ -781,6 +783,8 @@ def patch_abstract_response_zero_read_state(text):
 # the returned text is idempotently patched. Either changed anchor raises so a
 # dependency upgrade cannot silently restore truncation or retry-time allocation.
 # This function has no I/O.
+# Called by patch_async_webserver() from the PlatformIO pre-build hook; see
+# GitHub issue #60.
 def patch_abstract_response_zero_read(text):
     if ABSTRACT_RESPONSE_ZERO_READ_AFTER not in text:
         if text.count(ABSTRACT_RESPONSE_ZERO_READ_BEFORE) != 1:
