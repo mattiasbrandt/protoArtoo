@@ -42,9 +42,34 @@
   let pollInterval = null;
   let countdownTimers = {}; // Per-modal countdown state
 
+  // Which resource/section is currently shown as busy/no-response/retrying,
+  // and which outcome put it there. The bootstrap reducer marks a failed
+  // step "failed-retrying" regardless of whether the cause was an explicit
+  // busy refusal or a timeout -- the loader (not the reducer) is the only
+  // place that knows which, since it's the caller of loadScript(). render()
+  // is polled every POLL_INTERVAL_MS by the ticker; without this it would
+  // unconditionally reset back to the generic loading modal on every tick,
+  // undoing showBusyState()/showNoResponseState() a fraction of a second
+  // after they ran.
+  let pendingRecovery = null; // { name, kind: "busy" | "no-response" | "retrying" }
+
   // Render bootstrap state to UI
   function render(newState) {
     state = newState;
+
+    if (pendingRecovery) {
+      const step = [...state.resources, ...state.sections].find(
+        (s) => s.name === pendingRecovery.name
+      );
+      if (step && step.status === "failed-retrying") {
+        // Still waiting on this step's retry -- keep the modal that was
+        // already shown for it, don't let the poller stomp on it.
+        return;
+      }
+      // The step moved on (retry attempt started, or it succeeded) --
+      // resume normal rendering below.
+      pendingRecovery = null;
+    }
 
     // Hide all modals, show backdrop only if recovering
     Object.values(recoveryModals).forEach((m) => (m.style.display = "none"));
@@ -144,24 +169,53 @@
     }
   }
 
-  // Load a single script with recovery handling
+  // Show the "no-response" outcome for a resource/section step: state 3
+  // (no-response, first attempt) for its first failure, state 4 (retrying
+  // with growing backoff) once step.attempt shows this isn't the first try.
+  function dispatchNoResponse(name, listKey) {
+    const step = state[listKey].find((s) => s.name === name);
+    if (!step) return;
+    const nextRetryMs = step.nextAt - state.now;
+    if (step.attempt > 1) {
+      pendingRecovery = { name, kind: "retrying" };
+      showRetryingState(step.attempt, nextRetryMs);
+    } else {
+      pendingRecovery = { name, kind: "no-response" };
+      showNoResponseState(step.attempt, nextRetryMs);
+    }
+  }
+
+  // Load a single script with recovery handling.
+  //
+  // A plain <script src> tag cannot distinguish an ADR 0016 Busy Recovery
+  // Page (503 + Retry-After) from a generic network failure -- both just
+  // fire onerror. Fetch the resource first so the response status and
+  // Retry-After header are visible, then execute it as a script only once
+  // the response is known-good.
   function loadScript(scriptName) {
-    return new Promise((resolve) => {
-      const script = document.createElement("script");
-      script.src = scriptName;
-      script.async = false;
+    return fetch(scriptName, { cache: "no-store" })
+      .then((response) => {
+        if (response.status === 503) {
+          const retryAfterHeader = response.headers.get("Retry-After");
+          const retryAfterMs = retryAfterHeader
+            ? Number(retryAfterHeader) * 1000
+            : null;
+          return { ok: false, busy: true, retryAfterMs, status: 503 };
+        }
 
-      script.onload = () => {
-        resolve({ ok: true, status: 200 });
-      };
+        if (!response.ok) {
+          return { ok: false, busy: false, status: response.status };
+        }
 
-      script.onerror = () => {
-        script.remove();
-        resolve({ ok: false, status: 0, error: "Script load failed" });
-      };
-
-      document.body.appendChild(script);
-    });
+        return response.text().then((source) => {
+          const script = document.createElement("script");
+          script.text = source;
+          script.async = false;
+          document.body.appendChild(script);
+          return { ok: true, status: response.status };
+        });
+      })
+      .catch(() => ({ ok: false, busy: false, status: 0, error: "Script load failed" }));
   }
 
   // Main load loop using bootstrap
@@ -197,26 +251,32 @@
           type: "RESULT",
           outcome: { kind: "success" },
         });
+      } else if (result && result.busy) {
+        // Explicit ADR 0016 Busy Recovery Page (503 + Retry-After) --
+        // Story #8: "Controller busy" only after an explicit refusal.
+        const retryAfterMs = result.retryAfterMs ?? window.PageBootstrap.DEFAULT_BUSY_RETRY_MS;
+        state = window.PageBootstrap.dispatch(state, {
+          type: "RESULT",
+          outcome: { kind: "busy", retryAfterMs },
+        });
+        pendingRecovery = { name: scriptName, kind: "busy" };
+        showBusyState(retryAfterMs);
       } else if (Date.now() >= deadline) {
-        // Timeout
+        // Timeout -- Story #9: "No response from controller".
         state = window.PageBootstrap.dispatch(state, {
           type: "RESULT",
           outcome: { kind: "no-response" },
         });
-        const step = state.resources.find((r) => r.name === scriptName);
-        if (step) {
-          showNoResponseState(step.attempt, step.nextAt - state.now);
-        }
+        dispatchNoResponse(scriptName, "resources");
       } else {
-        // Network error
+        // Network error -- also reported as "No response from controller"
+        // per Story #9 (the UI does not distinguish network failure from
+        // timeout; both are honest "no response" outcomes).
         state = window.PageBootstrap.dispatch(state, {
           type: "RESULT",
           outcome: { kind: "no-response" },
         });
-        const step = state.resources.find((r) => r.name === scriptName);
-        if (step) {
-          showNoResponseState(step.attempt, step.nextAt - state.now);
-        }
+        dispatchNoResponse(scriptName, "resources");
       }
 
       render(state);

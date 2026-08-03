@@ -43,22 +43,26 @@ async function testWifiBootstrapRecovery() {
   });
 
   await page2.goto(TARGET_URL);
-  await page2.waitForTimeout(500);
+
+  // The busy state is only reachable once loadScript() actually dispatches
+  // outcome.kind === "busy" -- wait for the real transition instead of a
+  // fixed sleep, and fail if it never happens.
+  await page2.waitForFunction(
+    () => {
+      const el = document.getElementById("recovery-busy");
+      return el && window.getComputedStyle(el).display !== "none";
+    },
+    { timeout: 5000 }
+  );
 
   const busyModalVisible = await page2
     .locator("#recovery-busy")
-    .evaluate((el) => (el ? window.getComputedStyle(el).display !== "none" : false))
-    .catch(() => false);
+    .evaluate((el) => window.getComputedStyle(el).display !== "none");
+  assert.strictEqual(busyModalVisible, true, "Busy modal should be visible after a 503 response");
 
-  // Busy state may not show if the server response is intercepted by the page,
-  // but the important thing is that the modal exists and could be triggered.
-  if (busyModalVisible) {
-    const countdown = await page2.locator("#recovery-busy-countdown").textContent();
-    assert.ok(countdown, "Countdown should be visible in busy state");
-    console.log("  ✓ Busy state countdown renders");
-  } else {
-    console.log("  ✓ Busy modal exists (server handling 503 may vary)");
-  }
+  const countdown = await page2.locator("#recovery-busy-countdown").textContent();
+  assert.ok(/^\d+ s$/.test(countdown.trim()), "Countdown should show a numeric seconds value, got: " + countdown);
+  console.log("  ✓ Busy state renders with countdown: " + countdown);
 
   await browser2.close();
 
@@ -74,17 +78,29 @@ async function testWifiBootstrapRecovery() {
   });
 
   await page3.goto(TARGET_URL);
-  await page3.waitForTimeout(7000); // Wait past OPERATION_DEADLINE_MS (6s)
+
+  // Wait for the real timeout-driven transition (OPERATION_DEADLINE_MS is
+  // 6s) instead of asserting DOM presence regardless of whether it fired.
+  await page3.waitForFunction(
+    () => {
+      const el = document.getElementById("recovery-no-response");
+      return el && window.getComputedStyle(el).display !== "none";
+    },
+    { timeout: 8000 }
+  );
 
   const noResponseModalVisible = await page3
     .locator("#recovery-no-response")
-    .evaluate((el) => (el ? window.getComputedStyle(el).display !== "none" : false))
-    .catch(() => false);
+    .evaluate((el) => window.getComputedStyle(el).display !== "none");
+  assert.strictEqual(
+    noResponseModalVisible,
+    true,
+    "No-response modal should be visible after a script load times out"
+  );
 
-  // Modal structure should exist
-  const noResponseModal = await page3.locator("#recovery-no-response").count();
-  assert.ok(noResponseModal > 0, "No-response modal should exist in DOM");
-  console.log("  ✓ No-response modal structure present");
+  const attemptText = await page3.locator("#recovery-no-response-attempt").textContent();
+  assert.ok(/^Attempt \d+$/.test(attemptText.trim()), "Attempt counter should render, got: " + attemptText);
+  console.log("  ✓ No-response state renders after real timeout: " + attemptText);
 
   await browser3.close();
 
@@ -106,12 +122,28 @@ async function testWifiBootstrapRecovery() {
   const browser5 = await chromium.launch({ headless: HEADLESS });
   const page5 = await browser5.newPage();
 
+  // Delay a resource so the loading modal is actually visible when we check
+  // its box model -- checking immediately after goto() races the real load
+  // (often already-hidden by the time the check runs), which made this
+  // assertion fail nondeterministically against a display:none element.
+  await page5.route("**/shell.js", (route) => {
+    setTimeout(() => route.abort(), 300);
+  });
+
   await page5.goto(TARGET_URL);
+  await page5.waitForFunction(
+    () => {
+      const el = document.querySelector(".recovery-modal-panel");
+      return el && window.getComputedStyle(el).display !== "none";
+    },
+    { timeout: 3000 }
+  );
 
   const modalPanel = await page5.locator(".recovery-modal-panel").first();
-  const panelBox = await modalPanel.boundingBox().catch(() => null);
-  assert.ok(panelBox, "Recovery modal should have valid box model");
-  console.log("  ✓ Modal panel styled and positioned");
+  const panelBox = await modalPanel.boundingBox();
+  assert.ok(panelBox, "Recovery modal should have valid box model while visible");
+  assert.ok(panelBox.width > 0 && panelBox.height > 0, "Recovery modal should have nonzero size");
+  console.log("  ✓ Modal panel styled and positioned: " + JSON.stringify(panelBox));
 
   await browser5.close();
 
