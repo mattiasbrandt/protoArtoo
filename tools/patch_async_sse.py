@@ -634,6 +634,14 @@ ABSTRACT_RESPONSE_ZERO_READ_STATE_PREVIOUS_AFTER = """\
   size_t _readDataFromCacheOrContent(uint8_t *data, const size_t len);
 """
 
+ABSTRACT_RESPONSE_ZERO_READ_STATE_LEGACY_AFTER = """\
+  // buffer data size specifiers
+  size_t _send_buffer_offset{0}, _send_buffer_len{0};
+  static constexpr uint8_t MAX_CONSECUTIVE_FILL_BUFFER_FAILURES = 2;
+  uint8_t _consecutiveFillBufferFailures{0};
+  size_t _readDataFromCacheOrContent(uint8_t *data, const size_t len);
+"""
+
 ABSTRACT_RESPONSE_ZERO_READ_STATE_AFTER = """\
   // buffer data size specifiers
   size_t _send_buffer_offset{0}, _send_buffer_len{0};
@@ -699,6 +707,16 @@ ABSTRACT_RESPONSE_ZERO_READ_PREVIOUS_AFTER = ABSTRACT_RESPONSE_ZERO_READ_AFTER.r
 """,
 )
 
+ABSTRACT_RESPONSE_ZERO_READ_LEGACY_AFTER = (
+    ABSTRACT_RESPONSE_ZERO_READ_PREVIOUS_AFTER.replace(
+        "MAX_PREMATURE_ZERO_READ_RETRIES",
+        "MAX_CONSECUTIVE_FILL_BUFFER_FAILURES",
+    ).replace(
+        "_prematureZeroReadRetries",
+        "_consecutiveFillBufferFailures",
+    )
+)
+
 ABSTRACT_RESPONSE_PENDING_FINAL_BUFFER_BEFORE = """\
         } else {
           _send_buffer_len = _send_buffer_offset = 0;  // consider buffer empty
@@ -738,7 +756,7 @@ ABSTRACT_RESPONSE_TCP_ADD_PROGRESS_BEFORE = """\
       }
 """
 
-ABSTRACT_RESPONSE_TCP_ADD_PROGRESS_AFTER = """\
+ABSTRACT_RESPONSE_TCP_ADD_PROGRESS_PREVIOUS_AFTER = """\
       if (_send_buffer_len && _send_buffer) {
         // data is pending in buffer from a previous call or previous iteration
         size_t const added_len =
@@ -771,6 +789,43 @@ ABSTRACT_RESPONSE_TCP_ADD_PROGRESS_AFTER = """\
       }
 """
 
+ABSTRACT_RESPONSE_TCP_ADD_PROGRESS_AFTER = """\
+      if (_send_buffer_len && _send_buffer) {
+        // data is pending in buffer from a previous call or previous iteration
+        size_t const added_len =
+          request->client()->add(reinterpret_cast<char *>(_send_buffer->data() + _send_buffer_offset), _send_buffer_len - _send_buffer_offset);
+        if (added_len != _send_buffer_len - _send_buffer_offset) {
+          // Keep partial progress accounted and retry the remaining bytes later.
+          if (added_len == 0 && !_chunked && _sendContentLength) {
+            if (_tcpAddZeroRetries < MAX_TCP_ADD_ZERO_RETRIES) {
+              ++_tcpAddZeroRetries;
+            } else {
+              _state = RESPONSE_FAILED;
+              request->client()->close();
+              return payloadlen;
+            }
+          } else if (added_len > 0) {
+            if (!_chunked && _sendContentLength) {
+              _tcpAddZeroRetries = 0;
+            }
+            payloadlen += added_len;
+          }
+          _send_buffer_offset += added_len;
+          break;
+        } else {
+          if (!_chunked && _sendContentLength) {
+            _tcpAddZeroRetries = 0;
+          }
+          _send_buffer_len = _send_buffer_offset = 0;  // consider buffer empty
+          if (_sendContentLength && (_sentLength == _contentLength)) {
+            // The final buffered bytes have been accepted by TCP.
+            _state = RESPONSE_END;
+          }
+        }
+        payloadlen += added_len;
+      }
+"""
+
 ABSTRACT_RESPONSE_INFLIGHT_CREDIT_BEFORE = """\
 #if ASYNCWEBSERVER_USE_CHUNK_INFLIGHT
     _in_flight += payloadlen;
@@ -778,9 +833,18 @@ ABSTRACT_RESPONSE_INFLIGHT_CREDIT_BEFORE = """\
 #endif
 """
 
-ABSTRACT_RESPONSE_INFLIGHT_CREDIT_AFTER = """\
+ABSTRACT_RESPONSE_INFLIGHT_CREDIT_PREVIOUS_AFTER = """\
 #if ASYNCWEBSERVER_USE_CHUNK_INFLIGHT
     if (payloadlen) {
+      _in_flight += payloadlen;
+      --_in_flight_credit;  // take a credit
+    }
+#endif
+"""
+
+ABSTRACT_RESPONSE_INFLIGHT_CREDIT_AFTER = """\
+#if ASYNCWEBSERVER_USE_CHUNK_INFLIGHT
+    if (payloadlen || _chunked || !_sendContentLength) {
       _in_flight += payloadlen;
       --_in_flight_credit;  // take a credit
     }
@@ -870,7 +934,7 @@ def patch_static_handler_open_guard(text):
     return text
 
 
-# Add the fixed retry budget and counter to each AsyncAbstractResponse instance.
+# Add the two fixed retry budgets and counters to each AsyncAbstractResponse.
 # The input is the complete vendor header text; the returned text is patched or
 # unchanged when already patched. A moved/changed anchor raises instead of
 # silently dropping the response-recovery contract. This function has no I/O.
@@ -881,16 +945,18 @@ def patch_abstract_response_zero_read_state(text):
         return text
     original_count = text.count(ABSTRACT_RESPONSE_ZERO_READ_STATE_BEFORE)
     previous_count = text.count(ABSTRACT_RESPONSE_ZERO_READ_STATE_PREVIOUS_AFTER)
-    if original_count + previous_count != 1:
+    legacy_count = text.count(ABSTRACT_RESPONSE_ZERO_READ_STATE_LEGACY_AFTER)
+    if original_count + previous_count + legacy_count != 1:
         raise RuntimeError(
             "ESPAsyncWebServer WebResponseImpl.h response buffer state changed; "
             "review tools/patch_async_sse.py"
         )
-    source = (
-        ABSTRACT_RESPONSE_ZERO_READ_STATE_PREVIOUS_AFTER
-        if previous_count == 1
-        else ABSTRACT_RESPONSE_ZERO_READ_STATE_BEFORE
-    )
+    if previous_count == 1:
+        source = ABSTRACT_RESPONSE_ZERO_READ_STATE_PREVIOUS_AFTER
+    elif legacy_count == 1:
+        source = ABSTRACT_RESPONSE_ZERO_READ_STATE_LEGACY_AFTER
+    else:
+        source = ABSTRACT_RESPONSE_ZERO_READ_STATE_BEFORE
     return text.replace(
         source,
         ABSTRACT_RESPONSE_ZERO_READ_STATE_AFTER,
@@ -909,16 +975,18 @@ def patch_abstract_response_zero_read(text):
     if ABSTRACT_RESPONSE_ZERO_READ_AFTER not in text:
         original_count = text.count(ABSTRACT_RESPONSE_ZERO_READ_BEFORE)
         previous_count = text.count(ABSTRACT_RESPONSE_ZERO_READ_PREVIOUS_AFTER)
-        if original_count + previous_count != 1:
+        legacy_count = text.count(ABSTRACT_RESPONSE_ZERO_READ_LEGACY_AFTER)
+        if original_count + previous_count + legacy_count != 1:
             raise RuntimeError(
                 "ESPAsyncWebServer WebResponses.cpp non-chunked fill handling changed; "
                 "review tools/patch_async_sse.py"
             )
-        source = (
-            ABSTRACT_RESPONSE_ZERO_READ_PREVIOUS_AFTER
-            if previous_count == 1
-            else ABSTRACT_RESPONSE_ZERO_READ_BEFORE
-        )
+        if previous_count == 1:
+            source = ABSTRACT_RESPONSE_ZERO_READ_PREVIOUS_AFTER
+        elif legacy_count == 1:
+            source = ABSTRACT_RESPONSE_ZERO_READ_LEGACY_AFTER
+        else:
+            source = ABSTRACT_RESPONSE_ZERO_READ_BEFORE
         text = text.replace(
             source,
             ABSTRACT_RESPONSE_ZERO_READ_AFTER,
@@ -927,6 +995,7 @@ def patch_abstract_response_zero_read(text):
     if (
         ABSTRACT_RESPONSE_PENDING_FINAL_BUFFER_AFTER not in text
         and ABSTRACT_RESPONSE_TCP_ADD_PROGRESS_AFTER not in text
+        and ABSTRACT_RESPONSE_TCP_ADD_PROGRESS_PREVIOUS_AFTER not in text
     ):
         if text.count(ABSTRACT_RESPONSE_PENDING_FINAL_BUFFER_BEFORE) != 1:
             raise RuntimeError(
@@ -939,24 +1008,38 @@ def patch_abstract_response_zero_read(text):
         )
 
     if ABSTRACT_RESPONSE_TCP_ADD_PROGRESS_AFTER not in text:
-        if text.count(ABSTRACT_RESPONSE_TCP_ADD_PROGRESS_BEFORE) != 1:
+        original_count = text.count(ABSTRACT_RESPONSE_TCP_ADD_PROGRESS_BEFORE)
+        previous_count = text.count(ABSTRACT_RESPONSE_TCP_ADD_PROGRESS_PREVIOUS_AFTER)
+        if original_count + previous_count != 1:
             raise RuntimeError(
                 "ESPAsyncWebServer WebResponses.cpp TCP buffer progress handling changed; "
                 "review tools/patch_async_sse.py"
             )
+        source = (
+            ABSTRACT_RESPONSE_TCP_ADD_PROGRESS_PREVIOUS_AFTER
+            if previous_count == 1
+            else ABSTRACT_RESPONSE_TCP_ADD_PROGRESS_BEFORE
+        )
         text = text.replace(
-            ABSTRACT_RESPONSE_TCP_ADD_PROGRESS_BEFORE,
+            source,
             ABSTRACT_RESPONSE_TCP_ADD_PROGRESS_AFTER,
         )
 
     if ABSTRACT_RESPONSE_INFLIGHT_CREDIT_AFTER not in text:
-        if text.count(ABSTRACT_RESPONSE_INFLIGHT_CREDIT_BEFORE) != 1:
+        original_count = text.count(ABSTRACT_RESPONSE_INFLIGHT_CREDIT_BEFORE)
+        previous_count = text.count(ABSTRACT_RESPONSE_INFLIGHT_CREDIT_PREVIOUS_AFTER)
+        if original_count + previous_count != 1:
             raise RuntimeError(
                 "ESPAsyncWebServer WebResponses.cpp in-flight credit handling changed; "
                 "review tools/patch_async_sse.py"
             )
+        source = (
+            ABSTRACT_RESPONSE_INFLIGHT_CREDIT_PREVIOUS_AFTER
+            if previous_count == 1
+            else ABSTRACT_RESPONSE_INFLIGHT_CREDIT_BEFORE
+        )
         text = text.replace(
-            ABSTRACT_RESPONSE_INFLIGHT_CREDIT_BEFORE,
+            source,
             ABSTRACT_RESPONSE_INFLIGHT_CREDIT_AFTER,
         )
 
