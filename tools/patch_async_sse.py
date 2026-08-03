@@ -1238,6 +1238,14 @@ def patch_abstract_response_zero_read(text):
         and ABSTRACT_RESPONSE_TCP_DIAGNOSTICS_AFTER not in text
         and ABSTRACT_RESPONSE_TCP_DIAGNOSTICS_PREVIOUS_AFTER not in text
         and ABSTRACT_RESPONSE_TCP_ADD_PROGRESS_PREVIOUS_AFTER not in text
+        # patch_abstract_response_tcp_mss_cap() runs later in the pipeline
+        # and further transforms this exact region on top of the diagnostics
+        # seam (its own BEFORE state IS ABSTRACT_RESPONSE_TCP_DIAGNOSTICS_AFTER).
+        # An already-patched tree that has also had the MSS-cap patch applied
+        # no longer contains any of the five forms above, so without this
+        # check the already-correct final state was misread as unpatched-and-
+        # unrecognized, raising instead of skipping. See GitHub issue #64.
+        and ABSTRACT_RESPONSE_TCP_MSS_CAP_AFTER not in text
     ):
         if text.count(ABSTRACT_RESPONSE_PENDING_FINAL_BUFFER_BEFORE) != 1:
             raise RuntimeError(
@@ -1253,6 +1261,11 @@ def patch_abstract_response_zero_read(text):
         ABSTRACT_RESPONSE_TCP_ADD_PROGRESS_AFTER not in text
         and ABSTRACT_RESPONSE_TCP_DIAGNOSTICS_AFTER not in text
         and ABSTRACT_RESPONSE_TCP_DIAGNOSTICS_PREVIOUS_AFTER not in text
+        # Same pipeline-ordering gap as the PENDING_FINAL_BUFFER stage above:
+        # patch_abstract_response_tcp_mss_cap() further transforms this
+        # region after diagnostics, so its own AFTER state must also count
+        # as "already handled" here. See GitHub issue #64.
+        and ABSTRACT_RESPONSE_TCP_MSS_CAP_AFTER not in text
     ):
         original_count = text.count(ABSTRACT_RESPONSE_TCP_ADD_PROGRESS_BEFORE)
         previous_count = text.count(ABSTRACT_RESPONSE_TCP_ADD_PROGRESS_PREVIOUS_AFTER)

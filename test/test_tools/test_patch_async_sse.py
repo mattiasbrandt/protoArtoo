@@ -336,6 +336,37 @@ class PatchAsyncWebServerTest(unittest.TestCase):
             patched_response,
         )
 
+    def test_abstract_response_zero_read_recognizes_mss_cap_pipeline_output(self):
+        """Issue #64: a tree already patched through patch_abstract_response_tcp_mss_cap()
+        must not make patch_abstract_response_zero_read() raise on re-run.
+
+        patch_abstract_response_tcp_mss_cap() runs later in the pipeline and
+        further transforms the exact region patch_abstract_response_zero_read()'s
+        PENDING_FINAL_BUFFER stage also touches (its own BEFORE state IS
+        ABSTRACT_RESPONSE_TCP_DIAGNOSTICS_AFTER). A cached PlatformIO libdeps
+        tree that already has the full pipeline applied -- as happens whenever
+        one PlatformIO environment's cache is older than another's while the
+        patcher itself is under active iteration -- contains none of the
+        forms patch_abstract_response_zero_read() previously recognized as
+        "already handled," so it fell through to the drift-detection raise
+        despite the tree already being correctly and fully patched.
+        """
+        source = (
+            "prefix\n"
+            + PATCH.ABSTRACT_RESPONSE_ZERO_READ_AFTER
+            + "middle\n"
+            + PATCH.ABSTRACT_RESPONSE_TCP_MSS_CAP_AFTER
+            + "middle\n"
+            + PATCH.ABSTRACT_RESPONSE_INFLIGHT_CREDIT_AFTER
+            + "middle\n"
+            + PATCH.ABSTRACT_RESPONSE_BUFFER_RELEASE_AFTER
+            + "suffix\n"
+        )
+
+        patched = PATCH.patch_abstract_response_zero_read(source)
+
+        self.assertEqual(patched, source)
+
     def test_abstract_response_bounds_tcp_zero_add_and_counts_partial_progress(self):
         """Issue #60: unittest locks bounded stalls and partial progress accounting."""
         source = (
