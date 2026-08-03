@@ -408,6 +408,39 @@ class PatchAsyncWebServerTest(unittest.TestCase):
         )
         self.assertEqual(PATCH.patch_abstract_response_zero_read(patched), patched)
 
+    def test_abstract_response_tcp_diagnostics_cover_attempt_recovery_and_exhaustion(self):
+        """Issue #60: unittest locks allocation-free TCP outcome instrumentation."""
+        source = (
+            "prefix\n"
+            + PATCH.ABSTRACT_RESPONSE_TCP_DIAGNOSTICS_DECLARATIONS_BEFORE
+            + "middle\n"
+            + PATCH.ABSTRACT_RESPONSE_TCP_ADD_PROGRESS_AFTER
+            + "suffix\n"
+        )
+
+        patched = PATCH.patch_abstract_response_tcp_diagnostics(source)
+
+        self.assertIn(
+            "void webResponseTcpRecordZeroProgress();",
+            patched,
+        )
+        self.assertIn(
+            "if (added_len == 0 && !_chunked && _sendContentLength) {\n"
+            "            webResponseTcpRecordZeroProgress();",
+            patched,
+        )
+        self.assertIn(
+            "webResponseTcpRecordExhaustion();\n"
+            "              _state = RESPONSE_FAILED;",
+            patched,
+        )
+        self.assertEqual(patched.count("if (_tcpAddZeroRetries > 0) {"), 2)
+        self.assertEqual(patched.count("webResponseTcpRecordRecovery();"), 3)
+        self.assertEqual(
+            PATCH.patch_abstract_response_tcp_diagnostics(patched),
+            patched,
+        )
+
     def test_abstract_response_zero_read_patch_rejects_vendor_drift(self):
         source = (
             PATCH.ABSTRACT_RESPONSE_ZERO_READ_BEFORE

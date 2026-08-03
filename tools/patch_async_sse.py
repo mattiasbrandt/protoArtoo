@@ -826,6 +826,57 @@ ABSTRACT_RESPONSE_TCP_ADD_PROGRESS_AFTER = """\
       }
 """
 
+ABSTRACT_RESPONSE_TCP_DIAGNOSTICS_DECLARATIONS_BEFORE = """\
+#include <utility>
+"""
+
+ABSTRACT_RESPONSE_TCP_DIAGNOSTICS_DECLARATIONS_AFTER = """\
+#include <utility>
+
+// Allocation-free application telemetry for issue #60. Implemented by the
+// firmware and called only for declared-length, non-chunked responses.
+void webResponseTcpRecordZeroProgress();
+void webResponseTcpRecordRecovery();
+void webResponseTcpRecordExhaustion();
+"""
+
+ABSTRACT_RESPONSE_TCP_DIAGNOSTICS_AFTER = (
+    ABSTRACT_RESPONSE_TCP_ADD_PROGRESS_AFTER.replace(
+        "          if (added_len == 0 && !_chunked && _sendContentLength) {\n",
+        "          if (added_len == 0 && !_chunked && _sendContentLength) {\n"
+        "            webResponseTcpRecordZeroProgress();\n",
+    )
+    .replace(
+        "            } else {\n"
+        "              _state = RESPONSE_FAILED;\n",
+        "            } else {\n"
+        "              webResponseTcpRecordExhaustion();\n"
+        "              _state = RESPONSE_FAILED;\n",
+    )
+    .replace(
+        "          } else if (added_len > 0) {\n"
+        "            if (!_chunked && _sendContentLength) {\n"
+        "              _tcpAddZeroRetries = 0;\n",
+        "          } else if (added_len > 0) {\n"
+        "            if (!_chunked && _sendContentLength) {\n"
+        "              if (_tcpAddZeroRetries > 0) {\n"
+        "                webResponseTcpRecordRecovery();\n"
+        "              }\n"
+        "              _tcpAddZeroRetries = 0;\n",
+    )
+    .replace(
+        "        } else {\n"
+        "          if (!_chunked && _sendContentLength) {\n"
+        "            _tcpAddZeroRetries = 0;\n",
+        "        } else {\n"
+        "          if (!_chunked && _sendContentLength) {\n"
+        "            if (_tcpAddZeroRetries > 0) {\n"
+        "              webResponseTcpRecordRecovery();\n"
+        "            }\n"
+        "            _tcpAddZeroRetries = 0;\n",
+    )
+)
+
 ABSTRACT_RESPONSE_INFLIGHT_CREDIT_BEFORE = """\
 #if ASYNCWEBSERVER_USE_CHUNK_INFLIGHT
     _in_flight += payloadlen;
@@ -995,6 +1046,7 @@ def patch_abstract_response_zero_read(text):
     if (
         ABSTRACT_RESPONSE_PENDING_FINAL_BUFFER_AFTER not in text
         and ABSTRACT_RESPONSE_TCP_ADD_PROGRESS_AFTER not in text
+        and ABSTRACT_RESPONSE_TCP_DIAGNOSTICS_AFTER not in text
         and ABSTRACT_RESPONSE_TCP_ADD_PROGRESS_PREVIOUS_AFTER not in text
     ):
         if text.count(ABSTRACT_RESPONSE_PENDING_FINAL_BUFFER_BEFORE) != 1:
@@ -1007,7 +1059,10 @@ def patch_abstract_response_zero_read(text):
             ABSTRACT_RESPONSE_PENDING_FINAL_BUFFER_AFTER,
         )
 
-    if ABSTRACT_RESPONSE_TCP_ADD_PROGRESS_AFTER not in text:
+    if (
+        ABSTRACT_RESPONSE_TCP_ADD_PROGRESS_AFTER not in text
+        and ABSTRACT_RESPONSE_TCP_DIAGNOSTICS_AFTER not in text
+    ):
         original_count = text.count(ABSTRACT_RESPONSE_TCP_ADD_PROGRESS_BEFORE)
         previous_count = text.count(ABSTRACT_RESPONSE_TCP_ADD_PROGRESS_PREVIOUS_AFTER)
         if original_count + previous_count != 1:
@@ -1052,6 +1107,36 @@ def patch_abstract_response_zero_read(text):
         text = text.replace(
             ABSTRACT_RESPONSE_BUFFER_RELEASE_BEFORE,
             ABSTRACT_RESPONSE_BUFFER_RELEASE_AFTER,
+        )
+
+    return text
+
+
+# Add allocation-free outcome telemetry to the already-patched declared-length
+# TCP enqueue policy. The input is complete vendor implementation text; the
+# returned text is idempotently patched. Exact anchors preserve dependency-drift
+# detection. Called by the PlatformIO pre-build hook; see GitHub issue #60.
+def patch_abstract_response_tcp_diagnostics(text):
+    if ABSTRACT_RESPONSE_TCP_DIAGNOSTICS_DECLARATIONS_AFTER not in text:
+        if text.count(ABSTRACT_RESPONSE_TCP_DIAGNOSTICS_DECLARATIONS_BEFORE) != 1:
+            raise RuntimeError(
+                "ESPAsyncWebServer WebResponses.cpp includes changed; "
+                "review tools/patch_async_sse.py"
+            )
+        text = text.replace(
+            ABSTRACT_RESPONSE_TCP_DIAGNOSTICS_DECLARATIONS_BEFORE,
+            ABSTRACT_RESPONSE_TCP_DIAGNOSTICS_DECLARATIONS_AFTER,
+        )
+
+    if ABSTRACT_RESPONSE_TCP_DIAGNOSTICS_AFTER not in text:
+        if text.count(ABSTRACT_RESPONSE_TCP_ADD_PROGRESS_AFTER) != 1:
+            raise RuntimeError(
+                "ESPAsyncWebServer WebResponses.cpp TCP diagnostics seam changed; "
+                "review tools/patch_async_sse.py"
+            )
+        text = text.replace(
+            ABSTRACT_RESPONSE_TCP_ADD_PROGRESS_AFTER,
+            ABSTRACT_RESPONSE_TCP_DIAGNOSTICS_AFTER,
         )
 
     return text
@@ -1260,6 +1345,11 @@ def patch_async_webserver(env):
         source_dir / "WebResponses.cpp",
         patch_abstract_response_zero_read,
         "kept response tails retryable with bounded TCP enqueue stalls (issue #60)",
+    )
+    patch_file(
+        source_dir / "WebResponses.cpp",
+        patch_abstract_response_tcp_diagnostics,
+        "instrumented static response TCP enqueue outcomes (issue #60)",
     )
     patch_file(
         source_dir / "WebRequest.cpp",

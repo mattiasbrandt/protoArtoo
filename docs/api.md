@@ -984,6 +984,10 @@ Returns controller status snapshot.
 - `tcpAcceptRejectHeap`, `tcpAcceptRejectRate`, `tcpAcceptRejectAgeMs` —
   accept-guard rejection counters (heap floor / rate pacing) and milliseconds
   since the last rejection (`-1` if none since boot)
+- `staticTcpEnqueue` — boot-lifetime declared-length response diagnostics:
+  - `zeroProgress` counts eligible `AsyncClient::add()` calls that accepted no bytes
+  - `recoveries` counts zero-progress streaks ended by later positive TCP progress
+  - `exhaustions` counts responses closed after exhausting the fixed retry budget
 - `wifiRssi`, `wifiConnected`, `wifiClientConnected`, `littleFsReady`
 - `sleepMode`, `sleepSinceMs`, `activeMood`
 - `auxLed` object (`pin`, `r`, `g`, `b`, `effect`, `available`)

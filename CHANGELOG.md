@@ -16,6 +16,9 @@ Every semantic version release belongs here:
 ## [Unreleased]
 
 ### Added
+- Static-response TCP enqueue diagnostics for issue #60: `/api/status` reports
+  boot-lifetime zero-progress attempts, recovery episodes, and retry-budget
+  exhaustions without allocating in the response path.
 - Request-lifecycle evidence instrumentation for issue #52/#54: `/api/status` now
   reports live/peak inflight request depth, peak SSE clients, and refusal counts
   by admission class (inflight cap, SSE cap, heap floor diagnostic/non-diagnostic);
