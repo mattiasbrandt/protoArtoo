@@ -45,8 +45,9 @@ void test_static_tcp_episode_is_visible_in_snapshot() {
 // payload is the serialized diagnostics contract.
 void test_static_tcp_diagnostics_format_as_json_object() {
     const WebResponseTcpDiagnostics diagnostics = {
-        7U, 5U, 2U, 2U, 1U, 6U, 0U, -1, 7U, 9U, 16U, 2872U};
-    char out[336];
+        7U, 5U, 2U, 2U, 1U, 6U, 0U, -1, 7U, 9U, 16U, 2872U,
+        4100U, 1500U, 900U};
+    char out[480];
 
     const bool ok = formatWebResponseTcpDiagnosticsJson(out, sizeof(out), diagnostics);
 
@@ -55,18 +56,20 @@ void test_static_tcp_diagnostics_format_as_json_object() {
         "{\"zeroProgress\":7,\"noSendSpace\":5,\"zeroWithSendSpace\":2,"
         "\"recoveries\":2,\"exhaustions\":1,\"writeErrMem\":6,"
         "\"writeErrNonMem\":0,\"lastWriteErr\":-1,\"lastWriteQueue\":7,"
-        "\"maxWriteQueue\":9,\"writeQueueLimit\":16,\"lastWriteSize\":2872}",
+        "\"maxWriteQueue\":9,\"writeQueueLimit\":16,\"lastWriteSize\":2872,"
+        "\"lastHeapFree8bit\":4100,\"lastHeapLargest8bit\":1500,"
+        "\"minHeapLargest8bit\":900}",
         out);
 }
 
 // Issue #60: maximum boot-lifetime counters must fit the fixed local object
 // budget used by buildStatusJson().
-void test_static_tcp_diagnostics_max_values_fit_336_byte_budget() {
+void test_static_tcp_diagnostics_max_values_fit_480_byte_budget() {
     const WebResponseTcpDiagnostics diagnostics = {
         UINT32_MAX, UINT32_MAX, UINT32_MAX, UINT32_MAX, UINT32_MAX,
         UINT32_MAX, UINT32_MAX, INT32_MIN, UINT32_MAX, UINT32_MAX,
-        UINT32_MAX, UINT32_MAX};
-    char out[336];
+        UINT32_MAX, UINT32_MAX, UINT32_MAX, UINT32_MAX, UINT32_MAX};
+    char out[480];
 
     const bool ok = formatWebResponseTcpDiagnosticsJson(out, sizeof(out), diagnostics);
 
@@ -81,6 +84,6 @@ int main(int argc, char** argv) {
     UNITY_BEGIN();
     RUN_TEST(test_static_tcp_episode_is_visible_in_snapshot);
     RUN_TEST(test_static_tcp_diagnostics_format_as_json_object);
-    RUN_TEST(test_static_tcp_diagnostics_max_values_fit_336_byte_budget);
+    RUN_TEST(test_static_tcp_diagnostics_max_values_fit_480_byte_budget);
     return UNITY_END();
 }

@@ -9,6 +9,10 @@
 
 #include <cstdio>
 
+#ifdef ARDUINO
+#include <esp_heap_caps.h>
+#endif
+
 namespace {
 
 uint32_t s_zeroProgressAttempts = 0;
@@ -23,6 +27,9 @@ uint32_t s_lastWriteQueue = 0;
 uint32_t s_maxWriteQueue = 0;
 uint32_t s_writeQueueLimit = 0;
 uint32_t s_lastWriteSize = 0;
+uint32_t s_lastHeapFree8bit = 0;
+uint32_t s_lastHeapLargest8bit = 0;
+uint32_t s_minHeapLargest8bit = 0;
 
 }  // namespace
 
@@ -50,6 +57,21 @@ void webResponseTcpRecordAsyncClientAddFailure(int8_t error, bool memoryError,
     __atomic_store_n(&s_writeQueueLimit, (uint32_t)queueLimit, __ATOMIC_RELAXED);
     __atomic_store_n(&s_lastWriteSize, (uint32_t)writeSize, __ATOMIC_RELAXED);
 
+#ifdef ARDUINO
+    const uint32_t heapFree8bit =
+        (uint32_t)heap_caps_get_free_size(MALLOC_CAP_8BIT);
+    const uint32_t heapLargest8bit =
+        (uint32_t)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+    __atomic_store_n(&s_lastHeapFree8bit, heapFree8bit, __ATOMIC_RELAXED);
+    __atomic_store_n(&s_lastHeapLargest8bit, heapLargest8bit, __ATOMIC_RELAXED);
+
+    uint32_t smallest = __atomic_load_n(&s_minHeapLargest8bit, __ATOMIC_RELAXED);
+    while ((smallest == 0U || heapLargest8bit < smallest) &&
+           !__atomic_compare_exchange_n(&s_minHeapLargest8bit, &smallest, heapLargest8bit,
+                                        false, __ATOMIC_RELAXED, __ATOMIC_RELAXED)) {
+    }
+#endif
+
     uint32_t observed = __atomic_load_n(&s_maxWriteQueue, __ATOMIC_RELAXED);
     while ((uint32_t)queueLength > observed &&
            !__atomic_compare_exchange_n(&s_maxWriteQueue, &observed, (uint32_t)queueLength,
@@ -71,6 +93,9 @@ WebResponseTcpDiagnostics webResponseTcpDiagnosticsSnapshot() {
         __atomic_load_n(&s_maxWriteQueue, __ATOMIC_RELAXED),
         __atomic_load_n(&s_writeQueueLimit, __ATOMIC_RELAXED),
         __atomic_load_n(&s_lastWriteSize, __ATOMIC_RELAXED),
+        __atomic_load_n(&s_lastHeapFree8bit, __ATOMIC_RELAXED),
+        __atomic_load_n(&s_lastHeapLargest8bit, __ATOMIC_RELAXED),
+        __atomic_load_n(&s_minHeapLargest8bit, __ATOMIC_RELAXED),
     };
 }
 
@@ -85,7 +110,9 @@ bool formatWebResponseTcpDiagnosticsJson(char* buffer, size_t bufferSize,
         "{\"zeroProgress\":%lu,\"noSendSpace\":%lu,\"zeroWithSendSpace\":%lu,"
         "\"recoveries\":%lu,\"exhaustions\":%lu,\"writeErrMem\":%lu,"
         "\"writeErrNonMem\":%lu,\"lastWriteErr\":%ld,\"lastWriteQueue\":%lu,"
-        "\"maxWriteQueue\":%lu,\"writeQueueLimit\":%lu,\"lastWriteSize\":%lu}",
+        "\"maxWriteQueue\":%lu,\"writeQueueLimit\":%lu,\"lastWriteSize\":%lu,"
+        "\"lastHeapFree8bit\":%lu,\"lastHeapLargest8bit\":%lu,"
+        "\"minHeapLargest8bit\":%lu}",
         (unsigned long)diagnostics.zeroProgressAttempts,
         (unsigned long)diagnostics.noSendSpace,
         (unsigned long)diagnostics.zeroWithSendSpace,
@@ -97,6 +124,9 @@ bool formatWebResponseTcpDiagnosticsJson(char* buffer, size_t bufferSize,
         (unsigned long)diagnostics.lastWriteQueue,
         (unsigned long)diagnostics.maxWriteQueue,
         (unsigned long)diagnostics.writeQueueLimit,
-        (unsigned long)diagnostics.lastWriteSize);
+        (unsigned long)diagnostics.lastWriteSize,
+        (unsigned long)diagnostics.lastHeapFree8bit,
+        (unsigned long)diagnostics.lastHeapLargest8bit,
+        (unsigned long)diagnostics.minHeapLargest8bit);
     return written > 0 && (size_t)written < bufferSize;
 }

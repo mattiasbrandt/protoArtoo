@@ -22,6 +22,9 @@ struct WebResponseTcpDiagnostics {
     uint32_t maxWriteQueue;
     uint32_t writeQueueLimit;
     uint32_t lastWriteSize;
+    uint32_t lastHeapFree8bit;
+    uint32_t lastHeapLargest8bit;
+    uint32_t minHeapLargest8bit;
 };
 
 // Called from the patched ESPAsyncWebServer response path. These functions are

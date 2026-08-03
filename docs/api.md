@@ -972,7 +972,10 @@ Returns controller status snapshot.
 - `driveSpeed`, `driveSteer`, `domeTargetSpeed`, `domeEnabled`
 - `speedLimitMax`, `speedPreset`, `stationary`
 - `uptimeMs`, `firmwareVersion`, `webVersion`
-- `heapFree`, `heapMin`, `heapLargestBlock`, `heapLargest8bit`
+- `heapFree`, `heapMin`, `heapMin8bit`, `heapLargestBlock`, `heapLargest8bit`
+  - `heapMin8bit` is the boot-lifetime minimum free size of the real 8-bit
+    allocation pool. `heapMin` is legacy and reads `MALLOC_CAP_INTERNAL`, so it
+    includes the same non-allocatable leftover-IRAM region described below.
   - `heapLargest8bit` is the largest allocatable DRAM block (`MALLOC_CAP_8BIT`) —
     the pool `malloc` and the admission guards actually use. `heapLargestBlock`
     is legacy: it reads `MALLOC_CAP_INTERNAL`, which is dominated by a constant
@@ -997,6 +1000,9 @@ Returns controller status snapshot.
   - `lastWriteQueue`, `maxWriteQueue`, `writeQueueLimit`, and `lastWriteSize`
     capture the TCP send-queue state and attempted size around those failures;
     these write-failure fields cover all `AsyncClient` users, not only static files
+  - `lastHeapFree8bit`, `lastHeapLargest8bit`, and `minHeapLargest8bit` capture
+    allocator state immediately after failed writes and the smallest failure-time
+    block observed, using the same `MALLOC_CAP_8BIT` pool as lwIP `malloc`
 - `wifiRssi`, `wifiConnected`, `wifiClientConnected`, `littleFsReady`
 - `sleepMode`, `sleepSinceMs`, `activeMood`
 - `auxLed` object (`pin`, `r`, `g`, `b`, `effect`, `available`)
