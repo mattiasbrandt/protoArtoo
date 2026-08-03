@@ -8,6 +8,211 @@
     <link rel="icon" type="image/png" href="/r2d2body-favicon.png">
   </head>
   <body data-page="wifi">
+    <!-- Page Recovery View: four states per ADR 0016/0019 -->
+    <div id="recovery-backdrop" class="recovery-backdrop" role="dialog" aria-modal="true" aria-live="polite" style="display: none;">
+      <!-- State 1: Loading-Step-Named (Normal page startup) -->
+      <div id="recovery-loading" class="recovery-modal-panel" style="display: none;">
+        <div class="recovery-header">
+          <span class="indicator info" style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #6ab0ff; box-shadow: 0 0 5px #6ab0ff; margin-right: 6px;"></span>
+          <div>
+            <div class="recovery-status-reason">Loading page resources</div>
+            <div class="recovery-status-detail">Initializing dashboard</div>
+          </div>
+        </div>
+        <div class="recovery-step">
+          <span class="spinner" style="display: inline-block; width: 10px; height: 10px; border: 2px solid rgba(106, 176, 255, 0.2); border-top-color: #6ab0ff; border-radius: 50%; animation: spin 0.8s linear infinite; margin-right: 6px;"></span>
+          <span id="recovery-current-step">Loading: static assets</span>
+        </div>
+        <p class="recovery-message">Completed resources remain available. Section data loads after all required assets.</p>
+      </div>
+
+      <!-- State 2: Busy (503 recovery page) -->
+      <div id="recovery-busy" class="recovery-modal-panel" style="display: none;">
+        <div style="display: flex; align-items: center; justify-content: center; gap: 6px; margin-bottom: 8px; color: #e8a832;">
+          <span class="indicator" style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #e8a832; box-shadow: 0 0 5px #e8a832;"></span>
+          <span style="font-size: 0.8rem; font-weight: 600;">REQUEST REFUSED</span>
+        </div>
+        <div class="recovery-status-reason">Controller busy</div>
+        <p class="recovery-message">Controller is handling other requests. Try again in a moment.</p>
+        <div class="recovery-countdown-panel">
+          <div class="recovery-countdown-label">Retry interval</div>
+          <div class="recovery-countdown-value" id="recovery-busy-countdown" style="font-size: 1.6rem;">5 s</div>
+        </div>
+        <div class="recovery-actions">
+          <button class="btn accent" id="recovery-busy-retry" onclick="window.PABootstrapWifi && window.PABootstrapWifi.retryNow()">Retry now</button>
+        </div>
+      </div>
+
+      <!-- State 3: No response -->
+      <div id="recovery-no-response" class="recovery-modal-panel" style="display: none;">
+        <div class="recovery-header">
+          <span class="indicator" style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #e8a832; box-shadow: 0 0 5px #e8a832; margin-right: 6px;"></span>
+          <div>
+            <div class="recovery-status-reason">No response from controller</div>
+            <div class="recovery-status-detail">Connection timeout. Attempting to reconnect.</div>
+          </div>
+        </div>
+        <div class="recovery-countdown-panel">
+          <div class="recovery-countdown-value" id="recovery-no-response-countdown">3 s</div>
+          <div class="recovery-countdown-label">Next attempt<br/><span id="recovery-no-response-attempt">Attempt 1</span></div>
+        </div>
+        <div class="recovery-actions">
+          <button class="btn accent" id="recovery-no-response-retry" onclick="window.PABootstrapWifi && window.PABootstrapWifi.retryNow()">Retry now</button>
+        </div>
+      </div>
+
+      <!-- State 4: Retrying with backoff -->
+      <div id="recovery-retrying" class="recovery-modal-panel" style="display: none;">
+        <div class="recovery-header">
+          <span class="indicator" style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #e85454; box-shadow: 0 0 5px #e85454; margin-right: 6px;"></span>
+          <div>
+            <div class="recovery-status-reason">No response from controller</div>
+            <div class="recovery-status-detail">Still waiting. Retrying with increasing intervals.</div>
+          </div>
+        </div>
+        <div class="recovery-countdown-panel">
+          <div class="recovery-countdown-value" id="recovery-retrying-countdown">12 s</div>
+          <div class="recovery-countdown-label">Next attempt<br/><span id="recovery-retrying-attempt">Attempt 4 (backoff)</span></div>
+        </div>
+        <p class="recovery-message">Retry intervals are increasing to avoid overwhelming the controller. Tab continues retrying even when hidden.</p>
+        <div class="recovery-actions">
+          <button class="btn accent" id="recovery-retrying-retry" onclick="window.PABootstrapWifi && window.PABootstrapWifi.retryNow()">Retry now</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Recovery modal CSS (inline to avoid dependency) -->
+    <style>
+      .recovery-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.6);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+      }
+
+      .recovery-modal-panel {
+        background: var(--surface, #152238);
+        border: 1px solid var(--border, #2a4a7a);
+        border-radius: 8px;
+        padding: 20px;
+        width: 90%;
+        max-width: 380px;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+        text-align: center;
+      }
+
+      .recovery-header {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 8px;
+      }
+
+      .recovery-status-reason {
+        color: var(--silver-bright, #d4dde8);
+        font-size: 0.95rem;
+        font-weight: 600;
+      }
+
+      .recovery-status-detail {
+        color: var(--text-dim, #a8bcd8);
+        font-size: 0.8rem;
+        margin-top: 2px;
+      }
+
+      .recovery-step {
+        color: var(--accent-bright, #6ab0ff);
+        font-size: 0.8rem;
+        font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+        margin: 8px 0 0;
+      }
+
+      .recovery-countdown-panel {
+        background: rgba(0, 0, 0, 0.4);
+        border: 1px solid var(--border, #2a4a7a);
+        border-radius: 6px;
+        padding: 10px;
+        margin: 12px 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .recovery-countdown-value {
+        font-size: 1.4rem;
+        font-weight: 700;
+        color: var(--warning, #e8a832);
+        font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+        text-align: center;
+      }
+
+      .recovery-countdown-label {
+        color: var(--text-dim, #a8bcd8);
+        font-size: 0.75rem;
+        margin-bottom: 4px;
+      }
+
+      .recovery-message {
+        color: var(--text-dim, #a8bcd8);
+        font-size: 0.85rem;
+        line-height: 1.4;
+        margin: 8px 0 0;
+      }
+
+      .recovery-actions {
+        display: flex;
+        gap: 8px;
+        justify-content: center;
+        margin-top: 12px;
+      }
+
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        padding: 10px 16px;
+        background: var(--surface-alt, #1a2d4a);
+        color: var(--silver-bright, #d4dde8);
+        border: 1px solid var(--border, #2a4a7a);
+        border-radius: 999px;
+        font-size: 0.85rem;
+        font-weight: 600;
+        cursor: pointer;
+        text-align: center;
+        min-height: 38px;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.22);
+        transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+      }
+
+      .btn:hover {
+        background: var(--border, #2a4a7a);
+        border-color: var(--accent, #4a90d9);
+        color: var(--white, #f0f4f8);
+        transform: translateY(-1px);
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.28);
+      }
+
+      .btn.accent {
+        background: var(--accent, #4a90d9);
+        color: var(--white, #f0f4f8);
+        border-color: var(--accent-bright, #6ab0ff);
+      }
+
+      .btn.accent:hover {
+        background: var(--accent-bright, #6ab0ff);
+      }
+
+      @keyframes spin {
+        to { transform: rotate(360deg); }
+      }
+    </style>
+
     <div id="shell-top"></div>
 
     <div class="card" id="wifi-posture-card">
@@ -135,6 +340,7 @@
 
     <div id="shell-status"></div>
 
-    <script src="/page_loader.js" data-scripts="/web_api.js,/status_stream.js,/shell.js,/wifi.js,/footer.js"></script>
+    <script src="/page_bootstrap.js"></script>
+    <script src="/bootstrap_page_loader.js" data-scripts="/web_api.js,/status_stream.js,/shell.js,/wifi.js,/footer.js" data-sections="posture,settings,apply"></script>
   </body>
 </html>
