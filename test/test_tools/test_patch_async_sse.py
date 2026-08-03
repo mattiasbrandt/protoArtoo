@@ -487,6 +487,42 @@ class PatchAsyncWebServerTest(unittest.TestCase):
         ):
             PATCH.patch_abstract_response_zero_read(source)
 
+    def test_abstract_response_tcp_mss_cap_bounds_single_add_and_is_idempotent(self):
+        """Issue #60 Slice 12: bound each declared-length TCP enqueue to one MSS."""
+        source = "prefix\n" + PATCH.ABSTRACT_RESPONSE_TCP_DIAGNOSTICS_AFTER + "suffix\n"
+
+        patched = PATCH.patch_abstract_response_tcp_mss_cap(source)
+
+        self.assertIn(
+            "size_t const add_request_len =\n"
+            "          (!_chunked && _sendContentLength)\n"
+            "            ? std::min<size_t>(remaining_len, (size_t)CONFIG_LWIP_TCP_MSS)\n"
+            "            : remaining_len;",
+            patched,
+        )
+        self.assertIn(
+            "request->client()->add(reinterpret_cast<char *>(_send_buffer->data() + _send_buffer_offset), add_request_len);",
+            patched,
+        )
+        self.assertIn(
+            "if (added_len != add_request_len || add_request_len != remaining_len) {",
+            patched,
+        )
+        # A capped chunk that fully drains the buffer must still finalize
+        # RESPONSE_END, so that check now appears in both branches.
+        self.assertEqual(patched.count("_state = RESPONSE_END;"), 2)
+        self.assertEqual(
+            PATCH.patch_abstract_response_tcp_mss_cap(patched),
+            patched,
+        )
+
+    def test_abstract_response_tcp_mss_cap_rejects_vendor_drift(self):
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "TCP diagnostics seam changed for MSS cap",
+        ):
+            PATCH.patch_abstract_response_tcp_mss_cap("changed vendor tcp add path")
+
     def test_async_event_dispatch_patch_catches_exceptions_and_is_idempotent(self):
         source = (
             "prefix\n"

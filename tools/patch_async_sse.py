@@ -970,6 +970,97 @@ ABSTRACT_RESPONSE_TCP_DIAGNOSTICS_AFTER = (
     )
 )
 
+# Issue #60 Slice 12: a declared-length response's leftover buffer can span two
+# MSS-sized segments (ASYNC_RESPONCE_BUFF_SIZE == 2 * MSS). A single
+# AsyncClient::add() call for the whole remainder needs lwIP to allocate both
+# pbuf segments in one transactional tcp_write(); live evidence (issue #60,
+# Slice 11) showed that call rolling back entirely when only one segment's
+# worth of contiguous heap was available. Cap each add() attempt for
+# declared-length, non-chunked responses to one MSS so a single tcp_write()
+# only ever needs one pbuf segment; the existing zero-progress retry/recovery
+# accounting and final-buffer RESPONSE_END gating are reused unchanged for the
+# capped chunk, and a full drain still ends the response the same way.
+ABSTRACT_RESPONSE_TCP_MSS_CAP_BEFORE = ABSTRACT_RESPONSE_TCP_DIAGNOSTICS_AFTER
+
+ABSTRACT_RESPONSE_TCP_MSS_CAP_AFTER = (
+    ABSTRACT_RESPONSE_TCP_DIAGNOSTICS_AFTER.replace(
+        "        bool const tcp_had_send_space =\n"
+        "          !_chunked && _sendContentLength && request->client()->space() > 0;\n"
+        "        size_t const added_len =\n"
+        "          request->client()->add(reinterpret_cast<char *>(_send_buffer->data() + _send_buffer_offset), _send_buffer_len - _send_buffer_offset);\n"
+        "        if (added_len != _send_buffer_len - _send_buffer_offset) {\n",
+        "        bool const tcp_had_send_space =\n"
+        "          !_chunked && _sendContentLength && request->client()->space() > 0;\n"
+        "        size_t const remaining_len = _send_buffer_len - _send_buffer_offset;\n"
+        "        size_t const add_request_len =\n"
+        "          (!_chunked && _sendContentLength)\n"
+        "            ? std::min<size_t>(remaining_len, (size_t)CONFIG_LWIP_TCP_MSS)\n"
+        "            : remaining_len;\n"
+        "        size_t const added_len =\n"
+        "          request->client()->add(reinterpret_cast<char *>(_send_buffer->data() + _send_buffer_offset), add_request_len);\n"
+        "        if (added_len != add_request_len || add_request_len != remaining_len) {\n",
+    ).replace(
+        "          _send_buffer_offset += added_len;\n"
+        "          break;\n"
+        "        } else {\n"
+        "          if (!_chunked && _sendContentLength) {\n"
+        "            if (_tcpAddZeroRetries > 0) {\n"
+        "              webResponseTcpRecordRecovery();\n"
+        "            }\n"
+        "            _tcpAddZeroRetries = 0;\n"
+        "          }\n"
+        "          _send_buffer_len = _send_buffer_offset = 0;  // consider buffer empty\n"
+        "          if (_sendContentLength && (_sentLength == _contentLength)) {\n"
+        "            // The final buffered bytes have been accepted by TCP.\n"
+        "            _state = RESPONSE_END;\n"
+        "          }\n"
+        "        }\n",
+        "          _send_buffer_offset += added_len;\n"
+        "          if (_send_buffer_offset == _send_buffer_len) {\n"
+        "            _send_buffer_len = _send_buffer_offset = 0;  // consider buffer empty\n"
+        "            if (_sendContentLength && (_sentLength == _contentLength)) {\n"
+        "              // The final buffered bytes have been accepted by TCP.\n"
+        "              _state = RESPONSE_END;\n"
+        "            }\n"
+        "          }\n"
+        "          break;\n"
+        "        } else {\n"
+        "          if (!_chunked && _sendContentLength) {\n"
+        "            if (_tcpAddZeroRetries > 0) {\n"
+        "              webResponseTcpRecordRecovery();\n"
+        "            }\n"
+        "            _tcpAddZeroRetries = 0;\n"
+        "          }\n"
+        "          _send_buffer_len = _send_buffer_offset = 0;  // consider buffer empty\n"
+        "          if (_sendContentLength && (_sentLength == _contentLength)) {\n"
+        "            // The final buffered bytes have been accepted by TCP.\n"
+        "            _state = RESPONSE_END;\n"
+        "          }\n"
+        "        }\n",
+    )
+)
+
+
+# Bound each declared-length response's TCP enqueue to one MSS per attempt so
+# a single tcp_write() never needs more than one lwIP pbuf segment. The input
+# is the complete vendor implementation text; the returned text is idempotently
+# patched, building on the existing TCP diagnostics seam. Any changed anchor
+# raises so a dependency upgrade cannot silently restore the multi-segment
+# all-or-nothing allocation. This function has no I/O. Called by
+# patch_async_webserver() from the PlatformIO pre-build hook; see GitHub issue #60.
+def patch_abstract_response_tcp_mss_cap(text):
+    if ABSTRACT_RESPONSE_TCP_MSS_CAP_AFTER in text:
+        return text
+    if text.count(ABSTRACT_RESPONSE_TCP_MSS_CAP_BEFORE) != 1:
+        raise RuntimeError(
+            "ESPAsyncWebServer WebResponses.cpp TCP diagnostics seam changed for MSS cap; "
+            "review tools/patch_async_sse.py"
+        )
+    return text.replace(
+        ABSTRACT_RESPONSE_TCP_MSS_CAP_BEFORE,
+        ABSTRACT_RESPONSE_TCP_MSS_CAP_AFTER,
+    )
+
 ABSTRACT_RESPONSE_INFLIGHT_CREDIT_BEFORE = """\
 #if ASYNCWEBSERVER_USE_CHUNK_INFLIGHT
     _in_flight += payloadlen;
@@ -1500,6 +1591,11 @@ def patch_async_webserver(env):
         source_dir / "WebResponses.cpp",
         patch_abstract_response_tcp_diagnostics,
         "instrumented static response TCP enqueue outcomes (issue #60)",
+    )
+    patch_file(
+        source_dir / "WebResponses.cpp",
+        patch_abstract_response_tcp_mss_cap,
+        "bounded static response TCP enqueue to one MSS per attempt (issue #60)",
     )
     patch_file(
         source_dir / "WebRequest.cpp",

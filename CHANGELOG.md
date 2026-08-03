@@ -34,6 +34,13 @@ Every semantic version release belongs here:
   the same response instead of ending early with a truncated body. Repeated
   zero-progress TCP enqueue attempts are also bounded through AsyncTCP's
   five-second ACK window, while partial progress remains correctly accounted.
+- Static responses with a declared content length now enqueue at most one TCP
+  MSS per `AsyncClient::add()` attempt instead of the full buffered remainder
+  (up to two MSS at once). Live evidence for issue #60 traced the remaining
+  truncations to lwIP needing two contiguous pbuf segments for one
+  transactional write and rolling the whole write back when only one segment
+  fit; capping each attempt to one segment avoids that all-or-nothing
+  allocation.
 
 ## [1.0.0] - 2026-08-01
 
