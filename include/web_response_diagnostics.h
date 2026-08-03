@@ -15,6 +15,13 @@ struct WebResponseTcpDiagnostics {
     uint32_t zeroWithSendSpace;
     uint32_t recoveries;
     uint32_t exhaustions;
+    uint32_t writeErrMem;
+    uint32_t writeErrNonMem;
+    int32_t lastWriteErr;
+    uint32_t lastWriteQueue;
+    uint32_t maxWriteQueue;
+    uint32_t writeQueueLimit;
+    uint32_t lastWriteSize;
 };
 
 // Called from the patched ESPAsyncWebServer response path. These functions are
@@ -22,6 +29,9 @@ struct WebResponseTcpDiagnostics {
 void webResponseTcpRecordZeroProgress(bool hadSendSpace);
 void webResponseTcpRecordRecovery();
 void webResponseTcpRecordExhaustion();
+void webResponseTcpRecordAsyncClientAddFailure(int8_t error, bool memoryError,
+                                               uint16_t queueLength, uint16_t queueLimit,
+                                               uint16_t writeSize);
 
 // Return one coherent-enough telemetry snapshot. Counters are monotonic
 // evidence only; independent atomic loads do not provide transactional state.

@@ -503,6 +503,19 @@ class PatchAsyncWebServerTest(unittest.TestCase):
         self.assertIn("catch (const std::exception &ex)", patched)
         self.assertEqual(PATCH.patch_async_event_dispatch(patched), patched)
 
+    def test_asyncclient_add_diagnostics_capture_error_and_queue_state(self):
+        source = (
+            PATCH.ASYNC_CLIENT_ADD_DIAGNOSTICS_DECLARATION_BEFORE
+            + PATCH.ASYNC_CLIENT_ADD_DIAGNOSTICS_BEFORE
+        )
+
+        patched = PATCH.patch_asyncclient_add_diagnostics(source)
+
+        self.assertIn("void webResponseTcpRecordAsyncClientAddFailure(", patched)
+        self.assertIn("uint16_t const queue_length = tcp_sndqueuelen(_pcb);", patched)
+        self.assertIn("err, err == ERR_MEM, queue_length, TCP_SND_QUEUELEN", patched)
+        self.assertEqual(PATCH.patch_asyncclient_add_diagnostics(patched), patched)
+
     def test_tcp_accept_heap_guard_runs_before_client_alloc_and_is_idempotent(self):
         source = (
             "prefix\n"

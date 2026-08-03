@@ -19,7 +19,8 @@ Every semantic version release belongs here:
 - Static-response TCP enqueue diagnostics for issue #60: `/api/status` reports
   boot-lifetime zero-progress attempts, recovery episodes, and retry-budget
   exhaustions without allocating in the response path, including whether each
-  zero-progress attempt had TCP send space immediately beforehand.
+  zero-progress attempt had TCP send space immediately beforehand and the exact
+  lwIP error/send-queue state when `AsyncClient::add()` fails.
 - Request-lifecycle evidence instrumentation for issue #52/#54: `/api/status` now
   reports live/peak inflight request depth, peak SSE clients, and refusal counts
   by admission class (inflight cap, SSE cap, heap floor diagnostic/non-diagnostic);

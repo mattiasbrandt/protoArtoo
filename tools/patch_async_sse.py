@@ -41,6 +41,70 @@ SSE_PREAMBLE = """\
 
 """
 
+ASYNC_CLIENT_ADD_DIAGNOSTICS_DECLARATION_PREVIOUS_AFTER = """\
+#include "AsyncTCPSimpleIntrusiveList.h"
+
+// Allocation-free application telemetry for issue #60.
+void webResponseTcpRecordAsyncClientAddFailure(
+  int8_t error, bool memoryError, uint16_t queueLength, uint16_t queueLimit, uint16_t writeSize
+);
+"""
+
+ASYNC_CLIENT_ADD_DIAGNOSTICS_DECLARATION_BEFORE = """\
+#include <exception>
+"""
+
+ASYNC_CLIENT_ADD_DIAGNOSTICS_DECLARATION_AFTER = """\
+#include <exception>
+
+// Allocation-free application telemetry for issue #60.
+void webResponseTcpRecordAsyncClientAddFailure(
+  int8_t error, bool memoryError, uint16_t queueLength, uint16_t queueLimit, uint16_t writeSize
+);
+"""
+
+ASYNC_CLIENT_ADD_DIAGNOSTICS_BEFORE = """\
+size_t AsyncClient::add(const char *data, size_t size, uint8_t apiflags) {
+  if (!_pcb || size == 0 || data == NULL) {
+    return 0;
+  }
+  size_t room = space();
+  if (!room) {
+    return 0;
+  }
+  size_t will_send = (room < size) ? room : size;
+  int8_t err = ERR_OK;
+  err = _tcp_write(&_pcb, data, will_send, apiflags);
+  if (err != ERR_OK) {
+    return 0;
+  }
+  return will_send;
+}
+"""
+
+ASYNC_CLIENT_ADD_DIAGNOSTICS_AFTER = """\
+size_t AsyncClient::add(const char *data, size_t size, uint8_t apiflags) {
+  if (!_pcb || size == 0 || data == NULL) {
+    return 0;
+  }
+  size_t room = space();
+  if (!room) {
+    return 0;
+  }
+  size_t will_send = (room < size) ? room : size;
+  uint16_t const queue_length = tcp_sndqueuelen(_pcb);
+  int8_t err = ERR_OK;
+  err = _tcp_write(&_pcb, data, will_send, apiflags);
+  if (err != ERR_OK) {
+    webResponseTcpRecordAsyncClientAddFailure(
+      err, err == ERR_MEM, queue_length, TCP_SND_QUEUELEN, (uint16_t)will_send
+    );
+    return 0;
+  }
+  return will_send;
+}
+"""
+
 STATIC_SEARCH_BEFORE = """\
   if (_tryGzipFirst) {
     if (_fs.exists(gzip)) {
@@ -1212,7 +1276,43 @@ def patch_async_event_dispatch(text):
     return text
 
 
+def patch_asyncclient_add_diagnostics(text):
+    if ASYNC_CLIENT_ADD_DIAGNOSTICS_DECLARATION_AFTER not in text:
+        if ASYNC_CLIENT_ADD_DIAGNOSTICS_DECLARATION_PREVIOUS_AFTER in text:
+            text = text.replace(
+                ASYNC_CLIENT_ADD_DIAGNOSTICS_DECLARATION_PREVIOUS_AFTER,
+                '#include "AsyncTCPSimpleIntrusiveList.h"\n',
+            )
+        if text.count(ASYNC_CLIENT_ADD_DIAGNOSTICS_DECLARATION_BEFORE) != 1:
+            raise RuntimeError(
+                "AsyncTCP.cpp includes changed for add diagnostics; "
+                "review tools/patch_async_sse.py"
+            )
+        text = text.replace(
+            ASYNC_CLIENT_ADD_DIAGNOSTICS_DECLARATION_BEFORE,
+            ASYNC_CLIENT_ADD_DIAGNOSTICS_DECLARATION_AFTER,
+        )
+
+    if ASYNC_CLIENT_ADD_DIAGNOSTICS_AFTER not in text:
+        if text.count(ASYNC_CLIENT_ADD_DIAGNOSTICS_BEFORE) != 1:
+            raise RuntimeError(
+                "AsyncTCP.cpp AsyncClient::add changed; review tools/patch_async_sse.py"
+            )
+        text = text.replace(
+            ASYNC_CLIENT_ADD_DIAGNOSTICS_BEFORE,
+            ASYNC_CLIENT_ADD_DIAGNOSTICS_AFTER,
+        )
+
+    return text
+
+
 def patch_tcp_accept_heap_guard(text):
+    if ASYNC_CLIENT_ADD_DIAGNOSTICS_DECLARATION_PREVIOUS_AFTER in text:
+        text = text.replace(
+            ASYNC_CLIENT_ADD_DIAGNOSTICS_DECLARATION_PREVIOUS_AFTER,
+            '#include "AsyncTCPSimpleIntrusiveList.h"\n',
+        )
+
     if TCP_ACCEPT_HEAP_GUARD_AFTER not in text:
         if text.count(TCP_ACCEPT_HEAP_GUARD_BEFORE) != 1:
             raise RuntimeError(
@@ -1427,6 +1527,11 @@ def patch_async_webserver(env):
         asynctcp_source_dir / "AsyncTCP.cpp",
         patch_tcp_accept_heap_guard,
         "guarded tcp_accept before AsyncClient allocation under critical heap (issue #21)",
+    )
+    patch_file(
+        asynctcp_source_dir / "AsyncTCP.cpp",
+        patch_asyncclient_add_diagnostics,
+        "captured AsyncClient add error and queue state (issue #60)",
     )
     patch_file(
         asynctcp_source_dir / "AsyncTCP.cpp",

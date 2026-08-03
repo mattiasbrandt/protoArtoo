@@ -992,6 +992,11 @@ Returns controller status snapshot.
     immediately before `add()`; this isolates a write failure or connection race
   - `recoveries` counts zero-progress streaks ended by later positive TCP progress
   - `exhaustions` counts responses closed after exhausting the fixed retry budget
+  - `writeErrMem`, `writeErrNonMem`, and `lastWriteErr` report boot-lifetime
+    `AsyncClient::add()` write failures and the latest exact lwIP error
+  - `lastWriteQueue`, `maxWriteQueue`, `writeQueueLimit`, and `lastWriteSize`
+    capture the TCP send-queue state and attempted size around those failures;
+    these write-failure fields cover all `AsyncClient` users, not only static files
 - `wifiRssi`, `wifiConnected`, `wifiClientConnected`, `littleFsReady`
 - `sleepMode`, `sleepSinceMs`, `activeMood`
 - `auxLed` object (`pin`, `r`, `g`, `b`, `effect`, `available`)

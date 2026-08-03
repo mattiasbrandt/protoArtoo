@@ -658,7 +658,7 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     wifiRssi = wifi.wifiRssi;
 
     const char* auxLedEffectLabel = auxLedEffectToString(auxLedEffect);
-    char staticTcpEnqueueJson[192];
+    char staticTcpEnqueueJson[336];
     if (!formatWebResponseTcpDiagnosticsJson(
             staticTcpEnqueueJson, sizeof(staticTcpEnqueueJson),
             webResponseTcpDiagnosticsSnapshot())) {
