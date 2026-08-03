@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Print the locked, no-write execution plan for GitHub issue #65 live A/B runs.
 
-This planning-only slice validates immutable inputs and emits a JSON fixture for
-the later runtime coordinator. It never touches worktrees, evidence directories,
+This planner validates immutable inputs and emits the fixture consumed by
+issue65_live_ab_runtime.py. It never touches worktrees, evidence directories,
 the controller, the serial port, or the network.
 """
 from __future__ import annotations
@@ -20,15 +20,21 @@ ISSUE = 65
 REPO_ROOT = Path(__file__).resolve().parents[1]
 EVIDENCE_ROOT = REPO_ROOT / "tasks" / "evidence" / "issue-65"
 BROWSER_COLLECTOR = REPO_ROOT / "tools" / "issue65_browser_capture.js"
+RUNTIME_COORDINATOR = REPO_ROOT / "tools" / "issue65_live_ab_runtime.py"
 DEFAULT_CONTROLLER = "10.0.0.22"
 DEFAULT_SERIAL_PORT = "/dev/ttyUSB0"
 PRODUCTION_ENV = "protoArtoo_chirp"
 OTA_ENV = "protoArtoo_chirp_ota"
 VERSION_FILES = ("data/fw-version.json", "data/fs-version.json")
-AUTH_PREFIX = "https://github.com/mattiasbrandt/protoArtoo/issues/65#issuecomment-"
-FIELD_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+$")
-AUTH_RE = re.compile(
-    r"^https://github\.com/mattiasbrandt/protoArtoo/issues/65#issuecomment-[0-9]+$"
+FAILED_ALLOC_CONTRACT_URL = (
+    "https://github.com/mattiasbrandt/protoArtoo/issues/65"
+    "#issuecomment-5172626006"
+)
+FAILED_ALLOC_AVAILABILITY = "unavailable-in-fixed-production-build"
+FAILED_ALLOC_LIMITATION = (
+    "It may distinguish build-following page/HTTP/reset behavior only as far as "
+    "the available correlated evidence permits; it may not claim that either "
+    "build had zero failed allocations."
 )
 CONTROLLER_RE = re.compile(
     r"^(?=.{1,253}$)(?!-)[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*$"
@@ -70,21 +76,13 @@ PRIOR_ORDER = ("A1", "B1", "A2")
 def build_parser() -> PlannerArgumentParser:
     parser = PlannerArgumentParser(
         description=(
-            "Print the immutable Issue 65 live A/B plan. Runtime execution is "
-            "not implemented; --dry-run is currently required."
+            "Print the immutable Issue 65 live A/B plan. This tool is plan-only; "
+            "runtime execution is owned by issue65_live_ab_runtime.py."
         )
     )
     parser.add_argument("--run", required=True, choices=tuple(RUNS))
     parser.add_argument("--controller", default=DEFAULT_CONTROLLER)
     parser.add_argument("--serial-port", default=DEFAULT_SERIAL_PORT)
-    parser.add_argument(
-        "--failed-alloc-field",
-        help="candidate dotted production failed-allocation counter field",
-    )
-    parser.add_argument(
-        "--authorization-url",
-        help="Issue #65 comment URL proposed as evidence for the candidate field",
-    )
     parser.add_argument(
         "--allow-b2",
         action="store_true",
@@ -124,52 +122,22 @@ def validate_serial_port(value: str) -> str:
     return str(path)
 
 
-def validate_failed_alloc_source(args: argparse.Namespace) -> dict[str, object]:
-    field, authorization = args.failed_alloc_field, args.authorization_url
-    if bool(field) != bool(authorization):
-        raise PlanError(
-            "--failed-alloc-field and --authorization-url must be provided together"
-        )
-    if not field:
-        return {
-            "status": "BLOCKED",
-            "supplyStatus": "NOT_SUPPLIED",
-            "field": None,
-            "authorizationUrl": None,
-            "authorizationContentVerified": False,
-            "liveSchemaVerified": False,
-            "reason": (
-                "Both a dotted --failed-alloc-field and an Issue #65 comment "
-                "URL must be supplied, then the comment content and live schema "
-                "must both be verified before execute."
-            ),
-            "writeErrMemIsFailedAllocs": False,
-        }
-    if not FIELD_RE.fullmatch(field):
-        raise PlanError("--failed-alloc-field must be a dotted field path")
-    if field.split(".")[-1] == "writeErrMem":
-        raise PlanError(
-            "writeErrMem records write-memory errors; it must never be labeled "
-            "or used as failedAllocs"
-        )
-    if not authorization.startswith(AUTH_PREFIX):
-        raise PlanError(f"--authorization-url must start with {AUTH_PREFIX}")
-    if not AUTH_RE.fullmatch(authorization):
-        raise PlanError(
-            "--authorization-url must be an exact numeric Issue #65 comment URL"
-        )
+def failed_allocation_evidence() -> dict[str, object]:
+    """Return the issue-authorized immutable-build evidence contract."""
     return {
-        "status": "BLOCKED",
-        "supplyStatus": "SUPPLIED_UNVERIFIED",
-        "field": field,
-        "authorizationUrl": authorization,
-        "authorizationContentVerified": False,
-        "liveSchemaVerified": False,
-        "reason": (
-            "The supplied URL's comment content and the candidate field's live "
-            "schema must both be verified before execute."
-        ),
+        "globalFailedAllocs": None,
+        "availability": FAILED_ALLOC_AVAILABILITY,
+        "observations": {
+            "pre-load": None,
+            "load": None,
+            "cooldown": None,
+        },
+        "positiveEvidenceOnly": True,
+        "positiveEvents": [],
+        "proxiesUsed": False,
         "writeErrMemIsFailedAllocs": False,
+        "authorizationUrl": FAILED_ALLOC_CONTRACT_URL,
+        "limitation": FAILED_ALLOC_LIMITATION,
     }
 
 
@@ -182,7 +150,7 @@ def build_plan(args: argparse.Namespace) -> dict[str, object]:
     locked = RUNS[args.run]
     controller = validate_controller(args.controller)
     serial_port = validate_serial_port(args.serial_port)
-    failed_alloc = validate_failed_alloc_source(args)
+    failed_alloc = failed_allocation_evidence()
     if args.run == "B2" and not args.allow_b2:
         raise PlanError("B2 is gated; pass --allow-b2 after A1, B1, and A2 complete")
     if args.run != "B2" and args.allow_b2:
@@ -228,22 +196,12 @@ def build_plan(args: argparse.Namespace) -> dict[str, object]:
     )
     blockers = [
         {
-            "code": "RUNTIME_NOT_IMPLEMENTED",
-            "status": "BLOCKED",
-            "detail": "runtime execution not implemented in this slice",
-        },
-        {
             "code": "PREFLIGHT_NOT_PROBED",
             "status": "UNRESOLVED",
             "detail": (
                 "dry-run does not inspect commands, serial port, collector, "
                 "worktrees, evidence paths, or controller reachability"
             ),
-        },
-        {
-            "code": "FAILED_ALLOC_SOURCE",
-            "status": failed_alloc["status"],
-            "detail": failed_alloc["reason"],
         },
     ]
     if locked.required_completed_runs:
@@ -317,13 +275,20 @@ def build_plan(args: argparse.Namespace) -> dict[str, object]:
             "worktree": worktree,
             "evidenceDirectory": str(evidence),
             "browserCollector": str(BROWSER_COLLECTOR),
+            "runtimeCoordinator": str(RUNTIME_COORDINATOR),
         },
         "preflight": {
             "probePolicy": "REPORT_ONLY_DO_NOT_PROBE_IN_DRY_RUN",
             "checks": preflight_checks,
-            "failedAllocationSource": failed_alloc,
+            "failedAllocationContract": {
+                "status": "AUTHORIZED",
+                "authorizationUrl": FAILED_ALLOC_CONTRACT_URL,
+                "globalCounterEvaluable": False,
+                "positiveEvidenceStopsRun": True,
+            },
             "blockers": blockers,
         },
+        "failedAllocationEvidence": failed_alloc,
         "commands": {
             "worktreeAdd": command(
                 "git", "worktree", "add", "--detach", worktree, locked.commit
@@ -399,8 +364,9 @@ def build_plan(args: argparse.Namespace) -> dict[str, object]:
                 "startsBeforeSettle": True,
                 "unchangedAcrossRuns": ["A1", "B1", "A2", "B2"],
                 "diagnosticLossStopAfterSeconds": 30,
-                "failedAllocationField": failed_alloc["field"],
-                "schemaVerificationRequired": True,
+                "globalFailedAllocs": None,
+                "failedAllocationAvailability": FAILED_ALLOC_AVAILABILITY,
+                "positiveAllocationEvidenceStopsRun": True,
                 "writeErrMemIsFailedAllocs": False,
             },
             "browser": {
@@ -437,13 +403,13 @@ def build_plan(args: argparse.Namespace) -> dict[str, object]:
                 "Page Failure",
                 "HTTP Blackout",
                 "Unexpected controller failure",
-                "Power-Cycle Recovery",
                 "UNKNOWN",
             ],
+            "recoveryFacts": ["Power-Cycle Recovery"],
             "stopReasons": [
                 "panic",
                 "unexpected reset",
-                "failed-allocation growth",
+                "positive allocation-failure evidence",
                 "loss of ICMP",
                 "HTTP Blackout",
                 "operator interrupt",
@@ -462,8 +428,8 @@ def build_plan(args: argparse.Namespace) -> dict[str, object]:
                     "for 30 seconds while ping continues"
                 ),
                 "Unexpected controller failure": (
-                    "panic, unexpected reset, failed-allocation growth, or loss "
-                    "of ICMP stops the run"
+                    "panic, unexpected reset, positive allocation-failure "
+                    "evidence, or loss of ICMP stops the run"
                 ),
                 "Power-Cycle Recovery": (
                     "physically removing and restoring controller power restores "
@@ -512,7 +478,10 @@ def main(argv: list[str]) -> int:
     try:
         args = parser.parse_args(argv)
         if not args.dry_run:
-            raise PlanError("runtime execution not implemented in this slice; use --dry-run")
+            raise PlanError(
+                "this tool is plan-only; use --dry-run or invoke "
+                "tools/issue65_live_ab_runtime.py with explicit --execute"
+            )
         plan = build_plan(args)
     except PlanError as error:
         sys.stderr.write(f"ERROR: {error}\n")
