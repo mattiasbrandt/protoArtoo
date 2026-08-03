@@ -79,14 +79,16 @@ def build_parser() -> PlannerArgumentParser:
     parser.add_argument("--serial-port", default=DEFAULT_SERIAL_PORT)
     parser.add_argument(
         "--failed-alloc-field",
-        help="authorized dotted production failed-allocation counter field",
+        help="candidate dotted production failed-allocation counter field",
     )
     parser.add_argument(
         "--authorization-url",
-        help="Issue #65 comment URL authorizing the production counter field",
+        help="Issue #65 comment URL proposed as evidence for the candidate field",
     )
     parser.add_argument(
-        "--allow-b2", action="store_true", help="admit B2 after A1, B1, and A2"
+        "--allow-b2",
+        action="store_true",
+        help="request B2 planning review after A1, B1, and A2",
     )
     parser.add_argument(
         "--dry-run",
@@ -131,11 +133,15 @@ def validate_failed_alloc_source(args: argparse.Namespace) -> dict[str, object]:
     if not field:
         return {
             "status": "BLOCKED",
+            "supplyStatus": "NOT_SUPPLIED",
             "field": None,
             "authorizationUrl": None,
+            "authorizationContentVerified": False,
+            "liveSchemaVerified": False,
             "reason": (
                 "Both a dotted --failed-alloc-field and an Issue #65 comment "
-                "authorization URL are required."
+                "URL must be supplied, then the comment content and live schema "
+                "must both be verified before execute."
             ),
             "writeErrMemIsFailedAllocs": False,
         }
@@ -153,12 +159,15 @@ def validate_failed_alloc_source(args: argparse.Namespace) -> dict[str, object]:
             "--authorization-url must be an exact numeric Issue #65 comment URL"
         )
     return {
-        "status": "REQUIRES_LIVE_SCHEMA_VERIFICATION",
+        "status": "BLOCKED",
+        "supplyStatus": "SUPPLIED_UNVERIFIED",
         "field": field,
         "authorizationUrl": authorization,
+        "authorizationContentVerified": False,
+        "liveSchemaVerified": False,
         "reason": (
-            "Authorization is present, but the field requires live schema "
-            "verification before execute."
+            "The supplied URL's comment content and the candidate field's live "
+            "schema must both be verified before execute."
         ),
         "writeErrMemIsFailedAllocs": False,
     }
@@ -201,6 +210,22 @@ def build_plan(args: argparse.Namespace) -> dict[str, object]:
         "--url", f"{origin}/wifi.html", "--out", evidence / "browser",
         "--control-file", evidence / "control.json",
     )
+    identity_dir = evidence / "identity"
+    prepare_identity_dir = command("mkdir", "-p", identity_dir)
+    copy_firmware_identity = command(
+        "cp", f"{worktree}/data/fw-version.json", identity_dir / "fw-version.json"
+    )
+    hash_firmware = command(
+        "sha256sum", f"{worktree}/.pio/build/{OTA_ENV}/firmware.bin",
+        ">", identity_dir / "firmware.sha256",
+    )
+    copy_filesystem_identity = command(
+        "cp", f"{worktree}/data/fs-version.json", identity_dir / "fs-version.json"
+    )
+    hash_filesystem = command(
+        "sha256sum", f"{worktree}/.pio/build/{OTA_ENV}/littlefs.bin",
+        ">", identity_dir / "littlefs.sha256",
+    )
     blockers = [
         {
             "code": "RUNTIME_NOT_IMPLEMENTED",
@@ -225,16 +250,22 @@ def build_plan(args: argparse.Namespace) -> dict[str, object]:
         blockers.append(
             {
                 "code": "RUN_ORDER_UNVERIFIED",
-                "status": "UNRESOLVED",
-                "detail": "completion evidence required for "
-                + ", ".join(locked.required_completed_runs),
+                "status": "BLOCKED" if args.run == "B2" else "UNRESOLVED",
+                "detail": (
+                    "B2 remains ambiguous after A1/B1/A2 and requires explicit "
+                    "post-run review before admission"
+                    if args.run == "B2"
+                    else "completion evidence required for "
+                    + ", ".join(locked.required_completed_runs)
+                ),
             }
         )
     evidence_files = (
         "manifest.json", "build.log", "uploadfs.log", "firmware-upload.log",
         "serial.log", "ping.ndjson", "status.ndjson", "control.json",
         "cooldown-status.ndjson", "outcome.json", "identity/fw-version.json",
-        "identity/fs-version.json", "browser/browser-manifest.json",
+        "identity/fs-version.json", "identity/firmware.sha256",
+        "identity/littlefs.sha256", "browser/browser-manifest.json",
         "browser/network.ndjson", "browser/console.ndjson",
         "browser/page-errors.ndjson", "browser/page-state.json", "browser/dom.html",
         "browser/final-viewport.png", "browser/final-full.png",
@@ -271,7 +302,8 @@ def build_plan(args: argparse.Namespace) -> dict[str, object]:
             "commit": locked.commit,
             "priorOrder": list(PRIOR_ORDER),
             "requiredCompletedRuns": list(locked.required_completed_runs),
-            "b2Allowed": args.run == "B2" and args.allow_b2,
+            "b2Requested": args.run == "B2" and args.allow_b2,
+            "b2Allowed": False,
         },
         "target": {
             "controller": controller,
@@ -297,8 +329,23 @@ def build_plan(args: argparse.Namespace) -> dict[str, object]:
                 "git", "worktree", "add", "--detach", worktree, locked.commit
             ),
             "generatedVersionRestoreBeforeEveryPio": restore,
-            "buildFirmware": [restore, build, restore],
-            "uploadFilesystemWithCleanRestore": [restore, uploadfs, restore],
+            "prepareIdentityEvidence": prepare_identity_dir,
+            "buildFirmware": [
+                restore,
+                build,
+                prepare_identity_dir,
+                copy_firmware_identity,
+                hash_firmware,
+                restore,
+            ],
+            "uploadFilesystemWithCleanRestore": [
+                restore,
+                uploadfs,
+                prepare_identity_dir,
+                copy_filesystem_identity,
+                hash_filesystem,
+                restore,
+            ],
             "uploadPrebuiltFirmware": firmware_upload,
             "browserCapture": browser_capture,
             "chronology": (
@@ -430,20 +477,31 @@ def build_plan(args: argparse.Namespace) -> dict[str, object]:
             "noOverwrite": True,
             "files": [str(evidence / name) for name in evidence_files],
             "artifactIdentity": {
+                "expectedCommitFullSha": locked.commit,
                 "firmware": {
                     "generatedIdentitySource": f"{worktree}/data/fw-version.json",
                     "identityArtifact": str(evidence / "identity/fw-version.json"),
                     "image": f"{worktree}/.pio/build/{OTA_ENV}/firmware.bin",
+                    "digestArtifact": str(evidence / "identity/firmware.sha256"),
                     "manifestDigest": "SHA256(firmware.bin)",
                 },
                 "filesystem": {
                     "generatedIdentitySource": f"{worktree}/data/fs-version.json",
                     "identityArtifact": str(evidence / "identity/fs-version.json"),
                     "image": f"{worktree}/.pio/build/{OTA_ENV}/littlefs.bin",
+                    "digestArtifact": str(evidence / "identity/littlefs.sha256"),
                     "manifestDigest": "SHA256(littlefs.bin)",
                 },
                 "captureBeforeGeneratedVersionRestore": True,
                 "manifestRecordsUploadTimestampsAndChronology": True,
+                "manifestBindings": [
+                    "run.role",
+                    "run.commit full SHA",
+                    "identity/fw-version.json",
+                    "identity/fs-version.json",
+                    "identity/firmware.sha256",
+                    "identity/littlefs.sha256",
+                ],
             },
         },
     }
