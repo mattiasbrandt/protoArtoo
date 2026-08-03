@@ -218,6 +218,52 @@
       .catch(() => ({ ok: false, busy: false, status: 0, error: "Script load failed" }));
   }
 
+  // Map section names to API endpoints
+  function apiEndpointForSection(sectionName) {
+    const endpointMap = {
+      posture: "/api/wifi",
+      settings: "/api/config",
+      apply: "/api/config",
+    };
+    return endpointMap[sectionName] || null;
+  }
+
+  // Load section data via API with recovery handling.
+  //
+  // Similar to loadScript() but for API calls. Distinguishes busy (503 +
+  // Retry-After) from timeout/network errors, allowing proper recovery
+  // rendering per ADR 0016-0019.
+  function loadSectionData(sectionName) {
+    const endpoint = apiEndpointForSection(sectionName);
+    if (!endpoint) {
+      return Promise.resolve({ ok: false, busy: false, status: 0, error: "Unknown section" });
+    }
+
+    return fetch(endpoint, { cache: "no-store" })
+      .then((response) => {
+        if (response.status === 503) {
+          const retryAfterHeader = response.headers.get("Retry-After");
+          const retryAfterMs = retryAfterHeader
+            ? Number(retryAfterHeader) * 1000
+            : null;
+          return { ok: false, busy: true, retryAfterMs, status: 503 };
+        }
+
+        if (!response.ok) {
+          return { ok: false, busy: false, status: response.status };
+        }
+
+        // Verify JSON is parseable even if we don't use the data here
+        return response.json().then(() => {
+          return { ok: true, status: response.status };
+        }).catch(() => {
+          // Bad JSON response
+          return { ok: false, busy: false, status: 0, error: "Invalid response" };
+        });
+      })
+      .catch(() => ({ ok: false, busy: false, status: 0, error: "Network error" }));
+  }
+
   // Main load loop using bootstrap
   async function loadResources() {
     // Start polling for ticks
@@ -288,17 +334,77 @@
       delete el.dataset.deferredSrc;
     });
 
-    // Sections load in parallel (simulate with immediate success)
-    for (const section of sections) {
-      state = window.PageBootstrap.dispatch(state, { type: "TICK", dt: 0 });
-      if (state.active && state.active.kind === "section" && state.active.name === section) {
-        state = window.PageBootstrap.dispatch(state, {
-          type: "RESULT",
-          outcome: { kind: "success" },
-        });
+    // Sections load independently. The bootstrap reducer makes sections active
+    // for loading, and we process them as they're scheduled (not in strict sequence).
+    // One section's failure doesn't block others per Section Recovery (ADR 0017).
+    const overallDeadline = Date.now() + window.PageBootstrap.OPERATION_DEADLINE_MS;
+
+    // Track which sections we've finished
+    const sectionsProcessed = new Set();
+
+    async function processAllSections() {
+      while (sectionsProcessed.size < sections.length && Date.now() < overallDeadline) {
+        // Poll for any section that's ready to be processed
+        if (state.active && state.active.kind === "section" && !sectionsProcessed.has(state.active.name)) {
+          const sectionName = state.active.name;
+
+          // Try loading with timeout
+          let result = null;
+          const attemptDeadline = Date.now() + window.PageBootstrap.OPERATION_DEADLINE_MS;
+          while (!result && Date.now() < attemptDeadline) {
+            result = await Promise.race([
+              loadSectionData(sectionName),
+              new Promise((resolve) => setTimeout(() => resolve(null), 100)),
+            ]);
+          }
+
+          // Dispatch result
+          if (result && result.ok) {
+            state = window.PageBootstrap.dispatch(state, {
+              type: "RESULT",
+              outcome: { kind: "success" },
+            });
+            sectionsProcessed.add(sectionName);
+          } else if (result && result.busy) {
+            // Explicit ADR 0016 Busy Recovery Page (503 + Retry-After)
+            const retryAfterMs = result.retryAfterMs ?? window.PageBootstrap.DEFAULT_BUSY_RETRY_MS;
+            state = window.PageBootstrap.dispatch(state, {
+              type: "RESULT",
+              outcome: { kind: "busy", retryAfterMs },
+            });
+            pendingRecovery = { name: sectionName, kind: "busy" };
+            showBusyState(retryAfterMs);
+            // Don't mark as processed - will retry per bootstrap schedule
+          } else if (Date.now() >= attemptDeadline) {
+            // Timeout -- Story #9: "No response from controller"
+            state = window.PageBootstrap.dispatch(state, {
+              type: "RESULT",
+              outcome: { kind: "no-response" },
+            });
+            dispatchNoResponse(sectionName, "sections");
+            // Don't mark as processed - will retry per bootstrap schedule
+          } else {
+            // Network error -- also reported as "No response from controller"
+            state = window.PageBootstrap.dispatch(state, {
+              type: "RESULT",
+              outcome: { kind: "no-response" },
+            });
+            dispatchNoResponse(sectionName, "sections");
+            // Don't mark as processed - will retry per bootstrap schedule
+          }
+
+          render(state);
+        } else if (state.sectionsStable) {
+          // All sections are done or failed-retrying, exit
+          return;
+        } else {
+          // Wait for the next section to become active or deadline to pass
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        }
       }
-      render(state);
     }
+
+    await processAllSections();
 
     // Cleanup
     if (pollInterval) clearInterval(pollInterval);
