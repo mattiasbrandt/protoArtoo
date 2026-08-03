@@ -168,6 +168,18 @@ _Avoid_: one timeout for every operation, indefinite request, extending on meani
 The controller condition after page-loading activity stops: request and connection counts return to their resting values, usable heap settles within a measured warmed range, failed allocations stop increasing, and the controller remains responsive without a panic, reboot, or power cycle. The concrete pass/fail envelope (heap/largest-block range, cooldown timing, resting-count definitions, failed-allocation rule, stop conditions) is locked in ADR 0017, scoped to production builds only; the rapid-refresh/3-tab-burst and Mobile Safari scenario classes remain explicitly open pending further evidence rather than carrying invented numbers.
 _Avoid_: judging only whether a page appeared, comparing only with cold boot, accepting a lower heap level after every cycle, hiding recovery behind a restart, applying the same envelope to the profiler build
 
+**Page Failure**:
+An operator page is unusable or fails to finish loading while the controller's diagnostic HTTP endpoint still responds. Diagnostic reachability does not make the page healthy or recovered.
+_Avoid_: recovered page, healthy control surface, HTTP blackout
+
+**HTTP Blackout**:
+The operator UI and diagnostic HTTP endpoint are both unreachable while the controller still responds at the network layer. It is a stop condition, not successful pressure shedding or Page Load Memory Recovery.
+_Avoid_: page failure, network outage, self-recovery
+
+**Power-Cycle Recovery**:
+Restoring controller HTTP service by physically removing and restoring controller power. It is the only recovery demonstrated so far after an HTTP Blackout and is evidence of failed self-recovery, not an acceptable recovery mechanism.
+_Avoid_: browser retry, page refresh, self-recovery
+
 **Refresh Resilience**:
 The expectation that a normal browser refresh completes or visibly recovers, while rapid repeated refreshes may shed intermediate attempts without harming the controller. After refreshing stops, the final page recovers and the controller returns to Page Load Memory Recovery.
 _Avoid_: promising every overload attempt completes, retaining abandoned refreshes, crash or reboot under refresh pressure, requiring a power cycle after the pressure ends
