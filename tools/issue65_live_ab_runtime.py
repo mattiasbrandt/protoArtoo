@@ -48,6 +48,16 @@ def check(
     }
 
 
+def ready_create_check(name: str, subject: str) -> dict[str, str]:
+    return {
+        "name": name,
+        "subject": subject,
+        "status": "READY_CREATE",
+        "failure": "",
+        "detail": "detached worktree is absent and may be created by a future executor",
+    }
+
+
 def git_query(worktree: Path, *arguments: str) -> tuple[bool, str]:
     """Run one bounded, read-only git query without a shell."""
     try:
@@ -83,10 +93,7 @@ def worktree_checks(
 ) -> list[dict[str, str]]:
     if not worktree.is_dir():
         return [
-            check(
-                name, str(worktree), False, "WORKTREE_ABSENT",
-                "detached worktree is absent",
-            )
+            ready_create_check(name, str(worktree))
             for name in ("worktree-exact-commit", "worktree-clean")
         ]
 
@@ -100,11 +107,19 @@ def worktree_checks(
     status_ok, porcelain = git_query(
         worktree, "status", "--porcelain", "--untracked-files=all",
     )
-    clean = status_ok and not porcelain
-    clean_detail = (
-        "worktree has no tracked or untracked changes" if clean
-        else "worktree has tracked or untracked changes"
-        if status_ok else porcelain
+    entries = porcelain.splitlines() if status_ok else []
+    allowed_paths = set(planner.VERSION_FILES)
+    disallowed = [
+        entry for entry in entries
+        if len(entry) < 4 or entry[:2] == "??" or entry[3:] not in allowed_paths
+    ]
+    admissible = status_ok and not disallowed
+    admissible_detail = (
+        porcelain if not status_ok
+        else "worktree has no tracked or untracked changes" if not entries
+        else "only tracked generated version JSON files are dirty"
+        if admissible
+        else f"disallowed worktree changes: {', '.join(disallowed)}"
     )
     return [
         check(
@@ -112,16 +127,45 @@ def worktree_checks(
             "WORKTREE_COMMIT_MISMATCH", exact_detail,
         ),
         check(
-            "worktree-clean", str(worktree), clean,
-            "WORKTREE_DIRTY", clean_detail,
+            "worktree-clean", str(worktree), admissible,
+            "WORKTREE_DIRTY", admissible_detail,
         ),
     ]
 
 
-def prior_outcome_checks(run_id: str) -> list[dict[str, str]]:
+def validate_prior_outcome(
+    outcome: object,
+    expected_run: str,
+    terminal_outcomes: frozenset[str],
+) -> tuple[bool, str]:
+    """Validate the locked terminal-outcome schema used for run ordering."""
+    if not isinstance(outcome, dict):
+        return False, "prior outcome must be a JSON object"
+    run = outcome.get("run")
+    if not isinstance(run, dict):
+        return False, "prior outcome requires top-level run object"
+    if run.get("id") != expected_run:
+        return False, f"prior outcome run.id must be {expected_run}"
+    expected_commit = planner.RUNS[expected_run].commit
+    if run.get("commit") != expected_commit:
+        return False, f"prior outcome run.commit must be {expected_commit}"
+    primary = outcome.get("primaryOutcome")
+    if not isinstance(primary, str) or primary not in terminal_outcomes:
+        return False, "primaryOutcome must be a terminal planner outcome"
+    return True, (
+        f"terminal {expected_run} outcome matches locked commit and planner "
+        "vocabulary"
+    )
+
+
+def prior_outcome_checks(
+    run_id: str,
+    terminal_outcomes: frozenset[str],
+    evidence_root: Path = planner.EVIDENCE_ROOT,
+) -> list[dict[str, str]]:
     checks = []
     for prior_run in planner.RUNS[run_id].required_completed_runs:
-        artifact = planner.EVIDENCE_ROOT / prior_run / "outcome.json"
+        artifact = evidence_root / prior_run / "outcome.json"
         valid = False
         detail = "required prior outcome artifact is absent"
         if artifact.is_file():
@@ -130,10 +174,8 @@ def prior_outcome_checks(run_id: str) -> list[dict[str, str]]:
             except (OSError, UnicodeError, json.JSONDecodeError) as error:
                 detail = f"prior outcome artifact is invalid: {error}"
             else:
-                valid = isinstance(outcome, dict)
-                detail = (
-                    "required prior outcome artifact is a JSON object" if valid
-                    else "prior outcome artifact must be a JSON object"
+                valid, detail = validate_prior_outcome(
+                    outcome, prior_run, terminal_outcomes,
                 )
         checks.append(check(
             "prior-outcome-artifact", str(artifact), valid,
@@ -213,6 +255,7 @@ def build_report(args: argparse.Namespace) -> dict[str, object]:
     locked = planner.RUNS[args.run]
     evidence = planner.EVIDENCE_ROOT / args.run
     local_checks = command_checks()
+    allocation_contract = locked_plan["preflight"]["failedAllocationContract"]
 
     collector_exists = planner.BROWSER_COLLECTOR.is_file()
     local_checks.append(check(
@@ -234,7 +277,22 @@ def build_report(args: argparse.Namespace) -> dict[str, object]:
         else "evidence directory already exists",
     ))
     local_checks.extend(worktree_checks(Path(locked.worktree), locked.commit))
-    local_checks.extend(prior_outcome_checks(args.run))
+    terminal_outcomes = frozenset(
+        outcome for outcome in locked_plan["vocabulary"]["outcomes"]
+        if outcome != "UNKNOWN"
+    )
+    local_checks.extend(prior_outcome_checks(args.run, terminal_outcomes))
+    local_checks.append(check(
+        "failed-allocation-contract",
+        allocation_contract["authorizationUrl"],
+        allocation_contract["status"] == "AUTHORIZED",
+        "FAILED_ALLOCATION_CONTRACT_UNAUTHORIZED",
+        (
+            "positive evidence remains a stop condition; global zero failed "
+            "allocations cannot be inferred. "
+            + locked_plan["failedAllocationEvidence"]["limitation"]
+        ),
+    ))
 
     blockers = [
         {
@@ -243,14 +301,6 @@ def build_report(args: argparse.Namespace) -> dict[str, object]:
         }
         for item in local_checks if item["status"] == "BLOCKED"
     ]
-    allocation_contract = locked_plan["preflight"]["failedAllocationContract"]
-    if not allocation_contract["globalCounterEvaluable"]:
-        blockers.append({
-            "code": "FAILED_ALLOCATION_SIGNAL_UNAVAILABLE",
-            "check": "failed-allocation-contract",
-            "subject": allocation_contract["authorizationUrl"],
-            "detail": locked_plan["failedAllocationEvidence"]["limitation"],
-        })
     if args.run == "B2":
         blockers.append({
             "code": "B2_NOT_ADMITTED",
@@ -266,8 +316,17 @@ def build_report(args: argparse.Namespace) -> dict[str, object]:
         "schemaVersion": 1,
         "issue": planner.ISSUE,
         "mode": "runtime-admission",
-        "executeRequested": False,
-        "sideEffects": {"writes": 0, "networkRequests": 0, "probes": 0},
+        "executeRequested": bool(args.execute),
+        "sideEffects": {
+            "writes": 0,
+            "networkRequests": 0,
+            "serialOpens": 0,
+            "worktreeMutations": 0,
+            "browserLaunches": 0,
+            "builds": 0,
+            "uploads": 0,
+            "probes": 0,
+        },
         "readyForExecute": False,
         "admissionPassed": not blockers,
         "plannerPlan": locked_plan,
