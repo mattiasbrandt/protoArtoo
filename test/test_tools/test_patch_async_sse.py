@@ -159,11 +159,25 @@ class PatchAsyncWebServerTest(unittest.TestCase):
         patched = PATCH.patch_abstract_response_zero_read_state(source)
 
         self.assertIn(
-            "static constexpr uint8_t MAX_TCP_ADD_ZERO_RETRIES = 2;",
+            "static constexpr uint8_t MAX_TCP_ADD_ZERO_RETRIES = 10;",
             patched,
         )
         self.assertIn("uint8_t _tcpAddZeroRetries{0};", patched)
         self.assertEqual(PATCH.patch_abstract_response_zero_read_state(patched), patched)
+
+    def test_abstract_response_tcp_zero_add_state_upgrades_short_retry_window(self):
+        patched = PATCH.patch_abstract_response_zero_read_state(
+            PATCH.ABSTRACT_RESPONSE_ZERO_READ_STATE_TCP_RETRY_PREVIOUS_AFTER
+        )
+
+        self.assertIn(
+            "static constexpr uint8_t MAX_TCP_ADD_ZERO_RETRIES = 10;",
+            patched,
+        )
+        self.assertNotIn(
+            "static constexpr uint8_t MAX_TCP_ADD_ZERO_RETRIES = 2;",
+            patched,
+        )
 
     def test_abstract_response_zero_read_state_patch_rejects_vendor_drift(self):
         with self.assertRaisesRegex(

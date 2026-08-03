@@ -617,9 +617,10 @@ STATIC_OPEN_GUARD_AFTER = """\
 # Issue #60: AsyncAbstractResponse can finish a declared-length response before
 # all bytes reach TCP: every zero-length fill is treated as EOF, and the final
 # source bytes mark RESPONSE_END while they may still be pending in its response
-# buffer. Keep fixed, allocation-free source-read and TCP-enqueue retry counts
+# buffer. Keep bounded, allocation-free source-read and TCP-enqueue retry counts
 # on each response, and delay declared-length completion until TCP accepts the
-# final buffered bytes.
+# final buffered bytes. The TCP retry allowance spans AsyncTCP's five-second
+# ACK window so lwIP gets past its three-second initial retransmission.
 ABSTRACT_RESPONSE_ZERO_READ_STATE_BEFORE = """\
   // buffer data size specifiers
   size_t _send_buffer_offset{0}, _send_buffer_len{0};
@@ -642,7 +643,7 @@ ABSTRACT_RESPONSE_ZERO_READ_STATE_LEGACY_AFTER = """\
   size_t _readDataFromCacheOrContent(uint8_t *data, const size_t len);
 """
 
-ABSTRACT_RESPONSE_ZERO_READ_STATE_AFTER = """\
+ABSTRACT_RESPONSE_ZERO_READ_STATE_TCP_RETRY_PREVIOUS_AFTER = """\
   // buffer data size specifiers
   size_t _send_buffer_offset{0}, _send_buffer_len{0};
   static constexpr uint8_t MAX_PREMATURE_ZERO_READ_RETRIES = 2;
@@ -651,6 +652,13 @@ ABSTRACT_RESPONSE_ZERO_READ_STATE_AFTER = """\
   uint8_t _tcpAddZeroRetries{0};
   size_t _readDataFromCacheOrContent(uint8_t *data, const size_t len);
 """
+
+ABSTRACT_RESPONSE_ZERO_READ_STATE_AFTER = (
+    ABSTRACT_RESPONSE_ZERO_READ_STATE_TCP_RETRY_PREVIOUS_AFTER.replace(
+        "static constexpr uint8_t MAX_TCP_ADD_ZERO_RETRIES = 2;",
+        "static constexpr uint8_t MAX_TCP_ADD_ZERO_RETRIES = 10;",
+    )
+)
 
 ABSTRACT_RESPONSE_ZERO_READ_BEFORE = """\
         if (readLen == 0) {
@@ -1018,12 +1026,17 @@ def patch_abstract_response_zero_read_state(text):
     original_count = text.count(ABSTRACT_RESPONSE_ZERO_READ_STATE_BEFORE)
     previous_count = text.count(ABSTRACT_RESPONSE_ZERO_READ_STATE_PREVIOUS_AFTER)
     legacy_count = text.count(ABSTRACT_RESPONSE_ZERO_READ_STATE_LEGACY_AFTER)
-    if original_count + previous_count + legacy_count != 1:
+    tcp_retry_previous_count = text.count(
+        ABSTRACT_RESPONSE_ZERO_READ_STATE_TCP_RETRY_PREVIOUS_AFTER
+    )
+    if original_count + previous_count + legacy_count + tcp_retry_previous_count != 1:
         raise RuntimeError(
             "ESPAsyncWebServer WebResponseImpl.h response buffer state changed; "
             "review tools/patch_async_sse.py"
         )
-    if previous_count == 1:
+    if tcp_retry_previous_count == 1:
+        source = ABSTRACT_RESPONSE_ZERO_READ_STATE_TCP_RETRY_PREVIOUS_AFTER
+    elif previous_count == 1:
         source = ABSTRACT_RESPONSE_ZERO_READ_STATE_PREVIOUS_AFTER
     elif legacy_count == 1:
         source = ABSTRACT_RESPONSE_ZERO_READ_STATE_LEGACY_AFTER
