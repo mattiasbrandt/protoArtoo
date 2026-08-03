@@ -10,12 +10,13 @@
   const DEFAULT_TIMEOUT_MS = 6000;
 
   class ApiError extends Error {
-    constructor(message, { kind = "unknown", status = 0, cause = null } = {}) {
+    constructor(message, { kind = "unknown", status = 0, cause = null, retryAfterMs = null } = {}) {
       super(message);
       this.name = "ApiError";
       this.kind = kind;
       this.status = status;
       this.cause = cause;
+      this.retryAfterMs = retryAfterMs; // From Retry-After header, ADR 0016
     }
   }
 
@@ -53,7 +54,9 @@
   // FIFO caps in-flight requests so a page load presents as a short paced
   // trickle instead of a burst. Queue wait does not consume the request
   // timeout — the timeout timer starts when the request actually goes out.
-  const MAX_CONCURRENT_REQUESTS = 2;
+  // ADR 0019: narrowed from 2 to 1 for single active request slot
+  // (Bounded Page Attempt). The Common Page Bootstrap manages the queue.
+  const MAX_CONCURRENT_REQUESTS = 1;
   let inFlightCount = 0;
   const requestWaiters = [];
 
@@ -118,9 +121,12 @@
 
         if (!response.ok) {
           const apiMessage = payload && typeof payload === "object" ? payload.error : "";
+          const retryAfter = response.headers.get("Retry-After");
+          const retryAfterMs = retryAfter ? parseInt(retryAfter, 10) * 1000 : null;
           throw new ApiError(apiMessage || `HTTP ${response.status}`, {
             kind: "http",
             status: response.status,
+            retryAfterMs,
           });
         }
 
