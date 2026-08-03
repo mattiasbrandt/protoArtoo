@@ -129,12 +129,16 @@ The plain-language reason and next action shown by the Page Recovery View. "Cont
 _Avoid_: generic spinner, guessing that every failure means busy, raw HTTP or heap details, retry with no visible timing
 
 **Busy Recovery Page**:
-The smallest self-contained page returned when the controller can report an Immediate Request Refusal but cannot safely start the requested full page. It provides the Page Recovery View without loading another resource. It is not promised when the controller gives the browser no first response at all.
-_Avoid_: dependency on shared CSS or scripts, full application shell, claiming to handle a missing first response, error page with no retry path
+The smallest self-contained page returned when the controller can report an Immediate Request Refusal but cannot safely start the requested full page. It provides the Page Recovery View without loading another resource. It is not promised when the controller gives the browser no first response at all. Implemented as one fixed byte buffer (status line, headers, and HTML+inline-script body already concatenated at compile time) written directly to the raw transport, bypassing the normal response-object path; the same buffer is reused for every resource class rather than built per-class (ADR 0016).
+_Avoid_: dependency on shared CSS or scripts, full application shell, claiming to handle a missing first response, error page with no retry path, a normal dynamically-assembled response object
 
 **Recovery Capacity**:
-A small, fixed, measured controller allowance kept available for one Busy Recovery Page when normal work is refused. Its cost is part of the normal memory baseline and does not grow with failures or retain refused requests.
-_Avoid_: per-failure growth, general request queue, unmeasured reserve, more than one recovery response at a time
+A small, fixed, measured controller allowance kept available for one Busy Recovery Page when normal work is refused. Its cost is part of the normal memory baseline and does not grow with failures or retain refused requests. Exactly one reserved slot for the whole controller, shared across every resource class rather than one per class; refusals claim it before falling back to a plain connection abort, and release it on the same disconnect-completion boundary used for ordinary admitted requests (ADR 0016).
+_Avoid_: per-failure growth, general request queue, unmeasured reserve, more than one recovery response at a time, one slot per resource class
+
+**Recovery Retry Interval**:
+The fixed `Retry-After` value carried on a Busy Recovery Page response, grounded in this board's own measured pressure-recovery time rather than generic web-service overload conventions. Set to 5 seconds against #54's evidence of ~10s observed recovery. The static page's own inline countdown is a literal baked from the same source constant, since browsers do not auto-honor `Retry-After` and the page cannot read its own response headers (ADR 0016).
+_Avoid_: copying generic 30-120s rate-limit/maintenance conventions, a countdown value independent of the header value
 
 **Resource Step Recovery**:
 The page-loading behavior that keeps completed resource work, pauses dependent work at the first failed required step, and retries only that step. A page is ready only after every required step succeeds.
