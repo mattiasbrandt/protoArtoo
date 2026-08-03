@@ -614,12 +614,11 @@ STATIC_OPEN_GUARD_AFTER = """\
   String gzip = path + T__gz;
 """
 
-# Issue #60: AsyncAbstractResponse treats every zero-length non-chunked fill as
-# successful EOF, even when a declared Content-Length still has bytes missing.
-# A transient LittleFS read failure can therefore truncate an admitted static
-# response after its headers are already on the wire. Keep a fixed,
-# allocation-free consecutive-failure count on the response itself so the same
-# response can retry from later ack/poll callbacks before failing honestly.
+# Issue #60: AsyncAbstractResponse can finish a declared-length response before
+# all bytes reach TCP: every zero-length fill is treated as EOF, and the final
+# source bytes mark RESPONSE_END while they may still be pending in its response
+# buffer. Keep a fixed, allocation-free zero-read count on each response and
+# delay declared-length completion until TCP accepts the final buffered bytes.
 ABSTRACT_RESPONSE_ZERO_READ_STATE_BEFORE = """\
   // buffer data size specifiers
   size_t _send_buffer_offset{0}, _send_buffer_len{0};
@@ -668,11 +667,43 @@ ABSTRACT_RESPONSE_ZERO_READ_AFTER = """\
           _prematureZeroReadRetries = 0;
           _send_buffer_len += readLen;  // set buffers's size to match added data
           _sentLength += readLen;       // data is not sent yet, but we need it to understand that it would be last block
+        }
+"""
+
+# Exact output from issue #60 Slice 1/2. Existing PlatformIO dependency trees
+# may already contain it, so migrate that known form while continuing to reject
+# every other vendor/source drift.
+ABSTRACT_RESPONSE_ZERO_READ_PREVIOUS_AFTER = ABSTRACT_RESPONSE_ZERO_READ_AFTER.replace(
+    """\
+          _sentLength += readLen;       // data is not sent yet, but we need it to understand that it would be last block
+        }
+""",
+    """\
+          _sentLength += readLen;       // data is not sent yet, but we need it to understand that it would be last block
           if (_sendContentLength && (_sentLength == _contentLength)) {
             // it was last piece of content
             _state = RESPONSE_END;
           }
         }
+""",
+)
+
+ABSTRACT_RESPONSE_PENDING_FINAL_BUFFER_BEFORE = """\
+        } else {
+          _send_buffer_len = _send_buffer_offset = 0;  // consider buffer empty
+        }
+        payloadlen += added_len;
+"""
+
+ABSTRACT_RESPONSE_PENDING_FINAL_BUFFER_AFTER = """\
+        } else {
+          _send_buffer_len = _send_buffer_offset = 0;  // consider buffer empty
+          if (_sendContentLength && (_sentLength == _contentLength)) {
+            // The final buffered bytes have been accepted by TCP.
+            _state = RESPONSE_END;
+          }
+        }
+        payloadlen += added_len;
 """
 
 ABSTRACT_RESPONSE_BUFFER_RELEASE_BEFORE = """\
@@ -778,23 +809,41 @@ def patch_abstract_response_zero_read_state(text):
     )
 
 
-# Make declared-length zero reads retry twice and retain the existing response
-# buffer across those retries. The input is complete vendor implementation text;
-# the returned text is idempotently patched. Either changed anchor raises so a
-# dependency upgrade cannot silently restore truncation or retry-time allocation.
-# This function has no I/O.
+# Keep final declared-length bytes retryable until TCP accepts them, retry zero
+# reads twice, and retain the existing response buffer across those retries. The
+# input is complete vendor implementation text; the returned text is
+# idempotently patched. Any changed anchor raises so a dependency upgrade cannot
+# silently restore truncation or retry-time allocation. This function has no I/O.
 # Called by patch_async_webserver() from the PlatformIO pre-build hook; see
 # GitHub issue #60.
 def patch_abstract_response_zero_read(text):
     if ABSTRACT_RESPONSE_ZERO_READ_AFTER not in text:
-        if text.count(ABSTRACT_RESPONSE_ZERO_READ_BEFORE) != 1:
+        original_count = text.count(ABSTRACT_RESPONSE_ZERO_READ_BEFORE)
+        previous_count = text.count(ABSTRACT_RESPONSE_ZERO_READ_PREVIOUS_AFTER)
+        if original_count + previous_count != 1:
             raise RuntimeError(
                 "ESPAsyncWebServer WebResponses.cpp non-chunked fill handling changed; "
                 "review tools/patch_async_sse.py"
             )
+        source = (
+            ABSTRACT_RESPONSE_ZERO_READ_PREVIOUS_AFTER
+            if previous_count == 1
+            else ABSTRACT_RESPONSE_ZERO_READ_BEFORE
+        )
         text = text.replace(
-            ABSTRACT_RESPONSE_ZERO_READ_BEFORE,
+            source,
             ABSTRACT_RESPONSE_ZERO_READ_AFTER,
+        )
+
+    if ABSTRACT_RESPONSE_PENDING_FINAL_BUFFER_AFTER not in text:
+        if text.count(ABSTRACT_RESPONSE_PENDING_FINAL_BUFFER_BEFORE) != 1:
+            raise RuntimeError(
+                "ESPAsyncWebServer WebResponses.cpp pending response buffer handling changed; "
+                "review tools/patch_async_sse.py"
+            )
+        text = text.replace(
+            ABSTRACT_RESPONSE_PENDING_FINAL_BUFFER_BEFORE,
+            ABSTRACT_RESPONSE_PENDING_FINAL_BUFFER_AFTER,
         )
 
     if ABSTRACT_RESPONSE_BUFFER_RELEASE_AFTER not in text:
@@ -1013,7 +1062,7 @@ def patch_async_webserver(env):
     patch_file(
         source_dir / "WebResponses.cpp",
         patch_abstract_response_zero_read,
-        "retried premature non-chunked zero reads before honest fail-close (issue #60)",
+        "kept declared-length response tails retryable through TCP acceptance (issue #60)",
     )
     patch_file(
         source_dir / "WebRequest.cpp",

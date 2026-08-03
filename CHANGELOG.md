@@ -24,8 +24,9 @@ Every semantic version release belongs here:
   admission caps, floors, or weights were changed.
 
 ### Fixed
-- Static files with a declared content length now retry bounded transient zero
-  reads on the same response instead of ending early with a truncated body.
+- Static files with a declared content length now keep final buffered bytes
+  retryable until TCP accepts them and retry bounded transient zero reads on
+  the same response instead of ending early with a truncated body.
 
 ## [1.0.0] - 2026-08-01
 

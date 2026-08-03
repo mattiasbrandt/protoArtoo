@@ -159,6 +159,8 @@ class PatchAsyncWebServerTest(unittest.TestCase):
     def test_abstract_response_zero_read_patch_distinguishes_eof_retry_and_exhaustion(self):
         source = (
             "prefix\n"
+            + PATCH.ABSTRACT_RESPONSE_PENDING_FINAL_BUFFER_BEFORE
+            + "middle\n"
             + PATCH.ABSTRACT_RESPONSE_ZERO_READ_BEFORE
             + "middle\n"
             + PATCH.ABSTRACT_RESPONSE_BUFFER_RELEASE_BEFORE
@@ -194,9 +196,80 @@ class PatchAsyncWebServerTest(unittest.TestCase):
         )
         self.assertEqual(PATCH.patch_abstract_response_zero_read(patched), patched)
 
+    def test_abstract_response_keeps_final_buffer_retryable_until_tcp_accepts_it(self):
+        pending_buffer_source = """\
+        } else {
+          _send_buffer_len = _send_buffer_offset = 0;  // consider buffer empty
+        }
+        payloadlen += added_len;
+"""
+        source_complete_source = """\
+          if (_sendContentLength && (_sentLength == _contentLength)) {
+            // it was last piece of content
+            _state = RESPONSE_END;
+          }
+"""
+        source = (
+            "prefix\n"
+            + pending_buffer_source
+            + "middle\n"
+            + PATCH.ABSTRACT_RESPONSE_ZERO_READ_BEFORE
+            + "middle\n"
+            + PATCH.ABSTRACT_RESPONSE_BUFFER_RELEASE_BEFORE
+            + "suffix\n"
+        )
+
+        patched = PATCH.patch_abstract_response_zero_read(source)
+
+        self.assertIn(
+            "_send_buffer_len = _send_buffer_offset = 0;  // consider buffer empty\n"
+            "          if (_sendContentLength && (_sentLength == _contentLength)) {\n"
+            "            // The final buffered bytes have been accepted by TCP.\n"
+            "            _state = RESPONSE_END;\n"
+            "          }",
+            patched,
+        )
+        self.assertNotIn(source_complete_source, patched)
+        self.assertEqual(PATCH.patch_abstract_response_zero_read(patched), patched)
+
+    def test_abstract_response_patch_upgrades_previous_issue60_output(self):
+        current_progress_tail = """\
+          _sentLength += readLen;       // data is not sent yet, but we need it to understand that it would be last block
+        }
+"""
+        previous_progress_tail = """\
+          _sentLength += readLen;       // data is not sent yet, but we need it to understand that it would be last block
+          if (_sendContentLength && (_sentLength == _contentLength)) {
+            // it was last piece of content
+            _state = RESPONSE_END;
+          }
+        }
+"""
+        previous_zero_read_patch = PATCH.ABSTRACT_RESPONSE_ZERO_READ_AFTER.replace(
+            current_progress_tail,
+            previous_progress_tail,
+        )
+        source = (
+            "prefix\n"
+            + PATCH.ABSTRACT_RESPONSE_PENDING_FINAL_BUFFER_BEFORE
+            + "middle\n"
+            + previous_zero_read_patch
+            + "middle\n"
+            + PATCH.ABSTRACT_RESPONSE_BUFFER_RELEASE_AFTER
+            + "suffix\n"
+        )
+
+        patched = PATCH.patch_abstract_response_zero_read(source)
+
+        self.assertIn(PATCH.ABSTRACT_RESPONSE_ZERO_READ_AFTER, patched)
+        self.assertNotIn(previous_zero_read_patch, patched)
+        self.assertIn(PATCH.ABSTRACT_RESPONSE_PENDING_FINAL_BUFFER_AFTER, patched)
+        self.assertEqual(PATCH.patch_abstract_response_zero_read(patched), patched)
+
     def test_abstract_response_zero_read_patch_rejects_vendor_drift(self):
         source = (
             PATCH.ABSTRACT_RESPONSE_ZERO_READ_BEFORE
+            + PATCH.ABSTRACT_RESPONSE_PENDING_FINAL_BUFFER_BEFORE
             + "changed vendor buffer release"
         )
 
