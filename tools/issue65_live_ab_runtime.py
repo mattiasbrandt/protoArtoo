@@ -1,25 +1,27 @@
 #!/usr/bin/env python3
-"""Report read-only admission state for the Issue #65 live A/B fixture.
-
-Future execution commands are emitted only as argv data. This foundation never
-executes them, opens the controller/serial/browser, or mutates the filesystem.
-"""
+"""Plan or execute the locked Issue #65 live A/B fixture."""
 from __future__ import annotations
 
 import argparse
 import copy
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import hashlib
 import json
 import os
 from pathlib import Path
+import re
+import select
 import shutil
 import subprocess
 import sys
 import tempfile
+import termios
+import threading
 import time
-from typing import Any, Mapping, Sequence
+from typing import Any, Callable, Mapping, Sequence
+from urllib import error as urllib_error
+from urllib import request as urllib_request
 
 import issue65_live_ab as planner
 
@@ -28,6 +30,41 @@ GIT_TIMEOUT_SECONDS = 5
 REQUIRED_COMMANDS = (
     "git", "pio", "ping", "node", "python3", "sha256sum", "cp", "mkdir",
 )
+PING_INTERVAL_SECONDS = 1.0
+STATUS_INTERVAL_SECONDS = 5.0
+STATUS_DEADLINE_SECONDS = 1.0
+HTTP_BLACKOUT_SECONDS = 30.0
+RECENT_PING_SECONDS = 2.5
+COOLDOWN_SECONDS = 15.0
+COOLDOWN_TOLERANCE_BYTES = 2_000
+COOLDOWN_HEAP_FLOOR_BYTES = 12_000
+STOP_REASONS = frozenset((
+    "panic",
+    "unexpected reset",
+    "positive allocation-failure evidence",
+    "loss of ICMP",
+    "HTTP Blackout",
+    "operator interrupt",
+))
+PRIMARY_OUTCOMES = frozenset((
+    "Usable Page",
+    "Page Failure",
+    "HTTP Blackout",
+    "Unexpected controller failure",
+    "UNKNOWN",
+))
+ALLOCATION_FAILURE_RE = re.compile(
+    r"(?:alloc(?:ation)?(?:\s+\w+){0,3}\s+failed|failed\s+alloc|"
+    r"out\s+of\s+memory|no\s+memory|heap\s+corrupt|CORRUPT\s+HEAP)",
+    re.IGNORECASE,
+)
+PANIC_RE = re.compile(
+    r"(?:Guru Meditation|panic(?:'ed)?|assert failed|abort\(\))",
+    re.IGNORECASE,
+)
+_NDJSON_LOCK = threading.Lock()
+_CONTROL_LOCK = threading.RLock()
+_UNSET = object()
 
 
 class Issue65RuntimeError(RuntimeError):
@@ -59,6 +96,67 @@ class Timeline:
             ) / 1_000_000_000,
             **fields,
         }
+
+
+def _append_bytes_durable(path: Path, payload: bytes) -> None:
+    """Append one complete record and fsync it before returning."""
+    path = Path(path)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_APPEND
+    descriptor = os.open(path, flags, 0o644)
+    try:
+        view = memoryview(payload)
+        while view:
+            written = os.write(descriptor, view)
+            if written <= 0:
+                raise OSError("append made no progress")
+            view = view[written:]
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def append_ndjson(
+    path: Path,
+    timeline: Timeline,
+    event: str,
+    **fields: object,
+) -> dict[str, object]:
+    """Durably append one Timeline record as compact newline-delimited JSON."""
+    record = timeline.record(event, **fields)
+    _append_ndjson_record(path, record)
+    return record
+
+
+def _append_ndjson_record(
+    path: Path,
+    record: Mapping[str, object],
+) -> None:
+    payload = (
+        json.dumps(dict(record), separators=(",", ":"), ensure_ascii=False)
+        + "\n"
+    ).encode("utf-8")
+    with _NDJSON_LOCK:
+        _append_bytes_durable(Path(path), payload)
+
+
+class _DurableEventList(list[dict[str, object]]):
+    """Manifest event summary backed by an append-only events.ndjson journal."""
+
+    def __init__(
+        self,
+        journal: Path,
+        initial: Sequence[dict[str, object]] = (),
+    ) -> None:
+        super().__init__()
+        self._journal = Path(journal)
+        self._lock = threading.Lock()
+        for record in initial:
+            self.append(record)
+
+    def append(self, record: dict[str, object]) -> None:
+        with self._lock:
+            _append_ndjson_record(self._journal, record)
+            super().append(record)
 
 
 def _fsync_directory(directory: Path) -> None:
@@ -93,6 +191,662 @@ def atomic_write_json(path: Path, value: object) -> None:
     finally:
         if temporary_path is not None:
             temporary_path.unlink(missing_ok=True)
+
+
+def update_control_json(
+    path: Path,
+    *,
+    stop_reason: object = _UNSET,
+    status_reachable_at: object = _UNSET,
+) -> dict[str, str]:
+    """Atomically merge the two browser-control fields.
+
+    An existing stopReason is immutable. Unknown fields are intentionally not
+    propagated into this narrowly owned coordinator artifact.
+    """
+    path = Path(path)
+    with _CONTROL_LOCK:
+        current: object = {}
+        if path.exists():
+            try:
+                current = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeError, json.JSONDecodeError) as error:
+                raise Issue65RuntimeError(
+                    f"control file is not valid JSON: {path}"
+                ) from error
+        if not isinstance(current, dict):
+            raise Issue65RuntimeError("control file must contain one JSON object")
+        merged = {
+            key: value for key, value in current.items()
+            if key in ("stopReason", "statusReachableAt")
+            and isinstance(value, str)
+        }
+        if status_reachable_at is not _UNSET:
+            if not isinstance(status_reachable_at, str) or not status_reachable_at:
+                raise Issue65RuntimeError("statusReachableAt must be a timestamp string")
+            merged["statusReachableAt"] = status_reachable_at
+        if stop_reason is not _UNSET and "stopReason" not in merged:
+            if stop_reason not in STOP_REASONS:
+                raise Issue65RuntimeError(
+                    f"stopReason is outside the locked vocabulary: {stop_reason}"
+                )
+            merged["stopReason"] = str(stop_reason)
+        atomic_write_json(path, merged)
+        return merged
+
+
+class StopArbiter:
+    """Thread-safe, first-wins stop ownership for one live fixture."""
+
+    def __init__(
+        self,
+        control_path: Path,
+        timeline: Timeline,
+        events: list[dict[str, object]],
+    ) -> None:
+        self.control_path = Path(control_path)
+        self.timeline = timeline
+        self.events = events
+        self._lock = threading.Lock()
+        self._stopped = threading.Event()
+        self._reason: str | None = None
+        if self.control_path.exists():
+            try:
+                current = json.loads(self.control_path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeError, json.JSONDecodeError) as error:
+                raise Issue65RuntimeError(
+                    f"control file is not valid JSON: {self.control_path}"
+                ) from error
+            existing = current.get("stopReason") if isinstance(current, dict) else None
+            if existing is not None:
+                if existing not in STOP_REASONS:
+                    raise Issue65RuntimeError(
+                        "existing stopReason is outside the locked vocabulary"
+                    )
+                self._reason = existing
+                self._stopped.set()
+
+    @property
+    def reason(self) -> str | None:
+        with self._lock:
+            return self._reason
+
+    @property
+    def stopped(self) -> bool:
+        return self._stopped.is_set()
+
+    def request_stop(self, reason: str, **evidence: object) -> bool:
+        if reason not in STOP_REASONS:
+            raise Issue65RuntimeError(
+                f"stop reason is outside the locked vocabulary: {reason}"
+            )
+        with self._lock:
+            if self._reason is not None:
+                self.events.append(self.timeline.record(
+                    "stop-request-ignored",
+                    requestedReason=reason,
+                    firstReason=self._reason,
+                    **evidence,
+                ))
+                return False
+            merged = update_control_json(
+                self.control_path,
+                stop_reason=reason,
+            )
+            self._reason = merged["stopReason"]
+            self._stopped.set()
+            self.events.append(self.timeline.record(
+                "stop-requested",
+                stopReason=self._reason,
+                **evidence,
+            ))
+            return True
+
+    def mark_status_reachable(self, wall_time: str) -> None:
+        with self._lock:
+            update_control_json(
+                self.control_path,
+                status_reachable_at=wall_time,
+            )
+
+
+def _configure_serial_port(descriptor: int, baud: int = 115200) -> None:
+    baud_map = {
+        9600: termios.B9600,
+        19200: termios.B19200,
+        38400: termios.B38400,
+        57600: termios.B57600,
+        115200: termios.B115200,
+    }
+    baud_constant = baud_map.get(baud)
+    if baud_constant is None:
+        raise Issue65RuntimeError(f"unsupported serial baud rate: {baud}")
+    attrs = termios.tcgetattr(descriptor)
+    iflag, oflag, cflag, lflag, _ispeed, _ospeed, control = attrs
+    iflag &= ~(
+        termios.IGNBRK | termios.BRKINT | termios.PARMRK
+        | termios.ISTRIP | termios.INLCR | termios.IGNCR
+        | termios.ICRNL | termios.IXON
+    )
+    oflag &= ~termios.OPOST
+    lflag &= ~(
+        termios.ECHO | termios.ECHONL | termios.ICANON
+        | termios.ISIG | termios.IEXTEN
+    )
+    cflag &= ~(termios.CSIZE | termios.PARENB | termios.CSTOPB)
+    cflag |= termios.CS8 | termios.CLOCAL | termios.CREAD
+    cflag &= ~getattr(termios, "CRTSCTS", 0)
+    cflag &= ~getattr(termios, "HUPCL", 0)
+    control[termios.VMIN] = 0
+    control[termios.VTIME] = 1
+    termios.tcsetattr(
+        descriptor,
+        termios.TCSANOW,
+        [iflag, oflag, cflag, lflag, baud_constant, baud_constant, control],
+    )
+
+
+def classify_serial_line(line: str) -> str | None:
+    """Return only directly observable stop classes; silence proves nothing."""
+    if ALLOCATION_FAILURE_RE.search(line):
+        return "positive allocation-failure evidence"
+    if PANIC_RE.search(line):
+        return "panic"
+    return None
+
+
+class SerialWatcher:
+    """Reconnect-safe, no-control-line serial capture for the physical fixture."""
+
+    def __init__(
+        self,
+        port: Path,
+        bundle: EvidenceBundle,
+        arbiter: StopArbiter,
+        phase: Callable[[], str],
+    ) -> None:
+        self.port = Path(port)
+        self.bundle = bundle
+        self.arbiter = arbiter
+        self.phase = phase
+        self._stop = threading.Event()
+        self._thread = threading.Thread(
+            target=self._run,
+            name="issue65-serial",
+            daemon=True,
+        )
+        self.connected = threading.Event()
+        self.disconnected_after_connect = threading.Event()
+        self.reconnected = threading.Event()
+        self.error: BaseException | None = None
+        self._connection_count = 0
+
+    def start(self) -> None:
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+
+    def join(self, timeout: float = 3.0) -> None:
+        self._thread.join(timeout)
+        if self._thread.is_alive():
+            raise Issue65RuntimeError("serial watcher did not stop within deadline")
+        if self.error is not None:
+            raise Issue65RuntimeError(f"serial watcher failed: {self.error}")
+
+    def _record_line(self, line: str) -> None:
+        record = self.bundle.timeline.record(
+            "serial-line",
+            phase=self.phase(),
+            line=line,
+        )
+        text = (
+            f"{record['wallTime']} "
+            f"{record['elapsedMonotonicSeconds']:.6f} {line}\n"
+        )
+        _append_bytes_durable(self.bundle.root / "serial.log", text.encode("utf-8"))
+        stop_reason = classify_serial_line(line)
+        if stop_reason == "positive allocation-failure evidence":
+            observation_phase = {
+                "browser": "load",
+                "cooldown": "cooldown",
+            }.get(self.phase(), "pre-load")
+            self.bundle.record_failed_allocation(
+                phase=observation_phase,
+                raw_line=line,
+                record=record,
+            )
+        if stop_reason is not None:
+            self.arbiter.request_stop(
+                stop_reason,
+                source="serial",
+                rawLine=line,
+                wallTime=record["wallTime"],
+                monotonicNs=record["monotonicNs"],
+            )
+
+    def _run(self) -> None:
+        descriptor: int | None = None
+        buffer = bytearray()
+        try:
+            while not self._stop.is_set():
+                if descriptor is None:
+                    try:
+                        descriptor = os.open(
+                            self.port,
+                            os.O_RDONLY | os.O_NOCTTY | os.O_NONBLOCK,
+                        )
+                        _configure_serial_port(descriptor)
+                    except (FileNotFoundError, OSError, termios.error):
+                        if descriptor is not None:
+                            os.close(descriptor)
+                            descriptor = None
+                        self._stop.wait(0.1)
+                        continue
+                    self._connection_count += 1
+                    self.connected.set()
+                    if self._connection_count > 1:
+                        self.reconnected.set()
+                    self.bundle.events.append(self.bundle.timeline.record(
+                        "serial-connected",
+                        port=str(self.port),
+                        connectionCount=self._connection_count,
+                    ))
+                try:
+                    readable, _, _ = select.select([descriptor], [], [], 0.1)
+                    if not readable:
+                        continue
+                    chunk = os.read(descriptor, 512)
+                    if not chunk:
+                        raise OSError("serial device returned EOF")
+                    buffer.extend(chunk)
+                    while b"\n" in buffer:
+                        end = buffer.index(b"\n")
+                        raw = bytes(buffer[:end])
+                        del buffer[:end + 1]
+                        self._record_line(
+                            raw.decode("utf-8", errors="replace").rstrip("\r")
+                        )
+                except (OSError, ValueError):
+                    if descriptor is not None:
+                        os.close(descriptor)
+                        descriptor = None
+                    if self._connection_count > 0:
+                        self.disconnected_after_connect.set()
+                    self.bundle.events.append(self.bundle.timeline.record(
+                        "serial-disconnected",
+                        port=str(self.port),
+                    ))
+                    buffer.clear()
+        except BaseException as error:
+            self.error = error
+            try:
+                self.arbiter.request_stop(
+                    "operator interrupt" if isinstance(error, KeyboardInterrupt)
+                    else "unexpected reset",
+                    source="serial-watcher",
+                    error=str(error),
+                )
+            except BaseException:
+                pass
+        finally:
+            if descriptor is not None:
+                os.close(descriptor)
+
+
+def _http_json(url: str, timeout_seconds: float) -> dict[str, object]:
+    request = urllib_request.Request(
+        url,
+        headers={"Accept": "application/json", "Cache-Control": "no-cache"},
+        method="GET",
+    )
+    try:
+        with urllib_request.urlopen(request, timeout=timeout_seconds) as response:
+            if response.status != 200:
+                raise Issue65RuntimeError(
+                    f"{url} returned HTTP {response.status}"
+                )
+            body = response.read()
+    except (
+        urllib_error.URLError,
+        TimeoutError,
+        OSError,
+    ) as error:
+        raise Issue65RuntimeError(f"{url} is unreachable: {error}") from error
+    try:
+        value = json.loads(body)
+    except (UnicodeError, json.JSONDecodeError) as error:
+        raise Issue65RuntimeError(f"{url} returned invalid JSON") from error
+    if not isinstance(value, dict):
+        raise Issue65RuntimeError(f"{url} must return a JSON object")
+    return value
+
+
+def identity_mismatches(
+    status: Mapping[str, object],
+    identity: Mapping[str, object],
+    deployment: Mapping[str, object],
+    controller: str,
+) -> list[str]:
+    firmware_identity = deployment["firmware"]["generatedIdentity"]
+    filesystem_identity = deployment["filesystem"]["generatedIdentity"]
+    expected_firmware = firmware_identity.get("firmwareVersion")
+    expected_filesystem = filesystem_identity.get("fsVersion")
+    mismatches: list[str] = []
+    if status.get("firmwareVersion") != expected_firmware:
+        mismatches.append(
+            f"firmwareVersion expected {expected_firmware!r}, "
+            f"found {status.get('firmwareVersion')!r}"
+        )
+    if status.get("fsVersion") != expected_filesystem:
+        mismatches.append(
+            f"fsVersion expected {expected_filesystem!r}, "
+            f"found {status.get('fsVersion')!r}"
+        )
+    if status.get("resetReason") != "POWERON":
+        mismatches.append(
+            f"resetReason expected 'POWERON', found {status.get('resetReason')!r}"
+        )
+    uptime = status.get("uptimeMs")
+    if not isinstance(uptime, int) or uptime < 0:
+        mismatches.append(f"uptimeMs is not a fresh physical boot: {uptime!r}")
+    if not isinstance(identity.get("droidName"), str):
+        mismatches.append("identity response has no droidName")
+    if not controller:
+        mismatches.append("controller address is empty")
+    return mismatches
+
+
+def cooldown_sample_qualifies(value: object, baseline: int) -> bool:
+    return (
+        isinstance(value, int)
+        and value >= COOLDOWN_HEAP_FLOOR_BYTES
+        and abs(value - baseline) <= COOLDOWN_TOLERANCE_BYTES
+    )
+
+
+def evaluate_cooldown(
+    samples: Sequence[Mapping[str, object]],
+    baseline: int,
+) -> dict[str, object]:
+    consecutive = 0
+    qualifying = 0
+    for sample in samples:
+        status = sample.get("status")
+        value = status.get("heapLargest8bit") if isinstance(status, dict) else None
+        if cooldown_sample_qualifies(value, baseline):
+            qualifying += 1
+            consecutive += 1
+            if consecutive >= 2:
+                return {
+                    "passed": True,
+                    "baselineHeapLargest8bit": baseline,
+                    "qualifyingSamples": qualifying,
+                    "sampleCount": len(samples),
+                }
+        else:
+            consecutive = 0
+    return {
+        "passed": False,
+        "baselineHeapLargest8bit": baseline,
+        "qualifyingSamples": qualifying,
+        "sampleCount": len(samples),
+    }
+
+
+def classify_primary_outcome(
+    stop_reason: str | None,
+    browser_state: Mapping[str, object] | None,
+    status_reachable: bool,
+) -> str:
+    if stop_reason == "HTTP Blackout":
+        return "HTTP Blackout"
+    if stop_reason in (
+        "panic",
+        "unexpected reset",
+        "positive allocation-failure evidence",
+        "loss of ICMP",
+    ):
+        return "Unexpected controller failure"
+    if (
+        isinstance(browser_state, Mapping)
+        and browser_state.get("captureStatus") == "usable"
+        and browser_state.get("browserGatesPassed") is True
+        and status_reachable
+    ):
+        return "Usable Page"
+    if browser_state is not None and status_reachable:
+        return "Page Failure"
+    return "UNKNOWN"
+
+
+class MonitorLoop:
+    """One thread owns the fixed ping/status cadence and blackout timing."""
+
+    def __init__(
+        self,
+        controller: str,
+        bundle: EvidenceBundle,
+        arbiter: StopArbiter,
+    ) -> None:
+        self.controller = controller
+        self.bundle = bundle
+        self.arbiter = arbiter
+        self._stop = threading.Event()
+        self._thread = threading.Thread(
+            target=self._run,
+            name="issue65-network-monitor",
+            daemon=True,
+        )
+        self._lock = threading.RLock()
+        self.phase = "pre-cycle"
+        self.armed = False
+        self.browser_active = False
+        self.status_requests_enabled = True
+        self.latest_status: dict[str, object] | None = None
+        self.latest_status_record: dict[str, object] | None = None
+        self.latest_status_success_mono: float | None = None
+        self.latest_ping_success_mono: float | None = None
+        self.status_loss_started_mono: float | None = None
+        self.cooldown_samples: list[dict[str, object]] = []
+        self.error: BaseException | None = None
+
+    def start(self) -> None:
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+
+    def join(self, timeout: float = 4.0) -> None:
+        self._thread.join(timeout)
+        if self._thread.is_alive():
+            raise Issue65RuntimeError("network monitor did not stop within deadline")
+        if self.error is not None:
+            raise Issue65RuntimeError(f"network monitor failed: {self.error}")
+
+    def set_phase(self, phase: str) -> None:
+        with self._lock:
+            self.phase = phase
+            self.browser_active = phase == "browser"
+
+    def arm(self) -> None:
+        with self._lock:
+            self.armed = True
+
+    def stop_status_requests(self) -> None:
+        with self._lock:
+            self.status_requests_enabled = False
+
+    def snapshot(self) -> dict[str, object]:
+        with self._lock:
+            return {
+                "phase": self.phase,
+                "armed": self.armed,
+                "latestStatus": copy.deepcopy(self.latest_status),
+                "latestStatusRecord": copy.deepcopy(self.latest_status_record),
+                "latestStatusSuccessMonotonic": self.latest_status_success_mono,
+                "latestPingSuccessMonotonic": self.latest_ping_success_mono,
+                "statusLossStartedMonotonic": self.status_loss_started_mono,
+                "cooldownSamples": copy.deepcopy(self.cooldown_samples),
+            }
+
+    def wait_for_status(
+        self,
+        predicate: Callable[[Mapping[str, object]], bool],
+        timeout_seconds: float,
+    ) -> dict[str, object]:
+        deadline = time.monotonic() + timeout_seconds
+        while time.monotonic() < deadline and not self.arbiter.stopped:
+            with self._lock:
+                status = copy.deepcopy(self.latest_status)
+            if isinstance(status, dict) and predicate(status):
+                return status
+            self._stop.wait(0.1)
+        raise Issue65RuntimeError("timed out waiting for qualifying /api/status")
+
+    def _sample_ping(self) -> None:
+        started = time.monotonic()
+        try:
+            result = subprocess.run(
+                ["ping", "-c", "1", "-W", "1", self.controller],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+                timeout=2,
+                shell=False,
+            )
+            success = result.returncode == 0
+            detail = f"exit-{result.returncode}"
+        except (subprocess.TimeoutExpired, OSError) as error:
+            success = False
+            detail = str(error)
+        record = append_ndjson(
+            self.bundle.root / "ping.ndjson",
+            self.bundle.timeline,
+            "ping-sample",
+            phase=self.phase,
+            success=success,
+            detail=detail,
+            durationSeconds=time.monotonic() - started,
+        )
+        with self._lock:
+            if success:
+                self.latest_ping_success_mono = time.monotonic()
+            armed = self.armed
+        if armed and not success:
+            self.arbiter.request_stop(
+                "loss of ICMP",
+                source="ping",
+                wallTime=record["wallTime"],
+            )
+
+    def _sample_status(self) -> None:
+        with self._lock:
+            if not self.status_requests_enabled:
+                return
+            phase = self.phase
+            armed = self.armed
+            previous = copy.deepcopy(self.latest_status)
+        try:
+            status = _http_json(
+                f"http://{self.controller}/api/status",
+                STATUS_DEADLINE_SECONDS,
+            )
+            success = True
+            error = None
+        except Issue65RuntimeError as request_error:
+            status = None
+            success = False
+            error = str(request_error)
+        record = append_ndjson(
+            self.bundle.root / "status.ndjson",
+            self.bundle.timeline,
+            "status-sample",
+            phase=phase,
+            success=success,
+            error=error,
+            status=status,
+        )
+        now = time.monotonic()
+        with self._lock:
+            ping_recent = (
+                self.latest_ping_success_mono is not None
+                and now - self.latest_ping_success_mono <= RECENT_PING_SECONDS
+            )
+            if success and isinstance(status, dict):
+                self.latest_status = status
+                self.latest_status_record = record
+                self.latest_status_success_mono = now
+                self.status_loss_started_mono = None
+                if phase == "cooldown":
+                    self.cooldown_samples.append({
+                        "record": copy.deepcopy(record),
+                        "status": copy.deepcopy(status),
+                    })
+                browser_active = self.browser_active
+            else:
+                if self.status_loss_started_mono is None:
+                    self.status_loss_started_mono = now
+                loss_duration = now - self.status_loss_started_mono
+                browser_active = False
+        if success and isinstance(status, dict):
+            if (
+                armed
+                and isinstance(previous, dict)
+                and isinstance(previous.get("uptimeMs"), int)
+                and isinstance(status.get("uptimeMs"), int)
+                and status["uptimeMs"] < previous["uptimeMs"]
+            ):
+                self.arbiter.request_stop(
+                    "unexpected reset",
+                    source="status",
+                    previousUptimeMs=previous["uptimeMs"],
+                    uptimeMs=status["uptimeMs"],
+                )
+            if browser_active and not self.arbiter.stopped:
+                self.arbiter.mark_status_reachable(str(record["wallTime"]))
+        elif (
+            armed
+            and phase == "browser"
+            and loss_duration >= HTTP_BLACKOUT_SECONDS
+            and ping_recent
+        ):
+            self.arbiter.request_stop(
+                "HTTP Blackout",
+                source="status",
+                continuousLossSeconds=loss_duration,
+            )
+            self.stop_status_requests()
+
+    def _run(self) -> None:
+        next_ping = time.monotonic()
+        next_status = time.monotonic()
+        try:
+            while not self._stop.is_set():
+                now = time.monotonic()
+                if now >= next_ping:
+                    self._sample_ping()
+                    next_ping = max(next_ping + PING_INTERVAL_SECONDS, time.monotonic())
+                now = time.monotonic()
+                if now >= next_status:
+                    self._sample_status()
+                    next_status = max(
+                        next_status + STATUS_INTERVAL_SECONDS,
+                        time.monotonic(),
+                    )
+                deadline = min(next_ping, next_status)
+                self._stop.wait(max(0.01, min(0.1, deadline - time.monotonic())))
+        except BaseException as error:
+            self.error = error
+            try:
+                self.arbiter.request_stop(
+                    "operator interrupt" if isinstance(error, KeyboardInterrupt)
+                    else "unexpected reset",
+                    source="network-monitor",
+                    error=str(error),
+                )
+            except BaseException:
+                pass
 
 
 def create_evidence_root(root: Path) -> Path:
@@ -304,6 +1058,7 @@ class EvidenceBundle:
     timeline: Timeline
     manifest: dict[str, Any]
     outcome: dict[str, Any]
+    _lock: threading.RLock = field(default_factory=threading.RLock, repr=False)
 
     @classmethod
     def create(
@@ -325,10 +1080,16 @@ class EvidenceBundle:
             "stage": stage,
             "status": "IN_PROGRESS",
         }
+        create_evidence_root(root)
+        durable_events = _DurableEventList(root / "events.ndjson", [created])
         bundle = cls(
             root=root,
             timeline=timeline,
-            manifest={**copy.deepcopy(common), "events": [created], "artifacts": {}},
+            manifest={
+                **copy.deepcopy(common),
+                "events": durable_events,
+                "artifacts": {},
+            },
             outcome={
                 **copy.deepcopy(common),
                 "primaryOutcome": "UNKNOWN",
@@ -336,7 +1097,6 @@ class EvidenceBundle:
                 "stopReasons": [],
             },
         )
-        create_evidence_root(root)
         try:
             (root / "identity").mkdir()
             atomic_write_json(root / "manifest.json", bundle.manifest)
@@ -351,29 +1111,93 @@ class EvidenceBundle:
         return self.manifest["events"]
 
     def update_stage(self, stage: str) -> None:
-        self.manifest["stage"] = stage
-        self.outcome["stage"] = stage
-        self.events.append(self.timeline.record("stage", stage=stage))
-        atomic_write_json(self.root / "manifest.json", self.manifest)
-        atomic_write_json(self.root / "outcome.json", self.outcome)
+        with self._lock:
+            self.manifest["stage"] = stage
+            self.outcome["stage"] = stage
+            self.events.append(self.timeline.record("stage", stage=stage))
+            atomic_write_json(self.root / "manifest.json", self.manifest)
+            atomic_write_json(self.root / "outcome.json", self.outcome)
+
+    def record_failed_allocation(
+        self,
+        *,
+        phase: str,
+        raw_line: str,
+        record: Mapping[str, object],
+    ) -> None:
+        """Persist positive evidence without claiming a global zero counter."""
+        with self._lock:
+            event = {
+                "phase": phase,
+                "rawLine": raw_line,
+                "wallTime": record["wallTime"],
+                "monotonicNs": record["monotonicNs"],
+            }
+            for target in (self.manifest, self.outcome):
+                evidence = target["failedAllocationEvidence"]
+                evidence["positiveEvents"].append(copy.deepcopy(event))
+                if phase in evidence["observations"]:
+                    evidence["observations"][phase] = "POSITIVE_EVIDENCE"
+            atomic_write_json(self.root / "manifest.json", self.manifest)
+            atomic_write_json(self.root / "outcome.json", self.outcome)
+
+    def finalize(
+        self,
+        primary_outcome: str,
+        *,
+        stop_reason: str | None,
+        recovery_facts: Sequence[str] = (),
+        summary: Mapping[str, object] | None = None,
+    ) -> None:
+        if primary_outcome not in PRIMARY_OUTCOMES:
+            raise Issue65RuntimeError("primary outcome is outside locked vocabulary")
+        if any(fact != "Power-Cycle Recovery" for fact in recovery_facts):
+            raise Issue65RuntimeError("recovery fact is outside locked vocabulary")
+        with self._lock:
+            final = self.timeline.record(
+                "run-finished",
+                primaryOutcome=primary_outcome,
+                stopReason=stop_reason,
+            )
+            self.events.append(final)
+            self.manifest.update(
+                status="COMPLETE",
+                stage="complete",
+                primaryOutcome=primary_outcome,
+            )
+            self.outcome.update(
+                status="COMPLETE",
+                stage="complete",
+                primaryOutcome=primary_outcome,
+                recoveryFacts=list(recovery_facts),
+                stopReasons=[stop_reason] if stop_reason else [],
+            )
+            if summary is not None:
+                self.manifest["runSummary"] = copy.deepcopy(dict(summary))
+                self.outcome["runSummary"] = copy.deepcopy(dict(summary))
+            atomic_write_json(self.root / "manifest.json", self.manifest)
+            atomic_write_json(self.root / "outcome.json", self.outcome)
 
     def abort(self, error: BaseException, *, stage: str) -> None:
-        abort = {
-            "type": type(error).__name__,
-            "message": str(error),
-            "timeline": self.timeline.record("aborted", stage=stage),
-        }
-        self.manifest.update(status="ABORTED", stage=stage, abort=abort)
-        self.outcome.update(status="ABORTED", stage=stage, abort=copy.deepcopy(abort))
-        self.events.append(abort["timeline"])
-        for name, value in (
-            ("manifest.json", self.manifest),
-            ("outcome.json", self.outcome),
-        ):
-            try:
-                atomic_write_json(self.root / name, value)
-            except (OSError, TypeError, ValueError):
-                pass
+        with self._lock:
+            abort = {
+                "type": type(error).__name__,
+                "message": str(error),
+                "timeline": self.timeline.record("aborted", stage=stage),
+            }
+            self.manifest.update(status="ABORTED", stage=stage, abort=abort)
+            self.outcome.update(
+                status="ABORTED", stage=stage, abort=copy.deepcopy(abort),
+            )
+            self.events.append(abort["timeline"])
+            for name, value in (
+                ("manifest.json", self.manifest),
+                ("outcome.json", self.outcome),
+            ):
+                try:
+                    atomic_write_json(self.root / name, value)
+                except (OSError, TypeError, ValueError):
+                    pass
 
 
 def _assert_exact_worktree(worktree: Path, expected_commit: str) -> None:
@@ -577,11 +1401,479 @@ def deploy_pair(
         raise
 
 
+def _wait_for(
+    predicate: Callable[[], bool],
+    timeout_seconds: float,
+    *,
+    arbiter: StopArbiter | None = None,
+) -> bool:
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        if predicate():
+            return True
+        if arbiter is not None and arbiter.stopped:
+            return False
+        time.sleep(0.1)
+    return predicate()
+
+
+def _prompt_exact(prompt: str, expected: str) -> None:
+    response = input(prompt).strip()
+    if response != expected:
+        raise Issue65RuntimeError(
+            f"operator confirmation must be exactly {expected!r}; got {response!r}"
+        )
+
+
+def _persist_live_identity(
+    bundle: EvidenceBundle,
+    status: Mapping[str, object],
+    identity: Mapping[str, object],
+    controller: str,
+    serial_port: str,
+) -> dict[str, object]:
+    serial_path = Path(serial_port)
+    record = {
+        "controller": controller,
+        "controllerUrl": f"http://{controller}",
+        "serialPort": serial_port,
+        "serialResolvedPath": (
+            str(serial_path.resolve()) if serial_path.exists() else None
+        ),
+        "identity": copy.deepcopy(dict(identity)),
+        "statusIdentity": {
+            key: status.get(key)
+            for key in (
+                "firmwareVersion",
+                "fsVersion",
+                "resetReason",
+                "uptimeMs",
+            )
+        },
+    }
+    with bundle._lock:
+        bundle.manifest["liveIdentity"] = copy.deepcopy(record)
+        bundle.outcome["liveIdentity"] = copy.deepcopy(record)
+        atomic_write_json(bundle.root / "manifest.json", bundle.manifest)
+        atomic_write_json(bundle.root / "outcome.json", bundle.outcome)
+    return record
+
+
+def _run_browser_capture(
+    report: Mapping[str, Any],
+    bundle: EvidenceBundle,
+    arbiter: StopArbiter,
+) -> tuple[int, dict[str, object] | None]:
+    argv = list(report["futureExecutionArgv"]["browserCapture"])
+    log_path = bundle.root / "browser.log"
+    bundle.events.append(bundle.timeline.record(
+        "browser-capture-started",
+        argv=argv,
+    ))
+    process: subprocess.Popen[bytes] | None = None
+    return_code = -1
+    try:
+        with log_path.open("xb") as log:
+            process = subprocess.Popen(
+                argv,
+                cwd=planner.REPO_ROOT,
+                stdout=log,
+                stderr=subprocess.STDOUT,
+                shell=False,
+            )
+            deadline = time.monotonic() + 35.0
+            while process.poll() is None and time.monotonic() < deadline:
+                if arbiter.stopped:
+                    # The collector reads the first-wins stop from control.json
+                    # and performs its own bounded artifact capture/close.
+                    pass
+                time.sleep(0.1)
+            if process.poll() is None:
+                process.terminate()
+                try:
+                    process.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait(timeout=2)
+                raise Issue65RuntimeError(
+                    "browser collector exceeded its 35-second ownership deadline"
+                )
+            return_code = int(process.returncode)
+            log.flush()
+            os.fsync(log.fileno())
+    finally:
+        if process is not None and process.poll() is None:
+            process.kill()
+            process.wait(timeout=2)
+        bundle.events.append(bundle.timeline.record(
+            "browser-capture-finished",
+            returnCode=return_code,
+        ))
+    state_path = bundle.root / "browser" / "page-state.json"
+    state: dict[str, object] | None = None
+    if state_path.is_file():
+        try:
+            loaded = json.loads(state_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as error:
+            raise Issue65RuntimeError(
+                f"browser page state is invalid: {error}"
+            ) from error
+        if isinstance(loaded, dict):
+            state = loaded
+    if return_code == 2:
+        raise Issue65RuntimeError(
+            "browser collector reported an evidence-artifact failure"
+        )
+    if return_code not in (0, 3, 4):
+        raise Issue65RuntimeError(
+            f"browser collector exited unexpectedly with {return_code}"
+        )
+    return return_code, state
+
+
+def _attempt_power_cycle_recovery(
+    controller: str,
+    bundle: EvidenceBundle,
+) -> bool:
+    print(
+        "\nHTTP Blackout is confirmed. Browser and status-monitor traffic are stopped.\n"
+        "Physically unplug USB power, wait until fully unpowered, reconnect it,\n"
+        "then type RECOVER and press Enter.",
+        flush=True,
+    )
+    _prompt_exact("Recovery confirmation: ", "RECOVER")
+    deadline = time.monotonic() + 30.0
+    while time.monotonic() < deadline:
+        try:
+            status = _http_json(
+                f"http://{controller}/api/status",
+                STATUS_DEADLINE_SECONDS,
+            )
+            success = True
+            error = None
+        except Issue65RuntimeError as request_error:
+            status = None
+            success = False
+            error = str(request_error)
+        append_ndjson(
+            bundle.root / "recovery-status.ndjson",
+            bundle.timeline,
+            "recovery-status-sample",
+            success=success,
+            error=error,
+            status=status,
+        )
+        if success:
+            return True
+        time.sleep(2.0)
+    return False
+
+
+def _finalize_early_stop(
+    bundle: EvidenceBundle,
+    arbiter: StopArbiter,
+    run_id: str,
+    phase: str,
+) -> int:
+    primary = classify_primary_outcome(arbiter.reason, None, False)
+    bundle.finalize(
+        primary,
+        stop_reason=arbiter.reason,
+        summary={"stoppedBeforeBrowser": True, "phase": phase},
+    )
+    print(json.dumps({
+        "run": run_id,
+        "primaryOutcome": primary,
+        "stopReason": arbiter.reason,
+        "evidence": str(bundle.root),
+    }, indent=2), flush=True)
+    return 0
+
+
+def execute_run(report: Mapping[str, Any]) -> int:
+    plan = report["plannerPlan"]
+    run_id = str(plan["run"]["id"])
+    controller = str(plan["target"]["controller"])
+    serial_port = str(plan["target"]["serialPort"])
+    bundle: EvidenceBundle | None = None
+    monitor: MonitorLoop | None = None
+    serial: SerialWatcher | None = None
+    arbiter: StopArbiter | None = None
+    phase_lock = threading.Lock()
+    phase_value = "deployment"
+
+    def current_phase() -> str:
+        with phase_lock:
+            return phase_value
+
+    def set_phase(value: str) -> None:
+        nonlocal phase_value
+        with phase_lock:
+            phase_value = value
+        if monitor is not None:
+            monitor.set_phase(value)
+        if bundle is not None:
+            bundle.update_stage(value)
+
+    try:
+        bundle = EvidenceBundle.create(report)
+        deployment = deploy_pair(report, bundle)
+        arbiter = StopArbiter(
+            bundle.root / "control.json",
+            bundle.timeline,
+            bundle.events,
+        )
+        monitor = MonitorLoop(controller, bundle, arbiter)
+        serial = SerialWatcher(
+            Path(serial_port),
+            bundle,
+            arbiter,
+            current_phase,
+        )
+        set_phase("awaiting-physical-cycle")
+        serial.start()
+        monitor.start()
+        if not _wait_for(lambda: serial.connected.is_set(), 5.0):
+            raise Issue65RuntimeError(
+                f"serial watcher could not attach to {serial_port}"
+            )
+
+        print(
+            "\nDeployment completed. The fixed live timeline is running.\n"
+            "Now physically unplug the controller USB power cable, wait until the\n"
+            "controller is fully unpowered, reconnect the same cable, then type\n"
+            f"CYCLED {run_id} and press Enter.",
+            flush=True,
+        )
+        _prompt_exact("Physical-cycle confirmation: ", f"CYCLED {run_id}")
+        if not _wait_for(
+            lambda: serial.disconnected_after_connect.is_set(),
+            10.0,
+            arbiter=arbiter,
+        ):
+            if arbiter.stopped:
+                return _finalize_early_stop(
+                    bundle, arbiter, run_id, "physical-cycle",
+                )
+            raise Issue65RuntimeError(
+                "serial evidence did not observe USB disappearance during power cycle"
+            )
+        if not _wait_for(
+            lambda: serial.reconnected.is_set(),
+            20.0,
+            arbiter=arbiter,
+        ):
+            if arbiter.stopped:
+                return _finalize_early_stop(
+                    bundle, arbiter, run_id, "physical-cycle",
+                )
+            raise Issue65RuntimeError(
+                "serial evidence did not observe USB re-enumeration after power cycle"
+            )
+        if arbiter.stopped:
+            return _finalize_early_stop(
+                bundle,
+                arbiter,
+                run_id,
+                "physical-cycle",
+            )
+
+        expected_firmware = deployment["firmware"]["generatedIdentity"][
+            "firmwareVersion"
+        ]
+        expected_filesystem = deployment["filesystem"]["generatedIdentity"][
+            "fsVersion"
+        ]
+        try:
+            fresh_status = monitor.wait_for_status(
+                lambda status: (
+                    status.get("firmwareVersion") == expected_firmware
+                    and status.get("fsVersion") == expected_filesystem
+                    and status.get("resetReason") == "POWERON"
+                ),
+                60.0,
+            )
+        except Issue65RuntimeError:
+            if arbiter.stopped:
+                return _finalize_early_stop(
+                    bundle,
+                    arbiter,
+                    run_id,
+                    "identity-verification",
+                )
+            raise
+        identity = _http_json(
+            f"http://{controller}/api/identity",
+            STATUS_DEADLINE_SECONDS,
+        )
+        mismatches = identity_mismatches(
+            fresh_status,
+            identity,
+            deployment,
+            controller,
+        )
+        if mismatches:
+            raise Issue65RuntimeError(
+                "deployed identity verification failed: " + "; ".join(mismatches)
+            )
+        _persist_live_identity(
+            bundle,
+            fresh_status,
+            identity,
+            controller,
+            serial_port,
+        )
+        monitor.arm()
+
+        set_phase("settle")
+        print("Matched deployment verified; beginning fixed 90-second settle.", flush=True)
+        settle_deadline = time.monotonic() + 90.0
+        while time.monotonic() < settle_deadline and not arbiter.stopped:
+            time.sleep(min(0.25, settle_deadline - time.monotonic()))
+
+        browser_state: dict[str, object] | None = None
+        if not arbiter.stopped:
+            snapshot = monitor.snapshot()
+            baseline_status = snapshot["latestStatus"]
+            if not isinstance(baseline_status, dict):
+                raise Issue65RuntimeError("no status baseline exists before browser load")
+            baseline_heap = baseline_status.get("heapLargest8bit")
+            if not isinstance(baseline_heap, int):
+                raise Issue65RuntimeError(
+                    "pre-load status has no integer heapLargest8bit"
+                )
+            with bundle._lock:
+                bundle.manifest["preLoadStatus"] = copy.deepcopy(baseline_status)
+                bundle.outcome["preLoadStatus"] = copy.deepcopy(baseline_status)
+            set_phase("browser")
+            print("Starting the one visible /wifi.html browser load.", flush=True)
+            _return_code, browser_state = _run_browser_capture(
+                report,
+                bundle,
+                arbiter,
+            )
+
+            # If the browser failed while status loss is in progress, retain the
+            # browser phase just long enough to satisfy or falsify the exact
+            # 30-second HTTP Blackout definition.
+            loss_started = monitor.snapshot()["statusLossStartedMonotonic"]
+            if isinstance(loss_started, float) and not arbiter.stopped:
+                remaining = max(
+                    0.0,
+                    HTTP_BLACKOUT_SECONDS - (time.monotonic() - loss_started) + 0.5,
+                )
+                _wait_for(
+                    lambda: (
+                        arbiter.stopped
+                        or monitor.snapshot()["statusLossStartedMonotonic"] is None
+                    ),
+                    min(remaining, 6.0),
+                )
+
+            cooldown: dict[str, object] | None = None
+            if not arbiter.stopped:
+                set_phase("cooldown")
+                cooldown_deadline = time.monotonic() + COOLDOWN_SECONDS
+                while time.monotonic() < cooldown_deadline and not arbiter.stopped:
+                    time.sleep(min(0.25, cooldown_deadline - time.monotonic()))
+                cooldown_samples = monitor.snapshot()["cooldownSamples"]
+                if isinstance(cooldown_samples, list):
+                    cooldown = evaluate_cooldown(cooldown_samples, baseline_heap)
+                    for sample in cooldown_samples:
+                        _append_ndjson_record(
+                            bundle.root / "cooldown-status.ndjson",
+                            sample["record"],
+                        )
+            else:
+                cooldown = None
+        else:
+            baseline_status = None
+            baseline_heap = None
+            cooldown = None
+
+        snapshot = monitor.snapshot()
+        last_success = snapshot["latestStatusSuccessMonotonic"]
+        status_reachable = (
+            isinstance(last_success, float)
+            and time.monotonic() - last_success <= STATUS_INTERVAL_SECONDS + 2.0
+        )
+        primary = classify_primary_outcome(
+            arbiter.reason,
+            browser_state,
+            status_reachable,
+        )
+        recovery_facts: list[str] = []
+        if arbiter.reason == "HTTP Blackout":
+            monitor.stop_status_requests()
+            monitor.stop()
+            monitor.join()
+            monitor = None
+            if _attempt_power_cycle_recovery(controller, bundle):
+                recovery_facts.append("Power-Cycle Recovery")
+
+        summary = {
+            "browser": copy.deepcopy(browser_state),
+            "finalStatus": copy.deepcopy(snapshot["latestStatus"]),
+            "cooldown": copy.deepcopy(cooldown),
+            "statusReachableAtEnd": status_reachable,
+        }
+        bundle.finalize(
+            primary,
+            stop_reason=arbiter.reason,
+            recovery_facts=recovery_facts,
+            summary=summary,
+        )
+        print(
+            json.dumps({
+                "run": run_id,
+                "primaryOutcome": primary,
+                "stopReason": arbiter.reason,
+                "recoveryFacts": recovery_facts,
+                "evidence": str(bundle.root),
+            }, indent=2),
+            flush=True,
+        )
+        return 0
+    except KeyboardInterrupt as error:
+        if arbiter is not None:
+            try:
+                arbiter.request_stop("operator interrupt", source="keyboard")
+            except BaseException:
+                pass
+        if bundle is not None:
+            bundle.abort(error, stage=f"{current_phase()}-interrupted")
+        print("\nERROR: operator interrupt", file=sys.stderr)
+        return 130
+    except BaseException as error:
+        if bundle is not None and bundle.manifest.get("status") != "ABORTED":
+            bundle.abort(error, stage=f"{current_phase()}-aborted")
+        print(f"ERROR: {error}", file=sys.stderr)
+        return 2
+    finally:
+        cleanup_errors: list[str] = []
+        if monitor is not None:
+            monitor.stop()
+            try:
+                monitor.join()
+            except BaseException as error:
+                cleanup_errors.append(str(error))
+        if serial is not None:
+            serial.stop()
+            try:
+                serial.join()
+            except BaseException as error:
+                cleanup_errors.append(str(error))
+        if cleanup_errors:
+            print(
+                "WARNING: cleanup: " + "; ".join(cleanup_errors),
+                file=sys.stderr,
+            )
+
+
 def build_parser() -> planner.PlannerArgumentParser:
     parser = planner.PlannerArgumentParser(
         description=(
-            "Report local admission state for an Issue #65 live A/B run. "
-            "Runtime execution is not enabled."
+            "Report admission state or execute one locked Issue #65 live A/B run."
         )
     )
     parser.add_argument("--run", required=True, choices=tuple(planner.RUNS))
@@ -899,13 +2191,41 @@ def main(argv: list[str]) -> int:
     parser = build_parser()
     try:
         args = parser.parse_args(argv)
-        if args.execute:
-            print("ERROR: RUNTIME_EXECUTION_NOT_ENABLED", file=sys.stderr)
-            return 2
         report = build_report(args)
     except planner.PlanError as error:
         print(f"ERROR: {error}", file=sys.stderr)
         return 1
+    if args.execute:
+        if not sys.stdin.isatty() or not sys.stdout.isatty():
+            print(
+                "ERROR: --execute requires an interactive TTY for operator gates",
+                file=sys.stderr,
+            )
+            return 2
+        if report["blockers"]:
+            print(json.dumps({
+                "error": "RUNTIME_ADMISSION_BLOCKED",
+                "blockers": report["blockers"],
+            }, indent=2), file=sys.stderr)
+            return 2
+        run_id = report["plannerPlan"]["run"]["id"]
+        print(
+            "\nThis will create the fixed evidence bundle, build and upload the\n"
+            "matched firmware/filesystem pair, open serial, start the fixed ping\n"
+            "and status monitors, and later launch one headed Chromium load.\n"
+            "No step can overwrite an existing run bundle.",
+            flush=True,
+        )
+        try:
+            _prompt_exact(
+                f"Close every other controller tab and stop unrelated polling.\n"
+                f"Type RUN {run_id} to begin deployment: ",
+                f"RUN {run_id}",
+            )
+        except (Issue65RuntimeError, KeyboardInterrupt) as error:
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 2
+        return execute_run(report)
     print(json.dumps(report, indent=2))
     return 0
 
