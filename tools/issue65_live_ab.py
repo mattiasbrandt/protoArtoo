@@ -233,7 +233,8 @@ def build_plan(args: argparse.Namespace) -> dict[str, object]:
     evidence_files = (
         "manifest.json", "build.log", "uploadfs.log", "firmware-upload.log",
         "serial.log", "ping.ndjson", "status.ndjson", "control.json",
-        "cooldown-status.ndjson", "outcome.json", "browser/browser-manifest.json",
+        "cooldown-status.ndjson", "outcome.json", "identity/fw-version.json",
+        "identity/fs-version.json", "browser/browser-manifest.json",
         "browser/network.ndjson", "browser/console.ndjson",
         "browser/page-errors.ndjson", "browser/page-state.json", "browser/dom.html",
         "browser/final-viewport.png", "browser/final-full.png",
@@ -300,6 +301,11 @@ def build_plan(args: argparse.Namespace) -> dict[str, object]:
             "uploadFilesystemWithCleanRestore": [restore, uploadfs, restore],
             "uploadPrebuiltFirmware": firmware_upload,
             "browserCapture": browser_capture,
+            "chronology": (
+                "record build completion, filesystem upload start/end, firmware "
+                "upload start/end, physical cycle, settle, browser, and cooldown "
+                "timestamps in manifest.json"
+            ),
         },
         "fixture": {
             "physicalCycle": {
@@ -307,26 +313,44 @@ def build_plan(args: argparse.Namespace) -> dict[str, object]:
                 "steps": [
                     "Disconnect the controller USB power cable.",
                     "Wait until the controller is fully unpowered.",
+                    (
+                        "Start the serial watcher/capture before reconnect; if the "
+                        "port is absent, attach immediately when it re-enumerates."
+                    ),
                     "Reconnect USB power; do not connect other hardware.",
-                    "Start serial capture before judging boot completion.",
+                    "Retain serial capture through cooldown or any stop condition.",
                 ],
                 "powerCycleIsRecovery": False,
             },
             "serial": {
                 "command": command(
                     "python3", f"{worktree}/tools/serial_monitor.py",
-                    "--port", serial_port, "--duration", 45,
+                    "--port", serial_port, "--stream",
                 ),
                 "artifact": str(evidence / "serial.log"),
+                "lifetime": "pre-reconnect/re-enumeration through cooldown or stop",
             },
             "ping": {
                 "command": command("ping", "-c", 1, "-W", 1, controller),
                 "artifact": str(evidence / "ping.ndjson"),
                 "meaning": "network-layer reachability only",
+                "sampleEverySeconds": 1,
+                "maxOutstanding": 1,
+            },
+            "settle": {
+                "durationSeconds": 90,
+                "statusSamplingStartsBeforeSettle": True,
+                "browserPageLoads": 0,
+                "unrelatedHttpRequests": 0,
             },
             "status": {
                 "url": f"{origin}/api/status",
                 "artifact": str(evidence / "status.ndjson"),
+                "sampleEverySeconds": 5,
+                "requestDeadlineSeconds": 1,
+                "maxOutstanding": 1,
+                "startsBeforeSettle": True,
+                "unchangedAcrossRuns": ["A1", "B1", "A2", "B2"],
                 "diagnosticLossStopAfterSeconds": 30,
                 "failedAllocationField": failed_alloc["field"],
                 "schemaVerificationRequired": True,
@@ -340,41 +364,87 @@ def build_plan(args: argparse.Namespace) -> dict[str, object]:
             },
             "cooldown": {
                 "artifact": str(evidence / "cooldown-status.ndjson"),
-                "sampleEverySeconds": "2-3",
+                "sampleEverySeconds": 5,
                 "normalMaximumSeconds": 15,
+                "requiredConsecutiveQualifyingSamples": 2,
                 "success": (
                     "two consecutive heapLargest8bit samples within +/-2000 bytes "
                     "of the session baseline and not below 12000 bytes"
                 ),
-                "rapidRefreshThreeTabDuration": "OPEN_PENDING_CONTROLLED_REPEAT",
+                "cadenceDecision": (
+                    "ADR 0017 describes 2-3 second cooldown sampling, but Issue "
+                    "#65 locks one unchanged 5-second status cadence; #65 wins."
+                ),
             },
+            "crossRunControls": {
+                "sameBrowser": True,
+                "sameBrowserVersion": True,
+                "sameStatusAndPingCadence": True,
+                "recordUploadTimestampsAndFullChronology": True,
+            },
+            "outOfScope": ["rapid-refresh fixture"],
         },
         "vocabulary": {
             "outcomes": [
-                "PASS", "PAGE_FAILURE", "HTTP_BLACKOUT", "STOPPED", "BLOCKED"
-            ],
-            "browserCaptureStatuses": [
-                "usable", "browser-failure-observed", "stopped"
+                "Usable Page",
+                "Page Failure",
+                "HTTP Blackout",
+                "Unexpected controller failure",
+                "Power-Cycle Recovery",
+                "UNKNOWN",
             ],
             "stopReasons": [
-                "panic", "unexpected-reset", "sustained-diagnostics-loss",
-                "operator-interrupt", "external-termination",
+                "panic",
+                "unexpected reset",
+                "failed-allocation growth",
+                "loss of ICMP",
+                "HTTP Blackout",
+                "operator interrupt",
             ],
             "definitions": {
-                "PAGE_FAILURE": "operator page unusable while /api/status responds",
-                "HTTP_BLACKOUT": (
-                    "operator page and /api/status unreachable while ping responds"
+                "Usable Page": (
+                    "the operator page reaches the locked usable gate while "
+                    "/api/status remains reachable"
                 ),
-                "POWER_CYCLE_RECOVERY": (
-                    "physical power removal restores HTTP; evidence of failed "
-                    "self-recovery, never a pass"
+                "Page Failure": (
+                    "the operator page is unusable or fails to finish loading "
+                    "while /api/status still responds"
                 ),
+                "HTTP Blackout": (
+                    "the operator UI and /api/status are continuously unreachable "
+                    "for 30 seconds while ping continues"
+                ),
+                "Unexpected controller failure": (
+                    "panic, unexpected reset, failed-allocation growth, or loss "
+                    "of ICMP stops the run"
+                ),
+                "Power-Cycle Recovery": (
+                    "physically removing and restoring controller power restores "
+                    "HTTP; this is evidence of failed self-recovery, not a pass"
+                ),
+                "UNKNOWN": "the captured evidence is insufficient to classify",
             },
         },
         "expectedEvidenceBundle": {
             "root": str(evidence),
             "noOverwrite": True,
             "files": [str(evidence / name) for name in evidence_files],
+            "artifactIdentity": {
+                "firmware": {
+                    "generatedIdentitySource": f"{worktree}/data/fw-version.json",
+                    "identityArtifact": str(evidence / "identity/fw-version.json"),
+                    "image": f"{worktree}/.pio/build/{OTA_ENV}/firmware.bin",
+                    "manifestDigest": "SHA256(firmware.bin)",
+                },
+                "filesystem": {
+                    "generatedIdentitySource": f"{worktree}/data/fs-version.json",
+                    "identityArtifact": str(evidence / "identity/fs-version.json"),
+                    "image": f"{worktree}/.pio/build/{OTA_ENV}/littlefs.bin",
+                    "manifestDigest": "SHA256(littlefs.bin)",
+                },
+                "captureBeforeGeneratedVersionRestore": True,
+                "manifestRecordsUploadTimestampsAndChronology": True,
+            },
         },
     }
 
