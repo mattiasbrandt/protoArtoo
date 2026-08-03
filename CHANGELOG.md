@@ -26,7 +26,9 @@ Every semantic version release belongs here:
 ### Fixed
 - Static files with a declared content length now keep final buffered bytes
   retryable until TCP accepts them and retry bounded transient zero reads on
-  the same response instead of ending early with a truncated body.
+  the same response instead of ending early with a truncated body. Repeated
+  zero-progress TCP enqueue attempts are also bounded, while partial progress
+  remains correctly accounted.
 
 ## [1.0.0] - 2026-08-01
 

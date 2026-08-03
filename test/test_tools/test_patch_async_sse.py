@@ -149,6 +149,22 @@ class PatchAsyncWebServerTest(unittest.TestCase):
             patched,
         )
 
+    def test_abstract_response_tcp_zero_add_state_is_per_response(self):
+        source = (
+            "prefix\n"
+            + PATCH.ABSTRACT_RESPONSE_ZERO_READ_STATE_BEFORE
+            + "suffix\n"
+        )
+
+        patched = PATCH.patch_abstract_response_zero_read_state(source)
+
+        self.assertIn(
+            "static constexpr uint8_t MAX_TCP_ADD_ZERO_RETRIES = 2;",
+            patched,
+        )
+        self.assertIn("uint8_t _tcpAddZeroRetries{0};", patched)
+        self.assertEqual(PATCH.patch_abstract_response_zero_read_state(patched), patched)
+
     def test_abstract_response_zero_read_state_patch_rejects_vendor_drift(self):
         with self.assertRaisesRegex(
             RuntimeError,
@@ -159,9 +175,11 @@ class PatchAsyncWebServerTest(unittest.TestCase):
     def test_abstract_response_zero_read_patch_distinguishes_eof_retry_and_exhaustion(self):
         source = (
             "prefix\n"
-            + PATCH.ABSTRACT_RESPONSE_PENDING_FINAL_BUFFER_BEFORE
+            + PATCH.ABSTRACT_RESPONSE_TCP_ADD_PROGRESS_BEFORE
             + "middle\n"
             + PATCH.ABSTRACT_RESPONSE_ZERO_READ_BEFORE
+            + "middle\n"
+            + PATCH.ABSTRACT_RESPONSE_INFLIGHT_CREDIT_BEFORE
             + "middle\n"
             + PATCH.ABSTRACT_RESPONSE_BUFFER_RELEASE_BEFORE
             + "suffix\n"
@@ -190,19 +208,14 @@ class PatchAsyncWebServerTest(unittest.TestCase):
             "if (_send_buffer_len == 0 && _prematureZeroReadRetries == 0)",
             patched,
         )
+        retry_index = patched.index("++_prematureZeroReadRetries;")
         self.assertLess(
-            patched.index("++_prematureZeroReadRetries;"),
-            patched.index("_state = RESPONSE_FAILED;"),
+            retry_index,
+            patched.index("_state = RESPONSE_FAILED;", retry_index),
         )
         self.assertEqual(PATCH.patch_abstract_response_zero_read(patched), patched)
 
     def test_abstract_response_keeps_final_buffer_retryable_until_tcp_accepts_it(self):
-        pending_buffer_source = """\
-        } else {
-          _send_buffer_len = _send_buffer_offset = 0;  // consider buffer empty
-        }
-        payloadlen += added_len;
-"""
         source_complete_source = """\
           if (_sendContentLength && (_sentLength == _contentLength)) {
             // it was last piece of content
@@ -211,9 +224,11 @@ class PatchAsyncWebServerTest(unittest.TestCase):
 """
         source = (
             "prefix\n"
-            + pending_buffer_source
+            + PATCH.ABSTRACT_RESPONSE_TCP_ADD_PROGRESS_BEFORE
             + "middle\n"
             + PATCH.ABSTRACT_RESPONSE_ZERO_READ_BEFORE
+            + "middle\n"
+            + PATCH.ABSTRACT_RESPONSE_INFLIGHT_CREDIT_BEFORE
             + "middle\n"
             + PATCH.ABSTRACT_RESPONSE_BUFFER_RELEASE_BEFORE
             + "suffix\n"
@@ -251,9 +266,11 @@ class PatchAsyncWebServerTest(unittest.TestCase):
         )
         source = (
             "prefix\n"
-            + PATCH.ABSTRACT_RESPONSE_PENDING_FINAL_BUFFER_BEFORE
+            + PATCH.ABSTRACT_RESPONSE_TCP_ADD_PROGRESS_BEFORE
             + "middle\n"
             + previous_zero_read_patch
+            + "middle\n"
+            + PATCH.ABSTRACT_RESPONSE_INFLIGHT_CREDIT_BEFORE
             + "middle\n"
             + PATCH.ABSTRACT_RESPONSE_BUFFER_RELEASE_AFTER
             + "suffix\n"
@@ -263,13 +280,83 @@ class PatchAsyncWebServerTest(unittest.TestCase):
 
         self.assertIn(PATCH.ABSTRACT_RESPONSE_ZERO_READ_AFTER, patched)
         self.assertNotIn(previous_zero_read_patch, patched)
-        self.assertIn(PATCH.ABSTRACT_RESPONSE_PENDING_FINAL_BUFFER_AFTER, patched)
+        self.assertIn(PATCH.ABSTRACT_RESPONSE_TCP_ADD_PROGRESS_AFTER, patched)
+        self.assertEqual(PATCH.patch_abstract_response_zero_read(patched), patched)
+
+    def test_abstract_response_bounds_tcp_zero_add_and_counts_partial_progress(self):
+        pending_add_source = """\
+      if (_send_buffer_len && _send_buffer) {
+        // data is pending in buffer from a previous call or previous iteration
+        size_t const added_len =
+          request->client()->add(reinterpret_cast<char *>(_send_buffer->data() + _send_buffer_offset), _send_buffer_len - _send_buffer_offset);
+        if (added_len != _send_buffer_len - _send_buffer_offset) {
+          // we were not able to add entire buffer's content to tcp buffs, leave it for later
+          // (this should not happen normally unless connection's TCP window suddenly changed from remote or mem pressure)
+          _send_buffer_offset += added_len;
+          break;
+        } else {
+          _send_buffer_len = _send_buffer_offset = 0;  // consider buffer empty
+          if (_sendContentLength && (_sentLength == _contentLength)) {
+            // The final buffered bytes have been accepted by TCP.
+            _state = RESPONSE_END;
+          }
+        }
+        payloadlen += added_len;
+      }
+"""
+        inflight_credit_source = """\
+#if ASYNCWEBSERVER_USE_CHUNK_INFLIGHT
+    _in_flight += payloadlen;
+    --_in_flight_credit;  // take a credit
+#endif
+"""
+        source = (
+            "prefix\n"
+            + pending_add_source
+            + "middle\n"
+            + PATCH.ABSTRACT_RESPONSE_ZERO_READ_AFTER
+            + "middle\n"
+            + inflight_credit_source
+            + PATCH.ABSTRACT_RESPONSE_BUFFER_RELEASE_AFTER
+            + "suffix\n"
+        )
+
+        patched = PATCH.patch_abstract_response_zero_read(source)
+
+        self.assertIn(
+            "if (added_len == 0) {\n"
+            "            if (_tcpAddZeroRetries < MAX_TCP_ADD_ZERO_RETRIES) {\n"
+            "              ++_tcpAddZeroRetries;",
+            patched,
+        )
+        self.assertIn(
+            "_state = RESPONSE_FAILED;\n"
+            "              request->client()->close();",
+            patched,
+        )
+        self.assertIn(
+            "} else {\n"
+            "            _tcpAddZeroRetries = 0;\n"
+            "            payloadlen += added_len;\n"
+            "          }\n"
+            "          _send_buffer_offset += added_len;",
+            patched,
+        )
+        self.assertEqual(patched.count("_tcpAddZeroRetries = 0;"), 2)
+        self.assertIn(
+            "if (payloadlen) {\n"
+            "      _in_flight += payloadlen;\n"
+            "      --_in_flight_credit;  // take a credit\n"
+            "    }",
+            patched,
+        )
         self.assertEqual(PATCH.patch_abstract_response_zero_read(patched), patched)
 
     def test_abstract_response_zero_read_patch_rejects_vendor_drift(self):
         source = (
             PATCH.ABSTRACT_RESPONSE_ZERO_READ_BEFORE
-            + PATCH.ABSTRACT_RESPONSE_PENDING_FINAL_BUFFER_BEFORE
+            + PATCH.ABSTRACT_RESPONSE_TCP_ADD_PROGRESS_BEFORE
+            + PATCH.ABSTRACT_RESPONSE_INFLIGHT_CREDIT_BEFORE
             + "changed vendor buffer release"
         )
 

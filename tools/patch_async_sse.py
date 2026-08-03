@@ -617,11 +617,20 @@ STATIC_OPEN_GUARD_AFTER = """\
 # Issue #60: AsyncAbstractResponse can finish a declared-length response before
 # all bytes reach TCP: every zero-length fill is treated as EOF, and the final
 # source bytes mark RESPONSE_END while they may still be pending in its response
-# buffer. Keep a fixed, allocation-free zero-read count on each response and
-# delay declared-length completion until TCP accepts the final buffered bytes.
+# buffer. Keep fixed, allocation-free source-read and TCP-enqueue retry counts
+# on each response, and delay declared-length completion until TCP accepts the
+# final buffered bytes.
 ABSTRACT_RESPONSE_ZERO_READ_STATE_BEFORE = """\
   // buffer data size specifiers
   size_t _send_buffer_offset{0}, _send_buffer_len{0};
+  size_t _readDataFromCacheOrContent(uint8_t *data, const size_t len);
+"""
+
+ABSTRACT_RESPONSE_ZERO_READ_STATE_PREVIOUS_AFTER = """\
+  // buffer data size specifiers
+  size_t _send_buffer_offset{0}, _send_buffer_len{0};
+  static constexpr uint8_t MAX_PREMATURE_ZERO_READ_RETRIES = 2;
+  uint8_t _prematureZeroReadRetries{0};
   size_t _readDataFromCacheOrContent(uint8_t *data, const size_t len);
 """
 
@@ -629,7 +638,9 @@ ABSTRACT_RESPONSE_ZERO_READ_STATE_AFTER = """\
   // buffer data size specifiers
   size_t _send_buffer_offset{0}, _send_buffer_len{0};
   static constexpr uint8_t MAX_PREMATURE_ZERO_READ_RETRIES = 2;
+  static constexpr uint8_t MAX_TCP_ADD_ZERO_RETRIES = 2;
   uint8_t _prematureZeroReadRetries{0};
+  uint8_t _tcpAddZeroRetries{0};
   size_t _readDataFromCacheOrContent(uint8_t *data, const size_t len);
 """
 
@@ -704,6 +715,76 @@ ABSTRACT_RESPONSE_PENDING_FINAL_BUFFER_AFTER = """\
           }
         }
         payloadlen += added_len;
+"""
+
+ABSTRACT_RESPONSE_TCP_ADD_PROGRESS_BEFORE = """\
+      if (_send_buffer_len && _send_buffer) {
+        // data is pending in buffer from a previous call or previous iteration
+        size_t const added_len =
+          request->client()->add(reinterpret_cast<char *>(_send_buffer->data() + _send_buffer_offset), _send_buffer_len - _send_buffer_offset);
+        if (added_len != _send_buffer_len - _send_buffer_offset) {
+          // we were not able to add entire buffer's content to tcp buffs, leave it for later
+          // (this should not happen normally unless connection's TCP window suddenly changed from remote or mem pressure)
+          _send_buffer_offset += added_len;
+          break;
+        } else {
+          _send_buffer_len = _send_buffer_offset = 0;  // consider buffer empty
+          if (_sendContentLength && (_sentLength == _contentLength)) {
+            // The final buffered bytes have been accepted by TCP.
+            _state = RESPONSE_END;
+          }
+        }
+        payloadlen += added_len;
+      }
+"""
+
+ABSTRACT_RESPONSE_TCP_ADD_PROGRESS_AFTER = """\
+      if (_send_buffer_len && _send_buffer) {
+        // data is pending in buffer from a previous call or previous iteration
+        size_t const added_len =
+          request->client()->add(reinterpret_cast<char *>(_send_buffer->data() + _send_buffer_offset), _send_buffer_len - _send_buffer_offset);
+        if (added_len != _send_buffer_len - _send_buffer_offset) {
+          // Keep partial progress accounted and retry the remaining bytes later.
+          if (added_len == 0) {
+            if (_tcpAddZeroRetries < MAX_TCP_ADD_ZERO_RETRIES) {
+              ++_tcpAddZeroRetries;
+            } else {
+              _state = RESPONSE_FAILED;
+              request->client()->close();
+              return payloadlen;
+            }
+          } else {
+            _tcpAddZeroRetries = 0;
+            payloadlen += added_len;
+          }
+          _send_buffer_offset += added_len;
+          break;
+        } else {
+          _tcpAddZeroRetries = 0;
+          _send_buffer_len = _send_buffer_offset = 0;  // consider buffer empty
+          if (_sendContentLength && (_sentLength == _contentLength)) {
+            // The final buffered bytes have been accepted by TCP.
+            _state = RESPONSE_END;
+          }
+        }
+        payloadlen += added_len;
+      }
+"""
+
+ABSTRACT_RESPONSE_INFLIGHT_CREDIT_BEFORE = """\
+#if ASYNCWEBSERVER_USE_CHUNK_INFLIGHT
+    _in_flight += payloadlen;
+    --_in_flight_credit;  // take a credit
+#endif
+"""
+
+ABSTRACT_RESPONSE_INFLIGHT_CREDIT_AFTER = """\
+#if ASYNCWEBSERVER_USE_CHUNK_INFLIGHT
+    if (payloadlen) {
+      _in_flight += payloadlen;
+      --_in_flight_credit;  // take a credit
+    }
+#endif
 """
 
 ABSTRACT_RESPONSE_BUFFER_RELEASE_BEFORE = """\
@@ -798,22 +879,30 @@ def patch_static_handler_open_guard(text):
 def patch_abstract_response_zero_read_state(text):
     if ABSTRACT_RESPONSE_ZERO_READ_STATE_AFTER in text:
         return text
-    if text.count(ABSTRACT_RESPONSE_ZERO_READ_STATE_BEFORE) != 1:
+    original_count = text.count(ABSTRACT_RESPONSE_ZERO_READ_STATE_BEFORE)
+    previous_count = text.count(ABSTRACT_RESPONSE_ZERO_READ_STATE_PREVIOUS_AFTER)
+    if original_count + previous_count != 1:
         raise RuntimeError(
             "ESPAsyncWebServer WebResponseImpl.h response buffer state changed; "
             "review tools/patch_async_sse.py"
         )
+    source = (
+        ABSTRACT_RESPONSE_ZERO_READ_STATE_PREVIOUS_AFTER
+        if previous_count == 1
+        else ABSTRACT_RESPONSE_ZERO_READ_STATE_BEFORE
+    )
     return text.replace(
-        ABSTRACT_RESPONSE_ZERO_READ_STATE_BEFORE,
+        source,
         ABSTRACT_RESPONSE_ZERO_READ_STATE_AFTER,
     )
 
 
-# Keep final declared-length bytes retryable until TCP accepts them, retry zero
-# reads twice, and retain the existing response buffer across those retries. The
-# input is complete vendor implementation text; the returned text is
-# idempotently patched. Any changed anchor raises so a dependency upgrade cannot
-# silently restore truncation or retry-time allocation. This function has no I/O.
+# Keep final declared-length bytes retryable until TCP accepts them; bound both
+# zero reads and zero-progress TCP adds; account partial TCP progress; and retain
+# the existing response buffer across retries. The input is complete vendor
+# implementation text; the returned text is idempotently patched. Any changed
+# anchor raises so a dependency upgrade cannot silently restore truncation or
+# retry-time allocation. This function has no I/O.
 # Called by patch_async_webserver() from the PlatformIO pre-build hook; see
 # GitHub issue #60.
 def patch_abstract_response_zero_read(text):
@@ -835,7 +924,10 @@ def patch_abstract_response_zero_read(text):
             ABSTRACT_RESPONSE_ZERO_READ_AFTER,
         )
 
-    if ABSTRACT_RESPONSE_PENDING_FINAL_BUFFER_AFTER not in text:
+    if (
+        ABSTRACT_RESPONSE_PENDING_FINAL_BUFFER_AFTER not in text
+        and ABSTRACT_RESPONSE_TCP_ADD_PROGRESS_AFTER not in text
+    ):
         if text.count(ABSTRACT_RESPONSE_PENDING_FINAL_BUFFER_BEFORE) != 1:
             raise RuntimeError(
                 "ESPAsyncWebServer WebResponses.cpp pending response buffer handling changed; "
@@ -844,6 +936,28 @@ def patch_abstract_response_zero_read(text):
         text = text.replace(
             ABSTRACT_RESPONSE_PENDING_FINAL_BUFFER_BEFORE,
             ABSTRACT_RESPONSE_PENDING_FINAL_BUFFER_AFTER,
+        )
+
+    if ABSTRACT_RESPONSE_TCP_ADD_PROGRESS_AFTER not in text:
+        if text.count(ABSTRACT_RESPONSE_TCP_ADD_PROGRESS_BEFORE) != 1:
+            raise RuntimeError(
+                "ESPAsyncWebServer WebResponses.cpp TCP buffer progress handling changed; "
+                "review tools/patch_async_sse.py"
+            )
+        text = text.replace(
+            ABSTRACT_RESPONSE_TCP_ADD_PROGRESS_BEFORE,
+            ABSTRACT_RESPONSE_TCP_ADD_PROGRESS_AFTER,
+        )
+
+    if ABSTRACT_RESPONSE_INFLIGHT_CREDIT_AFTER not in text:
+        if text.count(ABSTRACT_RESPONSE_INFLIGHT_CREDIT_BEFORE) != 1:
+            raise RuntimeError(
+                "ESPAsyncWebServer WebResponses.cpp in-flight credit handling changed; "
+                "review tools/patch_async_sse.py"
+            )
+        text = text.replace(
+            ABSTRACT_RESPONSE_INFLIGHT_CREDIT_BEFORE,
+            ABSTRACT_RESPONSE_INFLIGHT_CREDIT_AFTER,
         )
 
     if ABSTRACT_RESPONSE_BUFFER_RELEASE_AFTER not in text:
@@ -1057,12 +1171,12 @@ def patch_async_webserver(env):
     patch_file(
         source_dir / "WebResponseImpl.h",
         patch_abstract_response_zero_read_state,
-        "tracked bounded non-chunked fill retries per response (issue #60)",
+        "tracked bounded source-read and TCP-enqueue retries per response (issue #60)",
     )
     patch_file(
         source_dir / "WebResponses.cpp",
         patch_abstract_response_zero_read,
-        "kept declared-length response tails retryable through TCP acceptance (issue #60)",
+        "kept response tails retryable with bounded TCP enqueue stalls (issue #60)",
     )
     patch_file(
         source_dir / "WebRequest.cpp",
