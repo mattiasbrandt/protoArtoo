@@ -830,7 +830,7 @@ ABSTRACT_RESPONSE_TCP_DIAGNOSTICS_DECLARATIONS_BEFORE = """\
 #include <utility>
 """
 
-ABSTRACT_RESPONSE_TCP_DIAGNOSTICS_DECLARATIONS_AFTER = """\
+ABSTRACT_RESPONSE_TCP_DIAGNOSTICS_DECLARATIONS_PREVIOUS_AFTER = """\
 #include <utility>
 
 // Allocation-free application telemetry for issue #60. Implemented by the
@@ -840,7 +840,14 @@ void webResponseTcpRecordRecovery();
 void webResponseTcpRecordExhaustion();
 """
 
-ABSTRACT_RESPONSE_TCP_DIAGNOSTICS_AFTER = (
+ABSTRACT_RESPONSE_TCP_DIAGNOSTICS_DECLARATIONS_AFTER = (
+    ABSTRACT_RESPONSE_TCP_DIAGNOSTICS_DECLARATIONS_PREVIOUS_AFTER.replace(
+        "void webResponseTcpRecordZeroProgress();",
+        "void webResponseTcpRecordZeroProgress(bool hadSendSpace);",
+    )
+)
+
+ABSTRACT_RESPONSE_TCP_DIAGNOSTICS_PREVIOUS_AFTER = (
     ABSTRACT_RESPONSE_TCP_ADD_PROGRESS_AFTER.replace(
         "          if (added_len == 0 && !_chunked && _sendContentLength) {\n",
         "          if (added_len == 0 && !_chunked && _sendContentLength) {\n"
@@ -874,6 +881,20 @@ ABSTRACT_RESPONSE_TCP_DIAGNOSTICS_AFTER = (
         "              webResponseTcpRecordRecovery();\n"
         "            }\n"
         "            _tcpAddZeroRetries = 0;\n",
+    )
+)
+
+ABSTRACT_RESPONSE_TCP_DIAGNOSTICS_AFTER = (
+    ABSTRACT_RESPONSE_TCP_DIAGNOSTICS_PREVIOUS_AFTER.replace(
+        "        size_t const added_len =\n"
+        "          request->client()->add(reinterpret_cast<char *>(_send_buffer->data() + _send_buffer_offset), _send_buffer_len - _send_buffer_offset);\n",
+        "        bool const tcp_had_send_space =\n"
+        "          !_chunked && _sendContentLength && request->client()->space() > 0;\n"
+        "        size_t const added_len =\n"
+        "          request->client()->add(reinterpret_cast<char *>(_send_buffer->data() + _send_buffer_offset), _send_buffer_len - _send_buffer_offset);\n",
+    ).replace(
+        "            webResponseTcpRecordZeroProgress();\n",
+        "            webResponseTcpRecordZeroProgress(tcp_had_send_space);\n",
     )
 )
 
@@ -1047,6 +1068,7 @@ def patch_abstract_response_zero_read(text):
         ABSTRACT_RESPONSE_PENDING_FINAL_BUFFER_AFTER not in text
         and ABSTRACT_RESPONSE_TCP_ADD_PROGRESS_AFTER not in text
         and ABSTRACT_RESPONSE_TCP_DIAGNOSTICS_AFTER not in text
+        and ABSTRACT_RESPONSE_TCP_DIAGNOSTICS_PREVIOUS_AFTER not in text
         and ABSTRACT_RESPONSE_TCP_ADD_PROGRESS_PREVIOUS_AFTER not in text
     ):
         if text.count(ABSTRACT_RESPONSE_PENDING_FINAL_BUFFER_BEFORE) != 1:
@@ -1062,6 +1084,7 @@ def patch_abstract_response_zero_read(text):
     if (
         ABSTRACT_RESPONSE_TCP_ADD_PROGRESS_AFTER not in text
         and ABSTRACT_RESPONSE_TCP_DIAGNOSTICS_AFTER not in text
+        and ABSTRACT_RESPONSE_TCP_DIAGNOSTICS_PREVIOUS_AFTER not in text
     ):
         original_count = text.count(ABSTRACT_RESPONSE_TCP_ADD_PROGRESS_BEFORE)
         previous_count = text.count(ABSTRACT_RESPONSE_TCP_ADD_PROGRESS_PREVIOUS_AFTER)
@@ -1118,24 +1141,38 @@ def patch_abstract_response_zero_read(text):
 # detection. Called by the PlatformIO pre-build hook; see GitHub issue #60.
 def patch_abstract_response_tcp_diagnostics(text):
     if ABSTRACT_RESPONSE_TCP_DIAGNOSTICS_DECLARATIONS_AFTER not in text:
-        if text.count(ABSTRACT_RESPONSE_TCP_DIAGNOSTICS_DECLARATIONS_BEFORE) != 1:
+        original_count = text.count(ABSTRACT_RESPONSE_TCP_DIAGNOSTICS_DECLARATIONS_BEFORE)
+        previous_count = text.count(ABSTRACT_RESPONSE_TCP_DIAGNOSTICS_DECLARATIONS_PREVIOUS_AFTER)
+        if previous_count > 1 or (previous_count == 0 and original_count != 1):
             raise RuntimeError(
                 "ESPAsyncWebServer WebResponses.cpp includes changed; "
                 "review tools/patch_async_sse.py"
             )
+        source = (
+            ABSTRACT_RESPONSE_TCP_DIAGNOSTICS_DECLARATIONS_PREVIOUS_AFTER
+            if previous_count == 1
+            else ABSTRACT_RESPONSE_TCP_DIAGNOSTICS_DECLARATIONS_BEFORE
+        )
         text = text.replace(
-            ABSTRACT_RESPONSE_TCP_DIAGNOSTICS_DECLARATIONS_BEFORE,
+            source,
             ABSTRACT_RESPONSE_TCP_DIAGNOSTICS_DECLARATIONS_AFTER,
         )
 
     if ABSTRACT_RESPONSE_TCP_DIAGNOSTICS_AFTER not in text:
-        if text.count(ABSTRACT_RESPONSE_TCP_ADD_PROGRESS_AFTER) != 1:
+        original_count = text.count(ABSTRACT_RESPONSE_TCP_ADD_PROGRESS_AFTER)
+        previous_count = text.count(ABSTRACT_RESPONSE_TCP_DIAGNOSTICS_PREVIOUS_AFTER)
+        if original_count + previous_count != 1:
             raise RuntimeError(
                 "ESPAsyncWebServer WebResponses.cpp TCP diagnostics seam changed; "
                 "review tools/patch_async_sse.py"
             )
+        source = (
+            ABSTRACT_RESPONSE_TCP_DIAGNOSTICS_PREVIOUS_AFTER
+            if previous_count == 1
+            else ABSTRACT_RESPONSE_TCP_ADD_PROGRESS_AFTER
+        )
         text = text.replace(
-            ABSTRACT_RESPONSE_TCP_ADD_PROGRESS_AFTER,
+            source,
             ABSTRACT_RESPONSE_TCP_DIAGNOSTICS_AFTER,
         )
 

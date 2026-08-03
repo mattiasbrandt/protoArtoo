@@ -986,6 +986,10 @@ Returns controller status snapshot.
   since the last rejection (`-1` if none since boot)
 - `staticTcpEnqueue` — boot-lifetime declared-length response diagnostics:
   - `zeroProgress` counts eligible `AsyncClient::add()` calls that accepted no bytes
+  - `noSendSpace` counts zero-progress calls made when the TCP send buffer exposed
+    no available space (also includes a no-longer-established connection)
+  - `zeroWithSendSpace` counts zero-progress calls despite positive send space
+    immediately before `add()`; this isolates a write failure or connection race
   - `recoveries` counts zero-progress streaks ended by later positive TCP progress
   - `exhaustions` counts responses closed after exhausting the fixed retry budget
 - `wifiRssi`, `wifiConnected`, `wifiClientConnected`, `littleFsReady`

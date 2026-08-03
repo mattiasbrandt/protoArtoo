@@ -11,13 +11,15 @@
 
 struct WebResponseTcpDiagnostics {
     uint32_t zeroProgressAttempts;
+    uint32_t noSendSpace;
+    uint32_t zeroWithSendSpace;
     uint32_t recoveries;
     uint32_t exhaustions;
 };
 
 // Called from the patched ESPAsyncWebServer response path. These functions are
 // fixed-cost atomic increments and must remain allocation-free.
-void webResponseTcpRecordZeroProgress();
+void webResponseTcpRecordZeroProgress(bool hadSendSpace);
 void webResponseTcpRecordRecovery();
 void webResponseTcpRecordExhaustion();
 

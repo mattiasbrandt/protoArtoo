@@ -12,13 +12,17 @@
 namespace {
 
 uint32_t s_zeroProgressAttempts = 0;
+uint32_t s_noSendSpace = 0;
+uint32_t s_zeroWithSendSpace = 0;
 uint32_t s_recoveries = 0;
 uint32_t s_exhaustions = 0;
 
 }  // namespace
 
-void webResponseTcpRecordZeroProgress() {
+void webResponseTcpRecordZeroProgress(bool hadSendSpace) {
     __atomic_fetch_add(&s_zeroProgressAttempts, 1U, __ATOMIC_RELAXED);
+    __atomic_fetch_add(
+        hadSendSpace ? &s_zeroWithSendSpace : &s_noSendSpace, 1U, __ATOMIC_RELAXED);
 }
 
 void webResponseTcpRecordRecovery() {
@@ -32,6 +36,8 @@ void webResponseTcpRecordExhaustion() {
 WebResponseTcpDiagnostics webResponseTcpDiagnosticsSnapshot() {
     return {
         __atomic_load_n(&s_zeroProgressAttempts, __ATOMIC_RELAXED),
+        __atomic_load_n(&s_noSendSpace, __ATOMIC_RELAXED),
+        __atomic_load_n(&s_zeroWithSendSpace, __ATOMIC_RELAXED),
         __atomic_load_n(&s_recoveries, __ATOMIC_RELAXED),
         __atomic_load_n(&s_exhaustions, __ATOMIC_RELAXED),
     };
@@ -45,8 +51,11 @@ bool formatWebResponseTcpDiagnosticsJson(char* buffer, size_t bufferSize,
 
     const int written = snprintf(
         buffer, bufferSize,
-        "{\"zeroProgress\":%lu,\"recoveries\":%lu,\"exhaustions\":%lu}",
+        "{\"zeroProgress\":%lu,\"noSendSpace\":%lu,\"zeroWithSendSpace\":%lu,"
+        "\"recoveries\":%lu,\"exhaustions\":%lu}",
         (unsigned long)diagnostics.zeroProgressAttempts,
+        (unsigned long)diagnostics.noSendSpace,
+        (unsigned long)diagnostics.zeroWithSendSpace,
         (unsigned long)diagnostics.recoveries,
         (unsigned long)diagnostics.exhaustions);
     return written > 0 && (size_t)written < bufferSize;

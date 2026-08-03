@@ -421,12 +421,17 @@ class PatchAsyncWebServerTest(unittest.TestCase):
         patched = PATCH.patch_abstract_response_tcp_diagnostics(source)
 
         self.assertIn(
-            "void webResponseTcpRecordZeroProgress();",
+            "void webResponseTcpRecordZeroProgress(bool hadSendSpace);",
+            patched,
+        )
+        self.assertIn(
+            "bool const tcp_had_send_space =\n"
+            "          !_chunked && _sendContentLength && request->client()->space() > 0;",
             patched,
         )
         self.assertIn(
             "if (added_len == 0 && !_chunked && _sendContentLength) {\n"
-            "            webResponseTcpRecordZeroProgress();",
+            "            webResponseTcpRecordZeroProgress(tcp_had_send_space);",
             patched,
         )
         self.assertIn(
@@ -440,6 +445,19 @@ class PatchAsyncWebServerTest(unittest.TestCase):
             PATCH.patch_abstract_response_tcp_diagnostics(patched),
             patched,
         )
+
+    def test_abstract_response_tcp_diagnostics_upgrade_previous_output(self):
+        source = (
+            PATCH.ABSTRACT_RESPONSE_TCP_DIAGNOSTICS_DECLARATIONS_PREVIOUS_AFTER
+            + PATCH.ABSTRACT_RESPONSE_TCP_DIAGNOSTICS_PREVIOUS_AFTER
+        )
+
+        patched = PATCH.patch_abstract_response_tcp_diagnostics(source)
+
+        self.assertIn(PATCH.ABSTRACT_RESPONSE_TCP_DIAGNOSTICS_DECLARATIONS_AFTER, patched)
+        self.assertIn(PATCH.ABSTRACT_RESPONSE_TCP_DIAGNOSTICS_AFTER, patched)
+        self.assertNotIn("void webResponseTcpRecordZeroProgress();", patched)
+        self.assertEqual(PATCH.patch_abstract_response_tcp_diagnostics(patched), patched)
 
     def test_abstract_response_zero_read_patch_rejects_vendor_drift(self):
         source = (
