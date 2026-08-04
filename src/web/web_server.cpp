@@ -1100,12 +1100,19 @@ void startHttpServerOnce() {
     // exact same trigger point production uses -- once WiFi has genuinely
     // come up, per handleWiFiEvent()'s two call sites below. WiFi bring-up
     // itself (webServerInit(), executeWifiBootPosture()) is untouched and
-    // always runs normally; only the HTTP server that starts here differs.
+    // always runs normally; only the HTTP server started below differs.
+    //
+    // This used to be an early `return` right here, which also skipped
+    // mDNS and ArduinoOTA startup further down in this same function --
+    // the exact same "skip too much of a multi-purpose function" mistake
+    // already made once for WiFi bring-up (see #72's findings doc). That
+    // left nothing listening on port 3232, so every OTA "Sending invitation"
+    // hung until timeout; only caught by actually trying to OTA-reflash,
+    // not by any earlier compile or source-level check. Fixed by only
+    // branching the HTTP-server-specific part; mDNS/OTA below now run
+    // unconditionally for both backends.
     initPsychicHttpServer();
-    serverStarted = true;
-    return;
-#endif
-
+#else
     if (!routesRegistered) {
         events.onConnect([](AsyncEventSourceClient* client) {
             (void)client;
@@ -1269,6 +1276,7 @@ void startHttpServerOnce() {
     }
 
     server.begin();
+#endif
     serverStarted = true;
     PA_LOG_INFO(TAG, "HTTP server started on port 80");
 
