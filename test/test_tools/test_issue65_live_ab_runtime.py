@@ -6,6 +6,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 
 TOOLS_DIR = Path(__file__).parents[2] / "tools"
@@ -90,8 +91,127 @@ class TemporaryGitIdentityWrapperTest(unittest.TestCase):
                 ).strip()
             )
 
+    def test_clean_worktree_keeps_locked_identity_during_generated_file_churn(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            worktree = root / "repo"
+            scratch = root / "scratch"
+            generated = worktree / "data" / "fw-version.json"
+            generated.parent.mkdir(parents=True)
+            scratch.mkdir()
+            generated.write_text('{"version":"old"}\n', encoding="utf-8")
+            subprocess.run(["git", "init", "-q", worktree], check=True)
+            subprocess.run(
+                ["git", "-C", worktree, "config", "user.email", "test@example.com"],
+                check=True,
+            )
+            subprocess.run(
+                ["git", "-C", worktree, "config", "user.name", "Test"],
+                check=True,
+            )
+            subprocess.run(
+                ["git", "-C", worktree, "add", "data/fw-version.json"],
+                check=True,
+            )
+            subprocess.run(
+                ["git", "-C", worktree, "commit", "-qm", "fixture"],
+                check=True,
+            )
+            clean = subprocess.check_output(
+                ["git", "describe", "--tags", "--always", "--long", "--dirty"],
+                cwd=worktree,
+                text=True,
+            ).strip()
+
+            with RUNTIME._temporary_git_identity_wrapper(
+                worktree,
+                scratch_directory=scratch,
+                expected_descriptor=clean,
+                expected_actual_descriptor=clean,
+            ) as environment:
+                generated.write_text('{"version":"generated"}\n', encoding="utf-8")
+                described = subprocess.check_output(
+                    ["git", "describe", "--tags", "--always", "--long", "--dirty"],
+                    cwd=worktree,
+                    env=environment,
+                    text=True,
+                ).strip()
+                delegated_status = subprocess.check_output(
+                    ["git", "status", "--porcelain"],
+                    cwd=worktree,
+                    env=environment,
+                    text=True,
+                ).strip()
+
+                self.assertEqual(described, clean)
+                self.assertIn("data/fw-version.json", delegated_status)
+
+            self.assertFalse((scratch / "git-identity-bin").exists())
+
 
 class PostRollbackRunTest(unittest.TestCase):
+    def test_r1_build_environment_masks_only_generated_identity_churn(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            worktree = root / "repo"
+            bundle_root = root / "bundle"
+            generated = worktree / "data" / "fw-version.json"
+            generated.parent.mkdir(parents=True)
+            bundle_root.mkdir()
+            generated.write_text('{"version":"old"}\n', encoding="utf-8")
+            subprocess.run(["git", "init", "-q", worktree], check=True)
+            subprocess.run(
+                ["git", "-C", worktree, "config", "user.email", "test@example.com"],
+                check=True,
+            )
+            subprocess.run(
+                ["git", "-C", worktree, "config", "user.name", "Test"],
+                check=True,
+            )
+            subprocess.run(
+                ["git", "-C", worktree, "add", "data/fw-version.json"],
+                check=True,
+            )
+            subprocess.run(
+                ["git", "-C", worktree, "commit", "-qm", "fixture"],
+                check=True,
+            )
+            report = {
+                "plannerPlan": {
+                    "run": {"role": "R"},
+                    "paths": {"worktree": str(worktree)},
+                },
+            }
+            bundle = SimpleNamespace(
+                root=bundle_root,
+                manifest={},
+                events=[],
+            )
+
+            with RUNTIME._temporary_build_environment(
+                report,
+                bundle,
+                before_event="firmware-build",
+            ) as environment:
+                generated.write_text('{"version":"generated"}\n', encoding="utf-8")
+                described = subprocess.check_output(
+                    ["git", "describe", "--tags", "--always", "--long", "--dirty"],
+                    cwd=worktree,
+                    env=environment,
+                    text=True,
+                ).strip()
+                clean = subprocess.check_output(
+                    ["git", "describe", "--tags", "--always", "--long"],
+                    cwd=worktree,
+                    text=True,
+                ).strip()
+                self.assertEqual(described, clean)
+
+            records = bundle.manifest["temporaryBuildIdentityWrappers"]
+            self.assertEqual(len(records), 1)
+            self.assertTrue(records[0]["removed"])
+            self.assertFalse((bundle_root / "git-identity-bin").exists())
+
     def test_r1_is_locked_to_verified_revert_and_complete_comparison(self):
         locked = RUNTIME.planner.RUNS["R1"]
 

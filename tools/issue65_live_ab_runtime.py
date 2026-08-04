@@ -1398,13 +1398,14 @@ def _temporary_git_identity_wrapper(
     *,
     scratch_directory: Path,
     expected_descriptor: str,
+    expected_actual_descriptor: str | None = None,
 ):
     """Return locked clean identity for one exact build-time Git query.
 
-    The authorized B patcher shim must be visible to PlatformIO, but it must not
-    add ``-dirty`` to the fixed commit identity. A temporary PATH entry
-    intercepts only the exact query made by ``extract_version.py`` and delegates
-    every other Git invocation to the real executable.
+    Temporary comparison-build changes must be visible to PlatformIO without
+    adding ``-dirty`` to the fixed commit identity. A temporary PATH entry
+    intercepts only the exact query made by ``extract_version.py`` and
+    delegates every other Git invocation to the real executable.
     """
     worktree = Path(worktree)
     scratch_directory = Path(scratch_directory)
@@ -1435,10 +1436,16 @@ def _temporary_git_identity_wrapper(
         raise Issue65RuntimeError(
             "could not validate the shimmed Git descriptor"
         ) from error
-    if actual_descriptor != f"{expected_descriptor}-dirty":
+    required_actual_descriptor = (
+        expected_actual_descriptor
+        if expected_actual_descriptor is not None
+        else f"{expected_descriptor}-dirty"
+    )
+    if actual_descriptor != required_actual_descriptor:
         raise Issue65RuntimeError(
-            "the build worktree has changes beyond the authorized identity "
-            f"shim: expected {expected_descriptor}-dirty, found {actual_descriptor}"
+            "the build worktree does not match the authorized identity "
+            f"fixture: expected {required_actual_descriptor}, "
+            f"found {actual_descriptor}"
         )
     wrapper_directory = scratch_directory / "git-identity-bin"
     wrapper = wrapper_directory / "git"
@@ -1684,6 +1691,71 @@ def _temporary_b_build_shim(
         atomic_write_json(bundle.root / "manifest.json", bundle.manifest)
 
 
+@contextmanager
+def _temporary_build_environment(
+    report: Mapping[str, Any],
+    bundle: EvidenceBundle,
+    *,
+    before_event: str,
+):
+    """Provide the locked build environment required by B and rollback runs."""
+    run = report["plannerPlan"]["run"]
+    if run["role"] == "B":
+        with _temporary_b_build_shim(
+            report,
+            bundle,
+            before_event=before_event,
+        ) as environment:
+            yield environment
+        return
+    if run["role"] != "R":
+        yield None
+        return
+
+    worktree = Path(report["plannerPlan"]["paths"]["worktree"])
+    descriptor_ok, clean_descriptor = git_query(
+        worktree,
+        "describe",
+        "--tags",
+        "--always",
+        "--long",
+        "--dirty",
+    )
+    if (
+        not descriptor_ok
+        or not clean_descriptor
+        or clean_descriptor.endswith("-dirty")
+    ):
+        raise Issue65RuntimeError(
+            "rollback worktree did not have a clean Git descriptor before "
+            f"{before_event}: {clean_descriptor}"
+        )
+
+    record = {
+        "beforeEvent": before_event,
+        "scope": "generated-version identity stability across nested builds",
+        "cleanGitDescriptor": clean_descriptor,
+        "removed": False,
+    }
+    bundle.manifest.setdefault(
+        "temporaryBuildIdentityWrappers", []
+    ).append(record)
+    atomic_write_json(bundle.root / "manifest.json", bundle.manifest)
+    try:
+        with _temporary_git_identity_wrapper(
+            worktree,
+            scratch_directory=bundle.root,
+            expected_descriptor=clean_descriptor,
+            expected_actual_descriptor=clean_descriptor,
+        ) as environment:
+            record["path"] = environment["PATH"].split(os.pathsep, 1)[0]
+            atomic_write_json(bundle.root / "manifest.json", bundle.manifest)
+            yield environment
+    finally:
+        record["removed"] = True
+        atomic_write_json(bundle.root / "manifest.json", bundle.manifest)
+
+
 def _verify_b_final_webresponses(
     report: Mapping[str, Any],
     bundle: EvidenceBundle,
@@ -1774,7 +1846,7 @@ def deploy_pair(
         _restore_b_pristine_webresponses(
             report, bundle, before_event="firmware-build",
         )
-        with _temporary_b_build_shim(
+        with _temporary_build_environment(
             report, bundle, before_event="firmware-build",
         ) as build_environment:
             run_logged(
@@ -1810,7 +1882,7 @@ def deploy_pair(
         _restore_b_pristine_webresponses(
             report, bundle, before_event="filesystem-upload",
         )
-        with _temporary_b_build_shim(
+        with _temporary_build_environment(
             report, bundle, before_event="filesystem-upload",
         ) as build_environment:
             run_logged(
