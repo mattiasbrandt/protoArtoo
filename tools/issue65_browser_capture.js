@@ -610,12 +610,14 @@ async function runCapture(config) {
     const t0EpochMs = Date.parse(t0);
     const deadline = performance.now() + OBSERVE_MS;
     hardStopTimer = setTimeout(() => killBrowserServer(browserServer), OBSERVE_MS);
-    // Do not await here: listeners must continue collecting while the one
-    // navigation and the DOM-only readiness loop progress concurrently.
-    page.goto(config.url, { waitUntil: "commit", timeout: OBSERVE_MS })
-      .catch((error) => {
-        navigationError = String(error);
-      });
+    // Event listeners continue collecting while Playwright awaits the one
+    // navigation. Wait for its commit before sampling the DOM so the initial
+    // about:blank execution context cannot be destroyed under page.evaluate().
+    try {
+      await page.goto(config.url, { waitUntil: "commit", timeout: OBSERVE_MS });
+    } catch (error) {
+      navigationError = String(error);
+    }
 
     while (performance.now() < deadline) {
       const control = readControlFile(config.controlFile);
