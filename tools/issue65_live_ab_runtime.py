@@ -65,6 +65,14 @@ PANIC_RE = re.compile(
 _NDJSON_LOCK = threading.Lock()
 _CONTROL_LOCK = threading.RLock()
 _UNSET = object()
+A_PARENT_COMMIT = "98b79a0053385d099eb3f57e185a60b90312646e"
+A_PRIME_WORKTREE = Path("/tmp/protoartoo-issue65-A-prime")
+A_PRIME_WEBRESPONSES_SHA256 = (
+    "0540b496b34ee9c597c3d5e0d3fc3a241873fe546bb6cf5995c0d6fba16e258e"
+)
+A_FINAL_WEBRESPONSES_SHA256 = (
+    "ba0c80be9bcd9ede4aff0a6594c05e9d772da586155453c3cb99aa8e3de33d61"
+)
 
 
 class Issue65RuntimeError(RuntimeError):
@@ -1277,6 +1285,94 @@ def _restore_generated_versions(
         )
 
 
+def _restore_a_historical_webresponses(
+    report: Mapping[str, Any],
+    bundle: EvidenceBundle,
+    *,
+    before_event: str,
+) -> None:
+    """Recreate the generated dependency state from which A originally built.
+
+    A's MSS-cap patch is not idempotent across separate PlatformIO hook
+    invocations. Its historical build succeeded because the dependency cache
+    already contained the immediately preceding commit's patch state. Restore
+    only that generated WebResponses.cpp before each A PlatformIO command; the
+    untouched A hook then applies its own final transformation.
+    """
+    run = report["plannerPlan"]["run"]
+    if run["role"] != "A":
+        return
+
+    _assert_exact_worktree(A_PRIME_WORKTREE, A_PARENT_COMMIT)
+    environment = planner.OTA_ENV
+    relative = Path(
+        ".pio/libdeps"
+    ) / environment / "ESPAsyncWebServer/src/WebResponses.cpp"
+    source = A_PRIME_WORKTREE / relative
+    worktree = Path(report["plannerPlan"]["paths"]["worktree"])
+    destination = worktree / relative
+    if not source.is_file() or not destination.is_file():
+        raise Issue65RuntimeError(
+            "A historical generated dependency is absent; recreate "
+            f"{A_PRIME_WORKTREE} at {A_PARENT_COMMIT} and build "
+            f"{environment} before retrying"
+        )
+
+    source_digest = sha256_file(source)
+    destination_digest = sha256_file(destination)
+    if source_digest != A_PRIME_WEBRESPONSES_SHA256:
+        raise Issue65RuntimeError(
+            "A historical generated dependency does not match the reviewed "
+            f"parent state: {source_digest}"
+        )
+    if destination_digest not in (
+        A_PRIME_WEBRESPONSES_SHA256,
+        A_FINAL_WEBRESPONSES_SHA256,
+    ):
+        raise Issue65RuntimeError(
+            "A generated dependency is neither the reviewed parent nor A "
+            f"final state: {destination_digest}"
+        )
+
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=".issue65-WebResponses.",
+        suffix=".cpp",
+        dir=destination.parent,
+    )
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "wb") as output_file:
+            with source.open("rb") as input_file:
+                shutil.copyfileobj(input_file, output_file)
+            output_file.flush()
+            os.fsync(output_file.fileno())
+        os.replace(temporary, destination)
+        _fsync_directory(destination.parent)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+
+    record = bundle.timeline.record(
+        "a-historical-generated-dependency-restored",
+        beforeEvent=before_event,
+        sourceCommit=A_PARENT_COMMIT,
+        source=str(source),
+        destination=str(destination),
+        previousSha256=destination_digest,
+        restoredSha256=source_digest,
+    )
+    bundle.events.append(record)
+    fixture = bundle.manifest.setdefault("generatedBuildFixture", {})
+    fixture.update({
+        "roleAOnly": True,
+        "sourceCommit": A_PARENT_COMMIT,
+        "sourceWorktree": str(A_PRIME_WORKTREE),
+        "webResponsesSha256": A_PRIME_WEBRESPONSES_SHA256,
+        "restoredBeforeEveryPio": True,
+    })
+    atomic_write_json(bundle.root / "manifest.json", bundle.manifest)
+
+
 def _identity_contract(
     report: Mapping[str, Any],
     name: str,
@@ -1322,6 +1418,9 @@ def deploy_pair(
         _restore_generated_versions(
             report, bundle, log=build_log, append=False,
         )
+        _restore_a_historical_webresponses(
+            report, bundle, before_event="firmware-build",
+        )
         run_logged(
             list(report["futureExecutionArgv"]["buildFirmware"]),
             cwd=worktree,
@@ -1344,6 +1443,9 @@ def deploy_pair(
         bundle.update_stage(stage)
         _restore_generated_versions(
             report, bundle, log=uploadfs_log, append=False,
+        )
+        _restore_a_historical_webresponses(
+            report, bundle, before_event="filesystem-upload",
         )
         run_logged(
             list(report["futureExecutionArgv"]["uploadFilesystem"]),
