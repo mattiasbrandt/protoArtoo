@@ -972,10 +972,7 @@ Returns controller status snapshot.
 - `driveSpeed`, `driveSteer`, `domeTargetSpeed`, `domeEnabled`
 - `speedLimitMax`, `speedPreset`, `stationary`
 - `uptimeMs`, `firmwareVersion`, `webVersion`
-- `heapFree`, `heapMin`, `heapMin8bit`, `heapLargestBlock`, `heapLargest8bit`
-  - `heapMin8bit` is the boot-lifetime minimum free size of the real 8-bit
-    allocation pool. `heapMin` is legacy and reads `MALLOC_CAP_INTERNAL`, so it
-    includes the same non-allocatable leftover-IRAM region described below.
+- `heapFree`, `heapMin`, `heapLargestBlock`, `heapLargest8bit`
   - `heapLargest8bit` is the largest allocatable DRAM block (`MALLOC_CAP_8BIT`) —
     the pool `malloc` and the admission guards actually use. `heapLargestBlock`
     is legacy: it reads `MALLOC_CAP_INTERNAL`, which is dominated by a constant
@@ -987,22 +984,6 @@ Returns controller status snapshot.
 - `tcpAcceptRejectHeap`, `tcpAcceptRejectRate`, `tcpAcceptRejectAgeMs` —
   accept-guard rejection counters (heap floor / rate pacing) and milliseconds
   since the last rejection (`-1` if none since boot)
-- `staticTcpEnqueue` — boot-lifetime declared-length response diagnostics:
-  - `zeroProgress` counts eligible `AsyncClient::add()` calls that accepted no bytes
-  - `noSendSpace` counts zero-progress calls made when the TCP send buffer exposed
-    no available space (also includes a no-longer-established connection)
-  - `zeroWithSendSpace` counts zero-progress calls despite positive send space
-    immediately before `add()`; this isolates a write failure or connection race
-  - `recoveries` counts zero-progress streaks ended by later positive TCP progress
-  - `exhaustions` counts responses closed after exhausting the fixed retry budget
-  - `writeErrMem`, `writeErrNonMem`, and `lastWriteErr` report boot-lifetime
-    `AsyncClient::add()` write failures and the latest exact lwIP error
-  - `lastWriteQueue`, `maxWriteQueue`, `writeQueueLimit`, and `lastWriteSize`
-    capture the TCP send-queue state and attempted size around those failures;
-    these write-failure fields cover all `AsyncClient` users, not only static files
-  - `lastHeapFree8bit`, `lastHeapLargest8bit`, and `minHeapLargest8bit` capture
-    allocator state immediately after failed writes and the smallest failure-time
-    block observed, using the same `MALLOC_CAP_8BIT` pool as lwIP `malloc`
 - `wifiRssi`, `wifiConnected`, `wifiClientConnected`, `littleFsReady`
 - `sleepMode`, `sleepSinceMs`, `activeMood`
 - `auxLed` object (`pin`, `r`, `g`, `b`, `effect`, `available`)

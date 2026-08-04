@@ -45,7 +45,6 @@
 #include "../../include/aux_led.h"
 #include "../../include/rc_diagnostics_snapshot.h"
 #include "../../include/robot_state.h"
-#include "../../include/web_response_diagnostics.h"
 #include "../../include/wifi_boot_decision.h"
 #include "../../include/wifi_recovery_gesture.h"
 
@@ -530,7 +529,6 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     unsigned long uptimeMs;
     unsigned long heapFree;
     unsigned long heapMin;
-    unsigned long heapMin8bit;
     uint32_t heapLargestBlock;
     bool otaActive;
     uint8_t otaProgressPct;
@@ -644,8 +642,6 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     uptimeMs = millis();
     heapFree = ESP.getFreeHeap();
     heapMin = ESP.getMinFreeHeap();
-    heapMin8bit =
-        (unsigned long)heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT);
     heapLargestBlock = webHeapMaxAlloc();
     otaActive = s_otaActive;
     otaProgressPct = s_otaProgressPct;
@@ -661,17 +657,10 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     wifiRssi = wifi.wifiRssi;
 
     const char* auxLedEffectLabel = auxLedEffectToString(auxLedEffect);
-    char staticTcpEnqueueJson[480];
-    if (!formatWebResponseTcpDiagnosticsJson(
-            staticTcpEnqueueJson, sizeof(staticTcpEnqueueJson),
-            webResponseTcpDiagnosticsSnapshot())) {
-        snprintf(buffer, bufferSize, "{\"ok\":false,\"error\":\"status payload overflow\"}");
-        return false;
-    }
     // Build the fixed system-health fields first.
     int written = snprintf(
         buffer, bufferSize,
-        "{\"estop\":%s,\"webControlEnabled\":%s,\"sbusSignalLost\":%s,\"sbusHwFailsafe\":%s,\"webDriveExpired\":%s,\"failsafeSource\":%d,\"driveSpeed\":%d,\"driveSteer\":%d,\"domeTargetSpeed\":%.3f,\"domeEnabled\":%s,\"speedLimitMax\":%d,\"speedPreset\":\"%s\",\"stationary\":%s,\"failsafeCount\":%lu,\"failsafeTriggerMs\":%lu,\"failsafeZeroMs\":%lu,\"failsafeTriggerToZeroMs\":%lu,\"failsafeWatchdogMs\":%lu,\"failsafeTriggerSource\":%d,\"uptimeMs\":%lu,\"firmwareVersion\":\"%s\",\"fsVersion\":\"%s\",\"resetReason\":\"%s\",\"heapFree\":%lu,\"heapMin\":%lu,\"heapMin8bit\":%lu,\"heapLargestBlock\":%lu,\"heapLargest8bit\":%lu,\"sseClients\":%u,\"sseClientsPeak\":%lu,\"tcpAcceptRejectHeap\":%lu,\"tcpAcceptRejectRate\":%lu,\"tcpAcceptRejectAgeMs\":%ld,\"staticTcpEnqueue\":%s,\"inflightRequests\":%d,\"inflightRequestsPeak\":%d,\"refusedInflightCap\":%lu,\"refusedSseCap\":%lu,\"refusedHeapFloor\":%lu,\"refusedHeapFloorDiag\":%lu,\"otaActive\":%s,\"otaProgress\":%u,\"otaLastError\":\"%s\",\"wifiRssi\":%ld,\"wifiConnected\":%s,\"wifiClientConnected\":%s,\"littleFsReady\":%s,\"sleepMode\":%s,\"sleepSinceMs\":%lu,\"activeMood\":%u,\"auxLed\":{\"pin\":%u,\"r\":%u,\"g\":%u,\"b\":%u,\"effect\":\"%s\",\"available\":%s}",
+        "{\"estop\":%s,\"webControlEnabled\":%s,\"sbusSignalLost\":%s,\"sbusHwFailsafe\":%s,\"webDriveExpired\":%s,\"failsafeSource\":%d,\"driveSpeed\":%d,\"driveSteer\":%d,\"domeTargetSpeed\":%.3f,\"domeEnabled\":%s,\"speedLimitMax\":%d,\"speedPreset\":\"%s\",\"stationary\":%s,\"failsafeCount\":%lu,\"failsafeTriggerMs\":%lu,\"failsafeZeroMs\":%lu,\"failsafeTriggerToZeroMs\":%lu,\"failsafeWatchdogMs\":%lu,\"failsafeTriggerSource\":%d,\"uptimeMs\":%lu,\"firmwareVersion\":\"%s\",\"fsVersion\":\"%s\",\"resetReason\":\"%s\",\"heapFree\":%lu,\"heapMin\":%lu,\"heapLargestBlock\":%lu,\"heapLargest8bit\":%lu,\"sseClients\":%u,\"sseClientsPeak\":%lu,\"tcpAcceptRejectHeap\":%lu,\"tcpAcceptRejectRate\":%lu,\"tcpAcceptRejectAgeMs\":%ld,\"inflightRequests\":%d,\"inflightRequestsPeak\":%d,\"refusedInflightCap\":%lu,\"refusedSseCap\":%lu,\"refusedHeapFloor\":%lu,\"refusedHeapFloorDiag\":%lu,\"otaActive\":%s,\"otaProgress\":%u,\"otaLastError\":\"%s\",\"wifiRssi\":%ld,\"wifiConnected\":%s,\"wifiClientConnected\":%s,\"littleFsReady\":%s,\"sleepMode\":%s,\"sleepSinceMs\":%lu,\"activeMood\":%u,\"auxLed\":{\"pin\":%u,\"r\":%u,\"g\":%u,\"b\":%u,\"effect\":\"%s\",\"available\":%s}",
         diag.estop ? "true" : "false", webControlEnabled ? "true" : "false",
         diag.sbusSignalLost ? "true" : "false", diag.sbusHwFailsafe ? "true" : "false",
         diag.webDriveExpired ? "true" : "false", (int)diag.failsafeSource, driveSpeed, driveSteer,
@@ -680,7 +669,7 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
         (unsigned long)diag.failsafeTriggerCount, (unsigned long)diag.failsafeLastTriggerMs, (unsigned long)diag.failsafeLastZeroOutputMs, (unsigned long)diag.failsafeLastTriggerToZeroMs,
         (unsigned long)diag.failsafeLastWatchdogMs, (int)diag.failsafeLastTriggerSource, uptimeMs, PA_FIRMWARE_VERSION, s_fsVersion,
         resetReasonName(esp_reset_reason()),
-        heapFree, heapMin, heapMin8bit, (unsigned long)heapLargestBlock,
+        heapFree, heapMin, (unsigned long)heapLargestBlock,
         // Same capability mask as every admission guard (MALLOC_CAP_8BIT).
         // heapLargestBlock above uses MALLOC_CAP_INTERNAL and can diverge
         // wildly from what the guards actually see; both are emitted so the
@@ -693,7 +682,6 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
         g_asyncTcpAcceptRejectLastMs == 0
             ? -1L
             : (long)(uint32_t)((uint32_t)uptimeMs - g_asyncTcpAcceptRejectLastMs),
-        staticTcpEnqueueJson,
         // Lifecycle admission evidence (issue #54): live + peak inflight
         // depth and refusal counts by the same broad classes the middleware
         // gates on above -- current/peak/refused evidence needed before any

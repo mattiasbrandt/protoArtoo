@@ -16,31 +16,12 @@ Every semantic version release belongs here:
 ## [Unreleased]
 
 ### Added
-- Static-response TCP enqueue diagnostics for issue #60: `/api/status` reports
-  boot-lifetime zero-progress attempts, recovery episodes, and retry-budget
-  exhaustions without allocating in the response path, including whether each
-  zero-progress attempt had TCP send space immediately beforehand and the exact
-  lwIP error/send-queue/8-bit-heap state when `AsyncClient::add()` fails.
 - Request-lifecycle evidence instrumentation for issue #52/#54: `/api/status` now
   reports live/peak inflight request depth, peak SSE clients, and refusal counts
   by admission class (inflight cap, SSE cap, heap floor diagnostic/non-diagnostic);
   `/api/profiler` (PA_HEAP_PROFILE builds) additionally reports a bounded
   request-start/handler-done/disconnect trace. Evidence-gathering only — no
   admission caps, floors, or weights were changed.
-
-### Fixed
-- Static files with a declared content length now keep final buffered bytes
-  retryable until TCP accepts them and retry bounded transient zero reads on
-  the same response instead of ending early with a truncated body. Repeated
-  zero-progress TCP enqueue attempts are also bounded through AsyncTCP's
-  five-second ACK window, while partial progress remains correctly accounted.
-- Static responses with a declared content length now enqueue at most one TCP
-  MSS per `AsyncClient::add()` attempt instead of the full buffered remainder
-  (up to two MSS at once). Live evidence for issue #60 traced the remaining
-  truncations to lwIP needing two contiguous pbuf segments for one
-  transactional write and rolling the whole write back when only one segment
-  fit; capping each attempt to one segment avoids that all-or-nothing
-  allocation.
 
 ## [1.0.0] - 2026-08-01
 
