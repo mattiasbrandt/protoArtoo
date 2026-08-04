@@ -5,8 +5,7 @@
 // Ports a representative slice of protoArtoo's HTTP surface onto PsychicHttp
 // 3.1.2, matching #52's Browser Load Profile needs (page load, refresh,
 // /api/events open/reconnect/hide/show/close). NOT production code and NOT
-// a full ~40-route port -- see docs/research/issue-72-psychichttp-adapter-prototype.md
-// for exact scope boundaries.
+// a full ~40-route port -- see issue #72's comments for exact scope boundaries.
 //
 // This file is inert in every build except env:protoArtoo_psychichttp_prototype
 // (guarded by PA_USE_PSYCHICHTTP_PROTOTYPE, set only in that env's build_flags).
@@ -213,23 +212,11 @@ void initPsychicHttpServer() {
   server.config.max_open_sockets = 10;
   server.config.stack_size = 8192;
   // Defaults (HTTPD_DEFAULT_CONFIG, esp_http_server.h) are backlog_conn=5 and
-  // lru_purge_enable=false. A real single-tab browser page load opens several
-  // parallel connections per origin; reproduced live (issue #73 load testing)
-  // that 4/5 truly-concurrent requests to the same static resource fail with
-  // a parser-level HTTP 400 ("incomplete" in esp_http_server's httpd_parse.c)
-  // under the defaults -- not an admission-filter rejection, confirmed via
-  // refusedInflightCap/refusedHeapFloor staying at 0 across the same burst.
-  // Raising backlog_conn and enabling LRU purge (evict the oldest idle
-  // connection instead of refusing a new one outright) were tested live as
-  // the two config knobs esp_http_server exposes for exactly this -- NEITHER
-  // FIXED IT. Even 2 genuinely simultaneous connections to different
-  // resources still fail 1 of 2 with the same parser-level 400, unchanged
-  // from the untuned baseline. Left set (harmless, matches upstream intent)
-  // but do not treat this as a working mitigation -- see
-  // docs/research/issue-73-psychichttp-concurrency-findings.md for the full
-  // investigation, including why ENABLE_ASYNC (PsychicHttp.h) is a different,
-  // narrower mechanism (explicit long-running-handler offload, e.g. uploads)
-  // and not a general fix for this.
+  // lru_purge_enable=false. Raised/enabled here -- tested live (issue #73)
+  // and confirmed these do NOT by themselves fix concurrent-request failures
+  // (see #73's comments for the full investigation). Left set anyway since
+  // they're harmless and match upstream's own intent; the actual fix for the
+  // concurrency bug was unrelated -- see admissionFilter()'s comment below.
   server.config.backlog_conn = 10;
   server.config.lru_purge_enable = true;
 
