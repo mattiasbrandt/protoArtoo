@@ -47,6 +47,9 @@
 #include "../../include/robot_state.h"
 #include "../../include/wifi_boot_decision.h"
 #include "../../include/wifi_recovery_gesture.h"
+#ifdef PA_USE_PSYCHICHTTP_PROTOTYPE
+#include "../../include/psychic_adapter.h"
+#endif
 
 // src/secrets.h is the Developer WiFi Shortcut (ADR 0015): local/self-build-only
 // compile-time WiFi defaults. It is never required to compile or boot — public
@@ -1090,6 +1093,18 @@ void startHttpServerOnce() {
     if (serverStarted) {
         return;
     }
+
+#ifdef PA_USE_PSYCHICHTTP_PROTOTYPE
+    // issue #72 prototype: PsychicHttp replaces ESPAsyncWebServer's HTTP
+    // server entirely (both would try to bind port 80), swapped in at the
+    // exact same trigger point production uses -- once WiFi has genuinely
+    // come up, per handleWiFiEvent()'s two call sites below. WiFi bring-up
+    // itself (webServerInit(), executeWifiBootPosture()) is untouched and
+    // always runs normally; only the HTTP server that starts here differs.
+    initPsychicHttpServer();
+    serverStarted = true;
+    return;
+#endif
 
     if (!routesRegistered) {
         events.onConnect([](AsyncEventSourceClient* client) {

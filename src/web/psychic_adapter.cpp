@@ -19,6 +19,7 @@
 #include <Arduino.h>
 #include <LittleFS.h>
 #include <PsychicHttp.h>
+#include <esp_err.h>
 #include <esp_heap_caps.h>
 #include <inttypes.h>
 #include <stdio.h>
@@ -212,7 +213,21 @@ void initPsychicHttpServer() {
     xTaskCreatePinnedToCore(sseBroadcastTask, "PsychicSSE", 4096, nullptr, 1, &s_broadcastTaskHandle, 0);
   }
 
-  printf("INFO: psychic_adapter: PsychicHttp server started on port 80\n");
+  // server.on()/serveStatic()/addFilter()/addMiddleware() above only
+  // register configuration -- nothing actually binds or listens until
+  // begin() (== start(), which calls httpd_start()) is called. The first
+  // draft of this prototype never called this at all ("starts automatically
+  // on construction, or via begin()" -- an unverified guess in a comment)
+  // and the rewrite dropped the call entirely instead of resolving that
+  // uncertainty, so the server logged "started" and never actually accepted
+  // a single connection. Fixed here, with the return value actually checked.
+  esp_err_t err = server.begin();
+  if (err != ESP_OK) {
+    printf("ERROR: psychic_adapter: server.begin() failed: %s\n", esp_err_to_name(err));
+    return;
+  }
+
+  printf("INFO: psychic_adapter: PsychicHttp server listening on port 80\n");
 }
 
 #endif  // PA_USE_PSYCHICHTTP_PROTOTYPE
