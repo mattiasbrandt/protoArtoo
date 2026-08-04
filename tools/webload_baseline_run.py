@@ -58,6 +58,20 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--controller", default=DEFAULT_CONTROLLER)
     parser.add_argument("--serial-port", default=DEFAULT_SERIAL_PORT)
     parser.add_argument(
+        "--build-env",
+        default=BUILD_ENV,
+        help=(
+            f"PlatformIO base env to build/OTA-flash in the build stage (default: {BUILD_ENV}). "
+            "The '_ota' suffix is appended automatically, matching this repo's *_ota env "
+            "naming convention (e.g. protoArtoo_chirp -> protoArtoo_chirp_ota). Added for "
+            "issue #53/#73 to target env:protoArtoo_psychichttp_prototype without silently "
+            "rebuilding and reflashing production CHIRP firmware over a prototype build -- "
+            "the identity stage compares only by git short-SHA, not by which env is flashed, "
+            "so a stale (behind-HEAD) prototype build will look like 'buildRequired' regardless "
+            "of --build-env; pass the right value explicitly rather than relying on the default."
+        ),
+    )
+    parser.add_argument(
         "--force-build",
         action="store_true",
         help="run make ota-chirp even if /api/identity already matches the local tip",
@@ -247,12 +261,15 @@ def _restore_generated_versions() -> None:
 
 
 def run_build(args: argparse.Namespace, evidence_dir: Path) -> dict[str, Any]:
-    """make ota-chirp against the current checkout, capturing build/upload logs
-    and firmware/filesystem identity into the evidence bundle, mirroring the
-    identity-capture shape #65 used (capture_artifact_identity)."""
+    """Build+OTA-flash args.build_env against the current checkout, capturing
+    build/upload logs and firmware/filesystem identity into the evidence
+    bundle, mirroring the identity-capture shape #65 used
+    (capture_artifact_identity). Defaults to BUILD_ENV (protoArtoo_chirp,
+    issue #66's original target); pass --build-env to target a different env,
+    e.g. protoArtoo_psychichttp_prototype for issue #73."""
     timeline = r65.Timeline.start()
     events: list[dict[str, object]] = []
-    ota_env = f"{BUILD_ENV}_ota"
+    ota_env = f"{args.build_env}_ota"
 
     _restore_generated_versions()
     build_log = evidence_dir / "build.log"
