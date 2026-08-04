@@ -76,6 +76,20 @@ const FIXED_RUNS = Object.freeze({
       "/footer.js",
     ],
   },
+  R1: {
+    role: "R",
+    commit: "128ab4581fa8ccf1112b13615ce219cff1cb463f",
+    requiredResources: [
+      "/wifi.html",
+      "/style.css",
+      "/page_loader.js",
+      "/web_api.js",
+      "/status_stream.js",
+      "/shell.js",
+      "/wifi.js",
+      "/footer.js",
+    ],
+  },
 });
 const REQUIRED_APIS = Object.freeze(["/api/identity", "/api/config", "/api/wifi"]);
 
@@ -88,7 +102,7 @@ function usage() {
     [--control-file tasks/evidence/issue-65/A1/control.json]
 
 Options:
-  --run RUN          One of A1, B1, A2, B2; locks the expected commit role.
+  --run RUN          One of A1, B1, A2, B2, R1; locks the expected commit role.
   --url URL          Exact http:// controller URL ending in /wifi.html.
   --out DIR          Browser artifact directory (must be under tasks/evidence/issue-65).
   --control-file F   Optional coordinator file with statusReachableAt or stopReason.
@@ -134,7 +148,7 @@ function ensureInsideEvidence(candidate, evidenceRoot, label) {
 
 function validateArgs(args) {
   if (!FIXED_RUNS[args.run]) {
-    throw new Error("--run must be one of A1, B1, A2, B2");
+    throw new Error("--run must be one of A1, B1, A2, B2, R1");
   }
   if (!args.url) throw new Error("--url is required");
 

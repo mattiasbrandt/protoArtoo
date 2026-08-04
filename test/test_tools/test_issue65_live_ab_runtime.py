@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import os
 import subprocess
 import sys
@@ -88,6 +89,45 @@ class TemporaryGitIdentityWrapperTest(unittest.TestCase):
                     text=True,
                 ).strip()
             )
+
+
+class PostRollbackRunTest(unittest.TestCase):
+    def test_r1_is_locked_to_verified_revert_and_complete_comparison(self):
+        locked = RUNTIME.planner.RUNS["R1"]
+
+        self.assertEqual(locked.role, "R")
+        self.assertEqual(
+            locked.commit,
+            "128ab4581fa8ccf1112b13615ce219cff1cb463f",
+        )
+        self.assertEqual(locked.worktree, "/tmp/protoartoo-issue65-R")
+        self.assertEqual(locked.required_completed_runs, ("A1", "B1", "A2"))
+
+    def test_r1_browser_plan_uses_pre_bootstrap_resource_contract(self):
+        result = subprocess.run(
+            [
+                "node",
+                TOOLS_DIR / "issue65_browser_capture.js",
+                "--dry-run",
+                "--run",
+                "R1",
+                "--url",
+                "http://10.0.0.22/wifi.html",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        plan = json.loads(result.stdout)
+        self.assertEqual(plan["role"], "R")
+        self.assertEqual(
+            plan["expectedCommit"],
+            "128ab4581fa8ccf1112b13615ce219cff1cb463f",
+        )
+        self.assertIn("/page_loader.js", plan["requiredResources"])
+        self.assertNotIn("/page_bootstrap.js", plan["requiredResources"])
 
 
 if __name__ == "__main__":

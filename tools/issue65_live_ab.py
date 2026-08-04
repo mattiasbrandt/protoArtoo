@@ -62,15 +62,18 @@ class LockedRun:
 
 A_SHA = "1b2bed8e86cbfbe4756427233e75875ca7f189e3"
 B_SHA = "956c9360d51cc2cb49f5935e35568ca18784c562"
+R_SHA = "128ab4581fa8ccf1112b13615ce219cff1cb463f"
 A_TREE = "/tmp/protoartoo-issue65-A"
 B_TREE = "/tmp/protoartoo-issue65-B"
+R_TREE = "/tmp/protoartoo-issue65-R"
 RUNS = {
     "A1": LockedRun("A", A_SHA, A_TREE, ()),
     "B1": LockedRun("B", B_SHA, B_TREE, ("A1",)),
     "A2": LockedRun("A", A_SHA, A_TREE, ("A1", "B1")),
     "B2": LockedRun("B", B_SHA, B_TREE, ("A1", "B1", "A2")),
+    "R1": LockedRun("R", R_SHA, R_TREE, ("A1", "B1", "A2")),
 }
-PRIOR_ORDER = ("A1", "B1", "A2")
+PRIOR_ORDER = ("A1", "B1", "A2", "R1")
 
 
 def build_parser() -> PlannerArgumentParser:
@@ -362,7 +365,7 @@ def build_plan(args: argparse.Namespace) -> dict[str, object]:
                 "requestDeadlineSeconds": 1,
                 "maxOutstanding": 1,
                 "startsBeforeSettle": True,
-                "unchangedAcrossRuns": ["A1", "B1", "A2", "B2"],
+                "unchangedAcrossRuns": ["A1", "B1", "A2", "B2", "R1"],
                 "diagnosticLossStopAfterSeconds": 30,
                 "globalFailedAllocs": None,
                 "failedAllocationAvailability": FAILED_ALLOC_AVAILABILITY,
