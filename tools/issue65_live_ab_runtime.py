@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import hashlib
@@ -72,6 +73,16 @@ A_PRIME_WEBRESPONSES_SHA256 = (
 )
 A_FINAL_WEBRESPONSES_SHA256 = (
     "ba0c80be9bcd9ede4aff0a6594c05e9d772da586155453c3cb99aa8e3de33d61"
+)
+B_PRIME_PACKAGE_ROOT = Path("/tmp/protoartoo-issue65-B-prime")
+B_PRIME_WEBRESPONSES_SHA256 = (
+    "12055aa687cd0f6f719b65057c7a1d203baf6f0ef88e96b3fb4909ac68d0e6f8"
+)
+B_ORIGINAL_PATCHER_SHA256 = (
+    "7ef8aac01b50b8e8e0a9a5be9aab1cc7254656b55223695abb7e36587b254864"
+)
+B_SHIM_PATCHER_SHA256 = (
+    "2b58d3b48d5d1f7162ab945ba88c1957cdf4aae28f03d2583f5d8143f2cb9363"
 )
 
 
@@ -1334,23 +1345,7 @@ def _restore_a_historical_webresponses(
             f"final state: {destination_digest}"
         )
 
-    descriptor, temporary_name = tempfile.mkstemp(
-        prefix=".issue65-WebResponses.",
-        suffix=".cpp",
-        dir=destination.parent,
-    )
-    temporary = Path(temporary_name)
-    try:
-        with os.fdopen(descriptor, "wb") as output_file:
-            with source.open("rb") as input_file:
-                shutil.copyfileobj(input_file, output_file)
-            output_file.flush()
-            os.fsync(output_file.fileno())
-        os.replace(temporary, destination)
-        _fsync_directory(destination.parent)
-    finally:
-        if temporary.exists():
-            temporary.unlink()
+    _replace_file_atomically(source, destination)
 
     record = bundle.timeline.record(
         "a-historical-generated-dependency-restored",
@@ -1370,6 +1365,247 @@ def _restore_a_historical_webresponses(
         "webResponsesSha256": A_PRIME_WEBRESPONSES_SHA256,
         "restoredBeforeEveryPio": True,
     })
+    atomic_write_json(bundle.root / "manifest.json", bundle.manifest)
+
+
+def _replace_file_atomically(source: Path, destination: Path) -> None:
+    """Atomically replace one file from a reviewed source and fsync it."""
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=".issue65-replace.",
+        suffix=destination.suffix,
+        dir=destination.parent,
+    )
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "wb") as output_file:
+            with source.open("rb") as input_file:
+                shutil.copyfileobj(input_file, output_file)
+            output_file.flush()
+            os.fsync(output_file.fileno())
+        os.replace(temporary, destination)
+        _fsync_directory(destination.parent)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+
+
+def _restore_b_pristine_webresponses(
+    report: Mapping[str, Any],
+    bundle: EvidenceBundle,
+    *,
+    before_event: str,
+) -> None:
+    """Restore pristine pinned vendor input before each exact-B PIO command.
+
+    Exact B recognizes the final MSS-cap output in its zero-read stage, but
+    its following diagnostics stage still rejects that already-correct final
+    state on a repeated pre-build pass. Restoring the pinned vendor file keeps
+    commit B untouched while recreating the input its first successful patch
+    pass consumed.
+    """
+    run = report["plannerPlan"]["run"]
+    if run["role"] != "B":
+        return
+
+    environment = planner.OTA_ENV
+    relative = Path(
+        ".pio/libdeps"
+    ) / environment / "ESPAsyncWebServer/src/WebResponses.cpp"
+    source = (
+        B_PRIME_PACKAGE_ROOT
+        / "ESPAsyncWebServer/src/WebResponses.cpp"
+    )
+    worktree = Path(report["plannerPlan"]["paths"]["worktree"])
+    destination = worktree / relative
+    if not source.is_file() or not destination.is_file():
+        raise Issue65RuntimeError(
+            "B pristine generated dependency is absent; install "
+            "ESP32Async/ESPAsyncWebServer@3.11.2 with --skip-dependencies "
+            f"into {B_PRIME_PACKAGE_ROOT} before retrying"
+        )
+
+    source_digest = sha256_file(source)
+    destination_digest = sha256_file(destination)
+    if source_digest != B_PRIME_WEBRESPONSES_SHA256:
+        raise Issue65RuntimeError(
+            "B pristine generated dependency does not match the reviewed "
+            f"PlatformIO Registry state: {source_digest}"
+        )
+    if destination_digest not in (
+        B_PRIME_WEBRESPONSES_SHA256,
+        A_FINAL_WEBRESPONSES_SHA256,
+    ):
+        raise Issue65RuntimeError(
+            "B generated dependency is neither the reviewed pristine nor "
+            f"final state: {destination_digest}"
+        )
+
+    _replace_file_atomically(source, destination)
+
+    record = bundle.timeline.record(
+        "b-pristine-generated-dependency-restored",
+        beforeEvent=before_event,
+        source=str(source),
+        destination=str(destination),
+        previousSha256=destination_digest,
+        restoredSha256=source_digest,
+    )
+    bundle.events.append(record)
+    fixture = bundle.manifest.setdefault("generatedBuildFixture", {})
+    fixture.update({
+        "roleBOnly": True,
+        "sourcePackage": "ESP32Async/ESPAsyncWebServer@3.11.2",
+        "sourcePackageRoot": str(B_PRIME_PACKAGE_ROOT),
+        "webResponsesSha256": B_PRIME_WEBRESPONSES_SHA256,
+        "restoredBeforeEveryPio": True,
+    })
+    atomic_write_json(bundle.root / "manifest.json", bundle.manifest)
+
+
+@contextmanager
+def _temporary_b_build_shim(
+    report: Mapping[str, Any],
+    bundle: EvidenceBundle,
+    *,
+    before_event: str,
+):
+    """Apply B's authorized recognition-only build shim, then restore it."""
+    run = report["plannerPlan"]["run"]
+    if run["role"] != "B":
+        yield
+        return
+
+    worktree = Path(report["plannerPlan"]["paths"]["worktree"])
+    source = planner.REPO_ROOT / "tools/patch_async_sse.py"
+    destination = worktree / "tools/patch_async_sse.py"
+    backup_directory = bundle.root / "generated-build-fixture"
+    backup_directory.mkdir(exist_ok=True)
+    backup = backup_directory / f"{before_event}-original-patch_async_sse.py"
+
+    if not source.is_file() or not destination.is_file():
+        raise Issue65RuntimeError(
+            "B build shim source or exact-B patcher is absent"
+        )
+    if backup.exists():
+        raise Issue65RuntimeError(
+            f"B build shim backup already exists: {backup}"
+        )
+
+    source_digest = sha256_file(source)
+    destination_digest = sha256_file(destination)
+    if source_digest != B_SHIM_PATCHER_SHA256:
+        raise Issue65RuntimeError(
+            "B build shim does not match the authorized recognition-only "
+            f"state: {source_digest}"
+        )
+    if destination_digest != B_ORIGINAL_PATCHER_SHA256:
+        raise Issue65RuntimeError(
+            "exact B patcher does not match the locked original state: "
+            f"{destination_digest}"
+        )
+
+    _replace_file_atomically(destination, backup)
+    shim_record: dict[str, object] | None = None
+    try:
+        _replace_file_atomically(source, destination)
+        if sha256_file(destination) != B_SHIM_PATCHER_SHA256:
+            raise Issue65RuntimeError(
+                "B build shim replacement did not persist"
+            )
+
+        applied = bundle.timeline.record(
+            "b-build-idempotency-shim-applied",
+            beforeEvent=before_event,
+            source=str(source),
+            destination=str(destination),
+            backup=str(backup),
+            originalSha256=destination_digest,
+            shimSha256=source_digest,
+        )
+        bundle.events.append(applied)
+        shim_record = {
+            "beforeEvent": before_event,
+            "authorization": "explicit operator approval 2026-08-04",
+            "scope": "build-hook idempotency recognition only",
+            "originalSha256": B_ORIGINAL_PATCHER_SHA256,
+            "shimSha256": B_SHIM_PATCHER_SHA256,
+            "backup": str(backup),
+            "restored": False,
+        }
+        bundle.manifest.setdefault(
+            "temporaryBuildShims", []
+        ).append(shim_record)
+        atomic_write_json(bundle.root / "manifest.json", bundle.manifest)
+        yield
+    finally:
+        _replace_file_atomically(backup, destination)
+        restored_digest = sha256_file(destination)
+        status_ok, patcher_status = git_query(
+            worktree,
+            "status",
+            "--porcelain",
+            "--",
+            "tools/patch_async_sse.py",
+        )
+        if (
+            restored_digest != B_ORIGINAL_PATCHER_SHA256
+            or not status_ok
+            or patcher_status
+        ):
+            raise Issue65RuntimeError(
+                "exact B patcher was not cleanly restored after the "
+                f"temporary build shim: sha256={restored_digest} "
+                f"status={patcher_status}"
+            )
+        if shim_record is not None:
+            shim_record["restored"] = True
+        restored = bundle.timeline.record(
+            "b-build-idempotency-shim-restored",
+            beforeEvent=before_event,
+            destination=str(destination),
+            restoredSha256=restored_digest,
+            trackedFileClean=True,
+        )
+        bundle.events.append(restored)
+        atomic_write_json(bundle.root / "manifest.json", bundle.manifest)
+
+
+def _verify_b_final_webresponses(
+    report: Mapping[str, Any],
+    bundle: EvidenceBundle,
+    *,
+    after_event: str,
+) -> None:
+    """Require exact B to finish each PIO command at reviewed final output."""
+    run = report["plannerPlan"]["run"]
+    if run["role"] != "B":
+        return
+
+    worktree = Path(report["plannerPlan"]["paths"]["worktree"])
+    generated = (
+        worktree
+        / ".pio/libdeps"
+        / planner.OTA_ENV
+        / "ESPAsyncWebServer/src/WebResponses.cpp"
+    )
+    if not generated.is_file():
+        raise Issue65RuntimeError(
+            "B generated WebResponses.cpp is absent after "
+            f"{after_event}"
+        )
+    generated_digest = sha256_file(generated)
+    if generated_digest != A_FINAL_WEBRESPONSES_SHA256:
+        raise Issue65RuntimeError(
+            "B generated WebResponses.cpp did not finish at the reviewed "
+            f"final state after {after_event}: {generated_digest}"
+        )
+    verified = bundle.timeline.record(
+        "b-generated-dependency-final-state-verified",
+        afterEvent=after_event,
+        path=str(generated),
+        sha256=generated_digest,
+    )
+    bundle.events.append(verified)
     atomic_write_json(bundle.root / "manifest.json", bundle.manifest)
 
 
@@ -1421,15 +1657,24 @@ def deploy_pair(
         _restore_a_historical_webresponses(
             report, bundle, before_event="firmware-build",
         )
-        run_logged(
-            list(report["futureExecutionArgv"]["buildFirmware"]),
-            cwd=worktree,
-            timeout_seconds=build_timeout_seconds,
-            artifact=build_log,
-            timeline=bundle.timeline,
-            events=bundle.events,
-            event="firmware-build",
-            append=True,
+        _restore_b_pristine_webresponses(
+            report, bundle, before_event="firmware-build",
+        )
+        with _temporary_b_build_shim(
+            report, bundle, before_event="firmware-build",
+        ):
+            run_logged(
+                list(report["futureExecutionArgv"]["buildFirmware"]),
+                cwd=worktree,
+                timeout_seconds=build_timeout_seconds,
+                artifact=build_log,
+                timeline=bundle.timeline,
+                events=bundle.events,
+                event="firmware-build",
+                append=True,
+            )
+        _verify_b_final_webresponses(
+            report, bundle, after_event="firmware-build",
         )
         firmware_contract = _identity_contract(report, "firmware")
         firmware = capture_artifact_identity(
@@ -1447,15 +1692,24 @@ def deploy_pair(
         _restore_a_historical_webresponses(
             report, bundle, before_event="filesystem-upload",
         )
-        run_logged(
-            list(report["futureExecutionArgv"]["uploadFilesystem"]),
-            cwd=worktree,
-            timeout_seconds=upload_timeout_seconds,
-            artifact=uploadfs_log,
-            timeline=bundle.timeline,
-            events=bundle.events,
-            event="filesystem-upload",
-            append=True,
+        _restore_b_pristine_webresponses(
+            report, bundle, before_event="filesystem-upload",
+        )
+        with _temporary_b_build_shim(
+            report, bundle, before_event="filesystem-upload",
+        ):
+            run_logged(
+                list(report["futureExecutionArgv"]["uploadFilesystem"]),
+                cwd=worktree,
+                timeout_seconds=upload_timeout_seconds,
+                artifact=uploadfs_log,
+                timeline=bundle.timeline,
+                events=bundle.events,
+                event="filesystem-upload",
+                append=True,
+            )
+        _verify_b_final_webresponses(
+            report, bundle, after_event="filesystem-upload",
         )
         filesystem_contract = _identity_contract(report, "filesystem")
         filesystem = capture_artifact_identity(
