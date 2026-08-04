@@ -34,8 +34,11 @@ bool webServerHasSSEClients();
 // for field semantics and the single-writer/bounded-overwrite contract.
 #define PA_REQUEST_TRACE_MAX 32
 struct RequestLifecycleEntry {
-    char requestClass[12];   // "diag", "api", or "static" (SSE excluded, see web_server.cpp)
-    uint32_t startMs;        // middleware admission time
+    char requestPath[28];    // request URL path, truncated (SSE excluded, see web_server.cpp)
+    uint32_t startMs;        // middleware admission time -- the earliest point our own
+                              // code sees this request; a large gap between this and the
+                              // browser's own request-start timestamp means the delay is
+                              // below us (TCP accept/backlog), not in our handler (issue #67)
     uint32_t handlerDoneMs;  // 0 until next() returns
     uint32_t disconnectMs;   // 0 until onDisconnect fires
 };

@@ -483,8 +483,8 @@ static void buildProfilerJson(char* buf, size_t bufSize) {
     APPEND(",\"requestTrace\":[");
     for (size_t i = 0; i < traceCount; i++) {
         if (i > 0) APPEND(",");
-        APPEND("{\"class\":\"%s\",\"startMs\":%lu,\"handlerDoneMs\":%lu,\"disconnectMs\":%lu}",
-               traceCopy[i].requestClass, (unsigned long)traceCopy[i].startMs,
+        APPEND("{\"path\":\"%s\",\"startMs\":%lu,\"handlerDoneMs\":%lu,\"disconnectMs\":%lu}",
+               traceCopy[i].requestPath, (unsigned long)traceCopy[i].startMs,
                (unsigned long)traceCopy[i].handlerDoneMs, (unsigned long)traceCopy[i].disconnectMs);
     }
     APPEND("]}");

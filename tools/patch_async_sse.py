@@ -790,6 +790,86 @@ def patch_eventsource_response_alloc(text):
     return text
 
 
+# Issue #67: write_send_buffs() retries an ASYNC_RESPONCE_BUFF_SIZE allocation
+# on every TCP ack/poll (roughly every CONFIG_ASYNC_TCP_POLL_TIMER slow-timer
+# tick, ~500ms) once a response has started. Under sustained heap
+# fragmentation, that allocation can keep failing indefinitely: the response
+# just sits in RESPONSE_CONTENT forever with headers already sent, since
+# nothing else ever aborts it. Every other admission/allocation guard in this
+# stack fails fast (abort()/close(), milliseconds); this was the one gap that
+# didn't, and it produced a live ~25s hang in issue #66's evidence trail. Bound
+# the retry count and close the connection once exceeded, same as the
+# existing close()-on-error path a few lines above this one.
+STATIC_RESPONSE_OOM_STALL_BEFORE = """\
+      if (!_send_buffer) {
+        auto p = new (std::nothrow) std::array<uint8_t, ASYNC_RESPONCE_BUFF_SIZE>;
+        if (p) {
+          _send_buffer.reset(p);
+          _send_buffer_len = _send_buffer_offset = 0;
+        } else {
+          break;  // OOM
+        }
+      }
+"""
+
+STATIC_RESPONSE_OOM_STALL_AFTER = """\
+      if (!_send_buffer) {
+        auto p = new (std::nothrow) std::array<uint8_t, ASYNC_RESPONCE_BUFF_SIZE>;
+        if (p) {
+          _send_buffer.reset(p);
+          _send_buffer_len = _send_buffer_offset = 0;
+          _oomStallCount = 0;
+        } else {
+#ifndef ASYNC_RESPONSE_OOM_STALL_MAX
+#define ASYNC_RESPONSE_OOM_STALL_MAX 10
+#endif
+          if (++_oomStallCount >= ASYNC_RESPONSE_OOM_STALL_MAX) {
+            // Fragmented heap hasn't freed one send buffer's worth of memory
+            // across ASYNC_RESPONSE_OOM_STALL_MAX retries (issue #67) -- fail
+            // this response now instead of stalling it indefinitely.
+            request->client()->close();
+            return 0;
+          }
+          break;  // OOM
+        }
+      }
+"""
+
+
+def patch_static_response_oom_stall(text):
+    if STATIC_RESPONSE_OOM_STALL_AFTER not in text:
+        if text.count(STATIC_RESPONSE_OOM_STALL_BEFORE) != 1:
+            raise RuntimeError(
+                "ESPAsyncWebServer WebResponses.cpp write_send_buffs OOM branch changed; "
+                "review tools/patch_async_sse.py"
+            )
+        text = text.replace(STATIC_RESPONSE_OOM_STALL_BEFORE, STATIC_RESPONSE_OOM_STALL_AFTER)
+
+    return text
+
+
+RESPONSE_OOM_STALL_MEMBER_BEFORE = "  size_t _send_buffer_offset{0}, _send_buffer_len{0};\n"
+
+RESPONSE_OOM_STALL_MEMBER_AFTER = """\
+  size_t _send_buffer_offset{0}, _send_buffer_len{0};
+  // Consecutive send-buffer allocation failures under heap pressure
+  // (issue #67). See write_send_buffs's OOM branch in WebResponses.cpp.
+  uint8_t _oomStallCount{0};
+"""
+
+
+def patch_response_oom_stall_member(text):
+    if RESPONSE_OOM_STALL_MEMBER_AFTER not in text:
+        if text.count(RESPONSE_OOM_STALL_MEMBER_BEFORE) != 1:
+            raise RuntimeError(
+                "ESPAsyncWebServer WebResponseImpl.h AsyncAbstractResponse member list changed; "
+                "review tools/patch_async_sse.py"
+            )
+        text = text.replace(RESPONSE_OOM_STALL_MEMBER_BEFORE, RESPONSE_OOM_STALL_MEMBER_AFTER)
+
+    return text
+
+
 LISTEN_BACKLOG_BEFORE = "  static uint8_t backlog = 5;\n"
 
 LISTEN_BACKLOG_AFTER = """\
@@ -880,6 +960,17 @@ def patch_async_webserver(env):
         source_dir / "WebRequest.cpp",
         patch_webrequest_response_alloc,
         "made request response factories non-throwing and send(nullptr) abort one request (issue #21)",
+    )
+    patch_file(
+        source_dir / "WebResponseImpl.h",
+        patch_response_oom_stall_member,
+        "added AsyncAbstractResponse OOM-stall counter (issue #67)",
+    )
+    patch_file(
+        source_dir / "WebResponses.cpp",
+        patch_static_response_oom_stall,
+        "bounded write_send_buffs OOM retries so a fragmented heap fails the "
+        "response fast instead of stalling it indefinitely (issue #67)",
     )
     patch_file(
         source_dir / "AsyncEventSource.cpp",

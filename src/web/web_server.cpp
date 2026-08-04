@@ -331,11 +331,11 @@ static uint8_t s_requestTraceCount = 0;
 // against the inflight cap. Overwrites the oldest ring slot once full; the
 // returned index is captured by the request's onDisconnect closure so
 // disconnectMs can be filled in later without a second lookup.
-static uint8_t pushRequestTraceEntry(const char* cls, uint32_t startMs) {
+static uint8_t pushRequestTraceEntry(const char* path, uint32_t startMs) {
     uint8_t idx = s_requestTraceHead;
     RequestLifecycleEntry& e = s_requestTrace[idx];
-    strncpy(e.requestClass, cls, sizeof(e.requestClass) - 1);
-    e.requestClass[sizeof(e.requestClass) - 1] = '\0';
+    strncpy(e.requestPath, path, sizeof(e.requestPath) - 1);
+    e.requestPath[sizeof(e.requestPath) - 1] = '\0';
     e.startMs = startMs;
     e.handlerDoneMs = 0;
     e.disconnectMs = 0;
@@ -1198,12 +1198,10 @@ void startHttpServerOnce() {
                 }
 #if PA_HEAP_PROFILE
                 traceStartMs = millis();
-                // Broad class matches the admission gates above: diagnostic
-                // reads, dynamic /api/* handlers, and everything else (the
-                // LittleFS static-file handler, matched later in the chain).
-                const char* traceClass =
-                    diagnostic ? "diag" : (url.startsWith("/api/") ? "api" : "static");
-                traceIdx = pushRequestTraceEntry(traceClass, traceStartMs);
+                // Full path (not just a broad class) so a specific slow/hung
+                // request (issue #67) can be matched against the browser's
+                // own per-request timestamps after the fact.
+                traceIdx = pushRequestTraceEntry(url.c_str(), traceStartMs);
                 traced = true;
 #endif
                 request->onDisconnect([
