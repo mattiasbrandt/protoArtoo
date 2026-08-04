@@ -300,120 +300,6 @@ static uint32_t s_refusedSseCap = 0;
 static uint32_t s_refusedHeapFloor = 0;
 static uint32_t s_refusedHeapFloorDiag = 0;
 
-// Busy Recovery Page: ADR 0016 -- one shared Recovery Capacity slot for the
-// whole controller, released on disconnect-completion (same boundary as
-// ordinary admitted requests). This buffer is written directly to the raw
-// AsyncClient via write(), bypassing AsyncWebServerResponse, which is known
-// to crash under the heap pressure this gate defends against. The buffer is
-// static constexpr so Content-Length is correct by construction.
-static constexpr const char* kBusyRecoveryPageBody =
-    "<!DOCTYPE html>"
-    "<html lang=\"en\">"
-    "<head>"
-    "<meta charset=\"utf-8\">"
-    "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
-    "<title>protoArtoo - Recovery</title>"
-    "<style>"
-    "body{background:#0c1525;color:#e8edf4;font-family:system-ui,sans-serif;"
-    "display:flex;align-items:center;justify-content:center;min-height:100vh;"
-    "margin:0;padding:12px;}"
-    ".panel{background:#152238;border:1px solid #2a4a7a;border-radius:8px;"
-    "padding:20px;width:90%;max-width:340px;text-align:center;}"
-    ".status{color:#e8a832;font-size:0.8rem;font-weight:600;margin-bottom:8px;}"
-    ".title{color:#d4dde8;font-size:1rem;font-weight:700;margin:0 0 6px;}"
-    ".message{color:#e8edf4;font-size:0.8rem;line-height:1.5;margin:0 0 12px;}"
-    ".countdown{background:rgba(0,0,0,0.4);border:1px solid #2a4a7a;"
-    "border-radius:6px;padding:8px;margin:12px 0;color:#e8a832;"
-    "font-size:1.4rem;font-weight:700;font-family:monospace;}"
-    ".label{color:#a8bcd8;font-size:0.75rem;margin-bottom:4px;}"
-    ".btn{display:inline-flex;align-items:center;justify-content:center;"
-    "padding:10px 16px;background:#4a90d9;color:#f0f4f8;border:1px solid #6ab0ff;"
-    "border-radius:999px;font-size:0.85rem;font-weight:600;cursor:pointer;"
-    "min-height:38px;margin-top:12px;transition:all 0.15s ease;}"
-    ".btn:hover{background:#6ab0ff;transform:translateY(-1px);}"
-    "</style>"
-    "</head>"
-    "<body>"
-    "<div class=\"panel\">"
-    "<div class=\"status\">REQUEST REFUSED</div>"
-    "<p class=\"title\">Controller busy</p>"
-    "<p class=\"message\">Controller is handling other requests. Try again in a moment.</p>"
-    "<div class=\"label\">Retry interval</div>"
-    "<div class=\"countdown\" id=\"countdown\">5 s</div>"
-    "<button class=\"btn\" onclick=\"location.reload()\">Retry now</button>"
-    "</div>"
-    "<script>"
-    "let remaining=5;"
-    "const el=document.getElementById('countdown');"
-    "const timer=setInterval(function(){"
-    "remaining--;if(remaining<0)remaining=5;"
-    "el.textContent=remaining+' s';"
-    "},1000);"
-    "setTimeout(function(){location.reload()},5000);"
-    "</script>"
-    "</body>"
-    "</html>";
-
-static constexpr size_t kBusyRecoveryPageBodyLen = sizeof(kBusyRecoveryPageBody) - 1;
-
-// HTTP response header for Busy Recovery Page (ADR 0016).
-// Content-Length must be updated if kBusyRecoveryPageBody changes.
-static constexpr const char* kBusyRecoveryPageHeader =
-    "HTTP/1.1 503 Service Unavailable\r\n"
-    "Content-Type: text/html; charset=utf-8\r\n"
-    "Content-Length: 1852\r\n"
-    "Retry-After: 5\r\n"
-    "Connection: close\r\n"
-    "\r\n";
-
-// Recovery Capacity: one shared slot, released on disconnect-completion.
-static AsyncClient* s_busyRecoveryClient = nullptr;
-
-// Attempt to send the Busy Recovery Page to request->client(). Returns true
-// if the slot was claimed and the write was initiated; false if the slot is
-// already occupied (fall back to abort()). The response is one direct write()
-// call to bypass AsyncWebServerResponse, which is known to crash under the
-// heap pressure this gate defends against (ADR 0016).
-static bool tryBusyResponse(AsyncWebServerRequest* request) {
-    AsyncClient* client = request->client();
-    if (!client) {
-        return false;
-    }
-    if (s_busyRecoveryClient != nullptr) {
-        // Slot already occupied; fall back to abort()
-        return false;
-    }
-    s_busyRecoveryClient = client;
-    // Release the slot on disconnect-completion (same boundary as ordinary
-    // admitted requests), not on write() return (AsyncTCP sends are async).
-    client->onDisconnect([](void* arg, AsyncClient* c) {
-        if (s_busyRecoveryClient == c) {
-            s_busyRecoveryClient = nullptr;
-        }
-    }, nullptr);
-
-    // Write header and body in a single call.
-    size_t headerLen = strlen(kBusyRecoveryPageHeader);
-    size_t totalLen = headerLen + kBusyRecoveryPageBodyLen;
-    char* buffer = (char*)malloc(totalLen);
-    if (!buffer) {
-        // Allocation failed; abandon the slot and fall back to abort().
-        s_busyRecoveryClient = nullptr;
-        return false;
-    }
-    memcpy(buffer, kBusyRecoveryPageHeader, headerLen);
-    memcpy(buffer + headerLen, kBusyRecoveryPageBody, kBusyRecoveryPageBodyLen);
-
-    bool wrote = client->write(buffer, totalLen) > 0;
-    free(buffer);
-
-    if (!wrote) {
-        // Write failed; abandon the slot.
-        s_busyRecoveryClient = nullptr;
-    }
-    return wrote;
-}
-
 #if PA_HEAP_PROFILE
 // Bounded request-lifecycle trace (issue #54 evidence, profiler-gated so it
 // costs nothing in normal builds). Read after an experiment via
@@ -1272,18 +1158,20 @@ void startHttpServerOnce() {
                 PA_LOG_WARN(TAG, "SSE client cap (%u) reached; rejecting new connection",
                             (unsigned)kMaxSseClients);
                 s_refusedSseCap++;
-                if (!tryBusyResponse(request)) {
-                    request->abort();
-                }
+                request->abort();
                 return;
             }
             if (!sse && s_inflightRequests >= kMaxInflightRequests) {
-                // Attempt Busy Recovery Page (ADR 0016), fall back to abort()
-                // if the recovery slot is occupied or write fails.
+                // abort() is the only rejection that is safe under pressure:
+                // a 503 with a body still constructs a full response, whose
+                // constructor unconditionally adds a Connection header via a
+                // std::list<AsyncWebHeader> node allocation -- a separate
+                // allocation site from the response object itself, not
+                // covered by the vendor's nothrow fixes, and the proven
+                // abort() site of the burst crashes. Closing the socket
+                // allocates nothing.
                 s_refusedInflightCap++;
-                if (!tryBusyResponse(request)) {
-                    request->abort();
-                }
+                request->abort();
                 return;
             }
             // SSE counts as diagnostic: it is the operator's primary
@@ -1300,15 +1188,14 @@ void startHttpServerOnce() {
                 if (diagnostic) {
                     s_refusedHeapFloorDiag++;
                 } else {
+                    // Diagnostic rejections stay silent: they only occur
+                    // during a pressure storm, exactly when log volume
+                    // itself is unwelcome.
                     PA_LOG_WARN(TAG, "rejecting %s: largest free block %u < %u",
                                 url.c_str(), (unsigned)largestBlock, (unsigned)floor);
                     s_refusedHeapFloor++;
                 }
-                // Attempt Busy Recovery Page (ADR 0016), fall back to abort()
-                // if the recovery slot is occupied or write fails.
-                if (!tryBusyResponse(request)) {
-                    request->abort();
-                }
+                request->abort();
                 return;
             }
 #if PA_HEAP_PROFILE

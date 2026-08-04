@@ -331,12 +331,7 @@
     showFeedback(estopFeedback, targetLatched ? "Latching E-Stop..." : "Clearing E-Stop...");
 
     try {
-      // Story #32: Estop bypasses queued page work entirely -- never wait
-      // behind reads, resources, retries, or background updates.
-      await window.PAApi.postForm(targetLatched ? "/api/estop" : "/api/estop/clear", {}, {
-        timeoutMs: 3000,
-        priority: window.PAApi.PRIORITY.ESTOP,
-      });
+      await window.PAApi.postForm(targetLatched ? "/api/estop" : "/api/estop/clear", {}, { timeoutMs: 3000 });
       await refreshStatusOnce();
       showFeedback(estopFeedback, targetLatched ? "E-Stop latched" : "E-Stop clear", "success");
     } catch (error) {
