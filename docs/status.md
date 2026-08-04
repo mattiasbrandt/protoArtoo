@@ -13,10 +13,13 @@ see `CHANGELOG.md`.
 |---|---|
 | Active release target | `v1.0.0` |
 | Latest tagged release | `v0.4.0` |
+| Web control status | Previously validated workflows remain available, but an ordinary page load can currently stall before controller data appears |
 
-protoArtoo is feature-complete for `v1.0.0`. Everything a builder does day to day
-— audio, RC control, dome control, servos, the web control panel, backups, and
-firmware updates — has been tested and confirmed working on real hardware.
+The main `v1.0.0` capabilities have been tested on real hardware, including
+audio, RC control, dome control, servos, web workflows, backups, and firmware
+updates. Release readiness remains open because ordinary controller web-page
+loading is not yet reliable enough: a styled page can remain stuck on
+**Loading** without filling in controller data.
 
 Full drive-motor (hoverboard) validation on a completely assembled droid is not
 part of this release. Drive control and safety logic are implemented and tested,
@@ -35,8 +38,9 @@ for it.
 - **Dome** — dome rotation, panel sequences, lights, and body-to-dome
   communication confirmed on real hardware.
 - **Servos** — arm and other servo movement confirmed on real hardware.
-- **Web control panel** — setup, live control, backup/restore, and droid
-  identity (custom `.local` name) confirmed working.
+- **Web control workflows** — setup, live control, backup/restore, and droid
+  identity (custom `.local` name) have completed successfully in hardware
+  validation. The ordinary-load reliability limitation below still applies.
 - **Firmware and filesystem updates** — updating over WiFi and over USB both
   confirmed end-to-end, including recovering cleanly from a failed update.
 - **Safety systems** — emergency stop and RC-signal-loss failsafe confirmed,
@@ -51,6 +55,12 @@ for it.
   as follow-up work after `v1.0.0` and will be documented when complete.
 - **MP3 Trigger audio module** — an alternative to the CHIRP module some
   builders use. Not re-confirmed on hardware for this release.
+- **Ordinary web-page load reliability.** A single page open can lose an early
+  required script while the controller status endpoint remains reachable. The
+  page then looks styled but stays on **Loading** with empty fields. A recovery
+  bootstrap experiment made this failure materially worse and has been rolled
+  back; the underlying HTTP resource-delivery pressure remains under
+  investigation in [the web recovery map](https://github.com/mattiasbrandt/protoArtoo/issues/52).
 
 ## Release History
 
