@@ -862,10 +862,84 @@ def patch_response_oom_stall_member(text):
     if RESPONSE_OOM_STALL_MEMBER_AFTER not in text:
         if text.count(RESPONSE_OOM_STALL_MEMBER_BEFORE) != 1:
             raise RuntimeError(
-                "ESPAsyncWebServer WebResponseImpl.h AsyncAbstractResponse member list changed; "
+                "ESPAsyncWebServer WebResponseImpl.h AsyncAbstractResponse member list changed (oom stall); "
                 "review tools/patch_async_sse.py"
             )
         text = text.replace(RESPONSE_OOM_STALL_MEMBER_BEFORE, RESPONSE_OOM_STALL_MEMBER_AFTER)
+
+    return text
+
+
+# Issue #60/#67 (distinct from the OOM-stall guard above, same function): a
+# zero-length read from _readDataFromCacheOrContent() is treated as
+# unconditional EOF, even when the response's own declared Content-Length
+# says there should be more data. Under heap pressure a file/content read can
+# come back short or empty without that meaning "truly done" -- the response
+# still transitions to RESPONSE_END and the connection closes having sent
+# fewer bytes than promised, which is exactly issue #60's live
+# net::ERR_CONTENT_LENGTH_MISMATCH. Only treat a zero read as done when the
+# declared length has actually been reached (or is unknown); otherwise retry
+# a bounded number of times, same discipline as the OOM-stall guard.
+STATIC_RESPONSE_SHORT_READ_BEFORE = """\
+        if (readLen == 0) {
+          // no more data to send
+          _state = RESPONSE_END;
+        } else if (readLen != RESPONSE_TRY_AGAIN) {
+"""
+
+STATIC_RESPONSE_SHORT_READ_AFTER = """\
+        if (readLen == 0) {
+          if (_sendContentLength && _sentLength < _contentLength) {
+#ifndef ASYNC_RESPONSE_SHORT_READ_STALL_MAX
+#define ASYNC_RESPONSE_SHORT_READ_STALL_MAX 10
+#endif
+            // Content-Length says we're not done -- this zero read is a
+            // stall, not EOF. Bound the retries and fail fast once exceeded,
+            // instead of closing early with a truncated body (issue #60).
+            if (++_shortReadStallCount >= ASYNC_RESPONSE_SHORT_READ_STALL_MAX) {
+              request->client()->close();
+              return 0;
+            }
+          } else {
+            // no more data to send
+            _state = RESPONSE_END;
+          }
+        } else if (readLen != RESPONSE_TRY_AGAIN) {
+          _shortReadStallCount = 0;
+"""
+
+
+def patch_static_response_short_read(text):
+    if STATIC_RESPONSE_SHORT_READ_AFTER not in text:
+        if text.count(STATIC_RESPONSE_SHORT_READ_BEFORE) != 1:
+            raise RuntimeError(
+                "ESPAsyncWebServer WebResponses.cpp readLen==0 EOF branch changed; "
+                "review tools/patch_async_sse.py"
+            )
+        text = text.replace(STATIC_RESPONSE_SHORT_READ_BEFORE, STATIC_RESPONSE_SHORT_READ_AFTER)
+
+    return text
+
+
+RESPONSE_SHORT_READ_MEMBER_BEFORE = "  uint8_t _oomStallCount{0};\n"
+
+RESPONSE_SHORT_READ_MEMBER_AFTER = """\
+  uint8_t _oomStallCount{0};
+  // Consecutive zero-length reads received while Content-Length says the
+  // response isn't done yet (issue #60/#67). See the readLen==0 branch in
+  // write_send_buffs, WebResponses.cpp.
+  uint8_t _shortReadStallCount{0};
+"""
+
+
+def patch_response_short_read_member(text):
+    if RESPONSE_SHORT_READ_MEMBER_AFTER not in text:
+        if text.count(RESPONSE_SHORT_READ_MEMBER_BEFORE) != 1:
+            raise RuntimeError(
+                "ESPAsyncWebServer WebResponseImpl.h AsyncAbstractResponse member list changed (short read); "
+                "review tools/patch_async_sse.py"
+            )
+        text = text.replace(RESPONSE_SHORT_READ_MEMBER_BEFORE, RESPONSE_SHORT_READ_MEMBER_AFTER)
 
     return text
 
@@ -971,6 +1045,17 @@ def patch_async_webserver(env):
         patch_static_response_oom_stall,
         "bounded write_send_buffs OOM retries so a fragmented heap fails the "
         "response fast instead of stalling it indefinitely (issue #67)",
+    )
+    patch_file(
+        source_dir / "WebResponseImpl.h",
+        patch_response_short_read_member,
+        "added AsyncAbstractResponse short-read-stall counter (issue #60/#67)",
+    )
+    patch_file(
+        source_dir / "WebResponses.cpp",
+        patch_static_response_short_read,
+        "stopped a premature zero-length read from being treated as EOF "
+        "before Content-Length is reached (issue #60/#67)",
     )
     patch_file(
         source_dir / "AsyncEventSource.cpp",
