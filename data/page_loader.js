@@ -46,13 +46,20 @@
     });
   };
 
-  const loadStylesheet = () => {
+  const loadStylesheet = (attempt = 1) => {
     const stylesheet = document.createElement("link");
     stylesheet.rel = "stylesheet";
     stylesheet.href = "/style.css";
     stylesheet.onload = () => loadNext(0);
     stylesheet.onerror = () => {
-      console.error("[page-loader] Failed to load /style.css");
+      stylesheet.remove();
+      if (attempt < MAX_SCRIPT_ATTEMPTS) {
+        console.warn(`[page-loader] Retrying /style.css (attempt ${attempt + 1})`);
+        window.setTimeout(() => loadStylesheet(attempt + 1), RETRY_DELAY_MS * attempt);
+        return;
+      }
+      console.error(`[page-loader] Failed to load /style.css after ${attempt} attempts`);
+      loadNext(0);
     };
     document.head.appendChild(stylesheet);
   };
