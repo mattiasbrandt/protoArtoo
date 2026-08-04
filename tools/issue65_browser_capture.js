@@ -256,6 +256,41 @@ async function bounded(label, action, artifactErrors, timeoutMs = 2_000) {
   }
 }
 
+async function captureTerminalScreenshots(
+  page,
+  artifacts,
+  artifactErrors,
+  deadline,
+) {
+  // Chromium screenshot capture waits for pending stylesheet/font work. A
+  // response that never finishes can therefore block the protocol command
+  // even though the page is visibly rendered. The workload ledger is already
+  // frozen at this point, so stop only the browser's existing in-flight loads
+  // before capturing the visible terminal state. This starts no new requests.
+  const stopped = await bounded(
+    "stop unfinished page loads for screenshots",
+    () => page.evaluate(() => {
+      window.stop();
+      return true;
+    }),
+    artifactErrors,
+    Math.max(1, Math.min(300, deadline - performance.now() - CLOSE_RESERVE_MS)),
+  );
+  if (stopped !== true) return;
+  await bounded(
+    "viewport screenshot",
+    () => page.screenshot({ path: artifacts.viewport }),
+    artifactErrors,
+    Math.max(1, Math.min(700, deadline - performance.now() - CLOSE_RESERVE_MS)),
+  );
+  await bounded(
+    "full-page screenshot",
+    () => page.screenshot({ path: artifacts.full, fullPage: true }),
+    artifactErrors,
+    Math.max(1, Math.min(700, deadline - performance.now() - CLOSE_RESERVE_MS)),
+  );
+}
+
 async function collectDomState(page, role) {
   return page.evaluate(async (expectedRole) => {
     const element = (selector) => document.querySelector(selector);
@@ -687,17 +722,11 @@ async function runCapture(config) {
       Math.max(1, Math.min(400, deadline - performance.now() - CLOSE_RESERVE_MS)),
     );
     if (finalHtml !== null) fs.writeFileSync(artifacts.dom, finalHtml);
-    await bounded(
-      "viewport screenshot",
-      () => page.screenshot({ path: artifacts.viewport }),
+    await captureTerminalScreenshots(
+      page,
+      artifacts,
       artifactErrors,
-      Math.max(1, Math.min(700, deadline - performance.now() - CLOSE_RESERVE_MS)),
-    );
-    await bounded(
-      "full-page screenshot",
-      () => page.screenshot({ path: artifacts.full, fullPage: true }),
-      artifactErrors,
-      Math.max(1, Math.min(700, deadline - performance.now() - CLOSE_RESERVE_MS)),
+      deadline,
     );
 
     // Stop page timers, polling, and SSE before deriving or writing results.
@@ -824,6 +853,10 @@ async function main() {
   }
 }
 
-main().then((code) => {
-  process.exitCode = code;
-});
+if (require.main === module) {
+  main().then((code) => {
+    process.exitCode = code;
+  });
+}
+
+module.exports = { captureTerminalScreenshots };

@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 import re
 import select
+import shlex
 import shutil
 import subprocess
 import sys
@@ -946,6 +947,7 @@ def run_logged(
     events: list[dict[str, object]],
     event: str,
     append: bool = False,
+    environment: Mapping[str, str] | None = None,
 ) -> subprocess.CompletedProcess[bytes]:
     """Run bounded list argv, combining output in one named evidence artifact."""
     if (
@@ -972,6 +974,7 @@ def run_logged(
                 result = subprocess.run(
                     argv,
                     cwd=cwd,
+                    env=environment,
                     stdout=log,
                     stderr=subprocess.STDOUT,
                     check=False,
@@ -1389,6 +1392,90 @@ def _replace_file_atomically(source: Path, destination: Path) -> None:
             temporary.unlink()
 
 
+@contextmanager
+def _temporary_git_identity_wrapper(
+    worktree: Path,
+    *,
+    scratch_directory: Path,
+    expected_descriptor: str,
+):
+    """Return locked clean identity for one exact build-time Git query.
+
+    The authorized B patcher shim must be visible to PlatformIO, but it must not
+    add ``-dirty`` to the fixed commit identity. A temporary PATH entry
+    intercepts only the exact query made by ``extract_version.py`` and delegates
+    every other Git invocation to the real executable.
+    """
+    worktree = Path(worktree)
+    scratch_directory = Path(scratch_directory)
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9.+_-]*", expected_descriptor):
+        raise Issue65RuntimeError(
+            f"invalid clean Git descriptor for build identity: {expected_descriptor!r}"
+        )
+    real_git = shutil.which("git")
+    if not real_git:
+        raise Issue65RuntimeError("real git executable is unavailable")
+    real_git_path = Path(real_git).resolve()
+    try:
+        actual_descriptor = subprocess.check_output(
+            [
+                str(real_git_path),
+                "describe",
+                "--tags",
+                "--always",
+                "--long",
+                "--dirty",
+            ],
+            cwd=worktree,
+            stderr=subprocess.DEVNULL,
+            timeout=GIT_TIMEOUT_SECONDS,
+            text=True,
+        ).strip()
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
+        raise Issue65RuntimeError(
+            "could not validate the shimmed Git descriptor"
+        ) from error
+    if actual_descriptor != f"{expected_descriptor}-dirty":
+        raise Issue65RuntimeError(
+            "the build worktree has changes beyond the authorized identity "
+            f"shim: expected {expected_descriptor}-dirty, found {actual_descriptor}"
+        )
+    wrapper_directory = scratch_directory / "git-identity-bin"
+    wrapper = wrapper_directory / "git"
+    if wrapper_directory.exists():
+        raise Issue65RuntimeError(
+            f"temporary Git identity wrapper already exists: {wrapper_directory}"
+        )
+    wrapper_directory.mkdir()
+    script = (
+        "#!/bin/sh\n"
+        "if [ \"$#\" -eq 5 ] && [ \"$1\" = \"describe\" ] && "
+        "[ \"$2\" = \"--tags\" ] && [ \"$3\" = \"--always\" ] && "
+        "[ \"$4\" = \"--long\" ] && [ \"$5\" = \"--dirty\" ]; then\n"
+        f"  printf '%s\\n' {shlex.quote(expected_descriptor)}\n"
+        "else\n"
+        f"  exec {shlex.quote(str(real_git_path))} \"$@\"\n"
+        "fi\n"
+    )
+    try:
+        with wrapper.open("x", encoding="utf-8") as output_file:
+            output_file.write(script)
+            output_file.flush()
+            os.fsync(output_file.fileno())
+        wrapper.chmod(0o700)
+        _fsync_directory(wrapper_directory)
+        environment = os.environ.copy()
+        environment["PATH"] = (
+            str(wrapper_directory)
+            + os.pathsep
+            + environment.get("PATH", os.defpath)
+        )
+        yield environment
+    finally:
+        wrapper.unlink(missing_ok=True)
+        wrapper_directory.rmdir()
+
+
 def _restore_b_pristine_webresponses(
     report: Mapping[str, Any],
     bundle: EvidenceBundle,
@@ -1472,7 +1559,7 @@ def _temporary_b_build_shim(
     """Apply B's authorized recognition-only build shim, then restore it."""
     run = report["plannerPlan"]["run"]
     if run["role"] != "B":
-        yield
+        yield None
         return
 
     worktree = Path(report["plannerPlan"]["paths"]["worktree"])
@@ -1502,6 +1589,23 @@ def _temporary_b_build_shim(
         raise Issue65RuntimeError(
             "exact B patcher does not match the locked original state: "
             f"{destination_digest}"
+        )
+    descriptor_ok, clean_descriptor = git_query(
+        worktree,
+        "describe",
+        "--tags",
+        "--always",
+        "--long",
+        "--dirty",
+    )
+    if (
+        not descriptor_ok
+        or not clean_descriptor
+        or clean_descriptor.endswith("-dirty")
+    ):
+        raise Issue65RuntimeError(
+            "exact B worktree did not have a clean Git descriptor before "
+            f"the temporary build shim: {clean_descriptor}"
         )
 
     _replace_file_atomically(destination, backup)
@@ -1536,7 +1640,17 @@ def _temporary_b_build_shim(
             "temporaryBuildShims", []
         ).append(shim_record)
         atomic_write_json(bundle.root / "manifest.json", bundle.manifest)
-        yield
+        with _temporary_git_identity_wrapper(
+            worktree,
+            scratch_directory=backup_directory,
+            expected_descriptor=clean_descriptor,
+        ) as environment:
+            applied["gitIdentityWrapper"] = environment["PATH"].split(
+                os.pathsep, 1,
+            )[0]
+            applied["cleanGitDescriptor"] = clean_descriptor
+            atomic_write_json(bundle.root / "manifest.json", bundle.manifest)
+            yield environment
     finally:
         _replace_file_atomically(backup, destination)
         restored_digest = sha256_file(destination)
@@ -1662,7 +1776,7 @@ def deploy_pair(
         )
         with _temporary_b_build_shim(
             report, bundle, before_event="firmware-build",
-        ):
+        ) as build_environment:
             run_logged(
                 list(report["futureExecutionArgv"]["buildFirmware"]),
                 cwd=worktree,
@@ -1672,6 +1786,7 @@ def deploy_pair(
                 events=bundle.events,
                 event="firmware-build",
                 append=True,
+                environment=build_environment,
             )
         _verify_b_final_webresponses(
             report, bundle, after_event="firmware-build",
@@ -1697,7 +1812,7 @@ def deploy_pair(
         )
         with _temporary_b_build_shim(
             report, bundle, before_event="filesystem-upload",
-        ):
+        ) as build_environment:
             run_logged(
                 list(report["futureExecutionArgv"]["uploadFilesystem"]),
                 cwd=worktree,
@@ -1707,6 +1822,7 @@ def deploy_pair(
                 events=bundle.events,
                 event="filesystem-upload",
                 append=True,
+                environment=build_environment,
             )
         _verify_b_final_webresponses(
             report, bundle, after_event="filesystem-upload",
