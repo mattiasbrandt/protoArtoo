@@ -454,6 +454,7 @@ async function runCapture(config) {
   const attempts = [];
   const attemptByRequest = new WeakMap();
   const artifactErrors = [];
+  const sampleErrors = [];
   let browserServer;
   let browser;
   let context;
@@ -633,7 +634,7 @@ async function runCapture(config) {
       const domState = await bounded(
         "DOM readiness sample",
         () => collectDomState(page, fixed.role),
-        artifactErrors,
+        sampleErrors,
         Math.min(1_000, sampleBudget),
       );
       if (domState) finalDomState = domState;
@@ -760,6 +761,7 @@ async function runCapture(config) {
       sseState: classifySse(workloadAttempts, finalDomState),
       domState: finalDomState,
       attempts: workloadAttempts,
+      sampleErrors,
       artifactErrors,
     };
     fs.writeFileSync(artifacts.state, `${JSON.stringify(result, null, 2)}\n`);
@@ -769,6 +771,7 @@ async function runCapture(config) {
       captureStatus,
       domCandidateAt,
       usableAt,
+      sampleErrors,
       artifactErrors,
       output: config.out,
     })}\n`);
