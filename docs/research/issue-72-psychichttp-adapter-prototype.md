@@ -2,7 +2,7 @@
 
 **Date**: 2026-08-04
 **Purpose**: Prototype a project-owned PsychicHttp adapter to answer key questions and measure page-load behavior before the full Browser Load Profile workload (#73).
-**Status**: Complete — real handlers wired and running, not stubs. See "Revision history" at the bottom; this document was corrected after an operator review found the first draft's admission cap didn't work and `/api/status` never sent a response.
+**Status**: Complete and **live-hardware-verified** — flashed to the physical board (10.0.0.22), `/api/status` and `/api/events` both confirmed serving real data over HTTP. See "Revision history" at the bottom for two full rounds of defects found and fixed after this document's first draft claimed completion: an admission cap that didn't work and a `/api/status` that never responded (caught by source-level review before ever touching hardware), then a WiFi bring-up regression and a missing `server.begin()` call that made the first hardware flash completely unreachable (caught only by actually flashing it).
 
 ---
 
@@ -93,21 +93,26 @@ The first draft of this document framed this correctly as "no queue, TCP hardwar
 - **Environment**: `env:protoArtoo_psychichttp_prototype`
 - **Command**: `pio run -e protoArtoo_psychichttp_prototype`
 - **Result**: SUCCESS, 20.99s
-- **Flash**: 1,462,472 bytes (85.8%) — down from the first draft's 93.1% once `main.cpp` genuinely stopped linking both server stacks' reachable code
-- **RAM**: 106,136 bytes (32.4%) — down from 36.1% for the same reason
+- **Flash**: 1,481,088 bytes (~87%) / **RAM**: ~35% — see "Revision history" for why this is higher than an earlier build; correctness (WiFi actually working) took priority over a marginally smaller number.
 
 ### Functional Testing
 
-**Still not performed** — this remains compile-verified plus source-level structural verification (the dispatch-order and SSE-send-loop findings above are read directly from PsychicHttp's real source, not asserted from docs or untested code). Actually exercising the admission cap, SSE reconnect, and stalled-client behavior under load requires live hardware — that is #73's scope, not this ticket's.
+**Performed live, on the physical board (10.0.0.22)**, after two real defects were found and fixed post-hoc — see "Revision history":
+- OTA-flashed first; the device went **fully unreachable** (HTTP and ICMP both) — traced to `main.cpp` skipping `webServerInit()` entirely to dodge a port-80 conflict, which also skipped WiFi bring-up (`webServerInit()` registers the `WiFi.onEvent` handler that `handleWiFiEvent()` uses to actually call `WiFi.begin()`/`WiFi.softAP()`). Diagnosed via a manual DTR/RTS reset pulse + serial capture (the default `serial_monitor.py` capture attached too late and missed the actual boot sequence entirely).
+- Fixed by reverting `main.cpp` and moving the PsychicHttp-vs-ESPAsyncWebServer swap to `startHttpServerOnce()` — the real seam inside `handleWiFiEvent()`, triggered only once WiFi is actually connected.
+- USB-reflashed; WiFi came up (confirmed via ping and a clean serial boot log) but `curl` got connection-refused on every request — `initPsychicHttpServer()` never called `server.begin()` (`begin()`/`start()` → `httpd_start()`). Registering routes/filters/middleware only configures the server; nothing was told to listen. Fixed, with the return value checked.
+- Re-flashed again: clean boot log shows `WiFi bootstrap: client mode` → `WiFi connected, IP: 10.0.0.22` → `psychic_adapter: PsychicHttp server listening on port 80`. `curl http://10.0.0.22/api/status` returns a full real JSON status snapshot; `inflightRequests` correctly reads `0` after the request completes (confirms the admission-counter fix from the first revision actually works under real HTTP, not just in the source-level dispatch-order read). `curl -N http://10.0.0.22/api/events` streams a real `event: status` payload immediately on connect.
+
+This confirms the server actually runs end-to-end on real hardware — not just that it compiles. It does **not** yet confirm the admission cap or SSE behavior under actual load/pressure; that remains #73's scope, listed below.
 
 ---
 
 ## What Still Needs Hardware Testing (#73 Scope)
 
-1. **Page load latency**: static file serving and `/api/status` timing vs. the current stack.
-2. **SSE reconnect behavior**: tab hide/show, network roam, browser-driven reconnect using PsychicHttp's `retry:` field (`client->send(msg, event, id, reconnect)` — not yet exercised in this prototype).
+1. **Page load latency**: static file serving and `/api/status` timing vs. the current stack, under the full Browser Load Profile (not just a single manual curl).
+2. **SSE reconnect behavior**: tab hide/show, network roam, browser-driven reconnect using PsychicHttp's `retry:` field (`client->send(msg, event, id, reconnect)` — not yet exercised).
 3. **Stalled-client behavior**: does the blocking `httpd_socket_send()` retry loop identified above cause observable stalls or heap pressure under a real half-open connection, and does isolating it to `sseBroadcastTask` actually contain the risk as intended?
-4. **Admission cap effectiveness under real concurrent load**: the filter/middleware pairing is now structurally correct per the source read above, but has not been exercised under actual concurrent requests on hardware.
+4. **Admission cap effectiveness under real concurrent load**: confirmed correct for a single sequential request (increments then releases back to 0); not yet exercised under actual concurrent/overlapping requests or heap pressure.
 5. **Rejection-path cost**: whether PsychicHttp's `send(400)`-on-reject path (vs. the current stack's cheaper `abort()`) is measurably more expensive under heap pressure — directly relevant to whether admission rejection stays cheap when it matters most.
 
 ---
@@ -130,4 +135,10 @@ The first draft of this document framed this correctly as "no queue, TCP hardwar
 2. The admission counter was incremented on every admitted request with no decrement anywhere, making the "inflight cap" a one-time "first 6 requests ever" lockout.
 3. `initPsychicHttpServer()` was never called from anywhere reachable — the server would never have started even if flashed.
 
-The draft also mislabeled the admission-timing finding as "✓ VERIFIED / CONFIRMED" while its own "Functional Testing" section admitted no test was actually run, and incorrectly claimed a filter rejection sends a bare TCP RST (it sends a real HTTP 400) and that "PsychicHttp depends on ESPAsyncWebServer" (both were linked only because the prototype env extends `protoArtoo_chirp`, which retains ESPAsyncWebServer in `lib_deps`, and nothing stripped it out — not an actual PsychicHttp dependency). This revision fixes all of the above and re-verifies both headline findings against PsychicHttp's real source rather than its docs.
+The draft also mislabeled the admission-timing finding as "✓ VERIFIED / CONFIRMED" while its own "Functional Testing" section admitted no test was actually run, and incorrectly claimed a filter rejection sends a bare TCP RST (it sends a real HTTP 400) and that "PsychicHttp depends on ESPAsyncWebServer" (both were linked only because the prototype env extends `protoArtoo_chirp`, which retains ESPAsyncWebServer in `lib_deps`, and nothing stripped it out — not an actual PsychicHttp dependency). This revision fixed all of the above and re-verified both headline findings against PsychicHttp's real source rather than its docs.
+
+**Second revision (this one) — the "fixed" version above still did not actually work on hardware**, because it had never been flashed. Two more real defects surfaced only by flashing it:
+1. `main.cpp` skipped `webServerInit()` entirely to avoid a port-80 conflict, not realizing that function also owns WiFi bring-up (`WiFi.onEvent` registration feeding `handleWiFiEvent()` → `executeWifiBootPosture()`). The device went fully unreachable — not a crash, just a radio that never turned on.
+2. `initPsychicHttpServer()` never called `server.begin()`. The first draft's own comment had flagged this as an open question ("starts automatically on construction, or via begin()") and the rewrite silently dropped the call instead of resolving it, so nothing was ever told to actually listen on the socket.
+
+Both are now fixed (see commit `850cac4`): the server swap moved to the correct seam (`startHttpServerOnce()`, gated on WiFi actually being connected), and `server.begin()` is called with its return value checked. Live-verified on the physical board: WiFi connects, the server listens, `/api/status` and `/api/events` both serve real data. Lesson for this map (also added to #53's Notes): compile success and even source-level structural verification are not sufficient for a prototype ticket — flash it before calling it done.
