@@ -56,6 +56,11 @@ static uint32_t s_refusedInflightCap = 0;
 static const uint32_t kMinLargestFreeBlockForNewWork = 9000;  // bytes
 static const uint32_t kMaxInflightRequests = 6;
 
+// Cached, not scanned live in the request path -- see admissionFilter()'s
+// comment for why. Refreshed once/second by backgroundMaintenanceTask().
+// Starts optimistic (no false heap-floor rejection before the first refresh).
+static uint32_t s_cachedLargestFreeBlock = UINT32_MAX;
+
 // =============================================================================
 // Admission filter -- runs BEFORE endpoint matching, static-file open, and
 // request body access.
@@ -92,7 +97,21 @@ static bool admissionFilter(PsychicRequest* request) {
     return false;
   }
 
-  uint32_t largestBlock = (uint32_t)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+  // Read the cached value, do NOT call heap_caps_get_largest_free_block()
+  // here. The current stack's own admission check (largestFreeBlock8Bit(),
+  // web_server.cpp) DOES scan live per-request and works fine -- but that's
+  // running on ESPAsyncWebServer's fully-async model, where one connection's
+  // handler cost doesn't stall others. PsychicHttp/esp_http_server's default
+  // config runs one round-robin task servicing one connection at a time
+  // (confirmed: Espressif's own esp_http_server docs, "selected in a round
+  // robin fashion in the server task loop"). Live-reproduced (issue #73):
+  // with a live per-request heap scan in this filter, 2 genuinely concurrent
+  // requests failed 1 of 2 with a parser-level HTTP 400, every time; with the
+  // scan removed, 9/9 concurrent requests across 3 rounds succeeded; with it
+  // restored, the failures came back identically. This is a real port gap,
+  // not a PsychicHttp defect: any per-request work tolerated on the async
+  // stack needs re-auditing for cost when porting to this single-task model.
+  uint32_t largestBlock = s_cachedLargestFreeBlock;
   if (largestBlock < kMinLargestFreeBlockForNewWork) {
     s_refusedHeapFloor++;
     printf("WARN: psychic_adapter: rejecting %s, heap floor critical (largest=%" PRIu32 ", min=%" PRIu32 ")\n",
@@ -152,20 +171,29 @@ static esp_err_t handleStatus(PsychicRequest* request, PsychicResponse* response
 }
 
 // =============================================================================
-// SSE periodic status broadcast.
+// Background maintenance: SSE periodic status broadcast + heap-cache refresh.
 //
-// The real eventStreamTask (web_server.cpp) also sends "rc" and "log" events
-// and is driven by an on-demand broadcast-request flag rather than a fixed
-// timer. This prototype intentionally sends only the "status" event, on a
-// fixed 1s interval, gated on eventSource->count() > 0 (matching the real
-// task's gate) -- enough to exercise a live SSE stream with real payloads for
-// #73's stalled-client test, not a full port of the event-stream task's
-// scheduling logic. Documented as a scope boundary in the findings doc.
+// SSE: the real eventStreamTask (web_server.cpp) also sends "rc" and "log"
+// events and is driven by an on-demand broadcast-request flag rather than a
+// fixed timer. This prototype intentionally sends only the "status" event,
+// on a fixed 1s interval, gated on eventSource->count() > 0 (matching the
+// real task's gate) -- enough to exercise a live SSE stream with real
+// payloads for #73's stalled-client test, not a full port of the
+// event-stream task's scheduling logic. Documented as a scope boundary in
+// the findings doc.
+//
+// Heap cache: see admissionFilter()'s comment for why this must not be
+// scanned live in the request path on this server. 1s staleness is an
+// acceptable tradeoff for a prototype; a production port would want this
+// tied to the same cadence the current stack already uses for its own
+// periodic diagnostics sampling, not invented fresh here.
 // =============================================================================
 
-static void sseBroadcastTask(void* /*param*/) {
+static void backgroundMaintenanceTask(void* /*param*/) {
   static char body[3072];
   for (;;) {
+    s_cachedLargestFreeBlock = (uint32_t)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+
     if (eventSource != nullptr && eventSource->count() > 0) {
       if (buildStatusJson(body, sizeof(body))) {
         eventSource->send(body, "status", millis());
@@ -230,7 +258,7 @@ void initPsychicHttpServer() {
   server.on("/api/events", eventSource);
 
   if (s_broadcastTaskHandle == nullptr) {
-    xTaskCreatePinnedToCore(sseBroadcastTask, "PsychicSSE", 4096, nullptr, 1, &s_broadcastTaskHandle, 0);
+    xTaskCreatePinnedToCore(backgroundMaintenanceTask, "PsychicMaint", 4096, nullptr, 1, &s_broadcastTaskHandle, 0);
   }
 
   // server.on()/serveStatic()/addFilter()/addMiddleware() above only
