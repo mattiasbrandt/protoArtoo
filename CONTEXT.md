@@ -164,6 +164,10 @@ _Avoid_: hidden polling, hidden retry loop, aborting a useful response only beca
 The bounded lifetime assigned to one kind of controller request. Ordinary page work uses a short measured deadline; known longer operations use an appropriate longer deadline and visible progress. A deadline extends only when measurable forward progress occurs.
 _Avoid_: one timeout for every operation, indefinite request, extending on meaningless activity, stopping healthy long work while progress is visible
 
+**Response-Phase Watchdog**:
+The bounded safety guard for an admitted, ordinary non-SSE HTTP response. It covers the response phase after application admission; it does not promise coverage of connection acceptance, request parsing or upload receipt, or intentionally long-lived live updates.
+_Avoid_: end-to-end request watchdog, upload watchdog, SSE timeout
+
 **Page Load Memory Recovery**:
 The controller condition after page-loading activity stops: request and connection counts return to their resting values, usable heap settles within a measured warmed range, failed allocations stop increasing, and the controller remains responsive without a panic, reboot, or power cycle. The concrete pass/fail envelope (heap/largest-block range, cooldown timing, resting-count definitions, failed-allocation rule, stop conditions) is locked in ADR 0017, scoped to production builds only; the rapid-refresh/3-tab-burst and Mobile Safari scenario classes remain explicitly open pending further evidence rather than carrying invented numbers.
 _Avoid_: judging only whether a page appeared, comparing only with cold boot, accepting a lower heap level after every cycle, hiding recovery behind a restart, applying the same envelope to the profiler build
