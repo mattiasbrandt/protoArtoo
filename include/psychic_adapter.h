@@ -8,10 +8,9 @@
 
 #ifdef PA_USE_PSYCHICHTTP_PROTOTYPE
 
-/// Initialize PsychicHttp server (replaces AsyncWebServer in prototype mode).
+/// Initialize and start the PsychicHttp server (issue #72 prototype).
+/// Mutually exclusive with webServerInit() -- called instead of it, not
+/// alongside it, since both would try to bind port 80.
 void initPsychicHttpServer();
-
-/// Broadcast an SSE event to all connected clients.
-void broadcastEvent(const char* eventType, const char* data);
 
 #endif  // PA_USE_PSYCHICHTTP_PROTOTYPE

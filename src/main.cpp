@@ -31,6 +31,9 @@
 #include "sequence_dispatcher.h"
 #include "servo_task.h"
 #include "web_server.h"
+#ifdef PA_USE_PSYCHICHTTP_PROTOTYPE
+#include "psychic_adapter.h"
+#endif
 
 // Global state — all tasks share these
 RobotState robotState = {};
@@ -318,8 +321,16 @@ void setup() {
         }
     }
 
-    // Start WiFi AP and web server
+    // Start WiFi AP and web server.
+    // issue #72 prototype: PsychicHttp replaces ESPAsyncWebServer entirely in
+    // this build (both would try to bind port 80) rather than running
+    // alongside it -- matches the "one build at a time" evaluation design in
+    // #53's map, not a permanent runtime toggle.
+#ifdef PA_USE_PSYCHICHTTP_PROTOTYPE
+    initPsychicHttpServer();
+#else
     webServerInit();
+#endif
 
     uint16_t bootTrack = 0;
     ConfigSnapshot bootCfg = {};
