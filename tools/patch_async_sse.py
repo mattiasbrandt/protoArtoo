@@ -1339,7 +1339,10 @@ def patch_abstract_response_tcp_diagnostics(text):
             ABSTRACT_RESPONSE_TCP_DIAGNOSTICS_DECLARATIONS_AFTER,
         )
 
-    if ABSTRACT_RESPONSE_TCP_DIAGNOSTICS_AFTER not in text:
+    if (
+        ABSTRACT_RESPONSE_TCP_DIAGNOSTICS_AFTER not in text
+        and ABSTRACT_RESPONSE_TCP_MSS_CAP_AFTER not in text
+    ):
         original_count = text.count(ABSTRACT_RESPONSE_TCP_ADD_PROGRESS_AFTER)
         previous_count = text.count(ABSTRACT_RESPONSE_TCP_DIAGNOSTICS_PREVIOUS_AFTER)
         if original_count + previous_count != 1:

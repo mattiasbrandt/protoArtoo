@@ -504,6 +504,18 @@ class PatchAsyncWebServerTest(unittest.TestCase):
         self.assertNotIn("void webResponseTcpRecordZeroProgress();", patched)
         self.assertEqual(PATCH.patch_abstract_response_tcp_diagnostics(patched), patched)
 
+    def test_abstract_response_tcp_diagnostics_recognizes_mss_cap_pipeline_output(self):
+        """A repeated pre-build pass must accept the later MSS-cap output."""
+        source = (
+            PATCH.ABSTRACT_RESPONSE_TCP_DIAGNOSTICS_DECLARATIONS_AFTER
+            + PATCH.ABSTRACT_RESPONSE_TCP_MSS_CAP_AFTER
+        )
+
+        self.assertEqual(
+            PATCH.patch_abstract_response_tcp_diagnostics(source),
+            source,
+        )
+
     def test_abstract_response_zero_read_patch_rejects_vendor_drift(self):
         source = (
             PATCH.ABSTRACT_RESPONSE_ZERO_READ_BEFORE
