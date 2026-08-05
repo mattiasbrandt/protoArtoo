@@ -13,6 +13,13 @@ than re-deriving them.
 Stages (see --stage): preflight -> identity -> build (conditional) -> full
 (power-cycle/sampling/browser-capture/cooldown/outcome/retry — added once the
 earlier stages are verified against the live controller).
+
+--stage full drives two browser captures in sequence: the single-tab capture
+(tools/webload_browser_capture.js) and then the multi-tab capture
+(tools/webload_multitab_capture.js), each followed by its own cooldown. Both
+land in outcome.json's `captures` list in the same shape, so a comparison run
+is one harness invocation rather than a scripted capture plus a hand-driven
+one.
 """
 from __future__ import annotations
 
@@ -36,6 +43,13 @@ ISSUE = 66
 REPO_ROOT = Path(__file__).resolve().parents[1]
 EVIDENCE_ROOT = REPO_ROOT / "tasks" / "evidence" / "webload"
 BROWSER_COLLECTOR = REPO_ROOT / "tools" / "webload_browser_capture.js"
+MULTITAB_COLLECTOR = REPO_ROOT / "tools" / "webload_multitab_capture.js"
+# 3 is the full Browser Load Profile: two steady tabs for the whole window plus
+# a brief third-tab overlap, so the default run covers both the two-tab and the
+# three-tab scenario without a second invocation. --multitab-tabs 2 drops the
+# third tab when only the steady-state pair is wanted.
+MULTITAB_DEFAULT_TABS = 3
+MULTITAB_TAB_CHOICES = (2, 3)
 BASELINE_ANCESTOR_SHA = "4b239ff2e215f265151fe5523b6fbcd8320dca7e"
 DEFAULT_CONTROLLER = "10.0.0.22"
 DEFAULT_SERIAL_PORT = (
@@ -75,6 +89,26 @@ def build_parser() -> argparse.ArgumentParser:
         "--force-build",
         action="store_true",
         help="run make ota-chirp even if /api/identity already matches the local tip",
+    )
+    parser.add_argument(
+        "--multitab-tabs",
+        type=int,
+        choices=MULTITAB_TAB_CHOICES,
+        default=MULTITAB_DEFAULT_TABS,
+        help=(
+            f"peak tab count for the --stage full multi-tab capture (default: "
+            f"{MULTITAB_DEFAULT_TABS}). 3 runs two steady tabs plus a brief third-tab "
+            "overlap, covering both scenarios in one run; 2 keeps only the steady pair."
+        ),
+    )
+    parser.add_argument(
+        "--skip-multitab",
+        action="store_true",
+        help=(
+            "omit the multi-tab capture from --stage full. Only for comparing against "
+            "an evidence bundle captured before multi-tab was part of the sequence -- "
+            "a run recorded with this flag is not comparable to a default run."
+        ),
     )
     parser.add_argument(
         "--dev-reboot",
@@ -140,6 +174,10 @@ def run_preflight(args: argparse.Namespace) -> dict[str, Any]:
 
     checks.append(check(
         "browser-collector-exists", str(BROWSER_COLLECTOR), BROWSER_COLLECTOR.is_file(),
+    ))
+
+    checks.append(check(
+        "multitab-collector-exists", str(MULTITAB_COLLECTOR), MULTITAB_COLLECTOR.is_file(),
     ))
 
     evidence_dir = EVIDENCE_ROOT / args.run_id
@@ -545,19 +583,39 @@ def _try_api_reboot(controller: str) -> bool:
 
 
 def _run_browser_capture(
-    argv: list[str], log_path: Path, bundle: Bundle, arbiter: "r65.StopArbiter",
-) -> tuple[int, dict[str, object] | None]:
-    """Own the browser collector subprocess exactly as #65's runtime does:
-    bounded ownership deadline, hard-kill on overrun, read back page-state.json."""
-    bundle.events.append(bundle.timeline.record("browser-capture-started", argv=argv))
+    name: str,
+    argv: list[str],
+    log_path: Path,
+    state_path: Path,
+    bundle: Bundle,
+    ownership_deadline_seconds: float,
+) -> dict[str, Any]:
+    """Own a browser collector subprocess exactly as #65's runtime does:
+    bounded ownership deadline, hard-kill on overrun, read back page-state.json.
+
+    Both collectors share the exit-code contract (0 usable, 2 evidence-artifact
+    failure, 3 failure observed, 4 stopped) and both write a page-state.json
+    carrying the same verdict keys, which is what lets one function drive them
+    and produce one uniform capture record for outcome.json.
+
+    The ownership deadline is per-capture rather than a module constant because
+    the two collectors observe for different windows; the multi-tab collector
+    reports the budget it needs through its own --dry-run plan.
+    """
+    started = bundle.timeline.record(
+        "browser-capture-started", capture=name, argv=argv,
+        ownershipDeadlineSeconds=ownership_deadline_seconds,
+    )
+    bundle.events.append(started)
     process: subprocess.Popen | None = None
     return_code = -1
+    finished: dict[str, Any] | None = None
     try:
         with log_path.open("xb") as log:
             process = subprocess.Popen(
                 argv, cwd=REPO_ROOT, stdout=log, stderr=subprocess.STDOUT, shell=False,
             )
-            deadline = time.monotonic() + BROWSER_CAPTURE_OWNERSHIP_DEADLINE_SECONDS
+            deadline = time.monotonic() + ownership_deadline_seconds
             while process.poll() is None and time.monotonic() < deadline:
                 time.sleep(0.1)
             if process.poll() is None:
@@ -568,7 +626,8 @@ def _run_browser_capture(
                     process.kill()
                     process.wait(timeout=2)
                 raise BaselineRunError(
-                    "browser collector exceeded its ownership deadline"
+                    f"{name} collector exceeded its ownership deadline "
+                    f"({ownership_deadline_seconds:.1f}s)"
                 )
             return_code = int(process.returncode)
             log.flush()
@@ -577,23 +636,84 @@ def _run_browser_capture(
         if process is not None and process.poll() is None:
             process.kill()
             process.wait(timeout=2)
-        bundle.events.append(bundle.timeline.record(
-            "browser-capture-finished", returnCode=return_code,
-        ))
-    state_path = log_path.parent / "browser" / "page-state.json"
+        finished = bundle.timeline.record(
+            "browser-capture-finished", capture=name, returnCode=return_code,
+        )
+        bundle.events.append(finished)
     state: dict[str, object] | None = None
     if state_path.is_file():
         try:
             loaded = json.loads(state_path.read_text(encoding="utf-8"))
         except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
-            raise BaselineRunError(f"browser page state is invalid: {error}") from error
+            raise BaselineRunError(f"{name} page state is invalid: {error}") from error
         if isinstance(loaded, dict):
             state = loaded
     if return_code == 2:
-        raise BaselineRunError("browser collector reported an evidence-artifact failure")
+        raise BaselineRunError(f"{name} collector reported an evidence-artifact failure")
     if return_code not in (0, 3, 4):
-        raise BaselineRunError(f"browser collector exited unexpectedly with {return_code}")
-    return return_code, state
+        raise BaselineRunError(f"{name} collector exited unexpectedly with {return_code}")
+    return {
+        "name": name,
+        "returnCode": return_code,
+        "startedWallTime": started["wallTime"],
+        "finishedWallTime": finished["wallTime"],
+        "startedElapsedSeconds": started["elapsedMonotonicSeconds"],
+        "finishedElapsedSeconds": finished["elapsedMonotonicSeconds"],
+        "log": str(log_path),
+        "pageState": str(state_path),
+        "state": state,
+    }
+
+
+MULTITAB_PLAN_TIMEOUT_SECONDS = 30.0
+
+
+def _multitab_argv(
+    controller: str, tip_commit: str, out_dir: Path, control_file: Path, tabs: int,
+) -> list[str]:
+    return [
+        "node", str(MULTITAB_COLLECTOR),
+        "--url", f"http://{controller}/index.html",
+        "--commit", tip_commit,
+        "--out", str(out_dir),
+        "--control-file", str(control_file),
+        "--tabs", str(tabs),
+    ]
+
+
+def _multitab_plan(
+    controller: str, tip_commit: str, out_dir: Path, control_file: Path, tabs: int,
+) -> dict[str, Any]:
+    """Ask the multi-tab collector what it intends to do, before running it.
+
+    The scenario timings live in the collector. Rather than restating them here
+    (where they would drift silently and the subprocess would be hard-killed
+    mid-capture once they did), the harness reads the collector's own --dry-run
+    plan and sizes the ownership deadline from its ownershipBudgetMs. The probe
+    also fails fast on an unrunnable collector or a rejected argument before the
+    run has committed to a browser launch.
+    """
+    argv = _multitab_argv(controller, tip_commit, out_dir, control_file, tabs) + ["--dry-run"]
+    result = subprocess.run(
+        argv, cwd=REPO_ROOT, capture_output=True, text=True, check=False,
+        timeout=MULTITAB_PLAN_TIMEOUT_SECONDS,
+    )
+    if result.returncode != 0:
+        raise BaselineRunError(
+            f"multitab collector rejected its plan (exit {result.returncode}): "
+            f"{result.stderr.strip().splitlines()[0] if result.stderr.strip() else 'no detail'}"
+        )
+    try:
+        plan = json.loads(result.stdout)
+    except json.JSONDecodeError as error:
+        raise BaselineRunError(f"multitab collector plan is not JSON: {error}") from error
+    scenario = plan.get("scenario") if isinstance(plan, dict) else None
+    if not isinstance(scenario, dict):
+        raise BaselineRunError("multitab collector plan has no scenario object")
+    budget_ms = scenario.get("ownershipBudgetMs")
+    if not isinstance(budget_ms, int) or budget_ms <= 0:
+        raise BaselineRunError("multitab collector plan has no positive ownershipBudgetMs")
+    return plan
 
 
 def _attempt_power_cycle_recovery(controller: str, bundle: Bundle) -> bool:
@@ -623,16 +743,36 @@ def _attempt_power_cycle_recovery(controller: str, bundle: Bundle) -> bool:
     return False
 
 
+def _capture_named(captures: list[dict[str, Any]], name: str) -> dict[str, Any] | None:
+    for capture in captures:
+        if capture.get("name") == name:
+            return capture
+    return None
+
+
 def _finalize(
     bundle: Bundle,
     arbiter: "r65.StopArbiter",
     run_id: str,
     primary: str,
-    browser_state: dict[str, object] | None,
-    cooldown: dict[str, object] | None,
     status_reachable: bool,
     recovery_facts: list[str],
+    captures: list[dict[str, Any]],
+    multitab_skipped: bool,
 ) -> dict[str, Any]:
+    """Write outcome.json.
+
+    `captures` is the machine-comparable section: one uniform record per browser
+    capture (single-tab, multi-tab), each carrying its own wall/monotonic
+    bracket, page state, pre-load heap, cooldown verdict and outcome. Top-level
+    `browser`/`cooldown`/`primaryOutcome` continue to describe the single-tab
+    capture alone, so bundles captured before multi-tab was part of the sequence
+    stay directly comparable. `multitabSkipped` distinguishes a run that opted
+    out from one recorded before multi-tab existed -- absence of a multi-tab
+    record alone would not say which.
+    """
+    single = _capture_named(captures, "single-tab")
+    multitab = _capture_named(captures, "multitab")
     outcome = {
         "schemaVersion": 1,
         "issue": ISSUE,
@@ -641,8 +781,11 @@ def _finalize(
         "primaryOutcome": primary,
         "stopReasons": [arbiter.reason] if arbiter.reason else [],
         "recoveryFacts": recovery_facts,
-        "browser": browser_state,
-        "cooldown": cooldown,
+        "browser": single.get("state") if single else None,
+        "cooldown": single.get("cooldown") if single else None,
+        "multitabSkipped": multitab_skipped,
+        "multitabOutcome": multitab.get("outcome") if multitab else None,
+        "captures": captures,
         "statusReachableAtEnd": status_reachable,
     }
     r65.atomic_write_json(bundle.root / "outcome.json", outcome)
@@ -651,17 +794,121 @@ def _finalize(
     )
     print(json.dumps({
         "run": run_id, "primaryOutcome": primary, "stopReason": arbiter.reason,
-        "recoveryFacts": recovery_facts, "evidence": str(bundle.root),
+        "recoveryFacts": recovery_facts,
+        "captures": [
+            {
+                "name": capture["name"],
+                "outcome": capture.get("outcome"),
+                "returnCode": capture["returnCode"],
+                "cooldownPassed": (capture.get("cooldown") or {}).get("passed"),
+            }
+            for capture in captures
+        ],
+        "multitabSkipped": multitab_skipped,
+        "evidence": str(bundle.root),
     }, indent=2), flush=True)
     return outcome
 
 
+def _run_capture_phase(
+    *,
+    name: str,
+    stage: str,
+    announcement: str,
+    argv: list[str],
+    log_path: Path,
+    state_path: Path,
+    ownership_deadline_seconds: float,
+    run_id: str,
+    bundle: Bundle,
+    monitor: "r65.MonitorLoop",
+    arbiter: "r65.StopArbiter",
+) -> dict[str, Any]:
+    """One browser capture phase: pre-load heap baseline -> the load itself ->
+    post-load blackout settle -> that capture's own cooldown.
+
+    Every capture in a run goes through here, so the single-tab and multi-tab
+    captures are measured the same way and their records are directly
+    comparable.
+
+    Two details are load-bearing:
+
+    - The load runs under the phase string "browser" whichever collector it is.
+      r65.MonitorLoop._sample_status() keys both HTTP Blackout detection and
+      statusReachable marking off exactly that value, so a distinct phase name
+      would silently disable blackout detection for the multi-tab load. Captures
+      are told apart by their wall/monotonic brackets and their own evidence
+      directories, not by the phase tag.
+    - Cooldown is evaluated on the samples this phase added, not the whole
+      shared list, since a run now has more than one cooldown. The heap baseline
+      is the one measured immediately before this capture, so each capture's
+      cooldown verdict isolates that capture rather than inheriting an earlier
+      one's failure to recover.
+    """
+    snapshot = monitor.snapshot()
+    baseline_status = snapshot["latestStatus"]
+    if not isinstance(baseline_status, dict):
+        raise BaselineRunError(f"no status baseline exists before the {name} load")
+    baseline_heap = baseline_status.get("heapLargest8bit")
+    if not isinstance(baseline_heap, int):
+        raise BaselineRunError(f"pre-{name} status has no integer heapLargest8bit")
+    bundle.write_manifest(
+        runId=run_id, status="IN_PROGRESS", stage=stage, preLoadStatus=baseline_status,
+    )
+
+    monitor.set_phase("browser")
+    print(announcement, flush=True)
+    capture = _run_browser_capture(
+        name, argv, log_path, state_path, bundle, ownership_deadline_seconds,
+    )
+
+    loss_started = monitor.snapshot()["statusLossStartedMonotonic"]
+    if isinstance(loss_started, float) and not arbiter.stopped:
+        remaining = max(
+            0.0,
+            r65.HTTP_BLACKOUT_SECONDS - (time.monotonic() - loss_started) + 0.5,
+        )
+        r65._wait_for(
+            lambda: (
+                arbiter.stopped
+                or monitor.snapshot()["statusLossStartedMonotonic"] is None
+            ),
+            min(remaining, 6.0),
+        )
+
+    cooldown: dict[str, object] | None = None
+    if not arbiter.stopped:
+        # Read the offset before flipping the phase: the monitor thread only
+        # appends while phase == "cooldown", so nothing can land in between.
+        cooldown_offset = len(monitor.snapshot()["cooldownSamples"])
+        monitor.set_phase("cooldown")
+        cooldown_deadline = time.monotonic() + r65.COOLDOWN_SECONDS
+        while time.monotonic() < cooldown_deadline and not arbiter.stopped:
+            time.sleep(min(0.25, cooldown_deadline - time.monotonic()))
+        cooldown_samples = monitor.snapshot()["cooldownSamples"]
+        if isinstance(cooldown_samples, list):
+            cooldown = r65.evaluate_cooldown(
+                cooldown_samples[cooldown_offset:], baseline_heap,
+            )
+
+    capture["preLoadStatus"] = baseline_status
+    capture["preLoadHeapLargest8bit"] = baseline_heap
+    capture["cooldown"] = cooldown
+    return capture
+
+
 def run_full(args: argparse.Namespace) -> dict[str, Any]:
     """Power-cycle -> serial/ping/status/logs sampling -> 90s settle -> single
-    index.html browser capture -> cooldown -> outcome classification. Mirrors
+    index.html browser capture -> cooldown -> multi-tab browser capture ->
+    cooldown -> outcome classification. Mirrors
     tools/issue65_live_ab_runtime.py's execute_run() control flow (that
     sequencing was hardened across #65's own iteration) adapted for one
-    in-place run instead of a role-locked worktree deployment."""
+    in-place run instead of a role-locked worktree deployment.
+
+    The multi-tab capture is appended after the single-tab capture and its
+    cooldown rather than interleaved with them, so the single-tab measurement
+    stays identical to bundles captured before multi-tab was part of the
+    sequence and the two remain comparable."""
     evidence_dir = EVIDENCE_ROOT / args.run_id
     r65.create_evidence_root(evidence_dir)
     (evidence_dir / "identity").mkdir(exist_ok=True)
@@ -677,14 +924,26 @@ def run_full(args: argparse.Namespace) -> dict[str, Any]:
     )
     logs_monitor = LogsMonitor(args.controller, bundle, lambda: monitor.phase)
 
+    multitab_skipped = bool(args.skip_multitab)
+    multitab_plan: dict[str, Any] | None = None
+    if not multitab_skipped:
+        # Resolve the multi-tab plan before the operator is asked to power-cycle:
+        # a bad --multitab-tabs value or an unrunnable collector should cost a
+        # command line, not a physical power cycle and a 90-second settle.
+        multitab_plan = _multitab_plan(
+            args.controller, tip_commit, evidence_dir / "multitab",
+            evidence_dir / "control.json", args.multitab_tabs,
+        )
+
     bundle.write_manifest(
         runId=args.run_id, controller=args.controller, serialPort=args.serial_port,
         tipCommit=tip_commit, devReboot=bool(args.dev_reboot),
+        multitabSkipped=multitab_skipped,
+        multitabScenario=(multitab_plan or {}).get("scenario"),
         stage="awaiting-physical-cycle", status="IN_PROGRESS",
     )
 
-    browser_state: dict[str, object] | None = None
-    cooldown: dict[str, object] | None = None
+    captures: list[dict[str, Any]] = []
     monitor_started = False
     serial_started = False
     logs_started = False
@@ -722,7 +981,10 @@ def run_full(args: argparse.Namespace) -> dict[str, Any]:
             lambda: serial.disconnected_after_connect.is_set(), 10.0, arbiter=arbiter,
         ):
             if arbiter.stopped:
-                return _finalize(bundle, arbiter, args.run_id, "UNKNOWN", None, None, False, [])
+                return _finalize(
+                    bundle, arbiter, args.run_id, "UNKNOWN", False, [],
+                    captures, multitab_skipped,
+                )
             raise BaselineRunError(
                 "serial evidence did not observe USB disappearance during power cycle"
             )
@@ -730,12 +992,18 @@ def run_full(args: argparse.Namespace) -> dict[str, Any]:
             lambda: serial.reconnected.is_set(), 20.0, arbiter=arbiter,
         ):
             if arbiter.stopped:
-                return _finalize(bundle, arbiter, args.run_id, "UNKNOWN", None, None, False, [])
+                return _finalize(
+                    bundle, arbiter, args.run_id, "UNKNOWN", False, [],
+                    captures, multitab_skipped,
+                )
             raise BaselineRunError(
                 "serial evidence did not observe USB re-enumeration after power cycle"
             )
         if arbiter.stopped:
-            return _finalize(bundle, arbiter, args.run_id, "UNKNOWN", None, None, False, [])
+            return _finalize(
+                bundle, arbiter, args.run_id, "UNKNOWN", False, [],
+                captures, multitab_skipped,
+            )
 
         try:
             fresh_status = monitor.wait_for_status(
@@ -747,7 +1015,10 @@ def run_full(args: argparse.Namespace) -> dict[str, Any]:
             )
         except r65.Issue65RuntimeError:
             if arbiter.stopped:
-                return _finalize(bundle, arbiter, args.run_id, "UNKNOWN", None, None, False, [])
+                return _finalize(
+                    bundle, arbiter, args.run_id, "UNKNOWN", False, [],
+                    captures, multitab_skipped,
+                )
             raise
         bundle.write_manifest(
             runId=args.run_id, status="IN_PROGRESS", stage="identity-verified",
@@ -764,55 +1035,42 @@ def run_full(args: argparse.Namespace) -> dict[str, Any]:
         while time.monotonic() < settle_deadline and not arbiter.stopped:
             time.sleep(min(0.25, settle_deadline - time.monotonic()))
 
-        baseline_heap: int | None = None
         if not arbiter.stopped:
-            snapshot = monitor.snapshot()
-            baseline_status = snapshot["latestStatus"]
-            if not isinstance(baseline_status, dict):
-                raise BaselineRunError("no status baseline exists before browser load")
-            baseline_heap = baseline_status.get("heapLargest8bit")
-            if not isinstance(baseline_heap, int):
-                raise BaselineRunError("pre-load status has no integer heapLargest8bit")
-            bundle.write_manifest(
-                runId=args.run_id, status="IN_PROGRESS", stage="browser",
-                preLoadStatus=baseline_status,
-            )
+            captures.append(_run_capture_phase(
+                name="single-tab",
+                stage="browser",
+                announcement="Starting the one visible /index.html browser load.",
+                argv=[
+                    "node", str(BROWSER_COLLECTOR),
+                    "--url", f"http://{args.controller}/index.html",
+                    "--commit", tip_commit,
+                    "--out", str(evidence_dir / "browser"),
+                    "--control-file", str(evidence_dir / "control.json"),
+                ],
+                log_path=evidence_dir / "browser.log",
+                state_path=evidence_dir / "browser" / "page-state.json",
+                ownership_deadline_seconds=BROWSER_CAPTURE_OWNERSHIP_DEADLINE_SECONDS,
+                run_id=args.run_id, bundle=bundle, monitor=monitor, arbiter=arbiter,
+            ))
 
-            monitor.set_phase("browser")
-            print("Starting the one visible /index.html browser load.", flush=True)
-            argv = [
-                "node", str(BROWSER_COLLECTOR),
-                "--url", f"http://{args.controller}/index.html",
-                "--commit", tip_commit,
-                "--out", str(evidence_dir / "browser"),
-                "--control-file", str(evidence_dir / "control.json"),
-            ]
-            _return_code, browser_state = _run_browser_capture(
-                argv, evidence_dir / "browser.log", bundle, arbiter,
-            )
-
-            loss_started = monitor.snapshot()["statusLossStartedMonotonic"]
-            if isinstance(loss_started, float) and not arbiter.stopped:
-                remaining = max(
-                    0.0,
-                    r65.HTTP_BLACKOUT_SECONDS - (time.monotonic() - loss_started) + 0.5,
-                )
-                r65._wait_for(
-                    lambda: (
-                        arbiter.stopped
-                        or monitor.snapshot()["statusLossStartedMonotonic"] is None
-                    ),
-                    min(remaining, 6.0),
-                )
-
-            if not arbiter.stopped:
-                monitor.set_phase("cooldown")
-                cooldown_deadline = time.monotonic() + r65.COOLDOWN_SECONDS
-                while time.monotonic() < cooldown_deadline and not arbiter.stopped:
-                    time.sleep(min(0.25, cooldown_deadline - time.monotonic()))
-                cooldown_samples = monitor.snapshot()["cooldownSamples"]
-                if isinstance(cooldown_samples, list):
-                    cooldown = r65.evaluate_cooldown(cooldown_samples, baseline_heap)
+        if not arbiter.stopped and multitab_plan is not None:
+            scenario = multitab_plan["scenario"]
+            captures.append(_run_capture_phase(
+                name="multitab",
+                stage="multitab",
+                announcement=(
+                    f"Starting the multi-tab browser load "
+                    f"({scenario['steadyTabs']} steady tabs, peak {scenario['peakTabs']})."
+                ),
+                argv=_multitab_argv(
+                    args.controller, tip_commit, evidence_dir / "multitab",
+                    evidence_dir / "control.json", args.multitab_tabs,
+                ),
+                log_path=evidence_dir / "multitab.log",
+                state_path=evidence_dir / "multitab" / "page-state.json",
+                ownership_deadline_seconds=scenario["ownershipBudgetMs"] / 1000.0,
+                run_id=args.run_id, bundle=bundle, monitor=monitor, arbiter=arbiter,
+            ))
 
         snapshot = monitor.snapshot()
         last_success = snapshot["latestStatusSuccessMonotonic"]
@@ -820,7 +1078,20 @@ def run_full(args: argparse.Namespace) -> dict[str, Any]:
             isinstance(last_success, float)
             and time.monotonic() - last_success <= r65.STATUS_INTERVAL_SECONDS + 2.0
         )
-        primary = r65.classify_primary_outcome(arbiter.reason, browser_state, status_reachable)
+        # Each capture is classified with the same classifier, so a multi-tab
+        # verdict reads in the same vocabulary as the single-tab one. The run's
+        # primaryOutcome stays the single-tab verdict: it is the field older
+        # bundles in this epic are compared on, and widening it here would make
+        # this run incomparable to them.
+        for capture in captures:
+            capture["outcome"] = r65.classify_primary_outcome(
+                arbiter.reason, capture.get("state"), status_reachable,
+            )
+        single_tab = _capture_named(captures, "single-tab")
+        primary = (
+            single_tab["outcome"] if single_tab
+            else r65.classify_primary_outcome(arbiter.reason, None, status_reachable)
+        )
         recovery_facts: list[str] = []
         if arbiter.reason == "HTTP Blackout":
             monitor.stop_status_requests()
@@ -831,8 +1102,8 @@ def run_full(args: argparse.Namespace) -> dict[str, Any]:
                 recovery_facts.append("Power-Cycle Recovery")
 
         return _finalize(
-            bundle, arbiter, args.run_id, primary, browser_state, cooldown,
-            status_reachable, recovery_facts,
+            bundle, arbiter, args.run_id, primary, status_reachable,
+            recovery_facts, captures, multitab_skipped,
         )
     except KeyboardInterrupt:
         if arbiter is not None:
