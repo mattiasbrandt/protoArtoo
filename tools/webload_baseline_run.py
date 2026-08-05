@@ -409,7 +409,18 @@ class LogsMonitor:
     since the endpoint has no cursor (full ring-buffer snapshot every call,
     src/web/api_status.cpp:119-127) -- only newly observed lines are appended
     to logs.ndjson, tagged with the sample timestamp and phase. New, issue #66
-    only -- #65 never captured this endpoint at all."""
+    only -- #65 never captured this endpoint at all.
+
+    Not every --build-env ports /api/logs (e.g. the #73 PsychicHttp prototype
+    never did). Issue #73's run-35 accepted-evidence attempt showed why that
+    matters: an unconditional 404 every LOG_INTERVAL_SECONDS for the whole run
+    is a real HTTP request/socket the target build still has to accept and
+    reject, adding load with no equivalent on a build where the endpoint
+    exists -- confounding any admission-pressure comparison between builds,
+    not just harmless noise. On the FIRST sample only, a definitive 404 (this
+    build does not serve the route, not a transient failure) disables further
+    polling for the rest of the run so the evidence bundle doesn't carry
+    build-specific dead weight into a cross-build comparison."""
 
     def __init__(self, controller: str, bundle: Bundle, phase_getter) -> None:
         self.controller = controller
@@ -420,6 +431,8 @@ class LogsMonitor:
             target=self._run, name="webload-logs-monitor", daemon=True,
         )
         self._previous_lines: list[str] = []
+        self._first_sample_done = False
+        self._supported = True
         self.error: BaseException | None = None
 
     def start(self) -> None:
@@ -473,15 +486,33 @@ class LogsMonitor:
             newLineCount=len(new_lines), newLines=new_lines,
         )
 
+        if not self._first_sample_done:
+            self._first_sample_done = True
+            if not success and error is not None and "HTTP Error 404" in error:
+                self._supported = False
+                r65.append_ndjson(
+                    self.bundle.root / "logs.ndjson", self.bundle.timeline,
+                    "logs-endpoint-not-supported",
+                    detail=(
+                        "first /api/logs sample returned 404 -- this build does not "
+                        "serve the route; disabling further polling for the rest of "
+                        "this run instead of generating a guaranteed-fail request "
+                        "every LOG_INTERVAL_SECONDS"
+                    ),
+                )
+
     def _run(self) -> None:
         next_sample = time.monotonic()
         try:
             while not self._stop.is_set():
-                now = time.monotonic()
-                if now >= next_sample:
-                    self._sample()
-                    next_sample = max(next_sample + LOG_INTERVAL_SECONDS, time.monotonic())
-                self._stop.wait(max(0.01, min(0.2, next_sample - time.monotonic())))
+                if self._supported:
+                    now = time.monotonic()
+                    if now >= next_sample:
+                        self._sample()
+                        next_sample = max(next_sample + LOG_INTERVAL_SECONDS, time.monotonic())
+                    self._stop.wait(max(0.01, min(0.2, next_sample - time.monotonic())))
+                else:
+                    self._stop.wait(0.2)
         except BaseException as error:  # noqa: BLE001 - surfaced via join()
             self.error = error
 

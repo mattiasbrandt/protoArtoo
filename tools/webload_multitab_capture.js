@@ -31,6 +31,13 @@ const REQUIRED_RESOURCES = Object.freeze([
   "/dome_panel_model.js", "/dome_layout.js", "/dome_layout_render.js",
   "/dome_control.js", "/app.js", "/footer.js",
 ]);
+// See webload_browser_capture.js's REQUIRED_APIS comment: these 4 are
+// genuinely fetched by the real frontend on every ordinary page load, and
+// the #73 PsychicHttp prototype ports none of them -- requiredApisOk will
+// therefore always read false against that build, by design, not from a
+// per-tab connection defect. Judge multi-tab runs against that build on
+// requiredResourcesOk/domGatesPassed and the per-tab network counts, not
+// requiredApisOk, until the prototype's API surface is completed.
 const REQUIRED_APIS = Object.freeze(["/api/identity", "/api/logs", "/api/config", "/api/actions"]);
 
 // Scenario timeline (ms from t0): 2 ordinary tabs open together, briefly

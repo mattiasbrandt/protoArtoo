@@ -38,6 +38,22 @@ const REQUIRED_RESOURCES = Object.freeze([
   "/app.js",
   "/footer.js",
 ]);
+// These 4 are genuinely fetched by the real production frontend on every
+// ordinary page load (data/app.js:534,574,633 -> /api/logs, /api/config,
+// /api/actions; data/shell.js:157 -> /api/identity), so this list is correct
+// against the current stack and must not be trimmed for convenience.
+//
+// Issue #73/#74 scope note: the PsychicHttp prototype (src/web/
+// psychic_adapter.cpp) does not port any of these 4 routes -- confirmed by
+// source, zero references. Against that build, browserGatesPassed/
+// captureStatus will therefore NEVER reach "usable", on every run,
+// regardless of concurrency/stall/multi-tab scenario -- that's an accurate
+// reflection of a real, documented port gap (#72 scoped the prototype as
+// partial), not a test-prep bug. Do not read a "usable"-gated failure
+// against that build as evidence of a connection-handling defect; judge
+// prototype runs on the sub-signals (REQUIRED_RESOURCES success, /api/status
+// reachability, heap/connection metrics, SSE behavior) instead of this
+// aggregate gate until the prototype's API surface is actually completed.
 const REQUIRED_APIS = Object.freeze(["/api/identity", "/api/logs", "/api/config", "/api/actions"]);
 const RUN_ID = "BASELINE1";
 
