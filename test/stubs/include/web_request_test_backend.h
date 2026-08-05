@@ -15,6 +15,14 @@ struct WebRequestTestParam {
     const char* value;
 };
 
+// One response header staged through WebRequest::addHeader(). Sized to the
+// same limits the async backend's staging buffer uses, so a header that would
+// be truncated on the device is truncated here too.
+struct WebRequestTestHeader {
+    char name[32] = {};
+    char value[64] = {};
+};
+
 struct WebRequestTestBackend {
     const WebRequestTestParam* params = nullptr;
     size_t paramCount = 0;
@@ -39,6 +47,12 @@ struct WebRequestTestBackend {
     unsigned sendCalls = 0;
     // True when the body arrived through sendChunked() rather than send().
     bool sentChunked = false;
+
+    // Headers the handler staged, in the order it staged them. Kept after the
+    // send rather than cleared with it: the assertion happens once the handler
+    // has returned, so clearing at send time would leave nothing to check.
+    WebRequestTestHeader headers[2];
+    size_t headerCount = 0;
 
     // True once the handler upgraded this request to an event stream. A test
     // asserting that the client cap rejects *before* the upgrade has to be able

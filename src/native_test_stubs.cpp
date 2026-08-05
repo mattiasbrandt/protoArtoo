@@ -32,9 +32,17 @@ void paLogLine(const char* /*line*/) {
 void paLogLineRaw(const char* /*line*/) {
 }
 
-// millis() stub — used by failsafe gate for diagnostics
+// millis() stub — used by the failsafe gate for diagnostics, and by anything
+// that timestamps work it hands to another task.
+//
+// Settable, defaulting to 0 so every existing test sees the frozen clock it
+// was written against. A test that needs a non-zero timestamp sets this: the
+// drive arbiter treats timestamp 0 as "never submitted", so a handler's
+// submission is indistinguishable from no submission while the clock reads 0.
+unsigned long g_test_millis = 0;
+
 unsigned long millis() {
-    return 0;
+    return g_test_millis;
 }
 
 // NVS save stub — not under test; POST handler calls it but tests call
@@ -102,6 +110,146 @@ void requestStatusBroadcastNow() {
 #include "sequence_dispatcher.h"
 QueueHandle_t sequenceQueue = nullptr;
 
+// -----------------------------------------------------------------------------
+// Motion and safety route group (#89). The handlers are under test; the tasks
+// they hand work to are not in the native build, so each side effect is
+// recorded rather than performed and the test asserts on the record.
+// -----------------------------------------------------------------------------
+
+// Command queues the handlers post to. The freertos stub's xQueueSend() always
+// succeeds, so the queue-full branches are device behaviour, not host.
+QueueHandle_t servoCmdQueue = nullptr;
+QueueHandle_t domeCmdQueue = nullptr;
+
+bool g_test_commanded_web_control = false;
+unsigned g_test_web_control_calls = 0;
+unsigned g_test_restart_requests = 0;
+unsigned g_test_marcduino_calls = 0;
+unsigned g_test_applied_mood = 0;
+
+void commandedSetWebControl(bool enabled, CommandSource /*source*/) {
+    g_test_commanded_web_control = enabled;
+    g_test_web_control_calls++;
+}
+
+void requestSystemRestart(uint32_t /*delayMs*/) {
+    g_test_restart_requests++;
+}
+
+#include "dome_rx_parser.h"
+bool parseMarcduinoCommand(const char* /*line*/) {
+    g_test_marcduino_calls++;
+    return true;
+}
+
+#include "mood.h"
+void applyMood(uint8_t moodId, bool /*fromDome*/) {
+    g_test_applied_mood = moodId;
+}
+
+// The persisted half of the speed-preset write. The pure preset mapping in
+// drive_speed_preset.h is exercised directly by test_drive_speed_preset; what
+// the handler needs from here is a controllable success/failure.
+#include "drive_speed_preset.h"
+bool g_test_speed_preset_persist_ok = true;
+SpeedPresetId g_test_persisted_speed_preset = SpeedPresetId::Normal;
+
+bool applySpeedPresetPersisted(SpeedPresetId preset) {
+    g_test_persisted_speed_preset = preset;
+    return g_test_speed_preset_persist_ok;
+}
+
+// AUX LED strip. aux_led.cpp is a task translation unit and stays out of the
+// native build, so the effect-name mapping the handler depends on is
+// reproduced here rather than stubbed away -- the payload assertions would be
+// vacuous otherwise.
+#include "aux_led.h"
+bool g_test_aux_led_queue_ok = true;
+
+const char* auxLedEffectToString(AuxLedEffect effect) {
+    switch (effect) {
+        case AUX_LED_EFFECT_SOLID:
+            return "solid";
+        case AUX_LED_EFFECT_BLINK:
+            return "blink";
+        case AUX_LED_EFFECT_PULSE:
+            return "pulse";
+        case AUX_LED_EFFECT_OFF:
+        default:
+            return "off";
+    }
+}
+
+bool parseAuxLedEffect(const char* raw, AuxLedEffect* out) {
+    if (raw == nullptr || out == nullptr) {
+        return false;
+    }
+    if (strcmp(raw, "off") == 0) {
+        *out = AUX_LED_EFFECT_OFF;
+    } else if (strcmp(raw, "solid") == 0) {
+        *out = AUX_LED_EFFECT_SOLID;
+    } else if (strcmp(raw, "blink") == 0) {
+        *out = AUX_LED_EFFECT_BLINK;
+    } else if (strcmp(raw, "pulse") == 0) {
+        *out = AUX_LED_EFFECT_PULSE;
+    } else {
+        return false;
+    }
+    return true;
+}
+
+bool auxLedQueueSetColor(uint8_t r, uint8_t g, uint8_t b, CommandSource /*source*/) {
+    if (!g_test_aux_led_queue_ok) {
+        return false;
+    }
+    robotState.auxLed.r = r;
+    robotState.auxLed.g = g;
+    robotState.auxLed.b = b;
+    return true;
+}
+
+bool auxLedQueueSetEffect(AuxLedEffect effect, CommandSource /*source*/) {
+    if (!g_test_aux_led_queue_ok) {
+        return false;
+    }
+    robotState.auxLed.effect = effect;
+    return true;
+}
+
+// Dome layout cache, normally filled by DomeLinkTask over WiFi. Tests set the
+// status and the payload; the handler's job is to relay them.
+DomeLayoutCacheStatus g_test_dome_layout_status = {};
+const char* g_test_dome_layout_payload = "";
+unsigned g_test_dome_layout_refresh_requests = 0;
+
+DomeLayoutCacheStatus domeLayoutCacheGetStatus() {
+    return g_test_dome_layout_status;
+}
+
+size_t domeLayoutCacheReadChunk(uint8_t* outBuf, size_t maxLen, size_t offset,
+                                uint32_t fetchedAtMs) {
+    // Generation pinning is the point of this signature: a filler that reads
+    // past a refresh must get 0, not bytes from the newer fetch.
+    if (fetchedAtMs != g_test_dome_layout_status.fetched_at_ms) {
+        return 0;
+    }
+    const size_t total = strlen(g_test_dome_layout_payload);
+    if (offset >= total) {
+        return 0;
+    }
+    size_t remaining = total - offset;
+    if (remaining > maxLen) {
+        remaining = maxLen;
+    }
+    memcpy(outBuf, g_test_dome_layout_payload + offset, remaining);
+    return remaining;
+}
+
+bool domeLayoutCacheRefreshRequested() {
+    g_test_dome_layout_refresh_requests++;
+    return true;
+}
+
 // Log ring stand-in for the one main.cpp owns, which the native build does not
 // compile. Backed by the real log_buffer.cpp ring, so /api/logs tests exercise
 // the actual copy behavior rather than a canned string. Tests fill it through
@@ -160,6 +308,16 @@ const char* WebRequest::body() const {
 
 size_t WebRequest::contentLength() const {
     return static_cast<const WebRequestTestBackend*>(backend_)->contentLength;
+}
+
+void WebRequest::addHeader(const char* name, const char* value) {
+    WebRequestTestBackend* b = static_cast<WebRequestTestBackend*>(backend_);
+    if (b->headerCount >= kMaxStagedHeaders) {
+        return;
+    }
+    WebRequestTestHeader& staged = b->headers[b->headerCount++];
+    snprintf(staged.name, sizeof(staged.name), "%s", name);
+    snprintf(staged.value, sizeof(staged.value), "%s", value);
 }
 
 void WebRequest::send(int code, const char* contentType, const char* body) {

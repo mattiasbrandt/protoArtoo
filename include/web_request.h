@@ -62,6 +62,18 @@ class WebRequest {
     // exact size -- the exact size is not knowable until the body is consumed.
     size_t contentLength() const;
 
+    // Stage one response header for the send that follows, and only that send:
+    // the staging clears as the response goes out, so a header can never leak
+    // onto the next request. Call before send() or sendChunked().
+    //
+    // Status line, Content-Type and framing headers stay the backend's to set;
+    // this is for the handler's own metadata, of which the group ported so far
+    // has exactly one -- the dome layout's cache age. Silently more than
+    // kMaxStagedHeaders staged headers would be a header lost at runtime, so
+    // the overflow is logged and dropped rather than swallowed.
+    static constexpr size_t kMaxStagedHeaders = 2;
+    void addHeader(const char* name, const char* value);
+
     // Send a complete response. A handler sends exactly once; the backend
     // owns status-line/header framing and connection semantics.
     void send(int code, const char* contentType, const char* body);

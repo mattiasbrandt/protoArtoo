@@ -24,16 +24,11 @@
 #include "../../include/api_actions.h"
 #include "../../include/api_profiler.h"
 #include "../../include/api_audio.h"
-#include "../../include/api_aux_led.h"
 #include "../../include/api_config.h"
-#include "../../include/api_dome.h"
-#include "../../include/api_drive.h"
 #include "../../include/drive_speed_preset.h"
-#include "../../include/api_estop.h"
 #include "../../include/api_helpers.h"
 #include "../../include/api_rc.h"
 #include "../../include/api_seq.h"
-#include "../../include/api_servo.h"
 #include "../../include/api_status.h"
 #include "../../include/api_system.h"
 #include "../../include/api_validation.h"
@@ -1340,14 +1335,9 @@ void startHttpServerOnce() {
         webRequestAsyncAttach(server);
         webRegisterSeamRoutes();
 
-        registerEstopRoutes(server);
-        registerDriveRoutes(server);
         registerMoodMapRoutes(server);
         registerAudioRoutes(server);
-        registerDomeRoutes(server);
-        registerAuxLedRoutes(server);
         registerRcRoutes(server);
-        registerServoRoutes(server);
         registerStatusRoutes(server);
         registerValidationRoutes(server);
 #if PA_HEAP_PROFILE

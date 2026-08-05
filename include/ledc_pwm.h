@@ -25,8 +25,13 @@
 
 #include <stdint.h>
 
-// Firmware-only: ESP32 LEDC hardware constants
-#ifdef ARDUINO_ARCH_ESP32
+// Firmware-only: ESP32 LEDC hardware constants.
+//
+// The native build's Arduino stub defines ARDUINO_ARCH_ESP32 for an unrelated
+// reason (a ServoComponentType guard), so that macro alone does not mean "an
+// ESP-IDF sysroot is present". Host translation units that only want the pulse
+// width constants below must not be handed an ESP-IDF driver header.
+#if defined(ARDUINO_ARCH_ESP32) && !defined(PA_NATIVE_TEST_STUBS)
 #include <driver/ledc.h>
 #endif
 

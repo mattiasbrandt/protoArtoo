@@ -511,6 +511,18 @@ size_t WebRequest::contentLength() const {
     return (size_t)psychicCtx(backend_)->req->contentLength();
 }
 
+void WebRequest::addHeader(const char* name, const char* value) {
+    WebRequestPsychicCtx* ctx = psychicCtx(backend_);
+    if (ctx->resp == nullptr) {
+        PA_LOG_ERROR(TAG, "addHeader() during upload chunk phase ignored (%s)", name);
+        return;
+    }
+    // No staging buffer needed: the response object already exists and belongs
+    // to this request alone, so the header is scoped exactly as the seam
+    // documents it. PsychicResponse copies both strings into its own storage.
+    ctx->resp->addHeader(name, value);
+}
+
 void WebRequest::send(int code, const char* contentType, const char* body) {
     WebRequestPsychicCtx* ctx = psychicCtx(backend_);
     if (ctx->resp == nullptr) {

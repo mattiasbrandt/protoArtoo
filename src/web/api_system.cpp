@@ -131,7 +131,7 @@ void handleManualCommandPost(WebRequest& req) {
         }
     }
 
-    if (!executeManualCommand(String(rawCommand))) {
+    if (!executeManualCommand(rawCommand)) {
         req.send(400, "application/json", "{\"ok\":false,\"error\":\"unsupported command\"}");
         return;
     }

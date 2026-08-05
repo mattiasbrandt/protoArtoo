@@ -4,13 +4,17 @@
 // AUX LED REST API
 //   POST /api/aux-led/color   body: {"r":0,"g":0,"b":0}
 //   POST /api/aux-led/effect  body: {"effect":"solid|blink|pulse|off"}
+//
+// Both endpoints accept either a JSON body or ordinary form fields; a JSON body
+// wins when present. Written against the project-owned WebRequest seam
+// (ADR 0021) and bound by the seam route table.
 // =============================================================================
 
 #include "api_aux_led.h"
 
-#include <cstdint>
 #include <ArduinoJson.h>
-#include <ESPAsyncWebServer.h>
+
+#include <cstdint>
 
 #include "api_helpers.h"
 #include "aux_led.h"
@@ -18,28 +22,41 @@
 
 namespace {
 
-bool parseJsonBody(AsyncWebServerRequest* req, JsonDocument* outDoc, bool* hasBody) {
+// Parses the request's raw (non-form) body as JSON. hasBody distinguishes "no
+// JSON body, fall through to form fields" from "a JSON body that did not
+// parse", which are the same false return but different outcomes.
+bool parseJsonBody(WebRequest& req, JsonDocument* outDoc, bool* hasBody) {
     if (outDoc == nullptr || hasBody == nullptr) {
         return false;
     }
     *hasBody = false;
 
-    if (req == nullptr || !req->hasParam("plain", true)) {
+    // Borrowed, not copied: an aux-LED body is small, but sizing a buffer for
+    // it here would be a second place to keep in step with the payload.
+    const char* raw = req.body();
+    if (raw == nullptr) {
         return true;
     }
 
     *hasBody = true;
-    DeserializationError err = deserializeJson(*outDoc, req->getParam("plain", true)->value().c_str());
+    DeserializationError err = deserializeJson(*outDoc, raw);
     return !err;
 }
 
-bool parseUint8FormField(AsyncWebServerRequest* req, const char* key, uint8_t* out) {
-    if (req == nullptr || key == nullptr || out == nullptr || !req->hasParam(key, true)) {
+bool parseUint8FormField(WebRequest& req, const char* key, uint8_t* out) {
+    if (key == nullptr || out == nullptr) {
+        return false;
+    }
+
+    // Wider than any valid 0..255 value, so an over-long input is rejected by
+    // the parser rather than truncated into a valid one (web_request.h).
+    char raw[16] = {};
+    if (!req.param(key, raw, sizeof(raw))) {
         return false;
     }
 
     uint32_t parsed = 0;
-    if (!parseUint32Value(req->getParam(key, true)->value().c_str(), &parsed) || parsed > 255U) {
+    if (!parseUint32Value(raw, &parsed) || parsed > 255U) {
         return false;
     }
 
@@ -65,7 +82,7 @@ bool parseUint8JsonField(const JsonDocument& doc, const char* key, uint8_t* out)
     return true;
 }
 
-bool parseColorPayload(AsyncWebServerRequest* req, uint8_t* r, uint8_t* g, uint8_t* b) {
+bool parseColorPayload(WebRequest& req, uint8_t* r, uint8_t* g, uint8_t* b) {
     if (r == nullptr || g == nullptr || b == nullptr) {
         return false;
     }
@@ -85,7 +102,7 @@ bool parseColorPayload(AsyncWebServerRequest* req, uint8_t* r, uint8_t* g, uint8
            parseUint8FormField(req, "b", b);
 }
 
-bool parseEffectPayload(AsyncWebServerRequest* req, AuxLedEffect* outEffect) {
+bool parseEffectPayload(WebRequest& req, AuxLedEffect* outEffect) {
     if (outEffect == nullptr) {
         return false;
     }
@@ -103,11 +120,14 @@ bool parseEffectPayload(AsyncWebServerRequest* req, AuxLedEffect* outEffect) {
         return parseAuxLedEffect(body["effect"].as<const char*>(), outEffect);
     }
 
-    if (!req->hasParam("effect", true)) {
+    // Wider than the longest effect name, so an over-long value reaches
+    // parseAuxLedEffect() as an unknown effect instead of a truncated match.
+    char raw[16] = {};
+    if (!req.param("effect", raw, sizeof(raw))) {
         return false;
     }
 
-    return parseAuxLedEffect(req->getParam("effect", true)->value().c_str(), outEffect);
+    return parseAuxLedEffect(raw, outEffect);
 }
 
 bool isAuxLedAvailable() {
@@ -119,7 +139,7 @@ bool isAuxLedAvailable() {
     return available && pin != 0;
 }
 
-void sendAuxLedStateResponse(AsyncWebServerRequest* req) {
+void sendAuxLedStateResponse(WebRequest& req) {
     uint8_t pin = 0;
     uint8_t r = 0;
     uint8_t g = 0;
@@ -136,59 +156,56 @@ void sendAuxLedStateResponse(AsyncWebServerRequest* req) {
 
     char body[160] = {};
     if (!formatAuxLedStateJson(body, sizeof(body), pin, r, g, b, auxLedEffectToString(effect))) {
-        req->send(500, "application/json", "{\"ok\":false,\"error\":\"aux LED response overflow\"}");
+        req.send(500, "application/json", "{\"ok\":false,\"error\":\"aux LED response overflow\"}");
         return;
     }
 
-    req->send(200, "application/json", body);
+    req.send(200, "application/json", body);
+}
+
+// Both endpoints reject a refused queue the same way, and the distinction the
+// operator needs is why: an absent strip is a wiring/config answer, a full
+// queue is a retry.
+void sendAuxLedQueueRefusal(WebRequest& req) {
+    if (!isAuxLedAvailable()) {
+        req.send(503, "application/json", "{\"ok\":false,\"error\":\"aux LED unavailable\"}");
+        return;
+    }
+    req.send(503, "application/json", "{\"ok\":false,\"error\":\"aux LED command queue full\"}");
 }
 
 }  // namespace
 
-void registerAuxLedRoutes(AsyncWebServer& server) {
-    server.on("/api/aux-led/color", HTTP_POST, [](AsyncWebServerRequest* req) {
-        uint8_t r = 0;
-        uint8_t g = 0;
-        uint8_t b = 0;
-        if (!parseColorPayload(req, &r, &g, &b)) {
-            req->send(400, "application/json",
-                      "{\"ok\":false,\"error\":\"payload must contain r,g,b integers 0..255\"}");
-            return;
-        }
+void handleAuxLedColorPost(WebRequest& req) {
+    uint8_t r = 0;
+    uint8_t g = 0;
+    uint8_t b = 0;
+    if (!parseColorPayload(req, &r, &g, &b)) {
+        req.send(400, "application/json",
+                 "{\"ok\":false,\"error\":\"payload must contain r,g,b integers 0..255\"}");
+        return;
+    }
 
-        if (!auxLedQueueSetColor(r, g, b, SRC_WEB_API)) {
-            if (!isAuxLedAvailable()) {
-                req->send(503, "application/json",
-                          "{\"ok\":false,\"error\":\"aux LED unavailable\"}");
-            } else {
-                req->send(503, "application/json",
-                          "{\"ok\":false,\"error\":\"aux LED command queue full\"}");
-            }
-            return;
-        }
+    if (!auxLedQueueSetColor(r, g, b, SRC_WEB_API)) {
+        sendAuxLedQueueRefusal(req);
+        return;
+    }
 
-        sendAuxLedStateResponse(req);
-    });
+    sendAuxLedStateResponse(req);
+}
 
-    server.on("/api/aux-led/effect", HTTP_POST, [](AsyncWebServerRequest* req) {
-        AuxLedEffect effect = AUX_LED_EFFECT_OFF;
-        if (!parseEffectPayload(req, &effect)) {
-            req->send(400, "application/json",
-                      "{\"ok\":false,\"error\":\"effect must be one of off|solid|blink|pulse\"}");
-            return;
-        }
+void handleAuxLedEffectPost(WebRequest& req) {
+    AuxLedEffect effect = AUX_LED_EFFECT_OFF;
+    if (!parseEffectPayload(req, &effect)) {
+        req.send(400, "application/json",
+                 "{\"ok\":false,\"error\":\"effect must be one of off|solid|blink|pulse\"}");
+        return;
+    }
 
-        if (!auxLedQueueSetEffect(effect, SRC_WEB_API)) {
-            if (!isAuxLedAvailable()) {
-                req->send(503, "application/json",
-                          "{\"ok\":false,\"error\":\"aux LED unavailable\"}");
-            } else {
-                req->send(503, "application/json",
-                          "{\"ok\":false,\"error\":\"aux LED command queue full\"}");
-            }
-            return;
-        }
+    if (!auxLedQueueSetEffect(effect, SRC_WEB_API)) {
+        sendAuxLedQueueRefusal(req);
+        return;
+    }
 
-        sendAuxLedStateResponse(req);
-    });
+    sendAuxLedStateResponse(req);
 }

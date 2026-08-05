@@ -13,9 +13,14 @@
 // =============================================================================
 
 #include "../../include/api_actions.h"
+#include "../../include/api_aux_led.h"
 #include "../../include/api_config.h"
+#include "../../include/api_dome.h"
+#include "../../include/api_drive.h"
+#include "../../include/api_estop.h"
 #include "../../include/api_identity.h"
 #include "../../include/api_logs.h"
+#include "../../include/api_servo.h"
 #include "../../include/api_status.h"
 #include "../../include/api_system.h"
 #include "../../include/api_upload.h"
@@ -54,6 +59,27 @@ void webRegisterSeamRoutes() {
     webRegisterRoute("/api/coredump/status", WebMethod::kGet, handleCoredumpStatusGet);
     webRegisterRoute("/api/coredump", WebMethod::kGet, handleCoredumpGet);
     webRegisterRoute("/api/coredump/erase", WebMethod::kPost, handleCoredumpErasePost);
+
+    // Motion and safety. The estop pair goes first because it is the pair the
+    // admission policy exempts by path (webPathIsEstop()), and because the
+    // dashboard's E-Stop button is inert on any build where it is missing.
+    webRegisterRoute("/api/estop", WebMethod::kPost, handleEstopPost);
+    webRegisterRoute("/api/estop/clear", WebMethod::kPost, handleEstopClearPost);
+
+    webRegisterRoute("/api/mode", WebMethod::kPost, handleModePost);
+    webRegisterRoute("/api/drive", WebMethod::kPost, handleDrivePost);
+    webRegisterRoute("/api/drive/speed-preset", WebMethod::kPost, handleSpeedPresetPost);
+    webRegisterRoute("/api/web-control/enable", WebMethod::kPost, handleWebControlEnablePost);
+    webRegisterRoute("/api/web-control/disable", WebMethod::kPost, handleWebControlDisablePost);
+
+    webRegisterRoute("/api/dome", WebMethod::kPost, handleDomeSpeedPost);
+    webRegisterRoute("/api/dome/cmd", WebMethod::kPost, handleDomeCmdPost);
+    webRegisterRoute("/api/dome/layout", WebMethod::kGet, handleDomeLayoutGet);
+
+    webRegisterRoute("/api/servo", WebMethod::kPost, handleServoPost);
+
+    webRegisterRoute("/api/aux-led/color", WebMethod::kPost, handleAuxLedColorPost);
+    webRegisterRoute("/api/aux-led/effect", WebMethod::kPost, handleAuxLedEffectPost);
 
     // Streaming OTA uploads, ported early on purpose: with these working on
     // the psychic build, later work reflashes over the air instead of needing

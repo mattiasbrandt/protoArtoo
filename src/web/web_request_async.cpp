@@ -16,6 +16,7 @@
 #include <ESPAsyncWebServer.h>
 #include <stdio.h>
 
+#include "../../include/logging.h"
 #include "../../include/web_request.h"
 #include "../../include/web_request_async.h"
 
@@ -32,6 +33,30 @@ AsyncWebServerRequest* asyncReq(void* backend) {
 // vendor API before this seam existed.
 bool isPostParam(AsyncWebServerRequest* req) {
     return req->method() == HTTP_POST;
+}
+
+// Headers staged by addHeader() until there is a response object to hang them
+// on. ESPAsyncWebServer has no header slot on the request, and send(code, type,
+// body) builds and dispatches its response in one call, so the only place a
+// staged header can be applied is between beginResponse() and send() below.
+//
+// File-scope for the same reason api_system.cpp's coredump statics are: the
+// server task runs handlers one at a time under both backends, so exactly one
+// request can be staging headers. Cleared as each response goes out, which is
+// what keeps a header from reaching the next request.
+struct StagedHeader {
+    char name[32];
+    char value[64];
+};
+
+StagedHeader s_stagedHeaders[WebRequest::kMaxStagedHeaders];
+size_t s_stagedHeaderCount = 0;
+
+void applyStagedHeaders(AsyncWebServerResponse* response) {
+    for (size_t i = 0; i < s_stagedHeaderCount; i++) {
+        response->addHeader(s_stagedHeaders[i].name, s_stagedHeaders[i].value);
+    }
+    s_stagedHeaderCount = 0;
 }
 
 }  // namespace
@@ -75,8 +100,35 @@ size_t WebRequest::contentLength() const {
     return asyncReq(backend_)->contentLength();
 }
 
+void WebRequest::addHeader(const char* name, const char* value) {
+    if (s_stagedHeaderCount >= kMaxStagedHeaders) {
+        PA_LOG_ERROR("WebServer", "staged header limit reached; dropping %s", name);
+        return;
+    }
+    StagedHeader& staged = s_stagedHeaders[s_stagedHeaderCount++];
+    snprintf(staged.name, sizeof(staged.name), "%s", name);
+    snprintf(staged.value, sizeof(staged.value), "%s", value);
+}
+
 void WebRequest::send(int code, const char* contentType, const char* body) {
-    asyncReq(backend_)->send(code, contentType, body);
+    AsyncWebServerRequest* req = asyncReq(backend_);
+    if (s_stagedHeaderCount == 0) {
+        // The overwhelmingly common path, kept exactly as it was: no response
+        // object handled here, no extra allocation, nothing to undo.
+        req->send(code, contentType, body);
+        return;
+    }
+    AsyncWebServerResponse* response = req->beginResponse(code, contentType, body);
+    if (response == nullptr) {
+        // Out of heap for the response object. Drop the staging so it cannot
+        // reach the next request, and fall back to the plain send, which is
+        // the vendor's own allocation-failure path either way.
+        s_stagedHeaderCount = 0;
+        req->send(code, contentType, body);
+        return;
+    }
+    applyStagedHeaders(response);
+    req->send(response);
 }
 
 bool WebRequest::sendChunked(const char* contentType, WebResponseBodyFiller filler) {
@@ -88,8 +140,12 @@ bool WebRequest::sendChunked(const char* contentType, WebResponseBodyFiller fill
     AsyncWebServerRequest* req = asyncReq(backend_);
     AsyncWebServerResponse* response = req->beginChunkedResponse(contentType, filler);
     if (response == nullptr) {
+        // Nothing was sent, so the handler still owes the client an error --
+        // and must not carry this response's headers into it.
+        s_stagedHeaderCount = 0;
         return false;
     }
+    applyStagedHeaders(response);
     req->send(response);
     return true;
 }
