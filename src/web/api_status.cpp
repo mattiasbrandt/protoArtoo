@@ -4,7 +4,7 @@
 // Status and telemetry API endpoints
 //   GET /api/status  — JSON status snapshot
 //   GET /api/health  — health telemetry
-//   GET /api/wifi    — WiFi status
+//   GET /api/wifi    — WiFi status (ported to the WebRequest seam)
 //   GET /api/serial  — serial port status
 // =============================================================================
 
@@ -23,6 +23,7 @@
 #include "log_buffer.h"
 #include "logging.h"
 #include "robot_state.h"
+#include "web_request.h"
 #include "web_server.h"
 
 static void buildWifiJson(char* buffer, size_t bufferSize) {
@@ -88,16 +89,21 @@ static void buildHealthJson(char* buffer, size_t bufferSize) {
                      heapLargestBlock, wifiRssi);
 }
 
+// GET /api/wifi — active connection diagnostics, read by the WiFi page
+// alongside the settings it saves through POST /api/wifi. Ported with the
+// WiFi write route so that page works end to end on one stack.
+void handleWifiGet(WebRequest& req) {
+    // Worst case: apSsid/staSsid at WIFI_SSID_MAX_LEN (32), apIp/staIp at
+    // 15 chars ("255.255.255.255"), plus fixed JSON literal overhead
+    // (~130 bytes including the staSsid and networkRecovery fields). 256
+    // bytes keeps headroom above the observed worst case.
+    char body[256];
+    buildWifiJson(body, sizeof(body));
+    req.send(200, "application/json", body);
+}
+
 void registerStatusRoutes(AsyncWebServer& server) {
-    server.on("/api/wifi", HTTP_GET, [](AsyncWebServerRequest* req) {
-        // Worst case: apSsid/staSsid at WIFI_SSID_MAX_LEN (32), apIp/staIp at
-        // 15 chars ("255.255.255.255"), plus fixed JSON literal overhead
-        // (~130 bytes including the staSsid and networkRecovery fields). 256
-        // bytes keeps headroom above the observed worst case.
-        char body[256];
-        buildWifiJson(body, sizeof(body));
-        req->send(200, "application/json", body);
-    });
+    // GET /api/wifi is registered by the seam route table, not here.
 
     server.on("/api/serial", HTTP_GET, [](AsyncWebServerRequest* req) {
         char body[768];

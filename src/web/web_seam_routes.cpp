@@ -16,6 +16,7 @@
 #include "../../include/api_config.h"
 #include "../../include/api_identity.h"
 #include "../../include/api_logs.h"
+#include "../../include/api_status.h"
 #include "../../include/api_system.h"
 #include "../../include/api_upload.h"
 #include "../../include/web_request.h"
@@ -36,6 +37,7 @@ void webRegisterSeamRoutes() {
     webRegisterRoute("/api/config", WebMethod::kPost, handleConfigPost);
     webRegisterRoute("/api/rc/map", WebMethod::kGet, handleRcMapGet);
     webRegisterRoute("/api/rc/map", WebMethod::kPost, handleRcMapPost);
+    webRegisterRoute("/api/wifi", WebMethod::kGet, handleWifiGet);
     webRegisterRoute("/api/wifi", WebMethod::kPost, handleWifiPost);
 
     // System control.
