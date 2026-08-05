@@ -72,10 +72,26 @@ const char* WebRequest::paramRef(const char* name) const {
 }
 
 const char* WebRequest::body() const {
-    // bodyCStr() rather than body(), for the same lifetime reason as above.
-    // PsychicHttp only turns a body into parameters when it is form-encoded
-    // or multipart, so a raw JSON body is reachable here and nowhere else.
-    const char* raw = psychicCtx(backend_)->req->bodyCStr();
+    PsychicRequest* req = psychicCtx(backend_)->req;
+
+    // Only a body that was NOT turned into parameters counts as a raw body.
+    // PsychicHttp parses form-urlencoded and multipart bodies into params, and
+    // the async stack likewise only exposes its "plain" parameter for bodies
+    // it did not parse. Returning a form body here made every form POST look
+    // to an apply core like a malformed JSON document -- proven on the device,
+    // where POST /api/config with an ordinary form field answered 400
+    // "invalid json body".
+    if (req->isMultipart()) {
+        return nullptr;
+    }
+    // contentType() returns a String by value under Arduino, so it is consumed
+    // here rather than held.
+    if (req->contentType().startsWith("application/x-www-form-urlencoded")) {
+        return nullptr;
+    }
+
+    // bodyCStr() rather than body(), for the same lifetime reason as paramRef().
+    const char* raw = req->bodyCStr();
     return (raw != nullptr && raw[0] != '\0') ? raw : nullptr;
 }
 
