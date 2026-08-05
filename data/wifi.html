@@ -346,12 +346,12 @@
       })();
     </script>
 
-    <!-- Common Page Bootstrap tracer page (ADR 0019 rollout order). The
-         reducer and recovery view load ahead of the host, which then drives
-         the rest of the chain one resource at a time. Any of these three can
-         be shed; the kernel above covers that case. -->
-    <script src="/page_bootstrap.js"></script>
-    <script src="/recovery_view.js"></script>
-    <script src="/page_bootstrap_host.js" data-scripts="/web_api.js,/status_stream.js,/shell.js,/wifi.js,/footer.js"></script>
+    <!-- Common Page Bootstrap tracer page (ADR 0019 rollout order). One
+         request on purpose: the browser fetches every <script src> in the
+         initial burst in parallel, so a split bootstrap would open the
+         concurrent connections it exists to prevent. Everything after this
+         loads one at a time, driven by the bootstrap. If even this request is
+         shed, the inline kernel above covers it. -->
+    <script src="/page_bootstrap.js" data-scripts="/web_api.js,/status_stream.js,/shell.js,/wifi.js,/footer.js"></script>
   </body>
 </html>

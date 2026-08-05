@@ -1,16 +1,20 @@
 // =============================================================================
 // data/page_bootstrap.js
 //
-// Common Page Bootstrap: the shared page-load recovery state model, used by
-// every controller page. See docs/page-load-recovery-architecture.md
-// ("Common Page Bootstrap interface") for the contract this implements, and
-// ADR 0016 (busy/no-response wire contract) plus ADR 0019 (single active
-// request slot, rollout order) for the decisions behind it.
+// The Common Page Bootstrap: page-load recovery for every controller page.
+// See docs/page-load-recovery-architecture.md, ADR 0016 and ADR 0019.
 //
-// This module is a PURE reducer: no DOM, no fetch, no timers, no logging. A
-// host owns the real clock and network and calls dispatch(state, action). That
-// purity is what makes the model testable under injected faults without a
-// device, and what keeps every page's recovery behavior identical.
+// THIS IS DELIBERATELY ONE FILE. The three parts below (state model, recovery
+// view, browser host) are one cohesive subsystem, and splitting them across
+// three <script src> tags made the page open three extra connections in the
+// initial burst -- the exact concurrent pattern this bootstrap exists to
+// prevent. Measured on the controller: all three were reset by the accept
+// guard during an ordinary page load, so the bootstrap never initialized.
+// One request keeps the page's opening burst no larger than it was before
+// the bootstrap existed.
+// =============================================================================
+
+// ============================ PART 1: state model ============================
 // =============================================================================
 (() => {
   // Browser Request Priority. Estop never enters the queue at all (see
@@ -418,4 +422,548 @@
     classifyOutcome,
     dispatch,
   };
+})();
+
+// =========================== PART 2: recovery view ===========================
+// =============================================================================
+// data/recovery_view.js
+//
+// Page Recovery View: renders the Common Page Bootstrap's state as the
+// operator-facing panel, so a page that is still loading or waiting to retry
+// says so instead of sitting silently. Four states, per the approved design:
+//
+//   loading      required resources still arriving, nothing has failed
+//   busy         the controller refused the request; honor its Retry-After
+//   no-response  nothing came back on the first attempt
+//   retrying     still nothing back, intervals are growing
+//
+// Reads bootstrap state and writes DOM. It derives everything it shows from
+// that state -- it holds no recovery state of its own, so what the operator
+// sees can never drift from what the bootstrap is actually doing.
+// See ADR 0016 and docs/page-load-recovery-architecture.md.
+// =============================================================================
+(() => {
+  const BACKDROP_ID = "page-recovery-backdrop";
+
+  // Beyond this attempt count the wait is long enough that the operator needs
+  // to be told the intervals are growing, not just that a retry is pending.
+  const BACKOFF_VISIBLE_AFTER_ATTEMPT = 1;
+
+  // Plain-language names for what the page is waiting on. Recovery copy must
+  // not leak internals, so a raw path or section id is never shown -- an
+  // unlabelled step falls back to a generic phrase rather than its filename.
+  const labels = new Map();
+  const GENERIC_LABEL = { resource: "page files", section: "page data" };
+
+  const labelFor = (name, kind) => labels.get(name) || GENERIC_LABEL[kind] || "page data";
+
+  const REASON_DETAIL = {
+    timeout: "Connection timed out. Attempting to reconnect.",
+    network: "Connection to the controller was lost. Attempting to reconnect.",
+    http: "The controller rejected the request. Retrying.",
+    "bad-json": "The controller sent an incomplete reply. Retrying.",
+  };
+
+  // ---------------------------------------------------------------------------
+  // Deriving what to show
+  // ---------------------------------------------------------------------------
+
+  // The step the operator cares about: whatever is blocking progress right
+  // now. A waiting resource outranks a waiting section, because nothing else
+  // can proceed until required resources land.
+  const blockingStep = (state) => {
+    if (!state.resourcesReady) {
+      const step = state.resources[state.resourceCursor];
+      if (step) return { step, kind: "resource" };
+    }
+    const waiting = state.sections.find((s) => s.status === "failed-retrying");
+    if (waiting) return { step: waiting, kind: "section" };
+    const loading = state.sections.find((s) => s.status === "loading");
+    if (loading) return { step: loading, kind: "section" };
+    return null;
+  };
+
+  const deriveView = (state) => {
+    // Once required resources are in and every section has settled, the page
+    // is usable -- get out of the operator's way even if a section is still
+    // retrying in the background.
+    if (state.resourcesReady && state.sectionsStable) return { visible: false };
+
+    const blocking = blockingStep(state);
+    if (!blocking) return { visible: false };
+
+    const { step, kind } = blocking;
+
+    if (step.status !== "failed-retrying") {
+      return {
+        visible: true,
+        mode: "loading",
+        stepName: step.name,
+        stepLabel: labelFor(step.name, kind),
+        kind,
+        // A step on the longer Operation Deadline needs to say so, or an
+        // expected wait reads as a frozen page.
+        longRunning: state.active?.name === step.name && state.active.longRunning === true,
+      };
+    }
+
+    const waitMs = Math.max(0, (step.nextAt ?? state.now) - state.now);
+    const mode =
+      step.reason === "busy"
+        ? "busy"
+        : step.attempt > BACKOFF_VISIBLE_AFTER_ATTEMPT
+          ? "retrying"
+          : "no-response";
+
+    return {
+      visible: true,
+      mode,
+      stepName: step.name,
+      stepLabel: labelFor(step.name, kind),
+      kind,
+      attempt: step.attempt,
+      reason: step.reason,
+      waitMs,
+      // Round up so a 4.2s wait reads "5 s" and reaches "1 s" before firing,
+      // rather than sitting on "0 s" while nothing visibly happens.
+      waitSeconds: Math.ceil(waitMs / 1000),
+    };
+  };
+
+  // ---------------------------------------------------------------------------
+  // Rendering
+  // ---------------------------------------------------------------------------
+  const el = (tag, className, text) => {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  };
+
+  const countdownPanel = (label, seconds, sublabel) => {
+    const panel = el("div", "recovery-countdown-panel");
+    if (label) panel.appendChild(el("div", "recovery-countdown-label", label));
+    panel.appendChild(el("div", "recovery-countdown-value", `${seconds} s`));
+    if (sublabel) panel.appendChild(el("div", "recovery-countdown-label", sublabel));
+    return panel;
+  };
+
+  const retryButton = (onRetryNow, stepName) => {
+    const actions = el("div", "recovery-actions");
+    const button = el("button", "btn accent", "Retry now");
+    button.type = "button";
+    button.addEventListener("click", () => onRetryNow(stepName));
+    actions.appendChild(button);
+    return actions;
+  };
+
+  const buildPanel = (view, onRetryNow) => {
+    const panel = el("div", "recovery-panel");
+
+    if (view.mode === "busy") {
+      const banner = el("div", "recovery-refused-banner");
+      banner.appendChild(el("span", "indicator warn"));
+      banner.appendChild(el("span", null, "REQUEST REFUSED"));
+      panel.appendChild(banner);
+      panel.appendChild(el("div", "recovery-status-reason", "Controller busy"));
+      panel.appendChild(
+        el(
+          "p",
+          "recovery-message",
+          "Controller is handling other requests. Try again in a moment."
+        )
+      );
+      panel.appendChild(countdownPanel("Retry interval", view.waitSeconds));
+      panel.appendChild(retryButton(onRetryNow, view.stepName));
+      return panel;
+    }
+
+    const header = el("div", "recovery-header");
+    const indicatorClass =
+      view.mode === "loading" ? "indicator info" : view.mode === "retrying" ? "indicator fail" : "indicator warn";
+    header.appendChild(el("span", indicatorClass));
+
+    const headerText = el("div");
+    if (view.mode === "loading") {
+      headerText.appendChild(el("div", "recovery-status-reason", "Loading page resources"));
+      headerText.appendChild(
+        el("div", "recovery-status-detail", "Preparing the controller page")
+      );
+    } else {
+      headerText.appendChild(
+        el("div", "recovery-status-reason", "No response from controller")
+      );
+      headerText.appendChild(
+        el(
+          "div",
+          "recovery-status-detail",
+          view.mode === "retrying"
+            ? "Still waiting. Retrying with increasing intervals."
+            : REASON_DETAIL[view.reason] || "Attempting to reconnect."
+        )
+      );
+    }
+    header.appendChild(headerText);
+    panel.appendChild(header);
+
+    if (view.mode === "loading") {
+      const step = el("p", "recovery-step");
+      step.appendChild(el("span", "recovery-spinner"));
+      step.appendChild(document.createTextNode(`Loading: ${view.stepLabel}`));
+      panel.appendChild(step);
+      panel.appendChild(
+        el(
+          "p",
+          "recovery-message",
+          view.longRunning
+            ? "This step normally takes longer than the others. Completed resources stay loaded."
+            : "Completed resources stay loaded. Page data loads once required files are in."
+        )
+      );
+      return panel;
+    }
+
+    panel.appendChild(
+      countdownPanel(
+        null,
+        view.waitSeconds,
+        view.mode === "retrying"
+          ? `Next attempt\nAttempt ${view.attempt} (backoff)`
+          : `Next attempt\nAttempt ${view.attempt}`
+      )
+    );
+
+    if (view.mode === "retrying") {
+      panel.appendChild(
+        el(
+          "p",
+          "recovery-message",
+          "Retry intervals are increasing so the controller is not overwhelmed."
+        )
+      );
+    }
+
+    panel.appendChild(retryButton(onRetryNow, view.stepName));
+    return panel;
+  };
+
+  // ---------------------------------------------------------------------------
+  // Mount / render
+  // ---------------------------------------------------------------------------
+  const ensureBackdrop = () => {
+    let backdrop = document.getElementById(BACKDROP_ID);
+    if (backdrop) return backdrop;
+
+    backdrop = el("div", "recovery-backdrop");
+    backdrop.id = BACKDROP_ID;
+    // Announced politely: this updates on a timer, and an assertive live
+    // region would interrupt the operator on every countdown tick.
+    backdrop.setAttribute("role", "status");
+    backdrop.setAttribute("aria-live", "polite");
+    backdrop.setAttribute("aria-atomic", "true");
+    document.body.appendChild(backdrop);
+    return backdrop;
+  };
+
+  // Signature kept stable across renders so the countdown can repaint without
+  // rebuilding the panel and stealing focus from the Retry now button.
+  const signatureOf = (view) =>
+    view.visible
+      ? `${view.mode}|${view.kind}|${view.stepName}|${view.attempt ?? 0}|${view.longRunning ? 1 : 0}`
+      : "hidden";
+
+  let lastSignature = null;
+
+  const render = (state, { onRetryNow = () => {} } = {}) => {
+    const view = deriveView(state);
+    const backdrop = ensureBackdrop();
+
+    if (!view.visible) {
+      backdrop.classList.remove("active");
+      document.body.classList.remove("recovery-active");
+      backdrop.replaceChildren();
+      lastSignature = "hidden";
+      return view;
+    }
+
+    const signature = signatureOf(view);
+    if (signature !== lastSignature) {
+      backdrop.replaceChildren(buildPanel(view, onRetryNow));
+      lastSignature = signature;
+    } else {
+      const value = backdrop.querySelector(".recovery-countdown-value");
+      if (value) value.textContent = `${view.waitSeconds} s`;
+    }
+
+    backdrop.classList.add("active");
+    document.body.classList.add("recovery-active");
+    return view;
+  };
+
+  window.PARecoveryView = {
+    deriveView,
+    render,
+    // Pages name their own steps in operator language; anything unnamed still
+    // renders safely via the generic fallback.
+    setLabels(entries) {
+      Object.entries(entries).forEach(([name, label]) => labels.set(name, label));
+    },
+  };
+})();
+
+// ============================ PART 3: browser host ===========================
+// =============================================================================
+// data/page_bootstrap_host.js
+//
+// Drives the Common Page Bootstrap reducer against the real browser: owns the
+// clock, loads the stylesheet and the page's script chain, runs page-declared
+// section loads, renders the Page Recovery View, and gates Live Page Updates.
+//
+// Replaces page_loader.js on pages that have adopted the bootstrap. It keeps
+// that file's contract intact -- one resource at a time, retry a failed load
+// rather than abandoning the chain, swap [data-deferred-src] once assets are
+// in, and announce readiness on window -- but the retry policy now comes from
+// the reducer instead of a second mechanism, and readiness is announced when
+// live updates may actually start rather than merely when scripts finished.
+//
+// See docs/page-load-recovery-architecture.md and ADR 0019.
+// =============================================================================
+(() => {
+  const loader = document.currentScript;
+  const scripts = (loader?.dataset?.scripts || "")
+    .split(",")
+    .map((source) => source.trim())
+    .filter(Boolean);
+
+  const TICK_MS = 250;
+
+  const Core = window.PageBootstrap;
+  if (!Core) {
+    // page_bootstrap.js is a hard prerequisite and is loaded ahead of this
+    // file by the page itself. Failing loudly beats a page that silently
+    // never loads anything.
+    throw new Error("[page-bootstrap] page_bootstrap.js must load before page_bootstrap_host.js");
+  }
+
+  // The stylesheet is deliberately NOT part of this chain. Pages carry a
+  // render-blocking <link> in <head>, so the browser fetches it once and
+  // natively; page_loader.js fetched it a second time and, because the chain
+  // waited on it, a stylesheet failure could stall everything behind it. Here
+  // a failed stylesheet costs styling only -- scripts and recovery still run.
+  let state = Core.createBootstrap({ resources: scripts, sections: [] });
+  const sectionLoaders = new Map();
+  const commandRunners = new Map();
+  let assetsAnnounced = false;
+
+  // ---------------------------------------------------------------------------
+  // Resource loading
+  // ---------------------------------------------------------------------------
+  const loadScript = (src, done) => {
+    const script = document.createElement("script");
+    script.src = src;
+    // Preserve execution order: the chain is sequential by design, and async
+    // would let a later script run against a not-yet-defined earlier global.
+    script.async = false;
+    script.onload = () => done(null);
+    script.onerror = () => {
+      script.remove();
+      done({ kind: "network" });
+    };
+    document.body.appendChild(script);
+  };
+
+  const runSection = (name, done) => {
+    const load = sectionLoaders.get(name);
+    if (!load) {
+      done({ kind: "http", status: 501 });
+      return;
+    }
+    Promise.resolve()
+      .then(() => load())
+      .then(() => done(null))
+      .catch((error) => done(error));
+  };
+
+  // ---------------------------------------------------------------------------
+  // Driving the reducer
+  //
+  // The reducer decides what should run; this only notices when its `active`
+  // slot changes and starts the corresponding real work exactly once.
+  // ---------------------------------------------------------------------------
+  let startedActiveId = null;
+
+  const settle = (id, error, retryAfterMs) => {
+    // A result arriving after its deadline already expired belongs to a
+    // request the reducer has moved on from; dropping it keeps the reducer's
+    // attempt accounting honest.
+    if (!state.active || state.active.id !== id) return;
+    const outcome = error
+      ? Core.classifyOutcome(error, retryAfterMs ?? error?.retryAfterMs ?? null)
+      : { kind: "success" };
+    apply(state.active.kind === "command" ? { type: "COMMAND_RESULT", outcome } : { type: "RESULT", outcome });
+  };
+
+  const syncActive = () => {
+    const active = state.active;
+    if (!active || active.id === startedActiveId) return;
+    startedActiveId = active.id;
+    const id = active.id;
+
+    if (active.kind === "resource") {
+      loadScript(active.name, (error) => settle(id, error));
+    } else if (active.kind === "section") {
+      runSection(active.name, (error) => settle(id, error));
+    } else if (active.kind === "command") {
+      // A command runs when the reducer gives it the slot, not when the page
+      // submitted it -- a queued command that ran immediately would defeat the
+      // priority ordering it was queued to respect.
+      const run = commandRunners.get(id);
+      commandRunners.delete(id);
+      if (!run) {
+        settle(id, { kind: "unknown" });
+        return;
+      }
+      Promise.resolve()
+        .then(() => run())
+        .then(() => settle(id, null))
+        .catch((error) => settle(id, error));
+    }
+  };
+
+  const announceAssetsOnce = () => {
+    if (assetsAnnounced || !state.liveUpdatesStarted) return;
+    assetsAnnounced = true;
+
+    document.querySelectorAll("[data-deferred-src]").forEach((element) => {
+      element.src = element.dataset.deferredSrc;
+      delete element.dataset.deferredSrc;
+    });
+
+    // Page Startup Order: this is the signal status_stream.js waits on before
+    // opening /api/events, so it fires once the page is genuinely ready for
+    // live updates -- not merely once its scripts finished downloading.
+    window.PAAssetsReady = true;
+    window.dispatchEvent(new Event("pa:assets-ready"));
+  };
+
+  const render = () => {
+    window.PARecoveryView?.render(state, {
+      onRetryNow: (name) => apply({ type: "RETRY_NOW", name }),
+    });
+  };
+
+  // Pages gate controls on whether the data behind them actually loaded, so
+  // they need to know when a section's status changes -- but not on every
+  // clock tick, which would fire several times a second for no new fact.
+  let lastSectionSignature = null;
+  const publishSectionChange = () => {
+    const signature = state.sections.map((s) => `${s.name}:${s.status}`).join(",");
+    if (signature === lastSectionSignature) return;
+    lastSectionSignature = signature;
+    window.dispatchEvent(
+      new CustomEvent("pa:bootstrap-change", {
+        detail: {
+          sections: state.sections.map((s) => ({ name: s.name, status: s.status })),
+          resourcesReady: state.resourcesReady,
+          sectionsStable: state.sectionsStable,
+        },
+      })
+    );
+  };
+
+  const apply = (action) => {
+    state = Core.dispatch(state, action);
+    syncActive();
+    announceAssetsOnce();
+    render();
+    publishSectionChange();
+  };
+
+  // ---------------------------------------------------------------------------
+  // Clock and visibility
+  // ---------------------------------------------------------------------------
+  let lastTickAt = Date.now();
+  const tick = () => {
+    const now = Date.now();
+    const dt = now - lastTickAt;
+    lastTickAt = now;
+    apply({ type: "TICK", dt });
+  };
+
+  document.addEventListener("visibilitychange", () => {
+    // Resync the clock on return so a long hidden stretch does not land as one
+    // enormous dt that instantly expires every pending deadline.
+    lastTickAt = Date.now();
+    apply({ type: "VISIBILITY", visible: !document.hidden });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Page-facing API
+  // ---------------------------------------------------------------------------
+  window.PABootstrap = {
+    // Page scripts call this as they execute, which is during resource
+    // loading -- before any section work is allowed to start.
+    registerSection(name, load, { label = null, deadlineMs = null } = {}) {
+      sectionLoaders.set(name, load);
+      if (label) window.PARecoveryView?.setLabels({ [name]: label });
+      apply({
+        type: "DECLARE_SECTIONS",
+        names: [name],
+        deadlines: deadlineMs ? { [name]: deadlineMs } : undefined,
+      });
+      // Sections may only be declared before any section work starts, so a
+      // late registration is refused. Silently dropping it would leave a page
+      // whose data simply never loads and no indication why.
+      if (!state.sections.some((s) => s.name === name)) {
+        console.warn(
+          `[page-bootstrap] section "${name}" registered after section work began; it will not load. ` +
+            "Register sections while the page script is executing."
+        );
+      }
+    },
+    setResourceLabels(entries) {
+      window.PARecoveryView?.setLabels(entries);
+    },
+
+    // Latching Estop bypasses the queue and the single active slot entirely --
+    // it must never wait behind a resource load, a retry, or a background
+    // section. It is also never auto-retried: a safety action is sent once,
+    // deliberately, and its outcome is the caller's to handle.
+    submitEstop(name, run) {
+      apply({ type: "SUBMIT_ESTOP", name });
+      return Promise.resolve().then(() => run());
+    },
+
+    // Ordinary user commands take the slot ahead of automatic page work but
+    // never preempt work already in flight, and are never auto-retried.
+    submitCommand(name, run) {
+      // The reducer assigns the next id, so claiming it here lets the runner
+      // be registered before the dispatch that may start it synchronously.
+      const id = state.nextId;
+      commandRunners.set(id, run);
+      apply({ type: "SUBMIT_COMMAND", name });
+    },
+
+    retryNow(name) {
+      apply({ type: "RETRY_NOW", name });
+    },
+    refreshSections(names) {
+      apply({ type: "REFRESH_SECTIONS", names });
+    },
+    getState() {
+      return state;
+    },
+  };
+
+  const start = () => {
+    lastTickAt = Date.now();
+    window.setInterval(tick, TICK_MS);
+    apply({ type: "TICK", dt: 0 });
+  };
+
+  if (document.readyState === "complete") {
+    start();
+  } else {
+    window.addEventListener("load", start, { once: true });
+  }
 })();
