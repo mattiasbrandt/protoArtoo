@@ -18,6 +18,9 @@
 
 static const char* TAG = "WebEvents";
 
+// Called from whichever task the active backend dispatches requests on -- the
+// psychic server task on the device, a test's own thread on the host. Never
+// from core 1.
 void handleEventsGet(WebRequest& req) {
     if (webEventStreamClientCount() >= PA_ADMISSION_MAX_SSE_CLIENTS) {
         g_webRefusedSseCap = g_webRefusedSseCap + 1u;

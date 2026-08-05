@@ -355,6 +355,12 @@ enum class StreamSendOutcome : unsigned char { kSent, kEvictDeadline, kEvictErro
 // Pushes one event at one socket without ever blocking longer than the
 // deadline.
 //
+// Called from two tasks: eventStreamTask (core 0) for every broadcast, and the
+// psychic server task for the stream head at upgrade time. Both may block for
+// up to the deadline, which is affordable on either -- eventStreamTask is a 1 Hz
+// housekeeping task, and the server task is core-0 web work. Neither is a core-1
+// real-time loop (AGENTS.md).
+//
 // MSG_DONTWAIT is what makes the deadline mean anything. Without it the
 // socket's own send timeout governs -- five seconds by default -- so a single
 // attempt against a stalled client would overrun any shorter deadline before
@@ -402,7 +408,8 @@ StreamSendOutcome sendEventBounded(int socket, const EventSegment* segments, siz
     }
 }
 
-// Unregisters a stream and drops its connection.
+// Unregisters a stream and drops its connection. Called from eventStreamTask,
+// which is the only place that can find a client unresponsive.
 //
 // httpd_sess_trigger_close() posts the close to the server's own control
 // socket rather than touching the session from here, which is what makes it
@@ -576,6 +583,9 @@ bool WebRequest::triggerClose() {
     return httpd_sess_trigger_close(raw->handle, httpd_req_to_sockfd(raw)) == ESP_OK;
 }
 
+// Called from the psychic server task, inside handleEventsGet()'s dispatch, so
+// the registry mutation here races the eviction path on eventStreamTask -- which
+// is why the registry has a lock and the admission counters above do not.
 bool WebRequest::beginEventStream() {
     WebRequestPsychicCtx* ctx = psychicCtx(backend_);
     httpd_req_t* raw = ctx->req->request();
@@ -627,6 +637,9 @@ bool WebRequest::beginEventStream() {
     return true;
 }
 
+// Read from eventStreamTask (to decide whether a tick has anywhere to go), from
+// the psychic server task (handleEventsGet()'s cap check and buildStatusJson()),
+// hence the lock on what is otherwise a plain field read.
 size_t webEventStreamClientCount() {
     taskENTER_CRITICAL(&s_streamMux);
     const size_t count = s_streams.count;
@@ -634,6 +647,10 @@ size_t webEventStreamClientCount() {
     return count;
 }
 
+// Called only from eventStreamTask (core 0, 1 Hz), which owns the scheduling
+// this reaches the wire for -- the on-demand status flag, the rc snapshot and
+// the log batch. Nothing else may broadcast: the segment buffers below borrow
+// that task's own static payload buffers.
 void webEventStreamBroadcast(const char* event, const char* data, uint32_t id) {
     if (s_streamServer == nullptr || data == nullptr) {
         return;

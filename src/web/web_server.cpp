@@ -1016,10 +1016,13 @@ bool webServerHasSSEClients() {
 // which is where an unbounded one can actually be fixed (ADR 0020 found no safe
 // cross-task close on AsyncTCP). The #91 cutover deletes this block with the
 // rest of the scaffold.
+// Called from eventStreamTask and, for the count, from any handler building the
+// status payload on the async_tcp task. AsyncEventSource does its own locking.
 size_t webEventStreamClientCount() {
     return events.count();
 }
 
+// eventStreamTask only, same as the psychic backend's.
 void webEventStreamBroadcast(const char* event, const char* data, uint32_t id) {
     events.send(data, event, id);
 }
