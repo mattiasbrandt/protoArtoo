@@ -118,11 +118,17 @@ void handleUploadChunk(UploadSession& session, UploadTarget target, int updateCo
     }
 
     if (final) {
+        if (session.bytesWritten == 0) {
+            Update.abort();
+            session.outcome = UploadOutcome::kNoImage;
+            return;
+        }
         if (!Update.end(true)) {
             Update.printError(Serial);
             session.outcome = UploadOutcome::kFailed;
             return;
         }
+        session.outcome = UploadOutcome::kComplete;
         PA_LOG_INFO(TAG, "OTA %s upload complete: %u bytes in %u ms, min free heap %u", label,
                     (unsigned)session.bytesWritten, (unsigned)(millis() - session.startMs),
                     (unsigned)session.minHeapFree);
@@ -135,14 +141,22 @@ void handleUploadDone(UploadSession& session, UploadTarget target, const char* l
     const UploadOutcome outcome = session.outcome;
     session.outcome = UploadOutcome::kInProgress;
 
-    // Update.hasError() is consulted as well as our own record: an error the
-    // library latched without failing a call we checked would otherwise be
-    // reported to the operator as a successful flash.
-    const UploadOutcome effective =
-        (outcome == UploadOutcome::kInProgress && Update.hasError()) ? UploadOutcome::kFailed
-                                                                    : outcome;
+    // Only an upload that actually wrote and finalized an image counts as
+    // success. Treating "nothing went wrong" as success made an empty POST to
+    // this endpoint answer 200 and reboot the controller -- proven on the
+    // device before this check existed.
+    //
+    // Update.hasError() is consulted as well: an error the library latched
+    // without failing a call checked above would otherwise be reported to the
+    // operator as a successful flash.
+    UploadOutcome effective = outcome;
+    if (effective == UploadOutcome::kInProgress) {
+        effective = UploadOutcome::kNoImage;
+    } else if (effective == UploadOutcome::kComplete && Update.hasError()) {
+        effective = UploadOutcome::kFailed;
+    }
 
-    if (effective != UploadOutcome::kInProgress) {
+    if (effective != UploadOutcome::kComplete) {
         const UploadResponse response = uploadFailureResponse(target, effective);
         PA_LOG_ERROR(TAG, "POST /upload/%s failed with %d", label, response.code);
         req.send(response.code, "application/json", response.body);

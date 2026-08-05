@@ -24,9 +24,11 @@ enum class UploadTarget : uint8_t { kFirmware, kFilesystem };
 // What happened to an upload, recorded during the streamed body and answered
 // once the body has been consumed.
 enum class UploadOutcome : uint8_t {
-    kInProgress,       // no problem seen yet
+    kInProgress,       // no problem seen yet, and not finished either
     kRejectedOversize, // cannot fit the destination partition
     kFailed,           // Update refused to begin, write, or finalize
+    kNoImage,          // the request carried no image to write
+    kComplete,         // written and finalized
 };
 
 // Multipart framing -- boundary lines, the Content-Disposition part header, the
@@ -71,6 +73,13 @@ struct UploadResponse {
 };
 
 inline UploadResponse uploadFailureResponse(UploadTarget target, UploadOutcome outcome) {
+    if (outcome == UploadOutcome::kNoImage) {
+        // A POST that delivered no image must not read as a successful flash.
+        // It reached this endpoint, so answering 200 would reboot the
+        // controller to re-run the image it is already running -- an outage
+        // with nothing to show for it.
+        return UploadResponse{400, "{\"ok\":false,\"error\":\"no image received\"}"};
+    }
     if (outcome == UploadOutcome::kRejectedOversize) {
         return target == UploadTarget::kFirmware
                    ? UploadResponse{413,

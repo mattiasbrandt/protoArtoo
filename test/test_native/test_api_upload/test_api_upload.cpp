@@ -82,6 +82,20 @@ void test_success_body_reports_overflow_rather_than_truncating() {
     TEST_ASSERT_FALSE(formatUploadSuccessJson(nullptr, 0, 1, 1, 1));
 }
 
+void test_a_post_with_no_image_is_not_a_successful_flash() {
+    // Proven on the device before this existed: an empty POST to
+    // /upload/firmware answered 200 and rebooted the controller, re-running
+    // the image it was already running. An outage with nothing to show for it.
+    UploadResponse fw = uploadFailureResponse(UploadTarget::kFirmware, UploadOutcome::kNoImage);
+    TEST_ASSERT_EQUAL_INT(400, fw.code);
+    TEST_ASSERT_NOT_NULL(strstr(fw.body, "\"ok\":false"));
+    TEST_ASSERT_NOT_NULL(strstr(fw.body, "no image received"));
+
+    UploadResponse fs = uploadFailureResponse(UploadTarget::kFilesystem, UploadOutcome::kNoImage);
+    TEST_ASSERT_EQUAL_INT(400, fs.code);
+    TEST_ASSERT_NOT_NULL(strstr(fs.body, "no image received"));
+}
+
 void test_failure_responses_carry_a_json_error_message_per_target() {
     // data/firmware.js reads jsonData.error to show the operator what went
     // wrong, so every failure body must carry one and the two targets must not
@@ -112,6 +126,7 @@ int main() {
     RUN_TEST(test_transport_ceiling_clears_every_partition_on_this_board);
     RUN_TEST(test_success_body_carries_the_transfer_evidence);
     RUN_TEST(test_success_body_reports_overflow_rather_than_truncating);
+    RUN_TEST(test_a_post_with_no_image_is_not_a_successful_flash);
     RUN_TEST(test_failure_responses_carry_a_json_error_message_per_target);
     return UNITY_END();
 }
