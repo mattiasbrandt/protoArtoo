@@ -236,7 +236,13 @@ void initPsychicHttpServer() {
     printf("INFO: psychic_adapter: SSE client #%u connected\n", client->socket());
     static char body[3072];
     if (buildStatusJson(body, sizeof(body))) {
-      client->send(body, "status", millis());
+      // reconnect=1234 (a value with no plausible browser-default collision)
+      // is #73's stalled-SSE follow-up: exercise PsychicEventSourceClient::
+      // send()'s reconnect param, which writes a "retry: <ms>" SSE field, and
+      // confirm it's wire-correct. Deliberately only on the FIRST event per
+      // connection (matching common SSE convention) -- not proof this field
+      // has any real effect on protoArtoo's actual client, see #73 comments.
+      client->send(body, "status", millis(), 1234);
     }
   });
   eventSource->onClose([](PsychicEventSourceClient* client) {
