@@ -60,11 +60,17 @@ enum class WebAcceptDecision : unsigned char {
     kRejectHeap,
 };
 
-// The whole Connection Admission decision. Rate is checked before heap because
-// the rate check is arithmetic on state already in cache, while the heap value
-// costs a heap walk to refresh -- so a paced-out connection never pays for one.
+// Produces the current largest free block. Passed in rather than called
+// directly so the decision stays host-testable, and so the decision itself
+// controls whether the sample is taken at all.
+using WebHeapSampler = size_t (*)(void* ctx);
+
+// The whole Connection Admission decision. Rate is checked before heap, and
+// the sampler is invoked only if the rate check passes: the rate check is
+// arithmetic on state already in cache, while sampling the heap may cost a
+// heap walk, so a paced-out connection must never trigger one.
 WebAcceptDecision webAcceptDecide(WebAcceptRateLimiter* limiter, uint32_t nowMs, uint32_t burst,
-                                  uint32_t perSecond, size_t largestFreeBlock,
+                                  uint32_t perSecond, WebHeapSampler sampler, void* samplerCtx,
                                   size_t minLargestFreeBlock);
 
 // -----------------------------------------------------------------------------

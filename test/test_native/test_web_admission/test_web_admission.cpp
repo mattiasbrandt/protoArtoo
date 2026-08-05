@@ -21,7 +21,20 @@ static constexpr size_t kFloorDiag = 7500;
 static constexpr size_t kAcceptFloor = 8500;
 static constexpr int kMaxInflight = 6;
 
+// Stands in for the heap walk. Counting the calls is the point: whether the
+// sample is taken at all is the guard's cost story, not an implementation
+// detail.
+static size_t s_sampleValue = 20000;
+static int s_sampleCalls = 0;
+
+static size_t sampleStub(void*) {
+    s_sampleCalls++;
+    return s_sampleValue;
+}
+
 void setUp() {
+    s_sampleValue = 20000;
+    s_sampleCalls = 0;
 }
 
 void tearDown() {
@@ -97,46 +110,70 @@ void test_bucket_survives_millis_wraparound() {
 // Connection Admission
 // -----------------------------------------------------------------------------
 
+static WebAcceptDecision decide(WebAcceptRateLimiter* limiter, uint32_t nowMs) {
+    return webAcceptDecide(limiter, nowMs, kBurst, kPerSecond, sampleStub, nullptr, kAcceptFloor);
+}
+
 void test_accept_admits_when_rate_and_heap_are_both_healthy() {
     WebAcceptRateLimiter limiter;
     webAcceptRateLimiterInit(&limiter, 1000, kBurst);
 
-    TEST_ASSERT_EQUAL(WebAcceptDecision::kAdmit,
-                      webAcceptDecide(&limiter, 1000, kBurst, kPerSecond, 20000, kAcceptFloor));
+    TEST_ASSERT_EQUAL(WebAcceptDecision::kAdmit, decide(&limiter, 1000));
 }
 
 void test_accept_rejects_below_the_heap_floor() {
     WebAcceptRateLimiter limiter;
     webAcceptRateLimiterInit(&limiter, 1000, kBurst);
+    s_sampleValue = kAcceptFloor - 1;
 
-    TEST_ASSERT_EQUAL(WebAcceptDecision::kRejectHeap,
-                      webAcceptDecide(&limiter, 1000, kBurst, kPerSecond, 8499, kAcceptFloor));
+    TEST_ASSERT_EQUAL(WebAcceptDecision::kRejectHeap, decide(&limiter, 1000));
 }
 
 void test_accept_admits_exactly_at_the_heap_floor() {
-    // The floor is a minimum, not a strict bound: calibration language says
-    // floors "sit below" the warm-under-load level, so the boundary value is
-    // still healthy.
+    // The floor is a minimum, not a strict bound: the calibration places the
+    // floors below the warm-under-load level, so the boundary value is still
+    // healthy and must not shed a page's own assets.
     WebAcceptRateLimiter limiter;
     webAcceptRateLimiterInit(&limiter, 1000, kBurst);
+    s_sampleValue = kAcceptFloor;
 
-    TEST_ASSERT_EQUAL(WebAcceptDecision::kAdmit,
-                      webAcceptDecide(&limiter, 1000, kBurst, kPerSecond, kAcceptFloor,
-                                      kAcceptFloor));
+    TEST_ASSERT_EQUAL(WebAcceptDecision::kAdmit, decide(&limiter, 1000));
 }
 
 void test_accept_checks_rate_before_heap() {
-    // Ordering is load-bearing: the heap value costs a heap walk to refresh,
-    // so a connection that is going to be paced out anyway must never pay for
-    // one. A paced-out connection reports kRejectRate even with a dead heap.
     WebAcceptRateLimiter limiter;
     webAcceptRateLimiterInit(&limiter, 1000, kBurst);
     for (uint32_t i = 0; i < kBurst; i++) {
-        webAcceptDecide(&limiter, 1000, kBurst, kPerSecond, 20000, kAcceptFloor);
+        decide(&limiter, 1000);
     }
+    s_sampleValue = 100;
 
-    TEST_ASSERT_EQUAL(WebAcceptDecision::kRejectRate,
-                      webAcceptDecide(&limiter, 1000, kBurst, kPerSecond, 100, kAcceptFloor));
+    TEST_ASSERT_EQUAL(WebAcceptDecision::kRejectRate, decide(&limiter, 1000));
+}
+
+void test_paced_out_connection_never_samples_the_heap() {
+    // The cost story of the whole guard: sampling the heap may walk it, and
+    // that walk happens on the task that services every other connection. A
+    // connection being paced out must not trigger one.
+    WebAcceptRateLimiter limiter;
+    webAcceptRateLimiterInit(&limiter, 1000, kBurst);
+    for (uint32_t i = 0; i < kBurst; i++) {
+        decide(&limiter, 1000);
+    }
+    const int callsAfterBurst = s_sampleCalls;
+
+    decide(&limiter, 1000);
+
+    TEST_ASSERT_EQUAL_INT(callsAfterBurst, s_sampleCalls);
+}
+
+void test_admission_samples_the_heap_at_most_once() {
+    WebAcceptRateLimiter limiter;
+    webAcceptRateLimiterInit(&limiter, 1000, kBurst);
+
+    decide(&limiter, 1000);
+
+    TEST_ASSERT_EQUAL_INT(1, s_sampleCalls);
 }
 
 void test_accept_does_not_spend_a_token_on_a_heap_rejection() {
@@ -145,14 +182,14 @@ void test_accept_does_not_spend_a_token_on_a_heap_rejection() {
     // paces out the connections that arrive once heap recovers.
     WebAcceptRateLimiter limiter;
     webAcceptRateLimiterInit(&limiter, 1000, kBurst);
+    s_sampleValue = 100;
     for (uint32_t i = 0; i < kBurst; i++) {
-        TEST_ASSERT_EQUAL(WebAcceptDecision::kRejectHeap,
-                          webAcceptDecide(&limiter, 1000, kBurst, kPerSecond, 100, kAcceptFloor));
+        TEST_ASSERT_EQUAL(WebAcceptDecision::kRejectHeap, decide(&limiter, 1000));
     }
 
+    s_sampleValue = 20000;
     for (uint32_t i = 0; i < kBurst; i++) {
-        TEST_ASSERT_EQUAL(WebAcceptDecision::kAdmit,
-                          webAcceptDecide(&limiter, 1000, kBurst, kPerSecond, 20000, kAcceptFloor));
+        TEST_ASSERT_EQUAL(WebAcceptDecision::kAdmit, decide(&limiter, 1000));
     }
 }
 
@@ -320,6 +357,8 @@ int main() {
     RUN_TEST(test_accept_rejects_below_the_heap_floor);
     RUN_TEST(test_accept_admits_exactly_at_the_heap_floor);
     RUN_TEST(test_accept_checks_rate_before_heap);
+    RUN_TEST(test_paced_out_connection_never_samples_the_heap);
+    RUN_TEST(test_admission_samples_the_heap_at_most_once);
     RUN_TEST(test_accept_does_not_spend_a_token_on_a_heap_rejection);
 
     RUN_TEST(test_unprimed_sample_is_due_rather_than_optimistic);

@@ -44,6 +44,7 @@
 #include "../../include/aux_led.h"
 #include "../../include/rc_diagnostics_snapshot.h"
 #include "../../include/robot_state.h"
+#include "../../include/web_admission.h"
 #include "../../include/web_request.h"
 #include "../../include/web_request_async.h"
 #include "../../include/wifi_boot_decision.h"
@@ -291,20 +292,30 @@ static constexpr size_t kMinLargestFreeBlockForDiagnostics =
 #define PA_ADMISSION_MAX_INFLIGHT_REQUESTS 6
 #endif
 static constexpr int kMaxInflightRequests = PA_ADMISSION_MAX_INFLIGHT_REQUESTS;
-static int s_inflightRequests = 0;
 
-// Lifecycle evidence (issue #54): admission counters by the same broad
-// classes the middleware already gates on (inflight, SSE, heap-floor
-// diagnostic/non-diagnostic). Cheap int increments only -- safe to keep in
-// the always-on /api/status snapshot. Single-writer (async_tcp task), same
-// convention as s_inflightRequests above; read cross-task (eventTask SSE
-// broadcast, /api/status handler) without a mutex, same as that field.
+// Lifecycle evidence: admission counters by the same broad classes the
+// middleware already gates on (inflight, SSE, heap-floor diagnostic and
+// non-diagnostic). Cheap int increments only -- safe to keep in the always-on
+// /api/status snapshot. Single-writer (async_tcp task), read cross-task
+// (eventTask SSE broadcast, status handler) without a mutex.
+//
+// The inflight and heap-floor counters belong to this file's own admission
+// middleware, which only exists on the async stack. On the PsychicHttp build
+// the equivalents are the project-owned globals in include/web_admission.h,
+// so these would be permanently zero -- and a counter that is always zero
+// reads as evidence of no refusals rather than of no implementation.
+#ifndef PA_WEB_BACKEND_PSYCHIC
+static int s_inflightRequests = 0;
 static int s_peakInflightRequests = 0;
-static uint32_t s_peakSseClients = 0;
 static uint32_t s_refusedInflightCap = 0;
-static uint32_t s_refusedSseCap = 0;
 static uint32_t s_refusedHeapFloor = 0;
 static uint32_t s_refusedHeapFloorDiag = 0;
+#endif
+
+// SSE lives on the async stack in both builds until the event stream is
+// ported, so its counters are unconditional.
+static uint32_t s_peakSseClients = 0;
+static uint32_t s_refusedSseCap = 0;
 
 #if PA_HEAP_PROFILE
 // Bounded request-lifecycle trace (issue #54 evidence, profiler-gated so it
@@ -664,10 +675,38 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     wifiRssi = wifi.wifiRssi;
 
     const char* auxLedEffectLabel = auxLedEffectToString(auxLedEffect);
+
+    // Admission evidence comes from whichever stack this build actually runs
+    // its admission on. The JSON field names below stay as they are either
+    // way: they are a comparability contract with the recorded baseline and
+    // the load harness, not a description of which implementation produced
+    // them. The names on the left are the project-owned counters that survive
+    // the cutover; the async values feeding them here disappear with the
+    // vendor patch that defines them.
+#ifdef PA_WEB_BACKEND_PSYCHIC
+    const uint32_t acceptRejectHeap = g_webAcceptRejectHeap;
+    const uint32_t acceptRejectRate = g_webAcceptRejectRate;
+    const uint32_t acceptRejectLastMs = g_webAcceptRejectLastMs;
+    const int inflightRequests = g_webInflightRequests;
+    const int inflightRequestsPeak = g_webInflightRequestsPeak;
+    const uint32_t refusedInflightCap = g_webRefusedInflightCap;
+    const uint32_t refusedHeapFloor = g_webRefusedHeapFloor;
+    const uint32_t refusedHeapFloorDiag = g_webRefusedHeapFloorDiag;
+#else
+    const uint32_t acceptRejectHeap = g_asyncTcpAcceptRejectHeap;
+    const uint32_t acceptRejectRate = g_asyncTcpAcceptRejectRate;
+    const uint32_t acceptRejectLastMs = g_asyncTcpAcceptRejectLastMs;
+    const int inflightRequests = s_inflightRequests;
+    const int inflightRequestsPeak = s_peakInflightRequests;
+    const uint32_t refusedInflightCap = s_refusedInflightCap;
+    const uint32_t refusedHeapFloor = s_refusedHeapFloor;
+    const uint32_t refusedHeapFloorDiag = s_refusedHeapFloorDiag;
+#endif
+
     // Build the fixed system-health fields first.
     int written = snprintf(
         buffer, bufferSize,
-        "{\"estop\":%s,\"webControlEnabled\":%s,\"sbusSignalLost\":%s,\"sbusHwFailsafe\":%s,\"webDriveExpired\":%s,\"failsafeSource\":%d,\"driveSpeed\":%d,\"driveSteer\":%d,\"domeTargetSpeed\":%.3f,\"domeEnabled\":%s,\"speedLimitMax\":%d,\"speedPreset\":\"%s\",\"stationary\":%s,\"failsafeCount\":%lu,\"failsafeTriggerMs\":%lu,\"failsafeZeroMs\":%lu,\"failsafeTriggerToZeroMs\":%lu,\"failsafeWatchdogMs\":%lu,\"failsafeTriggerSource\":%d,\"uptimeMs\":%lu,\"firmwareVersion\":\"%s\",\"fsVersion\":\"%s\",\"resetReason\":\"%s\",\"heapFree\":%lu,\"heapMin\":%lu,\"heapLargestBlock\":%lu,\"heapLargest8bit\":%lu,\"sseClients\":%u,\"sseClientsPeak\":%lu,\"tcpAcceptRejectHeap\":%lu,\"tcpAcceptRejectRate\":%lu,\"tcpAcceptRejectAgeMs\":%ld,\"inflightRequests\":%d,\"inflightRequestsPeak\":%d,\"refusedInflightCap\":%lu,\"refusedSseCap\":%lu,\"refusedHeapFloor\":%lu,\"refusedHeapFloorDiag\":%lu,\"otaActive\":%s,\"otaProgress\":%u,\"otaLastError\":\"%s\",\"wifiRssi\":%ld,\"wifiConnected\":%s,\"wifiClientConnected\":%s,\"littleFsReady\":%s,\"sleepMode\":%s,\"sleepSinceMs\":%lu,\"activeMood\":%u,\"auxLed\":{\"pin\":%u,\"r\":%u,\"g\":%u,\"b\":%u,\"effect\":\"%s\",\"available\":%s}",
+        "{\"estop\":%s,\"webControlEnabled\":%s,\"sbusSignalLost\":%s,\"sbusHwFailsafe\":%s,\"webDriveExpired\":%s,\"failsafeSource\":%d,\"driveSpeed\":%d,\"driveSteer\":%d,\"domeTargetSpeed\":%.3f,\"domeEnabled\":%s,\"speedLimitMax\":%d,\"speedPreset\":\"%s\",\"stationary\":%s,\"failsafeCount\":%lu,\"failsafeTriggerMs\":%lu,\"failsafeZeroMs\":%lu,\"failsafeTriggerToZeroMs\":%lu,\"failsafeWatchdogMs\":%lu,\"failsafeTriggerSource\":%d,\"uptimeMs\":%lu,\"firmwareVersion\":\"%s\",\"fsVersion\":\"%s\",\"resetReason\":\"%s\",\"heapFree\":%lu,\"heapMin\":%lu,\"heapLargestBlock\":%lu,\"heapLargest8bit\":%lu,\"sseClients\":%u,\"sseClientsPeak\":%lu,\"tcpAcceptRejectHeap\":%lu,\"tcpAcceptRejectRate\":%lu,\"tcpAcceptRejectAgeMs\":%ld,\"acceptGuardLastUs\":%lu,\"acceptGuardMaxUs\":%lu,\"inflightRequests\":%d,\"inflightRequestsPeak\":%d,\"refusedInflightCap\":%lu,\"refusedSseCap\":%lu,\"refusedHeapFloor\":%lu,\"refusedHeapFloorDiag\":%lu,\"otaActive\":%s,\"otaProgress\":%u,\"otaLastError\":\"%s\",\"wifiRssi\":%ld,\"wifiConnected\":%s,\"wifiClientConnected\":%s,\"littleFsReady\":%s,\"sleepMode\":%s,\"sleepSinceMs\":%lu,\"activeMood\":%u,\"auxLed\":{\"pin\":%u,\"r\":%u,\"g\":%u,\"b\":%u,\"effect\":\"%s\",\"available\":%s}",
         diag.estop ? "true" : "false", webControlEnabled ? "true" : "false",
         diag.sbusSignalLost ? "true" : "false", diag.sbusHwFailsafe ? "true" : "false",
         diag.webDriveExpired ? "true" : "false", (int)diag.failsafeSource, driveSpeed, driveSteer,
@@ -685,17 +724,20 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
         // Registered SSE clients; the admission cap keys on this, so stuck
         // or leaked entries become visible instead of silently denying SSE.
         (unsigned)events.count(), (unsigned long)s_peakSseClients,
-        (unsigned long)g_asyncTcpAcceptRejectHeap, (unsigned long)g_asyncTcpAcceptRejectRate,
-        g_asyncTcpAcceptRejectLastMs == 0
-            ? -1L
-            : (long)(uint32_t)((uint32_t)uptimeMs - g_asyncTcpAcceptRejectLastMs),
-        // Lifecycle admission evidence (issue #54): live + peak inflight
-        // depth and refusal counts by the same broad classes the middleware
-        // gates on above -- current/peak/refused evidence needed before any
-        // cap, floor, or weight is retuned.
-        s_inflightRequests, s_peakInflightRequests,
-        (unsigned long)s_refusedInflightCap, (unsigned long)s_refusedSseCap,
-        (unsigned long)s_refusedHeapFloor, (unsigned long)s_refusedHeapFloorDiag,
+        (unsigned long)acceptRejectHeap, (unsigned long)acceptRejectRate,
+        acceptRejectLastMs == 0 ? -1L
+                                : (long)(uint32_t)((uint32_t)uptimeMs - acceptRejectLastMs),
+        // Cost of the connection guard itself. Kept always-on rather than
+        // measured once: whether the guard is affordable on a stack that
+        // services every connection from one task is a standing property, not
+        // a one-off result.
+        (unsigned long)g_webAcceptGuardLastUs, (unsigned long)g_webAcceptGuardMaxUs,
+        // Live + peak inflight depth and refusal counts by the same broad
+        // classes the admission layer gates on -- current/peak/refused
+        // evidence needed before any cap, floor, or weight is retuned.
+        inflightRequests, inflightRequestsPeak,
+        (unsigned long)refusedInflightCap, (unsigned long)s_refusedSseCap,
+        (unsigned long)refusedHeapFloor, (unsigned long)refusedHeapFloorDiag,
         otaActive ? "true" : "false", (unsigned)otaProgressPct, otaLastError, wifiRssi,
         wifiConnected ? "true" : "false",
         wifiClientConnected ? "true" : "false", littleFsReady ? "true" : "false",

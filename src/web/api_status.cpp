@@ -102,8 +102,22 @@ void handleWifiGet(WebRequest& req) {
     req.send(200, "application/json", body);
 }
 
+void handleStatusGet(WebRequest& req) {
+    // Static, not stack: 3 KB on an 8 KB server task left too little headroom
+    // for the snprintf float-formatting frames plus nested interrupt frames
+    // under network load (stack-watchpoint panic proven by coredump). Both
+    // backends dispatch handlers from a single task, so one shared buffer is
+    // race-free -- same pattern as api_logs.cpp.
+    static char body[3072];
+    if (!buildStatusJson(body, sizeof(body))) {
+        PA_LOG_WARN("StatusAPI", "status payload overflowed; returning fallback payload");
+    }
+    req.send(200, "application/json", body);
+}
+
 void registerStatusRoutes(AsyncWebServer& server) {
-    // GET /api/wifi is registered by the seam route table, not here.
+    // GET /api/wifi and GET /api/status are registered by the seam route
+    // table, not here.
 
     server.on("/api/serial", HTTP_GET, [](AsyncWebServerRequest* req) {
         char body[768];
@@ -120,16 +134,4 @@ void registerStatusRoutes(AsyncWebServer& server) {
     // GET /api/logs moved to src/web/api_logs.cpp when it was ported to the
     // WebRequest seam; it is registered by the seam route table.
 
-    server.on("/api/status", HTTP_GET, [](AsyncWebServerRequest* req) {
-        // Static, not stack: 3 KB on the 8 KB async_tcp stack left too little
-        // headroom for the snprintf float-formatting frames plus nested
-        // interrupt frames under network load (stack-watchpoint panic proven
-        // by coredump). Handlers serialize on the async_tcp task, so one
-        // shared buffer is race-free — same pattern as api_logs.cpp.
-        static char body[3072];
-        if (!buildStatusJson(body, sizeof(body))) {
-            PA_LOG_WARN("StatusAPI", "status payload overflowed; returning fallback payload");
-        }
-        req->send(200, "application/json", body);
-    });
 }

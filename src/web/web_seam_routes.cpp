@@ -32,6 +32,12 @@ void webRegisterSeamRoutes() {
     webRegisterRoute("/api/actions", WebMethod::kGet, handleActionsGet);
     webRegisterRoute("/api/logs", WebMethod::kGet, handleLogsGet);
 
+    // Ported ahead of the rest of its route group: the admission counters and
+    // heap readings in this payload are what the load harness polls and what
+    // the migration's comparison run is scored against, so the guard's own
+    // evidence is unobservable without it.
+    webRegisterRoute("/api/status", WebMethod::kGet, handleStatusGet);
+
     // Config, RC-map and WiFi writes. Their decision logic stays in the
     // ADR 0011 apply cores; these routes only carry values across.
     webRegisterRoute("/api/config", WebMethod::kPost, handleConfigPost);

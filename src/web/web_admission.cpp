@@ -86,13 +86,13 @@ bool webAcceptRateLimiterTake(WebAcceptRateLimiter* limiter, uint32_t nowMs, uin
 }
 
 WebAcceptDecision webAcceptDecide(WebAcceptRateLimiter* limiter, uint32_t nowMs, uint32_t burst,
-                                  uint32_t perSecond, size_t largestFreeBlock,
+                                  uint32_t perSecond, WebHeapSampler sampler, void* samplerCtx,
                                   size_t minLargestFreeBlock) {
     refill(limiter, nowMs, burst, perSecond);
 
-    // Rate first: this is arithmetic on state already in cache, whereas the
-    // heap figure costs a heap walk to keep fresh. A connection that is going
-    // to be paced out must never trigger that walk.
+    // Rate first, and the sampler is not called yet: this check is arithmetic
+    // on state already in cache, whereas sampling the heap may walk it. A
+    // connection that is going to be paced out must never trigger that walk.
     if (limiter->tokensMilli < kTokenMilli) {
         return WebAcceptDecision::kRejectRate;
     }
@@ -100,7 +100,7 @@ WebAcceptDecision webAcceptDecide(WebAcceptRateLimiter* limiter, uint32_t nowMs,
     // A connection refused for heap was never admitted, so it does not spend
     // admission budget. Charging it would let a heap-pressure window pace out
     // the connections that arrive after heap recovers.
-    if (largestFreeBlock < minLargestFreeBlock) {
+    if (sampler(samplerCtx) < minLargestFreeBlock) {
         return WebAcceptDecision::kRejectHeap;
     }
 

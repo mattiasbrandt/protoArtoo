@@ -21,11 +21,14 @@
 #include <LittleFS.h>
 #include <PsychicHttp.h>
 #include <esp_err.h>
+#include <esp_heap_caps.h>
+#include <esp_timer.h>
 #include <http_parser.h>
 #include <stdio.h>
 
 #include "../../include/api_upload.h"
 #include "../../include/logging.h"
+#include "../../include/web_admission.h"
 #include "../../include/web_request.h"
 #include "../../include/web_server.h"
 #include "../../include/web_server_psychic.h"
@@ -45,6 +48,168 @@ WebRequestPsychicCtx* psychicCtx(void* backend) {
 }
 
 PsychicHttpServer s_server;
+
+// =============================================================================
+// Admission (include/web_admission.h)
+//
+// Two layers. The socket-open callback runs before any HTTP byte is parsed and
+// is blind to the URL; the global middleware runs once the request head is
+// read, before route matching and before a static file is opened, and is where
+// the estop bypass lives. Both run on the single server task, which is why the
+// heap sample is cached rather than taken per connection.
+//
+// All state here is touched only from that task, so no synchronisation is
+// needed -- the same single-writer property the async stack's admission
+// counters relied on.
+// =============================================================================
+
+WebAcceptRateLimiter s_acceptLimiter;
+WebHeapSampleCache s_heapSample;
+
+// The PsychicHttp constructor installs its own open_fn; this holds it so the
+// admit path can chain to it. Without that chain no PsychicClient is created,
+// which breaks getClient() and the close path.
+esp_err_t (*s_vendorOpenFn)(httpd_handle_t, int) = nullptr;
+
+#ifndef PA_ACCEPT_BURST
+#define PA_ACCEPT_BURST 6
+#endif
+#ifndef PA_ACCEPT_PER_SECOND
+#define PA_ACCEPT_PER_SECOND 8
+#endif
+#ifndef PA_ACCEPT_MIN_LARGEST_FREE_BLOCK
+#define PA_ACCEPT_MIN_LARGEST_FREE_BLOCK 8500
+#endif
+#ifndef PA_ACCEPT_HEAP_SAMPLE_MIN_INTERVAL_MS
+#define PA_ACCEPT_HEAP_SAMPLE_MIN_INTERVAL_MS 100
+#endif
+#ifndef PA_ADMISSION_MIN_LARGEST_FREE_BLOCK
+#define PA_ADMISSION_MIN_LARGEST_FREE_BLOCK 9000
+#endif
+#ifndef PA_ADMISSION_MIN_LARGEST_FREE_BLOCK_DIAG
+#define PA_ADMISSION_MIN_LARGEST_FREE_BLOCK_DIAG 7500
+#endif
+#ifndef PA_ADMISSION_MAX_INFLIGHT_REQUESTS
+#define PA_ADMISSION_MAX_INFLIGHT_REQUESTS 6
+#endif
+
+// Refreshes the cached largest-free-block reading at most once per interval.
+// heap_caps_get_largest_free_block() walks the heap, so charging every
+// connection for one would put that walk on the task servicing all the others
+// -- the cost that failed 1 of 2 concurrent requests on the prototype.
+size_t sampleLargestFreeBlock(void*) {
+    const uint32_t nowMs = millis();
+    if (webHeapSampleDue(&s_heapSample, nowMs, PA_ACCEPT_HEAP_SAMPLE_MIN_INTERVAL_MS)) {
+        webHeapSampleStore(&s_heapSample, nowMs, heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+    }
+    return s_heapSample.value;
+}
+
+// Connection Admission. Returning non-ESP_OK makes httpd_sess_new() delete the
+// session and the accept loop close the socket, before any HTTP parsing --
+// and, because the vendor open_fn is not chained on this path, before any
+// PsychicClient is allocated. Rejection therefore costs no heap, which is the
+// whole point at the moment there is none.
+esp_err_t admissionOpenCallback(httpd_handle_t hd, int sockfd) {
+    const int64_t startUs = esp_timer_get_time();
+    const uint32_t nowMs = millis();
+
+    const WebAcceptDecision decision =
+        webAcceptDecide(&s_acceptLimiter, nowMs, PA_ACCEPT_BURST, PA_ACCEPT_PER_SECOND,
+                        sampleLargestFreeBlock, nullptr, PA_ACCEPT_MIN_LARGEST_FREE_BLOCK);
+
+    const uint32_t elapsedUs = (uint32_t)(esp_timer_get_time() - startUs);
+    g_webAcceptGuardLastUs = elapsedUs;
+    if (elapsedUs > g_webAcceptGuardMaxUs) {
+        g_webAcceptGuardMaxUs = elapsedUs;
+    }
+
+    if (decision == WebAcceptDecision::kRejectRate) {
+        g_webAcceptRejectRate = g_webAcceptRejectRate + 1u;
+        g_webAcceptRejectLastMs = nowMs;
+        return ESP_FAIL;
+    }
+    if (decision == WebAcceptDecision::kRejectHeap) {
+        g_webAcceptRejectHeap = g_webAcceptRejectHeap + 1u;
+        g_webAcceptRejectLastMs = nowMs;
+        return ESP_FAIL;
+    }
+
+    return s_vendorOpenFn != nullptr ? s_vendorOpenFn(hd, sockfd) : ESP_OK;
+}
+
+// Releases an admitted request's in-flight slot however the handler leaves --
+// including by exception, which the async stack proved can escape from deep
+// inside response handling.
+struct InflightSlot {
+    bool held;
+
+    explicit InflightSlot(bool takeSlot) : held(takeSlot) {
+        if (!held) {
+            return;
+        }
+        g_webInflightRequests = g_webInflightRequests + 1;
+        if (g_webInflightRequests > g_webInflightRequestsPeak) {
+            g_webInflightRequestsPeak = g_webInflightRequests;
+        }
+    }
+
+    ~InflightSlot() {
+        if (held) {
+            g_webInflightRequests = g_webInflightRequests - 1;
+        }
+    }
+
+    InflightSlot(const InflightSlot&) = delete;
+    InflightSlot& operator=(const InflightSlot&) = delete;
+};
+
+// Request admission. Registered as a global middleware rather than a global
+// filter: a filter's only rejection path is the vendor's bodyless send(400),
+// whereas this rejects by returning non-ESP_OK, which esp_http_server answers
+// by closing the socket -- matching what the async stack's abort() did, and
+// allocating nothing. Serving the recovery page on a rejected main-frame
+// navigation replaces this return, and is the next slice of this migration.
+esp_err_t admissionMiddleware(PsychicRequest* request, PsychicResponse* response,
+                              PsychicMiddlewareNext next) {
+    (void)response;
+    const char* path = request->pathCStr();
+
+    WebRequestAdmissionInputs in = {};
+    in.estop = webPathIsEstop(path);
+    in.diagnostic = webPathIsDiagnostic(path);
+    in.longLived = webPathIsLongLived(path);
+    in.inflightRequests = g_webInflightRequests;
+    in.maxInflightRequests = PA_ADMISSION_MAX_INFLIGHT_REQUESTS;
+    in.largestFreeBlock = sampleLargestFreeBlock(nullptr);
+    in.minLargestFreeBlock = PA_ADMISSION_MIN_LARGEST_FREE_BLOCK;
+    in.minLargestFreeBlockDiagnostic = PA_ADMISSION_MIN_LARGEST_FREE_BLOCK_DIAG;
+
+    switch (webRequestAdmissionDecide(in)) {
+        case WebRequestAdmission::kRejectInflightCap:
+            g_webRefusedInflightCap = g_webRefusedInflightCap + 1u;
+            return ESP_FAIL;
+        case WebRequestAdmission::kRejectHeapFloor:
+            if (in.diagnostic) {
+                // Diagnostic rejections stay silent: they only happen during a
+                // pressure storm, exactly when log volume is least welcome.
+                g_webRefusedHeapFloorDiag = g_webRefusedHeapFloorDiag + 1u;
+            } else {
+                g_webRefusedHeapFloor = g_webRefusedHeapFloor + 1u;
+                PA_LOG_WARN(TAG, "rejecting %s: largest free block %u < %u", path,
+                            (unsigned)in.largestFreeBlock,
+                            (unsigned)in.minLargestFreeBlock);
+            }
+            return ESP_FAIL;
+        case WebRequestAdmission::kAdmit:
+            break;
+    }
+
+    // Estop is admitted but never counted, matching the async stack: a safety
+    // command must not be able to fill the cap it is exempt from.
+    InflightSlot slot(!in.estop && !in.longLived);
+    return next();
+}
 
 }  // namespace
 
@@ -221,6 +386,18 @@ void initPsychicWebServer() {
     // begin(); on()/serveStatic() only record configuration.
     s_server.config.max_open_sockets = 10;
     s_server.config.stack_size = 8192;
+
+    // Connection Admission, installed in the documented pre-begin() window
+    // where server.config is an ordinary ESP-IDF httpd_config. The constructor
+    // has already pointed open_fn at the library's own callback, so capture it
+    // first and chain to it whenever the guard admits -- dropping it would
+    // leave every admitted connection without a PsychicClient.
+    s_vendorOpenFn = s_server.config.open_fn;
+    s_server.config.open_fn = admissionOpenCallback;
+    webAcceptRateLimiterInit(&s_acceptLimiter, millis(), PA_ACCEPT_BURST);
+
+    // Request admission, ahead of route matching and the static-file open.
+    s_server.addMiddleware(admissionMiddleware);
 
     // PsychicHttp leaves HTTPD_DEFAULT_CONFIG()'s core_id at tskNO_AFFINITY,
     // which would let the server task -- and with it every handler's JSON
