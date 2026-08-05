@@ -123,7 +123,17 @@ def rows_from_serial(path: Path) -> list[tuple[str, str, str, str]]:
     return rows
 
 
-def rows_from_browser(state: dict[str, Any] | None) -> list[tuple[str, str, str, str]]:
+def rows_from_browser(
+    state: dict[str, Any] | None, source: str = "browser",
+) -> list[tuple[str, str, str, str]]:
+    """Milestones from one capture's page-state.json.
+
+    `source` labels which capture a row came from, since a run has more than one.
+    The multi-tab collector writes the same verdict keys as the single-tab one,
+    so both are read here without a second reader; milestones a given collector
+    does not produce (the multi-tab scenario has no domCandidateAt/usableAt
+    handshake) are simply absent and skipped.
+    """
     if not state:
         return []
     rows = []
@@ -136,12 +146,12 @@ def rows_from_browser(state: dict[str, Any] | None) -> list[tuple[str, str, str,
     for key, label in milestones:
         value = state.get(key)
         if isinstance(value, str) and value:
-            rows.append((value, "browser", label, f"terminalReason={state.get('terminalReason')}"))
+            rows.append((value, source, label, f"terminalReason={state.get('terminalReason')}"))
     sse_state = state.get("sseState")
     if sse_state:
         terminal_at = state.get("terminalAt")
         if isinstance(terminal_at, str):
-            rows.append((terminal_at, "browser", "SSE final state", f"sseState={sse_state}"))
+            rows.append((terminal_at, source, "SSE final state", f"sseState={sse_state}"))
     return rows
 
 
@@ -152,7 +162,8 @@ def build_timeline(run_dir: Path) -> str:
     rows += rows_from_logs(read_ndjson(run_dir / "logs.ndjson"))
     rows += rows_from_allocation_failures(read_ndjson(run_dir / "allocation-failures.ndjson"))
     rows += rows_from_serial(run_dir / "serial.log")
-    rows += rows_from_browser(read_json(run_dir / "browser" / "page-state.json"))
+    rows += rows_from_browser(read_json(run_dir / "browser" / "page-state.json"), "browser")
+    rows += rows_from_browser(read_json(run_dir / "multitab" / "page-state.json"), "multitab")
 
     rows.sort(key=lambda row: row[0])
 
