@@ -283,6 +283,24 @@
         return settleActive(prev, action.outcome);
       }
 
+      case "DECLARE_SECTIONS": {
+        // Page scripts declare their own sections as they execute, which is
+        // during resource loading -- before any section work may start. Only
+        // additive, and only while no section has run yet, so this can never
+        // discard in-progress or completed section state.
+        const known = new Set(prev.sections.map((s) => s.name));
+        const added = action.names.filter((name) => !known.has(name)).map(makeStep);
+        if (added.length === 0) return prev;
+        if (prev.sections.some((s) => s.status !== "pending")) return prev;
+        // recomputeSectionsStable re-derives the flag from the new list, so a
+        // page that was momentarily stable with nothing to do becomes unstable
+        // again as soon as it declares real work.
+        return recomputeSectionsStable({
+          ...prev,
+          sections: [...prev.sections, ...added],
+        });
+      }
+
       case "RETRY_NOW": {
         // Operator-facing "Retry now": pull the named waiting step forward
         // regardless of its scheduled time.

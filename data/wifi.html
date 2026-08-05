@@ -135,6 +135,11 @@
 
     <div id="shell-status"></div>
 
-    <script src="/page_loader.js" data-scripts="/web_api.js,/status_stream.js,/shell.js,/wifi.js,/footer.js"></script>
+    <!-- Common Page Bootstrap tracer page (ADR 0019 rollout order). The
+         reducer and recovery view load ahead of the host, which then drives
+         the rest of the chain one resource at a time. -->
+    <script src="/page_bootstrap.js"></script>
+    <script src="/recovery_view.js"></script>
+    <script src="/page_bootstrap_host.js" data-scripts="/web_api.js,/status_stream.js,/shell.js,/wifi.js,/footer.js"></script>
   </body>
 </html>
