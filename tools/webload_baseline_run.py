@@ -68,6 +68,9 @@ CYCLE_WAIT_SECONDS = 600.0
 # Re-enumeration is mechanical once power is back, so it stays tight.
 CYCLE_REENUMERATE_SECONDS = 30.0
 CYCLE_PROGRESS_INTERVAL_SECONDS = 15.0
+# USB re-enumerates well before the controller has booted and rejoined WiFi, so
+# this covers boot plus association, not just the reset itself.
+POST_CYCLE_STATUS_SECONDS = 90.0
 BASELINE_ANCESTOR_SHA = "4b239ff2e215f265151fe5523b6fbcd8320dca7e"
 DEFAULT_CONTROLLER = "10.0.0.22"
 DEFAULT_SERIAL_PORT = (
@@ -1135,6 +1138,14 @@ def run_full(args: argparse.Namespace) -> dict[str, Any]:
         if not r65._wait_for(lambda: serial.connected.is_set(), 5.0):
             raise BaselineRunError(f"serial watcher could not attach to {args.serial_port}")
 
+        # Remember how long the controller had been up before the cycle. The
+        # identity gate below needs it to tell a genuinely fresh boot from the
+        # cached pre-cycle status -- see the comment there.
+        pre_cycle_status = monitor.snapshot()["latestStatus"]
+        pre_cycle_uptime = (
+            pre_cycle_status.get("uptimeMs") if isinstance(pre_cycle_status, dict) else None
+        )
+
         if args.dev_reboot:
             print(
                 "\n[--dev-reboot] harness-development iteration -- NOT valid for an "
@@ -1164,12 +1175,30 @@ def run_full(args: argparse.Namespace) -> dict[str, Any]:
             )
 
         try:
+            # wait_for_status reads the monitor's last *successful* sample, which
+            # after a power cycle is still the one taken before it. Matching on
+            # firmware and resetReason alone lets that stale sample satisfy the
+            # gate the instant USB re-enumerates: a controller power-cycled by an
+            # earlier run already reports POWERON, so nothing distinguishes the
+            # cached reading from a fresh boot. The run then armed ICMP-loss
+            # detection while WiFi was still reconnecting and killed itself on
+            # the next failed ping (issue77-live-2, 2026-08-05).
+            #
+            # Requiring uptimeMs to have gone backwards proves the sample is from
+            # a boot after the cycle, and makes the wait cover the controller
+            # rejoining the network -- which the operator's typing delay used to
+            # cover by accident, before the confirmation prompt was removed.
             fresh_status = monitor.wait_for_status(
                 lambda status: (
                     version_matches_expected(status.get("firmwareVersion"), expected_short_sha)
                     and status.get("resetReason") == "POWERON"
+                    and isinstance(status.get("uptimeMs"), int)
+                    and (
+                        not isinstance(pre_cycle_uptime, int)
+                        or status["uptimeMs"] < pre_cycle_uptime
+                    )
                 ),
-                60.0,
+                POST_CYCLE_STATUS_SECONDS,
             )
         except r65.Issue65RuntimeError:
             if arbiter.stopped:
