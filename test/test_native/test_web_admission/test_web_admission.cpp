@@ -344,6 +344,36 @@ void test_live_update_stream_is_the_only_long_lived_path() {
     TEST_ASSERT_FALSE(webPathIsLongLived("/api/eventsource"));
 }
 
+void test_upload_paths_are_ordinary_work_and_get_no_exemption() {
+    // An OTA upload must face the same cap and the same floor as any other
+    // request. Exempting it would make the admission evidence for an upload
+    // round-trip meaningless -- the upload would be proving nothing about the
+    // policy it is supposed to be running under.
+    const char* uploads[] = {"/upload/firmware", "/upload/filesystem"};
+    for (unsigned i = 0; i < 2; i++) {
+        TEST_ASSERT_FALSE(webPathIsEstop(uploads[i]));
+        TEST_ASSERT_FALSE(webPathIsDiagnostic(uploads[i]));
+        TEST_ASSERT_FALSE(webPathIsLongLived(uploads[i]));
+    }
+}
+
+void test_an_upload_is_refused_under_pressure_like_any_other_request() {
+    // The corollary of the classification above, stated as behaviour: an
+    // upload arriving below the ordinary floor is refused, and it is refused
+    // by the ordinary floor rather than the lower diagnostic one.
+    WebRequestAdmissionInputs in = healthyInputs();
+    in.estop = webPathIsEstop("/upload/firmware");
+    in.diagnostic = webPathIsDiagnostic("/upload/firmware");
+    in.longLived = webPathIsLongLived("/upload/firmware");
+    in.largestFreeBlock = kFloor - 1;
+
+    TEST_ASSERT_EQUAL(WebRequestAdmission::kRejectHeapFloor, webRequestAdmissionDecide(in));
+
+    // ...and admitted once the ordinary floor is cleared.
+    in.largestFreeBlock = kFloor;
+    TEST_ASSERT_EQUAL(WebRequestAdmission::kAdmit, webRequestAdmissionDecide(in));
+}
+
 int main() {
     UNITY_BEGIN();
 
@@ -379,6 +409,8 @@ int main() {
     RUN_TEST(test_lookalike_paths_are_not_treated_as_estop);
     RUN_TEST(test_diagnostic_paths_are_recognised);
     RUN_TEST(test_live_update_stream_is_the_only_long_lived_path);
+    RUN_TEST(test_upload_paths_are_ordinary_work_and_get_no_exemption);
+    RUN_TEST(test_an_upload_is_refused_under_pressure_like_any_other_request);
 
     return UNITY_END();
 }
