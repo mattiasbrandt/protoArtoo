@@ -80,6 +80,12 @@ CYCLE_PROGRESS_INTERVAL_SECONDS = 15.0
 # USB re-enumerates well before the controller has booted and rejoined WiFi, so
 # this covers boot plus association, not just the reset itself.
 POST_CYCLE_STATUS_SECONDS = 90.0
+# Longest uptime a status sample may report and still be a boot from the cycle
+# this run just watched. The gate only looks for POST_CYCLE_STATUS_SECONDS after
+# re-enumeration, so a genuinely fresh controller cannot exceed that window by
+# much; the margin covers boot plus WiFi association before the first sample
+# lands. Anything older is the pre-cycle controller still answering.
+FRESH_BOOT_MAX_UPTIME_MS = int(POST_CYCLE_STATUS_SECONDS * 1000) + 30_000
 BASELINE_ANCESTOR_SHA = "4b239ff2e215f265151fe5523b6fbcd8320dca7e"
 DEFAULT_CONTROLLER = "10.0.0.22"
 DEFAULT_SERIAL_PORT = (
@@ -1224,14 +1230,6 @@ def run_full(args: argparse.Namespace) -> dict[str, Any]:
         if not r65._wait_for(lambda: serial.connected.is_set(), 5.0):
             raise BaselineRunError(f"serial watcher could not attach to {args.serial_port}")
 
-        # Remember how long the controller had been up before the cycle. The
-        # identity gate below needs it to tell a genuinely fresh boot from the
-        # cached pre-cycle status -- see the comment there.
-        pre_cycle_status = monitor.snapshot()["latestStatus"]
-        pre_cycle_uptime = (
-            pre_cycle_status.get("uptimeMs") if isinstance(pre_cycle_status, dict) else None
-        )
-
         if args.dev_reboot:
             print(
                 "\n[--dev-reboot] harness-development iteration -- NOT valid for an "
@@ -1270,19 +1268,24 @@ def run_full(args: argparse.Namespace) -> dict[str, Any]:
             # detection while WiFi was still reconnecting and killed itself on
             # the next failed ping (issue77-live-2, 2026-08-05).
             #
-            # Requiring uptimeMs to have gone backwards proves the sample is from
-            # a boot after the cycle, and makes the wait cover the controller
-            # rejoining the network -- which the operator's typing delay used to
-            # cover by accident, before the confirmation prompt was removed.
+            # A short uptime is what proves the sample is from a boot after the
+            # cycle, and it makes the wait cover the controller rejoining the
+            # network -- which the operator's typing delay used to cover by
+            # accident, before the confirmation prompt was removed.
+            #
+            # This was a comparison against the uptime sampled at run start,
+            # which is unsound: the monitor has taken no sample that early, so
+            # the baseline was None and the whole clause was skipped. The gate
+            # then degraded silently to firmware+POWERON -- exactly the failure
+            # it was written to prevent. Run run-40-issue94-wifi-tracer accepted
+            # a 35-minute-old sample and aborted on the real cycle that followed.
+            # An absolute ceiling needs no baseline, so it cannot be skipped.
             fresh_status = monitor.wait_for_status(
                 lambda status: (
                     version_matches_expected(status.get("firmwareVersion"), expected_short_sha)
                     and status.get("resetReason") == "POWERON"
                     and isinstance(status.get("uptimeMs"), int)
-                    and (
-                        not isinstance(pre_cycle_uptime, int)
-                        or status["uptimeMs"] < pre_cycle_uptime
-                    )
+                    and status["uptimeMs"] <= FRESH_BOOT_MAX_UPTIME_MS
                 ),
                 POST_CYCLE_STATUS_SECONDS,
             )
