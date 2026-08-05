@@ -45,10 +45,14 @@
 #include "../../include/aux_led.h"
 #include "../../include/rc_diagnostics_snapshot.h"
 #include "../../include/robot_state.h"
+#include "../../include/web_request_async.h"
 #include "../../include/wifi_boot_decision.h"
 #include "../../include/wifi_recovery_gesture.h"
 #ifdef PA_USE_PSYCHICHTTP_PROTOTYPE
 #include "../../include/psychic_adapter.h"
+#endif
+#ifdef PA_WEB_BACKEND_PSYCHIC
+#include "../../include/web_server_psychic.h"
 #endif
 
 // src/secrets.h is the Developer WiFi Shortcut (ADR 0015): local/self-build-only
@@ -1112,6 +1116,11 @@ void startHttpServerOnce() {
     // branching the HTTP-server-specific part; mDNS/OTA below now run
     // unconditionally for both backends.
     initPsychicHttpServer();
+#elif defined(PA_WEB_BACKEND_PSYCHIC)
+    // ADR 0021 dual-backend scaffold: the PsychicHttp backend replaces the
+    // async HTTP server at the same WiFi-event trigger point (both would
+    // bind port 80); mDNS/OTA below run unconditionally for both backends.
+    initPsychicWebServer();
 #else
     if (!routesRegistered) {
         events.onConnect([](AsyncEventSourceClient* client) {
@@ -1249,6 +1258,10 @@ void startHttpServerOnce() {
 #endif
         });
 
+        // ADR 0021: route groups ported to the WebRequest seam register
+        // through webRegisterRoute() against this server instance.
+        webRequestAsyncAttach(server);
+
         registerEstopRoutes(server);
         registerDriveRoutes(server);
         registerMoodMapRoutes(server);
@@ -1261,7 +1274,7 @@ void startHttpServerOnce() {
         registerStatusRoutes(server);
         registerValidationRoutes(server);
         registerSystemRoutes(server);
-        registerIdentityRoutes(server);
+        registerIdentityRoutes();
 #if PA_HEAP_PROFILE
         registerProfilerRoutes(server);
 #endif

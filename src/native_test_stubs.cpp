@@ -82,4 +82,64 @@ bool audioQueueDollar(const char* /*cmd*/, CommandSource /*src*/) { return true;
 #include "sequence_dispatcher.h"
 QueueHandle_t sequenceQueue = nullptr;
 
+// -----------------------------------------------------------------------------
+// WebRequest host-test backend (ADR 0021). backend_ holds a
+// WebRequestTestBackend (test/stubs/include/web_request_test_backend.h):
+// params come from the test's name/value table, send() captures the response
+// for assertions. The session escape hatch mirrors the async scaffold's
+// unsupported behavior (null/false).
+// -----------------------------------------------------------------------------
+#include <stdio.h>
+#include <string.h>
+
+#include "web_request.h"
+#include "web_request_test_backend.h"
+
+static const char* testParamLookup(const WebRequestTestBackend* b, const char* name) {
+    for (size_t i = 0; i < b->paramCount; i++) {
+        if (strcmp(b->params[i].name, name) == 0) {
+            return b->params[i].value;
+        }
+    }
+    return nullptr;
+}
+
+bool WebRequest::hasParam(const char* name) const {
+    return testParamLookup(static_cast<const WebRequestTestBackend*>(backend_), name) != nullptr;
+}
+
+bool WebRequest::param(const char* name, char* out, size_t outSize) const {
+    const char* value = testParamLookup(static_cast<const WebRequestTestBackend*>(backend_), name);
+    if (value == nullptr || out == nullptr || outSize == 0) {
+        return false;
+    }
+    snprintf(out, outSize, "%s", value);
+    return true;
+}
+
+void WebRequest::send(int code, const char* contentType, const char* body) {
+    WebRequestTestBackend* b = static_cast<WebRequestTestBackend*>(backend_);
+    b->sentCode = code;
+    snprintf(b->sentContentType, sizeof(b->sentContentType), "%s", contentType);
+    snprintf(b->sentBody, sizeof(b->sentBody), "%s", body);
+    b->sendCalls++;
+}
+
+void* WebRequest::sessionContext() const {
+    return nullptr;
+}
+
+bool WebRequest::setSessionContext(void* /*ctx*/, void (* /*freeFn*/)(void*)) {
+    return false;
+}
+
+bool WebRequest::triggerClose() {
+    return false;
+}
+
+// Route registration is a no-op on the host: native tests call the exposed
+// handlers directly instead of dispatching through a server.
+void webRegisterRoute(const char* /*path*/, WebMethod /*method*/, WebRequestHandler /*handler*/) {
+}
+
 #endif
