@@ -45,6 +45,7 @@
 #include "../../include/rc_diagnostics_snapshot.h"
 #include "../../include/robot_state.h"
 #include "../../include/web_admission.h"
+#include "../../include/web_event_stream.h"
 #include "../../include/web_request.h"
 #include "../../include/web_request_async.h"
 #include "../../include/wifi_boot_decision.h"
@@ -248,12 +249,9 @@ static bool littleFsReady = false;
 // failure path). These two gates keep heap out of that danger zone in the
 // first place instead of only reacting to it after the fact.
 
-// Concurrent /api/events (SSE) clients. Real operator use is 1-2 tabs; this
-// leaves room for a couple of legitimate low-traffic viewers without letting
-// an unbounded number of tabs/reloads pile up long-lived connections.
-#ifndef PA_ADMISSION_MAX_SSE_CLIENTS
-#define PA_ADMISSION_MAX_SSE_CLIENTS 3
-#endif
+// Concurrent /api/events (SSE) clients. The cap itself now lives with the rest
+// of the stream's policy in include/web_event_stream.h, so both stacks enforce
+// one number.
 static constexpr size_t kMaxSseClients = PA_ADMISSION_MAX_SSE_CLIENTS;
 
 // Below this, prefer rejecting new non-essential requests over constructing
@@ -312,10 +310,9 @@ static uint32_t s_refusedHeapFloor = 0;
 static uint32_t s_refusedHeapFloorDiag = 0;
 #endif
 
-// SSE lives on the async stack in both builds until the event stream is
-// ported, so its counters are unconditional.
-static uint32_t s_peakSseClients = 0;
-static uint32_t s_refusedSseCap = 0;
+// The event stream's own counters (peak clients, refused-at-cap, evicted) are
+// project-owned globals in include/web_event_stream.h, written by whichever
+// backend is serving the stream and read here for /api/status.
 
 #if PA_HEAP_PROFILE
 // Bounded request-lifecycle trace (issue #54 evidence, profiler-gated so it
@@ -706,7 +703,7 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     // Build the fixed system-health fields first.
     int written = snprintf(
         buffer, bufferSize,
-        "{\"estop\":%s,\"webControlEnabled\":%s,\"sbusSignalLost\":%s,\"sbusHwFailsafe\":%s,\"webDriveExpired\":%s,\"failsafeSource\":%d,\"driveSpeed\":%d,\"driveSteer\":%d,\"domeTargetSpeed\":%.3f,\"domeEnabled\":%s,\"speedLimitMax\":%d,\"speedPreset\":\"%s\",\"stationary\":%s,\"failsafeCount\":%lu,\"failsafeTriggerMs\":%lu,\"failsafeZeroMs\":%lu,\"failsafeTriggerToZeroMs\":%lu,\"failsafeWatchdogMs\":%lu,\"failsafeTriggerSource\":%d,\"uptimeMs\":%lu,\"firmwareVersion\":\"%s\",\"fsVersion\":\"%s\",\"resetReason\":\"%s\",\"heapFree\":%lu,\"heapMin\":%lu,\"heapLargestBlock\":%lu,\"heapLargest8bit\":%lu,\"sseClients\":%u,\"sseClientsPeak\":%lu,\"tcpAcceptRejectHeap\":%lu,\"tcpAcceptRejectRate\":%lu,\"tcpAcceptRejectAgeMs\":%ld,\"acceptGuardLastUs\":%lu,\"acceptGuardMaxUs\":%lu,\"acceptRejectLargestBlock\":%lu,\"acceptMinLargestBlockSeen\":%ld,\"inflightRequests\":%d,\"inflightRequestsPeak\":%d,\"refusedInflightCap\":%lu,\"refusedSseCap\":%lu,\"refusedHeapFloor\":%lu,\"refusedHeapFloorDiag\":%lu,\"busyRecoveryPagesServed\":%lu,\"otaActive\":%s,\"otaProgress\":%u,\"otaLastError\":\"%s\",\"wifiRssi\":%ld,\"wifiConnected\":%s,\"wifiClientConnected\":%s,\"littleFsReady\":%s,\"sleepMode\":%s,\"sleepSinceMs\":%lu,\"activeMood\":%u,\"auxLed\":{\"pin\":%u,\"r\":%u,\"g\":%u,\"b\":%u,\"effect\":\"%s\",\"available\":%s}",
+        "{\"estop\":%s,\"webControlEnabled\":%s,\"sbusSignalLost\":%s,\"sbusHwFailsafe\":%s,\"webDriveExpired\":%s,\"failsafeSource\":%d,\"driveSpeed\":%d,\"driveSteer\":%d,\"domeTargetSpeed\":%.3f,\"domeEnabled\":%s,\"speedLimitMax\":%d,\"speedPreset\":\"%s\",\"stationary\":%s,\"failsafeCount\":%lu,\"failsafeTriggerMs\":%lu,\"failsafeZeroMs\":%lu,\"failsafeTriggerToZeroMs\":%lu,\"failsafeWatchdogMs\":%lu,\"failsafeTriggerSource\":%d,\"uptimeMs\":%lu,\"firmwareVersion\":\"%s\",\"fsVersion\":\"%s\",\"resetReason\":\"%s\",\"heapFree\":%lu,\"heapMin\":%lu,\"heapLargestBlock\":%lu,\"heapLargest8bit\":%lu,\"sseClients\":%u,\"sseClientsPeak\":%lu,\"tcpAcceptRejectHeap\":%lu,\"tcpAcceptRejectRate\":%lu,\"tcpAcceptRejectAgeMs\":%ld,\"acceptGuardLastUs\":%lu,\"acceptGuardMaxUs\":%lu,\"acceptRejectLargestBlock\":%lu,\"acceptMinLargestBlockSeen\":%ld,\"inflightRequests\":%d,\"inflightRequestsPeak\":%d,\"refusedInflightCap\":%lu,\"refusedSseCap\":%lu,\"sseEvicted\":%lu,\"sseEvictAgeMs\":%ld,\"refusedHeapFloor\":%lu,\"refusedHeapFloorDiag\":%lu,\"busyRecoveryPagesServed\":%lu,\"otaActive\":%s,\"otaProgress\":%u,\"otaLastError\":\"%s\",\"wifiRssi\":%ld,\"wifiConnected\":%s,\"wifiClientConnected\":%s,\"littleFsReady\":%s,\"sleepMode\":%s,\"sleepSinceMs\":%lu,\"activeMood\":%u,\"auxLed\":{\"pin\":%u,\"r\":%u,\"g\":%u,\"b\":%u,\"effect\":\"%s\",\"available\":%s}",
         diag.estop ? "true" : "false", webControlEnabled ? "true" : "false",
         diag.sbusSignalLost ? "true" : "false", diag.sbusHwFailsafe ? "true" : "false",
         diag.webDriveExpired ? "true" : "false", (int)diag.failsafeSource, driveSpeed, driveSteer,
@@ -721,9 +718,9 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
         // wildly from what the guards actually see; both are emitted so the
         // divergence itself is observable.
         (unsigned long)largestFreeBlock8Bit(),
-        // Registered SSE clients; the admission cap keys on this, so stuck
-        // or leaked entries become visible instead of silently denying SSE.
-        (unsigned)events.count(), (unsigned long)s_peakSseClients,
+        // Open event streams; the client cap keys on this, so stuck or leaked
+        // entries become visible instead of silently denying new streams.
+        (unsigned)webEventStreamClientCount(), (unsigned long)g_webSseClientsPeak,
         (unsigned long)acceptRejectHeap, (unsigned long)acceptRejectRate,
         acceptRejectLastMs == 0 ? -1L
                                 : (long)(uint32_t)((uint32_t)uptimeMs - acceptRejectLastMs),
@@ -745,7 +742,14 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
         // classes the admission layer gates on -- current/peak/refused
         // evidence needed before any cap, floor, or weight is retuned.
         inflightRequests, inflightRequestsPeak,
-        (unsigned long)refusedInflightCap, (unsigned long)s_refusedSseCap,
+        (unsigned long)refusedInflightCap, (unsigned long)g_webRefusedSseCap,
+        // Stalled-client evictions. Rare by design, which is exactly why they
+        // are published: a run that never trips the deadline is otherwise
+        // indistinguishable from one where the guard silently stopped working.
+        // The age separates a boot-time blip from an ongoing problem.
+        (unsigned long)g_webSseEvicted,
+        g_webSseEvictLastMs == 0 ? -1L
+                                 : (long)(uint32_t)((uint32_t)uptimeMs - g_webSseEvictLastMs),
         (unsigned long)refusedHeapFloor, (unsigned long)refusedHeapFloorDiag,
         (unsigned long)g_webBusyRecoveryPagesServed,
         otaActive ? "true" : "false", (unsigned)otaProgressPct, otaLastError, wifiRssi,
@@ -1002,8 +1006,24 @@ bool webOtaActive() {
 }
 
 bool webServerHasSSEClients() {
-    return events.count() > 0;
+    return webEventStreamClientCount() > 0;
 }
+
+#ifndef PA_WEB_BACKEND_PSYCHIC
+// Event stream transport for the async scaffold (include/web_event_stream.h).
+// AsyncEventSource owns the client list and the send here, so these are pure
+// forwarding -- the bounded send and the eviction live on the psychic backend,
+// which is where an unbounded one can actually be fixed (ADR 0020 found no safe
+// cross-task close on AsyncTCP). The #91 cutover deletes this block with the
+// rest of the scaffold.
+size_t webEventStreamClientCount() {
+    return events.count();
+}
+
+void webEventStreamBroadcast(const char* event, const char* data, uint32_t id) {
+    events.send(data, event, id);
+}
+#endif
 
 // Shared SSE JSON buffers — file-scope so both eventStreamTask and the
 // onConnect handler use the same allocation rather than each having their own.
@@ -1066,7 +1086,7 @@ void eventStreamTask(void*) {
             continue;
         }
 
-        if (serverStarted && events.count() > 0) {
+        if (serverStarted && webEventStreamClientCount() > 0) {
             uint32_t nowMs = millis();
 
             taskENTER_CRITICAL(&s_broadcastMux);
@@ -1086,7 +1106,7 @@ void eventStreamTask(void*) {
                 } else {
                     s_statusSseOverflowWarned = false;
                 }
-                events.send(s_sseStatusBody, "status", nowMs);
+                webEventStreamBroadcast("status", s_sseStatusBody, nowMs);
             }
 
             RcDiagnosticsSnapshot rcSnap;
@@ -1110,7 +1130,7 @@ void eventStreamTask(void*) {
                 } else {
                     s_rcSseSizeWarned = false;
                     serializeJson(s_sseRcDoc, s_sseRcBody, sizeof(s_sseRcBody));
-                    events.send(s_sseRcBody, "rc", nowMs);
+                    webEventStreamBroadcast("rc", s_sseRcBody, nowMs);
                 }
             }
             if (!hwmUnderLoadLogged) {
@@ -1136,7 +1156,7 @@ void eventStreamTask(void*) {
                         pos += copy;
                     }
                     s_sseLogBatch[pos] = '\0';
-                    events.send(s_sseLogBatch, "log", nowMs);
+                    webEventStreamBroadcast("log", s_sseLogBatch, nowMs);
                 }
             }
         }
@@ -1183,8 +1203,8 @@ void startHttpServerOnce() {
             // then _clients.emplace_back(client)) -- events.count() here is
             // therefore the count BEFORE this client is registered, so the
             // peak must account for the one being added now.
-            if (events.count() + 1 > s_peakSseClients) {
-                s_peakSseClients = events.count() + 1;
+            if (events.count() + 1 > g_webSseClientsPeak) {
+                g_webSseClientsPeak = events.count() + 1;
             }
             // MUST NOT call client->close() here: this callback runs inside
             // AsyncEventSourceClient's constructor (via _addClient), and a
@@ -1228,7 +1248,7 @@ void startHttpServerOnce() {
             if (sse && events.count() >= kMaxSseClients) {
                 PA_LOG_WARN(TAG, "SSE client cap (%u) reached; rejecting new connection",
                             (unsigned)kMaxSseClients);
-                s_refusedSseCap++;
+                g_webRefusedSseCap = g_webRefusedSseCap + 1u;
                 request->abort();
                 return;
             }

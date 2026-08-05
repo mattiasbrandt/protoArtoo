@@ -106,6 +106,16 @@ bool WebRequest::triggerClose() {
     return false;
 }
 
+bool WebRequest::beginEventStream() {
+    // AsyncEventSource claims /api/events as a whole handler and drives the
+    // upgrade from inside the vendor's own request dispatch, so there is no
+    // point at which a seam handler could take the connection over. This stack
+    // keeps serving its stream through that handler (see startHttpServerOnce()
+    // in web_server.cpp); the route is therefore not in the shared seam table,
+    // and this is never reached on this build.
+    return false;
+}
+
 void webRegisterRoute(const char* path, WebMethod method, WebRequestHandler handler) {
     if (s_server == nullptr) {
         return;

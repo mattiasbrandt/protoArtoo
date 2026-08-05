@@ -84,6 +84,17 @@ class WebRequest {
     bool setSessionContext(void* ctx, void (*freeFn)(void*));
     bool triggerClose();
 
+    // Turn this request into a live event stream: write the stream response
+    // head and hand the connection to the broadcaster, which owns it from then
+    // on (include/web_event_stream.h). Returns false when the head could not be
+    // written or the backend has no per-request upgrade point at all -- the
+    // async scaffold serves its stream through a vendor handler that claims the
+    // whole route, so there is nothing for a handler to upgrade there.
+    //
+    // A handler that gets true must not send anything else: the response is
+    // open-ended by construction and there is no second reply to make.
+    bool beginEventStream();
+
    private:
     void* backend_;
 };

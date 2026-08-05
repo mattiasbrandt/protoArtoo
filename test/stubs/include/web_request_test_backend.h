@@ -39,4 +39,13 @@ struct WebRequestTestBackend {
     unsigned sendCalls = 0;
     // True when the body arrived through sendChunked() rather than send().
     bool sentChunked = false;
+
+    // True once the handler upgraded this request to an event stream. A test
+    // asserting that the client cap rejects *before* the upgrade has to be able
+    // to see that the upgrade never happened -- the response code alone reads
+    // the same whether the connection was refused early or torn down after.
+    bool eventStreamStarted = false;
+    // Makes beginEventStream() report failure, standing in for a transport that
+    // could not write the stream response head.
+    bool eventStreamFails = false;
 };

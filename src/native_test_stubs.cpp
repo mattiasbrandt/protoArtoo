@@ -214,6 +214,33 @@ bool WebRequest::triggerClose() {
     return false;
 }
 
+bool WebRequest::beginEventStream() {
+    WebRequestTestBackend* b = static_cast<WebRequestTestBackend*>(backend_);
+    if (b->eventStreamFails) {
+        return false;
+    }
+    b->eventStreamStarted = true;
+    return true;
+}
+
+// -----------------------------------------------------------------------------
+// Event stream transport (include/web_event_stream.h). The broadcaster's wire
+// side is a device concern; what a host test needs is control over how many
+// streams the handler believes are open, so the client cap can be exercised.
+// -----------------------------------------------------------------------------
+#include "web_event_stream.h"
+
+size_t g_test_event_stream_clients = 0;
+unsigned g_test_event_stream_broadcasts = 0;
+
+size_t webEventStreamClientCount() {
+    return g_test_event_stream_clients;
+}
+
+void webEventStreamBroadcast(const char* /*event*/, const char* /*data*/, uint32_t /*id*/) {
+    g_test_event_stream_broadcasts++;
+}
+
 // Route registration is a no-op on the host: native tests call the exposed
 // handlers directly instead of dispatching through a server.
 void webRegisterRoute(const char* /*path*/, WebMethod /*method*/, WebRequestHandler /*handler*/) {
