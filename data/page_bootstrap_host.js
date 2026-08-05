@@ -124,11 +124,31 @@
     });
   };
 
+  // Pages gate controls on whether the data behind them actually loaded, so
+  // they need to know when a section's status changes -- but not on every
+  // clock tick, which would fire several times a second for no new fact.
+  let lastSectionSignature = null;
+  const publishSectionChange = () => {
+    const signature = state.sections.map((s) => `${s.name}:${s.status}`).join(",");
+    if (signature === lastSectionSignature) return;
+    lastSectionSignature = signature;
+    window.dispatchEvent(
+      new CustomEvent("pa:bootstrap-change", {
+        detail: {
+          sections: state.sections.map((s) => ({ name: s.name, status: s.status })),
+          resourcesReady: state.resourcesReady,
+          sectionsStable: state.sectionsStable,
+        },
+      })
+    );
+  };
+
   const apply = (action) => {
     state = Core.dispatch(state, action);
     syncActive();
     announceAssetsOnce();
     render();
+    publishSectionChange();
   };
 
   // ---------------------------------------------------------------------------
@@ -155,9 +175,13 @@
   window.PABootstrap = {
     // Page scripts call this as they execute, which is during resource
     // loading -- before any section work is allowed to start.
-    registerSection(name, load) {
+    registerSection(name, load, { label = null } = {}) {
       sectionLoaders.set(name, load);
+      if (label) window.PARecoveryView?.setLabels({ [name]: label });
       apply({ type: "DECLARE_SECTIONS", names: [name] });
+    },
+    setResourceLabels(entries) {
+      window.PARecoveryView?.setLabels(entries);
     },
     submitCommand(name, run) {
       apply({ type: "SUBMIT_COMMAND", name });

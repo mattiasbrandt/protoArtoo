@@ -422,11 +422,29 @@
   // Section Recovery: each load is its own section, so one failing request
   // retries on its own without discarding the two that succeeded. The
   // bootstrap owns the retry schedule and the operator-visible waiting state.
+  // Labels are operator language, not filenames or endpoint ids -- the
+  // recovery view shows these verbatim.
   const SECTIONS = [
-    ["wifi-identity", loadIdentity],
-    ["wifi-config", loadConfig],
-    ["wifi-diagnostics", () => loadWifiDiagnostics()],
+    ["wifi-identity", loadIdentity, "droid identity"],
+    ["wifi-config", loadConfig, "saved WiFi settings"],
+    ["wifi-diagnostics", () => loadWifiDiagnostics(), "network status"],
   ];
+
+  // The settings form writes saved WiFi configuration, so it must not be
+  // operable while the saved values it edits are missing or stale -- a save
+  // from a half-populated form would persist blanks over real settings.
+  const CONFIG_DEPENDENT_CONTROLS = () => [saveButton, staSsid, staPassword, apSsid, apPassword, modeClient, modeStandaloneAp];
+
+  const gateOnSectionState = (sections) => {
+    const config = sections.find((s) => s.name === "wifi-config");
+    if (!config) return;
+    const usable = config.status === "done";
+    window.PAApi?.gateControls(CONFIG_DEPENDENT_CONTROLS(), usable);
+    // The apply button already derives from state.wifiConfig, which stays
+    // null while the config section has not succeeded, so re-deriving it here
+    // is enough -- no separate override is needed.
+    setApplyButtonState();
+  };
 
   const loadPageData = async () => {
     if (!window.PAApi) {
@@ -459,7 +477,18 @@
       return;
     }
     resetBeforeLoad();
-    SECTIONS.forEach(([name, load]) => window.PABootstrap.registerSection(name, load));
+    // Nothing here is safe to operate until its data lands.
+    gateOnSectionState([{ name: "wifi-config", status: "pending" }]);
+    window.PABootstrap.setResourceLabels?.({
+      "/web_api.js": "controller connection",
+      "/status_stream.js": "live updates",
+      "/shell.js": "page layout",
+      "/wifi.js": "WiFi settings",
+      "/footer.js": "page footer",
+    });
+    SECTIONS.forEach(([name, load, label]) =>
+      window.PABootstrap.registerSection(name, load, { label })
+    );
   };
 
   const buildSaveBody = () => {
@@ -572,6 +601,9 @@
 
   if (window.PABootstrap) {
     window.addEventListener("pa:assets-ready", reportLoadOutcome, { once: true });
+    window.addEventListener("pa:bootstrap-change", (event) => {
+      gateOnSectionState(event.detail?.sections || []);
+    });
     startPageLoad();
   } else {
     loadPageData();

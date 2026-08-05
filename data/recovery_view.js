@@ -22,6 +22,14 @@
   // to be told the intervals are growing, not just that a retry is pending.
   const BACKOFF_VISIBLE_AFTER_ATTEMPT = 1;
 
+  // Plain-language names for what the page is waiting on. Recovery copy must
+  // not leak internals, so a raw path or section id is never shown -- an
+  // unlabelled step falls back to a generic phrase rather than its filename.
+  const labels = new Map();
+  const GENERIC_LABEL = { resource: "page files", section: "page data" };
+
+  const labelFor = (name, kind) => labels.get(name) || GENERIC_LABEL[kind] || "page data";
+
   const REASON_DETAIL = {
     timeout: "Connection timed out. Attempting to reconnect.",
     network: "Connection to the controller was lost. Attempting to reconnect.",
@@ -60,7 +68,13 @@
     const { step, kind } = blocking;
 
     if (step.status !== "failed-retrying") {
-      return { visible: true, mode: "loading", stepName: step.name, kind };
+      return {
+        visible: true,
+        mode: "loading",
+        stepName: step.name,
+        stepLabel: labelFor(step.name, kind),
+        kind,
+      };
     }
 
     const waitMs = Math.max(0, (step.nextAt ?? state.now) - state.now);
@@ -75,6 +89,7 @@
       visible: true,
       mode,
       stepName: step.name,
+      stepLabel: labelFor(step.name, kind),
       kind,
       attempt: step.attempt,
       reason: step.reason,
@@ -164,7 +179,7 @@
     if (view.mode === "loading") {
       const step = el("p", "recovery-step");
       step.appendChild(el("span", "recovery-spinner"));
-      step.appendChild(document.createTextNode(`Loading: ${view.stepName}`));
+      step.appendChild(document.createTextNode(`Loading: ${view.stepLabel}`));
       panel.appendChild(step);
       panel.appendChild(
         el(
@@ -254,5 +269,10 @@
   window.PARecoveryView = {
     deriveView,
     render,
+    // Pages name their own steps in operator language; anything unnamed still
+    // renders safely via the generic fallback.
+    setLabels(entries) {
+      Object.entries(entries).forEach(([name, label]) => labels.set(name, label));
+    },
   };
 })();
