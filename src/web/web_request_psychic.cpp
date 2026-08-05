@@ -62,6 +62,23 @@ bool WebRequest::param(const char* name, char* out, size_t outSize) const {
     return true;
 }
 
+const char* WebRequest::paramRef(const char* name) const {
+    PsychicWebParameter* p = psychicCtx(backend_)->req->getParam(name);
+    // valueCStr(), not value(): value() returns a String by value under
+    // Arduino, so its c_str() would dangle the moment the temporary died.
+    // valueCStr() points into the parameter's own storage, which the request
+    // owns until it completes.
+    return p != nullptr ? p->valueCStr() : nullptr;
+}
+
+const char* WebRequest::body() const {
+    // bodyCStr() rather than body(), for the same lifetime reason as above.
+    // PsychicHttp only turns a body into parameters when it is form-encoded
+    // or multipart, so a raw JSON body is reachable here and nowhere else.
+    const char* raw = psychicCtx(backend_)->req->bodyCStr();
+    return (raw != nullptr && raw[0] != '\0') ? raw : nullptr;
+}
+
 size_t WebRequest::contentLength() const {
     return (size_t)psychicCtx(backend_)->req->contentLength();
 }

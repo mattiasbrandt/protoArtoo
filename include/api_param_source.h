@@ -2,10 +2,11 @@
 // include/api_param_source.h
 //
 // ConfigParamSource — function-pointer parameter lookup seam for API write
-// Apply Cores (ADR 0011). Decouples validation/apply logic from
-// AsyncWebServerRequest so it is reachable by native tests.
+// Apply Cores (ADR 0011). Decouples validation/apply logic from the request
+// object so it is reachable by native tests.
 //
-// Production: the handler wraps AsyncWebServerRequest::hasParam/getParam.
+// Production: webParamSource() adapts the project-owned WebRequest (ADR 0021),
+// so this seam names no web-server type on either side.
 // Tests: a static name->value table (see the ADR 0002 MapReader precedent).
 // =============================================================================
 #pragma once

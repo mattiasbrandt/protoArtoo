@@ -2,10 +2,15 @@
 // src/web/api_config.cpp
 //
 // Config API endpoints
-//   GET /api/config  — current persisted runtime config snapshot (ported to
-//                      the WebRequest seam, ADR 0021; bound by the seam route
-//                      table, not by registerConfigRoutes())
-//   POST /api/config — update config fields and persist to NVS
+//   GET  /api/config  — current persisted runtime config snapshot
+//   POST /api/config  — update config fields and persist to NVS
+//   GET  /api/rc/map  — current RC binding map
+//   POST /api/rc/map  — replace the RC binding map
+//   POST /api/wifi    — stage Device WiFi Settings
+//
+// All written against the project-owned WebRequest seam (ADR 0021) and bound
+// by the seam route table. The write paths go through the ADR 0011 apply cores
+// unchanged; the only coupling this file cuts is to the request object.
 //
 // Notes:
 // - This route is the sole web entrypoint for config writes.
@@ -17,7 +22,6 @@
 
 #include <Arduino.h>
 #include <ArduinoJson.h>
-#include <ESPAsyncWebServer.h>
 #include <ctype.h>
 #include <string.h>
 
@@ -25,6 +29,7 @@
 #include "api_config_snapshot.h"
 #include "api_rc_map_apply.h"
 #include "api_wifi_apply.h"
+#include "web_param_source.h"
 #include "api_helpers.h"
 #include "audio_task.h"
 #include "commanded_modes.h"
@@ -498,12 +503,17 @@ bool populateConfigJson(JsonDocument& doc, const ConfigSnapshot& snap) {
     return !doc.overflowed();
 }
 
-// GET /api/config — the config snapshot data/app.js fetches on every page load.
-// Ported to the WebRequest seam (ADR 0021), so this one source serves under
-// both device backends and the host-test backend.
-void handleConfigGet(WebRequest& req) {
-    ConfigSnapshot snap;
-    configCacheRead(&snap);
+namespace {
+
+// The config snapshot response, shared by the read route and the write route's
+// echo. Both must return the same shape for the same device state, so they
+// build it the same way rather than twice.
+//
+// pendingApply and networkRecovery are added on top of populateConfigJson():
+// they are runtime state (is a Staged Network Switch outstanding, was Network
+// Recovery Mode the posture actually entered at boot) that a pure snapshot
+// serializer cannot see.
+void sendConfigSnapshot(WebRequest& req, const ConfigSnapshot& snap) {
     JsonDocument doc;
     if (!populateConfigJson(doc, snap)) {
         req.send(500, "application/json",
@@ -539,241 +549,219 @@ void handleConfigGet(WebRequest& req) {
     req.send(200, "application/json", body);
 }
 
-void registerConfigRoutes(AsyncWebServer& server) {
-    server.on("/api/rc/map", HTTP_GET, [](AsyncWebServerRequest* req) {
-        ConfigSnapshot snap;
-        configCacheRead(&snap);
-        JsonDocument doc;
-        if (!populateRcMapJson(doc, snap)) {
-            req->send(500, "application/json",
-                      "{\"ok\":false,\"error\":\"rc map json build failed\"}");
-            return;
-        }
-        auto* stream = req->beginResponseStream("application/json");
-        if (stream == nullptr) {
-            req->send(500, "application/json",
-                      "{\"ok\":false,\"error\":\"response stream alloc failed\"}");
-            return;
-        }
-        serializeJson(doc, *stream);
-        req->send(stream);
-    });
-
-    server.on("/api/rc/map", HTTP_POST, [](AsyncWebServerRequest* req) {
-        ConfigParamSource params;
-        params.ctx = req;
-        params.get = [](void* ctx, const char* name) -> const char* {
-            auto* r = static_cast<AsyncWebServerRequest*>(ctx);
-            if (!r->hasParam(name, true)) {
-                return nullptr;
-            }
-            return r->getParam(name, true)->value().c_str();
-        };
-
-        ConfigSnapshot working;
-        configCacheRead(&working);
-
-        // RcMapApplyResult is small (~150 bytes); static kept for consistency
-        // with the ADR 0011 slice 1 out-parameter convention.
-        static RcMapApplyResult result;
-        rcMapApply(params, &working, &result);
-        if (!result.ok) {
-            JsonDocument err;
-            err["ok"] = false;
-            err["error"] = result.errorMessage;
-            if (result.errorEntry.present) {
-                JsonObject at = err["entry"].to<JsonObject>();
-                at["source"] = result.errorEntry.source;
-                at["channel"] = result.errorEntry.channel;
-                at["action"] = result.errorEntry.action;
-                if (result.errorEntry.payload[0] != '\0') {
-                    at["payload"] = result.errorEntry.payload;
-                }
-            }
-            char payload[320] = {};
-            serializeJson(err, payload, sizeof(payload));
-            req->send(400, "application/json", payload);
-            return;
-        }
-
-        configCacheApply(working);
-
-        ConfigSnapshot snap;
-        configCacheRead(&snap);
-
-        Preferences prefs;
-        if (!prefs.begin(NVS_NAMESPACE, false)) {
-            req->send(500, "application/json",
-                      "{\"ok\":false,\"error\":\"failed to persist config\"}");
-            return;
-        }
-
-        if (!configSaveSystem(prefs, snap.system)) {
-            prefs.end();
-            req->send(500, "application/json",
-                      "{\"ok\":false,\"error\":\"failed to persist config\"}");
-            return;
-        }
+bool persistSystemConfig(WebRequest& req, const SystemConfig& system) {
+    Preferences prefs;
+    if (!prefs.begin(NVS_NAMESPACE, false)) {
+        req.send(500, "application/json",
+                 "{\"ok\":false,\"error\":\"failed to persist config\"}");
+        return false;
+    }
+    if (!configSaveSystem(prefs, system)) {
         prefs.end();
+        req.send(500, "application/json",
+                 "{\"ok\":false,\"error\":\"failed to persist config\"}");
+        return false;
+    }
+    prefs.end();
+    return true;
+}
 
-        req->send(200, "application/json", "{\"ok\":true}");
-    });
+}  // namespace
 
-    // GET /api/config is registered by the seam route table, not here.
+// GET /api/config — the config snapshot data/app.js fetches on every page load.
+void handleConfigGet(WebRequest& req) {
+    ConfigSnapshot snap;
+    configCacheRead(&snap);
+    sendConfigSnapshot(req, snap);
+}
 
-    server.on("/api/config", HTTP_POST, [](AsyncWebServerRequest* req) {
-        ConfigSnapshot working;
-        configCacheRead(&working);
-        const bool domeEnabledBefore = working.system.enable_dome;
+// GET /api/rc/map — the RC binding map the mapper page reads.
+void handleRcMapGet(WebRequest& req) {
+    ConfigSnapshot snap;
+    configCacheRead(&snap);
+    JsonDocument doc;
+    if (!populateRcMapJson(doc, snap)) {
+        req.send(500, "application/json",
+                 "{\"ok\":false,\"error\":\"rc map json build failed\"}");
+        return;
+    }
 
-        ConfigParamSource params;
-        params.ctx = req;
-        params.get = [](void* ctx, const char* name) -> const char* {
-            auto* r = static_cast<AsyncWebServerRequest*>(ctx);
-            if (!r->hasParam(name, true)) {
-                return nullptr;
+    // Bounded like the config snapshot above, and for the same reasons. The
+    // map holds at most kRcMapMaxEntries entries of source/channel/action plus
+    // an optional Marcduino payload; 2 KB clears a full map with headroom.
+    static char body[2048];
+    if (measureJson(doc) >= sizeof(body)) {
+        req.send(500, "application/json",
+                 "{\"ok\":false,\"error\":\"rc map response overflow\"}");
+        return;
+    }
+    serializeJson(doc, body, sizeof(body));
+    req.send(200, "application/json", body);
+}
+
+// POST /api/rc/map — replace the RC binding map.
+void handleRcMapPost(WebRequest& req) {
+    ConfigParamSource params = webParamSource(req);
+
+    ConfigSnapshot working;
+    configCacheRead(&working);
+
+    // RcMapApplyResult is small (~150 bytes); static kept for consistency
+    // with the ADR 0011 slice 1 out-parameter convention.
+    static RcMapApplyResult result;
+    rcMapApply(params, &working, &result);
+    if (!result.ok) {
+        JsonDocument err;
+        err["ok"] = false;
+        err["error"] = result.errorMessage;
+        if (result.errorEntry.present) {
+            JsonObject at = err["entry"].to<JsonObject>();
+            at["source"] = result.errorEntry.source;
+            at["channel"] = result.errorEntry.channel;
+            at["action"] = result.errorEntry.action;
+            if (result.errorEntry.payload[0] != '\0') {
+                at["payload"] = result.errorEntry.payload;
             }
-            return r->getParam(name, true)->value().c_str();
-        };
-
-        // ConfigApplyResult is ~2.5 KB (dominated by the applied-fields log
-        // record) — static avoids a large stack frame on the AsyncTCP task,
-        // matching api_seq.cpp's SeqRunEvidence precedent.
-        static ConfigApplyResult result;
-        configApply(params, &working, domeEnabledBefore, &result);
-        if (result.error.hasError) {
-            char err[224];
-            snprintf(err, sizeof(err), "{\"ok\":false,\"error\":\"%s\"}", result.error.message);
-            req->send(400, "application/json", err);
-            return;
         }
+        char payload[320] = {};
+        serializeJson(err, payload, sizeof(payload));
+        req.send(400, "application/json", payload);
+        return;
+    }
 
-        for (size_t i = 0; i < result.applied.count; ++i) {
-            PA_LOG_INFO(TAG, "%s", result.applied.lines[i]);
-        }
+    configCacheApply(working);
 
-        // Apply working snapshot but preserve speedPresetActive to the special activePresetAfter value
-        configCacheApply(working);
+    ConfigSnapshot snap;
+    configCacheRead(&snap);
+    if (!persistSystemConfig(req, snap.system)) {
+        return;
+    }
 
-        // Sync stationary mode with edge detection and drive-on cue. Safe to call
-        // unconditionally: when the request omits "stationary", configApply() leaves
-        // working.system.stationary at the cache value read above, which always
-        // matches robotState.stationary (commandedSetStationary is the only runtime
-        // writer of both, keeping them in lockstep) — so the edge-detect inside it
-        // is a no-op and no cue fires.
-        commandedSetStationary(working.system.stationary, SRC_WEB_API);
+    req.send(200, "application/json", "{\"ok\":true}");
+}
 
-        if (result.actions.playDomeOnCue) {
-            audioQueuePlaySlot(AUDIO_SLOT_SYS_DOME_ON, SRC_INTERNAL);
-        }
+// POST /api/config — the sole web entrypoint for config writes.
+void handleConfigPost(WebRequest& req) {
+    ConfigSnapshot working;
+    configCacheRead(&working);
+    const bool domeEnabledBefore = working.system.enable_dome;
 
-        ConfigSnapshot snap;
-        configCacheRead(&snap);
+    ConfigParamSource params = webParamSource(req);
 
-        Preferences prefs;
-        if (!prefs.begin(NVS_NAMESPACE, false)) {
-            req->send(500, "application/json",
-                      "{\"ok\":false,\"error\":\"failed to persist config\"}");
-            return;
-        }
+    // ConfigApplyResult is ~2.5 KB (dominated by the applied-fields log
+    // record) — static avoids a large stack frame on the server task,
+    // matching api_seq.cpp's SeqRunEvidence precedent.
+    static ConfigApplyResult result;
+    configApply(params, &working, domeEnabledBefore, &result);
+    if (result.error.hasError) {
+        char err[224];
+        snprintf(err, sizeof(err), "{\"ok\":false,\"error\":\"%s\"}", result.error.message);
+        req.send(400, "application/json", err);
+        return;
+    }
 
-        if (!configSave(prefs, snap)) {
-            prefs.end();
-            req->send(500, "application/json",
-                      "{\"ok\":false,\"error\":\"failed to persist config\"}");
-            return;
-        }
+    for (size_t i = 0; i < result.applied.count; ++i) {
+        PA_LOG_INFO(TAG, "%s", result.applied.lines[i]);
+    }
+
+    configCacheApply(working);
+
+    // Sync stationary mode with edge detection and drive-on cue. Safe to call
+    // unconditionally: when the request omits "stationary", configApply() leaves
+    // working.system.stationary at the cache value read above, which always
+    // matches robotState.stationary (commandedSetStationary is the only runtime
+    // writer of both, keeping them in lockstep) — so the edge-detect inside it
+    // is a no-op and no cue fires.
+    commandedSetStationary(working.system.stationary, SRC_WEB_API);
+
+    if (result.actions.playDomeOnCue) {
+        audioQueuePlaySlot(AUDIO_SLOT_SYS_DOME_ON, SRC_INTERNAL);
+    }
+
+    ConfigSnapshot snap;
+    configCacheRead(&snap);
+
+    Preferences prefs;
+    if (!prefs.begin(NVS_NAMESPACE, false)) {
+        req.send(500, "application/json",
+                 "{\"ok\":false,\"error\":\"failed to persist config\"}");
+        return;
+    }
+    if (!configSave(prefs, snap)) {
         prefs.end();
-        requestStatusBroadcastNow();
-        JsonDocument doc;
-        if (!populateConfigJson(doc, snap)) {
-            req->send(500, "application/json",
-                      "{\"ok\":false,\"error\":\"config json build failed\"}");
-            return;
-        }
-        WifiConfig activeWifiAfterPost = {};
-        configCacheReadActiveWifi(&activeWifiAfterPost);
-        doc["wifi"]["pendingApply"] = wifiConfigsDiffer(snap.wifi, activeWifiAfterPost);
-        doc["wifi"]["networkRecovery"] = configCacheReadActiveWifiRecovery();
-        auto* stream = req->beginResponseStream("application/json");
-        if (stream == nullptr) {
-            req->send(500, "application/json",
-                      "{\"ok\":false,\"error\":\"response stream alloc failed\"}");
-            return;
-        }
-        serializeJson(doc, *stream);
-        req->send(stream);
-    });
+        req.send(500, "application/json",
+                 "{\"ok\":false,\"error\":\"failed to persist config\"}");
+        return;
+    }
+    prefs.end();
 
-    server.on("/api/wifi", HTTP_POST, [](AsyncWebServerRequest* req) {
-        ConfigParamSource params;
-        params.ctx = req;
-        params.get = [](void* ctx, const char* name) -> const char* {
-            auto* r = static_cast<AsyncWebServerRequest*>(ctx);
-            if (!r->hasParam(name, true)) {
-                return nullptr;
-            }
-            return r->getParam(name, true)->value().c_str();
-        };
+    requestStatusBroadcastNow();
+    sendConfigSnapshot(req, snap);
+}
 
-        WifiConfig working = {};
-        configCacheReadWifi(&working);
+// POST /api/wifi — stage Device WiFi Settings (ADR 0015 Staged Network Switch).
+void handleWifiPost(WebRequest& req) {
+    ConfigParamSource params = webParamSource(req);
 
-        // WifiApplyResult is small; static kept for consistency with the
-        // ADR 0011 slice 1 out-parameter convention.
-        static WifiApplyResult result;
-        wifiApply(params, &working, &result);
-        if (!result.ok) {
-            char errPayload[224];
-            snprintf(errPayload, sizeof(errPayload), "{\"ok\":false,\"error\":\"%s\"}",
-                     result.errorMessage);
-            req->send(400, "application/json", errPayload);
-            return;
-        }
+    WifiConfig working = {};
+    configCacheReadWifi(&working);
 
-        Preferences prefs;
-        if (!prefs.begin(NVS_NAMESPACE, false)) {
-            req->send(500, "application/json",
-                      "{\"ok\":false,\"error\":\"failed to persist wifi settings\"}");
-            return;
-        }
-        if (!configSaveWifi(prefs, working)) {
-            prefs.end();
-            req->send(500, "application/json",
-                      "{\"ok\":false,\"error\":\"failed to persist wifi settings\"}");
-            return;
-        }
+    // WifiApplyResult is small; static kept for consistency with the
+    // ADR 0011 slice 1 out-parameter convention.
+    static WifiApplyResult result;
+    wifiApply(params, &working, &result);
+    if (!result.ok) {
+        char errPayload[224];
+        snprintf(errPayload, sizeof(errPayload), "{\"ok\":false,\"error\":\"%s\"}",
+                 result.errorMessage);
+        req.send(400, "application/json", errPayload);
+        return;
+    }
+
+    Preferences prefs;
+    if (!prefs.begin(NVS_NAMESPACE, false)) {
+        req.send(500, "application/json",
+                 "{\"ok\":false,\"error\":\"failed to persist wifi settings\"}");
+        return;
+    }
+    if (!configSaveWifi(prefs, working)) {
         prefs.end();
+        req.send(500, "application/json",
+                 "{\"ok\":false,\"error\":\"failed to persist wifi settings\"}");
+        return;
+    }
+    prefs.end();
 
-        // Stage only: update the persisted cache so reads see the new
-        // settings, but do not touch WiFi hardware here (ADR 0015 Staged
-        // Network Switch — apply happens through an explicit reboot/restart
-        // handoff, not as a side effect of saving this form).
-        ConfigSnapshot snap;
-        configCacheRead(&snap);
-        snap.wifi = working;
-        configCacheApply(snap);
+    // Stage only: update the persisted cache so reads see the new settings,
+    // but do not touch WiFi hardware here (ADR 0015 Staged Network Switch —
+    // apply happens through an explicit reboot/restart handoff, not as a side
+    // effect of saving this form). This is what lets an operator reprovision
+    // while connected to the controller's own AP without dropping underneath
+    // themselves mid-request.
+    ConfigSnapshot snap;
+    configCacheRead(&snap);
+    snap.wifi = working;
+    configCacheApply(snap);
 
-        requestStatusBroadcastNow();
+    requestStatusBroadcastNow();
 
-        JsonDocument doc;
-        WifiConfigView view = wifiConfigToView(working);
-        doc["ok"] = true;
-        JsonObject wifi = doc["wifi"].to<JsonObject>();
-        wifi["provisioned"] = view.provisioned;
-        wifi["mode"] = wifiModeToString(view.mode);
-        wifi["staSsid"] = view.sta_ssid;
-        wifi["staPasswordSet"] = view.sta_password_set;
-        wifi["apSsid"] = view.ap_ssid;
-        wifi["apPasswordSet"] = view.ap_password_set;
+    JsonDocument doc;
+    WifiConfigView view = wifiConfigToView(working);
+    doc["ok"] = true;
+    JsonObject wifi = doc["wifi"].to<JsonObject>();
+    wifi["provisioned"] = view.provisioned;
+    wifi["mode"] = wifiModeToString(view.mode);
+    wifi["staSsid"] = view.sta_ssid;
+    wifi["staPasswordSet"] = view.sta_password_set;
+    wifi["apSsid"] = view.ap_ssid;
+    wifi["apPasswordSet"] = view.ap_password_set;
 
-        WifiConfig activeWifi = {};
-        configCacheReadActiveWifi(&activeWifi);
-        wifi["pendingApply"] = wifiConfigsDiffer(working, activeWifi);
-        wifi["networkRecovery"] = configCacheReadActiveWifiRecovery();
+    WifiConfig activeWifi = {};
+    configCacheReadActiveWifi(&activeWifi);
+    wifi["pendingApply"] = wifiConfigsDiffer(working, activeWifi);
+    wifi["networkRecovery"] = configCacheReadActiveWifiRecovery();
 
-        char payload[512];
-        serializeJson(doc, payload, sizeof(payload));
-        req->send(200, "application/json", payload);
-    });
+    char payload[512];
+    serializeJson(doc, payload, sizeof(payload));
+    req.send(200, "application/json", payload);
 }

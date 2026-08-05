@@ -3,7 +3,7 @@
 //
 // Native unit tests for configApply() (ADR 0011 Apply Core, slice 1).
 // Exercises the pure validate/apply logic against a ConfigSnapshot through a
-// std::map-backed ConfigParamSource, without FreeRTOS, AsyncWebServerRequest,
+// std::map-backed ConfigParamSource, without FreeRTOS, any web-server type,
 // or hardware dependencies.
 // =============================================================================
 #include <unity.h>

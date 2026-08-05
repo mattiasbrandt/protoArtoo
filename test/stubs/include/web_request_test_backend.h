@@ -23,6 +23,10 @@ struct WebRequestTestBackend {
     // Content-Length of a multipart body.
     size_t contentLength = 0;
 
+    // What body() returns: a raw (non-form) request body, such as the JSON the
+    // apply cores accept under the "plain" name.
+    const char* body = nullptr;
+
     int sentCode = 0;
     char sentContentType[64] = {};
     // Sized for the largest ported payload with headroom: the action registry

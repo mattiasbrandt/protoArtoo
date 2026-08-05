@@ -41,6 +41,22 @@ class WebRequest {
     // an over-long string instead of a silently valid truncation.
     bool param(const char* name, char* out, size_t outSize) const;
 
+    // Borrow the named parameter's value for as long as the request lives,
+    // without copying it. Returns nullptr when the parameter is absent.
+    //
+    // param() copies out and is what most handlers want: a value they can
+    // validate and normalize without depending on any backend's string
+    // lifetime. paramRef() exists for the apply cores (ADR 0011), whose
+    // ConfigParamSource hands a borrowed const char* straight to a parser --
+    // and whose raw-body parameter can carry a whole JSON document that no
+    // handler-side buffer should have to be sized for.
+    const char* paramRef(const char* name) const;
+
+    // Borrow the raw request body, or nullptr when there is none. Same
+    // lifetime as paramRef(). Backends differ in where a non-form body lives,
+    // and this is where that difference stops.
+    const char* body() const;
+
     // Declared body size. For a multipart upload this counts the framing as
     // well as the file, so it is an upper bound on the payload, never its
     // exact size -- the exact size is not knowable until the body is consumed.

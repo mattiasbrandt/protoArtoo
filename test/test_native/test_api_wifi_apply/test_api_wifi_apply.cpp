@@ -4,7 +4,7 @@
 // Native unit tests for wifiApply() (ADR 0011 Apply Core / ADR 0015 Device
 // WiFi Settings, issue #45). Exercises the pure validate/apply logic against
 // a WifiConfig through a std::map-backed ConfigParamSource, without
-// FreeRTOS, AsyncWebServerRequest, or WiFi hardware.
+// FreeRTOS, any web-server type, or WiFi hardware.
 // =============================================================================
 #include <unity.h>
 

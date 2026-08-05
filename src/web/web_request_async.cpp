@@ -55,6 +55,22 @@ bool WebRequest::param(const char* name, char* out, size_t outSize) const {
     return true;
 }
 
+const char* WebRequest::paramRef(const char* name) const {
+    AsyncWebServerRequest* req = asyncReq(backend_);
+    const AsyncWebParameter* p = req->getParam(name, isPostParam(req));
+    // value() returns a reference to the parameter's own String, which the
+    // request owns until it completes -- so this pointer outlives the call.
+    return p != nullptr ? p->value().c_str() : nullptr;
+}
+
+const char* WebRequest::body() const {
+    // ESPAsyncWebServer surfaces a non-form request body as a parameter named
+    // "plain" rather than exposing the buffer, so that is where the body is.
+    AsyncWebServerRequest* req = asyncReq(backend_);
+    const AsyncWebParameter* p = req->getParam("plain", true);
+    return p != nullptr ? p->value().c_str() : nullptr;
+}
+
 size_t WebRequest::contentLength() const {
     return asyncReq(backend_)->contentLength();
 }

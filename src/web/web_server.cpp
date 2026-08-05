@@ -1270,13 +1270,11 @@ void startHttpServerOnce() {
         registerMoodMapRoutes(server);
         registerAudioRoutes(server);
         registerDomeRoutes(server);
-        registerConfigRoutes(server);
         registerAuxLedRoutes(server);
         registerRcRoutes(server);
         registerServoRoutes(server);
         registerStatusRoutes(server);
         registerValidationRoutes(server);
-        registerSystemRoutes(server);
 #if PA_HEAP_PROFILE
         registerProfilerRoutes(server);
 #endif

@@ -4,7 +4,7 @@
 // Native unit tests for rcMapApply() (ADR 0011 Apply Core, slice 2).
 // Exercises the pure validate/apply logic against a ConfigSnapshot through a
 // std::map-backed ConfigParamSource carrying the "plain" JSON body, without
-// FreeRTOS, AsyncWebServerRequest, or hardware dependencies.
+// FreeRTOS, any web-server type, or hardware dependencies.
 // =============================================================================
 #include <unity.h>
 

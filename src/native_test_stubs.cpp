@@ -77,6 +77,26 @@ bool domeQueueTx(const char* /*cmd*/) { return true; }
 #include "audio_task.h"
 bool audioQueueDollar(const char* /*cmd*/, CommandSource /*src*/) { return true; }
 
+// Side effects of the config write path, recorded rather than performed so a
+// test can assert that a POST reached them. Zeroed by the test's own setUp().
+#include "commanded_modes.h"
+bool g_test_commanded_stationary = false;
+unsigned g_test_dome_on_cue_count = 0;
+unsigned g_test_status_broadcast_count = 0;
+
+void commandedSetStationary(bool stationary, CommandSource /*source*/) {
+    g_test_commanded_stationary = stationary;
+}
+
+bool audioQueuePlaySlot(AudioPlaybackSlot /*slot*/, CommandSource /*src*/) {
+    g_test_dome_on_cue_count++;
+    return true;
+}
+
+void requestStatusBroadcastNow() {
+    g_test_status_broadcast_count++;
+}
+
 // sequenceQueue — defined here so sequence_dispatcher.cpp can reference the
 // extern without main.cpp being in the native build.
 #include "sequence_dispatcher.h"
@@ -125,6 +145,17 @@ bool WebRequest::param(const char* name, char* out, size_t outSize) const {
     }
     snprintf(out, outSize, "%s", value);
     return true;
+}
+
+const char* WebRequest::paramRef(const char* name) const {
+    // The table's own storage outlives the request on the host, so borrowing
+    // is simply the lookup -- no copy step to get wrong.
+    return testParamLookup(static_cast<const WebRequestTestBackend*>(backend_), name);
+}
+
+const char* WebRequest::body() const {
+    const char* raw = static_cast<const WebRequestTestBackend*>(backend_)->body;
+    return (raw != nullptr && raw[0] != '\0') ? raw : nullptr;
 }
 
 size_t WebRequest::contentLength() const {
