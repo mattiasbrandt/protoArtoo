@@ -31,7 +31,6 @@
 #include "../../include/drive_speed_preset.h"
 #include "../../include/api_estop.h"
 #include "../../include/api_helpers.h"
-#include "../../include/api_identity.h"
 #include "../../include/api_rc.h"
 #include "../../include/api_seq.h"
 #include "../../include/api_servo.h"
@@ -45,6 +44,7 @@
 #include "../../include/aux_led.h"
 #include "../../include/rc_diagnostics_snapshot.h"
 #include "../../include/robot_state.h"
+#include "../../include/web_request.h"
 #include "../../include/web_request_async.h"
 #include "../../include/wifi_boot_decision.h"
 #include "../../include/wifi_recovery_gesture.h"
@@ -1259,8 +1259,11 @@ void startHttpServerOnce() {
         });
 
         // ADR 0021: route groups ported to the WebRequest seam register
-        // through webRegisterRoute() against this server instance.
+        // through webRegisterRoute() against this server instance. Their
+        // paths live in the one seam route table both backends call, so this
+        // block only registers what is still async-only.
         webRequestAsyncAttach(server);
+        webRegisterSeamRoutes();
 
         registerEstopRoutes(server);
         registerDriveRoutes(server);
@@ -1274,7 +1277,6 @@ void startHttpServerOnce() {
         registerStatusRoutes(server);
         registerValidationRoutes(server);
         registerSystemRoutes(server);
-        registerIdentityRoutes();
 #if PA_HEAP_PROFILE
         registerProfilerRoutes(server);
 #endif

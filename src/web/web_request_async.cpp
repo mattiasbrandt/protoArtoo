@@ -59,6 +59,21 @@ void WebRequest::send(int code, const char* contentType, const char* body) {
     asyncReq(backend_)->send(code, contentType, body);
 }
 
+bool WebRequest::sendChunked(const char* contentType, WebResponseBodyFiller filler) {
+    // AwsResponseFiller has the seam filler's exact shape, so the body is
+    // generated straight into AsyncTCP's outgoing chunk with nothing buffered
+    // in between. beginChunkedResponse() is 200-only here, which is why the
+    // seam declares chunked sends as 200-only rather than inventing a status
+    // argument one backend would have to fake.
+    AsyncWebServerRequest* req = asyncReq(backend_);
+    AsyncWebServerResponse* response = req->beginChunkedResponse(contentType, filler);
+    if (response == nullptr) {
+        return false;
+    }
+    req->send(response);
+    return true;
+}
+
 void* WebRequest::sessionContext() const {
     return nullptr;
 }

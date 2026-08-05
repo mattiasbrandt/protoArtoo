@@ -21,6 +21,14 @@ struct WebRequestTestBackend {
 
     int sentCode = 0;
     char sentContentType[64] = {};
-    char sentBody[256] = {};
+    // Sized for the largest ported payload with headroom: the action registry
+    // serializes to ~9 KB. Host-only, so a plain array beats an allocation.
+    char sentBody[16384] = {};
+    // Bytes the handler produced, which is what a test asserting completeness
+    // should check -- sentBody alone cannot distinguish a full body from one
+    // that filled the buffer exactly.
+    size_t sentBodyLength = 0;
     unsigned sendCalls = 0;
+    // True when the body arrived through sendChunked() rather than send().
+    bool sentChunked = false;
 };

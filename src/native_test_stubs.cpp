@@ -82,6 +82,16 @@ bool audioQueueDollar(const char* /*cmd*/, CommandSource /*src*/) { return true;
 #include "sequence_dispatcher.h"
 QueueHandle_t sequenceQueue = nullptr;
 
+// Log ring stand-in for the one main.cpp owns, which the native build does not
+// compile. Backed by the real log_buffer.cpp ring, so /api/logs tests exercise
+// the actual copy behavior rather than a canned string. Tests fill it through
+// g_test_log_buffer directly (declared extern in the test file).
+#include "log_buffer.h"
+LogBuffer g_test_log_buffer = {};
+size_t copyRecentLogs(char* buffer, size_t bufferSize) {
+    return logBufferCopy(&g_test_log_buffer, buffer, bufferSize);
+}
+
 // -----------------------------------------------------------------------------
 // WebRequest host-test backend (ADR 0021). backend_ holds a
 // WebRequestTestBackend (test/stubs/include/web_request_test_backend.h):
@@ -122,7 +132,39 @@ void WebRequest::send(int code, const char* contentType, const char* body) {
     b->sentCode = code;
     snprintf(b->sentContentType, sizeof(b->sentContentType), "%s", contentType);
     snprintf(b->sentBody, sizeof(b->sentBody), "%s", body);
+    b->sentBodyLength = strlen(body);
+    b->sentChunked = false;
     b->sendCalls++;
+}
+
+bool WebRequest::sendChunked(const char* contentType, WebResponseBodyFiller filler) {
+    WebRequestTestBackend* b = static_cast<WebRequestTestBackend*>(backend_);
+    b->sentCode = 200;
+    snprintf(b->sentContentType, sizeof(b->sentContentType), "%s", contentType);
+    b->sentChunked = true;
+    b->sendCalls++;
+
+    // Drive the filler in small chunks the way a device backend does, so a
+    // filler that mishandles the offset splits shows up on the host instead of
+    // only on hardware. sentBodyLength counts everything produced; sentBody
+    // keeps as much as it can hold.
+    uint8_t chunk[64];
+    size_t offset = 0;
+    for (;;) {
+        const size_t written = filler(chunk, sizeof(chunk), offset);
+        if (written == 0) {
+            break;
+        }
+        if (offset < sizeof(b->sentBody) - 1) {
+            size_t room = sizeof(b->sentBody) - 1 - offset;
+            size_t copy = written < room ? written : room;
+            memcpy(b->sentBody + offset, chunk, copy);
+            b->sentBody[offset + copy] = '\0';
+        }
+        offset += written;
+    }
+    b->sentBodyLength = offset;
+    return true;
 }
 
 void* WebRequest::sessionContext() const {

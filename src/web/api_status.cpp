@@ -4,7 +4,6 @@
 // Status and telemetry API endpoints
 //   GET /api/status  — JSON status snapshot
 //   GET /api/health  — health telemetry
-//   GET /api/logs    — recent log buffer
 //   GET /api/wifi    — WiFi status
 //   GET /api/serial  — serial port status
 // =============================================================================
@@ -112,26 +111,15 @@ void registerStatusRoutes(AsyncWebServer& server) {
         req->send(200, "application/json", body);
     });
 
-    // Logs endpoint uses a mutex to prevent concurrent access to the static buffer.
-    // Alternative approaches (chunked response, per-request allocation) are more
-    // complex and unnecessary for this infrequent debug endpoint.
-    static portMUX_TYPE logsMux = portMUX_INITIALIZER_UNLOCKED;
-    server.on("/api/logs", HTTP_GET, [](AsyncWebServerRequest* req) {
-        // Buffer sized to match ring capacity: LOG_BUFFER_LINES * LOG_LINE_MAX + 1.
-        // Was 4096 static (always allocated); now sized to actual ring content max.
-        static char body[LOG_BUFFER_LINES * LOG_LINE_MAX + 1];
-        taskENTER_CRITICAL(&logsMux);
-        copyRecentLogs(body, sizeof(body) - 1);
-        taskEXIT_CRITICAL(&logsMux);
-        req->send(200, "text/plain", body);
-    });
+    // GET /api/logs moved to src/web/api_logs.cpp when it was ported to the
+    // WebRequest seam; it is registered by the seam route table.
 
     server.on("/api/status", HTTP_GET, [](AsyncWebServerRequest* req) {
         // Static, not stack: 3 KB on the 8 KB async_tcp stack left too little
         // headroom for the snprintf float-formatting frames plus nested
         // interrupt frames under network load (stack-watchpoint panic proven
         // by coredump). Handlers serialize on the async_tcp task, so one
-        // shared buffer is race-free — same pattern as /api/logs above.
+        // shared buffer is race-free — same pattern as api_logs.cpp.
         static char body[3072];
         if (!buildStatusJson(body, sizeof(body))) {
             PA_LOG_WARN("StatusAPI", "status payload overflowed; returning fallback payload");

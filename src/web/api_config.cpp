@@ -2,7 +2,9 @@
 // src/web/api_config.cpp
 //
 // Config API endpoints
-//   GET /api/config  — current persisted runtime config snapshot
+//   GET /api/config  — current persisted runtime config snapshot (ported to
+//                      the WebRequest seam, ADR 0021; bound by the seam route
+//                      table, not by registerConfigRoutes())
 //   POST /api/config — update config fields and persist to NVS
 //
 // Notes:
@@ -496,6 +498,47 @@ bool populateConfigJson(JsonDocument& doc, const ConfigSnapshot& snap) {
     return !doc.overflowed();
 }
 
+// GET /api/config — the config snapshot data/app.js fetches on every page load.
+// Ported to the WebRequest seam (ADR 0021), so this one source serves under
+// both device backends and the host-test backend.
+void handleConfigGet(WebRequest& req) {
+    ConfigSnapshot snap;
+    configCacheRead(&snap);
+    JsonDocument doc;
+    if (!populateConfigJson(doc, snap)) {
+        req.send(500, "application/json",
+                 "{\"ok\":false,\"error\":\"config json build failed\"}");
+        return;
+    }
+    WifiConfig activeWifi = {};
+    configCacheReadActiveWifi(&activeWifi);
+    doc["wifi"]["pendingApply"] = wifiConfigsDiffer(snap.wifi, activeWifi);
+    doc["wifi"]["networkRecovery"] = configCacheReadActiveWifiRecovery();
+
+    // Static, not stack: the payload measures ~1.3 KB on a provisioned device,
+    // and even that is more than the psychic server task's 8 KB stack should
+    // carry next to ArduinoJson's serializer frames. Handlers serialize on one
+    // task under both backends, so a shared buffer is race-free — the same
+    // argument /api/status and /api/logs already make.
+    //
+    // Sized to kConfigJsonBudget, the worst-case bound test_api_config_json
+    // holds populateConfigJson() to; the overflow branch below is what makes a
+    // future field that breaks that bound a visible 500 rather than a silently
+    // truncated config.
+    //
+    // Serializing into a bounded buffer instead of a response stream also
+    // means no heap response object per request, which is the point of the
+    // migration for a route the dashboard hits on every page load.
+    static char body[3072];
+    if (measureJson(doc) >= sizeof(body)) {
+        req.send(500, "application/json",
+                 "{\"ok\":false,\"error\":\"config response overflow\"}");
+        return;
+    }
+    serializeJson(doc, body, sizeof(body));
+    req.send(200, "application/json", body);
+}
+
 void registerConfigRoutes(AsyncWebServer& server) {
     server.on("/api/rc/map", HTTP_GET, [](AsyncWebServerRequest* req) {
         ConfigSnapshot snap;
@@ -576,28 +619,7 @@ void registerConfigRoutes(AsyncWebServer& server) {
         req->send(200, "application/json", "{\"ok\":true}");
     });
 
-    server.on("/api/config", HTTP_GET, [](AsyncWebServerRequest* req) {
-        ConfigSnapshot snap;
-        configCacheRead(&snap);
-        JsonDocument doc;
-        if (!populateConfigJson(doc, snap)) {
-            req->send(500, "application/json",
-                      "{\"ok\":false,\"error\":\"config json build failed\"}");
-            return;
-        }
-        WifiConfig activeWifi = {};
-        configCacheReadActiveWifi(&activeWifi);
-        doc["wifi"]["pendingApply"] = wifiConfigsDiffer(snap.wifi, activeWifi);
-        doc["wifi"]["networkRecovery"] = configCacheReadActiveWifiRecovery();
-        auto* stream = req->beginResponseStream("application/json");
-        if (stream == nullptr) {
-            req->send(500, "application/json",
-                      "{\"ok\":false,\"error\":\"response stream alloc failed\"}");
-            return;
-        }
-        serializeJson(doc, *stream);
-        req->send(stream);
-    });
+    // GET /api/config is registered by the seam route table, not here.
 
     server.on("/api/config", HTTP_POST, [](AsyncWebServerRequest* req) {
         ConfigSnapshot working;

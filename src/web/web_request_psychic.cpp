@@ -24,9 +24,9 @@
 #include <http_parser.h>
 #include <stdio.h>
 
-#include "../../include/api_identity.h"
 #include "../../include/logging.h"
 #include "../../include/web_request.h"
+#include "../../include/web_server.h"
 #include "../../include/web_server_psychic.h"
 
 static const char* TAG = "WebServer";
@@ -66,6 +66,45 @@ void WebRequest::send(int code, const char* contentType, const char* body) {
     ctx->result = ctx->resp->send(code, contentType, body);
 }
 
+bool WebRequest::sendChunked(const char* contentType, WebResponseBodyFiller filler) {
+    WebRequestPsychicCtx* ctx = psychicCtx(backend_);
+
+    // Header/chunk/terminator sequence taken from PsychicFileResponse: the
+    // staged headers go out with the first chunk, and the empty terminating
+    // chunk closes the body. One chunk is in memory at a time.
+    ctx->resp->setCode(200);
+    ctx->resp->setContentType(contentType);
+    ctx->resp->sendHeaders();
+
+    // Stack, not static: the psychic server task is configured with an 8 KB
+    // stack and one chunk buffer is the whole cost of an arbitrarily large
+    // body. 1 KB keeps the chunk count low without crowding that stack.
+    uint8_t chunk[1024];
+    size_t offset = 0;
+    esp_err_t err = ESP_OK;
+    for (;;) {
+        const size_t written = filler(chunk, sizeof(chunk), offset);
+        if (written == 0) {
+            break;
+        }
+        err = ctx->resp->sendChunk(chunk, written);
+        if (err != ESP_OK) {
+            break;
+        }
+        offset += written;
+    }
+    if (err == ESP_OK) {
+        err = ctx->resp->finishChunking();
+    }
+
+    // Always true: staging headers cannot fail, so the response is committed
+    // from here on and the handler must not send an error on top of a body
+    // already on the wire. A transport failure travels out through result,
+    // the esp_err_t the vendor callback returns -- the same path send() uses.
+    ctx->result = err;
+    return true;
+}
+
 void* WebRequest::sessionContext() const {
     return psychicCtx(backend_)->req->request()->sess_ctx;
 }
@@ -99,12 +138,25 @@ void initPsychicWebServer() {
     s_server.config.max_open_sockets = 10;
     s_server.config.stack_size = 8192;
 
-    registerIdentityRoutes();
+    webRegisterSeamRoutes();
 
-    if (!LittleFS.begin(true)) {
-        PA_LOG_WARN(TAG, "LittleFS mount failed; static serving unavailable");
+    // Endpoints registered above win: serveStatic() installs a global handler,
+    // and the server only reaches global handlers after no endpoint matched.
+    //
+    // webServerInit() already mounted LittleFS and owns the littleFsReady flag
+    // /api/status reports, so gate on that rather than mounting a second time
+    // -- otherwise what is served and what is reported could disagree.
+    //
+    // The filesystem image ships only the gzipped copy of each text asset
+    // (tools/gzip_fsdata.py), which PsychicStaticFileHandler serves off its
+    // "<path>.gz" fallback with Content-Encoding: gzip, matching what the
+    // async stack did. Default file and cache-control are the async settings
+    // from web_server.cpp verbatim.
+    if (webLittleFsMounted()) {
+        s_server.serveStatic("/", LittleFS, "/")->setDefaultFile("index.html")->setCacheControl("no-cache");
+    } else {
+        PA_LOG_WARN(TAG, "LittleFS not mounted; static serving unavailable");
     }
-    s_server.serveStatic("/", LittleFS, "/")->setDefaultFile("index.html")->setCacheControl("no-cache");
 
     esp_err_t err = s_server.begin();
     if (err != ESP_OK) {

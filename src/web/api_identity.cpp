@@ -95,8 +95,3 @@ void handleIdentityPost(WebRequest& req) {
                 working.system.droid_name, working.system.mdns_use_name ? "true" : "false");
     sendIdentityResponse(req, working.system);
 }
-
-void registerIdentityRoutes() {
-    webRegisterRoute("/api/identity", WebMethod::kGet, handleIdentityGet);
-    webRegisterRoute("/api/identity", WebMethod::kPost, handleIdentityPost);
-}
