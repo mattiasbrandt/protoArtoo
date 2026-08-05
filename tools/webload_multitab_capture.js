@@ -34,7 +34,9 @@ const fs = require("fs");
 const path = require("path");
 const { performance } = require("perf_hooks");
 const { chromium } = require("playwright");
-const { collectDomState, captureTerminalScreenshots } = require("./webload_browser_capture.js");
+const {
+  collectDomState, captureTerminalScreenshots, splitArtifactErrors,
+} = require("./webload_browser_capture.js");
 
 const VIEWPORT = Object.freeze({ width: 1080, height: 800 });
 const COMMIT_RE = /^[0-9a-f]{40}$/;
@@ -364,37 +366,10 @@ async function attachTab(page, tab) {
   page.on("pageerror", (e) => tab.onPageError(e));
 }
 
-function artifactLanded(file) {
-  try {
-    return fs.statSync(file).size > 0;
-  } catch (_error) {
-    return false;
-  }
-}
-
-// captureTerminalScreenshots races each screenshot against a fixed 700ms cap
-// (see webload_browser_capture.js), and a controller that has just taken a
-// multi-tab load regularly pushes a screenshot past it even though Chromium
-// still finishes writing the file -- observed live 2026-08-05, where both of
-// tab 1's screenshots were recorded as timeouts while a 75KB PNG sat on disk.
-// Grade on whether the artifact actually landed, not on whether it won the
-// race. A timeout with a file present is a warning; only a genuinely missing
-// artifact is an evidence failure, which is what exit code 2 must keep meaning
-// -- otherwise a whole run's captures get discarded over a timing race.
-function splitArtifactErrors(raw, artifactPaths) {
-  const errors = [];
-  const warnings = [];
-  for (const entry of raw) {
-    const file = artifactPaths[entry.label];
-    if (file && artifactLanded(file)) {
-      warnings.push({ ...entry, resolution: "artifact present despite timeout", file });
-    } else {
-      errors.push(entry);
-    }
-  }
-  return { errors, warnings };
-}
-
+// Collects one tab's evidence but does not yet grade its artifacts: a
+// screenshot that overran its cap is still being written from Node at this
+// point, so grading here would report a file that is about to exist as
+// missing. gradeTabArtifacts() finishes the summary once the pages are closed.
 async function finalizeTab(page, tab) {
   const domState = await collectDomState(page).catch((error) => {
     appendNdjson(path.join(tab.tabDir, "page-errors.ndjson"), {
@@ -410,11 +385,7 @@ async function finalizeTab(page, tab) {
   await captureTerminalScreenshots(
     page, artifacts, rawArtifactErrors, performance.now() + 5_000,
   );
-  const { errors: artifactErrors, warnings: artifactWarnings } = splitArtifactErrors(
-    rawArtifactErrors,
-    { "viewport screenshot": artifacts.viewport, "full-page screenshot": artifacts.full },
-  );
-  const summary = {
+  return {
     tab: tab.name,
     refreshed: tab.refreshed === true,
     navigationErrors: tab.navigationErrors,
@@ -426,11 +397,22 @@ async function finalizeTab(page, tab) {
     sseHasLastStatus: domState?.sseRuntime?.hasLastStatus ?? false,
     sseConnectionText: domState?.sseRuntime?.connectionText ?? null,
     domState,
-    artifactErrors,
-    artifactWarnings,
+    artifacts,
+    rawArtifactErrors,
   };
-  fs.writeFileSync(path.join(tab.tabDir, "page-state.json"), `${JSON.stringify(summary, null, 2)}\n`);
-  return summary;
+}
+
+// Grades a finalized tab's artifacts and writes its page-state.json. Must run
+// after that tab's page is closed, so no further artifact writes can land.
+async function gradeTabArtifacts(summary, tabDir) {
+  const { artifacts, rawArtifactErrors, ...rest } = summary;
+  const { errors: artifactErrors, warnings: artifactWarnings } = await splitArtifactErrors(
+    rawArtifactErrors,
+    { "viewport screenshot": artifacts.viewport, "full-page screenshot": artifacts.full },
+  );
+  const graded = { ...rest, artifactErrors, artifactWarnings };
+  fs.writeFileSync(path.join(tabDir, "page-state.json"), `${JSON.stringify(graded, null, 2)}\n`);
+  return graded;
 }
 
 // SSE vocabulary ordered worst-first, so a run-level sseState reports the
@@ -550,11 +532,21 @@ async function runCapture(config) {
     // Only the tabs the scenario expects to survive the window are graded. The
     // third tab is closed by design partway through, so its absence is not a
     // failure and it never gets a verdict.
-    const finalSummaries = {};
+    const collected = {};
     for (const name of ["tab1", "tab2"]) {
       if (pages[name] && !pages[name].isClosed()) {
-        finalSummaries[name] = await finalizeTab(pages[name], tabs[name]);
+        collected[name] = await finalizeTab(pages[name], tabs[name]);
       }
+    }
+    // Close every page before grading artifacts. A screenshot that overran its
+    // cap is still being written from Node at this point; closing first means
+    // nothing new can land, so what is on disk afterwards is the final answer.
+    for (const page of Object.values(pages)) {
+      if (page && !page.isClosed()) await page.close().catch(() => {});
+    }
+    const finalSummaries = {};
+    for (const [name, summary] of Object.entries(collected)) {
+      finalSummaries[name] = await gradeTabArtifacts(summary, tabs[name].tabDir);
     }
     record("finalized");
 

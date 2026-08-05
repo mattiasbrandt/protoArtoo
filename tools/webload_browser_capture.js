@@ -233,6 +233,60 @@ async function bounded(label, action, artifactErrors, timeoutMs = 2_000) {
   }
 }
 
+// How long to keep looking for an artifact whose capture overran its cap.
+// bounded() abandons the race but not the underlying Playwright call, which
+// goes on to write the file from Node after the rejection -- so checking the
+// moment the race rejects reports a file that is about to exist as missing.
+// Observed 2026-08-05: a 73KB final-viewport.png on disk, graded an error.
+const ARTIFACT_SETTLE_MS = 1_500;
+const ARTIFACT_POLL_MS = 50;
+
+function artifactLanded(file) {
+  try {
+    return fs.statSync(file).size > 0;
+  } catch (_error) {
+    return false;
+  }
+}
+
+async function waitForArtifact(file, deadline) {
+  for (;;) {
+    if (artifactLanded(file)) return true;
+    if (performance.now() >= deadline) return false;
+    await sleep(ARTIFACT_POLL_MS);
+  }
+}
+
+// Each terminal artifact races a hard cap (700ms for a screenshot, applied by
+// captureTerminalScreenshots regardless of how much deadline is left). A
+// controller under load regularly pushes a screenshot past that cap even though
+// Chromium still finishes writing the file, and any entry in artifactErrors
+// means exit 2, which the coordinator treats as fatal -- so a whole run's
+// evidence could be discarded over a timing race with the PNG sitting on disk.
+//
+// Grade on whether the artifact actually landed. A timeout with a non-empty
+// file present is a warning; only a genuinely missing artifact is an evidence
+// failure, which is what exit 2 must keep meaning. Labels with no artifact of
+// their own (DOM sampling, the close sequence) are unaffected and stay errors.
+//
+// Call this only after the pages whose artifacts are being graded are closed,
+// so no further writes can land, and it settles a bounded time for writes
+// already in flight rather than sampling the filesystem once.
+async function splitArtifactErrors(raw, artifactPaths) {
+  const errors = [];
+  const warnings = [];
+  const deadline = performance.now() + ARTIFACT_SETTLE_MS;
+  for (const entry of raw) {
+    const file = artifactPaths[entry.label];
+    if (file && await waitForArtifact(file, deadline)) {
+      warnings.push({ ...entry, resolution: "artifact present despite timeout", file });
+    } else {
+      errors.push(entry);
+    }
+  }
+  return { errors, warnings };
+}
+
 async function captureTerminalScreenshots(page, artifacts, artifactErrors, deadline) {
   // Chromium screenshot capture waits for pending stylesheet/font work. A
   // response that never finishes can therefore block the protocol command
@@ -674,6 +728,13 @@ async function runCapture(config) {
         ? "browser-failure-observed"
         : "stopped";
     const observedWindowMs = terminalAt ? Date.parse(terminalAt) - t0EpochMs : null;
+    const {
+      errors: terminalArtifactErrors, warnings: artifactWarnings,
+    } = await splitArtifactErrors(artifactErrors, {
+      "viewport screenshot": artifacts.viewport,
+      "full-page screenshot": artifacts.full,
+      "final DOM HTML": artifacts.dom,
+    });
     const result = {
       issue: 66,
       run: RUN_ID,
@@ -694,7 +755,8 @@ async function runCapture(config) {
       domState: finalDomState,
       attempts: workloadAttempts,
       sampleErrors,
-      artifactErrors,
+      artifactErrors: terminalArtifactErrors,
+      artifactWarnings,
     };
     fs.writeFileSync(artifacts.state, `${JSON.stringify(result, null, 2)}\n`);
     process.stdout.write(`${JSON.stringify({
@@ -706,10 +768,11 @@ async function runCapture(config) {
       usableAt,
       sseState: result.sseState,
       sampleErrors,
-      artifactErrors,
+      artifactErrors: terminalArtifactErrors,
+      artifactWarningCount: artifactWarnings.length,
       output: config.out,
     })}\n`);
-    if (artifactErrors.length > 0) return 2;
+    if (terminalArtifactErrors.length > 0) return 2;
     if (captureStatus === "usable") return 0;
     if (captureStatus === "browser-failure-observed") return 3;
     return 4;
@@ -762,4 +825,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { captureTerminalScreenshots, collectDomState };
+module.exports = { captureTerminalScreenshots, collectDomState, splitArtifactErrors };
