@@ -168,8 +168,9 @@ struct InflightSlot {
 // filter: a filter's only rejection path is the vendor's bodyless send(400),
 // whereas this rejects by returning non-ESP_OK, which esp_http_server answers
 // by closing the socket -- matching what the async stack's abort() did, and
-// allocating nothing. Serving the recovery page on a rejected main-frame
-// navigation replaces this return, and is the next slice of this migration.
+// allocating nothing. Where a rejected main-frame navigation should instead
+// receive the Busy Recovery Page, this return is the seam that carries it;
+// see docs/adr/0016-busy-recovery-page-wire-contract.md.
 esp_err_t admissionMiddleware(PsychicRequest* request, PsychicResponse* response,
                               PsychicMiddlewareNext next) {
     (void)response;
