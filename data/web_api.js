@@ -10,14 +10,31 @@
   const DEFAULT_TIMEOUT_MS = 6000;
 
   class ApiError extends Error {
-    constructor(message, { kind = "unknown", status = 0, cause = null } = {}) {
+    constructor(message, { kind = "unknown", status = 0, cause = null, retryAfterMs = null } = {}) {
       super(message);
       this.name = "ApiError";
       this.kind = kind;
       this.status = status;
       this.cause = cause;
+      // Populated from the response's Retry-After when the device refuses a
+      // request as busy (ADR 0016), so callers honor the server's own interval
+      // instead of guessing one.
+      this.retryAfterMs = retryAfterMs;
     }
   }
+
+  // Retry-After is seconds-or-HTTP-date per RFC 9110. The device sends a small
+  // integer, but parse defensively and reject anything non-positive so a bad
+  // header degrades to the caller's default rather than a zero-delay hot loop.
+  const parseRetryAfterMs = (headerValue) => {
+    if (!headerValue) return null;
+    const seconds = Number(headerValue);
+    if (Number.isFinite(seconds)) return seconds > 0 ? seconds * 1000 : null;
+    const dateMs = Date.parse(headerValue);
+    if (Number.isNaN(dateMs)) return null;
+    const delta = dateMs - Date.now();
+    return delta > 0 ? delta : null;
+  };
 
   const normalizeError = (error) => {
     if (error instanceof ApiError) return error;
@@ -53,7 +70,11 @@
   // FIFO caps in-flight requests so a page load presents as a short paced
   // trickle instead of a burst. Queue wait does not consume the request
   // timeout — the timeout timer starts when the request actually goes out.
-  const MAX_CONCURRENT_REQUESTS = 2;
+  //
+  // Narrowed from 2 to 1 per ADR 0019: page recovery assumes a single active
+  // request slot, so the transport must not run two requests behind the
+  // bootstrap's back and defeat its ordering.
+  const MAX_CONCURRENT_REQUESTS = 1;
   let inFlightCount = 0;
   const requestWaiters = [];
 
@@ -121,6 +142,7 @@
           throw new ApiError(apiMessage || `HTTP ${response.status}`, {
             kind: "http",
             status: response.status,
+            retryAfterMs: parseRetryAfterMs(response.headers.get("retry-after")),
           });
         }
 
