@@ -298,9 +298,22 @@
         backdrop.setAttribute("aria-live", "polite");
         backdrop.setAttribute("aria-atomic", "true");
 
-        // How long to wait for the real bootstrap before concluding its own
-        // scripts were shed. Comfortably longer than an ordinary sequential
-        // load of this page's chain, short enough not to look frozen.
+        // The bootstrap file this kernel is responsible for fetching, and the
+        // chain it drives once it runs. Loading it from here rather than from
+        // a plain markup tag is deliberate: a bare tag has no retry, so one
+        // shed connection would kill the page permanently, and this kernel is
+        // the only code guaranteed to be present to recover from that.
+        var BOOTSTRAP_SRC = "/page_bootstrap.js";
+        var PAGE_SCRIPTS = "/web_api.js,/status_stream.js,/shell.js,/wifi.js,/footer.js";
+
+        // The controller sheds connections under burst pressure by design, so
+        // a failed fetch here is expected rather than exceptional. Matches the
+        // attempt count page_loader.js used for the same reason.
+        var MAX_BOOTSTRAP_ATTEMPTS = 4;
+        var BOOTSTRAP_RETRY_BASE_MS = 400;
+
+        // Final backstop: if the bootstrap never takes over even after those
+        // attempts, say so rather than sitting on a spinner.
         var TAKEOVER_DEADLINE_MS = 10000;
 
         function panel(html) {
@@ -331,9 +344,30 @@
           if (button) button.addEventListener("click", function () { window.location.reload(); });
         }
 
+        function loadBootstrap(attempt) {
+          var script = document.createElement("script");
+          script.src = BOOTSTRAP_SRC;
+          script.async = false;
+          // The host reads its chain from its own script tag; document.
+          // currentScript is set for dynamically inserted classic scripts too.
+          script.setAttribute("data-scripts", PAGE_SCRIPTS);
+          script.onerror = function () {
+            script.remove();
+            if (attempt < MAX_BOOTSTRAP_ATTEMPTS) {
+              window.setTimeout(function () {
+                loadBootstrap(attempt + 1);
+              }, BOOTSTRAP_RETRY_BASE_MS * attempt);
+              return;
+            }
+            showStalled();
+          };
+          document.body.appendChild(script);
+        }
+
         function start() {
           document.body.appendChild(backdrop);
           showLoading();
+          loadBootstrap(1);
           window.setTimeout(function () {
             // The real view replaces this content once it renders; only claim
             // a stall if the bootstrap genuinely never arrived.
@@ -346,12 +380,12 @@
       })();
     </script>
 
-    <!-- Common Page Bootstrap tracer page (ADR 0019 rollout order). One
-         request on purpose: the browser fetches every <script src> in the
-         initial burst in parallel, so a split bootstrap would open the
-         concurrent connections it exists to prevent. Everything after this
-         loads one at a time, driven by the bootstrap. If even this request is
-         shed, the inline kernel above covers it. -->
-    <script src="/page_bootstrap.js" data-scripts="/web_api.js,/status_stream.js,/shell.js,/wifi.js,/footer.js"></script>
+    <!-- No bootstrap <script src> here on purpose. The inline kernel above
+         fetches /page_bootstrap.js itself, with retry, and passes it the
+         script chain -- a bare tag has no retry, and the controller sheds
+         connections in the opening burst by design. Keeping it out of the
+         burst also leaves this page with the smallest possible set of
+         parallel requests at load. -->
+
   </body>
 </html>
