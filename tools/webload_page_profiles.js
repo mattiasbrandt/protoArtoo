@@ -342,6 +342,9 @@ function pageNames() {
   return Object.keys(PAGE_PROFILES);
 }
 
+// Turns a --page value into the profile both collectors gate on. The error
+// names the available pages, because a mistyped page is otherwise indis-
+// tinguishable from a page nobody has written a profile for yet.
 function resolveProfile(name) {
   const profile = PAGE_PROFILES[name];
   if (!profile) {
@@ -365,6 +368,10 @@ function describeProfile(profile) {
   };
 }
 
+// CLI entry point. This module is a library to the two collectors, which
+// require() it directly; the CLI exists only for the one consumer that cannot
+// require() it -- tools/webload_baseline_run.py, which reads --list to validate
+// --page and to build the collector URLs.
 function main(argv) {
   if (argv.includes("--help") || argv.length === 0) {
     process.stdout.write(
