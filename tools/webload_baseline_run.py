@@ -478,10 +478,21 @@ class Bundle:
     timeline: "r65.Timeline"
     events: list = field(default_factory=list)
     _lock: threading.RLock = field(default_factory=threading.RLock, repr=False)
+    _manifest: dict = field(default_factory=dict, repr=False)
 
     def write_manifest(self, **fields: object) -> None:
+        """Merge into manifest.json rather than replacing it.
+
+        Each call used to overwrite the whole document, so run-level provenance
+        written once at the start -- controller, serial port, tip commit, which
+        build was expected -- was gone by the end, replaced by whatever the last
+        stage happened to pass. That is exactly the identity a bundle needs when
+        it is compared against another one later. Stage and status still move,
+        because later values overwrite earlier ones for the same key.
+        """
         with self._lock:
-            payload = {"schemaVersion": 1, "issue": ISSUE, **fields}
+            self._manifest.update(fields)
+            payload = {"schemaVersion": 1, "issue": ISSUE, **self._manifest}
             r65.atomic_write_json(self.root / "manifest.json", payload)
 
     def record_failed_allocation(

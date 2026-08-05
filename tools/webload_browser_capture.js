@@ -264,10 +264,10 @@ async function waitForArtifact(file, deadline) {
 // means exit 2, which the coordinator treats as fatal -- so a whole run's
 // evidence could be discarded over a timing race with the PNG sitting on disk.
 //
-// Grade on whether the artifact actually landed. A timeout with a non-empty
-// file present is a warning; only a genuinely missing artifact is an evidence
-// failure, which is what exit 2 must keep meaning. Labels with no artifact of
-// their own (DOM sampling, the close sequence) are unaffected and stay errors.
+// Splits terminal-artifact timeouts into "never landed" and "landed late".
+// Neither is fatal: see the exit-code note in runCapture. The distinction is
+// still worth recording, since a missing screenshot and a slow one say
+// different things about how loaded the controller was.
 //
 // Call this only after the pages whose artifacts are being graded are closed,
 // so no further writes can land, and it settles a bounded time for writes
@@ -758,7 +758,13 @@ async function runCapture(config) {
       artifactErrors: terminalArtifactErrors,
       artifactWarnings,
     };
-    fs.writeFileSync(artifacts.state, `${JSON.stringify(result, null, 2)}\n`);
+    let stateWritten = true;
+    try {
+      fs.writeFileSync(artifacts.state, `${JSON.stringify(result, null, 2)}\n`);
+    } catch (error) {
+      stateWritten = false;
+      process.stderr.write(`failed to write page state: ${error}\n`);
+    }
     process.stdout.write(`${JSON.stringify({
       run: RUN_ID,
       terminalReason,
@@ -772,7 +778,17 @@ async function runCapture(config) {
       artifactWarningCount: artifactWarnings.length,
       output: config.out,
     })}\n`);
-    if (terminalArtifactErrors.length > 0) return 2;
+    // Exit 2 means the measurement itself is not on disk, and the coordinator
+    // treats it as fatal. Terminal snapshots -- screenshots, dom.html, the
+    // close sequence -- are supporting evidence, not the measurement: the
+    // workload ledger, DOM gates and verdict all live in page-state.json,
+    // which is written unconditionally above. A screenshot that misses its
+    // 700ms cap on a loaded controller is common and says nothing about the
+    // load being measured, so it is recorded in artifactErrors and the run
+    // still stands. Observed 2026-08-05: a complete run with both captures
+    // and both cooldowns was discarded because two of one tab's PNGs did not
+    // render in time.
+    if (!stateWritten || !artifactLanded(artifacts.state)) return 2;
     if (captureStatus === "usable") return 0;
     if (captureStatus === "browser-failure-observed") return 3;
     return 4;
@@ -825,4 +841,6 @@ if (require.main === module) {
   });
 }
 
-module.exports = { captureTerminalScreenshots, collectDomState, splitArtifactErrors };
+module.exports = {
+  captureTerminalScreenshots, collectDomState, splitArtifactErrors, artifactLanded,
+};

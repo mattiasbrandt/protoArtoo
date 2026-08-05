@@ -35,7 +35,7 @@ const path = require("path");
 const { performance } = require("perf_hooks");
 const { chromium } = require("playwright");
 const {
-  collectDomState, captureTerminalScreenshots, splitArtifactErrors,
+  collectDomState, captureTerminalScreenshots, splitArtifactErrors, artifactLanded,
 } = require("./webload_browser_capture.js");
 
 const VIEWPORT = Object.freeze({ width: 1080, height: 800 });
@@ -596,20 +596,32 @@ async function runCapture(config) {
       artifactErrors,
       artifactWarnings,
     };
-    fs.writeFileSync(path.join(config.out, "page-state.json"), `${JSON.stringify(result, null, 2)}\n`);
-    // outcome.json is kept for standalone runs that already consume it; the
-    // coordinator reads page-state.json.
-    fs.writeFileSync(
-      path.join(config.out, "outcome.json"),
-      `${JSON.stringify({ schemaVersion: 1, ...result }, null, 2)}\n`,
-    );
+    const statePath = path.join(config.out, "page-state.json");
+    let stateWritten = true;
+    try {
+      fs.writeFileSync(statePath, `${JSON.stringify(result, null, 2)}\n`);
+      // outcome.json is kept for standalone runs that already consume it; the
+      // coordinator reads page-state.json.
+      fs.writeFileSync(
+        path.join(config.out, "outcome.json"),
+        `${JSON.stringify({ schemaVersion: 1, ...result }, null, 2)}\n`,
+      );
+    } catch (error) {
+      stateWritten = false;
+      process.stderr.write(`failed to write page state: ${error}\n`);
+    }
     process.stdout.write(`${JSON.stringify({
       run: RUN_ID, tabs: scenario.tabs, terminalReason, captureStatus,
       allTabsPassed, browserGatesPassed, sseState: result.sseState,
       missingTabs, navigationErrors, artifactErrors,
       artifactWarningCount: artifactWarnings.length, output: config.out,
     })}\n`);
-    if (artifactErrors.length > 0) return 2;
+    // Exit 2 is reserved for the measurement itself being absent, matching
+    // webload_browser_capture.js. Missing terminal screenshots are recorded in
+    // each tab's artifactErrors and in the run summary, but do not discard the
+    // capture -- every tab's verdict, counts and DOM state are in the page
+    // states written above.
+    if (!stateWritten || !artifactLanded(statePath)) return 2;
     if (captureStatus === "usable") return 0;
     if (captureStatus === "browser-failure-observed") return 3;
     return 4;
