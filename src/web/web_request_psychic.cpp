@@ -24,6 +24,7 @@
 #include <http_parser.h>
 #include <stdio.h>
 
+#include "../../include/api_upload.h"
 #include "../../include/logging.h"
 #include "../../include/web_request.h"
 #include "../../include/web_server.h"
@@ -61,13 +62,29 @@ bool WebRequest::param(const char* name, char* out, size_t outSize) const {
     return true;
 }
 
+size_t WebRequest::contentLength() const {
+    return (size_t)psychicCtx(backend_)->req->contentLength();
+}
+
 void WebRequest::send(int code, const char* contentType, const char* body) {
     WebRequestPsychicCtx* ctx = psychicCtx(backend_);
+    if (ctx->resp == nullptr) {
+        // Upload chunk phase: PsychicHttp owns the response until the body has
+        // been consumed, so there is nothing to send through yet. Refusing here
+        // turns a handler that sends too early into a logged bug instead of a
+        // null dereference on a device that is mid-firmware-write.
+        PA_LOG_ERROR(TAG, "send() during upload chunk phase ignored (code=%d)", code);
+        return;
+    }
     ctx->result = ctx->resp->send(code, contentType, body);
 }
 
 bool WebRequest::sendChunked(const char* contentType, WebResponseBodyFiller filler) {
     WebRequestPsychicCtx* ctx = psychicCtx(backend_);
+    if (ctx->resp == nullptr) {
+        PA_LOG_ERROR(TAG, "sendChunked() during upload chunk phase ignored");
+        return false;
+    }
 
     // Header/chunk/terminator sequence taken from PsychicFileResponse: the
     // staged headers go out with the first chunk, and the empty terminating
@@ -132,6 +149,40 @@ void webRegisterRoute(const char* path, WebMethod method, WebRequestHandler hand
                 });
 }
 
+void webRegisterUploadRoute(const char* path, WebUploadChunkHandler onChunk,
+                            WebRequestHandler onDone) {
+    // Heap-allocated and never freed on purpose: PsychicUploadHandler must
+    // outlive registration for the life of the server, and registration only
+    // happens once during bring-up. There is no path that unregisters a route.
+    PsychicUploadHandler* handler = new PsychicUploadHandler();
+
+    handler->onUpload([onChunk](PsychicRequest* vendorReq, const String& filename, uint64_t index,
+                                uint8_t* data, size_t len, bool final) -> esp_err_t {
+        // No response object during the body phase; the seam's null-response
+        // guard turns a handler that sends here into a logged error.
+        WebRequestPsychicCtx ctx = {vendorReq, nullptr, ESP_OK};
+        WebRequest req(&ctx);
+        onChunk(req, filename.c_str(), (size_t)index, data, len, final);
+
+        // Always ESP_OK, even for an upload the handler is rejecting. A
+        // non-OK return makes PsychicUploadHandler::handleRequest() send its
+        // own text/html error and never call onRequest, which would replace
+        // the JSON error body data/firmware.js reads its message from. The
+        // handler records its own outcome and answers from onDone instead.
+        return ESP_OK;
+    });
+
+    handler->onRequest([onDone](PsychicRequest* vendorReq,
+                                PsychicResponse* vendorResp) -> esp_err_t {
+        WebRequestPsychicCtx ctx = {vendorReq, vendorResp, ESP_OK};
+        WebRequest req(&ctx);
+        onDone(req);
+        return ctx.result;
+    });
+
+    s_server.on(path, HTTP_POST, handler);
+}
+
 void initPsychicWebServer() {
     // Verified live on the #72 prototype: nothing binds or listens until
     // begin(); on()/serveStatic() only record configuration.
@@ -145,6 +196,14 @@ void initPsychicWebServer() {
     // core 1 real-time loops avoid heap allocation, core 0 web handlers may
     // allocate bounded per-request documents), so pin it.
     s_server.config.core_id = 0;
+
+    // PsychicUploadHandler refuses a request whose contentLength() exceeds this
+    // before any of our callbacks run, and answers with its own text/html 400.
+    // The library's 2 MB default happens to clear the 1.625 MB app partition,
+    // but "happens to" is not a contract: set it above our own per-target guard
+    // so the guard is what rejects an oversize image, in the JSON shape
+    // data/firmware.js reads. See uploadContentLengthFits() in api_upload.h.
+    s_server.maxUploadSize = kUploadTransportCeiling;
 
     webRegisterSeamRoutes();
 

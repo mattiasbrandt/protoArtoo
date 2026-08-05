@@ -55,6 +55,10 @@ bool WebRequest::param(const char* name, char* out, size_t outSize) const {
     return true;
 }
 
+size_t WebRequest::contentLength() const {
+    return asyncReq(backend_)->contentLength();
+}
+
 void WebRequest::send(int code, const char* contentType, const char* body) {
     asyncReq(backend_)->send(code, contentType, body);
 }
@@ -95,6 +99,24 @@ void webRegisterRoute(const char* path, WebMethod method, WebRequestHandler hand
         WebRequest req(vendorReq);
         handler(req);
     });
+}
+
+void webRegisterUploadRoute(const char* path, WebUploadChunkHandler onChunk,
+                            WebRequestHandler onDone) {
+    if (s_server == nullptr) {
+        return;
+    }
+    s_server->on(
+        path, HTTP_POST,
+        [onDone](AsyncWebServerRequest* vendorReq) {
+            WebRequest req(vendorReq);
+            onDone(req);
+        },
+        [onChunk](AsyncWebServerRequest* vendorReq, const String& filename, size_t index,
+                  uint8_t* data, size_t len, bool final) {
+            WebRequest req(vendorReq);
+            onChunk(req, filename.c_str(), index, data, len, final);
+        });
 }
 
 #endif  // !PA_WEB_BACKEND_PSYCHIC && !PA_NATIVE_TEST_STUBS

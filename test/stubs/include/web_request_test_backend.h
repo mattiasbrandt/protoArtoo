@@ -19,6 +19,10 @@ struct WebRequestTestBackend {
     const WebRequestTestParam* params = nullptr;
     size_t paramCount = 0;
 
+    // What contentLength() reports. Upload tests set this to stand in for the
+    // Content-Length of a multipart body.
+    size_t contentLength = 0;
+
     int sentCode = 0;
     char sentContentType[64] = {};
     // Sized for the largest ported payload with headroom: the action registry

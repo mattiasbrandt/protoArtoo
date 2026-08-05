@@ -41,6 +41,11 @@ class WebRequest {
     // an over-long string instead of a silently valid truncation.
     bool param(const char* name, char* out, size_t outSize) const;
 
+    // Declared body size. For a multipart upload this counts the framing as
+    // well as the file, so it is an upper bound on the payload, never its
+    // exact size -- the exact size is not knowable until the body is consumed.
+    size_t contentLength() const;
+
     // Send a complete response. A handler sends exactly once; the backend
     // owns status-line/header framing and connection semantics.
     void send(int code, const char* contentType, const char* body);
@@ -69,11 +74,29 @@ class WebRequest {
 
 using WebRequestHandler = void (*)(WebRequest&);
 
+// One chunk of a streamed upload body, delivered as it arrives so no backend
+// ever holds a whole image. index is this chunk's byte offset within the file,
+// final marks the last chunk, and data holds file bytes only -- both backends
+// strip the multipart envelope before calling this.
+//
+// A chunk handler must not send a response: the response belongs to the
+// completion handler, which runs once after the body. It records its own
+// outcome (and its own status code and body) instead of signalling through a
+// return value, so a rejected upload still answers in the shape the dashboard
+// parses rather than whatever the backend would substitute.
+using WebUploadChunkHandler = void (*)(WebRequest& req, const char* filename, size_t index,
+                                       const uint8_t* data, size_t len, bool final);
+
 // Register a handler for path+method with the active backend's server.
 // Backends require registration to happen inside their server bring-up
 // (startHttpServerOnce()'s registration block / initPsychicWebServer()),
 // which runs on the WiFi event callback path.
 void webRegisterRoute(const char* path, WebMethod method, WebRequestHandler handler);
+
+// Register a POST route whose body streams through onChunk, after which onDone
+// produces the response. Same registration timing rules as webRegisterRoute().
+void webRegisterUploadRoute(const char* path, WebUploadChunkHandler onChunk,
+                            WebRequestHandler onDone);
 
 // Every route group already ported to the seam, in one list both backends
 // call. A ported route registered per-backend instead would only have to be

@@ -127,6 +127,10 @@ bool WebRequest::param(const char* name, char* out, size_t outSize) const {
     return true;
 }
 
+size_t WebRequest::contentLength() const {
+    return static_cast<const WebRequestTestBackend*>(backend_)->contentLength;
+}
+
 void WebRequest::send(int code, const char* contentType, const char* body) {
     WebRequestTestBackend* b = static_cast<WebRequestTestBackend*>(backend_);
     b->sentCode = code;
@@ -182,6 +186,10 @@ bool WebRequest::triggerClose() {
 // Route registration is a no-op on the host: native tests call the exposed
 // handlers directly instead of dispatching through a server.
 void webRegisterRoute(const char* /*path*/, WebMethod /*method*/, WebRequestHandler /*handler*/) {
+}
+
+void webRegisterUploadRoute(const char* /*path*/, WebUploadChunkHandler /*onChunk*/,
+                            WebRequestHandler /*onDone*/) {
 }
 
 #endif

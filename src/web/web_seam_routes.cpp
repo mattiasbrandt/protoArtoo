@@ -16,6 +16,7 @@
 #include "../../include/api_config.h"
 #include "../../include/api_identity.h"
 #include "../../include/api_logs.h"
+#include "../../include/api_upload.h"
 #include "../../include/web_request.h"
 
 void webRegisterSeamRoutes() {
@@ -28,4 +29,12 @@ void webRegisterSeamRoutes() {
     webRegisterRoute("/api/config", WebMethod::kGet, handleConfigGet);
     webRegisterRoute("/api/actions", WebMethod::kGet, handleActionsGet);
     webRegisterRoute("/api/logs", WebMethod::kGet, handleLogsGet);
+
+    // Streaming OTA uploads (#80). Ported early in the epic on purpose: with
+    // these working on the psychic build, later slices reflash over the air
+    // instead of needing the controller pulled for a serial flash.
+    webRegisterUploadRoute("/upload/firmware", handleFirmwareUploadChunk,
+                           handleFirmwareUploadDone);
+    webRegisterUploadRoute("/upload/filesystem", handleFilesystemUploadChunk,
+                           handleFilesystemUploadDone);
 }
