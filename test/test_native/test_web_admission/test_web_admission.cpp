@@ -11,7 +11,10 @@
 // =============================================================================
 #include <unity.h>
 
+#include <cstring>
+
 #include "web_admission.h"
+#include "web_busy_page.h"
 
 // Values that make the arithmetic legible, not the calibrated device values.
 static constexpr uint32_t kBurst = 6;
@@ -374,6 +377,96 @@ void test_an_upload_is_refused_under_pressure_like_any_other_request() {
     TEST_ASSERT_EQUAL(WebRequestAdmission::kAdmit, webRequestAdmissionDecide(in));
 }
 
+// -----------------------------------------------------------------------------
+// Main-frame navigation detection
+// -----------------------------------------------------------------------------
+
+void test_browser_navigation_is_recognised_from_sec_fetch_mode() {
+    // What a browser sends when the operator opens or refreshes a page.
+    TEST_ASSERT_TRUE(webIsMainFrameNavigation(
+        "navigate", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"));
+}
+
+void test_a_page_fetching_its_own_resources_is_not_a_navigation() {
+    // Scripts, styles and API calls from an already-loaded page. These are the
+    // ones that must keep shedding cheaply.
+    TEST_ASSERT_FALSE(webIsMainFrameNavigation("cors", "*/*"));
+    TEST_ASSERT_FALSE(webIsMainFrameNavigation("no-cors", "*/*"));
+    TEST_ASSERT_FALSE(webIsMainFrameNavigation("same-origin", "application/json"));
+}
+
+void test_sec_fetch_mode_wins_over_a_misleading_accept_header() {
+    // A same-origin fetch may still advertise text/html. The explicit mode is
+    // the authoritative signal, so it must not be second-guessed.
+    TEST_ASSERT_FALSE(webIsMainFrameNavigation("same-origin", "text/html"));
+}
+
+void test_accept_is_the_fallback_when_sec_fetch_mode_is_absent() {
+    TEST_ASSERT_TRUE(webIsMainFrameNavigation(nullptr, "text/html,*/*;q=0.8"));
+    TEST_ASSERT_TRUE(webIsMainFrameNavigation("", "text/html"));
+    TEST_ASSERT_FALSE(webIsMainFrameNavigation(nullptr, "application/json"));
+    TEST_ASSERT_FALSE(webIsMainFrameNavigation("", "*/*"));
+}
+
+void test_an_unknown_client_gets_the_cheap_path() {
+    // No headers at all: treat as an asset. Guessing "navigation" here would
+    // spend the recovery response on a client that will never render it.
+    TEST_ASSERT_FALSE(webIsMainFrameNavigation(nullptr, nullptr));
+    TEST_ASSERT_FALSE(webIsMainFrameNavigation("", ""));
+}
+
+// -----------------------------------------------------------------------------
+// Busy Recovery Page wire contract
+// -----------------------------------------------------------------------------
+
+void test_busy_response_declares_the_status_the_frontend_branches_on() {
+    // data/page_bootstrap.js classifies exactly 503 as "busy"; anything else
+    // becomes "no-response" and the operator is told the wrong thing.
+    TEST_ASSERT_EQUAL_STRING_LEN("HTTP/1.1 503 Service Unavailable\r\n", kBusyRecoveryResponse, 34);
+}
+
+void test_busy_response_carries_the_retry_interval_the_page_counts_down() {
+    // data/web_api.js reads Retry-After to drive the retry timing, and the
+    // page's own countdown is baked from the same constant.
+    TEST_ASSERT_NOT_NULL(strstr(kBusyRecoveryResponse, "Retry-After: 5\r\n"));
+}
+
+void test_busy_response_content_length_matches_the_body_it_describes() {
+    // The whole reason Content-Length is a literal guarded by a static_assert:
+    // a wrong one truncates the page or hangs the browser waiting for bytes
+    // that never come.
+    const char* separator = strstr(kBusyRecoveryResponse, "\r\n\r\n");
+    TEST_ASSERT_NOT_NULL(separator);
+    const size_t bodyOffset = (size_t)(separator - kBusyRecoveryResponse) + 4;
+    const size_t actualBody = kBusyRecoveryResponseLength - bodyOffset;
+
+    TEST_ASSERT_EQUAL_UINT32(PA_BUSY_BODY_LENGTH, actualBody);
+    TEST_ASSERT_NOT_NULL(strstr(kBusyRecoveryResponse, "Content-Length: 2329\r\n"));
+}
+
+void test_busy_response_is_a_self_contained_page() {
+    // It is served precisely when the controller could not serve the page's
+    // own resources, so depending on any of them would guarantee a blank
+    // screen. No external stylesheet, script or image may appear.
+    TEST_ASSERT_NULL(strstr(kBusyRecoveryResponse, "/style.css"));
+    TEST_ASSERT_NULL(strstr(kBusyRecoveryResponse, "src=\""));
+    TEST_ASSERT_NULL(strstr(kBusyRecoveryResponse, "<link"));
+}
+
+void test_busy_response_tells_the_operator_it_is_busy_and_offers_a_retry() {
+    // CONTEXT.md reserves "Controller busy" for an explicit refusal, which is
+    // exactly what this response is; and Page Recovery View requires a working
+    // Retry now action that does not depend on the failed resources.
+    TEST_ASSERT_NOT_NULL(strstr(kBusyRecoveryResponse, "Controller busy"));
+    TEST_ASSERT_NOT_NULL(strstr(kBusyRecoveryResponse, "Retry now"));
+    TEST_ASSERT_NOT_NULL(strstr(kBusyRecoveryResponse, "location.reload()"));
+}
+
+void test_busy_response_closes_the_connection_it_is_shedding() {
+    TEST_ASSERT_NOT_NULL(strstr(kBusyRecoveryResponse, "Connection: close\r\n"));
+    TEST_ASSERT_NOT_NULL(strstr(kBusyRecoveryResponse, "Cache-Control: no-store\r\n"));
+}
+
 int main() {
     UNITY_BEGIN();
 
@@ -411,6 +504,19 @@ int main() {
     RUN_TEST(test_live_update_stream_is_the_only_long_lived_path);
     RUN_TEST(test_upload_paths_are_ordinary_work_and_get_no_exemption);
     RUN_TEST(test_an_upload_is_refused_under_pressure_like_any_other_request);
+
+    RUN_TEST(test_browser_navigation_is_recognised_from_sec_fetch_mode);
+    RUN_TEST(test_a_page_fetching_its_own_resources_is_not_a_navigation);
+    RUN_TEST(test_sec_fetch_mode_wins_over_a_misleading_accept_header);
+    RUN_TEST(test_accept_is_the_fallback_when_sec_fetch_mode_is_absent);
+    RUN_TEST(test_an_unknown_client_gets_the_cheap_path);
+
+    RUN_TEST(test_busy_response_declares_the_status_the_frontend_branches_on);
+    RUN_TEST(test_busy_response_carries_the_retry_interval_the_page_counts_down);
+    RUN_TEST(test_busy_response_content_length_matches_the_body_it_describes);
+    RUN_TEST(test_busy_response_is_a_self_contained_page);
+    RUN_TEST(test_busy_response_tells_the_operator_it_is_busy_and_offers_a_retry);
+    RUN_TEST(test_busy_response_closes_the_connection_it_is_shedding);
 
     return UNITY_END();
 }

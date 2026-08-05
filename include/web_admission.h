@@ -135,6 +135,28 @@ bool webPathIsEstop(const char* path);
 bool webPathIsDiagnostic(const char* path);
 bool webPathIsLongLived(const char* path);
 
+// True when this request is the browser navigating to a page, rather than a
+// page fetching one of its own resources.
+//
+// The distinction decides what a refusal looks like on the wire. A refused
+// navigation must carry the Busy Recovery Page, because a bodyless non-2xx
+// response to a main-frame navigation is what the browser renders as its own
+// error page -- the operator sees a dead tab rather than a controller saying
+// it is busy. A refused asset gets the cheap close instead: dressing up every
+// shed asset would cost bytes at the moment there are none, and no asset
+// caller renders a body anyway.
+//
+// Both header values are taken as already-copied strings so the decision stays
+// host-testable and so the caller controls where they came from -- reading
+// them through the vendor request object would allocate.
+//
+// Sec-Fetch-Mode is authoritative when present: every browser this UI targets
+// sends it, and "navigate" means exactly this. Accept is the fallback for
+// clients that omit it, where a preference for text/html is the best available
+// signal. Absent both, the request is treated as an asset, so an unknown
+// client gets the cheap path rather than the expensive one.
+bool webIsMainFrameNavigation(const char* secFetchMode, const char* accept);
+
 // -----------------------------------------------------------------------------
 // Counters
 // -----------------------------------------------------------------------------

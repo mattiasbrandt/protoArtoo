@@ -172,3 +172,19 @@ bool webPathIsLongLived(const char* path) {
     }
     return strcmp(path, "/api/events") == 0;
 }
+
+bool webIsMainFrameNavigation(const char* secFetchMode, const char* accept) {
+    // Present and explicit: believe it, including when it says this is not a
+    // navigation. A same-origin fetch may still advertise text/html, so
+    // falling through to Accept here would misclassify it.
+    if (secFetchMode != nullptr && secFetchMode[0] != '\0') {
+        return strcmp(secFetchMode, "navigate") == 0;
+    }
+
+    // Fallback for clients that omit the mode. A navigating browser leads its
+    // Accept with text/html; asset and API callers do not.
+    if (accept == nullptr) {
+        return false;
+    }
+    return strncmp(accept, "text/html", 9) == 0;
+}
