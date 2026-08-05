@@ -36,7 +36,7 @@
 
 // Body length as a number, and the same number as a string for the header.
 // The static_assert below is what keeps them honest.
-#define PA_BUSY_BODY_LENGTH 2329
+#define PA_BUSY_BODY_LENGTH 2327
 
 #define PA_BUSY_RECOVERY_BODY \
     "<!doctype html>" \
@@ -44,7 +44,7 @@
     "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">" \
     "<title>Controller busy</title><style>" \
     "body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;" \
-    "background:rgb(11,18,32);color:rgb(212,221,232);" \
+    "background:rgb(5,8,15);color:rgb(212,221,232);" \
     "font-family:-apple-system,BlinkMacSystemFont,\"Segoe UI\",Roboto,sans-serif}" \
     ".recovery-panel{background:rgb(21,34,56);border:1px solid rgb(42,74,122);border-radius:8px;" \
     "padding:20px;width:90%;max-width:380px;text-align:center}" \

@@ -29,6 +29,7 @@
 #include "../../include/api_upload.h"
 #include "../../include/logging.h"
 #include "../../include/web_admission.h"
+#include "../../include/web_busy_page.h"
 #include "../../include/web_request.h"
 #include "../../include/web_server.h"
 #include "../../include/web_server_psychic.h"
@@ -176,6 +177,49 @@ struct InflightSlot {
     InflightSlot& operator=(const InflightSlot&) = delete;
 };
 
+// Emits the Busy Recovery Page straight onto the socket, bypassing the
+// response object entirely. The buffer is compile-time constant, so this
+// answers a refusal without allocating a single byte -- which is the whole
+// reason a refused navigation can be answered at all.
+//
+// send() is not obliged to take the whole buffer at once, so partial writes
+// are looped. A failure mid-response just ends the attempt: the connection is
+// being closed either way, and the browser treats a truncated response the
+// same as the bare close it would otherwise have received.
+bool sendBusyRecoveryPage(httpd_req_t* raw) {
+    const int sockfd = httpd_req_to_sockfd(raw);
+    if (sockfd < 0) {
+        return false;
+    }
+
+    size_t sent = 0;
+    while (sent < kBusyRecoveryResponseLength) {
+        const int written = httpd_socket_send(raw->handle, sockfd, kBusyRecoveryResponse + sent,
+                                              kBusyRecoveryResponseLength - sent, 0);
+        if (written <= 0) {
+            return false;
+        }
+        sent += (size_t)written;
+    }
+    return true;
+}
+
+// Reads one request header into a caller-owned buffer. Deliberately not
+// PsychicRequest::header(), which resizes an internal std::string -- that
+// allocates on the one path that must not, and it shares that string with
+// pathCStr(), so it would also invalidate a path pointer taken earlier in the
+// same call.
+void copyHeader(httpd_req_t* raw, const char* name, char* out, size_t outSize) {
+    out[0] = '\0';
+    const size_t len = httpd_req_get_hdr_value_len(raw, name);
+    if (len == 0) {
+        return;
+    }
+    // Truncation is fine for both headers read here: one is a short enum-like
+    // token, the other is only examined for its leading media type.
+    httpd_req_get_hdr_value_str(raw, name, out, outSize);
+}
+
 // Request admission. Registered as a global middleware rather than a global
 // filter: a filter's only rejection path is the vendor's bodyless send(400),
 // whereas this rejects by returning non-ESP_OK, which esp_http_server answers
@@ -198,10 +242,12 @@ esp_err_t admissionMiddleware(PsychicRequest* request, PsychicResponse* response
     in.minLargestFreeBlock = PA_ADMISSION_MIN_LARGEST_FREE_BLOCK;
     in.minLargestFreeBlockDiagnostic = PA_ADMISSION_MIN_LARGEST_FREE_BLOCK_DIAG;
 
+    bool refused = false;
     switch (webRequestAdmissionDecide(in)) {
         case WebRequestAdmission::kRejectInflightCap:
             g_webRefusedInflightCap = g_webRefusedInflightCap + 1u;
-            return ESP_FAIL;
+            refused = true;
+            break;
         case WebRequestAdmission::kRejectHeapFloor:
             if (in.diagnostic) {
                 // Diagnostic rejections stay silent: they only happen during a
@@ -213,9 +259,32 @@ esp_err_t admissionMiddleware(PsychicRequest* request, PsychicResponse* response
                             (unsigned)in.largestFreeBlock,
                             (unsigned)in.minLargestFreeBlock);
             }
-            return ESP_FAIL;
+            refused = true;
+            break;
         case WebRequestAdmission::kAdmit:
             break;
+    }
+
+    if (refused) {
+        // Only a navigation is answered. A refused asset gets the bare close:
+        // its caller never renders a body, and spending bytes on one during a
+        // pressure window is what this whole layer exists to avoid. The
+        // headers are read only here, on the path already committed to
+        // refusing, so an admitted request pays nothing for this decision.
+        httpd_req_t* raw = request->request();
+        char secFetchMode[16];
+        char accept[32];
+        copyHeader(raw, "Sec-Fetch-Mode", secFetchMode, sizeof(secFetchMode));
+        copyHeader(raw, "Accept", accept, sizeof(accept));
+
+        if (webIsMainFrameNavigation(secFetchMode, accept)) {
+            g_webBusyRecoveryPagesServed = g_webBusyRecoveryPagesServed + 1u;
+            sendBusyRecoveryPage(raw);
+        }
+        // Either way the connection goes: returning non-ESP_OK is what makes
+        // esp_http_server close it, and the response above already declared
+        // Connection: close.
+        return ESP_FAIL;
     }
 
     // Estop is admitted but never counted, matching the async stack: a safety

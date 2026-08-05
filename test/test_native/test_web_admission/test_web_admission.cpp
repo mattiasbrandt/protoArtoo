@@ -441,7 +441,7 @@ void test_busy_response_content_length_matches_the_body_it_describes() {
     const size_t actualBody = kBusyRecoveryResponseLength - bodyOffset;
 
     TEST_ASSERT_EQUAL_UINT32(PA_BUSY_BODY_LENGTH, actualBody);
-    TEST_ASSERT_NOT_NULL(strstr(kBusyRecoveryResponse, "Content-Length: 2329\r\n"));
+    TEST_ASSERT_NOT_NULL(strstr(kBusyRecoveryResponse, "Content-Length: 2327\r\n"));
 }
 
 void test_busy_response_is_a_self_contained_page() {

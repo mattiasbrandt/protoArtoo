@@ -42,6 +42,44 @@ now**. `data/web_api.js` should read `response.headers.get("Retry-After")` for A
 callers so the Common Page Bootstrap gets a real controller-given retry time instead of
 guessing.
 
+## Realization on esp_http_server
+
+The wire contract above is unchanged on the PsychicHttp stack — same 503, same
+`Retry-After: 5`, same single compile-time buffer, same reuse across resource
+classes. Three mechanism details differ, and one part of this decision turns
+out not to be needed there.
+
+The buffer is written with `httpd_socket_send()` rather than an `AsyncClient`
+write, looping on partial sends, after which the middleware returns non-`ESP_OK`
+so `esp_http_server` closes the connection. `Content-Length` correctness is
+enforced by a `static_assert` tying the header literal to the body it describes
+(`include/web_busy_page.h`), which is a stronger guarantee than the async side's
+"same literal the bytes were built from".
+
+**Recovery Capacity has no implementation there, deliberately.** It exists in
+this decision because building a busy response on the async stack allocated, so
+the controller needed a reserved allowance and a one-at-a-time rule to be sure
+it could always afford one. Writing a `constexpr` buffer straight to a socket
+allocates nothing at all, so there is no capacity to reserve; and the server
+services connections from a single task, so two recovery responses cannot be in
+flight at once regardless. A reserved-slot flag there would be a counter that
+can never be contended. The invariant the slot protected still holds — it is
+just structural rather than enforced.
+
+Only a **main-frame navigation** is answered with the page; assets get the bare
+close. That is a narrowing of "reuse the identical buffer for every resource
+class", made because on this stack the refusal has to be decided per request
+with headers already parsed, so the class is cheaply knowable, and because
+nothing but a navigation renders the body.
+
+One consequence is worth stating plainly, because it bounds how often any of
+this is reachable: the connection-level guard (ADR 0022) refuses below 8500
+bytes largest-free-block, before a request exists to answer. The request-level
+floor is 9000. The Busy Recovery Page therefore fires only in the band between
+them, and measurement under burst load showed shedding happening almost
+entirely at the connection layer. The page is correct and proven to work, but
+it is a narrow path, not the common one.
+
 ## Consequences
 
 - The reused-buffer choice means the Busy Recovery Page's HTML is never rendered for

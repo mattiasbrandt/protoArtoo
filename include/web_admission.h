@@ -189,3 +189,9 @@ extern volatile int g_webInflightRequestsPeak;
 extern volatile uint32_t g_webRefusedInflightCap;
 extern volatile uint32_t g_webRefusedHeapFloor;
 extern volatile uint32_t g_webRefusedHeapFloorDiag;
+
+// Refusals that were answered with the Busy Recovery Page rather than a bare
+// close. Published because this path is rare by design and would otherwise be
+// indistinguishable from a broken one: an aggregate run that never triggers it
+// looks exactly like a run where it silently stopped working.
+extern volatile uint32_t g_webBusyRecoveryPagesServed;

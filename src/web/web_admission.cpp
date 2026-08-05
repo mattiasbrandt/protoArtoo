@@ -67,6 +67,7 @@ volatile int g_webInflightRequestsPeak = 0;
 volatile uint32_t g_webRefusedInflightCap = 0;
 volatile uint32_t g_webRefusedHeapFloor = 0;
 volatile uint32_t g_webRefusedHeapFloorDiag = 0;
+volatile uint32_t g_webBusyRecoveryPagesServed = 0;
 
 // -----------------------------------------------------------------------------
 // Connection Admission
