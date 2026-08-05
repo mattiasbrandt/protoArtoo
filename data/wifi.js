@@ -411,16 +411,33 @@
     renderPosture();
   };
 
-  const loadPageData = async () => {
-    if (!window.PAApi) {
-      setFeedback("API helper unavailable", "error");
-      return;
-    }
+  const resetBeforeLoad = () => {
     clearFieldErrors();
     state.rebootRequestPending = false;
     setApplyFeedback("");
     setApplyButtonState();
     setFeedback("Loading WiFi settings...");
+  };
+
+  // Section Recovery: each load is its own section, so one failing request
+  // retries on its own without discarding the two that succeeded. The
+  // bootstrap owns the retry schedule and the operator-visible waiting state.
+  const SECTIONS = [
+    ["wifi-identity", loadIdentity],
+    ["wifi-config", loadConfig],
+    ["wifi-diagnostics", () => loadWifiDiagnostics()],
+  ];
+
+  const loadPageData = async () => {
+    if (!window.PAApi) {
+      setFeedback("API helper unavailable", "error");
+      return;
+    }
+    resetBeforeLoad();
+
+    // Without the bootstrap this page still works exactly as before: one
+    // sequential pass, no retry. Pages are migrated one at a time (ADR 0019),
+    // so this fallback stays until the rollout finishes.
     try {
       await loadIdentity();
       await loadConfig();
@@ -430,6 +447,19 @@
       console.error("[wifi] load failed:", error);
       setFeedback(`Failed to load WiFi settings: ${window.PAApi.messageFor(error)}`, "error");
     }
+  };
+
+  const startPageLoad = () => {
+    if (!window.PABootstrap) {
+      loadPageData();
+      return;
+    }
+    if (!window.PAApi) {
+      setFeedback("API helper unavailable", "error");
+      return;
+    }
+    resetBeforeLoad();
+    SECTIONS.forEach(([name, load]) => window.PABootstrap.registerSection(name, load));
   };
 
   const buildSaveBody = () => {
@@ -525,6 +555,26 @@
   });
   document.addEventListener("visibilitychange", onVisibilityChange);
 
-  loadPageData();
-  startPolling();
+  // The bootstrap announces readiness once required resources are in and every
+  // section has settled -- which is where a "loaded" message becomes true.
+  // Settled includes a section that is visibly waiting to retry, so report
+  // what actually happened rather than claiming a clean load.
+  const reportLoadOutcome = () => {
+    const bootstrap = window.PABootstrap?.getState?.();
+    const failing = bootstrap?.sections?.filter((s) => s.status !== "done") || [];
+    if (failing.length === 0) {
+      setFeedback(`WiFi settings loaded at ${new Date().toLocaleTimeString()}`, "success");
+    } else {
+      setFeedback(`WiFi settings partly loaded; retrying ${failing.length} of ${bootstrap.sections.length}.`, "error");
+    }
+    startPolling();
+  };
+
+  if (window.PABootstrap) {
+    window.addEventListener("pa:assets-ready", reportLoadOutcome, { once: true });
+    startPageLoad();
+  } else {
+    loadPageData();
+    startPolling();
+  }
 })();
