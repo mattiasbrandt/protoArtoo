@@ -81,6 +81,27 @@ def build_parser() -> argparse.ArgumentParser:
             "received, so a gap in service becomes a number."
         ),
     )
+    parser.add_argument(
+        "--recv-buffer-bytes", type=int, default=None,
+        help=(
+            "shrink the stalled client's SO_RCVBUF before connect. Without this "
+            "the scenario does not actually stall: run-38 showed a default "
+            "receive buffer absorbing 70.8 KB of 1 Hz broadcasts across a 90s "
+            "window without the server ever reaching a would-block, so a send "
+            "deadline could not fire and the run proved nothing about it. "
+            "2048 fills within a couple of events."
+        ),
+    )
+    parser.add_argument(
+        "--reconnect-after", action="store_true",
+        help=(
+            "after the stall window, open a fresh SSE connection and confirm it "
+            "is accepted. An evicted client must find its slot released -- "
+            "otherwise eviction would trade a stalled stream for a permanently "
+            "consumed one of only three, and the frontend's backoff would "
+            "reconnect forever into a full cap."
+        ),
+    )
     return parser
 
 
@@ -169,10 +190,25 @@ class HealthyClient:
 
 def _open_sse_connection(
     controller: str, port: int, path: str, timeline: r65.Timeline,
+    recv_buffer_bytes: int | None = None,
 ) -> tuple[socket.socket, dict[str, Any]]:
     """Complete the HTTP handshake over a raw socket and confirm the
-    response is a live text/event-stream before returning it un-drained."""
-    sock = socket.create_connection((controller, port), timeout=HANDSHAKE_DEADLINE_SECONDS)
+    response is a live text/event-stream before returning it un-drained.
+
+    recv_buffer_bytes shrinks SO_RCVBUF before connect(), which is what makes a
+    stall actually stall. The first run of this scenario against the #83 guard
+    absorbed 70.8 KB over 90 s and never reached a would-block at all: a default
+    receive buffer plus window scaling swallows a 1 Hz broadcast indefinitely, so
+    "the client stopped reading" never becomes "the server cannot write". The
+    option has to be set before connect() because the advertised window is
+    negotiated in the SYN -- setting it afterwards leaves the peer already told
+    it may send far more.
+    """
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    if recv_buffer_bytes is not None:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, recv_buffer_bytes)
+    sock.settimeout(HANDSHAKE_DEADLINE_SECONDS)
+    sock.connect((controller, port))
     request = (
         f"GET {path} HTTP/1.1\r\n"
         f"Host: {controller}\r\n"
@@ -222,6 +258,11 @@ def _open_sse_connection(
     connect_record = timeline.record(
         "sse-connected", statusLine=status_line,
         firstEventBytes=len(first_event), localPort=sock.getsockname()[1],
+        # What the kernel actually granted, not what was asked for: Linux
+        # doubles SO_RCVBUF for its own bookkeeping and clamps to
+        # net.core.rmem_min. Recording the effective value keeps a run from
+        # claiming a window size it never had.
+        recvBufferBytes=sock.getsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF),
     )
     return sock, connect_record
 
@@ -332,9 +373,17 @@ def _summarize_samples(samples: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def _drain(sock: socket.socket, deadline_seconds: float) -> tuple[int, int]:
+def _drain(sock: socket.socket, deadline_seconds: float) -> tuple[int, int, str | None]:
     """Read whatever backlog is queued, bounded so a genuinely stuck server
-    can't hang the scenario forever. Returns (byteCount, recvCallCount)."""
+    can't hang the scenario forever.
+
+    Returns (byteCount, recvCallCount, resetError). A connection reset here is
+    not a harness failure -- it is the expected shape of a successful eviction:
+    the guard abandons a stalled client with linger{on,0}, which is an RST, so
+    the backlog is discarded rather than handed over. Recording it is the
+    client-side confirmation that the drop was abrupt; a graceful close would
+    instead deliver whatever had been queued.
+    """
     sock.settimeout(1.0)
     total_bytes = 0
     total_calls = 0
@@ -344,11 +393,13 @@ def _drain(sock: socket.socket, deadline_seconds: float) -> tuple[int, int]:
             chunk = sock.recv(65536)
         except (TimeoutError, socket.timeout):
             break
+        except OSError as error:
+            return total_bytes, total_calls, str(error)
         total_calls += 1
         if not chunk:
             break
         total_bytes += len(chunk)
-    return total_bytes, total_calls
+    return total_bytes, total_calls, None
 
 
 def run(args: argparse.Namespace) -> dict[str, Any]:
@@ -370,9 +421,16 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     if healthy:
         print(f"{len(healthy)} healthy SSE client(s) connected and reading")
 
-    sock, connect_record = _open_sse_connection(args.controller, args.port, args.path, timeline)
+    sock, connect_record = _open_sse_connection(
+        args.controller, args.port, args.path, timeline,
+        recv_buffer_bytes=args.recv_buffer_bytes,
+    )
     events.append(connect_record)
-    print(f"SSE connected ({connect_record['statusLine']}); starting {args.stall_seconds:.0f}s stall...")
+    print(
+        f"SSE connected ({connect_record['statusLine']}, "
+        f"rcvbuf={connect_record['recvBufferBytes']}B); "
+        f"starting {args.stall_seconds:.0f}s stall..."
+    )
 
     sampler = StatusSampler(args.controller, run_dir / "status-samples.ndjson", timeline)
     sampler.start()
@@ -389,13 +447,31 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
 
     drained_bytes = 0
     drained_calls = 0
+    drain_reset: str | None = None
     if args.end_mode == "drain":
-        drained_bytes, drained_calls = _drain(sock, deadline_seconds=5.0)
+        drained_bytes, drained_calls, drain_reset = _drain(sock, deadline_seconds=5.0)
         events.append(timeline.record(
             "drain-complete", byteCount=drained_bytes, recvCallCount=drained_calls,
+            resetError=drain_reset,
         ))
-    sock.close()
+    try:
+        sock.close()
+    except OSError:
+        # Already gone -- an evicted socket often is by this point.
+        pass
     events.append(timeline.record("sse-socket-closed", endMode=args.end_mode))
+
+    reconnect_result: dict[str, Any] | None = None
+    if args.reconnect_after:
+        try:
+            reconnect_sock, reconnect_record = _open_sse_connection(
+                args.controller, args.port, args.path, timeline,
+            )
+            reconnect_sock.close()
+            reconnect_result = {"accepted": True, "statusLine": reconnect_record["statusLine"]}
+        except (SseStallError, OSError) as error:
+            reconnect_result = {"accepted": False, "error": str(error)}
+        events.append(timeline.record("reconnect-attempt", **reconnect_result))
 
     healthy_results = [client.stop_and_join() for client in healthy]
     if healthy_results:
@@ -414,7 +490,12 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "endMode": args.end_mode,
         "drainedByteCount": drained_bytes,
         "drainedRecvCallCount": drained_calls,
+        # Set when the stalled client's own socket was reset rather than closed
+        # gracefully -- the client-side half of the eviction being abrupt.
+        "drainResetError": drain_reset,
         "healthyClients": healthy_results,
+        "recvBufferBytes": connect_record.get("recvBufferBytes"),
+        "reconnect": reconnect_result,
         **summary,
     }
     r65.atomic_write_json(run_dir / "outcome.json", outcome)
@@ -439,8 +520,10 @@ def main(argv: list[str]) -> int:
         f"heapFree(first->last)={outcome['heapFreeFirst']}->{outcome['heapFreeLast']} "
         f"(delta {outcome['heapFreeDelta']}) "
         f"sseEvicted={outcome['sseEvictedFirst']}->{outcome['sseEvictedLast']} "
-        f"drained={outcome['drainedByteCount']}B in {outcome['drainedRecvCallCount']} calls\n"
+        f"drained={outcome['drainedByteCount']}B in {outcome['drainedRecvCallCount']} calls "
+        f"rcvbuf={outcome['recvBufferBytes']}B\n"
         f"healthy={outcome['healthyClients']}\n"
+        f"reconnect={outcome['reconnect']}\n"
         f"Evidence: tasks/evidence/webload/{args.run_id}/sse-stall/"
     )
     return 0

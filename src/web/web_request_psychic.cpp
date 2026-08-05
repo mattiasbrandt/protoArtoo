@@ -434,6 +434,30 @@ void evictStream(int socket, StreamSendOutcome outcome) {
         PA_LOG_DEBUG(TAG, "event stream client %d disconnected", socket);
     }
 
+    // Abandon the connection abruptly rather than gracefully. Without this the
+    // eviction frees the broadcaster but not the memory: close() on a socket
+    // whose send queue is full leaves lwIP holding the pcb and the whole queue
+    // while it retransmits into a peer that has already stopped answering.
+    // Measured live on this controller -- the largest free block stayed
+    // depressed for 71 s after the client was evicted, and with one other
+    // stream open that sat below the Connection Admission floor for the whole
+    // period, refusing every new connection including the /api/status that
+    // would have explained it.
+    //
+    // linger{on, 0} makes the close an RST, which drops the queue immediately.
+    // It only ever touches a socket already being abandoned, so no ordinary
+    // connection loses its graceful shutdown. Requires CONFIG_LWIP_SO_LINGER,
+    // set in platformio.ini's custom_sdkconfig with the same rationale.
+    struct linger abandon = {};
+    abandon.l_onoff = 1;
+    abandon.l_linger = 0;
+    if (setsockopt(socket, SOL_SOCKET, SO_LINGER, &abandon, sizeof(abandon)) != 0) {
+        // Not fatal: the client still goes, the heap just recovers slowly. Worth
+        // saying out loud though, because "evicted but the block stayed low" is
+        // otherwise a very confusing thing to read in a run.
+        PA_LOG_WARN(TAG, "could not set SO_LINGER on client %d; close will be graceful", socket);
+    }
+
     httpd_sess_trigger_close(s_streamServer, socket);
 }
 
