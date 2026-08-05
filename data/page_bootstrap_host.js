@@ -38,6 +38,7 @@
   // a failed stylesheet costs styling only -- scripts and recovery still run.
   let state = Core.createBootstrap({ resources: scripts, sections: [] });
   const sectionLoaders = new Map();
+  const commandRunners = new Map();
   let assetsAnnounced = false;
 
   // ---------------------------------------------------------------------------
@@ -98,8 +99,21 @@
       loadScript(active.name, (error) => settle(id, error));
     } else if (active.kind === "section") {
       runSection(active.name, (error) => settle(id, error));
+    } else if (active.kind === "command") {
+      // A command runs when the reducer gives it the slot, not when the page
+      // submitted it -- a queued command that ran immediately would defeat the
+      // priority ordering it was queued to respect.
+      const run = commandRunners.get(id);
+      commandRunners.delete(id);
+      if (!run) {
+        settle(id, { kind: "unknown" });
+        return;
+      }
+      Promise.resolve()
+        .then(() => run())
+        .then(() => settle(id, null))
+        .catch((error) => settle(id, error));
     }
-    // Commands are dispatched by page code, which settles them itself.
   };
 
   const announceAssetsOnce = () => {
@@ -175,24 +189,52 @@
   window.PABootstrap = {
     // Page scripts call this as they execute, which is during resource
     // loading -- before any section work is allowed to start.
-    registerSection(name, load, { label = null } = {}) {
+    registerSection(name, load, { label = null, deadlineMs = null } = {}) {
       sectionLoaders.set(name, load);
       if (label) window.PARecoveryView?.setLabels({ [name]: label });
-      apply({ type: "DECLARE_SECTIONS", names: [name] });
+      apply({
+        type: "DECLARE_SECTIONS",
+        names: [name],
+        deadlines: deadlineMs ? { [name]: deadlineMs } : undefined,
+      });
+      // Sections may only be declared before any section work starts, so a
+      // late registration is refused. Silently dropping it would leave a page
+      // whose data simply never loads and no indication why.
+      if (!state.sections.some((s) => s.name === name)) {
+        console.warn(
+          `[page-bootstrap] section "${name}" registered after section work began; it will not load. ` +
+            "Register sections while the page script is executing."
+        );
+      }
     },
     setResourceLabels(entries) {
       window.PARecoveryView?.setLabels(entries);
     },
-    submitCommand(name, run) {
-      apply({ type: "SUBMIT_COMMAND", name });
-      const id = state.active && state.active.name === name ? state.active.id : null;
-      Promise.resolve()
-        .then(() => run())
-        .then(() => settle(id ?? state.active?.id, null))
-        .catch((error) => settle(id ?? state.active?.id, error));
+
+    // Latching Estop bypasses the queue and the single active slot entirely --
+    // it must never wait behind a resource load, a retry, or a background
+    // section. It is also never auto-retried: a safety action is sent once,
+    // deliberately, and its outcome is the caller's to handle.
+    submitEstop(name, run) {
+      apply({ type: "SUBMIT_ESTOP", name });
+      return Promise.resolve().then(() => run());
     },
+
+    // Ordinary user commands take the slot ahead of automatic page work but
+    // never preempt work already in flight, and are never auto-retried.
+    submitCommand(name, run) {
+      // The reducer assigns the next id, so claiming it here lets the runner
+      // be registered before the dispatch that may start it synchronously.
+      const id = state.nextId;
+      commandRunners.set(id, run);
+      apply({ type: "SUBMIT_COMMAND", name });
+    },
+
     retryNow(name) {
       apply({ type: "RETRY_NOW", name });
+    },
+    refreshSections(names) {
+      apply({ type: "REFRESH_SECTIONS", names });
     },
     getState() {
       return state;

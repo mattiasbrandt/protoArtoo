@@ -74,6 +74,9 @@
         stepName: step.name,
         stepLabel: labelFor(step.name, kind),
         kind,
+        // A step on the longer Operation Deadline needs to say so, or an
+        // expected wait reads as a frozen page.
+        longRunning: state.active?.name === step.name && state.active.longRunning === true,
       };
     }
 
@@ -185,7 +188,9 @@
         el(
           "p",
           "recovery-message",
-          "Completed resources stay loaded. Page data loads once required files are in."
+          view.longRunning
+            ? "This step normally takes longer than the others. Completed resources stay loaded."
+            : "Completed resources stay loaded. Page data loads once required files are in."
         )
       );
       return panel;
@@ -236,7 +241,9 @@
   // Signature kept stable across renders so the countdown can repaint without
   // rebuilding the panel and stealing focus from the Retry now button.
   const signatureOf = (view) =>
-    view.visible ? `${view.mode}|${view.kind}|${view.stepName}|${view.attempt ?? 0}` : "hidden";
+    view.visible
+      ? `${view.mode}|${view.kind}|${view.stepName}|${view.attempt ?? 0}|${view.longRunning ? 1 : 0}`
+      : "hidden";
 
   let lastSignature = null;
 

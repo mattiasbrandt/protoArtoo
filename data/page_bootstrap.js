@@ -26,10 +26,15 @@
   const NO_RESPONSE_BASE_BACKOFF_MS = 2000;
   const NO_RESPONSE_MAX_BACKOFF_MS = 30000;
 
-  // Operation Deadline for ordinary page work. Matches web_api.js's
-  // DEFAULT_TIMEOUT_MS so the client-side deadline and the request timeout
-  // describe the same boundary rather than fighting each other.
+  // Operation Deadline categories: exactly two, per ADR 0019.
+  //
+  // Ordinary matches web_api.js's DEFAULT_TIMEOUT_MS so the client-side
+  // deadline and the request timeout describe the same boundary rather than
+  // fighting each other. Catalog is the one known-longer operation; a step
+  // carrying it is flagged so the view can say the wait is expected instead of
+  // letting it read as a frozen page.
   const OPERATION_DEADLINE_MS = 6000;
+  const CATALOG_DEADLINE_MS = 12000;
 
   const backoffFor = (attempt) => {
     const ms = NO_RESPONSE_BASE_BACKOFF_MS * Math.pow(2, Math.max(0, attempt - 1));
@@ -76,16 +81,20 @@
     reason: null,
   });
 
-  const createBootstrap = ({ resources = [], sections = [] } = {}) =>
+  const createBootstrap = ({ resources = [], sections = [], deadlines = {} } = {}) =>
     // Settle the derived flags immediately, so a page declaring no sections
     // (or nothing at all) is already stable rather than waiting for a result
     // that will never arrive.
-    recomputeSectionsStable(baseBootstrap(resources, sections));
+    recomputeSectionsStable(baseBootstrap(resources, sections, deadlines));
 
-  const baseBootstrap = (resources, sections) => ({
+  const baseBootstrap = (resources, sections, deadlines) => ({
     now: 0,
     visible: true,
     nextId: 1,
+
+    // Per-step Operation Deadline overrides, keyed by step name. Anything
+    // absent uses the Ordinary category.
+    deadlines: { ...deadlines },
 
     // Resource Step Recovery: resources load one at a time in declared order
     // through a single cursor. A failure pauses the cursor and retries only
@@ -176,6 +185,7 @@
       });
     }
 
+    const deadlineMs = next.deadlines[work.name] ?? OPERATION_DEADLINE_MS;
     return {
       ...next,
       queue: next.queue.filter((item) => item.id !== id),
@@ -185,7 +195,11 @@
         name: work.name,
         priority: work.priority,
         startedAt: next.now,
-        deadlineAt: next.now + OPERATION_DEADLINE_MS,
+        deadlineMs,
+        // Flagged so the view can explain an expected-longer wait rather than
+        // leaving it looking frozen.
+        longRunning: deadlineMs > OPERATION_DEADLINE_MS,
+        deadlineAt: next.now + deadlineMs,
       },
     };
   };
@@ -298,7 +312,22 @@
         return recomputeSectionsStable({
           ...prev,
           sections: [...prev.sections, ...added],
+          deadlines: { ...prev.deadlines, ...(action.deadlines || {}) },
         });
+      }
+
+      case "REFRESH_SECTIONS": {
+        // An explicit operator refresh re-runs section work through the same
+        // single slot as everything else. Resources are untouched -- they are
+        // already loaded, and re-fetching them is exactly the duplicate work
+        // Resource Step Recovery exists to avoid.
+        const names = action.names ? new Set(action.names) : null;
+        const refreshed = prev.sections.map((step) =>
+          !names || names.has(step.name)
+            ? { ...step, status: "pending", attempt: 0, nextAt: null, reason: null }
+            : step
+        );
+        return pump(recomputeSectionsStable({ ...prev, sections: refreshed }));
       }
 
       case "RETRY_NOW": {
@@ -384,6 +413,7 @@
     PRIORITY,
     DEFAULT_BUSY_RETRY_MS,
     OPERATION_DEADLINE_MS,
+    CATALOG_DEADLINE_MS,
     createBootstrap,
     classifyOutcome,
     dispatch,

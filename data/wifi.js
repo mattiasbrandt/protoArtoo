@@ -576,9 +576,36 @@
     }
   };
 
-  if (form) form.addEventListener("submit", saveSettings);
-  if (applyButton) applyButton.addEventListener("click", rebootToApply);
-  if (reloadButton) reloadButton.addEventListener("click", loadPageData);
+  // With the bootstrap driving the page, an explicit Refresh has to go through
+  // it too -- running the three loads directly would put requests on the wire
+  // outside the single active-request slot the whole design depends on.
+  const onReloadClicked = () => {
+    if (!window.PABootstrap) {
+      loadPageData();
+      return;
+    }
+    resetBeforeLoad();
+    gateOnSectionState([{ name: "wifi-config", status: "pending" }]);
+    window.PABootstrap.refreshSections(SECTIONS.map(([name]) => name));
+  };
+
+  // Save and reboot are user commands: they take priority over automatic page
+  // work, and are never auto-retried, so a non-idempotent write cannot be
+  // replayed by recovery.
+  const onSaveSubmit = (event) => {
+    if (!window.PABootstrap) return saveSettings(event);
+    event.preventDefault();
+    window.PABootstrap.submitCommand("wifi-save", () => saveSettings(event));
+  };
+
+  const onApplyClicked = () => {
+    if (!window.PABootstrap) return rebootToApply();
+    window.PABootstrap.submitCommand("wifi-reboot", () => rebootToApply());
+  };
+
+  if (form) form.addEventListener("submit", onSaveSubmit);
+  if (applyButton) applyButton.addEventListener("click", onApplyClicked);
+  if (reloadButton) reloadButton.addEventListener("click", onReloadClicked);
   [modeClient, modeStandaloneAp].forEach((input) => {
     if (input) input.addEventListener("change", syncModeOptions);
   });
