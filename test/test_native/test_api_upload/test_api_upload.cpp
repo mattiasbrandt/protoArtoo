@@ -1,7 +1,7 @@
 // =============================================================================
 // test/test_native/test_api_upload/test_api_upload.cpp
 //
-// Native unit tests for the OTA upload guard and response mapping (#80).
+// Native unit tests for the OTA upload guard and response mapping.
 //
 // The handlers themselves are about the Update library, which only exists on
 // the device, so what is covered here is the part that decides: whether an

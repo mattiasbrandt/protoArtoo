@@ -2,7 +2,7 @@
 // src/web/api_logs.cpp
 //
 // GET /api/logs — recent log buffer, ported to the WebRequest seam (ADR 0021).
-// One of the three routes data/app.js fetches on every page load (#79).
+// One of the three routes data/app.js fetches on every page load.
 // =============================================================================
 
 #include "api_logs.h"

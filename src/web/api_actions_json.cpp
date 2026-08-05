@@ -7,8 +7,8 @@
 //
 // Kept apart from api_actions.cpp so the ported route lives in a translation
 // unit with no web-server, FreeRTOS or RC-dispatch dependency: the host tests
-// build and drive it directly, and the #91 cutover has nothing to untangle
-// here. api_actions.cpp keeps the still-async POST /api/actions/test route.
+// build and drive it directly, and the cutover has nothing to untangle here.
+// api_actions.cpp keeps the still-async POST /api/actions/test route.
 //
 // The body is written slice by slice against a byte offset rather than
 // assembled whole: the registry serializes to ~9 KB, and the JsonDocument

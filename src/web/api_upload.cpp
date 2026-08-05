@@ -5,9 +5,9 @@
 //   POST /upload/firmware    — firmware image (U_FLASH)
 //   POST /upload/filesystem  — LittleFS image (U_SPIFFS)
 //
-// Split out of api_system.cpp when ported (#80). These land early in epic #75
-// on purpose: without a working HTTP upload path, every later slice needs a
-// physical serial reflash rather than an over-the-air one.
+// Split out of api_system.cpp when ported. These land early in the migration
+// on purpose: without a working HTTP upload path, later work needs a physical
+// serial reflash rather than an over-the-air one.
 //
 // The body is written to flash chunk by chunk as it arrives, so the image is
 // never accumulated in heap -- only whatever the backend hands over for the
@@ -108,6 +108,9 @@ void handleUploadChunk(UploadSession& session, UploadTarget target, int updateCo
     }
 
     if (len > 0) {
+        // const_cast because Update.write() takes a non-const pointer even
+        // though it only reads the buffer. The seam keeps the chunk const so a
+        // handler cannot scribble on a buffer the backend still owns.
         if (Update.write(const_cast<uint8_t*>(data), len) != len) {
             Update.printError(Serial);
             session.outcome = UploadOutcome::kFailed;
