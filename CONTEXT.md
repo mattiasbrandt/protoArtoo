@@ -120,9 +120,13 @@ _Avoid_: blank page, spinner-only state, recovery controls that require the fail
 One finite try to load a page and its resources. A visible tab has at most one active attempt. Every request and queued item has a deadline; when the attempt fails, is replaced, or becomes unnecessary, its active and queued work is cancelled and released before a later retry starts. Waiting between retries creates no controller load.
 _Avoid_: overlapping retries, abandoned requests, unbounded client queues, holding controller capacity during retry delays, relying on refresh to clean up old work
 
+**Connection Admission**:
+The controller-side outcome when a new connection is dropped before any HTTP request has been read. It carries no response, no reason and no retry hint, and it is blind to the URL by construction, so it cannot exempt any path. To a browser it is indistinguishable from an unreachable controller and legitimately surfaces as "No response from controller".
+_Avoid_: Immediate Request Refusal, busy response, per-route exemption, Controller busy wording, a promise that safety paths are admitted
+
 **Immediate Request Refusal**:
-The controller-side outcome when a new page request cannot safely start. The controller does not queue or retain the request: it returns the smallest safe busy result and releases the attempt immediately. The Page Recovery View owns the wait and retry, and tells the operator whether the controller reported busy or did not respond.
-_Avoid_: controller-side wait queue, silent failure, indefinite request lifetime, starting expensive work before admission, treating every failed response as proof that the controller is busy
+The controller-side outcome when a page request that has already been read cannot safely start. The controller does not queue or retain the request: it returns the smallest safe busy result and releases the attempt immediately. The Page Recovery View owns the wait and retry, and tells the operator whether the controller reported busy or did not respond.
+_Avoid_: Connection Admission, controller-side wait queue, silent failure, indefinite request lifetime, starting expensive work before admission, treating every failed response as proof that the controller is busy
 
 **Page Recovery Status**:
 The plain-language reason and next action shown by the Page Recovery View. "Controller busy" is used only after an explicit Immediate Request Refusal; a timeout or connection failure is shown as "No response from controller". Each retrying state shows when the next attempt will start and keeps Retry now available.
