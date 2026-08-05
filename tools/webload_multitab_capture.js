@@ -37,30 +37,31 @@ const { chromium } = require("playwright");
 const {
   collectDomState, captureTerminalScreenshots, splitArtifactErrors, artifactLanded,
 } = require("./webload_browser_capture.js");
+const { DEFAULT_PAGE, pageNames, resolveProfile, describeProfile } =
+  require("./webload_page_profiles.js");
 
 const VIEWPORT = Object.freeze({ width: 1080, height: 800 });
 const COMMIT_RE = /^[0-9a-f]{40}$/;
-const REQUIRED_RESOURCES = Object.freeze([
-  "/index.html", "/page_loader.js", "/web_api.js", "/diagnostics.js",
-  "/status_stream.js", "/shell.js", "/health_signals.js", "/dome_command_map.js",
-  "/dome_panel_model.js", "/dome_layout.js", "/dome_layout_render.js",
-  "/dome_control.js", "/app.js", "/footer.js",
-]);
-// See webload_browser_capture.js's REQUIRED_APIS comment: these 4 are
-// genuinely fetched by the real frontend on every ordinary page load, and
-// the #73 PsychicHttp prototype ports none of them -- requiredApisOk will
-// therefore always read false against that build, by design, not from a
-// per-tab connection defect. Judge multi-tab runs against that build on
-// requiredResourcesOk/domGatesPassed and the per-tab network counts, not
-// requiredApisOk, until the prototype's API surface is completed.
-const REQUIRED_APIS = Object.freeze(["/api/identity", "/api/logs", "/api/config", "/api/actions"]);
+// Which page a run measures comes from --page (issue #94); the resources, APIs
+// and readiness gate that define it live in tools/webload_page_profiles.js.
+// Both collectors must gain page targeting together, or --stage full can only
+// half-target a page.
+//
+// See that module's index API comment: the four index.html APIs are genuinely
+// fetched by the real frontend on every ordinary load, and the #73 PsychicHttp
+// prototype ports none of them -- requiredApisOk will therefore always read
+// false against that build, by design, not from a per-tab connection defect.
+// Judge multi-tab runs against that build on requiredResourcesOk/domGatesPassed
+// and the per-tab network counts, not requiredApisOk, until the prototype's API
+// surface is completed.
+//
 // Tracked but never gated on, exactly as in webload_browser_capture.js: SSE
 // behavior is reportable evidence, not a pass/fail condition for a tab.
 const SSE_PATH = "/api/events";
 
-function isTrackedPath(candidate) {
-  return REQUIRED_RESOURCES.includes(candidate) ||
-    REQUIRED_APIS.includes(candidate) ||
+function isTrackedPath(profile, candidate) {
+  return profile.requiredResources.includes(candidate) ||
+    profile.requiredApis.includes(candidate) ||
     candidate === SSE_PATH;
 }
 
@@ -122,12 +123,16 @@ function usage() {
     --url http://10.0.0.22/index.html \\
     --commit <full 40-char sha of the tip under test> \\
     --out tasks/evidence/webload/<run-id>/multitab \\
+    [--page ${DEFAULT_PAGE}] \\
     [--tabs ${DEFAULT_TABS}] \\
     [--control-file tasks/evidence/webload/<run-id>/control.json]
 
 Options:
-  --url URL           Exact http:// controller URL ending in /index.html.
+  --url URL           Exact http:// controller URL whose path is the target page's.
   --commit SHA         Full 40-char git SHA of the tip under test (evidence only).
+  --page NAME          Page profile to measure: ${pageNames().join(", ")} (default ${DEFAULT_PAGE}).
+                        Selects the required resources, required APIs and readiness
+                        gate together; see tools/webload_page_profiles.js.
   --out DIR            Evidence output directory (must be under tasks/evidence/webload,
                         must not already exist).
   --tabs N             Peak tab count, ${MIN_TABS}-${MAX_TABS} (default ${DEFAULT_TABS}). ${MIN_TABS} keeps two ordinary
@@ -154,7 +159,7 @@ function parseArgs(argv) {
     const arg = argv[i];
     if (arg === "--help") args.help = true;
     else if (arg === "--dry-run") args.dryRun = true;
-    else if (["--url", "--commit", "--out", "--tabs", "--control-file"].includes(arg)) {
+    else if (["--url", "--commit", "--out", "--tabs", "--control-file", "--page"].includes(arg)) {
       if (i + 1 >= argv.length) throw new Error(`${arg} requires a value`);
       const key = {
         "--url": "url",
@@ -162,6 +167,7 @@ function parseArgs(argv) {
         "--out": "out",
         "--tabs": "tabs",
         "--control-file": "controlFile",
+        "--page": "page",
       }[arg];
       args[key] = argv[++i];
     } else {
@@ -199,6 +205,7 @@ function validateArgs(args) {
   }
   if (!args.out) throw new Error("--out is required");
   const tabs = parseTabs(args.tabs);
+  const profile = resolveProfile(args.page || DEFAULT_PAGE);
 
   let parsedUrl;
   try {
@@ -206,9 +213,12 @@ function validateArgs(args) {
   } catch (_error) {
     throw new Error("--url must be a valid URL");
   }
-  if (parsedUrl.protocol !== "http:" || parsedUrl.pathname !== "/index.html" ||
+  if (parsedUrl.protocol !== "http:" || parsedUrl.pathname !== profile.path ||
       parsedUrl.search || parsedUrl.hash) {
-    throw new Error("--url must be an unmodified http:// controller URL ending in /index.html");
+    throw new Error(
+      `--url must be an unmodified http:// controller URL ending in ${profile.path} ` +
+      `(the "${profile.name}" page profile); pass --page to measure a different one`,
+    );
   }
 
   const repoRoot = path.resolve(__dirname, "..");
@@ -220,7 +230,7 @@ function validateArgs(args) {
   if (!args.dryRun && fs.existsSync(out)) {
     throw new Error(`refusing to overwrite existing evidence directory: ${out}`);
   }
-  return { ...args, parsedUrl, out, controlFile, tabs, scenario: buildScenario(tabs) };
+  return { ...args, profile, parsedUrl, out, controlFile, tabs, scenario: buildScenario(tabs) };
 }
 
 function wallNow() {
@@ -272,7 +282,7 @@ function killBrowserServer(browserServer) {
 
 // One tab's own tracking: counts-only network summary (not a full per-request
 // timing ledger, see file header), plus console/page-error NDJSON logs.
-function makeTab(name, tabDir, origin) {
+function makeTab(name, tabDir, origin, profile) {
   fs.mkdirSync(tabDir, { recursive: true });
   const counts = new Map(); // path -> { attempts, successes, failures }
   const bump = (p, field) => {
@@ -291,19 +301,19 @@ function makeTab(name, tabDir, origin) {
       const reqOrigin = new URL(request.url()).origin;
       const p = urlPath(request.url());
       requestOrigins.set(request, { origin: reqOrigin, path: p });
-      if (reqOrigin === origin && isTrackedPath(p)) bump(p, "attempts");
+      if (reqOrigin === origin && isTrackedPath(profile, p)) bump(p, "attempts");
       appendNdjson(networkLog, { event: "request", method: request.method(), url: request.url(), at: wallNow() });
     },
     onResponse(response) {
       const info = requestOrigins.get(response.request());
-      if (info && info.origin === origin && isTrackedPath(info.path)) {
+      if (info && info.origin === origin && isTrackedPath(profile, info.path)) {
         if (isSuccessStatus(response.status())) bump(info.path, "successes");
       }
       appendNdjson(networkLog, { event: "response", status: response.status(), url: response.url(), at: wallNow() });
     },
     onRequestFailed(request) {
       const info = requestOrigins.get(request);
-      if (info && info.origin === origin && isTrackedPath(info.path)) {
+      if (info && info.origin === origin && isTrackedPath(profile, info.path)) {
         bump(info.path, "failures");
       }
       appendNdjson(networkLog, {
@@ -331,10 +341,10 @@ function makeTab(name, tabDir, origin) {
       counts.clear();
     },
     requiredResourcesOk() {
-      return REQUIRED_RESOURCES.every((p) => (counts.get(p)?.successes || 0) > 0);
+      return profile.requiredResources.every((p) => (counts.get(p)?.successes || 0) > 0);
     },
     requiredApisOk() {
-      return REQUIRED_APIS.every((p) => (counts.get(p)?.successes || 0) > 0);
+      return profile.requiredApis.every((p) => (counts.get(p)?.successes || 0) > 0);
     },
     // Same vocabulary webload_browser_capture.js's classifySse() produces, so
     // single-tab and multi-tab SSE evidence is read the same way. Derived from
@@ -370,8 +380,8 @@ async function attachTab(page, tab) {
 // screenshot that overran its cap is still being written from Node at this
 // point, so grading here would report a file that is about to exist as
 // missing. gradeTabArtifacts() finishes the summary once the pages are closed.
-async function finalizeTab(page, tab) {
-  const domState = await collectDomState(page).catch((error) => {
+async function finalizeTab(page, tab, profile) {
+  const domState = await collectDomState(page, profile).catch((error) => {
     appendNdjson(path.join(tab.tabDir, "page-errors.ndjson"), {
       type: "final-dom-state-error", at: wallNow(), error: String(error),
     });
@@ -457,13 +467,16 @@ async function runCapture(config) {
     context = await browser.newContext({ viewport: VIEWPORT });
 
     const manifest = {
-      issue: 73, run: RUN_ID, tipCommit: config.commit, url: config.url,
+      issue: 73, run: RUN_ID, tipCommit: config.commit,
+      page: config.profile.name, pageProfile: describeProfile(config.profile),
+      url: config.url,
       startedAt, observeMs: scenario.observeMs, viewport: VIEWPORT,
       browserVersion: browser.version(),
       playwrightVersion: require("playwright/package.json").version,
       controlFile: config.controlFile,
       scenario,
-      requiredResources: REQUIRED_RESOURCES, requiredApis: REQUIRED_APIS,
+      requiredResources: config.profile.requiredResources,
+      requiredApis: config.profile.requiredApis,
     };
     fs.writeFileSync(path.join(config.out, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
 
@@ -475,7 +488,7 @@ async function runCapture(config) {
     const openTab = async (name) => {
       const page = await context.newPage();
       const tabDir = path.join(config.out, name);
-      const tab = makeTab(name, tabDir, config.parsedUrl.origin);
+      const tab = makeTab(name, tabDir, config.parsedUrl.origin, config.profile);
       await attachTab(page, tab);
       pages[name] = page;
       tabs[name] = tab;
@@ -535,7 +548,7 @@ async function runCapture(config) {
     const collected = {};
     for (const name of ["tab1", "tab2"]) {
       if (pages[name] && !pages[name].isClosed()) {
-        collected[name] = await finalizeTab(pages[name], tabs[name]);
+        collected[name] = await finalizeTab(pages[name], tabs[name], config.profile);
       }
     }
     // Close every page before grading artifacts. A screenshot that overran its
@@ -581,6 +594,8 @@ async function runCapture(config) {
     // detail hangs off `tabs`.
     const result = {
       issue: 73, run: RUN_ID, tipCommit: config.commit,
+      // Which page this measurement is of; see webload_browser_capture.js.
+      page: config.profile.name,
       t0, startedAt, finishedAt: wallNow(),
       observeMs: scenario.observeMs,
       observedWindowMs: Date.parse(terminalAt) - t0EpochMs,
@@ -611,7 +626,8 @@ async function runCapture(config) {
       process.stderr.write(`failed to write page state: ${error}\n`);
     }
     process.stdout.write(`${JSON.stringify({
-      run: RUN_ID, tabs: scenario.tabs, terminalReason, captureStatus,
+      run: RUN_ID, page: config.profile.name, tabs: scenario.tabs,
+      terminalReason, captureStatus,
       allTabsPassed, browserGatesPassed, sseState: result.sseState,
       missingTabs, navigationErrors, artifactErrors,
       artifactWarningCount: artifactWarnings.length, output: config.out,
@@ -647,9 +663,12 @@ async function main() {
     const config = validateArgs(args);
     if (config.dryRun) {
       process.stdout.write(`${JSON.stringify({
-        issue: 73, run: RUN_ID, tipCommit: config.commit, url: config.url,
+        issue: 73, run: RUN_ID, tipCommit: config.commit,
+        page: config.profile.name, url: config.url,
         output: config.out, controlFile: config.controlFile,
         scenario: config.scenario,
+        requiredResources: config.profile.requiredResources,
+        requiredApis: config.profile.requiredApis,
       }, null, 2)}\n`);
       return 0;
     }

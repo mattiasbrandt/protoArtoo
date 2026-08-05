@@ -10,11 +10,19 @@
 // itself. SSE (#conn-status / status_stream.js) evidence is recorded, not gated —
 // issue #66 treats SSE failure as reportable evidence for issue #61, not a stop
 // condition for this collector.
+//
+// Which page is measured is chosen with --page (issue #94). The resources, APIs
+// and readiness gate that define a page live together in
+// tools/webload_page_profiles.js; nothing about a specific page is hardcoded
+// here. --page defaults to index, so an invocation written before #94 measures
+// exactly what it measured then.
 
 const fs = require("fs");
 const path = require("path");
 const { performance } = require("perf_hooks");
 const { chromium } = require("playwright");
+const { DEFAULT_PAGE, PAGE_PROFILES, pageNames, resolveProfile, describeProfile } =
+  require("./webload_page_profiles.js");
 
 const OBSERVE_MS = 30_000;
 const POLL_MS = 200;
@@ -22,39 +30,6 @@ const TERMINAL_CAPTURE_RESERVE_MS = 3_500;
 const CLOSE_RESERVE_MS = 800;
 const VIEWPORT = Object.freeze({ width: 1080, height: 800 });
 const COMMIT_RE = /^[0-9a-f]{40}$/;
-const REQUIRED_RESOURCES = Object.freeze([
-  "/index.html",
-  "/page_loader.js",
-  "/web_api.js",
-  "/diagnostics.js",
-  "/status_stream.js",
-  "/shell.js",
-  "/health_signals.js",
-  "/dome_command_map.js",
-  "/dome_panel_model.js",
-  "/dome_layout.js",
-  "/dome_layout_render.js",
-  "/dome_control.js",
-  "/app.js",
-  "/footer.js",
-]);
-// These 4 are genuinely fetched by the real production frontend on every
-// ordinary page load (data/app.js:534,574,633 -> /api/logs, /api/config,
-// /api/actions; data/shell.js:157 -> /api/identity), so this list is correct
-// against the current stack and must not be trimmed for convenience.
-//
-// Issue #73/#74 scope note: the PsychicHttp prototype (src/web/
-// psychic_adapter.cpp) does not port any of these 4 routes -- confirmed by
-// source, zero references. Against that build, browserGatesPassed/
-// captureStatus will therefore NEVER reach "usable", on every run,
-// regardless of concurrency/stall/multi-tab scenario -- that's an accurate
-// reflection of a real, documented port gap (#72 scoped the prototype as
-// partial), not a test-prep bug. Do not read a "usable"-gated failure
-// against that build as evidence of a connection-handling defect; judge
-// prototype runs on the sub-signals (REQUIRED_RESOURCES success, /api/status
-// reachability, heap/connection metrics, SSE behavior) instead of this
-// aggregate gate until the prototype's API surface is actually completed.
-const REQUIRED_APIS = Object.freeze(["/api/identity", "/api/logs", "/api/config", "/api/actions"]);
 const RUN_ID = "BASELINE1";
 
 function usage() {
@@ -62,12 +37,16 @@ function usage() {
   node tools/webload_browser_capture.js \\
     --url http://10.0.0.22/index.html \\
     --commit <full 40-char sha of the tip under test> \\
+    [--page ${DEFAULT_PAGE}] \\
     [--out tasks/evidence/webload/run-1/browser] \\
     [--control-file tasks/evidence/webload/run-1/control.json]
 
 Options:
-  --url URL           Exact http:// controller URL ending in /index.html.
+  --url URL           Exact http:// controller URL whose path is the target page's.
   --commit SHA         Full 40-char git SHA of the tip under test (evidence only).
+  --page NAME          Page profile to measure: ${pageNames().join(", ")} (default ${DEFAULT_PAGE}).
+                        Selects the required resources, required APIs and readiness
+                        gate together; see tools/webload_page_profiles.js.
   --out DIR            Browser artifact directory (must be under tasks/evidence/webload).
   --control-file F     Optional coordinator file with statusReachableAt or stopReason.
   --dry-run            Validate and print the fixed plan without launching Chromium.
@@ -85,13 +64,14 @@ function parseArgs(argv) {
       args.help = true;
     } else if (arg === "--dry-run") {
       args.dryRun = true;
-    } else if (["--url", "--commit", "--out", "--control-file"].includes(arg)) {
+    } else if (["--url", "--commit", "--out", "--control-file", "--page"].includes(arg)) {
       if (i + 1 >= argv.length) throw new Error(`${arg} requires a value`);
       const key = {
         "--url": "url",
         "--commit": "commit",
         "--out": "out",
         "--control-file": "controlFile",
+        "--page": "page",
       }[arg];
       args[key] = argv[++i];
     } else {
@@ -115,6 +95,7 @@ function validateArgs(args) {
   if (!args.commit || !COMMIT_RE.test(args.commit)) {
     throw new Error("--commit must be a full 40-character lowercase hex git SHA");
   }
+  const profile = resolveProfile(args.page || DEFAULT_PAGE);
 
   let parsedUrl;
   try {
@@ -122,9 +103,12 @@ function validateArgs(args) {
   } catch (_error) {
     throw new Error("--url must be a valid URL");
   }
-  if (parsedUrl.protocol !== "http:" || parsedUrl.pathname !== "/index.html" ||
+  if (parsedUrl.protocol !== "http:" || parsedUrl.pathname !== profile.path ||
       parsedUrl.search || parsedUrl.hash || parsedUrl.username || parsedUrl.password) {
-    throw new Error("--url must be an unmodified http:// controller URL ending in /index.html");
+    throw new Error(
+      `--url must be an unmodified http:// controller URL ending in ${profile.path} ` +
+      `(the "${profile.name}" page profile); pass --page to measure a different one`,
+    );
   }
 
   const repoRoot = path.resolve(__dirname, "..");
@@ -141,7 +125,7 @@ function validateArgs(args) {
   if (!args.dryRun && fs.existsSync(out)) {
     throw new Error(`refusing to overwrite existing evidence directory: ${out}`);
   }
-  return { ...args, parsedUrl, repoRoot, evidenceRoot, out, controlFile };
+  return { ...args, profile, parsedUrl, repoRoot, evidenceRoot, out, controlFile };
 }
 
 function wallNow() {
@@ -317,112 +301,13 @@ async function captureTerminalScreenshots(page, artifacts, artifactErrors, deadl
   );
 }
 
-async function collectDomState(page) {
-  return page.evaluate(async () => {
-    const element = (selector) => document.querySelector(selector);
-    const text = (selector) => (element(selector)?.textContent || "").trim();
-    const visible = (selector) => {
-      const node = element(selector);
-      if (!node) return false;
-      const style = getComputedStyle(node);
-      const rect = node.getBoundingClientRect();
-      return style.display !== "none" && style.visibility !== "hidden" &&
-        Number(style.opacity) !== 0 && rect.width > 0 && rect.height > 0;
-    };
-    const style = (selector) => {
-      const node = element(selector);
-      if (!node) return null;
-      const computed = getComputedStyle(node);
-      const rect = node.getBoundingClientRect();
-      return {
-        backgroundColor: computed.backgroundColor,
-        fontFamily: computed.fontFamily,
-        width: rect.width,
-        height: rect.height,
-      };
-    };
-
-    const HEALTH_IDS = ["h-sbus", "h-wifi", "h-fs", "h-heap", "h-dome-link", "h-sound", "h-dome-esc"];
-    const healthIndicators = Object.fromEntries(HEALTH_IDS.map((id) => {
-      const node = element(`#${id}`);
-      const classes = node ? Array.from(node.classList) : [];
-      const state = classes.find((cls) => ["ok", "warn", "fail", "off"].includes(cls)) || null;
-      return [id, { exists: Boolean(node), state }];
-    }));
-    const healthReady = HEALTH_IDS.every((id) => healthIndicators[id].state !== null);
-
-    const SNAPSHOT_IDS = ["snapshot-web-control", "snapshot-mode", "snapshot-estop", "snapshot-mood"];
-    const snapshotPills = Object.fromEntries(SNAPSHOT_IDS.map((id) => [id, text(`#${id}`)]));
-    const snapshotReady = SNAPSHOT_IDS.every((id) => {
-      const value = snapshotPills[id];
-      return value !== "" && !value.endsWith(": ...") && !value.endsWith("...");
-    });
-
-    const LOG_EMPTY_TEXT = "No log history available yet.";
-    const logConsoleText = text("#log-console");
-    const logConsoleReady = logConsoleText !== "" && logConsoleText !== LOG_EMPTY_TEXT;
-
-    const shellReady = visible("#shell-top .topbar") && visible("#shell-top nav a.active");
-    const bodyStyle = style("body");
-    const stylingReady = bodyStyle?.backgroundColor && bodyStyle.backgroundColor !== "rgba(0, 0, 0, 0)" &&
-      bodyStyle.fontFamily && !bodyStyle.fontFamily.includes("Times New Roman") &&
-      bodyStyle.width > 0 && bodyStyle.height > 0;
-
-    const runtime = {
-      PAAssetsReady: window.PAAssetsReady === true,
-      PAApi: Boolean(window.PAApi),
-      PAStatusStream: Boolean(window.PAStatusStream),
-      HealthSignalModel: Boolean(window.HEALTH_SIGNAL_MODEL || window.PAHealthSignals),
-    };
-    const runtimeReady = runtime.PAAssetsReady && runtime.PAApi && runtime.PAStatusStream;
-
-    let interactive = false;
-    if (document.readyState === "complete" && runtimeReady && healthReady && snapshotReady &&
-        logConsoleReady && shellReady && stylingReady) {
-      interactive = await new Promise((resolve) => {
-        let settled = false;
-        const started = performance.now();
-        const finish = (value) => {
-          if (settled) return;
-          settled = true;
-          resolve(value);
-        };
-        requestAnimationFrame(() => finish(performance.now() - started <= 500));
-        setTimeout(() => finish(false), 500);
-      });
-    }
-
-    const lastStatus = window.PAStatusStream?.getLastStatus?.() ?? null;
-    return {
-      capturedAt: new Date().toISOString(),
-      url: location.href,
-      title: document.title,
-      readyState: document.readyState,
-      runtime,
-      healthIndicators,
-      snapshotPills,
-      logConsoleText,
-      styles: { body: bodyStyle },
-      gates: {
-        documentReady: document.readyState === "complete",
-        runtimeReady,
-        healthReady,
-        snapshotReady,
-        logConsoleReady,
-        shellReady,
-        stylingReady,
-        interactive,
-      },
-      sseRuntime: {
-        supported: window.PAStatusStream?.isSupported?.() ?? false,
-        visible: window.PAStatusStream?.isVisible?.() ?? false,
-        hasLastStatus: lastStatus !== null,
-        lastStatus,
-        connectionText: text("#conn-status"),
-        connectionClass: element("#conn-status")?.className || "",
-      },
-    };
-  });
+// The probe is the profile's, evaluated in the page. Everything this collector
+// does with the result -- browserSideReady, classifySse, the terminal snapshot
+// -- reads the profile-independent envelope every probe returns, so no page
+// knowledge lives on this side of page.evaluate(). The default keeps the export
+// usable by callers that predate page targeting.
+async function collectDomState(page, profile = PAGE_PROFILES[DEFAULT_PAGE]) {
+  return page.evaluate(profile.domProbe);
 }
 
 function browserSideReady(domState) {
@@ -495,6 +380,8 @@ async function runCapture(config) {
       issue: 66,
       run: RUN_ID,
       tipCommit: config.commit,
+      page: config.profile.name,
+      pageProfile: describeProfile(config.profile),
       url: config.url,
       startedAt,
       observeMs: OBSERVE_MS,
@@ -504,8 +391,8 @@ async function runCapture(config) {
       playwrightVersion: require("playwright/package.json").version,
       cachePolicy: "fresh non-persistent browser context; no storage state",
       navigationCount: 1,
-      requiredResources: REQUIRED_RESOURCES,
-      requiredApis: REQUIRED_APIS,
+      requiredResources: config.profile.requiredResources,
+      requiredApis: config.profile.requiredApis,
       controlFile: config.controlFile,
     };
     fs.writeFileSync(artifacts.manifest, `${JSON.stringify(manifest, null, 2)}\n`);
@@ -644,14 +531,18 @@ async function runCapture(config) {
       if (sampleBudget <= 0) break;
       const domState = await bounded(
         "DOM readiness sample",
-        () => collectDomState(page),
+        () => collectDomState(page, config.profile),
         sampleErrors,
         Math.min(1_000, sampleBudget),
       );
       if (domState) finalDomState = domState;
 
-      const resourceSummary = summarizeAttempts(attempts, REQUIRED_RESOURCES, config.parsedUrl.origin);
-      const apiSummary = summarizeAttempts(attempts, REQUIRED_APIS, config.parsedUrl.origin);
+      const resourceSummary = summarizeAttempts(
+        attempts, config.profile.requiredResources, config.parsedUrl.origin,
+      );
+      const apiSummary = summarizeAttempts(
+        attempts, config.profile.requiredApis, config.parsedUrl.origin,
+      );
       const candidate = browserSideReady(domState) &&
         allSummariesSuccessful(resourceSummary) &&
         allSummariesSuccessful(apiSummary);
@@ -679,7 +570,7 @@ async function runCapture(config) {
     ));
     finalDomState = await bounded(
       "final DOM state",
-      () => collectDomState(page),
+      () => collectDomState(page, config.profile),
       artifactErrors,
       Math.max(1, Math.min(600, deadline - performance.now() - CLOSE_RESERVE_MS)),
     ) || finalDomState;
@@ -717,8 +608,12 @@ async function runCapture(config) {
         Math.max(1, deadline - performance.now()),
       );
     }
-    const resourceSummary = summarizeAttempts(workloadAttempts, REQUIRED_RESOURCES, config.parsedUrl.origin);
-    const apiSummary = summarizeAttempts(workloadAttempts, REQUIRED_APIS, config.parsedUrl.origin);
+    const resourceSummary = summarizeAttempts(
+      workloadAttempts, config.profile.requiredResources, config.parsedUrl.origin,
+    );
+    const apiSummary = summarizeAttempts(
+      workloadAttempts, config.profile.requiredApis, config.parsedUrl.origin,
+    );
     const browserGatesPassed = browserSideReady(finalDomState) &&
       allSummariesSuccessful(resourceSummary) &&
       allSummariesSuccessful(apiSummary);
@@ -739,6 +634,10 @@ async function runCapture(config) {
       issue: 66,
       run: RUN_ID,
       tipCommit: config.commit,
+      // Which page this measurement is of. run-39 (#64's ADR 0017 gate) was
+      // read as a wifi.html result until its resourceSummary was inspected by
+      // hand; a bundle should say what it measured without that step.
+      page: config.profile.name,
       t0,
       observeMs: OBSERVE_MS,
       observedWindowMs,
@@ -767,6 +666,7 @@ async function runCapture(config) {
     }
     process.stdout.write(`${JSON.stringify({
       run: RUN_ID,
+      page: config.profile.name,
       terminalReason,
       captureStatus,
       observedWindowMs,
@@ -816,6 +716,7 @@ async function main() {
         issue: 66,
         run: RUN_ID,
         tipCommit: config.commit,
+        page: config.profile.name,
         url: config.url,
         output: config.out,
         controlFile: config.controlFile,
@@ -823,8 +724,8 @@ async function main() {
         viewport: VIEWPORT,
         navigationCount: 1,
         controllerApiRequestsByCollector: 0,
-        requiredResources: REQUIRED_RESOURCES,
-        requiredApis: REQUIRED_APIS,
+        requiredResources: config.profile.requiredResources,
+        requiredApis: config.profile.requiredApis,
       }, null, 2)}\n`);
       return 0;
     }

@@ -157,21 +157,28 @@ def rows_from_browser(
 
 def build_timeline(run_dir: Path) -> str:
     rows: list[tuple[str, str, str, str]] = []
+    browser_state = read_json(run_dir / "browser" / "page-state.json")
+    multitab_state = read_json(run_dir / "multitab" / "page-state.json")
     rows += rows_from_ping(read_ndjson(run_dir / "ping.ndjson"))
     rows += rows_from_status(read_ndjson(run_dir / "status.ndjson"))
     rows += rows_from_logs(read_ndjson(run_dir / "logs.ndjson"))
     rows += rows_from_allocation_failures(read_ndjson(run_dir / "allocation-failures.ndjson"))
     rows += rows_from_serial(run_dir / "serial.log")
-    rows += rows_from_browser(read_json(run_dir / "browser" / "page-state.json"), "browser")
-    rows += rows_from_browser(read_json(run_dir / "multitab" / "page-state.json"), "multitab")
+    rows += rows_from_browser(browser_state, "browser")
+    rows += rows_from_browser(multitab_state, "multitab")
 
     rows.sort(key=lambda row: row[0])
 
     heap_floor_hits = [row for row in rows if "HEAP-FLOOR REJECTION" in row[2]]
+    # Which page the captures measured. Bundles written before issue #94 carry
+    # no `page` key at all -- every one of them measured index.html, but saying
+    # so here would be inventing provenance the bundle does not have.
+    page = (browser_state or {}).get("page") or (multitab_state or {}).get("page") or "unrecorded"
 
     lines = [
         f"# Web load correlated evidence timeline — {run_dir.name}",
         "",
+        f"Measured page: {page}.",
         f"Total events: {len(rows)}. Heap-floor rejection lines: {len(heap_floor_hits)}.",
         "",
         "| Time (UTC) | Source | Event | Detail |",

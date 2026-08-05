@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Coordinate the GitHub issue #66 live index.html baseline run.
+"""Coordinate the GitHub issue #66 live browser-load baseline run.
 
 Unlike issue #65's 5-run A/B matrix (separate /tmp worktrees per historical
 commit, role-locked build identity, B2 gating), issue #66 runs ONE baseline
@@ -20,6 +20,12 @@ earlier stages are verified against the live controller).
 land in outcome.json's `captures` list in the same shape, so a comparison run
 is one harness invocation rather than a scripted capture plus a hand-driven
 one.
+
+--page selects which controller page both captures measure (issue #94, default
+index). ADR 0019 makes wifi.html the tracer, and a page's required resources,
+required APIs and readiness gate are defined together in
+tools/webload_page_profiles.js -- this coordinator only carries the choice
+through to both collectors, so adding a page never touches this file.
 
 --stage full still requires a real physical power cycle -- resetReason ==
 POWERON is only reachable by removing power, and a deterministic cold heap is
@@ -55,6 +61,9 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 EVIDENCE_ROOT = REPO_ROOT / "tasks" / "evidence" / "webload"
 BROWSER_COLLECTOR = REPO_ROOT / "tools" / "webload_browser_capture.js"
 MULTITAB_COLLECTOR = REPO_ROOT / "tools" / "webload_multitab_capture.js"
+PAGE_PROFILES_MODULE = REPO_ROOT / "tools" / "webload_page_profiles.js"
+DEFAULT_PAGE = "index"
+PAGE_PROFILES_TIMEOUT_SECONDS = 15.0
 # 3 is the full Browser Load Profile: two steady tabs for the whole window plus
 # a brief third-tab overlap, so the default run covers both the two-tab and the
 # three-tab scenario without a second invocation. --multitab-tabs 2 drops the
@@ -135,6 +144,17 @@ def build_parser() -> argparse.ArgumentParser:
             f"{CYCLE_WAIT_SECONDS:.0f}s). The run gates on serial evidence of the cycle, "
             "not on a typed confirmation, so it needs no TTY and the cable can be pulled "
             "whenever within this window."
+        ),
+    )
+    parser.add_argument(
+        "--page",
+        default=DEFAULT_PAGE,
+        help=(
+            f"controller page both --stage full captures measure (default: {DEFAULT_PAGE}). "
+            "The page's required resources, required APIs and readiness gate travel "
+            "together as one profile in tools/webload_page_profiles.js; run that module "
+            "with --list to see the available pages. Deliberately not a fixed choice "
+            "list here, so adding a page stays a change to that one file."
         ),
     )
     parser.add_argument(
@@ -763,12 +783,66 @@ def _run_browser_capture(
 MULTITAB_PLAN_TIMEOUT_SECONDS = 30.0
 
 
+def resolve_page_profile(page: str) -> dict[str, Any]:
+    """Look up one page profile from the collectors' own profile module.
+
+    The profiles are defined once, in JavaScript, because that is where the
+    readiness gate has to live -- it is evaluated inside the page. Restating the
+    page list here would be a second source of truth that drifts the first time
+    a page is added, so this asks the module instead. Called before the operator
+    is sent to pull a cable: an unknown --page should cost a command line, not a
+    physical power cycle.
+    """
+    result = subprocess.run(
+        ["node", str(PAGE_PROFILES_MODULE), "--list"],
+        cwd=REPO_ROOT, capture_output=True, text=True, check=False,
+        timeout=PAGE_PROFILES_TIMEOUT_SECONDS,
+    )
+    if result.returncode != 0:
+        detail = result.stderr.strip().splitlines()
+        raise BaselineRunError(
+            f"could not read the page profiles (exit {result.returncode}): "
+            f"{detail[0] if detail else 'no detail'}"
+        )
+    try:
+        listing = json.loads(result.stdout)
+    except json.JSONDecodeError as error:
+        raise BaselineRunError(f"page profile listing is not JSON: {error}") from error
+    profiles = listing.get("pages") if isinstance(listing, dict) else None
+    if not isinstance(profiles, list):
+        raise BaselineRunError("page profile listing has no pages array")
+    for profile in profiles:
+        if isinstance(profile, dict) and profile.get("name") == page:
+            if not isinstance(profile.get("path"), str):
+                raise BaselineRunError(f"page profile {page!r} declares no path")
+            return profile
+    available = ", ".join(
+        str(profile.get("name")) for profile in profiles if isinstance(profile, dict)
+    )
+    raise BaselineRunError(f"unknown --page {page!r}; available pages: {available}")
+
+
+def _browser_argv(
+    controller: str, page: dict[str, Any], tip_commit: str, out_dir: Path, control_file: Path,
+) -> list[str]:
+    return [
+        "node", str(BROWSER_COLLECTOR),
+        "--url", f"http://{controller}{page['path']}",
+        "--page", page["name"],
+        "--commit", tip_commit,
+        "--out", str(out_dir),
+        "--control-file", str(control_file),
+    ]
+
+
 def _multitab_argv(
-    controller: str, tip_commit: str, out_dir: Path, control_file: Path, tabs: int,
+    controller: str, page: dict[str, Any], tip_commit: str, out_dir: Path,
+    control_file: Path, tabs: int,
 ) -> list[str]:
     return [
         "node", str(MULTITAB_COLLECTOR),
-        "--url", f"http://{controller}/index.html",
+        "--url", f"http://{controller}{page['path']}",
+        "--page", page["name"],
         "--commit", tip_commit,
         "--out", str(out_dir),
         "--control-file", str(control_file),
@@ -777,7 +851,8 @@ def _multitab_argv(
 
 
 def _multitab_plan(
-    controller: str, tip_commit: str, out_dir: Path, control_file: Path, tabs: int,
+    controller: str, page: dict[str, Any], tip_commit: str, out_dir: Path,
+    control_file: Path, tabs: int,
 ) -> dict[str, Any]:
     """Ask the multi-tab collector what it intends to do, before running it.
 
@@ -788,7 +863,9 @@ def _multitab_plan(
     also fails fast on an unrunnable collector or a rejected argument before the
     run has committed to a browser launch.
     """
-    argv = _multitab_argv(controller, tip_commit, out_dir, control_file, tabs) + ["--dry-run"]
+    argv = _multitab_argv(
+        controller, page, tip_commit, out_dir, control_file, tabs,
+    ) + ["--dry-run"]
     result = subprocess.run(
         argv, cwd=REPO_ROOT, capture_output=True, text=True, check=False,
         timeout=MULTITAB_PLAN_TIMEOUT_SECONDS,
@@ -941,6 +1018,7 @@ def _finalize(
     recovery_facts: list[str],
     captures: list[dict[str, Any]],
     multitab_skipped: bool,
+    page: str,
 ) -> dict[str, Any]:
     """Write outcome.json.
 
@@ -952,6 +1030,11 @@ def _finalize(
     stay directly comparable. `multitabSkipped` distinguishes a run that opted
     out from one recorded before multi-tab existed -- absence of a multi-tab
     record alone would not say which.
+
+    `page` is recorded at the top level as well as inside each capture's page
+    state, so a bundle says which page it measured without anyone reading a
+    resourceSummary to work it out (issue #94; run-39 was read as a wifi.html
+    result when it had measured the dashboard).
     """
     single = _capture_named(captures, "single-tab")
     multitab = _capture_named(captures, "multitab")
@@ -960,6 +1043,7 @@ def _finalize(
         "issue": ISSUE,
         "runId": run_id,
         "status": "COMPLETE",
+        "page": page,
         "primaryOutcome": primary,
         "stopReasons": [arbiter.reason] if arbiter.reason else [],
         "recoveryFacts": recovery_facts,
@@ -1081,7 +1165,7 @@ def _run_capture_phase(
 
 def run_full(args: argparse.Namespace) -> dict[str, Any]:
     """Power-cycle -> serial/ping/status/logs sampling -> 90s settle -> single
-    index.html browser capture -> cooldown -> multi-tab browser capture ->
+    browser capture -> cooldown -> multi-tab browser capture ->
     cooldown -> outcome classification. Mirrors
     tools/issue65_live_ab_runtime.py's execute_run() control flow (that
     sequencing was hardened across #65's own iteration) adapted for one
@@ -1098,6 +1182,7 @@ def run_full(args: argparse.Namespace) -> dict[str, Any]:
     bundle = Bundle(root=evidence_dir, timeline=timeline)
     tip_commit = git_head()
     expected_short_sha = resolve_expected_short_sha(args.expect_firmware)
+    page = resolve_page_profile(args.page)
 
     arbiter = r65.StopArbiter(evidence_dir / "control.json", timeline, bundle.events)
     monitor = r65.MonitorLoop(args.controller, bundle, arbiter)
@@ -1113,7 +1198,7 @@ def run_full(args: argparse.Namespace) -> dict[str, Any]:
         # a bad --multitab-tabs value or an unrunnable collector should cost a
         # command line, not a physical power cycle and a 90-second settle.
         multitab_plan = _multitab_plan(
-            args.controller, tip_commit, evidence_dir / "multitab",
+            args.controller, page, tip_commit, evidence_dir / "multitab",
             evidence_dir / "control.json", args.multitab_tabs,
         )
 
@@ -1122,6 +1207,7 @@ def run_full(args: argparse.Namespace) -> dict[str, Any]:
         tipCommit=tip_commit, devReboot=bool(args.dev_reboot),
         expectedShortSha=expected_short_sha,
         expectFirmwareSpec=args.expect_firmware,
+        page=page["name"], pageProfile=page,
         multitabSkipped=multitab_skipped,
         multitabScenario=(multitab_plan or {}).get("scenario"),
         stage="awaiting-physical-cycle", status="IN_PROGRESS",
@@ -1171,7 +1257,7 @@ def run_full(args: argparse.Namespace) -> dict[str, Any]:
         if arbiter.stopped:
             return _finalize(
                 bundle, arbiter, args.run_id, "UNKNOWN", False, [],
-                captures, multitab_skipped,
+                captures, multitab_skipped, page["name"],
             )
 
         try:
@@ -1204,7 +1290,7 @@ def run_full(args: argparse.Namespace) -> dict[str, Any]:
             if arbiter.stopped:
                 return _finalize(
                     bundle, arbiter, args.run_id, "UNKNOWN", False, [],
-                    captures, multitab_skipped,
+                    captures, multitab_skipped, page["name"],
                 )
             raise
         bundle.write_manifest(
@@ -1226,14 +1312,11 @@ def run_full(args: argparse.Namespace) -> dict[str, Any]:
             captures.append(_run_capture_phase(
                 name="single-tab",
                 stage="browser",
-                announcement="Starting the one visible /index.html browser load.",
-                argv=[
-                    "node", str(BROWSER_COLLECTOR),
-                    "--url", f"http://{args.controller}/index.html",
-                    "--commit", tip_commit,
-                    "--out", str(evidence_dir / "browser"),
-                    "--control-file", str(evidence_dir / "control.json"),
-                ],
+                announcement=f"Starting the one visible {page['path']} browser load.",
+                argv=_browser_argv(
+                    args.controller, page, tip_commit, evidence_dir / "browser",
+                    evidence_dir / "control.json",
+                ),
                 log_path=evidence_dir / "browser.log",
                 state_path=evidence_dir / "browser" / "page-state.json",
                 ownership_deadline_seconds=BROWSER_CAPTURE_OWNERSHIP_DEADLINE_SECONDS,
@@ -1246,11 +1329,11 @@ def run_full(args: argparse.Namespace) -> dict[str, Any]:
                 name="multitab",
                 stage="multitab",
                 announcement=(
-                    f"Starting the multi-tab browser load "
+                    f"Starting the multi-tab {page['path']} browser load "
                     f"({scenario['steadyTabs']} steady tabs, peak {scenario['peakTabs']})."
                 ),
                 argv=_multitab_argv(
-                    args.controller, tip_commit, evidence_dir / "multitab",
+                    args.controller, page, tip_commit, evidence_dir / "multitab",
                     evidence_dir / "control.json", args.multitab_tabs,
                 ),
                 log_path=evidence_dir / "multitab.log",
@@ -1292,7 +1375,7 @@ def run_full(args: argparse.Namespace) -> dict[str, Any]:
 
         return _finalize(
             bundle, arbiter, args.run_id, primary, status_reachable,
-            recovery_facts, captures, multitab_skipped,
+            recovery_facts, captures, multitab_skipped, page["name"],
         )
     except KeyboardInterrupt:
         if arbiter is not None:
