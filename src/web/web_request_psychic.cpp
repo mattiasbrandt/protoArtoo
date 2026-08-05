@@ -100,7 +100,14 @@ esp_err_t (*s_vendorOpenFn)(httpd_handle_t, int) = nullptr;
 size_t sampleLargestFreeBlock(void*) {
     const uint32_t nowMs = millis();
     if (webHeapSampleDue(&s_heapSample, nowMs, PA_ACCEPT_HEAP_SAMPLE_MIN_INTERVAL_MS)) {
-        webHeapSampleStore(&s_heapSample, nowMs, heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+        const size_t largest = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+        webHeapSampleStore(&s_heapSample, nowMs, largest);
+        // The low-water mark the guard itself observed. /api/status reports
+        // the resting value, which by definition is never the one that caused
+        // a refusal, so without this the depth of a transient dip is invisible.
+        if ((uint32_t)largest < g_webAcceptMinLargestBlockSeen) {
+            g_webAcceptMinLargestBlockSeen = (uint32_t)largest;
+        }
     }
     return s_heapSample.value;
 }
@@ -132,6 +139,11 @@ esp_err_t admissionOpenCallback(httpd_handle_t hd, int sockfd) {
     if (decision == WebAcceptDecision::kRejectHeap) {
         g_webAcceptRejectHeap = g_webAcceptRejectHeap + 1u;
         g_webAcceptRejectLastMs = nowMs;
+        // The reading the decision actually used, which is the cached sample
+        // and may be up to one interval old -- so a burst can be shed on one
+        // pessimistic sample. Publishing it makes that visible rather than
+        // leaving a bare refusal count to be argued over.
+        g_webAcceptRejectLargestBlock = (uint32_t)s_heapSample.value;
         return ESP_FAIL;
     }
 

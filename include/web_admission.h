@@ -148,6 +148,13 @@ extern volatile uint32_t g_webAcceptRejectHeap;
 extern volatile uint32_t g_webAcceptRejectRate;
 extern volatile uint32_t g_webAcceptRejectLastMs;
 
+// The largest-free-block reading that caused the most recent heap rejection,
+// and the lowest one ever seen by the guard. A refusal count alone says the
+// floor was crossed but not by how far, which is exactly the evidence needed
+// before anyone is allowed to argue about where the floor belongs.
+extern volatile uint32_t g_webAcceptRejectLargestBlock;
+extern volatile uint32_t g_webAcceptMinLargestBlockSeen;
+
 // Cost of the Connection Admission guard itself, in microseconds. Always on:
 // the guard's affordability is an acceptance condition of the stack it runs
 // on, not a one-off measurement, so it stays visible in every run.

@@ -110,6 +110,18 @@ The accepted trade-off is staleness: within a 100 ms window the value can be
 pessimistic, shedding connections briefly after heap has already recovered.
 The accept pacing bounds how many connections that can affect.
 
+That trade-off was initially suspected of causing the shedding observed under
+burst load, on the theory that one pessimistic sample could shed a whole
+window. Measurement refuted it, which is why the guard also publishes the
+reading that caused each refusal (`acceptRejectLargestBlock`) and the lowest
+reading it has ever taken (`acceptMinLargestBlockSeen`). Under a six-connection
+burst the largest free block genuinely fell to **7412 bytes** -- below the 8500
+accept floor -- and the refusal was taken on that real value, not a stale one.
+A refusal count alone could not have distinguished the two, and the difference
+decides whether the floor or the sampling interval is the thing to argue about.
+Nothing was retuned on this evidence; recording it is what #52's out-of-scope
+rule requires before anyone may.
+
 ## The counters keep their old names on purpose
 
 The C++ symbols are project-owned and outlive the vendor patch that defined

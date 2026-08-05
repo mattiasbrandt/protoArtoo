@@ -56,6 +56,8 @@ bool pathMatches(const char* path, const char* prefix) {
 volatile uint32_t g_webAcceptRejectHeap = 0;
 volatile uint32_t g_webAcceptRejectRate = 0;
 volatile uint32_t g_webAcceptRejectLastMs = 0;
+volatile uint32_t g_webAcceptRejectLargestBlock = 0;
+volatile uint32_t g_webAcceptMinLargestBlockSeen = UINT32_MAX;
 
 volatile uint32_t g_webAcceptGuardLastUs = 0;
 volatile uint32_t g_webAcceptGuardMaxUs = 0;
