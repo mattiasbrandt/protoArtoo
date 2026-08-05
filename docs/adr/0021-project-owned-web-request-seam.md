@@ -67,6 +67,28 @@ This is scaffolding, not the coexistence #53 rejected. **The cutover slice
 `tools/patch_async_sse.py`, and makes the psychic backend the only one.**
 Nothing in epic #75 is complete until the async implementation is gone.
 
+### What "no vendor type in a handler file" means mid-migration
+
+The rule above describes a *ported route*, not a whole file. Route groups
+convert one at a time, and a file can hold routes from more than one group --
+`api_config.cpp` holds the config read (#79) and the config/rc-map/wifi writes
+(a later slice). While that is true, the file still names
+`AsyncWebServerRequest` in the registration block for its unported routes.
+
+The invariant that actually binds during the migration: a route ported to the
+seam is a `void(WebRequest&)` function that names no vendor type, and it is
+bound by the seam route table, never by a per-backend `server.on()` call. Once
+a file's last group converts, the vendor type leaves it for good, and #91
+removes the async registration blocks entirely.
+
+Ported handlers whose enclosing file cannot compile for `[env:native]` -- the
+host tests drive handlers directly, so the translation unit has to build
+without a web server, FreeRTOS or RC dispatch -- move to a file that can
+(`api_logs.cpp`, `api_actions_json.cpp`). That split is for host-testability;
+a file already in the native build (`api_config.cpp`) does not need it, and
+splitting a handler away from the pure serializer it calls would cost more
+than it buys.
+
 ## Abort condition for the migration (#75 open question 2)
 
 Settled before any ported-stack measurement exists, so the threshold cannot be

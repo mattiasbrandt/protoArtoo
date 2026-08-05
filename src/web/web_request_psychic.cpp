@@ -138,6 +138,14 @@ void initPsychicWebServer() {
     s_server.config.max_open_sockets = 10;
     s_server.config.stack_size = 8192;
 
+    // PsychicHttp leaves HTTPD_DEFAULT_CONFIG()'s core_id at tskNO_AFFINITY,
+    // which would let the server task -- and with it every handler's JSON
+    // serialization and LittleFS read -- be scheduled onto core 1, where the
+    // 50 Hz drive and RC loops run. Web work belongs on core 0 (AGENTS.md:
+    // core 1 real-time loops avoid heap allocation, core 0 web handlers may
+    // allocate bounded per-request documents), so pin it.
+    s_server.config.core_id = 0;
+
     webRegisterSeamRoutes();
 
     // Endpoints registered above win: serveStatic() installs a global handler,
