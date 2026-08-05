@@ -20,6 +20,17 @@ earlier stages are verified against the live controller).
 land in outcome.json's `captures` list in the same shape, so a comparison run
 is one harness invocation rather than a scripted capture plus a hand-driven
 one.
+
+--stage full still requires a real physical power cycle -- resetReason ==
+POWERON is only reachable by removing power, and a deterministic cold heap is
+what every cooldown verdict is measured against. It does not require anyone to
+be at the terminal: the gate is serial evidence of USB disappearing and
+re-enumerating, not a typed confirmation, so the stage runs headless and the
+cable can be pulled any time within --cycle-wait-seconds.
+
+The build under test is --expect-firmware (default: local HEAD). Pin it when
+measuring a firmware other than the current tip -- an A/B across a migration
+needs one checkout of this harness to measure two different firmwares.
 """
 from __future__ import annotations
 
@@ -50,6 +61,13 @@ MULTITAB_COLLECTOR = REPO_ROOT / "tools" / "webload_multitab_capture.js"
 # third tab when only the steady-state pair is wanted.
 MULTITAB_DEFAULT_TABS = 3
 MULTITAB_TAB_CHOICES = (2, 3)
+# The operator has to walk to the droid and pull a cable, so the window is
+# generous. Nothing is consumed by waiting: the run samples nothing that
+# matters until the cycle is observed.
+CYCLE_WAIT_SECONDS = 600.0
+# Re-enumeration is mechanical once power is back, so it stays tight.
+CYCLE_REENUMERATE_SECONDS = 30.0
+CYCLE_PROGRESS_INTERVAL_SECONDS = 15.0
 BASELINE_ANCESTOR_SHA = "4b239ff2e215f265151fe5523b6fbcd8320dca7e"
 DEFAULT_CONTROLLER = "10.0.0.22"
 DEFAULT_SERIAL_PORT = (
@@ -91,6 +109,32 @@ def build_parser() -> argparse.ArgumentParser:
         help="run make ota-chirp even if /api/identity already matches the local tip",
     )
     parser.add_argument(
+        "--expect-firmware",
+        default=None,
+        metavar="REV_OR_VERSION",
+        help=(
+            "which build the controller is expected to be running: a git rev, a bare "
+            "short/full SHA, or a whole firmwareVersion string to copy-paste (default: "
+            "local HEAD). The identity gate exists to stop you measuring a stale flash, "
+            "but pinning it to HEAD means any commit invalidates it -- including commits "
+            "that touch only tooling or web assets, and including this harness's own. It "
+            "also blocks the thing a migration comparison needs: measuring two different "
+            "firmwares from one checkout of the harness. Pass the build under test and "
+            "unrelated commits stop mattering."
+        ),
+    )
+    parser.add_argument(
+        "--cycle-wait-seconds",
+        type=float,
+        default=CYCLE_WAIT_SECONDS,
+        help=(
+            f"how long to wait for the operator's physical power cycle (default: "
+            f"{CYCLE_WAIT_SECONDS:.0f}s). The run gates on serial evidence of the cycle, "
+            "not on a typed confirmation, so it needs no TTY and the cable can be pulled "
+            "whenever within this window."
+        ),
+    )
+    parser.add_argument(
         "--multitab-tabs",
         type=int,
         choices=MULTITAB_TAB_CHOICES,
@@ -115,7 +159,8 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help=(
             "harness-development iterations ONLY: try POST /api/reboot instead of a "
-            "physical power cycle (falls back to a manual-replug prompt if unresponsive). "
+            "physical power cycle (falls back to waiting for a manual replug if "
+            "unresponsive). "
             "Never valid for an accepted run-1/run-2 evidence bundle -- the ticket's "
             "Power-Cycle Recovery vocabulary and comparability to #65 both depend on a "
             "real physical power cycle."
@@ -218,7 +263,36 @@ def local_head_short_sha() -> str:
     return result.stdout.strip()
 
 
-def version_matches_head(version_string: str | None, head_short_sha: str) -> bool:
+def resolve_expected_short_sha(spec: str | None) -> str:
+    """Turn --expect-firmware into the short SHA the identity gate compares against.
+
+    Accepts a git rev (branch, tag, HEAD~3, full SHA), a bare short SHA that
+    need not exist in this checkout, or a whole firmwareVersion string copied
+    from /api/status -- the last so an operator can paste what the device
+    reports and pin exactly that, without hand-extracting the token.
+    """
+    if spec is None:
+        return local_head_short_sha()
+    embedded = VERSION_SHORT_SHA_RE.search(spec)
+    if embedded:
+        return embedded.group(1)[:7]
+    result = subprocess.run(
+        ["git", "-C", str(REPO_ROOT), "rev-parse", "--short=7", f"{spec}^{{commit}}"],
+        capture_output=True, text=True, check=False, timeout=5,
+    )
+    if result.returncode == 0:
+        return result.stdout.strip()
+    if re.fullmatch(r"[0-9a-f]{7,40}", spec):
+        # A commit this checkout does not have. Pinning it is still meaningful:
+        # the gate only ever compares the token the device reports.
+        return spec[:7]
+    raise BaselineRunError(
+        f"--expect-firmware {spec!r} is not a git rev this checkout knows, a hex SHA, "
+        "or a version string containing a -g<sha> token"
+    )
+
+
+def version_matches_expected(version_string: str | None, expected_short_sha: str) -> bool:
     """Compare by the git short-SHA embedded in a `git describe` version string.
 
     data/fw-version.json as committed is a stale snapshot from whenever it was
@@ -233,18 +307,23 @@ def version_matches_head(version_string: str | None, head_short_sha: str) -> boo
     match = VERSION_SHORT_SHA_RE.search(version_string)
     if not match:
         return False
-    return match.group(1).startswith(head_short_sha) or head_short_sha.startswith(match.group(1))
+    return (
+        match.group(1).startswith(expected_short_sha)
+        or expected_short_sha.startswith(match.group(1))
+    )
 
 
 def run_identity_check(args: argparse.Namespace) -> dict[str, Any]:
-    """Compare the device's running firmware identity against the local tip.
+    """Compare the device's running firmware identity against the build under test.
 
     Read-only: one GET /api/status (firmwareVersion/fsVersion/resetReason live
     there, not on /api/identity — /api/identity only carries droidName/
     mdnsUseName) plus one GET /api/identity for droidName. No writes. Answers
     whether run_build needs to flash before the baseline capture proceeds.
+
+    The build under test is --expect-firmware, defaulting to local HEAD.
     """
-    head_sha = local_head_short_sha()
+    head_sha = resolve_expected_short_sha(getattr(args, "expect_firmware", None))
     origin = f"http://{args.controller}"
     try:
         status = r65._http_json(f"{origin}/api/status", timeout_seconds=3.0)
@@ -260,7 +339,7 @@ def run_identity_check(args: argparse.Namespace) -> dict[str, Any]:
             "buildRequired": True,
         }
     running_version = status.get("firmwareVersion")
-    matches = version_matches_head(running_version, head_sha)
+    matches = version_matches_expected(running_version, head_sha)
     return {
         "schemaVersion": 1,
         "issue": ISSUE,
@@ -268,7 +347,9 @@ def run_identity_check(args: argparse.Namespace) -> dict[str, Any]:
         "runId": args.run_id,
         "reachable": True,
         "controller": args.controller,
-        "localHeadShortSha": head_sha,
+        "expectedShortSha": head_sha,
+        "expectFirmwareSpec": getattr(args, "expect_firmware", None),
+        "localHeadShortSha": local_head_short_sha(),
         "runningFirmwareVersion": running_version,
         "matches": matches,
         "buildRequired": not matches,
@@ -716,15 +797,94 @@ def _multitab_plan(
     return plan
 
 
-def _attempt_power_cycle_recovery(controller: str, bundle: Bundle) -> bool:
+def _wait_for_event(
+    event: threading.Event,
+    timeout_seconds: float,
+    arbiter: "r65.StopArbiter",
+    waiting_for: str,
+) -> bool:
+    """Wait on a serial event, printing progress so an unattended run is legible."""
+    deadline = time.monotonic() + timeout_seconds
+    next_notice = time.monotonic() + CYCLE_PROGRESS_INTERVAL_SECONDS
+    while time.monotonic() < deadline:
+        if event.wait(0.25):
+            return True
+        if arbiter.stopped:
+            return False
+        now = time.monotonic()
+        if now >= next_notice:
+            print(
+                f"  still waiting for {waiting_for} "
+                f"({deadline - now:.0f}s left)",
+                flush=True,
+            )
+            next_notice = now + CYCLE_PROGRESS_INTERVAL_SECONDS
+    return event.is_set()
+
+
+def _await_physical_power_cycle(
+    serial: "ScopedSerialWatcher",
+    arbiter: "r65.StopArbiter",
+    run_id: str,
+    wait_seconds: float,
+    banner: str,
+) -> None:
+    """Block until serial evidence shows the controller was actually power-cycled.
+
+    The run used to gate on the operator typing CYCLED <run-id>, which forced
+    every accepted run to hold an interactive TTY for the whole cycle -- so the
+    stage could not be driven headless, and an agent could not produce evidence
+    at all without a human sitting at the same terminal.
+
+    The typed confirmation never added information. The serial watcher already
+    observes USB disappearing and re-enumerating, and the identity gate below
+    still requires resetReason == POWERON, which only real power removal
+    produces. Gating on that evidence instead is both headless and stricter: it
+    cannot be satisfied by someone typing the words without pulling the cable.
+    """
+    print(banner, flush=True)
+    if not _wait_for_event(
+        serial.disconnected_after_connect, wait_seconds, arbiter,
+        "the controller's USB to disappear",
+    ):
+        if arbiter.stopped:
+            return
+        raise BaselineRunError(
+            f"no power cycle observed within {wait_seconds:.0f}s: serial evidence "
+            f"never showed {run_id}'s controller USB disappearing"
+        )
+    print("  USB disappeared; waiting for the controller to come back.", flush=True)
+    if not _wait_for_event(
+        serial.reconnected, CYCLE_REENUMERATE_SECONDS, arbiter,
+        "the controller's USB to re-enumerate",
+    ):
+        if arbiter.stopped:
+            return
+        raise BaselineRunError(
+            "serial evidence did not observe USB re-enumeration after power cycle"
+        )
+    print("  Controller re-enumerated; verifying firmware identity.", flush=True)
+
+
+def _attempt_power_cycle_recovery(
+    controller: str, bundle: Bundle, wait_seconds: float,
+) -> bool:
+    """Record whether a physical power cycle brings the controller back.
+
+    Like the run-start cycle, this no longer waits on a typed confirmation. It
+    polls /api/status for the whole window, so the operator can pull the cable
+    whenever they get to it and the recovery fact is established by the
+    controller answering again -- which is the actual evidence -- rather than
+    by someone asserting they replugged.
+    """
     print(
         "\nHTTP Blackout is confirmed. Browser and status-monitor traffic are stopped.\n"
-        "Physically unplug USB power, wait until fully unpowered, reconnect it,\n"
-        "then type RECOVER and press Enter.",
+        "Physically unplug USB power, wait until fully unpowered, then reconnect it.\n"
+        f"Polling /api/status for up to {wait_seconds:.0f}s; no confirmation needed.",
         flush=True,
     )
-    r65._prompt_exact("Recovery confirmation: ", "RECOVER")
-    deadline = time.monotonic() + 30.0
+    deadline = time.monotonic() + wait_seconds
+    next_notice = time.monotonic() + CYCLE_PROGRESS_INTERVAL_SECONDS
     while time.monotonic() < deadline:
         try:
             status = r65._http_json(
@@ -739,6 +899,14 @@ def _attempt_power_cycle_recovery(controller: str, bundle: Bundle) -> bool:
         )
         if success:
             return True
+        now = time.monotonic()
+        if now >= next_notice:
+            print(
+                f"  still waiting for the controller to answer "
+                f"({deadline - now:.0f}s left)",
+                flush=True,
+            )
+            next_notice = now + CYCLE_PROGRESS_INTERVAL_SECONDS
         time.sleep(2.0)
     return False
 
@@ -915,7 +1083,7 @@ def run_full(args: argparse.Namespace) -> dict[str, Any]:
     timeline = r65.Timeline.start()
     bundle = Bundle(root=evidence_dir, timeline=timeline)
     tip_commit = git_head()
-    head_short_sha = local_head_short_sha()
+    expected_short_sha = resolve_expected_short_sha(args.expect_firmware)
 
     arbiter = r65.StopArbiter(evidence_dir / "control.json", timeline, bundle.events)
     monitor = r65.MonitorLoop(args.controller, bundle, arbiter)
@@ -938,6 +1106,8 @@ def run_full(args: argparse.Namespace) -> dict[str, Any]:
     bundle.write_manifest(
         runId=args.run_id, controller=args.controller, serialPort=args.serial_port,
         tipCommit=tip_commit, devReboot=bool(args.dev_reboot),
+        expectedShortSha=expected_short_sha,
+        expectFirmwareSpec=args.expect_firmware,
         multitabSkipped=multitab_skipped,
         multitabScenario=(multitab_plan or {}).get("scenario"),
         stage="awaiting-physical-cycle", status="IN_PROGRESS",
@@ -961,44 +1131,21 @@ def run_full(args: argparse.Namespace) -> dict[str, Any]:
                 flush=True,
             )
             if not _try_api_reboot(args.controller):
-                print(
-                    "POST /api/reboot unresponsive -- physically replug USB now.",
-                    flush=True,
-                )
-                r65._prompt_exact(
-                    "Physical-cycle confirmation: ", f"CYCLED {args.run_id}",
+                _await_physical_power_cycle(
+                    serial, arbiter, args.run_id, args.cycle_wait_seconds,
+                    "POST /api/reboot unresponsive -- physically replug the controller "
+                    "USB cable. Waiting for serial evidence of the cycle.",
                 )
         else:
-            print(
-                "\nThis is an ACCEPTED EVIDENCE RUN. Physically unplug the controller "
-                "USB power cable, wait until fully unpowered, reconnect the same cable, "
-                f"then type CYCLED {args.run_id} and press Enter.",
-                flush=True,
+            _await_physical_power_cycle(
+                serial, arbiter, args.run_id, args.cycle_wait_seconds,
+                f"\nThis is an ACCEPTED EVIDENCE RUN ({args.run_id}). Physically unplug "
+                "the controller USB power cable, wait until fully unpowered, then "
+                "reconnect the same cable.\n"
+                f"No confirmation to type: the run gates on serial evidence of the "
+                f"cycle and waits up to {args.cycle_wait_seconds:.0f}s.",
             )
-            r65._prompt_exact("Physical-cycle confirmation: ", f"CYCLED {args.run_id}")
 
-        if not r65._wait_for(
-            lambda: serial.disconnected_after_connect.is_set(), 10.0, arbiter=arbiter,
-        ):
-            if arbiter.stopped:
-                return _finalize(
-                    bundle, arbiter, args.run_id, "UNKNOWN", False, [],
-                    captures, multitab_skipped,
-                )
-            raise BaselineRunError(
-                "serial evidence did not observe USB disappearance during power cycle"
-            )
-        if not r65._wait_for(
-            lambda: serial.reconnected.is_set(), 20.0, arbiter=arbiter,
-        ):
-            if arbiter.stopped:
-                return _finalize(
-                    bundle, arbiter, args.run_id, "UNKNOWN", False, [],
-                    captures, multitab_skipped,
-                )
-            raise BaselineRunError(
-                "serial evidence did not observe USB re-enumeration after power cycle"
-            )
         if arbiter.stopped:
             return _finalize(
                 bundle, arbiter, args.run_id, "UNKNOWN", False, [],
@@ -1008,7 +1155,7 @@ def run_full(args: argparse.Namespace) -> dict[str, Any]:
         try:
             fresh_status = monitor.wait_for_status(
                 lambda status: (
-                    version_matches_head(status.get("firmwareVersion"), head_short_sha)
+                    version_matches_expected(status.get("firmwareVersion"), expected_short_sha)
                     and status.get("resetReason") == "POWERON"
                 ),
                 60.0,
@@ -1098,7 +1245,9 @@ def run_full(args: argparse.Namespace) -> dict[str, Any]:
             monitor.stop()
             monitor.join()
             monitor_started = False
-            if _attempt_power_cycle_recovery(args.controller, bundle):
+            if _attempt_power_cycle_recovery(
+                args.controller, bundle, args.cycle_wait_seconds,
+            ):
                 recovery_facts.append("Power-Cycle Recovery")
 
         return _finalize(
@@ -1162,12 +1311,9 @@ def main(argv: list[str]) -> int:
                 report = run_build(args, evidence_dir)
                 report["identityBeforeBuild"] = identity_report
         elif args.stage == "full":
-            if not sys.stdin.isatty() or not sys.stdout.isatty():
-                sys.stderr.write(
-                    "ERROR: --stage full requires an interactive TTY for the "
-                    "physical-cycle operator gate\n"
-                )
-                return 2
+            # No TTY requirement: the physical-cycle gate is serial evidence, not
+            # a typed confirmation, so the stage runs headless and the operator
+            # can pull the cable whenever within --cycle-wait-seconds.
             report = run_full(args)
         else:
             raise BaselineRunError(f"unknown stage: {args.stage}")
