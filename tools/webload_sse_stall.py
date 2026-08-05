@@ -69,7 +69,102 @@ def build_parser() -> argparse.ArgumentParser:
             "(e.g. WiFi roam) rather than a tab that wakes back up."
         ),
     )
+    parser.add_argument(
+        "--healthy-clients", type=int, default=0,
+        help=(
+            "additional SSE clients that keep reading normally throughout the "
+            "stall. Issue #83 asks whether the broadcaster keeps serving other "
+            "clients while one is being evicted, and a run with only the "
+            "stalled client cannot answer that: a broadcaster frozen for the "
+            "whole window and one that never froze look identical from "
+            "/api/status alone. Each of these counts the events it actually "
+            "received, so a gap in service becomes a number."
+        ),
+    )
     return parser
+
+
+class HealthyClient:
+    """An ordinary SSE subscriber that keeps draining its socket for the whole
+    stall window, counting the events it receives.
+
+    This is the control the stalled client is measured against. Its event count
+    over a 90s window at 1 Hz is the direct evidence for "the broadcaster
+    continues serving other clients uninterrupted": a broadcaster held by the
+    stalled peer would starve this one at the same time."""
+
+    def __init__(self, index: int, controller: str, port: int, path: str) -> None:
+        self.index = index
+        self.controller = controller
+        self.port = port
+        self.path = path
+        self.socket: socket.socket | None = None
+        self.event_count = 0
+        self.byte_count = 0
+        self.first_event_monotonic: float | None = None
+        self.last_event_monotonic: float | None = None
+        self.max_gap_seconds = 0.0
+        self.error: str | None = None
+        self._stop = threading.Event()
+        self._thread = threading.Thread(
+            target=self._run, name=f"sse-healthy-{index}", daemon=True,
+        )
+
+    def connect(self, timeline: r65.Timeline) -> dict[str, Any]:
+        self.socket, record = _open_sse_connection(
+            self.controller, self.port, self.path, timeline,
+        )
+        return record
+
+    def start(self) -> None:
+        self._thread.start()
+
+    def _run(self) -> None:
+        assert self.socket is not None
+        self.socket.settimeout(0.5)
+        while not self._stop.is_set():
+            try:
+                chunk = self.socket.recv(65536)
+            except (TimeoutError, socket.timeout):
+                continue
+            except OSError as error:
+                self.error = str(error)
+                return
+            if not chunk:
+                self.error = "server closed the stream"
+                return
+            now = time.monotonic()
+            self.byte_count += len(chunk)
+            # Each SSE event ends in a blank line. Counting terminators rather
+            # than recv() calls keeps the number meaningful regardless of how
+            # TCP happened to segment the stream.
+            events = chunk.count(b"\r\n\r\n")
+            if events == 0:
+                continue
+            self.event_count += events
+            if self.first_event_monotonic is None:
+                self.first_event_monotonic = now
+            elif self.last_event_monotonic is not None:
+                # The longest silence this client saw. A broadcaster frozen on
+                # the stalled peer shows up here as a gap, even if the total
+                # count still looks healthy once it resumes.
+                self.max_gap_seconds = max(
+                    self.max_gap_seconds, now - self.last_event_monotonic,
+                )
+            self.last_event_monotonic = now
+
+    def stop_and_join(self, timeout: float = 5.0) -> dict[str, Any]:
+        self._stop.set()
+        self._thread.join(timeout)
+        if self.socket is not None:
+            self.socket.close()
+        return {
+            "index": self.index,
+            "eventCount": self.event_count,
+            "byteCount": self.byte_count,
+            "maxGapSeconds": round(self.max_gap_seconds, 3),
+            "error": self.error,
+        }
 
 
 def _open_sse_connection(
@@ -172,6 +267,15 @@ class StatusSampler:
             heapLargest8bit=(status or {}).get("heapLargest8bit"),
             sseClients=(status or {}).get("sseClients"),
             uptimeMs=(status or {}).get("uptimeMs"),
+            # Issue #83's guard publishes its own work. Without these the run
+            # says only "heap held", which is also what a run where nothing
+            # ever stalled looks like -- the eviction count is what separates
+            # "the deadline fired" from "the scenario did not reproduce".
+            # Absent on any firmware predating that guard, and recorded as
+            # None rather than 0 so a missing field cannot read as "no
+            # evictions".
+            sseEvicted=(status or {}).get("sseEvicted"),
+            refusedSseCap=(status or {}).get("refusedSseCap"),
         )
         self.samples.append(record)
 
@@ -205,12 +309,26 @@ def _summarize_samples(samples: list[dict[str, Any]]) -> dict[str, Any]:
         s["heapLargest8bit"] for s in reachable
         if isinstance(s.get("heapLargest8bit"), int)
     ]
+    free_values = [
+        s["heapFree"] for s in reachable if isinstance(s.get("heapFree"), int)
+    ]
+    evicted = [s["sseEvicted"] for s in reachable if isinstance(s.get("sseEvicted"), int)]
     return {
         "sampleCount": len(samples),
         "unreachableCount": unreachable_count,
         "deviceResetDetected": device_reset_detected,
         "heapLargest8bitMin": min(heap_values) if heap_values else None,
         "heapLargest8bitMax": max(heap_values) if heap_values else None,
+        # #73 scored the slide on heapFree (58.7K -> 53.5K), so the comparable
+        # numbers have to be first/last of that same field rather than a min
+        # and a max, which cannot tell a monotonic slide from a transient dip.
+        "heapFreeFirst": free_values[0] if free_values else None,
+        "heapFreeLast": free_values[-1] if free_values else None,
+        "heapFreeDelta": (free_values[-1] - free_values[0]) if free_values else None,
+        # None when the firmware does not publish the counter at all, which is
+        # a different statement from "it published zero".
+        "sseEvictedFirst": evicted[0] if evicted else None,
+        "sseEvictedLast": evicted[-1] if evicted else None,
     }
 
 
@@ -239,6 +357,19 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     timeline = r65.Timeline.start()
     events: list[dict[str, Any]] = []
 
+    # Healthy clients first, so they are already subscribed and reading before
+    # the stalled one exists. Connecting them afterwards would leave it
+    # ambiguous whether they were being served during the stall or only after
+    # the eviction had already cleared it.
+    healthy: list[HealthyClient] = []
+    for index in range(max(0, args.healthy_clients)):
+        client = HealthyClient(index, args.controller, args.port, args.path)
+        events.append(client.connect(timeline))
+        client.start()
+        healthy.append(client)
+    if healthy:
+        print(f"{len(healthy)} healthy SSE client(s) connected and reading")
+
     sock, connect_record = _open_sse_connection(args.controller, args.port, args.path, timeline)
     events.append(connect_record)
     print(f"SSE connected ({connect_record['statusLine']}); starting {args.stall_seconds:.0f}s stall...")
@@ -266,6 +397,10 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     sock.close()
     events.append(timeline.record("sse-socket-closed", endMode=args.end_mode))
 
+    healthy_results = [client.stop_and_join() for client in healthy]
+    if healthy_results:
+        events.append(timeline.record("healthy-clients-stopped", clients=healthy_results))
+
     summary = _summarize_samples(sampler.samples)
     outcome = {
         "schemaVersion": 1,
@@ -279,6 +414,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "endMode": args.end_mode,
         "drainedByteCount": drained_bytes,
         "drainedRecvCallCount": drained_calls,
+        "healthyClients": healthy_results,
         **summary,
     }
     r65.atomic_write_json(run_dir / "outcome.json", outcome)
@@ -300,7 +436,11 @@ def main(argv: list[str]) -> int:
         f"unreachable={outcome['unreachableCount']} "
         f"deviceResetDetected={outcome['deviceResetDetected']} "
         f"heapLargest8bit(min/max)={outcome['heapLargest8bitMin']}/{outcome['heapLargest8bitMax']} "
+        f"heapFree(first->last)={outcome['heapFreeFirst']}->{outcome['heapFreeLast']} "
+        f"(delta {outcome['heapFreeDelta']}) "
+        f"sseEvicted={outcome['sseEvictedFirst']}->{outcome['sseEvictedLast']} "
         f"drained={outcome['drainedByteCount']}B in {outcome['drainedRecvCallCount']} calls\n"
+        f"healthy={outcome['healthyClients']}\n"
         f"Evidence: tasks/evidence/webload/{args.run_id}/sse-stall/"
     )
     return 0
