@@ -222,7 +222,11 @@ void handleSeqPost(WebRequest& req) {
     if (body == nullptr) {
         return;
     }
-    const size_t len = strlen(body);
+    // The declared length, not strlen(): the backend buffers exactly
+    // contentLength() bytes, and measuring the buffer instead would silently
+    // truncate at an embedded NUL -- the HTTP layer's byte count is the one
+    // the store must persist.
+    const size_t len = req.contentLength();
     ProtocolCheckResult r = seqStoreSave(body, len);
     if (!r.ok) {
         sendCheckError(req, r);
