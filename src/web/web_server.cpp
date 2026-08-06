@@ -23,7 +23,6 @@
 
 #include "../../include/api_actions.h"
 #include "../../include/api_profiler.h"
-#include "../../include/api_audio.h"
 #include "../../include/api_config.h"
 #include "../../include/drive_speed_preset.h"
 #include "../../include/api_helpers.h"
@@ -1362,8 +1361,6 @@ void startHttpServerOnce() {
         webRequestAsyncAttach(server);
         webRegisterSeamRoutes();
 
-        registerMoodMapRoutes(server);
-        registerAudioRoutes(server);
         registerStatusRoutes(server);
 #if PA_HEAP_PROFILE
         registerProfilerRoutes(server);
