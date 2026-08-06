@@ -14,6 +14,19 @@
 
 #include "drive_speed_preset.h"
 // -----------------------------------------------------------------------------
+// trimAsciiWhitespace()
+// Strip leading and trailing spaces, tabs, CR and LF from a null-terminated
+// string, in place. Handlers that used to receive an Arduino String and call
+// String::trim() need this once they take copied-out C strings across the
+// WebRequest seam (ADR 0021), and more than one of them does -- a name or
+// token that only differs by a stray space has to keep reaching validation as
+// the same value it did before.
+// params: s — null-terminated string, modified in place (must not be null)
+// thread-safe: yes (pure function, no globals)
+// -----------------------------------------------------------------------------
+void trimAsciiWhitespace(char* s);
+
+// -----------------------------------------------------------------------------
 // parseDriveValue()
 // Parse a null-terminated decimal integer string into an int16_t.
 // Accepts negative values. Rejects empty strings, non-numeric input, and

@@ -30,18 +30,12 @@ AsyncWebServerRequest* asyncReq(void* backend) {
     return static_cast<AsyncWebServerRequest*>(backend);
 }
 
-// POST handlers read form-body parameters, GET handlers read the query
-// string -- the same split the handlers expressed directly against the
+// POST handlers read form-body parameters, GET and DELETE handlers read the
+// query string -- the same split the handlers expressed directly against the
 // vendor API before this seam existed.
 bool isPostParam(AsyncWebServerRequest* req) {
     return req->method() == HTTP_POST;
 }
-
-// Ceiling on a buffered raw body. Above the largest any seam POST route
-// legitimately carries -- GET /api/config serializes to 1341 bytes on the
-// device and its POST counterpart is the same shape -- and low enough that a
-// hostile Content-Length cannot turn into a large allocation.
-constexpr size_t kMaxRawBodyBytes = 4096;
 
 // Buffers a non-form request body so WebRequest::body() has something to hand
 // back, because this library will not do it for us: an application/json body
@@ -60,13 +54,13 @@ constexpr size_t kMaxRawBodyBytes = 4096;
 // the response belongs to the handler that runs after the body, and it reads a
 // null body as a malformed one. Sending here would answer the request twice.
 void accumulateRawBody(AsyncWebServerRequest* req, uint8_t* data, size_t len, size_t index,
-                       size_t total) {
+                       size_t total, size_t maxBytes) {
     if (index == 0) {
         req->_tempObject = nullptr;
-        if (total == 0 || total > kMaxRawBodyBytes) {
-            if (total > kMaxRawBodyBytes) {
+        if (total == 0 || total > maxBytes) {
+            if (total > maxBytes) {
                 PA_LOG_WARN("WebServer", "raw body of %u bytes exceeds %u; dropped",
-                            (unsigned)total, (unsigned)kMaxRawBodyBytes);
+                            (unsigned)total, (unsigned)maxBytes);
             }
             return;
         }
@@ -247,12 +241,16 @@ bool WebRequest::beginEventStream() {
     return false;
 }
 
-void webRegisterRoute(const char* path, WebMethod method, WebRequestHandler handler) {
+void webRegisterRoute(const char* path, WebMethod method, WebRequestHandler handler,
+                      size_t maxBodyBytes) {
     if (s_server == nullptr) {
         return;
     }
-    const WebRequestMethod vendorMethod = (method == WebMethod::kPost) ? HTTP_POST : HTTP_GET;
-    if (method == WebMethod::kGet) {
+    if (method != WebMethod::kPost) {
+        // GET and DELETE carry no body worth buffering, so they need no body
+        // handler and their parameters come from the query string.
+        const WebRequestMethod vendorMethod =
+            (method == WebMethod::kDelete) ? HTTP_DELETE : HTTP_GET;
         s_server->on(path, vendorMethod, [handler](AsyncWebServerRequest* vendorReq) {
             WebRequest req(vendorReq);
             handler(req);
@@ -266,14 +264,16 @@ void webRegisterRoute(const char* path, WebMethod method, WebRequestHandler hand
     // starts reading one later would otherwise fail in a way that looks like a
     // client bug.
     s_server->on(
-        path, vendorMethod,
+        path, HTTP_POST,
         [handler](AsyncWebServerRequest* vendorReq) {
             WebRequest req(vendorReq);
             handler(req);
         },
         nullptr,
-        [](AsyncWebServerRequest* vendorReq, uint8_t* data, size_t len, size_t index,
-           size_t total) { accumulateRawBody(vendorReq, data, len, index, total); });
+        [maxBodyBytes](AsyncWebServerRequest* vendorReq, uint8_t* data, size_t len, size_t index,
+                       size_t total) {
+            accumulateRawBody(vendorReq, data, len, index, total, maxBodyBytes);
+        });
 }
 
 void webRegisterUploadRoute(const char* path, WebUploadChunkHandler onChunk,

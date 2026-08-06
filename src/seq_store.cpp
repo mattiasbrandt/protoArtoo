@@ -398,28 +398,33 @@ bool seqStoreDelete(const char* name) {
 }
 
 // -----------------------------------------------------------------------------
-// Stream a stored file's raw JSON (GET /api/seq?name=)
+// Read one slice of a stored file's raw JSON (GET /api/seq?name=)
 // -----------------------------------------------------------------------------
-bool seqStoreStreamFile(const char* name, Print& out) {
-    if (!lock()) return false;
+size_t seqStoreReadFileSlice(const char* name, size_t offset, uint8_t* out, size_t capacity) {
+    if (out == nullptr || capacity == 0) return 0;
+    if (!lock()) return 0;
     const SeqIndexEntry* idx = seqStoreIndexFind(name);
     if (idx == nullptr) {
         unlock();
-        return false;
+        return 0;
     }
     char path[64];
     snprintf(path, sizeof(path), "%s/%s", SEQ_DIR, idx->file);
     File f = LittleFS.open(path, "r");
     if (!f) {
         unlock();
-        return false;
+        return 0;
     }
-    uint8_t buf[256];
-    size_t n;
-    while ((n = f.read(buf, sizeof(buf))) > 0) {
-        out.write(buf, n);
+    size_t read = 0;
+    // A seek past the end is the normal way this ends: the caller walks the
+    // offset forward until a slice comes back empty.
+    if (f.seek(offset)) {
+        const int n = f.read(out, capacity);
+        if (n > 0) {
+            read = (size_t)n;
+        }
     }
     f.close();
     unlock();
-    return true;
+    return read;
 }

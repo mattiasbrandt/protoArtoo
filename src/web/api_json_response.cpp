@@ -12,7 +12,7 @@
 #include "logging.h"
 
 void webSendJsonDocument(WebRequest& req, const JsonDocument& doc, size_t maxBytes,
-                         const char* tag) {
+                         const char* tag, int code) {
     // Measure before allocating: serializeJson() into a short buffer truncates
     // silently, and a truncated payload reaches the page as a parse error that
     // says nothing about why.
@@ -33,6 +33,6 @@ void webSendJsonDocument(WebRequest& req, const JsonDocument& doc, size_t maxByt
     }
 
     serializeJson(doc, body, bytes + 1);
-    req.send(200, "application/json", body);
+    req.send(code, "application/json", body);
     free(body);
 }

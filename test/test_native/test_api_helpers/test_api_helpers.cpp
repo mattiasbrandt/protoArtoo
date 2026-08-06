@@ -281,6 +281,34 @@ void test_formatAuxLedStateJson_small_buffer_fails() {
     TEST_ASSERT_FALSE(formatAuxLedStateJson(out, sizeof(out), 19, 10, 20, 30, "solid"));
 }
 
+// trimAsciiWhitespace() replaced the Arduino String::trim() that the sequence
+// and action-test routes relied on before they took copied-out C strings across
+// the WebRequest seam. An operator who pastes a name with a trailing space has
+// to keep getting the same answer they did before.
+void test_trimAsciiWhitespace_strips_both_ends() {
+    char s[32] = "  DM:ROCKMARCH\t\r\n";
+    trimAsciiWhitespace(s);
+    TEST_ASSERT_EQUAL_STRING("DM:ROCKMARCH", s);
+}
+
+void test_trimAsciiWhitespace_leaves_inner_spaces() {
+    char s[32] = "  a b  ";
+    trimAsciiWhitespace(s);
+    TEST_ASSERT_EQUAL_STRING("a b", s);
+}
+
+void test_trimAsciiWhitespace_all_whitespace_becomes_empty() {
+    char s[32] = " \t\r\n ";
+    trimAsciiWhitespace(s);
+    TEST_ASSERT_EQUAL_STRING("", s);
+}
+
+void test_trimAsciiWhitespace_untouched_string_is_unchanged() {
+    char s[32] = "DM:ROCKMARCH";
+    trimAsciiWhitespace(s);
+    TEST_ASSERT_EQUAL_STRING("DM:ROCKMARCH", s);
+}
+
 int main() {
     UNITY_BEGIN();
 
@@ -332,6 +360,10 @@ int main() {
     RUN_TEST(test_formatAuxLedStateJson_valid_payload);
     RUN_TEST(test_formatAuxLedStateJson_null_effect_fails);
     RUN_TEST(test_formatAuxLedStateJson_small_buffer_fails);
+    RUN_TEST(test_trimAsciiWhitespace_strips_both_ends);
+    RUN_TEST(test_trimAsciiWhitespace_leaves_inner_spaces);
+    RUN_TEST(test_trimAsciiWhitespace_all_whitespace_becomes_empty);
+    RUN_TEST(test_trimAsciiWhitespace_untouched_string_is_unchanged);
 
     return UNITY_END();
 }

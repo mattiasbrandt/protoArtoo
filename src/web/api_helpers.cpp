@@ -16,6 +16,26 @@
 
 #include "config.h"
 
+void trimAsciiWhitespace(char* s) {
+    if (s == nullptr) {
+        return;
+    }
+    char* start = s;
+    while (*start == ' ' || *start == '\t' || *start == '\r' || *start == '\n') {
+        ++start;
+    }
+    size_t len = strlen(start);
+    while (len > 0) {
+        const char c = start[len - 1];
+        if (c != ' ' && c != '\t' && c != '\r' && c != '\n') {
+            break;
+        }
+        --len;
+    }
+    memmove(s, start, len);
+    s[len] = '\0';
+}
+
 bool parseDriveValue(const char* raw, int16_t* out) {
     if (raw == nullptr || raw[0] == '\0') {
         return false;

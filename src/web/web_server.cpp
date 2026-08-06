@@ -1362,14 +1362,10 @@ void startHttpServerOnce() {
         webRequestAsyncAttach(server);
         webRegisterSeamRoutes();
 
+        // All that is left async-only is the audio group (#88). Everything
+        // else this block used to register is in the seam table above.
         registerMoodMapRoutes(server);
         registerAudioRoutes(server);
-        registerStatusRoutes(server);
-#if PA_HEAP_PROFILE
-        registerProfilerRoutes(server);
-#endif
-        registerActionsRoutes(server);
-        registerSeqRoutes(server);
 
         if (littleFsReady) {
             server.serveStatic("/", LittleFS, "/").setDefaultFile("index.html").setCacheControl("no-cache");

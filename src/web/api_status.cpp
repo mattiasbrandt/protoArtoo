@@ -1,17 +1,16 @@
 // =============================================================================
 // src/web/api_status.cpp
 //
-// Status and telemetry API endpoints
+// Status and telemetry API endpoints, all on the WebRequest seam (ADR 0021).
 //   GET /api/status  — JSON status snapshot
 //   GET /api/health  — health telemetry
-//   GET /api/wifi    — WiFi status (ported to the WebRequest seam)
+//   GET /api/wifi    — WiFi status
 //   GET /api/serial  — serial port status
 // =============================================================================
 
 #include "api_status.h"
 
 #include <Arduino.h>
-#include <ESPAsyncWebServer.h>
 #include <WiFi.h>
 #include <esp_heap_caps.h>
 
@@ -115,23 +114,20 @@ void handleStatusGet(WebRequest& req) {
     req.send(200, "application/json", body);
 }
 
-void registerStatusRoutes(AsyncWebServer& server) {
-    // GET /api/wifi and GET /api/status are registered by the seam route
-    // table, not here.
+// GET /api/serial — per-port status for the setup page's serial panel. The
+// payload is a fixed set of literal port descriptions with three values
+// substituted, so it is bounded by the format string rather than by device
+// state; 768 bytes covers it with headroom and fits a stack frame.
+void handleSerialGet(WebRequest& req) {
+    char body[768];
+    buildSerialJson(body, sizeof(body));
+    req.send(200, "application/json", body);
+}
 
-    server.on("/api/serial", HTTP_GET, [](AsyncWebServerRequest* req) {
-        char body[768];
-        buildSerialJson(body, sizeof(body));
-        req->send(200, "application/json", body);
-    });
-
-    server.on("/api/health", HTTP_GET, [](AsyncWebServerRequest* req) {
-        char body[256];
-        buildHealthJson(body, sizeof(body));
-        req->send(200, "application/json", body);
-    });
-
-    // GET /api/logs moved to src/web/api_logs.cpp when it was ported to the
-    // WebRequest seam; it is registered by the seam route table.
-
+// GET /api/health — the small telemetry payload the shell polls. Every field is
+// a bool or a fixed-width number, so 256 bytes is the whole of it.
+void handleHealthGet(WebRequest& req) {
+    char body[256];
+    buildHealthJson(body, sizeof(body));
+    req.send(200, "application/json", body);
 }

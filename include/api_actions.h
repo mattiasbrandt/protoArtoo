@@ -1,14 +1,11 @@
 // =============================================================================
 // include/api_actions.h
 //
-// Action registry API endpoints. GET /api/actions is ported to the
-// project-owned WebRequest seam (ADR 0021) and bound by the seam route table;
-// POST /api/actions/test still registers against the async server until its
-// group lands.
+// Action registry API endpoints. Both GET /api/actions and
+// POST /api/actions/test are ported to the project-owned WebRequest seam
+// (ADR 0021) and bound by the seam route table.
 // =============================================================================
 #pragma once
-
-#include <ESPAsyncWebServer.h>
 
 #include "rc_mapping.h"
 #include "web_request.h"
@@ -39,8 +36,5 @@ inline ActionTestGuardResult evaluateActionTestGuard(RobotActionId target,
     return ACTION_TEST_ALLOWED;
 }
 
-// Routes not yet ported to the seam: POST /api/actions/test. Called only from
-// the async registration block.
-void registerActionsRoutes(AsyncWebServer& server);
-
 void handleActionsGet(WebRequest& req);
+void handleActionsTestPost(WebRequest& req);

@@ -37,7 +37,6 @@
 #include "api_profiler.h"
 
 #include <Arduino.h>
-#include <ESPAsyncWebServer.h>
 #include <esp_debug_helpers.h>   // esp_backtrace_get_start/next_frame (failed-alloc backtrace)
 #include <esp_heap_caps.h>
 #include <freertos/FreeRTOS.h>
@@ -492,53 +491,62 @@ static void buildProfilerJson(char* buf, size_t bufSize) {
 #undef APPEND
 }
 
-void registerProfilerRoutes(AsyncWebServer& server) {
-    server.on("/api/profiler", HTTP_GET, [](AsyncWebServerRequest* req) {
-        static constexpr size_t kProfilerBodySize = 4096;
-        static char* body = nullptr;
-        if (body == nullptr) {
-            body = new (std::nothrow) char[kProfilerBodySize];
-        }
-        if (body == nullptr) {
-            req->abort();
-            return;
-        }
-        buildProfilerJson(body, kProfilerBodySize);
-        req->send(200, "application/json", body);
-    });
+// GET /api/profiler
+//
+// The body buffer is allocated once, on the first request, and reused for
+// every request after it -- so the per-request allocation cost is zero, which
+// is what a diagnostic endpoint polled during a heap investigation has to be:
+// a profiler that allocates per request measures its own footprint. It is not
+// a BSS array either, because permanent DRAM is the scarcest budget on this
+// target (api_json_response.h) and this route only exists on PA_HEAP_PROFILE
+// builds.
+void handleProfilerGet(WebRequest& req) {
+    static constexpr size_t kProfilerBodySize = 4096;
+    static char* body = nullptr;
+    if (body == nullptr) {
+        body = new (std::nothrow) char[kProfilerBodySize];
+    }
+    if (body == nullptr) {
+        // The async route aborted the connection here. The seam has no abort,
+        // and a 500 is the better answer regardless: setup.js reads the status
+        // code to decide whether the profiler UI exists at all, and a dropped
+        // connection is indistinguishable from the endpoint being absent.
+        req.send(500, "application/json",
+                 "{\"ok\":false,\"error\":\"profiler buffer alloc failed\"}");
+        return;
+    }
+    buildProfilerJson(body, kProfilerBodySize);
+    req.send(200, "application/json", body);
+}
 
 #ifdef CONFIG_HEAP_TRACING
-    server.on("/api/profiler/trace/start", HTTP_POST, [](AsyncWebServerRequest* req) {
-        if (s_traceRunning) {
-            req->send(200, "application/json", "{\"ok\":false,\"error\":\"trace already running\"}");
-            return;
-        }
-        esp_err_t err = heap_trace_start(HEAP_TRACE_LEAKS);
-        if (err == ESP_OK) {
-            s_traceRunning = true;
-            PA_LOG_INFO(TAG, "Tier 3 heap trace started (LEAKS mode)");
-            req->send(200, "application/json", "{\"ok\":true,\"mode\":\"LEAKS\"}");
-        } else {
-            PA_LOG_WARN(TAG, "Tier 3 heap trace start failed: %d", (int)err);
-            req->send(200, "application/json", "{\"ok\":false,\"error\":\"start failed\"}");
-        }
-    });
-
-    server.on("/api/profiler/trace/stop", HTTP_POST, [](AsyncWebServerRequest* req) {
-        if (!s_traceRunning) {
-            req->send(200, "application/json", "{\"ok\":false,\"error\":\"trace not running\"}");
-            return;
-        }
-        heap_trace_stop();
-        s_traceRunning = false;
-        PA_LOG_INFO(TAG, "Tier 3 heap trace stopped — dumping to serial");
-        heap_trace_dump();
-        req->send(200, "application/json", "{\"ok\":true,\"note\":\"dump written to serial log\"}");
-    });
-    PA_LOG_INFO(TAG, "/api/profiler/trace/start|stop registered");
-#endif
-
-    PA_LOG_INFO(TAG, "/api/profiler registered");
+void handleProfilerTraceStartPost(WebRequest& req) {
+    if (s_traceRunning) {
+        req.send(200, "application/json", "{\"ok\":false,\"error\":\"trace already running\"}");
+        return;
+    }
+    esp_err_t err = heap_trace_start(HEAP_TRACE_LEAKS);
+    if (err == ESP_OK) {
+        s_traceRunning = true;
+        PA_LOG_INFO(TAG, "Tier 3 heap trace started (LEAKS mode)");
+        req.send(200, "application/json", "{\"ok\":true,\"mode\":\"LEAKS\"}");
+    } else {
+        PA_LOG_WARN(TAG, "Tier 3 heap trace start failed: %d", (int)err);
+        req.send(200, "application/json", "{\"ok\":false,\"error\":\"start failed\"}");
+    }
 }
+
+void handleProfilerTraceStopPost(WebRequest& req) {
+    if (!s_traceRunning) {
+        req.send(200, "application/json", "{\"ok\":false,\"error\":\"trace not running\"}");
+        return;
+    }
+    heap_trace_stop();
+    s_traceRunning = false;
+    PA_LOG_INFO(TAG, "Tier 3 heap trace stopped — dumping to serial");
+    heap_trace_dump();
+    req.send(200, "application/json", "{\"ok\":true,\"note\":\"dump written to serial log\"}");
+}
+#endif
 
 #endif  // PA_HEAP_PROFILE

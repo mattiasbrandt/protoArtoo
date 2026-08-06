@@ -15,7 +15,11 @@
 #include <stddef.h>
 #include <stdint.h>
 
-enum class WebMethod : unsigned char { kGet, kPost };
+// kDelete carries no body and reads its parameters from the query string, the
+// same as kGet. It exists because Memory Wipe is DELETE /api/seq?name= in
+// data/seq.js, and re-spelling that as a POST to fit a two-value enum would
+// change a shipped client contract to save one enumerator.
+enum class WebMethod : unsigned char { kGet, kPost, kDelete };
 
 // Produces a chunked response body a piece at a time. Writes at most capacity
 // bytes of the body starting at byte offset into out and returns how many it
@@ -126,11 +130,27 @@ using WebRequestHandler = void (*)(WebRequest&);
 using WebUploadChunkHandler = void (*)(WebRequest& req, const char* filename, size_t index,
                                        const uint8_t* data, size_t len, bool final);
 
+// Ceiling on a buffered raw request body when a route does not name its own.
+// Above the largest an ordinary seam POST carries -- GET /api/config
+// serializes to 1341 bytes on the device and its POST counterpart is the same
+// shape -- and low enough that a hostile Content-Length cannot turn into a
+// large allocation.
+constexpr size_t kDefaultMaxBodyBytes = 4096;
+
 // Register a handler for path+method with the active backend's server.
 // Backends require registration to happen inside their server bring-up
 // (startHttpServerOnce()'s registration block / initPsychicWebServer()),
 // which runs on the WiFi event callback path.
-void webRegisterRoute(const char* path, WebMethod method, WebRequestHandler handler);
+//
+// maxBodyBytes bounds the raw body this route will buffer. It is per-route
+// rather than global because one route legitimately carries far more than the
+// rest -- POST /api/seq saves up to SEQ_FILE_MAX_BYTES (12 KB) -- and raising
+// the default for everything to accommodate it would hand every other route
+// the same allocation ceiling for nothing. A body over the limit is not
+// buffered, so body() reports null and the handler answers 413 from
+// contentLength(); see the parity rules in the ported handlers.
+void webRegisterRoute(const char* path, WebMethod method, WebRequestHandler handler,
+                      size_t maxBodyBytes = kDefaultMaxBodyBytes);
 
 // Register a POST route whose body streams through onChunk, after which onDone
 // produces the response. Same registration timing rules as webRegisterRoute().
