@@ -409,6 +409,11 @@ ProtocolCheckResult seqStoreSave(const char* json, size_t len) {
     strncpy(entry.source, src, sizeof(entry.source) - 1);
     entry.modified = doc["meta"]["modified"] | false;
     strncpy(entry.file, file, sizeof(entry.file) - 1);
+    // Nothing reaches this point without passing Protocol Check above, so the
+    // entry is valid. Leaving the zero-initialised default would index a
+    // just-validated sequence as needing repair until the next boot scan
+    // re-read it from flash and corrected the flag.
+    entry.valid = true;
     stagingFree(st);
 
     char tmpPath[72];
