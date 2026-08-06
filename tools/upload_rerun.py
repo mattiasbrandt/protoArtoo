@@ -38,9 +38,10 @@ contention is not evidence. Two consecutive ``/api/status`` reads with nothing
 else in flight differ by exactly one served request; anything above that aborts
 the run unless ``--allow-contention`` marks the evidence as contended.
 
-Reboots are confirmed by ``uptimeMs`` going *backwards*, not by a sleep: a
-settling delay proves nothing on its own, and an uptime that decreased cannot be
-a stale read of the pre-upload device.
+Reboots are confirmed by uptime falling *behind wall clock*, not by a sleep and
+not by uptime merely decreasing: a settling delay proves nothing on its own, and
+a round starting soon after a previous reboot can read a *higher* uptime than it
+started with and still have rebooted. See ``wait_for_reboot()``.
 
 Peak-heap evidence is taken from the upload's own success JSON rather than by
 polling ``/api/status``: the device reboots about a second later and takes the
@@ -59,7 +60,7 @@ import time
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import issue65_live_ab_runtime as r65  # noqa: E402  (reused, hardened primitives)
+import live_run_runtime as live  # noqa: E402  (reused, hardened primitives)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 EVIDENCE_ROOT = REPO_ROOT / "tasks" / "evidence" / "issue80"
@@ -154,8 +155,8 @@ def read_status(host: str, port: int) -> dict[str, Any]:
     """One /api/status snapshot, reduced to the fields this rerun reasons about."""
     url = f"http://{host}:{port}/api/status"
     try:
-        payload = r65._http_json(url, STATUS_TIMEOUT_SECONDS)
-    except r65.Issue65RuntimeError as error:
+        payload = live._http_json(url, STATUS_TIMEOUT_SECONDS)
+    except live.LiveRunError as error:
         raise UploadRerunError(str(error)) from error
 
     snapshot: dict[str, Any] = {}
@@ -606,7 +607,7 @@ def run_round_trip(
         "phase": target,
         "image": str(image),
         "imageBytes": size,
-        "imageSha256": r65.sha256_file(image),
+        "imageSha256": live.sha256_file(image),
         "statusBefore": before,
         "upload": result,
         "succeeded": succeeded,
@@ -808,7 +809,7 @@ def main(argv: list[str]) -> int:
     if evidence_path is None:
         EVIDENCE_ROOT.mkdir(parents=True, exist_ok=True)
         evidence_path = EVIDENCE_ROOT / f"upload-rerun-{int(time.time())}.json"
-    r65.atomic_write_json(evidence_path, run)
+    live.atomic_write_json(evidence_path, run)
     print(f"evidence: {evidence_path}")
     return exit_code
 
