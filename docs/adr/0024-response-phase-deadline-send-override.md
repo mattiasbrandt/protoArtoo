@@ -67,8 +67,12 @@ makes an event-stream broadcast -- written from the event task, against a socket
 this record does not own -- pass through untouched, and it is what would make
 the omission visible if `ENABLE_ASYNC` were ever turned on: the check would
 start refusing writes for the wrong request instead of silently guarding the
-wrong one. Turning those workers on requires this to become a per-socket table,
-and that is stated here rather than left to be discovered.
+wrong one. Turning those workers on requires this to become a per-socket table.
+
+That is enforced rather than merely written down: defining `ENABLE_ASYNC` fails
+the build. The failure mode it prevents is invisible at runtime -- the guard
+would go on publishing counters while holding the wrong request's deadline --
+so a comment would not have been protection.
 
 ## The clock starts at the first byte, not at admission
 

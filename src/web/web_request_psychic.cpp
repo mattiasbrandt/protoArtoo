@@ -361,6 +361,17 @@ struct InflightSlot {
 // are recognised by their descriptor and pass through untouched.
 // =============================================================================
 
+// PsychicHttp's per-request worker threads would make responses overlap, and
+// the single record below cannot represent two response phases at once: the
+// second request to arm would silently take the first one's deadline with it.
+// A build failure is the only honest outcome, because the damage is invisible
+// at runtime -- the guard would keep publishing counters while guarding the
+// wrong request.
+#ifdef ENABLE_ASYNC
+#error \
+    "PsychicHttp per-request worker threads make responses overlap; the response-phase deadline needs a per-socket table before ENABLE_ASYNC can be used (ADR 0022, ADR 0024)"
+#endif
+
 WebResponseDeadline s_responseDeadline;
 
 #ifndef PA_RESPONSE_DEADLINE_MS
