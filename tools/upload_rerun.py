@@ -89,6 +89,12 @@ STATUS_TIMEOUT_SECONDS = 10.0
 REBOOT_POLL_INTERVAL_SECONDS = 2.0
 REBOOT_DEADLINE_SECONDS = 120.0
 
+# How far uptime must fall behind wall clock before a reboot is called. Well
+# above any plausible clock skew between host and controller, and far below the
+# gap a real reboot opens: the flash alone takes 12-13 s, so a device that came
+# back reads seconds of uptime where tens of seconds should have accrued.
+REBOOT_MIN_UPTIME_DROP_MS = 5000.0
+
 # Sent in 64 KB writes. Small enough that a stalled socket surfaces as a
 # timeout on one write rather than after the whole image, large enough that the
 # host is never the bottleneck being measured.
@@ -409,10 +415,22 @@ def run_probe(host: str, port: int) -> dict[str, Any]:
 
     verdict, explanation = classify_probe(result)
     served = deltas.get("httpRequestsServed")
-    # The probe request plus the two /api/status reads that bracket it. Anything
-    # smaller means the upload request did not reach the admitted branch of the
-    # middleware, which is where this counter is published from.
-    admission_ran = isinstance(served, int) and served >= 3
+    # Two, not three. The counter is incremented in the middleware *before* the
+    # handler runs, so the leading /api/status read already counts itself and is
+    # inside the "before" value. What remains between the two snapshots is the
+    # probe upload plus the trailing read. The contention check confirms this
+    # independently: consecutive status reads on an idle board differ by exactly
+    # one, which is only true if a read counts itself.
+    admission_ran = isinstance(served, int) and served >= 2
+
+    # The connection-layer guard keeps its own timing, sampled on the accept
+    # path before any HTTP byte is parsed (ADR 0022). If it moved, open_fn ran
+    # for the probe's connection -- which is the layer the request middleware
+    # cannot speak for.
+    guard_moved = any(
+        isinstance(deltas.get(field), int) and deltas[field] != 0
+        for field in ("acceptGuardLastUs", "acceptMinLargestBlockSeen")
+    )
 
     return {
         "phase": "probe",
@@ -424,12 +442,21 @@ def run_probe(host: str, port: int) -> dict[str, Any]:
         "explanation": explanation,
         "admissionMiddlewareRan": admission_ran,
         "admissionEvidence": (
-            f"httpRequestsServed advanced by {served}; it is published only from "
-            "the admitted branch of admissionMiddleware, so an /upload/* request "
-            "took the ordinary admission path."
+            f"httpRequestsServed advanced by {served}, accounting for the probe "
+            "upload and the trailing status read. It is published only from the "
+            "admitted branch of admissionMiddleware, so an /upload/* request took "
+            "the ordinary admission path rather than an exemption."
             if admission_ran
             else f"httpRequestsServed advanced by {served!r}, which does not "
-            "account for the probe plus its two bracketing status reads."
+            "account for the probe upload plus the trailing status read."
+        ),
+        "connectionGuardRan": guard_moved,
+        "connectionGuardEvidence": (
+            "acceptGuardLastUs/acceptMinLargestBlockSeen moved across the probe, "
+            "so the pre-HTTP connection guard sampled this connection."
+            if guard_moved
+            else "neither connection-guard counter moved; the socket layer's "
+            "involvement in this probe is unproven."
         ),
     }
 
@@ -438,14 +465,26 @@ def wait_for_reboot(
     host: str,
     port: int,
     uptime_before_ms: int,
+    reference_monotonic: float,
     expect_version: str | None,
 ) -> dict[str, Any]:
     """Poll until the controller is back on a *new* boot.
 
-    Gated on uptimeMs having gone backwards rather than on elapsed wall time: a
-    delay only makes a stale read likely, whereas a decreased uptime cannot be
-    one. The version check is reported but not required, so a rerun against an
-    image built elsewhere still records the boot it observed.
+    Gated on uptime having fallen *behind wall clock*, not merely on uptimeMs
+    going backwards. A device that did not reboot advances its uptime by at
+    least the time that has passed, so the honest comparison is against
+    ``uptime_before + elapsed``, not against ``uptime_before``.
+
+    The difference is not academic. A round that begins moments after a previous
+    reboot starts from a tiny uptime -- one observed run began at 2667 ms and
+    read 2400 ms afterwards, a 267 ms margin. Had the poll landed 300 ms later,
+    a genuine reboot would have been recorded as no reboot at all, and the run
+    would have reported a failure that did not happen. Against elapsed wall
+    clock the same reading is unambiguous: roughly 20 s should have accrued and
+    2.4 s had.
+
+    The version check is reported but not required, so a rerun against an image
+    built elsewhere still records the boot it observed.
     """
     deadline = time.monotonic() + REBOOT_DEADLINE_SECONDS
     attempts = 0
@@ -462,13 +501,21 @@ def wait_for_reboot(
             continue
 
         uptime = status.get("uptimeMs")
-        if isinstance(uptime, int) and uptime < uptime_before_ms:
+        elapsed_ms = (time.monotonic() - reference_monotonic) * 1000.0
+        # What uptime would read if the controller had never gone down.
+        projected_ms = uptime_before_ms + elapsed_ms
+        rebooted = (
+            isinstance(uptime, int) and uptime + REBOOT_MIN_UPTIME_DROP_MS < projected_ms
+        )
+        if rebooted:
             running = status.get("firmwareVersion")
             return {
                 "rebooted": True,
                 "attempts": attempts,
                 "uptimeBeforeMs": uptime_before_ms,
                 "uptimeAfterMs": uptime,
+                "projectedUptimeWithoutRebootMs": round(projected_ms),
+                "elapsedSinceBeforeReadMs": round(elapsed_ms),
                 "resetReason": status.get("resetReason"),
                 "firmwareVersion": running,
                 "expectedFirmwareVersion": expect_version,
@@ -485,10 +532,25 @@ def wait_for_reboot(
         "uptimeBeforeMs": uptime_before_ms,
         "lastError": last_error,
         "note": (
-            "uptimeMs never went backwards within the deadline. The controller "
-            "either did not reboot or did not come back."
+            "uptime never fell behind wall clock within the deadline. The "
+            "controller either did not reboot or did not come back."
         ),
     }
+
+
+def image_carries_version(image: Path, expect_version: str) -> bool:
+    """Is the expected version stamp actually inside this binary?
+
+    The build bakes the stamp into the image, so this catches the trap that
+    several build environments set up: `pio run -e protoArtoo` and `make ota`
+    (which builds `protoArtoo_ota`) write to different directories, so the
+    default path can easily hold an image from before the last merge. Flashing
+    that and then measuring it would produce evidence about the wrong code, and
+    nothing else in the run would notice.
+    """
+    needle = expect_version.encode("utf-8", errors="ignore")
+    with image.open("rb") as handle:
+        return needle in handle.read()
 
 
 def run_round_trip(
@@ -497,12 +559,29 @@ def run_round_trip(
     target: str,
     image: Path,
     expect_version: str | None,
+    allow_version_mismatch: bool = False,
 ) -> dict[str, Any]:
     if not image.is_file():
         raise UploadRerunError(f"image not found: {image}")
     size = image.stat().st_size
 
+    # Firmware only: the filesystem image carries fs-version.json as a file
+    # rather than a baked-in string, and it is the firmware stamp that decides
+    # which code the evidence describes.
+    if target == "firmware" and expect_version and not allow_version_mismatch:
+        if not image_carries_version(image, expect_version):
+            raise UploadRerunError(
+                f"{image} does not carry the expected version stamp "
+                f"{expect_version!r}. This is almost always a stale build from a "
+                "different environment; rebuild, point --firmware-image at the "
+                "right output, or pass --allow-version-mismatch if the mismatch "
+                "is deliberate."
+            )
+
     before = read_status(host, port)
+    # Taken with the reading it is paired against, so the projection below
+    # measures from the same instant the controller reported its uptime.
+    uptime_reference = time.monotonic()
     uptime_before = before.get("uptimeMs")
     if not isinstance(uptime_before, int):
         raise UploadRerunError("/api/status did not report an integer uptimeMs")
@@ -540,7 +619,9 @@ def run_round_trip(
             "minHeapFree": body.get("minHeapFree"),
             "durationMs": body.get("durationMs"),
         }
-        record["reboot"] = wait_for_reboot(host, port, uptime_before, expect_version)
+        record["reboot"] = wait_for_reboot(
+            host, port, uptime_before, uptime_reference, expect_version
+        )
         record["statusAfter"] = record["reboot"].get("status")
     else:
         record["statusAfter"] = read_status(host, port)
@@ -597,6 +678,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="firmware version stamp the device should report after the flash; "
         "defaults to data/fw-version.json",
+    )
+    parser.add_argument(
+        "--allow-version-mismatch",
+        action="store_true",
+        help="upload a firmware image that does not carry the expected version "
+        "stamp; normally a stale build from another environment",
     )
     parser.add_argument(
         "--allow-contention",
@@ -678,6 +765,7 @@ def main(argv: list[str]) -> int:
                     "firmware",
                     args.firmware_image,
                     expect_version,
+                    args.allow_version_mismatch,
                 )
                 record["round"] = round_index + 1
                 run["phases"].append(record)
