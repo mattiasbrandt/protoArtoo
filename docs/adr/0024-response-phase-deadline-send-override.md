@@ -176,26 +176,45 @@ It does not give the guard any authority from another task. If the server task
 is blocked inside a handler, nothing here shortens that; what the design does is
 ensure the server task's own writes cannot be the thing blocking it.
 
-## Open: the client does not observe the disconnect
+## The stalled client is not told, and cannot be
 
-Server-side reclaim is proven -- the socket leaves the census, the in-flight
-slot is released, and the heap returns to its pre-stall value. The stalled
-*client*, however, saw its own TCP connection stay ESTABLISHED for the whole
-17 s the probe waited, on all three breaches.
+Server-side reclaim is proven: the socket leaves the census, the in-flight slot
+is released, and the heap returns to its pre-stall value. The stalled *client*,
+however, saw its own connection stay ESTABLISHED for the whole 17 s the probe
+waited, on all three breaches.
 
-The two observations do not yet agree, and the reason is not recorded here
-because it is not yet known. A FIN cannot be delivered into a zero window --
-it is sequenced behind body bytes the client never reads -- which would explain
-a client that notices nothing; but the heap returning implies lwIP did abort
-rather than close gracefully, and an abort's RST is not window-limited. What
-this means in practice is bounded: the controller has released everything it
-holds, so the consequence falls on the stalled peer's own socket rather than on
-the controller. It is recorded as open rather than explained away.
+That is not a contradiction, and the reason is a property of TCP rather than of
+anything here.
+
+`httpd_sess_delete()` applies its own `SO_LINGER` only when
+`config.enable_so_linger` is set, which is false by default, so it does not
+overwrite the `linger{on, 0}` this decision sets before triggering the close.
+The close is therefore a genuine abort, which is exactly what the recovered
+heap shows. The abort sends an RST.
+
+A receiver only accepts an RST whose sequence number lies inside its receive
+window, and a stalled client's window is zero by construction -- that is what
+makes it stalled. lwIP sends the RST at `snd_nxt`, which is ahead of the
+client's `rcv_nxt` by every body byte still undelivered, so the client's stack
+discards it as out of window. A graceful FIN fares no better: a FIN occupies a
+sequence number and is queued behind the same undelivered bytes.
+
+So a client that has stopped reading cannot be told that the connection is
+gone, by any close this decision could make. What matters is where the cost
+falls: the controller has released the socket, the slot and the memory, and
+what remains is a dead connection on the peer's own machine, which its own
+stack will time out. A browser tab that stopped reading was not waiting for an
+answer anyway.
+
+Not directly confirmed: the out-of-window discard is inferred from the observed
+behaviour plus the RST acceptance rule, not from a packet capture. A `tcpdump`
+of one breach would settle it, and is worth doing the next time the controller
+is free for an unrelated reason -- it changes no decision here, because every
+server-side obligation is already met.
 
 ## Status
 
-accepted (2026-08-06), implemented. Server-side behaviour verified on the
-controller; the client-side observation above is open.
+accepted (2026-08-06), implemented and verified on the controller.
 
 ## Relationship to ADR 0020
 
@@ -214,7 +233,9 @@ sweep (198 requests, 0 closures, slowest legitimate phase 184 ms) and the stall
 probe (3 breaches, 3 closures, in-flight slot released, heap recovered).
 
 No integrated droid hardware was involved, and nothing here touches the drive,
-RC or dome paths. What is not proven: the client-side disconnect above, and
-behaviour under genuine network degradation -- the margin argument for a slow
-link is reasoning about what the LAN measurement cannot bound, not a
-measurement of it.
+RC or dome paths.
+
+What is not proven: behaviour under genuine network degradation. The margin
+argument for a slow link is reasoning about what a warm-LAN measurement cannot
+bound, not a measurement of it. And the out-of-window RST discard above is
+inferred rather than captured.
