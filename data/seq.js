@@ -2759,9 +2759,43 @@
   // Initialize on Page Load
   // =========================================================================
 
+  // -------------------------------------------------------------------------
+  // Boot — load sequence list and factory sequences
+  // -------------------------------------------------------------------------
+
+  // Page Recovery: register startup API loads as sections so the bootstrap
+  // can show recovery state if any fetch fails.
+  // See docs/page-load-recovery-architecture.md and ADR 0019.
+  const SECTIONS = [
+    ["seq-list", () => PAApi.get("/api/seq/list").then(result => {
+      sequences = result.data || [];
+    }), "sequence list"],
+    ["seq-builtins", loadBuiltins, "factory sequences"],
+  ];
+
+  const startPageLoad = () => {
+    if (!window.PABootstrap) {
+      loadSequenceList().catch(() => {});
+      return;
+    }
+    window.PABootstrap.setResourceLabels?.({
+      "/web_api.js": "controller connection",
+      "/status_stream.js": "live updates",
+      "/shell.js": "page layout",
+      "/seq_protocol_check.js": "sequence protocol",
+      "/seq.js": "sequence editor",
+      "/footer.js": "page footer",
+    });
+    SECTIONS.forEach(([name, load, label]) =>
+      window.PABootstrap.registerSection(name, load, { label })
+    );
+  };
+
   const init = async () => {
     attachEventListeners();
-    await loadSequenceList();
+    startPageLoad();
+    // Render the list after bootstrap sections are registered and may be loading.
+    renderListView();
   };
 
   // Wait for shell and status_stream to be ready
