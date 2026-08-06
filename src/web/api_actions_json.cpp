@@ -14,87 +14,22 @@
 // assembled whole: the registry serializes to ~9 KB, and the JsonDocument
 // implementation this replaced exhausted fragmented heap during dashboard
 // startup. WebRequest::sendChunked() drives it, so no backend ever holds more
-// than one chunk of it.
+// than one chunk of it. The slice writer itself is shared
+// (include/web_json_slice_writer.h) -- the audio catalog and track payloads are
+// produced the same way.
 // =============================================================================
 
 #include "../../include/api_actions.h"
 
-#include <algorithm>
 #include <cstdio>
-#include <cstring>
 
 #include "../../include/action_registry.h"
 #include "../../include/logging.h"
+#include "../../include/web_json_slice_writer.h"
 
 static const char* TAG = "Actions";
 
 namespace {
-
-class JsonSliceWriter {
-public:
-    JsonSliceWriter(uint8_t* output, size_t capacity, size_t offset)
-        : output_(output), capacity_(capacity), offset_(offset) {}
-
-    void append(const char* text) {
-        append(text, std::strlen(text));
-    }
-
-    void append(const char* text, size_t length) {
-        if (written_ >= capacity_) {
-            logicalOffset_ += length;
-            return;
-        }
-
-        const size_t segmentEnd = logicalOffset_ + length;
-        if (offset_ < segmentEnd) {
-            const size_t start = offset_ > logicalOffset_ ? offset_ - logicalOffset_ : 0;
-            const size_t count = std::min(length - start, capacity_ - written_);
-            std::memcpy(output_ + written_, text + start, count);
-            written_ += count;
-        }
-        logicalOffset_ = segmentEnd;
-    }
-
-    void append(char value) {
-        append(&value, 1);
-    }
-
-    void appendJsonString(const char* value) {
-        append('"');
-        for (const unsigned char* p = reinterpret_cast<const unsigned char*>(value); *p != '\0'; ++p) {
-            switch (*p) {
-                case '"': append("\\\""); break;
-                case '\\': append("\\\\"); break;
-                case '\b': append("\\b"); break;
-                case '\f': append("\\f"); break;
-                case '\n': append("\\n"); break;
-                case '\r': append("\\r"); break;
-                case '\t': append("\\t"); break;
-                default:
-                    if (*p < 0x20) {
-                        char escaped[7];
-                        std::snprintf(escaped, sizeof(escaped), "\\u%04x", *p);
-                        append(escaped);
-                    } else {
-                        append(reinterpret_cast<const char*>(p), 1);
-                    }
-                    break;
-            }
-        }
-        append('"');
-    }
-
-    size_t written() const {
-        return written_;
-    }
-
-private:
-    uint8_t* output_;
-    size_t capacity_;
-    size_t offset_;
-    size_t logicalOffset_ = 0;
-    size_t written_ = 0;
-};
 
 void appendActionJson(JsonSliceWriter& writer, const ActionEntry& entry) {
     char id[12];

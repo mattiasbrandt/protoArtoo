@@ -260,6 +260,156 @@ bool domeLayoutCacheRefreshRequested() {
     return true;
 }
 
+// -----------------------------------------------------------------------------
+// Audio route group (#88). AudioTask and the drivers' live catalog are not in
+// the native build, so the handlers' whole view of the audio subsystem is
+// controlled from here: capability bits and catalog contents are set by the
+// test, and every enqueue is recorded rather than performed.
+// -----------------------------------------------------------------------------
+
+uint8_t g_test_audio_capabilities = 0;
+const char* g_test_audio_driver_name = "TEST";
+bool g_test_audio_queue_ok = true;
+
+unsigned g_test_audio_play_track_calls = 0;
+uint16_t g_test_audio_last_track = 0;
+unsigned g_test_audio_stop_calls = 0;
+unsigned g_test_audio_volume_calls = 0;
+uint8_t g_test_audio_last_volume = 0;
+unsigned g_test_audio_dollar_calls = 0;
+char g_test_audio_last_dollar[16] = {};
+unsigned g_test_audio_query_calls = 0;
+unsigned g_test_audio_refresh_catalog_calls = 0;
+unsigned g_test_audio_refresh_bindings_calls = 0;
+unsigned g_test_audio_play_banked_calls = 0;
+uint16_t g_test_audio_last_banked_index = 0;
+uint8_t g_test_audio_last_banked_bank = 0;
+char g_test_audio_last_banked_page = '\0';
+
+bool g_test_audio_catalog_ready = false;
+AudioCatalogBank g_test_audio_catalog_banks[8] = {};
+uint8_t g_test_audio_catalog_bank_count = 0;
+AudioCatalogEntry g_test_audio_catalog_entries[16] = {};
+uint16_t g_test_audio_catalog_entry_count = 0;
+
+uint8_t audioGetCapabilities() {
+    return g_test_audio_capabilities;
+}
+
+const char* audioGetDriverName() {
+    return g_test_audio_driver_name;
+}
+
+bool audioIsCatalogReady() {
+    return g_test_audio_catalog_ready;
+}
+
+const AudioCatalogBank* audioGetCatalogBanks(uint8_t* count) {
+    if (count != nullptr) {
+        *count = g_test_audio_catalog_bank_count;
+    }
+    return g_test_audio_catalog_banks;
+}
+
+const AudioCatalogEntry* audioGetCatalogEntries(uint16_t* count) {
+    if (count != nullptr) {
+        *count = g_test_audio_catalog_entry_count;
+    }
+    return g_test_audio_catalog_entries;
+}
+
+bool audioQueuePlayTrack(uint16_t track, CommandSource /*src*/) {
+    if (!g_test_audio_queue_ok) {
+        return false;
+    }
+    g_test_audio_play_track_calls++;
+    g_test_audio_last_track = track;
+    return true;
+}
+
+bool audioQueueTrackStop(CommandSource /*src*/) {
+    if (!g_test_audio_queue_ok) {
+        return false;
+    }
+    g_test_audio_stop_calls++;
+    return true;
+}
+
+bool audioQueueSetVolume(uint8_t vol, CommandSource /*src*/) {
+    if (!g_test_audio_queue_ok) {
+        return false;
+    }
+    g_test_audio_volume_calls++;
+    g_test_audio_last_volume = vol;
+    return true;
+}
+
+bool audioQueueQueryStatus(CommandSource /*src*/) {
+    if (!g_test_audio_queue_ok) {
+        return false;
+    }
+    g_test_audio_query_calls++;
+    return true;
+}
+
+bool audioQueueRefreshCatalog(CommandSource /*src*/) {
+    if (!g_test_audio_queue_ok) {
+        return false;
+    }
+    g_test_audio_refresh_catalog_calls++;
+    return true;
+}
+
+bool audioQueueRefreshBindings(CommandSource /*src*/) {
+    if (!g_test_audio_queue_ok) {
+        return false;
+    }
+    g_test_audio_refresh_bindings_calls++;
+    return true;
+}
+
+bool audioQueuePlayTrackBanked(uint16_t index, uint8_t bank, char page, CommandSource /*src*/) {
+    if (!g_test_audio_queue_ok) {
+        return false;
+    }
+    g_test_audio_play_banked_calls++;
+    g_test_audio_last_banked_index = index;
+    g_test_audio_last_banked_bank = bank;
+    g_test_audio_last_banked_page = page;
+    return true;
+}
+
+// The RX diagnostic strings GET /api/audio embeds. Reproduced from
+// src/tasks/audio_task.cpp rather than stubbed to a constant: the payload
+// assertion would be vacuous otherwise.
+const char* audioRxStatusToken(AudioRxStatus status) {
+    switch (status) {
+        case AUDIO_RX_AVAILABLE:
+            return "available";
+        case AUDIO_RX_BLOCKED_BY_DOME_UART:
+            return "blocked_by_dome_uart";
+        case AUDIO_RX_NO_RESPONSE:
+            return "no_response";
+        case AUDIO_RX_UNKNOWN:
+        default:
+            return "unknown";
+    }
+}
+
+const char* audioRxStatusDetail(AudioRxStatus status) {
+    switch (status) {
+        case AUDIO_RX_AVAILABLE:
+            return "Sound module RX is available";
+        case AUDIO_RX_BLOCKED_BY_DOME_UART:
+            return "Status unavailable: DomeLink is using UART";
+        case AUDIO_RX_NO_RESPONSE:
+            return "Sound module did not respond on RX";
+        case AUDIO_RX_UNKNOWN:
+        default:
+            return "Sound module RX status unknown";
+    }
+}
+
 // Log ring stand-in for the one main.cpp owns, which the native build does not
 // compile. Backed by the real log_buffer.cpp ring, so /api/logs tests exercise
 // the actual copy behavior rather than a canned string. Tests fill it through

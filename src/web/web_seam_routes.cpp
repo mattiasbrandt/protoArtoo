@@ -13,6 +13,7 @@
 // =============================================================================
 
 #include "../../include/api_actions.h"
+#include "../../include/api_audio.h"
 #include "../../include/api_aux_led.h"
 #include "../../include/api_config.h"
 #include "../../include/api_dome.h"
@@ -97,6 +98,28 @@ void webRegisterSeamRoutes() {
     webRegisterRoute("/api/rc", WebMethod::kGet, handleRcGet);
     webRegisterRoute("/api/rc/debug", WebMethod::kPost, handleRcDebugPost);
     webRegisterRoute("/api/validation", WebMethod::kGet, handleValidationGet);
+
+    // Audio. The read and control surface, the two track-assignment routes and
+    // the mood map, all reusing the ADR 0011 apply cores and the ADR 0013 config
+    // map. /api/audio/tracks is registered ahead of /api/audio because the async
+    // backend matches in registration order, and the shorter path would
+    // otherwise swallow requests for the longer one.
+    webRegisterRoute("/api/audio/tracks", WebMethod::kGet, handleAudioTracksGet);
+    webRegisterRoute("/api/audio/tracks", WebMethod::kPost, handleAudioTracksPost);
+    webRegisterRoute("/api/audio/category-range", WebMethod::kPost,
+                     handleAudioCategoryRangePost);
+    webRegisterRoute("/api/audio/mood-map", WebMethod::kGet, handleAudioMoodMapGet);
+    webRegisterRoute("/api/audio/mood-map", WebMethod::kPost, handleAudioMoodMapPost);
+    webRegisterRoute("/api/audio/catalog", WebMethod::kGet, handleAudioCatalogGet);
+    webRegisterRoute("/api/audio/catalog/refresh", WebMethod::kPost,
+                     handleAudioCatalogRefreshPost);
+    webRegisterRoute("/api/audio/query", WebMethod::kPost, handleAudioQueryPost);
+    webRegisterRoute("/api/audio/play-banked", WebMethod::kPost, handleAudioPlayBankedPost);
+    webRegisterRoute("/api/audio", WebMethod::kGet, handleAudioGet);
+    webRegisterRoute("/api/audio", WebMethod::kPost, handleAudioPost);
+
+    // Mood presets. index.html fetches this one on every load.
+    webRegisterRoute("/api/mood", WebMethod::kPost, handleMoodPost);
 
     // Learned Sequences. POST /api/seq names its own body bound because a
     // saved sequence runs to SEQ_FILE_MAX_BYTES, three times what the default
