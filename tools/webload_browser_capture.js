@@ -36,7 +36,14 @@ const TERMINAL_CAPTURE_RESERVE_MS = 3_500;
 const CLOSE_RESERVE_MS = 800;
 const VIEWPORT = Object.freeze({ width: 1080, height: 800 });
 const COMMIT_RE = /^[0-9a-f]{40}$/;
+// Which capture this is within a run, not which run it is -- the coordinator's
+// --run-id names the run. Kept static because the label identifies the capture
+// kind, and existing bundles are read by it.
 const RUN_ID = "BASELINE1";
+// Provenance of this collector, never the ticket a given run is evidence for.
+// Emitting the two as one field filed the #93 ADR 0017 acceptance bundle under
+// issue 66. The run's own ticket arrives via --issue and defaults to null.
+const HARNESS_ORIGIN_ISSUE = 66;
 
 function usage() {
   return `Usage:
@@ -61,6 +68,9 @@ Options:
                         requires the coordinator's controller-side /api/status
                         handshake. It changes what a passing run means, so it is not
                         a cosmetic flag.
+  --issue N            GitHub issue this capture is evidence for, recorded in every
+                        artifact. No default: an unset field reads null, which is
+                        honest, rather than naming this collector's origin ticket.
   --dry-run            Validate and print the fixed plan without launching Chromium.
   --help                Show this text.
 
@@ -76,7 +86,7 @@ function parseArgs(argv) {
       args.help = true;
     } else if (arg === "--dry-run") {
       args.dryRun = true;
-    } else if (["--url", "--commit", "--out", "--control-file", "--page"].includes(arg)) {
+    } else if (["--url", "--commit", "--out", "--control-file", "--page", "--issue"].includes(arg)) {
       if (i + 1 >= argv.length) throw new Error(`${arg} requires a value`);
       const key = {
         "--url": "url",
@@ -84,6 +94,7 @@ function parseArgs(argv) {
         "--out": "out",
         "--control-file": "controlFile",
         "--page": "page",
+        "--issue": "issue",
       }[arg];
       args[key] = argv[++i];
     } else {
@@ -134,10 +145,18 @@ function validateArgs(args) {
     ? ensureInsideEvidence(args.controlFile, evidenceRoot, "--control-file")
     : null;
 
+  // null rather than a default ticket number: a bundle that does not know which
+  // issue it belongs to should say so, not name the collector's origin ticket.
+  let issue = null;
+  if (args.issue !== undefined) {
+    if (!/^[0-9]+$/.test(args.issue)) throw new Error("--issue must be a positive integer");
+    issue = Number(args.issue);
+  }
+
   if (!args.dryRun && fs.existsSync(out)) {
     throw new Error(`refusing to overwrite existing evidence directory: ${out}`);
   }
-  return { ...args, profile, parsedUrl, repoRoot, evidenceRoot, out, controlFile };
+  return { ...args, profile, parsedUrl, repoRoot, evidenceRoot, out, controlFile, issue };
 }
 
 function wallNow() {
@@ -438,7 +457,8 @@ async function runCapture(config) {
     const userAgent = await page.evaluate(() => navigator.userAgent);
 
     const manifest = {
-      issue: 66,
+      issue: config.issue,
+      harnessOriginIssue: HARNESS_ORIGIN_ISSUE,
       run: RUN_ID,
       tipCommit: config.commit,
       page: config.profile.name,
@@ -700,7 +720,8 @@ async function runCapture(config) {
       "final DOM HTML": artifacts.dom,
     });
     const result = {
-      issue: 66,
+      issue: config.issue,
+      harnessOriginIssue: HARNESS_ORIGIN_ISSUE,
       run: RUN_ID,
       tipCommit: config.commit,
       // Which page this measurement is of. run-39 (#64's ADR 0017 gate) was
@@ -785,7 +806,8 @@ async function main() {
     const config = validateArgs(args);
     if (config.dryRun) {
       process.stdout.write(`${JSON.stringify({
-        issue: 66,
+        issue: config.issue,
+        harnessOriginIssue: HARNESS_ORIGIN_ISSUE,
         run: RUN_ID,
         tipCommit: config.commit,
         page: config.profile.name,
