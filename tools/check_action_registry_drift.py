@@ -232,13 +232,26 @@ def parse_js_fallback() -> dict[str, tuple[str, str, str, bool, bool]]:
     return rows
 
 
+# A route reaches the server one of two ways while the ADR 0021 migration is in
+# flight: the async stack's own server.on(...) block, or webRegisterRoute() /
+# webRegisterUploadRoute() in the seam route table. Matching only the first made
+# every ported route look deleted, so the whole check failed on routes that were
+# working -- and would have gone on failing louder with each remaining group.
+ROUTE_REGISTRATION_PATTERNS = (
+    r'server\.on\(\s*"([^"]+)"',
+    r'webRegisterRoute\(\s*"([^"]+)"',
+    r'webRegisterUploadRoute\(\s*"([^"]+)"',
+)
+
+
 def find_registered_routes() -> set[str]:
-    """All literal paths passed to server.on(...) across src/web/*.cpp."""
+    """All literal paths registered as routes across src/web/*.cpp."""
     routes: set[str] = set()
     for path in sorted(WEB_DIR.glob("*.cpp")):
         text = path.read_text(encoding="utf-8")
-        for match in re.finditer(r'server\.on\(\s*"([^"]+)"', text):
-            routes.add(match.group(1))
+        for pattern in ROUTE_REGISTRATION_PATTERNS:
+            for match in re.finditer(pattern, text):
+                routes.add(match.group(1))
     return routes
 
 
@@ -251,7 +264,7 @@ def find_documented_api_paths(doc: dict) -> set[str]:
 
 
 def check_api_endpoints(doc: dict, errors: list[str]) -> None:
-    """Bidirectional check: every server.on(...) route <-> every registry api_path.
+    """Bidirectional check: every registered route <-> every registry api_path.
 
     Covers the full API surface (not just RC-bindable actions), so a new
     endpoint added in src/web/*.cpp without a matching registry entry — or a
@@ -260,9 +273,9 @@ def check_api_endpoints(doc: dict, errors: list[str]) -> None:
     routes = find_registered_routes()
     documented = find_documented_api_paths(doc)
     for route in sorted(routes - documented):
-        errors.append(f"{route} registered via server.on(...) but missing from the registry (api_path)")
+        errors.append(f"{route} is registered as a route but missing from the registry (api_path)")
     for path in sorted(documented - routes):
-        errors.append(f"{path} documented as api_path but no matching server.on(...) route exists")
+        errors.append(f"{path} documented as api_path but no route registers it")
 
 
 def find_dome_cues() -> set[str]:

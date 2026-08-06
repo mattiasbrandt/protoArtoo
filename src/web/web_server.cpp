@@ -27,11 +27,9 @@
 #include "../../include/api_config.h"
 #include "../../include/drive_speed_preset.h"
 #include "../../include/api_helpers.h"
-#include "../../include/api_rc.h"
 #include "../../include/api_seq.h"
 #include "../../include/api_status.h"
 #include "../../include/api_system.h"
-#include "../../include/api_validation.h"
 #include "../../include/audio_task.h"
 #include "../../include/reset_reason.h"
 #include "../../include/config.h"
@@ -1366,9 +1364,7 @@ void startHttpServerOnce() {
 
         registerMoodMapRoutes(server);
         registerAudioRoutes(server);
-        registerRcRoutes(server);
         registerStatusRoutes(server);
-        registerValidationRoutes(server);
 #if PA_HEAP_PROFILE
         registerProfilerRoutes(server);
 #endif

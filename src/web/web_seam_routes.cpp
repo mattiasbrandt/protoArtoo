@@ -20,10 +20,12 @@
 #include "../../include/api_estop.h"
 #include "../../include/api_identity.h"
 #include "../../include/api_logs.h"
+#include "../../include/api_rc.h"
 #include "../../include/api_servo.h"
 #include "../../include/api_status.h"
 #include "../../include/api_system.h"
 #include "../../include/api_upload.h"
+#include "../../include/api_validation.h"
 #include "../../include/web_request.h"
 
 void webRegisterSeamRoutes() {
@@ -80,6 +82,13 @@ void webRegisterSeamRoutes() {
 
     webRegisterRoute("/api/aux-led/color", WebMethod::kPost, handleAuxLedColorPost);
     webRegisterRoute("/api/aux-led/effect", WebMethod::kPost, handleAuxLedEffectPost);
+
+    // RC diagnostics and the validation snapshot. Both read-only payloads come
+    // straight from their snapshot cores; /api/rc/map above is the write half of
+    // this group and was ported with the config routes.
+    webRegisterRoute("/api/rc", WebMethod::kGet, handleRcGet);
+    webRegisterRoute("/api/rc/debug", WebMethod::kPost, handleRcDebugPost);
+    webRegisterRoute("/api/validation", WebMethod::kGet, handleValidationGet);
 
     // Streaming OTA uploads, ported early on purpose: with these working on
     // the psychic build, later work reflashes over the air instead of needing
