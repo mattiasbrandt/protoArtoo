@@ -2667,6 +2667,21 @@ entries:
   requires_web_control: false
   nvs_key: null
 
+- name: system.api.event-stream
+  display_name: Event Stream
+  description: Server-sent event stream the dashboard subscribes to for status and rc events
+  domain: system
+  type: status
+  marcduino_cmd: null
+  api_path: /api/events
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/web/api_events.cpp
+  sources: [ web_api ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
 # --- rc ---
 - name: rc.status.snapshot
   display_name: RC Snapshot
