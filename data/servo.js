@@ -398,7 +398,32 @@
   // -------------------------------------------------------------------------
   // Boot — load config then start status subscription
   // -------------------------------------------------------------------------
-  loadCalib();
+
+  // Page Recovery: register startup API load as a section so the bootstrap
+  // can show recovery state if the config fetch fails.
+  // See docs/page-load-recovery-architecture.md and ADR 0019.
+  const SECTIONS = [
+    ["servo-calibration", loadCalib, "servo calibration"],
+  ];
+
+  const startPageLoad = () => {
+    if (!window.PABootstrap) {
+      loadCalib().catch(() => {});
+      return;
+    }
+    window.PABootstrap.setResourceLabels?.({
+      "/web_api.js": "controller connection",
+      "/status_stream.js": "live updates",
+      "/shell.js": "page layout",
+      "/servo.js": "servo control",
+      "/footer.js": "page footer",
+    });
+    SECTIONS.forEach(([name, load, label]) =>
+      window.PABootstrap.registerSection(name, load, { label })
+    );
+  };
+
+  startPageLoad();
 
   // SSE-first status updates with visibility-aware fallback polling.
   if (window.PAStatusStream?.isSupported()) {
