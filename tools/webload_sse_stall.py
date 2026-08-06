@@ -318,7 +318,7 @@ class StatusSampler:
             sseEvicted=(status or {}).get("sseEvicted"),
             refusedSseCap=(status or {}).get("refusedSseCap"),
             # Issue #92's response-phase deadline publishes its own work.
-            # Recorded as None when absent (firmware predating ADR 0020).
+            # Recorded as None when absent (firmware predating ADR 0024).
             responseDeadlineClosures=(status or {}).get("responseDeadlineClosures"),
             responseDeadlineAgeMs=(status or {}).get("responseDeadlineAgeMs"),
             responseLastMs=(status or {}).get("responseLastMs"),
@@ -385,7 +385,7 @@ def _summarize_samples(samples: list[dict[str, Any]]) -> dict[str, Any]:
         "sseEvictedFirst": evicted[0] if evicted else None,
         "sseEvictedLast": evicted[-1] if evicted else None,
         # Issue #92's response-phase deadline counter and high-water mark.
-        # Absent on firmware predating ADR 0020; None is the marker.
+        # Absent on firmware predating ADR 0024; None is the marker.
         "responseDeadlineClosuresFirst": deadline_closures[0] if deadline_closures else None,
         "responseDeadlineClosuresLast": deadline_closures[-1] if deadline_closures else None,
         "responseMaxMsHighWater": max(response_max) if response_max else None,
