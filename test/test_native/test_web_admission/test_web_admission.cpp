@@ -315,6 +315,51 @@ void test_inflight_cap_is_checked_before_the_heap_floor() {
     TEST_ASSERT_EQUAL(WebRequestAdmission::kRejectInflightCap, webRequestAdmissionDecide(in));
 }
 
+void test_override_zero_changes_nothing() {
+    // Every shipping build carries zero here, so the healthy-heap admit above
+    // must hold with the field stated explicitly rather than defaulted.
+    WebRequestAdmissionInputs in = healthyInputs();
+    in.minLargestFreeBlockOverride = 0;
+
+    TEST_ASSERT_EQUAL(WebRequestAdmission::kAdmit, webRequestAdmissionDecide(in));
+}
+
+void test_override_refuses_ordinary_work_on_a_healthy_heap() {
+    // The induced-pressure bench build: a floor raised above the resting heap
+    // makes an ordinary request refuse without the heap being touched, which
+    // is what lets the ADR 0016 Busy Recovery Page be exercised at all.
+    WebRequestAdmissionInputs in = healthyInputs();
+    in.minLargestFreeBlockOverride = in.largestFreeBlock + 1;
+
+    TEST_ASSERT_EQUAL(WebRequestAdmission::kRejectHeapFloor, webRequestAdmissionDecide(in));
+}
+
+void test_override_leaves_the_diagnostic_floor_alone() {
+    // The induced session must stay observable: /api/status keeps its real
+    // floor while ordinary work is being refused around it.
+    WebRequestAdmissionInputs in = healthyInputs();
+    in.diagnostic = true;
+    in.minLargestFreeBlockOverride = in.largestFreeBlock + 1;
+
+    TEST_ASSERT_EQUAL(WebRequestAdmission::kAdmit, webRequestAdmissionDecide(in));
+}
+
+void test_estop_is_admitted_through_the_override() {
+    WebRequestAdmissionInputs in = healthyInputs();
+    in.estop = true;
+    in.minLargestFreeBlockOverride = in.largestFreeBlock + 1;
+
+    TEST_ASSERT_EQUAL(WebRequestAdmission::kAdmit, webRequestAdmissionDecide(in));
+}
+
+void test_inflight_cap_still_precedes_the_overridden_floor() {
+    WebRequestAdmissionInputs in = healthyInputs();
+    in.inflightRequests = kMaxInflight;
+    in.minLargestFreeBlockOverride = in.largestFreeBlock + 1;
+
+    TEST_ASSERT_EQUAL(WebRequestAdmission::kRejectInflightCap, webRequestAdmissionDecide(in));
+}
+
 // -----------------------------------------------------------------------------
 // Path classification
 // -----------------------------------------------------------------------------
@@ -622,6 +667,11 @@ int main() {
     RUN_TEST(test_diagnostics_stay_reachable_below_the_ordinary_floor);
     RUN_TEST(test_diagnostics_are_not_exempt_from_every_floor);
     RUN_TEST(test_inflight_cap_is_checked_before_the_heap_floor);
+    RUN_TEST(test_override_zero_changes_nothing);
+    RUN_TEST(test_override_refuses_ordinary_work_on_a_healthy_heap);
+    RUN_TEST(test_override_leaves_the_diagnostic_floor_alone);
+    RUN_TEST(test_estop_is_admitted_through_the_override);
+    RUN_TEST(test_inflight_cap_still_precedes_the_overridden_floor);
 
     RUN_TEST(test_estop_paths_are_recognised);
     RUN_TEST(test_lookalike_paths_are_not_treated_as_estop);

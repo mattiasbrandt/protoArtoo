@@ -183,6 +183,14 @@ struct WebRequestAdmissionInputs {
     size_t largestFreeBlock;
     size_t minLargestFreeBlock;
     size_t minLargestFreeBlockDiagnostic;
+    // Bench-only floor override. When non-zero it replaces the ordinary-class
+    // floor above, so a build carrying it refuses ordinary work on a healthy
+    // heap -- the only way to exercise the ADR 0016 Busy Recovery Page against
+    // a controller that real load can no longer degrade. Diagnostics keep
+    // their own floor so the induced session stays observable, and the estop
+    // bypass is unaffected because it is decided before any floor is
+    // consulted. Zero in every shipping build.
+    size_t minLargestFreeBlockOverride;
 };
 
 // The whole request-level decision, in the same order the async stack applied
