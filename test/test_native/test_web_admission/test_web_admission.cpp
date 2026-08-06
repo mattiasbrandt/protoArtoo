@@ -467,6 +467,131 @@ void test_busy_response_closes_the_connection_it_is_shedding() {
     TEST_ASSERT_NOT_NULL(strstr(kBusyRecoveryResponse, "Cache-Control: no-store\r\n"));
 }
 
+// -----------------------------------------------------------------------------
+// Socket census
+// -----------------------------------------------------------------------------
+//
+// What is worth pinning is that the census cannot be made to lie by the two
+// things the device actually does to it: refuse connections, and reuse them.
+// The occupancy number is the input to a decision about max_open_sockets, so a
+// count that drifts under refusal would argue for the wrong budget.
+
+void test_census_starts_empty() {
+    WebSocketCensus census;
+    webSocketCensusInit(&census);
+
+    TEST_ASSERT_EQUAL_INT(0, census.open);
+    TEST_ASSERT_EQUAL_INT(0, census.openPeak);
+    TEST_ASSERT_EQUAL_UINT32(0u, census.accepted);
+    TEST_ASSERT_EQUAL_UINT32(0u, census.requests);
+    TEST_ASSERT_EQUAL_UINT32(0u, census.untracked);
+}
+
+void test_census_counts_open_sockets_and_remembers_the_peak() {
+    WebSocketCensus census;
+    webSocketCensusInit(&census);
+
+    TEST_ASSERT_TRUE(webSocketCensusOpen(&census, 4));
+    TEST_ASSERT_TRUE(webSocketCensusOpen(&census, 5));
+    TEST_ASSERT_TRUE(webSocketCensusOpen(&census, 6));
+    TEST_ASSERT_EQUAL_INT(3, census.open);
+
+    TEST_ASSERT_TRUE(webSocketCensusClose(&census, 5));
+    TEST_ASSERT_EQUAL_INT(2, census.open);
+
+    // The peak is what the socket budget has to cover, so it must survive the
+    // dip that follows it.
+    TEST_ASSERT_EQUAL_INT(3, census.openPeak);
+    TEST_ASSERT_EQUAL_UINT32(3u, census.accepted);
+}
+
+void test_a_refused_connection_does_not_underflow_the_occupancy_count() {
+    // The server calls its close callback for a socket the guard refused --
+    // httpd_sess_new() routes an open_fn failure through httpd_sess_delete().
+    // A bare decrement would go negative by exactly the refusal count, and
+    // refusals happen in the pressure windows where occupancy matters most.
+    WebSocketCensus census;
+    webSocketCensusInit(&census);
+
+    TEST_ASSERT_TRUE(webSocketCensusOpen(&census, 7));
+    TEST_ASSERT_FALSE(webSocketCensusClose(&census, 9));
+
+    TEST_ASSERT_EQUAL_INT(1, census.open);
+    TEST_ASSERT_EQUAL_UINT32(1u, census.accepted);
+}
+
+void test_closing_the_same_socket_twice_only_counts_once() {
+    WebSocketCensus census;
+    webSocketCensusInit(&census);
+
+    webSocketCensusOpen(&census, 3);
+    TEST_ASSERT_TRUE(webSocketCensusClose(&census, 3));
+    TEST_ASSERT_FALSE(webSocketCensusClose(&census, 3));
+
+    TEST_ASSERT_EQUAL_INT(0, census.open);
+}
+
+void test_a_reused_descriptor_is_a_new_connection() {
+    // lwIP hands the same fd back once it is free. Two connections that happen
+    // to reuse a number are still two connections, and churn counts them both.
+    WebSocketCensus census;
+    webSocketCensusInit(&census);
+
+    webSocketCensusOpen(&census, 8);
+    webSocketCensusClose(&census, 8);
+    webSocketCensusOpen(&census, 8);
+
+    TEST_ASSERT_EQUAL_UINT32(2u, census.accepted);
+    TEST_ASSERT_EQUAL_INT(1, census.open);
+    TEST_ASSERT_EQUAL_INT(1, census.openPeak);
+}
+
+void test_requests_and_connections_are_counted_separately() {
+    // Their ratio is the whole keep-alive measurement: one request per socket
+    // means the stack closes per response, many means it reuses.
+    WebSocketCensus census;
+    webSocketCensusInit(&census);
+
+    webSocketCensusOpen(&census, 4);
+    for (int i = 0; i < 12; ++i) {
+        webSocketCensusRequest(&census);
+    }
+
+    TEST_ASSERT_EQUAL_UINT32(1u, census.accepted);
+    TEST_ASSERT_EQUAL_UINT32(12u, census.requests);
+}
+
+void test_census_reports_rather_than_hides_an_overflow() {
+    // The capacity sits above the server's max_open_sockets, so filling it
+    // should be impossible in practice. If it ever happens the reading is an
+    // undercount, and saying so is what distinguishes "raise the capacity"
+    // from "the stack lost sockets".
+    WebSocketCensus census;
+    webSocketCensusInit(&census);
+
+    for (int fd = 0; fd < WEB_SOCKET_CENSUS_CAPACITY; ++fd) {
+        TEST_ASSERT_TRUE(webSocketCensusOpen(&census, fd));
+    }
+    TEST_ASSERT_FALSE(webSocketCensusOpen(&census, WEB_SOCKET_CENSUS_CAPACITY));
+
+    TEST_ASSERT_EQUAL_INT(WEB_SOCKET_CENSUS_CAPACITY, census.open);
+    TEST_ASSERT_EQUAL_UINT32((uint32_t)WEB_SOCKET_CENSUS_CAPACITY + 1u, census.accepted);
+    TEST_ASSERT_EQUAL_UINT32(1u, census.untracked);
+}
+
+void test_census_ignores_a_descriptor_that_is_not_a_socket() {
+    // -1 is the free-slot sentinel. Admitting one would both corrupt the set
+    // and make every later close match the wrong slot.
+    WebSocketCensus census;
+    webSocketCensusInit(&census);
+
+    TEST_ASSERT_FALSE(webSocketCensusOpen(&census, -1));
+    TEST_ASSERT_FALSE(webSocketCensusClose(&census, -1));
+
+    TEST_ASSERT_EQUAL_INT(0, census.open);
+    TEST_ASSERT_EQUAL_UINT32(0u, census.accepted);
+}
+
 int main() {
     UNITY_BEGIN();
 
@@ -517,6 +642,15 @@ int main() {
     RUN_TEST(test_busy_response_is_a_self_contained_page);
     RUN_TEST(test_busy_response_tells_the_operator_it_is_busy_and_offers_a_retry);
     RUN_TEST(test_busy_response_closes_the_connection_it_is_shedding);
+
+    RUN_TEST(test_census_starts_empty);
+    RUN_TEST(test_census_counts_open_sockets_and_remembers_the_peak);
+    RUN_TEST(test_a_refused_connection_does_not_underflow_the_occupancy_count);
+    RUN_TEST(test_closing_the_same_socket_twice_only_counts_once);
+    RUN_TEST(test_a_reused_descriptor_is_a_new_connection);
+    RUN_TEST(test_requests_and_connections_are_counted_separately);
+    RUN_TEST(test_census_reports_rather_than_hides_an_overflow);
+    RUN_TEST(test_census_ignores_a_descriptor_that_is_not_a_socket);
 
     return UNITY_END();
 }

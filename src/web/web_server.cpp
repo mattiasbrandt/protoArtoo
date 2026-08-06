@@ -754,6 +754,35 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
         (unsigned)auxLedPin, (unsigned)auxLedR, (unsigned)auxLedG, (unsigned)auxLedB,
         auxLedEffectLabel, auxLedAvailable ? "true" : "false");
 
+#if PA_WEB_BACKEND_PSYCHIC
+    // Connection lifetime, emitted only on the stack that has one to report.
+    // The async backend closes every response by construction, so a socket
+    // count there would only restate the request count -- and adding a field
+    // the recorded baseline scorecard never carried is exactly what the
+    // preserved counter names above exist to avoid.
+    //
+    // httpRequestsServed against httpSocketsAccepted is the measurement: their
+    // ratio is requests per connection, which is what "does this stack reuse
+    // connections" actually means. httpSocketsOpenPeak is the other half --
+    // reuse is only affordable if occupancy stays inside max_open_sockets.
+    if (written > 0 && written < (int)bufferSize - 1) {
+        const int extra =
+            snprintf(buffer + written, bufferSize - (size_t)written,
+                     ",\"httpSocketsAccepted\":%lu,\"httpSocketsOpen\":%d,"
+                     "\"httpSocketsOpenPeak\":%d,\"httpSocketsUntracked\":%lu,"
+                     "\"httpRequestsServed\":%lu",
+                     (unsigned long)g_webSocketsAccepted, (int)g_webSocketsOpen,
+                     (int)g_webSocketsOpenPeak, (unsigned long)g_webSocketsUntracked,
+                     (unsigned long)g_webRequestsServed);
+        if (extra > 0) {
+            // Truncation leaves written past the buffer, which the bound check
+            // below reads as a failed build -- the same way the fixed section
+            // above reports its own overflow.
+            written += extra;
+        }
+    }
+#endif
+
     // Conditionally append enabled-component keys — disabled components are absent,
     // not emitted as false placeholders (Phase 3 status/dashboard contract).
     bool ok = written > 0 && written < (int)bufferSize - 1;

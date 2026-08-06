@@ -69,6 +69,12 @@ volatile uint32_t g_webRefusedHeapFloor = 0;
 volatile uint32_t g_webRefusedHeapFloorDiag = 0;
 volatile uint32_t g_webBusyRecoveryPagesServed = 0;
 
+volatile uint32_t g_webSocketsAccepted = 0;
+volatile int g_webSocketsOpen = 0;
+volatile int g_webSocketsOpenPeak = 0;
+volatile uint32_t g_webSocketsUntracked = 0;
+volatile uint32_t g_webRequestsServed = 0;
+
 // -----------------------------------------------------------------------------
 // Connection Admission
 // -----------------------------------------------------------------------------
@@ -126,6 +132,66 @@ void webHeapSampleStore(WebHeapSampleCache* cache, uint32_t nowMs, size_t value)
     cache->value = value;
     cache->lastSampleMs = nowMs;
     cache->primed = true;
+}
+
+// -----------------------------------------------------------------------------
+// Socket census
+// -----------------------------------------------------------------------------
+
+void webSocketCensusInit(WebSocketCensus* census) {
+    for (size_t i = 0; i < WEB_SOCKET_CENSUS_CAPACITY; ++i) {
+        census->admittedFds[i] = -1;
+    }
+    census->open = 0;
+    census->openPeak = 0;
+    census->accepted = 0;
+    census->requests = 0;
+    census->untracked = 0;
+}
+
+bool webSocketCensusOpen(WebSocketCensus* census, int fd) {
+    // A negative descriptor is not a socket. Counting one would corrupt both
+    // the occupancy reading and the free-slot search, since -1 is the sentinel.
+    if (fd < 0) {
+        return false;
+    }
+
+    census->accepted = census->accepted + 1u;
+
+    for (size_t i = 0; i < WEB_SOCKET_CENSUS_CAPACITY; ++i) {
+        if (census->admittedFds[i] == -1) {
+            census->admittedFds[i] = fd;
+            census->open = census->open + 1;
+            if (census->open > census->openPeak) {
+                census->openPeak = census->open;
+            }
+            return true;
+        }
+    }
+
+    census->untracked = census->untracked + 1u;
+    return false;
+}
+
+bool webSocketCensusClose(WebSocketCensus* census, int fd) {
+    if (fd < 0) {
+        return false;
+    }
+    for (size_t i = 0; i < WEB_SOCKET_CENSUS_CAPACITY; ++i) {
+        if (census->admittedFds[i] == fd) {
+            census->admittedFds[i] = -1;
+            census->open = census->open - 1;
+            return true;
+        }
+    }
+    // Not ours: a connection the guard refused before it was ever admitted, or
+    // one the capacity above could not name. Either way the occupancy count
+    // never included it, so it must not be decremented for it.
+    return false;
+}
+
+void webSocketCensusRequest(WebSocketCensus* census) {
+    census->requests = census->requests + 1u;
 }
 
 // -----------------------------------------------------------------------------

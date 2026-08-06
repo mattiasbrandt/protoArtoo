@@ -72,6 +72,22 @@ PsychicHttpServer s_server;
 WebAcceptRateLimiter s_acceptLimiter;
 WebHeapSampleCache s_heapSample;
 
+// Connection lifetime evidence. Lives here rather than beside the event stream
+// registry because it is written from the same two admission callbacks, on the
+// same single task, and therefore needs none of that registry's locking.
+WebSocketCensus s_census;
+
+// Copies the census into the globals /api/status publishes. Called from the
+// same task that mutates it, so the read is consistent without a lock; the
+// globals are volatile only because the status builder reads them from another.
+void publishCensus() {
+    g_webSocketsAccepted = s_census.accepted;
+    g_webSocketsOpen = s_census.open;
+    g_webSocketsOpenPeak = s_census.openPeak;
+    g_webSocketsUntracked = s_census.untracked;
+    g_webRequestsServed = s_census.requests;
+}
+
 // The PsychicHttp constructor installs its own open_fn; this holds it so the
 // admit path can chain to it. Without that chain no PsychicClient is created,
 // which breaks getClient() and the close path.
@@ -152,6 +168,13 @@ esp_err_t admissionOpenCallback(httpd_handle_t hd, int sockfd) {
         g_webAcceptRejectLargestBlock = (uint32_t)s_heapSample.value;
         return ESP_FAIL;
     }
+
+    // Admitted. Counted before the vendor chain so the census and the server's
+    // own session table agree on what exists: httpd_sess_new() has already
+    // created the session by the time open_fn runs, and a vendor callback that
+    // failed would take it down through the same close_fn the census listens to.
+    webSocketCensusOpen(&s_census, sockfd);
+    publishCensus();
 
     return s_vendorOpenFn != nullptr ? s_vendorOpenFn(hd, sockfd) : ESP_OK;
 }
@@ -292,10 +315,52 @@ esp_err_t admissionMiddleware(PsychicRequest* request, PsychicResponse* response
         return ESP_FAIL;
     }
 
+    // Counted here rather than per route, because this is the only point every
+    // request passes through -- the global middleware chain wraps the static
+    // file handler as well as the endpoints, and assets are most of a page load.
+    // Only admitted requests count: a refusal never reached a handler, and
+    // folding refusals in would hide the very shedding the counters above exist
+    // to expose.
+    webSocketCensusRequest(&s_census);
+    publishCensus();
+
+#if PA_WEB_CLOSE_PER_RESPONSE
+    // The close-per-response arm of the keep-alive comparison. The event stream
+    // is exempt by definition: it is a response that never ends, and closing it
+    // after its head would make the arm measure a broken stream rather than a
+    // connection policy.
+    //
+    // The header is staged before the handler runs because it has to travel
+    // with the response, and PsychicResponse::sendHeaders() appends to this
+    // list rather than replacing it. esp_http_server stores the pointers as
+    // given, so both strings are literals with static storage.
+    const bool closeAfterResponse = !in.longLived;
+    httpd_req_t* rawForClose = request->request();
+    const httpd_handle_t serverForClose = rawForClose->handle;
+    const int sockForClose = httpd_req_to_sockfd(rawForClose);
+    if (closeAfterResponse && httpd_resp_set_hdr(rawForClose, "Connection", "close") != ESP_OK) {
+        // The header list is full (max_resp_headers). Say so rather than
+        // closing anyway: a socket that dies without having announced it is a
+        // different experiment from the one being run.
+        PA_LOG_WARN(TAG, "no header slot for Connection: close on %s", path);
+    }
+#endif
+
     // Estop is admitted but never counted, matching the async stack: a safety
     // command must not be able to fill the cap it is exempt from.
     InflightSlot slot(!in.estop && !in.longLived);
-    return next();
+    const esp_err_t result = next();
+
+#if PA_WEB_CLOSE_PER_RESPONSE
+    // Queued, not immediate: the server task processes the close from its own
+    // loop once this request has finished flushing, so the response the browser
+    // is still reading is not cut off underneath it.
+    if (closeAfterResponse && sockForClose >= 0) {
+        httpd_sess_trigger_close(serverForClose, sockForClose);
+    }
+#endif
+
+    return result;
 }
 
 // =============================================================================
@@ -471,6 +536,13 @@ void streamCloseCallback(httpd_handle_t hd, int sockfd) {
     if (wasStream) {
         PA_LOG_DEBUG(TAG, "event stream client %d closed", sockfd);
     }
+
+    // Returns false for a socket Connection Admission refused, which reaches
+    // this callback through httpd_sess_delete() having never been admitted.
+    // The census ignores it; the occupancy reading only ever counts sockets
+    // that actually got to serve something.
+    webSocketCensusClose(&s_census, sockfd);
+    publishCensus();
 
     if (s_vendorCloseFn != nullptr) {
         // The vendor callback closes the descriptor itself once it has torn
@@ -798,6 +870,7 @@ void initPsychicWebServer() {
     s_vendorOpenFn = s_server.config.open_fn;
     s_server.config.open_fn = admissionOpenCallback;
     webAcceptRateLimiterInit(&s_acceptLimiter, millis(), PA_ACCEPT_BURST);
+    webSocketCensusInit(&s_census);
 
     // Same capture-and-chain for the close side, which is how the event stream
     // registry learns that a subscribed socket has gone. Without it sseClients

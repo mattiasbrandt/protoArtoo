@@ -96,6 +96,67 @@ bool webHeapSampleDue(const WebHeapSampleCache* cache, uint32_t nowMs, uint32_t 
 void webHeapSampleStore(WebHeapSampleCache* cache, uint32_t nowMs, size_t value);
 
 // -----------------------------------------------------------------------------
+// Socket census
+// -----------------------------------------------------------------------------
+
+// How many admitted sockets the census can name at once. Sized above the
+// server's max_open_sockets so the tracked set never fills before the server's
+// own budget does -- if it did, the overflow would be an artefact of this
+// bookkeeping rather than a property of the stack being measured.
+#ifndef WEB_SOCKET_CENSUS_CAPACITY
+#define WEB_SOCKET_CENSUS_CAPACITY 16
+#endif
+
+// Connection lifetime evidence: how many sockets were opened, how many are open
+// now, and how many requests were served across them.
+//
+// The ratio of requests to sockets is what actually answers "is this stack
+// reusing connections", and it cannot be inferred from either number alone. A
+// stack that closes per response serves one request per socket; a keep-alive
+// stack serves many, and pays for it in occupancy against a fixed
+// max_open_sockets budget.
+//
+// The set of admitted descriptors is held rather than a bare counter because
+// the server calls its close callback for sockets Connection Admission refused
+// as well as for ones it admitted (httpd_sess_new() routes an open_fn failure
+// through httpd_sess_delete(), which calls close_fn). A bare decrement would
+// therefore underflow by exactly the refusal count -- and refusals cluster in
+// precisely the pressure windows where the occupancy reading matters most.
+struct WebSocketCensus {
+    // Descriptors of currently-open admitted sockets. A free slot holds -1.
+    int admittedFds[WEB_SOCKET_CENSUS_CAPACITY];
+    int open;
+    int openPeak;
+    // Cumulative admitted opens. Connection churn is this against uptime.
+    uint32_t accepted;
+    // Requests seen by the request layer, across all sockets.
+    uint32_t requests;
+    // Admitted sockets the set had no room to name. Published rather than
+    // silently dropped: a non-zero value means `open` is an undercount and the
+    // capacity above is what needs raising, not the reading that needs
+    // explaining.
+    uint32_t untracked;
+};
+
+// Clear the census and mark every slot free.
+void webSocketCensusInit(WebSocketCensus* census);
+
+// Record an admitted socket. Returns false when the set was full, in which case
+// the open is still counted in `accepted` and `untracked` but the descriptor is
+// not tracked, so its later close cannot be attributed.
+bool webSocketCensusOpen(WebSocketCensus* census, int fd);
+
+// Release a socket. Returns false for a descriptor the census never admitted --
+// a refused connection, or one lost to the capacity above -- and leaves the
+// occupancy count untouched in that case.
+bool webSocketCensusClose(WebSocketCensus* census, int fd);
+
+// Count one request. Deliberately not keyed on the socket: what is wanted is
+// the total, and pinning requests to descriptors would make this a per-request
+// scan of the set on the one task that services every connection.
+void webSocketCensusRequest(WebSocketCensus* census);
+
+// -----------------------------------------------------------------------------
 // Request admission
 // -----------------------------------------------------------------------------
 
@@ -195,3 +256,15 @@ extern volatile uint32_t g_webRefusedHeapFloorDiag;
 // indistinguishable from a broken one: an aggregate run that never triggers it
 // looks exactly like a run where it silently stopped working.
 extern volatile uint32_t g_webBusyRecoveryPagesServed;
+
+// Connection lifetime, published from the census above. Kept as plain globals
+// alongside the rest rather than exposing the census struct, so the status
+// builder stays a formatter and never reaches into admission state.
+//
+// These have no historical spelling to preserve: nothing measured connection
+// reuse before, because on the async stack there was none to measure.
+extern volatile uint32_t g_webSocketsAccepted;
+extern volatile int g_webSocketsOpen;
+extern volatile int g_webSocketsOpenPeak;
+extern volatile uint32_t g_webSocketsUntracked;
+extern volatile uint32_t g_webRequestsServed;
