@@ -135,10 +135,10 @@ size_t sampleLargestFreeBlock(void*) {
     return s_heapSample.value;
 }
 
-// Records a decision that has already been taken, for the issue #97 floor
-// evidence (include/web_admission_trace.h). Never consulted by either layer:
-// it runs after the outcome is fixed, so the only thing it can change is how
-// long the guard took.
+// Records a decision that has already been taken, as evidence for re-deriving
+// the admission floors (include/web_admission_trace.h). Never consulted by
+// either layer: it runs after the outcome is fixed, so the only thing it can
+// change is how long the guard took.
 //
 // The age it stores is the age of the sample the decision USED, which is what
 // separates "the heap really was this low" from "the heap was this low once,
@@ -157,9 +157,17 @@ size_t sampleLargestFreeBlock(void*) {
 #define PA_ADMISSION_TRACE_FRESH 1
 #endif
 
-void traceDecision(uint32_t nowMs, WebAdmissionTraceLayer layer,
-                   WebAdmissionTraceOutcome outcome, int inflight,
+void traceDecision(WebAdmissionTraceLayer layer, WebAdmissionTraceOutcome outcome, int inflight,
                    WebAdmissionTraceNavigation navigation) {
+    // Read here rather than taken from the caller. Each layer captures its own
+    // clock at a different point relative to the sampler -- the connection
+    // callback before it, the request middleware after it -- so a caller's
+    // stamp can predate the sample it is being compared against, and the
+    // unsigned subtraction below would turn a just-refreshed sample into the
+    // maximum possible age. That is the one reading this trace cannot afford to
+    // get backwards. Sampling has already happened by the time this runs, so a
+    // clock read here is never earlier than the sample it measures.
+    const uint32_t nowMs = millis();
     const uint32_t ageMs = s_heapSample.primed ? (nowMs - s_heapSample.lastSampleMs)
                                                : kWebAdmissionTraceAgeUnknown;
 #if PA_ADMISSION_TRACE_FRESH
@@ -174,7 +182,7 @@ void traceDecision(uint32_t nowMs, WebAdmissionTraceLayer layer,
 #else
 
 // Trace off: the call sites stay, and cost nothing.
-inline void traceDecision(uint32_t, WebAdmissionTraceLayer, WebAdmissionTraceOutcome, int,
+inline void traceDecision(WebAdmissionTraceLayer, WebAdmissionTraceOutcome, int,
                           WebAdmissionTraceNavigation) {
 }
 
@@ -204,7 +212,7 @@ esp_err_t admissionOpenCallback(httpd_handle_t hd, int sockfd) {
     if (decision == WebAcceptDecision::kRejectRate) {
         g_webAcceptRejectRate = g_webAcceptRejectRate + 1u;
         g_webAcceptRejectLastMs = nowMs;
-        traceDecision(nowMs, WebAdmissionTraceLayer::kConnection,
+        traceDecision(WebAdmissionTraceLayer::kConnection,
                       WebAdmissionTraceOutcome::kRejectRate, 0,
                       WebAdmissionTraceNavigation::kUnknown);
         return ESP_FAIL;
@@ -217,13 +225,13 @@ esp_err_t admissionOpenCallback(httpd_handle_t hd, int sockfd) {
         // pessimistic sample. Publishing it makes that visible rather than
         // leaving a bare refusal count to be argued over.
         g_webAcceptRejectLargestBlock = (uint32_t)s_heapSample.value;
-        traceDecision(nowMs, WebAdmissionTraceLayer::kConnection,
+        traceDecision(WebAdmissionTraceLayer::kConnection,
                       WebAdmissionTraceOutcome::kRejectHeap, 0,
                       WebAdmissionTraceNavigation::kUnknown);
         return ESP_FAIL;
     }
 
-    traceDecision(nowMs, WebAdmissionTraceLayer::kConnection, WebAdmissionTraceOutcome::kAdmit, 0,
+    traceDecision(WebAdmissionTraceLayer::kConnection, WebAdmissionTraceOutcome::kAdmit, 0,
                   WebAdmissionTraceNavigation::kUnknown);
 
     // Admitted. Counted before the vendor chain so the census and the server's
@@ -327,11 +335,6 @@ esp_err_t admissionMiddleware(PsychicRequest* request, PsychicResponse* response
     in.minLargestFreeBlock = PA_ADMISSION_MIN_LARGEST_FREE_BLOCK;
     in.minLargestFreeBlockDiagnostic = PA_ADMISSION_MIN_LARGEST_FREE_BLOCK_DIAG;
 
-    // Read after the sample, not before: the sample may have refreshed the
-    // cache, and an earlier stamp would make the age of a just-taken reading
-    // underflow to roughly forty-nine days.
-    const uint32_t nowMs = millis();
-
     bool refused = false;
     WebAdmissionTraceOutcome outcome = WebAdmissionTraceOutcome::kAdmit;
     switch (webRequestAdmissionDecide(in)) {
@@ -380,7 +383,7 @@ esp_err_t admissionMiddleware(PsychicRequest* request, PsychicResponse* response
         // the only point where a refusal's navigation class is known, and that
         // class is the whole question: a refused navigation is the one this
         // ticket has to see either completed or answered with the Busy page.
-        traceDecision(nowMs, WebAdmissionTraceLayer::kRequest, outcome, in.inflightRequests,
+        traceDecision(WebAdmissionTraceLayer::kRequest, outcome, in.inflightRequests,
                       navigation ? WebAdmissionTraceNavigation::kNavigation
                                  : WebAdmissionTraceNavigation::kAsset);
 
@@ -393,7 +396,7 @@ esp_err_t admissionMiddleware(PsychicRequest* request, PsychicResponse* response
     // Admitted: the navigation class stays unknown, because determining it
     // costs two header reads and an admitted request must not pay for a
     // distinction only a refusal acts on.
-    traceDecision(nowMs, WebAdmissionTraceLayer::kRequest, WebAdmissionTraceOutcome::kAdmit,
+    traceDecision(WebAdmissionTraceLayer::kRequest, WebAdmissionTraceOutcome::kAdmit,
                   in.inflightRequests, WebAdmissionTraceNavigation::kUnknown);
 
     // Counted here rather than per route, because this is the only point every

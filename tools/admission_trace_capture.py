@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Capture and read the controller's admission decision trace (issue #97).
+"""Capture and read the controller's admission decision trace.
 
 The controller records every Connection Admission and request admission
 decision into a small ring (include/web_admission_trace.h) and serves it at
 GET /api/admission/trace. This tool arms the ring, runs whatever produces the
-load, reads the ring back, and reduces it to the numbers #97's decision turns
+load, reads the ring back, and reduces it to the numbers a floor decision turns
 on.
 
 What it answers, and why each number is here:
@@ -24,8 +24,8 @@ What it answers, and why each number is here:
   Regime
       Refusals split by layer. Connection-layer refusals mean the navigation
       died before HTTP; request-layer refusals mean the page shed its own
-      assets. #97 has to cost both, and a change that fixes one can worsen the
-      other.
+      assets. Both regimes have to be costed, because a change that fixes one
+      can worsen the other.
 
 Usage:
 

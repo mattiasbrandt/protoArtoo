@@ -18,9 +18,13 @@
 // outcome.
 //
 // Gated on PA_ADMISSION_TRACE and off by default: this is evidence-gathering
-// for issue #97's floor decision, not a permanent surface. The final
-// verification of whatever that decision lands on has to run with it off, or
-// it verifies a build nobody ships.
+// for the outstanding re-derivation of the admission floors, not a permanent
+// surface. The floors in force were calibrated against the async stack's
+// page-load transient and have not been re-derived for this one -- see the heap
+// floor rationale in platformio.ini [flags_base] and
+// docs/adr/0022-connection-admission-on-esp-http-server.md. The final
+// verification of whatever
+// replaces them has to run with this off, or it verifies a build nobody ships.
 //
 // Pure data and pure functions: no Arduino, no vendor type, no clock of its
 // own. The device hookup lives in src/web/web_request_psychic.cpp and the
@@ -91,9 +95,9 @@ constexpr uint32_t kWebAdmissionTraceAgeUnknown = UINT32_MAX;
 // with measurably less heap than the one that ships -- it would move the very
 // reading it exists to record.
 //
-// It is also simply not available. Measured on this build (issue #97):
-// dram0_0_seg has 596 bytes of headroom, so an unpacked row of 44 bytes buys
-// thirteen decisions.
+// It is also simply not available. Measured on this build: dram0_0_seg has
+// 596 bytes of headroom, so an unpacked row of 44 bytes buys thirteen
+// decisions.
 //
 // So a row is packed to eight bytes and carries no path. Three consequences,
 // all deliberate:
