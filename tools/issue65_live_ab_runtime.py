@@ -37,9 +37,43 @@ STATUS_INTERVAL_SECONDS = 5.0
 STATUS_DEADLINE_SECONDS = 1.0
 HTTP_BLACKOUT_SECONDS = 30.0
 RECENT_PING_SECONDS = 2.5
+# A single dropped echo is not evidence of a controller failure. Observed on a
+# 2026-08-06 acceptance run: one lost reply mid-capture ended a 15-minute run as
+# "Unexpected controller failure" while /api/status answered 0.83s later, the
+# request counter kept climbing, and serial recorded no panic or reset. ICMP is
+# the cheapest liveness probe here and also the least reliable -- it is
+# deprioritised under load and by WiFi power save -- so it stops the run only
+# when loss is sustained, which a genuinely dead controller produces and a
+# dropped packet does not. At a 1s sample interval this is ~5 consecutive
+# misses, still far faster than the HTTP blackout detector.
+PING_LOSS_STOP_SECONDS = 5.0
+# Corroboration, mirroring the status path's own RECENT_PING_SECONDS check in
+# the opposite direction: a controller answering HTTP is alive whatever ICMP
+# says, so a successful /api/status this recently vetoes an ICMP stop outright.
+# Sized against STATUS_INTERVAL_SECONDS so two missed samples are needed before
+# the veto lapses.
+RECENT_STATUS_SECONDS = 12.0
 COOLDOWN_SECONDS = 15.0
 COOLDOWN_TOLERANCE_BYTES = 2_000
 COOLDOWN_HEAP_FLOOR_BYTES = 12_000
+def should_stop_on_ping_loss(
+    *, armed: bool, success: bool, loss_duration: float, status_recent: bool,
+) -> bool:
+    """Whether ICMP evidence is strong enough to end the run.
+
+    Sustained loss, and only while HTTP is not simultaneously proving the
+    controller alive. Either condition alone produces a false stop: a single
+    dropped echo, or ICMP starved under a load the controller is otherwise
+    serving fine. Kept separate from the sampler so both are assertable without
+    a live controller.
+    """
+    if not armed or success:
+        return False
+    if status_recent:
+        return False
+    return loss_duration >= PING_LOSS_STOP_SECONDS
+
+
 STOP_REASONS = frozenset((
     "panic",
     "unexpected reset",
@@ -667,6 +701,7 @@ class MonitorLoop:
         self.latest_status_record: dict[str, object] | None = None
         self.latest_status_success_mono: float | None = None
         self.latest_ping_success_mono: float | None = None
+        self.ping_loss_started_mono: float | None = None
         self.status_loss_started_mono: float | None = None
         self.cooldown_samples: list[dict[str, object]] = []
         self.error: BaseException | None = None
@@ -706,6 +741,7 @@ class MonitorLoop:
                 "latestStatusRecord": copy.deepcopy(self.latest_status_record),
                 "latestStatusSuccessMonotonic": self.latest_status_success_mono,
                 "latestPingSuccessMonotonic": self.latest_ping_success_mono,
+                "pingLossStartedMonotonic": self.ping_loss_started_mono,
                 "statusLossStartedMonotonic": self.status_loss_started_mono,
                 "cooldownSamples": copy.deepcopy(self.cooldown_samples),
             }
@@ -749,15 +785,30 @@ class MonitorLoop:
             detail=detail,
             durationSeconds=time.monotonic() - started,
         )
+        now = time.monotonic()
         with self._lock:
             if success:
-                self.latest_ping_success_mono = time.monotonic()
+                self.latest_ping_success_mono = now
+                self.ping_loss_started_mono = None
+                loss_duration = 0.0
+            else:
+                if self.ping_loss_started_mono is None:
+                    self.ping_loss_started_mono = now
+                loss_duration = now - self.ping_loss_started_mono
+            status_recent = (
+                self.latest_status_success_mono is not None
+                and now - self.latest_status_success_mono <= RECENT_STATUS_SECONDS
+            )
             armed = self.armed
-        if armed and not success:
+        if should_stop_on_ping_loss(
+            armed=armed, success=success,
+            loss_duration=loss_duration, status_recent=status_recent,
+        ):
             self.arbiter.request_stop(
                 "loss of ICMP",
                 source="ping",
                 wallTime=record["wallTime"],
+                lossDurationSeconds=round(loss_duration, 3),
             )
 
     def _sample_status(self) -> None:
