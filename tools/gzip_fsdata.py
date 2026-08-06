@@ -3,7 +3,7 @@
 PlatformIO pre-build script: build the LittleFS image from GZIPPED web assets.
 
 The web UI is ~656 KB of mostly uncompressed text (JS/CSS/HTML) — 84% of the
-filesystem. ESPAsyncWebServer's serveStatic() transparently serves `foo.js.gz`
+filesystem. PsychicHttp's static handler transparently serves `foo.js.gz`
 (with Content-Encoding: gzip + Content-Type from the original extension) when the
 raw file is absent, so shipping only the gzipped text shrinks the image to
 ~180 KB and speeds page loads — and frees flash for a coredump partition (#8).

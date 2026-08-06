@@ -1,5 +1,15 @@
 # Page Load Recovery architecture and rollout handoff
 
+> **Partly superseded.** This document was written against the ESPAsyncWebServer /
+> AsyncTCP stack, which epic #75 replaced with PsychicHttp over ESP-IDF's
+> `esp_http_server`. The product decisions here still stand -- request classes,
+> Recovery Capacity boundary, page bootstrap, rollout order, verification matrix --
+> but every statement about *where the seam sits in the server* is obsolete, and the
+> vendor patch it refers to no longer exists. For the current mechanism read
+> [ADR 0021](adr/0021-project-owned-web-request-seam.md) (project-owned request seam),
+> [ADR 0022](adr/0022-connection-admission-on-esp-http-server.md) (admission) and
+> [ADR 0023](adr/0023-http-keep-alive-on-esp-http-server.md) (keep-alive).
+
 Implementation-ready design for issue #52 ("Design safe web page-load recovery under
 constrained ESP32 memory"), synthesized once the lifecycle evidence, acceptance
 envelope, browser prototype, current-stack feasibility, and wire contract were all

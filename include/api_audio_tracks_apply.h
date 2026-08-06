@@ -3,7 +3,7 @@
 //
 // Apply Core for POST /api/audio/tracks (ADR 0011 audio wave, family 3).
 //
-// audioTracksApply(): pure function — no FreeRTOS, no AsyncWebServerRequest,
+// audioTracksApply(): pure function — no FreeRTOS, no request object,
 //   no NVS, no logging. Reads key/track and the optional bank/page through
 //   a ConfigParamSource, classifies the key (interval / banked / plain
 //   named-or-category track, with the zero-allowed exception list), and

@@ -1,7 +1,7 @@
 // =============================================================================
 // src/web/web_server.cpp
 //
-// WiFi and AsyncWebServer bootstrap for protoArtoo.
+// WiFi and HTTP server bootstrap for protoArtoo.
 // =============================================================================
 
 #include "../../include/web_server.h"
@@ -9,7 +9,6 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <ArduinoOTA.h>
-#include <ESPAsyncWebServer.h>
 #include <ESPmDNS.h>
 #include <LittleFS.h>
 #include <Preferences.h>
@@ -39,15 +38,9 @@
 #include "../../include/web_admission.h"
 #include "../../include/web_event_stream.h"
 #include "../../include/web_request.h"
-#include "../../include/web_request_async.h"
+#include "../../include/web_server_psychic.h"
 #include "../../include/wifi_boot_decision.h"
 #include "../../include/wifi_recovery_gesture.h"
-#ifdef PA_USE_PSYCHICHTTP_PROTOTYPE
-#include "../../include/psychic_adapter.h"
-#endif
-#ifdef PA_WEB_BACKEND_PSYCHIC
-#include "../../include/web_server_psychic.h"
-#endif
 
 // src/secrets.h is the Developer WiFi Shortcut (ADR 0015): local/self-build-only
 // compile-time WiFi defaults. It is never required to compile or boot — public
@@ -98,67 +91,6 @@ static const WiFiEvent_t ARDUINO_EVENT_WIFI_AP_START = 0;
 static const WiFiEvent_t ARDUINO_EVENT_WIFI_STA_START = 1;
 static const WiFiEvent_t ARDUINO_EVENT_WIFI_STA_GOT_IP = 2;
 static const WiFiEvent_t ARDUINO_EVENT_WIFI_STA_DISCONNECTED = 3;
-
-class AsyncEventSourceClient {
-   public:
-    void send(const char*, const char*, unsigned long) {
-    }
-};
-
-class AsyncEventSource {
-   public:
-    explicit AsyncEventSource(const char*) {
-    }
-
-    template <typename Callback>
-    void onConnect(Callback) {
-    }
-
-    size_t count() const {
-        return 0;
-    }
-    void send(const char*, const char*, unsigned long) {
-    }
-};
-
-class AsyncStaticWebHandler {
-   public:
-    AsyncStaticWebHandler& setDefaultFile(const char*) { return *this; }
-    AsyncStaticWebHandler& setCacheControl(const char*) { return *this; }
-};
-
-class AsyncWebServerRequest {
-   public:
-    const String& url() const {
-        static String s;
-        return s;
-    }
-    void abort() {
-    }
-    template <typename Callback>
-    void onDisconnect(Callback) {
-    }
-};
-
-using ArMiddlewareNext = void (*)();
-
-class AsyncWebServer {
-   public:
-    explicit AsyncWebServer(int) {
-    }
-    void addHandler(AsyncEventSource*) {
-    }
-    template <typename Middleware>
-    void addMiddleware(Middleware) {
-    }
-    template <typename FsType>
-    AsyncStaticWebHandler& serveStatic(const char*, FsType&, const char*) {
-        static AsyncStaticWebHandler handler;
-        return handler;
-    }
-    void begin() {
-    }
-};
 
 class LittleFSClass {
    public:
@@ -229,146 +161,18 @@ inline int xTaskCreatePinnedToCore(void (*)(void*), const char*, unsigned int, v
 #endif
 
 static const char* TAG = "WebServer";
-static AsyncWebServer server(80);
-static AsyncEventSource events("/api/events");
 static bool littleFsReady = false;
 
-// Admission control against heap exhaustion under bursty concurrent load. A
-// burst of long-lived SSE connections plus overlapping page-reload traffic
-// can drop the largest contiguous free block low enough that
-// ESPAsyncWebServer's own response-construction allocations fail (see
-// tools/patch_async_sse.py for the vendor-side hardening applied to that
-// failure path). These two gates keep heap out of that danger zone in the
-// first place instead of only reacting to it after the fact.
+// Admission control lives entirely on the serving backend now
+// (src/web/web_request_psychic.cpp, against the pure decision core in
+// include/web_admission.h). Its counters -- inflight depth, refusals by class,
+// accept-guard rejections -- are the project-owned globals declared there and
+// in include/web_event_stream.h; this file only reads them for /api/status.
 
-// Concurrent /api/events (SSE) clients. The cap itself now lives with the rest
-// of the stream's policy in include/web_event_stream.h, so both stacks enforce
-// one number.
-static constexpr size_t kMaxSseClients = PA_ADMISSION_MAX_SSE_CLIENTS;
-
-// Below this, prefer rejecting new non-essential requests over constructing
-// more response objects. Chosen with wide margin above the ~2-10 KB
-// largest-block range where allocation failures were actually observed
-// while reproducing the crash under load, so a rejection response can still
-// be built safely. Matches the threshold used by the vendor-side guards in
-// tools/patch_async_sse.py (LittleFS static-file open, AsyncTCP accept).
-#ifndef PA_ADMISSION_MIN_LARGEST_FREE_BLOCK
-#define PA_ADMISSION_MIN_LARGEST_FREE_BLOCK 20000
-#endif
-static constexpr size_t kMinLargestFreeBlockForNewWork = PA_ADMISSION_MIN_LARGEST_FREE_BLOCK;
-
-// Read-only diagnostics (status/profiler/coredump) stay reachable far deeper
-// into heap pressure than normal work -- they are what an operator needs to
-// see a rejection window -- but they must not be exempt entirely: response
-// construction itself allocates (headers, body copy), and letting it run
-// with a critically depressed heap aborts the firmware on an unpatched
-// std::list node allocation inside addHeader (coredump-proven, three times).
-// Floor sits just above the 2-10 KB largest-block range where those
-// allocations were observed to fail.
-#ifndef PA_ADMISSION_MIN_LARGEST_FREE_BLOCK_DIAG
-#define PA_ADMISSION_MIN_LARGEST_FREE_BLOCK_DIAG 10000
-#endif
-static constexpr size_t kMinLargestFreeBlockForDiagnostics =
-    PA_ADMISSION_MIN_LARGEST_FREE_BLOCK_DIAG;
-
-// Deterministic bound on parked-request memory. Every accepted request holds
-// its parsed request object and header list while it waits for the single
-// async_tcp task to serve it; a dense connection burst can park enough of
-// them to exhaust the heap before any of them respond, no matter what the
-// heap looked like when each was admitted. Browsers open at most 6 parallel
-// connections per host, so a cap of 6 is invisible to legitimate clients.
-// Single-writer: touched only from the async_tcp task.
-#ifndef PA_ADMISSION_MAX_INFLIGHT_REQUESTS
-#define PA_ADMISSION_MAX_INFLIGHT_REQUESTS 6
-#endif
-static constexpr int kMaxInflightRequests = PA_ADMISSION_MAX_INFLIGHT_REQUESTS;
-
-// Lifecycle evidence: admission counters by the same broad classes the
-// middleware already gates on (inflight, SSE, heap-floor diagnostic and
-// non-diagnostic). Cheap int increments only -- safe to keep in the always-on
-// /api/status snapshot. Single-writer (async_tcp task), read cross-task
-// (eventTask SSE broadcast, status handler) without a mutex.
-//
-// The inflight and heap-floor counters belong to this file's own admission
-// middleware, which only exists on the async stack. On the PsychicHttp build
-// the equivalents are the project-owned globals in include/web_admission.h,
-// so these would be permanently zero -- and a counter that is always zero
-// reads as evidence of no refusals rather than of no implementation.
-#ifndef PA_WEB_BACKEND_PSYCHIC
-static int s_inflightRequests = 0;
-static int s_peakInflightRequests = 0;
-static uint32_t s_refusedInflightCap = 0;
-static uint32_t s_refusedHeapFloor = 0;
-static uint32_t s_refusedHeapFloorDiag = 0;
-#endif
-
-// The event stream's own counters (peak clients, refused-at-cap, evicted) are
-// project-owned globals in include/web_event_stream.h, written by whichever
-// backend is serving the stream and read here for /api/status.
-
-#if PA_HEAP_PROFILE
-// Bounded request-lifecycle trace (issue #54 evidence, profiler-gated so it
-// costs nothing in normal builds). Read after an experiment via
-// /api/profiler, not polled during the workload. Covers only admitted,
-// non-SSE requests -- SSE's own lifetime is already visible via the
-// sseClients/sseClientsPeak counters above, and its "disconnect" is a tab
-// closing, not a per-request event this ring is meant to capture.
-//
-// handlerDoneMs marks when next() returned, i.e. when the matched handler's
-// call into send() returned control to the middleware. Under this stack's
-// synchronous per-request dispatch (single async_tcp task, matching the
-// single-writer property already relied on for s_inflightRequests above),
-// that is the best available proxy for "response ready" -- actual socket
-// write/flush still happens later via AsyncTCP polling, up to disconnectMs.
-//
-// Single-writer (async_tcp task) for both the initial record and the two
-// updates below; read from the same task via /api/profiler. A slot may be
-// overwritten by a newer entry before a very long-lived request's
-// disconnectMs update reaches it -- acceptable for a bounded evidence trace,
-// not a correctness-bearing structure.
-//
-// RequestLifecycleEntry and PA_REQUEST_TRACE_MAX are declared in
-// web_server.h so api_profiler.cpp can size its copy buffer identically.
-static RequestLifecycleEntry s_requestTrace[PA_REQUEST_TRACE_MAX];
-static uint8_t s_requestTraceHead = 0;
-static uint8_t s_requestTraceCount = 0;
-
-// Opens a new lifecycle-trace entry for one admitted request, called from
-// the admission middleware below at the moment a non-SSE request is counted
-// against the inflight cap. Overwrites the oldest ring slot once full; the
-// returned index is captured by the request's onDisconnect closure so
-// disconnectMs can be filled in later without a second lookup.
-static uint8_t pushRequestTraceEntry(const char* path, uint32_t startMs) {
-    uint8_t idx = s_requestTraceHead;
-    RequestLifecycleEntry& e = s_requestTrace[idx];
-    strncpy(e.requestPath, path, sizeof(e.requestPath) - 1);
-    e.requestPath[sizeof(e.requestPath) - 1] = '\0';
-    e.startMs = startMs;
-    e.handlerDoneMs = 0;
-    e.disconnectMs = 0;
-    s_requestTraceHead = (uint8_t)((s_requestTraceHead + 1U) % PA_REQUEST_TRACE_MAX);
-    if (s_requestTraceCount < PA_REQUEST_TRACE_MAX) {
-        s_requestTraceCount++;
-    }
-    return idx;
-}
-
-// Copies the trace ring oldest-first into out, for the /api/profiler handler
-// (api_profiler.cpp) to read once after an experiment. Read-only; does not
-// clear or rotate the ring, so repeated reads during a warm-up are safe.
-size_t copyRequestLifecycleTrace(RequestLifecycleEntry* out, size_t maxEntries) {
-    uint8_t count = s_requestTraceCount;
-    if (count > maxEntries) {
-        count = (uint8_t)maxEntries;
-    }
-    uint8_t oldest = (uint8_t)((s_requestTraceHead + PA_REQUEST_TRACE_MAX - s_requestTraceCount) %
-                                PA_REQUEST_TRACE_MAX);
-    for (uint8_t i = 0; i < count; i++) {
-        out[i] = s_requestTrace[(uint8_t)((oldest + i) % PA_REQUEST_TRACE_MAX)];
-    }
-    return count;
-}
-#endif  // PA_HEAP_PROFILE
+// The bounded request-lifecycle trace this file used to own moved with the
+// admission middleware that wrote it (src/web/web_request_psychic.cpp). Its
+// declarations stay in web_server.h so api_profiler.cpp can size its copy
+// buffer identically.
 
 #ifdef ARDUINO
 static size_t largestFreeBlock8Bit() {
@@ -380,18 +184,7 @@ static size_t largestFreeBlock8Bit() {
 }
 #endif
 
-// Accept-guard telemetry, defined inside the patched AsyncTCP tcp_accept
-// path (tools/patch_async_sse.py). Always-on visibility for rejected
-// accepts: the guard's own debug log is compiled out in normal builds, and
-// its invisibility previously cost two diagnosis rounds.
-extern "C" {
-extern volatile uint32_t g_asyncTcpAcceptRejectHeap;
-extern volatile uint32_t g_asyncTcpAcceptRejectRate;
-extern volatile uint32_t g_asyncTcpAcceptRejectLastMs;
-}
-
 static char s_fsVersion[48] = "unknown";
-static bool routesRegistered = false;
 static bool serverStarted = false;
 static bool eventTaskStarted = false;
 static bool otaTaskStarted = false;
@@ -665,14 +458,12 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
 
     const char* auxLedEffectLabel = auxLedEffectToString(auxLedEffect);
 
-    // Admission evidence comes from whichever stack this build actually runs
-    // its admission on. The JSON field names below stay as they are either
-    // way: they are a comparability contract with the recorded baseline and
-    // the load harness, not a description of which implementation produced
-    // them. The names on the left are the project-owned counters that survive
-    // the cutover; the async values feeding them here disappear with the
-    // vendor patch that defines them.
-#ifdef PA_WEB_BACKEND_PSYCHIC
+    // Admission evidence, read from the project-owned counters the serving
+    // backend writes (include/web_admission.h). The JSON field names below are
+    // a comparability contract with the recorded baseline and the load
+    // harness, not a description of which implementation produced them --
+    // which is why they are unchanged by the cutover that removed the other
+    // implementation.
     const uint32_t acceptRejectHeap = g_webAcceptRejectHeap;
     const uint32_t acceptRejectRate = g_webAcceptRejectRate;
     const uint32_t acceptRejectLastMs = g_webAcceptRejectLastMs;
@@ -681,16 +472,6 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     const uint32_t refusedInflightCap = g_webRefusedInflightCap;
     const uint32_t refusedHeapFloor = g_webRefusedHeapFloor;
     const uint32_t refusedHeapFloorDiag = g_webRefusedHeapFloorDiag;
-#else
-    const uint32_t acceptRejectHeap = g_asyncTcpAcceptRejectHeap;
-    const uint32_t acceptRejectRate = g_asyncTcpAcceptRejectRate;
-    const uint32_t acceptRejectLastMs = g_asyncTcpAcceptRejectLastMs;
-    const int inflightRequests = s_inflightRequests;
-    const int inflightRequestsPeak = s_peakInflightRequests;
-    const uint32_t refusedInflightCap = s_refusedInflightCap;
-    const uint32_t refusedHeapFloor = s_refusedHeapFloor;
-    const uint32_t refusedHeapFloorDiag = s_refusedHeapFloorDiag;
-#endif
 
     // Build the fixed system-health fields first.
     int written = snprintf(
@@ -751,17 +532,11 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
         (unsigned)auxLedPin, (unsigned)auxLedR, (unsigned)auxLedG, (unsigned)auxLedB,
         auxLedEffectLabel, auxLedAvailable ? "true" : "false");
 
-#if PA_WEB_BACKEND_PSYCHIC
-    // Connection lifetime, emitted only on the stack that has one to report.
-    // The async backend closes every response by construction, so a socket
-    // count there would only restate the request count -- and adding a field
-    // the recorded baseline scorecard never carried is exactly what the
-    // preserved counter names above exist to avoid.
-    //
-    // httpRequestsServed against httpSocketsAccepted is the measurement: their
-    // ratio is requests per connection, which is what "does this stack reuse
-    // connections" actually means. httpSocketsOpenPeak is the other half --
-    // reuse is only affordable if occupancy stays inside max_open_sockets.
+    // Connection lifetime. httpRequestsServed against httpSocketsAccepted is
+    // the measurement: their ratio is requests per connection, which is what
+    // "does this stack reuse connections" actually means (ADR 0023).
+    // httpSocketsOpenPeak is the other half -- reuse is only affordable if
+    // occupancy stays inside max_open_sockets.
     if (written > 0 && written < (int)bufferSize - 1) {
         const int extra =
             snprintf(buffer + written, bufferSize - (size_t)written,
@@ -778,7 +553,6 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
             written += extra;
         }
     }
-#endif
 
     // Conditionally append enabled-component keys — disabled components are absent,
     // not emitted as false placeholders (Phase 3 status/dashboard contract).
@@ -1030,30 +804,8 @@ bool webServerHasSSEClients() {
     return webEventStreamClientCount() > 0;
 }
 
-#ifndef PA_WEB_BACKEND_PSYCHIC
-// Event stream transport for the async scaffold (include/web_event_stream.h).
-// AsyncEventSource owns the client list and the send here, so these are pure
-// forwarding -- the bounded send and the eviction live on the psychic backend,
-// which is where an unbounded one can actually be fixed (ADR 0020 found no safe
-// cross-task close on AsyncTCP). The #91 cutover deletes this block with the
-// rest of the scaffold.
-// Called from eventStreamTask and, for the count, from any handler building the
-// status payload on the async_tcp task. AsyncEventSource does its own locking.
-size_t webEventStreamClientCount() {
-    return events.count();
-}
-
-// eventStreamTask only, same as the psychic backend's.
-void webEventStreamBroadcast(const char* event, const char* data, uint32_t id) {
-    events.send(data, event, id);
-}
-#endif
-
-// Shared SSE JSON buffers — file-scope so both eventStreamTask and the
-// onConnect handler use the same allocation rather than each having their own.
-// eventStreamTask runs at 1 Hz on Core 0; onConnect fires on the AsyncTCP
-// task also on Core 0. They cannot run truly concurrently on the same core,
-// so sharing these buffers is safe without additional locking.
+// Shared SSE JSON buffers — file-scope so every producer in this file uses the
+// same allocation rather than each having their own.
 // Combined saving vs previous approach (two sets of statics): 3 KB BSS.
 // Status JSON can exceed 1 KB when many components are enabled; keep headroom.
 static char s_sseStatusBody[3072];
@@ -1194,188 +946,11 @@ void startHttpServerOnce() {
         return;
     }
 
-#ifdef PA_USE_PSYCHICHTTP_PROTOTYPE
-    // issue #72 prototype: PsychicHttp replaces ESPAsyncWebServer's HTTP
-    // server entirely (both would try to bind port 80), swapped in at the
-    // exact same trigger point production uses -- once WiFi has genuinely
-    // come up, per handleWiFiEvent()'s two call sites below. WiFi bring-up
-    // itself (webServerInit(), executeWifiBootPosture()) is untouched and
-    // always runs normally; only the HTTP server started below differs.
-    //
-    // This used to be an early `return` right here, which also skipped
-    // mDNS and ArduinoOTA startup further down in this same function --
-    // the exact same "skip too much of a multi-purpose function" mistake
-    // already made once for WiFi bring-up (see #72's findings doc). That
-    // left nothing listening on port 3232, so every OTA "Sending invitation"
-    // hung until timeout; only caught by actually trying to OTA-reflash,
-    // not by any earlier compile or source-level check. Fixed by only
-    // branching the HTTP-server-specific part; mDNS/OTA below now run
-    // unconditionally for both backends.
-    initPsychicHttpServer();
-#elif defined(PA_WEB_BACKEND_PSYCHIC)
-    // ADR 0021 dual-backend scaffold: the PsychicHttp backend replaces the
-    // async HTTP server at the same WiFi-event trigger point (both would
-    // bind port 80); mDNS/OTA below run unconditionally for both backends.
+    // The HTTP server starts here, on the WiFi event callback path, never
+    // directly from setup(); mDNS and ArduinoOTA below start alongside it and
+    // are not part of the HTTP server's own bring-up.
     initPsychicWebServer();
-#else
-    if (!routesRegistered) {
-        events.onConnect([](AsyncEventSourceClient* client) {
-            (void)client;
-            // AsyncEventSource::_addClient() invokes this connect callback
-            // before appending the new client to its internal list (see
-            // _addClient() in AsyncEventSource.cpp: _connectcb(client) runs,
-            // then _clients.emplace_back(client)) -- events.count() here is
-            // therefore the count BEFORE this client is registered, so the
-            // peak must account for the one being added now.
-            if (events.count() + 1 > g_webSseClientsPeak) {
-                g_webSseClientsPeak = events.count() + 1;
-            }
-            // MUST NOT call client->close() here: this callback runs inside
-            // AsyncEventSourceClient's constructor (via _addClient), and a
-            // synchronous close runs the disconnect path that nulls the
-            // connection the constructor is still using -- panic, proven by
-            // coredump twice -- and then leaks the half-dead client as a
-            // permanent zombie entry in the client list, silently consuming
-            // the SSE cap. Cap and heap admission for /api/events happen in
-            // the middleware below, before the upgrade machinery ever runs.
-            // Over-cap is still possible in a narrow race (a second upgrade
-            // completing before the first registers); it is bounded to +1
-            // and transient, which is preferable to a crash.
-            if (events.count() >= kMaxSseClients) {
-                PA_LOG_WARN(TAG, "SSE clients above cap (%u) after race; tolerating extra client",
-                            (unsigned)kMaxSseClients);
-            }
-        });
-        server.addHandler(&events);
 
-        // Reject non-essential requests while heap is critically fragmented,
-        // instead of letting every handler construct response objects that
-        // may fail deep inside ESPAsyncWebServer. Estop and read-only
-        // diagnostics (status/profiler) must always go through regardless of
-        // heap state -- those are exactly what's needed to see what's
-        // happening during a rejection window, and they're cheap enough not
-        // to meaningfully add to the pressure.
-        server.addMiddleware([](AsyncWebServerRequest* request, ArMiddlewareNext next) {
-            const String& url = request->url();
-            // Estop is the safety path: never rejected, never counted.
-            if (url.startsWith("/api/estop")) {
-                next();
-                return;
-            }
-            // Long-lived SSE stream: not counted against the in-flight cap
-            // (it would pin a slot for the connection's whole lifetime), but
-            // its client cap is enforced here -- rejecting pre-upgrade with
-            // abort() is safe, whereas closing the client from
-            // events.onConnect crashes mid-constructor (see the onConnect
-            // comment above).
-            const bool sse = url == "/api/events";
-            if (sse && events.count() >= kMaxSseClients) {
-                PA_LOG_WARN(TAG, "SSE client cap (%u) reached; rejecting new connection",
-                            (unsigned)kMaxSseClients);
-                g_webRefusedSseCap = g_webRefusedSseCap + 1u;
-                request->abort();
-                return;
-            }
-            if (!sse && s_inflightRequests >= kMaxInflightRequests) {
-                // abort() is the only rejection that is safe under pressure:
-                // a 503 with a body still constructs a full response, whose
-                // constructor unconditionally adds a Connection header via a
-                // std::list<AsyncWebHeader> node allocation -- a separate
-                // allocation site from the response object itself, not
-                // covered by the vendor's nothrow fixes, and the proven
-                // abort() site of the burst crashes. Closing the socket
-                // allocates nothing.
-                s_refusedInflightCap++;
-                request->abort();
-                return;
-            }
-            // SSE counts as diagnostic: it is the operator's primary
-            // liveness/telemetry channel, one long-lived connection bounded
-            // by its own client cap, and shedding it during warm-heap dips
-            // left dashboards without live data while plain status polls
-            // still worked.
-            const bool diagnostic = sse || url == "/api/status" || url == "/api/profiler" ||
-                                    url == "/api/coredump";
-            size_t largestBlock = largestFreeBlock8Bit();
-            const size_t floor =
-                diagnostic ? kMinLargestFreeBlockForDiagnostics : kMinLargestFreeBlockForNewWork;
-            if (largestBlock < floor) {
-                if (diagnostic) {
-                    s_refusedHeapFloorDiag++;
-                } else {
-                    // Diagnostic rejections stay silent: they only occur
-                    // during a pressure storm, exactly when log volume
-                    // itself is unwelcome.
-                    PA_LOG_WARN(TAG, "rejecting %s: largest free block %u < %u",
-                                url.c_str(), (unsigned)largestBlock, (unsigned)floor);
-                    s_refusedHeapFloor++;
-                }
-                request->abort();
-                return;
-            }
-#if PA_HEAP_PROFILE
-            uint32_t traceStartMs = 0;
-            bool traced = false;
-            uint8_t traceIdx = 0;
-#endif
-            if (!sse) {
-                s_inflightRequests++;
-                if (s_inflightRequests > s_peakInflightRequests) {
-                    s_peakInflightRequests = s_inflightRequests;
-                }
-#if PA_HEAP_PROFILE
-                traceStartMs = millis();
-                // Full path (not just a broad class) so a specific slow/hung
-                // request (issue #67) can be matched against the browser's
-                // own per-request timestamps after the fact.
-                traceIdx = pushRequestTraceEntry(url.c_str(), traceStartMs);
-                traced = true;
-#endif
-                request->onDisconnect([
-#if PA_HEAP_PROFILE
-                                           traced, traceIdx
-#endif
-                ]() {
-                    if (s_inflightRequests > 0) {
-                        s_inflightRequests--;
-                    }
-#if PA_HEAP_PROFILE
-                    if (traced) {
-                        s_requestTrace[traceIdx].disconnectMs = millis();
-                    }
-#endif
-                });
-            }
-            next();
-#if PA_HEAP_PROFILE
-            if (traced) {
-                s_requestTrace[traceIdx].handlerDoneMs = millis();
-            }
-#endif
-        });
-
-        // ADR 0021: route groups ported to the WebRequest seam register
-        // through webRegisterRoute() against this server instance. Their
-        // paths live in the one seam route table both backends call, which as
-        // of the audio and sequence groups landing is every route there is.
-        webRequestAsyncAttach(server);
-        webRegisterSeamRoutes();
-
-        // Nothing left to register here. With the audio group (#88) and the
-        // sequence, profiler and status group (#90) both on the seam, every
-        // route this block used to add is in webRegisterSeamRoutes() above --
-        // which is the condition the #91 cutover needs before it can delete
-        // this block along with the rest of the async stack.
-
-        if (littleFsReady) {
-            server.serveStatic("/", LittleFS, "/").setDefaultFile("index.html").setCacheControl("no-cache");
-        }
-
-        routesRegistered = true;
-    }
-
-    server.begin();
-#endif
     serverStarted = true;
     PA_LOG_INFO(TAG, "HTTP server started on port 80");
 
@@ -1593,7 +1168,7 @@ static bool evaluateNetworkRecoveryGesture() {
 }
 
 void webServerInit() {
-    if (routesRegistered || serverStarted) {
+    if (serverStarted) {
         PA_LOG_DEBUG(TAG, "web bootstrap already initialised");
         return;
     }
