@@ -41,7 +41,12 @@ DEFAULT_PORT = 80
 DEFAULT_ASSET_PATH = "/seq.js"
 HANDSHAKE_DEADLINE_SECONDS = 10.0
 STATUS_POLL_INTERVAL_SECONDS = 1.0
-STATUS_REQUEST_DEADLINE_SECONDS = 3.0
+# Above any deadline this probe is run against. esp_http_server serves every
+# connection from one task (ADR 0022), so a stalled response delays other
+# connections for as long as it lives -- that is what the deadline bounds, not
+# what it removes. A timeout below the deadline would record that bounded delay
+# as an unreachable controller and hide the very number worth reporting.
+STATUS_REQUEST_DEADLINE_SECONDS = 20.0
 
 # Client receive buffer, set before connect so it is reflected in the window
 # advertised during the handshake. Small on purpose: the whole technique is to
@@ -137,6 +142,7 @@ class StatusMonitor:
             raise ProbeError(f"status monitor failed: {self.error}")
 
     def _sample(self) -> None:
+        started = time.monotonic()
         try:
             status = r65._http_json(
                 f"http://{self.controller}/api/status", STATUS_REQUEST_DEADLINE_SECONDS,
@@ -144,9 +150,10 @@ class StatusMonitor:
             success, error = True, None
         except r65.Issue65RuntimeError as request_error:
             status, success, error = None, False, str(request_error)
+        latency_ms = round((time.monotonic() - started) * 1000, 1)
         record = r65.append_ndjson(
             self.samples_path, self.timeline, "status-sample",
-            success=success, error=error,
+            success=success, error=error, latencyMs=latency_ms,
             responseDeadlineClosures=(status or {}).get("responseDeadlineClosures"),
             responseDeadlineAgeMs=(status or {}).get("responseDeadlineAgeMs"),
             responseLastMs=(status or {}).get("responseLastMs"),
@@ -231,37 +238,51 @@ def _open_stalling_connection(
     return sock, connect_record, sent_at
 
 
+# Linux TCP states from the kernel's tcp_info, whose first byte is tcpi_state.
+# Only the ones this probe distinguishes are named.
+TCP_ESTABLISHED = 1
+TCP_CLOSE = 7
+TCP_STATE_NAMES = {
+    1: "established", 2: "syn-sent", 3: "syn-recv", 4: "fin-wait1", 5: "fin-wait2",
+    6: "time-wait", 7: "close", 8: "close-wait", 9: "last-ack", 10: "listen",
+    11: "closing",
+}
+
+
 def _wait_for_reclaim(sock: socket.socket, timeout_seconds: float) -> tuple[str, float]:
     """Wait for the server to drop the stalled connection, and time it.
 
-    Returns (outcome, seconds) where outcome is one of:
-      "reset"    -- the peer sent RST, which is what a deadline breach does
-                    (SO_LINGER l_linger=0 before the queued close)
-      "closed"   -- the peer closed gracefully, which a breach does not do
-      "open"     -- still connected when the timeout expired: no reclaim
+    Returns (outcome, seconds) where outcome is "reclaimed:<tcp state>" once the
+    connection leaves ESTABLISHED, or "open" if it never does.
 
-    MSG_PEEK is what makes this measurement possible. An ordinary recv() would
-    take bytes out of the receive buffer, reopening the window and letting the
-    stalled response resume -- the probe would then be measuring its own
-    polling rather than the deadline. Peeking inspects the queue without
-    consuming it, so the window stays shut for the whole wait.
+    The detector reads the kernel's own TCP state (tcpi_state, the first byte of
+    TCP_INFO) rather than trying to read the socket. That is not a stylistic
+    choice -- reading cannot work here. The receive buffer is deliberately full
+    of body bytes, so recv() with MSG_PEEK returns one of those bytes forever
+    and never surfaces the RST behind them, and an ordinary recv() would drain
+    the buffer, reopen the window, and un-stall the very response being
+    measured. TCP_INFO reports the connection's state without touching the
+    queue at all.
+
+    SO_ERROR is checked alongside it, because a reset can be reported there
+    first, and it tells us *why* the connection ended rather than only that it
+    did.
     """
-    sock.setblocking(False)
     deadline = time.monotonic() + timeout_seconds
     started = time.monotonic()
     while True:
+        err = sock.getsockopt(socket.SOL_SOCKET, socket.SO_ERROR)
+        if err != 0:
+            return f"reclaimed:errno={err}", time.monotonic() - started
+
         try:
-            if sock.recv(1, socket.MSG_PEEK) == b"":
-                return "closed", time.monotonic() - started
-        except (BlockingIOError, InterruptedError):
-            pass  # Nothing new to look at; the connection is still up.
-        except ConnectionResetError:
-            return "reset", time.monotonic() - started
+            state = sock.getsockopt(socket.IPPROTO_TCP, socket.TCP_INFO, 1)[0]
         except OSError as error:
-            # Anything else that ends the connection counts as a reset for the
-            # purpose of this measurement, but is recorded by its own errno so
-            # a surprising one is not quietly folded in with ECONNRESET.
-            return f"reset:errno={error.errno}", time.monotonic() - started
+            return f"reclaimed:errno={error.errno}", time.monotonic() - started
+
+        if state != TCP_ESTABLISHED:
+            name = TCP_STATE_NAMES.get(state, str(state))
+            return f"reclaimed:{name}", time.monotonic() - started
 
         if time.monotonic() >= deadline:
             return "open", time.monotonic() - started
@@ -285,10 +306,17 @@ def _summarize_samples(samples: list[dict[str, Any]]) -> dict[str, Any]:
         s["responseMaxMs"] for s in reachable
         if isinstance(s.get("responseMaxMs"), int)
     ]
+    latencies = [
+        s["latencyMs"] for s in reachable if isinstance(s.get("latencyMs"), (int, float))
+    ]
 
     return {
         "sampleCount": len(samples),
         "unreachableCount": unreachable_count,
+        "pollLatencyMsMax": max(latencies) if latencies else None,
+        "pollLatencyMsMedian": (
+            sorted(latencies)[len(latencies) // 2] if latencies else None
+        ),
         "responseDeadlineClosuresFirst": closures[0] if closures else None,
         "responseDeadlineClosuresLast": closures[-1] if closures else None,
         "inflightRequestsRestingValue": inflight[-1] if inflight else None,
@@ -379,7 +407,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
                 "outcome": outcome,
                 "reclaimSeconds": reclaim_seconds,
                 "secondsSinceRequest": since_request_seconds,
-                "reclaimed": outcome.startswith("reset"),
+                "reclaimed": outcome.startswith("reclaimed"),
             })
         except (ProbeError, OSError) as error:
             events.append(timeline.record(
@@ -412,8 +440,11 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     attempted = len([b for b in breach_results if not b.get("failed")])
     closures_ok = closures_delta == attempted and attempted == args.repeat
 
-    # Every poll on the other connection must have succeeded, throughout. This
-    # is the "normal traffic on other connections is unaffected" evidence.
+    # Every poll on the other connection must have completed. Delay is expected
+    # and is reported rather than failed on: esp_http_server serves every
+    # connection from one task (ADR 0022), so a stalled response holds the task
+    # for as long as it lives. The deadline bounds that hold; it cannot remove
+    # it. What would be a real failure is a poll that never came back at all.
     all_polls_ok = summary["unreachableCount"] == 0
 
     # ADR 0017: inflightRequests must return to 0 immediately once load stops,
@@ -493,6 +524,9 @@ def main(argv: list[str]) -> int:
           f"against a {reclaim['deadlineSeconds']} s deadline")
     print(f"  status polls        {polls['sampleCount']} total, "
           f"{polls['unreachableCount']} unreachable  ok={verdict['allStatusPollsSucceeded']}")
+    print(f"  poll latency        median {polls.get('pollLatencyMsMedian')} ms, "
+          f"worst {polls.get('pollLatencyMsMax')} ms "
+          f"(worst is the delay one stall imposes on other connections)")
     print(f"  inflight resting    "
           f"{verdict['inflightRequestsReturnedToResting']['restingValue']}  "
           f"ok={verdict['inflightRequestsReturnedToResting']['ok']}")
