@@ -100,6 +100,40 @@ WebResponseDeadlineVerdict webResponseDeadlineCheck(WebResponseDeadline* deadlin
                                                     uint32_t nowMs, uint32_t deadlineMs);
 
 // -----------------------------------------------------------------------------
+// Write outcomes
+// -----------------------------------------------------------------------------
+
+enum class WebSendOutcome : unsigned char {
+    // Bytes were accepted. The count is the caller's to loop over.
+    kWritten,
+    // Nothing was accepted this instant, but the connection is alive and the
+    // same write can succeed later: the peer's receive window is full, or the
+    // stack could not find memory to queue the segment. Retry under the
+    // deadline.
+    kTransient,
+    // The socket cannot carry this response at all.
+    kFatal,
+};
+
+// Classifies one non-blocking send() return. Pure, so the table below is pinned
+// by a host test rather than by reasoning about a device under memory pressure.
+//
+// The distinction this draws is the whole point. A non-blocking write on this
+// stack fails for two reasons that look identical to the caller and are not:
+// EAGAIN when the peer's window is full, and ENOMEM/ENOBUFS when lwIP cannot
+// allocate a segment for the write. Both are transient and both clear on their
+// own, but only the first was ever retried -- so a momentary shortage of
+// contiguous heap, which a concurrent page load produces routinely, aborted the
+// response mid-body. For a static file that meant a well-formed 200 with a
+// truncated or empty body: the browser accepted it, and the script that never
+// arrived simply never ran (issue #98).
+//
+// A zero return is fatal rather than transient. send() returning 0 on a stream
+// socket means it will not make progress, and retrying it is an unbounded spin
+// against a socket that has nothing to say.
+WebSendOutcome webSendClassify(int sendResult, int errnoValue);
+
+// -----------------------------------------------------------------------------
 // Counters
 // -----------------------------------------------------------------------------
 //
@@ -119,3 +153,16 @@ extern volatile uint32_t g_webResponseDeadlineLastMs;
 // re-checked on any run rather than resting on one calibration session.
 extern volatile uint32_t g_webResponseLastMs;
 extern volatile uint32_t g_webResponseMaxMs;
+
+// Write attempts that were retried rather than failed, split by what made them
+// wait, plus the longest a single write spent waiting.
+//
+// Separated because they carry different news. A full receive window is the
+// ordinary cost of serving a client slower than the link; a memory-starved
+// write means the heap ran out of contiguous space mid-response, which is the
+// condition that used to truncate the body silently. A run where the second
+// counter climbs is a run whose heap headroom wants looking at, and that has to
+// be visible without reproducing the failure it now prevents.
+extern volatile uint32_t g_webSendRetriesWindow;
+extern volatile uint32_t g_webSendRetriesMemory;
+extern volatile uint32_t g_webSendRetryMaxMs;

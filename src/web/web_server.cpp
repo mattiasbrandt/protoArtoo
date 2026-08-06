@@ -545,6 +545,13 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     // clear the slowest legitimate response" is a standing property of the
     // system, not a past result (ADR 0024). responseDeadlineAgeMs follows
     // sseEvictAgeMs: -1 until one has fired.
+    //
+    // sendRetriesMemory is the one to watch: it counts writes that had to wait
+    // because the stack could not allocate a segment, which is the condition
+    // that used to abandon a response mid-body and hand the browser a
+    // well-formed but truncated file (#98). It is now retried rather than
+    // fatal, so the failure is invisible from the outside -- this counter is
+    // the only place the pressure still shows.
     if (written > 0 && written < (int)bufferSize - 1) {
         const uint32_t responseDeadlineLastMs = g_webResponseDeadlineLastMs;
         const long responseDeadlineAgeMs =
@@ -555,12 +562,16 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
                      "\"httpSocketsOpenPeak\":%d,\"httpSocketsUntracked\":%lu,"
                      "\"httpRequestsServed\":%lu,\"responseDeadlineClosures\":%lu,"
                      "\"responseDeadlineAgeMs\":%ld,\"responseLastMs\":%lu,"
-                     "\"responseMaxMs\":%lu",
+                     "\"responseMaxMs\":%lu,\"sendRetriesWindow\":%lu,"
+                     "\"sendRetriesMemory\":%lu,\"sendRetryMaxMs\":%lu",
                      (unsigned long)g_webSocketsAccepted, (int)g_webSocketsOpen,
                      (int)g_webSocketsOpenPeak, (unsigned long)g_webSocketsUntracked,
                      (unsigned long)g_webRequestsServed,
                      (unsigned long)g_webResponseDeadlineClosures, responseDeadlineAgeMs,
-                     (unsigned long)g_webResponseLastMs, (unsigned long)g_webResponseMaxMs);
+                     (unsigned long)g_webResponseLastMs, (unsigned long)g_webResponseMaxMs,
+                     (unsigned long)g_webSendRetriesWindow,
+                     (unsigned long)g_webSendRetriesMemory,
+                     (unsigned long)g_webSendRetryMaxMs);
         if (extra > 0) {
             // Truncation leaves written past the buffer, which the bound check
             // below reads as a failed build -- the same way the fixed section

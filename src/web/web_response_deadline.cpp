@@ -14,10 +14,39 @@
 
 #include "../../include/web_response_deadline.h"
 
+#include <errno.h>
+
 volatile uint32_t g_webResponseDeadlineClosures = 0;
 volatile uint32_t g_webResponseDeadlineLastMs = 0;
 volatile uint32_t g_webResponseLastMs = 0;
 volatile uint32_t g_webResponseMaxMs = 0;
+volatile uint32_t g_webSendRetriesWindow = 0;
+volatile uint32_t g_webSendRetriesMemory = 0;
+volatile uint32_t g_webSendRetryMaxMs = 0;
+
+WebSendOutcome webSendClassify(int sendResult, int errnoValue) {
+    if (sendResult > 0) {
+        return WebSendOutcome::kWritten;
+    }
+    if (sendResult == 0) {
+        return WebSendOutcome::kFatal;
+    }
+    // Written as a chain rather than a switch: EAGAIN and EWOULDBLOCK are the
+    // same value on both lwIP and the host, and duplicate case labels do not
+    // compile.
+    if (errnoValue == EAGAIN || errnoValue == EWOULDBLOCK) {
+        return WebSendOutcome::kTransient;
+    }
+    if (errnoValue == ENOMEM || errnoValue == ENOBUFS) {
+        return WebSendOutcome::kTransient;
+    }
+    if (errnoValue == EINTR) {
+        // Not a shortage of anything -- the call was interrupted before it
+        // could try. Reissuing it is the only correct response.
+        return WebSendOutcome::kTransient;
+    }
+    return WebSendOutcome::kFatal;
+}
 
 void webResponseDeadlineInit(WebResponseDeadline* deadline) {
     deadline->fd = -1;
