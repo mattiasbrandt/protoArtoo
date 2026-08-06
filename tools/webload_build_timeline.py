@@ -76,7 +76,9 @@ def rows_from_status(records: list[dict[str, Any]]) -> list[tuple[str, str, str,
                 f"heapLargest8bit={status.get('heapLargest8bit')} "
                 f"resetReason={status.get('resetReason')} "
                 f"refusedHeapFloor={status.get('refusedHeapFloor')} "
-                f"uptimeMs={status.get('uptimeMs')}"
+                f"uptimeMs={status.get('uptimeMs')} "
+                f"responseDeadlineClosures={status.get('responseDeadlineClosures')} "
+                f"responseMaxMs={status.get('responseMaxMs')}"
             )
             event = "status ok"
         else:

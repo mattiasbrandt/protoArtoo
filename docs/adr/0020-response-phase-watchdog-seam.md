@@ -27,6 +27,13 @@ unverified cross-task close(). No implementation code was added under #68.
 superseded (2026-08-04): stop condition triggered, no safe no-patch seam found;
 requirement carried forward to issue #53
 
+superseded (2026-08-06) by
+[ADR 0024](0024-response-phase-deadline-send-override.md): the requirement is
+discharged on `esp_http_server` through a session send override, a seam
+`ESPAsyncWebServer` has no equivalent of and which none of the options below
+therefore considered. Every rejection recorded here still holds for the stack it
+was written against.
+
 ## Considered options
 
 - **Cross-task application table of request/client pointers** — rejected because a
