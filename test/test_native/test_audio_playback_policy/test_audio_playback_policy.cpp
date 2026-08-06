@@ -165,6 +165,42 @@ void test_random_tick_uses_category_chirp_binding_when_mood_mapping_selected_cat
     TEST_ASSERT_EQUAL(AUDIO_CATEGORY_HAPPY, intent.category);
 }
 
+void test_random_tick_interval_prevents_rapid_reentry_when_lastrandms_advances() {
+    // This test simulates the state update flow between consecutive random ticks.
+    // Issue #51 suspected a tight loop where identical bank/page/index values repeat.
+    // This would only happen if lastRandMs never advances, so the interval check always passes.
+    // This test verifies that doesn't happen when the state is properly updated.
+
+    AudioPlaybackConfig cfg = baseConfig();
+    cfg.intervalFullS = 30;  // 30 second interval for full-awake mood
+    AudioBindingCache bindings{};
+    bindings.categories[AUDIO_CATEGORY_HAPPY] = {true, 4, 'd'};
+
+    // First call: lastRandMs = 0, nowMs = 1000 (interval has elapsed: 1000 - 0 >= 30000 is false)
+    // Actually, let me set up so the interval HAS elapsed
+    uint32_t nowMs = 40000;  // 40 seconds into boot
+    uint32_t lastRandMs = 0;  // First time, lastRandMs is 0
+
+    AudioPlaybackRandomContext ctx1{&cfg, &bindings, true, true, false, nowMs, lastRandMs, 11, 1};
+    AudioPlaybackIntent intent1 = audioPlaybackResolveRandomTick(ctx1);
+
+    // First call should succeed with 30s interval: nowMs(40000) - lastRandMs(0) >= 30000 is true
+    TEST_ASSERT_EQUAL(AUDIO_PLAYBACK_INTENT_PLAY_BANKED, intent1.kind);
+    TEST_ASSERT_TRUE(intent1.updateLastRandMs);  // Should mark to update the timer
+
+    // Simulate state update: lastRandMs becomes nowMs (40000)
+    lastRandMs = nowMs;
+
+    // Second call: 1ms later, same randomValue, should FAIL interval check
+    nowMs = 40001;
+    AudioPlaybackRandomContext ctx2{&cfg, &bindings, true, true, false, nowMs, lastRandMs, 11, 1};
+    AudioPlaybackIntent intent2 = audioPlaybackResolveRandomTick(ctx2);
+
+    // Second call should fail interval check: nowMs(40001) - lastRandMs(40000) < 30000
+    TEST_ASSERT_EQUAL(AUDIO_PLAYBACK_INTENT_NONE, intent2.kind);
+    TEST_ASSERT_EQUAL(AUDIO_PLAYBACK_NONE_INTERVAL_NOT_READY, intent2.reason);
+}
+
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
@@ -178,5 +214,6 @@ int main(int argc, char** argv) {
     RUN_TEST(test_command_play_antispam_has_no_timing_updates);
     RUN_TEST(test_random_tick_suppressed_during_dome_sequence_updates_random_timer_only);
     RUN_TEST(test_random_tick_uses_category_chirp_binding_when_mood_mapping_selected_category);
+    RUN_TEST(test_random_tick_interval_prevents_rapid_reentry_when_lastrandms_advances);
     return UNITY_END();
 }
