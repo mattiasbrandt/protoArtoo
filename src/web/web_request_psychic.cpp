@@ -431,11 +431,17 @@ void closeAfterDeadlineBreach(httpd_handle_t hd, int sockfd) {
 // httpd_send_all() calls it in a loop for partial writes, so a body larger than
 // one socket buffer is checked against the deadline several times over.
 int deadlineSend(httpd_handle_t hd, int sockfd, const char* buf, size_t len, int flags) {
-    // A caller that already asked not to block owns its own bound and gets the
-    // write unchanged. That is the event stream, whose sends carry
-    // MSG_DONTWAIT and are governed by their own deadline
-    // (PA_SSE_SEND_DEADLINE_MS) on a socket this record does not own anyway.
-    if ((flags & MSG_DONTWAIT) != 0) {
+    // Anything this deadline is not guarding keeps the plain blocking write it
+    // has always had, bounded by the socket's own send timeout. Two cases reach
+    // here: a caller that already asked not to block and owns its own bound
+    // (the event stream, governed by PA_SSE_SEND_DEADLINE_MS), and a write with
+    // no armed request behind it (the Busy Recovery Page, answered from the
+    // refusal path before any request is armed).
+    //
+    // The distinction is load-bearing rather than tidy. The guarded path below
+    // is a retry loop, and the only thing that ends it is the deadline; sending
+    // an unguarded write down it would spin forever against a full window.
+    if ((flags & MSG_DONTWAIT) != 0 || !webResponseDeadlineGuards(&s_responseDeadline, sockfd)) {
         return rawSocketSend(sockfd, buf, len, flags);
     }
 

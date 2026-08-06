@@ -123,6 +123,26 @@ void test_exempt_ignores_a_socket_that_is_not_armed() {
     TEST_ASSERT_EQUAL(WebResponseDeadlineVerdict::kBreach, check(kDeadlineMs));
 }
 
+// The predicate that decides whether a write is guarded at all. Its answer
+// selects between a bounded retry loop and a plain blocking write, so an
+// unguarded socket reading as guarded would spin against a full window with
+// nothing to end it.
+void test_guards_only_the_armed_unexempt_socket() {
+    TEST_ASSERT_FALSE(webResponseDeadlineGuards(&d, kSocket));
+
+    webResponseDeadlineArm(&d, kSocket);
+    TEST_ASSERT_TRUE(webResponseDeadlineGuards(&d, kSocket));
+    TEST_ASSERT_FALSE(webResponseDeadlineGuards(&d, kSocket + 1));
+    TEST_ASSERT_FALSE(webResponseDeadlineGuards(&d, -1));
+
+    webResponseDeadlineExempt(&d, kSocket);
+    TEST_ASSERT_FALSE(webResponseDeadlineGuards(&d, kSocket));
+
+    webResponseDeadlineArm(&d, kSocket);
+    webResponseDeadlineDisarm(&d, 0);
+    TEST_ASSERT_FALSE(webResponseDeadlineGuards(&d, kSocket));
+}
+
 void test_zero_deadline_disables_the_guard() {
     webResponseDeadlineArm(&d, kSocket);
     TEST_ASSERT_EQUAL(WebResponseDeadlineVerdict::kProceed,
@@ -201,6 +221,7 @@ int main(int, char**) {
     RUN_TEST(test_other_sockets_are_untouched);
     RUN_TEST(test_exempt_stream_never_breaches);
     RUN_TEST(test_exempt_ignores_a_socket_that_is_not_armed);
+    RUN_TEST(test_guards_only_the_armed_unexempt_socket);
     RUN_TEST(test_zero_deadline_disables_the_guard);
 
     RUN_TEST(test_disarm_reports_a_completed_response_duration);

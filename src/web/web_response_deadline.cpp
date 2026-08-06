@@ -53,6 +53,10 @@ int32_t webResponseDeadlineDisarm(WebResponseDeadline* deadline, uint32_t nowMs)
     return elapsed;
 }
 
+bool webResponseDeadlineGuards(const WebResponseDeadline* deadline, int fd) {
+    return fd >= 0 && deadline->fd == fd && !deadline->exempt;
+}
+
 WebResponseDeadlineVerdict webResponseDeadlineCheck(WebResponseDeadline* deadline, int fd,
                                                     uint32_t nowMs, uint32_t deadlineMs) {
     // Not the request under deadline. This is the common case for an

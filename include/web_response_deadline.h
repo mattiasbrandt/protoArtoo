@@ -78,6 +78,18 @@ void webResponseDeadlineExempt(WebResponseDeadline* deadline, int fd);
 // against.
 int32_t webResponseDeadlineDisarm(WebResponseDeadline* deadline, uint32_t nowMs);
 
+// True when fd is the socket this deadline is currently guarding: armed, and
+// not exempted as a stream.
+//
+// The caller needs this as a separate question from the verdict below, because
+// the two answers lead to different code and not merely to a different result.
+// A guarded write is issued non-blocking and retried under the deadline; an
+// unguarded one -- a refusal answered before any request was armed, a stream,
+// an idle server -- must keep the plain blocking write it always had. Deciding
+// that from the verdict alone would put an unguarded write into a retry loop
+// with no deadline to end it.
+bool webResponseDeadlineGuards(const WebResponseDeadline* deadline, int fd);
+
 // The whole decision, called immediately before every write attempt on fd.
 //
 // The first call of a phase starts the clock and always proceeds: a response
