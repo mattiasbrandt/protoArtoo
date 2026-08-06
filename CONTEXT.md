@@ -169,8 +169,8 @@ The bounded lifetime assigned to one kind of controller request. Ordinary page w
 _Avoid_: one timeout for every operation, indefinite request, extending on meaningless activity, stopping healthy long work while progress is visible
 
 **Response-Phase Watchdog**:
-The bounded safety guard for an admitted, ordinary non-SSE HTTP response. It covers the response phase after application admission; it does not promise coverage of connection acceptance, request parsing or upload receipt, or intentionally long-lived live updates.
-_Avoid_: end-to-end request watchdog, upload watchdog, SSE timeout
+The bounded safety guard for an admitted, ordinary non-SSE HTTP response. It covers the response phase after application admission; it does not promise coverage of connection acceptance, request parsing or upload receipt, or intentionally long-lived live updates. The response phase begins at the first byte the controller writes, not at admission, so time spent building a body or receiving an upload is outside it. Implemented as a session send override, the one point every response byte passes through on this stack, so it covers the controller's own responses, the web library's, and static assets alike; a breach drops the connection and releases the request's in-flight slot (ADR 0024, superseding ADR 0020).
+_Avoid_: end-to-end request watchdog, upload watchdog, SSE timeout, a guard that only covers routes the controller writes by hand, a breach that closes the socket but keeps the slot
 
 **Page Load Memory Recovery**:
 The controller condition after page-loading activity stops: request and connection counts return to their resting values, usable heap settles within a measured warmed range, failed allocations stop increasing, and the controller remains responsive without a panic, reboot, or power cycle. The concrete pass/fail envelope (heap/largest-block range, cooldown timing, resting-count definitions, failed-allocation rule, stop conditions) is locked in ADR 0017, scoped to production builds only; the rapid-refresh/3-tab-burst and Mobile Safari scenario classes remain explicitly open pending further evidence rather than carrying invented numbers.
