@@ -322,10 +322,7 @@ void setup() {
     // registers the WiFi event handler, and decides/executes the WiFi boot
     // posture (ADR 0015) -- it does NOT itself bind port 80. The actual HTTP
     // server only starts once WiFi genuinely comes up, via
-    // startHttpServerOnce() inside handleWiFiEvent(). The issue #72
-    // PsychicHttp-vs-ESPAsyncWebServer swap happens there, not here -- this
-    // call must always run unconditionally so WiFi bring-up is identical to
-    // production regardless of which HTTP server build this is.
+    // startHttpServerOnce() inside handleWiFiEvent().
     webServerInit();
 
     uint16_t bootTrack = 0;

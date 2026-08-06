@@ -1,21 +1,17 @@
 // =============================================================================
 // src/web/web_request_psychic.cpp
 //
-// PsychicHttp backend for the WebRequest seam (ADR 0021), plus the psychic
-// server bring-up. Becomes the only backend at the #91 cutover.
+// PsychicHttp backend for the WebRequest seam (ADR 0021), plus the server
+// bring-up. The only backend on the device since the #91 cutover; the host-test
+// backend in src/native_test_stubs.cpp is the sole other definition of these
+// methods.
 //
 // backend_ holds a WebRequestPsychicCtx (request + response + the esp_err_t
 // the vendor callback must return). The session escape hatch reaches the
 // underlying esp_http_server request: sess_ctx / free_ctx assignment and
 // httpd_sess_trigger_close() -- the capabilities this migration exists to
 // obtain (#53, ADR 0020).
-//
-// Scope while the migration is in flight: only ported route groups are
-// registered here (gap 4, #79 onward), and the pre-HTTP admission guard is
-// #81's slice -- this is a development target, not the release configuration,
-// until epic #75 completes.
 // =============================================================================
-#ifdef PA_WEB_BACKEND_PSYCHIC
 
 #include <Arduino.h>
 #include <LittleFS.h>
@@ -115,6 +111,53 @@ esp_err_t (*s_vendorOpenFn)(httpd_handle_t, int) = nullptr;
 #ifndef PA_ADMISSION_MAX_INFLIGHT_REQUESTS
 #define PA_ADMISSION_MAX_INFLIGHT_REQUESTS 6
 #endif
+
+#if PA_HEAP_PROFILE
+// Bounded request-lifecycle trace (issue #54 evidence, profiler-gated so it
+// costs nothing in normal builds). Read after an experiment via /api/profiler,
+// not polled during the workload. Covers only admitted requests that count
+// against the inflight cap -- a long-lived stream's lifetime is already visible
+// through the sseClients/sseClientsPeak counters, and it is not a per-request
+// event this ring is meant to capture.
+//
+// handlerDoneMs marks when next() returned, i.e. when the matched handler's
+// call into send() returned control to this middleware. esp_http_server writes
+// the response synchronously from that call, so unlike the async stack this is
+// "response written", not just "response ready".
+//
+// There is deliberately no disconnect timestamp. Connections are kept alive
+// across requests (ADR 0023), so a request has no close of its own to record --
+// the socket-level view lives in the httpSockets* counters instead.
+//
+// Single-writer: both the initial record and the handlerDoneMs update run on
+// the single server task, which is also where /api/profiler reads it. A slot
+// may be overwritten by a newer entry before a very long request's update
+// reaches it -- acceptable for a bounded evidence trace, not a
+// correctness-bearing structure.
+//
+// RequestLifecycleEntry and PA_REQUEST_TRACE_MAX are declared in web_server.h
+// so api_profiler.cpp can size its copy buffer identically.
+RequestLifecycleEntry s_requestTrace[PA_REQUEST_TRACE_MAX];
+uint8_t s_requestTraceHead = 0;
+uint8_t s_requestTraceCount = 0;
+
+// Opens a new lifecycle-trace entry and returns its ring index, so the caller
+// can fill in handlerDoneMs without a second lookup. Overwrites the oldest slot
+// once full.
+uint8_t pushRequestTraceEntry(const char* path, uint32_t startMs) {
+    const uint8_t idx = s_requestTraceHead;
+    RequestLifecycleEntry& e = s_requestTrace[idx];
+    strncpy(e.requestPath, path, sizeof(e.requestPath) - 1);
+    e.requestPath[sizeof(e.requestPath) - 1] = '\0';
+    e.startMs = startMs;
+    e.handlerDoneMs = 0;
+    s_requestTraceHead = (uint8_t)((s_requestTraceHead + 1U) % PA_REQUEST_TRACE_MAX);
+    if (s_requestTraceCount < PA_REQUEST_TRACE_MAX) {
+        s_requestTraceCount++;
+    }
+    return idx;
+}
+#endif  // PA_HEAP_PROFILE
 
 // Refreshes the cached largest-free-block reading at most once per interval.
 // heap_caps_get_largest_free_block() walks the heap, so charging every
@@ -430,10 +473,29 @@ esp_err_t admissionMiddleware(PsychicRequest* request, PsychicResponse* response
     }
 #endif
 
-    // Estop is admitted but never counted, matching the async stack: a safety
-    // command must not be able to fill the cap it is exempt from.
-    InflightSlot slot(!in.estop && !in.longLived);
+    // Estop is admitted but never counted: a safety command must not be able to
+    // fill the cap it is exempt from.
+    const bool counted = !in.estop && !in.longLived;
+    InflightSlot slot(counted);
+
+#if PA_HEAP_PROFILE
+    // Full path (not just a broad class) so a specific slow request (issue #67)
+    // can be matched against the browser's own per-request timestamps after the
+    // fact. Traced for exactly the requests the inflight cap counts, so the
+    // trace and the depth counters describe the same population.
+    uint8_t traceIdx = 0;
+    if (counted) {
+        traceIdx = pushRequestTraceEntry(path, millis());
+    }
+#endif
+
     const esp_err_t result = next();
+
+#if PA_HEAP_PROFILE
+    if (counted) {
+        s_requestTrace[traceIdx].handlerDoneMs = millis();
+    }
+#endif
 
 #if PA_WEB_CLOSE_PER_RESPONSE
     // Queued, not immediate: the server task processes the close from its own
@@ -639,6 +701,25 @@ void streamCloseCallback(httpd_handle_t hd, int sockfd) {
 }
 
 }  // namespace
+
+#if PA_HEAP_PROFILE
+// Copies the trace ring oldest-first into out, for the /api/profiler handler
+// (api_profiler.cpp) to read once after an experiment. Read-only; does not
+// clear or rotate the ring, so repeated reads during a warm-up are safe.
+size_t copyRequestLifecycleTrace(RequestLifecycleEntry* out, size_t maxEntries) {
+    uint8_t count = s_requestTraceCount;
+    if (count > maxEntries) {
+        count = (uint8_t)maxEntries;
+    }
+    const uint8_t oldest =
+        (uint8_t)((s_requestTraceHead + PA_REQUEST_TRACE_MAX - s_requestTraceCount) %
+                  PA_REQUEST_TRACE_MAX);
+    for (uint8_t i = 0; i < count; i++) {
+        out[i] = s_requestTrace[(uint8_t)((oldest + i) % PA_REQUEST_TRACE_MAX)];
+    }
+    return count;
+}
+#endif  // PA_HEAP_PROFILE
 
 bool WebRequest::hasParam(const char* name) const {
     return psychicCtx(backend_)->req->hasParam(name);
@@ -1050,5 +1131,3 @@ void initPsychicWebServer() {
     }
     PA_LOG_INFO(TAG, "PsychicHttp server listening on port 80");
 }
-
-#endif  // PA_WEB_BACKEND_PSYCHIC

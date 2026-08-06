@@ -15,8 +15,8 @@
 // must not outlive the handler call it was built in.
 //
 // Fields resolve to request parameters. The one special name is "plain", the
-// project's long-standing name for a raw (non-form) request body: backends
-// disagree about where such a body lives -- ESPAsyncWebServer surfaces it as a
-// parameter, PsychicHttp keeps it as the body -- and reconciling that here is
-// what keeps the difference out of the apply cores.
+// project's long-standing name for a raw (non-form) request body. Backends
+// disagree about where such a body lives -- PsychicHttp keeps it as the body,
+// the stack before it surfaced it as a parameter -- and reconciling that here
+// is what keeps the difference out of the apply cores.
 ConfigParamSource webParamSource(WebRequest& req);
