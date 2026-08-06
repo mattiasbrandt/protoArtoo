@@ -410,6 +410,18 @@ WebResponseDeadline s_responseDeadline;
 // this task spins on the CPU.
 constexpr uint32_t kResponseRetryDelayMs = 5;
 
+// Backstop for the one configuration in which nothing else ends the retry loop.
+// PA_RESPONSE_DEADLINE_MS=0 is documented in platformio.ini as disabling the
+// guard, and with it disabled the loop below has no other exit against a client
+// whose window stays full: a non-blocking write never times out on its own, so
+// it would be retried forever on the task that serves every connection. 5000 ms
+// is what the socket's own send_wait_timeout would have cost for a single
+// blocking write, which is the behaviour turning the deadline off asks for.
+//
+// Dead code on any build that keeps the deadline, because the compiler folds
+// the constant comparison away -- the shipped configuration is unchanged.
+constexpr uint32_t kResponseRetryUnguardedCapMs = 5000;
+
 // One raw write, carrying esp_http_server's own error mapping.
 //
 // This reproduces httpd_default_send() rather than calling it. That function is
@@ -548,6 +560,12 @@ int deadlineSend(httpd_handle_t hd, int sockfd, const char* buf, size_t len, int
             g_webSendRetriesWindow = g_webSendRetriesWindow + 1u;
         }
         waitedMs += kResponseRetryDelayMs;
+        if (PA_RESPONSE_DEADLINE_MS == 0 && waitedMs >= kResponseRetryUnguardedCapMs) {
+            // Reported as a timeout rather than a failure: that is what the
+            // blocking write this stands in for would have returned, and
+            // esp_http_server already knows how to end a response on it.
+            return HTTPD_SOCK_ERR_TIMEOUT;
+        }
         vTaskDelay(pdMS_TO_TICKS(kResponseRetryDelayMs));
     }
 }
