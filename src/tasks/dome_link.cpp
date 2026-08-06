@@ -59,11 +59,12 @@ constexpr const char* kDomeMdnsHost     = "astropixelsplus";
 constexpr const char* kDomeCmdEndpoint  = "/api/cmd";
 constexpr const char* kDomeLayoutEndpoint = "/api/dome/layout";
 constexpr uint8_t     kRxBufLen         = 64;
-// Dome layout cache size. Overridable because this single array is the largest
-// static allocation in the firmware, and static DRAM is the same memory the
-// heap is carved from -- so its size sets a ceiling on the largest contiguous
-// block the web stack's admission floors are calibrated against. Parameterised
-// to make that trade measurable rather than assumed; the default is unchanged.
+// Dome layout cache size. Overridable because this buffer is the largest single
+// allocation in the firmware, and it competes directly with the largest
+// contiguous block the web stack's admission floors have to work within.
+// Measured on the controller: reclaiming it took the resting largest free block
+// from 10228 to 32756 and stopped six concurrent asset fetches shedding five of
+// themselves, with no admission floor changed.
 #ifndef PA_DOME_LAYOUT_CACHE_BYTES
 #define PA_DOME_LAYOUT_CACHE_BYTES 24576
 #endif
@@ -75,11 +76,43 @@ enum DomeRxSource : uint8_t {
     DOME_RX_WIFI = 1,
 };
 
-// Dome layout cache: stores the JSON response from /api/dome/layout
-// Thread-safe access protected by cacheMux
-static uint8_t s_domeLayoutCache[kDomeLayoutCacheCapacity];
+// Dome layout cache: stores the JSON response from /api/dome/layout.
+// Thread-safe access protected by cacheMux.
+//
+// Heap, allocated on first use, rather than a static array -- which is what
+// ADR 0009 describes ("one reused heap buffer") and what the static array was
+// quietly deviating from. The difference is not stylistic: a static array costs
+// its full size whether the feature is ever used or not, and the only
+// configuration that uses it is a droid with the dome reachable over WiFi.
+// A bench controller has no dome board at all, so fetchDomeLayoutOverWifi() is
+// never reached and the buffer is never allocated -- the memory stays in the
+// heap, where the web stack's admission floors need it.
+//
+// Never freed once allocated: the transport can drop and return, and a buffer
+// this size is far easier to obtain once, early, than to reacquire from a
+// fragmented heap later.
+static uint8_t* s_domeLayoutCache = nullptr;
 static DomeLayoutCacheStatus s_domeLayoutCacheStatus = {false, 0, 0, 0};
 static portMUX_TYPE s_domeLayoutCacheMux = portMUX_INITIALIZER_UNLOCKED;
+
+// Obtains the cache buffer, allocating it the first time a fetch actually needs
+// one. Returns false if the heap cannot provide it, which the caller reports as
+// a failed fetch -- the same outcome, and the same 503 from /api/dome/layout,
+// that an unreachable dome already produces.
+static bool ensureDomeLayoutCache() {
+    if (s_domeLayoutCache != nullptr) {
+        return true;
+    }
+    s_domeLayoutCache = (uint8_t*)malloc(kDomeLayoutCacheCapacity);
+    if (s_domeLayoutCache == nullptr) {
+        PA_LOG_WARN(TAG, "dome layout cache: could not allocate %u bytes",
+                    (unsigned)kDomeLayoutCacheCapacity);
+        return false;
+    }
+    PA_LOG_INFO(TAG, "dome layout cache: allocated %u bytes on first fetch",
+                (unsigned)kDomeLayoutCacheCapacity);
+    return true;
+}
 
 static bool s_domeLayoutRefreshRequested = false;
 static uint32_t s_domeLayoutLastFetchMs = 0;
@@ -528,7 +561,12 @@ size_t domeLayoutCacheReadChunk(uint8_t* outBuf, size_t maxLen, size_t offset, u
 
     taskENTER_CRITICAL(&s_domeLayoutCacheMux);
     size_t copied = 0;
-    if (s_domeLayoutCacheStatus.has_data && s_domeLayoutCacheStatus.fetched_at_ms == fetchedAtMs &&
+    // The buffer is checked as well as has_data. has_data can only become true
+    // after a fetch that allocated it, so the two agree -- but this read is the
+    // one path that dereferences the pointer, and it must not depend on that
+    // invariant holding somewhere else.
+    if (s_domeLayoutCache != nullptr && s_domeLayoutCacheStatus.has_data &&
+        s_domeLayoutCacheStatus.fetched_at_ms == fetchedAtMs &&
         offset < s_domeLayoutCacheStatus.length) {
         size_t remaining = s_domeLayoutCacheStatus.length - offset;
         copied = remaining < maxLen ? remaining : maxLen;
@@ -619,6 +657,15 @@ static bool fetchDomeLayoutOverWifi(const IPAddress& peerIp) {
     // on-demand and throttled to once per 30s), unlike sendCommandOverWifi's
     // latency-sensitive 250ms budget, so it can afford a more generous window
     // for the dome to compose and send the ~12.5KB payload.
+    // Before opening the connection: a fetch with nowhere to put the bytes is
+    // just load on the dome and on this task. Reported as a failed fetch, which
+    // leaves /api/dome/layout answering the same 503 it already answers when the
+    // dome is unreachable.
+    if (!ensureDomeLayoutCache()) {
+        publishDomeLayoutCache(0, 0);
+        return false;
+    }
+
     HTTPClient http;
     http.setConnectTimeout(500);
     http.setTimeout(2000);
