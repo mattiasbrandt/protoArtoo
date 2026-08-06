@@ -28,6 +28,7 @@ enum class UploadOutcome : uint8_t {
     kRejectedOversize, // cannot fit the destination partition
     kFailed,           // Update refused to begin, write, or finalize
     kNoImage,          // the request carried no image to write
+    kBodyNotParsed,    // a body arrived, and none of it reached the updater
     kComplete,         // written and finalized
 };
 
@@ -63,6 +64,44 @@ inline bool uploadContentLengthFits(size_t contentLength, size_t partitionSize) 
     return contentLength <= partitionSize + kUploadMultipartOverheadAllowance;
 }
 
+// What the client is actually told, from what the streamed body recorded.
+//
+// Separate from the handler because the handler is unavoidably about Update and
+// only exists on the device, while this is the decision -- and a decision that
+// is only reachable through a flash write is a decision nothing can test
+// (ADR 0011).
+//
+//   recorded         what the chunk handler last wrote down
+//   sawChunk         whether the backend handed over a single chunk at all
+//   contentLength    the request's Content-Length
+//   updaterHasError  Update.hasError() once the body has been consumed
+//
+// The kInProgress case is the interesting one: the body has been consumed and
+// nothing finalized. Splitting it on sawChunk separates two failures that used
+// to answer identically. "No image received" is true of an empty POST, and it is
+// what an operator can act on. It is a lie when a 1.5 MB image was transferred
+// and the backend's multipart parser dropped it on the floor without saying so
+// -- the parser gives up silently on an allocation failure, so the request looks
+// from here exactly like one that carried nothing. That misreport is what made
+// this cost an evening; naming it separately is what stops the next one.
+inline UploadOutcome uploadEffectiveOutcome(UploadOutcome recorded, bool sawChunk,
+                                            size_t contentLength, bool updaterHasError) {
+    if (recorded == UploadOutcome::kComplete) {
+        // Consulted even on the success path: an error the library latched
+        // without failing a call the handler checked would otherwise be
+        // reported to the operator as a successful flash.
+        return updaterHasError ? UploadOutcome::kFailed : UploadOutcome::kComplete;
+    }
+    if (recorded != UploadOutcome::kInProgress) {
+        // Already decided during the body: oversize, or a failed write.
+        return recorded;
+    }
+    if (!sawChunk && contentLength > 0) {
+        return UploadOutcome::kBodyNotParsed;
+    }
+    return UploadOutcome::kNoImage;
+}
+
 // The response a failed upload earns. Bodies are JSON because
 // data/firmware.js reads its operator-facing message out of the "error" field.
 // Only defined for the failure outcomes; success is formatted below, since it
@@ -79,6 +118,17 @@ inline UploadResponse uploadFailureResponse(UploadTarget target, UploadOutcome o
         // controller to re-run the image it is already running -- an outage
         // with nothing to show for it.
         return UploadResponse{400, "{\"ok\":false,\"error\":\"no image received\"}"};
+    }
+    if (outcome == UploadOutcome::kBodyNotParsed) {
+        // 503 rather than 400: the body was transferred in full and the
+        // controller failed to read it, so this is the controller's fault and
+        // retrying is the right thing for the operator to do. A malformed body
+        // would land here too and earn a slightly generous 503, which is the
+        // cheaper mistake -- the dashboard is the only client that builds these
+        // requests, and it always builds them well-formed.
+        return UploadResponse{503,
+                              "{\"ok\":false,\"error\":\"the controller could not read the upload "
+                              "body; no image data reached the updater. retry\"}"};
     }
     if (outcome == UploadOutcome::kRejectedOversize) {
         return target == UploadTarget::kFirmware

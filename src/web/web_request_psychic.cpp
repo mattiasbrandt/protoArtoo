@@ -114,6 +114,32 @@ esp_err_t (*s_vendorOpenFn)(httpd_handle_t, int) = nullptr;
 #define PA_ADMISSION_MAX_INFLIGHT_REQUESTS 6
 #endif
 
+// An upload needs TWO FILE_CHUNK_SIZE buffers alive at once, and request
+// admission only ever guarantees ONE block of PA_ADMISSION_MIN_LARGEST_FREE_BLOCK.
+// PsychicHttp's MultipartProcessor takes a receive buffer for the whole transfer,
+// then a second buffer of the same size when it reaches the file part. The second
+// allocation is carved out of what the first left behind, so the floor has to
+// cover both -- and covering only the first is indistinguishable from covering
+// both right up until an upload is attempted.
+//
+// It failed exactly that way: with the library's 8 KB default against a 9000 byte
+// floor, the receive buffer took the only qualifying block, the item buffer found
+// 6644 bytes left and failed, and the parser abandoned the part WITHOUT reporting
+// an error -- it drains the rest of the body and returns ESP_OK, so a 1.5 MB image
+// transferred in full and arrived as "no image received". /upload/* is not a
+// diagnostic path, so the full floor is the one that applies.
+//
+// The slack is not decoration. The floor is checked against a reading that may be
+// up to PA_ACCEPT_HEAP_SAMPLE_MIN_INTERVAL_MS old, other work allocates between
+// admission and the parser, and each block carries allocator overhead of its own.
+static constexpr size_t kUploadParserBufferSlack = 2048;
+static_assert(2 * (size_t)FILE_CHUNK_SIZE + kUploadParserBufferSlack <=
+                  (size_t)PA_ADMISSION_MIN_LARGEST_FREE_BLOCK,
+              "An upload holds two FILE_CHUNK_SIZE buffers at once, and the multipart parser "
+              "abandons the body silently when the second one fails. Either lower "
+              "FILE_CHUNK_SIZE or raise PA_ADMISSION_MIN_LARGEST_FREE_BLOCK; both live in "
+              "platformio.ini [flags_base].");
+
 #if PA_HEAP_PROFILE
 // Bounded request-lifecycle trace (issue #54 evidence, profiler-gated so it
 // costs nothing in normal builds). Read after an experiment via /api/profiler,
