@@ -29,6 +29,12 @@ Three phases, in increasing order of what they cost if they go wrong:
 3. ``filesystem`` — the LittleFS round-trip. **Wipes learned sequences**, so it
    is opt-in with its own flag rather than riding along with ``--all``.
 
+Every run starts by checking whether another session is already driving the
+controller, because the board is shared and a measurement taken during
+contention is not evidence. Two consecutive ``/api/status`` reads with nothing
+else in flight differ by exactly one served request; anything above that aborts
+the run unless ``--allow-contention`` marks the evidence as contended.
+
 Reboots are confirmed by ``uptimeMs`` going *backwards*, not by a sleep: a
 settling delay proves nothing on its own, and an uptime that decreased cannot be
 a stale read of the pre-upload device.
@@ -86,6 +92,11 @@ REBOOT_DEADLINE_SECONDS = 120.0
 SEND_CHUNK_BYTES = 64 * 1024
 
 MULTIPART_BOUNDARY = "----protoArtooUploadRerunBoundary"
+
+# Gap between the samples that decide whether another session is using the
+# controller. Long enough that an ordinary dashboard page load lands inside the
+# window rather than between two samples.
+CONTENTION_SAMPLE_INTERVAL_SECONDS = 2.0
 
 # Counters read on both sides of every phase. Named rather than "whatever the
 # payload has" so a field disappearing from /api/status is reported as a missing
@@ -151,6 +162,55 @@ def read_status(host: str, port: int) -> dict[str, Any]:
         # later as "the counter was zero".
         snapshot["_missingFields"] = missing
     return snapshot
+
+
+def detect_contention(host: str, port: int, samples: int = 3) -> dict[str, Any]:
+    """Is anyone else talking to this controller right now?
+
+    The board is shared with other agent sessions, and a number taken while a
+    second session is loading the dashboard is not evidence of anything. Two
+    consecutive /api/status reads with nothing else in flight differ by exactly
+    one served request -- this read itself. Anything above that is foreign
+    traffic, and it is reported rather than left for whoever reads the evidence
+    to notice.
+    """
+    served: list[int] = []
+    sockets: list[int] = []
+    for index in range(samples):
+        if index > 0:
+            time.sleep(CONTENTION_SAMPLE_INTERVAL_SECONDS)
+        status = read_status(host, port)
+        value = status.get("httpRequestsServed")
+        if isinstance(value, int):
+            served.append(value)
+        value = status.get("httpSocketsAccepted")
+        if isinstance(value, int):
+            sockets.append(value)
+
+    if len(served) < 2:
+        return {
+            "checked": False,
+            "note": "httpRequestsServed was not readable; contention unknown",
+        }
+
+    # One request per sample is our own. Everything above that came from
+    # somewhere else.
+    foreign_requests = (served[-1] - served[0]) - (len(served) - 1)
+    foreign_sockets = 0
+    if len(sockets) >= 2:
+        # Keep-alive means our samples may share one socket rather than open one
+        # each, so this is a floor on foreign connections, not an exact count.
+        foreign_sockets = max(0, (sockets[-1] - sockets[0]) - (len(sockets) - 1))
+
+    elapsed = CONTENTION_SAMPLE_INTERVAL_SECONDS * (len(served) - 1)
+    return {
+        "checked": True,
+        "samples": len(served),
+        "windowSeconds": elapsed,
+        "foreignRequests": foreign_requests,
+        "foreignSocketsAtLeast": foreign_sockets,
+        "busy": foreign_requests > 0,
+    }
 
 
 def counter_deltas(before: dict[str, Any], after: dict[str, Any]) -> dict[str, int]:
@@ -528,6 +588,12 @@ def build_parser() -> argparse.ArgumentParser:
         "defaults to data/fw-version.json",
     )
     parser.add_argument(
+        "--allow-contention",
+        action="store_true",
+        help="run even though another session is using the controller; the "
+        "evidence is marked as taken under contention",
+    )
+    parser.add_argument(
         "--evidence",
         type=Path,
         default=None,
@@ -553,6 +619,28 @@ def main(argv: list[str]) -> int:
 
     exit_code = 0
     try:
+        # Taken before anything else, because every number below is worthless if
+        # a second session is driving the controller at the same time.
+        contention = detect_contention(args.host, args.port)
+        run["contention"] = contention
+        if contention.get("busy"):
+            print(
+                f"contention: {contention['foreignRequests']} foreign request(s) "
+                f"in {contention['windowSeconds']}s — another session is using "
+                "the controller",
+                file=sys.stderr,
+            )
+            if not args.allow_contention:
+                run["verdict"] = "aborted-controller-busy"
+                print(
+                    "aborting; rerun when the board is free, or pass "
+                    "--allow-contention to record the run as contended",
+                    file=sys.stderr,
+                )
+                exit_code = 3
+                raise SystemExit(exit_code)
+            run["contendedEvidence"] = True
+
         if args.probe:
             probe = run_probe(args.host, args.port)
             run["phases"].append(probe)
