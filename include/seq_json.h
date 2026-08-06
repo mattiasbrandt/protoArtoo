@@ -72,7 +72,7 @@ ProtocolCheckResult seqJsonParseVariant(JsonVariantConst root,
 //
 // Lets a caller right-size its SeqStep staging instead of reserving the
 // 96+96-step worst case, which on a fragmented heap is a contiguous block the
-// controller cannot always obtain (issue #99). Clamping rather than passing the
+// controller cannot always obtain. Clamping rather than passing the
 // raw size through keeps an oversized array a "too many steps" rejection in
 // parseBranch(); it is never silently truncated.
 void seqJsonStagingCaps(JsonVariantConst root, uint8_t& stepCap, uint8_t& closeCap);

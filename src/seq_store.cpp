@@ -56,7 +56,7 @@ static SemaphoreHandle_t s_mutex = nullptr;
 // separate blocks, so the store never asks the heap for the 96+96-step worst
 // case in one piece. That single 18432-byte request exceeded the largest
 // contiguous 8-bit block the controller could offer, which failed every save
-// regardless of payload size (issue #99). A typical Learned Sequence now stages
+// regardless of payload size. A typical Learned Sequence now stages
 // a few hundred bytes, and the 96-step worst case is two 9216-byte blocks.
 // -----------------------------------------------------------------------------
 struct SeqStaging {

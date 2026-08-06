@@ -29,8 +29,7 @@
 // its main and close branches as two separate blocks sized to the payload's own
 // step counts, never the 96+96-step worst case in one piece. The former single
 // 18432-byte request was larger than the largest contiguous 8-bit block the
-// controller could offer, so every save failed regardless of payload size
-// (issue #99).
+// controller could offer, so every save failed regardless of payload size.
 // =============================================================================
 #pragma once
 
