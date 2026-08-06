@@ -6,8 +6,10 @@
 //
 // Covers: the clock starting at the first write rather than at admission, the
 // breach latch, the exemptions (wrong socket, event stream, disabled), what
-// disarm reports into the published maximum, and millisecond rollover.
+// disarm reports into the published maximum, millisecond rollover, and the
+// send-outcome classification the retry loop is built on.
 // =============================================================================
+#include <errno.h>
 #include <unity.h>
 
 #include "web_response_deadline.h"
@@ -206,6 +208,45 @@ void test_rollover_does_not_reprieve_a_stalled_response() {
     TEST_ASSERT_EQUAL(WebResponseDeadlineVerdict::kBreach, check(0xFFFFFF00u + kDeadlineMs));
 }
 
+// -----------------------------------------------------------------------------
+// Send-outcome classification
+// -----------------------------------------------------------------------------
+
+void test_accepted_bytes_are_written() {
+    TEST_ASSERT_EQUAL(WebSendOutcome::kWritten, webSendClassify(1, 0));
+    TEST_ASSERT_EQUAL(WebSendOutcome::kWritten, webSendClassify(2048, EAGAIN));
+}
+
+void test_full_receive_window_is_transient() {
+    TEST_ASSERT_EQUAL(WebSendOutcome::kTransient, webSendClassify(-1, EAGAIN));
+    TEST_ASSERT_EQUAL(WebSendOutcome::kTransient, webSendClassify(-1, EWOULDBLOCK));
+}
+
+// The regression this whole change exists for: a write the stack had no memory
+// to queue used to be fatal, which abandoned the response mid-body and served
+// a well-formed but truncated file (#98).
+void test_memory_starved_write_is_transient_not_fatal() {
+    TEST_ASSERT_EQUAL(WebSendOutcome::kTransient, webSendClassify(-1, ENOMEM));
+    TEST_ASSERT_EQUAL(WebSendOutcome::kTransient, webSendClassify(-1, ENOBUFS));
+}
+
+void test_interrupted_write_is_transient() {
+    TEST_ASSERT_EQUAL(WebSendOutcome::kTransient, webSendClassify(-1, EINTR));
+}
+
+void test_dead_socket_is_fatal() {
+    TEST_ASSERT_EQUAL(WebSendOutcome::kFatal, webSendClassify(-1, EBADF));
+    TEST_ASSERT_EQUAL(WebSendOutcome::kFatal, webSendClassify(-1, ENOTCONN));
+    TEST_ASSERT_EQUAL(WebSendOutcome::kFatal, webSendClassify(-1, EPIPE));
+}
+
+// Retrying a socket that reports no progress is an unbounded spin, so zero is
+// deliberately not in the transient class however it arrives.
+void test_zero_length_write_is_fatal() {
+    TEST_ASSERT_EQUAL(WebSendOutcome::kFatal, webSendClassify(0, 0));
+    TEST_ASSERT_EQUAL(WebSendOutcome::kFatal, webSendClassify(0, ENOMEM));
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
 
@@ -232,6 +273,13 @@ int main(int, char**) {
 
     RUN_TEST(test_rollover_does_not_breach_a_fresh_response);
     RUN_TEST(test_rollover_does_not_reprieve_a_stalled_response);
+
+    RUN_TEST(test_accepted_bytes_are_written);
+    RUN_TEST(test_full_receive_window_is_transient);
+    RUN_TEST(test_memory_starved_write_is_transient_not_fatal);
+    RUN_TEST(test_interrupted_write_is_transient);
+    RUN_TEST(test_dead_socket_is_fatal);
+    RUN_TEST(test_zero_length_write_is_fatal);
 
     return UNITY_END();
 }

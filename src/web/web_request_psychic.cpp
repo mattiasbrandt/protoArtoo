@@ -419,15 +419,8 @@ constexpr uint32_t kResponseRetryDelayMs = 5;
 // function, which is the override itself. Five lines of duplication is the
 // smaller cost, and the error mapping is the part that has to match exactly:
 // the caller distinguishes a full window from a dead socket by it.
-int rawSocketSend(int sockfd, const char* buf, size_t len, int flags) {
-    if (buf == nullptr) {
-        return HTTPD_SOCK_ERR_INVALID;
-    }
-    const int ret = send(sockfd, buf, len, flags);
-    if (ret >= 0) {
-        return ret;
-    }
-    switch (errno) {
+int mapSendErrno(int errnoValue) {
+    switch (errnoValue) {
         case EAGAIN:
         case EINTR:
             return HTTPD_SOCK_ERR_TIMEOUT;
@@ -439,6 +432,17 @@ int rawSocketSend(int sockfd, const char* buf, size_t len, int flags) {
         default:
             return HTTPD_SOCK_ERR_FAIL;
     }
+}
+
+int rawSocketSend(int sockfd, const char* buf, size_t len, int flags) {
+    if (buf == nullptr) {
+        return HTTPD_SOCK_ERR_INVALID;
+    }
+    const int ret = send(sockfd, buf, len, flags);
+    if (ret >= 0) {
+        return ret;
+    }
+    return mapSendErrno(errno);
 }
 
 // Drops the connection a breach was taken on.
@@ -482,6 +486,11 @@ int deadlineSend(httpd_handle_t hd, int sockfd, const char* buf, size_t len, int
         return rawSocketSend(sockfd, buf, len, flags);
     }
 
+    // How long this one write has spent waiting, so the published maximum
+    // describes a single write rather than a whole response phase -- the two
+    // answer different questions, and the response phase already has its own.
+    uint32_t waitedMs = 0;
+
     for (;;) {
         // Read before the check so a latched breach can be told from the write
         // that caused it. The counter and the close belong to the transition:
@@ -504,19 +513,41 @@ int deadlineSend(httpd_handle_t hd, int sockfd, const char* buf, size_t len, int
             return HTTPD_SOCK_ERR_FAIL;
         }
 
-        const int written = rawSocketSend(sockfd, buf, len, flags | MSG_DONTWAIT);
-        if (written > 0) {
-            // Partial writes are the caller's to loop over, and looping there
-            // rather than here is what gives the deadline its granularity.
-            return written;
-        }
-        if (written != HTTPD_SOCK_ERR_TIMEOUT) {
-            // A dead socket, or a zero-length write. Either way the deadline
-            // has nothing to say about it.
-            return written;
+        // send() is called here rather than through rawSocketSend() so errno is
+        // read where it is produced: the classification below needs the errno
+        // itself, and the httpd_ error codes rawSocketSend() maps to cannot
+        // tell a full window from a memory-starved write.
+        errno = 0;
+        const int written = (buf != nullptr) ? send(sockfd, buf, len, flags | MSG_DONTWAIT) : -1;
+        const int sendErrno = (buf != nullptr) ? errno : EINVAL;
+
+        switch (webSendClassify(written, sendErrno)) {
+            case WebSendOutcome::kWritten:
+                // Partial writes are the caller's to loop over, and looping
+                // there rather than here is what gives the deadline its
+                // granularity.
+                if (waitedMs > g_webSendRetryMaxMs) {
+                    g_webSendRetryMaxMs = waitedMs;
+                }
+                return written;
+            case WebSendOutcome::kFatal:
+                // A dead socket. The deadline has nothing to say about it.
+                return mapSendErrno(sendErrno);
+            case WebSendOutcome::kTransient:
+                break;
         }
 
-        // Window full. Yield before looking at the clock again.
+        // Either the peer's window is full or the stack had no memory to queue
+        // the segment. Both clear on their own and both are retried here, under
+        // the deadline that bounds how long this task may spend on one write --
+        // failing instead would abandon the response mid-body, which for a
+        // static file means a well-formed 200 the browser cannot use (#98).
+        if (sendErrno == ENOMEM || sendErrno == ENOBUFS) {
+            g_webSendRetriesMemory = g_webSendRetriesMemory + 1u;
+        } else {
+            g_webSendRetriesWindow = g_webSendRetriesWindow + 1u;
+        }
+        waitedMs += kResponseRetryDelayMs;
         vTaskDelay(pdMS_TO_TICKS(kResponseRetryDelayMs));
     }
 }
