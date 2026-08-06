@@ -34,7 +34,6 @@
 #include "seq_store_util.h"    // SEQ_FILE_MAX_BYTES, SEQ_FS_FREE_FLOOR, helpers
 #include "sequence_engine.h"  // SequenceEntry
 
-class Print;  // Arduino print target (seqStoreStreamFile); full def in the .cpp
 
 // Mount LittleFS (idempotent), ensure /seq exists, and index every valid
 // Learned Sequence file. Invalid files are skipped with a warning. Call once at
@@ -75,6 +74,16 @@ ProtocolCheckResult seqStoreSave(const char* json, size_t len);
 // filesystem cannot diverge.
 bool seqStoreDelete(const char* name);
 
-// Stream a Learned Sequence file's raw JSON to `out` (GET /api/seq?name=).
-// Returns false if the name is not indexed or the file is missing.
-bool seqStoreStreamFile(const char* name, Print& out);
+// Copy up to `capacity` bytes of a Learned Sequence file's raw JSON, starting
+// at byte `offset`, into `out` (GET /api/seq?name=). Returns the number of
+// bytes copied; 0 means end of file, an unindexed name, or a read failure --
+// all three end the response body, which is the only distinction the caller
+// can act on anyway.
+//
+// Offset-addressed rather than streamed into an Arduino Print: this is what
+// WebRequest::sendChunked() drives (ADR 0021), so no backend and no handler
+// ever holds more than one chunk of a file that runs to SEQ_FILE_MAX_BYTES.
+// Each call opens and seeks, which costs a handful of LittleFS opens across a
+// whole file and, unlike a handle cached between calls, leaves nothing open if
+// the client disconnects mid-body.
+size_t seqStoreReadFileSlice(const char* name, size_t offset, uint8_t* out, size_t capacity);

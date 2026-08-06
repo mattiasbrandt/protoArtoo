@@ -8,9 +8,9 @@
 // =============================================================================
 #pragma once
 
-#include <ESPAsyncWebServer.h>
-
 #if PA_HEAP_PROFILE
+
+#include "web_request.h"
 
 // Call once at task start (SafetyMonitorTask) to register the failed-alloc
 // callback and open the initial "boot" monitoring window.
@@ -34,11 +34,18 @@ void profilerCollectHwm();
 void profilerCollectTaskHeap();
 #endif
 
-// Register profiler endpoints:
+// Profiler endpoints, bound by the seam route table (ADR 0021). All are absent
+// (404) when PA_HEAP_PROFILE is not defined, which is why both this block and
+// their registration sit behind the same guard.
+//
 //   GET  /api/profiler               — live heap/HWM/snapshot JSON
-//   POST /api/profiler/trace/start   — start Tier 3 leak trace (CONFIG_HEAP_TRACING only)
+void handleProfilerGet(WebRequest& req);
+
+#ifdef CONFIG_HEAP_TRACING
+//   POST /api/profiler/trace/start   — start Tier 3 leak trace
 //   POST /api/profiler/trace/stop    — stop + dump Tier 3 leak trace to serial
-// All endpoints are absent (404) when PA_HEAP_PROFILE is not defined.
-void registerProfilerRoutes(AsyncWebServer& server);
+void handleProfilerTraceStartPost(WebRequest& req);
+void handleProfilerTraceStopPost(WebRequest& req);
+#endif
 
 #endif  // PA_HEAP_PROFILE

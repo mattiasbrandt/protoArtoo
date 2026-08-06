@@ -559,9 +559,67 @@ void webEventStreamBroadcast(const char* /*event*/, const char* /*data*/, uint32
     g_test_event_stream_broadcasts++;
 }
 
+// -----------------------------------------------------------------------------
+// Learned Sequence store (include/seq_store.h). Only the LittleFS half is
+// stubbed: the index, the JSON codec and Protocol Check are all real code in
+// the native build, so a seq-route test exercises the actual validation path
+// and fakes only the filesystem underneath it.
+// -----------------------------------------------------------------------------
+#include <string>
+
+#include "seq_store.h"
+
+// What seqStoreSave() reports back, and what it was handed. A test sets the
+// verdict, calls the handler, and asserts on both the response and the bytes
+// the store would have written -- which is how "the body survived the seam
+// intact" gets checked without a filesystem.
+ProtocolCheckResult g_test_seq_save_result = pcOk();
+std::string g_test_seq_saved_body;
+unsigned g_test_seq_save_calls = 0;
+bool g_test_seq_delete_ok = true;
+unsigned g_test_seq_delete_calls = 0;
+// Stands in for one stored file's contents, served by the slice reader.
+std::string g_test_seq_file_body;
+
+void seqStoreInit() {
+}
+
+ProtocolCheckResult seqStorePrepare(const char* /*name*/) {
+    return pcOk();
+}
+
+bool seqStoreCommit(SequenceEntry& /*out*/) {
+    return false;
+}
+
+void seqStoreReleaseRun() {
+}
+
+ProtocolCheckResult seqStoreSave(const char* json, size_t len) {
+    g_test_seq_save_calls++;
+    g_test_seq_saved_body.assign(json != nullptr ? json : "", len);
+    return g_test_seq_save_result;
+}
+
+bool seqStoreDelete(const char* /*name*/) {
+    g_test_seq_delete_calls++;
+    return g_test_seq_delete_ok;
+}
+
+size_t seqStoreReadFileSlice(const char* /*name*/, size_t offset, uint8_t* out, size_t capacity) {
+    if (out == nullptr || capacity == 0 || offset >= g_test_seq_file_body.size()) {
+        return 0;
+    }
+    const size_t remaining = g_test_seq_file_body.size() - offset;
+    const size_t count = remaining < capacity ? remaining : capacity;
+    memcpy(out, g_test_seq_file_body.data() + offset, count);
+    return count;
+}
+
 // Route registration is a no-op on the host: native tests call the exposed
 // handlers directly instead of dispatching through a server.
-void webRegisterRoute(const char* /*path*/, WebMethod /*method*/, WebRequestHandler /*handler*/) {
+void webRegisterRoute(const char* /*path*/, WebMethod /*method*/, WebRequestHandler /*handler*/,
+                      size_t /*maxBodyBytes*/) {
 }
 
 void webRegisterUploadRoute(const char* /*path*/, WebUploadChunkHandler /*onChunk*/,

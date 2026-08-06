@@ -21,12 +21,15 @@
 #include "../../include/api_estop.h"
 #include "../../include/api_identity.h"
 #include "../../include/api_logs.h"
+#include "../../include/api_profiler.h"
 #include "../../include/api_rc.h"
+#include "../../include/api_seq.h"
 #include "../../include/api_servo.h"
 #include "../../include/api_status.h"
 #include "../../include/api_system.h"
 #include "../../include/api_upload.h"
 #include "../../include/api_validation.h"
+#include "../../include/seq_store_util.h"  // SEQ_FILE_MAX_BYTES
 #include "../../include/web_request.h"
 
 void webRegisterSeamRoutes() {
@@ -38,6 +41,7 @@ void webRegisterSeamRoutes() {
     // a page load needs from the psychic stack.
     webRegisterRoute("/api/config", WebMethod::kGet, handleConfigGet);
     webRegisterRoute("/api/actions", WebMethod::kGet, handleActionsGet);
+    webRegisterRoute("/api/actions/test", WebMethod::kPost, handleActionsTestPost);
     webRegisterRoute("/api/logs", WebMethod::kGet, handleLogsGet);
 
     // Ported ahead of the rest of its route group: the admission counters and
@@ -45,6 +49,10 @@ void webRegisterSeamRoutes() {
     // the migration's comparison run is scored against, so the guard's own
     // evidence is unobservable without it.
     webRegisterRoute("/api/status", WebMethod::kGet, handleStatusGet);
+
+    // The rest of the status/telemetry group, which followed /api/status.
+    webRegisterRoute("/api/health", WebMethod::kGet, handleHealthGet);
+    webRegisterRoute("/api/serial", WebMethod::kGet, handleSerialGet);
 
     // Config, RC-map and WiFi writes. Their decision logic stays in the
     // ADR 0011 apply cores; these routes only carry values across.
@@ -112,6 +120,30 @@ void webRegisterSeamRoutes() {
 
     // Mood presets. index.html fetches this one on every load.
     webRegisterRoute("/api/mood", WebMethod::kPost, handleMoodPost);
+
+    // Learned Sequences. POST /api/seq names its own body bound because a
+    // saved sequence runs to SEQ_FILE_MAX_BYTES, three times what the default
+    // allows -- and the store enforces that same number, so the route and the
+    // thing it writes to agree on one limit.
+    webRegisterRoute("/api/seq/list", WebMethod::kGet, handleSeqListGet);
+    webRegisterRoute("/api/seq/builtins", WebMethod::kGet, handleSeqBuiltinsGet);
+    webRegisterRoute("/api/seq/test", WebMethod::kPost, handleSeqTestPost);
+    webRegisterRoute("/api/seq/stop", WebMethod::kPost, handleSeqStopPost);
+    webRegisterRoute("/api/seq/last-run", WebMethod::kGet, handleSeqLastRunGet);
+    webRegisterRoute("/api/seq", WebMethod::kGet, handleSeqGet);
+    webRegisterRoute("/api/seq", WebMethod::kPost, handleSeqPost, SEQ_FILE_MAX_BYTES);
+    webRegisterRoute("/api/seq", WebMethod::kDelete, handleSeqDelete);
+
+#if PA_HEAP_PROFILE
+    // Absent entirely on builds without the profiler, which is what setup.js
+    // probes for: it shows the profiler panel only if this route answers 200.
+    webRegisterRoute("/api/profiler", WebMethod::kGet, handleProfilerGet);
+#ifdef CONFIG_HEAP_TRACING
+    webRegisterRoute("/api/profiler/trace/start", WebMethod::kPost,
+                     handleProfilerTraceStartPost);
+    webRegisterRoute("/api/profiler/trace/stop", WebMethod::kPost, handleProfilerTraceStopPost);
+#endif
+#endif
 
     // Streaming OTA uploads, ported early on purpose: with these working on
     // the psychic build, later work reflashes over the air instead of needing

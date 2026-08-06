@@ -1356,17 +1356,16 @@ void startHttpServerOnce() {
 
         // ADR 0021: route groups ported to the WebRequest seam register
         // through webRegisterRoute() against this server instance. Their
-        // paths live in the one seam route table both backends call, so this
-        // block only registers what is still async-only.
+        // paths live in the one seam route table both backends call, which as
+        // of the audio and sequence groups landing is every route there is.
         webRequestAsyncAttach(server);
         webRegisterSeamRoutes();
 
-        registerStatusRoutes(server);
-#if PA_HEAP_PROFILE
-        registerProfilerRoutes(server);
-#endif
-        registerActionsRoutes(server);
-        registerSeqRoutes(server);
+        // Nothing left to register here. With the audio group (#88) and the
+        // sequence, profiler and status group (#90) both on the seam, every
+        // route this block used to add is in webRegisterSeamRoutes() above --
+        // which is the condition the #91 cutover needs before it can delete
+        // this block along with the rest of the async stack.
 
         if (littleFsReady) {
             server.serveStatic("/", LittleFS, "/").setDefaultFile("index.html").setCacheControl("no-cache");

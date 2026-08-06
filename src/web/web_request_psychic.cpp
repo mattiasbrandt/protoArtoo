@@ -811,8 +811,25 @@ void webEventStreamBroadcast(const char* event, const char* data, uint32_t id) {
     }
 }
 
-void webRegisterRoute(const char* path, WebMethod method, WebRequestHandler handler) {
-    const http_method vendorMethod = (method == WebMethod::kPost) ? HTTP_POST : HTTP_GET;
+void webRegisterRoute(const char* path, WebMethod method, WebRequestHandler handler,
+                      size_t maxBodyBytes) {
+    // maxBodyBytes is the async backend's buffering bound; here the library
+    // does the buffering and enforces one server-wide ceiling
+    // (PsychicHttpServer::maxRequestBodySize), so the per-route value only has
+    // to fit under it. Raising the server ceiling to the largest route's need
+    // keeps the two backends agreeing on which bodies arrive at all; the
+    // matching 413 comes from the handler reading contentLength(), which is
+    // where both backends already agree.
+    if (maxBodyBytes > s_server.maxRequestBodySize) {
+        s_server.maxRequestBodySize = maxBodyBytes;
+    }
+
+    http_method vendorMethod = HTTP_GET;
+    if (method == WebMethod::kPost) {
+        vendorMethod = HTTP_POST;
+    } else if (method == WebMethod::kDelete) {
+        vendorMethod = HTTP_DELETE;
+    }
     s_server.on(path, vendorMethod,
                 [handler](PsychicRequest* vendorReq, PsychicResponse* vendorResp) -> esp_err_t {
                     WebRequestPsychicCtx ctx = {vendorReq, vendorResp, ESP_OK};

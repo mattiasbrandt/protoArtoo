@@ -1,24 +1,35 @@
 // =============================================================================
 // src/web/api_actions.cpp
 //
-// POST /api/actions/test — dispatch one action through RC trigger path for testing.
+// POST /api/actions/test — dispatch one action through RC trigger path for
+// testing, ported to the WebRequest seam (ADR 0021).
 //
-// GET /api/actions lives in api_actions_json.cpp: it is ported to the
-// WebRequest seam (ADR 0021) and bound by the seam route table, and keeping it
-// out of this file keeps it clear of the RC-dispatch and FreeRTOS dependencies
-// the test route needs.
+// GET /api/actions lives in api_actions_json.cpp: keeping it out of this file
+// keeps it clear of the RC-dispatch and FreeRTOS dependencies the test route
+// needs, so the host tests can build and drive it directly.
 // =============================================================================
 
 #include "../../include/api_actions.h"
 
 #include <ArduinoJson.h>
-#include <ESPAsyncWebServer.h>
+#include <stdio.h>
+#include <string.h>
 
 #include "../../include/action_registry.h"
+#include "../../include/api_helpers.h"  // trimAsciiWhitespace
+#include "../../include/api_json_response.h"
 #include "../../include/rc_input.h"
 #include "../../include/robot_state.h"
 
 namespace {
+
+static const char* TAG = "Actions";
+
+// An action token is a registry identifier, far shorter than this; the buffer
+// is oversized so an over-long token still reaches parseRobotActionId() as an
+// unparseable string rather than a truncation that happens to match.
+constexpr size_t kTokenBufSize = 64;
+constexpr size_t kResponseMaxBytes = 512;
 
 bool webControlEnabledForActionTest() {
     taskENTER_CRITICAL(&robotStateMux);
@@ -41,79 +52,71 @@ const char* actionDomainForId(RobotActionId id) {
     return entry != nullptr ? entry->domain : "unknown";
 }
 
+void sendJsonError(WebRequest& req, int code, const char* message) {
+    JsonDocument doc;
+    doc["ok"] = false;
+    doc["error"] = message;
+    webSendJsonDocument(req, doc, kResponseMaxBytes, TAG, code);
+}
+
 }  // namespace
 
-void registerActionsRoutes(AsyncWebServer& server) {
-    // GET /api/actions is registered by the seam route table, not here.
-
-    server.on("/api/actions/test", HTTP_POST, [](AsyncWebServerRequest* req) {
-
-        String token;
-        const AsyncWebParameter* tokenParam = req->getParam("token", true);
-        if (tokenParam != nullptr) {
-            token = tokenParam->value();
-        } else if (req->hasParam("plain", true)) {
+void handleActionsTestPost(WebRequest& req) {
+    // The token arrives either as a form field (data/app.js and data/rc.js both
+    // use postForm) or inside a JSON body. Both device backends parse a form
+    // body into parameters and leave only an unparsed body for body(), so
+    // "parameter first, then JSON" resolves the two without either backend
+    // having to special-case a content type.
+    char token[kTokenBufSize] = {};
+    if (!req.param("token", token, sizeof(token)) || token[0] == '\0') {
+        const char* body = req.body();
+        if (body != nullptr) {
             JsonDocument bodyDoc;
-            const String rawBody = req->getParam("plain", true)->value();
-            if (deserializeJson(bodyDoc, rawBody.c_str())) {
-                req->send(400, "application/json",
-                          "{\"ok\":false,\"error\":\"invalid json body\"}");
+            if (deserializeJson(bodyDoc, body)) {
+                sendJsonError(req, 400, "invalid json body");
                 return;
             }
             JsonVariantConst tokenVar = bodyDoc["token"];
             if (!tokenVar.is<const char*>()) {
-                req->send(400, "application/json",
-                          "{\"ok\":false,\"error\":\"invalid_action_token\"}");
+                sendJsonError(req, 400, "invalid_action_token");
                 return;
             }
-            token = tokenVar.as<const char*>();
+            snprintf(token, sizeof(token), "%s", tokenVar.as<const char*>());
         }
+    }
 
-        token.trim();
-        if (token.length() == 0) {
-            req->send(400, "application/json",
-                      "{\"ok\":false,\"error\":\"invalid_action_token\"}");
+    trimAsciiWhitespace(token);
+    if (token[0] == '\0') {
+        sendJsonError(req, 400, "invalid_action_token");
+        return;
+    }
+
+    RobotActionId target = ROBOT_ACTION_NONE;
+    if (!parseRobotActionId(token, &target)) {
+        sendJsonError(req, 400, "invalid_action_token");
+        return;
+    }
+
+    switch (evaluateActionTestGuard(target, webControlEnabledForActionTest())) {
+        case ACTION_TEST_SAFETY_CRITICAL_BLOCKED:
+            sendJsonError(req, 403, "safety_critical_blocked");
             return;
-        }
-
-        RobotActionId target = ROBOT_ACTION_NONE;
-        if (!parseRobotActionId(token.c_str(), &target)) {
-            req->send(400, "application/json",
-                      "{\"ok\":false,\"error\":\"invalid_action_token\"}");
+        case ACTION_TEST_WEB_CONTROL_DISABLED:
+            sendJsonError(req, 423, "web_control_disabled");
             return;
-        }
-
-        switch (evaluateActionTestGuard(target, webControlEnabledForActionTest())) {
-            case ACTION_TEST_SAFETY_CRITICAL_BLOCKED:
-                req->send(403, "application/json",
-                          "{\"ok\":false,\"error\":\"safety_critical_blocked\"}");
-                return;
-            case ACTION_TEST_WEB_CONTROL_DISABLED:
-                req->send(423, "application/json",
-                          "{\"ok\":false,\"error\":\"web_control_disabled\"}");
-                return;
-            case ACTION_TEST_ACTION_NOT_TESTABLE:
-                req->send(422, "application/json",
-                          "{\"ok\":false,\"error\":\"action_not_testable\"}");
-                return;
-            case ACTION_TEST_ALLOWED:
-            default:
-                break;
-        }
-
-        dispatchRcTriggerActionTest(target, "", true);
-
-        JsonDocument doc;
-        doc["ok"] = true;
-        doc["token"] = token;
-        doc["domain"] = actionDomainForId(target);
-        auto* stream = req->beginResponseStream("application/json");
-        if (stream == nullptr) {
-            req->send(500, "application/json",
-                      "{\"ok\":false,\"error\":\"response stream alloc failed\"}");
+        case ACTION_TEST_ACTION_NOT_TESTABLE:
+            sendJsonError(req, 422, "action_not_testable");
             return;
-        }
-        serializeJson(doc, *stream);
-        req->send(stream);
-    });
+        case ACTION_TEST_ALLOWED:
+        default:
+            break;
+    }
+
+    dispatchRcTriggerActionTest(target, "", true);
+
+    JsonDocument doc;
+    doc["ok"] = true;
+    doc["token"] = token;
+    doc["domain"] = actionDomainForId(target);
+    webSendJsonDocument(req, doc, kResponseMaxBytes, TAG);
 }
