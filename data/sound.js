@@ -2263,8 +2263,55 @@
     syncMoodMapControlState();
   });
 
-  // Initial module status fetch from cached data (no UART query on load)
-  updateModuleStatus();
+  // -------------------------------------------------------------------------
+  // Boot — load audio module status and conditionally load catalog
+  // -------------------------------------------------------------------------
+
+  // Page Recovery: register startup API loads as sections so the bootstrap
+  // can show recovery state if any fetch fails.
+  // The catalog load is conditional: it only runs if updateModuleStatus
+  // detects catalog support via capability flags.
+  // See docs/page-load-recovery-architecture.md and ADR 0019.
+  const loadAudioModuleStatus = async () => {
+    await updateModuleStatus();
+    // Catalog load is triggered conditionally inside updateModuleStatus ->
+    // applyCapabilityUI, so once module status is loaded, we know if catalog
+    // is needed. If it was needed, loadCatalog already started in applyCapabilityUI.
+  };
+
+  const loadAudioCatalogIfSupported = async () => {
+    if (!catalogSupported) {
+      // Catalog not supported; skip with success to keep the bootstrap
+      // from retrying if the capability check indicated no support.
+      return;
+    }
+    await loadCatalog();
+  };
+
+  const SECTIONS = [
+    ["audio-status", loadAudioModuleStatus, "audio module status"],
+    ["audio-catalog", loadAudioCatalogIfSupported, "audio catalog", { deadlineMs: 12000 }],
+  ];
+
+  const startPageLoad = () => {
+    if (!window.PABootstrap) {
+      updateModuleStatus().catch(() => {});
+      return;
+    }
+    window.PABootstrap.setResourceLabels?.({
+      "/web_api.js": "controller connection",
+      "/status_stream.js": "live updates",
+      "/shell.js": "page layout",
+      "/sound.js": "audio control",
+      "/footer.js": "page footer",
+    });
+    SECTIONS.forEach(([name, load, label, opts]) =>
+      window.PABootstrap.registerSection(name, load, { label, ...opts })
+    );
+  };
+
+  startPageLoad();
+
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState !== "hidden") {
       updateModuleStatus();
