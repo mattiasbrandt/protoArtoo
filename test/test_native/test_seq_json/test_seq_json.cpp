@@ -512,6 +512,125 @@ static void test_audio_serialize_roundtrip_with_bounded() {
 }
 
 // -----------------------------------------------------------------------------
+// Staging capacities (issue #99) — callers size their SeqStep staging from the
+// payload instead of reserving the 96+96-step worst case.
+// -----------------------------------------------------------------------------
+
+// Deserialize `json` and report the caps seqJsonStagingCaps() derives from it.
+static void capsOf(const char* json, uint8_t& stepCap, uint8_t& closeCap) {
+    JsonDocument doc;
+    TEST_ASSERT_FALSE(deserializeJson(doc, json));
+    seqJsonStagingCaps(doc.as<JsonVariantConst>(), stepCap, closeCap);
+}
+
+// Build "{...steps:[N x audio], closeSteps:[M x audio]}" into `out`.
+static void buildSeqJson(char* out, size_t cap, unsigned mainSteps, unsigned closeSteps) {
+    size_t n = (size_t)snprintf(out, cap, "{\"format\":1,\"name\":\"DM:CAPTEST\",\"steps\":[");
+    for (unsigned i = 0; i < mainSteps; ++i) {
+        n += (size_t)snprintf(out + n, cap - n, "%s{\"t\":0,\"type\":\"audio\",\"cmd\":\"$H\"}",
+                              i ? "," : "");
+    }
+    n += (size_t)snprintf(out + n, cap - n, "],\"closeSteps\":[");
+    for (unsigned i = 0; i < closeSteps; ++i) {
+        n += (size_t)snprintf(out + n, cap - n, "%s{\"t\":0,\"type\":\"audio\",\"cmd\":\"$H\"}",
+                              i ? "," : "");
+    }
+    snprintf(out + n, cap - n, "]}");
+}
+
+static void test_staging_caps_match_actual_step_counts() {
+    uint8_t stepCap = 0xFF, closeCap = 0xFF;
+    capsOf("{\"format\":1,\"name\":\"DM:X\",\"steps\":["
+           "{\"t\":0,\"type\":\"audio\",\"cmd\":\"$H\"},"
+           "{\"t\":100,\"type\":\"end\"}],"
+           "\"closeSteps\":[{\"t\":0,\"type\":\"end\"}]}",
+           stepCap, closeCap);
+    TEST_ASSERT_EQUAL_UINT8(2, stepCap);
+    TEST_ASSERT_EQUAL_UINT8(1, closeCap);
+}
+
+static void test_staging_caps_zero_when_branch_absent() {
+    uint8_t stepCap = 0xFF, closeCap = 0xFF;
+    // No closeSteps key at all.
+    capsOf("{\"format\":1,\"name\":\"DM:X\",\"steps\":[{\"t\":0,\"type\":\"end\"}]}",
+           stepCap, closeCap);
+    TEST_ASSERT_EQUAL_UINT8(1, stepCap);
+    TEST_ASSERT_EQUAL_UINT8(0, closeCap);
+
+    // No steps key either — the parse reports "missing steps array"; the caps
+    // must not invent a buffer for it.
+    capsOf("{\"format\":1,\"name\":\"DM:X\"}", stepCap, closeCap);
+    TEST_ASSERT_EQUAL_UINT8(0, stepCap);
+    TEST_ASSERT_EQUAL_UINT8(0, closeCap);
+}
+
+static void test_staging_caps_zero_when_branch_not_an_array() {
+    uint8_t stepCap = 0xFF, closeCap = 0xFF;
+    capsOf("{\"format\":1,\"name\":\"DM:X\",\"steps\":7,\"closeSteps\":\"nope\"}",
+           stepCap, closeCap);
+    TEST_ASSERT_EQUAL_UINT8(0, stepCap);
+    TEST_ASSERT_EQUAL_UINT8(0, closeCap);
+}
+
+static void test_staging_caps_clamp_to_pc_max_steps() {
+    static char json[24 * 1024];
+    buildSeqJson(json, sizeof(json), PC_MAX_STEPS + 30, PC_MAX_STEPS + 5);
+    uint8_t stepCap = 0, closeCap = 0;
+    capsOf(json, stepCap, closeCap);
+    TEST_ASSERT_EQUAL_UINT8(PC_MAX_STEPS, stepCap);
+    TEST_ASSERT_EQUAL_UINT8(PC_MAX_STEPS, closeCap);
+}
+
+static void test_staging_caps_preserve_too_many_steps_rejection() {
+    // Clamping must reject, not truncate: parsing an oversized array into a
+    // staging sized by the caps still fails with the "too many steps" error.
+    static char json[24 * 1024];
+    buildSeqJson(json, sizeof(json), PC_MAX_STEPS + 30, 0);
+    uint8_t stepCap = 0, closeCap = 0;
+    capsOf(json, stepCap, closeCap);
+
+    SeqDraft d;
+    ProtocolCheckResult r = seqJsonParse(json, gSteps, stepCap, gClose, closeCap, d);
+    TEST_ASSERT_FALSE(r.ok);
+    TEST_ASSERT_EQUAL_STRING("steps", r.field);
+}
+
+static void test_right_sized_staging_parses_identically() {
+    // A staging sized by the caps yields the same draft as the 96+96 worst case.
+    static const char* kJson =
+        "{\"format\":1,\"name\":\"DM:CAPTEST\",\"suppressMs\":5000,\"steps\":["
+        "{\"t\":0,\"type\":\"audio\",\"cmd\":\"$H\"},"
+        "{\"t\":100,\"type\":\"end\"}],"
+        "\"closeSteps\":[{\"t\":0,\"type\":\"dome\",\"cmd\":\":CL01\"},"
+        "{\"t\":50,\"type\":\"end\"}]}";
+
+    uint8_t stepCap = 0, closeCap = 0;
+    capsOf(kJson, stepCap, closeCap);
+    TEST_ASSERT_EQUAL_UINT8(2, stepCap);
+    TEST_ASSERT_EQUAL_UINT8(2, closeCap);
+
+    // Exactly-sized staging, so an over-run would trip the sanitizer/guard bytes.
+    SeqStep sized[2];
+    SeqStep sizedClose[2];
+    SeqDraft tight;
+    ProtocolCheckResult rt = seqJsonParse(kJson, sized, stepCap, sizedClose, closeCap, tight);
+    TEST_ASSERT_TRUE_MESSAGE(rt.ok, rt.message);
+
+    SeqDraft worst;
+    ProtocolCheckResult rw = seqJsonParse(kJson, gSteps, 96, gClose, 96, worst);
+    TEST_ASSERT_TRUE_MESSAGE(rw.ok, rw.message);
+
+    TEST_ASSERT_EQUAL_UINT8(worst.stepCount, tight.stepCount);
+    TEST_ASSERT_EQUAL_UINT8(worst.closeStepCount, tight.closeStepCount);
+    for (uint8_t i = 0; i < worst.stepCount; ++i) {
+        TEST_ASSERT_TRUE(stepEqIgnoringFx(worst.steps[i], tight.steps[i]));
+    }
+    for (uint8_t i = 0; i < worst.closeStepCount; ++i) {
+        TEST_ASSERT_TRUE(stepEqIgnoringFx(worst.closeSteps[i], tight.closeSteps[i]));
+    }
+}
+
+// -----------------------------------------------------------------------------
 int main(int /*argc*/, char** /*argv*/) {
     UNITY_BEGIN();
 
@@ -546,6 +665,13 @@ int main(int /*argc*/, char** /*argv*/) {
     RUN_TEST(test_audio_boundaudio_explicit_false);
     RUN_TEST(test_audio_boundaudio_wrong_type_rejected);
     RUN_TEST(test_audio_serialize_roundtrip_with_bounded);
+
+    RUN_TEST(test_staging_caps_match_actual_step_counts);
+    RUN_TEST(test_staging_caps_zero_when_branch_absent);
+    RUN_TEST(test_staging_caps_zero_when_branch_not_an_array);
+    RUN_TEST(test_staging_caps_clamp_to_pc_max_steps);
+    RUN_TEST(test_staging_caps_preserve_too_many_steps_rejection);
+    RUN_TEST(test_right_sized_staging_parses_identically);
 
     RUN_TEST(test_catalog_iteration_bounds);
     RUN_TEST(test_all_builtins_serialize_and_reparse);
