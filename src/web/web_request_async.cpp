@@ -15,6 +15,8 @@
 #include <Arduino.h>
 #include <ESPAsyncWebServer.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "../../include/logging.h"
 #include "../../include/web_request.h"
@@ -33,6 +35,70 @@ AsyncWebServerRequest* asyncReq(void* backend) {
 // vendor API before this seam existed.
 bool isPostParam(AsyncWebServerRequest* req) {
     return req->method() == HTTP_POST;
+}
+
+// Ceiling on a buffered raw body. Above the largest any seam POST route
+// legitimately carries -- GET /api/config serializes to 1341 bytes on the
+// device and its POST counterpart is the same shape -- and low enough that a
+// hostile Content-Length cannot turn into a large allocation.
+constexpr size_t kMaxRawBodyBytes = 4096;
+
+// Buffers a non-form request body so WebRequest::body() has something to hand
+// back, because this library will not do it for us: an application/json body
+// leaves _isPlainPost false and is delivered here, to the route's body handler,
+// and nowhere else. The buffer hangs on the request's own _tempObject slot,
+// which the vendor frees in ~AsyncWebServerRequest (WebRequest.cpp:114-115), so
+// nothing here owns it past the request.
+//
+// Form-urlencoded and multipart bodies never reach this function -- the library
+// parses them into parameters instead -- so body() reports nullptr for them,
+// which is exactly what the PsychicHttp backend does for the same two cases.
+// The two backends agree on "a raw body is one nobody parsed" without either
+// having to special-case a content type here.
+//
+// Every giving-up path leaves _tempObject null rather than sending a response:
+// the response belongs to the handler that runs after the body, and it reads a
+// null body as a malformed one. Sending here would answer the request twice.
+void accumulateRawBody(AsyncWebServerRequest* req, uint8_t* data, size_t len, size_t index,
+                       size_t total) {
+    if (index == 0) {
+        req->_tempObject = nullptr;
+        if (total == 0 || total > kMaxRawBodyBytes) {
+            if (total > kMaxRawBodyBytes) {
+                PA_LOG_WARN("WebServer", "raw body of %u bytes exceeds %u; dropped",
+                            (unsigned)total, (unsigned)kMaxRawBodyBytes);
+            }
+            return;
+        }
+        char* buf = (char*)malloc(total + 1);
+        if (buf == nullptr) {
+            PA_LOG_ERROR("WebServer", "raw body buffer alloc failed (%u bytes)",
+                         (unsigned)(total + 1));
+            return;
+        }
+        // Terminated up front, so a body that never completes reads as empty
+        // rather than as whatever the allocation happened to contain.
+        buf[0] = '\0';
+        req->_tempObject = buf;
+    }
+
+    char* buf = (char*)req->_tempObject;
+    if (buf == nullptr) {
+        return;
+    }
+
+    if ((index + len) > total) {
+        free(buf);
+        req->_tempObject = nullptr;
+        return;
+    }
+
+    if (len > 0) {
+        memcpy(buf + index, data, len);
+    }
+    if ((index + len) == total) {
+        buf[total] = '\0';
+    }
 }
 
 // Headers staged by addHeader() until there is a response object to hang them
@@ -89,11 +155,20 @@ const char* WebRequest::paramRef(const char* name) const {
 }
 
 const char* WebRequest::body() const {
-    // ESPAsyncWebServer surfaces a non-form request body as a parameter named
-    // "plain" rather than exposing the buffer, so that is where the body is.
+    // The buffer accumulateRawBody() built, hung on the request's own
+    // _tempObject slot (see webRegisterRoute below).
+    //
+    // Not getParam("plain"): that is the original me-no-dev library's
+    // behaviour, and this project builds against the ESP32Async fork 3.11.2,
+    // which never creates such a parameter. Checked in the vendored source
+    // rather than assumed -- every _params.emplace_back() in WebRequest.cpp
+    // (lines 304, 716, 845-846, 915, 921) is a query-string, form key=value,
+    // or multipart parameter. An application/json body leaves _isPlainPost
+    // false and goes to the route's body handler instead, so reading a "plain"
+    // parameter returned nullptr for every JSON POST on this stack.
     AsyncWebServerRequest* req = asyncReq(backend_);
-    const AsyncWebParameter* p = req->getParam("plain", true);
-    return p != nullptr ? p->value().c_str() : nullptr;
+    const char* raw = static_cast<const char*>(req->_tempObject);
+    return (raw != nullptr && raw[0] != '\0') ? raw : nullptr;
 }
 
 size_t WebRequest::contentLength() const {
@@ -177,10 +252,28 @@ void webRegisterRoute(const char* path, WebMethod method, WebRequestHandler hand
         return;
     }
     const WebRequestMethod vendorMethod = (method == WebMethod::kPost) ? HTTP_POST : HTTP_GET;
-    s_server->on(path, vendorMethod, [handler](AsyncWebServerRequest* vendorReq) {
-        WebRequest req(vendorReq);
-        handler(req);
-    });
+    if (method == WebMethod::kGet) {
+        s_server->on(path, vendorMethod, [handler](AsyncWebServerRequest* vendorReq) {
+            WebRequest req(vendorReq);
+            handler(req);
+        });
+        return;
+    }
+
+    // A POST also gets a body handler, or the library drops any body it did not
+    // parse into parameters and body() has nothing to return. Registered for
+    // every seam POST rather than the ones known to read a body: a route that
+    // starts reading one later would otherwise fail in a way that looks like a
+    // client bug.
+    s_server->on(
+        path, vendorMethod,
+        [handler](AsyncWebServerRequest* vendorReq) {
+            WebRequest req(vendorReq);
+            handler(req);
+        },
+        nullptr,
+        [](AsyncWebServerRequest* vendorReq, uint8_t* data, size_t len, size_t index,
+           size_t total) { accumulateRawBody(vendorReq, data, len, index, total); });
 }
 
 void webRegisterUploadRoute(const char* path, WebUploadChunkHandler onChunk,
