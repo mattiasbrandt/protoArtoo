@@ -19,14 +19,13 @@ rejection so the response phase is measured without a byte reaching flash.
 from __future__ import annotations
 
 import argparse
+import http.client
 import json
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import socket
 import sys
 import time
-import urllib.error
-import urllib.request
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -113,43 +112,94 @@ def shipped_assets() -> list[str]:
     return [f"/{p.name}" for p in files]
 
 
-def fetch(controller: str, path: str) -> dict[str, Any]:
-    """One request. Returns timing and outcome; never raises for an HTTP error.
+class Session:
+    """One keep-alive connection, reused for every request on it.
 
-    A non-2xx is recorded rather than thrown: several routes legitimately answer
-    4xx on a controller with that component disabled, and their response phase
-    is exactly as real as a 200's.
+    Connection Admission paces *connections*, not requests (ADR 0022): the
+    accept guard refuses past PA_ACCEPT_PER_SECOND, and a refusal arrives as a
+    connection reset with no HTTP in it at all. A sweep that opened a fresh
+    socket per request is therefore shed by the guard long before it learns
+    anything about response phases -- which is exactly what happened on the
+    first attempt.
+
+    Reusing one connection is also the honest shape: the stack keeps
+    connections alive (ADR 0023), so this is what a browser does.
     """
-    url = f"http://{controller}{path}"
-    started = time.monotonic()
-    try:
-        with urllib.request.urlopen(url, timeout=REQUEST_TIMEOUT_SECONDS) as response:
-            body = response.read()
-            return {
-                "path": path, "status": response.status, "bytes": len(body),
-                "clientMs": round((time.monotonic() - started) * 1000, 1),
-                "encoding": response.headers.get("Content-Encoding"),
-            }
-    except urllib.error.HTTPError as error:
-        body = error.read()
-        return {
-            "path": path, "status": error.code, "bytes": len(body),
-            "clientMs": round((time.monotonic() - started) * 1000, 1),
-        }
-    except (urllib.error.URLError, TimeoutError, socket.timeout, OSError) as error:
-        return {
-            "path": path, "status": None, "error": str(error),
-            "clientMs": round((time.monotonic() - started) * 1000, 1),
-        }
 
+    def __init__(self, controller: str) -> None:
+        self.controller = controller
+        self._conn: http.client.HTTPConnection | None = None
 
-def read_status(controller: str) -> dict[str, Any]:
-    url = f"http://{controller}/api/status"
-    try:
-        with urllib.request.urlopen(url, timeout=REQUEST_TIMEOUT_SECONDS) as response:
-            return json.loads(response.read())
-    except Exception as error:  # noqa: BLE001 - any failure here ends the sweep
-        raise CalibrationError(f"could not read /api/status: {error}") from error
+    def _connect(self) -> http.client.HTTPConnection:
+        if self._conn is None:
+            self._conn = http.client.HTTPConnection(
+                self.controller, 80, timeout=REQUEST_TIMEOUT_SECONDS
+            )
+        return self._conn
+
+    def close(self) -> None:
+        if self._conn is not None:
+            try:
+                self._conn.close()
+            except OSError:
+                pass
+            self._conn = None
+
+    def get(self, path: str) -> dict[str, Any]:
+        """One request. Returns timing and outcome; never raises for HTTP status.
+
+        A non-2xx is recorded rather than thrown: several routes legitimately
+        answer 4xx on a controller with that component disabled, and their
+        response phase is exactly as real as a 200's.
+
+        One reconnect is attempted, because a keep-alive connection can be
+        closed by the far end between requests for entirely ordinary reasons.
+        """
+        for attempt in (1, 2):
+            started = time.monotonic()
+            try:
+                conn = self._connect()
+                conn.request("GET", path, headers={"Host": self.controller})
+                response = conn.getresponse()
+                body = response.read()
+                return {
+                    "path": path,
+                    "status": response.status,
+                    "bytes": len(body),
+                    "clientMs": round((time.monotonic() - started) * 1000, 1),
+                    "encoding": response.getheader("Content-Encoding"),
+                    "reconnected": attempt > 1,
+                }
+            except (http.client.HTTPException, TimeoutError, socket.timeout, OSError) as error:
+                self.close()
+                if attempt == 2:
+                    return {
+                        "path": path,
+                        "status": None,
+                        "error": str(error),
+                        "clientMs": round((time.monotonic() - started) * 1000, 1),
+                    }
+                # Give the accept rate limiter a token back before reconnecting.
+                time.sleep(0.5)
+        raise AssertionError("unreachable")
+
+    def status_json(self) -> dict[str, Any]:
+        """/api/status, parsed. Kept separate from get() so the body is returned."""
+        for attempt in (1, 2):
+            try:
+                conn = self._connect()
+                conn.request("GET", "/api/status", headers={"Host": self.controller})
+                response = conn.getresponse()
+                body = response.read()
+                if response.status != 200:
+                    raise CalibrationError(f"/api/status answered {response.status}")
+                return json.loads(body)
+            except (http.client.HTTPException, TimeoutError, socket.timeout, OSError) as error:
+                self.close()
+                if attempt == 2:
+                    raise CalibrationError(f"could not read /api/status: {error}") from error
+                time.sleep(0.5)
+        raise AssertionError("unreachable")
 
 
 def upload_rejection_probe(controller: str) -> dict[str, Any]:
@@ -204,7 +254,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     print(f"Calibration sweep against {args.controller}: "
           f"{len(GET_ROUTES)} API routes, {len(assets)} assets, {args.rounds} round(s)")
 
-    before = read_status(args.controller)
+    session = Session(args.controller)
+    before = session.status_json()
     if "responseMaxMs" not in before:
         raise CalibrationError(
             "this controller does not publish responseMaxMs; it is running "
@@ -221,17 +272,19 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     sequential: list[dict[str, Any]] = []
     for round_index in range(args.rounds):
         for path in GET_ROUTES + assets:
-            result = fetch(args.controller, path)
-            status = read_status(args.controller)
-            # The status read is itself a response, so its own phase can be the
-            # one that lands in responseLastMs. What is attributed to `path` is
-            # the value observed before this read could overwrite it.
+            result = session.get(path)
+            # responseLastMs is read straight after, on the same connection, so
+            # the value belongs to the request just made. The status read is a
+            # response too and will overwrite it -- which is why the attribution
+            # that matters comes from the controller's own log line naming the
+            # route that set each new maximum.
+            status = session.status_json()
             result["deviceResponseLastMs"] = status.get("responseLastMs")
             result["round"] = round_index + 1
             sequential.append(result)
     phases["sequential"] = sequential
 
-    after_sequential = read_status(args.controller)
+    after_sequential = session.status_json()
     print(f"  after sequential sweep: responseMaxMs={after_sequential['responseMaxMs']}")
 
     # Browser-shaped load: the index plus its assets, fetched concurrently. This
@@ -239,11 +292,27 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     # its own size -- the server task is shared, so one request's phase includes
     # waiting behind the others.
     page_paths = ["/index.html"] + assets[: max(1, args.page_load_concurrency * 2)]
-    with ThreadPoolExecutor(max_workers=args.page_load_concurrency) as pool:
-        page_load = list(pool.map(lambda p: fetch(args.controller, p), page_paths))
+
+    # One connection per worker, each serving several requests in turn -- the
+    # shape a browser actually uses, and the shape Connection Admission is
+    # calibrated for. A connection per request would be shed by the accept
+    # guard rather than measured.
+    lanes: list[list[str]] = [[] for _ in range(max(1, args.page_load_concurrency))]
+    for index, path in enumerate(page_paths):
+        lanes[index % len(lanes)].append(path)
+
+    def run_lane(paths: list[str]) -> list[dict[str, Any]]:
+        lane = Session(args.controller)
+        try:
+            return [lane.get(path) for path in paths]
+        finally:
+            lane.close()
+
+    with ThreadPoolExecutor(max_workers=len(lanes)) as pool:
+        page_load = [r for lane in pool.map(run_lane, lanes) for r in lane]
     phases["pageLoad"] = page_load
 
-    after_page_load = read_status(args.controller)
+    after_page_load = session.status_json()
     print(f"  after concurrent page load: responseMaxMs={after_page_load['responseMaxMs']}")
 
     if not args.skip_upload_probe:
@@ -254,7 +323,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             phases["uploadRejection"] = {"error": str(error)}
             print(f"  upload path probe failed: {error}")
 
-    final = read_status(args.controller)
+    final = session.status_json()
+    session.close()
 
     slowest_client = max(
         (r for r in sequential + page_load if r.get("clientMs") is not None),
