@@ -484,12 +484,12 @@ void closeAfterDeadlineBreach(httpd_handle_t hd, int sockfd) {
 // httpd_send_all() calls it in a loop for partial writes, so a body larger than
 // one socket buffer is checked against the deadline several times over.
 int deadlineSend(httpd_handle_t hd, int sockfd, const char* buf, size_t len, int flags) {
-    // Anything this deadline is not guarding keeps the plain blocking write it
-    // has always had, bounded by the socket's own send timeout. Two cases reach
-    // here: a caller that already asked not to block and owns its own bound
-    // (the event stream, governed by PA_SSE_SEND_DEADLINE_MS), and a write with
-    // no armed request behind it (the Busy Recovery Page, answered from the
-    // refusal path before any request is armed).
+    // Anything this deadline is not guarding keeps the plain write it has
+    // always had, bounded by the socket's own send timeout. The callers that
+    // reach here asked not to block and own their own bound: the event stream
+    // (governed by PA_SSE_SEND_DEADLINE_MS) and the Busy Recovery Page
+    // (kBusyRecoverySendDeadlineMs, answered from the refusal path before any
+    // request is armed).
     //
     // The distinction is load-bearing rather than tidy. The guarded path below
     // is a retry loop, and the only thing that ends it is the deadline; sending
@@ -579,20 +579,37 @@ int deadlineSend(httpd_handle_t hd, int sockfd, const char* buf, size_t len, int
 // are looped. A failure mid-response just ends the attempt: the connection is
 // being closed either way, and the browser treats a truncated response the
 // same as the bare close it would otherwise have received.
+//
+// MSG_DONTWAIT with an owned deadline, for the same reason the event stream's
+// send carries them: this runs on the server task, during exactly the pressure
+// window the refusal exists to survive, and a blocking write against a client
+// that has stopped reading would hold that task for the socket's own send
+// timeout. A client too stalled to take the page within the deadline gets the
+// close it was already headed for.
+constexpr uint32_t kBusyRecoverySendDeadlineMs = 250;
+
 bool sendBusyRecoveryPage(httpd_req_t* raw) {
     const int sockfd = httpd_req_to_sockfd(raw);
     if (sockfd < 0) {
         return false;
     }
 
+    const uint32_t startMs = millis();
     size_t sent = 0;
     while (sent < kBusyRecoveryResponseLength) {
         const int written = httpd_socket_send(raw->handle, sockfd, kBusyRecoveryResponse + sent,
-                                              kBusyRecoveryResponseLength - sent, 0);
-        if (written <= 0) {
+                                              kBusyRecoveryResponseLength - sent, MSG_DONTWAIT);
+        if (written > 0) {
+            sent += (size_t)written;
+            continue;
+        }
+        if (written != HTTPD_SOCK_ERR_TIMEOUT) {
             return false;
         }
-        sent += (size_t)written;
+        if (millis() - startMs >= kBusyRecoverySendDeadlineMs) {
+            return false;
+        }
+        vTaskDelay(pdMS_TO_TICKS(kResponseRetryDelayMs));
     }
     return true;
 }
