@@ -5,7 +5,7 @@
 // family 2).
 //
 // audioCategoryRangeApply(): pure function — no FreeRTOS, no
-//   AsyncWebServerRequest, no NVS, no logging. Reads lo_key/hi_key/lo/hi
+//   request object, no NVS, no logging. Reads lo_key/hi_key/lo/hi
 //   and the optional bank/page/clear_binding params through a
 //   ConfigParamSource, validates the category key pair and range, and
 //   mutates `working` in place (mirrors ADR 0011 slice 1/2 house style).

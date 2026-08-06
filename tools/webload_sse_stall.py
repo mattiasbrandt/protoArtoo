@@ -317,6 +317,12 @@ class StatusSampler:
             # evictions".
             sseEvicted=(status or {}).get("sseEvicted"),
             refusedSseCap=(status or {}).get("refusedSseCap"),
+            # Issue #92's response-phase deadline publishes its own work.
+            # Recorded as None when absent (firmware predating ADR 0024).
+            responseDeadlineClosures=(status or {}).get("responseDeadlineClosures"),
+            responseDeadlineAgeMs=(status or {}).get("responseDeadlineAgeMs"),
+            responseLastMs=(status or {}).get("responseLastMs"),
+            responseMaxMs=(status or {}).get("responseMaxMs"),
         )
         self.samples.append(record)
 
@@ -354,6 +360,14 @@ def _summarize_samples(samples: list[dict[str, Any]]) -> dict[str, Any]:
         s["heapFree"] for s in reachable if isinstance(s.get("heapFree"), int)
     ]
     evicted = [s["sseEvicted"] for s in reachable if isinstance(s.get("sseEvicted"), int)]
+    deadline_closures = [
+        s["responseDeadlineClosures"] for s in reachable
+        if isinstance(s.get("responseDeadlineClosures"), int)
+    ]
+    response_max = [
+        s["responseMaxMs"] for s in reachable
+        if isinstance(s.get("responseMaxMs"), int)
+    ]
     return {
         "sampleCount": len(samples),
         "unreachableCount": unreachable_count,
@@ -370,6 +384,11 @@ def _summarize_samples(samples: list[dict[str, Any]]) -> dict[str, Any]:
         # a different statement from "it published zero".
         "sseEvictedFirst": evicted[0] if evicted else None,
         "sseEvictedLast": evicted[-1] if evicted else None,
+        # Issue #92's response-phase deadline counter and high-water mark.
+        # Absent on firmware predating ADR 0024; None is the marker.
+        "responseDeadlineClosuresFirst": deadline_closures[0] if deadline_closures else None,
+        "responseDeadlineClosuresLast": deadline_closures[-1] if deadline_closures else None,
+        "responseMaxMsHighWater": max(response_max) if response_max else None,
     }
 
 

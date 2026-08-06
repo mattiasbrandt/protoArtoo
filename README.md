@@ -390,8 +390,7 @@ If you are building a droid and considering the Artoo Controller PCB:
 
 | Library | Version | Purpose |
 |---------|---------|---------|
-| [ESPAsyncWebServer](https://github.com/ESP32Async/ESPAsyncWebServer) | 3.10.3 | Asynchronous HTTP/SSE server for web UI and REST API |
-| [AsyncTCP](https://github.com/ESP32Async/AsyncTCP) | 3.4.10 | Async TCP library for ESP32 (required by ESPAsyncWebServer) |
+| [PsychicHttp](https://github.com/hoeken/PsychicHttp) | 3.1.2 | HTTP/SSE server for web UI and REST API, over ESP-IDF's `esp_http_server` |
 | [ArduinoJson](https://github.com/bblanchon/ArduinoJson) | 7.4.3 | JSON serialization/deserialization for all API payloads |
 
 **ESP32 Arduino Core (Built-in)**

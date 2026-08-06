@@ -4,8 +4,8 @@
 // The live update stream (/api/events), owned by the project rather than by any
 // web stack's EventSource class.
 //
-// Both stacks' own implementations share the same defect: an unbounded send. On
-// ESPAsyncWebServer the send queues into AsyncTCP; on PsychicHttp
+// PsychicEventSource is not used, and neither was the stack before it: both
+// carry the same defect, an unbounded send.
 // PsychicEventSourceClient::sendEvent() retries httpd_socket_send() in a
 // `while (result == HTTPD_SOCK_ERR_TIMEOUT)` loop with no exit, against a socket
 // whose send timeout defaults to five seconds. A client that stops reading fills

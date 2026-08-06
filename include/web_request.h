@@ -5,9 +5,7 @@
 // WebRequest and register through webRegisterRoute(); no handler names a
 // vendor request type. Exactly one backend translation unit defines these
 // methods per build:
-//   src/web/web_request_async.cpp    -- ESPAsyncWebServer (default scaffold,
-//                                       deleted by the #91 cutover)
-//   src/web/web_request_psychic.cpp  -- PsychicHttp (PA_WEB_BACKEND_PSYCHIC)
+//   src/web/web_request_psychic.cpp  -- PsychicHttp, the device backend
 //   src/native_test_stubs.cpp        -- host-test backend (PA_NATIVE_TEST_STUBS)
 // =============================================================================
 #pragma once
@@ -93,8 +91,7 @@ class WebRequest {
     // Session escape hatch (ADR 0021): the esp_http_server capabilities this
     // migration exists to obtain -- sess_ctx / free_ctx / trigger-close for
     // the SSE eviction path and the ADR 0020 response-phase deadline. Real on
-    // the PsychicHttp backend; documented no-ops (null/false) on the async
-    // scaffold, which has no equivalent and is deleted at the #91 cutover.
+    // the PsychicHttp backend; no-ops (null/false) on the host-test backend.
     // -------------------------------------------------------------------------
     void* sessionContext() const;
     bool setSessionContext(void* ctx, void (*freeFn)(void*));
@@ -103,9 +100,7 @@ class WebRequest {
     // Turn this request into a live event stream: write the stream response
     // head and hand the connection to the broadcaster, which owns it from then
     // on (include/web_event_stream.h). Returns false when the head could not be
-    // written or the backend has no per-request upgrade point at all -- the
-    // async scaffold serves its stream through a vendor handler that claims the
-    // whole route, so there is nothing for a handler to upgrade there.
+    // written, or on a backend with no per-request upgrade point at all.
     //
     // A handler that gets true must not send anything else: the response is
     // open-ended by construction and there is no second reply to make.
@@ -137,10 +132,9 @@ using WebUploadChunkHandler = void (*)(WebRequest& req, const char* filename, si
 // large allocation.
 constexpr size_t kDefaultMaxBodyBytes = 4096;
 
-// Register a handler for path+method with the active backend's server.
-// Backends require registration to happen inside their server bring-up
-// (startHttpServerOnce()'s registration block / initPsychicWebServer()),
-// which runs on the WiFi event callback path.
+// Register a handler for path+method with the backend's server. Registration
+// has to happen inside the server bring-up (initPsychicWebServer()), which runs
+// on the WiFi event callback path.
 //
 // maxBodyBytes bounds the raw body this route will buffer. It is per-route
 // rather than global because one route legitimately carries far more than the
@@ -157,8 +151,5 @@ void webRegisterRoute(const char* path, WebMethod method, WebRequestHandler hand
 void webRegisterUploadRoute(const char* path, WebUploadChunkHandler onChunk,
                             WebRequestHandler onDone);
 
-// Every route group already ported to the seam, in one list both backends
-// call. A ported route registered per-backend instead would only have to be
-// forgotten in one of the two places to go missing on that stack. At the #91
-// cutover this becomes the whole route table.
+// The whole route table, in one list the backend calls from its bring-up.
 void webRegisterSeamRoutes();

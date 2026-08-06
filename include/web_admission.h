@@ -222,11 +222,12 @@ bool webIsMainFrameNavigation(const char* secFetchMode, const char* accept);
 // Counters
 // -----------------------------------------------------------------------------
 //
-// Project-owned, so they outlive the vendor-patched AsyncTCP globals they
-// replace. The JSON field names they are published under are a separate
-// contract -- see buildStatusJson() in src/web/web_server.cpp, where they keep
-// their historical spelling so run evidence stays comparable against the
-// recorded baseline without hand-diffing.
+// Project-owned. They took over from globals that lived inside a patched copy
+// of a vendor TCP library, and outliving that library is the point: these are
+// the only accept/admission counters now. The JSON field names they are
+// published under are a separate contract -- see buildStatusJson() in
+// src/web/web_server.cpp, where they keep their historical spelling so run
+// evidence stays comparable against the recorded baseline without hand-diffing.
 extern volatile uint32_t g_webAcceptRejectHeap;
 extern volatile uint32_t g_webAcceptRejectRate;
 extern volatile uint32_t g_webAcceptRejectLastMs;

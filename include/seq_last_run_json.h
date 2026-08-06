@@ -2,7 +2,7 @@
 // seq_last_run_json.h
 //
 // Pure JSON builder for GET /api/seq/last-run. Keeping this separate from the
-// AsyncWebServer handler makes the evidence contract native-testable.
+// route handler makes the evidence contract native-testable.
 // =============================================================================
 #pragma once
 

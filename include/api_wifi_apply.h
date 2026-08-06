@@ -4,7 +4,7 @@
 // Apply Core for POST /api/wifi (ADR 0011 pattern, ADR 0015 Device WiFi
 // Settings). See src/web/api_wifi_apply.cpp.
 //
-// wifiApply(): pure function — no FreeRTOS, no AsyncWebServerRequest, no
+// wifiApply(): pure function — no FreeRTOS, no request object, no
 //   logging, no NVS, no WiFi hardware access. Reads parameters through a
 //   ConfigParamSource, validates and mutates `working` in place, and writes a
 //   field-level error on failure. Callers persist `working` themselves

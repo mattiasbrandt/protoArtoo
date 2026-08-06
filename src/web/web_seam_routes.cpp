@@ -1,15 +1,9 @@
 // =============================================================================
 // src/web/web_seam_routes.cpp
 //
-// The route table for everything already ported to the WebRequest seam
-// (ADR 0021). Both device backends call webRegisterSeamRoutes() from their own
-// bring-up, so a ported route cannot be present on one stack and missing on
-// the other -- which is what per-backend registration lists invite.
-//
-// While the migration is in flight this is a partial table: routes not listed
-// here are still served by the async stack's own registration block in
-// web_server.cpp. The cutover deletes that block and leaves this as the whole
-// route table. See docs/adr/0021-project-owned-web-request-seam.md.
+// The whole route table, against the WebRequest seam (ADR 0021). The server
+// bring-up calls webRegisterSeamRoutes() once; nothing registers routes
+// anywhere else. See docs/adr/0021-project-owned-web-request-seam.md.
 // =============================================================================
 
 #include "../../include/api_actions.h"
@@ -37,18 +31,15 @@ void webRegisterSeamRoutes() {
     webRegisterRoute("/api/identity", WebMethod::kGet, handleIdentityGet);
     webRegisterRoute("/api/identity", WebMethod::kPost, handleIdentityPost);
 
-    // The three routes data/app.js and data/shell.js fetch on every page load.
-    // Until the remaining groups are ported, these plus static serving are what
-    // a page load needs from the psychic stack.
+    // The routes data/app.js and data/shell.js fetch on every page load.
     webRegisterRoute("/api/config", WebMethod::kGet, handleConfigGet);
     webRegisterRoute("/api/actions", WebMethod::kGet, handleActionsGet);
     webRegisterRoute("/api/actions/test", WebMethod::kPost, handleActionsTestPost);
     webRegisterRoute("/api/logs", WebMethod::kGet, handleLogsGet);
 
-    // Ported ahead of the rest of its route group: the admission counters and
-    // heap readings in this payload are what the load harness polls and what
-    // the migration's comparison run is scored against, so the guard's own
-    // evidence is unobservable without it.
+    // The admission counters and heap readings in this payload are what the
+    // load harness polls and what a comparison run is scored against, so the
+    // guard's own evidence is unobservable without it.
     webRegisterRoute("/api/status", WebMethod::kGet, handleStatusGet);
 
     // The rest of the status/telemetry group, which followed /api/status.

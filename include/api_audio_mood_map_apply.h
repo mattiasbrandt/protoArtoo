@@ -3,7 +3,7 @@
 //
 // Apply Core for POST /api/audio/mood-map (ADR 0011 audio wave, family 1).
 //
-// audioMoodMapApply(): pure function — no FreeRTOS, no AsyncWebServerRequest,
+// audioMoodMapApply(): pure function — no FreeRTOS, no request object,
 //   no NVS, no logging. Reads the four mood-category masks (quiet, mid,
 //   full, awakeplus) through a ConfigParamSource, accepting either the
 //   form-field shape or a "plain" JSON body (matching the legacy handler's

@@ -2,13 +2,13 @@
 // src/web/api_events.cpp
 //
 // GET /api/events. The client cap is enforced here, before the upgrade, which
-// is the point: on the async stack the equivalent check had to live in a
-// middleware because AsyncEventSource's connect callback runs inside a client
-// constructor that cannot survive being closed (see startHttpServerOnce() in
-// web_server.cpp for the two coredumps that proved it). A per-request upgrade
-// point removes that constraint -- refusing here means no stream response head
-// is ever written and no connection is ever registered, so a fourth tab is
-// turned away rather than admitted and then reaped.
+// is the point: on the stack this replaced, the equivalent check had to live in
+// a global middleware, because that library's connect callback ran inside a
+// client constructor that could not survive being closed -- two coredumps
+// proved it. A per-request upgrade point removes that constraint: refusing here
+// means no stream response head is ever written and no connection is ever
+// registered, so a fourth tab is turned away rather than admitted and then
+// reaped.
 // =============================================================================
 
 #include "../../include/api_events.h"

@@ -1,27 +1,24 @@
 // =============================================================================
 // src/web/web_request_psychic.cpp
 //
-// PsychicHttp backend for the WebRequest seam (ADR 0021), plus the psychic
-// server bring-up. Becomes the only backend at the #91 cutover.
+// PsychicHttp backend for the WebRequest seam (ADR 0021), plus the server
+// bring-up. The only backend on the device since the #91 cutover; the host-test
+// backend in src/native_test_stubs.cpp is the sole other definition of these
+// methods.
 //
 // backend_ holds a WebRequestPsychicCtx (request + response + the esp_err_t
 // the vendor callback must return). The session escape hatch reaches the
 // underlying esp_http_server request: sess_ctx / free_ctx assignment and
 // httpd_sess_trigger_close() -- the capabilities this migration exists to
 // obtain (#53, ADR 0020).
-//
-// Scope while the migration is in flight: only ported route groups are
-// registered here (gap 4, #79 onward), and the pre-HTTP admission guard is
-// #81's slice -- this is a development target, not the release configuration,
-// until epic #75 completes.
 // =============================================================================
-#ifdef PA_WEB_BACKEND_PSYCHIC
 
 #include <Arduino.h>
 #include <LittleFS.h>
 #include <PsychicHttp.h>
 #include <esp_err.h>
 #include <esp_heap_caps.h>
+#include <errno.h>
 #include <esp_timer.h>
 #include <http_parser.h>
 #include <lwip/sockets.h>
@@ -37,6 +34,7 @@
 #include "../../include/web_busy_page.h"
 #include "../../include/web_event_stream.h"
 #include "../../include/web_request.h"
+#include "../../include/web_response_deadline.h"
 #include "../../include/web_server.h"
 #include "../../include/web_server_psychic.h"
 
@@ -116,6 +114,53 @@ esp_err_t (*s_vendorOpenFn)(httpd_handle_t, int) = nullptr;
 #define PA_ADMISSION_MAX_INFLIGHT_REQUESTS 6
 #endif
 
+#if PA_HEAP_PROFILE
+// Bounded request-lifecycle trace (issue #54 evidence, profiler-gated so it
+// costs nothing in normal builds). Read after an experiment via /api/profiler,
+// not polled during the workload. Covers only admitted requests that count
+// against the inflight cap -- a long-lived stream's lifetime is already visible
+// through the sseClients/sseClientsPeak counters, and it is not a per-request
+// event this ring is meant to capture.
+//
+// handlerDoneMs marks when next() returned, i.e. when the matched handler's
+// call into send() returned control to this middleware. esp_http_server writes
+// the response synchronously from that call, so unlike the async stack this is
+// "response written", not just "response ready".
+//
+// There is deliberately no disconnect timestamp. Connections are kept alive
+// across requests (ADR 0023), so a request has no close of its own to record --
+// the socket-level view lives in the httpSockets* counters instead.
+//
+// Single-writer: both the initial record and the handlerDoneMs update run on
+// the single server task, which is also where /api/profiler reads it. A slot
+// may be overwritten by a newer entry before a very long request's update
+// reaches it -- acceptable for a bounded evidence trace, not a
+// correctness-bearing structure.
+//
+// RequestLifecycleEntry and PA_REQUEST_TRACE_MAX are declared in web_server.h
+// so api_profiler.cpp can size its copy buffer identically.
+RequestLifecycleEntry s_requestTrace[PA_REQUEST_TRACE_MAX];
+uint8_t s_requestTraceHead = 0;
+uint8_t s_requestTraceCount = 0;
+
+// Opens a new lifecycle-trace entry and returns its ring index, so the caller
+// can fill in handlerDoneMs without a second lookup. Overwrites the oldest slot
+// once full.
+uint8_t pushRequestTraceEntry(const char* path, uint32_t startMs) {
+    const uint8_t idx = s_requestTraceHead;
+    RequestLifecycleEntry& e = s_requestTrace[idx];
+    strncpy(e.requestPath, path, sizeof(e.requestPath) - 1);
+    e.requestPath[sizeof(e.requestPath) - 1] = '\0';
+    e.startMs = startMs;
+    e.handlerDoneMs = 0;
+    s_requestTraceHead = (uint8_t)((s_requestTraceHead + 1U) % PA_REQUEST_TRACE_MAX);
+    if (s_requestTraceCount < PA_REQUEST_TRACE_MAX) {
+        s_requestTraceCount++;
+    }
+    return idx;
+}
+#endif  // PA_HEAP_PROFILE
+
 // Refreshes the cached largest-free-block reading at most once per interval.
 // heap_caps_get_largest_free_block() walks the heap, so charging every
 // connection for one would put that walk on the task servicing all the others
@@ -188,6 +233,12 @@ inline void traceDecision(WebAdmissionTraceLayer, WebAdmissionTraceOutcome, int,
 
 #endif  // PA_ADMISSION_TRACE
 
+// The response-phase deadline's send override, defined with the rest of that
+// guard below. Declared here because Connection Admission is where it gets
+// installed: the session exists from that callback onward, and a response must
+// never be able to start on a socket that has not been given the guard.
+int deadlineSend(httpd_handle_t hd, int sockfd, const char* buf, size_t len, int flags);
+
 // Connection Admission. Returning non-ESP_OK makes httpd_sess_new() delete the
 // session and the accept loop close the socket, before any HTTP parsing --
 // and, because the vendor open_fn is not chained on this path, before any
@@ -241,7 +292,24 @@ esp_err_t admissionOpenCallback(httpd_handle_t hd, int sockfd) {
     webSocketCensusOpen(&s_census, sockfd);
     publishCensus();
 
-    return s_vendorOpenFn != nullptr ? s_vendorOpenFn(hd, sockfd) : ESP_OK;
+    const esp_err_t vendorResult = s_vendorOpenFn != nullptr ? s_vendorOpenFn(hd, sockfd) : ESP_OK;
+    if (vendorResult != ESP_OK) {
+        return vendorResult;
+    }
+
+    // Response-phase deadline, installed on the session the moment it exists so
+    // no response on it can ever leave through the unguarded default. Nothing
+    // is chained: PsychicHttpServer installs no send override of its own on the
+    // plain HTTP server (only its HTTPS sibling does, through esp_https_server),
+    // and there is no getter to recover one if it did.
+    if (httpd_sess_set_send_override(hd, sockfd, deadlineSend) != ESP_OK) {
+        // Not fatal -- the connection works, it is simply unguarded -- but it
+        // must not pass silently, because the whole guard would then be absent
+        // with every counter reading zero, which looks exactly like a quiet run.
+        PA_LOG_WARN(TAG, "no response deadline on socket %d: send override refused", sockfd);
+    }
+
+    return ESP_OK;
 }
 
 // Releases an admitted request's in-flight slot however the handler leaves --
@@ -269,6 +337,163 @@ struct InflightSlot {
     InflightSlot(const InflightSlot&) = delete;
     InflightSlot& operator=(const InflightSlot&) = delete;
 };
+
+// =============================================================================
+// Response-phase deadline (include/web_response_deadline.h)
+//
+// ADR 0020's guard, built where this stack actually allows one. Every response
+// byte -- the seam's own sends, PsychicHttp's, and the static file handler's --
+// leaves through the session's send function, so overriding that function is
+// the one place a deadline can see them all without patching a library.
+//
+// The write is issued non-blocking and retried, which is what makes the
+// deadline mean anything: the socket's own send timeout is five seconds
+// (httpd_config send_wait_timeout), so a single blocking attempt against a
+// stalled client would overrun any shorter deadline before the clock was
+// looked at again. Lowering that timeout instead was rejected -- esp_http_server
+// treats a timed-out write as fatal without retrying, so it would abort
+// legitimately slow clients rather than stalled ones.
+//
+// The state is a single record because at most one request can be in its
+// response phase: esp_http_server serves every connection from one task and the
+// library's per-request worker threads stay off (ADR 0022). Writes for any
+// other socket -- an event-stream broadcast from the event task, above all --
+// are recognised by their descriptor and pass through untouched.
+// =============================================================================
+
+// PsychicHttp's per-request worker threads would make responses overlap, and
+// the single record below cannot represent two response phases at once: the
+// second request to arm would silently take the first one's deadline with it.
+// A build failure is the only honest outcome, because the damage is invisible
+// at runtime -- the guard would keep publishing counters while guarding the
+// wrong request.
+#ifdef ENABLE_ASYNC
+#error \
+    "PsychicHttp per-request worker threads make responses overlap; the response-phase deadline needs a per-socket table before ENABLE_ASYNC can be used (ADR 0022, ADR 0024)"
+#endif
+
+WebResponseDeadline s_responseDeadline;
+
+#ifndef PA_RESPONSE_DEADLINE_MS
+#define PA_RESPONSE_DEADLINE_MS 4000
+#endif
+
+// How long to wait between write attempts once the client's receive window is
+// full. Same value and the same reasoning as the event stream's retry delay:
+// the window can only reopen when the client reads, which it cannot do while
+// this task spins on the CPU.
+constexpr uint32_t kResponseRetryDelayMs = 5;
+
+// One raw write, carrying esp_http_server's own error mapping.
+//
+// This reproduces httpd_default_send() rather than calling it. That function is
+// declared in the component's private header (esp_httpd_priv.h), so an override
+// installed from application code cannot chain to it, and the public
+// alternative -- httpd_socket_send() -- dispatches through the session's send
+// function, which is the override itself. Five lines of duplication is the
+// smaller cost, and the error mapping is the part that has to match exactly:
+// the caller distinguishes a full window from a dead socket by it.
+int rawSocketSend(int sockfd, const char* buf, size_t len, int flags) {
+    if (buf == nullptr) {
+        return HTTPD_SOCK_ERR_INVALID;
+    }
+    const int ret = send(sockfd, buf, len, flags);
+    if (ret >= 0) {
+        return ret;
+    }
+    switch (errno) {
+        case EAGAIN:
+        case EINTR:
+            return HTTPD_SOCK_ERR_TIMEOUT;
+        case EINVAL:
+        case EBADF:
+        case EFAULT:
+        case ENOTSOCK:
+            return HTTPD_SOCK_ERR_INVALID;
+        default:
+            return HTTPD_SOCK_ERR_FAIL;
+    }
+}
+
+// Drops the connection a breach was taken on.
+//
+// linger{on, 0} for the same reason the event stream eviction sets it: a client
+// that stalled a response has a full send queue, and a graceful close leaves
+// lwIP holding that queue while it retransmits into a peer that has stopped
+// answering -- measured on this controller as a depressed largest free block
+// for over a minute. An RST drops it immediately. Only ever applied to a socket
+// already being abandoned.
+//
+// The close itself is queued rather than immediate: this runs on the server
+// task, inside the handler whose response is being abandoned, so the session
+// must not be torn down underneath the frames still unwinding above.
+void closeAfterDeadlineBreach(httpd_handle_t hd, int sockfd) {
+    struct linger abandon = {};
+    abandon.l_onoff = 1;
+    abandon.l_linger = 0;
+    if (setsockopt(sockfd, SOL_SOCKET, SO_LINGER, &abandon, sizeof(abandon)) != 0) {
+        PA_LOG_WARN(TAG, "could not set SO_LINGER on socket %d; close will be graceful", sockfd);
+    }
+    httpd_sess_trigger_close(hd, sockfd);
+}
+
+// The session send override. Installed per socket at Connection Admission and
+// used by esp_http_server for every byte of every response on that socket:
+// httpd_send_all() calls it in a loop for partial writes, so a body larger than
+// one socket buffer is checked against the deadline several times over.
+int deadlineSend(httpd_handle_t hd, int sockfd, const char* buf, size_t len, int flags) {
+    // Anything this deadline is not guarding keeps the plain blocking write it
+    // has always had, bounded by the socket's own send timeout. Two cases reach
+    // here: a caller that already asked not to block and owns its own bound
+    // (the event stream, governed by PA_SSE_SEND_DEADLINE_MS), and a write with
+    // no armed request behind it (the Busy Recovery Page, answered from the
+    // refusal path before any request is armed).
+    //
+    // The distinction is load-bearing rather than tidy. The guarded path below
+    // is a retry loop, and the only thing that ends it is the deadline; sending
+    // an unguarded write down it would spin forever against a full window.
+    if ((flags & MSG_DONTWAIT) != 0 || !webResponseDeadlineGuards(&s_responseDeadline, sockfd)) {
+        return rawSocketSend(sockfd, buf, len, flags);
+    }
+
+    for (;;) {
+        // Read before the check so a latched breach can be told from the write
+        // that caused it. The counter and the close belong to the transition:
+        // every later write in the same response returns the same failure, and
+        // counting those would report one stalled client as many.
+        const bool alreadyBreached = s_responseDeadline.breached;
+        const uint32_t nowMs = millis();
+        if (webResponseDeadlineCheck(&s_responseDeadline, sockfd, nowMs,
+                                     PA_RESPONSE_DEADLINE_MS) ==
+            WebResponseDeadlineVerdict::kBreach) {
+            if (!alreadyBreached) {
+                g_webResponseDeadlineClosures = g_webResponseDeadlineClosures + 1u;
+                g_webResponseDeadlineLastMs = nowMs;
+                // Warn, not debug: this is rare by design, so a run that hit it
+                // must say so without anyone having raised the log level first.
+                PA_LOG_WARN(TAG, "response on socket %d missed the %u ms deadline; dropped", sockfd,
+                            (unsigned)PA_RESPONSE_DEADLINE_MS);
+                closeAfterDeadlineBreach(hd, sockfd);
+            }
+            return HTTPD_SOCK_ERR_FAIL;
+        }
+
+        const int written = rawSocketSend(sockfd, buf, len, flags | MSG_DONTWAIT);
+        if (written > 0) {
+            // Partial writes are the caller's to loop over, and looping there
+            // rather than here is what gives the deadline its granularity.
+            return written;
+        }
+        if (written != HTTPD_SOCK_ERR_TIMEOUT) {
+            // A dead socket, or a zero-length write. Either way the deadline
+            // has nothing to say about it.
+            return written;
+        }
+
+        // Window full. Yield before looking at the clock again.
+        vTaskDelay(pdMS_TO_TICKS(kResponseRetryDelayMs));
+    }
+}
 
 // Emits the Busy Recovery Page straight onto the socket, bypassing the
 // response object entirely. The buffer is compile-time constant, so this
@@ -430,10 +655,58 @@ esp_err_t admissionMiddleware(PsychicRequest* request, PsychicResponse* response
     }
 #endif
 
-    // Estop is admitted but never counted, matching the async stack: a safety
-    // command must not be able to fill the cap it is exempt from.
-    InflightSlot slot(!in.estop && !in.longLived);
+    // Arm the response-phase deadline for this request's socket. Armed for
+    // every admitted request including estop: the safety path is exempt from
+    // being *refused*, which is a memory policy, but a safety response that
+    // cannot finish is holding the task every other request needs and is not
+    // made safer by being allowed to hold it forever.
+    //
+    // The clock does not start here. It starts at the first byte the handler
+    // sends, so a slow body build and an upload's whole receive phase are
+    // outside it -- see webResponseDeadlineCheck().
+    httpd_req_t* rawForDeadline = request->request();
+    const int deadlineSocket = httpd_req_to_sockfd(rawForDeadline);
+    webResponseDeadlineArm(&s_responseDeadline, deadlineSocket);
+
+    // Estop is admitted but never counted: a safety command must not be able to
+    // fill the cap it is exempt from.
+    const bool counted = !in.estop && !in.longLived;
+    InflightSlot slot(counted);
+
+#if PA_HEAP_PROFILE
+    // Full path (not just a broad class) so a specific slow request (issue #67)
+    // can be matched against the browser's own per-request timestamps after the
+    // fact. Traced for exactly the requests the inflight cap counts, so the
+    // trace and the depth counters describe the same population.
+    uint8_t traceIdx = 0;
+    if (counted) {
+        traceIdx = pushRequestTraceEntry(path, millis());
+    }
+#endif
+
     const esp_err_t result = next();
+
+#if PA_HEAP_PROFILE
+    if (counted) {
+        s_requestTrace[traceIdx].handlerDoneMs = millis();
+    }
+#endif
+
+    // Release the phase and fold its duration into the published maximum. This
+    // is the margin evidence the calibrated deadline is set against, so it is
+    // taken on every response rather than in a one-off measurement session.
+    // Disarm reports -1 for a response that sent nothing or that breached,
+    // neither of which is a legitimate response time.
+    const int32_t responseMs = webResponseDeadlineDisarm(&s_responseDeadline, millis());
+    if (responseMs >= 0) {
+        g_webResponseLastMs = (uint32_t)responseMs;
+        if ((uint32_t)responseMs > g_webResponseMaxMs) {
+            g_webResponseMaxMs = (uint32_t)responseMs;
+            // The route that set a new maximum, which is what a calibration
+            // run needs and what a bare number cannot supply.
+            PA_LOG_INFO(TAG, "slowest response phase now %ld ms (%s)", (long)responseMs, path);
+        }
+    }
 
 #if PA_WEB_CLOSE_PER_RESPONSE
     // Queued, not immediate: the server task processes the close from its own
@@ -640,6 +913,25 @@ void streamCloseCallback(httpd_handle_t hd, int sockfd) {
 
 }  // namespace
 
+#if PA_HEAP_PROFILE
+// Copies the trace ring oldest-first into out, for the /api/profiler handler
+// (api_profiler.cpp) to read once after an experiment. Read-only; does not
+// clear or rotate the ring, so repeated reads during a warm-up are safe.
+size_t copyRequestLifecycleTrace(RequestLifecycleEntry* out, size_t maxEntries) {
+    uint8_t count = s_requestTraceCount;
+    if (count > maxEntries) {
+        count = (uint8_t)maxEntries;
+    }
+    const uint8_t oldest =
+        (uint8_t)((s_requestTraceHead + PA_REQUEST_TRACE_MAX - s_requestTraceCount) %
+                  PA_REQUEST_TRACE_MAX);
+    for (uint8_t i = 0; i < count; i++) {
+        out[i] = s_requestTrace[(uint8_t)((oldest + i) % PA_REQUEST_TRACE_MAX)];
+    }
+    return count;
+}
+#endif  // PA_HEAP_PROFILE
+
 bool WebRequest::hasParam(const char* name) const {
     return psychicCtx(backend_)->req->hasParam(name);
 }
@@ -786,6 +1078,12 @@ bool WebRequest::beginEventStream() {
         return false;
     }
     s_streamServer = raw->handle;
+
+    // Exempt this connection from the response-phase deadline before anything
+    // is written on it. A stream is a response that never ends by construction,
+    // so a deadline on it would be measuring the design rather than a stall --
+    // the stream's own bound is PA_SSE_SEND_DEADLINE_MS, applied per event.
+    webResponseDeadlineExempt(&s_responseDeadline, socket);
 
     // Register before writing the head. If the head fails the registration is
     // undone below, whereas registering afterwards would leave a window in
@@ -972,6 +1270,10 @@ void initPsychicWebServer() {
     s_server.config.open_fn = admissionOpenCallback;
     webAcceptRateLimiterInit(&s_acceptLimiter, millis(), PA_ACCEPT_BURST);
     webSocketCensusInit(&s_census);
+    // Idle until a request is admitted. The send override installed per socket
+    // from that same callback reads this record, so it has to be sane before
+    // the first connection rather than merely before the first request.
+    webResponseDeadlineInit(&s_responseDeadline);
 
 #if PA_ADMISSION_TRACE
     // Stamp the trace with the calibration it is about to record under, so a
@@ -1050,5 +1352,3 @@ void initPsychicWebServer() {
     }
     PA_LOG_INFO(TAG, "PsychicHttp server listening on port 80");
 }
-
-#endif  // PA_WEB_BACKEND_PSYCHIC
