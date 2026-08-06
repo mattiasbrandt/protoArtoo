@@ -131,6 +131,35 @@ a calibration run needs and what a bare number cannot supply.
 `PA_SSE_SEND_DEADLINE_MS`, the stream-side deadline it is the request-side
 counterpart to. `0` disables the guard.
 
+## What a stall costs the other connections, measured
+
+The deadline bounds head-of-line blocking; it does not remove it. On a stack
+that serves every connection from one task, a stalled response holds that task
+for as long as it lives, and what the deadline changes is how long that is.
+
+Measured on the seated controller with `PA_RESPONSE_DEADLINE_MS=4000`, polling
+`/api/status` once per second on a separate connection through three deliberate
+stalls (`tools/response_deadline_probe.py`):
+
+| reading | value |
+|---|---|
+| median poll latency | 121 ms |
+| worst poll latency | 4202 ms |
+| slow polls | exactly one per breach |
+| `heapLargest8bit` before / after | 34804 / 34804 |
+
+The worst figure is the deadline plus the breach path, and it lands on one poll
+per stall; every other poll is unaffected. That is the honest form of "normal
+traffic on other connections is unaffected" on this stack: bounded and
+attributable, rather than the unbounded hold it replaces, where each write could
+block for the socket's 5 s timeout and nothing limited the number of writes.
+
+The heap figures matter as much as the latency. ADR-era measurement of the event
+stream found that closing a socket whose send queue is full leaves lwIP holding
+the pcb and the whole queue, depressing the largest free block for over a
+minute. The `linger{on, 0}` abort means that does not happen here: the largest
+free block returns to its pre-stall value after every breach.
+
 ## What this does not do
 
 It does not bound a handler that stalls without writing anything. The clock
@@ -147,9 +176,26 @@ It does not give the guard any authority from another task. If the server task
 is blocked inside a handler, nothing here shortens that; what the design does is
 ensure the server task's own writes cannot be the thing blocking it.
 
+## Open: the client does not observe the disconnect
+
+Server-side reclaim is proven -- the socket leaves the census, the in-flight
+slot is released, and the heap returns to its pre-stall value. The stalled
+*client*, however, saw its own TCP connection stay ESTABLISHED for the whole
+17 s the probe waited, on all three breaches.
+
+The two observations do not yet agree, and the reason is not recorded here
+because it is not yet known. A FIN cannot be delivered into a zero window --
+it is sequenced behind body bytes the client never reads -- which would explain
+a client that notices nothing; but the heap returning implies lwIP did abort
+rather than close gracefully, and an abort's RST is not window-limited. What
+this means in practice is bounded: the controller has released everything it
+holds, so the consequence falls on the stalled peer's own socket rather than on
+the controller. It is recorded as open rather than explained away.
+
 ## Status
 
-TBD-ON-VERIFICATION
+accepted (2026-08-06), implemented. Server-side behaviour verified on the
+controller; the client-side observation above is open.
 
 ## Relationship to ADR 0020
 
@@ -162,4 +208,13 @@ rather than an update to that one.
 
 ## Validation
 
-TBD-ON-VERIFICATION
+`controller-upload-verified`, partial. The firmware was flashed to the ESP32
+controller over OTA and every number above is a device reading: the calibration
+sweep (198 requests, 0 closures, slowest legitimate phase 184 ms) and the stall
+probe (3 breaches, 3 closures, in-flight slot released, heap recovered).
+
+No integrated droid hardware was involved, and nothing here touches the drive,
+RC or dome paths. What is not proven: the client-side disconnect above, and
+behaviour under genuine network degradation -- the margin argument for a slow
+link is reasoning about what the LAN measurement cannot bound, not a
+measurement of it.
