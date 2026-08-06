@@ -383,7 +383,35 @@
     });
   }
 
+  // -------------------------------------------------------------------------
+  // Boot — load config then start status subscription
+  // -------------------------------------------------------------------------
+
+  // Page Recovery: register startup API load as a section so the bootstrap
+  // can show recovery state if the config fetch fails.
+  // See docs/page-load-recovery-architecture.md and ADR 0019.
+  const SECTIONS = [
+    ["dome-configuration", loadEscConfig, "dome configuration"],
+  ];
+
+  const startPageLoad = () => {
+    if (!window.PABootstrap) {
+      loadEscConfig().catch(() => {});
+      return;
+    }
+    window.PABootstrap.setResourceLabels?.({
+      "/web_api.js": "controller connection",
+      "/status_stream.js": "live updates",
+      "/shell.js": "page layout",
+      "/dome.js": "dome control",
+      "/footer.js": "page footer",
+    });
+    SECTIONS.forEach(([name, load, label]) =>
+      window.PABootstrap.registerSection(name, load, { label })
+    );
+  };
+
   renderDomeTargetSpeed(0);
   updateDomeControlsEnabled();
-  loadEscConfig();
+  startPageLoad();
 })();
