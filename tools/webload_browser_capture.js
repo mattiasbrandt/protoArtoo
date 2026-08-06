@@ -16,6 +16,12 @@
 // tools/webload_page_profiles.js; nothing about a specific page is hardcoded
 // here. --page defaults to index, so an invocation written before #94 measures
 // exactly what it measured then.
+//
+// The verdict has two modes, and which one applies is decided by whether
+// --control-file was passed. See deriveCaptureVerdict(): coordinated runs are
+// corroborated by the coordinator's controller-side /api/status handshake,
+// standalone runs are graded on the browser's own readiness gates. This
+// collector still never calls /api/status itself in either mode.
 
 const fs = require("fs");
 const path = require("path");
@@ -30,7 +36,14 @@ const TERMINAL_CAPTURE_RESERVE_MS = 3_500;
 const CLOSE_RESERVE_MS = 800;
 const VIEWPORT = Object.freeze({ width: 1080, height: 800 });
 const COMMIT_RE = /^[0-9a-f]{40}$/;
+// Which capture this is within a run, not which run it is -- the coordinator's
+// --run-id names the run. Kept static because the label identifies the capture
+// kind, and existing bundles are read by it.
 const RUN_ID = "BASELINE1";
+// Provenance of this collector, never the ticket a given run is evidence for.
+// Emitting the two as one field filed the #93 ADR 0017 acceptance bundle under
+// issue 66. The run's own ticket arrives via --issue and defaults to null.
+const HARNESS_ORIGIN_ISSUE = 66;
 
 function usage() {
   return `Usage:
@@ -48,7 +61,16 @@ Options:
                         Selects the required resources, required APIs and readiness
                         gate together; see tools/webload_page_profiles.js.
   --out DIR            Browser artifact directory (must be under tasks/evidence/webload).
-  --control-file F     Optional coordinator file with statusReachableAt or stopReason.
+  --control-file F     Coordinator file with statusReachableAt or stopReason. Omitting
+                        it is supported and selects the standalone verdict mode:
+                        the browser's own readiness gates decide the run. Passing
+                        it selects the coordinated mode, where "usable" additionally
+                        requires the coordinator's controller-side /api/status
+                        handshake. It changes what a passing run means, so it is not
+                        a cosmetic flag.
+  --issue N            GitHub issue this capture is evidence for, recorded in every
+                        artifact. No default: an unset field reads null, which is
+                        honest, rather than naming this collector's origin ticket.
   --dry-run            Validate and print the fixed plan without launching Chromium.
   --help                Show this text.
 
@@ -64,7 +86,7 @@ function parseArgs(argv) {
       args.help = true;
     } else if (arg === "--dry-run") {
       args.dryRun = true;
-    } else if (["--url", "--commit", "--out", "--control-file", "--page"].includes(arg)) {
+    } else if (["--url", "--commit", "--out", "--control-file", "--page", "--issue"].includes(arg)) {
       if (i + 1 >= argv.length) throw new Error(`${arg} requires a value`);
       const key = {
         "--url": "url",
@@ -72,6 +94,7 @@ function parseArgs(argv) {
         "--out": "out",
         "--control-file": "controlFile",
         "--page": "page",
+        "--issue": "issue",
       }[arg];
       args[key] = argv[++i];
     } else {
@@ -122,10 +145,18 @@ function validateArgs(args) {
     ? ensureInsideEvidence(args.controlFile, evidenceRoot, "--control-file")
     : null;
 
+  // null rather than a default ticket number: a bundle that does not know which
+  // issue it belongs to should say so, not name the collector's origin ticket.
+  let issue = null;
+  if (args.issue !== undefined) {
+    if (!/^[0-9]+$/.test(args.issue)) throw new Error("--issue must be a positive integer");
+    issue = Number(args.issue);
+  }
+
   if (!args.dryRun && fs.existsSync(out)) {
     throw new Error(`refusing to overwrite existing evidence directory: ${out}`);
   }
-  return { ...args, profile, parsedUrl, repoRoot, evidenceRoot, out, controlFile };
+  return { ...args, profile, parsedUrl, repoRoot, evidenceRoot, out, controlFile, issue };
 }
 
 function wallNow() {
@@ -188,6 +219,51 @@ function summarizeAttempts(attempts, requiredPaths, controllerOrigin) {
 
 function allSummariesSuccessful(summary) {
   return Object.values(summary).every((item) => item.successfulAttempts > 0);
+}
+
+// The run's verdict, as a pure function of the three things that decide it, so
+// the modes below can be asserted without launching Chromium against hardware.
+//
+// Two modes, distinguished by whether a --control-file was passed:
+//
+//   coordinated -- the coordinator (tools/webload_baseline_run.py) writes
+//                  statusReachableAt from its own /api/status probe, which
+//                  corroborates the browser's readiness with controller-side
+//                  evidence. "usable" requires that handshake.
+//   standalone  -- no coordinator, so the browser's readiness gates are the whole
+//                  verdict. This is what tools/webload_multitab_capture.js already
+//                  does for its fixed window, for the same reason.
+//
+// Conflating the two is what made a standalone run structurally incapable of
+// passing: "usable" was gated on a handshake that only a coordinator can produce,
+// so however healthy the page, captureStatus was a constant rather than a
+// measurement. Anything scored on it read the mode, not the controller.
+//
+// Gates passing with no handshake is reported as "controller-unconfirmed" rather
+// than as a browser failure. The browser observed no failure; the corroboration
+// simply never arrived, and those are different findings.
+function deriveCaptureVerdict({ coordinated, terminalReason, browserGatesPassed }) {
+  const verdictBasis = coordinated ? "coordinated-status-handshake" : "browser-gates-only";
+  const ranToCompletion = terminalReason === "observation-deadline" ||
+    terminalReason === "usable" || terminalReason === "browser-ready";
+  if (!ranToCompletion) return { captureStatus: "stopped", verdictBasis };
+  if (!browserGatesPassed) return { captureStatus: "browser-failure-observed", verdictBasis };
+  if (!coordinated) return { captureStatus: "usable", verdictBasis };
+  return {
+    captureStatus: terminalReason === "usable" ? "usable" : "controller-unconfirmed",
+    verdictBasis,
+  };
+}
+
+// Held to the (0, 2, 3, 4) contract tools/webload_baseline_run.py documents and
+// enforces -- it raises on anything else. "controller-unconfirmed" is a
+// non-passing outcome and shares 3; the distinction survives in page-state.json,
+// which is where evidence is read from.
+function captureExitCode(captureStatus) {
+  if (captureStatus === "usable") return 0;
+  if (captureStatus === "browser-failure-observed" ||
+      captureStatus === "controller-unconfirmed") return 3;
+  return 4;
 }
 
 function readControlFile(controlFile) {
@@ -346,6 +422,10 @@ async function runCapture(config) {
   // if two collectors start concurrently.
   fs.mkdirSync(config.out);
 
+  // Decided by whether --control-file was passed, never by whether that file
+  // exists yet: the coordinator writes it partway through the run, so presence
+  // on disk would silently reclassify the mode mid-observation.
+  const coordinated = config.controlFile !== null;
   const attempts = [];
   const attemptByRequest = new WeakMap();
   const artifactErrors = [];
@@ -377,7 +457,8 @@ async function runCapture(config) {
     const userAgent = await page.evaluate(() => navigator.userAgent);
 
     const manifest = {
-      issue: 66,
+      issue: config.issue,
+      harnessOriginIssue: HARNESS_ORIGIN_ISSUE,
       run: RUN_ID,
       tipCommit: config.commit,
       page: config.profile.name,
@@ -548,11 +629,21 @@ async function runCapture(config) {
         allSummariesSuccessful(apiSummary);
       if (candidate && !domCandidateAt) domCandidateAt = wallNow();
 
-      const statusReachableAt = control?.statusReachableAt;
-      if (domCandidateAt && typeof statusReachableAt === "string" &&
-          Date.parse(statusReachableAt) >= Math.max(t0EpochMs, Date.parse(domCandidateAt))) {
-        usableAt = statusReachableAt;
-        terminalReason = "usable";
+      if (coordinated) {
+        const statusReachableAt = control?.statusReachableAt;
+        if (domCandidateAt && typeof statusReachableAt === "string" &&
+            Date.parse(statusReachableAt) >= Math.max(t0EpochMs, Date.parse(domCandidateAt))) {
+          usableAt = statusReachableAt;
+          terminalReason = "usable";
+          break;
+        }
+      } else if (domCandidateAt) {
+        // No coordinator to wait for, so the candidate moment is terminal.
+        // usableAt is that moment: it is when the page became usable on the only
+        // evidence this mode has, rather than a handshake timestamp borrowed
+        // from a controller probe that was never run.
+        usableAt = domCandidateAt;
+        terminalReason = "browser-ready";
         break;
       }
       const sleepBudget = deadline - performance.now() - TERMINAL_CAPTURE_RESERVE_MS;
@@ -617,11 +708,9 @@ async function runCapture(config) {
     const browserGatesPassed = browserSideReady(finalDomState) &&
       allSummariesSuccessful(resourceSummary) &&
       allSummariesSuccessful(apiSummary);
-    const captureStatus = terminalReason === "usable" && browserGatesPassed
-      ? "usable"
-      : terminalReason === "observation-deadline"
-        ? "browser-failure-observed"
-        : "stopped";
+    const { captureStatus, verdictBasis } = deriveCaptureVerdict({
+      coordinated, terminalReason, browserGatesPassed,
+    });
     const observedWindowMs = terminalAt ? Date.parse(terminalAt) - t0EpochMs : null;
     const {
       errors: terminalArtifactErrors, warnings: artifactWarnings,
@@ -631,7 +720,8 @@ async function runCapture(config) {
       "final DOM HTML": artifacts.dom,
     });
     const result = {
-      issue: 66,
+      issue: config.issue,
+      harnessOriginIssue: HARNESS_ORIGIN_ISSUE,
       run: RUN_ID,
       tipCommit: config.commit,
       // Which page this measurement is of. run-39 (#64's ADR 0017 gate) was
@@ -646,6 +736,10 @@ async function runCapture(config) {
       terminalAt,
       terminalReason,
       captureStatus,
+      // What the verdict rests on. A bundle must say whether "usable" was
+      // corroborated by the coordinator's controller-side probe or graded on the
+      // browser alone, because those are different strengths of evidence.
+      verdictBasis,
       browserGatesPassed,
       navigationError,
       resourceSummary,
@@ -669,6 +763,7 @@ async function runCapture(config) {
       page: config.profile.name,
       terminalReason,
       captureStatus,
+      verdictBasis,
       observedWindowMs,
       domCandidateAt,
       usableAt,
@@ -689,9 +784,7 @@ async function runCapture(config) {
     // and both cooldowns was discarded because two of one tab's PNGs did not
     // render in time.
     if (!stateWritten || !artifactLanded(artifacts.state)) return 2;
-    if (captureStatus === "usable") return 0;
-    if (captureStatus === "browser-failure-observed") return 3;
-    return 4;
+    return captureExitCode(captureStatus);
   } finally {
     closingAt = closingAt || wallNow();
     if (hardStopTimer) clearTimeout(hardStopTimer);
@@ -713,13 +806,17 @@ async function main() {
     const config = validateArgs(args);
     if (config.dryRun) {
       process.stdout.write(`${JSON.stringify({
-        issue: 66,
+        issue: config.issue,
+        harnessOriginIssue: HARNESS_ORIGIN_ISSUE,
         run: RUN_ID,
         tipCommit: config.commit,
         page: config.profile.name,
         url: config.url,
         output: config.out,
         controlFile: config.controlFile,
+        // Printed in the plan because it decides what a passing run means, and
+        // the plan is what an operator checks before committing the window.
+        verdictMode: config.controlFile ? "coordinated" : "standalone",
         observeMs: OBSERVE_MS,
         viewport: VIEWPORT,
         navigationCount: 1,
@@ -744,4 +841,5 @@ if (require.main === module) {
 
 module.exports = {
   captureTerminalScreenshots, collectDomState, splitArtifactErrors, artifactLanded,
+  deriveCaptureVerdict, captureExitCode,
 };

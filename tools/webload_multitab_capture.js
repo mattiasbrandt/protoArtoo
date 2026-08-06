@@ -95,7 +95,14 @@ const CONTROL_POLL_MS = 200;
 const DEFAULT_TABS = 3;
 const MIN_TABS = 2;
 const MAX_TABS = 3;
+// Which capture this is within a run, not which run it is -- the coordinator's
+// --run-id names the run. Kept static because the label identifies the capture
+// kind, and existing bundles are read by it.
 const RUN_ID = "MULTITAB1";
+// Provenance of this collector, never the ticket a given run is evidence for.
+// Emitting the two as one field filed the #93 ADR 0017 acceptance bundle's
+// multi-tab leg under issue 73. The run's own ticket arrives via --issue.
+const HARNESS_ORIGIN_ISSUE = 73;
 
 // The single description of what a run of N tabs does. Everything downstream
 // -- the dry-run plan, the evidence manifest, the scenario loop, the
@@ -159,7 +166,7 @@ function parseArgs(argv) {
     const arg = argv[i];
     if (arg === "--help") args.help = true;
     else if (arg === "--dry-run") args.dryRun = true;
-    else if (["--url", "--commit", "--out", "--tabs", "--control-file", "--page"].includes(arg)) {
+    else if (["--url", "--commit", "--out", "--tabs", "--control-file", "--page", "--issue"].includes(arg)) {
       if (i + 1 >= argv.length) throw new Error(`${arg} requires a value`);
       const key = {
         "--url": "url",
@@ -168,6 +175,7 @@ function parseArgs(argv) {
         "--tabs": "tabs",
         "--control-file": "controlFile",
         "--page": "page",
+        "--issue": "issue",
       }[arg];
       args[key] = argv[++i];
     } else {
@@ -230,7 +238,17 @@ function validateArgs(args) {
   if (!args.dryRun && fs.existsSync(out)) {
     throw new Error(`refusing to overwrite existing evidence directory: ${out}`);
   }
-  return { ...args, profile, parsedUrl, out, controlFile, tabs, scenario: buildScenario(tabs) };
+  // null rather than a default ticket number: a bundle that does not know which
+  // issue it belongs to should say so, not name the collector's origin ticket.
+  let issue = null;
+  if (args.issue !== undefined) {
+    if (!/^[0-9]+$/.test(args.issue)) throw new Error("--issue must be a positive integer");
+    issue = Number(args.issue);
+  }
+  return {
+    ...args, profile, parsedUrl, out, controlFile, tabs, issue,
+    scenario: buildScenario(tabs),
+  };
 }
 
 function wallNow() {
@@ -467,7 +485,8 @@ async function runCapture(config) {
     context = await browser.newContext({ viewport: VIEWPORT });
 
     const manifest = {
-      issue: 73, run: RUN_ID, tipCommit: config.commit,
+      issue: config.issue, harnessOriginIssue: HARNESS_ORIGIN_ISSUE,
+      run: RUN_ID, tipCommit: config.commit,
       page: config.profile.name, pageProfile: describeProfile(config.profile),
       url: config.url,
       startedAt, observeMs: scenario.observeMs, viewport: VIEWPORT,
@@ -593,7 +612,8 @@ async function runCapture(config) {
     // so the coordinator classifies both captures with one code path; per-tab
     // detail hangs off `tabs`.
     const result = {
-      issue: 73, run: RUN_ID, tipCommit: config.commit,
+      issue: config.issue, harnessOriginIssue: HARNESS_ORIGIN_ISSUE,
+      run: RUN_ID, tipCommit: config.commit,
       // Which page this measurement is of; see webload_browser_capture.js.
       page: config.profile.name,
       t0, startedAt, finishedAt: wallNow(),
@@ -663,7 +683,8 @@ async function main() {
     const config = validateArgs(args);
     if (config.dryRun) {
       process.stdout.write(`${JSON.stringify({
-        issue: 73, run: RUN_ID, tipCommit: config.commit,
+        issue: config.issue, harnessOriginIssue: HARNESS_ORIGIN_ISSUE,
+      run: RUN_ID, tipCommit: config.commit,
         page: config.profile.name, url: config.url,
         output: config.out, controlFile: config.controlFile,
         scenario: config.scenario,

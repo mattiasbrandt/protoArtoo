@@ -56,7 +56,14 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import issue65_live_ab_runtime as r65  # noqa: E402  (reused, hardened primitives)
 
-ISSUE = 66
+# Where this harness came from, which is not the same question as which ticket a
+# given run belongs to. Conflating them wrote "issue": 66 into the ADR 0017
+# acceptance bundle for #93, so a later audit of the epic's closing measurement
+# reads a ticket that has nothing to do with it. This constant is provenance and
+# is always emitted as harnessOriginIssue; the run's own ticket comes from
+# --issue and is emitted as "issue", left null when the caller does not say.
+HARNESS_ORIGIN_ISSUE = 66
+RUN_ISSUE: int | None = None
 REPO_ROOT = Path(__file__).resolve().parents[1]
 EVIDENCE_ROOT = REPO_ROOT / "tasks" / "evidence" / "webload"
 BROWSER_COLLECTOR = REPO_ROOT / "tools" / "webload_browser_capture.js"
@@ -105,6 +112,18 @@ def build_parser() -> argparse.ArgumentParser:
         "--stage", choices=("preflight", "identity", "build", "full"), default="preflight",
     )
     parser.add_argument("--run-id", default="run-1")
+    parser.add_argument(
+        "--issue",
+        type=int,
+        default=None,
+        help=(
+            "GitHub issue this run is evidence for, recorded in every artifact. "
+            "Deliberately has no default: the harness used to stamp its own origin "
+            "ticket into every bundle, so an ADR 0017 acceptance run for one ticket "
+            "was filed under another. Left unset the field is null, which is honest; "
+            "the harness's own provenance is always recorded as harnessOriginIssue."
+        ),
+    )
     parser.add_argument("--controller", default=DEFAULT_CONTROLLER)
     parser.add_argument("--serial-port", default=DEFAULT_SERIAL_PORT)
     parser.add_argument(
@@ -271,7 +290,7 @@ def run_preflight(args: argparse.Namespace) -> dict[str, Any]:
     all_ok = all(item["status"] == "OK" for item in checks)
     return {
         "schemaVersion": 1,
-        "issue": ISSUE,
+        "issue": RUN_ISSUE, "harnessOriginIssue": HARNESS_ORIGIN_ISSUE,
         "stage": "preflight",
         "runId": args.run_id,
         "readyForNextStage": all_ok,
@@ -360,7 +379,7 @@ def run_identity_check(args: argparse.Namespace) -> dict[str, Any]:
     except r65.Issue65RuntimeError as error:
         return {
             "schemaVersion": 1,
-            "issue": ISSUE,
+            "issue": RUN_ISSUE, "harnessOriginIssue": HARNESS_ORIGIN_ISSUE,
             "stage": "identity",
             "runId": args.run_id,
             "reachable": False,
@@ -371,7 +390,7 @@ def run_identity_check(args: argparse.Namespace) -> dict[str, Any]:
     matches = version_matches_expected(running_version, head_sha)
     return {
         "schemaVersion": 1,
-        "issue": ISSUE,
+        "issue": RUN_ISSUE, "harnessOriginIssue": HARNESS_ORIGIN_ISSUE,
         "stage": "identity",
         "runId": args.run_id,
         "reachable": True,
@@ -467,7 +486,7 @@ def run_build(args: argparse.Namespace, evidence_dir: Path) -> dict[str, Any]:
     _restore_generated_versions()
     return {
         "schemaVersion": 1,
-        "issue": ISSUE,
+        "issue": RUN_ISSUE, "harnessOriginIssue": HARNESS_ORIGIN_ISSUE,
         "stage": "build",
         "runId": args.run_id,
         "otaEnvironment": ota_env,
@@ -521,7 +540,12 @@ class Bundle:
         """
         with self._lock:
             self._manifest.update(fields)
-            payload = {"schemaVersion": 1, "issue": ISSUE, **self._manifest}
+            payload = {
+                "schemaVersion": 1,
+                "issue": RUN_ISSUE,
+                "harnessOriginIssue": HARNESS_ORIGIN_ISSUE,
+                **self._manifest,
+            }
             r65.atomic_write_json(self.root / "manifest.json", payload)
 
     def record_failed_allocation(
@@ -838,6 +862,7 @@ def _browser_argv(
         "--commit", tip_commit,
         "--out", str(out_dir),
         "--control-file", str(control_file),
+        *(("--issue", str(RUN_ISSUE)) if RUN_ISSUE is not None else ()),
     ]
 
 
@@ -853,6 +878,7 @@ def _multitab_argv(
         "--out", str(out_dir),
         "--control-file", str(control_file),
         "--tabs", str(tabs),
+        *(("--issue", str(RUN_ISSUE)) if RUN_ISSUE is not None else ()),
     ]
 
 
@@ -1046,7 +1072,7 @@ def _finalize(
     multitab = _capture_named(captures, "multitab")
     outcome = {
         "schemaVersion": 1,
-        "issue": ISSUE,
+        "issue": RUN_ISSUE, "harnessOriginIssue": HARNESS_ORIGIN_ISSUE,
         "runId": run_id,
         "status": "COMPLETE",
         "page": page,
@@ -1414,6 +1440,8 @@ def run_full(args: argparse.Namespace) -> dict[str, Any]:
 
 def main(argv: list[str]) -> int:
     args = build_parser().parse_args(argv)
+    global RUN_ISSUE
+    RUN_ISSUE = args.issue
     try:
         if args.stage == "preflight":
             report = run_preflight(args)
@@ -1424,7 +1452,7 @@ def main(argv: list[str]) -> int:
             if not identity_report.get("buildRequired") and not args.force_build:
                 report = {
                     "schemaVersion": 1,
-                    "issue": ISSUE,
+                    "issue": RUN_ISSUE, "harnessOriginIssue": HARNESS_ORIGIN_ISSUE,
                     "stage": "build",
                     "runId": args.run_id,
                     "skipped": True,
