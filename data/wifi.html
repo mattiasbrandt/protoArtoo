@@ -137,12 +137,10 @@
     <div id="shell-status"></div>
 
 
-    <!-- No bootstrap <script src> here on purpose. The inline kernel above
-         fetches /page_bootstrap.js itself, with retry, and passes it the
-         script chain -- a bare tag has no retry, and the controller sheds
-         connections in the opening burst by design. Keeping it out of the
-         burst also leaves this page with the smallest possible set of
-         parallel requests at load. -->
+    <!-- No bootstrap <script src> here on purpose: the inline kernel in <head>
+         fetches /page_bootstrap.js itself, with retry, and hands it the script
+         chain from <html data-scripts>. A bare tag has no retry, and the
+         controller sheds connections in the opening burst by design. -->
 
   </body>
 </html>
