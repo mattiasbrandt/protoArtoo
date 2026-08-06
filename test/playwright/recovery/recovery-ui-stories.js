@@ -49,6 +49,14 @@ async function text(page, selector) {
 // Scenario 1: Intercept app.js, fail it N times, then let through
 async function scenarioResourceRetry(browser) {
   console.log("\n=== Scenario 1: Resource Retry (Intercepted Load) ===");
+
+  // INDUCED build refuses navigation itself, so these scenarios are meaningless noise.
+  // Skip them and only run on normally-serving builds.
+  if (INDUCED) {
+    recordResult("1-5", "SKIP", "skipped: interception scenarios need a normally-serving build");
+    return;
+  }
+
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   const pageErrors = [];
   const consoleErrors = [];
@@ -162,6 +170,12 @@ async function scenarioResourceRetry(browser) {
 //   Aborted fetch -> AbortError -> ApiError { kind: "timeout" }
 async function scenarioNoResponse(browser) {
   console.log("\n=== Scenario 2: No-Response Mode ===");
+
+  if (INDUCED) {
+    recordResult("6-8", "SKIP", "skipped: interception scenarios need a normally-serving build");
+    return;
+  }
+
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   const pageErrors = [];
   const consoleErrors = [];
@@ -236,7 +250,7 @@ async function scenarioNoResponse(browser) {
   }
 }
 
-// Scenario 3: Busy mode (503 + Retry-After)
+// Scenario 3: Busy mode (503 + Retry-After) — IN-PAGE recovery panel
 // CLASSIFYOUTCOME CONTRACT (data/page_bootstrap.js line 62-67):
 //   if (kind === "http" && status === 503) -> { kind: "busy", reason: "busy", retryAfterMs: ... }
 // WEB_API.JS ERROR SHAPE (data/web_api.js line 142-146):
@@ -246,6 +260,12 @@ async function scenarioNoResponse(browser) {
 //   Value: seconds (integer), parseRetryAfterMs converts to milliseconds
 async function scenarioBusyMode(browser) {
   console.log("\n=== Scenario 3: Busy Mode (503 + Retry-After) ===");
+
+  if (INDUCED) {
+    recordResult("9-13", "SKIP", "skipped: interception scenarios need a normally-serving build");
+    return;
+  }
+
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   const pageErrors = [];
   const consoleErrors = [];
@@ -298,59 +318,67 @@ async function scenarioBusyMode(browser) {
     // Wait for page to settle
     await page.waitForTimeout(2000);
 
-    // Story 9: Busy mode shows "Controller busy" reason
-    const statusReason = await text(page, ".recovery-status-reason");
+    // Story 9: REQUEST REFUSED banner (in-page busy panel, data/page_bootstrap.js line 564-567)
+    const refusedBanner = await page.locator("text=REQUEST REFUSED").count();
     recordResult(
       "9",
+      refusedBanner > 0 ? "PASS" : "UI-NOT-IMPLEMENTED",
+      `Banners: ${refusedBanner}`
+    );
+
+    // Story 10: Busy mode shows "Controller busy" reason
+    const statusReason = await text(page, ".recovery-status-reason");
+    recordResult(
+      "10",
       statusReason === "Controller busy" ? "PASS" : "UI-NOT-IMPLEMENTED",
       `Found: ${statusReason}`
     );
 
-    // Story 10: Countdown panel exists
+    // Story 11: Countdown panel exists
     const countdownPanel = await page.locator(".recovery-countdown-panel").count();
     recordResult(
-      "10",
+      "11",
       countdownPanel > 0 ? "PASS" : "UI-NOT-IMPLEMENTED",
       `Panels: ${countdownPanel}`
     );
 
-    // Story 11: Countdown value renders
+    // Story 12: Countdown value renders
     let countdownValue = await text(page, ".recovery-countdown-value");
     const initialSeconds = parseInt(countdownValue);
     const hasValidCountdown = !isNaN(initialSeconds) && initialSeconds > 0;
     recordResult(
-      "11",
+      "12",
       hasValidCountdown ? "PASS" : "UI-NOT-IMPLEMENTED",
       countdownValue
     );
 
-    // Story 12: Countdown ticks down
+    // Story 13: Countdown ticks down
     if (hasValidCountdown) {
       await page.waitForTimeout(500);
       const newCountdownValue = await text(page, ".recovery-countdown-value");
       const newSeconds = parseInt(newCountdownValue);
       recordResult(
-        "12",
+        "13",
         newSeconds <= initialSeconds && newSeconds > 0 ? "PASS" : "FAIL",
         `Countdown: ${initialSeconds}s -> ${newSeconds}s`
       );
     } else {
-      recordResult("12", "FAIL", "Cannot test countdown without valid value");
+      recordResult("13", "FAIL", "Cannot test countdown without valid value");
     }
 
     // Wait for retry to complete
     await page.waitForTimeout(3000);
 
-    // Story 13: Backdrop hides after recovery
+    // Story 14: Backdrop hides after recovery
     const backdropHidden = await page.evaluate(() => {
       const bd = document.getElementById("page-recovery-backdrop");
       return !bd || !bd.classList.contains("active");
     });
-    recordResult("13", backdropHidden ? "PASS" : "FAIL", "Backdrop hidden after recovery");
+    recordResult("14", backdropHidden ? "PASS" : "FAIL", "Backdrop hidden after recovery");
 
     await page.screenshot({ path: path.join(SCREENSHOT_DIR, "scenario3-busy-mode.png") });
   } catch (error) {
-    recordResult("9-13", "FAIL", error.message);
+    recordResult("9-14", "FAIL", error.message);
   } finally {
     await page.close();
   }
@@ -359,6 +387,12 @@ async function scenarioBusyMode(browser) {
 // Scenario 4: Per-resource retry
 async function scenarioPerResourceRetry(browser) {
   console.log("\n=== Scenario 4: Per-Resource Retry ===");
+
+  if (INDUCED) {
+    recordResult("14-15", "SKIP", "skipped: interception scenarios need a normally-serving build");
+    return;
+  }
+
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   const pageErrors = [];
   const consoleErrors = [];
@@ -440,14 +474,21 @@ async function scenarioPerResourceRetry(browser) {
   }
 }
 
-// Scenario 5: Induced bench build
+// Scenario 5: Induced bench build (server-rendered busy page)
+// SERVER-RENDERED PAGE CONTRACT (include/web_busy_page.h):
+//   When navigation is refused with 503, server sends a complete HTML page with:
+//   - "Controller busy" reason text
+//   - "It refused this page to protect itself." detail
+//   - Countdown element with ID #c and "Retrying automatically" label
+//   - Retry button with ID #r and "Retry now" text
+//   - Message "The controller is still running. Nothing was lost."
 async function scenarioInducedBench(browser) {
   if (!INDUCED) {
-    recordResult("16-19", "SKIP", "skipped: needs induced bench build");
+    recordResult("16-23", "SKIP", "skipped: needs induced bench build");
     return;
   }
 
-  console.log("\n=== Scenario 5: Induced Bench Build (Real 503) ===");
+  console.log("\n=== Scenario 5: Induced Bench Build (Server-Rendered Busy Page) ===");
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   const pageErrors = [];
   const consoleErrors = [];
@@ -463,28 +504,66 @@ async function scenarioInducedBench(browser) {
       window.EventSource = undefined;
     });
 
+    // Navigation itself will be refused with 503 on induced build
     await page.goto(TARGET_URL, { waitUntil: "domcontentloaded" });
     await page.waitForTimeout(1000);
 
-    // Story 16: REQUEST REFUSED banner
-    const banner = await page.locator("text=REQUEST REFUSED").count();
-    recordResult("16", banner > 0 ? "PASS" : "UI-NOT-IMPLEMENTED", `Banners: ${banner}`);
+    // Story 16: Server page shows "Controller busy" reason
+    const busyText = await text(page, "body");
+    recordResult(
+      "16",
+      busyText && busyText.includes("Controller busy") ? "PASS" : "UI-NOT-IMPLEMENTED",
+      "Controller busy text found"
+    );
 
-    // Story 17: "Controller busy"
-    const reason = await text(page, ".recovery-status-reason");
-    recordResult("17", reason && reason.includes("busy") ? "PASS" : "UI-NOT-IMPLEMENTED", reason);
+    // Story 17: Server page shows protection detail
+    recordResult(
+      "17",
+      busyText && busyText.includes("protect") ? "PASS" : "UI-NOT-IMPLEMENTED",
+      "Protection detail found"
+    );
 
-    // Story 18: Countdown exists
-    const countdown = await text(page, ".recovery-countdown-value");
-    recordResult("18", !isNaN(parseInt(countdown)) ? "PASS" : "UI-NOT-IMPLEMENTED", countdown);
+    // Story 18: Server page has countdown element (#c)
+    const countdownElement = await page.locator("#c").count();
+    recordResult("18", countdownElement > 0 ? "PASS" : "UI-NOT-IMPLEMENTED", `#c count: ${countdownElement}`);
 
-    // Story 19: Message mentions controller running
-    const msg = await text(page, ".recovery-message");
-    recordResult("19", msg && msg.includes("still") ? "PASS" : "UI-NOT-IMPLEMENTED", msg);
+    // Story 19: Countdown shows "Retrying automatically" label
+    const countdownLabel = await text(page, "#c");
+    recordResult(
+      "19",
+      countdownLabel && countdownLabel.includes("Retrying") ? "PASS" : "UI-NOT-IMPLEMENTED",
+      countdownLabel
+    );
+
+    // Story 20: Retry button exists (#r)
+    const retryButton = await page.locator("#r").count();
+    recordResult("20", retryButton > 0 ? "PASS" : "UI-NOT-IMPLEMENTED", `#r count: ${retryButton}`);
+
+    // Story 21: Retry button text is "Retry now"
+    if (retryButton > 0) {
+      const retryText = await text(page, "#r");
+      recordResult("21", retryText === "Retry now" ? "PASS" : "FAIL", retryText);
+    } else {
+      recordResult("21", "UI-NOT-IMPLEMENTED", "No #r button to check");
+    }
+
+    // Story 22: Message says "still running"
+    recordResult(
+      "22",
+      busyText && busyText.includes("still running") ? "PASS" : "UI-NOT-IMPLEMENTED",
+      "Still running message found"
+    );
+
+    // Story 23: Message says "Nothing was lost"
+    recordResult(
+      "23",
+      busyText && busyText.includes("Nothing was lost") ? "PASS" : "UI-NOT-IMPLEMENTED",
+      "Loss disclaimer found"
+    );
 
     await page.screenshot({ path: path.join(SCREENSHOT_DIR, "scenario5-induced-bench.png") });
   } catch (error) {
-    recordResult("16-19", "FAIL", error.message);
+    recordResult("16-23", "FAIL", error.message);
   } finally {
     await page.close();
   }
