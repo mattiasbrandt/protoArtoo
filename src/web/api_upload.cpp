@@ -21,6 +21,7 @@
 
 #include <Arduino.h>
 #include <Update.h>
+#include <esp_heap_caps.h>
 #include <esp_ota_ops.h>
 #include <esp_partition.h>
 
@@ -39,6 +40,11 @@ struct UploadSession {
     size_t bytesWritten;
     uint32_t minHeapFree;  // smallest free heap seen across the transfer
     uint32_t startMs;
+    // Whether the backend handed over a single chunk for this request. Not
+    // derivable from the fields above: a request whose body the multipart
+    // parser abandoned leaves every one of them untouched, which is also what
+    // an empty POST leaves. Kept separately so the two can be told apart.
+    bool sawChunk;
 };
 
 UploadSession s_firmwareSession = {};
@@ -76,6 +82,8 @@ void handleUploadChunk(UploadSession& session, UploadTarget target, int updateCo
                        size_t partitionSize, const char* label, WebRequest& req,
                        const char* filename, size_t index, const uint8_t* data, size_t len,
                        bool final) {
+    session.sawChunk = true;
+
     if (index == 0) {
         beginSession(session);
 
@@ -141,22 +149,30 @@ void handleUploadChunk(UploadSession& session, UploadTarget target, int updateCo
 // Shared body of both completion handlers.
 void handleUploadDone(UploadSession& session, UploadTarget target, const char* label,
                       WebRequest& req) {
-    const UploadOutcome outcome = session.outcome;
-    session.outcome = UploadOutcome::kInProgress;
-
     // Only an upload that actually wrote and finalized an image counts as
     // success. Treating "nothing went wrong" as success made an empty POST to
     // this endpoint answer 200 and reboot the controller -- proven on the
     // device before this check existed.
-    //
-    // Update.hasError() is consulted as well: an error the library latched
-    // without failing a call checked above would otherwise be reported to the
-    // operator as a successful flash.
-    UploadOutcome effective = outcome;
-    if (effective == UploadOutcome::kInProgress) {
-        effective = UploadOutcome::kNoImage;
-    } else if (effective == UploadOutcome::kComplete && Update.hasError()) {
-        effective = UploadOutcome::kFailed;
+    const UploadOutcome effective = uploadEffectiveOutcome(
+        session.outcome, session.sawChunk, req.contentLength(), Update.hasError());
+
+    // Rearm here rather than at the start of the next upload: the chunk handler
+    // is the only thing that runs at the start of one, and the case that has to
+    // be detected is precisely the one where it never runs at all.
+    session.outcome = UploadOutcome::kInProgress;
+    session.sawChunk = false;
+
+    if (effective == UploadOutcome::kBodyNotParsed) {
+        // The backend consumed a whole body and handed over nothing. Its
+        // multipart parser abandons a part silently when it cannot allocate its
+        // buffer, so what an investigation needs is the heap at this instant --
+        // and the device is about to answer and drop the request that produced
+        // it. Recorded here because nothing else in the system sees this moment.
+        PA_LOG_ERROR(TAG,
+                     "%s upload: %u byte body consumed, no chunk delivered; "
+                     "free heap %u, largest block %u",
+                     label, (unsigned)req.contentLength(), (unsigned)ESP.getFreeHeap(),
+                     (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
     }
 
     if (effective != UploadOutcome::kComplete) {
