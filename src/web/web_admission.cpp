@@ -210,7 +210,14 @@ WebRequestAdmission webRequestAdmissionDecide(const WebRequestAdmissionInputs& i
         return WebRequestAdmission::kRejectInflightCap;
     }
 
-    const size_t floor = in.diagnostic ? in.minLargestFreeBlockDiagnostic : in.minLargestFreeBlock;
+    // The override raises only the ordinary-class floor: diagnostics keep
+    // their real floor so /api/status and the live stream stay reachable while
+    // ordinary work is being refused -- the same shape real pressure has, and
+    // the reason an induced session can still be observed from outside.
+    const size_t ordinaryFloor =
+        in.minLargestFreeBlockOverride != 0 ? in.minLargestFreeBlockOverride
+                                            : in.minLargestFreeBlock;
+    const size_t floor = in.diagnostic ? in.minLargestFreeBlockDiagnostic : ordinaryFloor;
     if (in.largestFreeBlock < floor) {
         return WebRequestAdmission::kRejectHeapFloor;
     }

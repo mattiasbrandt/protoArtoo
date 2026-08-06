@@ -651,6 +651,14 @@ esp_err_t admissionMiddleware(PsychicRequest* request, PsychicResponse* response
     in.largestFreeBlock = sampleLargestFreeBlock(nullptr);
     in.minLargestFreeBlock = PA_ADMISSION_MIN_LARGEST_FREE_BLOCK;
     in.minLargestFreeBlockDiagnostic = PA_ADMISSION_MIN_LARGEST_FREE_BLOCK_DIAG;
+    // Bench-only: the induced-pressure env raises the floor above the resting
+    // heap so ordinary navigations genuinely refuse and serve the ADR 0016
+    // Busy Recovery Page. Compiled to a constant zero everywhere else.
+#ifdef PA_ADMISSION_OVERRIDE_HEAP_FLOOR
+    in.minLargestFreeBlockOverride = PA_ADMISSION_OVERRIDE_HEAP_FLOOR;
+#else
+    in.minLargestFreeBlockOverride = 0;
+#endif
 
     bool refused = false;
     WebAdmissionTraceOutcome outcome = WebAdmissionTraceOutcome::kAdmit;
