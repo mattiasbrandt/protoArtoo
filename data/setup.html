@@ -1,9 +1,12 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-scripts="/web_api.js,/diagnostics.js,/status_stream.js,/shell.js,/setup.js,/footer.js">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Setup - protoArtoo</title>
+    <link rel="stylesheet" href="/style.css">
+    <link rel="icon" type="image/png" href="/r2d2body-favicon.png">
+    <!-- PA:INCLUDE _recovery_kernel.html -->
   </head>
   <body data-page="setup">
     <div id="shell-top"></div>
@@ -461,30 +464,9 @@
 
     <div id="shell-status"></div>
 
-    <script data-scripts="/web_api.js,/diagnostics.js,/status_stream.js,/shell.js,/setup.js,/footer.js">
-      (() => {
-        const sources = document.currentScript.dataset.scripts.split(",");
-        const loadNext = (index) => {
-          if (index >= sources.length) {
-            document.querySelectorAll("[data-deferred-src]").forEach((element) => {
-              element.src = element.dataset.deferredSrc;
-              delete element.dataset.deferredSrc;
-            });
-            window.PAAssetsReady = true;
-            window.dispatchEvent(new Event("pa:assets-ready"));
-            return;
-          }
-          const script = document.createElement("script");
-          script.src = sources[index];
-          script.onload = () => loadNext(index + 1);
-          document.body.appendChild(script);
-        };
-        const stylesheet = document.createElement("link");
-        stylesheet.rel = "stylesheet";
-        stylesheet.href = "/style.css";
-        stylesheet.onload = () => loadNext(0);
-        document.head.appendChild(stylesheet);
-      })();
-    </script>
+    <!-- No bootstrap <script src> here on purpose: the inline kernel in <head>
+         fetches /page_bootstrap.js itself, with retry, and hands it the script
+         chain from <html data-scripts>. A bare tag has no retry, and the
+         controller sheds connections in the opening burst by design. -->
   </body>
 </html>

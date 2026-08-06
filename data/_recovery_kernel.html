@@ -11,11 +11,6 @@
      in the opening burst by design.
 
      Edit here only -- pages carry the directive, never a copy. -->
-         This is the one part of the page that must survive the failure it
-         reports, so it depends on nothing that can be shed: colors are
-         literal rather than custom properties (those live in /style.css),
-         and the kernel below renders without any external script. The full
-         view in /recovery_view.js upgrades this once it loads. -->
     <style>
       #page-recovery-backdrop {
         position: fixed;
@@ -186,8 +181,7 @@
         var PAGE_SCRIPTS = document.documentElement.getAttribute("data-scripts") || "";
 
         // The controller sheds connections under burst pressure by design, so
-        // a failed fetch here is expected rather than exceptional. Matches the
-        // attempt count page_loader.js used for the same reason.
+        // a failed fetch here is expected rather than exceptional.
         var MAX_BOOTSTRAP_ATTEMPTS = 4;
         var BOOTSTRAP_RETRY_BASE_MS = 400;
 
