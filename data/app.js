@@ -778,9 +778,46 @@
   topbarReboot?.addEventListener("click", rebootController);
 
 
-  loadRecentLogs();
-  loadLogLevel();
-  loadCommandTokens();
+  // -------------------------------------------------------------------------
+  // Boot — load recent logs, log level, and action tokens
+  // -------------------------------------------------------------------------
+
+  // Page Recovery: register startup API loads as sections so the bootstrap
+  // can show recovery state if any fetch fails.
+  // See docs/page-load-recovery-architecture.md and ADR 0019.
+  const SECTIONS = [
+    ["app-recent-logs", loadRecentLogs, "recent logs"],
+    ["app-log-level", loadLogLevel, "log level setting"],
+    ["app-action-tokens", loadCommandTokens, "action registry"],
+  ];
+
+  const startPageLoad = () => {
+    if (!window.PABootstrap) {
+      loadRecentLogs().catch(() => {});
+      loadLogLevel().catch(() => {});
+      loadCommandTokens().catch(() => {});
+      return;
+    }
+    window.PABootstrap.setResourceLabels?.({
+      "/web_api.js": "controller connection",
+      "/diagnostics.js": "diagnostics constants",
+      "/status_stream.js": "live updates",
+      "/shell.js": "page layout",
+      "/health_signals.js": "health indicator logic",
+      "/dome_command_map.js": "dome command map",
+      "/dome_panel_model.js": "dome panel state",
+      "/dome_layout.js": "dome panel layout",
+      "/dome_layout_render.js": "dome panel rendering",
+      "/dome_control.js": "dome control",
+      "/app.js": "home dashboard",
+      "/footer.js": "page footer",
+    });
+    SECTIONS.forEach(([name, load, label]) =>
+      window.PABootstrap.registerSection(name, load, { label })
+    );
+  };
+
+  startPageLoad();
 
   if (window.PAStatusStream?.isSupported()) {
     window.PAStatusStream.subscribe((eventType, payload) => {

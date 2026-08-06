@@ -1579,13 +1579,59 @@
   setEditorDirtyState("clean", "Saved");
   setEditorSavedTimestamp(null);
 
-  loadRecentActionTokens();
-  switchRcMode(rcInputModeHidden?.value || "standard_pwm");
-  loadRcMode().finally(() => {
-    loadMappings();
-  });
-  loadRcDiagnostics();
-  loadActionTargets().then(() => { if (selectedChannel) renderEditor(); });
+  // -------------------------------------------------------------------------
+  // Boot — load RC configuration and diagnostics
+  // -------------------------------------------------------------------------
+
+  // Page Recovery: register startup API loads as sections so the bootstrap
+  // can show recovery state if any fetch fails.
+  // See docs/page-load-recovery-architecture.md and ADR 0019.
+  const loadRcModeAndMappings = async () => {
+    await loadRcMode();
+    await loadMappings();
+  };
+
+  const loadRcDiagnosticsWithFallback = async () => {
+    await loadRcDiagnostics();
+  };
+
+  const loadActionTargetsWithFallback = async () => {
+    await loadActionTargets();
+    if (selectedChannel) renderEditor();
+  };
+
+  const SECTIONS = [
+    ["rc-mode-mapping", loadRcModeAndMappings, "RC receiver type and mapping"],
+    ["rc-diagnostics", loadRcDiagnosticsWithFallback, "RC channel diagnostics"],
+    ["rc-action-targets", loadActionTargetsWithFallback, "RC action registry"],
+  ];
+
+  const startPageLoad = () => {
+    loadRecentActionTokens();
+    switchRcMode(rcInputModeHidden?.value || "standard_pwm");
+
+    if (!window.PABootstrap) {
+      loadRcMode().finally(() => {
+        loadMappings();
+      });
+      loadRcDiagnostics();
+      loadActionTargets().then(() => { if (selectedChannel) renderEditor(); });
+      return;
+    }
+
+    window.PABootstrap.setResourceLabels?.({
+      "/web_api.js": "controller connection",
+      "/status_stream.js": "live updates",
+      "/shell.js": "page layout",
+      "/rc.js": "RC control",
+      "/footer.js": "page footer",
+    });
+    SECTIONS.forEach(([name, load, label]) =>
+      window.PABootstrap.registerSection(name, load, { label })
+    );
+  };
+
+  startPageLoad();
 
   const hasRcStream = subscribeRcEvents();
   if (!hasRcStream) {
