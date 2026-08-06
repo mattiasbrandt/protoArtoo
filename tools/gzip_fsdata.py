@@ -25,7 +25,9 @@ Recovery View kernel, which must be inline on every page — it is the one part 
 the UI that has to survive a failure that sheds external assets, so it cannot be
 an external file — while still living in exactly one editable source rather than
 ten hand-maintained copies that would drift apart. A missing or unexpanded
-include is a hard build failure, never a silently shipped page without recovery.
+include is a hard build failure, never a silently shipped page without recovery
+— and so is a served page that carries no kernel directive at all, since a page
+without one fails silently in exactly the situation recovery exists for.
 
 Runs after extract_version.py so the freshly-written fs-version.json is included
 in the LittleFS staging directory.
@@ -54,6 +56,11 @@ PARTIAL_PREFIX = "_"
 INCLUDE_RE = re.compile(r"[ \t]*<!--\s*PA:INCLUDE\s+([A-Za-z0-9_.\-/]+)\s*-->[ \t]*\n?")
 HTML_EXTS = {".html", ".htm"}
 
+# The one partial every served page is required to inline. It is checked by
+# name rather than by "has some directive" so a page cannot satisfy the guard
+# by including something else.
+RECOVERY_KERNEL = "_recovery_kernel.html"
+
 
 def _is_partial(filename):
     return filename.startswith(PARTIAL_PREFIX)
@@ -71,8 +78,12 @@ def _expand_includes(path, src_root):
 
     # Match the directive, never the bare token -- documentation and comments
     # legitimately mention PA:INCLUDE without being one.
-    if not INCLUDE_RE.search(text):
-        return text.encode("utf-8")
+    if RECOVERY_KERNEL not in INCLUDE_RE.findall(text):
+        raise SystemExit(
+            "[gzip_fsdata] %s does not include '%s'. Every served page inlines the "
+            "Page Recovery View kernel; add '<!-- PA:INCLUDE %s -->' to its <head>."
+            % (path, RECOVERY_KERNEL, RECOVERY_KERNEL)
+        )
 
     def _replace(match):
         target = os.path.join(src_root, match.group(1))

@@ -7,6 +7,7 @@
 // =============================================================================
 
 #include "../../include/api_actions.h"
+#include "../../include/api_admission_trace.h"
 #include "../../include/api_audio.h"
 #include "../../include/api_aux_led.h"
 #include "../../include/api_config.h"
@@ -124,6 +125,13 @@ void webRegisterSeamRoutes() {
     webRegisterRoute("/api/seq", WebMethod::kGet, handleSeqGet);
     webRegisterRoute("/api/seq", WebMethod::kPost, handleSeqPost, SEQ_FILE_MAX_BYTES);
     webRegisterRoute("/api/seq", WebMethod::kDelete, handleSeqDelete);
+
+#if PA_ADMISSION_TRACE
+    // Absent entirely on builds without the admission trace, so a harness that
+    // gets a 404 learns this build cannot answer the question rather than
+    // reading a 200 with an empty profile as "nothing was shed".
+    webRegisterRoute("/api/admission/trace", WebMethod::kGet, handleAdmissionTraceGet);
+#endif
 
 #if PA_HEAP_PROFILE
     // Absent entirely on builds without the profiler, which is what setup.js

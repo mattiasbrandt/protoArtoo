@@ -121,9 +121,10 @@ merged). The shape to implement for real:
   classification, not duplicated. Its `MAX_CONCURRENT_REQUESTS` narrows from 2 to 1
   (ADR 0019). Its `Retry-After` header should be read directly for API-class busy
   outcomes rather than guessed.
-- `data/page_loader.js`'s existing 3-attempt script retry-with-backoff is prior art
-  for Resource Step Recovery's script-loading half; the real bootstrap absorbs this
-  behavior rather than running a second, incompatible retry mechanism alongside it.
+- `data/page_loader.js`'s 3-attempt script retry-with-backoff was the prior art for
+  Resource Step Recovery's script-loading half; the bootstrap absorbed that behavior
+  rather than running a second, incompatible retry mechanism alongside it, and the
+  loader was removed once every page had migrated.
 - `data/status_stream.js`'s existing Hidden Tab Pause and reconnect-backoff for
   `/api/events` stays as the SSE transport underneath `liveUpdatesStarted` gating --
   except its known stuck-reconnect-after-first-failure defect (#61), which is a
@@ -132,8 +133,9 @@ merged). The shape to implement for real:
 
 ## Page, resource, and section inventory
 
-All 10 controller pages declare their script chain via `data-scripts`, consumed by
-`page_loader.js`. Every page shares the same base chain
+All 10 controller pages declare their script chain via `data-scripts` on `<html>`,
+consumed by the inline recovery kernel (`data/_recovery_kernel.html`), which fetches
+`page_bootstrap.js` with retry and hands it that chain. Every page shares the same base chain
 (`web_api.js`, `status_stream.js`, `shell.js`, then page-specific script(s), then
 `footer.js`); `index.html` and `setup.html` additionally load `diagnostics.js`.
 

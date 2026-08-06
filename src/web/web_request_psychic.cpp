@@ -25,6 +25,7 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "../../include/api_admission_trace.h"
 #include "../../include/api_events.h"
 #include "../../include/api_upload.h"
 #include "../../include/logging.h"
@@ -177,6 +178,59 @@ size_t sampleLargestFreeBlock(void*) {
     return s_heapSample.value;
 }
 
+// Records a decision that has already been taken, as evidence for re-deriving
+// the admission floors (include/web_admission_trace.h). Never consulted by
+// either layer: it runs after the outcome is fixed, so the only thing it can
+// change is how long the guard took.
+//
+// The age it stores is the age of the sample the decision USED, which is what
+// separates "the heap really was this low" from "the heap was this low once,
+// and everything arriving in the same sample interval inherited the reading".
+// A rate rejection never calls the sampler at all, so its row carries whatever
+// the cache last held and an age to match -- honest rather than tidy.
+#if PA_ADMISSION_TRACE
+
+// A second largest-free-block reading, taken fresh straight after the decision
+// and never stored back into the cache. This is the control the whole staleness
+// question needs: without it, a low `block` is indistinguishable from a low
+// reading that has since recovered. It costs one extra heap walk per decision,
+// which is why it is separately switchable -- a run that wants the guard's
+// undisturbed timing turns it off and keeps the rest of the profile.
+#ifndef PA_ADMISSION_TRACE_FRESH
+#define PA_ADMISSION_TRACE_FRESH 1
+#endif
+
+void traceDecision(WebAdmissionTraceLayer layer, WebAdmissionTraceOutcome outcome, int inflight,
+                   WebAdmissionTraceNavigation navigation) {
+    // Read here rather than taken from the caller. Each layer captures its own
+    // clock at a different point relative to the sampler -- the connection
+    // callback before it, the request middleware after it -- so a caller's
+    // stamp can predate the sample it is being compared against, and the
+    // unsigned subtraction below would turn a just-refreshed sample into the
+    // maximum possible age. That is the one reading this trace cannot afford to
+    // get backwards. Sampling has already happened by the time this runs, so a
+    // clock read here is never earlier than the sample it measures.
+    const uint32_t nowMs = millis();
+    const uint32_t ageMs = s_heapSample.primed ? (nowMs - s_heapSample.lastSampleMs)
+                                               : kWebAdmissionTraceAgeUnknown;
+#if PA_ADMISSION_TRACE_FRESH
+    const uint32_t fresh = (uint32_t)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+#else
+    const uint32_t fresh = 0;
+#endif
+    webAdmissionTraceRecord(webAdmissionTraceInstance(), nowMs, layer, outcome,
+                            (uint32_t)s_heapSample.value, fresh, ageMs, inflight, navigation);
+}
+
+#else
+
+// Trace off: the call sites stay, and cost nothing.
+inline void traceDecision(WebAdmissionTraceLayer, WebAdmissionTraceOutcome, int,
+                          WebAdmissionTraceNavigation) {
+}
+
+#endif  // PA_ADMISSION_TRACE
+
 // Connection Admission. Returning non-ESP_OK makes httpd_sess_new() delete the
 // session and the accept loop close the socket, before any HTTP parsing --
 // and, because the vendor open_fn is not chained on this path, before any
@@ -196,9 +250,14 @@ esp_err_t admissionOpenCallback(httpd_handle_t hd, int sockfd) {
         g_webAcceptGuardMaxUs = elapsedUs;
     }
 
+    // The connection layer is blind to the URL by construction, so every row it
+    // records carries no path and an unknown navigation class.
     if (decision == WebAcceptDecision::kRejectRate) {
         g_webAcceptRejectRate = g_webAcceptRejectRate + 1u;
         g_webAcceptRejectLastMs = nowMs;
+        traceDecision(WebAdmissionTraceLayer::kConnection,
+                      WebAdmissionTraceOutcome::kRejectRate, 0,
+                      WebAdmissionTraceNavigation::kUnknown);
         return ESP_FAIL;
     }
     if (decision == WebAcceptDecision::kRejectHeap) {
@@ -209,8 +268,14 @@ esp_err_t admissionOpenCallback(httpd_handle_t hd, int sockfd) {
         // pessimistic sample. Publishing it makes that visible rather than
         // leaving a bare refusal count to be argued over.
         g_webAcceptRejectLargestBlock = (uint32_t)s_heapSample.value;
+        traceDecision(WebAdmissionTraceLayer::kConnection,
+                      WebAdmissionTraceOutcome::kRejectHeap, 0,
+                      WebAdmissionTraceNavigation::kUnknown);
         return ESP_FAIL;
     }
+
+    traceDecision(WebAdmissionTraceLayer::kConnection, WebAdmissionTraceOutcome::kAdmit, 0,
+                  WebAdmissionTraceNavigation::kUnknown);
 
     // Admitted. Counted before the vendor chain so the census and the server's
     // own session table agree on what exists: httpd_sess_new() has already
@@ -314,9 +379,11 @@ esp_err_t admissionMiddleware(PsychicRequest* request, PsychicResponse* response
     in.minLargestFreeBlockDiagnostic = PA_ADMISSION_MIN_LARGEST_FREE_BLOCK_DIAG;
 
     bool refused = false;
+    WebAdmissionTraceOutcome outcome = WebAdmissionTraceOutcome::kAdmit;
     switch (webRequestAdmissionDecide(in)) {
         case WebRequestAdmission::kRejectInflightCap:
             g_webRefusedInflightCap = g_webRefusedInflightCap + 1u;
+            outcome = WebAdmissionTraceOutcome::kRejectInflight;
             refused = true;
             break;
         case WebRequestAdmission::kRejectHeapFloor:
@@ -330,6 +397,7 @@ esp_err_t admissionMiddleware(PsychicRequest* request, PsychicResponse* response
                             (unsigned)in.largestFreeBlock,
                             (unsigned)in.minLargestFreeBlock);
             }
+            outcome = WebAdmissionTraceOutcome::kRejectHeap;
             refused = true;
             break;
         case WebRequestAdmission::kAdmit:
@@ -348,15 +416,31 @@ esp_err_t admissionMiddleware(PsychicRequest* request, PsychicResponse* response
         copyHeader(raw, "Sec-Fetch-Mode", secFetchMode, sizeof(secFetchMode));
         copyHeader(raw, "Accept", accept, sizeof(accept));
 
-        if (webIsMainFrameNavigation(secFetchMode, accept)) {
+        const bool navigation = webIsMainFrameNavigation(secFetchMode, accept);
+        if (navigation) {
             g_webBusyRecoveryPagesServed = g_webBusyRecoveryPagesServed + 1u;
             sendBusyRecoveryPage(raw);
         }
+
+        // Recorded here rather than beside the counters above because this is
+        // the only point where a refusal's navigation class is known, and that
+        // class is the whole question: a refused navigation is the one this
+        // ticket has to see either completed or answered with the Busy page.
+        traceDecision(WebAdmissionTraceLayer::kRequest, outcome, in.inflightRequests,
+                      navigation ? WebAdmissionTraceNavigation::kNavigation
+                                 : WebAdmissionTraceNavigation::kAsset);
+
         // Either way the connection goes: returning non-ESP_OK is what makes
         // esp_http_server close it, and the response above already declared
         // Connection: close.
         return ESP_FAIL;
     }
+
+    // Admitted: the navigation class stays unknown, because determining it
+    // costs two header reads and an admitted request must not pay for a
+    // distinction only a refusal acts on.
+    traceDecision(WebAdmissionTraceLayer::kRequest, WebAdmissionTraceOutcome::kAdmit,
+                  in.inflightRequests, WebAdmissionTraceNavigation::kUnknown);
 
     // Counted here rather than per route, because this is the only point every
     // request passes through -- the global middleware chain wraps the static
@@ -969,6 +1053,19 @@ void initPsychicWebServer() {
     s_server.config.open_fn = admissionOpenCallback;
     webAcceptRateLimiterInit(&s_acceptLimiter, millis(), PA_ACCEPT_BURST);
     webSocketCensusInit(&s_census);
+
+#if PA_ADMISSION_TRACE
+    // Stamp the trace with the calibration it is about to record under, so a
+    // captured profile carries the floors it was taken against instead of
+    // relying on whoever reads it to remember which build produced it.
+    WebAdmissionTraceConfig traceConfig = {};
+    traceConfig.connectionFloor = PA_ACCEPT_MIN_LARGEST_FREE_BLOCK;
+    traceConfig.requestFloor = PA_ADMISSION_MIN_LARGEST_FREE_BLOCK;
+    traceConfig.requestFloorDiagnostic = PA_ADMISSION_MIN_LARGEST_FREE_BLOCK_DIAG;
+    traceConfig.sampleIntervalMs = PA_ACCEPT_HEAP_SAMPLE_MIN_INTERVAL_MS;
+    traceConfig.maxInflightRequests = PA_ADMISSION_MAX_INFLIGHT_REQUESTS;
+    webAdmissionTraceConfigure(webAdmissionTraceInstance(), traceConfig);
+#endif
 
     // Same capture-and-chain for the close side, which is how the event stream
     // registry learns that a subscribed socket has gone. Without it sseClients

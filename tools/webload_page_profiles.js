@@ -45,7 +45,8 @@ const INDEX_REQUIRED_APIS = Object.freeze([
 
 const INDEX_REQUIRED_RESOURCES = Object.freeze([
   "/index.html",
-  "/page_loader.js",
+  "/style.css",
+  "/page_bootstrap.js",
   "/web_api.js",
   "/diagnostics.js",
   "/status_stream.js",
@@ -60,10 +61,10 @@ const INDEX_REQUIRED_RESOURCES = Object.freeze([
   "/footer.js",
 ]);
 
-// wifi.html carries no /page_loader.js at all: its inline recovery kernel
-// (data/_recovery_kernel.html) fetches /page_bootstrap.js itself, with retry,
-// and hands it the chain declared on <html data-scripts>. /style.css is listed
-// because the recovery kernel deliberately renders without it, so a page that
+// Every served page now has this shape: no loader script of its own, an inline
+// recovery kernel (data/_recovery_kernel.html) that fetches /page_bootstrap.js
+// itself with retry, and the chain declared on <html data-scripts>. /style.css
+// is listed because the kernel deliberately renders without it, so a page that
 // never got its stylesheet still reaches a visible state -- the resource has to
 // be gated explicitly rather than inferred from the page looking rendered.
 const WIFI_REQUIRED_RESOURCES = Object.freeze([
@@ -85,10 +86,12 @@ const WIFI_REQUIRED_APIS = Object.freeze([
   "/api/identity", "/api/config", "/api/wifi",
 ]);
 
-// index.html's readiness gate. Unchanged from the inline probe this replaces:
-// the dashboard predates the bootstrap and exposes no state machine, so the
-// only evidence that it is up is that its rendered content stopped saying
-// "loading".
+// index.html's readiness gate. The dashboard now runs the bootstrap too, so
+// this asserts on window.PABootstrap.getState() like the wifi probe does --
+// resourcesReady/sectionsStable/liveUpdatesStarted are the Page Startup Order
+// boundary itself, and the per-step values say which step stalled. The
+// dashboard-specific content gates below are kept on top of that: the bootstrap
+// knows its scripts loaded, not that the dashboard actually rendered data.
 async function indexDomProbe() {
   const element = (selector) => document.querySelector(selector);
   const text = (selector) => (element(selector)?.textContent || "").trim();
@@ -139,16 +142,49 @@ async function indexDomProbe() {
     bodyStyle.fontFamily && !bodyStyle.fontFamily.includes("Times New Roman") &&
     bodyStyle.width > 0 && bodyStyle.height > 0;
 
+  const summarizeSteps = (steps) => (Array.isArray(steps) ? steps : []).map((step) => ({
+    name: step?.name ?? null,
+    status: step?.status ?? null,
+    attempt: step?.attempt ?? null,
+    reason: step?.reason ?? null,
+  }));
+  const state = window.PABootstrap?.getState?.() ?? null;
+  const bootstrap = state === null ? null : {
+    resourcesReady: state.resourcesReady === true,
+    sectionsStable: state.sectionsStable === true,
+    liveUpdatesStarted: state.liveUpdatesStarted === true,
+    resources: summarizeSteps(state.resources),
+    sections: summarizeSteps(state.sections),
+  };
+
+  // The recovery view is evidence, not a gate failure on its own: it can appear
+  // and clear again within one load. The gate below asks whether it is showing
+  // at the moment the page is graded.
+  const backdrop = element("#page-recovery-backdrop");
+  const recovery = {
+    backdropPresent: Boolean(backdrop),
+    backdropActive: Boolean(backdrop?.classList.contains("active")),
+    bodyRecoveryActive: document.body.classList.contains("recovery-active"),
+  };
+
   const runtime = {
     PAAssetsReady: window.PAAssetsReady === true,
     PAApi: Boolean(window.PAApi),
     PAStatusStream: Boolean(window.PAStatusStream),
+    PABootstrap: Boolean(window.PABootstrap),
     HealthSignalModel: Boolean(window.HEALTH_SIGNAL_MODEL || window.PAHealthSignals),
   };
-  const runtimeReady = runtime.PAAssetsReady && runtime.PAApi && runtime.PAStatusStream;
+  const runtimeReady = runtime.PAAssetsReady && runtime.PAApi &&
+    runtime.PAStatusStream && runtime.PABootstrap;
+
+  const resourcesReady = bootstrap?.resourcesReady === true;
+  const sectionsStable = bootstrap?.sectionsStable === true;
+  const liveUpdatesStarted = bootstrap?.liveUpdatesStarted === true;
+  const recoveryCleared = !recovery.backdropActive && !recovery.bodyRecoveryActive;
 
   let interactive = false;
-  if (document.readyState === "complete" && runtimeReady && healthReady && snapshotReady &&
+  if (document.readyState === "complete" && runtimeReady && resourcesReady &&
+      sectionsStable && liveUpdatesStarted && recoveryCleared && healthReady && snapshotReady &&
       logConsoleReady && shellReady && stylingReady) {
     interactive = await new Promise((resolve) => {
       let settled = false;
@@ -170,6 +206,8 @@ async function indexDomProbe() {
     title: document.title,
     readyState: document.readyState,
     runtime,
+    bootstrap,
+    recovery,
     healthIndicators,
     snapshotPills,
     logConsoleText,
@@ -177,6 +215,10 @@ async function indexDomProbe() {
     gates: {
       documentReady: document.readyState === "complete",
       runtimeReady,
+      resourcesReady,
+      sectionsStable,
+      liveUpdatesStarted,
+      recoveryCleared,
       healthReady,
       snapshotReady,
       logConsoleReady,
@@ -323,7 +365,7 @@ const PAGE_PROFILES = Object.freeze({
   index: Object.freeze({
     name: "index",
     path: "/index.html",
-    description: "Operator dashboard, unmigrated (still loaded by /page_loader.js)",
+    description: "Operator dashboard, migrated to the inline recovery kernel + bootstrap",
     requiredResources: INDEX_REQUIRED_RESOURCES,
     requiredApis: INDEX_REQUIRED_APIS,
     domProbe: indexDomProbe,

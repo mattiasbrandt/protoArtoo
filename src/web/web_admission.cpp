@@ -229,8 +229,17 @@ bool webPathIsDiagnostic(const char* path) {
     // Exact matches, matching what the async stack exempted. The coredump
     // subpaths are deliberately absent: /api/coredump/erase writes flash and
     // is not the read-only diagnostic this lower floor exists for.
+    //
+    // /api/admission/trace exists only on builds carrying the admission trace
+    // (PA_ADMISSION_TRACE), and is listed here unconditionally so this core
+    // stays free of build flags -- naming a path no build serves costs nothing,
+    // since an absent route answers 404 before the floor ever matters. It has
+    // to be here at all because the run it reports on is a pressure window, and
+    // a profile that sheds exactly when the controller is under load would
+    // describe every regime except the one worth measuring.
     return strcmp(path, "/api/status") == 0 || strcmp(path, "/api/profiler") == 0 ||
-           strcmp(path, "/api/coredump") == 0 || webPathIsLongLived(path);
+           strcmp(path, "/api/coredump") == 0 || strcmp(path, "/api/admission/trace") == 0 ||
+           webPathIsLongLived(path);
 }
 
 bool webPathIsLongLived(const char* path) {
