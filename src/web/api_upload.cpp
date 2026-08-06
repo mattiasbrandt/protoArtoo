@@ -156,6 +156,16 @@ void handleUploadDone(UploadSession& session, UploadTarget target, const char* l
     const UploadOutcome effective = uploadEffectiveOutcome(
         session.outcome, session.sawChunk, req.contentLength(), Update.hasError());
 
+    // A begun update that did not finalize must be torn down before the next
+    // upload: Update is a global singleton, and begin() against a transaction a
+    // failed upload left open refuses until the device reboots. Covers every
+    // failure path at once -- write failure, end() failure, and a body the
+    // parser abandoned after begin() -- and is a no-op when begin() never ran
+    // or the failure path already aborted.
+    if (effective != UploadOutcome::kComplete && Update.isRunning()) {
+        Update.abort();
+    }
+
     // Rearm here rather than at the start of the next upload: the chunk handler
     // is the only thing that runs at the start of one, and the case that has to
     // be detected is precisely the one where it never runs at all.
