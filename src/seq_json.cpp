@@ -315,6 +315,19 @@ ProtocolCheckResult seqJsonParseVariant(JsonVariantConst root,
     return pcOk();
 }
 
+// Entries present in one branch array, clamped to PC_MAX_STEPS. A missing key
+// or a non-array value yields 0.
+static uint8_t branchCap(JsonVariantConst branch) {
+    if (!branch.is<JsonArrayConst>()) return 0;
+    const size_t n = branch.as<JsonArrayConst>().size();
+    return (n > PC_MAX_STEPS) ? PC_MAX_STEPS : (uint8_t)n;
+}
+
+void seqJsonStagingCaps(JsonVariantConst root, uint8_t& stepCap, uint8_t& closeCap) {
+    stepCap  = branchCap(root["steps"]);
+    closeCap = branchCap(root["closeSteps"]);
+}
+
 ProtocolCheckResult seqJsonParse(const char* json,
                                  SeqStep* stepBuf, uint8_t stepCap,
                                  SeqStep* closeBuf, uint8_t closeCap,

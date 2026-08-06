@@ -65,6 +65,18 @@ ProtocolCheckResult seqJsonParseVariant(JsonVariantConst root,
                                         SeqStep* closeBuf, uint8_t closeCap,
                                         SeqDraft& out);
 
+// Staging capacities a seqJsonParseVariant() call needs for `root`: the number
+// of entries actually present in each branch array, clamped to PC_MAX_STEPS.
+// Zero for a branch that is missing or is not an array — the parse reports that
+// as a field error and never dereferences the buffer.
+//
+// Lets a caller right-size its SeqStep staging instead of reserving the
+// 96+96-step worst case, which on a fragmented heap is a contiguous block the
+// controller cannot always obtain (issue #99). Clamping rather than passing the
+// raw size through keeps an oversized array a "too many steps" rejection in
+// parseBranch(); it is never silently truncated.
+void seqJsonStagingCaps(JsonVariantConst root, uint8_t& stepCap, uint8_t& closeCap);
+
 // Serialize an entry into an existing JsonObject (for building arrays such as
 // GET /api/seq/builtins without an intermediate text buffer).
 void seqJsonSerializeObject(JsonObject obj, const SequenceEntry& entry,

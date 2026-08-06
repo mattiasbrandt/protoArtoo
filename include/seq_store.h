@@ -24,6 +24,13 @@
 // Save validation likewise uses a transient heap buffer. (Run buffers were a
 // fixed 2 x 96-step static block (~17 KB) before issue #8; making them dynamic
 // + right-sized reclaims that RAM whenever no Learned Sequence is running.)
+//
+// Staging is right-sized too: every parse (boot scan, prepare, save) allocates
+// its main and close branches as two separate blocks sized to the payload's own
+// step counts, never the 96+96-step worst case in one piece. The former single
+// 18432-byte request was larger than the largest contiguous 8-bit block the
+// controller could offer, so every save failed regardless of payload size
+// (issue #99).
 // =============================================================================
 #pragma once
 

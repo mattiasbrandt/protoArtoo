@@ -39,11 +39,64 @@ static SeqStep* s_runClose = nullptr;
 // validates into this transient heap pair; seqStoreCommit() copies it into the
 // run buffers once the previous run is drained. s_runName gives the running
 // entry a name whose lifetime does not depend on the (mutable) index.
-static SeqStep* s_staged = nullptr;  // malloc'd [192]: main at [0], close at [96]
-static SeqDraft s_stagedDraft;       // step pointers into s_staged
+//
+// s_staging.main is the "something is staged" sentinel: a staging that survived
+// Protocol Check always has at least one main step, because protocolCheck()
+// rejects an empty steps branch.
+static SeqDraft s_stagedDraft;  // step pointers into s_staging
 static char     s_runName[24];
 
 static SemaphoreHandle_t s_mutex = nullptr;
+
+// -----------------------------------------------------------------------------
+// Parse staging
+//
+// Every parse needs SeqStep buffers for the main and close branches. They are
+// sized to the payload's own step counts (seqJsonStagingCaps) and taken as two
+// separate blocks, so the store never asks the heap for the 96+96-step worst
+// case in one piece. That single 18432-byte request exceeded the largest
+// contiguous 8-bit block the controller could offer, which failed every save
+// regardless of payload size (issue #99). A typical Learned Sequence now stages
+// a few hundred bytes, and the 96-step worst case is two 9216-byte blocks.
+// -----------------------------------------------------------------------------
+struct SeqStaging {
+    SeqStep* main     = nullptr;
+    SeqStep* close    = nullptr;
+    uint8_t  mainCap  = 0;
+    uint8_t  closeCap = 0;
+};
+
+static SeqStaging s_staging;
+
+static void stagingFree(SeqStaging& st) {
+    free(st.main);
+    free(st.close);
+    st = SeqStaging();
+}
+
+// Allocate staging for `root`. A branch that is empty, missing, or not an array
+// gets a null buffer and a zero cap; seqJsonParseVariant()/protocolCheck()
+// already report that as a field error rather than dereferencing it. Returns
+// false only on a genuine allocation failure, leaving `st` empty.
+static bool stagingAlloc(JsonVariantConst root, SeqStaging& st) {
+    st = SeqStaging();
+    seqJsonStagingCaps(root, st.mainCap, st.closeCap);
+    if (st.mainCap > 0) {
+        st.main = (SeqStep*)malloc(sizeof(SeqStep) * st.mainCap);
+        if (st.main == nullptr) {
+            stagingFree(st);
+            return false;
+        }
+    }
+    if (st.closeCap > 0) {
+        st.close = (SeqStep*)malloc(sizeof(SeqStep) * st.closeCap);
+        if (st.close == nullptr) {
+            stagingFree(st);
+            return false;
+        }
+    }
+    return true;
+}
 
 // -----------------------------------------------------------------------------
 // Helpers (result constructors pcOk/pcFail are shared inlines in the header)
@@ -102,16 +155,6 @@ void seqStoreInit() {
         return;
     }
 
-    // Transient validation buffer for the boot scan (one file at a time). Heap
-    // is plentiful at boot, and this is freed before the dispatcher starts, so
-    // it never competes with the runtime run buffers. main at [0], close at [96].
-    SeqStep* scanBuf = (SeqStep*)malloc(sizeof(SeqStep) * 192);
-    if (scanBuf == nullptr) {
-        PA_LOG_ERROR(TAG, "scan buffer alloc failed; Learned Sequences not indexed");
-        dir.close();
-        return;
-    }
-
     uint8_t indexed = 0, skipped = 0;
     for (File f = dir.openNextFile(); f; f = dir.openNextFile()) {
         if (f.isDirectory()) { f.close(); continue; }
@@ -132,15 +175,36 @@ void seqStoreInit() {
         }
         SeqDraft d;
         JsonVariantConst root = doc.as<JsonVariantConst>();
+
+        // Transient validation staging, one file at a time. Sized to this
+        // file's own step counts and released before the next file, so the boot
+        // scan's peak is the largest single sequence rather than the worst case,
+        // and nothing survives into the dispatcher's lifetime.
+        SeqStaging st;
+        if (!stagingAlloc(root, st)) {
+            PA_LOG_WARN(TAG, "skip %s: staging alloc failed", file);
+            ++skipped;
+            continue;
+        }
         ProtocolCheckResult parseResult =
-            seqJsonParseVariant(root, scanBuf, 96, scanBuf + 96, 96, d);
+            seqJsonParseVariant(root, st.main, st.mainCap, st.close, st.closeCap, d);
+        // Protocol Check reads the staged steps, so it runs before the staging
+        // is released. Everything below this point needs only the draft's
+        // metadata, so the step pointers are cleared with the buffers they
+        // addressed rather than left dangling.
+        ProtocolCheckResult checkResult = parseResult.ok ? protocolCheck(d) : parseResult;
+        stagingFree(st);
+        d.steps = nullptr;
+        d.stepCount = 0;
+        d.closeSteps = nullptr;
+        d.closeStepCount = 0;
+
         if (!parseResult.ok) {
             // Unreadable format — cannot extract reliable metadata; skip entirely.
             PA_LOG_WARN(TAG, "skip %s: %s (%s)", file, parseResult.message, parseResult.field);
             ++skipped;
             continue;
         }
-        ProtocolCheckResult checkResult = protocolCheck(d);
         if (!checkResult.ok) {
             // Parseable but fails current contract (e.g. pre-Slice-1 :SM usage).
             // Index as invalid so the UI can surface it for repair/export/delete.
@@ -169,7 +233,6 @@ void seqStoreInit() {
         ++indexed;
     }
     dir.close();
-    free(scanBuf);
     PA_LOG_INFO(TAG, "indexed %u Learned Sequence(s), skipped %u", indexed, skipped);
 }
 
@@ -177,9 +240,8 @@ void seqStoreInit() {
 // Load (dispatcher run path) — two-phase: prepare into heap, commit to buffers
 // -----------------------------------------------------------------------------
 ProtocolCheckResult seqStorePrepare(const char* name) {
-    if (s_staged != nullptr) {  // a previous prepare was never committed
-        free(s_staged);
-        s_staged = nullptr;
+    if (s_staging.main != nullptr) {  // a previous prepare was never committed
+        stagingFree(s_staging);
     }
     if (!lock()) return pcFail("name", "store busy");
 
@@ -204,27 +266,28 @@ ProtocolCheckResult seqStorePrepare(const char* name) {
         return pcFail("json", err.c_str());
     }
 
-    SeqStep* tmp = (SeqStep*)malloc(sizeof(SeqStep) * 192);
-    if (tmp == nullptr) {
+    JsonVariantConst root = doc.as<JsonVariantConst>();
+    SeqStaging st;
+    if (!stagingAlloc(root, st)) {
         unlock();
         return pcFail("json", "out of memory");
     }
     SeqDraft d;
-    ProtocolCheckResult r = seqJsonParseVariant(doc.as<JsonVariantConst>(),
-                                                tmp, 96, tmp + 96, 96, d);
+    ProtocolCheckResult r =
+        seqJsonParseVariant(root, st.main, st.mainCap, st.close, st.closeCap, d);
     if (r.ok) r = protocolCheck(d);  // stamps effectClass into the staging
     unlock();
     if (!r.ok) {
-        free(tmp);
+        stagingFree(st);
         return r;
     }
-    s_staged = tmp;
+    s_staging = st;
     s_stagedDraft = d;
     return pcOk();
 }
 
 bool seqStoreCommit(SequenceEntry& out) {
-    if (s_staged == nullptr) {
+    if (s_staging.main == nullptr) {
         return false;
     }
     const SeqDraft& d = s_stagedDraft;
@@ -240,8 +303,7 @@ bool seqStoreCommit(SequenceEntry& out) {
     if (s_runMain == nullptr) {
         PA_LOG_WARN(TAG, "run buffer alloc failed (%u steps, ~%u bytes); run refused",
                     (unsigned)d.stepCount, (unsigned)(sizeof(SeqStep) * d.stepCount));
-        free(s_staged);
-        s_staged = nullptr;
+        stagingFree(s_staging);
         return false;
     }
     if (hasClose) {
@@ -249,8 +311,7 @@ bool seqStoreCommit(SequenceEntry& out) {
         if (s_runClose == nullptr) {
             PA_LOG_WARN(TAG, "close-branch alloc failed; run refused");
             seqStoreReleaseRun();  // frees s_runMain
-            free(s_staged);
-            s_staged = nullptr;
+            stagingFree(s_staging);
             return false;
         }
     }
@@ -270,8 +331,7 @@ bool seqStoreCommit(SequenceEntry& out) {
     out.closeSteps     = hasClose ? s_runClose : nullptr;
     out.closeStepCount = hasClose ? d.closeStepCount : 0;
 
-    free(s_staged);
-    s_staged = nullptr;
+    stagingFree(s_staging);
     return true;
 }
 
@@ -290,31 +350,33 @@ void seqStoreReleaseRun() {
 // Save
 // -----------------------------------------------------------------------------
 ProtocolCheckResult seqStoreSave(const char* json, size_t len) {
-    // Validate into a transient heap staging pair so a running sequence's run
-    // buffers (s_main/s_close) are never disturbed.
-    SeqStep* tmp = (SeqStep*)malloc(sizeof(SeqStep) * 192);
-    if (tmp == nullptr) {
-        return pcFail("json", "out of memory");
-    }
-
+    // Deserialize first: the staging is sized from the payload's own step
+    // counts, so there is nothing to allocate until the JSON is readable.
     JsonDocument doc;
     DeserializationError err = deserializeJson(doc, json, len);
-    ProtocolCheckResult r;
-    SeqDraft d;
     if (err) {
-        r = pcFail("json", err.c_str());
-    } else {
-        r = seqJsonParseVariant(doc.as<JsonVariantConst>(), tmp, 96, tmp + 96, 96, d);
-        if (r.ok) r = protocolCheck(d);
+        return pcFail("json", err.c_str());
     }
+    JsonVariantConst root = doc.as<JsonVariantConst>();
+
+    // Validate into a transient heap staging pair so a running sequence's run
+    // buffers (s_main/s_close) are never disturbed.
+    SeqStaging st;
+    if (!stagingAlloc(root, st)) {
+        return pcFail("json", "out of memory");
+    }
+    SeqDraft d;
+    ProtocolCheckResult r =
+        seqJsonParseVariant(root, st.main, st.mainCap, st.close, st.closeCap, d);
+    if (r.ok) r = protocolCheck(d);
     if (!r.ok) {
-        free(tmp);
+        stagingFree(st);
         return r;
     }
 
     char path[64];
     if (!nameToPath(d.name, path, sizeof(path))) {
-        free(tmp);
+        stagingFree(st);
         return pcFail("name", "invalid name");
     }
     char file[40];
@@ -323,7 +385,7 @@ ProtocolCheckResult seqStoreSave(const char* json, size_t len) {
     file[sizeof(file) - 1] = '\0';
 
     if (!lock()) {
-        free(tmp);
+        stagingFree(st);
         return pcFail("name", "store busy");
     }
 
@@ -334,7 +396,7 @@ ProtocolCheckResult seqStoreSave(const char* json, size_t len) {
         seqStoreCapacityCheck(isNew, seqStoreIndexCount(), len, freeBytes);
     if (!cap.ok) {
         unlock();
-        free(tmp);
+        stagingFree(st);
         return cap;
     }
 
@@ -347,7 +409,7 @@ ProtocolCheckResult seqStoreSave(const char* json, size_t len) {
     strncpy(entry.source, src, sizeof(entry.source) - 1);
     entry.modified = doc["meta"]["modified"] | false;
     strncpy(entry.file, file, sizeof(entry.file) - 1);
-    free(tmp);
+    stagingFree(st);
 
     char tmpPath[72];
     snprintf(tmpPath, sizeof(tmpPath), "%s/.tmp.json", SEQ_DIR);
