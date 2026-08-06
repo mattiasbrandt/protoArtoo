@@ -4,100 +4,81 @@
 // RC diagnostics API endpoints
 //   GET  /api/rc       — JSON RC diagnostics snapshot
 //   POST /api/rc/debug — Toggle verbose RC logging on/off
+//
+// Written against the project-owned WebRequest seam (ADR 0021) and bound by the
+// seam route table. The diagnostics snapshot core is reused unchanged: this
+// file captures, serializes and answers, and decides nothing about the payload.
+// tasks/rc_diagnostics_contract.md governs that payload's shape.
 // =============================================================================
 
 #include "api_rc.h"
 
-#include <Arduino.h>
 #include <ArduinoJson.h>
-#include <ESPAsyncWebServer.h>
-#include <stdlib.h>
-#include <string.h>
 
+#include "api_json_response.h"
 #include "commanded_modes.h"
 #include "logging.h"
-#include "robot_state.h"
 #include "rc_diagnostics_snapshot.h"
 
 static const char* TAG = "RC";
+
+// The largest body POST /api/rc/debug will accept. Inherited from the async
+// handler, which had to size a malloc for the whole body before reading it;
+// kept because it is also a sane bound on a two-field JSON object.
 static constexpr size_t RC_DEBUG_BODY_MAX = 128;
 
-void registerRcRoutes(AsyncWebServer& server) {
-    server.on("/api/rc", HTTP_GET, [](AsyncWebServerRequest* req) {
-        RcDiagnosticsSnapshot snap;
-        captureRcDiagnosticsSnapshot(&snap);
-        JsonDocument doc;
-        if (!populateRcDiagnosticsJson(doc, snap)) {
-            req->send(500, "application/json", "{\"ok\":false,\"error\":\"rc json build failed\"}");
-            return;
-        }
-        auto* stream = req->beginResponseStream("application/json");
-        if (stream == nullptr) {
-            req->send(500, "application/json",
-                      "{\"ok\":false,\"error\":\"response stream alloc failed\"}");
-            return;
-        }
-        serializeJson(doc, *stream);
-        req->send(stream);
-        PA_LOG_DEBUG(TAG, "GET /api/rc");
-    });
+// Ceiling on the diagnostics payload, above which the response is refused
+// rather than allocated for. Pinned by test_api_rc_routes against snapshots
+// filled to capacity with the widest values: 2488 bytes for the largest payload
+// the capture path can build, and 2931 for a deliberate over-bound that fills
+// the analog and digital channel buckets both.
+static constexpr size_t RC_PAYLOAD_MAX = 3072;
 
-    server.on(
-        "/api/rc/debug", HTTP_POST, [](AsyncWebServerRequest* req) {}, NULL,
-        [](AsyncWebServerRequest* req, uint8_t* data, size_t len, size_t index, size_t total) {
-            if (index == 0) {
-                if (total == 0 || total > RC_DEBUG_BODY_MAX) {
-                    req->send(413, "application/json",
-                              "{\"ok\":false,\"error\":\"payload too large\"}");
-                    req->_tempObject = nullptr;
-                    return;
-                }
-                char* body = (char*)malloc(total + 1);
-                if (body == nullptr) {
-                    req->send(500, "application/json",
-                              "{\"ok\":false,\"error\":\"request buffer alloc failed\"}");
-                    req->_tempObject = nullptr;
-                    return;
-                }
-                req->_tempObject = body;
-            }
+void handleRcGet(WebRequest& req) {
+    RcDiagnosticsSnapshot snap;
+    captureRcDiagnosticsSnapshot(&snap);
 
-            char* body = (char*)req->_tempObject;
-            if (body == nullptr) {
-                return;
-            }
-            if ((index + len) > total) {
-                free(body);
-                req->_tempObject = nullptr;
-                req->send(400, "application/json", "{\"ok\":false,\"error\":\"invalid body chunks\"}");
-                return;
-            }
+    JsonDocument doc;
+    if (!populateRcDiagnosticsJson(doc, snap)) {
+        req.send(500, "application/json", "{\"ok\":false,\"error\":\"rc json build failed\"}");
+        return;
+    }
 
-            if (len > 0) {
-                memcpy(body + index, data, len);
-            }
+    webSendJsonDocument(req, doc, RC_PAYLOAD_MAX, TAG);
+    PA_LOG_DEBUG(TAG, "GET /api/rc");
+}
 
-            if ((index + len) != total) {
-                return;
-            }
+void handleRcDebugPost(WebRequest& req) {
+    // The backend owns body accumulation now, so the length check happens once
+    // against the declared length instead of on the first arriving chunk.
+    // An absent body reaching this as "too large" is inherited behaviour, kept
+    // deliberately: the async handler answered 413 for both an empty and an
+    // over-long body, and payload parity is this port's correctness bar.
+    const size_t declared = req.contentLength();
+    if (declared == 0 || declared > RC_DEBUG_BODY_MAX) {
+        req.send(413, "application/json", "{\"ok\":false,\"error\":\"payload too large\"}");
+        return;
+    }
 
-            body[total] = '\0';
-            JsonDocument doc;
-            if (deserializeJson(doc, body, total)) {
-                free(body);
-                req->_tempObject = nullptr;
-                req->send(400, "application/json", "{\"ok\":false,\"error\":\"invalid json\"}");
-                return;
-            }
-            free(body);
-            req->_tempObject = nullptr;
+    // Borrowed for the life of the request, not copied: nothing here outlives
+    // the parse below. Null with a non-zero declared length means the backend
+    // consumed the body as form parameters instead, which is not JSON and gets
+    // the same answer the async stack's parse would have given it.
+    const char* body = req.body();
+    if (body == nullptr) {
+        req.send(400, "application/json", "{\"ok\":false,\"error\":\"invalid json\"}");
+        return;
+    }
 
-            bool enabled = doc["enabled"] | false;
+    JsonDocument doc;
+    if (deserializeJson(doc, body)) {
+        req.send(400, "application/json", "{\"ok\":false,\"error\":\"invalid json\"}");
+        return;
+    }
 
-            commandedSetRcDebug(enabled, SRC_WEB_API);
+    const bool enabled = doc["enabled"] | false;
+    commandedSetRcDebug(enabled, SRC_WEB_API);
 
-            PA_LOG_INFO(TAG, "RC debug mode %s", enabled ? "enabled" : "disabled");
-
-            req->send(200, "application/json", "{\"ok\":true}");
-        });
+    PA_LOG_INFO(TAG, "RC debug mode %s", enabled ? "enabled" : "disabled");
+    req.send(200, "application/json", "{\"ok\":true}");
 }

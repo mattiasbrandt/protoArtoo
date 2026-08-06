@@ -96,6 +96,16 @@ void commandedSetStationary(bool stationary, CommandSource /*source*/) {
     g_test_commanded_stationary = stationary;
 }
 
+// POST /api/rc/debug's only side effect. Recorded rather than performed: RC
+// verbose logging lives in RCInputTask, which is not in the native build.
+bool g_test_commanded_rc_debug = false;
+unsigned g_test_commanded_rc_debug_calls = 0;
+
+void commandedSetRcDebug(bool enabled, CommandSource /*source*/) {
+    g_test_commanded_rc_debug = enabled;
+    g_test_commanded_rc_debug_calls++;
+}
+
 bool audioQueuePlaySlot(AudioPlaybackSlot /*slot*/, CommandSource /*src*/) {
     g_test_dome_on_cue_count++;
     return true;
