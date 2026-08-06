@@ -59,7 +59,15 @@ constexpr const char* kDomeMdnsHost     = "astropixelsplus";
 constexpr const char* kDomeCmdEndpoint  = "/api/cmd";
 constexpr const char* kDomeLayoutEndpoint = "/api/dome/layout";
 constexpr uint8_t     kRxBufLen         = 64;
-constexpr size_t      kDomeLayoutCacheCapacity = 24576;  // ~24 KB
+// Dome layout cache size. Overridable because this single array is the largest
+// static allocation in the firmware, and static DRAM is the same memory the
+// heap is carved from -- so its size sets a ceiling on the largest contiguous
+// block the web stack's admission floors are calibrated against. Parameterised
+// to make that trade measurable rather than assumed; the default is unchanged.
+#ifndef PA_DOME_LAYOUT_CACHE_BYTES
+#define PA_DOME_LAYOUT_CACHE_BYTES 24576
+#endif
+constexpr size_t      kDomeLayoutCacheCapacity = PA_DOME_LAYOUT_CACHE_BYTES;
 constexpr uint32_t    kDomeLayoutRefreshMinIntervalMs = 30000;  // Don't refresh more than every 30s
 
 enum DomeRxSource : uint8_t {
