@@ -37,6 +37,7 @@
 #include "../../include/robot_state.h"
 #include "../../include/web_admission.h"
 #include "../../include/web_event_stream.h"
+#include "../../include/web_response_deadline.h"
 #include "../../include/web_request.h"
 #include "../../include/web_server_psychic.h"
 #include "../../include/wifi_boot_decision.h"
@@ -537,15 +538,29 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     // "does this stack reuse connections" actually means (ADR 0023).
     // httpSocketsOpenPeak is the other half -- reuse is only affordable if
     // occupancy stays inside max_open_sockets.
+    //
+    // responseMaxMs is the reading the response-phase deadline is calibrated
+    // against: the longest response phase seen this boot. It is published on
+    // every run rather than measured once, because "does the deadline still
+    // clear the slowest legitimate response" is a standing property of the
+    // system, not a past result (ADR 0024). responseDeadlineAgeMs follows
+    // sseEvictAgeMs: -1 until one has fired.
     if (written > 0 && written < (int)bufferSize - 1) {
+        const uint32_t responseDeadlineLastMs = g_webResponseDeadlineLastMs;
+        const long responseDeadlineAgeMs =
+            g_webResponseDeadlineClosures == 0 ? -1L : (long)(millis() - responseDeadlineLastMs);
         const int extra =
             snprintf(buffer + written, bufferSize - (size_t)written,
                      ",\"httpSocketsAccepted\":%lu,\"httpSocketsOpen\":%d,"
                      "\"httpSocketsOpenPeak\":%d,\"httpSocketsUntracked\":%lu,"
-                     "\"httpRequestsServed\":%lu",
+                     "\"httpRequestsServed\":%lu,\"responseDeadlineClosures\":%lu,"
+                     "\"responseDeadlineAgeMs\":%ld,\"responseLastMs\":%lu,"
+                     "\"responseMaxMs\":%lu",
                      (unsigned long)g_webSocketsAccepted, (int)g_webSocketsOpen,
                      (int)g_webSocketsOpenPeak, (unsigned long)g_webSocketsUntracked,
-                     (unsigned long)g_webRequestsServed);
+                     (unsigned long)g_webRequestsServed,
+                     (unsigned long)g_webResponseDeadlineClosures, responseDeadlineAgeMs,
+                     (unsigned long)g_webResponseLastMs, (unsigned long)g_webResponseMaxMs);
         if (extra > 0) {
             // Truncation leaves written past the buffer, which the bound check
             // below reads as a failed build -- the same way the fixed section
