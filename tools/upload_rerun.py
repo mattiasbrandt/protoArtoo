@@ -14,10 +14,13 @@ Three phases, in increasing order of what they cost if they go wrong:
    two questions at once:
 
    * **Does the multipart parser emit part callbacks?** The oversize guard lives
-     in the chunk handler at ``index == 0`` (``src/web/api_upload.cpp:83``), so a
-     413 *"larger than the app partition"* proves at least one callback ran. A
-     400 *"no image received"* is the #96 signature — the whole body consumed
-     with zero callbacks — and means the round-trip below cannot be scored yet.
+     in the chunk handler at ``index == 0``, so a 413 *"larger than the app
+     partition"* proves at least one callback ran. A 503 *"could not read the
+     upload body"* is ``kBodyNotParsed`` — the whole body consumed with zero
+     chunks, which is #96 — and means the round-trip below cannot be scored.
+     Since ``047da8a`` those two are distinct outcomes; before it they both
+     answered 400 *"no image received"*, which is what made #96 read as an
+     operator error rather than a controller one.
    * **Did the request pass admission?** ``httpRequestsServed`` is published from
      the admitted branch of ``admissionMiddleware`` and from nowhere else
      (``src/web/web_request_psychic.cpp:633``), so a delta across the probe is
@@ -361,12 +364,20 @@ def classify_probe(result: dict[str, Any]) -> tuple[str, str]:
             "index == 0. At least one multipart part callback ran, so the #96 "
             "signature (whole body consumed, zero callbacks) is absent.",
         )
+    if status == 503 and isinstance(error, str) and "could not read the upload body" in error:
+        return (
+            "issue96-regressed",
+            "kBodyNotParsed: a body was transferred in full and no chunk reached "
+            "the updater. This is the #96 failure, which 047da8a gave its own "
+            "outcome and 90f862f made a build error. The round-trip cannot be "
+            "scored until it is understood.",
+        )
     if status == 400 and error == "no image received":
         return (
-            "issue96-present",
-            "The completion handler reported kNoImage for a body that was fully "
-            "transferred: MultipartProcessor consumed the request and emitted no "
-            "part callbacks. This is #96; the round-trip cannot be scored yet.",
+            "empty-post-reported",
+            "kNoImage, which after 047da8a means the controller saw no body at "
+            "all. The probe sends 2 MB, so this points at the request never "
+            "arriving intact rather than at the upload path.",
         )
     if body is None:
         return (
