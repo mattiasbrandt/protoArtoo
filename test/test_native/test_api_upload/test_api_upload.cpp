@@ -117,6 +117,67 @@ void test_failure_responses_carry_a_json_error_message_per_target() {
     }
 }
 
+void test_a_consumed_body_that_delivered_no_chunk_is_not_no_image() {
+    // The failure this separation exists for: PsychicHttp's multipart parser
+    // gives up on an allocation failure without reporting one, drains the rest
+    // of the body and returns success, so a 1.5 MB firmware image arrives here
+    // as a request that recorded absolutely nothing. Answering "no image
+    // received" told the operator their file was the problem when the
+    // controller was.
+    const UploadOutcome outcome =
+        uploadEffectiveOutcome(UploadOutcome::kInProgress, /*sawChunk=*/false,
+                               /*contentLength=*/1549772, /*updaterHasError=*/false);
+    TEST_ASSERT_EQUAL_INT((int)UploadOutcome::kBodyNotParsed, (int)outcome);
+
+    UploadResponse fw = uploadFailureResponse(UploadTarget::kFirmware, outcome);
+    TEST_ASSERT_EQUAL_INT(503, fw.code);
+    TEST_ASSERT_NOT_NULL(strstr(fw.body, "\"ok\":false"));
+    // Must not read as the client's fault.
+    TEST_ASSERT_NULL(strstr(fw.body, "no image received"));
+}
+
+void test_an_empty_post_is_still_no_image() {
+    // A POST with no body at all delivers no chunk either, and for that request
+    // "no image received" is the accurate, actionable answer. Content-Length is
+    // what tells the two apart.
+    const UploadOutcome outcome =
+        uploadEffectiveOutcome(UploadOutcome::kInProgress, /*sawChunk=*/false,
+                               /*contentLength=*/0, /*updaterHasError=*/false);
+    TEST_ASSERT_EQUAL_INT((int)UploadOutcome::kNoImage, (int)outcome);
+    TEST_ASSERT_EQUAL_INT(400, uploadFailureResponse(UploadTarget::kFirmware, outcome).code);
+}
+
+void test_a_parsed_body_carrying_no_image_is_no_image_not_a_parse_failure() {
+    // Chunks arrived, so the parser worked; the part just held nothing to
+    // write. That is a client-side problem and must keep its 400.
+    const UploadOutcome outcome =
+        uploadEffectiveOutcome(UploadOutcome::kNoImage, /*sawChunk=*/true,
+                               /*contentLength=*/300, /*updaterHasError=*/false);
+    TEST_ASSERT_EQUAL_INT((int)UploadOutcome::kNoImage, (int)outcome);
+}
+
+void test_outcomes_decided_during_the_body_survive_the_mapping() {
+    // Oversize and write failures are decided while chunks are streaming and
+    // must not be reinterpreted afterwards.
+    TEST_ASSERT_EQUAL_INT(
+        (int)UploadOutcome::kRejectedOversize,
+        (int)uploadEffectiveOutcome(UploadOutcome::kRejectedOversize, true, 4000000, false));
+    TEST_ASSERT_EQUAL_INT(
+        (int)UploadOutcome::kFailed,
+        (int)uploadEffectiveOutcome(UploadOutcome::kFailed, true, 1549772, false));
+}
+
+void test_a_finalized_image_with_a_latched_updater_error_is_not_success() {
+    TEST_ASSERT_EQUAL_INT(
+        (int)UploadOutcome::kComplete,
+        (int)uploadEffectiveOutcome(UploadOutcome::kComplete, true, 1549772, false));
+    // An error the library latched without failing a call the handler checked
+    // must not be reported to the operator as a successful flash.
+    TEST_ASSERT_EQUAL_INT(
+        (int)UploadOutcome::kFailed,
+        (int)uploadEffectiveOutcome(UploadOutcome::kComplete, true, 1549772, true));
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_image_that_fits_the_partition_is_accepted);
@@ -128,5 +189,10 @@ int main() {
     RUN_TEST(test_success_body_reports_overflow_rather_than_truncating);
     RUN_TEST(test_a_post_with_no_image_is_not_a_successful_flash);
     RUN_TEST(test_failure_responses_carry_a_json_error_message_per_target);
+    RUN_TEST(test_a_consumed_body_that_delivered_no_chunk_is_not_no_image);
+    RUN_TEST(test_an_empty_post_is_still_no_image);
+    RUN_TEST(test_a_parsed_body_carrying_no_image_is_no_image_not_a_parse_failure);
+    RUN_TEST(test_outcomes_decided_during_the_body_survive_the_mapping);
+    RUN_TEST(test_a_finalized_image_with_a_latched_updater_error_is_not_success);
     return UNITY_END();
 }
