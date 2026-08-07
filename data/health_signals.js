@@ -92,8 +92,8 @@
     // malloc can never allocate, so it sits frozen regardless of pressure.
     const largest = Number(payload.heapLargest8bit);
     if (Number.isFinite(largest) && largest >= 0) {
-      const warnAt = t.largestWarn || 16000;
-      const failAt = t.largestCritical || 12000;
+      const warnAt = t.largestWarn ?? 16000;
+      const failAt = t.largestCritical ?? 12000;
       const free = Number.isFinite(heapBytes) ? `, heapFree=${heapBytes} B` : "";
       const detail = `heapLargest8bit=${largest} B (warn <=${warnAt} B, fail <=${failAt} B${free})`;
       if (largest > warnAt) return healthSignal("ok", "Normal", detail);
@@ -110,8 +110,8 @@
       );
     }
 
-    const warnAt = t.freeWarn || 65000;
-    const failAt = t.freeCritical || 40000;
+    const warnAt = t.freeWarn ?? 65000;
+    const failAt = t.freeCritical ?? 40000;
     const detail = `heapFree=${heapBytes} B (warn <=${warnAt} B, fail <=${failAt} B)`;
     if (heapBytes > warnAt) return healthSignal("ok", "Normal", detail);
     if (heapBytes > failAt) return healthSignal("warn", "Low", detail);
