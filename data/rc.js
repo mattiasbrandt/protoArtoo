@@ -268,7 +268,7 @@
       const selected = normalizedSelected === value ? " selected" : "";
       const label = `SE${entry.id} - ${entry.name}`;
       const title = entry.description || "";
-      return `<option value="${value}" title="${escapeHtml(title)}"${selected}>${escapeHtml(label)}</option>`;
+      return `<option value="${value}" title="${window.PAUtils.escapeHtml(title)}"${selected}>${window.PAUtils.escapeHtml(label)}</option>`;
     }).join("\n            ");
   };
 
@@ -278,7 +278,7 @@
     // Learned sequences will be fetched asynchronously
     return FACTORY_DOME_SEQUENCES.map((entry) => {
       const selected = sel === entry.payload ? ' selected' : '';
-      return `<option value="${escapeHtml(entry.payload)}" title="${escapeHtml(entry.description)}"${selected}>${escapeHtml(entry.label)}</option>`;
+      return `<option value="${window.PAUtils.escapeHtml(entry.payload)}" title="${window.PAUtils.escapeHtml(entry.description)}"${selected}>${window.PAUtils.escapeHtml(entry.label)}</option>`;
     }).join('\n            ');
   };
 
@@ -311,7 +311,7 @@
     if (domeSeqSelect) {
       domeSeqSelect.innerHTML = allSequences.map((entry) => {
         const selected = sel === entry.payload ? ' selected' : '';
-        return `<option value="${escapeHtml(entry.payload)}" title="${escapeHtml(entry.description)}"${selected}>${escapeHtml(entry.label)}</option>`;
+        return `<option value="${window.PAUtils.escapeHtml(entry.payload)}" title="${window.PAUtils.escapeHtml(entry.description)}"${selected}>${window.PAUtils.escapeHtml(entry.label)}</option>`;
       }).join('\n            ');
     }
   };
@@ -404,12 +404,6 @@
       exitLearnMode();
     }
   };
-  const escapeHtml = (value) => String(value)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/\"/g, "&quot;")
-    .replace(/'/g, "&#39;");
 
   const getEditorMode = () => {
     return rcSnapshot?.mode || rcInputModeHidden?.value || "standard_pwm";
@@ -581,7 +575,7 @@
       const age = Number(src.ageMs || 0);
       const state = !enabled ? "disabled" : linked ? "linked" : "waiting";
       return `<div class="rc-source-card rc-source-card-compact">
-        <div class="rc-source-card-title">${escapeHtml(name.toUpperCase())}</div>
+        <div class="rc-source-card-title">${window.PAUtils.escapeHtml(name.toUpperCase())}</div>
         <div class="rc-source-card-meta">${state} · age ${age}ms</div>
       </div>`;
     }).join("");
@@ -627,9 +621,9 @@
       const live = isAnalogAction(token)
         ? miniBarHtml(telemetry?.mapped || 0)
         : triggerStateHtml(token, channelKey, telemetry);
-      return `<tr data-chkey="${escapeHtml(channelKey)}" class="${selectedChannel === channelKey ? 'active-channel' : ''}">
-        <td>${escapeHtml(actionLabelFromToken(token))}</td>
-        <td>${escapeHtml(channelTitleFromKey(channelKey))}</td>
+      return `<tr data-chkey="${window.PAUtils.escapeHtml(channelKey)}" class="${selectedChannel === channelKey ? 'active-channel' : ''}">
+        <td>${window.PAUtils.escapeHtml(actionLabelFromToken(token))}</td>
+        <td>${window.PAUtils.escapeHtml(channelTitleFromKey(channelKey))}</td>
         <td>${live}</td>
       </tr>`;
     }).join('');
@@ -655,17 +649,17 @@
               : Math.round(((raw - 172) / (1811 - 172)) * 100))
           : 0;
         const clampedPct = Math.max(0, Math.min(100, barPct));
-        items.push(`<div class="rc-channel-item${isActive ? ' active' : ''}" data-chkey="${escapeHtml(channelKey)}" role="button" tabindex="0" aria-pressed="${isActive}">
+        items.push(`<div class="rc-channel-item${isActive ? ' active' : ''}" data-chkey="${window.PAUtils.escapeHtml(channelKey)}" role="button" tabindex="0" aria-pressed="${isActive}">
           <div class="rc-channel-item-head">
             <span class="rc-ch-num">CH ${i}</span>
             <span class="rc-ch-raw">${rawDisplay}</span>
           </div>
           <div class="rc-channel-mini-bar"><div class="rc-channel-mini-fill" style="--pct:${clampedPct}%"></div></div>
-          <div class="rc-ch-action">${actionLabel ? escapeHtml(actionLabel) : '<span class="rc-ch-unassigned">not mapped</span>'}</div>
+          <div class="rc-ch-action">${actionLabel ? window.PAUtils.escapeHtml(actionLabel) : '<span class="rc-ch-unassigned">not mapped</span>'}</div>
         </div>`);
       }
       return `<div class="rc-channel-group">
-        <div class="rc-channel-group-title">${escapeHtml(title)}</div>
+        <div class="rc-channel-group-title">${window.PAUtils.escapeHtml(title)}</div>
         ${items.join('')}
       </div>`;
     };
@@ -743,10 +737,10 @@
     }
 
     rcLivePreviewContent.innerHTML = `
-      <h4 class="rc-preview-title">${escapeHtml(channelTitleFromKey(selectedChannel))}</h4>
+      <h4 class="rc-preview-title">${window.PAUtils.escapeHtml(channelTitleFromKey(selectedChannel))}</h4>
       <div class="rc-preview-stack">
-        <div>Action: <strong>${actionToken ? escapeHtml(actionLabelFromToken(actionToken)) : 'Not mapped'}</strong></div>
-        <div>Raw: <strong>${escapeHtml(String(raw))}</strong></div>
+        <div>Action: <strong>${actionToken ? window.PAUtils.escapeHtml(actionLabelFromToken(actionToken)) : 'Not mapped'}</strong></div>
+        <div>Raw: <strong>${window.PAUtils.escapeHtml(String(raw))}</strong></div>
         ${isAnalogAction(actionToken) ? `<div>Mapped: <strong>${mapped.toFixed(3)}</strong></div>${barHtml}` : `<div>State: ${triggerStateHtml(actionToken, selectedChannel, telemetry)}</div>`}
       </div>`;
   };
@@ -793,18 +787,18 @@
     const feedbackClass = feedback ? ` ${feedback.kind || ''}` : '';
     const feedbackText = feedback ? feedback.text : '';
 
-    return `<div class="rc-action-row${selected ? ' selected' : ''}${disabled ? ' disabled' : ''}" data-action-token="${escapeHtml(item.token)}" data-action-disabled="${disabled ? 'true' : 'false'}" role="option" aria-selected="${selected ? 'true' : 'false'}" aria-disabled="${disabled ? 'true' : 'false'}">
-      <button type="button" class="rc-action-select-btn" data-action-select="${escapeHtml(item.token)}"${disabled ? ' disabled' : ''}>
+    return `<div class="rc-action-row${selected ? ' selected' : ''}${disabled ? ' disabled' : ''}" data-action-token="${window.PAUtils.escapeHtml(item.token)}" data-action-disabled="${disabled ? 'true' : 'false'}" role="option" aria-selected="${selected ? 'true' : 'false'}" aria-disabled="${disabled ? 'true' : 'false'}">
+      <button type="button" class="rc-action-select-btn" data-action-select="${window.PAUtils.escapeHtml(item.token)}"${disabled ? ' disabled' : ''}>
         <span class="rc-action-radio" aria-hidden="true">${selected ? '●' : '○'}</span>
         <span class="rc-action-main">
-          <span class="rc-action-label">${escapeHtml(item.label)}</span>
-          <span class="rc-action-desc">${escapeHtml(item.description || 'No description available.')}</span>
+          <span class="rc-action-label">${window.PAUtils.escapeHtml(item.label)}</span>
+          <span class="rc-action-desc">${window.PAUtils.escapeHtml(item.description || 'No description available.')}</span>
         </span>
       </button>
       <span class="rc-action-side">
         ${showSafetyPill ? '<span class="rc-action-safety-pill">⚠ Safety critical</span>' : ''}
-        ${showTestButton ? `<button type="button" class="rc-action-test-btn" data-action-test="${escapeHtml(item.token)}"${inFlight ? ' disabled' : ''}>▶</button>` : ''}
-        <span class="rc-action-test-feedback${feedbackClass}" data-action-feedback="${escapeHtml(item.token)}">${escapeHtml(feedbackText || '')}</span>
+        ${showTestButton ? `<button type="button" class="rc-action-test-btn" data-action-test="${window.PAUtils.escapeHtml(item.token)}"${inFlight ? ' disabled' : ''}>▶</button>` : ''}
+        <span class="rc-action-test-feedback${feedbackClass}" data-action-feedback="${window.PAUtils.escapeHtml(item.token)}">${window.PAUtils.escapeHtml(feedbackText || '')}</span>
       </span>
     </div>`;
   };
@@ -832,18 +826,18 @@
 
     return `<div class="rc-action-picker" role="listbox" aria-label="Select action" tabindex="0">
       <div class="rc-action-search-row">
-        <input class="rc-action-search-input" data-action-search type="search" placeholder="Search actions..." value="${escapeHtml(query)}" autocomplete="off">
+        <input class="rc-action-search-input" data-action-search type="search" placeholder="Search actions..." value="${window.PAUtils.escapeHtml(query)}" autocomplete="off">
         <button type="button" class="rc-action-search-clear" data-action-search-clear${query ? '' : ' disabled'}>✕</button>
       </div>
       ${recentBlock}
       ${groups.map(({ name, items }) => {
         const openAttr = query ? ' open' : (isActionGroupOpen(name) ? ' open' : '');
-        return `<details class="rc-action-group" data-action-group="${escapeHtml(name)}"${openAttr}>
-          <summary>${escapeHtml(name)}</summary>
+        return `<details class="rc-action-group" data-action-group="${window.PAUtils.escapeHtml(name)}"${openAttr}>
+          <summary>${window.PAUtils.escapeHtml(name)}</summary>
           <div class="rc-action-group-rows">${items.map((item) => renderActionRow(item, selectedToken)).join('')}</div>
         </details>`;
       }).join('')}
-      ${hasMatches ? '' : `<div class="rc-action-empty">No actions match "${escapeHtml(query)}".</div>`}
+      ${hasMatches ? '' : `<div class="rc-action-empty">No actions match "${window.PAUtils.escapeHtml(query)}".</div>`}
     </div>`;
   };
 
@@ -882,10 +876,10 @@
     const displayToken = mapEntryAction(entry);
 
     rcEditorContent.innerHTML = `
-      <h4 class="rc-editor-title">Edit ${escapeHtml(channelTitleFromKey(selectedChannel))}</h4>
-      <div class="desc mt-4">Source: <strong>${escapeHtml(sourceLabel(source))}</strong> · CH <strong>${escapeHtml(String(channel))}</strong></div>
+      <h4 class="rc-editor-title">Edit ${window.PAUtils.escapeHtml(channelTitleFromKey(selectedChannel))}</h4>
+      <div class="desc mt-4">Source: <strong>${window.PAUtils.escapeHtml(sourceLabel(source))}</strong> · CH <strong>${window.PAUtils.escapeHtml(String(channel))}</strong></div>
       <label class="rc-action-label-head mt-8">Action</label>
-      <input data-field="target" type="hidden" value="${escapeHtml(displayToken)}">
+      <input data-field="target" type="hidden" value="${window.PAUtils.escapeHtml(displayToken)}">
       ${renderActionPicker(displayToken, actionPickerQuery)}
       <div class="mt-8"><button type="button" class="btn btn-sm" data-action-unmap>Unmap channel</button></div>
       <div data-cond="seq" class="rc-editor-cond ${displayToken === 'seq' ? 'block' : 'hidden'}">
@@ -904,7 +898,7 @@
       </div>
       <div data-cond="cmd" class="rc-editor-cond ${displayToken === 'cmd' ? 'block' : 'hidden'}">
         <label>Marcduino Command
-          <input data-field="payload" type="text" value="${escapeHtml(entry.payload || '')}" placeholder=":OP01">
+          <input data-field="payload" type="text" value="${window.PAUtils.escapeHtml(entry.payload || '')}" placeholder=":OP01">
         </label>
       </div>
       <div data-cond="estop" class="rc-editor-cond ${displayToken === 'estop' ? 'block' : 'hidden'}">

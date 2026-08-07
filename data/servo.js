@@ -50,13 +50,6 @@
   let auxConfigured = { aux1: false, aux2: false, aux3: false };
 
 
-
-  const escapeHtml = (value) => String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/\"/g, "&quot;")
-    .replace(/'/g, "&#39;");
   // -------------------------------------------------------------------------
   // Servo command helpers
   // -------------------------------------------------------------------------
@@ -114,7 +107,7 @@
     if (armControlsContainer && ids !== renderedArmIds) {
       renderedArmIds = ids;
       armControlsContainer.innerHTML = enabled.map((arm) => {
-        const detail = escapeHtml(payload[arm.id]?.detail || "");
+        const detail = window.PAUtils.escapeHtml(payload[arm.id]?.detail || "");
         return `
           <div class="arm-control-row" id="row-${arm.id}">
             <span class="arm-name">${arm.name}</span>
@@ -200,7 +193,7 @@
       renderedAuxIds = ids;
       const rows = enabled.map((aux) => {
         const type = auxTypes[aux.id] || "none";
-        const detail = escapeHtml(payload[aux.id]?.detail || "");
+        const detail = window.PAUtils.escapeHtml(payload[aux.id]?.detail || "");
         const typeLabel = auxTypeLabel(type);
         if (type === "rgb") return buildAuxLedRow(aux);
         if (isServoType(type)) return buildAuxServoRow(aux, detail, typeLabel);

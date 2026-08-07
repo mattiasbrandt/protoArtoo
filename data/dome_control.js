@@ -330,7 +330,7 @@
           <div class="dome-sequence-row">
             <select id="dome-seq-selector" class="dome-seq-select" aria-label="Select sequence">
               <option value="">Choose sequence...</option>
-              ${merged.map((seq) => `<option value="${escapeAttr(seq.name)}">${escapeHtml(seq.name)}</option>`).join('')}
+              ${merged.map((seq) => `<option value="${window.PAUtils.escapeAttr(seq.name)}">${window.PAUtils.escapeHtml(seq.name)}</option>`).join('')}
             </select>
             <button id="dome-seq-play" class="btn" aria-label="Play selected sequence" title="Send sequence to droid">▶ Play</button>
             <button id="dome-seq-stop" class="btn" aria-label="Stop running sequence" title="Abort sequence">⏹ Stop</button>
@@ -421,20 +421,6 @@
       feedbackEl.textContent = text;
       feedbackEl.className = level ? `dome-control-feedback feedback ${level}` : 'dome-control-feedback feedback';
       feedbackEl.classList.toggle('hidden', !text);
-    }
-
-    function escapeHtml(str) {
-      const div = document.createElement('div');
-      div.textContent = str;
-      return div.innerHTML;
-    }
-
-    function escapeAttr(str) {
-      return String(str)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
     }
   }
 })();

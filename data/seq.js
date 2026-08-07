@@ -289,7 +289,7 @@
     const badges = [];
     if (seq.retrained) {
       badges.push(
-        `<span class="seq-badge seq-badge-retrained" title="This sequence shadows the factory ${seq.name}">Retrained</span>`
+        `<span class="seq-badge seq-badge-retrained" title="This sequence shadows the factory ${window.PAUtils.window.PAUtils.escapeAttr(seq.name)}">Retrained</span>`
       );
     }
     if (seq.valid === false) {
@@ -303,29 +303,29 @@
     // Share to project: only the operator's own custom sequences (not factory-derived).
     const isCustom = !seq.source || seq.source === "user";
     const shareBtn = isCustom
-      ? `<button class="btn btn-sm btn-action" data-action="share" data-seq-name="${escapeAttr(seq.name)}" title="Open a pre-filled GitHub issue to share this sequence with the project">Share to project</button>`
+      ? `<button class="btn btn-sm btn-action" data-action="share" data-seq-name="${window.PAUtils.escapeAttr(seq.name)}" title="Open a pre-filled GitHub issue to share this sequence with the project">Share to project</button>`
       : "";
 
-    const testBtnDisabled = seq.valid === false ? 'disabled title="Invalid sequence cannot be run — edit to repair"' : `data-seq-name="${escapeAttr(seq.name)}"`;
+    const testBtnDisabled = seq.valid === false ? 'disabled title="Invalid sequence cannot be run — edit to repair"' : `data-seq-name="${window.PAUtils.escapeAttr(seq.name)}"`;
 
     return `
       <div class="seq-card">
         <div class="seq-card-header">
-          <h4>${escapeHtml(seq.name)}</h4>
+          <h4>${window.PAUtils.escapeHtml(seq.name)}</h4>
           <div class="seq-badges">${badges.join("")}</div>
         </div>
         <div class="seq-card-meta">
-          <span class="seq-meta-item">Toggle: ${escapeHtml(seq.toggleGroup || "none")}</span>
+          <span class="seq-meta-item">Toggle: ${window.PAUtils.escapeHtml(seq.toggleGroup || "none")}</span>
           <span class="seq-meta-item">Suppress: ${seq.suppressMs}ms</span>
           <span class="seq-meta-item">Steps: ${stepCount}</span>
-          <span class="seq-meta-item">Modified: ${escapeHtml(modifiedDate)}</span>
+          <span class="seq-meta-item">Modified: ${window.PAUtils.escapeHtml(modifiedDate)}</span>
         </div>
         <div class="seq-card-actions">
-          <button class="btn btn-sm btn-action" data-action="edit" data-seq-name="${escapeAttr(seq.name)}">Edit</button>
+          <button class="btn btn-sm btn-action" data-action="edit" data-seq-name="${window.PAUtils.escapeAttr(seq.name)}">Edit</button>
           <button class="btn btn-sm btn-action" data-action="test" ${testBtnDisabled}>Test</button>
-          <button class="btn btn-sm btn-action" data-action="duplicate" data-seq-name="${escapeAttr(seq.name)}">Duplicate</button>
-          <button class="btn btn-sm btn-action" data-action="memory-wipe" data-seq-name="${escapeAttr(seq.name)}">Memory Wipe</button>
-          <button class="btn btn-sm btn-action" data-action="export" data-seq-name="${escapeAttr(seq.name)}">Export</button>
+          <button class="btn btn-sm btn-action" data-action="duplicate" data-seq-name="${window.PAUtils.escapeAttr(seq.name)}">Duplicate</button>
+          <button class="btn btn-sm btn-action" data-action="memory-wipe" data-seq-name="${window.PAUtils.escapeAttr(seq.name)}">Memory Wipe</button>
+          <button class="btn btn-sm btn-action" data-action="export" data-seq-name="${window.PAUtils.escapeAttr(seq.name)}">Export</button>
           ${shareBtn}
         </div>
         <div class="seq-card-test-feedback feedback hidden"></div>
@@ -339,37 +339,27 @@
     const suppressMs = builtin.suppressMs || 0;
     const purpose = builtin.purpose || "";
 
-    const purposeHtml = purpose ? `<p class="seq-card-purpose">${escapeHtml(purpose)}</p>` : "";
+    const purposeHtml = purpose ? `<p class="seq-card-purpose">${window.PAUtils.escapeHtml(purpose)}</p>` : "";
 
     return `
       <div class="seq-card seq-card-factory">
         <div class="seq-card-header">
-          <h4>${escapeHtml(builtin.name)}</h4>
+          <h4>${window.PAUtils.escapeHtml(builtin.name)}</h4>
           <div class="seq-badges">
             <span class="seq-badge seq-badge-factory" title="Built-in Factory sequence">Factory</span>
           </div>
         </div>
         ${purposeHtml}
         <div class="seq-card-meta">
-          <span class="seq-meta-item">Toggle: ${escapeHtml(toggleGroup)}</span>
+          <span class="seq-meta-item">Toggle: ${window.PAUtils.escapeHtml(toggleGroup)}</span>
           <span class="seq-meta-item">Suppress: ${suppressMs}ms</span>
           <span class="seq-meta-item">Steps: ${stepCount}</span>
         </div>
         <div class="seq-card-actions">
-          <button class="btn btn-sm btn-action" data-action="tune" data-builtin-name="${escapeAttr(builtin.name)}" title="Open for editing — save under the same name to retrain this sequence">Tune</button>
+          <button class="btn btn-sm btn-action" data-action="tune" data-builtin-name="${window.PAUtils.escapeAttr(builtin.name)}" title="Open for editing — save under the same name to retrain this sequence">Tune</button>
         </div>
       </div>
     `;
-  };
-
-  const escapeHtml = (str) => {
-    const div = document.createElement("div");
-    div.textContent = str;
-    return div.innerHTML;
-  };
-
-  const escapeAttr = (str) => {
-    return str.replace(/"/g, "&quot;");
   };
 
   // =========================================================================
@@ -608,8 +598,8 @@
                 (type) =>
                   `<div class="step-type-reference-item">
                     <span class="step-type-reference-emoji">${stepTypeEmoji[type]}</span>
-                    <span class="step-type-reference-name">${escapeHtml(stepTypeName[type])}</span>
-                    <span class="step-type-reference-desc">${escapeHtml(stepTypeDescriptions[type])}</span>
+                    <span class="step-type-reference-name">${window.PAUtils.escapeHtml(stepTypeName[type])}</span>
+                    <span class="step-type-reference-desc">${window.PAUtils.escapeHtml(stepTypeDescriptions[type])}</span>
                   </div>`
               )
               .join("")}
@@ -643,8 +633,8 @@
         <span class="step-number-label">Step ${idx + 1}</span>
         <span class="step-time-label">t=${step.t || 0}ms</span>
         <span class="step-card-emoji">${emoji}</span>
-        <span class="step-card-type">${escapeHtml(typeName)}</span>
-        <span class="step-card-preview">${escapeHtml(preview)}</span>
+        <span class="step-card-type">${window.PAUtils.escapeHtml(typeName)}</span>
+        <span class="step-card-preview">${window.PAUtils.escapeHtml(preview)}</span>
         ${isInvalid ? `<span class="step-card-error-badge" aria-hidden="true">!</span>` : ""}
         <button class="step-card-toggle" aria-label="${isExpanded ? "Collapse" : "Expand"} step" type="button" tabindex="-1">
           ${isExpanded ? "▼" : "▶"}
@@ -658,7 +648,7 @@
       <div class="step-card-expanded">
         ${isInvalid ? `<div class="step-card-error-message" id="${errorId}" role="alert" aria-live="polite">
           <span class="step-card-error-icon">!</span>
-          <span class="step-card-error-text">${escapeHtml(validation.error || "Invalid step")}</span>
+          <span class="step-card-error-text">${window.PAUtils.escapeHtml(validation.error || "Invalid step")}</span>
         </div>` : ""}
         <div class="step-card-expanded-content">
           <input class="step-t" type="number" value="${step.t || 0}" min="0" max="120000" aria-label="Step time offset (ms)" placeholder="t (ms)" ${isInvalid && validation.field === "t" ? `aria-invalid="true"` : ""}>
@@ -673,7 +663,7 @@
                     (type) =>
                       `<button class="step-type-chip step-type-card ${step.type === type ? "active" : ""}" data-type="${type}" aria-pressed="${step.type === type ? "true" : "false"}" title="${stepTypeName[type]}">
                         <span class="step-type-card-emoji">${stepTypeEmoji[type]}</span>
-                        <span class="step-type-card-name">${escapeHtml(stepTypeName[type])}</span>
+                        <span class="step-type-card-name">${window.PAUtils.escapeHtml(stepTypeName[type])}</span>
                       </button>`
                   )
                   .join("")}
@@ -702,7 +692,7 @@
                     (type) =>
                       `<button class="step-type-chip step-type-card ${step.type === type ? "active" : ""}" data-type="${type}" aria-pressed="${step.type === type ? "true" : "false"}" title="${stepTypeName[type]}">
                         <span class="step-type-card-emoji">${stepTypeEmoji[type]}</span>
-                        <span class="step-type-card-name">${escapeHtml(stepTypeName[type])}</span>
+                        <span class="step-type-card-name">${window.PAUtils.escapeHtml(stepTypeName[type])}</span>
                       </button>`
                   )
                   .join("")}
@@ -732,7 +722,7 @@
     if (!fieldsHtml || fieldsHtml.trim() === "") return "";
     return `
       <div class="step-field-group">
-        <div class="step-field-group-label">${escapeHtml(label)}</div>
+        <div class="step-field-group-label">${window.PAUtils.escapeHtml(label)}</div>
         <div class="step-field-group-content">
           ${fieldsHtml}
         </div>
@@ -802,7 +792,7 @@
 
     switch (step.type) {
       case "audio":
-        behaviorHtml = `<input class="step-field step-field-cmd" type="text" data-field="cmd" value="${escapeHtml(step.cmd || "")}" placeholder="$H, $N, $D, $A..." aria-label="Sound command">`;
+        behaviorHtml = `<input class="step-field step-field-cmd" type="text" data-field="cmd" value="${window.PAUtils.escapeHtml(step.cmd || "")}" placeholder="$H, $N, $D, $A..." aria-label="Sound command">`;
         break;
 
       case "dome": {
@@ -839,11 +829,11 @@
               ${["ROCKMARCH", "VADER", "ALARM", "LEIA", "HEART", "CANTINA", "SCREAM", "OVERLOAD", "HELLO", "RESET_VISUALS"]
                 .map(
                   (preset) =>
-                    `<option value="${preset}" ${presetName === preset ? "selected" : ""}>${escapeHtml(dvPresetLabel(preset))}</option>`
+                    `<option value="${preset}" ${presetName === preset ? "selected" : ""}>${window.PAUtils.escapeHtml(dvPresetLabel(preset))}</option>`
                 )
                 .join("")}
             </select>
-            <input type="hidden" class="step-field" data-field="cmd" value="${escapeHtml(step.cmd || "DV:ROCKMARCH")}">
+            <input type="hidden" class="step-field" data-field="cmd" value="${window.PAUtils.escapeHtml(step.cmd || "DV:ROCKMARCH")}">
             <button class="dome-mode-toggle" aria-label="Switch to panel mode">Panel</button>
           `;
         } else if (domeMode === "logic") {
@@ -898,7 +888,7 @@
           `;
 
           // Store hidden cmd field for serialization
-          behaviorHtml += `<input type="hidden" class="step-field" data-field="cmd" value="${escapeHtml(cmd)}">`;
+          behaviorHtml += `<input type="hidden" class="step-field" data-field="cmd" value="${window.PAUtils.escapeHtml(cmd)}">`;
         } else if (domeMode === "text") {
           // Logic Text Mode (DT:) structured step
           // Grammar: DT:<target>:<color>:<durationSec>:<speed>:<encodedText>
@@ -936,7 +926,7 @@
               <option value="ORANGE" ${color === "ORANGE" ? "selected" : ""}>Orange</option>
               <option value="PURPLE" ${color === "PURPLE" ? "selected" : ""}>Purple</option>
             </select>
-            <textarea class="step-field dt-text-input" data-field="text" placeholder="Enter text (max 32 chars, one line break allowed)" aria-label="Display text">${escapeHtml(decodedText)}</textarea>
+            <textarea class="step-field dt-text-input" data-field="text" placeholder="Enter text (max 32 chars, one line break allowed)" aria-label="Display text">${window.PAUtils.escapeHtml(decodedText)}</textarea>
           `;
 
           timingHtml = `
@@ -947,7 +937,7 @@
           `;
 
           // Store hidden cmd field for serialization
-          behaviorHtml += `<input type="hidden" class="step-field" data-field="cmd" value="${escapeHtml(cmd)}">`;
+          behaviorHtml += `<input type="hidden" class="step-field" data-field="cmd" value="${window.PAUtils.escapeHtml(cmd)}">`;
         } else if (domeMode === "holo") {
           // Holo Effect Mode (DH:) structured step
           // Grammar: DH:<target>:<effect>[:<color>[:<durationOrCount>]]
@@ -999,7 +989,7 @@
           `;
 
           // Store hidden cmd field for serialization
-          behaviorHtml += `<input type="hidden" class="step-field" data-field="cmd" value="${escapeHtml(cmd)}">`;
+          behaviorHtml += `<input type="hidden" class="step-field" data-field="cmd" value="${window.PAUtils.escapeHtml(cmd)}">`;
         } else if (domeMode === "panel") {
           // Render the live picker from DomeLayout if available, fall back to vendored.
           // Parse action and target from cmd, e.g., ":OP01" -> action="OP", target="01"
@@ -1047,7 +1037,7 @@
             // version), so "not reachable" would send the operator chasing the wrong
             // problem. Show the schema warning for that case.
             if (layoutSource === 'unsupported') {
-              sourceNotice = `<div class="dome-layout-notice dome-layout-error">${escapeHtml(domeLayout.warning || "Dome layout schema not supported")} — showing built-in MK4 layout</div>`;
+              sourceNotice = `<div class="dome-layout-notice dome-layout-error">${window.PAUtils.escapeHtml(domeLayout.warning || "Dome layout schema not supported")} — showing built-in MK4 layout</div>`;
             } else {
               sourceNotice = `<div class="dome-layout-notice dome-layout-vendored">Dome not reachable — showing built-in MK4 layout</div>`;
             }
@@ -1077,7 +1067,7 @@
               targetOptions += "<optgroup label='Ring panels'>";
               commandableRings.forEach((e) => {
                 const ringTarget = window.DomeCommandMap?.PANEL_COMMAND_TARGETS?.ring?.[e.id] || e.id;
-                targetOptions += `<option value="${ringTarget}" ${target === ringTarget ? "selected" : ""}>${escapeHtml(e.label)} → ${ringTarget}</option>`;
+                targetOptions += `<option value="${ringTarget}" ${target === ringTarget ? "selected" : ""}>${window.PAUtils.escapeHtml(e.label)} → ${ringTarget}</option>`;
               });
               targetOptions += "</optgroup>";
             }
@@ -1086,7 +1076,7 @@
               targetOptions += "<optgroup label='Pie / top panels'>";
               commandablePies.forEach((e) => {
                 const pieTarget = window.DomeCommandMap?.PANEL_COMMAND_TARGETS?.pie?.[e.id] || e.id;
-                targetOptions += `<option value="${pieTarget}" ${target === pieTarget ? "selected" : ""}>${escapeHtml(e.label)} → ${pieTarget}</option>`;
+                targetOptions += `<option value="${pieTarget}" ${target === pieTarget ? "selected" : ""}>${window.PAUtils.escapeHtml(e.label)} → ${pieTarget}</option>`;
               });
               targetOptions += "</optgroup>";
             }
@@ -1136,13 +1126,13 @@
             </select>
             <span class="dome-cmd-preview">:${action}${target}</span>
             <button class="dome-mode-toggle" aria-label="Switch to advanced mode">Advanced</button>
-            <input type="hidden" class="step-field" data-field="cmd" value="${escapeHtml(domeCmd)}">
+            <input type="hidden" class="step-field" data-field="cmd" value="${window.PAUtils.escapeHtml(domeCmd)}">
             <div class="dome-panel-advisory hidden"></div>
           `;
         } else {
           // Advanced mode: raw text input
           behaviorHtml = `
-            <input class="step-field step-field-cmd" type="text" data-field="cmd" value="${escapeHtml(domeCmd)}" placeholder="@0T6, *HP0, :SE07" aria-label="Dome command (advanced)">
+            <input class="step-field step-field-cmd" type="text" data-field="cmd" value="${window.PAUtils.escapeHtml(domeCmd)}" placeholder="@0T6, *HP0, :SE07" aria-label="Dome command (advanced)">
             <button class="dome-mode-toggle" aria-label="Switch to panel mode">Panel</button>
           `;
         }
@@ -1243,7 +1233,7 @@
 
     // Add the help line
     const helpLine = stepHelpLine(step);
-    const helpHtml = helpLine ? `<div class="step-help-line">${escapeHtml(helpLine)}</div>` : "";
+    const helpHtml = helpLine ? `<div class="step-help-line">${window.PAUtils.escapeHtml(helpLine)}</div>` : "";
 
     fieldsContainer.innerHTML = groupedHtml + helpHtml;
   };
@@ -1275,13 +1265,13 @@
 
     const tuneNotice = editorState.tuningFactory
       ? `<div class="card warning" style="margin-bottom: 1rem; font-size: 0.9rem;">
-           Tuning <strong>${escapeHtml(editorState.tuningFactory)}</strong> — save under the same name to create a Retrained version that overrides the Factory sequence at runtime. <em>Memory Wipe</em> restores the original.
+           Tuning <strong>${window.PAUtils.escapeHtml(editorState.tuningFactory)}</strong> — save under the same name to create a Retrained version that overrides the Factory sequence at runtime. <em>Memory Wipe</em> restores the original.
          </div>`
       : "";
 
     els.editorView.innerHTML = `
       <div class="card">
-        <h3>Edit — ${escapeHtml(seq.name || "New Sequence")}</h3>
+        <h3>Edit — ${window.PAUtils.escapeHtml(seq.name || "New Sequence")}</h3>
         ${tuneNotice}
 
         <div class="seq-editor-metadata">
@@ -1289,13 +1279,13 @@
           <div class="seq-metadata-section seq-metadata-info">
             <div class="seq-editor-field">
               <label for="seq-editor-name">Name</label>
-              <input id="seq-editor-name" type="text" value="${escapeHtml(seq.name || "DM:")}" placeholder="DM:MYSEQ" aria-label="Sequence name (DM:XXXX format)" maxlength="20">
+              <input id="seq-editor-name" type="text" value="${window.PAUtils.escapeHtml(seq.name || "DM:")}" placeholder="DM:MYSEQ" aria-label="Sequence name (DM:XXXX format)" maxlength="20">
               <div class="seq-editor-error-text" id="seq-editor-name-error" aria-live="polite"></div>
             </div>
 
             <div class="seq-editor-field">
               <label for="seq-editor-purpose">Purpose (optional)</label>
-              <input id="seq-editor-purpose" type="text" value="${escapeHtml(seq.meta?.purpose || "")}" placeholder="What this sequence does..." aria-label="Purpose of the sequence">
+              <input id="seq-editor-purpose" type="text" value="${window.PAUtils.escapeHtml(seq.meta?.purpose || "")}" placeholder="What this sequence does..." aria-label="Purpose of the sequence">
             </div>
 
             <div class="seq-editor-field">
@@ -1326,7 +1316,7 @@
 
               <div class="seq-editor-field">
                 <label for="seq-editor-notes">Notes (optional)</label>
-                <textarea id="seq-editor-notes" placeholder="Add any notes about this sequence..." aria-label="Optional notes about the sequence">${escapeHtml((seq.meta?.notes || ""))}</textarea>
+                <textarea id="seq-editor-notes" placeholder="Add any notes about this sequence..." aria-label="Optional notes about the sequence">${window.PAUtils.escapeHtml((seq.meta?.notes || ""))}</textarea>
               </div>
             </div>
           </div>
@@ -2352,7 +2342,7 @@
   const showEditorFeedback = (message, kind = "info") => {
     const feedbackEl = document.getElementById("seq-editor-feedback");
     if (!feedbackEl) return;
-    feedbackEl.innerHTML = `<div class="feedback feedback-${kind}">${escapeHtml(message)}</div>`;
+    feedbackEl.innerHTML = `<div class="feedback feedback-${kind}">${window.PAUtils.escapeHtml(message)}</div>`;
     feedbackEl.classList.remove("hidden");
   };
 
@@ -2388,10 +2378,10 @@
     if (!seqName) return;
     const testBtn = document.getElementById("seq-editor-test");
     if (testBtn) testBtn.disabled = true;
-    showEditorFeedback(`Sending ${escapeHtml(seqName)} to droid...`, "info");
+    showEditorFeedback(`Sending ${window.PAUtils.escapeHtml(seqName)} to droid...`, "info");
     try {
       await PAApi.postJson("/api/seq/test", { name: seqName });
-      showEditorFeedback(`${escapeHtml(seqName)} dispatched.`, "ok");
+      showEditorFeedback(`${window.PAUtils.escapeHtml(seqName)} dispatched.`, "ok");
     } catch (error) {
       showEditorFeedback("Test failed: " + PAApi.messageFor(error), "error");
     } finally {
@@ -2523,7 +2513,7 @@
         // Keep modal open so the operator reads which bindings are now inert
         let html = "<p><strong>Deleted. These RC bindings are now inert:</strong></p><ul>";
         dangling.forEach((b) => {
-          html += `<li>${escapeHtml(b.source)} CH${b.channel}</li>`;
+          html += `<li>${window.PAUtils.escapeHtml(b.source)} CH${b.channel}</li>`;
         });
         html += "</ul>";
         els.wipeDanglingInfo.innerHTML = html;

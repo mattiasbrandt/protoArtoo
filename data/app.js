@@ -102,13 +102,6 @@
     info: "pill-info",
   };
 
-  const escapeHtml = (value) => String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/\"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-
   const showFeedback = (el, message, level = "") => {
     if (!el) return;
     if (!el.dataset.baseClass) {
@@ -214,16 +207,16 @@
         detail = entry.detail || "✅ Enabled";
       }
       const stateText = String(state).replace(/_/g, " ");
-      const safeState = escapeHtml(stateText);
-      const safeDetail = escapeHtml(detail);
+      const safeState = window.PAUtils.escapeHtml(stateText);
+      const safeDetail = window.PAUtils.escapeHtml(detail);
       let transportLine = "";
       if (key === "s3DomeCtrl" && payload.dome_link?.state === "connected") {
         if (payload.dome_link?.uart_owned_by_dome === true) {
-          transportLine = `<div class="desc mt-6">${escapeHtml("UART2 owned by DomeLink")}</div>`;
+          transportLine = `<div class="desc mt-6">${window.PAUtils.escapeHtml("UART2 owned by DomeLink")}</div>`;
         }
       }
       if (key === "s2Sound" && entry?.rx_status === "blocked_by_dome_uart") {
-        transportLine += `<div class="desc mt-6">${escapeHtml("CHIRP RX unavailable while DomeLink owns UART2")}</div>`;
+        transportLine += `<div class="desc mt-6">${window.PAUtils.escapeHtml("CHIRP RX unavailable while DomeLink owns UART2")}</div>`;
       }
       return `
         <div class="status-item">
@@ -450,8 +443,8 @@
 
   const logEntryHtml = (line) => {
     const classes = `log-line${levelClassForMessage(line.message)}${line.extraClass || ""}`;
-    const ts = line.timestamp && line.timestamp !== "--:--:--" ? `[${escapeHtml(line.timestamp)}] ` : "";
-    return `<span class="${classes}">${ts}${escapeHtml(line.message)}</span>`;
+    const ts = line.timestamp && line.timestamp !== "--:--:--" ? `[${window.PAUtils.escapeHtml(line.timestamp)}] ` : "";
+    return `<span class="${classes}">${ts}${window.PAUtils.escapeHtml(line.message)}</span>`;
   };
 
   const hasActiveLogSelection = () => {
@@ -471,7 +464,7 @@
   const renderLogConsole = (stickToBottom = false) => {
     if (!logConsole) return;
     if (logLines.length === 0) {
-      logConsole.innerHTML = `<span class="log-line">${escapeHtml(LOG_EMPTY_TEXT)}</span>`;
+      logConsole.innerHTML = `<span class="log-line">${window.PAUtils.escapeHtml(LOG_EMPTY_TEXT)}</span>`;
     } else {
       logConsole.innerHTML = logLines.map((line) => logEntryHtml(line)).join("\n");
     }

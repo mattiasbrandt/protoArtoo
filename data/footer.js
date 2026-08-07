@@ -13,14 +13,6 @@
   let pollTimer = null;
   let unsubscribe = null;
 
-  const escapeHtml = (value) => String(value)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-
-
   const renderFooter = (status) => {
     if (!status) {
       footer.textContent = "Firmware info unavailable";
@@ -32,8 +24,8 @@
     const resolvedWeb = apiFsVersion !== "unknown" ? apiFsVersion : fsVersion;
 
     footer.innerHTML =
-      `FW: <span class="mono">${escapeHtml(fw)}</span><br>` +
-      `FS: <span class="mono">${escapeHtml(resolvedWeb)}</span>`;
+      `FW: <span class="mono">${window.PAUtils.escapeHtml(fw)}</span><br>` +
+      `FS: <span class="mono">${window.PAUtils.escapeHtml(resolvedWeb)}</span>`;
   };
 
   const loadFsVersion = async () => {

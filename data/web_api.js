@@ -208,12 +208,34 @@
     el.className = level ? `feedback ${level}` : "feedback";
   };
 
-  const debounce = (fn, ms) => (...args) => {
-    const timeoutId = window.PAApi._debounceTimeouts?.get(fn);
-    if (timeoutId !== undefined) window.clearTimeout(timeoutId);
-    const newId = window.setTimeout(() => fn(...args), ms);
-    if (!window.PAApi._debounceTimeouts) window.PAApi._debounceTimeouts = new Map();
-    window.PAApi._debounceTimeouts.set(fn, newId);
+  // Escape HTML special characters for text context (null/undefined → empty string).
+  const escapeHtml = (value) => {
+    return String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  };
+
+  // Escape HTML special characters for attribute context (null/undefined → empty string).
+  const escapeAttr = (value) => {
+    return String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  };
+
+  // Debounce with per-call-site state management.
+  const debounce = (fn, ms) => {
+    let timeoutId = null;
+    return (...args) => {
+      if (timeoutId !== null) window.clearTimeout(timeoutId);
+      timeoutId = window.setTimeout(() => {
+        fn(...args);
+        timeoutId = null;
+      }, ms);
+    };
   };
 
   window.PAApi = {
@@ -228,6 +250,8 @@
 
   window.PAUtils = {
     showFeedback,
+    escapeHtml,
+    escapeAttr,
     debounce,
   };
 })();
