@@ -17,9 +17,6 @@
 // ============================ PART 1: state model ============================
 // =============================================================================
 (() => {
-  // Browser Request Priority. Estop never enters the queue at all (see
-  // SUBMIT_ESTOP); the rest are ordered here, FIFO within a priority.
-  const PRIORITY = { ESTOP: 0, COMMAND: 1, STARTUP: 2, BACKGROUND: 3 };
 
   // Recovery Retry Interval: the server's fixed Retry-After for a busy
   // refusal (ADR 0016). Used only when the response carried no usable header.
@@ -94,7 +91,6 @@
   const baseBootstrap = (resources, sections, deadlines) => ({
     now: 0,
     visible: true,
-    nextId: 1,
 
     // Per-step Operation Deadline overrides, keyed by step name. Anything
     // absent uses the Ordinary category.
@@ -116,10 +112,7 @@
     // AND sections are stable.
     liveUpdatesStarted: false,
 
-    queue: [],
     active: null,
-    estopLog: [],
-    commandLog: [],
   });
 
   // ---------------------------------------------------------------------------
@@ -140,19 +133,11 @@
 
   const findStep = (state, kind, name) => state[listKey(kind)].find((step) => step.name === name);
 
-  const takeId = (state) => [state.nextId, { ...state, nextId: state.nextId + 1 }];
-
   // ---------------------------------------------------------------------------
   // Scheduling
   // ---------------------------------------------------------------------------
   const dispatchableWork = (state) => {
-    // Queued work first (priority, then FIFO), then the resource cursor while
-    // resources are still loading, then the next due section.
-    const ready = state.queue
-      .filter((item) => item.nextAt === null || item.nextAt <= state.now)
-      .sort((a, b) => a.priority - b.priority || a.id - b.id);
-    if (ready.length > 0) return ready[0];
-
+    // Resource cursor while resources are still loading, then the next due section.
     if (!state.resourcesReady) {
       const step = state.resources[state.resourceCursor];
       const due =
@@ -161,43 +146,30 @@
           (step.status === "failed-retrying" && step.nextAt <= state.now));
       // If the cursor step is loading, or failed and not yet due, nothing else
       // may start -- that is what makes resource loading strictly ordered.
-      return due ? { id: null, priority: PRIORITY.STARTUP, kind: "resource", name: step.name } : null;
+      return due ? { id: null, kind: "resource", name: step.name } : null;
     }
 
     const dueSection = state.sections.find(
       (s) => s.status === "pending" || (s.status === "failed-retrying" && s.nextAt <= state.now)
     );
     return dueSection
-      ? { id: null, priority: PRIORITY.BACKGROUND, kind: "section", name: dueSection.name }
+      ? { id: null, kind: "section", name: dueSection.name }
       : null;
   };
 
   const startWork = (state, work) => {
-    let next = state;
-    let id = work.id;
-    if (id === null) {
-      [id, next] = takeId(next);
-    }
-
-    // A dequeued user command has no step-list entry; its bookkeeping lives in
-    // commandLog, written when it was submitted.
-    if (work.kind === "resource" || work.kind === "section") {
-      const step = findStep(next, work.kind, work.name);
-      next = replaceStep(next, work.kind, work.name, {
-        status: "loading",
-        attempt: step.attempt + 1,
-      });
-    }
+    const step = findStep(state, work.kind, work.name);
+    let next = replaceStep(state, work.kind, work.name, {
+      status: "loading",
+      attempt: step.attempt + 1,
+    });
 
     const deadlineMs = next.deadlines[work.name] ?? OPERATION_DEADLINE_MS;
     return {
       ...next,
-      queue: next.queue.filter((item) => item.id !== id),
       active: {
-        id,
         kind: work.kind,
         name: work.name,
-        priority: work.priority,
         startedAt: next.now,
         deadlineMs,
         // Flagged so the view can explain an expected-longer wait rather than
@@ -281,11 +253,7 @@
         // result is a no-response outcome. This is the same boundary the wire
         // contract draws between busy and no-response.
         if (state.active && state.now >= state.active.deadlineAt) {
-          if (state.active.kind === "command") {
-            state = finishCommand(state, { kind: "no-response", reason: "timeout" });
-          } else {
-            state = settleActive(state, { kind: "no-response", reason: "timeout" });
-          }
+          state = settleActive(state, { kind: "no-response", reason: "timeout" });
           return state;
         }
 
@@ -297,7 +265,6 @@
 
       case "RESULT": {
         if (!prev.active) return prev; // nothing in flight to resolve
-        if (prev.active.kind === "command") return finishCommand(prev, action.outcome);
         return settleActive(prev, action.outcome);
       }
 
@@ -348,51 +315,7 @@
       }
 
       case "VISIBILITY": {
-        if (!action.visible) {
-          // Queued-but-not-started work is discarded rather than replayed on
-          // return; it is recomputed from current step state when shown again.
-          return { ...prev, visible: false, queue: [] };
-        }
-        return pump({ ...prev, visible: true });
-      }
-
-      case "SUBMIT_ESTOP": {
-        // Latching Estop bypasses the queue and the single active slot
-        // entirely. It is never queued and never auto-retried.
-        const [id, state] = takeId(prev);
-        return {
-          ...state,
-          estopLog: [...state.estopLog, { id, name: action.name, at: state.now }],
-        };
-      }
-
-      case "SUBMIT_COMMAND": {
-        // User commands go ahead of automatic work but never preempt whatever
-        // is already active.
-        const [id, state] = takeId(prev);
-        const entry = { id, name: action.name, status: "pending", at: state.now };
-        const withLog = { ...state, commandLog: [...state.commandLog, entry] };
-
-        if (!withLog.active) {
-          return startWork(withLog, {
-            id,
-            priority: PRIORITY.COMMAND,
-            kind: "command",
-            name: action.name,
-          });
-        }
-        return {
-          ...withLog,
-          queue: [
-            ...withLog.queue,
-            { id, priority: PRIORITY.COMMAND, kind: "command", name: action.name, nextAt: null },
-          ],
-        };
-      }
-
-      case "COMMAND_RESULT": {
-        if (!prev.active || prev.active.kind !== "command") return prev;
-        return finishCommand(prev, action.outcome);
+        return pump({ ...prev, visible: action.visible });
       }
 
       default:
@@ -400,21 +323,7 @@
     }
   };
 
-  // A failed user command is just failed -- never requeued, never auto-retried.
-  const finishCommand = (state, outcome) => {
-    const active = state.active;
-    const next = {
-      ...state,
-      active: null,
-      commandLog: state.commandLog.map((entry) =>
-        entry.id === active.id ? { ...entry, status: outcome.kind } : entry
-      ),
-    };
-    return pump(next);
-  };
-
   window.PageBootstrap = {
-    PRIORITY,
     DEFAULT_BUSY_RETRY_MS,
     OPERATION_DEADLINE_MS,
     CATALOG_DEADLINE_MS,
@@ -752,7 +661,6 @@
   // a failed stylesheet costs styling only -- scripts and recovery still run.
   let state = Core.createBootstrap({ resources: scripts, sections: [] });
   const sectionLoaders = new Map();
-  const commandRunners = new Map();
   let assetsAnnounced = false;
 
   // ---------------------------------------------------------------------------
@@ -790,43 +698,30 @@
   // The reducer decides what should run; this only notices when its `active`
   // slot changes and starts the corresponding real work exactly once.
   // ---------------------------------------------------------------------------
-  let startedActiveId = null;
+  let startedActiveWork = null;
 
-  const settle = (id, error, retryAfterMs) => {
+  const settle = (error, retryAfterMs) => {
     // A result arriving after its deadline already expired belongs to a
     // request the reducer has moved on from; dropping it keeps the reducer's
     // attempt accounting honest.
-    if (!state.active || state.active.id !== id) return;
+    if (!state.active) return;
     const outcome = error
       ? Core.classifyOutcome(error, retryAfterMs ?? error?.retryAfterMs ?? null)
       : { kind: "success" };
-    apply(state.active.kind === "command" ? { type: "COMMAND_RESULT", outcome } : { type: "RESULT", outcome });
+    apply({ type: "RESULT", outcome });
   };
 
   const syncActive = () => {
     const active = state.active;
-    if (!active || active.id === startedActiveId) return;
-    startedActiveId = active.id;
-    const id = active.id;
+    if (!active) return;
+    const workId = `${active.kind}:${active.name}`;
+    if (workId === startedActiveWork) return;
+    startedActiveWork = workId;
 
     if (active.kind === "resource") {
-      loadScript(active.name, (error) => settle(id, error));
+      loadScript(active.name, (error) => settle(error));
     } else if (active.kind === "section") {
-      runSection(active.name, (error) => settle(id, error));
-    } else if (active.kind === "command") {
-      // A command runs when the reducer gives it the slot, not when the page
-      // submitted it -- a queued command that ran immediately would defeat the
-      // priority ordering it was queued to respect.
-      const run = commandRunners.get(id);
-      commandRunners.delete(id);
-      if (!run) {
-        settle(id, { kind: "unknown" });
-        return;
-      }
-      Promise.resolve()
-        .then(() => run())
-        .then(() => settle(id, null))
-        .catch((error) => settle(id, error));
+      runSection(active.name, (error) => settle(error));
     }
   };
 
@@ -871,25 +766,53 @@
     );
   };
 
+  // Detect if there is pending work: active request or a step waiting to retry.
+  const hasPendingWork = () => {
+    if (state.active) return true;
+    const allSteps = [...state.resources, ...state.sections];
+    return allSteps.some((step) => step.status === "failed-retrying");
+  };
+
+  let clockTimer = null;
+
+  const stopClock = () => {
+    if (clockTimer !== null) {
+      window.clearTimeout(clockTimer);
+      clockTimer = null;
+    }
+  };
+
+  const startClock = () => {
+    if (clockTimer !== null || !hasPendingWork()) return;
+    clockTimer = window.setTimeout(tick, TICK_MS);
+  };
+
+  let lastTickAt = Date.now();
+  const tick = () => {
+    clockTimer = null;
+    const now = Date.now();
+    const dt = now - lastTickAt;
+    lastTickAt = now;
+    apply({ type: "TICK", dt });
+    // After dispatch, restart the clock only if there is more work.
+    if (hasPendingWork()) {
+      startClock();
+    }
+  };
+
   const apply = (action) => {
     state = Core.dispatch(state, action);
     syncActive();
     announceAssetsOnce();
     render();
     publishSectionChange();
+    // Restart the clock if any action created new work to do.
+    startClock();
   };
 
   // ---------------------------------------------------------------------------
   // Clock and visibility
   // ---------------------------------------------------------------------------
-  let lastTickAt = Date.now();
-  const tick = () => {
-    const now = Date.now();
-    const dt = now - lastTickAt;
-    lastTickAt = now;
-    apply({ type: "TICK", dt });
-  };
-
   document.addEventListener("visibilitychange", () => {
     // Resync the clock on return so a long hidden stretch does not land as one
     // enormous dt that instantly expires every pending deadline.
@@ -925,25 +848,6 @@
       window.PARecoveryView?.setLabels(entries);
     },
 
-    // Latching Estop bypasses the queue and the single active slot entirely --
-    // it must never wait behind a resource load, a retry, or a background
-    // section. It is also never auto-retried: a safety action is sent once,
-    // deliberately, and its outcome is the caller's to handle.
-    submitEstop(name, run) {
-      apply({ type: "SUBMIT_ESTOP", name });
-      return Promise.resolve().then(() => run());
-    },
-
-    // Ordinary user commands take the slot ahead of automatic page work but
-    // never preempt work already in flight, and are never auto-retried.
-    submitCommand(name, run) {
-      // The reducer assigns the next id, so claiming it here lets the runner
-      // be registered before the dispatch that may start it synchronously.
-      const id = state.nextId;
-      commandRunners.set(id, run);
-      apply({ type: "SUBMIT_COMMAND", name });
-    },
-
     retryNow(name) {
       apply({ type: "RETRY_NOW", name });
     },
@@ -957,7 +861,6 @@
 
   const start = () => {
     lastTickAt = Date.now();
-    window.setInterval(tick, TICK_MS);
     apply({ type: "TICK", dt: 0 });
   };
 

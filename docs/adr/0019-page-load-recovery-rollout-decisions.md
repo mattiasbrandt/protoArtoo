@@ -51,11 +51,11 @@ sampling) for each of the nine remaining page slices individually would mean nin
 separate live-hardware sessions -- repeated soak-adjacent hardware time this project
 has explicitly moved away from this session. Decision: **every** page slice requires
 only the deterministic browser fault-injection checks (per #55's fixture seam --
-busy/no-response/resource-fail/section-fail/hide-show/retry/deadline-cancel/
-command-priority), no live hardware needed. The full live-hardware envelope run is
-reserved for three checkpoints: the WiFi tracer (already required), the *first*
-non-tracer page slice (proves generalization didn't silently break memory behavior),
-and the *final* page (`index.html`) as the epic's true close-out.
+busy/no-response/resource-fail/section-fail/hide-show/retry/deadline-cancel), no live
+hardware needed. The full live-hardware envelope run is reserved for three checkpoints:
+the WiFi tracer (already required), the *first* non-tracer page slice (proves
+generalization didn't silently break memory behavior), and the *final* page
+(`index.html`) as the epic's true close-out.
 
 ## Stop/rollback rules
 

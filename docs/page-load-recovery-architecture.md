@@ -104,11 +104,10 @@ merged). The shape to implement for real:
     every section to be either done or visibly waiting to retry, not all succeeded.
   - **Page Startup Order**: `/api/events` (Live Page Updates) starts only once
     `resourcesReady && sectionsStable`.
-  - **Browser Request Priority**: a single active-request slot (see ADR 0019),
-    drawn from a priority order -- Estop bypasses the slot/queue entirely; user
-    commands next; then startup/first-section attempts; then background retries.
-    Estop is never queued and never auto-retried; user commands are never
-    auto-retried on failure either.
+  - **Single Active Request**: a single FIFO active-request slot shared across all
+    request types (see ADR 0019). Estop currently shares this slot with other requests
+    rather than bypassing it; this diverges from the server-side admission bypass in
+    `web_api.js` and is tracked by issue #108 for future alignment.
   - **Hidden Tab Pause**: hiding cancels queued-but-not-started work and stops new
     dispatch; the one active in-flight request is left to finish within its
     deadline; showing again resumes from the actual next unfinished step.
