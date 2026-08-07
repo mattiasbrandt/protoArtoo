@@ -168,9 +168,9 @@ async function assertNoHorizontalOverflow(page) {
     await page.screenshot({ path: "/tmp/wifi-client-mobile.png", fullPage: true });
 
     await page.goto(`${BASE_URL}/setup.html`, { waitUntil: "networkidle" });
-    await page.waitForSelector("#setup-wifi-link", { timeout: 10000 });
-    assert.match(await text(page, "#setup-wifi-card"), /WiFi page/);
-    assert.equal(await page.locator("#setup-wifi-card [name='wifiMode']").count(), 0);
+    await page.waitForSelector("#feature-form", { timeout: 10000 });
+    // WiFi configuration lives only on the WiFi page; Setup carries no WiFi controls.
+    assert.equal(await page.locator("[name='wifiMode']").count(), 0);
     await page.screenshot({ path: "/tmp/setup-wifi-deferral.png", fullPage: true });
 
     assert.deepEqual(pageErrors, []);

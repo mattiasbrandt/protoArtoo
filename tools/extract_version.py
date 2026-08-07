@@ -12,7 +12,9 @@ Version string format:
   No tags at all: v0.0.0-dev
 
 Strategy (in order):
-  1. git describe --tags --always + explicit dirty check  -> preferred
+  1. git describe --tags --always --match 'v[0-9]*' + explicit dirty check
+     -> preferred. The --match filter keeps non-release tags (safepoint
+     markers and similar) from being mistaken for a version.
      (equivalent to --dirty, but blind to the two stamp files this script
      writes — otherwise every build after the first reports -dirty, including
      a pristine CI release checkout)
@@ -26,6 +28,10 @@ import json
 import os
 import re
 import subprocess
+
+# Tags that name a release. Everything else in the tag namespace (safepoint
+# markers, scratch tags) is invisible to version stamping.
+RELEASE_TAG_GLOB = "v[0-9]*"
 
 try:
     Import("env")  # noqa: F821  (PlatformIO injects this in a build context)
@@ -71,7 +77,14 @@ def _tree_is_dirty():
 
 def _version_from_git():
     """Return version string from `git describe`, normalised to v-prefix."""
-    raw = _run(["git", "describe", "--tags", "--always", "--long"])
+    raw = _run([
+        "git", "describe", "--tags", "--always", "--long",
+        # Only release tags describe a version. The repo also carries
+        # non-release marker tags (e.g. safepoint/*), and without this filter
+        # describe picks whichever tag is nearest -- which stamped builds with
+        # a safepoint branch name instead of the release line.
+        "--match", RELEASE_TAG_GLOB,
+    ])
     if not raw:
         return None
     # Append -dirty in describe's own format so the normalisation below sees

@@ -1850,34 +1850,8 @@ body[data-page="servo"] .input-narrow {
 }
 
 .status-subline {
-  margin-top: 8px;
   color: var(--text-dim);
   font-size: 0.82rem;
-  padding-left: 14px;
-}
-
-.dot {
-  display: inline-block;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  margin-right: 6px;
-  vertical-align: middle;
-}
-
-.dot.green {
-  background: var(--success);
-  box-shadow: 0 0 5px var(--success);
-}
-
-.dot.yellow {
-  background: var(--warning);
-  box-shadow: 0 0 5px var(--warning);
-}
-
-.dot.red {
-  background: var(--danger);
-  box-shadow: 0 0 5px var(--danger);
 }
 
 .mono {

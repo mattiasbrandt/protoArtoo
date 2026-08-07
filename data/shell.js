@@ -3,71 +3,22 @@
 //
 // Shared topbar/nav/status shell renderer for all web pages.
 // Page selects shell configuration via <body data-page="...">.
+// The status bar carries firmware/filesystem versions only; footer.js fills it.
 // =============================================================================
 (() => {
   const page = document.body?.dataset?.page || "home";
 
   const PAGE_CONFIG = {
-    home: {
-      title: "{name} - Dashboard",
-      statusDot: "yellow",
-      statusText: "",
-      connectedText: "",
-    },
-    drive: {
-      title: "Drive - {name}",
-      statusDot: "yellow",
-      statusText: "Connecting…",
-      connectedText: "Drive page connected",
-    },
-    dome: {
-      title: "Dome - {name}",
-      statusDot: "yellow",
-      statusText: "Connecting…",
-      connectedText: "Dome page connected",
-    },
-    sound: {
-      title: "{name} - Sound",
-      statusDot: "yellow",
-      statusText: "Connecting…",
-      connectedText: "Sound page connected",
-    },
-    servo: {
-      title: "Servos - {name}",
-      statusDot: "yellow",
-      statusText: "Connecting…",
-      connectedText: "Servos page connected",
-    },
-    rc: {
-      title: "RC Control - {name}",
-      statusDot: "yellow",
-      statusText: "Connecting…",
-      connectedText: "RC page connected",
-    },
-    setup: {
-      title: "Setup - {name}",
-      statusDot: "yellow",
-      statusText: "Connecting…",
-      connectedText: "Setup page connected",
-    },
-    wifi: {
-      title: "WiFi - {name}",
-      statusDot: "yellow",
-      statusText: "Connecting…",
-      connectedText: "WiFi page connected",
-    },
-    firmware: {
-      title: "Firmware - {name}",
-      statusDot: "yellow",
-      statusText: "Connecting…",
-      connectedText: "Firmware page connected",
-    },
-    seq: {
-      title: "Sequences - {name}",
-      statusDot: "yellow",
-      statusText: "Connecting…",
-      connectedText: "Sequences page connected",
-    },
+    home: { title: "{name} - Dashboard" },
+    drive: { title: "Drive - {name}" },
+    dome: { title: "Dome - {name}" },
+    sound: { title: "{name} - Sound" },
+    servo: { title: "Servos - {name}" },
+    rc: { title: "RC Control - {name}" },
+    setup: { title: "Setup - {name}" },
+    wifi: { title: "WiFi - {name}" },
+    firmware: { title: "Firmware - {name}" },
+    seq: { title: "Sequences - {name}" },
   };
 
   const NAV = [
@@ -130,25 +81,9 @@
   if (shellStatus) {
     shellStatus.innerHTML = `
       <div class="status-bar" id="conn-status">
-        <div><span class="dot ${cfg.statusDot}"></span>${cfg.statusText}</div>
         <div class="status-subline" id="fw-meta">Loading firmware info...</div>
-        ${cfg.extraStatus || ""}
       </div>
     `;
-  }
-
-  if (window.PAStatusStream?.isSupported()) {
-    const connStatus = document.getElementById('conn-status');
-    const textEl = connStatus?.querySelector('div');
-
-    window.PAStatusStream.subscribe((eventType) => {
-      if (!connStatus) return;
-      if (eventType === 'status') {
-        if (textEl) { textEl.innerHTML = `<span class="dot green"></span>${cfg.connectedText || cfg.statusText}`; }
-      } else if (eventType === 'stream_error') {
-        if (textEl) { textEl.innerHTML = `<span class="dot warn"></span>Connection lost — retrying…`; }
-      }
-    });
   }
 
   const loadIdentity = async () => {

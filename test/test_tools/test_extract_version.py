@@ -73,6 +73,17 @@ class ExtractVersionTest(unittest.TestCase):
         # Dirty never collapses to a clean-looking bare tag.
         self.assertIn("-0-g", version)
 
+    def test_non_release_tag_is_ignored(self):
+        # A marker tag closer to HEAD than the release tag (the repo carries
+        # safepoint/* tags) must not become the version.
+        (self.repo / "src.cpp").write_text("// later work\n")
+        _git(self.repo, "add", "-A")
+        _git(self.repo, "commit", "-q", "-m", "chore(test): later work")
+        _git(self.repo, "tag", "safepoint/scratch-2026-01-01")
+        version = _run_script(self.repo)
+        self.assertNotIn("safepoint", version)
+        self.assertTrue(version.startswith("v9.9.9-1-g"), version)
+
     def test_stamp_rewrite_alone_stays_clean(self):
         # First run rewrites the tracked stamps; a second run must not read
         # its own output back as a dirty tree.

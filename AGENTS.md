@@ -408,9 +408,11 @@ either file to make this structurally impossible for an agent to violate.
 Two independent regeneration paths, both authoritative for their scope:
 
 - **Local dev builds**: `tools/extract_version.py` runs on every `pio run` and
-  writes both files from `git describe --tags --always --long` for the current
-  local `HEAD`, plus an explicit dirty check that ignores the two stamp files
-  themselves (so a build never marks itself dirty). Non-`main` branches get a `+<branch>` semver
+  writes both files from `git describe --tags --always --long --match 'v[0-9]*'`
+  for the current local `HEAD`, plus an explicit dirty check that ignores the two
+  stamp files themselves (so a build never marks itself dirty). The `--match`
+  filter keeps non-release tags (`safepoint/*` and similar markers) out of the
+  version string. Non-`main` branches get a `+<branch>` semver
   build-metadata suffix (slashes replaced with dashes); `main` builds stay bare.
   You do not need to stage or commit these files as part of feature-branch work —
   just build normally.
