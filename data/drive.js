@@ -365,24 +365,13 @@
   };
 
   const loadConfig = async () => {
-    if (!window.PAApi) {
-      if (window.PABootstrap) {
-        throw new Error("API helper unavailable");
-      }
-      return;
-    }
+    if (!window.PAApi) return;
     window.PAUtils.showFeedback(configFeedback, "Loading settings...");
     try {
       const result = await window.PAApi.get("/api/config", { timeoutMs: 3000 });
       renderConfig(result.data);
     } catch (error) {
-      // Let the bootstrap's recovery panel own the error message.
-      // Without bootstrap, show inline feedback and still throw so the
-      // no-bootstrap fallback path can handle it if needed.
-      if (!window.PABootstrap) {
-        window.PAUtils.showFeedback(configFeedback, `Failed to load settings: ${window.PAApi.messageFor(error)}`, "error");
-      }
-      throw error;
+      window.PAUtils.showFeedback(configFeedback, `Failed to load settings: ${window.PAApi.messageFor(error)}`, "error");
     }
   };
 
@@ -510,10 +499,7 @@
 
   const startPageLoad = () => {
     if (!window.PABootstrap) {
-      loadConfig().catch((error) => {
-        // Error already displayed inline by loadConfig; this catch prevents
-        // an unhandled rejection in the non-bootstrap fallback path.
-      });
+      loadConfig().catch(() => {});
       return;
     }
     window.PABootstrap.setResourceLabels?.({

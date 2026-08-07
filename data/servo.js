@@ -270,12 +270,7 @@
   };
 
   const loadCalib = async () => {
-    if (!window.PAApi) {
-      if (window.PABootstrap) {
-        throw new Error("API helper unavailable");
-      }
-      return;
-    }
+    if (!window.PAApi) return;
     setCalibFeedback("Loading calibration...");
     try {
       const result = await window.PAApi.get("/api/config", { timeoutMs: 5000 });
@@ -316,13 +311,7 @@
       setCalibFeedback(`Calibration loaded at ${new Date().toLocaleTimeString()}`, "success");
     } catch (error) {
       console.error("[servo] loadCalib failed:", error);
-      // Let the bootstrap's recovery panel own the error message.
-      // Without bootstrap, show inline feedback and still throw so the
-      // no-bootstrap fallback path can handle it if needed.
-      if (!window.PABootstrap) {
-        setCalibFeedback(`Failed to load calibration: ${window.PAApi.messageFor(error)}`, "error");
-      }
-      throw error;
+      setCalibFeedback(`Failed to load calibration: ${window.PAApi.messageFor(error)}`, "error");
     }
   };
 
@@ -412,10 +401,7 @@
 
   const startPageLoad = () => {
     if (!window.PABootstrap) {
-      loadCalib().catch((error) => {
-        // Error already displayed inline by loadCalib; this catch prevents
-        // an unhandled rejection in the non-bootstrap fallback path.
-      });
+      loadCalib().catch(() => {});
       return;
     }
     window.PABootstrap.setResourceLabels?.({

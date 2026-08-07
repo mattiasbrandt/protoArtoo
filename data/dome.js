@@ -191,12 +191,7 @@
 
 
   const loadEscConfig = async () => {
-    if (!window.PAApi) {
-      if (window.PABootstrap) {
-        throw new Error("API helper unavailable");
-      }
-      return;
-    }
+    if (!window.PAApi) return;
     showFeedback(escFeedback, "Loading motor settings...");
 
     try {
@@ -206,13 +201,7 @@
       showFeedback(escFeedback, `Motor settings loaded at ${ts}`, "success");
       showFeedback(rndFeedback, `Loaded at ${ts}`, "success");
     } catch (error) {
-      // Let the bootstrap's recovery panel own the error message.
-      // Without bootstrap, show inline feedback and still throw so the
-      // no-bootstrap fallback path can handle it if needed.
-      if (!window.PABootstrap) {
-        showFeedback(escFeedback, `Failed to load motor settings: ${window.PAApi.messageFor(error)}`, "error");
-      }
-      throw error;
+      showFeedback(escFeedback, `Failed to load motor settings: ${window.PAApi.messageFor(error)}`, "error");
     }
   };
 
@@ -407,10 +396,7 @@
 
   const startPageLoad = () => {
     if (!window.PABootstrap) {
-      loadEscConfig().catch((error) => {
-        // Error already displayed inline by loadEscConfig; this catch prevents
-        // an unhandled rejection in the non-bootstrap fallback path.
-      });
+      loadEscConfig().catch(() => {});
       return;
     }
     window.PABootstrap.setResourceLabels?.({

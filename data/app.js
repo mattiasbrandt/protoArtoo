@@ -522,20 +522,14 @@
   };
 
   const loadRecentLogs = async () => {
-    if (!window.PAApi || !logConsole) return;
-    try {
-      const result = await window.PAApi.get("/api/logs", { cache: "no-store", timeoutMs: 3000 });
-      if (logLines.length > 0) return;
-      const historyLines = String(result.data ?? "")
-        .split(/\r?\n/)
-        .map((line) => normalizeLogMessage(line.trimEnd()))
-        .filter((line) => line.length > 0);
-      setLogLines(historyLines);
-    } catch (error) {
-      if (logLines.length === 0) {
-        setLogLines([]);
-      }
-    }
+    if (!window.PAApi || !logConsole) throw new Error("API or console unavailable");
+    if (logLines.length > 0) return;
+    const result = await window.PAApi.get("/api/logs", { cache: "no-store", timeoutMs: 3000 });
+    const historyLines = String(result.data ?? "")
+      .split(/\r?\n/)
+      .map((line) => normalizeLogMessage(line.trimEnd()))
+      .filter((line) => line.length > 0);
+    setLogLines(historyLines);
   };
 
   const LOG_LEVELS = {
@@ -562,17 +556,14 @@
   };
 
   const loadLogLevel = async () => {
-    if (!window.PAApi || !logLevelPill) return;
-    try {
-      const result = await window.PAApi.get("/api/config", { cache: "no-store", timeoutMs: 3000 });
-      const level = Number(result.data?.system?.logLevel);
-      if (LOG_LEVELS[level]) {
-        currentLogLevel = level;
-        renderLogLevelPill(level);
-      }
-    } catch (error) {
-      // leave placeholder; user can still click to attempt a cycle once level is known
+    if (!window.PAApi || !logLevelPill) throw new Error("API or pill unavailable");
+    const result = await window.PAApi.get("/api/config", { cache: "no-store", timeoutMs: 3000 });
+    const level = Number(result.data?.system?.logLevel);
+    if (!LOG_LEVELS[level]) {
+      throw new Error(`Unknown log level: ${level}`);
     }
+    currentLogLevel = level;
+    renderLogLevelPill(level);
   };
 
   const cycleLogLevel = async () => {
@@ -621,17 +612,15 @@
   });
 
   const loadCommandTokens = async () => {
-    if (!window.PAApi) return;
-    try {
-      const result = await window.PAApi.get("/api/actions", { cache: "no-store", timeoutMs: 5000 });
-      if (!Array.isArray(result.data)) return;
-      commandTokens = result.data
-        .filter((entry) => entry && entry.testable === true && typeof entry.token === "string")
-        .map((entry) => entry.token)
-        .sort((a, b) => a.localeCompare(b));
-    } catch (_error) {
-      commandTokens = [];
+    if (!window.PAApi) throw new Error("API unavailable");
+    const result = await window.PAApi.get("/api/actions", { cache: "no-store", timeoutMs: 5000 });
+    if (!Array.isArray(result.data)) {
+      throw new Error("Action registry response is not an array");
     }
+    commandTokens = result.data
+      .filter((entry) => entry && entry.testable === true && typeof entry.token === "string")
+      .map((entry) => entry.token)
+      .sort((a, b) => a.localeCompare(b));
   };
 
   const appendCommandLine = (text, extraClass = " log-line-command") => {
