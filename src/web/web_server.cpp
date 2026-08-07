@@ -186,10 +186,10 @@ static size_t largestFreeBlock8Bit() {
 #endif
 
 // Sized for the longest stamp the version scheme composes:
-// fs-v<branch>-YYYY-MM-DD-<count>-g<sha>[-dirty][+<branch-suffix>]. The longest
-// live example (fs-vsafepoint/asyncwebserver-2026-07-11-268-g55f8a9b+phase-v1.0.0)
-// is 65 chars; 128 leaves room for longer branch names on both ends without the
-// copy in loadFsVersion() ever truncating the identity acceptance runs verify.
+// fs-v<release-tag>-<count>-g<sha>[-dirty][+<branch-suffix>], e.g.
+// fs-v1.0.0-alpha.1-837-g401530a+phase-v1.0.0 (43 chars). 128 leaves room for
+// longer branch names on both ends without the copy in loadFsVersion() ever
+// truncating the identity acceptance runs verify.
 static constexpr size_t kVersionStampMax = 128;
 static char s_fsVersion[kVersionStampMax] = "unknown";
 static bool serverStarted = false;
