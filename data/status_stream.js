@@ -99,7 +99,6 @@
     }
 
     connect();
-    retryCount = 0;
     if (lastStatus) emit("status", lastStatus);
   };
 
