@@ -107,10 +107,11 @@ merged). The shape to implement for real:
   - **Single Active Request**: a single FIFO active-request slot shared across all
     request types (see ADR 0019). Estop currently shares this slot with other requests
     rather than bypassing it; this diverges from the server-side admission bypass in
-    `web_api.js` and is tracked by issue #108 for future alignment.
-  - **Hidden Tab Pause**: hiding cancels queued-but-not-started work and stops new
-    dispatch; the one active in-flight request is left to finish within its
-    deadline; showing again resumes from the actual next unfinished step.
+    `src/web/web_admission.cpp` (see `include/web_admission.h`) and is tracked by
+    issue #108 for future alignment.
+  - **Hidden Tab Pause**: hiding stops new work dispatch; the one active in-flight
+    request is left to finish within its deadline; showing again resumes from the
+    actual next unfinished step.
   - **Operation Deadline**: `busy` outcomes retry using the server's `Retry-After`;
     `no-response` outcomes (including a deadline auto-expiry with no result) use
     growing backoff, since no server-given value exists for that case.
