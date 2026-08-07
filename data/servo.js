@@ -270,7 +270,7 @@
   };
 
   const loadCalib = async () => {
-    if (!window.PAApi) return;
+    if (!window.PAApi) throw new Error("API helper unavailable");
     setCalibFeedback("Loading calibration...");
     try {
       const result = await window.PAApi.get("/api/config", { timeoutMs: 5000 });
@@ -312,6 +312,7 @@
     } catch (error) {
       console.error("[servo] loadCalib failed:", error);
       setCalibFeedback(`Failed to load calibration: ${window.PAApi.messageFor(error)}`, "error");
+      throw error;
     }
   };
 

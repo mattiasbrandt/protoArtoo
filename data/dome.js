@@ -191,7 +191,7 @@
 
 
   const loadEscConfig = async () => {
-    if (!window.PAApi) return;
+    if (!window.PAApi) throw new Error("API helper unavailable");
     showFeedback(escFeedback, "Loading motor settings...");
 
     try {
@@ -202,6 +202,7 @@
       showFeedback(rndFeedback, `Loaded at ${ts}`, "success");
     } catch (error) {
       showFeedback(escFeedback, `Failed to load motor settings: ${window.PAApi.messageFor(error)}`, "error");
+      throw error;
     }
   };
 
