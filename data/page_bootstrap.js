@@ -91,6 +91,7 @@
   const baseBootstrap = (resources, sections, deadlines) => ({
     now: 0,
     visible: true,
+    nextId: 1,
 
     // Per-step Operation Deadline overrides, keyed by step name. Anything
     // absent uses the Ordinary category.
@@ -133,6 +134,8 @@
 
   const findStep = (state, kind, name) => state[listKey(kind)].find((step) => step.name === name);
 
+  const takeId = (state) => [state.nextId, { ...state, nextId: state.nextId + 1 }];
+
   // ---------------------------------------------------------------------------
   // Scheduling
   // ---------------------------------------------------------------------------
@@ -146,20 +149,26 @@
           (step.status === "failed-retrying" && step.nextAt <= state.now));
       // If the cursor step is loading, or failed and not yet due, nothing else
       // may start -- that is what makes resource loading strictly ordered.
-      return due ? { id: null, kind: "resource", name: step.name } : null;
+      return due ? { kind: "resource", name: step.name } : null;
     }
 
     const dueSection = state.sections.find(
       (s) => s.status === "pending" || (s.status === "failed-retrying" && s.nextAt <= state.now)
     );
     return dueSection
-      ? { id: null, kind: "section", name: dueSection.name }
+      ? { kind: "section", name: dueSection.name }
       : null;
   };
 
   const startWork = (state, work) => {
-    const step = findStep(state, work.kind, work.name);
-    let next = replaceStep(state, work.kind, work.name, {
+    let next = state;
+    let id = work.id;
+    if (!id) {
+      [id, next] = takeId(next);
+    }
+
+    const step = findStep(next, work.kind, work.name);
+    next = replaceStep(next, work.kind, work.name, {
       status: "loading",
       attempt: step.attempt + 1,
     });
@@ -168,6 +177,7 @@
     return {
       ...next,
       active: {
+        id,
         kind: work.kind,
         name: work.name,
         startedAt: next.now,
@@ -698,13 +708,14 @@
   // The reducer decides what should run; this only notices when its `active`
   // slot changes and starts the corresponding real work exactly once.
   // ---------------------------------------------------------------------------
-  let startedActiveWork = null;
+  let startedActiveId = null;
 
-  const settle = (error, retryAfterMs) => {
+  const settle = (id, error, retryAfterMs) => {
     // A result arriving after its deadline already expired belongs to a
     // request the reducer has moved on from; dropping it keeps the reducer's
-    // attempt accounting honest.
-    if (!state.active) return;
+    // attempt accounting honest. Each attempt has a unique id, so a late result
+    // from attempt N is ignored once the reducer moves to attempt N+1.
+    if (!state.active || state.active.id !== id) return;
     const outcome = error
       ? Core.classifyOutcome(error, retryAfterMs ?? error?.retryAfterMs ?? null)
       : { kind: "success" };
@@ -713,15 +724,14 @@
 
   const syncActive = () => {
     const active = state.active;
-    if (!active) return;
-    const workId = `${active.kind}:${active.name}`;
-    if (workId === startedActiveWork) return;
-    startedActiveWork = workId;
+    if (!active || active.id === startedActiveId) return;
+    startedActiveId = active.id;
+    const id = active.id;
 
     if (active.kind === "resource") {
-      loadScript(active.name, (error) => settle(error));
+      loadScript(active.name, (error) => settle(id, error));
     } else if (active.kind === "section") {
-      runSection(active.name, (error) => settle(error));
+      runSection(active.name, (error) => settle(id, error));
     }
   };
 
