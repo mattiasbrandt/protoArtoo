@@ -289,7 +289,7 @@
     const badges = [];
     if (seq.retrained) {
       badges.push(
-        `<span class="seq-badge seq-badge-retrained" title="This sequence shadows the factory ${window.PAUtils.window.PAUtils.escapeAttr(seq.name)}">Retrained</span>`
+        `<span class="seq-badge seq-badge-retrained" title="This sequence shadows the factory ${window.PAUtils.escapeAttr(seq.name)}">Retrained</span>`
       );
     }
     if (seq.valid === false) {
