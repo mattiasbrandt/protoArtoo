@@ -3,12 +3,25 @@
 Working spec for using the DFRobot FireBeetle 2 ESP32-P4 and DFR1237 IO
 expansion board as a controller candidate.
 
+Sources re-verified 2026-08-07. The previous revision of this sheet (2026-05-19)
+was written against the ESP32-P4 datasheet DFRobot hosts on its wiki, which has
+since been superseded twice over. See [Chip Revision: v1.x vs
+v3.x](#chip-revision-v1x-vs-v3x) first; it changes the toolchain configuration.
+
+**The unit in hand reports chip revision v1.0.** All toolchain guidance below is
+written for that.
+
 ## Boards Covered
 
 | Item | SKU | Notes |
 | --- | --- | --- |
-| FireBeetle 2 ESP32-P4 AI Vision Board | DFR1172 | ESP32-P4R32 main board with ESP32-C6 wireless co-processor |
+| FireBeetle 2 ESP32-P4 AI Vision Board | DFR1172 | ESP32-P4 main board with ESP32-C6 wireless co-processor |
 | FireBeetle 2 ESP32-P4 Edge AI & Video Processing Kit | DFR1237 | DFR1172 plus passive IO expansion board |
+
+DFRobot markets the main board as "ESP32-P4R32". That is a DFRobot shorthand for
+"P4 with 32 MB PSRAM", not an Espressif part number. Espressif's part numbers are
+`ESP32-P4NRW16` / `ESP32-P4NRW32` (chip revision v1.x) and
+`ESP32-P4NRW16X` / `ESP32-P4NRW32X` (chip revision v3.x).
 
 ## Official Sources Checked
 
@@ -16,11 +29,121 @@ expansion board as a controller candidate.
 | --- | --- | --- |
 | DFR1172 wiki | https://wiki.dfrobot.com/dfr1172/ | Product specs, onboard pin definitions, Arduino setup |
 | DFR1237 wiki | https://wiki.dfrobot.com/dfr1237/ | IO expansion board resources and product specs |
-| DFR1172 schematic PDF | https://dfimg.dfrobot.com/wiki/21103/DFR1172_firebeetle-esp32-p4r32-development-board_schematics_V1.0.pdf | Raster PDF; text extraction empty, OCR/image inspection required |
-| DFR1172 ESP32-P4 datasheet PDF | https://dfimg.dfrobot.com/wiki/21103/DFR1172_firebeetle-esp32-p4r32-development-board_datasheet_V1.0.pdf | Espressif ESP32-P4 Series Datasheet pre-release v0.5, 89 pages; normal `pdftotext` extraction worked |
+| DFR1237 schematics ZIP | https://dfimg.dfrobot.com/wiki/19348/DFR1237_firebeetle-2-esp32-p4-kit_schematics_V1.0.zip | **Authoritative for header geometry.** Contains a text-extractable KiCad 9.0.0 PDF of the IO expansion board (rev V1.0.0, 2025-06-05). The bundled main-board schematic is raster. |
+| DFR1237 datasheet ZIP | https://dfimg.dfrobot.com/wiki/19348/DFR1237_firebeetle-2-esp32-p4-kit_datasheet_V1.0.zip | Contains `esp32-p4-chip-revision-v1.3_datasheet_en.pdf` (Pre-release v0.6, 2025-10-23) plus the mic datasheet. This is the datasheet that applies to the silicon DFRobot ships. |
+| DFR1172 datasheet PDF | https://dfimg.dfrobot.com/wiki/21103/DFR1172_firebeetle-esp32-p4r32-development-board_datasheet_V1.0.pdf | ESP32-P4 Series Datasheet Pre-release v0.5, 2025-06-03, 89 pages. **Stale.** Superseded by the v1.3 datasheet in the DFR1237 kit ZIP. |
+| ESP32-P4 Datasheet (current) | https://documentation.espressif.com/esp32-p4_datasheet_en.pdf | Pre-release v0.7, 2026-07-14, 101 pages. **Documents chip revision v3.x only.** Do not apply its 400 MHz / v3.x figures to a v1.x board. |
+| ESP32-P4 Chip Revision v3.x User Guide | https://documentation.espressif.com/esp32-p4-chip-revision-v3.x_user_guide_en.html | v1.0, 2026.03. Design deltas, ESP-IDF version floor, silkscreen identification |
+| ESP32-P4 Series SoC Errata | https://docs.espressif.com/projects/esp-chip-errata/en/latest/esp32p4/esp-chip-errata-en-master-esp32p4.pdf | Errata doc v1.3, 2026-07-22. Per-revision affected matrix, chip-marking and eFuse revision identification |
+| ESP-IDF `Kconfig.hw_support` (esp32p4) | https://github.com/espressif/esp-idf/blob/v5.5.5/components/esp_hw_support/port/esp32p4/Kconfig.hw_support | `ESP32P4_SELECTS_REV_LESS_V3` and `ESP32P4_REV_MIN` semantics |
+| arduino-esp32 `boards.txt` / variant | https://github.com/espressif/arduino-esp32 | Dedicated `dfrobot_firebeetle2_esp32p4` board entry and `pins_arduino.h`, present since core 3.3.11 |
+| pioarduino platform | https://github.com/pioarduino/platform-espressif32 | Board JSON inventory and bundled framework versions |
 | DFR1237 dimension drawing PDF | https://dfimg.dfrobot.com/wiki/19348/DFR1237_firebeetle-2-esp32-p4-kit_dimension_V1.0.pdf | Raster PDF; OCR/image inspection required |
-| Arduino-ESP32 docs | https://espressif.github.io/arduino-esp32/ | ESP32-P4 listed as stable and development supported |
-| ESP-IDF serial connection docs | https://docs.espressif.com/projects/esp-idf/en/stable/esp32p4/get-started/establish-serial-connection.html | ESP32-P4 USB flashing/serial behavior |
+
+## Chip Revision: v1.x vs v3.x
+
+Espressif released ESP32-P4 chip revision v3.x on 2026-05-08. It is a wafer-level
+change, not a firmware change, and it is **not firmware-compatible** with the
+earlier v1.x silicon.
+
+Espressif's `vM.X` scheme makes the compatibility rule explicit:
+
+- **Major number change** (v1.x to v3.x): software is incompatible and must be
+  rebuilt for the new target.
+- **Minor number change** (v1.0 to v1.3): software is compatible; no change
+  needed.
+
+So the only split that matters for this board is v1.x versus v3.x. v1.0 and v1.3
+are interchangeable from a firmware standpoint.
+
+| | Chip revision v1.x | Chip revision v3.x |
+| --- | --- | --- |
+| Revisions in the wild | v0.0, v1.0, v1.3 | v3.0, v3.1, v3.2 |
+| Max HP CPU clock | 360 MHz | 400 MHz |
+| Espressif part numbers | `ESP32-P4NRW16` / `ESP32-P4NRW32` | `ESP32-P4NRW16X` / `ESP32-P4NRW32X` |
+| Applicable datasheet | "ESP32-P4 Chip Revision v1.3 Datasheet", Pre-release v0.6 | "ESP32-P4 Series Datasheet", Pre-release v0.7 |
+| ESP-IDF | any P4-capable version | **v5.5.3+ or v6.0+ required** |
+| `CONFIG_ESP32P4_SELECTS_REV_LESS_V3` | `y` | `n` (the ESP-IDF default) |
+| `CONFIG_ESP32P4_REV_MIN` options | v0.0, v0.1, v1.0 (max supported v1.99) | v3.0, v3.1 (max supported v3.99) |
+| Arduino `build.chip_variant` | `esp32p4_es` | `esp32p4` |
+| PlatformIO generic board | `esp32-p4` | `esp32-p4_r3` |
+
+**DFR1172/DFR1237 ships v1.x silicon.** DFRobot's kit datasheet bundle contains
+the revision-specific `esp32-p4-chip-revision-v1.3_datasheet_en.pdf` (file dated
+2026-01-19), and Espressif's `dfrobot_firebeetle2_esp32p4` Arduino board entry
+defaults to `build.chip_variant=esp32p4_es` and `build.f_cpu=360000000L`.
+Individual units vary within the v1.x family - **the board in hand is v1.0, not
+v1.3.** Because that is a minor-number difference, nothing in the toolchain
+configuration changes.
+
+Since Espressif publishes no v1.0-specific datasheet, use the v1.3 datasheet from
+the DFR1237 kit ZIP; minor-revision compatibility makes it applicable.
+
+This also resolves the 360 vs 400 MHz question the previous revision of this
+sheet left open: 360 MHz is not a conservative choice, it is the correct one for
+this board. And it means the previous PlatformIO recommendation
+(`board = esp32-p4_r3`) was wrong.
+
+### Selecting for the wrong revision
+
+- Building v3.x firmware for a v1.x chip, or the reverse, produces an image that
+  will not download or will not boot.
+- v1.x and v3.x cannot share one firmware image. If a fleet ever mixes both, it
+  needs two build targets.
+- ESP-IDF enforces this at boot via `CONFIG_ESP32P4_REV_MIN` and refuses to run
+  on a chip below the configured minimum. **No pre-v3 build can reject a v1.0
+  chip**: the only minimum-revision choices available under
+  `ESP32P4_SELECTS_REV_LESS_V3=y` are v0.0, v0.1, and v1.0, all of which accept
+  it. There is no v1.3 minimum to be caught out by.
+
+### Identifying the revision
+
+`esptool` prints the revision during connect:
+
+```
+esptool --port /dev/ttyACM0 chip-id
+```
+
+Look for `Chip is ESP32-P4 (revision v1.0)`. Note that `esptool` v5.x uses
+hyphenated subcommands (`chip-id`, `flash-id`); older releases used `chip_id`.
+
+Without a serial connection, read the manufacturing-code line of the chip
+marking:
+
+| Chip revision | Manufacturing code |
+| --- | --- |
+| v0.0 | `X A XX` |
+| **v1.0** | **`X C XX`** |
+| v1.3 | `X E XX` |
+| v3.0 | `X F XX` |
+| v3.1 | `X G XX` |
+| v3.2 | `X H XX` |
+
+The revision is also encoded in eFuse: major in
+`EFUSE_RD_MAC_SPI_SYS_2_REG[23]`, minor in `EFUSE_RD_MAC_SPI_SYS_2_REG[5:0]`.
+
+### Errata affecting this board
+
+Per ESP32-P4 Series SoC Errata v1.3 (2026-07-22), four errata affect v1.0. They
+are the same four that affect v1.3, so nothing is gained or lost by having the
+earlier revision.
+
+| Errata | Affects | Relevance here |
+| --- | --- | --- |
+| `RMT-176` - RMT continuous TX mode idle level is set by wrapped-back data rather than the end-marker `level` field | v0.0, v1.0, v1.3 | **Check this if RMT drives any line protocol.** Workaround is `RMT_IDLE_OUT_EN_CHn = 1`. ESP-IDF has bypassed it since v5.2, the first version supporting continuous TX mode |
+| `I2C-308` - I2C slave fails on multiple-read in non-FIFO mode | v0.0, v1.0, v1.3 | Only if the P4 acts as an I2C *slave* |
+| `APM-560` - unauthorized AHB access may block subsequent PSRAM or flash transactions | v0.0, v1.0, v1.3, v3.0 | Access-permission-management designs only |
+| `ECDSA_DS-837` - signatures with invalid `s` values are incorrectly accepted | v0.0, v1.0, v1.3 | Only if the ECDSA digital-signature peripheral verifies signatures |
+
+Note on the v3.x announcement: its "bugs fixed in v3.x" list (`MSPI-749/750/751`,
+`ROM-764`, `Analog-765`, `DMA-767`) reads as though those were long-standing
+defects, but the errata table marks every one of them as affecting **v3.0 only**.
+They were regressions introduced in early v3.x silicon and fixed within that
+family. They never affected v1.x. Do not treat them as open issues on this board.
+
+What v1.x genuinely lacks relative to v3.x: 400 MHz, Zb bit-manipulation
+extensions, 32 PMP entries, IO hold during deep sleep on all IOs, a 160 MHz I2S
+clock source, expanded ISP/PPA features, P-384 ECC, and AES DPA countermeasures.
 
 ## Mechanical Notes
 
@@ -31,48 +154,38 @@ expansion board as a controller candidate.
 | PCB outline | 25.4 mm x 60 mm |
 | Form factor | FireBeetle 2 footprint |
 | Supplied headers | Two 20-pin 2.54 mm male headers, per DFRobot product listing |
-| Mounting-hole dimensions | Not prioritized here; use physical measurement or source CAD for enclosure work |
-
-The DFR1172 board is the narrow module that plugs into the DFR1237 expansion
-board.
+| Socket into DFR1237 | 18-pin left row (`U2`), 14-pin right row (`U1`) |
 
 ### IO Expansion Board: DFR1237
 
-The DFR1237 dimension PDF is a raster drawing. `pdftotext` extracted no text, so
-the following dimensions come from 600 DPI rendering plus OCR and direct image
-inspection.
+From the KiCad schematic PDF in the DFR1237 schematics ZIP, plus the raster
+dimension drawing.
 
-| Parameter | Value |
-| --- | --- |
-| PCB outline | 45.00 mm x 60.00 mm |
-| PCB thickness | 1.6 mm |
-| Layers | 2 |
-| Solder mask | Black, top and bottom |
-| Silkscreen | White, top and bottom |
-| Drawing date | 2025-06-05 |
-| Drawing identifier | `DFR1237-V1.0.0-1.6mm-2 Layer-60*45mm` |
-| Mounting detail | Four mounting holes are shown; exact diameter is not called out in the drawing |
+| Parameter | Value | Source |
+| --- | --- | --- |
+| PCB outline | 45.00 mm x 60.00 mm | Dimension drawing |
+| PCB thickness | 1.6 mm | Dimension drawing |
+| Layers | 2 | Dimension drawing |
+| Solder mask / silkscreen | Black / white, top and bottom | Dimension drawing |
+| Drawing identifier | `DFR1237-V1.0.0-1.6mm-2 Layer-60*45mm`, 2025-06-05 | Dimension drawing |
+| Mounting holes | **Four, M3.0** (`H1`-`H4`) | Schematic |
+| Fiducials | Two (`FID1`, `FID2`) | Schematic |
+| CAD tool | KiCad E.D.A. 9.0.0 | Schematic |
 
-Hole dimensions are not the priority for this sheet. Use the physical board or
-DFRobot CAD/Gerber data for final enclosure work.
+The previous revision of this sheet recorded the hole diameter as "not called
+out". The schematic footprints are `MountingHole_M3.0`, so M3 is confirmed.
 
-### Expansion Header Geometry
-
-The IO expansion board is passive. It does not add level shifting, buffering, or
-new peripheral hardware. It exposes the DFR1172 module pins on labeled 2.54 mm
-headers and provides repeated 3V3/GND rails.
-
-Important mechanical clearances:
+Mechanical clearances still to respect:
 
 - Keep the two USB-C connectors, MIPI CSI/DSI connectors, TF card slot, reset
   button, BOOT button, and microphone area accessible if the main board is
   socketed into an enclosure.
-- The large black circles in the DFR1237 drawing are mounting holes, not GPIO
-  pads. Do not place standoffs through header/pin fields.
 - Treat the DFR1237 45 mm width as the envelope when the expansion board is
   installed; the DFR1172 module alone is only 25.4 mm wide.
 
 ## Electrical Summary
+
+### Board level (DFR1172 wiki)
 
 | Parameter | Value |
 | --- | --- |
@@ -84,189 +197,324 @@ Important mechanical clearances:
 | Wi-Fi AP current, 5 V VIN | 130 mA average, 1330 mA peak |
 | Wi-Fi STA current, 5 V VIN | 80 mA average, 1050 mA peak |
 | Operating temperature | -10 C to 60 C |
-| ESP32-P4 GPIO input high | min 0.75 x VDD |
-| ESP32-P4 GPIO input low | max 0.25 x VDD |
-| ESP32-P4 GPIO source current | typ 40 mA at VDD = 3.3 V, `PAD_DRIVER = 3` |
-| ESP32-P4 GPIO sink current | typ 28 mA at VDD = 3.3 V, `PAD_DRIVER = 3` |
-| Internal pull-up/down | typ 45 kOhm |
 
 Do not put 5 V signals on GPIO headers. The 5 V rail is power only.
+
+The 31.5 mA "deep sleep" figure is board level and is dominated by the
+regulators and the ESP32-C6, not the P4. The P4 die itself draws 0.012 mA in
+deep sleep with only the LP timer and LP memory powered. Budget from the board
+figure, not the chip figure.
+
+### Chip level (ESP32-P4 datasheet)
+
+| Parameter | Value |
+| --- | --- |
+| GPIO input high | min 0.75 x VDD |
+| GPIO input low | max 0.25 x VDD |
+| GPIO output high | min 0.8 x VDD (high-impedance load) |
+| GPIO output low | max 0.1 x VDD (high-impedance load) |
+| GPIO source current | typ 40 mA at VDD = 3.3 V, `PAD_DRIVER = 3` |
+| GPIO sink current | typ 28 mA at VDD = 3.3 V, `PAD_DRIVER = 3` |
+| Internal pull-up/down | typ 45 kOhm |
+| Pin capacitance | typ 2 pF |
+| Input leakage | max 50 nA |
+| Ambient temperature (silicon) | -40 C to 85 C |
+
+The silicon is rated -40 to +85 C; DFRobot rates the assembled board -10 to
++60 C. Use the board figure.
+
+Active-mode current at 360 MHz is not tabulated separately; the v0.7 datasheet
+tabulates 400 MHz. As an order-of-magnitude reference at 400 MHz with all
+peripheral clocks enabled: 56 mA dual-core WAITI, 112 mA dual-core spin loop,
+150 mA dual-core 32-bit data access. Expect roughly 90 percent of those at
+360 MHz.
+
+ESP32-P4 supports a per-pin input hysteresis filter (`gpio_config_t::hys_ctrl_mode`,
+disabled by default). Worth enabling on slow-edged or long-run digital inputs.
 
 ## ESP32-P4 / Board Resources
 
 | Resource | Value |
 | --- | --- |
-| Main SoC | ESP32-P4R32 |
-| HP CPU | RISC-V 32-bit dual-core, 360 MHz default |
+| Main SoC | ESP32-P4, chip revision v1.0 (board in hand) |
+| HP CPU | RISC-V 32-bit dual-core, **360 MHz max on this board** |
 | LP CPU | RISC-V 32-bit single-core, 40 MHz |
 | PSRAM | 32 MB in package |
 | Flash on DFR1172 | 16 MB external QSPI flash |
 | HP L2 memory | 768 KB |
+| HP TCM | 8 KB zero-wait |
 | LP SRAM | 32 KB |
 | HP ROM | 128 KB |
 | LP ROM | 16 KB |
 | User eFuse | 1792 bits user accessible from 4096-bit OTP |
+| Total GPIOs on package | 55 |
+| Package | QFN104, 10 x 10 mm |
 
-The Espressif datasheet notes 360 MHz as the default HP clock; 400 MHz exists in
-some documentation and PlatformIO manifests for rev.300/rev.301 generic targets,
-but DFRobot's public DFR1172 wiki states 360 MHz. Use 360 MHz as the conservative
-board spec unless the actual board revision and toolchain configuration are
-verified.
+### Wireless
+
+The P4 has no radio. Wi-Fi/Bluetooth comes from an onboard ESP32-C6 reached over
+SDIO. Espressif's Arduino variant declares `BOARD_HAS_SDIO_ESP_HOSTED`, so the
+link is **ESP-Hosted**, not a transparent peripheral:
+
+| Signal | GPIO |
+| --- | --- |
+| `BOARD_SDIO_ESP_HOSTED_CLK` | GPIO18 |
+| `BOARD_SDIO_ESP_HOSTED_CMD` | GPIO19 |
+| `BOARD_SDIO_ESP_HOSTED_D0` | GPIO14 |
+| `BOARD_SDIO_ESP_HOSTED_D1` | GPIO15 |
+| `BOARD_SDIO_ESP_HOSTED_D2` | GPIO16 |
+| `BOARD_SDIO_ESP_HOSTED_D3` | GPIO17 |
+| `BOARD_SDIO_ESP_HOSTED_RESET` | GPIO54 |
+
+Consequences worth planning around:
+
+- Wi-Fi is an RPC hop over SDIO, not native silicon. Throughput and latency
+  characteristics differ from an ESP32-S3, and the C6 needs matching slave
+  firmware. Verify throughput empirically before assuming parity.
+- The DFR1172 wiki also lists a `WAKEUP` line on GPIO6. The Arduino variant does
+  not define it. Treat GPIO6 as reserved until the main-board schematic is read.
 
 ## Onboard Fixed Pin Use
 
-These pins are already tied to board functions and should not be casually reused
-on IO headers.
+Sourced from the DFR1172 wiki pin tables and cross-checked against Espressif's
+`variants/dfrobot_firebeetle2_esp32p4/pins_arduino.h`.
 
 | Function | ESP32-P4 pins | Notes |
 | --- | --- | --- |
-| User LED | GPIO3 | Arduino blink examples use `3` |
-| BOOT button | GPIO35 | Also a strapping pin; sampled during reset |
-| Default I2C labels | GPIO7 SDA, GPIO8 SCL | Labels/defaults only; I2C controllers can be routed elsewhere |
-| UART0 labels | GPIO37 TX, GPIO38 RX | Default ROM/debug UART path |
-| PDM microphone | GPIO12 CLK, GPIO9 DATA | Avoid if using onboard mic |
-| ESP32-C6 Wi-Fi/BT SDIO | GPIO14 D0, GPIO15 D1, GPIO16 D2, GPIO17 D3, GPIO18 CLK, GPIO19 CMD, GPIO54 EN, GPIO6 WAKEUP | Reserved for wireless co-processor |
-| TF card SDIO | GPIO39 D0, GPIO40 D1, GPIO41 D2, GPIO42 D3, GPIO43 CLK, GPIO44 CMD, GPIO45 EN | Reserved if using onboard microSD |
+| User LED | GPIO3 | `LED_BUILTIN`. Also JTAG `MTDI` and `TOUCH_CHANNEL2` at silicon level |
+| BOOT button | GPIO35 | Strapping pin, weak pull-up at reset |
+| Default I2C labels | GPIO7 SDA, GPIO8 SCL | Arduino `SDA`/`SCL`. Also `T2`/`T3` touch aliases |
+| UART0 | GPIO37 TX, GPIO38 RX | Arduino `TX`/`RX`; ROM/debug UART path |
+| Microphone (PDM/I2S) | GPIO12 CLK, GPIO9 DATA | `MIC_I2S_CLK` / `MIC_I2S_DATA` |
+| ESP32-C6 SDIO | GPIO14-GPIO19, GPIO54 reset, GPIO6 wakeup | See ESP-Hosted table above |
+| TF card SDIO | GPIO39 D0, GPIO40 D1, GPIO41 D2, GPIO42 D3, GPIO43 CLK, GPIO44 CMD | Arduino `BOARD_SDMMC_SLOT 0` |
+| TF card power enable | GPIO45 | `BOARD_SDMMC_POWER_PIN`, **active LOW**, power channel 4. The wiki calls this "EN"; it is a power switch, not an SDIO signal |
 
-## IO Expansion Header Labels
+## IO Expansion Header Map
 
-The DFR1237 drawing exposes the following GPIO labels in the main repeated
-header area:
+Taken from the DFR1237 KiCad schematic, which supersedes the OCR-derived list in
+the previous revision of this sheet. All labels below are the actual net names on
+the board.
 
-`GPIO4`, `GPIO5`, `GPIO20`, `GPIO21`, `GPIO22`, `GPIO23`, `GPIO31`, `GPIO32`,
-`GPIO33`, `GPIO34`, `GPIO35`, `GPIO36`, `GPIO48`, `GPIO49`, `GPIO50`, `GPIO51`,
-`GPIO52`, plus visible dedicated labels for `GPIO7`, `GPIO8`, `GPIO28`, `GPIO29`,
-`GPIO30`, `GPIO37`, and `GPIO38`.
+### Module sockets
 
-The labels `SPI`, `UART`, and `I2C` on the expansion board are convenience
-groupings. They do not lock the silicon peripheral to those pins. ESP32-P4 uses
-GPIO matrix routing for most digital peripherals, so UART, I2C, SPI, TWAI, RMT,
-LEDC, MCPWM, and similar functions can usually be assigned in software to other
-GPIO header pins.
+`U2` (`ESP32-P4_L`), 18 pins:
 
-## UART-Capable GPIO Matrix
-
-At the silicon level, `UART0` through `UART4` can route TX/RX/RTS/CTS through
-the ESP32-P4 GPIO matrix to ordinary GPIOs. The practical question is not
-"can this pin become UART?" but "is this exposed pin safe to use as UART on this
-board?"
-
-### DFR1237 Exposed GPIO Suitability
-
-| GPIO | Expansion label/context | UART suitability | Notes |
+| Pin | Net | Pin | Net |
 | --- | --- | --- | --- |
-| GPIO4 | Main GPIO header | Good | Exposed, not listed as an onboard fixed function. Also has LP/touch/JTAG-related alternate functions, but usable as normal GPIO after configuration. |
-| GPIO5 | Main GPIO header | Good | Exposed, not listed as an onboard fixed function. Good spare UART candidate. |
-| GPIO7 | `7/D`, I2C data label | Good if I2C not needed | DFRobot default SDA. Can be reassigned if the I2C header/default bus is not used. |
-| GPIO8 | `8/C`, I2C clock label | Good if I2C not needed | DFRobot default SCL. Can be reassigned if the I2C header/default bus is not used. |
-| GPIO20 | Main GPIO header | Best | Clean exposed GPIO. Recommended UART TX/RX pool. |
-| GPIO21 | Main GPIO header | Best | Clean exposed GPIO. Recommended UART TX/RX pool. |
-| GPIO22 | Main GPIO header | Best | Clean exposed GPIO. Recommended UART TX/RX pool. |
-| GPIO23 | Main GPIO header | Best | Clean exposed GPIO. Recommended UART TX/RX pool. |
-| GPIO28 | `28/SCK`, SPI label | Good if SPI label not needed | Exposed on SPI header. Can be UART if not using this header as SPI clock. |
-| GPIO29 | `29/MO`, SPI label | Good if SPI label not needed | Exposed on SPI header. Can be UART if not using this header as SPI MOSI/MO. |
-| GPIO30 | `30/MI`, SPI label | Good if SPI label not needed | Exposed on SPI header. Can be UART if not using this header as SPI MISO/MI. |
-| GPIO31 | Main GPIO header | Best | Exposed. Also has SPI2 IO MUX role, but clean for GPIO-matrix UART if SPI2 is not assigned here. |
-| GPIO32 | Main GPIO header | Best | Exposed. Good UART candidate. |
-| GPIO33 | Main GPIO header | Good | Exposed. Good UART candidate unless planned for SPI2/Ethernet alternate use. |
-| GPIO34 | Main GPIO header | Caution | JTAG signal source strapping pin. Usable after reset, but attached UART device must not force a bad reset level. |
-| GPIO35 | Main GPIO header / BOOT | Avoid | BOOT button and boot-mode strapping. Do not use for routine UART lanes unless the reset behavior is proven safe. |
-| GPIO36 | Main GPIO header | Caution | Boot/ROM-print related strapping pin. Usable after reset, but risky with externally driven UART devices during reset. |
-| GPIO37 | `37/T`, UART label | Reserved for UART0 by default | Default UART0 TX and ROM/debug path. Leave as console/download UART unless intentionally moving debug to USB CDC. |
-| GPIO38 | `38/R`, UART label | Reserved for UART0 by default | Default UART0 RX and ROM/debug path. Leave as console/download UART unless intentionally moving debug to USB CDC. |
-| GPIO48 | Main GPIO header | Good | Exposed. Avoid only if using extended SD/MMC or Ethernet alternate mappings that need it. |
-| GPIO49 | Main GPIO header | Good / analog-capable | Exposed. Also ADC2 channel 0 / RMII alternate capability. Good for digital UART if analog/Ethernet not needed. |
-| GPIO50 | Main GPIO header | Good / analog-capable | Exposed. Also ADC2 channel 1 / RMII alternate capability. Good for digital UART if analog/Ethernet not needed. |
-| GPIO51 | Main GPIO header | Good / analog-capable | Exposed. Also ADC2 channel 2 / analog comparator capability. Good for digital UART if analog/comparator not needed. |
-| GPIO52 | Main GPIO header | Good / analog-capable | Exposed. Also ADC2 channel 3 / analog comparator capability. Good for digital UART if analog/comparator not needed. |
+| 1 | `RST` | 10 | `7/SDA` |
+| 2 | `3V3` | 11 | `48` |
+| 3 | `NC` | 12 | `49` |
+| 4 | `GND` | 13 | `50` |
+| 5 | `NC` | 14 | `52` |
+| 6 | `28/SCK` | 15 | `4` |
+| 7 | `29/MO` | 16 | `5` |
+| 8 | `30/MI` | 17 | `D1/TX` (GPIO37) |
+| 9 | `8/SCL` | 18 | `D0/RX` (GPIO38) |
 
-### Not Recommended for IO-Board UART Use
+`U1` (`ESP32-P4_R`), 14 pins:
 
-These are ESP32-P4 GPIOs, but they are either not the useful DFR1237 exposed
-pool or are already committed to onboard devices.
+| Pin | Net | Pin | Net |
+| --- | --- | --- | --- |
+| 1 | `VIN` | 8 | `22/A2` |
+| 2 | `3V3` | 9 | `21/A1` |
+| 3 | `GND` | 10 | `20/A0` |
+| 4 | `32/I3C/SCL` | 11 | `36` |
+| 5 | `33/I3C/SDA` | 12 | `35` |
+| 6 | `51/A4` | 13 | `34` |
+| 7 | `23/A3` | 14 | `31` |
 
-| GPIOs | Why not use for extra UART lanes |
+### Connectors
+
+| Ref | Type | Contents |
+| --- | --- | --- |
+| `J3` / `J5` / `J6` | 3 x 17-pin main GPIO field | Signal row `J3`, `+3V3` row `J5`, `GND` row `J6` |
+| `J2` | 5-pin SPI | `30/MI`, `29/MO`, `28/SCK`, `GND`, `+3V3` |
+| `J9` | 4-pin UART | `TX`, `RX`, `GND`, `+3V3` |
+| `J1` | 3-pin I2C | `7/SDA` + power/ground |
+| `J7` | 3-pin I2C | `8/SCL` + power/ground |
+| `J4` | 2x2 | `VIN`, `RST` |
+| `J14` / `J15` | 3-pin | `+3V3` / `GND` rails |
+
+`J3` signal order, pin 1 to pin 17:
+
+`4`, `5`, `20/A0`, `21/A1`, `22/A2`, `23/A3`, `31`, `32/I3C/SCL`,
+`33/I3C/SDA`, `34`, `35`, `36`, `48`, `49`, `50`, `51/A4`, `52`
+
+Two things the previous revision of this sheet missed, both visible in the
+schematic and both consequential:
+
+- **GPIO20-GPIO23 are silkscreened A0-A3, and GPIO51 is A4.** They are the
+  board's analog pins.
+- **GPIO32/GPIO33 are silkscreened I3C SCL/SDA.** They are the P4's IO MUX I3C
+  master pins, not generic GPIOs.
+
+The `SPI`, `UART`, and `I2C` groupings are still convenience labels; ESP32-P4
+routes most digital peripherals through the GPIO matrix. But the analog and I3C
+labels above reflect real silicon capability, not convenience.
+
+## GPIO Suitability
+
+Datasheet v0.7 Section 2.3.5 introduced a formal priority taxonomy that this
+sheet now adopts in place of its own ad-hoc ratings:
+
+- **P1** - fixed IO MUX pins, or GPIO-matrix pins with peripheral-specific
+  hardware (for example, I3C pins with configurable pull-ups).
+- **P2** - any GPIO via the GPIO matrix, usable without restriction.
+- **P3** - usable via the GPIO matrix, but conflicts with an important function:
+  strapping (GPIO34-GPIO38), USB Serial/JTAG (GPIO24, GPIO25),
+  **JTAG (GPIO2, GPIO3, GPIO4, GPIO5)**, UART0 (GPIO37, GPIO38).
+
+UART2 through UART4 have no P1 pins at all, so they must come from the P2/P3
+pool.
+
+### Two board-level constraints that override the taxonomy
+
+**1. Prefer GPIO36 and lower.** Espressif's own variant header carries this
+comment:
+
+> Use GPIOs 36 or lower on the P4 DevKit to avoid LDO power issues with high
+> numbered GPIOs.
+
+GPIO48 sits on `VDD_IO_5` and GPIO49-GPIO54 on `VDD_IO_6`, both fed by internal
+regulators. This directly contradicts the previous revision of this sheet, which
+put `UART4` on GPIO48/GPIO49 specifically to stay away from strapping pins. Treat
+GPIO48-GPIO52 as usable but requiring measurement, not as a safe default.
+
+**2. ADC1 is nearly exhausted before you start.** ADC1 channels 0-7 are
+GPIO16-GPIO23. GPIO16-GPIO19 are consumed by the ESP32-C6 SDIO link, so
+**GPIO20-GPIO23 are the only ADC1 channels this board can reach.** Assigning
+UART1 and UART2 there, as the previous revision recommended, costs every ADC1
+channel on the board. ADC2 (GPIO49-GPIO54) remains, but lands in the
+LDO-cautioned range.
+
+### Exposed GPIO table
+
+| GPIO | Board label | Priority | Silicon alternates | Notes |
+| --- | --- | --- | --- | --- |
+| GPIO4 | `4` | P3 | JTAG `MTMS`, `TOUCH_CHANNEL3`, LP GPIO | Arduino `T0`. Input-enabled at reset. Downgraded from "Good" |
+| GPIO5 | `5` | P3 | JTAG `MTDO`, `TOUCH_CHANNEL4`, LP GPIO | Arduino `T1`. `MTDO` is an output-capable pad. Downgraded from "Good" |
+| GPIO7 | `7/SDA` | P2 | `SPI2_CS_PAD`, `TOUCH_CHANNEL6`, LP GPIO | Board default SDA; Arduino `T2` |
+| GPIO8 | `8/SCL` | P2 | `SPI2_D_PAD`, `TOUCH_CHANNEL7`, LP GPIO | Board default SCL; Arduino `T3` |
+| GPIO20 | `20/A0` | P2 | `ADC1_CHANNEL4` | Clean digital, but spends an ADC1 channel |
+| GPIO21 | `21/A1` | P2 | `ADC1_CHANNEL5` | Clean digital, but spends an ADC1 channel |
+| GPIO22 | `22/A2` | P2 | `ADC1_CHANNEL6` | Clean digital, but spends an ADC1 channel |
+| GPIO23 | `23/A3` | P2 | `ADC1_CHANNEL7`, `REF_50M_CLK_PAD` | Clean digital, but spends an ADC1 channel |
+| GPIO28 | `28/SCK` | P2 | `SPI2_CS_PAD`, `GMAC_PHY_RXDV_PAD` | Arduino `SCK`. See silkscreen note below |
+| GPIO29 | `29/MO` | P2 | `SPI2_D_PAD`, `GMAC_PHY_RXD0_PAD` | Arduino `MOSI` |
+| GPIO30 | `30/MI` | P2 | `SPI2_CK_PAD`, `GMAC_PHY_RXD1_PAD` | Arduino `MISO` |
+| GPIO31 | `31` | P2 | `SPI2_Q_PAD`, `GMAC_PHY_RXER_PAD` | Arduino `SS`. Best clean pin in the <=36 range |
+| GPIO32 | `32/I3C/SCL` | P1 for I3C | `SPI2_HOLD_PAD`, `GMAC_RMII_CLK_PAD` | Reassignable, but costs the only I3C clock pin |
+| GPIO33 | `33/I3C/SDA` | P1 for I3C | `SPI2_WP_PAD`, `GMAC_PHY_TXEN_PAD` | Reassignable, but costs the only I3C data pin |
+| GPIO34 | `34` | P3 | Strapping (JTAG source), `SPI2_IO4_PAD` | See strapping notes |
+| GPIO35 | `35` | P3 | Strapping (boot mode), BOOT button, `SPI2_IO5_PAD` | Avoid |
+| GPIO36 | `36` | P3 | Strapping (ROM print), `SPI2_IO6_PAD` | See strapping notes |
+| GPIO37 | `37/T` | P3 | UART0 TX (IO MUX), `SPI2` eight-line | Keep as console/download UART |
+| GPIO38 | `38/R` | P3 | UART0 RX (IO MUX), `SPI2_DQS_PAD` | Keep as console/download UART |
+| GPIO48 | `48` | P2 | `SD1_CDATA7_PAD`, `GMAC_PHY_RXER_PAD` | `VDD_IO_5`. LDO caution |
+| GPIO49 | `49` | P2 | `ADC2_CHANNEL0`, `GMAC_PHY_TXEN_PAD` | Arduino `A5`. `VDD_IO_6`. LDO caution |
+| GPIO50 | `50` | P2 | `ADC2_CHANNEL1`, `GMAC_RMII_CLK_PAD` | Arduino `A6`. `VDD_IO_6`. LDO caution |
+| GPIO51 | `51/A4` | P2 | `ADC2_CHANNEL2`, `ANA_COMP0`, `GMAC_PHY_RXDV_PAD` | Arduino `A4`. `VDD_IO_6`. LDO caution |
+| GPIO52 | `52` | P2 | `ADC2_CHANNEL3`, `ANA_COMP0`, `GMAC_PHY_RXD0_PAD` | Arduino `A7`. `VDD_IO_6`. LDO caution |
+
+Silkscreen note: DFRobot labels GPIO28 `SCK`, but the P4 IO MUX assigns
+`SPI2_CS_PAD` to GPIO28 and `SPI2_CK_PAD` to GPIO30. Espressif's Arduino variant
+follows the silkscreen (`SCK = 28`, `MISO = 30`), which means Arduino SPI on this
+board runs through the GPIO matrix rather than the IO MUX fast path. Functionally
+fine; relevant if maximum SPI clock is ever needed.
+
+### Not available on the IO headers
+
+| GPIOs | Why |
 | --- | --- |
 | GPIO3 | Onboard LED |
-| GPIO6, GPIO14-GPIO19, GPIO54 | ESP32-C6 Wi-Fi/Bluetooth SDIO/control connection |
-| GPIO9, GPIO12 | Onboard PDM microphone |
-| GPIO39-GPIO45 | Onboard TF card SDIO |
-| GPIO0-GPIO2, GPIO10-GPIO13, GPIO24-GPIO27, GPIO46-GPIO47, GPIO53 | Not identified as the normal useful DFR1237 exposed header pool in the inspected drawing/wiki material |
+| GPIO6, GPIO14-GPIO19, GPIO54 | ESP32-C6 ESP-Hosted SDIO link |
+| GPIO9, GPIO12 | Onboard microphone |
+| GPIO39-GPIO45 | Onboard TF card SDIO plus power enable |
+| GPIO24, GPIO25 | USB Serial/JTAG (`USB1P1_N0`/`P0`) |
+| GPIO0-GPIO2, GPIO10, GPIO11, GPIO13, GPIO26, GPIO27, GPIO46, GPIO47, GPIO53 | Not brought out on DFR1237 |
 
-## Recommended UART Lane Plan
+## Strapping and Boot Behaviour
 
-Use USB CDC for programming/logging when possible, leave GPIO37/GPIO38 as the
-default UART0 escape hatch, and allocate additional hardware UARTs from clean
-DFR1237 header GPIOs.
+Five strapping pins, sampled into latches at reset and free as normal IO
+afterwards. Default levels are set by internal weak pulls when the pin is
+floating or sees a high-impedance load.
 
-| Lane | TX | RX | Status | Suggested use |
-| --- | --- | --- | --- | --- |
-| `UART0` | GPIO37 | GPIO38 | Keep default | ROM logs, fallback console, UART download/debug |
-| `UART1` | GPIO20 | GPIO21 | Best | Primary external serial device |
-| `UART2` | GPIO22 | GPIO23 | Best | Secondary external serial device |
-| `UART3` | GPIO31 | GPIO32 | Best | Third external serial device |
-| `UART4` | GPIO48 | GPIO49 | Good | Fourth external serial device; keeps away from boot strapping pins |
+| Pin | Default at reset | Role | Practical risk with defaults |
+| --- | --- | --- | --- |
+| GPIO34 | Floating | JTAG signal source | **None by default.** Only read when `EFUSE_JTAG_SEL_ENABLE` is burnt; the eFuse default is 0, so GPIO34 is ignored |
+| GPIO35 | Weak pull-up (bit = 1) | Boot mode | **Real.** Held low at reset forces joint download boot. BOOT button pin |
+| GPIO36 | Floating | ROM message printing | **None by default.** Only read when `EFUSE_UART_PRINT_CONTROL` is non-zero; the eFuse default is 0, so GPIO36 is ignored |
+| GPIO37 | Floating | Boot control, UART0 TX | Boot mode table lists "any value"; the pin does not select SPI vs download boot |
+| GPIO38 | Floating | Boot control, UART0 RX | Boot mode table lists "any value" |
 
-Alternate pairs:
+Boot mode selection reduces to: GPIO35 high (default) is SPI boot; GPIO35 low
+with GPIO36 high is joint download boot.
 
-| Pair | When to use |
+This is a meaningful relaxation of the previous revision's blanket "Caution" on
+GPIO34 and GPIO36. On a board with unburnt eFuses, only GPIO35 can actually
+disturb boot. The datasheet does warn that GPIO34 "does not have any internal
+pull resistors and the strapping value must be controlled by the external circuit
+that cannot be in a high impedance state" - which matters only once
+`EFUSE_JTAG_SEL_ENABLE` is burnt.
+
+Strapping timing to respect if you drive these pins:
+
+| Parameter | Min |
 | --- | --- |
-| GPIO4/GPIO5 | Good fallback if GPIO20-GPIO23 are needed for another bus |
-| GPIO28/GPIO29 or GPIO28/GPIO30 | Good if the SPI-labeled header is not used as SPI |
-| GPIO50/GPIO51 or GPIO51/GPIO52 | Good if ADC/comparator functions are not needed |
-| GPIO33/GPIO34 | Usable, but GPIO34 reset/JTAG strapping makes it less clean |
-| GPIO36 with another GPIO | Only after proving the attached device does not disturb boot/reset behavior |
+| `tSU` - power rails stable before `CHIP_PU` goes high | 0 ms |
+| `tH` - hold after `CHIP_PU` high, before pins become normal IO | 3 ms |
 
-## UART Lane Reassignment
+## UART Lane Plan
 
-### What "More UART Lanes" Means
+ESP32-P4 has six UART controllers: five HP (`UART0`-`UART4`) and one `LP_UART`.
+`UART0`-`UART4` TX/RX/RTS/CTS route to any GPIO through the GPIO matrix.
+`UART0` defaults to GPIO37/GPIO38 via IO MUX; `UART0` RTS/CTS IO MUX pads are
+GPIO8/GPIO9.
 
-ESP32-P4 has six UART controllers:
+The DFR1237 UART-labeled header (`J9`) only exposes the `UART0` pair plus power.
+Extra lanes are created in firmware.
 
-- Five high-performance UART controllers: `UART0` through `UART4`.
-- One low-power UART controller: `LP_UART`.
+Feature ceiling: 5 MBaud, 5-8 data bits, 1/1.5/2 stop bits, parity, RS485, IrDA,
+GDMA, hardware and software flow control, receive timeout, wake-on-UART. HP UARTs
+share 260 x 8-bit of FIFO RAM across all five controllers, so deep per-port FIFOs
+come at the expense of the others.
 
-The DFR1237 UART-labeled header only exposes the default `UART0` signals:
+### Recommended allocation
 
-| Expansion label | GPIO | Default role |
-| --- | --- | --- |
-| `37/T` | GPIO37 | `UART0_TXD_PAD` |
-| `38/R` | GPIO38 | `UART0_RXD_PAD` |
-| `GND` | GND | Reference |
-| `3V3` | 3.3 V | Power |
+There is no allocation on this board that costs nothing. Pick by what the design
+actually needs.
 
-Additional UART lanes are created in firmware by assigning `UART1` through
-`UART4` TX/RX pins to other free GPIO headers.
+| Lane | TX | RX | What it costs | When to pick it |
+| --- | --- | --- | --- | --- |
+| `UART0` | GPIO37 | GPIO38 | Nothing extra | Always keep. ROM logs, fallback console, UART download |
+| `UART1` | GPIO20 | GPIO21 | `ADC1_CHANNEL4/5` | Default first lane if no analog input is needed |
+| `UART2` | GPIO22 | GPIO23 | `ADC1_CHANNEL6/7` | Default second lane if no analog input is needed |
+| `UART3` | GPIO32 | GPIO33 | The I3C master interface | Third lane; safe if I3C is unused |
+| `UART4` | GPIO31 | GPIO28/29/30 | SPI2 quad group | Fourth lane; only if the SPI header is not used as SPI |
 
-### UART Routing Rules
+If analog input **is** needed, invert the order: keep GPIO20-GPIO23 as A0-A3,
+take `UART1` from GPIO32/GPIO33 and `UART2` from the SPI-labeled group, and
+accept GPIO48-GPIO52 for `UART3`/`UART4` only after measuring them under load.
 
-From the ESP32-P4 datasheet:
+Pairs to avoid unless proven:
 
-- `UART0` through `UART4` pins can be chosen from any GPIO through the GPIO
-  matrix.
-- `UART0` defaults to GPIO37/GPIO38 through IO MUX.
-- `LP_UART` pins can be chosen from LP GPIOs through the LP GPIO matrix.
-- `LP_UART` defaults to LP_GPIO14/LP_GPIO15, which correspond to GPIO14/GPIO15.
+| Pair | Why |
+| --- | --- |
+| GPIO4/GPIO5 | JTAG `MTMS`/`MTDO`, P3. The previous revision listed this as the preferred fallback; it is not |
+| Anything on GPIO48-GPIO52 | LDO caution from Espressif's own variant header |
+| GPIO34, GPIO36 | Strapping. Safe with unburnt eFuses, but the margin disappears the moment JTAG or ROM-print eFuses are programmed |
+| GPIO35 | BOOT button and boot-mode strapping |
 
-Board-level constraints matter more than the SoC's theoretical freedom:
+### Low-power UART
 
-- Avoid GPIO14-GPIO19, GPIO54, and GPIO6 if using Wi-Fi/Bluetooth, because those
-  are tied to the ESP32-C6 co-processor.
-- Avoid GPIO39-GPIO45 if using the onboard TF card.
-- Avoid GPIO9/GPIO12 if using the onboard microphone.
-- Avoid GPIO3 if using the onboard LED as a status indicator.
-- Be cautious with GPIO34-GPIO38. GPIO34 controls JTAG signal source at reset,
-  and GPIO35-GPIO38 control boot/download behavior. GPIO35 is also the BOOT
-  button. These pins can be regular IO after reset, but attached devices must
-  not force bad levels during reset.
-- GPIO37/GPIO38 are useful for ROM logs and UART download. Reassigning `UART0`
-  is possible after boot, but it removes the board's most predictable hardware
-  serial console unless USB CDC is used intentionally.
+`LP_UART` routes only to LP GPIOs, and its IO MUX pads `LP_UART_TXD_PAD` /
+`LP_UART_RXD_PAD` are GPIO14/GPIO15 - both consumed by the ESP32-C6 SDIO link.
+Other LP GPIOs (GPIO0-GPIO15) can carry it through the LP GPIO matrix, but on
+this board the only LP GPIOs reaching a header are GPIO4, GPIO5, GPIO7, and
+GPIO8. Treat `LP_UART` as impractical here unless Wi-Fi is abandoned.
 
-### Arduino Examples
-
-Use `HardwareSerial` with explicit pins. The IO expansion labels are just the
-physical GPIO numbers.
+### Arduino example
 
 ```cpp
 #include <Arduino.h>
@@ -280,7 +528,7 @@ constexpr int UART2_TX = 22;
 constexpr int UART2_RX = 23;
 
 void setup() {
-  Serial.begin(115200); // USB CDC when USB CDC On Boot is enabled.
+  Serial.begin(115200); // USB CDC; cdc_on_boot defaults to 1 on this board.
 
   ServoBus.begin(115200, SERIAL_8N1, UART1_RX, UART1_TX);
   AuxBus.begin(115200, SERIAL_8N1, UART2_RX, UART2_TX);
@@ -288,26 +536,15 @@ void setup() {
 
 void loop() {
   if (ServoBus.available()) {
-    int b = ServoBus.read();
-    AuxBus.write(b);
+    AuxBus.write(ServoBus.read());
   }
 }
 ```
 
-If the Arduino core exposes `Serial1`, `Serial2`, etc. for the selected ESP32-P4
-variant, the same pin-explicit pattern applies:
+Always pass pins explicitly so the code documents the header assignment. Do not
+rely on default `Serial1`/`Serial2` pins.
 
-```cpp
-Serial1.begin(115200, SERIAL_8N1, 21, 20); // RX, TX
-Serial2.begin(115200, SERIAL_8N1, 23, 22); // RX, TX
-```
-
-Do not rely on default `Serial1`/`Serial2` pins on this board. Pass pins
-explicitly so the code documents the IO expansion header assignment.
-
-### ESP-IDF Examples
-
-ESP-IDF uses `uart_set_pin()` after `uart_driver_install()`.
+### ESP-IDF example
 
 ```cpp
 #include "driver/uart.h"
@@ -332,123 +569,201 @@ void init_servo_uart() {
 }
 ```
 
-Hardware flow control is also routable if needed:
+Flow control is routable if the peer needs it:
 
 ```cpp
 uart_set_pin(UART_NUM_2, 22, 23, 31, 32); // TX, RX, RTS, CTS
 ```
 
-Only assign RTS/CTS if the external device actually uses flow control. Otherwise
-leave them as `UART_PIN_NO_CHANGE`.
-
-### Low-Power UART
-
-The LP UART is not the first choice for normal external modules. Its default
-pins are GPIO14/GPIO15, which are already used by the ESP32-C6 wireless SDIO
-link on DFR1172. Treat LP UART as unavailable unless Wi-Fi/Bluetooth is not used
-and the board-level ESP32-C6 connection is deliberately disabled or proven safe.
-
-## PlatformIO Notes
-
-Local PlatformIO board discovery found generic ESP32-P4 targets but no dedicated
-DFRobot FireBeetle 2 ESP32-P4 board ID in the installed platform:
-
-| Board ID | Notes |
-| --- | --- |
-| `esp32-p4` | Generic ESP32-P4 ES / pre-rev.300 target, 360 MHz, 4 MB default flash |
-| `esp32-p4_r3` | Generic ESP32-P4 rev.300 target, 400 MHz, 16 MB default flash |
-| `esp32-p4-evboard` | Espressif function EV board, not DFR1172 |
-| `esp32-p4_r3-evboard` | Espressif function EV board rev.301, not DFR1172 |
-
-For DFR1172, start from the generic rev.300 target only if the board's actual
-chip revision matches. Override flash and runtime assumptions explicitly.
-
-```ini
-[env:firebeetle2_esp32p4]
-platform = https://github.com/pioarduino/platform-espressif32.git
-board = esp32-p4_r3
-framework = arduino
-monitor_speed = 115200
-
-; DFR1172 has 16 MB flash and 32 MB PSRAM.
-board_upload.flash_size = 16MB
-board_build.flash_mode = qio
-board_build.f_flash = 80000000L
-board_build.psram_type = qspi
-build_flags =
-  -DBOARD_HAS_PSRAM
-```
-
-For conservative clocking, consider overriding CPU frequency to 360 MHz until the
-actual board revision is verified:
-
-```ini
-board_build.f_cpu = 360000000L
-```
-
-If using ESP-IDF:
-
-```ini
-[env:firebeetle2_esp32p4_idf]
-platform = https://github.com/pioarduino/platform-espressif32.git
-board = esp32-p4_r3
-framework = espidf
-monitor_speed = 115200
-board_upload.flash_size = 16MB
-```
-
-PlatformIO telemetry reported a local `.platformio/.cache` permission warning
-during `pio boards`; that did not prevent board list output, but it should be
-fixed outside this spec if PlatformIO behaves inconsistently.
+Only assign RTS/CTS if the external device uses flow control.
 
 ## Arduino-ESP32 Notes
 
-DFRobot's getting-started guide says to select `ESP32P4 Dev Module`, not a
-DFRobot-specific board entry. Important tool settings:
+**A dedicated board entry now exists.** Since arduino-esp32 core 3.3.11
+(2026-07-22) there is `DFRobot FireBeetle 2 ESP32-P4` with its own variant. Use
+it instead of `ESP32P4 Dev Module`; DFRobot's getting-started page still says
+otherwise and is out of date.
 
-- Enable `USB CDC On Boot` if using the programming USB-C port as `Serial`.
-- If `USB CDC On Boot` is disabled, serial output goes through UART TX/RX
-  instead; use `Serial0` deliberately for UART0 output.
-- Select a partition scheme compatible with 16 MB flash.
-- Board LED example uses GPIO3.
+Key values baked into that board entry:
 
-Arduino-ESP32 currently lists ESP32-P4 as supported in stable and development
-channels. Keep ESP32-P4 projects on Arduino core 3.3.x or newer unless a tested
-older core is deliberately pinned.
-
-## Boot and Debug Pin Cautions
-
-ESP32-P4 boot configuration uses strapping pins:
-
-| Pin | Role |
+| Setting | Value |
 | --- | --- |
-| GPIO34 | JTAG signal source control |
-| GPIO35 | Boot mode control; default weak pull-up; DFR1172 BOOT button |
-| GPIO36 | Boot mode / ROM print control |
-| GPIO37 | Boot mode control; default UART0 TX on DFR1172 |
-| GPIO38 | Boot mode control; default UART0 RX on DFR1172 |
+| `build.variant` | `dfrobot_firebeetle2_esp32p4` |
+| `build.chip_variant` | `esp32p4_es` (menu default: "Before v3.00") |
+| `build.f_cpu` | `360000000L` |
+| `build.flash_size` | `16MB` |
+| `build.flash_mode` | `dio` (bootloader `build.boot=qio`) |
+| `build.flash_freq` | `80m` |
+| `build.bootloader_addr` | `0x2000` |
+| `build.usb_mode` | `1` (Hardware CDC and JTAG) |
+| `build.cdc_on_boot` | `1` |
+| `build.defines` | `-DBOARD_HAS_PSRAM` |
+| `build.partitions` | `default` (a 4 MB table on a 16 MB part) |
 
-External circuits on these pins must not pull them to unintended levels during
-reset. If using them as UART lanes, ensure connected devices are high-impedance
-or benign through reset.
+Tool settings that matter:
+
+- **Chip Variant** menu: leave at "Before v3.00" for this board. "v3.00 or newer"
+  switches to `chip_variant=esp32p4` at 400 MHz and will not boot on v1.x
+  silicon.
+- The default partition scheme is the 4 MB `default` table. Pick a 16 MB scheme
+  (`16M Flash (3MB APP/9.9MB FATFS)` or similar) to use the flash on the board.
+- `USB CDC On Boot` defaults to enabled here, so `Serial` is USB CDC. `Serial0`
+  is the UART0 path on GPIO37/GPIO38.
+
+Convenience aliases the variant defines, beyond what the silkscreen shows:
+
+| Alias | GPIO | | Alias | GPIO |
+| --- | --- | --- | --- | --- |
+| `LED_BUILTIN` | 3 | | `A0` | 20 |
+| `TX` / `RX` | 37 / 38 | | `A1` | 21 |
+| `SDA` / `SCL` | 7 / 8 | | `A2` | 22 |
+| `SCK` | 28 | | `A3` | 23 |
+| `MOSI` | 29 | | `A4` | 51 |
+| `MISO` | 30 | | `A5` | 49 |
+| `SS` | 31 | | `A6` | 50 |
+| `T0`-`T3` | 4, 5, 7, 8 | | `A7` | 52 |
+
+Note `A4` maps to GPIO51 in both the silkscreen and the variant, but the variant
+adds `A5`-`A7` on GPIO49/GPIO50/GPIO52, which the silkscreen does not label.
+
+## PlatformIO Notes
+
+There is still **no DFRobot FireBeetle 2 ESP32-P4 board JSON** in
+pioarduino/platform-espressif32 as of release `55.03.311` (2026-07-24). Only
+generic and Espressif EV-board targets exist:
+
+| Board ID | `chip_variant` | `f_cpu` | Applies to this board? |
+| --- | --- | --- | --- |
+| `esp32-p4` | `esp32p4_es` | 360 MHz | Closest generic match |
+| `esp32-p4_r3` | `esp32p4` | 400 MHz | **No.** v3.x silicon only |
+| `esp32-p4-evboard` | `esp32p4_es` | 360 MHz | Espressif EV board |
+| `esp32-p4_r3-evboard` | `esp32p4` | 400 MHz | Espressif EV board, v3.x |
+
+`55.03.311` bundles arduino-esp32 3.3.11 and ESP-IDF v5.5.5, so the
+`dfrobot_firebeetle2_esp32p4` **variant** is present in the framework package
+even though no board JSON references it. Supply a project-local board definition
+to reach it.
+
+Save as `boards/dfrobot_firebeetle2_esp32p4.json` in the project root:
+
+```json
+{
+  "build": {
+    "core": "esp32",
+    "extra_flags": [
+      "-DBOARD_HAS_PSRAM",
+      "-DARDUINO_DFROBOT_FIREBEETLE2_ESP32P4"
+    ],
+    "f_cpu": "360000000L",
+    "f_flash": "80000000L",
+    "f_psram": "200000000L",
+    "flash_mode": "qio",
+    "mcu": "esp32p4",
+    "chip_variant": "esp32p4_es",
+    "variant": "dfrobot_firebeetle2_esp32p4"
+  },
+  "connectivity": ["wifi", "bluetooth"],
+  "debug": { "openocd_target": "esp32p4.cfg" },
+  "frameworks": ["arduino", "espidf"],
+  "name": "DFRobot FireBeetle 2 ESP32-P4",
+  "upload": {
+    "flash_size": "16MB",
+    "maximum_ram_size": 327680,
+    "maximum_size": 16777216,
+    "require_upload_port": true,
+    "speed": 460800
+  },
+  "url": "https://wiki.dfrobot.com/dfr1172/",
+  "vendor": "DFRobot"
+}
+```
+
+```ini
+[env:firebeetle2_esp32p4]
+platform = https://github.com/pioarduino/platform-espressif32/releases/download/55.03.311/platform-espressif32.zip
+board = dfrobot_firebeetle2_esp32p4
+framework = arduino
+monitor_speed = 115200
+board_build.partitions = default_16MB.csv
+build_flags =
+  -DARDUINO_USB_CDC_ON_BOOT=1
+  -DARDUINO_USB_MODE=1
+```
+
+Fall back to `board = esp32-p4` (not `esp32-p4_r3`) if a project-local board JSON
+is not wanted. That target defaults to 4 MB flash, so override
+`board_upload.flash_size`, `board_upload.maximum_size`, and the partition table.
+
+ESP-IDF framework variant:
+
+```ini
+[env:firebeetle2_esp32p4_idf]
+platform = https://github.com/pioarduino/platform-espressif32/releases/download/55.03.311/platform-espressif32.zip
+board = dfrobot_firebeetle2_esp32p4
+framework = espidf
+monitor_speed = 115200
+```
+
+Two items to verify on first build rather than assume:
+
+- **Flash mode.** Espressif's Arduino board entry uses `flash_mode=dio` with a
+  `qio` bootloader. The JSON above carries `qio`, matching the generic
+  `esp32-p4` targets. If the image fails to boot, try `"flash_mode": "dio"`.
+- **`connectivity`.** Wi-Fi here is ESP-Hosted over SDIO, not native. The field
+  is cosmetic in PlatformIO but the distinction is not.
+
+## ESP-IDF Notes
+
+- Current stable is **v6.0.2**; the v5.5 LTS line is at **v5.5.5**. pioarduino
+  `55.03.311` bundles v5.5.5.
+- For **v3.x** silicon, ESP-IDF v5.5.3+ or v6.0+ is mandatory.
+- For the **v1.x** silicon on this board, set
+  `CONFIG_ESP32P4_SELECTS_REV_LESS_V3=y` in `sdkconfig`. The ESP-IDF default is
+  `n`, which targets v3.x, so this must be set explicitly. An image built with
+  the wrong setting will fail to download or fail to boot.
+- With that set, `CONFIG_ESP32P4_REV_MIN` offers v0.0, v0.1, and v1.0; the
+  default falls to the lowest, and the maximum supported becomes v1.99. Any of
+  those accepts the v1.0 chip on this board, so no further action is needed.
+- If RMT is used in continuous TX mode, `RMT-176` applies. ESP-IDF has bypassed
+  it since v5.2, but confirm rather than assume if the RMT idle level matters.
+- Wi-Fi requires the `esp_hosted` component and matching ESP32-C6 slave firmware.
+  It is not `esp_wifi` against local silicon.
 
 ## Peripheral Remapping Cheat Sheet
 
-| Peripheral | Can remap to header GPIOs? | Notes |
+| Peripheral | Remappable to header GPIOs? | Notes |
 | --- | --- | --- |
-| UART0-UART4 | Yes, any GPIO via GPIO matrix | Best candidate for extra serial buses |
-| LP_UART | LP GPIOs only | Defaults overlap ESP32-C6 SDIO pins; avoid on DFR1172 |
-| I2C | Yes | SDA/SCL labels are defaults, not fixed |
-| SPI2/SPI3 user buses | Yes, but IO MUX defaults exist on some pins | Avoid flash and onboard SDIO pins |
+| `UART0`-`UART4` | Yes, any GPIO via GPIO matrix | `UART0` IO MUX pads GPIO37/38, RTS/CTS GPIO8/9 |
+| `LP_UART` | LP GPIOs only | IO MUX pads GPIO14/15 are taken by the C6 link; impractical here |
+| I2C | Yes | GPIO7/GPIO8 are board defaults, not fixed |
+| I3C | GPIO32/GPIO33 only | One I3C master; those are its pins |
+| SPI2/SPI3 | Yes, but IO MUX defaults live on GPIO28-GPIO38 | Board silkscreen does not match IO MUX roles |
 | RMT | Yes | Useful for single-wire protocols |
 | LEDC PWM | Yes | Good for simple PWM output |
-| TWAI/CAN | Yes, with external transceiver | Needs RX/TX GPIO pair |
+| MCPWM | Yes | Motor control |
+| TWAI/CAN | Yes, with external transceiver | Needs an RX/TX GPIO pair |
+| ADC1 | Fixed: GPIO16-GPIO23 | Only GPIO20-GPIO23 reach a header |
+| ADC2 | Fixed: GPIO49-GPIO54 | GPIO49-GPIO52 reach a header; LDO caution |
+| Analog comparator | Fixed: `ANA_COMP0` GPIO51/52, `ANA_COMP1` GPIO53/54 | Only `ANA_COMP0` is reachable |
+| Touch | Fixed: `TOUCH_CHANNEL1`-`14` on GPIO2-GPIO15 | Only GPIO4, 5, 7, 8 reach a header |
 | USB, MIPI CSI/DSI, flash | No general remap | Dedicated pins |
-| TF card SDIO | Board-wired to GPIO39-GPIO45 | Treat as fixed if using onboard slot |
-| ESP32-C6 wireless SDIO | Board-wired to GPIO14-GPIO19 plus GPIO54/GPIO6 | Treat as reserved |
+| TF card SDIO | Board-wired GPIO39-GPIO45 | Fixed if using the onboard slot |
+| ESP32-C6 SDIO | Board-wired GPIO14-GPIO19 plus GPIO54/GPIO6 | Reserved |
 
-## Mechanical Follow-Up
+## Open Items
 
-Hole diameter and exact mounting coordinates are intentionally not expanded here.
-For enclosure or daughterboard work, use the physical board or DFRobot source
-CAD/Gerber rather than OCR from the published drawing.
+Things this sheet states from documentation but has not confirmed on hardware:
+
+1. ~~**Chip revision.**~~ Resolved: the board reports **v1.0**. Confirm again for
+   any additional unit, since DFRobot ships across the v1.x family.
+2. **GPIO48-GPIO52 under load.** Espressif's "LDO power issues with high numbered
+   GPIOs" warning is unquantified. Measure before committing a UART or any
+   timing-critical signal there.
+3. **PlatformIO flash mode.** `qio` vs `dio` per the note above.
+4. **GPIO6.** The wiki lists it as a C6 wakeup line; the Arduino variant does
+   not. Read the main-board schematic or probe it.
+5. **Main-board schematic.** DFRobot ships it only as a raster PDF. If precise
+   net-level truth is needed for GPIO6, the mic, or the TF power switch, ask
+   DFRobot for source CAD.
+6. **Mounting-hole coordinates.** M3 diameter is confirmed; positions are not.
+   Use the physical board or DFRobot CAD for enclosure work.
