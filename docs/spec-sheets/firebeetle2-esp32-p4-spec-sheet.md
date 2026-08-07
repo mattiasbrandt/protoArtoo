@@ -36,6 +36,11 @@ DFRobot markets the main board as "ESP32-P4R32". That is a DFRobot shorthand for
 | ESP32-P4 Chip Revision v3.x User Guide | https://documentation.espressif.com/esp32-p4-chip-revision-v3.x_user_guide_en.html | v1.0, 2026.03. Design deltas, ESP-IDF version floor, silkscreen identification |
 | ESP32-P4 Series SoC Errata | https://docs.espressif.com/projects/esp-chip-errata/en/latest/esp32p4/esp-chip-errata-en-master-esp32p4.pdf | Errata doc v1.3, 2026-07-22. Per-revision affected matrix, chip-marking and eFuse revision identification |
 | ESP-IDF `Kconfig.hw_support` (esp32p4) | https://github.com/espressif/esp-idf/blob/v5.5.5/components/esp_hw_support/port/esp32p4/Kconfig.hw_support | `ESP32P4_SELECTS_REV_LESS_V3` and `ESP32P4_REV_MIN` semantics |
+| ESP-Hosted-MCU | https://github.com/espressif/esp-hosted-mcu | Architecture, transport comparison and throughput table, `docs/features.md`, `docs/troubleshooting.md` |
+| `esp_hosted` component | https://components.espressif.com/components/espressif/esp_hosted | v3.0.6; ESP-IDF component form of ESP-Hosted |
+| arduino-esp32 `esp32-hal-hosted.c/.h` | https://github.com/espressif/arduino-esp32/blob/master/cores/esp32/esp32-hal-hosted.c | Co-processor version query and slave OTA API |
+| arduino-esp32 `WiFiGeneric.cpp` | https://github.com/espressif/arduino-esp32/blob/master/libraries/WiFi/src/WiFiGeneric.cpp | `CONFIG_ESP_HOSTED_ENABLED` behavioural deviations |
+| ESP32-P4 product page | https://www.espressif.com/en/products/socs/esp32-p4 | Confirms the P4 has no radio and requires a companion chip |
 | arduino-esp32 `boards.txt` / variant | https://github.com/espressif/arduino-esp32 | Dedicated `dfrobot_firebeetle2_esp32p4` board entry and `pins_arduino.h`, present since core 3.3.11 |
 | pioarduino platform | https://github.com/pioarduino/platform-espressif32 | Board JSON inventory and bundled framework versions |
 | DFR1237 dimension drawing PDF | https://dfimg.dfrobot.com/wiki/19348/DFR1237_firebeetle-2-esp32-p4-kit_dimension_V1.0.pdf | Raster PDF; OCR/image inspection required |
@@ -250,29 +255,188 @@ disabled by default). Worth enabling on slow-edged or long-run digital inputs.
 | Total GPIOs on package | 55 |
 | Package | QFN104, 10 x 10 mm |
 
-### Wireless
+Wireless is not on this die. See the next section.
 
-The P4 has no radio. Wi-Fi/Bluetooth comes from an onboard ESP32-C6 reached over
-SDIO. Espressif's Arduino variant declares `BOARD_HAS_SDIO_ESP_HOSTED`, so the
-link is **ESP-Hosted**, not a transparent peripheral:
+## Wireless: ESP-Hosted over SDIO
 
-| Signal | GPIO |
+### The P4 die has no radio
+
+No Wi-Fi, no Bluetooth, no antenna, no PHY. This is a property of the SoC, not of
+this board, and it does not change between chip revisions. Espressif's own
+product page states the arrangement plainly: *"If the application requires
+wireless connectivity, any product from the ESP32-C/S series can serve as a
+wireless companion chip for ESP32-P4, connecting via SPI/SDIO/UART interfaces
+using ESP-Hosted or ESP-AT solutions."*
+
+DFRobot's marketing ("integrates WiFi/Bluetooth", "Wi-Fi 6") is true at the
+**board** level and false at the **SoC** level. What the board adds is a
+physically separate **ESP32-C6** wired to the P4 over a 4-bit SDIO bus, running
+**ESP-Hosted-MCU** as a communication co-processor.
+
+Every wireless capability in this section belongs to the C6. The seven GPIOs the
+link consumes are the tell: an on-die radio does not need a bus.
+
+### Transport pins
+
+Declared by Espressif's Arduino variant for this board
+(`variants/dfrobot_firebeetle2_esp32p4/pins_arduino.h`) and matched by the DFR1172
+wiki `WiFi` pin table:
+
+| Variant define | GPIO | Role |
+| --- | --- | --- |
+| `BOARD_SDIO_ESP_HOSTED_CLK` | GPIO18 | SDIO clock |
+| `BOARD_SDIO_ESP_HOSTED_CMD` | GPIO19 | SDIO command |
+| `BOARD_SDIO_ESP_HOSTED_D0` | GPIO14 | SDIO data 0 |
+| `BOARD_SDIO_ESP_HOSTED_D1` | GPIO15 | SDIO data 1 |
+| `BOARD_SDIO_ESP_HOSTED_D2` | GPIO16 | SDIO data 2 |
+| `BOARD_SDIO_ESP_HOSTED_D3` | GPIO17 | SDIO data 3 |
+| `BOARD_SDIO_ESP_HOSTED_RESET` | GPIO54 | C6 reset (wiki calls it `EN`) |
+
+`BOARD_HAS_SDIO_ESP_HOSTED` selects these automatically in
+`cores/esp32/esp32-hal-hosted.c`. They can be overridden at runtime before
+`WiFi.begin()` via `WiFiGenericClass::setPins(clk, cmd, d0, d1, d2, d3, rst)`,
+which exists only when `CONFIG_ESP_HOSTED_ENABLED` is set.
+
+The DFR1172 wiki additionally lists a `WAKEUP` line on GPIO6. The Arduino variant
+does not define it. Treat GPIO6 as reserved until the main-board schematic is
+read.
+
+GPIO14/GPIO15 doubling as the `LP_UART` IO MUX pads is why LP UART is impractical
+on this board while Wi-Fi is in use, and GPIO16-GPIO19 being `ADC1_CHANNEL0-3` is
+why only GPIO20-GPIO23 remain as reachable ADC1 inputs.
+
+### How it works
+
+Two distinct paths share the SDIO bus:
+
+- **Control plane.** Application Wi-Fi calls (`esp_wifi_init()`,
+  `esp_wifi_connect()`, ...) go to `esp_wifi_remote`, which forwards them to
+  ESP-Hosted. The host encodes them as protobuf RPC requests, ships them over
+  SDIO, and the C6 deserialises, executes, and replies. To the application it
+  looks like an ordinary ESP-IDF Wi-Fi call.
+- **Data plane.** Network packets are **not** serialised - they move as raw
+  frames. Only RPC control traffic pays the protobuf cost.
+
+Asynchronous Wi-Fi events raised by the C6 are delivered to the host and
+terminate in the standard ESP-IDF event loop, so `WiFi.onEvent()` and the
+`ARDUINO_EVENT_WIFI_*` handlers behave normally.
+
+In Arduino terms the entire `WiFi` class compiles under
+`#if SOC_WIFI_SUPPORTED || CONFIG_ESP_HOSTED_ENABLED`. `WiFi.begin()`,
+`WiFi.softAP()`, scanning, events, and the whole `Network`/`NetworkInterface`
+stack above it are unchanged. ESP-Hosted is an API-transparent layer, not an
+AT-command modem.
+
+### Wireless capability (from the ESP32-C6)
+
+| Parameter | Value |
 | --- | --- |
-| `BOARD_SDIO_ESP_HOSTED_CLK` | GPIO18 |
-| `BOARD_SDIO_ESP_HOSTED_CMD` | GPIO19 |
-| `BOARD_SDIO_ESP_HOSTED_D0` | GPIO14 |
-| `BOARD_SDIO_ESP_HOSTED_D1` | GPIO15 |
-| `BOARD_SDIO_ESP_HOSTED_D2` | GPIO16 |
-| `BOARD_SDIO_ESP_HOSTED_D3` | GPIO17 |
-| `BOARD_SDIO_ESP_HOSTED_RESET` | GPIO54 |
+| Wi-Fi standards | 802.11 b/g/n/ax |
+| Wi-Fi 6 (802.11ax) caveat | 20 MHz only, non-AP mode |
+| Band | 2.4 GHz only - **no 5 GHz** |
+| Bandwidth | 20 MHz and 40 MHz |
+| Modes | Station, SoftAP, SoftAP+Station, promiscuous |
+| Aggregation | TX/RX A-MPDU, TX/RX A-MSDU |
+| Bluetooth | BLE via ESP-Hosted / UART HCI, for NimBLE or Bluedroid |
 
-Consequences worth planning around:
+### Throughput
 
-- Wi-Fi is an RPC hop over SDIO, not native silicon. Throughput and latency
-  characteristics differ from an ESP32-S3, and the C6 needs matching slave
-  firmware. Verify throughput empirically before assuming parity.
-- The DFR1172 wiki also lists a `WAKEUP` line on GPIO6. The Arduino variant does
-  not define it. Treat GPIO6 as reserved until the main-board schematic is read.
+Espressif's published figures for the SDIO 4-bit transport with an ESP32-C6
+co-processor, measured in a shield box at 40 MHz bandwidth:
+
+| Direction | UDP | TCP |
+| --- | --- | --- |
+| Host TX | 79.5 Mbit/s | 53.4 Mbit/s |
+| Host RX | 68.1 Mbit/s | 44 Mbit/s |
+
+For context, SDIO 4-bit is the highest-performing ESP-Hosted transport; standard
+SPI manages roughly 22-25 Mbit/s and UART about 0.7 Mbit/s. These are Espressif's
+shield-box numbers on a reference design, not measurements on this board, and
+real over-the-air results will be lower. But the headline is that the hosted
+architecture is not the bottleneck - SDIO 4-bit comfortably exceeds what native
+ESP32 Wi-Fi typically delivers in practice. Latency and jitter under concurrent
+load are the properties worth measuring, not raw bandwidth.
+
+### Feature support
+
+Implemented by ESP-Hosted-MCU:
+
+- Wi-Fi Station, SoftAP, SoftAP+Station
+- Wi-Fi Enterprise security (optional)
+- Wi-Fi Easy Connect / DPP QR-code onboarding (optional)
+- iTWT (802.11ax individual Target Wake Time) - supported by the C6
+- Network Split, to divide traffic handling between host and co-processor
+- Bluetooth over ESP-Hosted or UART HCI (NimBLE, Bluedroid)
+- OpenThread / Zigbee over a dedicated UART
+- Host Power Save, letting the P4 sleep and be woken by the C6
+- GPIO Expander, letting the host drive the C6's GPIOs
+
+**ESP-NOW is not in the implemented-features list.** If a design depends on
+ESP-NOW - a common choice for body-to-dome links in droid builds - confirm it
+before committing, because ESP-Hosted does not currently advertise it.
+
+### Arduino behavioural differences
+
+Verified in `libraries/WiFi/src/WiFiGeneric.cpp`. These are real deviations from
+native-Wi-Fi ESP32 behaviour and are easy to trip over:
+
+| Behaviour | Under ESP-Hosted |
+| --- | --- |
+| Wi-Fi credential persistence | **Disabled.** `wifiLowLevelInit()` forces `cfg.nvs_enable = false` and `persistent = false`. The Wi-Fi driver will not store or restore credentials, so a bare `WiFi.begin()` cannot reconnect from driver-held state. The application must own its credentials. |
+| SmartConfig / ESP-Touch | Unavailable. All `SC_EVENT` handling is compiled out. |
+| Network provisioning | Unavailable. `NETWORK_PROV_EVENT` registration is compiled out. |
+| `setDualAntennaConfig()` | Unavailable. |
+
+The credential point is the one most likely to cause a surprise, and it is benign
+for any design that already keeps SSID and password in its own NVS namespace and
+passes them explicitly to `WiFi.begin(ssid, pass)`.
+
+### Co-processor firmware lifecycle
+
+This is the genuinely new operational surface: **two firmware artefacts, on two
+chips, that must stay compatible.** The Arduino core exposes an API for managing
+it (`cores/esp32/esp32-hal-hosted.h`), so it is tractable rather than scary:
+
+| Call | Purpose |
+| --- | --- |
+| `hostedGetHostVersion(&maj, &min, &patch)` | ESP-Hosted version bundled in the host image |
+| `hostedGetSlaveVersion(&maj, &min, &patch)` | Version actually running on the C6 |
+| `hostedGetSlaveTargetName()` | Co-processor target, e.g. `esp32c6`. Queried live from the slave when it is running ESP-Hosted 2.12.2 or newer |
+| `hostedHasUpdate()` | Compares the two, logs both, returns true when the host is newer |
+| `hostedGetUpdateURL()` | Builds `https://espressif.github.io/arduino-esp32/hosted/<target>-v<major>.<minor>.<patch>.bin` |
+| `hostedBeginUpdate()` / `hostedWriteUpdate()` / `hostedEndUpdate()` / `hostedActivateUpdate()` | Streams a new slave image to the C6 over the existing SDIO link |
+| `hostedIsInitialized()` / `hostedIsWiFiActive()` / `hostedIsBLEActive()` | Link and radio state |
+
+Points that matter for a fielded device:
+
+- **The C6 is updated over SDIO, not over wires.** No ESP-Prog, no jumpers, no
+  disassembly. That removes the worst version of this problem.
+- **Version skew is detected, not silently tolerated.** `hostedHasUpdate()` warns
+  in both directions: host-newer prints an update URL, host-older prints
+  "Version on Host is OLDER than version on co-processor".
+- **Host-side OTA does not carry the slave.** Flashing a new P4 application
+  leaves the C6 on whatever it was running. If a core upgrade bumps the bundled
+  ESP-Hosted version, the slave OTA has to be driven separately - worth wiring
+  into the device's own update flow rather than discovering it in the field.
+- A dead or mismatched link surfaces as
+  `E (…) transport: Not able to connect with ESP-Hosted slave device`.
+- ESP-Hosted also ships as a standalone ESP-IDF component
+  (`espressif/esp_hosted`, v3.0.6 at time of writing) for framework `espidf`
+  builds, configured via `CONFIG_SLAVE_IDF_TARGET_ESP32C6` and
+  `CONFIG_ESP_HOSTED_CP_TARGET_ESP32C6`.
+
+### What to prove before relying on it
+
+Bandwidth is not the risk; the transport is fast. The things worth measuring on
+this board specifically:
+
+1. Behaviour of a long-lived SSE or WebSocket fan-out across the RPC boundary,
+   including reconnect storms.
+2. Socket and PCB accounting under concurrent connections, since host-side lwIP
+   tuning was characterised against native Wi-Fi.
+3. Recovery after a C6 reset or SDIO link fault - does the host stack come back,
+   or does it need a reboot?
+4. Whether host application OTA and slave OTA can coexist in one update flow.
 
 ## Onboard Fixed Pin Use
 
