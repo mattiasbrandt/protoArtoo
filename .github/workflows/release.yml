@@ -35,16 +35,14 @@ jobs:
           - protoArtoo_mp3trigger
           - protoArtoo_dysv5w
     steps:
+      # Default depth-1 checkout is enough for the version stamp: on a tag
+      # push the tag ref itself is fetched, so git describe resolves it at
+      # distance 0 (verified by replicating the checkout fetch locally).
       - name: ⬇️ Checkout
-        uses: actions/checkout@v4
-        with:
-          # Full history + tags so the pre-build version stamp
-          # (tools/extract_version.py -> git describe) resolves the pushed tag
-          # exactly instead of degrading to a bare-hash fallback.
-          fetch-depth: 0
+        uses: actions/checkout@v7
 
       - name: 🐍 Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: '3.x'
           cache: pip
@@ -54,7 +52,7 @@ jobs:
         run: pip install platformio && pip install -r tools/requirements.txt
 
       - name: 💾 Cache PlatformIO packages and toolchains
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           # Cache the whole ~/.platformio tree, matching verification.yml — skips
           # re-downloading/re-unpacking the ESP-IDF toolchain on a warm cache.
@@ -80,7 +78,7 @@ jobs:
              release-artifacts/${{ matrix.env }}-filesystem.bin
 
       - name: ⬆️ Upload build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-artifacts-${{ matrix.env }}
           path: release-artifacts/
@@ -95,10 +93,10 @@ jobs:
       contents: write
     steps:
       - name: ⬇️ Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: ⬇️ Download all build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: release-artifacts-*
           path: release-artifacts
