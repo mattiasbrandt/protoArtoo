@@ -10,6 +10,7 @@ Issues and PRDs for this repo live as GitHub issues on `github.com/mattiasbrandt
 - **Comment on an issue**: `gh issue comment <number> --body "..."`
 - **Apply / remove labels**: `gh issue edit <number> --add-label "..."` / `--remove-label "..."`
 - **Close**: `gh issue close <number> --comment "..."`
+- **Relationships (parent/sub-issue, blocked-by/blocking), linking a branch to an issue, updating a status comment in place**: follow the `github-issues` skill — it carries the native `gh` commands (`--parent`, `--add-blocked-by`, `gh issue develop`, `--edit-last`). Relationships are set natively, never as body text like "Blocked by: #123".
 
 Infer the repo from `git remote -v` — `gh` does this automatically when run inside a clone.
 
