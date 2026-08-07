@@ -12,7 +12,10 @@ Version string format:
   No tags at all: v0.0.0-dev
 
 Strategy (in order):
-  1. git describe --tags --always --dirty  -> preferred, includes commit distance
+  1. git describe --tags --always + explicit dirty check  -> preferred
+     (equivalent to --dirty, but blind to the two stamp files this script
+     writes — otherwise every build after the first reports -dirty, including
+     a pristine CI release checkout)
   2. Latest ## [x.y.z] entry in CHANGELOG.md + short git hash  -> fallback
   3. "v0.0.0-dev"                           -> last resort
 
@@ -52,11 +55,29 @@ def _current_branch():
     return _run(["git", "rev-parse", "--abbrev-ref", "HEAD"])
 
 
+def _tree_is_dirty():
+    """True if any tracked file is modified, EXCLUDING the version stamps this
+    script itself writes. The stamps are regenerated on every build, so letting
+    them count would make every build after the first report -dirty — including
+    a pristine CI release checkout."""
+    out = _run([
+        "git", "status", "--porcelain", "--untracked-files=no", "--",
+        ".",
+        ":(exclude)data/fw-version.json",
+        ":(exclude)data/fs-version.json",
+    ])
+    return bool(out)
+
+
 def _version_from_git():
     """Return version string from `git describe`, normalised to v-prefix."""
-    raw = _run(["git", "describe", "--tags", "--always", "--long", "--dirty"])
+    raw = _run(["git", "describe", "--tags", "--always", "--long"])
     if not raw:
         return None
+    # Append -dirty in describe's own format so the normalisation below sees
+    # exactly what `git describe --dirty` would have produced.
+    if _tree_is_dirty():
+        raw += "-dirty"
     # git describe output: "v0.3.0-0-gabcdef" or "v0.3.0-5-gabcdef"
     # If it already starts with 'v', keep it; otherwise prepend.
     if not raw.startswith("v"):
