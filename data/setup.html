@@ -235,21 +235,23 @@
     <div class="card">
       <h3>🔌 Serial Status</h3>
       <div class="status-grid mt-16">
-        <div class="status-item">
-          <dt>S1 — Hoverboard</dt>
-          <dd id="serial-s1-state">...</dd>
-          <div class="desc mt-6" title="GPIO 16/17 · UART1 · 115200 baud">UART1 · 115200 baud</div>
-        </div>
-        <div class="status-item">
-          <dt>S2 — Sound</dt>
-          <dd id="serial-s2-state">...</dd>
-          <div class="desc mt-6" title="GPIO 26/35 · sound serial (driver-dependent) · 9600 baud">Sound serial (driver-dependent) · 9600 baud</div>
-        </div>
-        <div class="status-item">
-          <dt>S3 — Dome Link</dt>
-          <dd id="serial-s3-state">...</dd>
-          <div class="desc mt-6" title="GPIO 33/34 · UART2 · 9600 baud">UART2 · 9600 baud</div>
-        </div>
+        <dl>
+          <div class="status-item">
+            <dt>S1 — Hoverboard</dt>
+            <dd id="serial-s1-state">...</dd>
+            <div class="desc mt-6" title="GPIO 16/17 · UART1 · 115200 baud">UART1 · 115200 baud</div>
+          </div>
+          <div class="status-item">
+            <dt>S2 — Sound</dt>
+            <dd id="serial-s2-state">...</dd>
+            <div class="desc mt-6" title="GPIO 26/35 · sound serial (driver-dependent) · 9600 baud">Sound serial (driver-dependent) · 9600 baud</div>
+          </div>
+          <div class="status-item">
+            <dt>S3 — Dome Link</dt>
+            <dd id="serial-s3-state">...</dd>
+            <div class="desc mt-6" title="GPIO 33/34 · UART2 · 9600 baud">UART2 · 9600 baud</div>
+          </div>
+        </dl>
       </div>
       <div id="serial-status-line" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true"></div>
     </div>
@@ -268,26 +270,28 @@
         </label>
       </form>
       <div class="status-grid mt-16">
-        <div class="status-item">
-          <dt>Uptime</dt>
-          <dd id="diag-uptime">...</dd>
-          <div class="desc mt-6">Controller runtime since boot</div>
-        </div>
-        <div class="status-item">
-          <dt>Memory Free</dt>
-          <dd id="diag-heap-free">...</dd>
-          <div class="desc mt-6">Current free heap</div>
-        </div>
-        <div class="status-item">
-          <dt>Memory Min (since boot)</dt>
-          <dd id="diag-heap-min">...</dd>
-          <div class="desc mt-6">Low-water mark</div>
-        </div>
-        <div class="status-item">
-          <dt>Largest Block</dt>
-          <dd id="diag-heap-largest">...</dd>
-          <div class="desc mt-6">Fragmentation indicator</div>
-        </div>
+        <dl>
+          <div class="status-item">
+            <dt>Uptime</dt>
+            <dd id="diag-uptime">...</dd>
+            <div class="desc mt-6">Controller runtime since boot</div>
+          </div>
+          <div class="status-item">
+            <dt>Memory Free</dt>
+            <dd id="diag-heap-free">...</dd>
+            <div class="desc mt-6">Current free heap</div>
+          </div>
+          <div class="status-item">
+            <dt>Memory Min (since boot)</dt>
+            <dd id="diag-heap-min">...</dd>
+            <div class="desc mt-6">Low-water mark</div>
+          </div>
+          <div class="status-item">
+            <dt>Largest Block</dt>
+            <dd id="diag-heap-largest">...</dd>
+            <div class="desc mt-6">Fragmentation indicator</div>
+          </div>
+        </dl>
       </div>
       <div id="diag-memory-note" class="desc mt-12">Memory Min is the lowest free heap seen since boot (historical low-water mark).</div>
       <div id="diag-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true"></div>
@@ -307,34 +311,36 @@
       </div>
 
       <div class="status-grid mt-16">
-        <div class="status-item">
-          <dt>Heap Free</dt>
-          <dd id="prof-heap-free">...</dd>
-        </div>
-        <div class="status-item">
-          <dt>Heap Min</dt>
-          <dd id="prof-heap-min">...</dd>
-        </div>
-        <div class="status-item">
-          <dt>Largest Block</dt>
-          <dd id="prof-heap-largest">...</dd>
-        </div>
-        <div class="status-item">
-          <dt>Frag Ratio</dt>
-          <dd id="prof-frag-ratio">...</dd>
-        </div>
-        <div class="status-item">
-          <dt>Alloc Blocks</dt>
-          <dd id="prof-alloc-blocks">...</dd>
-        </div>
-        <div class="status-item">
-          <dt>Free Blocks</dt>
-          <dd id="prof-free-blocks">...</dd>
-        </div>
-        <div class="status-item">
-          <dt>Failed Allocs</dt>
-          <dd id="prof-failed-allocs">...</dd>
-        </div>
+        <dl>
+          <div class="status-item">
+            <dt>Heap Free</dt>
+            <dd id="prof-heap-free">...</dd>
+          </div>
+          <div class="status-item">
+            <dt>Heap Min</dt>
+            <dd id="prof-heap-min">...</dd>
+          </div>
+          <div class="status-item">
+            <dt>Largest Block</dt>
+            <dd id="prof-heap-largest">...</dd>
+          </div>
+          <div class="status-item">
+            <dt>Frag Ratio</dt>
+            <dd id="prof-frag-ratio">...</dd>
+          </div>
+          <div class="status-item">
+            <dt>Alloc Blocks</dt>
+            <dd id="prof-alloc-blocks">...</dd>
+          </div>
+          <div class="status-item">
+            <dt>Free Blocks</dt>
+            <dd id="prof-free-blocks">...</dd>
+          </div>
+          <div class="status-item">
+            <dt>Failed Allocs</dt>
+            <dd id="prof-failed-allocs">...</dd>
+          </div>
+        </dl>
       </div>
 
       <div class="mt-16">

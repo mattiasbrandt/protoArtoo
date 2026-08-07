@@ -187,6 +187,8 @@
     signals.forEach(({ id, state, reason, detail }) => setIndicator(id, state, reason, detail));
   };
 
+  let renderedComponentIds = null;
+
   const renderComponentStatus = (payload) => {
     if (!componentStatusCard || !componentStatusGrid) return;
 
@@ -194,37 +196,71 @@
     if (active.length === 0) {
       componentStatusCard.classList.add("hidden");
       componentStatusGrid.innerHTML = "";
+      renderedComponentIds = null;
       return;
     }
 
     componentStatusCard.classList.remove("hidden");
-    componentStatusGrid.innerHTML = active.map(([key, icon, label]) => {
-      const entry = payload[key];
-      let state = entry ? "enabled" : "disabled";
-      let detail = entry ? "✅ Enabled" : "⏸️ Disabled";
-      if (entry && typeof entry === "object") {
-        state = entry.state || "enabled";
-        detail = entry.detail || "✅ Enabled";
-      }
-      const stateText = String(state).replace(/_/g, " ");
-      const safeState = window.PAUtils.escapeHtml(stateText);
-      const safeDetail = window.PAUtils.escapeHtml(detail);
-      let transportLine = "";
-      if (key === "s3DomeCtrl" && payload.dome_link?.state === "connected") {
-        if (payload.dome_link?.uart_owned_by_dome === true) {
-          transportLine = `<div class="desc mt-6">${window.PAUtils.escapeHtml("UART2 owned by DomeLink")}</div>`;
+
+    // Build signature: component IDs + flags that affect transport lines
+    const transportFlags = [
+      payload.dome_link?.state === "connected" && payload.dome_link?.uart_owned_by_dome ? "dome-uart" : "",
+      payload.s2Sound?.rx_status === "blocked_by_dome_uart" ? "sound-blocked" : ""
+    ].filter(Boolean).join(",");
+    const signature = active.map(([key]) => key).join(",") + "|" + transportFlags;
+
+    // Rebuild only if component IDs or transport flags changed
+    if (signature !== renderedComponentIds) {
+      renderedComponentIds = signature;
+      const items = active.map(([key, icon, label]) => {
+        const entry = payload[key];
+        let state = entry ? "enabled" : "disabled";
+        let detail = entry ? "✅ Enabled" : "⏸️ Disabled";
+        if (entry && typeof entry === "object") {
+          state = entry.state || "enabled";
+          detail = entry.detail || "✅ Enabled";
         }
-      }
-      if (key === "s2Sound" && entry?.rx_status === "blocked_by_dome_uart") {
-        transportLine += `<div class="desc mt-6">${window.PAUtils.escapeHtml("CHIRP RX unavailable while DomeLink owns UART2")}</div>`;
-      }
-      return `
-        <div class="status-item">
+        const stateText = String(state).replace(/_/g, " ");
+        const safeState = window.PAUtils.escapeHtml(stateText);
+        const safeDetail = window.PAUtils.escapeHtml(detail);
+        let transportLine = "";
+        if (key === "s3DomeCtrl" && payload.dome_link?.state === "connected") {
+          if (payload.dome_link?.uart_owned_by_dome === true) {
+            transportLine = `<div class="desc mt-6">${window.PAUtils.escapeHtml("UART2 owned by DomeLink")}</div>`;
+          }
+        }
+        if (key === "s2Sound" && entry?.rx_status === "blocked_by_dome_uart") {
+          transportLine += `<div class="desc mt-6">${window.PAUtils.escapeHtml("CHIRP RX unavailable while DomeLink owns UART2")}</div>`;
+        }
+        return `
+        <div class="status-item" id="comp-${key}">
           <dt>${icon} ${label}</dt>
-          <dd>${safeState}</dd>
-          <div class="desc mt-6">${safeDetail}</div>${transportLine}
+          <dd id="state-${key}">${safeState}</dd>
+          <div class="desc mt-6" id="detail-${key}">${safeDetail}</div>${transportLine}
         </div>`;
-    }).join("");
+      }).join("");
+      componentStatusGrid.innerHTML = `<dl class="status-grid">${items}</dl>`;
+    } else {
+      // Patch only the text content when component set hasn't changed
+      active.forEach(([key]) => {
+        const entry = payload[key];
+        let state = entry ? "enabled" : "disabled";
+        let detail = entry ? "✅ Enabled" : "⏸️ Disabled";
+        if (entry && typeof entry === "object") {
+          state = entry.state || "enabled";
+          detail = entry.detail || "✅ Enabled";
+        }
+        const stateText = String(state).replace(/_/g, " ");
+        const safeState = window.PAUtils.escapeHtml(stateText);
+        const safeDetail = window.PAUtils.escapeHtml(detail);
+
+        const stateEl = document.getElementById(`state-${key}`);
+        if (stateEl) stateEl.textContent = safeState;
+
+        const detailEl = document.getElementById(`detail-${key}`);
+        if (detailEl) detailEl.textContent = safeDetail;
+      });
+    }
   };
 
   const renderOpMode = (payload) => {
