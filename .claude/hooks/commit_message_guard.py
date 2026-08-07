@@ -7,11 +7,10 @@ import sys
 
 ALLOWED_TYPES = "feat|fix|docs|refactor|chore|test|style|perf"
 ALLOWED_SCOPES = "drive|sbus|failsafe|dome|audio|servo|web|nvs|wifi|hw|plan|test|ci"
-PHASE_PATTERN = re.compile(
-    rf"^(?:{ALLOWED_TYPES})!?\(phase:v\d+\.\d+\.\d+/T\d{{2}}(?:/slice:[a-z0-9-]+)?\): .+",
-    re.DOTALL,
-)
-LEGACY_SCOPE_PATTERN = re.compile(
+# The live convention per AGENTS.md "Commit scope format": plain
+# type(scope): summary. The phase-era type(phase:vX.Y.Z/TNN) token is
+# history only and no longer accepted.
+SCOPE_PATTERN = re.compile(
     rf"^(?:{ALLOWED_TYPES})!?\((?:{ALLOWED_SCOPES})\): .+",
     re.DOTALL,
 )
@@ -88,7 +87,7 @@ def main() -> int:
         )
         return 0
 
-    if not (PHASE_PATTERN.match(message) or LEGACY_SCOPE_PATTERN.match(message)):
+    if not SCOPE_PATTERN.match(message):
         _deny(
             "Commit blocked: invalid commit message format. Expected "
             "type(scope): summary (scope from CONTRIBUTING). "
