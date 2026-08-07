@@ -15,15 +15,7 @@ Every semantic version release belongs here:
 
 ## [Unreleased]
 
-### Added
-- Request-lifecycle evidence instrumentation for issue #52/#54: `/api/status` now
-  reports live/peak inflight request depth, peak SSE clients, and refusal counts
-  by admission class (inflight cap, SSE cap, heap floor diagnostic/non-diagnostic);
-  `/api/profiler` (PA_HEAP_PROFILE builds) additionally reports a bounded
-  request-start/handler-done/disconnect trace. Evidence-gathering only — no
-  admission caps, floors, or weights were changed.
-
-## [1.0.0] - 2026-08-01
+## [1.0.0] - 2026-08-07
 
 First stable release. Feature-complete for day-to-day operation — audio, RC
 control, dome control, servos, the web control panel, backups, and firmware
@@ -59,6 +51,22 @@ follow-up work, not a blocker for this release (see `docs/status.md`).
 - Operators can now set a custom droid name from the web UI, shown on the status page and in logs.
 - GitHub Actions now gate pull requests with build, test, static-analysis, and
   dependency-review checks.
+- Tagged releases now publish ready-to-flash firmware and filesystem images for
+  each sound backend (CHIRP and MP3 Trigger), so operators can update a
+  controller without installing a build toolchain.
+- When the controller is too busy to serve a page, it now answers with a plain
+  "controller busy" recovery page that explains what happened and offers a
+  retry, instead of the browser showing a generic connection error. A refused
+  page load is now visibly different from an unreachable controller.
+- Every dashboard page now loads its data through a shared bootstrap that
+  reports each section's state individually. A section that fails to load shows
+  its own retry control and an explanation, instead of leaving the page blank or
+  silently stale, and controls backed by data that never arrived are disabled
+  rather than acting on stale values.
+- `/api/status` now reports web-server load evidence — live and peak concurrent
+  request depth, peak live-status client count, and how many connections were
+  refused and why — so a busy or degraded controller can be diagnosed from the
+  dashboard instead of from a serial log.
 
 ### Changed
 - Drive and RC control paths now use a shared output arbiter, safer source handling, and latching safety behavior.
@@ -73,12 +81,19 @@ follow-up work, not a blocker for this release (see `docs/status.md`).
   instead of intermittently dropping audio or dome commands.
 - Sequence and CHIRP catalog memory is now allocated based on actual data size
   instead of static worst-case buffers, reducing baseline heap usage.
-- AsyncTCP and AsyncWebServer were upgraded to the actively maintained
-  `ESP32Async/` fork, fixing SSE memory leaks and TCP teardown issues.
+- The controller's web server was replaced. It now runs on the ESP32's own
+  built-in HTTP server (via PsychicHttp) instead of the previous asynchronous
+  stack, which could not be made reliable under the memory pressure a dashboard
+  page load creates. Connections are now reused across requests rather than
+  reopened per response, and a request that stalls mid-response is closed
+  instead of holding the connection open indefinitely.
+- The controller now decides whether it can serve a request before accepting it,
+  based on actual free memory at that moment, and always answers — with the
+  recovery page above — rather than dropping the connection. Live-status
+  streams are budgeted separately from ordinary page loads, so a dashboard left
+  open no longer starves a new page load.
 - The dome panel picker UX is more direct (fewer confirmation steps for pie
   panels) and more readable (contrast, label sizing) for low-light operation.
-- SSE connections are now rate-limited and paced to avoid overloading the
-  device under dense dashboard polling.
 - OTA update timeouts were extended for reliability over slow connections.
 
 ### Fixed
@@ -92,14 +107,28 @@ follow-up work, not a blocker for this release (see `docs/status.md`).
   the shared UART; it now retries instead of falling back permanently.
 - Dome link UART recovery — reconnects now clear stale errors and no longer
   hang indefinitely contending for the shared UART.
+- Dashboard pages that would fail to load, load partially, or hang the
+  controller when several pages or tabs were opened at once, or when the
+  controller was low on memory. Page loads now succeed or refuse cleanly with an
+  explanation, and the controller stays reachable throughout.
 - Server-side crashes and connection issues under live-status (SSE) load, and
-  under general API load.
+  under general API load. A live-status client that stops reading is now dropped
+  instead of blocking the controller.
+- Large web assets could be truncated mid-transfer when memory was tight,
+  producing a partly-rendered dashboard; they are now sent in chunks the
+  connection can accept, and a starved write is retried instead of cut short.
+- A failed or incomplete firmware/filesystem upload could leave the controller
+  rebooting into a half-written image; an upload that delivers no usable image
+  is now rejected and the update aborted, with an accurate error message.
 - Dome panel availability messages now correctly explain *why* a panel is
   unavailable instead of a generic "not reachable".
 - The dome panel picker no longer renders blank on first load.
 - Pie panel label contrast now meets accessibility guidelines for low-light use.
 - A spurious failsafe trigger in single-SBUS mode with a secondary channel enabled.
 - Sequence save no longer drops the sequence body, fixing a save/round-trip regression.
+- A saved Learned Sequence could be written but not marked usable, so it never
+  appeared as playable; saved sequences are now indexed correctly and sized to
+  the sequence actually submitted.
 
 ### Still to verify
 - Drive-motor (hoverboard) behavior on a completely assembled droid. Drive control,
@@ -108,6 +137,11 @@ follow-up work, not a blocker for this release (see `docs/status.md`).
   work after `v1.0.0` and will be documented when complete.
 - The MP3 Trigger audio module (an alternative to CHIRP) is implemented but has
   not been re-confirmed on hardware for this release.
+- The failed-upload abort guard is implemented and confirmed in software, but the
+  failure itself has not been reproduced on hardware for this release.
+- Web-server behavior is confirmed under bench load and induced memory pressure,
+  but not yet over a long continuous session; sustained multi-hour dashboard use
+  has not been soak-tested.
 - Drive hardware checks are still to be completed on the hoverboard and complete droid hardware. This is the remaining hardware verification item before release.
 
 ## [0.4.0] - 2026-03-29
