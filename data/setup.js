@@ -1021,11 +1021,17 @@
 // =============================================================================
 // Memory Profiler UI (PA_HEAP_PROFILE=1 builds only)
 // Checks /api/profiler on load. If endpoint returns 200, shows the profiler
-// card and starts a 5-second refresh loop. If 404, card stays hidden.
+// card and starts a 5-second refresh loop. If 404, card stays hidden and
+// profiler requests stop to avoid repeated 404 errors on builds that don't
+// support heap profiling.
 // =============================================================================
 (() => {
   const card = document.getElementById("profiler-card");
   if (!card) return;
+
+  // Track whether the endpoint is unavailable (404 on first request).
+  // Once we know the capability is absent, stop making requests.
+  let profilerNotSupported = false;
 
   function kb(bytes) {
     return (bytes / 1024).toFixed(1) + " KB";
@@ -1122,14 +1128,23 @@
   }
 
   async function refreshProfiler() {
+    // If we previously detected that /api/profiler is not supported (404),
+    // stop making requests to avoid repeated 404 errors.
+    if (profilerNotSupported) return;
+
     try {
       const resp = await fetch("/api/profiler");
-      if (!resp.ok) return;
+      if (!resp.ok) {
+        // On 404 (or other error), mark profiler as unsupported and stop requesting.
+        profilerNotSupported = true;
+        return;
+      }
       const data = await resp.json();
       card.hidden = false;
       renderProfiler(data);
     } catch (_) {
-      // endpoint absent or network error — leave card hidden
+      // Network error — assume unavailable and stop requesting.
+      profilerNotSupported = true;
     }
   }
 
