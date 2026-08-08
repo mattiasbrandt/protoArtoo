@@ -100,5 +100,15 @@
   window.addEventListener("pa:identity-updated", (event) => {
     applyIdentityName(event.detail?.droidName);
   });
-  loadIdentity();
+
+  // Register identity load with the bootstrap if available; otherwise run it directly.
+  // This ensures the identity request is routed through the bootstrap's single-slot
+  // recovery mechanism rather than competing with other startup GETs.
+  if (window.PABootstrap) {
+    window.PABootstrap.registerSection("shell-identity", loadIdentity, {
+      label: "droid identity",
+    });
+  } else {
+    loadIdentity();
+  }
 })();

@@ -803,7 +803,22 @@
   // Page Recovery: register startup API loads as sections so the bootstrap
   // can show recovery state if any fetch fails.
   // See docs/page-load-recovery-architecture.md and ADR 0019.
+
+  // Initial status fetch: loads the current state when the stream is cold.
+  // This is registered as a section so the bootstrap can show recovery state
+  // if the fetch fails. For the stream-supported case, this section only runs
+  // if the stream has no cached value. For the fallback case, it ensures the
+  // page shows data before polling begins.
+  const loadInitialStatus = async () => {
+    const hasStream = window.PAStatusStream?.isSupported();
+    const hasCachedStatus = hasStream && window.PAStatusStream?.getLastStatus();
+    if (!hasStream || !hasCachedStatus) {
+      await refreshStatusOnce();
+    }
+  };
+
   const SECTIONS = [
+    ["app-initial-status", loadInitialStatus, "initial status"],
     ["app-recent-logs", loadRecentLogs, "recent logs"],
     ["app-log-level", loadLogLevel, "log level setting"],
     ["app-action-tokens", loadCommandTokens, "action registry"],
@@ -848,21 +863,14 @@
         setStale(true);
       }
     });
-
-    if (!window.PAStatusStream.getLastStatus()) {
-      refreshStatusOnce().catch(() => {
-        // Fallback polling below handles temporary fetch failures.
-      });
-    }
   } else {
+    // Fallback polling for pages without stream support
     const refreshFromFallback = () => {
       refreshStatusOnce().catch(() => {
         pollFailCount++;
         if (pollFailCount >= 2) setStale(true);
       });
     };
-
-    refreshFromFallback();
 
     window.setInterval(() => {
       if (document.visibilityState === "hidden") return;

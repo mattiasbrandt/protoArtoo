@@ -1595,13 +1595,13 @@
   };
 
   const SECTIONS = [
+    ["rc-recent-actions", loadRecentActionTokens, "recent RC action tokens"],
     ["rc-mode-mapping", loadRcModeAndMappings, "RC receiver type and mapping"],
     ["rc-diagnostics", loadRcDiagnosticsWithFallback, "RC channel diagnostics"],
     ["rc-action-targets", loadActionTargetsWithFallback, "RC action registry"],
   ];
 
   const startPageLoad = () => {
-    loadRecentActionTokens();
     switchRcMode(rcInputModeHidden?.value || "standard_pwm");
 
     if (!window.PABootstrap) {
