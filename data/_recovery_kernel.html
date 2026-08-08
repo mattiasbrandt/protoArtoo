@@ -19,12 +19,12 @@
         display: none;
         align-items: center;
         justify-content: center;
-        z-index: 1000;
+        z-index: 10001;
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       }
       #page-recovery-backdrop.active { display: flex; }
-      body.recovery-active > *:not(#page-recovery-backdrop) {
-        opacity: 0.4;
+      body.recovery-active *:not(#page-recovery-backdrop) {
+        visibility: hidden;
         pointer-events: none;
       }
       #page-recovery-backdrop .recovery-panel {
