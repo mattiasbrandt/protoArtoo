@@ -1145,12 +1145,10 @@
         profilerCapabilityKnown = true;
         return;
       }
-      if (result?.data?.profilerSupported === false) {
-        // Profiler is not supported on this build.
-        profilerNotSupported = true;
-        profilerCapabilityKnown = true;
-        return;
-      }
+      // Treat field as unsupported if explicitly false or absent (older firmware).
+      // This prevents repeated status polling on builds without the flag.
+      profilerNotSupported = true;
+      profilerCapabilityKnown = true;
     } catch (_) {
       // Status fetch failed — assume profiler might be available and try it anyway.
       // This provides graceful degradation if status endpoint is temporarily unavailable.
