@@ -569,19 +569,63 @@
   // ---------------------------------------------------------------------------
   // Mount / render
   // ---------------------------------------------------------------------------
+  let focusedBeforeOverlay = null;
+
   const ensureBackdrop = () => {
     let backdrop = document.getElementById(BACKDROP_ID);
     if (backdrop) return backdrop;
 
     backdrop = el("div", "recovery-backdrop");
     backdrop.id = BACKDROP_ID;
-    // Announced politely: this updates on a timer, and an assertive live
-    // region would interrupt the operator on every countdown tick.
-    backdrop.setAttribute("role", "status");
-    backdrop.setAttribute("aria-live", "polite");
-    backdrop.setAttribute("aria-atomic", "true");
+    // Modal dialog: blocks interaction with page content and traps focus.
+    // aria-modal indicates this is a modal overlay; focus management
+    // (setFocus, restoreFocus) handles the focus lifecycle.
+    backdrop.setAttribute("role", "dialog");
+    backdrop.setAttribute("aria-modal", "true");
+    backdrop.setAttribute("aria-label", "Page recovery overlay");
+
+    // Countdown announcement: separate live region so only the countdown
+    // update is announced, not the entire panel. aria-atomic=false prevents
+    // re-announcing the whole panel on every countdown tick.
+    const announcer = el("div", "recovery-countdown-announcer");
+    announcer.setAttribute("role", "status");
+    announcer.setAttribute("aria-live", "polite");
+    announcer.setAttribute("aria-atomic", "false");
+    announcer.style.position = "absolute";
+    announcer.style.left = "-10000px";
+    announcer.style.width = "1px";
+    announcer.style.height = "1px";
+    announcer.style.overflow = "hidden";
+    backdrop.appendChild(announcer);
+
     document.body.appendChild(backdrop);
     return backdrop;
+  };
+
+  const setFocus = (backdrop) => {
+    // Save current focus so we can restore it when overlay disappears
+    focusedBeforeOverlay = document.activeElement;
+
+    // Move focus into the modal; prefer the retry button if available
+    const retryButton = backdrop.querySelector(".btn.accent");
+    if (retryButton) {
+      retryButton.focus();
+    } else {
+      backdrop.focus();
+    }
+  };
+
+  const restoreFocus = () => {
+    // Return focus to what had it before the overlay appeared.
+    // If that element is gone or not focusable, return to document.
+    if (focusedBeforeOverlay && focusedBeforeOverlay !== document.body) {
+      try {
+        focusedBeforeOverlay.focus();
+      } catch (e) {
+        // Element no longer exists or can't receive focus; use body
+      }
+    }
+    focusedBeforeOverlay = null;
   };
 
   // Signature kept stable across renders so the countdown can repaint without
@@ -600,18 +644,30 @@
     if (!view.visible) {
       backdrop.classList.remove("active");
       document.body.classList.remove("recovery-active");
-      backdrop.replaceChildren();
+      // Preserve the announcer but clear the panel content
+      const announcer = backdrop.querySelector(".recovery-countdown-announcer");
+      backdrop.replaceChildren(announcer);
       lastSignature = "hidden";
+      // Return focus to what had it before the overlay appeared
+      restoreFocus();
       return view;
     }
 
     const signature = signatureOf(view);
     if (signature !== lastSignature) {
+      // New panel content: rebuild it, keeping the announcer
+      const announcer = backdrop.querySelector(".recovery-countdown-announcer");
       backdrop.replaceChildren(buildPanel(view, onRetryNow));
+      backdrop.appendChild(announcer);
       lastSignature = signature;
+      // Focus moved into the overlay for new content
+      setFocus(backdrop);
     } else {
+      // Only countdown changed: update both the display and the announcement
       const value = backdrop.querySelector(".recovery-countdown-value");
       if (value) value.textContent = `${view.waitSeconds} s`;
+      const announcer = backdrop.querySelector(".recovery-countdown-announcer");
+      if (announcer) announcer.textContent = `Next attempt in ${view.waitSeconds} second${view.waitSeconds === 1 ? "" : "s"}`;
     }
 
     backdrop.classList.add("active");
