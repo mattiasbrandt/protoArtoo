@@ -288,7 +288,7 @@
     if ((caps & AUDIO_CAP_QUERY_SAFE_PLAYING) !== 0) {
       moduleStatusRefreshTimer = window.setInterval(() => {
         if (document.visibilityState === "hidden") return;
-        updateModuleStatus();
+        updateModuleStatus().catch(() => {});
       }, 2000);
     }
   };
@@ -322,7 +322,7 @@
       if (catalogStatus && !catalogStatus.textContent) {
         catalogStatus.textContent = "Catalog not loaded yet. Click Refresh Catalog.";
       }
-      loadCatalog();
+      loadCatalog().catch(() => {});
     }
     syncCatalogBulkUi();
     applyChirpBindingBadges();
@@ -2015,7 +2015,7 @@
         soundStateBadge.textContent = "No module response";
         soundStateBadge.dataset.state = "error";
       } else if (soundStateBadge.dataset.state === "error") {
-        updateModuleStatus();
+        updateModuleStatus().catch(() => {});
       }
     }
   };
@@ -2315,7 +2315,7 @@
 
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState !== "hidden") {
-      updateModuleStatus();
+      updateModuleStatus().catch(() => {});
     }
   });
 
