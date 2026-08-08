@@ -1020,24 +1020,17 @@
 
 // =============================================================================
 // Memory Profiler UI (PA_HEAP_PROFILE=1 builds only)
-// Reads profilerSupported capability from /api/status. If false, card stays
-// hidden and no profiler requests are made. If true, loads profiler on page
-// load and starts a 5-second refresh loop.
-//
-// Error handling: Only latch on 404/501 (definitive absent). Retry on 503
-// (transient admission control busy) per ADR 0016.
+// Probes /api/profiler on load and refresh. If endpoint returns 404/501,
+// marks profiler as unsupported and stops requesting for the page session.
+// Retries on transient errors (503, network) per ADR 0016.
 // =============================================================================
 (() => {
   const card = document.getElementById("profiler-card");
   if (!card) return;
 
-  // Track whether the endpoint is known to be unavailable (404/501).
-  // Once we detect a definitive absence, stop making requests.
+  // Track whether the endpoint is definitively unavailable (404/501).
+  // Once detected, stop making requests for this page load.
   let profilerNotSupported = false;
-
-  // Track whether profiler capability has been checked from /api/status.
-  // If false at startup, we perform the initial capability check.
-  let profilerCapabilityKnown = false;
 
   function kb(bytes) {
     return (bytes / 1024).toFixed(1) + " KB";
@@ -1133,38 +1126,9 @@
     }
   }
 
-  async function checkProfilerCapability() {
-    // Check if the firmware supports profiler via /api/status.
-    // This avoids blindly fetching /api/profiler on builds that don't support it.
-    if (profilerCapabilityKnown) return;
-
-    try {
-      const result = await window.PAApi?.get?.("/api/status", { timeoutMs: 3000 });
-      if (result?.data?.profilerSupported === true) {
-        // Profiler is supported; proceed with refresh.
-        profilerCapabilityKnown = true;
-        return;
-      }
-      // Treat field as unsupported if explicitly false or absent (older firmware).
-      // This prevents repeated status polling on builds without the flag.
-      profilerNotSupported = true;
-      profilerCapabilityKnown = true;
-    } catch (_) {
-      // Status fetch failed — assume profiler might be available and try it anyway.
-      // This provides graceful degradation if status endpoint is temporarily unavailable.
-      profilerCapabilityKnown = true;
-    }
-  }
-
   async function refreshProfiler() {
-    // If profiler capability is known to be unsupported, do nothing.
+    // If profiler is definitively unsupported (404/501), do nothing.
     if (profilerNotSupported) return;
-
-    // On first call, check if profiler is supported before fetching.
-    if (!profilerCapabilityKnown) {
-      await checkProfilerCapability();
-      if (profilerNotSupported) return;
-    }
 
     try {
       const resp = await fetch("/api/profiler");

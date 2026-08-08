@@ -5,20 +5,13 @@ import assert from "node:assert";
 function createMockSetup() {
   const state = {
     profilerNotSupported: false,
-    profilerCapabilityKnown: false,
     fetchAttempts: 0,
     lastFetchStatus: null,
   };
 
-  // Simulate the refr esherProfiler logic with injectable fetch
+  // Simulate the refreshProfiler logic with injectable fetch
   const refreshProfiler = async (mockFetch) => {
     if (state.profilerNotSupported) return;
-
-    if (!state.profilerCapabilityKnown) {
-      // Simulate checkProfilerCapability — assume status always has profilerSupported: true
-      // so the test focuses on the fetch latch logic
-      state.profilerCapabilityKnown = true;
-    }
 
     try {
       state.fetchAttempts++;
@@ -131,79 +124,31 @@ test("#118: 200 OK succeeds (profiler available)", async (t) => {
   assert.strictEqual(state.profilerNotSupported, false, "Success should not latch unsupported");
 });
 
-test("#118: Absent field (older firmware) does not repeat status checks", async (t) => {
-  // This test simulates the regression: older firmware without profilerSupported field
-  // should NOT trigger repeated /api/status calls on every 5-second interval.
+test("#118: Successful 200 with partial data does not cause repeated polling", async (t) => {
+  // Verify that a successful response (200 OK) that happens to lack expected
+  // fields does not trigger latch behavior — the profiler is available, just
+  // the particular fetch returned incomplete data. Should retry normally.
 
-  const state = {
-    profilerNotSupported: false,
-    profilerCapabilityKnown: false,
-    statusCheckAttempts: 0,
-    fetchAttempts: 0,
+  const { state, refreshProfiler } = createMockSetup();
+  let callCount = 0;
+
+  const mockFetch = async (url) => {
+    callCount++;
+    return {
+      ok: true,
+      status: 200,
+      // Return a response that's missing fields (heapFree, etc.)
+      json: async () => ({ /* empty or partial */ }),
+    };
   };
 
-  const checkProfilerCapability = async (mockStatusFetch) => {
-    if (state.profilerCapabilityKnown) return;
+  // First call should succeed and not latch unsupported
+  await refreshProfiler(mockFetch);
+  assert.strictEqual(state.profilerNotSupported, false, "200 response should not latch unsupported");
+  assert.strictEqual(state.fetchAttempts, 1, "Should make one fetch");
 
-    try {
-      state.statusCheckAttempts++;
-      const result = await mockStatusFetch("/api/status");
-      if (result?.data?.profilerSupported === true) {
-        state.profilerCapabilityKnown = true;
-        return;
-      }
-      // Treat absent field as unsupported (older firmware)
-      state.profilerNotSupported = true;
-      state.profilerCapabilityKnown = true;
-    } catch (_) {
-      state.profilerCapabilityKnown = true;
-    }
-  };
-
-  const refreshProfiler = async (mockStatusFetch, mockProfilerFetch) => {
-    if (state.profilerNotSupported) return;
-    if (!state.profilerCapabilityKnown) {
-      await checkProfilerCapability(mockStatusFetch);
-      if (state.profilerNotSupported) return;
-    }
-
-    try {
-      state.fetchAttempts++;
-      const resp = await mockProfilerFetch("/api/profiler");
-      if (!resp.ok && (resp.status === 404 || resp.status === 501)) {
-        state.profilerNotSupported = true;
-      }
-    } catch (_) {}
-  };
-
-  // Mock /api/status that returns success but lacks profilerSupported field (older firmware)
-  const mockStatusFetch = async (url) => ({
-    ok: true,
-    status: 200,
-    data: {
-      heapFree: 10000,
-      // profilerSupported field is absent
-    },
-  });
-
-  // Mock /api/profiler that returns 404
-  const mockProfilerFetch = async (url) => ({
-    ok: false,
-    status: 404,
-  });
-
-  // First call: should check status, find field absent, latch off
-  await refreshProfiler(mockStatusFetch, mockProfilerFetch);
-  assert.strictEqual(state.statusCheckAttempts, 1, "Should check status once");
-  assert.strictEqual(state.profilerCapabilityKnown, true, "Should mark capability as known");
-  assert.strictEqual(state.profilerNotSupported, true, "Should latch as unsupported");
-
-  // Second call: should return early without any fetches (capability already known)
-  await refreshProfiler(mockStatusFetch, mockProfilerFetch);
-  assert.strictEqual(state.statusCheckAttempts, 1, "Should NOT check status again");
-  assert.strictEqual(state.fetchAttempts, 0, "Should NOT fetch profiler (unsupported)");
-
-  // Third call (simulates next 5-second interval): same behavior
-  await refreshProfiler(mockStatusFetch, mockProfilerFetch);
-  assert.strictEqual(state.statusCheckAttempts, 1, "Should still only have checked status once");
+  // Second call should retry (not return early)
+  await refreshProfiler(mockFetch);
+  assert.strictEqual(state.fetchAttempts, 2, "Should retry on next call despite partial data");
+  assert.strictEqual(callCount, 2, "Should make two actual fetches");
 });
