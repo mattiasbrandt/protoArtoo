@@ -29,11 +29,21 @@ const state = (page, fn) => page.evaluate(fn);
 
   await page.goto(TARGET_URL, { waitUntil: "domcontentloaded" });
 
-  // Wait for the panel to actually be visible (never networkidle - SSE keeps it open).
+  // Wait until the BOOTSTRAP owns the visible backdrop -- not merely until it is
+  // active. The inlined kernel creates and activates #page-recovery-backdrop long
+  // before page_bootstrap.js loads, so waiting on `.active` alone samples the
+  // kernel's own panel and reports a false failure: no tabindex, no announcer,
+  // no focus management, because none of that code has run yet.
+  // The announcer is created only by ensureBackdrop(), so it is a reliable
+  // marker that the bootstrap has taken over. Never networkidle - SSE stays open.
   let visible = false;
-  for (let i = 0; i < 60; i++) {
-    visible = await state(page, () =>
-      document.getElementById("page-recovery-backdrop")?.classList.contains("active") === true);
+  for (let i = 0; i < 80; i++) {
+    visible = await state(page, () => {
+      const bd = document.getElementById("page-recovery-backdrop");
+      return !!(window.PARecoveryView && bd
+        && bd.classList.contains("active")
+        && bd.querySelector(".recovery-countdown-announcer"));
+    });
     if (visible) break;
     await page.waitForTimeout(250);
   }
