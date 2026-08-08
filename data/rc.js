@@ -141,17 +141,16 @@
     return a.localeCompare(b);
   };
 
-  const loadRecentActionTokens = async () => {
+  const loadRecentActionTokens = () => {
     try {
       const parsed = JSON.parse(window.localStorage.getItem(ACTION_RECENTS_KEY) || '[]');
       if (!Array.isArray(parsed)) return;
       recentActionTokens = parsed
         .filter((token) => typeof token === 'string' && token.trim() !== '')
         .slice(0, ACTION_RECENTS_LIMIT);
-    } catch (error) {
-      console.warn("[RC] recent action tokens unavailable:", error);
-      // Rethrow so the bootstrap can show recovery and retry the request
-      throw error;
+    } catch (_error) {
+      // ignore: localStorage parse error — fall back to empty list
+      recentActionTokens = [];
     }
   };
 
@@ -1596,13 +1595,13 @@
   };
 
   const SECTIONS = [
-    ["rc-recent-actions", loadRecentActionTokens, "recent RC action tokens"],
     ["rc-mode-mapping", loadRcModeAndMappings, "RC receiver type and mapping"],
     ["rc-diagnostics", loadRcDiagnosticsWithFallback, "RC channel diagnostics"],
     ["rc-action-targets", loadActionTargetsWithFallback, "RC action registry"],
   ];
 
   const startPageLoad = () => {
+    loadRecentActionTokens();
     switchRcMode(rcInputModeHidden?.value || "standard_pwm");
 
     if (!window.PABootstrap) {

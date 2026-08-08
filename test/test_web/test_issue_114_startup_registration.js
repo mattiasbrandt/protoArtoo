@@ -1,9 +1,13 @@
 // =============================================================================
 // test/test_web/test_issue_114_startup_registration.js
 //
-// Verification that issue #114 is resolved: all three startup requests
-// (shell identity, app initial status, rc recent action tokens) are now
-// registered as bootstrap sections instead of bypassing it.
+// Verification that issue #114 is resolved: two of three startup requests
+// (shell identity, app initial status) are now registered as bootstrap
+// sections instead of bypassing it.
+//
+// rc-recent-actions is NOT registered because it reads localStorage
+// synchronously with no network request, so it's called directly during
+// startup instead and silently handles errors.
 //
 // Uses the page_module_harness to load real page modules and observe
 // what sections they register.
@@ -46,7 +50,10 @@ test("app.js registers initial status load as a section", (t) => {
   );
 });
 
-test("rc.js registers recent action tokens load as a section", (t) => {
+test("rc.js does NOT register recent action tokens as a section", (t) => {
+  // rc-recent-actions is not a network request (just localStorage), so it
+  // does not compete for the bootstrap slot. It's called directly during
+  // startup instead and silently handles errors (corrupt data → empty list).
   const output = execSync(
     "node test/test_web/helpers/page_module_harness.js rc.js 2>&1",
     {
@@ -56,7 +63,7 @@ test("rc.js registers recent action tokens load as a section", (t) => {
   );
 
   assert(
-    output.includes("rc-recent-actions"),
-    "rc.js must register 'rc-recent-actions' as a bootstrap section"
+    !output.includes("rc-recent-actions"),
+    "rc.js must NOT register 'rc-recent-actions' as a bootstrap section"
   );
 });
