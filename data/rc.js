@@ -213,10 +213,11 @@
         actionTargets = buildActionTargetsFromApi(result.data);
       }
       syncRecentActionTokensWithTargets();
-    } catch (_err) {
+    } catch (error) {
       // fetch error — fall back to hardcoded action targets
       console.warn('[RC] Failed to load action registry, using built-in list');
       syncRecentActionTokensWithTargets();
+      throw error;
     }
   };
 
@@ -1199,6 +1200,7 @@
       const fallbackMode = rcInputModeHidden?.value || 'standard_pwm';
       switchRcMode(fallbackMode);
       setModeFeedback(`Receiver config unavailable: ${window.PAApi.messageFor(error)}. Showing ${modeLabel(fallbackMode)} draft controls.`, 'warning');
+      throw error;
     }
   };
 
@@ -1227,6 +1229,7 @@
       renderLivePreview();
       renderEditor();
       setEditorFeedback(`Failed to load RC map: ${window.PAApi.messageFor(error)}`, 'error');
+      throw error;
     }
   };
 
@@ -1399,6 +1402,7 @@
       renderRcDiagnostics(result.data);
     } catch (error) {
       setEditorFeedback(`Failed to load RC diagnostics: ${window.PAApi.messageFor(error)}`, 'error');
+      throw error;
     }
   };
 

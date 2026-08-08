@@ -373,6 +373,7 @@
       builtins = result.data || [];
     } catch (error) {
       console.error("Error loading builtins:", error);
+      throw error;
     }
   };
 

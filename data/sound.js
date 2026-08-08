@@ -397,11 +397,12 @@
           soundStateBadge.dataset.state = "idle";
         }
       }
-    } catch (_err) {
+    } catch (error) {
       if (modLink) {
         modLink.textContent = "Fetch error";
         modLink.dataset.state = "error";
       }
+      throw error;
     }
   };
 
@@ -1356,7 +1357,7 @@
         catalogStatus.textContent = "Catalog load failed.";
       }
       showFeedback(catalogFeedback, `Catalog load failed: ${getApiErrorMessage(error)}`, false);
-      return false;
+      throw error;
     } finally {
       catalogFetchInFlight = false;
     }
@@ -2280,12 +2281,30 @@
   };
 
   const loadAudioCatalogIfSupported = async () => {
+    // Skip if no API available (fallback path). Otherwise try to load the catalog.
+    if (!window.PAApi) return;
+
+    // Try to load the catalog. Bypass the catalogSupported check since we determine
+    // support by attempting the fetch - if it fails with 404 or similar, that's handled
+    // differently than a network error (which should propagate).
     if (!catalogSupported) {
-      // Catalog not supported; skip with success to keep the bootstrap
-      // from retrying if the capability check indicated no support.
-      return;
+      // Catalog support was not confirmed, but try anyway to see if it's available.
+      // This ensures errors from the fetch attempt are properly propagated.
+      try {
+        const result = await window.PAApi.get("/api/audio/catalog", { timeoutMs: 12000 });
+        // Fetch succeeded, so catalog is supported. Update the flag and proceed.
+        const data = result.data || {};
+        catalogReady = Boolean(data.ready);
+        catalogSupported = true;
+        builtins = data.builtins || [];
+      } catch (error) {
+        // Propagate the error so bootstrap can show recovery
+        throw error;
+      }
+    } else {
+      // Catalog is known to be supported, use the normal load function
+      await loadCatalog();
     }
-    await loadCatalog();
   };
 
   const SECTIONS = [
