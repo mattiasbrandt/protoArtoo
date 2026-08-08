@@ -570,6 +570,7 @@
   // Mount / render
   // ---------------------------------------------------------------------------
   let focusedBeforeOverlay = null;
+  let overlayIsVisible = false;
 
   const ensureBackdrop = () => {
     let backdrop = document.getElementById(BACKDROP_ID);
@@ -598,14 +599,38 @@
     announcer.style.overflow = "hidden";
     backdrop.appendChild(announcer);
 
+    // Keyboard containment: trap Tab within the backdrop
+    backdrop.addEventListener("keydown", (event) => {
+      if (event.key !== "Tab") return;
+
+      const focusableElements = backdrop.querySelectorAll(
+        "button, [href], input, select, textarea, [tabindex]:not([tabindex=\"-1\"])"
+      );
+      if (focusableElements.length === 0) return;
+
+      const firstElement = focusableElements[0];
+      const lastElement = focusableElements[focusableElements.length - 1];
+
+      if (event.shiftKey) {
+        // Shift+Tab: cycle backwards
+        if (document.activeElement === firstElement) {
+          event.preventDefault();
+          lastElement.focus();
+        }
+      } else {
+        // Tab: cycle forwards
+        if (document.activeElement === lastElement) {
+          event.preventDefault();
+          firstElement.focus();
+        }
+      }
+    });
+
     document.body.appendChild(backdrop);
     return backdrop;
   };
 
   const setFocus = (backdrop) => {
-    // Save current focus so we can restore it when overlay disappears
-    focusedBeforeOverlay = document.activeElement;
-
     // Move focus into the modal; prefer the retry button if available
     const retryButton = backdrop.querySelector(".btn.accent");
     if (retryButton) {
@@ -648,9 +673,16 @@
       const announcer = backdrop.querySelector(".recovery-countdown-announcer");
       backdrop.replaceChildren(announcer);
       lastSignature = "hidden";
+      overlayIsVisible = false;
       // Return focus to what had it before the overlay appeared
       restoreFocus();
       return view;
+    }
+
+    // Transitioning from hidden to visible: save focus and enter overlay
+    if (!overlayIsVisible) {
+      overlayIsVisible = true;
+      focusedBeforeOverlay = document.activeElement;
     }
 
     const signature = signatureOf(view);

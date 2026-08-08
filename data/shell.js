@@ -94,6 +94,8 @@
       applyIdentityName(result.data?.droidName);
     } catch (error) {
       console.warn("[shell] identity unavailable:", error);
+      // Rethrow so the bootstrap can show recovery and retry the request
+      throw error;
     }
   };
 

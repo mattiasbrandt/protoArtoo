@@ -141,16 +141,17 @@
     return a.localeCompare(b);
   };
 
-  const loadRecentActionTokens = () => {
+  const loadRecentActionTokens = async () => {
     try {
       const parsed = JSON.parse(window.localStorage.getItem(ACTION_RECENTS_KEY) || '[]');
       if (!Array.isArray(parsed)) return;
       recentActionTokens = parsed
         .filter((token) => typeof token === 'string' && token.trim() !== '')
         .slice(0, ACTION_RECENTS_LIMIT);
-    } catch (_error) {
-      // ignore: localStorage parse error — fall back to empty list
-      recentActionTokens = [];
+    } catch (error) {
+      console.warn("[RC] recent action tokens unavailable:", error);
+      // Rethrow so the bootstrap can show recovery and retry the request
+      throw error;
     }
   };
 
