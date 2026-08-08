@@ -586,11 +586,12 @@
 
     // Upgrade (or maintain) dialog semantics. Whether the element came from the
     // kernel or was just created, after this function it must always have:
-    // role="dialog", aria-modal="true", aria-label, an announcer child, and a
-    // Tab handler. This is idempotent -- calling it multiple times is safe.
+    // role="dialog", aria-modal="true", aria-label, tabindex, an announcer child,
+    // and a Tab handler. This is idempotent -- calling it multiple times is safe.
     backdrop.setAttribute("role", "dialog");
     backdrop.setAttribute("aria-modal", "true");
     backdrop.setAttribute("aria-label", "Page recovery overlay");
+    backdrop.setAttribute("tabindex", "-1");
 
     // Ensure the countdown announcer exists. It is a separate live region so
     // only the countdown update is announced, not the entire panel.
@@ -618,7 +619,14 @@
         const focusableElements = backdrop.querySelectorAll(
           "button, [href], input, select, textarea, [tabindex]:not([tabindex=\"-1\"])"
         );
-        if (focusableElements.length === 0) return;
+
+        // If there are no focusable children (e.g., loading state), keep focus
+        // on the backdrop itself and prevent Tab from escaping.
+        if (focusableElements.length === 0) {
+          event.preventDefault();
+          backdrop.focus();
+          return;
+        }
 
         const firstElement = focusableElements[0];
         const lastElement = focusableElements[focusableElements.length - 1];
