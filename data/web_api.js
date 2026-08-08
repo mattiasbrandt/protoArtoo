@@ -95,11 +95,27 @@
     }
   };
 
+  let activeController = null;
+
   const request = async (path, opts = {}) => {
     await acquireRequestSlot();
     try {
       return await performRequest(path, opts);
     } finally {
+      releaseRequestSlot();
+    }
+  };
+
+  // Estop bypass: skips slot acquisition entirely so estop is never queued.
+  // Must never be auto-retried.
+  const estopRequest = async (path, opts = {}) => {
+    return performRequest(path, { ...opts, noRetry: true });
+  };
+
+  const abortRequest = () => {
+    if (activeController) {
+      activeController.abort();
+      activeController = null;
       releaseRequestSlot();
     }
   };
@@ -111,9 +127,11 @@
     headers = {},
     form = null,
     json = null,
+    noRetry = false,
   } = {}) => {
     const attempt = async (isRetry) => {
       const controller = new AbortController();
+      activeController = controller;
       const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
 
       try {
@@ -153,7 +171,8 @@
         // connection under load (admission control closes the socket);
         // like the truncated-JSON case, one quiet retry beats surfacing a
         // transient. POSTs are never retried — they may not be idempotent.
-        if (!isRetry && method === "GET"
+        // Also skip retries if noRetry is set (estop cannot be retried).
+        if (!noRetry && !isRetry && method === "GET"
             && (apiError.kind === "bad-json" || apiError.kind === "network")) {
           await new Promise((resolve) => window.setTimeout(resolve, BAD_JSON_RETRY_DELAY_MS));
           return attempt(true);
@@ -161,6 +180,7 @@
         throw apiError;
       } finally {
         window.clearTimeout(timeoutId);
+        activeController = null;
       }
     };
 
@@ -170,6 +190,7 @@
   const get = (path, opts = {}) => request(path, { ...opts, method: "GET" });
   const postForm = (path, form, opts = {}) => request(path, { ...opts, method: "POST", form });
   const postJson = (path, json, opts = {}) => request(path, { ...opts, method: "POST", json });
+  const estopPostForm = (path, form, opts = {}) => estopRequest(path, { ...opts, method: "POST", form });
 
   const HTTP_STATUS_MESSAGES = {
     400: "Device rejected the request",
@@ -244,6 +265,8 @@
     get,
     postForm,
     postJson,
+    estopPostForm,
+    abortRequest,
     messageFor,
     gateControls,
   };

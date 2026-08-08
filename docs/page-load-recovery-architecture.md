@@ -105,10 +105,9 @@ merged). The shape to implement for real:
   - **Page Startup Order**: `/api/events` (Live Page Updates) starts only once
     `resourcesReady && sectionsStable`.
   - **Single Active Request**: a single FIFO active-request slot shared across all
-    request types (see ADR 0019). Estop currently shares this slot with other requests
-    rather than bypassing it; this diverges from the server-side admission bypass in
-    `src/web/web_admission.cpp` (see `include/web_admission.h`) and is tracked by
-    issue #108 for future alignment.
+    request types except estop (see ADR 0019). Estop requests bypass the slot entirely
+    and are sent immediately without queueing, matching the server-side admission bypass
+    in `src/web/web_admission.cpp` (see `include/web_admission.h`).
   - **Hidden Tab Pause**: hiding stops new work dispatch; the one active in-flight
     request is left to finish within its deadline; showing again resumes from the
     actual next unfinished step.

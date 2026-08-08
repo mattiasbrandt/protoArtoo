@@ -172,7 +172,10 @@
     }
     window.PAUtils.showFeedback(controlFeedback, `${label}...`);
     try {
-      await window.PAApi.postForm(path, {}, { timeoutMs: 3000 });
+      // Estop requests skip the slot and are never retried
+      const isEstop = path === "/api/estop" || path === "/api/estop/clear";
+      const apiMethod = isEstop ? window.PAApi.estopPostForm : window.PAApi.postForm;
+      await apiMethod(path, {}, { timeoutMs: 3000 });
       window.PAUtils.showFeedback(controlFeedback, `${label} sent at ${new Date().toLocaleTimeString()}`, "success");
     } catch (error) {
       window.PAUtils.showFeedback(controlFeedback, `${label} failed: ${window.PAApi.messageFor(error)}`, "error");

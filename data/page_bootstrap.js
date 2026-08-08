@@ -682,8 +682,12 @@
     // Preserve execution order: the chain is sequential by design, and async
     // would let a later script run against a not-yet-defined earlier global.
     script.async = false;
-    script.onload = () => done(null);
+    script.onload = () => {
+      script.hasLoaded = true;
+      done(null);
+    };
     script.onerror = () => {
+      script.hasLoaded = true;
       script.remove();
       done({ kind: "network" });
     };
@@ -709,6 +713,7 @@
   // slot changes and starts the corresponding real work exactly once.
   // ---------------------------------------------------------------------------
   let startedActiveId = null;
+  let lastActive = null;
 
   const settle = (id, error, retryAfterMs) => {
     // A result arriving after its deadline already expired belongs to a
@@ -722,8 +727,29 @@
     apply({ type: "RESULT", outcome });
   };
 
+  const cancelActive = (active) => {
+    if (!active) return;
+    if (active.kind === "resource") {
+      // Remove the pending script tag if it's still loading
+      document.querySelectorAll(`script[src="${active.name}"]`).forEach((script) => {
+        if (!script.hasLoaded) {
+          script.remove();
+        }
+      });
+    } else if (active.kind === "section") {
+      // Abort any in-flight API request
+      window.PAApi?.abortRequest?.();
+    }
+  };
+
   const syncActive = () => {
     const active = state.active;
+    // If active changed and previous one is gone, cancel the old work
+    if (lastActive && lastActive.id !== (active?.id)) {
+      cancelActive(lastActive);
+    }
+    lastActive = active;
+
     if (!active || active.id === startedActiveId) return;
     startedActiveId = active.id;
     const id = active.id;

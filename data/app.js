@@ -360,7 +360,7 @@
     showFeedback(estopFeedback, targetLatched ? "Latching E-Stop..." : "Clearing E-Stop...");
 
     try {
-      await window.PAApi.postForm(targetLatched ? "/api/estop" : "/api/estop/clear", {}, { timeoutMs: 3000 });
+      await window.PAApi.estopPostForm(targetLatched ? "/api/estop" : "/api/estop/clear", {}, { timeoutMs: 3000 });
       await refreshStatusOnce();
       showFeedback(estopFeedback, targetLatched ? "E-Stop latched" : "E-Stop clear", "success");
     } catch (error) {
