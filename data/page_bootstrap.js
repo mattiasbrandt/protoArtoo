@@ -705,10 +705,14 @@
       return view;
     }
 
-    // Transitioning from hidden to visible: save focus and enter overlay
+    // Transitioning from hidden to visible: save focus and make visible first.
+    // Elements with display:none cannot receive focus, so the backdrop must be
+    // visible before any focus move attempts.
     if (!overlayIsVisible) {
       overlayIsVisible = true;
       focusedBeforeOverlay = document.activeElement;
+      backdrop.classList.add("active");
+      document.body.classList.add("recovery-active");
     }
 
     const signature = signatureOf(view);
@@ -729,9 +733,6 @@
       const announcer = backdrop.querySelector(".recovery-countdown-announcer");
       if (announcer) announcer.textContent = `Next attempt in ${view.waitSeconds} second${view.waitSeconds === 1 ? "" : "s"}`;
     }
-
-    backdrop.classList.add("active");
-    document.body.classList.add("recovery-active");
     return view;
   };
 
