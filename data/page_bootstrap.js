@@ -574,59 +574,72 @@
 
   const ensureBackdrop = () => {
     let backdrop = document.getElementById(BACKDROP_ID);
-    if (backdrop) return backdrop;
+    let isNewElement = false;
 
-    backdrop = el("div", "recovery-backdrop");
-    backdrop.id = BACKDROP_ID;
-    // Modal dialog: blocks interaction with page content and traps focus.
-    // aria-modal indicates this is a modal overlay; focus management
-    // (setFocus, restoreFocus) handles the focus lifecycle.
+    if (!backdrop) {
+      // Create the element if it doesn't exist
+      backdrop = el("div", "recovery-backdrop");
+      backdrop.id = BACKDROP_ID;
+      document.body.appendChild(backdrop);
+      isNewElement = true;
+    }
+
+    // Upgrade (or maintain) dialog semantics. Whether the element came from the
+    // kernel or was just created, after this function it must always have:
+    // role="dialog", aria-modal="true", aria-label, an announcer child, and a
+    // Tab handler. This is idempotent -- calling it multiple times is safe.
     backdrop.setAttribute("role", "dialog");
     backdrop.setAttribute("aria-modal", "true");
     backdrop.setAttribute("aria-label", "Page recovery overlay");
 
-    // Countdown announcement: separate live region so only the countdown
-    // update is announced, not the entire panel. aria-atomic=false prevents
-    // re-announcing the whole panel on every countdown tick.
-    const announcer = el("div", "recovery-countdown-announcer");
-    announcer.setAttribute("role", "status");
-    announcer.setAttribute("aria-live", "polite");
-    announcer.setAttribute("aria-atomic", "false");
-    announcer.style.position = "absolute";
-    announcer.style.left = "-10000px";
-    announcer.style.width = "1px";
-    announcer.style.height = "1px";
-    announcer.style.overflow = "hidden";
-    backdrop.appendChild(announcer);
+    // Ensure the countdown announcer exists. It is a separate live region so
+    // only the countdown update is announced, not the entire panel.
+    // aria-atomic=false prevents re-announcing the whole panel on every
+    // countdown tick.
+    if (!backdrop.querySelector(".recovery-countdown-announcer")) {
+      const announcer = el("div", "recovery-countdown-announcer");
+      announcer.setAttribute("role", "status");
+      announcer.setAttribute("aria-live", "polite");
+      announcer.setAttribute("aria-atomic", "false");
+      announcer.style.position = "absolute";
+      announcer.style.left = "-10000px";
+      announcer.style.width = "1px";
+      announcer.style.height = "1px";
+      announcer.style.overflow = "hidden";
+      backdrop.appendChild(announcer);
+    }
 
-    // Keyboard containment: trap Tab within the backdrop
-    backdrop.addEventListener("keydown", (event) => {
-      if (event.key !== "Tab") return;
+    // Attach keyboard containment handler if not already present.
+    // Identify by a marker on the backdrop so we never attach it twice.
+    if (!backdrop.dataset.tabHandlerAttached) {
+      backdrop.addEventListener("keydown", (event) => {
+        if (event.key !== "Tab") return;
 
-      const focusableElements = backdrop.querySelectorAll(
-        "button, [href], input, select, textarea, [tabindex]:not([tabindex=\"-1\"])"
-      );
-      if (focusableElements.length === 0) return;
+        const focusableElements = backdrop.querySelectorAll(
+          "button, [href], input, select, textarea, [tabindex]:not([tabindex=\"-1\"])"
+        );
+        if (focusableElements.length === 0) return;
 
-      const firstElement = focusableElements[0];
-      const lastElement = focusableElements[focusableElements.length - 1];
+        const firstElement = focusableElements[0];
+        const lastElement = focusableElements[focusableElements.length - 1];
 
-      if (event.shiftKey) {
-        // Shift+Tab: cycle backwards
-        if (document.activeElement === firstElement) {
-          event.preventDefault();
-          lastElement.focus();
+        if (event.shiftKey) {
+          // Shift+Tab: cycle backwards
+          if (document.activeElement === firstElement) {
+            event.preventDefault();
+            lastElement.focus();
+          }
+        } else {
+          // Tab: cycle forwards
+          if (document.activeElement === lastElement) {
+            event.preventDefault();
+            firstElement.focus();
+          }
         }
-      } else {
-        // Tab: cycle forwards
-        if (document.activeElement === lastElement) {
-          event.preventDefault();
-          firstElement.focus();
-        }
-      }
-    });
+      });
+      backdrop.dataset.tabHandlerAttached = "true";
+    }
 
-    document.body.appendChild(backdrop);
     return backdrop;
   };
 
@@ -671,7 +684,12 @@
       document.body.classList.remove("recovery-active");
       // Preserve the announcer but clear the panel content
       const announcer = backdrop.querySelector(".recovery-countdown-announcer");
-      backdrop.replaceChildren(announcer);
+      if (announcer) {
+        backdrop.replaceChildren(announcer);
+      } else {
+        // Defence in depth: if announcer is missing, just clear everything
+        backdrop.replaceChildren();
+      }
       lastSignature = "hidden";
       overlayIsVisible = false;
       // Return focus to what had it before the overlay appeared
@@ -687,10 +705,12 @@
 
     const signature = signatureOf(view);
     if (signature !== lastSignature) {
-      // New panel content: rebuild it, keeping the announcer
+      // New panel content: rebuild it, keeping the announcer if it exists
       const announcer = backdrop.querySelector(".recovery-countdown-announcer");
       backdrop.replaceChildren(buildPanel(view, onRetryNow));
-      backdrop.appendChild(announcer);
+      if (announcer) {
+        backdrop.appendChild(announcer);
+      }
       lastSignature = signature;
       // Focus moved into the overlay for new content
       setFocus(backdrop);
