@@ -23,14 +23,9 @@
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       }
       #page-recovery-backdrop.active { display: flex; }
-      body.recovery-active *:not(#page-recovery-backdrop) {
+      body.recovery-active > *:not(#page-recovery-backdrop) {
         opacity: 0.4;
         pointer-events: none;
-      }
-      body.recovery-active #page-recovery-backdrop * {
-        opacity: 1;
-        visibility: visible;
-        pointer-events: auto;
       }
       body.recovery-active .sleep-overlay,
       body.recovery-active .seq-modal {

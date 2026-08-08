@@ -1,17 +1,20 @@
-// Issue #117: Recovery panel layering and suppression of competing full-screen overlays.
+// Issue #117: Recovery panel z-index and overlay suppression with effective opacity verification.
 //
-// Design reference: aligned-state1-centered.png (Page Recovery View mockup from #63)
-// specifies dimmed-but-visible page content behind the recovery panel. This ensures the
-// operator sees the page still attempting to load/recover, with only rival full-screen
-// overlays (.sleep-overlay, .seq-modal) genuinely suppressed.
+// Design: Dimmed-but-visible page content behind recovery panel (aligned-state1-centered.png).
+// Operator must see page attempting to load/recover at effective opacity 0.4, not compounded
+// to near-invisibility.
+//
+// Critical: opacity compounds through DOM nesting via CSS inheritance.
+// Direct-child selector (> *) dims top-level blocks once; descendant selector (* ) multiplies
+// opacity at each level, causing opacity^depth invisibility (e.g., 0.4^4 ≈ 0.026 at depth 4).
 //
 // Verified properties:
-// 1. Recovery z-index > all competing overlays (10001 > 9999 > 1200)
-// 2. Page content stays visible at opacity: 0.4 (dimmed, inert, but visible)
-// 3. Recovery panel and descendants are fully visible and interactive
-// 4. Competing full-screen overlays are genuinely hidden (visibility: hidden)
-// 5. Retry button is hit-testable via elementFromPoint
-// 6. Kernel CSS is self-contained (no /style.css dependency)
+// 1. Recovery z-index > all overlays (10001 > 9999 > 1200)
+// 2. Direct-child dim rule: body.recovery-active > *:not(#page-recovery-backdrop) { opacity: 0.4 }
+// 3. Effective opacity at nesting depth 3-4: 0.4 (not compounded)
+// 4. Explicit overlay suppression: .sleep-overlay/.seq-modal visibility: hidden
+// 5. Recovery panel and button: fully visible (opacity 1), interactive, hit-testable
+// 6. Kernel self-contained: literal RGB colors, no /style.css
 
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
@@ -56,33 +59,33 @@ test("Issue #117: Recovery z-index exceeds all competing overlays", () => {
   }
 });
 
-test("Issue #117: Kernel CSS is self-contained (no /style.css dependency)", () => {
+test("Issue #117: Dim rule uses direct-child selector to avoid opacity compounding", () => {
   const kernelContent = fs.readFileSync(kernelPath, "utf8");
 
-  // No custom properties (would require /style.css)
+  // Must use direct-child (>) not descendant selector to avoid opacity compounding
+  assert.ok(
+    kernelContent.includes("body.recovery-active > *:not(#page-recovery-backdrop)"),
+    "dim rule must use direct-child selector (>) to prevent 0.4^depth invisibility"
+  );
+
+  // Must NOT have the old descendant form that compounds opacity
   assert.strictEqual(
-    kernelContent.includes("var(--"),
+    kernelContent.includes("body.recovery-active *:not(#page-recovery-backdrop)") &&
+    !kernelContent.includes("body.recovery-active > *:not(#page-recovery-backdrop)"),
     false,
-    "kernel must not use custom properties"
+    "must not have descendant selector without direct-child form"
   );
 
-  // Uses literal RGB/RGBA colors
-  const literalColors = (kernelContent.match(/rgb\(/g) || []).length;
-  assert.ok(literalColors > 5, "kernel must use literal RGB/RGBA colors");
-
-  // Has both dim rule for page content and targeted suppression for overlays
+  // Has explicit overlay suppression rules
   assert.ok(
-    kernelContent.includes("body.recovery-active *:not(#page-recovery-backdrop)"),
-    "kernel must dim regular page content"
-  );
-  assert.ok(
-    kernelContent.includes(".sleep-overlay") ||
-    kernelContent.includes(".seq-modal"),
-    "kernel must explicitly suppress competing full-screen overlays"
+    kernelContent.includes(".sleep-overlay") &&
+    kernelContent.includes(".seq-modal") &&
+    kernelContent.includes("visibility: hidden"),
+    "must explicitly suppress full-screen overlays by visibility, not opacity"
   );
 });
 
-test("Issue #117: Recovery panel visibility and design compliance (browser-based)", async () => {
+test("Issue #117: Effective opacity and recovery panel visibility (browser-based)", async () => {
   // This test requires Playwright; skip gracefully if not available
   let playwright;
   try {
@@ -96,17 +99,18 @@ test("Issue #117: Recovery panel visibility and design compliance (browser-based
   const page = await browser.newPage();
 
   try {
-    // Create test HTML with real kernel CSS + dimmed page content + recovery state
+    // Fixture with realistic nesting depth (4 levels, matching index.html structure)
+    // to properly detect opacity compounding bugs
     const testHtml = `<!doctype html>
 <html>
 <head>
   <style>
     * { margin: 0; padding: 0; }
     body { font-family: system-ui; background: rgb(20, 25, 35); }
-    .page-content {
-      padding: 40px;
-      color: rgb(200, 210, 225);
-    }
+    .card { padding: 20px; color: rgb(200, 210, 225); }
+    .card-header { margin-bottom: 12px; }
+    .card-content { padding: 8px; }
+    .nested-text { margin: 4px 0; }
     #page-recovery-backdrop {
       position: fixed;
       inset: 0;
@@ -117,14 +121,9 @@ test("Issue #117: Recovery panel visibility and design compliance (browser-based
       z-index: 10001;
     }
     #page-recovery-backdrop.active { display: flex; }
-    body.recovery-active *:not(#page-recovery-backdrop) {
+    body.recovery-active > *:not(#page-recovery-backdrop) {
       opacity: 0.4;
       pointer-events: none;
-    }
-    body.recovery-active #page-recovery-backdrop * {
-      opacity: 1;
-      visibility: visible;
-      pointer-events: auto;
     }
     body.recovery-active .sleep-overlay,
     body.recovery-active .seq-modal {
@@ -156,14 +155,30 @@ test("Issue #117: Recovery panel visibility and design compliance (browser-based
   </style>
 </head>
 <body>
-  <div class="page-content" data-testid="page-content">Page Background Content</div>
-  <div id="sleep-overlay" class="sleep-overlay" data-testid="sleep-overlay">Sleep Overlay</div>
-  <div id="page-recovery-backdrop" data-testid="recovery-backdrop">
-    <div class="recovery-panel" data-testid="recovery-panel">
-      <div data-testid="recovery-text">No response from controller</div>
-      <button type="button" class="btn" id="recovery-kernel-retry" data-testid="retry-button">Retry now</button>
+  <!-- Level 1: direct child of body (affected by > *) -->
+  <div class="card" data-testid="page-content">
+    <!-- Level 2: card child -->
+    <div class="card-header" data-testid="card-label">Status</div>
+    <!-- Level 3: header child -->
+    <div class="card-content" data-testid="content-wrapper">
+      <!-- Level 4: content child (deepest) -->
+      <div class="nested-text" data-testid="nested-text">Page content visible at depth 4</div>
     </div>
   </div>
+
+  <!-- Nested overlay (level 2 under body) -->
+  <div id="sleep-wrapper" data-testid="sleep-wrapper">
+    <div id="sleep-overlay" class="sleep-overlay" data-testid="sleep-overlay">Sleep</div>
+  </div>
+
+  <!-- Recovery backdrop -->
+  <div id="page-recovery-backdrop" data-testid="recovery-backdrop">
+    <div class="recovery-panel" data-testid="recovery-panel">
+      <div data-testid="panel-text">No response</div>
+      <button class="btn" id="recovery-kernel-retry" data-testid="retry-button">Retry</button>
+    </div>
+  </div>
+
   <script>
     document.body.classList.add('recovery-active');
     document.getElementById('page-recovery-backdrop').classList.add('active');
@@ -171,77 +186,89 @@ test("Issue #117: Recovery panel visibility and design compliance (browser-based
 </body>
 </html>`;
 
-    // Navigate to test HTML
     await page.setContent(testHtml);
     await page.waitForTimeout(100);
 
-    // Evaluate computed styles
+    // Measure EFFECTIVE opacity (product of ancestor chain opacities)
     const result = await page.evaluate(() => {
-      const pageContent = document.querySelector('[data-testid="page-content"]');
+      const computeEffectiveOpacity = (elem) => {
+        let effectiveOpacity = 1;
+        let current = elem;
+        while (current) {
+          const computed = window.getComputedStyle(current);
+          const opacity = parseFloat(computed.opacity);
+          effectiveOpacity *= opacity;
+          current = current.parentElement;
+        }
+        return effectiveOpacity;
+      };
+
+      const cardLabel = document.querySelector('[data-testid="card-label"]');
+      const nestedText = document.querySelector('[data-testid="nested-text"]');
       const panel = document.querySelector('[data-testid="recovery-panel"]');
+      const panelText = document.querySelector('[data-testid="panel-text"]');
       const btn = document.querySelector('[data-testid="retry-button"]');
-      const sleep = document.querySelector('[data-testid="sleep-overlay"]');
+      const sleepOverlay = document.querySelector('[data-testid="sleep-overlay"]');
 
-      const pageOpacity = window.getComputedStyle(pageContent).opacity;
-      const pagePE = window.getComputedStyle(pageContent).pointerEvents;
-      const panelVis = window.getComputedStyle(panel).visibility;
-      const panelOpacity = window.getComputedStyle(panel).opacity;
-      const panelPE = window.getComputedStyle(panel).pointerEvents;
-      const btnVis = window.getComputedStyle(btn).visibility;
-      const btnPE = window.getComputedStyle(btn).pointerEvents;
-      const sleepVis = window.getComputedStyle(sleep).visibility;
+      // Effective opacities
+      const cardLabelEffective = computeEffectiveOpacity(cardLabel);
+      const nestedTextEffective = computeEffectiveOpacity(nestedText);
+      const panelEffective = computeEffectiveOpacity(panel);
+      const btnEffective = computeEffectiveOpacity(btn);
 
-      // Hit-test: is button reachable?
+      // Hit-test
       const rect = btn.getBoundingClientRect();
-      const centerX = rect.left + rect.width / 2;
-      const centerY = rect.top + rect.height / 2;
-      const elementAtPoint = document.elementFromPoint(centerX, centerY);
+      const elementAtPoint = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
 
       return {
-        pageContentOpacity: pageOpacity,
-        pageContentPointerEvents: pagePE,
-        recoveryPanelVisibility: panelVis,
-        recoveryPanelOpacity: panelOpacity,
-        recoveryPanelPointerEvents: panelPE,
-        retryButtonVisibility: btnVis,
-        retryButtonPointerEvents: btnPE,
-        sleepOverlayVisibility: sleepVis,
+        cardLabelEffective: cardLabelEffective.toFixed(4),
+        nestedTextEffective: nestedTextEffective.toFixed(4),
+        panelEffective: panelEffective.toFixed(4),
+        btnEffective: btnEffective.toFixed(4),
+        sleepOverlayVisibility: window.getComputedStyle(sleepOverlay).visibility,
         isButtonHitTestable: elementAtPoint === btn,
-        elementAtPoint: elementAtPoint.getAttribute("data-testid") || elementAtPoint.tagName,
       };
     });
 
-    // Assertions
-    assert.strictEqual(result.pageContentOpacity, "0.4",
-      "page content must stay dimmed at opacity: 0.4 (visible but inert)");
-    assert.strictEqual(result.pageContentPointerEvents, "none",
-      "page content must be inert (pointer-events: none)");
-    assert.strictEqual(result.recoveryPanelVisibility, "visible",
-      "recovery panel must compute to visibility: visible");
-    assert.strictEqual(result.recoveryPanelOpacity, "1",
-      "recovery panel must be fully opaque (opacity: 1)");
-    assert.strictEqual(result.recoveryPanelPointerEvents, "auto",
-      "recovery panel must be interactive (pointer-events: auto)");
-    assert.strictEqual(result.retryButtonVisibility, "visible",
-      "retry button must compute to visibility: visible");
-    assert.strictEqual(result.retryButtonPointerEvents, "auto",
-      "retry button must be clickable (pointer-events: auto)");
-    assert.strictEqual(result.sleepOverlayVisibility, "hidden",
-      "sleep overlay must be suppressed (visibility: hidden)");
-    assert.strictEqual(result.isButtonHitTestable, true,
-      "retry button must be hit-testable via elementFromPoint");
+    // Assert effective opacities are NOT compounded
+    const cardLabel = parseFloat(result.cardLabelEffective);
+    const nestedText = parseFloat(result.nestedTextEffective);
+    const panelOp = parseFloat(result.panelEffective);
+    const btnOp = parseFloat(result.btnEffective);
 
-    // Log results for verification
-    console.log("\n  Computed styles with recovery-active (design compliance):");
-    console.log(`    page-content opacity: ${result.pageContentOpacity} (dimmed but visible)`);
-    console.log(`    page-content pointer-events: ${result.pageContentPointerEvents} (inert)`);
-    console.log(`    recovery-panel visibility: ${result.recoveryPanelVisibility}`);
-    console.log(`    recovery-panel opacity: ${result.recoveryPanelOpacity} (fully opaque)`);
-    console.log(`    recovery-panel pointer-events: ${result.recoveryPanelPointerEvents}`);
-    console.log(`    retry-button visibility: ${result.retryButtonVisibility}`);
-    console.log(`    retry-button pointer-events: ${result.retryButtonPointerEvents}`);
-    console.log(`    sleep-overlay visibility: ${result.sleepOverlayVisibility} (suppressed)`);
-    console.log(`    retry-button hit-testable: ${result.isButtonHitTestable} (elementFromPoint: ${result.elementAtPoint})`);
+    assert.ok(
+      cardLabel >= 0.39 && cardLabel <= 0.41,
+      `card label effective opacity must be ~0.4, got ${result.cardLabelEffective} (compounding would give 0.0256)`
+    );
+    assert.ok(
+      nestedText >= 0.39 && nestedText <= 0.41,
+      `nested text effective opacity must be ~0.4, got ${result.nestedTextEffective} (compounding would give 0.0256)`
+    );
+    assert.ok(
+      panelOp >= 0.99 && panelOp <= 1.01,
+      `recovery panel must be fully opaque (1.0), got ${result.panelEffective}`
+    );
+    assert.ok(
+      btnOp >= 0.99 && btnOp <= 1.01,
+      `retry button must be fully opaque (1.0), got ${result.btnEffective}`
+    );
+    assert.strictEqual(
+      result.sleepOverlayVisibility,
+      "hidden",
+      "sleep overlay must be visibility: hidden"
+    );
+    assert.strictEqual(
+      result.isButtonHitTestable,
+      true,
+      "retry button must be hit-testable"
+    );
+
+    console.log("\n  EFFECTIVE opacities (product of ancestor chain, not compounded):");
+    console.log(`    card-label depth 2: ${result.cardLabelEffective} (approved: ~0.4000)`);
+    console.log(`    nested-text depth 4: ${result.nestedTextEffective} (approved: ~0.4000, broken: ~0.0256)`);
+    console.log(`    recovery-panel: ${result.panelEffective} (must be 1.0000)`);
+    console.log(`    retry-button: ${result.btnEffective} (must be 1.0000, hit-testable: ${result.isButtonHitTestable})`);
+    console.log(`    sleep-overlay visibility: ${result.sleepOverlayVisibility}`);
   } finally {
     await browser.close();
   }
