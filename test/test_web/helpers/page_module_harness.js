@@ -13,6 +13,10 @@ global.document={readyState:"complete",addEventListener(){},currentScript:{datas
   getElementById:()=>mkEl(),querySelector:()=>mkEl(),querySelectorAll:()=>[],createElement:()=>mkEl(),
   body:mkEl(),documentElement:mkEl(),visibilityState:"visible"};
 global.Event=class{};global.CustomEvent=class{};global.navigator={};
+// Browsers always provide these. Omitting them makes a purely local
+// code path "reject" with a TypeError and read as correct propagation.
+const _store={};
+global.localStorage=window.localStorage={getItem:k=>(k in _store?_store[k]:null),setItem:(k,v)=>{_store[k]=String(v)},removeItem:k=>{delete _store[k]},clear:()=>{}};
 const reg={};
 window.PABootstrap={registerSection:(n,l)=>{reg[n]=l},setResourceLabels(){},retryNow(){},refreshSections(){},getState:()=>({})};
 class ApiError extends Error{constructor(m,o={}){super(m);this.kind=o.kind||"network"}}
