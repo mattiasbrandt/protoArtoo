@@ -20,6 +20,9 @@ window.PAApi={ApiError,get:()=>Promise.reject(new ApiError("fail",{kind:"network
   postForm:()=>Promise.resolve({ok:true,data:{}}),messageFor:()=>"Network error",gateControls(){}};
 window.PAUtils={showFeedback(){},escapeHtml:v=>String(v??""),escapeAttr:v=>String(v??""),debounce:f=>f};
 window.PAStatusStream={isSupported:()=>false,subscribe:()=>()=>{},getLastStatus:()=>null};
+// In a browser, `window.X = ...` also makes bare `X` resolve. Mirror that,
+// or a module using bare `PAApi` fails with a misleading ReferenceError.
+for (const k of ["PAApi","PAUtils","PABootstrap","PAStatusStream"]) globalThis[k]=window[k];
 window.PAHealthSignals=require("/home/mattias/Documents/GitHub/protoArtoo/data/health_signals.js");
 
 const file = process.argv[2];
