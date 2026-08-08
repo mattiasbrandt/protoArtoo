@@ -1020,18 +1020,24 @@
 
 // =============================================================================
 // Memory Profiler UI (PA_HEAP_PROFILE=1 builds only)
-// Checks /api/profiler on load. If endpoint returns 200, shows the profiler
-// card and starts a 5-second refresh loop. If 404, card stays hidden and
-// profiler requests stop to avoid repeated 404 errors on builds that don't
-// support heap profiling.
+// Reads profilerSupported capability from /api/status. If false, card stays
+// hidden and no profiler requests are made. If true, loads profiler on page
+// load and starts a 5-second refresh loop.
+//
+// Error handling: Only latch on 404/501 (definitive absent). Retry on 503
+// (transient admission control busy) per ADR 0016.
 // =============================================================================
 (() => {
   const card = document.getElementById("profiler-card");
   if (!card) return;
 
-  // Track whether the endpoint is unavailable (404 on first request).
-  // Once we know the capability is absent, stop making requests.
+  // Track whether the endpoint is known to be unavailable (404/501).
+  // Once we detect a definitive absence, stop making requests.
   let profilerNotSupported = false;
+
+  // Track whether profiler capability has been checked from /api/status.
+  // If false at startup, we perform the initial capability check.
+  let profilerCapabilityKnown = false;
 
   function kb(bytes) {
     return (bytes / 1024).toFixed(1) + " KB";
@@ -1127,24 +1133,59 @@
     }
   }
 
+  async function checkProfilerCapability() {
+    // Check if the firmware supports profiler via /api/status.
+    // This avoids blindly fetching /api/profiler on builds that don't support it.
+    if (profilerCapabilityKnown) return;
+
+    try {
+      const result = await window.PAApi?.get?.("/api/status", { timeoutMs: 3000 });
+      if (result?.data?.profilerSupported === true) {
+        // Profiler is supported; proceed with refresh.
+        profilerCapabilityKnown = true;
+        return;
+      }
+      if (result?.data?.profilerSupported === false) {
+        // Profiler is not supported on this build.
+        profilerNotSupported = true;
+        profilerCapabilityKnown = true;
+        return;
+      }
+    } catch (_) {
+      // Status fetch failed — assume profiler might be available and try it anyway.
+      // This provides graceful degradation if status endpoint is temporarily unavailable.
+      profilerCapabilityKnown = true;
+    }
+  }
+
   async function refreshProfiler() {
-    // If we previously detected that /api/profiler is not supported (404),
-    // stop making requests to avoid repeated 404 errors.
+    // If profiler capability is known to be unsupported, do nothing.
     if (profilerNotSupported) return;
+
+    // On first call, check if profiler is supported before fetching.
+    if (!profilerCapabilityKnown) {
+      await checkProfilerCapability();
+      if (profilerNotSupported) return;
+    }
 
     try {
       const resp = await fetch("/api/profiler");
       if (!resp.ok) {
-        // On 404 (or other error), mark profiler as unsupported and stop requesting.
-        profilerNotSupported = true;
+        // Only latch on 404 (Not Found) or 501 (Not Implemented) — these indicate
+        // the feature is permanently absent on this build (PA_HEAP_PROFILE=0).
+        // Do NOT latch on 503 (Service Unavailable / admission control) — that is
+        // a transient condition and the profiler may succeed on retry per ADR 0016.
+        if (resp.status === 404 || resp.status === 501) {
+          profilerNotSupported = true;
+        }
         return;
       }
       const data = await resp.json();
       card.hidden = false;
       renderProfiler(data);
     } catch (_) {
-      // Network error — assume unavailable and stop requesting.
-      profilerNotSupported = true;
+      // Network error — leave profilerNotSupported false so we retry on next attempt.
+      // Do not permanently disable profiler on transient network failures.
     }
   }
 
