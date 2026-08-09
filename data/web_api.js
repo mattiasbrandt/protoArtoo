@@ -95,28 +95,37 @@
     }
   };
 
-  let activeController = null;
+  // Section requests (from page_bootstrap.js via the section loaders) use
+  // activeSectionController for cancellation. The bootstrap tracks section
+  // state and cancels the previous section's request when transitioning to
+  // a new section. Only section requests are cancellable; emergency paths
+  // like estopRequest bypass both slot acquisition and cancellation.
+  let activeSectionController = null;
 
   const request = async (path, opts = {}) => {
     await acquireRequestSlot();
     try {
-      return await performRequest(path, opts);
+      return await performRequest(path, { ...opts, _isSection: true });
     } finally {
       releaseRequestSlot();
     }
   };
 
   // Estop bypass: skips slot acquisition entirely so estop is never queued.
-  // Must never be auto-retried.
+  // Must never be auto-retried. Also bypasses cancellation: estop is not
+  // abortable by abortRequest().
   const estopRequest = async (path, opts = {}) => {
-    return performRequest(path, { ...opts, noRetry: true });
+    return performRequest(path, { ...opts, noRetry: true, _isSection: false });
   };
 
+  // Cancel the active section request. Only section requests are cancellable;
+  // estop and other bypass paths are never aborted. Slot release is handled
+  // by the request's own finally block, so abortRequest does not call
+  // releaseRequestSlot (which would cause a double release).
   const abortRequest = () => {
-    if (activeController) {
-      activeController.abort();
-      activeController = null;
-      releaseRequestSlot();
+    if (activeSectionController) {
+      activeSectionController.abort();
+      activeSectionController = null;
     }
   };
 
@@ -128,10 +137,13 @@
     form = null,
     json = null,
     noRetry = false,
+    _isSection = false,
   } = {}) => {
     const attempt = async (isRetry) => {
       const controller = new AbortController();
-      activeController = controller;
+      if (_isSection) {
+        activeSectionController = controller;
+      }
       const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
 
       try {
@@ -180,7 +192,9 @@
         throw apiError;
       } finally {
         window.clearTimeout(timeoutId);
-        activeController = null;
+        if (_isSection) {
+          activeSectionController = null;
+        }
       }
     };
 
