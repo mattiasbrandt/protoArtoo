@@ -28,6 +28,7 @@
 #include <string.h>
 
 #include "api_helpers.h"
+#include "api_json_response.h"
 #include "audio_task.h"
 #include "commanded_modes.h"
 #include "config_store.h"
@@ -236,7 +237,7 @@ bool executeManualCommand(const char* raw) {
 void handleModePost(WebRequest& req) {
     char mode[32] = {};
     if (!paramLowercase(req, "mode", mode, sizeof(mode))) {
-        req.send(400, "application/json", "{\"ok\":false,\"error\":\"missing mode parameter\"}");
+        webSendJsonError(req, 400, "missing mode parameter");
         return;
     }
 
@@ -253,28 +254,25 @@ void handleModePost(WebRequest& req) {
         PA_LOG_INFO(TAG, "[WEB] Mode set to driving");
         req.send(200, "application/json", "{\"ok\":true}");
     } else {
-        req.send(400, "application/json",
-                 "{\"ok\":false,\"error\":\"invalid mode - use 'stationary' or 'driving'\"}");
+        webSendJsonError(req, 400, "invalid mode - use 'stationary' or 'driving'");
     }
 }
 
 void handleSpeedPresetPost(WebRequest& req) {
     char presetRaw[32] = {};
     if (!paramLowercase(req, "preset", presetRaw, sizeof(presetRaw))) {
-        req.send(400, "application/json", "{\"ok\":false,\"error\":\"missing preset\"}");
+        webSendJsonError(req, 400, "missing preset");
         return;
     }
 
     SpeedPresetId preset = SpeedPresetId::Normal;
     if (!parseSpeedPresetId(presetRaw, &preset)) {
-        req.send(400, "application/json",
-                 "{\"ok\":false,\"error\":\"invalid preset - use slow, normal, or turbo\"}");
+        webSendJsonError(req, 400, "invalid preset - use slow, normal, or turbo");
         return;
     }
 
     if (!applySpeedPresetPersisted(preset)) {
-        req.send(500, "application/json",
-                 "{\"ok\":false,\"error\":\"failed to persist speed preset\"}");
+        webSendJsonError(req, 500, "failed to persist speed preset");
         return;
     }
 
@@ -285,8 +283,7 @@ void handleSpeedPresetPost(WebRequest& req) {
 
     char response[96];
     if (!formatSpeedPresetResponseJson(response, sizeof(response), activePreset, speedLimitMax)) {
-        req.send(500, "application/json",
-                 "{\"ok\":false,\"error\":\"speed preset response overflow\"}");
+        webSendJsonError(req, 500, "speed preset response overflow");
         return;
     }
     req.send(200, "application/json", response);
@@ -312,15 +309,14 @@ void handleDrivePost(WebRequest& req) {
     char steerRaw[16] = {};
     if (!req.param("speed", speedRaw, sizeof(speedRaw)) ||
         !req.param("steer", steerRaw, sizeof(steerRaw))) {
-        req.send(400, "application/json", "{\"ok\":false,\"error\":\"missing speed or steer\"}");
+        webSendJsonError(req, 400, "missing speed or steer");
         return;
     }
 
     int16_t speed = 0;
     int16_t steer = 0;
     if (!parseDriveValue(speedRaw, &speed) || !parseDriveValue(steerRaw, &steer)) {
-        req.send(400, "application/json",
-                 "{\"ok\":false,\"error\":\"speed and steer must be integers\"}");
+        webSendJsonError(req, 400, "speed and steer must be integers");
         return;
     }
 
@@ -335,8 +331,7 @@ void handleDrivePost(WebRequest& req) {
 
     if (blocked) {
         PA_LOG_WARN(TAG, "[WEB] POST /api/drive - rejected: blocked by safety state");
-        req.send(409, "application/json",
-                 "{\"ok\":false,\"error\":\"drive blocked by safety state\"}");
+        webSendJsonError(req, 409, "drive blocked by safety state");
         return;
     }
 
@@ -361,21 +356,20 @@ void handleDomeCmdPost(WebRequest& req) {
     // first -- turning an over-long command into a truncated valid one.
     const char* raw = req.paramRef("cmd");
     if (raw == nullptr || raw[0] == '\0') {
-        req.send(400, "application/json", "{\"ok\":false,\"error\":\"missing cmd parameter\"}");
+        webSendJsonError(req, 400, "missing cmd parameter");
         return;
     }
     if (strlen(raw) > 127) {
-        req.send(400, "application/json", "{\"ok\":false,\"error\":\"cmd too long (max 127)\"}");
+        webSendJsonError(req, 400, "cmd too long (max 127)");
         return;
     }
     if (strncmp(raw, "DM:", 3) == 0) {
         if (!sequenceStart(raw, SRC_WEB_API)) {
-            req.send(503, "application/json", "{\"ok\":false,\"error\":\"sequence queue full\"}");
+            webSendJsonError(req, 503, "sequence queue full");
             return;
         }
     } else if (!domeQueueTx(raw)) {
-        req.send(503, "application/json",
-                 "{\"ok\":false,\"error\":\"dome TX queue full or link not ready\"}");
+        webSendJsonError(req, 503, "dome TX queue full or link not ready");
         return;
     }
     PA_LOG_INFO(TAG, "[WEB] POST /api/dome/cmd cmd=%s", raw);
@@ -387,26 +381,25 @@ void handleDomeSpeedPost(WebRequest& req) {
     // parseDomeSpeedValue() and is rejected instead of being truncated.
     char speedRaw[32] = {};
     if (!req.param("speed", speedRaw, sizeof(speedRaw))) {
-        req.send(400, "application/json", "{\"ok\":false,\"error\":\"missing speed\"}");
+        webSendJsonError(req, 400, "missing speed");
         return;
     }
 
     if (isSleepModeActive()) {
-        req.send(423, "application/json", "{\"error\":\"sleeping\",\"hint\":\"POST /api/wake\"}");
+        webSendJsonError(req, 423, "sleeping", "POST /api/wake");
         return;
     }
 
     float speed = 0.0f;
     if (!parseDomeSpeedValue(speedRaw, &speed)) {
-        req.send(400, "application/json",
-                 "{\"ok\":false,\"error\":\"speed must be a float in range -1.0..1.0\"}");
+        webSendJsonError(req, 400, "speed must be a float in range -1.0..1.0");
         return;
     }
 
     ConfigSnapshot cfg = {};
     configCacheRead(&cfg);
     if (!cfg.system.enable_dome) {
-        req.send(409, "application/json", "{\"ok\":false,\"error\":\"dome output is disabled\"}");
+        webSendJsonError(req, 409, "dome output is disabled");
         return;
     }
 
@@ -418,7 +411,7 @@ void handleDomeSpeedPost(WebRequest& req) {
         taskENTER_CRITICAL(&robotStateMux);
         robotState.queueOverflowCount++;
         taskEXIT_CRITICAL(&robotStateMux);
-        req.send(503, "application/json", "{\"ok\":false,\"error\":\"dome command queue full\"}");
+        webSendJsonError(req, 503, "dome command queue full");
         return;
     }
 

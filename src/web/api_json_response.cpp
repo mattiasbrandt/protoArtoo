@@ -44,7 +44,7 @@ void webSendJsonError(WebRequest& req, int status, const char* errorToken,
     // Error responses are small and bounded; use a fixed-size allocation.
     // Worst case: {"ok":false,"error":"...","hint":"...","field":"..."}
     // ~256 bytes is safe.
-    StaticJsonDocument<256> doc;
+    JsonDocument doc;
     doc["ok"] = false;
     doc["error"] = errorToken;
     if (hint != nullptr) {

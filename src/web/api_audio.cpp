@@ -51,6 +51,7 @@
 #include "api_audio_mood_map_apply.h"
 #include "api_audio_tracks_apply.h"
 #include "api_helpers.h"
+#include "api_json_response.h"
 #include "audio_task.h"
 #include "chirp_binding_keys.h"
 #include "config.h"
@@ -148,9 +149,7 @@ bool parseChirpPage(const char* raw, char* pageOut) {
 // carry their own error structs rather than a shared one, so the two fields
 // that matter are passed rather than the struct.
 void sendApplyError(WebRequest& req, const char* message, bool notFound) {
-    char err[192];
-    snprintf(err, sizeof(err), "{\"ok\":false,\"error\":\"%s\"}", message);
-    req.send(notFound ? 404 : 400, "application/json", err);
+    webSendJsonError(req, notFound ? 404 : 400, message);
 }
 
 // -----------------------------------------------------------------------------
@@ -388,8 +387,7 @@ void handleAudioMoodMapGet(WebRequest& req) {
     char body[128];
     size_t n = formatMoodCategoryMapJson(body, sizeof(body), masks);
     if (n >= sizeof(body)) {
-        req.send(500, "application/json",
-                 "{\"ok\":false,\"error\":\"mood-map response overflow\"}");
+        webSendJsonError(req, 500, "mood-map response overflow");
         return;
     }
     req.send(200, "application/json", body);
@@ -415,7 +413,7 @@ void handleAudioMoodMapPost(WebRequest& req) {
     }
 
     if (!ok) {
-        req.send(500, "application/json", "{\"ok\":false,\"error\":\"NVS write failed\"}");
+        webSendJsonError(req, 500, "NVS write failed");
         return;
     }
 
@@ -459,8 +457,7 @@ void handleAudioTracksGet(WebRequest& req) {
     }
 
     if (!req.sendChunked("application/json", fillTracksResponse)) {
-        req.send(500, "application/json",
-                 "{\"ok\":false,\"error\":\"response stream alloc failed\"}");
+        webSendJsonError(req, 500, "response stream alloc failed");
         return;
     }
     PA_LOG_DEBUG(TAG, "[AUDIO] GET /api/audio/tracks bindings=%s",
@@ -537,7 +534,7 @@ void handleAudioTracksPost(WebRequest& req) {
         }
         req.send(200, "application/json", "{\"ok\":true}");
     } else {
-        req.send(500, "application/json", "{\"ok\":false,\"error\":\"NVS write failed\"}");
+        webSendJsonError(req, 500, "NVS write failed");
     }
 }
 
@@ -607,7 +604,7 @@ void handleAudioCategoryRangePost(WebRequest& req) {
     }
 
     if (!ok) {
-        req.send(500, "application/json", "{\"ok\":false,\"error\":\"NVS write failed\"}");
+        webSendJsonError(req, 500, "NVS write failed");
         return;
     }
 
@@ -635,7 +632,7 @@ void handleAudioCategoryRangePost(WebRequest& req) {
 
 void handleMoodPost(WebRequest& req) {
     if (isSleepModeActive()) {
-        req.send(423, "application/json", "{\"error\":\"sleeping\",\"hint\":\"POST /api/wake\"}");
+        webSendJsonError(req, 423, "sleeping", "POST /api/wake");
         return;
     }
 
@@ -644,7 +641,7 @@ void handleMoodPost(WebRequest& req) {
     // that happens to match (web_request.h).
     char moodRaw[16] = {};
     if (!req.param("mood", moodRaw, sizeof(moodRaw))) {
-        req.send(400, "application/json", "{\"ok\":false,\"error\":\"missing mood parameter\"}");
+        webSendJsonError(req, 400, "missing mood parameter");
         return;
     }
 
@@ -654,8 +651,7 @@ void handleMoodPost(WebRequest& req) {
     uint32_t mood = 0;
     if (!parseUint32Value(moodRaw, &mood) || (mood != 10 && mood != 11 && mood != 13 &&
                                               mood != 14)) {
-        req.send(400, "application/json",
-                 "{\"ok\":false,\"error\":\"mood must be 10, 11, 13, or 14\"}");
+        webSendJsonError(req, 400, "mood must be 10, 11, 13, or 14");
         return;
     }
 
@@ -674,8 +670,7 @@ void handleMoodPost(WebRequest& req) {
 // (3 x 300 ms query timeout + queue latency).
 void handleAudioQueryPost(WebRequest& req) {
     if (!audioQueueQueryStatus(SRC_WEB_API)) {
-        req.send(503, "application/json",
-                 "{\"ok\":false,\"error\":\"audio command queue full\"}");
+        webSendJsonError(req, 503, "audio command queue full");
         return;
     }
     PA_LOG_INFO(TAG, "[AUDIO] POST /api/audio/query — status poll enqueued");
@@ -685,8 +680,7 @@ void handleAudioQueryPost(WebRequest& req) {
 // Returns the cached CHIRP catalog from the most recent refresh.
 void handleAudioCatalogGet(WebRequest& req) {
     if (!audioCatalogSupported()) {
-        req.send(404, "application/json",
-                 "{\"ok\":false,\"error\":\"catalog unsupported by active backend\"}");
+        webSendJsonError(req, 404, "catalog unsupported by active backend");
         return;
     }
 
@@ -695,7 +689,7 @@ void handleAudioCatalogGet(WebRequest& req) {
     if (req.param("bank", bankRaw, sizeof(bankRaw))) {
         uint32_t parsedBank = 0;
         if (!parseUint32Value(bankRaw, &parsedBank) || parsedBank < 1 || parsedBank > 6) {
-            req.send(400, "application/json", "{\"ok\":false,\"error\":\"bank must be 1-6\"}");
+            webSendJsonError(req, 400, "bank must be 1-6");
             return;
         }
         bankFilter = (uint8_t)parsedBank;
@@ -709,8 +703,7 @@ void handleAudioCatalogGet(WebRequest& req) {
     s_catalogEntries = audioGetCatalogEntries(&s_catalogEntryCount);
 
     if (!req.sendChunked("application/json", fillCatalogResponse)) {
-        req.send(500, "application/json",
-                 "{\"ok\":false,\"error\":\"response stream alloc failed\"}");
+        webSendJsonError(req, 500, "response stream alloc failed");
         return;
     }
     PA_LOG_DEBUG(TAG, "[AUDIO] GET /api/audio/catalog ready=%s entries=%u bank=%u",
@@ -720,13 +713,11 @@ void handleAudioCatalogGet(WebRequest& req) {
 
 void handleAudioCatalogRefreshPost(WebRequest& req) {
     if (!audioCatalogSupported()) {
-        req.send(404, "application/json",
-                 "{\"ok\":false,\"error\":\"catalog unsupported by active backend\"}");
+        webSendJsonError(req, 404, "catalog unsupported by active backend");
         return;
     }
     if (!audioQueueRefreshCatalog(SRC_WEB_API)) {
-        req.send(503, "application/json",
-                 "{\"ok\":false,\"error\":\"audio command queue full\"}");
+        webSendJsonError(req, 503, "audio command queue full");
         return;
     }
     PA_LOG_INFO(TAG, "[AUDIO] POST /api/audio/catalog/refresh queued");
@@ -736,12 +727,11 @@ void handleAudioCatalogRefreshPost(WebRequest& req) {
 // Play a CHIRP entry by bank/page/index for quick validation from Sound UI.
 void handleAudioPlayBankedPost(WebRequest& req) {
     if (isSleepModeActive()) {
-        req.send(423, "application/json", "{\"error\":\"sleeping\",\"hint\":\"POST /api/wake\"}");
+        webSendJsonError(req, 423, "sleeping", "POST /api/wake");
         return;
     }
     if (!audioCatalogSupported()) {
-        req.send(404, "application/json",
-                 "{\"ok\":false,\"error\":\"catalog unsupported by active backend\"}");
+        webSendJsonError(req, 404, "catalog unsupported by active backend");
         return;
     }
 
@@ -753,32 +743,29 @@ void handleAudioPlayBankedPost(WebRequest& req) {
     if (!req.param("index", indexRaw, sizeof(indexRaw)) ||
         !req.param("bank", bankRaw, sizeof(bankRaw)) ||
         !req.param("page", pageRaw, sizeof(pageRaw))) {
-        req.send(400, "application/json",
-                 "{\"ok\":false,\"error\":\"requires index, bank, page\"}");
+        webSendJsonError(req, 400, "requires index, bank, page");
         return;
     }
 
     uint32_t indexValue = 0;
     uint32_t bankValue = 0;
     if (!parseUint32Value(indexRaw, &indexValue) || indexValue < 1 || indexValue > 65535) {
-        req.send(400, "application/json", "{\"ok\":false,\"error\":\"index must be 1-65535\"}");
+        webSendJsonError(req, 400, "index must be 1-65535");
         return;
     }
     if (!parseUint32Value(bankRaw, &bankValue) || bankValue < 1 || bankValue > 6) {
-        req.send(400, "application/json", "{\"ok\":false,\"error\":\"bank must be 1-6\"}");
+        webSendJsonError(req, 400, "bank must be 1-6");
         return;
     }
 
     char page = 'A';
     if (!parseChirpPage(pageRaw, &page)) {
-        req.send(400, "application/json",
-                 "{\"ok\":false,\"error\":\"page must be a single letter A-Z\"}");
+        webSendJsonError(req, 400, "page must be a single letter A-Z");
         return;
     }
 
     if (!audioQueuePlayTrackBanked((uint16_t)indexValue, (uint8_t)bankValue, page, SRC_WEB_API)) {
-        req.send(503, "application/json",
-                 "{\"ok\":false,\"error\":\"audio command queue full\"}");
+        webSendJsonError(req, 503, "audio command queue full");
         return;
     }
 
@@ -825,32 +812,28 @@ void handleAudioPost(WebRequest& req) {
     // unknown-action answer below instead of truncating into a match.
     char action[16] = {};
     if (!req.param("action", action, sizeof(action))) {
-        req.send(400, "application/json", "{\"ok\":false,\"error\":\"missing action parameter\"}");
+        webSendJsonError(req, 400, "missing action parameter");
         return;
     }
 
     // ---- play ----
     if (strcmp(action, "play") == 0) {
         if (isSleepModeActive()) {
-            req.send(423, "application/json",
-                     "{\"error\":\"sleeping\",\"hint\":\"POST /api/wake\"}");
+            webSendJsonError(req, 423, "sleeping", "POST /api/wake");
             return;
         }
         char trackRaw[16] = {};
         if (!req.param("track", trackRaw, sizeof(trackRaw))) {
-            req.send(400, "application/json",
-                     "{\"ok\":false,\"error\":\"play requires track parameter\"}");
+            webSendJsonError(req, 400, "play requires track parameter");
             return;
         }
         uint32_t track = 0;
         if (!parseUint32Value(trackRaw, &track) || track < 1 || track > 65535) {
-            req.send(400, "application/json",
-                     "{\"ok\":false,\"error\":\"track must be 1–65535\"}");
+            webSendJsonError(req, 400, "track must be 1–65535");
             return;
         }
         if (!audioQueuePlayTrack((uint16_t)track, SRC_WEB_API)) {
-            req.send(503, "application/json",
-                     "{\"ok\":false,\"error\":\"audio command queue full\"}");
+            webSendJsonError(req, 503, "audio command queue full");
             return;
         }
         PA_LOG_INFO(TAG, "[AUDIO] POST /api/audio play track=%d", (int)track);
@@ -861,8 +844,7 @@ void handleAudioPost(WebRequest& req) {
     // ---- stop ----
     if (strcmp(action, "stop") == 0) {
         if (!audioQueueTrackStop(SRC_WEB_API)) {
-            req.send(503, "application/json",
-                     "{\"ok\":false,\"error\":\"audio command queue full\"}");
+            webSendJsonError(req, 503, "audio command queue full");
             return;
         }
         PA_LOG_INFO(TAG, "[AUDIO] POST /api/audio stop");
@@ -874,20 +856,18 @@ void handleAudioPost(WebRequest& req) {
     if (strcmp(action, "volume") == 0) {
         char levelRaw[16] = {};
         if (!req.param("level", levelRaw, sizeof(levelRaw))) {
-            req.send(400, "application/json",
-                     "{\"ok\":false,\"error\":\"volume requires level parameter\"}");
+            webSendJsonError(req, 400, "volume requires level parameter");
             return;
         }
         uint32_t level = 0;
         if (!parseUint32Value(levelRaw, &level) || level > 30) {
-            req.send(400, "application/json", "{\"ok\":false,\"error\":\"level must be 0–30\"}");
+            webSendJsonError(req, 400, "level must be 0–30");
             return;
         }
 
         // Apply immediately in AudioTask runtime
         if (!audioQueueSetVolume((uint8_t)level, SRC_WEB_API)) {
-            req.send(503, "application/json",
-                     "{\"ok\":false,\"error\":\"audio command queue full\"}");
+            webSendJsonError(req, 503, "audio command queue full");
             return;
         }
         // Persist as the new default volume so it survives reboot
@@ -900,8 +880,7 @@ void handleAudioPost(WebRequest& req) {
         PA_LOG_INFO(TAG, "[AUDIO] POST /api/audio volume level=%d saved=%s", (int)level,
                     saved ? "true" : "false");
         if (!saved) {
-            req.send(500, "application/json",
-                     "{\"ok\":false,\"error\":\"volume applied but NVS save failed\"}");
+            webSendJsonError(req, 500, "volume applied but NVS save failed");
             return;
         }
         req.send(200, "application/json", "{\"ok\":true}");
@@ -911,8 +890,7 @@ void handleAudioPost(WebRequest& req) {
     // ---- dollar (raw $ command) ----
     if (strcmp(action, "dollar") == 0) {
         if (isSleepModeActive()) {
-            req.send(423, "application/json",
-                     "{\"error\":\"sleeping\",\"hint\":\"POST /api/wake\"}");
+            webSendJsonError(req, 423, "sleeping", "POST /api/wake");
             return;
         }
         // Wider than the 9-character ceiling below, so an over-long command is
@@ -920,19 +898,16 @@ void handleAudioPost(WebRequest& req) {
         // being truncated into an accepted one.
         char cmd[24] = {};
         if (!req.param("cmd", cmd, sizeof(cmd)) || cmd[0] != '$') {
-            req.send(400, "application/json",
-                     "{\"ok\":false,\"error\":\"dollar requires cmd starting with '$'\"}");
+            webSendJsonError(req, 400, "dollar requires cmd starting with '$'");
             return;
         }
         // Limit cmd length to what audioCmdQueue dollar field can hold
         if (strlen(cmd) > 9) {
-            req.send(400, "application/json",
-                     "{\"ok\":false,\"error\":\"cmd too long (max 9 chars)\"}");
+            webSendJsonError(req, 400, "cmd too long (max 9 chars)");
             return;
         }
         if (!audioQueueDollar(cmd, SRC_WEB_API)) {
-            req.send(503, "application/json",
-                     "{\"ok\":false,\"error\":\"audio command queue full\"}");
+            webSendJsonError(req, 503, "audio command queue full");
             return;
         }
         PA_LOG_INFO(TAG, "[AUDIO] POST /api/audio dollar cmd=%s", cmd);
@@ -940,6 +915,5 @@ void handleAudioPost(WebRequest& req) {
         return;
     }
 
-    req.send(400, "application/json",
-             "{\"ok\":false,\"error\":\"unknown action — use play/stop/volume/dollar\"}");
+    webSendJsonError(req, 400, "unknown action — use play/stop/volume/dollar");
 }

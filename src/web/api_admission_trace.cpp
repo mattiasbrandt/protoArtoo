@@ -10,6 +10,7 @@
 
 #if PA_ADMISSION_TRACE
 
+#include "../../include/api_json_response.h"
 #include "../../include/logging.h"
 
 static const char* TAG = "WebServer";
@@ -42,7 +43,7 @@ void handleAdmissionTraceGet(WebRequest& req) {
     const bool clear = req.hasParam("clear");
 
     if (!req.sendChunked("application/json", fillAdmissionTraceResponse)) {
-        req.send(503, "application/json", "{\"error\":\"admission trace unavailable\"}");
+        webSendJsonError(req, 503, "admission trace unavailable");
         return;
     }
 

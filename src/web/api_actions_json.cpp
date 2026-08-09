@@ -24,6 +24,7 @@
 #include <cstdio>
 
 #include "../../include/action_registry.h"
+#include "../../include/api_json_response.h"
 #include "../../include/logging.h"
 #include "../../include/web_json_slice_writer.h"
 
@@ -73,8 +74,7 @@ size_t fillActionsResponse(uint8_t* output, size_t capacity, size_t offset) {
 
 void handleActionsGet(WebRequest& req) {
     if (!req.sendChunked("application/json", fillActionsResponse)) {
-        req.send(500, "application/json",
-                 "{\"ok\":false,\"error\":\"response alloc failed\"}");
+        webSendJsonError(req, 500, "response alloc failed");
         return;
     }
     PA_LOG_DEBUG(TAG, "GET /api/actions (%zu entries)", ACTION_REGISTRY_SIZE);
