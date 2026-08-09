@@ -21,7 +21,7 @@
 #include <cstring>
 #include <string>
 
-#include "web_admission_trace.h"
+#include "web_admission_event_ring.h"
 
 static WebAdmissionTrace s_trace;
 

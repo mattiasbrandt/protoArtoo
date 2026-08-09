@@ -1,8 +1,10 @@
 // =============================================================================
 // include/api_admission_trace.h
 //
-// GET /api/admission/trace -- readback for the admission decision ring
-// (include/web_admission_trace.h), on the WebRequest seam (ADR 0021).
+// HTTP ENDPOINT: GET /api/admission/trace -- readback for the admission event
+// ring (include/web_admission_event_ring.h), on the WebRequest seam (ADR 0021).
+// Independent of admission policy (include/web_admission.h) and event storage;
+// this module provides only the HTTP interface.
 //
 // Present only on builds with PA_ADMISSION_TRACE, like /api/profiler is present
 // only with PA_HEAP_PROFILE. Absent means 404, which is what a harness should
@@ -11,7 +13,7 @@
 // =============================================================================
 #pragma once
 
-#include "web_admission_trace.h"
+#include "web_admission_event_ring.h"
 
 #if PA_ADMISSION_TRACE
 
