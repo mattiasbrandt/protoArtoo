@@ -13,6 +13,42 @@
 #include "drive_speed_preset.h"
 #include "marcduino_helpers.h"
 #include "rc_mapping.h"
+#include "rc_sound_category_table.h"
+
+// =============================================================================
+// Sound Category Table
+// =============================================================================
+// Maps each sound action to its category lo/hi member pointers.
+// Defined here and declared in rc_sound_category_table.h for testing.
+
+const RcSoundCategoryEntry rcSoundCategoryTable[] = {
+    {SOUND_ACTION_RANDOM_GENERAL, &RcSoundCategorySnapshot::gen_lo,
+     &RcSoundCategorySnapshot::gen_hi},
+    {SOUND_ACTION_RANDOM_CHATTY, &RcSoundCategorySnapshot::chat_lo,
+     &RcSoundCategorySnapshot::chat_hi},
+    {SOUND_ACTION_RANDOM_HAPPY, &RcSoundCategorySnapshot::hap_lo,
+     &RcSoundCategorySnapshot::hap_hi},
+    {SOUND_ACTION_RANDOM_PROCESSING, &RcSoundCategorySnapshot::proc_lo,
+     &RcSoundCategorySnapshot::proc_hi},
+    {SOUND_ACTION_RANDOM_SAD, &RcSoundCategorySnapshot::sad_lo,
+     &RcSoundCategorySnapshot::sad_hi},
+    {SOUND_ACTION_RANDOM_SENTIMENTAL, &RcSoundCategorySnapshot::sent_lo,
+     &RcSoundCategorySnapshot::sent_hi},
+    {SOUND_ACTION_RANDOM_HUMMING, &RcSoundCategorySnapshot::hum_lo,
+     &RcSoundCategorySnapshot::hum_hi},
+    {SOUND_ACTION_RANDOM_SCREAM, &RcSoundCategorySnapshot::scrm_lo,
+     &RcSoundCategorySnapshot::scrm_hi},
+    {SOUND_ACTION_RANDOM_SURPRISED, &RcSoundCategorySnapshot::ooh_lo,
+     &RcSoundCategorySnapshot::ooh_hi},
+    {SOUND_ACTION_RANDOM_ALERT, &RcSoundCategorySnapshot::alrm_lo,
+     &RcSoundCategorySnapshot::alrm_hi},
+    {SOUND_ACTION_RANDOM_SNARKY, &RcSoundCategorySnapshot::snarky_lo,
+     &RcSoundCategorySnapshot::snarky_hi},
+    {SOUND_ACTION_RANDOM_WHISTLE, &RcSoundCategorySnapshot::whis_lo,
+     &RcSoundCategorySnapshot::whis_hi},
+};
+
+const size_t rcSoundCategoryTableSize = sizeof(rcSoundCategoryTable) / sizeof(rcSoundCategoryTable[0]);
 
 RcActionResult rcDispatchAction(const RcActionPayload& input) {
     RcActionResult res = {};
@@ -60,63 +96,18 @@ RcActionResult rcDispatchAction(const RcActionPayload& input) {
         case SOUND_ACTION_RANDOM_SNARKY:
         case SOUND_ACTION_RANDOM_WHISTLE: {
             if (input.pressed) {
-                uint16_t lo = 0;
-                uint16_t hi = 0;
-                switch (input.target) {
-                    case SOUND_ACTION_RANDOM_GENERAL:
-                        lo = input.categories.gen_lo;
-                        hi = input.categories.gen_hi;
+                // Lookup category entry for this action in the global table
+                for (size_t i = 0; i < rcSoundCategoryTableSize; ++i) {
+                    if (rcSoundCategoryTable[i].action == input.target) {
+                        const RcSoundCategorySnapshot& cat = input.categories;
+                        uint16_t lo = cat.*(rcSoundCategoryTable[i].lo);
+                        uint16_t hi = cat.*(rcSoundCategoryTable[i].hi);
+                        uint16_t track = 0;
+                        if (selectRandomTrackInRange(lo, hi, input.randomSeed, &track)) {
+                            res.audioTrack = track;
+                        }
                         break;
-                    case SOUND_ACTION_RANDOM_CHATTY:
-                        lo = input.categories.chat_lo;
-                        hi = input.categories.chat_hi;
-                        break;
-                    case SOUND_ACTION_RANDOM_HAPPY:
-                        lo = input.categories.hap_lo;
-                        hi = input.categories.hap_hi;
-                        break;
-                    case SOUND_ACTION_RANDOM_PROCESSING:
-                        lo = input.categories.proc_lo;
-                        hi = input.categories.proc_hi;
-                        break;
-                    case SOUND_ACTION_RANDOM_SAD:
-                        lo = input.categories.sad_lo;
-                        hi = input.categories.sad_hi;
-                        break;
-                    case SOUND_ACTION_RANDOM_SENTIMENTAL:
-                        lo = input.categories.sent_lo;
-                        hi = input.categories.sent_hi;
-                        break;
-                    case SOUND_ACTION_RANDOM_HUMMING:
-                        lo = input.categories.hum_lo;
-                        hi = input.categories.hum_hi;
-                        break;
-                    case SOUND_ACTION_RANDOM_SCREAM:
-                        lo = input.categories.scrm_lo;
-                        hi = input.categories.scrm_hi;
-                        break;
-                    case SOUND_ACTION_RANDOM_SURPRISED:
-                        lo = input.categories.ooh_lo;
-                        hi = input.categories.ooh_hi;
-                        break;
-                    case SOUND_ACTION_RANDOM_ALERT:
-                        lo = input.categories.alrm_lo;
-                        hi = input.categories.alrm_hi;
-                        break;
-                    case SOUND_ACTION_RANDOM_SNARKY:
-                        lo = input.categories.snarky_lo;
-                        hi = input.categories.snarky_hi;
-                        break;
-                    case SOUND_ACTION_RANDOM_WHISTLE:
-                        lo = input.categories.whis_lo;
-                        hi = input.categories.whis_hi;
-                        break;
-                    default:
-                        break;
-                }
-                uint16_t track = 0;
-                if (selectRandomTrackInRange(lo, hi, input.randomSeed, &track)) {
-                    res.audioTrack = track;
+                    }
                 }
             }
             break;

@@ -8,6 +8,7 @@
 #include <cstring>
 
 #include "rc_action_dispatcher.h"
+#include "rc_sound_category_table.h"
 
 static RcActionPayload buildPayload(RobotActionId target, const char* payload, bool pressed) {
     RcActionPayload p = {};
@@ -198,6 +199,82 @@ void test_speed_preset_cycle(void) {
     TEST_ASSERT_EQUAL(SpeedPresetId::Normal, res.newSpeedPreset);
 }
 
+// =============================================================================
+// Sound Category Table Tests
+// =============================================================================
+
+void test_category_table_has_all_12_actions(void) {
+    // Verify the table has all 12 sound actions
+    TEST_ASSERT_EQUAL_INT(12, rcSoundCategoryTableSize);
+
+    // Verify each action appears in the table
+    bool found[12] = {false};
+    RobotActionId actions[12] = {
+        SOUND_ACTION_RANDOM_GENERAL,      SOUND_ACTION_RANDOM_CHATTY,
+        SOUND_ACTION_RANDOM_HAPPY,        SOUND_ACTION_RANDOM_PROCESSING,
+        SOUND_ACTION_RANDOM_SAD,          SOUND_ACTION_RANDOM_SENTIMENTAL,
+        SOUND_ACTION_RANDOM_HUMMING,      SOUND_ACTION_RANDOM_SCREAM,
+        SOUND_ACTION_RANDOM_SURPRISED,    SOUND_ACTION_RANDOM_ALERT,
+        SOUND_ACTION_RANDOM_SNARKY,       SOUND_ACTION_RANDOM_WHISTLE,
+    };
+
+    for (size_t i = 0; i < rcSoundCategoryTableSize; ++i) {
+        for (int j = 0; j < 12; ++j) {
+            if (rcSoundCategoryTable[i].action == actions[j]) {
+                found[j] = true;
+                break;
+            }
+        }
+    }
+
+    for (int j = 0; j < 12; ++j) {
+        TEST_ASSERT_TRUE_MESSAGE(found[j], "Action not found in table");
+    }
+}
+
+void test_category_table_gen_lo_hi_pointers(void) {
+    // Find GENERAL entry and verify lo/hi member pointers
+    const RcSoundCategoryEntry* genEntry = nullptr;
+    for (size_t i = 0; i < rcSoundCategoryTableSize; ++i) {
+        if (rcSoundCategoryTable[i].action == SOUND_ACTION_RANDOM_GENERAL) {
+            genEntry = &rcSoundCategoryTable[i];
+            break;
+        }
+    }
+    TEST_ASSERT_NOT_NULL(genEntry);
+
+    // Verify pointers access correct members
+    RcSoundCategorySnapshot snap = {};
+    snap.gen_lo = 100;
+    snap.gen_hi = 200;
+
+    TEST_ASSERT_EQUAL_INT(100, snap.*(genEntry->lo));
+    TEST_ASSERT_EQUAL_INT(200, snap.*(genEntry->hi));
+}
+
+void test_category_table_whistle_hi_pointer(void) {
+    // Mutation test: verify the WHISTLE entry's hi pointer is correct
+    // If the pointer is wrong (e.g., points to whis_lo instead of whis_hi),
+    // this test will fail.
+    const RcSoundCategoryEntry* whistleEntry = nullptr;
+    for (size_t i = 0; i < rcSoundCategoryTableSize; ++i) {
+        if (rcSoundCategoryTable[i].action == SOUND_ACTION_RANDOM_WHISTLE) {
+            whistleEntry = &rcSoundCategoryTable[i];
+            break;
+        }
+    }
+    TEST_ASSERT_NOT_NULL(whistleEntry);
+
+    RcSoundCategorySnapshot snap = {};
+    snap.whis_lo = 300;
+    snap.whis_hi = 400;
+
+    // The hi pointer must return 400, not 300
+    uint16_t hi = snap.*(whistleEntry->hi);
+    TEST_ASSERT_EQUAL_INT(400, hi);
+    TEST_ASSERT_NOT_EQUAL(300, hi);
+}
+
 int main(void) {
     UNITY_BEGIN();
     RUN_TEST(test_none_action_returns_empty_result);
@@ -218,5 +295,8 @@ int main(void) {
     RUN_TEST(test_op_mode_stationary_on_press);
     RUN_TEST(test_op_mode_driving_on_release);
     RUN_TEST(test_speed_preset_cycle);
+    RUN_TEST(test_category_table_has_all_12_actions);
+    RUN_TEST(test_category_table_gen_lo_hi_pointers);
+    RUN_TEST(test_category_table_whistle_hi_pointer);
     return UNITY_END();
 }
