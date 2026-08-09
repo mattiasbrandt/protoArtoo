@@ -161,6 +161,147 @@ void test_both_estop_paths_are_exempt_from_admission() {
     TEST_ASSERT_TRUE(webRequestAdmissionDecide(in) == WebRequestAdmission::kAdmit);
 }
 
+void test_dedicated_estop_clear_handler_broadcasts_status() {
+    WebRequestTestBackend latchBackend;
+    WebRequest latchReq(&latchBackend);
+    handleEstopPost(latchReq);
+    TEST_ASSERT_TRUE(estopIsLatched());
+    g_test_status_broadcast_count = 0;
+
+    WebRequestTestBackend backend;
+    WebRequest req(&backend);
+    handleEstopClearPost(req);
+
+    TEST_ASSERT_FALSE(failsafeIsActive());
+    TEST_ASSERT_EQUAL_UINT(1, g_test_status_broadcast_count);
+}
+
+void test_manual_command_clear_estop_clears_and_broadcasts() {
+    WebRequestTestBackend latchBackend;
+    WebRequest latchReq(&latchBackend);
+    handleEstopPost(latchReq);
+    TEST_ASSERT_TRUE(estopIsLatched());
+    g_test_status_broadcast_count = 0;
+
+    bool success = executeManualCommand("clear_estop");
+
+    TEST_ASSERT_TRUE(success);
+    TEST_ASSERT_FALSE(failsafeIsActive());
+    TEST_ASSERT_EQUAL_UINT(1, g_test_status_broadcast_count);
+}
+
+void test_both_clear_paths_are_behaviourally_identical() {
+    // Latch via POST /api/estop
+    WebRequestTestBackend latchBackend;
+    WebRequest latchReq(&latchBackend);
+    handleEstopPost(latchReq);
+    TEST_ASSERT_TRUE(estopIsLatched());
+
+    // Clear via /api/estop/clear and record broadcast count
+    g_test_status_broadcast_count = 0;
+    WebRequestTestBackend clearBackend1;
+    WebRequest clearReq1(&clearBackend1);
+    handleEstopClearPost(clearReq1);
+    const unsigned broadcastsViaHandler = g_test_status_broadcast_count;
+    TEST_ASSERT_EQUAL_UINT(1, broadcastsViaHandler);
+
+    // Latch again for the manual-command test
+    handleEstopPost(latchReq);
+    TEST_ASSERT_TRUE(estopIsLatched());
+
+    // Clear via manual-command and record broadcast count
+    g_test_status_broadcast_count = 0;
+    executeManualCommand("clear_estop");
+    const unsigned broadcastsViaManualCommand = g_test_status_broadcast_count;
+
+    // Both paths must broadcast exactly once on clear
+    TEST_ASSERT_EQUAL_UINT(broadcastsViaHandler, broadcastsViaManualCommand);
+    TEST_ASSERT_EQUAL_UINT(1, broadcastsViaManualCommand);
+    TEST_ASSERT_FALSE(failsafeIsActive());
+}
+
+void test_manual_command_clear_estop_is_case_insensitive() {
+    WebRequestTestBackend latchBackend;
+    WebRequest latchReq(&latchBackend);
+    handleEstopPost(latchReq);
+    TEST_ASSERT_TRUE(estopIsLatched());
+
+    bool success = executeManualCommand("CLeAr_EsToP");
+
+    TEST_ASSERT_TRUE(success);
+    TEST_ASSERT_FALSE(failsafeIsActive());
+}
+
+void test_only_explicit_clear_estop_can_clear_the_latch() {
+    WebRequestTestBackend latchBackend;
+    WebRequest latchReq(&latchBackend);
+    handleEstopPost(latchReq);
+    TEST_ASSERT_TRUE(estopIsLatched());
+
+    // Verify that other commands do not clear the latch
+    bool disableResult = executeManualCommand("disable_web_control");
+    TEST_ASSERT_TRUE(disableResult);
+    TEST_ASSERT_TRUE(estopIsLatched());
+
+    // Mode commands should not clear it either
+    bool stationaryResult = executeManualCommand("#st");
+    TEST_ASSERT_TRUE(stationaryResult);
+    TEST_ASSERT_TRUE(estopIsLatched());
+
+    // Only explicit clear_estop clears it
+    bool clearResult = executeManualCommand("clear_estop");
+    TEST_ASSERT_TRUE(clearResult);
+    TEST_ASSERT_FALSE(failsafeIsActive());
+}
+
+void test_drive_oversized_speed_is_rejected() {
+    robotState.webControlEnabled = true;
+
+    // A value wider than can fit in a signed 16-bit int should be rejected
+    const WebRequestTestParam params[] = {{"speed", "32768"}, {"steer", "0"}};
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 2;
+    WebRequest req(&backend);
+
+    handleDrivePost(req);
+
+    TEST_ASSERT_EQUAL_INT(400, backend.sentCode);
+    TEST_ASSERT_NOT_NULL(strstr(backend.sentBody, "speed and steer must be integers"));
+}
+
+void test_drive_is_rejected_while_sbus_lost_and_web_control_disabled() {
+    robotState.webControlEnabled = false;
+    robotState.sbusSignalLost = true;
+
+    const WebRequestTestParam params[] = {{"speed", "100"}, {"steer", "0"}};
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 2;
+    WebRequest req(&backend);
+
+    handleDrivePost(req);
+
+    TEST_ASSERT_EQUAL_INT(409, backend.sentCode);
+    TEST_ASSERT_NOT_NULL(strstr(backend.sentBody, "drive blocked by safety state"));
+}
+
+void test_drive_is_allowed_while_sbus_lost_but_web_control_enabled() {
+    robotState.webControlEnabled = true;
+    robotState.sbusSignalLost = true;
+
+    const WebRequestTestParam params[] = {{"speed", "100"}, {"steer", "0"}};
+    WebRequestTestBackend backend;
+    backend.params = params;
+    backend.paramCount = 2;
+    WebRequest req(&backend);
+
+    handleDrivePost(req);
+
+    // Should succeed when web control is explicitly enabled despite SBUS loss
+    TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
+}
+
 // -----------------------------------------------------------------------------
 // Drive
 // -----------------------------------------------------------------------------
@@ -644,12 +785,20 @@ int main(int, char**) {
     RUN_TEST(test_estop_post_latches_and_stays_latched);
     RUN_TEST(test_estop_clear_releases_the_latch);
     RUN_TEST(test_both_estop_paths_are_exempt_from_admission);
+    RUN_TEST(test_dedicated_estop_clear_handler_broadcasts_status);
+    RUN_TEST(test_manual_command_clear_estop_clears_and_broadcasts);
+    RUN_TEST(test_both_clear_paths_are_behaviourally_identical);
+    RUN_TEST(test_manual_command_clear_estop_is_case_insensitive);
+    RUN_TEST(test_only_explicit_clear_estop_can_clear_the_latch);
 
     RUN_TEST(test_drive_clamps_to_the_configured_speed_cap);
     RUN_TEST(test_drive_is_rejected_while_estopped);
     RUN_TEST(test_drive_is_rejected_when_stationary);
     RUN_TEST(test_drive_rejects_non_integer_values);
     RUN_TEST(test_drive_without_parameters_is_rejected);
+    RUN_TEST(test_drive_oversized_speed_is_rejected);
+    RUN_TEST(test_drive_is_rejected_while_sbus_lost_and_web_control_disabled);
+    RUN_TEST(test_drive_is_allowed_while_sbus_lost_but_web_control_enabled);
     RUN_TEST(test_mode_post_sets_stationary_and_broadcasts);
     RUN_TEST(test_mode_post_rejects_an_unknown_mode);
     RUN_TEST(test_speed_preset_reports_the_applied_cap);
