@@ -169,8 +169,8 @@ StreamSendOutcome sendEventBounded(int socket, const EventSegment* segments, siz
 // httpd_sess_trigger_close() posts the close to the server's own control
 // socket rather than touching the session from here, which is what makes it
 // safe to call from the event task. That is exactly the cross-task close
-// capability not available in the prior async backend -- the reason this
-// migration to PsychicHttp exists.
+// capability not available in the prior async backend (ADR 0020) -- the reason
+// this migration to PsychicHttp exists.
 void evictStream(int socket, StreamSendOutcome outcome) {
     taskENTER_CRITICAL(&s_streamMux);
     webEventStreamRegistryRemove(&s_streams, socket);
