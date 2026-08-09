@@ -27,7 +27,7 @@
 
 #include "api_audio.h"
 #include "audio_driver.h"
-#include "config_store.h"
+#include "config_cache.h"
 #include "robot_state.h"
 #include "web_request_test_backend.h"
 

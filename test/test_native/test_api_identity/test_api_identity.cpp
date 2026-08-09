@@ -12,7 +12,7 @@
 #include <cstring>
 
 #include "api_identity.h"
-#include "config_store.h"
+#include "config_cache.h"
 #include "web_request_test_backend.h"
 
 namespace {

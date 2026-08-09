@@ -33,7 +33,7 @@
 #include "audio_task_step.h"
 #include "config.h"
 #include "config_nvsio.h"
-#include "config_store.h"
+#include "config_cache.h"
 #include "dome_link.h"
 #include "logging.h"
 #include "queue_drop_tracker.h"

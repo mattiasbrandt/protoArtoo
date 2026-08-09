@@ -5,6 +5,7 @@
 // =============================================================================
 
 #include "config_store.h"
+#include "config_cache.h"
 
 #include "audio_dollar_parser.h"
 #include "config.h"

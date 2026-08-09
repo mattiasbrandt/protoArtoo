@@ -15,7 +15,7 @@
 #include <esp_heap_caps.h>
 
 #include "config.h"
-#include "config_store.h"
+#include "config_cache.h"
 #include "dome_link.h"
 #include "dome_task.h"
 #include "log_buffer.h"

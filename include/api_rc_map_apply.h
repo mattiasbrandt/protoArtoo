@@ -20,7 +20,7 @@
 
 #include "api_config_snapshot.h"
 #include "api_param_source.h"
-#include "config_store.h"
+#include "config_cache.h"
 
 struct RcMapApplyErrorEntry {
     bool present = false;

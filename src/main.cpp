@@ -15,6 +15,7 @@
 #include "audio_task.h"
 #include "aux_led.h"
 #include "config_store.h"
+#include "config_cache.h"
 #include "dome_link.h"
 #include "dome_task.h"
 #include "drive.h"

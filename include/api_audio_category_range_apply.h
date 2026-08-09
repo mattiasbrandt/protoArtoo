@@ -33,7 +33,7 @@
 #include <stdint.h>
 
 #include "api_param_source.h"
-#include "config_store.h"
+#include "config_cache.h"
 
 struct AudioCategoryRangeApplyError {
     bool hasError = false;

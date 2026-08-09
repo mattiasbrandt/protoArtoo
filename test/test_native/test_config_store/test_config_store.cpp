@@ -12,6 +12,7 @@
 #include <unity.h>
 
 #include "config_store.h"
+#include "config_cache.h"
 #include "robot_state.h"
 
 // Provided by native_test_stubs.cpp

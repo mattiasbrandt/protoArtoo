@@ -34,7 +34,7 @@
 
 #include "audio_task.h"
 #include "config.h"
-#include "config_store.h"
+#include "config_cache.h"
 #include "dome_cue_handler.h"
 #include "dome_link_arbiter.h"
 #include "dome_link_encoding.h"

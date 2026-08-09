@@ -30,7 +30,7 @@
 #include <stddef.h>
 
 #include "api_param_source.h"
-#include "config_store.h"
+#include "config_cache.h"
 
 struct ConfigApplyError {
     bool hasError = false;
