@@ -12,6 +12,7 @@
   let fsVersion = "unknown";
   let pollTimer = null;
   let unsubscribe = null;
+  let retryTimer = null;
 
   const renderFooter = (status) => {
     if (!status) {
@@ -48,9 +49,33 @@
     try {
       const result = await window.PAApi.get("/api/status", { timeoutMs: 3000, cache: "no-store" });
       renderFooter(result.data);
-    } catch (_error) {
-      // fetch timeout/error — show unavailable message
+    } catch (error) {
+      // fetch timeout/error — log and show unavailable message
+      console.warn("[footer] failed to fetch status:", error?.message || error);
       footer.textContent = "Firmware info unavailable";
+    }
+  };
+
+  const retryFetchWithBackoff = async (attempt = 0) => {
+    const maxAttempts = 3;
+    const baseDelayMs = 500;
+    const delayMs = baseDelayMs * Math.pow(2, attempt);
+
+    try {
+      await fetchStatus();
+      if (retryTimer !== null) {
+        window.clearTimeout(retryTimer);
+        retryTimer = null;
+      }
+      return;
+    } catch (_error) {
+      // fetchStatus already logged and updated footer
+    }
+
+    if (attempt < maxAttempts - 1) {
+      retryTimer = window.setTimeout(() => {
+        retryFetchWithBackoff(attempt + 1);
+      }, delayMs);
     }
   };
 
@@ -64,12 +89,23 @@
 
   const startSseMode = () => {
     unsubscribe = window.PAStatusStream.subscribe((eventType, payload) => {
-      if (eventType === "status") renderFooter(payload);
+      if (eventType === "status") {
+        renderFooter(payload);
+        if (retryTimer !== null) {
+          window.clearTimeout(retryTimer);
+          retryTimer = null;
+        }
+      }
     });
 
     if (!window.PAStatusStream.getLastStatus()) {
-      fetchStatus();
+      retryFetchWithBackoff(0);
     }
+
+    pollTimer = window.setInterval(() => {
+      if (document.visibilityState === "hidden") return;
+      fetchStatus();
+    }, 5000);
   };
 
   const onVisibilityChange = () => {
