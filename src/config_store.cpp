@@ -1,7 +1,7 @@
 // =============================================================================
 // src/config_store.cpp
 //
-// Config schema module implementation — centralized NVS load/save and validation.
+// Config schema module implementation  --  centralized NVS load/save and validation.
 // =============================================================================
 
 #include "config_store.h"
@@ -641,7 +641,7 @@ ConfigValidationResult configValidate(ConfigKey key, int32_t value) {
         case ConfigKey::LOG_LEVEL:
             return (value >= 1 && value <= 3) ? ConfigValidationResult::OK : ConfigValidationResult::INVALID_VALUE;
 
-        // Audio tracks (uint16, 0..65535 — accept all)
+        // Audio tracks (uint16, 0..65535  --  accept all)
         case ConfigKey::SND_SCREAM:
         case ConfigKey::SND_FAINT:
         case ConfigKey::SND_LEIA:

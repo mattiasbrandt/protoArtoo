@@ -2,10 +2,10 @@
 // src/drivers/hoverboard_uart.cpp
 //
 // Gen2.x hoverboard UART frame builder.
-// Protocol: 8-byte frame — [0xABCD start][int16 steer][int16 speed][uint16 XOR checksum]
+// Protocol: 8-byte frame  --  [0xABCD start][int16 steer][int16 speed][uint16 XOR checksum]
 // Reference: https://github.com/RoboDurden/Hoverboard-Firmware-Hack-Gen2.x
 //
-// Pure logic — no FreeRTOS, no Serial, no task code.
+// Pure logic  --  no FreeRTOS, no Serial, no task code.
 // DriveTask owns UART1 and calls these functions at 50 Hz.
 // =============================================================================
 
@@ -18,7 +18,7 @@
 
 // -----------------------------------------------------------------------------
 // calcHoverboardChecksum()
-// XOR of start word (0xABCD), steer, and speed — as used by Gen2.x firmware.
+// XOR of start word (0xABCD), steer, and speed  --  as used by Gen2.x firmware.
 // Cast to uint16_t is required: steer/speed are signed, XOR treats as bit patterns.
 // -----------------------------------------------------------------------------
 uint16_t calcHoverboardChecksum(int16_t steer, int16_t speed) {
@@ -160,14 +160,14 @@ bool feedHoverboardFeedbackByte(HoverboardFeedbackParser* parser, uint8_t b,
                 parser->idx = 0; parser->seekingStart = true;
                 return true;
             }
-            if (parser->formatKnown) {  // known FOC, bad checksum — resync
+            if (parser->formatKnown) {  // known FOC, bad checksum  --  resync
                 memset(parser->buf, 0, sizeof(parser->buf));
                 parser->idx = 0; parser->seekingStart = true;
                 return false;
             }
-            // unknown format, FOC failed — keep accumulating to 26 bytes
+            // unknown format, FOC failed  --  keep accumulating to 26 bytes
         }
-        // known Gen2.x — keep accumulating
+        // known Gen2.x  --  keep accumulating
     }
 
     // Try Gen2.x format at 26 bytes
@@ -188,7 +188,7 @@ bool feedHoverboardFeedbackByte(HoverboardFeedbackParser* parser, uint8_t b,
 
 #ifdef ARDUINO_ARCH_ESP32
 // readHoverboardFeedback()
-// Non-blocking UART feedback parser — thin loop over feedHoverboardFeedbackByte.
+// Non-blocking UART feedback parser  --  thin loop over feedHoverboardFeedbackByte.
 bool readHoverboardFeedback(HardwareSerial& uart,
                             HoverboardFeedbackParser* parser,
                             HoverboardFeedback* out) {

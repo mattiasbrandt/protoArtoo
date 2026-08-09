@@ -1,7 +1,7 @@
 // =============================================================================
 // src/tasks/dome_link.cpp
 //
-// DomeLinkTask — body-side protoR2link transport.
+// DomeLinkTask  --  body-side protoR2link transport.
 //
 // This file is the imperative shell: it gathers inputs, calls
 // domeLinkArbiterStep(), and executes the returned actions through the
@@ -179,7 +179,7 @@ static void releaseUartToAudioRx() {
     s_uartOwned = false;
     domeUartRelease(DOME_UART_DOME);
     // Intentionally leave owner at DOME_UART_NONE. AudioTask acquires
-    // DOME_UART_AUDIO before each query and releases after — pre-acquiring
+    // DOME_UART_AUDIO before each query and releases after  --  pre-acquiring
     // here caused a spurious duplicate-acquire WARN on every audio poll cycle.
 
     PA_LOG_DEBUG(TAG, "UART2 ownership -> audio RX (GPIO%d)", PIN_AUDIO_RX);
@@ -801,7 +801,7 @@ void domeLinkTask(void* pvParameters) {
             processUdpRx(now, nullptr);
         }
 
-        // Dome sequence timeout watchdog — untouched; ADR 0004 replaces these.
+        // Dome sequence timeout watchdog  --  untouched; ADR 0004 replaces these.
         {
             taskENTER_CRITICAL(&robotStateMux);
             bool seqActive    = robotState.domeSeqActive;

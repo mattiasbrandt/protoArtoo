@@ -5,7 +5,7 @@
 // Arduino, JSON, or logging, so the report rules are natively testable.
 //
 // Deleting a Learned Sequence leaves any RC trigger bound to its name a silent
-// no-op — unless a Factory Sequence shadows the name, in which case the
+// no-op  --  unless a Factory Sequence shadows the name, in which case the
 // triggers keep resolving and nothing dangles. Both rules live here; the
 // DELETE handler is the adapter (snapshot capture, JSON shaping, log replay).
 //

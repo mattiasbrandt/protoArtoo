@@ -22,7 +22,7 @@ portMUX_TYPE robotStateMux = 0;
 // Arduino Serial instance (referenced by code compiled in native tests)
 SerialStub Serial;
 
-// Logging sinks — no-op in native test builds
+// Logging sinks  --  no-op in native test builds
 void paLogInit() {
 }
 
@@ -32,7 +32,7 @@ void paLogLine(const char* /*line*/) {
 void paLogLineRaw(const char* /*line*/) {
 }
 
-// millis() stub — used by the failsafe gate for diagnostics, and by anything
+// millis() stub  --  used by the failsafe gate for diagnostics, and by anything
 // that timestamps work it hands to another task.
 //
 // Settable, defaulting to 0 so every existing test sees the frozen clock it
@@ -45,7 +45,7 @@ unsigned long millis() {
     return g_test_millis;
 }
 
-// NVS save stub — not under test; POST handler calls it but tests call
+// NVS save stub  --  not under test; POST handler calls it but tests call
 // populateConfigJson() directly without going through registerConfigRoutes().
 bool saveConfigToNvs() {
     return true;
@@ -115,12 +115,12 @@ void requestStatusBroadcastNow() {
     g_test_status_broadcast_count++;
 }
 
-// sequenceQueue — defined here so sequence_dispatcher.cpp can reference the
+// sequenceQueue  --  defined here so sequence_dispatcher.cpp can reference the
 // extern without main.cpp being in the native build.
 #include "sequence_dispatcher.h"
 QueueHandle_t sequenceQueue = nullptr;
 
-// sequenceDispatcherInit stub — initialize queue to non-null so native tests
+// sequenceDispatcherInit stub  --  initialize queue to non-null so native tests
 // can pass sequences through the test API routes without "queue full" 503 errors.
 void sequenceDispatcherInit() {
     sequenceQueue = (QueueHandle_t)0xDEADBEEF;
@@ -732,7 +732,7 @@ inline int xTaskCreatePinnedToCore(void (*)(void*), const char*, unsigned int, v
     return 0;
 }
 
-// ESP-IDF watchdog stubs — needed by sequenceDispatcherTask
+// ESP-IDF watchdog stubs  --  needed by sequenceDispatcherTask
 void esp_task_wdt_add(void*) {
     // No-op: native tests don't run real watchdog
 }
@@ -741,7 +741,7 @@ void esp_task_wdt_reset() {
     // No-op: native tests don't run real watchdog
 }
 
-// ESP-IDF random number generator stub — used by seqEnginePeek() for random selection
+// ESP-IDF random number generator stub  --  used by seqEnginePeek() for random selection
 uint32_t esp_random() {
     // Return a deterministic value for native tests (thread-safe in single-threaded native env)
     static uint32_t seed = 12345;
@@ -749,7 +749,7 @@ uint32_t esp_random() {
     return (seed / 65536) % 32768;
 }
 
-// audioQueuePlayCategory stub — called by dispatchAction in sequence_dispatcher.cpp
+// audioQueuePlayCategory stub  --  called by dispatchAction in sequence_dispatcher.cpp
 #include "audio_task.h"
 bool audioQueuePlayCategory(AudioPlaybackCategory /*category*/, AudioPlaybackSlot /*fallback*/,
                             CommandSource /*src*/) {

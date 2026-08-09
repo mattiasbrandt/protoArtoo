@@ -1,7 +1,7 @@
 // =============================================================================
 // include/protocol_check.h
 //
-// Protocol Check — the safety validator every Learned Sequence passes on save
+// Protocol Check  --  the safety validator every Learned Sequence passes on save
 // (ADR 0006). Pure module: no Arduino, FreeRTOS, filesystem,
 // or JSON dependencies, so the full accept/reject matrix is natively testable.
 //
@@ -27,7 +27,7 @@
 #include "sequence_engine.h"  // SeqStep, SeqStepParams, SeqToggleGroup, SeqEffectClass
 
 // -----------------------------------------------------------------------------
-// Result — field-level error reporting for the editor/API. ok == true means the
+// Result  --  field-level error reporting for the editor/API. ok == true means the
 // draft passed and (for branch checks) effectClass has been stamped on each step.
 // -----------------------------------------------------------------------------
 struct ProtocolCheckResult {
@@ -37,7 +37,7 @@ struct ProtocolCheckResult {
 };
 
 // -----------------------------------------------------------------------------
-// Result constructors — shared by every module that produces a
+// Result constructors  --  shared by every module that produces a
 // ProtocolCheckResult (validator, JSON codec, runtime store) so the error
 // shape and truncation rules stay identical everywhere.
 // -----------------------------------------------------------------------------
@@ -80,7 +80,7 @@ static const uint8_t  PC_NAME_BODY_MAX    = 18;  // chars after "DM:"
 static const uint8_t  PC_CMD_MAX          = 63;  // payload[64] minus NUL
 
 // -----------------------------------------------------------------------------
-// Staging draft — the in-memory form a Learned Sequence takes between JSON parse
+// Staging draft  --  the in-memory form a Learned Sequence takes between JSON parse
 // and engine execution. `steps`/`closeSteps` point at caller-owned buffers
 // (the runtime staging buffer, or test fixtures); the draft itself is small.
 // -----------------------------------------------------------------------------
@@ -95,7 +95,7 @@ struct SeqDraft {
 };
 
 // True if `g` is a recognised SeqToggleGroup value (incl. the user latches).
-// Note: protocolCheckMeta() additionally REJECTS the user latches for now —
+// Note: protocolCheckMeta() additionally REJECTS the user latches for now  -- 
 // the engine's branch-pick/latch execution is not wired for them yet.
 bool protocolCheckToggleGroupValid(SeqToggleGroup g);
 

@@ -279,7 +279,7 @@ static ProtocolCheckResult classifyDome(const char* label, uint8_t idx,
         return pcFailAt(label, idx, "cmd", "DM:* is a sequence trigger, not a step");
     }
 
-    // DV:<NAME> — dome visual preset (logic/PSI/holo only; issue #2 task #5). The
+    // DV:<NAME>  --  dome visual preset (logic/PSI/holo only; issue #2 task #5). The
     // name set is closed and owned by the dome; persisted/replayable sequences may
     // only carry a known preset so an unknown name can never reach the wire. DV:
     // is visual-only and does not participate in panel cleanup semantics.
@@ -299,7 +299,7 @@ static ProtocolCheckResult classifyDome(const char* label, uint8_t idx,
         return pcFailAt(label, idx, "cmd", "unknown DV: visual preset");
     }
 
-    // DL:<target>:<mode>[:<color>[:<durationSec>]] — Logic/PSI Mode (issue #11).
+    // DL:<target>:<mode>[:<color>[:<durationSec>]]  --  Logic/PSI Mode (issue #11).
     // Structured control for dome logic/PSI animations. Mirrors client validation
     // in data/seq_protocol_check.js exactly. Grammar enforces uppercase tokens,
     // full-string match, known enums, and command length <= 63.
@@ -354,7 +354,7 @@ static ProtocolCheckResult classifyDome(const char* label, uint8_t idx,
             return pcFailAt(label, idx, "cmd", "unknown DL: mode");
         }
 
-        // Parse color (optional) — if present, validate against whitelist
+        // Parse color (optional)  --  if present, validate against whitelist
         if (*p != '\0') {
             const char* colorStart = parseField(&p, fieldLen);
             bool colorOk = false;
@@ -397,7 +397,7 @@ static ProtocolCheckResult classifyDome(const char* label, uint8_t idx,
         return pcOk();
     }
 
-    // DT:<target>:<color>:<durationSec>:<speed>:<encodedText> — Logic Text (issue #11).
+    // DT:<target>:<color>:<durationSec>:<speed>:<encodedText>  --  Logic Text (issue #11).
     // Multi-line text display on FLD/RLD. Text is percent-encoded; only valid escapes
     // are %0A (newline), %25 (%), %3A (:). Encoded text <= 40 chars; decoded <= 32;
     // max one newline; reject if final command length > 63. Mirrors client validation
@@ -527,7 +527,7 @@ static ProtocolCheckResult classifyDome(const char* label, uint8_t idx,
         return pcOk();
     }
 
-    // DH:<target>:<effect>[:<color>[:<durationOrCount>]] — Holo Effect (issue #11).
+    // DH:<target>:<effect>[:<color>[:<durationOrCount>]]  --  Holo Effect (issue #11).
     // Holoprojector effects: OFF, ON, RESET, RANDOM, WAG, NOD, PULSE, RAINBOW, FLASH,
     // SHORTCIRCUIT, SOLID. Targets: F (front), R (rear), T (top), A (all). Color and
     // duration are effect-dependent: validation enforces the AstroPixelsPlus dome's
@@ -618,7 +618,7 @@ static ProtocolCheckResult classifyDome(const char* label, uint8_t idx,
             return pcFailAt(label, idx, "cmd", "unknown DH: effect");
         }
 
-        // Parse color (optional) — if present, validate against whitelist. Omitted
+        // Parse color (optional)  --  if present, validate against whitelist. Omitted
         // color defaults to DEFAULT (colorIdx 0), which passes every effect's matrix.
         uint8_t colorIdx = 0;  // 0 == DEFAULT
         if (*p != '\0') {
@@ -698,7 +698,7 @@ static ProtocolCheckResult classifyDome(const char* label, uint8_t idx,
         return pcOk();
     }
 
-    // :SE<dd> — exactly two digits (the Marcduino zero-padded form, e.g.
+    // :SE<dd>  --  exactly two digits (the Marcduino zero-padded form, e.g.
     // :SE09), so every dome sequence has a single canonical spelling.
     if (strncmp(cmd, ":SE", 3) == 0) {
         const char* p = cmd + 3;
@@ -766,7 +766,7 @@ ProtocolCheckResult protocolCheckMeta(const char* name, uint32_t suppressMs,
     }
     if (toggleGroup >= TOGGLE_USER1 && toggleGroup <= TOGGLE_USER4) {
         // The engine's branch-pick/latch switches are not wired for the user
-        // latches yet — such a toggle would run open-branch-only and never
+        // latches yet  --  such a toggle would run open-branch-only and never
         // latch. Reject on save so a Learned toggle cannot execute silently
         // wrong; lift this when the engine gains user-latch state.
         return pcFail("toggleGroup", "user toggle groups are not supported yet");
@@ -930,13 +930,13 @@ ProtocolCheckResult protocolCheckBranch(const char* label, SeqStep* steps,
                 // durationMs must be positive, EXCEPT the explicit neutral stop
                 // (speedPct == 0 && durationMs == 0 is the only valid zero case)
                 if (p.speedPct == 0 && p.durationMs == 0) {
-                    // Explicit neutral stop — valid
+                    // Explicit neutral stop  --  valid
                 } else if (p.durationMs == 0) {
-                    // Non-zero speed with zero duration — reject
+                    // Non-zero speed with zero duration  --  reject
                     return pcFailAt(label, i, "durationMs",
                                   "must be positive (or both speedPct and durationMs must be 0 for neutral stop)");
                 } else if (p.speedPct == 0 && p.durationMs > 0) {
-                    // Zero speed with positive duration — reject (ambiguous intent)
+                    // Zero speed with positive duration  --  reject (ambiguous intent)
                     return pcFailAt(label, i, "speedPct",
                                   "non-zero speed required when durationMs > 0 (or use speedPct=0, durationMs=0 for neutral stop)");
                 }

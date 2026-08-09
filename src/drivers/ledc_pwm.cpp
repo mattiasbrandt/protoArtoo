@@ -19,13 +19,13 @@
 
 static const char* TAG = "ledc_pwm";
 
-// ESP32 LEDC peripheral constants — kept here, not in the header, so the
+// ESP32 LEDC peripheral constants  --  kept here, not in the header, so the
 // header stays free of ESP32-specific types and is includable on native.
 #define PA_LEDC_TIMER LEDC_TIMER_0
 #define PA_LEDC_MODE LEDC_LOW_SPEED_MODE
 #define PA_LEDC_RESOLUTION LEDC_RESOLUTION  // 16-bit on classic ESP32 (Artoo PCB target)
 
-// GPIO pin for each channel — indexed by LedcChannel enum value (0-5).
+// GPIO pin for each channel  --  indexed by LedcChannel enum value (0-5).
 static const uint8_t kChannelGpio[LEDC_CH_MAX] = {
     PIN_ARM1_SERVO,  // LEDC_CH_ARM1 = 0
     PIN_ARM2_SERVO,  // LEDC_CH_ARM2 = 1
@@ -50,7 +50,7 @@ uint8_t getChannelGpio(uint8_t channel) {
 // ledcPwmInit()
 // Configure LEDC timer 0 at 50Hz/16-bit and attach channels.
 // skipChannel leaves one channel detached so the GPIO can be reused (e.g. AUX LED RMT).
-// Configured channels start at neutral (1500µs).
+// Configured channels start at neutral (1500us).
 // Returns false and logs on any LEDC API error.
 // -----------------------------------------------------------------------------
 bool ledcPwmInit(uint8_t skipChannel) {
@@ -139,7 +139,7 @@ bool ledcPwmSetPercent(uint8_t channel, float percent) {
     if (percent > 1.0f)
         percent = 1.0f;
 
-    // Probe channel bounds via clampPulseWidth — single source of truth for limits.
+    // Probe channel bounds via clampPulseWidth  --  single source of truth for limits.
     uint16_t minUs = clampPulseWidth(channel, 0);
     uint16_t maxUs = clampPulseWidth(channel, 65535U);
     uint16_t pulseUs = minUs + (uint16_t)(percent * (float)(maxUs - minUs));
@@ -166,7 +166,7 @@ void ledcPwmInitNeutralPositions() {
 
 // -----------------------------------------------------------------------------
 // ledcPwmEmergencyStop()
-// Bypasses clamp/log path — writes neutral duty directly for minimum latency.
+// Bypasses clamp/log path  --  writes neutral duty directly for minimum latency.
 // -----------------------------------------------------------------------------
 void ledcPwmEmergencyStop() {
     uint32_t duty = pulseUsToDuty(SERVO_PULSE_NEUTRAL_US);

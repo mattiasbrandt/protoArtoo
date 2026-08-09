@@ -8,7 +8,7 @@
 //   parse:     JSON text -> SeqDraft (into caller-owned SeqStep buffers).
 //              Returns parse-level errors in the ProtocolCheckResult shape so
 //              the API layer reports parse and Protocol Check failures the same
-//              way. Semantic bounds are NOT checked here — callers run
+//              way. Semantic bounds are NOT checked here  --  callers run
 //              protocolCheck() on the resulting draft.
 //   serialize: SequenceEntry -> JSON text (powers GET /api/seq/builtins and the
 //              editor's clone-to-retrain).
@@ -50,14 +50,14 @@ const char* seqSlotSetToString(SeqSlotSet s);
 
 // Parse JSON v1 into a draft, filling the caller-owned step buffers. On success
 // `out.steps`/`out.closeSteps` point at the provided buffers. effectClass is
-// left FX_NONE — protocolCheck() stamps it. Returns a field-level error on any
+// left FX_NONE  --  protocolCheck() stamps it. Returns a field-level error on any
 // structural/type failure (ok == true on success).
 ProtocolCheckResult seqJsonParse(const char* json,
                                  SeqStep* stepBuf, uint8_t stepCap,
                                  SeqStep* closeBuf, uint8_t closeCap,
                                  SeqDraft& out);
 
-// Same, from an already-deserialized JSON root — lets the runtime store parse
+// Same, from an already-deserialized JSON root  --  lets the runtime store parse
 // straight from a LittleFS File stream (deserializeJson(doc, file)) without a
 // large intermediate text buffer.
 ProtocolCheckResult seqJsonParseVariant(JsonVariantConst root,
@@ -67,7 +67,7 @@ ProtocolCheckResult seqJsonParseVariant(JsonVariantConst root,
 
 // Staging capacities a seqJsonParseVariant() call needs for `root`: the number
 // of entries actually present in each branch array, clamped to PC_MAX_STEPS.
-// Zero for a branch that is missing or is not an array — the parse reports that
+// Zero for a branch that is missing or is not an array  --  the parse reports that
 // as a field error and never dereferences the buffer.
 //
 // Lets a caller right-size its SeqStep staging instead of reserving the

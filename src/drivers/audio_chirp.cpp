@@ -256,7 +256,7 @@ bool AudioDriverChirp::ensureEntryStorage(uint16_t needed) {
     if (needed == 0) needed = 1;
     if (needed > AUDIO_CATALOG_MAX_ENTRIES) needed = AUDIO_CATALOG_MAX_ENTRIES;
     // Reuse an existing allocation that already fits (a re-refresh of the same
-    // module). Only (re)allocate to grow — sized to the module's actual track
+    // module). Only (re)allocate to grow  --  sized to the module's actual track
     // count, not the fixed 300-entry worst case (~15.6 KB). Callers set
     // m_catalogCount = 0 before this, so a concurrent reader sees no entries
     // while the array is swapped.
@@ -361,7 +361,7 @@ bool AudioDriverChirp::loadManifestBanks(uint32_t timeoutMs, bool keepTotalTrack
 bool AudioDriverChirp::begin(uint8_t vol) {
     if (!m_io.writeByte) { m_io = kChirpProductionIO; }
 
-    // Hardware TX init — no-op in native test builds.
+    // Hardware TX init  --  no-op in native test builds.
     softUartTxBegin();
 
     // Reset to known sentinel values before optional RX work so cached state
@@ -446,8 +446,8 @@ void AudioDriverChirp::stop() {
 
 // -----------------------------------------------------------------------------
 // setVolume()
-// Set global volume. vol is 0–30 (clamped by AudioTask before this call).
-// Scales to CHIRP native range 0–99: N = (vol * CHIRP_VOL_MAX) / 30.
+// Set global volume. vol is 0-30 (clamped by AudioTask before this call).
+// Scales to CHIRP native range 0-99: N = (vol * CHIRP_VOL_MAX) / 30.
 // Format: "VOL:N\n"
 // -----------------------------------------------------------------------------
 void AudioDriverChirp::setVolume(uint8_t vol) {
@@ -469,7 +469,7 @@ bool AudioDriverChirp::refreshCatalog() {
     }
 
     // Size the entry array to the module's ACTUAL track count (sum of bank
-    // counts), not the fixed 300-entry worst case — a typical module has far
+    // counts), not the fixed 300-entry worst case  --  a typical module has far
     // fewer, so this allocates only what it needs (issue #8 heap hardening).
     uint32_t total = 0;
     for (uint8_t i = 0; i < m_catalogBankCount; ++i) {
@@ -615,7 +615,7 @@ static bool parseChirpStatusLine(const char* line, uint8_t* playStateOut) {
 bool AudioDriverChirp::queryModuleState(AudioModuleState& out) {
     out.linkOk = false;
     out.playState = 0xFF;
-    out.device = 0x03;          // CHIRP: Bank 1 on flash, Banks 2–6 on SD
+    out.device = 0x03;          // CHIRP: Bank 1 on flash, Banks 2-6 on SD
     out.totalTracks = m_totalTracks;
     out.currentTrack = m_lastTrack;   // last index sent via playTrack()
 
@@ -689,7 +689,7 @@ bool AudioDriverChirp::queryModuleState(AudioModuleState& out) {
 void AudioDriverChirp::getCachedState(AudioModuleState& out) const {
     out.linkOk = m_linkOk;
     out.playState = m_playState;
-    out.device = 0x03;          // CHIRP: Bank 1 flash-backed, Banks 2–6 SD
+    out.device = 0x03;          // CHIRP: Bank 1 flash-backed, Banks 2-6 SD
     out.totalTracks = m_totalTracks;
     out.currentTrack = m_lastTrack;   // last track index sent to playTrack()
 }

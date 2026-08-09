@@ -1,10 +1,10 @@
 // =============================================================================
 // include/rc_action_dispatcher.h
 //
-// RcActionDispatcher — pure action dispatch logic for RC trigger bindings.
+// RcActionDispatcher  --  pure action dispatch logic for RC trigger bindings.
 // Input: RcActionPayload (snapshot of all needed state + target + seed).
 // Output: RcActionResult (all intents, no side effects).
-// No robotState, no FreeRTOS, no queues — safe for native unit tests.
+// No robotState, no FreeRTOS, no queues  --  safe for native unit tests.
 // =============================================================================
 #pragma once
 

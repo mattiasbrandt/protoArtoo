@@ -4,7 +4,7 @@
 // Canonical NVS-key lookup tables for CHIRP catalog bindings, shared by the
 // api_audio.cpp GET handlers and the api_audio_tracks_apply /
 // api_audio_category_range_apply write-path Apply Cores (ADR 0011 audio
-// wave). Single source of truth — a code-review pass on the campaign
+// wave). Single source of truth  --  a code-review pass on the campaign
 // flagged these as duplicated across three files with drift risk if a new
 // slot or category is ever added; consolidated here.
 // =============================================================================

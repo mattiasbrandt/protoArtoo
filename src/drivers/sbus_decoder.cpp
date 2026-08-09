@@ -9,9 +9,9 @@
 //   1. RMT ISR captures signal edge timings into a double-buffered symbol array.
 //   2. ISR re-arms receive on the other buffer immediately so no frame is missed.
 //      Buffers with too few symbols (idle timeouts) are dropped at the ISR level.
-//   3. read() in task context: flattens RMT symbols → flat bit array → 25 bytes.
+//   3. read() in task context: flattens RMT symbols -> flat bit array -> 25 bytes.
 //   4. Validates SBUS header (0x0F) and accepted footer variants (0x00/0x?4).
-//   5. Calls sbusUnpackChannels() + parseSbusFlags() — shared, independently
+//   5. Calls sbusUnpackChannels() + parseSbusFlags()  --  shared, independently
 //      tested helpers in sbus_unpack.h and sbus_flags.h.
 //
 // Signal handling and compatibility notes:
@@ -37,14 +37,14 @@ static const char* TAG = "SbusDecoder";
 // RMT channel configuration
 // ---------------------------------------------------------------------------
 
-// 1 µs per tick — 10 ticks per SBUS bit at 100 kbaud.
+// 1 us per tick  --  10 ticks per SBUS bit at 100 kbaud.
 static constexpr uint32_t kResolutionHz = 1'000'000;
 
-// 3 RMT memory blocks per channel; worst-case SBUS frame ≈ 150 symbols.
+// 3 RMT memory blocks per channel; worst-case SBUS frame ~= 150 symbols.
 // Classic ESP32 has 8 blocks total; 2 decoders use 6, leaving 2 free.
 static constexpr size_t kMemBlockSymbols = 192;
 
-// Ignore pulses shorter than 3 µs (glitch filter).
+// Ignore pulses shorter than 3 us (glitch filter).
 static constexpr uint32_t kGlitchNs = 3'000;
 
 // Terminate receive after 0.3 ms of same-level signal (inter-frame gap marker).
@@ -53,7 +53,7 @@ static constexpr uint32_t kGlitchNs = 3'000;
 static constexpr uint32_t kFrameGapNs = 300'000;
 
 // Minimum symbols to forward to the task queue.
-// Idle timeouts produce 0–2 symbols; a real SBUS frame produces >= 20.
+// Idle timeouts produce 0-2 symbols; a real SBUS frame produces >= 20.
 static constexpr size_t kMinSymsForFrame = 10;
 
 // ---------------------------------------------------------------------------
@@ -106,7 +106,7 @@ bool SbusDecoder::begin(int rxPin) {
     cfg.clk_src           = RMT_CLK_SRC_DEFAULT;  // APB 80 MHz; driver prescales to resolution_hz
     cfg.resolution_hz     = kResolutionHz;
     cfg.mem_block_symbols = kMemBlockSymbols;
-    cfg.flags.invert_in   = 1;  // SBUS inverted logic → standard polarity after GPIO matrix
+    cfg.flags.invert_in   = 1;  // SBUS inverted logic -> standard polarity after GPIO matrix
 
     esp_err_t err = rmt_new_rx_channel(&cfg, &_channel);
     if (err != ESP_OK) {
@@ -215,9 +215,9 @@ bool SbusDecoder::read() {
 }
 
 // -----------------------------------------------------------------------------
-// _onRecvDone — ISR callback (IRAM_ATTR)
+// _onRecvDone  --  ISR callback (IRAM_ATTR)
 //
-// Called by the RMT driver when the receive window closes — either the signal
+// Called by the RMT driver when the receive window closes  --  either the signal
 // held one level for > kFrameGapNs (normal frame end) or the symbol buffer
 // filled up (should not happen for normal SBUS traffic with kMemBlockSymbols=192).
 //
@@ -225,7 +225,7 @@ bool SbusDecoder::read() {
 // the task is parsing the completed buffer.
 //
 // Only forwards buffers large enough to plausibly contain a real frame. Idle
-// timeouts produce 0–2 symbols and are discarded here without waking the task.
+// timeouts produce 0-2 symbols and are discarded here without waking the task.
 // -----------------------------------------------------------------------------
 bool IRAM_ATTR SbusDecoder::_onRecvDone(rmt_channel_handle_t chan,
                                          const rmt_rx_done_event_data_t* edata,
@@ -236,7 +236,7 @@ bool IRAM_ATTR SbusDecoder::_onRecvDone(rmt_channel_handle_t chan,
     // Record symbol count for the buffer that just completed.
     // Double-buffer timing note: with queue depth 2 and SBUS at 100 Hz (10 ms),
     // the ISR could cycle back to writing buf[N] while the task holds buf[N] in the
-    // queue. In practice this requires the task to miss >20 ms of execution — not
+    // queue. In practice this requires the task to miss >20 ms of execution  --  not
     // possible at the 5 ms poll rate. If it did occur, _parseSymbols() would reject
     // the corrupt frame via header/footer validation, so there is no safety impact.
     self->_rxDoneCount = self->_rxDoneCount + 1;
@@ -291,7 +291,7 @@ static void storeDecodedFrame(const uint8_t* frame, SbusData* out) {
 
 // -----------------------------------------------------------------------------
 // _parseSymbols
-// Orchestrates flatten → locate → extract → validate → decode.
+// Orchestrates flatten -> locate -> extract -> validate -> decode.
 // Tries standard and fast SBUS timing, then polarity fallback.
 // Runs in task context (never in ISR).
 // -----------------------------------------------------------------------------

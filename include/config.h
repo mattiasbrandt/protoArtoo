@@ -17,13 +17,13 @@
 #include <stdint.h>
 
 // -----------------------------------------------------------------------------
-// UART1 (Serial1) — Hoverboard motor controller (Gen2.x protocol, PCB S1)
+// UART1 (Serial1)  --  Hoverboard motor controller (Gen2.x protocol, PCB S1)
 // -----------------------------------------------------------------------------
 constexpr uint8_t PIN_HOVERBOARD_TX = 16;
 constexpr uint8_t PIN_HOVERBOARD_RX = 17;
 
 // -----------------------------------------------------------------------------
-// UART2 (Serial2) — Dome serial link (AstroPixelsPlus via slip ring, PCB S3)
+// UART2 (Serial2)  --  Dome serial link (AstroPixelsPlus via slip ring, PCB S3)
 // Dome control UART (S3, slip ring).
 // -----------------------------------------------------------------------------
 constexpr uint8_t PIN_DOME_TX = 33;
@@ -34,7 +34,7 @@ constexpr uint8_t PIN_DOME_RX = 34;
 // TX primary; RX used for status/ACK where the module supports it.
 // -----------------------------------------------------------------------------
 constexpr uint8_t PIN_AUDIO_TX = 26;
-constexpr uint8_t PIN_AUDIO_RX = 35;  // input-only GPIO — RX only, cannot be TX
+constexpr uint8_t PIN_AUDIO_RX = 35;  // input-only GPIO  --  RX only, cannot be TX
 
 // -----------------------------------------------------------------------------
 // RC receiver inputs
@@ -49,23 +49,23 @@ constexpr uint8_t PIN_RC_CH4 = 4;
 constexpr uint8_t PIN_RC_CH5 = 12;
 constexpr uint8_t PIN_RC_CH6 = 27;
 
-constexpr uint8_t PIN_SBUS1_RX = PIN_RC_CH1;  // CH1 — SBUS #1 (drive)
-constexpr uint8_t PIN_SBUS2_RX = PIN_RC_CH2;  // CH2 — SBUS #2 (dome)
+constexpr uint8_t PIN_SBUS1_RX = PIN_RC_CH1;  // CH1  --  SBUS #1 (drive)
+constexpr uint8_t PIN_SBUS2_RX = PIN_RC_CH2;  // CH2  --  SBUS #2 (dome)
 
 // -----------------------------------------------------------------------------
 // Servo outputs (LEDC PWM)
-// ARM1 = Utility arm servo #1 — Top / Left arm (GPIO 23)
-// ARM2 = Utility arm servo #2 — Bottom / Right arm (GPIO 5)
+// ARM1 = Utility arm servo #1  --  Top / Left arm (GPIO 23)
+// ARM2 = Utility arm servo #2  --  Bottom / Right arm (GPIO 5)
 // AUX1 = Spare servo output (GPIO 19, also labelled ARM3)
 // AUX2 = Spare servo output (GPIO 18, also labelled ARM4)
 // AUX3 = Spare servo output (GPIO 32, also labelled ARM5)
-// DOME = Dome rotation ESC (GPIO 25) — drives brushless motor, not a servo
+// DOME = Dome rotation ESC (GPIO 25)  --  drives brushless motor, not a servo
 // -----------------------------------------------------------------------------
 constexpr uint8_t PIN_ARM1_SERVO = 23;
 constexpr uint8_t PIN_ARM2_SERVO = 5;
-constexpr uint8_t PIN_ARM3_SERVO = 19;  // AUX1 — spare servo output
-constexpr uint8_t PIN_ARM4_SERVO = 18;  // AUX2 — spare servo output
-constexpr uint8_t PIN_ARM5_SERVO = 32;  // AUX3 — spare servo output
+constexpr uint8_t PIN_ARM3_SERVO = 19;  // AUX1  --  spare servo output
+constexpr uint8_t PIN_ARM4_SERVO = 18;  // AUX2  --  spare servo output
+constexpr uint8_t PIN_ARM5_SERVO = 32;  // AUX3  --  spare servo output
 constexpr uint8_t PIN_DOME_ESC = 25;
 
 // AUX LED strip selection values (NVS aux_led_pin)
@@ -145,8 +145,8 @@ constexpr char WIFI_AP_IP[] = "192.168.4.1";
 
 // Default AP Credential (ADR 0015): the documented bootstrap password an
 // Unprovisioned Controller uses for WiFi Provisioning and Network Recovery
-// Mode. Public and shared by design — it is a bootstrap credential, not a
-// security boundary — and operator-changeable through Device WiFi Settings.
+// Mode. Public and shared by design  --  it is a bootstrap credential, not a
+// security boundary  --  and operator-changeable through Device WiFi Settings.
 constexpr char WIFI_DEFAULT_AP_PASSWORD[] = "protoArtoo1";
 
 // -----------------------------------------------------------------------------

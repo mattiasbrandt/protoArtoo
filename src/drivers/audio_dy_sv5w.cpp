@@ -1,9 +1,9 @@
 // =============================================================================
 // src/drivers/audio_dy_sv5w.cpp
 //
-// DY-SV5W UART driver — authoritative implementation from module datasheet.
+// DY-SV5W UART driver  --  authoritative implementation from module datasheet.
 //
-// Frame format (checksum dialect — confirmed by datasheet):
+// Frame format (checksum dialect  --  confirmed by datasheet):
 //   [0xAA] [CMD] [LEN] [DATA...] [SM]
 //   SM = low 8 bits of sum of ALL preceding bytes (0xAA + CMD + LEN + DATA).
 //   Example: play   = AA 02 00 AC  (AA+02+00 = AC)
@@ -53,7 +53,7 @@ static const char* TAG = "AudioDrv";
 static HardwareSerial s_audioSerial(2);
 
 // -----------------------------------------------------------------------------
-// Production IO adapters — file-scope statics wrapping hardware.
+// Production IO adapters  --  file-scope statics wrapping hardware.
 // No-capture lambdas are legal here because s_audioSerial is a translation-unit
 // global; no capture needed.
 // -----------------------------------------------------------------------------
@@ -92,8 +92,8 @@ void AudioDriverDySv5w::sendCommand(const uint8_t* payload, uint8_t len) {
 // -----------------------------------------------------------------------------
 // sendQuery()
 // Send a 4-byte query frame then poll for a response via m_io.
-// query[]      — exactly 4 bytes: [0xAA, CMD, 0x00, SM].
-// expectedLen  — break once this many bytes have been received.
+// query[]       --  exactly 4 bytes: [0xAA, CMD, 0x00, SM].
+// expectedLen   --  break once this many bytes have been received.
 // Returns number of bytes read into buf (max maxLen).
 // -----------------------------------------------------------------------------
 uint8_t AudioDriverDySv5w::sendQuery(const uint8_t* query, uint8_t* buf,
@@ -121,12 +121,12 @@ uint8_t AudioDriverDySv5w::sendQuery(const uint8_t* query, uint8_t* buf,
 // Runs diagnostic queries before and after init to confirm the UART link is
 // alive and the storage device is present. Zero-byte query responses mean TX
 // is not reaching the module (check DIP: CON3=1 CON2=0 CON1=0 for UART mode).
-// Runs inside AudioTask on Core 0 — blocking here is acceptable.
+// Runs inside AudioTask on Core 0  --  blocking here is acceptable.
 // -----------------------------------------------------------------------------
 bool AudioDriverDySv5w::begin(uint8_t vol) {
     if (!m_io.writeByte) { m_io = kDySv5wProductionIO; }
 
-    // Hardware init — no-ops in native test builds.
+    // Hardware init  --  no-ops in native test builds.
     s_audioSerial.begin(9600, SERIAL_8N1, PIN_AUDIO_RX, -1);
     softUartTxBegin();
 
@@ -137,7 +137,7 @@ bool AudioDriverDySv5w::begin(uint8_t vol) {
     while (m_io.rxAvailable()) { (void)m_io.rxRead(); }
 
     // -------------------------------------------------------------------------
-    // Pre-init diagnostic queries — run BEFORE sending any commands so we
+    // Pre-init diagnostic queries  --  run BEFORE sending any commands so we
     // see the module's raw power-on state. If all three return 0 bytes the
     // UART TX wire is not reaching the module or DIP mode is wrong.
     // -------------------------------------------------------------------------
@@ -185,7 +185,7 @@ bool AudioDriverDySv5w::begin(uint8_t vol) {
     }
 
     // -------------------------------------------------------------------------
-    // Init commands — device select (use detected device), EQ normal, volume.
+    // Init commands  --  device select (use detected device), EQ normal, volume.
     //
     // IMPORTANT: do NOT hardcode SD/TF here. The module reports its actual
     // storage type via Q_DEV_ONLINE. Sending switchDrive(SD) to a FLASH module
@@ -206,12 +206,12 @@ bool AudioDriverDySv5w::begin(uint8_t vol) {
     uint8_t eqNormal[] = {0xAA, 0x1A, 0x01, 0x00};
     sendCommand(eqNormal, sizeof(eqNormal));
 
-    // Set volume from NVS config — applied once during init.
+    // Set volume from NVS config  --  applied once during init.
     uint8_t volCmd[] = {0xAA, 0x13, 0x01, vol};
     sendCommand(volCmd, sizeof(volCmd));
 
     // -------------------------------------------------------------------------
-    // Post-init confirmation — verify device select took effect.
+    // Post-init confirmation  --  verify device select took effect.
     // -------------------------------------------------------------------------
     static const uint8_t Q_PLAY_DRIVE[] = {0xAA, 0x0A, 0x00, 0xB4};
     n = sendQuery(Q_PLAY_DRIVE, rsp, sizeof(rsp), 5, 300);
@@ -237,7 +237,7 @@ bool AudioDriverDySv5w::begin(uint8_t vol) {
 // Populates 'out' from the responses; returns true if at least one query
 // received a valid response (i.e. the UART link is alive).
 // Called by AudioTask after begin() and then periodically every ~2 s.
-// Blocking up to ~900 ms total (3 × 300 ms timeout) in the worst case.
+// Blocking up to ~900 ms total (3 x 300 ms timeout) in the worst case.
 // Only call from AudioTask (Core 0).
 // -----------------------------------------------------------------------------
 bool AudioDriverDySv5w::queryModuleState(AudioModuleState& out) {
@@ -295,8 +295,8 @@ void AudioDriverDySv5w::getCachedState(AudioModuleState& out) const {
     out.linkOk = (m_device != 0xFF);
     out.device = m_device;
     out.totalTracks = m_totalTracks;
-    out.playState = 0xFF;  // not cached — requires active query
-    out.currentTrack = 0;  // not cached — requires active query
+    out.playState = 0xFF;  // not cached  --  requires active query
+    out.currentTrack = 0;  // not cached  --  requires active query
 }
 
 // -----------------------------------------------------------------------------
@@ -340,7 +340,7 @@ void AudioDriverDySv5w::stop() {
 
 // -----------------------------------------------------------------------------
 // setVolume()
-// Set playback volume. vol is 0–30 (clamped by AudioTask before this call).
+// Set playback volume. vol is 0-30 (clamped by AudioTask before this call).
 // Opcode 0x13.
 // DYPlayer::setVolume: {0xAA, 0x13, 0x01, volume}
 // BetterDuino MDuinoSoundDYPlayer::SetVolume: {0xAA, 0x13, 0x01, Volume}

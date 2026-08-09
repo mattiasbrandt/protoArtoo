@@ -1,7 +1,7 @@
 // =============================================================================
 // src/main.cpp
 //
-// protoArtoo — ESP32 body controller for MK4 astromech droid.
+// protoArtoo  --  ESP32 body controller for MK4 astromech droid.
 // Boot: config load, safety defaults, task creation.
 // =============================================================================
 
@@ -35,7 +35,7 @@
 #include "servo_task.h"
 #include "web_server.h"
 
-// Global state — all tasks share these
+// Global state  --  all tasks share these
 RobotState robotState = {};
 portMUX_TYPE robotStateMux = portMUX_INITIALIZER_UNLOCKED;
 QueueHandle_t servoCmdQueue = nullptr;
@@ -157,7 +157,7 @@ bool copyLogLineAt(size_t idx, char* out, size_t outSize) {
     return valid;
 }
 // -----------------------------------------------------------------------------
-// loadConfigToState() — load NVS config into the runtime config cache
+// loadConfigToState()  --  load NVS config into the runtime config cache
 // Called once at boot before tasks start.
 // Logs an error if config load fails; safe defaults are applied in all paths.
 // -----------------------------------------------------------------------------
@@ -173,7 +173,7 @@ void loadConfigToState() {
         PA_LOG_ERROR("config", "failed to load NVS config (schema or migration error); using safe defaults");
     }
 
-    // Apply all config fields to robotState (no mutex needed — called before tasks start)
+    // Apply all config fields to robotState (no mutex needed  --  called before tasks start)
     // All validation and clamping is now performed within configLoad()
     configCacheApply(snap);
 
@@ -215,7 +215,7 @@ void setup() {
     robotState.audio_module_device = 0xFF;
     robotState.audio_module_play_state = 0xFF;
     robotState.audio_module_rx_status = AUDIO_RX_UNKNOWN;
-    // Load config from NVS — may override cfg_logLevel with the user's saved value.
+    // Load config from NVS  --  may override cfg_logLevel with the user's saved value.
     loadConfigToState();
     logBootHealth();
 
@@ -234,7 +234,7 @@ void setup() {
     failsafeInit(&robotStateMux);
     driveArbiterInit(&robotStateMux);
 
-    // Safety: boot with drive locked until SBUS confirmed — only if SBUS is configured.
+    // Safety: boot with drive locked until SBUS confirmed  --  only if SBUS is configured.
     // If SBUS is disabled, skip the arm; RcInputTask will arm SBUS_WATCHDOG itself
     // on first iteration if the operator enables SBUS at runtime via /api/config.
     {
@@ -247,7 +247,7 @@ void setup() {
         }
     }
 
-    // Detect TWDT reset from previous boot — set estop so robot does not move
+    // Detect TWDT reset from previous boot  --  set estop so robot does not move
     // until operator explicitly clears via POST /api/estop/clear
     esp_reset_reason_t resetReason = esp_reset_reason();
     if (bootTwdtResetDecision(resetReason)) {
@@ -279,11 +279,11 @@ void setup() {
     xTaskCreatePinnedToCore(rcInputTask, "RCInputTask", 7168, nullptr, 5, nullptr, 1);
     xTaskCreatePinnedToCore(
         servoTask, "ServoTask", 4096, nullptr, 4, nullptr,
-        1);  // HWM: code fix (ConfigSnapshot→ServoConfig in hot paths) + 3072->4096
+        1);  // HWM: code fix (ConfigSnapshot->ServoConfig in hot paths) + 3072->4096
     xTaskCreatePinnedToCore(domeTask, "DomeTask", 3072, nullptr, 4, nullptr,
                             1);  // Stack sized from profiler HWM: 108 B free at 2048 B.
 
-    // AudioTask: Core 0 (non-RT) — software bit-bang TX blocks ~6 ms per command;
+    // AudioTask: Core 0 (non-RT)  --  software bit-bang TX blocks ~6 ms per command;
     // keeping off Core 1 avoids any interaction with DriveTask / ServoTask timing.
     xTaskCreatePinnedToCore(audioTask, "AudioTask", 6144, nullptr, 3, nullptr, 0);
 
@@ -293,14 +293,14 @@ void setup() {
         xTaskCreatePinnedToCore(auxLedTask, "AuxLedTask", 4096, nullptr, 2, nullptr, 0);
     }
 
-    // DomeLinkTask: Core 1 — bidirectional Marcduino serial to AstroPixelsPlus.
+    // DomeLinkTask: Core 1  --  bidirectional Marcduino serial to AstroPixelsPlus.
     // UART2 TX/RX are non-blocking hardware operations; Core 1 at priority 3.
     // 4096: profiler measured 988 B free at 3072 B without WiFi fallback active;
     // HTTPClient call-chain in sendCommandOverWifi needs 3 KB+ of stack headroom.
     xTaskCreatePinnedToCore(domeLinkTask, "DomeLinkTask", 6144, nullptr, 3, nullptr, 1);
 
     // SafetyMonitorTask: 10 Hz audit on Core 0 (non-RT, low priority).
-    // HWM first-iteration: 476 B free — WARN path allocates 128 B format buffer +
+    // HWM first-iteration: 476 B free  --  WARN path allocates 128 B format buffer +
     // printf; bumped to 3072 to ensure adequate headroom for all log paths.
     xTaskCreatePinnedToCore(safetyMonitorTask, "SafetyMonitor", 3072, nullptr, 2, nullptr, 0);
 
@@ -309,12 +309,12 @@ void setup() {
     // staging buffers, so it must complete before SeqDisp starts (ADR 0006).
     seqStoreInit();
 
-    // SequenceDispatcherTask: Core 0 (non-RT) — body-side DM:* sequence coordinator.
+    // SequenceDispatcherTask: Core 0 (non-RT)  --  body-side DM:* sequence coordinator.
     // 10 ms tick. Dispatches to domeQueueTx / audioQueueDollar / domeCmdQueue.
     // Core 0 keeps the 50 Hz safety loops on Core 1 unburdened (ADR 0004).
     xTaskCreatePinnedToCore(sequenceDispatcherTask, "SeqDisp", 4096, nullptr, 3, nullptr, 0);
 
-    // Restore last mood — audio component only.
+    // Restore last mood  --  audio component only.
     // - Dome link is not yet established at boot, so dome TX is intentionally skipped.
     // - We apply audio directly here rather than via applyMood() to avoid writing
     //   last_mood back to NVS (we just read it; the value has not changed).
@@ -361,7 +361,7 @@ void loop() {
     if (shouldRestart) {
         PA_LOG_INFO("main", "restarting controller");
         Serial.flush();
-        // Deinit TWDT before restart — prevents esp_restart() from being
+        // Deinit TWDT before restart  --  prevents esp_restart() from being
         // misclassified as ESP_RST_TASK_WDT and triggering a boot-time estop.
         esp_task_wdt_deinit();
         delay(100);

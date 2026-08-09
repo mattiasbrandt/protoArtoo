@@ -1,7 +1,7 @@
 // =============================================================================
 // src/sequence_dispatcher_step.cpp
 //
-// Sequence Dispatcher Step Core (ADR 0014) — pure decision logic for action dispatch.
+// Sequence Dispatcher Step Core (ADR 0014)  --  pure decision logic for action dispatch.
 // =============================================================================
 
 #include "sequence_dispatcher_step.h"

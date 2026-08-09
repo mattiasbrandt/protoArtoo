@@ -2,7 +2,7 @@
 // include/marcduino_helpers.h
 //
 // Pure-math helpers for Marcduino command parsing.
-// No Arduino, no FreeRTOS, no queues — safe to include in native unit tests.
+// No Arduino, no FreeRTOS, no queues  --  safe to include in native unit tests.
 //
 // Extracted from src/drivers/dome_rx_parser.cpp so the mapping and conversion
 // logic can be exercised without hardware dependencies.
@@ -17,13 +17,13 @@
 // marcduino_panel_to_arm_id()
 // Map Marcduino panel number to internal armId.
 //
-//   Panel 1 → armId 0  (ARM1)
-//   Panel 2 → armId 1  (ARM2)
-//   Panel 3 → armId 2  (AUX1)
-//   Panel 4 → armId 3  (AUX2)
-//   Panel 5 → armId 4  (AUX3)
-//   Panel 0 or 99 → armId 255  (broadcast — ARM1+ARM2)
-//   Any other value → 254  (invalid sentinel)
+//   Panel 1 -> armId 0  (ARM1)
+//   Panel 2 -> armId 1  (ARM2)
+//   Panel 3 -> armId 2  (AUX1)
+//   Panel 4 -> armId 3  (AUX2)
+//   Panel 5 -> armId 4  (AUX3)
+//   Panel 0 or 99 -> armId 255  (broadcast  --  ARM1+ARM2)
+//   Any other value -> 254  (invalid sentinel)
 //
 // Returns 254 for invalid panel numbers (caller must reject the command).
 // Returns 255 for broadcast (panel 0 or 99).
@@ -50,10 +50,10 @@ inline uint8_t marcduino_panel_to_arm_id(int panel) {
 
 // -----------------------------------------------------------------------------
 // marcduino_panel_to_arm_id_mv()
-// Variant for :MV (position) commands — broadcast (0/99) is not valid for MV.
+// Variant for :MV (position) commands  --  broadcast (0/99) is not valid for MV.
 //
-//   Panel 1-5 → armId 0-4 (same as above)
-//   Any other value → 254 (invalid sentinel)
+//   Panel 1-5 -> armId 0-4 (same as above)
+//   Any other value -> 254 (invalid sentinel)
 // -----------------------------------------------------------------------------
 inline uint8_t marcduino_panel_to_arm_id_mv(int panel) {
     switch (panel) {
@@ -68,7 +68,7 @@ inline uint8_t marcduino_panel_to_arm_id_mv(int panel) {
         case 5:
             return 4;
         default:
-            return 254;  // invalid (includes 0 and 99 — no broadcast for MV)
+            return 254;  // invalid (includes 0 and 99  --  no broadcast for MV)
     }
 }
 

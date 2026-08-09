@@ -1,20 +1,20 @@
 // =============================================================================
 // include/dome_math.h
 //
-// Pure-logic dome ESC pulse mapping — no hardware, no FreeRTOS.
+// Pure-logic dome ESC pulse mapping  --  no hardware, no FreeRTOS.
 // Extracted for testability. Used by DomeTask and native tests.
 //
 // ESC PWM semantics (standard RC PWM, 50 Hz):
-//   1000µs = full reverse / max brake
-//   1500µs = neutral / stop
-//   2000µs = full forward
+//   1000us = full reverse / max brake
+//   1500us = neutral / stop
+//   2000us = full forward
 // =============================================================================
 #pragma once
 #include <stdint.h>
 
 // -----------------------------------------------------------------------------
 // domeSpeedToPulseUs()
-// Map normalized speed (-1.0..1.0) to ESC PWM pulse width (µs).
+// Map normalized speed (-1.0..1.0) to ESC PWM pulse width (us).
 //
 // The speed limit percentage scales the usable pulse range symmetrically around
 // neutral. Asymmetric neutral trimming (neutral != midpoint of min..max) is

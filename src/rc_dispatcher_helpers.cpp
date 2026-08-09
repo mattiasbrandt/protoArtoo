@@ -1,7 +1,7 @@
 // =============================================================================
 // src/rc_dispatcher_helpers.cpp
 //
-// Implementation of RC dispatch helpers — queue commands to subsystems,
+// Implementation of RC dispatch helpers  --  queue commands to subsystems,
 // encapsulating all subsystem-specific knowledge.
 //
 // =============================================================================

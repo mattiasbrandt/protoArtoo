@@ -1,12 +1,12 @@
 // =============================================================================
 // src/tasks/safety.cpp
 //
-// SafetyMonitorTask — secondary audit task for protoArtoo.
+// SafetyMonitorTask  --  secondary audit task for protoArtoo.
 // Runs at 10 Hz on Core 0 (low priority, non-blocking).
 //
 // Responsibilities:
 //   - Log failsafe trigger count increases
-//   - Verify dome connection state transitions (connected ↔ lost)
+//   - Verify dome connection state transitions (connected <-> lost)
 //   - Warn if free heap drops below 20 KB and monitor heap fragmentation
 //
 // SAFETY: This task does NOT directly control motors or actuators.
@@ -42,8 +42,8 @@ constexpr uint8_t HEAP_FRAGMENT_WARN_SAMPLE_COUNT = 30;  // 3 s at 10 Hz
 // safetyMonitorTask()
 // Observer-only audit task. Logs state transitions and health warnings.
 // Core 0, priority 2, 2048-byte stack, 10 Hz.
-// Does NOT feed TWDT — this is not a real-time task.
-// Does NOT set failsafe flags — read-only access to RobotState.
+// Does NOT feed TWDT  --  this is not a real-time task.
+// Does NOT set failsafe flags  --  read-only access to RobotState.
 // -----------------------------------------------------------------------------
 void safetyMonitorTask(void* pvParameters) {
     PA_LOG_INFO(TAG, "active");

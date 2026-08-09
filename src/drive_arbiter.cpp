@@ -1,7 +1,7 @@
 // =============================================================================
 // src/drive_arbiter.cpp
 //
-// Drive Output Arbiter — implementation.
+// Drive Output Arbiter  --  implementation.
 // Owns all drive command state (speed, steer, source, timestamp).
 // =============================================================================
 

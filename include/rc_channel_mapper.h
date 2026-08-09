@@ -1,7 +1,7 @@
 // =============================================================================
 // include/rc_channel_mapper.h
 //
-// Pure RC channel mapping module — converts raw channel snapshots to control
+// Pure RC channel mapping module  --  converts raw channel snapshots to control
 // intent without FreeRTOS, mutex, or RobotState coupling.
 //
 // This module is designed to be unit-testable in isolation, accepting only
@@ -101,7 +101,7 @@ struct RcMappingConfig {
 // Pure Mapping Function
 // ============================================================================
 
-// rcMapChannels() — convert raw channel snapshot to control intent
+// rcMapChannels()  --  convert raw channel snapshot to control intent
 //
 // Pure function:
 //   - No global state reads
@@ -111,8 +111,8 @@ struct RcMappingConfig {
 //   - No side effects
 //
 // Parameters:
-//   snap   — raw channel snapshot from receiver
-//   cfg    — mapping configuration extracted from RobotState
+//   snap    --  raw channel snapshot from receiver
+//   cfg     --  mapping configuration extracted from RobotState
 //
 // Returns:
 //   RcControlIntent with interpreted control values and audio trigger

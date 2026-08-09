@@ -1,7 +1,7 @@
 // =============================================================================
 // include/rc_channel_mapper_stages.h
 //
-// Internal pipeline stages for RC channel mapping — exposed for testing.
+// Internal pipeline stages for RC channel mapping  --  exposed for testing.
 // Do not depend on these from client code; use rcMapChannels() instead.
 // These are implementation seams declared solely to enable unit tests of
 // individual mapping stages.

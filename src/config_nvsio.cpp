@@ -91,7 +91,7 @@ bool PrefsWriter::writeStr(const char* key, const char* value) {
     if (value == nullptr) {
         return false;
     }
-    // putString returns length(), which is 0 for empty strings — not an error.
+    // putString returns length(), which is 0 for empty strings  --  not an error.
     prefs_.putString(key, value);
     return true;
 }

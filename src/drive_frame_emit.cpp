@@ -1,7 +1,7 @@
 // =============================================================================
 // src/drive_frame_emit.cpp
 //
-// Drive tick decision step (ADR 0014) — pure decision logic for frame emission.
+// Drive tick decision step (ADR 0014)  --  pure decision logic for frame emission.
 // Extracted from drive.cpp for native testability (ADR 0005).
 // =============================================================================
 

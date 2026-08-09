@@ -24,7 +24,7 @@
 static const char* TAG = "SEQST";
 static const char* SEQ_DIR = "/seq";
 
-// Run buffers — heap-allocated, RIGHT-SIZED to the committed sequence's step
+// Run buffers  --  heap-allocated, RIGHT-SIZED to the committed sequence's step
 // counts, and freed when the run ends (seqStoreReleaseRun) so an idle body or a
 // Factory-only run (Factory steps live in flash) holds ZERO staging RAM. This
 // reclaims the former fixed 2 x 96 x sizeof(SeqStep) (~17 KB) static block on a
@@ -134,7 +134,7 @@ static bool indexDraft(const SeqDraft& d, JsonVariantConst root, const char* fil
 }
 
 // -----------------------------------------------------------------------------
-// Init — scan + index
+// Init  --  scan + index
 // -----------------------------------------------------------------------------
 void seqStoreInit() {
     if (s_mutex == nullptr) {
@@ -200,7 +200,7 @@ void seqStoreInit() {
         d.closeStepCount = 0;
 
         if (!parseResult.ok) {
-            // Unreadable format — cannot extract reliable metadata; skip entirely.
+            // Unreadable format  --  cannot extract reliable metadata; skip entirely.
             PA_LOG_WARN(TAG, "skip %s: %s (%s)", file, parseResult.message, parseResult.field);
             ++skipped;
             continue;
@@ -237,7 +237,7 @@ void seqStoreInit() {
 }
 
 // -----------------------------------------------------------------------------
-// Load (dispatcher run path) — two-phase: prepare into heap, commit to buffers
+// Load (dispatcher run path)  --  two-phase: prepare into heap, commit to buffers
 // -----------------------------------------------------------------------------
 ProtocolCheckResult seqStorePrepare(const char* name) {
     if (s_staging.main != nullptr) {  // a previous prepare was never committed
@@ -297,7 +297,7 @@ bool seqStoreCommit(SequenceEntry& out) {
     // committing a new one) and allocate fresh, RIGHT-SIZED buffers for this
     // sequence. Only the dispatcher task runs commit/run/release, so the engine
     // cannot be reading these while we reallocate. A failed allocation refuses
-    // the run gracefully — the staging is freed and the caller does not start it.
+    // the run gracefully  --  the staging is freed and the caller does not start it.
     seqStoreReleaseRun();
     s_runMain = (SeqStep*)malloc(sizeof(SeqStep) * d.stepCount);
     if (s_runMain == nullptr) {

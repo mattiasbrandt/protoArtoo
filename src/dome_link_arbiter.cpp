@@ -1,7 +1,7 @@
 // =============================================================================
 // src/dome_link_arbiter.cpp
 //
-// protoR2link Arbiter — transport selection, probe cadence, and sleep-sync
+// protoR2link Arbiter  --  transport selection, probe cadence, and sleep-sync
 // decisions as a pure step function over explicit state.
 //
 // See include/dome_link_arbiter.h and docs/adr/0005-protor2link-arbiter-
@@ -29,7 +29,7 @@ DomeLinkArbiterActions domeLinkArbiterStep(DomeLinkArbiterState&        s,
     //
     // WiFi fallback is allowed only when UART has never established contact
     // this boot. Once UART contact is seen, a heartbeat loss means the dome
-    // is off or rebooting — stay on UART and keep probing (via the normal
+    // is off or rebooting  --  stay on UART and keep probing (via the normal
     // 1 Hz heartbeat) rather than silently migrating to WiFi (ADR 0005,
     // resolves the WiFi-steady-state deviation accepted for v1.0.0).
     // -----------------------------------------------------------------------

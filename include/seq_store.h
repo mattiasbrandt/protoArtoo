@@ -64,7 +64,7 @@ bool seqStoreCommit(SequenceEntry& out);
 
 // Free the heap run buffers after a Learned Sequence run has fully drained.
 // The dispatcher calls this at sequence end/abort so an idle body (or a
-// Factory-only run — Factory steps live in flash) holds zero run-buffer RAM.
+// Factory-only run  --  Factory steps live in flash) holds zero run-buffer RAM.
 // No-op / safe to call when nothing is allocated. Dispatcher task only.
 void seqStoreReleaseRun();
 

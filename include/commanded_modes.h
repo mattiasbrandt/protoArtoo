@@ -11,7 +11,7 @@ void commandedSetStationary(bool stationary, CommandSource source);
 
 // Sets robotState.sleepMode and sleepSinceMs under critical section.
 // Returns true if sleepMode actually changed (false->true or true->false).
-// Sets sleepSinceMs = now on entry, 0 on exit. Does not broadcast status or log —
+// Sets sleepSinceMs = now on entry, 0 on exit. Does not broadcast status or log  -- 
 // caller decides what to do with the changed result (some callers unconditionally
 // broadcast regardless).
 bool commandedSetSleep(bool sleep, CommandSource source);

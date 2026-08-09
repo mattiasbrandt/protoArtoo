@@ -2,7 +2,7 @@
 // src/tasks/sequence_engine.cpp
 //
 // Pure DM:* sequence cursor engine (ADR 0004, issue #2). No Arduino, FreeRTOS,
-// logging, or RNG dependencies — fully natively testable. See header for the
+// logging, or RNG dependencies  --  fully natively testable. See header for the
 // peek/commit execution model.
 //
 // Panel movement is authored as logical dome panel intent; raw servo-pulse
@@ -40,7 +40,7 @@ static void setPayload(SeqAction& a, const char* payload) {
 
 // dueRel is the fire offset (ms) relative to finishStartMs. Instant resets pass
 // 0; staggered individual ring closes pass increasing offsets so only one ring
-// servo actuates at a time (group closes brown out the dome — see addRingClose).
+// servo actuates at a time (group closes brown out the dome  --  see addRingClose).
 static void addFinal(SeqEngineState& st, SeqActionKind kind, const char* payload,
                      uint16_t dueRel = 0) {
     const uint8_t cap = (uint8_t)(sizeof(st.finalQ) / sizeof(st.finalQ[0]));
@@ -103,7 +103,7 @@ static const uint8_t  kRingPanelCount   = (uint8_t)(sizeof(kRingPanels) / sizeof
 static const uint16_t kRingAllMask      = (uint16_t)((1u << kRingPanelCount) - 1u);
 // Per-panel cadence for staggered cleanup closes: only one ring servo actuates
 // at a time, so single-servo inrush never overlaps (a simultaneous group close
-// browns out the dome from a loaded ring — 2026-06-17 hardware repro).
+// browns out the dome from a loaded ring  --  2026-06-17 hardware repro).
 static const uint16_t kRingCloseSpacingMs = 500;
 
 // ringOpenMask bit index for ring panel number n, or -1 if not a ring panel.
@@ -120,7 +120,7 @@ static void setAllRingOpen(SeqEngineState& st, bool open) {
 }
 
 // Update the per-run net-open RING mask from a dispatched dome command. Only
-// :OP/:CL change logical open state; :OF leaves it uncertain (no mark — the
+// :OP/:CL change logical open state; :OF leaves it uncertain (no mark  --  the
 // authored branch must clean up its own flutters). Pie targets (14 group, P*
 // individual) do not affect the ring mask.
 static void recordRingOpenState(SeqEngineState& st, const char* cmd) {
@@ -128,9 +128,9 @@ static void recordRingOpenState(SeqEngineState& st, const char* cmd) {
         return;
     }
     bool open;
-    if (cmd[1] == 'O' && cmd[2] == 'P')      open = true;   // :OP — open
-    else if (cmd[1] == 'C' && cmd[2] == 'L') open = false;  // :CL — close
-    else return;                                            // :OF / non-panel — no change
+    if (cmd[1] == 'O' && cmd[2] == 'P')      open = true;   // :OP  --  open
+    else if (cmd[1] == 'C' && cmd[2] == 'L') open = false;  // :CL  --  close
+    else return;                                            // :OF / non-panel  --  no change
     const char* t = cmd + 3;
     if (t[0] == '0' && t[1] == '0') { setAllRingOpen(st, open); return; } // 00 = all
     if (t[0] == '1' && t[1] == '5') { setAllRingOpen(st, open); return; } // 15 = ring group
@@ -166,7 +166,7 @@ static void updateLatchesForClose(SeqEngineState& st, const char* cmd) {
 // (2026-06-17 hardware repro: reset_reason=BROWNOUT at terminal :CL15). So close
 // only the ring panels this run left logically OPEN, one at a time at
 // kRingCloseSpacingMs cadence. No-op when nothing is left open. Pie panels left
-// open are NOT auto-closed here (pie-close safety is a separate open item) — an
+// open are NOT auto-closed here (pie-close safety is a separate open item)  --  an
 // authored sequence that opens pies must close them in its own branch.
 static void addRingClose(SeqEngineState& st) {
     uint16_t emitted = 0;
@@ -236,7 +236,7 @@ static void beginFinish(SeqEngineState& st, bool abnormal) {
     // DV-backed sequences explicitly close the DV lifecycle. The raw resets
     // above stay as compatibility primitives but do not clear the dome's DV
     // preset field, so without this the dome's visual_preset telemetry stays
-    // stale at the run's preset name (issue #9 §2). Emitted after the raw
+    // stale at the run's preset name (issue #9 #2). Emitted after the raw
     // resets so DV:RESET_VISUALS is the final visual word and telemetry settles
     // to the RESET_VISUALS idle marker, making teardown machine-verifiable.
     if (st.dvPresetActive) {
@@ -257,7 +257,7 @@ static void beginFinish(SeqEngineState& st, bool abnormal) {
     }
     // FX_AUDIO stops only on abnormal termination (ring-out preserved on normal end,
     // e.g. SEQ_AUDIO_CAT screams/alarms). FX_AUDIO_BOUNDED (ADR 0010, opt-in per named
-    // track) stops on BOTH normal and abnormal termination — it is a hard cut, not a
+    // track) stops on BOTH normal and abnormal termination  --  it is a hard cut, not a
     // fade; sequences wanting a musical ending author the bound earlier in the timeline
     // (see DM:ROCKMARCH's pre-TERM close pass).
     if (((st.activeFx & FX_AUDIO) && abnormal) || (st.activeFx & FX_AUDIO_BOUNDED)) {
@@ -270,7 +270,7 @@ static void beginFinish(SeqEngineState& st, bool abnormal) {
     // Toggle bookkeeping on normal completion. A close branch runs its own
     // per-target closes; once no group remains latched open we still request ring
     // cleanup, which is a no-op when the branch already closed every ring panel
-    // (e.g. DM:LOW) — that is exactly why the brownout-prone terminal group close
+    // (e.g. DM:LOW)  --  that is exactly why the brownout-prone terminal group close
     // is gone: addRingClose closes only ring panels actually left open, staggered.
     if (!abnormal && st.entry->toggleGroup != TOGGLE_NONE) {
         applyToggleLatch(st);
@@ -499,7 +499,7 @@ bool seqEnginePeek(SeqEngineState& st, uint32_t nowMs, SeqRandFn rnd, SeqAction&
     if (!st.finishing) {
         while (true) {
             if (st.cursor >= st.stepCount) {
-                // Malformed table (no STEP_END sentinel) — finish defensively.
+                // Malformed table (no STEP_END sentinel)  --  finish defensively.
                 beginFinish(st, false);
                 break;
             }
@@ -550,7 +550,7 @@ bool seqEnginePeek(SeqEngineState& st, uint32_t nowMs, SeqRandFn rnd, SeqAction&
                     return false;
                 }
                 if (step.params.bodyCount == 0) {
-                    st.cursor++;  // degenerate loop — skip
+                    st.cursor++;  // degenerate loop  --  skip
                     continue;
                 }
                 st.inLoop = true;
@@ -615,7 +615,7 @@ void seqEngineCommit(SeqEngineState& st) {
     }
 
     if (st.cursor >= st.stepCount || !st.pendingComputed) {
-        return;  // nothing peeked — defensive
+        return;  // nothing peeked  --  defensive
     }
 
     const SeqStep& step = st.steps[st.cursor];
@@ -628,7 +628,7 @@ void seqEngineCommit(SeqEngineState& st) {
         recordRingOpenState(st, st.pending.payload);
         updateLatchesForClose(st, st.pending.payload);
         // Note a DV:<name> preset so terminal cleanup closes its lifecycle with
-        // DV:RESET_VISUALS (issue #9 §2 teardown decision).
+        // DV:RESET_VISUALS (issue #9 #2 teardown decision).
         if (strncmp(st.pending.payload, "DV:", 3) == 0) {
             st.dvPresetActive = true;
         }

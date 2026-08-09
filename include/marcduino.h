@@ -2,8 +2,8 @@
 // include/marcduino.h
 //
 // Marcduino command string constants for protoArtoo body controller.
-// These are the commands sent TO the dome (body→dome) and received FROM
-// the dome (dome→body).
+// These are the commands sent TO the dome (body->dome) and received FROM
+// the dome (dome->body).
 //
 // Protocol: ASCII strings terminated with \r
 // Baud: 9600 on UART1 (dome serial via slip ring)
@@ -12,24 +12,24 @@
 
 // -----------------------------------------------------------------------------
 // -----------------------------------------------------------------------------
-// Body→Dome heartbeat (sent at 1 Hz by DomeLinkTask)
+// Body->Dome heartbeat (sent at 1 Hz by DomeLinkTask)
 // Dome responds with #APHB
 // -----------------------------------------------------------------------------
 #define MD_BODY_HB "#PAHB\r"
 
 // -----------------------------------------------------------------------------
-// Dome→Body heartbeat (received from dome)
+// Dome->Body heartbeat (received from dome)
 // -----------------------------------------------------------------------------
 #define MD_DOME_HB "#APHB\r"
 
 // -----------------------------------------------------------------------------
-// Body→Dome sleep sync (state change notifications)
+// Body->Dome sleep sync (state change notifications)
 // -----------------------------------------------------------------------------
 #define MD_BODY_SLEEP "#PASL\r"
 #define MD_BODY_WAKE "#PAWU\r"
 
 // -----------------------------------------------------------------------------
-// Body→Dome: full-droid sequences (triggers coordinated dome + body action)
+// Body->Dome: full-droid sequences (triggers coordinated dome + body action)
 // -----------------------------------------------------------------------------
 #define MD_SEQ_SCREAM ":SE01\r"        // Scream sequence
 #define MD_SEQ_WAVE ":SE02\r"          // Wave sequence
@@ -48,7 +48,7 @@
 #define MD_SEQ_HAPPY ":SE15\r"         // Happy
 
 // -----------------------------------------------------------------------------
-// Body→Dome: arm commands (dome triggers body arm via dome→body serial)
+// Body->Dome: arm commands (dome triggers body arm via dome->body serial)
 // These are received BY the body from the dome
 // -----------------------------------------------------------------------------
 #define MD_ARM1_OPEN ":OP01\r"
@@ -58,7 +58,7 @@
 
 // -----------------------------------------------------------------------------
 // Audio play commands ($ prefix = play sound on body audio module)
-// Sent dome→body; body AudioTask handles these
+// Sent dome->body; body AudioTask handles these
 // -----------------------------------------------------------------------------
 #define MD_AUDIO_RANDOM "$S\r"         // Random sound from configured range
 #define MD_AUDIO_TRACK(n) "$" #n "\r"  // Play specific track n

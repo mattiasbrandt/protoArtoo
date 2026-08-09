@@ -1,14 +1,14 @@
 // =============================================================================
 // include/logging.h
 //
-// Logging macros for protoArtoo — shared between tasks, drivers, and web layer.
+// Logging macros for protoArtoo  --  shared between tasks, drivers, and web layer.
 // Centralizes log formatting to ensure consistent output across the system.
 //
 // Log level is checked at runtime against the config cache log level, which is
 // NVS-backed and adjustable from the Setup page without a reboot. The
 // compile-time PA_LOG_LEVEL build flag sets the boot default and the maximum
 // ring buffer depth (see log_buffer.h), but does not gate output at compile
-// time — all levels are always compiled in.
+// time  --  all levels are always compiled in.
 // =============================================================================
 #pragma once
 
@@ -24,7 +24,7 @@ void paLogLine(const char* line);
 void paLogLineRaw(const char* line);
 uint8_t configCurrentLogLevel();
 
-// Inline helper — reads the live log level under the config cache lock.
+// Inline helper  --  reads the live log level under the config cache lock.
 // Used by every log macro to get the current runtime level without a full
 inline uint8_t paCurrentLogLevel() {
     return configCurrentLogLevel();

@@ -56,7 +56,7 @@ class AudioDriverDySv5w : public AudioDriver {
    private:
     AudioSerialIO m_io{};
 
-    // Last known total tracks and device — populated during begin() and carried
+    // Last known total tracks and device  --  populated during begin() and carried
     // forward when queryModuleState() is called (total-tracks query runs in begin
     // only, not on every periodic poll to keep poll overhead low).
     uint16_t m_totalTracks = 0;

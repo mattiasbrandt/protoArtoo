@@ -165,7 +165,7 @@ void failsafeClearEstop() {
     taskENTER_CRITICAL(_mux);
     bool estopWasActive = (_activeMask & estopBit) != 0;
     bool twdtWasActive = (_activeMask & twdtBit) != 0;
-    // Clear both ESTOP and TWDT_RESET — both represent explicit operator recovery intent
+    // Clear both ESTOP and TWDT_RESET  --  both represent explicit operator recovery intent
     _activeMask &= ~estopBit;
     _activeMask &= ~twdtBit;
     updateMirrorsLocked();

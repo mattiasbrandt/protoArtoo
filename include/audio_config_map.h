@@ -1,7 +1,7 @@
 // =============================================================================
 // include/audio_config_map.h
 //
-// audio_config_map — canonical home for the config-to-audio schema mapping
+// audio_config_map  --  canonical home for the config-to-audio schema mapping
 // (ADR 0013). Pure functions: no FreeRTOS, no
 // AudioDriver, no raw Preferences, no logging.
 //
@@ -14,7 +14,7 @@
 //     audioUnpackChirpCategoryBinding)
 //   - the binding-cache refresh (audioBindingsRefresh), reading through the
 //     ADR 0002 ConfigReader seam (PrefsReader in production, MapReader in
-//     tests) instead of raw Preferences — this is what makes the refresh
+//     tests) instead of raw Preferences  --  this is what makes the refresh
 //     loop (capability gate, key iteration, rejection paths) testable.
 //
 // AudioTask (src/tasks/audio_task.cpp) stays the shell: it owns the
@@ -24,7 +24,7 @@
 // executePlaybackIntent() dispatch.
 //
 // api_audio.cpp (the web write-handler layer) is the intended second
-// consumer of these tables in a later Apply Core wave (ADR 0011) — not
+// consumer of these tables in a later Apply Core wave (ADR 0011)  --  not
 // this module.
 //
 // Defined in src/tasks/audio_config_map.cpp.

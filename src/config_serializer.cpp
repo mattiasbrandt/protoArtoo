@@ -2,7 +2,7 @@
 // src/config_serializer.cpp
 //
 // Pure config serialization implementation.
-// No logging, no FreeRTOS, no task-level calls — uses Arduino String for NVS string values.
+// No logging, no FreeRTOS, no task-level calls  --  uses Arduino String for NVS string values.
 // =============================================================================
 
 #include "config_serializer.h"
@@ -247,7 +247,7 @@ void deserializeSystem(const ConfigReader& r, SystemConfig* out, const SystemCon
 
     {
         // Block scope: destroys droidName String before the larger field block below,
-        // keeping the peak frame smaller. normalizeDroidName rejects uppercase — fall
+        // keeping the peak frame smaller. normalizeDroidName rejects uppercase  --  fall
         // back to DROID_NAME_DEFAULT if stored name is invalid.
         String droidName = r.readStr("droid_name", DROID_NAME_DEFAULT);
         char normalizedName[DROID_NAME_MAX_LEN + 1] = {};
@@ -328,7 +328,7 @@ void deserializeWifi(const ConfigReader& r, WifiConfig* out, const WifiConfig& d
     }
     snprintf(out->sta_password, sizeof(out->sta_password), "%s", staPassword.c_str());
 
-    // AP SSID must stay non-empty — an empty SSID would make Standalone AP Mode unusable.
+    // AP SSID must stay non-empty  --  an empty SSID would make Standalone AP Mode unusable.
     String apSsid = r.readStr("wifi_ap_ssid", def.ap_ssid);
     if (apSsid.length() == 0 || apSsid.length() > WIFI_SSID_MAX_LEN) {
         apSsid = String(def.ap_ssid);
@@ -345,7 +345,7 @@ void deserializeWifi(const ConfigReader& r, WifiConfig* out, const WifiConfig& d
 }  // namespace
 
 // =============================================================================
-// Shared defaults — ConfigSnapshot is 744 bytes, too large for the 6144-byte
+// Shared defaults  --  ConfigSnapshot is 744 bytes, too large for the 6144-byte
 // loop task stack. Static BSS allocation; populated once on first use.
 // =============================================================================
 
@@ -536,7 +536,7 @@ bool configSerializeSystem(const SystemConfig& cfg, ConfigWriter& w) {
     ok = w.writeBool("op_mode", cfg.stationary) && ok;
     ok = w.writeU8("rc_mode", (uint8_t)cfg.rc_input_mode) && ok;
 
-    // RC bindings — format and write as strings
+    // RC bindings  --  format and write as strings
     char encoded[48] = {};
     if (formatRcBindingConfig(encoded, sizeof(encoded), cfg.rc_pwm_drive_speed)) {
         ok = w.writeStr("rcp_drv", encoded) && ok;
@@ -626,7 +626,7 @@ bool configSerializeWifi(const WifiConfig& cfg, ConfigWriter& w) {
 }
 
 // =============================================================================
-// Domain-level deserializers — each loads only its own domain keys
+// Domain-level deserializers  --  each loads only its own domain keys
 // =============================================================================
 
 void configDeserializeDrive(const ConfigReader& r, DriveConfig* out) {

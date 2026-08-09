@@ -1,7 +1,7 @@
 // =============================================================================
 // src/commanded_modes.cpp
 //
-// Commanded Mode Setters — promotion of the stationary-mode setter pattern
+// Commanded Mode Setters  --  promotion of the stationary-mode setter pattern
 // into a shared module. Handles state write, config cache sync, edge detection,
 // and audio cue queueing for mode transitions.
 // =============================================================================

@@ -9,7 +9,7 @@
 // function pointer; emitted work is returned as SeqAction values that the
 // dispatcher task maps onto domeQueueTx()/audioQueue*().
 //
-// Execution model — peek/commit:
+// Execution model  --  peek/commit:
 //   seqEnginePeek()   returns the next due action without consuming it.
 //   seqEngineCommit() consumes it after the caller dispatched it successfully.
 // If a downstream queue is full the caller simply does not commit; the same
@@ -33,7 +33,7 @@ enum SeqStepType : uint8_t {
                               // resolved at fire time
     STEP_AUDIO_CATEGORY = 5,  // random track from a config-backed sound category
     STEP_CLEAR_LATCHES  = 6,  // body-internal: reset toggle latches (piesOpen/
-                              // ringOpen) at this step's fire time. Factory-only —
+                              // ringOpen) at this step's fire time. Factory-only  -- 
                               // there is no JSON/wire form, the seq_json parser
                               // cannot produce it, and serialization omits it, so
                               // it never reaches Protocol Check. Used by DM:RESET
@@ -41,32 +41,32 @@ enum SeqStepType : uint8_t {
     STEP_DOME_ROTATE    = 7,  // body-owned dome ESC timed rotation. Separate
                               // from STEP_DOME_CMD, which is dome serial/TX.
     STEP_AUDIO_STOP     = 8,  // body-internal: emit a Track Stop (SEQ_ACT_AUDIO_STOP)
-                              // at this step's fire time, mid-sequence — for an
+                              // at this step's fire time, mid-sequence  --  for an
                               // author who wants a musically sensible cutoff earlier
                               // than the natural SEQ_TERM (ADR 0010), e.g. ROCKMARCH's
                               // 47000 ms cutoff before its 48250 ms TERM. Track Stop,
                               // not the mood-disabling full stop, so it never needs a
-                              // dollar command. Factory-only — same as
+                              // dollar command. Factory-only  --  same as
                               // STEP_CLEAR_LATCHES: no JSON/wire form, the seq_json
                               // parser cannot produce it, and serialization omits it,
                               // so it never reaches Protocol Check.
 };
 
 // -----------------------------------------------------------------------------
-// Effect class bitmask — persistent dome/body state a step activates. The
+// Effect class bitmask  --  persistent dome/body state a step activates. The
 // engine ORs fired steps' classes into activeFx and emits the matching reset
 // commands on terminal transitions (ADR 0004 decision 7), only for what was
 // actually activated.
 // -----------------------------------------------------------------------------
 enum SeqEffectClass : uint8_t {
     FX_NONE      = 0,
-    FX_LOGIC_PSI = 1 << 0,  // @0T* / @0P*  — reset with @0T1 + @0P1
-    FX_PANEL     = 1 << 1,  // panel opens   — reset with :CL00 (close + release)
-    FX_HOLO      = 1 << 2,  // holo effects  — reset with *ST00
-    FX_AUDIO     = 1 << 3,  // long audio    — Track Stop on ABNORMAL termination only
+    FX_LOGIC_PSI = 1 << 0,  // @0T* / @0P*   --  reset with @0T1 + @0P1
+    FX_PANEL     = 1 << 1,  // panel opens    --  reset with :CL00 (close + release)
+    FX_HOLO      = 1 << 2,  // holo effects   --  reset with *ST00
+    FX_AUDIO     = 1 << 3,  // long audio     --  Track Stop on ABNORMAL termination only
                             // (ring-out preserved on normal completion)
-    FX_DOME_SEQUENCE = 1 << 4, // legacy :SE## — conservatively reset dome effects
-    FX_AUDIO_BOUNDED = 1 << 5, // long NAMED TRACK (opt-in, ADR 0010 Bounded Audio) —
+    FX_DOME_SEQUENCE = 1 << 4, // legacy :SE##  --  conservatively reset dome effects
+    FX_AUDIO_BOUNDED = 1 << 5, // long NAMED TRACK (opt-in, ADR 0010 Bounded Audio)  -- 
                                // Track Stop on normal termination as well as abnormal.
                                // Sibling to FX_AUDIO; SEQ_AUDIO_CAT keeps plain FX_AUDIO
                                // so short category vocalizations always ring out.
@@ -121,12 +121,12 @@ struct SeqStepParams {
 };
 
 // -----------------------------------------------------------------------------
-// SeqStep — POD step, statically allocated, serializable-ready.
+// SeqStep  --  POD step, statically allocated, serializable-ready.
 //
 // tMs:  Milliseconds from sequence start (or from iteration start for steps
 //       inside a STEP_LOOP body) when this step fires.
 // payload: Dome command (STEP_DOME_CMD) or audio $-command (STEP_AUDIO).
-//          64 bytes — matches DomeTxCmd.buf.
+//          64 bytes  --  matches DomeTxCmd.buf.
 // -----------------------------------------------------------------------------
 struct SeqStep {
     uint32_t      tMs;
@@ -137,7 +137,7 @@ struct SeqStep {
 };
 
 // -----------------------------------------------------------------------------
-// Catalog authoring macros — keep the positional SeqStepParams ordering in one
+// Catalog authoring macros  --  keep the positional SeqStepParams ordering in one
 // place. The firmware toolchain cannot rely on C++20 designated initializers.
 // All explicit initializer lists include audioBounded (new field, ADR 0010) as the
 // last element, initialized to 0. Factory catalog entries ignore this field and set
@@ -163,7 +163,7 @@ struct SeqStep {
 #define SEQ_AUDIO_STOP(t)     { (t), STEP_AUDIO_STOP, FX_NONE, "", {} }
 
 // -----------------------------------------------------------------------------
-// Toggle groups (ADR 0004 decision 8) — body-authoritative latched panel state.
+// Toggle groups (ADR 0004 decision 8)  --  body-authoritative latched panel state.
 // -----------------------------------------------------------------------------
 enum SeqToggleGroup : uint8_t {
     TOGGLE_NONE  = 0,
@@ -182,12 +182,12 @@ enum SeqToggleGroup : uint8_t {
 };
 
 // -----------------------------------------------------------------------------
-// SequenceEntry — one body-owned sequence in the catalog. For toggle entries,
+// SequenceEntry  --  one body-owned sequence in the catalog. For toggle entries,
 // `steps` is the open branch and `closeSteps` the close branch; the engine
 // picks the branch from the latched group state at start.
 // -----------------------------------------------------------------------------
 struct SequenceEntry {
-    const char*    name;        // "DM:VADER" etc. — exact match, case-sensitive
+    const char*    name;        // "DM:VADER" etc.  --  exact match, case-sensitive
     const SeqStep* steps;
     uint8_t        stepCount;
     uint32_t       suppressMs;  // suppression window duration
@@ -289,7 +289,7 @@ struct SeqEngineState {
     // cleanup then explicitly closes the DV lifecycle with DV:RESET_VISUALS so
     // the dome's visual_preset telemetry settles to RESET_VISUALS (machine-
     // verifiable teardown) and the named rendering is deterministically reset.
-    // Raw @0T1/@0P1/*ST00 do not clear the dome's DV preset field (issue #9 §2).
+    // Raw @0T1/@0P1/*ST00 do not clear the dome's DV preset field (issue #9 #2).
     bool      dvPresetActive;
 };
 

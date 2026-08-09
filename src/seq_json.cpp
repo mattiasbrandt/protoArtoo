@@ -225,12 +225,12 @@ static ProtocolCheckResult parseStep(const char* label, JsonObjectConst obj,
         // Validate durationMs: must be positive, EXCEPT the explicit neutral stop
         // (speedPct == 0 && durationMs == 0 is the only valid zero case)
         if (speedPct == 0 && durationMs == 0) {
-            // Explicit neutral stop — valid
+            // Explicit neutral stop  --  valid
         } else if (durationMs == 0) {
-            // Non-zero speed with zero duration — reject
+            // Non-zero speed with zero duration  --  reject
             return pcFailAt(label, idx, "durationMs", "must be positive (or both speedPct and durationMs must be 0 for neutral stop)");
         } else if (speedPct == 0 && durationMs > 0) {
-            // Zero speed with positive duration — reject (ambiguous intent)
+            // Zero speed with positive duration  --  reject (ambiguous intent)
             return pcFailAt(label, idx, "speedPct", "non-zero speed required when durationMs > 0 (or use speedPct=0, durationMs=0 for neutral stop)");
         }
 

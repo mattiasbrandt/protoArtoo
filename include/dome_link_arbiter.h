@@ -1,7 +1,7 @@
 // =============================================================================
 // include/dome_link_arbiter.h
 //
-// protoR2link Arbiter — pure decision module for dome-link transport selection,
+// protoR2link Arbiter  --  pure decision module for dome-link transport selection,
 // probe cadence, and sleep-sync.
 //
 // Design (ADR 0005):
@@ -10,7 +10,7 @@
 //   - The task loop (dome_link.cpp) gathers inputs, calls this function, and
 //     executes the returned actions through the existing concrete transport
 //     functions. The arbiter decides WHEN; the shell does HOW.
-//   - Native timeline tests assert on DomeLinkArbiterActions directly — no
+//   - Native timeline tests assert on DomeLinkArbiterActions directly  --  no
 //     fakes, no mocks needed.
 //
 // This header is Arduino-free and compiles in the native test environment.

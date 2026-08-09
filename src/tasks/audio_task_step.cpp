@@ -1,7 +1,7 @@
 // =============================================================================
 // src/tasks/audio_task_step.cpp
 //
-// Audio Step Core (ADR 0014) — pure per-tick decisions for audioTask().
+// Audio Step Core (ADR 0014)  --  pure per-tick decisions for audioTask().
 // See include/audio_task_step.h for the calling contract.
 // =============================================================================
 
@@ -38,7 +38,7 @@ static void applyIntentToState(AudioStepState& state, const AudioPlaybackIntent&
             state.randomMode = false;
             break;
         case AUDIO_PLAYBACK_INTENT_TRACK_STOP:
-            // randomMode intentionally untouched — Track Stop preserves idle mood
+            // randomMode intentionally untouched  --  Track Stop preserves idle mood
             // (ADR 0010); the cadence bump arrives via updateLastPlayMs below.
             break;
         case AUDIO_PLAYBACK_INTENT_SET_VOLUME:
@@ -65,7 +65,7 @@ static void applyIntentToState(AudioStepState& state, const AudioPlaybackIntent&
 }
 
 // -----------------------------------------------------------------------------
-// Phase 1 — tick
+// Phase 1  --  tick
 // -----------------------------------------------------------------------------
 AudioStepTickActions audioStepTick(AudioStepState& state, const AudioStepTickInputs& in) {
     AudioStepTickActions actions{};
@@ -77,7 +77,7 @@ AudioStepTickActions audioStepTick(AudioStepState& state, const AudioStepTickInp
             actions.stopReason = AUDIO_STEP_STOP_DISABLED;
         }
         state.lastAudioEnabled = false;
-        // randomMode must be cleared here — if it stays true, the random timer
+        // randomMode must be cleared here  --  if it stays true, the random timer
         // would fire the moment audio is re-enabled.
         if (state.randomMode) {
             state.randomMode = false;
@@ -108,7 +108,7 @@ AudioStepTickActions audioStepTick(AudioStepState& state, const AudioStepTickInp
 }
 
 // -----------------------------------------------------------------------------
-// Phase 2 — init result
+// Phase 2  --  init result
 // -----------------------------------------------------------------------------
 AudioStepInitResultActions audioStepInitResult(AudioStepState& state, bool beginOk,
                                                bool catalogCapable) {
@@ -131,7 +131,7 @@ AudioStepInitResultActions audioStepInitResult(AudioStepState& state, bool begin
 }
 
 // -----------------------------------------------------------------------------
-// Phase 3 — command
+// Phase 3  --  command
 // -----------------------------------------------------------------------------
 static void resolvePlayback(AudioStepState& state, const AudioStepCommandInputs& in,
                             const AudioPlaybackRequest& request, bool withConfig,
@@ -298,7 +298,7 @@ AudioStepCommandActions audioStepCommand(AudioStepState& state,
 }
 
 // -----------------------------------------------------------------------------
-// Phase 4 — idle
+// Phase 4  --  idle
 // -----------------------------------------------------------------------------
 AudioStepIdleActions audioStepIdle(AudioStepState& state, const AudioStepIdleInputs& in) {
     AudioStepIdleActions actions{};

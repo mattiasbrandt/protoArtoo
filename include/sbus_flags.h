@@ -1,13 +1,13 @@
 // =============================================================================
 // include/sbus_flags.h
 //
-// Pure SBUS flags-byte parsing — no hardware, no FreeRTOS.
+// Pure SBUS flags-byte parsing  --  no hardware, no FreeRTOS.
 // Extracted for testability. Used by SbusDecoder and native tests.
 //
 // SBUS flags byte bit assignments (per SBUS specification):
 //   bit0 = CH17 digital channel
 //   bit1 = CH18 digital channel
-//   bit2 = lost_frame (single frame missed — not a failsafe condition)
+//   bit2 = lost_frame (single frame missed  --  not a failsafe condition)
 //   bit3 = failsafe   (receiver has lost TX signal)
 // =============================================================================
 #pragma once

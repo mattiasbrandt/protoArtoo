@@ -84,6 +84,6 @@ struct RcDiagnosticsSnapshot {
 void captureRcDiagnosticsSnapshot(RcDiagnosticsSnapshot* out);
 bool populateRcDiagnosticsJson(JsonDocument& doc, const RcDiagnosticsSnapshot& snap);
 
-// Exposed for unit testing — determines whether a source is active in a given mode.
+// Exposed for unit testing  --  determines whether a source is active in a given mode.
 bool rcSourceEnabledForMode(RcBindingSource source, RcInputMode mode, bool enableRcCh1,
                             bool enableRcCh2, bool anyPwmEnabled, bool useCh2);

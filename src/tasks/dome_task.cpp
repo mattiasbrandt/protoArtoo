@@ -1,12 +1,12 @@
 // =============================================================================
 // src/tasks/dome_task.cpp
 //
-// DomeTask — LEDC PWM control for dome rotation ESC (ISDT ESC70).
+// DomeTask  --  LEDC PWM control for dome rotation ESC (ISDT ESC70).
 //
 // ESC PWM semantics (standard RC PWM, 50 Hz):
-//   1000µs = full reverse / max brake
-//   1500µs = neutral / stop  ← safe idle output; emitted on disable, estop, timeout
-//   2000µs = full forward
+//   1000us = full reverse / max brake
+//   1500us = neutral / stop  <- safe idle output; emitted on disable, estop, timeout
+//   2000us = full forward
 //
 // All pulse limits (neutral, min, max) and speed limit percentage are read from
 // persisted config (cfg_dome_neutral_us, cfg_dome_min_pulse_us,
@@ -14,7 +14,7 @@
 // can be trimmed via the Setup page without a firmware rebuild.
 //
 // ESC configuration (running mode, throttle calibration, PWM frequency, voltage
-// cutoff) is handled exclusively via the ISD Go APP over Bluetooth — out of scope
+// cutoff) is handled exclusively via the ISD Go APP over Bluetooth  --  out of scope
 // for this firmware. Throttle calibration via the ISD Go APP is a hardware
 // bring-up prerequisite before the dome motor will respond correctly to our PWM.
 //
@@ -67,7 +67,7 @@ static void setDomeSpeed(float speed) {
 
 // -----------------------------------------------------------------------------
 // setDomeNeutral()
-// Output the configured neutral pulse — safe idle output.
+// Output the configured neutral pulse  --  safe idle output.
 // Used on disable, estop, timeout, and startup.
 // -----------------------------------------------------------------------------
 static void setDomeNeutral() {
@@ -114,7 +114,7 @@ void domeTaskInit() {
 // Main dome task loop.
 //
 // Feature toggle: when cfg_enable_dome is false, the task holds neutral output
-// and discards all queued commands — the ESC is inert.
+// and discards all queued commands  --  the ESC is inert.
 // -----------------------------------------------------------------------------
 void domeTask(void* pvParameters) {
     (void)pvParameters;
@@ -152,7 +152,7 @@ void domeTask(void* pvParameters) {
         taskEXIT_CRITICAL(&robotStateMux);
         bool enabled = configCacheDomeEnabled();
 
-        // Feature toggle: dome disabled — hold neutral, drain queue, do nothing
+        // Feature toggle: dome disabled  --  hold neutral, drain queue, do nothing
         if (!enabled) {
             if (currentSpeed != 0.0f) {
                 currentSpeed = 0.0f;
@@ -195,7 +195,7 @@ void domeTask(void* pvParameters) {
             PA_LOG_INFO(TAG, "Sleep mode cleared — dome command processing resumed");
         }
 
-        // Safety: estop — force neutral while emergency stopped
+        // Safety: estop  --  force neutral while emergency stopped
         if (estop && currentSpeed != 0.0f) {
             currentSpeed = 0.0f;
             setDomeNeutral();
@@ -237,7 +237,7 @@ void domeTask(void* pvParameters) {
             }
         }
 
-        // Check for command timeout (failsafe) — output neutral, never float
+        // Check for command timeout (failsafe)  --  output neutral, never float
         if (hasCommand && (millis() - lastCommandMs) > DOME_COMMAND_TIMEOUT_MS) {
             if (currentSpeed != 0.0f) {
                 currentSpeed = 0.0f;
@@ -278,7 +278,7 @@ void domeTask(void* pvParameters) {
                         : 0UL;
 
                 if (!rndWasActive) {
-                    // Conditions just became active — set initial pause before first move.
+                    // Conditions just became active  --  set initial pause before first move.
                     rndState    = DOME_RND_PAUSING;
                     rndNextMs   = now + (uint32_t)rndPauseMin * 1000UL +
                                   (rndPauseRangeMs > 0 ? (esp_random() % rndPauseRangeMs) : 0UL);

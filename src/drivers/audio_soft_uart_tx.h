@@ -7,7 +7,7 @@
 // Both AUDIO_SOFT_UART and AUDIO_CHIRP drivers include this header to avoid
 // duplicating bit-bang logic without creating a cross-driver dependency.
 //
-// Not a public header — only audio driver .cpp files should include this.
+// Not a public header  --  only audio driver .cpp files should include this.
 //
 // Interrupt safety
 // ----------------
@@ -34,17 +34,17 @@
 
 #include "config.h"
 
-// Bit period for 9600 baud: 1,000,000 / 9600 ≈ 104 µs
+// Bit period for 9600 baud: 1,000,000 / 9600 ~= 104 us
 static constexpr uint32_t SOFT_UART_BIT_US = 104;
 
 // portMUX for Core 0 critical section around each byte transmission.
-// One instance per driver TU (safe — at most one driver compiled at a time).
+// One instance per driver TU (safe  --  at most one driver compiled at a time).
 static portMUX_TYPE s_softUartMux = portMUX_INITIALIZER_UNLOCKED;
 
 // -----------------------------------------------------------------------------
 // softUartTxBegin()
 // Configure PIN_AUDIO_TX as a digital output and set idle HIGH.
-// UART idle state is logic HIGH — must be called once before any byte TX.
+// UART idle state is logic HIGH  --  must be called once before any byte TX.
 // -----------------------------------------------------------------------------
 inline void softUartTxBegin() {
     pinMode(PIN_AUDIO_TX, OUTPUT);
@@ -56,13 +56,13 @@ inline void softUartTxBegin() {
 // Transmit one byte via software UART: start bit, 8 data bits LSB-first,
 // stop bit. Uses delayMicroseconds() for bit timing at 9600 baud.
 //
-// Wrapped in a portMUX critical section — see file header for rationale.
+// Wrapped in a portMUX critical section  --  see file header for rationale.
 // Core 0 is non-preemptible for the duration (~1.04 ms).
 // -----------------------------------------------------------------------------
 inline void softUartTxByte(uint8_t b) {
     portENTER_CRITICAL(&s_softUartMux);
 
-    // Start bit — pull low for one bit period
+    // Start bit  --  pull low for one bit period
     digitalWrite(PIN_AUDIO_TX, LOW);
     delayMicroseconds(SOFT_UART_BIT_US);
 
@@ -72,7 +72,7 @@ inline void softUartTxByte(uint8_t b) {
         delayMicroseconds(SOFT_UART_BIT_US);
     }
 
-    // Stop bit — return high for one bit period
+    // Stop bit  --  return high for one bit period
     digitalWrite(PIN_AUDIO_TX, HIGH);
     delayMicroseconds(SOFT_UART_BIT_US);
 

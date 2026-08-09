@@ -1,7 +1,7 @@
 // =============================================================================
 // include/failsafe_gate.h
 //
-// FailsafeGate — unified failsafe state machine.
+// FailsafeGate  --  unified failsafe state machine.
 // All failsafe state is owned by this module; external code routes through it.
 // Thread-safe: all methods acquire an internal spinlock.
 //

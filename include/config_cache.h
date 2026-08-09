@@ -1,7 +1,7 @@
 // =============================================================================
 // include/config_cache.h
 //
-// Runtime config cache — accessor layer for live config state.
+// Runtime config cache  --  accessor layer for live config state.
 //
 // Design:
 // - configCacheRead/Apply manage the live config cache (mutex-protected).
@@ -51,7 +51,7 @@ void configCacheReadActiveWifi(WifiConfig* out);
 // configCacheSetActiveWifiRecovery / configCacheReadActiveWifiRecovery: was
 // Network Recovery Mode (ADR 0015) the posture actually entered at the last
 // boot? Recovery temporarily exposes WiFi Provisioning without
-// touching Device WiFi Settings, so this flag — not activeWifiConfig — is
+// touching Device WiFi Settings, so this flag  --  not activeWifiConfig  --  is
 // the read surface's source of truth for "the controller is in recovery
 // right now." Set once by the WiFi bootstrap shell alongside
 // configCacheSetActiveWifi().
