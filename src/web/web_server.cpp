@@ -489,7 +489,7 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     }
 
     // Conditionally append enabled-component keys - disabled components are absent,
-    // not emitted as false placeholders (Phase 3 status/dashboard contract).
+    // not emitted as false placeholders (status/dashboard contract).
     bool ok = written > 0 && written < (int)bufferSize - 1;
     if (ok) {
         char* pos = buffer + written;

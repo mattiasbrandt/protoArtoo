@@ -603,7 +603,7 @@ void handleRcMapPost(WebRequest& req) {
     configCacheRead(&working);
 
     // RcMapApplyResult is small (~150 bytes); static kept for consistency
-    // with the ADR 0011 slice 1 out-parameter convention.
+    // with the ADR 0011 apply-core out-parameter convention.
     static RcMapApplyResult result;
     rcMapApply(params, &working, &result);
     if (!result.ok) {

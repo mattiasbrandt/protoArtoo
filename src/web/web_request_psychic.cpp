@@ -59,7 +59,7 @@ PsychicHttpServer s_server;
 // PsychicEventSource is deliberately not used. Its send retries
 // httpd_socket_send() in an unbounded loop against a socket whose send timeout
 // defaults to five seconds, so one client that stops reading stops the
-// broadcast for everyone -- the defect this slice exists to remove -- and it
+// broadcast for everyone -- a defect being addressed here -- and it
 // builds every message through a std::string plus an Arduino String copy, two
 // allocations per client per event on a stack whose whole problem is heap.
 //
@@ -179,9 +179,8 @@ void evictStream(int socket, StreamSendOutcome outcome) {
     if (outcome == StreamSendOutcome::kEvictDeadline) {
         g_webSseEvicted = g_webSseEvicted + 1u;
         g_webSseEvictLastMs = millis();
-        // Warn, not debug: this is the whole point of the slice and it is rare
-        // by design, so a run that hit it must say so without anyone having to
-        // have raised the log level in advance.
+        // Warn, not debug: this event is rare by design, and a run that hits it
+        // must say so without anyone having to have raised the log level in advance.
         PA_LOG_WARN(TAG, "event stream client %d missed the %u ms send deadline; dropped", socket,
                     (unsigned)PA_SSE_SEND_DEADLINE_MS);
     } else {
