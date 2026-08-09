@@ -64,7 +64,9 @@ void rcDispatchDome(int domeRawFiltered, const RcMappingConfig& mapping, bool do
 
 void rcDispatchAudioTrigger(const char* audioTrigger) {
     if (audioTrigger != nullptr) {
-        parseMarcduinoCommand(audioTrigger);
+        if (!parseMarcduinoCommand(audioTrigger)) {
+            PA_LOG_DEBUG(TAG, "audio trigger command not recognized: %s", audioTrigger);
+        }
     }
 }
 
@@ -138,7 +140,9 @@ void rcDispatchSingleAction(const RcActionResult& res) {
     }
 
     if (res.marcduinoCmd[0] != '\0') {
-        parseMarcduinoCommand(res.marcduinoCmd);
+        if (!parseMarcduinoCommand(res.marcduinoCmd)) {
+            PA_LOG_DEBUG(TAG, "marcduino command not recognized: %s", res.marcduinoCmd);
+        }
     }
 }
 

@@ -21,6 +21,7 @@ workflows.
 - Shared state truth: `include/robot_state.h`
 - Action registry: `docs/action-registry.yaml`
 - REST API contracts: `docs/api.md`
+- Core error-signalling conventions: `docs/core-error-signalling.md`
 - Crash/coredump + heap troubleshooting procedures: `docs/troubleshooting.md`
 - SBUS protocol truth: `docs/spec-sheets/sbus-protocol.md`
 - ESP-IDF5 RMT driver truth: `docs/spec-sheets/rmt-esp32-idf5.md`

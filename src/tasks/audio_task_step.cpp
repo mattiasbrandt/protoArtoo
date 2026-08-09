@@ -8,6 +8,7 @@
 #include "audio_task_step.h"
 
 #include "audio_config_map.h"  // audioSlotForDollar ($-command table, ADR 0013)
+#include "logging.h"
 
 // -----------------------------------------------------------------------------
 // Intent state effects.
@@ -157,6 +158,14 @@ AudioStepCommandActions audioStepCommand(AudioStepState& state,
                 break;
             }
             AudioAction action = parseAudioDollar(cmd.dollar, *in.named);
+
+            // Log unrecognized $ commands (Class 1: input validation failure).
+            // See docs/core-error-signalling.md for convention.
+            if (action.type == AUDIO_ACTION_NONE && cmd.dollar[0] == '$' &&
+                cmd.dollar[1] != '\0') {
+                PA_LOG_WARN("audio", "unrecognized $ command: %s", cmd.dollar);
+            }
+
             AudioPlaybackRequest request{};
             if (action.type == AUDIO_ACTION_PLAY_TRACK) {
                 AudioPlaybackSlot slot = audioSlotForDollar(cmd.dollar);
