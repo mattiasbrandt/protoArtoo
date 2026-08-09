@@ -154,6 +154,18 @@ When adding a function that can fail:
 5. **For Core 1 real-time paths:** Use Class 4 (log-and-continue) or Class 3 (counter + rate-limited log). Avoid blocking or allocation.
 6. **For web handlers:** Catch core failures at the seam, map to HTTP status/error, and call `webSendJsonError()`.
 
+## Core Inconsistencies Resolved (Issue #129)
+
+This document was created to address five core error-signalling inconsistencies found in the 2026-08-09 standing-state review. Status:
+
+| Inconsistency Class | Module | Instance | Resolution |
+|---|---|---|---|
+| Input validation (Class 1) | parseAudioDollar | unrecognized $ commands | Aligned: WARN log added in `src/tasks/audio_task_step.cpp` (issue #129, slice 2) |
+| Operational failure (Class 2) | configSave* | rollback paths | Aligned: ERROR logs added in `src/web/api_audio.cpp` lines 510, 589 (issue #129, slice 3) |
+| Repeated failure (Class 3) | queue send/drop | drops to queues | Exempted: Already aligned by issue #128 via `queue_drop_tracker.h` — the "bool + counter + rate-limited log" reference implementation cited above |
+| Operational failure (Class 2) | parseMarcduinoCommand | RC dispatch calls | Aligned: DEBUG logs added in `src/rc_dispatcher_helpers.cpp` (issue #129, slice 4) |
+| Benign failure (Class 4) | audio task | unrecognized AUDIO_ACTION_NONE | Exempted: Expected behavior for forward-incompatible or unrecognized commands; silent handling is correct per Class 4 (log-and-continue). No change needed. |
+
 ## Related
 
 - [api.md](api.md) — REST/HTTP error contract
