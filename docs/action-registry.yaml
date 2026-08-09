@@ -2620,6 +2620,24 @@ entries:
   requires_web_control: false
   nvs_key: null
 
+- name: system.api.get-admission-trace
+  display_name: Get Admission Trace
+  description: >
+    Ring buffer of admission decisions — shed count, reasons, and admission
+    state snapshots. Compiled in only when PA_ADMISSION_TRACE=1 (issue #97
+    floor decision diagnostics).
+  domain: system
+  type: action
+  marcduino_cmd: null
+  api_path: /api/admission/trace
+  sse_event: null
+  cpp_enum: null
+  cpp_file: src/web/api_admission_trace.cpp
+  sources: [ web_api ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: null
+
 - name: system.api.get-validation
   display_name: Get Validation Snapshot
   description: Consolidated hardware-validation snapshot (Phase 4 closure checks)
