@@ -202,6 +202,7 @@ bool executeManualCommand(const char* raw) {
 
         case MC_CLEAR_ESTOP:
             failsafeClearEstop();
+            requestStatusBroadcastNow();
             return true;
 
         case MC_ENABLE_WEB_CONTROL:
