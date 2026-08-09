@@ -14,6 +14,7 @@
 #include "../../include/api_dome.h"
 #include "../../include/api_drive.h"
 #include "../../include/api_estop.h"
+#include "../../include/api_events.h"
 #include "../../include/api_identity.h"
 #include "../../include/api_logs.h"
 #include "../../include/api_profiler.h"
@@ -36,6 +37,12 @@ void webRegisterSeamRoutes() {
     webRegisterRoute("/api/actions", WebMethod::kGet, handleActionsGet);
     webRegisterRoute("/api/actions/test", WebMethod::kPost, handleActionsTestPost);
     webRegisterRoute("/api/logs", WebMethod::kGet, handleLogsGet);
+
+    // The live update stream. Registered here as a seam route handler like any
+    // other endpoint, using the per-request upgrade point the seam provides.
+    // ADR 0021 documents that endpoints stay in this table; ADR 0020 led to the
+    // per-request beginEventStream() the seam now offers.
+    webRegisterRoute("/api/events", WebMethod::kGet, handleEventsGet);
 
     // The admission counters and heap readings in this payload are what the
     // load harness polls and what a comparison run is scored against, so the
