@@ -487,8 +487,7 @@ esp_err_t admissionMiddleware(PsychicRequest* request, PsychicResponse* response
     httpd_req_t* rawForDeadline = request->request();
     const int deadlineSocket = httpd_req_to_sockfd(rawForDeadline);
     // webResponseDeadlineArm is declared in web_response_deadline.h (policy core)
-    // s_responseDeadline is implemented in web_response_deadline_psychic.cpp
-    extern WebResponseDeadline s_responseDeadline;
+    // s_responseDeadline is declared in web_backend_psychic.h (cross-unit interface)
     webResponseDeadlineArm(&s_responseDeadline, deadlineSocket);
 
     // Estop is admitted but never counted: a safety command must not be able to

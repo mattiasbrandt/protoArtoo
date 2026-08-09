@@ -18,9 +18,17 @@
 #include <esp_err.h>
 #include <esp_http_server.h>
 
+#include "web_admission.h"
+#include "web_response_deadline.h"
+
 // =============================================================================
 // Admission orchestration (web_admission_psychic.cpp)
 // =============================================================================
+
+// Admission state (implementation detail, exposed for event stream close callback).
+extern WebSocketCensus s_census;
+extern WebResponseDeadline s_responseDeadline;
+extern void publishCensus();
 
 // Register connection-admission callback and initialize rate limiter/census.
 // Called during server pre-begin() configuration.

@@ -39,11 +39,6 @@
 
 static const char* TAG = "WebServer";
 
-// Admission state and response deadline state, implemented in separate units
-extern WebSocketCensus s_census;
-extern void publishCensus();
-extern WebResponseDeadline s_responseDeadline;
-
 namespace {
 
 struct WebRequestPsychicCtx {
@@ -590,10 +585,11 @@ void initPsychicWebServer() {
     // merely before the first request.
     webDeadlineInitialize();
 
-    // Request admission middleware, in order: connection callbacks first,
-    // then response deadline guard, then request admission middleware.
-    webAdmissionRegisterMiddleware(s_server);
+    // Admission trace configuration (must be before middleware registration).
     webAdmissionTraceInit();
+
+    // Request admission middleware (registered last, after all guards are ready).
+    webAdmissionRegisterMiddleware(s_server);
 
     // Event stream infrastructure. The server task learns a subscribed socket
     // has gone through the close callback chain, which is why the registry
