@@ -105,7 +105,11 @@
   const request = async (path, opts = {}) => {
     await acquireRequestSlot();
     try {
-      return await performRequest(path, { ...opts, _isSection: true });
+      // Only mark as cancellable if section loader is currently active.
+      // page_bootstrap.js sets window.PABootstrap.isSectionLoaderActive during
+      // runSection(), so only the loader's requests (and no other module's) are cancellable.
+      const _isSection = window.PABootstrap?.isSectionLoaderActive ?? false;
+      return await performRequest(path, { ...opts, _isSection });
     } finally {
       releaseRequestSlot();
     }

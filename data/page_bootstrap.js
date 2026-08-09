@@ -817,10 +817,20 @@
       done({ kind: "http", status: 501 });
       return;
     }
+    // Set flag so that web_api.js knows requests made during this loader
+    // are section requests and should be cancellable by abortRequest().
+    // All other module requests (footer, status, etc.) remain non-cancellable.
+    if (!window.PABootstrap) window.PABootstrap = {};
+    const previousFlag = window.PABootstrap.isSectionLoaderActive;
+    window.PABootstrap.isSectionLoaderActive = true;
+
     Promise.resolve()
       .then(() => load())
       .then(() => done(null))
-      .catch((error) => done(error));
+      .catch((error) => done(error))
+      .finally(() => {
+        window.PABootstrap.isSectionLoaderActive = previousFlag;
+      });
   };
 
   // ---------------------------------------------------------------------------
