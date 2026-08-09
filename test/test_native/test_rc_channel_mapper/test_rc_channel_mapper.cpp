@@ -8,6 +8,7 @@
 #include <unity.h>
 
 #include "rc_channel_mapper.h"
+#include "rc_channel_mapper_stages.h"
 #include "rc_mapping.h"
 
 void setUp() {
@@ -521,6 +522,76 @@ void test_dual_sbus_mode_mismatch() {
 }
 
 // =============================================================================
+// Mapper Stage Tests
+// =============================================================================
+
+void test_stage_drive_controls_center_sticks() {
+    RcChannelSnapshot snap = makePwmSnapshot(1500, 1500);
+    RcMappingConfig cfg = makeDefaultPwmConfig();
+    RcControlIntent intent = {};
+
+    bool result = rcMapDriveControls(snap, cfg, false, &intent);
+
+    TEST_ASSERT_TRUE(result);
+    TEST_ASSERT_EQUAL_INT16(0, intent.driveSpeed);
+    TEST_ASSERT_EQUAL_INT16(0, intent.driveSteer);
+}
+
+void test_stage_drive_controls_disabled() {
+    RcChannelSnapshot snap = makePwmSnapshot(1500, 1500);
+    RcMappingConfig cfg = makeDefaultPwmConfig();
+    cfg.driveSpeed = disabledRcBinding();  // Disable drive speed binding
+    RcControlIntent intent = {};
+
+    bool result = rcMapDriveControls(snap, cfg, false, &intent);
+
+    TEST_ASSERT_FALSE(result);
+    TEST_ASSERT_EQUAL_INT16(0, intent.driveSpeed);
+    TEST_ASSERT_EQUAL_INT16(0, intent.driveSteer);
+}
+
+void test_stage_dome_control_center_stick() {
+    RcChannelSnapshot snap = makePwmSnapshot(1500, 1500);
+    RcMappingConfig cfg = makeDefaultPwmConfig();
+    cfg.enableDome = true;
+    cfg.domeSpeed = defaultPwmBinding(3);  // Dome on CH3
+    RcControlIntent intent = {};
+
+    bool result = rcMapDomeControl(snap, cfg, false, &intent);
+
+    TEST_ASSERT_FALSE(result);  // CH3 not in snapshot
+    TEST_ASSERT_EQUAL_INT16(0, intent.domeSpeed);
+}
+
+void test_stage_servo_controls_arm1() {
+    RcChannelSnapshot snap = makePwmSnapshot(1500, 1500);
+    RcMappingConfig cfg = makeDefaultPwmConfig();
+    cfg.enableArm1 = true;
+    cfg.arm1 = defaultPwmBinding(3);  // Arm1 on CH3
+    RcControlIntent intent = {};
+
+    bool result = rcMapServoControls(snap, cfg, false, &intent);
+
+    TEST_ASSERT_FALSE(result);  // CH3 not in snapshot (only CH1-CH2)
+    TEST_ASSERT_EQUAL_INT(RC_SERVO_NO_CHANGE, intent.arm1Cmd);
+}
+
+void test_stage_audio_trigger_rising_edge() {
+    RcChannelSnapshot snap = makePwmSnapshot(1500, 1500);
+    RcMappingConfig cfg = makeDefaultPwmConfig();
+    cfg.enableSound = true;
+    cfg.sound = defaultPwmBinding(4);  // Sound on CH4
+    cfg.prevSoundPressed = false;
+    RcControlIntent intent = {};
+
+    bool result = rcMapAudioTrigger(snap, cfg, false, &intent);
+
+    TEST_ASSERT_FALSE(result);  // CH4 not in snapshot
+    TEST_ASSERT_NULL(intent.audioTrigger);
+    TEST_ASSERT_FALSE(intent.soundPressed);
+}
+
+// =============================================================================
 // Run All Tests
 // =============================================================================
 
@@ -578,6 +649,13 @@ int main() {
     RUN_TEST(test_dual_sbus_center_sticks);
     RUN_TEST(test_dual_sbus_drive_forward_dome_speed);
     RUN_TEST(test_dual_sbus_mode_mismatch);
+
+    // Mapper stages (independently testable seams)
+    RUN_TEST(test_stage_drive_controls_center_sticks);
+    RUN_TEST(test_stage_drive_controls_disabled);
+    RUN_TEST(test_stage_dome_control_center_stick);
+    RUN_TEST(test_stage_servo_controls_arm1);
+    RUN_TEST(test_stage_audio_trigger_rising_edge);
 
     return UNITY_END();
 }

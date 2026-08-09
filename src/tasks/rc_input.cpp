@@ -24,21 +24,18 @@
 #include <esp_system.h>
 #include <esp_task_wdt.h>
 
-#include "../../include/audio_task.h"
-#include "../../include/sequence_dispatcher.h"
 #include "../../include/commanded_modes.h"
 #include "../../include/config.h"
 #include "../../include/config_cache.h"
-#include "../../include/dome_link.h"
 #include "../../include/dome_rx_parser.h"
 #include "../../include/drive_arbiter.h"
 #include "../../include/drive_speed_preset.h"
 #include "../../include/failsafe_gate.h"
 #include "../../include/ledc_pwm.h"
 #include "../../include/logging.h"
-#include "../../include/marcduino_helpers.h"
 #include "../../include/queue_drop_tracker.h"
 #include "../../include/rc_channel_mapper.h"
+#include "../../include/rc_dispatcher_helpers.h"
 #include "../../include/rc_input_processor.h"
 #include "../../include/rc_mapping_cache.h"
 #include "../../include/rc_pwm_helpers.h"
@@ -78,45 +75,6 @@ static void storePwmDiagnostics(const uint32_t pulses[6], const bool enabled[6])
     taskEXIT_CRITICAL(&robotStateMux);
 }
 
-static bool queueServoSequence(uint8_t sequenceId, CommandSource source) {
-    ServoCommand cmd = {};
-    cmd.type = SERVO_CMD_SEQUENCE;
-    cmd.sequenceId = sequenceId;
-    cmd.source = source;
-    cmd.timestampMs = millis();
-    if (xQueueSend(servoCmdQueue, &cmd, 0) != pdTRUE) {
-        logQueueDrop(QUEUE_SERVO_CMD, "servo sequence command");
-        return false;
-    }
-    return true;
-}
-
-static bool queueDomeCommand(float speed, CommandSource source) {
-    DomeCommand domeCmd = {};
-    domeCmd.speed = speed;
-    domeCmd.source = source;
-    domeCmd.timestampMs = millis();
-    if (xQueueSend(domeCmdQueue, &domeCmd, 0) != pdTRUE) {
-        logQueueDrop(QUEUE_DOME_CMD, "dome command");
-        return false;
-    }
-    return true;
-}
-
-static bool queueServoCommand(uint8_t armId, ServoCommandType type, uint16_t positionUs,
-                              CommandSource source) {
-    ServoCommand cmd = {};
-    cmd.armId = armId;
-    cmd.type = type;
-    cmd.positionUs = positionUs;
-    cmd.source = source;
-    cmd.timestampMs = millis();
-    if (xQueueSend(servoCmdQueue, &cmd, 0) != pdTRUE) {
-        logQueueDrop(QUEUE_SERVO_CMD, "servo command");
-        return false;
-    }
-    return true;
-}
 
 // Build an RcMappingConfig from the config cache for the given RC input mode.
 // prevSoundPressed is left false; callers must set it from their static state.
@@ -237,19 +195,13 @@ static void dispatchProcessorOutput(const RcProcessorOutput& output, const RcMap
         !output.stationaryLockedByTrigger) {
         commandedSetStationary(false, SRC_SBUS);
     }
-    driveArbiterSubmit(DriveSource::RC, output.backbone.driveSpeed, output.backbone.driveSteer,
-                       millis());
+    rcDispatchDrive(output.backbone.driveSpeed, output.backbone.driveSteer, false);
 
     // Backbone: dome (filtered raw value, re-calibrated)
-    if (output.domeFiltered) {
-        queueDomeCommand(applyRcAnalogCalibration(output.domeRawFiltered, mapping.domeSpeed, nullptr),
-                         SRC_SBUS);
-    }
+    rcDispatchDome(output.domeRawFiltered, mapping, output.domeFiltered);
 
     // Backbone: audio trigger
-    if (output.backbone.audioTrigger != nullptr) {
-        parseMarcduinoCommand(output.backbone.audioTrigger);
-    }
+    rcDispatchAudioTrigger(output.backbone.audioTrigger);
 
     // Backbone: servo commands (arm1 = index 0, arm2 = index 1)
     auto dispatchServo = [](RcServoCommand cmd, uint8_t armId) {
@@ -258,72 +210,21 @@ static void dispatchProcessorOutput(const RcProcessorOutput& output, const RcMap
         uint16_t positionUs = SERVO_PULSE_NEUTRAL_US;
         if (cmd == RC_SERVO_OPEN)    servoType = SERVO_CMD_OPEN;
         else if (cmd == RC_SERVO_CLOSE) servoType = SERVO_CMD_CLOSE;
-        queueServoCommand(armId, servoType, positionUs, SRC_SBUS);
+        ServoCommand servoCmd = {};
+        servoCmd.armId = armId;
+        servoCmd.type = servoType;
+        servoCmd.positionUs = positionUs;
+        servoCmd.source = SRC_SBUS;
+        servoCmd.timestampMs = millis();
+        if (xQueueSend(servoCmdQueue, &servoCmd, 0) != pdTRUE) {
+            logQueueDrop(QUEUE_SERVO_CMD, "servo command");
+        }
     };
     dispatchServo(output.backbone.arm1Cmd, 0);
     dispatchServo(output.backbone.arm2Cmd, 1);
 
     // Tier 2 trigger results
-    for (size_t i = 0; i < RC_TRIGGER_MAX; ++i) {
-        const RcActionResult& res = output.triggerResults[i];
-        if (res.audioTrack != 0) {
-            const RcTriggerBinding& b = triggers[i];
-            const char* catLabel = randomSoundCategoryLabel(b.target);
-            // Log format: [RC] sound <BUS> CH<N> <category> -> track <N>
-            // Distinguishes operator-triggered sounds from droid-initiated ones ([INT]/[DOME]).
-            PA_LOG_INFO(TAG, "[RC] sound %s CH%u %s -> track %u",
-                        rcBindingSourceToLabel(b.source), (unsigned)b.channel,
-                        catLabel ? catLabel : robotActionIdToString(b.target),
-                        (unsigned)res.audioTrack);
-            if (!audioQueuePlayTrack(res.audioTrack, SRC_SBUS))
-                PA_LOG_WARN(TAG, "audio track dropped: track=%u queue full", (unsigned)res.audioTrack);
-        }
-        if (res.audioDollarCmd[0] != '\0') {
-            const RcTriggerBinding& b = triggers[i];
-            PA_LOG_INFO(TAG, "[RC] sound %s CH%u %s -> seq %s",
-                        rcBindingSourceToLabel(b.source), (unsigned)b.channel,
-                        robotActionIdToString(b.target), res.audioDollarCmd);
-            if (!audioQueueDollar(res.audioDollarCmd, SRC_SBUS))
-                PA_LOG_WARN(TAG, "droid sequence audio dropped: %s", res.audioDollarCmd);
-        }
-        if (res.servoIndex >= 0) {
-            if (res.servoIsSequence) {
-                if (!queueServoSequence(res.servoSequenceId, SRC_SBUS))
-                    PA_LOG_WARN(TAG, "droid sequence servo queue full: seq=%u",
-                                (unsigned)res.servoSequenceId);
-            } else {
-                ServoCommandType cmd = res.servoOpen ? SERVO_CMD_OPEN : SERVO_CMD_CLOSE;
-                queueServoCommand((uint8_t)res.servoIndex, cmd, 0, SRC_SBUS);
-            }
-        }
-        if (res.domeTxCmd[0] != '\0') {
-            if (strncmp(res.domeTxCmd, "DM:", 3) == 0) {
-                // DM:* — route through sequence choke point regardless of dome link state.
-                // sequenceStart() handles catalog, alias, and fallback dispatch.
-                if (!sequenceStart(res.domeTxCmd, SRC_SBUS))
-                    PA_LOG_WARN(TAG, "sequence start failed: %s", res.domeTxCmd);
-            } else if (domeConnected()) {
-                if (!domeQueueTx(res.domeTxCmd))
-                    PA_LOG_WARN(TAG, "dome tx queue full: %s", res.domeTxCmd);
-            }
-        }
-        if (res.marcduinoCmd[0] != '\0') {
-            parseMarcduinoCommand(res.marcduinoCmd);
-        }
-        if (res.triggerEstop) {
-            failsafeTrigger(FailsafeLayer::ESTOP);
-        }
-        if (res.setSleep) {
-            commandedSetSleep(res.newSleepMode, SRC_SBUS);
-            requestStatusBroadcastNow();
-        }
-        if (res.setStationary) {
-            commandedSetStationary(res.newStationaryMode, SRC_SBUS);
-        }
-        if (res.setSpeedPreset) {
-            applySpeedPresetRuntime(res.newSpeedPreset);
-        }
-    }
+    rcDispatchTriggerResults(output, triggers);
 }
 
 static constexpr uint32_t kOneShotEdgeDebounceMs = 120;
@@ -370,40 +271,10 @@ static void processTriggerAction(RobotActionId target, const char* payload, bool
 
     RcActionResult res = rcDispatchAction(ap);
 
-    if (res.audioTrack != 0) {
-        if (!audioQueuePlayTrack(res.audioTrack, SRC_SBUS)) {
-            PA_LOG_WARN(TAG, "audio track dropped: track=%u queue full", (unsigned)res.audioTrack);
-        }
-    }
-    if (res.audioDollarCmd[0] != '\0') {
-        if (!audioQueueDollar(res.audioDollarCmd, SRC_SBUS)) {
-            PA_LOG_WARN(TAG, "droid sequence audio dropped: %s", res.audioDollarCmd);
-        }
-    }
-    if (res.servoIndex >= 0) {
-        if (res.servoIsSequence) {
-            if (!queueServoSequence(res.servoSequenceId, SRC_SBUS)) {
-                PA_LOG_WARN(TAG, "droid sequence servo queue full: seq=%u",
-                            (unsigned)res.servoSequenceId);
-            }
-        } else {
-            ServoCommandType cmd = res.servoOpen ? SERVO_CMD_OPEN : SERVO_CMD_CLOSE;
-            queueServoCommand((uint8_t)res.servoIndex, cmd, 0, SRC_SBUS);
-        }
-    }
-    if (res.domeTxCmd[0] != '\0') {
-        if (strncmp(res.domeTxCmd, "DM:", 3) == 0) {
-            if (!sequenceStart(res.domeTxCmd, SRC_SBUS))
-                PA_LOG_WARN(TAG, "sequence start failed: %s", res.domeTxCmd);
-        } else if (domeConnected()) {
-            if (!domeQueueTx(res.domeTxCmd)) {
-                PA_LOG_WARN(TAG, "dome tx queue full: %s", res.domeTxCmd);
-            }
-        }
-    }
-    if (res.marcduinoCmd[0] != '\0') {
-        parseMarcduinoCommand(res.marcduinoCmd);
-    }
+    // Dispatch audio, servo, dome, marcduino commands
+    rcDispatchSingleAction(res);
+
+    // Handle system modes (estop, sleep, stationary, speed preset)
     if (res.triggerEstop) {
         failsafeTrigger(FailsafeLayer::ESTOP);
     }
