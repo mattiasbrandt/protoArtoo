@@ -21,6 +21,7 @@
 #include <unistd.h>
 
 #include "../../include/logging.h"
+#include "../../include/web_backend_psychic.h"
 #include "../../include/web_busy_page.h"
 #include "../../include/web_response_deadline.h"
 

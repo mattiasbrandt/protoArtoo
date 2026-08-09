@@ -30,6 +30,7 @@
 #include "../../include/api_upload.h"
 #include "../../include/logging.h"
 #include "../../include/web_admission.h"
+#include "../../include/web_backend_psychic.h"
 #include "../../include/web_event_stream.h"
 #include "../../include/web_request.h"
 #include "../../include/web_response_deadline.h"
@@ -581,20 +582,16 @@ void initPsychicWebServer() {
 
     // Connection Admission callbacks. Installed in the documented pre-begin()
     // window where server.config is an ordinary ESP-IDF httpd_config.
-    // Implemented in web_admission_psychic.cpp.
-    extern void webAdmissionRegisterCallbacks(PsychicHttpServer& server);
     webAdmissionRegisterCallbacks(s_server);
 
     // Response-phase deadline initialization. Idle until a request is admitted.
     // The send override installed per socket from the admission callback reads
     // this record, so it has to be sane before the first connection rather than
-    // merely before the first request. Implemented in web_response_deadline_psychic.cpp.
-    extern void webDeadlineInitialize();
+    // merely before the first request.
     webDeadlineInitialize();
 
-    // Request admission middleware. Implemented in web_admission_psychic.cpp.
-    extern void webAdmissionRegisterMiddleware(PsychicHttpServer& server);
-    extern void webAdmissionTraceInit();
+    // Request admission middleware, in order: connection callbacks first,
+    // then response deadline guard, then request admission middleware.
     webAdmissionRegisterMiddleware(s_server);
     webAdmissionTraceInit();
 

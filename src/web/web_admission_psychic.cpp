@@ -23,6 +23,7 @@
 #include "../../include/api_admission_trace.h"
 #include "../../include/logging.h"
 #include "../../include/web_admission.h"
+#include "../../include/web_backend_psychic.h"
 #include "../../include/web_busy_page.h"
 #include "../../include/web_event_stream.h"
 #include "../../include/web_response_deadline.h"
@@ -297,10 +298,6 @@ esp_err_t admissionOpenCallback(httpd_handle_t hd, int sockfd) {
     // is chained: PsychicHttpServer installs no send override of its own on the
     // plain HTTP server (only its HTTPS sibling does, through esp_https_server),
     // and there is no getter to recover one if it did.
-    //
-    // Forward declared below; implemented in web_response_deadline_psychic.cpp
-    extern int webResponseDeadlineSendOverride(httpd_handle_t hd, int sockfd, const char* buf,
-                                               size_t len, int flags);
     if (httpd_sess_set_send_override(hd, sockfd, webResponseDeadlineSendOverride) != ESP_OK) {
         // Not fatal -- the connection works, it is simply unguarded -- but it
         // must not pass silently, because the whole guard would then be absent
@@ -424,8 +421,6 @@ esp_err_t admissionMiddleware(PsychicRequest* request, PsychicResponse* response
         const bool navigation = webIsMainFrameNavigation(secFetchMode, accept);
         if (navigation) {
             g_webBusyRecoveryPagesServed = g_webBusyRecoveryPagesServed + 1u;
-            // webBusyRecoveryPageSend is implemented in web_response_deadline_psychic.cpp
-            extern bool webBusyRecoveryPageSend(httpd_req_t * raw);
             webBusyRecoveryPageSend(raw);
         }
 
@@ -571,11 +566,9 @@ size_t copyRequestLifecycleTrace(RequestLifecycleEntry* out, size_t maxEntries) 
 // Functions to register the middleware callbacks with the server.
 // (Called from web_request_psychic.cpp during server initialization.)
 
-void webAdmissionRegisterCallbacks(PsychicHttpServer& server,
-                                   esp_err_t (**vendorOpenFn)(httpd_handle_t, int)) {
+void webAdmissionRegisterCallbacks(PsychicHttpServer& server) {
     // Capture and chain the vendor's open callback
-    *vendorOpenFn = server.config.open_fn;
-    s_vendorOpenFn = *vendorOpenFn;
+    s_vendorOpenFn = server.config.open_fn;
     server.config.open_fn = admissionOpenCallback;
 
     // Initialize admission state
