@@ -1,22 +1,35 @@
 // =============================================================================
 // include/drive_frame_emit.h
 //
-// Pure decision logic for drive frame emission continuity.
+// Drive tick decision step (ADR 0014) — pure decision logic for frame emission.
 // Extracted from drive.cpp for native testability (ADR 0005).
+//
+// The driveTickDecide() function encodes the zero-frame continuity invariant:
+// a frame to the hoverboard is emitted every tick regardless of failsafe state
+// or command freshness. The function takes these inputs to allow comprehensive
+// testing across all state combinations; the decision is unconditionally true.
 // =============================================================================
 #pragma once
 
 #include <cstdint>
 
-// Drive frame emission decision.
-// Returns true if a frame should be emitted on this tick.
-// SAFETY: Zero-frame continuity — the hoverboard receives a frame every tick
-// regardless of failsafe state, command availability, or other conditions.
-// This prevents drift if command input is stalled or failsafe is active.
+// Drive tick action set — what the loop should do this iteration
+struct DriveTickActions {
+    bool shouldEmitFrame = false;  // Zero-frame rule: ALWAYS true
+    int16_t speed = 0;             // Arbiter-resolved speed (with failsafe applied)
+    int16_t steer = 0;             // Arbiter-resolved steer (with failsafe applied)
+};
+
+// Drive tick decision inputs — all state the decision needs
+struct DriveTickInputs {
+    bool failsafeActive = false;   // Any failsafe layer is active
+    int16_t arbiterSpeed = 0;      // From DriveArbiter (pre-failsafe value)
+    int16_t arbiterSteer = 0;      // From DriveArbiter (pre-failsafe value)
+};
+
+// Drive tick decision step: take arbiter output and failsafe state,
+// decide whether to emit frame and what speed/steer to send.
 //
-// Inputs encode the state the decision should NOT gate on:
-//   failsafeActive: whether any failsafe layer is currently active (frame sent anyway)
-//   commandFresh:   whether the latest motion command is still within timeout (frame sent anyway)
-//
-// Both inputs are provided so the decision can be tested against all state combinations.
-bool driveFrameShouldEmit(bool failsafeActive, bool commandFresh);
+// SAFETY: shouldEmitFrame is UNCONDITIONALLY true regardless of any input.
+// The zero-frame rule requires sending a frame (even zero-valued) every tick.
+DriveTickActions driveTickDecide(const DriveTickInputs& in);
