@@ -67,6 +67,7 @@ void driveTask(void* pvParameters) {
 
     uint8_t frameBuf[8];
     const TickType_t period = pdMS_TO_TICKS(1000 / DRIVE_FREQ_HZ);  // 20 ms at 50 Hz
+    TickType_t lastWakeTime = xTaskGetTickCount();  // Initialize for vTaskDelayUntil
     bool hwmLogged = false;
 
     bool zeroOutputRecorded = false;
@@ -187,6 +188,6 @@ void driveTask(void* pvParameters) {
         PA_LOG_DEBUG(TAG, "frame spd:%d str:%d fs:%d", speed, steer, (int)failsafeActive);
 #endif
 
-        vTaskDelay(period);
+        vTaskDelayUntil(&lastWakeTime, period);
     }
 }
