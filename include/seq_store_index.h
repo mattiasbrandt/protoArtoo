@@ -1,7 +1,7 @@
 // =============================================================================
 // include/seq_store_index.h
 //
-// In-memory Learned Sequence name index (issue #2 slice 3, ADR 0006). PURE:
+// In-memory Learned Sequence name index (ADR 0006). PURE:
 // a fixed static table of sequence metadata, no FreeRTOS/LittleFS/JSON. The
 // firmware I/O layer (seq_store.cpp) populates it at boot/CRUD by scanning
 // /data/seq/; the pure routing seam (sequenceLookup) and listings query it, so

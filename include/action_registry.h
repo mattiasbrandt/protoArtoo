@@ -8,7 +8,7 @@
 //
 // Used by:
 //   - GET /api/actions (src/web/api_actions.cpp) — serves JSON to the UI
-//   - slice:e RC mapping UI dropdowns
+//   - RC mapping UI dropdowns
 //
 // To add a new bindable action:
 //   1. Add the entry to docs/action-registry.yaml.

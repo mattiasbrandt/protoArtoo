@@ -1,7 +1,7 @@
 // =============================================================================
 // include/mood_sound_mapping.h
 //
-// T11 helpers for mood-to-sound-category mapping.
+// Mood-to-sound-category mapping helpers.
 // - Select random tracks from weighted category pools via 12-bit masks
 // - Resolve per-mood mask selection
 // - Preserve flat random-range fallback behavior
@@ -120,7 +120,7 @@ inline bool selectRandomTrackFromCategoryMask(const SoundCategoryRange* ranges, 
     return false;
 }
 
-// Legacy flat-range random selection (pre-T11 behavior), including max<min guard.
+// Legacy flat-range random selection (before mood categories), including max<min guard.
 inline uint16_t selectRandomTrackFromFlatRange(uint16_t randMin, uint16_t randMax,
                                                uint32_t randomValue) {
     if (randMax < randMin) {

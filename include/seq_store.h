@@ -1,8 +1,8 @@
 // =============================================================================
 // include/seq_store.h
 //
-// Learned Sequence runtime store — LittleFS I/O layer (issue #2 slice 3c,
-// ADR 0006). FIRMWARE-ONLY (LittleFS + FreeRTOS mutex); the pure name index and
+// Learned Sequence runtime store - LittleFS I/O layer (ADR 0006).
+// FIRMWARE-ONLY (LittleFS + FreeRTOS mutex); the pure name index and
 // routing seam live in seq_store_index.{h,cpp} / sequence_catalog.cpp so the
 // lookup precedence stays native-testable.
 //

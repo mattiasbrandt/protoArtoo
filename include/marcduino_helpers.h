@@ -74,7 +74,7 @@ inline uint8_t marcduino_panel_to_arm_id_mv(int panel) {
 
 // -----------------------------------------------------------------------------
 // marcduino_mv_value_to_pulse_us()
-// Convert Phase 3 `:MVxxdddd` values to servo pulse width in microseconds.
+// Convert `:MVxxdddd` values to servo pulse width in microseconds.
 //
 // Marcduino direct numeric semantics:
 //   - 0000-0180 => degrees across the configured servo pulse range

@@ -4,7 +4,7 @@
 
 #include "robot_state.h"
 
-// Drive speed-limit mode buckets for T09 system sound events.
+// Drive speed-limit mode buckets for system sound events.
 // Base thresholds:
 // - Slow:   scale < 0.34
 // - Normal: 0.34 <= scale < 0.67

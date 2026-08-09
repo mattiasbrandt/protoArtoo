@@ -1,7 +1,7 @@
 // =============================================================================
 // src/seq_json.cpp
 //
-// Learned Sequence JSON format v1 parse/serialize (issue #2 slice 3, ADR 0006).
+// Learned Sequence JSON format v1 parse/serialize (ADR 0006).
 // See header for the format. Uses ArduinoJson (bounded per-call document).
 // =============================================================================
 

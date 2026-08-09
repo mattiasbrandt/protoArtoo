@@ -10,7 +10,7 @@
 // otherwise.
 //
 // AudioModuleState interface, queryModuleState(), and getCachedState() remain
-// fully intact. See T66 for UART2 contention handling.
+// fully intact. UART2 is shared with the dome link; see audio_mp3trigger.h for the contention pattern.
 //
 // For compatibility with DY-SV5W firmware variants, this driver sends the
 // checksum-frame dialect used by DYPlayer/BetterDuino.

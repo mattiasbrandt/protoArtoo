@@ -1,7 +1,7 @@
 // =============================================================================
 // src/seq_store_index.cpp
 //
-// Pure in-memory Learned Sequence name index (issue #2 slice 3, ADR 0006).
+// Pure in-memory Learned Sequence name index (ADR 0006).
 // See header. No locking here — the firmware I/O layer (seq_store.cpp) holds a
 // mutex across index mutation + the matching file operation so the index and
 // filesystem never diverge under concurrent web/dispatcher access.

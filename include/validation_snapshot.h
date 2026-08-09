@@ -1,7 +1,7 @@
 // =============================================================================
 // include/validation_snapshot.h
 //
-// ValidationSnapshot + JSON builder contract for Phase 4 hardware validation.
+// ValidationSnapshot + JSON builder contract for hardware-validation evidence.
 //
 // captureValidationSnapshot(): copies relevant validation state under robotStateMux.
 // populateValidationJson(): pure function that builds ArduinoJson payload from

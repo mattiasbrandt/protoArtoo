@@ -1,7 +1,7 @@
 // =============================================================================
 // src/seq_store.cpp
 //
-// Learned Sequence runtime store — LittleFS I/O (issue #2 slice 3c, ADR 0006).
+// Learned Sequence runtime store - LittleFS I/O (ADR 0006).
 // Firmware-only; see header for the contract. Pure validation/index/parse live
 // in protocol_check / seq_json / seq_store_index and are tested natively.
 // =============================================================================
@@ -206,7 +206,7 @@ void seqStoreInit() {
             continue;
         }
         if (!checkResult.ok) {
-            // Parseable but fails current contract (e.g. pre-Slice-1 :SM usage).
+            // Parseable but fails current contract (e.g. legacy :SM usage).
             // Index as invalid so the UI can surface it for repair/export/delete.
             PA_LOG_WARN(TAG, "index invalid %s: %s (%s)", file,
                         checkResult.message, checkResult.field);

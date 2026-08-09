@@ -2,11 +2,11 @@
 // include/protocol_check.h
 //
 // Protocol Check — the safety validator every Learned Sequence passes on save
-// (issue #2 slice 3, ADR 0006). Pure module: no Arduino, FreeRTOS, filesystem,
+// (ADR 0006). Pure module: no Arduino, FreeRTOS, filesystem,
 // or JSON dependencies, so the full accept/reject matrix is natively testable.
 //
 // Protocol Check operates on the parsed staging representation (the same
-// SeqStep / SeqStepParams model the slice-2 engine executes), NOT on raw JSON.
+// SeqStep / SeqStepParams model the sequence engine executes), NOT on raw JSON.
 // JSON parsing (seq_json.cpp) feeds it; the runtime store (seq_store.cpp) calls
 // it before committing a file. This keeps validation independent of the wire
 // format and lets the engine stay the single interpreter.

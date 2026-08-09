@@ -24,14 +24,14 @@ constexpr uint8_t PIN_HOVERBOARD_RX = 17;
 
 // -----------------------------------------------------------------------------
 // UART2 (Serial2) — Dome serial link (AstroPixelsPlus via slip ring, PCB S3)
-// Phase 4 only — not used in Phase 1.
+// Dome control UART (S3, slip ring).
 // -----------------------------------------------------------------------------
 constexpr uint8_t PIN_DOME_TX = 33;
 constexpr uint8_t PIN_DOME_RX = 34;
 
 // -----------------------------------------------------------------------------
 // Audio module serial (DY-SV5W, PCB S2)
-// TX primary; RX available for status/ACK (optional, Phase 4).
+// TX primary; RX used for status/ACK where the module supports it.
 // -----------------------------------------------------------------------------
 constexpr uint8_t PIN_AUDIO_TX = 26;
 constexpr uint8_t PIN_AUDIO_RX = 35;  // input-only GPIO — RX only, cannot be TX

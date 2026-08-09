@@ -1,7 +1,7 @@
 // =============================================================================
 // src/protocol_check.cpp
 //
-// Protocol Check implementation (issue #2 slice 3, ADR 0006). See header for
+// Protocol Check implementation (ADR 0006). See header for
 // the contract. Pure: depends only on the sequence model, the catalog lookup
 // (for retrain rules), and the audio policy enums (for category bounds).
 // =============================================================================
