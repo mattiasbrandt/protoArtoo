@@ -367,11 +367,11 @@
     window.PAUtils.showFeedback(configFeedback, `Settings loaded at ${new Date().toLocaleTimeString()}`, "success");
   };
 
-  const loadConfig = async () => {
+  const loadConfig = async ({ signal = null } = {}) => {
     if (!window.PAApi) throw new Error("API helper unavailable");
     window.PAUtils.showFeedback(configFeedback, "Loading settings...");
     try {
-      const result = await window.PAApi.get("/api/config", { timeoutMs: 3000 });
+      const result = await window.PAApi.get("/api/config", { timeoutMs: 3000, signal });
       renderConfig(result.data);
     } catch (error) {
       window.PAUtils.showFeedback(configFeedback, `Failed to load settings: ${window.PAApi.messageFor(error)}`, "error");

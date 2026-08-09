@@ -325,9 +325,9 @@
     setSleepUi(!!payload.sleepMode);
   };
 
-  const refreshStatusOnce = async () => {
+  const refreshStatusOnce = async ({ signal = null } = {}) => {
     if (!window.PAApi) return;
-    const result = await window.PAApi.get("/api/status", { cache: "no-store", timeoutMs: 3000 });
+    const result = await window.PAApi.get("/api/status", { cache: "no-store", timeoutMs: 3000, signal });
     applyStatus(result.data);
   };
 
@@ -557,10 +557,10 @@
     }
   };
 
-  const loadRecentLogs = async () => {
+  const loadRecentLogs = async ({ signal = null } = {}) => {
     if (!window.PAApi || !logConsole) throw new Error("API or console unavailable");
     if (logLines.length > 0) return;
-    const result = await window.PAApi.get("/api/logs", { cache: "no-store", timeoutMs: 3000 });
+    const result = await window.PAApi.get("/api/logs", { cache: "no-store", timeoutMs: 3000, signal });
     const historyLines = String(result.data ?? "")
       .split(/\r?\n/)
       .map((line) => normalizeLogMessage(line.trimEnd()))
@@ -591,9 +591,9 @@
     logLevelPill.setAttribute("aria-label", `Log level: ${info.label}. Click to cycle to the next level.`);
   };
 
-  const loadLogLevel = async () => {
+  const loadLogLevel = async ({ signal = null } = {}) => {
     if (!window.PAApi || !logLevelPill) throw new Error("API or pill unavailable");
-    const result = await window.PAApi.get("/api/config", { cache: "no-store", timeoutMs: 3000 });
+    const result = await window.PAApi.get("/api/config", { cache: "no-store", timeoutMs: 3000, signal });
     const level = Number(result.data?.system?.logLevel);
     if (!LOG_LEVELS[level]) {
       throw new Error(`Unknown log level: ${level}`);
@@ -647,9 +647,9 @@
     }
   });
 
-  const loadCommandTokens = async () => {
+  const loadCommandTokens = async ({ signal = null } = {}) => {
     if (!window.PAApi) throw new Error("API unavailable");
-    const result = await window.PAApi.get("/api/actions", { cache: "no-store", timeoutMs: 5000 });
+    const result = await window.PAApi.get("/api/actions", { cache: "no-store", timeoutMs: 5000, signal });
     if (!Array.isArray(result.data)) {
       throw new Error("Action registry response is not an array");
     }
@@ -809,11 +809,11 @@
   // if the fetch fails. For the stream-supported case, this section only runs
   // if the stream has no cached value. For the fallback case, it ensures the
   // page shows data before polling begins.
-  const loadInitialStatus = async () => {
+  const loadInitialStatus = async ({ signal = null } = {}) => {
     const hasStream = window.PAStatusStream?.isSupported();
     const hasCachedStatus = hasStream && window.PAStatusStream?.getLastStatus();
     if (!hasStream || !hasCachedStatus) {
-      await refreshStatusOnce();
+      await refreshStatusOnce({ signal });
     }
   };
 

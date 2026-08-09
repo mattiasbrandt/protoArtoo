@@ -190,12 +190,12 @@
   };
 
 
-  const loadEscConfig = async () => {
+  const loadEscConfig = async ({ signal = null } = {}) => {
     if (!window.PAApi) throw new Error("API helper unavailable");
     showFeedback(escFeedback, "Loading motor settings...");
 
     try {
-      const result = await window.PAApi.get("/api/config", { timeoutMs: 3000 });
+      const result = await window.PAApi.get("/api/config", { timeoutMs: 3000, signal });
       renderEscConfigSnapshot(result.data);
       const ts = new Date().toLocaleTimeString();
       showFeedback(escFeedback, `Motor settings loaded at ${ts}`, "success");

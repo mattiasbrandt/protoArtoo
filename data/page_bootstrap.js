@@ -815,22 +815,18 @@
     const load = sectionLoaders.get(name);
     if (!load) {
       done({ kind: "http", status: 501 });
-      return;
+      return null;
     }
-    // Set flag so that web_api.js knows requests made during this loader
-    // are section requests and should be cancellable by abortRequest().
-    // All other module requests (footer, status, etc.) remain non-cancellable.
-    if (!window.PABootstrap) window.PABootstrap = {};
-    const previousFlag = window.PABootstrap.isSectionLoaderActive;
-    window.PABootstrap.isSectionLoaderActive = true;
-
+    // One AbortController per section run, owned here. The loader receives
+    // this run's signal and forwards it to the requests it issues, so
+    // cancelling the run aborts exactly those requests and can never touch
+    // another module's traffic - no other code holds this controller.
+    const controller = new AbortController();
     Promise.resolve()
-      .then(() => load())
+      .then(() => load({ signal: controller.signal }))
       .then(() => done(null))
-      .catch((error) => done(error))
-      .finally(() => {
-        window.PABootstrap.isSectionLoaderActive = previousFlag;
-      });
+      .catch((error) => done(error));
+    return controller;
   };
 
   // ---------------------------------------------------------------------------
@@ -841,6 +837,10 @@
   // ---------------------------------------------------------------------------
   let startedActiveId = null;
   let lastActive = null;
+  // The controller for the section run currently in flight, keyed by the
+  // reducer attempt id that started it. Cancellation goes through this handle
+  // only, so it can only ever hit the run this host itself started.
+  let activeSectionRun = null;
 
   const settle = (id, error, retryAfterMs) => {
     // A result arriving after its deadline already expired belongs to a
@@ -864,8 +864,12 @@
         }
       });
     } else if (active.kind === "section") {
-      // Abort any in-flight API request
-      window.PAApi?.abortRequest?.();
+      // Abort only the run this host started for that attempt; the controller
+      // is private to the run, so no other module's request can be affected.
+      if (activeSectionRun && activeSectionRun.id === active.id) {
+        activeSectionRun.controller.abort();
+        activeSectionRun = null;
+      }
     }
   };
 
@@ -884,7 +888,8 @@
     if (active.kind === "resource") {
       loadScript(active.name, (error) => settle(id, error));
     } else if (active.kind === "section") {
-      runSection(active.name, (error) => settle(id, error));
+      const controller = runSection(active.name, (error) => settle(id, error));
+      activeSectionRun = controller ? { id, controller } : null;
     }
   };
 
