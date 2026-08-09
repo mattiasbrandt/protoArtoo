@@ -58,8 +58,11 @@ for it.
 - **Ordinary web-page load reliability.** A single page open can lose an early
   required script while the controller status endpoint remains reachable. The
   page then looks styled but stays on **Loading** with empty fields. A recovery
-  bootstrap experiment made this failure materially worse and has been rolled
-  back; the underlying HTTP resource-delivery pressure remains under
+  bootstrap experiment on the AsyncWebServer stack showed this failure could be
+  made worse by the admission guard and was rolled back. The current PsychicHttp
+  stack (#75 migration) has not yet demonstrated this issue under the measurement
+  scope defined in [ADR 0017](adr/0017-page-load-memory-recovery-acceptance-envelope.md).
+  The underlying HTTP resource-delivery pressure on this stack remains under
   investigation in [the web recovery map](https://github.com/mattiasbrandt/protoArtoo/issues/52).
 
 ## Release History

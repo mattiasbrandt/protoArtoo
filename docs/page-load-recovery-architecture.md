@@ -1,14 +1,14 @@
 # Page Load Recovery architecture and rollout handoff
 
-> **Partly superseded.** This document was written against the ESPAsyncWebServer /
-> AsyncTCP stack, which epic #75 replaced with PsychicHttp over ESP-IDF's
-> `esp_http_server`. The product decisions here still stand -- request classes,
-> Recovery Capacity boundary, page bootstrap, rollout order, verification matrix --
-> but every statement about *where the seam sits in the server* is obsolete, and the
-> vendor patch it refers to no longer exists. For the current mechanism read
+> **Mechanism updated for PsychicHttp.** This document describes the page-load recovery
+> architecture and rollout as currently implemented on ESP-IDF's `esp_http_server`
+> backend via PsychicHttp (epic #75 migration). The product decisions -- request classes,
+> Recovery Capacity, page bootstrap, rollout order, verification matrix -- remain as
+> designed. For architectural decisions see
 > [ADR 0021](adr/0021-project-owned-web-request-seam.md) (project-owned request seam),
-> [ADR 0022](adr/0022-connection-admission-on-esp-http-server.md) (admission) and
-> [ADR 0023](adr/0023-http-keep-alive-on-esp-http-server.md) (keep-alive).
+> [ADR 0022](adr/0022-connection-admission-on-esp-http-server.md) (connection and request admission),
+> [ADR 0024](adr/0024-response-phase-deadline-send-override.md) (response-phase deadline), and
+> [ADR 0016](adr/0016-busy-recovery-page-wire-contract.md) (Busy Recovery Page).
 
 Implementation-ready design for issue #52 ("Design safe web page-load recovery under
 constrained ESP32 memory"), synthesized once the lifecycle evidence, acceptance
@@ -35,58 +35,76 @@ It is a synthesis and pointer document, not a replacement for the ADRs it refere
 
 ## Admission seam
 
-Locked in ADR 0018. The vendor request lifecycle (`.pio/libdeps/*/ESPAsyncWebServer/`)
-parses method/URL, then calls `_attachHandler()` -- which runs every handler's
-`canHandle()` **before** `server.addMiddleware()`'s chain. For the static-file
-handler, `canHandle()` opens the file directly from LittleFS: real I/O before our
-admission middleware ever sees the request. This exact gap is already closed in
-production via `tools/patch_async_sse.py`'s existing `STATIC_OPEN_GUARD` (issue #21,
-round 4), which checks `ASYNC_STATIC_MIN_LARGEST_FREE_BLOCK` (9000) at the real
-`_fs.open()` seam and aborts before opening if the floor isn't cleared. No vendor
-replacement or broad patch is needed. One small gap remains open (not blocking): that
-guard checks the heap floor only, not the inflight/SSE caps, because those counters
-are internal-linkage `static` variables in a different translation unit
-(`src/web/web_server.cpp`) from the vendor-patched file. Closing it needs a small
-cross-TU `extern` accessor -- scoped as a short future follow-up.
+Implemented across ADRs 0021 (request seam), 0022 (connection and request admission),
+and 0024 (response-phase deadline). On ESP-IDF's `esp_http_server`, admission runs in
+two layers:
+
+**Connection Admission** runs from the server's socket-open callback
+(`src/web/web_admission_psychic.cpp`) before any HTTP byte is parsed. It is blind to
+the URL and makes a rate-limiting and heap-floor decision based only on the socket
+itself. Rejected connections are never opened by the HTTP server, allocating nothing
+at rejection time.
+
+**Request Admission** runs from a global middleware that chains before route matching
+and before a static file is opened. It runs once the HTTP request head has been read,
+so it can see the URL and distinguish estop from ordinary requests. This layer gates
+the same heap floors and the in-flight request cap that appear in the Request Classes
+section below.
+
+The two-layer split is forced, not stylistic (ADR 0022). At the socket layer there is
+no HTTP context -- no method, no URL -- so policies that depend on the request must
+live in the request layer. Both layers are needed because the socket layer alone
+cannot distinguish which requests should bypass the cap. The consequence of this design
+is that the estop bypass is exempt at the request layer but cannot be exempt at the
+socket layer; this is parity with the prior stack's behavior, not a regression
+(ADR 0022).
 
 ## Request classes and exception paths
 
-Three broad classes, matching the existing middleware
-(`src/web/web_server.cpp:1143-1242`):
+The request-admission middleware (`src/web/web_admission_psychic.cpp`) enforces three
+distinct classes:
 
 - **Diagnostic** (`/api/status`, `/api/profiler`, `/api/coredump`, and `/api/events`):
   gated by the looser `PA_ADMISSION_MIN_LARGEST_FREE_BLOCK_DIAG` floor (7500) so
-  operators can still see what's happening during a rejection window.
+  operators can still see what's happening during a rejection window. These routes
+  should remain reachable even under heap pressure.
 - **Non-diagnostic** (everything else -- static assets, ordinary `/api/*` calls,
   uploads): gated by `PA_ADMISSION_MIN_LARGEST_FREE_BLOCK` (9000) and the inflight cap
-  (`kMaxInflightRequests`).
-- **Estop** (`/api/estop`): the sole exception path -- bypasses admission entirely,
-  never counted, never refused. This is not new; it is the existing invariant this
-  architecture must preserve, not change.
+  (`PA_ADMISSION_MAX_INFLIGHT_REQUESTS`, typically 6).
+- **Estop** (`/api/estop`): the sole exception path -- bypasses request admission
+  entirely, never counted against the cap, never refused. This is not new; it is the
+  existing invariant this architecture must preserve, not change.
 
 ## Connection-lifetime accounting
 
-An admitted (non-refused) request remains counted until the server's disconnect
-completion point (`request->onDisconnect(...)`), because response, file, and TCP
-memory may still be live before then -- already implemented
-(`src/web/web_server.cpp:1221-1234`). A refused attempt is released immediately via
-`abort()` or the ADR 0016 Busy Recovery Page, never parked. This accounting boundary
-does not change as part of this rollout; the Common Page Bootstrap's client-side
-Bounded Page Attempt/Operation Deadline model is a client-side concept layered on top,
-not a replacement for it.
+An admitted (non-refused) request is counted in the inflight cap from the request
+middleware's entry point until the handler returns (via an RAII `InflightSlot` guard
+in `src/web/web_admission_psychic.cpp`). The server writes the response synchronously
+from the handler, so this timing covers the whole request-response cycle. A refused
+attempt is released immediately via connection closure or the Busy Recovery Page,
+never incremented against the cap. This accounting boundary does not change as part of
+this rollout; the Common Page Bootstrap's client-side Bounded Page Attempt/Operation
+Deadline model is a client-side concept layered on top, not a replacement for it.
 
 ## Recovery Capacity boundary
 
-Locked in ADR 0016. Exactly one reserved slot for the whole controller, shared across
-every resource class -- not one per class. All four existing refusal call sites
-(`refusedInflightCap`, `refusedSseCap`, `refusedHeapFloor`, `refusedHeapFloorDiag`)
-attempt to claim it via a shared `tryBusyResponse()` helper before falling back to
-`abort()`. The response is one `static constexpr` byte buffer (status line + headers +
-HTML/inline-script body), written directly to the raw `AsyncClient`, bypassing
-`AsyncWebServerResponse` entirely (a bare 503 through the normal response path is a
-proven crash site under this exact pressure). Carries `Retry-After: 5`
-(Recovery Retry Interval), grounded in #54's measured ~10s recovery time, not the
-generic 30-120s web-service overload convention.
+Specified in ADR 0016 (wire contract) and ADR 0024 (implementation on esp_http_server).
+When a request-admission floor or cap is exceeded, the middleware attempts to send a
+Busy Recovery Page (503 status, `Retry-After: 5` header) before closing the connection.
+
+The response is one `static constexpr` byte buffer (status line + headers + HTML body)
+written directly to the socket via `httpd_socket_send()`, bypassing the normal
+`PsychicResponse` chain. This allocates nothing at rejection time, which is load-bearing:
+the header-list allocation that breaks normal response paths under heap pressure (ADR 0016)
+is sidestepped by writing directly to the socket. After the buffer is sent, the
+middleware returns non-`ESP_OK` so the server closes the connection.
+
+On this stack (unlike the prior AsyncWebServer stack), no Recovery Capacity slot needs
+to be reserved: the server services all connections from a single task, so at most one
+response can be in flight at once, and the Busy Recovery Page reuse is structural rather
+than enforced. The wire contract (503 + `Retry-After: 5`) remains unchanged, grounded in
+#54's measured ~10s recovery time rather than the generic 30-120s web-service overload
+convention (ADR 0016).
 
 ## Common Page Bootstrap interface
 
