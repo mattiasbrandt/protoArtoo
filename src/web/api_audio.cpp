@@ -680,7 +680,7 @@ void handleAudioQueryPost(WebRequest& req) {
         webSendJsonError(req, 503, "audio command queue full");
         return;
     }
-    PA_LOG_INFO(TAG, "[AUDIO] POST /api/audio/query — status poll enqueued");
+    PA_LOG_INFO(TAG, "[AUDIO] POST /api/audio/query - status poll enqueued");
     req.send(200, "application/json", "{\"ok\":true}");
 }
 
@@ -836,7 +836,7 @@ void handleAudioPost(WebRequest& req) {
         }
         uint32_t track = 0;
         if (!parseUint32Value(trackRaw, &track) || track < 1 || track > 65535) {
-            webSendJsonError(req, 400, "track must be 1–65535");
+            webSendJsonError(req, 400, "track must be 1-65535");
             return;
         }
         if (!audioQueuePlayTrack((uint16_t)track, SRC_WEB_API)) {
@@ -868,7 +868,7 @@ void handleAudioPost(WebRequest& req) {
         }
         uint32_t level = 0;
         if (!parseUint32Value(levelRaw, &level) || level > 30) {
-            webSendJsonError(req, 400, "level must be 0–30");
+            webSendJsonError(req, 400, "level must be 0-30");
             return;
         }
 
@@ -922,5 +922,5 @@ void handleAudioPost(WebRequest& req) {
         return;
     }
 
-    webSendJsonError(req, 400, "unknown action — use play/stop/volume/dollar");
+    webSendJsonError(req, 400, "unknown action - use play/stop/volume/dollar");
 }

@@ -283,7 +283,7 @@ void profilerCollectHwm() {
         if (tmp[i].found) foundCount++;
     }
     if (foundCount == 0) {
-        PA_LOG_WARN(TAG, "HWM: all xTaskGetHandle() calls returned NULL — check configUSE_TRACE_FACILITY=1 in sdkconfig");
+        PA_LOG_WARN(TAG, "HWM: all xTaskGetHandle() calls returned NULL - check configUSE_TRACE_FACILITY=1 in sdkconfig");
     }
     taskENTER_CRITICAL(&s_hwmMux);
     for (int i = 0; i < PROF_TASK_MAX; i++) {
@@ -543,7 +543,7 @@ void handleProfilerTraceStopPost(WebRequest& req) {
     }
     heap_trace_stop();
     s_traceRunning = false;
-    PA_LOG_INFO(TAG, "Tier 3 heap trace stopped — dumping to serial");
+    PA_LOG_INFO(TAG, "Tier 3 heap trace stopped - dumping to serial");
     heap_trace_dump();
     req.send(200, "application/json", "{\"ok\":true,\"note\":\"dump written to serial log\"}");
 }

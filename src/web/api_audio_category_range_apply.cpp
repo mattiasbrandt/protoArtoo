@@ -113,12 +113,12 @@ void audioCategoryRangeApply(const ConfigParamSource& params, bool catalogSuppor
         return;
     }
     if (loTrack > 999U || hiTrack > 999U) {
-        setError(result, "range values must be 0–999");
+        setError(result, "range values must be 0-999");
         return;
     }
     if (!((loTrack == 0U && hiTrack == 0U) ||
           (loTrack >= 1U && hiTrack >= 1U && loTrack <= hiTrack))) {
-        setError(result, "range must be 0/0 or 1–999 with lo <= hi");
+        setError(result, "range must be 0/0 or 1-999 with lo <= hi");
         return;
     }
 
