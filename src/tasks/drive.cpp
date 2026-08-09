@@ -20,6 +20,7 @@
 #include "config_store.h"
 #include "drive_arbiter.h"
 #include "drive.h"
+#include "drive_frame_emit.h"
 #include "failsafe_gate.h"
 #include "hoverboard_uart.h"
 #include "logging.h"
@@ -136,8 +137,14 @@ void driveTask(void* pvParameters) {
         }
 
         // Send frame — always (zero-frame rule: never go silent, hoverboard must coast, not drift)
-        buildHoverboardFrame(frameBuf, steer, speed);
-        hoverSerial.write(frameBuf, sizeof(frameBuf));
+        // Frame emission must be unconditional: it should not be gated on failsafe state or
+        // command freshness. Pass both inputs to the decision function so the test can verify
+        // the decision returns true regardless of all possible state combinations.
+        bool commandFresh = !failsafeActive;  // if failsafe active, no recent command available
+        if (driveFrameShouldEmit(failsafeActive, commandFresh)) {
+            buildHoverboardFrame(frameBuf, steer, speed);
+            hoverSerial.write(frameBuf, sizeof(frameBuf));
+        }
 
         // Read hoverboard controller feedback — non-blocking, drains available bytes.
         // Decodes battery voltage, board temperature, and motor speed from the
