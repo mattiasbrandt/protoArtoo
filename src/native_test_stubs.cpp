@@ -637,4 +637,93 @@ void logQueueDrop(QueueDropId /*queueId*/, const char* /*description*/) {
     // tested directly and covers the rate-limiting logic that matters.
 }
 
+// =============================================================================
+// WiFi and LittleFS fake classes for native test builds (moved from
+// src/web/web_server.cpp). Note: String and millis() stubs are already in
+// test/stubs/include/Arduino.h, so only WiFi-specific and FreeRTOS stubs
+// are defined here.
+// =============================================================================
+
+class IPAddress {
+   public:
+    String toString() const {
+        return String();
+    }
+};
+
+using wl_status_t = int;
+using WiFiEvent_t = int;
+
+static const wl_status_t WL_CONNECTED = 3;
+static const int WIFI_AP = 1;
+static const int WIFI_AP_STA = 2;
+static const WiFiEvent_t ARDUINO_EVENT_WIFI_AP_START = 0;
+static const WiFiEvent_t ARDUINO_EVENT_WIFI_STA_START = 1;
+static const WiFiEvent_t ARDUINO_EVENT_WIFI_STA_GOT_IP = 2;
+static const WiFiEvent_t ARDUINO_EVENT_WIFI_STA_DISCONNECTED = 3;
+
+class LittleFSClass {
+   public:
+    bool begin(bool) {
+        return false;
+    }
+};
+
+class WiFiClass {
+   public:
+    wl_status_t status() const {
+        return 0;
+    }
+    long RSSI() const {
+        return 0;
+    }
+    IPAddress softAPIP() const {
+        return IPAddress();
+    }
+    IPAddress localIP() const {
+        return IPAddress();
+    }
+    int getMode() const {
+        return WIFI_AP;
+    }
+    int softAPgetStationNum() const {
+        return 0;
+    }
+    void onEvent(void (*)(WiFiEvent_t)) {
+    }
+    void mode(int) {
+    }
+    void softAP(const char*, const char* = nullptr) {
+    }
+    void begin(const char*, const char*) {
+    }
+};
+
+class ESPClass {
+   public:
+    unsigned long getFreeHeap() const {
+        return 0;
+    }
+    unsigned long getMinFreeHeap() const {
+        return 0;
+    }
+    unsigned long getMaxAllocHeap() const {
+        return 0;
+    }
+};
+
+static WiFiClass WiFi;
+static LittleFSClass LittleFS;
+static ESPClass ESP;
+
+// Note: pdMS_TO_TICKS is already defined in test/stubs/include/freertos/FreeRTOS.h
+// So we only define the task-related stubs here.
+
+inline void vTaskDelay(unsigned long) {
+}
+inline int xTaskCreatePinnedToCore(void (*)(void*), const char*, unsigned int, void*, unsigned int,
+                                   void*, int) {
+    return 0;
+}
+
 #endif
