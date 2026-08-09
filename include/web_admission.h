@@ -1,8 +1,12 @@
 // =============================================================================
 // include/web_admission.h
 //
-// Connection and request admission, owned by the project rather than by any
-// web stack. Two layers, deliberately:
+// ADMISSION POLICY: Pure decision functions for connection and request admission,
+// owned by the project rather than by any web stack. Independent of admission
+// event storage (include/web_admission_event_ring.h) and HTTP visibility
+// (include/api_admission_trace.h). This module contains only the policy.
+//
+// Two layers, deliberately:
 //
 //   Connection Admission  -- runs before any HTTP byte is parsed, from the
 //                            server's socket-open callback. Blind to the URL
@@ -18,6 +22,16 @@
 // values live in platformio.ini [flags_base] under their rationale, and the
 // device hookup passes them in.
 //
+// CONNECTION ADMISSION SESSION
+//
+// The calling layer uses a WebAdmissionSession handle to manage connection-level
+// admission state (rate limiter, heap sample cache, sampler function). The session
+// bundles these implementation details so the caller owns a single opaque reference
+// rather than threading through separate parameters. The pure decision functions
+// (webAcceptDecide, webAcceptRateLimiterTake, etc.) remain directly reachable for
+// native tests, keeping the decision logic independently testable per ADR 0011
+// (pure core, visible shell).
+//
 // See docs/adr/0018-early-admission-seam-feasibility.md for why admission has
 // to gate the costly work rather than run beside it, and CONTEXT.md for the
 // Connection Admission / Immediate Request Refusal distinction.
@@ -27,8 +41,41 @@
 #include <stddef.h>
 #include <stdint.h>
 
+// Forward declaration: the session is opaque to callers. Its definition lives
+// in the implementation to hide the rate limiter, cache, and sampler details.
+struct WebAdmissionSession;
+
+enum class WebAcceptDecision : unsigned char {
+    kAdmit,
+    kRejectRate,
+    kRejectHeap,
+};
+
+// Create and initialize a new admission session. Called once at server startup.
+// The sampler is a function that returns the largest free block; it is invoked
+// only when rate-pacing would not reject the connection, so a paced-out
+// connection never triggers a heap walk. Returns nullptr if allocation fails.
+WebAdmissionSession* webAdmissionSessionCreate(uint32_t nowMs, size_t (*sampler)(void* ctx),
+                                               void* samplerCtx);
+
+// Connection Admission decision from a session. Encapsulates the rate limiter,
+// heap cache, and sampler, so the caller owns one opaque reference rather than
+// threading through separate parameters.
+WebAcceptDecision webAdmissionSessionConnectionDecide(WebAdmissionSession* session,
+                                                      uint32_t nowMs, uint32_t burst,
+                                                      uint32_t perSecond,
+                                                      size_t minLargestFreeBlock);
+
+// Return the cached largest-free-block sample from the session. The session
+// manages caching; this returns the current cached value without refreshing.
+size_t webAdmissionSessionGetCachedHeapSample(WebAdmissionSession* session);
+
+// Return the age of the cached sample, in milliseconds, or kWebAdmissionTraceAgeUnknown
+// if the cache is unprimed. Used for tracing and diagnostics.
+uint32_t webAdmissionSessionGetHeapSampleAge(WebAdmissionSession* session, uint32_t nowMs);
+
 // -----------------------------------------------------------------------------
-// Connection Admission
+// Connection Admission -- pure functions (directly testable)
 // -----------------------------------------------------------------------------
 
 // Token bucket over accepted connections, in milli-tokens so a refill rate of
@@ -53,12 +100,6 @@ void webAcceptRateLimiterInit(WebAcceptRateLimiter* limiter, uint32_t nowMs, uin
 // does not produce a spurious refill or stall.
 bool webAcceptRateLimiterTake(WebAcceptRateLimiter* limiter, uint32_t nowMs, uint32_t burst,
                               uint32_t perSecond);
-
-enum class WebAcceptDecision : unsigned char {
-    kAdmit,
-    kRejectRate,
-    kRejectHeap,
-};
 
 // Produces the current largest free block. Passed in rather than called
 // directly so the decision stays host-testable, and so the decision itself
