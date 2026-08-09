@@ -47,3 +47,15 @@
 // the route in the log line that accompanies either.
 void webSendJsonDocument(WebRequest& req, const JsonDocument& doc, size_t maxBytes,
                          const char* tag, int code = 200);
+
+// Send a JSON error response with consistent wire shape: {"ok":false,"error":...}
+//
+// status is the HTTP status code (e.g., 400, 409, 423, 500).
+// errorToken is a stable machine-readable error identifier (e.g., "invalid input").
+// hint (optional) adds a "hint" field suggesting recovery (e.g., "POST /api/wake").
+// field (optional) adds a "field" field naming which parameter failed (e.g., "speed").
+//
+// All error responses are bounded to ~256 bytes, so no tag-based size ceiling is needed.
+// If hint or field is present, the caller must ensure it fits in the response.
+void webSendJsonError(WebRequest& req, int status, const char* errorToken,
+                      const char* hint = nullptr, const char* field = nullptr);

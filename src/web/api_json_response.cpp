@@ -36,3 +36,25 @@ void webSendJsonDocument(WebRequest& req, const JsonDocument& doc, size_t maxByt
     req.send(code, "application/json", body);
     free(body);
 }
+
+// =============================================================================
+
+void webSendJsonError(WebRequest& req, int status, const char* errorToken,
+                      const char* hint, const char* field) {
+    // Error responses are small and bounded; use a fixed-size allocation.
+    // Worst case: {"ok":false,"error":"...","hint":"...","field":"..."}
+    // ~256 bytes is safe.
+    StaticJsonDocument<256> doc;
+    doc["ok"] = false;
+    doc["error"] = errorToken;
+    if (hint != nullptr) {
+        doc["hint"] = hint;
+    }
+    if (field != nullptr) {
+        doc["field"] = field;
+    }
+
+    // Error responses must fit in 256 bytes; if they don't, something is wrong
+    // with the caller's input (field/hint too long).
+    webSendJsonDocument(req, doc, 256, "webSendJsonError", status);
+}
