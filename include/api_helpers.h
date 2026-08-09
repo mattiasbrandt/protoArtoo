@@ -67,37 +67,3 @@ bool parseBoolValue(const char* raw, bool* out);
 // other punctuation are rejected.
 // Returns false if the result is empty or does not fit in out.
 bool normalizeDroidName(const char* raw, char* out, size_t outSize);
-
-// -----------------------------------------------------------------------------
-// formatConfigJson()
-// Write a JSON config object into a caller-supplied buffer.
-// Pure function — no globals, no Arduino, no FreeRTOS.
-// params: buf               — output buffer (must not be null)
-//         bufSize           — size of buf in bytes
-//         speedLimitMax     — current speed limit cap
-//         webDriveTimeoutMs — current web drive timeout in ms
-// thread-safe: yes (pure function, no globals)
-// -----------------------------------------------------------------------------
-void formatConfigJson(char* buf, size_t bufSize, int16_t speedLimitMax, uint32_t webDriveTimeoutMs);
-
-// Format JSON response for sleep/wake control endpoints.
-// Output: {"ok":true,"sleepMode":<bool>,"changed":<bool>}
-// Returns false if the payload does not fit in buf.
-bool formatSleepControlJson(char* buf, size_t bufSize, bool sleepMode, bool changed);
-
-// Format JSON response for identity endpoints.
-// Output: {"droidName":"...","mdnsUseName":<bool>}
-// Returns false if the payload does not fit in buf.
-bool formatIdentityJson(char* buf, size_t bufSize, const char* droidName, bool mdnsUseName);
-
-// Format JSON response for speed preset endpoint.
-// Output: {"ok":true,"preset":"slow|normal|turbo","speedLimitMax":<0..600>}
-// Returns false if the payload does not fit in buf or preset is invalid.
-bool formatSpeedPresetResponseJson(char* buf, size_t bufSize, SpeedPresetId preset,
-                                   int16_t speedLimitMax);
-
-// Format JSON response for AUX LED endpoints.
-// Output: {"ok":true,"auxLed":{"pin":<u8>,"r":<u8>,"g":<u8>,"b":<u8>,"effect":"..."}}
-// Returns false if the payload does not fit in buf.
-bool formatAuxLedStateJson(char* buf, size_t bufSize, uint8_t pin, uint8_t r, uint8_t g,
-                           uint8_t b, const char* effect);

@@ -9,7 +9,7 @@
 #include <string.h>
 #include <unity.h>
 
-#include "api_helpers.h"
+#include "api_config.h"
 #include "log_buffer.h"
 
 static LogBuffer buf;
