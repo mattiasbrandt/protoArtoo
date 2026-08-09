@@ -13,6 +13,7 @@
 #include <stddef.h>
 
 #include "../../include/config.h"
+#include "../../include/config_cache.h"
 #include "../../include/config_store.h"
 #include "../../include/logging.h"
 #include "../../include/web_server.h"
