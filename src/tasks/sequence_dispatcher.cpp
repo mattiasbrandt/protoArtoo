@@ -32,10 +32,13 @@ static const char* TAG = "SEQ";
 
 // FreeRTOS/Arduino headers needed only for the task function
 #ifdef PA_NATIVE_TEST_STUBS
-// Native tests: provide stub implementation (no FreeRTOS queue in tests)
+// Native tests: provide stub implementation (no real FreeRTOS queue in tests)
 extern QueueHandle_t sequenceQueue;
 void sequenceDispatcherInit() {
-    // No-op stub: no FreeRTOS queue creation in native tests
+    // Initialize to a non-null value so native tests can pass sequences
+    // through the test API routes without "queue full" 503 errors.
+    // The native FreeRTOS stubs handle the rest.
+    sequenceQueue = (QueueHandle_t)0xDEADBEEF;
 }
 #else
 // Hardware build: include full dependencies
