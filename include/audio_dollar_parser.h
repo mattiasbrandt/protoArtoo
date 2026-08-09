@@ -53,7 +53,7 @@ constexpr uint16_t AUDIO_TRACK_HAPPY     = 3;    // $H — happy/greeting clip (
 // Random playback pool defaults (NVS-configurable)
 constexpr uint16_t AUDIO_RAND_TRACK_MIN   = 1;
 constexpr uint16_t AUDIO_RAND_TRACK_MAX   = 100;
-// Per-mood random playback intervals in seconds — NVS-configurable.
+// Per-mood random playback intervals in seconds - NVS-configurable.
 // AudioTask derives the active interval from robotState.activeMood + cfg_snd_int_*.
 // Mood 0 (unset) falls back to AUDIO_RAND_INT_FULL. An interval of 0 suppresses
 // random playback for that mood.

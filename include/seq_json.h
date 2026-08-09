@@ -1,7 +1,7 @@
 // =============================================================================
 // include/seq_json.h
 //
-// Learned Sequence JSON format v1 — parse and serialize (ADR 0006).
+// Learned Sequence JSON format v1 - parse and serialize (ADR 0006).
 // Maps 1:1 onto the SeqStep / SeqStepParams model so the sequence
 // engine is the single interpreter; no separate runtime representation.
 //
