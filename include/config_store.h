@@ -429,12 +429,6 @@ void configLoadDome(Preferences& prefs, DomeConfig* out);
 void configLoadSystem(Preferences& prefs, SystemConfig* out);
 void configLoadWifi(Preferences& prefs, WifiConfig* out);
 
-bool configAudioGetTrackByKey(const AudioConfig& config, const char* key, uint16_t* out);
-bool configAudioSetTrackByKey(AudioConfig* config, const char* key, uint16_t value);
-const char* configAudioCategoryCompanionKey(const char* key);
-bool configUpdateAudioMoodMasks(Preferences& prefs, uint16_t quiet, uint16_t mid, uint16_t full,
-                                uint16_t awakeplus);
-
 // configSave: Persist full ConfigSnapshot to NVS.
 // Caller opens Preferences with begin() before calling.
 // Holds no mutex and performs no robotState reads/writes.
@@ -448,45 +442,6 @@ bool configSaveServo(Preferences& prefs, const ServoConfig& config);
 bool configSaveDome(Preferences& prefs, const DomeConfig& config);
 bool configSaveSystem(Preferences& prefs, const SystemConfig& config);
 bool configSaveWifi(Preferences& prefs, const WifiConfig& config);
-
-// configCacheRead: Fill a ConfigSnapshot from the live config cache.
-// This uses configCacheMux, not robotStateMux. Runtime tasks should copy the
-// domain they need into stack locals, then release the cache lock before doing work.
-void configCacheRead(ConfigSnapshot* out);
-void configCacheReadDome(DomeConfig* out);
-bool configCacheDomeEnabled();
-void configCacheReadServo(ServoConfig* out);
-bool configCacheServoAnyEnabled();
-void configCacheReadWifi(WifiConfig* out);
-
-// configCacheSetActiveWifi / configCacheReadActiveWifi: the Device WiFi
-// Settings snapshot actually applied to WiFi hardware at the last boot or
-// restart, as opposed to configCacheReadWifi() which reflects the latest
-// persisted (possibly not-yet-applied) settings. The web read surface
-// compares the two via wifiConfigsDiffer() to report active-vs-pending state
-// for a Staged Network Switch (ADR 0015). Set once by the WiFi bootstrap
-// shell after it decides and enters a boot posture.
-void configCacheSetActiveWifi(const WifiConfig& cfg);
-void configCacheReadActiveWifi(WifiConfig* out);
-
-// configCacheSetActiveWifiRecovery / configCacheReadActiveWifiRecovery: was
-// Network Recovery Mode (ADR 0015) the posture actually entered at the last
-// boot? Recovery temporarily exposes WiFi Provisioning without
-// touching Device WiFi Settings, so this flag — not activeWifiConfig — is
-// the read surface's source of truth for "the controller is in recovery
-// right now." Set once by the WiFi bootstrap shell alongside
-// configCacheSetActiveWifi().
-void configCacheSetActiveWifiRecovery(bool recovering);
-bool configCacheReadActiveWifiRecovery();
-
-// configCacheApply: Replace the live config cache with a full snapshot.
-// Marks RobotState.rcConfigDirty so RcInputTask rebuilds cached mapping config.
-void configCacheApply(const ConfigSnapshot& snap);
-
-// configCurrentLogLevel: lightweight runtime log-level accessor used by logging.h.
-uint8_t configCurrentLogLevel();
-void configResolvedMdnsHostname(const SystemConfig& system, char* out, size_t outSize);
-void configCacheResolvedMdnsHostname(char* out, size_t outSize);
 
 // configValidate: Validate a scalar field value before writing.
 // Covers int, float, bool, and enum fields only.
