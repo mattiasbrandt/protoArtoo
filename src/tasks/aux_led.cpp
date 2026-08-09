@@ -15,6 +15,7 @@
 #include "config.h"
 #include "config_store.h"
 #include "logging.h"
+#include "queue_drop_tracker.h"
 #include "robot_state.h"
 #include "web_server.h"
 
@@ -230,9 +231,7 @@ bool auxLedQueueSetColor(uint8_t r, uint8_t g, uint8_t b, CommandSource source) 
     cmd.b = b;
 
     if (xQueueSend(s_auxLedQueue, &cmd, 0) != pdTRUE) {
-        taskENTER_CRITICAL(&robotStateMux);
-        robotState.queueOverflowCount++;
-        taskEXIT_CRITICAL(&robotStateMux);
+        logQueueDrop(QUEUE_AUX_LED, "set color command");
         return false;
     }
 
@@ -250,6 +249,12 @@ bool auxLedQueueSetEffect(AuxLedEffect effect, CommandSource source) {
     cmd.effect = effect;
 
     if (xQueueSend(s_auxLedQueue, &cmd, 0) != pdTRUE) {
+        static uint32_t lastWarnMs = 0;
+        uint32_t nowMs = millis();
+        if ((uint32_t)(nowMs - lastWarnMs) > 5000) {  // Rate-limit to once per 5s
+            PA_LOG_WARN("AuxLed", "auxLedQueue full, dropped set effect command");
+            lastWarnMs = nowMs;
+        }
         taskENTER_CRITICAL(&robotStateMux);
         robotState.queueOverflowCount++;
         taskEXIT_CRITICAL(&robotStateMux);

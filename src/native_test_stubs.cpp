@@ -626,4 +626,15 @@ void webRegisterUploadRoute(const char* /*path*/, WebUploadChunkHandler /*onChun
                             WebRequestHandler /*onDone*/) {
 }
 
+// Queue-drop logging stub (include/queue_drop_tracker.h). The full implementation
+// lives in src/queue_drop_tracker.cpp which is only compiled for device builds.
+// Native tests exercise the pure decision function (queueDropShouldLog) directly
+// via test_queue_drop_tracker.cpp; the adapter (logQueueDrop) is a no-op here.
+#include "queue_drop_tracker.h"
+
+void logQueueDrop(QueueDropId /*queueId*/, const char* /*description*/) {
+    // No-op in native test builds. The pure function queueDropShouldLog() is
+    // tested directly and covers the rate-limiting logic that matters.
+}
+
 #endif

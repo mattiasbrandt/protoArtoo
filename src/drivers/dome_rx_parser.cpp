@@ -29,6 +29,7 @@
 #include "ledc_pwm.h"
 #include "logging.h"
 #include "marcduino_helpers.h"
+#include "queue_drop_tracker.h"
 #include "robot_state.h"
 #include "web_server.h"
 
@@ -89,11 +90,10 @@ bool handlePanelCommand(const char* cmd) {
     }
 
     if (xQueueSend(servoCmdQueue, &servoCmd, 0) != pdTRUE) {
-        taskENTER_CRITICAL(&robotStateMux);
-        robotState.queueOverflowCount++;
-        taskEXIT_CRITICAL(&robotStateMux);
+        logQueueDrop(QUEUE_SERVO_CMD, "servo panel command");
+    } else {
+        PA_LOG_INFO(TAG, "[SERVO] panel command: %s", cmd);
     }
-    PA_LOG_INFO(TAG, "[SERVO] panel command: %s", cmd);
     return true;
 }
 
@@ -151,12 +151,11 @@ bool handleSequenceCommand(const char* cmd) {
             servoCmd.timestampMs = millis();
 
             if (xQueueSend(servoCmdQueue, &servoCmd, 0) != pdTRUE) {
-                taskENTER_CRITICAL(&robotStateMux);
-                robotState.queueOverflowCount++;
-                taskEXIT_CRITICAL(&robotStateMux);
+                logQueueDrop(QUEUE_SERVO_CMD, "servo sequence command");
+            } else {
+                handled = true;
+                queuedSeqId = mappedSeqId;
             }
-            handled = true;
-            queuedSeqId = mappedSeqId;
         }
     }
 

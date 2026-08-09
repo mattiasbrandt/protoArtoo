@@ -158,14 +158,19 @@ bool copyLogLineAt(size_t idx, char* out, size_t outSize) {
 // -----------------------------------------------------------------------------
 // loadConfigToState() — load NVS config into the runtime config cache
 // Called once at boot before tasks start.
+// Logs an error if config load fails; safe defaults are applied in all paths.
 // -----------------------------------------------------------------------------
 void loadConfigToState() {
     Preferences prefs;
     prefs.begin(NVS_NAMESPACE, true);
     ConfigSnapshot snap;
-    configLoad(prefs, &snap);
+    bool configOk = configLoad(prefs, &snap);
     uint8_t lastMood = prefs.getUChar("last_mood", 0);  // read BEFORE prefs.end()
     prefs.end();
+
+    if (!configOk) {
+        PA_LOG_ERROR("config", "failed to load NVS config (schema or migration error); using safe defaults");
+    }
 
     // Apply all config fields to robotState (no mutex needed — called before tasks start)
     // All validation and clamping is now performed within configLoad()

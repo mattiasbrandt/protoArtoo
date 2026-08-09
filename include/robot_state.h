@@ -213,9 +213,9 @@ struct RobotState {
     // --- Zone 7: Aux LED ---
     AuxLedState auxLed;
 
-    // --- Zone 8: Sequence dispatcher (SequenceDispatcherTask; dome_link.cpp co-writes for coordination) ---
-    bool domeSeqActive;    // true while a dome sequence is running
-    uint32_t domeSeqUntilMs;   // safety timeout: auto-clear domeSeqActive at this millis()
+    // --- Zone 8: Sequence dispatcher (SequenceDispatcherTask writes; DomeLinkTask writes for coordination) ---
+    bool domeSeqActive;    // true while a dome sequence is running (written by SequenceDispatcherTask and DomeLinkTask)
+    uint32_t domeSeqUntilMs;   // safety timeout: auto-clear domeSeqActive at this millis() (written by SequenceDispatcherTask and DomeLinkTask)
 
     // --- Zone 9: Shared telemetry / documented handshake flags (multi-writer by design) ---
     uint32_t queueOverflowCount;  // shared telemetry counter, incremented by many tasks

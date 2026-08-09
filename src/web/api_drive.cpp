@@ -39,6 +39,7 @@
 #include "failsafe_gate.h"
 #include "logging.h"
 #include "mood.h"
+#include "queue_drop_tracker.h"
 #include "robot_state.h"
 #include "sequence_dispatcher.h"
 #include "web_server.h"
@@ -409,9 +410,7 @@ void handleDomeSpeedPost(WebRequest& req) {
     cmd.source = SRC_WEB_API;
     cmd.timestampMs = millis();
     if (xQueueSend(domeCmdQueue, &cmd, 0) != pdTRUE) {
-        taskENTER_CRITICAL(&robotStateMux);
-        robotState.queueOverflowCount++;
-        taskEXIT_CRITICAL(&robotStateMux);
+        logQueueDrop(QUEUE_DOME_CMD, "POST /api/dome");
         webSendJsonError(req, 503, "dome command queue full");
         return;
     }

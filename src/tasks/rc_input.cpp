@@ -37,6 +37,7 @@
 #include "../../include/ledc_pwm.h"
 #include "../../include/logging.h"
 #include "../../include/marcduino_helpers.h"
+#include "../../include/queue_drop_tracker.h"
 #include "../../include/rc_channel_mapper.h"
 #include "../../include/rc_input_processor.h"
 #include "../../include/rc_mapping_cache.h"
@@ -84,9 +85,7 @@ static bool queueServoSequence(uint8_t sequenceId, CommandSource source) {
     cmd.source = source;
     cmd.timestampMs = millis();
     if (xQueueSend(servoCmdQueue, &cmd, 0) != pdTRUE) {
-        taskENTER_CRITICAL(&robotStateMux);
-        robotState.queueOverflowCount++;
-        taskEXIT_CRITICAL(&robotStateMux);
+        logQueueDrop(QUEUE_SERVO_CMD, "servo sequence command");
         return false;
     }
     return true;
@@ -98,9 +97,7 @@ static bool queueDomeCommand(float speed, CommandSource source) {
     domeCmd.source = source;
     domeCmd.timestampMs = millis();
     if (xQueueSend(domeCmdQueue, &domeCmd, 0) != pdTRUE) {
-        taskENTER_CRITICAL(&robotStateMux);
-        robotState.queueOverflowCount++;
-        taskEXIT_CRITICAL(&robotStateMux);
+        logQueueDrop(QUEUE_DOME_CMD, "dome command");
         return false;
     }
     return true;
@@ -115,9 +112,7 @@ static bool queueServoCommand(uint8_t armId, ServoCommandType type, uint16_t pos
     cmd.source = source;
     cmd.timestampMs = millis();
     if (xQueueSend(servoCmdQueue, &cmd, 0) != pdTRUE) {
-        taskENTER_CRITICAL(&robotStateMux);
-        robotState.queueOverflowCount++;
-        taskEXIT_CRITICAL(&robotStateMux);
+        logQueueDrop(QUEUE_SERVO_CMD, "servo command");
         return false;
     }
     return true;
