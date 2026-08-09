@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 REGISTRY_PATH = ROOT / "docs" / "action-registry.yaml"
 RC_MAPPING_PATH = ROOT / "include" / "rc_mapping.h"
 RC_ACTION_TYPES_PATH = ROOT / "include" / "rc_action_types.h"
+RC_ACTION_TYPES_CPP_PATH = ROOT / "src" / "rc_action_types.cpp"
 ACTION_REGISTRY_PATH = ROOT / "src" / "web" / "action_registry.cpp"
 RC_JS_PATH = ROOT / "data" / "rc.js"
 WEB_DIR = ROOT / "src" / "web"
@@ -145,15 +146,17 @@ def load_expected_actions(doc: dict) -> list[ExpectedAction]:
 
 
 def parse_to_string_tokens() -> dict[str, str]:
-    # robotActionIdToString is now in rc_action_types.h (split from rc_mapping.h)
+    # robotActionIdToString is now in src/rc_action_types.cpp (moved for header diet)
     text = None
-    if RC_ACTION_TYPES_PATH.exists():
+    if RC_ACTION_TYPES_CPP_PATH.exists():
+        text = RC_ACTION_TYPES_CPP_PATH.read_text(encoding="utf-8")
+    elif RC_ACTION_TYPES_PATH.exists():
         text = RC_ACTION_TYPES_PATH.read_text(encoding="utf-8")
     else:
         text = RC_MAPPING_PATH.read_text(encoding="utf-8")
 
     body = re.search(
-        r"robotActionIdToString\(RobotActionId target\).*?switch \(target\) {(?P<body>.*?)\n    }",
+        r"robotActionIdToString\(RobotActionId target\).*?switch \(target\) {(?P<body>.*?)\n}",
         text,
         re.S,
     )
@@ -169,9 +172,11 @@ def parse_to_string_tokens() -> dict[str, str]:
 
 
 def parse_from_string_tokens() -> dict[str, str]:
-    # parseRobotActionId is now in rc_action_types.h (split from rc_mapping.h)
+    # parseRobotActionId is now in src/rc_action_types.cpp (moved for header diet)
     text = None
-    if RC_ACTION_TYPES_PATH.exists():
+    if RC_ACTION_TYPES_CPP_PATH.exists():
+        text = RC_ACTION_TYPES_CPP_PATH.read_text(encoding="utf-8")
+    elif RC_ACTION_TYPES_PATH.exists():
         text = RC_ACTION_TYPES_PATH.read_text(encoding="utf-8")
     else:
         text = RC_MAPPING_PATH.read_text(encoding="utf-8")
