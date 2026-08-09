@@ -25,7 +25,31 @@
 // =============================================================================
 #pragma once
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include "web_request.h"
+
+// Format JSON response for audio status endpoint.
+// Pure function — no globals, no Arduino, no FreeRTOS.
+// params: buf          — output buffer (must not be null)
+//         bufSize      — size of buf in bytes (256 bytes sufficient with RX diagnostics)
+//         driverName   — driver name string e.g. "DY-SV5W" (must not be null)
+//         capabilities — AudioDriver::AUDIO_CAP_* bitmask; controls which fields are meaningful
+//         linkOk       — true if module responded to at least one UART query
+//         active       — true if firmware sent a play command recently (audioActive)
+//         playState    — 0=stop 1=playing 2=paused 0xFF=unknown
+//         device       — 0=USB 1=SD/TF 2=FLASH 0xFF=none/unknown
+//         totalTracks  — total tracks reported by module (0 if unknown)
+//         currentTrack — currently selected track (0 if unknown)
+//         rxStatus     — compact RX diagnostic string (must not be null)
+//         rxDetail     — operator-readable RX diagnostic (must not be null)
+// thread-safe: yes (pure function, no globals)
+void formatAudioStatusJson(char* buf, size_t bufSize, const char* driverName,
+                           uint8_t capabilities, bool linkOk, bool active,
+                           uint8_t playState, uint8_t device, uint16_t totalTracks,
+                           uint16_t currentTrack, const char* rxStatus,
+                           const char* rxDetail);
 
 void handleAudioGet(WebRequest& req);
 void handleAudioPost(WebRequest& req);
