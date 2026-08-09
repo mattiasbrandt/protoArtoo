@@ -73,6 +73,10 @@ reporting passes that never ran. In the worker's worktree, personally:
 5. Reject by naming concrete defects (file:line, what is wrong, what the bar
    is) on the sub-issue. Do not fix it yourself. Do not lower the bar for
    velocity.
+6. Issue-body ownership: only you edit a sub-issue's body. Tick acceptance
+   checkboxes when, and only when, you have re-verified the criterion
+   yourself; tick the remainder in the same pass as the evidence-bearing
+   closing comment.
 
 ## Rejection bookkeeping and escalation
 

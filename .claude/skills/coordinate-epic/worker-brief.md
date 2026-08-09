@@ -24,7 +24,17 @@ SLICE WORKFLOW (AGENTS.md, binding)
 - implement -> verify -> commit immediately (explicit per-file git add,
   type(scope): summary, no co-author trailers) -> record
   "Slice N - <short SHA> <subject> - verified <how>" in ONE evolving status
-  comment (gh issue comment {ISSUE} --edit-last --create-if-none).
+  comment, updated in place as follows.
+- Status comment mechanics (all agents share one GitHub identity, so
+  --edit-last can overwrite the coordinator's comments - never use it):
+  1. Before your first slice, create your status comment with a marker first
+     line: gh issue comment {ISSUE} --body "<!-- worker-status-{ISSUE} -->..."
+  2. Find its id once: gh api repos/{owner}/{repo}/issues/{ISSUE}/comments
+     --jq '.[] | select(.body | startswith("<!-- worker-status-{ISSUE} -->")) | .id'
+  3. Update that id thereafter: gh api -X PATCH
+     repos/{owner}/{repo}/issues/comments/<id> -f body="..."
+- The issue BODY belongs to the coordinator: never edit it and never tick
+  acceptance checkboxes - the critic ticks them on verified acceptance.
 - Never leave a green slice uncommitted.
 
 VERIFICATION (software-verified cap)
