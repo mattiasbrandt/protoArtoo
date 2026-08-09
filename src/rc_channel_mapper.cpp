@@ -1,7 +1,7 @@
 // =============================================================================
 // src/rc_channel_mapper.cpp
 //
-// Pure RC channel mapping implementation — converts raw channel snapshots to
+// Pure RC channel mapping implementation  --  converts raw channel snapshots to
 // control intent without FreeRTOS, mutex, or RobotState coupling.
 //
 // =============================================================================
@@ -95,7 +95,7 @@ static bool bindingSourceActiveForMode(const RcBindingConfig& binding, const RcC
 }
 
 // ============================================================================
-// Mapping Stages — independently testable seams in the pipeline
+// Mapping Stages  --  independently testable seams in the pipeline
 // ============================================================================
 
 // Map drive controls: speed + steer (backbone)

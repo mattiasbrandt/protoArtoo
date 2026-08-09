@@ -1,7 +1,7 @@
 // =============================================================================
 // src/tasks/mood.cpp
 //
-// applyMood() — dual-path mood preset execution.
+// applyMood()  --  dual-path mood preset execution.
 // See include/mood.h for the full design contract.
 // =============================================================================
 
@@ -46,7 +46,7 @@ void applyMood(uint8_t moodId, bool fromDome) {
     commandedSetActiveMood(moodId, fromDome ? SRC_INTERNAL : SRC_WEB_API);
 
     // --- Persist to NVS ---
-    // Dedicated mini-write — avoids saving entire config for a mood change.
+    // Dedicated mini-write  --  avoids saving entire config for a mood change.
     // NOTE: applyMood() may be called from DomeLinkTask (Core 1) when a mood
     // command arrives from dome serial. Flash writes take a few ms and will
     // briefly stall DomeLinkTask. This is acceptable because mood changes are

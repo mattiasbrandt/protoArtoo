@@ -1,7 +1,7 @@
 // =============================================================================
 // include/dome_rx_parser.h
 //
-// Marcduino command parser for dome→body serial communication.
+// Marcduino command parser for dome->body serial communication.
 // Parses :OP/:CL/:MV commands and body sequences (:SE30-:SE36).
 // Compatibility alias: :SE01 maps to body :SE30 arm choreography.
 //
@@ -19,6 +19,6 @@
 // Returns true if command was recognized and processed.
 bool parseMarcduinoCommand(const char* line);
 
-// Command handlers — exposed for testing
+// Command handlers  --  exposed for testing
 bool handlePanelCommand(const char* cmd);     // :OP, :CL, :MV
 bool handleSequenceCommand(const char* cmd);  // :SE30-:SE36 (+ :SE01 alias)

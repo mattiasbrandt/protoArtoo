@@ -1,7 +1,7 @@
 // =============================================================================
 // include/drive_arbiter.h
 //
-// Drive Output Arbiter — centralizes drive command arbitration from multiple
+// Drive Output Arbiter  --  centralizes drive command arbitration from multiple
 // sources (RC / SBUS and Web API).
 //
 // Design:
@@ -14,7 +14,7 @@
 // Arbitration logic:
 //   - Most recent source (within timeout window) wins.
 //   - Web source times out after cfg_webDriveTimeoutMs.
-//   - Speed/steer are clamped to ±speedLimitMax before output.
+//   - Speed/steer are clamped to +/-speedLimitMax before output.
 //   - If any failsafe layer or web timeout is active, output is zeroed.
 // =============================================================================
 #pragma once

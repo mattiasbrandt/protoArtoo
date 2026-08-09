@@ -17,8 +17,8 @@ constexpr int kSbusDecodeMinBitsPerByte = 11;
 constexpr int kSbusDecodeTotalBits = kSbusDecodeFrameLen * kSbusDecodeBitsPerByte;
 constexpr int kSbusDecodeMaxScanBits = 1024;
 // Maximum slip correction (in bits) per byte boundary during re-sync.
-// Handles up to ±1 slip per byte (±2 would require stop bit at byteStart+8,
-// which may be data — unreliable). HOTRC dominant mode is single-bit slip per frame.
+// Handles up to +/-1 slip per byte (+/-2 would require stop bit at byteStart+8,
+// which may be data  --  unreliable). HOTRC dominant mode is single-bit slip per frame.
 constexpr int kSbusDecodeMaxStartBitSlip = 1;
 
 struct SbusDecodeAttemptStats {
@@ -30,7 +30,7 @@ struct SbusDecodeAttemptStats {
 };
 
 
-// Count set bits in a byte — portable, no compiler built-ins.
+// Count set bits in a byte  --  portable, no compiler built-ins.
 inline uint8_t sbusDecodePopcount8(uint8_t v) {
     uint8_t n = 0;
     while (v) { n++; v = (uint8_t)(v & (v - 1U)); }
@@ -98,7 +98,7 @@ inline bool extractSbusBytes(const bool* bits, int bc, int startPos, bool invert
     if (bitsPerByte < kSbusDecodeMinBitsPerByte || bitsPerByte > kSbusDecodeBitsPerByte) return false;
     // Minimum bits needed: (frameLen-1) full bytes with max -1 slip at each of
     // the (frameLen-1) inter-byte boundaries, plus 9 bits for the footer byte
-    // (stop bits absent — absorbed by the RMT gap-terminator symbol).
+    // (stop bits absent  --  absorbed by the RMT gap-terminator symbol).
     const int minExtractBits = (frameLen - 1) * (bitsPerByte - kSbusDecodeMaxStartBitSlip) + 9;
     if (bc - startPos < minExtractBits) return false;
 
@@ -128,16 +128,16 @@ inline bool extractSbusBytes(const bool* bits, int bc, int startPos, bool invert
         if (b >= frameLen - 1) continue;  // no re-sync needed after last byte
 
         // Re-sync: locate the start bit of the next byte by scanning forward from
-        // the stop-bit region (byteStart+bitsPerByte-2) for the first HIGH→LOW
+        // the stop-bit region (byteStart+bitsPerByte-2) for the first HIGH->LOW
         // transition. Stop bits are structurally always HIGH; the first LOW after
-        // them is unambiguously the next start bit. This handles ±kSbusDecodeMaxStartBitSlip
+        // them is unambiguously the next start bit. This handles +/-kSbusDecodeMaxStartBitSlip
         // bit slips per byte without the risk of mistaking a LOW data bit for a start bit
         // (a LOW data bit is NOT preceded by a stop bit at the byte boundary).
         //
         // Search window: [byteStart+bitsPerByte-2 .. byteStart+bitsPerByte+kSbusDecodeMaxStartBitSlip]
-        //   -1 slip: stop2 at +10, start at +11  (prev=+10=HIGH) ✓
-        //    0 slip: stop1/2 at +10/+11, start at +12 (prev=+11=HIGH) ✓
-        //   +1 slip: extra stop at +12, start at +13 (prev=+12=HIGH) ✓
+        //   -1 slip: stop2 at +10, start at +11  (prev=+10=HIGH) OK
+        //    0 slip: stop1/2 at +10/+11, start at +12 (prev=+11=HIGH) OK
+        //   +1 slip: extra stop at +12, start at +13 (prev=+12=HIGH) OK
         const int searchStart = byteStart + bitsPerByte - 2;
         const int searchEnd   = byteStart + bitsPerByte + kSbusDecodeMaxStartBitSlip;
         int nextByteStart = -1;
@@ -153,7 +153,7 @@ inline bool extractSbusBytes(const bool* bits, int bc, int startPos, bool invert
         // window. This matches the d9f4a50 baseline behaviour for frames where the
         // adaptive period is slightly off (expanded runs push the true start bit
         // beyond the window). Fixed stride may produce wrong bytes in those frames,
-        // but header+footer validation will reject them — same outcome as before.
+        // but header+footer validation will reject them  --  same outcome as before.
         byteStart = (nextByteStart >= 0) ? nextByteStart : (byteStart + bitsPerByte);
     }
 
@@ -167,10 +167,10 @@ inline bool extractSbusBytes(const bool* bits, int bc, int startPos, bool invert
 // The last symbol is excluded because the ESP-IDF RMT driver merges the
 // inter-frame idle gap ticks into the last symbol's duration0 (with duration1=0
 // marking end-of-capture). Including those gap ticks inflates totalTicks by ~300,
-// which rounds 115 kbaud (8.68 ticks/bit → 2604 ticks) up to period=10 instead
-// of the correct 9 — causing near-total extract failures.
+// which rounds 115 kbaud (8.68 ticks/bit -> 2604 ticks) up to period=10 instead
+// of the correct 9  --  causing near-total extract failures.
 //
-// Result is clamped to [8, 10] ticks/bit (covers ~80–125 kbaud range).
+// Result is clamped to [8, 10] ticks/bit (covers ~80-125 kbaud range).
 template <typename SymbolT>
 inline uint32_t sbusEstimateBitPeriod(const SymbolT* syms, size_t count) {
     constexpr uint32_t kAdaptiveMin = 8;
@@ -205,7 +205,7 @@ inline bool decodeFrameFromBits(const bool* bits, int bc, bool invertBits,
 
     uint8_t candidateFrame[kSbusDecodeFrameLen] = {};
     // Minimum bits: (frameLen-1) full bytes with max -1 slip at each boundary,
-    // plus 9 bits for the last byte (stop bits absent — absorbed by RMT gap symbol).
+    // plus 9 bits for the last byte (stop bits absent  --  absorbed by RMT gap symbol).
     const int minBitsNeeded = (frameLen - 1) * (bitsPerByte - kSbusDecodeMaxStartBitSlip) + 9;
 
     // RMT terminates capture on the inter-frame idle gap, so every buffer starts
@@ -216,7 +216,7 @@ inline bool decodeFrameFromBits(const bool* bits, int bc, bool invertBits,
     //
     // If the first LOW bit does not produce a valid frame (e.g. a 1-bit slip shifts
     // the footer off-position), we discard the buffer and return false. The watchdog
-    // then fires and resets channels to 0 — safe behaviour.
+    // then fires and resets channels to 0  --  safe behaviour.
     //
     // Leading HIGH bits from the inter-frame gap remainder are skipped to reach P.
     int firstLow = -1;

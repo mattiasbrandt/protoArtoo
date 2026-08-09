@@ -1,5 +1,5 @@
 // =============================================================================
-// seq_last_run_json.cpp — pure JSON view of SeqRunEvidence.
+// seq_last_run_json.cpp  --  pure JSON view of SeqRunEvidence.
 // =============================================================================
 
 #include "seq_last_run_json.h"

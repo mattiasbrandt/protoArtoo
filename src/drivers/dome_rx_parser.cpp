@@ -171,7 +171,7 @@ bool handleSequenceCommand(const char* cmd) {
 
 // -----------------------------------------------------------------------------
 // parseMarcduinoCommand()
-// Main entry point — parse and dispatch Marcduino command.
+// Main entry point  --  parse and dispatch Marcduino command.
 // -----------------------------------------------------------------------------
 bool parseMarcduinoCommand(const char* line) {
     if (!line || line[0] == '\0')
@@ -188,7 +188,7 @@ bool parseMarcduinoCommand(const char* line) {
 
         case '$':
             // Route to AudioTask queue (non-blocking). The queue send will fail
-            // gracefully if the queue is full — queueOverflowCount is incremented
+            // gracefully if the queue is full  --  queueOverflowCount is incremented
             // by audioQueueDollar() in that case.
             if (!audioQueueDollar(line, SRC_INTERNAL)) {
                 PA_LOG_WARN(TAG, "[AUDIO] queue full, dropped: %s", line);

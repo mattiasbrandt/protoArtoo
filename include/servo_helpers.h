@@ -2,7 +2,7 @@
 // include/servo_helpers.h
 //
 // Pure helpers for servo arm ID mapping and enable-flag logic.
-// No Arduino, no FreeRTOS, no queues — safe to include in native unit tests.
+// No Arduino, no FreeRTOS, no queues  --  safe to include in native unit tests.
 //
 // Extracted from src/tasks/servo_task.cpp so the mapping and enable logic
 // can be exercised without hardware dependencies.
@@ -18,12 +18,12 @@
 // servo_arm_id_to_ledc_channel()
 // Map armId to LEDC channel index.
 //
-//   0 → LEDC_CH_ARM1
-//   1 → LEDC_CH_ARM2
-//   2 → LEDC_CH_AUX1
-//   3 → LEDC_CH_AUX2
-//   4 → LEDC_CH_AUX3
-//   any other → LEDC_CH_MAX  (invalid sentinel)
+//   0 -> LEDC_CH_ARM1
+//   1 -> LEDC_CH_ARM2
+//   2 -> LEDC_CH_AUX1
+//   3 -> LEDC_CH_AUX2
+//   4 -> LEDC_CH_AUX3
+//   any other -> LEDC_CH_MAX  (invalid sentinel)
 // -----------------------------------------------------------------------------
 inline uint8_t servo_arm_id_to_ledc_channel(uint8_t arm_id) {
     switch (arm_id) {

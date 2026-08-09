@@ -1,7 +1,7 @@
 // =============================================================================
 // include/sequence_dispatcher_step.h
 //
-// Sequence Dispatcher Step Core (ADR 0014) — pure decision logic for action dispatch.
+// Sequence Dispatcher Step Core (ADR 0014)  --  pure decision logic for action dispatch.
 //
 // Extracted from sequenceDispatcher.cpp for native testability. The pure core
 // owns the decision: given a SeqAction from the engine, which target (dome,
@@ -17,7 +17,7 @@
 
 #include "sequence_engine.h"  // SeqAction
 
-// Dispatch targets — what queue/function the action should route to
+// Dispatch targets  --  what queue/function the action should route to
 enum SequenceDispatchTarget : uint8_t {
     SEQ_DISPATCH_DOME_CMD,         // domeQueueTx(payload)
     SEQ_DISPATCH_DOME_ROTATE,      // domeRotateQueue: converted to DomeCommand
@@ -27,7 +27,7 @@ enum SequenceDispatchTarget : uint8_t {
     SEQ_DISPATCH_NONE,             // Silent success (unknown action)
 };
 
-// Dispatch decision output — what the adapter should execute
+// Dispatch decision output  --  what the adapter should execute
 struct SequenceDispatcherStepActions {
     SequenceDispatchTarget target = SEQ_DISPATCH_NONE;
 

@@ -27,7 +27,7 @@
 // Flat sequences
 // =============================================================================
 
-// DM:VADER — Imperial March visual mode (47 s).
+// DM:VADER  --  Imperial March visual mode (47 s).
 // Holos, logics, and PSI set to MARCH mode; auto-reset at sequence end.
 static const SeqStep kVaderSteps[] = {
     SEQ_AUDIO_FX(0, FX_AUDIO_BOUNDED, "$M"),     // Imperial March (Bounded Audio: Track Stop at terminal cleanup)
@@ -40,7 +40,7 @@ static const SeqStep kVaderSteps[] = {
     SEQ_TERM(47000),
 };
 
-// DM:HELLO — "Hello There" greeting (4 s).
+// DM:HELLO  --  "Hello There" greeting (4 s).
 // Front and rear logic text, then a six-pulse P1 panel wave.
 static const SeqStep kHelloSteps[] = {
     SEQ_AUDIO(0, "$H"),                          // happy/greeting clip
@@ -55,7 +55,7 @@ static const SeqStep kHelloSteps[] = {
     SEQ_TERM(950),                               // auto :CL00 (close + release)
 };
 
-// DM:NOD — short acknowledgment: sound + logic text + P1 wave.
+// DM:NOD  --  short acknowledgment: sound + logic text + P1 wave.
 // Demonstrates sound-to-motion sync from a single body clock (issue #2).
 static const SeqStep kNodSteps[] = {
     SEQ_AUDIO(0, "$H"),                          // ack/happy clip
@@ -65,11 +65,11 @@ static const SeqStep kNodSteps[] = {
     SEQ_TERM(300),                               // auto scoped :CL15 (ring-only close + release)
 };
 
-// DM:FLUTTER — ring then pie panels sweep to 75%, then close (10 s window).
+// DM:FLUTTER  --  ring then pie panels sweep to 75%, then close (10 s window).
 // Intent-adapted from previous pulse choreography; partial-open fidelity is
 // intentionally not preserved in body-authored form.
 static const SeqStep kFlutterSteps[] = {
-    // ring to 75% — P1,P2,P3,P4,P7,P11,P13
+    // ring to 75%  --  P1,P2,P3,P4,P7,P11,P13
     SEQ_DOME(0, FX_PANEL, ":OP01"),
     SEQ_DOME(150, FX_NONE, ":OP02"),
     SEQ_DOME(300, FX_NONE, ":OP03"),
@@ -77,7 +77,7 @@ static const SeqStep kFlutterSteps[] = {
     SEQ_DOME(600, FX_NONE, ":OP07"),
     SEQ_DOME(750, FX_NONE, ":OP11"),
     SEQ_DOME(900, FX_NONE, ":OP13"),
-    // pies to 75% — PP1,PP2,PP3,PP4,PP5,PP6
+    // pies to 75%  --  PP1,PP2,PP3,PP4,PP5,PP6
     SEQ_DOME(1050, FX_NONE, ":OPP1"),
     SEQ_DOME(1200, FX_NONE, ":OPP2"),
     SEQ_DOME(1350, FX_NONE, ":OPP3"),
@@ -102,7 +102,7 @@ static const SeqStep kFlutterSteps[] = {
     SEQ_TERM(4250),                              // auto :CL00 (release)
 };
 
-// DM:BLOOM — pies open together over 1.2 s, wiggle three times, close (8 s).
+// DM:BLOOM  --  pies open together over 1.2 s, wiggle three times, close (8 s).
 // Intent-adapted from previous pulse choreography; sine/easing fidelity is
 // intentionally not preserved in body-authored form.
 static const SeqStep kBloomSteps[] = {
@@ -161,7 +161,7 @@ static const SeqStep kBloomSteps[] = {
     SEQ_TERM(5650),                              // auto :CL00 (release)
 };
 
-// DM:LEIA — Leia message mode (36 s): front holo Leia, other holos off,
+// DM:LEIA  --  Leia message mode (36 s): front holo Leia, other holos off,
 // Leia logics/PSI; everything resets via effect classes at the end.
 static const SeqStep kLeiaSteps[] = {
     SEQ_AUDIO_FX(0, FX_AUDIO_BOUNDED, "$L"),     // Leia message (Bounded Audio: Track Stop at terminal cleanup)
@@ -173,7 +173,7 @@ static const SeqStep kLeiaSteps[] = {
     SEQ_TERM(36000),                             // auto @0T1/@0P1/*ST00
 };
 
-// DM:ALARM — pulsing red holos/logics/PSI (10 s). Audio: random track from
+// DM:ALARM  --  pulsing red holos/logics/PSI (10 s). Audio: random track from
 // the alert category, falling back to the named scream track.
 static const SeqStep kAlarmSteps[] = {
     SEQ_AUDIO_CAT(0, AUDIO_CATEGORY_ALERT, AUDIO_SLOT_NAMED_SCREAM),
@@ -185,7 +185,7 @@ static const SeqStep kAlarmSteps[] = {
     SEQ_TERM(10000),                             // auto @0T1/@0P1/*ST00
 };
 
-// DM:HEART — rainbow holos and a sweet logic message (10 s). Audio: random
+// DM:HEART  --  rainbow holos and a sweet logic message (10 s). Audio: random
 // track from the sentimental category, falling back to the named happy track.
 static const SeqStep kHeartSteps[] = {
     SEQ_AUDIO_CAT(0, AUDIO_CATEGORY_SENTIMENTAL, AUDIO_SLOT_NAMED_HAPPY),
@@ -201,7 +201,7 @@ static const SeqStep kHeartSteps[] = {
     SEQ_TERM(10000),                             // auto @0T1/@0P1/*ST00
 };
 
-// DM:RESET — safe ring-panel reset + body latch clear, then reset holos/logics/
+// DM:RESET  --  safe ring-panel reset + body latch clear, then reset holos/logics/
 // PSI. Pie panels are NOT auto-closed: on this droid pie-close mechanical safety
 // is still unverified, and the systemic invariant (2026-06-17/-18 brownout fix)
 // is that the body never auto-emits a group close (:CL00/:CL14/:CL15) nor an
@@ -230,13 +230,13 @@ static const SeqStep kResetSteps[] = {
 };
 
 // =============================================================================
-// Loop sequences — a STEP_LOOP header repeats the following bodyCount steps
+// Loop sequences  --  a STEP_LOOP header repeats the following bodyCount steps
 // every periodMs while the iteration start is inside durationMs. Body step
 // times are relative to the iteration start. Post-loop steps are authored
 // past the worst-case loop end (the final iteration may overhang durationMs).
 // =============================================================================
 
-// DM:CANTINA — 130 BPM alternating panel dance for ~15 s (17 s window).
+// DM:CANTINA  --  130 BPM alternating panel dance for ~15 s (17 s window).
 // Two beats per iteration: group A open / group B closed, then inverted.
 // 8 iterations x 1846 ms from t=100 -> loop ends at ~14868 ms.
 static const SeqStep kCantinaSteps[] = {
@@ -279,14 +279,14 @@ static const SeqStep kCantinaSteps[] = {
     SEQ_TERM(15400),                             // auto @0T1/@0P1/*ST00/:CL00
 };
 
-// DM:ROCKMARCH — Imperial March with one ring panel stepping per beat
+// DM:ROCKMARCH  --  Imperial March with one ring panel stepping per beat
 // (923 ms) for ~45 s (47 s window). One iteration = one full ring pass:
 // open slot k at k*923, close it 773 ms later. 7 iterations x 6461 ms.
 static const SeqStep kRockmarchSteps[] = {
     SEQ_AUDIO_FX(0, FX_AUDIO_BOUNDED, "$M"),     // Imperial March (Bounded Audio: Track Stop at terminal cleanup)
     // Dome-native red MARCH visual preset (logic/PSI/holo) via the DV: surface
     // (issue #2 task #5, first acceptance case). Replaces the raw @0T11/@0P11/
-    // @HPA0021|47 approximation, which rendered default blue on hardware — the
+    // @HPA0021|47 approximation, which rendered default blue on hardware  --  the
     // dome owns the typed red MARCH rendering. Tagged FX_LOGIC_PSI|FX_HOLO so the
     // engine's terminal cleanup still emits the body-owned visual teardown
     // (@0T1/@0P1/*ST00). Body keeps music + the ring wave + settle close below.
@@ -335,12 +335,12 @@ static const SeqStep kRockmarchSteps[] = {
 };
 
 // =============================================================================
-// Random sequences — STEP_RANDOM resolves a logical panel target and optional
+// Random sequences  --  STEP_RANDOM resolves a logical panel target and optional
 // timing jitter at fire time. SLOTSET_HOLD reuses the previous pick;
 // pickDistinct avoids slots already picked this run.
 // =============================================================================
 
-// DM:SCREAM — panels burst open, red alert, random one-panel flutter, close
+// DM:SCREAM  --  panels burst open, red alert, random one-panel flutter, close
 // (15 s window). Flutter: 10 iterations of a 380 ms 4-move pattern on a
 // randomly picked panel (repeats across iterations allowed, as in the dome's
 // original code). Audio: random scream-category track (fallback named scream).
@@ -378,7 +378,7 @@ static const SeqStep kScreamSteps[] = {
     SEQ_TERM(7450),                              // auto @0T1/@0P1/*ST00/:CL00
 };
 
-// DM:OVERLOAD — failure logics/PSI, holos short-circuit, six panels flutter
+// DM:OVERLOAD  --  failure logics/PSI, holos short-circuit, six panels flutter
 // on random logical targets, then everything resets (12 s
 // window). Drift gaps are randomized as 0..500 ms jitter on fixed 650 ms
 // offsets (issue #2: gap randomness, absolute schedule preserved). Audio:
@@ -402,13 +402,13 @@ static const SeqStep kOverloadSteps[] = {
 };
 
 // =============================================================================
-// Toggle sequences (ADR 0004 decision 8) — `steps` is the open branch,
+// Toggle sequences (ADR 0004 decision 8)  --  `steps` is the open branch,
 // `closeSteps` the close branch; the engine picks by latched group state and
 // flips the latch on normal completion. Close branches end without a release;
 // the engine emits :CL00 once no group remains latched open (issue #2 gap #1).
 // =============================================================================
 
-// DM:PIES open — pie wave: open PP1->PP6, close PP6->PP1, reopen, twice (12 s).
+// DM:PIES open  --  pie wave: open PP1->PP6, close PP6->PP1, reopen, twice (12 s).
 static const SeqStep kPiesOpenSteps[] = {
     SEQ_AUDIO(100, "$H"),
     // cycle 1: open PP1->PP6
@@ -446,7 +446,7 @@ static const SeqStep kPiesOpenSteps[] = {
     SEQ_DOME(2800, FX_NONE, ":CLP3"),
     SEQ_DOME(2900, FX_NONE, ":CLP2"),
     SEQ_DOME(3000, FX_NONE, ":CLP1"),
-    // cycle 2: reopen PP1->PP6 — pies end open
+    // cycle 2: reopen PP1->PP6  --  pies end open
     SEQ_DOME(3100, FX_NONE, ":OPP1"),
     SEQ_DOME(3200, FX_NONE, ":OPP2"),
     SEQ_DOME(3300, FX_NONE, ":OPP3"),
@@ -456,7 +456,7 @@ static const SeqStep kPiesOpenSteps[] = {
     SEQ_TERM(4600),
 };
 
-// DM:PIES close — reset holos, close PP1->PP6 serially.
+// DM:PIES close  --  reset holos, close PP1->PP6 serially.
 static const SeqStep kPiesCloseSteps[] = {
     SEQ_DOME(0, FX_NONE, "*ST00"),
     SEQ_AUDIO(0, "$H"),
@@ -469,7 +469,7 @@ static const SeqStep kPiesCloseSteps[] = {
     SEQ_TERM(1700),
 };
 
-// DM:LOW open — ring wave twice, then all ring panels open (15 s).
+// DM:LOW open  --  ring wave twice, then all ring panels open (15 s).
 static const SeqStep kLowOpenSteps[] = {
     SEQ_AUDIO(0, "$H"),
     // cycle 1: open P1,P13,P11,P2,P3,P4,P7
@@ -504,7 +504,7 @@ static const SeqStep kLowOpenSteps[] = {
     SEQ_DOME(3850, FX_NONE, ":CL01"),
     SEQ_DOME(4050, FX_NONE, ":CL13"),
     SEQ_DOME(4250, FX_NONE, ":CL11"),
-    // final open: P11/P13/P1 together, then P2,P3,P4,P7 — ring ends open
+    // final open: P11/P13/P1 together, then P2,P3,P4,P7  --  ring ends open
     SEQ_DOME(4400, FX_NONE, ":OP11"),
     SEQ_DOME(4400, FX_NONE, ":OP13"),
     SEQ_DOME(4400, FX_NONE, ":OP01"),
@@ -515,7 +515,7 @@ static const SeqStep kLowOpenSteps[] = {
     SEQ_TERM(5900),
 };
 
-// DM:LOW close — reset holos, then close ring panels ONE AT A TIME with ~500 ms
+// DM:LOW close  --  reset holos, then close ring panels ONE AT A TIME with ~500 ms
 // settle between each. The wide cadence is deliberate, not cosmetic: closing all 7
 // ring servos in the original tight 150 ms burst from a fully-open state browned out
 // the dome (esp_reset_reason=BROWNOUT, code 9, 2026-06-17 hardware repro) -- the dome
@@ -537,7 +537,7 @@ static const SeqStep kLowCloseSteps[] = {
     SEQ_TERM(4500),
 };
 
-// DM:OPENALL open — pie sweep, ring panels together, then P1/P2 + PP2/PP4
+// DM:OPENALL open  --  pie sweep, ring panels together, then P1/P2 + PP2/PP4
 // twinkle twice (10 s).
 static const SeqStep kOpenallOpenSteps[] = {
     SEQ_AUDIO(0, "$H"),
@@ -579,7 +579,7 @@ static const SeqStep kOpenallOpenSteps[] = {
     SEQ_TERM(3680),
 };
 
-// DM:OPENALL close — close every panel serially in all-panels order.
+// DM:OPENALL close  --  close every panel serially in all-panels order.
 static const SeqStep kOpenallCloseSteps[] = {
     SEQ_AUDIO(0, "$H"),
     SEQ_DOME(0, FX_NONE, ":CL01"),
@@ -643,7 +643,7 @@ static constexpr uint8_t kCatalogSize =
     (uint8_t)(sizeof(kCatalog) / sizeof(kCatalog[0]));
 
 // =============================================================================
-// Alias table — DM:* names that forward directly to the dome unchanged or
+// Alias table  --  DM:* names that forward directly to the dome unchanged or
 // mapped to a :SE## / $NNN target. No body execution; dome owns these.
 // =============================================================================
 
@@ -682,7 +682,7 @@ static constexpr uint8_t kAliasSize =
     (uint8_t)(sizeof(kAliases) / sizeof(kAliases[0]));
 
 // =============================================================================
-// Lookup — pure, no side effects, native-testable.
+// Lookup  --  pure, no side effects, native-testable.
 // =============================================================================
 
 const SequenceEntry* sequenceCatalogFind(const char* name) {

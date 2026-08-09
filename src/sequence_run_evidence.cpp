@@ -1,5 +1,5 @@
 // =============================================================================
-// sequence_run_evidence.cpp — see sequence_run_evidence.h.
+// sequence_run_evidence.cpp  --  see sequence_run_evidence.h.
 //
 // One static record, written on the dispatcher task and read (snapshot-copied)
 // by the Core 0 web handler. Guarded by a portMUX (no-op in native tests). Net-
@@ -63,7 +63,7 @@ static void applyRing(SeqRunEvidence& r, const char* cmd) {
     if (cmd[1] == 'O' && cmd[2] == 'P')      isOpen = true;
     else if (cmd[1] == 'C' && cmd[2] == 'L') isClose = true;
     else if (cmd[1] == 'O' && cmd[2] == 'F') { /* flutter: touched only */ }
-    else return;  // :SE / other — not a panel command
+    else return;  // :SE / other  --  not a panel command
 
     const char* t = cmd + 3;
     uint16_t bits = 0;

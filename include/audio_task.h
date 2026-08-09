@@ -1,7 +1,7 @@
 // =============================================================================
 // include/audio_task.h
 //
-// AudioTask — the sole writer to the audio serial GPIO.
+// AudioTask  --  the sole writer to the audio serial GPIO.
 //
 // All audio commands (from RC, web API, dome serial '$' RX, mood presets)
 // are enqueued via the helpers below and processed by audioTask() on Core 0.
@@ -28,7 +28,7 @@
 #include "robot_state.h"
 
 // -----------------------------------------------------------------------------
-// AudioCommandType — discriminant for messages placed on audioCmdQueue.
+// AudioCommandType  --  discriminant for messages placed on audioCmdQueue.
 //
 // This is the queue-level enum: it describes what the AudioTask should execute.
 // It is intentionally coarser than AudioActionType (see audio_dollar_parser.h),
@@ -36,22 +36,22 @@
 // (RANDOM_ON/OFF, VOLUME_UP/DOWN) that the parser resolves before enqueueing.
 // -----------------------------------------------------------------------------
 enum AudioCommandType : uint8_t {
-    AUDIO_CMD_DOLLAR = 0,    // raw '$' command string — parsed in AudioTask
+    AUDIO_CMD_DOLLAR = 0,    // raw '$' command string  --  parsed in AudioTask
     AUDIO_CMD_PLAY_TRACK,    // play specific track number directly
     AUDIO_CMD_PLAY_TRACK_BANKED,  // play CHIRP bank/page/index tuple
     AUDIO_CMD_PLAY_SLOT,  // play named/system slot with backend-aware resolution
     AUDIO_CMD_PLAY_CATEGORY,  // play random category track with optional fallback slot
-    AUDIO_CMD_STOP,          // stop playback (mood Quiet only — disables random mode)
+    AUDIO_CMD_STOP,          // stop playback (mood Quiet only  --  disables random mode)
     AUDIO_CMD_TRACK_STOP,    // Track Stop (ADR 0010): stop current playback only,
                              // preserve random/idle mood
-    AUDIO_CMD_SET_VOLUME,    // set absolute volume 0–30
+    AUDIO_CMD_SET_VOLUME,    // set absolute volume 0-30
     AUDIO_CMD_QUERY_STATUS,  // on-demand status query (manual/fallback poll path)
     AUDIO_CMD_REFRESH_CATALOG,  // refresh CHIRP catalog cache
     AUDIO_CMD_REFRESH_BINDINGS,  // refresh cached CHIRP slot/category bindings from NVS
 };
 
 // -----------------------------------------------------------------------------
-// AudioCommand — message placed on audioCmdQueue.
+// AudioCommand  --  message placed on audioCmdQueue.
 // Sized conservatively: dollar string covers all $ shortcuts ($S, $001 etc.).
 // -----------------------------------------------------------------------------
 struct AudioCommand {
@@ -83,7 +83,7 @@ const char* audioRxStatusToken(AudioRxStatus status);
 const char* audioRxStatusDetail(AudioRxStatus status);
 
 // -----------------------------------------------------------------------------
-// audioTask() — FreeRTOS task entry point.
+// audioTask()  --  FreeRTOS task entry point.
 // Pinned to Core 0 (non-RT side). Software bit-bang TX blocks for up to ~6 ms
 // per audio command; Core 0 keeps this away from DriveTask / ServoTask.
 // Priority: 3 (below web server; above idle).
@@ -116,7 +116,7 @@ bool audioQueuePlayCategory(AudioPlaybackCategory category, AudioPlaybackSlot fa
                             CommandSource src);
 
 // Enqueue a stop command. Full stop: also disables random/idle mood. Reserved for
-// the mood system's Quiet path ($s / SE10) — do not call from any other surface.
+// the mood system's Quiet path ($s / SE10)  --  do not call from any other surface.
 bool audioQueueStop(CommandSource src);
 
 // Enqueue a Track Stop (ADR 0010): stops current playback only, preserves
@@ -124,7 +124,7 @@ bool audioQueueStop(CommandSource src);
 // a natural beat. Use this everywhere except the mood system's Quiet path.
 bool audioQueueTrackStop(CommandSource src);
 
-// Enqueue an absolute volume set (clamped to 0–30 before enqueue).
+// Enqueue an absolute volume set (clamped to 0-30 before enqueue).
 bool audioQueueSetVolume(uint8_t vol, CommandSource src);
 
 // Enqueue an on-demand module status query. AudioTask runs queryModuleState()

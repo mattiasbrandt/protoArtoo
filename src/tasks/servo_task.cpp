@@ -1,7 +1,7 @@
 // =============================================================================
 // src/tasks/servo_task.cpp
 //
-// ServoTask — LEDC PWM control for utility arm servos and spare servo outputs.
+// ServoTask  --  LEDC PWM control for utility arm servos and spare servo outputs.
 // Handles open/close commands and Marcduino sequences for:
 //   - ARM1 (Top/Left utility arm, GPIO 23)
 //   - ARM2 (Bottom/Right utility arm, GPIO 5)
@@ -42,11 +42,11 @@ static struct {
 // -----------------------------------------------------------------------------
 // armIdToLedcChannel()
 // Map armId to LEDC channel.
-//   0 = ARM1  → LEDC_CH_ARM1  (GPIO 23)
-//   1 = ARM2  → LEDC_CH_ARM2  (GPIO 5)
-//   2 = AUX1  → LEDC_CH_AUX1 (GPIO 19, also labelled ARM3)
-//   3 = AUX2  → LEDC_CH_AUX2 (GPIO 18, also labelled ARM4)
-//   4 = AUX3  → LEDC_CH_AUX3 (GPIO 32, also labelled ARM5)
+//   0 = ARM1  -> LEDC_CH_ARM1  (GPIO 23)
+//   1 = ARM2  -> LEDC_CH_ARM2  (GPIO 5)
+//   2 = AUX1  -> LEDC_CH_AUX1 (GPIO 19, also labelled ARM3)
+//   3 = AUX2  -> LEDC_CH_AUX2 (GPIO 18, also labelled ARM4)
+//   4 = AUX3  -> LEDC_CH_AUX3 (GPIO 32, also labelled ARM5)
 // Returns LEDC_CH_MAX (invalid) for unknown armId.
 // -----------------------------------------------------------------------------
 static uint8_t armIdToLedcChannel(uint8_t armId) {
@@ -140,13 +140,13 @@ static void executeSequence(uint8_t seqId) {
             setArmPosition(1, openUs);
             break;
 
-        case 33:  // Body — use gripper arm (ARM1)
+        case 33:  // Body  --  use gripper arm (ARM1)
             seqState.activeArm = 0;
             getOpenClosePositions(0, openUs, closeUs);
             setArmPosition(0, openUs);
             break;
 
-        case 34:  // Body — use interface tool (ARM2)
+        case 34:  // Body  --  use interface tool (ARM2)
             seqState.activeArm = 1;
             getOpenClosePositions(1, openUs, closeUs);
             setArmPosition(1, openUs);
@@ -277,7 +277,7 @@ static bool isArmEnabled(uint8_t armId) {
 // Process incoming servo command.
 // -----------------------------------------------------------------------------
 static void processCommand(const ServoCommand& cmd) {
-    // Safety: Check estop — reject all commands while emergency stopped
+    // Safety: Check estop  --  reject all commands while emergency stopped
     taskENTER_CRITICAL(&robotStateMux);
     bool estop = robotState.estop;
     bool sleepMode = robotState.sleepMode;
@@ -422,7 +422,7 @@ void servoTask(void* pvParameters) {
     esp_task_wdt_add(NULL);
 
     // Feature toggle: if no arm/aux outputs are enabled, ServoTask has no
-    // channels to drive. Idle here feeding TWDT only — no queue processing,
+    // channels to drive. Idle here feeding TWDT only  --  no queue processing,
     // no sequence updates.
     if (!configCacheServoAnyEnabled()) {
         PA_LOG_DEBUG("ServoTask", "all arm/aux outputs disabled — task idle");

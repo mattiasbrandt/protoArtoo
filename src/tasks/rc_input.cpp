@@ -1,17 +1,17 @@
 // =============================================================================
 // src/tasks/rc_input.cpp
 //
-// RcInputTask — handles all RC input modes: standard_pwm, single_sbus, dual_sbus.
+// RcInputTask  --  handles all RC input modes: standard_pwm, single_sbus, dual_sbus.
 // Renamed from sbus_input.cpp; the task was never SBUS-specific.
 //
-// Receiver #1 (PIN_SBUS1_RX = GPIO 15): Drive — CH1=speed, CH2=steer
+// Receiver #1 (PIN_SBUS1_RX = GPIO 15): Drive  --  CH1=speed, CH2=steer
 // Receiver #2 (PIN_SBUS2_RX = GPIO 13): Dome spin
 //
 // SbusDecoder API:
-//   .begin(pin)   — initialize RMT channel on pin; returns false if no channel free
-//   .read()       — returns true when a new 25-byte frame is decoded
-//   .data()       — returns SbusData{ch[16], failsafe, lost_frame}
-//   ch[]          — 0-indexed, range SBUS_MIN(172)..SBUS_MAX(1811), center ~992
+//   .begin(pin)    --  initialize RMT channel on pin; returns false if no channel free
+//   .read()        --  returns true when a new 25-byte frame is decoded
+//   .data()        --  returns SbusData{ch[16], failsafe, lost_frame}
+//   ch[]           --  0-indexed, range SBUS_MIN(172)..SBUS_MAX(1811), center ~992
 //
 // Safety layers implemented here:
 //   Layer 1: SBUS receiver hardware failsafe flag (data.failsafe)
@@ -46,7 +46,7 @@
 
 static const char* TAG = "RCInputTask";
 
-// SBUS receiver objects — RMT-based, no hardware UART consumed.
+// SBUS receiver objects  --  RMT-based, no hardware UART consumed.
 // GPIO 15 (PIN_SBUS1_RX) and GPIO 13 (PIN_SBUS2_RX) are the SBUS receiver pins.
 // SBUS1 and SBUS2 each occupy one RMT channel (3 memory blocks each).
 // UART1 is now exclusively owned by DriveTask; UART2 by DomeLinkTask.
@@ -341,7 +341,7 @@ static void dispatchStandardPwmInputs() {
     static RcProcessorConfig cfg_proc = {};
     buildRcProcessorConfig(RC_INPUT_STANDARD_PWM, &cfg_proc);
     cfg_proc.mapping.prevSoundPressed = s_rcProcessor.lastSoundPressed;
-    // PWM mode has no Tier 2 SBUS triggers — clear count so processor skips the loop
+    // PWM mode has no Tier 2 SBUS triggers  --  clear count so processor skips the loop
     cfg_proc.triggerCount = 0;
 
     static RcProcessorInput input = {};
@@ -410,7 +410,7 @@ static bool driveSbusDecoderEnabledForMode(RcInputMode mode, bool enableRcCh1, b
 // Thread safety: all RobotState writes use taskENTER/EXIT_CRITICAL.
 // -----------------------------------------------------------------------------
 void rcInputTask(void* pvParameters) {
-    // Register with TWDT unconditionally — this task feeds the watchdog
+    // Register with TWDT unconditionally  --  this task feeds the watchdog
     // regardless of which RC mode is active or what channels are enabled.
     esp_task_wdt_add(NULL);
 
@@ -577,7 +577,7 @@ void rcInputTask(void* pvParameters) {
             SbusData data = sbus_drive.data();
 
             // single_sbus+useCh2=true: decoder reads GPIO13 (dome GPIO).
-            // Treat as SBUS2 — store to sbus2 state and dispatch dome/aux bindings only.
+            // Treat as SBUS2  --  store to sbus2 state and dispatch dome/aux bindings only.
             // Drive bindings (SBUS1) never fire, and SBUS2-only traffic must not feed
             // the drive SBUS watchdog.
             bool asSbus2 = (rcInputMode == RC_INPUT_SINGLE_SBUS) && useCh2;
@@ -643,7 +643,7 @@ void rcInputTask(void* pvParameters) {
             }
         }
 
-        // Layer 2: SBUS software watchdog — fires if no valid frame for SBUS_TIMEOUT_MS
+        // Layer 2: SBUS software watchdog  --  fires if no valid frame for SBUS_TIMEOUT_MS
         ConfigSnapshot watchdogCfg = {};
         configCacheRead(&watchdogCfg);
         taskENTER_CRITICAL(&robotStateMux);
@@ -743,7 +743,7 @@ void rcInputTask(void* pvParameters) {
             }
         }
 
-        // SBUS2 watchdog — Layer 2 safety for dome receiver
+        // SBUS2 watchdog  --  Layer 2 safety for dome receiver
         taskENTER_CRITICAL(&robotStateMux);
         uint32_t lastSbus2 = robotState.lastSbus2Ms;
         taskEXIT_CRITICAL(&robotStateMux);
@@ -866,7 +866,7 @@ void rcInputTask(void* pvParameters) {
         // Feed Task Watchdog Timer
         esp_task_wdt_reset();
 
-        // ~200 Hz poll rate — SBUS frames arrive at 100 Hz; poll twice per frame
+        // ~200 Hz poll rate  --  SBUS frames arrive at 100 Hz; poll twice per frame
         vTaskDelay(pdMS_TO_TICKS(5));
     }
 }

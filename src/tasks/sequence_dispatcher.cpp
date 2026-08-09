@@ -9,7 +9,7 @@
 // mapping engine actions onto the dome/audio queues.
 //
 // Dispatch policy: if a downstream queue is full mid-sequence, the engine
-// action is retried on the next 10 ms tick (absolute step times — no drift).
+// action is retried on the next 10 ms tick (absolute step times  --  no drift).
 // During preempt/estop cleanup the reset drain is best-effort instead, so a
 // full queue can never stall an abort.
 //
@@ -35,7 +35,7 @@
 #include "sequence_engine.h"
 #include "sequence_run_evidence.h"
 
-// Platform definition seam — hardware vs native test builds.
+// Platform definition seam  --  hardware vs native test builds.
 // This is the irreducible guard needed because queue definition must differ:
 // hardware builds define the real queue with xQueueCreate; native builds use
 // the stub version from native_test_stubs.cpp to avoid duplicate definitions.
@@ -70,7 +70,7 @@ bool sequenceActionToDomeCommand(const SeqAction& act, uint32_t nowMs,
 }
 
 // =============================================================================
-// sequenceStart — choke point called from RC and web paths.
+// sequenceStart  --  choke point called from RC and web paths.
 // =============================================================================
 
 bool sequenceStart(const char* name, CommandSource src) {
@@ -81,7 +81,7 @@ bool sequenceStart(const char* name, CommandSource src) {
     SequenceLookupResult r = sequenceLookup(name);
 
     switch (r.kind) {
-        case SEQ_RUNTIME:   // Learned Sequence — loaded on demand in the task
+        case SEQ_RUNTIME:   // Learned Sequence  --  loaded on demand in the task
         case SEQ_CATALOG: {
             if (sequenceQueue == nullptr) {
                 return false;
@@ -120,7 +120,7 @@ bool sequenceStart(const char* name, CommandSource src) {
 }
 
 // =============================================================================
-// Task Adapter — Core 0, priority 3, 10 ms tick.
+// Task Adapter  --  Core 0, priority 3, 10 ms tick.
 // Compiles with native FreeRTOS stubs for testing.
 // =============================================================================
 
@@ -239,7 +239,7 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
             if (isRuntime) {
                 // Stage the Learned Sequence (parse + Protocol Check into a
                 // transient heap pair) BEFORE touching the engine, so a load
-                // that fails — corrupt file, concurrent Memory Wipe — never
+                // that fails  --  corrupt file, concurrent Memory Wipe  --  never
                 // costs the currently running sequence.
                 ProtocolCheckResult lr = seqStorePrepare(req.name);
                 if (!lr.ok) {
@@ -320,7 +320,7 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
         prevEstop = estopActive;
 
         // Web-initiated non-latching stop (POST /api/seq/stop).
-        // The flag is transient — set by the web handler, cleared here after abort processing.
+        // The flag is transient  --  set by the web handler, cleared here after abort processing.
         // Unlike estop (which latches), a stop does not affect other subsystems or boot state.
         bool stopRequested = false;
         taskENTER_CRITICAL(&robotStateMux);
@@ -343,10 +343,10 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
         }
 
         // Dome (re)connect resync (ADR 0004 decision 8): panel state on the
-        // dome is unknown after boot or a link gap, so assume closed — abort any
+        // dome is unknown after boot or a link gap, so assume closed  --  abort any
         // running sequence, stage an individual ring-only close (drained below),
         // and clear the latches. Never a group :CL15/:CL00 (see the estop-clear
-        // resync above — a group close browns out the dome from a loaded ring);
+        // resync above  --  a group close browns out the dome from a loaded ring);
         // pies are never auto-closed on resync.
         const bool domeConn = domeConnected();
         if (domeConn && !prevDomeConn) {
@@ -368,7 +368,7 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
         prevDomeConn = domeConn;
 
         // Drain the staged ring-only resync close: one individual :CLnn per
-        // kResyncCloseSpacingMs (best-effort — hold the index on a full TX queue
+        // kResyncCloseSpacingMs (best-effort  --  hold the index on a full TX queue
         // and retry next tick). Never a group close; never a pie close.
         if (resyncCloseIdx != 0xFF && (int32_t)(now - resyncCloseDueMs) >= 0) {
             char closeCmd[8];

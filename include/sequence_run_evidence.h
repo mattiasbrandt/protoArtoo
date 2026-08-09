@@ -1,5 +1,5 @@
 // =============================================================================
-// sequence_run_evidence.h — body-side machine-readable "last sequence run"
+// sequence_run_evidence.h  --  body-side machine-readable "last sequence run"
 // record (issue #2 task #6).
 //
 // Purpose: so an agent can verify what the body actually did on the last
@@ -23,7 +23,7 @@
 // Bounded buffers. The record is held as TWO static copies (the live record on
 // the dispatcher task + a snapshot the API handler serializes from), so every
 // byte here costs ~2x static RAM. On this heap-constrained ESP32 (steady-state
-// free heap is tight — see the 2026-06-18 heap-exhaustion fix) the ring is sized
+// free heap is tight  --  see the 2026-06-18 heap-exhaustion fix) the ring is sized
 // at the operator-sanctioned minimum of 32 entries, each capped at 48 bytes
 // (longer than any real dome command, e.g. "@HPS101/HPR02/HPT02|36"). Truncation
 // is signalled via txOmittedRecentCount / cleanupTruncated so partial capture is
@@ -83,17 +83,17 @@ struct SeqRunEvidence {
     uint8_t  cleanupTotalCount;          // total cleanup commands emitted
     bool     cleanupTruncated;           // total > cap
 
-    // "Did it know anything went wrong" — counter deltas over the run window.
+    // "Did it know anything went wrong"  --  counter deltas over the run window.
     uint32_t bodyQueueFullDelta;         // robotState.queueOverflowCount delta
     uint32_t dispatchRetryCount;         // downstream queue-full retries this run
 };
 
 // Lifecycle (called from the dispatcher task). All allocation-free.
-//   seqEvidenceBegin    — start a new record (captures body queue-full baseline).
-//   seqEvidenceRecordTx — append one emitted command; cleanup=true routes it to
+//   seqEvidenceBegin     --  start a new record (captures body queue-full baseline).
+//   seqEvidenceRecordTx  --  append one emitted command; cleanup=true routes it to
 //                         the cleanup buffer too and infers no extra scope.
-//   seqEvidenceNoteRetry— a dispatch hit a full queue and will retry.
-//   seqEvidenceEnd      — finalize outcome/reason/endMs and queue-full delta.
+//   seqEvidenceNoteRetry --  a dispatch hit a full queue and will retry.
+//   seqEvidenceEnd       --  finalize outcome/reason/endMs and queue-full delta.
 void seqEvidenceBegin(const char* name, uint8_t source, uint32_t startMs,
                       uint32_t bodyQueueFullBaseline);
 void seqEvidenceRecordTx(const SeqAction& act, bool cleanup);

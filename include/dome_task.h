@@ -1,7 +1,7 @@
 // =============================================================================
 // include/dome_task.h
 //
-// DomeTask — controls dome rotation ESC via LEDC PWM.
+// DomeTask  --  controls dome rotation ESC via LEDC PWM.
 // Receives commands via domeCmdQueue and executes them.
 // =============================================================================
 #pragma once
@@ -16,5 +16,5 @@
 // Call once from setup().
 void domeTaskInit();
 
-// The DomeTask function — runs on Core 1.
+// The DomeTask function  --  runs on Core 1.
 void domeTask(void* pvParameters);

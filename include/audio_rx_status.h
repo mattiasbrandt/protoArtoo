@@ -1,7 +1,7 @@
 // =============================================================================
 // include/audio_rx_status.h
 //
-// AudioRxStatus enum — RX availability state for audio module status reporting.
+// AudioRxStatus enum  --  RX availability state for audio module status reporting.
 //
 // Extracted from robot_state.h so audio_driver.h can use it without pulling in
 // the full robot state (Arduino, FreeRTOS, etc.).

@@ -1,7 +1,7 @@
 // =============================================================================
 // include/rc_dispatcher_helpers.h
 //
-// RC dispatch helpers — decouple rc_input.cpp from subsystem queue APIs.
+// RC dispatch helpers  --  decouple rc_input.cpp from subsystem queue APIs.
 // Each helper consumes its slice of RcActionResult, encapsulating all calls
 // to a specific subsystem. rc_input.cpp calls helpers and stops including
 // subsystem headers solely for dispatch.
@@ -15,7 +15,7 @@
 
 #include "rc_action_dispatcher.h"
 
-// Forward declarations — headers NOT included here to avoid coupling rc_input.cpp
+// Forward declarations  --  headers NOT included here to avoid coupling rc_input.cpp
 // to the world. Each helper includes only what it needs.
 struct RcProcessorOutput;
 struct RcMappingConfig;

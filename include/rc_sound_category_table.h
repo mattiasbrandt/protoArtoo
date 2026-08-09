@@ -1,7 +1,7 @@
 // =============================================================================
 // include/rc_sound_category_table.h
 //
-// Sound category lookup table — exposed for testing.
+// Sound category lookup table  --  exposed for testing.
 // Maps RobotActionId (sound action) to audio category bounds (lo/hi).
 // Do not depend on this from client code; it is an implementation seam
 // declared solely to enable unit tests of sound action dispatch.

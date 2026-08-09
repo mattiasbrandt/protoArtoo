@@ -71,8 +71,8 @@ enum DomeUartOwner : uint8_t {
 
 enum ServoComponentType : uint8_t {
     SERVO_COMP_NONE = 0,    // Nothing connected / unassigned
-    SERVO_COMP_MG996R = 1,  // Standard hobby servo, 1000-2000 µs range
-    SERVO_COMP_MG90S = 2,   // Micro servo, 500-2500 µs range
+    SERVO_COMP_MG996R = 1,  // Standard hobby servo, 1000-2000 us range
+    SERVO_COMP_MG90S = 2,   // Micro servo, 500-2500 us range
     SERVO_COMP_RGB = 3,     // RGB LED strip (no servo PWM calibration)
 };
 
@@ -115,7 +115,7 @@ enum ServoCommandType : uint8_t {
 struct ServoCommand {
     uint8_t armId;          // 0=ARM1, 1=ARM2, 2=AUX1, 3=AUX2, 4=AUX3, 255=broadcast (ARM1+ARM2)
     ServoCommandType type;  // Command type
-    uint16_t positionUs;    // Target pulse width (µs) for POSITION type
+    uint16_t positionUs;    // Target pulse width (us) for POSITION type
     uint8_t sequenceId;     // Sequence ID 30-36 for SEQUENCE type
     CommandSource source;
     uint32_t timestampMs;
@@ -132,7 +132,7 @@ struct DomeCommand {
 };
 
 // -----------------------------------------------------------------------------
-// RobotState — shared state, all access under robotStateMux
+// RobotState  --  shared state, all access under robotStateMux
 // -----------------------------------------------------------------------------
 struct RobotState {
     // --- Zone 1: Drive output + hoverboard feedback + failsafe gate (DriveTask) ---
@@ -265,7 +265,7 @@ inline void recordFailsafeZeroOutputLocked(uint32_t nowMs) {
 }
 
 // -----------------------------------------------------------------------------
-// FailsafeDiagnostics — canonical multi-field zone snapshot (ADR 0012)
+// FailsafeDiagnostics  --  canonical multi-field zone snapshot (ADR 0012)
 // -----------------------------------------------------------------------------
 struct FailsafeDiagnostics {
     bool estop;

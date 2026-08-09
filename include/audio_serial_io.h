@@ -1,7 +1,7 @@
 // =============================================================================
 // include/audio_serial_io.h
 //
-// AudioSerialIO — injectable I/O seam for audio drivers.
+// AudioSerialIO  --  injectable I/O seam for audio drivers.
 //
 // Separates protocol framing (what bytes to send, when to wait, what to read)
 // from the transport mechanism (softUartTxByte, HardwareSerial, vTaskDelay).

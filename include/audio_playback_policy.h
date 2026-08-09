@@ -77,7 +77,7 @@ enum AudioPlaybackRequestKind : uint8_t {
     AUDIO_PLAYBACK_REQ_CATEGORY,
     AUDIO_PLAYBACK_REQ_STOP,
     AUDIO_PLAYBACK_REQ_TRACK_STOP,  // Track Stop (ADR 0010): stop current playback
-                                    // only, preserve randomMode — every non-mood
+                                    // only, preserve randomMode  --  every non-mood
                                     // stop surface uses this instead of REQ_STOP.
     AUDIO_PLAYBACK_REQ_SET_VOLUME,
     AUDIO_PLAYBACK_REQ_RANDOM_ON,

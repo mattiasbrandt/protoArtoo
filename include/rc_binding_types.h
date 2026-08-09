@@ -84,7 +84,7 @@ inline const char* rcBindingSourceToString(RcBindingSource source) {
     }
 }
 
-// Display label for logs — uppercase. Use rcBindingSourceToString() for serialization
+// Display label for logs  --  uppercase. Use rcBindingSourceToString() for serialization
 // (parsing expects lowercase; changing that function would break config round-trips).
 inline const char* rcBindingSourceToLabel(RcBindingSource source) {
     switch (source) {

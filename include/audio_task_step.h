@@ -1,7 +1,7 @@
 // =============================================================================
 // include/audio_task_step.h
 //
-// Audio Step Core (ADR 0014) — the audio task's pure per-tick decision module.
+// Audio Step Core (ADR 0014)  --  the audio task's pure per-tick decision module.
 //
 // Second instance of the Step Core pattern (ADR 0005): the audioTask() loop
 // gathers inputs, calls the phase functions below in loop order, and executes
@@ -9,13 +9,13 @@
 // logging dependencies; compiles in the native test environment.
 //
 // Calling contract (one loop iteration):
-//   1. audioStepTick()       — disable/init/sleep-entry transitions.
+//   1. audioStepTick()        --  disable/init/sleep-entry transitions.
 //        drainQueue  -> receive+discard one command, end iteration.
 //        initDriver  -> run driver->begin(state.currentVol), then step 2.
-//   2. audioStepInitResult() — retry-ceiling policy for driver begin().
+//   2. audioStepInitResult()  --  retry-ceiling policy for driver begin().
 //        skipRestOfTick -> delay AUDIO_STEP_INIT_RETRY_DELAY_MS, end iteration.
-//   3. audioStepCommand()    — once per command received this iteration.
-//   4. audioStepIdle()       — random playback tick + auto status-query gate.
+//   3. audioStepCommand()     --  once per command received this iteration.
+//   4. audioStepIdle()        --  random playback tick + auto status-query gate.
 //
 // The core owns the intent's state effects (randomMode, currentVol, cadence
 // timestamps); the adapter executes intents on the driver and performs all
@@ -36,7 +36,7 @@ static constexpr uint32_t AUDIO_STEP_INIT_RETRY_DELAY_MS = 250;
 static constexpr uint8_t AUDIO_STEP_INIT_MAX_RETRIES = 20;
 
 // -----------------------------------------------------------------------------
-// AudioStepState — the loop's cross-iteration state, owned by the core.
+// AudioStepState  --  the loop's cross-iteration state, owned by the core.
 // Default initialization is the boot state.
 // -----------------------------------------------------------------------------
 struct AudioStepState {
@@ -54,7 +54,7 @@ struct AudioStepState {
 enum AudioStepStopReason : uint8_t {
     AUDIO_STEP_STOP_NONE = 0,
     AUDIO_STEP_STOP_DISABLED,     // audio toggled off with playback possibly active
-    AUDIO_STEP_STOP_SLEEP_ENTRY,  // sleep mode entered — suppress playback
+    AUDIO_STEP_STOP_SLEEP_ENTRY,  // sleep mode entered  --  suppress playback
 };
 
 enum AudioStepIgnoreReason : uint8_t {
@@ -64,7 +64,7 @@ enum AudioStepIgnoreReason : uint8_t {
 };
 
 // -----------------------------------------------------------------------------
-// Phase 1 — audioStepTick()
+// Phase 1  --  audioStepTick()
 // -----------------------------------------------------------------------------
 struct AudioStepTickInputs {
     bool audioEnabled = false;  // cfg.system.enable_s2_sound
@@ -83,7 +83,7 @@ struct AudioStepTickActions {
 AudioStepTickActions audioStepTick(AudioStepState& state, const AudioStepTickInputs& in);
 
 // -----------------------------------------------------------------------------
-// Phase 2 — audioStepInitResult()
+// Phase 2  --  audioStepInitResult()
 // -----------------------------------------------------------------------------
 struct AudioStepInitResultActions {
     bool skipRestOfTick = false;  // failure (retry or give-up): delay, end iteration
@@ -96,7 +96,7 @@ AudioStepInitResultActions audioStepInitResult(AudioStepState& state, bool begin
                                                bool catalogCapable);
 
 // -----------------------------------------------------------------------------
-// Phase 3 — audioStepCommand()
+// Phase 3  --  audioStepCommand()
 // -----------------------------------------------------------------------------
 struct AudioStepCommandInputs {
     uint32_t nowMs = 0;
@@ -122,7 +122,7 @@ AudioStepCommandActions audioStepCommand(AudioStepState& state,
                                          const AudioCommand& cmd);
 
 // -----------------------------------------------------------------------------
-// Phase 4 — audioStepIdle()
+// Phase 4  --  audioStepIdle()
 // -----------------------------------------------------------------------------
 struct AudioStepIdleInputs {
     uint32_t nowMs = 0;

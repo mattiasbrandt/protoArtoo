@@ -8,12 +8,12 @@
 // 9600 baud. RX status/manifest responses are read via HardwareSerial(2) on
 // PIN_AUDIO_RX (GPIO 35).
 //
-// ⚠ CHIRP defaults to 115200 baud. Before using this driver, set the board's
+// NOTE: CHIRP defaults to 115200 baud. Before using this driver, set the board's
 // baud rate to 9600 by placing the following in CHIRP.INI on the SD card root:
 //   #BAUD_RATE 9600
 //
 // Reference: https://github.com/joymonkey/CHIRP
-// See docs/sound_playback.md §2.2 for full protocol and file layout details.
+// See docs/sound_playback.md #2.2 for full protocol and file layout details.
 //
 // Only compiled when PA_AUDIO_DRIVER == AUDIO_CHIRP (platformio.ini).
 // =============================================================================
@@ -45,7 +45,7 @@ class AudioDriverChirp : public AudioDriver {
     // Stop all active streams.
     void stop() override;
 
-    // Set volume 0–30 (clamped by AudioTask). Scaled to CHIRP 0–99 range.
+    // Set volume 0-30 (clamped by AudioTask). Scaled to CHIRP 0-99 range.
     void setVolume(uint8_t vol) override;
     const char* driverName() const override {
         return "CHIRP";
@@ -83,7 +83,7 @@ class AudioDriverChirp : public AudioDriver {
     // Catalog storage is heap-allocated on first discovery and reused after.
     // When CHIRP RX is unavailable (e.g. the dome link owns UART2) discovery
     // never runs, so these stay null and the ~16 KB they would hold statically
-    // stays as free, contiguous heap — easing DRAM fragmentation.
+    // stays as free, contiguous heap  --  easing DRAM fragmentation.
     AudioCatalogEntry* m_catalog = nullptr;
     AudioCatalogBank* m_catalogBanks = nullptr;
 

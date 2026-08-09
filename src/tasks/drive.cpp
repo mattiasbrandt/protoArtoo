@@ -1,7 +1,7 @@
 // =============================================================================
 // src/tasks/drive.cpp
 //
-// DriveTask — sends 8-byte Gen2.x frames to the hoverboard at 50 Hz.
+// DriveTask  --  sends 8-byte Gen2.x frames to the hoverboard at 50 Hz.
 // Owns UART1 / Serial1 on GPIO PIN_HOVERBOARD_TX / PIN_HOVERBOARD_RX.
 // Runs on Core 1 (real-time).
 //
@@ -35,12 +35,12 @@ static HardwareSerial hoverSerial(1);
 // -----------------------------------------------------------------------------
 // driveTask()
 // Sends Gen2.x 8-byte frames to the hoverboard at DRIVE_FREQ_HZ (50 Hz).
-// Registers with TWDT on entry — if this loop hangs, chip resets in 3 s.
+// Registers with TWDT on entry  --  if this loop hangs, chip resets in 3 s.
 // Applies SPEED_LIMIT_MAX cap and all active failsafe overrides every frame.
 // Thread safety: all RobotState reads/writes use taskENTER/EXIT_CRITICAL.
 // -----------------------------------------------------------------------------
 void driveTask(void* pvParameters) {
-    // Register with TWDT unconditionally — this task must feed the watchdog
+    // Register with TWDT unconditionally  --  this task must feed the watchdog
     // regardless of enable state or the chip will reset after WATCHDOG_TIMEOUT_S.
     esp_task_wdt_add(NULL);
 
@@ -73,7 +73,7 @@ void driveTask(void* pvParameters) {
     bool zeroOutputRecorded = false;
     uint32_t zeroRecordedForTriggerMs = 0;
     while (true) {
-        // Feed TWDT — if this line is not reached within WATCHDOG_TIMEOUT_S, chip resets
+        // Feed TWDT  --  if this line is not reached within WATCHDOG_TIMEOUT_S, chip resets
         esp_task_wdt_reset();
 
         // Log stack high-water mark once, after the first loop (captures init overhead).
@@ -137,7 +137,7 @@ void driveTask(void* pvParameters) {
             zeroRecordedForTriggerMs = 0;
         }
 
-        // Send frame — always (zero-frame rule: never go silent, hoverboard must coast, not drift)
+        // Send frame  --  always (zero-frame rule: never go silent, hoverboard must coast, not drift)
         // Pure step decision: encode frame emission and payload.
         DriveTickInputs tickIn{
             .failsafeActive = failsafeActive,
@@ -150,9 +150,9 @@ void driveTask(void* pvParameters) {
             hoverSerial.write(frameBuf, sizeof(frameBuf));
         }
 
-        // Read hoverboard controller feedback — non-blocking, drains available bytes.
+        // Read hoverboard controller feedback  --  non-blocking, drains available bytes.
         // Decodes battery voltage, board temperature, and motor speed from the
-        // Gen2.x feedback frame the hoverboard controller sends back at 10–100 Hz.
+        // Gen2.x feedback frame the hoverboard controller sends back at 10-100 Hz.
         // If no valid frame arrives within HB_FEEDBACK_STALE_MS, mark feedback as
         // invalid so the UI does not display stale readings indefinitely.
         static constexpr uint32_t kFeedbackStaleMs = 5000;

@@ -1,7 +1,7 @@
 // =============================================================================
 // src/tasks/audio_dollar_parser.cpp
 //
-// Implementation of parseAudioDollar() — pure logic, no Arduino/FreeRTOS deps.
+// Implementation of parseAudioDollar()  --  pure logic, no Arduino/FreeRTOS deps.
 // Included in both the firmware build and the native unit test build.
 //
 // See include/audio_dollar_parser.h for the full $ command reference.
@@ -22,10 +22,10 @@ AudioAction parseAudioDollar(const char* cmd, const AudioNamedTracks& named) {
     const char* arg = cmd + 1;  // character(s) after '$'
 
     if (*arg == '\0') {
-        return action;  // bare '$' — NONE
+        return action;  // bare '$'  --  NONE
     }
 
-    // Numeric argument: $nnn — play track by number
+    // Numeric argument: $nnn  --  play track by number
     if (*arg >= '0' && *arg <= '9') {
         int track = atoi(arg);
         if (track > 0 && track <= 65535) {
@@ -66,7 +66,7 @@ AudioAction parseAudioDollar(const char* cmd, const AudioNamedTracks& named) {
         case 'p': action.type = AUDIO_ACTION_VOLUME_SET; action.volume = AUDIO_VOLUME_MIN; break;
 
         default:
-            break;  // unrecognised — NONE
+            break;  // unrecognised  --  NONE
     }
 
     return action;

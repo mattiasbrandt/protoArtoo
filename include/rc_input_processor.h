@@ -1,10 +1,10 @@
 // =============================================================================
 // include/rc_input_processor.h
 //
-// RcInputProcessor — pure RC input orchestration.
+// RcInputProcessor  --  pure RC input orchestration.
 // Owns debounce state, dome filter, sound edge detection.
 // Input: channel snapshot + injected config. Output: backbone intent + trigger results.
-// No FreeRTOS, no robotState, no hardware I/O — safe for native unit tests.
+// No FreeRTOS, no robotState, no hardware I/O  --  safe for native unit tests.
 // =============================================================================
 #pragma once
 

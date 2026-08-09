@@ -1,7 +1,7 @@
 // =============================================================================
 // src/tasks/audio_task.cpp
 //
-// AudioTask — sole writer to the audio serial GPIO (PIN_AUDIO_TX, GPIO 26).
+// AudioTask  --  sole writer to the audio serial GPIO (PIN_AUDIO_TX, GPIO 26).
 //
 // Imperative adapter for the Audio Step Core (audio_task_step, ADR 0014):
 //   - Gathers one generation of inputs per loop iteration (config, RobotState).
@@ -41,7 +41,7 @@
 #include "web_server.h"
 
 // -----------------------------------------------------------------------------
-// Driver instantiation — one concrete driver per build
+// Driver instantiation  --  one concrete driver per build
 // -----------------------------------------------------------------------------
 #if PA_AUDIO_DRIVER == AUDIO_SOFT_UART
 #include "audio_dy_sv5w.h"
@@ -631,7 +631,7 @@ void audioTask(void* pvParameters) {
             PA_LOG_INFO(TAG, "audio driver init — PA_AUDIO_DRIVER=%d vol=%u", PA_AUDIO_DRIVER,
                         (unsigned)step.currentVol);
             if (ir.seedModuleState) {
-                // Seed RobotState from getCachedState() — begin() runs pre-init
+                // Seed RobotState from getCachedState()  --  begin() runs pre-init
                 // queries so m_device and m_totalTracks may already be populated
                 // (non-0xFF/0) if the module responded.
                 AudioModuleState ms{};

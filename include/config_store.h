@@ -1,14 +1,14 @@
 // =============================================================================
 // include/config_store.h
 //
-// Config schema module — centralized NVS key definitions, load/save, and
+// Config schema module  --  centralized NVS key definitions, load/save, and
 // scalar validation for all cfg_* configuration fields.
 //
 // Design:
 // - ConfigSnapshot is an in-flight copy of config state; used only at
 //   load/save boundaries (boot and API updates).
 // - All cfg_* NVS keys are defined and owned by this module.
-// - Schema versioning: Version 0 (legacy) → 1 (current). Bump on rename/removal/type change.
+// - Schema versioning: Version 0 (legacy) -> 1 (current). Bump on rename/removal/type change.
 // - configLoad/configSave are caller-opened (Preferences lifecycle managed by caller).
 // - configSave() performs no mutex lock and no robotState reads; callers capture snapshot.
 // - configValidate() handles scalar fields only (int/float/bool/enum). Complex structs
@@ -32,7 +32,7 @@ enum class ConfigValidationResult : uint8_t {
     INVALID_VALUE = 2,
 };
 
-// ConfigKey enum — enumerates all scalar cfg_* fields for validation and lookup
+// ConfigKey enum  --  enumerates all scalar cfg_* fields for validation and lookup
 enum class ConfigKey : uint8_t {
     // Speed control
     SPEED_LIMIT_MAX = 0,
@@ -270,14 +270,14 @@ struct ServoConfig {
 };
 
 // -----------------------------------------------------------------------------
-// Device WiFi Settings (ADR 0015 — runtime WiFi provisioning)
+// Device WiFi Settings (ADR 0015  --  runtime WiFi provisioning)
 // -----------------------------------------------------------------------------
 
 // WifiMode is the ongoing operator-selected posture once provisioned.
 // It is meaningless while wifi.provisioned == false (Unprovisioned Controller).
 enum class WifiMode : uint8_t {
-    CLIENT = 0,         // WiFi Client Mode — join an existing network
-    STANDALONE_AP = 1,  // Standalone AP Mode — host the controller's own network
+    CLIENT = 0,         // WiFi Client Mode  --  join an existing network
+    STANDALONE_AP = 1,  // Standalone AP Mode  --  host the controller's own network
 };
 
 constexpr size_t WIFI_SSID_MAX_LEN = 32;      // 802.11 SSID length limit
@@ -401,7 +401,7 @@ inline size_t rcTriggerSlotsCopy(const SystemConfig& sys, RcTriggerBinding* out,
     return n;
 }
 
-// ConfigSnapshot — in-flight snapshot of all cfg_* fields, used only at
+// ConfigSnapshot  --  in-flight snapshot of all cfg_* fields, used only at
 // load/save boundaries. NOT persisted or shared with tasks at runtime.
 struct ConfigSnapshot {
     DriveConfig drive;

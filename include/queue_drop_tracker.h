@@ -13,7 +13,7 @@
 //   - Safe from Core 1 real-time tasks and Core 0 web handlers.
 //   - No heap allocation or blocking.
 //
-// Architecture (ADR 0005/0014 — pure step core + thin adapter):
+// Architecture (ADR 0005/0014  --  pure step core + thin adapter):
 //   - queueDropShouldLog() is a pure decision function: state + time -> bool.
 //     No I/O, no robotState, no portMUX. Natively testable.
 //   - logQueueDrop() is the thin adapter: calls the pure function, emits the

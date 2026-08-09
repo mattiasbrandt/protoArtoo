@@ -1,7 +1,7 @@
 // =============================================================================
 // src/rc_input_processor.cpp
 //
-// RcInputProcessor implementation — see include/rc_input_processor.h.
+// RcInputProcessor implementation  --  see include/rc_input_processor.h.
 // =============================================================================
 
 #include "rc_input_processor.h"

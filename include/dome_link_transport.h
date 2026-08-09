@@ -1,7 +1,7 @@
 // =============================================================================
 // include/dome_link_transport.h
 //
-// DomeLinkTransport enum — active transport state for the protoR2link.
+// DomeLinkTransport enum  --  active transport state for the protoR2link.
 //
 // Extracted from robot_state.h so dome_link_arbiter.h can use it without
 // pulling in the full robot state (Arduino, FreeRTOS, etc.).
