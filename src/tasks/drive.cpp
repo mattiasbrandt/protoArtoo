@@ -20,6 +20,7 @@
 #include "config_store.h"
 #include "drive_arbiter.h"
 #include "drive.h"
+#include "drive_frame_emit.h"
 #include "failsafe_gate.h"
 #include "hoverboard_uart.h"
 #include "logging.h"
@@ -136,8 +137,17 @@ void driveTask(void* pvParameters) {
         }
 
         // Send frame — always (zero-frame rule: never go silent, hoverboard must coast, not drift)
-        buildHoverboardFrame(frameBuf, steer, speed);
-        hoverSerial.write(frameBuf, sizeof(frameBuf));
+        // Pure step decision: encode frame emission and payload.
+        DriveTickInputs tickIn{
+            .failsafeActive = failsafeActive,
+            .arbiterSpeed = speed,
+            .arbiterSteer = steer,
+        };
+        DriveTickActions tickActions = driveTickDecide(tickIn);
+        if (tickActions.shouldEmitFrame) {
+            buildHoverboardFrame(frameBuf, tickActions.steer, tickActions.speed);
+            hoverSerial.write(frameBuf, sizeof(frameBuf));
+        }
 
         // Read hoverboard controller feedback — non-blocking, drains available bytes.
         // Decodes battery voltage, board temperature, and motor speed from the
