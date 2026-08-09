@@ -1,7 +1,7 @@
 // =============================================================================
 // src/seq_store_util.cpp
 //
-// Pure decision logic for the Learned Sequence store (issue #2 slice 3). See
+// Pure decision logic for the Learned Sequence store (ADR 0006). See
 // header. No Arduino/FreeRTOS/LittleFS dependencies — natively testable.
 // =============================================================================
 

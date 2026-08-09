@@ -1,8 +1,8 @@
 // =============================================================================
 // include/seq_json.h
 //
-// Learned Sequence JSON format v1 — parse and serialize (issue #2 slice 3,
-// ADR 0006). Maps 1:1 onto the SeqStep / SeqStepParams model so the slice-2
+// Learned Sequence JSON format v1 — parse and serialize (ADR 0006).
+// Maps 1:1 onto the SeqStep / SeqStepParams model so the sequence
 // engine is the single interpreter; no separate runtime representation.
 //
 //   parse:     JSON text -> SeqDraft (into caller-owned SeqStep buffers).

@@ -1,7 +1,7 @@
 // =============================================================================
 // src/seq_store.cpp
 //
-// Learned Sequence runtime store — LittleFS I/O (issue #2 slice 3c, ADR 0006).
+// Learned Sequence runtime store — LittleFS I/O (ADR 0006).
 // Firmware-only; see header for the contract. Pure validation/index/parse live
 // in protocol_check / seq_json / seq_store_index and are tested natively.
 // =============================================================================

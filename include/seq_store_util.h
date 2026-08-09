@@ -1,8 +1,8 @@
 // =============================================================================
 // include/seq_store_util.h
 //
-// Pure decision logic for the Learned Sequence store (issue #2 slice 3, ADR
-// 0006). Extracted from seq_store.cpp so the capacity policy and the name->file
+// Pure decision logic for the Learned Sequence store (ADR 0006).
+// Extracted from seq_store.cpp so the capacity policy and the name->file
 // mapping are native-testable against the real production code, without an
 // (unfaithful) LittleFS emulation. seq_store.cpp calls these around its I/O.
 // =============================================================================

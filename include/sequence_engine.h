@@ -170,8 +170,8 @@ enum SeqToggleGroup : uint8_t {
     TOGGLE_PIES  = 1,
     TOGGLE_LOW   = 2,
     TOGGLE_ALL   = 3,
-    // User latches for non-shadowing Learned toggle sequences (issue #2 slice 3,
-    // grill decision 4). RESERVED: the engine's branch-pick/latch switches are
+    // User latches for non-shadowing Learned toggle sequences. RESERVED: the
+    // engine's branch-pick/latch switches are
     // not wired for these yet (SeqToggleState has no user fields), so Protocol
     // Check rejects them on save. The values exist so the JSON format and the
     // runtime index can already represent them.
