@@ -206,7 +206,7 @@ void seqStoreInit() {
             continue;
         }
         if (!checkResult.ok) {
-            // Parseable but fails current contract (e.g. pre-Slice-1 :SM usage).
+            // Parseable but fails current contract (e.g. legacy :SM usage).
             // Index as invalid so the UI can surface it for repair/export/delete.
             PA_LOG_WARN(TAG, "index invalid %s: %s (%s)", file,
                         checkResult.message, checkResult.field);

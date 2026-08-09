@@ -126,7 +126,7 @@ inline const char* randomSoundCategoryLabel(RobotActionId target) {
     }
 }
 
-// Simple predicates for action classification (moved to cpp in slice 2)
+// Inline action classification predicates — remain in header for use in routing logic.
 inline bool robotActionNeedsPayload(RobotActionId target) {
     return target == DOME_ACTION_MARCDUINO_SEQ || target == DOME_ACTION_MARCDUINO_CMD ||
            target == DOME_ACTION_SEQ;
