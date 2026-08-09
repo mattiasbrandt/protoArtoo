@@ -356,6 +356,40 @@ that mechanism for ongoing feature-branch PRs.
 agent self-merge under any circumstance, regardless of how low-risk a change
 appears.
 
+### Push and remote policy
+
+The gate binds on **what receives the push**, not on the act of pushing. An
+earlier blanket "nothing is pushed until the operator says so" was unfollowable
+in practice — `gh issue develop`, which the issue workflow requires to create the
+native Development link, is itself a remote write — and a rule that the
+prescribed workflow breaks on its first step gets read loosely, which is how an
+agent eventually rationalizes a push to a shared branch.
+
+| Action | Gate |
+|---|---|
+| Push a `feature/`, `fix/`, `refactor/`, `chore/`, `docs/`, `test/`, or `exp/` branch you own | Free — no approval |
+| `--force-with-lease` onto that same branch after a rebase | Free — no approval |
+| `gh issue develop` branch creation | Free — no approval |
+| Push to `phase/*` or any shared integration branch | Explicit operator approval |
+| Open **or** merge a PR | Explicit operator approval |
+| Push a tag | Explicit operator approval |
+| Push to `main`, or self-merge any PR | Never, unconditionally |
+
+Rationale for the free tier: no workflow triggers on a branch push. The
+`verification` and `dependency-review` workflows run on `pull_request` into
+`phase/v*`/`main`; `verification` and `version-sync` additionally run on push to
+`main`; `release` runs on `v*.*.*` tags. A worker branch push therefore consumes
+no CI and publishes no project state.
+
+Pushing worker branches is **encouraged, not merely tolerated**. This repo's
+documented worst failure mode is losing work to a parallel agent operating over
+another agent's tree (see "Incremental slice workflow"). Commits that exist only
+in one local worktree have no backup; origin is the backup. Push each branch once
+its slice commits land.
+
+Note the repo is public: work pushed to a branch is world-visible before review.
+That is an accepted trade against losing it.
+
 ### Commit scope format (required)
 
 All commits use plain [Conventional Commits](https://www.conventionalcommits.org)
@@ -431,6 +465,7 @@ to a meaningless default.
 - Ad-hoc incidental improvements are permitted commits without plan amendment; formal scope additions require PM approval
 - Mattias approves every PR merge to `main`, unconditionally — no agent self-merge regardless of change size or risk
 - Merge method for ongoing feature-branch PRs is "Rebase and merge" (see "Branch model" above for the one-time historical exception)
+- Pushing your own work branch is free; pushing to a shared branch, opening or merging a PR, and pushing tags each need explicit operator approval (see "Push and remote policy")
 
 ## Agent skills
 
