@@ -12,37 +12,53 @@
 // action is retried on the next 10 ms tick (absolute step times — no drift).
 // During preempt/estop cleanup the reset drain is best-effort instead, so a
 // full queue can never stall an abort.
+//
+// Dispatch decision logic is extracted to sequence_dispatcher_step (ADR 0014):
+// a pure decision module that takes a SeqAction and returns the target queue
+// and command format. The task adapter executes those decisions. The pure
+// functions (sequenceStart, sequenceLookup, sequenceActionToDomeCommand) are
+// testable in the native environment without FreeRTOS/Arduino dependencies.
 // =============================================================================
 
-#ifndef PA_NATIVE_TEST_STUBS
+#include <string.h>
+
+#include "dome_link.h"
+#include "logging.h"
+#include "sequence_dispatcher.h"
+#include "sequence_dispatcher_step.h"
+#include "sequence_engine.h"
+
+static const char* TAG = "SEQ";
+
+// FreeRTOS/Arduino headers needed only for the task function
+#ifdef PA_NATIVE_TEST_STUBS
+// Native tests: provide stub implementation (no FreeRTOS queue in tests)
+extern QueueHandle_t sequenceQueue;
+void sequenceDispatcherInit() {
+    // No-op stub: no FreeRTOS queue creation in native tests
+}
+#else
+// Hardware build: include full dependencies
 #include <Arduino.h>
 #include <esp_task_wdt.h>
-#endif
-
-#include <string.h>
 
 #include "audio_task.h"
 #include "dome_link.h"
 #include "logging.h"
 #include "robot_state.h"
 #include "seq_store.h"
-#include "sequence_dispatcher.h"
-#include "sequence_engine.h"
 #include "sequence_run_evidence.h"
-
-static const char* TAG = "SEQ";
 
 // =============================================================================
 // Queue
 // =============================================================================
 
-#ifndef PA_NATIVE_TEST_STUBS
 QueueHandle_t sequenceQueue = nullptr;
-#endif
 
 void sequenceDispatcherInit() {
     sequenceQueue = xQueueCreate(4, sizeof(SequenceRequest));
 }
+#endif
 
 bool sequenceActionToDomeCommand(const SeqAction& act, uint32_t nowMs,
                                  DomeCommand& out) {
@@ -109,32 +125,50 @@ bool sequenceStart(const char* name, CommandSource src) {
 }
 
 // =============================================================================
-// Task — Core 0, priority 3, 10 ms tick.
-// Not compiled in native test builds.
+// Task Adapter — Core 0, priority 3, 10 ms tick.
+// Only compiled in hardware builds; native tests link stub versions.
 // =============================================================================
 
 #ifndef PA_NATIVE_TEST_STUBS
 
+// Dispatch an action to the appropriate queue using the pure step-core decision.
+// Preserves the safety invariants: a full queue causes retry on the next tick
+// rather than stalling the engine. In abort/preempt cleanup, failures are
+// best-effort and do not stall the drain.
 static bool dispatchAction(const SeqAction& act) {
-    switch (act.kind) {
-        case SEQ_ACT_DOME_CMD:
+    const SequenceDispatcherStepActions decision = sequenceDispatcherStep(act, millis());
+
+    switch (decision.target) {
+        case SEQ_DISPATCH_DOME_CMD:
+            // Forward dome text command to dome queue.
             return domeQueueTx(act.payload);
-        case SEQ_ACT_DOME_ROTATE: {
+
+        case SEQ_DISPATCH_DOME_ROTATE: {
+            // Send converted DomeCommand to the dome rotation queue.
             DomeCommand cmd = {};
             if (!sequenceActionToDomeCommand(act, millis(), cmd)) {
                 return true;
             }
             return xQueueSend(domeCmdQueue, &cmd, 0) == pdTRUE;
         }
-        case SEQ_ACT_AUDIO_DOLLAR:
+
+        case SEQ_DISPATCH_AUDIO_DOLLAR:
+            // Forward audio dollar command to audio queue.
             return audioQueueDollar(act.payload, SRC_SEQ);
-        case SEQ_ACT_AUDIO_CATEGORY:
-            return audioQueuePlayCategory((AudioPlaybackCategory)act.audioCategory,
-                                          (AudioPlaybackSlot)act.audioFallbackSlot,
+
+        case SEQ_DISPATCH_AUDIO_CATEGORY:
+            // Route to audio category play with fallback slot.
+            return audioQueuePlayCategory((AudioPlaybackCategory)decision.audioCategory.category,
+                                          (AudioPlaybackSlot)decision.audioCategory.fallbackSlot,
                                           SRC_SEQ);
-        case SEQ_ACT_AUDIO_STOP:
+
+        case SEQ_DISPATCH_AUDIO_STOP:
+            // Forward to audio stop queue.
             return audioQueueTrackStop(SRC_SEQ);
+
+        case SEQ_DISPATCH_NONE:
         default:
+            // Unknown action: silent success (fail-safe behavior).
             return true;
     }
 }
@@ -149,8 +183,9 @@ static uint32_t bodyQueueFullCount() {
 }
 
 // Best-effort drain of remaining engine actions (abort/preempt cleanup).
-// Commits regardless of dispatch result so a full queue cannot stall cleanup.
-// These are all terminal/abort cleanup, so they are recorded as cleanup evidence.
+// SAFETY INVARIANT: drains regardless of dispatch result so a full queue
+// cannot stall an abort or preempt. These are all terminal/abort cleanup,
+// so they are recorded as cleanup evidence.
 static void drainBestEffort(SeqEngineState& engine, uint32_t now) {
     SeqAction act;
     while (seqEnginePeek(engine, now, esp_random, act)) {
@@ -259,7 +294,9 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
             }
         }
 
-        // Abort on estop; resync the dome to a known safe state on estop-clear.
+        // SAFETY INVARIANT: Abort on estop; resync the dome to a known safe state on estop-clear.
+        // Estop abort is latching: once it fires, it drains all pending actions and
+        // prevents new sequences from starting until estop is released and resync completes.
         bool estopActive = false;
         taskENTER_CRITICAL(&robotStateMux);
         estopActive = robotState.estop;
@@ -353,7 +390,10 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
             }
         }
 
+        // SAFETY INVARIANT: Suppression window behavior.
         // Advance the cursor: dispatch due actions, retry on queue-full.
+        // If a downstream queue is full mid-sequence, the action is retried
+        // on the next tick without advancing the cursor.
         if (seqEngineActive(engine)) {
             SeqAction act;
             while (seqEnginePeek(engine, now, esp_random, act)) {
