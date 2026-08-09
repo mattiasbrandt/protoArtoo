@@ -7,7 +7,7 @@
 // baud — the same pin and bit-bang rate used by AUDIO_SOFT_UART and AUDIO_CHIRP.
 // RX query responses are read via HardwareSerial(2) on PIN_AUDIO_RX (GPIO 35),
 // opened RX-only (TX pin = -1). UART2 is shared with dome link (S3) and SBUS2;
-// queryModuleState() returns cached state when UART2 is contended (see T66).
+// queryModuleState() returns cached state when UART2 is contended (the dome link shares UART2).
 //
 // Wire protocol (source-verified: BetterDuino MDuinoSound.cpp, Padawan360,
 // SparkFun MP3 Trigger v2.4 Hookup Guide):

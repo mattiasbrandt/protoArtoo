@@ -8,7 +8,7 @@
 // dispatches the returned AudioAction to the active AudioDriver.
 //
 // Named track defaults follow the R2 community standard SD card numbering.
-// They are compile-time defaults only; T07 will add NVS-backed overrides.
+// They are compile-time defaults only; NVS-backed overrides exist via audioTrackNvsKey() / config_store.
 //
 // $ command reference (full set handled here):
 //   $nnn  — play track nnn (1-based integer)
@@ -37,7 +37,7 @@
 // -----------------------------------------------------------------------------
 // Default track indices for named $ commands.
 // Based on R2 community standard SD card layout (sequential file numbering).
-// ⚠ Verify against installed SD card layout during T09 hardware validation.
+// NOTE: verify against the installed SD card layout during hardware validation.
 // -----------------------------------------------------------------------------
 constexpr uint16_t AUDIO_TRACK_SCREAM    = 126;  // $S — scream bank start
 constexpr uint16_t AUDIO_TRACK_FAINT     = 128;  // $F — short circuit / faint
@@ -50,10 +50,10 @@ constexpr uint16_t AUDIO_TRACK_STARTUP   = 255;  // $B — startup / boot sound
 constexpr uint16_t AUDIO_TRACK_DISCO     = 0;    // $D — disco (NVS snd_disco, 0=disabled)
 constexpr uint16_t AUDIO_TRACK_HAPPY     = 3;    // $H — happy/greeting clip (R2 community track 3 default)
 
-// Random playback pool defaults (NVS-configurable in T07)
+// Random playback pool defaults (NVS-configurable)
 constexpr uint16_t AUDIO_RAND_TRACK_MIN   = 1;
 constexpr uint16_t AUDIO_RAND_TRACK_MAX   = 100;
-// Per-mood random playback intervals in seconds — NVS-configurable (T18).
+// Per-mood random playback intervals in seconds — NVS-configurable.
 // AudioTask derives the active interval from robotState.activeMood + cfg_snd_int_*.
 // Mood 0 (unset) falls back to AUDIO_RAND_INT_FULL. An interval of 0 suppresses
 // random playback for that mood.
