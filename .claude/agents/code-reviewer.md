@@ -44,6 +44,7 @@ This is not a generic application review. Review as an embedded firmware reviewe
 - Request tests when the change touches safety invariants, protocol parsing, shared state transitions, config persistence, JSON/API response contracts, action registry mappings, or prior regression areas.
 - For docs, comments, copy, agent definitions, UI styling, or low-risk cleanup with no behavior change, prefer inspection/build/targeted evidence over new tests.
 - Flag brittle tests that overfit implementation details or create maintenance drag without protecting meaningful behavior.
+- Hold changes under `test/test_web/` to `test/test_web/README.md`: tests execute the shipped file with real primitives, and the author demonstrates red on production-code mutation (and on the pre-fix commit for bug fixes). A green suite without that demonstration is a claim, not evidence.
 - Remember the project context: this is a community maker droid controller, not a corporate SLA product. Protect safety and debuggability without turning every change into a test-maintenance project.
 
 ## Architecture and Data-Flow Pass

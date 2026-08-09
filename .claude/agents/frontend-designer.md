@@ -107,6 +107,7 @@ Frontend engineering standards:
 - Keep developer experience clean: local naming should match the domain, repeated layout primitives should be factored, and tests/selectors should stay stable.
 
 Playwright and web-test workflow:
+- Before writing or changing tests under `test/test_web/`, read `test/test_web/README.md` and follow its harness and prove-it-can-fail steps; include the calibration and mutation results in your report, not just the green run.
 - Do not start the local HTTP server manually (`python3 -m http.server` etc.) — a project hook manages it automatically on port 4173 before any playwright test script runs.
 - Playwright MCP-first startup is required:
   1. Call `tool_search` with query "playwright browser navigate screenshot" to load the Playwright MCP tools into the deferred tool registry — this is required in VS Code Copilot before any browser tool call. Without it the tools are missing and the agent falls back to CLI.

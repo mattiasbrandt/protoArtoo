@@ -294,6 +294,11 @@ locally when specifically investigating a static analysis issue.
 changed should have high-signal native coverage for the typical case and serialized
 size budget. Avoid low-value tests that only mirror implementation details.
 
+**Web behavior test rule:** before writing or reviewing tests under
+`test/test_web/`, read `test/test_web/README.md`. A suite is vacuous until a
+production-code mutation turns it red; bug-fix coverage additionally requires
+red against the pre-fix commit. Green alone is a claim, not evidence.
+
 Classify verification status explicitly — use only these labels:
 
 - `software-verified` — build/tests/checks passed; no upload implied
