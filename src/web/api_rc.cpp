@@ -2,8 +2,8 @@
 // src/web/api_rc.cpp
 //
 // RC diagnostics API endpoints
-//   GET  /api/rc       — JSON RC diagnostics snapshot
-//   POST /api/rc/debug — Toggle verbose RC logging on/off
+//   GET  /api/rc       - JSON RC diagnostics snapshot
+//   POST /api/rc/debug - Toggle verbose RC logging on/off
 //
 // Written against the project-owned WebRequest seam (ADR 0021) and bound by the
 // seam route table. The diagnostics snapshot core is reused unchanged: this

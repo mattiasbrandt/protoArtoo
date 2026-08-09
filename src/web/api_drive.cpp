@@ -2,13 +2,13 @@
 // src/web/api_drive.cpp
 //
 // Drive and web control API endpoints
-//   POST /api/mode                    — stationary / driving mode
-//   POST /api/drive                   — browser drive command (timeout-protected)
-//   POST /api/drive/speed-preset      — apply Slow/Normal/Turbo speed preset
-//   POST /api/web-control/enable      — enable browser control
-//   POST /api/web-control/disable     — disable browser control
-//   POST /api/dome/cmd                — forward a raw Marcduino line to the dome
-//   POST /api/dome                    — dome rotation speed
+//   POST /api/mode                    - stationary / driving mode
+//   POST /api/drive                   - browser drive command (timeout-protected)
+//   POST /api/drive/speed-preset      - apply Slow/Normal/Turbo speed preset
+//   POST /api/web-control/enable      - enable browser control
+//   POST /api/web-control/disable     - disable browser control
+//   POST /api/dome/cmd                - forward a raw Marcduino line to the dome
+//   POST /api/dome                    - dome rotation speed
 //
 // Written against the project-owned WebRequest seam (ADR 0021) and bound by the
 // seam route table.
@@ -58,7 +58,7 @@ static bool isSleepModeActive() {
 
 namespace {
 
-// ManualCommand — recognized command tokens for POST /api/manual-command.
+// ManualCommand - recognized command tokens for POST /api/manual-command.
 // Internal to this translation unit; not exposed in any header.
 enum ManualCommand : uint8_t {
     MC_UNKNOWN = 0,
@@ -158,17 +158,17 @@ bool executeManualCommand(const char* raw) {
         return false;
     }
 
-    // Marcduino commands are case-sensitive — route them directly on raw
+    // Marcduino commands are case-sensitive - route them directly on raw
     // WITHOUT copying or case-folding. Only the keyword commands below need
     // lowercasing, and we defer that copy until we actually need it.
     const char prefix = raw[0];
 
-    // $ — audio commands: route to AudioTask
+    // $ - audio commands: route to AudioTask
     if (prefix == '$') {
         return audioQueueDollar(raw, SRC_WEB_API);
     }
 
-    // : and # — body-processed Marcduino: servo sequences, panel cmds, config
+    // : and # - body-processed Marcduino: servo sequences, panel cmds, config
     if (prefix == ':' || prefix == '#') {
         // Mood commands (:SE10/11/13/14) are not valid body sequences so
         // parseMarcduinoCommand() would silently discard them. Intercept first.
@@ -178,16 +178,16 @@ bool executeManualCommand(const char* raw) {
             return true;
         }
         parseMarcduinoCommand(raw);
-        return true;  // always accept — body handles or discards per routing table
+        return true;  // always accept - body handles or discards per routing table
     }
 
-    // * @ % & ! — dome-bound Marcduino: forward to dome TX queue
+    // * @ % & ! - dome-bound Marcduino: forward to dome TX queue
     if (prefix == '*' || prefix == '@' || prefix == '%' || prefix == '&' || prefix == '!') {
         domeQueueTx(raw);
         return true;
     }
 
-    // Keyword commands (estop, reboot, etc.) — case-insensitive. Only build the
+    // Keyword commands (estop, reboot, etc.) - case-insensitive. Only build the
     // lowercase copy here, not for every Marcduino command. The buffer clears
     // the longest keyword ("disable_web_control", 19); anything longer cannot
     // match one and is resolved as unknown.
@@ -348,7 +348,7 @@ void handleDrivePost(WebRequest& req) {
     req.send(200, "application/json", "{\"ok\":true}");
 }
 
-// POST /api/dome/cmd — forward a raw Marcduino command verbatim to the dome
+// POST /api/dome/cmd - forward a raw Marcduino command verbatim to the dome
 // over the dome link TX queue (UART2 or WiFi/UDP), bypassing the body's
 // Marcduino prefix router. Use this for dome-native prefixes (:, *, @, etc.)
 // that the body would otherwise consume or reject.

@@ -20,27 +20,27 @@ struct WiFiConnectivityFields {
 };
 
 // Compute canonical WiFi status booleans used in JSON status/health payloads.
-// Pure function — no globals, no Arduino, no FreeRTOS.
-// params: apEnabled       — true when AP mode is active (AP or AP+STA)
-//         staConnected    — true when STA is connected (`WL_CONNECTED`)
-//         apStationCount  — number of stations currently attached to soft AP
-//         staRssi         — RSSI to upstream AP in dBm (valid when staConnected)
+// Pure function - no globals, no Arduino, no FreeRTOS.
+// params: apEnabled       - true when AP mode is active (AP or AP+STA)
+//         staConnected    - true when STA is connected (`WL_CONNECTED`)
+//         apStationCount  - number of stations currently attached to soft AP
+//         staRssi         - RSSI to upstream AP in dBm (valid when staConnected)
 // returns: derived wifiConnected / wifiClientConnected flags + wifiRssi
 // thread-safe: yes (pure function, no globals)
 WiFiConnectivityFields deriveWiFiConnectivityFields(bool apEnabled, bool staConnected,
                                                     unsigned int apStationCount, long staRssi);
 
 // Write a JSON WiFi status object into a caller-supplied buffer.
-// Pure function — no globals, no Arduino, no FreeRTOS.
-// params: buf          — output buffer (must not be null)
-//         bufSize      — size of buf in bytes
-//         apSsid       — AP SSID string (must not be null)
-//         apIp         — AP IP address string (must not be null)
-//         staEnabled   — true if STA mode is active
-//         staConnected — true if STA is connected to upstream AP
-//         staIp        — STA IP address string (empty string if not connected)
-//         wifiRssi     — WiFi signal strength in dBm (0 if not connected)
-//         networkRecovery — true if Network Recovery Mode (ADR 0015) is the
+// Pure function - no globals, no Arduino, no FreeRTOS.
+// params: buf          - output buffer (must not be null)
+//         bufSize      - size of buf in bytes
+//         apSsid       - AP SSID string (must not be null)
+//         apIp         - AP IP address string (must not be null)
+//         staEnabled   - true if STA mode is active
+//         staConnected - true if STA is connected to upstream AP
+//         staIp        - STA IP address string (empty string if not connected)
+//         wifiRssi     - WiFi signal strength in dBm (0 if not connected)
+//         networkRecovery - true if Network Recovery Mode (ADR 0015) is the
 //                           posture actually active this boot
 // thread-safe: yes (pure function, no globals)
 void formatWifiJson(char* buf, size_t bufSize, const char* apSsid, const char* apIp,
@@ -53,31 +53,31 @@ void formatWifiJson(char* buf, size_t bufSize, const char* apSsid, const char* a
 const char* wifiStatusApSsid(const char* activeApSsid);
 
 // Write a JSON serial-port status object into a caller-supplied buffer.
-// Pure function — no globals, no Arduino, no FreeRTOS.
-// params: buf            — output buffer (must not be null)
-//         bufSize        — size of buf in bytes
-//         domeLinkActive — true if dome heartbeat link is active
-//         domeHbRx       — dome heartbeat receive counter
-//         bodyHbTx       — body heartbeat transmit counter
+// Pure function - no globals, no Arduino, no FreeRTOS.
+// params: buf            - output buffer (must not be null)
+//         bufSize        - size of buf in bytes
+//         domeLinkActive - true if dome heartbeat link is active
+//         domeHbRx       - dome heartbeat receive counter
+//         bodyHbTx       - body heartbeat transmit counter
 // thread-safe: yes (pure function, no globals)
 void formatSerialJson(char* buf, size_t bufSize, bool domeLinkActive, unsigned long domeHbRx,
                       unsigned long bodyHbTx);
 
 // Write a JSON health/diagnostics object into a caller-supplied buffer.
-// Pure function — no globals, no Arduino, no FreeRTOS.
-// params: buf               — output buffer (must not be null)
-//         bufSize           — size of buf in bytes
-//         estop             — current estop state
-//         sbusSignalLost    — true if SBUS signal is lost
-//         sbusHwFailsafe    — true if SBUS hardware failsafe is active
-//         webControlEnabled — true if web drive control is enabled
-//         wifiConnected     — true if control-surface WiFi is available (AP active or STA
-//         connected) wifiClientConnected — true if at least one station is attached to soft AP
-//         fsReady           — true if LittleFS is mounted
-//         heapFree          — current free heap in bytes
-//         heapMin           — minimum free heap since boot in bytes
-//         heapLargestBlock  — largest contiguous free heap block in bytes
-//         wifiRssi          — STA RSSI in dBm (0 when STA disconnected)
+// Pure function - no globals, no Arduino, no FreeRTOS.
+// params: buf               - output buffer (must not be null)
+//         bufSize           - size of buf in bytes
+//         estop             - current estop state
+//         sbusSignalLost    - true if SBUS signal is lost
+//         sbusHwFailsafe    - true if SBUS hardware failsafe is active
+//         webControlEnabled - true if web drive control is enabled
+//         wifiConnected     - true if control-surface WiFi is available (AP active or STA
+//         connected) wifiClientConnected - true if at least one station is attached to soft AP
+//         fsReady           - true if LittleFS is mounted
+//         heapFree          - current free heap in bytes
+//         heapMin           - minimum free heap since boot in bytes
+//         heapLargestBlock  - largest contiguous free heap block in bytes
+//         wifiRssi          - STA RSSI in dBm (0 when STA disconnected)
 // thread-safe: yes (pure function, no globals)
 void formatHealthJson(char* buf, size_t bufSize, bool estop, bool sbusSignalLost,
                       bool sbusHwFailsafe, bool webControlEnabled, bool wifiConnected,

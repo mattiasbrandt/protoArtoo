@@ -3,7 +3,7 @@
 //
 // PA_HEAP_PROFILE=1 gated heap profiling interface.
 //
-// All functions are no-ops when PA_HEAP_PROFILE is not defined — callers may
+// All functions are no-ops when PA_HEAP_PROFILE is not defined - callers may
 // include this header unconditionally and guard call sites with #if PA_HEAP_PROFILE.
 // =============================================================================
 #pragma once
@@ -38,12 +38,12 @@ void profilerCollectTaskHeap();
 // (404) when PA_HEAP_PROFILE is not defined, which is why both this block and
 // their registration sit behind the same guard.
 //
-//   GET  /api/profiler               — live heap/HWM/snapshot JSON
+//   GET  /api/profiler               - live heap/HWM/snapshot JSON
 void handleProfilerGet(WebRequest& req);
 
 #ifdef CONFIG_HEAP_TRACING
-//   POST /api/profiler/trace/start   — start Tier 3 leak trace
-//   POST /api/profiler/trace/stop    — stop + dump Tier 3 leak trace to serial
+//   POST /api/profiler/trace/start   - start Tier 3 leak trace
+//   POST /api/profiler/trace/stop    - stop + dump Tier 3 leak trace to serial
 void handleProfilerTraceStartPost(WebRequest& req);
 void handleProfilerTraceStopPost(WebRequest& req);
 #endif

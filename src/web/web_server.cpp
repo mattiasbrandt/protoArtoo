@@ -42,7 +42,7 @@
 #include "../../include/web_network_bootstrap.h"
 
 // src/secrets.h is the Developer WiFi Shortcut (ADR 0015): local/self-build-only
-// compile-time WiFi defaults. It is never required to compile or boot — public
+// compile-time WiFi defaults. It is never required to compile or boot - public
 // release binaries (protoArtoo_chirp, protoArtoo_mp3trigger) ship without it and
 // boot into WiFi Provisioning via wifiDecideBootPosture() instead.
 #if __has_include("secrets.h")
@@ -110,7 +110,7 @@ const uint32_t WIFI_RECOVERY_GESTURE_STABLE_MS = 20000;
 
 namespace {
 
-// MALLOC_CAP_INTERNAL — dominated by a constant ~36 KB leftover-IRAM block
+// MALLOC_CAP_INTERNAL - dominated by a constant ~36 KB leftover-IRAM block
 // that malloc can never allocate. Kept ONLY to keep the legacy
 // heapLargestBlock status field stable for existing consumers; never use it
 // for heap-health decisions. The real pool is largestFreeBlock8Bit().
@@ -488,7 +488,7 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
         }
     }
 
-    // Conditionally append enabled-component keys — disabled components are absent,
+    // Conditionally append enabled-component keys - disabled components are absent,
     // not emitted as false placeholders (Phase 3 status/dashboard contract).
     bool ok = written > 0 && written < (int)bufferSize - 1;
     if (ok) {
@@ -659,7 +659,7 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
             }
         }
 
-        // Top-level dome_link block — always present for external tooling,
+        // Top-level dome_link block - always present for external tooling,
         // regardless of whether the s3DomeCtrl component is enabled.
         // three states: connected (hb seen < 5s), lost (was seen, now > 5s), not_seen (never).
         {
@@ -738,7 +738,7 @@ bool webServerHasSSEClients() {
     return webEventStreamClientCount() > 0;
 }
 
-// Shared SSE JSON buffers — file-scope so every producer in this file uses the
+// Shared SSE JSON buffers - file-scope so every producer in this file uses the
 // same allocation rather than each having their own.
 // Combined saving vs previous approach (two sets of statics): 3 KB BSS.
 // Status JSON can exceed 1 KB when many components are enabled; keep headroom.
@@ -900,7 +900,7 @@ void startHttpServerOnce() {
         }
     }
 
-    // Start OTA task in background — MUST NOT block WiFi event handler (causes TWDT)
+    // Start OTA task in background - MUST NOT block WiFi event handler (causes TWDT)
     if (!otaTaskStarted) {
         xTaskCreatePinnedToCore(
             [](void*) {

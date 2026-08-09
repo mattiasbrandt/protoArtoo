@@ -4,12 +4,12 @@
 // Apply Core for POST /api/wifi (ADR 0011 pattern, ADR 0015 Device WiFi
 // Settings). See src/web/api_wifi_apply.cpp.
 //
-// wifiApply(): pure function — no FreeRTOS, no request object, no
+// wifiApply(): pure function - no FreeRTOS, no request object, no
 //   logging, no NVS, no WiFi hardware access. Reads parameters through a
 //   ConfigParamSource, validates and mutates `working` in place, and writes a
 //   field-level error on failure. Callers persist `working` themselves
 //   (configSaveWifi) only when result->ok is true; this is a Staged Network
-//   Switch (ADR 0015) — settings are saved, not hot-applied.
+//   Switch (ADR 0015) - settings are saved, not hot-applied.
 // =============================================================================
 #pragma once
 

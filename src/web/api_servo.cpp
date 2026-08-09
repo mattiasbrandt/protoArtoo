@@ -2,7 +2,7 @@
 // src/web/api_servo.cpp
 //
 // Servo control API endpoint
-//   POST /api/servo  — Control arm servos (open/close/position/stop)
+//   POST /api/servo  - Control arm servos (open/close/position/stop)
 //
 // Written against the project-owned WebRequest seam (ADR 0021) and bound by the
 // seam route table. The command goes onto servoCmdQueue with a zero wait, so

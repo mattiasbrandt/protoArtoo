@@ -2,11 +2,11 @@
 // src/web/api_config.cpp
 //
 // Config API endpoints
-//   GET  /api/config  — current persisted runtime config snapshot
-//   POST /api/config  — update config fields and persist to NVS
-//   GET  /api/rc/map  — current RC binding map
-//   POST /api/rc/map  — replace the RC binding map
-//   POST /api/wifi    — stage Device WiFi Settings
+//   GET  /api/config  - current persisted runtime config snapshot
+//   POST /api/config  - update config fields and persist to NVS
+//   GET  /api/rc/map  - current RC binding map
+//   POST /api/rc/map  - replace the RC binding map
+//   POST /api/wifi    - stage Device WiFi Settings
 //
 // All written against the project-owned WebRequest seam (ADR 0021) and bound
 // by the seam route table. The write paths go through the ADR 0011 apply cores
@@ -413,7 +413,7 @@ bool assignRcMapEntryToSnapshot(const RcMapEntry& entry, const ConfigSnapshot& e
 //-----------------------------------------------------------------------------
 // populateConfigJson()
 //
-// Pure function — no global state, no FreeRTOS. Accepts a snapshot produced by
+// Pure function - no global state, no FreeRTOS. Accepts a snapshot produced by
 // captureConfigSnapshot() and builds the ArduinoJson document field by field.
 // Builds the JSON snapshot consumed by the web config UI and API clients.
 // Returns false only if the JsonDocument overflows.
@@ -492,7 +492,7 @@ bool populateConfigJson(JsonDocument& doc, const ConfigSnapshot& snap) {
     // "pendingApply" flag (active-vs-pending for a Staged Network Switch) and
     // "networkRecovery" flag (was Network Recovery Mode the posture actually
     // entered at boot) are runtime state, not part of this
-    // pure snapshot — the caller adds them after calling populateConfigJson().
+    // pure snapshot - the caller adds them after calling populateConfigJson().
     WifiConfigView wifiView = wifiConfigToView(snap.wifi);
     JsonObject wifi = doc["wifi"].to<JsonObject>();
     wifi["provisioned"] = wifiView.provisioned;
@@ -529,7 +529,7 @@ void sendConfigSnapshot(WebRequest& req, const ConfigSnapshot& snap) {
     // Static, not stack: the payload measures ~1.3 KB on a provisioned device,
     // and even that is more than the psychic server task's 8 KB stack should
     // carry next to ArduinoJson's serializer frames. Handlers serialize on one
-    // task under both backends, so a shared buffer is race-free — the same
+    // task under both backends, so a shared buffer is race-free - the same
     // argument /api/status and /api/logs already make.
     //
     // Sized to kConfigJsonBudget, the worst-case bound test_api_config_json
@@ -566,14 +566,14 @@ bool persistSystemConfig(WebRequest& req, const SystemConfig& system) {
 
 }  // namespace
 
-// GET /api/config — the config snapshot data/app.js fetches on every page load.
+// GET /api/config - the config snapshot data/app.js fetches on every page load.
 void handleConfigGet(WebRequest& req) {
     ConfigSnapshot snap;
     configCacheRead(&snap);
     sendConfigSnapshot(req, snap);
 }
 
-// GET /api/rc/map — the RC binding map the mapper page reads.
+// GET /api/rc/map - the RC binding map the mapper page reads.
 void handleRcMapGet(WebRequest& req) {
     ConfigSnapshot snap;
     configCacheRead(&snap);
@@ -595,7 +595,7 @@ void handleRcMapGet(WebRequest& req) {
     req.send(200, "application/json", body);
 }
 
-// POST /api/rc/map — replace the RC binding map.
+// POST /api/rc/map - replace the RC binding map.
 void handleRcMapPost(WebRequest& req) {
     ConfigParamSource params = webParamSource(req);
 
@@ -634,7 +634,7 @@ void handleRcMapPost(WebRequest& req) {
     req.send(200, "application/json", "{\"ok\":true}");
 }
 
-// POST /api/config — the sole web entrypoint for config writes.
+// POST /api/config - the sole web entrypoint for config writes.
 void handleConfigPost(WebRequest& req) {
     ConfigSnapshot working;
     configCacheRead(&working);
@@ -643,7 +643,7 @@ void handleConfigPost(WebRequest& req) {
     ConfigParamSource params = webParamSource(req);
 
     // ConfigApplyResult is ~2.5 KB (dominated by the applied-fields log
-    // record) — static avoids a large stack frame on the server task,
+    // record) - static avoids a large stack frame on the server task,
     // matching api_seq.cpp's SeqRunEvidence precedent.
     static ConfigApplyResult result;
     configApply(params, &working, domeEnabledBefore, &result);
@@ -662,7 +662,7 @@ void handleConfigPost(WebRequest& req) {
     // unconditionally: when the request omits "stationary", configApply() leaves
     // working.system.stationary at the cache value read above, which always
     // matches robotState.stationary (commandedSetStationary is the only runtime
-    // writer of both, keeping them in lockstep) — so the edge-detect inside it
+    // writer of both, keeping them in lockstep) - so the edge-detect inside it
     // is a no-op and no cue fires.
     commandedSetStationary(working.system.stationary, SRC_WEB_API);
 
@@ -689,7 +689,7 @@ void handleConfigPost(WebRequest& req) {
     sendConfigSnapshot(req, snap);
 }
 
-// POST /api/wifi — stage Device WiFi Settings (ADR 0015 Staged Network Switch).
+// POST /api/wifi - stage Device WiFi Settings (ADR 0015 Staged Network Switch).
 void handleWifiPost(WebRequest& req) {
     ConfigParamSource params = webParamSource(req);
 
@@ -718,7 +718,7 @@ void handleWifiPost(WebRequest& req) {
     prefs.end();
 
     // Stage only: update the persisted cache so reads see the new settings,
-    // but do not touch WiFi hardware here (ADR 0015 Staged Network Switch —
+    // but do not touch WiFi hardware here (ADR 0015 Staged Network Switch -
     // apply happens through an explicit reboot/restart handoff, not as a side
     // effect of saving this form). This is what lets an operator reprovision
     // while connected to the controller's own AP without dropping underneath

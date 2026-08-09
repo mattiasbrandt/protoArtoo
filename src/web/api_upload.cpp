@@ -2,8 +2,8 @@
 // src/web/api_upload.cpp
 //
 // Streaming OTA upload endpoints, ported to the WebRequest seam (ADR 0021):
-//   POST /upload/firmware    — firmware image (U_FLASH)
-//   POST /upload/filesystem  — LittleFS image (U_SPIFFS)
+//   POST /upload/firmware    - firmware image (U_FLASH)
+//   POST /upload/filesystem  - LittleFS image (U_SPIFFS)
 //
 // Split out of api_system.cpp when ported. These land early in the migration
 // on purpose: without a working HTTP upload path, later work needs a physical

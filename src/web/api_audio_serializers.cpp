@@ -2,7 +2,7 @@
 // src/web/api_audio_serializers.cpp
 //
 // Pure JSON serialization helper for audio module status.
-// No Arduino, no FreeRTOS, no hardware dependencies — testable in native env.
+// No Arduino, no FreeRTOS, no hardware dependencies - testable in native env.
 // =============================================================================
 
 #include "api_audio.h"

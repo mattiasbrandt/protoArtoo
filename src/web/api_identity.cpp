@@ -2,8 +2,8 @@
 // src/web/api_identity.cpp
 //
 // Droid identity API endpoints
-//   GET  /api/identity  — current cosmetic droid name and mDNS opt-in
-//   POST /api/identity  — persist validated droid name and mDNS opt-in
+//   GET  /api/identity  - current cosmetic droid name and mDNS opt-in
+//   POST /api/identity  - persist validated droid name and mDNS opt-in
 //
 // First route ported to the WebRequest seam (ADR 0021): the same handler
 // source compiles and serves under every backend and names no vendor type.

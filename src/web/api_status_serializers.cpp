@@ -2,7 +2,7 @@
 // src/web/api_status_serializers.cpp
 //
 // Pure JSON serialization helpers for WiFi and health status.
-// No Arduino, no FreeRTOS, no hardware dependencies — testable in native env.
+// No Arduino, no FreeRTOS, no hardware dependencies - testable in native env.
 // =============================================================================
 
 #include "api_status.h"

@@ -3,7 +3,7 @@
 //
 // Apply Core for POST /api/audio/tracks (ADR 0011 audio wave, family 3).
 //
-// audioTracksApply(): pure function — no FreeRTOS, no request object,
+// audioTracksApply(): pure function - no FreeRTOS, no request object,
 //   no NVS, no logging. Reads key/track and the optional bank/page through
 //   a ConfigParamSource, classifies the key (interval / banked / plain
 //   named-or-category track, with the zero-allowed exception list), and
@@ -17,7 +17,7 @@
 // The core does not persist to NVS: the legacy handler's two-phase persist
 // (config NVS, then a separate chirp-binding NVS key) with rollback on
 // partial failure stays in the shell verbatim, per ADR 0011's "the shell
-// keeps every side effect" principle — same shape as the category-range
+// keeps every side effect" principle - same shape as the category-range
 // core (family 2).
 //
 // Defined in src/web/api_audio_tracks_apply.cpp.

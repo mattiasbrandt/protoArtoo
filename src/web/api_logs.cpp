@@ -1,7 +1,7 @@
 // =============================================================================
 // src/web/api_logs.cpp
 //
-// GET /api/logs — recent log buffer, ported to the WebRequest seam (ADR 0021).
+// GET /api/logs - recent log buffer, ported to the WebRequest seam (ADR 0021).
 // One of the three routes data/app.js fetches on every page load.
 // =============================================================================
 
@@ -14,7 +14,7 @@ void handleLogsGet(WebRequest& req) {
     // Buffer sized to match ring capacity: LOG_BUFFER_LINES * LOG_LINE_MAX + 1.
     // Static, not stack: neither the async_tcp task nor the psychic server task
     // has 6 KB of stack to spare, and handlers serialize on one task under both
-    // backends, so a shared buffer is race-free — the same argument
+    // backends, so a shared buffer is race-free - the same argument
     // /api/status makes for its own payload buffer.
     static char body[LOG_BUFFER_LINES * LOG_LINE_MAX + 1];
 

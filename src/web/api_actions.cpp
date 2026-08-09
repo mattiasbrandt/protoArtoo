@@ -1,7 +1,7 @@
 // =============================================================================
 // src/web/api_actions.cpp
 //
-// POST /api/actions/test — dispatch one action through RC trigger path for
+// POST /api/actions/test - dispatch one action through RC trigger path for
 // testing, ported to the WebRequest seam (ADR 0021).
 //
 // GET /api/actions lives in api_actions_json.cpp: keeping it out of this file

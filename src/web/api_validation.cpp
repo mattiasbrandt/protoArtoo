@@ -2,7 +2,7 @@
 // src/web/api_validation.cpp
 //
 // Consolidated hardware-validation API endpoint.
-//   GET /api/validation — validation-focused snapshot for hardware closure checks
+//   GET /api/validation - validation-focused snapshot for hardware closure checks
 //
 // Written against the project-owned WebRequest seam (ADR 0021) and bound by the
 // seam route table. The validation snapshot core is reused unchanged.

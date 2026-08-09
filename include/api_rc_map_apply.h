@@ -3,7 +3,7 @@
 //
 // Apply Core for POST /api/rc/map (ADR 0011 RC mapping apply core).
 //
-// rcMapApply(): pure function — no FreeRTOS, no request object, no
+// rcMapApply(): pure function - no FreeRTOS, no request object, no
 //   NVS. Reads the JSON map body through a ConfigParamSource, validates
 //   each entry, and applies them onto `working` in place (clearing existing
 //   slots first, exactly as the legacy handler did). On the first invalid

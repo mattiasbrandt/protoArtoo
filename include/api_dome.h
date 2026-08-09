@@ -12,5 +12,5 @@
 
 #include "web_request.h"
 
-// GET /api/dome/layout — dome layout JSON cache relay.
+// GET /api/dome/layout - dome layout JSON cache relay.
 void handleDomeLayoutGet(WebRequest& req);
