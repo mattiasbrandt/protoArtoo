@@ -13,10 +13,12 @@
   let pollTimer = null;
   let unsubscribe = null;
   let retryTimer = null;
+  let hasRealData = false;
 
   const renderFooter = (status) => {
     if (!status) {
       footer.textContent = "Firmware info unavailable";
+      hasRealData = false;
       return;
     }
 
@@ -27,6 +29,7 @@
     footer.innerHTML =
       `FW: <span class="mono">${window.PAUtils.escapeHtml(fw)}</span><br>` +
       `FS: <span class="mono">${window.PAUtils.escapeHtml(resolvedWeb)}</span>`;
+    hasRealData = true;
   };
 
   const loadFsVersion = async () => {
@@ -37,22 +40,26 @@
         fsVersion = String(result.data.fsVersion);
       }
     } catch (_error) {
-      // ignore: fetch error — keep fallback fsVersion value
+      // ignore: fetch error - keep fallback fsVersion value
     }
   };
 
   const fetchStatus = async () => {
     if (!window.PAApi) {
       footer.textContent = "Firmware info unavailable";
-      return;
+      hasRealData = false;
+      return false;
     }
     try {
       const result = await window.PAApi.get("/api/status", { timeoutMs: 3000, cache: "no-store" });
       renderFooter(result.data);
+      return true;
     } catch (error) {
-      // fetch timeout/error — log and show unavailable message
+      // fetch timeout/error - log and show unavailable message
       console.warn("[footer] failed to fetch status:", error?.message || error);
       footer.textContent = "Firmware info unavailable";
+      hasRealData = false;
+      return false;
     }
   };
 
@@ -61,15 +68,13 @@
     const baseDelayMs = 500;
     const delayMs = baseDelayMs * Math.pow(2, attempt);
 
-    try {
-      await fetchStatus();
+    const success = await fetchStatus();
+    if (success) {
       if (retryTimer !== null) {
         window.clearTimeout(retryTimer);
         retryTimer = null;
       }
       return;
-    } catch (_error) {
-      // fetchStatus already logged and updated footer
     }
 
     if (attempt < maxAttempts - 1) {
@@ -104,6 +109,7 @@
 
     pollTimer = window.setInterval(() => {
       if (document.visibilityState === "hidden") return;
+      if (hasRealData) return;
       fetchStatus();
     }, 5000);
   };
@@ -130,6 +136,10 @@
       if (pollTimer !== null) {
         window.clearInterval(pollTimer);
         pollTimer = null;
+      }
+      if (retryTimer !== null) {
+        window.clearTimeout(retryTimer);
+        retryTimer = null;
       }
     });
   };
