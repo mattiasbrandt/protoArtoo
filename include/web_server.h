@@ -13,6 +13,19 @@
 #include "log_buffer.h"
 #include "logging.h"
 
+// Network Recovery Mode local entry gesture (ADR 0015). See
+// include/wifi_recovery_gesture.h for the pure decision rule. The count is
+// persisted under NVS_NAMESPACE so it survives the reboot(s) the gesture
+// itself requires; it is cleared once uptime confirms the boot was not part
+// of a rapid power-cycle sequence.
+extern const char* kWifiRecoveryCycleKey;
+extern const uint32_t WIFI_RECOVERY_GESTURE_STABLE_MS;
+
+// HTTP server bootstrap: start PsychicHttp, mDNS, and OTA. Called from
+// handleWiFiEvent() in web_network_bootstrap.cpp when WiFi is ready.
+// Must be called from the WiFi event callback path, never directly from setup().
+void startHttpServerOnce();
+
 bool buildStatusJson(char* buffer, size_t bufferSize);
 void requestStatusBroadcastNow();
 size_t copyRecentLogs(char* buffer, size_t bufferSize);
