@@ -507,7 +507,10 @@ void handleAudioTracksPost(WebRequest& req) {
             configAudioSetTrackByKey(&oldSnap.audio, key, oldTrack);
             configCacheApply(oldSnap);
             configCacheRead(&oldSnap);
-            configSaveAudio(prefs, oldSnap.audio);
+            bool rollbackOk = configSaveAudio(prefs, oldSnap.audio);
+            if (!rollbackOk) {
+                PA_LOG_ERROR(TAG, "[AUDIO] rollback save failed after binding write error");
+            }
         }
 
         ok = wroteTrack && wroteChirp;
@@ -586,7 +589,10 @@ void handleAudioCategoryRangePost(WebRequest& req) {
             configAudioSetTrackByKey(&oldSnap.audio, hiKey, oldHi);
             configCacheApply(oldSnap);
             configCacheRead(&oldSnap);
-            configSaveAudio(prefs, oldSnap.audio);
+            bool rollbackOk = configSaveAudio(prefs, oldSnap.audio);
+            if (!rollbackOk) {
+                PA_LOG_ERROR(TAG, "[AUDIO] rollback save failed after category binding write error");
+            }
         } else if (!wroteConfig) {
             ConfigSnapshot oldSnap;
             configCacheRead(&oldSnap);
