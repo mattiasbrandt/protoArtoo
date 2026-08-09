@@ -36,6 +36,7 @@
 #include "config_store.h"
 #include "dome_link.h"
 #include "logging.h"
+#include "queue_drop_tracker.h"
 #include "robot_state.h"
 #include "web_server.h"
 
@@ -135,9 +136,7 @@ bool audioQueueDollar(const char* cmd, CommandSource src) {
     strncpy(msg.dollar, cmd, sizeof(msg.dollar) - 1);
     msg.dollar[sizeof(msg.dollar) - 1] = '\0';
     if (xQueueSend(audioCmdQueue, &msg, 0) != pdTRUE) {
-        taskENTER_CRITICAL(&robotStateMux);
-        robotState.queueOverflowCount++;
-        taskEXIT_CRITICAL(&robotStateMux);
+        logQueueDrop(QUEUE_AUDIO_CMD, "dollar command");
         return false;
     }
     return true;
@@ -152,6 +151,12 @@ bool audioQueuePlayTrack(uint16_t track, CommandSource src) {
     msg.source = src;
     msg.track = track;
     if (xQueueSend(audioCmdQueue, &msg, 0) != pdTRUE) {
+        static uint32_t lastWarnMs = 0;
+        uint32_t nowMs = millis();
+        if ((uint32_t)(nowMs - lastWarnMs) > 5000) {  // Rate-limit to once per 5s
+            PA_LOG_WARN(TAG, "audioCmdQueue full, dropped play track command");
+            lastWarnMs = nowMs;
+        }
         taskENTER_CRITICAL(&robotStateMux);
         robotState.queueOverflowCount++;
         taskEXIT_CRITICAL(&robotStateMux);
@@ -171,6 +176,12 @@ bool audioQueuePlayTrackBanked(uint16_t index, uint8_t bank, char page, CommandS
     msg.banked.bank = bank;
     msg.banked.page = page;
     if (xQueueSend(audioCmdQueue, &msg, 0) != pdTRUE) {
+        static uint32_t lastWarnMs = 0;
+        uint32_t nowMs = millis();
+        if ((uint32_t)(nowMs - lastWarnMs) > 5000) {  // Rate-limit to once per 5s
+            PA_LOG_WARN(TAG, "audioCmdQueue full, dropped play track banked command");
+            lastWarnMs = nowMs;
+        }
         taskENTER_CRITICAL(&robotStateMux);
         robotState.queueOverflowCount++;
         taskEXIT_CRITICAL(&robotStateMux);
@@ -188,6 +199,12 @@ bool audioQueuePlaySlot(AudioPlaybackSlot slot, CommandSource src) {
     msg.source = src;
     msg.slot = slot;
     if (xQueueSend(audioCmdQueue, &msg, 0) != pdTRUE) {
+        static uint32_t lastWarnMs = 0;
+        uint32_t nowMs = millis();
+        if ((uint32_t)(nowMs - lastWarnMs) > 5000) {  // Rate-limit to once per 5s
+            PA_LOG_WARN(TAG, "audioCmdQueue full, dropped play slot command");
+            lastWarnMs = nowMs;
+        }
         taskENTER_CRITICAL(&robotStateMux);
         robotState.queueOverflowCount++;
         taskEXIT_CRITICAL(&robotStateMux);
@@ -207,6 +224,12 @@ bool audioQueuePlayCategory(AudioPlaybackCategory category, AudioPlaybackSlot fa
     msg.category.category = category;
     msg.category.fallbackSlot = fallbackSlot;
     if (xQueueSend(audioCmdQueue, &msg, 0) != pdTRUE) {
+        static uint32_t lastWarnMs = 0;
+        uint32_t nowMs = millis();
+        if ((uint32_t)(nowMs - lastWarnMs) > 5000) {  // Rate-limit to once per 5s
+            PA_LOG_WARN(TAG, "audioCmdQueue full, dropped play category command");
+            lastWarnMs = nowMs;
+        }
         taskENTER_CRITICAL(&robotStateMux);
         robotState.queueOverflowCount++;
         taskEXIT_CRITICAL(&robotStateMux);
@@ -220,6 +243,12 @@ bool audioQueueStop(CommandSource src) {
     msg.type = AUDIO_CMD_STOP;
     msg.source = src;
     if (xQueueSend(audioCmdQueue, &msg, 0) != pdTRUE) {
+        static uint32_t lastWarnMs = 0;
+        uint32_t nowMs = millis();
+        if ((uint32_t)(nowMs - lastWarnMs) > 5000) {  // Rate-limit to once per 5s
+            PA_LOG_WARN(TAG, "audioCmdQueue full, dropped stop command");
+            lastWarnMs = nowMs;
+        }
         taskENTER_CRITICAL(&robotStateMux);
         robotState.queueOverflowCount++;
         taskEXIT_CRITICAL(&robotStateMux);
@@ -233,6 +262,12 @@ bool audioQueueTrackStop(CommandSource src) {
     msg.type = AUDIO_CMD_TRACK_STOP;
     msg.source = src;
     if (xQueueSend(audioCmdQueue, &msg, 0) != pdTRUE) {
+        static uint32_t lastWarnMs = 0;
+        uint32_t nowMs = millis();
+        if ((uint32_t)(nowMs - lastWarnMs) > 5000) {  // Rate-limit to once per 5s
+            PA_LOG_WARN(TAG, "audioCmdQueue full, dropped track stop command");
+            lastWarnMs = nowMs;
+        }
         taskENTER_CRITICAL(&robotStateMux);
         robotState.queueOverflowCount++;
         taskEXIT_CRITICAL(&robotStateMux);
@@ -247,6 +282,12 @@ bool audioQueueSetVolume(uint8_t vol, CommandSource src) {
     msg.source = src;
     msg.volume = audioClampVolume(vol);
     if (xQueueSend(audioCmdQueue, &msg, 0) != pdTRUE) {
+        static uint32_t lastWarnMs = 0;
+        uint32_t nowMs = millis();
+        if ((uint32_t)(nowMs - lastWarnMs) > 5000) {  // Rate-limit to once per 5s
+            PA_LOG_WARN(TAG, "audioCmdQueue full, dropped set volume command");
+            lastWarnMs = nowMs;
+        }
         taskENTER_CRITICAL(&robotStateMux);
         robotState.queueOverflowCount++;
         taskEXIT_CRITICAL(&robotStateMux);
@@ -260,6 +301,12 @@ bool audioQueueQueryStatus(CommandSource src) {
     msg.type = AUDIO_CMD_QUERY_STATUS;
     msg.source = src;
     if (xQueueSend(audioCmdQueue, &msg, 0) != pdTRUE) {
+        static uint32_t lastWarnMs = 0;
+        uint32_t nowMs = millis();
+        if ((uint32_t)(nowMs - lastWarnMs) > 5000) {  // Rate-limit to once per 5s
+            PA_LOG_WARN(TAG, "audioCmdQueue full, dropped query status command");
+            lastWarnMs = nowMs;
+        }
         taskENTER_CRITICAL(&robotStateMux);
         robotState.queueOverflowCount++;
         taskEXIT_CRITICAL(&robotStateMux);
@@ -273,6 +320,12 @@ bool audioQueueRefreshCatalog(CommandSource src) {
     msg.type = AUDIO_CMD_REFRESH_CATALOG;
     msg.source = src;
     if (xQueueSend(audioCmdQueue, &msg, 0) != pdTRUE) {
+        static uint32_t lastWarnMs = 0;
+        uint32_t nowMs = millis();
+        if ((uint32_t)(nowMs - lastWarnMs) > 5000) {  // Rate-limit to once per 5s
+            PA_LOG_WARN(TAG, "audioCmdQueue full, dropped refresh catalog command");
+            lastWarnMs = nowMs;
+        }
         taskENTER_CRITICAL(&robotStateMux);
         robotState.queueOverflowCount++;
         taskEXIT_CRITICAL(&robotStateMux);
@@ -286,6 +339,12 @@ bool audioQueueRefreshBindings(CommandSource src) {
     msg.type = AUDIO_CMD_REFRESH_BINDINGS;
     msg.source = src;
     if (xQueueSend(audioCmdQueue, &msg, 0) != pdTRUE) {
+        static uint32_t lastWarnMs = 0;
+        uint32_t nowMs = millis();
+        if ((uint32_t)(nowMs - lastWarnMs) > 5000) {  // Rate-limit to once per 5s
+            PA_LOG_WARN(TAG, "audioCmdQueue full, dropped refresh bindings command");
+            lastWarnMs = nowMs;
+        }
         taskENTER_CRITICAL(&robotStateMux);
         robotState.queueOverflowCount++;
         taskEXIT_CRITICAL(&robotStateMux);

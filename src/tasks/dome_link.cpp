@@ -42,6 +42,7 @@
 #include "logging.h"
 #include "marcduino.h"
 #include "mood.h"
+#include "queue_drop_tracker.h"
 #include "robot_state.h"
 
 static const char* TAG = "DomeLink";
@@ -528,10 +529,7 @@ bool domeQueueTx(const char* cmd) {
     strncpy(msg.buf, cmd, sizeof(msg.buf) - 1);
     msg.buf[sizeof(msg.buf) - 1] = '\0';
     if (xQueueSend(domeTxQueue, &msg, 0) != pdTRUE) {
-        taskENTER_CRITICAL(&robotStateMux);
-        robotState.queueOverflowCount++;
-        taskEXIT_CRITICAL(&robotStateMux);
-        PA_LOG_WARN(TAG, "TX queue full, dropped: %s", cmd);
+        logQueueDrop(QUEUE_DOME_TX, "TX command");
         return false;
     }
     return true;
