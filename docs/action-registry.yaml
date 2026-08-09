@@ -174,8 +174,8 @@ entries:
 
 - name: drive.action.speed-preset-cycle
   display_name: Speed Preset Cycle
-  description: Cycle speed preset Slow → Normal → Turbo
-  runtime_description: Cycle drive speed preset Slow → Normal → Turbo
+  description: Cycle speed preset Slow -> Normal -> Turbo
+  runtime_description: Cycle drive speed preset Slow -> Normal -> Turbo
   domain: drive
   type: action
   marcduino_cmd: null

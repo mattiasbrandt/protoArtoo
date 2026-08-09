@@ -1,8 +1,7 @@
 // =============================================================================
 // include/api_rc_map_apply.h
 //
-// Apply Core for POST /api/rc/map (ADR 0011, slice 2 of the write-path
-// campaign).
+// Apply Core for POST /api/rc/map (ADR 0011 RC mapping apply core).
 //
 // rcMapApply(): pure function — no FreeRTOS, no request object, no
 //   NVS. Reads the JSON map body through a ConfigParamSource, validates
@@ -39,5 +38,5 @@ struct RcMapApplyResult {
 // `working` must already hold the current cached snapshot (shell reads it
 // via configCacheRead before calling); it is mutated in place on success.
 // `result` is fully reinitialized on entry (safe to reuse a static
-// instance across calls, per the ADR 0011 slice 1 stack-size lesson).
+// instance across calls, per the ADR 0011 apply-core stack-size lesson).
 void rcMapApply(const ConfigParamSource& params, ConfigSnapshot* working, RcMapApplyResult* result);

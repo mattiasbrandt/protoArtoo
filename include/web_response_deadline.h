@@ -125,8 +125,8 @@ enum class WebSendOutcome : unsigned char {
 // own, but only the first was ever retried -- so a momentary shortage of
 // contiguous heap, which a concurrent page load produces routinely, aborted the
 // response mid-body. For a static file that meant a well-formed 200 with a
-// truncated or empty body: the browser accepted it, and the script that never
-// arrived simply never ran (issue #98).
+// truncated or empty body: the browser accepted it silently, and the script that
+// never arrived simply never ran.
 //
 // A zero return is fatal rather than transient. send() returning 0 on a stream
 // socket means it will not make progress, and retrying it is an unbounded spin

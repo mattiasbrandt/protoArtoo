@@ -115,7 +115,8 @@ constexpr uint32_t kWebAdmissionTraceAgeUnknown = UINT32_MAX;
 //     is where that information already exists and costs nothing.
 //
 // Sixty-four rows at eight bytes is 512, which fits with margin left over.
-// Raise it once the #91 cutover deletes the async scaffold's statics.
+// Raise it once PsychicHttp migration completes and the async scaffold is
+// fully removed.
 // -----------------------------------------------------------------------------
 
 #ifndef WEB_ADMISSION_TRACE_CAPACITY

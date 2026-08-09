@@ -153,9 +153,9 @@ void handleSeqListGet(WebRequest& req) {
 // The list form carries no step data, so the whole-catalog response stays a few
 // hundred bytes and cannot exhaust the fragmented heap mid-send. Serializing all
 // factory sequences with their steps into one buffered response was large enough
-// to OOM AsyncTCP during delivery, and ESP32's exceptions-disabled libstdc++
-// turns the failed allocation into terminate()/abort() (panic reboot). The
-// editor fetches full steps per-name only when the operator clones a sequence.
+// to OOM the prior async backend during delivery, and ESP32's exceptions-disabled
+// libstdc++ turns the failed allocation into terminate()/abort() (panic reboot).
+// The editor fetches full steps per-name only when the operator clones a sequence.
 void handleSeqBuiltinsGet(WebRequest& req) {
     char name[kSeqNameBufSize];
     if (req.param("name", name, sizeof(name)) && name[0] != '\0') {

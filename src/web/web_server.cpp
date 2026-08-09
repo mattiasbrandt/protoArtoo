@@ -457,9 +457,9 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     // sendRetriesMemory is the one to watch: it counts writes that had to wait
     // because the stack could not allocate a segment, which is the condition
     // that used to abandon a response mid-body and hand the browser a
-    // well-formed but truncated file (#98). It is now retried rather than
-    // fatal, so the failure is invisible from the outside -- this counter is
-    // the only place the pressure still shows.
+    // well-formed but truncated file (prior async backend failure mode). It is
+    // now retried rather than fatal, so the failure is invisible from the
+    // outside -- this counter is the only place the pressure still shows.
     if (written > 0 && written < (int)bufferSize - 1) {
         const uint32_t responseDeadlineLastMs = g_webResponseDeadlineLastMs;
         const long responseDeadlineAgeMs =

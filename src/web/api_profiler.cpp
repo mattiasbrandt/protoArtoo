@@ -139,8 +139,8 @@ static uint32_t s_failedAllocCount = 0;
 // inline, then optionally aborts). It MUST NOT allocate: a previous version
 // logged via Arduino Print::printf, which mallocs its own buffer — so under heap
 // exhaustion that malloc ALSO failed and re-entered this hook, recursing until a
-// task stack overflowed (a 64-byte mDNS alloc on the lwIP 'tiT' task crashed it;
-// found by decoding the coredump, issue #8). IDF's own abort path
+// task stack overflowed (coredump analysis found a 64-byte mDNS alloc crash on the
+// lwIP 'tiT' task). IDF's own abort path
 // (fmt_abort_str/hex_to_str) likewise formats with manual hex + memcpy, never
 // printf. So: only count, capture raw values + backtrace PCs (esp_backtrace_*
 // walks the stack and does not allocate), guard against re-entry, and let the
@@ -475,7 +475,7 @@ static void buildProfilerJson(char* buf, size_t bufSize) {
     }
     APPEND("]");
 
-    // Bounded request-lifecycle trace (issue #54 evidence) -- oldest first.
+    // Bounded request-lifecycle trace for profiler evidence -- oldest first.
     // Read here, once, after an experiment; never polled during the
     // workload. See web_request_psychic.cpp for field semantics.
     RequestLifecycleEntry traceCopy[PA_REQUEST_TRACE_MAX];

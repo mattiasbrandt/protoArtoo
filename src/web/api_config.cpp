@@ -697,7 +697,7 @@ void handleWifiPost(WebRequest& req) {
     configCacheReadWifi(&working);
 
     // WifiApplyResult is small; static kept for consistency with the
-    // ADR 0011 slice 1 out-parameter convention.
+    // ADR 0011 apply-core out-parameter convention.
     static WifiApplyResult result;
     wifiApply(params, &working, &result);
     if (!result.ok) {

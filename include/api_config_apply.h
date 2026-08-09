@@ -1,8 +1,7 @@
 // =============================================================================
 // include/api_config_apply.h
 //
-// Apply Core for POST /api/config (ADR 0011, slice 1 of the write-path
-// campaign).
+// Apply Core for POST /api/config (ADR 0011 config apply core).
 //
 // configApply(): pure function — no FreeRTOS, no request object, no
 //   logging, no NVS. Reads parameters through a ConfigParamSource, validates
@@ -19,7 +18,7 @@
 //
 // ConfigApplyActions intentionally has no playDriveOnCue: ADR 0012 moves
 // that rule to commandedSetStationary() (state-derived), once the later
-// Z2 commanded_modes slice lands. Until then the shell keeps its existing
+// Z2 commanded_modes feature lands. Until then the shell keeps its existing
 // inline stationary-release cue logic unchanged. playDomeOnCue stays a core
 // action because it is config-derived (enable_dome false->true).
 //
