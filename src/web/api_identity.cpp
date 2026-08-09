@@ -15,6 +15,7 @@
 #include <stdio.h>
 
 #include "api_helpers.h"
+#include "api_json_response.h"
 #include "config.h"
 #include "config_store.h"
 #include "logging.h"
@@ -27,8 +28,7 @@ namespace {
 void sendIdentityResponse(WebRequest& req, const SystemConfig& system) {
     char body[96] = {};
     if (!formatIdentityJson(body, sizeof(body), system.droid_name, system.mdns_use_name)) {
-        req.send(500, "application/json",
-                 "{\"ok\":false,\"error\":\"identity response overflow\"}");
+        webSendJsonError(req, 500, "identity response overflow");
         return;
     }
     req.send(200, "application/json", body);
@@ -48,15 +48,13 @@ void handleIdentityPost(WebRequest& req) {
     // rejected, instead of being truncated into a silently valid name.
     char rawName[DROID_NAME_MAX_LEN * 2 + 2] = {};
     if (!req.param("droidName", rawName, sizeof(rawName))) {
-        req.send(400, "application/json",
-                 "{\"ok\":false,\"error\":\"droidName is required\"}");
+        webSendJsonError(req, 400, "droidName is required");
         return;
     }
 
     char normalized[DROID_NAME_MAX_LEN + 1] = {};
     if (!normalizeDroidName(rawName, normalized, sizeof(normalized))) {
-        req.send(400, "application/json",
-                 "{\"ok\":false,\"error\":\"droidName must be 1..32 lowercase letters, numbers, or hyphens; spaces are not allowed\"}");
+        webSendJsonError(req, 400, "droidName must be 1..32 lowercase letters, numbers, or hyphens; spaces are not allowed");
         return;
     }
 
@@ -64,8 +62,7 @@ void handleIdentityPost(WebRequest& req) {
     char rawMdns[16] = {};
     if (req.param("mdnsUseName", rawMdns, sizeof(rawMdns))) {
         if (!parseBoolValue(rawMdns, &mdnsUseName)) {
-            req.send(400, "application/json",
-                     "{\"ok\":false,\"error\":\"mdnsUseName must be true/false or 1/0\"}");
+            webSendJsonError(req, 400, "mdnsUseName must be true/false or 1/0");
             return;
         }
     }
@@ -78,15 +75,13 @@ void handleIdentityPost(WebRequest& req) {
 
     Preferences prefs;
     if (!prefs.begin(NVS_NAMESPACE, false)) {
-        req.send(500, "application/json",
-                 "{\"ok\":false,\"error\":\"failed to persist identity\"}");
+        webSendJsonError(req, 500, "failed to persist identity");
         return;
     }
 
     if (!configSaveSystem(prefs, working.system)) {
         prefs.end();
-        req.send(500, "application/json",
-                 "{\"ok\":false,\"error\":\"failed to persist identity\"}");
+        webSendJsonError(req, 500, "failed to persist identity");
         return;
     }
     prefs.end();

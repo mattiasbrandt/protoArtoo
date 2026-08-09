@@ -16,6 +16,7 @@
 #include <string.h>
 
 #include "api_helpers.h"
+#include "api_json_response.h"
 #include "ledc_pwm.h"
 #include "logging.h"
 #include "robot_state.h"
@@ -80,16 +81,13 @@ void handleServoPost(WebRequest& req) {
     char arm[16] = {};
     char action[16] = {};
     if (!req.param("arm", arm, sizeof(arm)) || !req.param("action", action, sizeof(action))) {
-        req.send(400, "application/json",
-                 "{\"ok\":false,\"error\":\"Missing arm or action parameter\"}");
+        webSendJsonError(req, 400, "Missing arm or action parameter");
         return;
     }
 
     int16_t armId = parseArmId(arm);
     if (armId < 0) {
-        req.send(400, "application/json",
-                 "{\"ok\":false,\"error\":\"Invalid arm. Use: arm1, arm2, aux1, aux2, aux3, "
-                 "or both\"}");
+        webSendJsonError(req, 400, "Invalid arm. Use: arm1, arm2, aux1, aux2, aux3, or both");
         return;
     }
 
@@ -100,8 +98,7 @@ void handleServoPost(WebRequest& req) {
 
     // Parse action
     if (!parseAction(action, cmd.type, cmd.positionUs)) {
-        req.send(400, "application/json",
-                 "{\"ok\":false,\"error\":\"Invalid action. Use: open, close, stop, or position\"}");
+        webSendJsonError(req, 400, "Invalid action. Use: open, close, stop, or position");
         return;
     }
 
@@ -109,9 +106,7 @@ void handleServoPost(WebRequest& req) {
     if (cmd.type == SERVO_CMD_POSITION && strcmp(action, "position") == 0) {
         char positionRaw[16] = {};
         if (!req.param("positionUs", positionRaw, sizeof(positionRaw))) {
-            req.send(400, "application/json",
-                     "{\"ok\":false,\"error\":\"Missing positionUs parameter for position "
-                     "action\"}");
+            webSendJsonError(req, 400, "Missing positionUs parameter for position action");
             return;
         }
         // Unparseable input lands on the same range error a numerically
@@ -120,11 +115,11 @@ void handleServoPost(WebRequest& req) {
         uint32_t parsed = 0;
         if (!parseUint32Value(positionRaw, &parsed) || parsed < SERVO_PULSE_MIN_US ||
             parsed > SERVO_PULSE_MAX_US) {
-            char errBuf[96];
-            snprintf(errBuf, sizeof(errBuf),
-                     "{\"ok\":false,\"error\":\"positionUs must be between %u and %u\"}",
+            char errMsg[64];
+            snprintf(errMsg, sizeof(errMsg),
+                     "positionUs must be between %u and %u",
                      (unsigned)SERVO_PULSE_MIN_US, (unsigned)SERVO_PULSE_MAX_US);
-            req.send(400, "application/json", errBuf);
+            webSendJsonError(req, 400, errMsg);
             return;
         }
         cmd.positionUs = (uint16_t)parsed;
@@ -132,7 +127,7 @@ void handleServoPost(WebRequest& req) {
 
     // Send command to servo task queue (non-blocking)
     if (xQueueSend(servoCmdQueue, &cmd, 0) != pdTRUE) {
-        req.send(503, "application/json", "{\"ok\":false,\"error\":\"Servo command queue full\"}");
+        webSendJsonError(req, 503, "Servo command queue full");
         return;
     }
 

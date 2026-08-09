@@ -19,8 +19,10 @@
 #include "api_dome.h"
 
 #include <Arduino.h>
+#include <ArduinoJson.h>
 #include <stdio.h>
 
+#include "api_json_response.h"
 #include "dome_link.h"
 #include "dome_link_transport.h"
 #include "logging.h"
@@ -55,7 +57,7 @@ void handleDomeLayoutGet(WebRequest& req) {
     if (transport != DOME_LINK_TRANSPORT_WIFI) {
         PA_LOG_DEBUG(TAG, "GET /api/dome/layout: WiFi transport not active (transport=%u)",
                      (unsigned)transport);
-        req.send(503, "application/json", "{\"error\":\"dome layout unavailable (not WiFi)\"}");
+        webSendJsonError(req, 503, "dome layout unavailable (not WiFi)");
         return;
     }
 
@@ -66,8 +68,11 @@ void handleDomeLayoutGet(WebRequest& req) {
         // Cache miss or empty: request a background fetch and return 503
         PA_LOG_DEBUG(TAG, "GET /api/dome/layout: cache miss, requesting refresh");
         domeLayoutCacheRefreshRequested();
-        req.send(503, "application/json",
-                 "{\"error\":\"dome layout unavailable\",\"retry\":true}");
+        JsonDocument doc;
+        doc["ok"] = false;
+        doc["error"] = "dome layout unavailable";
+        doc["retry"] = true;
+        webSendJsonDocument(req, doc, 256, TAG, 503);
         return;
     }
 
@@ -82,8 +87,11 @@ void handleDomeLayoutGet(WebRequest& req) {
     req.addHeader("X-Dome-Layout-Age-Ms", ageHeader);
 
     if (!req.sendChunked("application/json", fillDomeLayoutResponse)) {
-        req.send(503, "application/json",
-                 "{\"error\":\"dome layout unavailable\",\"retry\":true}");
+        JsonDocument doc;
+        doc["ok"] = false;
+        doc["error"] = "dome layout unavailable";
+        doc["retry"] = true;
+        webSendJsonDocument(req, doc, 256, TAG, 503);
         return;
     }
     PA_LOG_DEBUG(TAG, "GET /api/dome/layout: serving %u bytes (age=%u ms)",

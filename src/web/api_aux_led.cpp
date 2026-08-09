@@ -17,6 +17,7 @@
 #include <cstdint>
 
 #include "api_helpers.h"
+#include "api_json_response.h"
 #include "aux_led.h"
 #include "robot_state.h"
 
@@ -156,7 +157,7 @@ void sendAuxLedStateResponse(WebRequest& req) {
 
     char body[160] = {};
     if (!formatAuxLedStateJson(body, sizeof(body), pin, r, g, b, auxLedEffectToString(effect))) {
-        req.send(500, "application/json", "{\"ok\":false,\"error\":\"aux LED response overflow\"}");
+        webSendJsonError(req, 500, "aux LED response overflow");
         return;
     }
 
@@ -168,10 +169,10 @@ void sendAuxLedStateResponse(WebRequest& req) {
 // queue is a retry.
 void sendAuxLedQueueRefusal(WebRequest& req) {
     if (!isAuxLedAvailable()) {
-        req.send(503, "application/json", "{\"ok\":false,\"error\":\"aux LED unavailable\"}");
+        webSendJsonError(req, 503, "aux LED unavailable");
         return;
     }
-    req.send(503, "application/json", "{\"ok\":false,\"error\":\"aux LED command queue full\"}");
+    webSendJsonError(req, 503, "aux LED command queue full");
 }
 
 }  // namespace
@@ -181,8 +182,7 @@ void handleAuxLedColorPost(WebRequest& req) {
     uint8_t g = 0;
     uint8_t b = 0;
     if (!parseColorPayload(req, &r, &g, &b)) {
-        req.send(400, "application/json",
-                 "{\"ok\":false,\"error\":\"payload must contain r,g,b integers 0..255\"}");
+        webSendJsonError(req, 400, "payload must contain r,g,b integers 0..255");
         return;
     }
 
@@ -197,8 +197,7 @@ void handleAuxLedColorPost(WebRequest& req) {
 void handleAuxLedEffectPost(WebRequest& req) {
     AuxLedEffect effect = AUX_LED_EFFECT_OFF;
     if (!parseEffectPayload(req, &effect)) {
-        req.send(400, "application/json",
-                 "{\"ok\":false,\"error\":\"effect must be one of off|solid|blink|pulse\"}");
+        webSendJsonError(req, 400, "effect must be one of off|solid|blink|pulse");
         return;
     }
 

@@ -40,7 +40,7 @@ void handleRcGet(WebRequest& req) {
 
     JsonDocument doc;
     if (!populateRcDiagnosticsJson(doc, snap)) {
-        req.send(500, "application/json", "{\"ok\":false,\"error\":\"rc json build failed\"}");
+        webSendJsonError(req, 500, "rc json build failed");
         return;
     }
 
@@ -56,7 +56,7 @@ void handleRcDebugPost(WebRequest& req) {
     // over-long body, and payload parity is this port's correctness bar.
     const size_t declared = req.contentLength();
     if (declared == 0 || declared > RC_DEBUG_BODY_MAX) {
-        req.send(413, "application/json", "{\"ok\":false,\"error\":\"payload too large\"}");
+        webSendJsonError(req, 413, "payload too large");
         return;
     }
 
@@ -66,13 +66,13 @@ void handleRcDebugPost(WebRequest& req) {
     // the same answer the async stack's parse would have given it.
     const char* body = req.body();
     if (body == nullptr) {
-        req.send(400, "application/json", "{\"ok\":false,\"error\":\"invalid json\"}");
+        webSendJsonError(req, 400, "invalid json");
         return;
     }
 
     JsonDocument doc;
     if (deserializeJson(doc, body)) {
-        req.send(400, "application/json", "{\"ok\":false,\"error\":\"invalid json\"}");
+        webSendJsonError(req, 400, "invalid json");
         return;
     }
 

@@ -29,8 +29,7 @@ void handleValidationGet(WebRequest& req) {
 
     JsonDocument doc;
     if (!populateValidationJson(doc, snap)) {
-        req.send(500, "application/json",
-                 "{\"ok\":false,\"error\":\"validation json build failed\"}");
+        webSendJsonError(req, 500, "validation json build failed");
         return;
     }
 

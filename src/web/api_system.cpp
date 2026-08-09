@@ -24,6 +24,7 @@
 
 #include "api_drive.h"
 #include "api_helpers.h"
+#include "api_json_response.h"
 #include "commanded_modes.h"
 #include "config_store.h"
 #include "logging.h"
@@ -50,9 +51,9 @@ namespace {
 void sendSleepControlResponse(WebRequest& req, bool sleepMode, bool changed, const char* label) {
     char body[96];
     if (!formatSleepControlJson(body, sizeof(body), sleepMode, changed)) {
-        char err[96];
-        snprintf(err, sizeof(err), "{\"ok\":false,\"error\":\"%s response overflow\"}", label);
-        req.send(500, "application/json", err);
+        char errMsg[96];
+        snprintf(errMsg, sizeof(errMsg), "%s response overflow", label);
+        webSendJsonError(req, 500, errMsg);
         return;
     }
     if (changed) {
@@ -102,7 +103,7 @@ void handleWakePost(WebRequest& req) {
 void handleManualCommandPost(WebRequest& req) {
     uint32_t now = millis();
     if ((now - lastManualCmdMs) < MANUAL_CMD_MIN_INTERVAL_MS) {
-        req.send(429, "application/json", "{\"ok\":false,\"error\":\"rate limit exceeded\"}");
+        webSendJsonError(req, 429, "rate limit exceeded");
         return;
     }
     lastManualCmdMs = now;
@@ -111,7 +112,7 @@ void handleManualCommandPost(WebRequest& req) {
     // outlive the guard checks below and reach executeManualCommand() intact.
     const char* rawCommand = req.paramRef("command");
     if (rawCommand == nullptr) {
-        req.send(400, "application/json", "{\"ok\":false,\"error\":\"missing command\"}");
+        webSendJsonError(req, 400, "missing command");
         return;
     }
 
@@ -125,14 +126,13 @@ void handleManualCommandPost(WebRequest& req) {
                               prefix == '*' || prefix == '@' || prefix == '%' ||
                               prefix == '&' || prefix == '!';
         if (blockedBySleep) {
-            req.send(423, "application/json",
-                     "{\"error\":\"sleeping\",\"hint\":\"POST /api/wake\"}");
+            webSendJsonError(req, 423, "sleeping", "POST /api/wake");
             return;
         }
     }
 
     if (!executeManualCommand(rawCommand)) {
-        req.send(400, "application/json", "{\"ok\":false,\"error\":\"unsupported command\"}");
+        webSendJsonError(req, 400, "unsupported command");
         return;
     }
 
@@ -164,13 +164,13 @@ void handleCoredumpStatusGet(WebRequest& req) {
 void handleCoredumpGet(WebRequest& req) {
     size_t addr = 0, size = 0;
     if (esp_core_dump_image_get(&addr, &size) != ESP_OK || size == 0) {
-        req.send(404, "application/json", "{\"ok\":false,\"error\":\"no coredump\"}");
+        webSendJsonError(req, 404, "no coredump");
         return;
     }
     const esp_partition_t* part = esp_partition_find_first(
         ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_COREDUMP, nullptr);
     if (part == nullptr) {
-        req.send(500, "application/json", "{\"ok\":false,\"error\":\"no coredump partition\"}");
+        webSendJsonError(req, 500, "no coredump partition");
         return;
     }
 
@@ -180,13 +180,13 @@ void handleCoredumpGet(WebRequest& req) {
     s_coredumpPartition = part;
     s_coredumpSize = size;
     if (!req.sendChunked("application/octet-stream", fillCoredumpResponse)) {
-        req.send(500, "application/json", "{\"ok\":false,\"error\":\"response alloc failed\"}");
+        webSendJsonError(req, 500, "response alloc failed");
     }
 }
 
 void handleCoredumpErasePost(WebRequest& req) {
     if (esp_core_dump_image_erase() != ESP_OK) {
-        req.send(500, "application/json", "{\"ok\":false,\"error\":\"erase failed\"}");
+        webSendJsonError(req, 500, "erase failed");
         return;
     }
     PA_LOG_INFO(TAG, "[WEB] coredump erased");

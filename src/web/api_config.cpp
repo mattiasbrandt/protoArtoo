@@ -27,6 +27,7 @@
 
 #include "api_config_apply.h"
 #include "api_config_snapshot.h"
+#include "api_json_response.h"
 #include "api_rc_map_apply.h"
 #include "api_wifi_apply.h"
 #include "web_param_source.h"
@@ -516,8 +517,7 @@ namespace {
 void sendConfigSnapshot(WebRequest& req, const ConfigSnapshot& snap) {
     JsonDocument doc;
     if (!populateConfigJson(doc, snap)) {
-        req.send(500, "application/json",
-                 "{\"ok\":false,\"error\":\"config json build failed\"}");
+        webSendJsonError(req, 500, "config json build failed");
         return;
     }
     WifiConfig activeWifi = {};
@@ -541,8 +541,7 @@ void sendConfigSnapshot(WebRequest& req, const ConfigSnapshot& snap) {
     // migration for a route the dashboard hits on every page load.
     static char body[3072];
     if (measureJson(doc) >= sizeof(body)) {
-        req.send(500, "application/json",
-                 "{\"ok\":false,\"error\":\"config response overflow\"}");
+        webSendJsonError(req, 500, "config response overflow");
         return;
     }
     serializeJson(doc, body, sizeof(body));
@@ -552,14 +551,12 @@ void sendConfigSnapshot(WebRequest& req, const ConfigSnapshot& snap) {
 bool persistSystemConfig(WebRequest& req, const SystemConfig& system) {
     Preferences prefs;
     if (!prefs.begin(NVS_NAMESPACE, false)) {
-        req.send(500, "application/json",
-                 "{\"ok\":false,\"error\":\"failed to persist config\"}");
+        webSendJsonError(req, 500, "failed to persist config");
         return false;
     }
     if (!configSaveSystem(prefs, system)) {
         prefs.end();
-        req.send(500, "application/json",
-                 "{\"ok\":false,\"error\":\"failed to persist config\"}");
+        webSendJsonError(req, 500, "failed to persist config");
         return false;
     }
     prefs.end();
@@ -581,8 +578,7 @@ void handleRcMapGet(WebRequest& req) {
     configCacheRead(&snap);
     JsonDocument doc;
     if (!populateRcMapJson(doc, snap)) {
-        req.send(500, "application/json",
-                 "{\"ok\":false,\"error\":\"rc map json build failed\"}");
+        webSendJsonError(req, 500, "rc map json build failed");
         return;
     }
 
@@ -591,8 +587,7 @@ void handleRcMapGet(WebRequest& req) {
     // an optional Marcduino payload; 2 KB clears a full map with headroom.
     static char body[2048];
     if (measureJson(doc) >= sizeof(body)) {
-        req.send(500, "application/json",
-                 "{\"ok\":false,\"error\":\"rc map response overflow\"}");
+        webSendJsonError(req, 500, "rc map response overflow");
         return;
     }
     serializeJson(doc, body, sizeof(body));
@@ -623,9 +618,7 @@ void handleRcMapPost(WebRequest& req) {
                 at["payload"] = result.errorEntry.payload;
             }
         }
-        char payload[320] = {};
-        serializeJson(err, payload, sizeof(payload));
-        req.send(400, "application/json", payload);
+        webSendJsonDocument(req, err, 320, TAG, 400);
         return;
     }
 
@@ -654,9 +647,7 @@ void handleConfigPost(WebRequest& req) {
     static ConfigApplyResult result;
     configApply(params, &working, domeEnabledBefore, &result);
     if (result.error.hasError) {
-        char err[224];
-        snprintf(err, sizeof(err), "{\"ok\":false,\"error\":\"%s\"}", result.error.message);
-        req.send(400, "application/json", err);
+        webSendJsonError(req, 400, result.error.message);
         return;
     }
 
@@ -683,14 +674,12 @@ void handleConfigPost(WebRequest& req) {
 
     Preferences prefs;
     if (!prefs.begin(NVS_NAMESPACE, false)) {
-        req.send(500, "application/json",
-                 "{\"ok\":false,\"error\":\"failed to persist config\"}");
+        webSendJsonError(req, 500, "failed to persist config");
         return;
     }
     if (!configSave(prefs, snap)) {
         prefs.end();
-        req.send(500, "application/json",
-                 "{\"ok\":false,\"error\":\"failed to persist config\"}");
+        webSendJsonError(req, 500, "failed to persist config");
         return;
     }
     prefs.end();
@@ -711,23 +700,18 @@ void handleWifiPost(WebRequest& req) {
     static WifiApplyResult result;
     wifiApply(params, &working, &result);
     if (!result.ok) {
-        char errPayload[224];
-        snprintf(errPayload, sizeof(errPayload), "{\"ok\":false,\"error\":\"%s\"}",
-                 result.errorMessage);
-        req.send(400, "application/json", errPayload);
+        webSendJsonError(req, 400, result.errorMessage);
         return;
     }
 
     Preferences prefs;
     if (!prefs.begin(NVS_NAMESPACE, false)) {
-        req.send(500, "application/json",
-                 "{\"ok\":false,\"error\":\"failed to persist wifi settings\"}");
+        webSendJsonError(req, 500, "failed to persist wifi settings");
         return;
     }
     if (!configSaveWifi(prefs, working)) {
         prefs.end();
-        req.send(500, "application/json",
-                 "{\"ok\":false,\"error\":\"failed to persist wifi settings\"}");
+        webSendJsonError(req, 500, "failed to persist wifi settings");
         return;
     }
     prefs.end();

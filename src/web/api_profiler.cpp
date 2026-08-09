@@ -51,6 +51,7 @@
 #include <esp_heap_trace.h>
 #endif
 
+#include "api_json_response.h"
 #include "logging.h"
 #include "web_server.h"
 
@@ -511,8 +512,7 @@ void handleProfilerGet(WebRequest& req) {
         // and a 500 is the better answer regardless: setup.js reads the status
         // code to decide whether the profiler UI exists at all, and a dropped
         // connection is indistinguishable from the endpoint being absent.
-        req.send(500, "application/json",
-                 "{\"ok\":false,\"error\":\"profiler buffer alloc failed\"}");
+        webSendJsonError(req, 500, "profiler buffer alloc failed");
         return;
     }
     buildProfilerJson(body, kProfilerBodySize);
@@ -522,7 +522,7 @@ void handleProfilerGet(WebRequest& req) {
 #ifdef CONFIG_HEAP_TRACING
 void handleProfilerTraceStartPost(WebRequest& req) {
     if (s_traceRunning) {
-        req.send(200, "application/json", "{\"ok\":false,\"error\":\"trace already running\"}");
+        webSendJsonError(req, 409, "trace already running");
         return;
     }
     esp_err_t err = heap_trace_start(HEAP_TRACE_LEAKS);
@@ -532,13 +532,13 @@ void handleProfilerTraceStartPost(WebRequest& req) {
         req.send(200, "application/json", "{\"ok\":true,\"mode\":\"LEAKS\"}");
     } else {
         PA_LOG_WARN(TAG, "Tier 3 heap trace start failed: %d", (int)err);
-        req.send(200, "application/json", "{\"ok\":false,\"error\":\"start failed\"}");
+        webSendJsonError(req, 500, "start failed");
     }
 }
 
 void handleProfilerTraceStopPost(WebRequest& req) {
     if (!s_traceRunning) {
-        req.send(200, "application/json", "{\"ok\":false,\"error\":\"trace not running\"}");
+        webSendJsonError(req, 409, "trace not running");
         return;
     }
     heap_trace_stop();
