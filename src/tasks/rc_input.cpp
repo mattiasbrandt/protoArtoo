@@ -28,7 +28,7 @@
 #include "../../include/sequence_dispatcher.h"
 #include "../../include/commanded_modes.h"
 #include "../../include/config.h"
-#include "../../include/config_store.h"
+#include "../../include/config_cache.h"
 #include "../../include/dome_link.h"
 #include "../../include/dome_rx_parser.h"
 #include "../../include/drive_arbiter.h"

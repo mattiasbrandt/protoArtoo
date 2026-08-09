@@ -56,6 +56,7 @@
 #include "chirp_binding_keys.h"
 #include "config.h"
 #include "config_store.h"
+#include "config_cache.h"
 #include "logging.h"
 #include "mood.h"
 #include "mood_sound_mapping.h"

@@ -9,7 +9,7 @@
 #include "commanded_modes.h"
 
 #include "audio_task.h"
-#include "config_store.h"
+#include "config_cache.h"
 #include "robot_state.h"
 
 void commandedSetStationary(bool stationary, CommandSource source) {

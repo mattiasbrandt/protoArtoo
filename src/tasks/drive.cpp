@@ -17,7 +17,7 @@
 #include <esp_task_wdt.h>
 
 #include "config.h"
-#include "config_store.h"
+#include "config_cache.h"
 #include "drive_arbiter.h"
 #include "drive.h"
 #include "drive_frame_emit.h"

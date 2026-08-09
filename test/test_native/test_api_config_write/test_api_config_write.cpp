@@ -15,7 +15,7 @@
 #include <cstring>
 
 #include "api_config.h"
-#include "config_store.h"
+#include "config_cache.h"
 #include "web_request_test_backend.h"
 
 extern bool g_test_commanded_stationary;

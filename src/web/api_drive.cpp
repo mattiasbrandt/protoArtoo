@@ -31,7 +31,7 @@
 #include "api_json_response.h"
 #include "audio_task.h"
 #include "commanded_modes.h"
-#include "config_store.h"
+#include "config_cache.h"
 #include "dome_link.h"
 #include "dome_rx_parser.h"
 #include "drive_arbiter.h"

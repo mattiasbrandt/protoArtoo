@@ -10,7 +10,7 @@
 
 #include <cmath>
 
-#include "../../include/config_store.h"
+#include "../../include/config_cache.h"
 #include "../../include/rc_diagnostics.h"
 #include "../../include/robot_state.h"
 

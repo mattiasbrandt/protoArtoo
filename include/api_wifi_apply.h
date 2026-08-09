@@ -14,7 +14,7 @@
 #pragma once
 
 #include "api_param_source.h"
-#include "config_store.h"
+#include "config_cache.h"
 
 struct WifiApplyResult {
     bool ok = false;

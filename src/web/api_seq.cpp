@@ -19,7 +19,7 @@
 
 #include "api_helpers.h"           // trimAsciiWhitespace
 #include "api_json_response.h"
-#include "config_store.h"          // ConfigSnapshot, configCacheRead, rcTriggerSlotsCopy
+#include "config_cache.h"          // ConfigSnapshot, configCacheRead, rcTriggerSlotsCopy
 #include "logging.h"
 #include "rc_action_types.h"       // RcTriggerBinding
 #include "rc_binding_types.h"      // rcBindingSourceToString

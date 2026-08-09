@@ -36,6 +36,7 @@
 #include "commanded_modes.h"
 #include "config.h"
 #include "config_store.h"
+#include "config_cache.h"
 #include "logging.h"
 #include "robot_state.h"
 #include "seq_store_index.h"   // Learned Sequence names accepted for RC binding

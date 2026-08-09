@@ -28,7 +28,7 @@
 #include <esp_task_wdt.h>
 
 #include "config.h"
-#include "config_store.h"
+#include "config_cache.h"
 #include "dome_math.h"
 #include "ledc_pwm.h"
 #include "logging.h"

@@ -18,6 +18,7 @@
 #include "api_json_response.h"
 #include "config.h"
 #include "config_store.h"
+#include "config_cache.h"
 #include "logging.h"
 #include "web_request.h"
 

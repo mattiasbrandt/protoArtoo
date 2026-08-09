@@ -30,7 +30,7 @@
 #include "../../include/audio_task.h"
 #include "../../include/reset_reason.h"
 #include "../../include/config.h"
-#include "../../include/config_store.h"
+#include "../../include/config_cache.h"
 #include "../../include/aux_led.h"
 #include "../../include/rc_diagnostics_snapshot.h"
 #include "../../include/robot_state.h"

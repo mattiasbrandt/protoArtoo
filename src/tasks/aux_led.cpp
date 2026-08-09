@@ -13,7 +13,7 @@
 #include <string.h>
 
 #include "config.h"
-#include "config_store.h"
+#include "config_cache.h"
 #include "logging.h"
 #include "queue_drop_tracker.h"
 #include "robot_state.h"

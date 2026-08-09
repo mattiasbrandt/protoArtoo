@@ -20,7 +20,7 @@
 #include "api_drive.h"
 #include "api_estop.h"
 #include "api_servo.h"
-#include "config_store.h"
+#include "config_cache.h"
 #include "dome_link.h"
 #include "dome_link_transport.h"
 #include "drive_arbiter.h"
