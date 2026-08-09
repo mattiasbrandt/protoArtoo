@@ -1,17 +1,17 @@
 // =============================================================================
-// src/web/web_admission_trace.cpp
+// src/web/web_admission_event_ring.cpp
 //
-// The admission decision ring and its JSON form. Pure: every input arrives as
-// a parameter, so this compiles and is exercised on the host exactly like the
-// decision core it observes.
+// The admission event ring (ring buffer of decision events) and its JSON form.
+// Pure: every input arrives as a parameter, so this compiles and is exercised
+// on the host exactly like the decision core it observes.
 //
 // Rows are packed to eight bytes because the ring competes with the heap it
-// measures; see include/web_admission_trace.h. The packing lives entirely
+// measures; see include/web_admission_event_ring.h. The packing lives entirely
 // between webAdmissionTraceRecord() and the accessors below -- callers give
 // bytes and milliseconds and read bytes and milliseconds back.
 // =============================================================================
 
-#include "../../include/web_admission_trace.h"
+#include "../../include/web_admission_event_ring.h"
 
 #if PA_ADMISSION_TRACE
 

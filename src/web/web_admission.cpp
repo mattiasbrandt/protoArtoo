@@ -271,3 +271,89 @@ bool webIsMainFrameNavigation(const char* secFetchMode, const char* accept) {
     }
     return strncmp(accept, "text/html", 9) == 0;
 }
+
+// =============================================================================
+// Connection Admission Session (opaque)
+// =============================================================================
+
+// The opaque session bundles the rate limiter, heap cache, and sampler function,
+// so the calling layer owns one handle rather than threading through separate
+// parameters. The pure decision functions remain directly reachable for tests.
+struct WebAdmissionSession {
+    WebAcceptRateLimiter limiter;
+    WebHeapSampleCache heapSample;
+    size_t (*sampler)(void* ctx);
+    void* samplerCtx;
+};
+
+WebAdmissionSession* webAdmissionSessionCreate(uint32_t nowMs, size_t (*sampler)(void* ctx),
+                                               void* samplerCtx) {
+    WebAdmissionSession* session = new WebAdmissionSession();
+    if (session == nullptr) {
+        return nullptr;
+    }
+    webAcceptRateLimiterInit(&session->limiter, nowMs, 0);  // burst is set per-call
+    memset(&session->heapSample, 0, sizeof(session->heapSample));
+    session->sampler = sampler;
+    session->samplerCtx = samplerCtx;
+    return session;
+}
+
+WebAcceptDecision webAdmissionSessionConnectionDecide(WebAdmissionSession* session,
+                                                      uint32_t nowMs, uint32_t burst,
+                                                      uint32_t perSecond,
+                                                      size_t minLargestFreeBlock) {
+    // Implement the connection admission decision, encapsulating the rate
+    // limiter, heap cache, and sampler. Rate is checked before heap: the rate
+    // check is arithmetic on state already in the limiter, whereas sampling the
+    // heap may cost a walk. A paced-out connection must never trigger that walk.
+    //
+    // This reimplements the core logic of webAcceptDecide() with cache
+    // management built in, so the caller owns one opaque session reference.
+    // The pure function webAcceptDecide() remains directly reachable for native
+    // tests, keeping the decision logic independently testable (ADR 0011).
+
+    // Refill the rate limiter for elapsed time, clamped to burst size.
+    // Unsigned subtraction handles millisecond counter rollover correctly.
+    constexpr uint32_t kTokenMilli = 1000u;
+    const uint32_t elapsedMs = nowMs - session->limiter.lastRefillMs;
+    session->limiter.lastRefillMs = nowMs;
+
+    const uint32_t capMilli = burst * kTokenMilli;
+    const uint64_t refilled =
+        (uint64_t)session->limiter.tokensMilli + (uint64_t)elapsedMs * (uint64_t)perSecond;
+    session->limiter.tokensMilli = refilled > capMilli ? capMilli : (uint32_t)refilled;
+
+    // Rate check: this is the only thing a paced-out connection does.
+    if (session->limiter.tokensMilli < kTokenMilli) {
+        return WebAcceptDecision::kRejectRate;
+    }
+
+    // Heap check: refresh the cache if needed, then check against the floor.
+    // The cache interval is a constant for now; future work may make it
+    // configurable. It defaults to 100ms, matching PA_ACCEPT_HEAP_SAMPLE_MIN_INTERVAL_MS.
+    constexpr uint32_t kHeapSampleIntervalMs = 100;
+    if (webHeapSampleDue(&session->heapSample, nowMs, kHeapSampleIntervalMs)) {
+        const size_t largest = session->sampler(session->samplerCtx);
+        webHeapSampleStore(&session->heapSample, nowMs, largest);
+    }
+
+    if (session->heapSample.value < minLargestFreeBlock) {
+        return WebAcceptDecision::kRejectHeap;
+    }
+
+    // Admitted: take a token and accept the connection.
+    session->limiter.tokensMilli -= kTokenMilli;
+    return WebAcceptDecision::kAdmit;
+}
+
+size_t webAdmissionSessionGetCachedHeapSample(WebAdmissionSession* session) {
+    return session->heapSample.value;
+}
+
+uint32_t webAdmissionSessionGetHeapSampleAge(WebAdmissionSession* session, uint32_t nowMs) {
+    if (!session->heapSample.primed) {
+        return UINT32_MAX;  // Unprimed cache
+    }
+    return nowMs - session->heapSample.lastSampleMs;
+}

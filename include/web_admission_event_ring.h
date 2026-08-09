@@ -1,17 +1,20 @@
 // =============================================================================
-// include/web_admission_trace.h
+// include/web_admission_event_ring.h
 //
-// A ring of admission decisions, so the largest-free-block reading through a
-// full page load can be read back as a curve rather than argued about from a
-// spot value.
+// EVENT RING: A ring buffer (circular FIFO) of admission decision events,
+// independent of the admission policy (include/web_admission.h). This module
+// stores evidence about what the admission layers decided and why; it does not
+// participate in those decisions.
 //
-// Both admission layers (include/web_admission.h) refuse on a number. The
-// counters they publish say how often each floor was crossed, but not what the
-// reading was doing between crossings, and not how old the reading was when it
-// was used -- both layers share one cached sample, so a decision may be taken
-// on a value measured up to an interval earlier. A refusal count cannot
-// distinguish "the heap really was that low" from "the heap was that low once,
-// and everything that arrived in the next interval inherited the reading".
+// The ring exists so the largest-free-block reading through a full page load
+// can be read back as a curve rather than argued about from a spot value. Both
+// admission layers (include/web_admission.h) refuse on a number. The counters
+// they publish say how often each floor was crossed, but not what the reading
+// was doing between crossings, and not how old the reading was when it was used
+// -- both layers share one cached sample, so a decision may be taken on a value
+// measured up to an interval earlier. A refusal count cannot distinguish "the
+// heap really was that low" from "the heap was that low once, and everything
+// that arrived in the next interval inherited the reading".
 //
 // Recording happens strictly AFTER the decision it describes, so nothing here
 // can change what the guard did. The cost is time and BSS, never a different
@@ -23,11 +26,11 @@
 // page-load transient and have not been re-derived for this one -- see the heap
 // floor rationale in platformio.ini [flags_base] and
 // docs/adr/0022-connection-admission-on-esp-http-server.md. The final
-// verification of whatever
-// replaces them has to run with this off, or it verifies a build nobody ships.
+// verification of whatever replaces them has to run with this off, or it
+// verifies a build nobody ships.
 //
 // Pure data and pure functions: no Arduino, no vendor type, no clock of its
-// own. The device hookup lives in src/web/web_request_psychic.cpp and the
+// own. The device hookup lives in src/web/web_admission_psychic.cpp and the
 // readback route in src/web/api_admission_trace.cpp.
 // =============================================================================
 #pragma once

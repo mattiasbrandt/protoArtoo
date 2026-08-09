@@ -44,8 +44,10 @@ static const char* TAG = "WebServer";
 // counters relied on.
 // =============================================================================
 
-WebAcceptRateLimiter s_acceptLimiter;
-WebHeapSampleCache s_heapSample;
+// Connection admission session, bundling the rate limiter, heap cache, and
+// sampler. Initialized once at server startup and reused for every connection.
+// Stored as pointer to keep the type opaque to callers.
+static WebAdmissionSession* s_admissionSession = nullptr;
 
 // Connection lifetime evidence. Lives here rather than beside the event stream
 // registry because it is written from the same two admission callbacks, on the
@@ -163,23 +165,18 @@ uint8_t pushRequestTraceEntry(const char* path, uint32_t startMs) {
 }
 #endif  // PA_HEAP_PROFILE
 
-// Refreshes the cached largest-free-block reading at most once per interval.
-// heap_caps_get_largest_free_block() walks the heap, so charging every
-// connection for one would put that walk on the task servicing all the others
-// -- the cost that failed 1 of 2 concurrent requests on the prototype.
-size_t sampleLargestFreeBlock(void*) {
-    const uint32_t nowMs = millis();
-    if (webHeapSampleDue(&s_heapSample, nowMs, PA_ACCEPT_HEAP_SAMPLE_MIN_INTERVAL_MS)) {
-        const size_t largest = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
-        webHeapSampleStore(&s_heapSample, nowMs, largest);
-        // The low-water mark the guard itself observed. /api/status reports
-        // the resting value, which by definition is never the one that caused
-        // a refusal, so without this the depth of a transient dip is invisible.
-        if ((uint32_t)largest < g_webAcceptMinLargestBlockSeen) {
-            g_webAcceptMinLargestBlockSeen = (uint32_t)largest;
-        }
+// Sampler function for the admission session. Called by the session when the
+// rate check passes and a heap sample is needed. Updates the low-water mark.
+// The session manages caching, so this just does the walk.
+size_t sessionHeapSampler(void*) {
+    const size_t largest = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+    // The low-water mark the guard itself observed. /api/status reports
+    // the resting value, which by definition is never the one that caused
+    // a refusal, so without this the depth of a transient dip is invisible.
+    if ((uint32_t)largest < g_webAcceptMinLargestBlockSeen) {
+        g_webAcceptMinLargestBlockSeen = (uint32_t)largest;
     }
-    return s_heapSample.value;
+    return largest;
 }
 
 // Records a decision that has already been taken, as evidence for re-deriving
@@ -205,32 +202,25 @@ size_t sampleLargestFreeBlock(void*) {
 #endif
 
 void traceDecision(WebAdmissionTraceLayer layer, WebAdmissionTraceOutcome outcome, int inflight,
-                   WebAdmissionTraceNavigation navigation) {
-    // Read here rather than taken from the caller. Each layer captures its own
-    // clock at a different point relative to the sampler -- the connection
-    // callback before it, the request middleware after it -- so a caller's
-    // stamp can predate the sample it is being compared against, and the
-    // unsigned subtraction below would turn a just-refreshed sample into the
-    // maximum possible age. That is the one reading this trace cannot afford to
-    // get backwards. Sampling has already happened by the time this runs, so a
-    // clock read here is never earlier than the sample it measures.
+                   WebAdmissionTraceNavigation navigation, size_t heapSample, uint32_t ageMs) {
+    // Record the decision along with the heap sample and its age.
+    // The age is measured by the caller (connection vs request layer) because
+    // each captures its own clock at a different point relative to the sampler.
     const uint32_t nowMs = millis();
-    const uint32_t ageMs = s_heapSample.primed ? (nowMs - s_heapSample.lastSampleMs)
-                                               : kWebAdmissionTraceAgeUnknown;
 #if PA_ADMISSION_TRACE_FRESH
     const uint32_t fresh = (uint32_t)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
 #else
     const uint32_t fresh = 0;
 #endif
     webAdmissionTraceRecord(webAdmissionTraceInstance(), nowMs, layer, outcome,
-                            (uint32_t)s_heapSample.value, fresh, ageMs, inflight, navigation);
+                            (uint32_t)heapSample, fresh, ageMs, inflight, navigation);
 }
 
 #else
 
 // Trace off: the call sites stay, and cost nothing.
 inline void traceDecision(WebAdmissionTraceLayer, WebAdmissionTraceOutcome, int,
-                          WebAdmissionTraceNavigation) {
+                          WebAdmissionTraceNavigation, size_t, uint32_t) {
 }
 
 #endif  // PA_ADMISSION_TRACE
@@ -245,14 +235,20 @@ esp_err_t admissionOpenCallback(httpd_handle_t hd, int sockfd) {
     const uint32_t nowMs = millis();
 
     const WebAcceptDecision decision =
-        webAcceptDecide(&s_acceptLimiter, nowMs, PA_ACCEPT_BURST, PA_ACCEPT_PER_SECOND,
-                        sampleLargestFreeBlock, nullptr, PA_ACCEPT_MIN_LARGEST_FREE_BLOCK);
+        webAdmissionSessionConnectionDecide(s_admissionSession, nowMs, PA_ACCEPT_BURST,
+                                            PA_ACCEPT_PER_SECOND,
+                                            PA_ACCEPT_MIN_LARGEST_FREE_BLOCK);
 
     const uint32_t elapsedUs = (uint32_t)(esp_timer_get_time() - startUs);
     g_webAcceptGuardLastUs = elapsedUs;
     if (elapsedUs > g_webAcceptGuardMaxUs) {
         g_webAcceptGuardMaxUs = elapsedUs;
     }
+
+    // Get the cached heap sample and its age for tracing.
+    const size_t heapSample = webAdmissionSessionGetCachedHeapSample(s_admissionSession);
+    const uint32_t ageMs =
+        webAdmissionSessionGetHeapSampleAge(s_admissionSession, nowMs);
 
     // The connection layer is blind to the URL by construction, so every row it
     // records carries no path and an unknown navigation class.
@@ -261,7 +257,7 @@ esp_err_t admissionOpenCallback(httpd_handle_t hd, int sockfd) {
         g_webAcceptRejectLastMs = nowMs;
         traceDecision(WebAdmissionTraceLayer::kConnection,
                       WebAdmissionTraceOutcome::kRejectRate, 0,
-                      WebAdmissionTraceNavigation::kUnknown);
+                      WebAdmissionTraceNavigation::kUnknown, heapSample, ageMs);
         return ESP_FAIL;
     }
     if (decision == WebAcceptDecision::kRejectHeap) {
@@ -271,15 +267,15 @@ esp_err_t admissionOpenCallback(httpd_handle_t hd, int sockfd) {
         // and may be up to one interval old -- so a burst can be shed on one
         // pessimistic sample. Publishing it makes that visible rather than
         // leaving a bare refusal count to be argued over.
-        g_webAcceptRejectLargestBlock = (uint32_t)s_heapSample.value;
+        g_webAcceptRejectLargestBlock = (uint32_t)heapSample;
         traceDecision(WebAdmissionTraceLayer::kConnection,
                       WebAdmissionTraceOutcome::kRejectHeap, 0,
-                      WebAdmissionTraceNavigation::kUnknown);
+                      WebAdmissionTraceNavigation::kUnknown, heapSample, ageMs);
         return ESP_FAIL;
     }
 
     traceDecision(WebAdmissionTraceLayer::kConnection, WebAdmissionTraceOutcome::kAdmit, 0,
-                  WebAdmissionTraceNavigation::kUnknown);
+                  WebAdmissionTraceNavigation::kUnknown, heapSample, ageMs);
 
     // Admitted. Counted before the vendor chain so the census and the server's
     // own session table agree on what exists: httpd_sess_new() has already
@@ -368,7 +364,10 @@ esp_err_t admissionMiddleware(PsychicRequest* request, PsychicResponse* response
     in.longLived = webPathIsLongLived(path);
     in.inflightRequests = g_webInflightRequests;
     in.maxInflightRequests = PA_ADMISSION_MAX_INFLIGHT_REQUESTS;
-    in.largestFreeBlock = sampleLargestFreeBlock(nullptr);
+    // Get the cached heap sample from the session. The sample is refreshed by
+    // the connection admission layer as it admits connections; the request layer
+    // uses that same cached value.
+    in.largestFreeBlock = webAdmissionSessionGetCachedHeapSample(s_admissionSession);
     in.minLargestFreeBlock = PA_ADMISSION_MIN_LARGEST_FREE_BLOCK;
     in.minLargestFreeBlockDiagnostic = PA_ADMISSION_MIN_LARGEST_FREE_BLOCK_DIAG;
     // Bench-only: the induced-pressure env raises the floor above the resting
@@ -428,9 +427,11 @@ esp_err_t admissionMiddleware(PsychicRequest* request, PsychicResponse* response
         // the only point where a refusal's navigation class is known, and that
         // class is the whole question: a refused navigation is the one this
         // ticket has to see either completed or answered with the Busy page.
+        const uint32_t ageMs = webAdmissionSessionGetHeapSampleAge(s_admissionSession, millis());
         traceDecision(WebAdmissionTraceLayer::kRequest, outcome, in.inflightRequests,
                       navigation ? WebAdmissionTraceNavigation::kNavigation
-                                 : WebAdmissionTraceNavigation::kAsset);
+                                 : WebAdmissionTraceNavigation::kAsset,
+                      in.largestFreeBlock, ageMs);
 
         // Either way the connection goes: returning non-ESP_OK is what makes
         // esp_http_server close it, and the response above already declared
@@ -441,8 +442,10 @@ esp_err_t admissionMiddleware(PsychicRequest* request, PsychicResponse* response
     // Admitted: the navigation class stays unknown, because determining it
     // costs two header reads and an admitted request must not pay for a
     // distinction only a refusal acts on.
+    const uint32_t admitAgeMs = webAdmissionSessionGetHeapSampleAge(s_admissionSession, millis());
     traceDecision(WebAdmissionTraceLayer::kRequest, WebAdmissionTraceOutcome::kAdmit,
-                  in.inflightRequests, WebAdmissionTraceNavigation::kUnknown);
+                  in.inflightRequests, WebAdmissionTraceNavigation::kUnknown,
+                  in.largestFreeBlock, admitAgeMs);
 
     // Counted here rather than per route, because this is the only point every
     // request passes through -- the global middleware chain wraps the static
@@ -571,7 +574,13 @@ void webAdmissionRegisterCallbacks(PsychicHttpServer& server) {
     server.config.open_fn = admissionOpenCallback;
 
     // Initialize admission state
-    webAcceptRateLimiterInit(&s_acceptLimiter, millis(), PA_ACCEPT_BURST);
+    const uint32_t nowMs = millis();
+    if (s_admissionSession == nullptr) {
+        s_admissionSession = webAdmissionSessionCreate(nowMs, sessionHeapSampler, nullptr);
+        if (s_admissionSession == nullptr) {
+            PA_LOG_ERROR(TAG, "admission session allocation failed");
+        }
+    }
     webSocketCensusInit(&s_census);
 }
 
