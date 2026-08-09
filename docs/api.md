@@ -3,18 +3,27 @@
 This document describes the currently exposed HTTP and SSE API in protoArtoo,
 including request shape, accepted parameters, and observed response contracts.
 
+**Route Coverage (for drift detection):** 64 routes total, derived from
+`src/web/web_seam_routes.cpp`, `src/web/web_request_psychic.cpp` (SSE), and
+upload handlers. Breakdown: 61 core API routes + 2 multipart upload routes +
+1 SSE stream. All are documented here or listed under "Internal Routes".
+
 ## Table of Contents
 
 - [Request/Response Conventions](#requestresponse-conventions)
+- [Error Contract](#error-contract)
+- [Identity](#identity)
 - [Safety and Drive](#safety-and-drive)
 - [Servo and AUX Outputs](#servo-and-aux-outputs)
 - [Audio and Mood](#audio-and-mood)
+- [Learned Sequences](#learned-sequences)
 - [Configuration and RC](#configuration-and-rc)
 - [Action Registry](#action-registry)
 - [Status and Validation](#status-and-validation)
 - [System and OTA](#system-and-ota)
 - [SSE Events](#sse-events)
 - [Profiling (Build-Conditional)](#profiling-build-conditional)
+- [Internal Routes](#internal-routes)
 
 ## Request/Response Conventions
 
@@ -25,6 +34,79 @@ including request shape, accepted parameters, and observed response contracts.
 - Base URL examples below use `http://artoo.local`.
 - The controller hostname is lowercase `artoo`; use `artoo.local` on STA networks.
 - If mDNS is unavailable on your host network, use the current device IP from `GET /api/wifi` (`staIp`) or your network lease table.
+
+## Error Contract
+
+All error responses use a unified JSON shape:
+
+```json
+{"ok":false,"error":"<error-token>"}
+```
+
+An error response may optionally include:
+- `"hint"`: a string suggesting recovery action (e.g., `"POST /api/wake"`)
+- `"field"`: the name of a request parameter that failed validation (e.g., `"speed"`)
+
+The HTTP status code (4xx, 5xx) indicates the error class:
+- `400` — invalid input (missing field, bad format, out of range)
+- `409` — conflict with current state (e.g., drive blocked by estop)
+- `423` — transient resource unavailable (e.g., sleeping, resource in use)
+- `503` — service unavailable (queue full, hardware link down)
+- `500` — server error
+
+Example with hint and field:
+
+```json
+{"ok":false,"error":"missing password","hint":"POST /api/wifi to list networks","field":"password"}
+```
+
+## Identity
+
+### GET /api/identity
+
+Returns the droid's cosmetic name and mDNS hostname preference.
+
+- Success: `200` JSON with `droidName` and `mdnsUseName`
+- Errors: `500` on response build overflow
+
+#### Example request
+
+```bash
+curl -s http://artoo.local/api/identity
+```
+
+#### Example response
+
+```json
+{"droidName":"artoo","mdnsUseName":true}
+```
+
+### POST /api/identity
+
+Persists a new cosmetic droid name and/or mDNS hostname preference.
+
+- Body fields:
+  - `droidName`: required; must be 1–32 lowercase letters, numbers, or hyphens (no spaces)
+  - `mdnsUseName`: optional; `true`, `false`, `0`, or `1` (defaults to existing value)
+- Success: `200` JSON with updated `droidName` and `mdnsUseName`
+- Errors:
+  - `400` `{"ok":false,"error":"droidName is required"}`
+  - `400` `{"ok":false,"error":"droidName must be 1..32 lowercase letters, numbers, or hyphens; spaces are not allowed"}`
+  - `400` `{"ok":false,"error":"mdnsUseName must be true/false or 1/0"}`
+  - `500` `{"ok":false,"error":"failed to persist identity"}`
+
+#### Example request
+
+```bash
+curl -s -X POST http://artoo.local/api/identity \
+  -d 'droidName=r2d2&mdnsUseName=true'
+```
+
+#### Example response
+
+```json
+{"droidName":"r2d2","mdnsUseName":true}
+```
 
 ## Safety and Drive
 
@@ -208,6 +290,76 @@ curl -s -X POST http://artoo.local/api/dome \
 
 ```json
 {"ok":true}
+```
+
+### POST /api/dome/cmd
+
+Sends a raw dome command or a factory sequence (DM:* name).
+
+The command is routed based on its prefix:
+- Starts with `DM:` — queued as a Learned Sequence or factory sequence (same as `POST /api/seq/test`)
+- Otherwise — queued as a raw command to the dome link
+
+- Body fields:
+- `cmd`: required; raw string or `DM:*` factory sequence name; max 127 characters
+- Success: `200` `{"ok":true}`
+- Errors:
+- `400` `{"ok":false,"error":"missing cmd parameter"}`
+- `400` `{"ok":false,"error":"cmd too long (max 127)"}`
+- `503` `{"ok":false,"error":"sequence queue full"}` (when `cmd` starts with `DM:`)
+- `503` `{"ok":false,"error":"dome TX queue full or link not ready"}` (raw command)
+
+#### Example request (factory sequence)
+
+```bash
+curl -s -X POST http://artoo.local/api/dome/cmd \
+  -d 'cmd=DM:ROCKMARCH'
+```
+
+#### Example response
+
+```json
+{"ok":true}
+```
+
+#### Example request (raw dome command)
+
+```bash
+curl -s -X POST http://artoo.local/api/dome/cmd \
+  -d 'cmd=$87'
+```
+
+#### Example response
+
+```json
+{"ok":true}
+```
+
+### GET /api/dome/layout
+
+Fetches cached dome layout JSON from WiFi transport.
+
+The layout is cached by the dome link task. This endpoint streams the cached bytes from a chunked response, so no per-request buffer allocation is needed.
+
+If the cache is empty or transport is not WiFi, returns `503` and sets a flag for the background task to fetch on the next loop.
+
+- Success: `200` chunked JSON with layout structure
+- Errors:
+- `503` `{"ok":false,"error":"dome layout unavailable (not WiFi)"}`
+- `503` `{"ok":false,"error":"dome layout unavailable","retry":true}` (cache miss)
+
+Response includes an `X-Dome-Layout-Age-Ms` header with the age of the cached layout in milliseconds.
+
+#### Example request
+
+```bash
+curl -s http://artoo.local/api/dome/layout
+```
+
+#### Example response (abridged)
+
+```json
+{"servos":[{"channel":0,"id":"arm1","type":"gripper"}],"geometry":{}}
 ```
 
 ## Servo and AUX Outputs
@@ -678,6 +830,246 @@ Plays CHIRP tuple.
 ```bash
 curl -s -X POST http://artoo.local/api/audio/play-banked \
   -d 'index=14&bank=2&page=A'
+```
+
+#### Example response
+
+```json
+{"ok":true}
+```
+
+## Learned Sequences
+
+Learned Sequences are named command sequences stored in the controller's persistent storage. The `seq` endpoints manage playback, storage, and metadata. Each sequence is identified by a `DM:*` name (factory sequences and Learned Sequences use the same namespace).
+
+### GET /api/seq/list
+
+Returns an index of all Learned Sequences stored in the controller.
+
+- Success: `200` JSON array of sequence metadata objects
+  - `name`: sequence identifier (e.g., `"DM:ROCKMARCH"`)
+  - `toggleGroup`: toggle group assignment
+  - `suppressMs`: suppression interval in milliseconds
+  - `source`: where the sequence came from (`"web"`, `"chirp"`, etc.)
+  - `modified`: ISO 8601 timestamp of last modification
+  - `valid`: boolean indicating if the sequence is valid and runnable
+  - `retrained`: boolean; true if this sequence shadows a factory sequence
+- Errors: `500` on response overflow
+
+#### Example request
+
+```bash
+curl -s http://artoo.local/api/seq/list
+```
+
+#### Example response (abridged)
+
+```json
+[
+  {"name":"DM:ROCKMARCH","toggleGroup":"movement","suppressMs":1000,"source":"web","modified":"2026-01-15T10:30:00Z","valid":true,"retrained":false},
+  {"name":"DM:SPINNY","toggleGroup":"movement","suppressMs":500,"source":"web","modified":"2026-01-14T14:22:00Z","valid":true,"retrained":true}
+]
+```
+
+### GET /api/seq/builtins
+
+Returns factory sequence metadata and optionally a full factory sequence JSON.
+
+- Query params:
+  - `name=<sequence-name>`: optional; if provided, returns the full factory sequence JSON v1 for that name
+- Success (list): `200` JSON array of factory sequence metadata (same shape as `/api/seq/list`)
+- Success (single): `200` JSON v1 of a single factory sequence (full step data)
+- Errors:
+  - `404` `{"ok":false,"error":"factory sequence not found"}` (when fetching a single sequence by name)
+  - `500` on response overflow
+
+#### Example request (list all factory sequences)
+
+```bash
+curl -s http://artoo.local/api/seq/builtins
+```
+
+#### Example response (abridged)
+
+```json
+[
+  {"name":"DM:ROCKMARCH","toggleGroup":"movement","suppressMs":1000,"source":"factory","modified":"","valid":true,"retrained":false},
+  {"name":"DM:HELLO","toggleGroup":"greeting","suppressMs":2000,"source":"factory","modified":"","valid":true,"retrained":false}
+]
+```
+
+#### Example request (fetch single factory sequence)
+
+```bash
+curl -s 'http://artoo.local/api/seq/builtins?name=DM:ROCKMARCH'
+```
+
+#### Example response (abridged)
+
+```json
+{"name":"DM:ROCKMARCH","version":1,"toggleGroup":"movement","suppressMs":1000,"steps":[{"type":"dome","action":"speed","payload":"0.5","durationMs":1000}]}
+```
+
+### POST /api/seq/test
+
+Queues a sequence for playback by `DM:*` name (Learned or factory).
+
+Accepts the sequence name via query parameter or JSON body. The body form is preferred for editor automation.
+
+- Body (form):
+  - `name`: `DM:*` sequence name
+- Body (JSON):
+  - `{"name":"DM:*"}`
+- Success: `200` `{"ok":true}`
+- Errors:
+  - `400` `{"ok":false,"error":"missing or invalid DM:* name"}`
+  - `423` `{"error":"sleeping","hint":"POST /api/wake"}` (sleep mode blocks)
+  - `503` `{"ok":false,"error":"sequence queue full"}`
+
+#### Example request (form)
+
+```bash
+curl -s -X POST http://artoo.local/api/seq/test \
+  -d 'name=DM:ROCKMARCH'
+```
+
+#### Example response
+
+```json
+{"ok":true}
+```
+
+#### Example request (JSON body)
+
+```bash
+curl -s -X POST http://artoo.local/api/seq/test \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"DM:ROCKMARCH"}'
+```
+
+#### Example response
+
+```json
+{"ok":true}
+```
+
+### POST /api/seq/stop
+
+Aborts the currently running sequence (Learned or factory).
+
+Stop is non-latching and idempotent. If no sequence is running, the request succeeds with no-op. Does not affect other subsystems (e.g., estop).
+
+- Body: none
+- Success: `200` `{"ok":true}`
+
+#### Example request
+
+```bash
+curl -s -X POST http://artoo.local/api/seq/stop
+```
+
+#### Example response
+
+```json
+{"ok":true}
+```
+
+### GET /api/seq/last-run
+
+Returns machine-readable evidence of the last sequence execution.
+
+- Success: `200` JSON with execution details:
+  - `name`: sequence name
+  - `startMs`: timestamp when sequence started
+  - `runDurationMs`: how long the sequence ran
+  - `step`: current/final step index
+  - `state`: execution state (`"idle"`, `"running"`, `"stopped"`, `"error"`, etc.)
+  - Additional fields depend on sequence engine state
+- Errors: `500` on response overflow
+
+#### Example request
+
+```bash
+curl -s http://artoo.local/api/seq/last-run
+```
+
+#### Example response (abridged)
+
+```json
+{"name":"DM:ROCKMARCH","startMs":1234567890,"runDurationMs":5000,"step":3,"state":"running"}
+```
+
+### GET /api/seq
+
+Fetches the raw JSON of a single Learned Sequence by name.
+
+- Query params:
+  - `name=<sequence-name>`: required; Learned Sequence name to fetch
+- Success: `200` JSON v1 of the Learned Sequence
+- Errors:
+  - `400` `{"ok":false,"error":"name is required"}`
+  - `404` `{"ok":false,"error":"sequence not found"}`
+  - `500` on response overflow
+
+#### Example request
+
+```bash
+curl -s 'http://artoo.local/api/seq?name=DM:CUSTOM'
+```
+
+#### Example response (abridged)
+
+```json
+{"name":"DM:CUSTOM","version":1,"steps":[{"type":"dome","action":"speed","payload":"0.5","durationMs":1000}]}
+```
+
+### POST /api/seq
+
+Validates and persists a Learned Sequence.
+
+Sends a full sequence JSON v1 in the body. The endpoint runs Protocol Check validation and persists to storage if valid.
+
+- Body: JSON v1 sequence object with:
+  - `name`: `DM:*` identifier
+  - `version`: must be `1`
+  - `steps`: array of valid step objects
+  - `toggleGroup`: optional toggle group assignment
+  - `suppressMs`: optional suppression interval (1000–120000 ms)
+- Success: `200` `{"ok":true}`
+- Errors:
+  - `400` `{"ok":false,"error":"...","field":"<field>"}` (Protocol Check failure, see field)
+  - `500` `{"ok":false,"error":"sequence save failed"}`
+
+#### Example request
+
+```bash
+curl -s -X POST http://artoo.local/api/seq \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"DM:CUSTOM","version":1,"steps":[{"type":"dome","action":"speed","payload":"0.5","durationMs":1000}]}'
+```
+
+#### Example response
+
+```json
+{"ok":true}
+```
+
+### DELETE /api/seq
+
+Deletes a Learned Sequence from storage (Memory Wipe).
+
+- Query params:
+  - `name=<sequence-name>`: required; Learned Sequence name to delete
+- Success: `200` `{"ok":true}`
+- Errors:
+  - `400` `{"ok":false,"error":"name is required"}`
+  - `404` `{"ok":false,"error":"sequence not found"}`
+  - `500` `{"ok":false,"error":"delete failed"}`
+
+#### Example request
+
+```bash
+curl -s -X DELETE http://artoo.local/api/seq?name=DM:CUSTOM
 ```
 
 #### Example response
@@ -1442,4 +1834,27 @@ curl -s -X POST http://artoo.local/api/profiler/trace/stop
 
 ```json
 {"ok":true,"note":"dump written to serial log"}
+```
+
+## Internal Routes
+
+The following routes are intentionally undocumented in the operator-facing API; they are internal diagnostic or measurement tools. They may change without warning and should not be used in operator automation.
+
+### GET /api/admission/trace
+
+**Build-gated: `PA_ADMISSION_TRACE` only.** Absent (404) if not enabled.
+
+Returns a ring buffer of admission decisions — shed count, reasons, admission state snapshots.
+
+Machine-readable evidence for heap pressure analysis and load tuning only. No stability guarantee.
+
+- Query params:
+  - `clear`: optional; if present, clears the ring buffer after sending
+- Success: `200` JSON with trace data (format not documented)
+- Errors: `503` on send failure
+
+#### Example request
+
+```bash
+curl -s 'http://artoo.local/api/admission/trace?clear=1'
 ```
