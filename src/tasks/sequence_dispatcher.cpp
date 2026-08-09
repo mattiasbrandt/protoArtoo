@@ -18,49 +18,51 @@
 // and command format. The task adapter executes those decisions. The pure
 // functions (sequenceStart, sequenceLookup, sequenceActionToDomeCommand) are
 // testable in the native environment without FreeRTOS/Arduino dependencies.
+// The task adapter (dispatchAction, sequenceDispatcherTask) compiles with
+// native test stubs for FreeRTOS, allowing full system behavior verification.
 // =============================================================================
 
+#include <Arduino.h>
 #include <string.h>
 
-#include "dome_link.h"
-#include "logging.h"
-#include "sequence_dispatcher.h"
-#include "sequence_dispatcher_step.h"
-#include "sequence_engine.h"
-
-static const char* TAG = "SEQ";
-
-// FreeRTOS/Arduino headers needed only for the task function
+// esp_task_wdt.h is ESP-IDF-specific and not available in native test builds,
+// but is required for the hardware task to register with the watchdog.
 #ifdef PA_NATIVE_TEST_STUBS
-// Native tests: provide stub implementation (no real FreeRTOS queue in tests)
-extern QueueHandle_t sequenceQueue;
-void sequenceDispatcherInit() {
-    // Initialize to a non-null value so native tests can pass sequences
-    // through the test API routes without "queue full" 503 errors.
-    // The native FreeRTOS stubs handle the rest.
-    sequenceQueue = (QueueHandle_t)0xDEADBEEF;
-}
+// Native stubs: declare functions provided by native_test_stubs.cpp
+extern void esp_task_wdt_add(void*);
+extern void esp_task_wdt_reset();
+extern uint32_t esp_random();
 #else
-// Hardware build: include full dependencies
-#include <Arduino.h>
 #include <esp_task_wdt.h>
+#endif
 
 #include "audio_task.h"
 #include "dome_link.h"
 #include "logging.h"
 #include "robot_state.h"
 #include "seq_store.h"
+#include "sequence_dispatcher.h"
+#include "sequence_dispatcher_step.h"
+#include "sequence_engine.h"
 #include "sequence_run_evidence.h"
 
+static const char* TAG = "SEQ";
+
 // =============================================================================
-// Queue
+// Queue — hardware implementation. Native test stubs provide their own versions
+// in native_test_stubs.cpp to avoid duplicate definition.
 // =============================================================================
 
+#ifndef PA_NATIVE_TEST_STUBS
 QueueHandle_t sequenceQueue = nullptr;
 
 void sequenceDispatcherInit() {
     sequenceQueue = xQueueCreate(4, sizeof(SequenceRequest));
 }
+#else
+// Native tests: extern declarations satisfied by native_test_stubs.cpp
+extern QueueHandle_t sequenceQueue;
+extern void sequenceDispatcherInit();
 #endif
 
 bool sequenceActionToDomeCommand(const SeqAction& act, uint32_t nowMs,
@@ -129,10 +131,8 @@ bool sequenceStart(const char* name, CommandSource src) {
 
 // =============================================================================
 // Task Adapter — Core 0, priority 3, 10 ms tick.
-// Only compiled in hardware builds; native tests link stub versions.
+// Compiles with native FreeRTOS stubs for testing.
 // =============================================================================
-
-#ifndef PA_NATIVE_TEST_STUBS
 
 // Dispatch an action to the appropriate queue using the pure step-core decision.
 // Preserves the safety invariants: a full queue causes retry on the next tick
@@ -441,5 +441,3 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
         vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
-
-#endif  // PA_NATIVE_TEST_STUBS
