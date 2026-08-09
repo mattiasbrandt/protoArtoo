@@ -25,17 +25,6 @@
 #include <Arduino.h>
 #include <string.h>
 
-// esp_task_wdt.h is ESP-IDF-specific and not available in native test builds,
-// but is required for the hardware task to register with the watchdog.
-#ifdef PA_NATIVE_TEST_STUBS
-// Native stubs: declare functions provided by native_test_stubs.cpp
-extern void esp_task_wdt_add(void*);
-extern void esp_task_wdt_reset();
-extern uint32_t esp_random();
-#else
-#include <esp_task_wdt.h>
-#endif
-
 #include "audio_task.h"
 #include "dome_link.h"
 #include "logging.h"
@@ -46,24 +35,25 @@ extern uint32_t esp_random();
 #include "sequence_engine.h"
 #include "sequence_run_evidence.h"
 
-static const char* TAG = "SEQ";
+// Platform definition seam — hardware vs native test builds.
+// This is the irreducible guard needed because queue definition must differ:
+// hardware builds define the real queue with xQueueCreate; native builds use
+// the stub version from native_test_stubs.cpp to avoid duplicate definitions.
+// We also conditionally include esp_task_wdt.h (hardware only) and the
+// stub header (native only).
+#ifdef PA_NATIVE_TEST_STUBS
+#include "esp_task_wdt_stubs.h"   // Native: stub declarations
+#else
+#include <esp_task_wdt.h>         // Hardware: real ESP-IDF watchdog
 
-// =============================================================================
-// Queue — hardware implementation. Native test stubs provide their own versions
-// in native_test_stubs.cpp to avoid duplicate definition.
-// =============================================================================
-
-#ifndef PA_NATIVE_TEST_STUBS
 QueueHandle_t sequenceQueue = nullptr;
 
 void sequenceDispatcherInit() {
     sequenceQueue = xQueueCreate(4, sizeof(SequenceRequest));
 }
-#else
-// Native tests: extern declarations satisfied by native_test_stubs.cpp
-extern QueueHandle_t sequenceQueue;
-extern void sequenceDispatcherInit();
 #endif
+
+static const char* TAG = "SEQ";
 
 bool sequenceActionToDomeCommand(const SeqAction& act, uint32_t nowMs,
                                  DomeCommand& out) {
