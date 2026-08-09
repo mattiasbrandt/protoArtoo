@@ -19,6 +19,8 @@
 #include "dome_task.h"
 #include "drive.h"
 #include "drive_arbiter.h"
+#include "failsafe_boot_sbus.h"
+#include "failsafe_boot_twdt.h"
 #include "failsafe_gate.h"
 #include "ledc_pwm.h"
 #include "log_buffer.h"
@@ -234,7 +236,7 @@ void setup() {
         configCacheRead(&bootCfg);
         bool sbusMode = bootCfg.system.rc_input_mode != RC_INPUT_STANDARD_PWM;
         bool anyChannel = bootCfg.system.enable_rc_ch1 || bootCfg.system.enable_rc_ch2;
-        if (sbusMode && anyChannel) {
+        if (bootSbusSafeGuardDecision(sbusMode, anyChannel)) {
             failsafeTrigger(FailsafeLayer::SBUS_WATCHDOG);
         }
     }
@@ -242,7 +244,7 @@ void setup() {
     // Detect TWDT reset from previous boot — set estop so robot does not move
     // until operator explicitly clears via POST /api/estop/clear
     esp_reset_reason_t resetReason = esp_reset_reason();
-    if (resetReason == ESP_RST_TASK_WDT) {
+    if (bootTwdtResetDecision(resetReason)) {
         failsafeTrigger(FailsafeLayer::TWDT_RESET);
         PA_LOG_ERROR("main", "task watchdog reset detected - estop set");
     }
