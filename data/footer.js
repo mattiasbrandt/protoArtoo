@@ -12,10 +12,13 @@
   let fsVersion = "unknown";
   let pollTimer = null;
   let unsubscribe = null;
+  let retryTimer = null;
+  let hasRealData = false;
 
   const renderFooter = (status) => {
     if (!status) {
       footer.textContent = "Firmware info unavailable";
+      hasRealData = false;
       return;
     }
 
@@ -26,6 +29,7 @@
     footer.innerHTML =
       `FW: <span class="mono">${window.PAUtils.escapeHtml(fw)}</span><br>` +
       `FS: <span class="mono">${window.PAUtils.escapeHtml(resolvedWeb)}</span>`;
+    hasRealData = true;
   };
 
   const loadFsVersion = async () => {
@@ -36,21 +40,47 @@
         fsVersion = String(result.data.fsVersion);
       }
     } catch (_error) {
-      // ignore: fetch error — keep fallback fsVersion value
+      // ignore: fetch error - keep fallback fsVersion value
     }
   };
 
   const fetchStatus = async () => {
     if (!window.PAApi) {
       footer.textContent = "Firmware info unavailable";
-      return;
+      hasRealData = false;
+      return false;
     }
     try {
       const result = await window.PAApi.get("/api/status", { timeoutMs: 3000, cache: "no-store" });
       renderFooter(result.data);
-    } catch (_error) {
-      // fetch timeout/error — show unavailable message
+      return true;
+    } catch (error) {
+      // fetch timeout/error - log and show unavailable message
+      console.warn("[footer] failed to fetch status:", error?.message || error);
       footer.textContent = "Firmware info unavailable";
+      hasRealData = false;
+      return false;
+    }
+  };
+
+  const retryFetchWithBackoff = async (attempt = 0) => {
+    const maxAttempts = 3;
+    const baseDelayMs = 500;
+    const delayMs = baseDelayMs * Math.pow(2, attempt);
+
+    const success = await fetchStatus();
+    if (success) {
+      if (retryTimer !== null) {
+        window.clearTimeout(retryTimer);
+        retryTimer = null;
+      }
+      return;
+    }
+
+    if (attempt < maxAttempts - 1) {
+      retryTimer = window.setTimeout(() => {
+        retryFetchWithBackoff(attempt + 1);
+      }, delayMs);
     }
   };
 
@@ -64,12 +94,24 @@
 
   const startSseMode = () => {
     unsubscribe = window.PAStatusStream.subscribe((eventType, payload) => {
-      if (eventType === "status") renderFooter(payload);
+      if (eventType === "status") {
+        renderFooter(payload);
+        if (retryTimer !== null) {
+          window.clearTimeout(retryTimer);
+          retryTimer = null;
+        }
+      }
     });
 
     if (!window.PAStatusStream.getLastStatus()) {
-      fetchStatus();
+      retryFetchWithBackoff(0);
     }
+
+    pollTimer = window.setInterval(() => {
+      if (document.visibilityState === "hidden") return;
+      if (hasRealData) return;
+      fetchStatus();
+    }, 5000);
   };
 
   const onVisibilityChange = () => {
@@ -94,6 +136,10 @@
       if (pollTimer !== null) {
         window.clearInterval(pollTimer);
         pollTimer = null;
+      }
+      if (retryTimer !== null) {
+        window.clearTimeout(retryTimer);
+        retryTimer = null;
       }
     });
   };
