@@ -3,8 +3,8 @@
 //
 // Streaming OTA upload endpoints, written against the project-owned WebRequest
 // seam (ADR 0021) and bound by the seam route table:
-//   POST /upload/firmware    — firmware image (U_FLASH)
-//   POST /upload/filesystem  — LittleFS image (U_SPIFFS)
+//   POST /upload/firmware    - firmware image (U_FLASH)
+//   POST /upload/filesystem  - LittleFS image (U_SPIFFS)
 //
 // The size guard and the outcome-to-response mapping live here as pure
 // functions so the host tests can drive them; the handlers themselves are

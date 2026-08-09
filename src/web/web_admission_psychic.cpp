@@ -119,7 +119,7 @@ static_assert(2 * (size_t)FILE_CHUNK_SIZE + kUploadParserBufferSlack <=
               "platformio.ini [flags_base].");
 
 #if PA_HEAP_PROFILE
-// Bounded request-lifecycle trace (issue #54 evidence, profiler-gated so it
+// Bounded request-lifecycle trace for profiler evidence (profiler-gated so it
 // costs nothing in normal builds). Read after an experiment via /api/profiler,
 // not polled during the workload. Covers only admitted requests that count
 // against the inflight cap -- a long-lived stream's lifetime is already visible
@@ -499,10 +499,11 @@ esp_err_t admissionMiddleware(PsychicRequest* request, PsychicResponse* response
     InflightSlot slot(counted);
 
 #if PA_HEAP_PROFILE
-    // Full path (not just a broad class) so a specific slow request (issue #67)
+    // Full path (not just a broad class) so a specific slow request
     // can be matched against the browser's own per-request timestamps after the
-    // fact. Traced for exactly the requests the inflight cap counts, so the
-    // trace and the depth counters describe the same population.
+    // fact to distinguish TCP backlog delays from handler delays. Traced for
+    // exactly the requests the inflight cap counts, so the trace and the depth
+    // counters describe the same population.
     uint8_t traceIdx = 0;
     if (counted) {
         traceIdx = pushRequestTraceEntry(path, millis());

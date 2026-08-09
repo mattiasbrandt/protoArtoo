@@ -1,7 +1,7 @@
 // =============================================================================
 // include/api_param_source.h
 //
-// ConfigParamSource — function-pointer parameter lookup seam for API write
+// ConfigParamSource - function-pointer parameter lookup seam for API write
 // Apply Cores (ADR 0011). Decouples validation/apply logic from the request
 // object so it is reachable by native tests.
 //

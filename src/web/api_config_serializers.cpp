@@ -2,7 +2,7 @@
 // src/web/api_config_serializers.cpp
 //
 // Pure JSON serialization helper for config status.
-// No Arduino, no FreeRTOS, no hardware dependencies — testable in native env.
+// No Arduino, no FreeRTOS, no hardware dependencies - testable in native env.
 // =============================================================================
 
 #include "api_config.h"

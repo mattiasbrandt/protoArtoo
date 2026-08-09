@@ -3,7 +3,7 @@
 //
 // Apply Core for POST /api/audio/mood-map (ADR 0011 audio wave, family 1).
 //
-// audioMoodMapApply(): pure function — no FreeRTOS, no request object,
+// audioMoodMapApply(): pure function - no FreeRTOS, no request object,
 //   no NVS, no logging. Reads the four mood-category masks (quiet, mid,
 //   full, awakeplus) through a ConfigParamSource, accepting either the
 //   form-field shape or a "plain" JSON body (matching the legacy handler's
@@ -11,7 +11,7 @@
 //   validates each against MOOD_CATEGORY_MASK_MAX. Byte-identical error
 //   messages to the legacy handler.
 //
-// This core does not touch NVS or the config cache — the existing
+// This core does not touch NVS or the config cache - the existing
 // configUpdateAudioMoodMasks(Preferences&, ...) domain function
 // (config_store.h) already bundles validate+apply+persist for this single
 // atomic write, and stays a shell-only call. The core's job is purely the

@@ -1,7 +1,7 @@
 // =============================================================================
 // src/web/api_audio.cpp
 //
-// Audio REST API — see include/api_audio.h for the route list.
+// Audio REST API - see include/api_audio.h for the route list.
 //
 // Written against the project-owned WebRequest seam (ADR 0021) and bound by the
 // seam route table. No vendor request type is named here.
@@ -12,7 +12,7 @@
 // The canonical field schema stays in the ADR 0013 audio config map behind its
 // ConfigReader seam, reached through configAudioSetTrackByKey/configSaveAudio.
 //
-// The two large read payloads — the track assignments and the CHIRP catalog —
+// The two large read payloads - the track assignments and the CHIRP catalog -
 // are produced slice by slice through WebRequest::sendChunked() rather than
 // assembled whole. The catalog alone can carry 300 entries, and this is the
 // heaviest read surface the dashboard has. Chunked bodies are driven by a plain
@@ -22,15 +22,15 @@
 // exactly one of these reads can be in flight).
 //
 // POST /api/audio params:
-//   action=play   &track=N      — play track N (1-based)
-//   action=stop                 — stop playback
-//   action=volume &level=N      — set absolute volume (0–30)
-//   action=dollar &cmd=$R       — raw $ command (any from the $ command set)
+//   action=play   &track=N      - play track N (1-based)
+//   action=stop                 - stop playback
+//   action=volume &level=N      - set absolute volume (0-30)
+//   action=dollar &cmd=$R       - raw $ command (any from the $ command set)
 //
 // POST /api/audio/tracks params:
-//   key=<name>   &track=N       — set named/category/system track (1–999, or 0–999 where allowed)
-//   key=rand_min &track=N       — set random pool minimum
-//   key=rand_max &track=N       — set random pool maximum
+//   key=<name>   &track=N       - set named/category/system track (1-999, or 0-999 where allowed)
+//   key=rand_min &track=N       - set random pool minimum
+//   key=rand_max &track=N       - set random pool maximum
 //
 // Valid key names: scream faint leia cantina_s sw_theme imp_march cantina_l
 //                  startup doodoo failure disco mahna inlove macho gangnam
@@ -159,7 +159,7 @@ void sendApplyError(WebRequest& req, const char* message, bool notFound) {
 // Snapshotted by the handler before the send: the audio config as one struct
 // (~124 bytes) and the CHIRP bindings as the packed NVS words they are stored
 // as (~152 bytes), so the producer re-walks RAM rather than re-opening NVS on
-// every chunk. Small on purpose — permanent BSS is the scarcest budget on this
+// every chunk. Small on purpose - permanent BSS is the scarcest budget on this
 // target (include/api_json_response.h records what overran it).
 // -----------------------------------------------------------------------------
 AudioConfig s_tracksAudio = {};
@@ -305,7 +305,7 @@ size_t fillTracksResponse(uint8_t* out, size_t capacity, size_t offset) {
 // The bank/entry arrays are borrowed from the driver's cache, exactly as the
 // async handler borrowed them: a refresh that lands mid-send would swap the
 // backing allocation underneath. That exposure predates this port and is not
-// widened by it — audio_chirp.cpp marks the cache empty before reallocating.
+// widened by it - audio_chirp.cpp marks the cache empty before reallocating.
 // -----------------------------------------------------------------------------
 uint8_t s_catalogBankFilter = 0;
 bool s_catalogReady = false;
@@ -434,7 +434,7 @@ void handleAudioTracksGet(WebRequest& req) {
     s_tracksAudio = snap.audio;
 
     // CHIRP bindings only exist on a catalog-capable backend, and only that
-    // backend's payload carries them — matching what the async handler emitted.
+    // backend's payload carries them - matching what the async handler emitted.
     s_tracksIncludeBindings = audioCatalogSupported();
     memset(s_tracksBindings, 0, sizeof(s_tracksBindings));
     memset(s_tracksCategoryBindings, 0, sizeof(s_tracksCategoryBindings));
@@ -653,7 +653,7 @@ void handleMoodPost(WebRequest& req) {
     }
 
     // Unparseable input lands on the same whitelist error a numerically invalid
-    // mood gets, which is what this endpoint has always answered — the vendor's
+    // mood gets, which is what this endpoint has always answered - the vendor's
     // toInt() read garbage as 0, and 0 is not a mood.
     uint32_t mood = 0;
     if (!parseUint32Value(moodRaw, &mood) || (mood != 10 && mood != 11 && mood != 13 &&
@@ -680,7 +680,7 @@ void handleAudioQueryPost(WebRequest& req) {
         webSendJsonError(req, 503, "audio command queue full");
         return;
     }
-    PA_LOG_INFO(TAG, "[AUDIO] POST /api/audio/query — status poll enqueued");
+    PA_LOG_INFO(TAG, "[AUDIO] POST /api/audio/query - status poll enqueued");
     req.send(200, "application/json", "{\"ok\":true}");
 }
 
@@ -836,7 +836,7 @@ void handleAudioPost(WebRequest& req) {
         }
         uint32_t track = 0;
         if (!parseUint32Value(trackRaw, &track) || track < 1 || track > 65535) {
-            webSendJsonError(req, 400, "track must be 1–65535");
+            webSendJsonError(req, 400, "track must be 1-65535");
             return;
         }
         if (!audioQueuePlayTrack((uint16_t)track, SRC_WEB_API)) {
@@ -868,7 +868,7 @@ void handleAudioPost(WebRequest& req) {
         }
         uint32_t level = 0;
         if (!parseUint32Value(levelRaw, &level) || level > 30) {
-            webSendJsonError(req, 400, "level must be 0–30");
+            webSendJsonError(req, 400, "level must be 0-30");
             return;
         }
 
@@ -922,5 +922,5 @@ void handleAudioPost(WebRequest& req) {
         return;
     }
 
-    webSendJsonError(req, 400, "unknown action — use play/stop/volume/dollar");
+    webSendJsonError(req, 400, "unknown action - use play/stop/volume/dollar");
 }

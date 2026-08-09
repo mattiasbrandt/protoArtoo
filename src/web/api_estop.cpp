@@ -2,8 +2,8 @@
 // src/web/api_estop.cpp
 //
 // ESTOP API endpoints
-//   POST /api/estop        — latch estop (requires explicit clear to resume)
-//   POST /api/estop/clear  — clear estop (explicit human gate)
+//   POST /api/estop        - latch estop (requires explicit clear to resume)
+//   POST /api/estop/clear  - clear estop (explicit human gate)
 //
 // Written against the project-owned WebRequest seam (ADR 0021) and bound by the
 // seam route table. The latching behaviour itself lives in failsafe_gate.cpp;

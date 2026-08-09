@@ -2,7 +2,7 @@
 // src/web/api_system_serializers.cpp
 //
 // Pure JSON serialization helper for sleep/wake control.
-// No Arduino, no FreeRTOS, no hardware dependencies — testable in native env.
+// No Arduino, no FreeRTOS, no hardware dependencies - testable in native env.
 // =============================================================================
 
 #include "api_system.h"

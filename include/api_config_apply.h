@@ -1,17 +1,16 @@
 // =============================================================================
 // include/api_config_apply.h
 //
-// Apply Core for POST /api/config (ADR 0011, slice 1 of the write-path
-// campaign).
+// Apply Core for POST /api/config (ADR 0011 config apply core).
 //
-// configApply(): pure function — no FreeRTOS, no request object, no
+// configApply(): pure function - no FreeRTOS, no request object, no
 //   logging, no NVS. Reads parameters through a ConfigParamSource, validates
 //   and mutates `working` in place, and writes a result carrying a
 //   field-level error (byte-identical to the legacy 400 bodies), a bounded
 //   applied-fields log record for the shell to replay, and plain-data
 //   actions.
 //
-// ConfigApplyResult is ~2.5 KB (the applied-fields log record dominates) —
+// ConfigApplyResult is ~2.5 KB (the applied-fields log record dominates) -
 // too large to return by value on an 8 KB web server task stack (see
 // api_seq.cpp's SeqRunEvidence for the same constraint). It is an
 // out-parameter; callers keep their instance `static`, matching that
@@ -19,7 +18,7 @@
 //
 // ConfigApplyActions intentionally has no playDriveOnCue: ADR 0012 moves
 // that rule to commandedSetStationary() (state-derived), once the later
-// Z2 commanded_modes slice lands. Until then the shell keeps its existing
+// Z2 commanded_modes feature lands. Until then the shell keeps its existing
 // inline stationary-release cue logic unchanged. playDomeOnCue stays a core
 // action because it is config-derived (enable_dome false->true).
 //
@@ -42,7 +41,7 @@ struct ConfigApplyActions {
 };
 
 // Bounded record of pre-formatted "[CFG] ..." log lines, in apply order.
-// The core does not log (ADR 0002 purity discipline) — the shell replays
+// The core does not log (ADR 0002 purity discipline) - the shell replays
 // these via PA_LOG_INFO. kMaxLines covers the largest single-request field
 // count today (~29: 4 speed-group lines + 5 scalar lines + 15 boolFields +
 // 5 dome-random lines) with headroom; kLineWidth covers the longest

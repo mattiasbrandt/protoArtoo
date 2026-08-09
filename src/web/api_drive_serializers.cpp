@@ -2,7 +2,7 @@
 // src/web/api_drive_serializers.cpp
 //
 // Pure JSON serialization helper for drive-related responses.
-// No Arduino, no FreeRTOS, no hardware dependencies — testable in native env.
+// No Arduino, no FreeRTOS, no hardware dependencies - testable in native env.
 // =============================================================================
 
 #include "api_drive.h"

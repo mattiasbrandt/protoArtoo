@@ -59,7 +59,7 @@ bool isValidDomeSeqPayload(const char* payload) {
     for (int i = 0; kDomeSeqPayloads[i] != nullptr; ++i) {
         if (strcmp(payload, kDomeSeqPayloads[i]) == 0) return true;
     }
-    // Learned Sequences (issue #2 slice 3): accept any DM:* name currently in the
+    // Runtime-defined sequences (learned): accept any DM:* name currently in the
     // runtime index so an RC trigger can bind to a runtime-defined sequence. If
     // the Learned Sequence is later deleted, sequenceStart() falls through to the
     // dome fallback; the binding stays valid but inert.

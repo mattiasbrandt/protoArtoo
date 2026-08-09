@@ -106,7 +106,7 @@ const char* requireBody(WebRequest& req, size_t maxBytes) {
 }
 
 // -----------------------------------------------------------------------------
-// GET /api/seq?name= — raw stored JSON of one Learned Sequence
+// GET /api/seq?name= - raw stored JSON of one Learned Sequence
 //
 // The body comes off LittleFS a slice at a time (WebRequest::sendChunked), so
 // a file that runs to SEQ_FILE_MAX_BYTES never exists whole in RAM. The filler
@@ -147,15 +147,15 @@ void handleSeqListGet(WebRequest& req) {
     webSendJsonDocument(req, doc, kSeqListMaxBytes, TAG);
 }
 
-// GET /api/seq/builtins         — lightweight factory catalog (metadata only).
-// GET /api/seq/builtins?name=X   — full JSON v1 of one factory sequence.
+// GET /api/seq/builtins         - lightweight factory catalog (metadata only).
+// GET /api/seq/builtins?name=X   - full JSON v1 of one factory sequence.
 //
 // The list form carries no step data, so the whole-catalog response stays a few
 // hundred bytes and cannot exhaust the fragmented heap mid-send. Serializing all
 // factory sequences with their steps into one buffered response was large enough
-// to OOM AsyncTCP during delivery, and ESP32's exceptions-disabled libstdc++
-// turns the failed allocation into terminate()/abort() (panic reboot). The
-// editor fetches full steps per-name only when the operator clones a sequence.
+// to OOM the prior async backend during delivery, and ESP32's exceptions-disabled
+// libstdc++ turns the failed allocation into terminate()/abort() (panic reboot).
+// The editor fetches full steps per-name only when the operator clones a sequence.
 void handleSeqBuiltinsGet(WebRequest& req) {
     char name[kSeqNameBufSize];
     if (req.param("name", name, sizeof(name)) && name[0] != '\0') {
@@ -188,7 +188,7 @@ void handleSeqBuiltinsGet(WebRequest& req) {
     webSendJsonDocument(req, doc, kSeqListMaxBytes, TAG);
 }
 
-// GET /api/seq?name=  — raw stored JSON of one Learned Sequence.
+// GET /api/seq?name=  - raw stored JSON of one Learned Sequence.
 void handleSeqGet(WebRequest& req) {
     char name[kSeqNameBufSize];
     if (!req.param("name", name, sizeof(name)) || name[0] == '\0') {
@@ -216,7 +216,7 @@ void handleSeqGet(WebRequest& req) {
     }
 }
 
-// POST /api/seq  — body: JSON v1; validate + persist.
+// POST /api/seq  - body: JSON v1; validate + persist.
 void handleSeqPost(WebRequest& req) {
     const char* body = requireBody(req, SEQ_FILE_MAX_BYTES);
     if (body == nullptr) {
@@ -236,7 +236,7 @@ void handleSeqPost(WebRequest& req) {
     req.send(200, "application/json", "{\"ok\":true}");
 }
 
-// DELETE /api/seq?name=  — Memory Wipe.
+// DELETE /api/seq?name=  - Memory Wipe.
 void handleSeqDelete(WebRequest& req) {
     char name[kSeqNameBufSize];
     if (!req.param("name", name, sizeof(name)) || name[0] == '\0') {
@@ -282,7 +282,7 @@ void handleSeqDelete(WebRequest& req) {
     webSendJsonDocument(req, doc, kSeqListMaxBytes, TAG);
 }
 
-// POST /api/seq/test  — run a sequence by name (same ungated path as dome/cmd).
+// POST /api/seq/test  - run a sequence by name (same ungated path as dome/cmd).
 //
 // The name arrives either as a form field or inside a JSON body, because both
 // clients exist: data/seq.js and data/dome_control.js post JSON, and the older
@@ -322,7 +322,7 @@ void handleSeqTestPost(WebRequest& req) {
     req.send(200, "application/json", "{\"ok\":true}");
 }
 
-// GET /api/seq/last-run — machine-readable evidence of the most recent body-owned
+// GET /api/seq/last-run - machine-readable evidence of the most recent body-owned
 // sequence run: what ran, what was sent (bounded TX stream),
 // what cleanup was emitted (separate), inferred scopes + ring masks, and whether
 // anything went wrong (body-local queue-full/retry counts). Lets agents diff
@@ -339,7 +339,7 @@ void handleSeqLastRunGet(WebRequest& req) {
     webSendJsonDocument(req, doc, kSeqDocumentMaxBytes, TAG);
 }
 
-// POST /api/seq/stop — non-latching sequence stop.
+// POST /api/seq/stop - non-latching sequence stop.
 // Aborts the currently running DM:* sequence via the dispatcher's existing
 // abort path (seqEngineAbort + safe staggered dome cleanup). Returns idempotently
 // 200 OK even if no sequence is running (no-op). Does not latch or affect other

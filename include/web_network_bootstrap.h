@@ -12,7 +12,7 @@
 //   back to startHttpServerOnce() (in web_server.cpp) when WiFi is ready
 // - This creates an intentional two-way dependency that preserves the critical
 //   invariant: initPsychicWebServer() is invoked from the WiFi event callback
-//   path, never from setup() — each unit needs the other for correct behavior
+//   path, never from setup() - each unit needs the other for correct behavior
 // - All symbols declared in their respective owner headers; no cross-include
 //   of .cpp files required for linking
 // =============================================================================

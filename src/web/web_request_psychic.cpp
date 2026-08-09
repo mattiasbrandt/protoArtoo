@@ -3,14 +3,14 @@
 //
 // PsychicHttp backend for the WebRequest seam (ADR 0021). Implements the seam's
 // method contract and the server bring-up/route registration. The only backend
-// on the device since the #91 cutover; the host-test backend in
+// on the device since PsychicHttp migration; the host-test backend in
 // src/native_test_stubs.cpp is the sole other definition of these methods.
 //
 // backend_ holds a WebRequestPsychicCtx (request + response + the esp_err_t
 // the vendor callback must return). The session escape hatch reaches the
 // underlying esp_http_server request: sess_ctx / free_ctx assignment and
 // httpd_sess_trigger_close() -- the capabilities this migration exists to
-// obtain (#53, ADR 0020).
+// obtain (ADR 0020).
 //
 // Admission orchestration and the response-phase deadline's send override live
 // in separate units (web_admission_psychic.cpp, web_response_deadline_psychic.cpp)
@@ -59,7 +59,7 @@ PsychicHttpServer s_server;
 // PsychicEventSource is deliberately not used. Its send retries
 // httpd_socket_send() in an unbounded loop against a socket whose send timeout
 // defaults to five seconds, so one client that stops reading stops the
-// broadcast for everyone -- the defect this slice exists to remove -- and it
+// broadcast for everyone -- a defect being addressed here -- and it
 // builds every message through a std::string plus an Arduino String copy, two
 // allocations per client per event on a stack whose whole problem is heap.
 //
@@ -169,8 +169,8 @@ StreamSendOutcome sendEventBounded(int socket, const EventSegment* segments, siz
 // httpd_sess_trigger_close() posts the close to the server's own control
 // socket rather than touching the session from here, which is what makes it
 // safe to call from the event task. That is exactly the cross-task close
-// ADR 0020 went looking for on AsyncTCP and could not find -- the capability
-// this migration exists to obtain.
+// capability not available in the prior async backend (ADR 0020) -- the reason
+// this migration to PsychicHttp exists.
 void evictStream(int socket, StreamSendOutcome outcome) {
     taskENTER_CRITICAL(&s_streamMux);
     webEventStreamRegistryRemove(&s_streams, socket);
@@ -179,9 +179,8 @@ void evictStream(int socket, StreamSendOutcome outcome) {
     if (outcome == StreamSendOutcome::kEvictDeadline) {
         g_webSseEvicted = g_webSseEvicted + 1u;
         g_webSseEvictLastMs = millis();
-        // Warn, not debug: this is the whole point of the slice and it is rare
-        // by design, so a run that hit it must say so without anyone having to
-        // have raised the log level in advance.
+        // Warn, not debug: this event is rare by design, and a run that hits it
+        // must say so without anyone having to have raised the log level in advance.
         PA_LOG_WARN(TAG, "event stream client %d missed the %u ms send deadline; dropped", socket,
                     (unsigned)PA_SSE_SEND_DEADLINE_MS);
     } else {
@@ -570,8 +569,8 @@ void webRegisterUploadRoute(const char* path, WebUploadChunkHandler onChunk,
 }
 
 void initPsychicWebServer() {
-    // Verified live on the #72 prototype: nothing binds or listens until
-    // begin(); on()/serveStatic() only record configuration.
+    // Configuration: nothing binds or listens until begin();
+    // on()/serveStatic() only record configuration.
     s_server.config.max_open_sockets = 10;
     s_server.config.stack_size = 8192;
 

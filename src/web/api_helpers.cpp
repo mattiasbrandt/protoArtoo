@@ -61,7 +61,7 @@ bool parseUint32Value(const char* raw, uint32_t* out) {
         return false;
     }
 
-    // Reject leading minus sign — strtoul accepts it (wraps around)
+    // Reject leading minus sign - strtoul accepts it (wraps around)
     if (raw[0] == '-') {
         return false;
     }

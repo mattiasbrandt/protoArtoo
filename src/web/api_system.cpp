@@ -2,13 +2,13 @@
 // src/web/api_system.cpp
 //
 // System control API endpoints
-//   POST /api/sleep            — enter cosmetic sleep mode
-//   POST /api/wake             — leave cosmetic sleep mode
-//   POST /api/manual-command   — execute manual Marcduino command
-//   POST /api/reboot           — request system restart
-//   GET  /api/coredump/status  — is a saved coredump present
-//   GET  /api/coredump         — stream the saved coredump image
-//   POST /api/coredump/erase   — clear the saved coredump
+//   POST /api/sleep            - enter cosmetic sleep mode
+//   POST /api/wake             - leave cosmetic sleep mode
+//   POST /api/manual-command   - execute manual Marcduino command
+//   POST /api/reboot           - request system restart
+//   GET  /api/coredump/status  - is a saved coredump present
+//   GET  /api/coredump         - stream the saved coredump image
+//   POST /api/coredump/erase   - clear the saved coredump
 //
 // All written against the project-owned WebRequest seam (ADR 0021) and bound
 // by the seam route table. The OTA upload routes live in api_upload.cpp.
@@ -148,7 +148,7 @@ void handleRebootPost(WebRequest& req) {
 
 // ---- Coredump (observability) ----
 // The framework saves an ELF coredump to the `coredump` data partition on a
-// PANIC. These let an agent fetch + clear it over HTTP — the seated controller
+// PANIC. These let an agent fetch + clear it over HTTP - the seated controller
 // cannot be USB-read (GPIO15/SBUS strapping). Decode with:
 //   esp-coredump info_corefile -c coredump.elf .pio/build/<env>/firmware.elf
 void handleCoredumpStatusGet(WebRequest& req) {
@@ -173,7 +173,7 @@ void handleCoredumpGet(WebRequest& req) {
         return;
     }
 
-    // Streamed straight from flash a chunk at a time — no large heap buffer on
+    // Streamed straight from flash a chunk at a time - no large heap buffer on
     // a heap-constrained device. The coredump image starts at partition
     // offset 0.
     s_coredumpPartition = part;

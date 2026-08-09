@@ -4,15 +4,15 @@
 // Apply Core for POST /api/audio/category-range (ADR 0011 audio wave,
 // family 2).
 //
-// audioCategoryRangeApply(): pure function — no FreeRTOS, no
+// audioCategoryRangeApply(): pure function - no FreeRTOS, no
 //   request object, no NVS, no logging. Reads lo_key/hi_key/lo/hi
 //   and the optional bank/page/clear_binding params through a
 //   ConfigParamSource, validates the category key pair and range, and
-//   mutates `working` in place (mirrors ADR 0011 slice 1/2 house style).
+//   mutates `working` in place (mirrors ADR 0011 apply-core house style).
 //   Byte-identical error messages to the legacy handler.
 //
 // `catalogSupported` is a live input the shell must snapshot before
-// calling (audioCatalogSupported() queries the live AudioDriver — an
+// calling (audioCatalogSupported() queries the live AudioDriver - an
 // impure runtime query, same reasoning as ADR 0011's
 // "snapshot live inputs before calling the core").
 //
@@ -20,10 +20,10 @@
 // handler's two-phase persist (config NVS, then a separate chirp-binding
 // NVS key) with rollback-on-partial-failure is side-effect orchestration
 // that stays in the shell verbatim, per ADR 0011's "the shell keeps every
-// side effect" principle — this is not a "simple apply-once, persist-once"
-// core like slices 1/2, so the result carries everything the shell needs
-// to replay that exact two-phase dance: the old field values (for
-// rollback), the resolved binding NVS key, and the packed bank/page
+// side effect" principle - this is not a "simple apply-once, persist-once"
+// core like the standard apply-core pattern, so the result carries everything
+// the shell needs to replay that exact two-phase dance: the old field values
+// (for rollback), the resolved binding NVS key, and the packed bank/page
 // binding.
 //
 // Defined in src/web/api_audio_category_range_apply.cpp.

@@ -41,7 +41,7 @@ void webServerInit();
 bool webServerHasSSEClients();
 
 #if PA_HEAP_PROFILE
-// Bounded request-lifecycle trace (issue #54 evidence). See
+// Bounded request-lifecycle trace for profiler evidence. See
 // web_request_psychic.cpp for field semantics and the
 // single-writer/bounded-overwrite contract.
 #define PA_REQUEST_TRACE_MAX 32
@@ -51,7 +51,7 @@ struct RequestLifecycleEntry {
     uint32_t startMs;        // middleware admission time -- the earliest point our own
                               // code sees this request; a large gap between this and the
                               // browser's own request-start timestamp means the delay is
-                              // below us (TCP accept/backlog), not in our handler (issue #67)
+                              // below us (TCP accept/backlog), not in our handler
     uint32_t handlerDoneMs;  // 0 until next() returns
 };
 // Copies up to maxEntries oldest-first trace entries into out; returns the

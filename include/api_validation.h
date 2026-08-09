@@ -8,5 +8,5 @@
 
 #include "web_request.h"
 
-// GET /api/validation — validation-focused snapshot for hardware closure checks.
+// GET /api/validation - validation-focused snapshot for hardware closure checks.
 void handleValidationGet(WebRequest& req);

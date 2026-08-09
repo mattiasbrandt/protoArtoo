@@ -67,7 +67,7 @@ bool paramPasswordMaxLen(const ConfigParamSource& params, const char* name, char
 }
 
 // paramApPassword: validates the AP password against ESP32 SoftAP
-// requirements — empty (open network) or WIFI_PASSWORD_MIN_LEN..MAX_LEN.
+// requirements - empty (open network) or WIFI_PASSWORD_MIN_LEN..MAX_LEN.
 bool paramApPassword(const ConfigParamSource& params, const char* name, char* out, size_t outSize,
                       char* errBuf, size_t errBufSize) {
     const char* raw = configParamGet(params, name);

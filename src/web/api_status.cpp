@@ -2,10 +2,10 @@
 // src/web/api_status.cpp
 //
 // Status and telemetry API endpoints, all on the WebRequest seam (ADR 0021).
-//   GET /api/status  — JSON status snapshot
-//   GET /api/health  — health telemetry
-//   GET /api/wifi    — WiFi status
-//   GET /api/serial  — serial port status
+//   GET /api/status  - JSON status snapshot
+//   GET /api/health  - health telemetry
+//   GET /api/wifi    - WiFi status
+//   GET /api/serial  - serial port status
 // =============================================================================
 
 #include "api_status.h"
@@ -87,7 +87,7 @@ static void buildHealthJson(char* buffer, size_t bufferSize) {
                      heapLargestBlock, wifiRssi);
 }
 
-// GET /api/wifi — active connection diagnostics, read by the WiFi page
+// GET /api/wifi - active connection diagnostics, read by the WiFi page
 // alongside the settings it saves through POST /api/wifi. Ported with the
 // WiFi write route so that page works end to end on one stack.
 void handleWifiGet(WebRequest& req) {
@@ -113,7 +113,7 @@ void handleStatusGet(WebRequest& req) {
     req.send(200, "application/json", body);
 }
 
-// GET /api/serial — per-port status for the setup page's serial panel. The
+// GET /api/serial - per-port status for the setup page's serial panel. The
 // payload is a fixed set of literal port descriptions with three values
 // substituted, so it is bounded by the format string rather than by device
 // state; 768 bytes covers it with headroom and fits a stack frame.
@@ -123,7 +123,7 @@ void handleSerialGet(WebRequest& req) {
     req.send(200, "application/json", body);
 }
 
-// GET /api/health — the small telemetry payload the shell polls. Every field is
+// GET /api/health - the small telemetry payload the shell polls. Every field is
 // a bool or a fixed-width number, so 256 bytes is the whole of it.
 void handleHealthGet(WebRequest& req) {
     char body[256];

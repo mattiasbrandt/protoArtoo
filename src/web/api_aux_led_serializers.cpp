@@ -2,7 +2,7 @@
 // src/web/api_aux_led_serializers.cpp
 //
 // Pure JSON serialization helper for AUX LED status.
-// No Arduino, no FreeRTOS, no hardware dependencies — testable in native env.
+// No Arduino, no FreeRTOS, no hardware dependencies - testable in native env.
 // =============================================================================
 
 #include "api_aux_led.h"

@@ -151,7 +151,7 @@ void test_audioCategoryRangeApply_range_over_999_rejected(void) {
     AudioCategoryRangeApplyResult result;
     audioCategoryRangeApply(makeSource(&m), true, &snap, &result);
     TEST_ASSERT_TRUE(result.error.hasError);
-    TEST_ASSERT_EQUAL_STRING("range values must be 0–999", result.error.message);
+    TEST_ASSERT_EQUAL_STRING("range values must be 0-999", result.error.message);
 }
 
 void test_audioCategoryRangeApply_lo_greater_than_hi_rejected(void) {

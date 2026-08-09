@@ -2,12 +2,12 @@
 // src/web/api_dome.cpp
 //
 // Dome proxy API endpoints
-//   GET /api/dome/layout  — fetch dome layout JSON from cache (non-blocking relay)
+//   GET /api/dome/layout  - fetch dome layout JSON from cache (non-blocking relay)
 //
 // The dome layout is cached by DomeLinkTask on WiFi transport.
 // The web handler streams the cached bytes out through a chunked response
 // filler (domeLayoutCacheReadChunk), so no per-request buffer is needed on the
-// server task's stack — each fill call copies only the small slice the backend
+// server task's stack - each fill call copies only the small slice the backend
 // asks for, under a brief cache-mutex hold.
 // If cache is empty or transport != WiFi, handler returns 503 Service Unavailable
 // and sets a refresh flag for the background task to fetch on next loop.

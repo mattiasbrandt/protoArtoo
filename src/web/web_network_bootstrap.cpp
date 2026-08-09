@@ -28,7 +28,7 @@
 #include <WiFi.h>
 
 // src/secrets.h is the Developer WiFi Shortcut (ADR 0015): local/self-build-only
-// compile-time WiFi defaults. It is never required to compile or boot — public
+// compile-time WiFi defaults. It is never required to compile or boot - public
 // release binaries (protoArtoo_chirp, protoArtoo_mp3trigger) ship without it and
 // boot into WiFi Provisioning via wifiDecideBootPosture() instead.
 #if __has_include("secrets.h")
@@ -67,7 +67,7 @@ void handleWiFiEvent(WiFiEvent_t event) {
         case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
             // Ordinary WiFi Client Mode connection trouble stays visible as a
             // client-mode problem (ADR 0015). It must never trigger automatic
-            // AP fallback here — wifiDecideBootPosture() has no connectivity
+            // AP fallback here - wifiDecideBootPosture() has no connectivity
             // input, so there is nothing to re-decide on disconnect.
             PA_LOG_INFO(TAG, "WiFi connection lost");
             break;
@@ -77,7 +77,7 @@ void handleWiFiEvent(WiFiEvent_t event) {
 }
 
 // buildDeveloperShortcut: the Developer WiFi Shortcut (ADR 0015) resolved from
-// src/secrets.h, source-build-only. Never populated in public release binaries —
+// src/secrets.h, source-build-only. Never populated in public release binaries -
 // `available` stays false whenever secrets.h is absent or leaves its expected
 // macros undefined, which is always true for protoArtoo_chirp/protoArtoo_mp3trigger.
 static WifiDeveloperShortcut buildDeveloperShortcut() {
@@ -106,7 +106,7 @@ static void executeWifiBootPosture(WifiBootPosture posture, const WifiConfig& se
         case WifiBootPosture::PROVISIONING:
         case WifiBootPosture::NETWORK_RECOVERY:
             // Both postures expose WiFi Provisioning with the documented Default AP
-            // Credential — recovery must stay reachable even if the operator no
+            // Credential - recovery must stay reachable even if the operator no
             // longer remembers a custom Standalone AP Mode password.
             WiFi.mode(WIFI_AP);
             WiFi.softAP(WIFI_AP_SSID, WIFI_DEFAULT_AP_PASSWORD);
@@ -182,7 +182,7 @@ void webNetworkBootstrap() {
     // Developer WiFi Shortcut, through the same pure decision layer the native
     // tests exercise (test_wifi_boot_decision). networkRecoveryRequested comes
     // from the explicit local power-cycle gesture (wifi_recovery_gesture.h)
-    // — this shell classifies the reset reason and
+    // - this shell classifies the reset reason and
     // owns the persisted counter, but never infers recovery from ordinary STA
     // connection trouble.
     WifiConfig wifiSettings = {};

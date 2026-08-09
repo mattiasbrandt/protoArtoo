@@ -91,7 +91,7 @@
     { token: 'droid_seq_disco', label: 'Disco', group: 'Sequences', description: 'SE09 - disco audio ($D) with body wave, then forward :SE09 to dome', disabled: false, testable: true, safetyCritical: false },
     { token: 'droid_seq_screams', label: 'Screams', group: 'Sequences', description: 'SE15 - screams audio only on body side, then forward :SE15 to dome', disabled: false, testable: true, safetyCritical: false },
     { token: 'droid_seq_wiggle', label: 'Panel Wiggle', group: 'Sequences', description: 'SE16 - body wave sequence, then forward :SE16 to dome', disabled: false, testable: true, safetyCritical: false },
-    { token: 'speed_preset_cycle', label: 'Speed Preset Cycle', group: 'Movement', description: 'Cycle drive speed preset Slow → Normal → Turbo', disabled: false, testable: true, safetyCritical: false },
+    { token: 'speed_preset_cycle', label: 'Speed Preset Cycle', group: 'Movement', description: 'Cycle drive speed preset Slow -> Normal -> Turbo', disabled: false, testable: true, safetyCritical: false },
   ];
 
   // Live action targets — replaced on load from GET /api/actions.

@@ -196,7 +196,8 @@ int webResponseDeadlineSendOverride(httpd_handle_t hd, int sockfd, const char* b
         // the segment. Both clear on their own and both are retried here, under
         // the deadline that bounds how long this task may spend on one write --
         // failing instead would abandon the response mid-body, which for a
-        // static file means a well-formed 200 the browser cannot use (#98).
+        // static file means a well-formed 200 the browser silently accepts but
+        // cannot use (missing content prevents script execution).
         if (sendErrno == ENOMEM || sendErrno == ENOBUFS) {
             g_webSendRetriesMemory = g_webSendRetriesMemory + 1u;
         } else {

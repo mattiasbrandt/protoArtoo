@@ -4,7 +4,7 @@
 // PA_HEAP_PROFILE=1 gated heap profiling backend.
 //
 // Implements:
-//   GET /api/profiler — JSON snapshot of global heap, per-task stack HWM,
+//   GET /api/profiler - JSON snapshot of global heap, per-task stack HWM,
 //                       mode-scoped low-water marks, and (if CONFIG_HEAP_TASK_TRACKING)
 //                       per-task heap allocation stats.
 //
@@ -15,17 +15,17 @@
 //     heap_caps_get_largest_free_block(MALLOC_CAP_8BIT)
 //     heap_caps_get_info()    -> multi_heap_info_t
 //     uxTaskGetStackHighWaterMark()
-//     heap_caps_monitor_local_minimum_free_size_start/stop() — scoped low-water marks
+//     heap_caps_monitor_local_minimum_free_size_start/stop() - scoped low-water marks
 //     heap_caps_register_failed_alloc_callback()
 //   Tier 2 (CONFIG_HEAP_TASK_TRACKING only):
 //     heap_caps_alloc_all_task_stat_arrays()
 //     heap_caps_get_all_task_stat()         -> heap_all_tasks_stat_t
 //     heap_caps_free_all_task_stat_arrays()
-//   Tier 3 (CONFIG_HEAP_TRACING only — escalation path):
-//     heap_trace_init_standalone(buf, 200)  — 200 records ~32B each = ~6 KB static
-//     heap_trace_start(HEAP_TRACE_LEAKS)    — POST /api/profiler/trace/start
-//     heap_trace_stop()                     — POST /api/profiler/trace/stop
-//     heap_trace_dump()                     — dumps to serial at stop
+//   Tier 3 (CONFIG_HEAP_TRACING only - escalation path):
+//     heap_trace_init_standalone(buf, 200)  - 200 records ~32B each = ~6 KB static
+//     heap_trace_start(HEAP_TRACE_LEAKS)    - POST /api/profiler/trace/start
+//     heap_trace_stop()                     - POST /api/profiler/trace/stop
+//     heap_trace_dump()                     - dumps to serial at stop
 //
 // SAFETY: No interaction with Core 1 real-time loops.
 // All state is written only from SafetyMonitorTask (Core 0).
@@ -58,7 +58,7 @@
 static const char* TAG = "Profiler";
 
 // =============================================================================
-// Mode-scoped snapshot ring (Tier 1 — heap_caps_monitor_local_minimum_free_size)
+// Mode-scoped snapshot ring (Tier 1 - heap_caps_monitor_local_minimum_free_size)
 //
 // Each entry records the low-water mark of a named mode window. Windows are
 // opened and closed by profilerModeTransition(). The local monitoring API
@@ -80,7 +80,7 @@ static uint8_t s_snapHead = 0;
 static uint8_t s_snapCount = 0;
 static portMUX_TYPE s_snapMux = portMUX_INITIALIZER_UNLOCKED;
 
-// Active window state — written only by SafetyMonitorTask, read by web handler.
+// Active window state - written only by SafetyMonitorTask, read by web handler.
 // s_windowMux guards concurrent reads of these three fields.
 static portMUX_TYPE s_windowMux = portMUX_INITIALIZER_UNLOCKED;
 static bool s_windowOpen = false;
@@ -106,7 +106,7 @@ static void pushSnapshot(const char* label, uint32_t heapMin, uint32_t largestBl
 }
 
 // =============================================================================
-// Per-task stack HWM (Tier 1 — uxTaskGetStackHighWaterMark)
+// Per-task stack HWM (Tier 1 - uxTaskGetStackHighWaterMark)
 // =============================================================================
 
 #define PROF_TASK_MAX 9
@@ -127,7 +127,7 @@ static TaskHwmEntry s_taskHwm[PROF_TASK_MAX];
 static portMUX_TYPE s_hwmMux = portMUX_INITIALIZER_UNLOCKED;
 
 // =============================================================================
-// Failed-allocation counter (Tier 1 — heap_caps_register_failed_alloc_callback)
+// Failed-allocation counter (Tier 1 - heap_caps_register_failed_alloc_callback)
 // =============================================================================
 
 static uint32_t s_failedAllocCount = 0;
@@ -137,10 +137,10 @@ static uint32_t s_failedAllocCount = 0;
 // This hook runs IN the context of the failing allocation, on the stack of
 // whichever task hit it (IDF heap_caps.c: heap_caps_alloc_failed calls the hook
 // inline, then optionally aborts). It MUST NOT allocate: a previous version
-// logged via Arduino Print::printf, which mallocs its own buffer — so under heap
+// logged via Arduino Print::printf, which mallocs its own buffer - so under heap
 // exhaustion that malloc ALSO failed and re-entered this hook, recursing until a
-// task stack overflowed (a 64-byte mDNS alloc on the lwIP 'tiT' task crashed it;
-// found by decoding the coredump, issue #8). IDF's own abort path
+// task stack overflowed (coredump analysis found a 64-byte mDNS alloc crash on the
+// lwIP 'tiT' task). IDF's own abort path
 // (fmt_abort_str/hex_to_str) likewise formats with manual hex + memcpy, never
 // printf. So: only count, capture raw values + backtrace PCs (esp_backtrace_*
 // walks the stack and does not allocate), guard against re-entry, and let the
@@ -156,7 +156,7 @@ static void failedAllocCb(size_t requested_size, uint32_t caps, const char* func
     (void)function_name;
     __atomic_fetch_add(&s_failedAllocCount, 1U, __ATOMIC_RELAXED);
 
-    // Reentrancy guard — belt-and-suspenders now that nothing below allocates.
+    // Reentrancy guard - belt-and-suspenders now that nothing below allocates.
     if (s_inFailedAllocCb) {
         return;
     }
@@ -178,7 +178,7 @@ static void failedAllocCb(size_t requested_size, uint32_t caps, const char* func
 }
 
 // =============================================================================
-// Tier 2 — per-task heap allocation stats (CONFIG_HEAP_TASK_TRACKING only)
+// Tier 2 - per-task heap allocation stats (CONFIG_HEAP_TASK_TRACKING only)
 // Uses heap_caps_alloc_all_task_stat_arrays / get_all_task_stat / free.
 // =============================================================================
 
@@ -200,9 +200,9 @@ static portMUX_TYPE s_taskHeapMux = portMUX_INITIALIZER_UNLOCKED;
 #endif  // CONFIG_HEAP_TASK_TRACKING
 
 // =============================================================================
-// Tier 3 — heap leak tracing (CONFIG_HEAP_TRACING only — escalation path)
+// Tier 3 - heap leak tracing (CONFIG_HEAP_TRACING only - escalation path)
 // Initialised at boot; started/stopped via POST /api/profiler/trace/start|stop.
-// One-session-only diagnostic — disable after evidence collected.
+// One-session-only diagnostic - disable after evidence collected.
 // =============================================================================
 
 #ifdef CONFIG_HEAP_TRACING
@@ -283,7 +283,7 @@ void profilerCollectHwm() {
         if (tmp[i].found) foundCount++;
     }
     if (foundCount == 0) {
-        PA_LOG_WARN(TAG, "HWM: all xTaskGetHandle() calls returned NULL — check configUSE_TRACE_FACILITY=1 in sdkconfig");
+        PA_LOG_WARN(TAG, "HWM: all xTaskGetHandle() calls returned NULL - check configUSE_TRACE_FACILITY=1 in sdkconfig");
     }
     taskENTER_CRITICAL(&s_hwmMux);
     for (int i = 0; i < PROF_TASK_MAX; i++) {
@@ -340,7 +340,7 @@ static const char* hwmStatus(uint32_t hwmBytes) {
 }
 
 static void buildProfilerJson(char* buf, size_t bufSize) {
-    // Tier 1 global metrics — direct IDF 5.5 APIs
+    // Tier 1 global metrics - direct IDF 5.5 APIs
     uint32_t heapFree = (uint32_t)heap_caps_get_free_size(MALLOC_CAP_8BIT);
     uint32_t heapMin = (uint32_t)heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT);
     uint32_t heapLargest = (uint32_t)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
@@ -457,7 +457,7 @@ static void buildProfilerJson(char* buf, size_t bufSize) {
                currentLabel, (unsigned long)info.minimum_free_bytes);
     }
 
-    // Snapshot ring — oldest first; each entry = one closed mode window
+    // Snapshot ring - oldest first; each entry = one closed mode window
     APPEND(",\"snapshots\":[");
     if (snapCount > 0) {
         uint8_t oldest = (uint8_t)((snapHead + PROF_SNAPSHOT_MAX - snapCount) % PROF_SNAPSHOT_MAX);
@@ -475,7 +475,7 @@ static void buildProfilerJson(char* buf, size_t bufSize) {
     }
     APPEND("]");
 
-    // Bounded request-lifecycle trace (issue #54 evidence) -- oldest first.
+    // Bounded request-lifecycle trace for profiler evidence -- oldest first.
     // Read here, once, after an experiment; never polled during the
     // workload. See web_request_psychic.cpp for field semantics.
     RequestLifecycleEntry traceCopy[PA_REQUEST_TRACE_MAX];
@@ -543,7 +543,7 @@ void handleProfilerTraceStopPost(WebRequest& req) {
     }
     heap_trace_stop();
     s_traceRunning = false;
-    PA_LOG_INFO(TAG, "Tier 3 heap trace stopped — dumping to serial");
+    PA_LOG_INFO(TAG, "Tier 3 heap trace stopped - dumping to serial");
     heap_trace_dump();
     req.send(200, "application/json", "{\"ok\":true,\"note\":\"dump written to serial log\"}");
 }
