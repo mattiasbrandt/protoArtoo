@@ -79,7 +79,7 @@ void safetyMonitorTask(void* pvParameters) {
         // Log new failsafe triggers
         if (diag.failsafeTriggerCount > lastFailsafeCount) {
             PA_LOG_WARN(TAG,
-                        "failsafe triggered — count:%lu source:%d estop:%d sbus:%d hw:%d trigger_ms:%lu zero_ms:%lu trigger_to_zero_ms:%lu trigger_src:%d",
+                        "failsafe triggered - count:%lu source:%d estop:%d sbus:%d hw:%d trigger_ms:%lu zero_ms:%lu trigger_to_zero_ms:%lu trigger_src:%d",
                         (unsigned long)diag.failsafeTriggerCount, (int)diag.failsafeSource, (int)diag.estop, (int)diag.sbusSignalLost, (int)diag.sbusHwFailsafe,
                         (unsigned long)diag.failsafeLastTriggerMs, (unsigned long)diag.failsafeLastZeroOutputMs,
                         (unsigned long)diag.failsafeLastTriggerToZeroMs, (int)diag.failsafeLastTriggerSource);

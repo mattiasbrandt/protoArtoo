@@ -85,7 +85,7 @@ bool handlePanelCommand(const char* cmd) {
     taskEXIT_CRITICAL(&robotStateMux);
 
     if (estop) {
-        PA_LOG_WARN(TAG, "[SERVO] panel command rejected — estop active");
+        PA_LOG_WARN(TAG, "[SERVO] panel command rejected - estop active");
         return false;
     }
 

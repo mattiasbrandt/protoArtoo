@@ -157,7 +157,7 @@ void domeTask(void* pvParameters) {
             if (currentSpeed != 0.0f) {
                 currentSpeed = 0.0f;
                 setDomeNeutral();
-                PA_LOG_INFO(TAG, "Dome disabled — holding neutral");
+                PA_LOG_INFO(TAG, "Dome disabled - holding neutral");
             }
             seqMoveUntilMs = 0;
             // Drain any queued commands so they don't accumulate
@@ -178,7 +178,7 @@ void domeTask(void* pvParameters) {
                 setDomeNeutral();
             }
             if (!sleepHolding) {
-                PA_LOG_INFO(TAG, "Sleep mode active — dome neutral");
+                PA_LOG_INFO(TAG, "Sleep mode active - dome neutral");
                 sleepHolding = true;
             }
 
@@ -192,7 +192,7 @@ void domeTask(void* pvParameters) {
         }
         if (sleepHolding) {
             sleepHolding = false;
-            PA_LOG_INFO(TAG, "Sleep mode cleared — dome command processing resumed");
+            PA_LOG_INFO(TAG, "Sleep mode cleared - dome command processing resumed");
         }
 
         // Safety: estop  --  force neutral while emergency stopped
@@ -200,7 +200,7 @@ void domeTask(void* pvParameters) {
             currentSpeed = 0.0f;
             setDomeNeutral();
             seqMoveUntilMs = 0;
-            PA_LOG_WARN(TAG, "Estop active — dome neutral");
+            PA_LOG_WARN(TAG, "Estop active - dome neutral");
         }
 
         bool manualCommandThisTick = false;
@@ -242,7 +242,7 @@ void domeTask(void* pvParameters) {
             if (currentSpeed != 0.0f) {
                 currentSpeed = 0.0f;
                 setDomeNeutral();
-                PA_LOG_INFO(TAG, "Command timeout — dome neutral");
+                PA_LOG_INFO(TAG, "Command timeout - dome neutral");
             }
             hasCommand = false;
         }

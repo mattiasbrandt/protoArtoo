@@ -97,7 +97,7 @@ bool SbusDecoder::begin(int rxPin) {
     // blocking if the task is one frame behind.
     _queue = xQueueCreate(2, sizeof(uint8_t));
     if (!_queue) {
-        ESP_LOGE(TAG, "queue alloc failed — GPIO%d", rxPin);
+        ESP_LOGE(TAG, "queue alloc failed - GPIO%d", rxPin);
         return false;
     }
 
@@ -192,7 +192,7 @@ bool SbusDecoder::read() {
     // recovery from task context before draining the queue.
     if (_isrRearmFailed) {
         _isrRearmFailed = false;
-        ESP_LOGW(TAG, "ISR re-arm failed — attempting recovery from task context");
+        ESP_LOGW(TAG, "ISR re-arm failed - attempting recovery from task context");
         esp_err_t err = rmt_receive(_channel,
                                     _rxBufs[_activeBuf].symbols,
                                     sizeof(_rxBufs[_activeBuf].symbols),

@@ -189,7 +189,7 @@ static void abortSequenceAndPark(const char* reason) {
         setArmPosition(activeArm, closeUs);
     }
 
-    PA_LOG_INFO(TAG, "Sequence :SE%02d aborted — %s", sequenceId, reason);
+    PA_LOG_INFO(TAG, "Sequence :SE%02d aborted - %s", sequenceId, reason);
 }
 
 // -----------------------------------------------------------------------------
@@ -284,18 +284,18 @@ static void processCommand(const ServoCommand& cmd) {
     taskEXIT_CRITICAL(&robotStateMux);
 
     if (estop) {
-        PA_LOG_WARN(TAG, "[%s] Command rejected — estop active", commandSourceToString(cmd.source));
+        PA_LOG_WARN(TAG, "[%s] Command rejected - estop active", commandSourceToString(cmd.source));
         return;
     }
     if (sleepMode && cmd.type == SERVO_CMD_SEQUENCE) {
-        PA_LOG_INFO(TAG, "[%s] Sequence command ignored — sleep mode active",
+        PA_LOG_INFO(TAG, "[%s] Sequence command ignored - sleep mode active",
                     commandSourceToString(cmd.source));
         return;
     }
 
     // Feature toggle: reject commands for disabled or AUX-LED-reserved subsystems
     if (cmd.type != SERVO_CMD_SEQUENCE && !isArmEnabled(cmd.armId)) {
-        PA_LOG_WARN(TAG, "[%s] Command rejected — arm%d disabled or reserved",
+        PA_LOG_WARN(TAG, "[%s] Command rejected - arm%d disabled or reserved",
                     commandSourceToString(cmd.source), cmd.armId);
         return;
     }
@@ -334,7 +334,7 @@ static void processCommand(const ServoCommand& cmd) {
         case SERVO_CMD_POSITION:
             // Validate pulse width before setting
             if (cmd.positionUs < SERVO_PULSE_MIN_US || cmd.positionUs > SERVO_PULSE_MAX_US) {
-                PA_LOG_WARN(TAG, "[%s] Invalid position %d us — rejected",
+                PA_LOG_WARN(TAG, "[%s] Invalid position %d us - rejected",
                             commandSourceToString(cmd.source), cmd.positionUs);
                 break;
             }
@@ -397,11 +397,11 @@ void servoTaskInit() {
         }
 
         if (skipChannel != LEDC_CH_MAX) {
-            PA_LOG_INFO(TAG, "AUX LED active on selection %u (GPIO %u) — LEDC skipped for that header",
+            PA_LOG_INFO(TAG, "AUX LED active on selection %u (GPIO %u) - LEDC skipped for that header",
                         (unsigned)auxLedPin, (unsigned)getChannelGpio(skipChannel));
         }
     } else {
-        PA_LOG_INFO(TAG, "all LEDC outputs disabled — skipping LEDC init");
+        PA_LOG_INFO(TAG, "all LEDC outputs disabled - skipping LEDC init");
     }
 
     if (anyServo) {
@@ -425,7 +425,7 @@ void servoTask(void* pvParameters) {
     // channels to drive. Idle here feeding TWDT only  --  no queue processing,
     // no sequence updates.
     if (!configCacheServoAnyEnabled()) {
-        PA_LOG_DEBUG("ServoTask", "all arm/aux outputs disabled — task idle");
+        PA_LOG_DEBUG("ServoTask", "all arm/aux outputs disabled - task idle");
         for (;;) {
             esp_task_wdt_reset();
             vTaskDelay(pdMS_TO_TICKS(20));

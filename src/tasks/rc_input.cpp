@@ -448,25 +448,25 @@ void rcInputTask(void* pvParameters) {
     }
 
     if (rcInputMode == RC_INPUT_STANDARD_PWM) {
-        PA_LOG_INFO(TAG, "started — standard_pwm mode, SBUS decoders inactive");
+        PA_LOG_INFO(TAG, "started - standard_pwm mode, SBUS decoders inactive");
     } else if (rcInputMode == RC_INPUT_SINGLE_SBUS) {
         if (driveSbusEnabled) {
             int sbusRxPin = useCh2 ? PIN_SBUS2_RX : PIN_SBUS1_RX;
-            PA_LOG_INFO(TAG, "started — single_sbus mode, SBUS%d GPIO%d active", useCh2 ? 2 : 1,
+            PA_LOG_INFO(TAG, "started - single_sbus mode, SBUS%d GPIO%d active", useCh2 ? 2 : 1,
                         sbusRxPin);
         } else {
-            PA_LOG_INFO(TAG, "started — single_sbus mode, SBUS%d disabled",
+            PA_LOG_INFO(TAG, "started - single_sbus mode, SBUS%d disabled",
                         useCh2 ? 2 : 1);
         }
     } else {
         if (!driveSbusEnabled)
-            PA_LOG_INFO(TAG, "started — dual_sbus mode, SBUS2 GPIO%d only (SBUS1 disabled)",
+            PA_LOG_INFO(TAG, "started - dual_sbus mode, SBUS2 GPIO%d only (SBUS1 disabled)",
                         PIN_SBUS2_RX);
         else if (!domeSbusEnabled)
-            PA_LOG_INFO(TAG, "started — dual_sbus mode, SBUS1 GPIO%d only (SBUS2 disabled)",
+            PA_LOG_INFO(TAG, "started - dual_sbus mode, SBUS1 GPIO%d only (SBUS2 disabled)",
                         PIN_SBUS1_RX);
         else
-            PA_LOG_INFO(TAG, "started — dual_sbus mode, SBUS1 GPIO%d + SBUS2 GPIO%d active",
+            PA_LOG_INFO(TAG, "started - dual_sbus mode, SBUS1 GPIO%d + SBUS2 GPIO%d active",
                         PIN_SBUS1_RX, PIN_SBUS2_RX);
     }
 
@@ -546,14 +546,14 @@ void rcInputTask(void* pvParameters) {
         if (!driveSbusEnabled && sbus_drive.isInitialized()) {
             sbus_drive.end();
             driveSbusInitWarned = false;
-            PA_LOG_INFO(TAG, "SBUS1 disabled — RMT channel released");
+            PA_LOG_INFO(TAG, "SBUS1 disabled - RMT channel released");
         }
 
         if (!domeSbusEnabled && sbus_dome.isInitialized()) {
             sbus_dome.end();
             domeSbusInitWarned = false;
             sbusWatchdogReset(&sbus2Watchdog);
-            PA_LOG_INFO(TAG, "SBUS2 disabled — RMT channel released");
+            PA_LOG_INFO(TAG, "SBUS2 disabled - RMT channel released");
         }
 
         if (rcInputMode == RC_INPUT_STANDARD_PWM) {

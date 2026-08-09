@@ -77,7 +77,7 @@ struct AudioCommand {
 // Union must be large enough to hold the dollar string (largest member).
 // If this fires, increase dollar[] or check for accidental struct changes.
 static_assert(sizeof(AudioCommand) >= 10 + 2,
-              "AudioCommand too small — dollar[] union member may be truncated");
+              "AudioCommand too small - dollar[] union member may be truncated");
 
 const char* audioRxStatusToken(AudioRxStatus status);
 const char* audioRxStatusDetail(AudioRxStatus status);

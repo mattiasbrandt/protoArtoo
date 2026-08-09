@@ -50,7 +50,7 @@ static AudioDriverDySv5w s_driver;
 #include "audio_chirp.h"
 static AudioDriverChirp s_driver;
 #elif PA_AUDIO_DRIVER == AUDIO_DFPLAYER
-#error "AUDIO_DFPLAYER driver not yet implemented — see T15 / T16"
+#error "AUDIO_DFPLAYER driver not yet implemented - see T15 / T16"
 #elif PA_AUDIO_DRIVER == AUDIO_MP3TRIGGER
 #include "audio_mp3trigger.h"
 static AudioDriverMp3Trigger s_driver;
@@ -584,18 +584,18 @@ void audioTask(void* pvParameters) {
         if (tick.stopDriver) {
             driver->stop();
             if (tick.stopReason == AUDIO_STEP_STOP_DISABLED) {
-                PA_LOG_INFO(TAG, "audio disabled — stopping active playback");
+                PA_LOG_INFO(TAG, "audio disabled - stopping active playback");
             }
         }
         if (tick.stopReason == AUDIO_STEP_STOP_SLEEP_ENTRY) {
-            PA_LOG_INFO(TAG, "sleep mode active — audio playback suppressed");
+            PA_LOG_INFO(TAG, "sleep mode active - audio playback suppressed");
         }
         if (tick.clearAudioActive) {
             taskENTER_CRITICAL(&robotStateMux);
             robotState.audioActive = false;
             taskEXIT_CRITICAL(&robotStateMux);
             if (tick.drainQueue) {
-                PA_LOG_INFO(TAG, "audio disabled — random mode cleared");
+                PA_LOG_INFO(TAG, "audio disabled - random mode cleared");
             }
         }
         if (tick.drainQueue) {
@@ -611,13 +611,13 @@ void audioTask(void* pvParameters) {
                 audioStepInitResult(step, initOk, catalogCapable);
             if (ir.giveUp) {
                 PA_LOG_WARN(TAG,
-                            "audio driver begin() failed %u times — giving up; driver inoperative",
+                            "audio driver begin() failed %u times - giving up; driver inoperative",
                             (unsigned)AUDIO_STEP_INIT_MAX_RETRIES);
                 setAudioRxStatus(AUDIO_RX_NO_RESPONSE);
             }
             if (ir.skipRestOfTick) {
                 if (!ir.giveUp) {
-                    PA_LOG_DEBUG(TAG, "audio driver begin incomplete (%u/%u) — will retry",
+                    PA_LOG_DEBUG(TAG, "audio driver begin incomplete (%u/%u) - will retry",
                                  (unsigned)step.beginRetryCount,
                                  (unsigned)AUDIO_STEP_INIT_MAX_RETRIES);
                 }
@@ -628,7 +628,7 @@ void audioTask(void* pvParameters) {
                 bool cacheLoaded = refreshChirpBindingCacheFromNvs();
                 PA_LOG_INFO(TAG, "CHIRP binding cache %s", cacheLoaded ? "loaded" : "load failed");
             }
-            PA_LOG_INFO(TAG, "audio driver init — PA_AUDIO_DRIVER=%d vol=%u", PA_AUDIO_DRIVER,
+            PA_LOG_INFO(TAG, "audio driver init - PA_AUDIO_DRIVER=%d vol=%u", PA_AUDIO_DRIVER,
                         (unsigned)step.currentVol);
             if (ir.seedModuleState) {
                 // Seed RobotState from getCachedState()  --  begin() runs pre-init
@@ -659,7 +659,7 @@ void audioTask(void* pvParameters) {
             const AudioStepCommandActions ca = audioStepCommand(step, cmdIn, cmd);
 
             if (ca.ignored == AUDIO_STEP_IGNORE_SLEEP) {
-                PA_LOG_INFO(TAG, "[%s] %s ignored — sleep mode active",
+                PA_LOG_INFO(TAG, "[%s] %s ignored - sleep mode active",
                             commandSourceToString(cmd.source), playCommandName(cmd.type));
             } else if (ca.ignored == AUDIO_STEP_IGNORE_UNSUPPORTED_BACKEND) {
                 PA_LOG_DEBUG(TAG, "[%s] %s ignored (unsupported backend)",
