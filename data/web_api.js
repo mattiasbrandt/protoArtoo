@@ -36,9 +36,16 @@
     return delta > 0 ? delta : null;
   };
 
-  const normalizeError = (error) => {
+  // An AbortError has two distinct causes that callers must be able to tell
+  // apart: the request's own timeout fired (kind "timeout", surfaced to the
+  // operator), or the caller cancelled it through the signal it owns (kind
+  // "cancelled", normally swallowed because the caller asked for it).
+  const normalizeError = (error, callerSignal = null) => {
     if (error instanceof ApiError) return error;
     if (error?.name === "AbortError") {
+      if (callerSignal?.aborted) {
+        return new ApiError("Request cancelled", { kind: "cancelled", cause: error });
+      }
       return new ApiError("Request timeout", { kind: "timeout" });
     }
     return new ApiError("Network request failed", { kind: "network", cause: error });
@@ -95,29 +102,43 @@
     }
   };
 
-  let activeController = null;
+  // Cancellation is caller-owned: a caller that needs to cancel its request
+  // creates its own AbortController and passes controller.signal as
+  // opts.signal (standard platform pattern). Ownership travels with the
+  // request, so cancelling one caller's request can never touch another
+  // caller's request - there is no shared abort state in this module at all.
+  // The bootstrap owns one controller per section run (see page_bootstrap.js);
+  // requests issued without a signal (footer, status widgets) are not
+  // cancellable by anyone.
+  const throwIfCancelled = (signal) => {
+    if (signal?.aborted) {
+      throw new ApiError("Request cancelled", { kind: "cancelled" });
+    }
+  };
 
   const request = async (path, opts = {}) => {
+    const { signal = null } = opts;
+    throwIfCancelled(signal);
     await acquireRequestSlot();
     try {
+      // Cancelled while queued for the slot: skip the dispatch entirely so a
+      // dead request does not spend slot time, and release via the same
+      // finally as every other outcome.
+      throwIfCancelled(signal);
       return await performRequest(path, opts);
     } finally {
+      // Sole release point for the slot this request acquired, on every
+      // outcome (success, error, timeout, cancellation). Nothing else may
+      // release a slot, so accounting cannot drift (ADR 0019).
       releaseRequestSlot();
     }
   };
 
-  // Estop bypass: skips slot acquisition entirely so estop is never queued.
-  // Must never be auto-retried.
+  // Estop bypass: skips slot acquisition entirely so estop is never queued,
+  // must never be auto-retried, and strips any caller signal so the E-Stop
+  // POST can never be cancelled once dispatched.
   const estopRequest = async (path, opts = {}) => {
-    return performRequest(path, { ...opts, noRetry: true });
-  };
-
-  const abortRequest = () => {
-    if (activeController) {
-      activeController.abort();
-      activeController = null;
-      releaseRequestSlot();
-    }
+    return performRequest(path, { ...opts, noRetry: true, signal: null });
   };
 
   const performRequest = async (path, {
@@ -128,10 +149,18 @@
     form = null,
     json = null,
     noRetry = false,
+    signal = null,
   } = {}) => {
     const attempt = async (isRetry) => {
+      // The internal controller drives the timeout; the caller's signal (if
+      // any) is bridged onto it so either source can abort the fetch. The
+      // caller's controller is never touched from here - ownership stays with
+      // the caller.
       const controller = new AbortController();
-      activeController = controller;
+      const onCallerAbort = () => controller.abort();
+      if (signal) {
+        signal.addEventListener("abort", onCallerAbort, { once: true });
+      }
       const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
 
       try {
@@ -166,7 +195,7 @@
 
         return { ok: true, status: response.status, data: payload };
       } catch (error) {
-        const apiError = normalizeError(error);
+        const apiError = normalizeError(error, signal);
         // Network errors on GETs are usually the device shedding a
         // connection under load (admission control closes the socket);
         // like the truncated-JSON case, one quiet retry beats surfacing a
@@ -175,12 +204,17 @@
         if (!noRetry && !isRetry && method === "GET"
             && (apiError.kind === "bad-json" || apiError.kind === "network")) {
           await new Promise((resolve) => window.setTimeout(resolve, BAD_JSON_RETRY_DELAY_MS));
+          // The caller may have cancelled during the retry delay; a cancelled
+          // request must not go back out on the wire.
+          throwIfCancelled(signal);
           return attempt(true);
         }
         throw apiError;
       } finally {
         window.clearTimeout(timeoutId);
-        activeController = null;
+        if (signal) {
+          signal.removeEventListener("abort", onCallerAbort);
+        }
       }
     };
 
@@ -204,6 +238,7 @@
   const messageFor = (error) => {
     if (!(error instanceof ApiError)) return "Request failed";
     if (error.kind === "timeout") return "Request timed out";
+    if (error.kind === "cancelled") return "Request cancelled";
     if (error.kind === "network") return "Network error";
     if (error.kind === "http") {
       if (error.message && !error.message.startsWith("HTTP ")) return error.message;
@@ -266,7 +301,6 @@
     postForm,
     postJson,
     estopPostForm,
-    abortRequest,
     messageFor,
     gateControls,
   };

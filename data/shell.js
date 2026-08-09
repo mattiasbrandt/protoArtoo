@@ -86,11 +86,11 @@
     `;
   }
 
-  const loadIdentity = async () => {
+  const loadIdentity = async ({ signal = null } = {}) => {
     try {
       const result = window.PAApi
-        ? await window.PAApi.get("/api/identity", { timeoutMs: 3000 })
-        : { data: await fetch("/api/identity", { cache: "no-store" }).then((r) => r.json()) };
+        ? await window.PAApi.get("/api/identity", { timeoutMs: 3000, signal })
+        : { data: await fetch("/api/identity", { cache: "no-store", signal }).then((r) => r.json()) };
       applyIdentityName(result.data?.droidName);
     } catch (error) {
       console.warn("[shell] identity unavailable:", error);

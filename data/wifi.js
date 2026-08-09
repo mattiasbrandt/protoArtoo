@@ -387,8 +387,8 @@
       `WiFi Client Mode is active. Open ${hostAddress} or ${staAddress}.`;
   };
 
-  const loadIdentity = async () => {
-    const result = await window.PAApi.get("/api/identity", { timeoutMs: 3000 });
+  const loadIdentity = async ({ signal = null } = {}) => {
+    const result = await window.PAApi.get("/api/identity", { timeoutMs: 3000, signal });
     state.identity = {
       droidName: result.data?.droidName || DEFAULT_HOSTNAME,
       mdnsUseName: Boolean(result.data?.mdnsUseName),
@@ -396,17 +396,17 @@
     renderPosture();
   };
 
-  const loadConfig = async () => {
-    const result = await window.PAApi.get("/api/config", { timeoutMs: 5000 });
+  const loadConfig = async ({ signal = null } = {}) => {
+    const result = await window.PAApi.get("/api/config", { timeoutMs: 5000, signal });
     renderSettings(result.data?.wifi || null);
     renderPosture();
   };
 
-  const loadWifiDiagnostics = async (showLoading = false) => {
+  const loadWifiDiagnostics = async (showLoading = false, { signal = null } = {}) => {
     if (showLoading) {
       setFeedback("Loading WiFi settings...");
     }
-    const result = await window.PAApi.get("/api/wifi", { timeoutMs: 5000 });
+    const result = await window.PAApi.get("/api/wifi", { timeoutMs: 5000, signal });
     state.diagnostics = result.data || {};
     renderPosture();
   };
@@ -427,7 +427,7 @@
   const SECTIONS = [
     ["wifi-identity", loadIdentity, "droid identity"],
     ["wifi-config", loadConfig, "saved WiFi settings"],
-    ["wifi-diagnostics", () => loadWifiDiagnostics(), "network status"],
+    ["wifi-diagnostics", (ctx) => loadWifiDiagnostics(false, ctx), "network status"],
   ];
 
   // The settings form writes saved WiFi configuration, so it must not be

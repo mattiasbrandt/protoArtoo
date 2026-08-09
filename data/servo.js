@@ -269,11 +269,11 @@
     calibFeedback.className = cls ? `feedback ${cls}` : "feedback";
   };
 
-  const loadCalib = async () => {
+  const loadCalib = async ({ signal = null } = {}) => {
     if (!window.PAApi) throw new Error("API helper unavailable");
     setCalibFeedback("Loading calibration...");
     try {
-      const result = await window.PAApi.get("/api/config", { timeoutMs: 5000 });
+      const result = await window.PAApi.get("/api/config", { timeoutMs: 5000, signal });
       const cfg = result.data;
 
       // Arm calibration
