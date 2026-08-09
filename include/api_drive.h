@@ -11,7 +11,18 @@
 // =============================================================================
 #pragma once
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include "web_request.h"
+
+#include "drive_speed_preset.h"
+
+// Format JSON response for speed preset endpoint.
+// Output: {"ok":true,"preset":"slow|normal|turbo","speedLimitMax":<0..600>}
+// Returns false if the payload does not fit in buf or preset is invalid.
+bool formatSpeedPresetResponseJson(char* buf, size_t bufSize, SpeedPresetId preset,
+                                   int16_t speedLimitMax);
 
 void handleModePost(WebRequest& req);
 void handleDrivePost(WebRequest& req);

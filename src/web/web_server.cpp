@@ -24,7 +24,6 @@
 #include "../../include/api_profiler.h"
 #include "../../include/api_config.h"
 #include "../../include/drive_speed_preset.h"
-#include "../../include/api_helpers.h"
 #include "../../include/api_seq.h"
 #include "../../include/api_status.h"
 #include "../../include/api_system.h"

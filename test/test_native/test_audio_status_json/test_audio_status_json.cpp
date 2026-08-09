@@ -9,7 +9,7 @@
 #include <string.h>
 #include <unity.h>
 
-#include "api_helpers.h"
+#include "api_audio.h"
 
 static constexpr uint8_t AUDIO_CAP_STATUS_QUERY = 0x01;
 static constexpr uint8_t AUDIO_CAP_DEVICE_TYPE = 0x02;

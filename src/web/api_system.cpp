@@ -23,7 +23,6 @@
 #include <stdint.h>
 
 #include "api_drive.h"
-#include "api_helpers.h"
 #include "api_json_response.h"
 #include "commanded_modes.h"
 #include "config_store.h"

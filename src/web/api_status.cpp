@@ -14,7 +14,6 @@
 #include <WiFi.h>
 #include <esp_heap_caps.h>
 
-#include "api_helpers.h"
 #include "config.h"
 #include "config_store.h"
 #include "dome_link.h"

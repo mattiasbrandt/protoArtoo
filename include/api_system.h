@@ -7,7 +7,15 @@
 // =============================================================================
 #pragma once
 
+#include <stddef.h>
+#include <stdbool.h>
+
 #include "web_request.h"
+
+// Format JSON response for sleep/wake control endpoints.
+// Output: {"ok":true,"sleepMode":<bool>,"changed":<bool>}
+// Returns false if the payload does not fit in buf.
+bool formatSleepControlJson(char* buf, size_t bufSize, bool sleepMode, bool changed);
 
 void handleSleepPost(WebRequest& req);
 void handleWakePost(WebRequest& req);

@@ -1,13 +1,19 @@
 // =============================================================================
 // test/test_native/test_api_helpers/test_api_helpers.cpp
 //
-// Native unit tests for web API parsing helpers.
-// Tests: parseDriveValue, parseUint32Value, parseBoolValue.
+// Native unit tests for web API parsing helpers and format functions.
+// Tests: parseDriveValue, parseUint32Value, parseBoolValue,
+//        formatSleepControlJson, formatIdentityJson, formatSpeedPresetResponseJson,
+//        formatAuxLedStateJson
 // =============================================================================
 #include <unity.h>
 
 #include <string.h>
 #include "api_helpers.h"
+#include "api_system.h"
+#include "api_identity.h"
+#include "api_drive.h"
+#include "api_aux_led.h"
 
 void setUp() {
 }

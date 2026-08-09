@@ -6,7 +6,6 @@
 
 #include "config_store.h"
 
-#include "api_helpers.h"
 #include "audio_dollar_parser.h"
 #include "config.h"
 #include "config_serializer.h"
