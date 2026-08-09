@@ -2,7 +2,7 @@
 // src/main.cpp
 //
 // protoArtoo — ESP32 body controller for MK4 astromech droid.
-// Boot sequence — Phase 1 stub.
+// Boot: config load, safety defaults, task creation.
 // =============================================================================
 
 #include <Arduino.h>
@@ -281,7 +281,7 @@ void setup() {
         servoTask, "ServoTask", 4096, nullptr, 4, nullptr,
         1);  // HWM: code fix (ConfigSnapshot→ServoConfig in hot paths) + 3072->4096
     xTaskCreatePinnedToCore(domeTask, "DomeTask", 3072, nullptr, 4, nullptr,
-                            1);  // T24 R1: profiler HWM reached 108 B free at 2048 B.
+                            1);  // Stack sized from profiler HWM: 108 B free at 2048 B.
 
     // AudioTask: Core 0 (non-RT) — software bit-bang TX blocks ~6 ms per command;
     // keeping off Core 1 avoids any interaction with DriveTask / ServoTask timing.

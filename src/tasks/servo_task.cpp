@@ -132,7 +132,7 @@ static void executeSequence(uint8_t seqId) {
             setArmPosition(1, openUs);
             break;
 
-        case 31:  // All body panels open and close (arms only in Phase 3)
+        case 31:  // All body panels open and close
         case 32:  // All body doors open and wiggle-close
             seqState.activeArm = 255;
             getOpenClosePositions(0, openUs, closeUs);
