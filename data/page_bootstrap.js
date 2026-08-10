@@ -340,6 +340,94 @@
     }
   };
 
+  // ---------------------------------------------------------------------------
+  // Background Poll: ongoing polling with cadence, backoff, and visibility pause
+  // ---------------------------------------------------------------------------
+  const createBackgroundPoll = (attempt, {
+    cadenceMs = 0,
+    skipWhen = () => false,
+    runOnStart = false,
+    refreshOnReturn = false,
+    retry = null,
+  } = {}) => {
+    let intervalId = null;
+    let retryTimeoutId = null;
+    let retryAttempt = 0;
+    let visibilityListener = null;
+    let inFlight = false;
+
+    const runAttempt = async () => {
+      if (inFlight) return;
+      inFlight = true;
+      try {
+        const result = await attempt();
+        // A falsy result means retry if config exists; truthy means success
+        if (!result && retry && retryAttempt < retry.maxAttempts - 1) {
+          retryAttempt += 1;
+          const delayMs = retry.baseMs * Math.pow(retry.factor, retryAttempt - 1);
+          retryTimeoutId = window.setTimeout(() => {
+            retryTimeoutId = null;
+            runAttempt();
+          }, delayMs);
+        } else {
+          // Success or max attempts reached: stop retrying
+          retryAttempt = 0;
+        }
+      } finally {
+        inFlight = false;
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      // Trigger refresh only when becoming visible, if requested
+      if (document.visibilityState !== "hidden" && refreshOnReturn) {
+        runAttempt();
+      }
+    };
+
+    const start = () => {
+      if (runOnStart) {
+        runAttempt();
+      }
+
+      if (cadenceMs > 0) {
+        intervalId = window.setInterval(() => {
+          // Check visibility on each tick (not cached) to handle direct property changes
+          if (document.visibilityState !== "hidden" && !skipWhen()) {
+            runAttempt();
+          }
+        }, cadenceMs);
+      }
+
+      if (refreshOnReturn || cadenceMs > 0) {
+        visibilityListener = handleVisibilityChange;
+        document.addEventListener("visibilitychange", visibilityListener);
+      }
+    };
+
+    const cancelRetry = () => {
+      if (retryTimeoutId !== null) {
+        window.clearTimeout(retryTimeoutId);
+        retryTimeoutId = null;
+        retryAttempt = 0;
+      }
+    };
+
+    const stop = () => {
+      if (intervalId !== null) {
+        window.clearInterval(intervalId);
+        intervalId = null;
+      }
+      cancelRetry();
+      if (visibilityListener) {
+        document.removeEventListener("visibilitychange", visibilityListener);
+        visibilityListener = null;
+      }
+    };
+
+    return { start, cancelRetry, stop };
+  };
+
   window.PageBootstrap = {
     DEFAULT_BUSY_RETRY_MS,
     OPERATION_DEADLINE_MS,
@@ -347,6 +435,7 @@
     createBootstrap,
     classifyOutcome,
     dispatch,
+    createBackgroundPoll,
   };
 })();
 
