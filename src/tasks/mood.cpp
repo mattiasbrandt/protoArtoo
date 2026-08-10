@@ -21,7 +21,7 @@ static const char* TAG = "Mood";
 void applyMood(uint8_t moodId, bool fromDome) {
     const char* audioCmd = moodAudioCommand(moodId);
     if (!audioCmd) {
-        PA_LOG_WARN(TAG, "applyMood: invalid mood id %u — ignored", (unsigned)moodId);
+        PA_LOG_WARN(TAG, "applyMood: invalid mood id %u - ignored", (unsigned)moodId);
         return;
     }
 
@@ -37,9 +37,9 @@ void applyMood(uint8_t moodId, bool fromDome) {
         domeQueueTx(domeTxBuf);
         PA_LOG_INFO(TAG, "mood %u dome TX: %s", (unsigned)moodId, domeTxBuf);
     } else if (fromDome) {
-        PA_LOG_DEBUG(TAG, "mood %u — dome TX suppressed (called from dome RX)", (unsigned)moodId);
+        PA_LOG_DEBUG(TAG, "mood %u - dome TX suppressed (called from dome RX)", (unsigned)moodId);
     } else {
-        PA_LOG_DEBUG(TAG, "mood %u — dome TX skipped (dome not connected)", (unsigned)moodId);
+        PA_LOG_DEBUG(TAG, "mood %u - dome TX skipped (dome not connected)", (unsigned)moodId);
     }
 
     // --- Update shared state ---

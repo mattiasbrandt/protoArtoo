@@ -122,10 +122,10 @@ bool AudioDriverMp3Trigger::begin(uint8_t vol) {
     uint8_t n = sendQuery('S', '0', line, (uint8_t)sizeof(line), 500);
     if (n > 1 && line[0] == '=') {
         m_linkOk = true;
-        PA_LOG_INFO(TAG, "link OK — version: %s", line + 1);  // strip leading '='
+        PA_LOG_INFO(TAG, "link OK - version: %s", line + 1);  // strip leading '='
     } else {
         PA_LOG_WARN(TAG,
-                    "no response to S0 query — check wiring and SD baud init "
+                    "no response to S0 query - check wiring and SD baud init "
                     "file (factory default is 38400; community standard is 9600)");
     }
 
@@ -143,12 +143,12 @@ bool AudioDriverMp3Trigger::begin(uint8_t vol) {
             }
             PA_LOG_INFO(TAG, "total tracks = %u", (unsigned)m_totalTracks);
         } else {
-            PA_LOG_WARN(TAG, "no response to S1 query — total tracks unknown");
+            PA_LOG_WARN(TAG, "no response to S1 query - total tracks unknown");
         }
     }
 
     setVolume(vol);
-    PA_LOG_INFO(TAG, "init done — vol=%u link=%s tracks=%u", (unsigned)vol,
+    PA_LOG_INFO(TAG, "init done - vol=%u link=%s tracks=%u", (unsigned)vol,
                 m_linkOk ? "OK" : "no response", (unsigned)m_totalTracks);
     return true;
 }
@@ -167,7 +167,7 @@ void AudioDriverMp3Trigger::playTrack(uint16_t track) {
         return;
     }
     if (track > 255) {
-        PA_LOG_WARN(TAG, "playTrack(%u) exceeds MP3 Trigger maximum (255) — dropped",
+        PA_LOG_WARN(TAG, "playTrack(%u) exceeds MP3 Trigger maximum (255) - dropped",
                     (unsigned)track);
         return;
     }

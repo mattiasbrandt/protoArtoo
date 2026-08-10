@@ -390,7 +390,7 @@ bool AudioDriverChirp::begin(uint8_t vol) {
                     "CHIRP RX catalog discovery skipped: DomeLink is using UART2; playback commands remain available");
     }
 
-    PA_LOG_INFO(TAG, "init — vol=%u Bank1 sounds=%u banks=%u link=%s", (unsigned)vol,
+    PA_LOG_INFO(TAG, "init - vol=%u Bank1 sounds=%u banks=%u link=%s", (unsigned)vol,
                 (unsigned)m_totalTracks, (unsigned)m_catalogBankCount,
                 m_linkOk ? "OK" : "no response");
     return true;

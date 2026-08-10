@@ -127,7 +127,7 @@ void driveTask(void* pvParameters) {
                 copyFailsafeDiagnosticsLocked(&diag);
                 taskEXIT_CRITICAL(&robotStateMux);
                 PA_LOG_INFO(TAG,
-                            "failsafe zero output asserted — source:%d trigger_to_zero:%lu ms",
+                            "failsafe zero output asserted - source:%d trigger_to_zero:%lu ms",
                             (int)diag.failsafeLastTriggerSource, (unsigned long)diag.failsafeLastTriggerToZeroMs);
                 zeroOutputRecorded = true;
                 zeroRecordedForTriggerMs = diag.failsafeLastTriggerMs;
@@ -179,7 +179,7 @@ void driveTask(void* pvParameters) {
                 taskENTER_CRITICAL(&robotStateMux);
                 robotState.hb_feedbackValid = false;
                 taskEXIT_CRITICAL(&robotStateMux);
-                PA_LOG_INFO(TAG, "hoverboard feedback stale (>%lu ms) — invalidated",
+                PA_LOG_INFO(TAG, "hoverboard feedback stale (>%lu ms) - invalidated",
                             (unsigned long)kFeedbackStaleMs);
             }
         }

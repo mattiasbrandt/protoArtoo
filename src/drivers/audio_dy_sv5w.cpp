@@ -157,7 +157,7 @@ bool AudioDriverDySv5w::begin(uint8_t vol) {
         PA_LOG_INFO(TAG, "pre-init: device online = %s (0x%02X)", dev, rsp[3]);
     } else {
         PA_LOG_WARN(TAG,
-                    "pre-init: no response to device-online query — "
+                    "pre-init: no response to device-online query - "
                     "check DIP (CON3=1 CON2=0 CON1=0) and TX wiring");
     }
 
@@ -199,7 +199,7 @@ bool AudioDriverDySv5w::begin(uint8_t vol) {
         sendCommand(selectDev, sizeof(selectDev));
         PA_LOG_INFO(TAG, "init: switchDrive to 0x%02X", m_device);
     } else {
-        PA_LOG_WARN(TAG, "init: skipping switchDrive — device unknown from pre-init query");
+        PA_LOG_WARN(TAG, "init: skipping switchDrive - device unknown from pre-init query");
     }
 
     // Set EQ to Normal (0x1A, eq=0x00).
@@ -226,7 +226,7 @@ bool AudioDriverDySv5w::begin(uint8_t vol) {
         PA_LOG_WARN(TAG, "post-init: no response to play-drive query");
     }
 
-    PA_LOG_INFO(TAG, "init done — vol=%u device=0x%02X tracks=%u", (unsigned)vol,
+    PA_LOG_INFO(TAG, "init done - vol=%u device=0x%02X tracks=%u", (unsigned)vol,
                 (unsigned)m_device, (unsigned)m_totalTracks);
     return true;
 }

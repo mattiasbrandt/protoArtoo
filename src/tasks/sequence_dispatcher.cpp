@@ -305,7 +305,7 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
             activeName[0] = '\0';
         }
         if (!estopActive && prevEstop) {
-            PA_LOG_INFO(TAG, "estop cleared — dome resync (staged ring close)");
+            PA_LOG_INFO(TAG, "estop cleared - dome resync (staged ring close)");
             // Stage an individual ring-only close (drained below), never a group
             // :CL15/:CL00: a group close drives every ring servo simultaneously
             // and browns out the dome from a loaded ring (issue #2 hardware
@@ -350,7 +350,7 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
         // pies are never auto-closed on resync.
         const bool domeConn = domeConnected();
         if (domeConn && !prevDomeConn) {
-            PA_LOG_INFO(TAG, "dome (re)connected — panel state resync (staged ring close)");
+            PA_LOG_INFO(TAG, "dome (re)connected - panel state resync (staged ring close)");
             if (seqEngineActive(engine)) {
                 seqEngineAbort(engine);
                 drainBestEffort(engine, now);
