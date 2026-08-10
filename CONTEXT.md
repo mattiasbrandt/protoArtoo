@@ -164,6 +164,14 @@ _Avoid_: Estop waiting behind reads, user action waiting behind polling, backgro
 The quiet state entered when a controller page is no longer visible. The tab starts no new loads, retries, polls, or live-update connections; one active bounded request or already-sent user command may finish within its deadline. When visible again, the page resumes from its unfinished step.
 _Avoid_: hidden polling, hidden retry loop, aborting a useful response only because visibility changed, restarting completed work on return
 
+**Background Poll**:
+A bootstrap-owned ongoing page work item that repeats on a caller-set cadence after page startup: it pauses while the tab is hidden, runs at most one attempt at a time, applies its caller's retry backoff, and can be stopped by its owner. The footer version display and the setup page's profiler card are Background Polls, not page sections.
+_Avoid_: ad hoc interval loops, per-module visibility handling, a second retry mechanism beside the bootstrap
+
+**Section Request Handle**:
+The request surface a section loader receives from the Common Page Bootstrap: calls made through it automatically carry the section's cancellation signal and Operation Deadline category, so a loader does not thread the signal into each request by hand. The raw signal remains available for work the handle cannot express.
+_Avoid_: manual signal threading in every loader, per-page cancellation ownership, a global abort lane
+
 **Operation Deadline**:
 The bounded lifetime assigned to one kind of controller request. Ordinary page work uses a short measured deadline; known longer operations use an appropriate longer deadline and visible progress. A deadline extends only when measurable forward progress occurs.
 _Avoid_: one timeout for every operation, indefinite request, extending on meaningless activity, stopping healthy long work while progress is visible
@@ -404,6 +412,8 @@ _Avoid_: audio lifecycle manager, audio coordinator, dispatch switch
 - **Browser Request Priority** prevents background page work from delaying operator commands and lets latching Estop bypass queued requests.
 - **Hidden Tab Pause** stops new controller work without abandoning the one bounded request or user command already in progress.
 - Every request in a **Bounded Page Attempt** has an **Operation Deadline** suited to its work and visible progress.
+- A **Background Poll** starts only after **Page Startup Order** allows background work and obeys **Hidden Tab Pause**.
+- A **Section Request Handle** carries a section's cancellation and **Operation Deadline** into every request its loader makes during a **Bounded Page Attempt**.
 - **Page Load Recovery** includes **Page Load Memory Recovery** after repeated page and retry activity on the **Supported ESP32 Board**.
 - **Refresh Resilience** may shed excess rapid attempts, but the final page must regain **Page Load Recovery** and the controller must regain **Page Load Memory Recovery**.
 - The **Common Page Bootstrap** applies the agreed loading and recovery behavior consistently to every controller page.
