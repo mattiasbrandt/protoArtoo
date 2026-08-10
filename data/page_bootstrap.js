@@ -918,8 +918,47 @@
     // cancelling the run aborts exactly those requests and can never touch
     // another module's traffic - no other code holds this controller.
     const controller = new AbortController();
+
+    // Section Request Handle: wraps PAApi methods to inject the section's
+    // signal and Operation Deadline category. Loaders call handle.get(),
+    // handle.postForm(), etc. to get signal + deadline for free.
+    const handle = {
+      get: (path, opts = {}) => {
+        const deadlineMs = state.deadlines[name];
+        return window.PAApi.get(path, {
+          ...opts,
+          signal: controller.signal,
+          timeoutMs: deadlineMs ?? 6000,
+        });
+      },
+      postForm: (path, form, opts = {}) => {
+        const deadlineMs = state.deadlines[name];
+        return window.PAApi.postForm(path, form, {
+          ...opts,
+          signal: controller.signal,
+          timeoutMs: deadlineMs ?? 6000,
+        });
+      },
+      postJson: (path, json, opts = {}) => {
+        const deadlineMs = state.deadlines[name];
+        return window.PAApi.postJson(path, json, {
+          ...opts,
+          signal: controller.signal,
+          timeoutMs: deadlineMs ?? 6000,
+        });
+      },
+      estopPostForm: (path, form, opts = {}) => {
+        const deadlineMs = state.deadlines[name];
+        return window.PAApi.estopPostForm(path, form, {
+          ...opts,
+          signal: controller.signal,
+          timeoutMs: deadlineMs ?? 6000,
+        });
+      },
+    };
+
     Promise.resolve()
-      .then(() => load({ signal: controller.signal }))
+      .then(() => load({ signal: controller.signal, handle }))
       .then(() => done(null))
       .catch((error) => done(error));
     return controller;

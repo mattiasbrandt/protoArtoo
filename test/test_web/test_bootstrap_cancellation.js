@@ -227,3 +227,214 @@ test("an in-flight E-Stop POST survives a section deadline cancellation", async 
   assert.strictEqual(await estop, "completed", "the E-Stop POST must complete despite the section cancellation");
   assert.ok(!env.aborted.includes("/api/estop"), "the E-Stop POST must never see an abort");
 });
+
+// =============================================================================
+// Section Request Handle tests
+// =============================================================================
+
+test("section loader receives a handle alongside the raw signal", async () => {
+  const env = makeEnv();
+  let receivedHandle = null;
+  env.PABootstrap.registerSection(
+    "handle-check",
+    ({ signal, handle } = {}) => {
+      receivedHandle = handle;
+      return Promise.resolve();
+    },
+    { label: "handle check" }
+  );
+  env.fireLoad();
+  await sleep(150);
+  assert.ok(receivedHandle, "the bootstrap must pass a handle to the loader");
+  assert.ok(typeof receivedHandle.get === "function", "handle must have a get method");
+  assert.ok(typeof receivedHandle.postForm === "function", "handle must have a postForm method");
+  assert.ok(typeof receivedHandle.postJson === "function", "handle must have a postJson method");
+  assert.ok(typeof receivedHandle.estopPostForm === "function", "handle must have an estopPostForm method");
+});
+
+test("handle.get() injects the section's signal", async () => {
+  const env = makeEnv();
+  let capturedSignal = null;
+  const originalGet = env.PAApi.get;
+  env.PAApi.get = function(path, opts) {
+    capturedSignal = opts?.signal;
+    return originalGet.call(this, path, opts);
+  };
+
+  env.PABootstrap.registerSection(
+    "signal-inject-test",
+    async ({ signal, handle } = {}) => {
+      await handle.get("/api/test");
+    },
+    { label: "signal inject test" }
+  );
+  env.fireLoad();
+  await sleep(200);
+  assert.ok(capturedSignal, "handle.get must pass a signal to the fetch mock");
+  assert.ok(capturedSignal instanceof AbortSignal, "the signal must be a real AbortSignal");
+
+  env.PAApi.get = originalGet;
+});
+
+test("handle request carries the section's Operation Deadline: Ordinary by default (6000ms)", async () => {
+  const env = makeEnv();
+  let capturedTimeoutMs = null;
+  // Monkey-patch PAApi.get to capture the timeoutMs
+  const originalGet = env.PAApi.get;
+  env.PAApi.get = function(path, opts) {
+    capturedTimeoutMs = opts?.timeoutMs;
+    return originalGet.call(this, path, opts);
+  };
+
+  env.PABootstrap.registerSection(
+    "deadline-ordinary",
+    async ({ signal, handle } = {}) => {
+      await handle.get("/api/test");
+    },
+    { label: "deadline ordinary" }
+  );
+  env.fireLoad();
+  await sleep(200);
+  assert.strictEqual(capturedTimeoutMs, 6000, "handle.get must inject 6000ms (Ordinary) by default");
+
+  env.PAApi.get = originalGet;
+});
+
+test("handle request carries the section's declared Operation Deadline", async () => {
+  const env = makeEnv();
+  let capturedTimeoutMs = null;
+  const originalGet = env.PAApi.get;
+  env.PAApi.get = function(path, opts) {
+    capturedTimeoutMs = opts?.timeoutMs;
+    return originalGet.call(this, path, opts);
+  };
+
+  env.PABootstrap.registerSection(
+    "deadline-catalog",
+    async ({ signal, handle } = {}) => {
+      await handle.get("/api/test");
+    },
+    { label: "deadline catalog", deadlineMs: 12000 }
+  );
+  env.fireLoad();
+  await sleep(200);
+  assert.strictEqual(capturedTimeoutMs, 12000, "handle.get must inject the section's declared deadlineMs");
+
+  env.PAApi.get = originalGet;
+});
+
+test("handle.postForm() injects signal and deadline", async () => {
+  const env = makeEnv();
+  let capturedOpts = null;
+  const originalPostForm = env.PAApi.postForm;
+  env.PAApi.postForm = function(path, form, opts) {
+    capturedOpts = opts;
+    return originalPostForm.call(this, path, form, opts);
+  };
+
+  env.PABootstrap.registerSection(
+    "postform-test",
+    async ({ signal, handle } = {}) => {
+      await handle.postForm("/api/test", {});
+    },
+    { label: "postform test" }
+  );
+  env.fireLoad();
+  await sleep(200);
+  assert.ok(capturedOpts?.signal, "handle.postForm must pass a signal");
+  assert.strictEqual(capturedOpts?.timeoutMs, 6000, "handle.postForm must inject 6000ms deadline");
+
+  env.PAApi.postForm = originalPostForm;
+});
+
+test("handle.postJson() injects signal and deadline", async () => {
+  const env = makeEnv();
+  let capturedOpts = null;
+  const originalPostJson = env.PAApi.postJson;
+  env.PAApi.postJson = function(path, json, opts) {
+    capturedOpts = opts;
+    return originalPostJson.call(this, path, json, opts);
+  };
+
+  env.PABootstrap.registerSection(
+    "postjson-test",
+    async ({ signal, handle } = {}) => {
+      await handle.postJson("/api/test", { data: "test" });
+    },
+    { label: "postjson test" }
+  );
+  env.fireLoad();
+  await sleep(200);
+  assert.ok(capturedOpts?.signal, "handle.postJson must pass a signal");
+  assert.strictEqual(capturedOpts?.timeoutMs, 6000, "handle.postJson must inject 6000ms deadline");
+
+  env.PAApi.postJson = originalPostJson;
+});
+
+test("handle.estopPostForm() injects signal and deadline", async () => {
+  const env = makeEnv();
+  let capturedOpts = null;
+  const originalEstopPostForm = env.PAApi.estopPostForm;
+  env.PAApi.estopPostForm = function(path, form, opts) {
+    capturedOpts = opts;
+    return originalEstopPostForm.call(this, path, form, opts);
+  };
+
+  env.PABootstrap.registerSection(
+    "estop-test",
+    async ({ signal, handle } = {}) => {
+      await handle.estopPostForm("/api/estop", {});
+    },
+    { label: "estop test" }
+  );
+  env.fireLoad();
+  await sleep(200);
+  assert.ok(capturedOpts?.signal, "handle.estopPostForm must pass a signal");
+  assert.strictEqual(capturedOpts?.timeoutMs, 6000, "handle.estopPostForm must inject 6000ms deadline");
+
+  env.PAApi.estopPostForm = originalEstopPostForm;
+});
+
+test("aborting the section run cancels only handle requests, not unrelated traffic", async () => {
+  const env = makeEnv();
+  env.hangMsFor["/api/section"] = 10000; // loader's own request, never finishes
+  env.hangMsFor["/api/unrelated"] = 80;
+
+  env.PABootstrap.registerSection(
+    "handle-cancellation",
+    async ({ signal, handle } = {}) => {
+      await handle.get("/api/section");
+    },
+    { label: "handle cancel", deadlineMs: 400 }
+  );
+  env.fireLoad();
+  await sleep(100); // handle request is now in flight
+
+  // An unrelated request arrives mid-load
+  const unrelated = settle(env.PAApi.get("/api/unrelated", { timeoutMs: 5000 }));
+
+  // Wait for the deadline to expire
+  await sleep(700);
+
+  assert.ok(env.aborted.includes("/api/section"), "handle request must be aborted at deadline");
+  assert.strictEqual(await unrelated, "completed", "unrelated request must survive section cancellation");
+  assert.ok(!env.aborted.includes("/api/unrelated"), "unrelated request must never be aborted");
+  assert.strictEqual(env.maxInFlight, 1, "single-slot invariant must hold");
+});
+
+test("raw signal remains available to the loader as escape hatch", async () => {
+  const env = makeEnv();
+  let loaderSignal = null;
+  env.PABootstrap.registerSection(
+    "raw-signal-test",
+    ({ signal, handle } = {}) => {
+      loaderSignal = signal;
+      return env.PAApi.get("/api/test", { timeoutMs: 3000, signal });
+    },
+    { label: "raw signal test" }
+  );
+  env.fireLoad();
+  await sleep(150);
+  assert.ok(loaderSignal, "loader must receive the raw signal");
+  assert.ok(loaderSignal instanceof AbortSignal, "raw signal must be a real AbortSignal");
+});
