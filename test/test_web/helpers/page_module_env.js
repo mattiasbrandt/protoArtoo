@@ -108,6 +108,31 @@ export const loadPageModule = (file, { respond = () => ({}), fetchImpl = null, o
 
   const call = async (method, path, opts = {}) => {
     requests.push({ method, path, opts });
+    // When fetchImpl is provided (for transport-level tests like profiler), route
+    // PAApi through the mock fetch so calls are recorded in env.fetches and
+    // responses/errors are mapped to the real ApiError shape.
+    if (fetchImpl) {
+      try {
+        const response = await context.fetch(path, opts);
+        // Mock fetch returns a Response-like object
+        if (response && typeof response.ok === "boolean") {
+          const payload = response.json ? await response.json() : {};
+          if (!response.ok) {
+            throw new ApiError(
+              payload && typeof payload === "object" ? payload.error : `HTTP ${response.status}`,
+              { kind: "http", status: response.status }
+            );
+          }
+          return { data: payload };
+        }
+      } catch (error) {
+        // If it's already an ApiError, re-throw it
+        if (error instanceof ApiError) throw error;
+        // Network/other errors become network ApiError
+        throw new ApiError("Network request failed", { kind: "network" });
+      }
+    }
+    // When fetchImpl is absent, use respond like before
     const result = await respond(path, { ...opts, method });
     return result && typeof result === "object" && "data" in result ? result : { data: result ?? {} };
   };

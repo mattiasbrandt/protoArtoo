@@ -1020,17 +1020,13 @@
 
 // =============================================================================
 // Memory Profiler UI (PA_HEAP_PROFILE=1 builds only)
-// Probes /api/profiler on load and refresh. If endpoint returns 404/501,
-// marks profiler as unsupported and stops requesting for the page session.
-// Retries on transient errors (503, network) per ADR 0016.
+// Polls /api/profiler through PAApi on load and refresh. If endpoint returns
+// 404/501, stops polling for the page session. Retries on transient errors
+// (503, network) per ADR 0016. Uses Background Poll for cadence and visibility.
 // =============================================================================
 (() => {
   const card = document.getElementById("profiler-card");
   if (!card) return;
-
-  // Track whether the endpoint is definitively unavailable (404/501).
-  // Once detected, stop making requests for this page load.
-  let profilerNotSupported = false;
 
   function kb(bytes) {
     return (bytes / 1024).toFixed(1) + " KB";
@@ -1126,34 +1122,39 @@
     }
   }
 
+  // Latch for 404/501: the endpoint is permanently absent on this build.
+  // Once detected, the attempt function will not fetch again, and poll.stop()
+  // ensures the interval and visibility listener are removed in normal operation.
+  let latched = false;
+
+  let poll;
+
   async function refreshProfiler() {
-    // If profiler is definitively unsupported (404/501), do nothing.
-    if (profilerNotSupported) return;
+    // Once latched on 404/501, do not make any more requests.
+    if (latched) return;
 
     try {
-      const resp = await fetch("/api/profiler");
-      if (!resp.ok) {
-        // Only latch on 404 (Not Found) or 501 (Not Implemented) — these indicate
-        // the feature is permanently absent on this build (PA_HEAP_PROFILE=0).
-        // Do NOT latch on 503 (Service Unavailable / admission control) — that is
-        // a transient condition and the profiler may succeed on retry per ADR 0016.
-        if (resp.status === 404 || resp.status === 501) {
-          profilerNotSupported = true;
-        }
-        return;
-      }
-      const data = await resp.json();
+      const result = await window.PAApi.get("/api/profiler");
+      // Success: render the profiler data
       card.hidden = false;
-      renderProfiler(data);
-    } catch (_) {
-      // Network error — leave profilerNotSupported false so we retry on next attempt.
-      // Do not permanently disable profiler on transient network failures.
+      renderProfiler(result.data);
+    } catch (error) {
+      // Only latch on 404 (Not Found) or 501 (Not Implemented) — these indicate
+      // the feature is permanently absent on this build (PA_HEAP_PROFILE=0).
+      // Do NOT latch on 503 (Service Unavailable / admission control) — that is
+      // a transient condition and the profiler may succeed on retry per ADR 0016.
+      if (error instanceof window.PAApi.ApiError && (error.status === 404 || error.status === 501)) {
+        latched = true;
+        poll.stop();
+      }
+      // Transient errors (503, network, timeout, etc.): keep polling on cadence.
     }
   }
 
-  refreshProfiler();
-  setInterval(refreshProfiler, 5000);
-  document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState !== "hidden") refreshProfiler();
+  poll = window.PageBootstrap.createBackgroundPoll(refreshProfiler, {
+    cadenceMs: 5000,
+    runOnStart: true,
+    refreshOnReturn: true,
   });
+  poll.start();
 })();
