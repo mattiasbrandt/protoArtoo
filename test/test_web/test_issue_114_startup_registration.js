@@ -1,69 +1,59 @@
 // =============================================================================
 // test/test_web/test_issue_114_startup_registration.js
 //
-// Verification that issue #114 is resolved: two of three startup requests
-// (shell identity, app initial status) are now registered as bootstrap
-// sections instead of bypassing it.
+// Startup work must go through the bootstrap (issue #114). A page module that
+// fires its own request at load time bypasses the single request slot and the
+// recovery panel, so a failure there leaves the page silently incomplete.
 //
-// rc-recent-actions is NOT registered because it reads localStorage
-// synchronously with no network request, so it's called directly during
-// startup instead and silently handles errors.
+// The exception is rc-recent-actions: it reads localStorage synchronously with
+// no network request, so it does not compete for the slot and is called
+// directly.
 //
-// Uses the page_module_harness to load real page modules and observe
-// what sections they register.
+// Each module is loaded and asked what it registered. This used to shell out to
+// a CLI harness and substring-match its stdout, from a hardcoded absolute path
+// that only resolved on one machine. Issue #146.
 // =============================================================================
 
 import { test } from "node:test";
 import assert from "node:assert";
-import { execSync } from "child_process";
 
-test("shell.js registers identity load as a section", (t) => {
-  // The harness output shows registered sections with their names.
-  // A properly registered section appears as:
-  //   filename   section-name         RESOLVED  <-- SWALLOWS
-  const output = execSync(
-    "node test/test_web/helpers/page_module_harness.js shell.js 2>&1",
-    {
-      cwd: "/home/mattias/Documents/GitHub/protoArtoo",
-      encoding: "utf-8",
-    }
-  );
+import { loadPageModule } from "./helpers/page_module_env.js";
 
-  assert(
-    output.includes("shell-identity"),
-    "shell.js must register 'shell-identity' as a bootstrap section"
+// Answers every endpoint successfully; these tests are about what a module
+// registers at load, not what the controller replies.
+const quiet = () => ({ data: {} });
+
+test("shell.js registers its identity load as a bootstrap section", (t) => {
+  const env = loadPageModule("shell.js", { respond: quiet });
+
+  assert.ok(
+    env.sectionNames().includes("shell-identity"),
+    `shell.js must register shell-identity, registered: ${env.sectionNames().join(", ") || "(none)"}`
   );
 });
 
-test("app.js registers initial status load as a section", (t) => {
-  const output = execSync(
-    "node test/test_web/helpers/page_module_harness.js app.js 2>&1",
-    {
-      cwd: "/home/mattias/Documents/GitHub/protoArtoo",
-      encoding: "utf-8",
-    }
-  );
+test("app.js registers its initial status load as a bootstrap section", (t) => {
+  const env = loadPageModule("app.js", { respond: quiet });
 
-  assert(
-    output.includes("app-initial-status"),
-    "app.js must register 'app-initial-status' as a bootstrap section"
+  assert.ok(
+    env.sectionNames().includes("app-initial-status"),
+    `app.js must register app-initial-status, registered: ${env.sectionNames().join(", ") || "(none)"}`
   );
 });
 
-test("rc.js does NOT register recent action tokens as a section", (t) => {
-  // rc-recent-actions is not a network request (just localStorage), so it
-  // does not compete for the bootstrap slot. It's called directly during
-  // startup instead and silently handles errors (corrupt data → empty list).
-  const output = execSync(
-    "node test/test_web/helpers/page_module_harness.js rc.js 2>&1",
-    {
-      cwd: "/home/mattias/Documents/GitHub/protoArtoo",
-      encoding: "utf-8",
-    }
-  );
+test("rc.js keeps its localStorage read out of the bootstrap", (t) => {
+  const env = loadPageModule("rc.js", { respond: quiet });
 
-  assert(
-    !output.includes("rc-recent-actions"),
-    "rc.js must NOT register 'rc-recent-actions' as a bootstrap section"
+  assert.ok(
+    !env.sectionNames().includes("rc-recent-actions"),
+    "a synchronous localStorage read does not compete for the request slot and must not take one"
   );
+});
+
+test("A registered section is a function the bootstrap can actually run", async (t) => {
+  const env = loadPageModule("shell.js", { respond: quiet });
+
+  // Registering a name is only half the contract: the bootstrap has to be able
+  // to invoke it and get a promise back.
+  await assert.doesNotReject(() => Promise.resolve(env.runSection("shell-identity")));
 });
