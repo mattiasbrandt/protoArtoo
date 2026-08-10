@@ -1,154 +1,158 @@
+// =============================================================================
+// test/test_web/test_issue_118_profiler_latching.js
+//
+// Heap profiler polling on the setup page (issue #118): a build without the
+// profiler (PA_HEAP_PROFILE=0) answers 404 or 501, and the page must stop
+// asking. A 503 or a dropped connection is transient - ADR 0016 - and must not
+// disable the panel for the rest of the session.
+//
+// These tests poll the real refreshProfiler in data/setup.js through the timer
+// and visibility paths that call it. The previous version defined its own
+// twenty-line "simulate the refreshProfiler logic" copy and asserted against
+// that, so the latch could have been inverted in the shipped file without any
+// test noticing. Issue #146.
+// =============================================================================
+
 import { test } from "node:test";
 import assert from "node:assert";
 
-// Mock fetch responses for testing profiler error handling
-function createMockSetup() {
-  const state = {
-    profilerNotSupported: false,
-    fetchAttempts: 0,
-    lastFetchStatus: null,
-  };
+import { loadPageModule } from "./helpers/page_module_env.js";
 
-  // Simulate the refreshProfiler logic with injectable fetch
-  const refreshProfiler = async (mockFetch) => {
-    if (state.profilerNotSupported) return;
+const PROFILER_PATH = "/api/profiler";
 
-    try {
-      state.fetchAttempts++;
-      const resp = await mockFetch("/api/profiler");
-      state.lastFetchStatus = resp.status;
+const response = (status, body = {}) => ({
+  ok: status >= 200 && status < 300,
+  status,
+  json: async () => body,
+});
 
-      if (!resp.ok) {
-        if (resp.status === 404 || resp.status === 501) {
-          state.profilerNotSupported = true;
-        }
-        return;
-      }
-      // Success path (200)
-      return { success: true };
-    } catch (_) {
-      // Network error — do not latch
-    }
-  };
+const HEAP_SAMPLE = { heapFree: 10000, heapMin: 5000, fragRatio: 0.25 };
 
-  return { state, refreshProfiler };
-}
-
-test("#118: 404 latches profilerNotSupported (stops retries)", async (t) => {
-  const { state, refreshProfiler } = createMockSetup();
-
-  const mockFetch = async (url) => ({
-    ok: false,
-    status: 404,
+// Brings the setup page up with a scripted profiler endpoint. The module polls
+// once at load; `poll()` drives each subsequent attempt through the 5 s
+// interval the page installed.
+const loadSetupPage = async (answer) => {
+  const env = loadPageModule("setup.js", {
+    fetchImpl: (url) => {
+      if (String(url).startsWith(PROFILER_PATH)) return answer();
+      return response(200, {});
+    },
   });
+  await env.settle();
 
-  // First call should detect 404 and latch
-  await refreshProfiler(mockFetch);
-  assert.strictEqual(state.profilerNotSupported, true, "404 should latch profilerNotSupported");
-  assert.strictEqual(state.fetchAttempts, 1, "Should make one fetch");
+  const profilerPolls = () => env.fetches.filter((f) => String(f.url).startsWith(PROFILER_PATH)).length;
+  // The page installs more than one 5 s interval. Firing all of them is what a
+  // 5 s tick does in the browser, and avoids guessing which one is the
+  // profiler's.
+  const ticking = env.intervals.filter((i) => i.ms === 5000);
+  assert.ok(ticking.length > 0, "the setup page must install a 5 s poll");
 
-  // Second call should return early without fetching
-  await refreshProfiler(mockFetch);
-  assert.strictEqual(state.fetchAttempts, 1, "Should not make second fetch after 404 latch");
-});
-
-test("#118: 501 latches profilerNotSupported (stops retries)", async (t) => {
-  const { state, refreshProfiler } = createMockSetup();
-
-  const mockFetch = async (url) => ({
-    ok: false,
-    status: 501,
-  });
-
-  // First call should detect 501 and latch
-  await refreshProfiler(mockFetch);
-  assert.strictEqual(state.profilerNotSupported, true, "501 should latch profilerNotSupported");
-  assert.strictEqual(state.fetchAttempts, 1, "Should make one fetch");
-
-  // Second call should return early without fetching
-  await refreshProfiler(mockFetch);
-  assert.strictEqual(state.fetchAttempts, 1, "Should not make second fetch after 501 latch");
-});
-
-test("#118: 503 does NOT latch (retries allowed)", async (t) => {
-  const { state, refreshProfiler } = createMockSetup();
-
-  const mockFetch = async (url) => ({
-    ok: false,
-    status: 503,
-  });
-
-  // First call should see 503 but NOT latch
-  await refreshProfiler(mockFetch);
-  assert.strictEqual(state.profilerNotSupported, false, "503 should NOT latch profilerNotSupported");
-  assert.strictEqual(state.fetchAttempts, 1, "Should make one fetch");
-
-  // Second call should retry (not return early)
-  await refreshProfiler(mockFetch);
-  assert.strictEqual(state.fetchAttempts, 2, "Should make second fetch after 503 (transient)");
-});
-
-test("#118: Network error does NOT latch (retries allowed)", async (t) => {
-  const { state, refreshProfiler } = createMockSetup();
-
-  const mockFetch = async (url) => {
-    throw new Error("Network error");
+  return {
+    ...env,
+    profilerPolls,
+    poll: async () => {
+      ticking.forEach((interval) => interval.fn());
+      await env.settle();
+    },
   };
+};
 
-  // First call should catch network error but NOT latch
-  await refreshProfiler(mockFetch);
-  assert.strictEqual(state.profilerNotSupported, false, "Network error should NOT latch profilerNotSupported");
-  assert.strictEqual(state.fetchAttempts, 1, "Should attempt one fetch");
+test("The setup page polls the profiler as soon as it loads", async (t) => {
+  const env = await loadSetupPage(() => response(200, HEAP_SAMPLE));
 
-  // Second call should retry (not return early)
-  await refreshProfiler(mockFetch);
-  assert.strictEqual(state.fetchAttempts, 2, "Should retry after network error (transient)");
+  assert.equal(env.profilerPolls(), 1, "the panel must populate without waiting for the first interval");
 });
 
-test("#118: 200 OK succeeds (profiler available)", async (t) => {
-  const { state, refreshProfiler } = createMockSetup();
+test("A 404 stops the page asking for a profiler this build does not have", async (t) => {
+  const env = await loadSetupPage(() => response(404));
+  assert.equal(env.profilerPolls(), 1);
 
-  const mockFetch = async (url) => ({
-    ok: true,
-    status: 200,
-    json: async () => ({
-      heapFree: 10000,
-      heapMin: 5000,
-      fragRatio: 0.25,
-    }),
-  });
+  await env.poll();
+  await env.poll();
 
-  // Call should succeed
-  const result = await refreshProfiler(mockFetch);
-  assert.deepStrictEqual(result, { success: true }, "200 response should succeed");
-  assert.strictEqual(state.profilerNotSupported, false, "Success should not latch unsupported");
+  assert.equal(
+    env.profilerPolls(),
+    1,
+    "404 means the feature is absent from this build; polling it every 5 s forever is pure noise"
+  );
 });
 
-test("#118: Successful 200 with partial data does not cause repeated polling", async (t) => {
-  // Verify that a successful response (200 OK) that happens to lack expected
-  // fields does not trigger latch behavior — the profiler is available, just
-  // the particular fetch returned incomplete data. Should retry normally.
+test("A 501 stops the page asking, the same as a 404", async (t) => {
+  const env = await loadSetupPage(() => response(501));
+  assert.equal(env.profilerPolls(), 1);
 
-  const { state, refreshProfiler } = createMockSetup();
-  let callCount = 0;
+  await env.poll();
 
-  const mockFetch = async (url) => {
-    callCount++;
-    return {
-      ok: true,
-      status: 200,
-      // Return a response that's missing fields (heapFree, etc.)
-      json: async () => ({ /* empty or partial */ }),
-    };
-  };
+  assert.equal(env.profilerPolls(), 1, "501 is the other permanently-absent answer");
+});
 
-  // First call should succeed and not latch unsupported
-  await refreshProfiler(mockFetch);
-  assert.strictEqual(state.profilerNotSupported, false, "200 response should not latch unsupported");
-  assert.strictEqual(state.fetchAttempts, 1, "Should make one fetch");
+test("A 503 does not latch - admission control is transient", async (t) => {
+  const env = await loadSetupPage(() => response(503));
+  assert.equal(env.profilerPolls(), 1);
 
-  // Second call should retry (not return early)
-  await refreshProfiler(mockFetch);
-  assert.strictEqual(state.fetchAttempts, 2, "Should retry on next call despite partial data");
-  assert.strictEqual(callCount, 2, "Should make two actual fetches");
+  await env.poll();
+
+  assert.equal(
+    env.profilerPolls(),
+    2,
+    "a busy controller must not cost the operator the profiler for the rest of the session"
+  );
+});
+
+test("A dropped connection does not latch", async (t) => {
+  const env = await loadSetupPage(() => Promise.reject(new Error("Simulated network failure")));
+  assert.equal(env.profilerPolls(), 1);
+
+  await env.poll();
+
+  assert.equal(env.profilerPolls(), 2, "a transient network failure must leave the poll running");
+});
+
+test("A 500 does not latch", async (t) => {
+  const env = await loadSetupPage(() => response(500));
+
+  await env.poll();
+
+  assert.equal(
+    env.profilerPolls(),
+    2,
+    "only 404 and 501 mean absent; every other failure is worth retrying"
+  );
+});
+
+test("Polling continues after a success, and after a success that carried no data", async (t) => {
+  const env = await loadSetupPage(() => response(200, {}));
+
+  await env.poll();
+  await env.poll();
+
+  assert.equal(
+    env.profilerPolls(),
+    3,
+    "a thin payload is still a working endpoint - it must not be mistaken for an absent one"
+  );
+});
+
+test("Latching survives the visibility path, not just the interval", async (t) => {
+  const env = await loadSetupPage(() => response(404));
+
+  env.document.visibilityState = "visible";
+  env.emit("document", "visibilitychange");
+  await env.settle();
+
+  assert.equal(
+    env.profilerPolls(),
+    1,
+    "returning to the tab must not reopen a poll the page has already latched off"
+  );
+});
+
+test("Returning to the tab repolls while the profiler is still available", async (t) => {
+  const env = await loadSetupPage(() => response(200, HEAP_SAMPLE));
+
+  env.document.visibilityState = "visible";
+  env.emit("document", "visibilitychange");
+  await env.settle();
+
+  assert.equal(env.profilerPolls(), 2, "a returning operator must see current heap numbers");
 });

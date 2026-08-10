@@ -74,9 +74,10 @@ class ApiError extends Error {
 // call with (wrapped as { data } unless it already looks like a response), or
 // throw to fail it. Every call is appended to `requests` first, so a rejected
 // call is still visible to the test.
-export const loadPageModule = (file, { respond = () => ({}), overrides = {} } = {}) => {
+export const loadPageModule = (file, { respond = () => ({}), fetchImpl = null, overrides = {} } = {}) => {
   const source = readFileSync(join(dataDir, file), "utf-8");
   const requests = [];
+  const fetches = [];
   const sections = new Map();
   const elements = new Map();
   const intervals = [];
@@ -205,6 +206,13 @@ export const loadPageModule = (file, { respond = () => ({}), overrides = {} } = 
     parseFloat,
     encodeURIComponent,
     decodeURIComponent,
+    // Some modules reach for the platform fetch directly rather than going
+    // through PAApi. Record those calls too, so the same test can see them.
+    fetch: (url, init) => {
+      fetches.push({ url, init });
+      if (!fetchImpl) return Promise.reject(new Error("page_module_env: no fetch configured"));
+      return Promise.resolve().then(() => fetchImpl(url, init));
+    },
   };
   context.globalThis = context;
   // Page modules read globals both as `window.X` and bare `X`, the way a
@@ -228,6 +236,7 @@ export const loadPageModule = (file, { respond = () => ({}), overrides = {} } = 
     window: windowMock,
     document: documentMock,
     requests,
+    fetches,
     intervals,
     timeouts,
     cleared,
