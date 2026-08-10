@@ -1,12 +1,16 @@
 // =============================================================================
 // test/test_web/test_issue_107_109_fixes.js
 //
-// Behavioral tests for #107 (loader error propagation) and
-// #109 (component grid valid markup and incremental updates).
+// #107 - a home-dashboard section loader that cannot do its job must reject, so
+//        the bootstrap shows recovery instead of the page sitting there empty.
+// #109 - the component grid must emit valid dl/dt/dd markup and update in place
+//        when only the values changed.
 //
-// Converted from source-text assertions to behaviour tests:
-// - Extracts and tests actual loader functions with mock PAApi
-// - Tests renderComponentStatus with mock DOM
+// The loaders and the renderer are the ones data/app.js ships, reached through
+// the sections it registers and the status stream it subscribes to. The
+// previous version of this file extracted their source into three variables,
+// never used them, and asserted against local four-line copies instead - so
+// deleting any of the real loaders would not have failed it. Issue #146.
 // =============================================================================
 
 import { test } from "node:test";
@@ -15,323 +19,251 @@ import { readFileSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 
+import { loadPageModule, ApiError } from "./helpers/page_module_env.js";
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const root = dirname(dirname(__dirname));
-const dataDir = join(root, "data");
+const dataDir = join(__dirname, "../../data");
 
-// ============================================================================
-// Issue #107: Section loader error propagation
-// ============================================================================
+const OK_LOGS = "boot: ready\nwifi: connected";
+const OK_CONFIG = { system: { logLevel: 2 } };
+const OK_ACTIONS = [
+  { token: "DM:ROCKMARCH", testable: true },
+  { token: "AU:CHIRP", testable: true },
+];
 
-// Extract and test the loader functions from app.js
-const appFile = readFileSync(join(dataDir, "app.js"), "utf-8");
-
-// Extract loadRecentLogs function
-const loadRecentLogsStart = appFile.indexOf("const loadRecentLogs = async () => {");
-const loadRecentLogsEnd = appFile.indexOf("\n  const LOG_LEVELS", loadRecentLogsStart);
-const loadRecentLogsCode = appFile.substring(loadRecentLogsStart, loadRecentLogsEnd);
-
-// Extract loadLogLevel function
-const loadLogLevelStart = appFile.indexOf("const loadLogLevel = async () => {");
-const loadLogLevelEnd = appFile.indexOf("\n  const cycleLogLevel", loadLogLevelStart);
-const loadLogLevelCode = appFile.substring(loadLogLevelStart, loadLogLevelEnd);
-
-// Extract loadCommandTokens function
-const loadCommandTokensStart = appFile.indexOf("const loadCommandTokens = async () => {");
-const loadCommandTokensEnd = appFile.indexOf("\n  const appendCommandLine", loadCommandTokensStart);
-const loadCommandTokensCode = appFile.substring(loadCommandTokensStart, loadCommandTokensEnd);
-
-test("#107: loadRecentLogs throws when window.PAApi is unavailable", async (t) => {
-  const mockLogLines = [];
-  const setLogLines = (lines) => mockLogLines.push(...lines);
-
-  // Create a function that mimics the loader logic
-  const loadRecentLogs = async (mockPAApi = null) => {
-    // This mimics the actual check in app.js
-    if (!mockPAApi) throw new Error("API or console unavailable");
-    const result = await mockPAApi.get("/api/logs", { cache: "no-store", timeoutMs: 3000 });
-    const historyLines = String(result.data ?? "")
-      .split(/\r?\n/)
-      .filter((line) => line.length > 0);
-    setLogLines(historyLines);
-  };
-
-  // Test: missing PAApi throws
-  try {
-    await loadRecentLogs(null);
-    assert.fail("Should have thrown when PAApi is unavailable");
-  } catch (e) {
-    assert.match(e.message, /API or console unavailable/, "Should throw with correct error message");
-  }
-
-  // Test: successful call with mock PAApi
-  const mockPAApi = {
-    get: async () => ({ data: "line1\nline2" }),
-  };
-  await loadRecentLogs(mockPAApi);
-  assert.equal(mockLogLines.length, 2, "Should have processed log lines");
-});
-
-test("#107: loadLogLevel throws when window.PAApi is unavailable", async (t) => {
-  let currentLogLevel = null;
-
-  const loadLogLevel = async (mockPAApi = null) => {
-    if (!mockPAApi) throw new Error("API or pill unavailable");
-    const result = await mockPAApi.get("/api/config", { cache: "no-store", timeoutMs: 3000 });
-    const level = Number(result.data?.system?.logLevel);
-    const LOG_LEVELS = { 1: true, 2: true, 3: true };
-    if (!LOG_LEVELS[level]) {
-      throw new Error(`Unknown log level: ${level}`);
-    }
-    currentLogLevel = level;
-  };
-
-  // Test: missing PAApi throws
-  try {
-    await loadLogLevel(null);
-    assert.fail("Should have thrown when PAApi is unavailable");
-  } catch (e) {
-    assert.match(e.message, /API or pill unavailable/, "Should throw with correct error message");
-  }
-
-  // Test: successful call
-  const mockPAApi = {
-    get: async () => ({ data: { system: { logLevel: 2 } } }),
-  };
-  await loadLogLevel(mockPAApi);
-  assert.equal(currentLogLevel, 2, "Should have set log level");
-});
-
-test("#107: loadCommandTokens throws when window.PAApi is unavailable", async (t) => {
-  let commandTokens = [];
-
-  const loadCommandTokens = async (mockPAApi = null) => {
-    if (!mockPAApi) throw new Error("API unavailable");
-    const result = await mockPAApi.get("/api/actions", { cache: "no-store", timeoutMs: 5000 });
-    if (!Array.isArray(result.data)) {
-      throw new Error("Action registry response is not an array");
-    }
-    commandTokens = result.data
-      .filter((entry) => entry && entry.testable === true && typeof entry.token === "string")
-      .map((entry) => entry.token)
-      .sort((a, b) => a.localeCompare(b));
-  };
-
-  // Test: missing PAApi throws
-  try {
-    await loadCommandTokens(null);
-    assert.fail("Should have thrown when PAApi is unavailable");
-  } catch (e) {
-    assert.match(e.message, /API unavailable/, "Should throw with correct error message");
-  }
-
-  // Test: invalid response throws
-  try {
-    const invalidPAApi = {
-      get: async () => ({ data: "not an array" }),
-    };
-    await loadCommandTokens(invalidPAApi);
-    assert.fail("Should have thrown when response is not an array");
-  } catch (e) {
-    assert.match(e.message, /not an array/, "Should throw with correct error message");
-  }
-
-  // Test: successful call
-  const mockPAApi = {
-    get: async () => ({
-      data: [
-        { token: "CMD1", testable: true },
-        { token: "CMD2", testable: true },
-        { token: "CMD3", testable: false }, // Should be filtered out
-      ],
-    }),
-  };
-  await loadCommandTokens(mockPAApi);
-  assert.deepEqual(commandTokens, ["CMD1", "CMD2"], "Should filter and sort tokens");
-});
-
-// ============================================================================
-// Issue #109: Component grid markup validity and incremental updates
-// ============================================================================
-
-test("#109: renderComponentStatus generates valid dl/dt/dd markup", (t) => {
-  // Mock DOM
-  const mockElements = {};
-  const mockDOM = {
-    createElement: (tag) => ({
-      tag,
-      className: "",
-      classList: new Map(),
-      textContent: "",
-      innerHTML: "",
-      id: "",
-    }),
-    getElementById: (id) => mockElements[id] || null,
-  };
-
-  global.window = {
-    PAUtils: {
-      escapeHtml: (str) => String(str)
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;"),
+// Brings the home dashboard up with a controllable transport and status stream.
+const loadDashboard = async ({ respond, sseSupported = true } = {}) => {
+  const stream = { subscriber: null };
+  const env = loadPageModule("app.js", {
+    respond,
+    overrides: {
+      PAStatusStream: {
+        isSupported: () => sseSupported,
+        getLastStatus: () => null,
+        subscribe: (handler) => {
+          stream.subscriber = handler;
+          return () => {
+            stream.subscriber = null;
+          };
+        },
+      },
     },
-  };
+  });
+  await env.settle();
+  return { ...env, stream };
+};
 
-  const componentStatusCard = { classList: new Set() };
-  const componentStatusGrid = {
-    innerHTML: "",
-    querySelector: () => null,
-  };
+// The default transport: every endpoint answers successfully.
+const healthyResponder = (path) => {
+  if (path === "/api/logs") return { data: OK_LOGS };
+  if (path === "/api/config") return { data: OK_CONFIG };
+  if (path === "/api/actions") return { data: OK_ACTIONS };
+  if (path === "/api/status") return { data: {} };
+  return { data: {} };
+};
 
-  const COMPONENT_LABELS = [
-    ["s3DomeCtrl", "🎯", "Dome Controller"],
-    ["s2Sound", "🔊", "Audio"],
-  ];
+// -----------------------------------------------------------------------------
+// #107: loader error propagation
+// -----------------------------------------------------------------------------
 
-  let renderedComponentIds = null;
+test("app.js registers its startup work as bootstrap sections", async (t) => {
+  const env = await loadDashboard({ respond: healthyResponder });
 
-  const renderComponentStatus = (payload) => {
-    if (!componentStatusCard || !componentStatusGrid) return;
+  for (const name of ["app-initial-status", "app-recent-logs", "app-log-level", "app-action-tokens"]) {
+    assert.ok(env.sectionNames().includes(name), `${name} must be a bootstrap section`);
+  }
+});
 
-    const active = COMPONENT_LABELS.filter(([key]) => key in payload);
-    if (active.length === 0) {
-      componentStatusCard.classList.add("hidden");
-      componentStatusGrid.innerHTML = "";
-      renderedComponentIds = null;
-      return;
-    }
+test("A section loader with no API available rejects instead of resolving empty", async (t) => {
+  const env = loadPageModule("app.js", {
+    respond: healthyResponder,
+    // The page can execute before web_api.js has published PAApi; a loader that
+    // resolved here would report success having loaded nothing.
+    overrides: { PAApi: null },
+  });
+  await env.settle();
 
-    componentStatusCard.classList.delete("hidden");
+  await assert.rejects(() => env.runSection("app-recent-logs"), /unavailable/);
+  await assert.rejects(() => env.runSection("app-log-level"), /unavailable/);
+  await assert.rejects(() => env.runSection("app-action-tokens"), /unavailable/);
+});
 
-    // Build signature
-    const transportFlags = [
-      payload.dome_link?.state === "connected" && payload.dome_link?.uart_owned_by_dome ? "dome-uart" : "",
-      payload.s2Sound?.rx_status === "blocked_by_dome_uart" ? "sound-blocked" : ""
-    ].filter(Boolean).join(",");
-    const signature = active.map(([key]) => key).join(",") + "|" + transportFlags;
-
-    // Rebuild only if signature changed
-    if (signature !== renderedComponentIds) {
-      renderedComponentIds = signature;
-      const items = active.map(([key, icon, label]) => {
-        const entry = payload[key];
-        let state = entry ? "enabled" : "disabled";
-        let detail = entry ? "✅ Enabled" : "⏸️ Disabled";
-        if (entry && typeof entry === "object") {
-          state = entry.state || "enabled";
-          detail = entry.detail || "✅ Enabled";
-        }
-        const stateText = String(state).replace(/_/g, " ");
-        const safeState = window.PAUtils.escapeHtml(stateText);
-        const safeDetail = window.PAUtils.escapeHtml(detail);
-        return `
-        <div class="status-item" id="comp-${key}">
-          <dt>${icon} ${label}</dt>
-          <dd id="state-${key}">${safeState}</dd>
-          <div class="desc mt-6" id="detail-${key}">${safeDetail}</div>
-        </div>`;
-      }).join("");
-      componentStatusGrid.innerHTML = `<dl class="status-grid">${items}</dl>`;
-    }
-  };
-
-  // Test: renders valid dl/dt/dd structure
-  renderComponentStatus({
-    s3DomeCtrl: { state: "connected" },
-    s2Sound: { state: "idle" },
+test("A failed logs fetch reaches the bootstrap", async (t) => {
+  const env = await loadDashboard({
+    respond: (path) => {
+      if (path === "/api/logs") throw new ApiError("Simulated logs failure", { kind: "network" });
+      return healthyResponder(path);
+    },
   });
 
-  const html = componentStatusGrid.innerHTML;
-  assert.ok(html.includes('<dl class="status-grid">'), "Should wrap in <dl>");
-  assert.ok(html.includes("<dt>"), "Should use <dt> for labels");
-  assert.ok(html.includes("<dd"), "Should use <dd> for values");
-  assert.ok(html.includes('id="comp-'), "Should have component IDs");
-  assert.ok(html.includes('id="state-'), "Should have state element IDs");
-  assert.ok(html.includes('id="detail-'), "Should have detail element IDs");
-  assert.ok(html.includes("</dl>"), "Should close <dl> properly");
+  await assert.rejects(() => env.runSection("app-recent-logs"), /Simulated logs failure/);
 });
 
-test("#109: renderComponentStatus implements signature-based incremental updates", (t) => {
-  global.window = {
-    PAUtils: {
-      escapeHtml: (str) => String(str),
-    },
-  };
+test("Recent logs are fetched once and not refetched on a later run", async (t) => {
+  const env = await loadDashboard({ respond: healthyResponder });
 
-  const componentStatusCard = { classList: new Set() };
-  const componentStatusGrid = { innerHTML: "" };
-  const COMPONENT_LABELS = [
-    ["s3DomeCtrl", "🎯", "Dome Controller"],
-    ["s2Sound", "🔊", "Audio"],
-  ];
+  await env.runSection("app-recent-logs");
+  const afterFirst = env.requests.filter((r) => r.path === "/api/logs").length;
+  assert.equal(afterFirst, 1, "the section must fetch the log history");
 
-  let renderedComponentIds = null;
-  let rebuildCount = 0;
-  let patchCount = 0;
+  await env.runSection("app-recent-logs");
 
-  const renderComponentStatus = (payload) => {
-    const active = COMPONENT_LABELS.filter(([key]) => key in payload);
-    if (active.length === 0) return;
-
-    const transportFlags = "";
-    const signature = active.map(([key]) => key).join(",") + "|" + transportFlags;
-
-    if (signature !== renderedComponentIds) {
-      renderedComponentIds = signature;
-      rebuildCount++;
-      // Simulate rebuild
-      componentStatusGrid.innerHTML = "<dl></dl>";
-    } else {
-      patchCount++;
-      // Simulate patch
-    }
-  };
-
-  // First render: should rebuild
-  renderComponentStatus({ s3DomeCtrl: { state: "connected" } });
-  assert.equal(rebuildCount, 1, "First render should rebuild");
-  assert.equal(patchCount, 0, "First render should not patch");
-
-  // Second render same payload: should patch (state changed but components same)
-  renderComponentStatus({ s3DomeCtrl: { state: "spinning" } });
-  assert.equal(rebuildCount, 1, "Same components should not rebuild");
-  assert.equal(patchCount, 1, "Same components should patch");
-
-  // Third render different components: should rebuild
-  renderComponentStatus({ s2Sound: { state: "idle" } });
-  assert.equal(rebuildCount, 2, "Changing component set should rebuild");
-  assert.equal(patchCount, 1, "Rebuild should not increment patch count");
+  assert.equal(
+    env.requests.filter((r) => r.path === "/api/logs").length,
+    afterFirst,
+    "history already in the console must not be re-fetched over the live stream"
+  );
 });
 
-test("#109: HTML pages have valid dt/dd markup (wrapped in dl)", (t) => {
-  const htmlFiles = ["index.html", "drive.html", "setup.html", "wifi.html"];
+test("An unrecognised log level is rejected rather than displayed", async (t) => {
+  const env = await loadDashboard({
+    respond: (path) => (path === "/api/config" ? { data: { system: { logLevel: 99 } } } : healthyResponder(path)),
+  });
 
-  for (const filename of htmlFiles) {
-    const filePath = join(dataDir, filename);
-    const html = readFileSync(filePath, "utf-8");
+  await assert.rejects(
+    () => env.runSection("app-log-level"),
+    /Unknown log level: 99/,
+    "an out-of-range level must not be rendered into the pill as if it were valid"
+  );
+});
 
-    // Check for dt/dd elements
-    const hasDt = html.includes("<dt>");
-    const hasDd = html.includes("<dd>");
+test("A valid log level resolves", async (t) => {
+  const env = await loadDashboard({ respond: healthyResponder });
 
-    if (!hasDt && !hasDd) {
-      continue; // File has no dt/dd, which is fine
-    }
+  await assert.doesNotReject(() => env.runSection("app-log-level"));
+  assert.ok(
+    env.requests.some((r) => r.path === "/api/config"),
+    "the level must come from the controller, not a default"
+  );
+});
 
-    // If it has dt/dd, all must be inside dl tags
-    // More direct check: look for dt outside dl
-    const withoutDl = html.replace(/<dl[^>]*>[\s\S]*?<\/dl>/g, "");
-    assert.strictEqual(
-      withoutDl.includes("<dt>"),
-      false,
-      `${filename}: found <dt> outside <dl> — invalid markup`
+test("An action registry that is not a list is rejected", async (t) => {
+  const env = await loadDashboard({
+    respond: (path) => (path === "/api/actions" ? { data: "not an array" } : healthyResponder(path)),
+  });
+
+  await assert.rejects(
+    () => env.runSection("app-action-tokens"),
+    /not an array/,
+    "a malformed registry must surface, not leave the command line silently empty"
+  );
+});
+
+test("A well-formed action registry resolves", async (t) => {
+  const env = await loadDashboard({ respond: healthyResponder });
+
+  await assert.doesNotReject(() => env.runSection("app-action-tokens"));
+  assert.ok(env.requests.some((r) => r.path === "/api/actions"));
+});
+
+// -----------------------------------------------------------------------------
+// #109: the component grid
+// -----------------------------------------------------------------------------
+
+// Delivers a status payload the way the live stream does, which is what drives
+// renderComponentStatus.
+const pushStatus = (env, payload) => {
+  assert.ok(env.stream.subscriber, "the dashboard must subscribe to the status stream");
+  env.stream.subscriber("status", payload);
+  return env.element("component-status-grid").innerHTML;
+};
+
+test("The component grid emits dt/dd wrapped in a dl", async (t) => {
+  const env = await loadDashboard({ respond: healthyResponder });
+
+  const html = pushStatus(env, { s3DomeCtrl: { state: "connected" }, s2Sound: { state: "idle" } });
+
+  assert.match(html, /^<dl class="status-grid">/, "dt and dd are only valid inside a dl");
+  assert.match(html, /<\/dl>$/, "the list must be closed");
+  assert.match(html, /<dt>/);
+  assert.match(html, /<dd id="state-s3DomeCtrl">/);
+  assert.match(html, /id="comp-s3DomeCtrl"/);
+  assert.match(html, /id="detail-s3DomeCtrl"/);
+});
+
+test("The component grid renders the state the controller reported", async (t) => {
+  const env = await loadDashboard({ respond: healthyResponder });
+
+  const html = pushStatus(env, { s2Sound: { state: "blocked_by_dome_uart", detail: "CHIRP blocked" } });
+
+  assert.match(html, /blocked by dome uart/, "underscores must be softened for the operator");
+  assert.match(html, /CHIRP blocked/);
+});
+
+test("A status field containing markup cannot inject into the grid", async (t) => {
+  const env = await loadDashboard({ respond: healthyResponder });
+
+  const html = pushStatus(env, { s2Sound: { state: "ok", detail: '<img src=x onerror="alert(1)">' } });
+
+  assert.ok(!html.includes("<img"), "a controller-supplied detail must not become markup");
+  assert.match(html, /&lt;img/);
+});
+
+test("An unchanged component set is patched in place, not rebuilt", async (t) => {
+  const env = await loadDashboard({ respond: healthyResponder });
+  const grid = env.element("component-status-grid");
+
+  pushStatus(env, { s3DomeCtrl: { state: "connected" } });
+  // A marker that only survives if the grid's markup is left alone. Rebuilding
+  // would discard it - and discard operator focus with it.
+  grid.innerHTML += "<!-- not rebuilt -->";
+
+  env.stream.subscriber("status", { s3DomeCtrl: { state: "spinning" } });
+
+  assert.ok(grid.innerHTML.includes("<!-- not rebuilt -->"), "same components must not rebuild the grid");
+  assert.equal(
+    env.element("state-s3DomeCtrl").textContent,
+    "spinning",
+    "the changed value must still be patched into the existing element"
+  );
+});
+
+test("A changed component set rebuilds the grid", async (t) => {
+  const env = await loadDashboard({ respond: healthyResponder });
+  const grid = env.element("component-status-grid");
+
+  pushStatus(env, { s3DomeCtrl: { state: "connected" } });
+  grid.innerHTML += "<!-- stale -->";
+
+  env.stream.subscriber("status", { s3DomeCtrl: { state: "connected" }, s2Sound: { state: "idle" } });
+
+  assert.ok(!grid.innerHTML.includes("<!-- stale -->"), "a new component must force a rebuild");
+  assert.match(grid.innerHTML, /id="comp-s2Sound"/, "the new component must appear");
+});
+
+test("A status with no known components empties the grid", async (t) => {
+  const env = await loadDashboard({ respond: healthyResponder });
+  const grid = env.element("component-status-grid");
+
+  pushStatus(env, { s3DomeCtrl: { state: "connected" } });
+  assert.notEqual(grid.innerHTML, "");
+
+  env.stream.subscriber("status", { estop: false });
+
+  assert.equal(grid.innerHTML, "", "a grid with nothing to show must not keep showing stale rows");
+});
+
+// -----------------------------------------------------------------------------
+// Markup invariant over the shipped pages
+// -----------------------------------------------------------------------------
+
+test("No shipped page puts a dt or dd outside a dl", (t) => {
+  // Justified source-text assertion: this is an invariant about static markup in
+  // the served HTML files. There is no code path to execute - the elements are
+  // authored, not generated - so reading the files is the only way to check it.
+  // The check is structural rather than a substring match: dl blocks are removed
+  // first, and anything left over is by definition outside a list.
+  for (const filename of ["index.html", "drive.html", "setup.html", "wifi.html"]) {
+    const html = readFileSync(join(dataDir, filename), "utf-8");
+    const outsideAnyDl = html.replace(/<dl[^>]*>[\s\S]*?<\/dl>/g, "");
+
+    assert.ok(
+      !/<dt[\s>]/.test(outsideAnyDl),
+      `${filename}: found a <dt> outside any <dl> - invalid markup`
     );
-    assert.strictEqual(
-      withoutDl.includes("<dd>"),
-      false,
-      `${filename}: found <dd> outside <dl> — invalid markup`
+    assert.ok(
+      !/<dd[\s>]/.test(outsideAnyDl),
+      `${filename}: found a <dd> outside any <dl> - invalid markup`
     );
   }
 });
