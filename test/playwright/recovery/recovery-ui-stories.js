@@ -74,10 +74,10 @@ const storyKeys = {
   "resource-retry-step": "3",
   "resource-retry-recovery": "4",
   "resource-retry-attempts": "5",
-  // Scenario 2: No-Response Mode
-  "no-response-status": "6",
-  "no-response-button": "7",
-  "no-response-button-text": "8",
+  // Scenario 2: Section failure -- panel covers blocking phase only
+  "no-response-hides-on-stable": "6",
+  "no-response-inline-feedback": "7",
+  "no-response-background-retry": "8",
   // Scenario 3: Busy Mode
   "busy-banner": "9",
   "busy-status": "10",
@@ -126,6 +126,22 @@ async function waitForResourcesReady(page, timeoutMs = 5000) {
     await page.waitForTimeout(50);
   }
   throw new Error("Timeout waiting for resourcesReady");
+}
+
+// Wait until the page has settled: resources in AND every section done or
+// visibly waiting to retry (sectionsStable). This is the boundary where
+// deriveView hides the recovery panel and inline feedback takes over.
+async function waitForSettled(page, timeoutMs = 15000) {
+  const startTime = Date.now();
+  while (Date.now() - startTime < timeoutMs) {
+    const state = await page.evaluate(() => {
+      const s = window.PABootstrap?.getState?.();
+      return s ? { ready: s.resourcesReady, stable: s.sectionsStable } : null;
+    });
+    if (state && state.ready && state.stable) return true;
+    await page.waitForTimeout(100);
+  }
+  return false;
 }
 
 // Poll deriveView output by reading the backdrop DOM
@@ -232,9 +248,19 @@ async function scenarioResourceRetry(browser) {
       recordResult("resource-retry-status", lateStatusReason ? "PASS" : "UI-NOT-IMPLEMENTED", `Expected phase progression, early="${earlyStatusReason}" late="${lateStatusReason}"`);
     }
 
-    const finalBackdropActive = await page.evaluate(() =>
-      document.getElementById("page-recovery-backdrop")?.classList.contains("active")
-    );
+    // The third app.js request being SEEN is not the panel being gone: the
+    // download, footer.js, and the next render tick still have to land.
+    // Poll for the hide instead of sampling once, so device latency does not
+    // race the tail of the chain.
+    let finalBackdropActive = true;
+    const hideDeadline = Date.now() + 10000;
+    while (Date.now() < hideDeadline) {
+      finalBackdropActive = await page.evaluate(() =>
+        document.getElementById("page-recovery-backdrop")?.classList.contains("active")
+      );
+      if (!finalBackdropActive) break;
+      await page.waitForTimeout(200);
+    }
     recordResult("resource-retry-recovery", !finalBackdropActive ? "PASS" : "FAIL", `Expected false, found ${finalBackdropActive}`);
     recordResult("resource-retry-attempts", appJsAttempts === 3 ? "PASS" : "FAIL", `Expected 3 attempts, got ${appJsAttempts}`);
 
@@ -246,19 +272,26 @@ async function scenarioResourceRetry(browser) {
   }
 }
 
-// Scenario 2: No-Response Mode
+// Scenario 2: Section failure -- panel covers the blocking phase only
 // TARGETS wifi.html only (bootstrap sections registered at data/wifi.js:490)
 // index.html has no bootstrap sections, making in-page recovery panels unreachable.
-// REDUCER CONTRACT (data/page_bootstrap.js line 474-531):
-//   blockingStep prefers resources while !resourcesReady, masks failed sections
-//   Once resourcesReady, returns failed-retrying section
-//   deriveView: attempt <= BACKOFF_VISIBLE_AFTER_ATTEMPT -> "no-response"
-//              attempt > BACKOFF_VISIBLE_AFTER_ATTEMPT -> "retrying"
+//
+// REWRITTEN -- stories 6-8 used to expect the recovery panel to stay visible
+// showing "No response from controller" after a section failure. The design
+// has never done that: recomputeSectionsStable counts failed-retrying as
+// stable, and deriveView returns { visible: false } the moment
+// resourcesReady && sectionsStable (data/page_bootstrap.js). From then on the
+// inline card feedback ("WiFi settings partly loaded; retrying N of M.") owns
+// the persistent error while the bootstrap keeps retrying in the background.
+// The old stories only passed when a slow sibling section happened to hold
+// the page unstable long enough to catch the transient panel -- a race, not a
+// contract. Do not restore the old expectation; the hide-on-stable handoff to
+// inline feedback IS the behaviour under test.
 async function scenarioNoResponse(browser) {
-  console.log("\n=== Scenario 2: No-Response Mode (wifi.html) ===");
+  console.log("\n=== Scenario 2: Section Failure Handoff (wifi.html) ===");
 
   if (INDUCED) {
-    recordResult("no-response-status", "SKIP", "skipped: interception scenarios need a normally-serving build");
+    recordResult("no-response-hides-on-stable", "SKIP", "skipped: interception scenarios need a normally-serving build");
     return;
   }
 
@@ -283,67 +316,84 @@ async function scenarioNoResponse(browser) {
     );
     await page.route("**/api/status", (route) => route.fulfill(json(statusPayload)));
 
-    // Abort /api/config on every attempt to trigger no-response
-    await page.route("**/api/config", (route) => route.abort("failed"));
+    // Abort /api/config on every attempt so the wifi-config section fails
+    // and stays in failed-retrying while its siblings succeed.
+    let configAttempts = 0;
+    await page.route("**/api/config", (route) => {
+      configAttempts++;
+      route.abort("failed");
+    });
 
     await page.addInitScript(() => {
       window.EventSource = undefined;
+      // Record whether the recovery backdrop was ever shown, so the blocking
+      // phase can be asserted after the fact without racing its visibility.
+      // Observe the document node: at init-script time documentElement may
+      // not exist yet, but subtree observation still reaches body later.
+      window.__recoveryWasActive = false;
+      new MutationObserver(() => {
+        if (document.body?.classList.contains("recovery-active")) {
+          window.__recoveryWasActive = true;
+        }
+      }).observe(document, {
+        attributes: true,
+        subtree: true,
+        attributeFilter: ["class"],
+      });
     });
 
     await page.goto(wifiTargetUrl, { waitUntil: "domcontentloaded" });
 
-    // Wait for resources to load
-    const state = await waitForResourcesReady(page);
+    const state = await waitForResourcesReady(page, 15000);
     console.log(`  Resources ready. Sections: ${state.sections.map((s) => s.name).join(", ")}`);
 
-    // Story 6: Wait for the no-response mode panel to appear with explicit locator wait
-    // This ensures we wait for both backdrop active AND the "No response from controller" text,
-    // covering the time needed for resources to finish + one abort+classify cycle.
-    const backdropWithNoResponse = page.locator("#page-recovery-backdrop.active >> text=No response from controller");
-    let noResponseAppeared = false;
-    try {
-      await backdropWithNoResponse.first().waitFor({ timeout: 5000 });
-      noResponseAppeared = true;
-    } catch (e) {
-      // "No response from controller" did not appear within timeout
-    }
-
-    // Sample elements while backdrop is active to capture the no-response state
-    const noResponseState = noResponseAppeared
-      ? await page.evaluate(() => {
-          if (!document.body.classList.contains("recovery-active")) {
-            return null;
-          }
-          const backdrop = document.getElementById("page-recovery-backdrop");
-          if (!backdrop || !backdrop.classList.contains("active")) {
-            return null;
-          }
-          return {
-            statusReason: document.querySelector(".recovery-status-reason")?.textContent?.trim(),
-            hasRetryButton: document.querySelectorAll(".recovery-actions button").length > 0,
-            buttonText: document.querySelector(".recovery-actions button")?.textContent?.trim(),
-          };
-        })
-      : null;
-
+    // Story 6: the panel covered the blocking phase and hid once every
+    // section settled (done or visibly waiting to retry).
+    const settled = await waitForSettled(page);
+    const panelState = await page.evaluate(() => ({
+      wasActive: window.__recoveryWasActive === true,
+      activeNow:
+        document.getElementById("page-recovery-backdrop")?.classList.contains("active") === true ||
+        document.body.classList.contains("recovery-active"),
+    }));
     recordResult(
-      "no-response-status",
-      noResponseAppeared && noResponseState?.statusReason === "No response from controller" ? "PASS" : "UI-NOT-IMPLEMENTED",
-      `Expected "No response from controller", found "${noResponseState?.statusReason}"`
+      "no-response-hides-on-stable",
+      settled && panelState.wasActive && !panelState.activeNow ? "PASS" : "FAIL",
+      `Expected settled + panel shown then hidden, found settled=${settled} wasActive=${panelState.wasActive} activeNow=${panelState.activeNow}`
     );
 
-    // Story 7-8: Retry button present and text is "Retry now"
-    recordResult("no-response-button", noResponseState?.hasRetryButton ? "PASS" : "UI-NOT-IMPLEMENTED", `Expected true, found ${noResponseState?.hasRetryButton}`);
-
-    if (noResponseState?.hasRetryButton) {
-      recordResult("no-response-button-text", noResponseState?.buttonText === "Retry now" ? "PASS" : "FAIL", `Expected "Retry now", found "${noResponseState?.buttonText}"`);
-    } else {
-      recordResult("no-response-button-text", "UI-NOT-IMPLEMENTED", "No retry button to check");
+    // Story 7: inline feedback owns the persistent error after the handoff.
+    // reportLoadOutcome (data/wifi.js) writes it on pa:assets-ready.
+    let feedbackText = null;
+    const feedbackDeadline = Date.now() + 5000;
+    while (Date.now() < feedbackDeadline) {
+      feedbackText = await text(page, "#wifi-settings-feedback");
+      if (feedbackText && feedbackText.includes("partly loaded")) break;
+      await page.waitForTimeout(100);
     }
+    recordResult(
+      "no-response-inline-feedback",
+      feedbackText && /partly loaded; retrying \d+ of \d+/.test(feedbackText) ? "PASS" : "FAIL",
+      `Expected "partly loaded; retrying N of M", found "${feedbackText}"`
+    );
+
+    // Story 8: the bootstrap keeps retrying the failed section in the
+    // background while the panel stays hidden. First retry is due
+    // NO_RESPONSE_BASE_BACKOFF_MS (2 s) after the failure.
+    const attemptsAtSettle = configAttempts;
+    await page.waitForTimeout(5000);
+    const stillHidden = await page.evaluate(
+      () => !document.getElementById("page-recovery-backdrop")?.classList.contains("active")
+    );
+    recordResult(
+      "no-response-background-retry",
+      configAttempts > attemptsAtSettle && stillHidden ? "PASS" : "FAIL",
+      `Expected retries to continue hidden, found attempts ${attemptsAtSettle} -> ${configAttempts}, hidden=${stillHidden}`
+    );
 
     await page.screenshot({ path: path.join(SCREENSHOT_DIR, "scenario2-no-response.png") });
   } catch (error) {
-    recordResult("no-response-status", "FAIL", error.message);
+    recordResult("no-response-hides-on-stable", "FAIL", error.message);
   } finally {
     await page.close();
   }
@@ -556,7 +606,19 @@ async function scenarioPerResourceRetry(browser) {
     });
 
     await page.goto(TARGET_URL, { waitUntil: "domcontentloaded" });
-    await page.waitForTimeout(3000);
+
+    // Stories 15-16 used to sample at a fixed 3000 ms and reported one app.js
+    // request. That was the sample racing the retry schedule, not a retry
+    // defect: resources load strictly sequentially, so against a real
+    // controller app.js's FIRST request lands around t+1.8 s, and the first
+    // retry is due NO_RESPONSE_BASE_BACKOFF_MS (2 s) later -- after the
+    // sample. Key the sample on resourcesReady instead of wall-clock so the
+    // assertion runs after the schedule it is measuring.
+    try {
+      await waitForResourcesReady(page, 15000);
+    } catch (e) {
+      // resourcesReady never came up; the assertions below report it
+    }
 
     const bootstrapState = await page.evaluate(() => {
       const state = window.PABootstrap?.getState?.();
@@ -567,7 +629,7 @@ async function scenarioPerResourceRetry(browser) {
       };
     });
 
-    recordResult("per-resource-bootstrap", bootstrapState && bootstrapState.resourcesReady ? "PASS" : "UI-NOT-IMPLEMENTED", `Expected true, found ${bootstrapState?.resourcesReady}`);
+    recordResult("per-resource-bootstrap", bootstrapState && bootstrapState.resourcesReady ? "PASS" : "FAIL", `Expected true, found ${bootstrapState?.resourcesReady}`);
 
     const styleLoaded = resourceLog["style.css"] === 1;
     const appRetried = resourceLog[appResource] === 2;
