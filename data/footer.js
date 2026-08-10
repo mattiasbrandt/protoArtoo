@@ -10,10 +10,10 @@
   if (!footer) return;
 
   let fsVersion = "unknown";
-  let pollTimer = null;
   let unsubscribe = null;
-  let retryTimer = null;
   let hasRealData = false;
+  let versionPoll = null;
+  let retryPoll = null;
 
   const renderFooter = (status) => {
     if (!status) {
@@ -63,84 +63,49 @@
     }
   };
 
-  const retryFetchWithBackoff = async (attempt = 0) => {
-    const maxAttempts = 3;
-    const baseDelayMs = 500;
-    const delayMs = baseDelayMs * Math.pow(2, attempt);
-
-    const success = await fetchStatus();
-    if (success) {
-      if (retryTimer !== null) {
-        window.clearTimeout(retryTimer);
-        retryTimer = null;
-      }
-      return;
-    }
-
-    if (attempt < maxAttempts - 1) {
-      retryTimer = window.setTimeout(() => {
-        retryFetchWithBackoff(attempt + 1);
-      }, delayMs);
-    }
-  };
-
-  const startFallbackPolling = () => {
-    fetchStatus();
-    pollTimer = window.setInterval(() => {
-      if (document.visibilityState === "hidden") return;
-      fetchStatus();
-    }, 5000);
-  };
-
-  const startSseMode = () => {
-    unsubscribe = window.PAStatusStream.subscribe((eventType, payload) => {
-      if (eventType === "status") {
-        renderFooter(payload);
-        if (retryTimer !== null) {
-          window.clearTimeout(retryTimer);
-          retryTimer = null;
-        }
-      }
-    });
-
-    if (!window.PAStatusStream.getLastStatus()) {
-      retryFetchWithBackoff(0);
-    }
-
-    pollTimer = window.setInterval(() => {
-      if (document.visibilityState === "hidden") return;
-      if (hasRealData) return;
-      fetchStatus();
-    }, 5000);
-  };
-
-  const onVisibilityChange = () => {
-    if (document.visibilityState !== "hidden") {
-      fetchStatus();
-    }
-  };
-
   const init = async () => {
     await loadFsVersion();
 
     if (window.PAStatusStream?.isSupported()) {
-      startSseMode();
+      // SSE mode: subscribe and set up conditional polling
+      unsubscribe = window.PAStatusStream.subscribe((eventType, payload) => {
+        if (eventType === "status") {
+          renderFooter(payload);
+          // Status arrived: cancel any pending retry
+          retryPoll?.cancelRetry();
+        }
+      });
+
+      // Start retry poll only if no cached status
+      if (!window.PAStatusStream.getLastStatus()) {
+        retryPoll = window.PageBootstrap.createBackgroundPoll(fetchStatus, {
+          retry: { baseMs: 500, factor: 2, maxAttempts: 3 },
+          runOnStart: true,
+        });
+        retryPoll.start();
+      }
+
+      // Version poll: conditional, only while no real data
+      versionPoll = window.PageBootstrap.createBackgroundPoll(fetchStatus, {
+        cadenceMs: 5000,
+        skipWhen: () => hasRealData,
+        refreshOnReturn: true,
+      });
+      versionPoll.start();
     } else {
-      startFallbackPolling();
+      // Fallback mode: no SSE, poll for everything
+      versionPoll = window.PageBootstrap.createBackgroundPoll(fetchStatus, {
+        cadenceMs: 5000,
+        runOnStart: true,
+        refreshOnReturn: true,
+      });
+      versionPoll.start();
     }
 
-    document.addEventListener("visibilitychange", onVisibilityChange);
     window.addEventListener("beforeunload", () => {
-      document.removeEventListener("visibilitychange", onVisibilityChange);
       if (unsubscribe) unsubscribe();
-      if (pollTimer !== null) {
-        window.clearInterval(pollTimer);
-        pollTimer = null;
-      }
-      if (retryTimer !== null) {
-        window.clearTimeout(retryTimer);
-        retryTimer = null;
-      }
+      if (versionPoll) versionPoll.stop();
+      if (retryPoll) retryPoll.stop();
     });
   };
 

@@ -21,6 +21,11 @@ import { dirname, join } from "path";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dataDir = join(__dirname, "../../../data");
 
+// Extract PART 1 (reducer) from page_bootstrap.js for test harness use
+const bootstrapFile = readFileSync(join(dataDir, "page_bootstrap.js"), "utf-8");
+const part2Marker = bootstrapFile.indexOf("// =========================== PART 2");
+const bootstrapPart1Src = bootstrapFile.substring(bootstrapFile.indexOf("(() => {"), part2Marker);
+
 // A stub element that answers any property access with something plausible, so
 // module-level wiring never crashes on an element this test does not care
 // about. Writes are accepted and discarded.
@@ -221,6 +226,9 @@ export const loadPageModule = (file, { respond = () => ({}), fetchImpl = null, o
     context[key] = windowMock[key];
   }
 
+  // Load PART 1 of page_bootstrap.js first to populate window.PageBootstrap
+  vm.runInNewContext(bootstrapPart1Src, context);
+  // Then load the page module itself
   vm.runInNewContext(source, context, { filename: file });
 
   // Lets a module's own async load settle. Page modules kick work off at load
