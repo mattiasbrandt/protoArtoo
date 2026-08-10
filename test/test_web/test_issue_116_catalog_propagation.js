@@ -1,133 +1,132 @@
 // =============================================================================
 // test/test_web/test_issue_116_catalog_propagation.js
 //
-// Verification that audio-catalog propagates errors when catalog is supported,
-// but legitimately resolves when catalog is not supported (issue #116).
+// The audio-catalog bootstrap section (issue #116): it must resolve quietly
+// when the backend has no catalog capability, and it must let a real catalog
+// failure reach the bootstrap so recovery can retry instead of the page
+// silently showing an empty catalog.
 //
-// Extracted from shipped sound.js - tests actual loadAudioCatalogIfSupported behavior
+// Everything below runs the shipped data/sound.js and drives the section
+// loader it registers. An earlier version of this file defined its own
+// four-line copy of loadAudioCatalogIfSupported and asserted against that, so
+// deleting the real one from sound.js would not have failed it. Issue #146.
 // =============================================================================
 
 import { test } from "node:test";
 import assert from "node:assert";
-import { readFileSync } from "fs";
-import { fileURLToPath } from "url";
-import { dirname, join } from "path";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const soundPath = join(__dirname, "../../data/sound.js");
-const soundFile = readFileSync(soundPath, "utf-8");
+import { loadPageModule, ApiError } from "./helpers/page_module_env.js";
 
-test("audio-catalog section legitimately resolves when not supported", async (t) => {
-  // Mock the dependencies
-  let catalogSupported = false;
-  let loadCatalogCalled = false;
+// AudioDriver capability bits, mirroring audio_driver.h. Status query is the
+// baseline every backend reports; catalog is the one under test.
+const CAP_STATUS_QUERY = 0x01;
+const CAP_CATALOG = 0x20;
 
-  // Create function that tests the actual shipped logic pattern
-  const loadAudioCatalogIfSupported = async () => {
-    if (!catalogSupported) {
-      // When catalogSupported is false, returns early without throwing
-      return;
-    }
-    loadCatalogCalled = true;
-    throw new Error("Should not reach");
-  };
+const MODULE_PATH = "/api/audio";
+const CATALOG_PATH = "/api/audio/catalog";
 
-  // Test: unsupported catalog returns successfully
-  await loadAudioCatalogIfSupported();
-  assert.equal(loadCatalogCalled, false, "Should not call loadCatalog when unsupported");
-});
+// Brings sound.js up with the given capability word, then settles whatever the
+// capability handler kicked off, so each test starts from a quiet module.
+const soundPageWith = async ({ capabilities, catalog = () => ({ ready: true, banks: [], entries: [] }) }) => {
+  const env = loadPageModule("sound.js", {
+    respond: (path) => {
+      if (path === MODULE_PATH) return { data: { capabilities, link_ok: true } };
+      if (path === CATALOG_PATH) return { data: catalog() };
+      return { data: {} };
+    },
+  });
 
-test("audio-catalog calls loadCatalog when catalog is supported", async (t) => {
-  let catalogSupported = true;
-  let loadCatalogCalled = false;
+  await env.runSection("audio-status");
+  // applyCapabilityUI starts a fire-and-forget catalog load when the backend
+  // supports one; let it settle so the next assertion sees a settled module.
+  await new Promise((resolve) => setImmediate(resolve));
+  return env;
+};
 
-  const loadCatalog = async () => {
-    loadCatalogCalled = true;
-    return true;
-  };
+test("sound.js registers the audio-catalog section on the longer catalog deadline", (t) => {
+  const env = loadPageModule("sound.js", { respond: () => ({ data: {} }) });
 
-  const loadAudioCatalogIfSupported = async () => {
-    if (!catalogSupported) {
-      return;
-    }
-    await loadCatalog();
-  };
-
-  // Test: supported catalog calls loadCatalog
-  await loadAudioCatalogIfSupported();
-  assert.equal(loadCatalogCalled, true, "Should call loadCatalog when supported");
-});
-
-test("loadCatalog rethrows errors to propagate to bootstrap", async (t) => {
-  let feedbackShown = [];
-
-  const showFeedback = (el, message, level) => {
-    feedbackShown.push({ message, level });
-  };
-
-  const loadCatalog = async () => {
-    try {
-      throw new Error("Network error");
-    } catch (error) {
-      // Show inline feedback before rethrow
-      showFeedback(null, `Catalog load failed: ${error.message}`, false);
-      throw error;
-    }
-  };
-
-  // Test: error is shown and rethrown
-  try {
-    await loadCatalog();
-    assert.fail("Should have thrown error");
-  } catch (e) {
-    assert.match(e.message, /Network error/, "Error should be propagated");
-    assert.equal(feedbackShown.length, 1, "Feedback should be shown before throwing");
-  }
-});
-
-test("catalogSupported flag controls behaviour path", async (t) => {
-  let supportedCount = 0;
-  let unsupportedCount = 0;
-
-  const testPath = async (catalogSupported) => {
-    const loadAudioCatalogIfSupported = async () => {
-      if (!catalogSupported) {
-        unsupportedCount++;
-        return;
-      }
-      supportedCount++;
-    };
-
-    await loadAudioCatalogIfSupported();
-  };
-
-  // Test unsupported path
-  await testPath(false);
-  assert.equal(unsupportedCount, 1, "unsupported should increment");
-  assert.equal(supportedCount, 0, "supported should not increment");
-
-  // Test supported path
-  await testPath(true);
-  assert.equal(supportedCount, 1, "supported should increment");
-  assert.equal(unsupportedCount, 1, "unsupported should stay same");
-});
-
-test("shipped sound.js contains loadAudioCatalogIfSupported function", (t) => {
-  // Verify the shipped code actually has the function we're testing
   assert.ok(
-    soundFile.includes("const loadAudioCatalogIfSupported"),
-    "sound.js must define loadAudioCatalogIfSupported"
+    env.sectionNames().includes("audio-catalog"),
+    "the catalog load must be a bootstrap section so recovery can see it fail"
   );
-
-  // Verify it returns early when catalogSupported is false
-  assert.ok(
-    soundFile.includes("if (!catalogSupported)"),
-    "loadAudioCatalogIfSupported must check catalogSupported"
+  assert.equal(
+    env.sectionOptions("audio-catalog").deadlineMs,
+    12000,
+    "the catalog is the known-longer operation and must carry its own deadline"
   );
+});
 
-  // Verify it calls loadCatalog when supported
+test("audio-catalog asks the controller for nothing when the backend has no catalog", async (t) => {
+  const env = await soundPageWith({ capabilities: CAP_STATUS_QUERY });
+
+  const before = env.pathsRequested().filter((path) => path === CATALOG_PATH).length;
+  assert.equal(before, 0, "a backend without the capability must not be probed for a catalog");
+
+  await env.runSection("audio-catalog");
+
+  assert.equal(
+    env.pathsRequested().filter((path) => path === CATALOG_PATH).length,
+    0,
+    "the section must skip the fetch entirely, not fetch and discard"
+  );
+});
+
+test("audio-catalog resolves when the backend has no catalog, so the page finishes loading", async (t) => {
+  const env = await soundPageWith({ capabilities: CAP_STATUS_QUERY });
+
+  // Rejecting here would put the bootstrap into recovery and retry forever for
+  // a backend that is behaving correctly.
+  await assert.doesNotReject(
+    () => env.runSection("audio-catalog"),
+    "an absent capability is a success, not a failure to retry"
+  );
+});
+
+test("audio-catalog fetches the catalog when the backend supports one", async (t) => {
+  const env = await soundPageWith({ capabilities: CAP_STATUS_QUERY | CAP_CATALOG });
+
+  await env.runSection("audio-catalog");
+
   assert.ok(
-    soundFile.includes("await loadCatalog()"),
-    "loadAudioCatalogIfSupported must call loadCatalog"
+    env.pathsRequested().includes(CATALOG_PATH),
+    "a catalog-capable backend must actually be asked for its catalog"
+  );
+});
+
+test("a catalog fetch failure reaches the bootstrap instead of being swallowed", async (t) => {
+  const env = await soundPageWith({
+    capabilities: CAP_STATUS_QUERY | CAP_CATALOG,
+    catalog: () => {
+      throw new ApiError("Simulated catalog failure", { kind: "network" });
+    },
+  });
+
+  await assert.rejects(
+    () => env.runSection("audio-catalog"),
+    /Simulated catalog failure/,
+    "the section must propagate so recovery can retry it"
+  );
+});
+
+test("a failed catalog load is retryable - the next attempt fetches again", async (t) => {
+  let failNext = true;
+  const env = await soundPageWith({
+    capabilities: CAP_STATUS_QUERY | CAP_CATALOG,
+    catalog: () => {
+      if (failNext) throw new ApiError("Simulated catalog failure", { kind: "network" });
+      return { ready: true, banks: [], entries: [] };
+    },
+  });
+
+  await assert.rejects(() => env.runSection("audio-catalog"));
+  const afterFailure = env.pathsRequested().filter((path) => path === CATALOG_PATH).length;
+
+  failNext = false;
+  await env.runSection("audio-catalog");
+
+  assert.ok(
+    env.pathsRequested().filter((path) => path === CATALOG_PATH).length > afterFailure,
+    "an in-flight guard left set by a failure would make every retry a silent no-op"
   );
 });
