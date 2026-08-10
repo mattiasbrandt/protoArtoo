@@ -38,7 +38,13 @@ SLICE WORKFLOW (AGENTS.md, binding)
 - Never leave a green slice uncommitted.
 
 VERIFICATION (software-verified cap)
-- pio run build + pio test -e native + the ticket's acceptance checks.
+- Slice gate: after committing each slice, run
+  `python3 tools/slice_verify.py --base phase/v1.0.0` and paste its PASS/FAIL
+  block verbatim into your status comment (AGENTS.md "Worker slice gate" -
+  commit first; the gate diffs merge-base..HEAD). The gate covers build,
+  native tests, and diff checks; it does NOT run the web suite - web tickets
+  also run test/test_web and paste that result.
+- The ticket's acceptance checks, on top of the gate.
 - NEVER flash, never run make ota, never run pio test concurrently with any
   OTA anywhere.
 - Tests you add or change must be PROVEN ABLE TO FAIL before you report

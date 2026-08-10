@@ -59,7 +59,11 @@ and critic protocol into the epic body so they survive this session.
 Worker summaries are claims, not evidence; this repo has caught agents
 reporting passes that never ran. In the worker's worktree, personally:
 
-1. Re-run the build, the native tests, and every acceptance check.
+1. Re-run the slice gate: `python3 tools/slice_verify.py --base phase/v1.0.0`.
+   Its block must match the worker's pasted block character for character;
+   divergence marks the slice unverified (AGENTS.md "Worker slice gate"). The
+   gate skips the web suite - for web tickets also re-run test/test_web. Then
+   every remaining acceptance check.
 2. For new or changed tests, demand the prove-it-can-fail evidence: red
    against the pre-fix commit for bug fixes, red under production-code
    mutation. Web tests are held to `test/test_web/README.md`. A green suite
