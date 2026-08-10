@@ -288,6 +288,14 @@ Add `make check-action-drift` when action registry, RC tokens, or
 `make check` (cppcheck) is slow — CI runs it on every PR automatically. Only run it
 locally when specifically investigating a static analysis issue.
 
+**Worker slice gate:** after committing a slice, workers must run
+`python3 tools/slice_verify.py --base <base-ref>` and paste its PASS/FAIL block
+verbatim into the issue status comment. The coordinator re-runs the same command
+on the branch; divergence between the two blocks marks the slice unverified. The
+gate exits non-zero on any FAIL. Its diff checks compare merge-base..HEAD, so
+commit before running it; build-stamped working-tree changes to
+`data/*version.json` are ignored by design.
+
 **CI gate:** `verification` workflow runs on every PR to `main` — do not bypass it.
 
 **JSON API test rule:** JSON API response builders that are new or materially
