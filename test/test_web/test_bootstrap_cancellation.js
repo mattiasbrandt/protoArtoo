@@ -422,6 +422,65 @@ test("aborting the section run cancels only handle requests, not unrelated traff
   assert.strictEqual(env.maxInFlight, 1, "single-slot invariant must hold");
 });
 
+test("CRITICAL P1: aborting the section run aborts EXACTLY the handle's in-flight requests", async () => {
+  // This test proves the handle injects THIS SECTION RUN's signal, not some other signal.
+  // Mutation P1: replace the section run's signal with an unrelated AbortController's signal
+  // in buildHandleOpts. This test must turn RED because the handle's request will NOT be
+  // aborted when the section deadline fires.
+  //
+  // The test:
+  // - Section has deadlineMs: 400, so handle requests get timeoutMs: 400
+  // - Mock hangs for longer than 400ms (env.hangMsFor: 2000)
+  // - When section deadline fires at 400ms, it aborts the controller
+  // - If the handle uses the RIGHT signal (controller.signal), the fetch aborts
+  // - If the handle uses WRONG signal (P1 mutation), the fetch NEVER aborts
+  //   because the wrong signal is never fired, so the mock just keeps hanging
+  const env = makeEnv();
+  env.hangMsFor["/api/handle-request"] = 2000; // longer than section deadline
+  env.hangMsFor["/api/unrelated-concurrent"] = 100;
+
+  let receivedHandle = null;
+  env.PABootstrap.registerSection(
+    "handle-signal-test",
+    ({ signal, handle } = {}) => {
+      receivedHandle = handle;
+      // Make a request via the handle. The section deadline is 400ms, so the
+      // handle injects timeoutMs: 400. The mock hangs for 2000ms. If the signal
+      // is correct, the abort at 400ms causes the fetch to fail. If the signal
+      // is wrong (P1 mutation), the fetch hangs until the mock finally times out.
+      return handle.get("/api/handle-request");
+    },
+    { label: "handle signal critical test", deadlineMs: 400 }
+  );
+  env.fireLoad();
+  await sleep(100); // handle request is now in flight
+
+  // A second module's unrelated request arrives while the section load is in flight
+  const unrelated = settle(
+    env.PAApi.get("/api/unrelated-concurrent", { timeoutMs: 8000 })
+  );
+
+  // Wait for the section deadline to expire (400ms + clock tick)
+  await sleep(700);
+
+  // CRITICAL ASSERTIONS: the handle request MUST be aborted by the section run's
+  // deadline via its signal. If P1 mutation swaps the signal, the request will NOT
+  // be aborted and this assertion will fail.
+  assert.ok(
+    env.aborted.includes("/api/handle-request"),
+    "handle.get request MUST be aborted at section deadline (proves handle uses section's signal)"
+  );
+  assert.strictEqual(
+    await unrelated,
+    "completed",
+    "unrelated concurrent request MUST complete and never be aborted"
+  );
+  assert.ok(
+    !env.aborted.includes("/api/unrelated-concurrent"),
+    "unrelated concurrent request MUST NEVER see an abort signal"
+  );
+});
+
 test("raw signal remains available to the loader as escape hatch", async () => {
   const env = makeEnv();
   let loaderSignal = null;

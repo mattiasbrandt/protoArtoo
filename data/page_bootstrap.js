@@ -922,39 +922,22 @@
     // Section Request Handle: wraps PAApi methods to inject the section's
     // signal and Operation Deadline category. Loaders call handle.get(),
     // handle.postForm(), etc. to get signal + deadline for free.
+    const buildHandleOpts = (callerOpts = {}) => {
+      const deadlineMs = state.deadlines[name];
+      return {
+        ...callerOpts,
+        // The section run's signal and deadline category are mandatory overrides,
+        // so they are spread last and cannot be overridden by caller opts.
+        signal: controller.signal,
+        timeoutMs: deadlineMs ?? window.PageBootstrap.OPERATION_DEADLINE_MS,
+      };
+    };
+
     const handle = {
-      get: (path, opts = {}) => {
-        const deadlineMs = state.deadlines[name];
-        return window.PAApi.get(path, {
-          ...opts,
-          signal: controller.signal,
-          timeoutMs: deadlineMs ?? 6000,
-        });
-      },
-      postForm: (path, form, opts = {}) => {
-        const deadlineMs = state.deadlines[name];
-        return window.PAApi.postForm(path, form, {
-          ...opts,
-          signal: controller.signal,
-          timeoutMs: deadlineMs ?? 6000,
-        });
-      },
-      postJson: (path, json, opts = {}) => {
-        const deadlineMs = state.deadlines[name];
-        return window.PAApi.postJson(path, json, {
-          ...opts,
-          signal: controller.signal,
-          timeoutMs: deadlineMs ?? 6000,
-        });
-      },
-      estopPostForm: (path, form, opts = {}) => {
-        const deadlineMs = state.deadlines[name];
-        return window.PAApi.estopPostForm(path, form, {
-          ...opts,
-          signal: controller.signal,
-          timeoutMs: deadlineMs ?? 6000,
-        });
-      },
+      get: (path, opts) => window.PAApi.get(path, buildHandleOpts(opts)),
+      postForm: (path, form, opts) => window.PAApi.postForm(path, form, buildHandleOpts(opts)),
+      postJson: (path, json, opts) => window.PAApi.postJson(path, json, buildHandleOpts(opts)),
+      estopPostForm: (path, form, opts) => window.PAApi.estopPostForm(path, form, buildHandleOpts(opts)),
     };
 
     Promise.resolve()
