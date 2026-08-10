@@ -76,6 +76,11 @@ jobs:
         continue-on-error: true
         run: pio run -e protoArtoo
 
+      - name: 🏗️ Profiler build
+        id: profiler-build
+        continue-on-error: true
+        run: pio run -e protoArtoo_profiler
+
       - name: 🧪 Native tests
         id: native-tests
         continue-on-error: true
@@ -102,6 +107,7 @@ jobs:
         if: always()
         env:
           BUILD_OUTCOME: ${{ steps.firmware-build.outcome }}
+          PROFILER_OUTCOME: ${{ steps.profiler-build.outcome }}
           TESTS_OUTCOME: ${{ steps.native-tests.outcome }}
           ANALYSIS_OUTCOME: ${{ steps.static-analysis.outcome }}
           DRIFT_OUTCOME: ${{ steps.action-drift.outcome }}
@@ -122,11 +128,12 @@ jobs:
             echo ""
             echo "| | Check | Command | Status |"
             echo "|---|---|---|---|"
-            row "$BUILD_OUTCOME"    "Firmware build"       "pio run -e protoArtoo"
-            row "$TESTS_OUTCOME"   "Native tests"          "pio test -e native"
+            row "$BUILD_OUTCOME"     "Firmware build"       "pio run -e protoArtoo"
+            row "$PROFILER_OUTCOME"  "Profiler build"       "pio run -e protoArtoo_profiler"
+            row "$TESTS_OUTCOME"    "Native tests"          "pio test -e native"
             row "$ANALYSIS_OUTCOME" "Static analysis"      "pio check -e protoArtoo"
-            row "$DRIFT_OUTCOME"   "Action registry drift" "make check-action-drift"
-            row "$WEB_OUTCOME"     "Web logic tests"       "node --test test/test_web/*.js"
+            row "$DRIFT_OUTCOME"    "Action registry drift" "make check-action-drift"
+            row "$WEB_OUTCOME"      "Web logic tests"       "node --test test/test_web/*.js"
             echo ""
             echo "Run: [$(date -u '+%Y-%m-%d %H:%M UTC')]($RUN_URL)"
           } | tee .ci-summary.md >> "$GITHUB_STEP_SUMMARY"
@@ -146,6 +153,7 @@ jobs:
         if: always()
         env:
           BUILD_OUTCOME: ${{ steps.firmware-build.outcome }}
+          PROFILER_OUTCOME: ${{ steps.profiler-build.outcome }}
           TESTS_OUTCOME: ${{ steps.native-tests.outcome }}
           ANALYSIS_OUTCOME: ${{ steps.static-analysis.outcome }}
           DRIFT_OUTCOME: ${{ steps.action-drift.outcome }}
@@ -153,6 +161,7 @@ jobs:
         run: |
           failed=()
           [ "$BUILD_OUTCOME"    != "success" ] && failed+=("firmware-build")
+          [ "$PROFILER_OUTCOME" != "success" ] && failed+=("profiler-build")
           [ "$TESTS_OUTCOME"    != "success" ] && failed+=("native-tests")
           [ "$ANALYSIS_OUTCOME" != "success" ] && failed+=("static-analysis")
           [ "$DRIFT_OUTCOME"    != "success" ] && failed+=("action-drift")
