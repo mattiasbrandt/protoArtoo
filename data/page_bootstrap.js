@@ -302,9 +302,16 @@
         // single slot as everything else. Resources are untouched -- they are
         // already loaded, and re-fetching them is exactly the duplicate work
         // Resource Step Recovery exists to avoid.
+        //
+        // The step `active` points at stays as it is: resetting it to pending
+        // while its request is still in flight would leave deriveView with no
+        // loading step to report and hide the recovery panel mid-request. Its
+        // in-flight response is as fresh as a re-issued one, and it settles
+        // through the single slot like everything else.
         const names = action.names ? new Set(action.names) : null;
+        const inFlight = prev.active?.kind === "section" ? prev.active.name : null;
         const refreshed = prev.sections.map((step) =>
-          !names || names.has(step.name)
+          (!names || names.has(step.name)) && step.name !== inFlight
             ? { ...step, status: "pending", attempt: 0, nextAt: null, reason: null }
             : step
         );
