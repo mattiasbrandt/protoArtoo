@@ -39,12 +39,15 @@ and critic protocol into the epic body so they survive this session.
 
 ## Assignment (you set up, then hand the worker its worktree)
 
-- `gh issue develop <n> --base phase/v1.0.0 --name <type>/<slug>`, then
+`<base>` throughout this skill is the epic's integration branch - read it
+from the epic's coordination section (it changes at Phase 5 closure).
+
+- `gh issue develop <n> --base <base> --name <type>/<slug>`, then
   `git worktree add ../wt-<n> <branch>`.
 - **Stale-base trap:** `gh issue develop` branches from ORIGIN's ref, which
   can be many commits behind the local integration branch. After creating the
   worktree, `git -C ../wt-<n> rev-parse HEAD` must equal the local
-  `phase/v1.0.0` tip; if not, `reset --hard` it there before the worker
+  `<base>` tip; if not, `reset --hard` it there before the worker
   starts. Every worktree, every time.
 - One sub-issue per worker. A worker operates ONLY inside its own worktree;
   any out-of-tree edit, checkout, stash, restore, or clean is an automatic
@@ -59,7 +62,7 @@ and critic protocol into the epic body so they survive this session.
 Worker summaries are claims, not evidence; this repo has caught agents
 reporting passes that never ran. In the worker's worktree, personally:
 
-1. Re-run the slice gate: `python3 tools/slice_verify.py --base phase/v1.0.0`.
+1. Re-run the slice gate: `python3 tools/slice_verify.py --base <base>`.
    Its block must match the worker's pasted block character for character;
    divergence marks the slice unverified (AGENTS.md "Worker slice gate"). The
    gate skips the web suite - for web tickets also re-run test/test_web. Then
@@ -68,7 +71,7 @@ reporting passes that never ran. In the worker's worktree, personally:
    against the pre-fix commit for bug fixes, red under production-code
    mutation. Web tests are held to `test/test_web/README.md`. A green suite
    without that demonstration is a claim.
-3. Read the full diff (`git diff phase/v1.0.0...HEAD`): scope creep,
+3. Read the full diff (`git diff <base>...HEAD`): scope creep,
    shortcuts, behaviour change in tickets that promise none, comment
    degradation, core guardrails (no heap alloc or blocking on Core 1 paths,
    RobotState via portMUX/zone discipline).
@@ -99,7 +102,7 @@ reporting passes that never ran. In the worker's worktree, personally:
 
 ## Integration (serialized - you alone)
 
-Merge reviewed branches into `phase/v1.0.0` one at a time, oldest-reviewed
+Merge reviewed branches into `<base>` one at a time, oldest-reviewed
 first; later conflicting branches rebase onto the updated base before their
 review completes. After the final merge, re-run the merged-tree test suite
 and any epic-level acceptance sweeps - line numbers and stragglers move.

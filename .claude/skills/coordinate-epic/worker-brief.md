@@ -1,7 +1,8 @@
 # Worker brief template
 
-Compose the worker prompt from this template. Fill only {ISSUE} and
-{WORKTREE}; everything ticket-specific stays in the ticket.
+Compose the worker prompt from this template. Fill only {ISSUE}, {WORKTREE},
+and {BASE} (the epic's integration branch); everything ticket-specific stays
+in the ticket.
 
 ---
 
@@ -39,7 +40,7 @@ SLICE WORKFLOW (AGENTS.md, binding)
 
 VERIFICATION (software-verified cap)
 - Slice gate: after committing each slice, run
-  `python3 tools/slice_verify.py --base phase/v1.0.0` and paste its PASS/FAIL
+  `python3 tools/slice_verify.py --base {BASE}` and paste its PASS/FAIL
   block verbatim into your status comment (AGENTS.md "Worker slice gate" -
   commit first; the gate diffs merge-base..HEAD). The gate covers build,
   native tests, and diff checks; it does NOT run the web suite - web tickets
