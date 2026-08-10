@@ -27,6 +27,7 @@
 #include "../../include/web_busy_page.h"
 #include "../../include/web_event_stream.h"
 #include "../../include/web_response_deadline.h"
+#include "../../include/web_server.h"
 
 static const char* TAG = "WebServer";
 
