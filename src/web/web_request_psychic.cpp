@@ -568,6 +568,26 @@ void webRegisterUploadRoute(const char* path, WebUploadChunkHandler onChunk,
     s_server.on(path, HTTP_POST, handler);
 }
 
+void webRegisterNotFoundRoute(WebRequestHandler handler) {
+    // PsychicHttpServer::_process() consults endpoints first and global
+    // handlers (serveStatic() among them) second, and only returns
+    // HTTPD_404_NOT_FOUND -- which is what routes here -- when neither claimed
+    // the request. So static serving keeps its priority: a request for a file
+    // that exists never reaches this handler, and one for a file that does not
+    // is a not-found like any other.
+    //
+    // onNotFound() replaces the handler on the library's defaultEndpoint, which
+    // it consults for every method, not the HTTP_GET the endpoint was built
+    // with. A POST to a mistyped path answers in the same shape as a GET.
+    s_server.onNotFound(
+        [handler](PsychicRequest* vendorReq, PsychicResponse* vendorResp) -> esp_err_t {
+            WebRequestPsychicCtx ctx = {vendorReq, vendorResp, ESP_OK};
+            WebRequest req(&ctx);
+            handler(req);
+            return ctx.result;
+        });
+}
+
 void initPsychicWebServer() {
     // Configuration: nothing binds or listens until begin();
     // on()/serveStatic() only record configuration.

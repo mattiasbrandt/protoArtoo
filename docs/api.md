@@ -60,6 +60,20 @@ Example with hint and field:
 {"ok":false,"error":"missing password","hint":"POST /api/wifi to list networks","field":"password"}
 ```
 
+### Unknown routes
+
+A request that matches no endpoint and no static file gets the same shape, with
+`content-type: application/json`:
+
+```
+GET /api/nonexistent-route
+  ->  404   {"ok":false,"error":"not found"}
+```
+
+This holds for any method and any path, not only `/api/*`, so a client never has
+to parse a non-JSON body to find out an endpoint is gone. Files that exist are
+served normally; only requests that had no answer either way reach this reply.
+
 ## Identity
 
 ### GET /api/identity

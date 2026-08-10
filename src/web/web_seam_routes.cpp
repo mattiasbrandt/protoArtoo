@@ -17,6 +17,7 @@
 #include "../../include/api_events.h"
 #include "../../include/api_identity.h"
 #include "../../include/api_logs.h"
+#include "../../include/api_not_found.h"
 #include "../../include/api_profiler.h"
 #include "../../include/api_rc.h"
 #include "../../include/api_seq.h"
@@ -158,4 +159,11 @@ void webRegisterSeamRoutes() {
                            handleFirmwareUploadDone);
     webRegisterUploadRoute("/upload/filesystem", handleFilesystemUploadChunk,
                            handleFilesystemUploadDone);
+
+    // Everything the table above did not claim, and no static file answered
+    // either. Registered here rather than in the bring-up so the fallthrough
+    // goes through the same registration path as the routes it backstops; the
+    // backend consults it last regardless of where it was registered. Answers
+    // in the docs/api.md error contract instead of the vendored text/html body.
+    webRegisterNotFoundRoute(handleNotFound);
 }

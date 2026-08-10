@@ -10,6 +10,7 @@
 #include <cstring>
 
 #include "api_json_response.h"
+#include "api_not_found.h"
 #include "web_request_test_backend.h"
 
 void setUp() {
@@ -161,6 +162,43 @@ void test_web_send_json_error_json_is_valid() {
     TEST_ASSERT_EQUAL_CHAR('}', body[lastIdx]);
 }
 
+// =============================================================================
+// Unknown-route 404 (the fallthrough the seam route table registers)
+// =============================================================================
+
+void test_not_found_answers_404() {
+    WebRequestTestBackend backend;
+    WebRequest req(&backend);
+
+    handleNotFound(req);
+
+    TEST_ASSERT_EQUAL_INT(404, backend.sentCode);
+}
+
+void test_not_found_answers_json_not_vendor_html() {
+    // The divergence this covers: the backend's own not-found reply is
+    // text/html, so an unknown route was the one response a client could get
+    // outside the contract.
+    WebRequestTestBackend backend;
+    WebRequest req(&backend);
+
+    handleNotFound(req);
+
+    TEST_ASSERT_EQUAL_STRING("application/json", backend.sentContentType);
+}
+
+void test_not_found_carries_unified_error_shape() {
+    WebRequestTestBackend backend;
+    WebRequest req(&backend);
+
+    handleNotFound(req);
+
+    TEST_ASSERT_NOT_NULL(strstr(backend.sentBody, "\"ok\":false"));
+    TEST_ASSERT_NOT_NULL(strstr(backend.sentBody, "\"error\":\"not found\""));
+    TEST_ASSERT_NULL(strstr(backend.sentBody, "\"hint\""));
+    TEST_ASSERT_NULL(strstr(backend.sentBody, "\"field\""));
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_web_send_json_error_returns_correct_status_code);
@@ -175,5 +213,8 @@ int main() {
     RUN_TEST(test_web_send_json_error_409_conflict);
     RUN_TEST(test_web_send_json_error_various_status_codes);
     RUN_TEST(test_web_send_json_error_json_is_valid);
+    RUN_TEST(test_not_found_answers_404);
+    RUN_TEST(test_not_found_answers_json_not_vendor_html);
+    RUN_TEST(test_not_found_carries_unified_error_shape);
     return UNITY_END();
 }

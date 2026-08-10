@@ -632,6 +632,9 @@ void webRegisterUploadRoute(const char* /*path*/, WebUploadChunkHandler /*onChun
                             WebRequestHandler /*onDone*/) {
 }
 
+void webRegisterNotFoundRoute(WebRequestHandler /*handler*/) {
+}
+
 // Queue-drop logging stub (include/queue_drop_tracker.h). The full implementation
 // lives in src/queue_drop_tracker.cpp which is only compiled for device builds.
 // Native tests exercise the pure decision function (queueDropShouldLog) directly

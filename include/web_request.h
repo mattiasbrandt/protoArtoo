@@ -151,5 +151,12 @@ void webRegisterRoute(const char* path, WebMethod method, WebRequestHandler hand
 void webRegisterUploadRoute(const char* path, WebUploadChunkHandler onChunk,
                             WebRequestHandler onDone);
 
+// Register the handler for a request that matched no route and no static file.
+// Backends answer such a request out of their own vendored default otherwise,
+// in whatever shape that default happens to have, which is how a client could
+// see something other than the unified JSON error contract. Same registration
+// timing rules as webRegisterRoute().
+void webRegisterNotFoundRoute(WebRequestHandler handler);
+
 // The whole route table, in one list the backend calls from its bring-up.
 void webRegisterSeamRoutes();
