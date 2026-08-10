@@ -1,401 +1,356 @@
 // =============================================================================
 // test/test_web/test_footer_recovery.js
 //
-// Regression test for footer SSE mode retry/recovery and conditional polling.
-// Executes shipped footer.js in a vm with mocked window/document/PAApi.
-// Issue: #149 Version footer permanently shows "Firmware info unavailable"
+// Version footer recovery (issue #149): the footer must not sit on
+// "Firmware info unavailable" forever when the first status fetch loses a race
+// with the SSE stream. It retries with backoff, polls only while it has no real
+// data, and stands down the moment a status event arrives.
+//
+// Every test drives the shipped data/footer.js in a vm and asserts on what it
+// did - what it rendered, which timers it armed and with what delay, which it
+// cleared. Eight of the ten tests here used to assert on substrings of
+// footer.js instead ("shipped code must have 500ms base delay"), which could
+// not tell a working backoff from a broken one. Issue #146.
 // =============================================================================
 
 import { test } from "node:test";
 import assert from "node:assert";
-import { readFileSync } from "fs";
-import { fileURLToPath } from "url";
-import { dirname, join } from "path";
-import { runInNewContext } from "vm";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const footerPath = join(__dirname, "../../data/footer.js");
+import { loadPageModule, ApiError } from "./helpers/page_module_env.js";
 
-function createFooterTestContext() {
-  const events = [];
-  let elementTextContent = "Firmware info unavailable";
-  let elementInnerHTML = "";
-  const asyncSettlements = [];
+const STATUS_PATH = "/api/status";
+const FS_VERSION_PATH = "/fs-version.json";
+const UNAVAILABLE = "Firmware info unavailable";
 
-  const mockContext = {
-    window: {
-      PAUtils: {
-        escapeHtml: (val) => {
-          if (!val) return "";
-          return String(val)
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;")
-            .replace(/"/g, "&quot;");
-        },
-      },
-      PAApi: null,
-      PAStatusStream: null,
-      setInterval: (fn, ms) => {
-        const id = Symbol(`interval-${events.length}`);
-        events.push({ type: "setInterval", ms, id, time: events.length });
-        return id;
-      },
-      clearInterval: (id) => {
-        events.push({ type: "clearInterval", id, time: events.length });
-      },
-      setTimeout: (fn, ms) => {
-        const id = Symbol(`timeout-${events.length}`);
-        events.push({ type: "setTimeout", ms, id, time: events.length });
-        // Simulate async execution
-        asyncSettlements.push(
-          new Promise((resolve) => {
-            setTimeout(() => {
-              fn();
-              resolve();
-            }, ms);
-          })
-        );
-        return id;
-      },
-      clearTimeout: (id) => {
-        events.push({ type: "clearTimeout", id, time: events.length });
-      },
-      addEventListener: () => {},
-    },
-    document: {
-      getElementById: (id) => {
-        if (id === "fw-meta") {
-          return {
-            get textContent() {
-              return elementTextContent;
-            },
-            set textContent(val) {
-              elementTextContent = val;
-            },
-            get innerHTML() {
-              return elementInnerHTML;
-            },
-            set innerHTML(val) {
-              elementInnerHTML = val;
-            },
-          };
-        }
-        return null;
-      },
-      addEventListener: () => {},
-      visibilityState: "visible",
-    },
-    console,
-  };
+const STATUS_PAYLOAD = { firmwareVersion: "v1.0.0", fsVersion: "v1.0.0" };
 
-  return {
-    mockContext,
-    events,
-    asyncSettlements,
-    getFooterText: () => elementTextContent,
-    getFooterHTML: () => elementInnerHTML,
-    waitForAsync: () => Promise.all(asyncSettlements),
-  };
-}
+// Brings footer.js up with a controllable transport and status stream.
+//
+// statusOutcome() decides what /api/status does on each call, so a test can
+// fail the first N attempts and then succeed. sse.supported switches between
+// the SSE lane and the fallback-polling lane.
+const loadFooter = async ({
+  statusOutcome = () => STATUS_PAYLOAD,
+  sseSupported = true,
+  lastStatus = null,
+} = {}) => {
+  const stream = { subscriber: null, lastStatus };
 
-test("footer SSE mode calls fetchStatus when no cached status, attempts retry on failure", async (t) => {
-  const { mockContext, events, getFooterText, waitForAsync } = createFooterTestContext();
-  const footerCode = readFileSync(footerPath, "utf-8");
-
-  let fetchCalls = [];
-  mockContext.window.PAApi = {
-    get: async (path) => {
-      fetchCalls.push({ path, time: Date.now() });
-      if (path === "/fs-version.json") {
-        return { data: { fsVersion: "v1.0.0" } };
-      }
-      if (path === "/api/status") {
-        // All status fetches fail to trigger retry
-        throw new Error("Simulated fetch failure");
+  const env = loadPageModule("footer.js", {
+    respond: (path) => {
+      if (path === FS_VERSION_PATH) return { data: { fsVersion: "v1.0.0" } };
+      if (path === STATUS_PATH) {
+        const outcome = statusOutcome();
+        if (outcome instanceof Error) throw outcome;
+        return { data: outcome };
       }
       return { data: {} };
     },
-  };
+    overrides: {
+      PAStatusStream: {
+        isSupported: () => sseSupported,
+        getLastStatus: () => stream.lastStatus,
+        subscribe: (handler) => {
+          stream.subscriber = handler;
+          return () => {
+            stream.subscriber = null;
+          };
+        },
+      },
+    },
+  });
 
-  mockContext.window.PAStatusStream = {
-    isSupported: () => true,
-    getLastStatus: () => null,
-    subscribe: () => () => {},
-  };
+  await env.settle();
+  return { ...env, stream, footer: env.element("fw-meta") };
+};
 
-  runInNewContext(footerCode, mockContext);
-  await waitForAsync();
-  await new Promise((r) => setTimeout(r, 100));
+const statusRequests = (env) => env.requests.filter((r) => r.path === STATUS_PATH);
+const retryDelays = (env) => env.timeouts.map((t) => t.ms);
 
-  // Should have scheduled at least one retry timer
-  const timeoutEvents = events.filter((e) => e.type === "setTimeout");
-  assert.ok(
-    timeoutEvents.length >= 1,
-    `should schedule retry timers, got ${timeoutEvents.length}`
+// Fires every retry timer armed so far, letting each one arm the next.
+const drainRetries = async (env, rounds = 5) => {
+  let fired = 0;
+  for (let round = 0; round < rounds; round += 1) {
+    const next = env.timeouts[fired];
+    if (!next) break;
+    fired += 1;
+    next.fn();
+    await env.settle();
+  }
+  return fired;
+};
+
+// -----------------------------------------------------------------------------
+// Retry with backoff
+// -----------------------------------------------------------------------------
+
+test("A failed first status fetch leaves the footer saying so", async (t) => {
+  const env = await loadFooter({
+    statusOutcome: () => new ApiError("Simulated fetch failure", { kind: "network" }),
+  });
+
+  assert.equal(env.footer.textContent, UNAVAILABLE, "a failed fetch must not leave stale text");
+  assert.equal(statusRequests(env).length, 1, "the first attempt must have gone out");
+});
+
+test("Retries back off 500 ms, 1 s, 2 s and then stop at three attempts", async (t) => {
+  const env = await loadFooter({
+    statusOutcome: () => new ApiError("Simulated fetch failure", { kind: "network" }),
+  });
+
+  await drainRetries(env);
+
+  assert.deepEqual(
+    retryDelays(env),
+    [500, 1000],
+    "backoff must double from a 500 ms base, and the third attempt is the last so it arms no timer"
   );
-
-  // Footer should show unavailable after failed fetches
-  assert.strictEqual(
-    getFooterText(),
-    "Firmware info unavailable",
-    "footer should show unavailable after fetch failures"
+  assert.equal(
+    statusRequests(env).length,
+    3,
+    "three attempts total - a fourth would mean the attempt cap is not being honoured"
   );
 });
 
-test("footer SSE mode installs 5s polling interval (code structure)", (t) => {
-  const footerCode = readFileSync(footerPath, "utf-8");
+test("A retry that succeeds stops the retry chain", async (t) => {
+  let attempt = 0;
+  const env = await loadFooter({
+    statusOutcome: () => {
+      attempt += 1;
+      return attempt === 1 ? new ApiError("Simulated fetch failure", { kind: "network" }) : STATUS_PAYLOAD;
+    },
+  });
 
-  // Verify setInterval(fn, 5000) is called in startSseMode
-  const sseStart = footerCode.indexOf("const startSseMode");
-  const sseEnd = footerCode.indexOf("};", sseStart);
-  const sseBody = footerCode.substring(sseStart, sseEnd);
+  assert.equal(retryDelays(env).length, 1, "the failed first attempt must arm one retry");
+
+  await drainRetries(env);
+
+  assert.equal(retryDelays(env).length, 1, "a successful retry must not arm another");
+  assert.equal(statusRequests(env).length, 2, "no further attempts after success");
+  assert.match(env.footer.innerHTML, /v1\.0\.0/, "the footer must show the version it fetched");
+});
+
+test("A successful fetch renders firmware and filesystem versions", async (t) => {
+  const env = await loadFooter({
+    statusOutcome: () => ({ firmwareVersion: "v1.2.3", fsVersion: "v4.5.6" }),
+  });
+
+  assert.match(env.footer.innerHTML, /FW:.*v1\.2\.3/s, "firmware version must be shown");
+  assert.match(env.footer.innerHTML, /FS:.*v4\.5\.6/s, "filesystem version must be shown");
+  assert.notEqual(env.footer.textContent, UNAVAILABLE);
+});
+
+test("A status version containing markup is escaped before it reaches the footer", async (t) => {
+  const env = await loadFooter({
+    statusOutcome: () => ({ firmwareVersion: '<img src=x onerror="alert(1)">', fsVersion: "v1.0.0" }),
+  });
 
   assert.ok(
-    sseBody.includes("setInterval"),
-    "startSseMode must call setInterval"
+    !env.footer.innerHTML.includes("<img"),
+    "a version string from the controller must not be able to inject markup"
   );
+  assert.match(env.footer.innerHTML, /&lt;img/);
+});
+
+// -----------------------------------------------------------------------------
+// The SSE lane
+// -----------------------------------------------------------------------------
+
+test("A status event from the stream renders the footer", async (t) => {
+  const env = await loadFooter({ lastStatus: STATUS_PAYLOAD });
+
+  assert.ok(env.stream.subscriber, "SSE mode must subscribe to the status stream");
+  env.stream.subscriber("status", { firmwareVersion: "v9.9.9", fsVersion: "v9.9.9" });
+
+  assert.match(env.footer.innerHTML, /v9\.9\.9/, "the footer must render the streamed status");
+});
+
+test("Events other than status leave the footer alone", async (t) => {
+  const env = await loadFooter({ lastStatus: STATUS_PAYLOAD });
+  env.stream.subscriber("status", STATUS_PAYLOAD);
+  const rendered = env.footer.innerHTML;
+
+  env.stream.subscriber("log", { line: "something else entirely" });
+
+  assert.equal(env.footer.innerHTML, rendered, "an unrelated event must not repaint the footer");
+});
+
+test("A status event arriving mid-backoff cancels the pending retry", async (t) => {
+  const env = await loadFooter({
+    statusOutcome: () => new ApiError("Simulated fetch failure", { kind: "network" }),
+  });
+
+  const armed = env.timeouts.at(-1);
+  assert.ok(armed, "a failed fetch must have armed a retry");
+  assert.equal(env.cleared.timeouts.length, 0, "nothing cancelled yet");
+
+  env.stream.subscriber("status", STATUS_PAYLOAD);
 
   assert.ok(
-    sseBody.includes("5000"),
-    "startSseMode must use 5000ms interval"
+    env.cleared.timeouts.includes(armed.id),
+    "the pending retry must be cancelled once the stream delivers a status"
   );
+  assert.match(env.footer.innerHTML, /v1\.0\.0/, "the streamed status must be what the footer shows");
+});
 
-  // Verify it's assigned to pollTimer
-  assert.ok(
-    sseBody.includes("pollTimer = window.setInterval"),
-    "polling interval must be assigned to pollTimer"
-  );
+test("SSE mode skips its first fetch when the stream already has a status", async (t) => {
+  const env = await loadFooter({ lastStatus: STATUS_PAYLOAD });
 
-  // Verify visibility check
-  assert.ok(
-    sseBody.includes('visibilityState === "hidden"'),
-    "poll must skip when page is hidden"
+  assert.equal(
+    statusRequests(env).length,
+    0,
+    "a cached status makes the startup fetch redundant work"
   );
 });
 
-test("footer retry uses exponential backoff with 500ms base and 2x multiplier", (t) => {
-  const footerCode = readFileSync(footerPath, "utf-8");
+test("SSE mode fetches at startup when the stream has nothing cached", async (t) => {
+  const env = await loadFooter({ lastStatus: null });
 
-  // Extract and verify backoff logic is in the code
-  assert.ok(
-    footerCode.includes("baseDelayMs = 500"),
-    "shipped code must have 500ms base delay"
-  );
-
-  assert.ok(
-    footerCode.includes("Math.pow(2, attempt)"),
-    "shipped code must use exponential backoff (2^attempt)"
-  );
-
-  // Verify attempt limiting
-  assert.ok(
-    footerCode.includes("maxAttempts = 3"),
-    "shipped code must limit to 3 attempts"
-  );
-
-  // Verify retry scheduling
-  assert.ok(
-    footerCode.includes("attempt < maxAttempts - 1"),
-    "shipped code must check remaining attempts"
+  assert.equal(
+    statusRequests(env).length,
+    1,
+    "with no cached status the footer must fetch, or it shows unavailable until the next event"
   );
 });
 
-test("fetchStatus returns boolean to indicate success vs failure", (t) => {
-  const footerCode = readFileSync(footerPath, "utf-8");
+// -----------------------------------------------------------------------------
+// Conditional polling
+// -----------------------------------------------------------------------------
 
-  // Verify success return
-  const fetchStart = footerCode.indexOf("const fetchStatus = async");
-  const fetchEnd = footerCode.indexOf("};", fetchStart);
-  const fetchBody = footerCode.substring(fetchStart, fetchEnd);
+test("SSE mode installs a 5 s poll", async (t) => {
+  const env = await loadFooter({ lastStatus: STATUS_PAYLOAD });
 
-  assert.ok(fetchBody.includes("return true"), "fetchStatus must return true on success");
-
-  assert.ok(fetchBody.includes("return false"), "fetchStatus must return false on failure");
-
-  // Verify both returns are in the function
-  const successCount = (fetchBody.match(/return true/g) || []).length;
-  const failCount = (fetchBody.match(/return false/g) || []).length;
-  assert.ok(successCount >= 1, "must have at least one success return");
-  assert.ok(failCount >= 1, "must have at least one failure return");
-});
-
-test("retryFetchWithBackoff awaits and checks fetchStatus result before scheduling next attempt", (t) => {
-  const footerCode = readFileSync(footerPath, "utf-8");
-
-  const retryStart = footerCode.indexOf("const retryFetchWithBackoff");
-  const retryEnd = footerCode.indexOf("};", retryStart);
-  const retryBody = footerCode.substring(retryStart, retryEnd);
-
-  // Verify it awaits fetchStatus result
-  assert.ok(
-    retryBody.includes("const success = await fetchStatus()") ||
-      retryBody.includes("const success=await fetchStatus()"),
-    "retryFetchWithBackoff must await fetchStatus() and capture result"
-  );
-
-  // Verify it checks success
-  assert.ok(
-    retryBody.includes("if (success)"),
-    "retryFetchWithBackoff must check if fetch succeeded"
-  );
-
-  // Verify early return on success
-  assert.ok(
-    retryBody.includes("if (success)") && retryBody.includes("return;"),
-    "retryFetchWithBackoff must return early on success"
-  );
-
-  // Verify retry only scheduled if more attempts available
-  assert.ok(
-    retryBody.includes("if (attempt < maxAttempts - 1)"),
-    "retry must only schedule if attempts remain"
+  assert.deepEqual(
+    env.intervals.map((i) => i.ms),
+    [5000],
+    "exactly one poll, at the 5 s cadence"
   );
 });
 
-test("subscription handler cancels retry timer when status event arrives (code structure)", (t) => {
-  const footerCode = readFileSync(footerPath, "utf-8");
+test("The SSE poll stands down once the footer has real data", async (t) => {
+  const env = await loadFooter({ lastStatus: STATUS_PAYLOAD });
+  env.stream.subscriber("status", STATUS_PAYLOAD);
+  const before = statusRequests(env).length;
 
-  // Verify subscription callback checks for status event
-  const sseStart = footerCode.indexOf("const startSseMode");
-  const sseEnd = footerCode.indexOf("};", sseStart);
-  const sseBody = footerCode.substring(sseStart, sseEnd);
+  env.fireInterval(env.intervals[0].id);
+  await env.settle();
 
-  // Verify it subscribes and handles status events
-  assert.ok(
-    sseBody.includes("subscribe"),
-    "startSseMode must subscribe to PAStatusStream"
-  );
-
-  assert.ok(
-    sseBody.includes('if (eventType === "status")'),
-    "subscription callback must check for status event type"
-  );
-
-  // Verify it calls renderFooter
-  assert.ok(
-    sseBody.includes("renderFooter(payload)"),
-    "subscription callback must render footer with payload"
-  );
-
-  // Verify it clears retry timer on status event
-  const subscribeStart = sseBody.indexOf(".subscribe");
-  const subscribeEnd = sseBody.indexOf("});", subscribeStart);
-  const subscribeBody = sseBody.substring(subscribeStart, subscribeEnd);
-
-  assert.ok(
-    subscribeBody.includes("if (retryTimer !== null)") &&
-      subscribeBody.includes("clearTimeout(retryTimer)"),
-    "subscription callback must clear retryTimer when status event arrives"
+  assert.equal(
+    statusRequests(env).length,
+    before,
+    "polling on top of a live stream is exactly the duplicate traffic this poll exists to avoid"
   );
 });
 
-test("footer errors logged via console.warn with [footer] prefix (visible, not silent)", (t) => {
-  const footerCode = readFileSync(footerPath, "utf-8");
+test("The SSE poll keeps fetching while the footer has no real data", async (t) => {
+  const env = await loadFooter({
+    statusOutcome: () => new ApiError("Simulated fetch failure", { kind: "network" }),
+  });
+  const before = statusRequests(env).length;
 
-  // Verify error logging is in fetchStatus
-  const fetchStart = footerCode.indexOf("const fetchStatus = async");
-  const fetchEnd = footerCode.indexOf("};", fetchStart);
-  const fetchBody = footerCode.substring(fetchStart, fetchEnd);
+  env.fireInterval(env.intervals[0].id);
+  await env.settle();
 
-  assert.ok(
-    fetchBody.includes('console.warn("[footer]'),
-    "fetchStatus must call console.warn with [footer] prefix"
-  );
-
-  // Verify error.message extraction
-  assert.ok(
-    fetchBody.includes("error?.message"),
-    "fetchStatus must extract error.message for debugging"
-  );
-
-  // Verify this is a catch block (not just any console.warn)
-  assert.ok(
-    fetchBody.includes("catch") && fetchBody.includes('console.warn("[footer]'),
-    "error logging must be in error handler"
+  assert.equal(
+    statusRequests(env).length,
+    before + 1,
+    "the poll is the recovery path when the stream never delivers"
   );
 });
 
-test("polling is conditional - only runs when footer has no real data (hasRealData flag)", (t) => {
-  const footerCode = readFileSync(footerPath, "utf-8");
+test("The poll skips a hidden tab", async (t) => {
+  const env = await loadFooter({
+    statusOutcome: () => new ApiError("Simulated fetch failure", { kind: "network" }),
+  });
+  const before = statusRequests(env).length;
 
-  // Verify hasRealData flag exists
-  assert.ok(
-    footerCode.includes("hasRealData"),
-    "shipped code must track hasRealData flag"
+  env.document.visibilityState = "hidden";
+  env.fireInterval(env.intervals[0].id);
+  await env.settle();
+
+  assert.equal(statusRequests(env).length, before, "a background tab must not be polled");
+});
+
+test("Without SSE support the footer falls back to polling and fetches immediately", async (t) => {
+  const env = await loadFooter({ sseSupported: false });
+
+  assert.equal(statusRequests(env).length, 1, "fallback mode must fetch at startup");
+  assert.deepEqual(
+    env.intervals.map((i) => i.ms),
+    [5000],
+    "fallback mode must install the same 5 s poll"
   );
+  assert.equal(env.stream.subscriber, null, "no subscription without stream support");
+});
 
-  // Verify flag is initialized
-  assert.ok(
-    footerCode.includes("let hasRealData"),
-    "hasRealData must be declared as state variable"
-  );
+test("The fallback poll keeps fetching even after it has real data", async (t) => {
+  const env = await loadFooter({ sseSupported: false });
+  const before = statusRequests(env).length;
 
-  // Verify flag is set to true on successful render
-  const renderStart = footerCode.indexOf("const renderFooter");
-  const renderEnd = footerCode.indexOf("};", renderStart);
-  const renderBody = footerCode.substring(renderStart, renderEnd);
+  env.fireInterval(env.intervals[0].id);
+  await env.settle();
 
-  assert.ok(
-    renderBody.includes("hasRealData = true"),
-    "renderFooter must set hasRealData = true on successful render"
-  );
-
-  // Verify flag is set to false on error
-  assert.ok(
-    renderBody.includes("hasRealData = false"),
-    "renderFooter must set hasRealData = false when status is null"
-  );
-
-  // Verify poll checks the flag
-  const sseStart = footerCode.indexOf("const startSseMode");
-  const sseEnd = footerCode.indexOf("};", sseStart);
-  const sseBody = footerCode.substring(sseStart, sseEnd);
-
-  assert.ok(
-    sseBody.includes("if (hasRealData) return;"),
-    "poll in SSE mode must skip if hasRealData is true"
+  assert.equal(
+    statusRequests(env).length,
+    before + 1,
+    "with no stream to feed it, the poll is the only source of fresh data"
   );
 });
 
-test("beforeunload cleanup prevents timer leaks (clears retryTimer)", (t) => {
-  const footerCode = readFileSync(footerPath, "utf-8");
+// -----------------------------------------------------------------------------
+// Visibility and teardown
+// -----------------------------------------------------------------------------
 
-  const beforeStart = footerCode.indexOf('addEventListener("beforeunload"');
-  const beforeEnd = footerCode.indexOf("});", beforeStart) + 3;
-  const beforeBody = footerCode.substring(beforeStart, beforeEnd);
+test("Returning to a visible tab refetches the status", async (t) => {
+  const env = await loadFooter({ lastStatus: STATUS_PAYLOAD });
+  const before = statusRequests(env).length;
 
-  // Verify retryTimer cleanup
-  assert.ok(
-    beforeBody.includes("retryTimer"),
-    "beforeunload must reference retryTimer"
-  );
+  env.document.visibilityState = "visible";
+  env.emit("document", "visibilitychange");
+  await env.settle();
 
-  assert.ok(
-    beforeBody.includes("clearTimeout(retryTimer)"),
-    "beforeunload must clear retryTimer with clearTimeout"
-  );
-
-  // Verify it's guarded
-  assert.ok(
-    beforeBody.includes("if (retryTimer !== null)"),
-    "retryTimer cleanup must be guarded by null check"
-  );
+  assert.equal(statusRequests(env).length, before + 1, "a returning operator must see current data");
 });
 
-test("footer comments and code use ASCII only (no em-dashes or unicode)", (t) => {
-  const footerCode = readFileSync(footerPath, "utf-8");
+test("Unloading the page clears the poll, the retry and the subscription", async (t) => {
+  const env = await loadFooter({
+    statusOutcome: () => new ApiError("Simulated fetch failure", { kind: "network" }),
+  });
 
-  // Check for em-dashes and similar unicode
-  const forbidden = /[‐-―]|[^\x00-\x7F]/g;
-  const matches = footerCode.match(forbidden);
+  const poll = env.intervals[0];
+  const retry = env.timeouts.at(-1);
+  assert.ok(poll && retry, "the fixture must have both a poll and a pending retry to clean up");
 
-  // Filter out content inside strings (basic check for common unicode in values)
-  const codeWithoutStrings = footerCode.replace(/"[^"]*"/g, "").replace(/'[^']*'/g, "");
-  const codeMatches = codeWithoutStrings.match(forbidden);
+  env.emit("window", "beforeunload");
 
-  assert.ok(
-    !codeMatches || codeMatches.length === 0,
-    "code must use ASCII only (no em-dashes or unicode operators)"
+  assert.ok(env.cleared.intervals.includes(poll.id), "the poll interval must be cleared");
+  assert.ok(env.cleared.timeouts.includes(retry.id), "the pending retry must be cleared");
+  assert.equal(env.stream.subscriber, null, "the stream subscription must be released");
+});
+
+// -----------------------------------------------------------------------------
+// Source-text check, deliberately kept
+// -----------------------------------------------------------------------------
+
+test("footer.js is ASCII only", async (t) => {
+  // Justified source-text assertion: this is a lint rule about the bytes of the
+  // file, not about behaviour. It exists because non-ASCII punctuation in
+  // served JS has broken the bundle before, and there is no runtime observation
+  // that could show it - the code behaves identically either way.
+  const { readFileSync } = await import("fs");
+  const { fileURLToPath } = await import("url");
+  const { dirname, join } = await import("path");
+  const here = dirname(fileURLToPath(import.meta.url));
+  const footerCode = readFileSync(join(here, "../../data/footer.js"), "utf-8");
+
+  // String and comment contents are excluded: operator-facing copy may legitimately
+  // carry non-ASCII, the ban is on code and punctuation.
+  const codeOnly = footerCode.replace(/"[^"]*"/g, "").replace(/'[^']*'/g, "").replace(/`[^`]*`/g, "");
+  const offenders = codeOnly.match(/[^\x00-\x7F]/g);
+
+  assert.equal(
+    offenders,
+    null,
+    `footer.js must use ASCII only; found ${JSON.stringify(offenders)}`
   );
 });

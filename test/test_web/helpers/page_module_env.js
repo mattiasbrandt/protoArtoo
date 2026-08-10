@@ -52,6 +52,13 @@ const makeElement = () => {
   });
 };
 
+const escapeForTest = (value) =>
+  String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+
 class ApiError extends Error {
   constructor(message, { kind = "network", status = 0 } = {}) {
     super(message);
@@ -67,12 +74,31 @@ class ApiError extends Error {
 // call with (wrapped as { data } unless it already looks like a response), or
 // throw to fail it. Every call is appended to `requests` first, so a rejected
 // call is still visible to the test.
-export const loadPageModule = (file, { respond = () => ({}) } = {}) => {
+export const loadPageModule = (file, { respond = () => ({}), overrides = {} } = {}) => {
   const source = readFileSync(join(dataDir, file), "utf-8");
   const requests = [];
   const sections = new Map();
+  const elements = new Map();
   const intervals = [];
   const timeouts = [];
+  const cleared = { intervals: [], timeouts: [] };
+  const listeners = { window: [], document: [] };
+
+  // Stable per-id elements: a module looks an element up once and holds the
+  // reference, so a test must be able to reach the same object afterwards.
+  const elementById = (id) => {
+    if (!elements.has(id)) elements.set(id, makeElement());
+    return elements.get(id);
+  };
+
+  // Timers are recorded rather than run. A page module installs polling at load
+  // time, and a live interval would keep the test process alive; recording also
+  // lets a test fire a specific timer and assert on what it did.
+  const addTimer = (list, fn, ms) => {
+    const id = list.length + 1;
+    list.push({ id, fn, ms });
+    return id;
+  };
 
   const call = async (method, path, opts = {}) => {
     requests.push({ method, path, opts });
@@ -91,8 +117,12 @@ export const loadPageModule = (file, { respond = () => ({}) } = {}) => {
     },
     PAUtils: {
       showFeedback: () => {},
-      escapeHtml: (value) => String(value ?? ""),
-      escapeAttr: (value) => String(value ?? ""),
+      // Mirrors data/web_api.js's escaping rather than passing values through.
+      // A stub that did not escape would let a module drop its escapeHtml call
+      // without any test noticing. web_api.js's own escaping is proven
+      // separately in test_pautils_validation.js.
+      escapeHtml: escapeForTest,
+      escapeAttr: escapeForTest,
       debounce: (fn) => fn,
     },
     PABootstrap: {
@@ -108,19 +138,11 @@ export const loadPageModule = (file, { respond = () => ({}) } = {}) => {
       subscribe: () => () => {},
       getLastStatus: () => null,
     },
-    // Timers are recorded rather than run: a page module installs polling at
-    // load time and a live interval would keep the test process alive.
-    setInterval: (fn, ms) => {
-      intervals.push({ fn, ms });
-      return intervals.length;
-    },
-    clearInterval: () => {},
-    setTimeout: (fn, ms) => {
-      timeouts.push({ fn, ms });
-      return timeouts.length;
-    },
-    clearTimeout: () => {},
-    addEventListener: () => {},
+    setInterval: (fn, ms) => addTimer(intervals, fn, ms),
+    clearInterval: (id) => cleared.intervals.push(id),
+    setTimeout: (fn, ms) => addTimer(timeouts, fn, ms),
+    clearTimeout: (id) => cleared.timeouts.push(id),
+    addEventListener: (type, handler) => listeners.window.push({ type, handler }),
     removeEventListener: () => {},
     location: { origin: "http://device", href: "http://device/" },
     localStorage: {
@@ -130,11 +152,9 @@ export const loadPageModule = (file, { respond = () => ({}) } = {}) => {
       clear: () => {},
     },
     matchMedia: () => ({ matches: false, addEventListener: () => {}, removeEventListener: () => {} }),
-    requestAnimationFrame: (fn) => {
-      timeouts.push({ fn, ms: 0 });
-      return timeouts.length;
-    },
+    requestAnimationFrame: (fn) => addTimer(timeouts, fn, 0),
     getSelection: () => null,
+    ...overrides,
   };
 
   const documentMock = {
@@ -143,13 +163,13 @@ export const loadPageModule = (file, { respond = () => ({}) } = {}) => {
     body: makeElement(),
     documentElement: makeElement(),
     currentScript: { dataset: {} },
-    getElementById: () => makeElement(),
+    getElementById: (id) => elementById(id),
     querySelector: () => makeElement(),
     querySelectorAll: () => [],
     createElement: () => makeElement(),
     createTextNode: () => makeElement(),
     createDocumentFragment: () => makeElement(),
-    addEventListener: () => {},
+    addEventListener: (type, handler) => listeners.document.push({ type, handler }),
     removeEventListener: () => {},
   };
 
@@ -195,12 +215,35 @@ export const loadPageModule = (file, { respond = () => ({}) } = {}) => {
 
   vm.runInNewContext(source, context, { filename: file });
 
+  // Lets a module's own async load settle. Page modules kick work off at load
+  // time and nothing here is fake-timed, so a test has to yield before it can
+  // assert on the result.
+  const settle = async (turns = 3) => {
+    for (let i = 0; i < turns; i += 1) {
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+  };
+
   return {
     window: windowMock,
     document: documentMock,
     requests,
     intervals,
     timeouts,
+    cleared,
+    settle,
+    element: elementById,
+    // Fires a recorded timer callback the way the browser eventually would.
+    fireTimeout: (id) => timeouts.find((t) => t.id === id)?.fn(),
+    fireInterval: (id) => intervals.find((t) => t.id === id)?.fn(),
+    // Delivers a window/document event to the handlers the module registered.
+    emit: (target, type, event = {}) => {
+      const matching = listeners[target].filter((l) => l.type === type);
+      if (matching.length === 0) {
+        throw new Error(`page_module_env: ${file} registered no ${target} "${type}" listener`);
+      }
+      matching.forEach(({ handler }) => handler(event));
+    },
     sectionNames: () => [...sections.keys()],
     // Runs a registered section loader the way the bootstrap would.
     runSection: (name, opts = {}) => {
