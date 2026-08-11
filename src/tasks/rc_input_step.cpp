@@ -50,6 +50,30 @@ static bool driveSbusDecoderEnabledForMode(uint8_t mode, bool enableRcCh1, bool 
     return enableRcCh1;
 }
 
+// ============================================================================
+// Startup Decision
+// ============================================================================
+
+RcInputStartupPlan rcInputStepStartupPlan(const RcInputStepStartupInputs& in) {
+    RcInputStartupPlan out = {};
+
+    out.driveSbusEnabled =
+        driveSbusDecoderEnabledForMode(in.rcInputMode, in.enableRcCh1, in.enableRcCh2, in.useCh2);
+    out.domeSbusEnabled = is_dome_sbus_mode(in.rcInputMode) && in.enableRcCh2;
+    out.sbus1WatchdogEnabled =
+        out.driveSbusEnabled &&
+        !(in.rcInputMode == RC_INPUT_SINGLE_SBUS && in.useCh2);
+
+    if (in.rcInputMode == RC_INPUT_STANDARD_PWM) {
+        out.taskEnabled = in.enableRcCh1 || in.enableRcCh2 || in.enableRcCh3 || in.enableRcCh4 ||
+                          in.enableRcCh5 || in.enableRcCh6;
+    } else {
+        out.taskEnabled = out.driveSbusEnabled || out.domeSbusEnabled;
+    }
+
+    return out;
+}
+
 RcInputStepTickActions rcInputStepTick(RcInputStepState* state,
                                        const RcInputStepTickInputs& in) {
     RcInputStepTickActions out = {};

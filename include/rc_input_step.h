@@ -27,6 +27,30 @@
 #include "sbus_watchdog.h"  // SbusWatchdog, SbusWatchdogTransition
 
 // ============================================================================
+// Startup Decision
+// ============================================================================
+
+struct RcInputStepStartupInputs {
+    uint8_t rcInputMode;
+    bool useCh2;
+    bool enableRcCh1;
+    bool enableRcCh2;
+    bool enableRcCh3;
+    bool enableRcCh4;
+    bool enableRcCh5;
+    bool enableRcCh6;
+};
+
+struct RcInputStartupPlan {
+    bool taskEnabled = false;
+    bool driveSbusEnabled = false;
+    bool domeSbusEnabled = false;
+    bool sbus1WatchdogEnabled = false;
+};
+
+RcInputStartupPlan rcInputStepStartupPlan(const RcInputStepStartupInputs& in);
+
+// ============================================================================
 // RcInputStepState  --  cross-iteration state, owned by the step.
 // Default initialization is the boot state.
 // ============================================================================

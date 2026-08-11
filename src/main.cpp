@@ -27,6 +27,7 @@
 #include "log_buffer.h"
 #include "mood.h"
 #include "rc_input.h"
+#include "rc_input_step.h"
 #include "reset_reason.h"
 #include "robot_state.h"
 #include "safety.h"
@@ -274,6 +275,15 @@ void setup() {
     loadConfigToState();
     paLogRingApplyBootDepth();
     logBootHealth();
+    ConfigSnapshot bootCfg = {};
+    configCacheRead(&bootCfg);
+    RcInputStepStartupInputs rcStartup = {
+        bootCfg.system.rc_input_mode, bootCfg.system.single_sbus_use_ch2,
+        bootCfg.system.enable_rc_ch1, bootCfg.system.enable_rc_ch2,
+        bootCfg.system.enable_rc_ch3, bootCfg.system.enable_rc_ch4,
+        bootCfg.system.enable_rc_ch5, bootCfg.system.enable_rc_ch6,
+    };
+    RcInputStartupPlan rcPlan = rcInputStepStartupPlan(rcStartup);
 
     // Layer 4: Initialize Task Watchdog Timer
     // IDF 5.x: esp_task_wdt_init() takes a config struct (timeout_ms, idle_core_mask,
@@ -290,17 +300,11 @@ void setup() {
     failsafeInit(&robotStateMux);
     driveArbiterInit(&robotStateMux);
 
-    // Safety: boot with drive locked until SBUS confirmed  --  only if SBUS is configured.
-    // If SBUS is disabled, skip the arm; RcInputTask will arm SBUS_WATCHDOG itself
-    // on first iteration if the operator enables SBUS at runtime via /api/config.
-    {
-        ConfigSnapshot bootCfg = {};
-        configCacheRead(&bootCfg);
-        bool sbusMode = bootCfg.system.rc_input_mode != RC_INPUT_STANDARD_PWM;
-        bool anyChannel = bootCfg.system.enable_rc_ch1 || bootCfg.system.enable_rc_ch2;
-        if (bootSbusSafeGuardDecision(sbusMode, anyChannel)) {
-            failsafeTrigger(FailsafeLayer::SBUS_WATCHDOG);
-        }
+    // Safety: boot with drive locked until the existing SBUS1 watchdog sees
+    // a frame. Routed SBUS2 watchdog arming remains owned by issue #167.
+    bool sbusMode = bootCfg.system.rc_input_mode != RC_INPUT_STANDARD_PWM;
+    if (bootSbusSafeGuardDecision(sbusMode, rcPlan.sbus1WatchdogEnabled)) {
+        failsafeTrigger(FailsafeLayer::SBUS_WATCHDOG);
     }
 
     // Detect TWDT reset from previous boot  --  set estop so robot does not move
@@ -328,11 +332,14 @@ void setup() {
 
     // Launch real-time tasks on Core 1
     // DriveTask: 50 Hz hoverboard frames, feeds TWDT, Layer 3 web timeout
-    // RcInputTask: ~200 Hz RC poll (all modes), Layer 1+2 failsafe
+    // RcInputTask: ~200 Hz RC poll (all modes), Layer 1+2 failsafe; omitted
+    // when no RC input is active for the boot-selected mode and routing.
     // ServoTask: 50 Hz servo PWM updates
     // DomeTask: 50 Hz ESC PWM updates
     xTaskCreatePinnedToCore(driveTask, "DriveTask", 4096, nullptr, 5, nullptr, 1);
-    xTaskCreatePinnedToCore(rcInputTask, "RCInputTask", 7168, nullptr, 5, nullptr, 1);
+    if (rcPlan.taskEnabled) {
+        xTaskCreatePinnedToCore(rcInputTask, "RCInputTask", 7168, nullptr, 5, nullptr, 1);
+    }
     xTaskCreatePinnedToCore(
         servoTask, "ServoTask", 4096, nullptr, 4, nullptr,
         1);  // HWM: code fix (ConfigSnapshot->ServoConfig in hot paths) + 3072->4096
@@ -390,8 +397,6 @@ void setup() {
     webServerInit();
 
     uint16_t bootTrack = 0;
-    ConfigSnapshot bootCfg = {};
-    configCacheRead(&bootCfg);
     bootTrack = bootCfg.audio.snd_sys_boot;
     if (bootTrack != 0) {
         if (audioQueuePlaySlot(AUDIO_SLOT_SYS_BOOT, SRC_INTERNAL)) {

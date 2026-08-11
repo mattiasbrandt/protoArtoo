@@ -17,6 +17,136 @@ void setUp() {}
 void tearDown() {}
 
 // ============================================================================
+// Startup Decision
+// ============================================================================
+
+void test_task_disabled_at_boot_when_all_rc_components_off() {
+    RcInputStepStartupInputs in = {RC_INPUT_STANDARD_PWM, false, false, false,
+                                   false, false, false, false};
+
+    TEST_ASSERT_FALSE(rcInputStepStartupPlan(in).taskEnabled);
+}
+
+void test_task_enabled_at_boot_when_rc_component_1_is_on() {
+    RcInputStepStartupInputs in = {RC_INPUT_STANDARD_PWM, false, true, false,
+                                   false, false, false, false};
+
+    TEST_ASSERT_TRUE(rcInputStepStartupPlan(in).taskEnabled);
+}
+
+void test_task_enabled_at_boot_when_rc_component_2_is_on() {
+    RcInputStepStartupInputs in = {RC_INPUT_STANDARD_PWM, false, false, true,
+                                   false, false, false, false};
+
+    TEST_ASSERT_TRUE(rcInputStepStartupPlan(in).taskEnabled);
+}
+
+void test_task_enabled_at_boot_when_rc_component_3_is_on() {
+    RcInputStepStartupInputs in = {RC_INPUT_STANDARD_PWM, false, false, false,
+                                   true, false, false, false};
+
+    TEST_ASSERT_TRUE(rcInputStepStartupPlan(in).taskEnabled);
+}
+
+void test_task_enabled_at_boot_when_rc_component_4_is_on() {
+    RcInputStepStartupInputs in = {RC_INPUT_STANDARD_PWM, false, false, false,
+                                   false, true, false, false};
+
+    TEST_ASSERT_TRUE(rcInputStepStartupPlan(in).taskEnabled);
+}
+
+void test_task_enabled_at_boot_when_rc_component_5_is_on() {
+    RcInputStepStartupInputs in = {RC_INPUT_STANDARD_PWM, false, false, false,
+                                   false, false, true, false};
+
+    TEST_ASSERT_TRUE(rcInputStepStartupPlan(in).taskEnabled);
+}
+
+void test_task_enabled_at_boot_when_rc_component_6_is_on() {
+    RcInputStepStartupInputs in = {RC_INPUT_STANDARD_PWM, false, false, false,
+                                   false, false, false, true};
+
+    TEST_ASSERT_TRUE(rcInputStepStartupPlan(in).taskEnabled);
+}
+
+void test_single_sbus_parks_when_only_unselected_receiver_is_on() {
+    RcInputStepStartupInputs in = {RC_INPUT_SINGLE_SBUS, false, false, true,
+                                   false, false, false, false};
+
+    TEST_ASSERT_FALSE(rcInputStepStartupPlan(in).taskEnabled);
+}
+
+void test_single_sbus_ch2_route_parks_when_only_ch1_is_on() {
+    RcInputStepStartupInputs in = {RC_INPUT_SINGLE_SBUS, true, true, false,
+                                   false, false, false, false};
+
+    TEST_ASSERT_FALSE(rcInputStepStartupPlan(in).taskEnabled);
+}
+
+void test_single_sbus_ch1_route_runs_when_ch1_is_on() {
+    RcInputStepStartupInputs in = {RC_INPUT_SINGLE_SBUS, false, true, false,
+                                   false, false, false, false};
+
+    TEST_ASSERT_TRUE(rcInputStepStartupPlan(in).taskEnabled);
+}
+
+void test_single_sbus_ch2_route_runs_when_ch2_is_on() {
+    RcInputStepStartupInputs in = {RC_INPUT_SINGLE_SBUS, true, false, true,
+                                   false, false, false, false};
+
+    TEST_ASSERT_TRUE(rcInputStepStartupPlan(in).taskEnabled);
+}
+
+void test_dual_sbus_runs_when_ch1_is_on() {
+    RcInputStepStartupInputs in = {RC_INPUT_DUAL_SBUS, false, true, false,
+                                   false, false, false, false};
+
+    TEST_ASSERT_TRUE(rcInputStepStartupPlan(in).taskEnabled);
+}
+
+void test_dual_sbus_runs_when_ch2_is_on() {
+    RcInputStepStartupInputs in = {RC_INPUT_DUAL_SBUS, false, false, true,
+                                   false, false, false, false};
+
+    TEST_ASSERT_TRUE(rcInputStepStartupPlan(in).taskEnabled);
+}
+
+void test_pwm_does_not_arm_sbus1_watchdog() {
+    RcInputStepStartupInputs in = {RC_INPUT_STANDARD_PWM, false, true, false,
+                                   false, false, false, false};
+
+    TEST_ASSERT_FALSE(rcInputStepStartupPlan(in).sbus1WatchdogEnabled);
+}
+
+void test_single_sbus_ch1_arms_sbus1_watchdog() {
+    RcInputStepStartupInputs in = {RC_INPUT_SINGLE_SBUS, false, true, false,
+                                   false, false, false, false};
+
+    TEST_ASSERT_TRUE(rcInputStepStartupPlan(in).sbus1WatchdogEnabled);
+}
+
+void test_single_sbus_routed_ch2_does_not_arm_sbus1_watchdog() {
+    RcInputStepStartupInputs in = {RC_INPUT_SINGLE_SBUS, true, false, true,
+                                   false, false, false, false};
+
+    TEST_ASSERT_FALSE(rcInputStepStartupPlan(in).sbus1WatchdogEnabled);
+}
+
+void test_dual_sbus_ch1_arms_sbus1_watchdog() {
+    RcInputStepStartupInputs in = {RC_INPUT_DUAL_SBUS, false, true, false,
+                                   false, false, false, false};
+
+    TEST_ASSERT_TRUE(rcInputStepStartupPlan(in).sbus1WatchdogEnabled);
+}
+
+void test_dual_sbus_dome_only_does_not_arm_sbus1_watchdog() {
+    RcInputStepStartupInputs in = {RC_INPUT_DUAL_SBUS, false, false, true,
+                                   false, false, false, false};
+
+    TEST_ASSERT_FALSE(rcInputStepStartupPlan(in).sbus1WatchdogEnabled);
+}
+
+// ============================================================================
 // Initialization Tests
 // ============================================================================
 
@@ -683,6 +813,25 @@ void test_sbus2_routed_frame_clean_clears_and_dispatches() {
 
 int main(void) {
     UNITY_BEGIN();
+
+    RUN_TEST(test_task_disabled_at_boot_when_all_rc_components_off);
+    RUN_TEST(test_task_enabled_at_boot_when_rc_component_1_is_on);
+    RUN_TEST(test_task_enabled_at_boot_when_rc_component_2_is_on);
+    RUN_TEST(test_task_enabled_at_boot_when_rc_component_3_is_on);
+    RUN_TEST(test_task_enabled_at_boot_when_rc_component_4_is_on);
+    RUN_TEST(test_task_enabled_at_boot_when_rc_component_5_is_on);
+    RUN_TEST(test_task_enabled_at_boot_when_rc_component_6_is_on);
+    RUN_TEST(test_single_sbus_parks_when_only_unselected_receiver_is_on);
+    RUN_TEST(test_single_sbus_ch2_route_parks_when_only_ch1_is_on);
+    RUN_TEST(test_single_sbus_ch1_route_runs_when_ch1_is_on);
+    RUN_TEST(test_single_sbus_ch2_route_runs_when_ch2_is_on);
+    RUN_TEST(test_dual_sbus_runs_when_ch1_is_on);
+    RUN_TEST(test_dual_sbus_runs_when_ch2_is_on);
+    RUN_TEST(test_pwm_does_not_arm_sbus1_watchdog);
+    RUN_TEST(test_single_sbus_ch1_arms_sbus1_watchdog);
+    RUN_TEST(test_single_sbus_routed_ch2_does_not_arm_sbus1_watchdog);
+    RUN_TEST(test_dual_sbus_ch1_arms_sbus1_watchdog);
+    RUN_TEST(test_dual_sbus_dome_only_does_not_arm_sbus1_watchdog);
 
     RUN_TEST(test_init_zeros_watchdog_state);
 
