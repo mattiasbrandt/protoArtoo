@@ -9,10 +9,12 @@ it verbatim; a reviewer re-runs the same command with the same patches.
 Verdicts:
   KILLED          suite exited non-zero with at least one TAP `not ok` failure
                   and no cancellations — the only acceptable outcome
-  KILLED-BY-HANG  suite exited non-zero but the kill was a timeout or a
-                  cancelled test, not an assertion — rejected: a test that can
-                  only fail by hanging vanishes from `# fail` and proves the
-                  behaviour is unasserted
+  KILLED-BY-HANG  suite exited non-zero but the kill was a hang, not an
+                  assertion — rejected either way it surfaces: a drained event
+                  loop cancels the pending test (`cancelledByParent`,
+                  `# fail 0` with `# cancelled 1`) and a timer-kept-alive hang
+                  times out (`testTimeoutFailure`, counted in `# fail`);
+                  neither proves the behaviour is asserted
   SURVIVED        suite stayed green — the mutation is uncovered; rejected
   APPLY-FAIL      the patch did not apply cleanly to HEAD
   NO-TREE-CHANGE  the patch applied but left the working tree unchanged — the
@@ -35,10 +37,10 @@ import sys
 
 from slice_verify import (
     ROOT,
-    VERSION_JSON_RE,
     WEB_TEST_TIMEOUT,
     info,
     parse_tap_counts,
+    porcelain_nonversion_paths,
     run,
 )
 
@@ -51,13 +53,8 @@ def tracked_changes_present() -> bool:
     Untracked files are ignored: `git apply -R` only ever touches the files
     named in a patch, which are tracked by definition.
     """
-    for line in run(["git", "status", "--porcelain", "-uno"]).stdout.splitlines():
-        path = line[3:]
-        if " -> " in path:
-            path = path.split(" -> ", 1)[1]
-        if not VERSION_JSON_RE.match(path):
-            return True
-    return False
+    porcelain = run(["git", "status", "--porcelain", "-uno"]).stdout
+    return bool(porcelain_nonversion_paths(porcelain))
 
 
 def patch_files(patch_path: str) -> list[str]:
@@ -77,25 +74,32 @@ def restore(patch_path: str, files: list[str]) -> bool:
     return proc.returncode == 0 and not tree_changed(files)
 
 
-def run_suite(cmd: list[str], timeout: int) -> tuple[int, dict[str, int], bool]:
+def run_suite(cmd: list[str], timeout: int) -> tuple[int, dict[str, int], bool, bool]:
     proc = run(cmd, cwd=ROOT, timeout=timeout)
     output = proc.stdout + proc.stderr
     counts = parse_tap_counts(output) or {}
     has_not_ok = any(
         line.lstrip().startswith("not ok") for line in output.splitlines()
     )
-    return proc.returncode, counts, has_not_ok
+    has_timeout_failure = "testTimeoutFailure" in output
+    return proc.returncode, counts, has_not_ok, has_timeout_failure
 
 
 def verdict_for(
-    code: int, counts: dict[str, int], has_not_ok: bool
+    code: int, counts: dict[str, int], has_not_ok: bool, has_timeout_failure: bool
 ) -> str:
     if code == 0:
         return "SURVIVED"
     timed_out = code == 124
     cancelled = counts.get("cancelled", 0)
     failed = counts.get("fail", 0)
-    if failed >= 1 and cancelled == 0 and not timed_out and has_not_ok:
+    if (
+        failed >= 1
+        and cancelled == 0
+        and not timed_out
+        and not has_timeout_failure
+        and has_not_ok
+    ):
         return "KILLED"
     return "KILLED-BY-HANG"
 
@@ -155,8 +159,10 @@ def main() -> int:
             rows_ok = False
             continue
         info(f"mutation applied ({', '.join(files)}); running suite...")
-        code, counts, has_not_ok = run_suite(suite_cmd, args.timeout)
-        verdict = verdict_for(code, counts, has_not_ok)
+        code, counts, has_not_ok, has_timeout_failure = run_suite(
+            suite_cmd, args.timeout
+        )
+        verdict = verdict_for(code, counts, has_not_ok, has_timeout_failure)
         print(
             f"{label:<{LABEL_WIDTH}}{len(files):<7}{code:<6}"
             f"{counts.get('fail', '-'):<6}{counts.get('cancelled', '-'):<11}{verdict}"

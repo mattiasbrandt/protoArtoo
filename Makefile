@@ -20,7 +20,7 @@ OTA_TRANSFER_TIMEOUT ?= 60
 
 -include user.mk
 
-.PHONY: all help build test test-web check check-action-drift flash ota uploadfs \
+.PHONY: all help build test test-web test-tools check check-action-drift flash ota uploadfs \
         flash-chirp ota-chirp ota-mp3trigger \
         flash-dysv5w ota-dysv5w \
         flash-monitor flash-chirp-monitor \
@@ -55,6 +55,9 @@ test: ## Run native unit tests
 # tools/slice_verify.py runs the same invocation; keep the flags in sync.
 test-web: ## Run web behavioral tests (node:test)
 	node --test --test-timeout=10000 'test/test_web/test_*.js'
+
+test-tools: ## Run Python tooling tests (incl. slice gate self-tests)
+	python3 -m unittest discover -s test/test_tools -q
 
 check: ## Static analysis with cppcheck
 	pio check -e protoArtoo

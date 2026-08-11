@@ -25,6 +25,8 @@ files are never reported. Checks:
 9. `tools/slice_verify.py` itself must not be in the diff unless the run
    acknowledges it with --expect-gate-edit (the ACK is visible in the block)
 10. no fenced pathspec (--fenced, comma-separated, repeatable) in the diff
+11. the tooling test suite (test/test_tools/, includes the gate's own unit
+    tests) passes — the evidence producer is not exempt from prove-it-works
 
 The block opens with provenance lines — gate script blob hash, HEAD sha, a
 DIRTY marker when the working tree differs beyond `data/*version.json`,
@@ -366,15 +368,25 @@ def script_blob_hash() -> str:
     return proc.stdout.strip()[:12] if proc.returncode == 0 else "unknown"
 
 
-def working_tree_dirty() -> bool:
-    """True when the working tree differs from HEAD beyond data/*version.json."""
-    for line in git(["status", "--porcelain"]).splitlines():
+def porcelain_nonversion_paths(porcelain: str) -> list[str]:
+    """Paths from `git status --porcelain` output, minus data/*version.json.
+
+    Renames report their destination path. Shared with mutation_verify so both
+    tools agree on what counts as a dirty tree.
+    """
+    paths: list[str] = []
+    for line in porcelain.splitlines():
         path = line[3:]
         if " -> " in path:
             path = path.split(" -> ", 1)[1]
         if not VERSION_JSON_RE.match(path):
-            return True
-    return False
+            paths.append(path)
+    return paths
+
+
+def working_tree_dirty() -> bool:
+    """True when the working tree differs from HEAD beyond data/*version.json."""
+    return bool(porcelain_nonversion_paths(git(["status", "--porcelain"])))
 
 
 def env_fingerprint() -> str:
@@ -452,6 +464,11 @@ def main() -> int:
         base, base_notes = base_totals(base_sha)
 
     results = [
+        check_command_exit(
+            "gate self-tests",
+            ["python3", "-m", "unittest", "discover", "-s", "test/test_tools", "-q"],
+            timeout=120,
+        ),
         check_native_tests(base["native"], same_commit, base_notes["native"]),
         check_web_tests(base["web"], same_commit, base_notes["web"]),
         check_deleted_tests(base_sha),
