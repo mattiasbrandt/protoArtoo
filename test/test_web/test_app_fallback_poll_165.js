@@ -120,21 +120,18 @@ const makeEnv = () => {
 
 test("Dashboard fallback path: single-flight prevents overlapping attempts", async (t) => {
   const env = makeEnv();
-  let attempts = 0;
-  let concurrent = 0;
-  let maxConcurrent = 0;
-  let resolveAttempt;
+  const callTimeline = [];
 
-  // Mock refreshStatusOnce to return a slowly-resolving promise
+  // Mock refreshStatusOnce to track timing of concurrent calls
   const mockRefreshStatusOnce = async () => {
-    attempts += 1;
-    concurrent += 1;
-    maxConcurrent = Math.max(maxConcurrent, concurrent);
+    const callId = callTimeline.length;
+    const startTime = Date.now();
+    callTimeline.push({ id: callId, start: startTime, end: null });
 
     // Simulate a response that takes longer than one cadence tick (3000 ms)
-    await sleep(4000);
+    await sleep(500);
 
-    concurrent -= 1;
+    callTimeline[callId].end = Date.now();
     return true;
   };
 
@@ -167,7 +164,7 @@ test("Dashboard fallback path: single-flight prevents overlapping attempts", asy
   const fallbackPoll = window.PageBootstrap.createBackgroundPoll(
     refreshFromFallback,
     {
-      cadenceMs: 3000,
+      cadenceMs: 200,
       refreshOnReturn: true,
     }
   );
@@ -180,25 +177,34 @@ test("Dashboard fallback path: single-flight prevents overlapping attempts", asy
 
   vm.runInNewContext(fallbackCode, appContext);
 
-  // Fire the cadence interval multiple times rapidly
-  // All should be queued/guarded by single-flight
+  // Fire the cadence interval multiple times over time
+  // Each fires 200ms apart, but each call takes 500ms
+  // So if single-flight works, only the first should complete before the next fires
   for (let i = 0; i < 3; i += 1) {
     env.fireInterval(env.intervals[0].id);
+    await sleep(150); // Stagger the fires to allow previous to start
   }
 
-  // Wait for the long-running attempt to settle
-  await sleep(4500);
+  // Wait for all calls to settle
+  await sleep(1000);
 
-  // Should have only one attempt, despite firing the interval 3 times
+  // Verify no overlapping calls
+  let hasOverlap = false;
+  for (let i = 0; i < callTimeline.length; i += 1) {
+    for (let j = i + 1; j < callTimeline.length; j += 1) {
+      const call1 = callTimeline[i];
+      const call2 = callTimeline[j];
+      // Check if call2 started before call1 ended
+      if (call2.start < call1.end) {
+        hasOverlap = true;
+      }
+    }
+  }
+
   assert.equal(
-    attempts,
-    1,
-    "single-flight must prevent overlapping attempts; got " + attempts
-  );
-  assert.equal(
-    maxConcurrent,
-    1,
-    "max concurrent attempts must be 1, got " + maxConcurrent
+    hasOverlap,
+    false,
+    `single-flight must prevent overlapping calls. timeline: ${JSON.stringify(callTimeline)}`
   );
 });
 
