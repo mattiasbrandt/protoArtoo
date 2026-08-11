@@ -38,7 +38,7 @@ static const char* TAG = "WebServer";
     "PsychicHttp per-request worker threads make responses overlap; the response-phase deadline needs a per-socket table before ENABLE_ASYNC can be used (ADR 0022, ADR 0024)"
 #endif
 
-WebResponseDeadline s_responseDeadline;
+static WebResponseDeadline s_responseDeadline;
 
 #ifndef PA_RESPONSE_DEADLINE_MS
 #define PA_RESPONSE_DEADLINE_MS 4000
@@ -262,4 +262,19 @@ bool webBusyRecoveryPageSend(httpd_req_t* raw) {
 
 void webDeadlineInitialize() {
     webResponseDeadlineInit(&s_responseDeadline);
+}
+
+// Accessors for the backend's singleton response deadline state.
+// These wrap the pure core functions in web_response_deadline.h for host testing.
+
+void webResponseDeadlineExemptSocket(int fd) {
+    webResponseDeadlineExempt(&s_responseDeadline, fd);
+}
+
+void webResponseDeadlineArmSocket(int fd) {
+    webResponseDeadlineArm(&s_responseDeadline, fd);
+}
+
+int32_t webResponseDeadlineDisarmCurrent(uint32_t nowMs) {
+    return webResponseDeadlineDisarm(&s_responseDeadline, nowMs);
 }

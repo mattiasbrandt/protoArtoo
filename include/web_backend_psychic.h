@@ -25,10 +25,9 @@
 // Admission orchestration (web_admission_psychic.cpp)
 // =============================================================================
 
-// Admission state (implementation detail, exposed for event stream close callback).
-extern WebSocketCensus s_census;
-extern WebResponseDeadline s_responseDeadline;
-extern void publishCensus();
+// Close an admitted socket and publish updated census counters.
+// Call when a socket is closing so the occupancy reading reflects current state.
+void webAdmissionSocketClosed(int sockfd);
 
 // Register connection-admission callback and initialize rate limiter/census.
 // Called during server pre-begin() configuration.
@@ -47,6 +46,19 @@ void webAdmissionTraceInit();
 
 // Initialize deadline state before any connections arrive.
 void webDeadlineInitialize();
+
+// Exempt a socket from response-phase deadline enforcement (for event streams).
+void webResponseDeadlineExemptSocket(int fd);
+
+// Arm the response-phase deadline for a socket (when a request is admitted).
+void webResponseDeadlineArmSocket(int fd);
+
+// Disarm the currently-armed response-phase deadline and report elapsed time.
+// Returns elapsed milliseconds, or -1 if the phase cannot be reported.
+// Note: Only the currently armed socket can be disarmed; prior armed state is
+// implicit. See ADR 0024 for why a per-socket table is needed to support
+// ENABLE_ASYNC (currently disabled; see web_response_deadline_psychic.cpp).
+int32_t webResponseDeadlineDisarmCurrent(uint32_t nowMs);
 
 // Session send override callback for deadline enforcement.
 // Registered per-socket from connection-admission callback.
