@@ -346,10 +346,11 @@
     modQueryNote.textContent = "Status is cached from boot. Use Poll to refresh — only poll when not playing.";
   };
 
-  const updateModuleStatus = async ({ signal = null } = {}) => {
+  const updateModuleStatus = async ({ handle = null } = {}) => {
     if (!window.PAApi) return;
     try {
-      const result = await window.PAApi.get("/api/audio", { timeoutMs: 3000, signal });
+      const api = handle || window.PAApi;
+      const result = await api.get("/api/audio");
       const d = result.data;
 
       if (d.capabilities !== undefined && d.capabilities !== null) {
@@ -1315,12 +1316,16 @@
     syncCatalogBulkUi(visibleEntries);
   };
 
-  const loadCatalog = async ({ signal = null } = {}) => {
+  const loadCatalog = async ({ handle = null } = {}) => {
     if (!window.PAApi || !catalogSupported) return false;
     if (catalogFetchInFlight) return catalogReady;
     catalogFetchInFlight = true;
     try {
-      const result = await window.PAApi.get("/api/audio/catalog", { timeoutMs: 12000, signal });
+      // When called as the audio-catalog section loader, handle carries the Catalog
+      // deadline (12000ms). When called from applyCapabilityUI pre-load, handle is
+      // absent and we use PAApi directly (which uses DEFAULT_TIMEOUT_MS).
+      const api = handle || window.PAApi;
+      const result = await api.get("/api/audio/catalog");
       const data = result.data || {};
       catalogReady = Boolean(data.ready);
       catalogBanks = Array.isArray(data.banks) ? data.banks : [];
@@ -2273,25 +2278,27 @@
   // The catalog load is conditional: it only runs if updateModuleStatus
   // detects catalog support via capability flags.
   // See docs/page-load-recovery-architecture.md and ADR 0019.
-  const loadAudioModuleStatus = async ({ signal = null } = {}) => {
-    await updateModuleStatus({ signal });
+  const loadAudioModuleStatus = async ({ handle = null } = {}) => {
+    await updateModuleStatus({ handle });
     // Catalog load is triggered conditionally inside updateModuleStatus ->
     // applyCapabilityUI, so once module status is loaded, we know if catalog
     // is needed. If it was needed, loadCatalog already started in applyCapabilityUI.
   };
 
-  const loadAudioCatalogIfSupported = async ({ signal = null } = {}) => {
+  const loadAudioCatalogIfSupported = async ({ handle = null } = {}) => {
     if (!catalogSupported) {
       // Catalog not supported; skip with success to keep the bootstrap
       // from retrying if the capability check indicated no support.
       return;
     }
-    await loadCatalog({ signal });
+    // CRITICAL: handle carries the Catalog deadline (12000ms). The bootstrap
+    // always provides the handle for this section, ensuring the deadline is applied.
+    await loadCatalog({ handle });
   };
 
   const SECTIONS = [
     ["audio-status", loadAudioModuleStatus, "audio module status"],
-    ["audio-catalog", loadAudioCatalogIfSupported, "audio catalog", { deadlineMs: 12000 }],
+    ["audio-catalog", loadAudioCatalogIfSupported, "audio catalog", { deadlineMs: window.PageBootstrap.CATALOG_DEADLINE_MS }],
   ];
 
   const startPageLoad = () => {
