@@ -89,7 +89,7 @@ void handleUploadChunk(UploadSession& session, UploadTarget target, int updateCo
 
         const size_t contentLength = req.contentLength();
         if (!uploadContentLengthFits(contentLength, partitionSize)) {
-            PA_LOG_ERROR(TAG, "%s upload rejected: %u bytes exceeds the %u byte partition", label,
+            PA_LOG_WARN(TAG, "%s upload rejected: %u bytes exceeds the %u byte partition", label,
                          (unsigned)contentLength, (unsigned)partitionSize);
             session.outcome = UploadOutcome::kRejectedOversize;
             return;

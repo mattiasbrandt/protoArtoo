@@ -237,7 +237,7 @@ void profilerInit() {
     if (heap_trace_init_standalone(s_traceRecords, PROF_TRACE_RECORDS) == ESP_OK) {
         PA_LOG_INFO(TAG, "Tier 3 heap trace buffer ready (%d records)", PROF_TRACE_RECORDS);
     } else {
-        PA_LOG_WARN(TAG, "Tier 3 heap trace init failed");
+        PA_LOG_ERROR(TAG, "Tier 3 heap trace init failed");
     }
 #endif
 }
@@ -283,7 +283,7 @@ void profilerCollectHwm() {
         if (tmp[i].found) foundCount++;
     }
     if (foundCount == 0) {
-        PA_LOG_WARN(TAG, "HWM: all xTaskGetHandle() calls returned NULL - check configUSE_TRACE_FACILITY=1 in sdkconfig");
+        PA_LOG_ERROR(TAG, "HWM: all xTaskGetHandle() calls returned NULL - check configUSE_TRACE_FACILITY=1 in sdkconfig");
     }
     taskENTER_CRITICAL(&s_hwmMux);
     for (int i = 0; i < PROF_TASK_MAX; i++) {

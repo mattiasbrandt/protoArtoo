@@ -163,14 +163,22 @@ constexpr char PA_FIRMWARE_VERSION[] = "v0.0.0-dev";
 // Log levels
 // -----------------------------------------------------------------------------
 constexpr uint8_t PA_LOG_LEVEL_ERROR = 1;
-constexpr uint8_t PA_LOG_LEVEL_INFO = 2;
-constexpr uint8_t PA_LOG_LEVEL_DEBUG = 3;
+constexpr uint8_t PA_LOG_LEVEL_WARN = 2;
+constexpr uint8_t PA_LOG_LEVEL_INFO = 3;
+constexpr uint8_t PA_LOG_LEVEL_DEBUG = 4;
 
 // PA_LOG_LEVEL controls USB debug serial verbosity on UART0.
-// - PA_LOG_LEVEL_ERROR (1): faults only (watchdog resets, mount failures, etc.)
-// - PA_LOG_LEVEL_INFO  (2): normal boot health and service bring-up
-// - PA_LOG_LEVEL_DEBUG (3): verbose development logging, including lower-priority events
+// - PA_LOG_LEVEL_ERROR (1): loss of function only  --  init/mount failures, failed
+//   allocations, unrecoverable driver errors, watchdog-reset detection
+// - PA_LOG_LEVEL_WARN  (2): errors plus safety warnings  --  failsafe layer triggers,
+//   SBUS watchdog fired, hardware failsafe asserted, estop events, rejected unsafe
+//   commands. The recommended minimum: "faults only" means this tier, so a quiet log
+//   still reports failsafe activity.
+// - PA_LOG_LEVEL_INFO  (3): normal boot health, service bring-up, state transitions
+// - PA_LOG_LEVEL_DEBUG (4): verbose development logging, including lower-priority events
 // Set via -DPA_LOG_LEVEL=N in platformio.ini build_flags. Defaults to DEBUG if unset.
+// This is only the boot default until NVS config loads; the runtime level is the
+// operator's saved logLevel (Setup page).
 #ifndef PA_LOG_LEVEL
-#define PA_LOG_LEVEL 3
+#define PA_LOG_LEVEL 4
 #endif

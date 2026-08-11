@@ -302,12 +302,12 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
 
     if (configParamHas(params, "logLevel")) {
         int16_t lvl = 0;
-        if (paramInt16(params, "logLevel", 1, 3, &lvl)) {
+        if (paramInt16(params, "logLevel", 1, 4, &lvl)) {
             working->system.logLevel = (uint8_t)lvl;
             appendApplied(&result->applied, "[CFG] logLevel updated to %d", (int)lvl);
             result->changed = true;
         } else {
-            setError(result, "logLevel must be 1 (Error), 2 (Info), or 3 (Debug)");
+            setError(result, "logLevel must be 1 (Error), 2 (Warning), 3 (Info), or 4 (Debug)");
             return;
         }
     }

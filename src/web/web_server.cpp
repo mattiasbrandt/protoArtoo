@@ -896,7 +896,7 @@ void startHttpServerOnce() {
             MDNS.enableArduino(3232, false);
             PA_LOG_INFO(TAG, "mDNS ready as %s.local", hostname);
         } else {
-            PA_LOG_WARN(TAG, "mDNS init failed for host %s", hostname);
+            PA_LOG_ERROR(TAG, "mDNS init failed for host %s", hostname);
         }
     }
 

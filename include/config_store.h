@@ -22,7 +22,9 @@
 #include "robot_state.h"
 
 // NVS schema version
-constexpr uint8_t CONFIG_SCHEMA_VERSION = 1;
+// 0 (legacy) -> 1: key renames. 1 -> 2: log_level renumbered for the WARN tier
+// (old 2=Info/3=Debug become 3/4; see configLoad()).
+constexpr uint8_t CONFIG_SCHEMA_VERSION = 2;
 constexpr char CONFIG_SCHEMA_VERSION_KEY[] = "schema_ver";
 
 // Validation result

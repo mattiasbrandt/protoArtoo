@@ -51,7 +51,7 @@ inline uint8_t paCurrentLogLevel() {
 
 #define PA_LOG_WARN(tag, fmt, ...)                                          \
     do {                                                                    \
-        if (paCurrentLogLevel() >= PA_LOG_LEVEL_INFO) {                     \
+        if (paCurrentLogLevel() >= PA_LOG_LEVEL_WARN) {                     \
             _PA_LOG_FORMAT("W", tag, fmt, ##__VA_ARGS__);                   \
         }                                                                   \
     } while (0)

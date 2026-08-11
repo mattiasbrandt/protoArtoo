@@ -384,10 +384,17 @@ bool configCacheReadActiveWifiRecovery() {
     return result;
 }
 
+// Live log level, published on every cache apply. Read lock-free by the log
+// macros: a single aligned byte is atomic on this core, and the log path runs
+// on Core 1 real-time loops where a critical section per suppressed log call
+// is not acceptable.
+static volatile uint8_t s_liveLogLevel = 0;
+
 void configCacheApply(const ConfigSnapshot& snap) {
     taskENTER_CRITICAL(&configCacheMux);
     configCache = snap;
     taskEXIT_CRITICAL(&configCacheMux);
+    s_liveLogLevel = snap.system.logLevel;
 
     taskENTER_CRITICAL(&robotStateMux);
     robotState.rcConfigDirty = true;
@@ -395,10 +402,7 @@ void configCacheApply(const ConfigSnapshot& snap) {
 }
 
 uint8_t configCurrentLogLevel() {
-    uint8_t level = 0;
-    taskENTER_CRITICAL(&configCacheMux);
-    level = configCache.system.logLevel;
-    taskEXIT_CRITICAL(&configCacheMux);
+    uint8_t level = s_liveLogLevel;
     return level == 0 ? PA_LOG_LEVEL : level;
 }
 
@@ -523,6 +527,16 @@ bool configLoad(Preferences& prefs, ConfigSnapshot* out) {
     }
 
     bool ok = configDeserialize(reader, out);
+
+    if (stored < 2) {
+        // Schema 1 -> 2: log_level renumbered when the WARN tier was inserted.
+        // Old: 1=Error 2=Info 3=Debug. New: 1=Error 2=Warn 3=Info 4=Debug.
+        // Only 2 and 3 changed meaning; 1 and values already >= 4 are unaffected.
+        if (out->system.logLevel == 2 || out->system.logLevel == 3) {
+            out->system.logLevel += 1;
+            prefs.putUChar("log_level", out->system.logLevel);
+        }
+    }
 
     if (stored < CONFIG_SCHEMA_VERSION) {
         // Migration succeeded: stamp current version so next boot is clean.

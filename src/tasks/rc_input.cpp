@@ -446,7 +446,7 @@ void rcInputTask(void* pvParameters) {
     }
     if (domeSbusEnabled) {
         if (!sbus_dome.begin(PIN_SBUS2_RX)) {
-            PA_LOG_WARN(TAG, "RMT init failed for SBUS2 GPIO%d", PIN_SBUS2_RX);
+            PA_LOG_ERROR(TAG, "RMT init failed for SBUS2 GPIO%d", PIN_SBUS2_RX);
             domeSbusEnabled = false;
         }
     }
@@ -554,7 +554,7 @@ void rcInputTask(void* pvParameters) {
         if (stepDecoderOut.shouldBeginDomeSbus && !sbus_dome.isInitialized()) {
             if (!sbus_dome.begin(PIN_SBUS2_RX)) {
                 if (!domeSbusInitWarned) {
-                    PA_LOG_WARN(TAG, "RMT init failed for SBUS2 GPIO%d", PIN_SBUS2_RX);
+                    PA_LOG_ERROR(TAG, "RMT init failed for SBUS2 GPIO%d", PIN_SBUS2_RX);
                     domeSbusInitWarned = true;
                 }
                 domeSbusEnabled = false;
