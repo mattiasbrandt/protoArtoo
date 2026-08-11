@@ -22,6 +22,16 @@ files are never reported. Checks:
 6. `data/*version.json` must not appear in the diff
 7. no new `extern` declarations added inside `.cpp` files (`extern "C"` allowed)
 8. no new `#ifdef ARDUINO` / `#ifndef ARDUINO` blocks added under `include/`
+9. `tools/slice_verify.py` itself must not be in the diff unless the run
+   acknowledges it with --expect-gate-edit (the ACK is visible in the block)
+10. no fenced pathspec (--fenced, comma-separated, repeatable) in the diff
+
+The block opens with provenance lines — gate script blob hash, HEAD sha, a
+DIRTY marker when the working tree differs beyond `data/*version.json`,
+base/merge-base, diff size, and toolchain versions — so a pasted block can be
+checked against the commit and gate version it claims to describe. Every
+subprocess runs under a timeout so a hung build or test fails the gate loudly
+instead of hanging it.
 
 Exit code 0 only when every check passes. Dependency-free: stdlib + git + pio.
 """
@@ -58,6 +68,13 @@ TAP_COUNT_RE = re.compile(r"^# (tests|pass|fail|cancelled) (\d+)$", re.MULTILINE
 LABEL_WIDTH = 29
 DETAIL_WIDTH = 26
 
+GIT_TIMEOUT = 120
+BUILD_TIMEOUT = 1800
+NATIVE_TEST_TIMEOUT = 1800
+WEB_TEST_TIMEOUT = 300
+DEFAULT_TIMEOUT = 600
+GATE_SCRIPT = "tools/slice_verify.py"
+
 
 @dataclass
 class CheckResult:
@@ -71,12 +88,28 @@ def info(message: str) -> None:
     print(f"[slice_verify] {message}", file=sys.stderr, flush=True)
 
 
-def run(cmd: list[str], cwd: Path = ROOT) -> subprocess.CompletedProcess:
-    return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
+def _text(data: str | bytes | None) -> str:
+    if data is None:
+        return ""
+    if isinstance(data, bytes):
+        return data.decode(errors="replace")
+    return data
+
+
+def run(
+    cmd: list[str], cwd: Path = ROOT, timeout: int = DEFAULT_TIMEOUT
+) -> subprocess.CompletedProcess:
+    try:
+        return subprocess.run(
+            cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout
+        )
+    except subprocess.TimeoutExpired as exc:
+        stderr = _text(exc.stderr) + f"\n[slice_verify] timed out after {timeout}s"
+        return subprocess.CompletedProcess(cmd, 124, _text(exc.stdout), stderr)
 
 
 def git(args: list[str], cwd: Path = ROOT) -> str:
-    proc = run(["git", *args], cwd=cwd)
+    proc = run(["git", *args], cwd=cwd, timeout=GIT_TIMEOUT)
     if proc.returncode != 0:
         raise RuntimeError(f"git {' '.join(args)} failed: {proc.stderr.strip()}")
     return proc.stdout
@@ -97,7 +130,7 @@ def parse_native_summary(output: str) -> tuple[int, int] | None:
 
 
 def run_native_tests(cwd: Path) -> tuple[int, tuple[int, int] | None, str]:
-    proc = run(["pio", "test", "-e", "native"], cwd=cwd)
+    proc = run(["pio", "test", "-e", "native"], cwd=cwd, timeout=NATIVE_TEST_TIMEOUT)
     output = proc.stdout + proc.stderr
     return proc.returncode, parse_native_summary(output), output
 
@@ -132,7 +165,7 @@ def run_web_tests(cwd: Path) -> tuple[int, dict[str, int] | None, str]:
     files = web_test_files(cwd)
     if not files:
         return 0, {"tests": 0, "pass": 0, "fail": 0, "cancelled": 0}, ""
-    proc = run(["node", *WEB_TEST_FLAGS, *files], cwd=cwd)
+    proc = run(["node", *WEB_TEST_FLAGS, *files], cwd=cwd, timeout=WEB_TEST_TIMEOUT)
     output = proc.stdout + proc.stderr
     return proc.returncode, parse_tap_counts(output), output
 
@@ -266,9 +299,11 @@ def check_deleted_tests(base_sha: str) -> CheckResult:
     return CheckResult("deleted test files", str(len(names)), not names, notes)
 
 
-def check_command_exit(label: str, cmd: list[str]) -> CheckResult:
+def check_command_exit(
+    label: str, cmd: list[str], timeout: int = DEFAULT_TIMEOUT
+) -> CheckResult:
     info(f"running {' '.join(cmd)}...")
-    proc = run(cmd)
+    proc = run(cmd, timeout=timeout)
     notes: list[str] = []
     if proc.returncode != 0:
         notes.append(f"{' '.join(cmd)} failed; tail:")
@@ -301,6 +336,62 @@ def check_version_json(base_sha: str) -> CheckResult:
     )
 
 
+def check_gate_script(base_sha: str, expect_gate_edit: bool) -> CheckResult:
+    names = git(["diff", "--name-only", base_sha, "HEAD", "--", GATE_SCRIPT]).splitlines()
+    if not names:
+        return CheckResult("gate script in diff", "0 files", True, [])
+    if expect_gate_edit:
+        notes = ["gate edit acknowledged via --expect-gate-edit; needs coordinator sanction"]
+        return CheckResult("gate script in diff", "ACK (expect-gate-edit)", True, notes)
+    notes = [f"in diff: {name}" for name in names]
+    notes.append(
+        "the gate must not be edited by the slice it verifies; rerun with"
+        " --expect-gate-edit only for coordinator-sanctioned gate work"
+    )
+    return CheckResult("gate script in diff", f"{len(names)} files", False, notes)
+
+
+def check_fenced_paths(base_sha: str, fences: list[str]) -> CheckResult:
+    if not fences:
+        return CheckResult("fenced paths", "none declared", True, [])
+    names = git(["diff", "--name-only", base_sha, "HEAD", "--", *fences]).splitlines()
+    notes = [f"fenced path touched: {name}" for name in names]
+    if names:
+        notes.append("fenced paths are out of scope for this slice by coordinator order")
+    return CheckResult("fenced paths", f"{len(names)} touched", not names, notes)
+
+
+def script_blob_hash() -> str:
+    proc = run(["git", "hash-object", GATE_SCRIPT], timeout=GIT_TIMEOUT)
+    return proc.stdout.strip()[:12] if proc.returncode == 0 else "unknown"
+
+
+def working_tree_dirty() -> bool:
+    """True when the working tree differs from HEAD beyond data/*version.json."""
+    for line in git(["status", "--porcelain"]).splitlines():
+        path = line[3:]
+        if " -> " in path:
+            path = path.split(" -> ", 1)[1]
+        if not VERSION_JSON_RE.match(path):
+            return True
+    return False
+
+
+def env_fingerprint() -> str:
+    def first_line(cmd: list[str]) -> str:
+        proc = run(cmd, timeout=60)
+        text = (proc.stdout or proc.stderr).strip()
+        return text.splitlines()[0] if proc.returncode == 0 and text else "unknown"
+
+    return " | ".join(
+        (
+            first_line(["pio", "--version"]),
+            first_line(["python3", "--version"]),
+            first_line(["node", "--version"]),
+        )
+    )
+
+
 def check_added_pattern(
     label: str, base_sha: str, pathspec: list[str], pattern: re.Pattern
 ) -> CheckResult:
@@ -318,7 +409,24 @@ def main() -> int:
         description="Mechanical PASS/FAIL gate for a branch against a base ref."
     )
     parser.add_argument("--base", required=True, help="base ref, e.g. phase/v1.0.0")
+    parser.add_argument(
+        "--fenced",
+        action="append",
+        default=[],
+        metavar="PATHSPECS",
+        help="comma-separated pathspecs the slice must not touch; repeatable",
+    )
+    parser.add_argument(
+        "--expect-gate-edit",
+        action="store_true",
+        help="acknowledge a coordinator-sanctioned edit to this script;"
+        " the ACK is visible in the printed block",
+    )
+    parser.add_argument(
+        "--json", metavar="PATH", help="also write the results as JSON to PATH"
+    )
     args = parser.parse_args()
+    fences = [spec for chunk in args.fenced for spec in chunk.split(",") if spec]
 
     try:
         base_sha = git(["merge-base", args.base, "HEAD"]).strip()
@@ -326,6 +434,15 @@ def main() -> int:
     except RuntimeError as err:
         print(f"error: {err}", file=sys.stderr)
         return 2
+
+    gate_hash = script_blob_hash()
+    dirty = working_tree_dirty()
+    env = env_fingerprint()
+    diff_files = len(git(["diff", "--name-only", base_sha, "HEAD"]).splitlines())
+    print(f"gate {gate_hash}  head {head_sha[:12]}{'  DIRTY' if dirty else ''}")
+    print(f"base {args.base}  merge-base {base_sha[:12]}  files {diff_files}")
+    print(f"env  {env}")
+    print()
 
     same_commit = base_sha == head_sha
     if same_commit:
@@ -347,6 +464,8 @@ def main() -> int:
         check_added_pattern(
             "new #ifndef ARDUINO in inc/", base_sha, ["include/"], ARDUINO_GUARD_RE
         ),
+        check_gate_script(base_sha, args.expect_gate_edit),
+        check_fenced_paths(base_sha, fences),
     ]
 
     for result in results:
@@ -359,8 +478,34 @@ def main() -> int:
         for result in failures:
             for note in result.notes:
                 print(f"FAIL {result.label}: {note}")
-        return 1
-    return 0
+
+    if args.json:
+        payload = {
+            "gate": {
+                "script_hash": gate_hash,
+                "head": head_sha,
+                "dirty": dirty,
+                "base_ref": args.base,
+                "merge_base": base_sha,
+                "files_in_diff": diff_files,
+                "env": env,
+                "fenced": fences,
+                "expect_gate_edit": args.expect_gate_edit,
+            },
+            "checks": [
+                {
+                    "label": result.label,
+                    "detail": result.detail,
+                    "passed": result.passed,
+                    "notes": result.notes,
+                }
+                for result in results
+            ],
+            "ok": not failures,
+        }
+        Path(args.json).write_text(json.dumps(payload, indent=2) + "\n")
+
+    return 1 if failures else 0
 
 
 if __name__ == "__main__":
