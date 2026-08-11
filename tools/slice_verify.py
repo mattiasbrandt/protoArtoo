@@ -12,10 +12,15 @@ working-tree diff would always self-flag. Pre-existing instances in untouched
 files are never reported. Checks:
 
 1. native test total at HEAD vs base, plus suite pass/fail; a shrinking total
-   fails the gate (coverage reduction needs explicit coordinator acceptance)
+   fails the gate (coverage reduction needs explicit coordinator acceptance),
+   and a flat total fails when the diff touches src/ or include/ — production
+   changes must grow the suite that covers them unless the run carries a
+   coordinator-sanctioned --expect-no-new-tests (the ACK is visible)
 2. web suite (node:test) total at HEAD vs base, gated on process exit code and
    `# cancelled` — never on `# fail`, which is unreliable in both directions
-   (a hung test vanishes from it; a broken invocation inflates it)
+   (a hung test vanishes from it; a broken invocation inflates it); a flat
+   total fails when the diff touches data/ (beyond the version stamps), with
+   the same --expect-no-new-tests waiver
 3. no test file deleted between base and HEAD (native or web)
 4. `pio run -e protoArtoo` exit code (never bare `pio run`)
 5. `tools/check_action_registry_drift.py` exit code
@@ -52,6 +57,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 CACHE_PATH = ROOT / ".pio" / "slice-verify-cache.json"
 VERSION_JSON_RE = re.compile(r"^data/.*version\.json$")
+WEB_PRODUCTION_RE = re.compile(r"^data/")
+NATIVE_PRODUCTION_RE = re.compile(r"^(?:src|include)/")
 EXTERN_RE = re.compile(r'\bextern\b(?!\s*"C")')
 ARDUINO_GUARD_RE = re.compile(
     r"#\s*(?:ifndef|ifdef)\s+ARDUINO\b|#\s*(?:if|elif)\b.*defined\s*\(\s*ARDUINO\s*\)"
@@ -217,8 +224,48 @@ def base_totals(base_sha: str) -> tuple[dict[str, int | None], dict[str, list[st
     return totals, notes
 
 
+def production_changes(diff_names: list[str]) -> dict[str, list[str]]:
+    """Split diff paths into the production trees each suite is answerable for.
+
+    Only the native suite can cover src/ and include/; only the web suite can
+    cover data/. The version stamps are build artifacts, not production code.
+    """
+    return {
+        "web": [
+            name
+            for name in diff_names
+            if WEB_PRODUCTION_RE.match(name) and not VERSION_JSON_RE.match(name)
+        ],
+        "native": [name for name in diff_names if NATIVE_PRODUCTION_RE.match(name)],
+    }
+
+
+def zero_delta_ok(
+    delta: int, production: list[str], waived: bool, suite: str
+) -> tuple[bool, list[str]]:
+    """Production changes must grow the owning suite; a flat delta is only
+    acceptable under an explicit, visible waiver. delta == 0 is precisely the
+    state in which no mutation can ever be killed."""
+    if delta != 0 or not production:
+        return True, []
+    if waived:
+        return True, [
+            f"{suite} delta +0 with {len(production)} production files changed;"
+            " ACK (--expect-no-new-tests); needs coordinator sanction"
+        ]
+    return False, [
+        f"{len(production)} production files changed but the {suite} test count"
+        " did not grow; add coverage or rerun with coordinator-sanctioned"
+        " --expect-no-new-tests"
+    ]
+
+
 def check_native_tests(
-    base_total: int | None, same_commit: bool, base_notes: list[str]
+    base_total: int | None,
+    same_commit: bool,
+    base_notes: list[str],
+    production: list[str],
+    expect_no_new_tests: bool,
 ) -> CheckResult:
     info("running native tests at HEAD...")
     code, summary, output = run_native_tests(ROOT)
@@ -242,6 +289,11 @@ def check_native_tests(
                 f"native test count shrank by {-delta}; shrinking coverage"
                 " needs explicit coordinator acceptance"
             )
+        delta_ok, delta_notes = zero_delta_ok(
+            delta, production, expect_no_new_tests, "native"
+        )
+        notes.extend(delta_notes)
+        passed = passed and delta_ok
     if code != 0 or succeeded != total:
         notes.append(f"native suite: {succeeded}/{total} succeeded, exit {code}; tail:")
         notes.extend(output.splitlines()[-10:])
@@ -250,7 +302,11 @@ def check_native_tests(
 
 
 def check_web_tests(
-    base_total: int | None, same_commit: bool, base_notes: list[str]
+    base_total: int | None,
+    same_commit: bool,
+    base_notes: list[str],
+    production: list[str],
+    expect_no_new_tests: bool,
 ) -> CheckResult:
     info("running web tests at HEAD...")
     code, counts, output = run_web_tests(ROOT)
@@ -275,6 +331,11 @@ def check_web_tests(
                 f"web test count shrank by {-delta}; shrinking coverage"
                 " needs explicit coordinator acceptance"
             )
+        delta_ok, delta_notes = zero_delta_ok(
+            delta, production, expect_no_new_tests, "web"
+        )
+        notes.extend(delta_notes)
+        passed = passed and delta_ok
     if code != 0 or cancelled:
         # Gate on exit code and cancellations, never on `# fail`: a hung test
         # is reported cancelledByParent and vanishes from the fail count while
@@ -435,6 +496,13 @@ def main() -> int:
         " the ACK is visible in the printed block",
     )
     parser.add_argument(
+        "--expect-no-new-tests",
+        action="store_true",
+        help="acknowledge, with coordinator sanction, that this slice changes"
+        " production code without growing the owning test suite;"
+        " the ACK is visible in the printed block",
+    )
+    parser.add_argument(
         "--json", metavar="PATH", help="also write the results as JSON to PATH"
     )
     args = parser.parse_args()
@@ -450,7 +518,9 @@ def main() -> int:
     gate_hash = script_blob_hash()
     dirty = working_tree_dirty()
     env = env_fingerprint()
-    diff_files = len(git(["diff", "--name-only", base_sha, "HEAD"]).splitlines())
+    diff_names = git(["diff", "--name-only", base_sha, "HEAD"]).splitlines()
+    diff_files = len(diff_names)
+    production = production_changes(diff_names)
     print(f"gate {gate_hash}  head {head_sha[:12]}{'  DIRTY' if dirty else ''}")
     print(f"base {args.base}  merge-base {base_sha[:12]}  files {diff_files}")
     print(f"env  {env}")
@@ -469,8 +539,20 @@ def main() -> int:
             ["python3", "-m", "unittest", "discover", "-s", "test/test_tools", "-q"],
             timeout=120,
         ),
-        check_native_tests(base["native"], same_commit, base_notes["native"]),
-        check_web_tests(base["web"], same_commit, base_notes["web"]),
+        check_native_tests(
+            base["native"],
+            same_commit,
+            base_notes["native"],
+            production["native"],
+            args.expect_no_new_tests,
+        ),
+        check_web_tests(
+            base["web"],
+            same_commit,
+            base_notes["web"],
+            production["web"],
+            args.expect_no_new_tests,
+        ),
         check_deleted_tests(base_sha),
         check_command_exit("pio run -e protoArtoo", ["pio", "run", "-e", "protoArtoo"]),
         check_command_exit(
@@ -508,6 +590,8 @@ def main() -> int:
                 "env": env,
                 "fenced": fences,
                 "expect_gate_edit": args.expect_gate_edit,
+                "expect_no_new_tests": args.expect_no_new_tests,
+                "production_files": production,
             },
             "checks": [
                 {

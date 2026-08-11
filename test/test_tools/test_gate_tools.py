@@ -73,6 +73,53 @@ class PorcelainDirtyPaths(unittest.TestCase):
         self.assertEqual(slice_verify.porcelain_nonversion_paths(text), [])
 
 
+class ProductionSplit(unittest.TestCase):
+    def test_trees_map_to_their_suites(self):
+        names = [
+            "data/page_bootstrap.js",
+            "data/index.html",
+            "src/main.cpp",
+            "include/config.h",
+            "tools/slice_verify.py",
+            "test/test_web/test_footer.js",
+        ]
+        split = slice_verify.production_changes(names)
+        self.assertEqual(split["web"], ["data/page_bootstrap.js", "data/index.html"])
+        self.assertEqual(split["native"], ["src/main.cpp", "include/config.h"])
+
+    def test_version_stamps_are_not_production(self):
+        split = slice_verify.production_changes(
+            ["data/fw-version.json", "data/fs-version.json"]
+        )
+        self.assertEqual(split["web"], [])
+
+
+class ZeroDeltaGate(unittest.TestCase):
+    def test_flat_delta_with_production_changes_fails(self):
+        ok, notes = slice_verify.zero_delta_ok(0, ["data/app.js"], False, "web")
+        self.assertFalse(ok)
+        self.assertTrue(notes)
+
+    def test_flat_delta_without_production_changes_passes(self):
+        self.assertEqual(slice_verify.zero_delta_ok(0, [], False, "web"), (True, []))
+
+    def test_growing_delta_passes(self):
+        self.assertEqual(
+            slice_verify.zero_delta_ok(3, ["data/app.js"], False, "web"), (True, [])
+        )
+
+    def test_waiver_passes_with_visible_ack(self):
+        ok, notes = slice_verify.zero_delta_ok(0, ["src/main.cpp"], True, "native")
+        self.assertTrue(ok)
+        self.assertIn("--expect-no-new-tests", notes[0])
+
+    def test_shrinking_delta_is_not_this_checks_business(self):
+        # delta < 0 already fails via the shrink rule; zero_delta_ok stays out.
+        self.assertEqual(
+            slice_verify.zero_delta_ok(-2, ["data/app.js"], False, "web"), (True, [])
+        )
+
+
 class TimeoutRunner(unittest.TestCase):
     def test_timeout_returns_124_with_note(self):
         proc = slice_verify.run(["sleep", "5"], timeout=1)
