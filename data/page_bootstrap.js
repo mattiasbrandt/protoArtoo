@@ -919,9 +919,32 @@
     // another module's traffic - no other code holds this controller.
     const controller = new AbortController();
 
-    // Section Request Handle: wraps PAApi methods to inject the section's
-    // signal and Operation Deadline category. Loaders call handle.get(),
-    // handle.postForm(), etc. to get signal + deadline for free.
+    // ========================================================================
+    // Section Loader Contract: Handle and Signal
+    // ========================================================================
+    // Every section loader receives two values for managing its network lifecycle:
+    //
+    // 1. handle (Section Request Handle):
+    //    Mandatory for ALL PAApi traffic. This wrapper ensures every PAApi call
+    //    (handle.get, handle.postForm, handle.postJson, handle.estopPostForm)
+    //    automatically receives both the section run's abort signal and its
+    //    Operation Deadline as non-overridable options. These are spread last
+    //    in buildHandleOpts, so caller opts cannot override them. This guarantees
+    //    cancelling the section run aborts exactly these requests and injects
+    //    the appropriate timeout category.
+    //
+    // 2. signal (raw AbortSignal):
+    //    Passed separately as an escape hatch for non-PAApi work only. Use this
+    //    if your loader needs to join raw fetch() calls or EventSource
+    //    subscriptions to the section run's cancellation lifecycle. Do NOT pass
+    //    this raw signal into PAApi options - the handle already supplies it,
+    //    and doing so would bypass the Operation Deadline injection and timeout
+    //    logic. Only destructure { handle } unless you have non-PAApi work.
+    //
+    // Loaders destructure one or both values depending on their work type:
+    //   async ({ handle }) => { ... }  // Pure PAApi caller
+    //   async ({ handle, signal }) => { ... }  // Needs to join raw fetch/EventSource
+    //
     const buildHandleOpts = (callerOpts = {}) => {
       const deadlineMs = state.deadlines[name];
       return {
