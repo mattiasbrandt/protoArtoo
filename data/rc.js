@@ -345,6 +345,9 @@
     );
   };
 
+  const rcSourcesEnabled = (diagnostics) => Object.values(diagnostics?.sources || {})
+    .some((source) => source?.enabled === true);
+
   const getSingleSbusRecvCh2 = (cfg) => cfg?.rc?.sbus?.recvCh2 === true;
 
   const setSingleSbusRecvSelect = (recvCh2) => {
@@ -1134,7 +1137,7 @@
       const savedMode = getRcModeFromConfig(result.data);
       switchRcMode(savedMode);
       await loadMappings();
-      setModeFeedback(`${modeLabel(savedMode)} saved at ${new Date().toLocaleTimeString()}`, 'success');
+      setModeFeedback(`${modeLabel(savedMode)} saved at ${new Date().toLocaleTimeString()}. Restart the controller to apply.`, 'success');
     } catch (error) {
       setModeFeedback(`❌ ${window.PAApi.messageFor(error)}`, 'error');
     }
@@ -1390,6 +1393,7 @@
 
   const renderRcDiagnostics = (payload) => {
     rcSnapshot = payload;
+    setRcInputsEnabled(rcSourcesEnabled(payload));
     renderSourceHealth();
     renderSummaryTable();
     renderChannelList();
@@ -1547,7 +1551,7 @@
       setSbusRecvFeedback("Saving...");
       try {
         await window.PAApi.postJson("/api/config", { rc: { sbus: { recvCh2 } } }, { timeoutMs: 5000 });
-        setSbusRecvFeedback(`\u2713 Saved at ${new Date().toLocaleTimeString()}`, "success", 2000);
+        setSbusRecvFeedback(`\u2713 Saved at ${new Date().toLocaleTimeString()}. Restart the controller to apply.`, "success");
         confirmedSbusRecvValue = sbusRecvSel.value;
       } catch (error) {
         sbusRecvSel.value = confirmedSbusRecvValue;

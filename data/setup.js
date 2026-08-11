@@ -171,7 +171,7 @@
     if (pending) {
       setSaveSummary("💾 Saving...", "saving");
     } else if (setupSaveSummary?.dataset.state === "saving") {
-      setSaveSummary("💾 Auto-save ready", "info");
+      setSaveSummary("💾 Auto-save · restart to apply", "info");
     }
   };
 
@@ -400,8 +400,8 @@
       const result = await window.PAApi.postForm("/api/config", body, { timeoutMs: 5000 });
       renderFeatures(result.data);
       const savedAt = new Date().toLocaleTimeString();
-      setFeatureFeedback(`Saved at ${savedAt}`, "success");
-      setSaveSummary(`✅ Saved at ${savedAt}`, "ok");
+      setFeatureFeedback(`Saved at ${savedAt}. Restart the controller to apply component changes.`, "success");
+      setSaveSummary(`🔄 Saved at ${savedAt} · restart required`, "warn");
     } catch (error) {
       console.error("[setup] saveFeatures failed:", error);
       setFeatureFeedback(window.PAApi.messageFor(error), "error");
@@ -531,7 +531,7 @@
   initSegmentedTypeControls();
   updateEnabledSummary();
   updateAuxLedConfigVisibility();
-  setSaveSummary("💾 Auto-save ready", "info");
+  setSaveSummary("💾 Auto-save · restart to apply", "info");
   renderIdentity({ droidName: "protoartoo", mdnsUseName: false });
   loadIdentity();
   loadFeatures();
