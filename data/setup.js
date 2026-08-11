@@ -75,8 +75,14 @@
 
   let saveInFlight = false;
   let saveQueued = false;
+  let saveScheduled = false;
+  let featureEditGeneration = 0;
+  let rcChangeGeneration = 0;
+  let savedRcChangeGeneration = 0;
+  let rcRestartPending = false;
   // Auto-save state
   let saveTimeout = null;
+  const RC_TOGGLE_KEYS = new Set(["rcCh1", "rcCh2", "rcCh3", "rcCh4", "rcCh5", "rcCh6"]);
 
   const setSaveSummary = (message, state = "info") => {
     if (!setupSaveSummary) return;
@@ -171,7 +177,7 @@
     if (pending) {
       setSaveSummary("💾 Saving...", "saving");
     } else if (setupSaveSummary?.dataset.state === "saving") {
-      setSaveSummary("💾 Auto-save · restart to apply", "info");
+      setSaveSummary("💾 Auto-save ready", "info");
     }
   };
 
@@ -381,6 +387,8 @@
     }
 
     saveInFlight = true;
+    const requestEditGeneration = featureEditGeneration;
+    const requestRcChangeGeneration = rcChangeGeneration;
     setFeatureFeedback("Saving...");
     try {
       const body = new URLSearchParams();
@@ -398,10 +406,21 @@
         body.set("aux_led_count", String(sanitizeAuxLedCount()));
       }
       const result = await window.PAApi.postForm("/api/config", body, { timeoutMs: 5000 });
-      renderFeatures(result.data);
+      if (featureEditGeneration === requestEditGeneration) {
+        renderFeatures(result.data);
+      }
+      if (requestRcChangeGeneration > savedRcChangeGeneration) {
+        savedRcChangeGeneration = requestRcChangeGeneration;
+        rcRestartPending = true;
+      }
       const savedAt = new Date().toLocaleTimeString();
-      setFeatureFeedback(`Saved at ${savedAt}. Restart the controller to apply component changes.`, "success");
-      setSaveSummary(`🔄 Saved at ${savedAt} · restart required`, "warn");
+      if (rcRestartPending) {
+        setFeatureFeedback(`Saved at ${savedAt}. Restart the controller to apply RC input changes.`, "success");
+        setSaveSummary(`🔄 Saved at ${savedAt} · restart required`, "warn");
+      } else {
+        setFeatureFeedback(`Saved at ${savedAt}`, "success");
+        setSaveSummary(`✅ Saved at ${savedAt}`, "ok");
+      }
     } catch (error) {
       console.error("[setup] saveFeatures failed:", error);
       setFeatureFeedback(window.PAApi.messageFor(error), "error");
@@ -413,14 +432,21 @@
         saveFeatures();
         return;
       }
-      setSavePending(false);
+      if (!saveScheduled) {
+        setSavePending(false);
+      }
     }
   };
 
   const debouncedSave = (...args) => {
     setSavePending(true);
     clearTimeout(saveTimeout);
-    saveTimeout = setTimeout(() => saveFeatures(...args), 300);
+    saveScheduled = true;
+    saveTimeout = setTimeout(() => {
+      saveScheduled = false;
+      saveTimeout = null;
+      saveFeatures(...args);
+    }, 300);
   };
 
   // Attach listeners to all toggles and selects
@@ -428,6 +454,10 @@
     const toggle = featureToggles[key];
     if (toggle.input) {
       toggle.input.addEventListener("change", () => {
+        featureEditGeneration += 1;
+        if (RC_TOGGLE_KEYS.has(key)) {
+          rcChangeGeneration += 1;
+        }
         updateToggleStatus(key);
         updateEnabledSummary();
         if (["aux1", "aux2", "aux3"].includes(key)) {
@@ -441,6 +471,7 @@
   Object.entries(typeSelects).forEach(([typeKey, select]) => {
     if (select) {
       select.addEventListener("change", () => {
+        featureEditGeneration += 1;
         if (AUX_RGB_SELECT_KEYS.includes(typeKey)) {
           enforceSingleRgbAux(typeKey);
           updateAuxLedConfigVisibility();
@@ -453,6 +484,7 @@
 
   if (auxLedCountInput) {
     auxLedCountInput.addEventListener("change", () => {
+      featureEditGeneration += 1;
       sanitizeAuxLedCount();
       debouncedSave();
     });
@@ -531,7 +563,7 @@
   initSegmentedTypeControls();
   updateEnabledSummary();
   updateAuxLedConfigVisibility();
-  setSaveSummary("💾 Auto-save · restart to apply", "info");
+  setSaveSummary("💾 Auto-save ready", "info");
   renderIdentity({ droidName: "protoartoo", mdnsUseName: false });
   loadIdentity();
   loadFeatures();
