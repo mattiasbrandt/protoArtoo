@@ -53,17 +53,25 @@ static WebAdmissionSession* s_admissionSession = nullptr;
 // Connection lifetime evidence. Lives here rather than beside the event stream
 // registry because it is written from the same two admission callbacks, on the
 // same single task, and therefore needs none of that registry's locking.
-WebSocketCensus s_census;
+static WebSocketCensus s_census;
 
 // Copies the census into the globals /api/status publishes. Called from the
 // same task that mutates it, so the read is consistent without a lock; the
 // globals are volatile only because the status builder reads them from another.
-void publishCensus() {
+static void publishCensus() {
     g_webSocketsAccepted = s_census.accepted;
     g_webSocketsOpen = s_census.open;
     g_webSocketsOpenPeak = s_census.openPeak;
     g_webSocketsUntracked = s_census.untracked;
     g_webRequestsServed = s_census.requests;
+}
+
+// Accessor: close socket and publish updated census. Wraps the two operations
+// that the stream close callback needs. This is the only external reach-in to
+// the census; all other census operations stay in this unit.
+void webAdmissionSocketClosed(int sockfd) {
+    webSocketCensusClose(&s_census, sockfd);
+    publishCensus();
 }
 
 // The PsychicHttp constructor installs its own open_fn; this holds it so the
@@ -490,9 +498,10 @@ esp_err_t admissionMiddleware(PsychicRequest* request, PsychicResponse* response
     // outside it -- see webResponseDeadlineCheck().
     httpd_req_t* rawForDeadline = request->request();
     const int deadlineSocket = httpd_req_to_sockfd(rawForDeadline);
-    // webResponseDeadlineArm is declared in web_response_deadline.h (policy core)
-    // s_responseDeadline is declared in web_backend_psychic.h (cross-unit interface)
-    webResponseDeadlineArm(&s_responseDeadline, deadlineSocket);
+    // The accessor hides s_responseDeadline, which is now translation-unit-local
+    // in web_response_deadline_psychic.cpp. The core decision lives in
+    // web_response_deadline.h for host testing.
+    webResponseDeadlineArmSocket(deadlineSocket);
 
     // Estop is admitted but never counted: a safety command must not be able to
     // fill the cap it is exempt from.
@@ -524,8 +533,9 @@ esp_err_t admissionMiddleware(PsychicRequest* request, PsychicResponse* response
     // taken on every response rather than in a one-off measurement session.
     // Disarm reports -1 for a response that sent nothing or that breached,
     // neither of which is a legitimate response time.
-    // webResponseDeadlineDisarm is declared in web_response_deadline.h (policy core)
-    const int32_t responseMs = webResponseDeadlineDisarm(&s_responseDeadline, millis());
+    // The accessor hides s_responseDeadline, which is now translation-unit-local
+    // in web_response_deadline_psychic.cpp. The -1 sentinel is preserved.
+    const int32_t responseMs = webResponseDeadlineDisarmSocket(millis());
     if (responseMs >= 0) {
         g_webResponseLastMs = (uint32_t)responseMs;
         if ((uint32_t)responseMs > g_webResponseMaxMs) {

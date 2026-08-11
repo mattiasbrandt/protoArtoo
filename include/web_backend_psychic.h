@@ -25,10 +25,10 @@
 // Admission orchestration (web_admission_psychic.cpp)
 // =============================================================================
 
-// Admission state (implementation detail, exposed for event stream close callback).
-extern WebSocketCensus s_census;
-extern WebResponseDeadline s_responseDeadline;
-extern void publishCensus();
+// Accessor: close socket and publish updated census. Wraps
+// webSocketCensusClose(&s_census, fd) and publishCensus(); s_census and
+// publishCensus are now translation-unit-local in web_admission_psychic.cpp.
+void webAdmissionSocketClosed(int sockfd);
 
 // Register connection-admission callback and initialize rate limiter/census.
 // Called during server pre-begin() configuration.
@@ -47,6 +47,20 @@ void webAdmissionTraceInit();
 
 // Initialize deadline state before any connections arrive.
 void webDeadlineInitialize();
+
+// Accessors: operations on the backend session state that hide s_responseDeadline.
+// These wrap the pure core functions in web_response_deadline.h.
+// s_responseDeadline is now translation-unit-local in web_response_deadline_psychic.cpp.
+
+// Exempt a socket from response-phase deadline enforcement (for event streams).
+void webResponseDeadlineExemptSocket(int fd);
+
+// Arm the response-phase deadline for a socket (when a request is admitted).
+void webResponseDeadlineArmSocket(int fd);
+
+// Disarm the response-phase deadline for a socket and report elapsed time.
+// Returns elapsed milliseconds, or -1 if the phase cannot be reported.
+int32_t webResponseDeadlineDisarmSocket(uint32_t nowMs);
 
 // Session send override callback for deadline enforcement.
 // Registered per-socket from connection-admission callback.
