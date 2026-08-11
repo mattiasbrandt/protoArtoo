@@ -57,8 +57,11 @@ from the epic's coordination section (it changes at Phase 5 closure).
   prompt - the brief's first step sends the worker to the issue body and the
   pinned coordinator comment.
 - Fence files mechanically, not just in prose: put the exact gate invocation
-  including `--fenced <pathspecs>` in the ticket's pinned comment. The gate
-  then rejects a fenced-file edit in the worker's own run, before review.
+  in the ticket's pinned comment — `--fenced <pathspecs>`, the `--mutations`
+  expectation for web slices, and any waiver flag you are sanctioning
+  (`--expect-no-new-tests`, `--expect-no-mutations`). The gate then rejects a
+  fenced-file edit, a flat test total, or missing mutation coverage in the
+  worker's own run, before review.
 
 ## Critic protocol (before accepting any slice - no exceptions)
 
@@ -66,22 +69,25 @@ Worker summaries are claims, not evidence; this repo has caught agents
 reporting passes that never ran. In the worker's worktree, personally:
 
 1. Re-run the slice gate with the worker's exact invocation, including any
-   `--fenced` pathspecs from your brief:
-   `python3 tools/slice_verify.py --base <base> [--fenced ...]`. Its block
-   must match the worker's pasted block character for character, provenance
-   lines included - gate hash, HEAD sha, DIRTY marker, merge-base, diff size;
+   `--fenced` pathspecs and the worker's `--mutations` patches from your
+   brief: `python3 tools/slice_verify.py --base <base> [--fenced ...]
+   [--mutations <patches>]`. Its block must match the worker's pasted block
+   character for character, provenance lines included - both script hashes
+   (`gate` and `mut`), HEAD sha, DIRTY marker, merge-base, diff size;
    divergence marks the slice unverified (AGENTS.md "Worker slice gate"). The
-   gate runs both suites, the build, and the diff checks; `--json` on both
-   runs makes the comparison diffable. An `--expect-gate-edit` ACK in a
-   worker's block that you did not sanction is an automatic reject. Then
-   every remaining acceptance check.
+   gate runs both suites, the mutation stage, the build, and the diff checks;
+   `--json` on both runs makes the comparison diffable. Any waiver ACK in a
+   worker's block that you did not sanction - `--expect-gate-edit`,
+   `--expect-no-new-tests`, `--expect-no-mutations` - is an automatic
+   reject. Then every remaining acceptance check.
 2. For new or changed tests, demand the prove-it-can-fail evidence: red
-   against the pre-fix commit for bug fixes, and a
-   `python3 tools/mutation_verify.py <patches>` table - KILLED rows only; a
-   SURVIVED, KILLED-BY-HANG, or hand-written table is a reject. Re-run the
-   tool with the worker's patches yourself. Web tests are held to
-   `test/test_web/README.md`. A green suite without that demonstration is a
-   claim.
+   against the pre-fix commit for bug fixes. Mutation coverage is proven by
+   the gate re-run in step 1 - the mutation row passes only when every patch
+   is KILLED by assertion and every changed web production JS file is hit by
+   at least one patch; a SURVIVED, KILLED-BY-HANG, uncovered file, or any
+   mutation table pasted outside a gate block is a reject. Web tests are
+   held to `test/test_web/README.md`. A green suite without that
+   demonstration is a claim.
 3. Read the full diff (`git diff <base>...HEAD`): scope creep,
    shortcuts, behaviour change in tickets that promise none, comment
    degradation, core guardrails (no heap alloc or blocking on Core 1 paths,
