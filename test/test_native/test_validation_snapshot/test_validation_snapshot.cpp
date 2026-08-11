@@ -2,6 +2,7 @@
 #include <string.h>
 #include <unity.h>
 
+#include "config_cache.h"
 #include "validation_snapshot.h"
 
 namespace {
@@ -163,11 +164,39 @@ void test_populateValidationJson_key_order_matches_contract() {
     TEST_ASSERT_TRUE(pAudio < pRc);
 }
 
+void test_captureValidationSnapshot_reports_boot_active_rc_and_live_timeout() {
+    memset(&robotState, 0, sizeof(robotState));
+
+    ConfigSnapshot boot = {};
+    boot.system.rc_input_mode = RC_INPUT_SINGLE_SBUS;
+    boot.system.single_sbus_use_ch2 = false;
+    boot.system.enable_rc_ch1 = true;
+    configCacheSetActiveRcInput(rcInputActiveConfigFromSystem(boot.system));
+
+    ConfigSnapshot saved = boot;
+    saved.system.rc_input_mode = RC_INPUT_DUAL_SBUS;
+    saved.system.single_sbus_use_ch2 = true;
+    saved.system.enable_rc_ch1 = false;
+    saved.system.enable_rc_ch2 = true;
+    saved.drive.sbusTimeoutMs = 4321;
+    configCacheApply(saved);
+
+    ValidationSnapshot snapshot = {};
+    captureValidationSnapshot(&snapshot);
+
+    TEST_ASSERT_EQUAL_STRING("single_sbus", snapshot.rc.mode);
+    TEST_ASSERT_TRUE(snapshot.rc.sources[0].enabled);
+    TEST_ASSERT_FALSE(snapshot.rc.sources[1].enabled);
+    TEST_ASSERT_FALSE(snapshot.rc.sources[2].enabled);
+    TEST_ASSERT_EQUAL_UINT32(4321, snapshot.rc.timeoutMs);
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_populateValidationJson_typical_valid);
     RUN_TEST(test_populateValidationJson_worst_case_fits_buffer);
     RUN_TEST(test_populateValidationJson_rejects_null_contract_fields);
     RUN_TEST(test_populateValidationJson_key_order_matches_contract);
+    RUN_TEST(test_captureValidationSnapshot_reports_boot_active_rc_and_live_timeout);
     return UNITY_END();
 }

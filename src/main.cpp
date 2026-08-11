@@ -277,13 +277,9 @@ void setup() {
     logBootHealth();
     ConfigSnapshot bootCfg = {};
     configCacheRead(&bootCfg);
-    RcInputStepStartupInputs rcStartup = {
-        bootCfg.system.rc_input_mode, bootCfg.system.single_sbus_use_ch2,
-        bootCfg.system.enable_rc_ch1, bootCfg.system.enable_rc_ch2,
-        bootCfg.system.enable_rc_ch3, bootCfg.system.enable_rc_ch4,
-        bootCfg.system.enable_rc_ch5, bootCfg.system.enable_rc_ch6,
-    };
-    RcInputStartupPlan rcPlan = rcInputStepStartupPlan(rcStartup);
+    const RcInputActiveConfig activeRc = rcInputActiveConfigFromSystem(bootCfg.system);
+    configCacheSetActiveRcInput(activeRc);
+    RcInputStartupPlan rcPlan = rcInputStepStartupPlan(activeRc);
 
     // Layer 4: Initialize Task Watchdog Timer
     // IDF 5.x: esp_task_wdt_init() takes a config struct (timeout_ms, idle_core_mask,
@@ -302,8 +298,7 @@ void setup() {
 
     // Safety: boot with drive locked until the existing SBUS1 watchdog sees
     // a frame. Routed SBUS2 watchdog arming remains owned by issue #167.
-    bool sbusMode = bootCfg.system.rc_input_mode != RC_INPUT_STANDARD_PWM;
-    if (bootSbusSafeGuardDecision(sbusMode, rcPlan.sbus1WatchdogEnabled)) {
+    if (bootSbusSafeGuardDecision(rcPlan.sbus1WatchdogEnabled)) {
         failsafeTrigger(FailsafeLayer::SBUS_WATCHDOG);
     }
 

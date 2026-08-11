@@ -29,14 +29,20 @@ void rcInputStepInit(RcInputStepState* state) {
 // Startup Decision
 // ============================================================================
 
+// Identify modes that route drive input through SBUS. The startup-plan builder
+// calls this so hardware decisions remain pure and independent of config/NVS.
 static bool is_drive_sbus_mode(uint8_t mode) {
     return mode == RC_INPUT_SINGLE_SBUS || mode == RC_INPUT_DUAL_SBUS;
 }
 
+// Identify modes that dedicate the second decoder to dome input. The
+// startup-plan builder calls this to keep the #167 single-SBUS route excluded.
 static bool is_dome_sbus_mode(uint8_t mode) {
     return mode == RC_INPUT_DUAL_SBUS;
 }
 
+// Decide whether the boot-active mode, route, and drive RC toggles need a drive
+// decoder. rcInputStepStartupPlan calls this before main initializes hardware.
 static bool driveSbusDecoderEnabledForMode(uint8_t mode, bool enableRcCh1, bool enableRcCh2,
                                            bool useCh2) {
     if (!is_drive_sbus_mode(mode)) {
@@ -49,19 +55,23 @@ static bool driveSbusDecoderEnabledForMode(uint8_t mode, bool enableRcCh1, bool 
     return enableRcCh1;
 }
 
-RcInputStartupPlan rcInputStepStartupPlan(const RcInputStepStartupInputs& in) {
+// Project the immutable boot-active RC configuration into decoder, watchdog,
+// and task decisions. main and rcInputTask call this from the same published
+// active snapshot so startup hardware and runtime dispatch cannot diverge.
+RcInputStartupPlan rcInputStepStartupPlan(const RcInputActiveConfig& active) {
     RcInputStartupPlan out = {};
 
     out.driveSbusEnabled =
-        driveSbusDecoderEnabledForMode(in.rcInputMode, in.enableRcCh1, in.enableRcCh2, in.useCh2);
-    out.domeSbusEnabled = is_dome_sbus_mode(in.rcInputMode) && in.enableRcCh2;
+        driveSbusDecoderEnabledForMode(active.mode, active.enableRc[0], active.enableRc[1],
+                                       active.useCh2);
+    out.domeSbusEnabled = is_dome_sbus_mode(active.mode) && active.enableRc[1];
     out.sbus1WatchdogEnabled =
         out.driveSbusEnabled &&
-        !(in.rcInputMode == RC_INPUT_SINGLE_SBUS && in.useCh2);
+        !(active.mode == RC_INPUT_SINGLE_SBUS && active.useCh2);
 
-    if (in.rcInputMode == RC_INPUT_STANDARD_PWM) {
-        out.taskEnabled = in.enableRcCh1 || in.enableRcCh2 || in.enableRcCh3 || in.enableRcCh4 ||
-                          in.enableRcCh5 || in.enableRcCh6;
+    if (active.mode == RC_INPUT_STANDARD_PWM) {
+        out.taskEnabled = active.enableRc[0] || active.enableRc[1] || active.enableRc[2] ||
+                          active.enableRc[3] || active.enableRc[4] || active.enableRc[5];
     } else {
         out.taskEnabled = out.driveSbusEnabled || out.domeSbusEnabled;
     }

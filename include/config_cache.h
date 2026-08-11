@@ -15,6 +15,7 @@
 #pragma once
 
 #include "config_store.h"  // For type definitions (ConfigSnapshot, DomeConfig, etc.)
+#include "rc_input_active_config.h"
 
 // =============================================================================
 // Cache read-write (live runtime state)
@@ -33,6 +34,18 @@ void configCacheReadWifi(WifiConfig* out);
 // configCacheApply: Replace the live config cache with a full snapshot.
 // Marks RobotState.rcConfigDirty so RcInputTask rebuilds cached mapping config.
 void configCacheApply(const ConfigSnapshot& snap);
+
+// Project the boot SystemConfig into the immutable RC settings that actually
+// govern decoder startup, dispatch gates, and RC reporting. main calls this
+// once after NVS load so saved staged changes cannot partially apply at runtime
+// (ADR 0027).
+RcInputActiveConfig rcInputActiveConfigFromSystem(const SystemConfig& system);
+
+// Publish/read the RC configuration applied at boot. main publishes once;
+// RcInputTask and RC diagnostics/status readers consume copies under the config
+// cache lock so their reported state matches the running hardware paths.
+void configCacheSetActiveRcInput(const RcInputActiveConfig& cfg);
+void configCacheReadActiveRcInput(RcInputActiveConfig* out);
 
 // =============================================================================
 // Active WiFi state (reflects the bootstrap-time decision, not persisted settings)

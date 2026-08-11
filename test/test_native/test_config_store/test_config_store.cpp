@@ -645,6 +645,54 @@ void test_configCacheRead_captures_all_categories() {
     TEST_ASSERT_EQUAL_UINT8(7, snap.system.rc_free3.channel);
 }
 
+void test_active_rc_config_survives_saved_toggle_and_mode_changes() {
+    ConfigSnapshot boot = {};
+    boot.system.rc_input_mode = RC_INPUT_SINGLE_SBUS;
+    boot.system.single_sbus_use_ch2 = false;
+    boot.system.enable_rc_ch1 = true;
+    boot.system.enable_rc_ch2 = false;
+    boot.system.enable_rc_ch3 = true;
+    boot.system.enable_rc_ch4 = false;
+    boot.system.enable_rc_ch5 = true;
+    boot.system.enable_rc_ch6 = false;
+    boot.system.enable_dome = true;
+    boot.system.enable_arm1 = true;
+    boot.system.enable_arm2 = false;
+    boot.system.enable_s2_sound = true;
+    configCacheSetActiveRcInput(rcInputActiveConfigFromSystem(boot.system));
+
+    ConfigSnapshot saved = boot;
+    saved.system.rc_input_mode = RC_INPUT_DUAL_SBUS;
+    saved.system.single_sbus_use_ch2 = true;
+    saved.system.enable_rc_ch1 = false;
+    saved.system.enable_rc_ch2 = true;
+    saved.system.enable_rc_ch3 = false;
+    saved.system.enable_rc_ch4 = true;
+    saved.system.enable_rc_ch5 = false;
+    saved.system.enable_rc_ch6 = true;
+    saved.system.enable_dome = false;
+    saved.system.enable_arm1 = false;
+    saved.system.enable_arm2 = true;
+    saved.system.enable_s2_sound = false;
+    configCacheApply(saved);
+
+    RcInputActiveConfig active = {};
+    configCacheReadActiveRcInput(&active);
+
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)RC_INPUT_SINGLE_SBUS, (uint8_t)active.mode);
+    TEST_ASSERT_FALSE(active.useCh2);
+    TEST_ASSERT_TRUE(active.enableRc[0]);
+    TEST_ASSERT_FALSE(active.enableRc[1]);
+    TEST_ASSERT_TRUE(active.enableRc[2]);
+    TEST_ASSERT_FALSE(active.enableRc[3]);
+    TEST_ASSERT_TRUE(active.enableRc[4]);
+    TEST_ASSERT_FALSE(active.enableRc[5]);
+    TEST_ASSERT_TRUE(active.enableDome);
+    TEST_ASSERT_TRUE(active.enableArm1);
+    TEST_ASSERT_FALSE(active.enableArm2);
+    TEST_ASSERT_TRUE(active.enableSound);
+}
+
 // Test: full save path — config cache -> configSave -> configLoad
 // Verifies that the complete chain used by saveConfigToNvs() preserves values correctly.
 void test_configCacheRead_save_round_trip() {
@@ -1235,6 +1283,7 @@ int main() {
     RUN_TEST(test_configLoad_save_dome_wifi_peer_ip_empty);
     RUN_TEST(test_configLoad_save_moodcat_12bit_mask);
     RUN_TEST(test_configCacheRead_captures_all_categories);
+    RUN_TEST(test_active_rc_config_survives_saved_toggle_and_mode_changes);
     RUN_TEST(test_configCacheRead_save_round_trip);
     RUN_TEST(test_configCacheApply_applies_all_categories);
     RUN_TEST(test_configCacheApply_does_not_touch_runtime_fields);

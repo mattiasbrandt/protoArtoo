@@ -101,6 +101,8 @@ void captureValidationSnapshot(ValidationSnapshot* out) {
 
     ConfigSnapshot cfg = {};
     configCacheRead(&cfg);
+    RcInputActiveConfig activeRc = {};
+    configCacheReadActiveRcInput(&activeRc);
 
     taskENTER_CRITICAL(&robotStateMux);
     copyFailsafeDiagnosticsLocked(&diag);
@@ -122,15 +124,15 @@ void captureValidationSnapshot(ValidationSnapshot* out) {
     intFull = cfg.audio.snd_int_full;
     intAwake = cfg.audio.snd_int_awake;
 
-    rcMode = cfg.system.rc_input_mode;
+    rcMode = static_cast<RcInputMode>(activeRc.mode);
     timeoutMs = cfg.drive.sbusTimeoutMs;
-    enableRcCh1 = cfg.system.enable_rc_ch1;
-    enableRcCh2 = cfg.system.enable_rc_ch2;
-    enableRcCh3 = cfg.system.enable_rc_ch3;
-    enableRcCh4 = cfg.system.enable_rc_ch4;
-    enableRcCh5 = cfg.system.enable_rc_ch5;
-    enableRcCh6 = cfg.system.enable_rc_ch6;
-    sbusUseCh2 = cfg.system.single_sbus_use_ch2;
+    enableRcCh1 = activeRc.enableRc[0];
+    enableRcCh2 = activeRc.enableRc[1];
+    enableRcCh3 = activeRc.enableRc[2];
+    enableRcCh4 = activeRc.enableRc[3];
+    enableRcCh5 = activeRc.enableRc[4];
+    enableRcCh6 = activeRc.enableRc[5];
+    sbusUseCh2 = activeRc.useCh2;
     lastPwmMs = robotState.lastPwmMs;
     lastSbus1Ms = robotState.lastSbus1Ms;
     lastSbus2Ms = robotState.lastSbus2Ms;

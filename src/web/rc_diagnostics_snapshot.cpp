@@ -122,15 +122,17 @@ void captureRcDiagnosticsSnapshot(RcDiagnosticsSnapshot* out) {
 
     ConfigSnapshot cfg = {};
     configCacheRead(&cfg);
-    rcInputMode = cfg.system.rc_input_mode;
+    RcInputActiveConfig activeRc = {};
+    configCacheReadActiveRcInput(&activeRc);
+    rcInputMode = static_cast<RcInputMode>(activeRc.mode);
     timeoutMs = cfg.drive.sbusTimeoutMs;
-    sbusUseCh2 = cfg.system.single_sbus_use_ch2;
-    enableRcCh1 = cfg.system.enable_rc_ch1;
-    enableRcCh2 = cfg.system.enable_rc_ch2;
-    enableRcCh3 = cfg.system.enable_rc_ch3;
-    enableRcCh4 = cfg.system.enable_rc_ch4;
-    enableRcCh5 = cfg.system.enable_rc_ch5;
-    enableRcCh6 = cfg.system.enable_rc_ch6;
+    sbusUseCh2 = activeRc.useCh2;
+    enableRcCh1 = activeRc.enableRc[0];
+    enableRcCh2 = activeRc.enableRc[1];
+    enableRcCh3 = activeRc.enableRc[2];
+    enableRcCh4 = activeRc.enableRc[3];
+    enableRcCh5 = activeRc.enableRc[4];
+    enableRcCh6 = activeRc.enableRc[5];
     taskENTER_CRITICAL(&robotStateMux);
     sbusSignalLost = robotState.sbusSignalLost;
     sbus2SignalLost = robotState.sbus2SignalLost;

@@ -2,6 +2,7 @@
 #include <string.h>
 #include <unity.h>
 
+#include "config_cache.h"
 #include "rc_diagnostics.h"
 #include "rc_diagnostics_snapshot.h"
 #include "robot_state.h"
@@ -285,6 +286,33 @@ void test_rcSourceEnabledForMode_none_always_false() {
     TEST_ASSERT_FALSE(rcSourceEnabledForMode(RC_BINDING_NONE, RC_INPUT_SINGLE_SBUS, true, true, true, true));
 }
 
+void test_captureRcDiagnosticsSnapshot_reports_boot_active_rc_and_live_bindings() {
+    memset(&robotState, 0, sizeof(robotState));
+
+    ConfigSnapshot boot = {};
+    boot.system.rc_input_mode = RC_INPUT_SINGLE_SBUS;
+    boot.system.single_sbus_use_ch2 = false;
+    boot.system.enable_rc_ch1 = true;
+    configCacheSetActiveRcInput(rcInputActiveConfigFromSystem(boot.system));
+
+    ConfigSnapshot saved = boot;
+    saved.system.rc_input_mode = RC_INPUT_DUAL_SBUS;
+    saved.system.single_sbus_use_ch2 = true;
+    saved.system.enable_rc_ch1 = false;
+    saved.system.enable_rc_ch2 = true;
+    saved.system.rc_sbus_drive_speed = defaultSbusBinding(RC_BINDING_SBUS1, 9);
+    configCacheApply(saved);
+
+    RcDiagnosticsSnapshot snapshot = {};
+    captureRcDiagnosticsSnapshot(&snapshot);
+
+    TEST_ASSERT_EQUAL_STRING("single_sbus", snapshot.mode);
+    TEST_ASSERT_TRUE(snapshot.sources[0].enabled);
+    TEST_ASSERT_FALSE(snapshot.sources[1].enabled);
+    TEST_ASSERT_FALSE(snapshot.sources[2].enabled);
+    TEST_ASSERT_EQUAL_UINT8(9, snapshot.mappingChannels[0].binding.channel);
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_rc_diagnostics_normalize_raw_uses_binding_center);
@@ -307,6 +335,7 @@ int main() {
     RUN_TEST(test_rcSourceEnabledForMode_dual_sbus_follows_enable_flags);
     RUN_TEST(test_rcSourceEnabledForMode_pwm_follows_anyPwmEnabled);
     RUN_TEST(test_rcSourceEnabledForMode_none_always_false);
+    RUN_TEST(test_captureRcDiagnosticsSnapshot_reports_boot_active_rc_and_live_bindings);
 
     return UNITY_END();
 }

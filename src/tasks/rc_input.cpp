@@ -79,20 +79,20 @@ static void storePwmDiagnostics(const uint32_t pulses[6], const bool enabled[6])
 
 
 // Build an RcMappingConfig from live mapping settings while preserving the
-// component-toggle snapshot taken when the RC task started.
-static RcMappingConfig rcBuildMappingConfig(RcInputMode mode, const bool bootEnableRc[6]) {
+// component toggles published as active at boot.
+static RcMappingConfig rcBuildMappingConfig(const RcInputActiveConfig& active) {
     RcMappingConfig out = {};
     ConfigSnapshot cfg = {};
     configCacheRead(&cfg);
     for (size_t i = 0; i < 6; ++i) {
-        out.enableRc[i] = bootEnableRc[i];
+        out.enableRc[i] = active.enableRc[i];
     }
-    out.enableDome = cfg.system.enable_dome;
-    out.enableArm1 = cfg.system.enable_arm1;
-    out.enableArm2 = cfg.system.enable_arm2;
-    out.enableSound = cfg.system.enable_s2_sound;
+    out.enableDome = active.enableDome;
+    out.enableArm1 = active.enableArm1;
+    out.enableArm2 = active.enableArm2;
+    out.enableSound = active.enableSound;
     out.maxOut = cfg.drive.speedLimitMax;
-    if (mode == RC_INPUT_STANDARD_PWM) {
+    if (active.mode == RC_INPUT_STANDARD_PWM) {
         out.driveSpeed = cfg.system.rc_pwm_drive_speed;
         out.driveSteer = cfg.system.rc_pwm_drive_steer;
         out.domeSpeed = cfg.system.rc_pwm_dome_speed;
@@ -111,8 +111,9 @@ static RcMappingConfig rcBuildMappingConfig(RcInputMode mode, const bool bootEna
     return out;
 }
 
-static RcMappingConfig rcGetMappingConfig(RcInputMode mode, const bool bootEnableRc[6]) {
+static RcMappingConfig rcGetMappingConfig(const RcInputActiveConfig& active) {
     static RcMappingCache mappingCache = {};
+    const RcInputMode mode = static_cast<RcInputMode>(active.mode);
 
     bool dirty;
     taskENTER_CRITICAL(&robotStateMux);
@@ -131,7 +132,7 @@ static RcMappingConfig rcGetMappingConfig(RcInputMode mode, const bool bootEnabl
         return cached;
     }
 
-    cached = rcBuildMappingConfig(mode, bootEnableRc);
+    cached = rcBuildMappingConfig(active);
     rcMappingCacheSet(&mappingCache, mode, cached);
     return cached;
 }
@@ -148,10 +149,9 @@ static void loadTier2TriggerBindings(RcTriggerBinding* bindings, size_t* count) 
     *count = rcTriggerSlotsCopy(cfg.system, bindings, RC_TRIGGER_MAX);
 }
 
-static void buildRcProcessorConfig(RcInputMode mode, const bool bootEnableRc[6],
-                                   RcProcessorConfig* out) {
+static void buildRcProcessorConfig(const RcInputActiveConfig& active, RcProcessorConfig* out) {
     *out = {};
-    out->mapping = rcGetMappingConfig(mode, bootEnableRc);
+    out->mapping = rcGetMappingConfig(active);
     loadTier2TriggerBindings(out->triggers, &out->triggerCount);
 
     static ConfigSnapshot snap = {};
@@ -295,9 +295,9 @@ void dispatchRcTriggerActionTest(RobotActionId target, const char* payload, bool
     processTriggerAction(target, payload, pressed);
 }
 
-static void dispatchStandardPwmInputs(const bool bootEnableRc[6]) {
+static void dispatchStandardPwmInputs(const RcInputActiveConfig& active) {
     uint32_t pulses[6] = {};
-    RcMappingConfig cfg = rcGetMappingConfig(RC_INPUT_STANDARD_PWM, bootEnableRc);
+    RcMappingConfig cfg = rcGetMappingConfig(active);
 
     // Time-bounded pulse reading: limit total time spent to maintain ~20ms loop cadence
     const uint32_t startMs = millis();
@@ -339,7 +339,7 @@ static void dispatchStandardPwmInputs(const bool bootEnableRc[6]) {
     for (int i = 0; i < 6; ++i) snap.channels[i] = (int16_t)pulses[i];
 
     static RcProcessorConfig cfg_proc = {};
-    buildRcProcessorConfig(RC_INPUT_STANDARD_PWM, bootEnableRc, &cfg_proc);
+    buildRcProcessorConfig(active, &cfg_proc);
     cfg_proc.mapping.prevSoundPressed = s_rcProcessor.lastSoundPressed;
     // PWM mode has no Tier 2 SBUS triggers  --  clear count so processor skips the loop
     cfg_proc.triggerCount = 0;
@@ -357,17 +357,17 @@ static void dispatchStandardPwmInputs(const bool bootEnableRc[6]) {
 }
 
 static void dispatchSbusBindingsForSource(const SbusData& data, RcBindingSource source,
-                                          RcInputMode mode, const bool bootEnableRc[6]) {
+                                          const RcInputActiveConfig& active) {
     // Build channel snapshot from SBUS frame
     RcChannelSnapshot snap = {};
     snap.valid = true;
-    snap.mode  = mode;
+    snap.mode  = static_cast<RcInputMode>(active.mode);
     for (int i = 0; i < 16; ++i) snap.channels[i] = data.ch[i];
     snap.channels[16] = data.ch17 ? 1811 : 172;
     snap.channels[17] = data.ch18 ? 1811 : 172;
 
     static RcProcessorConfig cfg = {};
-    buildRcProcessorConfig(mode, bootEnableRc, &cfg);
+    buildRcProcessorConfig(active, &cfg);
     cfg.mapping.prevSoundPressed = s_rcProcessor.lastSoundPressed;
 
     static RcProcessorInput input = {};
@@ -398,21 +398,11 @@ void rcInputTask(void* pvParameters) {
     rcInputProcessorInit(&s_rcProcessor);
     rcInputStepInit(&s_rcStepState);
 
-    ConfigSnapshot startupCfg = {};
-    configCacheRead(&startupCfg);
-    const RcInputMode rcInputMode = startupCfg.system.rc_input_mode;
-    const bool useCh2 = startupCfg.system.single_sbus_use_ch2;
-    const bool bootEnableRc[6] = {
-        startupCfg.system.enable_rc_ch1, startupCfg.system.enable_rc_ch2,
-        startupCfg.system.enable_rc_ch3, startupCfg.system.enable_rc_ch4,
-        startupCfg.system.enable_rc_ch5, startupCfg.system.enable_rc_ch6,
-    };
-    const RcInputStepStartupInputs startupIn = {
-        static_cast<uint8_t>(rcInputMode), useCh2,
-        bootEnableRc[0], bootEnableRc[1], bootEnableRc[2],
-        bootEnableRc[3], bootEnableRc[4], bootEnableRc[5],
-    };
-    const RcInputStartupPlan startupPlan = rcInputStepStartupPlan(startupIn);
+    RcInputActiveConfig active = {};
+    configCacheReadActiveRcInput(&active);
+    const RcInputMode rcInputMode = static_cast<RcInputMode>(active.mode);
+    const bool useCh2 = active.useCh2;
+    const RcInputStartupPlan startupPlan = rcInputStepStartupPlan(active);
 
     bool driveSbusEnabled = false;
     if (startupPlan.driveSbusEnabled) {
@@ -475,7 +465,7 @@ void rcInputTask(void* pvParameters) {
 
         // Handle PWM mode early exit (dispatch and delay)
         if (rcInputMode == RC_INPUT_STANDARD_PWM) {
-            dispatchStandardPwmInputs(bootEnableRc);
+            dispatchStandardPwmInputs(active);
             esp_task_wdt_reset();
             vTaskDelay(pdMS_TO_TICKS(20));
             continue;
@@ -522,8 +512,7 @@ void rcInputTask(void* pvParameters) {
                 }
                 taskEXIT_CRITICAL(&robotStateMux);
                 if (frameOut.dispatchBindings) {
-                    dispatchSbusBindingsForSource(data, RC_BINDING_SBUS2, rcInputMode,
-                                                  bootEnableRc);
+                    dispatchSbusBindingsForSource(data, RC_BINDING_SBUS2, active);
                 }
             } else {
                 taskENTER_CRITICAL(&robotStateMux);
@@ -569,8 +558,7 @@ void rcInputTask(void* pvParameters) {
                     failsafeClear(FailsafeLayer::SBUS_WATCHDOG);
                 }
                 if (frameOut.dispatchBindings) {
-                    dispatchSbusBindingsForSource(data, RC_BINDING_SBUS1, rcInputMode,
-                                                  bootEnableRc);
+                    dispatchSbusBindingsForSource(data, RC_BINDING_SBUS1, active);
                 }
             }
         }
@@ -684,8 +672,7 @@ void rcInputTask(void* pvParameters) {
                 PA_LOG_WARN(TAG, "SBUS2 hardware failsafe asserted");
             }
             if (frameOut.dispatchBindings) {
-                dispatchSbusBindingsForSource(data, RC_BINDING_SBUS2, rcInputMode,
-                                              bootEnableRc);
+                dispatchSbusBindingsForSource(data, RC_BINDING_SBUS2, active);
             }
         }
 

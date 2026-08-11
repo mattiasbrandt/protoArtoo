@@ -9,32 +9,23 @@
 // actions. No FreeRTOS, Arduino, RobotState, hardware I/O, or logging lives here.
 //
 // Calling contract:
-//   1. rcInputStepStartupPlan() once from the boot snapshot.
-//   2. Initialize the planned decoders once.
-//   3. Call only the watchdog functions whose decoder paths are active.
-//   4. Execute returned actions; transition-labelled logs stay edge-gated.
+//   1. main projects and publishes the boot-active RC configuration once.
+//   2. Startup consumers derive the same plan from that immutable projection.
+//   3. Initialize the planned decoders once.
+//   4. Call only the watchdog functions whose decoder paths are active.
+//   5. Execute returned actions; transition-labelled logs stay edge-gated.
 //
 // =============================================================================
 #pragma once
 
 #include <stdint.h>
 
+#include "rc_input_active_config.h"
 #include "sbus_watchdog.h"  // SbusWatchdog, SbusWatchdogTransition
 
 // ============================================================================
 // Startup Decision
 // ============================================================================
-
-struct RcInputStepStartupInputs {
-    uint8_t rcInputMode;
-    bool useCh2;
-    bool enableRcCh1;
-    bool enableRcCh2;
-    bool enableRcCh3;
-    bool enableRcCh4;
-    bool enableRcCh5;
-    bool enableRcCh6;
-};
 
 struct RcInputStartupPlan {
     bool taskEnabled = false;
@@ -43,7 +34,7 @@ struct RcInputStartupPlan {
     bool sbus1WatchdogEnabled = false;
 };
 
-RcInputStartupPlan rcInputStepStartupPlan(const RcInputStepStartupInputs& in);
+RcInputStartupPlan rcInputStepStartupPlan(const RcInputActiveConfig& active);
 
 // ============================================================================
 // RcInputStepState  --  cross-iteration state, owned by the step.
