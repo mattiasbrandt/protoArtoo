@@ -35,6 +35,15 @@ explicit triggers, so task early-outs cannot break it.
   paths, and a one-time failsafe clear on live disable. Rejected.
 - **Split contract by class** (safety toggles staged, cosmetic toggles live) —
   two contracts to document and audit. Rejected.
+- **Mirroring every toggle as a compile-time `PA_ENABLE_*` flag** — after
+  staged-at-reboot, a runtime toggle's residual cost is flash-only (code
+  present, ~1 byte of config, one boot read); steady-state CPU and heap are
+  zero, and heap/CPU — not flash — are the scarce resources on this board.
+  A full mirror would also spread permanent `#ifdef` fencing across tasks,
+  queues, and web handlers, and the Public Release Operator model requires
+  the component toggles to remain browser-configurable in prebuilt release
+  artifacts. The existing 5 compile-time flags stay a developer-only
+  build-stripping tier, not a mirror of the runtime toggles. Rejected.
 
 Staged-at-reboot also removes the failsafe-clear question entirely: the gate's
 active mask boots clear, so an off subsystem's failsafe layers are simply

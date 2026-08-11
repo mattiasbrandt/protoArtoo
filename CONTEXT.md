@@ -445,6 +445,7 @@ _Avoid_: unconstructed-only off, construction-gate-only toggle, live per-tick to
 - The **Audio Config Map** is the single schema home consumed by both the audio task and the api_audio **Apply Core** (ADR 0013); the playback policy stays config-free behind it.
 - A **Step Core** decides, its task-loop adapter executes; the **Audio Step Core** calls the playback policy internally, so the policy stays its own tested module behind the step seam.
 - A **Component Toggle** and the safety machinery are independent in both directions: a toggle never gates estop latching or the failsafe gate, and estop/safety handling never overrides a toggle or the settings functions — a disabled subsystem stays inert even during estop, since an inert component has no output to stop.
+- A **Component Toggle** is runtime by requirement: a **Public Release Operator** must be able to declare fitted hardware from the browser, so component toggles are never compile-time build flags; developer build-stripping flags are a separate tier, not a mirror of the toggles.
 
 ## Example Dialogue
 
