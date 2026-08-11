@@ -462,9 +462,12 @@ test("CRITICAL P1: handle injects the section run's signal — proven via active
   // Now observe the outcomes:
   // - With correct code: handleRequestPromise should settle as "error:cancelled"
   //   because the section's old controller was aborted
-  // - With P1 mutation: handleRequestPromise would settle as "error:timeout"
-  //   because the wrong signal is never aborted and PAApi's 6000ms timeout fires
-  const handleResult = await handleRequestPromise;
+  // - With P1 mutation: handleRequestPromise would never settle because the
+  //   wrong signal is never aborted, so the race will resolve with "pending"
+  const handleResult = await Promise.race([
+    handleRequestPromise,
+    sleep(500).then(() => "pending"),
+  ]);
 
   assert.strictEqual(
     handleResult,
