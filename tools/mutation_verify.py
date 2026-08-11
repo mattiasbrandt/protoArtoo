@@ -3,8 +3,10 @@
 
 Takes one or more mutation patches (unified diffs against HEAD), and for each:
 applies it, proves from the working tree that it changed something, runs the
-suite, restores, and prints one verdict row. The table is the evidence — paste
-it verbatim; a reviewer re-runs the same command with the same patches.
+suite, restores, and prints one verdict row. The canonical entry point is the
+slice gate: `tools/slice_verify.py --mutations <patches>` runs this tool and
+folds the verdict into its block, so passing the gate implies killed
+mutations. Standalone runs remain useful while authoring patches.
 
 Verdicts:
   KILLED          suite exited non-zero with at least one TAP `not ok` failure
@@ -40,6 +42,7 @@ from slice_verify import (
     WEB_TEST_TIMEOUT,
     info,
     parse_tap_counts,
+    patch_files,
     porcelain_nonversion_paths,
     run,
 )
@@ -55,13 +58,6 @@ def tracked_changes_present() -> bool:
     """
     porcelain = run(["git", "status", "--porcelain", "-uno"]).stdout
     return bool(porcelain_nonversion_paths(porcelain))
-
-
-def patch_files(patch_path: str) -> list[str]:
-    proc = run(["git", "apply", "--numstat", patch_path])
-    if proc.returncode != 0:
-        return []
-    return [line.split("\t")[2] for line in proc.stdout.splitlines() if line]
 
 
 def tree_changed(files: list[str]) -> bool:

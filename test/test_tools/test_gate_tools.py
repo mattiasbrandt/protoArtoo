@@ -8,6 +8,7 @@ suite as its first check.
 """
 
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -118,6 +119,50 @@ class ZeroDeltaGate(unittest.TestCase):
         self.assertEqual(
             slice_verify.zero_delta_ok(-2, ["data/app.js"], False, "web"), (True, [])
         )
+
+
+class MutationRequirement(unittest.TestCase):
+    def test_no_production_js_means_not_required(self):
+        result = slice_verify.check_mutations(["data/index.html"], [], False)
+        self.assertTrue(result.passed)
+        self.assertEqual(result.detail, "not required")
+
+    def test_production_js_without_patches_fails(self):
+        result = slice_verify.check_mutations(["data/app.js"], [], False)
+        self.assertFalse(result.passed)
+        self.assertIn("data/app.js", " ".join(result.notes))
+
+    def test_waiver_passes_with_visible_ack(self):
+        result = slice_verify.check_mutations(["data/app.js"], [], True)
+        self.assertTrue(result.passed)
+        self.assertEqual(result.detail, "ACK (expect-no-mutations)")
+
+    def test_uncovered_files_are_named(self):
+        uncovered = slice_verify.uncovered_production_files(
+            ["data/app.js", "data/footer.js"],
+            {"m1.patch": ["data/app.js"], "m2.patch": []},
+        )
+        self.assertEqual(uncovered, ["data/footer.js"])
+
+    def test_full_coverage_leaves_nothing_uncovered(self):
+        self.assertEqual(
+            slice_verify.uncovered_production_files(
+                ["data/app.js"], {"m1.patch": ["data/app.js", "data/other.js"]}
+            ),
+            [],
+        )
+
+
+class MutationEntryExpansion(unittest.TestCase):
+    def test_directory_expands_to_sorted_patches(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            for name in ("b.patch", "a.patch", "notes.md"):
+                (Path(tmp) / name).write_text("")
+            expanded = slice_verify.expand_mutation_entries([tmp, "single.patch"])
+            self.assertEqual(
+                expanded,
+                [str(Path(tmp) / "a.patch"), str(Path(tmp) / "b.patch"), "single.patch"],
+            )
 
 
 class TimeoutRunner(unittest.TestCase):

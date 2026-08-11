@@ -21,19 +21,28 @@ files are never reported. Checks:
    (a hung test vanishes from it; a broken invocation inflates it); a flat
    total fails when the diff touches data/ (beyond the version stamps), with
    the same --expect-no-new-tests waiver
-3. no test file deleted between base and HEAD (native or web)
-4. `pio run -e protoArtoo` exit code (never bare `pio run`)
-5. `tools/check_action_registry_drift.py` exit code
-6. `data/*version.json` must not appear in the diff
-7. no new `extern` declarations added inside `.cpp` files (`extern "C"` allowed)
-8. no new `#ifdef ARDUINO` / `#ifndef ARDUINO` blocks added under `include/`
-9. `tools/slice_verify.py` itself must not be in the diff unless the run
-   acknowledges it with --expect-gate-edit (the ACK is visible in the block)
-10. no fenced pathspec (--fenced, comma-separated, repeatable) in the diff
-11. the tooling test suite (test/test_tools/, includes the gate's own unit
+3. mutation gate: a diff that touches web production JS (data/*.js) must
+   carry mutation patches (--mutations, files or directories of *.patch);
+   the gate runs tools/mutation_verify.py itself and fails unless every
+   mutation is KILLED and every changed JS file is hit by at least one
+   patch, so a passing block *implies* killed mutations — waivable only via
+   a visible, coordinator-sanctioned --expect-no-mutations ACK
+4. no test file deleted between base and HEAD (native or web)
+5. `pio run -e protoArtoo` exit code (never bare `pio run`)
+6. `tools/check_action_registry_drift.py` exit code
+7. `data/*version.json` must not appear in the diff
+8. no new `extern` declarations added inside `.cpp` files (`extern "C"` allowed)
+9. no new `#ifdef ARDUINO` / `#ifndef ARDUINO` blocks added under `include/`
+10. neither `tools/slice_verify.py` nor `tools/mutation_verify.py` may be in
+    the diff unless the run acknowledges it with --expect-gate-edit (the ACK
+    is visible in the block) — both scripts produce evidence, so both are
+    fenced
+11. no fenced pathspec (--fenced, comma-separated, repeatable) in the diff
+12. the tooling test suite (test/test_tools/, includes the gate's own unit
     tests) passes — the evidence producer is not exempt from prove-it-works
 
-The block opens with provenance lines — gate script blob hash, HEAD sha, a
+The block opens with provenance lines — blob hashes of both verifier
+scripts, HEAD sha, a
 DIRTY marker when the working tree differs beyond `data/*version.json`,
 base/merge-base, diff size, and toolchain versions — so a pasted block can be
 checked against the commit and gate version it claims to describe. Every
@@ -83,6 +92,8 @@ NATIVE_TEST_TIMEOUT = 1800
 WEB_TEST_TIMEOUT = 300
 DEFAULT_TIMEOUT = 600
 GATE_SCRIPT = "tools/slice_verify.py"
+MUTATION_SCRIPT = "tools/mutation_verify.py"
+WEB_JS_RE = re.compile(r"^data/.*\.js$")
 
 
 @dataclass
@@ -352,6 +363,94 @@ def check_web_tests(
     return CheckResult("web tests", detail, passed, notes)
 
 
+def patch_files(patch_path: str) -> list[str]:
+    """Files a patch touches, via git apply --numstat; empty on a bad patch.
+
+    Shared with mutation_verify so both tools agree on what a patch targets.
+    """
+    proc = run(["git", "apply", "--numstat", patch_path], timeout=GIT_TIMEOUT)
+    if proc.returncode != 0:
+        return []
+    return [line.split("\t")[2] for line in proc.stdout.splitlines() if line]
+
+
+def expand_mutation_entries(entries: list[str]) -> list[str]:
+    """--mutations entries: a directory contributes its *.patch files, sorted."""
+    patches: list[str] = []
+    for entry in entries:
+        path = Path(entry)
+        if path.is_dir():
+            patches.extend(sorted(str(child) for child in path.glob("*.patch")))
+        else:
+            patches.append(entry)
+    return patches
+
+
+def uncovered_production_files(
+    production_js: list[str], patch_lists: dict[str, list[str]]
+) -> list[str]:
+    """Changed web production JS files no mutation patch touches.
+
+    One weak patch must not stand in for a multi-file sweep: every changed
+    production module needs at least one mutation aimed at it."""
+    covered = {name for files in patch_lists.values() for name in files}
+    return [name for name in production_js if name not in covered]
+
+
+def check_mutations(
+    production_web: list[str], patches: list[str], expect_no_mutations: bool
+) -> CheckResult:
+    """Mutation coverage as a gate row: a passing block implies killed
+    mutations, so there is no separate evidence left for a report to
+    substitute or omit."""
+    label = "mutation gate"
+    production_js = [name for name in production_web if WEB_JS_RE.match(name)]
+    if not patches:
+        if not production_js:
+            return CheckResult(label, "not required", True, [])
+        if expect_no_mutations:
+            return CheckResult(
+                label,
+                "ACK (expect-no-mutations)",
+                True,
+                [
+                    f"{len(production_js)} web production JS files changed with"
+                    " no mutation evidence; needs coordinator sanction"
+                ],
+            )
+        notes = [f"web production JS changed: {name}" for name in production_js]
+        notes.append(
+            "supply mutation patches via --mutations (files or a directory of"
+            " *.patch), or rerun with coordinator-sanctioned"
+            " --expect-no-mutations"
+        )
+        return CheckResult(label, "patches missing", False, notes)
+    passed = True
+    notes = []
+    patch_lists = {patch: patch_files(patch) for patch in patches}
+    uncovered = uncovered_production_files(production_js, patch_lists)
+    if uncovered:
+        passed = False
+        notes.extend(f"no mutation patch touches: {name}" for name in uncovered)
+        notes.append(
+            "every changed web production JS file needs at least one mutation"
+            " patch aimed at it"
+        )
+    info(f"running {MUTATION_SCRIPT} on {len(patches)} patches...")
+    timeout = 120 + (WEB_TEST_TIMEOUT + 30) * len(patches)
+    proc = run(["python3", MUTATION_SCRIPT, *patches], timeout=timeout)
+    for line in proc.stdout.splitlines():
+        info(f"  {line}")
+    if proc.returncode != 0:
+        passed = False
+        notes.append(f"{MUTATION_SCRIPT} exit {proc.returncode}; table:")
+        notes.extend(proc.stdout.splitlines()[-(len(patches) + 4) :])
+        stderr_tail = proc.stderr.strip()
+        if stderr_tail:
+            notes.extend(stderr_tail.splitlines()[-5:])
+    return CheckResult(label, f"{len(patches)} patches", passed, notes)
+
+
 def check_deleted_tests(base_sha: str) -> CheckResult:
     names = git(
         ["diff", "--diff-filter=D", "--name-only", base_sha, "HEAD", "--", "test/"]
@@ -400,7 +499,9 @@ def check_version_json(base_sha: str) -> CheckResult:
 
 
 def check_gate_script(base_sha: str, expect_gate_edit: bool) -> CheckResult:
-    names = git(["diff", "--name-only", base_sha, "HEAD", "--", GATE_SCRIPT]).splitlines()
+    names = git(
+        ["diff", "--name-only", base_sha, "HEAD", "--", GATE_SCRIPT, MUTATION_SCRIPT]
+    ).splitlines()
     if not names:
         return CheckResult("gate script in diff", "0 files", True, [])
     if expect_gate_edit:
@@ -408,8 +509,8 @@ def check_gate_script(base_sha: str, expect_gate_edit: bool) -> CheckResult:
         return CheckResult("gate script in diff", "ACK (expect-gate-edit)", True, notes)
     notes = [f"in diff: {name}" for name in names]
     notes.append(
-        "the gate must not be edited by the slice it verifies; rerun with"
-        " --expect-gate-edit only for coordinator-sanctioned gate work"
+        "neither verifier script may be edited by the slice it verifies; rerun"
+        " with --expect-gate-edit only for coordinator-sanctioned gate work"
     )
     return CheckResult("gate script in diff", f"{len(names)} files", False, notes)
 
@@ -424,8 +525,8 @@ def check_fenced_paths(base_sha: str, fences: list[str]) -> CheckResult:
     return CheckResult("fenced paths", f"{len(names)} touched", not names, notes)
 
 
-def script_blob_hash() -> str:
-    proc = run(["git", "hash-object", GATE_SCRIPT], timeout=GIT_TIMEOUT)
+def script_blob_hash(script: str = GATE_SCRIPT) -> str:
+    proc = run(["git", "hash-object", script], timeout=GIT_TIMEOUT)
     return proc.stdout.strip()[:12] if proc.returncode == 0 else "unknown"
 
 
@@ -503,10 +604,28 @@ def main() -> int:
         " the ACK is visible in the printed block",
     )
     parser.add_argument(
+        "--mutations",
+        action="append",
+        default=[],
+        metavar="PATHS",
+        help="comma-separated mutation patch files or directories of *.patch;"
+        " repeatable; required when the diff touches web production JS",
+    )
+    parser.add_argument(
+        "--expect-no-mutations",
+        action="store_true",
+        help="acknowledge, with coordinator sanction, that this slice changes"
+        " web production JS without mutation evidence;"
+        " the ACK is visible in the printed block",
+    )
+    parser.add_argument(
         "--json", metavar="PATH", help="also write the results as JSON to PATH"
     )
     args = parser.parse_args()
     fences = [spec for chunk in args.fenced for spec in chunk.split(",") if spec]
+    mutations = expand_mutation_entries(
+        [spec for chunk in args.mutations for spec in chunk.split(",") if spec]
+    )
 
     try:
         base_sha = git(["merge-base", args.base, "HEAD"]).strip()
@@ -516,12 +635,16 @@ def main() -> int:
         return 2
 
     gate_hash = script_blob_hash()
+    mutation_hash = script_blob_hash(MUTATION_SCRIPT)
     dirty = working_tree_dirty()
     env = env_fingerprint()
     diff_names = git(["diff", "--name-only", base_sha, "HEAD"]).splitlines()
     diff_files = len(diff_names)
     production = production_changes(diff_names)
-    print(f"gate {gate_hash}  head {head_sha[:12]}{'  DIRTY' if dirty else ''}")
+    print(
+        f"gate {gate_hash}  mut {mutation_hash}"
+        f"  head {head_sha[:12]}{'  DIRTY' if dirty else ''}"
+    )
     print(f"base {args.base}  merge-base {base_sha[:12]}  files {diff_files}")
     print(f"env  {env}")
     print()
@@ -553,6 +676,7 @@ def main() -> int:
             production["web"],
             args.expect_no_new_tests,
         ),
+        check_mutations(production["web"], mutations, args.expect_no_mutations),
         check_deleted_tests(base_sha),
         check_command_exit("pio run -e protoArtoo", ["pio", "run", "-e", "protoArtoo"]),
         check_command_exit(
@@ -582,6 +706,7 @@ def main() -> int:
         payload = {
             "gate": {
                 "script_hash": gate_hash,
+                "mutation_script_hash": mutation_hash,
                 "head": head_sha,
                 "dirty": dirty,
                 "base_ref": args.base,
@@ -591,6 +716,8 @@ def main() -> int:
                 "fenced": fences,
                 "expect_gate_edit": args.expect_gate_edit,
                 "expect_no_new_tests": args.expect_no_new_tests,
+                "expect_no_mutations": args.expect_no_mutations,
+                "mutations": mutations,
                 "production_files": production,
             },
             "checks": [
