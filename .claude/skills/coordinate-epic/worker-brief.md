@@ -13,6 +13,16 @@ pinned coordinator comment (attempt log, rejected approaches, verification
 harness). Rejected approaches are out of scope: do not attempt a variation of
 a rejected category. Then read AGENTS.md.
 
+WHERE TO SPEND YOUR EFFORT
+The source code is the deliverable; tests are scaffolding that proves it.
+Spend your time on the change itself - is it wired in and called, are the
+rules it replaces actually deleted, did you miss call sites, is the result
+simpler to read than what was there. A module added beside the thing it was
+meant to replace is not the ticket, however well tested it is. Write focused
+tests, not exhaustive suites, and do not polish them; you will not be
+rejected for test naming, structure or volume, and you will be rejected for
+production code that does not do the job.
+
 BOUNDARIES
 - Operate ONLY inside {WORKTREE}. Never edit, checkout, stash, restore, or
   clean anything outside it. Out-of-tree touches are an automatic reject.

@@ -68,6 +68,18 @@ from the epic's coordination section (it changes at Phase 5 closure).
 Worker summaries are claims, not evidence; this repo has caught agents
 reporting passes that never ran. In the worker's worktree, personally:
 
+0. **Read the production diff first, and weight it heaviest.** The source is
+   what ships; tests are scaffolding. `git diff <base>...HEAD -- <prod paths>`
+   and ask: is the new code actually *wired in and called*, or added beside
+   what it was meant to replace? Were the old rules **deleted**, or are there
+   now two copies? Were call sites missed? Is the seam readable, and is the
+   result genuinely simpler than what it replaced? Does it do what the ticket
+   claimed? A gate cannot answer any of this - production code that does not
+   do the job passes every test-shaped check. This repo has shipped a
+   step-core module nothing referenced, and left a hand-rolled poll in place
+   through an epic that claimed to consolidate polling. Both were invisible
+   to a green gate.
+
 1. Re-run the slice gate with the worker's exact invocation, including any
    `--fenced` pathspecs and the worker's `--mutations` patches from your
    brief: `python3 tools/slice_verify.py --base <base> [--fenced ...]
@@ -88,6 +100,15 @@ reporting passes that never ran. In the worker's worktree, personally:
    mutation table pasted outside a gate block is a reject. Web tests are
    held to `test/test_web/README.md`. A green suite without that
    demonstration is a claim.
+
+   The gate is a mechanical floor, and it is automated - running it costs no
+   iterations. **Do not spend rejection cycles on top of it arguing test
+   design.** Never reject a slice for test naming, structure, tidiness or
+   volume; ask for focused tests, not exhaustive suites. Test quality is
+   minor next to source quality - if a rejection is about the tests rather
+   than the code, it had better be because the tests prove nothing, not
+   because they could be prettier. Iteration spent on test design is
+   iteration not spent on the change itself.
 3. Read the full diff (`git diff <base>...HEAD`): scope creep,
    shortcuts, behaviour change in tickets that promise none, comment
    degradation, core guardrails (no heap alloc or blocking on Core 1 paths,
