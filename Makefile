@@ -20,7 +20,7 @@ OTA_TRANSFER_TIMEOUT ?= 60
 
 -include user.mk
 
-.PHONY: all help build test check check-action-drift flash ota uploadfs \
+.PHONY: all help build test test-web check check-action-drift flash ota uploadfs \
         flash-chirp ota-chirp ota-mp3trigger \
         flash-dysv5w ota-dysv5w \
         flash-monitor flash-chirp-monitor \
@@ -47,6 +47,14 @@ build: ## Compile firmware  (BUILD_ENV=protoArtoo by default)
 
 test: ## Run native unit tests
 	pio test -e native
+
+# Canonical web-suite invocation. The quoted glob is expanded by node itself:
+# `node --test test/test_web/` (directory form) fails with MODULE_NOT_FOUND
+# disguised as a one-test failure. The per-test timeout turns a hung test into
+# a counted failure instead of a vanished `cancelledByParent` entry.
+# tools/slice_verify.py runs the same invocation; keep the flags in sync.
+test-web: ## Run web behavioral tests (node:test)
+	node --test --test-timeout=10000 'test/test_web/test_*.js'
 
 check: ## Static analysis with cppcheck
 	pio check -e protoArtoo
