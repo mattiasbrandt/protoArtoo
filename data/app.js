@@ -873,21 +873,23 @@
   } else {
     // Fallback polling for pages without stream support
     const refreshFromFallback = () => {
-      refreshStatusOnce().catch(() => {
+      return refreshStatusOnce().catch(() => {
         pollFailCount++;
         if (pollFailCount >= 2) setStale(true);
       });
     };
 
-    window.setInterval(() => {
-      if (document.visibilityState === "hidden") return;
-      refreshFromFallback();
-    }, 3000);
-
-    document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState !== "hidden") {
-        refreshFromFallback();
+    const fallbackPoll = window.PageBootstrap.createBackgroundPoll(
+      refreshFromFallback,
+      {
+        cadenceMs: 3000,
+        refreshOnReturn: true,
       }
+    );
+    fallbackPoll.start();
+
+    window.addEventListener("beforeunload", () => {
+      fallbackPoll.stop();
     });
   }
   setEstopUi(false);
