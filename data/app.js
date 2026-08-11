@@ -574,9 +574,10 @@
   };
 
   const LOG_LEVELS = {
-    1: { label: "Error", icon: "🪵", cls: "pill-error", hint: "Faults only" },
-    2: { label: "Info", icon: "🪵", cls: "pill-info", hint: "Boot + service health" },
-    3: { label: "Debug", icon: "🪵", cls: "pill-warn", hint: "Verbose" },
+    1: { label: "Error", icon: "🪵", cls: "pill-error", hint: "Loss of function only" },
+    2: { label: "Warning", icon: "🪵", cls: "pill-info", hint: "Faults + safety warnings" },
+    3: { label: "Info", icon: "🪵", cls: "pill-info", hint: "Boot + service health" },
+    4: { label: "Debug", icon: "🪵", cls: "pill-warn", hint: "Verbose" },
   };
   let currentLogLevel = null;
   let logLevelPending = false;
@@ -614,7 +615,7 @@
       await loadLogLevel();
       if (!LOG_LEVELS[currentLogLevel]) return;
     }
-    const nextLevel = currentLogLevel >= 3 ? 1 : currentLogLevel + 1;
+    const nextLevel = currentLogLevel >= 4 ? 1 : currentLogLevel + 1;
     const previousLevel = currentLogLevel;
     logLevelPending = true;
     currentLogLevel = nextLevel;
