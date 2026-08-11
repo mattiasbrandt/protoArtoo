@@ -325,9 +325,13 @@
     setSleepUi(!!payload.sleepMode);
   };
 
-  const refreshStatusOnce = async ({ signal = null } = {}) => {
+  const refreshStatusOnce = async ({ handle } = {}) => {
     if (!window.PAApi) return;
-    const result = await window.PAApi.get("/api/status", { cache: "no-store", timeoutMs: 3000, signal });
+    // When called as a section loader, handle is always present and carries the
+    // section's deadline. When called from non-section contexts (fallback polling),
+    // handle is absent and we use PAApi directly (which uses DEFAULT_TIMEOUT_MS).
+    const api = handle || window.PAApi;
+    const result = await api.get("/api/status", { cache: "no-store" });
     applyStatus(result.data);
   };
 
@@ -557,10 +561,11 @@
     }
   };
 
-  const loadRecentLogs = async ({ signal = null } = {}) => {
+  const loadRecentLogs = async ({ handle = null } = {}) => {
     if (!window.PAApi || !logConsole) throw new Error("API or console unavailable");
     if (logLines.length > 0) return;
-    const result = await window.PAApi.get("/api/logs", { cache: "no-store", timeoutMs: 3000, signal });
+    const api = handle ?? window.PAApi;
+    const result = await api.get("/api/logs", { cache: "no-store" });
     const historyLines = String(result.data ?? "")
       .split(/\r?\n/)
       .map((line) => normalizeLogMessage(line.trimEnd()))
@@ -591,9 +596,10 @@
     logLevelPill.setAttribute("aria-label", `Log level: ${info.label}. Click to cycle to the next level.`);
   };
 
-  const loadLogLevel = async ({ signal = null } = {}) => {
+  const loadLogLevel = async ({ handle = null } = {}) => {
     if (!window.PAApi || !logLevelPill) throw new Error("API or pill unavailable");
-    const result = await window.PAApi.get("/api/config", { cache: "no-store", timeoutMs: 3000, signal });
+    const api = handle ?? window.PAApi;
+    const result = await api.get("/api/config", { cache: "no-store" });
     const level = Number(result.data?.system?.logLevel);
     if (!LOG_LEVELS[level]) {
       throw new Error(`Unknown log level: ${level}`);
@@ -647,9 +653,10 @@
     }
   });
 
-  const loadCommandTokens = async ({ signal = null } = {}) => {
+  const loadCommandTokens = async ({ handle = null } = {}) => {
     if (!window.PAApi) throw new Error("API unavailable");
-    const result = await window.PAApi.get("/api/actions", { cache: "no-store", timeoutMs: 5000, signal });
+    const api = handle ?? window.PAApi;
+    const result = await api.get("/api/actions", { cache: "no-store" });
     if (!Array.isArray(result.data)) {
       throw new Error("Action registry response is not an array");
     }
@@ -809,11 +816,11 @@
   // if the fetch fails. For the stream-supported case, this section only runs
   // if the stream has no cached value. For the fallback case, it ensures the
   // page shows data before polling begins.
-  const loadInitialStatus = async ({ signal = null } = {}) => {
+  const loadInitialStatus = async ({ handle = null } = {}) => {
     const hasStream = window.PAStatusStream?.isSupported();
     const hasCachedStatus = hasStream && window.PAStatusStream?.getLastStatus();
     if (!hasStream || !hasCachedStatus) {
-      await refreshStatusOnce({ signal });
+      await refreshStatusOnce({ handle });
     }
   };
 
