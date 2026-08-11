@@ -11,12 +11,17 @@ excluded deliberately: the device build itself stamps data/*version.json, so a
 working-tree diff would always self-flag. Pre-existing instances in untouched
 files are never reported. Checks:
 
-1. native test total at HEAD vs base, plus suite pass/fail
-2. `pio run -e protoArtoo` exit code (never bare `pio run`)
-3. `tools/check_action_registry_drift.py` exit code
-4. `data/*version.json` must not appear in the diff
-5. no new `extern` declarations added inside `.cpp` files (`extern "C"` allowed)
-6. no new `#ifdef ARDUINO` / `#ifndef ARDUINO` blocks added under `include/`
+1. native test total at HEAD vs base, plus suite pass/fail; a shrinking total
+   fails the gate (coverage reduction needs explicit coordinator acceptance)
+2. web suite (node:test) total at HEAD vs base, gated on process exit code and
+   `# cancelled` — never on `# fail`, which is unreliable in both directions
+   (a hung test vanishes from it; a broken invocation inflates it)
+3. no test file deleted between base and HEAD (native or web)
+4. `pio run -e protoArtoo` exit code (never bare `pio run`)
+5. `tools/check_action_registry_drift.py` exit code
+6. `data/*version.json` must not appear in the diff
+7. no new `extern` declarations added inside `.cpp` files (`extern "C"` allowed)
+8. no new `#ifdef ARDUINO` / `#ifndef ARDUINO` blocks added under `include/`
 
 Exit code 0 only when every check passes. Dependency-free: stdlib + git + pio.
 """
@@ -42,6 +47,13 @@ ARDUINO_GUARD_RE = re.compile(
 TEST_TOTAL_RE = re.compile(r"(\d+) test cases:")
 TEST_SUCCEEDED_RE = re.compile(r"(\d+) succeeded")
 TEST_FAILED_RE = re.compile(r"(\d+) failed")
+
+WEB_TEST_DIR = Path("test") / "test_web"
+WEB_TEST_GLOB = "test_*.js"
+# Keep flags in sync with `make test-web`. The gate invokes node directly so
+# base-commit worktrees that predate the make target verify identically.
+WEB_TEST_FLAGS = ["--test", "--test-timeout=10000"]
+TAP_COUNT_RE = re.compile(r"^# (tests|pass|fail|cancelled) (\d+)$", re.MULTILINE)
 
 LABEL_WIDTH = 29
 DETAIL_WIDTH = 26
@@ -105,60 +117,153 @@ def save_cache(cache: dict) -> None:
         pass
 
 
-def base_native_total(base_sha: str) -> tuple[int | None, list[str]]:
-    """Native test total at the base commit, via a throwaway worktree.
+def web_test_files(cwd: Path) -> list[str]:
+    return sorted(
+        str(path.relative_to(cwd)) for path in (cwd / WEB_TEST_DIR).glob(WEB_TEST_GLOB)
+    )
 
-    Cached per commit SHA so repeated gate runs do not rebuild the base suite.
+
+def parse_tap_counts(output: str) -> dict[str, int] | None:
+    counts = {key: int(value) for key, value in TAP_COUNT_RE.findall(output)}
+    return counts if "tests" in counts else None
+
+
+def run_web_tests(cwd: Path) -> tuple[int, dict[str, int] | None, str]:
+    files = web_test_files(cwd)
+    if not files:
+        return 0, {"tests": 0, "pass": 0, "fail": 0, "cancelled": 0}, ""
+    proc = run(["node", *WEB_TEST_FLAGS, *files], cwd=cwd)
+    output = proc.stdout + proc.stderr
+    return proc.returncode, parse_tap_counts(output), output
+
+
+def base_totals(base_sha: str) -> tuple[dict[str, int | None], dict[str, list[str]]]:
+    """Native and web test totals at the base commit, via a throwaway worktree.
+
+    Cached per commit SHA so repeated gate runs do not rebuild the base
+    suites. Cache entries written by older gate versions were a bare native
+    total; those are treated as native-only and the web total is filled in.
     """
     cache = load_cache()
-    if base_sha in cache:
-        return cache[base_sha], []
-    info(f"running native tests at base {base_sha[:12]} (temporary worktree)...")
+    entry = cache.get(base_sha)
+    if isinstance(entry, int):
+        entry = {"native": entry}
+    totals: dict[str, int | None] = dict(entry) if isinstance(entry, dict) else {}
+    notes: dict[str, list[str]] = {"native": [], "web": []}
+    if "native" in totals and "web" in totals:
+        return totals, notes
+    info(f"running base suites at {base_sha[:12]} (temporary worktree)...")
     worktree = Path(tempfile.mkdtemp(prefix="slice-verify-base-"))
-    notes: list[str] = []
-    total: int | None = None
     try:
         git(["worktree", "add", "--detach", str(worktree), base_sha])
-        code, summary, output = run_native_tests(worktree)
-        if code != 0 or summary is None:
-            notes.append(f"base native run failed (exit {code}); tail:")
-            notes.extend(output.splitlines()[-10:])
-        else:
-            total = summary[0]
-            cache[base_sha] = total
-            save_cache(cache)
+        if "native" not in totals:
+            code, summary, output = run_native_tests(worktree)
+            if code != 0 or summary is None:
+                totals["native"] = None
+                notes["native"].append(f"base native run failed (exit {code}); tail:")
+                notes["native"].extend(output.splitlines()[-10:])
+            else:
+                totals["native"] = summary[0]
+        if "web" not in totals:
+            code, counts, output = run_web_tests(worktree)
+            if code != 0 or counts is None or counts.get("cancelled", 0):
+                totals["web"] = None
+                notes["web"].append(f"base web run failed (exit {code}); tail:")
+                notes["web"].extend(output.splitlines()[-10:])
+            else:
+                totals["web"] = counts["tests"]
     finally:
         run(["git", "worktree", "remove", "--force", str(worktree)])
         run(["git", "worktree", "prune"])
-    return total, notes
+    cached = {key: value for key, value in totals.items() if value is not None}
+    if cached:
+        cache[base_sha] = cached
+        save_cache(cache)
+    return totals, notes
 
 
-def check_native_tests(base_sha: str, head_sha: str) -> CheckResult:
+def check_native_tests(
+    base_total: int | None, same_commit: bool, base_notes: list[str]
+) -> CheckResult:
     info("running native tests at HEAD...")
     code, summary, output = run_native_tests(ROOT)
-    notes: list[str] = []
+    notes: list[str] = list(base_notes)
     if summary is None:
         notes.append(f"could not parse native test summary (exit {code}); tail:")
         notes.extend(output.splitlines()[-10:])
         return CheckResult("native tests", "unparseable", False, notes)
     total, succeeded = summary
-    if base_sha == head_sha:
-        base_total: int | None = total
-    else:
-        base_total, base_notes = base_native_total(base_sha)
-        notes.extend(base_notes)
+    if same_commit:
+        base_total = total
     if base_total is None:
         detail = f"? -> {total}"
         passed = False
     else:
         delta = total - base_total
         detail = f"{base_total} -> {total}  (delta {delta:+d})"
-        passed = code == 0 and succeeded == total
+        passed = code == 0 and succeeded == total and delta >= 0
+        if delta < 0:
+            notes.append(
+                f"native test count shrank by {-delta}; shrinking coverage"
+                " needs explicit coordinator acceptance"
+            )
     if code != 0 or succeeded != total:
         notes.append(f"native suite: {succeeded}/{total} succeeded, exit {code}; tail:")
         notes.extend(output.splitlines()[-10:])
         passed = False
     return CheckResult("native tests", detail, passed, notes)
+
+
+def check_web_tests(
+    base_total: int | None, same_commit: bool, base_notes: list[str]
+) -> CheckResult:
+    info("running web tests at HEAD...")
+    code, counts, output = run_web_tests(ROOT)
+    notes: list[str] = list(base_notes)
+    if counts is None:
+        notes.append(f"could not parse web TAP summary (exit {code}); tail:")
+        notes.extend(output.splitlines()[-10:])
+        return CheckResult("web tests", "unparseable", False, notes)
+    total = counts["tests"]
+    cancelled = counts.get("cancelled", 0)
+    if same_commit:
+        base_total = total
+    if base_total is None:
+        detail = f"? -> {total}"
+        passed = False
+    else:
+        delta = total - base_total
+        detail = f"{base_total} -> {total}  (delta {delta:+d})"
+        passed = code == 0 and cancelled == 0 and delta >= 0
+        if delta < 0:
+            notes.append(
+                f"web test count shrank by {-delta}; shrinking coverage"
+                " needs explicit coordinator acceptance"
+            )
+    if code != 0 or cancelled:
+        # Gate on exit code and cancellations, never on `# fail`: a hung test
+        # is reported cancelledByParent and vanishes from the fail count while
+        # the process still exits non-zero.
+        notes.append(
+            f"web suite exit {code}, fail {counts.get('fail', 0)},"
+            f" cancelled {cancelled}; failing tests:"
+        )
+        not_ok = [
+            line for line in output.splitlines() if line.lstrip().startswith("not ok")
+        ]
+        notes.extend(not_ok[:20] or output.splitlines()[-10:])
+        passed = False
+    return CheckResult("web tests", detail, passed, notes)
+
+
+def check_deleted_tests(base_sha: str) -> CheckResult:
+    names = git(
+        ["diff", "--diff-filter=D", "--name-only", base_sha, "HEAD", "--", "test/"]
+    ).splitlines()
+    notes = [f"deleted: {name}" for name in names]
+    if names:
+        notes.append("deleting a test file needs explicit coordinator acceptance")
+    return CheckResult("deleted test files", str(len(names)), not names, notes)
 
 
 def check_command_exit(label: str, cmd: list[str]) -> CheckResult:
@@ -222,8 +327,17 @@ def main() -> int:
         print(f"error: {err}", file=sys.stderr)
         return 2
 
+    same_commit = base_sha == head_sha
+    if same_commit:
+        base: dict[str, int | None] = {"native": None, "web": None}
+        base_notes: dict[str, list[str]] = {"native": [], "web": []}
+    else:
+        base, base_notes = base_totals(base_sha)
+
     results = [
-        check_native_tests(base_sha, head_sha),
+        check_native_tests(base["native"], same_commit, base_notes["native"]),
+        check_web_tests(base["web"], same_commit, base_notes["web"]),
+        check_deleted_tests(base_sha),
         check_command_exit("pio run -e protoArtoo", ["pio", "run", "-e", "protoArtoo"]),
         check_command_exit(
             "check-action-drift", ["python3", "tools/check_action_registry_drift.py"]
