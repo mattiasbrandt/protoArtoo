@@ -1,29 +1,24 @@
 // =============================================================================
 // include/rc_input_step.h
 //
-// RC Input Step Core (ADR 0005/0014)  --  the RC input task's pure per-tick
-// decision module.
+// RC Input Step Core  --  pure startup, watchdog, and per-frame decisions for
+// the RC input task.
 //
-// Extracts the state-machine decisions from rcInputTask (modes, decoder enables,
-// watchdog transitions, failsafe state changes, zero-frame decisions) into a
-// testable pure core. No FreeRTOS, no Arduino, no RobotState, no hardware I/O.
+// Startup configuration is staged for the lifetime of the task. The task loop
+// gathers runtime inputs, calls these functions, and executes their plain-data
+// actions. No FreeRTOS, Arduino, RobotState, hardware I/O, or logging lives here.
 //
-// The task loop (rcInputTask in rc_input.cpp) is the adapter: it gathers inputs,
-// calls the step functions, and executes the returned plain-data actions.
-//
-// Calling contract (simplified one-iteration sketch):
-//   1. Gather config (mode, enables, watchdog state, timestamps)
-//   2. rcInputStepTick() -> actions for decoders (enable/disable)
-//   3. rcInputStepSbus1Watchdog() -> SBUS1 failsafe transitions
-//   4. rcInputStepSbus2Watchdog() -> SBUS2 state updates
-//   5. Execute actions: RMT begin/end, failsafe layers, zero-frame submit, etc.
+// Calling contract:
+//   1. rcInputStepStartupPlan() once from the boot snapshot.
+//   2. Initialize the planned decoders once.
+//   3. Call only the watchdog functions whose decoder paths are active.
+//   4. Execute returned actions; transition-labelled logs stay edge-gated.
 //
 // =============================================================================
 #pragma once
 
 #include <stdint.h>
 
-#include "failsafe_gate.h"  // FailsafeLayer only (enum)
 #include "sbus_watchdog.h"  // SbusWatchdog, SbusWatchdogTransition
 
 // ============================================================================
@@ -57,68 +52,9 @@ RcInputStartupPlan rcInputStepStartupPlan(const RcInputStepStartupInputs& in);
 struct RcInputStepState {
     SbusWatchdog sbus1Watchdog = {};  // drive receiver watchdog
     SbusWatchdog sbus2Watchdog = {};  // dome receiver watchdog
-    bool lastUseCh2 = false;          // frozen baseline for single_sbus reinit
-};
-
-// ============================================================================
-// Decoder Desired State Phase
-// ============================================================================
-
-struct RcInputStepTickInputs {
-    // Configuration snapshot (per-tick)
-    uint8_t rcInputMode;  // RC_INPUT_STANDARD_PWM, SINGLE_SBUS, DUAL_SBUS
-    bool enableRcCh1;     // enable SBUS1 receiver
-    bool enableRcCh2;     // enable SBUS2 receiver
-    bool useCh2;          // single_sbus only: use GPIO13 (SBUS2) instead of GPIO15 (SBUS1)
-};
-
-struct RcInputStepTickActions {
-    // Desired decoder state (what should be enabled for current mode/config)
-    bool driveSbusDesiredEnabled = false;  // should drive SBUS decoder be active?
-    bool domeSbusDesiredEnabled = false;   // should dome SBUS decoder be active?
-
-    // Receiver-change reinit ordering (end-before-begin)
-    bool shouldEndDriveSbus = false;       // end drive decoder before re-init
-    bool shouldUpdateLastUseCh2 = false;   // update frozen baseline (single_sbus only)
-
-    // Per-mode failsafe clears (PWM mode only)
-    bool clearSbusWatchdog = false;        // clear FailsafeLayer::SBUS_WATCHDOG
-    bool clearSbusHw = false;              // clear FailsafeLayer::SBUS_HW
-    bool clearSbus2SignalLost = false;     // clear robotState.sbus2SignalLost
-    bool clearSbus2HwFailsafe = false;     // clear robotState.sbus2HwFailsafe
 };
 
 void rcInputStepInit(RcInputStepState* state);
-RcInputStepTickActions rcInputStepTick(RcInputStepState* state,
-                                       const RcInputStepTickInputs& in);
-
-// ============================================================================
-// Decoder Init/Deinit Phase
-// ============================================================================
-
-struct RcInputStepDecoderStateInputs {
-    // Current mode and desired state (from prior tick or rcInputStepTick)
-    uint8_t rcInputMode;
-    bool driveSbusDesiredEnabled;
-    bool domeSbusDesiredEnabled;
-
-    // Current initialized state of decoders
-    bool driveSbusInitialized;
-    bool domeSbusInitialized;
-
-    // Receiver-change end-before-begin ordering
-    bool shouldEndDriveSbus;
-};
-
-struct RcInputStepDecoderStateActions {
-    bool shouldBeginDriveSbus = false;
-    bool shouldEndDriveSbus = false;   // may be set from input or by this function
-    bool shouldBeginDomeSbus = false;
-    bool shouldEndDomeSbus = false;
-};
-
-RcInputStepDecoderStateActions rcInputStepDecoderState(
-    const RcInputStepDecoderStateInputs& in);
 
 // ============================================================================
 // SBUS1 (Drive) Watchdog Phase

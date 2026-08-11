@@ -22,12 +22,11 @@ void rcInputStepInit(RcInputStepState* state) {
     if (state != nullptr) {
         state->sbus1Watchdog = {};
         state->sbus2Watchdog = {};
-        state->lastUseCh2 = false;
     }
 }
 
 // ============================================================================
-// Decoder Desired State Phase
+// Startup Decision
 // ============================================================================
 
 static bool is_drive_sbus_mode(uint8_t mode) {
@@ -50,10 +49,6 @@ static bool driveSbusDecoderEnabledForMode(uint8_t mode, bool enableRcCh1, bool 
     return enableRcCh1;
 }
 
-// ============================================================================
-// Startup Decision
-// ============================================================================
-
 RcInputStartupPlan rcInputStepStartupPlan(const RcInputStepStartupInputs& in) {
     RcInputStartupPlan out = {};
 
@@ -69,77 +64,6 @@ RcInputStartupPlan rcInputStepStartupPlan(const RcInputStepStartupInputs& in) {
                           in.enableRcCh5 || in.enableRcCh6;
     } else {
         out.taskEnabled = out.driveSbusEnabled || out.domeSbusEnabled;
-    }
-
-    return out;
-}
-
-RcInputStepTickActions rcInputStepTick(RcInputStepState* state,
-                                       const RcInputStepTickInputs& in) {
-    RcInputStepTickActions out = {};
-
-    if (state == nullptr) {
-        return out;
-    }
-
-    // ---- Compute desired decoder state for current mode/enable combo ----
-    out.driveSbusDesiredEnabled =
-        driveSbusDecoderEnabledForMode(in.rcInputMode, in.enableRcCh1, in.enableRcCh2, in.useCh2);
-    out.domeSbusDesiredEnabled =
-        (is_dome_sbus_mode(in.rcInputMode) && in.enableRcCh2);
-
-    // ---- Detect single_sbus receiver selection change (end-before-begin) ----
-    // CRITICAL: This detection must run BEFORE init/deinit logic to ensure
-    // we end-before-begin rather than init-then-teardown in the same iteration.
-    // If useCh2 changes while in single_sbus mode, end the decoder now.
-    if (in.rcInputMode == RC_INPUT_SINGLE_SBUS && in.useCh2 != state->lastUseCh2) {
-        out.shouldEndDriveSbus = true;
-    }
-
-    // Only update lastUseCh2 while in single_sbus mode. Freezing the baseline
-    // across mode transitions prevents spurious reinit when returning to single_sbus
-    // after useCh2 was changed while in dual_sbus or standard_pwm mode.
-    if (in.rcInputMode == RC_INPUT_SINGLE_SBUS) {
-        out.shouldUpdateLastUseCh2 = (in.useCh2 != state->lastUseCh2);
-    }
-
-    // ---- PWM mode failsafe clears ----
-    if (in.rcInputMode == RC_INPUT_STANDARD_PWM) {
-        out.clearSbusWatchdog = true;
-        out.clearSbusHw = true;
-        out.clearSbus2SignalLost = true;
-        out.clearSbus2HwFailsafe = true;
-    }
-
-    return out;
-}
-
-// ============================================================================
-// Decoder Init/Deinit State Machine
-// ============================================================================
-
-RcInputStepDecoderStateActions rcInputStepDecoderState(
-    const RcInputStepDecoderStateInputs& in) {
-    RcInputStepDecoderStateActions out = {};
-
-    // Pass through any end-before-begin directive
-    out.shouldEndDriveSbus = in.shouldEndDriveSbus;
-
-    // ---- Drive SBUS decoder state machine ----
-    // Transition to desired enabled state, if not already there
-    if (in.driveSbusDesiredEnabled && !in.driveSbusInitialized) {
-        out.shouldBeginDriveSbus = true;
-    }
-    if (!in.driveSbusDesiredEnabled && in.driveSbusInitialized) {
-        out.shouldEndDriveSbus = true;
-    }
-
-    // ---- Dome SBUS decoder state machine ----
-    if (in.domeSbusDesiredEnabled && !in.domeSbusInitialized) {
-        out.shouldBeginDomeSbus = true;
-    }
-    if (!in.domeSbusDesiredEnabled && in.domeSbusInitialized) {
-        out.shouldEndDomeSbus = true;
     }
 
     return out;
@@ -177,11 +101,6 @@ RcInputStepSbus1WatchdogActions rcInputStepSbus1Watchdog(
         } else if (out.transition == SbusWatchdogTransition::OK) {
             out.clearSbusHw = true;
         }
-    } else {
-        // Tracking disabled: reset watchdog and clear failsafe layers
-        sbusWatchdogReset(&state->sbus1Watchdog);
-        out.clearSbusWatchdog = true;
-        out.clearSbusHw = true;
     }
 
     return out;
@@ -212,9 +131,6 @@ RcInputStepSbus2WatchdogActions rcInputStepSbus2Watchdog(
         } else if (out.transition == SbusWatchdogTransition::JUST_RESTORED) {
             out.clearSbus2SignalLost = true;
         }
-    } else {
-        // Tracking disabled: reset watchdog
-        sbusWatchdogReset(&state->sbus2Watchdog);
     }
 
     return out;
