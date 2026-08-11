@@ -143,7 +143,11 @@ follow-up work, not a blocker for this release (see `docs/status.md`).
   but not yet over a long continuous session; sustained multi-hour dashboard use
   has not been soak-tested.
 - Drive hardware checks are still to be completed on the hoverboard and complete droid hardware. This is the remaining hardware verification item before release.
-- RC input decision logic (mode changes, watchdog and receiver-failsafe transitions, zero-frame behavior on signal loss) is covered by automated tests and the wiring is checked during controller upload, but a signal-loss drill with a live receiver is still to be completed.
+- RC input decision logic (mode changes, watchdog and receiver-failsafe transitions,
+  zero-frame behavior on signal loss) was reworked for this release and is covered by
+  automated tests, but the reworked code has not yet been run on a controller. Checking
+  it on hardware, including a signal-loss drill with a live receiver, is still to be
+  completed.
 
 ## [0.4.0] - 2026-03-29
 
