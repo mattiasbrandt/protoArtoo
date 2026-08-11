@@ -264,10 +264,8 @@ void webDeadlineInitialize() {
     webResponseDeadlineInit(&s_responseDeadline);
 }
 
-// Accessors: operations on the backend session state that hide s_responseDeadline.
-// These wrap the pure core functions, which remain in web_response_deadline.h
-// for host testing. The call sites in web_request_psychic.cpp and
-// web_admission_psychic.cpp go through these instead of reaching in to the state.
+// Accessors for the backend's singleton response deadline state.
+// These wrap the pure core functions in web_response_deadline.h for host testing.
 
 void webResponseDeadlineExemptSocket(int fd) {
     webResponseDeadlineExempt(&s_responseDeadline, fd);
@@ -277,6 +275,6 @@ void webResponseDeadlineArmSocket(int fd) {
     webResponseDeadlineArm(&s_responseDeadline, fd);
 }
 
-int32_t webResponseDeadlineDisarmSocket(uint32_t nowMs) {
+int32_t webResponseDeadlineDisarmCurrent(uint32_t nowMs) {
     return webResponseDeadlineDisarm(&s_responseDeadline, nowMs);
 }

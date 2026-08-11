@@ -229,8 +229,7 @@ void streamCloseCallback(httpd_handle_t hd, int sockfd) {
     // Returns false for a socket Connection Admission refused, which reaches
     // this callback through httpd_sess_delete() having never been admitted.
     // The census ignores it; the occupancy reading only ever counts sockets
-    // that actually got to serve something. The accessor hides s_census and
-    // publishCensus, which are now translation-unit-local in web_admission_psychic.cpp.
+    // that actually got to serve something.
     webAdmissionSocketClosed(sockfd);
 
     if (s_vendorCloseFn != nullptr) {
@@ -396,8 +395,6 @@ bool WebRequest::beginEventStream() {
     // is written on it. A stream is a response that never ends by construction,
     // so a deadline on it would be measuring the design rather than a stall --
     // the stream's own bound is PA_SSE_SEND_DEADLINE_MS, applied per event.
-    // The accessor hides s_responseDeadline, which is now translation-unit-local
-    // in web_response_deadline_psychic.cpp.
     webResponseDeadlineExemptSocket(socket);
 
     // Register before writing the head. If the head fails the registration is

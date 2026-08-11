@@ -498,9 +498,7 @@ esp_err_t admissionMiddleware(PsychicRequest* request, PsychicResponse* response
     // outside it -- see webResponseDeadlineCheck().
     httpd_req_t* rawForDeadline = request->request();
     const int deadlineSocket = httpd_req_to_sockfd(rawForDeadline);
-    // The accessor hides s_responseDeadline, which is now translation-unit-local
-    // in web_response_deadline_psychic.cpp. The core decision lives in
-    // web_response_deadline.h for host testing.
+    // The core decision lives in web_response_deadline.h for host testing (ADR 0011).
     webResponseDeadlineArmSocket(deadlineSocket);
 
     // Estop is admitted but never counted: a safety command must not be able to
@@ -532,10 +530,9 @@ esp_err_t admissionMiddleware(PsychicRequest* request, PsychicResponse* response
     // is the margin evidence the calibrated deadline is set against, so it is
     // taken on every response rather than in a one-off measurement session.
     // Disarm reports -1 for a response that sent nothing or that breached,
-    // neither of which is a legitimate response time.
-    // The accessor hides s_responseDeadline, which is now translation-unit-local
-    // in web_response_deadline_psychic.cpp. The -1 sentinel is preserved.
-    const int32_t responseMs = webResponseDeadlineDisarmSocket(millis());
+    // neither of which is a legitimate response time. The core decision lives in
+    // web_response_deadline.h for host testing (ADR 0011).
+    const int32_t responseMs = webResponseDeadlineDisarmCurrent(millis());
     if (responseMs >= 0) {
         g_webResponseLastMs = (uint32_t)responseMs;
         if ((uint32_t)responseMs > g_webResponseMaxMs) {
