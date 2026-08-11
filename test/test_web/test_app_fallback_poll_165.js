@@ -214,18 +214,23 @@ test("Dashboard fallback path: single-flight prevents overlapping attempts", asy
 // The mutation removes "return" from refreshFromFallback, so the promise is
 // not returned to createBackgroundPoll's runAttempt. This causes inFlight to
 // clear before the request settles, allowing overlapping requests.
+//
+// This test detects the mutation by:
+// 1. Measuring how many times refreshStatusOnce is called when intervals fire
+// 2. With the fix (return), only 1 call (single-flight guard works)
+// 3. Without the fix (no return), multiple concurrent calls (inFlight clears early)
 // =============================================================================
 
 test("Dashboard fallback path: promise-return enables single-flight guarding", async (t) => {
   const env = makeEnv();
-  let inFlightAttempts = [];
+  const callLog = [];
 
-  // Mock refreshStatusOnce to take 500ms so we can detect if multiple calls overlap
+  // Mock refreshStatusOnce to track every invocation
   const mockRefreshStatusOnce = async () => {
-    const callId = inFlightAttempts.length;
-    inFlightAttempts.push({ id: callId, start: Date.now(), end: null });
+    const id = callLog.length;
+    callLog.push({ id, start: Date.now() });
     await sleep(500);
-    inFlightAttempts[callId].end = Date.now();
+    callLog[id].end = Date.now();
     return true;
   };
 
@@ -244,11 +249,24 @@ test("Dashboard fallback path: promise-return enables single-flight guarding", a
   };
   appContext.globalThis = appContext;
 
-  // Run the fallback polling code with createBackgroundPoll
+  // Extract and load the real fallback code from app.js
+  // This ensures mutations to the refreshFromFallback function are detected
+  const appFile = readFileSync(join(__dirname, "../../data/app.js"), "utf-8");
+
+  // Find the fallback polling section (SSE-unsupported branch)
+  // Extract from "const refreshFromFallback" through the closing bracket
+  // This regex captures both "return refreshStatusOnce" and "refreshStatusOnce" (mutated version)
+  const refreshFromFallbackMatch = appFile.match(
+    /const refreshFromFallback = \(\) => \{\s*(?:return\s+)?refreshStatusOnce\(\)[\s\S]*?\};\s*/
+  );
+
+  if (!refreshFromFallbackMatch) {
+    assert.fail("Could not find refreshFromFallback in app.js");
+  }
+
+  // Build the fallback polling setup code from the actual app.js
   const fallbackCode = `
-  const refreshFromFallback = () => {
-    return refreshStatusOnce().catch(() => {});
-  };
+  ${refreshFromFallbackMatch[0]}
 
   const fallbackPoll = window.PageBootstrap.createBackgroundPoll(
     refreshFromFallback,
@@ -262,31 +280,38 @@ test("Dashboard fallback path: promise-return enables single-flight guarding", a
 
   vm.runInNewContext(fallbackCode, appContext);
 
-  // Fire the interval several times while the first attempt is in flight
-  for (let i = 0; i < 4; i += 1) {
+  // Fire the interval 3 times over 300ms total
+  // Each refreshStatusOnce call takes 500ms
+  // With single-flight guard: only 1 call total
+  // Without single-flight guard: 3 concurrent calls (since inFlight clears immediately)
+  for (let i = 0; i < 3; i += 1) {
     env.fireInterval(env.intervals[0].id);
-    await sleep(100); // Stagger the fires
+    await sleep(100);
   }
 
-  // Wait for all attempts to settle
-  await sleep(700);
+  // Wait for all promises to settle
+  await sleep(600);
 
-  // Check that no two attempts overlapped
-  let hasOverlap = false;
-  for (let i = 0; i < inFlightAttempts.length; i++) {
-    for (let j = i + 1; j < inFlightAttempts.length; j++) {
-      const call1 = inFlightAttempts[i];
-      const call2 = inFlightAttempts[j];
-      if (call2.start < call1.end) {
-        hasOverlap = true;
+  // Count concurrent calls: if any two intervals start before a previous one ends
+  let maxConcurrent = 0;
+  for (let i = 0; i < callLog.length; i++) {
+    let concurrent = 1; // Count the current call
+    for (let j = 0; j < callLog.length; j++) {
+      if (i !== j && callLog[j].start < callLog[i].end && callLog[j].start >= callLog[i].start) {
+        concurrent++;
       }
     }
+    maxConcurrent = Math.max(maxConcurrent, concurrent);
   }
 
+  // With the fix (with return), maxConcurrent must be 1
+  // Without the fix (no return), maxConcurrent will be 3
   assert.equal(
-    hasOverlap,
-    false,
-    `no overlapping calls allowed. calls: ${JSON.stringify(inFlightAttempts)}`
+    maxConcurrent,
+    1,
+    `single-flight guard broken: max concurrent calls was ${maxConcurrent}, expected 1. ` +
+    `This means refreshFromFallback is not returning the promise, allowing inFlight to clear early. ` +
+    `Call log: ${JSON.stringify(callLog)}`
   );
 });
 
