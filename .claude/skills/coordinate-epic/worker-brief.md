@@ -49,13 +49,18 @@ SLICE WORKFLOW (AGENTS.md, binding)
 VERIFICATION (software-verified cap)
 - Slice gate: after committing each slice, run
   `python3 tools/slice_verify.py --base {BASE}` (plus the --fenced pathspecs
-  below, if any) and paste its FULL block verbatim into your status comment,
-  provenance lines included (AGENTS.md "Worker slice gate" - commit first;
-  the gate diffs merge-base..HEAD). The gate runs the native suite, the web
-  suite, the build, and the diff checks; it fails on deleted test files, a
-  shrinking test total, or an edit to the gate script itself. The
-  coordinator re-runs the same command and compares blocks, provenance
-  included.
+  below, if any, and --mutations with your mutation patches when your diff
+  touches web production JS) and paste its FULL block verbatim into your
+  status comment, provenance lines included (AGENTS.md "Worker slice gate" -
+  commit first; the gate diffs merge-base..HEAD). The gate runs the native
+  suite, the web suite, the mutation stage, the build, and the diff checks;
+  it fails on deleted test files, a shrinking test total, a flat test total
+  over production changes, a changed web production JS file no mutation
+  patch touches, or an edit to either verifier script. The waiver flags
+  (--expect-gate-edit, --expect-no-new-tests, --expect-no-mutations) are
+  coordinator-granted in this brief only - never self-granted; every ACK is
+  visible in the block. The coordinator re-runs the same command and
+  compares blocks, provenance included.
 - All pasted evidence carries process exit codes - never a hand-summarised
   pass/fail line, and never a grep of the TAP `# fail` line (hangs vanish
   from it; the exit code is the signal).
@@ -65,11 +70,14 @@ VERIFICATION (software-verified cap)
 - Tests you add or change must be PROVEN ABLE TO FAIL before you report
   green: for bug fixes, run them against the pre-fix commit and show red;
   then mutate the production code you fixed and show red. Web tests follow
-  test/test_web/README.md exactly. Mutation evidence is a
-  `python3 tools/mutation_verify.py <patches>` table pasted verbatim - it
-  proves each mutation applied and that the kill was an assertion. A test
-  that fails only by hanging or timing out is not coverage. A green run
-  alone, or a hand-written mutation table, will be rejected.
+  test/test_web/README.md exactly. Mutation evidence is the gate block run
+  with --mutations - the gate applies each patch itself and fails unless
+  every mutation is KILLED by assertion and every changed web production JS
+  file is hit by at least one patch. Author patches against HEAD (edit,
+  `git diff > mX.patch`, revert); standalone
+  `python3 tools/mutation_verify.py <patches>` runs are for authoring only.
+  A test that fails only by hanging or timing out is not coverage. A green
+  run alone, or a hand-written mutation table, will be rejected.
 - If the ticket's pinned comment provides a verification harness, run it and
   paste its output verbatim; do not substitute your own summary of it.
 
