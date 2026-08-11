@@ -1321,11 +1321,15 @@
     if (catalogFetchInFlight) return catalogReady;
     catalogFetchInFlight = true;
     try {
-      // When called as the audio-catalog section loader, handle carries the Catalog
-      // deadline (12000ms). When called from applyCapabilityUI pre-load, handle is
-      // absent and we use PAApi directly (which uses DEFAULT_TIMEOUT_MS).
-      const api = handle || window.PAApi;
-      const result = await api.get("/api/audio/catalog");
+      // GET /api/audio/catalog carries the Catalog deadline (12000ms) per ADR 0019,
+      // regardless of context. When called as a section loader, handle carries it.
+      // When called from pre-load or retry paths (non-section), use explicit timeout.
+      let result;
+      if (handle) {
+        result = await handle.get("/api/audio/catalog");
+      } else {
+        result = await window.PAApi.get("/api/audio/catalog", { timeoutMs: window.PageBootstrap.CATALOG_DEADLINE_MS });
+      }
       const data = result.data || {};
       catalogReady = Boolean(data.ready);
       catalogBanks = Array.isArray(data.banks) ? data.banks : [];
