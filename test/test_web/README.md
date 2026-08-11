@@ -10,9 +10,12 @@ A **mutation** is a small bug planted in production code on purpose - invert a
 flag, delete a stop() call - to test the tests: if the suite stays green with
 the bug in place, the tests are vacuous for that behavior. A good suite
 "kills" the mutation with at least one assertion failure; the mutation is then
-reverted and never ships. Run mutations through `tools/mutation_verify.py`,
+reverted and never ships. The slice gate runs mutations itself:
+`tools/slice_verify.py --mutations <patches>` drives `tools/mutation_verify.py`,
 which proves each one applied, requires the kill to be an assertion (a hang or
-timeout does not count), and restores the tree.
+timeout does not count), requires every changed `data/*.js` file to be hit by
+at least one patch, and restores the tree. Standalone `tools/mutation_verify.py`
+runs are for authoring patches before the gate run.
 
 ## Harness pattern
 
@@ -47,10 +50,10 @@ timeout does not count), and restores the tree.
    `git checkout` - restore targets the last commit, and uncommitted work is
    wiped silently.
 
-Report the calibration result and the mutation table alongside the green run.
-If a mutation turns nothing red, fix the test - a gap explained away
-("logically correct per the specification") is how both rejected attempts
-shipped.
+Report the calibration result alongside the green run; mutation evidence is
+the gate block itself, run with `--mutations`. If a mutation turns nothing
+red, fix the test - a gap explained away ("logically correct per the
+specification") is how both rejected attempts shipped.
 
 ## Traps that shipped real bugs here
 
