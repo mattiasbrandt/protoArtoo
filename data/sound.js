@@ -223,7 +223,7 @@
   let catalogBanks = [];
   let catalogEntries = [];
   let catalogBankFilter = 0;
-  let catalogFetchInFlight = false;
+  let catalogFetchPromise = null;
   let catalogRefreshInFlight = false;
   let catalogAutoLoadAttempted = false;
   let catalogBulkMode = false;
@@ -1318,58 +1318,60 @@
 
   const loadCatalog = async ({ handle = null } = {}) => {
     if (!window.PAApi || !catalogSupported) return false;
-    if (catalogFetchInFlight) return catalogReady;
-    catalogFetchInFlight = true;
-    try {
-      // GET /api/audio/catalog carries the Catalog deadline (12000ms) per ADR 0019,
-      // regardless of context. When called as a section loader, handle carries it.
-      // When called from pre-load or retry paths (non-section), use explicit timeout.
-      let result;
-      if (handle) {
-        result = await handle.get("/api/audio/catalog");
-      } else {
-        result = await window.PAApi.get("/api/audio/catalog", { timeoutMs: window.PageBootstrap.CATALOG_DEADLINE_MS });
-      }
-      const data = result.data || {};
-      catalogReady = Boolean(data.ready);
-      catalogBanks = Array.isArray(data.banks) ? data.banks : [];
-      catalogEntries = Array.isArray(data.entries) ? data.entries : [];
-      const validKeys = new Set(catalogEntries.map((entry) => catalogEntryKey(entry)));
-      [...catalogSelectedKeys].forEach((key) => {
-        if (!validKeys.has(key)) {
-          catalogSelectedKeys.delete(key);
-        }
-      });
-
-      if (catalogStatus) {
-        if (!catalogReady) {
-          catalogStatus.textContent = "Catalog not loaded yet. Click Refresh Catalog.";
+    if (catalogFetchPromise) return catalogFetchPromise;
+    catalogFetchPromise = (async () => {
+      try {
+        // GET /api/audio/catalog carries the Catalog deadline (12000ms) per ADR 0019,
+        // regardless of context. When called as a section loader, handle carries it.
+        // When called from pre-load or retry paths (non-section), use explicit timeout.
+        let result;
+        if (handle) {
+          result = await handle.get("/api/audio/catalog");
         } else {
-          const bank1PageCount = catalogBanks.filter((bankRow) =>
-            Number.parseInt(String(bankRow?.bank ?? "0"), 10) === 1
-          ).length;
-          let statusText = `${catalogEntries.length} entries across ${catalogBanks.length} bank(s).`;
-          if (bank1PageCount === 1) {
-            statusText += " CHIRP reports one active Bank 1 page per refresh.";
-          }
-          catalogStatus.dataset.baseText = statusText;
-          catalogStatus.textContent = statusText;
+          result = await window.PAApi.get("/api/audio/catalog", { timeoutMs: window.PageBootstrap.CATALOG_DEADLINE_MS });
         }
-      }
+        const data = result.data || {};
+        catalogReady = Boolean(data.ready);
+        catalogBanks = Array.isArray(data.banks) ? data.banks : [];
+        catalogEntries = Array.isArray(data.entries) ? data.entries : [];
+        const validKeys = new Set(catalogEntries.map((entry) => catalogEntryKey(entry)));
+        [...catalogSelectedKeys].forEach((key) => {
+          if (!validKeys.has(key)) {
+            catalogSelectedKeys.delete(key);
+          }
+        });
 
-      renderCatalogBankTabs();
-      renderCatalogRows();
-      return catalogReady;
-    } catch (error) {
-      if (catalogStatus) {
-        delete catalogStatus.dataset.baseText;
-        catalogStatus.textContent = "Catalog load failed.";
+        if (catalogStatus) {
+          if (!catalogReady) {
+            catalogStatus.textContent = "Catalog not loaded yet. Click Refresh Catalog.";
+          } else {
+            const bank1PageCount = catalogBanks.filter((bankRow) =>
+              Number.parseInt(String(bankRow?.bank ?? "0"), 10) === 1
+            ).length;
+            let statusText = `${catalogEntries.length} entries across ${catalogBanks.length} bank(s).`;
+            if (bank1PageCount === 1) {
+              statusText += " CHIRP reports one active Bank 1 page per refresh.";
+            }
+            catalogStatus.dataset.baseText = statusText;
+            catalogStatus.textContent = statusText;
+          }
+        }
+
+        renderCatalogBankTabs();
+        renderCatalogRows();
+        return catalogReady;
+      } catch (error) {
+        if (catalogStatus) {
+          delete catalogStatus.dataset.baseText;
+          catalogStatus.textContent = "Catalog load failed.";
+        }
+        showFeedback(catalogFeedback, `Catalog load failed: ${getApiErrorMessage(error)}`, false);
+        throw error;
+      } finally {
+        catalogFetchPromise = null;
       }
-      showFeedback(catalogFeedback, `Catalog load failed: ${getApiErrorMessage(error)}`, false);
-      throw error;
-    } finally {
-      catalogFetchInFlight = false;
-    }
+    })();
+    return catalogFetchPromise;
   };
   const refreshCatalog = async () => {
     if (!window.PAApi || !catalogSupported) return false;
