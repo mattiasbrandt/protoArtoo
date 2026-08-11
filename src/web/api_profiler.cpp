@@ -333,6 +333,73 @@ void profilerCollectTaskHeap() {
 // /api/profiler endpoint
 // =============================================================================
 
+// Profiler capture struct - holds a complete snapshot of all mux-guarded state
+struct ProfilerCapture {
+    // Window state
+    char currentLabel[20];
+    bool currentOpen;
+
+    // Snapshot ring
+    HeapSnapshot snapCopy[PROF_SNAPSHOT_MAX];
+    uint8_t snapHead;
+    uint8_t snapCount;
+
+    // HWM entries
+    TaskHwmEntry hwmCopy[PROF_TASK_MAX];
+
+    // Task heap (if CONFIG_HEAP_TASK_TRACKING)
+#ifdef CONFIG_HEAP_TASK_TRACKING
+    TaskHeapEntry heapCopy[PROF_TASK_HEAP_MAX];
+    uint8_t heapCount;
+#endif
+};
+
+// Private capture function - acquires all four muxes in fixed order and returns snapshot.
+// Lock order: s_windowMux -> s_snapMux -> s_hwmMux -> s_taskHeapMux.
+// Reason: one place owns the topology; consistent order keeps it that way if ever held together.
+// Guarantee: each block is internally consistent; blocks are captured in fixed order but are
+// NOT atomic with respect to each other (a writer can modify state between acquisitions).
+// Non-atomicity is accepted: holding all four across the copy would mean ~1KB of copying with
+// interrupts disabled on a real-time core - unacceptably long critical section for a diagnostic.
+static void profilerCapture(ProfilerCapture& cap) {
+    // Acquire s_windowMux first
+    taskENTER_CRITICAL(&s_windowMux);
+    cap.currentOpen = s_windowOpen;
+    if (cap.currentOpen) {
+        strncpy(cap.currentLabel, s_windowLabel, sizeof(cap.currentLabel) - 1);
+        cap.currentLabel[sizeof(cap.currentLabel) - 1] = '\0';
+    } else {
+        cap.currentLabel[0] = '\0';
+    }
+    taskEXIT_CRITICAL(&s_windowMux);
+
+    // Acquire s_snapMux
+    taskENTER_CRITICAL(&s_snapMux);
+    for (int i = 0; i < PROF_SNAPSHOT_MAX; i++) {
+        cap.snapCopy[i] = s_snapshots[i];
+    }
+    cap.snapHead = s_snapHead;
+    cap.snapCount = s_snapCount;
+    taskEXIT_CRITICAL(&s_snapMux);
+
+    // Acquire s_hwmMux
+    taskENTER_CRITICAL(&s_hwmMux);
+    for (int i = 0; i < PROF_TASK_MAX; i++) {
+        cap.hwmCopy[i] = s_taskHwm[i];
+    }
+    taskEXIT_CRITICAL(&s_hwmMux);
+
+    // Acquire s_taskHeapMux
+#ifdef CONFIG_HEAP_TASK_TRACKING
+    taskENTER_CRITICAL(&s_taskHeapMux);
+    cap.heapCount = s_taskHeapCount;
+    for (uint8_t i = 0; i < cap.heapCount; i++) {
+        cap.heapCopy[i] = s_taskHeap[i];
+    }
+    taskEXIT_CRITICAL(&s_taskHeapMux);
+#endif
+}
+
 static const char* hwmStatus(uint32_t hwmBytes) {
     if (hwmBytes > 2048U) return "ok";
     if (hwmBytes > 1024U) return "warn";
@@ -340,7 +407,7 @@ static const char* hwmStatus(uint32_t hwmBytes) {
 }
 
 static void buildProfilerJson(char* buf, size_t bufSize) {
-    // Tier 1 global metrics - direct IDF 5.5 APIs
+    // Tier 1 global metrics - direct IDF 5.5 APIs (no mux needed)
     uint32_t heapFree = (uint32_t)heap_caps_get_free_size(MALLOC_CAP_8BIT);
     uint32_t heapMin = (uint32_t)heap_caps_get_minimum_free_size(MALLOC_CAP_8BIT);
     uint32_t heapLargest = (uint32_t)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
@@ -351,37 +418,11 @@ static void buildProfilerJson(char* buf, size_t bufSize) {
 
     uint32_t failedAllocs = __atomic_load_n(&s_failedAllocCount, __ATOMIC_RELAXED);
 
-    // Read current open window state under mutex
-    char currentLabel[20] = {};
-    bool currentOpen = false;
-    taskENTER_CRITICAL(&s_windowMux);
-    currentOpen = s_windowOpen;
-    if (currentOpen) {
-        strncpy(currentLabel, s_windowLabel, sizeof(currentLabel) - 1);
-        currentLabel[sizeof(currentLabel) - 1] = '\0';
-    }
-    taskEXIT_CRITICAL(&s_windowMux);
-    // info.minimum_free_bytes already reflects the running local min while window open
+    // Perform single capture of all mux-guarded state in fixed order
+    static ProfilerCapture cap = {};
+    profilerCapture(cap);
 
-    // Copy snapshot ring under mutex
-    HeapSnapshot snapCopy[PROF_SNAPSHOT_MAX];
-    uint8_t snapHead;
-    uint8_t snapCount;
-    taskENTER_CRITICAL(&s_snapMux);
-    for (int i = 0; i < PROF_SNAPSHOT_MAX; i++) {
-        snapCopy[i] = s_snapshots[i];
-    }
-    snapHead = s_snapHead;
-    snapCount = s_snapCount;
-    taskEXIT_CRITICAL(&s_snapMux);
-
-    // Copy HWM entries under mutex
-    TaskHwmEntry hwmCopy[PROF_TASK_MAX];
-    taskENTER_CRITICAL(&s_hwmMux);
-    for (int i = 0; i < PROF_TASK_MAX; i++) {
-        hwmCopy[i] = s_taskHwm[i];
-    }
-    taskEXIT_CRITICAL(&s_hwmMux);
+    // Now use only the captured data; no direct mux acquisitions in this handler
 
     size_t pos = 0;
 
@@ -418,59 +459,50 @@ static void buildProfilerJson(char* buf, size_t bufSize) {
     APPEND(",\"taskStacks\":[");
     bool firstTask = true;
     for (int i = 0; i < PROF_TASK_MAX; i++) {
-        if (!hwmCopy[i].found) continue;
+        if (!cap.hwmCopy[i].found) continue;
         if (!firstTask) APPEND(",");
         firstTask = false;
         APPEND("{\"name\":\"%s\",\"hwmBytes\":%lu,\"status\":\"%s\"}",
-               hwmCopy[i].name,
-               (unsigned long)hwmCopy[i].hwmBytes,
-               hwmStatus(hwmCopy[i].hwmBytes));
+               cap.hwmCopy[i].name,
+               (unsigned long)cap.hwmCopy[i].hwmBytes,
+               hwmStatus(cap.hwmCopy[i].hwmBytes));
     }
     APPEND("]");
 
 #ifdef CONFIG_HEAP_TASK_TRACKING
-    // Per-task heap allocation stats (Tier 2)
-    TaskHeapEntry heapCopy[PROF_TASK_HEAP_MAX];
-    uint8_t heapCount;
-    taskENTER_CRITICAL(&s_taskHeapMux);
-    heapCount = s_taskHeapCount;
-    for (uint8_t i = 0; i < heapCount; i++) {
-        heapCopy[i] = s_taskHeap[i];
-    }
-    taskEXIT_CRITICAL(&s_taskHeapMux);
-
+    // Per-task heap allocation stats (Tier 2) - already captured in cap
     APPEND(",\"taskHeap\":[");
-    for (uint8_t i = 0; i < heapCount; i++) {
+    for (uint8_t i = 0; i < cap.heapCount; i++) {
         if (i > 0) APPEND(",");
         APPEND("{\"name\":\"%s\",\"current\":%lu,\"peak\":%lu,\"heapCount\":%lu}",
-               heapCopy[i].name,
-               (unsigned long)heapCopy[i].currentBytes,
-               (unsigned long)heapCopy[i].peakBytes,
-               (unsigned long)heapCopy[i].heapCount);
+               cap.heapCopy[i].name,
+               (unsigned long)cap.heapCopy[i].currentBytes,
+               (unsigned long)cap.heapCopy[i].peakBytes,
+               (unsigned long)cap.heapCopy[i].heapCount);
     }
     APPEND("]");
 #endif
 
     // Active window: running local minimum of the currently open mode window
-    if (currentOpen) {
+    if (cap.currentOpen) {
         APPEND(",\"current\":{\"label\":\"%s\",\"heapFree\":%lu}",
-               currentLabel, (unsigned long)info.minimum_free_bytes);
+               cap.currentLabel, (unsigned long)info.minimum_free_bytes);
     }
 
     // Snapshot ring - oldest first; each entry = one closed mode window
     APPEND(",\"snapshots\":[");
-    if (snapCount > 0) {
-        uint8_t oldest = (uint8_t)((snapHead + PROF_SNAPSHOT_MAX - snapCount) % PROF_SNAPSHOT_MAX);
+    if (cap.snapCount > 0) {
+        uint8_t oldest = (uint8_t)((cap.snapHead + PROF_SNAPSHOT_MAX - cap.snapCount) % PROF_SNAPSHOT_MAX);
         bool firstSnap = true;
-        for (uint8_t i = 0; i < snapCount; i++) {
+        for (uint8_t i = 0; i < cap.snapCount; i++) {
             uint8_t idx = (uint8_t)((oldest + i) % PROF_SNAPSHOT_MAX);
             if (!firstSnap) APPEND(",");
             firstSnap = false;
             APPEND("{\"label\":\"%s\",\"heapFree\":%lu,\"largestBlock\":%lu,\"ts\":%lu}",
-                   snapCopy[idx].label,
-                   (unsigned long)snapCopy[idx].heapMinDuring,
-                   (unsigned long)snapCopy[idx].largestBlockAtClose,
-                   (unsigned long)snapCopy[idx].windowOpenTs);
+                   cap.snapCopy[idx].label,
+                   (unsigned long)cap.snapCopy[idx].heapMinDuring,
+                   (unsigned long)cap.snapCopy[idx].largestBlockAtClose,
+                   (unsigned long)cap.snapCopy[idx].windowOpenTs);
         }
     }
     APPEND("]");
