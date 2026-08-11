@@ -387,8 +387,9 @@
       `WiFi Client Mode is active. Open ${hostAddress} or ${staAddress}.`;
   };
 
-  const loadIdentity = async ({ signal = null } = {}) => {
-    const result = await window.PAApi.get("/api/identity", { timeoutMs: 3000, signal });
+  const loadIdentity = async ({ handle = null } = {}) => {
+    const api = handle || window.PAApi;
+    const result = await api.get("/api/identity");
     state.identity = {
       droidName: result.data?.droidName || DEFAULT_HOSTNAME,
       mdnsUseName: Boolean(result.data?.mdnsUseName),
@@ -396,17 +397,19 @@
     renderPosture();
   };
 
-  const loadConfig = async ({ signal = null } = {}) => {
-    const result = await window.PAApi.get("/api/config", { timeoutMs: 5000, signal });
+  const loadConfig = async ({ handle = null } = {}) => {
+    const api = handle || window.PAApi;
+    const result = await api.get("/api/config");
     renderSettings(result.data?.wifi || null);
     renderPosture();
   };
 
-  const loadWifiDiagnostics = async (showLoading = false, { signal = null } = {}) => {
+  const loadWifiDiagnostics = async (showLoading = false, { handle = null } = {}) => {
     if (showLoading) {
       setFeedback("Loading WiFi settings...");
     }
-    const result = await window.PAApi.get("/api/wifi", { timeoutMs: 5000, signal });
+    const api = handle || window.PAApi;
+    const result = await api.get("/api/wifi");
     state.diagnostics = result.data || {};
     renderPosture();
   };
