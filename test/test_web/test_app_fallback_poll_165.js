@@ -209,16 +209,23 @@ test("Dashboard fallback path: single-flight prevents overlapping attempts", asy
 });
 
 // =============================================================================
-// Verify that refreshFromFallback returns its promise
+// Carrying assertion: detecting the "no return" mutation
+//
+// The mutation removes "return" from refreshFromFallback, so the promise is
+// not returned to createBackgroundPoll's runAttempt. This causes inFlight to
+// clear before the request settles, allowing overlapping requests.
 // =============================================================================
 
-test("Dashboard fallback path: refreshFromFallback returns promise", async (t) => {
+test("Dashboard fallback path: promise-return enables single-flight guarding", async (t) => {
   const env = makeEnv();
-  let attemptResolved = false;
+  let inFlightAttempts = [];
 
+  // Mock refreshStatusOnce to take 500ms so we can detect if multiple calls overlap
   const mockRefreshStatusOnce = async () => {
-    await sleep(10);
-    attemptResolved = true;
+    const callId = inFlightAttempts.length;
+    inFlightAttempts.push({ id: callId, start: Date.now(), end: null });
+    await sleep(500);
+    inFlightAttempts[callId].end = Date.now();
     return true;
   };
 
@@ -237,31 +244,50 @@ test("Dashboard fallback path: refreshFromFallback returns promise", async (t) =
   };
   appContext.globalThis = appContext;
 
-  let capturedPromise = null;
-
-  const testCode = `
+  // Run the fallback polling code with createBackgroundPoll
+  const fallbackCode = `
   const refreshFromFallback = () => {
-    return refreshStatusOnce().catch(() => {
-      // error handling
-    });
+    return refreshStatusOnce().catch(() => {});
   };
 
-  // Capture the result of calling refreshFromFallback
-  capturedPromise = refreshFromFallback();
+  const fallbackPoll = window.PageBootstrap.createBackgroundPoll(
+    refreshFromFallback,
+    {
+      cadenceMs: 200,
+      refreshOnReturn: true,
+    }
+  );
+  fallbackPoll.start();
   `;
 
-  vm.runInNewContext(testCode, appContext);
-  capturedPromise = appContext.capturedPromise;
+  vm.runInNewContext(fallbackCode, appContext);
 
-  // The promise should exist and be a Promise
-  assert.ok(
-    capturedPromise instanceof Promise,
-    "refreshFromFallback must return a Promise"
+  // Fire the interval several times while the first attempt is in flight
+  for (let i = 0; i < 4; i += 1) {
+    env.fireInterval(env.intervals[0].id);
+    await sleep(100); // Stagger the fires
+  }
+
+  // Wait for all attempts to settle
+  await sleep(700);
+
+  // Check that no two attempts overlapped
+  let hasOverlap = false;
+  for (let i = 0; i < inFlightAttempts.length; i++) {
+    for (let j = i + 1; j < inFlightAttempts.length; j++) {
+      const call1 = inFlightAttempts[i];
+      const call2 = inFlightAttempts[j];
+      if (call2.start < call1.end) {
+        hasOverlap = true;
+      }
+    }
+  }
+
+  assert.equal(
+    hasOverlap,
+    false,
+    `no overlapping calls allowed. calls: ${JSON.stringify(inFlightAttempts)}`
   );
-
-  // Wait for it to settle
-  await capturedPromise;
-  assert.ok(attemptResolved, "promise must eventually resolve");
 });
 
 // =============================================================================
