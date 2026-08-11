@@ -20,6 +20,14 @@ BOUNDARIES
   code, no copy-paste where the ticket demands consolidation, no deleted or
   degraded comments, no scope creep beyond the sub-issue. If the clean fix
   reveals a deeper issue, report it on the issue - do not expand scope.
+- Files the ticket fences off are out of scope even if you form a theory
+  that involves them. Test the theory without editing the fenced file and
+  report the result either way; the gate's --fenced check rejects the edit.
+- Never edit a shared test harness to accommodate the code under test; fix
+  the code or report the conflict.
+- If a stated requirement of the ticket cannot be met, STOP and report on
+  the issue. Shipping the remainder while reporting the ticket complete is
+  an automatic reject.
 
 SLICE WORKFLOW (AGENTS.md, binding)
 - implement -> verify -> commit immediately (explicit per-file git add,
@@ -40,19 +48,28 @@ SLICE WORKFLOW (AGENTS.md, binding)
 
 VERIFICATION (software-verified cap)
 - Slice gate: after committing each slice, run
-  `python3 tools/slice_verify.py --base {BASE}` and paste its PASS/FAIL
-  block verbatim into your status comment (AGENTS.md "Worker slice gate" -
-  commit first; the gate diffs merge-base..HEAD). The gate covers build,
-  native tests, and diff checks; it does NOT run the web suite - web tickets
-  also run test/test_web and paste that result.
+  `python3 tools/slice_verify.py --base {BASE}` (plus the --fenced pathspecs
+  below, if any) and paste its FULL block verbatim into your status comment,
+  provenance lines included (AGENTS.md "Worker slice gate" - commit first;
+  the gate diffs merge-base..HEAD). The gate runs the native suite, the web
+  suite, the build, and the diff checks; it fails on deleted test files, a
+  shrinking test total, or an edit to the gate script itself. The
+  coordinator re-runs the same command and compares blocks, provenance
+  included.
+- All pasted evidence carries process exit codes - never a hand-summarised
+  pass/fail line, and never a grep of the TAP `# fail` line (hangs vanish
+  from it; the exit code is the signal).
 - The ticket's acceptance checks, on top of the gate.
 - NEVER flash, never run make ota, never run pio test concurrently with any
   OTA anywhere.
 - Tests you add or change must be PROVEN ABLE TO FAIL before you report
   green: for bug fixes, run them against the pre-fix commit and show red;
   then mutate the production code you fixed and show red. Web tests follow
-  test/test_web/README.md exactly. Paste the calibration and mutation output
-  in your status comment - a green run alone will be rejected.
+  test/test_web/README.md exactly. Mutation evidence is a
+  `python3 tools/mutation_verify.py <patches>` table pasted verbatim - it
+  proves each mutation applied and that the kill was an assertion. A test
+  that fails only by hanging or timing out is not coverage. A green run
+  alone, or a hand-written mutation table, will be rejected.
 - If the ticket's pinned comment provides a verification harness, run it and
   paste its output verbatim; do not substitute your own summary of it.
 

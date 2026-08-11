@@ -289,12 +289,30 @@ Add `make check-action-drift` when action registry, RC tokens, or
 locally when specifically investigating a static analysis issue.
 
 **Worker slice gate:** after committing a slice, workers must run
-`python3 tools/slice_verify.py --base <base-ref>` and paste its PASS/FAIL block
-verbatim into the issue status comment. The coordinator re-runs the same command
-on the branch; divergence between the two blocks marks the slice unverified. The
-gate exits non-zero on any FAIL. Its diff checks compare merge-base..HEAD, so
-commit before running it; build-stamped working-tree changes to
-`data/*version.json` are ignored by design.
+`python3 tools/slice_verify.py --base <base-ref>` (plus any `--fenced` pathspecs
+the coordinator's brief specifies) and paste its full block verbatim into the
+issue status comment — including the opening provenance lines (gate hash, HEAD
+sha, DIRTY marker, merge-base, diff size, toolchain). The coordinator re-runs
+the same command on the branch and compares blocks, provenance lines included;
+divergence marks the slice unverified. The gate runs the native suite, the web
+suite (`make test-web` semantics: process exit code and `# cancelled` decide,
+never the TAP `# fail` line), the firmware build, drift and diff checks, and
+fails on deleted test files or a shrinking test total. Its diff checks compare
+merge-base..HEAD, so commit before running it; build-stamped working-tree
+changes to `data/*version.json` are ignored by design. Editing
+`tools/slice_verify.py` inside a slice fails the gate; `--expect-gate-edit` is
+for coordinator-sanctioned gate work only and its ACK is visible in the block.
+
+**Evidence rules:** pasted evidence must carry process exit codes, never a
+hand-summarised pass/fail line. A test that fails only by hanging or timing out
+is not acceptable coverage — the failure must be an assertion. Mutation
+evidence must be a `python3 tools/mutation_verify.py <patches>` table pasted
+verbatim (it proves each mutation applied and that the kill was an assertion);
+a hand-written mutation table is not evidence. If a stated requirement of the
+ticket cannot be met, stop and report on the issue — shipping the remainder
+while reporting the ticket complete is a reject, not a partial pass. Never edit
+a shared test harness to accommodate the code under test; fix the code or
+report the conflict.
 
 **CI gate:** `verification` workflow runs on every PR to `main` — do not bypass it.
 
