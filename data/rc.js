@@ -206,9 +206,10 @@
     return targets;
   };
 
-  const loadActionTargets = async ({ signal = null } = {}) => {
+  const loadActionTargets = async ({ handle = null } = {}) => {
     try {
-      const result = await window.PAApi.get('/api/actions', { timeoutMs: 5000, signal });
+      const api = handle || window.PAApi;
+      const result = await api.get('/api/actions');
       if (Array.isArray(result.data)) {
         actionTargets = buildActionTargetsFromApi(result.data);
       }
@@ -1180,9 +1181,10 @@
     });
   });
 
-  const loadRcMode = async ({ signal = null } = {}) => {
+  const loadRcMode = async ({ handle = null } = {}) => {
     try {
-      const result = await window.PAApi.get('/api/config', { timeoutMs: 5000, signal });
+      const api = handle || window.PAApi;
+      const result = await api.get('/api/config');
       const data = result.data;
       const mode = getRcModeFromConfig(data);
       if (rcInputModeHidden) rcInputModeHidden.value = mode;
@@ -1204,9 +1206,10 @@
     }
   };
 
-  const loadMappings = async ({ signal = null } = {}) => {
+  const loadMappings = async ({ handle = null } = {}) => {
     try {
-      const result = await window.PAApi.get('/api/rc/map', { timeoutMs: 5000, signal });
+      const api = handle || window.PAApi;
+      const result = await api.get('/api/rc/map');
       const payload = result.data || {};
       const mode = typeof payload.mode === 'string' ? payload.mode : getEditorMode();
       channelMap = modeMapFromArray(payload.map);
@@ -1396,9 +1399,10 @@
     }
   };
 
-  const loadRcDiagnostics = async ({ signal = null } = {}) => {
+  const loadRcDiagnostics = async ({ handle = null } = {}) => {
     try {
-      const result = await window.PAApi.get('/api/rc', { timeoutMs: 5000, signal });
+      const api = handle || window.PAApi;
+      const result = await api.get('/api/rc');
       renderRcDiagnostics(result.data);
     } catch (error) {
       setEditorFeedback(`Failed to load RC diagnostics: ${window.PAApi.messageFor(error)}`, 'error');
@@ -1584,17 +1588,17 @@
   // Page Recovery: register startup API loads as sections so the bootstrap
   // can show recovery state if any fetch fails.
   // See docs/page-load-recovery-architecture.md and ADR 0019.
-  const loadRcModeAndMappings = async ({ signal = null } = {}) => {
-    await loadRcMode({ signal });
-    await loadMappings({ signal });
+  const loadRcModeAndMappings = async ({ handle = null } = {}) => {
+    await loadRcMode({ handle });
+    await loadMappings({ handle });
   };
 
-  const loadRcDiagnosticsWithFallback = async ({ signal = null } = {}) => {
-    await loadRcDiagnostics({ signal });
+  const loadRcDiagnosticsWithFallback = async ({ handle = null } = {}) => {
+    await loadRcDiagnostics({ handle });
   };
 
-  const loadActionTargetsWithFallback = async ({ signal = null } = {}) => {
-    await loadActionTargets({ signal });
+  const loadActionTargetsWithFallback = async ({ handle = null } = {}) => {
+    await loadActionTargets({ handle });
     if (selectedChannel) renderEditor();
   };
 
