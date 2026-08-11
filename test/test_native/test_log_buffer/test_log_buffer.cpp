@@ -12,10 +12,16 @@
 #include "api_config.h"
 #include "log_buffer.h"
 
+// Fixed test capacity: the ring is runtime-sized in production (boot-sized
+// from the saved log level), so these tests exercise the ring behavior at one
+// representative depth.
+static constexpr size_t kTestLines = 20;
+static char storage[kTestLines][LOG_LINE_MAX];
 static LogBuffer buf;
 
 void setUp() {
-    memset(&buf, 0, sizeof(buf));
+    memset(storage, 0, sizeof(storage));
+    logBufferInit(&buf, storage, kTestLines);
 }
 
 void tearDown() {
@@ -58,28 +64,28 @@ void test_two_lines_ordered_oldest_first() {
 }
 
 void test_count_increments_up_to_capacity() {
-    for (size_t i = 0; i < LOG_BUFFER_LINES; ++i) {
+    for (size_t i = 0; i < kTestLines; ++i) {
         logBufferAppend(&buf, "x");
     }
-    TEST_ASSERT_EQUAL_size_t(LOG_BUFFER_LINES, buf.count);
+    TEST_ASSERT_EQUAL_size_t(kTestLines, buf.count);
 }
 
 void test_count_does_not_exceed_capacity() {
-    for (size_t i = 0; i < LOG_BUFFER_LINES + 5; ++i) {
+    for (size_t i = 0; i < kTestLines + 5; ++i) {
         logBufferAppend(&buf, "x");
     }
-    TEST_ASSERT_EQUAL_size_t(LOG_BUFFER_LINES, buf.count);
+    TEST_ASSERT_EQUAL_size_t(kTestLines, buf.count);
 }
 
 void test_wrap_around_oldest_overwritten() {
     char line[32];
-    for (size_t i = 0; i < LOG_BUFFER_LINES; ++i) {
+    for (size_t i = 0; i < kTestLines; ++i) {
         snprintf(line, sizeof(line), "line%zu", i);
         logBufferAppend(&buf, line);
     }
     logBufferAppend(&buf, "newest");
 
-    char out[LOG_BUFFER_LINES * LOG_LINE_MAX];
+    char out[kTestLines * LOG_LINE_MAX];
     logBufferCopy(&buf, out, sizeof(out));
 
     TEST_ASSERT_NULL(strstr(out, "line0"));
@@ -88,17 +94,17 @@ void test_wrap_around_oldest_overwritten() {
 
 void test_wrap_around_order_preserved() {
     char line[32];
-    const size_t total = LOG_BUFFER_LINES + 3;
+    const size_t total = kTestLines + 3;
     for (size_t i = 0; i < total; ++i) {
         snprintf(line, sizeof(line), "L%zu", i);
         logBufferAppend(&buf, line);
     }
-    char out[LOG_BUFFER_LINES * LOG_LINE_MAX];
+    char out[kTestLines * LOG_LINE_MAX];
     logBufferCopy(&buf, out, sizeof(out));
 
     // After overflow: oldest visible is L3, newest is L(total-1)
     char oldest[16], newest[16];
-    snprintf(oldest, sizeof(oldest), "L%zu", total - LOG_BUFFER_LINES);  // first still in ring
+    snprintf(oldest, sizeof(oldest), "L%zu", total - kTestLines);  // first still in ring
     snprintf(newest, sizeof(newest), "L%zu", total - 1);                 // last written
     const char* p_oldest = strstr(out, oldest);
     const char* p_newest = strstr(out, newest);
@@ -157,12 +163,26 @@ void test_totalWritten_increments_on_each_append() {
 }
 
 void test_totalWritten_exceeds_capacity_on_wraparound() {
-    for (size_t i = 0; i < LOG_BUFFER_LINES + 5; ++i) {
+    for (size_t i = 0; i < kTestLines + 5; ++i) {
         logBufferAppend(&buf, "x");
     }
-    TEST_ASSERT_EQUAL_UINT32(LOG_BUFFER_LINES + 5, buf.totalWritten);
+    TEST_ASSERT_EQUAL_UINT32(kTestLines + 5, buf.totalWritten);
     // count is still capped at capacity
-    TEST_ASSERT_EQUAL_size_t(LOG_BUFFER_LINES, buf.count);
+    TEST_ASSERT_EQUAL_size_t(kTestLines, buf.count);
+}
+
+// --- logRingLinesForLevel ---
+
+void test_ring_lines_for_each_level() {
+    TEST_ASSERT_EQUAL_size_t(16, logRingLinesForLevel(1));
+    TEST_ASSERT_EQUAL_size_t(20, logRingLinesForLevel(2));
+    TEST_ASSERT_EQUAL_size_t(24, logRingLinesForLevel(3));
+    TEST_ASSERT_EQUAL_size_t(48, logRingLinesForLevel(4));
+}
+
+void test_ring_lines_out_of_range_clamped() {
+    TEST_ASSERT_EQUAL_size_t(16, logRingLinesForLevel(0));
+    TEST_ASSERT_EQUAL_size_t(LOG_RING_MAX_LINES, logRingLinesForLevel(9));
 }
 
 // --- formatConfigJson (drive-settings slice only; full config coverage is in test_json_formatters) ---
@@ -217,6 +237,9 @@ int main() {
     RUN_TEST(test_copy_output_null_terminated);
     RUN_TEST(test_copy_zero_size_returns_zero);
     RUN_TEST(test_copy_small_buffer_truncates);
+
+    RUN_TEST(test_ring_lines_for_each_level);
+    RUN_TEST(test_ring_lines_out_of_range_clamped);
 
     RUN_TEST(test_formatConfigJson_contains_speedLimitMax);
     RUN_TEST(test_formatConfigJson_contains_webDriveTimeoutMs);

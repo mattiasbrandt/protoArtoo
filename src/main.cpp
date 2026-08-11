@@ -48,7 +48,16 @@ static portMUX_TYPE restartMux = portMUX_INITIALIZER_UNLOCKED;
 static portMUX_TYPE logMux = portMUX_INITIALIZER_UNLOCKED;
 static StaticSemaphore_t logSerialMutexStorage = {};
 static SemaphoreHandle_t logSerialMutex = nullptr;
+// Static bootstrap ring: captures the few lines logged before NVS config loads
+// (schema migration, mount problems). paLogRingApplyBootDepth() replaces it
+// with a heap ring sized to the saved log level and carries these lines over.
+static char logBootstrapStorage[LOG_RING_BOOTSTRAP_LINES][LOG_LINE_MAX];
 static LogBuffer recentLogBuf = {};
+// /api/logs response body, allocated alongside the sized ring (capacity *
+// LOG_LINE_MAX + 1). One shared buffer is race-free because web handlers
+// serialize on one task; see handleLogsGet().
+static char* logsBodyBuf = nullptr;
+static size_t logsBodyBufSize = 0;
 
 namespace {
 
@@ -71,6 +80,50 @@ void paLogInit() {
     if (logSerialMutex == nullptr) {
         logSerialMutex = xSemaphoreCreateMutexStatic(&logSerialMutexStorage);
     }
+    if (recentLogBuf.lines == nullptr) {
+        logBufferInit(&recentLogBuf, logBootstrapStorage, LOG_RING_BOOTSTRAP_LINES);
+    }
+}
+
+// Size the log ring and the /api/logs body from the operator's saved log
+// level. Called once from setup() after NVS config loads and before any task
+// or the web server starts; bootstrap lines are carried over. On allocation
+// failure the bootstrap ring stays in place so logging never loses its store.
+static void paLogRingApplyBootDepth() {
+    const size_t wanted = logRingLinesForLevel(configCurrentLogLevel());
+    char(*storage)[LOG_LINE_MAX] = (char(*)[LOG_LINE_MAX])malloc(wanted * LOG_LINE_MAX);
+    char* body = (char*)malloc(wanted * LOG_LINE_MAX + 1);
+    if (storage == nullptr || body == nullptr) {
+        free(storage);
+        free(body);
+        PA_LOG_ERROR("log", "ring alloc failed (%u lines) - keeping bootstrap depth",
+                     (unsigned)wanted);
+        return;
+    }
+
+    LogBuffer sized = {};
+    logBufferInit(&sized, storage, wanted);
+
+    taskENTER_CRITICAL(&logMux);
+    size_t start =
+        (recentLogBuf.head + recentLogBuf.capacity - recentLogBuf.count) % recentLogBuf.capacity;
+    for (size_t i = 0; i < recentLogBuf.count; ++i) {
+        logBufferAppend(&sized, recentLogBuf.lines[(start + i) % recentLogBuf.capacity]);
+    }
+    sized.totalWritten = recentLogBuf.totalWritten;
+    recentLogBuf = sized;
+    logsBodyBuf = body;
+    logsBodyBufSize = wanted * LOG_LINE_MAX + 1;
+    taskEXIT_CRITICAL(&logMux);
+}
+
+char* recentLogsBodyBuffer(size_t* size) {
+    if (logsBodyBuf == nullptr) {
+        *size = 0;
+        return nullptr;
+    }
+    *size = logsBodyBufSize;
+    return logsBodyBuf;
 }
 
 void paLogLineRaw(const char* line) {
@@ -122,9 +175,11 @@ uint32_t copyNewLogLinesSince(uint32_t lastSent, char out[][LOG_LINE_MAX], size_
     uint32_t n = (from < total) ? (total - from) : 0;
     if (n > (uint32_t)maxLines)
         n = (uint32_t)maxLines;
-    size_t startIdx = (recentLogBuf.head + LOG_BUFFER_LINES - (size_t)count) % LOG_BUFFER_LINES;
+    size_t startIdx =
+        (recentLogBuf.head + recentLogBuf.capacity - (size_t)count) % recentLogBuf.capacity;
     for (uint32_t i = 0; i < n; ++i) {
-        size_t ringIdx = (startIdx + (size_t)(from - ringStart) + (size_t)i) % LOG_BUFFER_LINES;
+        size_t ringIdx =
+            (startIdx + (size_t)(from - ringStart) + (size_t)i) % recentLogBuf.capacity;
         strncpy(out[i], recentLogBuf.lines[ringIdx], LOG_LINE_MAX - 1);
         out[i][LOG_LINE_MAX - 1] = '\0';
     }
@@ -148,8 +203,8 @@ bool copyLogLineAt(size_t idx, char* out, size_t outSize) {
     bool valid = idx < recentLogBuf.count;
     if (valid) {
         size_t startIdx =
-            (recentLogBuf.head + LOG_BUFFER_LINES - recentLogBuf.count) % LOG_BUFFER_LINES;
-        size_t ringIdx = (startIdx + idx) % LOG_BUFFER_LINES;
+            (recentLogBuf.head + recentLogBuf.capacity - recentLogBuf.count) % recentLogBuf.capacity;
+        size_t ringIdx = (startIdx + idx) % recentLogBuf.capacity;
         strncpy(out, recentLogBuf.lines[ringIdx], outSize - 1);
         out[outSize - 1] = '\0';
     }
@@ -217,6 +272,7 @@ void setup() {
     robotState.audio_module_rx_status = AUDIO_RX_UNKNOWN;
     // Load config from NVS  --  may override cfg_logLevel with the user's saved value.
     loadConfigToState();
+    paLogRingApplyBootDepth();
     logBootHealth();
 
     // Layer 4: Initialize Task Watchdog Timer
@@ -267,7 +323,7 @@ void setup() {
     domeTaskInit();
     bool auxLedTaskReady = auxLedTaskInit();
     if (!auxLedTaskReady) {
-        PA_LOG_WARN("main", "aux LED task init failed; AUX LED API will report unavailable");
+        PA_LOG_ERROR("main", "aux LED task init failed; AUX LED API will report unavailable");
     }
 
     // Launch real-time tasks on Core 1

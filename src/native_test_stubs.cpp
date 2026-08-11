@@ -422,8 +422,14 @@ const char* audioRxStatusDetail(AudioRxStatus status) {
 // g_test_log_buffer directly (declared extern in the test file).
 #include "log_buffer.h"
 LogBuffer g_test_log_buffer = {};
+char g_test_log_storage[LOG_RING_MAX_LINES][LOG_LINE_MAX] = {};
+static char s_testLogsBody[LOG_RING_MAX_LINES * LOG_LINE_MAX + 1];
 size_t copyRecentLogs(char* buffer, size_t bufferSize) {
     return logBufferCopy(&g_test_log_buffer, buffer, bufferSize);
+}
+char* recentLogsBodyBuffer(size_t* size) {
+    *size = sizeof(s_testLogsBody);
+    return s_testLogsBody;
 }
 
 // -----------------------------------------------------------------------------

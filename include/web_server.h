@@ -29,6 +29,10 @@ void startHttpServerOnce();
 bool buildStatusJson(char* buffer, size_t bufferSize);
 void requestStatusBroadcastNow();
 size_t copyRecentLogs(char* buffer, size_t bufferSize);
+// Boot-allocated /api/logs response buffer (ring capacity * LOG_LINE_MAX + 1).
+// Returns nullptr with *size = 0 until paLogRingApplyBootDepth() has run or if
+// its allocation failed.
+char* recentLogsBodyBuffer(size_t* size);
 uint32_t copyNewLogLinesSince(uint32_t lastSent, char out[][LOG_LINE_MAX], size_t maxLines,
                               size_t* linesCopied);
 size_t getLogBufferCount();

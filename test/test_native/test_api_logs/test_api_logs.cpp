@@ -15,9 +15,10 @@
 #include "web_request_test_backend.h"
 
 extern LogBuffer g_test_log_buffer;
+extern char g_test_log_storage[LOG_RING_MAX_LINES][LOG_LINE_MAX];
 
 void setUp() {
-    g_test_log_buffer = LogBuffer{};
+    logBufferInit(&g_test_log_buffer, g_test_log_storage, LOG_RING_MAX_LINES);
 }
 
 void tearDown() {
@@ -52,7 +53,7 @@ void test_full_ring_is_served_without_truncating_the_response() {
     // Fill the ring to capacity: the handler's buffer is sized from the same
     // constants, so a full ring must come back whole.
     char line[LOG_LINE_MAX];
-    for (size_t i = 0; i < LOG_BUFFER_LINES; ++i) {
+    for (size_t i = 0; i < LOG_RING_MAX_LINES; ++i) {
         memset(line, 'x', sizeof(line) - 1);
         line[sizeof(line) - 1] = '\0';
         logBufferAppend(&g_test_log_buffer, line);
@@ -63,10 +64,10 @@ void test_full_ring_is_served_without_truncating_the_response() {
 
     handleLogsGet(req);
 
-    // LOG_BUFFER_LINES lines of LOG_LINE_MAX-1 chars, each followed by a
-    // newline -- exactly LOG_BUFFER_LINES * LOG_LINE_MAX bytes, which is what
+    // LOG_RING_MAX_LINES lines of LOG_LINE_MAX-1 chars, each followed by a
+    // newline -- exactly LOG_RING_MAX_LINES * LOG_LINE_MAX bytes, which is what
     // the handler's buffer is sized to hold alongside its terminator.
-    const size_t expected = LOG_BUFFER_LINES * LOG_LINE_MAX;
+    const size_t expected = LOG_RING_MAX_LINES * LOG_LINE_MAX;
     TEST_ASSERT_EQUAL_UINT(expected, backend.sentBodyLength);
 }
 

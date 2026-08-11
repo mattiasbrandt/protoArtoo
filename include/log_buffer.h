@@ -20,36 +20,49 @@
 // 128 chars covers all normal log lines; longer lines are truncated at source.
 static constexpr size_t LOG_LINE_MAX = 128;
 
-// LOG_BUFFER_LINES: in-memory ring depth, scaled to PA_LOG_LEVEL.
+// Ring depth follows the operator's saved log level. The ring is sized ONCE at
+// boot from NVS (see paLogRingApplyBootDepth in main.cpp): changing the level
+// on the Setup page changes emission immediately and ring depth at the next
+// reboot, so log level remains the single knob and history depth follows the
+// chosen verbosity.
 //
-//   PA_LOG_LEVEL_ERROR (1): 16 lines  --  faults only; minimal memory use
-//   PA_LOG_LEVEL_INFO  (2): 20 lines  --  normal operator use; default production
-//   PA_LOG_LEVEL_DEBUG (3): 48 lines  --  verbose; more history needed for diagnosis
+//   ERROR (1): 16 lines  --  faults only; minimal memory use
+//   WARN  (2): 20 lines  --  faults plus safety warnings; default production
+//   INFO  (3): 24 lines  --  normal operator use
+//   DEBUG (4): 48 lines  --  verbose; more history needed for diagnosis
 //
-// Deeper debug sessions that need more history should raise the log level.
-// The dashboard console always shows all buffered lines; there is no separate
-// UI control for ring depth  --  log level is the single knob.
-#ifndef PA_LOG_LEVEL
-#  define PA_LOG_LEVEL 2
-#endif
+// LOG_RING_BOOTSTRAP_LINES backs the static ring that captures the few boot
+// lines emitted before NVS config loads; those lines are carried into the
+// boot-sized ring. LOG_RING_MAX_LINES bounds the sized ring and the native
+// test storage.
+static constexpr size_t LOG_RING_BOOTSTRAP_LINES = 8;
+static constexpr size_t LOG_RING_MAX_LINES = 48;
 
-#if PA_LOG_LEVEL >= 3
-static constexpr size_t LOG_BUFFER_LINES = 48;
-#elif PA_LOG_LEVEL >= 2
-static constexpr size_t LOG_BUFFER_LINES = 20;
-#else
-static constexpr size_t LOG_BUFFER_LINES = 16;
-#endif
+// Ring depth for a runtime log level (1=Error .. 4=Debug); out-of-range low
+// values get the minimum depth, high values the maximum.
+size_t logRingLinesForLevel(uint8_t level);
 
 // -----------------------------------------------------------------------------
-// LogBuffer  --  plain-old-data ring buffer, zero-initialise before use.
+// LogBuffer  --  plain-old-data ring view over caller-owned storage.
+// Zero-initialise, then logBufferInit() with storage before first use.
 // -----------------------------------------------------------------------------
 struct LogBuffer {
-    char lines[LOG_BUFFER_LINES][LOG_LINE_MAX];
-    size_t count;           // number of valid entries (0..LOG_BUFFER_LINES)
+    char (*lines)[LOG_LINE_MAX];  // caller-owned storage, `capacity` slots
+    size_t capacity;        // number of line slots in `lines`
+    size_t count;           // number of valid entries (0..capacity)
     size_t head;            // index where the NEXT write will go (wraps)
     uint32_t totalWritten;  // monotonically increasing count of all appends ever
 };
+
+// -----------------------------------------------------------------------------
+// logBufferInit()
+// Point the ring at caller-owned storage and reset it to empty.
+// params: buf       --  ring buffer to initialise (must not be null)
+//         storage   --  array of `capacity` line slots (must not be null)
+//         capacity  --  number of slots in storage (must be > 0)
+// thread-safe: NO  --  caller must hold any required lock
+// -----------------------------------------------------------------------------
+void logBufferInit(LogBuffer* buf, char (*storage)[LOG_LINE_MAX], size_t capacity);
 
 // -----------------------------------------------------------------------------
 // logBufferAppend()
