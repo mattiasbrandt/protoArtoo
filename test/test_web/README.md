@@ -6,6 +6,14 @@ mode is the **vacuous test** - a test that cannot fail. Work from this
 assumption: your suite is vacuous until a mutation of production code turns it
 red.
 
+A **mutation** is a small bug planted in production code on purpose - invert a
+flag, delete a stop() call - to test the tests: if the suite stays green with
+the bug in place, the tests are vacuous for that behavior. A good suite
+"kills" the mutation with at least one assertion failure; the mutation is then
+reverted and never ships. Run mutations through `tools/mutation_verify.py`,
+which proves each one applied, requires the kill to be an assertion (a hang or
+timeout does not count), and restores the tree.
+
 ## Harness pattern
 
 - **Execute the shipped file.** `vm.runInNewContext(readFileSync("data/<module>.js"), context)`
