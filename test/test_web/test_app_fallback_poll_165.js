@@ -2,301 +2,88 @@
 // test/test_web/test_app_fallback_poll_165.js
 //
 // Integration test for #165: Dashboard SSE-fallback polling uses
-// createBackgroundPoll with proper single-flight guarding.
-// Proves that refreshFromFallback returns its promise (critical for
-// single-flight to work) and that overlapping attempts are prevented.
+// createBackgroundPoll with proper single-flight guarding, correct cadence,
+// and proper teardown.
+//
+// Loads the REAL data/app.js module and verifies that:
+// - refreshFromFallback returns its promise (so single-flight works)
+// - Only one concurrent /api/status request is in flight at a time
+// - Cadence is 3000ms
+// - Interval and listener are removed on beforeunload
 // =============================================================================
 
 import { test } from "node:test";
 import assert from "node:assert";
-import vm from "node:vm";
-import { readFileSync } from "fs";
-import { fileURLToPath } from "url";
-import { dirname, join } from "path";
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const bootstrapFile = readFileSync(
-  join(__dirname, "../../data/page_bootstrap.js"),
-  "utf-8"
-);
-const appFile = readFileSync(join(__dirname, "../../data/app.js"), "utf-8");
-
-// Extract PART 1 (reducer) only from page_bootstrap.js
-const part2Marker = bootstrapFile.indexOf("// =========================== PART 2");
-const part1Src = bootstrapFile.substring(
-  bootstrapFile.indexOf("(() => {"),
-  part2Marker
-);
+import { loadPageModule } from "./helpers/page_module_env.js";
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// Builds a context with mocked timers and document visibility state.
-const makeEnv = () => {
-  const env = {
-    intervals: [],
-    timeouts: [],
-    cleared: { intervals: [], timeouts: [] },
-    listeners: { document: [], window: [] },
-    statusAttempts: [],
-  };
-
-  const addTimer = (list, fn, ms) => {
-    const id = list.length + 1;
-    list.push({ id, fn, ms });
-    return id;
-  };
-
-  const documentMock = {
-    visibilityState: "visible",
-    hidden: false,
-    addEventListener: (type, handler) => {
-      if (type === "visibilitychange") {
-        env.listeners.document.push({ type, handler });
-      }
-    },
-    removeEventListener: (type, handler) => {
-      if (type === "visibilitychange") {
-        const idx = env.listeners.document.findIndex((l) => l.handler === handler);
-        if (idx >= 0) env.listeners.document.splice(idx, 1);
-      }
-    },
-  };
-
-  const context = {
-    window: {
-      PageBootstrap: undefined,
-      setInterval: (fn, ms) => addTimer(env.intervals, fn, ms),
-      clearInterval: (id) => env.cleared.intervals.push(id),
-      setTimeout: (fn, ms) => addTimer(env.timeouts, fn, ms),
-      clearTimeout: (id) => env.cleared.timeouts.push(id),
-      addEventListener: (type, handler) => {
-        if (type === "beforeunload") {
-          env.listeners.window.push({ type, handler });
-        }
-      },
-      PAStatusStream: {
-        isSupported: () => false, // Force fallback path
-      },
-    },
-    document: documentMock,
-    console: { log: () => {}, warn: () => {}, error: () => {} },
-  };
-  context.globalThis = context;
-  context.window.PageBootstrap = context.window.PageBootstrap || {};
-
-  // Run page_bootstrap PART 1 to set up createBackgroundPoll
-  vm.runInNewContext(part1Src, context);
-
-  return {
-    ...env,
-    window: context.window,
-    document: documentMock,
-    fireInterval: (id) => env.intervals.find((t) => t.id === id)?.fn(),
-    fireTimeout: (id) => env.timeouts.find((t) => t.id === id)?.fn(),
-    fireAllTimeouts: async () => {
-      let fired = 0;
-      while (env.timeouts.length > fired) {
-        const next = env.timeouts[fired];
-        fired += 1;
-        next.fn();
-        await sleep(0);
-      }
-      return fired;
-    },
-    emit: (type, event = {}) => {
-      if (type === "visibilitychange") {
-        env.listeners.document.forEach(({ handler }) => handler(event));
-      }
-    },
-    fireBeforeunload: () => {
-      env.listeners.window.forEach(({ handler }) => handler());
-    },
-  };
-};
-
 // =============================================================================
-// Single-flight guard: the carrying assertion for #165
+// Single-flight carrying assertion: all three mutations must be KILLED
 // =============================================================================
 
-test("Dashboard fallback path: single-flight prevents overlapping attempts", async (t) => {
-  const env = makeEnv();
-  const callTimeline = [];
-
-  // Mock refreshStatusOnce to track timing of concurrent calls
-  const mockRefreshStatusOnce = async () => {
-    const callId = callTimeline.length;
-    const startTime = Date.now();
-    callTimeline.push({ id: callId, start: startTime, end: null });
-
-    // Simulate a response that takes longer than one cadence tick (3000 ms)
-    await sleep(500);
-
-    callTimeline[callId].end = Date.now();
-    return true;
-  };
-
-  // Inject mocked refreshStatusOnce into the app context
-  const appContext = {
-    window: env.window,
-    document: env.document,
-    console: { log: () => {}, warn: () => {}, error: () => {} },
-    refreshStatusOnce: mockRefreshStatusOnce,
-    setStale: () => {},
-    applyStatus: () => {},
-    appendLogLine: () => {},
-    setEstopUi: () => {},
-    setSleepUi: () => {},
-    startPageLoad: () => {},
-    SECTIONS: [],
-  };
-  appContext.globalThis = appContext;
-
-  // Extract and run only the SSE-unsupported branch from app.js
-  // This is the fallback polling code we're testing
-  const fallbackCode = `
-  const refreshFromFallback = () => {
-    return refreshStatusOnce().catch(() => {
-      // pollFailCount++;
-      // if (pollFailCount >= 2) setStale(true);
-    });
-  };
-
-  const fallbackPoll = window.PageBootstrap.createBackgroundPoll(
-    refreshFromFallback,
-    {
-      cadenceMs: 200,
-      refreshOnReturn: true,
-    }
-  );
-  fallbackPoll.start();
-
-  window.addEventListener("beforeunload", () => {
-    fallbackPoll.stop();
-  });
-  `;
-
-  vm.runInNewContext(fallbackCode, appContext);
-
-  // Fire the cadence interval multiple times over time
-  // Each fires 200ms apart, but each call takes 500ms
-  // So if single-flight works, only the first should complete before the next fires
-  for (let i = 0; i < 3; i += 1) {
-    env.fireInterval(env.intervals[0].id);
-    await sleep(150); // Stagger the fires to allow previous to start
-  }
-
-  // Wait for all calls to settle
-  await sleep(1000);
-
-  // Verify no overlapping calls
-  let hasOverlap = false;
-  for (let i = 0; i < callTimeline.length; i += 1) {
-    for (let j = i + 1; j < callTimeline.length; j += 1) {
-      const call1 = callTimeline[i];
-      const call2 = callTimeline[j];
-      // Check if call2 started before call1 ended
-      if (call2.start < call1.end) {
-        hasOverlap = true;
-      }
-    }
-  }
-
-  assert.equal(
-    hasOverlap,
-    false,
-    `single-flight must prevent overlapping calls. timeline: ${JSON.stringify(callTimeline)}`
-  );
-});
-
-// =============================================================================
-// Carrying assertion: detecting the "no return" mutation
-//
-// The mutation removes "return" from refreshFromFallback, so the promise is
-// not returned to createBackgroundPoll's runAttempt. This causes inFlight to
-// clear before the request settles, allowing overlapping requests.
-//
-// This test detects the mutation by:
-// 1. Measuring how many times refreshStatusOnce is called when intervals fire
-// 2. With the fix (return), only 1 call (single-flight guard works)
-// 3. Without the fix (no return), multiple concurrent calls (inFlight clears early)
-// =============================================================================
-
-test("Dashboard fallback path: promise-return enables single-flight guarding", async (t) => {
-  const env = makeEnv();
+test("Dashboard fallback path: real app.js single-flight and teardown", async (t) => {
   const callLog = [];
+  const statusDelay = 400; // Make /api/status slow so overlaps are detectable
 
-  // Mock refreshStatusOnce to track every invocation
-  const mockRefreshStatusOnce = async () => {
-    const id = callLog.length;
-    callLog.push({ id, start: Date.now() });
-    await sleep(500);
-    callLog[id].end = Date.now();
-    return true;
-  };
+  // Load the real app.js module
+  const env = loadPageModule("app.js", {
+    respond: (path) => {
+      if (path === "/api/status") {
+        // Track every /api/status call
+        const id = callLog.length;
+        callLog.push({ id, start: Date.now() });
 
-  const appContext = {
-    window: env.window,
-    document: env.document,
-    console: { log: () => {}, warn: () => {}, error: () => {} },
-    refreshStatusOnce: mockRefreshStatusOnce,
-    setStale: () => {},
-    applyStatus: () => {},
-    appendLogLine: () => {},
-    setEstopUi: () => {},
-    setSleepUi: () => {},
-    startPageLoad: () => {},
-    SECTIONS: [],
-  };
-  appContext.globalThis = appContext;
+        // Return a promise that resolves after the delay
+        return new Promise((resolve) => {
+          setTimeout(() => {
+            callLog[id].end = Date.now();
+            resolve({ data: { estop: false, sleepMode: false } });
+          }, statusDelay);
+        });
+      }
+      return { data: {} };
+    },
+  });
 
-  // Extract and load the real fallback code from app.js
-  // This ensures mutations to the refreshFromFallback function are detected
-  const appFile = readFileSync(join(__dirname, "../../data/app.js"), "utf-8");
+  // Settle initial load
+  await env.settle();
 
-  // Find the fallback polling section (SSE-unsupported branch)
-  // Extract from "const refreshFromFallback" through the closing bracket
-  // This regex captures both "return refreshStatusOnce" and "refreshStatusOnce" (mutated version)
-  const refreshFromFallbackMatch = appFile.match(
-    /const refreshFromFallback = \(\) => \{\s*(?:return\s+)?refreshStatusOnce\(\)[\s\S]*?\};\s*/
+  // Verify the fallback path was taken (no SSE)
+  assert.ok(
+    !env.window.PAStatusStream.isSupported(),
+    "fallback path must be active (SSE disabled)"
   );
 
-  if (!refreshFromFallbackMatch) {
-    assert.fail("Could not find refreshFromFallback in app.js");
-  }
-
-  // Build the fallback polling setup code from the actual app.js
-  const fallbackCode = `
-  ${refreshFromFallbackMatch[0]}
-
-  const fallbackPoll = window.PageBootstrap.createBackgroundPoll(
-    refreshFromFallback,
-    {
-      cadenceMs: 200,
-      refreshOnReturn: true,
-    }
+  // Verify interval was created
+  assert.ok(
+    env.intervals.length > 0,
+    "fallback path must create a polling interval"
   );
-  fallbackPoll.start();
-  `;
 
-  vm.runInNewContext(fallbackCode, appContext);
+  const fallbackInterval = env.intervals[env.intervals.length - 1];
 
-  // Fire the interval 3 times over 300ms total
-  // Each refreshStatusOnce call takes 500ms
-  // With single-flight guard: only 1 call total
-  // Without single-flight guard: 3 concurrent calls (since inFlight clears immediately)
+  // =========================================================================
+  // MUTATION 1 (m1.patch): Mutation removes `return` from refreshFromFallback
+  // Without it, inFlight clears before request settles, allowing overlaps
+  // Must kill this test by showing overlaps
+  // =========================================================================
+  // Fire interval 3 times, staggered
+  // Each call takes 400ms, so if single-flight works, only 1 concurrent call
+  // If single-flight is broken (no return), 3 concurrent calls
+  callLog.length = 0;
   for (let i = 0; i < 3; i += 1) {
-    env.fireInterval(env.intervals[0].id);
+    env.fireInterval(fallbackInterval.id);
     await sleep(100);
   }
 
-  // Wait for all promises to settle
-  await sleep(600);
+  await sleep(600); // Wait for all calls to settle
 
-  // Count concurrent calls: if any two intervals start before a previous one ends
+  // Count max concurrent calls
   let maxConcurrent = 0;
-  for (let i = 0; i < callLog.length; i++) {
-    let concurrent = 1; // Count the current call
-    for (let j = 0; j < callLog.length; j++) {
+  for (let i = 0; i < callLog.length; i += 1) {
+    let concurrent = 1;
+    for (let j = 0; j < callLog.length; j += 1) {
       if (i !== j && callLog[j].start < callLog[i].end && callLog[j].start >= callLog[i].start) {
         concurrent++;
       }
@@ -304,124 +91,38 @@ test("Dashboard fallback path: promise-return enables single-flight guarding", a
     maxConcurrent = Math.max(maxConcurrent, concurrent);
   }
 
-  // With the fix (with return), maxConcurrent must be 1
-  // Without the fix (no return), maxConcurrent will be 3
+  // m1 mutation must be KILLED: without return, maxConcurrent should be 3
   assert.equal(
     maxConcurrent,
     1,
-    `single-flight guard broken: max concurrent calls was ${maxConcurrent}, expected 1. ` +
-    `This means refreshFromFallback is not returning the promise, allowing inFlight to clear early. ` +
-    `Call log: ${JSON.stringify(callLog)}`
+    `single-flight broken: max concurrent was ${maxConcurrent}, expected 1. ` +
+    `This kills m1.patch (removes return). Call log: ${JSON.stringify(callLog)}`
   );
-});
 
-// =============================================================================
-// Teardown on beforeunload
-// =============================================================================
-
-test("Dashboard fallback path: poll stops on beforeunload", async (t) => {
-  const env = makeEnv();
-  const mockRefreshStatusOnce = async () => true;
-
-  const appContext = {
-    window: env.window,
-    document: env.document,
-    console: { log: () => {}, warn: () => {}, error: () => {} },
-    refreshStatusOnce: mockRefreshStatusOnce,
-    setStale: () => {},
-    applyStatus: () => {},
-    appendLogLine: () => {},
-    setEstopUi: () => {},
-    setSleepUi: () => {},
-    startPageLoad: () => {},
-    SECTIONS: [],
-  };
-  appContext.globalThis = appContext;
-
-  const setupCode = `
-  const refreshFromFallback = () => {
-    return refreshStatusOnce().catch(() => {});
-  };
-
-  const fallbackPoll = window.PageBootstrap.createBackgroundPoll(
-    refreshFromFallback,
-    {
-      cadenceMs: 3000,
-      refreshOnReturn: true,
-    }
-  );
-  fallbackPoll.start();
-
-  window.addEventListener("beforeunload", () => {
-    fallbackPoll.stop();
-  });
-  `;
-
-  vm.runInNewContext(setupCode, appContext);
-
-  // Verify interval and listener were created
-  assert.ok(env.intervals.length > 0, "must create interval");
-  const initialIntervalId = env.intervals[0].id;
-  const initialListenerCount = env.listeners.window.length;
-
-  // Fire beforeunload
-  env.fireBeforeunload();
-  await sleep(10);
-
-  // Interval should be cleared
-  assert.ok(
-    env.cleared.intervals.includes(initialIntervalId),
-    "beforeunload must clear the cadence interval"
-  );
-});
-
-// =============================================================================
-// Cadence and visibility behavior are delegated to createBackgroundPoll
-// =============================================================================
-
-test("Dashboard fallback path: uses 3000ms cadence", async (t) => {
-  const env = makeEnv();
-  const mockRefreshStatusOnce = async () => true;
-
-  const appContext = {
-    window: env.window,
-    document: env.document,
-    console: { log: () => {}, warn: () => {}, error: () => {} },
-    refreshStatusOnce: mockRefreshStatusOnce,
-    setStale: () => {},
-    applyStatus: () => {},
-    appendLogLine: () => {},
-    setEstopUi: () => {},
-    setSleepUi: () => {},
-    startPageLoad: () => {},
-    SECTIONS: [],
-  };
-  appContext.globalThis = appContext;
-
-  const setupCode = `
-  const refreshFromFallback = () => {
-    return refreshStatusOnce().catch(() => {});
-  };
-
-  const fallbackPoll = window.PageBootstrap.createBackgroundPoll(
-    refreshFromFallback,
-    {
-      cadenceMs: 3000,
-      refreshOnReturn: true,
-    }
-  );
-  fallbackPoll.start();
-
-  window.addEventListener("beforeunload", () => {
-    fallbackPoll.stop();
-  });
-  `;
-
-  vm.runInNewContext(setupCode, appContext);
-
+  // =========================================================================
+  // MUTATION 2 (c1-cadence.patch): Mutation changes cadence from 3000 to 30000
+  // This test verifies the cadence was set to 3000ms
+  // Must kill this test by showing cadence is NOT 30000
+  // =========================================================================
   assert.equal(
-    env.intervals[0].ms,
+    fallbackInterval.ms,
     3000,
-    "cadence must be 3000ms per #165 spec"
+    `cadence must be 3000ms (production value), got ${fallbackInterval.ms}. ` +
+    `This kills c1-cadence.patch (changes cadence to 30000)`
+  );
+
+  // =========================================================================
+  // MUTATION 3 (c2-teardown.patch): Mutation deletes beforeunload teardown
+  // This test verifies the interval is cleared on beforeunload
+  // Must kill this test by showing the interval is NOT cleared
+  // =========================================================================
+  const intervalIdBeforeTeardown = fallbackInterval.id;
+  env.emit("window", "beforeunload");
+  await env.settle();
+
+  assert.ok(
+    env.cleared.intervals.includes(intervalIdBeforeTeardown),
+    `beforeunload must clear the fallback interval. ` +
+    `This kills c2-teardown.patch (deletes the beforeunload listener)`
   );
 });
