@@ -505,6 +505,179 @@ void test_zero_frame_not_submitted_when_both_ok() {
 }
 
 // ============================================================================
+// Per-Frame Decisions: SBUS1 (drive) receiver frames
+// ============================================================================
+
+void test_sbus1_frame_failsafe_triggers_hw_zero_frame_and_one_shot_log() {
+    RcInputStepSbus1FrameInputs in = {
+        .failsafe = true,
+        .lostFrame = false,
+        .hwFailsafeWasActive = false,
+    };
+
+    RcInputStepSbus1FrameActions out = rcInputStepSbus1Frame(in);
+
+    TEST_ASSERT_TRUE(out.triggerSbusHw);
+    TEST_ASSERT_TRUE(out.logHwFailsafeAsserted);  // rising edge
+    TEST_ASSERT_TRUE(out.submitDriveZeroFrame);
+    TEST_ASSERT_FALSE(out.clearSbusHw);
+    TEST_ASSERT_FALSE(out.clearSbusWatchdog);
+    TEST_ASSERT_FALSE(out.dispatchBindings);
+
+    // Already active: still trigger and zero-frame every frame, but log only once.
+    in.hwFailsafeWasActive = true;
+    out = rcInputStepSbus1Frame(in);
+
+    TEST_ASSERT_TRUE(out.triggerSbusHw);
+    TEST_ASSERT_FALSE(out.logHwFailsafeAsserted);
+    TEST_ASSERT_TRUE(out.submitDriveZeroFrame);
+}
+
+void test_sbus1_frame_lost_frame_only_counts() {
+    RcInputStepSbus1FrameInputs in = {
+        .failsafe = false,
+        .lostFrame = true,
+        .hwFailsafeWasActive = false,
+    };
+
+    RcInputStepSbus1FrameActions out = rcInputStepSbus1Frame(in);
+
+    TEST_ASSERT_TRUE(out.incrementLostFrameCount);
+    TEST_ASSERT_FALSE(out.triggerSbusHw);
+    TEST_ASSERT_FALSE(out.submitDriveZeroFrame);
+    TEST_ASSERT_FALSE(out.clearSbusHw);
+    TEST_ASSERT_FALSE(out.clearSbusWatchdog);
+    TEST_ASSERT_FALSE(out.dispatchBindings);
+}
+
+void test_sbus1_frame_clean_clears_failsafes_and_dispatches() {
+    RcInputStepSbus1FrameInputs in = {
+        .failsafe = false,
+        .lostFrame = false,
+        .hwFailsafeWasActive = true,
+    };
+
+    RcInputStepSbus1FrameActions out = rcInputStepSbus1Frame(in);
+
+    TEST_ASSERT_TRUE(out.clearSbusHw);
+    TEST_ASSERT_TRUE(out.clearSbusWatchdog);
+    TEST_ASSERT_TRUE(out.dispatchBindings);
+    TEST_ASSERT_FALSE(out.triggerSbusHw);
+    TEST_ASSERT_FALSE(out.submitDriveZeroFrame);
+    TEST_ASSERT_FALSE(out.incrementLostFrameCount);
+}
+
+// ============================================================================
+// Per-Frame Decisions: SBUS2 (dome) receiver frames
+// ============================================================================
+
+void test_sbus2_frame_failsafe_sets_hw_with_one_shot_log() {
+    RcInputStepSbus2FrameInputs in = {
+        .failsafe = true,
+        .lostFrame = false,
+        .hwFailsafeWasActive = false,
+    };
+
+    RcInputStepSbus2FrameActions out = rcInputStepSbus2Frame(in);
+
+    TEST_ASSERT_TRUE(out.setSbus2HwFailsafe);
+    TEST_ASSERT_FALSE(out.clearSbus2HwFailsafe);
+    TEST_ASSERT_TRUE(out.logHwFailsafeAsserted);  // rising edge
+    TEST_ASSERT_FALSE(out.updateLastSbus2Ms);     // heartbeat suppressed
+    TEST_ASSERT_FALSE(out.dispatchBindings);
+
+    in.hwFailsafeWasActive = true;
+    out = rcInputStepSbus2Frame(in);
+
+    TEST_ASSERT_TRUE(out.setSbus2HwFailsafe);
+    TEST_ASSERT_FALSE(out.logHwFailsafeAsserted);
+}
+
+void test_sbus2_frame_lost_frame_suppresses_heartbeat_and_dispatch() {
+    RcInputStepSbus2FrameInputs in = {
+        .failsafe = false,
+        .lostFrame = true,
+        .hwFailsafeWasActive = false,
+    };
+
+    RcInputStepSbus2FrameActions out = rcInputStepSbus2Frame(in);
+
+    TEST_ASSERT_TRUE(out.incrementLostFrameCount);
+    TEST_ASSERT_TRUE(out.clearSbus2HwFailsafe);  // tracks failsafe flag every frame
+    TEST_ASSERT_FALSE(out.updateLastSbus2Ms);    // SBUS2 watchdog fires if this persists
+    TEST_ASSERT_FALSE(out.dispatchBindings);
+    TEST_ASSERT_FALSE(out.logHwFailsafeAsserted);
+}
+
+void test_sbus2_frame_clean_heartbeats_and_dispatches() {
+    RcInputStepSbus2FrameInputs in = {
+        .failsafe = false,
+        .lostFrame = false,
+        .hwFailsafeWasActive = true,
+    };
+
+    RcInputStepSbus2FrameActions out = rcInputStepSbus2Frame(in);
+
+    TEST_ASSERT_TRUE(out.clearSbus2HwFailsafe);
+    TEST_ASSERT_TRUE(out.updateLastSbus2Ms);
+    TEST_ASSERT_TRUE(out.dispatchBindings);
+    TEST_ASSERT_FALSE(out.incrementLostFrameCount);
+    TEST_ASSERT_FALSE(out.clearSbus2SignalLost);  // watchdog restore owns this clear
+}
+
+// ============================================================================
+// Per-Frame Decisions: routed SBUS2 frames (single_sbus + useCh2)
+// ============================================================================
+
+void test_sbus2_routed_frame_failsafe_latches_hw() {
+    RcInputStepSbus2FrameInputs in = {
+        .failsafe = true,
+        .lostFrame = false,
+        .hwFailsafeWasActive = false,
+    };
+
+    RcInputStepSbus2FrameActions out = rcInputStepSbus2RoutedFrame(in);
+
+    TEST_ASSERT_TRUE(out.setSbus2HwFailsafe);
+    TEST_ASSERT_FALSE(out.clearSbus2HwFailsafe);
+    TEST_ASSERT_FALSE(out.logHwFailsafeAsserted);  // routed path never logs
+    TEST_ASSERT_FALSE(out.updateLastSbus2Ms);
+    TEST_ASSERT_FALSE(out.dispatchBindings);
+}
+
+void test_sbus2_routed_frame_lost_frame_holds_hw_state() {
+    RcInputStepSbus2FrameInputs in = {
+        .failsafe = false,
+        .lostFrame = true,
+        .hwFailsafeWasActive = false,
+    };
+
+    RcInputStepSbus2FrameActions out = rcInputStepSbus2RoutedFrame(in);
+
+    TEST_ASSERT_TRUE(out.incrementLostFrameCount);
+    TEST_ASSERT_FALSE(out.setSbus2HwFailsafe);
+    TEST_ASSERT_FALSE(out.clearSbus2HwFailsafe);  // latched until a clean frame
+    TEST_ASSERT_FALSE(out.updateLastSbus2Ms);
+    TEST_ASSERT_FALSE(out.dispatchBindings);
+}
+
+void test_sbus2_routed_frame_clean_clears_and_dispatches() {
+    RcInputStepSbus2FrameInputs in = {
+        .failsafe = false,
+        .lostFrame = false,
+        .hwFailsafeWasActive = false,
+    };
+
+    RcInputStepSbus2FrameActions out = rcInputStepSbus2RoutedFrame(in);
+
+    TEST_ASSERT_TRUE(out.clearSbus2HwFailsafe);
+    TEST_ASSERT_TRUE(out.clearSbus2SignalLost);  // no watchdog restore on this path
+    TEST_ASSERT_TRUE(out.updateLastSbus2Ms);
+    TEST_ASSERT_TRUE(out.dispatchBindings);
+    TEST_ASSERT_FALSE(out.incrementLostFrameCount);
+}
+
+// ============================================================================
 // Unity Test Runner
 // ============================================================================
 
@@ -548,6 +721,18 @@ int main(void) {
     RUN_TEST(test_sbus2_watchdog_just_lost_transition);
     RUN_TEST(test_sbus2_watchdog_just_restored_transition);
     RUN_TEST(test_sbus2_tracking_disabled_resets_watchdog);
+
+    RUN_TEST(test_sbus1_frame_failsafe_triggers_hw_zero_frame_and_one_shot_log);
+    RUN_TEST(test_sbus1_frame_lost_frame_only_counts);
+    RUN_TEST(test_sbus1_frame_clean_clears_failsafes_and_dispatches);
+
+    RUN_TEST(test_sbus2_frame_failsafe_sets_hw_with_one_shot_log);
+    RUN_TEST(test_sbus2_frame_lost_frame_suppresses_heartbeat_and_dispatch);
+    RUN_TEST(test_sbus2_frame_clean_heartbeats_and_dispatches);
+
+    RUN_TEST(test_sbus2_routed_frame_failsafe_latches_hw);
+    RUN_TEST(test_sbus2_routed_frame_lost_frame_holds_hw_state);
+    RUN_TEST(test_sbus2_routed_frame_clean_clears_and_dispatches);
 
     RUN_TEST(test_zero_frame_submitted_on_pwm_signal_lost);
     RUN_TEST(test_zero_frame_submitted_on_sbus_hw_failsafe);

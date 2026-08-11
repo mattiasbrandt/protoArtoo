@@ -614,24 +614,36 @@ void rcInputTask(void* pvParameters) {
             bool asSbus2 = (rcInputMode == RC_INPUT_SINGLE_SBUS) && useCh2;
 
             if (asSbus2) {
+                RcInputStepSbus2FrameInputs frameIn = {
+                    .failsafe = data.failsafe,
+                    .lostFrame = data.lost_frame,
+                    .hwFailsafeWasActive = false,  // unused: routed path has no one-shot log
+                };
+                RcInputStepSbus2FrameActions frameOut = rcInputStepSbus2RoutedFrame(frameIn);
+
                 taskENTER_CRITICAL(&robotStateMux);
                 for (int i = 0; i < 16; ++i) {
                     robotState.rcSbus2Raw[i] = (uint16_t)data.ch[i];
                 }
                 robotState.rcSbus2Digital[0] = data.ch17;
                 robotState.rcSbus2Digital[1] = data.ch18;
-                bool suppress = data.failsafe || data.lost_frame;
-                if (data.failsafe) {
+                if (frameOut.setSbus2HwFailsafe) {
                     robotState.sbus2HwFailsafe = true;
-                } else if (data.lost_frame) {
-                    robotState.sbus2LostFrameCount++;
-                } else {
+                }
+                if (frameOut.clearSbus2HwFailsafe) {
                     robotState.sbus2HwFailsafe = false;
+                }
+                if (frameOut.clearSbus2SignalLost) {
                     robotState.sbus2SignalLost = false;
+                }
+                if (frameOut.incrementLostFrameCount) {
+                    robotState.sbus2LostFrameCount++;
+                }
+                if (frameOut.updateLastSbus2Ms) {
                     robotState.lastSbus2Ms = millis();
                 }
                 taskEXIT_CRITICAL(&robotStateMux);
-                if (!suppress) {
+                if (frameOut.dispatchBindings) {
                     dispatchSbusBindingsForSource(data, RC_BINDING_SBUS2, rcInputMode, enableRcCh1,
                                                   enableRcCh2, useCh2);
                 }
@@ -643,17 +655,27 @@ void rcInputTask(void* pvParameters) {
                 }
                 robotState.rcSbus1Digital[0] = data.ch17;
                 robotState.rcSbus1Digital[1] = data.ch18;
+                bool hwFailsafeWasActive = robotState.sbusHwFailsafe;
+                taskEXIT_CRITICAL(&robotStateMux);
 
-                // Layer 1: Hardware failsafe flag from receiver firmware
-                if (data.failsafe) {
-                    bool hwFailsafeWasActive = robotState.sbusHwFailsafe;
-                    taskEXIT_CRITICAL(&robotStateMux);
+                RcInputStepSbus1FrameInputs frameIn = {
+                    .failsafe = data.failsafe,
+                    .lostFrame = data.lost_frame,
+                    .hwFailsafeWasActive = hwFailsafeWasActive,
+                };
+                RcInputStepSbus1FrameActions frameOut = rcInputStepSbus1Frame(frameIn);
+
+                if (frameOut.triggerSbusHw) {
                     failsafeTrigger(FailsafeLayer::SBUS_HW);
-                    if (!hwFailsafeWasActive) {
-                        PA_LOG_WARN(TAG, "SBUS1 hardware failsafe asserted");
-                    }
+                }
+                if (frameOut.logHwFailsafeAsserted) {
+                    PA_LOG_WARN(TAG, "SBUS1 hardware failsafe asserted");
+                }
+                if (frameOut.submitDriveZeroFrame) {
                     driveArbiterSubmit(DriveSource::RC, 0, 0, millis());
-                } else if (data.lost_frame) {
+                }
+                if (frameOut.incrementLostFrameCount) {
+                    taskENTER_CRITICAL(&robotStateMux);
                     robotState.sbus1LostFrameCount++;
                     uint32_t lostCount = robotState.sbus1LostFrameCount;
                     bool rcDebug = robotState.rcDebugMode;
@@ -661,13 +683,14 @@ void rcInputTask(void* pvParameters) {
                     if (rcDebug && (lostCount % 100 == 0)) {
                         PA_LOG_DEBUG(TAG, "SBUS1 lost_frame count: %lu", (unsigned long)lostCount);
                     }
-                } else {
-                    taskEXIT_CRITICAL(&robotStateMux);
+                }
+                if (frameOut.clearSbusHw) {
                     failsafeClear(FailsafeLayer::SBUS_HW);
+                }
+                if (frameOut.clearSbusWatchdog) {
                     failsafeClear(FailsafeLayer::SBUS_WATCHDOG);
-                    taskENTER_CRITICAL(&robotStateMux);
-                    taskEXIT_CRITICAL(&robotStateMux);
-
+                }
+                if (frameOut.dispatchBindings) {
                     dispatchSbusBindingsForSource(data, RC_BINDING_SBUS1, rcInputMode, enableRcCh1,
                                                   enableRcCh2, useCh2);
                 }
@@ -743,35 +766,39 @@ void rcInputTask(void* pvParameters) {
 
             taskENTER_CRITICAL(&robotStateMux);
             bool wasSbus2HwFailsafe = robotState.sbus2HwFailsafe;
-            robotState.sbus2HwFailsafe = data.failsafe;
+            taskEXIT_CRITICAL(&robotStateMux);
+
+            RcInputStepSbus2FrameInputs frameIn = {
+                .failsafe = data.failsafe,
+                .lostFrame = data.lost_frame,
+                .hwFailsafeWasActive = wasSbus2HwFailsafe,
+            };
+            RcInputStepSbus2FrameActions frameOut = rcInputStepSbus2Frame(frameIn);
+
+            taskENTER_CRITICAL(&robotStateMux);
+            if (frameOut.setSbus2HwFailsafe) {
+                robotState.sbus2HwFailsafe = true;
+            }
+            if (frameOut.clearSbus2HwFailsafe) {
+                robotState.sbus2HwFailsafe = false;
+            }
             for (int i = 0; i < 16; ++i) {
                 robotState.rcSbus2Raw[i] = (uint16_t)data.ch[i];
             }
             robotState.rcSbus2Digital[0] = data.ch17;
             robotState.rcSbus2Digital[1] = data.ch18;
-            if (data.lost_frame) {
+            if (frameOut.incrementLostFrameCount) {
                 robotState.sbus2LostFrameCount++;
             }
-            // Suppress dispatch (and watchdog heartbeat) on any receiver-side signal
-            // quality event: hardware failsafe OR lost_frame.
-            // - failsafe: receiver outputting programmed failsafe positions.
-            // - lost_frame: receiver missed a TX packet; outputs hold/failsafe position
-            //   with lost_frame=true, failsafe=false. Without this guard, the programmed
-            //   hold position (ch1=389 = -89%) would be dispatched to the dome task.
-            // Suppressing the watchdog heartbeat on both events means the SBUS2 watchdog
-            // fires and stops the dome if either condition persists.
-            bool suppress = data.failsafe || data.lost_frame;
-            if (!suppress) {
+            if (frameOut.updateLastSbus2Ms) {
                 robotState.lastSbus2Ms = millis();
             }
             taskEXIT_CRITICAL(&robotStateMux);
 
-            if (suppress) {
-                if (data.failsafe && !wasSbus2HwFailsafe) {
-                    PA_LOG_WARN(TAG, "SBUS2 hardware failsafe asserted");
-                }
-                // Do not dispatch. Watchdog stops dome if condition persists.
-            } else {
+            if (frameOut.logHwFailsafeAsserted) {
+                PA_LOG_WARN(TAG, "SBUS2 hardware failsafe asserted");
+            }
+            if (frameOut.dispatchBindings) {
                 dispatchSbusBindingsForSource(data, RC_BINDING_SBUS2, rcInputMode, enableRcCh1,
                                               enableRcCh2, useCh2);
             }

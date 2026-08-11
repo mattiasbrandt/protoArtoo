@@ -197,6 +197,75 @@ RcInputStepSbus2WatchdogActions rcInputStepSbus2Watchdog(
 }
 
 // ============================================================================
+// Per-Frame Decision Phase
+// ============================================================================
+
+RcInputStepSbus1FrameActions rcInputStepSbus1Frame(const RcInputStepSbus1FrameInputs& in) {
+    RcInputStepSbus1FrameActions out = {};
+
+    if (in.failsafe) {
+        // Layer 1: hardware failsafe flag from receiver firmware.
+        out.triggerSbusHw = true;
+        out.logHwFailsafeAsserted = !in.hwFailsafeWasActive;
+        out.submitDriveZeroFrame = true;
+    } else if (in.lostFrame) {
+        out.incrementLostFrameCount = true;
+    } else {
+        out.clearSbusHw = true;
+        out.clearSbusWatchdog = true;
+        out.dispatchBindings = true;
+    }
+
+    return out;
+}
+
+RcInputStepSbus2FrameActions rcInputStepSbus2Frame(const RcInputStepSbus2FrameInputs& in) {
+    RcInputStepSbus2FrameActions out = {};
+
+    // sbus2HwFailsafe tracks the receiver flag on every frame, including
+    // lost_frame ones (failsafe=false there clears it).
+    out.setSbus2HwFailsafe = in.failsafe;
+    out.clearSbus2HwFailsafe = !in.failsafe;
+    out.logHwFailsafeAsserted = in.failsafe && !in.hwFailsafeWasActive;
+    out.incrementLostFrameCount = in.lostFrame;
+
+    // Suppress dispatch (and watchdog heartbeat) on any receiver-side signal
+    // quality event: hardware failsafe OR lost_frame.
+    // - failsafe: receiver outputting programmed failsafe positions.
+    // - lost_frame: receiver missed a TX packet; outputs hold/failsafe position
+    //   with lost_frame=true, failsafe=false. Without this guard, the programmed
+    //   hold position (ch1=389 = -89%) would be dispatched to the dome task.
+    // Suppressing the watchdog heartbeat on both events means the SBUS2 watchdog
+    // fires and stops the dome if either condition persists.
+    bool suppress = in.failsafe || in.lostFrame;
+    out.updateLastSbus2Ms = !suppress;
+    out.dispatchBindings = !suppress;
+
+    return out;
+}
+
+RcInputStepSbus2FrameActions rcInputStepSbus2RoutedFrame(const RcInputStepSbus2FrameInputs& in) {
+    RcInputStepSbus2FrameActions out = {};
+
+    // Routed path (drive decoder reading GPIO13): sbus2HwFailsafe latches across
+    // lost_frame events and only clears on a clean frame, and a clean frame also
+    // clears sbus2SignalLost directly (no SBUS2 watchdog restore runs for this
+    // path when the dome decoder is not initialized).
+    if (in.failsafe) {
+        out.setSbus2HwFailsafe = true;
+    } else if (in.lostFrame) {
+        out.incrementLostFrameCount = true;
+    } else {
+        out.clearSbus2HwFailsafe = true;
+        out.clearSbus2SignalLost = true;
+        out.updateLastSbus2Ms = true;
+        out.dispatchBindings = true;
+    }
+
+    return out;
+}
+
+// ============================================================================
 // Zero-Frame Submission Phase
 // ============================================================================
 
