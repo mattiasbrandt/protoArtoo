@@ -36,7 +36,8 @@ inline uint8_t paCurrentLogLevel() {
         /* Serial lines are bounded here; the retained SSE ring truncates to LOG_LINE_MAX. */ \
         _Pragma("GCC diagnostic push")                                            \
         _Pragma("GCC diagnostic ignored \"-Wformat-truncation\"")                 \
-        snprintf(_pa_log_buf, sizeof(_pa_log_buf), "[" level "][%s] " fmt, tag, ##__VA_ARGS__); \
+        snprintf(_pa_log_buf, sizeof(_pa_log_buf), "[%lu][" level "][%s] " fmt,               \
+                 (unsigned long)millis(), tag, ##__VA_ARGS__);                                \
         _Pragma("GCC diagnostic pop")                                             \
         paLogLine(_pa_log_buf);                                                   \
     } while (0)

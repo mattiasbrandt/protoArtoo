@@ -1143,6 +1143,65 @@ void test_configLoad_save_wifi_round_trip() {
     TEST_ASSERT_EQUAL_STRING("fieldpass1", loaded.wifi.ap_password);
 }
 
+
+// Test: schema 1 -> 2 migration renumbers log_level for the inserted WARN tier
+// (old 1=Error 2=Info 3=Debug; new 1=Error 2=Warn 3=Info 4=Debug).
+void test_configLoad_schema_v1_migrates_info_log_level() {
+    Preferences prefs;
+    prefs.begin("proto", false);
+    prefs.putUChar(CONFIG_SCHEMA_VERSION_KEY, 1);
+    prefs.putUChar("log_level", 2);  // old Info
+
+    ConfigSnapshot snap = {};
+    TEST_ASSERT_TRUE(configLoad(prefs, &snap));
+
+    TEST_ASSERT_EQUAL_UINT8(3, snap.system.logLevel);              // new Info
+    TEST_ASSERT_EQUAL_UINT8(3, prefs.getUChar("log_level", 0));    // stored key rewritten
+    TEST_ASSERT_EQUAL_UINT8(CONFIG_SCHEMA_VERSION,
+                            prefs.getUChar(CONFIG_SCHEMA_VERSION_KEY, 0));
+    prefs.end();
+}
+
+void test_configLoad_schema_v1_migrates_debug_log_level() {
+    Preferences prefs;
+    prefs.begin("proto", false);
+    prefs.putUChar(CONFIG_SCHEMA_VERSION_KEY, 1);
+    prefs.putUChar("log_level", 3);  // old Debug
+
+    ConfigSnapshot snap = {};
+    TEST_ASSERT_TRUE(configLoad(prefs, &snap));
+
+    TEST_ASSERT_EQUAL_UINT8(4, snap.system.logLevel);  // new Debug
+    prefs.end();
+}
+
+void test_configLoad_schema_v1_leaves_error_log_level_alone() {
+    Preferences prefs;
+    prefs.begin("proto", false);
+    prefs.putUChar(CONFIG_SCHEMA_VERSION_KEY, 1);
+    prefs.putUChar("log_level", 1);  // Error: same meaning in both numberings
+
+    ConfigSnapshot snap = {};
+    TEST_ASSERT_TRUE(configLoad(prefs, &snap));
+
+    TEST_ASSERT_EQUAL_UINT8(1, snap.system.logLevel);
+    TEST_ASSERT_EQUAL_UINT8(1, prefs.getUChar("log_level", 0));
+    prefs.end();
+}
+
+void test_configLoad_current_schema_does_not_remap_log_level() {
+    Preferences prefs;
+    prefs.begin("proto", false);
+    prefs.putUChar(CONFIG_SCHEMA_VERSION_KEY, CONFIG_SCHEMA_VERSION);
+    prefs.putUChar("log_level", 2);  // already new numbering: Warn
+
+    ConfigSnapshot snap = {};
+    TEST_ASSERT_TRUE(configLoad(prefs, &snap));
+
+    TEST_ASSERT_EQUAL_UINT8(2, snap.system.logLevel);  // stays Warn
+    prefs.end();
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_configLoad_empty_nvs_returns_defaults);
@@ -1160,6 +1219,10 @@ int main() {
     RUN_TEST(test_configValidate_dome_speed);
     RUN_TEST(test_configValidate_booleans);
     RUN_TEST(test_configLoad_legacy_schema_v0);
+    RUN_TEST(test_configLoad_schema_v1_migrates_info_log_level);
+    RUN_TEST(test_configLoad_schema_v1_migrates_debug_log_level);
+    RUN_TEST(test_configLoad_schema_v1_leaves_error_log_level_alone);
+    RUN_TEST(test_configLoad_current_schema_does_not_remap_log_level);
     RUN_TEST(test_configLoad_schema_mismatch);
     RUN_TEST(test_configLoad_save_audio_tracks);
     RUN_TEST(test_configLoad_save_servo_config);
