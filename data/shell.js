@@ -88,8 +88,9 @@
 
   const loadIdentity = async ({ handle = null } = {}) => {
     try {
+      const api = handle || window.PAApi;
       const result = window.PAApi
-        ? await (handle || window.PAApi).get("/api/identity")
+        ? await api.get("/api/identity")
         : { data: await fetch("/api/identity", { cache: "no-store" }).then((r) => r.json()) };
       applyIdentityName(result.data?.droidName);
     } catch (error) {
