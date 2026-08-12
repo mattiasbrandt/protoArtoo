@@ -33,6 +33,7 @@ struct DriveOutput {
     int16_t steer;              // -speedLimitMax .. +speedLimitMax
     bool failsafeActive;        // true if FailsafeGate or web timeout requires zero output
     bool webTimedOut;           // true when the latest web command is stale
+    bool rcTimedOut;            // true when the latest RC command is stale (diagnostics)
     DriveSource activeSource;   // which source provided the current output (RC or WEB_API)
     uint32_t activeTimestampMs; // submit timestamp of the winning source (for status mirrors)
 };
@@ -41,6 +42,7 @@ struct DriveOutput {
 struct DriveArbiterConfig {
     int16_t speedLimitMax;      // Clamp limit (typically SPEED_LIMIT_MAX)
     uint32_t webDriveTimeoutMs; // Web timeout threshold
+    uint32_t rcDriveTimeoutMs;  // RC timeout threshold (from sbusTimeoutMs)
 };
 
 // Thread-safe initialization: must be called once from main.cpp before task creation.
