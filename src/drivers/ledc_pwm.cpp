@@ -19,6 +19,10 @@
 
 static const char* TAG = "ledc_pwm";
 
+// Bit mask of configured LEDC channels (1 = configured, 0 = skipped).
+// Set at init time; channels outside this mask fail silently (return false, no log).
+static uint8_t s_configuredMask = 0;
+
 // ESP32 LEDC peripheral constants  --  kept here, not in the header, so the
 // header stays free of ESP32-specific types and is includable on native.
 #define PA_LEDC_TIMER LEDC_TIMER_0
@@ -49,11 +53,22 @@ uint8_t getChannelGpio(uint8_t channel) {
 // -----------------------------------------------------------------------------
 // ledcPwmInit()
 // Configure LEDC timer 0 at 50Hz/16-bit and attach channels.
-// skipChannel leaves one channel detached so the GPIO can be reused (e.g. AUX LED RMT).
+// enabledMask: bitmask where bit N = 1 includes LedcChannel N, 0 excludes it.
+// Channels outside the mask are left unconfigured; PWM writes to them fail silently.
+// Returns false and logs on any LEDC API error (timer config only; skipped
+// channels do not fail init).
+// Stores the mask in s_configuredMask for use by write functions.
+// Returns true if timer config succeeds, even if enabledMask is 0 (no channels).
 // Configured channels start at neutral (1500us).
-// Returns false and logs on any LEDC API error.
 // -----------------------------------------------------------------------------
-bool ledcPwmInit(uint8_t skipChannel) {
+bool ledcPwmInit(uint8_t enabledMask) {
+    s_configuredMask = enabledMask;
+
+    // If no channels are enabled, skip timer config entirely.
+    if (enabledMask == 0) {
+        return true;
+    }
+
     ledc_timer_config_t timerConfig = {};
     timerConfig.speed_mode = PA_LEDC_MODE;
     timerConfig.duty_resolution = PA_LEDC_RESOLUTION;
@@ -69,8 +84,7 @@ bool ledcPwmInit(uint8_t skipChannel) {
 
     uint8_t configuredCount = 0;
     for (int i = 0; i < LEDC_CH_MAX; i++) {
-        if ((uint8_t)i == skipChannel) {
-            ESP_LOGI(TAG, "Skipping channel %d GPIO %d", i, (int)kChannelGpio[i]);
+        if (!(enabledMask & (1 << i))) {
             continue;
         }
 
@@ -100,10 +114,15 @@ bool ledcPwmInit(uint8_t skipChannel) {
 // ledcPwmSetPulseWidth()
 // Set pulse width for a specific channel in microseconds.
 // Clamps to channel-appropriate range before writing to hardware.
+// Returns false silently (no log) if channel is not in the configured mask.
+// Returns false with error log if LEDC write fails.
 // -----------------------------------------------------------------------------
 bool ledcPwmSetPulseWidth(uint8_t channel, uint16_t pulseUs) {
     if (channel >= LEDC_CH_MAX) {
-        ESP_LOGW(TAG, "Invalid channel: %d", channel);
+        return false;
+    }
+
+    if (!(s_configuredMask & (1 << channel))) {
         return false;
     }
 
@@ -128,9 +147,14 @@ bool ledcPwmSetPulseWidth(uint8_t channel, uint16_t pulseUs) {
 // ledcPwmSetPercent()
 // Set pulse width as a fraction of the channel's full range (0.0-1.0).
 // Derives min/max from clampPulseWidth to stay consistent with clamping logic.
+// Returns false silently (no log) if channel is not in the configured mask.
 // -----------------------------------------------------------------------------
 bool ledcPwmSetPercent(uint8_t channel, float percent) {
     if (channel >= LEDC_CH_MAX) {
+        return false;
+    }
+
+    if (!(s_configuredMask & (1 << channel))) {
         return false;
     }
 
@@ -156,23 +180,30 @@ bool ledcPwmSetNeutral(uint8_t channel) {
 
 // -----------------------------------------------------------------------------
 // ledcPwmInitNeutralPositions()
+// Set only configured channels to neutral.
+// Skips channels outside the enabled mask.
 // -----------------------------------------------------------------------------
 void ledcPwmInitNeutralPositions() {
     for (int i = 0; i < LEDC_CH_MAX; i++) {
-        ledcPwmSetNeutral(i);
+        if (s_configuredMask & (1 << i)) {
+            ledcPwmSetNeutral(i);
+        }
     }
-    ESP_LOGI(TAG, "All channels set to neutral");
+    ESP_LOGI(TAG, "Configured channels set to neutral");
 }
 
 // -----------------------------------------------------------------------------
 // ledcPwmEmergencyStop()
 // Bypasses clamp/log path  --  writes neutral duty directly for minimum latency.
+// Sets only configured channels to neutral; skips channels outside the mask.
 // -----------------------------------------------------------------------------
 void ledcPwmEmergencyStop() {
     uint32_t duty = pulseUsToDuty(SERVO_PULSE_NEUTRAL_US);
     for (int i = 0; i < LEDC_CH_MAX; i++) {
-        ledc_set_duty(PA_LEDC_MODE, (ledc_channel_t)i, duty);
-        ledc_update_duty(PA_LEDC_MODE, (ledc_channel_t)i);
+        if (s_configuredMask & (1 << i)) {
+            ledc_set_duty(PA_LEDC_MODE, (ledc_channel_t)i, duty);
+            ledc_update_duty(PA_LEDC_MODE, (ledc_channel_t)i);
+        }
     }
-    ESP_LOGW(TAG, "EMERGENCY STOP - all channels neutral");
+    ESP_LOGW(TAG, "EMERGENCY STOP - all configured channels neutral");
 }

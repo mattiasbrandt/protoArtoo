@@ -139,10 +139,13 @@ inline uint16_t clampPulseWidth(uint8_t channel, uint16_t pulseUs) {
 // -----------------------------------------------------------------------------
 
 // Initialize LEDC timer and configure PWM channels.
-// skipChannel allows leaving one channel detached (LEDC_CH_MAX = no skip).
+// enabledMask: bitmask where bit N corresponds to LedcChannel N.
+// A bit set to 1 includes the channel; 0 excludes it.
+// Bit positions: 0=ARM1, 1=ARM2, 2=DOME, 3=AUX1, 4=AUX2, 5=AUX3.
+// Pass 0 to skip initialization entirely.
 // Must be called once before using any PWM outputs.
 // Returns true on success, false if LEDC setup fails.
-bool ledcPwmInit(uint8_t skipChannel = LEDC_CH_MAX);
+bool ledcPwmInit(uint8_t enabledMask);
 
 // Set pulse width for a specific channel in microseconds.
 // Pulse width is automatically clamped to safe range for the channel type.

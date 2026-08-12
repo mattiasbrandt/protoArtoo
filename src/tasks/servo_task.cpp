@@ -22,6 +22,16 @@
 
 static const char* TAG = "SERVO";
 
+// Boot snapshot of component toggles, captured once at startup.
+// Toggles are staged at reboot (ADR 0027); this snapshot is the stable read for the whole session.
+static bool s_arm1_enabled = false;
+static bool s_arm2_enabled = false;
+static bool s_aux1_enabled = false;
+static bool s_aux2_enabled = false;
+static bool s_aux3_enabled = false;
+static bool s_dome_enabled = false;
+static uint8_t s_aux_led_pin = AUX_LED_PIN_DISABLED;
+
 // -----------------------------------------------------------------------------
 // Sequence state machine
 // -----------------------------------------------------------------------------
@@ -39,6 +49,9 @@ static struct {
     uint8_t sequenceId;
 } seqState = {};
 
+// Forward declaration for functions used in static helpers below.
+static bool isArmEnabled(uint8_t armId);
+
 // -----------------------------------------------------------------------------
 // armIdToLedcChannel()
 // Map armId to LEDC channel.
@@ -54,11 +67,32 @@ static uint8_t armIdToLedcChannel(uint8_t armId) {
 }
 
 // -----------------------------------------------------------------------------
+// isArmEnabled()
+// Check feature toggle for a given armId using the boot-time snapshot.
+// Toggles are read once at startup and never re-checked per iteration.
+// armId 255 (broadcast) is allowed only if both ARM1 and ARM2 are enabled.
+// AUX channel selected for WS2812 is treated as unavailable to avoid
+// pin ownership conflicts.
+// Per ADR 0027, this function gates all servo operations on the component
+// toggle snapshot captured at startup.
+// -----------------------------------------------------------------------------
+static bool isArmEnabled(uint8_t armId) {
+    return servo_arm_enabled(armId, s_arm1_enabled, s_arm2_enabled, s_aux1_enabled, s_aux2_enabled,
+                             s_aux3_enabled, s_aux_led_pin);
+}
+
+// -----------------------------------------------------------------------------
 // setArmPosition()
 // Set single arm to specific pulse width.
 // armId: 0=ARM1, 1=ARM2, 2=AUX1, 3=AUX2, 4=AUX3
+// Returns silently (no log, no PWM write) if the arm is disabled.
+// Per ADR 0027, disabled channels never PWM-commanded and never update robotState.
 // -----------------------------------------------------------------------------
 static void setArmPosition(uint8_t armId, uint16_t pulseUs) {
+    if (!isArmEnabled(armId)) {
+        return;
+    }
+
     uint8_t channel = armIdToLedcChannel(armId);
     if (channel >= LEDC_CH_MAX) {
         PA_LOG_WARN(TAG, "setArmPosition: invalid armId %d", armId);
@@ -116,52 +150,81 @@ static void getOpenClosePositions(uint8_t armId, uint16_t& openUs, uint16_t& clo
 // -----------------------------------------------------------------------------
 // executeSequence()
 // Execute Marcduino sequence :SE30-:SE36.
+// Per ADR 0027, if the sequence's target arm(s) are all disabled, do not start
+// the state machine (state stays SEQ_IDLE) and log at debug level.
+// A sequence with one enabled arm and one disabled arm runs on the enabled arm only.
+// Both-arm sequences with no enabled arms are silently rejected (not started).
 // -----------------------------------------------------------------------------
 static void executeSequence(uint8_t seqId) {
-    seqState.sequenceId = seqId;
-    seqState.state = SEQ_OPENING;
-    seqState.stateStartMs = millis();
-
-    uint16_t openUs, closeUs;
+    uint8_t activeArm = 255;  // default to both-arm for decision logic
 
     switch (seqId) {
         case 30:                       // Utility arm open-and-close
-            seqState.activeArm = 255;  // Both arms
-            getOpenClosePositions(0, openUs, closeUs);
-            setArmPosition(0, openUs);
-            setArmPosition(1, openUs);
-            break;
-
         case 31:  // All body panels open and close
         case 32:  // All body doors open and wiggle-close
-            seqState.activeArm = 255;
-            getOpenClosePositions(0, openUs, closeUs);
-            setArmPosition(0, openUs);
-            setArmPosition(1, openUs);
+        case 35:  // Ping-pong body doors
+        case 36:  // BT-1 two-gripper sequence
+            activeArm = 255;  // Both arms
             break;
 
         case 33:  // Body  --  use gripper arm (ARM1)
-            seqState.activeArm = 0;
-            getOpenClosePositions(0, openUs, closeUs);
-            setArmPosition(0, openUs);
+            activeArm = 0;
             break;
 
         case 34:  // Body  --  use interface tool (ARM2)
-            seqState.activeArm = 1;
-            getOpenClosePositions(1, openUs, closeUs);
-            setArmPosition(1, openUs);
-            break;
-
-        case 35:  // Ping-pong body doors
-        case 36:  // BT-1 two-gripper sequence
-            seqState.activeArm = 255;
-            getOpenClosePositions(0, openUs, closeUs);
-            setArmPosition(0, openUs);
-            setArmPosition(1, openUs);
+            activeArm = 1;
             break;
 
         default:
             seqState.state = SEQ_IDLE;
+            return;
+    }
+
+    // Gate on enabled arm(s): reject if target arm(s) are all disabled.
+    if (activeArm == 255) {
+        if (!isArmEnabled(0) && !isArmEnabled(1)) {
+            PA_LOG_DEBUG(TAG, "Sequence :SE%02d - both arms disabled, not started", seqId);
+            seqState.state = SEQ_IDLE;
+            return;
+        }
+    } else {
+        if (!isArmEnabled(activeArm)) {
+            PA_LOG_DEBUG(TAG, "Sequence :SE%02d - arm%d disabled, not started", seqId, activeArm);
+            seqState.state = SEQ_IDLE;
+            return;
+        }
+    }
+
+    // Start the sequence.
+    seqState.sequenceId = seqId;
+    seqState.state = SEQ_OPENING;
+    seqState.stateStartMs = millis();
+    seqState.activeArm = activeArm;
+
+    uint16_t openUs, closeUs;
+
+    switch (seqId) {
+        case 30:
+        case 31:
+        case 32:
+        case 35:
+        case 36:
+            getOpenClosePositions(0, openUs, closeUs);
+            setArmPosition(0, openUs);
+            setArmPosition(1, openUs);
+            break;
+
+        case 33:
+            getOpenClosePositions(0, openUs, closeUs);
+            setArmPosition(0, openUs);
+            break;
+
+        case 34:
+            getOpenClosePositions(1, openUs, closeUs);
+            setArmPosition(1, openUs);
+            break;
+
+        default:
             break;
     }
 
@@ -253,28 +316,10 @@ static void updateSequence() {
 }
 
 // -----------------------------------------------------------------------------
-// isArmEnabled()
-// Check feature toggle for a given armId.
-// armId 255 (broadcast) is allowed only if at least ARM1 and ARM2 are enabled.
-// AUX channel selected for WS2812 (cfg_aux_led_pin) is treated as unavailable
-// for servo commands to avoid pin ownership conflicts.
-// -----------------------------------------------------------------------------
-static bool isArmEnabled(uint8_t armId) {
-    ConfigSnapshot cfg = {};
-    configCacheRead(&cfg);
-    bool arm1 = cfg.system.enable_arm1;
-    bool arm2 = cfg.system.enable_arm2;
-    bool aux1 = cfg.system.enable_aux1;
-    bool aux2 = cfg.system.enable_aux2;
-    bool aux3 = cfg.system.enable_aux3;
-    uint8_t auxLedPin = cfg.servo.aux_led_pin;
-
-    return servo_arm_enabled(armId, arm1, arm2, aux1, aux2, aux3, auxLedPin);
-}
-
-// -----------------------------------------------------------------------------
 // processCommand()
 // Process incoming servo command.
+// Per ADR 0027, sequences are gated inside executeSequence(), not here.
+// Regular arm commands (open/close/position) are gated per isArmEnabled().
 // -----------------------------------------------------------------------------
 static void processCommand(const ServoCommand& cmd) {
     // Safety: Check estop  --  reject all commands while emergency stopped
@@ -293,10 +338,11 @@ static void processCommand(const ServoCommand& cmd) {
         return;
     }
 
-    // Feature toggle: reject commands for disabled or AUX-LED-reserved subsystems
+    // Feature toggle: reject arm commands for disabled or AUX-LED-reserved subsystems.
+    // Sequences are gated separately in executeSequence().
     if (cmd.type != SERVO_CMD_SEQUENCE && !isArmEnabled(cmd.armId)) {
-        PA_LOG_WARN(TAG, "[%s] Command rejected - arm%d disabled or reserved",
-                    commandSourceToString(cmd.source), cmd.armId);
+        PA_LOG_DEBUG(TAG, "[%s] Command rejected - arm%d disabled or reserved",
+                     commandSourceToString(cmd.source), cmd.armId);
         return;
     }
 
@@ -358,47 +404,54 @@ static void processCommand(const ServoCommand& cmd) {
 
 // -----------------------------------------------------------------------------
 // servoTaskInit()
-// Initialize servo hardware.
+// Initialize servo hardware once at startup.
+// Captures component toggles snapshot and builds LEDC channel mask.
+// Per ADR 0027, toggles are read once at boot, never re-checked per iteration.
+// Disabled channels are never PWM-initialized or PWM-commanded.
+// Channels reserved by AUX LED are excluded from the mask.
 // -----------------------------------------------------------------------------
 void servoTaskInit() {
+    // Capture toggles snapshot once at startup.
     ConfigSnapshot cfg = {};
     configCacheRead(&cfg);
-    bool enableArm1 = cfg.system.enable_arm1;
-    bool enableArm2 = cfg.system.enable_arm2;
-    bool enableAux1 = cfg.system.enable_aux1;
-    bool enableAux2 = cfg.system.enable_aux2;
-    bool enableAux3 = cfg.system.enable_aux3;
-    bool enableDome = cfg.system.enable_dome;
-    uint8_t auxLedPin = cfg.servo.aux_led_pin;
+    s_arm1_enabled = cfg.system.enable_arm1;
+    s_arm2_enabled = cfg.system.enable_arm2;
+    s_aux1_enabled = cfg.system.enable_aux1;
+    s_aux2_enabled = cfg.system.enable_aux2;
+    s_aux3_enabled = cfg.system.enable_aux3;
+    s_dome_enabled = cfg.system.enable_dome;
+    s_aux_led_pin = cfg.servo.aux_led_pin;
 
-    bool anyServo = enableArm1 || enableArm2 || enableAux1 || enableAux2 || enableAux3;
-    bool anyLedc = anyServo || enableDome;
-
-    uint8_t skipChannel = LEDC_CH_MAX;
-    if (auxLedPin == AUX_LED_PIN_AUX1) {
-        skipChannel = LEDC_CH_AUX1;
-    } else if (auxLedPin == AUX_LED_PIN_AUX2) {
-        skipChannel = LEDC_CH_AUX2;
-    } else if (auxLedPin == AUX_LED_PIN_AUX3) {
-        skipChannel = LEDC_CH_AUX3;
-    }
+    bool anyServo = s_arm1_enabled || s_arm2_enabled || s_aux1_enabled || s_aux2_enabled || s_aux3_enabled;
+    bool anyLedc = anyServo || s_dome_enabled;
 
     if (anyLedc) {
-        if (!ledcPwmInit(skipChannel)) {
+        // Build enabled-channels mask using the helper from servo_helpers.h.
+        uint8_t ledcMask = servo_enabled_ledc_mask(s_arm1_enabled, s_arm2_enabled, s_aux1_enabled,
+                                                   s_aux2_enabled, s_aux3_enabled, s_dome_enabled,
+                                                   s_aux_led_pin);
+
+        if (!ledcPwmInit(ledcMask)) {
             PA_LOG_ERROR(TAG, "LEDC init failed");
             return;
         }
 
-        for (uint8_t channel = 0; channel < LEDC_CH_MAX; ++channel) {
-            if (channel == skipChannel) {
-                continue;
-            }
-            ledcPwmSetNeutral(channel);
-        }
+        // Call neutral init; it now respects the configured mask.
+        ledcPwmInitNeutralPositions();
 
-        if (skipChannel != LEDC_CH_MAX) {
-            PA_LOG_INFO(TAG, "AUX LED active on selection %u (GPIO %u) - LEDC skipped for that header",
-                        (unsigned)auxLedPin, (unsigned)getChannelGpio(skipChannel));
+        if (s_aux_led_pin != AUX_LED_PIN_DISABLED) {
+            uint8_t reservedChannel = LEDC_CH_MAX;
+            if (s_aux_led_pin == AUX_LED_PIN_AUX1) {
+                reservedChannel = LEDC_CH_AUX1;
+            } else if (s_aux_led_pin == AUX_LED_PIN_AUX2) {
+                reservedChannel = LEDC_CH_AUX2;
+            } else if (s_aux_led_pin == AUX_LED_PIN_AUX3) {
+                reservedChannel = LEDC_CH_AUX3;
+            }
+            if (reservedChannel != LEDC_CH_MAX) {
+                PA_LOG_INFO(TAG, "AUX LED active on selection %u (GPIO %u) - LEDC skipped for that header",
+                            (unsigned)s_aux_led_pin, (unsigned)getChannelGpio(reservedChannel));
+            }
         }
     } else {
         PA_LOG_INFO(TAG, "all LEDC outputs disabled - skipping LEDC init");

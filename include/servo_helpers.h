@@ -76,3 +76,47 @@ inline bool servo_arm_enabled(uint8_t arm_id, bool arm1, bool arm2, bool aux1, b
             return false;
     }
 }
+
+// -----------------------------------------------------------------------------
+// servo_enabled_ledc_mask()
+// Build a LEDC channel bitmask from enable flags, excluding channels reserved
+// for AUX LED use.
+//
+// Each bit position corresponds to a LedcChannel:
+//   bit 0 = LEDC_CH_ARM1
+//   bit 1 = LEDC_CH_ARM2
+//   bit 2 = LEDC_CH_DOME
+//   bit 3 = LEDC_CH_AUX1
+//   bit 4 = LEDC_CH_AUX2
+//   bit 5 = LEDC_CH_AUX3
+//
+// A channel's bit is set if its corresponding toggle is true AND the channel
+// is not reserved by aux_led_pin_selection. DOME is included unconditionally
+// (AUX LED never reserves DOME).
+// Returns 0 if no channels are enabled.
+// -----------------------------------------------------------------------------
+inline uint8_t servo_enabled_ledc_mask(bool arm1, bool arm2, bool aux1, bool aux2, bool aux3,
+                                       bool dome, uint8_t aux_led_pin_selection) {
+    uint8_t mask = 0;
+
+    if (arm1) {
+        mask |= (1 << 0);  // LEDC_CH_ARM1
+    }
+    if (arm2) {
+        mask |= (1 << 1);  // LEDC_CH_ARM2
+    }
+    if (dome) {
+        mask |= (1 << 2);  // LEDC_CH_DOME
+    }
+    if (aux1 && aux_led_pin_selection != AUX_LED_PIN_AUX1) {
+        mask |= (1 << 3);  // LEDC_CH_AUX1
+    }
+    if (aux2 && aux_led_pin_selection != AUX_LED_PIN_AUX2) {
+        mask |= (1 << 4);  // LEDC_CH_AUX2
+    }
+    if (aux3 && aux_led_pin_selection != AUX_LED_PIN_AUX3) {
+        mask |= (1 << 5);  // LEDC_CH_AUX3
+    }
+
+    return mask;
+}
