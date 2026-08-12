@@ -738,7 +738,7 @@ void test_sbus2_frame_clean_heartbeats_and_dispatches() {
 // Per-Frame Decisions: routed SBUS2 frames (single_sbus + useCh2)
 // ============================================================================
 
-void test_sbus2_routed_frame_failsafe_latches_hw() {
+void test_sbus2_routed_frame_failsafe_triggers_hw_zero_frame() {
     RcInputStepSbus2FrameInputs in = {
         .failsafe = true,
         .lostFrame = false,
@@ -749,7 +749,11 @@ void test_sbus2_routed_frame_failsafe_latches_hw() {
 
     TEST_ASSERT_TRUE(out.setSbus2HwFailsafe);
     TEST_ASSERT_FALSE(out.clearSbus2HwFailsafe);
-    TEST_ASSERT_FALSE(out.logHwFailsafeAsserted);  // routed path never logs
+    // Slice 2: routed path mirrors SBUS1 drive failsafe behavior
+    TEST_ASSERT_TRUE(out.triggerSbusHw);
+    TEST_ASSERT_TRUE(out.submitDriveZeroFrame);
+    TEST_ASSERT_FALSE(out.clearSbusHw);
+    TEST_ASSERT_FALSE(out.logRoutedHwFailsafeClearedOnFallingEdge);
     TEST_ASSERT_FALSE(out.updateLastSbus2Ms);
     TEST_ASSERT_FALSE(out.dispatchBindings);
 }
@@ -774,7 +778,7 @@ void test_sbus2_routed_frame_clean_clears_and_dispatches() {
     RcInputStepSbus2FrameInputs in = {
         .failsafe = false,
         .lostFrame = false,
-        .hwFailsafeWasActive = false,
+        .hwFailsafeWasActive = false,  // was never in failsafe
     };
 
     RcInputStepSbus2FrameActions out = rcInputStepSbus2RoutedFrame(in);
@@ -784,6 +788,68 @@ void test_sbus2_routed_frame_clean_clears_and_dispatches() {
     TEST_ASSERT_TRUE(out.updateLastSbus2Ms);
     TEST_ASSERT_TRUE(out.dispatchBindings);
     TEST_ASSERT_FALSE(out.incrementLostFrameCount);
+    // Slice 2: no drive failsafe actions when recovering from a non-failsafe clean state
+    TEST_ASSERT_FALSE(out.triggerSbusHw);
+    TEST_ASSERT_FALSE(out.submitDriveZeroFrame);
+    TEST_ASSERT_FALSE(out.clearSbusHw);
+    TEST_ASSERT_FALSE(out.logRoutedHwFailsafeClearedOnFallingEdge);
+}
+
+void test_sbus2_routed_frame_clean_after_failsafe_clears_hw() {
+    // Rising edge: failsafe flag asserted
+    RcInputStepSbus2FrameInputs failsafeIn = {
+        .failsafe = true,
+        .lostFrame = false,
+        .hwFailsafeWasActive = false,
+    };
+
+    RcInputStepSbus2FrameActions failsafeOut = rcInputStepSbus2RoutedFrame(failsafeIn);
+
+    TEST_ASSERT_TRUE(failsafeOut.setSbus2HwFailsafe);
+    TEST_ASSERT_TRUE(failsafeOut.triggerSbusHw);
+    TEST_ASSERT_TRUE(failsafeOut.submitDriveZeroFrame);
+
+    // Falling edge: failsafe flag cleared
+    RcInputStepSbus2FrameInputs cleanIn = {
+        .failsafe = false,
+        .lostFrame = false,
+        .hwFailsafeWasActive = true,  // was in failsafe, now recovering
+    };
+
+    RcInputStepSbus2FrameActions cleanOut = rcInputStepSbus2RoutedFrame(cleanIn);
+
+    TEST_ASSERT_TRUE(cleanOut.clearSbus2HwFailsafe);
+    TEST_ASSERT_TRUE(cleanOut.clearSbus2SignalLost);
+    TEST_ASSERT_TRUE(cleanOut.updateLastSbus2Ms);
+    TEST_ASSERT_TRUE(cleanOut.dispatchBindings);
+    // Slice 2: falling edge triggers clear on the drive path with log
+    TEST_ASSERT_TRUE(cleanOut.clearSbusHw);
+    TEST_ASSERT_TRUE(cleanOut.logRoutedHwFailsafeClearedOnFallingEdge);
+    TEST_ASSERT_FALSE(cleanOut.triggerSbusHw);
+    TEST_ASSERT_FALSE(cleanOut.submitDriveZeroFrame);
+}
+
+void test_sbus2_routed_sustained_failsafe_triggers_and_zeroes_every_frame() {
+    // Rising edge
+    RcInputStepSbus2FrameInputs failsafeIn = {
+        .failsafe = true,
+        .lostFrame = false,
+        .hwFailsafeWasActive = false,
+    };
+
+    RcInputStepSbus2FrameActions first = rcInputStepSbus2RoutedFrame(failsafeIn);
+
+    TEST_ASSERT_TRUE(first.triggerSbusHw);
+    TEST_ASSERT_TRUE(first.submitDriveZeroFrame);
+
+    // Sustained failsafe: still trigger and zero, no log
+    failsafeIn.hwFailsafeWasActive = true;
+    RcInputStepSbus2FrameActions sustained = rcInputStepSbus2RoutedFrame(failsafeIn);
+
+    TEST_ASSERT_TRUE(sustained.triggerSbusHw);
+    TEST_ASSERT_TRUE(sustained.submitDriveZeroFrame);
+    TEST_ASSERT_FALSE(sustained.clearSbusHw);
+    TEST_ASSERT_FALSE(sustained.logRoutedHwFailsafeClearedOnFallingEdge);
 }
 
 // ============================================================================
@@ -845,9 +911,11 @@ int main(void) {
     RUN_TEST(test_sbus2_frame_lost_frame_suppresses_heartbeat_and_dispatch);
     RUN_TEST(test_sbus2_frame_clean_heartbeats_and_dispatches);
 
-    RUN_TEST(test_sbus2_routed_frame_failsafe_latches_hw);
+    RUN_TEST(test_sbus2_routed_frame_failsafe_triggers_hw_zero_frame);
     RUN_TEST(test_sbus2_routed_frame_lost_frame_holds_hw_state);
     RUN_TEST(test_sbus2_routed_frame_clean_clears_and_dispatches);
+    RUN_TEST(test_sbus2_routed_frame_clean_after_failsafe_clears_hw);
+    RUN_TEST(test_sbus2_routed_sustained_failsafe_triggers_and_zeroes_every_frame);
 
     RUN_TEST(test_zero_frame_submitted_on_pwm_signal_lost);
     RUN_TEST(test_zero_frame_submitted_on_sbus_hw_failsafe);

@@ -482,12 +482,29 @@ void rcInputTask(void* pvParameters) {
             bool asSbus2 = (rcInputMode == RC_INPUT_SINGLE_SBUS) && useCh2;
 
             if (asSbus2) {
+                // Slice 2: Read the previous routed hw failsafe state for edge detection.
+                bool routedHwFailsafeWasActive = s_rcStepState.routedHwFailsafeWasActive;
+
                 RcInputStepSbus2FrameInputs frameIn = {
                     .failsafe = data.failsafe,
                     .lostFrame = data.lost_frame,
-                    .hwFailsafeWasActive = false,  // unused: routed path has no one-shot log
+                    .hwFailsafeWasActive = routedHwFailsafeWasActive,
                 };
                 RcInputStepSbus2FrameActions frameOut = rcInputStepSbus2RoutedFrame(frameIn);
+
+                // Slice 2: Execute routed hardware failsafe actions on the drive path.
+                if (frameOut.triggerSbusHw) {
+                    failsafeTrigger(FailsafeLayer::SBUS_HW);
+                }
+                if (frameOut.submitDriveZeroFrame) {
+                    driveArbiterSubmit(DriveSource::RC, 0, 0, millis());
+                }
+                if (frameOut.clearSbusHw) {
+                    failsafeClear(FailsafeLayer::SBUS_HW);
+                }
+                if (frameOut.logRoutedHwFailsafeClearedOnFallingEdge) {
+                    PA_LOG_INFO(TAG, "SBUS2 (routed) hardware failsafe cleared");
+                }
 
                 taskENTER_CRITICAL(&robotStateMux);
                 for (int i = 0; i < 16; ++i) {
@@ -510,6 +527,8 @@ void rcInputTask(void* pvParameters) {
                 if (frameOut.updateLastSbus2Ms) {
                     robotState.lastSbus2Ms = millis();
                 }
+                // Slice 2: Update edge state for next iteration.
+                s_rcStepState.routedHwFailsafeWasActive = data.failsafe;
                 taskEXIT_CRITICAL(&robotStateMux);
                 if (frameOut.dispatchBindings) {
                     dispatchSbusBindingsForSource(data, RC_BINDING_SBUS2, active);

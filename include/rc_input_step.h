@@ -47,8 +47,9 @@ RcInputStartupPlan rcInputStepStartupPlan(const RcInputActiveConfig& active);
 // Default initialization is the boot state.
 // ============================================================================
 struct RcInputStepState {
-    SbusWatchdog sbus1Watchdog = {};  // drive receiver watchdog
-    SbusWatchdog sbus2Watchdog = {};  // dome receiver watchdog
+    SbusWatchdog sbus1Watchdog = {};    // drive receiver watchdog
+    SbusWatchdog sbus2Watchdog = {};    // dome receiver watchdog
+    bool routedHwFailsafeWasActive = false;  // routed receiver hw failsafe edge tracking
 };
 
 void rcInputStepInit(RcInputStepState* state);
@@ -156,8 +157,13 @@ struct RcInputStepSbus2FrameActions {
     bool clearSbus2SignalLost = false;   // robotState.sbus2SignalLost = false
     bool incrementLostFrameCount = false;
     bool updateLastSbus2Ms = false;      // watchdog heartbeat (clean frames only)
-    bool logHwFailsafeAsserted = false;  // one-shot warn on rising edge
+    bool logHwFailsafeAsserted = false;  // one-shot warn on rising edge (dome path only)
     bool dispatchBindings = false;       // dispatch SBUS2 bindings for this frame
+    // Routed receiver (single_sbus + useCh2) drive-level failsafe actions (Slice 2)
+    bool triggerSbusHw = false;          // failsafeTrigger(SBUS_HW) on routed failsafe
+    bool submitDriveZeroFrame = false;   // driveArbiterSubmit(RC, 0, 0, now) on routed failsafe
+    bool clearSbusHw = false;            // failsafeClear(SBUS_HW) on routed recovery
+    bool logRoutedHwFailsafeClearedOnFallingEdge = false;  // INFO log on recovery (falling edge)
 };
 
 // Dome decoder frames (dual_sbus).
