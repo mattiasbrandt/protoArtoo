@@ -37,7 +37,6 @@ struct RcInputStartupPlan {
     bool taskEnabled = false;
     bool driveSbusEnabled = false;
     bool domeSbusEnabled = false;
-    bool sbus1WatchdogEnabled = false;
     DriveWatchdogSource driveWatchdogSource = DriveWatchdogSource::NONE;
 };
 
@@ -53,42 +52,6 @@ struct RcInputStepState {
 };
 
 void rcInputStepInit(RcInputStepState* state);
-
-// ============================================================================
-// SBUS1 (Drive) Watchdog Phase
-// ============================================================================
-
-struct RcInputStepSbus1WatchdogInputs {
-    // Current mode and tracking configuration
-    uint8_t rcInputMode;
-    bool useCh2;  // single_sbus: are we using GPIO13 (SBUS2)?
-
-    // Decoder and input state
-    bool driveSbusInitialized;  // is decoder running?
-
-    // Watchdog timestamps and config
-    uint32_t lastSbus1Ms;  // last valid frame timestamp
-    uint32_t nowMs;        // current time
-    uint32_t timeoutMs;    // configured timeout
-};
-
-struct RcInputStepSbus1WatchdogActions {
-    // Watchdog transition (tells us what changed)
-    SbusWatchdogTransition transition = SbusWatchdogTransition::OK;
-
-    // Failsafe layer decisions
-    bool triggerSbusWatchdog = false;      // failsafeTrigger(SBUS_WATCHDOG)
-    bool triggerSbusHw = false;            // failsafeTrigger(SBUS_HW) on HW failsafe
-    bool clearSbusWatchdog = false;        // failsafeClear(SBUS_WATCHDOG)
-    bool clearSbusHw = false;              // failsafeClear(SBUS_HW)
-
-    // Zero-frame submission to drive arbiter on signal loss
-    bool submitDriveZeroFrame = false;
-    uint32_t zeroFrameSubmitMs = 0;
-};
-
-RcInputStepSbus1WatchdogActions rcInputStepSbus1Watchdog(
-    RcInputStepState* state, const RcInputStepSbus1WatchdogInputs& in);
 
 // ============================================================================
 // SBUS2 (Dome) Watchdog Phase

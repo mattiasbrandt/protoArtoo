@@ -65,9 +65,6 @@ RcInputStartupPlan rcInputStepStartupPlan(const RcInputActiveConfig& active) {
         driveSbusDecoderEnabledForMode(active.mode, active.enableRc[0], active.enableRc[1],
                                        active.useCh2);
     out.domeSbusEnabled = is_dome_sbus_mode(active.mode) && active.enableRc[1];
-    out.sbus1WatchdogEnabled =
-        out.driveSbusEnabled &&
-        !(active.mode == RC_INPUT_SINGLE_SBUS && active.useCh2);
 
     // Identify the drive watchdog source. The source determines which timestamp
     // (lastSbus1Ms vs lastSbus2Ms) owns the drive heartbeat and watchdog.
@@ -86,43 +83,6 @@ RcInputStartupPlan rcInputStepStartupPlan(const RcInputActiveConfig& active) {
                           active.enableRc[3] || active.enableRc[4] || active.enableRc[5];
     } else {
         out.taskEnabled = out.driveSbusEnabled || out.domeSbusEnabled;
-    }
-
-    return out;
-}
-
-// ============================================================================
-// SBUS1 (Drive) Watchdog State Machine
-// ============================================================================
-
-RcInputStepSbus1WatchdogActions rcInputStepSbus1Watchdog(
-    RcInputStepState* state, const RcInputStepSbus1WatchdogInputs& in) {
-    RcInputStepSbus1WatchdogActions out = {};
-
-    if (state == nullptr) {
-        return out;
-    }
-
-    // Determine if SBUS1 watchdog tracking is active for this iteration
-    bool sbus1TrackingActive = in.driveSbusInitialized &&
-                               !(in.rcInputMode == RC_INPUT_SINGLE_SBUS && in.useCh2);
-
-    if (sbus1TrackingActive) {
-        // Invoke the watchdog state machine
-        out.transition = sbusWatchdogCheck(&state->sbus1Watchdog, in.lastSbus1Ms, in.nowMs,
-                                           in.timeoutMs);
-
-        // Translate watchdog transitions to failsafe actions
-        if (out.transition == SbusWatchdogTransition::JUST_LOST) {
-            out.triggerSbusWatchdog = true;
-            out.submitDriveZeroFrame = true;
-            out.zeroFrameSubmitMs = in.nowMs;
-        } else if (out.transition == SbusWatchdogTransition::JUST_RESTORED) {
-            out.clearSbusWatchdog = true;
-            out.clearSbusHw = true;
-        } else if (out.transition == SbusWatchdogTransition::OK) {
-            out.clearSbusHw = true;
-        }
     }
 
     return out;

@@ -755,7 +755,7 @@ void rcInputTask(void* pvParameters) {
             lastSbusDiagLogMs = nowMs;
             bool waitingDrive = driveWatchdogEnabled &&
                                 ((startupPlan.driveWatchdogSource == DriveWatchdogSource::SBUS1 && lastSbus1 == 0) ||
-                                 (startupPlan.driveWatchdogSource == DriveWatchdogSource::SBUS2_ROUTED && lastSbus2 == 0));
+                                 (startupPlan.driveWatchdogSource == DriveWatchdogSource::SBUS2_ROUTED && lastSbus2ForDrive == 0));
             bool waitingDome = domeSbusEnabled && (lastSbus2 == 0);
             if (waitingDrive || waitingDome) {
                 taskENTER_CRITICAL(&robotStateMux);
