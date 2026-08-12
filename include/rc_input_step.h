@@ -159,7 +159,7 @@ struct RcInputStepSbus2FrameActions {
     bool updateLastSbus2Ms = false;      // watchdog heartbeat (clean frames only)
     bool logHwFailsafeAsserted = false;  // one-shot warn on rising edge (dome path only)
     bool dispatchBindings = false;       // dispatch SBUS2 bindings for this frame
-    // Routed receiver (single_sbus + useCh2) drive-level failsafe actions (Slice 2)
+    // Routed receiver (single_sbus + useCh2) drive-level failsafe actions
     bool triggerSbusHw = false;          // failsafeTrigger(SBUS_HW) on routed failsafe
     bool submitDriveZeroFrame = false;   // driveArbiterSubmit(RC, 0, 0, now) on routed failsafe
     bool clearSbusHw = false;            // failsafeClear(SBUS_HW) on routed recovery

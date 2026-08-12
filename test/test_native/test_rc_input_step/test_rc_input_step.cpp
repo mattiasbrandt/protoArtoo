@@ -749,7 +749,7 @@ void test_sbus2_routed_frame_failsafe_triggers_hw_zero_frame() {
 
     TEST_ASSERT_TRUE(out.setSbus2HwFailsafe);
     TEST_ASSERT_FALSE(out.clearSbus2HwFailsafe);
-    // Slice 2: routed path mirrors SBUS1 drive failsafe behavior
+    // Routed path mirrors SBUS1 drive failsafe behavior
     TEST_ASSERT_TRUE(out.triggerSbusHw);
     TEST_ASSERT_TRUE(out.submitDriveZeroFrame);
     TEST_ASSERT_FALSE(out.clearSbusHw);
@@ -788,7 +788,7 @@ void test_sbus2_routed_frame_clean_clears_and_dispatches() {
     TEST_ASSERT_TRUE(out.updateLastSbus2Ms);
     TEST_ASSERT_TRUE(out.dispatchBindings);
     TEST_ASSERT_FALSE(out.incrementLostFrameCount);
-    // Slice 2: no drive failsafe actions when recovering from a non-failsafe clean state
+    // No drive failsafe actions when recovering from a non-failsafe clean state
     TEST_ASSERT_FALSE(out.triggerSbusHw);
     TEST_ASSERT_FALSE(out.submitDriveZeroFrame);
     TEST_ASSERT_FALSE(out.clearSbusHw);
@@ -822,7 +822,7 @@ void test_sbus2_routed_frame_clean_after_failsafe_clears_hw() {
     TEST_ASSERT_TRUE(cleanOut.clearSbus2SignalLost);
     TEST_ASSERT_TRUE(cleanOut.updateLastSbus2Ms);
     TEST_ASSERT_TRUE(cleanOut.dispatchBindings);
-    // Slice 2: falling edge triggers clear on the drive path with log
+    // Falling edge triggers clear on the drive path with log
     TEST_ASSERT_TRUE(cleanOut.clearSbusHw);
     TEST_ASSERT_TRUE(cleanOut.logRoutedHwFailsafeClearedOnFallingEdge);
     TEST_ASSERT_FALSE(cleanOut.triggerSbusHw);
