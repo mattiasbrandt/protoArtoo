@@ -237,7 +237,17 @@ test("Receiver Type separates restart-staged settings from live mapping edits", 
 });
 
 test("non-RC component auto-save retains ordinary saved feedback", async () => {
-  const config = { components: {}, system: {} };
+  const config = {
+    components: {
+      rcCh1: { enabled: false },
+      rcCh2: { enabled: false },
+      rcCh3: { enabled: false },
+      rcCh4: { enabled: false },
+      rcCh5: { enabled: false },
+      rcCh6: { enabled: false },
+    },
+    system: {},
+  };
   const env = loadInteractiveModule("setup.js", async (_method, path) => {
     if (path === "/api/identity") return { droidName: "protoartoo", mdnsUseName: false };
     if (path === "/api/config") return config;
@@ -256,7 +266,17 @@ test("non-RC component auto-save retains ordinary saved feedback", async () => {
 });
 
 test("RC component auto-save reports that controller restart is required", async () => {
-  const config = { components: {}, system: {} };
+  const config = {
+    components: {
+      rcCh1: { enabled: false },
+      rcCh2: { enabled: false },
+      rcCh3: { enabled: false },
+      rcCh4: { enabled: false },
+      rcCh5: { enabled: false },
+      rcCh6: { enabled: false },
+    },
+    system: {},
+  };
   const env = loadInteractiveModule("setup.js", async (_method, path) => {
     if (path === "/api/identity") return { droidName: "protoartoo", mdnsUseName: false };
     if (path === "/api/config") return config;
@@ -274,7 +294,17 @@ test("RC component auto-save reports that controller restart is required", async
 });
 
 test("restart remains pending after a later non-RC component save", async () => {
-  const config = { components: {}, system: {} };
+  const config = {
+    components: {
+      rcCh1: { enabled: false },
+      rcCh2: { enabled: false },
+      rcCh3: { enabled: false },
+      rcCh4: { enabled: false },
+      rcCh5: { enabled: false },
+      rcCh6: { enabled: false },
+    },
+    system: {},
+  };
   const env = loadInteractiveModule("setup.js", async (_method, path) => {
     if (path === "/api/identity") return { droidName: "protoartoo", mdnsUseName: false };
     if (path === "/api/config") return config;
@@ -389,4 +419,148 @@ test("boot-active RC diagnostics override staged disabled component settings", a
     false,
     "live tools must follow boot-active /api/rc sources until restart"
   );
+});
+
+test("WARNING #1: restart cue must survive a later save failure", async () => {
+  const config = { components: { rcCh1: { enabled: false }, rcCh2: { enabled: false }, rcCh3: { enabled: false }, rcCh4: { enabled: false }, rcCh5: { enabled: false }, rcCh6: { enabled: false } }, system: {} };
+  let firstSaveSucceeds = true;
+  const env = loadInteractiveModule("setup.js", async (method, path, body) => {
+    if (path === "/api/identity") return { droidName: "protoartoo", mdnsUseName: false };
+    if (method === "POST" && path === "/api/config") {
+      if (!firstSaveSucceeds) throw new Error("Save failed (simulated)");
+      return config;
+    }
+    if (path === "/api/config") return config;
+    return {};
+  });
+  await env.settle();
+
+  const rcToggle = env.element("enable-rc-ch1");
+  rcToggle.checked = true;
+  await rcToggle.emit("change");
+  await env.fireTimer(300);
+
+  // First save succeeds and sets restart pending
+  assert.match(env.element("setup-save-summary").textContent, /restart required/);
+
+  // Trigger a failed save attempt
+  firstSaveSucceeds = false;
+  const nonRcToggle = env.element("enable-arm1");
+  nonRcToggle.checked = true;
+  await nonRcToggle.emit("change");
+  await env.fireTimer(300);
+
+  // Error feedback shown
+  assert.match(env.element("feature-feedback").textContent, /Save failed/i);
+
+  // The restart cue MUST still be pending, not wiped by the failure
+  assert.match(
+    env.element("setup-save-summary").textContent,
+    /restart still required|restart required/,
+    "restart requirement must survive a later save failure"
+  );
+});
+
+test("WARNING #2: stale response must not overwrite newer RC pending state", async () => {
+  const config = (rcCh1Enabled, rcCh2Enabled) => ({
+    components: {
+      rcCh1: { enabled: rcCh1Enabled },
+      rcCh2: { enabled: rcCh2Enabled },
+      rcCh3: { enabled: false },
+      rcCh4: { enabled: false },
+      rcCh5: { enabled: false },
+      rcCh6: { enabled: false },
+    },
+    system: {},
+  });
+  let firstSaveResolve;
+  const firstSavePromise = new Promise((resolve) => { firstSaveResolve = resolve; });
+  const postedValues = [];
+
+  const env = loadInteractiveModule("setup.js", async (method, path, body) => {
+    if (path === "/api/identity") return { droidName: "protoartoo", mdnsUseName: false };
+    if (method === "POST" && path === "/api/config") {
+      const posted = {
+        rcCh1: body.get("enableRcCh1"),
+        rcCh2: body.get("enableRcCh2"),
+      };
+      postedValues.push(posted);
+      if (postedValues.length === 1) {
+        // First request hangs, second request will complete first
+        return firstSavePromise;
+      }
+      // Second request returns immediately
+      return config(true, true);
+    }
+    if (path === "/api/config") return config(false, false);
+    return {};
+  });
+  await env.settle();
+
+  // Queue first save (rcCh1)
+  const rcCh1Toggle = env.element("enable-rc-ch1");
+  rcCh1Toggle.checked = true;
+  await rcCh1Toggle.emit("change");
+  const firstSave = env.startTimer(300);
+  await env.settle();
+
+  // Queue second save (rcCh2) which will complete before first
+  const rcCh2Toggle = env.element("enable-rc-ch2");
+  rcCh2Toggle.checked = true;
+  await rcCh2Toggle.emit("change");
+  await env.fireTimer(300);
+
+  // Resolve the first request with STALE response (only rcCh1, not rcCh2)
+  firstSaveResolve(config(true, false));
+  await firstSave;
+  await env.settle();
+
+  // Both requests must have been sent
+  assert.equal(postedValues.length, 2, "both RC changes must be persisted");
+
+  // The restart cue must reflect the NEWER state (rcCh2 pending), not the stale response
+  assert.match(
+    env.element("feature-feedback").textContent,
+    /Restart the controller to apply RC input changes\./,
+    "pending state must not be overwritten by stale response"
+  );
+  assert.match(env.element("setup-save-summary").textContent, /restart required/);
+});
+
+test("WARNING #3: reverting to boot-active value must clear restart cue", async () => {
+  const config = { components: { rcCh1: { enabled: false }, rcCh2: { enabled: false }, rcCh3: { enabled: false }, rcCh4: { enabled: false }, rcCh5: { enabled: false }, rcCh6: { enabled: false } }, system: {} };
+
+  const env = loadInteractiveModule("setup.js", async (method, path, body) => {
+    if (path === "/api/identity") return { droidName: "protoartoo", mdnsUseName: false };
+    if (method === "POST" && path === "/api/config") {
+      const newEnabled = body.get("enableRcCh1") === "true";
+      config.components.rcCh1.enabled = newEnabled;
+      return config;
+    }
+    if (path === "/api/config") return config;
+    return {};
+  });
+  await env.settle();
+
+  // Change RC setting away from boot-active (false -> true)
+  const rcToggle = env.element("enable-rc-ch1");
+  rcToggle.checked = true;
+  await rcToggle.emit("change");
+  await env.fireTimer(300);
+
+  // Restart is required (differs from boot-active)
+  assert.match(env.element("setup-save-summary").textContent, /restart required/);
+
+  // Revert back to boot-active value (true -> false)
+  rcToggle.checked = false;
+  await rcToggle.emit("change");
+  await env.fireTimer(300);
+
+  // Restart cue must clear because saved state now matches boot-active
+  assert.doesNotMatch(
+    env.element("setup-save-summary").textContent,
+    /restart required/,
+    "restart requirement must clear when reverted to boot-active value"
+  );
+  assert.match(env.element("setup-save-summary").textContent, /Auto-save ready|Saved/);
 });
