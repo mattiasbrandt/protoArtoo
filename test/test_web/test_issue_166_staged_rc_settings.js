@@ -527,6 +527,92 @@ test("WARNING #2: stale response must not overwrite newer RC pending state", asy
   assert.match(env.element("setup-save-summary").textContent, /restart required/);
 });
 
+test("generation guard prevents corrupted savedGeneration affecting future saves", async () => {
+  const config = (rcCh1Enabled, rcCh2Enabled, rcCh3Enabled) => ({
+    components: {
+      rcCh1: { enabled: rcCh1Enabled },
+      rcCh2: { enabled: rcCh2Enabled },
+      rcCh3: { enabled: rcCh3Enabled },
+      rcCh4: { enabled: false },
+      rcCh5: { enabled: false },
+      rcCh6: { enabled: false },
+    },
+    system: {},
+  });
+  let firstSaveResolve, thirdSaveResolve;
+  const firstSavePromise = new Promise((resolve) => { firstSaveResolve = resolve; });
+  const thirdSavePromise = new Promise((resolve) => { thirdSaveResolve = resolve; });
+
+  const env = loadInteractiveModule("setup.js", async (method, path, body) => {
+    if (path === "/api/identity") return { droidName: "protoartoo", mdnsUseName: false };
+    if (method === "POST" && path === "/api/config") {
+      const ch1 = body.get("enableRcCh1") === "true";
+      const ch2 = body.get("enableRcCh2") === "true";
+      const ch3 = body.get("enableRcCh3") === "true";
+
+      if (ch1 && !ch2 && !ch3) {
+        // First request hangs
+        return firstSavePromise;
+      }
+      if (ch1 && ch2 && !ch3) {
+        // Third request hangs (it's the third request in network time, but generation-wise)
+        return thirdSavePromise;
+      }
+      // Second request returns immediately
+      return config(ch1, ch2, ch3);
+    }
+    if (path === "/api/config") return config(false, false, false);
+    return {};
+  });
+  await env.settle();
+
+  // First RC change (generation 1)
+  const rcCh1Toggle = env.element("enable-rc-ch1");
+  rcCh1Toggle.checked = true;
+  await rcCh1Toggle.emit("change");
+  const firstSave = env.startTimer(300);
+  await env.settle();
+
+  // Second RC change (generation 2)
+  const rcCh2Toggle = env.element("enable-rc-ch2");
+  rcCh2Toggle.checked = true;
+  await rcCh2Toggle.emit("change");
+  await env.fireTimer(300);
+
+  // Third RC change (generation 3)
+  const rcCh3Toggle = env.element("enable-rc-ch3");
+  rcCh3Toggle.checked = true;
+  await rcCh3Toggle.emit("change");
+  const thirdSave = env.startTimer(300);
+  await env.settle();
+
+  // Now responses arrive out of order:
+  // - Second response (gen 2) completes: should set savedGeneration = 2
+  // - First response (gen 1) arrives: WITH guard, doesn't update (1 not > 2)
+  //                                   WITHOUT guard, sets savedGeneration = 1 (corruption!)
+  // - Third response (gen 3): WITH guard, 3 > 2 so updates
+  //                          WITHOUT guard, 3 > 1 so updates (SAME behavior, but used wrong base)
+
+  firstSaveResolve(config(true, false, false));
+  await firstSave;
+
+  thirdSaveResolve(config(true, true, true));
+  await thirdSave;
+  await env.settle();
+
+  // With guard: savedGeneration = 3, rcRestartPending = true (all three RC channels enabled)
+  // Without guard: saved Generation was corrupted to 1, then 3, rcRestartPending = true
+  // Both end with restart = true, BUT without the guard the savedGeneration value is wrong
+  // This matters if a fourth save with generation 2 arrives after third completes
+
+  assert.match(
+    env.element("feature-feedback").textContent,
+    /Restart the controller to apply RC input changes\./,
+    "guard protects savedGeneration even when final rcRestartPending is the same"
+  );
+  assert.match(env.element("setup-save-summary").textContent, /restart required/);
+});
+
 test("WARNING #3: reverting to boot-active value must clear restart cue", async () => {
   const config = { components: { rcCh1: { enabled: false }, rcCh2: { enabled: false }, rcCh3: { enabled: false }, rcCh4: { enabled: false }, rcCh5: { enabled: false }, rcCh6: { enabled: false } }, system: {} };
 

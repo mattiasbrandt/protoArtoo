@@ -80,7 +80,6 @@
   let rcChangeGeneration = 0;
   let savedRcChangeGeneration = 0;
   let rcRestartPending = false;
-  let rcSaveGeneration = 0;  // Monotonic counter to guard RC restart state from stale responses
   let bootActiveRcComponents = {};  // Snapshot of boot-active RC component state from /api/rc
   // Auto-save state
   let saveTimeout = null;
@@ -427,7 +426,6 @@
     saveInFlight = true;
     const requestEditGeneration = featureEditGeneration;
     const requestRcChangeGeneration = rcChangeGeneration;
-    const requestRcSaveGeneration = ++rcSaveGeneration;  // Increment to detect stale responses
     setFeatureFeedback("Saving...");
     try {
       const body = new URLSearchParams();
@@ -448,8 +446,8 @@
       if (featureEditGeneration === requestEditGeneration) {
         renderFeatures(result.data);
       }
-      // Guard RC restart state with both generation counters to prevent stale responses from overwriting newer state
-      if (requestRcChangeGeneration > savedRcChangeGeneration && requestRcSaveGeneration === rcSaveGeneration) {
+      // Guard RC restart state: only update if this request's RC generation is newer than the last saved one
+      if (requestRcChangeGeneration > savedRcChangeGeneration) {
         savedRcChangeGeneration = requestRcChangeGeneration;
         // Check if UI values match boot-active: if so, restart is not needed
         rcRestartPending = checkIfRcRestartNeeded();
