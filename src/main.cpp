@@ -296,9 +296,10 @@ void setup() {
     failsafeInit(&robotStateMux);
     driveArbiterInit(&robotStateMux);
 
-    // Safety: boot with drive locked until the existing SBUS1 watchdog sees
-    // a frame. Routed SBUS2 watchdog arming remains owned by issue #167.
-    if (bootSbusSafeGuardDecision(rcPlan.sbus1WatchdogEnabled)) {
+    // Safety: boot with drive locked until the identified drive watchdog
+    // (SBUS1 or routed SBUS2) sees a frame. This applies the same
+    // initialization as the runtime watchdog for the active drive source.
+    if (rcPlan.driveWatchdogSource != DriveWatchdogSource::NONE) {
         failsafeTrigger(FailsafeLayer::SBUS_WATCHDOG);
     }
 

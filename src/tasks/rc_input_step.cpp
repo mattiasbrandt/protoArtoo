@@ -69,6 +69,18 @@ RcInputStartupPlan rcInputStepStartupPlan(const RcInputActiveConfig& active) {
         out.driveSbusEnabled &&
         !(active.mode == RC_INPUT_SINGLE_SBUS && active.useCh2);
 
+    // Identify the drive watchdog source. The source determines which timestamp
+    // (lastSbus1Ms vs lastSbus2Ms) owns the drive heartbeat and watchdog.
+    if (!out.driveSbusEnabled) {
+        out.driveWatchdogSource = DriveWatchdogSource::NONE;
+    } else if (active.mode == RC_INPUT_SINGLE_SBUS && active.useCh2) {
+        // Routed CH2: drive decoder reads GPIO13 (dome pin), stored as SBUS2
+        out.driveWatchdogSource = DriveWatchdogSource::SBUS2_ROUTED;
+    } else {
+        // Standard CH1 paths (single_sbus CH1 or dual_sbus CH1)
+        out.driveWatchdogSource = DriveWatchdogSource::SBUS1;
+    }
+
     if (active.mode == RC_INPUT_STANDARD_PWM) {
         out.taskEnabled = active.enableRc[0] || active.enableRc[1] || active.enableRc[2] ||
                           active.enableRc[3] || active.enableRc[4] || active.enableRc[5];
@@ -140,6 +152,48 @@ RcInputStepSbus2WatchdogActions rcInputStepSbus2Watchdog(
             out.stopDomeMs = in.nowMs;
         } else if (out.transition == SbusWatchdogTransition::JUST_RESTORED) {
             out.clearSbus2SignalLost = true;
+        }
+    }
+
+    return out;
+}
+
+// ============================================================================
+// Generalized Drive Watchdog (SBUS1 or routed SBUS2)
+// ============================================================================
+
+RcInputStepDriveWatchdogActions rcInputStepDriveWatchdog(
+    RcInputStepState* state, const RcInputStepDriveWatchdogInputs& in) {
+    RcInputStepDriveWatchdogActions out = {};
+
+    if (state == nullptr || in.source == DriveWatchdogSource::NONE) {
+        return out;
+    }
+
+    // Select the appropriate watchdog object and timestamp based on source
+    SbusWatchdog* watchdog = nullptr;
+    uint32_t lastFrameMs = 0;
+
+    if (in.source == DriveWatchdogSource::SBUS1) {
+        watchdog = &state->sbus1Watchdog;
+        lastFrameMs = in.lastSbus1Ms;
+    } else if (in.source == DriveWatchdogSource::SBUS2_ROUTED) {
+        watchdog = &state->sbus2Watchdog;
+        lastFrameMs = in.lastSbus2Ms;
+    }
+
+    if (watchdog != nullptr && in.driveDecoderInitialized) {
+        // Invoke the watchdog state machine
+        out.transition = sbusWatchdogCheck(watchdog, lastFrameMs, in.nowMs, in.timeoutMs);
+
+        // Translate watchdog transitions to drive failsafe actions
+        // (identical for both SBUS1 and routed SBUS2 sources)
+        if (out.transition == SbusWatchdogTransition::JUST_LOST) {
+            out.triggerSbusWatchdog = true;
+            out.submitDriveZeroFrame = true;
+            out.zeroFrameSubmitMs = in.nowMs;
+        } else if (out.transition == SbusWatchdogTransition::JUST_RESTORED) {
+            out.clearSbusWatchdog = true;
         }
     }
 

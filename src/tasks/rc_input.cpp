@@ -425,7 +425,7 @@ void rcInputTask(void* pvParameters) {
         }
     }
 
-    const bool sbus1WatchdogEnabled = startupPlan.sbus1WatchdogEnabled && driveSbusEnabled;
+    const bool driveWatchdogEnabled = startupPlan.driveWatchdogSource != DriveWatchdogSource::NONE && driveSbusEnabled;
 
     if (rcInputMode == RC_INPUT_STANDARD_PWM) {
         PA_LOG_INFO(TAG, "started - standard_pwm mode, SBUS decoders inactive");
@@ -565,34 +565,41 @@ void rcInputTask(void* pvParameters) {
 
         uint32_t nowMs = millis();
         uint32_t timeoutMs = 0;
-        if (sbus1WatchdogEnabled || domeSbusEnabled) {
+        if (driveWatchdogEnabled || domeSbusEnabled) {
             ConfigSnapshot watchdogCfg = {};
             configCacheRead(&watchdogCfg);
             timeoutMs = watchdogCfg.drive.sbusTimeoutMs;
         }
 
         uint32_t lastSbus1 = 0;
-        if (sbus1WatchdogEnabled) {
+        uint32_t lastSbus2ForDrive = 0;  // Used only if source == SBUS2_ROUTED
+        if (driveWatchdogEnabled) {
             taskENTER_CRITICAL(&robotStateMux);
             lastSbus1 = robotState.lastSbus1Ms;
+            if (startupPlan.driveWatchdogSource == DriveWatchdogSource::SBUS2_ROUTED) {
+                lastSbus2ForDrive = robotState.lastSbus2Ms;
+            }
             taskEXIT_CRITICAL(&robotStateMux);
 
-            RcInputStepSbus1WatchdogInputs stepSbus1In = {
-                .rcInputMode = rcInputMode,
-                .useCh2 = useCh2,
-                .driveSbusInitialized = true,
+            RcInputStepDriveWatchdogInputs stepDriveIn = {
+                .driveDecoderInitialized = true,
+                .source = startupPlan.driveWatchdogSource,
                 .lastSbus1Ms = lastSbus1,
+                .lastSbus2Ms = lastSbus2ForDrive,
                 .nowMs = nowMs,
                 .timeoutMs = timeoutMs,
             };
-            RcInputStepSbus1WatchdogActions stepSbus1Out =
-                rcInputStepSbus1Watchdog(&s_rcStepState, stepSbus1In);
+            RcInputStepDriveWatchdogActions stepDriveOut =
+                rcInputStepDriveWatchdog(&s_rcStepState, stepDriveIn);
 
-            if (stepSbus1Out.triggerSbusWatchdog) {
+            if (stepDriveOut.triggerSbusWatchdog) {
                 failsafeTrigger(FailsafeLayer::SBUS_WATCHDOG);
                 driveArbiterSubmit(DriveSource::RC, 0, 0, nowMs);
-                PA_LOG_WARN(TAG, "SBUS1 watchdog fired - no frame for %lu ms (timeout=%lu ms)",
-                            (unsigned long)(nowMs - lastSbus1), (unsigned long)timeoutMs);
+                uint32_t lastMs = (startupPlan.driveWatchdogSource == DriveWatchdogSource::SBUS2_ROUTED)
+                                      ? lastSbus2ForDrive
+                                      : lastSbus1;
+                PA_LOG_WARN(TAG, "drive watchdog fired - no frame for %lu ms (timeout=%lu ms)",
+                            (unsigned long)(nowMs - lastMs), (unsigned long)timeoutMs);
                 if ((uint32_t)(nowMs - lastSbus1WatchdogDiagMs) >= kWatchdogDiagIntervalMs) {
                     lastSbus1WatchdogDiagMs = nowMs;
                     taskENTER_CRITICAL(&robotStateMux);
@@ -602,7 +609,7 @@ void rcInputTask(void* pvParameters) {
                         SbusDecoderDebugStats driveStats = sbus_drive.debugStats();
                         PA_LOG_DEBUG(
                             TAG,
-                            "SBUS1 watchdog decode stats: rx_done=%lu queued=%lu short=%lu "
+                            "drive watchdog decode stats: rx_done=%lu queued=%lu short=%lu "
                             "ok=%lu fail=%lu bitlow=%lu extract=%lu hdr=%lu ftr=%lu "
                             "last_ftr=0x%02x rearm=%lu parity=%lu syms(last=%lu max=%lu)",
                             (unsigned long)driveStats.rxDoneCount,
@@ -622,14 +629,14 @@ void rcInputTask(void* pvParameters) {
                     }
                 }
             }
-            if (stepSbus1Out.clearSbusWatchdog) {
+            if (stepDriveOut.clearSbusWatchdog) {
                 failsafeClear(FailsafeLayer::SBUS_WATCHDOG);
             }
-            if (stepSbus1Out.transition == SbusWatchdogTransition::JUST_RESTORED) {
-                PA_LOG_INFO(TAG, "SBUS1 signal restored");
-            }
-            if (stepSbus1Out.clearSbusHw) {
-                failsafeClear(FailsafeLayer::SBUS_HW);
+            if (stepDriveOut.transition == SbusWatchdogTransition::JUST_RESTORED) {
+                const char* sourceStr = (startupPlan.driveWatchdogSource == DriveWatchdogSource::SBUS2_ROUTED)
+                                            ? "routed SBUS2"
+                                            : "SBUS1";
+                PA_LOG_INFO(TAG, "drive signal restored (%s)", sourceStr);
             }
         }
 
@@ -746,14 +753,20 @@ void rcInputTask(void* pvParameters) {
         if ((driveSbusEnabled || domeSbusEnabled) &&
             (uint32_t)(nowMs - lastSbusDiagLogMs) >= 2000U) {
             lastSbusDiagLogMs = nowMs;
-            bool waitingDrive = sbus1WatchdogEnabled && (lastSbus1 == 0);
+            bool waitingDrive = driveWatchdogEnabled &&
+                                ((startupPlan.driveWatchdogSource == DriveWatchdogSource::SBUS1 && lastSbus1 == 0) ||
+                                 (startupPlan.driveWatchdogSource == DriveWatchdogSource::SBUS2_ROUTED && lastSbus2 == 0));
             bool waitingDome = domeSbusEnabled && (lastSbus2 == 0);
             if (waitingDrive || waitingDome) {
                 taskENTER_CRITICAL(&robotStateMux);
                 bool rcDebug = robotState.rcDebugMode;
                 taskEXIT_CRITICAL(&robotStateMux);
-                if (waitingDrive)
-                    PA_LOG_INFO(TAG, "SBUS1 waiting for first frame");
+                if (waitingDrive) {
+                    const char* sourceStr = (startupPlan.driveWatchdogSource == DriveWatchdogSource::SBUS2_ROUTED)
+                                                ? "routed SBUS2"
+                                                : "SBUS1";
+                    PA_LOG_INFO(TAG, "drive (%s) waiting for first frame", sourceStr);
+                }
                 if (waitingDome)
                     PA_LOG_INFO(TAG, "SBUS2 waiting for first frame");
                 if (rcDebug) {

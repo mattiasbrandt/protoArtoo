@@ -27,11 +27,18 @@
 // Startup Decision
 // ============================================================================
 
+enum class DriveWatchdogSource : uint8_t {
+    NONE = 0,            // no drive watchdog needed
+    SBUS1 = 1,           // drive heartbeat via lastSbus1Ms (CH1 routes)
+    SBUS2_ROUTED = 2,    // drive heartbeat via lastSbus2Ms (routed CH2 route)
+};
+
 struct RcInputStartupPlan {
     bool taskEnabled = false;
     bool driveSbusEnabled = false;
     bool domeSbusEnabled = false;
     bool sbus1WatchdogEnabled = false;
+    DriveWatchdogSource driveWatchdogSource = DriveWatchdogSource::NONE;
 };
 
 RcInputStartupPlan rcInputStepStartupPlan(const RcInputActiveConfig& active);
@@ -112,6 +119,40 @@ struct RcInputStepSbus2WatchdogActions {
 
 RcInputStepSbus2WatchdogActions rcInputStepSbus2Watchdog(
     RcInputStepState* state, const RcInputStepSbus2WatchdogInputs& in);
+
+// ============================================================================
+// Generalized Drive Watchdog Phase (SBUS1 or routed SBUS2)
+// ============================================================================
+
+struct RcInputStepDriveWatchdogInputs {
+    // Decoder and input state
+    bool driveDecoderInitialized;  // is drive decoder running?
+
+    // Watchdog source selector
+    DriveWatchdogSource source;
+
+    // Timestamps and config (one is active depending on source)
+    uint32_t lastSbus1Ms;  // used when source == SBUS1
+    uint32_t lastSbus2Ms;  // used when source == SBUS2_ROUTED
+    uint32_t nowMs;        // current time
+    uint32_t timeoutMs;    // configured timeout
+};
+
+struct RcInputStepDriveWatchdogActions {
+    // Watchdog transition (tells us what changed)
+    SbusWatchdogTransition transition = SbusWatchdogTransition::OK;
+
+    // Failsafe layer decisions
+    bool triggerSbusWatchdog = false;  // failsafeTrigger(SBUS_WATCHDOG)
+    bool clearSbusWatchdog = false;    // failsafeClear(SBUS_WATCHDOG)
+
+    // Zero-frame submission to drive arbiter on signal loss
+    bool submitDriveZeroFrame = false;
+    uint32_t zeroFrameSubmitMs = 0;
+};
+
+RcInputStepDriveWatchdogActions rcInputStepDriveWatchdog(
+    RcInputStepState* state, const RcInputStepDriveWatchdogInputs& in);
 
 // ============================================================================
 // Per-Frame Phase  --  decisions taken on each received SBUS frame.

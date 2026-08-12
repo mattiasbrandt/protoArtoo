@@ -163,6 +163,57 @@ void test_dual_sbus_dome_only_does_not_arm_sbus1_watchdog() {
 }
 
 // ============================================================================
+// Drive Watchdog Source Selection (Slice 1)
+// ============================================================================
+
+void test_pwm_mode_identifies_no_drive_watchdog_source() {
+    RcInputActiveConfig in = makeActiveRc(RC_INPUT_STANDARD_PWM, false, true, false,
+                                           false, false, false, false);
+
+    TEST_ASSERT_EQUAL(DriveWatchdogSource::NONE, rcInputStepStartupPlan(in).driveWatchdogSource);
+}
+
+void test_single_sbus_ch1_identifies_sbus1_drive_watchdog_source() {
+    RcInputActiveConfig in = makeActiveRc(RC_INPUT_SINGLE_SBUS, false, true, false,
+                                           false, false, false, false);
+
+    TEST_ASSERT_EQUAL(DriveWatchdogSource::SBUS1,
+                      rcInputStepStartupPlan(in).driveWatchdogSource);
+}
+
+void test_single_sbus_routed_ch2_identifies_sbus2_routed_drive_watchdog_source() {
+    RcInputActiveConfig in = makeActiveRc(RC_INPUT_SINGLE_SBUS, true, false, true,
+                                           false, false, false, false);
+
+    TEST_ASSERT_EQUAL(DriveWatchdogSource::SBUS2_ROUTED,
+                      rcInputStepStartupPlan(in).driveWatchdogSource);
+}
+
+void test_dual_sbus_ch1_identifies_sbus1_drive_watchdog_source() {
+    RcInputActiveConfig in = makeActiveRc(RC_INPUT_DUAL_SBUS, false, true, false,
+                                           false, false, false, false);
+
+    TEST_ASSERT_EQUAL(DriveWatchdogSource::SBUS1,
+                      rcInputStepStartupPlan(in).driveWatchdogSource);
+}
+
+void test_dual_sbus_dome_only_identifies_no_drive_watchdog_source() {
+    RcInputActiveConfig in = makeActiveRc(RC_INPUT_DUAL_SBUS, false, false, true,
+                                           false, false, false, false);
+
+    TEST_ASSERT_EQUAL(DriveWatchdogSource::NONE,
+                      rcInputStepStartupPlan(in).driveWatchdogSource);
+}
+
+void test_all_disabled_identifies_no_drive_watchdog_source() {
+    RcInputActiveConfig in = makeActiveRc(RC_INPUT_SINGLE_SBUS, false, false, false,
+                                           false, false, false, false);
+
+    TEST_ASSERT_EQUAL(DriveWatchdogSource::NONE,
+                      rcInputStepStartupPlan(in).driveWatchdogSource);
+}
+
+// ============================================================================
 // Initialization
 // ============================================================================
 
@@ -431,6 +482,145 @@ void test_sbus2_sustained_loss_stops_once() {
 }
 
 // ============================================================================
+// Generalized Drive Watchdog (SBUS1 or routed SBUS2) -- Slice 1
+// ============================================================================
+
+void test_drive_watchdog_source_none_returns_empty() {
+    RcInputStepState state = {};
+    RcInputStepDriveWatchdogInputs in = {
+        .driveDecoderInitialized = true,
+        .source = DriveWatchdogSource::NONE,
+        .lastSbus1Ms = 100,
+        .lastSbus2Ms = 100,
+        .nowMs = 500,
+        .timeoutMs = 200,
+    };
+
+    RcInputStepDriveWatchdogActions out = rcInputStepDriveWatchdog(&state, in);
+
+    TEST_ASSERT_EQUAL(SbusWatchdogTransition::OK, out.transition);
+    TEST_ASSERT_FALSE(out.triggerSbusWatchdog);
+    TEST_ASSERT_FALSE(out.submitDriveZeroFrame);
+    TEST_ASSERT_FALSE(out.clearSbusWatchdog);
+}
+
+void test_drive_watchdog_sbus1_source_just_lost() {
+    RcInputStepState state = {};
+    RcInputStepDriveWatchdogInputs in = {
+        .driveDecoderInitialized = true,
+        .source = DriveWatchdogSource::SBUS1,
+        .lastSbus1Ms = 100,
+        .lastSbus2Ms = 1000,  // not used
+        .nowMs = 400,          // timeout
+        .timeoutMs = 200,
+    };
+
+    RcInputStepDriveWatchdogActions out = rcInputStepDriveWatchdog(&state, in);
+
+    TEST_ASSERT_EQUAL(SbusWatchdogTransition::JUST_LOST, out.transition);
+    TEST_ASSERT_TRUE(out.triggerSbusWatchdog);
+    TEST_ASSERT_TRUE(out.submitDriveZeroFrame);
+}
+
+void test_drive_watchdog_sbus1_source_just_restored() {
+    RcInputStepState state = {};
+    state.sbus1Watchdog.signalLost = true;
+    RcInputStepDriveWatchdogInputs in = {
+        .driveDecoderInitialized = true,
+        .source = DriveWatchdogSource::SBUS1,
+        .lastSbus1Ms = 100,
+        .lastSbus2Ms = 1000,
+        .nowMs = 120,  // within timeout
+        .timeoutMs = 200,
+    };
+
+    RcInputStepDriveWatchdogActions out = rcInputStepDriveWatchdog(&state, in);
+
+    TEST_ASSERT_EQUAL(SbusWatchdogTransition::JUST_RESTORED, out.transition);
+    TEST_ASSERT_TRUE(out.clearSbusWatchdog);
+    TEST_ASSERT_FALSE(out.triggerSbusWatchdog);
+}
+
+void test_drive_watchdog_sbus2_routed_source_just_lost() {
+    RcInputStepState state = {};
+    RcInputStepDriveWatchdogInputs in = {
+        .driveDecoderInitialized = true,
+        .source = DriveWatchdogSource::SBUS2_ROUTED,
+        .lastSbus1Ms = 1000,  // not used
+        .lastSbus2Ms = 100,
+        .nowMs = 400,  // timeout
+        .timeoutMs = 200,
+    };
+
+    RcInputStepDriveWatchdogActions out = rcInputStepDriveWatchdog(&state, in);
+
+    TEST_ASSERT_EQUAL(SbusWatchdogTransition::JUST_LOST, out.transition);
+    TEST_ASSERT_TRUE(out.triggerSbusWatchdog);
+    TEST_ASSERT_TRUE(out.submitDriveZeroFrame);
+}
+
+void test_drive_watchdog_sbus2_routed_source_just_restored() {
+    RcInputStepState state = {};
+    state.sbus2Watchdog.signalLost = true;
+    RcInputStepDriveWatchdogInputs in = {
+        .driveDecoderInitialized = true,
+        .source = DriveWatchdogSource::SBUS2_ROUTED,
+        .lastSbus1Ms = 1000,
+        .lastSbus2Ms = 100,
+        .nowMs = 120,  // within timeout
+        .timeoutMs = 200,
+    };
+
+    RcInputStepDriveWatchdogActions out = rcInputStepDriveWatchdog(&state, in);
+
+    TEST_ASSERT_EQUAL(SbusWatchdogTransition::JUST_RESTORED, out.transition);
+    TEST_ASSERT_TRUE(out.clearSbusWatchdog);
+    TEST_ASSERT_FALSE(out.triggerSbusWatchdog);
+}
+
+void test_drive_watchdog_sbus2_routed_sustained_loss_silent() {
+    RcInputStepState state = {};
+    RcInputStepDriveWatchdogInputs in = {
+        .driveDecoderInitialized = true,
+        .source = DriveWatchdogSource::SBUS2_ROUTED,
+        .lastSbus1Ms = 1000,
+        .lastSbus2Ms = 100,
+        .nowMs = 400,  // timeout
+        .timeoutMs = 200,
+    };
+
+    RcInputStepDriveWatchdogActions first = rcInputStepDriveWatchdog(&state, in);
+    in.nowMs = 500;
+    RcInputStepDriveWatchdogActions sustained = rcInputStepDriveWatchdog(&state, in);
+
+    TEST_ASSERT_EQUAL(SbusWatchdogTransition::JUST_LOST, first.transition);
+    TEST_ASSERT_TRUE(first.triggerSbusWatchdog);
+    TEST_ASSERT_TRUE(first.submitDriveZeroFrame);
+    TEST_ASSERT_EQUAL(SbusWatchdogTransition::LOST, sustained.transition);
+    TEST_ASSERT_FALSE(sustained.triggerSbusWatchdog);
+    TEST_ASSERT_FALSE(sustained.submitDriveZeroFrame);
+}
+
+void test_drive_watchdog_disabled_decoder_emits_no_actions() {
+    RcInputStepState state = {};
+    RcInputStepDriveWatchdogInputs in = {
+        .driveDecoderInitialized = false,  // decoder not running
+        .source = DriveWatchdogSource::SBUS2_ROUTED,
+        .lastSbus1Ms = 1000,
+        .lastSbus2Ms = 100,
+        .nowMs = 500,  // would timeout
+        .timeoutMs = 200,
+    };
+
+    RcInputStepDriveWatchdogActions out = rcInputStepDriveWatchdog(&state, in);
+
+    TEST_ASSERT_EQUAL(SbusWatchdogTransition::OK, out.transition);
+    TEST_ASSERT_FALSE(out.triggerSbusWatchdog);
+    TEST_ASSERT_FALSE(out.submitDriveZeroFrame);
+    TEST_ASSERT_FALSE(out.clearSbusWatchdog);
+}
+
+// ============================================================================
 // Zero-Frame Submission Decisions on Signal Loss
 // ============================================================================
 
@@ -677,6 +867,13 @@ int main(void) {
     RUN_TEST(test_dual_sbus_ch1_arms_sbus1_watchdog);
     RUN_TEST(test_dual_sbus_dome_only_does_not_arm_sbus1_watchdog);
 
+    RUN_TEST(test_pwm_mode_identifies_no_drive_watchdog_source);
+    RUN_TEST(test_single_sbus_ch1_identifies_sbus1_drive_watchdog_source);
+    RUN_TEST(test_single_sbus_routed_ch2_identifies_sbus2_routed_drive_watchdog_source);
+    RUN_TEST(test_dual_sbus_ch1_identifies_sbus1_drive_watchdog_source);
+    RUN_TEST(test_dual_sbus_dome_only_identifies_no_drive_watchdog_source);
+    RUN_TEST(test_all_disabled_identifies_no_drive_watchdog_source);
+
     RUN_TEST(test_init_zeros_watchdog_state);
 
     RUN_TEST(test_sbus1_watchdog_just_lost_transition);
@@ -692,6 +889,14 @@ int main(void) {
     RUN_TEST(test_sbus2_tracking_disabled_emits_no_recurring_actions_or_restore);
     RUN_TEST(test_sbus2_lost_restored_steady_emits_one_restore_and_one_stop);
     RUN_TEST(test_sbus2_sustained_loss_stops_once);
+
+    RUN_TEST(test_drive_watchdog_source_none_returns_empty);
+    RUN_TEST(test_drive_watchdog_sbus1_source_just_lost);
+    RUN_TEST(test_drive_watchdog_sbus1_source_just_restored);
+    RUN_TEST(test_drive_watchdog_sbus2_routed_source_just_lost);
+    RUN_TEST(test_drive_watchdog_sbus2_routed_source_just_restored);
+    RUN_TEST(test_drive_watchdog_sbus2_routed_sustained_loss_silent);
+    RUN_TEST(test_drive_watchdog_disabled_decoder_emits_no_actions);
 
     RUN_TEST(test_sbus1_frame_failsafe_triggers_hw_zero_frame_and_one_shot_log);
     RUN_TEST(test_sbus1_frame_lost_frame_only_counts);
