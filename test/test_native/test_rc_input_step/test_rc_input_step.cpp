@@ -852,6 +852,88 @@ void test_sbus2_routed_sustained_failsafe_triggers_and_zeroes_every_frame() {
     TEST_ASSERT_FALSE(sustained.logRoutedHwFailsafeClearedOnFallingEdge);
 }
 
+void test_sbus2_routed_latch_latches_across_lost_frame() {
+    // HIGH safety defect test: edge latch must NOT clear on lost_frame,
+    // only on a clean frame. Sequence: failsafe -> lost_frame -> clean
+    // must result in SBUS_HW clearing and falling-edge INFO firing on the
+    // clean frame (not stuck latched forever).
+
+    // Rising edge: failsafe frame
+    RcInputStepSbus2FrameInputs failsafeIn = {
+        .failsafe = true,
+        .lostFrame = false,
+        .hwFailsafeWasActive = false,  // adapter will track this
+    };
+
+    RcInputStepSbus2FrameActions failsafeOut = rcInputStepSbus2RoutedFrame(failsafeIn);
+
+    TEST_ASSERT_TRUE(failsafeOut.triggerSbusHw);
+    TEST_ASSERT_TRUE(failsafeOut.submitDriveZeroFrame);
+    TEST_ASSERT_TRUE(failsafeOut.logHwFailsafeAsserted);  // rising edge WARN
+    // Simulate adapter updating: routedHwFailsafeWasActive = true (because failsafe=true)
+
+    // Lost frame: failsafe clear, lost_frame set
+    // Adapter must NOT clear the latch on lost_frame
+    RcInputStepSbus2FrameInputs lostIn = {
+        .failsafe = false,  // lost_frame has failsafe=false
+        .lostFrame = true,
+        .hwFailsafeWasActive = true,  // latch should still be true from failsafe
+    };
+
+    RcInputStepSbus2FrameActions lostOut = rcInputStepSbus2RoutedFrame(lostIn);
+
+    TEST_ASSERT_TRUE(lostOut.incrementLostFrameCount);
+    // The step function must NOT trigger or clear on lost_frame
+    TEST_ASSERT_FALSE(lostOut.triggerSbusHw);
+    TEST_ASSERT_FALSE(lostOut.clearSbusHw);
+    TEST_ASSERT_FALSE(lostOut.logRoutedHwFailsafeClearedOnFallingEdge);
+    TEST_ASSERT_FALSE(lostOut.logHwFailsafeAsserted);  // no log on lost_frame
+    // Adapter must NOT update latch to false on lost_frame
+    // (hwFailsafeWasActive remains true from failsafe)
+
+    // Clean frame: failsafe clear, lost_frame clear
+    // Falling edge should trigger because hwFailsafeWasActive=true
+    RcInputStepSbus2FrameInputs cleanIn = {
+        .failsafe = false,
+        .lostFrame = false,
+        .hwFailsafeWasActive = true,  // still true because latch didn't clear on lost_frame
+    };
+
+    RcInputStepSbus2FrameActions cleanOut = rcInputStepSbus2RoutedFrame(cleanIn);
+
+    TEST_ASSERT_TRUE(cleanOut.clearSbus2HwFailsafe);
+    TEST_ASSERT_TRUE(cleanOut.clearSbus2SignalLost);
+    TEST_ASSERT_TRUE(cleanOut.updateLastSbus2Ms);
+    TEST_ASSERT_TRUE(cleanOut.dispatchBindings);
+    // Falling edge: clear SBUS_HW and log recovery
+    TEST_ASSERT_TRUE(cleanOut.clearSbusHw);
+    TEST_ASSERT_TRUE(cleanOut.logRoutedHwFailsafeClearedOnFallingEdge);
+    TEST_ASSERT_FALSE(cleanOut.logHwFailsafeAsserted);  // no log on clean frame
+}
+
+void test_sbus2_routed_frame_failsafe_logs_warn_on_rising_edge_only() {
+    // MEDIUM: rising-edge WARN log must fire once, not on sustained failsafe.
+
+    // Rising edge: log should fire
+    RcInputStepSbus2FrameInputs failsafeIn = {
+        .failsafe = true,
+        .lostFrame = false,
+        .hwFailsafeWasActive = false,
+    };
+
+    RcInputStepSbus2FrameActions first = rcInputStepSbus2RoutedFrame(failsafeIn);
+
+    TEST_ASSERT_TRUE(first.logHwFailsafeAsserted);
+    TEST_ASSERT_TRUE(first.triggerSbusHw);
+
+    // Sustained failsafe: log should NOT fire
+    failsafeIn.hwFailsafeWasActive = true;
+    RcInputStepSbus2FrameActions sustained = rcInputStepSbus2RoutedFrame(failsafeIn);
+
+    TEST_ASSERT_FALSE(sustained.logHwFailsafeAsserted);
+    TEST_ASSERT_TRUE(sustained.triggerSbusHw);  // still triggers, just no log
+}
+
 // ============================================================================
 // Unity Test Runner
 // ============================================================================
@@ -916,6 +998,8 @@ int main(void) {
     RUN_TEST(test_sbus2_routed_frame_clean_clears_and_dispatches);
     RUN_TEST(test_sbus2_routed_frame_clean_after_failsafe_clears_hw);
     RUN_TEST(test_sbus2_routed_sustained_failsafe_triggers_and_zeroes_every_frame);
+    RUN_TEST(test_sbus2_routed_latch_latches_across_lost_frame);
+    RUN_TEST(test_sbus2_routed_frame_failsafe_logs_warn_on_rising_edge_only);
 
     RUN_TEST(test_zero_frame_submitted_on_pwm_signal_lost);
     RUN_TEST(test_zero_frame_submitted_on_sbus_hw_failsafe);

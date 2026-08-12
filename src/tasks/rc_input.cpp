@@ -482,7 +482,8 @@ void rcInputTask(void* pvParameters) {
             bool asSbus2 = (rcInputMode == RC_INPUT_SINGLE_SBUS) && useCh2;
 
             if (asSbus2) {
-                // Slice 2: Read the previous routed hw failsafe state for edge detection.
+                // Routed receiver (single_sbus + useCh2): read the previous hw failsafe state
+                // for edge detection. Step function uses this to gate one-shot logs.
                 bool routedHwFailsafeWasActive = s_rcStepState.routedHwFailsafeWasActive;
 
                 RcInputStepSbus2FrameInputs frameIn = {
@@ -492,12 +493,16 @@ void rcInputTask(void* pvParameters) {
                 };
                 RcInputStepSbus2FrameActions frameOut = rcInputStepSbus2RoutedFrame(frameIn);
 
-                // Slice 2: Execute routed hardware failsafe actions on the drive path.
+                // Routed receiver: execute drive-level hardware failsafe actions
+                // that mirror SBUS1 behavior (failsafeTrigger, zero submit, clear).
                 if (frameOut.triggerSbusHw) {
                     failsafeTrigger(FailsafeLayer::SBUS_HW);
                 }
                 if (frameOut.submitDriveZeroFrame) {
                     driveArbiterSubmit(DriveSource::RC, 0, 0, millis());
+                }
+                if (frameOut.logHwFailsafeAsserted) {
+                    PA_LOG_WARN(TAG, "SBUS2 (routed) hardware failsafe asserted");
                 }
                 if (frameOut.clearSbusHw) {
                     failsafeClear(FailsafeLayer::SBUS_HW);
@@ -527,8 +532,12 @@ void rcInputTask(void* pvParameters) {
                 if (frameOut.updateLastSbus2Ms) {
                     robotState.lastSbus2Ms = millis();
                 }
-                // Slice 2: Update edge state for next iteration.
-                s_rcStepState.routedHwFailsafeWasActive = data.failsafe;
+                // Routed receiver: latch the hw-failsafe edge state for next iteration.
+                // Latch latches across lost_frame (do not update), only changes on
+                // non-lost_frame frames (failsafe flag determines next state).
+                if (!data.lost_frame) {
+                    s_rcStepState.routedHwFailsafeWasActive = data.failsafe;
+                }
                 taskEXIT_CRITICAL(&robotStateMux);
                 if (frameOut.dispatchBindings) {
                     dispatchSbusBindingsForSource(data, RC_BINDING_SBUS2, active);

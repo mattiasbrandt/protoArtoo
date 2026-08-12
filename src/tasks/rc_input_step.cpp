@@ -217,10 +217,11 @@ RcInputStepSbus2FrameActions rcInputStepSbus2RoutedFrame(const RcInputStepSbus2F
     // path when the dome decoder is not initialized).
     if (in.failsafe) {
         out.setSbus2HwFailsafe = true;
-        // Slice 2: Mirror the SBUS1 drive-level failsafe behavior: trigger the global
+        // Mirror the SBUS1 drive-level failsafe behavior per ADR 0027: trigger the global
         // hardware failsafe layer and submit zero frame on every failsafe frame.
         out.triggerSbusHw = true;
         out.submitDriveZeroFrame = true;
+        out.logHwFailsafeAsserted = !in.hwFailsafeWasActive;  // rising edge only
     } else if (in.lostFrame) {
         out.incrementLostFrameCount = true;
     } else {
@@ -228,7 +229,7 @@ RcInputStepSbus2FrameActions rcInputStepSbus2RoutedFrame(const RcInputStepSbus2F
         out.clearSbus2SignalLost = true;
         out.updateLastSbus2Ms = true;
         out.dispatchBindings = true;
-        // Slice 2: Clear the global hardware failsafe layer on falling edge (clean frame after failsafe).
+        // Clear the global hardware failsafe layer on falling edge (clean frame after failsafe).
         if (in.hwFailsafeWasActive) {
             out.clearSbusHw = true;
             out.logRoutedHwFailsafeClearedOnFallingEdge = true;
