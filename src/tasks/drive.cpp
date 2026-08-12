@@ -89,10 +89,12 @@ void driveTask(void* pvParameters) {
         configCacheRead(&runtimeCfg);
         int16_t maxOut = runtimeCfg.drive.speedLimitMax;
         uint32_t webTimeoutMs = runtimeCfg.drive.webDriveTimeoutMs;
+        uint32_t rcTimeoutMs = runtimeCfg.drive.sbusTimeoutMs;
 
         DriveArbiterConfig cfg = {
             .speedLimitMax = maxOut,
             .webDriveTimeoutMs = webTimeoutMs,
+            .rcDriveTimeoutMs = rcTimeoutMs,
         };
         DriveOutput driveOut = driveArbiterResolve(cfg, nowMs);
 

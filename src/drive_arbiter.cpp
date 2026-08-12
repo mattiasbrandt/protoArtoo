@@ -111,6 +111,7 @@ DriveOutput driveArbiterResolve(const DriveArbiterConfig& cfg,
             .steer = 0,
             .failsafeActive = true,
             .webTimedOut = false,
+            .rcTimedOut = false,
             .activeSource = DriveSource::RC,
             .activeTimestampMs = 0,
         };
@@ -121,30 +122,42 @@ DriveOutput driveArbiterResolve(const DriveArbiterConfig& cfg,
     DriveSource activeSource = DriveSource::RC;
     uint32_t activeTimestampMs = 0;
     bool webTimedOut = false;
+    bool rcTimedOut = false;
 
     taskENTER_CRITICAL(g_arbiterMux);
 
-    // Determine which source provides output
-    // Most recent timestamp (within timeout) wins
+    // Determine which source provides output.
+    // RC and web are valid only if timestamp is non-zero AND within timeout window.
     bool rcValid = (g_arbiter.rcTimestampMs != 0);
     bool webValid = (g_arbiter.webTimestampMs != 0);
-    if (webValid) {
-        // Check if web command has timed out
-        uint32_t webAge = (uint32_t)(nowMs - g_arbiter.webTimestampMs);
-        if (webAge > cfg.webDriveTimeoutMs) {
-            webTimedOut = true;
+
+    // Check if RC command has timed out
+    if (rcValid) {
+        uint32_t rcAge = (uint32_t)(nowMs - g_arbiter.rcTimestampMs);
+        if (rcAge > cfg.rcDriveTimeoutMs) {
+            rcTimedOut = true;
+            rcValid = false;  // Stale RC is not valid for arbitration
         }
     }
 
-    // Arbitration logic: most recent non-timed-out source wins
-    if (rcValid && (!webValid || webTimedOut || (int32_t)(g_arbiter.rcTimestampMs - g_arbiter.webTimestampMs) >= 0)) {
-        // RC wins: either it's the only valid source, or web is timed out, or RC is more recent
+    // Check if web command has timed out
+    if (webValid) {
+        uint32_t webAge = (uint32_t)(nowMs - g_arbiter.webTimestampMs);
+        if (webAge > cfg.webDriveTimeoutMs) {
+            webTimedOut = true;
+            webValid = false;  // Stale web is not valid for arbitration
+        }
+    }
+
+    // Arbitration logic: most recent valid (non-timed-out) source wins
+    if (rcValid && (!webValid || (int32_t)(g_arbiter.rcTimestampMs - g_arbiter.webTimestampMs) >= 0)) {
+        // RC wins: either it's the only valid source, or web is also invalid, or RC is more recent
         activeSource = DriveSource::RC;
         outputSpeed = g_arbiter.rcSpeed;
         outputSteer = g_arbiter.rcSteer;
         activeTimestampMs = g_arbiter.rcTimestampMs;
-    } else if (webValid && !webTimedOut) {
-        // Web wins: it's valid and more recent than RC
+    } else if (webValid) {
+        // Web wins: it's valid and (RC is not valid or RC is older)
         activeSource = DriveSource::WEB_API;
         outputSpeed = g_arbiter.webSpeed;
         outputSteer = g_arbiter.webSteer;
@@ -172,6 +185,7 @@ DriveOutput driveArbiterResolve(const DriveArbiterConfig& cfg,
     }
 
     // Check if any failsafe is active and zero output if so.
+    // Note: rcTimedOut is diagnostics only; web timeout still triggers failsafe.
     bool failsafeActive = failsafeIsActive() || webTimedOut;
     if (failsafeActive) {
         outputSpeed = 0;
@@ -183,6 +197,7 @@ DriveOutput driveArbiterResolve(const DriveArbiterConfig& cfg,
         .steer = outputSteer,
         .failsafeActive = failsafeActive,
         .webTimedOut = webTimedOut,
+        .rcTimedOut = rcTimedOut,
         .activeSource = activeSource,
         .activeTimestampMs = activeTimestampMs,
     };

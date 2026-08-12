@@ -7,9 +7,9 @@
 
 #include "failsafe_boot_sbus.h"
 
-bool bootSbusSafeGuardDecision(bool sbusMode, bool anyChannelEnabled) {
-    // Arm SBUS_WATCHDOG if SBUS mode is active and at least one RC channel is enabled.
-    // This leaves the drive locked (failsafe active) until the first SBUS frame arrives,
-    // preventing drift before RC signal is established.
-    return sbusMode && anyChannelEnabled;
+bool bootSbusSafeGuardDecision(bool sbus1WatchdogEnabled) {
+    // The Step Core already resolved mode, routing, and decoder enablement.
+    // Mirroring that decision keeps boot arming aligned with the watchdog the
+    // RC task will actually run without expanding #167's routed-SBUS2 scope.
+    return sbus1WatchdogEnabled;
 }

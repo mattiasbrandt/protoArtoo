@@ -9,7 +9,7 @@
 #include <cstdint>
 
 // Boot SBUS failsafe guard decision.
-// Returns true if SBUS_WATCHDOG should be armed at boot.
-// SAFETY: SBUS mode leaves drive unlocked until first frame arrives;
-// boot must activate SBUS_WATCHDOG failsafe to prevent drift before RC signal.
-bool bootSbusSafeGuardDecision(bool sbusMode, bool anyChannelEnabled);
+// main passes the boot-active plan's existing SBUS1 watchdog decision so boot
+// safety and RcInputTask share one routing-aware source of truth. Routed SBUS2
+// watchdog coverage remains owned by issue #167.
+bool bootSbusSafeGuardDecision(bool sbus1WatchdogEnabled);

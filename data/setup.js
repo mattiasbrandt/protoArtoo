@@ -75,8 +75,15 @@
 
   let saveInFlight = false;
   let saveQueued = false;
+  let saveScheduled = false;
+  let featureEditGeneration = 0;
+  let rcChangeGeneration = 0;
+  let savedRcChangeGeneration = 0;
+  let rcRestartPending = false;
+  let bootActiveRcComponents = {};  // Snapshot of boot-active RC component state from /api/rc
   // Auto-save state
   let saveTimeout = null;
+  const RC_TOGGLE_KEYS = new Set(["rcCh1", "rcCh2", "rcCh3", "rcCh4", "rcCh5", "rcCh6"]);
 
   const setSaveSummary = (message, state = "info") => {
     if (!setupSaveSummary) return;
@@ -301,6 +308,12 @@
     const components = payload?.components || {};
     const system = payload?.system || {};
 
+    // Capture boot-active RC state on the first load (when the page initializes)
+    const isInitialLoad = Object.keys(bootActiveRcComponents).length === 0;
+    if (isInitialLoad) {
+      captureBootActiveRcState(payload);
+    }
+
     const togglePayload = {
       enableArm1: components.arm1?.enabled,
       enableArm2: components.arm2?.enabled,
@@ -321,10 +334,12 @@
 
     Object.entries(TOGGLE_KEY_MAP).forEach(([payloadKey, toggleKey]) => {
       const toggle = featureToggles[toggleKey];
-      if (toggle && toggle.input && togglePayload[payloadKey] !== undefined) {
-        toggle.input.checked = Boolean(togglePayload[payloadKey]);
-        updateToggleStatus(toggleKey);
-      }
+      if (!toggle || !toggle.input || togglePayload[payloadKey] === undefined) return;
+      // Do not sync RC toggles after initial load — they are boot-staged and user edits
+      // are pending. Syncing them would overwrite pending changes and lose restart tracking.
+      if (!isInitialLoad && RC_TOGGLE_KEYS.has(toggleKey)) return;
+      toggle.input.checked = Boolean(togglePayload[payloadKey]);
+      updateToggleStatus(toggleKey);
     });
 
     const typePayload = {
@@ -360,6 +375,34 @@
     }
   };
 
+  const captureBootActiveRcState = (config) => {
+    // Snapshot RC component enabled states at page load (boot-active truth).
+    // Later, if saved state matches this, no restart is actually needed.
+    if (config?.components) {
+      for (const key of RC_TOGGLE_KEYS) {
+        if (config.components[key] !== undefined) {
+          bootActiveRcComponents[key] = Boolean(config.components[key]?.enabled);
+        }
+      }
+    }
+  };
+
+  const checkIfRcRestartNeeded = () => {
+    // Check if UI values match boot-active truth.
+    // If the operator has changed an RC toggle away from boot-active, restart is needed.
+    // If they've reverted it back to boot-active, no restart is needed.
+    for (const key of RC_TOGGLE_KEYS) {
+      const toggle = featureToggles[key];
+      if (!toggle || !toggle.input) continue;
+      const currentValue = Boolean(toggle.input.checked);
+      const bootActiveValue = bootActiveRcComponents[key];
+      if (bootActiveValue !== undefined && currentValue !== bootActiveValue) {
+        return true;
+      }
+    }
+    return false;
+  };
+
   const loadFeatures = async () => {
     if (!window.PAApi) return;
     setFeatureFeedback("Loading component settings...");
@@ -381,6 +424,8 @@
     }
 
     saveInFlight = true;
+    const requestEditGeneration = featureEditGeneration;
+    const requestRcChangeGeneration = rcChangeGeneration;
     setFeatureFeedback("Saving...");
     try {
       const body = new URLSearchParams();
@@ -398,14 +443,32 @@
         body.set("aux_led_count", String(sanitizeAuxLedCount()));
       }
       const result = await window.PAApi.postForm("/api/config", body, { timeoutMs: 5000 });
-      renderFeatures(result.data);
+      if (featureEditGeneration === requestEditGeneration) {
+        renderFeatures(result.data);
+      }
+      // Guard RC restart state: only update if this request's RC generation is newer than the last saved one
+      if (requestRcChangeGeneration > savedRcChangeGeneration) {
+        savedRcChangeGeneration = requestRcChangeGeneration;
+        // Check if UI values match boot-active: if so, restart is not needed
+        rcRestartPending = checkIfRcRestartNeeded();
+      }
       const savedAt = new Date().toLocaleTimeString();
-      setFeatureFeedback(`Saved at ${savedAt}`, "success");
-      setSaveSummary(`✅ Saved at ${savedAt}`, "ok");
+      if (rcRestartPending) {
+        setFeatureFeedback(`Saved at ${savedAt}. Restart the controller to apply RC input changes.`, "success");
+        setSaveSummary(`🔄 Saved at ${savedAt} · restart required`, "warn");
+      } else {
+        setFeatureFeedback(`Saved at ${savedAt}`, "success");
+        setSaveSummary(`✅ Saved at ${savedAt}`, "ok");
+      }
     } catch (error) {
       console.error("[setup] saveFeatures failed:", error);
       setFeatureFeedback(window.PAApi.messageFor(error), "error");
-      setSaveSummary("❌ Save failed", "error");
+      // Preserve pending restart status: don't downgrade from warn to error state if restart was already pending
+      if (rcRestartPending) {
+        setSaveSummary(`🔄 Save failed, but restart still required`, "warn");
+      } else {
+        setSaveSummary("❌ Save failed", "error");
+      }
     } finally {
       saveInFlight = false;
       if (saveQueued) {
@@ -413,14 +476,21 @@
         saveFeatures();
         return;
       }
-      setSavePending(false);
+      if (!saveScheduled) {
+        setSavePending(false);
+      }
     }
   };
 
   const debouncedSave = (...args) => {
     setSavePending(true);
     clearTimeout(saveTimeout);
-    saveTimeout = setTimeout(() => saveFeatures(...args), 300);
+    saveScheduled = true;
+    saveTimeout = setTimeout(() => {
+      saveScheduled = false;
+      saveTimeout = null;
+      saveFeatures(...args);
+    }, 300);
   };
 
   // Attach listeners to all toggles and selects
@@ -428,6 +498,10 @@
     const toggle = featureToggles[key];
     if (toggle.input) {
       toggle.input.addEventListener("change", () => {
+        featureEditGeneration += 1;
+        if (RC_TOGGLE_KEYS.has(key)) {
+          rcChangeGeneration += 1;
+        }
         updateToggleStatus(key);
         updateEnabledSummary();
         if (["aux1", "aux2", "aux3"].includes(key)) {
@@ -441,6 +515,7 @@
   Object.entries(typeSelects).forEach(([typeKey, select]) => {
     if (select) {
       select.addEventListener("change", () => {
+        featureEditGeneration += 1;
         if (AUX_RGB_SELECT_KEYS.includes(typeKey)) {
           enforceSingleRgbAux(typeKey);
           updateAuxLedConfigVisibility();
@@ -453,6 +528,7 @@
 
   if (auxLedCountInput) {
     auxLedCountInput.addEventListener("change", () => {
+      featureEditGeneration += 1;
       sanitizeAuxLedCount();
       debouncedSave();
     });

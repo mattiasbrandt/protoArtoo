@@ -296,6 +296,7 @@ bool wifiConfigsDiffer(const WifiConfig& a, const WifiConfig& b) {
 
 ConfigSnapshot configCache = {};
 WifiConfig activeWifiConfig = {};
+RcInputActiveConfig activeRcInputConfig = {};
 bool activeWifiRecovery = false;
 portMUX_TYPE configCacheMux = portMUX_INITIALIZER_UNLOCKED;
 
@@ -399,6 +400,45 @@ void configCacheApply(const ConfigSnapshot& snap) {
     taskENTER_CRITICAL(&robotStateMux);
     robotState.rcConfigDirty = true;
     taskEXIT_CRITICAL(&robotStateMux);
+}
+
+// Project SystemConfig into the RC values that take effect only at boot. main
+// calls this after NVS load so later saves remain pending without changing the
+// running decoder/mapping/reporting posture (ADR 0027).
+RcInputActiveConfig rcInputActiveConfigFromSystem(const SystemConfig& system) {
+    RcInputActiveConfig out = {};
+    out.mode = system.rc_input_mode;
+    out.useCh2 = system.single_sbus_use_ch2;
+    out.enableRc[0] = system.enable_rc_ch1;
+    out.enableRc[1] = system.enable_rc_ch2;
+    out.enableRc[2] = system.enable_rc_ch3;
+    out.enableRc[3] = system.enable_rc_ch4;
+    out.enableRc[4] = system.enable_rc_ch5;
+    out.enableRc[5] = system.enable_rc_ch6;
+    out.enableDome = system.enable_dome;
+    out.enableArm1 = system.enable_arm1;
+    out.enableArm2 = system.enable_arm2;
+    out.enableSound = system.enable_s2_sound;
+    return out;
+}
+
+// Publish the immutable RC boot projection under the cache lock. main calls
+// this once before starting RC and web tasks so all consumers share one truth.
+void configCacheSetActiveRcInput(const RcInputActiveConfig& cfg) {
+    taskENTER_CRITICAL(&configCacheMux);
+    activeRcInputConfig = cfg;
+    taskEXIT_CRITICAL(&configCacheMux);
+}
+
+// Copy the boot-active RC posture safely. RC input and RC-facing diagnostics
+// call this instead of treating newly saved staged settings as already active.
+void configCacheReadActiveRcInput(RcInputActiveConfig* out) {
+    if (out == nullptr) {
+        return;
+    }
+    taskENTER_CRITICAL(&configCacheMux);
+    *out = activeRcInputConfig;
+    taskEXIT_CRITICAL(&configCacheMux);
 }
 
 uint8_t configCurrentLogLevel() {
