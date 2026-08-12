@@ -56,3 +56,18 @@ struct SequenceDispatcherStepActions {
 // No side effects: does not call queues, FreeRTOS, RobotState, or logging.
 SequenceDispatcherStepActions sequenceDispatcherStep(const SeqAction& act,
                                                      uint32_t nowMs);
+
+// Idle gating: compute the wait timeout for the task's blocking queue receive.
+//
+// When a sequence is active or a staged ring-close is pending, the task must
+// run at 10 ms cadence to feed step-driven choreography and ring-close drain.
+// When idle, the task blocks on the request queue and only wakes for TWDT
+// reset (3 s timeout) and to poll estop/dome-connect edges.
+//
+// Args:
+//   engineActive: true if a sequence is currently running.
+//   resyncClosePending: true if a staged ring-close is waiting in resyncCloseIdx.
+//
+// Returns: wait_ms for xQueueReceive timeout (10 ms if either condition is
+// true, 250 ms otherwise).
+uint32_t sequence_dispatcher_wait_ms(bool engineActive, bool resyncClosePending);

@@ -223,14 +223,16 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
     const uint32_t kResyncCloseSpacingMs = 500;
     uint8_t        resyncCloseIdx = 0xFF;
     uint32_t       resyncCloseDueMs = 0;
+    uint32_t       waitMs = 10;  // task wake timeout; computed at end of each iteration
 
     while (true) {
         esp_task_wdt_reset();
+        SequenceRequest req = {};
+        const bool haveReq = xQueueReceive(sequenceQueue, &req, pdMS_TO_TICKS(waitMs)) == pdTRUE;
         const uint32_t now = millis();
 
         // Check for a new request (preempt current sequence if one is running).
-        SequenceRequest req = {};
-        if (xQueueReceive(sequenceQueue, &req, 0) == pdTRUE) {
+        if (haveReq) {
             const bool isRuntime = (sequenceLookup(req.name).kind == SEQ_RUNTIME);
             const SequenceEntry* catalogEntry =
                 isRuntime ? nullptr : sequenceCatalogFind(req.name);
@@ -428,6 +430,8 @@ void sequenceDispatcherTask(void* /*pvParameters*/) {
             }
         }
 
-        vTaskDelay(pdMS_TO_TICKS(10));
+        // Compute wait timeout for next iteration: 10 ms if active or resync pending,
+        // 250 ms otherwise (task blocks on request queue, wakes on TWDT and edges).
+        waitMs = sequence_dispatcher_wait_ms(seqEngineActive(engine), resyncCloseIdx != 0xFF);
     }
 }

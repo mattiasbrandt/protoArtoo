@@ -237,6 +237,25 @@ void test_dome_rotate_receives_timestamp_parameter() {
 }
 
 // =============================================================================
+// Idle gating timeout calculation
+// =============================================================================
+
+void test_wait_ms_active_sequence_returns_10() {
+    uint32_t waitMs = sequence_dispatcher_wait_ms(true, false);
+    TEST_ASSERT_EQUAL_UINT32(10, waitMs);
+}
+
+void test_wait_ms_resync_close_pending_returns_10() {
+    uint32_t waitMs = sequence_dispatcher_wait_ms(false, true);
+    TEST_ASSERT_EQUAL_UINT32(10, waitMs);
+}
+
+void test_wait_ms_idle_returns_250() {
+    uint32_t waitMs = sequence_dispatcher_wait_ms(false, false);
+    TEST_ASSERT_EQUAL_UINT32(250, waitMs);
+}
+
+// =============================================================================
 // Runner
 // =============================================================================
 
@@ -268,6 +287,10 @@ int main(int /*argc*/, char** /*argv*/) {
     RUN_TEST(test_default_action_is_none);
 
     RUN_TEST(test_dome_rotate_receives_timestamp_parameter);
+
+    RUN_TEST(test_wait_ms_active_sequence_returns_10);
+    RUN_TEST(test_wait_ms_resync_close_pending_returns_10);
+    RUN_TEST(test_wait_ms_idle_returns_250);
 
     return UNITY_END();
 }

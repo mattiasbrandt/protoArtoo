@@ -52,3 +52,15 @@ SequenceDispatcherStepActions sequenceDispatcherStep(const SeqAction& act,
 
     return actions;
 }
+
+uint32_t sequence_dispatcher_wait_ms(bool engineActive, bool resyncClosePending) {
+    // Active choreography and staged ring-close drain require 10 ms cadence for
+    // absolute step timing and smooth servo motion. Otherwise the task blocks on
+    // the request queue and only wakes to feed the TWDT reset (3 s timeout) and
+    // to poll estop/dome-connect edges, whose resync latency tolerance is
+    // operator-scale (250 ms idle is acceptable).
+    if (engineActive || resyncClosePending) {
+        return 10;
+    }
+    return 250;
+}
