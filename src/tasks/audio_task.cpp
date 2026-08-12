@@ -12,6 +12,10 @@
 // policy invocation, volume and random-mode state, status/catalog gating)
 // lives in the step core.
 //
+// Feature toggle: enable_s2_sound is staged at reboot (ADR 0027). The task is
+// only spawned when enabled at boot; the audioQueue* helpers gate on the
+// boot-latched state and return true (accepted-and-discarded) when disabled.
+//
 // Core assignment: Core 0 (non-RT).
 // Reason: software bit-bang TX blocks for up to ~6 ms per command; keeping
 // AudioTask on Core 0 prevents any interaction with DriveTask / ServoTask
@@ -122,11 +126,23 @@ bool audioIsCatalogReady() {
 
 static const char* TAG = "AudioTask";
 
+// Audio output is staged at reboot (ADR 0027); when inactive, commands are
+// accepted and discarded so callers (sequence engine, web routes) see the same
+// success semantics as the old drain-and-discard task.
+static bool audioOutputInactive() {
+    return !configCacheReadActiveAudioEnabled();
+}
+
 // -----------------------------------------------------------------------------
 // Queue-send helpers (non-blocking, timeout 0)
+// Queue helpers gate on audioOutputInactive(): when audio is disabled at boot,
+// commands return true (accepted) but are not enqueued (staged-at-reboot per ADR 0027).
 // -----------------------------------------------------------------------------
 
 bool audioQueueDollar(const char* cmd, CommandSource src) {
+    if (audioOutputInactive()) {
+        return true;
+    }
     if (!cmd || cmd[0] != '$') {
         return false;
     }
@@ -143,6 +159,9 @@ bool audioQueueDollar(const char* cmd, CommandSource src) {
 }
 
 bool audioQueuePlayTrack(uint16_t track, CommandSource src) {
+    if (audioOutputInactive()) {
+        return true;
+    }
     if (track == 0) {
         return false;
     }
@@ -166,6 +185,9 @@ bool audioQueuePlayTrack(uint16_t track, CommandSource src) {
 }
 
 bool audioQueuePlayTrackBanked(uint16_t index, uint8_t bank, char page, CommandSource src) {
+    if (audioOutputInactive()) {
+        return true;
+    }
     if (index == 0 || bank == 0) {
         return false;
     }
@@ -191,6 +213,9 @@ bool audioQueuePlayTrackBanked(uint16_t index, uint8_t bank, char page, CommandS
 }
 
 bool audioQueuePlaySlot(AudioPlaybackSlot slot, CommandSource src) {
+    if (audioOutputInactive()) {
+        return true;
+    }
     if (slot == AUDIO_SLOT_NONE) {
         return false;
     }
@@ -215,6 +240,9 @@ bool audioQueuePlaySlot(AudioPlaybackSlot slot, CommandSource src) {
 
 bool audioQueuePlayCategory(AudioPlaybackCategory category, AudioPlaybackSlot fallbackSlot,
                             CommandSource src) {
+    if (audioOutputInactive()) {
+        return true;
+    }
     if (!audioPlaybackIsValidCategory(category)) {
         return false;
     }
@@ -239,6 +267,9 @@ bool audioQueuePlayCategory(AudioPlaybackCategory category, AudioPlaybackSlot fa
 }
 
 bool audioQueueStop(CommandSource src) {
+    if (audioOutputInactive()) {
+        return true;
+    }
     AudioCommand msg{};
     msg.type = AUDIO_CMD_STOP;
     msg.source = src;
@@ -258,6 +289,9 @@ bool audioQueueStop(CommandSource src) {
 }
 
 bool audioQueueTrackStop(CommandSource src) {
+    if (audioOutputInactive()) {
+        return true;
+    }
     AudioCommand msg{};
     msg.type = AUDIO_CMD_TRACK_STOP;
     msg.source = src;
@@ -277,6 +311,9 @@ bool audioQueueTrackStop(CommandSource src) {
 }
 
 bool audioQueueSetVolume(uint8_t vol, CommandSource src) {
+    if (audioOutputInactive()) {
+        return true;
+    }
     AudioCommand msg{};
     msg.type = AUDIO_CMD_SET_VOLUME;
     msg.source = src;
@@ -297,6 +334,9 @@ bool audioQueueSetVolume(uint8_t vol, CommandSource src) {
 }
 
 bool audioQueueQueryStatus(CommandSource src) {
+    if (audioOutputInactive()) {
+        return true;
+    }
     AudioCommand msg{};
     msg.type = AUDIO_CMD_QUERY_STATUS;
     msg.source = src;
@@ -316,6 +356,9 @@ bool audioQueueQueryStatus(CommandSource src) {
 }
 
 bool audioQueueRefreshCatalog(CommandSource src) {
+    if (audioOutputInactive()) {
+        return true;
+    }
     AudioCommand msg{};
     msg.type = AUDIO_CMD_REFRESH_CATALOG;
     msg.source = src;
@@ -335,6 +378,9 @@ bool audioQueueRefreshCatalog(CommandSource src) {
 }
 
 bool audioQueueRefreshBindings(CommandSource src) {
+    if (audioOutputInactive()) {
+        return true;
+    }
     AudioCommand msg{};
     msg.type = AUDIO_CMD_REFRESH_BINDINGS;
     msg.source = src;
@@ -540,11 +586,13 @@ static const char* playCommandName(AudioCommandType type) {
 // and executes the returned plain-data actions on the driver, the dome-UART
 // arbitration, and the RobotState audio zone.
 //
-// Disabled state: drains the queue silently, never touches the audio GPIO.
-// The driver is re-initialized on the first iteration after being enabled.
+// Feature toggle: task is only spawned when audio output is enabled at boot
+// (staged at reboot per ADR 0027). When disabled at boot, this task does not run.
 // -----------------------------------------------------------------------------
 void audioTask(void* pvParameters) {
     (void)pvParameters;
+
+    const bool audioEnabledAtBoot = configCacheReadActiveAudioEnabled();
 
     AudioStepState step{};
     AudioNamedTracks named{};
@@ -561,8 +609,9 @@ void audioTask(void* pvParameters) {
 
         // ----------------------------------------------------------------
         // Gather this iteration's inputs. Config is read fresh so a Setup
-        // page toggle (S2 Sound, tracks, moods) takes effect without a
-        // reboot; every step phase sees this one generation.
+        // page toggle (tracks, moods, volume) takes effect without a reboot;
+        // S2 Sound toggle is staged at reboot (ADR 0027). Every step phase
+        // sees one generation of inputs.
         // ----------------------------------------------------------------
         ConfigSnapshot cfg = {};
         configCacheRead(&cfg);
@@ -576,7 +625,7 @@ void audioTask(void* pvParameters) {
         const bool catalogCapable = (caps & AudioDriver::AUDIO_CAP_CATALOG) != 0;
 
         AudioStepTickInputs tickIn{};
-        tickIn.audioEnabled = cfg.system.enable_s2_sound;
+        tickIn.audioEnabled = audioEnabledAtBoot;
         tickIn.sleepMode = sleepMode;
         tickIn.configVolume = cfg.audio.audioVolume;
         const AudioStepTickActions tick = audioStepTick(step, tickIn);

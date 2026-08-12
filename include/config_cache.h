@@ -81,6 +81,12 @@ bool configCacheReadActiveWifiRecovery();
 void configCacheSetActiveDomeEnabled(bool enabled);
 bool configCacheReadActiveDomeEnabled();
 
+// configCacheSetActiveAudioEnabled / configCacheReadActiveAudioEnabled: boot-effective
+// audio output posture per ADR 0027 staged-at-reboot; saved toggle changes take
+// effect next boot. Tasks read their toggles once at startup, never per iteration.
+void configCacheSetActiveAudioEnabled(bool enabled);
+bool configCacheReadActiveAudioEnabled();
+
 // =============================================================================
 // Log level accessor (lightweight, used by logging.h)
 // =============================================================================

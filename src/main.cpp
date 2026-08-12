@@ -280,6 +280,7 @@ void setup() {
     const RcInputActiveConfig activeRc = rcInputActiveConfigFromSystem(bootCfg.system);
     configCacheSetActiveRcInput(activeRc);
     configCacheSetActiveDomeEnabled(bootCfg.system.enable_dome);
+    configCacheSetActiveAudioEnabled(bootCfg.system.enable_s2_sound);
     RcInputStartupPlan rcPlan = rcInputStepStartupPlan(activeRc);
 
     // Layer 4: Initialize Task Watchdog Timer
@@ -348,7 +349,11 @@ void setup() {
 
     // AudioTask: Core 0 (non-RT)  --  software bit-bang TX blocks ~6 ms per command;
     // keeping off Core 1 avoids any interaction with DriveTask / ServoTask timing.
-    xTaskCreatePinnedToCore(audioTask, "AudioTask", 6144, nullptr, 3, nullptr, 0);
+    // Omitted when audio output is disabled at boot (ADR 0027: not spawning the owning
+    // task at all is the preferred form).
+    if (bootCfg.system.enable_s2_sound) {
+        xTaskCreatePinnedToCore(audioTask, "AudioTask", 6144, nullptr, 3, nullptr, 0);
+    }
 
     // AuxLedTask: Core 0 (non-RT) - WS2812B effects and API-driven color/effect updates.
     // Runs independently of Core 1 control loops.

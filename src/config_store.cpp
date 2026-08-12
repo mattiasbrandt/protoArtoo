@@ -299,6 +299,7 @@ WifiConfig activeWifiConfig = {};
 RcInputActiveConfig activeRcInputConfig = {};
 bool activeWifiRecovery = false;
 bool activeDomeEnabled = false;
+bool activeAudioEnabled = false;
 portMUX_TYPE configCacheMux = portMUX_INITIALIZER_UNLOCKED;
 
 void configCacheRead(ConfigSnapshot* out) {
@@ -398,6 +399,22 @@ bool configCacheReadActiveDomeEnabled() {
     bool result;
     taskENTER_CRITICAL(&configCacheMux);
     result = activeDomeEnabled;
+    taskEXIT_CRITICAL(&configCacheMux);
+    return result;
+}
+
+// See declaration comment in config_cache.h.
+void configCacheSetActiveAudioEnabled(bool enabled) {
+    taskENTER_CRITICAL(&configCacheMux);
+    activeAudioEnabled = enabled;
+    taskEXIT_CRITICAL(&configCacheMux);
+}
+
+// See declaration comment in config_cache.h.
+bool configCacheReadActiveAudioEnabled() {
+    bool result;
+    taskENTER_CRITICAL(&configCacheMux);
+    result = activeAudioEnabled;
     taskEXIT_CRITICAL(&configCacheMux);
     return result;
 }
