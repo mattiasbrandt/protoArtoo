@@ -298,6 +298,7 @@ ConfigSnapshot configCache = {};
 WifiConfig activeWifiConfig = {};
 RcInputActiveConfig activeRcInputConfig = {};
 bool activeWifiRecovery = false;
+bool activeDomeEnabled = false;
 portMUX_TYPE configCacheMux = portMUX_INITIALIZER_UNLOCKED;
 
 void configCacheRead(ConfigSnapshot* out) {
@@ -381,6 +382,22 @@ bool configCacheReadActiveWifiRecovery() {
     bool result;
     taskENTER_CRITICAL(&configCacheMux);
     result = activeWifiRecovery;
+    taskEXIT_CRITICAL(&configCacheMux);
+    return result;
+}
+
+// See declaration comment in config_cache.h.
+void configCacheSetActiveDomeEnabled(bool enabled) {
+    taskENTER_CRITICAL(&configCacheMux);
+    activeDomeEnabled = enabled;
+    taskEXIT_CRITICAL(&configCacheMux);
+}
+
+// See declaration comment in config_cache.h.
+bool configCacheReadActiveDomeEnabled() {
+    bool result;
+    taskENTER_CRITICAL(&configCacheMux);
+    result = activeDomeEnabled;
     taskEXIT_CRITICAL(&configCacheMux);
     return result;
 }

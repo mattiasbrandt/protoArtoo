@@ -425,6 +425,7 @@ void rcInputTask(void* pvParameters) {
         }
     }
 
+    const bool domeOutputActive = configCacheReadActiveDomeEnabled();
     const bool driveWatchdogEnabled = startupPlan.driveWatchdogSource != DriveWatchdogSource::NONE && driveSbusEnabled;
 
     if (rcInputMode == RC_INPUT_STANDARD_PWM) {
@@ -761,7 +762,7 @@ void rcInputTask(void* pvParameters) {
                     }
                 }
             }
-            if (stepSbus2Out.shouldStopDome) {
+            if (stepSbus2Out.shouldStopDome && domeOutputActive) {
                 DomeCommand stopCmd = {};
                 stopCmd.speed = 0.0f;
                 stopCmd.source = SRC_INTERNAL;

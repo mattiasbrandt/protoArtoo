@@ -18,9 +18,8 @@
 // for this firmware. Throttle calibration via the ISD Go APP is a hardware
 // bring-up prerequisite before the dome motor will respond correctly to our PWM.
 //
-// Feature toggle: cfg_enable_dome must be true for the task to process commands
-// or actuate the ESC. When disabled, the task holds neutral output and discards
-// all queued commands.
+// Feature toggle: cfg_enable_dome (staged at reboot per ADR 0027) gates whether
+// the task is spawned at all. When disabled at boot, DomeTask does not run.
 // =============================================================================
 
 #include "dome_task.h"
@@ -111,10 +110,8 @@ void domeTaskInit() {
 
 // -----------------------------------------------------------------------------
 // domeTask()
-// Main dome task loop.
-//
-// Feature toggle: when cfg_enable_dome is false, the task holds neutral output
-// and discards all queued commands  --  the ESC is inert.
+// Main dome task loop. Task is only spawned when dome output is enabled at boot
+// (staged at reboot per ADR 0027).
 // -----------------------------------------------------------------------------
 void domeTask(void* pvParameters) {
     (void)pvParameters;
@@ -127,12 +124,7 @@ void domeTask(void* pvParameters) {
     uint32_t lastCommandMs = 0;
     bool hasCommand = false;
 
-    // Start at neutral only when dome output is enabled. If disabled, LEDC may
-    // be intentionally uninitialized (all outputs disabled configuration).
-    bool domeEnabledAtBoot = configCacheDomeEnabled();
-    if (domeEnabledAtBoot) {
-        setDomeNeutral();
-    }
+    setDomeNeutral();
 
     bool hwmLogged = false;
     bool sleepHolding = false;
@@ -150,26 +142,6 @@ void domeTask(void* pvParameters) {
         bool estop = robotState.estop;
         bool sleepMode = robotState.sleepMode;
         taskEXIT_CRITICAL(&robotStateMux);
-        bool enabled = configCacheDomeEnabled();
-
-        // Feature toggle: dome disabled  --  hold neutral, drain queue, do nothing
-        if (!enabled) {
-            if (currentSpeed != 0.0f) {
-                currentSpeed = 0.0f;
-                setDomeNeutral();
-                PA_LOG_INFO(TAG, "Dome disabled - holding neutral");
-            }
-            seqMoveUntilMs = 0;
-            // Drain any queued commands so they don't accumulate
-            while (xQueueReceive(domeCmdQueue, &cmd, 0) == pdTRUE) {
-                // discard
-            }
-            hasCommand = false;
-            sleepHolding = false;
-            esp_task_wdt_reset();
-            vTaskDelay(pdMS_TO_TICKS(20));
-            continue;
-        }
 
         if (sleepMode) {
             seqMoveUntilMs = 0;
@@ -271,7 +243,7 @@ void domeTask(void* pvParameters) {
             domeSeqActive = robotState.domeSeqActive;
             taskEXIT_CRITICAL(&robotStateMux);
 
-            if (rndEnabled && enabled && !sleepMode && !estop && !domeSeqActive) {
+            if (rndEnabled && !sleepMode && !estop && !domeSeqActive) {
                 const uint32_t rndPauseRangeMs =
                     (rndPauseMax > rndPauseMin)
                         ? (uint32_t)(rndPauseMax - rndPauseMin) * 1000UL

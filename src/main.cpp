@@ -279,6 +279,7 @@ void setup() {
     configCacheRead(&bootCfg);
     const RcInputActiveConfig activeRc = rcInputActiveConfigFromSystem(bootCfg.system);
     configCacheSetActiveRcInput(activeRc);
+    configCacheSetActiveDomeEnabled(bootCfg.system.enable_dome);
     RcInputStartupPlan rcPlan = rcInputStepStartupPlan(activeRc);
 
     // Layer 4: Initialize Task Watchdog Timer
@@ -331,7 +332,8 @@ void setup() {
     // RcInputTask: ~200 Hz RC poll (all modes), Layer 1+2 failsafe; omitted
     // when no RC input is active for the boot-selected mode and routing.
     // ServoTask: 50 Hz servo PWM updates
-    // DomeTask: 50 Hz ESC PWM updates
+    // DomeTask: 50 Hz ESC PWM updates; omitted when dome output is disabled
+    // at boot (ADR 0027: not spawning the owning task at all is the preferred form).
     xTaskCreatePinnedToCore(driveTask, "DriveTask", 4096, nullptr, 5, nullptr, 1);
     if (rcPlan.taskEnabled) {
         xTaskCreatePinnedToCore(rcInputTask, "RCInputTask", 7168, nullptr, 5, nullptr, 1);
@@ -339,8 +341,10 @@ void setup() {
     xTaskCreatePinnedToCore(
         servoTask, "ServoTask", 4096, nullptr, 4, nullptr,
         1);  // HWM: code fix (ConfigSnapshot->ServoConfig in hot paths) + 3072->4096
-    xTaskCreatePinnedToCore(domeTask, "DomeTask", 3072, nullptr, 4, nullptr,
-                            1);  // Stack sized from profiler HWM: 108 B free at 2048 B.
+    if (bootCfg.system.enable_dome) {
+        xTaskCreatePinnedToCore(domeTask, "DomeTask", 3072, nullptr, 4, nullptr,
+                                1);  // Stack sized from profiler HWM: 108 B free at 2048 B.
+    }
 
     // AudioTask: Core 0 (non-RT)  --  software bit-bang TX blocks ~6 ms per command;
     // keeping off Core 1 avoids any interaction with DriveTask / ServoTask timing.

@@ -348,6 +348,10 @@ static bool parseDomeRxLine(const char* line, DomeRxSource source, uint32_t nowM
         return true;
     }
     if (strncmp(line, "dome=rot,", 9) == 0) {
+        // Dome output is staged at reboot (ADR 0027); when inactive, ignore the command.
+        if (!configCacheReadActiveDomeEnabled()) {
+            return true;
+        }
         int speedPct = 0;
         unsigned int durMs = 0;
         if (sscanf(line + 9, "%d,%u", &speedPct, &durMs) == 2) {

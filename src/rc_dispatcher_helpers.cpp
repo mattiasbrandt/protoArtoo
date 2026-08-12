@@ -16,6 +16,7 @@
 #include "audio_task.h"
 #include "commanded_modes.h"
 #include "config.h"
+#include "config_cache.h"
 #include "dome_link.h"
 #include "dome_rx_parser.h"
 #include "drive_arbiter.h"
@@ -46,6 +47,9 @@ void rcDispatchDrive(int16_t driveSpeed, int16_t driveSteer, bool shouldStop) {
 // =============================================================================
 
 void rcDispatchDome(int domeRawFiltered, const RcMappingConfig& mapping, bool domeFiltered) {
+    if (!configCacheReadActiveDomeEnabled()) {
+        return;
+    }
     if (domeFiltered) {
         float calibrated = applyRcAnalogCalibration(domeRawFiltered, mapping.domeSpeed, nullptr);
         DomeCommand domeCmd = {};

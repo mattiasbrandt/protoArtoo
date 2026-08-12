@@ -72,6 +72,16 @@ void configCacheSetActiveWifiRecovery(bool recovering);
 bool configCacheReadActiveWifiRecovery();
 
 // =============================================================================
+// Active component output toggles (staged at reboot per ADR 0027)
+// =============================================================================
+
+// configCacheSetActiveDomeEnabled / configCacheReadActiveDomeEnabled: boot-effective
+// dome output posture per ADR 0027 staged-at-reboot; saved toggle changes take
+// effect next boot. Tasks read their toggles once at startup, never per iteration.
+void configCacheSetActiveDomeEnabled(bool enabled);
+bool configCacheReadActiveDomeEnabled();
+
+// =============================================================================
 // Log level accessor (lightweight, used by logging.h)
 // =============================================================================
 

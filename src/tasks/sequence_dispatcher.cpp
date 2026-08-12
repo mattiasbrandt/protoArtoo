@@ -26,6 +26,7 @@
 #include <string.h>
 
 #include "audio_task.h"
+#include "config_cache.h"
 #include "dome_link.h"
 #include "logging.h"
 #include "robot_state.h"
@@ -137,6 +138,10 @@ static bool dispatchAction(const SeqAction& act) {
             return domeQueueTx(act.payload);
 
         case SEQ_DISPATCH_DOME_ROTATE: {
+            // Dome output is staged at reboot (ADR 0027); when inactive, drop the action.
+            if (!configCacheReadActiveDomeEnabled()) {
+                return true;
+            }
             // Send converted DomeCommand to the dome rotation queue.
             DomeCommand cmd = {};
             if (!sequenceActionToDomeCommand(act, millis(), cmd)) {
