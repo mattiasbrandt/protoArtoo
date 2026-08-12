@@ -49,6 +49,13 @@ Staged-at-reboot also removes the failsafe-clear question entirely: the gate's
 active mask boots clear, so an off subsystem's failsafe layers are simply
 never set.
 
+**Update (2026-08-12):** The four dead compile-time mirrors
+(`PA_ENABLE_AUDIO`, `PA_ENABLE_ARMS`, `PA_ENABLE_DOME_MOTOR`,
+`PA_ENABLE_DOME_SBUS`) were deleted. They had no source references and
+contradicted the decision to keep the runtime toggle tier as the sole operator
+control surface. `PA_ENABLE_STA_WIFI` (config-only, selects Developer WiFi
+Shortcut posture) remains the only compile-time flag.
+
 ## Consequences
 
 - `rcInputTask`, `domeTask`, and `audioTask` move from per-iteration toggle
