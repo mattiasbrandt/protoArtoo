@@ -19,3 +19,29 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+===============================================================================
+SCOPE OF THE LICENCE ABOVE
+===============================================================================
+
+The MIT licence covers this repository's own work: the firmware source, the
+web UI, the documentation and the tooling. A licence can only grant rights
+over what its author owns, so for the avoidance of doubt:
+
+  1. THIRD-PARTY LIBRARIES are not part of this grant. Dependencies such as
+     PsychicHttp, ArduinoJson and the ESP32 Arduino core are fetched at build
+     time by PlatformIO and remain under their own licences.
+
+  2. THE ARTOO CONTROLLER PCB is Steve's hardware design (https://artoo.uk).
+     This repository contains firmware for that board, not the board design
+     itself. Nothing here grants any rights to the hardware.
+
+  3. THE MK4 ASTROMECH DROID is MrBaddeley's design, distributed as paid
+     models through his Patreon (https://www.patreon.com/mrbaddeley). This
+     repository contains no print files, geometry or other derivatives of
+     his work; if you want the droid, support him and get it from him.
+
+Star Wars, R2-D2 and related names and marks belong to Lucasfilm Ltd. This
+is a non-commercial fan project by a hobbyist droid builder, with no
+affiliation with, connection to, or endorsement from Lucasfilm or The Walt
+Disney Company.
