@@ -1,6 +1,6 @@
 /**
  * Minimal P4 bringup application — first-flash deliverable for #183.
- * Lives outside src/ (fenced) in bringup/p4_bringup.ino.
+ * Lives outside src/ (fenced) in bringup/p4_bringup.cpp.
  *
  * Full firmware compilation is blocked by #185 (WiFi seam adaptation).
  * Known blockers in src/:
@@ -12,14 +12,17 @@
 
 #include <Arduino.h>
 
+// GPIO 3 is LED_BUILTIN on FireBeetle 2 ESP32-P4 (DFR1172)
+#define BRINGUP_LED 3
+
 void setup() {
-  pinMode(LED_BUILTIN, OUTPUT);
+  pinMode(BRINGUP_LED, OUTPUT);
 
   // Three blinks to signal boot
   for (int i = 0; i < 3; i++) {
-    digitalWrite(LED_BUILTIN, HIGH);
+    digitalWrite(BRINGUP_LED, HIGH);
     delay(200);
-    digitalWrite(LED_BUILTIN, LOW);
+    digitalWrite(BRINGUP_LED, LOW);
     delay(200);
   }
 
@@ -34,9 +37,9 @@ void setup() {
 }
 
 void loop() {
-  digitalWrite(LED_BUILTIN, HIGH);
+  digitalWrite(BRINGUP_LED, HIGH);
   delay(1000);
-  digitalWrite(LED_BUILTIN, LOW);
+  digitalWrite(BRINGUP_LED, LOW);
   delay(4000);
 
   static unsigned long lastPrint = 0;
