@@ -4,13 +4,19 @@ name: Version Sync
 # on main: every push regenerates both from the actual merge commit and
 # bot-commits them back. This is separate from verification.yml (left
 # untouched) and from release.yml (tag-triggered, purely additive).
+#
+# The push authenticates via a write deploy key (VERSION_SYNC_DEPLOY_KEY
+# secret), not GITHUB_TOKEN: the main ruleset requires PRs and status checks,
+# GITHUB_TOKEN cannot be a ruleset bypass actor, and "Deploy keys" can.
+# Unlike GITHUB_TOKEN pushes, deploy-key pushes DO trigger workflows, so the
+# bot-author guard below is load-bearing, not just belt-and-braces.
 on:
   push:
     branches:
       - main
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   sync-version:
@@ -24,6 +30,9 @@ jobs:
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          # Fetch and push over SSH as the deploy key, so the push is a
+          # ruleset-bypass actor (see header comment).
+          ssh-key: ${{ secrets.VERSION_SYNC_DEPLOY_KEY }}
 
       - name: 🐍 Set up Python
         uses: actions/setup-python@v7
