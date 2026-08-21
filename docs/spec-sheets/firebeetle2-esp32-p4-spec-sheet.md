@@ -8,8 +8,18 @@ was written against the ESP32-P4 datasheet DFRobot hosts on its wiki, which has
 since been superseded twice over. See [Chip Revision: v1.x vs
 v3.x](#chip-revision-v1x-vs-v3x) first; it changes the toolchain configuration.
 
-**The unit in hand reports chip revision v1.0.** All toolchain guidance below is
-written for that.
+**This project's bench board reports chip revision v1.3**, read from the board
+over USB on 2026-08-21 (see [Identifying the
+revision](#identifying-the-revision) for the verbatim output). An earlier
+revision of this sheet recorded v1.0 for the unit in hand; v1.3 is the
+verified reading for the board this project actually builds against.
+
+That correction changes no toolchain setting. v1.0 and v1.3 are both v1.x and
+are firmware-interchangeable, and DFRobot ships units across the v1.x family —
+so **both are documented throughout this sheet, and you must check your own
+board rather than assume it matches ours.** All toolchain guidance below is
+written for the v1.x family as a whole; the only split that changes
+configuration is v1.x versus v3.x.
 
 ## Boards Covered
 
@@ -81,12 +91,17 @@ v1.x remains what the market sells.
 the revision-specific `esp32-p4-chip-revision-v1.3_datasheet_en.pdf` (file dated
 2026-01-19), and Espressif's `dfrobot_firebeetle2_esp32p4` Arduino board entry
 defaults to `build.chip_variant=esp32p4_es` and `build.f_cpu=360000000L`.
-Individual units vary within the v1.x family - **the board in hand is v1.0, not
-v1.3.** Because that is a minor-number difference, nothing in the toolchain
-configuration changes.
+Individual units vary within the v1.x family, so **do not infer your board's
+revision from this sheet - read it from your own board.** This project's bench
+unit is **v1.3**. Because any difference inside v1.x is a minor-number
+difference, nothing in the toolchain configuration changes either way.
 
-Since Espressif publishes no v1.0-specific datasheet, use the v1.3 datasheet from
-the DFR1237 kit ZIP; minor-revision compatibility makes it applicable.
+Datasheet, by the revision you actually have:
+
+- **v1.3** - use `esp32-p4-chip-revision-v1.3_datasheet_en.pdf` from the DFR1237
+  kit ZIP. It matches the silicon exactly. This is the case for our bench board.
+- **v1.0** - Espressif publishes no v1.0-specific datasheet. Use the same v1.3
+  datasheet; minor-revision compatibility makes it applicable.
 
 This also resolves the 360 vs 400 MHz question the previous revision of this
 sheet left open: 360 MHz is not a conservative choice, it is the correct one for
@@ -107,14 +122,37 @@ this board. And it means the previous PlatformIO recommendation
 
 ### Identifying the revision
 
-`esptool` prints the revision during connect:
+`esptool` prints the revision during connect. Read-only - it resets the chip
+into download mode but writes nothing:
 
 ```
 esptool --port /dev/ttyACM0 chip-id
 ```
 
-Look for `Chip is ESP32-P4 (revision v1.0)`. Note that `esptool` v5.x uses
-hyphenated subcommands (`chip-id`, `flash-id`); older releases used `chip_id`.
+Actual output from this project's bench board, `esptool` v5.3.0, 2026-08-21:
+
+```
+Detecting chip type... ESP32-P4
+Connected to ESP32-P4 on /dev/ttyACM0:
+Chip type:          ESP32-P4 (revision v1.3)
+Features:           Dual Core + LP Core, 400MHz
+Crystal frequency:  40MHz
+USB mode:           USB-Serial/JTAG
+MAC:                30:ed:a0:ea:15:cd
+```
+
+Look for the `Chip type:` line and read the revision in parentheses. Two
+traps in that output:
+
+- **The line to grep for changed.** Older `esptool` printed
+  `Chip is ESP32-P4 (revision vX.Y)`; v5.x prints `Chip type:`. Matching on
+  "Chip is" silently finds nothing on a current toolchain. v5.x also uses
+  hyphenated subcommands (`chip-id`, `flash-id`) where older releases used
+  `chip_id` / `flash_id`.
+- **`Features: ... 400MHz` is not your chip's ceiling.** That line reports the
+  ESP32-P4 *series* capability, not the die's max clock. On any v1.x board the
+  maximum is 360 MHz - keep `build.f_cpu = 360000000L` and do not raise the
+  clock on the strength of that line.
 
 Without a serial connection, read the manufacturing-code line of the chip
 marking:
@@ -122,8 +160,8 @@ marking:
 | Chip revision | Manufacturing code |
 | --- | --- |
 | v0.0 | `X A XX` |
-| **v1.0** | **`X C XX`** |
-| v1.3 | `X E XX` |
+| v1.0 | `X C XX` |
+| **v1.3** (our bench board) | **`X E XX`** |
 | v3.0 | `X F XX` |
 | v3.1 | `X G XX` |
 | v3.2 | `X H XX` |
@@ -133,9 +171,10 @@ The revision is also encoded in eFuse: major in
 
 ### Errata affecting this board
 
-Per ESP32-P4 Series SoC Errata v1.3 (2026-07-22), four errata affect v1.0. They
-are the same four that affect v1.3, so nothing is gained or lost by having the
-earlier revision.
+Per ESP32-P4 Series SoC Errata v1.3 (2026-07-22), the same four errata affect
+v0.0, v1.0 and v1.3 alike. Nothing is gained or lost by which v1.x revision a
+board carries, so this table applies whichever one you have - including our
+v1.3 bench board.
 
 | Errata | Affects | Relevance here |
 | --- | --- | --- |
@@ -245,11 +284,11 @@ disabled by default). Worth enabling on slow-edged or long-run digital inputs.
 
 | Resource | Value |
 | --- | --- |
-| Main SoC | ESP32-P4, chip revision v1.0 (board in hand) |
-| HP CPU | RISC-V 32-bit dual-core, **360 MHz max on this board** |
+| Main SoC | ESP32-P4, chip revision **v1.3** on our bench board (verified 2026-08-21); DFRobot ships across the v1.x family, so check your own |
+| HP CPU | RISC-V 32-bit dual-core, **360 MHz max on this board** (the `400MHz` in `esptool` output is a series figure, not this die's ceiling) |
 | LP CPU | RISC-V 32-bit single-core, 40 MHz |
 | PSRAM | 32 MB in package |
-| Flash on DFR1172 | 16 MB external QSPI flash |
+| Flash on DFR1172 | 16 MB external QSPI flash. `esptool flash-id` on our board reports manufacturer `ef`, device `4018` - a Winbond W25Q128-class part - and detects 16MB |
 | HP L2 memory | 768 KB |
 | HP TCM | 8 KB zero-wait |
 | LP SRAM | 32 KB |
