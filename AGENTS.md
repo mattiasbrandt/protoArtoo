@@ -20,6 +20,8 @@ workflows.
 - Hardware truth: `docs/pin_map.md`, `include/config.h`
 - Shared state truth: `include/robot_state.h`
 - Action registry: `docs/action-registry.yaml`
+- Droid parts catalog: `docs/droid-parts.yaml`
+- Operator-facing copy voice: `docs/ui-copy-voice.md`
 - REST API contracts: `docs/api.md`
 - Core error-signalling conventions: `docs/core-error-signalling.md`
 - Crash/coredump + heap troubleshooting procedures: `docs/troubleshooting.md`
@@ -352,6 +354,10 @@ evidence phrases ("Automated checks are passing", "Tested on an ESP32 controller
 
 ## Web/UI Copy Rules
 
+- Before writing or editing ANY operator-facing text (UI labels, help text,
+  hints, toasts, errors, wizard steps, release notes), apply the maker-voice
+  rules in `docs/ui-copy-voice.md`. Gate: a maker with no firmware knowledge
+  must get every sentence on first read.
 - Avoid internal planning language in operator-facing text
 - Keep copy focused on device state, controls, and diagnostics
 - Prefer symbols and related emoji over verbose text labels where meaning is clear at a glance — reduces visual clutter and aids quick scanning
