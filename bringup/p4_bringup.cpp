@@ -2,12 +2,16 @@
  * Minimal P4 bringup application — first-flash deliverable for #183.
  * Lives outside src/ (fenced) in bringup/p4_bringup.cpp.
  *
- * Full firmware compilation is blocked by #185 (WiFi seam adaptation).
- * Known blockers in src/:
- * - dome_link.cpp: WiFi API symbols (P4 uses ESP-Hosted over SDIO)
- * - audio_chirp.cpp:294: memset over non-trivial struct (reported as #196)
+ * Full firmware adaptation to P4's ESP-Hosted WiFi path is tracked in #188.
+ * This minimal bringup does not build the full firmware — it serves as the
+ * first-flash image to establish the toolchain and gate platform readiness.
  *
- * This sketch provides the only definition of setup()/loop() to the linker.
+ * Uses weak symbols to avoid linker collision when .dummy/sketch.cpp.o is
+ * compiled as part of the custom_sdkconfig library pass. The weak attributes
+ * allow the linker to coexist with .dummy's copy without error; which copy
+ * reaches the final image depends on link order and object archive contents.
+ * Empirically (verified by nm/addr2line on the shipped firmware.bin), the
+ * bringup source's setup()/loop() reach the final image.
  */
 
 #include <Arduino.h>
@@ -15,6 +19,8 @@
 // GPIO 3 is LED_BUILTIN on FireBeetle 2 ESP32-P4 (DFR1172)
 #define BRINGUP_LED 3
 
+// Weak symbols to coexist with .dummy/sketch.cpp.o in the library pass
+__attribute__((weak))
 void setup() {
   pinMode(BRINGUP_LED, OUTPUT);
 
@@ -36,6 +42,7 @@ void setup() {
   Serial.println(" bytes");
 }
 
+__attribute__((weak))
 void loop() {
   digitalWrite(BRINGUP_LED, HIGH);
   delay(1000);
