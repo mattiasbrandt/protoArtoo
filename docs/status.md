@@ -11,15 +11,16 @@ see `CHANGELOG.md`.
 
 | Status item | Current state |
 |---|---|
-| Active release target | `v1.0.0` |
-| Latest tagged release | `v0.4.0` |
-| Web control status | Previously validated workflows remain available, but an ordinary page load can currently stall before controller data appears |
+| Latest release | [`v1.0.0`](https://github.com/mattiasbrandt/protoArtoo/releases/latest) (2026-08-21) — ready-to-flash firmware and filesystem images per audio module |
+| Web control | Working — pages load reliably, and a controller too busy to serve a page says so and offers a retry instead of hanging |
+| Next up | Drive-motor validation on an assembled droid |
 
-The main `v1.0.0` capabilities have been tested on real hardware, including
-audio, RC control, dome control, servos, web workflows, backups, and firmware
-updates. Release readiness remains open because ordinary controller web-page
-loading is not yet reliable enough: a styled page can remain stuck on
-**Loading** without filling in controller data.
+`v1.0.0` is the first stable release. Its capabilities are confirmed on real
+hardware: audio, RC control, dome control, servos, web workflows, backups, and
+firmware updates. The page-loading reliability problem that held the release
+open is fixed — the web server was replaced for `v1.0.0`, and the fix was
+confirmed on the controller including a deliberately induced low-memory
+session.
 
 Full drive-motor (hoverboard) validation on a completely assembled droid is not
 part of this release. Drive control and safety logic are implemented and tested,
@@ -39,10 +40,15 @@ for it.
   communication confirmed on real hardware.
 - **Servos** — arm and other servo movement confirmed on real hardware.
 - **Web control workflows** — setup, live control, backup/restore, and droid
-  identity (custom `.local` name) have completed successfully in hardware
-  validation. The ordinary-load reliability limitation below still applies.
+  identity (custom `.local` name) confirmed in hardware validation. Page loads
+  are reliable, and a controller under memory pressure answers with a plain
+  "controller busy" page and a retry instead of leaving the browser hanging.
+- **WiFi setup from the browser** — pointing the droid at a home network or
+  keeping it on its own hotspot, switched from the WiFi page with a staged
+  reboot, confirmed on the controller. Settings survive reboots and firmware
+  updates.
 - **Firmware and filesystem updates** — updating over WiFi and over USB both
-  confirmed end-to-end, including recovering cleanly from a failed update.
+  confirmed end-to-end.
 - **Safety systems** — emergency stop and RC-signal-loss failsafe confirmed,
   outside of live drive-motor behavior (see below).
 
@@ -55,15 +61,20 @@ for it.
   as follow-up work after `v1.0.0` and will be documented when complete.
 - **MP3 Trigger audio module** — an alternative to the CHIRP module some
   builders use. Not re-confirmed on hardware for this release.
-- **Ordinary web-page load reliability.** A single page open can lose an early
-  required script while the controller status endpoint remains reachable. The
-  page then looks styled but stays on **Loading** with empty fields. A recovery
-  bootstrap experiment on the AsyncWebServer stack showed this failure could be
-  made worse by the admission guard and was rolled back. The current PsychicHttp
-  stack (#75 migration) has not yet demonstrated this issue under the measurement
-  scope defined in [ADR 0017](adr/0017-page-load-memory-recovery-acceptance-envelope.md).
-  The underlying HTTP resource-delivery pressure on this stack remains under
-  investigation in [the web recovery map](https://github.com/mattiasbrandt/protoArtoo/issues/52).
+- **First boot of a downloaded release on a fresh controller.** The
+  boot-into-setup-hotspot flow is covered by automated tests and the release
+  builds ship without any developer WiFi shortcut, but the literal "flash,
+  join the hotspot, open the WiFi page" pass hasn't been run live yet.
+- **Recovery from an interrupted update.** The firmware rejects an upload that
+  delivers no usable image instead of rebooting into it; this guard is tested
+  in software, but the failure itself hasn't been reproduced on hardware.
+- **Long web sessions.** Web behavior is confirmed under bench load and induced
+  memory pressure, but a dashboard left open for many hours hasn't been
+  soak-tested.
+- **Reworked RC input decision logic.** Mode changes, watchdog and
+  receiver-failsafe transitions, and zero-frame behavior on signal loss were
+  reworked for this release and are covered by automated tests; a hardware
+  pass, including a signal-loss drill with a live receiver, is still to come.
 
 ## Release History
 
@@ -73,6 +84,6 @@ for it.
 | `v0.2.0` | WiFi, web UI, OTA firmware updates |
 | `v0.3.0` | Arm servos, dome motor, RC diagnostics and channel mapping |
 | `v0.4.0` | Audio system, bidirectional dome link, web UI improvements |
-| `v1.0.0` | Full architecture, audio confirmed on hardware, OTA and backup confirmed, configurable droid identity. Full drive-motor validation follows as a separate, documented pass. |
+| `v1.0.0` | First stable release: reliable page loads on a rebuilt web server, WiFi setup from the browser with a recovery mode, ready-to-flash release downloads per audio module, four log levels, and per-component enable toggles. Full drive-motor validation follows as a separate, documented pass. |
 
 For detailed per-change history, see `CHANGELOG.md`.

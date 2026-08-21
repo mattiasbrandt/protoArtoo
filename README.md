@@ -132,6 +132,13 @@ Open the repo in VS Code and accept the recommended extensions when prompted
 
 ## Building and flashing
 
+**Already running protoArtoo?** You don't need any of this to update: download
+the firmware and filesystem images for your audio module from the
+[latest release](https://github.com/mattiasbrandt/protoArtoo/releases/latest)
+and upload both from the controller's **Firmware** page. Building from source
+is only needed for the very first USB flash of a blank board, or for
+development.
+
 ```bash
 git clone https://github.com/mattiasbrandt/protoArtoo.git
 cd protoArtoo
@@ -277,7 +284,7 @@ The dome has no local sound module. The body is the sole audio authority.
 - Home dashboard with drive mode, mood selector, and live status
 - Sound page, RC diagnostics, servo control, dome control, setup, and firmware update pages
 - Real-time page updates — reconnects automatically when switching back to the tab
-- Runtime log level selector (Error / Info / Debug) on Setup page — no reflash required
+- Runtime log level selector (Errors / Warnings / Info / Debug) on Setup page — no reflash required
 
 **Safety-First Architecture**
 - Five independent failsafe layers from hardware through application
@@ -408,7 +415,7 @@ If you are building a droid and considering the Artoo Controller PCB:
 |-----------|---------|
 | `Preferences` | NVS (Non-Volatile Storage) for configuration persistence |
 | `LittleFS` | Flash filesystem for web UI assets |
-| `WiFi` | WiFi support — STA client or AP mode (build-time choice) |
+| `WiFi` | WiFi support — joins your network or hosts the droid's own hotspot, chosen at runtime from the WiFi page ([`docs/wifi-provisioning.md`](./docs/wifi-provisioning.md)) |
 | `LEDC` | PWM generation for servos and ESC |
 | `FreeRTOS` | Task scheduling with core isolation (Core 0: network/web, Core 1: real-time control) |
 
