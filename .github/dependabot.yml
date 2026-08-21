@@ -6,6 +6,12 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 3
+    # Pin the conventional-commit prefix explicitly ("chore(deps): ..." /
+    # "chore(deps-dev): ..."), rather than relying on Dependabot's
+    # history-based auto-detection.
+    commit-message:
+      prefix: chore
+      include: scope
     labels:
       - dependencies
     groups:
@@ -20,6 +26,12 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 3
+    # Pin the conventional-commit prefix explicitly ("chore(deps): ..." /
+    # "chore(deps-dev): ..."), rather than relying on Dependabot's
+    # history-based auto-detection.
+    commit-message:
+      prefix: chore
+      include: scope
     labels:
       - dependencies
     groups:
@@ -38,6 +50,12 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 3
+    # Pin the conventional-commit prefix explicitly ("chore(deps): ..." /
+    # "chore(deps-dev): ..."), rather than relying on Dependabot's
+    # history-based auto-detection.
+    commit-message:
+      prefix: chore
+      include: scope
     labels:
       - dependencies
     groups:
