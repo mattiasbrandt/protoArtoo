@@ -209,7 +209,7 @@ The expected controller web workload: primarily one visible Firefox tab, with a 
 _Avoid_: treating mobile Safari as the common client, testing only Chromium, requiring operators to keep exactly one tab, unbounded browser concurrency
 
 **Supported ESP32 Board**:
-The dual-header ESP32 D1 Mini clone required by the current Artoo Controller PCB. Firmware and web reliability must work within this board's memory limits; possible support for newer controllers does not relax the current requirement.
+The dual-header ESP32 D1 Mini clone required by the current Artoo Controller PCB — canonically the **artoo-esp32** build target. Firmware and web reliability must work within this board's memory limits; ESP32-P4 Target support does not relax the current requirement.
 _Avoid_: official Wemos board, temporary development board, waiting for newer hardware
 
 **Web Server Library**:
@@ -382,6 +382,34 @@ _Avoid_: audio lifecycle manager, audio coordinator, dispatch switch
 A runtime `components.*` setting declaring whether a hardware subsystem is fitted and in use. Off means inert, not merely unconstructed: the disabled subsystem performs no recurring per-tick decision work, no recurring writes to shared safety state, no recurring queue sends or log emission, and spends no ongoing CPU or memory on its behalf. One-time transition work at boot is allowed. A toggle change is a Staged Component Switch: it is saved immediately but takes effect at the next boot, so tasks read their toggles once at startup rather than every iteration.
 _Avoid_: unconstructed-only off, construction-gate-only toggle, live per-tick toggle reads, disabled subsystem reporting signal events
 
+**artoo-esp32**:
+The canonical name for the build target pairing the classic-generation ESP32 D1 Mini clone with the artoo.uk Artoo Controller PCB (env/variant id `artoo_esp32`). A fully supported, first-class target.
+_Avoid_: classic, legacy board, clone build
+
+**ESP32-P4 Target**:
+The chip-level build target covering any ESP32-P4-based controller board. It owns everything true of the chip regardless of board: Hosted WiFi, UART/RMT budgets, partition and PSRAM policy. Chip-wide code, flags, and docs say ESP32-P4, never a board name (ADR 0028).
+_Avoid_: firebeetle target, naming the chip layer after one board
+
+**Board Variant**:
+The thin per-board layer under a chip target: a pin-map block plus one PlatformIO env (`artoo_esp32`, `firebeetle2`). A variant holds pins and board quirks only; adding a board on a supported chip costs a variant and nothing else (ADR 0028).
+_Avoid_: board port, per-board fork
+
+**firebeetle2**:
+The Board Variant for the DFRobot FireBeetle 2 ESP32-P4 development board — the current vehicle for ESP32-P4 Target development. The name refers only to that physical board.
+_Avoid_: firebeetle2 for chip-wide concepts, throwaway mule
+
+**Board Capability Gate**:
+A compile-time `PA_CAP_*` declaration of what a board's hardware can support. An absent capability means the feature is not linked into that board's image and the UI shows not-on-this-board. Distinct from a Component Toggle, which stays runtime and declares fitted hardware (ADR 0029).
+_Avoid_: compile-time component toggle, feature flag, capability as a runtime setting
+
+**Hosted WiFi**:
+The ESP32-P4 Target's network stack: WiFi served by an on-board ESP32-C6 co-processor over SDIO. A platform property of the chip target, selected behind the network-manager seam; artoo-esp32 keeps native `esp_wifi`.
+_Avoid_: external WiFi module, board-specific WiFi hack
+
+**Bench-Mode**:
+The development posture where a controller board runs connected to USB only, without droid hardware — exercising HTTP, SSE, serial, OTA, and bench-attachable peripherals. A posture, not a verification status: evidence gathered in Bench-Mode is at most Controller Upload Verified.
+_Avoid_: bench verified, bench tested, using bench work as integrated-hardware evidence
+
 ## Relationships
 
 - **Phase 5** can include work that is not yet covered by **Full Hardware Validation**.
@@ -446,6 +474,10 @@ _Avoid_: unconstructed-only off, construction-gate-only toggle, live per-tick to
 - A **Step Core** decides, its task-loop adapter executes; the **Audio Step Core** calls the playback policy internally, so the policy stays its own tested module behind the step seam.
 - A **Component Toggle** and the safety machinery are independent in both directions: a toggle never gates estop latching or the failsafe gate, and estop/safety handling never overrides a toggle or the settings functions — a disabled subsystem stays inert even during estop, since an inert component has no output to stop.
 - A **Component Toggle** is runtime by requirement: a **Public Release Operator** must be able to declare fitted hardware from the browser, so component toggles are never compile-time build flags; developer build-stripping flags are a separate tier, not a mirror of the toggles.
+- A **Board Capability Gate** answers what the board's silicon can do; a **Component Toggle** answers what fitted hardware the operator uses. Where the capability is absent the toggle question never arises (not-on-this-board); where it is present, ADR 0027 toggle semantics apply unchanged.
+- **firebeetle2** and **artoo_esp32** are **Board Variants**; the **ESP32-P4 Target** and the classic-generation chip target above them own chip-wide facts (ADR 0028). **artoo-esp32** remains fully supported alongside any ESP32-P4 board.
+- On the **ESP32-P4 Target**, the **protoR2link Primary Transport** stays UART — carried on a dedicated P4 UART — with the **protoR2link Fallback Transport** unchanged (ADR 0003).
+- Evidence gathered in **Bench-Mode** maps to **Software Verified** or **Controller Upload Verified**, never directly to **Full Hardware Verified**.
 
 ## Example Dialogue
 

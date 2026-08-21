@@ -1,0 +1,58 @@
+# Board capability gates are compile-time; component toggles stay runtime
+
+Dual-target support (ADR 0028) means features will exist that the artoo-esp32
+board can never run — subsystems needing the ESP32-P4's extra UARTs, PSRAM,
+or Hosted WiFi stack. The artoo-esp32 build (4 MB flash, tight heap floor)
+must not pay for them, and "off via a runtime toggle" is not enough: ADR 0027
+made disabled components inert, but their code is still linked and their
+flash is still spent.
+
+We decided on a **Board Capability Gate** tier: compile-time `PA_CAP_*`
+flags, set by the chip-target and board-variant layers, declaring what a
+board's hardware **can** do.
+
+- A feature gated on an absent capability is **not linked** into that board's
+  image at all — no code, no tasks, no buffers, no flash.
+- The web UI shows three states per gated feature: **not-on-this-board**
+  (capability absent), **off**, and **on** (capability present, governed by
+  its runtime Component Toggle per ADR 0027).
+- The action registry gains a capability field; `make check-action-drift`
+  verifies registry entries against the gates.
+- Per-env flash/RAM **build-size budgets** are asserted in the verification
+  gate and in CI, so capability spill into the artoo-esp32 image fails a PR
+  loudly instead of eroding the heap floor silently.
+
+This does not reopen ADR 0027's rejection of compile-time toggle mirrors.
+The two tiers answer different questions and neither substitutes for the
+other:
+
+- A **Component Toggle** declares what fitted hardware the operator uses. It
+  is runtime by requirement — a Public Release Operator configures it from
+  the browser — and per-droid.
+- A **Board Capability Gate** declares what the board's silicon and pin map
+  can support. It is invariant for a given PCB: no browser setting can add a
+  fourth UART to an artoo-esp32. Making it compile-time costs operators
+  nothing.
+
+Where a capability is present, the Component Toggle contract (off = inert,
+staged at reboot) applies unchanged.
+
+## Considered options
+
+- **Runtime-everything** (ship all features on all boards, rely on ADR 0027
+  toggles) — spends artoo-esp32 flash and link-time RAM on code that can
+  never run there; contradicts the no-spill requirement. Rejected.
+- **Ad hoc `#ifdef` per feature** — no single audit surface, no registry
+  linkage, and capability drift between code, UI, and docs goes undetected.
+  Rejected in favor of named `PA_CAP_*` gates checked by the drift checker.
+- **Folding capabilities into the Component Toggle tier** — would force
+  toggles to become build flags, which ADR 0027 explicitly rejected for
+  operator-configurability reasons. The tiers stay separate. Rejected.
+
+## Consequences
+
+- The three-state UI and registry capability field are new operator-facing
+  and contributor-facing surfaces; `check-action-drift` guards them.
+- Per-env budgets become part of the standard verification sequence and CI.
+- Baseline flash/RAM numbers are recorded per env when the budgets are
+  introduced.
