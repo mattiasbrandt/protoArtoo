@@ -73,6 +73,10 @@ are interchangeable from a firmware standpoint.
 | Arduino `build.chip_variant` | `esp32p4_es` | `esp32p4` |
 | PlatformIO generic board | `esp32-p4` | `esp32-p4_r3` |
 
+A vendor survey on 2026-08-21 (DFRobot, Waveshare, M5Stack, Olimex, 4D
+Systems) found no development board verifiably shipping v3.x silicon yet;
+v1.x remains what the market sells.
+
 **DFR1172/DFR1237 ships v1.x silicon.** DFRobot's kit datasheet bundle contains
 the revision-specific `esp32-p4-chip-revision-v1.3_datasheet_en.pdf` (file dated
 2026-01-19), and Espressif's `dfrobot_firebeetle2_esp32p4` Arduino board entry
@@ -438,6 +442,31 @@ this board specifically:
    or does it need a reboot?
 4. Whether host application OTA and slave OTA can coexist in one update flow.
 
+### Issue-tracker signals (espressif/esp-hosted-mcu, checked 2026-08-21)
+
+Open issues on the P4 + C6 SDIO transport that bear directly on the list
+above. All states verified against the GitHub tracker on the check date.
+
+| Issue | State | Title (abridged) | Bears on |
+| --- | --- | --- | --- |
+| [#197](https://github.com/espressif/esp-hosted-mcu/issues/197) (EHM-220) | open | SDIO data path wedges under sustained outbound TCP load; no recovery without RST, no liveness API | Items 1 and 3 |
+| [#220](https://github.com/espressif/esp-hosted-mcu/issues/220) (EHM-252) | open | `sdio_read_regs()` reports success on an all-ones bus read, so a dead link is never declared failed and the host never restarts | Item 3 |
+| [#121](https://github.com/espressif/esp-hosted-mcu/issues/121) (EHM-124) | open | Unrecoverable host SDIO state (P4 + C6) | Item 3 |
+| [#167](https://github.com/espressif/esp-hosted-mcu/issues/167) (EHM-188) | open | Unrecoverable host SDIO state, second report | Item 3 |
+| [#221](https://github.com/espressif/esp-hosted-mcu/issues/221) (EHM-253) | open | SDIO uplink overload: slave Wi-Fi task wedge, silent host RX stall | Items 1 and 2 |
+| [#144](https://github.com/espressif/esp-hosted-mcu/issues/144) (EHM-156) | open | `sdio_rx_get_buffer` / `transport_drv_sta_tx` assert failures (P4 + C6) | Item 2 |
+| [#219](https://github.com/espressif/esp-hosted-mcu/issues/219) (EHM-250) | open | SDIO TX DMA alignment rejection when TX buffers come from SPIRAM (`MEMPOOL_PREFER_SPIRAM`) | Item 2; relevant to any PSRAM-heavy design |
+| [#230](https://github.com/espressif/esp-hosted-mcu/issues/230) (EHM-261) | open | Unguarded `_h_destroy_semaphore` in `wait_for_sync_response()` panics the calling task on RPC timeout | Item 3; an RPC timeout can kill the host task outright |
+| [#226](https://github.com/espressif/esp-hosted-mcu/issues/226) (EHM-257) | open | `rpc_wifi_scan_get_ap_records()` memcpys from a NULL payload when the scan RPC response is lost | Host stability; avoid unguarded scan calls |
+| [#212](https://github.com/espressif/esp-hosted-mcu/issues/212) (EHM-238) | open | P4 + C6: NimBLE `HCI_Reset` times out after advertising starts, Wi-Fi scan returns 0, persists across slave re-flash | Wi-Fi + BLE coexistence; avoid concurrent BLE use until resolved |
+
+Takeaway for firmware design: several reports describe the link dying without
+the host being told (no liveness API; a dead bus that still reads as success),
+so host code should supervise the C6 itself - watchdog the transport, treat
+prolonged silence as a fault, and own an escalation path (C6 reset via
+GPIO54, then controlled host reboot). Issue states change; re-check before
+relying on this table.
+
 ## Onboard Fixed Pin Use
 
 Sourced from the DFR1172 wiki pin tables and cross-checked against Espressif's
@@ -793,7 +822,9 @@ adds `A5`-`A7` on GPIO49/GPIO50/GPIO52, which the silkscreen does not label.
 ## PlatformIO Notes
 
 There is still **no DFRobot FireBeetle 2 ESP32-P4 board JSON** in
-pioarduino/platform-espressif32 as of release `55.03.311` (2026-07-24). Only
+pioarduino/platform-espressif32 as of release `55.03.311` (2026-07-24;
+re-checked 2026-08-21, still the latest release and still no DFRobot board
+JSON). Only
 generic and Espressif EV-board targets exist:
 
 | Board ID | `chip_variant` | `f_cpu` | Applies to this board? |
