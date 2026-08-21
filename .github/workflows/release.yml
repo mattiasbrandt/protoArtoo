@@ -60,9 +60,10 @@ jobs:
           key: ${{ runner.os }}-pio-${{ hashFiles('platformio.ini') }}
           restore-keys: ${{ runner.os }}-pio-
 
-      - name: 🔑 Provision CI placeholder secrets.h
-        run: cp src/secrets.h.example src/secrets.h
-
+      # No secrets.h is provisioned here on purpose: release binaries must be
+      # built without one so the Developer WiFi Shortcut (ADR 0015) stays
+      # unavailable and a fresh controller boots into WiFi Provisioning.
+      # Even the placeholder secrets.h.example defines the shortcut macros.
       - name: 🏗️ Build firmware
         run: pio run -e ${{ matrix.env }}
 
