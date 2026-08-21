@@ -93,6 +93,12 @@ sdkconfig.protoArtoo*
 src/idf_component.yml
 managed_components/
 .dummy/
+# Emitted at project root by the ESP-IDF component-manager path (P4 builds hit
+# this via custom_sdkconfig). CMakeLists.txt is generated per checkout — its
+# project() name is the containing directory, so a worktree build writes a
+# different one than the main checkout.
+CMakeLists.txt
+dependencies.lock
 
 # Misc
 # node_modules/ — ignored when JS tooling (e.g. playwright) is installed
