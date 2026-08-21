@@ -421,7 +421,7 @@ agent eventually rationalizes a push to a shared branch.
 | Push a `feature/`, `fix/`, `refactor/`, `chore/`, `docs/`, `test/`, or `exp/` branch you own | Free — no approval |
 | `--force-with-lease` onto that same branch after a rebase | Free — no approval |
 | `gh issue develop` branch creation | Free — no approval |
-| Push to `phase/*` or any shared integration branch | Explicit operator approval |
+| Push to any shared integration branch (`phase/*` is retired history) | Explicit operator approval |
 | Open **or** merge a PR | Explicit operator approval |
 | Push a tag | Explicit operator approval |
 | Push to `main`, or self-merge any PR | Never, unconditionally |
