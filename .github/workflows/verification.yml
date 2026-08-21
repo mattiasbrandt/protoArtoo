@@ -19,6 +19,10 @@ jobs:
   verification:
     name: verification
     runs-on: ubuntu-latest
+    # Version-sync's bot commit now pushes via a deploy key, and deploy-key
+    # pushes (unlike GITHUB_TOKEN pushes) trigger on:push workflows. A
+    # version-JSON-only commit needs no verification run — skip it.
+    if: github.event_name != 'push' || github.event.head_commit.author.email != '41898282+github-actions[bot]@users.noreply.github.com'
     permissions:
       contents: read
       pull-requests: write
