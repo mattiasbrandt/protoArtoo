@@ -9,4 +9,4 @@ pyserial>=3.5
 questionary>=2.1.1
 
 # PyYAML: required for action catalog generation from docs/action-registry.yaml.
-PyYAML>=6.0
+PyYAML>=6.0.3
