@@ -15,7 +15,7 @@ Every semantic version release belongs here:
 
 ## [Unreleased]
 
-## [1.0.0] - 2026-08-07
+## [1.0.0] - 2026-08-21
 
 First stable release. Feature-complete for day-to-day operation — audio, RC
 control, dome control, servos, the web control panel, backups, and firmware
@@ -52,8 +52,21 @@ follow-up work, not a blocker for this release (see `docs/status.md`).
 - GitHub Actions now gate pull requests with build, test, static-analysis, and
   dependency-review checks.
 - Tagged releases now publish ready-to-flash firmware and filesystem images for
-  each sound backend (CHIRP and MP3 Trigger), so operators can update a
-  controller without installing a build toolchain.
+  each sound backend (CHIRP, MP3 Trigger, and DY-SV5W), so operators can update
+  a controller without installing a build toolchain.
+- WiFi setup no longer requires building from source. A controller flashed with
+  a downloaded release build starts its own setup hotspot on first boot; joining
+  it opens the WiFi page, where the droid is either pointed at an existing
+  network (WiFi Client Mode) or kept on its own hotspot (Standalone AP Mode).
+  WiFi settings live on the controller and survive firmware updates. Compiled-in
+  credentials (`src/secrets.h`) remain available as a self-build developer
+  shortcut only.
+- An explicit Network Recovery Mode reopens the setup hotspot with a documented
+  default credential, so a controller whose saved WiFi settings point at an
+  unreachable network can always be repaired without reflashing.
+- Servos, dome, and audio each have an enable toggle: a component switched off
+  is fully inert (nothing is driven on its pins), and toggle changes are staged
+  to take effect at the next reboot like other reboot-scoped settings.
 - When the controller is too busy to serve a page, it now answers with a plain
   "controller busy" recovery page that explains what happened and offers a
   retry, instead of the browser showing a generic connection error. A refused
@@ -95,6 +108,14 @@ follow-up work, not a blocker for this release (see `docs/status.md`).
 - The dome panel picker UX is more direct (fewer confirmation steps for pie
   panels) and more readable (contrast, label sizing) for low-light operation.
 - OTA update timeouts were extended for reliability over slow connections.
+- Log verbosity now has four tiers (Errors, Warnings, Info, Debug) instead of
+  three, selectable from the Setup page. Log lines are timestamped, and the
+  in-memory log buffer is sized at boot from the saved level, so quieter levels
+  keep more history.
+- The `LICENSE` and `README` now state plainly what the MIT grant covers (this
+  repository's own firmware, web UI, docs, and tooling) and what it cannot
+  (third-party libraries, the Artoo Controller PCB design, the MK4 droid
+  design), with a Lucasfilm/Disney non-affiliation disclaimer.
 
 ### Fixed
 - Audio control and playback regressions across supported backends.
@@ -129,6 +150,12 @@ follow-up work, not a blocker for this release (see `docs/status.md`).
 - A saved Learned Sequence could be written but not marked usable, so it never
   appeared as playable; saved sequences are now indexed correctly and sized to
   the sequence actually submitted.
+- An RC input disabled in settings is now parked and inert from boot instead of
+  still being read, the boot-active RC configuration is reported truthfully in
+  the UI, and RC setting changes clearly mark that a restart is needed before
+  they apply.
+- Drive commands from an RC source that has gone quiet now expire in the output
+  arbiter instead of being held and replayed.
 
 ### Still to verify
 - Drive-motor (hoverboard) behavior on a completely assembled droid. Drive control,
@@ -148,6 +175,11 @@ follow-up work, not a blocker for this release (see `docs/status.md`).
   automated tests, but the reworked code has not yet been run on a controller. Checking
   it on hardware, including a signal-loss drill with a live receiver, is still to be
   completed.
+- First-boot WiFi Provisioning on a factory-fresh (unprovisioned) controller has
+  not been exercised live end to end. The boot-posture decision is covered by
+  automated tests, and release builds are now compiled without any developer
+  WiFi shortcut, but the literal "flash, join the setup hotspot, open the WiFi
+  page" flow still needs one live pass.
 
 ## [0.4.0] - 2026-03-29
 
