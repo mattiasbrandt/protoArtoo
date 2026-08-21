@@ -1,0 +1,259 @@
+<!-- data/_recovery_kernel.html
+
+     Page Recovery View kernel, inlined into every controller page at build
+     time by tools/gzip_fsdata.py (see the PA:INCLUDE directive in each page).
+
+     This is the one part of the UI that must survive the failure it reports,
+     so it depends on nothing that can be shed: colors are literal rather than
+     custom properties (those live in /style.css), and it renders without any
+     external script. It also fetches /page_bootstrap.js itself, with retry,
+     because a bare markup tag has none and the controller sheds connections
+     in the opening burst by design.
+
+     Edit here only -- pages carry the directive, never a copy. -->
+    <style>
+      #page-recovery-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.6);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 10001;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      }
+      #page-recovery-backdrop.active { display: flex; }
+      body.recovery-active > *:not(#page-recovery-backdrop) {
+        opacity: 0.4;
+        pointer-events: none;
+      }
+      body.recovery-active .sleep-overlay,
+      body.recovery-active .seq-modal {
+        visibility: hidden;
+        pointer-events: none;
+      }
+      #page-recovery-backdrop .recovery-panel {
+        background: rgb(21, 34, 56);
+        border: 1px solid rgb(42, 74, 122);
+        border-radius: 8px;
+        padding: 20px;
+        width: 90%;
+        max-width: 380px;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+        text-align: center;
+      }
+      #page-recovery-backdrop .recovery-header {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 8px;
+      }
+      #page-recovery-backdrop .recovery-refused-banner {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        margin-bottom: 8px;
+        color: rgb(232, 168, 50);
+        font-size: 0.8rem;
+        font-weight: 600;
+        letter-spacing: 0.05em;
+      }
+      #page-recovery-backdrop .indicator {
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        display: inline-block;
+        background: rgb(232, 168, 50);
+        box-shadow: 0 0 6px rgb(232, 168, 50);
+      }
+      #page-recovery-backdrop .indicator.info {
+        background: rgb(106, 176, 255);
+        box-shadow: 0 0 6px rgb(106, 176, 255);
+      }
+      #page-recovery-backdrop .indicator.fail {
+        background: rgb(232, 84, 84);
+        box-shadow: 0 0 6px rgb(232, 84, 84);
+      }
+      #page-recovery-backdrop .recovery-status-reason {
+        color: rgb(212, 221, 232);
+        font-size: 0.95rem;
+        font-weight: 600;
+      }
+      #page-recovery-backdrop .recovery-status-detail {
+        color: rgb(168, 188, 216);
+        font-size: 0.8rem;
+        margin-top: 2px;
+      }
+      #page-recovery-backdrop .recovery-step {
+        color: rgb(106, 176, 255);
+        font-size: 0.8rem;
+        font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+        margin: 8px 0 0;
+      }
+      #page-recovery-backdrop .recovery-countdown-panel {
+        background: rgba(0, 0, 0, 0.4);
+        border: 1px solid rgb(42, 74, 122);
+        border-radius: 6px;
+        padding: 10px;
+        margin: 12px 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 6px;
+      }
+      #page-recovery-backdrop .recovery-countdown-value {
+        font-size: 1.4rem;
+        font-weight: 700;
+        color: rgb(232, 168, 50);
+        font-variant-numeric: tabular-nums;
+        font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      }
+      #page-recovery-backdrop .recovery-countdown-label {
+        color: rgb(168, 188, 216);
+        font-size: 0.75rem;
+        white-space: pre-line;
+      }
+      #page-recovery-backdrop .recovery-message {
+        color: rgb(168, 188, 216);
+        font-size: 0.85rem;
+        line-height: 1.4;
+        margin: 8px 0 0;
+      }
+      #page-recovery-backdrop .recovery-actions {
+        display: flex;
+        gap: 8px;
+        margin-top: 12px;
+        justify-content: center;
+      }
+      #page-recovery-backdrop .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 10px 16px;
+        background: rgb(74, 144, 217);
+        color: rgb(240, 244, 248);
+        border: 1px solid rgb(106, 176, 255);
+        border-radius: 999px;
+        font-size: 0.85rem;
+        font-weight: 600;
+        font-family: inherit;
+        cursor: pointer;
+        min-height: 38px;
+      }
+      #page-recovery-backdrop .btn:hover { background: rgb(106, 176, 255); }
+      #page-recovery-backdrop .recovery-spinner {
+        display: inline-block;
+        width: 10px;
+        height: 10px;
+        border: 2px solid rgba(106, 176, 255, 0.2);
+        border-top-color: rgb(106, 176, 255);
+        border-radius: 50%;
+        animation: recovery-spin 0.8s linear infinite;
+        margin-right: 6px;
+        vertical-align: -1px;
+      }
+      @keyframes recovery-spin { to { transform: rotate(360deg); } }
+      @media (prefers-reduced-motion: reduce) {
+        #page-recovery-backdrop .recovery-spinner { animation: none; opacity: 0.7; }
+      }
+    </style>
+
+    <!-- Recovery kernel: inline on purpose. Everything below it can be shed
+         by the controller under load, including the scripts that render the
+         real recovery view, so the page must be able to say what is happening
+         using nothing but what already arrived in this response. Shows the
+         loading state immediately and, if the bootstrap never takes over,
+         reports that itself with a working retry. -->
+    <script>
+      (function () {
+        var backdrop = document.createElement("div");
+        backdrop.id = "page-recovery-backdrop";
+        backdrop.setAttribute("role", "status");
+        backdrop.setAttribute("aria-live", "polite");
+        backdrop.setAttribute("aria-atomic", "true");
+
+        // The bootstrap file this kernel is responsible for fetching, and the
+        // chain it drives once it runs. Loading it from here rather than from
+        // a plain markup tag is deliberate: a bare tag has no retry, so one
+        // shed connection would kill the page permanently, and this kernel is
+        // the only code guaranteed to be present to recover from that.
+        // Each page declares its own script chain on <html data-scripts>, so
+        // this kernel stays identical across every page. documentElement is
+        // available here even though this runs in <head> before <body> exists.
+        var BOOTSTRAP_SRC = "/page_bootstrap.js";
+        var PAGE_SCRIPTS = document.documentElement.getAttribute("data-scripts") || "";
+
+        // The controller sheds connections under burst pressure by design, so
+        // a failed fetch here is expected rather than exceptional.
+        var MAX_BOOTSTRAP_ATTEMPTS = 4;
+        var BOOTSTRAP_RETRY_BASE_MS = 400;
+
+        // Final backstop: if the bootstrap never takes over even after those
+        // attempts, say so rather than sitting on a spinner.
+        var TAKEOVER_DEADLINE_MS = 10000;
+
+        function panel(html) {
+          backdrop.innerHTML = '<div class="recovery-panel">' + html + "</div>";
+          backdrop.classList.add("active");
+          document.body.classList.add("recovery-active");
+        }
+
+        function showLoading() {
+          panel(
+            '<div class="recovery-header"><span class="indicator info"></span>' +
+              '<div><div class="recovery-status-reason">Loading page resources</div>' +
+              '<div class="recovery-status-detail">Preparing the controller page</div></div></div>' +
+              '<p class="recovery-step"><span class="recovery-spinner"></span>Loading: page files</p>' +
+              '<p class="recovery-message">Completed resources stay loaded.</p>'
+          );
+        }
+
+        function showStalled() {
+          panel(
+            '<div class="recovery-header"><span class="indicator fail"></span>' +
+              '<div><div class="recovery-status-reason">No response from controller</div>' +
+              '<div class="recovery-status-detail">The page could not finish loading its files.</div></div></div>' +
+              '<p class="recovery-message">The controller may be busy. Retry when ready.</p>' +
+              '<div class="recovery-actions"><button type="button" class="btn" id="recovery-kernel-retry">Retry now</button></div>'
+          );
+          var button = document.getElementById("recovery-kernel-retry");
+          if (button) button.addEventListener("click", function () { window.location.reload(); });
+        }
+
+        function loadBootstrap(attempt) {
+          var script = document.createElement("script");
+          script.src = BOOTSTRAP_SRC;
+          script.async = false;
+          // The host reads its chain from its own script tag; document.
+          // currentScript is set for dynamically inserted classic scripts too.
+          script.setAttribute("data-scripts", PAGE_SCRIPTS);
+          script.onerror = function () {
+            script.remove();
+            if (attempt < MAX_BOOTSTRAP_ATTEMPTS) {
+              window.setTimeout(function () {
+                loadBootstrap(attempt + 1);
+              }, BOOTSTRAP_RETRY_BASE_MS * attempt);
+              return;
+            }
+            showStalled();
+          };
+          document.body.appendChild(script);
+        }
+
+        function start() {
+          document.body.appendChild(backdrop);
+          showLoading();
+          loadBootstrap(1);
+          window.setTimeout(function () {
+            // The real view replaces this content once it renders; only claim
+            // a stall if the bootstrap genuinely never arrived.
+            if (!window.PABootstrap || !window.PARecoveryView) showStalled();
+          }, TAKEOVER_DEADLINE_MS);
+        }
+
+        if (document.body) start();
+        else document.addEventListener("DOMContentLoaded", start, { once: true });
+      })();
+    </script>

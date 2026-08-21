@@ -1,11 +1,12 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-scripts="/web_api.js,/status_stream.js,/shell.js,/servo.js,/footer.js">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Servos - protoArtoo</title>
     <link rel="stylesheet" href="/style.css">
     <link rel="icon" type="image/png" href="/r2d2body-favicon.png">
+    <!-- PA:INCLUDE _recovery_kernel.html -->
   </head>
   <body data-page="servo">
     <div id="shell-top"></div>
@@ -20,18 +21,17 @@
     </div>
 
     <!-- No arms enabled notice -->
-    <div class="card disabled-card" id="no-arms-card" role="status" aria-live="polite" aria-atomic="true">
+    <div class="card disabled-card hidden" id="no-arms-card" role="status" aria-live="polite" aria-atomic="true">
       <h3>🦾 Servo Hardware Disabled</h3>
       <div class="desc">Servo control buttons are unavailable because no arm servos are enabled.</div>
       <div class="desc disabled-reason"><strong>Required component:</strong> ARM1 and/or ARM2</div>
       <div class="desc">Open <a class="setup-link" href="/setup.html">Setup</a> and enable at least one arm servo to restore arm controls.</div>
     </div>
 
-    <!-- AUX Outputs (AUX1 / AUX2 / AUX3) -->
-    <div class="card hidden" id="aux-controls-card">
-      <h3>🔌 AUX Outputs</h3>
-      <div class="desc">Controls for enabled auxiliary outputs. Servo outputs support open, close,
-        and stop. RGB LED strips show a placeholder — output control coming soon.</div>
+    <!-- AUX (AUX1 / AUX2 / AUX3) -->
+    <div class="card" id="aux-controls-card">
+      <h3>🔌 AUX</h3>
+      <div class="desc">Controls for enabled AUX outputs. 💡 LED strip options are configured in <a class="setup-link" href="/setup.html">Setup</a>.</div>
       <div id="aux-controls-container" class="mt-12"></div>
       <div id="aux-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true">No command sent yet.</div>
     </div>
@@ -42,14 +42,18 @@
       <div class="desc">
         Set the open and close pulse widths (µs) for each servo output. MG996R standard range is
         1000–2000 µs; MG90S micro servo range is 500–2500 µs. Use the test buttons to move the
-        servo live while adjusting, then save when the position is correct.
+        servo live while adjusting, changes auto-save immediately as you adjust.
+      </div>
+
+      <div class="caution-banner" role="alert">
+        ⚠️ Test buttons move real hardware. Ensure arms and panels are clear before testing.
       </div>
 
       <form id="calib-form" class="mt-16">
 
         <!-- ARM1 calibration (shown only when ARM1 enabled) -->
         <div class="hidden" id="arm1-calib-section">
-          <div class="section-label">Left Arm — ARM1 (GPIO 23)</div>
+          <div class="section-label">Left Arm — ARM1</div>
           <div class="form-grid">
             <label class="field">
               <span>Open position (µs)</span>
@@ -80,7 +84,7 @@
 
         <!-- ARM2 calibration (shown only when ARM2 enabled) -->
         <div class="hidden" id="arm2-calib-section">
-          <div class="section-label">Right Arm — ARM2 (GPIO 5)</div>
+          <div class="section-label">Right Arm — ARM2</div>
           <div class="form-grid">
             <label class="field">
               <span>Open position (µs)</span>
@@ -111,7 +115,7 @@
 
         <!-- AUX1 calibration (shown only when AUX1 enabled and type is a servo) -->
         <div class="hidden" id="aux1-calib-section">
-          <div class="section-label">AUX Output 1 — AUX1 (GPIO 19)</div>
+          <div class="section-label">AUX Output 1 — AUX1</div>
           <div class="form-grid">
             <label class="field">
               <span>Open position (µs)</span>
@@ -140,7 +144,7 @@
 
         <!-- AUX2 calibration (shown only when AUX2 enabled and type is a servo) -->
         <div class="hidden" id="aux2-calib-section">
-          <div class="section-label">AUX Output 2 — AUX2 (GPIO 18)</div>
+          <div class="section-label">AUX Output 2 — AUX2</div>
           <div class="form-grid">
             <label class="field">
               <span>Open position (µs)</span>
@@ -169,7 +173,7 @@
 
         <!-- AUX3 calibration (shown only when AUX3 enabled and type is a servo) -->
         <div class="hidden" id="aux3-calib-section">
-          <div class="section-label">AUX Output 3 — AUX3 (GPIO 32)</div>
+          <div class="section-label">AUX Output 3 — AUX3</div>
           <div class="form-grid">
             <label class="field">
               <span>Open position (µs)</span>
@@ -205,10 +209,9 @@
 
     <div id="shell-status"></div>
 
-    <script src="/web_api.js"></script>
-    <script src="/status_stream.js"></script>
-    <script src="/shell.js"></script>
-    <script src="/servo.js"></script>
-    <script src="/footer.js"></script>
+    <!-- No bootstrap <script src> here on purpose: the inline kernel in <head>
+         fetches /page_bootstrap.js itself, with retry, and hands it the script
+         chain from <html data-scripts>. A bare tag has no retry, and the
+         controller sheds connections in the opening burst by design. -->
   </body>
 </html>

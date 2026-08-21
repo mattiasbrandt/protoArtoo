@@ -1,7 +1,7 @@
 // =============================================================================
 // src/tasks/mood.cpp
 //
-// applyMood() — dual-path mood preset execution.
+// applyMood()  --  dual-path mood preset execution.
 // See include/mood.h for the full design contract.
 // =============================================================================
 
@@ -10,6 +10,7 @@
 #include <Preferences.h>
 
 #include "audio_task.h"
+#include "commanded_modes.h"
 #include "config.h"
 #include "dome_link.h"
 #include "logging.h"
@@ -20,7 +21,7 @@ static const char* TAG = "Mood";
 void applyMood(uint8_t moodId, bool fromDome) {
     const char* audioCmd = moodAudioCommand(moodId);
     if (!audioCmd) {
-        PA_LOG_WARN(TAG, "applyMood: invalid mood id %u — ignored", (unsigned)moodId);
+        PA_LOG_WARN(TAG, "applyMood: invalid mood id %u - ignored", (unsigned)moodId);
         return;
     }
 
@@ -36,18 +37,16 @@ void applyMood(uint8_t moodId, bool fromDome) {
         domeQueueTx(domeTxBuf);
         PA_LOG_INFO(TAG, "mood %u dome TX: %s", (unsigned)moodId, domeTxBuf);
     } else if (fromDome) {
-        PA_LOG_DEBUG(TAG, "mood %u — dome TX suppressed (called from dome RX)", (unsigned)moodId);
+        PA_LOG_DEBUG(TAG, "mood %u - dome TX suppressed (called from dome RX)", (unsigned)moodId);
     } else {
-        PA_LOG_DEBUG(TAG, "mood %u — dome TX skipped (dome not connected)", (unsigned)moodId);
+        PA_LOG_DEBUG(TAG, "mood %u - dome TX skipped (dome not connected)", (unsigned)moodId);
     }
 
     // --- Update shared state ---
-    taskENTER_CRITICAL(&robotStateMux);
-    robotState.activeMood = moodId;
-    taskEXIT_CRITICAL(&robotStateMux);
+    commandedSetActiveMood(moodId, fromDome ? SRC_INTERNAL : SRC_WEB_API);
 
     // --- Persist to NVS ---
-    // Dedicated mini-write — avoids saving entire config for a mood change.
+    // Dedicated mini-write  --  avoids saving entire config for a mood change.
     // NOTE: applyMood() may be called from DomeLinkTask (Core 1) when a mood
     // command arrives from dome serial. Flash writes take a few ms and will
     // briefly stall DomeLinkTask. This is acceptable because mood changes are

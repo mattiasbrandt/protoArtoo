@@ -15,6 +15,172 @@ Every semantic version release belongs here:
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-08-21
+
+First stable release. Feature-complete for day-to-day operation — audio, RC
+control, dome control, servos, the web control panel, backups, and firmware
+updates are all confirmed working on real hardware. Full drive-motor
+(hoverboard) validation on a completely assembled droid is tracked as
+follow-up work, not a blocker for this release (see `docs/status.md`).
+
+### Added
+- Runtime action registry now powers RC bindings and the action picker in the web API/UI.
+- Sleep mode now keeps body and dome state in sync, with wake and sleep control from the web UI and RC bindings.
+- CHIRP playback got broader sound coverage: category ranges, named tracks, banked playback, and system sound mapping.
+- Full-droid sequence actions and dome sequence controls now support more complex show playback.
+- AUX LED strip support now includes configurable header selection and setup-page controls.
+- The setup page now supports NVS backup and restore.
+- Shell controls now include estop and reboot actions.
+- Random dome rotation now has web configuration and RC control support.
+- Coredump partition and HTTP retrieval (`/api/coredump`) lets operators download
+  crash dumps for offline analysis alongside the live serial log.
+- Static web assets are now gzip-compressed at build time, reducing dashboard load size.
+- The sequence editor's dome panel picker is now an SVG rendering of real dome
+  geometry, matching the live dome render on the home page, with pie panels
+  directly selectable.
+- The home page now has quick-access controls for dome commands and recently-used sequences.
+- New `POST /api/seq/stop` provides a non-latching way to abort a running
+  sequence, distinct from estop.
+- The dashboard now shows which dome link transport (WiFi or serial UART) is active.
+- Dome visual commands (Holo Effect, Logic/PSI, Logic Text, Visual Preset) are
+  now validated server-side before dispatch, catching malformed dome commands
+  before they reach the dome.
+- The sequence editor now supports authoring `DV:<name>` visual presets and
+  Holo Effect / Logic-PSI / Logic-Text steps, completing the dome sequence vocabulary.
+- Every built-in sequence now shows its intended use on the Factory card.
+- Operators can now set a custom droid name from the web UI, shown on the status page and in logs.
+- GitHub Actions now gate pull requests with build, test, static-analysis, and
+  dependency-review checks.
+- Tagged releases now publish ready-to-flash firmware and filesystem images for
+  each sound backend (CHIRP, MP3 Trigger, and DY-SV5W), so operators can update
+  a controller without installing a build toolchain.
+- WiFi setup no longer requires building from source. A controller flashed with
+  a downloaded release build starts its own setup hotspot on first boot; joining
+  it opens the WiFi page, where the droid is either pointed at an existing
+  network (WiFi Client Mode) or kept on its own hotspot (Standalone AP Mode).
+  WiFi settings live on the controller and survive firmware updates. Compiled-in
+  credentials (`src/secrets.h`) remain available as a self-build developer
+  shortcut only.
+- An explicit Network Recovery Mode reopens the setup hotspot with a documented
+  default credential, so a controller whose saved WiFi settings point at an
+  unreachable network can always be repaired without reflashing.
+- Servos, dome, and audio each have an enable toggle: a component switched off
+  is fully inert (nothing is driven on its pins), and toggle changes are staged
+  to take effect at the next reboot like other reboot-scoped settings.
+- When the controller is too busy to serve a page, it now answers with a plain
+  "controller busy" recovery page that explains what happened and offers a
+  retry, instead of the browser showing a generic connection error. A refused
+  page load is now visibly different from an unreachable controller.
+- Every dashboard page now loads its data through a shared bootstrap that
+  reports each section's state individually. A section that fails to load shows
+  its own retry control and an explanation, instead of leaving the page blank or
+  silently stale, and controls backed by data that never arrived are disabled
+  rather than acting on stale values.
+- `/api/status` now reports web-server load evidence — live and peak concurrent
+  request depth, peak live-status client count, and how many connections were
+  refused and why — so a busy or degraded controller can be diagnosed from the
+  dashboard instead of from a serial log.
+
+### Changed
+- Drive and RC control paths now use a shared output arbiter, safer source handling, and latching safety behavior.
+- Configuration flows now separate save/apply, runtime use, and reboot survival through clearer state handling.
+- Audio now uses a shared driver interface and playback policy, with cleaner catalog ownership and volume handling.
+- Dome handling is now split into serial control, motion control, and body-link coordination.
+- Web and dashboard surfaces now have clearer live feedback, more reliable status derivation, and better log handling.
+- The public status page (`docs/status.md`) was rewritten for a plain-language
+  operator audience, with per-subsystem evidence and a clear list of what's
+  still unverified.
+- CHIRP audio and the dome serial link now coexist reliably on a shared UART,
+  instead of intermittently dropping audio or dome commands.
+- Sequence and CHIRP catalog memory is now allocated based on actual data size
+  instead of static worst-case buffers, reducing baseline heap usage.
+- The controller's web server was replaced. It now runs on the ESP32's own
+  built-in HTTP server (via PsychicHttp) instead of the previous asynchronous
+  stack, which could not be made reliable under the memory pressure a dashboard
+  page load creates. Connections are now reused across requests rather than
+  reopened per response, and a request that stalls mid-response is closed
+  instead of holding the connection open indefinitely.
+- The controller now decides whether it can serve a request before accepting it,
+  based on actual free memory at that moment, and always answers — with the
+  recovery page above — rather than dropping the connection. Live-status
+  streams are budgeted separately from ordinary page loads, so a dashboard left
+  open no longer starves a new page load.
+- The dome panel picker UX is more direct (fewer confirmation steps for pie
+  panels) and more readable (contrast, label sizing) for low-light operation.
+- OTA update timeouts were extended for reliability over slow connections.
+- Log verbosity now has four tiers (Errors, Warnings, Info, Debug) instead of
+  three, selectable from the Setup page. Log lines are timestamped, and the
+  in-memory log buffer is sized at boot from the saved level, so quieter levels
+  keep more history.
+- The `LICENSE` and `README` now state plainly what the MIT grant covers (this
+  repository's own firmware, web UI, docs, and tooling) and what it cannot
+  (third-party libraries, the Artoo Controller PCB design, the MK4 droid
+  design), with a Lucasfilm/Disney non-affiliation disclaimer.
+
+### Fixed
+- Audio control and playback regressions across supported backends.
+- RC mapping, config apply, and UI synchronization bugs.
+- Status and diagnostics issues that could hide the actual runtime state.
+- A heap-exhaustion crash (OOM) affecting CHIRP and Learned Sequences under
+  larger catalogs/libraries — memory is now right-sized on demand instead of
+  over-allocated up front.
+- CHIRP audio could silently fail to initialize when the dome serial link held
+  the shared UART; it now retries instead of falling back permanently.
+- Dome link UART recovery — reconnects now clear stale errors and no longer
+  hang indefinitely contending for the shared UART.
+- Dashboard pages that would fail to load, load partially, or hang the
+  controller when several pages or tabs were opened at once, or when the
+  controller was low on memory. Page loads now succeed or refuse cleanly with an
+  explanation, and the controller stays reachable throughout.
+- Server-side crashes and connection issues under live-status (SSE) load, and
+  under general API load. A live-status client that stops reading is now dropped
+  instead of blocking the controller.
+- Large web assets could be truncated mid-transfer when memory was tight,
+  producing a partly-rendered dashboard; they are now sent in chunks the
+  connection can accept, and a starved write is retried instead of cut short.
+- A failed or incomplete firmware/filesystem upload could leave the controller
+  rebooting into a half-written image; an upload that delivers no usable image
+  is now rejected and the update aborted, with an accurate error message.
+- Dome panel availability messages now correctly explain *why* a panel is
+  unavailable instead of a generic "not reachable".
+- The dome panel picker no longer renders blank on first load.
+- Pie panel label contrast now meets accessibility guidelines for low-light use.
+- A spurious failsafe trigger in single-SBUS mode with a secondary channel enabled.
+- Sequence save no longer drops the sequence body, fixing a save/round-trip regression.
+- A saved Learned Sequence could be written but not marked usable, so it never
+  appeared as playable; saved sequences are now indexed correctly and sized to
+  the sequence actually submitted.
+- An RC input disabled in settings is now parked and inert from boot instead of
+  still being read, the boot-active RC configuration is reported truthfully in
+  the UI, and RC setting changes clearly mark that a restart is needed before
+  they apply.
+- Drive commands from an RC source that has gone quiet now expire in the output
+  arbiter instead of being held and replayed.
+
+### Still to verify
+- Drive-motor (hoverboard) behavior on a completely assembled droid. Drive control,
+  safety logic, and failsafe are implemented and tested, but live wheel response
+  has not yet been confirmed on a finished build. This is planned as follow-up
+  work after `v1.0.0` and will be documented when complete.
+- The MP3 Trigger audio module (an alternative to CHIRP) is implemented but has
+  not been re-confirmed on hardware for this release.
+- The failed-upload abort guard is implemented and confirmed in software, but the
+  failure itself has not been reproduced on hardware for this release.
+- Web-server behavior is confirmed under bench load and induced memory pressure,
+  but not yet over a long continuous session; sustained multi-hour dashboard use
+  has not been soak-tested.
+- Drive hardware checks are still to be completed on the hoverboard and complete droid hardware. This is the remaining hardware verification item before release.
+- RC input decision logic (mode changes, watchdog and receiver-failsafe transitions,
+  zero-frame behavior on signal loss) was reworked for this release and is covered by
+  automated tests, but the reworked code has not yet been run on a controller. Checking
+  it on hardware, including a signal-loss drill with a live receiver, is still to be
+  completed.
+- First-boot WiFi Provisioning on a factory-fresh (unprovisioned) controller has
+  not been exercised live end to end. The boot-posture decision is covered by
+  automated tests, and release builds are now compiled without any developer
+  WiFi shortcut, but the literal "flash, join the setup hotspot, open the WiFi
+  page" flow still needs one live pass.
+
 ## [0.4.0] - 2026-03-29
 
 ### Added

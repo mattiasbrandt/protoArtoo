@@ -1,29 +1,42 @@
 // =============================================================================
 // src/main.cpp
 //
-// protoArtoo — ESP32 body controller for MK4 astromech droid.
-// Boot sequence — Phase 1 stub.
+// protoArtoo  --  ESP32 body controller for MK4 astromech droid.
+// Boot: config load, safety defaults, task creation.
 // =============================================================================
 
 #include <Arduino.h>
 #include <Preferences.h>
+#include <cstddef>
 #include <esp_task_wdt.h>
+#include <freertos/semphr.h>
 
 #include "audio_dollar_parser.h"
 #include "audio_task.h"
+#include "aux_led.h"
+#include "config_store.h"
+#include "config_cache.h"
 #include "dome_link.h"
 #include "dome_task.h"
 #include "drive.h"
+#include "drive_arbiter.h"
+#include "failsafe_boot_sbus.h"
+#include "failsafe_boot_twdt.h"
+#include "failsafe_gate.h"
 #include "ledc_pwm.h"
 #include "log_buffer.h"
 #include "mood.h"
 #include "rc_input.h"
+#include "rc_input_step.h"
+#include "reset_reason.h"
 #include "robot_state.h"
 #include "safety.h"
+#include "seq_store.h"
+#include "sequence_dispatcher.h"
 #include "servo_task.h"
 #include "web_server.h"
 
-// Global state — all tasks share these
+// Global state  --  all tasks share these
 RobotState robotState = {};
 portMUX_TYPE robotStateMux = portMUX_INITIALIZER_UNLOCKED;
 QueueHandle_t servoCmdQueue = nullptr;
@@ -34,133 +47,113 @@ static volatile bool restartRequested = false;
 static volatile uint32_t restartAtMs = 0;
 static portMUX_TYPE restartMux = portMUX_INITIALIZER_UNLOCKED;
 static portMUX_TYPE logMux = portMUX_INITIALIZER_UNLOCKED;
+static StaticSemaphore_t logSerialMutexStorage = {};
+static SemaphoreHandle_t logSerialMutex = nullptr;
+// Static bootstrap ring: captures the few lines logged before NVS config loads
+// (schema migration, mount problems). paLogRingApplyBootDepth() replaces it
+// with a heap ring sized to the saved log level and carries these lines over.
+static char logBootstrapStorage[LOG_RING_BOOTSTRAP_LINES][LOG_LINE_MAX];
 static LogBuffer recentLogBuf = {};
+// /api/logs response body, allocated alongside the sized ring (capacity *
+// LOG_LINE_MAX + 1). One shared buffer is race-free because web handlers
+// serialize on one task; see handleLogsGet().
+static char* logsBodyBuf = nullptr;
+static size_t logsBodyBufSize = 0;
 
 namespace {
 
-struct RcBindingNvsSpec {
-    const char* key;
-    RcBindingConfig* binding;
-    RcBindingConfig defaultValue;
-};
-
-bool loadRcBindingFromPrefs(Preferences& prefs, const char* key,
-                            const RcBindingConfig& defaultValue, RcBindingConfig* out) {
-    if (out == nullptr) {
-        return false;
-    }
-
-    char fallback[48] = {};
-    if (!formatRcBindingConfig(fallback, sizeof(fallback), defaultValue)) {
-        *out = defaultValue;
-        return false;
-    }
-
-    String stored = prefs.getString(key, fallback);
-    RcBindingConfig parsed = defaultValue;
-    if (!parseRcBindingConfig(stored.c_str(), &parsed)) {
-        parsed = defaultValue;
-    }
-    *out = parsed;
-    return true;
-}
-
-bool saveRcBindingToPrefs(Preferences& prefs, const char* key, const RcBindingConfig& binding) {
-    char encoded[48] = {};
-    if (!formatRcBindingConfig(encoded, sizeof(encoded), binding)) {
-        return false;
-    }
-    return prefs.putString(key, encoded) > 0;
-}
-
-// Tier 2 Trigger Binding NVS helpers
-struct RcTriggerBindingNvsSpec {
-    const char* key;
-    RcTriggerBinding* binding;
-    RcTriggerBinding defaultValue;
-};
-
-bool loadRcTriggerBindingFromPrefs(Preferences& prefs, const char* key,
-                                   const RcTriggerBinding& defaultValue, RcTriggerBinding* out) {
-    if (out == nullptr) {
-        return false;
-    }
-
-    char fallback[64] = {};
-    if (!formatRcTriggerBinding(fallback, sizeof(fallback), defaultValue)) {
-        *out = defaultValue;
-        return false;
-    }
-
-    String stored = prefs.getString(key, fallback);
-    RcTriggerBinding parsed = defaultValue;
-    if (!parseRcTriggerBinding(stored.c_str(), &parsed)) {
-        parsed = defaultValue;
-    }
-    *out = parsed;
-    return true;
-}
-
-bool saveRcTriggerBindingToPrefs(Preferences& prefs, const char* key,
-                                 const RcTriggerBinding& binding) {
-    char encoded[64] = {};
-    if (!formatRcTriggerBinding(encoded, sizeof(encoded), binding)) {
-        return false;
-    }
-    return prefs.putString(key, encoded) > 0;
-}
-
-const char* resetReasonName(esp_reset_reason_t reason) {
-    switch (reason) {
-        case ESP_RST_UNKNOWN:
-            return "UNKNOWN";
-        case ESP_RST_POWERON:
-            return "POWERON";
-        case ESP_RST_EXT:
-            return "EXTERNAL";
-        case ESP_RST_SW:
-            return "SOFTWARE";
-        case ESP_RST_PANIC:
-            return "PANIC";
-        case ESP_RST_INT_WDT:
-            return "INT_WDT";
-        case ESP_RST_TASK_WDT:
-            return "TASK_WDT";
-        case ESP_RST_WDT:
-            return "WDT";
-        case ESP_RST_DEEPSLEEP:
-            return "DEEPSLEEP";
-        case ESP_RST_BROWNOUT:
-            return "BROWNOUT";
-        case ESP_RST_SDIO:
-            return "SDIO";
-        default:
-            return "OTHER";
-    }
-}
-
 void logBootHealth() {
+    ConfigSnapshot cfg = {};
+    configCacheRead(&cfg);
     PA_LOG_INFO("main", "protoArtoo boot begin");
     PA_LOG_INFO("main", "reset_reason=%s (%d)", resetReasonName(esp_reset_reason()),
                 (int)esp_reset_reason());
     PA_LOG_INFO("main",
-                "config speed_limit_max=%d sbus_timeout_ms=%lu web_timeout_ms=%lu ch8_mode_lock=%s "
-                "audio_volume=%u",
-                robotState.cfg_speedLimitMax, (unsigned long)robotState.cfg_sbusTimeoutMs,
-                (unsigned long)robotState.cfg_webDriveTimeoutMs,
-                robotState.cfg_ch8ModeLock ? "true" : "false", robotState.cfg_audioVolume);
+                "config speed_limit_max=%d sbus_timeout_ms=%lu web_timeout_ms=%lu audio_volume=%u",
+                cfg.drive.speedLimitMax, (unsigned long)cfg.drive.sbusTimeoutMs,
+                (unsigned long)cfg.drive.webDriveTimeoutMs, cfg.audio.audioVolume);
     PA_LOG_DEBUG("main", "heap_free=%lu", (unsigned long)ESP.getFreeHeap());
 }
 
 }  // namespace
 
-void paLogLine(const char* level, const char* message) {
-    char line[LOG_LINE_MAX];
-    snprintf(line, sizeof(line), "[%s] %s", level, message);
+void paLogInit() {
+    if (logSerialMutex == nullptr) {
+        logSerialMutex = xSemaphoreCreateMutexStatic(&logSerialMutexStorage);
+    }
+    if (recentLogBuf.lines == nullptr) {
+        logBufferInit(&recentLogBuf, logBootstrapStorage, LOG_RING_BOOTSTRAP_LINES);
+    }
+}
 
+// Size the log ring and the /api/logs body from the operator's saved log
+// level. Called once from setup() after NVS config loads and before any task
+// or the web server starts; bootstrap lines are carried over. On allocation
+// failure the bootstrap ring stays in place so logging never loses its store.
+static void paLogRingApplyBootDepth() {
+    const size_t wanted = logRingLinesForLevel(configCurrentLogLevel());
+    char(*storage)[LOG_LINE_MAX] = (char(*)[LOG_LINE_MAX])malloc(wanted * LOG_LINE_MAX);
+    char* body = (char*)malloc(wanted * LOG_LINE_MAX + 1);
+    if (storage == nullptr || body == nullptr) {
+        free(storage);
+        free(body);
+        PA_LOG_ERROR("log", "ring alloc failed (%u lines) - keeping bootstrap depth",
+                     (unsigned)wanted);
+        return;
+    }
+
+    LogBuffer sized = {};
+    logBufferInit(&sized, storage, wanted);
+
+    taskENTER_CRITICAL(&logMux);
+    size_t start =
+        (recentLogBuf.head + recentLogBuf.capacity - recentLogBuf.count) % recentLogBuf.capacity;
+    for (size_t i = 0; i < recentLogBuf.count; ++i) {
+        logBufferAppend(&sized, recentLogBuf.lines[(start + i) % recentLogBuf.capacity]);
+    }
+    sized.totalWritten = recentLogBuf.totalWritten;
+    recentLogBuf = sized;
+    logsBodyBuf = body;
+    logsBodyBufSize = wanted * LOG_LINE_MAX + 1;
+    taskEXIT_CRITICAL(&logMux);
+}
+
+char* recentLogsBodyBuffer(size_t* size) {
+    if (logsBodyBuf == nullptr) {
+        *size = 0;
+        return nullptr;
+    }
+    *size = logsBodyBufSize;
+    return logsBodyBuf;
+}
+
+void paLogLineRaw(const char* line) {
     taskENTER_CRITICAL(&logMux);
     logBufferAppend(&recentLogBuf, line);
     taskEXIT_CRITICAL(&logMux);
+}
+
+void paLogLine(const char* line) {
+    if (line == nullptr) {
+        return;
+    }
+
+    size_t lineLen = 0;
+    while (line[lineLen] != '\0' && lineLen < PA_LOG_SERIAL_LINE_MAX) {
+        ++lineLen;
+    }
+
+    SemaphoreHandle_t serialMutex = logSerialMutex;
+    if (serialMutex != nullptr) {
+        xSemaphoreTake(serialMutex, portMAX_DELAY);
+    }
+    Serial.write((const uint8_t*)line, lineLen);
+    Serial.write('\n');
+    if (serialMutex != nullptr) {
+        xSemaphoreGive(serialMutex);
+    }
+
+    paLogLineRaw(line);
 }
 
 size_t copyRecentLogs(char* buffer, size_t bufferSize) {
@@ -183,9 +176,11 @@ uint32_t copyNewLogLinesSince(uint32_t lastSent, char out[][LOG_LINE_MAX], size_
     uint32_t n = (from < total) ? (total - from) : 0;
     if (n > (uint32_t)maxLines)
         n = (uint32_t)maxLines;
-    size_t startIdx = (recentLogBuf.head + LOG_BUFFER_LINES - (size_t)count) % LOG_BUFFER_LINES;
+    size_t startIdx =
+        (recentLogBuf.head + recentLogBuf.capacity - (size_t)count) % recentLogBuf.capacity;
     for (uint32_t i = 0; i < n; ++i) {
-        size_t ringIdx = (startIdx + (size_t)(from - ringStart) + (size_t)i) % LOG_BUFFER_LINES;
+        size_t ringIdx =
+            (startIdx + (size_t)(from - ringStart) + (size_t)i) % recentLogBuf.capacity;
         strncpy(out[i], recentLogBuf.lines[ringIdx], LOG_LINE_MAX - 1);
         out[i][LOG_LINE_MAX - 1] = '\0';
     }
@@ -209,534 +204,51 @@ bool copyLogLineAt(size_t idx, char* out, size_t outSize) {
     bool valid = idx < recentLogBuf.count;
     if (valid) {
         size_t startIdx =
-            (recentLogBuf.head + LOG_BUFFER_LINES - recentLogBuf.count) % LOG_BUFFER_LINES;
-        size_t ringIdx = (startIdx + idx) % LOG_BUFFER_LINES;
+            (recentLogBuf.head + recentLogBuf.capacity - recentLogBuf.count) % recentLogBuf.capacity;
+        size_t ringIdx = (startIdx + idx) % recentLogBuf.capacity;
         strncpy(out, recentLogBuf.lines[ringIdx], outSize - 1);
         out[outSize - 1] = '\0';
     }
     taskEXIT_CRITICAL(&logMux);
     return valid;
 }
-
 // -----------------------------------------------------------------------------
-// setDriveCommand() — thread-safe drive command update
-// Called from RcInputTask, WebAPI handler, or safety zeroing.
-// -----------------------------------------------------------------------------
-void setDriveCommand(int16_t speed, int16_t steer, CommandSource src) {
-    taskENTER_CRITICAL(&robotStateMux);
-    robotState.driveSpeed = speed;
-    robotState.driveSteer = steer;
-    robotState.lastDriveSource = src;
-    robotState.lastDriveCommandMs = millis();
-    taskEXIT_CRITICAL(&robotStateMux);
-
-    if (speed != 0 || steer != 0) {
-        PA_LOG_INFO("DRIVE", "[%s] Drive command: speed=%d steer=%d", commandSourceToString(src),
-                    speed, steer);
-    }
-}
-
-// -----------------------------------------------------------------------------
-bool domeConnected() {
-    taskENTER_CRITICAL(&robotStateMux);
-    uint32_t lastSeen = robotState.domeLastSeenMs;
-    taskEXIT_CRITICAL(&robotStateMux);
-    return lastSeen > 0 && (millis() - lastSeen) < 5000;
-}
-
-// -----------------------------------------------------------------------------
-// loadConfigToState() — load NVS config into robotState.cfg_* fields
+// loadConfigToState()  --  load NVS config into the runtime config cache
 // Called once at boot before tasks start.
+// Logs an error if config load fails; safe defaults are applied in all paths.
 // -----------------------------------------------------------------------------
 void loadConfigToState() {
     Preferences prefs;
     prefs.begin(NVS_NAMESPACE, true);
-    robotState.cfg_speedLimitMax = prefs.getShort("spd_max", SPEED_LIMIT_MAX);
-    robotState.cfg_sbusTimeoutMs = prefs.getULong("sbus_tmo", SBUS_TIMEOUT_MS);
-    robotState.cfg_webDriveTimeoutMs = prefs.getULong("web_tmo", WEB_DRIVE_TIMEOUT_MS);
-    robotState.cfg_ch8ModeLock = prefs.getBool("ch8_lock", false);
-    robotState.cfg_audioVolume = (uint8_t)prefs.getUChar("aud_vol", 20);
-    robotState.cfg_logLevel = (uint8_t)prefs.getUChar("log_level", PA_LOG_LEVEL);
-    robotState.cfg_snd_scream = prefs.getUShort("snd_scream", AUDIO_TRACK_SCREAM);
-    robotState.cfg_snd_faint = prefs.getUShort("snd_faint", AUDIO_TRACK_FAINT);
-    robotState.cfg_snd_leia = prefs.getUShort("snd_leia", AUDIO_TRACK_LEIA);
-    robotState.cfg_snd_cantina_s = prefs.getUShort("snd_cantina_s", AUDIO_TRACK_CANTINA_S);
-    robotState.cfg_snd_sw_theme = prefs.getUShort("snd_sw", AUDIO_TRACK_SW_THEME);
-    robotState.cfg_snd_imp_march = prefs.getUShort("snd_march", AUDIO_TRACK_IMP_MARCH);
-    robotState.cfg_snd_cantina_l = prefs.getUShort("snd_cantina_l", AUDIO_TRACK_CANTINA_L);
-    robotState.cfg_snd_startup = prefs.getUShort("snd_startup", AUDIO_TRACK_STARTUP);
-    robotState.cfg_snd_rand_min = prefs.getUShort("snd_rand_min", AUDIO_RAND_TRACK_MIN);
-    robotState.cfg_snd_rand_max = prefs.getUShort("snd_rand_max", AUDIO_RAND_TRACK_MAX);
-    robotState.cfg_snd_int_quiet = constrain(prefs.getUShort("snd_int_quiet", AUDIO_RAND_INT_QUIET),
-                                             (uint16_t)0, (uint16_t)3600);
-    robotState.cfg_snd_int_mid =
-        constrain(prefs.getUShort("snd_int_mid", AUDIO_RAND_INT_MID), (uint16_t)0, (uint16_t)3600);
-    robotState.cfg_snd_int_full = constrain(prefs.getUShort("snd_int_full", AUDIO_RAND_INT_FULL),
-                                            (uint16_t)0, (uint16_t)3600);
-    robotState.cfg_snd_int_awake = constrain(prefs.getUShort("snd_int_awake", AUDIO_RAND_INT_AWAKE),
-                                             (uint16_t)0, (uint16_t)3600);
-
-    robotState.cfg_arm1_open_us = prefs.getUShort("arm1_op", 2000);
-    robotState.cfg_arm1_close_us = prefs.getUShort("arm1_cl", 1000);
-    robotState.cfg_arm2_open_us = prefs.getUShort("arm2_op", 2000);
-    robotState.cfg_arm2_close_us = prefs.getUShort("arm2_cl", 1000);
-
-    robotState.cfg_arm1_type = (ServoComponentType)prefs.getUChar("arm1_type", SERVO_COMP_MG996R);
-    robotState.cfg_arm2_type = (ServoComponentType)prefs.getUChar("arm2_type", SERVO_COMP_MG996R);
-    robotState.cfg_aux1_type = (ServoComponentType)prefs.getUChar("aux1_type", SERVO_COMP_NONE);
-    robotState.cfg_aux2_type = (ServoComponentType)prefs.getUChar("aux2_type", SERVO_COMP_NONE);
-    robotState.cfg_aux3_type = (ServoComponentType)prefs.getUChar("aux3_type", SERVO_COMP_NONE);
-
-    robotState.cfg_aux1_open_us = prefs.getUShort("aux1_op", 2000);
-    robotState.cfg_aux1_close_us = prefs.getUShort("aux1_cl", 1000);
-    robotState.cfg_aux2_open_us = prefs.getUShort("aux2_op", 2000);
-    robotState.cfg_aux2_close_us = prefs.getUShort("aux2_cl", 1000);
-    robotState.cfg_aux3_open_us = prefs.getUShort("aux3_op", 2000);
-    robotState.cfg_aux3_close_us = prefs.getUShort("aux3_cl", 1000);
-
-    union {
-        float f;
-        uint32_t u;
-    } dome_conv;
-    dome_conv.u = prefs.getULong("dome_min", 0);
-    robotState.cfg_dome_min_speed = dome_conv.f;
-    dome_conv.u = prefs.getULong("dome_max", 0x3F800000);
-    robotState.cfg_dome_max_speed = dome_conv.f;
-
-    robotState.cfg_seq_open_ms = prefs.getUShort("seq_op", 1000);
-    robotState.cfg_seq_close_ms = prefs.getUShort("seq_cl", 1000);
-
-    robotState.cfg_dome_neutral_us = prefs.getUShort("dome_neu", 1500);
-    robotState.cfg_dome_min_pulse_us = prefs.getUShort("dome_minp", 1000);
-    robotState.cfg_dome_max_pulse_us = prefs.getUShort("dome_maxp", 2000);
-    robotState.cfg_dome_speed_limit_pct = prefs.getUChar("dome_pct", 100);
-    robotState.cfg_rc_input_mode = (RcInputMode)prefs.getUChar("rc_mode", RC_INPUT_DUAL_SBUS);
-
-    // All component toggles default OFF — operator must explicitly enable each
-    // connected peripheral via the Setup page. NVS overrides the default once
-    // a value has been saved.
-    robotState.cfg_enable_arm1 = prefs.getBool("en_arm1", false);
-    robotState.cfg_enable_arm2 = prefs.getBool("en_arm2", false);
-    robotState.cfg_enable_aux1 = prefs.getBool("en_aux1", false);
-    robotState.cfg_enable_aux2 = prefs.getBool("en_aux2", false);
-    robotState.cfg_enable_aux3 = prefs.getBool("en_aux3", false);
-    robotState.cfg_enable_dome = prefs.getBool("en_dome", false);
-    robotState.cfg_enable_rc_ch1 = prefs.getBool("en_rc_ch1", false);
-    robotState.cfg_enable_rc_ch2 = prefs.getBool("en_rc_ch2", false);
-    robotState.cfg_enable_rc_ch3 = prefs.getBool("en_rc_ch3", false);
-    robotState.cfg_enable_rc_ch4 = prefs.getBool("en_rc_ch4", false);
-    robotState.cfg_enable_rc_ch5 = prefs.getBool("en_rc_ch5", false);
-    robotState.cfg_enable_rc_ch6 = prefs.getBool("en_rc_ch6", false);
-    robotState.cfg_single_sbus_use_ch2 = prefs.getBool("sbus_recv_ch2", false);
-    robotState.cfg_enable_s1_hoverboard = prefs.getBool("en_s1", false);
-    robotState.cfg_enable_s2_sound = prefs.getBool("en_s2", false);
-    robotState.cfg_enable_s3_dome_ctrl = prefs.getBool("en_s3", false);
-    robotState.cfg_stationary = prefs.getBool("op_mode", false);
-    robotState.activeMood = prefs.getUChar("last_mood", 0);
-
-    RcBindingNvsSpec bindingSpecs[] = {
-        {"rcp_drv", &robotState.cfg_rc_pwm_drive_speed, defaultPwmBinding(1)},
-        {"rcp_str", &robotState.cfg_rc_pwm_drive_steer, defaultPwmBinding(2)},
-        {"rcp_lim", &robotState.cfg_rc_pwm_drive_limit, disabledRcBinding()},
-        {"rcp_dom", &robotState.cfg_rc_pwm_dome_speed, defaultPwmBinding(3)},
-        {"rcp_a1", &robotState.cfg_rc_pwm_arm1, defaultPwmBinding(4)},
-        {"rcp_a2", &robotState.cfg_rc_pwm_arm2, defaultPwmBinding(5)},
-        {"rcp_snd", &robotState.cfg_rc_pwm_sound, defaultPwmBinding(6)},
-        {"rcs_drv", &robotState.cfg_rc_sbus_drive_speed, defaultSbusBinding(RC_BINDING_SBUS1, 1)},
-        {"rcs_str", &robotState.cfg_rc_sbus_drive_steer, defaultSbusBinding(RC_BINDING_SBUS1, 2)},
-        {"rcs_lim", &robotState.cfg_rc_sbus_drive_limit, defaultSbusBinding(RC_BINDING_SBUS1, 8)},
-        {"rcs_dom", &robotState.cfg_rc_sbus_dome_speed, defaultSbusBinding(RC_BINDING_SBUS2, 1)},
-        {"rcs_a1", &robotState.cfg_rc_sbus_arm1, defaultSbusBinding(RC_BINDING_SBUS2, 2)},
-        {"rcs_a2", &robotState.cfg_rc_sbus_arm2, defaultSbusBinding(RC_BINDING_SBUS2, 3)},
-        {"rcs_snd", &robotState.cfg_rc_sbus_sound, disabledRcBinding()},
-    };
-
-    for (size_t i = 0; i < sizeof(bindingSpecs) / sizeof(bindingSpecs[0]); ++i) {
-        loadRcBindingFromPrefs(prefs, bindingSpecs[i].key, bindingSpecs[i].defaultValue,
-                               bindingSpecs[i].binding);
-    }
-
-    // Tier 2 Trigger/Button bindings
-    RcTriggerBindingNvsSpec triggerSpecs[] = {
-        {"rc_arm1", &robotState.cfg_rc_arm1,
-         makeRcTriggerBinding(RC_BINDING_SBUS1, 4, RC_ACTION_ARM1_TOGGLE, nullptr,
-                              RC_SBUS_DEFAULT_MIN, RC_SBUS_DEFAULT_CENTER, RC_SBUS_DEFAULT_MAX, 0,
-                              false)},
-        {"rc_arm2", &robotState.cfg_rc_arm2,
-         makeRcTriggerBinding(RC_BINDING_SBUS1, 5, RC_ACTION_ARM2_TOGGLE, nullptr,
-                              RC_SBUS_DEFAULT_MIN, RC_SBUS_DEFAULT_CENTER, RC_SBUS_DEFAULT_MAX, 0,
-                              false)},
-        {"rc_aux1", &robotState.cfg_rc_aux1, disabledRcTriggerBinding()},
-        {"rc_aux2", &robotState.cfg_rc_aux2, disabledRcTriggerBinding()},
-        {"rc_aux3", &robotState.cfg_rc_aux3, disabledRcTriggerBinding()},
-        {"rc_sound", &robotState.cfg_rc_sound, disabledRcTriggerBinding()},
-        {"rc_opmode", &robotState.cfg_rc_opmode, disabledRcTriggerBinding()},
-        {"rc_free0", &robotState.cfg_rc_free0, disabledRcTriggerBinding()},
-        {"rc_free1", &robotState.cfg_rc_free1, disabledRcTriggerBinding()},
-        {"rc_free2", &robotState.cfg_rc_free2, disabledRcTriggerBinding()},
-        {"rc_free3", &robotState.cfg_rc_free3, disabledRcTriggerBinding()},
-    };
-
-    for (size_t i = 0; i < sizeof(triggerSpecs) / sizeof(triggerSpecs[0]); ++i) {
-        loadRcTriggerBindingFromPrefs(prefs, triggerSpecs[i].key, triggerSpecs[i].defaultValue,
-                                      triggerSpecs[i].binding);
-    }
-
+    ConfigSnapshot snap;
+    bool configOk = configLoad(prefs, &snap);
+    uint8_t lastMood = prefs.getUChar("last_mood", 0);  // read BEFORE prefs.end()
     prefs.end();
 
-    robotState.cfg_speedLimitMax =
-        constrain(robotState.cfg_speedLimitMax, (int16_t)0, (int16_t)SPEED_LIMIT_MAX);
-    robotState.cfg_sbusTimeoutMs =
-        constrain(robotState.cfg_sbusTimeoutMs, (uint32_t)50, (uint32_t)5000);
-    robotState.cfg_webDriveTimeoutMs =
-        constrain(robotState.cfg_webDriveTimeoutMs, (uint32_t)100, (uint32_t)5000);
-    robotState.cfg_audioVolume = constrain(robotState.cfg_audioVolume, (uint8_t)0, (uint8_t)30);
-
-    robotState.cfg_arm1_open_us =
-        constrain(robotState.cfg_arm1_open_us, (uint16_t)500, (uint16_t)2500);
-    robotState.cfg_arm1_close_us =
-        constrain(robotState.cfg_arm1_close_us, (uint16_t)500, (uint16_t)2500);
-    robotState.cfg_arm2_open_us =
-        constrain(robotState.cfg_arm2_open_us, (uint16_t)500, (uint16_t)2500);
-    robotState.cfg_arm2_close_us =
-        constrain(robotState.cfg_arm2_close_us, (uint16_t)500, (uint16_t)2500);
-
-    if (robotState.cfg_arm1_type > SERVO_COMP_RGB)
-        robotState.cfg_arm1_type = SERVO_COMP_MG996R;
-    if (robotState.cfg_arm2_type > SERVO_COMP_RGB)
-        robotState.cfg_arm2_type = SERVO_COMP_MG996R;
-    if (robotState.cfg_aux1_type > SERVO_COMP_RGB)
-        robotState.cfg_aux1_type = SERVO_COMP_NONE;
-    if (robotState.cfg_aux2_type > SERVO_COMP_RGB)
-        robotState.cfg_aux2_type = SERVO_COMP_NONE;
-    if (robotState.cfg_aux3_type > SERVO_COMP_RGB)
-        robotState.cfg_aux3_type = SERVO_COMP_NONE;
-
-    robotState.cfg_aux1_open_us =
-        constrain(robotState.cfg_aux1_open_us, (uint16_t)500, (uint16_t)2500);
-    robotState.cfg_aux1_close_us =
-        constrain(robotState.cfg_aux1_close_us, (uint16_t)500, (uint16_t)2500);
-    robotState.cfg_aux2_open_us =
-        constrain(robotState.cfg_aux2_open_us, (uint16_t)500, (uint16_t)2500);
-    robotState.cfg_aux2_close_us =
-        constrain(robotState.cfg_aux2_close_us, (uint16_t)500, (uint16_t)2500);
-    robotState.cfg_aux3_open_us =
-        constrain(robotState.cfg_aux3_open_us, (uint16_t)500, (uint16_t)2500);
-    robotState.cfg_aux3_close_us =
-        constrain(robotState.cfg_aux3_close_us, (uint16_t)500, (uint16_t)2500);
-    if (robotState.cfg_dome_min_speed < 0.0f)
-        robotState.cfg_dome_min_speed = 0.0f;
-    if (robotState.cfg_dome_max_speed > 1.0f)
-        robotState.cfg_dome_max_speed = 1.0f;
-
-    if (robotState.cfg_seq_open_ms < 100)
-        robotState.cfg_seq_open_ms = 100;
-    if (robotState.cfg_seq_open_ms > 5000)
-        robotState.cfg_seq_open_ms = 5000;
-    if (robotState.cfg_seq_close_ms < 100)
-        robotState.cfg_seq_close_ms = 100;
-    if (robotState.cfg_seq_close_ms > 5000)
-        robotState.cfg_seq_close_ms = 5000;
-
-    robotState.cfg_dome_neutral_us =
-        constrain(robotState.cfg_dome_neutral_us, (uint16_t)1000, (uint16_t)2000);
-    robotState.cfg_dome_min_pulse_us =
-        constrain(robotState.cfg_dome_min_pulse_us, (uint16_t)1000, (uint16_t)2000);
-    robotState.cfg_dome_max_pulse_us =
-        constrain(robotState.cfg_dome_max_pulse_us, (uint16_t)1000, (uint16_t)2000);
-    robotState.cfg_dome_speed_limit_pct =
-        constrain(robotState.cfg_dome_speed_limit_pct, (uint8_t)0, (uint8_t)100);
-    if (robotState.cfg_rc_input_mode > RC_INPUT_DUAL_SBUS) {
-        robotState.cfg_rc_input_mode = RC_INPUT_DUAL_SBUS;
+    if (!configOk) {
+        PA_LOG_ERROR("config", "failed to load NVS config (schema or migration error); using safe defaults");
     }
 
-    RcBindingConfig* bindings[] = {
-        &robotState.cfg_rc_pwm_drive_speed,  &robotState.cfg_rc_pwm_drive_steer,
-        &robotState.cfg_rc_pwm_drive_limit,  &robotState.cfg_rc_pwm_dome_speed,
-        &robotState.cfg_rc_pwm_arm1,         &robotState.cfg_rc_pwm_arm2,
-        &robotState.cfg_rc_pwm_sound,        &robotState.cfg_rc_sbus_drive_speed,
-        &robotState.cfg_rc_sbus_drive_steer, &robotState.cfg_rc_sbus_drive_limit,
-        &robotState.cfg_rc_sbus_dome_speed,  &robotState.cfg_rc_sbus_arm1,
-        &robotState.cfg_rc_sbus_arm2,        &robotState.cfg_rc_sbus_sound,
-    };
-    const RcBindingConfig defaults[] = {
-        defaultPwmBinding(1),
-        defaultPwmBinding(2),
-        disabledRcBinding(),
-        defaultPwmBinding(3),
-        defaultPwmBinding(4),
-        defaultPwmBinding(5),
-        defaultPwmBinding(6),
-        defaultSbusBinding(RC_BINDING_SBUS1, 1),
-        defaultSbusBinding(RC_BINDING_SBUS1, 2),
-        defaultSbusBinding(RC_BINDING_SBUS1, 8),
-        defaultSbusBinding(RC_BINDING_SBUS2, 1),
-        defaultSbusBinding(RC_BINDING_SBUS2, 2),
-        defaultSbusBinding(RC_BINDING_SBUS2, 3),
-        disabledRcBinding(),
-    };
-    for (size_t i = 0; i < sizeof(bindings) / sizeof(bindings[0]); ++i) {
-        if (!rcBindingIsValid(*bindings[i])) {
-            *bindings[i] = defaults[i];
-        }
-    }
+    // Apply all config fields to robotState (no mutex needed  --  called before tasks start)
+    // All validation and clamping is now performed within configLoad()
+    configCacheApply(snap);
 
-    // Validate Tier 2 Trigger bindings
-    RcTriggerBinding* triggerBindings[] = {
-        &robotState.cfg_rc_arm1,   &robotState.cfg_rc_arm2,  &robotState.cfg_rc_aux1,
-        &robotState.cfg_rc_aux2,   &robotState.cfg_rc_aux3,  &robotState.cfg_rc_sound,
-        &robotState.cfg_rc_opmode, &robotState.cfg_rc_free0, &robotState.cfg_rc_free1,
-        &robotState.cfg_rc_free2,  &robotState.cfg_rc_free3,
-    };
-    const RcTriggerBinding triggerDefaults[] = {
-        makeRcTriggerBinding(RC_BINDING_SBUS1, 4, RC_ACTION_ARM1_TOGGLE, nullptr,
-                             RC_SBUS_DEFAULT_MIN, RC_SBUS_DEFAULT_CENTER, RC_SBUS_DEFAULT_MAX, 0,
-                             false),
-        makeRcTriggerBinding(RC_BINDING_SBUS1, 5, RC_ACTION_ARM2_TOGGLE, nullptr,
-                             RC_SBUS_DEFAULT_MIN, RC_SBUS_DEFAULT_CENTER, RC_SBUS_DEFAULT_MAX, 0,
-                             false),
-        disabledRcTriggerBinding(),
-        disabledRcTriggerBinding(),
-        disabledRcTriggerBinding(),
-        disabledRcTriggerBinding(),
-        disabledRcTriggerBinding(),
-        disabledRcTriggerBinding(),
-        disabledRcTriggerBinding(),
-        disabledRcTriggerBinding(),
-        disabledRcTriggerBinding(),
-    };
-    for (size_t i = 0; i < sizeof(triggerBindings) / sizeof(triggerBindings[0]); ++i) {
-        if (!rcTriggerBindingIsValid(*triggerBindings[i])) {
-            *triggerBindings[i] = triggerDefaults[i];
-        }
-    }
+    robotState.activeMood = lastMood;
 
     // Initialize runtime state from config
-    robotState.stationary = robotState.cfg_stationary;
+    robotState.stationary = snap.system.stationary;
 }
 
 bool saveConfigToNvs() {
-    int16_t speedLimitMax;
-    uint32_t sbusTimeoutMs;
-    uint32_t webDriveTimeoutMs;
-    bool ch8ModeLock;
-    uint8_t audioVolume;
-    uint8_t logLevel;
-    uint16_t sndScream, sndFaint, sndLeia, sndCantinaS, sndSwTheme;
-    uint16_t sndImpMarch, sndCantinaL, sndStartup, sndRandMin, sndRandMax;
-    uint16_t sndIntQuiet, sndIntMid, sndIntFull, sndIntAwake;
-    uint16_t arm1Open, arm1Close, arm2Open, arm2Close;
-    float domeMin, domeMax;
-    uint16_t seqOpenMs, seqCloseMs;
-    uint16_t domeNeutralUs, domeMinPulseUs, domeMaxPulseUs;
-    uint8_t domeSpeedLimitPct;
-    RcInputMode rcInputMode;
-    bool enableArm1, enableArm2, enableAux1, enableAux2, enableAux3, enableDome;
-    bool enableRcCh1, enableRcCh2, enableRcCh3, enableRcCh4, enableRcCh5, enableRcCh6;
-    bool enableS1Hoverboard, enableS2Sound, enableS3DomeCtrl, singleSbusUseCh2;
-    bool stationary;
-    RcBindingConfig rcPwmDriveSpeed, rcPwmDriveSteer, rcPwmDriveLimit, rcPwmDomeSpeed, rcPwmArm1,
-        rcPwmArm2, rcPwmSound;
-    RcBindingConfig rcSbusDriveSpeed, rcSbusDriveSteer, rcSbusDriveLimit, rcSbusDomeSpeed,
-        rcSbusArm1, rcSbusArm2, rcSbusSound;
-    ServoComponentType arm1Type, arm2Type, aux1Type, aux2Type, aux3Type;
-    uint16_t aux1Open, aux1Close, aux2Open, aux2Close, aux3Open, aux3Close;
-
-    taskENTER_CRITICAL(&robotStateMux);
-    speedLimitMax = robotState.cfg_speedLimitMax;
-    sbusTimeoutMs = robotState.cfg_sbusTimeoutMs;
-    webDriveTimeoutMs = robotState.cfg_webDriveTimeoutMs;
-    ch8ModeLock = robotState.cfg_ch8ModeLock;
-    audioVolume = robotState.cfg_audioVolume;
-    logLevel = robotState.cfg_logLevel;
-    sndScream = robotState.cfg_snd_scream;
-    sndFaint = robotState.cfg_snd_faint;
-    sndLeia = robotState.cfg_snd_leia;
-    sndCantinaS = robotState.cfg_snd_cantina_s;
-    sndSwTheme = robotState.cfg_snd_sw_theme;
-    sndImpMarch = robotState.cfg_snd_imp_march;
-    sndCantinaL = robotState.cfg_snd_cantina_l;
-    sndStartup = robotState.cfg_snd_startup;
-    sndRandMin = robotState.cfg_snd_rand_min;
-    sndRandMax = robotState.cfg_snd_rand_max;
-    sndIntQuiet = robotState.cfg_snd_int_quiet;
-    sndIntMid = robotState.cfg_snd_int_mid;
-    sndIntFull = robotState.cfg_snd_int_full;
-    sndIntAwake = robotState.cfg_snd_int_awake;
-    arm1Open = robotState.cfg_arm1_open_us;
-    arm1Close = robotState.cfg_arm1_close_us;
-    arm2Open = robotState.cfg_arm2_open_us;
-    arm2Close = robotState.cfg_arm2_close_us;
-    domeMin = robotState.cfg_dome_min_speed;
-    domeMax = robotState.cfg_dome_max_speed;
-    seqOpenMs = robotState.cfg_seq_open_ms;
-    seqCloseMs = robotState.cfg_seq_close_ms;
-    domeNeutralUs = robotState.cfg_dome_neutral_us;
-    domeMinPulseUs = robotState.cfg_dome_min_pulse_us;
-    domeMaxPulseUs = robotState.cfg_dome_max_pulse_us;
-    domeSpeedLimitPct = robotState.cfg_dome_speed_limit_pct;
-    rcInputMode = robotState.cfg_rc_input_mode;
-    enableArm1 = robotState.cfg_enable_arm1;
-    enableArm2 = robotState.cfg_enable_arm2;
-    enableAux1 = robotState.cfg_enable_aux1;
-    enableAux2 = robotState.cfg_enable_aux2;
-    enableAux3 = robotState.cfg_enable_aux3;
-    enableDome = robotState.cfg_enable_dome;
-    enableRcCh1 = robotState.cfg_enable_rc_ch1;
-    enableRcCh2 = robotState.cfg_enable_rc_ch2;
-    enableRcCh3 = robotState.cfg_enable_rc_ch3;
-    enableRcCh4 = robotState.cfg_enable_rc_ch4;
-    enableRcCh5 = robotState.cfg_enable_rc_ch5;
-    enableRcCh6 = robotState.cfg_enable_rc_ch6;
-    enableS1Hoverboard = robotState.cfg_enable_s1_hoverboard;
-    enableS2Sound = robotState.cfg_enable_s2_sound;
-    enableS3DomeCtrl = robotState.cfg_enable_s3_dome_ctrl;
-    singleSbusUseCh2 = robotState.cfg_single_sbus_use_ch2;
-    stationary = robotState.cfg_stationary;
-    rcPwmDriveSpeed = robotState.cfg_rc_pwm_drive_speed;
-    rcPwmDriveSteer = robotState.cfg_rc_pwm_drive_steer;
-    rcPwmDriveLimit = robotState.cfg_rc_pwm_drive_limit;
-    rcPwmDomeSpeed = robotState.cfg_rc_pwm_dome_speed;
-    rcPwmArm1 = robotState.cfg_rc_pwm_arm1;
-    rcPwmArm2 = robotState.cfg_rc_pwm_arm2;
-    rcPwmSound = robotState.cfg_rc_pwm_sound;
-    rcSbusDriveSpeed = robotState.cfg_rc_sbus_drive_speed;
-    rcSbusDriveSteer = robotState.cfg_rc_sbus_drive_steer;
-    rcSbusDriveLimit = robotState.cfg_rc_sbus_drive_limit;
-    rcSbusDomeSpeed = robotState.cfg_rc_sbus_dome_speed;
-    rcSbusArm1 = robotState.cfg_rc_sbus_arm1;
-    rcSbusArm2 = robotState.cfg_rc_sbus_arm2;
-    rcSbusSound = robotState.cfg_rc_sbus_sound;
-
-    // Tier 2 Trigger bindings
-    RcTriggerBinding rcArm1, rcArm2, rcAux1, rcAux2, rcAux3, rcSound, rcOpmode;
-    RcTriggerBinding rcFree0, rcFree1, rcFree2, rcFree3;
-    rcArm1 = robotState.cfg_rc_arm1;
-    rcArm2 = robotState.cfg_rc_arm2;
-    rcAux1 = robotState.cfg_rc_aux1;
-    rcAux2 = robotState.cfg_rc_aux2;
-    rcAux3 = robotState.cfg_rc_aux3;
-    rcSound = robotState.cfg_rc_sound;
-    rcOpmode = robotState.cfg_rc_opmode;
-    rcFree0 = robotState.cfg_rc_free0;
-    rcFree1 = robotState.cfg_rc_free1;
-    rcFree2 = robotState.cfg_rc_free2;
-    rcFree3 = robotState.cfg_rc_free3;
-
-    arm1Type = robotState.cfg_arm1_type;
-    arm2Type = robotState.cfg_arm2_type;
-    aux1Type = robotState.cfg_aux1_type;
-    aux2Type = robotState.cfg_aux2_type;
-    aux3Type = robotState.cfg_aux3_type;
-    aux1Open = robotState.cfg_aux1_open_us;
-    aux1Close = robotState.cfg_aux1_close_us;
-    aux2Open = robotState.cfg_aux2_open_us;
-    aux2Close = robotState.cfg_aux2_close_us;
-    aux3Open = robotState.cfg_aux3_open_us;
-    aux3Close = robotState.cfg_aux3_close_us;
-    taskEXIT_CRITICAL(&robotStateMux);
+    ConfigSnapshot snap;
+    configCacheRead(&snap);
 
     Preferences prefs;
     if (!prefs.begin(NVS_NAMESPACE, false)) {
         return false;
     }
 
-    bool ok = true;
-    ok = prefs.putShort("spd_max", speedLimitMax) > 0 && ok;
-    ok = prefs.putULong("sbus_tmo", sbusTimeoutMs) > 0 && ok;
-    ok = prefs.putULong("web_tmo", webDriveTimeoutMs) > 0 && ok;
-    ok = prefs.putBool("ch8_lock", ch8ModeLock) > 0 && ok;
-    ok = prefs.putUChar("aud_vol", audioVolume) > 0 && ok;
-    ok = prefs.putUChar("log_level", logLevel) > 0 && ok;
-    ok = prefs.putUShort("snd_scream", sndScream) > 0 && ok;
-    ok = prefs.putUShort("snd_faint", sndFaint) > 0 && ok;
-    ok = prefs.putUShort("snd_leia", sndLeia) > 0 && ok;
-    ok = prefs.putUShort("snd_cantina_s", sndCantinaS) > 0 && ok;
-    ok = prefs.putUShort("snd_sw", sndSwTheme) > 0 && ok;
-    ok = prefs.putUShort("snd_march", sndImpMarch) > 0 && ok;
-    ok = prefs.putUShort("snd_cantina_l", sndCantinaL) > 0 && ok;
-    ok = prefs.putUShort("snd_startup", sndStartup) > 0 && ok;
-    ok = prefs.putUShort("snd_rand_min", sndRandMin) > 0 && ok;
-    ok = prefs.putUShort("snd_rand_max", sndRandMax) > 0 && ok;
-    ok = prefs.putUShort("snd_int_quiet", sndIntQuiet) > 0 && ok;
-    ok = prefs.putUShort("snd_int_mid", sndIntMid) > 0 && ok;
-    ok = prefs.putUShort("snd_int_full", sndIntFull) > 0 && ok;
-    ok = prefs.putUShort("snd_int_awake", sndIntAwake) > 0 && ok;
-    ok = prefs.putUShort("arm1_op", arm1Open) > 0 && ok;
-    ok = prefs.putUShort("arm1_cl", arm1Close) > 0 && ok;
-    ok = prefs.putUShort("arm2_op", arm2Open) > 0 && ok;
-    ok = prefs.putUShort("arm2_cl", arm2Close) > 0 && ok;
-    ok = prefs.putUChar("arm1_type", (uint8_t)arm1Type) > 0 && ok;
-    ok = prefs.putUChar("arm2_type", (uint8_t)arm2Type) > 0 && ok;
-    ok = prefs.putUChar("aux1_type", (uint8_t)aux1Type) > 0 && ok;
-    ok = prefs.putUChar("aux2_type", (uint8_t)aux2Type) > 0 && ok;
-    ok = prefs.putUChar("aux3_type", (uint8_t)aux3Type) > 0 && ok;
-    ok = prefs.putUShort("aux1_op", aux1Open) > 0 && ok;
-    ok = prefs.putUShort("aux1_cl", aux1Close) > 0 && ok;
-    ok = prefs.putUShort("aux2_op", aux2Open) > 0 && ok;
-    ok = prefs.putUShort("aux2_cl", aux2Close) > 0 && ok;
-    ok = prefs.putUShort("aux3_op", aux3Open) > 0 && ok;
-    ok = prefs.putUShort("aux3_cl", aux3Close) > 0 && ok;
-
-    union {
-        float f;
-        uint32_t u;
-    } dome_conv;
-    dome_conv.f = domeMin;
-    ok = prefs.putULong("dome_min", dome_conv.u) > 0 && ok;
-    dome_conv.f = domeMax;
-    ok = prefs.putULong("dome_max", dome_conv.u) > 0 && ok;
-    ok = prefs.putUShort("seq_op", seqOpenMs) > 0 && ok;
-    ok = prefs.putUShort("seq_cl", seqCloseMs) > 0 && ok;
-    ok = prefs.putUShort("dome_neu", domeNeutralUs) > 0 && ok;
-    ok = prefs.putUShort("dome_minp", domeMinPulseUs) > 0 && ok;
-    ok = prefs.putUShort("dome_maxp", domeMaxPulseUs) > 0 && ok;
-    ok = prefs.putUChar("dome_pct", domeSpeedLimitPct) > 0 && ok;
-    ok = prefs.putUChar("rc_mode", (uint8_t)rcInputMode) > 0 && ok;
-    ok = prefs.putBool("en_arm1", enableArm1) > 0 && ok;
-    ok = prefs.putBool("en_arm2", enableArm2) > 0 && ok;
-    ok = prefs.putBool("en_aux1", enableAux1) > 0 && ok;
-    ok = prefs.putBool("en_aux2", enableAux2) > 0 && ok;
-    ok = prefs.putBool("en_aux3", enableAux3) > 0 && ok;
-    ok = prefs.putBool("en_dome", enableDome) > 0 && ok;
-    ok = prefs.putBool("en_rc_ch1", enableRcCh1) > 0 && ok;
-    ok = prefs.putBool("en_rc_ch2", enableRcCh2) > 0 && ok;
-    ok = prefs.putBool("en_rc_ch3", enableRcCh3) > 0 && ok;
-    ok = prefs.putBool("en_rc_ch4", enableRcCh4) > 0 && ok;
-    ok = prefs.putBool("en_rc_ch5", enableRcCh5) > 0 && ok;
-    ok = prefs.putBool("en_rc_ch6", enableRcCh6) > 0 && ok;
-    ok = prefs.putBool("sbus_recv_ch2", singleSbusUseCh2) > 0 && ok;
-    ok = prefs.putBool("en_s1", enableS1Hoverboard) > 0 && ok;
-    ok = prefs.putBool("en_s2", enableS2Sound) > 0 && ok;
-    ok = prefs.putBool("en_s3", enableS3DomeCtrl) > 0 && ok;
-    ok = prefs.putBool("op_mode", stationary) > 0 && ok;
-    ok = saveRcBindingToPrefs(prefs, "rcp_drv", rcPwmDriveSpeed) && ok;
-    ok = saveRcBindingToPrefs(prefs, "rcp_str", rcPwmDriveSteer) && ok;
-    ok = saveRcBindingToPrefs(prefs, "rcp_lim", rcPwmDriveLimit) && ok;
-    ok = saveRcBindingToPrefs(prefs, "rcp_dom", rcPwmDomeSpeed) && ok;
-    ok = saveRcBindingToPrefs(prefs, "rcp_a1", rcPwmArm1) && ok;
-    ok = saveRcBindingToPrefs(prefs, "rcp_a2", rcPwmArm2) && ok;
-    ok = saveRcBindingToPrefs(prefs, "rcp_snd", rcPwmSound) && ok;
-    ok = saveRcBindingToPrefs(prefs, "rcs_drv", rcSbusDriveSpeed) && ok;
-    ok = saveRcBindingToPrefs(prefs, "rcs_str", rcSbusDriveSteer) && ok;
-    ok = saveRcBindingToPrefs(prefs, "rcs_lim", rcSbusDriveLimit) && ok;
-    ok = saveRcBindingToPrefs(prefs, "rcs_dom", rcSbusDomeSpeed) && ok;
-    ok = saveRcBindingToPrefs(prefs, "rcs_a1", rcSbusArm1) && ok;
-    ok = saveRcBindingToPrefs(prefs, "rcs_a2", rcSbusArm2) && ok;
-    ok = saveRcBindingToPrefs(prefs, "rcs_snd", rcSbusSound) && ok;
-
-    ok = saveRcTriggerBindingToPrefs(prefs, "rc_arm1", rcArm1) && ok;
-    ok = saveRcTriggerBindingToPrefs(prefs, "rc_arm2", rcArm2) && ok;
-    ok = saveRcTriggerBindingToPrefs(prefs, "rc_aux1", rcAux1) && ok;
-    ok = saveRcTriggerBindingToPrefs(prefs, "rc_aux2", rcAux2) && ok;
-    ok = saveRcTriggerBindingToPrefs(prefs, "rc_aux3", rcAux3) && ok;
-    ok = saveRcTriggerBindingToPrefs(prefs, "rc_sound", rcSound) && ok;
-    ok = saveRcTriggerBindingToPrefs(prefs, "rc_opmode", rcOpmode) && ok;
-    ok = saveRcTriggerBindingToPrefs(prefs, "rc_free0", rcFree0) && ok;
-    ok = saveRcTriggerBindingToPrefs(prefs, "rc_free1", rcFree1) && ok;
-    ok = saveRcTriggerBindingToPrefs(prefs, "rc_free2", rcFree2) && ok;
-    ok = saveRcTriggerBindingToPrefs(prefs, "rc_free3", rcFree3) && ok;
-
+    bool ok = configSave(prefs, snap);
     prefs.end();
     return ok;
 }
@@ -751,23 +263,25 @@ void requestSystemRestart(uint32_t delayMs) {
 void setup() {
     Serial.begin(115200);
     Serial.setDebugOutput(false);
+    paLogInit();
     delay(200);
 
-    // Safety: boot with drive locked until SBUS confirmed
-    robotState.sbusSignalLost = true;
-    robotState.estop = false;
     // Audio module state: 0xFF = "unknown/none" until AudioTask runs its init
     // query. Zero-init would show "USB" (0x00) before any query succeeds.
     robotState.audio_module_device = 0xFF;
     robotState.audio_module_play_state = 0xFF;
-    // Pre-init log level to compile-time default so any log calls added before
-    // loadConfigToState() in the future are not silently dropped (cfg_logLevel
-    // is zero-initialized by robotState = {} which would suppress all output).
-    robotState.cfg_logLevel = PA_LOG_LEVEL;
-
-    // Load config from NVS — may override cfg_logLevel with the user's saved value.
+    robotState.audio_module_rx_status = AUDIO_RX_UNKNOWN;
+    // Load config from NVS  --  may override cfg_logLevel with the user's saved value.
     loadConfigToState();
+    paLogRingApplyBootDepth();
     logBootHealth();
+    ConfigSnapshot bootCfg = {};
+    configCacheRead(&bootCfg);
+    const RcInputActiveConfig activeRc = rcInputActiveConfigFromSystem(bootCfg.system);
+    configCacheSetActiveRcInput(activeRc);
+    configCacheSetActiveDomeEnabled(bootCfg.system.enable_dome);
+    configCacheSetActiveAudioEnabled(bootCfg.system.enable_s2_sound);
+    RcInputStartupPlan rcPlan = rcInputStepStartupPlan(activeRc);
 
     // Layer 4: Initialize Task Watchdog Timer
     // IDF 5.x: esp_task_wdt_init() takes a config struct (timeout_ms, idle_core_mask,
@@ -780,14 +294,22 @@ void setup() {
     };
     esp_task_wdt_init(&twdt_config);
 
-    // Detect TWDT reset from previous boot — set estop so robot does not move
+    // Initialize FailsafeGate and DriveArbiter before task creation
+    failsafeInit(&robotStateMux);
+    driveArbiterInit(&robotStateMux);
+
+    // Safety: boot with drive locked until the identified drive watchdog
+    // (SBUS1 or routed SBUS2) sees a frame. This applies the same
+    // initialization as the runtime watchdog for the active drive source.
+    if (rcPlan.driveWatchdogSource != DriveWatchdogSource::NONE) {
+        failsafeTrigger(FailsafeLayer::SBUS_WATCHDOG);
+    }
+
+    // Detect TWDT reset from previous boot  --  set estop so robot does not move
     // until operator explicitly clears via POST /api/estop/clear
     esp_reset_reason_t resetReason = esp_reset_reason();
-    if (resetReason == ESP_RST_TASK_WDT) {
-        robotState.estop = true;
-        taskENTER_CRITICAL(&robotStateMux);
-        recordFailsafeTriggerLocked(FS_WATCHDOG_RESET, millis());
-        taskEXIT_CRITICAL(&robotStateMux);
+    if (bootTwdtResetDecision(resetReason)) {
+        failsafeTrigger(FailsafeLayer::TWDT_RESET);
         PA_LOG_ERROR("main", "task watchdog reset detected - estop set");
     }
 
@@ -796,57 +318,71 @@ void setup() {
     domeCmdQueue = xQueueCreate(8, sizeof(DomeCommand));
     audioCmdQueue = xQueueCreate(8, sizeof(AudioCommand));
     domeTxQueue = xQueueCreate(16, sizeof(DomeTxCmd));
+    sequenceDispatcherInit();
 
-    // Initialize LEDC PWM hardware only if at least one LEDC-driven output is
-    // enabled.  ARM1/2/AUX1-3 and DOME all share the same LEDC timer, so the
-    // init lives here rather than inside either task-init function.
-    {
-        taskENTER_CRITICAL(&robotStateMux);
-        bool anyLedc = robotState.cfg_enable_arm1 || robotState.cfg_enable_arm2 ||
-                       robotState.cfg_enable_aux1 || robotState.cfg_enable_aux2 ||
-                       robotState.cfg_enable_aux3 || robotState.cfg_enable_dome;
-        taskEXIT_CRITICAL(&robotStateMux);
-        if (anyLedc) {
-            ledcPwmInit();
-            ledcPwmInitNeutralPositions();
-        }
-    }
+    // ServoTask owns LEDC hardware init and applies AUX LED channel skip policy.
     servoTaskInit();
     domeTaskInit();
+    bool auxLedTaskReady = auxLedTaskInit();
+    if (!auxLedTaskReady) {
+        PA_LOG_ERROR("main", "aux LED task init failed; AUX LED API will report unavailable");
+    }
 
     // Launch real-time tasks on Core 1
     // DriveTask: 50 Hz hoverboard frames, feeds TWDT, Layer 3 web timeout
-    // RcInputTask: ~200 Hz RC poll (all modes), Layer 1+2 failsafe
+    // RcInputTask: ~200 Hz RC poll (all modes), Layer 1+2 failsafe; omitted
+    // when no RC input is active for the boot-selected mode and routing.
     // ServoTask: 50 Hz servo PWM updates
-    // DomeTask: 50 Hz ESC PWM updates
-    // UART1 ownership: DriveTask (hoverboard, Serial1 @ 115200 8N1) and RcInputTask
-    // (SBUS1 decoder, Serial1 @ 100000 8E2 inverted) both call Serial1.begin().
-    // With this creation order (DriveTask first, RcInputTask second) and equal FreeRTOS
-    // priority, RcInputTask's begin() wins UART1 when SBUS mode is active — hoverboard
-    // TX is left at wrong baud. Do not enable S1 hoverboard and SBUS mode simultaneously
-    // until Phase 5 T01 (RMT SBUS decoder) is implemented.
+    // DomeTask: 50 Hz ESC PWM updates; omitted when dome output is disabled
+    // at boot (ADR 0027: not spawning the owning task at all is the preferred form).
     xTaskCreatePinnedToCore(driveTask, "DriveTask", 4096, nullptr, 5, nullptr, 1);
-    xTaskCreatePinnedToCore(rcInputTask, "RCInputTask", 4096, nullptr, 5, nullptr, 1);
+    if (rcPlan.taskEnabled) {
+        xTaskCreatePinnedToCore(rcInputTask, "RCInputTask", 7168, nullptr, 5, nullptr, 1);
+    }
     xTaskCreatePinnedToCore(
-        servoTask, "ServoTask", 3072, nullptr, 4, nullptr,
-        1);  // HWM: ~728 B used; was 5120 (oversized for string formatting assumption)
-    xTaskCreatePinnedToCore(domeTask, "DomeTask", 2048, nullptr, 4, nullptr,
-                            1);  // HWM: ~764 B used
+        servoTask, "ServoTask", 4096, nullptr, 4, nullptr,
+        1);  // HWM: code fix (ConfigSnapshot->ServoConfig in hot paths) + 3072->4096
+    if (bootCfg.system.enable_dome) {
+        xTaskCreatePinnedToCore(domeTask, "DomeTask", 3072, nullptr, 4, nullptr,
+                                1);  // Stack sized from profiler HWM: 108 B free at 2048 B.
+    }
 
-    // AudioTask: Core 0 (non-RT) — software bit-bang TX blocks ~6 ms per command;
+    // AudioTask: Core 0 (non-RT)  --  software bit-bang TX blocks ~6 ms per command;
     // keeping off Core 1 avoids any interaction with DriveTask / ServoTask timing.
-    xTaskCreatePinnedToCore(audioTask, "AudioTask", 3072, nullptr, 3, nullptr, 0);
+    // Omitted when audio output is disabled at boot (ADR 0027: not spawning the owning
+    // task at all is the preferred form).
+    if (bootCfg.system.enable_s2_sound) {
+        xTaskCreatePinnedToCore(audioTask, "AudioTask", 6144, nullptr, 3, nullptr, 0);
+    }
 
-    // DomeLinkTask: Core 1 — bidirectional Marcduino serial to AstroPixelsPlus.
+    // AuxLedTask: Core 0 (non-RT) - WS2812B effects and API-driven color/effect updates.
+    // Runs independently of Core 1 control loops.
+    if (auxLedTaskReady) {
+        xTaskCreatePinnedToCore(auxLedTask, "AuxLedTask", 4096, nullptr, 2, nullptr, 0);
+    }
+
+    // DomeLinkTask: Core 1  --  bidirectional Marcduino serial to AstroPixelsPlus.
     // UART2 TX/RX are non-blocking hardware operations; Core 1 at priority 3.
-    xTaskCreatePinnedToCore(domeLinkTask, "DomeLinkTask", 3072, nullptr, 3, nullptr, 1);
+    // 4096: profiler measured 988 B free at 3072 B without WiFi fallback active;
+    // HTTPClient call-chain in sendCommandOverWifi needs 3 KB+ of stack headroom.
+    xTaskCreatePinnedToCore(domeLinkTask, "DomeLinkTask", 6144, nullptr, 3, nullptr, 1);
 
     // SafetyMonitorTask: 10 Hz audit on Core 0 (non-RT, low priority).
-    // HWM first-iteration: 476 B free — WARN path allocates 128 B format buffer +
+    // HWM first-iteration: 476 B free  --  WARN path allocates 128 B format buffer +
     // printf; bumped to 3072 to ensure adequate headroom for all log paths.
     xTaskCreatePinnedToCore(safetyMonitorTask, "SafetyMonitor", 3072, nullptr, 2, nullptr, 0);
 
-    // Restore last mood — audio component only.
+    // Index Learned Sequences from LittleFS before the dispatcher can run one.
+    // Mounts LittleFS (idempotent) and scans /seq/. Boot scan reuses the run
+    // staging buffers, so it must complete before SeqDisp starts (ADR 0006).
+    seqStoreInit();
+
+    // SequenceDispatcherTask: Core 0 (non-RT)  --  body-side DM:* sequence coordinator.
+    // 10 ms tick. Dispatches to domeQueueTx / audioQueueDollar / domeCmdQueue.
+    // Core 0 keeps the 50 Hz safety loops on Core 1 unburdened (ADR 0004).
+    xTaskCreatePinnedToCore(sequenceDispatcherTask, "SeqDisp", 4096, nullptr, 3, nullptr, 0);
+
+    // Restore last mood  --  audio component only.
     // - Dome link is not yet established at boot, so dome TX is intentionally skipped.
     // - We apply audio directly here rather than via applyMood() to avoid writing
     //   last_mood back to NVS (we just read it; the value has not changed).
@@ -854,13 +390,26 @@ void setup() {
         const char* bootAudioCmd = moodAudioCommand(robotState.activeMood);
         if (bootAudioCmd) {
             audioQueueDollar(bootAudioCmd, SRC_INTERNAL);
-            PA_LOG_INFO("main", "boot mood restore: SE%u -> %s", (unsigned)robotState.activeMood,
-                        bootAudioCmd);
+            PA_LOG_INFO("main", "boot mood: %s", moodLabel(robotState.activeMood));
         }
     }
 
-    // Start WiFi AP and web server
+    // Start WiFi AP and web server. webServerInit() only mounts LittleFS,
+    // registers the WiFi event handler, and decides/executes the WiFi boot
+    // posture (ADR 0015) -- it does NOT itself bind port 80. The actual HTTP
+    // server only starts once WiFi genuinely comes up, via
+    // startHttpServerOnce() inside handleWiFiEvent().
     webServerInit();
+
+    uint16_t bootTrack = 0;
+    bootTrack = bootCfg.audio.snd_sys_boot;
+    if (bootTrack != 0) {
+        if (audioQueuePlaySlot(AUDIO_SLOT_SYS_BOOT, SRC_INTERNAL)) {
+            PA_LOG_INFO("main", "system boot sound queued");
+        } else {
+            PA_LOG_WARN("main", "system boot sound queue full");
+        }
+    }
 
     PA_LOG_INFO("main", "init complete");
     Serial.flush();
@@ -878,6 +427,9 @@ void loop() {
     if (shouldRestart) {
         PA_LOG_INFO("main", "restarting controller");
         Serial.flush();
+        // Deinit TWDT before restart  --  prevents esp_restart() from being
+        // misclassified as ESP_RST_TASK_WDT and triggering a boot-time estop.
+        esp_task_wdt_deinit();
         delay(100);
         ESP.restart();
     }

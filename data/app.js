@@ -4,12 +4,13 @@
 // Home dashboard controller.
 // - Uses shared status stream (SSE-first, polling fallback)
 // - Provides truthful mode/mood command UX with rollback on failure
-// - Renders system health, component status, live logs, and quick audio controls
+// - Renders system health, component status, live logs, and status snapshots
 // =============================================================================
 (() => {
-  const healthSummary = document.getElementById("health-summary");
   const logConsole = document.getElementById("log-console");
   const logPaused = document.getElementById("log-paused");
+  const logCommandInput = document.getElementById("log-command-input");
+  const logLevelPill = document.getElementById("log-level-pill");
   const componentStatusCard = document.getElementById("component-status-card");
   const componentStatusGrid = document.getElementById("component-status-grid");
 
@@ -17,14 +18,56 @@
   const opmodeStationary = document.getElementById("opmode-stationary");
   const opmodeFeedback = document.getElementById("opmode-feedback");
 
-  const moodDomeNote = document.getElementById("mood-dome-note");
   const moodFeedback = document.getElementById("mood-feedback");
 
-  const audioFeedback = document.getElementById("audio-feedback");
+  const estopToggle = document.getElementById("estop-toggle");
+  const estopFeedback = document.getElementById("estop-feedback");
+  const sleepToggle = document.getElementById("sleep-toggle");
+  const sleepOverlay = document.getElementById("sleep-overlay");
+  const sleepOverlayWake = document.getElementById("sleep-overlay-wake");
+  const sleepFeedback = document.getElementById("sleep-feedback");
+  const topbarReboot = document.getElementById("topbar-reboot");
+  const rebootFeedback = document.getElementById("reboot-feedback");
+  const staleBanner = document.getElementById('status-stale-banner');
+  const setStale = (stale, options = {}) => {
+    const rerender = options.rerender !== false;
+    statusIsStale = stale === true;
+    if (staleBanner) staleBanner.style.display = statusIsStale ? "" : "none";
+    if (rerender && lastStatus) renderHealth(lastStatus);
+  };
+  const snapshotWebControl = document.getElementById("snapshot-web-control");
+  const snapshotMode = document.getElementById("snapshot-mode");
+  const snapshotEstop = document.getElementById("snapshot-estop");
+  const snapshotMood = document.getElementById("snapshot-mood");
 
   let lastStatus = null;
+  let statusIsStale = false;
   let modePending = false;
   let moodPending = false;
+  let pollFailCount = 0;
+  let estopPending = false;
+  let sleepPending = false;
+  let isSleeping = false;
+  let isEstopLatched = false;
+  let estopStateKnown = false;
+  let rebootPending = false;
+
+  const INDICATOR_TEXT = {
+    'h-sbus':      'ht-sbus',
+    'h-wifi':      'ht-wifi',
+    'h-fs':        'ht-fs',
+    'h-heap':      'ht-heap',
+    'h-dome-link': 'ht-dome-link',
+    'h-sound':     'ht-sound',
+    'h-dome-esc': 'ht-dome-esc',
+  };
+  const HEALTH_SIGNAL_MODEL = window.PAHealthSignals;
+  const INDICATOR_STATE_LABELS = HEALTH_SIGNAL_MODEL?.INDICATOR_STATE_LABELS || {
+    ok: "OK",
+    warn: "WARN",
+    fail: "FAIL",
+    off: "OFF",
+  };
 
   const COMPONENT_LABELS = [
     ["arm1", "🦾", "Left Arm"],
@@ -41,87 +84,110 @@
     ["rcCh6", "🕹️", "RC Channel 6"],
     ["s1Hoverboard", "🔌", "Hoverboard Drive"],
     ["s2Sound", "🔊", "Sound Module"],
-    ["s3DomeCtrl", "🔌", "Dome Controller"],
+    ["s3DomeCtrl", "🔌", "protoR2link"],
   ];
+
+  const MOOD_LABELS = {
+    0: "Idle 😐",
+    10: "Quiet 🤐",
+    11: "Full-Awake 😄",
+    13: "Mid-Awake 😐",
+    14: "Awake+ 🤩",
+  };
+
+  const PILL_CLASS_MAP = {
+    ok: "pill-ok",
+    warn: "pill-warn",
+    error: "pill-error",
+    info: "pill-info",
+  };
 
   const showFeedback = (el, message, level = "") => {
     if (!el) return;
+    if (!el.dataset.baseClass) {
+      el.dataset.baseClass = el.className || "feedback";
+    }
     el.textContent = message;
-    el.className = level ? `feedback ${level}` : "feedback";
+    el.className = level ? `${el.dataset.baseClass} ${level}` : el.dataset.baseClass;
   };
 
-  const setIndicator = (id, state) => {
+  const setEstopPending = (pending) => {
+    estopPending = pending;
+    if (!estopToggle) return;
+    estopToggle.disabled = pending;
+    estopToggle.classList.toggle("is-pending", pending);
+    estopToggle.setAttribute("aria-disabled", pending ? "true" : "false");
+  };
+
+  const setEstopUi = (latched) => {
+    isEstopLatched = !!latched;
+    if (!estopToggle) return;
+    estopToggle.classList.toggle("danger", isEstopLatched);
+    estopToggle.title = isEstopLatched ? "Clear E-Stop" : "Latch E-Stop";
+    estopToggle.setAttribute("aria-pressed", isEstopLatched.toString());
+    if (!estopStateKnown) {
+      estopStateKnown = true;
+      estopToggle.disabled = false;
+    }
+  };
+
+  const setSleepPending = (pending) => {
+    sleepPending = pending;
+    [sleepToggle, sleepOverlayWake].forEach((el) => {
+      if (!el) return;
+      el.disabled = pending;
+      el.classList.toggle("is-pending", pending);
+      el.setAttribute("aria-disabled", pending ? "true" : "false");
+    });
+  };
+
+  const setSleepUi = (sleeping) => {
+    isSleeping = !!sleeping;
+    if (sleepToggle) {
+      sleepToggle.textContent = isSleeping ? "💤 Wake" : "💤 Sleep";
+      sleepToggle.title = isSleeping ? "Wake droid subsystems" : "Park droid subsystems";
+      sleepToggle.classList.toggle("danger", isSleeping);
+      sleepToggle.classList.toggle("accent", isSleeping);
+      sleepToggle.setAttribute("aria-pressed", isSleeping.toString());
+    }
+    if (sleepOverlay) {
+      sleepOverlay.classList.toggle("active", isSleeping);
+      sleepOverlay.setAttribute("aria-hidden", (!isSleeping).toString());
+    }
+    document.body.classList.toggle("sleep-mode-active", isSleeping);
+  };
+
+
+  const setIndicator = (id, state, reason = "", detail = "") => {
     const el = document.getElementById(id);
     if (!el) return;
     el.className = `indicator ${state}`;
+    const textEl = INDICATOR_TEXT[id] ? document.getElementById(INDICATOR_TEXT[id]) : null;
+    if (textEl) {
+      const label = INDICATOR_STATE_LABELS[state] || String(state).toUpperCase();
+      textEl.textContent = reason ? `${label}: ${reason}` : label;
+
+      if (detail) {
+        textEl.title = detail;
+      } else {
+        textEl.removeAttribute("title");
+      }
+    }
   };
 
   const renderHealth = (payload) => {
-    const anyRcEnabled = !!(
-      payload.rcCh1 || payload.rcCh2 || payload.rcCh3 ||
-      payload.rcCh4 || payload.rcCh5 || payload.rcCh6
-    );
-    if (!anyRcEnabled) {
-      setIndicator("h-sbus", "off");
-    } else {
-      setIndicator("h-sbus", payload.sbusSignalLost || payload.sbusHwFailsafe ? "fail" : "ok");
+    if (!HEALTH_SIGNAL_MODEL || typeof HEALTH_SIGNAL_MODEL.deriveHealthSignals !== "function") {
+      Object.keys(INDICATOR_TEXT).forEach((id) => {
+        setIndicator(id, "warn", "Health model missing", "health_signals.js failed to load");
+      });
+      return;
     }
 
-    setIndicator("h-wifi", (payload.wifiConnected || payload.wifiClientConnected) ? "ok" : "warn");
-    setIndicator("h-fs", payload.littleFsReady ? "ok" : "fail");
-    setIndicator("h-heap", payload.heapFree > 120000 ? "ok" : payload.heapFree > 80000 ? "warn" : "fail");
-
-    if (payload.dome_link) {
-      const s = payload.dome_link.state;
-      setIndicator(
-        "h-dome-link",
-        s === "connected" ? "ok" :
-        s === "lost" ? "fail" :
-        s === "not_seen" ? "warn" : "off"
-      );
-    } else {
-      setIndicator("h-dome-link", "off");
-    }
-
-    setIndicator("h-audio", payload.s2Sound && typeof payload.s2Sound === "object" ? "ok" : "off");
-
-    if (!healthSummary) return;
-
-    const heapFreeKb = Math.round(payload.heapFree / 1024);
-
-    let heapLabel = "✅ Healthy";
-    let heapColor = "var(--success)";
-    if (heapFreeKb < 80) {
-      heapLabel = "❌ Critical";
-      heapColor = "var(--danger)";
-    } else if (heapFreeKb < 120) {
-      heapLabel = "⚠️ Low";
-      heapColor = "var(--warning)";
-    }
-
-    let wifiQuality = "❌ Unknown";
-    let wifiColor = "var(--danger)";
-    if ((payload.wifiConnected || payload.wifiClientConnected) && payload.wifiRssi !== 0) {
-      if (payload.wifiRssi >= -67) {
-        wifiQuality = `✅ Excellent (${payload.wifiRssi} dBm)`;
-        wifiColor = "var(--success)";
-      } else if (payload.wifiRssi >= -75) {
-        wifiQuality = `✅ Good (${payload.wifiRssi} dBm)`;
-        wifiColor = "var(--success)";
-      } else if (payload.wifiRssi >= -85) {
-        wifiQuality = `⚠️ Fair (${payload.wifiRssi} dBm)`;
-        wifiColor = "var(--warning)";
-      } else {
-        wifiQuality = `❌ Poor (${payload.wifiRssi} dBm)`;
-        wifiColor = "var(--danger)";
-      }
-    }
-
-    healthSummary.innerHTML =
-      `Memory: <span style="color:${heapColor};font-weight:700">${heapFreeKb} KB ${heapLabel}</span><br>` +
-      `WiFi: <span style="color:${wifiColor};font-weight:700">${wifiQuality}</span><br>` +
-      `<span class="desc">Detailed memory headroom telemetry is available on Setup → Diagnostics.</span>`;
+    const signals = HEALTH_SIGNAL_MODEL.deriveHealthSignals(payload, { stale: statusIsStale });
+    signals.forEach(({ id, state, reason, detail }) => setIndicator(id, state, reason, detail));
   };
+
+  let renderedComponentIds = null;
 
   const renderComponentStatus = (payload) => {
     if (!componentStatusCard || !componentStatusGrid) return;
@@ -130,25 +196,71 @@
     if (active.length === 0) {
       componentStatusCard.classList.add("hidden");
       componentStatusGrid.innerHTML = "";
+      renderedComponentIds = null;
       return;
     }
 
     componentStatusCard.classList.remove("hidden");
-    componentStatusGrid.innerHTML = active.map(([key, icon, label]) => {
-      const entry = payload[key];
-      let state = entry ? "enabled" : "disabled";
-      let detail = entry ? "✅ Enabled" : "⏸️ Disabled";
-      if (entry && typeof entry === "object") {
-        state = entry.state || "enabled";
-        detail = entry.detail || "✅ Enabled";
-      }
-      return `
-        <div class="status-item">
+
+    // Build signature: component IDs + flags that affect transport lines
+    const transportFlags = [
+      payload.dome_link?.state === "connected" && payload.dome_link?.uart_owned_by_dome ? "dome-uart" : "",
+      payload.s2Sound?.rx_status === "blocked_by_dome_uart" ? "sound-blocked" : ""
+    ].filter(Boolean).join(",");
+    const signature = active.map(([key]) => key).join(",") + "|" + transportFlags;
+
+    // Rebuild only if component IDs or transport flags changed
+    if (signature !== renderedComponentIds) {
+      renderedComponentIds = signature;
+      const items = active.map(([key, icon, label]) => {
+        const entry = payload[key];
+        let state = entry ? "enabled" : "disabled";
+        let detail = entry ? "✅ Enabled" : "⏸️ Disabled";
+        if (entry && typeof entry === "object") {
+          state = entry.state || "enabled";
+          detail = entry.detail || "✅ Enabled";
+        }
+        const stateText = String(state).replace(/_/g, " ");
+        const safeState = window.PAUtils.escapeHtml(stateText);
+        const safeDetail = window.PAUtils.escapeHtml(detail);
+        let transportLine = "";
+        if (key === "s3DomeCtrl" && payload.dome_link?.state === "connected") {
+          if (payload.dome_link?.uart_owned_by_dome === true) {
+            transportLine = `<div class="desc mt-6">${window.PAUtils.escapeHtml("UART2 owned by DomeLink")}</div>`;
+          }
+        }
+        if (key === "s2Sound" && entry?.rx_status === "blocked_by_dome_uart") {
+          transportLine += `<div class="desc mt-6">${window.PAUtils.escapeHtml("CHIRP RX unavailable while DomeLink owns UART2")}</div>`;
+        }
+        return `
+        <div class="status-item" id="comp-${key}">
           <dt>${icon} ${label}</dt>
-          <dd>${state.replace(/_/g, " ")}</dd>
-          <div class="desc mt-6">${detail}</div>
+          <dd id="state-${key}">${safeState}</dd>
+          <div class="desc mt-6" id="detail-${key}">${safeDetail}</div>${transportLine}
         </div>`;
-    }).join("");
+      }).join("");
+      componentStatusGrid.innerHTML = `<dl class="status-grid">${items}</dl>`;
+    } else {
+      // Patch only the text content when component set hasn't changed
+      active.forEach(([key]) => {
+        const entry = payload[key];
+        let state = entry ? "enabled" : "disabled";
+        let detail = entry ? "✅ Enabled" : "⏸️ Disabled";
+        if (entry && typeof entry === "object") {
+          state = entry.state || "enabled";
+          detail = entry.detail || "✅ Enabled";
+        }
+        const stateText = String(state).replace(/_/g, " ");
+        const safeState = window.PAUtils.escapeHtml(stateText);
+        const safeDetail = window.PAUtils.escapeHtml(detail);
+
+        const stateEl = document.getElementById(`state-${key}`);
+        if (stateEl) stateEl.textContent = safeState;
+
+        const detailEl = document.getElementById(`detail-${key}`);
+        if (detailEl) detailEl.textContent = safeDetail;
+      });
+    }
   };
 
   const renderOpMode = (payload) => {
@@ -171,25 +283,120 @@
     });
   };
 
-  const renderMoodDomeNote = (payload) => {
-    if (!moodDomeNote) return;
-    const domeConnected = payload?.dome_link?.state === "connected";
-    moodDomeNote.classList.toggle("visible", !domeConnected);
+  const setStatusPill = (el, text, state = "info", compact = true) => {
+    if (!el) return;
+    const sizeClass = compact ? "status-pill status-pill-compact" : "status-pill";
+    el.textContent = text;
+    el.className = `${sizeClass} ${PILL_CLASS_MAP[state] || PILL_CLASS_MAP.info}`;
+  };
+
+  const renderMissionSnapshot = (payload) => {
+    const isStationary = !!payload.stationary;
+    const moodText = MOOD_LABELS[payload.activeMood] || `Mood ${payload.activeMood || 0}`;
+
+    setStatusPill(
+      snapshotWebControl,
+      payload.webControlEnabled ? "🕹️ Web control: Enabled" : "🕹️ Web control: Disabled",
+      payload.webControlEnabled ? "ok" : "warn",
+    );
+    setStatusPill(
+      snapshotMode,
+      isStationary ? "🧭 Mode: Stationary" : "🧭 Mode: Driving",
+      isStationary ? "warn" : "ok",
+    );
+    setStatusPill(
+      snapshotEstop,
+      payload.estop ? "🛑 E-Stop: Latched" : "🛑 E-Stop: Clear",
+      payload.estop ? "error" : "ok",
+    );
+    setStatusPill(snapshotMood, `🎬 Mood: ${moodText}`, "info");
   };
 
   const applyStatus = (payload) => {
     lastStatus = payload;
+    pollFailCount = 0;
+    setStale(false, { rerender: false });
     renderHealth(payload);
     renderComponentStatus(payload);
+    renderMissionSnapshot(payload);
     renderOpMode(payload);
-    renderMoodDomeNote(payload);
     renderActiveMood(payload);
+    setEstopUi(!!payload.estop);
+    setSleepUi(!!payload.sleepMode);
   };
 
-  const refreshStatusOnce = async () => {
+  const refreshStatusOnce = async ({ handle } = {}) => {
     if (!window.PAApi) return;
-    const result = await window.PAApi.get("/api/status", { cache: "no-store", timeoutMs: 3000 });
+    // When called as a section loader, handle is always present and carries the
+    // section's deadline. When called from non-section contexts (fallback polling),
+    // handle is absent and we use PAApi directly (which uses DEFAULT_TIMEOUT_MS).
+    const api = handle || window.PAApi;
+    const result = await api.get("/api/status", { cache: "no-store" });
     applyStatus(result.data);
+  };
+
+  const toggleSleepWake = async (forceWake = false) => {
+    if (!window.PAApi || sleepPending) return;
+    const targetSleep = forceWake ? false : !isSleeping;
+    setSleepPending(true);
+    showFeedback(sleepFeedback, targetSleep ? "Entering sleep mode..." : "Waking droid...");
+
+    try {
+      await window.PAApi.postForm(targetSleep ? "/api/sleep" : "/api/wake", {}, { timeoutMs: 3000 });
+      await refreshStatusOnce();
+      showFeedback(sleepFeedback, targetSleep ? "Sleep mode enabled" : "Droid awake", "success");
+    } catch (error) {
+      showFeedback(
+        sleepFeedback,
+        `Sleep toggle failed: ${window.PAApi.messageFor(error)}`,
+        "error"
+      );
+      if (lastStatus) setSleepUi(!!lastStatus.sleepMode);
+    } finally {
+      setSleepPending(false);
+    }
+  };
+
+  const toggleEstop = async () => {
+    if (!window.PAApi || estopPending) return;
+    const targetLatched = !isEstopLatched;
+    setEstopPending(true);
+    showFeedback(estopFeedback, targetLatched ? "Latching E-Stop..." : "Clearing E-Stop...");
+
+    try {
+      await window.PAApi.estopPostForm(targetLatched ? "/api/estop" : "/api/estop/clear", {}, { timeoutMs: 3000 });
+      await refreshStatusOnce();
+      showFeedback(estopFeedback, targetLatched ? "E-Stop latched" : "E-Stop clear", "success");
+    } catch (error) {
+      showFeedback(estopFeedback, `E-Stop failed: ${window.PAApi.messageFor(error)}`, "error");
+      if (lastStatus) setEstopUi(!!lastStatus.estop);
+    } finally {
+      setEstopPending(false);
+    }
+  };
+
+  const rebootController = async () => {
+    if (!window.PAApi || rebootPending) return;
+    rebootPending = true;
+    if (topbarReboot) {
+      topbarReboot.disabled = true;
+      topbarReboot.classList.add("is-pending");
+      topbarReboot.setAttribute("aria-disabled", "true");
+    }
+    showFeedback(rebootFeedback, "Rebooting...");
+
+    try {
+      await window.PAApi.postForm("/api/reboot", {}, { timeoutMs: 3000 });
+      showFeedback(rebootFeedback, "Rebooting...", "success");
+    } catch (error) {
+      showFeedback(rebootFeedback, `Reboot failed: ${window.PAApi.messageFor(error)}`, "error");
+      rebootPending = false;
+      if (topbarReboot) {
+        topbarReboot.disabled = false;
+        topbarReboot.classList.remove("is-pending");
+        topbarReboot.setAttribute("aria-disabled", "false");
+      }
+    }
   };
 
   const setModePending = (pending) => {
@@ -245,25 +452,63 @@
     }
   };
 
-  const appendLogLine = (text) => {
-    if (!logConsole) return;
+  const LOG_MAX_LINES = 250;
+  const LOG_TRIM_LINES = 200;
+  const LOG_EMPTY_TEXT = "No log history available yet.";
+  const COMMAND_HISTORY_MAX = 20;
+  let logLines = [];
+  let commandTokens = [];
+  let commandHistory = [];
+  let commandHistoryIndex = -1;
+  let logSelectionActive = false;
 
-    const raw = logConsole.textContent;
-    if (raw.length > 0 && raw !== "Waiting for logs…") {
-      const lines = raw.split("\n");
-      if (lines.length > 250) {
-        logConsole.textContent = `${lines.slice(lines.length - 200).join("\n")}\n`;
-      }
-    } else {
-      logConsole.textContent = "";
-    }
+  const normalizeLogMessage = (line) => String(line ?? "").trim();
 
-    logConsole.textContent += `${text}\n`;
+  const timestampNow = () => new Date().toTimeString().slice(0, 8);
 
+  const levelClassForMessage = (message) => {
+    const match = String(message ?? "").match(/^\[([EWID])\]/);
+    if (!match) return "";
+    if (match[1] === "E") return " log-line-error";
+    if (match[1] === "W") return " log-line-warn";
+    if (match[1] === "D") return " log-line-debug";
+    return "";
+  };
+
+  const makeLogEntry = (message, { timestamp = timestampNow(), extraClass = "" } = {}) => ({
+    timestamp,
+    message: normalizeLogMessage(message),
+    extraClass,
+  });
+
+  const logEntryHtml = (line) => {
+    const classes = `log-line${levelClassForMessage(line.message)}${line.extraClass || ""}`;
+    const ts = line.timestamp && line.timestamp !== "--:--:--" ? `[${window.PAUtils.escapeHtml(line.timestamp)}] ` : "";
+    return `<span class="${classes}">${ts}${window.PAUtils.escapeHtml(line.message)}</span>`;
+  };
+
+  const hasActiveLogSelection = () => {
+    if (!logConsole || !window.getSelection) return false;
+    const selection = window.getSelection();
+    if (!selection || selection.isCollapsed || selection.rangeCount === 0) return false;
+    const range = selection.getRangeAt(0);
+    return logConsole.contains(range.commonAncestorContainer);
+  };
+
+  const isLogAtBottom = () => {
+    if (!logConsole) return true;
     const threshold = 50;
-    const atBottom =
-      logConsole.scrollTop + logConsole.clientHeight >= logConsole.scrollHeight - threshold;
-    if (atBottom) {
+    return logConsole.scrollTop + logConsole.clientHeight >= logConsole.scrollHeight - threshold;
+  };
+
+  const renderLogConsole = (stickToBottom = false) => {
+    if (!logConsole) return;
+    if (logLines.length === 0) {
+      logConsole.innerHTML = `<span class="log-line">${window.PAUtils.escapeHtml(LOG_EMPTY_TEXT)}</span>`;
+    } else {
+      logConsole.innerHTML = logLines.map((line) => logEntryHtml(line)).join("\n");
+    }
+    if (stickToBottom && !hasActiveLogSelection()) {
       logConsole.scrollTop = logConsole.scrollHeight;
       logPaused?.classList.remove("visible");
     } else {
@@ -271,30 +516,276 @@
     }
   };
 
-  logConsole?.addEventListener("scroll", () => {
-    const threshold = 50;
-    const atBottom =
-      logConsole.scrollTop + logConsole.clientHeight >= logConsole.scrollHeight - threshold;
-    if (atBottom) logPaused?.classList.remove("visible");
-  });
+  const setLogLines = (lines, { forceBottom = true } = {}) => {
+    logLines = lines
+      .map((line) => makeLogEntry(line, { timestamp: "--:--:--" }))
+      .filter((line) => line.message.length > 0)
+      .slice(-LOG_MAX_LINES);
+    const stickToBottom = (forceBottom || isLogAtBottom()) && !hasActiveLogSelection();
+    renderLogConsole(stickToBottom);
+  };
 
-  const postAudio = async (params) => {
-    if (!window.PAApi) return;
-    try {
-      const result = await window.PAApi.postForm("/api/audio", params, { timeoutMs: 3000 });
-      const payload = result.data;
-      const ok = payload && typeof payload === "object" ? !!payload.ok : true;
-      const msg = ok ? "Done" : (payload?.error || "Audio command failed");
-      showFeedback(audioFeedback, msg, ok ? "success" : "error");
-      if (ok) {
-        window.setTimeout(() => {
-          if (audioFeedback) audioFeedback.textContent = "";
-        }, 2000);
-      }
-    } catch (error) {
-      showFeedback(audioFeedback, window.PAApi.messageFor(error), "error");
+  const appendLogLine = (text, options = {}) => {
+    if (!logConsole) return;
+    const message = normalizeLogMessage(text);
+    if (!message) return;
+
+    const stickToBottom = isLogAtBottom() && !hasActiveLogSelection();
+    const entry = makeLogEntry(message, options);
+    const wasEmpty = logLines.length === 0;
+    logLines.push(entry);
+    let didTrim = false;
+    if (logLines.length > LOG_MAX_LINES) {
+      logLines = logLines.slice(logLines.length - LOG_TRIM_LINES);
+      didTrim = true;
+    }
+    if (hasActiveLogSelection()) {
+      logSelectionActive = true;
+      logPaused?.classList.add("visible");
+      return;
+    }
+    if (didTrim) {
+      renderLogConsole(stickToBottom);
+      return;
+    }
+    if (wasEmpty) {
+      logConsole.innerHTML = logEntryHtml(entry);
+    } else {
+      logConsole.insertAdjacentHTML("beforeend", `\n${logEntryHtml(entry)}`);
+    }
+    if (stickToBottom) {
+      logConsole.scrollTop = logConsole.scrollHeight;
+      logPaused?.classList.remove("visible");
+    } else {
+      logPaused?.classList.add("visible");
     }
   };
+
+  const loadRecentLogs = async ({ handle = null } = {}) => {
+    if (!window.PAApi || !logConsole) throw new Error("API or console unavailable");
+    if (logLines.length > 0) return;
+    const api = handle ?? window.PAApi;
+    const result = await api.get("/api/logs", { cache: "no-store" });
+    const historyLines = String(result.data ?? "")
+      .split(/\r?\n/)
+      .map((line) => normalizeLogMessage(line.trimEnd()))
+      .filter((line) => line.length > 0);
+    setLogLines(historyLines);
+  };
+
+  const LOG_LEVELS = {
+    1: { label: "Error", icon: "🪵", cls: "pill-error", hint: "Loss of function only" },
+    2: { label: "Warning", icon: "🪵", cls: "pill-info", hint: "Faults + safety warnings" },
+    3: { label: "Info", icon: "🪵", cls: "pill-info", hint: "Boot + service health" },
+    4: { label: "Debug", icon: "🪵", cls: "pill-warn", hint: "Verbose" },
+  };
+  let currentLogLevel = null;
+  let logLevelPending = false;
+
+  const renderLogLevelPill = (level) => {
+    if (!logLevelPill) return;
+    const info = LOG_LEVELS[level];
+    if (!info) {
+      logLevelPill.textContent = "🪵 ...";
+      logLevelPill.title = "Log level unknown — click to retry";
+      logLevelPill.setAttribute("aria-label", "Log level unknown. Click to retry.");
+      return;
+    }
+    logLevelPill.className = `status-pill status-pill-compact ${info.cls}`;
+    logLevelPill.textContent = `${info.icon} ${info.label}`;
+    logLevelPill.title = `Log level: ${info.label} (${info.hint}) — click to cycle`;
+    logLevelPill.setAttribute("aria-label", `Log level: ${info.label}. Click to cycle to the next level.`);
+  };
+
+  const loadLogLevel = async ({ handle = null } = {}) => {
+    if (!window.PAApi || !logLevelPill) throw new Error("API or pill unavailable");
+    const api = handle ?? window.PAApi;
+    const result = await api.get("/api/config", { cache: "no-store" });
+    const level = Number(result.data?.system?.logLevel);
+    if (!LOG_LEVELS[level]) {
+      throw new Error(`Unknown log level: ${level}`);
+    }
+    currentLogLevel = level;
+    renderLogLevelPill(level);
+  };
+
+  const cycleLogLevel = async () => {
+    if (!window.PAApi || !logLevelPill || logLevelPending) return;
+    if (!LOG_LEVELS[currentLogLevel]) {
+      await loadLogLevel();
+      if (!LOG_LEVELS[currentLogLevel]) return;
+    }
+    const nextLevel = currentLogLevel >= 4 ? 1 : currentLogLevel + 1;
+    const previousLevel = currentLogLevel;
+    logLevelPending = true;
+    currentLogLevel = nextLevel;
+    renderLogLevelPill(nextLevel);
+    try {
+      await window.PAApi.postForm("/api/config", { logLevel: String(nextLevel) }, { timeoutMs: 3000 });
+      appendCommandLine(`[UI] Log level set to ${LOG_LEVELS[nextLevel].label}`, " log-line-command");
+    } catch (error) {
+      currentLogLevel = previousLevel;
+      renderLogLevelPill(previousLevel);
+      appendCommandLine(
+        `[ERROR] log level change failed: ${window.PAApi.messageFor(error)}`,
+        " log-line-command-error"
+      );
+    } finally {
+      logLevelPending = false;
+    }
+  };
+
+  logLevelPill?.addEventListener("click", cycleLogLevel);
+
+  logConsole?.addEventListener("scroll", () => {
+    if (isLogAtBottom() && !hasActiveLogSelection()) {
+      logPaused?.classList.remove("visible");
+    }
+  });
+
+  document.addEventListener("selectionchange", () => {
+    if (!logConsole) return;
+    if (hasActiveLogSelection()) {
+      logSelectionActive = true;
+      logPaused?.classList.add("visible");
+    } else if (logSelectionActive) {
+      logSelectionActive = false;
+      renderLogConsole(isLogAtBottom());
+    }
+  });
+
+  const loadCommandTokens = async ({ handle = null } = {}) => {
+    if (!window.PAApi) throw new Error("API unavailable");
+    const api = handle ?? window.PAApi;
+    const result = await api.get("/api/actions", { cache: "no-store" });
+    if (!Array.isArray(result.data)) {
+      throw new Error("Action registry response is not an array");
+    }
+    commandTokens = result.data
+      .filter((entry) => entry && entry.testable === true && typeof entry.token === "string")
+      .map((entry) => entry.token)
+      .sort((a, b) => a.localeCompare(b));
+  };
+
+  const appendCommandLine = (text, extraClass = " log-line-command") => {
+    appendLogLine(text, { extraClass });
+  };
+
+  const printCommandHelp = () => {
+    if (commandTokens.length === 0) {
+      appendCommandLine("[ERROR] action list unavailable", " log-line-command-error");
+      return;
+    }
+    appendCommandLine(`available commands: ${commandTokens.join(" ")}`);
+  };
+
+  const rememberCommand = (token) => {
+    if (!token) return;
+    if (commandHistory[commandHistory.length - 1] !== token) {
+      commandHistory.push(token);
+      if (commandHistory.length > COMMAND_HISTORY_MAX) {
+        commandHistory = commandHistory.slice(commandHistory.length - COMMAND_HISTORY_MAX);
+      }
+    }
+    commandHistoryIndex = commandHistory.length;
+  };
+
+  const dispatchConsoleCommand = async (rawToken) => {
+    const token = normalizeLogMessage(rawToken);
+    if (!token) return;
+    rememberCommand(token);
+    appendCommandLine(`> ${token}`);
+
+    if (token === "help" || token === "?") {
+      printCommandHelp();
+      return;
+    }
+
+    if (!commandTokens.includes(token)) {
+      appendCommandLine(`[ERROR] unknown command: ${token}`, " log-line-command-error");
+      return;
+    }
+
+    if (!window.PAApi) {
+      appendCommandLine("[ERROR] API unavailable", " log-line-command-error");
+      return;
+    }
+
+    try {
+      await window.PAApi.postForm("/api/actions/test", { token }, { timeoutMs: 5000 });
+      appendCommandLine(`[OK] ${token}`);
+    } catch (error) {
+      appendCommandLine(`[ERROR] ${window.PAApi.messageFor(error)}`, " log-line-command-error");
+    }
+  };
+
+  const commonPrefix = (values) => {
+    if (values.length === 0) return "";
+    let prefix = values[0];
+    for (let i = 1; i < values.length && prefix.length > 0; i += 1) {
+      while (!values[i].startsWith(prefix)) {
+        prefix = prefix.slice(0, -1);
+      }
+    }
+    return prefix;
+  };
+
+  const completeConsoleCommand = () => {
+    if (!logCommandInput) return;
+    const partial = normalizeLogMessage(logCommandInput.value);
+    if (!partial) {
+      printCommandHelp();
+      return;
+    }
+    const matches = commandTokens.filter((token) => token.startsWith(partial));
+    if (matches.length === 1) {
+      logCommandInput.value = matches[0];
+      return;
+    }
+    if (matches.length > 1) {
+      const shared = commonPrefix(matches);
+      if (shared.length > partial.length) {
+        logCommandInput.value = shared;
+        return;
+      }
+      appendCommandLine(matches.join(" "));
+      return;
+    }
+    appendCommandLine(`[ERROR] unknown command: ${partial}`, " log-line-command-error");
+  };
+
+  logCommandInput?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      const token = logCommandInput.value;
+      logCommandInput.value = "";
+      dispatchConsoleCommand(token);
+      return;
+    }
+    if (event.key === "Tab") {
+      event.preventDefault();
+      completeConsoleCommand();
+      return;
+    }
+    if (event.key === "ArrowUp") {
+      if (commandHistory.length === 0) return;
+      event.preventDefault();
+      commandHistoryIndex = Math.max(0, commandHistoryIndex - 1);
+      logCommandInput.value = commandHistory[commandHistoryIndex] || "";
+      logCommandInput.setSelectionRange(logCommandInput.value.length, logCommandInput.value.length);
+      return;
+    }
+    if (event.key === "ArrowDown") {
+      if (commandHistory.length === 0) return;
+      event.preventDefault();
+      commandHistoryIndex = Math.min(commandHistory.length, commandHistoryIndex + 1);
+      logCommandInput.value = commandHistoryIndex >= commandHistory.length
+        ? ""
+        : commandHistory[commandHistoryIndex];
+      logCommandInput.setSelectionRange(logCommandInput.value.length, logCommandInput.value.length);
+    }
+  });
+
 
   opmodeDrive?.addEventListener("click", () => setMode("driving"));
   opmodeStationary?.addEventListener("click", () => setMode("stationary"));
@@ -307,39 +798,101 @@
     });
   });
 
-  document.getElementById("audio-stop")?.addEventListener("click", () => postAudio({ action: "stop" }));
-  document.getElementById("audio-vol-up")?.addEventListener("click", () => postAudio({ action: "dollar", cmd: "$+" }));
-  document.getElementById("audio-vol-dn")?.addEventListener("click", () => postAudio({ action: "dollar", cmd: "$-" }));
+  estopToggle?.addEventListener("click", toggleEstop);
+  sleepToggle?.addEventListener("click", () => toggleSleepWake(false));
+  sleepOverlayWake?.addEventListener("click", () => toggleSleepWake(true));
+  topbarReboot?.addEventListener("click", rebootController);
+
+
+  // -------------------------------------------------------------------------
+  // Boot — load recent logs, log level, and action tokens
+  // -------------------------------------------------------------------------
+
+  // Page Recovery: register startup API loads as sections so the bootstrap
+  // can show recovery state if any fetch fails.
+  // See docs/page-load-recovery-architecture.md and ADR 0019.
+
+  // Initial status fetch: loads the current state when the stream is cold.
+  // This is registered as a section so the bootstrap can show recovery state
+  // if the fetch fails. For the stream-supported case, this section only runs
+  // if the stream has no cached value. For the fallback case, it ensures the
+  // page shows data before polling begins.
+  const loadInitialStatus = async ({ handle = null } = {}) => {
+    const hasStream = window.PAStatusStream?.isSupported();
+    const hasCachedStatus = hasStream && window.PAStatusStream?.getLastStatus();
+    if (!hasStream || !hasCachedStatus) {
+      await refreshStatusOnce({ handle });
+    }
+  };
+
+  const SECTIONS = [
+    ["app-initial-status", loadInitialStatus, "initial status"],
+    ["app-recent-logs", loadRecentLogs, "recent logs"],
+    ["app-log-level", loadLogLevel, "log level setting"],
+    ["app-action-tokens", loadCommandTokens, "action registry"],
+  ];
+
+  const startPageLoad = () => {
+    if (!window.PABootstrap) {
+      loadRecentLogs().catch(() => {});
+      loadLogLevel().catch(() => {});
+      loadCommandTokens().catch(() => {});
+      return;
+    }
+    window.PABootstrap.setResourceLabels?.({
+      "/web_api.js": "controller connection",
+      "/diagnostics.js": "diagnostics constants",
+      "/status_stream.js": "live updates",
+      "/shell.js": "page layout",
+      "/health_signals.js": "health indicator logic",
+      "/dome_command_map.js": "dome command map",
+      "/dome_panel_model.js": "dome panel state",
+      "/dome_layout.js": "dome panel layout",
+      "/dome_layout_render.js": "dome panel rendering",
+      "/dome_control.js": "dome control",
+      "/app.js": "home dashboard",
+      "/footer.js": "page footer",
+    });
+    SECTIONS.forEach(([name, load, label]) =>
+      window.PABootstrap.registerSection(name, load, { label })
+    );
+  };
+
+  startPageLoad();
 
   if (window.PAStatusStream?.isSupported()) {
     window.PAStatusStream.subscribe((eventType, payload) => {
-      if (eventType === "status") applyStatus(payload);
-      if (eventType === "log") appendLogLine(payload);
+      if (eventType === "status") {
+        applyStatus(payload);
+      }
+      if (eventType === "log") payload.split("\x01").forEach((line) => appendLogLine(line));
+      if (eventType === "stream_error") {
+        appendLogLine("[connection lost — retrying…]");
+        setStale(true);
+      }
     });
-
-    if (!window.PAStatusStream.getLastStatus()) {
-      refreshStatusOnce().catch(() => {
-        // Fallback polling below handles temporary fetch failures.
-      });
-    }
   } else {
+    // Fallback polling for pages without stream support
     const refreshFromFallback = () => {
-      refreshStatusOnce().catch(() => {
-        // No-op: operator sees stale values; next cycle retries.
+      return refreshStatusOnce().catch(() => {
+        pollFailCount++;
+        if (pollFailCount >= 2) setStale(true);
       });
     };
 
-    refreshFromFallback();
-
-    window.setInterval(() => {
-      if (document.visibilityState === "hidden") return;
-      refreshFromFallback();
-    }, 3000);
-
-    document.addEventListener("visibilitychange", () => {
-      if (document.visibilityState !== "hidden") {
-        refreshFromFallback();
+    const fallbackPoll = window.PageBootstrap.createBackgroundPoll(
+      refreshFromFallback,
+      {
+        cadenceMs: 3000,
+        refreshOnReturn: true,
       }
+    );
+    fallbackPoll.start();
+
+    window.addEventListener("beforeunload", () => {
+      fallbackPoll.stop();
     });
   }
+  setEstopUi(false);
+  setSleepUi(false);
 })();

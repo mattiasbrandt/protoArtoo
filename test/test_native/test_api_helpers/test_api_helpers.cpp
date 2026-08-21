@@ -1,12 +1,19 @@
 // =============================================================================
 // test/test_native/test_api_helpers/test_api_helpers.cpp
 //
-// Native unit tests for web API parsing helpers.
-// Tests: parseDriveValue, parseUint32Value, parseBoolValue, resolveManualCommand.
+// Native unit tests for web API parsing helpers and format functions.
+// Tests: parseDriveValue, parseUint32Value, parseBoolValue,
+//        formatSleepControlJson, formatIdentityJson, formatSpeedPresetResponseJson,
+//        formatAuxLedStateJson
 // =============================================================================
 #include <unity.h>
 
+#include <string.h>
 #include "api_helpers.h"
+#include "api_system.h"
+#include "api_identity.h"
+#include "api_drive.h"
+#include "api_aux_led.h"
 
 void setUp() {
 }
@@ -162,42 +169,150 @@ void test_parseBool_yes_fails() {
     TEST_ASSERT_FALSE(parseBoolValue("yes", &out));
 }
 
-// --- resolveManualCommand() tests ---
+// --- normalizeDroidName() tests ---
 
-void test_resolve_estop() {
-    TEST_ASSERT_EQUAL_INT(MC_ESTOP, (int)resolveManualCommand("estop"));
+void test_normalizeDroidName_accepts_lowercase() {
+    char out[33] = {};
+    TEST_ASSERT_TRUE(normalizeDroidName("r2-unit07", out, sizeof(out)));
+    TEST_ASSERT_EQUAL_STRING("r2-unit07", out);
 }
 
-void test_resolve_clear_estop() {
-    TEST_ASSERT_EQUAL_INT(MC_CLEAR_ESTOP, (int)resolveManualCommand("clear_estop"));
+void test_normalizeDroidName_rejects_uppercase() {
+    char out[33] = {};
+    TEST_ASSERT_FALSE(normalizeDroidName("R2-unit07", out, sizeof(out)));
 }
 
-void test_resolve_enable_web_control() {
-    TEST_ASSERT_EQUAL_INT(MC_ENABLE_WEB_CONTROL, (int)resolveManualCommand("enable_web_control"));
+void test_normalizeDroidName_rejects_spaces() {
+    char out[33] = {};
+    TEST_ASSERT_FALSE(normalizeDroidName("Artoo Body", out, sizeof(out)));
 }
 
-void test_resolve_disable_web_control() {
-    TEST_ASSERT_EQUAL_INT(MC_DISABLE_WEB_CONTROL, (int)resolveManualCommand("disable_web_control"));
+void test_normalizeDroidName_rejects_invalid_chars() {
+    char out[33] = {};
+    TEST_ASSERT_FALSE(normalizeDroidName("Artoo!Body", out, sizeof(out)));
 }
 
-void test_resolve_reboot() {
-    TEST_ASSERT_EQUAL_INT(MC_REBOOT, (int)resolveManualCommand("reboot"));
+void test_normalizeDroidName_empty_fails() {
+    char out[33] = {};
+    TEST_ASSERT_FALSE(normalizeDroidName("", out, sizeof(out)));
 }
 
-void test_resolve_unknown() {
-    TEST_ASSERT_EQUAL_INT(MC_UNKNOWN, (int)resolveManualCommand("unknown_cmd"));
+void test_normalizeDroidName_too_long_fails() {
+    char out[33] = {};
+    TEST_ASSERT_FALSE(normalizeDroidName("abcdefghijklmnopqrstuvwxyz1234567", out, sizeof(out)));
 }
 
-void test_resolve_empty_unknown() {
-    TEST_ASSERT_EQUAL_INT(MC_UNKNOWN, (int)resolveManualCommand(""));
+// --- formatSleepControlJson() tests ---
+
+void test_formatSleepControlJson_sleep_changed() {
+    char out[96] = {};
+    TEST_ASSERT_TRUE(formatSleepControlJson(out, sizeof(out), true, true));
+    TEST_ASSERT_EQUAL_STRING("{\"ok\":true,\"sleepMode\":true,\"changed\":true}", out);
 }
 
-void test_resolve_null_unknown() {
-    TEST_ASSERT_EQUAL_INT(MC_UNKNOWN, (int)resolveManualCommand(nullptr));
+void test_formatSleepControlJson_wake_unchanged() {
+    char out[96] = {};
+    TEST_ASSERT_TRUE(formatSleepControlJson(out, sizeof(out), false, false));
+    TEST_ASSERT_EQUAL_STRING("{\"ok\":true,\"sleepMode\":false,\"changed\":false}", out);
 }
 
-void test_resolve_uppercase_unknown() {
-    TEST_ASSERT_EQUAL_INT(MC_UNKNOWN, (int)resolveManualCommand("ESTOP"));
+void test_formatSleepControlJson_null_buffer_fails() {
+    TEST_ASSERT_FALSE(formatSleepControlJson(nullptr, 32, true, true));
+}
+
+void test_formatSleepControlJson_small_buffer_fails() {
+    char out[16] = {};
+    TEST_ASSERT_FALSE(formatSleepControlJson(out, sizeof(out), true, true));
+}
+
+// --- formatIdentityJson() tests ---
+
+void test_formatIdentityJson_valid_payload() {
+    char out[96] = {};
+    TEST_ASSERT_TRUE(formatIdentityJson(out, sizeof(out), "r2-unit", true));
+    TEST_ASSERT_EQUAL_STRING("{\"droidName\":\"r2-unit\",\"mdnsUseName\":true}", out);
+}
+
+void test_formatIdentityJson_small_buffer_fails() {
+    char out[20] = {};
+    TEST_ASSERT_FALSE(formatIdentityJson(out, sizeof(out), "r2-unit", false));
+}
+
+// --- formatSpeedPresetResponseJson() tests ---
+
+void test_formatSpeedPresetResponseJson_valid_payload() {
+    char out[96] = {};
+    TEST_ASSERT_TRUE(formatSpeedPresetResponseJson(out, sizeof(out), SpeedPresetId::Turbo, 600));
+    TEST_ASSERT_EQUAL_STRING("{\"ok\":true,\"preset\":\"turbo\",\"speedLimitMax\":600}", out);
+}
+
+void test_formatSpeedPresetResponseJson_null_buffer_fails() {
+    TEST_ASSERT_FALSE(formatSpeedPresetResponseJson(nullptr, 32, SpeedPresetId::Slow, 200));
+}
+
+void test_formatSpeedPresetResponseJson_small_buffer_fails() {
+    char out[24] = {};
+    TEST_ASSERT_FALSE(formatSpeedPresetResponseJson(out, sizeof(out), SpeedPresetId::Normal, 350));
+}
+
+void test_formatSpeedPresetResponseJson_out_of_range_fails() {
+    char out[96] = {};
+    TEST_ASSERT_FALSE(formatSpeedPresetResponseJson(out, sizeof(out), SpeedPresetId::Slow, 601));
+}
+
+void test_formatSpeedPresetResponseJson_invalid_preset_fails() {
+    char out[96] = {};
+    TEST_ASSERT_FALSE(
+        formatSpeedPresetResponseJson(out, sizeof(out), (SpeedPresetId)99, 200));
+}
+
+
+// --- formatAuxLedStateJson() tests ---
+
+void test_formatAuxLedStateJson_valid_payload() {
+    char out[128] = {};
+    TEST_ASSERT_TRUE(formatAuxLedStateJson(out, sizeof(out), 19, 10, 20, 30, "pulse"));
+    TEST_ASSERT_EQUAL_STRING(
+        "{\"ok\":true,\"auxLed\":{\"pin\":19,\"r\":10,\"g\":20,\"b\":30,\"effect\":\"pulse\"}}",
+        out);
+}
+
+void test_formatAuxLedStateJson_null_effect_fails() {
+    char out[128] = {};
+    TEST_ASSERT_FALSE(formatAuxLedStateJson(out, sizeof(out), 19, 10, 20, 30, nullptr));
+}
+
+void test_formatAuxLedStateJson_small_buffer_fails() {
+    char out[16] = {};
+    TEST_ASSERT_FALSE(formatAuxLedStateJson(out, sizeof(out), 19, 10, 20, 30, "solid"));
+}
+
+// trimAsciiWhitespace() replaced the Arduino String::trim() that the sequence
+// and action-test routes relied on before they took copied-out C strings across
+// the WebRequest seam. An operator who pastes a name with a trailing space has
+// to keep getting the same answer they did before.
+void test_trimAsciiWhitespace_strips_both_ends() {
+    char s[32] = "  DM:ROCKMARCH\t\r\n";
+    trimAsciiWhitespace(s);
+    TEST_ASSERT_EQUAL_STRING("DM:ROCKMARCH", s);
+}
+
+void test_trimAsciiWhitespace_leaves_inner_spaces() {
+    char s[32] = "  a b  ";
+    trimAsciiWhitespace(s);
+    TEST_ASSERT_EQUAL_STRING("a b", s);
+}
+
+void test_trimAsciiWhitespace_all_whitespace_becomes_empty() {
+    char s[32] = " \t\r\n ";
+    trimAsciiWhitespace(s);
+    TEST_ASSERT_EQUAL_STRING("", s);
+}
+
+void test_trimAsciiWhitespace_untouched_string_is_unchanged() {
+    char s[32] = "DM:ROCKMARCH";
+    trimAsciiWhitespace(s);
+    TEST_ASSERT_EQUAL_STRING("DM:ROCKMARCH", s);
 }
 
 int main() {
@@ -231,16 +346,30 @@ int main() {
     RUN_TEST(test_parseBool_null_fails);
     RUN_TEST(test_parseBool_uppercase_fails);
     RUN_TEST(test_parseBool_yes_fails);
-
-    RUN_TEST(test_resolve_estop);
-    RUN_TEST(test_resolve_clear_estop);
-    RUN_TEST(test_resolve_enable_web_control);
-    RUN_TEST(test_resolve_disable_web_control);
-    RUN_TEST(test_resolve_reboot);
-    RUN_TEST(test_resolve_unknown);
-    RUN_TEST(test_resolve_empty_unknown);
-    RUN_TEST(test_resolve_null_unknown);
-    RUN_TEST(test_resolve_uppercase_unknown);
+    RUN_TEST(test_normalizeDroidName_accepts_lowercase);
+    RUN_TEST(test_normalizeDroidName_rejects_uppercase);
+    RUN_TEST(test_normalizeDroidName_rejects_spaces);
+    RUN_TEST(test_normalizeDroidName_rejects_invalid_chars);
+    RUN_TEST(test_normalizeDroidName_empty_fails);
+    RUN_TEST(test_normalizeDroidName_too_long_fails);
+    RUN_TEST(test_formatSleepControlJson_sleep_changed);
+    RUN_TEST(test_formatSleepControlJson_wake_unchanged);
+    RUN_TEST(test_formatSleepControlJson_null_buffer_fails);
+    RUN_TEST(test_formatSleepControlJson_small_buffer_fails);
+    RUN_TEST(test_formatIdentityJson_valid_payload);
+    RUN_TEST(test_formatIdentityJson_small_buffer_fails);
+    RUN_TEST(test_formatSpeedPresetResponseJson_valid_payload);
+    RUN_TEST(test_formatSpeedPresetResponseJson_null_buffer_fails);
+    RUN_TEST(test_formatSpeedPresetResponseJson_small_buffer_fails);
+    RUN_TEST(test_formatSpeedPresetResponseJson_out_of_range_fails);
+    RUN_TEST(test_formatSpeedPresetResponseJson_invalid_preset_fails);
+    RUN_TEST(test_formatAuxLedStateJson_valid_payload);
+    RUN_TEST(test_formatAuxLedStateJson_null_effect_fails);
+    RUN_TEST(test_formatAuxLedStateJson_small_buffer_fails);
+    RUN_TEST(test_trimAsciiWhitespace_strips_both_ends);
+    RUN_TEST(test_trimAsciiWhitespace_leaves_inner_spaces);
+    RUN_TEST(test_trimAsciiWhitespace_all_whitespace_becomes_empty);
+    RUN_TEST(test_trimAsciiWhitespace_untouched_string_is_unchanged);
 
     return UNITY_END();
 }

@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en" data-scripts="/web_api.js,/status_stream.js,/shell.js,/seq_protocol_check.js,/dome_command_map.js,/dome_panel_model.js,/dome_layout.js,/dome_layout_render.js,/seq.js,/footer.js">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Sequences — protoArtoo</title>
+    <link rel="stylesheet" href="/style.css">
+    <link rel="icon" type="image/png" href="/r2d2body-favicon.png">
+    <!-- PA:INCLUDE _recovery_kernel.html -->
+  </head>
+  <body data-page="seq">
+    <div id="shell-top"></div>
+
+    <!-- Main Learned Sequences Card -->
+    <div id="seq-main-card" class="card">
+      <div class="seq-card-header-row">
+        <h3>🎬 Learned Sequences</h3>
+        <div class="seq-card-actions-top">
+          <button id="seq-btn-import" class="btn btn-sm" title="Restore a sequence you previously exported">Restore Backup</button>
+        </div>
+      </div>
+
+      <!-- Empty state (shown initially) -->
+      <div id="seq-empty-state" class="seq-empty-state">
+        <div class="seq-empty-icon">✓</div>
+        <h4>No learned sequences yet</h4>
+        <p>Tune a Factory sequence below, or restore a sequence you previously exported.</p>
+        <div class="seq-entry-points">
+          <button class="btn" id="seq-empty-import">Restore Backup</button>
+        </div>
+      </div>
+
+      <!-- Populated state: Capacity indicator + list (hidden initially) -->
+      <div id="seq-populated-state" class="hidden">
+        <div class="seq-capacity-row">
+          <span id="seq-capacity-display">0 / 16 sequences</span>
+        </div>
+
+        <div id="seq-cards-container" class="seq-cards-list">
+          <!-- seq-card elements inserted here -->
+        </div>
+      </div>
+    </div>
+
+    <!-- Import Modal (hidden initially) -->
+    <div id="seq-modal-import" class="seq-modal hidden" role="dialog" aria-modal="true" aria-labelledby="seq-modal-import-title">
+      <div class="seq-modal-overlay"></div>
+      <div class="seq-modal-content">
+        <div class="seq-modal-header">
+          <h4 id="seq-modal-import-title">Restore Backup</h4>
+          <button id="seq-modal-import-close" class="btn-close" aria-label="Close">✕</button>
+        </div>
+        <div class="seq-modal-body">
+          <p>Restore a sequence you previously exported. Choose its JSON file:</p>
+          <div class="seq-import-file-picker">
+            <input id="seq-import-file-input" type="file" accept=".json" aria-label="Choose JSON file">
+            <label for="seq-import-file-input" class="btn btn-sm">📂 Choose File...</label>
+          </div>
+          <p class="seq-import-divider">OR paste JSON directly:</p>
+          <textarea
+            id="seq-import-textarea"
+            class="seq-import-textarea"
+            placeholder="Paste JSON here..."
+            aria-label="Paste JSON directly"
+          ></textarea>
+          <div id="seq-import-feedback" class="feedback hidden"></div>
+        </div>
+        <div class="seq-modal-footer">
+          <button id="seq-modal-import-cancel" class="btn btn-secondary">Cancel</button>
+          <button id="seq-modal-import-confirm" class="btn" disabled>Restore & Edit</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Editor View (hidden initially) -->
+    <div id="seq-editor-view" class="hidden">
+      <!-- Editor content loaded here by seq.js -->
+    </div>
+
+    <!-- Modals for editor (Memory Wipe, etc.) loaded by seq.js -->
+    <div id="seq-modal-memory-wipe" class="seq-modal hidden" role="dialog" aria-modal="true" aria-labelledby="seq-modal-wipe-title">
+      <div class="seq-modal-overlay"></div>
+      <div class="seq-modal-content">
+        <div class="seq-modal-header">
+          <h4 id="seq-modal-wipe-title">Confirm Memory Wipe</h4>
+        </div>
+        <div class="seq-modal-body">
+          <p id="seq-wipe-seq-name"></p>
+          <div class="seq-wipe-warning">
+            <p><strong>This will permanently delete</strong> the sequence from the droid and cannot be undone.</p>
+            <p>If this sequence matches a factory sequence name, deleting it will restore the factory programming. Otherwise, any RC trigger bindings pointing to this name will become inert.</p>
+            <p class="seq-wipe-confirm-prompt">Type the sequence name to confirm:</p>
+            <input
+              id="seq-wipe-confirm-input"
+              type="text"
+              placeholder="Sequence name"
+              class="seq-wipe-confirm-input"
+              aria-label="Type sequence name to confirm deletion"
+            >
+          </div>
+          <div id="seq-wipe-dangling-info" class="seq-wipe-dangling-info hidden"></div>
+        </div>
+        <div class="seq-modal-footer">
+          <button id="seq-modal-wipe-cancel" class="btn btn-secondary">Cancel</button>
+          <button id="seq-modal-wipe-confirm" class="btn btn-danger" disabled>Confirm Deletion</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="shell-status"></div>
+
+    <!-- No bootstrap <script src> here on purpose: the inline kernel in <head>
+         fetches /page_bootstrap.js itself, with retry, and hands it the script
+         chain from <html data-scripts>. A bare tag has no retry, and the
+         controller sheds connections in the opening burst by design. -->
+  </body>
+</html>

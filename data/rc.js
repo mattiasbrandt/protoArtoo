@@ -1,10 +1,13 @@
 (() => {
-  let selectedSlot = null;
+  let selectedChannel = null;
   let rcSnapshot = null;
-  let configCache = null;
-  let mappingDraft = {};
-
+  let channelMap = {};
+  let triggerPulseState = {};
+  
   // ── Learning mode state ───────────────────────────────────────────────────
+  // Flow: idle → learnActive (user clicks Learn) → await signal > threshold
+  //       → learnHit (candidate recorded) → selectedChannel (user confirms)
+  //       → editor opened. Timeout or user cancel returns to idle.
   let learnActive = false;
   let learnBaseline = null;    // raw snapshot taken when detect mode was entered
   let learnHit = null;         // { source:"sbus1"|"sbus2"|"pwm", channel:1-based, raw:value }
@@ -17,20 +20,21 @@
   // Buttons go 500+ µs from center (1500); filters cable noise (~10 µs).
   const LEARN_PWM_THRESHOLD = 200;
   // ─────────────────────────────────────────────────────────────────────────
-
+  
   const rcModeCards = document.querySelectorAll(".rc-mode-card");
   const rcInputModeHidden = document.getElementById("rc-input-mode");
   const rcModeFeedback = document.getElementById("rc-mode-feedback");
   const rcResetDefaults = document.getElementById("rc-reset-defaults");
   const rcDisabledCard = document.getElementById("rc-disabled-card");
-
+  
   const singleSbusRecvSection = document.getElementById("single-sbus-recv-section");
   const sbusRecvSel = document.getElementById("sbus-recv-sel");
   const sbusRecvFeedback = document.getElementById("sbus-recv-feedback");
   let sbusRecvFeedbackTimer = null;
+  let confirmedSbusRecvValue = null;
   const rcSummaryBody = document.getElementById("rc-summary-body");
-
-  const rcSlotItems = document.getElementById("rc-slot-items");
+  
+  const rcChannelItems = document.getElementById("rc-channel-items");
   const rcLivePreviewContent = document.getElementById("rc-live-preview-content");
   const rcPreviewSourceHealth = document.getElementById("rc-preview-source-health");
   const rcEditorContent = document.getElementById("rc-editor-content");
@@ -39,157 +43,293 @@
   const rcEditorFeedback = document.getElementById("rc-editor-feedback");
   const rcEditorDirty = document.getElementById("rc-editor-dirty");
   const rcEditorSavedAt = document.getElementById("rc-editor-saved-at");
-
+  
   const rcLearnBtn    = document.getElementById("rc-learn-btn");
   const rcLearnBanner = document.getElementById("rc-learn-banner");
   const rcLearnStatus = document.getElementById("rc-learn-status");
   const rcLearnStop   = document.getElementById("rc-learn-stop");
   let rcInputsEnabled = true;
-
-  const SUPPORTED_SLOTS = [
-    "driveSpeed", "driveSteer", "driveLimit", "domeSpeed",
-    "arm1", "arm2", "aux1", "aux2", "aux3", "sound",
-    "opMode", "free0", "free1", "free2", "free3"
+  
+  const ANALOG_ACTION_TOKENS = new Set(['drive_speed', 'drive_steer', 'dome_speed']);
+  // Hardcoded fallback used until GET /api/actions resolves.
+  // Matches robotActionIdToString() NVS token keys in rc_mapping.h.
+  const HARDCODED_ACTION_TARGETS = [
+    { token: 'drive_speed', label: 'Speed', group: 'Movement', description: 'Forward/reverse drive speed (analog axis)', disabled: false, testable: false, safetyCritical: false },
+    { token: 'drive_steer', label: 'Steer', group: 'Movement', description: 'Left/right steering (analog axis)', disabled: false, testable: false, safetyCritical: false },
+    { token: 'dome_speed', label: 'Dome Speed', group: 'Movement', description: 'Dome rotation speed (analog axis)', disabled: false, testable: false, safetyCritical: false },
+    { token: 'op_mode', label: 'Set Mode', group: 'Mode', description: 'Switch between stationary and driving mode', disabled: false, testable: true, safetyCritical: false, oneShot: false },
+    { token: 'arm1_toggle', label: 'ARM1 Toggle', group: 'Arms', description: 'Toggle arm 1 servo between open and closed', disabled: false, testable: true, safetyCritical: false, oneShot: false },
+    { token: 'arm2_toggle', label: 'ARM2 Toggle', group: 'Arms', description: 'Toggle arm 2 servo between open and closed', disabled: false, testable: true, safetyCritical: false, oneShot: false },
+    { token: 'aux1_toggle', label: 'AUX1 Toggle', group: 'Arms', description: 'Toggle aux 1 servo between open and closed', disabled: false, testable: true, safetyCritical: false, oneShot: false },
+    { token: 'aux2_toggle', label: 'AUX2 Toggle', group: 'Arms', description: 'Toggle aux 2 servo between open and closed', disabled: false, testable: true, safetyCritical: false, oneShot: false },
+    { token: 'aux3_toggle', label: 'AUX3 Toggle', group: 'Arms', description: 'Toggle aux 3 servo between open and closed', disabled: false, testable: true, safetyCritical: false, oneShot: false },
+    { token: 'seq', label: 'Marcduino Sequence', group: 'Sequences', description: 'Trigger a raw numbered body sequence payload (typically SE30-SE36)', disabled: false, testable: false, safetyCritical: false },
+    { token: 'dome_seq', label: 'Dome Sequence', group: 'Sequences', description: 'Trigger a dome-side panel/light sequence by number', disabled: false, testable: false, safetyCritical: false },
+    { token: 'cmd', label: 'Marcduino Command', group: 'Command', description: 'Send a specific Marcduino command string to the dome', disabled: false, testable: false, safetyCritical: false },
+    { token: 'sleep_toggle', label: 'Sleep Toggle', group: 'System', description: 'Toggle cosmetic sleep mode while keeping drive safety active', disabled: false, testable: true, safetyCritical: false },
+    { token: 'sound_rand_general', label: 'Random General', group: 'Sound', description: 'Play one random track from configured general range', disabled: false, testable: true, safetyCritical: false },
+    { token: 'sound_rand_chatty', label: 'Random Chatty', group: 'Sound', description: 'Play one random track from configured chatty range', disabled: false, testable: true, safetyCritical: false },
+    { token: 'sound_rand_happy', label: 'Random Happy', group: 'Sound', description: 'Play one random track from configured happy range', disabled: false, testable: true, safetyCritical: false },
+    { token: 'sound_rand_processing', label: 'Random Processing', group: 'Sound', description: 'Play one random track from configured processing range', disabled: false, testable: true, safetyCritical: false },
+    { token: 'sound_rand_sad', label: 'Random Sad', group: 'Sound', description: 'Play one random track from configured sad range', disabled: false, testable: true, safetyCritical: false },
+    { token: 'sound_rand_sentimental', label: 'Random Sentimental', group: 'Sound', description: 'Play one random track from configured sentimental range', disabled: false, testable: true, safetyCritical: false },
+    { token: 'sound_rand_humming', label: 'Random Humming', group: 'Sound', description: 'Play one random track from configured humming range', disabled: false, testable: true, safetyCritical: false },
+    { token: 'sound_rand_scream', label: 'Random Scream', group: 'Sound', description: 'Play one random track from configured scream range', disabled: false, testable: true, safetyCritical: false },
+    { token: 'sound_rand_surprised', label: 'Random Surprised', group: 'Sound', description: 'Play one random track from configured surprised range', disabled: false, testable: true, safetyCritical: false },
+    { token: 'sound_rand_alert', label: 'Random Alert', group: 'Sound', description: 'Play one random track from configured alert range', disabled: false, testable: true, safetyCritical: false },
+    { token: 'sound_rand_snarky', label: 'Random Snarky', group: 'Sound', description: 'Play one random track from configured snarky range', disabled: false, testable: true, safetyCritical: false },
+    { token: 'sound_rand_whistle', label: 'Random Whistle', group: 'Sound', description: 'Play one random track from configured whistle range', disabled: false, testable: true, safetyCritical: false },
+    { token: 'estop', label: 'Emergency Stop', group: 'Safety', description: 'Immediately stop all drive output and latch estop', disabled: false, testable: false, safetyCritical: true },
+    { token: 'droid_seq_scream', label: 'Scream', group: 'Sequences', description: 'SE01 - scream audio and body sequence, then forward :SE01 to dome', disabled: false, testable: true, safetyCritical: false },
+    { token: 'droid_seq_wave', label: 'Wave', group: 'Sequences', description: 'SE02 - body wave sequence, then forward :SE02 to dome', disabled: false, testable: true, safetyCritical: false },
+    { token: 'droid_seq_fast_wave', label: 'Fast Wave', group: 'Sequences', description: 'SE03 - fast wave sequence, then forward :SE03 to dome', disabled: false, testable: true, safetyCritical: false },
+    { token: 'droid_seq_open_wave', label: 'Open Wave', group: 'Sequences', description: 'SE04 - open wave sequence, then forward :SE04 to dome', disabled: false, testable: true, safetyCritical: false },
+    { token: 'droid_seq_beep_cantina', label: 'Beep Cantina', group: 'Sequences', description: 'SE05 - short Cantina audio with body wave, then forward :SE05 to dome', disabled: false, testable: true, safetyCritical: false },
+    { token: 'droid_seq_faint', label: 'Faint', group: 'Sequences', description: 'SE06 - faint audio with body park sequence, then forward :SE06 to dome', disabled: false, testable: true, safetyCritical: false },
+    { token: 'droid_seq_cantina', label: 'Cantina Dance', group: 'Sequences', description: 'SE07 - long Cantina audio with body wave, then forward :SE07 to dome', disabled: false, testable: true, safetyCritical: false },
+    { token: 'droid_seq_leia', label: 'Leia Message', group: 'Sequences', description: 'SE08 - Leia audio with body sequence, then forward :SE08 to dome', disabled: false, testable: true, safetyCritical: false },
+    { token: 'droid_seq_disco', label: 'Disco', group: 'Sequences', description: 'SE09 - disco audio ($D) with body wave, then forward :SE09 to dome', disabled: false, testable: true, safetyCritical: false },
+    { token: 'droid_seq_screams', label: 'Screams', group: 'Sequences', description: 'SE15 - screams audio only on body side, then forward :SE15 to dome', disabled: false, testable: true, safetyCritical: false },
+    { token: 'droid_seq_wiggle', label: 'Panel Wiggle', group: 'Sequences', description: 'SE16 - body wave sequence, then forward :SE16 to dome', disabled: false, testable: true, safetyCritical: false },
+    { token: 'speed_preset_cycle', label: 'Speed Preset Cycle', group: 'Movement', description: 'Cycle drive speed preset Slow -> Normal -> Turbo', disabled: false, testable: true, safetyCritical: false },
   ];
 
-  const isSlotSupported = (slotKey) => {
-    return SUPPORTED_SLOTS.includes(slotKey);
+  // Live action targets — replaced on load from GET /api/actions.
+  // Falls back to HARDCODED_ACTION_TARGETS if the request fails.
+  let actionTargets = HARDCODED_ACTION_TARGETS;
+  let actionPickerScrollTop = 0;
+  let actionPickerFeedback = null;
+  let actionPickerInFlightToken = null;
+  let actionPickerLastChannel = null;
+  const actionPickerGroupOpen = {};
+
+  let actionPickerQuery = '';
+  let recentActionTokens = [];
+  const ACTION_RECENTS_KEY = 'pa.rc.recentActionTokens';
+  const ACTION_RECENTS_LIMIT = 8;
+
+  const DOMAIN_GROUP = {
+    drive: 'Movement',
+    servo: 'Arms',
+    dome: 'Sequences',
+    sound: 'Sound',
+    system: 'System',
+    aux: 'Aux',
+  };
+  const ACTION_GROUP_OVERRIDE = {
+    'system.action.set-mode': 'Mode',
+    'system.action.estop': 'Safety',
+    'dome.action.marcduino-command': 'Command',
+    'dome.action.set-speed': 'Movement',
+  };
+  const ACTION_GROUP_ORDER = ['Movement', 'Mode', 'Arms', 'Sound', 'Sequences', 'Command', 'Safety', 'System', 'Aux', 'Other'];
+  const DEFAULT_COLLAPSED_GROUPS = new Set(['Sound', 'Sequences']);
+  const NON_TESTABLE_TOKENS = new Set(['drive_speed', 'drive_steer', 'dome_speed', 'estop']);
+
+  // dome_seq is now enabled.
+  const UNAVAILABLE_TOKENS = new Set();
+
+  const actionGroup = (entry) => {
+    if (ACTION_GROUP_OVERRIDE[entry.name]) return ACTION_GROUP_OVERRIDE[entry.name];
+    return DOMAIN_GROUP[entry.domain] || 'Other';
   };
 
-  const BACKBONE_SLOTS = ["driveSpeed", "driveSteer", "domeSpeed", "driveLimit"];
+  const sortByGroupOrder = (a, b) => {
+    const ai = ACTION_GROUP_ORDER.includes(a) ? ACTION_GROUP_ORDER.indexOf(a) : ACTION_GROUP_ORDER.indexOf('Other');
+    const bi = ACTION_GROUP_ORDER.includes(b) ? ACTION_GROUP_ORDER.indexOf(b) : ACTION_GROUP_ORDER.indexOf('Other');
+    if (ai !== bi) return ai - bi;
+    return a.localeCompare(b);
+  };
 
-  const RC_ACTION_TARGETS = [
-    { token: 'none',         label: 'Disabled',                      group: 'Off' },
-    { token: 'drive_speed',  label: 'Drive Speed',                   group: 'Movement' },
-    { token: 'drive_steer',  label: 'Drive Steer',                   group: 'Movement' },
-    { token: 'dome_speed',   label: 'Dome Speed',                    group: 'Movement' },
-    { token: 'speed_limit',  label: 'Speed Limit',                   group: 'Movement' },
-    { token: 'op_mode',      label: 'Driving ↔ Stationary Switch',   group: 'Mode' },
-    { token: 'arm1_toggle',  label: 'ARM1 Toggle',                   group: 'Arms' },
-    { token: 'arm2_toggle',  label: 'ARM2 Toggle',                   group: 'Arms' },
-    { token: 'aux1_toggle',  label: 'AUX1 Toggle',                   group: 'Arms' },
-    { token: 'aux2_toggle',  label: 'AUX2 Toggle',                   group: 'Arms' },
-    { token: 'aux3_toggle',  label: 'AUX3 Toggle',                   group: 'Arms' },
-    { token: 'seq',          label: 'Body Sequence',                  group: 'Sequences' },
-    { token: 'dome_seq',     label: 'Dome Sequence (Unavailable)', group: 'Sequences', disabled: true },
-    { token: 'cmd',          label: 'Marcduino Command',              group: 'Command' },
-    { token: 'estop',        label: 'E-Stop Latch',                   group: 'Safety' },
+  const loadRecentActionTokens = () => {
+    try {
+      const parsed = JSON.parse(window.localStorage.getItem(ACTION_RECENTS_KEY) || '[]');
+      if (!Array.isArray(parsed)) return;
+      recentActionTokens = parsed
+        .filter((token) => typeof token === 'string' && token.trim() !== '')
+        .slice(0, ACTION_RECENTS_LIMIT);
+    } catch (_error) {
+      // ignore: localStorage parse error — fall back to empty list
+      recentActionTokens = [];
+    }
+  };
+
+  const saveRecentActionTokens = () => {
+    try {
+      window.localStorage.setItem(ACTION_RECENTS_KEY, JSON.stringify(recentActionTokens));
+    } catch (_error) {
+      // ignore: localStorage write failed (e.g., private browsing) — not persisted
+    }
+  };
+
+  const syncRecentActionTokensWithTargets = () => {
+    const validTokens = new Set(actionTargets.map((item) => item.token));
+    const filtered = recentActionTokens.filter((token) => validTokens.has(token));
+    if (filtered.length !== recentActionTokens.length) {
+      recentActionTokens = filtered;
+      saveRecentActionTokens();
+    }
+  };
+
+  const rememberRecentActionToken = (token) => {
+    if (!token) return;
+    recentActionTokens = [token, ...recentActionTokens.filter((entry) => entry !== token)]
+      .slice(0, ACTION_RECENTS_LIMIT);
+    saveRecentActionTokens();
+  };
+
+  const buildActionTargetsFromApi = (entries) => {
+    const targets = [];
+    entries.forEach((entry) => {
+      const token = typeof entry.token === 'string' ? entry.token : '';
+      if (!token) return;
+      const unavail = UNAVAILABLE_TOKENS.has(token);
+      const safetyCritical = Boolean(entry.safety_critical);
+      const testable = typeof entry.testable === 'boolean'
+        ? entry.testable
+        : !NON_TESTABLE_TOKENS.has(token);
+      const oneShot = typeof entry.one_shot === 'boolean'
+        ? entry.one_shot
+        : !ANALOG_ACTION_TOKENS.has(token);
+      const label = entry.display_name || entry.name || token;
+      targets.push({
+        token,
+        label: unavail ? `${label} (Unavailable)` : label,
+        group: actionGroup(entry),
+        description: entry.description || '',
+        disabled: unavail,
+        testable: testable && !unavail && !safetyCritical,
+        safetyCritical,
+        oneShot,
+      });
+    });
+    return targets;
+  };
+
+  const loadActionTargets = async ({ handle = null } = {}) => {
+    try {
+      const api = handle || window.PAApi;
+      const result = await api.get('/api/actions');
+      if (Array.isArray(result.data)) {
+        actionTargets = buildActionTargetsFromApi(result.data);
+      }
+      syncRecentActionTokensWithTargets();
+    } catch (error) {
+      // fetch error — fall back to hardcoded action targets
+      console.warn('[RC] Failed to load action registry, using built-in list');
+      syncRecentActionTokensWithTargets();
+      throw error;
+    }
+  };
+
+  const MARCDUINO_SEQUENCES = [
+    { id: 30, name: "Utility arm open-and-close", description: "Open both utility arms, then close them." },
+    { id: 31, name: "All body panels open and close", description: "Open all body panels, then close them." },
+    { id: 32, name: "All body doors wiggle-close", description: "Open all body doors, then close with wiggle timing." },
+    { id: 33, name: "Use gripper arm", description: "Run the body sequence that uses ARM1 gripper motion." },
+    { id: 34, name: "Use interface tool", description: "Run the body sequence that uses ARM2 interface-tool motion." },
+    { id: 35, name: "Ping-pong body doors", description: "Alternate body door motion in ping-pong pattern." },
+    { id: 36, name: "BT-1 two-gripper sequence", description: "Run the BT-1 style dual-gripper body sequence." },
   ];
+
+  // Factory dome sequences (fallback when /api/seq/list is unavailable)
+  const FACTORY_DOME_SEQUENCES = [
+    { payload: 'DM:PIES',      label: 'Pie Panels',           description: 'Toggle pie panels open/close (12 s)' },
+    { payload: 'DM:LOW',       label: 'Lower Panels',         description: 'Toggle lower panels open/close (15 s)' },
+    { payload: 'DM:OPENALL',   label: 'Open All Panels',      description: 'Toggle all panels open/close (10 s)' },
+    { payload: 'DM:FLUTTER',   label: 'Flutter',              description: 'All panels flutter to 75%, snap closed (10 s)' },
+    { payload: 'DM:BLOOM',     label: 'Bloom',                description: 'Pie panels ease open, wiggle, close (8 s)' },
+    { payload: 'DM:SCREAM',    label: 'Scream',               description: 'All panels burst open, red alert (15 s)' },
+    { payload: 'DM:OVERLOAD',  label: 'Overload',             description: 'Failure logics, panels sluggishly drift (12 s)' },
+    { payload: 'DM:HEART',     label: 'Heart',                description: 'Rainbow holos, sweet logic message (10 s)' },
+    { payload: 'DM:ALARM',     label: 'Alarm',                description: 'Pulsing red holos and logics (10 s)' },
+    { payload: 'DM:DISCO',     label: 'Disco',                description: 'Disco sequence delegating to SE09 (46 s)' },
+    { payload: 'DM:VADER',     label: 'Imperial March',       description: 'Imperial March -- red logics/holos (47 s)' },
+    { payload: 'DM:ROCKMARCH', label: 'Rock March',           description: 'Imperial March alternate visual (47 s)' },
+    { payload: 'DM:HELLO',     label: 'Hello There',          description: 'Panel wave + logic scroll greeting (4 s)' },
+    { payload: 'DM:LEIA',      label: 'Leia',                 description: 'Front holo Leia effect, logic Leia mode (36 s)' },
+    { payload: 'DM:CANTINA',   label: 'Cantina',              description: '130 BPM alternating panel dance (17 s)' },
+    { payload: 'DM:RESET',     label: 'Reset All',            description: 'Close all panels, reset all subsystems (4 s)' },
+    { payload: 'DM:RANDOM',    label: 'Random',               description: 'Delegate to a random SE sequence' },
+  ];
+
+  // Cached learned sequences (fetched on demand)
+  let cachedLearnedSequences = null;
+
+  const normalizeMarcduinoSequencePayload = (payload) => {
+    const raw = String(payload || "").trim().toUpperCase();
+    if (/^\d{2}$/.test(raw)) return raw;
+    const match = /^SE(\d{2})$/.exec(raw);
+    return match ? match[1] : raw;
+  };
+
+  const renderMarcduinoSequenceOptions = (selectedPayload) => {
+    const normalizedSelected = normalizeMarcduinoSequencePayload(selectedPayload);
+    return MARCDUINO_SEQUENCES.map((entry) => {
+      const value = String(entry.id);
+      const selected = normalizedSelected === value ? " selected" : "";
+      const label = `SE${entry.id} - ${entry.name}`;
+      const title = entry.description || "";
+      return `<option value="${value}" title="${window.PAUtils.escapeHtml(title)}"${selected}>${window.PAUtils.escapeHtml(label)}</option>`;
+    }).join("\n            ");
+  };
+
+  const renderDomeSequenceOptions = (selectedPayload) => {
+    const sel = String(selectedPayload || '').trim().toUpperCase();
+    // Use factory sequences only for initial render
+    // Learned sequences will be fetched asynchronously
+    return FACTORY_DOME_SEQUENCES.map((entry) => {
+      const selected = sel === entry.payload ? ' selected' : '';
+      return `<option value="${window.PAUtils.escapeHtml(entry.payload)}" title="${window.PAUtils.escapeHtml(entry.description)}"${selected}>${window.PAUtils.escapeHtml(entry.label)}</option>`;
+    }).join('\n            ');
+  };
+
+  const updateDomeSequenceOptions = async (selectedPayload) => {
+    const sel = String(selectedPayload || '').trim().toUpperCase();
+
+    // Fetch learned sequences if not cached
+    if (cachedLearnedSequences === null) {
+      try {
+        const result = await PAApi.get('/api/seq/list');
+        if (result.ok && Array.isArray(result.data)) {
+          cachedLearnedSequences = result.data.map((seq) => ({
+            payload: seq.name,
+            label: seq.name,
+            description: `Learned sequence (${seq.stepCount || 0} steps, ${seq.suppressMs}ms suppress)`,
+          }));
+        } else {
+          cachedLearnedSequences = [];
+        }
+      } catch {
+        cachedLearnedSequences = [];
+      }
+    }
+
+    // Combine factory + learned sequences
+    const allSequences = [...FACTORY_DOME_SEQUENCES, ...cachedLearnedSequences];
+
+    // Find the dome_seq select element and update it
+    const domeSeqSelect = rcEditorContent.querySelector('[data-cond="dome_seq"] select');
+    if (domeSeqSelect) {
+      domeSeqSelect.innerHTML = allSequences.map((entry) => {
+        const selected = sel === entry.payload ? ' selected' : '';
+        return `<option value="${window.PAUtils.escapeHtml(entry.payload)}" title="${window.PAUtils.escapeHtml(entry.description)}"${selected}>${window.PAUtils.escapeHtml(entry.label)}</option>`;
+      }).join('\n            ');
+    }
+  };
 
   const SOURCE_OPTIONS = {
-    standard_pwm: ["none", "pwm"],
-    single_sbus: ["none", "sbus1"],
-    dual_sbus: ["none", "sbus1", "sbus2"],
+    standard_pwm: ["pwm"],
+    single_sbus: ["sbus1", "sbus2"],
+    dual_sbus: ["sbus1", "sbus2"],
   };
 
-  const DEFAULT_BINDING = {
-    source: "none",
-    channel: 0,
-    min: 1000,
-    center: 1500,
-    max: 2000,
-    deadband: 0,
-    reverse: false,
-    target: "none",
-    payload: ""
-  };
+  const channelKeyOf = (source, channel) => `${source}:${Number(channel)}`;
 
-  const RC_ACTIONS = {
-    standard_pwm: [
-      { key: "driveSpeed", field: "rcPwmDriveSpeed", label: "Drive speed", type: "backbone" },
-      { key: "driveSteer", field: "rcPwmDriveSteer", label: "Drive steer", type: "backbone" },
-      { key: "driveLimit", field: "rcPwmDriveLimit", label: "Speed limit", type: "backbone" },
-      { key: "domeSpeed", field: "rcPwmDomeSpeed", label: "Dome speed", type: "backbone" },
-      { key: "arm1", field: "rcArm1", label: "ARM1 trigger", type: "trigger" },
-      { key: "arm2", field: "rcArm2", label: "ARM2 trigger", type: "trigger" },
-      { key: "aux1", field: "rcAux1", label: "AUX1 trigger", type: "trigger" },
-      { key: "aux2", field: "rcAux2", label: "AUX2 trigger", type: "trigger" },
-      { key: "aux3", field: "rcAux3", label: "AUX3 trigger", type: "trigger" },
-      { key: "sound", field: "rcSound", label: "Sound trigger", type: "trigger" },
-      { key: "opMode", field: "rcOpMode", label: "Op-mode switch", type: "trigger" },
-      { key: "free0", field: "rcFree0", label: "Free slot 0", type: "trigger" },
-      { key: "free1", field: "rcFree1", label: "Free slot 1", type: "trigger" },
-      { key: "free2", field: "rcFree2", label: "Free slot 2", type: "trigger" },
-      { key: "free3", field: "rcFree3", label: "Free slot 3", type: "trigger" },
-    ],
-    single_sbus: [
-      { key: "driveSpeed", field: "rcSbusDriveSpeed", label: "Drive speed", type: "backbone" },
-      { key: "driveSteer", field: "rcSbusDriveSteer", label: "Drive steer", type: "backbone" },
-      { key: "driveLimit", field: "rcSbusDriveLimit", label: "Speed limit", type: "backbone" },
-      { key: "domeSpeed", field: "rcSbusDomeSpeed", label: "Dome speed", type: "backbone" },
-      { key: "arm1", field: "rcArm1", label: "ARM1 trigger", type: "trigger" },
-      { key: "arm2", field: "rcArm2", label: "ARM2 trigger", type: "trigger" },
-      { key: "aux1", field: "rcAux1", label: "AUX1 trigger", type: "trigger" },
-      { key: "aux2", field: "rcAux2", label: "AUX2 trigger", type: "trigger" },
-      { key: "aux3", field: "rcAux3", label: "AUX3 trigger", type: "trigger" },
-      { key: "sound", field: "rcSound", label: "Sound trigger", type: "trigger" },
-      { key: "opMode", field: "rcOpMode", label: "Op-mode switch", type: "trigger" },
-      { key: "free0", field: "rcFree0", label: "Free slot 0", type: "trigger" },
-      { key: "free1", field: "rcFree1", label: "Free slot 1", type: "trigger" },
-      { key: "free2", field: "rcFree2", label: "Free slot 2", type: "trigger" },
-      { key: "free3", field: "rcFree3", label: "Free slot 3", type: "trigger" },
-    ],
-    dual_sbus: [
-      { key: "driveSpeed", field: "rcSbusDriveSpeed", label: "Drive speed", type: "backbone" },
-      { key: "driveSteer", field: "rcSbusDriveSteer", label: "Drive steer", type: "backbone" },
-      { key: "driveLimit", field: "rcSbusDriveLimit", label: "Speed limit", type: "backbone" },
-      { key: "domeSpeed", field: "rcSbusDomeSpeed", label: "Dome speed", type: "backbone" },
-      { key: "arm1", field: "rcArm1", label: "ARM1 trigger", type: "trigger" },
-      { key: "arm2", field: "rcArm2", label: "ARM2 trigger", type: "trigger" },
-      { key: "aux1", field: "rcAux1", label: "AUX1 trigger", type: "trigger" },
-      { key: "aux2", field: "rcAux2", label: "AUX2 trigger", type: "trigger" },
-      { key: "aux3", field: "rcAux3", label: "AUX3 trigger", type: "trigger" },
-      { key: "sound", field: "rcSound", label: "Sound trigger", type: "trigger" },
-      { key: "opMode", field: "rcOpMode", label: "Op-mode switch", type: "trigger" },
-      { key: "free0", field: "rcFree0", label: "Free slot 0", type: "trigger" },
-      { key: "free1", field: "rcFree1", label: "Free slot 1", type: "trigger" },
-      { key: "free2", field: "rcFree2", label: "Free slot 2", type: "trigger" },
-      { key: "free3", field: "rcFree3", label: "Free slot 3", type: "trigger" },
-    ],
-  };
-
-  const RC_BINDING_PATHS = {
-    rcPwmDriveSpeed: ["rc", "pwm", "driveSpeed"],
-    rcPwmDriveSteer: ["rc", "pwm", "driveSteer"],
-    rcPwmDriveLimit: ["rc", "pwm", "driveLimit"],
-    rcPwmDomeSpeed: ["rc", "pwm", "domeSpeed"],
-    rcPwmArm1: ["rc", "pwm", "arm1"],
-    rcPwmArm2: ["rc", "pwm", "arm2"],
-    rcPwmSound: ["rc", "pwm", "sound"],
-    rcSbusDriveSpeed: ["rc", "sbus", "driveSpeed"],
-    rcSbusDriveSteer: ["rc", "sbus", "driveSteer"],
-    rcSbusDriveLimit: ["rc", "sbus", "driveLimit"],
-    rcSbusDomeSpeed: ["rc", "sbus", "domeSpeed"],
-    rcSbusArm1: ["rc", "sbus", "arm1"],
-    rcSbusArm2: ["rc", "sbus", "arm2"],
-    rcSbusSound: ["rc", "sbus", "sound"],
-    rcArm1: ["rc", "triggers", "arm1"],
-    rcArm2: ["rc", "triggers", "arm2"],
-    rcAux1: ["rc", "triggers", "aux1"],
-    rcAux2: ["rc", "triggers", "aux2"],
-    rcAux3: ["rc", "triggers", "aux3"],
-    rcSound: ["rc", "triggers", "sound"],
-    rcOpMode: ["rc", "triggers", "opMode"],
-    rcFree0: ["rc", "triggers", "free0"],
-    rcFree1: ["rc", "triggers", "free1"],
-    rcFree2: ["rc", "triggers", "free2"],
-    rcFree3: ["rc", "triggers", "free3"],
-  };
-
-  const readPath = (obj, path) => {
-    let cur = obj;
-    for (let i = 0; i < path.length; i += 1) {
-      if (cur == null || typeof cur !== "object") return undefined;
-      cur = cur[path[i]];
-    }
-    return cur;
-  };
-
-  const getConfigBindingString = (cfg, field) => {
-    const path = RC_BINDING_PATHS[field];
-    if (!path) return "";
-    const value = readPath(cfg, path);
-    return typeof value === "string" ? value : "";
+  const parseChannelKey = (channelKey) => {
+    const [source = "", channelValue = "0"] = String(channelKey || "").split(":");
+    const channel = Number.parseInt(channelValue, 10) || 0;
+    return { source, channel };
   };
 
   const getRcModeFromConfig = (cfg) => {
@@ -204,6 +344,9 @@
       c.rcCh4?.enabled || c.rcCh5?.enabled || c.rcCh6?.enabled
     );
   };
+
+  const rcSourcesEnabled = (diagnostics) => Object.values(diagnostics?.sources || {})
+    .some((source) => source?.enabled === true);
 
   const getSingleSbusRecvCh2 = (cfg) => cfg?.rc?.sbus?.recvCh2 === true;
 
@@ -236,6 +379,17 @@
     }
   };
 
+  const setModeFeedback = (message, variant = '') => {
+    if (!rcModeFeedback) return;
+    rcModeFeedback.textContent = message;
+    rcModeFeedback.className = variant ? `feedback mt-12 ${variant}` : 'feedback mt-12';
+  };
+
+  const setEditorFeedback = (message, variant = '') => {
+    if (!rcEditorFeedback) return;
+    rcEditorFeedback.textContent = message;
+    rcEditorFeedback.className = variant ? `feedback mt-12 ${variant}` : 'feedback mt-12';
+  };
 
   const setRcInputsEnabled = (enabled) => {
     rcInputsEnabled = enabled;
@@ -255,127 +409,77 @@
       exitLearnMode();
     }
   };
-  const escapeHtml = (value) => String(value)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-
-  const parseBindingString = (value) => {
-    if (typeof value !== "string" || value.trim() === "") {
-      return { ...DEFAULT_BINDING };
-    }
-
-    const parts = value.split(":");
-    if (parts.length >= 9) {
-      const source = parts[0] || "none";
-      const channel = parts[1] || "0";
-      const target = parts[2] || "none";
-      const payload = parts.slice(3, parts.length - 5).join(":");
-      const min = parts[parts.length - 5] || "1000";
-      const center = parts[parts.length - 4] || "1500";
-      const max = parts[parts.length - 3] || "2000";
-      const deadband = parts[parts.length - 2] || "0";
-      const reverse = parts[parts.length - 1] || "0";
-
-      const normalizedTarget = target === "marcduino" ? "cmd" : target;
-
-      return {
-        source,
-        channel: Number.parseInt(channel, 10) || 0,
-        target: normalizedTarget,
-        payload,
-        min: Number.parseInt(min, 10) || 1000,
-        center: Number.parseInt(center, 10) || 1500,
-        max: Number.parseInt(max, 10) || 2000,
-        deadband: Number.parseInt(deadband, 10) || 0,
-        reverse: reverse === "1" || reverse === "true",
-      };
-    } else {
-      const [source = "none", channel = "0", min = "1000", center = "1500", max = "2000",
-        deadband = "0", reverse = "0"] = value.split(":");
-
-      return {
-        source,
-        channel: Number.parseInt(channel, 10) || 0,
-        target: "none",
-        payload: "",
-        min: Number.parseInt(min, 10) || 1000,
-        center: Number.parseInt(center, 10) || 1500,
-        max: Number.parseInt(max, 10) || 2000,
-        deadband: Number.parseInt(deadband, 10) || 0,
-        reverse: reverse === "1" || reverse === "true",
-      };
-    }
-  };
-
-  const formatBindingString = (binding, isBackbone = false) => {
-    const source = binding.source || "none";
-    const channel = source === "none" ? 0 : Number.parseInt(binding.channel, 10) || 0;
-    const min = Number.parseInt(binding.min, 10) || 1000;
-    const center = Number.parseInt(binding.center, 10) || 1500;
-    const max = Number.parseInt(binding.max, 10) || 2000;
-    const deadband = Number.parseInt(binding.deadband, 10) || 0;
-    const reverse = binding.reverse ? 1 : 0;
-
-    if (isBackbone) {
-      // Old format for backbone bindings: source:channel:min:center:max:deadband:reverse
-      return [source, channel, min, center, max, deadband, reverse].join(":");
-    } else {
-      // New format for trigger bindings: source:channel:target:payload:min:center:max:deadband:reverse
-      const target = binding.target || "none";
-      const payload = binding.payload || "";
-      return [source, channel, target, payload, min, center, max, deadband, reverse].join(":");
-    }
-  };
 
   const getEditorMode = () => {
-    return rcSnapshot?.mode || "standard_pwm";
+    return rcSnapshot?.mode || rcInputModeHidden?.value || "standard_pwm";
   };
 
-  const cloneModeDraft = (mode) => {
-    const draft = {};
-    (RC_ACTIONS[mode] || []).forEach(({ key, field }) => {
-      draft[key] = parseBindingString(getConfigBindingString(configCache, field));
+  const normalizeMapEntry = (entry) => {
+    const source = typeof entry?.source === 'string' ? entry.source : '';
+    const channel = Number.parseInt(entry?.channel, 10) || 0;
+    const action = typeof entry?.action === 'string' ? entry.action : '';
+    const payload = entry?.payload == null ? '' : String(entry.payload);
+    if (!source || channel <= 0 || !action) return null;
+    const normalized = { source, channel, action };
+    if (payload) normalized.payload = payload;
+    return normalized;
+  };
+
+  const assignmentForChannel = (channelKey) => channelMap[channelKey] || null;
+
+
+  const asMapArray = () => Object.values(channelMap);
+
+  const modeMapFromArray = (entries) => {
+    const byChannel = {};
+    (Array.isArray(entries) ? entries : []).forEach((entry) => {
+      const normalized = normalizeMapEntry(entry);
+      if (!normalized) return;
+      byChannel[channelKeyOf(normalized.source, normalized.channel)] = normalized;
     });
-    return draft;
+    return byChannel;
   };
 
-  const findChannelForSlot = (slotKey, snapshot) => {
-    if (!snapshot || !snapshot.channels) return null;
+  const isAnalogAction = (token) => ANALOG_ACTION_TOKENS.has(token);
 
-    if (BACKBONE_SLOTS.includes(slotKey)) {
-      return snapshot.channels.find(ch => ch.name === slotKey);
+  const mapEntryAction = (entry) => String(entry?.action || '');
+
+  const mappedFromRaw = (source, raw) => {
+    if (raw == null) return 0;
+    if (source === 'pwm') {
+      return Math.max(-1, Math.min(1, (Number(raw) - 1500) / 500));
     }
-
-    return snapshot.channels.find(ch => ch.name === slotKey);
+    return Math.max(-1, Math.min(1, (Number(raw) - 992) / 819));
   };
 
-  let saveTimeout = null;
-  const debounce = (fn, ms) => {
-    return (...args) => {
-      clearTimeout(saveTimeout);
-      saveTimeout = setTimeout(() => fn(...args), ms);
+  const rawForChannel = (source, channel) => {
+    const sourceRaw = rcSnapshot?.raw?.[source];
+    return Array.isArray(sourceRaw) ? sourceRaw[channel - 1] : null;
+  };
+
+  const getChannelTelemetry = (channelKey) => {
+    if (!rcSnapshot) return null;
+    const { source, channel } = parseChannelKey(channelKey);
+    if (!source || channel <= 0) return null;
+    const raw = rawForChannel(source, channel);
+    if (raw == null) return { raw: null, mapped: 0, pressed: false, pressedLevel: false };
+    const center = source === 'pwm' ? 1500 : 992;
+    const threshold = source === 'pwm' ? 200 : 300;
+    const pressedLevel = Math.abs(raw - center) >= threshold;
+    return {
+      raw,
+      mapped: mappedFromRaw(source, raw),
+      pressed: pressedLevel,
+      pressedLevel,
     };
   };
 
   let debouncedSaveRcMode = () => {};
 
-  const getActionsForMode = (mode = getEditorMode()) => RC_ACTIONS[mode] || RC_ACTIONS.standard_pwm;
-
-  const isBackboneSlot = (slotKey) => BACKBONE_SLOTS.includes(slotKey);
-
-  const toActionToken = (slotKey, binding) => {
-    if (slotKey === "driveSpeed") return "drive_speed";
-    if (slotKey === "driveSteer") return "drive_steer";
-    if (slotKey === "domeSpeed") return "dome_speed";
-    if (slotKey === "driveLimit") return "speed_limit";
-    return binding?.target || "none";
-  };
+  const actionTargetFromToken = (token) => actionTargets.find((item) => item.token === token) || null;
 
   const actionLabelFromToken = (token) => {
-    const found = RC_ACTION_TARGETS.find(item => item.token === token);
+    const found = actionTargetFromToken(token);
     return found ? found.label : token;
   };
 
@@ -383,12 +487,20 @@
     if (source === "pwm") return "PWM";
     if (source === "sbus1") return "SBUS#1";
     if (source === "sbus2") return "SBUS#2";
-    return "Disabled";
+    return "Unknown";
   };
 
-  const slotLabelForKey = (slotKey) => {
-    const found = getActionsForMode().find((action) => action.key === slotKey);
-    return found ? found.label : slotKey;
+  const MODE_LABEL = {
+    standard_pwm: "🎮 Standard PWM",
+    single_sbus: "📻 Single SBUS",
+    dual_sbus: "📡 Dual SBUS",
+  };
+
+  const modeLabel = (mode) => MODE_LABEL[mode] || mode;
+
+  const channelTitleFromKey = (channelKey) => {
+    const { source, channel } = parseChannelKey(channelKey);
+    return `${sourceLabel(source)} CH ${channel || '—'}`;
   };
 
   const setEditorDirtyState = (state, text) => {
@@ -417,31 +529,43 @@
     }
   };
 
-  const bindingForSlot = (slotKey) => {
-    const mode = getEditorMode();
-    if (!mappingDraft[mode]) {
-      mappingDraft[mode] = cloneModeDraft(mode);
-    }
-    return mappingDraft[mode][slotKey] || { ...DEFAULT_BINDING };
-  };
-
-  const normalizeSlotName = (name) => String(name || "").replace(/[_\s-]/g, "").toLowerCase();
-
-  const getChannelTelemetry = (slotKey) => {
-    if (!rcSnapshot) return null;
-    const channels = Array.isArray(rcSnapshot.channels) ? rcSnapshot.channels : [];
-    const wanted = normalizeSlotName(slotKey);
-    return channels.find(ch => normalizeSlotName(ch.name) === wanted) || null;
-  };
-
   const miniBarHtml = (mapped) => {
     const normalized = Math.max(0, Math.min(1, (Number(mapped) + 1) / 2));
     const pct = Math.round(normalized * 100);
     return `<div class="rc-mini-bar"><div class="rc-mini-fill" style="--mini-pct:${pct}%"></div></div>`;
   };
 
-  const triggerStateHtml = (channel) => {
-    const pressed = Boolean(channel && channel.pressed);
+  const isOneShotActionToken = (token) => {
+    if (!token || isAnalogAction(token)) return false;
+    const found = actionTargetFromToken(token);
+    if (found && typeof found.oneShot === 'boolean') return found.oneShot;
+    return true;
+  };
+
+  const consumeTriggerPulse = (channelKey, pressedLevel) => {
+    if (!channelKey) return false;
+    const now = Date.now();
+    const state = triggerPulseState[channelKey] || { init: false, lastPressed: false, pulseUntil: 0 };
+    if (!state.init) {
+      state.init = true;
+      state.lastPressed = pressedLevel;
+      state.pulseUntil = 0;
+      triggerPulseState[channelKey] = state;
+      return false;
+    }
+    if (pressedLevel !== state.lastPressed) {
+      state.lastPressed = pressedLevel;
+      state.pulseUntil = now + 450;
+    }
+    triggerPulseState[channelKey] = state;
+    return now <= state.pulseUntil;
+  };
+
+  const triggerStateHtml = (token, channelKey, telemetry) => {
+    const pressedLevel = Boolean(telemetry && telemetry.pressedLevel);
+    const pressed = isOneShotActionToken(token)
+      ? consumeTriggerPulse(channelKey, pressedLevel)
+      : pressedLevel;
     return pressed ? '<span aria-label="Pressed">● PRESSED</span>' : '<span aria-label="Released">○ Released</span>';
   };
 
@@ -456,7 +580,7 @@
       const age = Number(src.ageMs || 0);
       const state = !enabled ? "disabled" : linked ? "linked" : "waiting";
       return `<div class="rc-source-card rc-source-card-compact">
-        <div class="rc-source-card-title">${escapeHtml(name.toUpperCase())}</div>
+        <div class="rc-source-card-title">${window.PAUtils.escapeHtml(name.toUpperCase())}</div>
         <div class="rc-source-card-meta">${state} · age ${age}ms</div>
       </div>`;
     }).join("");
@@ -481,320 +605,563 @@
 
   const renderSummaryTable = () => {
     if (!rcSummaryBody) return;
-    const actions = getActionsForMode();
-    if (!actions.length) {
-      rcSummaryBody.innerHTML = '<tr><td colspan="5">No slots for this mode.</td></tr>';
+    const rows = asMapArray()
+      .slice()
+      .sort((a, b) => (a.source === b.source ? a.channel - b.channel : a.source.localeCompare(b.source)));
+
+    if (!rows.length) {
+      rcSummaryBody.innerHTML = '<tr><td colspan="3" class="desc">No channels mapped yet.</td></tr>';
       return;
     }
 
-    rcSummaryBody.innerHTML = actions.map(({ key, label }) => {
-      const binding = bindingForSlot(key);
-      const telemetry = getChannelTelemetry(key);
-      const actionToken = toActionToken(key, binding);
-      const live = isBackboneSlot(key) ? miniBarHtml(telemetry?.mapped || 0) : triggerStateHtml(telemetry);
-      const channel = binding.source === "none" ? "—" : String(binding.channel || "—");
-      return `<tr data-slot="${escapeHtml(key)}">
-        <td>${escapeHtml(label)}</td>
-        <td>${escapeHtml(actionLabelFromToken(actionToken))}</td>
-        <td><span class="rc-map-source-badge" data-source="${escapeHtml(binding.source)}">${escapeHtml(sourceLabel(binding.source))}</span></td>
-        <td>${escapeHtml(channel)}</td>
+    const liveKeys = new Set(rows.map((entry) => channelKeyOf(entry.source, entry.channel)));
+    Object.keys(triggerPulseState).forEach((key) => {
+      if (!liveKeys.has(key)) delete triggerPulseState[key];
+    });
+
+    rcSummaryBody.innerHTML = rows.map((entry) => {
+      const channelKey = channelKeyOf(entry.source, entry.channel);
+      const telemetry = getChannelTelemetry(channelKey);
+      const token = mapEntryAction(entry);
+      const live = isAnalogAction(token)
+        ? miniBarHtml(telemetry?.mapped || 0)
+        : triggerStateHtml(token, channelKey, telemetry);
+      return `<tr data-chkey="${window.PAUtils.escapeHtml(channelKey)}" class="${selectedChannel === channelKey ? 'active-channel' : ''}">
+        <td>${window.PAUtils.escapeHtml(actionLabelFromToken(token))}</td>
+        <td>${window.PAUtils.escapeHtml(channelTitleFromKey(channelKey))}</td>
         <td>${live}</td>
       </tr>`;
-    }).join("");
-
-    rcSummaryBody.querySelectorAll("tr[data-slot]").forEach(row => {
-      const key = row.dataset.slot;
-      row.classList.add("row-clickable");
-      row.classList.toggle("active-slot", selectedSlot === key);
-      row.addEventListener("click", () => selectSlot(key));
-      wireFocusableItem(row, () => selectSlot(key));
-    });
+    }).join('');
   };
 
-  const renderSlotList = () => {
-    if (!rcSlotItems) return;
-    const actions = getActionsForMode();
-    const backbone = actions.filter(a => isBackboneSlot(a.key));
-    const trigger = actions.filter(a => !isBackboneSlot(a.key));
+  const renderChannelList = () => {
+    if (!rcChannelItems) return;
+    const mode = getEditorMode();
+    const snap = rcSnapshot;
 
-    const renderItems = (items) => items.map(({ key, label }) => {
-      const binding = bindingForSlot(key);
-      const telemetry = getChannelTelemetry(key);
-      const live = isBackboneSlot(key)
-        ? miniBarHtml(telemetry?.mapped || 0)
-        : `<span>${triggerStateHtml(telemetry)}</span>`;
-
-      return `<div class="rc-slot-item${selectedSlot === key ? " active" : ""}" data-slot="${escapeHtml(key)}" role="button" aria-pressed="${selectedSlot === key ? "true" : "false"}">
-        <div class="rc-slot-item-head">
-          <strong>${escapeHtml(label)}</strong>
-          <span class="rc-map-source-badge" data-source="${escapeHtml(binding.source)}">${escapeHtml(sourceLabel(binding.source))}</span>
-        </div>
-        <div class="rc-slot-item-meta">
-          <span>CH ${binding.source === "none" ? "—" : escapeHtml(String(binding.channel || "—"))}</span>
-          ${live}
-        </div>
+    const renderGroup = (title, source, rawArray, channelCount) => {
+      const items = [];
+      for (let i = 1; i <= channelCount; i++) {
+        const channelKey = channelKeyOf(source, i);
+        const raw = rawArray ? rawArray[i - 1] : null;
+        const entry = assignmentForChannel(channelKey);
+        const actionLabel = entry ? actionLabelFromToken(mapEntryAction(entry)) : null;
+        const isActive = channelKey === selectedChannel;
+        const rawDisplay = raw != null ? raw : '—';
+        const barPct = raw != null
+          ? (source === 'pwm'
+              ? Math.round(((raw - 1000) / 1000) * 100)
+              : Math.round(((raw - 172) / (1811 - 172)) * 100))
+          : 0;
+        const clampedPct = Math.max(0, Math.min(100, barPct));
+        items.push(`<div class="rc-channel-item${isActive ? ' active' : ''}" data-chkey="${window.PAUtils.escapeHtml(channelKey)}" role="button" tabindex="0" aria-pressed="${isActive}">
+          <div class="rc-channel-item-head">
+            <span class="rc-ch-num">CH ${i}</span>
+            <span class="rc-ch-raw">${rawDisplay}</span>
+          </div>
+          <div class="rc-channel-mini-bar"><div class="rc-channel-mini-fill" style="--pct:${clampedPct}%"></div></div>
+          <div class="rc-ch-action">${actionLabel ? window.PAUtils.escapeHtml(actionLabel) : '<span class="rc-ch-unassigned">not mapped</span>'}</div>
+        </div>`);
+      }
+      return `<div class="rc-channel-group">
+        <div class="rc-channel-group-title">${window.PAUtils.escapeHtml(title)}</div>
+        ${items.join('')}
       </div>`;
-    }).join("");
+    };
 
-    rcSlotItems.innerHTML = `
-      <div class="rc-slot-group-title">Backbone Channels</div>
-      ${renderItems(backbone)}
-      <div class="rc-slot-group-title trigger">Trigger/Button Channels</div>
-      ${renderItems(trigger)}
-    `;
+    let html = '';
+    if (mode === 'standard_pwm') {
+      html = renderGroup('PWM', 'pwm', snap?.raw?.pwm, 6);
+    } else {
+      html = renderGroup('SBUS1', 'sbus1', snap?.raw?.sbus1, 6)
+           + renderGroup('SBUS2', 'sbus2', snap?.raw?.sbus2, 6);
+    }
 
-    const slotNodes = Array.from(rcSlotItems.querySelectorAll(".rc-slot-item"));
-    slotNodes.forEach((node, index) => {
-      const key = node.dataset.slot;
-      node.addEventListener("click", () => selectSlot(key));
-      wireFocusableItem(node, () => selectSlot(key));
-      node.addEventListener("keydown", (e) => {
-        if (e.key === "ArrowDown") {
+    rcChannelItems.innerHTML = html;
+
+    const channelNodes = Array.from(rcChannelItems.querySelectorAll('.rc-channel-item'));
+    channelNodes.forEach((node, index) => {
+      const channelKey = node.dataset.chkey;
+      node.addEventListener('click', () => selectChannel(channelKey));
+      wireFocusableItem(node, () => selectChannel(channelKey));
+      node.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowDown') {
           e.preventDefault();
-          const next = slotNodes[Math.min(index + 1, slotNodes.length - 1)];
-          next?.focus();
-          next?.click();
+          channelNodes[Math.min(index + 1, channelNodes.length - 1)]?.focus();
         }
-        if (e.key === "ArrowUp") {
+        if (e.key === 'ArrowUp') {
           e.preventDefault();
-          const prev = slotNodes[Math.max(index - 1, 0)];
-          prev?.focus();
-          prev?.click();
+          channelNodes[Math.max(index - 1, 0)]?.focus();
         }
       });
     });
 
-    // Re-apply learn-hot after innerHTML wipe — defined below, called safely
-    // because renderSlotList() is only invoked after all functions are declared.
     applyLearnHighlight();
+  };
+
+  // Cheap live update: refresh raw values and bars without full re-render.
+  const updateChannelListRaw = () => {
+    if (!rcChannelItems || !rcSnapshot?.raw) return;
+    rcChannelItems.querySelectorAll('.rc-channel-item').forEach(el => {
+      const { source, channel } = parseChannelKey(el.dataset.chkey);
+      const raw = rawForChannel(source, channel);
+      const rawEl = el.querySelector('.rc-ch-raw');
+      if (rawEl) rawEl.textContent = raw != null ? raw : '—';
+      const fillEl = el.querySelector('.rc-channel-mini-fill');
+      if (fillEl && raw != null) {
+        const barPct = source === 'pwm'
+          ? Math.round(((raw - 1000) / 1000) * 100)
+          : Math.round(((raw - 172) / (1811 - 172)) * 100);
+        fillEl.style.setProperty('--pct', `${Math.max(0, Math.min(100, barPct))}%`);
+      }
+    });
   };
 
   const renderLivePreview = () => {
     if (!rcLivePreviewContent) return;
     renderSourceHealth();
 
-    if (!selectedSlot) {
-      rcLivePreviewContent.innerHTML = '<div class="desc">Select a channel from the list to see live data.</div>';
+    if (!selectedChannel) {
+      rcLivePreviewContent.innerHTML = '';
       return;
     }
 
-    const binding = bindingForSlot(selectedSlot);
-    const telemetry = getChannelTelemetry(selectedSlot);
+    const entry = assignmentForChannel(selectedChannel) || { ...parseChannelKey(selectedChannel), payload: '' };
+    const telemetry = getChannelTelemetry(selectedChannel);
     const mapped = Number(telemetry?.mapped || 0);
-    const raw = telemetry?.raw ?? 0;
-    const rawUs = telemetry?.rawUs ?? 1500;
+    const raw = telemetry?.raw ?? '—';
+    const actionToken = mapEntryAction(entry);
 
-    let barHtml = "";
-    if (selectedSlot === "driveSpeed" || selectedSlot === "driveSteer") {
+    let barHtml = '';
+    if (isAnalogAction(actionToken)) {
       const width = Math.min(50, Math.round(Math.abs(mapped) * 50));
       const left = mapped >= 0 ? 50 : 50 - width;
       barHtml = `<div class="rc-preview-bar rc-preview-bar-center">
         <div class="rc-preview-fill signed" style="--bar-left:${left}%;--bar-width:${width}%"></div>
       </div>`;
-    } else if (selectedSlot === "domeSpeed") {
-      const width = Math.round(Math.abs(mapped) * 100);
-      const dir = mapped < 0 ? "Reverse" : mapped > 0 ? "Forward" : "Stopped";
-      barHtml = `<div class="rc-preview-bar">
-        <div class="rc-preview-fill" style="--bar-width:${Math.max(0, Math.min(100, width))}%"></div>
-      </div><div class="rc-preview-dir">Direction: ${dir}</div>`;
-    } else if (selectedSlot === "driveLimit") {
-      const width = Math.round(((mapped + 1) / 2) * 100);
-      barHtml = `<div class="rc-preview-bar">
-        <div class="rc-preview-fill" style="--bar-width:${Math.max(0, Math.min(100, width))}%"></div>
-      </div>`;
     }
 
-    if (isBackboneSlot(selectedSlot)) {
-      rcLivePreviewContent.innerHTML = `
-        <h4 class="rc-preview-title">${escapeHtml(slotLabelForKey(selectedSlot))}</h4>
-        <div class="rc-preview-stack">
-          <div>Source: <strong>${escapeHtml(sourceLabel(binding.source))}</strong> · CH ${binding.source === "none" ? "—" : escapeHtml(String(binding.channel || "—"))}</div>
-          <div>Raw: <strong>${escapeHtml(String(raw))}</strong> · ${escapeHtml(String(rawUs))} us</div>
-          <div>Mapped: <strong>${mapped.toFixed(3)}</strong></div>
-          ${barHtml}
-        </div>`;
-    } else {
-      rcLivePreviewContent.innerHTML = `
-        <h4 class="rc-preview-title">${escapeHtml(slotLabelForKey(selectedSlot))}</h4>
-        <div class="rc-preview-stack">
-          <div>Source: <strong>${escapeHtml(sourceLabel(binding.source))}</strong> · CH ${binding.source === "none" ? "—" : escapeHtml(String(binding.channel || "—"))}</div>
-          <div>State: ${triggerStateHtml(telemetry)}</div>
-          <div>Raw: <strong>${escapeHtml(String(raw))}</strong></div>
-        </div>`;
-    }
+    rcLivePreviewContent.innerHTML = `
+      <h4 class="rc-preview-title">${window.PAUtils.escapeHtml(channelTitleFromKey(selectedChannel))}</h4>
+      <div class="rc-preview-stack">
+        <div>Action: <strong>${actionToken ? window.PAUtils.escapeHtml(actionLabelFromToken(actionToken)) : 'Not mapped'}</strong></div>
+        <div>Raw: <strong>${window.PAUtils.escapeHtml(String(raw))}</strong></div>
+        ${isAnalogAction(actionToken) ? `<div>Mapped: <strong>${mapped.toFixed(3)}</strong></div>${barHtml}` : `<div>State: ${triggerStateHtml(actionToken, selectedChannel, telemetry)}</div>`}
+      </div>`;
   };
 
-  const renderActionOptions = (selected) => {
-    const groups = {};
-    RC_ACTION_TARGETS.forEach(item => {
-      if (!groups[item.group]) groups[item.group] = [];
-      groups[item.group].push(item);
+  const groupedActionTargets = () => {
+    const groups = new Map();
+    actionTargets.forEach((item) => {
+      if (!groups.has(item.group)) groups.set(item.group, []);
+      groups.get(item.group).push(item);
     });
 
-    return Object.entries(groups).map(([group, items]) => {
-      const options = items.map(item =>
-        `<option value="${escapeHtml(item.token)}"${item.token === selected ? " selected" : ""}${item.disabled ? " disabled" : ""}>${escapeHtml(item.label)}</option>`
-      ).join("");
-      return `<optgroup label="${escapeHtml(group)}">${options}</optgroup>`;
-    }).join("");
+    return Array.from(groups.keys())
+      .sort(sortByGroupOrder)
+      .map((name) => ({
+        name,
+        items: groups.get(name).slice().sort((a, b) => a.label.localeCompare(b.label)),
+      }));
+  };
+
+  const isActionGroupOpen = (groupName) => {
+    if (Object.prototype.hasOwnProperty.call(actionPickerGroupOpen, groupName)) {
+      return actionPickerGroupOpen[groupName];
+    }
+    return !DEFAULT_COLLAPSED_GROUPS.has(groupName);
+  };
+
+  const actionMatchesQuery = (item, query) => {
+    if (!query) return true;
+    const q = query.toLowerCase();
+    return item.label.toLowerCase().includes(q)
+      || item.token.toLowerCase().includes(q)
+      || (item.description || '').toLowerCase().includes(q);
+  };
+
+  const renderActionRow = (item, selectedToken) => {
+    const selected = item.token === selectedToken;
+    const disabled = Boolean(item.disabled);
+    const showSafetyPill = Boolean(item.safetyCritical);
+    const showTestButton = Boolean(item.testable) && !disabled && !showSafetyPill;
+    const inFlight = actionPickerInFlightToken !== null;
+    const feedback = actionPickerFeedback && actionPickerFeedback.token === item.token
+      ? actionPickerFeedback
+      : null;
+    const feedbackClass = feedback ? ` ${feedback.kind || ''}` : '';
+    const feedbackText = feedback ? feedback.text : '';
+
+    return `<div class="rc-action-row${selected ? ' selected' : ''}${disabled ? ' disabled' : ''}" data-action-token="${window.PAUtils.escapeHtml(item.token)}" data-action-disabled="${disabled ? 'true' : 'false'}" role="option" aria-selected="${selected ? 'true' : 'false'}" aria-disabled="${disabled ? 'true' : 'false'}">
+      <button type="button" class="rc-action-select-btn" data-action-select="${window.PAUtils.escapeHtml(item.token)}"${disabled ? ' disabled' : ''}>
+        <span class="rc-action-radio" aria-hidden="true">${selected ? '●' : '○'}</span>
+        <span class="rc-action-main">
+          <span class="rc-action-label">${window.PAUtils.escapeHtml(item.label)}</span>
+          <span class="rc-action-desc">${window.PAUtils.escapeHtml(item.description || 'No description available.')}</span>
+        </span>
+      </button>
+      <span class="rc-action-side">
+        ${showSafetyPill ? '<span class="rc-action-safety-pill">⚠ Safety critical</span>' : ''}
+        ${showTestButton ? `<button type="button" class="rc-action-test-btn" data-action-test="${window.PAUtils.escapeHtml(item.token)}"${inFlight ? ' disabled' : ''}>▶</button>` : ''}
+        <span class="rc-action-test-feedback${feedbackClass}" data-action-feedback="${window.PAUtils.escapeHtml(item.token)}">${window.PAUtils.escapeHtml(feedbackText || '')}</span>
+      </span>
+    </div>`;
+  };
+
+  const renderActionPicker = (selectedToken, queryText = '') => {
+    const query = String(queryText || '').trim();
+    const groups = groupedActionTargets()
+      .map(({ name, items }) => ({
+        name,
+        items: items.filter((item) => actionMatchesQuery(item, query)),
+      }))
+      .filter(({ items }) => items.length > 0);
+
+    const recentItems = recentActionTokens
+      .map((token) => actionTargets.find((item) => item.token === token))
+      .filter((item) => Boolean(item) && actionMatchesQuery(item, query));
+
+    const hasMatches = recentItems.length > 0 || groups.length > 0;
+    const recentBlock = recentItems.length > 0
+      ? `<details class="rc-action-group rc-action-group-recent" open>
+          <summary>🕘 Recently used</summary>
+          <div class="rc-action-group-rows">${recentItems.map((item) => renderActionRow(item, selectedToken)).join('')}</div>
+        </details>`
+      : '';
+
+    return `<div class="rc-action-picker" role="listbox" aria-label="Select action" tabindex="0">
+      <div class="rc-action-search-row">
+        <input class="rc-action-search-input" data-action-search type="search" placeholder="Search actions..." value="${window.PAUtils.escapeHtml(query)}" autocomplete="off">
+        <button type="button" class="rc-action-search-clear" data-action-search-clear${query ? '' : ' disabled'}>✕</button>
+      </div>
+      ${recentBlock}
+      ${groups.map(({ name, items }) => {
+        const openAttr = query ? ' open' : (isActionGroupOpen(name) ? ' open' : '');
+        return `<details class="rc-action-group" data-action-group="${window.PAUtils.escapeHtml(name)}"${openAttr}>
+          <summary>${window.PAUtils.escapeHtml(name)}</summary>
+          <div class="rc-action-group-rows">${items.map((item) => renderActionRow(item, selectedToken)).join('')}</div>
+        </details>`;
+      }).join('')}
+      ${hasMatches ? '' : `<div class="rc-action-empty">No actions match "${window.PAUtils.escapeHtml(query)}".</div>`}
+    </div>`;
   };
 
   const renderEditor = () => {
     if (!rcEditorContent) return;
-    if (!selectedSlot) {
-      rcEditorContent.innerHTML = '<div class="desc">Select a channel from the list to edit its mapping.</div>';
+    if (!selectedChannel) {
+      actionPickerFeedback = null;
+      actionPickerInFlightToken = null;
+      actionPickerLastChannel = null;
+      rcEditorContent.innerHTML = '';
       if (rcEditorApply) rcEditorApply.disabled = true;
       if (rcEditorRevert) rcEditorRevert.disabled = true;
-      setEditorDirtyState("clean", "Select a slot to edit");
+      setEditorDirtyState('clean', 'Select a channel to edit');
       return;
     }
 
-    const binding = { ...bindingForSlot(selectedSlot) };
-    const mode = getEditorMode();
-    const sourceOptions = SOURCE_OPTIONS[mode] || SOURCE_OPTIONS.standard_pwm;
-    const isBackbone = isBackboneSlot(selectedSlot);
-    const slotLabel = slotLabelForKey(selectedSlot);
+    if (actionPickerLastChannel !== selectedChannel) {
+      actionPickerFeedback = null;
+      actionPickerInFlightToken = null;
+      actionPickerScrollTop = 0;
+      actionPickerQuery = '';
+      Object.keys(actionPickerGroupOpen).forEach((group) => delete actionPickerGroupOpen[group]);
+      actionPickerLastChannel = selectedChannel;
+    } else {
+      const previousPicker = rcEditorContent.querySelector('.rc-action-picker');
+      if (previousPicker) {
+        actionPickerScrollTop = previousPicker.scrollTop;
+        previousPicker.querySelectorAll('[data-action-group]').forEach((groupNode) => {
+          actionPickerGroupOpen[groupNode.dataset.actionGroup] = groupNode.open;
+        });
+      }
+    }
 
-    const sourceSelect = sourceOptions.map(src =>
-      `<option value="${escapeHtml(src)}"${binding.source === src ? " selected" : ""}>${escapeHtml(sourceLabel(src))}</option>`
-    ).join("");
-
-    const channelMax = binding.source === "pwm" ? 6 : 18;
+    const { source, channel } = parseChannelKey(selectedChannel);
+    const entry = assignmentForChannel(selectedChannel) || { source, channel, payload: '' };
+    const displayToken = mapEntryAction(entry);
 
     rcEditorContent.innerHTML = `
-      <h4 class="rc-editor-title">Edit ${escapeHtml(slotLabel)}</h4>
-      <label>Source
-        <select data-field="source">${sourceSelect}</select>
-      </label>
-      <label>Channel
-        <input data-field="channel" type="number" min="0" max="${channelMax}" value="${escapeHtml(String(binding.channel || 0))}">
-      </label>
-      ${isBackbone ? "" : `<label>Action<select data-field="target">${renderActionOptions(binding.target || "none")}</select></label>`}
-      <div data-cond="seq" class="rc-editor-cond ${binding.target === "seq" ? "block" : "hidden"}">
-        <label>Body Sequence
+      <h4 class="rc-editor-title">Edit ${window.PAUtils.escapeHtml(channelTitleFromKey(selectedChannel))}</h4>
+      <div class="desc mt-4">Source: <strong>${window.PAUtils.escapeHtml(sourceLabel(source))}</strong> · CH <strong>${window.PAUtils.escapeHtml(String(channel))}</strong></div>
+      <label class="rc-action-label-head mt-8">Action</label>
+      <input data-field="target" type="hidden" value="${window.PAUtils.escapeHtml(displayToken)}">
+      ${renderActionPicker(displayToken, actionPickerQuery)}
+      <div class="mt-8"><button type="button" class="btn btn-sm" data-action-unmap>Unmap channel</button></div>
+      <div data-cond="seq" class="rc-editor-cond ${displayToken === 'seq' ? 'block' : 'hidden'}">
+        <label>Marcduino Sequence
           <select data-field="payload">
-            <option value="30"${binding.payload === "30" ? " selected" : ""}>SE30</option>
-            <option value="31"${binding.payload === "31" ? " selected" : ""}>SE31</option>
-            <option value="32"${binding.payload === "32" ? " selected" : ""}>SE32</option>
-            <option value="33"${binding.payload === "33" ? " selected" : ""}>SE33</option>
-            <option value="34"${binding.payload === "34" ? " selected" : ""}>SE34</option>
-            <option value="35"${binding.payload === "35" ? " selected" : ""}>SE35</option>
-            <option value="36"${binding.payload === "36" ? " selected" : ""}>SE36</option>
+            ${renderMarcduinoSequenceOptions(entry.payload)}
           </select>
         </label>
       </div>
-      <div data-cond="cmd" class="rc-editor-cond ${binding.target === "cmd" ? "block" : "hidden"}">
-        <label>Marcduino Command
-          <input data-field="payload" type="text" value="${escapeHtml(binding.payload || "")}" placeholder=":OP01">
+      <div data-cond="dome_seq" class="rc-editor-cond ${displayToken === 'dome_seq' ? 'block' : 'hidden'}">
+        <label>Dome Sequence
+          <select data-field="payload">
+            ${renderDomeSequenceOptions(entry.payload)}
+          </select>
         </label>
       </div>
-      <div data-cond="estop" class="rc-editor-cond ${binding.target === "estop" ? "block" : "hidden"}">
-        <label><input data-field="estop-confirm" type="checkbox"> I understand this latches estop.</label>
+      <div data-cond="cmd" class="rc-editor-cond ${displayToken === 'cmd' ? 'block' : 'hidden'}">
+        <label>Marcduino Command
+          <input data-field="payload" type="text" value="${window.PAUtils.escapeHtml(entry.payload || '')}" placeholder=":OP01">
+        </label>
       </div>
-      <details>
-        <summary>Calibration</summary>
-        <label>Min <input data-field="min" type="number" value="${escapeHtml(String(binding.min || 1000))}"></label>
-        <label>Center <input data-field="center" type="number" value="${escapeHtml(String(binding.center || 1500))}"></label>
-        <label>Max <input data-field="max" type="number" value="${escapeHtml(String(binding.max || 2000))}"></label>
-        <label>Deadband <input data-field="deadband" type="number" value="${escapeHtml(String(binding.deadband || 0))}"></label>
-        <label><input data-field="reverse" type="checkbox"${binding.reverse ? " checked" : ""}> Reverse</label>
-      </details>
-    `;
+      <div data-cond="estop" class="rc-editor-cond ${displayToken === 'estop' ? 'block' : 'hidden'}">
+        <label><input data-field="estop-confirm" type="checkbox"> I understand this latches estop.</label>
+      </div>`;
 
     const updateConditionalFields = () => {
       const targetEl = rcEditorContent.querySelector('[data-field="target"]');
-      const target = targetEl ? targetEl.value : binding.target;
+      const target = targetEl ? targetEl.value : displayToken;
       const seq = rcEditorContent.querySelector('[data-cond="seq"]');
+      const domeSeq = rcEditorContent.querySelector('[data-cond="dome_seq"]');
       const cmd = rcEditorContent.querySelector('[data-cond="cmd"]');
       const estop = rcEditorContent.querySelector('[data-cond="estop"]');
-      if (seq) seq.className = `rc-editor-cond ${target === "seq" ? "block" : "hidden"}`;
-      if (cmd) cmd.className = `rc-editor-cond ${target === "cmd" ? "block" : "hidden"}`;
-      if (estop) estop.className = `rc-editor-cond ${target === "estop" ? "block" : "hidden"}`;
+      if (seq) seq.className = `rc-editor-cond ${target === 'seq' ? 'block' : 'hidden'}`;
+      if (domeSeq) domeSeq.className = `rc-editor-cond ${target === 'dome_seq' ? 'block' : 'hidden'}`;
+      if (cmd) cmd.className = `rc-editor-cond ${target === 'cmd' ? 'block' : 'hidden'}`;
+      if (estop) estop.className = `rc-editor-cond ${target === 'estop' ? 'block' : 'hidden'}`;
     };
 
-    rcEditorContent.querySelectorAll("[data-field]").forEach(field => {
-      field.addEventListener("change", () => {
-        markEditorDirty();
-        if (field.dataset.field === "target") {
-          updateConditionalFields();
-        }
+    const refreshActionPickerSelectionUi = () => {
+      const targetEl = rcEditorContent.querySelector('[data-field="target"]');
+      const selectedToken = targetEl ? targetEl.value : '';
+      rcEditorContent.querySelectorAll('[data-action-token]').forEach((row) => {
+        const rowToken = row.dataset.actionToken;
+        const selected = rowToken === selectedToken;
+        row.classList.toggle('selected', selected);
+        row.setAttribute('aria-selected', selected ? 'true' : 'false');
+        const radio = row.querySelector('.rc-action-radio');
+        if (radio) radio.textContent = selected ? '●' : '○';
       });
-      field.addEventListener("input", () => {
+
+      const picker = rcEditorContent.querySelector('.rc-action-picker');
+      if (picker) picker.scrollTop = actionPickerScrollTop;
+    };
+
+    const syncActionTestUi = () => {
+      const inFlight = actionPickerInFlightToken !== null;
+      rcEditorContent.querySelectorAll('[data-action-test]').forEach((btn) => {
+        btn.disabled = inFlight;
+      });
+      rcEditorContent.querySelectorAll('[data-action-feedback]').forEach((node) => {
+        const token = node.dataset.actionFeedback;
+        const feedback = token && actionPickerFeedback && actionPickerFeedback.token === token
+          ? actionPickerFeedback
+          : null;
+        node.textContent = feedback ? feedback.text : '';
+        node.className = `rc-action-test-feedback${feedback ? ` ${feedback.kind || ''}` : ''}`;
+      });
+    };
+
+    const collapseExpandedActionGroups = () => {
+      rcEditorContent.querySelectorAll('[data-action-group]').forEach((groupNode) => {
+        if (groupNode.open) groupNode.open = false;
+        actionPickerGroupOpen[groupNode.dataset.actionGroup] = false;
+      });
+    };
+
+    const setActionToken = (token, keepFocus = false) => {
+      const targetEl = rcEditorContent.querySelector('[data-field="target"]');
+      if (!targetEl || targetEl.value === token) return;
+      targetEl.value = token;
+      rememberRecentActionToken(token);
+      actionPickerFeedback = null;
+      updateConditionalFields();
+      refreshActionPickerSelectionUi();
+      syncActionTestUi();
+      markEditorDirty();
+      if (keepFocus) {
+        rcEditorContent.querySelector('.rc-action-picker')?.focus();
+      }
+      // Fetch learned sequences if dome_seq is selected
+      if (token === 'dome_seq') {
+        const currentPayload = rcEditorContent.querySelector('[data-cond="dome_seq"] select')?.value || '';
+        updateDomeSequenceOptions(currentPayload);
+      }
+    };
+
+    const runActionTest = async (token) => {
+      if (actionPickerInFlightToken) return;
+      const channelAtStart = selectedChannel;
+      actionPickerInFlightToken = token;
+      actionPickerFeedback = { token, kind: 'info', text: 'Testing...' };
+      syncActionTestUi();
+      try {
+        await window.PAApi.postForm('/api/actions/test', { token }, { timeoutMs: 5000 });
+        if (selectedChannel !== channelAtStart) return;
+        actionPickerFeedback = { token, kind: 'success', text: 'Dispatched' };
+      } catch (error) {
+        if (selectedChannel !== channelAtStart) return;
+        actionPickerFeedback = { token, kind: 'error', text: window.PAApi.messageFor(error) };
+      } finally {
+        if (actionPickerInFlightToken === token) actionPickerInFlightToken = null;
+        if (selectedChannel === channelAtStart) syncActionTestUi();
+      }
+    };
+
+    rcEditorContent.querySelectorAll('[data-field]').forEach((field) => {
+      field.addEventListener('change', () => {
+        markEditorDirty();
+        if (field.dataset.field === 'target') updateConditionalFields();
+      });
+      field.addEventListener('input', () => {
         markEditorDirty();
       });
     });
 
+    const picker = rcEditorContent.querySelector('.rc-action-picker');
+    if (picker) {
+      picker.addEventListener('scroll', () => {
+        actionPickerScrollTop = picker.scrollTop;
+      });
+
+      const searchInput = picker.querySelector('[data-action-search]');
+      if (searchInput) {
+        searchInput.addEventListener('input', () => {
+          const nextQuery = searchInput.value || '';
+          if (nextQuery === actionPickerQuery) return;
+          actionPickerQuery = nextQuery;
+          actionPickerScrollTop = 0;
+          renderEditor();
+          const nextInput = rcEditorContent.querySelector('[data-action-search]');
+          if (nextInput) {
+            nextInput.focus();
+            nextInput.setSelectionRange(actionPickerQuery.length, actionPickerQuery.length);
+          }
+        });
+      }
+
+      const clearSearchBtn = picker.querySelector('[data-action-search-clear]');
+      if (clearSearchBtn) {
+        clearSearchBtn.addEventListener('click', () => {
+          if (!actionPickerQuery) return;
+          actionPickerQuery = '';
+          actionPickerScrollTop = 0;
+          renderEditor();
+          rcEditorContent.querySelector('[data-action-search]')?.focus();
+        });
+      }
+
+      picker.querySelectorAll('[data-action-group]').forEach((groupNode) => {
+        groupNode.addEventListener('toggle', () => {
+          actionPickerGroupOpen[groupNode.dataset.actionGroup] = groupNode.open;
+        });
+      });
+
+      picker.querySelectorAll('[data-action-select]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const token = btn.dataset.actionSelect;
+          if (!token) return;
+          setActionToken(token);
+        });
+      });
+
+      const unmapBtn = rcEditorContent.querySelector('[data-action-unmap]');
+      if (unmapBtn) {
+        unmapBtn.addEventListener('click', () => setActionToken(''));
+      }
+
+      picker.querySelectorAll('[data-action-test]').forEach((btn) => {
+        btn.addEventListener('click', (event) => {
+          event.stopPropagation();
+          const token = btn.dataset.actionTest;
+          if (!token) return;
+          runActionTest(token);
+        });
+      });
+
+      picker.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          collapseExpandedActionGroups();
+          return;
+        }
+
+        if (event.target instanceof Element && event.target.closest('.rc-action-test-btn')) return;
+        if (event.target instanceof Element && event.target.closest('.rc-action-search-input')) return;
+        if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp' && event.key !== 'Enter') return;
+        event.preventDefault();
+
+        const selectable = actionTargets
+          .filter((item) => !item.disabled && actionMatchesQuery(item, actionPickerQuery))
+          .map((item) => item.token);
+        if (!selectable.length) return;
+
+        const targetEl = rcEditorContent.querySelector('[data-field="target"]');
+        const currentToken = targetEl ? targetEl.value : '';
+        let index = selectable.indexOf(currentToken);
+        if (index < 0) index = 0;
+
+        if (event.key === 'ArrowDown') {
+          index = Math.min(index + 1, selectable.length - 1);
+          setActionToken(selectable[index], true);
+          return;
+        }
+        if (event.key === 'ArrowUp') {
+          index = Math.max(index - 1, 0);
+          setActionToken(selectable[index], true);
+          return;
+        }
+        if (event.key === 'Enter') {
+          setActionToken(selectable[index], true);
+        }
+      });
+    }
+
     updateConditionalFields();
-    markEditorClean();
+    refreshActionPickerSelectionUi();
+    syncActionTestUi();
   };
 
   const updateSummaryMiniBar = () => {
     if (!rcSummaryBody || !rcSnapshot) return;
-    const rows = rcSummaryBody.querySelectorAll("tr[data-slot]");
-    rows.forEach(row => {
-      const slot = row.dataset.slot;
-      const telemetry = getChannelTelemetry(slot);
-      const cell = row.children[4];
+    rcSummaryBody.querySelectorAll('tr[data-chkey]').forEach((row) => {
+      const channelKey = row.dataset.chkey;
+      const entry = assignmentForChannel(channelKey);
+      if (!entry) return;
+      const telemetry = getChannelTelemetry(channelKey);
+      const token = mapEntryAction(entry);
+      const cell = row.children[2];
       if (!cell) return;
-      if (isBackboneSlot(slot)) {
-        cell.innerHTML = miniBarHtml(telemetry?.mapped || 0);
-      } else {
-        cell.innerHTML = triggerStateHtml(telemetry);
-      }
+      cell.innerHTML = isAnalogAction(token) ? miniBarHtml(telemetry?.mapped || 0) : triggerStateHtml(token, channelKey, telemetry);
     });
   };
 
   const saveRcMode = async () => {
     if (!rcInputModeHidden) return;
     const mode = rcInputModeHidden.value;
-    if (rcModeFeedback) {
-      rcModeFeedback.textContent = "Saving...";
-      rcModeFeedback.className = "feedback";
-    }
+    setModeFeedback('Saving...');
     try {
-      const result = await window.PAApi.postForm("/api/config", { rcInputMode: mode }, { timeoutMs: 5000 });
-      switchRcMode(getRcModeFromConfig(result.data));
-      if (rcModeFeedback) {
-        rcModeFeedback.textContent = `\u2713 Saved at ${new Date().toLocaleTimeString()}`;
-        rcModeFeedback.className = "feedback success";
-      }
+      const result = await window.PAApi.postForm('/api/config', { rcInputMode: mode }, { timeoutMs: 5000 });
+      const savedMode = getRcModeFromConfig(result.data);
+      switchRcMode(savedMode);
+      await loadMappings();
+      setModeFeedback(`${modeLabel(savedMode)} saved at ${new Date().toLocaleTimeString()}. Restart the controller to apply.`, 'success');
     } catch (error) {
-      if (rcModeFeedback) {
-        rcModeFeedback.textContent = `\u274c ${window.PAApi.messageFor(error)}`;
-        rcModeFeedback.className = "feedback error";
-      }
+      setModeFeedback(`❌ ${window.PAApi.messageFor(error)}`, 'error');
     }
   };
 
-  debouncedSaveRcMode = debounce(saveRcMode, 250);
+  debouncedSaveRcMode = window.PAUtils.debounce(saveRcMode, 250);
 
   const switchRcMode = (mode) => {
     if (rcInputModeHidden) rcInputModeHidden.value = mode;
     rcModeCards.forEach((card) => {
       const selected = card.dataset.mode === mode;
-      card.classList.toggle("selected", selected);
-      card.setAttribute("aria-pressed", selected ? "true" : "false");
+      card.classList.toggle('selected', selected);
+      card.setAttribute('aria-pressed', selected ? 'true' : 'false');
     });
     updateRecvSel(mode);
-
-    // Clear selected slot when mode changes
-    selectedSlot = null;
-    document.querySelectorAll('.rc-slot-item').forEach(el => {
-      el.classList.remove('active');
-    });
-    document.querySelectorAll('.rc-summary-table tr[data-slot]').forEach(tr => {
-      tr.classList.remove('active-slot');
-    });
-
-    // Re-render all panels to reflect the new mode
+    selectedChannel = null;
+    document.querySelectorAll('.rc-channel-item').forEach((el) => el.classList.remove('active'));
     renderSummaryTable();
-    renderSlotList();
+    renderChannelList();
     renderLivePreview();
     renderEditor();
   };
 
-  // Set up event listeners for mode cards
-  rcModeCards.forEach(card => {
+  rcModeCards.forEach((card) => {
     card.addEventListener('click', () => {
       const mode = card.dataset.mode;
       if (mode && rcInputModeHidden) {
@@ -817,46 +1184,70 @@
     });
   });
 
-  const loadRcMode = async () => {
+  const loadRcMode = async ({ handle = null } = {}) => {
     try {
-      const result = await window.PAApi.get("/api/config", { timeoutMs: 5000 });
+      const api = handle || window.PAApi;
+      const result = await api.get('/api/config');
       const data = result.data;
       const mode = getRcModeFromConfig(data);
       if (rcInputModeHidden) rcInputModeHidden.value = mode;
       rcModeCards.forEach((card) => {
         const selected = card.dataset.mode === mode;
-        card.classList.toggle("selected", selected);
-        card.setAttribute("aria-pressed", selected ? "true" : "false");
+        card.classList.toggle('selected', selected);
+        card.setAttribute('aria-pressed', selected ? 'true' : 'false');
       });
-      configCache = data;
       setSingleSbusRecvSelect(getSingleSbusRecvCh2(data));
+      confirmedSbusRecvValue = sbusRecvSel?.value ?? null;
       updateRecvSel(mode);
-      if (rcModeFeedback) {
-        rcModeFeedback.textContent = `Receiver type: ${mode}`;
-        rcModeFeedback.className = "feedback success";
-      }
+      setModeFeedback(`Receiver type: ${modeLabel(mode)}`, 'success');
       setRcInputsEnabled(rcComponentsEnabled(data));
     } catch (error) {
-      if (rcModeFeedback) {
-        rcModeFeedback.textContent = `Failed to load receiver type: ${window.PAApi.messageFor(error)}`;
-        rcModeFeedback.className = "feedback error";
-      }
+      const fallbackMode = rcInputModeHidden?.value || 'standard_pwm';
+      switchRcMode(fallbackMode);
+      setModeFeedback(`Receiver config unavailable: ${window.PAApi.messageFor(error)}. Showing ${modeLabel(fallbackMode)} draft controls.`, 'warning');
+      throw error;
     }
   };
 
-  const selectSlot = (key) => {
-    // Prevent selecting unsupported slots
-    if (!isSlotSupported(key)) {
-      return;
+  const loadMappings = async ({ handle = null } = {}) => {
+    try {
+      const api = handle || window.PAApi;
+      const result = await api.get('/api/rc/map');
+      const payload = result.data || {};
+      const mode = typeof payload.mode === 'string' ? payload.mode : getEditorMode();
+      channelMap = modeMapFromArray(payload.map);
+      triggerPulseState = {};
+      if (rcInputModeHidden?.value !== mode) switchRcMode(mode);
+      if (selectedChannel) {
+        const { source } = parseChannelKey(selectedChannel);
+        const allowedSources = SOURCE_OPTIONS[mode] || SOURCE_OPTIONS.standard_pwm;
+        if (!allowedSources.includes(source)) selectedChannel = null;
+      }
+      renderSummaryTable();
+      renderChannelList();
+      renderLivePreview();
+      renderEditor();
+    } catch (error) {
+      channelMap = {};
+      triggerPulseState = {};
+      renderSummaryTable();
+      renderChannelList();
+      renderLivePreview();
+      renderEditor();
+      setEditorFeedback(`Failed to load RC map: ${window.PAApi.messageFor(error)}`, 'error');
+      throw error;
     }
+  };
 
-    selectedSlot = key;
-    document.querySelectorAll('.rc-slot-item').forEach(el => {
-      el.classList.toggle('active', el.dataset.slot === key);
+  const selectChannel = (channelKey) => {
+    selectedChannel = channelKey;
+    document.querySelectorAll('.rc-channel-item').forEach((el) => {
+      el.classList.toggle('active', el.dataset.chkey === channelKey);
     });
-    document.querySelectorAll('.rc-summary-table tr[data-slot]').forEach(tr => {
-      tr.classList.toggle('active-slot', tr.dataset.slot === key);
+    document.querySelectorAll('.rc-summary-table tr[data-chkey]').forEach((row) => {
+      row.classList.toggle('active-channel', row.dataset.chkey === channelKey);
     });
+    markEditorClean();
     renderLivePreview();
     renderEditor();
   };
@@ -882,68 +1273,51 @@
 
     let best = null;
 
-    // SBUS sources — raw units 172-1811, center ~992
-    ['sbus1', 'sbus2'].forEach(src => {
+    ['sbus1', 'sbus2'].forEach((src) => {
       const currArr = Array.isArray(raw[src]) ? raw[src] : [];
       const baseArr = Array.isArray(baseRaw[src]) ? baseRaw[src] : [];
       currArr.forEach((val, idx) => {
-        const base = baseArr[idx] ?? val;  // if no baseline, deviation = 0
+        const base = baseArr[idx] ?? val;
         const delta = Math.abs(val - base);
-        if (delta >= LEARN_SBUS_THRESHOLD) {
-          if (!best || delta > best.delta) {
-            best = { source: src, channel: idx + 1, raw: val, baseline: base, delta };
-          }
+        if (delta >= LEARN_SBUS_THRESHOLD && (!best || delta > best.delta)) {
+          best = { source: src, channel: idx + 1, raw: val, baseline: base, delta };
         }
       });
     });
 
-    // PWM — microseconds 1000-2000, center ~1500
-    {
-      const currArr = Array.isArray(raw.pwm) ? raw.pwm : [];
-      const baseArr = Array.isArray(baseRaw.pwm) ? baseRaw.pwm : [];
-      currArr.forEach((val, idx) => {
-        if (val === 0) return;          // 0 = no valid pulse on this channel
-        const base = baseArr[idx] ?? val;
-        if (base === 0) return;
-        const delta = Math.abs(val - base);
-        if (delta >= LEARN_PWM_THRESHOLD) {
-          if (!best || delta > best.delta) {
-            best = { source: 'pwm', channel: idx + 1, raw: val, baseline: base, delta };
-          }
-        }
-      });
-    }
+    const currPwm = Array.isArray(raw.pwm) ? raw.pwm : [];
+    const basePwm = Array.isArray(baseRaw.pwm) ? baseRaw.pwm : [];
+    currPwm.forEach((val, idx) => {
+      if (val === 0) return;
+      const base = basePwm[idx] ?? val;
+      if (base === 0) return;
+      const delta = Math.abs(val - base);
+      if (delta >= LEARN_PWM_THRESHOLD && (!best || delta > best.delta)) {
+        best = { source: 'pwm', channel: idx + 1, raw: val, baseline: base, delta };
+      }
+    });
 
     return best;
   };
 
-  // Find all slot keys whose current binding matches the detected source+channel.
-  const slotsForDetectHit = (hit) => {
+  const mappedActionsForDetectHit = (hit) => {
     if (!hit) return [];
-    const mode = getEditorMode();
-    const slots = RC_ACTIONS[mode] || RC_ACTIONS.dual_sbus;
-    return slots
-      .filter(({ key }) => {
-        const b = bindingForSlot(key);
-        return b.source === hit.source && Number(b.channel) === hit.channel;
-      })
-      .map(({ key }) => key);
+    return asMapArray()
+      .filter((entry) => entry.source === hit.source && Number(entry.channel) === hit.channel)
+      .map((entry) => actionLabelFromToken(mapEntryAction(entry)));
   };
 
-  // Human-readable label for a detect hit.
   const detectHitLabel = (hit) => {
     if (!hit) return '';
     const srcLabel = { sbus1: 'SBUS1', sbus2: 'SBUS2', pwm: 'PWM' }[hit.source] || hit.source.toUpperCase();
     return `${srcLabel} CH ${hit.channel}`;
   };
 
-  // Apply/remove learn-hot class on slot cards that are already bound to the
-  // detected source+channel. Uses direct classList toggle — no re-render.
   const applyLearnHighlight = () => {
-    if (!rcSlotItems) return;
-    const bound = learnActive && learnHit ? slotsForDetectHit(learnHit) : [];
-    rcSlotItems.querySelectorAll('.rc-slot-item').forEach(el => {
-      el.classList.toggle('learn-hot', bound.includes(el.dataset.slot));
+    if (!rcChannelItems) return;
+    const channelKey = learnActive && learnHit ? channelKeyOf(learnHit.source, learnHit.channel) : null;
+    rcChannelItems.querySelectorAll('.rc-channel-item').forEach((el) => {
+      el.classList.toggle('learn-hot', channelKey !== null && el.dataset.chkey === channelKey);
     });
   };
 
@@ -957,16 +1331,11 @@
       return;
     }
     const label = detectHitLabel(learnHit);
-    const bound = slotsForDetectHit(learnHit);
-    if (bound.length > 0) {
-      const slotLabels = bound.map(k => {
-        const mode = getEditorMode();
-        const slots = RC_ACTIONS[mode] || RC_ACTIONS.dual_sbus;
-        return slots.find(s => s.key === k)?.label || k;
-      }).join(', ');
-      rcLearnStatus.textContent = `Detected: ${label} → already assigned to ${slotLabels}`;
+    const mappedActions = mappedActionsForDetectHit(learnHit);
+    if (mappedActions.length > 0) {
+      rcLearnStatus.textContent = `Detected: ${label} → already assigned to ${mappedActions.join(', ')}`;
     } else {
-      rcLearnStatus.textContent = `Detected: ${label} — not assigned to any slot. Select a slot to configure it.`;
+      rcLearnStatus.textContent = `Detected: ${label} — unassigned. Select this channel to configure it.`;
     }
   };
 
@@ -984,75 +1353,64 @@
     );
   };
 
-
   const enterLearnMode = () => {
     if (!rcInputsEnabled) {
-      if (rcEditorFeedback) {
-        rcEditorFeedback.textContent = "Detect mode unavailable: enable an RC channel in Setup.";
-        rcEditorFeedback.className = "feedback warning";
-      }
+      setEditorFeedback('Detect mode unavailable: enable an RC channel in Setup.', 'warning');
       return;
     }
-    learnActive  = true;
-    learnBaseline = rcSnapshot;   // snapshot at mode entry — baseline for deviation
-    learnHit     = null;
+    learnActive = true;
+    learnBaseline = rcSnapshot;
+    learnHit = null;
     learnStartMs = Date.now();
-    if (rcLearnBtn)    rcLearnBtn.textContent = '🔍 Detecting…';
+    if (rcLearnBtn) rcLearnBtn.textContent = '🔍 Detecting…';
     if (rcLearnBanner) rcLearnBanner.hidden = false;
     updateLearnBanner();
     applyLearnHighlight();
   };
 
   const exitLearnMode = () => {
-    learnActive  = false;
+    learnActive = false;
     learnBaseline = null;
-    learnHit     = null;
-    if (rcLearnBtn)    rcLearnBtn.textContent = '🔍 Detect channel';
+    learnHit = null;
+    if (rcLearnBtn) rcLearnBtn.textContent = '🔍 Detect channel';
     if (rcLearnBanner) rcLearnBanner.hidden = true;
     applyLearnHighlight();
   };
 
-  // Called on every SSE rc tick when learnActive is true.
   const processLearnTick = (currSnapshot) => {
     if (Date.now() - learnStartMs > LEARN_TIMEOUT_MS) {
       exitLearnMode();
       return;
     }
-
-    const newHit = computeDetectHit(learnBaseline, currSnapshot);
-    const prevHit = learnHit;
-    learnHit = newHit;
-
-    // Update DOM only when result changes to avoid needless repaints.
-    const changed = JSON.stringify(newHit) !== JSON.stringify(prevHit);
+    const nextHit = computeDetectHit(learnBaseline, currSnapshot);
+    const changed = JSON.stringify(nextHit) !== JSON.stringify(learnHit);
+    learnHit = nextHit;
     if (changed) {
       updateLearnBanner();
       applyLearnHighlight();
     }
   };
 
-  // ─────────────────────────────────────────────────────────────────────────
-
   const renderRcDiagnostics = (payload) => {
     rcSnapshot = payload;
-
+    setRcInputsEnabled(rcSourcesEnabled(payload));
+    renderSourceHealth();
     renderSummaryTable();
-    renderSlotList();
-    if (selectedSlot) {
+    renderChannelList();
+    if (selectedChannel) {
       renderLivePreview();
       renderEditor();
     }
   };
 
-  const loadRcDiagnostics = async () => {
+  const loadRcDiagnostics = async ({ handle = null } = {}) => {
     try {
-      const result = await window.PAApi.get("/api/rc", { timeoutMs: 5000 });
+      const api = handle || window.PAApi;
+      const result = await api.get('/api/rc');
       renderRcDiagnostics(result.data);
     } catch (error) {
-      if (rcEditorFeedback) {
-        rcEditorFeedback.textContent = `Failed to load RC diagnostics: ${window.PAApi.messageFor(error)}`;
-        rcEditorFeedback.className = "feedback error";
-      }
+      setEditorFeedback(`Failed to load RC diagnostics: ${window.PAApi.messageFor(error)}`, 'error');
+      throw error;
     }
   };
 
@@ -1061,219 +1419,106 @@
 
     window.PAStatusStream.subscribe((eventType, payload) => {
       try {
-        if (eventType === "status") {
-          const data = typeof payload === "string" ? JSON.parse(payload) : payload;
+        if (eventType === 'status') {
+          const data = typeof payload === 'string' ? JSON.parse(payload) : payload;
           setRcInputsEnabled(rcEnabledFromStatus(data));
           return;
         }
-        if (eventType !== "rc") return;
-        const data = typeof payload === "string" ? JSON.parse(payload) : payload;
+        if (eventType !== 'rc') return;
+        const data = typeof payload === 'string' ? JSON.parse(payload) : payload;
 
-        // Process learning mode tick: compare current raw channels against the
-        // baseline snapshot captured when detect mode was entered.
-        if (learnActive) {
-          processLearnTick(data);
-        }
+        if (learnActive) processLearnTick(data);
 
         rcSnapshot = data;
-
-        // Fast path updates for frequently changing elements
+        renderSourceHealth();
         updateSummaryMiniBar();
-        if (selectedSlot) {
-          renderLivePreview();
-        }
-        // Note: Not re-rendering slot list or editor on every SSE tick for performance
+        updateChannelListRaw();
+        if (selectedChannel) renderLivePreview();
       } catch (_error) {
-        if (rcEditorFeedback) {
-          rcEditorFeedback.textContent = "Received malformed RC event payload.";
-          rcEditorFeedback.className = "feedback error";
-        }
+        setEditorFeedback('Received malformed RC event payload.', 'error');
       }
     });
 
     return true;
   };
-  
 
   const saveMapping = async () => {
+    if (!selectedChannel || !rcEditorContent) return;
+
+    const { source, channel } = parseChannelKey(selectedChannel);
     const mode = getEditorMode();
+    const target = rcEditorContent.querySelector('[data-field="target"]')?.value || '';
+    const payloadField = rcEditorContent.querySelector(`.rc-editor-cond[data-cond="${target}"] [data-field="payload"]`);
+    const payload = payloadField ? payloadField.value : '';
 
-    const formFields = rcEditorContent.querySelectorAll('[data-field]');
-    const binding = { ...DEFAULT_BINDING };
-
-    formFields.forEach(field => {
-      const fieldName = field.dataset.field;
-      if (fieldName === "estop-confirm") {
-        return;
-      }
-
-      if (field.type === "checkbox") {
-        binding[fieldName] = field.checked;
-      } else {
-        binding[fieldName] = field.value;
-      }
-
-      if (["channel", "min", "center", "max", "deadband"].includes(fieldName)) {
-        binding[fieldName] = Number.parseInt(field.value, 10) || 0;
-      }
-    });
-
-    const allowedSources = SOURCE_OPTIONS[mode] || SOURCE_OPTIONS.standard_pwm;
-    if (!allowedSources.includes(binding.source)) {
-      if (rcEditorFeedback) {
-        rcEditorFeedback.textContent = `Source must be one of: ${allowedSources.join(", ")}.`;
-        rcEditorFeedback.className = "feedback error";
-      }
+    if (target === 'cmd' && payload && !/^[:$#]/.test(payload)) {
+      setEditorFeedback('Marcduino command must start with :, $, or #', 'error');
       return;
     }
-
-    // Validate Marcduino command prefix
-    if (binding.target === "cmd" && binding.payload) {
-      if (!/^[:$#]/.test(binding.payload)) {
-        if (rcEditorFeedback) {
-          rcEditorFeedback.textContent = "Marcduino command must start with :, $, or #";
-          rcEditorFeedback.className = "feedback error";
-        }
-        return;
-      }
-    }
-
-    if (binding.target === "dome_seq") {
-      if (rcEditorFeedback) {
-        rcEditorFeedback.textContent = "Dome sequence trigger mapping is not available in this firmware build.";
-        rcEditorFeedback.className = "feedback warning";
-      }
-      return;
-    }
-
-    // Validate E-Stop confirmation
-    if (binding.target === "estop") {
+    if (target === 'estop') {
       const confirmCheckbox = rcEditorContent.querySelector('[data-field="estop-confirm"]');
       if (!confirmCheckbox || !confirmCheckbox.checked) {
-        if (rcEditorFeedback) {
-          rcEditorFeedback.textContent = "E-Stop action requires confirmation checkbox";
-          rcEditorFeedback.className = "feedback error";
-        }
+        setEditorFeedback('E-Stop action requires confirmation checkbox', 'error');
         return;
       }
     }
 
-    if (!mappingDraft[mode]) mappingDraft[mode] = {};
-    mappingDraft[mode][selectedSlot] = binding;
-
-    // Per-slot save semantics: only save the currently selected slot
-    const action = RC_ACTIONS[mode]?.find(a => a.key === selectedSlot);
-    if (!action) return;
-
-    const body = new URLSearchParams();
-    const isBackbone = action.type === "backbone";
-    body.set(action.field, formatBindingString(binding, isBackbone));
-
-    setEditorDirtyState("saving", "Saving changes…");
-    if (rcEditorFeedback) {
-      rcEditorFeedback.textContent = "Saving...";
-      rcEditorFeedback.className = "feedback";
+    const allowedSources = SOURCE_OPTIONS[mode] || SOURCE_OPTIONS.standard_pwm;
+    if (!allowedSources.includes(source)) {
+      setEditorFeedback(`Channel source ${sourceLabel(source)} is not valid in ${modeLabel(mode)} mode.`, 'error');
+      return;
     }
 
+    const nextMap = { ...channelMap };
+    if (!target) {
+      delete nextMap[selectedChannel];
+    } else {
+      nextMap[selectedChannel] = normalizeMapEntry({ source, channel, action: target, payload });
+    }
+
+    setEditorDirtyState('saving', 'Saving changes…');
+    setEditorFeedback('Saving...');
+
     try {
-      const result = await window.PAApi.postForm("/api/config", body, { timeoutMs: 5000 });
-      configCache = result.data;
-
+      const result = await window.PAApi.postForm('/api/rc/map', { plain: JSON.stringify({ map: Object.values(nextMap) }) }, { timeoutMs: 5000 });
+      const serverMap = Array.isArray(result.data?.map) ? result.data.map : Object.values(nextMap);
+      channelMap = modeMapFromArray(serverMap);
       const savedAt = new Date().toLocaleTimeString();
-      if (rcEditorFeedback) {
-        rcEditorFeedback.textContent = `\u2713 Saved at ${savedAt}`;
-        rcEditorFeedback.className = "feedback success";
-      }
+      setEditorFeedback(`✓ Saved at ${savedAt}`, 'success');
       markEditorClean(savedAt);
-
-      await loadRcDiagnostics();
+      renderSummaryTable();
+      renderChannelList();
+      renderLivePreview();
+      renderEditor();
     } catch (error) {
-      setEditorDirtyState("error", "Save failed — unsaved changes");
+      setEditorDirtyState('error', 'Save failed — unsaved changes');
       if (rcEditorApply) rcEditorApply.disabled = false;
       if (rcEditorRevert) rcEditorRevert.disabled = false;
-      if (rcEditorFeedback) {
-        rcEditorFeedback.textContent = `Failed to save: ${window.PAApi.messageFor(error)}`;
-        rcEditorFeedback.className = "feedback error";
-      }
+      setEditorFeedback(`Failed to save: ${window.PAApi.messageFor(error)}`, 'error');
     }
   };
 
-  const revertMapping = () => {
-    const mode = getEditorMode();
-    mappingDraft[mode] = cloneModeDraft(mode);
-    renderEditor();
-
-    if (rcEditorFeedback) {
-      rcEditorFeedback.textContent = "Reverted to saved configuration.";
-      rcEditorFeedback.className = "feedback";
-    }
-
+  const revertMapping = async () => {
+    await loadMappings();
+    setEditorFeedback('Reverted to last saved mapping.');
     markEditorClean();
   };
 
   const resetToDefaults = async () => {
-    if (!confirm("Are you sure you want to reset all RC mappings to their default values?")) {
-      return;
-    }
-
-    if (rcEditorFeedback) {
-      rcEditorFeedback.textContent = "Resetting to defaults...";
-      rcEditorFeedback.className = "feedback";
-    }
-
+    if (!confirm('Are you sure you want to clear all RC mappings?')) return;
+    setEditorFeedback('Clearing mappings...');
     try {
-      const body = new URLSearchParams();
-      const mode = getEditorMode();
-
-      if (mode === "standard_pwm") {
-        body.set("rcPwmDriveSpeed", "pwm:1:1000:1500:2000:0:0");
-        body.set("rcPwmDriveSteer", "pwm:2:1000:1500:2000:0:0");
-        body.set("rcPwmDriveLimit", "none:0:1000:1500:2000:0:0");
-        body.set("rcPwmDomeSpeed", "pwm:3:1000:1500:2000:0:0");
-        body.set("rcArm1", "pwm:4:arm1_toggle::1000:1500:2000:0:0");
-        body.set("rcArm2", "pwm:5:arm2_toggle::1000:1500:2000:0:0");
-      } else if (mode === "single_sbus") {
-        body.set("rcSbusDriveSpeed", "sbus1:1:172:992:1811:0:0");
-        body.set("rcSbusDriveSteer", "sbus1:2:172:992:1811:0:0");
-        body.set("rcSbusDriveLimit", "sbus1:8:172:992:1811:0:0");
-        body.set("rcSbusDomeSpeed", "sbus1:3:172:992:1811:0:0");
-        body.set("rcArm1", "sbus1:4:arm1_toggle::172:992:1811:0:0");
-        body.set("rcArm2", "sbus1:5:arm2_toggle::172:992:1811:0:0");
-      } else {
-        body.set("rcSbusDriveSpeed", "sbus1:1:172:992:1811:0:0");
-        body.set("rcSbusDriveSteer", "sbus1:2:172:992:1811:0:0");
-        body.set("rcSbusDriveLimit", "sbus1:8:172:992:1811:0:0");
-        body.set("rcSbusDomeSpeed", "sbus2:1:172:992:1811:0:0");
-        body.set("rcArm1", "sbus1:4:arm1_toggle::172:992:1811:0:0");
-        body.set("rcArm2", "sbus1:5:arm2_toggle::172:992:1811:0:0");
-      }
-
-      body.set("rcAux1", "none:0:none::1000:1500:2000:0:0");
-      body.set("rcAux2", "none:0:none::1000:1500:2000:0:0");
-      body.set("rcAux3", "none:0:none::1000:1500:2000:0:0");
-      body.set("rcSound", "none:0:none::1000:1500:2000:0:0");
-      body.set("rcOpMode", "none:0:none::1000:1500:2000:0:0");
-      body.set("rcFree0", "none:0:none::1000:1500:2000:0:0");
-      body.set("rcFree1", "none:0:none::1000:1500:2000:0:0");
-      body.set("rcFree2", "none:0:none::1000:1500:2000:0:0");
-      body.set("rcFree3", "none:0:none::1000:1500:2000:0:0");
-
-      const result = await window.PAApi.postForm("/api/config", body, { timeoutMs: 5000 });
-      configCache = result.data;
-
+      await window.PAApi.postForm('/api/rc/map', { plain: JSON.stringify({ map: [] }) }, { timeoutMs: 5000 });
+      channelMap = {};
       const savedAt = new Date().toLocaleTimeString();
-      if (rcEditorFeedback) {
-        rcEditorFeedback.textContent = "\u2713 Reset to defaults successful";
-        rcEditorFeedback.className = "feedback success";
-      }
+      setEditorFeedback('✓ Cleared all mappings', 'success');
       markEditorClean(savedAt);
-
-      await loadRcDiagnostics();
+      renderSummaryTable();
+      renderChannelList();
+      renderLivePreview();
+      renderEditor();
     } catch (error) {
-      if (rcEditorFeedback) {
-        rcEditorFeedback.textContent = `Failed to reset to defaults: ${window.PAApi.messageFor(error)}`;
-        rcEditorFeedback.className = "feedback error";
-      }
+      setEditorFeedback(`Failed to clear mappings: ${window.PAApi.messageFor(error)}`, 'error');
     }
   };
 
@@ -1303,13 +1548,13 @@
   if (sbusRecvSel) {
     sbusRecvSel.addEventListener("change", async () => {
       const recvCh2 = sbusRecvSel.value === "true";
-      const prevValue = sbusRecvSel.value;  // save for revert on failure
       setSbusRecvFeedback("Saving...");
       try {
         await window.PAApi.postJson("/api/config", { rc: { sbus: { recvCh2 } } }, { timeoutMs: 5000 });
-        setSbusRecvFeedback(`\u2713 Saved at ${new Date().toLocaleTimeString()}`, "success", 2000);
+        setSbusRecvFeedback(`\u2713 Saved at ${new Date().toLocaleTimeString()}. Restart the controller to apply.`, "success");
+        confirmedSbusRecvValue = sbusRecvSel.value;
       } catch (error) {
-        sbusRecvSel.value = prevValue;  // revert to last confirmed server state
+        sbusRecvSel.value = confirmedSbusRecvValue;
         setSbusRecvFeedback(`\u274c ${window.PAApi.messageFor(error)}`, "error", 2000);
       }
     });
@@ -1327,7 +1572,8 @@
   setRcDebugMode(true).catch(err => console.error("[RC] Debug mode init failed:", err));
 
   window.addEventListener("beforeunload", () => {
-    navigator.sendBeacon("/api/rc/debug", JSON.stringify({ enabled: false }));
+    const body = new Blob([JSON.stringify({ enabled: false })], { type: "application/json" });
+    navigator.sendBeacon("/api/rc/debug", body);
   });
 
   document.addEventListener("visibilitychange", () => {
@@ -1339,8 +1585,59 @@
   setEditorDirtyState("clean", "Saved");
   setEditorSavedTimestamp(null);
 
-  loadRcMode();
-  loadRcDiagnostics();
+  // -------------------------------------------------------------------------
+  // Boot — load RC configuration and diagnostics
+  // -------------------------------------------------------------------------
+
+  // Page Recovery: register startup API loads as sections so the bootstrap
+  // can show recovery state if any fetch fails.
+  // See docs/page-load-recovery-architecture.md and ADR 0019.
+  const loadRcModeAndMappings = async ({ handle = null } = {}) => {
+    await loadRcMode({ handle });
+    await loadMappings({ handle });
+  };
+
+  const loadRcDiagnosticsWithFallback = async ({ handle = null } = {}) => {
+    await loadRcDiagnostics({ handle });
+  };
+
+  const loadActionTargetsWithFallback = async ({ handle = null } = {}) => {
+    await loadActionTargets({ handle });
+    if (selectedChannel) renderEditor();
+  };
+
+  const SECTIONS = [
+    ["rc-mode-mapping", loadRcModeAndMappings, "RC receiver type and mapping"],
+    ["rc-diagnostics", loadRcDiagnosticsWithFallback, "RC channel diagnostics"],
+    ["rc-action-targets", loadActionTargetsWithFallback, "RC action registry"],
+  ];
+
+  const startPageLoad = () => {
+    loadRecentActionTokens();
+    switchRcMode(rcInputModeHidden?.value || "standard_pwm");
+
+    if (!window.PABootstrap) {
+      loadRcMode().finally(() => {
+        loadMappings();
+      });
+      loadRcDiagnostics();
+      loadActionTargets().then(() => { if (selectedChannel) renderEditor(); });
+      return;
+    }
+
+    window.PABootstrap.setResourceLabels?.({
+      "/web_api.js": "controller connection",
+      "/status_stream.js": "live updates",
+      "/shell.js": "page layout",
+      "/rc.js": "RC control",
+      "/footer.js": "page footer",
+    });
+    SECTIONS.forEach(([name, load, label]) =>
+      window.PABootstrap.registerSection(name, load, { label })
+    );
+  };
+
+  startPageLoad();
 
   const hasRcStream = subscribeRcEvents();
   if (!hasRcStream) {

@@ -27,7 +27,6 @@
   const aux2CalibSection     = document.getElementById("aux2-calib-section");
   const aux3CalibSection     = document.getElementById("aux3-calib-section");
 
-  const calibForm            = document.getElementById("calib-form");
   const arm1OpenUs           = document.getElementById("arm1-open-us");
   const arm1CloseUs          = document.getElementById("arm1-close-us");
   const arm2OpenUs           = document.getElementById("arm2-open-us");
@@ -48,15 +47,8 @@
 
   // Component types loaded from /api/config — determines AUX rendering
   let auxTypes = { aux1: "none", aux2: "none", aux3: "none" };
+  let auxConfigured = { aux1: false, aux2: false, aux3: false };
 
-  // Debounce utility for auto-save
-  let saveTimeout = null;
-  const debounce = (fn, ms) => {
-    return (...args) => {
-      clearTimeout(saveTimeout);
-      saveTimeout = setTimeout(() => fn(...args), ms);
-    };
-  };
 
   // -------------------------------------------------------------------------
   // Servo command helpers
@@ -115,7 +107,7 @@
     if (armControlsContainer && ids !== renderedArmIds) {
       renderedArmIds = ids;
       armControlsContainer.innerHTML = enabled.map((arm) => {
-        const detail = payload[arm.id]?.detail || "";
+        const detail = window.PAUtils.escapeHtml(payload[arm.id]?.detail || "");
         return `
           <div class="arm-control-row" id="row-${arm.id}">
             <span class="arm-name">${arm.name}</span>
@@ -147,49 +139,82 @@
     { id: "aux3", name: "AUX 3", label: "AUX3" },
   ];
 
+  const setupActionText = window.PAUi?.setupActionText || ((action) => `${action} in Setup`);
+  const setupActionHtml = window.PAUi?.setupActionHtml
+    || ((action) => `${action} in <a class="setup-link" href="/setup.html">Setup</a>`);
+  const isServoType = (type) => type === "mg996r" || type === "mg90s";
+  const auxTypeLabel = (type) => type === "mg90s" ? "MG90S servo" : type === "mg996r" ? "MG996R servo" : "";
+
+  const buildAuxLedRow = (aux) => `
+    <div class="arm-control-row" id="row-${aux.id}">
+      <span class="arm-name">${aux.name}</span>
+      <span class="arm-position text-dim">💡 LED strip (${setupActionText("configure")})</span>
+    </div>`;
+
+  const buildAuxServoRow = (aux, detail, typeLabel) => {
+    const descriptor = typeLabel ? `${typeLabel}${detail ? ` · ${detail}` : ""}` : detail;
+    return `
+      <div class="arm-control-row" id="row-${aux.id}">
+        <span class="arm-name">${aux.name}</span>
+        <span class="arm-position text-dim" id="pos-${aux.id}">${descriptor}</span>
+        <button class="btn" data-arm="${aux.id}" data-action="open" type="button">📂 Open</button>
+        <button class="btn" data-arm="${aux.id}" data-action="close" type="button">📁 Close</button>
+        <button class="btn" data-arm="${aux.id}" data-action="stop" type="button">⏹️ Stop</button>
+      </div>`;
+  };
+
+  const bindAuxActionDelegation = () => {
+    if (!auxControlsContainer || auxControlsContainer.dataset.actionsBound === "1") return;
+    auxControlsContainer.dataset.actionsBound = "1";
+    auxControlsContainer.addEventListener("click", (event) => {
+      const button = event.target.closest("button[data-arm][data-action]");
+      if (!button || !auxControlsContainer.contains(button)) return;
+      postServoAction(button.dataset.arm, button.dataset.action, auxFeedback);
+    });
+  };
+
   let renderedAuxIds = null;
 
   const renderAuxControls = (payload) => {
-    const enabled = AUX_DEFS.filter((a) => a.id in payload);
-    if (auxControlsCard) auxControlsCard.classList.toggle("hidden", enabled.length === 0);
-    if (enabled.length === 0) return;
+    const enabled = AUX_DEFS.filter((a) => auxConfigured[a.id] || (a.id in payload));
+    if (auxControlsCard) auxControlsCard.classList.remove("hidden");
+    if (!auxControlsContainer) return;
+    bindAuxActionDelegation();
+
+    if (enabled.length === 0) {
+      renderedAuxIds = "none";
+      auxControlsContainer.innerHTML =
+        `<div class="desc">${setupActionHtml("Enable AUX outputs")} to show controls here.</div>`;
+      return;
+    }
 
     const ids = enabled.map((a) => `${a.id}:${auxTypes[a.id]}`).join(",");
-    if (auxControlsContainer && ids !== renderedAuxIds) {
+    if (ids !== renderedAuxIds) {
       renderedAuxIds = ids;
-      auxControlsContainer.innerHTML = enabled.map((aux) => {
+      const rows = enabled.map((aux) => {
         const type = auxTypes[aux.id] || "none";
-        const detail = payload[aux.id]?.detail || "";
-        if (type === "rgb") {
-          return `
-            <div class="arm-control-row" id="row-${aux.id}">
-              <span class="arm-name">${aux.name}</span>
-              <span class="arm-position text-dim">RGB LED strip — control coming soon</span>
-            </div>`;
-        }
-        if (type === "mg996r" || type === "mg90s") {
-          return `
-            <div class="arm-control-row" id="row-${aux.id}">
-              <span class="arm-name">${aux.name}</span>
-              <span class="arm-position text-dim" id="pos-${aux.id}">${detail}</span>
-              <button class="btn" data-arm="${aux.id}" data-action="open"  type="button">📂 Open</button>
-              <button class="btn" data-arm="${aux.id}" data-action="close" type="button">📁 Close</button>
-              <button class="btn" data-arm="${aux.id}" data-action="stop"  type="button">⏹️ Stop</button>
-            </div>`;
-        }
-        return "";  // none — nothing connected, skip
-      }).join("");
+        const detail = window.PAUtils.escapeHtml(payload[aux.id]?.detail || "");
+        const typeLabel = auxTypeLabel(type);
+        if (type === "rgb") return buildAuxLedRow(aux);
+        if (isServoType(type)) return buildAuxServoRow(aux, detail, typeLabel);
+        return "";
+      }).filter(Boolean);
 
-      auxControlsContainer.querySelectorAll("[data-arm]").forEach((btn) => {
-        btn.addEventListener("click", () =>
-          postServoAction(btn.dataset.arm, btn.dataset.action, auxFeedback));
-      });
-    } else if (auxControlsContainer) {
-      enabled.forEach((aux) => {
-        const el = document.getElementById(`pos-${aux.id}`);
-        if (el) el.textContent = payload[aux.id]?.detail || "";
-      });
+      auxControlsContainer.innerHTML = rows.length > 0
+        ? rows.join("")
+        : "<div class=\"desc\">AUX outputs are enabled, but none are configured as controllable servo or LED strip outputs.</div>";
+      return;
     }
+
+    enabled.forEach((aux) => {
+      const el = document.getElementById(`pos-${aux.id}`);
+      if (!el) return;
+      const type = auxTypes[aux.id] || "none";
+      if (!isServoType(type)) return;
+      const typeLabel = auxTypeLabel(type);
+      const detail = payload[aux.id]?.detail || "";
+      el.textContent = typeLabel ? `${typeLabel}${detail ? ` · ${detail}` : ""}` : detail;
+    });
   };
 
   // -------------------------------------------------------------------------
@@ -198,11 +223,10 @@
   const renderCalibSections = (payload) => {
     const arm1Present = "arm1" in payload;
     const arm2Present = "arm2" in payload;
-    const aux1Present = "aux1" in payload;
-    const aux2Present = "aux2" in payload;
-    const aux3Present = "aux3" in payload;
+    const aux1Present = auxConfigured.aux1 || ("aux1" in payload);
+    const aux2Present = auxConfigured.aux2 || ("aux2" in payload);
+    const aux3Present = auxConfigured.aux3 || ("aux3" in payload);
 
-    const isServoType = (t) => t === "mg996r" || t === "mg90s";
 
     const aux1Servo = aux1Present && isServoType(auxTypes.aux1);
     const aux2Servo = aux2Present && isServoType(auxTypes.aux2);
@@ -245,11 +269,12 @@
     calibFeedback.className = cls ? `feedback ${cls}` : "feedback";
   };
 
-  const loadCalib = async () => {
-    if (!window.PAApi) return;
+  const loadCalib = async ({ handle = null } = {}) => {
+    if (!window.PAApi) throw new Error("API helper unavailable");
     setCalibFeedback("Loading calibration...");
     try {
-      const result = await window.PAApi.get("/api/config", { timeoutMs: 5000 });
+      const api = handle || window.PAApi;
+      const result = await api.get("/api/config");
       const cfg = result.data;
 
       // Arm calibration
@@ -277,16 +302,18 @@
       auxTypes.aux1 = String(components.aux1?.type || "none");
       auxTypes.aux2 = String(components.aux2?.type || "none");
       auxTypes.aux3 = String(components.aux3?.type || "none");
+      auxConfigured.aux1 = Boolean(components.aux1?.enabled);
+      auxConfigured.aux2 = Boolean(components.aux2?.enabled);
+      auxConfigured.aux3 = Boolean(components.aux3?.enabled);
       // Re-render AUX controls now that types are known
-      if (lastPayload) {
-        renderAuxControls(lastPayload);
-        renderCalibSections(lastPayload);
-      }
+      renderAuxControls(lastPayload || {});
+      renderCalibSections(lastPayload || {});
 
       setCalibFeedback(`Calibration loaded at ${new Date().toLocaleTimeString()}`, "success");
     } catch (error) {
       console.error("[servo] loadCalib failed:", error);
       setCalibFeedback(`Failed to load calibration: ${window.PAApi.messageFor(error)}`, "error");
+      throw error;
     }
   };
 
@@ -324,7 +351,7 @@
     }
   };
 
-  const debouncedSave = debounce(saveCalib, 500);
+  const debouncedSave = window.PAUtils.debounce(saveCalib, 500);
 
   // Attach auto-save listeners to all calibration inputs
   const calibInputs = [arm1OpenUs, arm1CloseUs, arm2OpenUs, arm2CloseUs,
@@ -366,7 +393,32 @@
   // -------------------------------------------------------------------------
   // Boot — load config then start status subscription
   // -------------------------------------------------------------------------
-  loadCalib();
+
+  // Page Recovery: register startup API load as a section so the bootstrap
+  // can show recovery state if the config fetch fails.
+  // See docs/page-load-recovery-architecture.md and ADR 0019.
+  const SECTIONS = [
+    ["servo-calibration", loadCalib, "servo calibration"],
+  ];
+
+  const startPageLoad = () => {
+    if (!window.PABootstrap) {
+      loadCalib().catch(() => {});
+      return;
+    }
+    window.PABootstrap.setResourceLabels?.({
+      "/web_api.js": "controller connection",
+      "/status_stream.js": "live updates",
+      "/shell.js": "page layout",
+      "/servo.js": "servo control",
+      "/footer.js": "page footer",
+    });
+    SECTIONS.forEach(([name, load, label]) =>
+      window.PABootstrap.registerSection(name, load, { label })
+    );
+  };
+
+  startPageLoad();
 
   // SSE-first status updates with visibility-aware fallback polling.
   if (window.PAStatusStream?.isSupported()) {

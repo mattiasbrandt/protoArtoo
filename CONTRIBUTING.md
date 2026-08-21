@@ -12,7 +12,37 @@ This document covers:
 - What never goes in a commit
 
 For project-specific terms and abbreviations (for example `RobotState`, NVS,
-Marcduino, SBUS, AP/STA), see `docs/terminology.md`.
+Marcduino, SBUS, AP/STA), see `docs/terminology.md`. For resolved project
+language decisions and status wording, see `CONTEXT.md`.
+
+Issue labels live in `.github/labels.yml` and are split into domain labels and
+work-type labels. Keep new issues and PR notes in that same vocabulary.
+
+## Getting started
+
+For a new clone, run the setup wizard to configure your build environment:
+
+```bash
+make setup
+```
+
+This writes `user.mk` (gitignored) with your OTA IP, USB upload port, and audio
+backend choice. Run `make help` to see all available targets.
+
+If you do not have `make` installed, you can run PlatformIO commands directly —
+the Makefile is a convenience wrapper only and is never required.
+
+---
+
+## Working with AI agents
+
+This project uses AI coding agents extensively, and human and agent
+contributors follow the same rules below. The canonical, model-agnostic
+policy for agents — workflow, subagent orchestration, the MemPalace memory
+protocol, verification-status labels, and the branch/commit invariants
+referenced throughout this document — lives in [`AGENTS.md`](AGENTS.md) at
+the repo root. This document doesn't duplicate that policy; if something
+here and `AGENTS.md` ever disagree, `AGENTS.md` wins.
 
 ---
 
@@ -87,7 +117,6 @@ CH8 at minimum completely locks drive. Gives the operator a physical
 confidence dial for tight spaces.
 
 NVS key ch8_mode_lock (default false) enables optional binary mode-lock.
-See Section 6.7 of firmware plan for full spec.
 ```
 
 ```
@@ -138,76 +167,124 @@ These will not be accepted in a pull request.
 
 ## Branch strategy
 
-protoArtoo uses a phase-oriented branch model. See `tasks/dev-workflow-change-spec.md`
-for the full specification.
+Through the `v1.0.0` release, protoArtoo used a phase-oriented branch model:
+all work for a development phase landed on a single long-lived
+`phase/vX.Y.Z` branch, merged into `main` (non-fast-forward, PM-approved) at
+phase completion. That model is retired as of `v1.0.0` — documented below
+only as history, not current practice.
 
 ```
 main
-└── phase/v0.4.0        ← active phase branch (all work lands here)
+└── phase/v1.0.0        ← phase branch (v1.0.0 and earlier work, historical)
     ├── (feat commits)
     └── (fix/docs/chore commits)
-
-exp/<topic>            ← disposable experiments (never merged to main)
 ```
+
+**Current model (post-`v1.0.0`): short-lived feature branches.** Branch off
+`main`, PR back into `main`, delete after merge. Multiple independent
+branches may coexist — there's no "one active line of work at a time"
+constraint anymore. `AGENTS.md`'s "Branch model" section is canonical for
+full detail; summary here:
 
 ### Branch naming
 
 | Branch | Purpose |
 |---|---|
-| `main` | Stable, released state only. Tagged at every version. |
-| `phase/vX.Y.Z` | All work for the active development phase. |
-| `exp/<topic>` | Exploratory or speculative work. Start here if you\'re not sure where your contribution fits. |
+| `main` | Stable, released state only. Tagged at every version. Updated only via a Mattias-approved PR merge. |
+| `feature/<what>` | New user-facing functionality. |
+| `fix/<what>` | Bug fixes. |
+| `refactor/<what>` | Code restructuring, no behavior change. |
+| `chore/<what>` | Build config, deps, CI, tooling. |
+| `docs/<what>` | Documentation only. |
+| `exp/<topic>` | Exploratory or speculative work. Start here if you're not sure where your contribution fits. Never merged directly to `main`. |
 
-`dev`, `feature/<phase>-<what>`, and `fix/<what>` branches are retired.
+`phase/vX.Y.Z` and `dev` branches are retired as of `v1.0.0`.
 
-### Rules for contributors
+### Merge strategy
 
-- Fork the repository and create your branch from the active `phase/vX.Y.Z` branch, not from `main`.
-- `main` is protected and only updated at phase completion via a PM-approved merge — pull requests directly targeting `main` will not be accepted during active development.
-- If you are unsure which phase branch is active, check `docs/status.md` or open an issue to ask.
-- After your work is merged, your branch will be deleted.
+"Rebase and merge" into `main` for feature-branch PRs — matches the
+historical linear/no-merge-commit pattern. (The one-time `phase/v1.0.0` ->
+`main` merge used "Create a merge commit" instead, specifically to satisfy
+the non-fast-forward invariant for that historical branch; that mechanism
+doesn't apply to ongoing feature-branch PRs.)
 
-### Commit scope for external contributors
+### Current practice
 
-All commits must use the Conventional Commits format. The scope should include
-the active phase. If your contribution is not tied to a specific phase plan task,
-use `T00`:
+In practice, protoArtoo is maintained solo, with AI coding agents doing much
+of the implementation work under human review directly on feature branches.
+Mattias approves and merges every PR into `main`, unconditionally — no
+agent self-merge regardless of how low-risk a change appears.
 
-```
-type(phase:vX.Y.Z/T00): summary
-```
+If you're an external contributor: fork the repository, branch from
+`main`, and open a PR against it. `main` is protected. After your work is
+merged, your branch will be deleted.
 
-Examples:
-```
-fix(phase:v0.4.0/T00): correct typo in README
-docs(phase:v0.4.0/T00): add DFPlayer Mini to supported audio module list
-feat(phase:v0.4.0/T00): add example config for single-SBUS wiring
-```
+### Commit scope
 
-If your contribution directly addresses a specific task in the phase plan,
-you are welcome to use the task number (e.g. `T03`).
+All commits use Conventional Commits format with a scope (see "Scopes"
+above): `type(scope): summary`. Through `v1.0.0`, that scope also carried a
+phase/task tag — `type(phase:vX.Y.Z/T<NN>): summary` — visible throughout
+this repo's git history through that release if you need a reference. That
+token is dropped entirely going forward; the post-`v1.0.0` commit scope is
+just the plain Conventional Commits form above, using the domain scopes from
+the "Scopes" table.
 
 ---
 
 ## Pull request checklist
 
-Before opening a PR from your branch to the active `phase/vX.Y.Z` branch, confirm all items:
+Before opening a PR from your branch to the currently-active development
+branch (see "Branch strategy" above), confirm the items that apply. These are risk-scaled per `AGENTS.md`'s
+verification policy, not a flat checklist every PR must clear in full: a
+docs-only or copy change needs inspection, not a full `pio test` run; a
+change touching a failsafe layer, protocol parsing, or shared state needs
+the full build/test/check pass below. When in doubt, scale up.
 
-**Builds**
+**Builds** — required for any firmware source change
 - [ ] `pio run -e protoArtoo` completes with no errors and no warnings
   (build flags include `-Werror` — warnings are errors)
 
-**Tests**
+**Tests** — required when safety, protocol parsing, shared state, config
+persistence, or JSON/API contracts are touched (see `AGENTS.md`
+"Verification and Reporting" for the full rule)
 - [ ] `pio test -e native` — all native tests pass
 - [ ] `pio test -e protoArtoo` — all on-device tests pass (if hardware available)
 
-**Static analysis**
+**Verification status**
+- [ ] PR notes classify verification using the project labels:
+  `software-verified`, `controller-upload-verified`, `full-hardware-verified`,
+  `partial`, or `full-hardware-required`
+- [ ] If hardware validation is deferred, blockers and remaining checks are stated
+- [ ] Public-facing docs use evidence phrases such as "Automated checks are passing"
+  or "Tested on an ESP32 controller" rather than internal verification labels
+
+Do not use "bench verified" or "bench-tested" as a status. It is ambiguous: a
+green build is `software-verified`; an ESP32 upload plus runtime smoke check is
+`controller-upload-verified`; integrated subsystem testing is
+`full-hardware-verified`.
+
+Regression troubleshooting policy (parser/protocol iterate-fix loops):
+- Precedence: this policy overrides any implied expectation to author/update tests on every micro-change.
+- Each iteration must still run a fast relevant verification step (targeted existing test, focused build, or runtime probe).
+- Add/update tests at confirmed-fix commit boundaries, for safety-critical behavior changes, and when a larger feature/task slice is completed.
+- For larger feature implementations, tests must be kept up to date before marking work complete.
+
+SBUS/RMT spec compliance gate:
+- For any change touching SBUS parsing, SBUS framing/flags/timing acceptance, or ESP-IDF5 RMT behavior, review these docs before coding:
+  - `docs/spec-sheets/rmt-esp32-idf5.md`
+  - `docs/spec-sheets/sbus-protocol.md`
+  - `docs/spec-sheets/hotrc-sbus-spec.md` (when HOTRC profile behavior is in scope)
+- Resolution order: RMT driver-level -> SBUS protocol-level -> HOTRC profile-level.
+- If a required value is unresolved, mark it `UNKNOWN` and stop dependent implementation changes instead of guessing.
+- Do not reopen previously rejected parser mechanisms unless new contradictory telemetry is captured.
+
+**Static analysis** — required for firmware source changes
 - [ ] `pio check` — no high or medium severity findings
 - [ ] Any `pio check` suppression or analysis-only build flag in `platformio.ini` has an inline comment explaining rationale and scope (no broad/global suppressions unless unavoidable)
 
-**Code style**
+**Code style** — required for firmware source changes
 - [ ] `clang-format -i src/**/*.cpp src/**/*.h` applied
-- [ ] All new functions have a header comment (see Section 8.1 of firmware plan)
+- [ ] All new functions have a header comment (see "Code standards summary" below)
 - [ ] No inline `//TODO` items that disable or bypass safety logic
 
 **Safety**
@@ -231,8 +308,7 @@ Before opening a PR from your branch to the active `phase/vX.Y.Z` branch, confir
 
 ## Code standards summary
 
-The full standard is in Section 8 of `artoo_firmware_replacement_plan.md`.
-The most important rules:
+The rules below are the standard — apply them to all new and changed code:
 
 **Comments** — every non-trivial function has a header comment explaining what
 it does, why it exists, which task calls it, and a reference link if applicable.

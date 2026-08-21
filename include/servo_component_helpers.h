@@ -2,7 +2,7 @@
 // include/servo_component_helpers.h
 //
 // Pure helpers for servo component type conversion and default calibration.
-// No Arduino, no FreeRTOS, no queues — safe to include in native unit tests.
+// No Arduino, no FreeRTOS, no queues  --  safe to include in native unit tests.
 //
 // Extracted from src/web/api_estop.cpp so type conversion and default
 // logic can be exercised without hardware dependencies.
@@ -28,10 +28,10 @@ enum ServoComponentType : uint8_t {
 // servoCompTypeToString()
 // Convert ServoComponentType enum to string representation.
 //
-//   SERVO_COMP_MG996R → "mg996r"
-//   SERVO_COMP_MG90S  → "mg90s"
-//   SERVO_COMP_RGB    → "rgb"
-//   SERVO_COMP_NONE   → "none"
+//   SERVO_COMP_MG996R -> "mg996r"
+//   SERVO_COMP_MG90S  -> "mg90s"
+//   SERVO_COMP_RGB    -> "rgb"
+//   SERVO_COMP_NONE   -> "none"
 // -----------------------------------------------------------------------------
 inline const char* servoCompTypeToString(ServoComponentType t) {
     switch (t) {
@@ -50,11 +50,11 @@ inline const char* servoCompTypeToString(ServoComponentType t) {
 // parseServoCompType()
 // Parse string representation back to ServoComponentType enum.
 //
-//   "mg996r" → SERVO_COMP_MG996R
-//   "mg90s"  → SERVO_COMP_MG90S
-//   "rgb"    → SERVO_COMP_RGB
-//   "none"   → SERVO_COMP_NONE
-//   nullptr or unknown → SERVO_COMP_NONE
+//   "mg996r" -> SERVO_COMP_MG996R
+//   "mg90s"  -> SERVO_COMP_MG90S
+//   "rgb"    -> SERVO_COMP_RGB
+//   "none"   -> SERVO_COMP_NONE
+//   nullptr or unknown -> SERVO_COMP_NONE
 // -----------------------------------------------------------------------------
 inline ServoComponentType parseServoCompType(const char* s) {
     if (s == nullptr)
@@ -72,9 +72,9 @@ inline ServoComponentType parseServoCompType(const char* s) {
 // servoTypeDefaultOpen()
 // Return default "open" pulse width in microseconds for a given servo type.
 //
-//   MG996R: 2000 µs (standard hobby servo range)
-//   MG90S:  2500 µs (micro servo full range)
-//   RGB/none: 1500 µs (neutral position)
+//   MG996R: 2000 us (standard hobby servo range)
+//   MG90S:  2500 us (micro servo full range)
+//   RGB/none: 1500 us (neutral position)
 // -----------------------------------------------------------------------------
 inline uint16_t servoTypeDefaultOpen(ServoComponentType t) {
     if (t == SERVO_COMP_MG996R)
@@ -88,9 +88,9 @@ inline uint16_t servoTypeDefaultOpen(ServoComponentType t) {
 // servoTypeDefaultClose()
 // Return default "close" pulse width in microseconds for a given servo type.
 //
-//   MG996R: 1000 µs (standard hobby servo range)
-//   MG90S:  500 µs (micro servo full range)
-//   RGB/none: 1500 µs (neutral position)
+//   MG996R: 1000 us (standard hobby servo range)
+//   MG90S:  500 us (micro servo full range)
+//   RGB/none: 1500 us (neutral position)
 // -----------------------------------------------------------------------------
 inline uint16_t servoTypeDefaultClose(ServoComponentType t) {
     if (t == SERVO_COMP_MG996R)

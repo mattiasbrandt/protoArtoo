@@ -13,27 +13,28 @@
 // =============================================================================
 #pragma once
 
+#include <stddef.h>
 #include <stdint.h>
 
 // -----------------------------------------------------------------------------
-// UART1 (Serial1) — Hoverboard motor controller (Gen2.x protocol, PCB S1)
+// UART1 (Serial1)  --  Hoverboard motor controller (Gen2.x protocol, PCB S1)
 // -----------------------------------------------------------------------------
 constexpr uint8_t PIN_HOVERBOARD_TX = 16;
 constexpr uint8_t PIN_HOVERBOARD_RX = 17;
 
 // -----------------------------------------------------------------------------
-// UART2 (Serial2) — Dome serial link (AstroPixelsPlus via slip ring, PCB S3)
-// Phase 4 only — not used in Phase 1.
+// UART2 (Serial2)  --  Dome serial link (AstroPixelsPlus via slip ring, PCB S3)
+// Dome control UART (S3, slip ring).
 // -----------------------------------------------------------------------------
 constexpr uint8_t PIN_DOME_TX = 33;
 constexpr uint8_t PIN_DOME_RX = 34;
 
 // -----------------------------------------------------------------------------
 // Audio module serial (DY-SV5W, PCB S2)
-// TX primary; RX available for status/ACK (optional, Phase 4).
+// TX primary; RX used for status/ACK where the module supports it.
 // -----------------------------------------------------------------------------
 constexpr uint8_t PIN_AUDIO_TX = 26;
-constexpr uint8_t PIN_AUDIO_RX = 35;  // input-only GPIO — RX only, cannot be TX
+constexpr uint8_t PIN_AUDIO_RX = 35;  // input-only GPIO  --  RX only, cannot be TX
 
 // -----------------------------------------------------------------------------
 // RC receiver inputs
@@ -48,24 +49,51 @@ constexpr uint8_t PIN_RC_CH4 = 4;
 constexpr uint8_t PIN_RC_CH5 = 12;
 constexpr uint8_t PIN_RC_CH6 = 27;
 
-constexpr uint8_t PIN_SBUS1_RX = PIN_RC_CH1;  // CH1 — SBUS #1 (drive)
-constexpr uint8_t PIN_SBUS2_RX = PIN_RC_CH2;  // CH2 — SBUS #2 (dome)
+constexpr uint8_t PIN_SBUS1_RX = PIN_RC_CH1;  // CH1  --  SBUS #1 (drive)
+constexpr uint8_t PIN_SBUS2_RX = PIN_RC_CH2;  // CH2  --  SBUS #2 (dome)
 
 // -----------------------------------------------------------------------------
 // Servo outputs (LEDC PWM)
-// ARM1 = Utility arm servo #1 — Top / Left arm (GPIO 23)
-// ARM2 = Utility arm servo #2 — Bottom / Right arm (GPIO 5)
+// ARM1 = Utility arm servo #1  --  Top / Left arm (GPIO 23)
+// ARM2 = Utility arm servo #2  --  Bottom / Right arm (GPIO 5)
 // AUX1 = Spare servo output (GPIO 19, also labelled ARM3)
 // AUX2 = Spare servo output (GPIO 18, also labelled ARM4)
 // AUX3 = Spare servo output (GPIO 32, also labelled ARM5)
-// DOME = Dome rotation ESC (GPIO 25) — drives brushless motor, not a servo
+// DOME = Dome rotation ESC (GPIO 25)  --  drives brushless motor, not a servo
 // -----------------------------------------------------------------------------
 constexpr uint8_t PIN_ARM1_SERVO = 23;
 constexpr uint8_t PIN_ARM2_SERVO = 5;
-constexpr uint8_t PIN_ARM3_SERVO = 19;  // AUX1 — spare servo output
-constexpr uint8_t PIN_ARM4_SERVO = 18;  // AUX2 — spare servo output
-constexpr uint8_t PIN_ARM5_SERVO = 32;  // AUX3 — spare servo output
+constexpr uint8_t PIN_ARM3_SERVO = 19;  // AUX1  --  spare servo output
+constexpr uint8_t PIN_ARM4_SERVO = 18;  // AUX2  --  spare servo output
+constexpr uint8_t PIN_ARM5_SERVO = 32;  // AUX3  --  spare servo output
 constexpr uint8_t PIN_DOME_ESC = 25;
+
+// AUX LED strip selection values (NVS aux_led_pin)
+constexpr uint8_t AUX_LED_PIN_DISABLED = 0;
+constexpr uint8_t AUX_LED_PIN_AUX1 = 1;
+constexpr uint8_t AUX_LED_PIN_AUX2 = 2;
+constexpr uint8_t AUX_LED_PIN_AUX3 = 3;
+constexpr uint8_t AUX_LED_PIN_MAX = AUX_LED_PIN_AUX3;
+constexpr uint8_t AUX_LED_COUNT_DEFAULT = 1;
+constexpr uint8_t AUX_LED_COUNT_MAX = 255;
+
+inline bool auxLedPinSettingValid(uint8_t selection) {
+    return selection <= AUX_LED_PIN_MAX;
+}
+
+inline uint8_t auxLedSelectionToGpio(uint8_t selection) {
+    switch (selection) {
+        case AUX_LED_PIN_AUX1:
+            return PIN_ARM3_SERVO;
+        case AUX_LED_PIN_AUX2:
+            return PIN_ARM4_SERVO;
+        case AUX_LED_PIN_AUX3:
+            return PIN_ARM5_SERVO;
+        case AUX_LED_PIN_DISABLED:
+        default:
+            return 0;
+    }
+}
 
 // -----------------------------------------------------------------------------
 // I2C
@@ -77,6 +105,9 @@ constexpr uint8_t PIN_I2C_SDA = 21;
 // Drive constants
 // -----------------------------------------------------------------------------
 constexpr int16_t SPEED_LIMIT_MAX = 600;  // Absolute max drive output (never exceeded)
+constexpr int16_t SPEED_PRESET_SLOW = 200;
+constexpr int16_t SPEED_PRESET_NORMAL = 350;
+constexpr int16_t SPEED_PRESET_TURBO = SPEED_LIMIT_MAX;
 constexpr uint32_t HOVERBOARD_BAUD = 115200;
 constexpr uint32_t DRIVE_FREQ_HZ = 50;  // Frame rate for hoverboard UART
 
@@ -101,12 +132,29 @@ constexpr uint32_t WATCHDOG_TIMEOUT_S = 3;  // ESP32 TWDT timeout
 // NVS
 // -----------------------------------------------------------------------------
 constexpr char NVS_NAMESPACE[] = "proto";
+constexpr char NVS_KEY_AUX_LED_PIN[] = "aux_led_pin";
+constexpr char NVS_KEY_AUX_LED_COUNT[] = "aux_led_count";
+constexpr char DROID_NAME_DEFAULT[] = "protoartoo";
+constexpr size_t DROID_NAME_MAX_LEN = 32;
 
 // -----------------------------------------------------------------------------
 // WiFi AP
 // -----------------------------------------------------------------------------
 constexpr char WIFI_AP_SSID[] = "protoArtoo";
 constexpr char WIFI_AP_IP[] = "192.168.4.1";
+
+// Default AP Credential (ADR 0015): the documented bootstrap password an
+// Unprovisioned Controller uses for WiFi Provisioning and Network Recovery
+// Mode. Public and shared by design  --  it is a bootstrap credential, not a
+// security boundary  --  and operator-changeable through Device WiFi Settings.
+constexpr char WIFI_DEFAULT_AP_PASSWORD[] = "protoArtoo1";
+
+// -----------------------------------------------------------------------------
+// WiFi hostname / mDNS
+// -----------------------------------------------------------------------------
+// Keep the LAN hostname lowercase for resolver compatibility. AP mode does not
+// advertise mDNS; this hostname is used only when STA WiFi is active.
+constexpr char WIFI_MDNS_HOST[] = "artoo";
 #ifndef PA_FIRMWARE_VERSION
 constexpr char PA_FIRMWARE_VERSION[] = "v0.0.0-dev";
 #endif
@@ -115,14 +163,22 @@ constexpr char PA_FIRMWARE_VERSION[] = "v0.0.0-dev";
 // Log levels
 // -----------------------------------------------------------------------------
 constexpr uint8_t PA_LOG_LEVEL_ERROR = 1;
-constexpr uint8_t PA_LOG_LEVEL_INFO = 2;
-constexpr uint8_t PA_LOG_LEVEL_DEBUG = 3;
+constexpr uint8_t PA_LOG_LEVEL_WARN = 2;
+constexpr uint8_t PA_LOG_LEVEL_INFO = 3;
+constexpr uint8_t PA_LOG_LEVEL_DEBUG = 4;
 
 // PA_LOG_LEVEL controls USB debug serial verbosity on UART0.
-// - PA_LOG_LEVEL_ERROR (1): faults only (watchdog resets, mount failures, etc.)
-// - PA_LOG_LEVEL_INFO  (2): normal boot health and service bring-up
-// - PA_LOG_LEVEL_DEBUG (3): verbose development logging, including lower-priority events
+// - PA_LOG_LEVEL_ERROR (1): loss of function only  --  init/mount failures, failed
+//   allocations, unrecoverable driver errors, watchdog-reset detection
+// - PA_LOG_LEVEL_WARN  (2): errors plus safety warnings  --  failsafe layer triggers,
+//   SBUS watchdog fired, hardware failsafe asserted, estop events, rejected unsafe
+//   commands. The recommended minimum: "faults only" means this tier, so a quiet log
+//   still reports failsafe activity.
+// - PA_LOG_LEVEL_INFO  (3): normal boot health, service bring-up, state transitions
+// - PA_LOG_LEVEL_DEBUG (4): verbose development logging, including lower-priority events
 // Set via -DPA_LOG_LEVEL=N in platformio.ini build_flags. Defaults to DEBUG if unset.
+// This is only the boot default until NVS config loads; the runtime level is the
+// operator's saved logLevel (Setup page).
 #ifndef PA_LOG_LEVEL
-#  define PA_LOG_LEVEL 3
+#define PA_LOG_LEVEL 4
 #endif

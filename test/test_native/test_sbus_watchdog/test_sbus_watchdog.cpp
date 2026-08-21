@@ -1,15 +1,14 @@
 // =============================================================================
 // test/test_native/test_sbus_watchdog/test_sbus_watchdog.cpp
 //
-// Native unit tests for SBUS watchdog timeout detection.
-// Tests: sbusWatchdogTimeoutCheck() for signal loss detection.
+// Native unit tests for SBUS watchdog timeout and transition detection.
 //
 // Safety relevance: SBUS signal loss must be detected to enter failsafe mode
 // and stop the robot when RC transmitter disconnects.
 // =============================================================================
 #include <unity.h>
 
-#include "sbus_math.h"
+#include "sbus_watchdog.h"
 
 void setUp() {
 }
@@ -78,6 +77,49 @@ void test_sbus_long_timeout_for_weak_signal() {
     TEST_ASSERT_TRUE(sbusWatchdogTimeoutCheck(0, 1500, 1000));     // 1500ms > 1000ms
 }
 
+void test_sbus_watchdog_ok_no_timeout() {
+    SbusWatchdog watchdog = {};
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)SbusWatchdogTransition::OK,
+                            (uint8_t)sbusWatchdogCheck(&watchdog, 900, 1000, 200));
+    TEST_ASSERT_FALSE(watchdog.signalLost);
+}
+
+void test_sbus_watchdog_just_lost_first_timeout() {
+    SbusWatchdog watchdog = {};
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)SbusWatchdogTransition::JUST_LOST,
+                            (uint8_t)sbusWatchdogCheck(&watchdog, 799, 1000, 200));
+    TEST_ASSERT_TRUE(watchdog.signalLost);
+}
+
+void test_sbus_watchdog_mid_lost_sustained_timeout() {
+    SbusWatchdog watchdog = {};
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)SbusWatchdogTransition::JUST_LOST,
+                            (uint8_t)sbusWatchdogCheck(&watchdog, 799, 1000, 200));
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)SbusWatchdogTransition::LOST,
+                            (uint8_t)sbusWatchdogCheck(&watchdog, 800, 1100, 200));
+    TEST_ASSERT_TRUE(watchdog.signalLost);
+}
+
+void test_sbus_watchdog_just_restored_first_recovery() {
+    SbusWatchdog watchdog = {};
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)SbusWatchdogTransition::JUST_LOST,
+                            (uint8_t)sbusWatchdogCheck(&watchdog, 799, 1000, 200));
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)SbusWatchdogTransition::JUST_RESTORED,
+                            (uint8_t)sbusWatchdogCheck(&watchdog, 1050, 1100, 200));
+    TEST_ASSERT_FALSE(watchdog.signalLost);
+}
+
+void test_sbus_watchdog_sustained_restored_is_ok() {
+    SbusWatchdog watchdog = {};
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)SbusWatchdogTransition::JUST_LOST,
+                            (uint8_t)sbusWatchdogCheck(&watchdog, 799, 1000, 200));
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)SbusWatchdogTransition::JUST_RESTORED,
+                            (uint8_t)sbusWatchdogCheck(&watchdog, 1050, 1100, 200));
+    TEST_ASSERT_EQUAL_UINT8((uint8_t)SbusWatchdogTransition::OK,
+                            (uint8_t)sbusWatchdogCheck(&watchdog, 1150, 1200, 200));
+    TEST_ASSERT_FALSE(watchdog.signalLost);
+}
+
 int main() {
     UNITY_BEGIN();
 
@@ -91,6 +133,11 @@ int main() {
     RUN_TEST(test_sbus_zero_timeout_immediate_timeout);
     RUN_TEST(test_sbus_standard_200ms_timeout);
     RUN_TEST(test_sbus_long_timeout_for_weak_signal);
+    RUN_TEST(test_sbus_watchdog_ok_no_timeout);
+    RUN_TEST(test_sbus_watchdog_just_lost_first_timeout);
+    RUN_TEST(test_sbus_watchdog_mid_lost_sustained_timeout);
+    RUN_TEST(test_sbus_watchdog_just_restored_first_recovery);
+    RUN_TEST(test_sbus_watchdog_sustained_restored_is_ok);
 
     return UNITY_END();
 }

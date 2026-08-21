@@ -7,12 +7,15 @@
 // - Fallback-friendly: pages may use polling if EventSource is unavailable
 // =============================================================================
 (() => {
-  const RETRY_MS = 2000;
+  const RETRY_BASE_MS = 2000;
+  const RETRY_MAX_MS  = 30000;
+  let retryCount = 0;
 
   let source = null;
   let reconnectTimer = null;
   let lastStatus = null;
   let visible = document.visibilityState !== "hidden";
+  let assetsReady = window.PAAssetsReady === true;
   const listeners = new Set();
 
   const emit = (eventType, payload) => {
@@ -20,7 +23,7 @@
       try {
         listener(eventType, payload);
       } catch (_error) {
-        // Listener errors must not break stream fan-out.
+        // swallow: listener errors must not break stream fan-out to other subscribers
       }
     });
   };
@@ -34,10 +37,16 @@
 
   const scheduleReconnect = () => {
     if (reconnectTimer !== null || !visible || typeof EventSource === "undefined") return;
+    // Half-to-full jitter: multiple open pages/tabs losing the stream at the
+    // same moment (device reboot, guard rejection storm) must not reconnect
+    // in lockstep and re-burst a recovering device.
+    const ceiling = Math.min(RETRY_BASE_MS * Math.pow(2, retryCount), RETRY_MAX_MS);
+    const delay = ceiling / 2 + Math.random() * (ceiling / 2);
+    retryCount++;
     reconnectTimer = window.setTimeout(() => {
       reconnectTimer = null;
       connect();
-    }, RETRY_MS);
+    }, delay);
   };
 
   const close = () => {
@@ -47,15 +56,26 @@
   };
 
   const connect = () => {
-    if (source || !visible || typeof EventSource === "undefined") return;
+    if (!assetsReady || source || !visible || typeof EventSource === "undefined") return;
 
     source = new EventSource("/api/events");
+
+    // Status events are delta-triggered: after a reconnect, an idle device
+    // may push nothing for a long time, which left pages showing a stale
+    // "connection lost" state despite a live stream. Re-emitting the last
+    // known status on open lets existing page logic clear that state.
+    source.onopen = () => {
+      retryCount = 0;
+      if (lastStatus) emit("status", lastStatus);
+    };
 
     source.addEventListener("status", (event) => {
       try {
         lastStatus = JSON.parse(event.data);
         emit("status", lastStatus);
+        retryCount = 0;
       } catch (_error) {
+        // JSON parse failed — emit malformed payload error to subscribers
         emit("status_error", new Error("Malformed status event payload"));
       }
     });
@@ -83,6 +103,10 @@
   };
 
   document.addEventListener("visibilitychange", onVisibilityChange);
+  window.addEventListener("pa:assets-ready", () => {
+    assetsReady = true;
+    if (listeners.size > 0) connect();
+  }, { once: true });
 
   window.PAStatusStream = {
     subscribe(listener) {
@@ -91,7 +115,7 @@
         try {
           listener("status", lastStatus);
         } catch (_error) {
-          // Keep subscribe path resilient.
+          // swallow: listener error during initial status delivery — subscription succeeds
         }
       }
       connect();

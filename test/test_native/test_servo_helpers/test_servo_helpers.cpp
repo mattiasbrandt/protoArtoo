@@ -52,52 +52,125 @@ void test_arm_invalid_large_returns_ledc_max() {
 // --- servo_arm_enabled -------------------------------------------------------
 
 void test_arm0_enabled_when_arm1_flag_true() {
-    TEST_ASSERT_TRUE(servo_arm_enabled(0, true, false, false, false, false));
+    TEST_ASSERT_TRUE(servo_arm_enabled(0, true, false, false, false, false, AUX_LED_PIN_DISABLED));
 }
 
 void test_arm0_disabled_when_arm1_flag_false() {
-    TEST_ASSERT_FALSE(servo_arm_enabled(0, false, true, true, true, true));
+    TEST_ASSERT_FALSE(servo_arm_enabled(0, false, true, true, true, true, AUX_LED_PIN_DISABLED));
 }
 
 void test_arm1_enabled_when_arm2_flag_true() {
-    TEST_ASSERT_TRUE(servo_arm_enabled(1, false, true, false, false, false));
+    TEST_ASSERT_TRUE(servo_arm_enabled(1, false, true, false, false, false, AUX_LED_PIN_DISABLED));
 }
 
 void test_arm1_disabled_when_arm2_flag_false() {
-    TEST_ASSERT_FALSE(servo_arm_enabled(1, true, false, true, true, true));
+    TEST_ASSERT_FALSE(servo_arm_enabled(1, true, false, true, true, true, AUX_LED_PIN_DISABLED));
 }
 
 void test_arm2_aux1_enabled_when_aux1_flag_true() {
-    TEST_ASSERT_TRUE(servo_arm_enabled(2, false, false, true, false, false));
+    TEST_ASSERT_TRUE(servo_arm_enabled(2, false, false, true, false, false, AUX_LED_PIN_DISABLED));
 }
 
 void test_arm3_aux2_enabled_when_aux2_flag_true() {
-    TEST_ASSERT_TRUE(servo_arm_enabled(3, false, false, false, true, false));
+    TEST_ASSERT_TRUE(servo_arm_enabled(3, false, false, false, true, false, AUX_LED_PIN_DISABLED));
 }
 
 void test_arm4_aux3_enabled_when_aux3_flag_true() {
-    TEST_ASSERT_TRUE(servo_arm_enabled(4, false, false, false, false, true));
+    TEST_ASSERT_TRUE(servo_arm_enabled(4, false, false, false, false, true, AUX_LED_PIN_DISABLED));
 }
 
 void test_broadcast_255_enabled_when_both_arm1_arm2_true() {
-    TEST_ASSERT_TRUE(servo_arm_enabled(255, true, true, false, false, false));
+    TEST_ASSERT_TRUE(servo_arm_enabled(255, true, true, false, false, false, AUX_LED_PIN_DISABLED));
 }
 
 void test_broadcast_255_disabled_when_arm1_false() {
-    TEST_ASSERT_FALSE(servo_arm_enabled(255, false, true, true, true, true));
+    TEST_ASSERT_FALSE(servo_arm_enabled(255, false, true, true, true, true, AUX_LED_PIN_DISABLED));
 }
 
 void test_broadcast_255_disabled_when_arm2_false() {
-    TEST_ASSERT_FALSE(servo_arm_enabled(255, true, false, true, true, true));
+    TEST_ASSERT_FALSE(servo_arm_enabled(255, true, false, true, true, true, AUX_LED_PIN_DISABLED));
 }
 
 void test_broadcast_255_disabled_when_both_false() {
-    TEST_ASSERT_FALSE(servo_arm_enabled(255, false, false, true, true, true));
+    TEST_ASSERT_FALSE(servo_arm_enabled(255, false, false, true, true, true, AUX_LED_PIN_DISABLED));
 }
 
 void test_unknown_arm_id_returns_false() {
-    TEST_ASSERT_FALSE(servo_arm_enabled(5, true, true, true, true, true));
-    TEST_ASSERT_FALSE(servo_arm_enabled(100, true, true, true, true, true));
+    TEST_ASSERT_FALSE(servo_arm_enabled(5, true, true, true, true, true, AUX_LED_PIN_DISABLED));
+    TEST_ASSERT_FALSE(servo_arm_enabled(100, true, true, true, true, true, AUX_LED_PIN_DISABLED));
+}
+
+// AUX LED pin reservation must disable the matching AUX servo arm only.
+void test_aux1_reserved_blocks_arm2_servo() {
+    TEST_ASSERT_FALSE(servo_arm_enabled(2, false, false, true, true, true, AUX_LED_PIN_AUX1));
+    TEST_ASSERT_TRUE(servo_arm_enabled(3, false, false, true, true, true, AUX_LED_PIN_AUX1));
+    TEST_ASSERT_TRUE(servo_arm_enabled(4, false, false, true, true, true, AUX_LED_PIN_AUX1));
+}
+
+void test_aux2_reserved_blocks_arm3_servo() {
+    TEST_ASSERT_TRUE(servo_arm_enabled(2, false, false, true, true, true, AUX_LED_PIN_AUX2));
+    TEST_ASSERT_FALSE(servo_arm_enabled(3, false, false, true, true, true, AUX_LED_PIN_AUX2));
+    TEST_ASSERT_TRUE(servo_arm_enabled(4, false, false, true, true, true, AUX_LED_PIN_AUX2));
+}
+
+void test_aux3_reserved_blocks_arm4_servo() {
+    TEST_ASSERT_TRUE(servo_arm_enabled(2, false, false, true, true, true, AUX_LED_PIN_AUX3));
+    TEST_ASSERT_TRUE(servo_arm_enabled(3, false, false, true, true, true, AUX_LED_PIN_AUX3));
+    TEST_ASSERT_FALSE(servo_arm_enabled(4, false, false, true, true, true, AUX_LED_PIN_AUX3));
+}
+
+// --- servo_enabled_ledc_mask -------------------------------------------------
+
+void test_ledc_mask_all_on_no_reservation() {
+    // All channels enabled, no AUX LED reservation.
+    // Expected mask: bits 0-5 set (0x3F)
+    uint8_t mask = servo_enabled_ledc_mask(true, true, true, true, true, true, AUX_LED_PIN_DISABLED);
+    TEST_ASSERT_EQUAL_UINT8(0x3F, mask);
+}
+
+void test_ledc_mask_all_off() {
+    // All channels disabled.
+    // Expected mask: 0x00
+    uint8_t mask = servo_enabled_ledc_mask(false, false, false, false, false, false, AUX_LED_PIN_DISABLED);
+    TEST_ASSERT_EQUAL_UINT8(0x00, mask);
+}
+
+void test_ledc_mask_dome_only() {
+    // Only dome enabled.
+    // Expected mask: bit 2 set (0x04)
+    uint8_t mask = servo_enabled_ledc_mask(false, false, false, false, false, true, AUX_LED_PIN_DISABLED);
+    TEST_ASSERT_EQUAL_UINT8(0x04, mask);
+}
+
+void test_ledc_mask_aux1_reserved_excluded() {
+    // All AUX channels enabled, but AUX1 reserved for LED.
+    // arm1=false, arm2=true, aux1=true (reserved), aux2=true, aux3=true, dome=false, LED=AUX1
+    // Expected: bit 1 (ARM2), bit 4 (AUX2), bit 5 (AUX3) = 0b110010 = 0x32 = 50
+    uint8_t mask = servo_enabled_ledc_mask(false, true, true, true, true, false, AUX_LED_PIN_AUX1);
+    TEST_ASSERT_EQUAL_UINT8(0x32, mask);
+}
+
+void test_ledc_mask_aux2_reserved_excluded() {
+    // All AUX channels enabled, AUX2 reserved for LED.
+    // arm1=true, arm2=false, aux1=true, aux2=true (reserved), aux3=true, dome=false
+    // Expected: 0b101001 = 0x29
+    uint8_t mask = servo_enabled_ledc_mask(true, false, true, true, true, false, AUX_LED_PIN_AUX2);
+    TEST_ASSERT_EQUAL_UINT8(0x29, mask);
+}
+
+void test_ledc_mask_aux3_reserved_excluded() {
+    // All AUX channels enabled, AUX3 reserved for LED.
+    // arm1=true, arm2=true, aux1=true, aux2=true, aux3=true (reserved), dome=false
+    // Expected: bits 0,1,3,4 set = 0b011011 = 0x1B = 27
+    uint8_t mask = servo_enabled_ledc_mask(true, true, true, true, true, false, AUX_LED_PIN_AUX3);
+    TEST_ASSERT_EQUAL_UINT8(0x1B, mask);
+}
+
+void test_ledc_mask_servo_and_dome() {
+    // ARM1, ARM2, and DOME enabled, no AUX, no LED reservation.
+    // Expected: bits 0,1,2 set = 0x07
+    uint8_t mask = servo_enabled_ledc_mask(true, true, false, false, false, true, AUX_LED_PIN_DISABLED);
+    TEST_ASSERT_EQUAL_UINT8(0x07, mask);
 }
 
 int main() {
@@ -124,6 +197,17 @@ int main() {
     RUN_TEST(test_broadcast_255_disabled_when_arm2_false);
     RUN_TEST(test_broadcast_255_disabled_when_both_false);
     RUN_TEST(test_unknown_arm_id_returns_false);
+    RUN_TEST(test_aux1_reserved_blocks_arm2_servo);
+    RUN_TEST(test_aux2_reserved_blocks_arm3_servo);
+    RUN_TEST(test_aux3_reserved_blocks_arm4_servo);
+
+    RUN_TEST(test_ledc_mask_all_on_no_reservation);
+    RUN_TEST(test_ledc_mask_all_off);
+    RUN_TEST(test_ledc_mask_dome_only);
+    RUN_TEST(test_ledc_mask_aux1_reserved_excluded);
+    RUN_TEST(test_ledc_mask_aux2_reserved_excluded);
+    RUN_TEST(test_ledc_mask_aux3_reserved_excluded);
+    RUN_TEST(test_ledc_mask_servo_and_dome);
 
     return UNITY_END();
 }

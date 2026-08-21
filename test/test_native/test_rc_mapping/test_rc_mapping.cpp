@@ -64,6 +64,27 @@ void test_switch_state_uses_thresholds() {
     TEST_ASSERT_EQUAL_UINT8(RC_SWITCH_HIGH, rcAnalogToSwitchState(1800, binding));
 }
 
+void test_rc_trigger_default_reverse_applies_to_sbus_buttons() {
+    TEST_ASSERT_TRUE(rcTriggerDefaultReverse(RC_BINDING_SBUS1, 3));
+    TEST_ASSERT_TRUE(rcTriggerDefaultReverse(RC_BINDING_SBUS1, 6));
+    TEST_ASSERT_TRUE(rcTriggerDefaultReverse(RC_BINDING_SBUS2, 4));
+    TEST_ASSERT_TRUE(rcTriggerDefaultReverse(RC_BINDING_SBUS2, 5));
+}
+
+void test_rc_trigger_default_reverse_ignores_non_button_channels() {
+    TEST_ASSERT_FALSE(rcTriggerDefaultReverse(RC_BINDING_PWM, 3));
+    TEST_ASSERT_FALSE(rcTriggerDefaultReverse(RC_BINDING_SBUS1, 2));
+    TEST_ASSERT_FALSE(rcTriggerDefaultReverse(RC_BINDING_SBUS2, 7));
+}
+
+void test_robot_action_is_one_shot_button_classification() {
+    TEST_ASSERT_TRUE(robotActionIsOneShotButton(SOUND_ACTION_RANDOM_HUMMING));
+    TEST_ASSERT_TRUE(robotActionIsOneShotButton(DOME_ACTION_MARCDUINO_SEQ));
+    TEST_ASSERT_TRUE(robotActionIsOneShotButton(SYSTEM_ACTION_SLEEP_TOGGLE));
+    TEST_ASSERT_FALSE(robotActionIsOneShotButton(SERVO_ACTION_ARM1_TOGGLE));
+    TEST_ASSERT_FALSE(robotActionIsOneShotButton(SYSTEM_ACTION_OP_MODE));
+}
+
 // --- Edge case tests for parseRcBindingConfig ---
 
 void test_parse_rejects_empty_string() {
@@ -249,12 +270,12 @@ void test_trigger_parse_accepts_colon_payload() {
     TEST_ASSERT_TRUE(parseRcTriggerBinding("sbus1:6:cmd::OP01:172:992:1811:0:0", &binding));
     TEST_ASSERT_EQUAL_UINT8(RC_BINDING_SBUS1, binding.source);
     TEST_ASSERT_EQUAL_UINT8(6, binding.channel);
-    TEST_ASSERT_EQUAL_UINT8(RC_ACTION_MARCDUINO_CMD, binding.target);
+    TEST_ASSERT_EQUAL_UINT8(DOME_ACTION_MARCDUINO_CMD, binding.target);
     TEST_ASSERT_EQUAL_STRING(":OP01", binding.marcduinoPayload);
 }
 
 void test_trigger_format_round_trip_keeps_colon_payload() {
-    RcTriggerBinding input = makeRcTriggerBinding(RC_BINDING_SBUS1, 7, RC_ACTION_MARCDUINO_CMD,
+    RcTriggerBinding input = makeRcTriggerBinding(RC_BINDING_SBUS1, 7, DOME_ACTION_MARCDUINO_CMD,
                                                   ":MV120", 172, 992, 1811, 0, false);
     char encoded[96] = {};
     RcTriggerBinding decoded = {};
@@ -270,7 +291,7 @@ void test_trigger_format_round_trip_keeps_colon_payload() {
 void test_trigger_parse_accepts_dome_seq_payload() {
     RcTriggerBinding binding = {};
     TEST_ASSERT_TRUE(parseRcTriggerBinding("sbus2:3:dome_seq:12:172:992:1811:0:0", &binding));
-    TEST_ASSERT_EQUAL_UINT8(RC_ACTION_DOME_SEQ, binding.target);
+    TEST_ASSERT_EQUAL_UINT8(DOME_ACTION_SEQ, binding.target);
     TEST_ASSERT_EQUAL_STRING("12", binding.marcduinoPayload);
 }
 
@@ -289,6 +310,94 @@ void test_trigger_parse_rejects_uint16_field_overflow() {
     TEST_ASSERT_FALSE(parseRcTriggerBinding("sbus1:6:cmd::OP01:70000:992:1811:0:0", &binding));
 }
 
+void test_sound_random_action_tokens_round_trip() {
+    const RobotActionId ids[] = {
+        SOUND_ACTION_RANDOM_GENERAL,     SOUND_ACTION_RANDOM_CHATTY,
+        SOUND_ACTION_RANDOM_HAPPY,       SOUND_ACTION_RANDOM_PROCESSING,
+        SOUND_ACTION_RANDOM_SAD,         SOUND_ACTION_RANDOM_SENTIMENTAL,
+        SOUND_ACTION_RANDOM_HUMMING,     SOUND_ACTION_RANDOM_SCREAM,
+        SOUND_ACTION_RANDOM_SURPRISED,   SOUND_ACTION_RANDOM_ALERT,
+        SOUND_ACTION_RANDOM_SNARKY,        SOUND_ACTION_RANDOM_WHISTLE,
+    };
+
+    for (size_t i = 0; i < sizeof(ids) / sizeof(ids[0]); ++i) {
+        const char* token = robotActionIdToString(ids[i]);
+        TEST_ASSERT_NOT_NULL(token);
+        TEST_ASSERT_NOT_EQUAL(0, strcmp(token, "none"));
+
+        RobotActionId parsed = ROBOT_ACTION_NONE;
+        TEST_ASSERT_TRUE(parseRobotActionId(token, &parsed));
+        TEST_ASSERT_EQUAL_UINT8(ids[i], parsed);
+    }
+}
+
+void test_droid_sequence_action_tokens_round_trip() {
+    struct Expected {
+        RobotActionId id;
+        const char* token;
+        int seqId;
+    };
+    const Expected expected[] = {
+        {DROID_SEQ_SCREAM, "droid_seq_scream", 1},
+        {DROID_SEQ_WAVE, "droid_seq_wave", 2},
+        {DROID_SEQ_FAST_WAVE, "droid_seq_fast_wave", 3},
+        {DROID_SEQ_OPEN_WAVE, "droid_seq_open_wave", 4},
+        {DROID_SEQ_BEEP_CANTINA, "droid_seq_beep_cantina", 5},
+        {DROID_SEQ_FAINT, "droid_seq_faint", 6},
+        {DROID_SEQ_CANTINA, "droid_seq_cantina", 7},
+        {DROID_SEQ_LEIA, "droid_seq_leia", 8},
+        {DROID_SEQ_DISCO, "droid_seq_disco", 9},
+        {DROID_SEQ_SCREAMS, "droid_seq_screams", 15},
+        {DROID_SEQ_WIGGLE, "droid_seq_wiggle", 16},
+    };
+
+    for (size_t i = 0; i < sizeof(expected) / sizeof(expected[0]); ++i) {
+        const char* token = robotActionIdToString(expected[i].id);
+        TEST_ASSERT_EQUAL_STRING(expected[i].token, token);
+
+        RobotActionId parsed = ROBOT_ACTION_NONE;
+        TEST_ASSERT_TRUE(parseRobotActionId(token, &parsed));
+        TEST_ASSERT_EQUAL_UINT8(expected[i].id, parsed);
+
+        TEST_ASSERT_TRUE(robotActionIsButton(expected[i].id));
+        TEST_ASSERT_TRUE(robotActionValidForTier2(expected[i].id));
+        TEST_ASSERT_FALSE(robotActionNeedsPayload(expected[i].id));
+        TEST_ASSERT_EQUAL_INT(expected[i].seqId, robotActionIdToDroidSeqId(expected[i].id));
+    }
+}
+
+void test_droid_sequence_helper_returns_minus_one_for_non_droid_actions() {
+    TEST_ASSERT_EQUAL_INT(-1, robotActionIdToDroidSeqId(ROBOT_ACTION_NONE));
+    TEST_ASSERT_EQUAL_INT(-1, robotActionIdToDroidSeqId(SERVO_ACTION_ARM1_TOGGLE));
+    TEST_ASSERT_EQUAL_INT(-1, robotActionIdToDroidSeqId(DOME_ACTION_SEQ));
+    TEST_ASSERT_EQUAL_INT(-1, robotActionIdToDroidSeqId(SYSTEM_ACTION_ESTOP));
+}
+
+void test_sound_random_category_labels() {
+    struct Expected {
+        RobotActionId id;
+        const char* label;
+    };
+    const Expected expected[] = {
+        {SOUND_ACTION_RANDOM_GENERAL, "general"},
+        {SOUND_ACTION_RANDOM_CHATTY, "chatty"},
+        {SOUND_ACTION_RANDOM_HAPPY, "happy"},
+        {SOUND_ACTION_RANDOM_PROCESSING, "processing"},
+        {SOUND_ACTION_RANDOM_SAD, "sad"},
+        {SOUND_ACTION_RANDOM_SENTIMENTAL, "sentimental"},
+        {SOUND_ACTION_RANDOM_HUMMING, "humming"},
+        {SOUND_ACTION_RANDOM_SCREAM, "scream"},
+        {SOUND_ACTION_RANDOM_SURPRISED, "surprised"},
+        {SOUND_ACTION_RANDOM_ALERT, "alert"},
+        {SOUND_ACTION_RANDOM_SNARKY, "snarky"},
+        {SOUND_ACTION_RANDOM_WHISTLE, "whistle"},
+    };
+    for (size_t i = 0; i < sizeof(expected) / sizeof(expected[0]); ++i) {
+        TEST_ASSERT_EQUAL_STRING(expected[i].label, randomSoundCategoryLabel(expected[i].id));
+    }
+    TEST_ASSERT_NULL(randomSoundCategoryLabel(SYSTEM_ACTION_ESTOP));
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_parse_pwm_binding);
@@ -299,6 +408,9 @@ int main() {
     RUN_TEST(test_apply_calibration_reports_deadband);
     RUN_TEST(test_sbus_digital_channels_are_flagged_digital);
     RUN_TEST(test_switch_state_uses_thresholds);
+    RUN_TEST(test_rc_trigger_default_reverse_applies_to_sbus_buttons);
+    RUN_TEST(test_rc_trigger_default_reverse_ignores_non_button_channels);
+    RUN_TEST(test_robot_action_is_one_shot_button_classification);
 
     // Edge case tests
     RUN_TEST(test_parse_rejects_empty_string);
@@ -340,6 +452,10 @@ int main() {
     RUN_TEST(test_trigger_parse_rejects_channel_overflow_wraparound);
     RUN_TEST(test_trigger_parse_rejects_reverse_overflow);
     RUN_TEST(test_trigger_parse_rejects_uint16_field_overflow);
+    RUN_TEST(test_sound_random_action_tokens_round_trip);
+    RUN_TEST(test_sound_random_category_labels);
+    RUN_TEST(test_droid_sequence_action_tokens_round_trip);
+    RUN_TEST(test_droid_sequence_helper_returns_minus_one_for_non_droid_actions);
 
     return UNITY_END();
 }

@@ -1,26 +1,29 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-scripts="/web_api.js,/diagnostics.js,/status_stream.js,/shell.js,/setup.js,/footer.js">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Setup - protoArtoo</title>
     <link rel="stylesheet" href="/style.css">
     <link rel="icon" type="image/png" href="/r2d2body-favicon.png">
+    <!-- PA:INCLUDE _recovery_kernel.html -->
   </head>
   <body data-page="setup">
     <div id="shell-top"></div>
 
-
     <div class="board-image-wrap">
-      <img src="/artoo_board.jpg" alt="Artoo Controller PCB" title="Artoo Controller PCB">
+      <img data-deferred-src="/artoo_board.jpg" alt="Artoo Controller PCB" title="Artoo Controller PCB">
     </div>
+
     <div class="card">
       <h3>🔧 Hardware Components</h3>
-      <div class="desc">Enable the hardware modules connected to your Artoo Controller.
-        Disabled components are hidden from all pages and not driven by the firmware.</div>
+      <div class="setup-toolbar mt-16">
+        <span id="setup-enabled-summary" class="status-pill pill-ok">✅ 0 enabled</span>
+        <span id="setup-save-summary" class="status-pill pill-info">💾 Auto-save ready</span>
+      </div>
       <form id="feature-form" class="mt-16">
 
-        <div class="section-label">ARM &amp; AUX</div>
+        <div class="section-label">🤖 ARM &amp; AUX</div>
         <div class="component-row">
           <label class="toggle-switch" title="AUX1 / ARM3 (GPIO 19) — Auxiliary PWM output 1">
             <input type="checkbox" id="enable-aux1" name="enableAux1">
@@ -28,11 +31,17 @@
             <span class="toggle-label">AUX1</span>
             <span class="toggle-status" id="status-aux1">Disabled</span>
           </label>
-          <select class="type-select" id="type-aux1" title="Component type connected to AUX1 / ARM3" aria-label="AUX1 component type">
+          <div class="type-segmented" id="seg-type-aux1" data-target="type-aux1" role="group" aria-label="AUX1 component type">
+            <button type="button" class="seg-option is-active" data-value="none">None</button>
+            <button type="button" class="seg-option" data-value="mg996r">MG996R</button>
+            <button type="button" class="seg-option" data-value="mg90s">MG90S</button>
+            <button type="button" class="seg-option" data-value="rgb">LED strip</button>
+          </div>
+          <select class="type-select type-select-native" id="type-aux1" title="Component type connected to AUX1 / ARM3" aria-label="AUX1 component type" tabindex="-1" aria-hidden="true">
             <option value="none">Nothing connected</option>
             <option value="mg996r">MG996R servo</option>
             <option value="mg90s">MG90S servo</option>
-            <option value="rgb">RGB LED strip</option>
+            <option value="rgb">LED strip</option>
           </select>
         </div>
         <div class="component-row">
@@ -42,11 +51,17 @@
             <span class="toggle-label">AUX2</span>
             <span class="toggle-status" id="status-aux2">Disabled</span>
           </label>
-          <select class="type-select" id="type-aux2" title="Component type connected to AUX2 / ARM4" aria-label="AUX2 component type">
+          <div class="type-segmented" id="seg-type-aux2" data-target="type-aux2" role="group" aria-label="AUX2 component type">
+            <button type="button" class="seg-option is-active" data-value="none">None</button>
+            <button type="button" class="seg-option" data-value="mg996r">MG996R</button>
+            <button type="button" class="seg-option" data-value="mg90s">MG90S</button>
+            <button type="button" class="seg-option" data-value="rgb">LED strip</button>
+          </div>
+          <select class="type-select type-select-native" id="type-aux2" title="Component type connected to AUX2 / ARM4" aria-label="AUX2 component type" tabindex="-1" aria-hidden="true">
             <option value="none">Nothing connected</option>
             <option value="mg996r">MG996R servo</option>
             <option value="mg90s">MG90S servo</option>
-            <option value="rgb">RGB LED strip</option>
+            <option value="rgb">LED strip</option>
           </select>
         </div>
         <div class="component-row">
@@ -56,13 +71,21 @@
             <span class="toggle-label">AUX3</span>
             <span class="toggle-status" id="status-aux3">Disabled</span>
           </label>
-          <select class="type-select" id="type-aux3" title="Component type connected to AUX3 / ARM5" aria-label="AUX3 component type">
+          <div class="type-segmented" id="seg-type-aux3" data-target="type-aux3" role="group" aria-label="AUX3 component type">
+            <button type="button" class="seg-option is-active" data-value="none">None</button>
+            <button type="button" class="seg-option" data-value="mg996r">MG996R</button>
+            <button type="button" class="seg-option" data-value="mg90s">MG90S</button>
+            <button type="button" class="seg-option" data-value="rgb">LED strip</button>
+          </div>
+          <select class="type-select type-select-native" id="type-aux3" title="Component type connected to AUX3 / ARM5" aria-label="AUX3 component type" tabindex="-1" aria-hidden="true">
             <option value="none">Nothing connected</option>
             <option value="mg996r">MG996R servo</option>
             <option value="mg90s">MG90S servo</option>
-            <option value="rgb">RGB LED strip</option>
+            <option value="rgb">LED strip</option>
           </select>
         </div>
+
+
         <div class="component-row">
           <label class="toggle-switch" title="ARM2 (GPIO 5) — Right utility arm servo">
             <input type="checkbox" id="enable-arm2" name="enableArm2">
@@ -70,7 +93,11 @@
             <span class="toggle-label">ARM2</span>
             <span class="toggle-status" id="status-arm2">Disabled</span>
           </label>
-          <select class="type-select" id="type-arm2" title="Component type connected to ARM2" aria-label="ARM2 component type">
+          <div class="type-segmented" id="seg-type-arm2" data-target="type-arm2" role="group" aria-label="ARM2 component type">
+            <button type="button" class="seg-option is-active" data-value="mg996r">MG996R</button>
+            <button type="button" class="seg-option" data-value="mg90s">MG90S</button>
+          </div>
+          <select class="type-select type-select-native" id="type-arm2" title="Component type connected to ARM2" aria-label="ARM2 component type" tabindex="-1" aria-hidden="true">
             <option value="mg996r">MG996R (standard)</option>
             <option value="mg90s">MG90S (micro)</option>
           </select>
@@ -82,7 +109,11 @@
             <span class="toggle-label">ARM1</span>
             <span class="toggle-status" id="status-arm1">Disabled</span>
           </label>
-          <select class="type-select" id="type-arm1" title="Component type connected to ARM1" aria-label="ARM1 component type">
+          <div class="type-segmented" id="seg-type-arm1" data-target="type-arm1" role="group" aria-label="ARM1 component type">
+            <button type="button" class="seg-option is-active" data-value="mg996r">MG996R</button>
+            <button type="button" class="seg-option" data-value="mg90s">MG90S</button>
+          </div>
+          <select class="type-select type-select-native" id="type-arm1" title="Component type connected to ARM1" aria-label="ARM1 component type" tabindex="-1" aria-hidden="true">
             <option value="mg996r">MG996R (standard)</option>
             <option value="mg90s">MG90S (micro)</option>
           </select>
@@ -94,7 +125,10 @@
           <span class="toggle-status" id="status-dome">Disabled</span>
         </label>
 
-        <div class="section-label">RX IN/OUT</div>
+        <div class="section-label">🎮 RX IN/OUT</div>
+        <div class="info-note" role="note">
+          RC input changes save immediately and apply after controller restart.
+        </div>
         <div class="component-row">
           <label class="toggle-switch" title="CH1 (GPIO 15) — SBUS drive receiver or PWM input 1">
             <input type="checkbox" id="enable-rc-ch1" name="enableRcCh1">
@@ -144,7 +178,7 @@
           </label>
         </div>
 
-        <div class="section-label">SERIAL COMMS</div>
+        <div class="section-label">🔌 SERIAL COMMS</div>
         <div class="component-row">
           <label class="toggle-switch" title="S1 (GPIO 16/17) — Hoverboard drive motor controller">
             <input type="checkbox" id="enable-s1-hoverboard" name="enableS1Hoverboard">
@@ -153,17 +187,17 @@
             <span class="toggle-status" id="status-s1-hoverboard">Disabled</span>
           </label>
         </div>
-        <div class="component-row stack">
-          <label class="toggle-switch full-width" title="S2 (GPIO 26/35) — Audio module TX. Backend selected by PA_AUDIO_DRIVER build flag: AUDIO_SOFT_UART for DY-SV5W, AUDIO_CHIRP for CHIRP board.">
+        <div class="component-row">
+          <label class="toggle-switch" title="S2 (GPIO 26/35) — Sound module TX. Backend selected by PA_AUDIO_DRIVER build flag: AUDIO_SOFT_UART for DY-SV5W, AUDIO_CHIRP for CHIRP board.">
             <input type="checkbox" id="enable-s2-sound" name="enableS2Sound">
             <span class="toggle-slider"></span>
             <span class="toggle-label">S2 — Sound</span>
-            <span class="toggle-status" id="status-s2-sound">Disabled</span>
             <span id="s2-driver-label" class="s2-driver-label"></span>
+            <span class="toggle-status" id="status-s2-sound">Disabled</span>
           </label>
         </div>
         <div class="component-row">
-          <label class="toggle-switch" title="S3 (GPIO 33/34) — Dome controller serial link (slip ring)">
+          <label class="toggle-switch" title="S3 (GPIO 33/34) — protoR2link serial transport (slip ring)">
             <input type="checkbox" id="enable-s3-dome-ctrl" name="enableS3DomeCtrl">
             <span class="toggle-slider"></span>
             <span class="toggle-label">S3 — Dome Control</span>
@@ -171,9 +205,7 @@
           </label>
         </div>
 
-        <div class="info-note" role="note" aria-label="Receiver and serial compatibility notice">
-          <div>S3 Dome Control and Dual SBUS receiver #2 cannot be used at the same time.</div>
-          <div>When hoverboard drive (S1) is enabled, use Standard PWM for RC drive input.</div>
+        <div class="info-note" role="note" aria-label="RC receiver mode note">
           <div>In Stationary mode, Dual SBUS is usually unnecessary — Single SBUS or Standard PWM is recommended.</div>
         </div>
 
@@ -181,26 +213,48 @@
       <div id="feature-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true">Loading component settings...</div>
     </div>
 
+    <!-- LED Strip -->
+    <div class="card">
+      <h3>💡 LED Strip</h3>
+      <div class="desc">Configure AUX LED strip routing and live output preview. Route is set by enabling AUX1/AUX2/AUX3 and selecting LED strip as that AUX component type.</div>
+      <div class="component-row mt-16">
+        <label class="toggle-switch" for="aux-led-count" title="LED strip count for the routed AUX LED output">
+          <span class="toggle-label">LED strip count</span>
+          <span class="toggle-status" id="aux-led-route-status">Not routed</span>
+        </label>
+        <input id="aux-led-count" class="type-select" name="auxLedCount" type="number" min="1" max="255" step="1" value="1" aria-label="LED strip count">
+        <span id="aux-led-route-badge" class="status-pill pill-info status-pill-compact">🔗 Not routed</span>
+      </div>
+      <div class="mt-12" aria-live="polite" aria-atomic="true">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span id="aux-led-swatch" style="display:inline-block;width:22px;height:22px;border-radius:50%;border:1px solid var(--border);background:rgb(0,0,0);"></span>
+          <span id="aux-led-preview-text" class="desc"></span>
+        </div>
+        <div id="aux-led-preview-note" class="desc mt-6"></div>
+      </div>
+    </div>
+
     <!-- Serial Connection Status -->
     <div class="card">
       <h3>🔌 Serial Status</h3>
-      <div class="desc">Live connection state for the three configurable serial ports.</div>
       <div class="status-grid mt-16">
-        <div class="status-item">
-          <dt>S1 — Hoverboard</dt>
-          <dd id="serial-s1-state">...</dd>
-          <div class="desc mt-6">GPIO 16/17 · UART1 · 115200 baud</div>
-        </div>
-        <div class="status-item">
-          <dt>S2 — Sound</dt>
-          <dd id="serial-s2-state">...</dd>
-          <div class="desc mt-6">GPIO 26/35 · audio serial (driver-dependent) · 9600 baud</div>
-        </div>
-        <div class="status-item">
-          <dt>S3 — Dome Link</dt>
-          <dd id="serial-s3-state">...</dd>
-          <div class="desc mt-6">GPIO 33/34 · UART2 · 9600 baud</div>
-        </div>
+        <dl>
+          <div class="status-item">
+            <dt>S1 — Hoverboard</dt>
+            <dd id="serial-s1-state">...</dd>
+            <div class="desc mt-6" title="GPIO 16/17 · UART1 · 115200 baud">UART1 · 115200 baud</div>
+          </div>
+          <div class="status-item">
+            <dt>S2 — Sound</dt>
+            <dd id="serial-s2-state">...</dd>
+            <div class="desc mt-6" title="GPIO 26/35 · sound serial (driver-dependent) · 9600 baud">Sound serial (driver-dependent) · 9600 baud</div>
+          </div>
+          <div class="status-item">
+            <dt>S3 — Dome Link</dt>
+            <dd id="serial-s3-state">...</dd>
+            <div class="desc mt-6" title="GPIO 33/34 · UART2 · 9600 baud">UART2 · 9600 baud</div>
+          </div>
+        </dl>
       </div>
       <div id="serial-status-line" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true"></div>
     </div>
@@ -208,49 +262,204 @@
     <!-- Diagnostics -->
     <div class="card">
       <h3>🩺 Diagnostics</h3>
-      <div class="desc">Controls what the firmware writes to the serial console and the live log
-        panel. Takes effect immediately — no reboot needed. The setting persists across reboots.</div>
       <form id="diag-form" class="form-grid mt-16">
         <label class="field" for="log-level-select">
           <span>Log verbosity</span>
           <select id="log-level-select" name="logLevel">
-            <option value="1">1 — Error only (faults and crashes)</option>
-            <option value="2">2 — Info (normal boot and service messages)</option>
-            <option value="3">3 — Debug (verbose, for development and fault diagnosis)</option>
+            <option value="1">1 — Error only (loss of function)</option>
+            <option value="2">2 — Warning (faults and safety warnings — recommended minimum)</option>
+            <option value="3">3 — Info (normal boot and service messages)</option>
+            <option value="4">4 — Debug (verbose, for development and fault diagnosis)</option>
           </select>
         </label>
       </form>
+      <p class="desc mt-16">Applies immediately to what gets logged. The log history depth (16–48 lines) follows the saved level after the next restart.</p>
       <div class="status-grid mt-16">
-        <div class="status-item">
-          <dt>Uptime</dt>
-          <dd id="diag-uptime">...</dd>
-          <div class="desc mt-6">Controller runtime since boot</div>
-        </div>
-        <div class="status-item">
-          <dt>Memory Free</dt>
-          <dd id="diag-heap-free">...</dd>
-          <div class="desc mt-6">Current free heap</div>
-        </div>
-        <div class="status-item">
-          <dt>Memory Min (since boot)</dt>
-          <dd id="diag-heap-min">...</dd>
-          <div class="desc mt-6">Low-water mark</div>
-        </div>
-        <div class="status-item">
-          <dt>Largest Block</dt>
-          <dd id="diag-heap-largest">...</dd>
-          <div class="desc mt-6">Fragmentation indicator</div>
-        </div>
+        <dl>
+          <div class="status-item">
+            <dt>Uptime</dt>
+            <dd id="diag-uptime">...</dd>
+            <div class="desc mt-6">Controller runtime since boot</div>
+          </div>
+          <div class="status-item">
+            <dt>Memory Free</dt>
+            <dd id="diag-heap-free">...</dd>
+            <div class="desc mt-6">Current free heap</div>
+          </div>
+          <div class="status-item">
+            <dt>Memory Min (since boot)</dt>
+            <dd id="diag-heap-min">...</dd>
+            <div class="desc mt-6">Low-water mark</div>
+          </div>
+          <div class="status-item">
+            <dt>Largest Block</dt>
+            <dd id="diag-heap-largest">...</dd>
+            <div class="desc mt-6">Fragmentation indicator</div>
+          </div>
+        </dl>
       </div>
       <div id="diag-memory-note" class="desc mt-12">Memory Min is the lowest free heap seen since boot (historical low-water mark).</div>
       <div id="diag-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true"></div>
+    </div>
+
+    <!-- Memory Profiler (visible only in PA_HEAP_PROFILE=1 builds) -->
+    <div class="card" id="profiler-card" hidden>
+      <h3>🔬 Memory Profiler</h3>
+      <div class="desc">Live heap attribution data from the profiler build (<code>PA_HEAP_PROFILE=1</code>). Absent in normal builds.</div>
+
+      <div class="mt-16">
+        <div class="desc"><strong>Fragmentation</strong></div>
+        <div id="prof-frag-bar-wrap" style="margin-top:6px;background:#333;border-radius:4px;height:16px;overflow:hidden">
+          <div id="prof-frag-bar" style="height:100%;width:0%;background:#4caf50;transition:width .4s"></div>
+        </div>
+        <div id="prof-frag-label" class="desc mt-6"></div>
+      </div>
+
+      <div class="status-grid mt-16">
+        <dl>
+          <div class="status-item">
+            <dt>Heap Free</dt>
+            <dd id="prof-heap-free">...</dd>
+          </div>
+          <div class="status-item">
+            <dt>Heap Min</dt>
+            <dd id="prof-heap-min">...</dd>
+          </div>
+          <div class="status-item">
+            <dt>Largest Block</dt>
+            <dd id="prof-heap-largest">...</dd>
+          </div>
+          <div class="status-item">
+            <dt>Frag Ratio</dt>
+            <dd id="prof-frag-ratio">...</dd>
+          </div>
+          <div class="status-item">
+            <dt>Alloc Blocks</dt>
+            <dd id="prof-alloc-blocks">...</dd>
+          </div>
+          <div class="status-item">
+            <dt>Free Blocks</dt>
+            <dd id="prof-free-blocks">...</dd>
+          </div>
+          <div class="status-item">
+            <dt>Failed Allocs</dt>
+            <dd id="prof-failed-allocs">...</dd>
+          </div>
+        </dl>
+      </div>
+
+      <div class="mt-16">
+        <div class="desc"><strong>Task Stack HWM</strong> — minimum free stack remaining per task</div>
+        <table id="prof-hwm-table" style="width:100%;border-collapse:collapse;margin-top:8px;font-size:0.85em">
+          <thead>
+            <tr>
+              <th style="text-align:left;padding:4px 8px;border-bottom:1px solid #444">Task</th>
+              <th style="text-align:right;padding:4px 8px;border-bottom:1px solid #444">HWM (bytes)</th>
+              <th style="text-align:center;padding:4px 8px;border-bottom:1px solid #444">Status</th>
+            </tr>
+          </thead>
+          <tbody id="prof-hwm-tbody"></tbody>
+        </table>
+      </div>
+
+      <div id="prof-task-heap-section" class="mt-16" hidden>
+        <div class="desc"><strong>Task Heap Allocations</strong> — per-task heap usage (Tier 2)</div>
+        <table id="prof-heap-table" style="width:100%;border-collapse:collapse;margin-top:8px;font-size:0.85em">
+          <thead>
+            <tr>
+              <th style="text-align:left;padding:4px 8px;border-bottom:1px solid #444">Task</th>
+              <th style="text-align:right;padding:4px 8px;border-bottom:1px solid #444">Current</th>
+              <th style="text-align:right;padding:4px 8px;border-bottom:1px solid #444">Peak</th>
+              <th style="text-align:right;padding:4px 8px;border-bottom:1px solid #444">Count</th>
+            </tr>
+          </thead>
+          <tbody id="prof-heap-tbody"></tbody>
+        </table>
+      </div>
+
+      <div class="mt-16">
+        <div class="desc"><strong>Mode Snapshots</strong> — local low-water mark per mode window (heap_caps_monitor_local_minimum_free_size)</div>
+        <div id="prof-current-window" class="desc mt-6" style="color:#ff9800" hidden></div>
+        <table id="prof-snap-table" style="width:100%;border-collapse:collapse;margin-top:8px;font-size:0.85em">
+          <thead>
+            <tr>
+              <th style="text-align:left;padding:4px 8px;border-bottom:1px solid #444">Window Label</th>
+              <th style="text-align:right;padding:4px 8px;border-bottom:1px solid #444">Min During</th>
+              <th style="text-align:right;padding:4px 8px;border-bottom:1px solid #444">Largest Block</th>
+              <th style="text-align:right;padding:4px 8px;border-bottom:1px solid #444">Opened T+ms</th>
+            </tr>
+          </thead>
+          <tbody id="prof-snap-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Backup & Restore -->
+    <div class="card">
+      <h3>💾 Backup &amp; Restore</h3>
+      <div class="desc">Save all your droid settings to a file on your computer, or restore from a previous backup.</div>
+
+      <div class="button-row button-row-compact mt-16">
+        <button id="backup-download-btn" class="btn" type="button">Download Backup</button>
+      </div>
+
+      <div class="section-label mt-16">Restore from file</div>
+      <input type="file" id="backup-file-input" accept=".json" style="display:none" aria-label="Select backup file">
+      <div class="button-row button-row-compact mt-8">
+        <button id="backup-file-trigger" class="btn" type="button">Choose File</button>
+      </div>
+
+      <div id="backup-summary" class="desc mt-12" hidden></div>
+
+      <div id="restore-sections" class="mt-12" hidden>
+        <div class="component-row">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="checkbox" id="restore-chk-config"> Core config
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="checkbox" id="restore-chk-rc-map"> RC mappings
+          </label>
+        </div>
+        <div class="component-row mt-6">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="checkbox" id="restore-chk-audio-tracks"> Audio tracks
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+            <input type="checkbox" id="restore-chk-mood-map"> Audio mood map
+          </label>
+        </div>
+      </div>
+
+      <div id="restore-btn-row" class="button-row button-row-compact mt-12" hidden>
+        <button id="backup-restore-btn" class="btn" type="button">Restore selected</button>
+      </div>
+
+      <div id="backup-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true"></div>
+    </div>
+
+    <div class="card">
+      <div class="identity-header">
+        <h3>🤖 Droid Identity</h3>
+        <div id="identity-feedback" class="feedback identity-feedback" role="status" aria-live="polite" aria-atomic="true"></div>
+      </div>
+      <div class="identity-grid">
+        <label class="field" for="droid-name-input">
+          <span>Droid name</span>
+          <input id="droid-name-input" type="text" maxlength="32" pattern="[a-z0-9-]+" autocomplete="off" spellcheck="false" value="protoartoo">
+        </label>
+        <label class="field-checkbox identity-checkbox" for="mdns-use-name">
+          <input type="checkbox" id="mdns-use-name">
+          <span>Use as network hostname (mDNS)</span>
+        </label>
+        <button id="identity-save-button" class="btn identity-save-button" type="button">💾 Save</button>
+      </div>
     </div>
 
     <!-- System Controls -->
     <div class="card">
       <h3>🔄 System</h3>
       <div class="desc">Restart the controller to apply certain hardware configuration changes. The web interface will be unavailable for ~10 seconds during reboot.</div>
-      <div class="button-row mt-16">
+      <div class="button-row button-row-compact mt-16">
         <button id="reboot-button" class="btn danger" type="button">🔄 Reboot Controller</button>
       </div>
       <div id="reboot-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true"></div>
@@ -258,10 +467,9 @@
 
     <div id="shell-status"></div>
 
-    <script src="/web_api.js"></script>
-    <script src="/status_stream.js"></script>
-    <script src="/shell.js"></script>
-    <script src="/setup.js"></script>
-    <script src="/footer.js"></script>
+    <!-- No bootstrap <script src> here on purpose: the inline kernel in <head>
+         fetches /page_bootstrap.js itself, with retry, and hands it the script
+         chain from <html data-scripts>. A bare tag has no retry, and the
+         controller sheds connections in the opening burst by design. -->
   </body>
 </html>

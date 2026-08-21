@@ -1,0 +1,12 @@
+# tools/requirements.txt — developer tools for protoArtoo.
+# Install with: pip install -r tools/requirements.txt
+#
+# pyserial: required for tools/serial_monitor.py (make monitor).
+pyserial>=3.5
+
+# questionary: interactive prompts for tools/configure.py (make setup).
+# Falls back to plain input() if not installed — not required for core workflow.
+questionary>=2.0
+
+# PyYAML: required for action catalog generation from docs/action-registry.yaml.
+PyYAML>=6.0

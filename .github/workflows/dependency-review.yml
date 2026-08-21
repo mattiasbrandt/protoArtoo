@@ -1,0 +1,26 @@
+name: Dependency review
+
+on:
+  pull_request:
+    branches:
+      - 'phase/v*'
+      - main
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  dependency-review:
+    name: dependency-review
+    runs-on: ubuntu-latest
+    steps:
+      - name: ⬇️ Checkout
+        uses: actions/checkout@v7
+
+      - name: 🔒 Dependency review
+        uses: actions/dependency-review-action@v5
+        with:
+          # Block newly introduced high or critical vulnerable dependencies.
+          # License enforcement is deferred — no audited allowlist exists yet.
+          fail-on-severity: high

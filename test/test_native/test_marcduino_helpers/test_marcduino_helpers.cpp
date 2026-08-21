@@ -7,6 +7,7 @@
 // All helpers are inline in marcduino_helpers.h — no hardware or framework deps.
 // =============================================================================
 #include <unity.h>
+#include <string.h>
 
 #include "../../../include/marcduino_helpers.h"
 
@@ -151,18 +152,47 @@ void test_sequence_negative_is_invalid() {
     TEST_ASSERT_FALSE(marcduino_sequence_id_valid(-1));
 }
 
-// --- marcduino_full_sequence_to_body_sequence -------------------------------
+// --- marcduino_full_droid_body_actions ---------------------------------------
 
-void test_full_sequence_01_maps_to_body_sequence_30() {
-    TEST_ASSERT_EQUAL_UINT8(30, (uint8_t)marcduino_full_sequence_to_body_sequence(1));
+void test_full_droid_body_action_mappings() {
+    struct Expected {
+        int seqId;
+        const char* audio;
+        int bodySeq;
+    };
+    const Expected expected[] = {
+        {1, "$S", 30},
+        {2, nullptr, 31},
+        {3, nullptr, 31},
+        {4, nullptr, 31},
+        {5, "$c", 31},
+        {6, "$F", 30},
+        {7, "$C", 31},
+        {8, "$L", 30},
+        {9, "$D", 31},
+        {15, "$S", -1},
+        {16, nullptr, 31},
+    };
+
+    for (size_t i = 0; i < sizeof(expected) / sizeof(expected[0]); ++i) {
+        FullDroidBodyAction action = marcduino_full_droid_body_actions(expected[i].seqId);
+        TEST_ASSERT_TRUE(action.bodySeqId == expected[i].bodySeq);
+        if (expected[i].audio == nullptr) {
+            TEST_ASSERT_TRUE(action.audioDollarCmd == nullptr);
+        } else {
+            TEST_ASSERT_TRUE(action.audioDollarCmd != nullptr);
+            TEST_ASSERT_TRUE(strcmp(action.audioDollarCmd, expected[i].audio) == 0);
+        }
+    }
 }
 
-void test_full_sequence_02_has_no_direct_body_mapping() {
-    TEST_ASSERT_TRUE(marcduino_full_sequence_to_body_sequence(2) < 0);
-}
-
-void test_full_sequence_16_has_no_direct_body_mapping() {
-    TEST_ASSERT_TRUE(marcduino_full_sequence_to_body_sequence(16) < 0);
+void test_full_droid_body_action_noop_cases() {
+    const int noOps[] = {0, 10, 11, 12, 13, 14, 17, 99, -1};
+    for (size_t i = 0; i < sizeof(noOps) / sizeof(noOps[0]); ++i) {
+        FullDroidBodyAction action = marcduino_full_droid_body_actions(noOps[i]);
+        TEST_ASSERT_TRUE(action.audioDollarCmd == nullptr);
+        TEST_ASSERT_TRUE(action.bodySeqId == -1);
+    }
 }
 
 int main() {
@@ -200,9 +230,8 @@ int main() {
     RUN_TEST(test_sequence_0_is_invalid);
     RUN_TEST(test_sequence_negative_is_invalid);
 
-    RUN_TEST(test_full_sequence_01_maps_to_body_sequence_30);
-    RUN_TEST(test_full_sequence_02_has_no_direct_body_mapping);
-    RUN_TEST(test_full_sequence_16_has_no_direct_body_mapping);
+    RUN_TEST(test_full_droid_body_action_mappings);
+    RUN_TEST(test_full_droid_body_action_noop_cases);
 
     return UNITY_END();
 }

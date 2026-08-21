@@ -1,124 +1,78 @@
 # Project Status
 
-protoArtoo is open-source ESP32 body controller firmware for MK4 astromech droids.
-This page tracks the current development state across firmware phases.
-For detailed release notes see `CHANGELOG.md`.
+protoArtoo is open-source ESP32 body-controller firmware for MK4 astromech droids.
+This page gives builders and operators a plain-language snapshot of what's ready
+to use and what isn't, yet.
 
----
+For setup instructions, see the project `README`. For a full history of changes,
+see `CHANGELOG.md`.
 
-## Phase Overview
+## Current Snapshot
 
-| Phase | Description | Status |
-|---|---|---|
-| Architecture & planning | Firmware design and hardware research | Complete |
-| Dome firmware (AstroPixelsPlus fork) | Body-link protocol for the dome controller | Complete |
-| Phase 1 — Drive | Hoverboard drive, RC receiver input, failsafe | Complete — `v0.1.0` |
-| Phase 2 — Web interface | WiFi, web UI, OTA firmware updates | Complete |
-| Phase 3 — Servos + dome motor | Arm servos, dome motor, RC diagnostics and mapping | Software complete — hardware validation partially deferred |
-| **Phase 4 — Audio + dome link** | Sound playback, bidirectional dome communication, web UI improvements | Complete — `v0.4.0`; hardware validation deferred to Phase 5 |
-| Phase 5 — Community release | Documentation, polish, public release | Planned |
+| Status item | Current state |
+|---|---|
+| Active release target | `v1.0.0` |
+| Latest tagged release | `v0.4.0` |
+| Web control status | Previously validated workflows remain available, but an ordinary page load can currently stall before controller data appears |
 
----
+The main `v1.0.0` capabilities have been tested on real hardware, including
+audio, RC control, dome control, servos, web workflows, backups, and firmware
+updates. Release readiness remains open because ordinary controller web-page
+loading is not yet reliable enough: a styled page can remain stuck on
+**Loading** without filling in controller data.
 
-## Current Version
+Full drive-motor (hoverboard) validation on a completely assembled droid is not
+part of this release. Drive control and safety logic are implemented and tested,
+but haven't yet been confirmed with a hoverboard actually driving wheels on a
+finished build. This is tracked as follow-up work after `v1.0.0`, not a blocker
+for it.
 
-Latest release: `v0.4.0` — see `CHANGELOG.md` for full history.
-Development builds are versioned from the git history and build timestamp.
+## What's Confirmed Working
 
----
+- **Audio** — sound playback, named sounds, random chatter, boot sounds, and
+  sleep behavior confirmed on real hardware with the CHIRP audio module.
+  The DY-SV5W audio module has also been confirmed on hardware for playback
+  and volume control.
+- **RC control** — transmitter and receiver setup, channel mapping, and
+  RC-triggered actions (sounds, dome moves, etc.) confirmed on real hardware.
+- **Dome** — dome rotation, panel sequences, lights, and body-to-dome
+  communication confirmed on real hardware.
+- **Servos** — arm and other servo movement confirmed on real hardware.
+- **Web control workflows** — setup, live control, backup/restore, and droid
+  identity (custom `.local` name) have completed successfully in hardware
+  validation. The ordinary-load reliability limitation below still applies.
+- **Firmware and filesystem updates** — updating over WiFi and over USB both
+  confirmed end-to-end, including recovering cleanly from a failed update.
+- **Safety systems** — emergency stop and RC-signal-loss failsafe confirmed,
+  outside of live drive-motor behavior (see below).
 
-## What Works
+## What's Not Yet Verified
 
-### Drive and safety
+- **Drive-motor (hoverboard) behavior on a complete droid.** Drive control and
+  safety logic exist and have been tested, but live wheel response, drive
+  failsafe with motors connected, and kill-switch behavior have not yet been
+  confirmed on an assembled droid with a hoverboard installed. This is planned
+  as follow-up work after `v1.0.0` and will be documented when complete.
+- **MP3 Trigger audio module** — an alternative to the CHIRP module some
+  builders use. Not re-confirmed on hardware for this release.
+- **Ordinary web-page load reliability.** A single page open can lose an early
+  required script while the controller status endpoint remains reachable. The
+  page then looks styled but stays on **Loading** with empty fields. A recovery
+  bootstrap experiment on the AsyncWebServer stack showed this failure could be
+  made worse by the admission guard and was rolled back. The current PsychicHttp
+  stack (#75 migration) has not yet demonstrated this issue under the measurement
+  scope defined in [ADR 0017](adr/0017-page-load-memory-recovery-acceptance-envelope.md).
+  The underlying HTTP resource-delivery pressure on this stack remains under
+  investigation in [the web recovery map](https://github.com/mattiasbrandt/protoArtoo/issues/52).
 
-- Hoverboard drive with speed and steering control from an RC transmitter
-- Configurable speed limit from the web interface
-- Three RC receiver modes: standard PWM, single SBUS, or dual SBUS; in Single SBUS mode,
-  the active receiver (SBUS1 or SBUS2) is selectable from the RC page and persists across reboots
-  without affecting channel mapping
-- Failsafe automatically stops the motors if the RC signal is lost
-- Emergency stop with latching behavior — requires a deliberate clear before drive resumes
+## Release History
 
-### Web interface
+| Release | Key additions |
+|---|---|
+| `v0.1.0` | Hoverboard drive, RC receiver input, failsafe |
+| `v0.2.0` | WiFi, web UI, OTA firmware updates |
+| `v0.3.0` | Arm servos, dome motor, RC diagnostics and channel mapping |
+| `v0.4.0` | Audio system, bidirectional dome link, web UI improvements |
+| `v1.0.0` | Full architecture, audio confirmed on hardware, OTA and backup confirmed, configurable droid identity. Full drive-motor validation follows as a separate, documented pass. |
 
-- WiFi configuration: standalone access point or connection to an existing network
-- Home dashboard: drive mode switcher, mood selector, and live status indicators
-- Setup page: configure connected hardware components, RC receiver mode, and channel mapping
-- Drive page: manual drive and dome control from the browser
-- Dome page: direct dome motor control
-- Servo page: arm and accessory servo control
-- Sound page: trigger named sounds, configure track assignments, and set mood chatter rates
-- RC diagnostics: live channel values, binding editor, and per-mode calibration
-- Firmware and web UI updates directly from the browser
-- Runtime log verbosity control without reflashing
-- All settings persist across reboots
-
-### Arms and servos
-
-- Up to six servo channels supported: two main arms, three auxiliary outputs, one RGB indicator
-- Open/close calibration per channel, configurable from the web interface
-- Servo type selection (MG996R, MG90S, RGB, or none) per channel
-
-### Audio
-
-- Pluggable audio module support: DY-SV5W (confirmed on hardware) and CHIRP (implemented — hardware validation pending)
-- Plays named sound cues: scream, Leia message, Short Circuit, Cantina, Imperial March, Star Wars theme, and more
-- Sounds triggered from RC transmitter, web interface, or dome serial commands
-- Random ambient chatter with per-mood frequency — each mood preset has its own chatter rate
-- Volume configurable from the Sound page and persisted across reboots
-- Sound module connection state and playback status visible on the Sound page
-
-### Moods and sequences
-
-- 15 mood and sequence presets selectable from the home dashboard or RC transmitter
-- Mood selection triggers body sounds and, when the dome is connected, the corresponding dome lighting sequence
-- Last active mood is restored on reboot
-
-### Dome link
-
-- Bidirectional serial communication with the dome controller over the slip ring
-- Body sends a regular heartbeat to the dome; connection state shown on the dashboard
-- Commands received from the dome (sounds, arm sequences) are dispatched to the body automatically
-- Body-side communication confirmed; full end-to-end requires the dome board connected via slip ring
-
----
-
-## Known Limitations
-
-- **Dome Control and Dual SBUS cannot be used at the same time:** The dome serial link
-  and the second SBUS receiver input share the same hardware resource on this board.
-  When S3 Dome Control is enabled in Setup, Dual SBUS mode is not available for
-  simultaneous use. Single SBUS and Standard PWM are unaffected.
-
-- **Hoverboard drive requires Standard PWM for RC input:** The hoverboard drive
-  connection and SBUS receiver inputs share hardware resources. When hoverboard drive
-  is connected and active, use Standard PWM mode for RC drive input rather than a SBUS
-  receiver mode. This constraint will be removed in a future update.
-
-- **Sound module status varies by backend:** Modules with bidirectional UART (DY-SV5W, CHIRP) report module state on the Sound page. DY-SV5W status is manually polled to avoid disrupting its RX state machine during playback. CHIRP status updates automatically every 2 seconds and is safe to query at any time.
----
-
-## Pending Hardware Validation
-
-The following features are implemented and software-verified but require a fully assembled
-droid for final confirmation. They are planned for the Phase 5 hardware validation pass.
-
-- **Drive and failsafe** — hoverboard response, RC failsafe, and speed limit; hoverboard
-  is not currently connected
-- **Dome motor** — RC-driven dome motor response; requires the full wiring harness connected
-- **RC mapping with a physical transmitter** — channel mapping and calibration across all
-  receiver modes; save/restore across reboots
-- **Dome link end-to-end** — requires both the body board and dome board connected over
-  the slip ring
-- **Audio edge cases** — most audio paths confirmed on hardware; S2 enable/disable toggle
-  and boot mood restore require hardware reconnect
-- **Firmware and web UI update flows** — upload progress indication and post-reboot
-  reconnect with the updated version
-
----
-
-## Roadmap
-
-- **Phase 4 (software complete):** audio system, full dome link, and web UI quality improvements;
-  hardware validation deferred to Phase 5
-- **Phase 5 (next):** hardware validation, final documentation, and initial public release as `v1.0.0`
+For detailed per-change history, see `CHANGELOG.md`.

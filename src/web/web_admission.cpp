@@ -1,0 +1,359 @@
+// =============================================================================
+// src/web/web_admission.cpp
+//
+// Decision core for Connection Admission and request admission, plus the
+// counters both layers publish. No Arduino, no vendor type, no clock of its
+// own: every input arrives as a parameter, so this whole file compiles and is
+// exercised on the host. The device hookup lives with the backend that owns
+// the sockets (src/web/web_request_psychic.cpp).
+//
+// See include/web_admission.h for the two-layer split and why the estop bypass
+// can only exist at the request layer.
+// =============================================================================
+
+#include "../../include/web_admission.h"
+
+#include <string.h>
+
+namespace {
+
+// One token, in the milli-token units the bucket counts in.
+constexpr uint32_t kTokenMilli = 1000u;
+
+// Refill for time elapsed since the last call, clamped to the burst size, and
+// stamp the refill time. Unsigned subtraction makes the elapsed interval
+// correct across the millisecond counter's 32-bit rollover; a signed or
+// widened subtraction would read a rollover as roughly 49 days of credit.
+void refill(WebAcceptRateLimiter* limiter, uint32_t nowMs, uint32_t burst, uint32_t perSecond) {
+    const uint32_t elapsedMs = nowMs - limiter->lastRefillMs;
+    limiter->lastRefillMs = nowMs;
+
+    const uint32_t capMilli = burst * kTokenMilli;
+    const uint64_t refilled =
+        (uint64_t)limiter->tokensMilli + (uint64_t)elapsedMs * (uint64_t)perSecond;
+    limiter->tokensMilli = refilled > capMilli ? capMilli : (uint32_t)refilled;
+}
+
+// True when path is exactly prefix, or prefix followed by a path separator.
+// Substring matching would make /api/estopper a safety path.
+bool pathMatches(const char* path, const char* prefix) {
+    if (path == nullptr) {
+        return false;
+    }
+    const size_t prefixLen = strlen(prefix);
+    if (strncmp(path, prefix, prefixLen) != 0) {
+        return false;
+    }
+    return path[prefixLen] == '\0' || path[prefixLen] == '/';
+}
+
+}  // namespace
+
+// -----------------------------------------------------------------------------
+// Counters
+// -----------------------------------------------------------------------------
+
+volatile uint32_t g_webAcceptRejectHeap = 0;
+volatile uint32_t g_webAcceptRejectRate = 0;
+volatile uint32_t g_webAcceptRejectLastMs = 0;
+volatile uint32_t g_webAcceptRejectLargestBlock = 0;
+volatile uint32_t g_webAcceptMinLargestBlockSeen = UINT32_MAX;
+
+volatile uint32_t g_webAcceptGuardLastUs = 0;
+volatile uint32_t g_webAcceptGuardMaxUs = 0;
+
+volatile int g_webInflightRequests = 0;
+volatile int g_webInflightRequestsPeak = 0;
+volatile uint32_t g_webRefusedInflightCap = 0;
+volatile uint32_t g_webRefusedHeapFloor = 0;
+volatile uint32_t g_webRefusedHeapFloorDiag = 0;
+volatile uint32_t g_webBusyRecoveryPagesServed = 0;
+
+volatile uint32_t g_webSocketsAccepted = 0;
+volatile int g_webSocketsOpen = 0;
+volatile int g_webSocketsOpenPeak = 0;
+volatile uint32_t g_webSocketsUntracked = 0;
+volatile uint32_t g_webRequestsServed = 0;
+
+// -----------------------------------------------------------------------------
+// Connection Admission
+// -----------------------------------------------------------------------------
+
+void webAcceptRateLimiterInit(WebAcceptRateLimiter* limiter, uint32_t nowMs, uint32_t burst) {
+    limiter->tokensMilli = burst * kTokenMilli;
+    limiter->lastRefillMs = nowMs;
+}
+
+bool webAcceptRateLimiterTake(WebAcceptRateLimiter* limiter, uint32_t nowMs, uint32_t burst,
+                              uint32_t perSecond) {
+    refill(limiter, nowMs, burst, perSecond);
+    if (limiter->tokensMilli < kTokenMilli) {
+        return false;
+    }
+    limiter->tokensMilli -= kTokenMilli;
+    return true;
+}
+
+WebAcceptDecision webAcceptDecide(WebAcceptRateLimiter* limiter, uint32_t nowMs, uint32_t burst,
+                                  uint32_t perSecond, WebHeapSampler sampler, void* samplerCtx,
+                                  size_t minLargestFreeBlock) {
+    refill(limiter, nowMs, burst, perSecond);
+
+    // Rate first, and the sampler is not called yet: this check is arithmetic
+    // on state already in cache, whereas sampling the heap may walk it. A
+    // connection that is going to be paced out must never trigger that walk.
+    if (limiter->tokensMilli < kTokenMilli) {
+        return WebAcceptDecision::kRejectRate;
+    }
+
+    // A connection refused for heap was never admitted, so it does not spend
+    // admission budget. Charging it would let a heap-pressure window pace out
+    // the connections that arrive after heap recovers.
+    if (sampler(samplerCtx) < minLargestFreeBlock) {
+        return WebAcceptDecision::kRejectHeap;
+    }
+
+    limiter->tokensMilli -= kTokenMilli;
+    return WebAcceptDecision::kAdmit;
+}
+
+// -----------------------------------------------------------------------------
+// Cached heap sample
+// -----------------------------------------------------------------------------
+
+bool webHeapSampleDue(const WebHeapSampleCache* cache, uint32_t nowMs, uint32_t minIntervalMs) {
+    if (!cache->primed) {
+        return true;
+    }
+    return (uint32_t)(nowMs - cache->lastSampleMs) >= minIntervalMs;
+}
+
+void webHeapSampleStore(WebHeapSampleCache* cache, uint32_t nowMs, size_t value) {
+    cache->value = value;
+    cache->lastSampleMs = nowMs;
+    cache->primed = true;
+}
+
+// -----------------------------------------------------------------------------
+// Socket census
+// -----------------------------------------------------------------------------
+
+void webSocketCensusInit(WebSocketCensus* census) {
+    for (size_t i = 0; i < WEB_SOCKET_CENSUS_CAPACITY; ++i) {
+        census->admittedFds[i] = -1;
+    }
+    census->open = 0;
+    census->openPeak = 0;
+    census->accepted = 0;
+    census->requests = 0;
+    census->untracked = 0;
+}
+
+bool webSocketCensusOpen(WebSocketCensus* census, int fd) {
+    // A negative descriptor is not a socket. Counting one would corrupt both
+    // the occupancy reading and the free-slot search, since -1 is the sentinel.
+    if (fd < 0) {
+        return false;
+    }
+
+    census->accepted = census->accepted + 1u;
+
+    for (size_t i = 0; i < WEB_SOCKET_CENSUS_CAPACITY; ++i) {
+        if (census->admittedFds[i] == -1) {
+            census->admittedFds[i] = fd;
+            census->open = census->open + 1;
+            if (census->open > census->openPeak) {
+                census->openPeak = census->open;
+            }
+            return true;
+        }
+    }
+
+    census->untracked = census->untracked + 1u;
+    return false;
+}
+
+bool webSocketCensusClose(WebSocketCensus* census, int fd) {
+    if (fd < 0) {
+        return false;
+    }
+    for (size_t i = 0; i < WEB_SOCKET_CENSUS_CAPACITY; ++i) {
+        if (census->admittedFds[i] == fd) {
+            census->admittedFds[i] = -1;
+            census->open = census->open - 1;
+            return true;
+        }
+    }
+    // Not ours: a connection the guard refused before it was ever admitted, or
+    // one the capacity above could not name. Either way the occupancy count
+    // never included it, so it must not be decremented for it.
+    return false;
+}
+
+void webSocketCensusRequest(WebSocketCensus* census) {
+    census->requests = census->requests + 1u;
+}
+
+// -----------------------------------------------------------------------------
+// Request admission
+// -----------------------------------------------------------------------------
+
+WebRequestAdmission webRequestAdmissionDecide(const WebRequestAdmissionInputs& in) {
+    // Estop is the safety path: never rejected, never counted. Shedding it to
+    // protect memory would trade the failure this policy exists to prevent for
+    // a worse one.
+    if (in.estop) {
+        return WebRequestAdmission::kAdmit;
+    }
+
+    if (!in.longLived && in.inflightRequests >= in.maxInflightRequests) {
+        return WebRequestAdmission::kRejectInflightCap;
+    }
+
+    // The override raises only the ordinary-class floor: diagnostics keep
+    // their real floor so /api/status and the live stream stay reachable while
+    // ordinary work is being refused -- the same shape real pressure has, and
+    // the reason an induced session can still be observed from outside.
+    const size_t ordinaryFloor =
+        in.minLargestFreeBlockOverride != 0 ? in.minLargestFreeBlockOverride
+                                            : in.minLargestFreeBlock;
+    const size_t floor = in.diagnostic ? in.minLargestFreeBlockDiagnostic : ordinaryFloor;
+    if (in.largestFreeBlock < floor) {
+        return WebRequestAdmission::kRejectHeapFloor;
+    }
+
+    return WebRequestAdmission::kAdmit;
+}
+
+bool webPathIsEstop(const char* path) {
+    return pathMatches(path, "/api/estop");
+}
+
+bool webPathIsDiagnostic(const char* path) {
+    if (path == nullptr) {
+        return false;
+    }
+    // Exact matches, matching what the async stack exempted. The coredump
+    // subpaths are deliberately absent: /api/coredump/erase writes flash and
+    // is not the read-only diagnostic this lower floor exists for.
+    //
+    // /api/admission/trace exists only on builds carrying the admission trace
+    // (PA_ADMISSION_TRACE), and is listed here unconditionally so this core
+    // stays free of build flags -- naming a path no build serves costs nothing,
+    // since an absent route answers 404 before the floor ever matters. It has
+    // to be here at all because the run it reports on is a pressure window, and
+    // a profile that sheds exactly when the controller is under load would
+    // describe every regime except the one worth measuring.
+    return strcmp(path, "/api/status") == 0 || strcmp(path, "/api/profiler") == 0 ||
+           strcmp(path, "/api/coredump") == 0 || strcmp(path, "/api/admission/trace") == 0 ||
+           webPathIsLongLived(path);
+}
+
+bool webPathIsLongLived(const char* path) {
+    if (path == nullptr) {
+        return false;
+    }
+    return strcmp(path, "/api/events") == 0;
+}
+
+bool webIsMainFrameNavigation(const char* secFetchMode, const char* accept) {
+    // Present and explicit: believe it, including when it says this is not a
+    // navigation. A same-origin fetch may still advertise text/html, so
+    // falling through to Accept here would misclassify it.
+    if (secFetchMode != nullptr && secFetchMode[0] != '\0') {
+        return strcmp(secFetchMode, "navigate") == 0;
+    }
+
+    // Fallback for clients that omit the mode. A navigating browser leads its
+    // Accept with text/html; asset and API callers do not.
+    if (accept == nullptr) {
+        return false;
+    }
+    return strncmp(accept, "text/html", 9) == 0;
+}
+
+// =============================================================================
+// Connection Admission Session (opaque)
+// =============================================================================
+
+// The opaque session bundles the rate limiter, heap cache, and sampler function,
+// so the calling layer owns one handle rather than threading through separate
+// parameters. The pure decision functions remain directly reachable for tests.
+struct WebAdmissionSession {
+    WebAcceptRateLimiter limiter;
+    WebHeapSampleCache heapSample;
+    size_t (*sampler)(void* ctx);
+    void* samplerCtx;
+};
+
+WebAdmissionSession* webAdmissionSessionCreate(uint32_t nowMs, size_t (*sampler)(void* ctx),
+                                               void* samplerCtx) {
+    WebAdmissionSession* session = new WebAdmissionSession();
+    if (session == nullptr) {
+        return nullptr;
+    }
+    webAcceptRateLimiterInit(&session->limiter, nowMs, 0);  // burst is set per-call
+    memset(&session->heapSample, 0, sizeof(session->heapSample));
+    session->sampler = sampler;
+    session->samplerCtx = samplerCtx;
+    return session;
+}
+
+WebAcceptDecision webAdmissionSessionConnectionDecide(WebAdmissionSession* session,
+                                                      uint32_t nowMs, uint32_t burst,
+                                                      uint32_t perSecond,
+                                                      size_t minLargestFreeBlock) {
+    // Implement the connection admission decision, encapsulating the rate
+    // limiter, heap cache, and sampler. Rate is checked before heap: the rate
+    // check is arithmetic on state already in the limiter, whereas sampling the
+    // heap may cost a walk. A paced-out connection must never trigger that walk.
+    //
+    // This reimplements the core logic of webAcceptDecide() with cache
+    // management built in, so the caller owns one opaque session reference.
+    // The pure function webAcceptDecide() remains directly reachable for native
+    // tests, keeping the decision logic independently testable (ADR 0011).
+
+    // Refill the rate limiter for elapsed time, clamped to burst size.
+    // Unsigned subtraction handles millisecond counter rollover correctly.
+    constexpr uint32_t kTokenMilli = 1000u;
+    const uint32_t elapsedMs = nowMs - session->limiter.lastRefillMs;
+    session->limiter.lastRefillMs = nowMs;
+
+    const uint32_t capMilli = burst * kTokenMilli;
+    const uint64_t refilled =
+        (uint64_t)session->limiter.tokensMilli + (uint64_t)elapsedMs * (uint64_t)perSecond;
+    session->limiter.tokensMilli = refilled > capMilli ? capMilli : (uint32_t)refilled;
+
+    // Rate check: this is the only thing a paced-out connection does.
+    if (session->limiter.tokensMilli < kTokenMilli) {
+        return WebAcceptDecision::kRejectRate;
+    }
+
+    // Heap check: refresh the cache if needed, then check against the floor.
+    // The cache interval is a constant for now; future work may make it
+    // configurable. It defaults to 100ms, matching PA_ACCEPT_HEAP_SAMPLE_MIN_INTERVAL_MS.
+    constexpr uint32_t kHeapSampleIntervalMs = 100;
+    if (webHeapSampleDue(&session->heapSample, nowMs, kHeapSampleIntervalMs)) {
+        const size_t largest = session->sampler(session->samplerCtx);
+        webHeapSampleStore(&session->heapSample, nowMs, largest);
+    }
+
+    if (session->heapSample.value < minLargestFreeBlock) {
+        return WebAcceptDecision::kRejectHeap;
+    }
+
+    // Admitted: take a token and accept the connection.
+    session->limiter.tokensMilli -= kTokenMilli;
+    return WebAcceptDecision::kAdmit;
+}
+
+size_t webAdmissionSessionGetCachedHeapSample(WebAdmissionSession* session) {
+    return session->heapSample.value;
+}
+
+uint32_t webAdmissionSessionGetHeapSampleAge(WebAdmissionSession* session, uint32_t nowMs) {
+    if (!session->heapSample.primed) {
+        return UINT32_MAX;  // Unprimed cache
+    }
+    return nowMs - session->heapSample.lastSampleMs;
+}

@@ -1,11 +1,12 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-scripts="/web_api.js,/status_stream.js,/shell.js,/drive.js,/footer.js">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Drive - protoArtoo</title>
     <link rel="stylesheet" href="/style.css">
     <link rel="icon" type="image/png" href="/r2d2body-favicon.png">
+    <!-- PA:INCLUDE _recovery_kernel.html -->
   </head>
   <body data-page="drive">
     <div id="shell-top"></div>
@@ -22,12 +23,9 @@
     <!-- Safety Controls - ALWAYS FIRST -->
     <div class="card danger">
       <h3>🛑 Safety Controls</h3>
-      <div class="button-row">
+      <div class="button-row drive-safety-actions">
         <button id="estop-button" class="btn danger" type="button" aria-label="Emergency Stop">
           🛑 Latch Estop
-        </button>
-        <button id="clear-estop-button" class="btn" type="button" aria-label="Clear Emergency Stop">
-          🟢 Clear Estop
         </button>
         <button id="enable-web-control-button" class="btn accent" type="button" aria-label="Enable Web Control">
           ✓ Enable Web Control
@@ -37,32 +35,89 @@
         </button>
       </div>
       <div id="control-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true">No command sent yet.</div>
+      <div class="recovery-row mt-12">
+        <span class="desc">Recovery: only available when estop is latched</span>
+        <button id="clear-estop-button" class="btn" type="button" aria-label="Clear Emergency Stop">🟢 Clear Estop</button>
+      </div>
+      <div class="safety-status-strip mt-12">
+        <span>Failsafe: <span id="status-failsafe-label">--</span></span>
+      </div>
     </div>
 
-    <!-- Movement Status -->
+    <!-- Speed Preset -->
     <div class="card">
-      <h3>🚗 Movement Status</h3>
-      <div class="status-grid">
-        <div class="status-item">
-          <dt>Estop State</dt>
-          <dd id="estop-state">--</dd>
+      <h3>🚦 Speed Preset</h3>
+      <div class="desc">Choose a drive speed profile for one-tap limit switching.</div>
+      <div class="drive-preset-section mt-16" aria-label="Speed preset controls">
+        <div class="rc-mode-grid drive-preset-grid">
+          <button class="rc-mode-card drive-preset-card preset-btn" data-speed-preset="slow" type="button" aria-label="Apply slow speed preset" aria-pressed="false">
+            <div class="rc-mode-icon" aria-hidden="true">🐌</div>
+            <div class="rc-mode-title">Slow</div>
+            <div class="rc-mode-desc">Precision / indoor pace</div>
+            <span class="preset-limit-value" id="preset-value-slow"></span>
+          </button>
+          <button class="rc-mode-card drive-preset-card preset-btn" data-speed-preset="normal" type="button" aria-label="Apply normal speed preset" aria-pressed="false">
+            <div class="rc-mode-title">Normal</div>
+            <div class="rc-mode-desc">Balanced default profile</div>
+            <span class="preset-limit-value" id="preset-value-normal"></span>
+          </button>
+          <button class="rc-mode-card drive-preset-card preset-btn" data-speed-preset="turbo" type="button" aria-label="Apply turbo speed preset" aria-pressed="false">
+            <div class="rc-mode-icon" aria-hidden="true">⚡</div>
+            <div class="rc-mode-title">Turbo</div>
+            <div class="rc-mode-desc">Fast profile for open runs</div>
+            <span class="preset-limit-value" id="preset-value-turbo"></span>
+          </button>
         </div>
-        <div class="status-item">
-          <dt>Web Control</dt>
-          <dd id="web-control-state">--</dd>
+      </div>
+      <div id="preset-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true"></div>
+    </div>
+
+    <!-- Live Drive Output -->
+    <div class="card" id="live-output-card">
+      <h3>📊 Live Drive Output</h3>
+      <div class="drive-sliders-row">
+        <div class="drive-vslider-wrap">
+          <div class="drive-vslider-track">
+            <div class="drive-vslider-fill" id="steer-fill"></div>
+            <div class="drive-vslider-thumb" id="steer-thumb"></div>
+          </div>
+          <div class="drive-vslider-label">STEER</div>
+          <div class="drive-vslider-value" id="steer-value">0</div>
         </div>
-        <div class="status-item">
-          <dt>Failsafe Source</dt>
-          <dd id="failsafe-source">--</dd>
+        <div class="drive-vslider-wrap">
+          <div class="drive-vslider-track">
+            <div class="drive-vslider-fill" id="throttle-fill"></div>
+            <div class="drive-vslider-thumb" id="throttle-thumb"></div>
+          </div>
+          <div class="drive-vslider-label">THROTTLE</div>
+          <div class="drive-vslider-value" id="throttle-value">0</div>
         </div>
-        <div class="status-item">
-          <dt>Drive Output</dt>
-          <dd id="drive-output">--</dd>
-        </div>
-        <div class="status-item">
-          <dt>Speed Limit Scale</dt>
-          <dd id="speed-limit">--</dd>
-        </div>
+      </div>
+    </div>
+
+    <!-- Hoverboard Controller -->
+    <div class="card" id="hoverboard-card">
+      <h3>🤖 Hoverboard Controller</h3>
+      <div class="desc" id="hb-no-data">No data — controller feedback not yet received.</div>
+      <div class="status-grid" id="hb-data-grid">
+        <dl>
+          <div class="status-item">
+            <dt>Battery</dt>
+            <dd id="hb-battery">—</dd>
+          </div>
+          <div class="status-item">
+            <dt>Board Temp</dt>
+            <dd id="hb-board-temp">—</dd>
+          </div>
+          <div class="status-item">
+            <dt>Speed R / L</dt>
+            <dd id="hb-speed">—</dd>
+          </div>
+          <div class="status-item" id="hb-current-row">
+            <dt>Current L / R</dt>
+            <dd id="hb-current">—</dd>
+          </div>
+        </dl>
       </div>
     </div>
 
@@ -70,6 +125,10 @@
     <div class="card">
       <h3>🎮 Drive Controls</h3>
       <div class="desc">Hold to drive, release to stop. Command timeout follows the configured Web Control Timeout setting.</div>
+      <div class="drive-control-hints mt-10">
+        <span class="status-pill pill-info status-pill-compact">🎯 Hold = command</span>
+        <span class="status-pill pill-info status-pill-compact">🛑 Release = stop</span>
+      </div>
       <div class="dpad-grid mt-16">
         <button class="btn dpad-btn" data-drive-speed="260" data-drive-steer="0"
           type="button" aria-label="Drive Forward">⬆️</button>
@@ -87,36 +146,55 @@
     <!-- Drive Settings -->
     <div class="card">
       <h3>⚙️ Drive Settings</h3>
-      <div class="desc">Speed limits, web control timeout, and CH8 binding. Settings take effect immediately and survive reboot.</div>
+      <div class="desc">Speed cap and web control timeout settings. Speed presets are switched from the buttons above or via RC Speed preset cycle trigger.</div>
       <form id="config-form" class="form-grid mt-16">
         <label class="field">
           <span>Maximum Speed Limit</span>
-          <input id="speed-limit-max" name="speedLimitMax" type="number" min="0" max="600" step="1"
-            title="Maximum speed value sent to the hoverboard controller (0–600). Lower values make the droid slower and safer.">
+          <div class="slider-container">
+            <input id="speed-limit-max" name="speedLimitMax" type="range" min="0" max="600" step="5"
+              title="Maximum speed value sent to the hoverboard controller (0–600). Lower values make the droid slower and safer.">
+          </div>
+          <span class="drive-readout" id="speed-limit-max-readout">—</span>
         </label>
         <label class="field">
           <span>Web Control Timeout (ms)</span>
           <input id="web-drive-timeout" name="webDriveTimeoutMs" type="number" min="100" max="5000" step="50"
             title="Web drive commands expire after this many milliseconds. The droid stops if no new command arrives within this window.">
         </label>
-        <label class="field field-checkbox"
-          title="When enabled, CH8 still scales speed limit 0–100%. Near zero (below ~2%) it also forces Stationary mode and commands stop.">
-          <input id="ch8-mode-lock" name="ch8ModeLock" type="checkbox">
-          <span>Enable CH8 Mode Lock at Zero</span>
+        <label class="field">
+          <span>Slow Preset Limit</span>
+          <div class="slider-container">
+            <input id="speed-preset-slow" name="speedPresetSlow" class="preset-input" aria-describedby="preset-distinct-hint" type="range" min="0" max="600" step="5"
+              title="Drive speed limit applied by Slow preset.">
+          </div>
+          <span class="drive-readout" id="speed-preset-slow-readout">—</span>
         </label>
-        <div class="button-row">
-          <button id="reload-config-button" class="btn" type="button">🔄 Reload</button>
-        </div>
+        <label class="field">
+          <span>Normal Preset Limit</span>
+          <div class="slider-container">
+            <input id="speed-preset-normal" name="speedPresetNormal" class="preset-input" aria-describedby="preset-distinct-hint" type="range" min="0" max="600" step="5"
+              title="Drive speed limit applied by Normal preset.">
+          </div>
+          <span class="drive-readout" id="speed-preset-normal-readout">—</span>
+        </label>
+        <label class="field">
+          <span>Turbo Preset Limit</span>
+          <div class="slider-container">
+            <input id="speed-preset-turbo" name="speedPresetTurbo" class="preset-input" aria-describedby="preset-distinct-hint" type="range" min="0" max="600" step="5"
+              title="Drive speed limit applied by Turbo preset.">
+          </div>
+          <span class="drive-readout" id="speed-preset-turbo-readout">—</span>
+        </label>
+        <div id="preset-distinct-hint" class="feedback warning preset-distinct-hint hidden" role="status" aria-live="polite" aria-atomic="true">Preset limits must be distinct. Duplicate values make preset switching ambiguous.</div>
       </form>
       <div id="config-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true">Loading settings...</div>
     </div>
 
     <div id="shell-status"></div>
 
-    <script src="/web_api.js"></script>
-    <script src="/status_stream.js"></script>
-    <script src="/shell.js"></script>
-    <script src="/drive.js"></script>
-    <script src="/footer.js"></script>
+    <!-- No bootstrap <script src> here on purpose: the inline kernel in <head>
+         fetches /page_bootstrap.js itself, with retry, and hands it the script
+         chain from <html data-scripts>. A bare tag has no retry, and the
+         controller sheds connections in the opening burst by design. -->
   </body>
 </html>

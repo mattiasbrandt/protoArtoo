@@ -9,100 +9,103 @@
   const footer = document.getElementById("fw-meta");
   if (!footer) return;
 
-  let webVersion = "unknown";
-  let pollTimer = null;
+  let fsVersion = "unknown";
   let unsubscribe = null;
-
-  const escapeHtml = (value) => String(value)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-
+  let hasRealData = false;
+  let versionPoll = null;
+  let retryPoll = null;
 
   const renderFooter = (status) => {
     if (!status) {
       footer.textContent = "Firmware info unavailable";
+      hasRealData = false;
       return;
     }
 
     const fw = String(status.firmwareVersion || "unknown");
-    const apiWebVersion = String(status.webVersion || "unknown");
-    const loadedWebVersion = webVersion !== "unknown" ? webVersion : "unknown";
-    const resolvedWeb = loadedWebVersion !== "unknown" ? loadedWebVersion : apiWebVersion;
+    const apiFsVersion = String(status.fsVersion || "unknown");
+    const resolvedWeb = apiFsVersion !== "unknown" ? apiFsVersion : fsVersion;
 
     footer.innerHTML =
-      `FW: <span class="mono">${escapeHtml(fw)}</span><br>` +
-      `Web: <span class="mono">${escapeHtml(resolvedWeb)}</span>`;
+      `FW: <span class="mono">${window.PAUtils.escapeHtml(fw)}</span><br>` +
+      `FS: <span class="mono">${window.PAUtils.escapeHtml(resolvedWeb)}</span>`;
+    hasRealData = true;
   };
 
-  const loadWebVersion = async () => {
+  const loadFsVersion = async () => {
     if (!window.PAApi) return;
     try {
-      const result = await window.PAApi.get("/web-version.json", { timeoutMs: 2500, cache: "no-store" });
-      if (result.data && typeof result.data === "object" && result.data.webVersion) {
-        webVersion = String(result.data.webVersion);
+      const result = await window.PAApi.get("/fs-version.json", { timeoutMs: 2500, cache: "no-store" });
+      if (result.data && typeof result.data === "object" && result.data.fsVersion) {
+        fsVersion = String(result.data.fsVersion);
       }
     } catch (_error) {
-      // Keep fallback value.
+      // ignore: fetch error - keep fallback fsVersion value
     }
   };
 
   const fetchStatus = async () => {
     if (!window.PAApi) {
       footer.textContent = "Firmware info unavailable";
-      return;
+      hasRealData = false;
+      return false;
     }
     try {
       const result = await window.PAApi.get("/api/status", { timeoutMs: 3000, cache: "no-store" });
       renderFooter(result.data);
-    } catch (_error) {
+      return true;
+    } catch (error) {
+      // fetch timeout/error - log and show unavailable message
+      console.warn("[footer] failed to fetch status:", error?.message || error);
       footer.textContent = "Firmware info unavailable";
-    }
-  };
-
-  const startFallbackPolling = () => {
-    fetchStatus();
-    pollTimer = window.setInterval(() => {
-      if (document.visibilityState === "hidden") return;
-      fetchStatus();
-    }, 5000);
-  };
-
-  const startSseMode = () => {
-    unsubscribe = window.PAStatusStream.subscribe((eventType, payload) => {
-      if (eventType === "status") renderFooter(payload);
-    });
-
-    if (!window.PAStatusStream.getLastStatus()) {
-      fetchStatus();
-    }
-  };
-
-  const onVisibilityChange = () => {
-    if (document.visibilityState !== "hidden") {
-      fetchStatus();
+      hasRealData = false;
+      return false;
     }
   };
 
   const init = async () => {
-    await loadWebVersion();
+    await loadFsVersion();
 
     if (window.PAStatusStream?.isSupported()) {
-      startSseMode();
+      // SSE mode: subscribe and set up conditional polling
+      unsubscribe = window.PAStatusStream.subscribe((eventType, payload) => {
+        if (eventType === "status") {
+          renderFooter(payload);
+          // Status arrived: cancel any pending retry
+          retryPoll?.cancelRetry();
+        }
+      });
+
+      // Start retry poll only if no cached status
+      if (!window.PAStatusStream.getLastStatus()) {
+        retryPoll = window.PageBootstrap.createBackgroundPoll(fetchStatus, {
+          retry: { baseMs: 500, factor: 2, maxAttempts: 3 },
+          runOnStart: true,
+        });
+        retryPoll.start();
+      }
+
+      // Version poll: conditional, only while no real data
+      versionPoll = window.PageBootstrap.createBackgroundPoll(fetchStatus, {
+        cadenceMs: 5000,
+        skipWhen: () => hasRealData,
+        refreshOnReturn: true,
+      });
+      versionPoll.start();
     } else {
-      startFallbackPolling();
+      // Fallback mode: no SSE, poll for everything
+      versionPoll = window.PageBootstrap.createBackgroundPoll(fetchStatus, {
+        cadenceMs: 5000,
+        runOnStart: true,
+        refreshOnReturn: true,
+      });
+      versionPoll.start();
     }
 
-    document.addEventListener("visibilitychange", onVisibilityChange);
     window.addEventListener("beforeunload", () => {
-      document.removeEventListener("visibilitychange", onVisibilityChange);
       if (unsubscribe) unsubscribe();
-      if (pollTimer !== null) {
-        window.clearInterval(pollTimer);
-        pollTimer = null;
-      }
+      if (versionPoll) versionPoll.stop();
+      if (retryPoll) retryPoll.stop();
     });
   };
 

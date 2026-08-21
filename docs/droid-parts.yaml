@@ -1,0 +1,122 @@
+# protoArtoo Droid Parts Catalog — MrBaddeley MK4 (default model)
+# ================================================================
+# Source of truth for the physical parts of the default droid design: every
+# panel, door, arm, and fixture, with its community-standard shorthand and
+# position. This is DATA ONLY — mapping UI, body SVG views, and per-part
+# control land later (see issue #175). Code that needs a part vocabulary
+# (dome map, body views, sequence lanes, wiring sheet) reads from here.
+#
+# Naming policy (operator decision 2026-08-22):
+#   The BASE name for a part follows MrBaddeley's design part names (cad_name)
+#   wherever the MK4 design provides one. The community vocabulary — Printed
+#   Droid PP/P/HP shorthand and plain-English labels — is carried in `aliases`,
+#   first-class for import matching, search, and anything a visiting builder
+#   types. UI shows the base name with the shorthand alongside.
+#   Dome cad_name values are TBD: they must be read out of the actual MK4
+#   design files (the dome CAD names are known to be unordered/duplicated,
+#   which is why ids here are position-ordered instead) — do not guess them.
+#
+# Field notes:
+#   id:         protoArtoo part id — stable, position-ordered per class
+#   shorthand:  the community channel-naming standard from the Printed Droid
+#               R2-D2 terminology reference (printed-droid.com/kb/r2-d2-terminology):
+#               PP1..PP6 pie panels, P1..P14 lower dome panels, HPn-1/HPn-2
+#               holoprojector pan/tilt. This is what builders type and expect.
+#   cad_name:   the part's name in MrBaddeley's MK4 design files (names only;
+#               no geometry from those files lives in this repository).
+#   aliases:    community/plain-English names that must match on import/search.
+#   bearing_deg: degrees clockwise viewed from above, 0 = dead astern,
+#               180 = dead ahead (Printed Droid drawing convention). Dome
+#               entries carry real bearings; body entries carry position
+#               words only until measured on our droid.
+#   position:   compass-ish word — easier to find on a real droid than a number.
+#   control:    how protoArtoo can reach the part TODAY:
+#               dome-link  = AstroPixelsPlus serial (:OPnn/:CLnn panel numbers)
+#               body-ledc  = local LEDC PWM channel on the Artoo PCB
+#               none       = present on the droid design, nothing drives it yet
+#   dome_link_panel: the :OPnn/:CLnn number our AstroPixelsPlus fork serves
+#               for this part. TBD until verified against the fork's panel
+#               table on hardware — do not guess.
+#
+# Dome panel notes ("lit"): panels Printed Droid lists as carrying lights or
+# displays rather than a servo. A mapping onto one of these is unusual but
+# legal — query it, never refuse it.
+
+model:
+  design: MrBaddeley MK4
+  dome_pies_large: 6      # PP1..PP6 — the six primary pie panels
+  dome_pies_small: 6      # MK4 design also has 6 small inner pies (no PP shorthand)
+  dome_lower_panels: 14   # P1..P14
+  holoprojectors: 3       # HP1..HP3, pan+tilt each
+
+dome_pies:
+  - { id: pie1, cad_name: TBD, shorthand: PP1, aliases: ["PP1", "Dome pie 1"], bearing_deg: 150, position: rear-right,  control: dome-link, dome_link_panel: TBD }
+  - { id: pie2, cad_name: TBD, shorthand: PP2, aliases: ["PP2", "Dome pie 2"], bearing_deg: 90,  position: right,       control: dome-link, dome_link_panel: TBD }
+  - { id: pie3, cad_name: TBD, shorthand: PP3, aliases: ["PP3", "Dome pie 3"], bearing_deg: 30,  position: front-right, control: dome-link, dome_link_panel: TBD,
+      note: usually carries holoprojector 3 }
+  - { id: pie4, cad_name: TBD, shorthand: PP4, aliases: ["PP4", "Dome pie 4"], bearing_deg: 330, position: front-left,  control: dome-link, dome_link_panel: TBD,
+      note: usually the periscope }
+  - { id: pie5, cad_name: TBD, shorthand: PP5, aliases: ["PP5", "Dome pie 5"], bearing_deg: 270, position: left,        control: dome-link, dome_link_panel: TBD }
+  - { id: pie6, cad_name: TBD, shorthand: PP6, aliases: ["PP6", "Dome pie 6"], bearing_deg: 210, position: rear-left,   control: dome-link, dome_link_panel: TBD }
+
+dome_panels:
+  - { id: panel1,  cad_name: TBD, shorthand: P1,  aliases: ["P1",  "Dome side panel 1"],  bearing_deg: 142.5, position: rear-right,  control: dome-link, dome_link_panel: TBD }
+  - { id: panel2,  cad_name: TBD, shorthand: P2,  aliases: ["P2",  "Dome side panel 2"],  bearing_deg: 128,   position: rear-right,  control: dome-link, dome_link_panel: TBD }
+  - { id: panel3,  cad_name: TBD, shorthand: P3,  aliases: ["P3",  "Dome side panel 3"],  bearing_deg: 114,   position: right,       control: dome-link, dome_link_panel: TBD }
+  - { id: panel4,  cad_name: TBD, shorthand: P4,  aliases: ["P4",  "Dome side panel 4"],  bearing_deg: 94,    position: right,       control: dome-link, dome_link_panel: TBD }
+  - { id: panel5,  cad_name: TBD, shorthand: P5,  aliases: ["P5",  "Dome side panel 5"],  bearing_deg: 75.5,  position: right,       control: none,
+      lit: Magic Panel }
+  - { id: panel6,  cad_name: TBD, shorthand: P6,  aliases: ["P6",  "Dome side panel 6"],  bearing_deg: 62.5,  position: front-right, control: none,
+      lit: small upper panel }
+  - { id: panel7,  cad_name: TBD, shorthand: P7,  aliases: ["P7",  "Dome side panel 7"],  bearing_deg: 45,    position: front-right, control: dome-link, dome_link_panel: TBD }
+  - { id: panel8,  cad_name: TBD, shorthand: P8,  aliases: ["P8",  "Dome side panel 8"],  bearing_deg: 24,    position: front,       control: none,
+      lit: Rear PSI }
+  - { id: panel9,  cad_name: TBD, shorthand: P9,  aliases: ["P9",  "Dome side panel 9"],  bearing_deg: 300,   position: rear-left,   control: none,
+      lit: Rear Logic Display }
+  - { id: panel10, cad_name: TBD, shorthand: P10, aliases: ["P10", "Dome side panel 10"], bearing_deg: 242,   position: left,        control: dome-link, dome_link_panel: TBD }
+  - { id: panel11, cad_name: TBD, shorthand: P11, aliases: ["P11", "Dome side panel 11"], bearing_deg: 217,   position: rear-left,   control: dome-link, dome_link_panel: TBD }
+  - { id: panel12, cad_name: TBD, shorthand: P12, aliases: ["P12", "Dome side panel 12"], bearing_deg: 204,   position: rear,        control: none,
+      lit: Front Logic Displays }
+  - { id: panel13, cad_name: TBD, shorthand: P13, aliases: ["P13", "Dome side panel 13"], bearing_deg: 194,   position: rear,        control: dome-link, dome_link_panel: TBD }
+  - { id: panel14, cad_name: TBD, shorthand: P14, aliases: ["P14", "Dome side panel 14"], bearing_deg: 184,   position: rear,        control: none,
+      lit: Front PSI }
+
+holoprojectors:
+  - { id: hp1Pan,  cad_name: TBD, shorthand: HP1-1, aliases: ["HP1-1", "Holoprojector 1 pan"],  unit: 1, axis: pan,  bearing_deg: 165, position: rear,  control: none }
+  - { id: hp1Tilt, cad_name: TBD, shorthand: HP1-2, aliases: ["HP1-2", "Holoprojector 1 tilt"], unit: 1, axis: tilt, bearing_deg: 165, position: rear,  control: none }
+  - { id: hp2Pan,  cad_name: TBD, shorthand: HP2-1, aliases: ["HP2-1", "Holoprojector 2 pan"],  unit: 2, axis: pan,  bearing_deg: 350, position: front, control: none }
+  - { id: hp2Tilt, cad_name: TBD, shorthand: HP2-2, aliases: ["HP2-2", "Holoprojector 2 tilt"], unit: 2, axis: tilt, bearing_deg: 350, position: front, control: none }
+  - { id: hp3Pan,  cad_name: TBD, shorthand: HP3-1, aliases: ["HP3-1", "Holoprojector 3 pan"],  unit: 3, axis: pan,  bearing_deg: 38,  position: front-right, control: none,
+      note: sits inside pie panel PP3 }
+  - { id: hp3Tilt, cad_name: TBD, shorthand: HP3-2, aliases: ["HP3-2", "Holoprojector 3 tilt"], unit: 3, axis: tilt, bearing_deg: 38,  position: front-right, control: none }
+
+dome_fixtures:            # orientation references — not servos
+  - { id: domeBtn1, label: Dome button 1, bearing_deg: 8,  position: front }
+  - { id: domeBtn2, label: Dome button 2, bearing_deg: 20, position: front }
+
+body_doors:
+  - { id: doorFL,    cad_name: FLBreadpanDoor,  aliases: ["Left body door", "FL door"],       position: front-left,  control: none }
+  - { id: doorFR,    cad_name: FRBreadpandoor,  aliases: ["Right body door", "FR door"],      position: front-right, control: none }
+  - { id: doorRL,    cad_name: RLBreadpanDoor,  aliases: ["Rear-left body door", "RL door"],  position: rear-left,   control: none }
+  - { id: doorRR,    cad_name: RRBreadpandoor,  aliases: ["Rear-right body door", "RR door"], position: rear-right,  control: none }
+  - { id: dataport,  cad_name: DataPortDoor,    aliases: ["Dataport door", "Dataport"],       position: front-left,  control: none }
+  - { id: chargebay, cad_name: ChargingBayDoor, aliases: ["Chargebay door", "Charge bay"],    position: front-right, control: none }
+  - { id: smallDoor, cad_name: SmallLongDoor,   aliases: ["Small long door"],                 position: front,       control: none }
+  - { id: drawer,    cad_name: Drawer,          aliases: ["Drawer"],                          position: front,       control: none }
+
+body_arms:
+  - { id: utilUp,    cad_name: UpperUtilityArm, aliases: ["Upper utility arm"], position: front, control: body-ledc,
+      note: one of the two MG996R utility arm servos protoArtoo already drives }
+  - { id: utilLo,    cad_name: LowerUtilityArm, aliases: ["Lower utility arm"], position: front, control: body-ledc,
+      note: one of the two MG996R utility arm servos protoArtoo already drives }
+  - { id: gripArm,   cad_name: null, aliases: ["Gripper arm"],    position: front-left,  control: none,
+      note: common MK4 addition; not in the base MK4 design exports }
+  - { id: gripClaw,  cad_name: null, aliases: ["Gripper claw"],   position: front-left,  control: none }
+  - { id: interArm,  cad_name: null, aliases: ["Interface arm"],  position: front-right, control: none }
+  - { id: interTool, cad_name: null, aliases: ["Interface tool"], position: front-right, control: none }
+
+# Escape hatch for off-model hardware wired to spare outputs (fire
+# extinguisher, custom rigs). Exists so a real output is never unnameable.
+other_slots:
+  count: 10
+  id_prefix: other        # other1..other10

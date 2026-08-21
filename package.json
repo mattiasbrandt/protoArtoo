@@ -1,0 +1,27 @@
+{
+  "name": "protoartoo",
+  "version": "1.0.0",
+  "description": "<p align=\"center\">   <img src=\"data/r2d2body.svg\" alt=\"protoArtoo logo\" width=\"96\" height=\"96\"> </p>",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs",
+    "test": "test"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mattiasbrandt/protoArtoo.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/mattiasbrandt/protoArtoo/issues"
+  },
+  "homepage": "https://github.com/mattiasbrandt/protoArtoo#readme",
+  "devDependencies": {
+    "playwright": "^1.59.1"
+  }
+}

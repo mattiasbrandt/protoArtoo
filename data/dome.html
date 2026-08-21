@@ -1,11 +1,12 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-scripts="/web_api.js,/status_stream.js,/shell.js,/dome.js,/footer.js">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Dome - protoArtoo</title>
     <link rel="stylesheet" href="/style.css">
     <link rel="icon" type="image/png" href="/r2d2body-favicon.png">
+    <!-- PA:INCLUDE _recovery_kernel.html -->
   </head>
   <body data-page="dome">
     <div id="shell-top"></div>
@@ -22,17 +23,23 @@
 
     <div class="card">
       <h3>🔄 Dome Rotation</h3>
-      <div class="desc">Drag the slider to rotate the dome. Releasing returns to stop automatically.</div>
-      <div class="slider-container mt-16">
-        <input id="dome-slider" type="range" min="-100" max="100" value="0"
-          aria-label="Dome rotation speed">
-        <div class="slider-labels">
-          <span>Reverse</span>
-          <span>Stop</span>
-          <span>Forward</span>
-        </div>
+      <div class="dome-toolbar mt-16">
+        <span id="dome-hardware-pill" class="status-pill pill-info status-pill-compact">🧩 DOME status pending</span>
+        <span id="dome-web-pill" class="status-pill pill-info status-pill-compact">🕹️ Web control status pending</span>
       </div>
-      <div class="slider-value" id="dome-speed-display">0%</div>
+      <div class="dome-live-track mt-16" role="img" aria-label="Live dome rotation target from RC input">
+        <div id="dome-live-fill" class="dome-live-fill"></div>
+        <div class="dome-live-center"></div>
+      </div>
+      <div class="slider-labels">
+        <span>Reverse</span>
+        <span>Stop</span>
+        <span>Forward</span>
+      </div>
+      <div class="dome-live-meta mt-12">
+        <div class="slider-value" id="dome-speed-display">0%</div>
+        <span id="dome-rotation-state" class="status-pill pill-info">⏸️ Idle</span>
+      </div>
       <div id="dome-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true">Dome ready.</div>
     </div>
 
@@ -44,25 +51,25 @@
         <strong>Note:</strong> ESC calibration, PWM frequency, and voltage cutoff are configured
         via the ISD Go mobile app over Bluetooth. These settings only adjust the pulse width range.
       </div>
-      <form id="esc-form" class="form-grid mt-16">
+      <form id="esc-form" class="form-grid dome-settings-grid mt-16">
         <label class="field">
           <span>Neutral Pulse (µs)</span>
-          <input id="dome-neutral" name="domeNeutralUs" type="number" min="1000" max="2000" step="1"
+          <input id="dome-neutral" class="compact-number" name="domeNeutralUs" type="number" min="1000" max="2000" step="1"
             title="ESC neutral/stop pulse width in microseconds">
         </label>
         <label class="field">
           <span>Minimum Pulse (µs)</span>
-          <input id="dome-min-pulse" name="domeMinPulseUs" type="number" min="1000" max="2000" step="1"
+          <input id="dome-min-pulse" class="compact-number" name="domeMinPulseUs" type="number" min="1000" max="2000" step="1"
             title="ESC full-reverse pulse width in microseconds">
         </label>
         <label class="field">
           <span>Maximum Pulse (µs)</span>
-          <input id="dome-max-pulse" name="domeMaxPulseUs" type="number" min="1000" max="2000" step="1"
+          <input id="dome-max-pulse" class="compact-number" name="domeMaxPulseUs" type="number" min="1000" max="2000" step="1"
             title="ESC full-forward pulse width in microseconds">
         </label>
         <label class="field">
           <span>Speed Limit (%)</span>
-          <input id="dome-speed-limit" name="domeSpeedLimitPct" type="number" min="0" max="100" step="1"
+          <input id="dome-speed-limit" class="compact-number" name="domeSpeedLimitPct" type="number" min="0" max="100" step="1"
             title="Maximum dome rotation speed as a percentage of the full ESC range">
         </label>
         <div class="button-row">
@@ -72,12 +79,53 @@
       <div id="esc-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true">Loading motor settings...</div>
     </div>
 
+    <!-- Random Dome Movement -->
+    <div class="card">
+      <h3>🎲 Random Dome Movement</h3>
+      <div class="desc">Autonomous idle dome rotation when no RC or web command is active.</div>
+      <form id="rnd-dome-form" class="form-grid dome-settings-grid mt-16">
+        <label class="field field-full">
+          <span>Enable random movement</span>
+          <input id="dome-rnd-enable" name="domeRndEnable" type="checkbox"
+            title="Enable autonomous idle dome rotation">
+        </label>
+        <label class="field">
+          <span>Speed (%)</span>
+          <input id="dome-rnd-speed" class="compact-number" name="domeRndSpeedPct"
+            type="number" min="5" max="100" step="1"
+            title="Rotation speed during each random movement as a percentage of maximum dome speed">
+        </label>
+        <label class="field">
+          <span>Min pause (s)</span>
+          <input id="dome-rnd-pause-min" class="compact-number" name="domeRndPauseMin"
+            type="number" min="1" max="120" step="1"
+            title="Minimum idle pause duration between random movements in seconds">
+        </label>
+        <label class="field">
+          <span>Max pause (s)</span>
+          <input id="dome-rnd-pause-max" class="compact-number" name="domeRndPauseMax"
+            type="number" min="1" max="120" step="1"
+            title="Maximum idle pause duration between random movements in seconds">
+        </label>
+        <label class="field">
+          <span>Move duration (ms)</span>
+          <input id="dome-rnd-move-ms" class="compact-number" name="domeRndMoveMs"
+            type="number" min="500" max="10000" step="100"
+            title="Duration of each random rotation movement in milliseconds">
+        </label>
+        <div class="button-row">
+          <button id="reload-rnd-button" class="btn" type="button">🔄 Reload</button>
+        </div>
+      </form>
+      <div id="rnd-feedback" class="feedback mt-12" role="status"
+           aria-live="polite" aria-atomic="true">Loading random movement settings...</div>
+    </div>
+
     <div id="shell-status"></div>
 
-    <script src="/web_api.js"></script>
-    <script src="/status_stream.js"></script>
-    <script src="/shell.js"></script>
-    <script src="/dome.js"></script>
-    <script src="/footer.js"></script>
+    <!-- No bootstrap <script src> here on purpose: the inline kernel in <head>
+         fetches /page_bootstrap.js itself, with retry, and hands it the script
+         chain from <html data-scripts>. A bare tag has no retry, and the
+         controller sheds connections in the opening burst by design. -->
   </body>
 </html>

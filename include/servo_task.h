@@ -1,7 +1,7 @@
 // =============================================================================
 // include/servo_task.h
 //
-// ServoTask — controls utility arm servos via LEDC PWM.
+// ServoTask  --  controls utility arm servos via LEDC PWM.
 // Receives commands via servoCmdQueue and executes them.
 // =============================================================================
 #pragma once
@@ -16,5 +16,5 @@
 // Call once from setup().
 void servoTaskInit();
 
-// The ServoTask function — runs on Core 1.
+// The ServoTask function  --  runs on Core 1.
 void servoTask(void* pvParameters);

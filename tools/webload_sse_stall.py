@@ -1,0 +1,552 @@
+#!/usr/bin/env python3
+"""Stalled-SSE-client scenario for issue #73.
+
+Neither a browser tab nor curl can produce a half-open SSE client on demand:
+closing the tab sends a clean FIN, and normal reads keep draining the socket.
+This script opens a raw TCP connection to /api/events, completes the HTTP
+handshake to become a real subscribed SSE client (so it counts toward
+sseClients and receives real broadcast traffic), then stops calling recv()
+entirely while leaving the socket open -- exactly the "server keeps sending,
+client stopped reading" condition #73 asks about. TCP flow control does the
+rest: once the client's receive window fills, the server's next send() on
+that socket blocks (ESPAsyncWebServer) or retries in a blocking loop
+(PsychicEventSource, see #72/#73 findings) rather than returning immediately.
+
+Meanwhile a second, independent connection polls /api/status on a fixed
+cadence so heap/sseClients/uptimeMs are observable throughout the stall
+without touching the stalled socket. Reuses tools/issue65_live_ab_runtime.py's
+already-hardened Timeline/NDJSON/atomic-JSON primitives rather than
+re-deriving them, per this repo's established webload_* convention.
+
+This is a standalone scenario tool, not a replacement for
+webload_baseline_run.py -- it produces its own evidence subtree
+(tasks/evidence/webload/<run-id>/sse-stall/) that a run-id shared with a
+webload_baseline_run.py --stage full capture can sit alongside.
+"""
+from __future__ import annotations
+
+import argparse
+from pathlib import Path
+import socket
+import sys
+import threading
+import time
+from typing import Any
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import issue65_live_ab_runtime as r65  # noqa: E402  (reused, hardened primitives)
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+EVIDENCE_ROOT = REPO_ROOT / "tasks" / "evidence" / "webload"
+DEFAULT_CONTROLLER = "10.0.0.22"
+DEFAULT_PORT = 80
+DEFAULT_PATH = "/api/events"
+HANDSHAKE_DEADLINE_SECONDS = 10.0
+STATUS_POLL_INTERVAL_SECONDS = 2.0
+STATUS_REQUEST_DEADLINE_SECONDS = 5.0
+
+
+class SseStallError(RuntimeError):
+    """A scenario setup or evidence-write step could not be completed."""
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--controller", default=DEFAULT_CONTROLLER)
+    parser.add_argument("--port", type=int, default=DEFAULT_PORT)
+    parser.add_argument("--path", default=DEFAULT_PATH)
+    parser.add_argument("--run-id", required=True)
+    parser.add_argument(
+        "--stall-seconds", type=float, default=90.0,
+        help="how long to hold the SSE socket open without reading it",
+    )
+    parser.add_argument(
+        "--end-mode", choices=("drain", "abrupt"), default="drain",
+        help=(
+            "drain: recv() everything queued at the end and observe how much "
+            "backlog piled up, then close cleanly. abrupt: close the socket "
+            "immediately without reading, simulating a dropped connection "
+            "(e.g. WiFi roam) rather than a tab that wakes back up."
+        ),
+    )
+    parser.add_argument(
+        "--healthy-clients", type=int, default=0,
+        help=(
+            "additional SSE clients that keep reading normally throughout the "
+            "stall. Issue #83 asks whether the broadcaster keeps serving other "
+            "clients while one is being evicted, and a run with only the "
+            "stalled client cannot answer that: a broadcaster frozen for the "
+            "whole window and one that never froze look identical from "
+            "/api/status alone. Each of these counts the events it actually "
+            "received, so a gap in service becomes a number."
+        ),
+    )
+    parser.add_argument(
+        "--recv-buffer-bytes", type=int, default=None,
+        help=(
+            "shrink the stalled client's SO_RCVBUF before connect. Without this "
+            "the scenario does not actually stall: run-38 showed a default "
+            "receive buffer absorbing 70.8 KB of 1 Hz broadcasts across a 90s "
+            "window without the server ever reaching a would-block, so a send "
+            "deadline could not fire and the run proved nothing about it. "
+            "2048 fills within a couple of events."
+        ),
+    )
+    parser.add_argument(
+        "--reconnect-after", action="store_true",
+        help=(
+            "after the stall window, open a fresh SSE connection and confirm it "
+            "is accepted. An evicted client must find its slot released -- "
+            "otherwise eviction would trade a stalled stream for a permanently "
+            "consumed one of only three, and the frontend's backoff would "
+            "reconnect forever into a full cap."
+        ),
+    )
+    return parser
+
+
+class HealthyClient:
+    """An ordinary SSE subscriber that keeps draining its socket for the whole
+    stall window, counting the events it receives.
+
+    This is the control the stalled client is measured against. Its event count
+    over a 90s window at 1 Hz is the direct evidence for "the broadcaster
+    continues serving other clients uninterrupted": a broadcaster held by the
+    stalled peer would starve this one at the same time."""
+
+    def __init__(self, index: int, controller: str, port: int, path: str) -> None:
+        self.index = index
+        self.controller = controller
+        self.port = port
+        self.path = path
+        self.socket: socket.socket | None = None
+        self.event_count = 0
+        self.byte_count = 0
+        self.first_event_monotonic: float | None = None
+        self.last_event_monotonic: float | None = None
+        self.max_gap_seconds = 0.0
+        self.error: str | None = None
+        self._stop = threading.Event()
+        self._thread = threading.Thread(
+            target=self._run, name=f"sse-healthy-{index}", daemon=True,
+        )
+
+    def connect(self, timeline: r65.Timeline) -> dict[str, Any]:
+        self.socket, record = _open_sse_connection(
+            self.controller, self.port, self.path, timeline,
+        )
+        return record
+
+    def start(self) -> None:
+        self._thread.start()
+
+    def _run(self) -> None:
+        assert self.socket is not None
+        self.socket.settimeout(0.5)
+        while not self._stop.is_set():
+            try:
+                chunk = self.socket.recv(65536)
+            except (TimeoutError, socket.timeout):
+                continue
+            except OSError as error:
+                self.error = str(error)
+                return
+            if not chunk:
+                self.error = "server closed the stream"
+                return
+            now = time.monotonic()
+            self.byte_count += len(chunk)
+            # Each SSE event ends in a blank line. Counting terminators rather
+            # than recv() calls keeps the number meaningful regardless of how
+            # TCP happened to segment the stream.
+            events = chunk.count(b"\r\n\r\n")
+            if events == 0:
+                continue
+            self.event_count += events
+            if self.first_event_monotonic is None:
+                self.first_event_monotonic = now
+            elif self.last_event_monotonic is not None:
+                # The longest silence this client saw. A broadcaster frozen on
+                # the stalled peer shows up here as a gap, even if the total
+                # count still looks healthy once it resumes.
+                self.max_gap_seconds = max(
+                    self.max_gap_seconds, now - self.last_event_monotonic,
+                )
+            self.last_event_monotonic = now
+
+    def stop_and_join(self, timeout: float = 5.0) -> dict[str, Any]:
+        self._stop.set()
+        self._thread.join(timeout)
+        if self.socket is not None:
+            self.socket.close()
+        return {
+            "index": self.index,
+            "eventCount": self.event_count,
+            "byteCount": self.byte_count,
+            "maxGapSeconds": round(self.max_gap_seconds, 3),
+            "error": self.error,
+        }
+
+
+def _open_sse_connection(
+    controller: str, port: int, path: str, timeline: r65.Timeline,
+    recv_buffer_bytes: int | None = None,
+) -> tuple[socket.socket, dict[str, Any]]:
+    """Complete the HTTP handshake over a raw socket and confirm the
+    response is a live text/event-stream before returning it un-drained.
+
+    recv_buffer_bytes shrinks SO_RCVBUF before connect(), which is what makes a
+    stall actually stall. The first run of this scenario against the #83 guard
+    absorbed 70.8 KB over 90 s and never reached a would-block at all: a default
+    receive buffer plus window scaling swallows a 1 Hz broadcast indefinitely, so
+    "the client stopped reading" never becomes "the server cannot write". The
+    option has to be set before connect() because the advertised window is
+    negotiated in the SYN -- setting it afterwards leaves the peer already told
+    it may send far more.
+    """
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    if recv_buffer_bytes is not None:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, recv_buffer_bytes)
+    sock.settimeout(HANDSHAKE_DEADLINE_SECONDS)
+    sock.connect((controller, port))
+    request = (
+        f"GET {path} HTTP/1.1\r\n"
+        f"Host: {controller}\r\n"
+        "Accept: text/event-stream\r\n"
+        "Cache-Control: no-cache\r\n"
+        "Connection: keep-alive\r\n"
+        "\r\n"
+    ).encode("ascii")
+    sock.sendall(request)
+
+    sock.settimeout(HANDSHAKE_DEADLINE_SECONDS)
+    header_bytes = b""
+    deadline = time.monotonic() + HANDSHAKE_DEADLINE_SECONDS
+    while b"\r\n\r\n" not in header_bytes:
+        if time.monotonic() > deadline:
+            sock.close()
+            raise SseStallError(f"{path} did not complete headers within deadline")
+        chunk = sock.recv(4096)
+        if not chunk:
+            sock.close()
+            raise SseStallError(f"{path} closed the connection during the handshake")
+        header_bytes += chunk
+    header_text, _, leftover = header_bytes.partition(b"\r\n\r\n")
+    status_line = header_text.split(b"\r\n", 1)[0].decode("ascii", errors="replace")
+    if " 200 " not in f" {status_line} ":
+        sock.close()
+        raise SseStallError(f"{path} returned unexpected status line: {status_line!r}")
+    if b"text/event-stream" not in header_text.lower():
+        sock.close()
+        raise SseStallError(f"{path} did not respond with text/event-stream: {header_text!r}")
+
+    # Confirm at least one real event arrives before starting the stall --
+    # otherwise a stall that "succeeds" could just mean the stream never
+    # started, not that a live broadcast got stuck behind a full window.
+    first_event = leftover
+    if b"\n\n" not in first_event and b"data:" not in first_event:
+        sock.settimeout(HANDSHAKE_DEADLINE_SECONDS)
+        try:
+            chunk = sock.recv(4096)
+        except (TimeoutError, socket.timeout) as error:
+            sock.close()
+            raise SseStallError(
+                f"{path} handshake completed but no event arrived within deadline"
+            ) from error
+        first_event += chunk
+
+    connect_record = timeline.record(
+        "sse-connected", statusLine=status_line,
+        firstEventBytes=len(first_event), localPort=sock.getsockname()[1],
+        # What the kernel actually granted, not what was asked for: Linux
+        # doubles SO_RCVBUF for its own bookkeeping and clamps to
+        # net.core.rmem_min. Recording the effective value keeps a run from
+        # claiming a window size it never had.
+        recvBufferBytes=sock.getsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF),
+    )
+    return sock, connect_record
+
+
+class StatusSampler:
+    """Poll /api/status on an independent connection while the SSE socket
+    is stalled, so heap/sseClients/uptimeMs are observable without touching
+    the socket under test. Mirrors webload_baseline_run.py's LogsMonitor
+    shape (background thread, durable NDJSON append per sample)."""
+
+    def __init__(self, controller: str, samples_path: Path, timeline: r65.Timeline) -> None:
+        self.controller = controller
+        self.samples_path = samples_path
+        self.timeline = timeline
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._run, name="sse-stall-status-sampler", daemon=True)
+        self.error: BaseException | None = None
+        self.samples: list[dict[str, Any]] = []
+
+    def start(self) -> None:
+        self._thread.start()
+
+    def stop_and_join(self, timeout: float = 5.0) -> None:
+        self._stop.set()
+        self._thread.join(timeout)
+        if self._thread.is_alive():
+            raise SseStallError("status sampler did not stop within deadline")
+        if self.error is not None:
+            raise SseStallError(f"status sampler failed: {self.error}")
+
+    def _sample(self) -> None:
+        try:
+            status = r65._http_json(
+                f"http://{self.controller}/api/status", STATUS_REQUEST_DEADLINE_SECONDS,
+            )
+            success, error = True, None
+        except r65.Issue65RuntimeError as request_error:
+            status, success, error = None, False, str(request_error)
+        record = r65.append_ndjson(
+            self.samples_path, self.timeline, "status-sample",
+            success=success, error=error,
+            heapFree=(status or {}).get("heapFree"),
+            heapLargest8bit=(status or {}).get("heapLargest8bit"),
+            sseClients=(status or {}).get("sseClients"),
+            uptimeMs=(status or {}).get("uptimeMs"),
+            # Issue #83's guard publishes its own work. Without these the run
+            # says only "heap held", which is also what a run where nothing
+            # ever stalled looks like -- the eviction count is what separates
+            # "the deadline fired" from "the scenario did not reproduce".
+            # Absent on any firmware predating that guard, and recorded as
+            # None rather than 0 so a missing field cannot read as "no
+            # evictions".
+            sseEvicted=(status or {}).get("sseEvicted"),
+            refusedSseCap=(status or {}).get("refusedSseCap"),
+            # Issue #92's response-phase deadline publishes its own work.
+            # Recorded as None when absent (firmware predating ADR 0024).
+            responseDeadlineClosures=(status or {}).get("responseDeadlineClosures"),
+            responseDeadlineAgeMs=(status or {}).get("responseDeadlineAgeMs"),
+            responseLastMs=(status or {}).get("responseLastMs"),
+            responseMaxMs=(status or {}).get("responseMaxMs"),
+        )
+        self.samples.append(record)
+
+    def _run(self) -> None:
+        next_sample = time.monotonic()
+        try:
+            while not self._stop.is_set():
+                now = time.monotonic()
+                if now >= next_sample:
+                    self._sample()
+                    next_sample = max(
+                        next_sample + STATUS_POLL_INTERVAL_SECONDS, time.monotonic(),
+                    )
+                self._stop.wait(max(0.01, min(0.2, next_sample - time.monotonic())))
+        except BaseException as error:  # noqa: BLE001 - surfaced via stop_and_join()
+            self.error = error
+
+
+def _summarize_samples(samples: list[dict[str, Any]]) -> dict[str, Any]:
+    reachable = [s for s in samples if s.get("success")]
+    unreachable_count = len(samples) - len(reachable)
+    device_reset_detected = False
+    previous_uptime: int | None = None
+    for sample in reachable:
+        uptime = sample.get("uptimeMs")
+        if isinstance(uptime, int) and previous_uptime is not None and uptime < previous_uptime:
+            device_reset_detected = True
+        if isinstance(uptime, int):
+            previous_uptime = uptime
+    heap_values = [
+        s["heapLargest8bit"] for s in reachable
+        if isinstance(s.get("heapLargest8bit"), int)
+    ]
+    free_values = [
+        s["heapFree"] for s in reachable if isinstance(s.get("heapFree"), int)
+    ]
+    evicted = [s["sseEvicted"] for s in reachable if isinstance(s.get("sseEvicted"), int)]
+    deadline_closures = [
+        s["responseDeadlineClosures"] for s in reachable
+        if isinstance(s.get("responseDeadlineClosures"), int)
+    ]
+    response_max = [
+        s["responseMaxMs"] for s in reachable
+        if isinstance(s.get("responseMaxMs"), int)
+    ]
+    return {
+        "sampleCount": len(samples),
+        "unreachableCount": unreachable_count,
+        "deviceResetDetected": device_reset_detected,
+        "heapLargest8bitMin": min(heap_values) if heap_values else None,
+        "heapLargest8bitMax": max(heap_values) if heap_values else None,
+        # #73 scored the slide on heapFree (58.7K -> 53.5K), so the comparable
+        # numbers have to be first/last of that same field rather than a min
+        # and a max, which cannot tell a monotonic slide from a transient dip.
+        "heapFreeFirst": free_values[0] if free_values else None,
+        "heapFreeLast": free_values[-1] if free_values else None,
+        "heapFreeDelta": (free_values[-1] - free_values[0]) if free_values else None,
+        # None when the firmware does not publish the counter at all, which is
+        # a different statement from "it published zero".
+        "sseEvictedFirst": evicted[0] if evicted else None,
+        "sseEvictedLast": evicted[-1] if evicted else None,
+        # Issue #92's response-phase deadline counter and high-water mark.
+        # Absent on firmware predating ADR 0024; None is the marker.
+        "responseDeadlineClosuresFirst": deadline_closures[0] if deadline_closures else None,
+        "responseDeadlineClosuresLast": deadline_closures[-1] if deadline_closures else None,
+        "responseMaxMsHighWater": max(response_max) if response_max else None,
+    }
+
+
+def _drain(sock: socket.socket, deadline_seconds: float) -> tuple[int, int, str | None]:
+    """Read whatever backlog is queued, bounded so a genuinely stuck server
+    can't hang the scenario forever.
+
+    Returns (byteCount, recvCallCount, resetError). A connection reset here is
+    not a harness failure -- it is the expected shape of a successful eviction:
+    the guard abandons a stalled client with linger{on,0}, which is an RST, so
+    the backlog is discarded rather than handed over. Recording it is the
+    client-side confirmation that the drop was abrupt; a graceful close would
+    instead deliver whatever had been queued.
+    """
+    sock.settimeout(1.0)
+    total_bytes = 0
+    total_calls = 0
+    deadline = time.monotonic() + deadline_seconds
+    while time.monotonic() < deadline:
+        try:
+            chunk = sock.recv(65536)
+        except (TimeoutError, socket.timeout):
+            break
+        except OSError as error:
+            return total_bytes, total_calls, str(error)
+        total_calls += 1
+        if not chunk:
+            break
+        total_bytes += len(chunk)
+    return total_bytes, total_calls, None
+
+
+def run(args: argparse.Namespace) -> dict[str, Any]:
+    run_dir = EVIDENCE_ROOT / args.run_id / "sse-stall"
+    run_dir.mkdir(parents=True, exist_ok=False)
+    timeline = r65.Timeline.start()
+    events: list[dict[str, Any]] = []
+
+    # Healthy clients first, so they are already subscribed and reading before
+    # the stalled one exists. Connecting them afterwards would leave it
+    # ambiguous whether they were being served during the stall or only after
+    # the eviction had already cleared it.
+    healthy: list[HealthyClient] = []
+    for index in range(max(0, args.healthy_clients)):
+        client = HealthyClient(index, args.controller, args.port, args.path)
+        events.append(client.connect(timeline))
+        client.start()
+        healthy.append(client)
+    if healthy:
+        print(f"{len(healthy)} healthy SSE client(s) connected and reading")
+
+    sock, connect_record = _open_sse_connection(
+        args.controller, args.port, args.path, timeline,
+        recv_buffer_bytes=args.recv_buffer_bytes,
+    )
+    events.append(connect_record)
+    print(
+        f"SSE connected ({connect_record['statusLine']}, "
+        f"rcvbuf={connect_record['recvBufferBytes']}B); "
+        f"starting {args.stall_seconds:.0f}s stall..."
+    )
+
+    sampler = StatusSampler(args.controller, run_dir / "status-samples.ndjson", timeline)
+    sampler.start()
+
+    stall_start = time.monotonic()
+    # Deliberately no recv() calls on `sock` here -- that omission IS the
+    # scenario. The socket stays open and TCP-alive while the peer (the
+    # controller) keeps trying to push SSE broadcasts into it.
+    time.sleep(max(0.0, args.stall_seconds))
+    stall_elapsed = time.monotonic() - stall_start
+
+    sampler.stop_and_join()
+    events.append(timeline.record("stall-window-elapsed", elapsedSeconds=stall_elapsed))
+
+    drained_bytes = 0
+    drained_calls = 0
+    drain_reset: str | None = None
+    if args.end_mode == "drain":
+        drained_bytes, drained_calls, drain_reset = _drain(sock, deadline_seconds=5.0)
+        events.append(timeline.record(
+            "drain-complete", byteCount=drained_bytes, recvCallCount=drained_calls,
+            resetError=drain_reset,
+        ))
+    try:
+        sock.close()
+    except OSError:
+        # Already gone -- an evicted socket often is by this point.
+        pass
+    events.append(timeline.record("sse-socket-closed", endMode=args.end_mode))
+
+    reconnect_result: dict[str, Any] | None = None
+    if args.reconnect_after:
+        try:
+            reconnect_sock, reconnect_record = _open_sse_connection(
+                args.controller, args.port, args.path, timeline,
+            )
+            reconnect_sock.close()
+            reconnect_result = {"accepted": True, "statusLine": reconnect_record["statusLine"]}
+        except (SseStallError, OSError) as error:
+            reconnect_result = {"accepted": False, "error": str(error)}
+        events.append(timeline.record("reconnect-attempt", **reconnect_result))
+
+    healthy_results = [client.stop_and_join() for client in healthy]
+    if healthy_results:
+        events.append(timeline.record("healthy-clients-stopped", clients=healthy_results))
+
+    summary = _summarize_samples(sampler.samples)
+    outcome = {
+        "schemaVersion": 1,
+        "issue": 73,
+        "scenario": "sse-stall",
+        "runId": args.run_id,
+        "controller": args.controller,
+        "path": args.path,
+        "stallSecondsRequested": args.stall_seconds,
+        "stallSecondsActual": stall_elapsed,
+        "endMode": args.end_mode,
+        "drainedByteCount": drained_bytes,
+        "drainedRecvCallCount": drained_calls,
+        # Set when the stalled client's own socket was reset rather than closed
+        # gracefully -- the client-side half of the eviction being abrupt.
+        "drainResetError": drain_reset,
+        "healthyClients": healthy_results,
+        "recvBufferBytes": connect_record.get("recvBufferBytes"),
+        "reconnect": reconnect_result,
+        **summary,
+    }
+    r65.atomic_write_json(run_dir / "outcome.json", outcome)
+    for event in events:
+        r65._append_ndjson_record(run_dir / "events.ndjson", event)
+    return outcome
+
+
+def main(argv: list[str]) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    try:
+        outcome = run(args)
+    except (SseStallError, r65.Issue65RuntimeError, OSError) as error:
+        print(f"ERROR: {error}", file=sys.stderr)
+        return 1
+    print(
+        f"Done. samples={outcome['sampleCount']} "
+        f"unreachable={outcome['unreachableCount']} "
+        f"deviceResetDetected={outcome['deviceResetDetected']} "
+        f"heapLargest8bit(min/max)={outcome['heapLargest8bitMin']}/{outcome['heapLargest8bitMax']} "
+        f"heapFree(first->last)={outcome['heapFreeFirst']}->{outcome['heapFreeLast']} "
+        f"(delta {outcome['heapFreeDelta']}) "
+        f"sseEvicted={outcome['sseEvictedFirst']}->{outcome['sseEvictedLast']} "
+        f"drained={outcome['drainedByteCount']}B in {outcome['drainedRecvCallCount']} calls "
+        f"rcvbuf={outcome['recvBufferBytes']}B\n"
+        f"healthy={outcome['healthyClients']}\n"
+        f"reconnect={outcome['reconnect']}\n"
+        f"Evidence: tasks/evidence/webload/{args.run_id}/sse-stall/"
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

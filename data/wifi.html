@@ -1,64 +1,148 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-scripts="/web_api.js,/status_stream.js,/shell.js,/wifi.js,/footer.js">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>WiFi - protoArtoo</title>
     <link rel="stylesheet" href="/style.css">
     <link rel="icon" type="image/png" href="/r2d2body-favicon.png">
+    <!-- PA:INCLUDE _recovery_kernel.html -->
   </head>
   <body data-page="wifi">
     <div id="shell-top"></div>
 
-
-    <!-- WiFi Client card — shown when firmware is built in STA mode -->
-    <div class="card hidden" id="wifi-sta-card">
-      <h3>🌐 WiFi Client</h3>
-      <div class="desc" id="wifi-sta-desc">Running in WiFi Client (STA) mode.</div>
+    <div class="card" id="wifi-posture-card">
+      <div class="card-header-row">
+        <h3>📶 Network Posture</h3>
+        <span id="wifi-pending-summary" class="status-pill pill-info status-pill-compact">Loading</span>
+      </div>
+      <div class="desc" id="wifi-posture-desc">Loading WiFi posture...</div>
       <div class="status-grid mt-16">
-        <div class="status-item">
-          <dt>Status</dt>
-          <dd id="wifi-sta-connected">--</dd>
-        </div>
-        <div class="status-item">
-          <dt>IP Address</dt>
-          <dd id="wifi-sta-ip">--</dd>
-        </div>
-        <div class="status-item">
-          <dt>📶 Signal</dt>
-          <dd id="wifi-signal">--</dd>
-          <div class="desc mt-6">RSSI: <span id="wifi-rssi">--</span> dBm</div>
-        </div>
+        <dl>
+          <div class="status-item">
+            <dt>Device setup</dt>
+            <dd id="wifi-provisioning-state">--</dd>
+          </div>
+          <div class="status-item">
+            <dt>Active posture</dt>
+            <dd id="wifi-active-mode">--</dd>
+          </div>
+          <div class="status-item">
+            <dt>Client connection</dt>
+            <dd id="wifi-client-state">--</dd>
+          </div>
+          <div class="status-item">
+            <dt>Signal</dt>
+            <dd id="wifi-signal">--</dd>
+            <div class="desc mt-6">RSSI: <span id="wifi-rssi">--</span> dBm</div>
+          </div>
+          <div class="status-item">
+            <dt>STA IP</dt>
+            <dd id="wifi-sta-ip">--</dd>
+          </div>
+          <div class="status-item">
+            <dt>AP IP</dt>
+            <dd id="wifi-ap-ip">--</dd>
+          </div>
+        </dl>
+      </div>
+      <div class="section-label mt-16">Active vs Saved Settings</div>
+      <div class="wifi-compare-grid mt-12">
+        <dl class="wifi-summary-list" aria-label="Active network settings">
+          <dt>Active now</dt>
+          <dd id="wifi-active-summary-mode">--</dd>
+          <dt>Network</dt>
+          <dd id="wifi-active-summary-network">--</dd>
+          <dt>Address</dt>
+          <dd id="wifi-active-summary-address">--</dd>
+        </dl>
+        <dl class="wifi-summary-list" aria-label="Saved network settings">
+          <dt id="wifi-saved-summary-title">Saved after reboot</dt>
+          <dd id="wifi-saved-summary-mode">--</dd>
+          <dt>Client network</dt>
+          <dd id="wifi-saved-summary-sta">--</dd>
+          <dt>AP network</dt>
+          <dd id="wifi-saved-summary-ap">--</dd>
+        </dl>
       </div>
     </div>
 
-    <!-- Access Point card — active in AP-mode builds -->
-    <div class="card" id="wifi-ap-card">
-      <h3>📡 Access Point</h3>
-      <div class="desc" id="wifi-ap-desc">Connect to this network to reach the controller.</div>
-      <div class="status-grid mt-16">
-        <div class="status-item">
-          <dt>Network Name</dt>
-          <dd id="wifi-ap-ssid">--</dd>
+    <div class="card" id="wifi-settings-card">
+      <h3>💾 Device WiFi Settings</h3>
+      <div class="desc">Save network settings first. The active connection changes after the controller reboots.</div>
+      <form id="wifi-settings-form" class="wifi-settings-form mt-16" novalidate>
+        <div class="section-label">Mode</div>
+        <div class="wifi-mode-options" role="radiogroup" aria-label="WiFi mode">
+          <label class="wifi-mode-option" for="wifi-mode-client">
+            <input id="wifi-mode-client" name="wifiMode" type="radio" value="client" required>
+            <span>
+              <span class="wifi-mode-title">🌐 WiFi Client Mode</span>
+              <span class="desc">Join the operator's WiFi network.</span>
+            </span>
+          </label>
+          <label class="wifi-mode-option" for="wifi-mode-standalone-ap">
+            <input id="wifi-mode-standalone-ap" name="wifiMode" type="radio" value="standalone_ap" required>
+            <span>
+              <span class="wifi-mode-title">📡 Standalone AP Mode</span>
+              <span class="desc">Host the controller WiFi network.</span>
+            </span>
+          </label>
         </div>
-        <div class="status-item">
-          <dt>IP Address</dt>
-          <dd id="wifi-ap-ip">--</dd>
+
+        <div class="section-label">🌐 WiFi Client Settings</div>
+        <div class="wifi-settings-grid mt-12">
+          <label class="field" for="wifi-sta-ssid">
+            <span>Network name</span>
+            <input id="wifi-sta-ssid" name="staSsid" type="text" maxlength="32" autocomplete="off" spellcheck="false">
+            <span id="wifi-sta-ssid-error" class="field-error-message" role="alert"></span>
+          </label>
+          <label class="field" for="wifi-sta-password">
+            <span>Password</span>
+            <input id="wifi-sta-password" name="staPassword" type="password" maxlength="63" autocomplete="new-password">
+            <span id="wifi-sta-password-hint" class="desc">Blank keeps the saved password.</span>
+            <span id="wifi-sta-password-error" class="field-error-message" role="alert"></span>
+          </label>
         </div>
-      </div>
+
+        <div class="section-label mt-16">📡 Standalone AP Settings</div>
+        <div class="wifi-settings-grid mt-12">
+          <label class="field" for="wifi-ap-ssid">
+            <span>Network name</span>
+            <input id="wifi-ap-ssid" name="apSsid" type="text" maxlength="32" autocomplete="off" spellcheck="false">
+            <span id="wifi-ap-ssid-error" class="field-error-message" role="alert"></span>
+          </label>
+          <label class="field" for="wifi-ap-password">
+            <span>Password</span>
+            <input id="wifi-ap-password" name="apPassword" type="password" maxlength="63" autocomplete="new-password">
+            <span id="wifi-ap-password-hint" class="desc">Blank keeps the saved password.</span>
+            <span id="wifi-ap-password-error" class="field-error-message" role="alert"></span>
+          </label>
+        </div>
+
+        <div class="button-row button-row-compact mt-16">
+          <button id="wifi-save-settings-button" class="btn accent" type="submit">💾 Save Settings</button>
+          <button id="reload-wifi-button" class="btn" type="button">🔄 Refresh</button>
+        </div>
+        <div id="wifi-settings-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true">Loading WiFi settings...</div>
+      </form>
     </div>
 
-    <div class="button-row">
-      <button id="reload-wifi-button" class="btn" type="button">🔄 Refresh</button>
+    <div class="card" id="wifi-apply-card">
+      <h3>🔄 Staged Network Switch</h3>
+      <div id="wifi-apply-guidance" class="desc">Loading reconnect guidance...</div>
+      <div class="button-row button-row-compact mt-16">
+        <button id="wifi-apply-reboot-button" class="btn danger" type="button" disabled>🔄 Reboot to Apply</button>
+      </div>
+      <div id="wifi-apply-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true"></div>
     </div>
-    <div id="wifi-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true">Loading WiFi status...</div>
 
     <div id="shell-status"></div>
 
-    <script src="/web_api.js"></script>
-    <script src="/status_stream.js"></script>
-    <script src="/shell.js"></script>
-    <script src="/wifi.js"></script>
-    <script src="/footer.js"></script>
+
+    <!-- No bootstrap <script src> here on purpose: the inline kernel in <head>
+         fetches /page_bootstrap.js itself, with retry, and hands it the script
+         chain from <html data-scripts>. A bare tag has no retry, and the
+         controller sheds connections in the opening burst by design. -->
+
   </body>
 </html>

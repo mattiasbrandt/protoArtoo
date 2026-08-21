@@ -1,74 +1,63 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-scripts="/web_api.js,/diagnostics.js,/status_stream.js,/shell.js,/health_signals.js,/dome_command_map.js,/dome_panel_model.js,/dome_layout.js,/dome_layout_render.js,/dome_control.js,/app.js,/footer.js">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" type="image/png" href="/r2d2body-favicon.png">
     <title>protoArtoo - Dashboard</title>
     <link rel="stylesheet" href="/style.css">
-    <link rel="icon" type="image/png" href="/r2d2body-favicon.png">
+    <!-- PA:INCLUDE _recovery_kernel.html -->
   </head>
   <body data-page="home">
     <div id="shell-top"></div>
-
-
-    <!-- Quick Controls -->
-    <div class="card">
-      <h3>⚡ Quick Controls</h3>
-      <div class="button-row">
-        <a href="/drive.html" class="btn">🏎️ Drive Controls</a>
-        <a href="/dome.html" class="btn">🔄 Dome Controls</a>
-      </div>
-      <div class="desc mt-12">Audio</div>
-      <div class="button-row mt-6">
-        <button class="btn" id="audio-stop" title="Stop current playback" aria-label="Stop audio playback">⏹ Stop</button>
-        <button class="btn" id="audio-vol-up" title="Volume up" aria-label="Increase audio volume">🔊+</button>
-        <button class="btn" id="audio-vol-dn" title="Volume down" aria-label="Decrease audio volume">🔉-</button>
-      </div>
-      <div id="audio-feedback" class="feedback mt-8" role="status" aria-live="polite" aria-atomic="true"></div>
+    <div id="status-stale-banner" class="stale-banner" role="alert" aria-live="polite" style="display:none">
+      ⚠️ Status data may be stale — connection interrupted
     </div>
 
-    <!-- System Health -->
-    <div class="card">
-      <h3>📊 System Health</h3>
-      <div class="health-grid" id="health-grid">
-        <div class="health-item">
-          <div class="indicator" id="h-sbus"></div>
-          <span>RC Receiver</span>
-        </div>
-        <div class="health-item">
-          <div class="indicator" id="h-wifi"></div>
-          <span>WiFi</span>
-        </div>
-        <div class="health-item">
-          <div class="indicator" id="h-fs"></div>
-          <span>File System</span>
-        </div>
-        <div class="health-item">
-          <div class="indicator" id="h-heap"></div>
-          <span>Memory</span>
-        </div>
-        <div class="health-item">
-          <div class="indicator" id="h-dome-link"></div>
-          <span>Dome Link</span>
-        </div>
-        <div class="health-item">
-          <div class="indicator" id="h-audio"></div>
-          <span>Audio</span>
-        </div>
+    <div class="card home-snapshot-card">
+      <h3>🛰️ Status</h3>
+      <div class="snapshot-pills mt-12">
+        <span id="snapshot-web-control" class="status-pill pill-info status-pill-compact">🕹️ Web control: ...</span>
+        <span id="snapshot-mode" class="status-pill pill-info status-pill-compact">🧭 Mode: ...</span>
+        <span id="snapshot-estop" class="status-pill pill-info status-pill-compact">🛑 E-Stop: ...</span>
+        <span id="snapshot-mood" class="status-pill pill-info status-pill-compact">🎬 Mood: ...</span>
       </div>
     </div>
 
-    <!-- Components (shown only when hardware is enabled) -->
-    <div class="card hidden" id="component-status-card">
-      <h3>🔧 Components</h3>
-      <div class="desc">Active hardware modules and their current state.</div>
-      <div id="component-status-grid" class="status-grid mt-12"></div>
+    <!-- Dome Control Card (Collapsible) -->
+    <div class="card" id="dome-control-card">
+      <button id="dome-control-header" class="dome-control-header" aria-expanded="false" aria-controls="dome-control-body">
+        <h3 style="margin: 0;">Dome Control</h3>
+        <span class="dome-control-toggle">▼</span>
+      </button>
+      <div id="dome-control-body" class="dome-control-body hidden">
+        <div class="dome-control-feedback feedback hidden" role="status" aria-live="polite" aria-atomic="true"></div>
+        <!-- Dome SVG and sequence controls injected here -->
+      </div>
     </div>
+
+    <template id="topbar-actions-template">
+      <div class="index-top-actions">
+        <div class="top-action">
+          <button class="btn top-action-button" id="estop-toggle" title="E-Stop" aria-label="Toggle emergency stop" aria-pressed="false" disabled>🛑 E-Stop</button>
+          <div id="estop-feedback" class="feedback compact-feedback" role="status" aria-live="polite" aria-atomic="true"></div>
+        </div>
+        <div class="top-action">
+          <button class="btn power-toggle accent top-action-button" id="sleep-toggle" title="Toggle sleep mode" aria-label="Toggle sleep mode" aria-pressed="false">💤 Sleep</button>
+          <div id="sleep-feedback" class="feedback compact-feedback" role="status" aria-live="polite" aria-atomic="true"></div>
+        </div>
+        <div class="top-action">
+          <button class="btn top-action-button" id="topbar-reboot" title="Reboot controller" aria-label="Reboot controller" type="button">🔄 Reboot</button>
+          <div id="reboot-feedback" class="feedback compact-feedback" role="status" aria-live="polite" aria-atomic="true"></div>
+        </div>
+      </div>
+    </template>
+
+
 
     <!-- Operation Mode -->
     <div class="card">
       <h3>🕹️ Operation Mode</h3>
-      <div class="desc">Switch between active driving and stationary performance mode.</div>
       <div class="opmode-grid">
         <button class="opmode-btn drive active" id="opmode-drive" title="Full movement control with tank-style steering" aria-label="Set operation mode to Driving" aria-pressed="true">
           <span class="opmode-icon">🏎️</span>
@@ -84,15 +73,14 @@
 
     <!-- Mood Selector -->
     <div class="card">
-      <h3>🎭 Mood</h3>
-      <div class="desc">Set R2-D2's idle behavior — sound chatter, holo activity, and dome lights.</div>
+      <h3>🎬 Mood</h3>
       <div class="mood-grid">
         <button class="mood-btn quiet" id="mood-quiet" data-cmd=":SE10" title="Stop sound chatter. Holo projectors parked and off." aria-label="Set mood to Quiet" aria-pressed="false">
-          <span class="mood-icon">😴</span>
+          <span class="mood-icon">🤐</span>
           <span>Quiet</span>
         </button>
         <button class="mood-btn mid" id="mood-mid" data-cmd=":SE13" title="Resume sound chatter. Holo projectors parked." aria-label="Set mood to Mid-Awake" aria-pressed="false">
-          <span class="mood-icon">🙂</span>
+          <span class="mood-icon">😐</span>
           <span>Mid-Awake</span>
         </button>
         <button class="mood-btn full" id="mood-full" data-cmd=":SE11" title="Resume sound chatter. Holo projectors moving." aria-label="Set mood to Full-Awake" aria-pressed="false">
@@ -100,28 +88,88 @@
           <span>Full-Awake</span>
         </button>
         <button class="mood-btn awakeplus" id="mood-awakeplus" data-cmd=":SE14" title="Resume sound chatter. Holo projectors moving with LEDs on." aria-label="Set mood to Awake Plus" aria-pressed="false">
-          <span class="mood-icon">✨</span>
+          <span class="mood-icon">🤩</span>
           <span>Awake+</span>
         </button>
       </div>
-      <div id="mood-dome-note" class="mood-dome-note">Dome visuals require an active dome link. Mood still controls body audio when the dome is offline.</div>
       <div id="mood-feedback" class="feedback mt-8" role="status" aria-live="polite" aria-atomic="true"></div>
-  
+
     </div>
+    <!-- Components (shown only when hardware is enabled) -->
+    <div class="card hidden" id="component-status-card">
+      <h3>🔧 Components</h3>
+      <div id="component-status-grid" class="status-grid mt-12"></div>
+    </div>
+
+    <!-- System Health -->
     <div class="card">
-      <h3>📋 Live Logs</h3>
-      <div class="log-wrap">
-        <pre id="log-console" class="log-console">Waiting for logs…</pre>
+      <h3>📊 System Health</h3>
+      <div class="health-grid" id="health-grid">
+        <div class="health-item">
+          <div class="indicator" id="h-sbus"></div>
+          <span>RC Receiver</span>
+          <span class="indicator-text" id="ht-sbus"></span>
+        </div>
+        <div class="health-item">
+          <div class="indicator" id="h-wifi"></div>
+          <span>WiFi</span>
+          <span class="indicator-text" id="ht-wifi"></span>
+        </div>
+        <div class="health-item">
+          <div class="indicator" id="h-fs"></div>
+          <span>File System</span>
+          <span class="indicator-text" id="ht-fs"></span>
+        </div>
+        <div class="health-item">
+          <div class="indicator" id="h-heap"></div>
+          <span>Memory</span>
+          <span class="indicator-text" id="ht-heap"></span>
+        </div>
+        <div class="health-item">
+          <div class="indicator" id="h-dome-link"></div>
+          <span>Dome Link</span>
+          <span class="indicator-text" id="ht-dome-link"></span>
+        </div>
+        <div class="health-item">
+          <div class="indicator" id="h-sound"></div>
+          <span>Sound</span>
+          <span class="indicator-text" id="ht-sound"></span>
+        </div>
+        <div class="health-item">
+          <div class="indicator" id="h-dome-esc"></div>
+          <span>Dome ESC</span>
+          <span class="indicator-text" id="ht-dome-esc"></span>
+        </div>
       </div>
-      <div class="log-paused" id="log-paused">⏸ Auto-scroll paused — scroll to bottom to resume</div>
+    </div>
+
+    <div class="card">
+      <div class="card-header-row">
+        <div class="card-header-title-group">
+          <h3>📋 Live Logs</h3>
+          <button type="button" id="log-level-pill" class="status-pill status-pill-compact pill-info" title="Log level: loading... — click to change" aria-label="Log level: loading. Click to change.">🪵 ...</button>
+        </div>
+        <div class="log-paused" id="log-paused">⏸ Auto-scroll paused</div>
+      </div>
+      <div class="log-wrap">
+        <pre id="log-console" class="log-console"></pre>
+        <input id="log-command-input" class="log-command-input" type="text" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="> ...">
+      </div>
     </div>
 
     <div id="shell-status"></div>
 
-    <script src="/web_api.js"></script>
-    <script src="/status_stream.js"></script>
-    <script src="/shell.js"></script>
-    <script src="/app.js"></script>
-    <script src="/footer.js"></script>
+    <div id="sleep-overlay" class="sleep-overlay" aria-live="polite" aria-hidden="true">
+      <div class="sleep-overlay-panel">
+        <h2>Sleep Mode Active</h2>
+        <p>Cosmetic subsystems are parked. Drive and safety controls remain active.</p>
+        <button class="btn danger" id="sleep-overlay-wake" aria-label="Wake droid">Wake Droid</button>
+      </div>
+    </div>
+
+    <!-- No bootstrap <script src> here on purpose: the inline kernel in <head>
+         fetches /page_bootstrap.js itself, with retry, and hands it the script
+         chain from <html data-scripts>. A bare tag has no retry, and the
+         controller sheds connections in the opening burst by design. -->
   </body>
 </html>

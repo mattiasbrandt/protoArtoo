@@ -2,9 +2,9 @@
 // include/marcduino_helpers.h
 //
 // Pure-math helpers for Marcduino command parsing.
-// No Arduino, no FreeRTOS, no queues — safe to include in native unit tests.
+// No Arduino, no FreeRTOS, no queues  --  safe to include in native unit tests.
 //
-// Extracted from src/drivers/marcduino_rx.cpp so the mapping and conversion
+// Extracted from src/drivers/dome_rx_parser.cpp so the mapping and conversion
 // logic can be exercised without hardware dependencies.
 // =============================================================================
 #pragma once
@@ -17,13 +17,13 @@
 // marcduino_panel_to_arm_id()
 // Map Marcduino panel number to internal armId.
 //
-//   Panel 1 → armId 0  (ARM1)
-//   Panel 2 → armId 1  (ARM2)
-//   Panel 3 → armId 2  (AUX1)
-//   Panel 4 → armId 3  (AUX2)
-//   Panel 5 → armId 4  (AUX3)
-//   Panel 0 or 99 → armId 255  (broadcast — ARM1+ARM2)
-//   Any other value → 254  (invalid sentinel)
+//   Panel 1 -> armId 0  (ARM1)
+//   Panel 2 -> armId 1  (ARM2)
+//   Panel 3 -> armId 2  (AUX1)
+//   Panel 4 -> armId 3  (AUX2)
+//   Panel 5 -> armId 4  (AUX3)
+//   Panel 0 or 99 -> armId 255  (broadcast  --  ARM1+ARM2)
+//   Any other value -> 254  (invalid sentinel)
 //
 // Returns 254 for invalid panel numbers (caller must reject the command).
 // Returns 255 for broadcast (panel 0 or 99).
@@ -50,10 +50,10 @@ inline uint8_t marcduino_panel_to_arm_id(int panel) {
 
 // -----------------------------------------------------------------------------
 // marcduino_panel_to_arm_id_mv()
-// Variant for :MV (position) commands — broadcast (0/99) is not valid for MV.
+// Variant for :MV (position) commands  --  broadcast (0/99) is not valid for MV.
 //
-//   Panel 1-5 → armId 0-4 (same as above)
-//   Any other value → 254 (invalid sentinel)
+//   Panel 1-5 -> armId 0-4 (same as above)
+//   Any other value -> 254 (invalid sentinel)
 // -----------------------------------------------------------------------------
 inline uint8_t marcduino_panel_to_arm_id_mv(int panel) {
     switch (panel) {
@@ -68,13 +68,13 @@ inline uint8_t marcduino_panel_to_arm_id_mv(int panel) {
         case 5:
             return 4;
         default:
-            return 254;  // invalid (includes 0 and 99 — no broadcast for MV)
+            return 254;  // invalid (includes 0 and 99  --  no broadcast for MV)
     }
 }
 
 // -----------------------------------------------------------------------------
 // marcduino_mv_value_to_pulse_us()
-// Convert Phase 3 `:MVxxdddd` values to servo pulse width in microseconds.
+// Convert `:MVxxdddd` values to servo pulse width in microseconds.
 //
 // Marcduino direct numeric semantics:
 //   - 0000-0180 => degrees across the configured servo pulse range
@@ -111,19 +111,46 @@ inline bool marcduino_sequence_id_valid(int seq_id) {
 }
 
 // -----------------------------------------------------------------------------
-// marcduino_full_sequence_to_body_sequence()
-// Compatibility mapping for full-droid sequence IDs (:SE01-:SE16) that have a
-// direct body-arm sequence equivalent in protoArtoo.
+// Full-droid sequence decomposition for body-local actions.
 //
-// Return value:
-//   - body sequence ID (30-36) when a direct mapping exists
-//   - -1 when no direct body-arm mapping exists
+// audioDollarCmd:
+//   - nullptr => no local audio trigger
+//   - "$X"    => queue this audio command to AudioTask
+//
+// bodySeqId:
+//   - -1      => no local body servo sequence
+//   - 30 / 31 => queue existing body sequence handler
 // -----------------------------------------------------------------------------
-inline int marcduino_full_sequence_to_body_sequence(int seq_id) {
+struct FullDroidBodyAction {
+    const char* audioDollarCmd;
+    int         bodySeqId;
+};
+
+inline FullDroidBodyAction marcduino_full_droid_body_actions(int seq_id) {
     switch (seq_id) {
         case 1:
-            return 30;  // ScreamSequence body side == utility arm open/close
+            return {"$S", 30};
+        case 2:
+            return {nullptr, 31};
+        case 3:
+            return {nullptr, 31};
+        case 4:
+            return {nullptr, 31};
+        case 5:
+            return {"$c", 31};
+        case 6:
+            return {"$F", 30};
+        case 7:
+            return {"$C", 31};
+        case 8:
+            return {"$L", 30};
+        case 9:
+            return {"$D", 31};
+        case 15:
+            return {"$S", -1};
+        case 16:
+            return {nullptr, 31};
         default:
-            return -1;
+            return {nullptr, -1};
     }
 }

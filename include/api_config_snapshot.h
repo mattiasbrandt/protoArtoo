@@ -1,104 +1,43 @@
 // =============================================================================
 // include/api_config_snapshot.h
 //
-// ConfigSnapshot — a plain-data copy of all NVS-backed config fields from
-// RobotState, captured under portMUX so the JSON builder is FreeRTOS-free.
+// ConfigSnapshot - a plain-data copy of all NVS-backed config fields from
+// RobotState. Used by pure (FreeRTOS-free) JSON builders for the API layer.
 //
-// captureConfigSnapshot(): takes the critical section, copies cfg_* fields.
-//   Defined in src/web/api_config.cpp (requires FreeRTOS).
-//
-// populateConfigJson(): pure function — no global state, no FreeRTOS.
+// populateConfigJson(): pure function - no global state, no FreeRTOS.
 //   Builds an ArduinoJson document from the snapshot.
 //   Returns false if any RC binding format call fails (caller sends 500).
+//   Defined in src/web/api_config.cpp.
+//
+// populateRcMapJson(): pure function - serializes RC map bindings to JSON.
 //   Defined in src/web/api_config.cpp.
 // =============================================================================
 #pragma once
 
+#include <stddef.h>
 #include <ArduinoJson.h>
 
+#include "config_store.h"
 #include "rc_mapping.h"
-#include "robot_state.h"
 
-// All NVS-backed config fields, copied out of RobotState under portMUX.
-struct ConfigSnapshot {
-    int16_t speedLimitMax;
-    uint32_t webDriveTimeoutMs;
-    bool ch8ModeLock;
-    bool stationary;
-    uint8_t logLevel;
-    RcInputMode rcInputMode;
-    bool sbusRecvCh2;
+// ConfigSnapshot is canonically defined in config_store.h.
+// (Included above for use by API layer JSON helpers.)
 
-    bool enableArm1;
-    bool enableArm2;
-    bool enableAux1;
-    bool enableAux2;
-    bool enableAux3;
-    bool enableDome;
-    bool enableRcCh1;
-    bool enableRcCh2;
-    bool enableRcCh3;
-    bool enableRcCh4;
-    bool enableRcCh5;
-    bool enableRcCh6;
-    bool enableS1Hoverboard;
-    bool enableS2Sound;
-    bool enableS3DomeCtrl;
+// Pure helpers backing /api/rc/map serialization and slot assignment.
+// Exposed for native regression tests.
+static constexpr size_t kRcMapMaxEntries = 14;
 
-    uint16_t domeNeutralUs;
-    uint16_t domeMinPulseUs;
-    uint16_t domeMaxPulseUs;
-    uint8_t domeSpeedLimitPct;
-
-    ServoComponentType arm1Type;
-    ServoComponentType arm2Type;
-    ServoComponentType aux1Type;
-    ServoComponentType aux2Type;
-    ServoComponentType aux3Type;
-
-    uint16_t arm1OpenUs;
-    uint16_t arm1CloseUs;
-    uint16_t arm2OpenUs;
-    uint16_t arm2CloseUs;
-    uint16_t aux1OpenUs;
-    uint16_t aux1CloseUs;
-    uint16_t aux2OpenUs;
-    uint16_t aux2CloseUs;
-    uint16_t aux3OpenUs;
-    uint16_t aux3CloseUs;
-
-    RcBindingConfig rcPwmDriveSpeed;
-    RcBindingConfig rcPwmDriveSteer;
-    RcBindingConfig rcPwmDriveLimit;
-    RcBindingConfig rcPwmDomeSpeed;
-    RcBindingConfig rcPwmArm1;
-    RcBindingConfig rcPwmArm2;
-    RcBindingConfig rcPwmSound;
-
-    RcBindingConfig rcSbusDriveSpeed;
-    RcBindingConfig rcSbusDriveSteer;
-    RcBindingConfig rcSbusDriveLimit;
-    RcBindingConfig rcSbusDomeSpeed;
-    RcBindingConfig rcSbusArm1;
-    RcBindingConfig rcSbusArm2;
-    RcBindingConfig rcSbusSound;
-
-    RcTriggerBinding rcArm1;
-    RcTriggerBinding rcArm2;
-    RcTriggerBinding rcAux1;
-    RcTriggerBinding rcAux2;
-    RcTriggerBinding rcAux3;
-    RcTriggerBinding rcSound;
-    RcTriggerBinding rcOpmode;
-    RcTriggerBinding rcFree0;
-    RcTriggerBinding rcFree1;
-    RcTriggerBinding rcFree2;
-    RcTriggerBinding rcFree3;
+struct RcMapEntry {
+    RcBindingSource source;
+    uint8_t channel;
+    RobotActionId action;
+    char payload[16];
 };
 
-// Copies robotState.cfg_* into *out under portMUX critical section.
-// Defined in src/web/api_config.cpp.
-void captureConfigSnapshot(ConfigSnapshot* out);
+bool populateRcMapJson(JsonDocument& doc, const ConfigSnapshot& snap);
+void clearRcMapSlots(ConfigSnapshot* working);
+bool assignRcMapEntryToSnapshot(const RcMapEntry& entry, const ConfigSnapshot& existing,
+                                ConfigSnapshot* working, char* error, size_t errorSize);
 
 // Populates doc from snap. Pure: no globals, no FreeRTOS.
 // Returns false if any binding string format fails.

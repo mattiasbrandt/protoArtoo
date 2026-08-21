@@ -1,8 +1,12 @@
-#ifndef API_SERVO_H
-#define API_SERVO_H
+// =============================================================================
+// include/api_servo.h
+//
+// Servo control API endpoint, written against the project-owned WebRequest
+// seam (ADR 0021) and bound by the seam route table. Exposed so native tests
+// can drive it directly through the host-test backend.
+// =============================================================================
+#pragma once
 
-#include <ESPAsyncWebServer.h>
+#include "web_request.h"
 
-void registerServoRoutes(AsyncWebServer& server);
-
-#endif
+void handleServoPost(WebRequest& req);

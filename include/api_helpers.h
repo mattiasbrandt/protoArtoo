@@ -2,7 +2,7 @@
 // include/api_helpers.h
 //
 // Pure parsing helpers for web API parameter validation.
-// No Arduino, no FreeRTOS, no hardware dependencies — testable in native env.
+// No Arduino, no FreeRTOS, no hardware dependencies - testable in native env.
 //
 // All functions take null-terminated C strings and write results via out-params.
 // Returns true on success, false on parse failure or out-of-range input.
@@ -12,29 +12,27 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "drive_speed_preset.h"
 // -----------------------------------------------------------------------------
-// ManualCommand — recognised command tokens for POST /api/manual-command.
-// Returned by resolveManualCommand() so callers can dispatch without string
-// comparison.
+// trimAsciiWhitespace()
+// Strip leading and trailing spaces, tabs, CR and LF from a null-terminated
+// string, in place. Handlers that used to receive an Arduino String and call
+// String::trim() need this once they take copied-out C strings across the
+// WebRequest seam (ADR 0021), and more than one of them does -- a name or
+// token that only differs by a stray space has to keep reaching validation as
+// the same value it did before.
+// params: s - null-terminated string, modified in place (must not be null)
+// thread-safe: yes (pure function, no globals)
 // -----------------------------------------------------------------------------
-enum ManualCommand : uint8_t {
-    MC_UNKNOWN = 0,
-    MC_ESTOP,
-    MC_CLEAR_ESTOP,
-    MC_ENABLE_WEB_CONTROL,
-    MC_DISABLE_WEB_CONTROL,
-    MC_REBOOT,
-    MC_STATIONARY_MODE,
-    MC_DRIVING_MODE,
-};
+void trimAsciiWhitespace(char* s);
 
 // -----------------------------------------------------------------------------
 // parseDriveValue()
 // Parse a null-terminated decimal integer string into an int16_t.
 // Accepts negative values. Rejects empty strings, non-numeric input, and
 // strings with trailing non-numeric characters.
-// params: raw — null-terminated input string (must not be null)
-//         out — receives parsed value on success
+// params: raw - null-terminated input string (must not be null)
+//         out - receives parsed value on success
 // returns: true on success, false on any parse error
 // thread-safe: yes (pure function, no globals)
 // -----------------------------------------------------------------------------
@@ -45,8 +43,8 @@ bool parseDriveValue(const char* raw, int16_t* out);
 // Parse a null-terminated decimal unsigned integer string into a uint32_t.
 // Rejects empty strings, negative values, non-numeric input, and strings with
 // trailing non-numeric characters.
-// params: raw — null-terminated input string (must not be null)
-//         out — receives parsed value on success
+// params: raw - null-terminated input string (must not be null)
+//         out - receives parsed value on success
 // returns: true on success, false on any parse error
 // thread-safe: yes (pure function, no globals)
 // -----------------------------------------------------------------------------
@@ -55,138 +53,17 @@ bool parseUint32Value(const char* raw, uint32_t* out);
 // -----------------------------------------------------------------------------
 // parseBoolValue()
 // Parse a null-terminated string into a bool.
-// Accepts: "true", "1" → true; "false", "0" → false.
+// Accepts: "true", "1" -> true; "false", "0" -> false.
 // All other values return false (parse failure).
-// params: raw — null-terminated input string (must not be null)
-//         out — receives parsed value on success
+// params: raw - null-terminated input string (must not be null)
+//         out - receives parsed value on success
 // returns: true on success, false on unrecognised input
 // thread-safe: yes (pure function, no globals)
 // -----------------------------------------------------------------------------
 bool parseBoolValue(const char* raw, bool* out);
 
-// -----------------------------------------------------------------------------
-// resolveManualCommand()
-// Map a null-terminated command string to a ManualCommand enum value.
-// Input is trimmed and lowercased before matching (caller must pass already
-// normalised input — lowercase, no leading/trailing whitespace).
-// params: command — null-terminated, already-normalised command string
-// returns: ManualCommand enum value; MC_UNKNOWN if not recognised
-// thread-safe: yes (pure function, no globals)
-// -----------------------------------------------------------------------------
-ManualCommand resolveManualCommand(const char* command);
-
-// -----------------------------------------------------------------------------
-// formatConfigJson()
-// Write a JSON config object into a caller-supplied buffer.
-// Pure function — no globals, no Arduino, no FreeRTOS.
-// params: buf               — output buffer (must not be null)
-//         bufSize           — size of buf in bytes
-//         speedLimitMax     — current speed limit cap
-//         webDriveTimeoutMs — current web drive timeout in ms
-//         ch8ModeLock       — current CH8 mode-lock setting
-// thread-safe: yes (pure function, no globals)
-// -----------------------------------------------------------------------------
-void formatConfigJson(char* buf, size_t bufSize, int16_t speedLimitMax, uint32_t webDriveTimeoutMs,
-                      bool ch8ModeLock);
-
-// -----------------------------------------------------------------------------
-// formatWifiJson()
-// Write a JSON WiFi status object into a caller-supplied buffer.
-// Pure function — no globals, no Arduino, no FreeRTOS.
-// params: buf          — output buffer (must not be null)
-//         bufSize      — size of buf in bytes
-//         apSsid       — AP SSID string (must not be null)
-//         apIp         — AP IP address string (must not be null)
-//         staEnabled   — true if STA mode is active
-//         staConnected — true if STA is connected to upstream AP
-//         staIp        — STA IP address string (empty string if not connected)
-//         wifiRssi     — WiFi signal strength in dBm (0 if not connected)
-// thread-safe: yes (pure function, no globals)
-// -----------------------------------------------------------------------------
-void formatWifiJson(char* buf, size_t bufSize, const char* apSsid, const char* apIp,
-                    bool staEnabled, bool staConnected, const char* staIp, long wifiRssi);
-
-// -----------------------------------------------------------------------------
-// formatSerialJson()
-// Write a JSON serial-port status object into a caller-supplied buffer.
-// Pure function — no globals, no Arduino, no FreeRTOS.
-// params: buf            — output buffer (must not be null)
-//         bufSize        — size of buf in bytes
-//         domeLinkActive — true if dome heartbeat link is active
-//         domeHbRx       — dome heartbeat receive counter
-//         bodyHbTx       — body heartbeat transmit counter
-// thread-safe: yes (pure function, no globals)
-// -----------------------------------------------------------------------------
-void formatSerialJson(char* buf, size_t bufSize, bool domeLinkActive, unsigned long domeHbRx,
-                      unsigned long bodyHbTx);
-
-// -----------------------------------------------------------------------------
-// WiFiConnectivityFields
-// Derived connectivity fields shared by /api/health and /api/status.
-// `wifiConnected` answers "is WiFi service reachable from operators" while
-// `wifiClientConnected` answers "is an external client currently attached to AP".
-// -----------------------------------------------------------------------------
-struct WiFiConnectivityFields {
-    bool wifiConnected;
-    bool wifiClientConnected;
-    long wifiRssi;
-};
-
-// -----------------------------------------------------------------------------
-// deriveWiFiConnectivityFields()
-// Compute canonical WiFi status booleans used in JSON status/health payloads.
-// Pure function — no globals, no Arduino, no FreeRTOS.
-// params: apEnabled       — true when AP mode is active (AP or AP+STA)
-//         staConnected    — true when STA is connected (`WL_CONNECTED`)
-//         apStationCount  — number of stations currently attached to soft AP
-//         staRssi         — RSSI to upstream AP in dBm (valid when staConnected)
-// returns: derived wifiConnected / wifiClientConnected flags + wifiRssi
-// thread-safe: yes (pure function, no globals)
-// -----------------------------------------------------------------------------
-WiFiConnectivityFields deriveWiFiConnectivityFields(bool apEnabled, bool staConnected,
-                                                    unsigned int apStationCount, long staRssi);
-
-// -----------------------------------------------------------------------------
-// formatHealthJson()
-// Write a JSON health/diagnostics object into a caller-supplied buffer.
-// Pure function — no globals, no Arduino, no FreeRTOS.
-// params: buf               — output buffer (must not be null)
-//         bufSize           — size of buf in bytes
-//         estop             — current estop state
-//         sbusSignalLost    — true if SBUS signal is lost
-//         sbusHwFailsafe    — true if SBUS hardware failsafe is active
-//         webControlEnabled — true if web drive control is enabled
-//         wifiConnected     — true if control-surface WiFi is available (AP active or STA
-//         connected) wifiClientConnected — true if at least one station is attached to soft AP
-//         fsReady           — true if LittleFS is mounted
-//         heapFree          — current free heap in bytes
-//         heapMin           — minimum free heap since boot in bytes
-//         heapLargestBlock  — largest contiguous free heap block in bytes
-//         wifiRssi          — STA RSSI in dBm (0 when STA disconnected)
-// thread-safe: yes (pure function, no globals)
-// -----------------------------------------------------------------------------
-void formatHealthJson(char* buf, size_t bufSize, bool estop, bool sbusSignalLost,
-                      bool sbusHwFailsafe, bool webControlEnabled, bool wifiConnected,
-                      bool wifiClientConnected, bool fsReady, unsigned long heapFree,
-                      unsigned long heapMin, unsigned long heapLargestBlock, long wifiRssi);
-
-// -----------------------------------------------------------------------------
-// formatAudioStatusJson()
-// Write a JSON audio-module status object into a caller-supplied buffer.
-// Pure function — no globals, no Arduino, no FreeRTOS.
-// params: buf          — output buffer (must not be null)
-//         bufSize      — size of buf in bytes (192 bytes sufficient; worst-case ~160 bytes with capabilities field)
-//         driverName   — driver name string e.g. "DY-SV5W" (must not be null)
-//         capabilities — AudioDriver::AUDIO_CAP_* bitmask; controls which fields are meaningful
-//         linkOk       — true if module responded to at least one UART query
-//         active       — true if firmware sent a play command recently (audioActive)
-//         playState    — 0=stop 1=playing 2=paused 0xFF=unknown
-//         device       — 0=USB 1=SD/TF 2=FLASH 0xFF=none/unknown
-//         totalTracks  — total tracks reported by module (0 if unknown)
-//         currentTrack — currently selected track (0 if unknown)
-// thread-safe: yes (pure function, no globals)
-// -----------------------------------------------------------------------------
-void formatAudioStatusJson(char* buf, size_t bufSize, const char* driverName,
-                           uint8_t capabilities, bool linkOk, bool active,
-                           uint8_t playState, uint8_t device, uint16_t totalTracks,
-                           uint16_t currentTrack);
+// Validate and copy an operator-facing droid name into the persisted form.
+// Names may contain lowercase a-z, 0-9, and '-'. Uppercase, whitespace, and
+// other punctuation are rejected.
+// Returns false if the result is empty or does not fit in out.
+bool normalizeDroidName(const char* raw, char* out, size_t outSize);

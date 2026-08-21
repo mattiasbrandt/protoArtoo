@@ -1,0 +1,46 @@
+name: Version Sync
+
+# CI is the sole authority for data/fw-version.json and data/fs-version.json
+# on main: every push regenerates both from the actual merge commit and
+# bot-commits them back. This is separate from verification.yml (left
+# untouched) and from release.yml (tag-triggered, purely additive).
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  sync-version:
+    name: sync version JSON
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Skip runs triggered by this job's own bot commit, to avoid an infinite loop.
+    if: github.event.head_commit.author.email != '41898282+github-actions[bot]@users.noreply.github.com'
+    steps:
+      - name: ⬇️ Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: 🐍 Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.x'
+
+      - name: 🔢 Regenerate version JSON
+        run: python3 tools/extract_version.py
+
+      - name: 💾 Commit if changed
+        run: |
+          if git diff --quiet -- data/fw-version.json data/fs-version.json; then
+            echo "Version JSON already up to date — nothing to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/fw-version.json data/fs-version.json
+          git commit -m "chore(ci): sync version JSON to $(git rev-parse --short HEAD)"
+          git push

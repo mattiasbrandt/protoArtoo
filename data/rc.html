@@ -1,11 +1,12 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-scripts="/web_api.js,/status_stream.js,/shell.js,/rc.js,/footer.js">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>RC Control - protoArtoo</title>
     <link rel="stylesheet" href="/style.css">
     <link rel="icon" type="image/png" href="/r2d2body-favicon.png">
+    <!-- PA:INCLUDE _recovery_kernel.html -->
   </head>
   <body data-page="rc">
     <div id="shell-top"></div>
@@ -14,15 +15,18 @@
     <!-- Receiver Type (shown first: this choice defines everything else on this page) -->
     <!-- No RC inputs notice (hidden when any RC channel is enabled) -->
     <div id="rc-disabled-card" class="card disabled-card hidden" role="status" aria-live="polite" aria-atomic="true">
-      <h3>🕹️ RC Inputs Disabled</h3>
-      <div class="desc">Live receiver diagnostics are unavailable because all RC input channels are disabled.</div>
-      <div class="desc disabled-reason"><strong>Required component:</strong> At least one RC channel (typically CH1 — Drive / SBUS 1)</div>
-      <div class="desc">Open <a class="setup-link" href="/setup.html">Setup</a> and enable an RC input channel to restore live RC status. Mapping edits remain available.</div>
+      <h3>🕹️ RC Source Inactive</h3>
+      <div class="desc">No RC source is active for the current receiver type and routing.</div>
+      <div class="desc disabled-reason">Enable the applicable RC input in <a class="setup-link" href="/setup.html">Setup</a>, or select the intended receiver type and routing below, then restart the controller.</div>
+      <div class="desc">Mapping edits remain available.</div>
     </div>
 
     <div class="card">
       <h3>📡 Receiver Type</h3>
-      <div class="desc">Select how your RC receiver connects to the controller. This setting determines which bindings and calibration values apply.</div>
+
+      <div class="info-note mt-12" role="note">
+        Receiver type and single-SBUS routing save immediately and apply after controller restart. Channel mapping changes apply when saved.
+      </div>
 
       <div class="rc-mode-grid mt-16">
         <div class="rc-mode-card" data-mode="standard_pwm" tabindex="0" role="button" aria-pressed="false">
@@ -42,20 +46,15 @@
         </div>
       </div>
 
-      <div class="info-note" role="note" aria-label="Receiver mode compatibility notice">
-        <div>Dual SBUS is only available when S3 Dome Control is disabled.</div>
-        <div>When hoverboard drive (S1) is enabled, use Standard PWM for RC drive input.</div>
-      </div>
 
 
       <input type="hidden" id="rc-input-mode" value="standard_pwm">
       <div id="single-sbus-recv-section" class="mt-16 hidden" aria-hidden="true">
         <label for="sbus-recv-sel">Single SBUS receiver</label>
-        <select id="sbus-recv-sel" aria-describedby="sbus-recv-note sbus-recv-feedback">
-          <option value="false">SBUS1 (GPIO 15)</option>
-          <option value="true">SBUS2 (GPIO 13)</option>
+        <select id="sbus-recv-sel" aria-describedby="sbus-recv-feedback" title="Select which physical SBUS input is treated as the primary receiver.">
+          <option value="false">SBUS1 / CH1</option>
+          <option value="true">SBUS2 / CH2</option>
         </select>
-        <div id="sbus-recv-note" class="desc mt-8">Selecting a different receiver does not change your channel mapping.</div>
         <div id="sbus-recv-feedback" class="feedback mt-8" role="status" aria-live="polite" aria-atomic="true"></div>
       </div>
 
@@ -63,38 +62,49 @@
       <div id="rc-mode-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true">Loading receiver type...</div>
       
       <div class="mt-16">
-        <button id="rc-reset-defaults" class="btn" type="button">↺ Reset to Defaults</button>
+        <button id="rc-reset-defaults" class="btn" type="button">↺ Reset defaults</button>
       </div>
     </div>
 
     <!-- Binding Summary Table -->
     <div class="card">
       <h3>📋 Binding Summary</h3>
-      <div class="desc">Overview of all channel bindings. Click any row to edit.</div>
       
       <table class="rc-summary-table mt-16">
         <thead>
           <tr>
-            <th>Slot</th>
             <th>Action</th>
-            <th>Source</th>
             <th>CH</th>
             <th>Live</th>
           </tr>
         </thead>
         <tbody id="rc-summary-body">
-          <tr><td colspan="5">Loading bindings...</td></tr>
+          <tr><td colspan="3">Loading bindings...</td></tr>
         </tbody>
       </table>
     </div>
 
-    <!-- Three-panel Editor -->
+    <!-- Live Monitor strip (source health + selected slot live data) -->
+    <div class="card">
+      <div class="rc-live-monitor-layout">
+        <div>
+          <h4 class="rc-panel-title">📈 Live Monitor</h4>
+          <div id="rc-live-preview-content">
+          </div>
+        </div>
+        <div>
+          <h4 class="rc-panel-title">📡 Source Health</h4>
+          <div id="rc-preview-source-health" class="rc-source-grid mt-12"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Two-panel Editor -->
     <div class="card">
       <div class="rc-mapper-grid">
-        <!-- Slot List (left sidebar) -->
-        <div class="rc-slot-list">
-          <h4 class="rc-panel-title">1) Slot List</h4>
-          <div class="desc rc-panel-desc">Select a slot to inspect and edit. Backbone channels are listed first.</div>
+        <!-- Channel List (left) -->
+        <div class="rc-channel-list">
+          <h4 class="rc-panel-title">📻 Channels</h4>
           <div class="rc-learn-bar">
             <button id="rc-learn-btn" class="btn" type="button">🔍 Detect channel</button>
           </div>
@@ -106,31 +116,15 @@
             </div>
             <button id="rc-learn-stop" class="btn btn-sm" type="button">✕ Stop</button>
           </div>
-          <div id="rc-slot-items">
+          <div id="rc-channel-items">
           </div>
         </div>
-        
-        <!-- Live Preview Panel (center) -->
-        <div class="rc-live-preview">
-          <h4 class="rc-panel-title">2) Live Preview</h4>
-          <div class="desc rc-panel-desc">Shows real-time source and mapped values for the selected slot.</div>
-          <div id="rc-live-preview-content">
-            <div class="desc">Select a channel from the list to see live data.</div>
-          </div>
-          
-          <!-- Source Health Summary -->
-          <div class="mt-20">
-            <h4>📡 Source Health</h4>
-            <div id="rc-preview-source-health" class="rc-source-grid mt-12"></div>
-          </div>
-        </div>
-        
+
         <!-- Editor Panel (right) -->
         <div class="rc-editor-panel">
-          <h4 class="rc-panel-title">3) Mapping Editor</h4>
-          <div class="desc rc-panel-desc">Adjust source, channel, and action for the selected slot, then apply to save.</div>
+          <h4 class="rc-panel-title">🛠️ Mapping Editor</h4>
+          <div class="desc rc-panel-desc">Adjust the selected channel mapping, then apply to save.</div>
           <div id="rc-editor-content">
-            <div class="desc">Select a channel from the list to edit its mapping.</div>
           </div>
           
           <div class="rc-editor-status-row mt-20" role="status" aria-live="polite" aria-atomic="true">
@@ -139,8 +133,8 @@
           </div>
 
           <div class="button-row rc-editor-actions mt-12">
-            <button id="rc-editor-apply" class="btn accent" type="button" disabled>Apply & Save</button>
-            <button id="rc-editor-revert" class="btn" type="button" disabled>Revert Draft</button>
+            <button id="rc-editor-apply" class="btn accent" type="button" disabled>💾 Apply & Save</button>
+            <button id="rc-editor-revert" class="btn" type="button" disabled>↩ Revert Draft</button>
           </div>
 
           <div id="rc-editor-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true"></div>
@@ -150,10 +144,9 @@
 
     <div id="shell-status"></div>
 
-    <script src="/web_api.js"></script>
-    <script src="/status_stream.js"></script>
-    <script src="/shell.js"></script>
-    <script src="/rc.js"></script>
-    <script src="/footer.js"></script>
+    <!-- No bootstrap <script src> here on purpose: the inline kernel in <head>
+         fetches /page_bootstrap.js itself, with retry, and hands it the script
+         chain from <html data-scripts>. A bare tag has no retry, and the
+         controller sheds connections in the opening burst by design. -->
   </body>
 </html>

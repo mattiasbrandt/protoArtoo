@@ -14,6 +14,28 @@
 #include <cstdlib>
 #include <cstring>
 
+#include "config.h"
+
+void trimAsciiWhitespace(char* s) {
+    if (s == nullptr) {
+        return;
+    }
+    char* start = s;
+    while (*start == ' ' || *start == '\t' || *start == '\r' || *start == '\n') {
+        ++start;
+    }
+    size_t len = strlen(start);
+    while (len > 0) {
+        const char c = start[len - 1];
+        if (c != ' ' && c != '\t' && c != '\r' && c != '\n') {
+            break;
+        }
+        --len;
+    }
+    memmove(s, start, len);
+    s[len] = '\0';
+}
+
 bool parseDriveValue(const char* raw, int16_t* out) {
     if (raw == nullptr || raw[0] == '\0') {
         return false;
@@ -39,7 +61,7 @@ bool parseUint32Value(const char* raw, uint32_t* out) {
         return false;
     }
 
-    // Reject leading minus sign — strtoul accepts it (wraps around)
+    // Reject leading minus sign - strtoul accepts it (wraps around)
     if (raw[0] == '-') {
         return false;
     }
@@ -73,113 +95,27 @@ bool parseBoolValue(const char* raw, bool* out) {
     return false;
 }
 
-ManualCommand resolveManualCommand(const char* command) {
-    if (command == nullptr) {
-        return MC_UNKNOWN;
+bool normalizeDroidName(const char* raw, char* out, size_t outSize) {
+    if (raw == nullptr || out == nullptr || outSize == 0) {
+        return false;
     }
 
-    if (strcmp(command, "estop") == 0) {
-        return MC_ESTOP;
-    }
-    if (strcmp(command, "clear_estop") == 0) {
-        return MC_CLEAR_ESTOP;
-    }
-    if (strcmp(command, "enable_web_control") == 0) {
-        return MC_ENABLE_WEB_CONTROL;
-    }
-    if (strcmp(command, "disable_web_control") == 0) {
-        return MC_DISABLE_WEB_CONTROL;
-    }
-    if (strcmp(command, "reboot") == 0) {
-        return MC_REBOOT;
-    }
-    if (strcmp(command, "#st") == 0) {
-        return MC_STATIONARY_MODE;
-    }
-    if (strcmp(command, "#sm") == 0) {
-        return MC_DRIVING_MODE;
-    }
+    size_t len = 0;
+    for (const char* p = raw; *p != '\0'; ++p) {
+        const char c = *p;
+        if (c == ' ' || c == '\t' || c == '\n' || c == '\r') {
+            return false;
+        }
+        const bool allowed = (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-';
+        if (!allowed) {
+            return false;
+        }
 
-    return MC_UNKNOWN;
-}
-
-void formatConfigJson(char* buf, size_t bufSize, int16_t speedLimitMax, uint32_t webDriveTimeoutMs,
-                      bool ch8ModeLock) {
-    snprintf(buf, bufSize, "{\"speedLimitMax\":%d,\"webDriveTimeoutMs\":%lu,\"ch8ModeLock\":%s}",
-             (int)speedLimitMax, (unsigned long)webDriveTimeoutMs, ch8ModeLock ? "true" : "false");
-}
-
-void formatWifiJson(char* buf, size_t bufSize, const char* apSsid, const char* apIp,
-                    bool staEnabled, bool staConnected, const char* staIp, long wifiRssi) {
-    snprintf(buf, bufSize,
-             "{\"apSsid\":\"%s\",\"apIp\":\"%s\",\"staEnabled\":%s,\"staConnected\":%s,\"staIp\":"
-             "\"%s\",\"wifiRssi\":%ld}",
-             apSsid, apIp, staEnabled ? "true" : "false", staConnected ? "true" : "false", staIp,
-             wifiRssi);
-}
-
-void formatSerialJson(char* buf, size_t bufSize, bool domeLinkActive, unsigned long domeHbRx,
-                      unsigned long bodyHbTx) {
-    snprintf(buf, bufSize,
-             "{"
-             "\"debug\":{\"label\":\"S0\",\"name\":\"ESP debug\",\"active\":true,\"note\":\"USB "
-             "debug serial\"},"
-             "\"hoverboard\":{\"label\":\"S1\",\"name\":\"Hoverboard\",\"active\":true,"
-             "\"hardwareRequired\":true,\"note\":\"Firmware path active; full behavior needs Artoo "
-             "PCB + hoverboard chain\"},"
-             "\"sound\":{\"label\":\"S2\",\"name\":\"Sound\",\"active\":false,\"hardwareRequired\":"
-             "true,\"note\":\"Electrically defined, phase 4 audio integration\"},"
-             "\"dome\":{\"label\":\"S3\",\"name\":\"Dome "
-             "Control\",\"active\":%s,\"heartbeatRx\":%lu,\"heartbeatTx\":%lu,\"hardwareRequired\":"
-             "true,\"note\":\"Body-dome link reserved for later phase integration\"}"
-             "}",
-             domeLinkActive ? "true" : "false", domeHbRx, bodyHbTx);
-}
-
-WiFiConnectivityFields deriveWiFiConnectivityFields(bool apEnabled, bool staConnected,
-                                                    unsigned int apStationCount, long staRssi) {
-    WiFiConnectivityFields fields{};
-    fields.wifiConnected = apEnabled || staConnected;
-    fields.wifiClientConnected = apEnabled && apStationCount > 0U;
-    fields.wifiRssi = staConnected ? staRssi : 0;
-    return fields;
-}
-
-void formatHealthJson(char* buf, size_t bufSize, bool estop, bool sbusSignalLost,
-                      bool sbusHwFailsafe, bool webControlEnabled, bool wifiConnected,
-                      bool wifiClientConnected, bool fsReady, unsigned long heapFree,
-                      unsigned long heapMin, unsigned long heapLargestBlock, long wifiRssi) {
-    snprintf(buf, bufSize,
-             "{\"estop\":%s,\"sbusSignalLost\":%s,\"sbusHwFailsafe\":%s,\"webControlEnabled\":%s,"
-             "\"wifiConnected\":%s,\"wifiClientConnected\":%s,\"littleFsReady\":%s,"
-             "\"heapFree\":%lu,\"heapMin\":%lu,\"heapLargestBlock\":%lu,\"wifiRssi\":%ld}",
-             estop ? "true" : "false", sbusSignalLost ? "true" : "false",
-             sbusHwFailsafe ? "true" : "false", webControlEnabled ? "true" : "false",
-             wifiConnected ? "true" : "false", wifiClientConnected ? "true" : "false",
-             fsReady ? "true" : "false", heapFree, heapMin, heapLargestBlock, wifiRssi);
-}
-
-void formatAudioStatusJson(char* buf, size_t bufSize, const char* driverName,
-                           uint8_t capabilities, bool linkOk, bool active,
-                           uint8_t playState, uint8_t device, uint16_t totalTracks,
-                           uint16_t currentTrack) {
-    // playState labels per datasheet: 0=stop 1=playing 2=paused 0xFF=unknown
-    const char* playSt = (playState == 0x00)   ? "stop"
-                         : (playState == 0x01) ? "playing"
-                         : (playState == 0x02) ? "paused"
-                                               : "unknown";
-    // device labels: 0=USB 1=SD/TF 2=FLASH 3=Flash+SD(CHIRP) 0xFF=none/unknown
-    const char* devStr = (device == 0x00)   ? "USB"
-                         : (device == 0x01) ? "SD/TF"
-                         : (device == 0x02) ? "FLASH"
-                         : (device == 0x03) ? "Flash+SD"
-                         : (device == 0xFF) ? "none"
-                                            : "unknown";
-    snprintf(buf, bufSize,
-             "{\"driver\":\"%s\",\"capabilities\":%u,\"link_ok\":%s,\"active\":%s,"
-             "\"play_state\":\"%s\",\"device\":\"%s\","
-             "\"total_tracks\":%u,\"current_track\":%u}",
-             driverName, (unsigned)capabilities, linkOk ? "true" : "false",
-             active ? "true" : "false", playSt, devStr, (unsigned)totalTracks,
-             (unsigned)currentTrack);
+        if (len + 1 >= outSize || len >= DROID_NAME_MAX_LEN) {
+            return false;
+        }
+        out[len++] = c;
+    }
+    out[len] = '\0';
+    return len > 0;
 }

@@ -1,12 +1,22 @@
-# Partition table for protoArtoo — 4MB ESP32 flash, OTA + LittleFS
+# Partition table for protoArtoo — 4MB ESP32 flash, OTA + LittleFS + coredump
 #
 # Redesigned for arduino-esp32 v3.x (IDF 5.x) which produces ~15% larger
 # binaries than v2.x due to expanded network stack and USB support.
 #
-# App partitions increased from 1.25MB (0x140000) to 1.625MB (0x1A0000).
-# At 1300KB current firmware size this gives ~25% headroom for future growth.
-# LittleFS reduced from 1.44MB to 704KB; web UI assets are ~340KB so this
-# remains ample. Total: exactly 4MB.
+# App partitions: 1.625MB (0x1A0000) each (~25% headroom over the ~1.58MB build).
+# LittleFS reduced from 704KB to 640KB to carve a 64KB coredump partition. Web UI
+# assets are gzipped at build (tools/gzip_fsdata.py) to ~151KB, so 640KB is ample.
+# Total: exactly 4MB.
+#
+# coredump (64KB, type data / subtype coredump): the arduino-esp32 framework
+# enables CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH + DATA_FORMAT_ELF + CHECK_BOOT, but
+# the table previously had no coredump partition (boot logged "esp_core_dump_flash:
+# No core dump partition found!"), so a PANIC left only a reset reason. With this
+# partition a crash saves an ELF coredump, fetched in-PCB over HTTP via
+# /api/coredump (USB read is GPIO15-blocked when seated) and decoded with:
+#   esp-coredump info_corefile -c coredump.bin .pio/build/<env>/firmware.elf
+# (issue #8). Changing the partition table requires a full USB flash + uploadfs;
+# a plain OTA does not rewrite the table.
 #
 # Offsets are explicit to prevent silent layout shifts on toolchain upgrades.
 #
@@ -15,4 +25,5 @@ nvs,      data, nvs,      0x9000,  0x5000,
 otadata,  data, ota,      0xe000,  0x2000,
 app0,     app,  ota_0,   0x10000, 0x1A0000,
 app1,     app,  ota_1,  0x1B0000, 0x1A0000,
-spiffs,   data, spiffs, 0x350000,  0xB0000,
+spiffs,   data, spiffs, 0x350000,  0xA0000,
+coredump, data, coredump, 0x3F0000, 0x10000,

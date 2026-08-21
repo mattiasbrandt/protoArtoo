@@ -1,0 +1,68 @@
+#pragma once
+
+#include <stdint.h>
+
+#include "robot_state.h"
+
+// Drive speed-limit mode buckets for system sound events.
+// Base thresholds:
+// - Slow:   scale < 0.34
+// - Normal: 0.34 <= scale < 0.67
+// - Turbo:  scale >= 0.67
+//
+// scale values are clamped to [0.0, 1.0] before classification.
+enum SystemDriveModeBucket : uint8_t {
+    SYSTEM_DRIVE_MODE_SLOW = 0,
+    SYSTEM_DRIVE_MODE_NORMAL,
+    SYSTEM_DRIVE_MODE_TURBO,
+};
+
+static constexpr float SYSTEM_MODE_SLOW_TO_NORMAL = 0.36f;
+static constexpr float SYSTEM_MODE_NORMAL_TO_SLOW = 0.32f;
+static constexpr float SYSTEM_MODE_NORMAL_TO_TURBO = 0.69f;
+static constexpr float SYSTEM_MODE_TURBO_TO_NORMAL = 0.65f;
+
+inline float clampSystemDriveModeScale(float scale) {
+    if (scale < 0.0f) return 0.0f;
+    if (scale > 1.0f) return 1.0f;
+    return scale;
+}
+
+inline SystemDriveModeBucket classifySystemDriveMode(float scale) {
+    scale = clampSystemDriveModeScale(scale);
+    if (scale < 0.34f) return SYSTEM_DRIVE_MODE_SLOW;
+    if (scale < 0.67f) return SYSTEM_DRIVE_MODE_NORMAL;
+    return SYSTEM_DRIVE_MODE_TURBO;
+}
+
+// Hysteresis classification to suppress repeated mode-flip sounds from RC jitter.
+inline SystemDriveModeBucket classifySystemDriveModeWithHysteresis(SystemDriveModeBucket previous,
+                                                                   float scale) {
+    scale = clampSystemDriveModeScale(scale);
+    switch (previous) {
+        case SYSTEM_DRIVE_MODE_SLOW:
+            if (scale >= SYSTEM_MODE_NORMAL_TO_TURBO) return SYSTEM_DRIVE_MODE_TURBO;
+            return (scale >= SYSTEM_MODE_SLOW_TO_NORMAL) ? SYSTEM_DRIVE_MODE_NORMAL
+                                                          : SYSTEM_DRIVE_MODE_SLOW;
+        case SYSTEM_DRIVE_MODE_NORMAL:
+            if (scale < SYSTEM_MODE_NORMAL_TO_SLOW) return SYSTEM_DRIVE_MODE_SLOW;
+            if (scale >= SYSTEM_MODE_NORMAL_TO_TURBO) return SYSTEM_DRIVE_MODE_TURBO;
+            return SYSTEM_DRIVE_MODE_NORMAL;
+        case SYSTEM_DRIVE_MODE_TURBO:
+            if (scale < SYSTEM_MODE_NORMAL_TO_SLOW) return SYSTEM_DRIVE_MODE_SLOW;
+            return (scale < SYSTEM_MODE_TURBO_TO_NORMAL) ? SYSTEM_DRIVE_MODE_NORMAL
+                                                          : SYSTEM_DRIVE_MODE_TURBO;
+        default:
+            return classifySystemDriveMode(scale);
+    }
+}
+
+typedef bool (*SystemSoundQueueFn)(uint16_t track, CommandSource src);
+
+// Queue a configured system sound track with 0-as-silent guard.
+// Returns true only when a non-zero track was accepted by the queue function.
+inline bool queueSystemSoundTrack(uint16_t track, SystemSoundQueueFn queueFn,
+                                  CommandSource src = SRC_INTERNAL) {
+    if (track == 0 || queueFn == nullptr) return false;
+    return queueFn(track, src);
+}

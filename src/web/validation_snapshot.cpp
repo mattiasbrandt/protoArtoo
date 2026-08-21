@@ -8,6 +8,7 @@
 
 #include <Arduino.h>
 
+#include "../../include/config_cache.h"
 #include "../../include/robot_state.h"
 
 namespace {
@@ -25,13 +26,15 @@ const char* rcInputModeLabel(RcInputMode mode) {
 }
 
 bool rcSourceEnabledForMode(RcBindingSource source, RcInputMode mode, bool enableRcCh1, bool enableRcCh2,
-                            bool anyPwmEnabled) {
+                            bool anyPwmEnabled, bool useCh2) {
     switch (source) {
         case RC_BINDING_PWM:
             return mode == RC_INPUT_STANDARD_PWM && anyPwmEnabled;
         case RC_BINDING_SBUS1:
-            return mode != RC_INPUT_STANDARD_PWM && enableRcCh1;
+            if (mode == RC_INPUT_SINGLE_SBUS) return !useCh2 && enableRcCh1;
+            return mode == RC_INPUT_DUAL_SBUS && enableRcCh1;
         case RC_BINDING_SBUS2:
+            if (mode == RC_INPUT_SINGLE_SBUS) return useCh2 && enableRcCh2;
             return mode == RC_INPUT_DUAL_SBUS && enableRcCh2;
         case RC_BINDING_NONE:
         default:
@@ -64,19 +67,9 @@ void captureValidationSnapshot(ValidationSnapshot* out) {
     ValidationSnapshot snap = {};
     const uint32_t nowMs = currentMillis();
 
-    bool estop;
-    bool webDriveExpired;
-    bool sbusSignalLost;
+    FailsafeDiagnostics diag = {};
     bool sbus2SignalLost;
-    bool sbusHwFailsafe;
     bool sbus2HwFailsafe;
-    FailsafeSource failsafeSource;
-    uint32_t failsafeCount;
-    uint32_t triggerMs;
-    uint32_t zeroMs;
-    uint32_t triggerToZeroMs;
-    uint32_t watchdogMs;
-    FailsafeSource triggerSource;
 
     bool enableS3DomeCtrl;
     uint32_t domeHbRx;
@@ -101,48 +94,45 @@ void captureValidationSnapshot(ValidationSnapshot* out) {
     bool enableRcCh4;
     bool enableRcCh5;
     bool enableRcCh6;
+    bool sbusUseCh2;
     uint32_t lastPwmMs;
     uint32_t lastSbus1Ms;
     uint32_t lastSbus2Ms;
 
-    taskENTER_CRITICAL(&robotStateMux);
-    estop = robotState.estop;
-    webDriveExpired = robotState.webDriveExpired;
-    sbusSignalLost = robotState.sbusSignalLost;
-    sbus2SignalLost = robotState.sbus2SignalLost;
-    sbusHwFailsafe = robotState.sbusHwFailsafe;
-    sbus2HwFailsafe = robotState.sbus2HwFailsafe;
-    failsafeSource = robotState.failsafeSource;
-    failsafeCount = robotState.failsafeTriggerCount;
-    triggerMs = robotState.failsafeLastTriggerMs;
-    zeroMs = robotState.failsafeLastZeroOutputMs;
-    triggerToZeroMs = robotState.failsafeLastTriggerToZeroMs;
-    watchdogMs = robotState.failsafeLastWatchdogMs;
-    triggerSource = robotState.failsafeLastTriggerSource;
+    ConfigSnapshot cfg = {};
+    configCacheRead(&cfg);
+    RcInputActiveConfig activeRc = {};
+    configCacheReadActiveRcInput(&activeRc);
 
-    enableS3DomeCtrl = robotState.cfg_enable_s3_dome_ctrl;
+    taskENTER_CRITICAL(&robotStateMux);
+    copyFailsafeDiagnosticsLocked(&diag);
+    sbus2SignalLost = robotState.sbus2SignalLost;
+    sbus2HwFailsafe = robotState.sbus2HwFailsafe;
+
+    enableS3DomeCtrl = cfg.system.enable_s3_dome_ctrl;
     domeHbRx = robotState.domeHbRx;
     bodyHbTx = robotState.bodyHbTx;
     domeLastSeenMs = robotState.domeLastSeenMs;
 
-    enableS2Sound = robotState.cfg_enable_s2_sound;
+    enableS2Sound = cfg.system.enable_s2_sound;
     audioActive = robotState.audioActive;
     activeMood = robotState.activeMood;
-    randMin = robotState.cfg_snd_rand_min;
-    randMax = robotState.cfg_snd_rand_max;
-    intQuiet = robotState.cfg_snd_int_quiet;
-    intMid = robotState.cfg_snd_int_mid;
-    intFull = robotState.cfg_snd_int_full;
-    intAwake = robotState.cfg_snd_int_awake;
+    randMin = cfg.audio.snd_rand_min;
+    randMax = cfg.audio.snd_rand_max;
+    intQuiet = cfg.audio.snd_int_quiet;
+    intMid = cfg.audio.snd_int_mid;
+    intFull = cfg.audio.snd_int_full;
+    intAwake = cfg.audio.snd_int_awake;
 
-    rcMode = robotState.cfg_rc_input_mode;
-    timeoutMs = robotState.cfg_sbusTimeoutMs;
-    enableRcCh1 = robotState.cfg_enable_rc_ch1;
-    enableRcCh2 = robotState.cfg_enable_rc_ch2;
-    enableRcCh3 = robotState.cfg_enable_rc_ch3;
-    enableRcCh4 = robotState.cfg_enable_rc_ch4;
-    enableRcCh5 = robotState.cfg_enable_rc_ch5;
-    enableRcCh6 = robotState.cfg_enable_rc_ch6;
+    rcMode = static_cast<RcInputMode>(activeRc.mode);
+    timeoutMs = cfg.drive.sbusTimeoutMs;
+    enableRcCh1 = activeRc.enableRc[0];
+    enableRcCh2 = activeRc.enableRc[1];
+    enableRcCh3 = activeRc.enableRc[2];
+    enableRcCh4 = activeRc.enableRc[3];
+    enableRcCh5 = activeRc.enableRc[4];
+    enableRcCh6 = activeRc.enableRc[5];
+    sbusUseCh2 = activeRc.useCh2;
     lastPwmMs = robotState.lastPwmMs;
     lastSbus1Ms = robotState.lastSbus1Ms;
     lastSbus2Ms = robotState.lastSbus2Ms;
@@ -150,17 +140,17 @@ void captureValidationSnapshot(ValidationSnapshot* out) {
 
     snap.updatedMs = nowMs;
 
-    snap.drive.estop = estop;
-    snap.drive.webDriveExpired = webDriveExpired;
-    snap.drive.sbusSignalLost = sbusSignalLost;
-    snap.drive.sbusHwFailsafe = sbusHwFailsafe;
-    snap.drive.failsafeSource = failsafeSource;
-    snap.drive.failsafeCount = failsafeCount;
-    snap.drive.triggerMs = triggerMs;
-    snap.drive.zeroMs = zeroMs;
-    snap.drive.triggerToZeroMs = triggerToZeroMs;
-    snap.drive.watchdogMs = watchdogMs;
-    snap.drive.triggerSource = triggerSource;
+    snap.drive.estop = diag.estop;
+    snap.drive.webDriveExpired = diag.webDriveExpired;
+    snap.drive.sbusSignalLost = diag.sbusSignalLost;
+    snap.drive.sbusHwFailsafe = diag.sbusHwFailsafe;
+    snap.drive.failsafeSource = diag.failsafeSource;
+    snap.drive.failsafeCount = diag.failsafeTriggerCount;
+    snap.drive.triggerMs = diag.failsafeLastTriggerMs;
+    snap.drive.zeroMs = diag.failsafeLastZeroOutputMs;
+    snap.drive.triggerToZeroMs = diag.failsafeLastTriggerToZeroMs;
+    snap.drive.watchdogMs = diag.failsafeLastWatchdogMs;
+    snap.drive.triggerSource = diag.failsafeLastTriggerSource;
 
     snap.domeLink.hbTx = bodyHbTx;
     snap.domeLink.hbRx = domeHbRx;
@@ -199,15 +189,15 @@ void captureValidationSnapshot(ValidationSnapshot* out) {
 
     ValidationRcSourceSnapshot& sbus1 = snap.rc.sources[0];
     sbus1.key = "sbus1";
-    sbus1.enabled = rcSourceEnabledForMode(RC_BINDING_SBUS1, rcMode, enableRcCh1, enableRcCh2, anyPwmEnabled);
-    sbus1.linked = sbus1.enabled && lastSbus1Ms > 0 && !sbusSignalLost && sbus1Age <= timeoutMs;
-    sbus1.signalLost = sbus1.enabled ? sbusSignalLost : false;
-    sbus1.failsafe = sbus1.enabled ? sbusHwFailsafe : false;
+    sbus1.enabled = rcSourceEnabledForMode(RC_BINDING_SBUS1, rcMode, enableRcCh1, enableRcCh2, anyPwmEnabled, sbusUseCh2);
+    sbus1.linked = sbus1.enabled && lastSbus1Ms > 0 && !diag.sbusSignalLost && sbus1Age <= timeoutMs;
+    sbus1.signalLost = sbus1.enabled ? diag.sbusSignalLost : false;
+    sbus1.failsafe = sbus1.enabled ? diag.sbusHwFailsafe : false;
     sbus1.ageMs = sbus1Age;
 
     ValidationRcSourceSnapshot& sbus2 = snap.rc.sources[1];
     sbus2.key = "sbus2";
-    sbus2.enabled = rcSourceEnabledForMode(RC_BINDING_SBUS2, rcMode, enableRcCh1, enableRcCh2, anyPwmEnabled);
+    sbus2.enabled = rcSourceEnabledForMode(RC_BINDING_SBUS2, rcMode, enableRcCh1, enableRcCh2, anyPwmEnabled, sbusUseCh2);
     sbus2.linked = sbus2.enabled && lastSbus2Ms > 0 && !sbus2SignalLost && sbus2Age <= timeoutMs;
     sbus2.signalLost = sbus2.enabled ? sbus2SignalLost : false;
     sbus2.failsafe = sbus2.enabled ? sbus2HwFailsafe : false;
@@ -215,7 +205,7 @@ void captureValidationSnapshot(ValidationSnapshot* out) {
 
     ValidationRcSourceSnapshot& pwm = snap.rc.sources[2];
     pwm.key = "pwm";
-    pwm.enabled = rcSourceEnabledForMode(RC_BINDING_PWM, rcMode, enableRcCh1, enableRcCh2, anyPwmEnabled);
+    pwm.enabled = rcSourceEnabledForMode(RC_BINDING_PWM, rcMode, enableRcCh1, enableRcCh2, anyPwmEnabled, sbusUseCh2);
     pwm.linked = pwm.enabled && lastPwmMs > 0 && pwmAge <= timeoutMs;
     pwm.signalLost = pwm.enabled && lastPwmMs > 0 && pwmAge > timeoutMs;
     pwm.failsafe = false;

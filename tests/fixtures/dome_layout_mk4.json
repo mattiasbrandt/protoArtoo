@@ -1,0 +1,924 @@
+{
+  "schema_revision": 1,
+  "template_id": "mr-baddeley-complex-dome-mk4",
+  "template_name": "Mr Baddeley Complex Dome MK4",
+  "template_revision": 1,
+  "model": "MK4",
+  "source": "AstroPixelsPlus data/panels.html",
+  "coordinate_space": {
+    "viewBox": "0 0 480 480"
+  },
+  "runtime_state_ts": 1105975,
+  "elements": [
+    {
+      "id": "HP2",
+      "label": "HP2",
+      "element_type": "holo",
+      "panel_kind": null,
+      "mounted_on": null,
+      "in_layout": true,
+      "commandable": false,
+      "disabled": false,
+      "disabled_reason": null,
+      "aliases": [
+        "RHP"
+      ],
+      "capabilities": [
+        "light",
+        "aim",
+        "effect"
+      ],
+      "render_order": 10,
+      "geometry": {
+        "type": "ellipse",
+        "cx": 240.0,
+        "cy": 81.0,
+        "rx": 14.1,
+        "ry": 10.9,
+        "rotation": 0.0
+      },
+      "label_anchor": {
+        "x": 240.0,
+        "y": 81.0
+      }
+    },
+    {
+      "id": "P8",
+      "label": "P8",
+      "element_type": "panel",
+      "panel_kind": "fixed",
+      "mounted_on": null,
+      "in_layout": true,
+      "commandable": false,
+      "disabled": false,
+      "disabled_reason": null,
+      "aliases": [],
+      "capabilities": [],
+      "render_order": 20,
+      "geometry": {
+        "type": "svg_path",
+        "d": "M 272.8,71.2 A 172,172 0 0 1 318.1,86.7 L 306.3,109.9 A 146,146 0 0 0 267.9,96.7 Z"
+      },
+      "label_anchor": {
+        "x": 309.3,
+        "y": 34.6
+      },
+      "callout": {
+        "x": 309.3,
+        "y": 38.6,
+        "r": 14.0,
+        "connector_to": {
+          "x": 301.2,
+          "y": 62.2
+        }
+      }
+    },
+    {
+      "id": "RPSI",
+      "label": "RPSI",
+      "element_type": "psi",
+      "panel_kind": null,
+      "mounted_on": "P8",
+      "in_layout": true,
+      "commandable": false,
+      "disabled": false,
+      "disabled_reason": null,
+      "aliases": [
+        "Rear PSI"
+      ],
+      "capabilities": [
+        "light",
+        "effect"
+      ],
+      "render_order": 21,
+      "geometry": {
+        "type": "point",
+        "cx": 301.2,
+        "cy": 62.2,
+        "r": 6.0
+      },
+      "label_anchor": {
+        "x": 309.3,
+        "y": 43.6
+      },
+      "callout": {
+        "x": 309.3,
+        "y": 38.6,
+        "r": 14.0,
+        "connector_to": {
+          "x": 301.2,
+          "y": 62.2
+        }
+      }
+    },
+    {
+      "id": "P7",
+      "label": "P7",
+      "element_type": "panel",
+      "panel_kind": "ring",
+      "mounted_on": null,
+      "in_layout": true,
+      "commandable": true,
+      "active": true,
+      "disabled": false,
+      "disabled_reason": null,
+      "aliases": [],
+      "capabilities": [
+        "open",
+        "close",
+        "flutter"
+      ],
+      "render_order": 30,
+      "geometry": {
+        "type": "svg_path",
+        "d": "M 331.1,94.1 A 172,172 0 0 1 391.9,159.3 L 368.9,171.5 A 146,146 0 0 0 317.4,116.2 Z"
+      },
+      "label_anchor": {
+        "x": 395.8,
+        "y": 94.7
+      },
+      "callout": {
+        "x": 395.8,
+        "y": 94.7,
+        "r": 12.0,
+        "connector_to": {
+          "x": 377.5,
+          "y": 111.8
+        }
+      }
+    },
+    {
+      "id": "P6",
+      "label": "P6",
+      "element_type": "panel",
+      "panel_kind": "fixed",
+      "mounted_on": null,
+      "in_layout": true,
+      "commandable": false,
+      "disabled": false,
+      "disabled_reason": null,
+      "aliases": [],
+      "capabilities": [],
+      "render_order": 40,
+      "geometry": {
+        "type": "svg_path",
+        "d": "M 398.3,172.8 A 172,172 0 0 1 409.4,210.1 L 383.8,214.6 A 146,146 0 0 0 374.4,183.0 Z"
+      },
+      "label_anchor": {
+        "x": 444.2,
+        "y": 172.5
+      },
+      "callout": {
+        "x": 444.2,
+        "y": 179.5,
+        "r": 16.0,
+        "connector_to": {
+          "x": 420.3,
+          "y": 186.6
+        }
+      }
+    },
+    {
+      "id": "MP",
+      "label": "MP",
+      "element_type": "panel",
+      "panel_kind": "fixed",
+      "mounted_on": null,
+      "in_layout": true,
+      "commandable": false,
+      "disabled": false,
+      "disabled_reason": null,
+      "aliases": [
+        "Magic Panel"
+      ],
+      "capabilities": [],
+      "render_order": 41,
+      "geometry": {
+        "type": "svg_path",
+        "d": "M 398.3,172.8 A 172,172 0 0 1 409.4,210.1 L 383.8,214.6 A 146,146 0 0 0 374.4,183.0 Z"
+      },
+      "label_anchor": {
+        "x": 444.2,
+        "y": 179.5
+      },
+      "callout": {
+        "x": 444.2,
+        "y": 179.5,
+        "r": 16.0,
+        "connector_to": {
+          "x": 420.3,
+          "y": 186.6
+        }
+      }
+    },
+    {
+      "id": "P5",
+      "label": "P5",
+      "element_type": "panel",
+      "panel_kind": "fixed",
+      "mounted_on": null,
+      "in_layout": true,
+      "commandable": false,
+      "disabled": false,
+      "disabled_reason": null,
+      "aliases": [],
+      "capabilities": [],
+      "render_order": 42,
+      "geometry": {
+        "type": "svg_path",
+        "d": "M 398.3,172.8 A 172,172 0 0 1 409.4,210.1 L 383.8,214.6 A 146,146 0 0 0 374.4,183.0 Z"
+      },
+      "label_anchor": {
+        "x": 444.2,
+        "y": 186.5
+      },
+      "callout": {
+        "x": 444.2,
+        "y": 179.5,
+        "r": 16.0,
+        "connector_to": {
+          "x": 420.3,
+          "y": 186.6
+        }
+      }
+    },
+    {
+      "id": "P4",
+      "label": "P4",
+      "element_type": "panel",
+      "panel_kind": "ring",
+      "mounted_on": null,
+      "in_layout": true,
+      "commandable": true,
+      "active": true,
+      "disabled": false,
+      "disabled_reason": null,
+      "aliases": [],
+      "capabilities": [
+        "open",
+        "close",
+        "flutter"
+      ],
+      "render_order": 50,
+      "geometry": {
+        "type": "svg_path",
+        "d": "M 411.3,225.0 A 172,172 0 0 1 395.9,312.7 L 372.3,301.7 A 146,146 0 0 0 385.4,227.3 Z"
+      },
+      "label_anchor": {
+        "x": 449.8,
+        "y": 277.0
+      },
+      "callout": {
+        "x": 449.8,
+        "y": 277.0,
+        "r": 12.0,
+        "connector_to": {
+          "x": 425.1,
+          "y": 272.6
+        }
+      }
+    },
+    {
+      "id": "P3",
+      "label": "P3",
+      "element_type": "panel",
+      "panel_kind": "ring",
+      "mounted_on": null,
+      "in_layout": true,
+      "commandable": true,
+      "active": true,
+      "disabled": false,
+      "disabled_reason": null,
+      "aliases": [],
+      "capabilities": [
+        "open",
+        "close",
+        "flutter"
+      ],
+      "render_order": 60,
+      "geometry": {
+        "type": "svg_path",
+        "d": "M 389.0,326.0 A 172,172 0 0 1 365.8,357.3 L 346.8,339.6 A 146,146 0 0 0 366.4,313.0 Z"
+      },
+      "label_anchor": {
+        "x": 411.2,
+        "y": 366.7
+      },
+      "callout": {
+        "x": 411.2,
+        "y": 366.7,
+        "r": 12.0,
+        "connector_to": {
+          "x": 391.1,
+          "y": 351.8
+        }
+      }
+    },
+    {
+      "id": "P2",
+      "label": "P2",
+      "element_type": "panel",
+      "panel_kind": "ring",
+      "mounted_on": null,
+      "in_layout": true,
+      "commandable": true,
+      "active": true,
+      "disabled": false,
+      "disabled_reason": null,
+      "aliases": [],
+      "capabilities": [
+        "open",
+        "close",
+        "flutter"
+      ],
+      "render_order": 70,
+      "geometry": {
+        "type": "svg_path",
+        "d": "M 355.1,367.8 A 172,172 0 0 1 323.4,390.4 L 310.8,367.7 A 146,146 0 0 0 337.7,348.5 Z"
+      },
+      "label_anchor": {
+        "x": 363.7,
+        "y": 413.4
+      },
+      "callout": {
+        "x": 363.7,
+        "y": 413.4,
+        "r": 12.0,
+        "connector_to": {
+          "x": 349.2,
+          "y": 393.1
+        }
+      }
+    },
+    {
+      "id": "P1",
+      "label": "P1",
+      "element_type": "panel",
+      "panel_kind": "ring",
+      "mounted_on": null,
+      "in_layout": true,
+      "commandable": true,
+      "active": true,
+      "disabled": false,
+      "disabled_reason": null,
+      "aliases": [],
+      "capabilities": [
+        "open",
+        "close",
+        "flutter"
+      ],
+      "render_order": 80,
+      "geometry": {
+        "type": "svg_path",
+        "d": "M 310.0,397.1 A 172,172 0 0 1 272.8,408.8 L 267.9,383.3 A 146,146 0 0 0 299.4,373.4 Z"
+      },
+      "label_anchor": {
+        "x": 304.1,
+        "y": 443.1
+      },
+      "callout": {
+        "x": 304.1,
+        "y": 443.1,
+        "r": 12.0,
+        "connector_to": {
+          "x": 296.5,
+          "y": 419.3
+        }
+      }
+    },
+    {
+      "id": "HP1",
+      "label": "HP1",
+      "element_type": "holo",
+      "panel_kind": null,
+      "mounted_on": null,
+      "in_layout": true,
+      "commandable": false,
+      "disabled": false,
+      "disabled_reason": null,
+      "aliases": [
+        "FHP"
+      ],
+      "capabilities": [
+        "light",
+        "aim",
+        "effect"
+      ],
+      "render_order": 90,
+      "geometry": {
+        "type": "ellipse",
+        "cx": 237.2,
+        "cy": 399.0,
+        "rx": 16.5,
+        "ry": 10.9,
+        "rotation": 181.0
+      },
+      "label_anchor": {
+        "x": 237.2,
+        "y": 399.0
+      }
+    },
+    {
+      "id": "P14",
+      "label": "P14",
+      "element_type": "panel",
+      "panel_kind": "fixed",
+      "mounted_on": null,
+      "in_layout": true,
+      "commandable": false,
+      "disabled": false,
+      "disabled_reason": null,
+      "aliases": [],
+      "capabilities": [],
+      "render_order": 100,
+      "geometry": {
+        "type": "svg_path",
+        "d": "M 198.4,406.9 A 172,172 0 0 1 154.0,389.0 L 167.0,366.4 A 146,146 0 0 0 204.7,381.7 Z"
+      },
+      "label_anchor": {
+        "x": 160.2,
+        "y": 433.5
+      },
+      "callout": {
+        "x": 160.2,
+        "y": 437.5,
+        "r": 14.0,
+        "connector_to": {
+          "x": 169.6,
+          "y": 414.3
+        }
+      }
+    },
+    {
+      "id": "FPSI",
+      "label": "FPSI",
+      "element_type": "psi",
+      "panel_kind": null,
+      "mounted_on": "P14",
+      "in_layout": true,
+      "commandable": false,
+      "disabled": false,
+      "disabled_reason": null,
+      "aliases": [
+        "Front PSI"
+      ],
+      "capabilities": [
+        "light",
+        "effect"
+      ],
+      "render_order": 101,
+      "geometry": {
+        "type": "point",
+        "cx": 169.6,
+        "cy": 414.3,
+        "r": 6.0
+      },
+      "label_anchor": {
+        "x": 160.2,
+        "y": 442.5
+      },
+      "callout": {
+        "x": 160.2,
+        "y": 437.5,
+        "r": 14.0,
+        "connector_to": {
+          "x": 169.6,
+          "y": 414.3
+        }
+      }
+    },
+    {
+      "id": "P13",
+      "label": "P13",
+      "element_type": "panel",
+      "panel_kind": "ring",
+      "mounted_on": null,
+      "in_layout": true,
+      "commandable": true,
+      "active": true,
+      "disabled": false,
+      "disabled_reason": null,
+      "aliases": [],
+      "capabilities": [
+        "open",
+        "close",
+        "flutter"
+      ],
+      "render_order": 110,
+      "geometry": {
+        "type": "svg_path",
+        "d": "M 138.9,379.2 A 172,172 0 0 1 124.9,367.8 L 142.3,348.5 A 146,146 0 0 0 154.2,358.1 Z"
+      },
+      "label_anchor": {
+        "x": 106.0,
+        "y": 405.5
+      },
+      "callout": {
+        "x": 106.0,
+        "y": 405.5,
+        "r": 12.0,
+        "connector_to": {
+          "x": 121.7,
+          "y": 386.1
+        }
+      }
+    },
+    {
+      "id": "P12",
+      "label": "P12",
+      "element_type": "panel",
+      "panel_kind": "fixed",
+      "mounted_on": null,
+      "in_layout": true,
+      "commandable": false,
+      "disabled": false,
+      "disabled_reason": null,
+      "aliases": [],
+      "capabilities": [],
+      "render_order": 120,
+      "geometry": {
+        "type": "svg_path",
+        "d": "M 112.2,355.1 A 172,172 0 0 1 88.1,320.7 L 111.1,308.5 A 146,146 0 0 0 131.5,337.7 Z"
+      },
+      "label_anchor": {
+        "x": 65.5,
+        "y": 358.2
+      },
+      "callout": {
+        "x": 65.5,
+        "y": 362.2,
+        "r": 14.0,
+        "connector_to": {
+          "x": 86.0,
+          "y": 347.8
+        }
+      }
+    },
+    {
+      "id": "FLD",
+      "label": "FLD",
+      "element_type": "logic",
+      "panel_kind": null,
+      "mounted_on": "P12",
+      "in_layout": true,
+      "commandable": false,
+      "disabled": false,
+      "disabled_reason": null,
+      "aliases": [
+        "FLDs",
+        "top_fld",
+        "bottom_fld"
+      ],
+      "capabilities": [
+        "light",
+        "effect"
+      ],
+      "render_order": 121,
+      "geometry": {
+        "type": "point",
+        "cx": 86.0,
+        "cy": 347.8,
+        "r": 6.0
+      },
+      "label_anchor": {
+        "x": 65.5,
+        "y": 367.2
+      },
+      "callout": {
+        "x": 65.5,
+        "y": 362.2,
+        "r": 14.0,
+        "connector_to": {
+          "x": 86.0,
+          "y": 347.8
+        }
+      }
+    },
+    {
+      "id": "P11",
+      "label": "P11",
+      "element_type": "panel",
+      "panel_kind": "ring",
+      "mounted_on": null,
+      "in_layout": true,
+      "commandable": true,
+      "active": true,
+      "disabled": false,
+      "disabled_reason": null,
+      "aliases": [],
+      "capabilities": [
+        "open",
+        "close",
+        "flutter"
+      ],
+      "render_order": 130,
+      "geometry": {
+        "type": "svg_path",
+        "d": "M 80.5,304.4 A 172,172 0 0 1 74.7,287.4 L 99.7,280.2 A 146,146 0 0 0 104.6,294.7 Z"
+      },
+      "label_anchor": {
+        "x": 38.6,
+        "y": 309.3
+      },
+      "callout": {
+        "x": 38.6,
+        "y": 309.3,
+        "r": 12.0,
+        "connector_to": {
+          "x": 62.2,
+          "y": 301.2
+        }
+      }
+    },
+    {
+      "id": "P10",
+      "label": "P10",
+      "element_type": "panel",
+      "panel_kind": "fixed",
+      "mounted_on": null,
+      "in_layout": true,
+      "commandable": false,
+      "disabled": false,
+      "disabled_reason": null,
+      "aliases": [],
+      "capabilities": [],
+      "render_order": 140,
+      "geometry": {
+        "type": "svg_path",
+        "d": "M 70.6,269.9 A 172,172 0 0 1 88.1,159.3 L 111.1,171.5 A 146,146 0 0 0 96.2,265.4 Z"
+      },
+      "label_anchor": {
+        "x": 29.6,
+        "y": 206.7
+      },
+      "callout": {
+        "x": 29.6,
+        "y": 206.7,
+        "r": 11.0,
+        "connector_to": {
+          "x": 54.3,
+          "y": 210.6
+        }
+      }
+    },
+    {
+      "id": "P9",
+      "label": "P9",
+      "element_type": "panel",
+      "panel_kind": "fixed",
+      "mounted_on": null,
+      "in_layout": true,
+      "commandable": false,
+      "disabled": false,
+      "disabled_reason": null,
+      "aliases": [],
+      "capabilities": [],
+      "render_order": 150,
+      "geometry": {
+        "type": "svg_path",
+        "d": "M 97.4,143.8 A 172,172 0 0 1 192.6,74.7 L 199.8,99.7 A 146,146 0 0 0 119.0,158.4 Z"
+      },
+      "label_anchor": {
+        "x": 114.8,
+        "y": 63.7
+      },
+      "callout": {
+        "x": 114.8,
+        "y": 67.7,
+        "r": 14.0,
+        "connector_to": {
+          "x": 129.5,
+          "y": 87.9
+        }
+      }
+    },
+    {
+      "id": "RLD",
+      "label": "RLD",
+      "element_type": "logic",
+      "panel_kind": null,
+      "mounted_on": "P9",
+      "in_layout": true,
+      "commandable": false,
+      "disabled": false,
+      "disabled_reason": null,
+      "aliases": [],
+      "capabilities": [
+        "light",
+        "effect"
+      ],
+      "render_order": 151,
+      "geometry": {
+        "type": "point",
+        "cx": 129.5,
+        "cy": 87.9,
+        "r": 6.0
+      },
+      "label_anchor": {
+        "x": 114.8,
+        "y": 72.7
+      },
+      "callout": {
+        "x": 114.8,
+        "y": 67.7,
+        "r": 14.0,
+        "connector_to": {
+          "x": 129.5,
+          "y": 87.9
+        }
+      }
+    },
+    {
+      "id": "PP4",
+      "label": "PP4",
+      "element_type": "panel",
+      "panel_kind": "pie",
+      "mounted_on": null,
+      "in_layout": true,
+      "commandable": true,
+      "active": true,
+      "disabled": true,
+      "disabled_reason": "Servo linkage issue",
+      "aliases": [],
+      "capabilities": [
+        "open",
+        "close",
+        "flutter"
+      ],
+      "render_order": 200,
+      "geometry": {
+        "type": "svg_path",
+        "d": "M 184.6,135.8 A 118,118 0 0 1 293.6,134.9 L 264.5,191.9 A 54,54 0 0 0 214.6,192.3 Z"
+      },
+      "label_anchor": {
+        "x": 240.0,
+        "y": 154.0
+      }
+    },
+    {
+      "id": "PP3",
+      "label": "PP3",
+      "element_type": "panel",
+      "panel_kind": "pie",
+      "mounted_on": null,
+      "in_layout": true,
+      "commandable": true,
+      "active": false,
+      "disabled": true,
+      "disabled_reason": "Servo linkage issue",
+      "aliases": [],
+      "capabilities": [
+        "open",
+        "close",
+        "flutter"
+      ],
+      "render_order": 210,
+      "geometry": {
+        "type": "svg_path",
+        "d": "M 302.5,139.9 A 118,118 0 0 1 357.8,233.8 L 293.9,237.2 A 54,54 0 0 0 268.6,194.2 Z"
+      },
+      "label_anchor": {
+        "x": 296.0,
+        "y": 216.0
+      }
+    },
+    {
+      "id": "HP3",
+      "label": "HP3",
+      "element_type": "holo",
+      "panel_kind": null,
+      "mounted_on": "PP3",
+      "in_layout": true,
+      "commandable": false,
+      "disabled": false,
+      "disabled_reason": null,
+      "aliases": [
+        "THP"
+      ],
+      "capabilities": [
+        "light",
+        "aim",
+        "effect"
+      ],
+      "render_order": 211,
+      "geometry": {
+        "type": "circle",
+        "cx": 320.4,
+        "cy": 172.5,
+        "r": 6.0
+      },
+      "label_anchor": {
+        "x": 320.4,
+        "y": 172.5
+      }
+    },
+    {
+      "id": "PP2",
+      "label": "PP2",
+      "element_type": "panel",
+      "panel_kind": "pie",
+      "mounted_on": null,
+      "in_layout": true,
+      "commandable": true,
+      "active": true,
+      "disabled": true,
+      "disabled_reason": "Servo linkage issue",
+      "aliases": [],
+      "capabilities": [
+        "open",
+        "close",
+        "flutter"
+      ],
+      "render_order": 220,
+      "geometry": {
+        "type": "svg_path",
+        "d": "M 357.9,244.1 A 118,118 0 0 1 304.3,339.0 L 269.4,285.3 A 54,54 0 0 0 294.0,241.9 Z"
+      },
+      "label_anchor": {
+        "x": 314.9,
+        "y": 282.3
+      }
+    },
+    {
+      "id": "PP1",
+      "label": "PP1",
+      "element_type": "panel",
+      "panel_kind": "pie",
+      "mounted_on": null,
+      "in_layout": true,
+      "commandable": true,
+      "active": true,
+      "disabled": true,
+      "disabled_reason": "Servo linkage issue",
+      "aliases": [],
+      "capabilities": [
+        "open",
+        "close",
+        "flutter"
+      ],
+      "render_order": 230,
+      "geometry": {
+        "type": "svg_path",
+        "d": "M 295.4,344.2 A 118,118 0 0 1 186.4,345.1 L 215.5,288.1 A 54,54 0 0 0 265.4,287.7 Z"
+      },
+      "label_anchor": {
+        "x": 240.8,
+        "y": 326.0
+      }
+    },
+    {
+      "id": "PP6",
+      "label": "PP6",
+      "element_type": "panel",
+      "panel_kind": "pie",
+      "mounted_on": null,
+      "in_layout": true,
+      "commandable": true,
+      "active": true,
+      "disabled": true,
+      "disabled_reason": "Servo linkage issue",
+      "aliases": [],
+      "capabilities": [
+        "open",
+        "close",
+        "flutter"
+      ],
+      "render_order": 240,
+      "geometry": {
+        "type": "svg_path",
+        "d": "M 177.5,340.1 A 118,118 0 0 1 122.2,246.2 L 186.1,242.8 A 54,54 0 0 0 211.4,285.8 Z"
+      },
+      "label_anchor": {
+        "x": 165.9,
+        "y": 283.6
+      }
+    },
+    {
+      "id": "PP5",
+      "label": "PP5",
+      "element_type": "panel",
+      "panel_kind": "pie",
+      "mounted_on": null,
+      "in_layout": true,
+      "commandable": true,
+      "active": false,
+      "disabled": false,
+      "disabled_reason": null,
+      "aliases": [],
+      "capabilities": [
+        "open",
+        "close",
+        "flutter"
+      ],
+      "render_order": 250,
+      "geometry": {
+        "type": "svg_path",
+        "d": "M 122.1,235.9 A 118,118 0 0 1 175.7,141.0 L 210.6,194.7 A 54,54 0 0 0 186.0,238.1 Z"
+      },
+      "label_anchor": {
+        "x": 165.1,
+        "y": 197.7
+      }
+    }
+  ]
+}

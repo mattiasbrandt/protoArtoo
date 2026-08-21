@@ -94,6 +94,11 @@ void test_startup() {
     TEST_ASSERT_EQUAL_UINT16(AUDIO_TRACK_STARTUP, a.track);
 }
 
+void test_disco_default_is_none_until_configured() {
+    AudioAction a = parseAudioDollar("$D");
+    TEST_ASSERT_EQUAL(AUDIO_ACTION_NONE, a.type);
+}
+
 // -----------------------------------------------------------------------------
 // Playback control
 // -----------------------------------------------------------------------------
@@ -200,6 +205,23 @@ void test_custom_named_tracks() {
     TEST_ASSERT_EQUAL_UINT16(AUDIO_TRACK_FAINT, faint.track);
 }
 
+void test_disco_plays_custom_named_track() {
+    AudioNamedTracks custom{};
+    custom.disco = 9;
+
+    AudioAction disco = parseAudioDollar("$D", custom);
+    TEST_ASSERT_EQUAL(AUDIO_ACTION_PLAY_TRACK, disco.type);
+    TEST_ASSERT_EQUAL_UINT16(9, disco.track);
+}
+
+void test_disco_zero_track_is_suppressed() {
+    AudioNamedTracks custom{};
+    custom.disco = 0;
+
+    AudioAction disco = parseAudioDollar("$D", custom);
+    TEST_ASSERT_EQUAL(AUDIO_ACTION_NONE, disco.type);
+}
+
 // -----------------------------------------------------------------------------
 // audioTrackNvsKey() — API key → NVS key mapping
 // -----------------------------------------------------------------------------
@@ -246,6 +268,88 @@ void test_nvs_key_snd_int_full() {
 void test_nvs_key_snd_int_awake() {
     TEST_ASSERT_EQUAL_STRING("snd_int_awake", audioTrackNvsKey("snd_int_awake"));
 }
+void test_nvs_key_doodoo() {
+    TEST_ASSERT_EQUAL_STRING("snd_doodoo", audioTrackNvsKey("doodoo"));
+}
+void test_nvs_key_failure() {
+    TEST_ASSERT_EQUAL_STRING("snd_failure", audioTrackNvsKey("failure"));
+}
+void test_nvs_key_disco() {
+    TEST_ASSERT_EQUAL_STRING("snd_disco", audioTrackNvsKey("disco"));
+}
+void test_nvs_key_mahna() {
+    TEST_ASSERT_EQUAL_STRING("snd_mahna", audioTrackNvsKey("mahna"));
+}
+void test_nvs_key_inlove() {
+    TEST_ASSERT_EQUAL_STRING("snd_inlove", audioTrackNvsKey("inlove"));
+}
+void test_nvs_key_macho() {
+    TEST_ASSERT_EQUAL_STRING("snd_macho", audioTrackNvsKey("macho"));
+}
+void test_nvs_key_gangnam() {
+    TEST_ASSERT_EQUAL_STRING("snd_gangnam", audioTrackNvsKey("gangnam"));
+}
+void test_nvs_key_uptown() {
+    TEST_ASSERT_EQUAL_STRING("snd_uptown", audioTrackNvsKey("uptown"));
+}
+void test_nvs_key_celebr() {
+    TEST_ASSERT_EQUAL_STRING("snd_celebr", audioTrackNvsKey("celebr"));
+}
+void test_nvs_key_stayin() {
+    TEST_ASSERT_EQUAL_STRING("snd_stayin", audioTrackNvsKey("stayin"));
+}
+void test_nvs_key_harlem() {
+    TEST_ASSERT_EQUAL_STRING("snd_harlem", audioTrackNvsKey("harlem"));
+}
+void test_nvs_key_pbjtime() {
+    TEST_ASSERT_EQUAL_STRING("snd_pbjtime", audioTrackNvsKey("pbjtime"));
+}
+void test_nvs_key_sys_boot() {
+    TEST_ASSERT_EQUAL_STRING("snd_sys_boot", audioTrackNvsKey("sys_boot"));
+}
+void test_nvs_key_sys_mode_n() {
+    TEST_ASSERT_EQUAL_STRING("snd_sys_mode_n", audioTrackNvsKey("sys_mode_n"));
+}
+void test_nvs_key_sys_mode_s() {
+    TEST_ASSERT_EQUAL_STRING("snd_sys_mode_s", audioTrackNvsKey("sys_mode_s"));
+}
+void test_nvs_key_sys_mode_t() {
+    TEST_ASSERT_EQUAL_STRING("snd_sys_mode_t", audioTrackNvsKey("sys_mode_t"));
+}
+void test_nvs_key_sys_drv_on() {
+    TEST_ASSERT_EQUAL_STRING("snd_sys_drv_on", audioTrackNvsKey("sys_drv_on"));
+}
+void test_nvs_key_sys_dome_on() {
+    TEST_ASSERT_EQUAL_STRING("snd_sys_dome_on", audioTrackNvsKey("sys_dome_on"));
+}
+
+
+void test_nvs_key_sound_categories() {
+    TEST_ASSERT_EQUAL_STRING("snd_cat_gen_lo", audioTrackNvsKey("snd_cat_gen_lo"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_gen_hi", audioTrackNvsKey("snd_cat_gen_hi"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_chat_lo", audioTrackNvsKey("snd_cat_chat_lo"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_chat_hi", audioTrackNvsKey("snd_cat_chat_hi"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_hap_lo", audioTrackNvsKey("snd_cat_hap_lo"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_hap_hi", audioTrackNvsKey("snd_cat_hap_hi"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_proc_lo", audioTrackNvsKey("snd_cat_proc_lo"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_proc_hi", audioTrackNvsKey("snd_cat_proc_hi"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_sad_lo", audioTrackNvsKey("snd_cat_sad_lo"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_sad_hi", audioTrackNvsKey("snd_cat_sad_hi"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_sent_lo", audioTrackNvsKey("snd_cat_sent_lo"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_sent_hi", audioTrackNvsKey("snd_cat_sent_hi"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_hum_lo", audioTrackNvsKey("snd_cat_hum_lo"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_hum_hi", audioTrackNvsKey("snd_cat_hum_hi"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_scrm_lo", audioTrackNvsKey("snd_cat_scrm_lo"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_scrm_hi", audioTrackNvsKey("snd_cat_scrm_hi"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_ooh_lo", audioTrackNvsKey("snd_cat_ooh_lo"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_ooh_hi", audioTrackNvsKey("snd_cat_ooh_hi"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_alrm_lo", audioTrackNvsKey("snd_cat_alrm_lo"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_alrm_hi", audioTrackNvsKey("snd_cat_alrm_hi"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_snrk_lo", audioTrackNvsKey("snd_cat_snrk_lo"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_snrk_hi", audioTrackNvsKey("snd_cat_snrk_hi"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_whis_lo", audioTrackNvsKey("snd_cat_whis_lo"));
+    TEST_ASSERT_EQUAL_STRING("snd_cat_whis_hi", audioTrackNvsKey("snd_cat_whis_hi"));
+}
 
 void test_nvs_key_unknown_returns_null() {
     TEST_ASSERT_NULL(audioTrackNvsKey("bogus"));
@@ -260,8 +364,17 @@ void test_nvs_keys_are_15_chars_or_less() {
     // NVS key length limit is 15 chars (ESP-IDF constraint)
     const char* keys[] = {
         "scream","faint","leia","cantina_s","sw_theme",
-        "imp_march","cantina_l","startup","rand_min","rand_max",
-        "snd_int_quiet","snd_int_mid","snd_int_full","snd_int_awake"
+        "imp_march","cantina_l","startup","doodoo","failure",
+        "disco","mahna","inlove","macho","gangnam","uptown",
+        "celebr","stayin","harlem","pbjtime",
+        "sys_boot","sys_mode_n","sys_mode_s","sys_mode_t","sys_drv_on","sys_dome_on",
+        "snd_cat_gen_lo","snd_cat_gen_hi","snd_cat_chat_lo","snd_cat_chat_hi",
+        "snd_cat_hap_lo","snd_cat_hap_hi","snd_cat_proc_lo","snd_cat_proc_hi",
+        "snd_cat_sad_lo","snd_cat_sad_hi","snd_cat_sent_lo","snd_cat_sent_hi",
+        "snd_cat_hum_lo","snd_cat_hum_hi","snd_cat_scrm_lo","snd_cat_scrm_hi",
+        "snd_cat_ooh_lo","snd_cat_ooh_hi","snd_cat_alrm_lo","snd_cat_alrm_hi",
+        "snd_cat_snrk_lo","snd_cat_snrk_hi","snd_cat_whis_lo","snd_cat_whis_hi",
+        "rand_min","rand_max","snd_int_quiet","snd_int_mid","snd_int_full","snd_int_awake"
     };
     for (size_t i = 0; i < sizeof(keys)/sizeof(keys[0]); i++) {
         const char* nvsKey = audioTrackNvsKey(keys[i]);
@@ -292,6 +405,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_imp_march);
     RUN_TEST(test_startup);
 
+    RUN_TEST(test_disco_default_is_none_until_configured);
     // Playback control
     RUN_TEST(test_random_on);
     RUN_TEST(test_random_off);
@@ -313,6 +427,8 @@ int main(int argc, char** argv) {
 
     // Custom named tracks
     RUN_TEST(test_custom_named_tracks);
+    RUN_TEST(test_disco_plays_custom_named_track);
+    RUN_TEST(test_disco_zero_track_is_suppressed);
 
     // audioTrackNvsKey
     RUN_TEST(test_nvs_key_scream);
@@ -323,6 +439,25 @@ int main(int argc, char** argv) {
     RUN_TEST(test_nvs_key_imp_march);
     RUN_TEST(test_nvs_key_cantina_l);
     RUN_TEST(test_nvs_key_startup);
+    RUN_TEST(test_nvs_key_doodoo);
+    RUN_TEST(test_nvs_key_failure);
+    RUN_TEST(test_nvs_key_disco);
+    RUN_TEST(test_nvs_key_mahna);
+    RUN_TEST(test_nvs_key_inlove);
+    RUN_TEST(test_nvs_key_macho);
+    RUN_TEST(test_nvs_key_gangnam);
+    RUN_TEST(test_nvs_key_uptown);
+    RUN_TEST(test_nvs_key_celebr);
+    RUN_TEST(test_nvs_key_stayin);
+    RUN_TEST(test_nvs_key_harlem);
+    RUN_TEST(test_nvs_key_pbjtime);
+    RUN_TEST(test_nvs_key_sys_boot);
+    RUN_TEST(test_nvs_key_sys_mode_n);
+    RUN_TEST(test_nvs_key_sys_mode_s);
+    RUN_TEST(test_nvs_key_sys_mode_t);
+    RUN_TEST(test_nvs_key_sys_drv_on);
+    RUN_TEST(test_nvs_key_sys_dome_on);
+    RUN_TEST(test_nvs_key_sound_categories);
     RUN_TEST(test_nvs_key_rand_min);
     RUN_TEST(test_nvs_key_rand_max);
     RUN_TEST(test_nvs_key_snd_int_quiet);

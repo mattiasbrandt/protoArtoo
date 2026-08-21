@@ -2,14 +2,14 @@
 // test/test_native/test_audio_status_json/test_audio_status_json.cpp
 //
 // Native tests for formatAudioStatusJson().
-// Verifies content correctness and that the output fits within the 192-byte
+// Verifies content correctness and that the output fits within the 256-byte
 // buffer used by GET /api/audio.
 // =============================================================================
 
 #include <string.h>
 #include <unity.h>
 
-#include "api_helpers.h"
+#include "api_audio.h"
 
 static constexpr uint8_t AUDIO_CAP_STATUS_QUERY = 0x01;
 static constexpr uint8_t AUDIO_CAP_DEVICE_TYPE = 0x02;
@@ -18,6 +18,17 @@ static constexpr uint8_t AUDIO_CAP_CURRENT_TRACK = 0x08;
 static constexpr uint8_t AUDIO_CAP_QUERY_SAFE_PLAYING = 0x10;
 static constexpr uint8_t CAPS_DY_SV5W = 0x0F;
 static constexpr uint8_t CAPS_CHIRP   = 0x1F;
+
+static void formatAudioStatusJsonDefault(char* buf, size_t bufSize, const char* driverName,
+                                         uint8_t capabilities, bool linkOk, bool active,
+                                         uint8_t playState, uint8_t device,
+                                         uint16_t totalTracks, uint16_t currentTrack) {
+    formatAudioStatusJson(buf, bufSize, driverName, capabilities, linkOk, active, playState,
+                          device, totalTracks, currentTrack, "available",
+                          "Sound module RX is available");
+}
+
+#define formatAudioStatusJson(...) formatAudioStatusJsonDefault(__VA_ARGS__)
 
 void setUp() {
 }
@@ -32,15 +43,15 @@ void tearDown() {
 // ~137 bytes + null = 138 — well within 192.
 
 void test_buffer_fits_with_capabilities() {
-    char buf[192];
+    char buf[256];
     formatAudioStatusJson(buf, sizeof(buf), "DY-SV5W", 0xFF, true, true, 0xFF, 0xFF, 65535, 65535);
     size_t len = strlen(buf);
-    TEST_ASSERT_LESS_THAN(192u, len);
+    TEST_ASSERT_LESS_THAN(256u, len);
     TEST_ASSERT_GREATER_THAN(0u, len);
 }
 
 void test_typical_case_link_ok_sd_playing() {
-    char buf[192];
+    char buf[256];
     // link_ok=true active=true play_state=1(playing) device=1(SD/TF) tracks=50 current=7
     formatAudioStatusJson(buf, sizeof(buf), "DY-SV5W", CAPS_DY_SV5W, true, true, 0x01, 0x01, 50, 7);
     TEST_ASSERT_NOT_NULL(strstr(buf, "\"link_ok\":true"));
@@ -53,7 +64,7 @@ void test_typical_case_link_ok_sd_playing() {
 }
 
 void test_link_not_ok_shows_unknown_device() {
-    char buf[192];
+    char buf[256];
     // link_ok=false, device=0xFF (no device / unknown until query responds)
     formatAudioStatusJson(buf, sizeof(buf), "DY-SV5W", CAPS_DY_SV5W, false, false, 0xFF, 0xFF, 0, 0);
     TEST_ASSERT_NOT_NULL(strstr(buf, "\"link_ok\":false"));
@@ -63,31 +74,31 @@ void test_link_not_ok_shows_unknown_device() {
 }
 
 void test_play_state_stop() {
-    char buf[192];
+    char buf[256];
     formatAudioStatusJson(buf, sizeof(buf), "DY-SV5W", CAPS_DY_SV5W, true, false, 0x00, 0x01, 10, 3);
     TEST_ASSERT_NOT_NULL(strstr(buf, "\"play_state\":\"stop\""));
 }
 
 void test_play_state_paused() {
-    char buf[192];
+    char buf[256];
     formatAudioStatusJson(buf, sizeof(buf), "DY-SV5W", CAPS_DY_SV5W, true, false, 0x02, 0x01, 10, 3);
     TEST_ASSERT_NOT_NULL(strstr(buf, "\"play_state\":\"paused\""));
 }
 
 void test_device_usb() {
-    char buf[192];
+    char buf[256];
     formatAudioStatusJson(buf, sizeof(buf), "DY-SV5W", CAPS_DY_SV5W, true, false, 0x00, 0x00, 5, 1);
     TEST_ASSERT_NOT_NULL(strstr(buf, "\"device\":\"USB\""));
 }
 
 void test_device_flash() {
-    char buf[192];
+    char buf[256];
     formatAudioStatusJson(buf, sizeof(buf), "DY-SV5W", CAPS_DY_SV5W, true, false, 0x00, 0x02, 5, 1);
     TEST_ASSERT_NOT_NULL(strstr(buf, "\"device\":\"FLASH\""));
 }
 
 void test_capabilities_field_present() {
-    char buf[192];
+    char buf[256];
     TEST_ASSERT_EQUAL_UINT8(CAPS_DY_SV5W,
         (uint8_t)(AUDIO_CAP_STATUS_QUERY | AUDIO_CAP_DEVICE_TYPE | AUDIO_CAP_TRACK_COUNT | AUDIO_CAP_CURRENT_TRACK));
     formatAudioStatusJson(buf, sizeof(buf), "DY-SV5W", CAPS_DY_SV5W, true, true, 0x01, 0x01, 50, 7);
@@ -95,7 +106,7 @@ void test_capabilities_field_present() {
 }
 
 void test_chirp_capabilities_field() {
-    char buf[192];
+    char buf[256];
     // 0x1F = all five bits: STATUS_QUERY | DEVICE_TYPE | TRACK_COUNT | CURRENT_TRACK | QUERY_SAFE_PLAYING
     TEST_ASSERT_EQUAL_UINT8(CAPS_CHIRP,
         (uint8_t)(AUDIO_CAP_STATUS_QUERY | AUDIO_CAP_DEVICE_TYPE | AUDIO_CAP_TRACK_COUNT |
@@ -109,15 +120,26 @@ void test_chirp_capabilities_field() {
 }
 
 void test_device_flash_sd() {
-    char buf[192];
+    char buf[256];
     formatAudioStatusJson(buf, sizeof(buf), "CHIRP", CAPS_CHIRP, true, false, 0x00, 0x03, 61, 0);
     TEST_ASSERT_NOT_NULL(strstr(buf, "\"device\":\"Flash+SD\""));
 }
 
 void test_capabilities_zero_driver() {
-    char buf[192];
+    char buf[256];
     formatAudioStatusJson(buf, sizeof(buf), "UNKNOWN", 0, false, false, 0xFF, 0xFF, 0, 0);
     TEST_ASSERT_NOT_NULL(strstr(buf, "\"capabilities\":0"));
+}
+
+#undef formatAudioStatusJson
+
+void test_rx_diagnostics_fields_present() {
+    char buf[256];
+    formatAudioStatusJson(buf, sizeof(buf), "CHIRP", CAPS_CHIRP, false, false, 0xFF, 0x03,
+                          0, 0, "blocked_by_dome_uart",
+                          "Status unavailable: DomeLink is using UART");
+    TEST_ASSERT_NOT_NULL(strstr(buf, "\"rx_status\":\"blocked_by_dome_uart\""));
+    TEST_ASSERT_NOT_NULL(strstr(buf, "\"rx_detail\":\"Status unavailable: DomeLink is using UART\""));
 }
 
 
@@ -135,6 +157,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_chirp_capabilities_field);
     RUN_TEST(test_capabilities_zero_driver);
     RUN_TEST(test_device_flash_sd);
+    RUN_TEST(test_rx_diagnostics_fields_present);
 
     return UNITY_END();
 }

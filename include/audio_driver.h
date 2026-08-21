@@ -4,13 +4,13 @@
 // Abstract AudioDriver interface for protoArtoo body audio system.
 //
 // The body controller is the sole audio source for the droid. All audio
-// commands — from RC, web API, or dome serial '$' RX — route through the
+// commands  --  from RC, web API, or dome serial '$' RX  --  route through the
 // AudioTask queue and are dispatched via this interface. No other task writes
 // to the audio serial GPIO directly.
 //
 // Design:
 //   - One concrete driver is compiled in per build, selected by PA_AUDIO_DRIVER.
-//   - Volume range is normalised 0–30 at the interface level; concrete drivers
+//   - Volume range is normalised 0-30 at the interface level; concrete drivers
 //     scale to their module's native range if different.
 //   - Drivers expose capability bits so AudioTask can choose safe query strategy
 //     per backend (for example polling only when stopped vs safe-during-play).
@@ -26,17 +26,41 @@
 
 #include <stdint.h>
 
+#include "audio_rx_status.h"
+
 // -----------------------------------------------------------------------------
-// Build-flag constants — match values used in platformio.ini build_flags.
+// Build-flag constants  --  match values used in platformio.ini build_flags.
 // PA_AUDIO_DRIVER must be set to one of these at compile time.
 // -----------------------------------------------------------------------------
 #define AUDIO_SOFT_UART 1  // Software UART TX binary-frame driver (default)
 #define AUDIO_DFPLAYER 2
 #define AUDIO_MP3TRIGGER 3
-#define AUDIO_CHIRP 4  // CHIRP Audio Trigger — ASCII UART commands
+#define AUDIO_CHIRP 4  // CHIRP Audio Trigger  --  ASCII UART commands
+
+// Audio catalog constants  --  used by drivers and callers that support banked playback.
+// These are moved to the base interface so AudioTask can work with catalogs without
+// backend-specific downcasts.
+static constexpr uint8_t AUDIO_CATALOG_MAX_BANKS = 64;
+static constexpr uint16_t AUDIO_CATALOG_MAX_ENTRIES = 300;
+
+// Catalog entry  --  one track descriptor in an audio catalog.
+struct AudioCatalogEntry {
+    uint8_t bank = 0;
+    char page = 'A';
+    uint16_t index = 0;
+    char name[48] = {0};
+};
+
+// Catalog bank descriptor  --  one bank/page combination in an audio catalog.
+struct AudioCatalogBank {
+    uint8_t bank = 0;
+    char page = 'A';
+    char dirName[32] = {0};
+    uint16_t count = 0;
+};
 
 // -----------------------------------------------------------------------------
-// AudioModuleState — live state returned by queryModuleState().
+// AudioModuleState  --  live state returned by queryModuleState().
 // Populated from live UART RX queries; reflects what the module actually reports.
 // -----------------------------------------------------------------------------
 struct AudioModuleState {
@@ -48,7 +72,7 @@ struct AudioModuleState {
 };
 
 // -----------------------------------------------------------------------------
-// AudioDriver — abstract interface
+// AudioDriver  --  abstract interface
 // -----------------------------------------------------------------------------
 class AudioDriver {
    public:
@@ -58,19 +82,30 @@ class AudioDriver {
     static constexpr uint8_t AUDIO_CAP_TRACK_COUNT = 0x04;
     static constexpr uint8_t AUDIO_CAP_CURRENT_TRACK = 0x08;
     static constexpr uint8_t AUDIO_CAP_QUERY_SAFE_PLAYING = 0x10;
+    static constexpr uint8_t AUDIO_CAP_CATALOG = 0x20;
 
-    // Initialise hardware (GPIO, serial pin) and set initial volume — called once
-    // during AudioTask init. vol is the NVS-configured volume (0–30).
-    virtual void begin(uint8_t vol) = 0;
+    // Initialise hardware (GPIO, serial pin) and set initial volume  --  called once
+    // during AudioTask init. vol is the NVS-configured volume (0-30).
+    // Returns true when command-side initialisation completed; false only for a
+    // transient failure that should be retried by AudioTask.
+    virtual bool begin(uint8_t vol) = 0;
 
     // Play a specific track by 1-based index (maps directly to SD card file number).
     // Track 0 is invalid; driver should silently ignore it.
     virtual void playTrack(uint16_t track) = 0;
 
+    // Play a specific bank/page/index tuple. Default maps to flat track playback
+    // so non-banked backends do not need an override.
+    virtual void playTrackBanked(uint16_t index, uint8_t bank, char page) {
+        (void)bank;
+        (void)page;
+        playTrack(index);
+    }
+
     // Stop current playback immediately.
     virtual void stop() = 0;
 
-    // Set output volume in the range 0–30 (0 = silent, 30 = maximum).
+    // Set output volume in the range 0-30 (0 = silent, 30 = maximum).
     // AudioTask clamps the value before calling; driver may assume it is in range.
     virtual void setVolume(uint8_t vol) = 0;
 
@@ -84,6 +119,15 @@ class AudioDriver {
     // whether status polling is safe during playback. Default: no query support.
     virtual uint8_t capabilities() const {
         return 0;
+    }
+
+    // Classifies the RX availability state from a begin() or queryModuleState() outcome.
+    // Default: AVAILABLE if linkOk, NO_RESPONSE otherwise.
+    // Override in drivers whose RX path shares UART2 with DomeLink to return
+    // BLOCKED_BY_DOME_UART when DomeLink owns the bus  --  forgetting to override
+    // in such a driver causes false "No module response" errors in the UI.
+    virtual AudioRxStatus classifyRxStatus(bool linkOk) const {
+        return linkOk ? AUDIO_RX_AVAILABLE : AUDIO_RX_NO_RESPONSE;
     }
 
     // Query the module for live state. Returns true and populates 'out' if the
@@ -101,5 +145,48 @@ class AudioDriver {
         out = AudioModuleState{};
         out.playState = 0xFF;
         out.device = 0xFF;
+    }
+
+    // Catalog support (AUDIO_CAP_CATALOG backends only).
+    // Drivers without catalog support return false/0/nullptr; these defaults apply to all.
+
+    // Refresh the catalog from the hardware module (blocking, Core 0 only).
+    // Returns true on success, false on timeout or error.
+    // Default returns false (no catalog support).
+    virtual bool refreshCatalog() {
+        return false;
+    }
+
+    // Query whether the catalog is ready (has been loaded and populated).
+    // Returns true if loaded, false otherwise or if catalog not supported.
+    // Safe to call from any context.
+    virtual bool isCatalogReady() const {
+        return false;
+    }
+
+    // Get the number of catalog entries currently loaded.
+    // Returns 0 if no catalog is loaded or if catalog not supported.
+    virtual uint16_t getCatalogEntryCount() const {
+        return 0;
+    }
+
+    // Get the catalog entry array (read-only).
+    // Returns nullptr if no catalog is loaded or if catalog not supported.
+    // Caller should iterate [0, getCatalogEntryCount()) if non-nullptr.
+    virtual const AudioCatalogEntry* getCatalogEntries() const {
+        return nullptr;
+    }
+
+    // Get the number of catalog banks currently loaded.
+    // Returns 0 if no catalog is loaded or if catalog not supported.
+    virtual uint8_t getCatalogBankCount() const {
+        return 0;
+    }
+
+    // Get the catalog bank descriptor array (read-only).
+    // Returns nullptr if no catalog is loaded or if catalog not supported.
+    // Caller should iterate [0, getCatalogBankCount()) if non-nullptr.
+    virtual const AudioCatalogBank* getCatalogBanks() const {
+        return nullptr;
     }
 };
