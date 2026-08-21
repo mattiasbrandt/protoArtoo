@@ -284,7 +284,7 @@ disabled by default). Worth enabling on slow-edged or long-run digital inputs.
 
 | Resource | Value |
 | --- | --- |
-| Main SoC | ESP32-P4, chip revision **v1.3** on our bench board (verified 2026-08-21); DFRobot ships across the v1.x family, so check your own |
+| Main SoC | ESP32-P4, chip revision **v1.3** on our bench board (verified 2026-08-21 by `esptool`, and again 2026-08-22 by the running firmware reporting `Revision: 103`); DFRobot ships across the v1.x family, so check your own |
 | HP CPU | RISC-V 32-bit dual-core, **360 MHz max on this board** (the `400MHz` in `esptool` output is a series figure, not this die's ceiling) |
 | LP CPU | RISC-V 32-bit single-core, 40 MHz |
 | PSRAM | 32 MB in package |
@@ -824,7 +824,7 @@ Key values baked into that board entry:
 | `build.chip_variant` | `esp32p4_es` (menu default: "Before v3.00") |
 | `build.f_cpu` | `360000000L` |
 | `build.flash_size` | `16MB` |
-| `build.flash_mode` | `dio` (bootloader `build.boot=qio`) |
+| `build.flash_mode` | `dio` (bootloader `build.boot=qio`) — **but see the note below; the PlatformIO board JSON in this sheet uses `qio`, and `qio` is what has actually been flashed and booted** |
 | `build.flash_freq` | `80m` |
 | `build.bootloader_addr` | `0x2000` |
 | `build.usb_mode` | `1` (Hardware CDC and JTAG) |
@@ -840,7 +840,20 @@ Tool settings that matter:
 - The default partition scheme is the 4 MB `default` table. Pick a 16 MB scheme
   (`16M Flash (3MB APP/9.9MB FATFS)` or similar) to use the flash on the board.
 - `USB CDC On Boot` defaults to enabled here, so `Serial` is USB CDC. `Serial0`
-  is the UART0 path on GPIO37/GPIO38.
+  is the UART0 path on GPIO37/GPIO38. **This default belongs to the Arduino IDE,
+  not to PlatformIO** — under PlatformIO you must pass
+  `-DARDUINO_USB_CDC_ON_BOOT=1` and `-DARDUINO_USB_MODE=1` in `build_flags`,
+  or `Serial` silently becomes UART0 and nothing reaches `/dev/ttyACM*`. Board
+  JSON keys do not work for this; see the note on the board JSON below.
+
+> [!NOTE]
+> **Flash mode, unresolved contradiction.** The table above records `dio` for
+> `build.flash_mode` (bootloader `qio`), while this sheet's ready-made
+> PlatformIO board JSON specifies `qio`. Measured on 2026-08-22: a `qio` image
+> flashed with `Hash of data verified` and boots and runs on the v1.3 board, so
+> `qio` is empirically viable for the app image. The two figures have not been
+> reconciled against a primary source — do not cite "the spec sheet default"
+> as if it were unambiguous.
 
 Convenience aliases the variant defines, beyond what the silkscreen shows:
 
@@ -879,6 +892,22 @@ even though no board JSON references it. Supply a project-local board definition
 to reach it.
 
 Save as `boards/dfrobot_firebeetle2_esp32p4.json` in the project root:
+
+> [!IMPORTANT]
+> **This board JSON alone does not give you a USB serial console.** `Serial`
+> binds to UART0 (GPIO37/GPIO38), so a board flashed over USB Serial/JTAG runs
+> but prints **nothing** on `/dev/ttyACM*` — which reads as dead firmware when
+> it is only a misrouted console. Add the build flags shown in the PlatformIO
+> env below.
+>
+> Putting `cdc_on_boot` / `usb_mode` *in this JSON does not work* — the keys
+> are accepted but this platform does not translate them into defines.
+> Verified on 2026-08-22: with the keys in the board manifest the linked ELF
+> carried **0 `HWCDC` symbols** and `Serial` resolved to `Serial0`; moving the
+> same settings to `build_flags` took it to **21 `HWCDC` symbols** and the
+> console came up. The Arduino-settings table above lists `build.cdc_on_boot`
+> and `build.usb_mode` because those are **Arduino IDE** menu settings, and
+> PlatformIO does not inherit them.
 
 ```json
 {

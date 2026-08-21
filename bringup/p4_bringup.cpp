@@ -24,6 +24,12 @@ __attribute__((weak))
 void setup() {
   pinMode(BRINGUP_LED, OUTPUT);
 
+  // Serial is the native USB CDC endpoint, which only exists once the host has
+  // enumerated and opened the port. Start it before the blinks so enumeration
+  // overlaps them, then allow a short settle before the first write - output
+  // sent to a not-yet-opened CDC endpoint is discarded, not buffered.
+  Serial.begin(115200);
+
   // Three blinks to signal boot
   for (int i = 0; i < 3; i++) {
     digitalWrite(BRINGUP_LED, HIGH);
