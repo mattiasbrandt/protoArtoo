@@ -78,15 +78,21 @@ void handleWiFiEvent(WiFiEvent_t event) {
 
 // buildDeveloperShortcut: the Developer WiFi Shortcut (ADR 0015) resolved from
 // src/secrets.h, source-build-only. Never populated in public release binaries -
-// `available` stays false whenever secrets.h is absent or leaves its expected
-// macros undefined, which is always true for protoArtoo_chirp/protoArtoo_mp3trigger.
+// `available` stays false whenever secrets.h is absent, leaves its expected
+// macros undefined, or defines only the blank placeholder values.
 static WifiDeveloperShortcut buildDeveloperShortcut() {
     WifiDeveloperShortcut shortcut;
 #if PA_HAS_SECRETS_HEADER
 #if PA_ENABLE_STA_WIFI
 #if defined(PA_STA_SSID) && defined(PA_STA_PASSWORD)
-    shortcut.available = true;
-    shortcut.mode = WifiMode::CLIENT;
+    // A blank PA_STA_SSID (the secrets.h.example placeholder) is not a usable
+    // shortcut: honoring it would boot an unprovisioned controller into
+    // WiFi.begin("", ...) instead of WiFi Provisioning (ADR 0015), with no
+    // AP and no web server to recover through.
+    if (PA_STA_SSID[0] != '\0') {
+        shortcut.available = true;
+        shortcut.mode = WifiMode::CLIENT;
+    }
 #endif
 #else
 #if defined(PA_AP_PASSWORD)
