@@ -348,17 +348,23 @@ logging gated by `#ifdef PA_VERBOSE_<TASK>` build flag.
 
 protoArtoo uses [Semantic Versioning 2.0.0](https://semver.org/).
 
-Releases are tagged on `main` after a phase milestone is confirmed working:
+A release is cut by tagging the target commit on `main`:
 
 ```bash
-git tag -a v0.1.0 -m "Phase 1 complete — drive via RC with full failsafe"
-git push origin v0.1.0
+git tag -a v1.1.0 -m "v1.1.0 — short summary"
+git push origin v1.1.0
 ```
 
-A GitHub Release is created from the tag with the relevant `CHANGELOG.md`
-section as the release body.
+Pushing a `vX.Y.Z` tag triggers `.github/workflows/release.yml`, which builds
+firmware and filesystem images for every flashable sound-backend env, generates
+SHA256 checksums, and publishes a GitHub Release with the matching
+`CHANGELOG.md` section as the release notes. Nothing is hand-written at tag
+time — if `CHANGELOG.md` has no entry for the version, the workflow fails
+instead of publishing empty notes, so add a dated `[X.Y.Z]` entry before
+tagging.
 
-See `CHANGELOG.md` for the full release plan and milestone conditions.
+A hyphenated tag (for example `v1.1.0-rc.1`) is published as a prerelease and
+never becomes the repository's "Latest" release.
 
 ---
 
