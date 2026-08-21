@@ -1,0 +1,22 @@
+# Partition table for protoArtoo P4 — 16MB ESP32-P4 flash, OTA + LittleFS + coredump
+#
+# App partitions: 3MB (0x300000) each, leaving ~10MB for LittleFS + coredump.
+# LittleFS: 9.6MB (0x9C0000). Web UI assets are gzipped at build (tools/gzip_fsdata.py)
+# to ~151KB, so 9.6MB is ample headroom.
+# Coredump: 64KB (0x10000, type data / subtype coredump).
+#
+# The arduino-esp32 framework enables CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH +
+# DATA_FORMAT_ELF + CHECK_BOOT, so a PANIC saves an ELF coredump, fetched in-PCB over
+# HTTP via /api/coredump (USB read is GPIO15-blocked when seated) and decoded with:
+#   esp-coredump info_corefile -c coredump.bin .pio/build/<env>/firmware.elf
+#
+# Offsets are explicit to prevent silent layout shifts on toolchain upgrades.
+# Total: 0x9000 + 0x2000 + 0x300000 + 0x300000 + 0x9C0000 + 0x10000 = 0x1000000 (16MB).
+#
+# Name,   Type, SubType,  Offset,    Size, Flags
+nvs,      data, nvs,      0x9000,  0x5000,
+otadata,  data, ota,      0xe000,  0x2000,
+app0,     app,  ota_0,   0x10000, 0x300000,
+app1,     app,  ota_1,  0x310000, 0x300000,
+spiffs,   data, spiffs, 0x610000, 0x9C0000,
+coredump, data, coredump, 0xFF0000, 0x10000,
