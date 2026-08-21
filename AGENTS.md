@@ -252,6 +252,22 @@ make flash-monitor                  # USB flash + capture boot log until "init c
 make flash-chirp-monitor            # USB CHIRP flash + boot log capture
 ```
 
+**Dual-target builds — always go through `make`, never bare `pio`.** The
+artoo-esp32 and ESP32-P4 targets pin different pioarduino platform versions
+that require different versions of the same packages, so each gets its own
+`PLATFORMIO_CORE_DIR`. The Makefile selects it from `BUILD_ENV`:
+
+```bash
+make build                          # artoo-esp32  -> $(PIO_CORE_DIR_ARTOO)
+make build BUILD_ENV=protoArtoo_p4  # ESP32-P4     -> $(PIO_CORE_DIR_P4)
+```
+
+A bare `pio run -e protoArtoo_p4` uses the default core dir and swaps the
+artoo-esp32 Arduino core in place — slow every time, and corrupting if any two
+builds overlap. Run **one PlatformIO build at a time**, machine-wide: the core
+dirs are separate, but a single core dir is still not safe against concurrent
+package installs.
+
 **Overrides** (CLI or `user.mk` for persistence):
 ```bash
 make ota OTA_IP=10.0.0.22           # use IP when mDNS is unavailable

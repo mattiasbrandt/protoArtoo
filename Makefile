@@ -18,6 +18,34 @@ UPLOAD_PORT ?= /dev/ttyUSB0
 OTA_TIMEOUT ?= 60
 OTA_TRANSFER_TIMEOUT ?= 60
 
+# ── Toolchain isolation: artoo-esp32 vs ESP32-P4 ─────────────────────────────
+# The two targets pin different pioarduino platform versions, and those
+# versions require *different versions of the same packages*
+# (framework-arduinoespressif32 3.3.7 vs 3.3.11, tool-esptoolpy 5.1.2 vs 5.3.0,
+# tool-cppcheck 2.11.0 vs 2.20.1). PlatformIO installs packages into
+# unversioned directories under its core dir, so a shared core dir means every
+# switch between the targets swaps the whole Arduino core in place — slow when
+# serialized, and corrupting when two builds overlap.
+#
+# Each target therefore gets its own PLATFORMIO_CORE_DIR, selected from
+# BUILD_ENV. Nothing is shared, so the targets can no longer clobber each
+# other and a P4 build costs no artoo-esp32 reinstall.
+#
+#   make build                              -> artoo-esp32 core dir
+#   make build BUILD_ENV=protoArtoo_p4      -> P4 core dir
+#
+# Override either path in user.mk if you keep toolchains elsewhere.
+PIO_CORE_DIR_ARTOO ?= $(HOME)/.platformio
+PIO_CORE_DIR_P4    ?= $(HOME)/.platformio-p4
+
+PIO_CORE_DIR = $(if $(filter protoArtoo_p4%,$(BUILD_ENV)),$(PIO_CORE_DIR_P4),$(PIO_CORE_DIR_ARTOO))
+
+# Use $(PIO) for BUILD_ENV-parameterised firmware targets. Targets that hard-code
+# an artoo-esp32 env (chirp, mp3trigger, dysv5w, check*) keep bare `pio` on
+# purpose: they must stay on the artoo-esp32 core dir even when BUILD_ENV points
+# at P4.
+PIO = PLATFORMIO_CORE_DIR=$(PIO_CORE_DIR) pio
+
 -include user.mk
 
 .PHONY: all help build test test-web test-tools check check-action-drift flash ota uploadfs \
@@ -43,7 +71,7 @@ help: ## Show available targets
 # ── Core ─────────────────────────────────────────────────────────────────────
 
 build: ## Compile firmware  (BUILD_ENV=protoArtoo by default)
-	pio run -e $(BUILD_ENV)
+	$(PIO) run -e $(BUILD_ENV)
 
 test: ## Run native unit tests
 	pio test -e native
@@ -68,14 +96,14 @@ check-action-drift: ## Ad hoc check that action YAML, C++, and RC fallback metad
 # ── Flash: DY-SV5W (default) ─────────────────────────────────────────────────
 
 flash: test ## Flash via USB  (UPLOAD_PORT=/dev/ttyUSB0)
-	pio run -e $(BUILD_ENV) -t upload --upload-port $(UPLOAD_PORT)
+	$(PIO) run -e $(BUILD_ENV) -t upload --upload-port $(UPLOAD_PORT)
 
 ota: test ## Flash via OTA  (OTA_IP=artoo.local by default)
-	pio run -e $(BUILD_ENV)_ota
+	$(PIO) run -e $(BUILD_ENV)_ota
 	python3 tools/ota_upload.py --env $(BUILD_ENV)_ota --host $(OTA_IP) --timeout $(OTA_TIMEOUT) --transfer-timeout $(OTA_TRANSFER_TIMEOUT)
 
 uploadfs: ## Upload LittleFS web UI via OTA  (no test gate)
-	pio run -e $(BUILD_ENV)_ota -t uploadfs --upload-port $(OTA_IP)
+	$(PIO) run -e $(BUILD_ENV)_ota -t uploadfs --upload-port $(OTA_IP)
 
 # ── Flash: CHIRP audio module ────────────────────────────────────────────────
 
@@ -83,7 +111,7 @@ flash-chirp: test ## Flash CHIRP build via USB
 	pio run -e protoArtoo_chirp -t upload --upload-port $(UPLOAD_PORT)
 
 flash-monitor: test ## Flash default build via USB then capture boot log
-	pio run -e $(BUILD_ENV) -t upload --upload-port $(UPLOAD_PORT)
+	$(PIO) run -e $(BUILD_ENV) -t upload --upload-port $(UPLOAD_PORT)
 	python3 tools/serial_monitor.py --until "init complete" --timeout 30
 
 flash-chirp-monitor: test ## Flash CHIRP build via USB then capture boot log
@@ -128,7 +156,7 @@ setup-wifi: ## Configure WiFi credentials  (writes src/secrets.h)
 	python3 tools/configure.py --wifi
 
 clean: ## Remove PlatformIO build artifacts
-	pio run -t clean
+	$(PIO) run -t clean
 
 monitor: ## Open serial monitor
 	python3 tools/serial_monitor.py
