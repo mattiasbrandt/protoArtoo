@@ -382,6 +382,10 @@ _Avoid_: audio lifecycle manager, audio coordinator, dispatch switch
 A runtime `components.*` setting declaring whether a hardware subsystem is fitted and in use. Off means inert, not merely unconstructed: the disabled subsystem performs no recurring per-tick decision work, no recurring writes to shared safety state, no recurring queue sends or log emission, and spends no ongoing CPU or memory on its behalf. One-time transition work at boot is allowed. A toggle change is a Staged Component Switch: it is saved immediately but takes effect at the next boot, so tasks read their toggles once at startup rather than every iteration.
 _Avoid_: unconstructed-only off, construction-gate-only toggle, live per-tick toggle reads, disabled subsystem reporting signal events
 
+**Epic Branch**:
+A rare long-lived branch (`epic/<name>`) holding all work of one multi-ticket epic issue. Sub-issue slices are committed directly to it; it reaches `main` only through a PM-approved PR at epic closure or an explicitly PM-called milestone merge. Scoped to one epic issue and coexisting with ordinary short-lived branches — not a development phase.
+_Avoid_: phase branch, dev branch, per-ticket PRs inside an epic
+
 **artoo-esp32**:
 The canonical name for the build target pairing the classic-generation ESP32 D1 Mini clone with the artoo.uk Artoo Controller PCB (env/variant id `artoo_esp32`). A fully supported, first-class target.
 _Avoid_: classic, legacy board, clone build
@@ -478,6 +482,7 @@ _Avoid_: bench verified, bench tested, using bench work as integrated-hardware e
 - **firebeetle2** and **artoo_esp32** are **Board Variants**; the **ESP32-P4 Target** and the classic-generation chip target above them own chip-wide facts (ADR 0028). **artoo-esp32** remains fully supported alongside any ESP32-P4 board.
 - On the **ESP32-P4 Target**, the **protoR2link Primary Transport** stays UART — carried on a dedicated P4 UART — with the **protoR2link Fallback Transport** unchanged (ADR 0003).
 - Evidence gathered in **Bench-Mode** maps to **Software Verified** or **Controller Upload Verified**, never directly to **Full Hardware Verified**.
+- An **Epic Branch** is the documented exception to short-lived feature branches; the **Post-Release Main Workflow** still governs how it reaches `main` (a PM-approved PR at closure or milestone).
 
 ## Example Dialogue
 

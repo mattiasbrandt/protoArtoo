@@ -190,15 +190,18 @@ full detail; summary here:
 
 | Branch | Purpose |
 |---|---|
-| `main` | Stable, released state only. Tagged at every version. Updated only via a Mattias-approved PR merge. |
+| `main` | Stable, released state. Tagged at every version. Substantive changes land only via a Mattias-approved PR merge; docs, chore, and agent-facing maintenance commits may land directly. |
 | `feature/<what>` | New user-facing functionality. |
 | `fix/<what>` | Bug fixes. |
 | `refactor/<what>` | Code restructuring, no behavior change. |
 | `chore/<what>` | Build config, deps, CI, tooling. |
 | `docs/<what>` | Documentation only. |
+| `epic/<name>` | Rare multi-ticket effort tracked by one epic issue. Sub-issue slices commit directly to the branch (no per-ticket PRs); the branch merges to `main` via one PM-approved PR at epic closure, with optional PM-called milestone merges. Not a phase revival — scoped to one epic issue. |
 | `exp/<topic>` | Exploratory or speculative work. Start here if you're not sure where your contribution fits. Never merged directly to `main`. |
 
-`phase/vX.Y.Z` and `dev` branches are retired as of `v1.0.0`.
+`phase/vX.Y.Z` and `dev` branches are retired as of `v1.0.0`. Releases are
+small and frequent: `main` is tagged per semver as merged work accrues — no
+umbrella releases accumulating months of features.
 
 ### Merge strategy
 

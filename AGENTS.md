@@ -384,17 +384,34 @@ it does not describe current practice.
 
 | Branch | Purpose |
 |---|---|
-| `main` | Stable, released state only. Tagged at every version. Updated only via a Mattias-approved PR merge. |
+| `main` | Stable, released state. Tagged at every version. Substantive changes land only via a Mattias-approved PR merge; docs, chore, and agent-facing maintenance commits may land directly (CONTEXT.md "Post-Release Main Workflow"). |
 | `feature/<what>` | New user-facing functionality. |
 | `fix/<what>` | Bug fixes. |
 | `refactor/<what>` | Code restructuring, no behavior change. |
 | `chore/<what>` | Build config, deps, CI, tooling. |
 | `docs/<what>` | Documentation only. |
+| `epic/<name>` | Rare multi-ticket effort tracked by one epic/wayfinder issue (e.g. `epic/esp32-p4` for #182). See "Epic branches" below. |
 | `exp/<topic>` | Disposable experiments. Never merged directly to `main`. |
 
 Multiple independent feature branches may coexist — the phase model's "one
 active phase at a time" constraint has no replacement; it simply no longer
 applies. Branch off `main`, PR back into `main`, delete after merge.
+
+**Epic branches** (`epic/<name>`): the documented exception for an effort too
+large for one short-lived branch — a multi-ticket epic tracked by a single
+epic/wayfinder issue. Sub-issue work is committed directly to the epic branch
+as verified slices under the normal commit discipline; sub-issues do **not**
+get per-ticket PRs. The branch reaches `main` through one normal
+Mattias-approved PR at epic closure (`Closes #<epic>`); the PM may
+additionally call an intermediate milestone merge PR (for example after a
+go/no-go gate). This is not a phase revival: an epic branch is scoped to one
+epic issue, coexists with ordinary feature branches, and carries no
+release-versioning role of its own.
+
+**Release cadence:** post-`v1.0.0` releases are small and frequent — `main`
+is tagged per semver as merged work accrues (fixes → patch, features →
+minor). No umbrella releases accumulating months of features; an epic merge
+typically warrants a minor release on its own.
 
 **Merge strategy:** "Rebase and merge" for this ongoing feature-branch
 workflow. This is distinct from the one-time `phase/v1.0.0` -> `main` merge,
