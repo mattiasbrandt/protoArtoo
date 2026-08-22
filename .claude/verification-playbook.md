@@ -14,7 +14,7 @@ Use this checklist when reporting completion.
 
 Automated tests are evidence, not the goal. Choose checks based on the risk touched:
 
-- Firmware behavior change: start with `pio run -e protoArtoo`.
+- Firmware behavior change: start with `pio run -e artoo_esp32`.
 - Safety invariants, protocol parsing, shared state transitions, config persistence,
   JSON/API contracts, or prior regression paths: add `pio test -e native`.
 - Action registry, RC tokens, or `ACTION_REGISTRY[]`: add `make check-action-drift`.

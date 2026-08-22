@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""protoArtoo — interactive build & deploy wizard.
+"""artoo_esp32 — interactive build & deploy wizard.
 
 Run via:  make          (default target)
           python3 tools/deploy.py
@@ -143,9 +143,9 @@ def run_cmd(args: list[str]) -> int:
 
 # (display label, env for USB/build, env for OTA)
 AUDIO_MODULES: list[tuple[str, str, str]] = [
-    ("🔊  DY-SV5W  (default)",  "protoArtoo",           "protoArtoo_ota"),
-    ("🎵  CHIRP",               "protoArtoo_chirp",      "protoArtoo_chirp_ota"),
-    ("🎙  MP3 Trigger",         "protoArtoo_mp3trigger", "protoArtoo_mp3trigger_ota"),
+    ("🔊  DY-SV5W  (default)",  "artoo_esp32",           "artoo_esp32_ota"),
+    ("🎵  CHIRP",               "artoo_esp32_chirp",      "artoo_esp32_chirp_ota"),
+    ("🎙  MP3 Trigger",         "artoo_esp32_mp3trigger", "artoo_esp32_mp3trigger_ota"),
 ]
 
 ACTIONS: list[tuple[str, str]] = [
@@ -182,7 +182,7 @@ def main() -> int:
         print(info("   pip install -r tools/requirements.txt  for arrow-key menus.\n"))
 
     print()
-    print(bold("🤖  protoArtoo  —  build & deploy"))
+    print(bold("🤖  artoo_esp32  —  build & deploy"))
     print(SEP)
 
     # ── Q1: Action ──
@@ -197,9 +197,9 @@ def main() -> int:
     action = dict(ACTIONS)[action_label]
 
     # ── Q2: Audio module (skip for test-only) ──
-    env_usb = env_ota = "protoArtoo"
+    env_usb = env_ota = "artoo_esp32"
     if action != "test":
-        current_env  = _user_mk("BUILD_ENV", "protoArtoo")
+        current_env  = _user_mk("BUILD_ENV", "artoo_esp32")
         default_audio = next(
             (a[0] for a in AUDIO_MODULES if a[1] == current_env),
             AUDIO_MODULES[0][0],

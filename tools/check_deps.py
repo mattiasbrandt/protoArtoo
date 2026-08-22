@@ -2,7 +2,7 @@
 # =============================================================================
 # tools/check_deps.py
 #
-# Development environment dependency checker for protoArtoo.
+# Development environment dependency checker for artoo_esp32.
 #
 # Checks that required OS commands and Python packages are present and prints
 # platform-appropriate install hints for anything missing.
@@ -85,7 +85,7 @@ def check_python_pkg(import_name: str, display_name: str,
 def main() -> None:
     is_wsl = _detect_wsl()
 
-    print(f"\n{BOLD}protoArtoo — dependency check{RESET}")
+    print(f"\n{BOLD}artoo_esp32 — dependency check{RESET}")
     print(f"Python {sys.version.split()[0]}")
     if is_wsl:
         print(f"{CYAN}Environment: Windows Subsystem for Linux (WSL){RESET}")

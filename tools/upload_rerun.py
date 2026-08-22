@@ -67,8 +67,8 @@ EVIDENCE_ROOT = REPO_ROOT / "tasks" / "evidence" / "issue80"
 DEFAULT_CONTROLLER = "protoartoo.local"
 DEFAULT_PORT = 80
 
-DEFAULT_FIRMWARE_IMAGE = REPO_ROOT / ".pio" / "build" / "protoArtoo" / "firmware.bin"
-DEFAULT_FILESYSTEM_IMAGE = REPO_ROOT / ".pio" / "build" / "protoArtoo" / "littlefs.bin"
+DEFAULT_FIRMWARE_IMAGE = REPO_ROOT / ".pio" / "build" / "artoo_esp32" / "firmware.bin"
+DEFAULT_FILESYSTEM_IMAGE = REPO_ROOT / ".pio" / "build" / "artoo_esp32" / "littlefs.bin"
 FIRMWARE_VERSION_FILE = REPO_ROOT / "data" / "fw-version.json"
 
 # Above the 1,703,936-byte app partition plus the 4 KB multipart-framing
@@ -543,8 +543,8 @@ def image_carries_version(image: Path, expect_version: str) -> bool:
     """Is the expected version stamp actually inside this binary?
 
     The build bakes the stamp into the image, so this catches the trap that
-    several build environments set up: `pio run -e protoArtoo` and `make ota`
-    (which builds `protoArtoo_ota`) write to different directories, so the
+    several build environments set up: `pio run -e artoo_esp32` and `make ota`
+    (which builds `artoo_esp32_ota`) write to different directories, so the
     default path can easily hold an image from before the last merge. Flashing
     that and then measuring it would produce evidence about the wrong code, and
     nothing else in the run would notice.

@@ -202,7 +202,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--host", default="10.0.0.22")
     parser.add_argument("--port", type=int, default=80)
-    parser.add_argument("--env", default="protoArtoo",
+    parser.add_argument("--env", default="artoo_esp32",
                         help="PlatformIO env whose staged fsdata_gz holds the shipped sizes")
     parser.add_argument("--asset", action="append", dest="assets",
                         help="Asset path to probe; repeatable. Defaults to the size ladder.")

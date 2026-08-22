@@ -78,12 +78,12 @@ jobs:
       - name: 🏗️ Firmware build
         id: firmware-build
         continue-on-error: true
-        run: pio run -e protoArtoo
+        run: pio run -e artoo_esp32
 
       - name: 🏗️ Profiler build
         id: profiler-build
         continue-on-error: true
-        run: pio run -e protoArtoo_profiler
+        run: pio run -e artoo_esp32_profiler
 
       - name: 🧪 Native tests
         id: native-tests
@@ -93,7 +93,7 @@ jobs:
       - name: 🔍 Static analysis
         id: static-analysis
         continue-on-error: true
-        run: pio check -e protoArtoo
+        run: pio check -e artoo_esp32
 
       - name: 📋 Action registry drift
         id: action-drift
@@ -132,10 +132,10 @@ jobs:
             echo ""
             echo "| | Check | Command | Status |"
             echo "|---|---|---|---|"
-            row "$BUILD_OUTCOME"     "Firmware build"       "pio run -e protoArtoo"
-            row "$PROFILER_OUTCOME"  "Profiler build"       "pio run -e protoArtoo_profiler"
+            row "$BUILD_OUTCOME"     "Firmware build"       "pio run -e artoo_esp32"
+            row "$PROFILER_OUTCOME"  "Profiler build"       "pio run -e artoo_esp32_profiler"
             row "$TESTS_OUTCOME"    "Native tests"          "pio test -e native"
-            row "$ANALYSIS_OUTCOME" "Static analysis"      "pio check -e protoArtoo"
+            row "$ANALYSIS_OUTCOME" "Static analysis"      "pio check -e artoo_esp32"
             row "$DRIFT_OUTCOME"    "Action registry drift" "make check-action-drift"
             row "$WEB_OUTCOME"      "Web logic tests"       "node --test test/test_web/*.js"
             echo ""

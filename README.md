@@ -189,7 +189,7 @@ make help             # List all named targets
 pio test -e native
 
 # On-device — requires flashed ESP32
-pio test -e protoArtoo
+pio test -e artoo_esp32
 
 # Static analysis
 pio check

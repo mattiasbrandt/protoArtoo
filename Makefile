@@ -1,5 +1,5 @@
 # =============================================================================
-# protoArtoo — build facade
+# artoo_esp32 — build facade
 #
 # Running bare `make` launches the interactive wizard (tools/deploy.py).
 #
@@ -9,11 +9,11 @@
 # Variables (CLI or user.mk):
 #   make ota OTA_IP=192.168.4.1
 #   make flash UPLOAD_PORT=/dev/ttyUSB1
-#   make ota BUILD_ENV=protoArtoo_chirp
+#   make ota BUILD_ENV=artoo_esp32_chirp
 # =============================================================================
 
 OTA_IP      ?= artoo.local
-BUILD_ENV   ?= protoArtoo
+BUILD_ENV   ?= artoo_esp32
 UPLOAD_PORT ?= /dev/ttyUSB0
 OTA_TIMEOUT ?= 60
 OTA_TRANSFER_TIMEOUT ?= 60
@@ -35,7 +35,7 @@ OTA_TRANSFER_TIMEOUT ?= 60
 # are needed here — satisfying ADR 0028's acceptance test.
 #
 #   make build                              -> artoo-esp32 core dir (default)
-#   make build BUILD_ENV=protoArtoo_p4      -> P4 core dir (board = dfrobot_firebeetle2_esp32p4)
+#   make build BUILD_ENV=firebeetle2      -> P4 core dir (board = dfrobot_firebeetle2_esp32p4)
 #   make build BUILD_ENV=<new_p4_board>     -> P4 core dir (auto-detected if board = dfrobot_firebeetle2_esp32p4)
 #
 # Override either path in user.mk if you keep toolchains elsewhere.
@@ -47,7 +47,7 @@ PIO_CORE_DIR_P4    ?= $(HOME)/.platformio-p4
 # adding a P4 board variant means adding its env here as well as to
 # platformio.ini and config.h. ADR 0028's "a new board costs only a pin map plus
 # an env" does not hold for this line, and that is a known, accepted exception.
-P4_ENVS := protoArtoo_p4 protoArtoo_p4_hosted_bench
+P4_ENVS := firebeetle2 firebeetle2_hosted_bench
 
 # Map BUILD_ENV to chip target, then to core dir. Lookup is chip-aware:
 # if BUILD_ENV is in P4_ENVS, use P4 core dir; otherwise use artoo-esp32 core dir.
@@ -83,7 +83,7 @@ help: ## Show available targets
 
 # ── Core ─────────────────────────────────────────────────────────────────────
 
-build: ## Compile firmware  (BUILD_ENV=protoArtoo by default)
+build: ## Compile firmware  (BUILD_ENV=artoo_esp32 by default)
 	$(PIO) run -e $(BUILD_ENV)
 
 test: ## Run native unit tests
@@ -101,7 +101,7 @@ test-tools: ## Run Python tooling tests (incl. slice gate self-tests)
 	python3 -m unittest discover -s test/test_tools -q
 
 check: ## Static analysis with cppcheck
-	pio check -e protoArtoo
+	pio check -e artoo_esp32
 
 check-action-drift: ## Ad hoc check that action YAML, C++, and RC fallback metadata align
 	python3 tools/check_action_registry_drift.py
@@ -121,44 +121,44 @@ uploadfs: ## Upload LittleFS web UI via OTA  (no test gate)
 # ── Flash: CHIRP audio module ────────────────────────────────────────────────
 
 flash-chirp: test ## Flash CHIRP build via USB
-	pio run -e protoArtoo_chirp -t upload --upload-port $(UPLOAD_PORT)
+	pio run -e artoo_esp32_chirp -t upload --upload-port $(UPLOAD_PORT)
 
 flash-monitor: test ## Flash default build via USB then capture boot log
 	$(PIO) run -e $(BUILD_ENV) -t upload --upload-port $(UPLOAD_PORT)
 	python3 tools/serial_monitor.py --until "init complete" --timeout 30
 
 flash-chirp-monitor: test ## Flash CHIRP build via USB then capture boot log
-	pio run -e protoArtoo_chirp -t upload --upload-port $(UPLOAD_PORT)
+	pio run -e artoo_esp32_chirp -t upload --upload-port $(UPLOAD_PORT)
 	python3 tools/serial_monitor.py --until "init complete" --timeout 30
 
 ota-chirp: test ## Flash CHIRP build via OTA
-	pio run -e protoArtoo_chirp_ota
-	python3 tools/ota_upload.py --env protoArtoo_chirp_ota --host $(OTA_IP) --timeout $(OTA_TIMEOUT) --transfer-timeout $(OTA_TRANSFER_TIMEOUT)
+	pio run -e artoo_esp32_chirp_ota
+	python3 tools/ota_upload.py --env artoo_esp32_chirp_ota --host $(OTA_IP) --timeout $(OTA_TIMEOUT) --transfer-timeout $(OTA_TRANSFER_TIMEOUT)
 
 # ── Flash: MP3 Trigger ───────────────────────────────────────────────────────
 
 ota-mp3trigger: test ## Flash MP3 Trigger build via OTA
-	pio run -e protoArtoo_mp3trigger_ota
-	python3 tools/ota_upload.py --env protoArtoo_mp3trigger_ota --host $(OTA_IP) --timeout $(OTA_TIMEOUT) --transfer-timeout $(OTA_TRANSFER_TIMEOUT)
+	pio run -e artoo_esp32_mp3trigger_ota
+	python3 tools/ota_upload.py --env artoo_esp32_mp3trigger_ota --host $(OTA_IP) --timeout $(OTA_TIMEOUT) --transfer-timeout $(OTA_TRANSFER_TIMEOUT)
 
 # ── Flash: DY-SV5W (named env) ───────────────────────────────────────────────
-# Same driver as the default protoArtoo env — these targets exist so DY-SV5W
+# Same driver as the default artoo_esp32 env — these targets exist so DY-SV5W
 # has the same explicit, discoverable build/flash surface as CHIRP and MP3 Trigger.
 
 flash-dysv5w: test ## Flash DY-SV5W build via USB
-	pio run -e protoArtoo_dysv5w -t upload --upload-port $(UPLOAD_PORT)
+	pio run -e artoo_esp32_dysv5w -t upload --upload-port $(UPLOAD_PORT)
 
 ota-dysv5w: test ## Flash DY-SV5W build via OTA
-	pio run -e protoArtoo_dysv5w_ota
-	python3 tools/ota_upload.py --env protoArtoo_dysv5w_ota --host $(OTA_IP) --timeout $(OTA_TIMEOUT) --transfer-timeout $(OTA_TRANSFER_TIMEOUT)
+	pio run -e artoo_esp32_dysv5w_ota
+	python3 tools/ota_upload.py --env artoo_esp32_dysv5w_ota --host $(OTA_IP) --timeout $(OTA_TIMEOUT) --transfer-timeout $(OTA_TRANSFER_TIMEOUT)
 
 # ── Compile-check only ───────────────────────────────────────────────────────
 
 check-chirp: ## Compile-check CHIRP backend  (no flash)
-	pio run -e protoArtoo_chirp_check
+	pio run -e artoo_esp32_chirp_check
 
 check-mp3trigger: ## Compile-check MP3Trigger backend  (no flash)
-	pio run -e protoArtoo_mp3trigger_check
+	pio run -e artoo_esp32_mp3trigger_check
 
 # ── Setup & tools ────────────────────────────────────────────────────────────
 

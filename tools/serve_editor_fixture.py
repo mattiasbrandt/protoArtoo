@@ -2,7 +2,7 @@
 """
 Lightweight fixture server for offline editor development and Playwright tests.
 
-Serves the protoArtoo editor (data/) + fixture APIs locally on :4173.
+Serves the artoo_esp32 editor (data/) + fixture APIs locally on :4173.
 
 Usage:
   python3 tools/serve_editor_fixture.py

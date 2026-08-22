@@ -1733,7 +1733,7 @@ USB read is blocked when the ESP32 is in the PCB (GPIO15/SBUS strapping).
 ```bash
 curl -s http://artoo.local/api/coredump -o coredump.elf
 # decode against the firmware.elf for the deployed version (keyed by fw-version.json):
-esp-coredump info_corefile -c coredump.elf .pio/build/protoArtoo_chirp/firmware.elf
+esp-coredump info_corefile -c coredump.elf .pio/build/artoo_esp32_chirp/firmware.elf
 ```
 
 ### POST /api/coredump/erase

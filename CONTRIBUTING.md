@@ -1,6 +1,6 @@
-# Contributing to protoArtoo
+# Contributing to artoo_esp32
 
-Thank you for your interest in contributing. protoArtoo is a safety-critical
+Thank you for your interest in contributing. artoo_esp32 is a safety-critical
 firmware for a 20 kg wheeled robot. Quality, clarity, and traceability are not
 optional here — they are part of the deliverable.
 
@@ -167,7 +167,7 @@ These will not be accepted in a pull request.
 
 ## Branch strategy
 
-Through the `v1.0.0` release, protoArtoo used a phase-oriented branch model:
+Through the `v1.0.0` release, artoo_esp32 used a phase-oriented branch model:
 all work for a development phase landed on a single long-lived
 `phase/vX.Y.Z` branch, merged into `main` (non-fast-forward, PM-approved) at
 phase completion. That model is retired as of `v1.0.0` — documented below
@@ -213,7 +213,7 @@ doesn't apply to ongoing feature-branch PRs.)
 
 ### Current practice
 
-In practice, protoArtoo is maintained solo, with AI coding agents doing much
+In practice, artoo_esp32 is maintained solo, with AI coding agents doing much
 of the implementation work under human review directly on feature branches.
 Mattias approves and merges every PR into `main`, unconditionally — no
 agent self-merge regardless of how low-risk a change appears.
@@ -244,14 +244,14 @@ change touching a failsafe layer, protocol parsing, or shared state needs
 the full build/test/check pass below. When in doubt, scale up.
 
 **Builds** — required for any firmware source change
-- [ ] `pio run -e protoArtoo` completes with no errors and no warnings
+- [ ] `pio run -e artoo_esp32` completes with no errors and no warnings
   (build flags include `-Werror` — warnings are errors)
 
 **Tests** — required when safety, protocol parsing, shared state, config
 persistence, or JSON/API contracts are touched (see `AGENTS.md`
 "Verification and Reporting" for the full rule)
 - [ ] `pio test -e native` — all native tests pass
-- [ ] `pio test -e protoArtoo` — all on-device tests pass (if hardware available)
+- [ ] `pio test -e artoo_esp32` — all on-device tests pass (if hardware available)
 
 **Verification status**
 - [ ] PR notes classify verification using the project labels:
@@ -349,7 +349,7 @@ logging gated by `#ifdef PA_VERBOSE_<TASK>` build flag.
 
 ## Versioning and releases
 
-protoArtoo uses [Semantic Versioning 2.0.0](https://semver.org/).
+artoo_esp32 uses [Semantic Versioning 2.0.0](https://semver.org/).
 
 A release is cut by tagging the target commit on `main`:
 

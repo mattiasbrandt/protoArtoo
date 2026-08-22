@@ -2,7 +2,7 @@
 # =============================================================================
 # tools/serial_monitor.py
 #
-# Serial monitor for protoArtoo ESP32 bench verification.
+# Serial monitor for artoo_esp32 ESP32 bench verification.
 #
 # Opens the port without becoming its controlling terminal and without touching
 # DTR/RTS on POSIX systems. Output goes to stdout; status/errors go to stderr.
@@ -168,7 +168,7 @@ def stream_forever_pyserial(s) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="protoArtoo serial monitor — does not reset the ESP32 on connect"
+        description="artoo_esp32 serial monitor — does not reset the ESP32 on connect"
     )
     parser.add_argument(
         "--port", default="/dev/ttyUSB0",

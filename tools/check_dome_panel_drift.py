@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Drift check: protoArtoo's vendored dome panel SVG vs the AstroPixelsPlus source.
+"""Drift check: artoo_esp32's vendored dome panel SVG vs the AstroPixelsPlus source.
 
-protoArtoo's sequence-editor dome picker (``data/dome_panel_model.js`` ->
+artoo_esp32's sequence-editor dome picker (``data/dome_panel_model.js`` ->
 ``DOME_PANEL_MAP_SVG``) is a *vendored copy* of the AstroPixelsPlus MK4 dome map
 (``data/panels.html``). Because it is a copy, it can silently drift from the
 fork's source of truth if the dome map changes there. This script compares the
@@ -17,7 +17,7 @@ has the running dome but not necessarily a local AstroPixelsPlus checkout:
 Comparison:
   - Selectable ring + pie panel paths (id + ``d=`` geometry) -- the core check.
   - Fixed panels and ring callout anchors -- best-effort (ids/markup differ
-    between the fork source and the protoArtoo port, so these are warnings by
+    between the fork source and the artoo_esp32 port, so these are warnings by
     default; use --strict to make them fail too).
   - Whitespace / comma / number-formatting (minification) differences in ``d=``
     are ignored; coordinate *values* are compared (rounded to 2 dp).
@@ -111,7 +111,7 @@ def _paths(svg: str) -> dict:
 
 def _callouts(svg: str) -> dict:
     """Ring callout circles keyed by their panel target (data-target on the
-    protoArtoo side, domePanelClick('Pxx') on the fork side)."""
+    artoo_esp32 side, domePanelClick('Pxx') on the fork side)."""
     out = {}
     for tag in re.findall(r"<circle\b[^>]*>", svg):
         tgt = _attr(tag, "data-target")

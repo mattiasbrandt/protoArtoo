@@ -28,7 +28,7 @@ files are never reported. Checks:
    patch, so a passing block *implies* killed mutations — waivable only via
    a visible, coordinator-sanctioned --expect-no-mutations ACK
 4. no test file deleted between base and HEAD (native or web)
-5. `pio run -e protoArtoo` exit code (never bare `pio run`)
+5. `pio run -e artoo_esp32` exit code (never bare `pio run`)
 6. `tools/check_action_registry_drift.py` exit code
 7. `data/*version.json` must not appear in the diff
 8. no new `extern` declarations added inside `.cpp` files (`extern "C"` allowed)
@@ -678,7 +678,7 @@ def main() -> int:
         ),
         check_mutations(production["web"], mutations, args.expect_no_mutations),
         check_deleted_tests(base_sha),
-        check_command_exit("pio run -e protoArtoo", ["pio", "run", "-e", "protoArtoo"]),
+        check_command_exit("pio run -e artoo_esp32", ["pio", "run", "-e", "artoo_esp32"]),
         check_command_exit(
             "check-action-drift", ["python3", "tools/check_action_registry_drift.py"]
         ),

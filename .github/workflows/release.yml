@@ -26,14 +26,14 @@ jobs:
       matrix:
         # Flashable, user-relevant sound-backend envs only. Adding a future
         # backend is a one-line addition here — do not hand-roll more jobs.
-        # Excluded on purpose: protoArtoo_prod (self-build-only), *_check
+        # Excluded on purpose: artoo_esp32_prod (self-build-only), *_check
         # (compile-only), *_profiler* (dev tooling), *_ota (identical
         # firmware.bin to its non-OTA counterpart, just a different
         # upload_protocol).
         env:
-          - protoArtoo_chirp
-          - protoArtoo_mp3trigger
-          - protoArtoo_dysv5w
+          - artoo_esp32_chirp
+          - artoo_esp32_mp3trigger
+          - artoo_esp32_dysv5w
     steps:
       # Default depth-1 checkout is enough for the version stamp: on a tag
       # push the tag ref itself is fetched, so git describe resolves it at

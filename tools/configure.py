@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""First-run setup wizard for protoArtoo.
+"""First-run setup wizard for artoo_esp32.
 
 Modes:
   - Default (no flags): writes user.mk with local build overrides only.
@@ -36,7 +36,7 @@ SECRETS_H_PATH = os.path.join(REPO_ROOT, "src", "secrets.h")
 
 DEFAULTS = {
     "OTA_IP": "10.0.0.22",
-    "BUILD_ENV": "protoArtoo",
+    "BUILD_ENV": "artoo_esp32",
     "UPLOAD_PORT": "/dev/ttyUSB0",
 }
 
@@ -48,9 +48,9 @@ SECRETS_DEFAULTS = {
 
 # (display label, BUILD_ENV value)
 AUDIO_BACKENDS = [
-    ("DY-SV5W (default — confirmed hardware)", "protoArtoo"),
-    ("CHIRP", "protoArtoo_chirp"),
-    ("MP3 Trigger", "protoArtoo_mp3trigger"),
+    ("DY-SV5W (default — confirmed hardware)", "artoo_esp32"),
+    ("CHIRP", "artoo_esp32_chirp"),
+    ("MP3 Trigger", "artoo_esp32_mp3trigger"),
 ]
 
 # ---------------------------------------------------------------------------
@@ -424,7 +424,7 @@ def run() -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="protoArtoo local setup wizard")
+    parser = argparse.ArgumentParser(description="artoo_esp32 local setup wizard")
     parser.add_argument(
         "--wifi",
         action="store_true",
