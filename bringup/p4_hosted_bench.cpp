@@ -4,23 +4,32 @@
  *
  * Tests SDIO WiFi transport stability using PsychicHttp server.
  * Provides endpoints for:
- *  - /api/status: Link and health metrics (boot counter, link faults)
+ *  - /api/health: Simple liveness check
+ *  - /api/status: Link and health metrics with full transport visibility
  *  - /api/c6/reset: Trigger C6 co-processor reset
+ *  - /api/events: SSE stream of monotonic counter at fixed cadence
  *
  * Critical constraints (from prepared research #184):
  *  - WiFi credential persistence is DISABLED under ESP-Hosted
- *    → Must call WiFi.begin(ssid, pass) explicitly, no NVS fallback
- *  - No liveness API for SDIO link → supervise it ourselves
+ *    Must call WiFi.begin(ssid, pass) explicitly, no NVS fallback
+ *  - No liveness API for SDIO link, supervise it ourselves via transport
  *  - Never WiFi.scan() unguarded (EHM-257 NULL memcpy crash)
  *  - Avoid BLE entirely (EHM-238 P4+C6 coexistence broken)
  *
- * Uses weak symbols (like p4_bringup.cpp) to coexist with .dummy/sketch.cpp.o
- * in the custom_sdkconfig library pass.
+ * WiFi credentials NEVER committed (public repo). Build with explicit creds:
+ *   make build BUILD_ENV=protoArtoo_p4_hosted_bench \
+ *     PLATFORMIO_BUILD_FLAGS="-DBENCH_SSID=ssid -DBENCH_PASS=pass"
+ *
+ * Uses weak symbols to coexist with .dummy/sketch.cpp.o in custom_sdkconfig pass.
  */
 
 #include <Arduino.h>
 #include <WiFi.h>
 #include <PsychicHttp.h>
+#include <ArduinoJson.h>
+#include <esp_err.h>
+#include <esp_system.h>
+#include <esp_heap_caps.h>
 
 // GPIO 3 is LED_BUILTIN on FireBeetle 2 ESP32-P4 (DFR1172)
 #define BENCH_LED 3
@@ -28,8 +37,7 @@
 // C6 co-processor reset line (GPIO 54, from spec sheet)
 #define C6_RESET_GPIO 54
 
-// Provisioned WiFi credentials — set environment-specific defaults.
-// BENCH_SSID and BENCH_PASS can be overridden via build flags.
+// Provisioned WiFi credentials - overridden by build flags, not committed
 #ifndef BENCH_SSID
 #define BENCH_SSID "protoArtoo-bench"
 #endif
@@ -37,31 +45,37 @@
 #define BENCH_PASS "protoArtoo-bench"
 #endif
 
-// Global state for link supervision and metrics
+// SSE stream cadence (milliseconds between monotonic counter frames)
+#define BENCH_SSE_CADENCE_MS 1000
+
+// Global state for link supervision and metrics.
+// benchBootCount is RTC_DATA_ATTR so it survives a CPU reset (not power cycle).
+RTC_DATA_ATTR static unsigned int benchBootCount = 0;
+
 static struct {
   unsigned long bootTimeMs = 0;
-  unsigned int bootCount = 0;
   unsigned int linkFaultCount = 0;
   unsigned long lastWiFiCheckMs = 0;
   unsigned long wifiConnectAttemptMs = 0;
   bool wifiConnected = false;
+  uint32_t sseFrameCount = 0;
+  unsigned int sseClientCount = 0;
+  unsigned long lastSseFrameMs = 0;
 } benchState;
 
 // HTTP server instance
 PsychicHttpServer http;
 
+// SSE event source
+PsychicEventSource events;
+
 // ============================================================================
 // Link Supervision
 // ============================================================================
 
-/**
- * Check WiFi link status and supervise SDIO transport.
- * Called periodically from loop() to detect link faults.
- */
 void superviseLink() {
   unsigned long now = millis();
 
-  // Check every 5 seconds if we're connected; supervise transport health.
   if (now - benchState.lastWiFiCheckMs < 5000) {
     return;
   }
@@ -71,20 +85,15 @@ void superviseLink() {
   bool isConnected = (WiFi.status() == WL_CONNECTED);
   benchState.wifiConnected = isConnected;
 
-  // Detect link fault: transition from connected to not connected.
   if (wasConnected && !isConnected) {
     benchState.linkFaultCount++;
     Serial.print("[BENCH] WiFi link fault detected. Total faults: ");
     Serial.println(benchState.linkFaultCount);
   }
 
-  // If not connected, initiate reconnection with explicit credentials.
-  // This is required under ESP-Hosted: WiFi state is not persisted in NVS.
   if (!isConnected) {
-    // Only attempt reconnect every 10 seconds to avoid log spam.
     if (now - benchState.wifiConnectAttemptMs >= 10000) {
       Serial.println("[BENCH] WiFi not connected, calling begin() with explicit creds...");
-      // Must provide SSID and pass explicitly — NVS persistence is disabled.
       WiFi.begin(BENCH_SSID, BENCH_PASS);
       benchState.wifiConnectAttemptMs = now;
     }
@@ -92,83 +101,131 @@ void superviseLink() {
 }
 
 // ============================================================================
+// SSE Event Stream
+// ============================================================================
+
+void emitSseFrame() {
+  unsigned long now = millis();
+
+  if (now - benchState.lastSseFrameMs < BENCH_SSE_CADENCE_MS) {
+    return;
+  }
+  benchState.lastSseFrameMs = now;
+
+  char frame[64];
+  snprintf(frame, sizeof(frame), "data: %lu\n", benchState.sseFrameCount);
+  benchState.sseFrameCount++;
+
+  events.send(frame);
+}
+
+void handleSseOpen(PsychicEventSourceClient* client) {
+  benchState.sseClientCount++;
+  Serial.print("[BENCH] SSE client connected. Total: ");
+  Serial.println(benchState.sseClientCount);
+}
+
+void handleSseClose(PsychicEventSourceClient* client) {
+  if (benchState.sseClientCount > 0) {
+    benchState.sseClientCount--;
+  }
+  Serial.print("[BENCH] SSE client disconnected. Total: ");
+  Serial.println(benchState.sseClientCount);
+}
+
+// ============================================================================
 // HTTP Endpoints
 // ============================================================================
 
-/**
- * GET /api/status
- * Return JSON with bench metrics: boot count, uptime, link faults, WiFi state.
- */
-void handleStatus(PsychicRequest *request) {
-  DynamicJsonDocument doc(256);
+static esp_err_t handleStatus(PsychicRequest *request, PsychicResponse *response) {
+  JsonDocument doc;
 
-  doc["bootCount"] = benchState.bootCount;
+  // Boot and reset info
+  doc["bootCount"] = benchBootCount;
+  doc["resetReason"] = (int)esp_reset_reason();
   doc["uptimeMs"] = millis() - benchState.bootTimeMs;
+
+  // Link supervision
   doc["linkFaultCount"] = benchState.linkFaultCount;
   doc["wifiConnected"] = benchState.wifiConnected;
   doc["wifiStatus"] = (int)WiFi.status();
+  doc["wifiRSSI"] = benchState.wifiConnected ? WiFi.RSSI() : -999;
+
+  // Heap metrics
   doc["freeHeapBytes"] = ESP.getFreeHeap();
+  doc["largestFree8bitBlock"] = (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+
+  // SSE metrics
+  doc["sseFramesSent"] = benchState.sseFrameCount;
+  doc["sseClientsConnected"] = benchState.sseClientCount;
+
+  // ESP-Hosted transport visibility (Arduino core esp32-hal-hosted.h)
+  extern bool hostedIsInitialized();
+  extern bool hostedIsWiFiActive();
+  extern void hostedGetHostVersion(uint32_t *major, uint32_t *minor, uint32_t *patch);
+  extern void hostedGetSlaveVersion(uint32_t *major, uint32_t *minor, uint32_t *patch);
+  extern const char *hostedGetSlaveTargetName();
+
+  uint32_t hostMajor = 0, hostMinor = 0, hostPatch = 0;
+  uint32_t slaveMajor = 0, slaveMinor = 0, slavePatch = 0;
+  hostedGetHostVersion(&hostMajor, &hostMinor, &hostPatch);
+  hostedGetSlaveVersion(&slaveMajor, &slaveMinor, &slavePatch);
+
+  doc["hostedIsInitialized"] = hostedIsInitialized();
+  doc["hostedIsWiFiActive"] = hostedIsWiFiActive();
+  char hostVersionStr[32], slaveVersionStr[32];
+  snprintf(hostVersionStr, sizeof(hostVersionStr), "%lu.%lu.%lu", hostMajor, hostMinor, hostPatch);
+  snprintf(slaveVersionStr, sizeof(slaveVersionStr), "%lu.%lu.%lu", slaveMajor, slaveMinor, slavePatch);
+  doc["hostedHostVersion"] = hostVersionStr;
+  doc["hostedSlaveVersion"] = slaveVersionStr;
+  doc["hostedSlaveTargetName"] = hostedGetSlaveTargetName();
+
+  // Chip info
   doc["chipModel"] = ESP.getChipModel();
   doc["chipRevision"] = ESP.getChipRevision();
 
-  String response;
-  serializeJson(doc, response);
+  String body;
+  serializeJson(doc, body);
 
-  request->send(200, "application/json", response);
+  return response->send(200, "application/json", body.c_str());
 }
 
-/**
- * POST /api/c6/reset
- * Trigger a C6 co-processor reset by toggling GPIO54.
- * Response includes the reset timestamp and new link fault count.
- */
-void handleC6Reset(PsychicRequest *request) {
+static esp_err_t handleC6Reset(PsychicRequest *request, PsychicResponse *response) {
   Serial.println("[BENCH] C6 reset requested via HTTP endpoint.");
 
-  // Drive reset line low for 100ms, then release.
   digitalWrite(C6_RESET_GPIO, LOW);
   delay(100);
   digitalWrite(C6_RESET_GPIO, HIGH);
 
-  // Return JSON with reset result.
-  DynamicJsonDocument doc(128);
+  JsonDocument doc;
   doc["resetTriggeredAtMs"] = millis() - benchState.bootTimeMs;
   doc["linkFaultCountAfterReset"] = benchState.linkFaultCount;
 
-  String response;
-  serializeJson(doc, response);
+  String body;
+  serializeJson(doc, body);
 
-  request->send(200, "application/json", response);
+  return response->send(200, "application/json", body.c_str());
 }
 
-/**
- * GET /api/health
- * Simple liveness check for the bench firmware.
- */
-void handleHealth(PsychicRequest *request) {
-  request->send(200, "text/plain", "OK");
+static esp_err_t handleHealth(PsychicRequest *request, PsychicResponse *response) {
+  return response->send(200, "text/plain", "OK");
 }
 
 // ============================================================================
 // Setup and Initialization
 // ============================================================================
 
-// Weak symbols to coexist with .dummy/sketch.cpp.o in the library pass
 __attribute__((weak))
 void setup() {
-  // Initialize boot state
+  benchBootCount++;
   benchState.bootTimeMs = millis();
-  benchState.bootCount++;
 
-  // GPIO setup
   pinMode(BENCH_LED, OUTPUT);
   pinMode(C6_RESET_GPIO, OUTPUT);
-  digitalWrite(C6_RESET_GPIO, HIGH);  // Release reset line (active low)
+  digitalWrite(C6_RESET_GPIO, HIGH);
 
-  // Serial console via USB CDC
   Serial.begin(115200);
 
-  // Blink pattern: 3 blinks to signal boot
   for (int i = 0; i < 3; i++) {
     digitalWrite(BENCH_LED, HIGH);
     delay(200);
@@ -181,25 +238,39 @@ void setup() {
   Serial.println(ESP.getChipModel());
   Serial.print("[BENCH] Revision: ");
   Serial.println(ESP.getChipRevision());
+  Serial.print("[BENCH] Boot count: ");
+  Serial.println(benchBootCount);
+  Serial.print("[BENCH] Reset reason: ");
+  Serial.println((int)esp_reset_reason());
   Serial.print("[BENCH] Free heap: ");
   Serial.print(ESP.getFreeHeap());
   Serial.println(" bytes");
 
-  // Initialize WiFi with explicit SSID and password.
-  // ESP-Hosted does NOT persist WiFi state in NVS; every boot must call begin() explicitly.
   Serial.print("[BENCH] WiFi.begin(\"");
   Serial.print(BENCH_SSID);
   Serial.println("\", <pass>)...");
   WiFi.begin(BENCH_SSID, BENCH_PASS);
   benchState.wifiConnectAttemptMs = millis();
 
-  // Register HTTP endpoints
   Serial.println("[BENCH] Registering HTTP endpoints...");
-  http.on("/api/health", HTTP_GET, handleHealth);
-  http.on("/api/status", HTTP_GET, handleStatus);
-  http.on("/api/c6/reset", HTTP_POST, handleC6Reset);
+  http.on("/api/health", HTTP_GET,
+    [](PsychicRequest *req, PsychicResponse *resp) -> esp_err_t {
+      return handleHealth(req, resp);
+    });
+  http.on("/api/status", HTTP_GET,
+    [](PsychicRequest *req, PsychicResponse *resp) -> esp_err_t {
+      return handleStatus(req, resp);
+    });
+  http.on("/api/c6/reset", HTTP_POST,
+    [](PsychicRequest *req, PsychicResponse *resp) -> esp_err_t {
+      return handleC6Reset(req, resp);
+    });
 
-  // Start the HTTP server on port 80
+  // Register SSE event source with callbacks
+  events.onOpen(handleSseOpen);
+  events.onClose(handleSseClose);
+  http.on("/api/events", &events);
+
   if (http.begin()) {
     Serial.println("[BENCH] HTTP server started on port 80.");
   } else {
@@ -211,27 +282,30 @@ void setup() {
 
 __attribute__((weak))
 void loop() {
-  // Blink heartbeat: 200ms on, 4800ms off (5s cycle)
   digitalWrite(BENCH_LED, HIGH);
   delay(200);
   digitalWrite(BENCH_LED, LOW);
 
-  // Supervise the WiFi link and handle reconnection.
   superviseLink();
+  emitSseFrame();
 
-  // Small delay to avoid busy-spinning.
   delay(100);
 
-  // Every 30 seconds, log a status line.
   static unsigned long lastStatusLog = 0;
   unsigned long now = millis();
   if (now - lastStatusLog >= 30000) {
     Serial.print("[BENCH] Uptime: ");
     Serial.print((now - benchState.bootTimeMs) / 1000);
-    Serial.print("s, WiFi: ");
+    Serial.print("s, Boot#: ");
+    Serial.print(benchBootCount);
+    Serial.print(", WiFi: ");
     Serial.print(benchState.wifiConnected ? "CONNECTED" : "DISCONNECTED");
     Serial.print(", Link faults: ");
     Serial.print(benchState.linkFaultCount);
+    Serial.print(", SSE clients: ");
+    Serial.print(benchState.sseClientCount);
+    Serial.print(", SSE frames: ");
+    Serial.print(benchState.sseFrameCount);
     Serial.print(", Free heap: ");
     Serial.print(ESP.getFreeHeap());
     Serial.println(" bytes");
