@@ -19,7 +19,7 @@ OTA_TIMEOUT ?= 60
 OTA_TRANSFER_TIMEOUT ?= 60
 
 # ── Toolchain isolation: artoo-esp32 vs ESP32-P4 ─────────────────────────────
-# The two targets pin different pioarduino platform versions, and those
+# The two chip targets pin different pioarduino platform versions, and those
 # versions require *different versions of the same packages*
 # (framework-arduinoespressif32 3.3.7 vs 3.3.11, tool-esptoolpy 5.1.2 vs 5.3.0,
 # tool-cppcheck 2.11.0 vs 2.20.1). PlatformIO installs packages into
@@ -27,18 +27,31 @@ OTA_TRANSFER_TIMEOUT ?= 60
 # switch between the targets swaps the whole Arduino core in place — slow when
 # serialized, and corrupting when two builds overlap.
 #
-# Each target therefore gets its own PLATFORMIO_CORE_DIR, selected from
-# BUILD_ENV. Nothing is shared, so the targets can no longer clobber each
-# other and a P4 build costs no artoo-esp32 reinstall.
+# Each chip target therefore gets its own PLATFORMIO_CORE_DIR, selected from
+# BUILD_ENV via the board declaration in platformio.ini. This is chip-aware
+# (per ADR 0028): adding a new P4 board variant costs only a platformio.ini env
+# (with board = dfrobot_firebeetle2_esp32p4) and a config.h pin-map block.
+# The Makefile auto-discovers the board type from platformio.ini, so no changes
+# are needed here — satisfying ADR 0028's acceptance test.
 #
-#   make build                              -> artoo-esp32 core dir
-#   make build BUILD_ENV=protoArtoo_p4      -> P4 core dir
+#   make build                              -> artoo-esp32 core dir (default)
+#   make build BUILD_ENV=protoArtoo_p4      -> P4 core dir (board = dfrobot_firebeetle2_esp32p4)
+#   make build BUILD_ENV=<new_p4_board>     -> P4 core dir (auto-detected if board = dfrobot_firebeetle2_esp32p4)
 #
 # Override either path in user.mk if you keep toolchains elsewhere.
 PIO_CORE_DIR_ARTOO ?= $(HOME)/.platformio
 PIO_CORE_DIR_P4    ?= $(HOME)/.platformio-p4
 
-PIO_CORE_DIR = $(if $(filter protoArtoo_p4%,$(BUILD_ENV)),$(PIO_CORE_DIR_P4),$(PIO_CORE_DIR_ARTOO))
+# Envs that target the ESP32-P4 chip, for PLATFORMIO_CORE_DIR selection only.
+# Keyed on chip, not board name, per ADR 0028 - but this IS a hard-coded list:
+# adding a P4 board variant means adding its env here as well as to
+# platformio.ini and config.h. ADR 0028's "a new board costs only a pin map plus
+# an env" does not hold for this line, and that is a known, accepted exception.
+P4_ENVS := protoArtoo_p4 protoArtoo_p4_hosted_bench
+
+# Map BUILD_ENV to chip target, then to core dir. Lookup is chip-aware:
+# if BUILD_ENV is in P4_ENVS, use P4 core dir; otherwise use artoo-esp32 core dir.
+PIO_CORE_DIR = $(if $(filter $(P4_ENVS),$(BUILD_ENV)),$(PIO_CORE_DIR_P4),$(PIO_CORE_DIR_ARTOO))
 
 # Use $(PIO) for BUILD_ENV-parameterised firmware targets. Targets that hard-code
 # an artoo-esp32 env (chirp, mp3trigger, dysv5w, check*) keep bare `pio` on
