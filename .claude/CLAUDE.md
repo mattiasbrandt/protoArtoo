@@ -32,6 +32,14 @@ Follow [AGENTS.md](../AGENTS.md) for the full canonical list. Do not violate:
 
 ### Token-Efficient and Safe Context Use
 
+> This section is about avoiding *redundant* work — re-reading a file you have
+> already read and that has not changed. It is **never** licence to skip a read
+> you have not done, to guess instead of opening the source of truth, or to
+> trim a deliverable. See [AGENTS.md](../AGENTS.md) "Effort Policy
+> (Non-Negotiable)", which takes precedence wherever the two could be read to
+> conflict.
+
+
 - Avoid redundant re-reads of unchanged files.
 - Re-read when freshness risk exists: after edits, formatters/codegen, failed patch apply, user edits, or before line-specific patches/explanations that depend on exact current text.
 - Prefer targeted reads over broad scans.

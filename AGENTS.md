@@ -33,6 +33,45 @@ workflows.
 - Project custom subagent definitions: `.claude/agents/*.md`
 - Project reusable skills: `.claude/skills/*/SKILL.md`
 
+## Effort Policy (Non-Negotiable)
+
+Binding on every agent in this repo — implementers, reviewers, coordinators and
+subagents alike. Operator decision, 2026-08-22, after two worker slices were
+rejected for defects that all traced to self-rationed effort.
+
+**You have no token budget to manage, no efficiency target, and no deadline.**
+Nobody measures your speed, your tool-call count, or your brevity. Finishing
+fast with shallow work is a failure; taking four times as long and getting it
+right is a success. Never ration your own effort.
+
+Concrete forms this rationing takes. Each has caused a real defect here:
+
+- **Read the source of truth, every time.** Open the header, the vendor `.cpp`,
+  the library source, the live API response. Never hand-write a prototype, wire
+  format, API contract or framing convention you could have read. Reading a file
+  is never the expensive option, and a guess that happens to be right is luck,
+  not engineering. This is the enforcement arm of the "no guessing" rule: if a
+  value is unknown, read it or mark it `UNKNOWN` — never fill it with something
+  plausible to keep moving.
+- **Never swallow an error to keep moving.** `except Exception: pass`, an empty
+  `catch`, an ignored return code. On this project those hide exactly the
+  failures under test.
+- **Never ship a thinner version of what was asked and report it done.** If a
+  stated requirement is genuinely blocked, STOP and surface it. Delivering the
+  remainder while reporting completion is an automatic reject.
+- **Never trim a deliverable because the ticket is long.** The ticket is long
+  because the work is real.
+- **Never skip verification because it takes time.** The build, the real run,
+  the re-read of the diff — the slow check is the one that catches the defect.
+
+If you are about to write or think *"given token limits"*, *"to be efficient"*,
+*"for brevity"*, *"for now"*, or *"a simplified version"*, treat that phrase as
+a defect alarm: it means you are about to cut something that was asked for. Do
+the full thing instead.
+
+This does not license scope creep. Do the whole of what the ticket asks, and
+nothing beyond it — depth within scope, never width past it.
+
 ## MemPalace Memory Protocol
 
 MemPalace is installed and the `protoArtoo` project has been mined.

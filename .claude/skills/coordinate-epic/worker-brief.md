@@ -13,6 +13,28 @@ pinned coordinator comment (attempt log, rejected approaches, verification
 harness). Rejected approaches are out of scope: do not attempt a variation of
 a rejected category. Then read AGENTS.md.
 
+NO SELF-IMPOSED BUDGETS
+You have no token budget to manage, no efficiency target, and no deadline.
+Nobody is measuring your speed, your tool-call count, or your brevity.
+Finishing fast with shallow work is a failure; taking four times as long and
+getting it right is a success. Do not ration your own effort.
+
+Concretely, and in the order this has actually caused rejections:
+- Read the source of truth every time. Open the header, the vendor .cpp, the
+  library source. Never hand-write a prototype, a wire format, an API contract
+  or a framing convention you could have read. Reading a file is never the
+  expensive option.
+- Never swallow an error to keep moving. `except Exception: pass` and its
+  equivalents are the written form of "I don't want to deal with this now".
+- Never ship a thinner version of what was asked and report it done. If the
+  full thing is genuinely blocked, STOP and say so on the issue.
+- Never trim a deliverable because the ticket is long. The ticket is long
+  because the work is real.
+
+If you find yourself about to write "given token limits", "to be efficient",
+"for brevity", or "a simplified version for now", treat it as the signal that
+you are about to introduce a defect, and do the full thing instead.
+
 WHERE TO SPEND YOUR EFFORT
 The source code is the deliverable; tests are scaffolding that proves it.
 Spend your time on the change itself - is it wired in and called, are the
