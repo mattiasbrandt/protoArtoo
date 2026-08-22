@@ -175,11 +175,11 @@ Reporting requirements:
 Completion contract:
 1. Implement minimal code change slice.
 2. Choose verification based on risk and explain why it is sufficient.
-3. For firmware behavior changes, run `pio run -e protoArtoo`; add `pio test -e native`, `make check-action-drift`, `pio check`, or focused hardware checks only when the touched risk justifies them.
+3. For firmware behavior changes, run `make build BUILD_ENV=<affected-env>` (for example, `artoo_esp32` or `firebeetle2`); add `pio test -e native`, `make check-action-drift`, `pio check`, or focused hardware checks only when the touched risk justifies them.
 4. If hardware is available and relevant, run upload/runtime verification; if not, explicitly classify as `partial` or `full-hardware-required` with blocker.
 5. Update active task notes in `tasks/` only for active planned firmware work where those notes already exist or the user asks for task tracking.
 6. Record significant discoveries/decisions in MemPalace; do not save routine edits, trivial cleanup, or facts already captured in source files.
-7. Only then create commit using required phase scope format.
+7. Only then create the commit using AGENTS.md's current commit scope format.
 
 Commit policy:
 - Do not run `git commit` before appropriate risk-based verification is complete and reported.

@@ -2,7 +2,8 @@
  * Minimal P4 bringup application — first-flash deliverable for #183.
  * Lives outside src/ (fenced) in bringup/p4_bringup.cpp.
  *
- * Full firmware adaptation to P4's ESP-Hosted WiFi path is tracked in #188.
+ * Full firmware adaptation to the FireBeetle 2's C6/ESP-Hosted WiFi path is
+ * tracked in #188/#189.
  * This minimal bringup does not build the full firmware — it serves as the
  * first-flash image to establish the toolchain and gate platform readiness.
  *
@@ -16,27 +17,30 @@
 
 #include <Arduino.h>
 
-// GPIO 3 is LED_BUILTIN on FireBeetle 2 ESP32-P4 (DFR1172)
-#define BRINGUP_LED 3
-
 // Weak symbols to coexist with .dummy/sketch.cpp.o in the library pass
 __attribute__((weak))
 void setup() {
-  pinMode(BRINGUP_LED, OUTPUT);
-
   // Serial is the native USB CDC endpoint, which only exists once the host has
   // enumerated and opened the port. Start it before the blinks so enumeration
   // overlaps them, then allow a short settle before the first write - output
   // sent to a not-yet-opened CDC endpoint is discarded, not buffered.
   Serial.begin(115200);
 
+#if defined(LED_BUILTIN)
+  pinMode(LED_BUILTIN, OUTPUT);
+
   // Three blinks to signal boot
   for (int i = 0; i < 3; i++) {
-    digitalWrite(BRINGUP_LED, HIGH);
+    digitalWrite(LED_BUILTIN, HIGH);
     delay(200);
-    digitalWrite(BRINGUP_LED, LOW);
+    digitalWrite(LED_BUILTIN, LOW);
     delay(200);
   }
+#else
+  // The generic custom_sdkconfig library pass may omit board-variant symbols.
+  // Keep that pass buildable without inventing a numeric fallback.
+  Serial.println("protoArtoo P4 bringup: LED_BUILTIN unavailable; blink disabled.");
+#endif
 
   Serial.println("protoArtoo P4 bringup initialized.");
   Serial.print("Chip: ");
@@ -50,10 +54,14 @@ void setup() {
 
 __attribute__((weak))
 void loop() {
-  digitalWrite(BRINGUP_LED, HIGH);
+#if defined(LED_BUILTIN)
+  digitalWrite(LED_BUILTIN, HIGH);
   delay(1000);
-  digitalWrite(BRINGUP_LED, LOW);
+  digitalWrite(LED_BUILTIN, LOW);
   delay(4000);
+#else
+  delay(5000);
+#endif
 
   static unsigned long lastPrint = 0;
   if (millis() - lastPrint > 30000) {

@@ -1,5 +1,5 @@
 # =============================================================================
-# artoo_esp32 — build facade
+# protoArtoo — build facade
 #
 # Running bare `make` launches the interactive wizard (tools/deploy.py).
 #
@@ -27,26 +27,22 @@ OTA_TRANSFER_TIMEOUT ?= 60
 # switch between the targets swaps the whole Arduino core in place — slow when
 # serialized, and corrupting when two builds overlap.
 #
-# Each chip target therefore gets its own PLATFORMIO_CORE_DIR, selected from
-# BUILD_ENV via the board declaration in platformio.ini. This is chip-aware
-# (per ADR 0028): adding a new P4 board variant costs only a platformio.ini env
-# (with board = dfrobot_firebeetle2_esp32p4) and a config.h pin-map block.
-# The Makefile auto-discovers the board type from platformio.ini, so no changes
-# are needed here — satisfying ADR 0028's acceptance test.
+# Each chip target therefore gets its own PLATFORMIO_CORE_DIR. The Makefile
+# selects it from BUILD_ENV using the explicit P4_ENVS list below; it does not
+# inspect platformio.ini to discover an env's chip target. Adding another P4
+# Board Variant costs a config.h pin-map block, a platformio.ini env, and one
+# P4_ENVS entry (ADR 0028).
 #
 #   make build                              -> artoo-esp32 core dir (default)
-#   make build BUILD_ENV=firebeetle2      -> P4 core dir (board = dfrobot_firebeetle2_esp32p4)
-#   make build BUILD_ENV=<new_p4_board>     -> P4 core dir (auto-detected if board = dfrobot_firebeetle2_esp32p4)
+#   make build BUILD_ENV=firebeetle2        -> P4 core dir
+#   make build BUILD_ENV=<new_p4_board>     -> P4 core dir after adding it to P4_ENVS
 #
 # Override either path in user.mk if you keep toolchains elsewhere.
 PIO_CORE_DIR_ARTOO ?= $(HOME)/.platformio
 PIO_CORE_DIR_P4    ?= $(HOME)/.platformio-p4
 
 # Envs that target the ESP32-P4 chip, for PLATFORMIO_CORE_DIR selection only.
-# Keyed on chip, not board name, per ADR 0028 - but this IS a hard-coded list:
-# adding a P4 board variant means adding its env here as well as to
-# platformio.ini and config.h. ADR 0028's "a new board costs only a pin map plus
-# an env" does not hold for this line, and that is a known, accepted exception.
+# This is intentionally a hard-coded chip-target list (ADR 0028).
 P4_ENVS := firebeetle2 firebeetle2_hosted_bench
 
 # Map BUILD_ENV to chip target, then to core dir. Lookup is chip-aware:

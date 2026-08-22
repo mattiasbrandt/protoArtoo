@@ -14,7 +14,8 @@ Use this checklist when reporting completion.
 
 Automated tests are evidence, not the goal. Choose checks based on the risk touched:
 
-- Firmware behavior change: start with `pio run -e artoo_esp32`.
+- Firmware behavior change: start with `make build BUILD_ENV=<affected-env>`
+  (for example, `artoo_esp32` or `firebeetle2`).
 - Safety invariants, protocol parsing, shared state transitions, config persistence,
   JSON/API contracts, or prior regression paths: add `pio test -e native`.
 - Action registry, RC tokens, or `ACTION_REGISTRY[]`: add `make check-action-drift`.
@@ -24,7 +25,8 @@ Automated tests are evidence, not the goal. Choose checks based on the risk touc
 
 If upload is requested and hardware is available:
 
-- `pio run -e <env> -t upload --upload-port <port-or-host>`
+- USB: `make flash BUILD_ENV=<affected-env> UPLOAD_PORT=<port>`
+- OTA: `make ota BUILD_ENV=<affected-env> OTA_IP=<host>`
 
 ## Frontend fallback checks (hardware unavailable)
 

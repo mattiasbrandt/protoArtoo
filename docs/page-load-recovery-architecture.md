@@ -240,7 +240,7 @@ Locked in ADR 0019:
   resolving them.
 - The small inflight/SSE-cap gap in the early admission seam (ADR 0018) -- scoped as
   a short future follow-up, not blocking this rollout.
-- The `protoArtoo_profiler`-build lifecycle-timing trace (`/api/profiler`'s
+- The `artoo_esp32_profiler`-build lifecycle-timing trace (`/api/profiler`'s
   request-start/response-ready/disconnect data) -- still not captured per #54's own
   final comment; any timing-stage thresholds beyond what ADR 0017 already locks stay
   open pending that pass.

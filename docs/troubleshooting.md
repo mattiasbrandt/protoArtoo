@@ -7,7 +7,8 @@ concrete, ordered procedure with exact commands and decision points.
 
 Base URL: `http://artoo.local` (or the device IP — `GET /api/wifi` → `staIp`, or
 `10.0.0.22` if mDNS is flaky). All HTTP probes work on the **seated** controller;
-USB does **not** (see "Flashing constraint" below).
+esptool flash/write operations do **not**. USB serial monitoring remains readable
+with the reset caveat below.
 
 ---
 
@@ -28,7 +29,7 @@ GDB_DIR="$HOME/.platformio/packages/tool-xtensa-esp-elf-gdb/bin"
 PATH="$GDB_DIR:$PATH" ~/.platformio/penv/bin/esp-coredump \
   --chip esp32 \
   info_corefile --core coredump.elf --core-format raw \
-  .pio/build/protoArtoo_chirp/firmware.elf
+  .pio/build/artoo_esp32_chirp/firmware.elf
 
 # 4. After analysing, clear it so the NEXT crash is captured.
 curl -s -X POST http://artoo.local/api/coredump/erase
@@ -94,8 +95,8 @@ curl -s http://artoo.local/api/status | grep -oE '"(heapFree|heapMin|heapLargest
 
 ### Deep read (profiler build)
 
-Flash `protoArtoo_profiler` (CHIRP + `PA_HEAP_PROFILE`; same code as
-`protoArtoo_chirp` plus instrumentation). `GET /api/profiler` adds: per-task stack
+Flash `artoo_esp32_profiler` (CHIRP + `PA_HEAP_PROFILE`; same code as
+`artoo_esp32_chirp` plus instrumentation). `GET /api/profiler` adds: per-task stack
 high-water marks, a failed-allocation **counter + `lastFail`** (size, caps, and a
 backtrace of raw PCs — decode with `xtensa-esp32-elf-addr2line -e <firmware.elf>
 <pc...>`), mode-scoped low-water snapshots (`boot`, `rc_linked`, `audio_play`),
@@ -135,16 +136,19 @@ compare that value separately when diagnosing remote dome ingress drops.
 
 ## 3. Flashing constraint (READ before collecting USB evidence)
 
-**The seated controller cannot be USB-flashed or USB-read.** GPIO15 is
-`PIN_SBUS1_RX`, a strapping pin; the SBUS receiver fights download-mode strapping
-and the PCB loads the EN/GPIO0 auto-reset circuit, so esptool reports *"Download
-mode detected, but no sync reply / TX path seems down"* (`tasks/lessons.md:549`).
+**The seated controller cannot be USB-flashed or have flash memory read by
+esptool.** GPIO15 is `PIN_SBUS1_RX`, a strapping pin; the SBUS receiver fights
+download-mode strapping and the PCB loads the EN/GPIO0 auto-reset circuit, so
+esptool reports *"Download mode detected, but no sync reply / TX path seems
+down"* (`tasks/lessons.md:549`). USB serial monitoring is a separate read path
+and remains available as described below.
 
 - **Seated → use OTA** (`make ota-chirp OTA_IP=...`) and **HTTP** for all evidence
   (`/api/coredump`, `/api/profiler`, `/api/logs`, `/api/status`). This is the
   normal path and why the coredump/profiler evidence is exposed over HTTP.
-- **USB flash → unseat the ESP32**, then `make flash BUILD_ENV=protoArtoo_chirp
-  UPLOAD_PORT=/dev/ttyUSB0`, then reseat. A partition-table change (e.g. the
+- **USB flash → unseat the ESP32**, then
+  `make flash BUILD_ENV=artoo_esp32_chirp UPLOAD_PORT=/dev/ttyUSB0`, then reseat.
+  A partition-table change (e.g. the
   coredump partition) needs this full USB flash + `uploadfs`; OTA does not rewrite
   the partition table.
 

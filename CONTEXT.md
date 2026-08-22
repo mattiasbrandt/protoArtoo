@@ -391,24 +391,24 @@ The canonical name for the build target pairing the classic-generation ESP32 D1 
 _Avoid_: classic, legacy board, clone build
 
 **ESP32-P4 Target**:
-The chip-level build target covering any ESP32-P4-based controller board. It owns everything true of the chip regardless of board: Hosted WiFi, UART/RMT budgets, partition and PSRAM policy. Chip-wide code, flags, and docs say ESP32-P4, never a board name (ADR 0028).
-_Avoid_: firebeetle target, naming the chip layer after one board
+The chip-level build target covering any ESP32-P4-based controller board. It owns chip-wide facts, including the lack of a native radio and need for an external network-backend seam, but not a particular companion chip or transport (ADR 0028).
+_Avoid_: firebeetle target, Hosted WiFi as a chip property, naming the chip layer after one board
 
 **Board Variant**:
-The thin per-board layer under a chip target: a pin-map block plus one PlatformIO env (`artoo_esp32`, `firebeetle2`). A variant holds pins and board quirks only; adding a board on a supported chip costs a variant and nothing else (ADR 0028).
+The per-physical-board layer under a chip target: pin map, fitted devices, transport/reset wiring, lifecycle requirements, quirks, and one PlatformIO env. Adding an ESP32-P4 variant also requires one entry in the Makefile's explicit `P4_ENVS` toolchain-selection list (ADR 0028).
 _Avoid_: board port, per-board fork
 
 **firebeetle2**:
-The Board Variant for the DFRobot FireBeetle 2 ESP32-P4 development board — the current vehicle for ESP32-P4 Target development. The name refers only to that physical board.
+The Board Variant for the DFRobot FireBeetle 2 ESP32-P4 development board, including its fitted ESP32-C6, C6-over-SDIO transport, reset wiring, and co-processor lifecycle. The name and those topology facts refer only to that physical board.
 _Avoid_: firebeetle2 for chip-wide concepts, throwaway mule
 
 **Board Capability Gate**:
-A compile-time `PA_CAP_*` declaration of what a board's hardware can support. An absent capability means the feature is not linked into that board's image and the UI shows not-on-this-board. Distinct from a Component Toggle, which stays runtime and declares fitted hardware (ADR 0029).
-_Avoid_: compile-time component toggle, feature flag, capability as a runtime setting
+A compile-time `PA_CAP_*` declaration of what topology a board's fitted hardware can support. It controls linking and not-on-this-board UI state; it does not attest successful co-processor provisioning, boot, initialization, or runtime reachability (ADR 0029).
+_Avoid_: compile-time component toggle, feature flag, capability as a runtime setting, runtime-ready signal
 
 **Hosted WiFi**:
-The ESP32-P4 Target's network stack: WiFi served by an on-board ESP32-C6 co-processor over SDIO. A platform property of the chip target, selected behind the network-manager seam; artoo-esp32 keeps native `esp_wifi`.
-_Avoid_: external WiFi module, board-specific WiFi hack
+A network backend in which a separate wireless co-processor serves WiFi through ESP-Hosted. On firebeetle2 it uses the board's fitted ESP32-C6 over SDIO; it is not intrinsic to ESP32-P4, and its capability gate does not prove runtime readiness.
+_Avoid_: ESP32-P4's native WiFi, universal P4 C6/SDIO topology, runtime-ready capability
 
 **Bench-Mode**:
 The development posture where a controller board runs connected to USB only, without droid hardware — exercising HTTP, SSE, serial, OTA, and bench-attachable peripherals. A posture, not a verification status: evidence gathered in Bench-Mode is at most Controller Upload Verified.
@@ -479,7 +479,7 @@ _Avoid_: bench verified, bench tested, using bench work as integrated-hardware e
 - A **Component Toggle** and the safety machinery are independent in both directions: a toggle never gates estop latching or the failsafe gate, and estop/safety handling never overrides a toggle or the settings functions — a disabled subsystem stays inert even during estop, since an inert component has no output to stop.
 - A **Component Toggle** is runtime by requirement: a **Public Release Operator** must be able to declare fitted hardware from the browser, so component toggles are never compile-time build flags; developer build-stripping flags are a separate tier, not a mirror of the toggles.
 - A **Board Capability Gate** answers what the board's silicon can do; a **Component Toggle** answers what fitted hardware the operator uses. Where the capability is absent the toggle question never arises (not-on-this-board); where it is present, ADR 0027 toggle semantics apply unchanged.
-- **firebeetle2** and **artoo_esp32** are **Board Variants**; the **ESP32-P4 Target** and the classic-generation chip target above them own chip-wide facts (ADR 0028). **artoo-esp32** remains fully supported alongside any ESP32-P4 board.
+- **firebeetle2** and **artoo_esp32** are **Board Variants**; the **ESP32-P4 Target** and the classic-generation chip target above them own chip-wide facts. ESP32-P4 supplies the external network-backend seam, while firebeetle2 owns its fitted C6/SDIO/reset topology (ADR 0028). **artoo-esp32** remains fully supported alongside any ESP32-P4 board.
 - On the **ESP32-P4 Target**, the **protoR2link Primary Transport** stays UART — carried on a dedicated P4 UART — with the **protoR2link Fallback Transport** unchanged (ADR 0003).
 - Evidence gathered in **Bench-Mode** maps to **Software Verified** or **Controller Upload Verified**, never directly to **Full Hardware Verified**.
 - An **Epic Branch** is the documented exception to short-lived feature branches; the **Post-Release Main Workflow** still governs how it reaches `main` (a PM-approved PR at closure or milestone).

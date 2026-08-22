@@ -1663,7 +1663,7 @@ Streams OTA firmware update.
 
 ```bash
 curl -s -X POST http://artoo.local/upload/firmware \
-  -F 'firmware=@.pio/build/protoArtoo/firmware.bin'
+  -F 'firmware=@.pio/build/artoo_esp32/firmware.bin'
 ```
 
 #### Example response
@@ -1687,7 +1687,7 @@ Streams OTA filesystem update.
 
 ```bash
 curl -s -X POST http://artoo.local/upload/filesystem \
-  -F 'filesystem=@.pio/build/protoArtoo/littlefs.bin'
+  -F 'filesystem=@.pio/build/artoo_esp32/littlefs.bin'
 ```
 
 #### Example response

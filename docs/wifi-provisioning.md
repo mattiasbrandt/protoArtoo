@@ -11,7 +11,7 @@ rationale and [api.md](api.md) for the underlying `/api/wifi` and
 ## Release artifacts stay WiFi-mode-free
 
 Public release binaries are published one per **sound backend**
-(`protoArtoo_chirp`, `protoArtoo_mp3trigger`, `protoArtoo_dysv5w` —
+(`artoo_esp32_chirp`, `artoo_esp32_mp3trigger`, `artoo_esp32_dysv5w` —
 `<env>-firmware.bin` + `<env>-filesystem.bin`), matching whichever audio
 module you have wired. There is no separate "AP build" or "client build" —
 every release binary boots the same way and lets you choose WiFi Client Mode

@@ -1,6 +1,6 @@
-# Contributing to artoo_esp32
+# Contributing to protoArtoo
 
-Thank you for your interest in contributing. artoo_esp32 is a safety-critical
+Thank you for your interest in contributing. protoArtoo is safety-critical
 firmware for a 20 kg wheeled robot. Quality, clarity, and traceability are not
 optional here — they are part of the deliverable.
 
@@ -29,8 +29,10 @@ make setup
 This writes `user.mk` (gitignored) with your OTA IP, USB upload port, and audio
 backend choice. Run `make help` to see all available targets.
 
-If you do not have `make` installed, you can run PlatformIO commands directly —
-the Makefile is a convenience wrapper only and is never required.
+Use the Makefile for firmware build and upload commands. It selects the isolated
+PlatformIO core directory required by each chip target; bare `pio run` can swap
+incompatible Arduino toolchains in place. Install `make` rather than bypassing
+that selection for `artoo_esp32` or `firebeetle2`.
 
 ---
 
@@ -167,7 +169,7 @@ These will not be accepted in a pull request.
 
 ## Branch strategy
 
-Through the `v1.0.0` release, artoo_esp32 used a phase-oriented branch model:
+Through the `v1.0.0` release, protoArtoo used a phase-oriented branch model:
 all work for a development phase landed on a single long-lived
 `phase/vX.Y.Z` branch, merged into `main` (non-fast-forward, PM-approved) at
 phase completion. That model is retired as of `v1.0.0` — documented below
@@ -213,7 +215,7 @@ doesn't apply to ongoing feature-branch PRs.)
 
 ### Current practice
 
-In practice, artoo_esp32 is maintained solo, with AI coding agents doing much
+In practice, protoArtoo is maintained solo, with AI coding agents doing much
 of the implementation work under human review directly on feature branches.
 Mattias approves and merges every PR into `main`, unconditionally — no
 agent self-merge regardless of how low-risk a change appears.
@@ -244,8 +246,8 @@ change touching a failsafe layer, protocol parsing, or shared state needs
 the full build/test/check pass below. When in doubt, scale up.
 
 **Builds** — required for any firmware source change
-- [ ] `pio run -e artoo_esp32` completes with no errors and no warnings
-  (build flags include `-Werror` — warnings are errors)
+- [ ] `make build BUILD_ENV=<affected-env>` completes successfully (for example,
+  `artoo_esp32` or `firebeetle2`; project-source build flags include `-Werror`)
 
 **Tests** — required when safety, protocol parsing, shared state, config
 persistence, or JSON/API contracts are touched (see `AGENTS.md`
@@ -349,7 +351,7 @@ logging gated by `#ifdef PA_VERBOSE_<TASK>` build flag.
 
 ## Versioning and releases
 
-artoo_esp32 uses [Semantic Versioning 2.0.0](https://semver.org/).
+protoArtoo uses [Semantic Versioning 2.0.0](https://semver.org/).
 
 A release is cut by tagging the target commit on `main`:
 

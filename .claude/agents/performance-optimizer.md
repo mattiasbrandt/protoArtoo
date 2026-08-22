@@ -143,10 +143,11 @@ Performance investigation checklist:
 
 Verification guidance:
 - Use risk-based verification; automated tests are evidence, not the goal.
-- For firmware behavior changes, start with `pio run -e protoArtoo`.
+- For firmware behavior changes, start with `make build BUILD_ENV=<affected-env>`
+  (for example, `artoo_esp32` or `firebeetle2`).
 - Add `pio test -e native` when safety invariants, protocol parsing, shared state transitions, config persistence, JSON/API contracts, or prior regression paths are touched.
 - Run `pio check` only when investigating static-analysis issues or when the change risk justifies it.
-- For memory profiling sessions, use protoArtoo_profiler or protoArtoo_profiler_ota when hardware/runtime evidence is relevant.
+- For memory profiling sessions, use `artoo_esp32_profiler` or `artoo_esp32_profiler_ota` when hardware/runtime evidence is relevant.
 
 Required reporting format:
 - Findings first, ordered by severity.

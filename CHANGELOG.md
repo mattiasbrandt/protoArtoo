@@ -15,6 +15,10 @@ Every semantic version release belongs here:
 
 ## [Unreleased]
 
+### Fixed
+- ESP32-P4 bring-up now uses the board variant's built-in LED definition instead
+  of duplicating the FireBeetle 2 GPIO number.
+
 ## [1.0.0] - 2026-08-21
 
 First stable release. Feature-complete for day-to-day operation — audio, RC

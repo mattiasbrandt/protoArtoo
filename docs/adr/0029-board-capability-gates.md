@@ -1,11 +1,12 @@
 # Board capability gates are compile-time; component toggles stay runtime
 
 Dual-target support (ADR 0028) means features will exist that the artoo-esp32
-board can never run — subsystems needing the ESP32-P4's extra UARTs, PSRAM,
-or Hosted WiFi stack. The artoo-esp32 build (4 MB flash, tight heap floor)
-must not pay for them, and "off via a runtime toggle" is not enough: ADR 0027
-made disabled components inert, but their code is still linked and their
-flash is still spent.
+board can never run — subsystems needing the ESP32-P4 chip's extra UARTs or
+PSRAM, and Board Variant capabilities such as the FireBeetle 2's fitted C6 and
+Hosted WiFi topology. Hosted WiFi is not an ESP32-P4 chip property. The
+artoo-esp32 build (4 MB flash, tight heap floor) must not pay for unavailable
+features, and "off via a runtime toggle" is not enough: ADR 0027 made disabled
+components inert, but their code is still linked and their flash is still spent.
 
 We decided on a **Board Capability Gate** tier: compile-time `PA_CAP_*`
 flags, set by the chip-target and board-variant layers, declaring what a

@@ -8,7 +8,8 @@ workflows.
 ## Project Context
 
 - Project: `protoArtoo` (ESP32 body controller firmware for MK4 astromech droids)
-- Build system: PlatformIO (`protoArtoo` target + `native` tests)
+- Build system: PlatformIO (`artoo_esp32` and `firebeetle2` firmware targets +
+  `native` tests)
 - Companion dome firmware: `mattiasbrandt/AstroPixelsPlus`
 
 ## Source of Truth Files
@@ -298,10 +299,10 @@ that require different versions of the same packages, so each gets its own
 
 ```bash
 make build                          # artoo-esp32  -> $(PIO_CORE_DIR_ARTOO)
-make build BUILD_ENV=protoArtoo_p4  # ESP32-P4     -> $(PIO_CORE_DIR_P4)
+make build BUILD_ENV=firebeetle2    # ESP32-P4     -> $(PIO_CORE_DIR_P4)
 ```
 
-A bare `pio run -e protoArtoo_p4` uses the default core dir and swaps the
+A bare `pio run -e firebeetle2` uses the default core dir and swaps the
 artoo-esp32 Arduino core in place — slow every time, and corrupting if any two
 builds overlap. Run **one PlatformIO build at a time**, machine-wide: the core
 dirs are separate, but a single core dir is still not safe against concurrent
@@ -311,7 +312,7 @@ package installs.
 ```bash
 make ota OTA_IP=10.0.0.22           # use IP when mDNS is unavailable
 make flash UPLOAD_PORT=/dev/ttyUSB1
-make ota BUILD_ENV=protoArtoo_chirp # override build env
+make ota BUILD_ENV=artoo_esp32_chirp # override build env
 ```
 
 - ArduinoOTA starts automatically on Core 0 when WiFi comes up (port 3232).
