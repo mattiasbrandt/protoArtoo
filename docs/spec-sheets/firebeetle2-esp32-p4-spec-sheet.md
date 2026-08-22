@@ -347,14 +347,19 @@ esp-hosted-mcu Kconfig, GPIO6 is the host-wakeup input, used only when
 host. Whether it is physically routed to the C6 on this board is still unread
 from the main-board schematic; nothing in the normal path depends on it.
 
-> [!CAUTION]
-> **Unresolved contradiction on GPIO54.** The DFR1172 wiki calls this pin `EN`.
-> On an ESP32-C6-MINI-1, `EN` is chip-enable: HIGH runs the module, LOW holds it
-> in reset - that is an **active-LOW** reset. But the bundled `esp_hosted`
-> component builds with `CONFIG_ESP_HOSTED_SDIO_RESET_ACTIVE_HIGH=1`, under which
-> the host releases reset by driving the pin **LOW**. If the wiki label is
-> accurate, that default holds the C6 down permanently. Untested as of
-> 2026-08-22; see "Measured: first boot" below.
+> [!NOTE]
+> **GPIO54 polarity: a contradiction on paper, tested, and not the cause.** The
+> DFR1172 wiki calls this pin `EN`. On an ESP32-C6-MINI-1, `EN` is chip-enable:
+> HIGH runs the module, LOW holds it in reset - an **active-LOW** reset. The
+> bundled `esp_hosted` component builds with
+> `CONFIG_ESP_HOSTED_SDIO_RESET_ACTIVE_HIGH=1`, under which the host would
+> release reset by driving the pin **LOW**. The two readings disagree.
+>
+> Tested 2026-08-22: both `RESET_ACTIVE_HIGH` symbols set to `n` and **verified
+> applied in the generated config** before flashing. The failure was identical.
+> Inverting the polarity changes nothing on this board, so this is not the cause
+> of the link failure. Left recorded because the paper contradiction is real and
+> will confuse the next reader otherwise.
 
 GPIO14/GPIO15 doubling as the `LP_UART` IO MUX pads is why LP UART is impractical
 on this board while Wi-Fi is in use, and GPIO16-GPIO19 being `ADC1_CHANNEL0-3` is
@@ -441,7 +446,39 @@ Ruled out by measurement, so nobody repeats them:
 - **Application code driving GPIO54** - removed entirely and reflashed; identical
   failure. The hosted driver owns the pin.
 
-Still open: the GPIO54 polarity contradiction above.
+### Configuration gotcha: three Kconfig namespaces, one effective
+
+Hit twice while eliminating the hypotheses above, and it silently invalidates
+experiments. The generated `sdkconfig.defaults` carries the same ESP-Hosted SDIO
+settings under three prefixes:
+
+| Namespace | Example | Role |
+| --- | --- | --- |
+| `CONFIG_ESP_HOSTED_SDIO_*` | `CONFIG_ESP_HOSTED_SDIO_CLOCK_FREQ_KHZ` | the user-facing Kconfig option |
+| `CONFIG_SDIO_*` | `CONFIG_SDIO_CLOCK_FREQ_KHZ` | second copy |
+| `CONFIG_ESP_SDIO_*` | `CONFIG_ESP_SDIO_CLOCK_FREQ_KHZ` | **the effective transport config** |
+
+The third holds the values the Arduino HAL's fallback branch reads
+(`CONFIG_ESP_SDIO_PIN_CLK=18`, `..._PIN_CMD=19`, `..._GPIO_RESET_SLAVE=54`),
+plus `..._BUS_WIDTH=4` and the clock.
+
+> [!CAUTION]
+> Setting `CONFIG_ESP_HOSTED_SDIO_<X>` in `custom_sdkconfig` does **not**
+> propagate to `CONFIG_ESP_SDIO_<X>`. The build accepts the line, reports
+> success, and the effective value is unchanged. Always grep the generated
+> `sdkconfig.defaults` for **every** variant of a symbol before believing an
+> override applied - and before treating a negative result as evidence.
+>
+> Exception worth knowing: there is no `CONFIG_ESP_SDIO_RESET_ACTIVE_HIGH`. Only
+> two `RESET_ACTIVE_HIGH` symbols exist in the whole generated config.
+
+### Current status
+
+The link has never been observed to come up on this board. Every host-side lever
+reachable from `custom_sdkconfig`, the Arduino variant, or the application has
+been tried and measured. The remaining candidate is the **factory C6 slave
+firmware being too old** for host ESP-Hosted 2.12.11 - tracked in issue #198,
+which carries the flashing procedure, the verified image URL, and the risks.
 
 ### Wireless capability (from the ESP32-C6)
 
