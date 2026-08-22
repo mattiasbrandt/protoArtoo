@@ -472,6 +472,67 @@ plus `..._BUS_WIDTH=4` and the clock.
 > Exception worth knowing: there is no `CONFIG_ESP_SDIO_RESET_ACTIVE_HIGH`. Only
 > two `RESET_ACTIVE_HIGH` symbols exist in the whole generated config.
 
+### ⚠️ Programming the C6: what is verified, and one hazard
+
+Established on the bench 2026-08-22. Full working notes in issue #198.
+
+> [!CAUTION]
+> ⛔ **Do NOT connect the programmer's `5V` to the pad silkscreened `NC`.**
+> DFRobot wiki doc 21646's wiring diagram shows exactly that, and following it
+> made the board **heat up on the opposite face, near the DSI/CSI FPC connectors**,
+> where the ESP32-P4 and its power circuitry sit. Power was removed immediately
+> and the board was undamaged, but the connection is wrong. Espressif's generic
+> ESP-Hosted guidance - *do not connect VDD* - is correct here and the
+> board-specific diagram is not. Power the board from its own USB-C.
+
+**The connection that works**, verified by reading `chip-id` and a full 4 MB
+read-back:
+
+| USB-TTL (3V3 logic) | FireBeetle 2 |
+| --- | --- |
+| `TXD` | pad **2** of the four gold pads below the beetle logo (underside) |
+| `RXD` | pad **3** of those four |
+| `GND` | `GND` on the header edge, above pin `32` |
+| ⛔ `5V` | **not connected** |
+
+No `IO0` wire is needed - the C6 enters download mode without one. The host P4
+must be prevented from driving GPIO54 (the C6 reset line); parking it in ROM
+bootloader does this without holding buttons:
+
+```bash
+esptool --chip esp32p4 --port <P4> --before default-reset --after no-reset flash-id
+#   -> "Staying in bootloader."
+```
+
+### C6 flash layout
+
+Read from the chip, not from documentation:
+
+| Offset | Contents |
+| --- | --- |
+| `0x0` | C6 bootloader |
+| `0x8000` | partition table, magic `0xAA50` |
+| `0x10000` | `factory` app, 1024 KiB |
+
+| Label | Type | Offset | Size |
+| --- | --- | --- | --- |
+| `nvs` | data | `0x00009000` | 24 KiB |
+| `phy_init` | data | `0x0000f000` | 4 KiB |
+| `factory` | app | `0x00010000` | 1024 KiB |
+
+> [!WARNING]
+> **DFRobot's published C6 image is app-only.** Its first bytes match what is at
+> `0x10000` on the chip, not the bootloader at `0x0`. Writing it at `0x0` -
+> the obvious reading of "flash this bin" - destroys the bootloader and the
+> partition table.
+>
+> Unresolved as of 2026-08-22: the `factory` partition is 1024 KiB and its app
+> content fills it exactly, there are **129776 bytes of content past `0x110000`
+> outside any declared partition**, and both DFRobot's image (1150 KiB) and the
+> matching ESP-Hosted 2.12.11 slave image (1198 KiB) are larger than that
+> partition. The table therefore does not fully describe the chip. Resolve this
+> before writing anything - see #198.
+
 ### Current status
 
 The link has never been observed to come up on this board. Every host-side lever
