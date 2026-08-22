@@ -6,7 +6,7 @@
  * Provides endpoints for:
  *  - /api/health: Simple liveness check
  *  - /api/status: Link and health metrics with full transport visibility
- *  - /api/c6/reset: Trigger C6 co-processor reset
+ *  - /api/c6/reset: Schedule an abrupt C6 co-processor reset
  *  - /api/events: SSE stream of monotonic counter at fixed cadence
  *
  * Critical constraints (from prepared research #184):
@@ -17,8 +17,8 @@
  *  - Avoid BLE entirely (EHM-238 P4+C6 coexistence broken)
  *
  * WiFi credentials NEVER committed (public repo). Build with explicit creds:
- *   make build BUILD_ENV=protoArtoo_p4_hosted_bench \
- *     PLATFORMIO_BUILD_FLAGS="-DBENCH_SSID=ssid -DBENCH_PASS=pass"
+ *   PLATFORMIO_BUILD_FLAGS='-DBENCH_SSID=\"ssid\" -DBENCH_PASS=\"pass\"' \
+ *     make build BUILD_ENV=firebeetle2_hosted_bench
  *
  * Uses weak symbols to coexist with .dummy/sketch.cpp.o in custom_sdkconfig pass.
  */
@@ -30,14 +30,9 @@
 #include <esp_err.h>
 #include <esp_system.h>
 #include <esp_heap_caps.h>
+#include <driver/gpio.h>
 
 #include "esp32-hal-hosted.h"
-
-// GPIO 3 is LED_BUILTIN on FireBeetle 2 ESP32-P4 (DFR1172)
-#define BENCH_LED 3
-
-// C6 co-processor reset line (GPIO 54, from spec sheet)
-#define C6_RESET_GPIO 54
 
 // Provisioned WiFi credentials - overridden by build flags, not committed
 #ifndef BENCH_SSID
@@ -47,58 +42,219 @@
 #define BENCH_PASS "protoArtoo-bench"
 #endif
 
-// SSE stream cadence (milliseconds between monotonic counter frames)
-#define BENCH_SSE_CADENCE_MS 1000
+// Timing constants in milliseconds.
+static constexpr uint32_t BENCH_SSE_CADENCE_MS = 1000;
+static constexpr uint32_t WIFI_CHECK_INTERVAL_MS = 5000;
+static constexpr uint32_t WIFI_RETRY_INTERVAL_MS = 10000;
+static constexpr uint32_t RESET_RESPONSE_GRACE_MS = 1000;
+static constexpr uint32_t RESET_PULSE_MS = 100;
 
-// Global state for link supervision and metrics.
 // benchBootCount is RTC_DATA_ATTR so it survives a CPU reset (not power cycle).
 RTC_DATA_ATTR static unsigned int benchBootCount = 0;
 
 static struct {
-  unsigned long bootTimeMs = 0;
+  uint32_t bootTimeMs = 0;
   unsigned int linkFaultCount = 0;
-  unsigned long lastWiFiCheckMs = 0;
-  unsigned long wifiConnectAttemptMs = 0;
+  uint32_t lastWiFiCheckMs = 0;
+  uint32_t lastWiFiBeginAtMs = 0;
   bool wifiConnected = false;
+  bool hasConnectedOnce = false;
+  wl_status_t firstWiFiBeginStatus = WL_IDLE_STATUS;
+  bool firstHostedInitialized = false;
+  bool firstHostedWiFiActiveFlag = false;
+  uint32_t firstAttemptAtMs = 0;
+  unsigned int wifiBeginAttemptCount = 0;
+  unsigned int wifiRetryCount = 0;
+  wl_status_t lastWiFiBeginStatus = WL_IDLE_STATUS;
+  bool httpStartAttempted = false;
+  esp_err_t httpStartResult = ESP_OK;
+  bool httpStarted = false;
   uint32_t sseFrameCount = 0;
   unsigned int sseClientCount = 0;
-  unsigned long lastSseFrameMs = 0;
+  uint32_t lastSseFrameMs = 0;
 } benchState;
 
-// HTTP server instance
-PsychicHttpServer http;
+enum class ResetPhase : uint8_t {
+  IDLE,
+  RESERVED,
+  RESPONSE_GRACE,
+  LOW_ASSERTED,
+};
 
-// SSE event source
+static struct {
+  bool executionAvailable = false;
+  ResetPhase phase = ResetPhase::IDLE;
+  uint32_t nextRequestId = 1;
+  uint32_t currentRequestId = 0;
+  unsigned int scheduledCount = 0;
+  unsigned int acceptedCount = 0;
+  unsigned int rejectedCount = 0;
+  unsigned int responseSendFailureCount = 0;
+  unsigned int executedCount = 0;
+  unsigned int completedCount = 0;
+  uint32_t scheduledAtMs = 0;
+  uint32_t responseSentAtMs = 0;
+  uint32_t lowAttemptAtMs = 0;
+  uint32_t highAttemptAtMs = 0;
+  uint32_t completedAtMs = 0;
+  bool lowWriteAttempted = false;
+  bool highWriteAttempted = false;
+  esp_err_t lastResponseSendResult = ESP_OK;
+  esp_err_t lastLowWriteResult = ESP_OK;
+  esp_err_t lastHighWriteResult = ESP_OK;
+} resetState;
+
+static portMUX_TYPE resetMux = portMUX_INITIALIZER_UNLOCKED;
+
+// HTTP server and SSE source.
+PsychicHttpServer http;
 PsychicEventSource events;
+
+static uint32_t benchUptimeMs() {
+  return millis() - benchState.bootTimeMs;
+}
+
+static bool deadlineReached(uint32_t now, uint32_t deadline) {
+  return static_cast<int32_t>(now - deadline) >= 0;
+}
+
+static const char *resetPhaseName(ResetPhase phase) {
+  switch (phase) {
+    case ResetPhase::IDLE:
+      return "idle";
+    case ResetPhase::RESERVED:
+      return "reserved";
+    case ResetPhase::RESPONSE_GRACE:
+      return "responseGrace";
+    case ResetPhase::LOW_ASSERTED:
+      return "lowAsserted";
+  }
+  return "unknown";
+}
 
 // ============================================================================
 // Link Supervision
 // ============================================================================
 
-void superviseLink() {
-  unsigned long now = millis();
+static void startHttpIfReady() {
+  if (benchState.httpStartAttempted || WiFi.status() != WL_CONNECTED) {
+    return;
+  }
 
-  if (now - benchState.lastWiFiCheckMs < 5000) {
+  benchState.httpStartAttempted = true;
+  benchState.httpStartResult = http.begin();
+  benchState.httpStarted = (benchState.httpStartResult == ESP_OK);
+
+  Serial.printf(
+    "[BENCH] HTTP_START result=%d (%s), started=%s. A client response is still required to prove reachability.\n",
+    static_cast<int>(benchState.httpStartResult), esp_err_to_name(benchState.httpStartResult), benchState.httpStarted ? "true" : "false"
+  );
+}
+
+static void superviseLink() {
+  const uint32_t now = millis();
+
+  if (now - benchState.lastWiFiCheckMs < WIFI_CHECK_INTERVAL_MS) {
     return;
   }
   benchState.lastWiFiCheckMs = now;
 
-  bool wasConnected = benchState.wifiConnected;
-  bool isConnected = (WiFi.status() == WL_CONNECTED);
+  const bool wasConnected = benchState.wifiConnected;
+  const bool isConnected = (WiFi.status() == WL_CONNECTED);
   benchState.wifiConnected = isConnected;
 
-  if (wasConnected && !isConnected) {
-    benchState.linkFaultCount++;
-    Serial.print("[BENCH] WiFi link fault detected. Total faults: ");
-    Serial.println(benchState.linkFaultCount);
+  if (isConnected) {
+    if (!benchState.hasConnectedOnce) {
+      benchState.hasConnectedOnce = true;
+      Serial.println("[BENCH] WiFi reached WL_CONNECTED for the first time.");
+    }
+    startHttpIfReady();
+    return;
   }
 
-  if (!isConnected) {
-    if (now - benchState.wifiConnectAttemptMs >= 10000) {
-      Serial.println("[BENCH] WiFi not connected, calling begin() with explicit creds...");
-      WiFi.begin(BENCH_SSID, BENCH_PASS);
-      benchState.wifiConnectAttemptMs = now;
+  if (wasConnected) {
+    benchState.linkFaultCount++;
+    Serial.printf("[BENCH] WiFi link fault detected. Total faults: %u\n", benchState.linkFaultCount);
+  }
+
+  // A failed first attempt stays quiescent so its UART evidence is not blurred.
+  // Retrying is a later resilience test and is enabled only after one connection.
+  if (!benchState.hasConnectedOnce || now - benchState.lastWiFiBeginAtMs < WIFI_RETRY_INTERVAL_MS) {
+    return;
+  }
+
+  benchState.wifiRetryCount++;
+  benchState.wifiBeginAttemptCount++;
+  benchState.lastWiFiBeginStatus = WiFi.begin(BENCH_SSID, BENCH_PASS);
+  benchState.lastWiFiBeginAtMs = millis();
+  Serial.printf(
+    "[BENCH] RETRY %u WiFi.begin immediateStatus=%d; this is not eventual association proof.\n",
+    benchState.wifiRetryCount, static_cast<int>(benchState.lastWiFiBeginStatus)
+  );
+}
+
+// ============================================================================
+// Abrupt C6 Reset State Machine
+// ============================================================================
+
+static void serviceScheduledReset() {
+  const uint32_t now = benchUptimeMs();
+  uint32_t requestId = 0;
+  ResetPhase phase = ResetPhase::IDLE;
+  uint32_t phaseDeadline = 0;
+
+  portENTER_CRITICAL(&resetMux);
+  phase = resetState.phase;
+  requestId = resetState.currentRequestId;
+  if (phase == ResetPhase::RESPONSE_GRACE) {
+    phaseDeadline = resetState.responseSentAtMs + RESET_RESPONSE_GRACE_MS;
+  } else if (phase == ResetPhase::LOW_ASSERTED) {
+    phaseDeadline = resetState.lowAttemptAtMs + RESET_PULSE_MS;
+  }
+  portEXIT_CRITICAL(&resetMux);
+
+  if (phase == ResetPhase::RESPONSE_GRACE && deadlineReached(now, phaseDeadline)) {
+    const esp_err_t result = gpio_set_level(static_cast<gpio_num_t>(BOARD_SDIO_ESP_HOSTED_RESET), 0);
+    const uint32_t attemptedAt = benchUptimeMs();
+
+    portENTER_CRITICAL(&resetMux);
+    if (resetState.phase == ResetPhase::RESPONSE_GRACE && resetState.currentRequestId == requestId) {
+      resetState.executedCount++;
+      resetState.lowWriteAttempted = true;
+      resetState.lowAttemptAtMs = attemptedAt;
+      resetState.lastLowWriteResult = result;
+      // Even an API error does not prove the pad stayed high. Always make the
+      // corresponding HIGH release attempt after the bounded pulse interval.
+      resetState.phase = ResetPhase::LOW_ASSERTED;
     }
+    portEXIT_CRITICAL(&resetMux);
+
+    Serial.printf(
+      "[BENCH] RESET request=%lu low-write result=%d (%s) at=%lums; API acceptance is not electrical proof.\n",
+      static_cast<unsigned long>(requestId), static_cast<int>(result), esp_err_to_name(result), static_cast<unsigned long>(attemptedAt)
+    );
+    return;
+  }
+
+  if (phase == ResetPhase::LOW_ASSERTED && deadlineReached(now, phaseDeadline)) {
+    const esp_err_t result = gpio_set_level(static_cast<gpio_num_t>(BOARD_SDIO_ESP_HOSTED_RESET), 1);
+    const uint32_t attemptedAt = benchUptimeMs();
+
+    portENTER_CRITICAL(&resetMux);
+    if (resetState.phase == ResetPhase::LOW_ASSERTED && resetState.currentRequestId == requestId) {
+      resetState.highWriteAttempted = true;
+      resetState.highAttemptAtMs = attemptedAt;
+      resetState.lastHighWriteResult = result;
+      resetState.completedCount++;
+      resetState.completedAtMs = attemptedAt;
+      resetState.phase = ResetPhase::IDLE;
+    }
+    portEXIT_CRITICAL(&resetMux);
+
+    Serial.printf(
+      "[BENCH] RESET request=%lu high-write result=%d (%s) at=%lums; verify the pulse and C6 reboot externally.\n",
+      static_cast<unsigned long>(requestId), static_cast<int>(result), esp_err_to_name(result), static_cast<unsigned long>(attemptedAt)
+    );
   }
 }
 
@@ -106,33 +262,33 @@ void superviseLink() {
 // SSE Event Stream
 // ============================================================================
 
-void emitSseFrame() {
-  unsigned long now = millis();
+static void emitSseFrame() {
+  const uint32_t now = millis();
 
-  if (now - benchState.lastSseFrameMs < BENCH_SSE_CADENCE_MS) {
+  if (!benchState.httpStarted || now - benchState.lastSseFrameMs < BENCH_SSE_CADENCE_MS) {
     return;
   }
   benchState.lastSseFrameMs = now;
 
   char frame[64];
-  snprintf(frame, sizeof(frame), "%lu", benchState.sseFrameCount);
+  snprintf(frame, sizeof(frame), "%lu", static_cast<unsigned long>(benchState.sseFrameCount));
   benchState.sseFrameCount++;
 
   events.send(frame);
 }
 
-void handleSseOpen(PsychicEventSourceClient* client) {
+static void handleSseOpen(PsychicEventSourceClient *client) {
+  (void)client;
   benchState.sseClientCount++;
-  Serial.print("[BENCH] SSE client connected. Total: ");
-  Serial.println(benchState.sseClientCount);
+  Serial.printf("[BENCH] SSE client connected. Total: %u\n", benchState.sseClientCount);
 }
 
-void handleSseClose(PsychicEventSourceClient* client) {
+static void handleSseClose(PsychicEventSourceClient *client) {
+  (void)client;
   if (benchState.sseClientCount > 0) {
     benchState.sseClientCount--;
   }
-  Serial.print("[BENCH] SSE client disconnected. Total: ");
-  Serial.println(benchState.sseClientCount);
+  Serial.printf("[BENCH] SSE client disconnected. Total: %u\n", benchState.sseClientCount);
 }
 
 // ============================================================================
@@ -140,70 +296,180 @@ void handleSseClose(PsychicEventSourceClient* client) {
 // ============================================================================
 
 static esp_err_t handleStatus(PsychicRequest *request, PsychicResponse *response) {
+  (void)request;
   JsonDocument doc;
 
-  // Boot and reset info
   doc["bootCount"] = benchBootCount;
-  doc["resetReason"] = (int)esp_reset_reason();
-  doc["uptimeMs"] = millis() - benchState.bootTimeMs;
+  doc["resetReason"] = static_cast<int>(esp_reset_reason());
+  doc["uptimeMs"] = benchUptimeMs();
 
-  // Link supervision
   doc["linkFaultCount"] = benchState.linkFaultCount;
   doc["wifiConnected"] = benchState.wifiConnected;
-  doc["wifiStatus"] = (int)WiFi.status();
+  doc["wifiStatus"] = static_cast<int>(WiFi.status());
   doc["wifiRSSI"] = benchState.wifiConnected ? WiFi.RSSI() : -999;
+  doc["firstWiFiBeginStatus"] = static_cast<int>(benchState.firstWiFiBeginStatus);
+  doc["firstHostedInitialized"] = benchState.firstHostedInitialized;
+  doc["firstHostedWiFiActiveFlag"] = benchState.firstHostedWiFiActiveFlag;
+  doc["firstAttemptAtMs"] = benchState.firstAttemptAtMs;
+  doc["wifiBeginAttemptCount"] = benchState.wifiBeginAttemptCount;
+  doc["wifiRetryCount"] = benchState.wifiRetryCount;
+  doc["lastWiFiBeginStatus"] = static_cast<int>(benchState.lastWiFiBeginStatus);
 
-  // Heap metrics
+  doc["httpStartAttempted"] = benchState.httpStartAttempted;
+  doc["httpStartResult"] = static_cast<int>(benchState.httpStartResult);
+  doc["httpStarted"] = benchState.httpStarted;
+
   doc["freeHeapBytes"] = ESP.getFreeHeap();
-  doc["largestFree8bitBlock"] = (unsigned long)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
-
-  // SSE metrics
+  doc["largestFree8bitBlock"] = static_cast<unsigned long>(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
   doc["sseFramesSent"] = benchState.sseFrameCount;
   doc["sseClientsConnected"] = benchState.sseClientCount;
 
-  // ESP-Hosted transport visibility
-  uint32_t hostMajor = 0, hostMinor = 0, hostPatch = 0;
-  uint32_t slaveMajor = 0, slaveMinor = 0, slavePatch = 0;
+  uint32_t hostMajor = 0;
+  uint32_t hostMinor = 0;
+  uint32_t hostPatch = 0;
+  uint32_t slaveMajor = 0;
+  uint32_t slaveMinor = 0;
+  uint32_t slavePatch = 0;
   hostedGetHostVersion(&hostMajor, &hostMinor, &hostPatch);
   hostedGetSlaveVersion(&slaveMajor, &slaveMinor, &slavePatch);
 
   doc["hostedIsInitialized"] = hostedIsInitialized();
   doc["hostedIsWiFiActive"] = hostedIsWiFiActive();
-  char hostVersionStr[32], slaveVersionStr[32];
+  doc["hostedIsWiFiActiveMeaning"] = "requested/usage flag; not initialization or association proof";
+  char hostVersionStr[32];
+  char slaveVersionStr[32];
   snprintf(hostVersionStr, sizeof(hostVersionStr), "%lu.%lu.%lu", hostMajor, hostMinor, hostPatch);
   snprintf(slaveVersionStr, sizeof(slaveVersionStr), "%lu.%lu.%lu", slaveMajor, slaveMinor, slavePatch);
   doc["hostedHostVersion"] = hostVersionStr;
   doc["hostedSlaveVersion"] = slaveVersionStr;
   doc["hostedSlaveTargetName"] = hostedGetSlaveTargetName();
 
-  // Chip info
+  decltype(resetState) resetSnapshot;
+  portENTER_CRITICAL(&resetMux);
+  resetSnapshot = resetState;
+  portEXIT_CRITICAL(&resetMux);
+
+  doc["resetExecutionAvailable"] = resetSnapshot.executionAvailable;
+  doc["resetState"] = resetPhaseName(resetSnapshot.phase);
+  doc["resetPending"] = resetSnapshot.phase != ResetPhase::IDLE;
+  doc["resetRequestId"] = resetSnapshot.currentRequestId;
+  doc["resetScheduledCount"] = resetSnapshot.scheduledCount;
+  doc["resetAcceptedCount"] = resetSnapshot.acceptedCount;
+  doc["resetRejectedCount"] = resetSnapshot.rejectedCount;
+  doc["resetResponseSendFailureCount"] = resetSnapshot.responseSendFailureCount;
+  doc["resetResponseSendResult"] = static_cast<int>(resetSnapshot.lastResponseSendResult);
+  doc["resetExecutedCount"] = resetSnapshot.executedCount;
+  doc["resetCompletedCount"] = resetSnapshot.completedCount;
+  doc["resetScheduledAtMs"] = resetSnapshot.scheduledAtMs;
+  doc["resetResponseSentAtMs"] = resetSnapshot.responseSentAtMs;
+  doc["resetLowWriteAttempted"] = resetSnapshot.lowWriteAttempted;
+  doc["resetLowAttemptAtMs"] = resetSnapshot.lowAttemptAtMs;
+  doc["resetLowWriteResult"] = static_cast<int>(resetSnapshot.lastLowWriteResult);
+  doc["resetHighWriteAttempted"] = resetSnapshot.highWriteAttempted;
+  doc["resetHighAttemptAtMs"] = resetSnapshot.highAttemptAtMs;
+  doc["resetHighWriteResult"] = static_cast<int>(resetSnapshot.lastHighWriteResult);
+  doc["resetCompletedAtMs"] = resetSnapshot.completedAtMs;
+  doc["resetResponseGraceMs"] = RESET_RESPONSE_GRACE_MS;
+  doc["resetPulseMs"] = RESET_PULSE_MS;
+  doc["resetEvidenceBoundary"] = "GPIO API results require external logic capture plus C6 UART reboot proof";
+
   doc["chipModel"] = ESP.getChipModel();
   doc["chipRevision"] = ESP.getChipRevision();
 
   String body;
   serializeJson(doc, body);
-
   return response->send(200, "application/json", body.c_str());
+}
+
+static esp_err_t sendResetRejection(PsychicResponse *response, int status, const char *reason) {
+  JsonDocument doc;
+  doc["resetScheduled"] = false;
+  doc["reason"] = reason;
+  String body;
+  serializeJson(doc, body);
+  return response->send(status, "application/json", body.c_str());
 }
 
 static esp_err_t handleC6Reset(PsychicRequest *request, PsychicResponse *response) {
-  Serial.println("[BENCH] C6 reset requested via HTTP endpoint.");
+  (void)request;
+  const bool hostedInitialized = hostedIsInitialized();
+  const uint32_t requestedAt = benchUptimeMs();
+  uint32_t requestId = 0;
+  const char *rejectionReason = nullptr;
+  int rejectionStatus = 503;
 
-  digitalWrite(C6_RESET_GPIO, LOW);
-  delay(100);
-  digitalWrite(C6_RESET_GPIO, HIGH);
+  portENTER_CRITICAL(&resetMux);
+  if (!resetState.executionAvailable) {
+    resetState.rejectedCount++;
+    rejectionReason = "reset execution unavailable";
+  } else if (!hostedInitialized) {
+    resetState.rejectedCount++;
+    rejectionReason = "ESP-Hosted is not initialized";
+  } else if (resetState.phase != ResetPhase::IDLE) {
+    resetState.rejectedCount++;
+    rejectionReason = "another reset is pending";
+    rejectionStatus = 409;
+  } else {
+    requestId = resetState.nextRequestId++;
+    resetState.currentRequestId = requestId;
+    resetState.phase = ResetPhase::RESERVED;
+    resetState.scheduledCount++;
+    resetState.scheduledAtMs = requestedAt;
+    resetState.responseSentAtMs = 0;
+    resetState.lowAttemptAtMs = 0;
+    resetState.highAttemptAtMs = 0;
+    resetState.completedAtMs = 0;
+    resetState.lowWriteAttempted = false;
+    resetState.highWriteAttempted = false;
+    resetState.lastResponseSendResult = ESP_OK;
+    resetState.lastLowWriteResult = ESP_OK;
+    resetState.lastHighWriteResult = ESP_OK;
+  }
+  portEXIT_CRITICAL(&resetMux);
+
+  if (rejectionReason != nullptr) {
+    Serial.printf("[BENCH] RESET rejected: %s.\n", rejectionReason);
+    return sendResetRejection(response, rejectionStatus, rejectionReason);
+  }
 
   JsonDocument doc;
-  doc["resetTriggeredAtMs"] = millis() - benchState.bootTimeMs;
-  doc["linkFaultCountAfterReset"] = benchState.linkFaultCount;
-
+  doc["requestId"] = requestId;
+  doc["resetScheduled"] = true;
+  doc["responseGraceMs"] = RESET_RESPONSE_GRACE_MS;
   String body;
   serializeJson(doc, body);
 
-  return response->send(200, "application/json", body.c_str());
+  // httpd_resp_send() completes the response send call before this returns. The
+  // additional grace gives the client time to receive it; only synchronized
+  // client/logic/UART capture can prove the response preceded the physical edge.
+  const esp_err_t sendResult = response->send(202, "application/json", body.c_str());
+  const uint32_t responseSentAt = benchUptimeMs();
+
+  portENTER_CRITICAL(&resetMux);
+  if (resetState.phase == ResetPhase::RESERVED && resetState.currentRequestId == requestId) {
+    resetState.lastResponseSendResult = sendResult;
+    if (sendResult == ESP_OK) {
+      resetState.acceptedCount++;
+      resetState.responseSentAtMs = responseSentAt;
+      resetState.phase = ResetPhase::RESPONSE_GRACE;
+    } else {
+      resetState.responseSendFailureCount++;
+      resetState.completedAtMs = responseSentAt;
+      resetState.phase = ResetPhase::IDLE;
+    }
+  }
+  portEXIT_CRITICAL(&resetMux);
+
+  Serial.printf(
+    "[BENCH] RESET request=%lu response-send result=%d (%s) at=%lums; %s.\n",
+    static_cast<unsigned long>(requestId), static_cast<int>(sendResult), esp_err_to_name(sendResult), static_cast<unsigned long>(responseSentAt),
+    sendResult == ESP_OK ? "grace interval started" : "reset canceled"
+  );
+  return sendResult;
 }
 
 static esp_err_t handleHealth(PsychicRequest *request, PsychicResponse *response) {
+  (void)request;
   return response->send(200, "text/plain", "OK");
 }
 
@@ -211,44 +477,7 @@ static esp_err_t handleHealth(PsychicRequest *request, PsychicResponse *response
 // Setup and Initialization
 // ============================================================================
 
-__attribute__((weak))
-void setup() {
-  benchBootCount++;
-  benchState.bootTimeMs = millis();
-
-  pinMode(BENCH_LED, OUTPUT);
-  pinMode(C6_RESET_GPIO, OUTPUT);
-  digitalWrite(C6_RESET_GPIO, HIGH);
-
-  Serial.begin(115200);
-
-  for (int i = 0; i < 3; i++) {
-    digitalWrite(BENCH_LED, HIGH);
-    delay(200);
-    digitalWrite(BENCH_LED, LOW);
-    delay(200);
-  }
-
-  Serial.println("\n[BENCH] protoArtoo P4 ESP-Hosted bench initialized.");
-  Serial.print("[BENCH] Chip: ");
-  Serial.println(ESP.getChipModel());
-  Serial.print("[BENCH] Revision: ");
-  Serial.println(ESP.getChipRevision());
-  Serial.print("[BENCH] Boot count: ");
-  Serial.println(benchBootCount);
-  Serial.print("[BENCH] Reset reason: ");
-  Serial.println((int)esp_reset_reason());
-  Serial.print("[BENCH] Free heap: ");
-  Serial.print(ESP.getFreeHeap());
-  Serial.println(" bytes");
-
-  Serial.print("[BENCH] WiFi.begin(\"");
-  Serial.print(BENCH_SSID);
-  Serial.println("\", <pass>)...");
-  WiFi.begin(BENCH_SSID, BENCH_PASS);
-  benchState.wifiConnectAttemptMs = millis();
-
-  Serial.println("[BENCH] Registering HTTP endpoints...");
+static void registerHttpEndpoints() {
   http.on("/api/health", HTTP_GET,
     [](PsychicRequest *req, PsychicResponse *resp) -> esp_err_t {
       return handleHealth(req, resp);
@@ -262,49 +491,96 @@ void setup() {
       return handleC6Reset(req, resp);
     });
 
-  // Register SSE event source with callbacks
   events.onOpen(handleSseOpen);
   events.onClose(handleSseClose);
   http.on("/api/events", &events);
+}
 
-  if (http.begin()) {
-    Serial.println("[BENCH] HTTP server started on port 80.");
-  } else {
-    Serial.println("[BENCH] ERROR: HTTP server failed to start!");
+static void updateHeartbeatLed() {
+#if defined(LED_BUILTIN)
+  static uint32_t lastToggleAtMs = 0;
+  static bool lit = false;
+  const uint32_t now = millis();
+  if (now - lastToggleAtMs < 500) {
+    return;
   }
+  lastToggleAtMs = now;
+  lit = !lit;
+  digitalWrite(LED_BUILTIN, lit ? HIGH : LOW);
+#endif
+}
 
-  Serial.println("[BENCH] Setup complete. Entering loop...");
+__attribute__((weak))
+void setup() {
+  benchBootCount++;
+  benchState.bootTimeMs = millis();
+
+  Serial.begin(115200);
+
+#if defined(LED_BUILTIN)
+  pinMode(LED_BUILTIN, OUTPUT);
+  for (int i = 0; i < 3; i++) {
+    digitalWrite(LED_BUILTIN, HIGH);
+    delay(200);
+    digitalWrite(LED_BUILTIN, LOW);
+    delay(200);
+  }
+#else
+  Serial.println("[BENCH] LED_BUILTIN is unavailable in this build pass; heartbeat disabled.");
+#endif
+
+  Serial.println("\n[BENCH] protoArtoo P4 ESP-Hosted bench initialized.");
+  Serial.printf("[BENCH] Chip: %s\n", ESP.getChipModel());
+  Serial.printf("[BENCH] Revision: %u\n", ESP.getChipRevision());
+  Serial.printf("[BENCH] Boot count: %u\n", benchBootCount);
+  Serial.printf("[BENCH] Reset reason: %d\n", static_cast<int>(esp_reset_reason()));
+  Serial.printf("[BENCH] Free heap: %lu bytes\n", static_cast<unsigned long>(ESP.getFreeHeap()));
+
+  Serial.println("[BENCH] Registering HTTP endpoints; server start remains deferred until WL_CONNECTED.");
+  registerHttpEndpoints();
+
+  portENTER_CRITICAL(&resetMux);
+  resetState.executionAvailable = true;
+  portEXIT_CRITICAL(&resetMux);
+
+  Serial.printf("[BENCH] WiFi.begin(\"%s\", <pass>)...\n", BENCH_SSID);
+  benchState.firstWiFiBeginStatus = WiFi.begin(BENCH_SSID, BENCH_PASS);
+  benchState.firstAttemptAtMs = benchUptimeMs();
+  benchState.firstHostedInitialized = hostedIsInitialized();
+  benchState.firstHostedWiFiActiveFlag = hostedIsWiFiActive();
+  benchState.wifiBeginAttemptCount = 1;
+  benchState.lastWiFiBeginStatus = benchState.firstWiFiBeginStatus;
+  benchState.lastWiFiBeginAtMs = millis();
+
+  Serial.printf(
+    "[BENCH] FIRST_ATTEMPT at=%lums WiFi.begin immediateStatus=%d hostedInitialized=%s "
+    "hostedWiFiActiveRequestedFlag=%s; immediate status and requested/usage flag are not eventual association proof.\n",
+    static_cast<unsigned long>(benchState.firstAttemptAtMs), static_cast<int>(benchState.firstWiFiBeginStatus),
+    benchState.firstHostedInitialized ? "true" : "false", benchState.firstHostedWiFiActiveFlag ? "true" : "false"
+  );
+  Serial.println("[BENCH] Initial failure will remain quiescent; retries are enabled only after one successful connection.");
 }
 
 __attribute__((weak))
 void loop() {
-  digitalWrite(BENCH_LED, HIGH);
-  delay(200);
-  digitalWrite(BENCH_LED, LOW);
-
+  updateHeartbeatLed();
+  serviceScheduledReset();
   superviseLink();
   emitSseFrame();
 
-  delay(100);
-
-  static unsigned long lastStatusLog = 0;
-  unsigned long now = millis();
+  static uint32_t lastStatusLog = 0;
+  const uint32_t now = millis();
   if (now - lastStatusLog >= 30000) {
-    Serial.print("[BENCH] Uptime: ");
-    Serial.print((now - benchState.bootTimeMs) / 1000);
-    Serial.print("s, Boot#: ");
-    Serial.print(benchBootCount);
-    Serial.print(", WiFi: ");
-    Serial.print(benchState.wifiConnected ? "CONNECTED" : "DISCONNECTED");
-    Serial.print(", Link faults: ");
-    Serial.print(benchState.linkFaultCount);
-    Serial.print(", SSE clients: ");
-    Serial.print(benchState.sseClientCount);
-    Serial.print(", SSE frames: ");
-    Serial.print(benchState.sseFrameCount);
-    Serial.print(", Free heap: ");
-    Serial.print(ESP.getFreeHeap());
-    Serial.println(" bytes");
+    Serial.printf(
+      "[BENCH] STATUS uptime=%lus boot=%u wifi=%s everConnected=%s faults=%u retries=%u "
+      "httpAttempted=%s httpStarted=%s sseClients=%u sseFrames=%lu freeHeap=%lu bytes\n",
+      static_cast<unsigned long>(benchUptimeMs() / 1000), benchBootCount, benchState.wifiConnected ? "CONNECTED" : "DISCONNECTED",
+      benchState.hasConnectedOnce ? "true" : "false", benchState.linkFaultCount, benchState.wifiRetryCount,
+      benchState.httpStartAttempted ? "true" : "false", benchState.httpStarted ? "true" : "false", benchState.sseClientCount,
+      static_cast<unsigned long>(benchState.sseFrameCount), static_cast<unsigned long>(ESP.getFreeHeap())
+    );
     lastStatusLog = now;
   }
+
+  delay(1);  // Yield without blocking the reset timing state machine.
 }
