@@ -495,6 +495,19 @@ read-back:
 | `GND` | `GND` on the header edge, above pin `32` |
 | ⛔ `5V` | **not connected** |
 
+> [!WARNING]
+> **DFRobot doc 21646 contradicts itself on the pad order, and the pads are
+> unlabelled on the board (2 mm pitch).** Its **Hardware Connection** figure
+> (USB-TTL converter drawn as 5V/GND/TX/RX) and its **Test Points** figure
+> ("Introduction to Test Points", labelling `ESP32C6_IO9/BOOT / RX / TX / GND /
+> 3V3 / RST`) place **`GND` and `ESP32C6_IO9/BOOT` in swapped positions**. RX/TX
+> (the middle two) are consistent; the two OUTER pads are where the figures
+> disagree. Only `GND`/`RX`/`TX` are needed for a read or flash (no BOOT strap -
+> the C6 enters download without one), so use the three-wire set above and
+> **confirm `GND` by continuity to a known ground** rather than trusting either
+> figure. (This is what a successful download used: `GND` + `ESP32C6_RX` +
+> `ESP32C6_TX`, no IO9/BOOT.)
+
 No `IO0` wire is needed - the C6 enters download mode without one. The host P4
 must be prevented from driving GPIO54 (the C6 reset line); parking it in ROM
 bootloader does this without holding buttons:
@@ -506,40 +519,88 @@ esptool --chip esp32p4 --port <P4> --before default-reset --after no-reset flash
 
 ### C6 flash layout
 
-Read from the chip, not from documentation:
+Read from the chip, and corrected 2026-08-22 (see #198): the board is **factory
+misprovisioned**. A complete merged image (bootloader + partition table + app) was
+written at global `0x10000` instead of `0x0`, so the chip carries two boot chains,
+one nested inside the other:
 
-| Offset | Contents |
+| Global offset | What is there |
 | --- | --- |
-| `0x0` | C6 bootloader |
-| `0x8000` | partition table, magic `0xAA50` |
-| `0x10000` | `factory` app, 1024 KiB |
+| `0x0` | outer C6 bootloader (entry `0x4086c410`) |
+| `0x8000` | outer partition table (`0xAA50`): `factory` app @ `0x10000`, 1024 KiB |
+| `0x10000` | **inner** bootloader (entry `0x4086c11c`) - the merged image's own loader |
+| `0x18000` | **inner** partition table (`0xAA50`, valid MD5) - the coherent dual-OTA layout |
+| `0x20000` | the **real** app: `network_adapter`, `83efce6-dirty`, ESP-IDF v5.4-dev, Oct 24 2024 |
+
+Inner table (the coherent one, matching esp-hosted-mcu commit `83efce6`; offsets are
+relative to a base of `0x0`, i.e. this image expects to live at `0x0`):
 
 | Label | Type | Offset | Size |
 | --- | --- | --- | --- |
-| `nvs` | data | `0x00009000` | 24 KiB |
-| `phy_init` | data | `0x0000f000` | 4 KiB |
-| `factory` | app | `0x00010000` | 1024 KiB |
+| `nvs` | data | `0x9000` | 16 KiB |
+| `otadata` | data | `0xd000` | 8 KiB |
+| `phy_init` | data | `0xf000` | 4 KiB |
+| `ota_0` | app | `0x10000` | 1536 KiB |
+| `ota_1` | app | `0x190000` | 1536 KiB |
 
 > [!WARNING]
-> **DFRobot's published C6 image is app-only.** Its first bytes match what is at
-> `0x10000` on the chip, not the bootloader at `0x0`. Writing it at `0x0` -
-> the obvious reading of "flash this bin" - destroys the bootloader and the
-> partition table.
+> **The chip is misprovisioned, not merely oddly partitioned - do not "fix" the
+> outer table.** The on-chip bytes from `0x10000` onward are DFRobot's published
+> `C6_v14_eco2_0022.bin` **in full, byte-for-byte** (SHA-256 of the shifted slice
+> `d8625fd1...35ce3a`), a complete merged image that DFRobot's own Flash Download
+> Tool screenshot flashes at `0x0` (this is the exact file in DFRobot's current "factory
+> default firmware" ZIP from wiki doc 21646 - downloaded 2026-08-22 and hash-verified
+> byte-identical to the on-chip bytes). Here it was written at `0x10000`. The outer
+> bootloader therefore **selects `factory @ 0x10000` and attempts to validate it** -
+> but that image is another **bootloader**, not an app, and its first RAM segment
+> (`0x40875720-0x40876d5c`) overlaps the running outer bootloader's own DRAM, so the
+> ESP-IDF image loader rejects it (`overlaps bootloader data` / `not bootable`) and
+> resets. It does **not** recurse into the nested loader. This malformed chain
+> plausibly explains why the C6 never runs its app and never brings up its SDIO slave
+> (the CMD5/`0x107` timeout). The C6 silicon itself is healthy - it answers esptool -
+> so this is a misprovisioned flash **state**, not dead silicon, and a correct reflash
+> should fix it. The placement error is byte-proven; the exact runtime failure mode is
+> inference until a C6 UART boot log is captured.
 >
-> Unresolved as of 2026-08-22: the `factory` partition is 1024 KiB and its app
-> content fills it exactly, there are **129776 bytes of content past `0x110000`
-> outside any declared partition**, and both DFRobot's image (1150 KiB) and the
-> matching ESP-Hosted 2.12.11 slave image (1198 KiB) are larger than that
-> partition. The table therefore does not fully describe the chip. Resolve this
-> before writing anything - see #198.
+> The earlier "app-only image overflowing a 1024 KiB `factory` partition" reading in
+> this sheet was **wrong and is retracted** (credit: independent analysis by Codex,
+> reproduced here with `esptool image-info` and `gen_esp32part.py`). The
+> 129,776-byte "overhang" is the tail of a whole merged image written at the wrong
+> base, not an app spilling its slot.
+
+> [!NOTE]
+> **Reflash (only if we choose to reflash rather than RMA - see #198):** write a
+> coherent layout, do not patch the nested one. Verify the 4 MB backup hash is
+> stored safely and run read-only `esptool get-security-info` first (stop on
+> secure-boot / flash-encryption / secure-download). Then: erase the C6; flash
+> DFRobot's complete merged `C6_v14_eco2_0022.bin` at `0x0` exactly as DFRobot
+> documents; read back and hash-compare; boot once and capture the C6 log to prove
+> the nested/shifted layout is gone. Only then apply the 2.12.11 update at
+> Espressif's published offsets (`ota_data_initial.bin` @ `0xd000`, then
+> `esp32c6-v2.12.11.bin` @ `0x10000`) - the 1,226,800-byte app fits the coherent
+> 1536 KiB `ota_0` slot with **346,064 bytes spare**, so there is no need to invent
+> a larger `factory` table. **Do not** flash the new app into the current nested
+> layout, and **do not** hand-build a larger outer `factory` entry to legitimise the
+> overhang - that fixes the wrong layer and discards the coherent dual-OTA structure.
 
 ### Current status
 
 The link has never been observed to come up on this board. Every host-side lever
-reachable from `custom_sdkconfig`, the Arduino variant, or the application has
-been tried and measured. The remaining candidate is the **factory C6 slave
-firmware being too old** for host ESP-Hosted 2.12.11 - tracked in issue #198,
-which carries the flashing procedure, the verified image URL, and the risks.
+reachable from `custom_sdkconfig`, the Arduino variant, or the application has been
+tried and measured; the failure sits at SDIO CMD5 enumeration
+(`sdmmc_io_send_op_cond`, `0x107` timeout), below the ESP-Hosted protocol. The
+leading explanation is no longer "old slave firmware" but a **byte-proven factory
+misprovisioning** (see the layout above): the merged C6 image sits at `0x10000`
+instead of `0x0`, so the C6 most likely never reaches its real app. This is a reflash
+of a misprovisioned unit (misprovisioned flash state, not dead silicon), not routine provisioning - escalate the evidence
+to DFRobot in parallel (#198). The single most decisive non-destructive test is a
+**C6 UART boot log** on a cold start (TX/RX/GND only, never adapter 5 V), which shows
+directly which bootloader / table / app the C6 selects; measuring the GPIO54 (`EN`)
+level is still worthwhile. Note esp-hosted-mcu #127 (M5Stack Tab5, P4+C6) hits the
+identical `send_op_cond 0x107` with a HEALTHY, booting slave, so 0x107 is ambiguous
+(dead slave vs live slave + host-link failure) - the UART boot log tells them apart, and
+a reflash may be necessary but not sufficient. #198 carries the reasoning, the reflash procedure, and
+the risks.
 
 ### Wireless capability (from the ESP32-C6)
 
