@@ -31,6 +31,15 @@
 #include <esp_system.h>
 #include <esp_heap_caps.h>
 
+// ESP-Hosted transport visibility (Arduino core esp32-hal-hosted.h)
+extern "C" {
+  bool hostedIsInitialized();
+  bool hostedIsWiFiActive();
+  void hostedGetHostVersion(uint32_t *major, uint32_t *minor, uint32_t *patch);
+  void hostedGetSlaveVersion(uint32_t *major, uint32_t *minor, uint32_t *patch);
+  const char *hostedGetSlaveTargetName();
+}
+
 // GPIO 3 is LED_BUILTIN on FireBeetle 2 ESP32-P4 (DFR1172)
 #define BENCH_LED 3
 
@@ -159,13 +168,7 @@ static esp_err_t handleStatus(PsychicRequest *request, PsychicResponse *response
   doc["sseFramesSent"] = benchState.sseFrameCount;
   doc["sseClientsConnected"] = benchState.sseClientCount;
 
-  // ESP-Hosted transport visibility (Arduino core esp32-hal-hosted.h)
-  extern bool hostedIsInitialized();
-  extern bool hostedIsWiFiActive();
-  extern void hostedGetHostVersion(uint32_t *major, uint32_t *minor, uint32_t *patch);
-  extern void hostedGetSlaveVersion(uint32_t *major, uint32_t *minor, uint32_t *patch);
-  extern const char *hostedGetSlaveTargetName();
-
+  // ESP-Hosted transport visibility
   uint32_t hostMajor = 0, hostMinor = 0, hostPatch = 0;
   uint32_t slaveMajor = 0, slaveMinor = 0, slavePatch = 0;
   hostedGetHostVersion(&hostMajor, &hostMinor, &hostPatch);
