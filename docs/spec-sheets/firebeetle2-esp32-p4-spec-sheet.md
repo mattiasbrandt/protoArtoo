@@ -341,8 +341,20 @@ wiki `WiFi` pin table:
 which exists only when `CONFIG_ESP_HOSTED_ENABLED` is set.
 
 The DFR1172 wiki additionally lists a `WAKEUP` line on GPIO6. The Arduino variant
-does not define it. Treat GPIO6 as reserved until the main-board schematic is
-read.
+does not define it, and it is **not required for boot or link bring-up**: in the
+esp-hosted-mcu Kconfig, GPIO6 is the host-wakeup input, used only when
+`ESP_HOSTED_HOST_DEEP_SLEEP_ALLOWED` is enabled so the slave can wake a sleeping
+host. Whether it is physically routed to the C6 on this board is still unread
+from the main-board schematic; nothing in the normal path depends on it.
+
+> [!CAUTION]
+> **Unresolved contradiction on GPIO54.** The DFR1172 wiki calls this pin `EN`.
+> On an ESP32-C6-MINI-1, `EN` is chip-enable: HIGH runs the module, LOW holds it
+> in reset - that is an **active-LOW** reset. But the bundled `esp_hosted`
+> component builds with `CONFIG_ESP_HOSTED_SDIO_RESET_ACTIVE_HIGH=1`, under which
+> the host releases reset by driving the pin **LOW**. If the wiki label is
+> accurate, that default holds the C6 down permanently. Untested as of
+> 2026-08-22; see "Measured: first boot" below.
 
 GPIO14/GPIO15 doubling as the `LP_UART` IO MUX pads is why LP UART is impractical
 on this board while Wi-Fi is in use, and GPIO16-GPIO19 being `ADC1_CHANNEL0-3` is
@@ -369,6 +381,67 @@ In Arduino terms the entire `WiFi` class compiles under
 `WiFi.softAP()`, scanning, events, and the whole `Network`/`NetworkInterface`
 stack above it are unchanged. ESP-Hosted is an API-transparent layer, not an
 AT-command modem.
+
+### The C6 as hardware: module, factory firmware, reflashing
+
+Confirmed 2026-08-22 against the DFR1172 wiki and by inspecting the vendor
+binary. Previously this sheet described the C6 only as "a physically separate
+ESP32-C6"; these are the specifics.
+
+| Fact | Detail | Source |
+| --- | --- | --- |
+| Module | **ESP32-C6-MINI-1** | DFR1172 wiki, "On-board Function Diagram" table |
+| Physical location | **Underside** of the FireBeetle 2, with its own PCB antenna | wiki table; confirmed visually on the bench board |
+| Factory firmware | `C6_v14_eco2_0022.bin`, 1178352 bytes, dated 2025-02-12 | DFRobot-published ZIP linked from wiki doc 21646 |
+| Factory firmware type | **ESP-Hosted-MCU slave firmware** - not ESP-AT, not blank | strings in the binary: `ESP-Hosted-MCU Slave FW version :: %d.%d.%d`, `esp_hosted_rpc.pb-c.c`, `fg_mcu_slave`, `./main/sdio_slave_api.c` |
+| Factory firmware age | Built from `esp_as_mcu_host`, the project's **former** name - an early build | build path string in the binary |
+
+**The C6 is user-reflashable, and DFRobot documents it**:
+`https://wiki.dfrobot.com/dfr1172/docs/21646`, "ESP32-C6 Firmware Update Guide".
+A USB-TTL adapter is jumpered to the C6 side and the image written with Flash
+Download Tool or any esptool-compatible writer; if the download fails, hold `RST`
+on the board while starting it. The wiring diagram on that page is a raster
+image, so the jumper pin mapping has to be read off it visually - it is not
+transcribed here rather than guessed.
+
+> [!NOTE]
+> The DFR1237 `UART` header is **not** a route to the C6. It exposes the P4's
+> `UART0` pair plus power only (see "IO Expansion Header Map"). Reflashing the C6
+> requires the connection in wiki doc 21646.
+
+### Measured: first boot does not bring the link up
+
+Recorded 2026-08-22 on the bench board, `CONFIG_ESP_HOSTED_ENABLED=y`,
+arduino-esp32 3.3.11 / ESP-Hosted 2.12.11, factory C6 firmware untouched:
+
+```
+E sdmmc_io: sdmmc_init_io: sdmmc_io_send_op_cond (1) returned 0x107
+E sdio_wrapper: sdmmc_card_init failed
+E H_SDIO_DRV: card init failed
+E transport: ensure_slave_bus_ready failed
+E H_API: ESP-Hosted link not yet up
+[E][WiFiGeneric.cpp:291] wifiLowLevelInit(): esp_wifi_init 0xffffffff: ESP_FAIL
+```
+
+`0x107` is `ESP_ERR_TIMEOUT`. The failure is at **SDIO card enumeration**, below
+the ESP-Hosted protocol - the slave is not answering electrically at all, which
+is a different class of fault from a host/slave version mismatch (that would fail
+later, at handshake or RPC). The P4 side is otherwise healthy: USB CDC console,
+timers, heap and application code all run normally.
+
+Ruled out by measurement, so nobody repeats them:
+
+- **Host pin configuration** - the variant defines match the table above, and
+  `hostedInit()` demonstrably copies them into `esp_hosted_sdio_config`.
+- **The TF card slot** - it is SDMMC **slot 0** (GPIO39-45); ESP-Hosted uses
+  **slot 1** (`CONFIG_ESP_HOSTED_SDIO_SLOT 1`). No pin or slot overlap. A seated
+  card is irrelevant.
+- **`CONFIG_ESP_HOSTED_P4_DEV_BOARD_NONE=1`** - benign. It only defers deep-sleep
+  wakeup GPIO configuration; it does not disable or misconfigure SDIO.
+- **Application code driving GPIO54** - removed entirely and reflashed; identical
+  failure. The hosted driver owns the pin.
+
+Still open: the GPIO54 polarity contradiction above.
 
 ### Wireless capability (from the ESP32-C6)
 
@@ -446,9 +519,19 @@ it (`cores/esp32/esp32-hal-hosted.h`), so it is tractable rather than scary:
 | `hostedGetSlaveVersion(&maj, &min, &patch)` | Version actually running on the C6 |
 | `hostedGetSlaveTargetName()` | Co-processor target, e.g. `esp32c6`. Queried live from the slave when it is running ESP-Hosted 2.12.2 or newer |
 | `hostedHasUpdate()` | Compares the two, logs both, returns true when the host is newer |
-| `hostedGetUpdateURL()` | Builds `https://espressif.github.io/arduino-esp32/hosted/<target>-v<major>.<minor>.<patch>.bin` |
+| `hostedGetUpdateURL()` | Builds `https://espressif.github.io/arduino-esp32/hosted/<target>-v<major>.<minor>.<patch>.bin`. See the version-scheme warning below - the version is **not** the Arduino core version |
 | `hostedBeginUpdate()` / `hostedWriteUpdate()` / `hostedEndUpdate()` / `hostedActivateUpdate()` | Streams a new slave image to the C6 over the existing SDIO link |
 | `hostedIsInitialized()` / `hostedIsWiFiActive()` / `hostedIsBLEActive()` | Link and radio state |
+
+> [!WARNING]
+> **The slave image version tracks the ESP-Hosted component, not arduino-esp32.**
+> `hostedGetUpdateURL()` formats `host_version_struct`, which is populated from
+> `ESP_HOSTED_VERSION_{MAJOR,MINOR,PATCH}_1` in
+> `esp_hosted/host/esp_hosted_host_fw_ver.h`. For arduino-esp32 **3.3.11** those
+> macros are **2 / 12 / 11**, so the image this toolchain expects is
+> `esp32c6-v2.12.11.bin`. Verified 2026-08-22: that URL returns HTTP 200, while
+> `esp32c6-v3.3.11.bin` returns **404**. Assuming the Arduino core version sends
+> you to a file that does not exist.
 
 Points that matter for a fielded device:
 
@@ -469,6 +552,11 @@ Points that matter for a fielded device:
   `CONFIG_ESP_HOSTED_CP_TARGET_ESP32C6`.
 
 ### What to prove before relying on it
+
+> [!IMPORTANT]
+> Item 0, ahead of all of these: **the link has not yet been observed to come up
+> on this board at all.** See "Measured: first boot does not bring the link up".
+> Everything below assumes a working transport and remains unmeasured here.
 
 Bandwidth is not the risk; the transport is fast. The things worth measuring on
 this board specifically:
