@@ -68,6 +68,16 @@ void test_aux_led_selection_to_gpio_mapping() {
     TEST_ASSERT_EQUAL_INT(auxLedSelectionToGpio(AUX_LED_PIN_AUX3), PIN_ARM5_SERVO);
 }
 
+// Every pin required by FireBeetle production consumers is also required on
+// the shipping artoo-esp32 board. Expanding the production-owned inventory here
+// prevents a newly guarded consumer from bypassing native coverage.
+void test_required_consumer_pins_are_assigned_on_artoo_esp32() {
+#define PA_FIREBEETLE_REQUIRED_PIN(pin, diagnostic) \
+    TEST_ASSERT_NOT_EQUAL(PA_PIN_UNASSIGNED, pin);
+#include "firebeetle_required_pins.inc"
+#undef PA_FIREBEETLE_REQUIRED_PIN
+}
+
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_pa_board_is_defined);
@@ -76,5 +86,6 @@ int main() {
     RUN_TEST(test_pins_are_defined);
     RUN_TEST(test_servo_and_led_config_available);
     RUN_TEST(test_aux_led_selection_to_gpio_mapping);
+    RUN_TEST(test_required_consumer_pins_are_assigned_on_artoo_esp32);
     return UNITY_END();
 }

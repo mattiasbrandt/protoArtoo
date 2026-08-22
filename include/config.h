@@ -189,14 +189,6 @@ constexpr uint8_t PIN_RC_CH6 = PA_PIN_UNASSIGNED;  // TBD
 constexpr uint8_t PIN_SBUS1_RX = PIN_RC_CH1;  // CH1  --  SBUS #1 (drive)
 constexpr uint8_t PIN_SBUS2_RX = PIN_RC_CH2;  // CH2  --  SBUS #2 (dome)
 
-// SAFETY-CRITICAL: SBUS pins feed the estop path (failsafe boot default, latching estop).
-// A silent wrong value is the most expensive defect class in this repo.
-// These asserts must pass or firmware build fails.
-static_assert(PIN_SBUS1_RX != PA_PIN_UNASSIGNED,
-              "firebeetle2: SBUS1 pin is unassigned - see #190");
-static_assert(PIN_SBUS2_RX != PA_PIN_UNASSIGNED,
-              "firebeetle2: SBUS2 pin is unassigned - see #190");
-
 // Servo outputs (LEDC PWM)
 // TBD: Servo assignment constrained by RC pin footprint and available GPIO.
 // Deferred to #190 after RC lanes are finalized.
@@ -207,14 +199,14 @@ constexpr uint8_t PIN_ARM4_SERVO = PA_PIN_UNASSIGNED;  // TBD (AUX2)
 constexpr uint8_t PIN_ARM5_SERVO = PA_PIN_UNASSIGNED;  // TBD (AUX3)
 constexpr uint8_t PIN_DOME_ESC = PA_PIN_UNASSIGNED;    // TBD
 
-// Guards for servo and dome ESC pins. These fire if firmware tries to use
-// an unassigned pin, preventing silent configuration of wrong GPIO.
-static_assert(PIN_ARM1_SERVO != PA_PIN_UNASSIGNED,
-              "firebeetle2: ARM1 servo pin is unassigned - see #190");
-static_assert(PIN_ARM2_SERVO != PA_PIN_UNASSIGNED,
-              "firebeetle2: ARM2 servo pin is unassigned - see #190");
-static_assert(PIN_DOME_ESC != PA_PIN_UNASSIGNED,
-              "firebeetle2: Dome ESC pin is unassigned - see #190");
+// Every pin used by a production peripheral must be assigned before the full
+// FireBeetle firmware can compile. This is safety-critical for SBUS because it
+// feeds the failsafe/estop path. SBUS1/2 guard RC_CH1/2 through their aliases,
+// so the inventory has no duplicate RC_CH1/2 rows that could drift.
+#define PA_FIREBEETLE_REQUIRED_PIN(pin, diagnostic) \
+    static_assert(pin != PA_PIN_UNASSIGNED, diagnostic);
+#include "firebeetle_required_pins.inc"
+#undef PA_FIREBEETLE_REQUIRED_PIN
 
 // AUX LED strip selection values (NVS aux_led_pin)
 constexpr uint8_t AUX_LED_PIN_DISABLED = 0;
