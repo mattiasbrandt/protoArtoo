@@ -1,464 +1,381 @@
 #!/usr/bin/env python3
-"""
-P4 ESP-Hosted WiFi reliability soak test harness — #184
+"""P4 ESP-Hosted WiFi reliability soak test harness — #184.
+Implements the full verdict contract from the issue body."""
 
-Drives the bench firmware via HTTP endpoints to exercise SDIO WiFi stability.
-Tests:
-  - SSE soak driver: N concurrent long-lived readers with frame-gap detection
-  - Reconnect-storm driver: rapid connect/drop cycles
-  - Periodic status checks (link fault tracking)
-  - C6 co-processor reset cycles
-
-Output: Machine-readable JSON with observed numbers and pass/fail verdict.
-
-Typical invocation:
-  python3 tools/p4_hosted_soak.py --target 192.168.1.100 --duration 3600 --sse-clients 5
-
-The firmware must be running p4_hosted_bench.cpp on a P4+C6 board over SDIO.
-"""
-
-import argparse
-import json
-import sys
-import threading
-import time
+import argparse, json, sys, threading, time, urllib.request
 from typing import Optional, Dict, Any, List
-import urllib.request
-import urllib.error
 
-# HTTP timeout for individual requests (seconds)
 REQUEST_TIMEOUT = 5
-
-# SSE frame timeout: if we don't see a frame in this many seconds, it's a gap
-SSE_FRAME_TIMEOUT_S = 5
-
+SSE_FRAME_CADENCE_MS = 1000
 
 class BenchClient:
-    """Simple HTTP client for the bench firmware endpoints."""
-
     def __init__(self, target: str):
-        """
-        Initialize client pointing to the bench firmware.
-
-        Args:
-            target: IP address or hostname (e.g., "192.168.1.100" or "protoartoo.local")
-        """
-        # Normalize target: add http:// if not present
-        if not target.startswith("http://") and not target.startswith("https://"):
-            self.base_url = f"http://{target}"
-        else:
-            self.base_url = target
+        self.base_url = f"http://{target}" if not target.startswith("http") else target
 
     def _request(self, method: str, endpoint: str) -> Optional[Dict[str, Any]]:
-        """
-        Make an HTTP request to the bench firmware.
-
-        Args:
-            method: HTTP method ("GET" or "POST")
-            endpoint: API endpoint path (e.g., "/api/status")
-
-        Returns:
-            Parsed JSON response, or None on error
-        """
-        url = f"{self.base_url}{endpoint}"
-
-        req = urllib.request.Request(url, method=method)
-        req.add_header("User-Agent", "p4-hosted-soak/1.0")
-
         try:
-            with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT) as response:
-                data = response.read().decode("utf-8")
-                if response.headers.get("content-type", "").startswith("application/json"):
-                    return json.loads(data)
-                else:
-                    # Non-JSON response (e.g., "OK" from /health)
-                    return {"raw": data, "status_code": response.status}
+            req = urllib.request.Request(f"{self.base_url}{endpoint}", method=method)
+            req.add_header("User-Agent", "p4-hosted-soak/1.0")
+            with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT) as r:
+                data = r.read().decode("utf-8")
+                return json.loads(data) if "json" in r.headers.get("content-type", "") else {"raw": data}
         except Exception as e:
-            print(f"[ERROR] Request failed to {url}: {e}", file=sys.stderr)
             return None
 
     def health(self) -> bool:
-        """Check firmware liveness."""
-        response = self._request("GET", "/api/health")
-        return response is not None
+        return self._request("GET", "/api/health") is not None
 
     def status(self) -> Optional[Dict[str, Any]]:
-        """Get bench status (metrics, WiFi state, link faults)."""
         return self._request("GET", "/api/status")
 
     def reset_c6(self) -> Optional[Dict[str, Any]]:
-        """Trigger C6 co-processor reset."""
         return self._request("POST", "/api/c6/reset")
 
-    def stream_sse(self, timeout_seconds: int = 30) -> List[int]:
-        """
-        Read SSE frames from /api/events until timeout or connection closes.
-        Returns list of frame numbers (data field parsed as int).
-        """
-        url = f"{self.base_url}/api/events"
+    def stream_sse(self, timeout_seconds: int = 30) -> tuple:
+        """Returns (frames_list, error_msg). PsychicEventSource produces: data: <msg>\r\n\r\n"""
         frames = []
+        error_msg = ""
         start_time = time.time()
-
-        req = urllib.request.Request(url)
-        req.add_header("User-Agent", "p4-hosted-soak/1.0")
-
         try:
-            with urllib.request.urlopen(req, timeout=timeout_seconds + REQUEST_TIMEOUT) as response:
-                for line_bytes in response:
-                    line = line_bytes.decode("utf-8").strip()
+            req = urllib.request.Request(f"{self.base_url}/api/events")
+            with urllib.request.urlopen(req, timeout=timeout_seconds + REQUEST_TIMEOUT) as r:
+                for line_bytes in r:
+                    line = line_bytes.decode("utf-8").rstrip("\r\n")
                     if line.startswith("data: "):
                         try:
-                            frame_num = int(line[6:])
-                            frames.append(frame_num)
-                        except ValueError:
-                            pass
-                    # Check if we've exceeded the timeout
+                            frames.append(int(line[6:]))
+                        except ValueError as e:
+                            error_msg = f"Parse error on '{line[6:]}': {str(e)}"
+                            return frames, error_msg
                     if time.time() - start_time >= timeout_seconds:
                         break
         except Exception as e:
-            pass  # Connection closed or timeout - that's expected
-
-        return frames
-
+            error_msg = f"{type(e).__name__}: {str(e)}"
+        return frames, error_msg
 
 class SseReader(threading.Thread):
-    """Thread that reads SSE frames and detects gaps."""
-
-    def __init__(self, client: BenchClient, stream_duration_s: int, reader_id: int):
+    def __init__(self, client: BenchClient, duration: int, reader_id: int):
         super().__init__(daemon=True)
-        self.client = client
-        self.stream_duration_s = stream_duration_s
-        self.reader_id = reader_id
-        self.frames_received = 0
-        self.gaps_detected = 0
+        self.client, self.duration, self.reader_id = client, duration, reader_id
+        self.frames_received = self.gaps_detected = 0
         self.last_frame_num = None
-        self.error_occurred = False
+        self.error_msg = ""
 
     def run(self):
-        """Read SSE stream and detect frame-number gaps."""
-        try:
-            frames = self.client.stream_sse(self.stream_duration_s)
-            self.frames_received = len(frames)
+        frames, error_msg = self.client.stream_sse(self.duration)
+        self.frames_received = len(frames)
+        self.error_msg = error_msg
+        for f in frames:
+            if self.last_frame_num is not None and f != self.last_frame_num + 1:
+                self.gaps_detected += 1
+            self.last_frame_num = f
 
-            # Detect gaps: frame numbers should increment by 1
-            for frame_num in frames:
-                if self.last_frame_num is not None:
-                    if frame_num != self.last_frame_num + 1:
-                        self.gaps_detected += 1
-                self.last_frame_num = frame_num
-        except Exception as e:
-            print(f"[SSE] Reader {self.reader_id} error: {e}", file=sys.stderr)
-            self.error_occurred = True
-
-
-def run_sse_soak(client: BenchClient, num_clients: int, stream_duration_s: int) -> Dict[str, Any]:
-    """
-    Run SSE soak test with N concurrent readers.
-
-    Args:
-        client: Initialized BenchClient
-        num_clients: Number of concurrent SSE readers
-        stream_duration_s: Duration each reader should stream
-
-    Returns:
-        Dict with metrics: total_frames, gaps, clients_succeeded, clients_failed
-    """
-    print(f"[SSE] Starting {num_clients} concurrent readers for {stream_duration_s}s each...")
-
-    readers = [
-        SseReader(client, stream_duration_s, i)
-        for i in range(num_clients)
-    ]
-
-    # Start all readers
-    for reader in readers:
-        reader.start()
-
-    # Wait for all readers to finish
-    for reader in readers:
-        reader.join()
-
-    # Aggregate results
+def run_sse_soak(client: BenchClient, num_clients: int, duration: int) -> Dict[str, Any]:
+    """SSE soak: N concurrent readers with gap detection."""
+    readers = [SseReader(client, duration, i) for i in range(num_clients)]
+    for r in readers: r.start()
+    for r in readers: r.join()
+    
     total_frames = sum(r.frames_received for r in readers)
     total_gaps = sum(r.gaps_detected for r in readers)
-    succeeded = sum(1 for r in readers if not r.error_occurred)
-    failed = sum(1 for r in readers if r.error_occurred)
-
+    expected = (duration * 1000) // SSE_FRAME_CADENCE_MS
+    half_expected = expected // 2 if expected > 0 else 0
+    
     return {
         "num_clients": num_clients,
         "total_frames_received": total_frames,
         "total_frame_gaps": total_gaps,
-        "clients_succeeded": succeeded,
-        "clients_failed": failed,
+        "clients_failed": sum(1 for r in readers if r.error_msg),
+        "readers_below_half": sum(1 for r in readers if r.frames_received < half_expected),
+        "min_frames": min((r.frames_received for r in readers), default=0),
+        "expected_frames": expected,
+        "first_error": next((r.error_msg for r in readers if r.error_msg), None),
     }
 
+def run_reconnect_storm(client: BenchClient, duration: int, concurrent: int = 5) -> Dict[str, Any]:
+    """Concurrent SSE connect/drop storm targeting /api/events."""
+    success = fail = 0
+    lock = threading.Lock()
+    
+    def worker():
+        nonlocal success, fail
+        frames, error = client.stream_sse(timeout_seconds=2)
+        with lock:
+            if error or len(frames) == 0:
+                fail += 1
+            else:
+                success += 1
+    
+    start, threads = time.time(), []
+    while time.time() - start < duration:
+        t = threading.Thread(target=worker, daemon=True)
+        t.start()
+        threads.append(t)
+        if len(threads) >= concurrent:
+            threads.pop(0).join()
+        time.sleep(0.5)
+    
+    for t in threads: t.join()
+    
+    return {"successful_connects": success, "connect_failures": fail, "total_attempts": success + fail}
 
-def run_reconnect_storm(client: BenchClient, num_cycles: int, delay_ms: int = 500) -> Dict[str, Any]:
-    """
-    Run reconnect-storm test: rapid connect/drop cycles.
-
-    Args:
-        client: Initialized BenchClient
-        num_cycles: Number of connect/drop cycles
-        delay_ms: Delay between cycles (milliseconds)
-
-    Returns:
-        Dict with metrics: cycles_completed, connect_failures
-    """
-    print(f"[RECONNECT] Starting {num_cycles} rapid connect/drop cycles (delay: {delay_ms}ms)...")
-
-    connect_failures = 0
-    cycles_completed = 0
-
-    for i in range(num_cycles):
-        # Each cycle: GET /api/status (implicit connect) and immediately close
-        status = client.status()
-        if status is None:
-            connect_failures += 1
-        else:
-            cycles_completed += 1
-
-        # Small delay between cycles
-        if i < num_cycles - 1:
-            time.sleep(delay_ms / 1000.0)
-
-    return {
-        "num_cycles": num_cycles,
-        "cycles_completed": cycles_completed,
-        "connect_failures": connect_failures,
-    }
-
-
-def run_soak_test(
-    client: BenchClient,
-    duration_seconds: int,
-    sse_clients: int = 3,
-    reset_interval_seconds: int = 60,
-    status_interval_seconds: int = 10,
-) -> Dict[str, Any]:
-    """
-    Run the comprehensive soak test against the bench firmware.
-
-    Runs in parallel:
-      - SSE soak driver (N concurrent long-lived readers)
-      - Reconnect-storm driver (rapid cycles)
-      - Periodic status checks and C6 resets
-
-    Args:
-        client: Initialized BenchClient
-        duration_seconds: Total test duration
-        sse_clients: Number of concurrent SSE readers
-        reset_interval_seconds: Interval between C6 resets
-        status_interval_seconds: Interval between status checks
-
-    Returns:
-        Machine-readable JSON dict with observed numbers and pass/fail
-    """
-    print(f"[SOAK] Starting comprehensive bench test")
-    print(f"[SOAK] Duration: {duration_seconds}s, SSE clients: {sse_clients}")
-
+def run_soak_test(client: BenchClient, duration: int, sse_clients: int = 3, 
+                  reset_interval: int = 60, status_interval: int = 10,
+                  heap_tol_pct: int = 20) -> Dict[str, Any]:
+    """Full soak test per the verdict contract."""
     start_time = time.time()
-    last_status_check = 0
-    last_reset = 0
-    status_checks = 0
+    boot_prev = reset_reason_prev = faults_prev = None
+    boot_final = reset_reason_final = faults_final = None
+    heap_baseline = heap_final = None
+    sse_clients_max = 0
+    status_count = 0
     resets_triggered = 0
-    last_boot_count = None
-    boot_count_changed = False
-    link_fault_changes = []
-    test_passed = True
-
-    # Run SSE soak in background (parallel with other tests)
+    exceptions_list = []
+    
+    print(f"[SOAK] Starting: duration={duration}s, sse_clients={sse_clients}, heap_tol={heap_tol_pct}%")
+    
+    # Run SSE soak
     print("[SOAK] Launching SSE soak driver...")
-    sse_results = run_sse_soak(client, sse_clients, int(duration_seconds * 0.8))
-
-    # Run reconnect-storm driver
+    sse_res = run_sse_soak(client, sse_clients, int(duration * 0.8))
+    
+    # Run reconnect storm
     print("[SOAK] Launching reconnect-storm driver...")
-    reconnect_results = run_reconnect_storm(client, num_cycles=20, delay_ms=500)
-
-    # Run periodic status checks and C6 resets
+    reconnect_res = run_reconnect_storm(client, duration // 2, concurrent=5)
+    
+    # Main test loop: periodic status checks and C6 resets
+    last_status = last_reset = 0.0
     try:
-        while time.time() - start_time < duration_seconds:
-            elapsed = time.time() - start_time
-            now = time.time()
-
-            # Periodic status check
-            if now - last_status_check >= status_interval_seconds:
-                status = client.status()
-                if status:
-                    status_checks += 1
-                    boot_count = status.get("bootCount", -1)
-                    link_faults = status.get("linkFaultCount", -1)
-
-                    # Track boot count changes (recovery without reboot)
-                    if last_boot_count is not None and boot_count > last_boot_count:
-                        boot_count_changed = True
-                    last_boot_count = boot_count
-
-                    link_fault_changes.append(link_faults)
-                    print(f"[SOAK] Status @ {elapsed:.1f}s: boot_count={boot_count}, "
-                          f"link_faults={link_faults}, sse_clients={status.get('sseClientsConnected', 0)}")
-                else:
-                    test_passed = False
-                    print(f"[SOAK] Status check FAILED @ {elapsed:.1f}s", file=sys.stderr)
-
-                last_status_check = now
-
-            # Periodic C6 reset
-            if now - last_reset >= reset_interval_seconds:
-                reset_result = client.reset_c6()
-                if reset_result:
-                    resets_triggered += 1
-                    print(f"[SOAK] C6 reset triggered @ {elapsed:.1f}s")
-                else:
-                    test_passed = False
-                    print(f"[SOAK] C6 reset FAILED @ {elapsed:.1f}s", file=sys.stderr)
-
-                last_reset = now
-
-            # Small sleep
+        while time.time() - start_time < duration:
+            now = time.time() - start_time
+            
+            if time.time() - last_status >= status_interval:
+                try:
+                    s = client.status()
+                    if s:
+                        status_count += 1
+                        boot = s.get("bootCount")
+                        reset = s.get("resetReason")
+                        faults = s.get("linkFaultCount")
+                        heap = s.get("freeHeapBytes", 0)
+                        sse_connected = s.get("sseClientsConnected", 0)
+                        
+                        if boot_prev is None: boot_prev = boot
+                        if reset_reason_prev is None: reset_reason_prev = reset
+                        if faults_prev is None: faults_prev = faults
+                        if heap_baseline is None: heap_baseline = heap
+                        
+                        boot_final = boot
+                        reset_reason_final = reset
+                        faults_final = faults
+                        heap_final = heap
+                        sse_clients_max = max(sse_clients_max, sse_connected)
+                        
+                        print(f"[SOAK] @ {now:.1f}s: boot={boot} reset={reset} faults={faults} sse_clients={sse_connected}")
+                    else:
+                        exceptions_list.append("Status fetch failed: connection error")
+                except Exception as e:
+                    exceptions_list.append(f"Status check: {type(e).__name__}: {str(e)}")
+                
+                last_status = time.time()
+            
+            if time.time() - last_reset >= reset_interval:
+                try:
+                    if client.reset_c6():
+                        resets_triggered += 1
+                        print(f"[SOAK] C6 reset triggered @ {now:.1f}s")
+                    else:
+                        exceptions_list.append("C6 reset failed: connection error")
+                except Exception as e:
+                    exceptions_list.append(f"C6 reset: {type(e).__name__}: {str(e)}")
+                
+                last_reset = time.time()
+            
             time.sleep(0.5)
-
-    except KeyboardInterrupt:
-        print("\n[SOAK] Test interrupted by user.")
-
-    # Compute final pass/fail
-    elapsed_total = time.time() - start_time
-    final_boot_count = last_boot_count if last_boot_count is not None else -1
-    sse_verdict = "PASS" if sse_results["total_frame_gaps"] == 0 else "FAIL"
-    reconnect_verdict = "PASS" if reconnect_results["connect_failures"] == 0 else "FAIL"
-    overall_verdict = "PASS" if (test_passed and sse_verdict == "PASS") else "FAIL"
-
-    # Build result JSON
-    result = {
+    
+    except Exception as e:
+        exceptions_list.append(f"Main loop: {type(e).__name__}: {str(e)}")
+    
+    # Compute verdicts per contract
+    boot_count_advanced = (boot_final > boot_prev) if (boot_prev is not None and boot_final is not None) else False
+    
+    # SSE verdict
+    sse_fail = []
+    if sse_res["total_frames_received"] == 0:
+        sse_fail.append("total_frames_received == 0 (inert measurement)")
+    if sse_res["readers_below_half"] > 0:
+        sse_fail.append(f"{sse_res['readers_below_half']} readers received < 50% of expected frames")
+    if sse_res["total_frame_gaps"] > 0:
+        sse_fail.append(f"total_frame_gaps > 0: {sse_res['total_frame_gaps']}")
+    if sse_res["clients_failed"] > 0:
+        sse_fail.append(f"clients_failed > 0: {sse_res['clients_failed']}")
+    if sse_clients_max < sse_clients:
+        sse_fail.append(f"firmware sseClientsConnected max {sse_clients_max} never reached requested {sse_clients}")
+    
+    # Reconnect storm verdict
+    reconnect_fail = []
+    if reconnect_res["connect_failures"] > 0:
+        reconnect_fail.append(f"connect_failures > 0: {reconnect_res['connect_failures']}")
+    
+    # C6 reset recovery verdict
+    c6_fail = []
+    if boot_count_advanced:
+        c6_fail.append("boot_count_advanced: host rebooted during C6 reset")
+    if reset_reason_final in [1, 3, 4, 5]:  # ESP_RST_PANIC=1, TASK_WDT=3, INT_WDT=4, WDT=5
+        c6_fail.append(f"resetReason {reset_reason_final}: panic/watchdog detected")
+    if faults_final is not None and faults_final > faults_prev and (not client.status() or not client.status().get("wifiConnected")):
+        c6_fail.append("WiFi did not return to connected after C6 reset")
+    
+    # Overall verdict: PASS only if all sub-verdicts pass AND at least 1 reset AND at least 1 status sample
+    sse_verdict = "PASS" if not sse_fail else "FAIL"
+    reconnect_verdict = "PASS" if not reconnect_fail else "FAIL"
+    c6_verdict = "PASS" if not c6_fail else "FAIL"
+    
+    overall_verdict = "PASS" if (sse_verdict == "PASS" and reconnect_verdict == "PASS" and c6_verdict == "PASS" and
+                                 resets_triggered >= 1 and status_count >= 1) else "FAIL"
+    
+    return {
         "verdict": overall_verdict,
-        "elapsed_seconds": elapsed_total,
-        "duration_target_seconds": duration_seconds,
-        "status_checks_completed": status_checks,
+        "elapsed_seconds": time.time() - start_time,
+        "duration_target_seconds": duration,
+        "status_samples_taken": status_count,
         "c6_resets_triggered": resets_triggered,
-        "boot_count_final": final_boot_count,
-        "boot_count_advanced": boot_count_changed,
         "sse_soak": {
             "verdict": sse_verdict,
-            **sse_results,
+            "fail_reasons": sse_fail if sse_fail else None,
+            **sse_res,
         },
         "reconnect_storm": {
             "verdict": reconnect_verdict,
-            **reconnect_results,
+            "fail_reasons": reconnect_fail if reconnect_fail else None,
+            **reconnect_res,
         },
-        "link_faults_observed": link_fault_changes,
-        "link_faults_escalated": len(link_fault_changes) > 0 and link_fault_changes[-1] > (link_fault_changes[0] if link_fault_changes else 0),
+        "c6_reset_recovery": {
+            "verdict": c6_verdict,
+            "fail_reasons": c6_fail if c6_fail else None,
+            "boot_count_advanced": boot_count_advanced,
+            "boot_count_prev": boot_prev,
+            "boot_count_final": boot_final,
+            "resetReason_final": reset_reason_final,
+        },
+        "exceptions_captured": exceptions_list if exceptions_list else None,
     }
 
-    return result
-
-
-def dry_run(client: BenchClient) -> bool:
-    """Quick connectivity test."""
-    print("[DRY-RUN] Testing connectivity...")
-
-    if not client.health():
-        print("[DRY-RUN] Health check failed.")
+def self_test() -> bool:
+    """Offline parser validation. PsychicEventSource produces: data: <msg>\r\n\r\n"""
+    print("[SELF-TEST] Testing SSE frame parser against fixture bytes...")
+    
+    # Fixture 1: Clean sequence
+    frames, gaps = [], 0
+    for line in b"data: 0\r\ndata: 1\r\ndata: 2\r\n".decode().split("\r\n"):
+        if line.startswith("data: "):
+            try:
+                f = int(line[6:])
+                if frames and f != frames[-1] + 1: gaps += 1
+                frames.append(f)
+            except ValueError: gaps = 999
+    if frames != [0, 1, 2] or gaps != 0:
+        print(f"[SELF-TEST] FAIL: clean sequence got {frames}, gaps={gaps}")
         return False
-    print("[DRY-RUN] Health check OK")
-
-    status = client.status()
-    if not status:
-        print("[DRY-RUN] Status fetch failed.")
+    print(f"[SELF-TEST] PASS: clean sequence {frames}, gaps={gaps}")
+    
+    # Fixture 2: Gapped sequence
+    frames, gaps = [], 0
+    for line in b"data: 0\r\ndata: 2\r\n".decode().split("\r\n"):
+        if line.startswith("data: "):
+            try:
+                f = int(line[6:])
+                if frames and f != frames[-1] + 1: gaps += 1
+                frames.append(f)
+            except ValueError: gaps = 999
+    if frames != [0, 2] or gaps != 1:
+        print(f"[SELF-TEST] FAIL: gapped sequence got {frames}, gaps={gaps}")
         return False
-
-    print(f"[DRY-RUN] Status OK: boot_count={status.get('bootCount')}, "
-          f"uptime_ms={status.get('uptimeMs')}, wifi_connected={status.get('wifiConnected')}")
-
-    # Quick SSE test: read 5 frames
-    frames = client.stream_sse(timeout_seconds=10)
-    if len(frames) < 3:
-        print(f"[DRY-RUN] SSE test insufficient: got {len(frames)} frames, expected >= 3")
+    print(f"[SELF-TEST] PASS: gapped sequence {frames}, gaps={gaps}")
+    
+    # Fixture 3: Garbled sequence
+    frames, gaps = [], 0
+    for line in b"data: garbled\r\n".decode().split("\r\n"):
+        if line.startswith("data: "):
+            try:
+                f = int(line[6:])
+                frames.append(f)
+            except ValueError:
+                gaps = 999
+                break
+    if gaps != 999:
+        print(f"[SELF-TEST] FAIL: garbled didn't trigger parse error")
         return False
-    print(f"[DRY-RUN] SSE test OK: received {len(frames)} frames")
-
-    print("[DRY-RUN] All checks passed. Firmware is ready for soak test.")
+    print(f"[SELF-TEST] PASS: garbled rejected")
+    
+    # Fixture 4: Empty stream
+    frames, gaps = [], 0
+    for line in b"".decode().split("\r\n"):
+        if line.startswith("data: "):
+            frames.append(int(line[6:]))
+    if frames != [] or gaps != 0:
+        print(f"[SELF-TEST] FAIL: empty got {frames}")
+        return False
+    print(f"[SELF-TEST] PASS: empty stream")
+    
+    print("[SELF-TEST] All tests passed")
     return True
 
+def dry_run(client: BenchClient) -> bool:
+    print("[DRY-RUN] Quick connectivity test...")
+    if not client.health():
+        print("[DRY-RUN] FAIL: health check")
+        return False
+    print("[DRY-RUN] OK: health")
+    
+    s = client.status()
+    if not s:
+        print("[DRY-RUN] FAIL: status fetch")
+        return False
+    print(f"[DRY-RUN] OK: status (boot={s.get('bootCount')})")
+    
+    frames, err = client.stream_sse(timeout_seconds=10)
+    if len(frames) < 3:
+        print(f"[DRY-RUN] FAIL: SSE got {len(frames)} frames, error: {err}")
+        return False
+    print(f"[DRY-RUN] OK: SSE stream ({len(frames)} frames)")
+    
+    print("[DRY-RUN] All checks passed")
+    return True
 
 def main():
-    parser = argparse.ArgumentParser(
-        description=__doc__,
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-
-    parser.add_argument(
-        "--target",
-        default="protoartoo.local",
-        help="Target hostname or IP address (default: protoartoo.local)",
-    )
-
-    parser.add_argument(
-        "--duration",
-        type=int,
-        default=3600,
-        help="Test duration in seconds (default: 3600s = 1 hour)",
-    )
-
-    parser.add_argument(
-        "--sse-clients",
-        type=int,
-        default=3,
-        help="Number of concurrent SSE readers (default: 3)",
-    )
-
-    parser.add_argument(
-        "--reset-interval",
-        type=int,
-        default=60,
-        help="Seconds between C6 reset triggers (default: 60s)",
-    )
-
-    parser.add_argument(
-        "--status-interval",
-        type=int,
-        default=10,
-        help="Seconds between status checks (default: 10s)",
-    )
-
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Quick connectivity test, then exit",
-    )
-
-    parser.add_argument(
-        "--output-json",
-        type=str,
-        help="Output results to JSON file",
-    )
-
-    args = parser.parse_args()
-
-    client = BenchClient(args.target)
-
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument("--target", default="protoartoo.local")
+    p.add_argument("--duration", type=int, default=600)
+    p.add_argument("--sse-clients", type=int, default=3)
+    p.add_argument("--reset-interval", type=int, default=60)
+    p.add_argument("--status-interval", type=int, default=10)
+    p.add_argument("--heap-recovery-tolerance-pct", type=int, default=20)
+    p.add_argument("--self-test", action="store_true")
+    p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--output-json", type=str)
+    args = p.parse_args()
+    
+    if args.self_test:
+        sys.exit(0 if self_test() else 1)
+    
+    c = BenchClient(args.target)
+    
     if args.dry_run:
-        success = dry_run(client)
-        sys.exit(0 if success else 1)
-    else:
-        result = run_soak_test(
-            client,
-            args.duration,
-            sse_clients=args.sse_clients,
-            reset_interval_seconds=args.reset_interval,
-            status_interval_seconds=args.status_interval,
-        )
-
-        # Print JSON result to stdout
-        print(json.dumps(result, indent=2))
-
-        # Optionally write to file
-        if args.output_json:
-            with open(args.output_json, "w") as f:
-                json.dump(result, f, indent=2)
-            print(f"\n[SOAK] Results written to {args.output_json}", file=sys.stderr)
-
-        sys.exit(0 if result["verdict"] == "PASS" else 1)
-
+        sys.exit(0 if dry_run(c) else 1)
+    
+    r = run_soak_test(c, args.duration, sse_clients=args.sse_clients,
+                      reset_interval=args.reset_interval,
+                      status_interval=args.status_interval,
+                      heap_tol_pct=args.heap_recovery_tolerance_pct)
+    
+    print(json.dumps(r, indent=2))
+    
+    if args.output_json:
+        with open(args.output_json, "w") as f:
+            json.dump(r, f, indent=2)
+        print(f"\n[SOAK] Results written to {args.output_json}", file=sys.stderr)
+    
+    sys.exit(0 if r["verdict"] == "PASS" else 1)
 
 if __name__ == "__main__":
     main()

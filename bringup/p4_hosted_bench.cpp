@@ -31,14 +31,7 @@
 #include <esp_system.h>
 #include <esp_heap_caps.h>
 
-// ESP-Hosted transport visibility (Arduino core esp32-hal-hosted.h)
-extern "C" {
-  bool hostedIsInitialized();
-  bool hostedIsWiFiActive();
-  void hostedGetHostVersion(uint32_t *major, uint32_t *minor, uint32_t *patch);
-  void hostedGetSlaveVersion(uint32_t *major, uint32_t *minor, uint32_t *patch);
-  const char *hostedGetSlaveTargetName();
-}
+#include "esp32-hal-hosted.h"
 
 // GPIO 3 is LED_BUILTIN on FireBeetle 2 ESP32-P4 (DFR1172)
 #define BENCH_LED 3
@@ -122,7 +115,7 @@ void emitSseFrame() {
   benchState.lastSseFrameMs = now;
 
   char frame[64];
-  snprintf(frame, sizeof(frame), "data: %lu\n", benchState.sseFrameCount);
+  snprintf(frame, sizeof(frame), "%lu", benchState.sseFrameCount);
   benchState.sseFrameCount++;
 
   events.send(frame);
