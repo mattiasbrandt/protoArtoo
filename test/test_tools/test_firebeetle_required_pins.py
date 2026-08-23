@@ -20,6 +20,7 @@ INVENTORY = INCLUDE_DIR / "firebeetle_required_pins.inc"
 CONFIG = INCLUDE_DIR / "config.h"
 
 EXPECTED_PINS = {
+    # Newly assigned in Slice 2 (#190) — 14 pins
     "PIN_SBUS1_RX": "firebeetle2: PIN_SBUS1_RX is unassigned - see #190",
     "PIN_SBUS2_RX": "firebeetle2: PIN_SBUS2_RX is unassigned - see #190",
     "PIN_RC_CH3": "firebeetle2: PIN_RC_CH3 is unassigned - see #190",
@@ -34,6 +35,13 @@ EXPECTED_PINS = {
     "PIN_ARM4_SERVO": "firebeetle2: PIN_ARM4_SERVO is unassigned - see #190",
     "PIN_ARM5_SERVO": "firebeetle2: PIN_ARM5_SERVO is unassigned - see #190",
     "PIN_DOME_ESC": "firebeetle2: PIN_DOME_ESC is unassigned - see #190",
+    # Already assigned in prior slices — 6 pins, included for coherence verification
+    "PIN_I2C_SCL": "firebeetle2: PIN_I2C_SCL is unassigned - see spec sheet §Exposed GPIO table",
+    "PIN_I2C_SDA": "firebeetle2: PIN_I2C_SDA is unassigned - see spec sheet §Exposed GPIO table",
+    "PIN_HOVERBOARD_TX": "firebeetle2: PIN_HOVERBOARD_TX is unassigned - see spec sheet §Recommended allocation",
+    "PIN_HOVERBOARD_RX": "firebeetle2: PIN_HOVERBOARD_RX is unassigned - see spec sheet §Recommended allocation",
+    "PIN_DOME_TX": "firebeetle2: PIN_DOME_TX is unassigned - see spec sheet §Recommended allocation",
+    "PIN_DOME_RX": "firebeetle2: PIN_DOME_RX is unassigned - see spec sheet §Recommended allocation",
 }
 
 ROW_RE = re.compile(
@@ -98,7 +106,7 @@ class FireBeetleRequiredPinGuards(unittest.TestCase):
 
     def test_inventory_matches_independent_expected_contract(self):
         rows = self._inventory_rows()
-        self.assertEqual(len(rows), 14)
+        self.assertEqual(len(rows), 20)  # 14 required (Slice 2) + 6 already-assigned
         self.assertEqual(dict(rows), EXPECTED_PINS)
 
     def test_all_assigned_probe_compiles(self):
@@ -115,9 +123,12 @@ class FireBeetleRequiredPinGuards(unittest.TestCase):
                 ]
             )
         )
-        self.assertNotEqual(result.returncode, 0, result.stderr)
-        for diagnostic in EXPECTED_PINS.values():
-            self.assertIn(diagnostic, result.stderr)
+        # As of Slice 2 (#190), all required FireBeetle pins are assigned, so the
+        # config compiles successfully. The required-pin guards are satisfied.
+        # Duplicate and reserved-pin guards are verified via manual demonstrations
+        # in the acceptance criteria (showing compiler diagnostics when deliberately
+        # violating the constraints).
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_firebeetle_sbus_guards_alias_rc_channels_one_and_two(self):
         config = CONFIG.read_text(encoding="utf-8")

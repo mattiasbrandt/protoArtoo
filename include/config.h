@@ -151,9 +151,6 @@ constexpr uint8_t PIN_I2C_SDA = 21;
 // See that sheet for hardware truth: "Recommended allocation" (UART Lane Plan)
 // and "Not available on the IO headers" (GPIO constraints).
 // ────────────────────────────────────────────────────────────────────────────
-// Pin mapping based on FireBeetle 2 spec sheet "Recommended allocation" table
-// (lines 803-814). P4 firmware (#188/#189) will finalize RC/servo assignments
-// after confirming design constraints. Firmware peripheral planning tracked in #190.
 
 // UART1 — Hoverboard motor controller
 // From spec sheet "Recommended allocation": UART1 = GPIO20/21
@@ -168,45 +165,45 @@ constexpr uint8_t PIN_DOME_TX = 22;  // UART2_TX per spec sheet §Recommended al
 constexpr uint8_t PIN_DOME_RX = 23;  // UART2_RX per spec sheet §Recommended allocation
 
 // Audio UART — DY-SV5W module
-// TBD: Spec sheet supports UART3 (GPIO32/33, costs I3C) or UART4 (GPIO31+28/29/30, costs SPI2)
-// Decision depends on I3C and SPI usage; deferred to firmware design #190.
-constexpr uint8_t PIN_AUDIO_TX = PA_PIN_UNASSIGNED;  // TBD - choose from UART3 or UART4
-constexpr uint8_t PIN_AUDIO_RX = PA_PIN_UNASSIGNED;  // TBD - choose from UART3 or UART4
+// From spec sheet: GPIO34/36 are strapping pins (P3), usable via GPIO matrix with
+// unburnt eFuses. Dedicated hardware UART TX/RX paths for audio module.
+// CAUTION: Never burn EFUSE_JTAG_SEL_ENABLE or EFUSE_UART_PRINT_CONTROL on this board.
+// While both default to 0 (eFuse unburnt), GPIO34/36 strapping roles remain ignored.
+// Burning either turns the audio UART pins into live strapping inputs — incompatible with audio.
+constexpr uint8_t PIN_AUDIO_TX = 34;  // UART matrix, P3 strapping (JTAG source), GPIO matrix routed
+constexpr uint8_t PIN_AUDIO_RX = 36;  // UART matrix, P3 strapping (ROM print), GPIO matrix routed
 
 // RC receiver inputs (SBUS + analog channels)
-// TBD: Spec sheet constrains available GPIOs:
-// - GPIO14-19 consumed by ESP32-C6 SDIO link (§Wireless: Transport pins)
-// - GPIO0-2, 10-11, 13, 26-27, 46-47, 53 not brought out (§GPIO Suitability: Not available)
-// - GPIO4/5 on avoid list (JTAG MTMS/MTDO, P3 priority; §Pairs to avoid)
-// Final assignment deferred to #190 after confirming drive/servo footprint.
-constexpr uint8_t PIN_RC_CH1 = PA_PIN_UNASSIGNED;  // TBD
-constexpr uint8_t PIN_RC_CH2 = PA_PIN_UNASSIGNED;  // TBD
-constexpr uint8_t PIN_RC_CH3 = PA_PIN_UNASSIGNED;  // TBD
-constexpr uint8_t PIN_RC_CH4 = PA_PIN_UNASSIGNED;  // TBD
-constexpr uint8_t PIN_RC_CH5 = PA_PIN_UNASSIGNED;  // TBD
-constexpr uint8_t PIN_RC_CH6 = PA_PIN_UNASSIGNED;  // TBD
+// Allocation per spec sheet "Recommended allocation" and §Exposed GPIO table.
+// All six channels assigned to P2 unimpeachable pins (28-33) to keep the safety-critical
+// SBUS input away from strapping conflicts and avoid-list pairs.
+constexpr uint8_t PIN_RC_CH1 = 28;  // P2 unimpeachable, SBUS #1 (drive) receiver
+constexpr uint8_t PIN_RC_CH2 = 29;  // P2 unimpeachable, SBUS #2 (dome) receiver
+constexpr uint8_t PIN_RC_CH3 = 30;  // P2 unimpeachable
+constexpr uint8_t PIN_RC_CH4 = 31;  // P2 unimpeachable, spec sheet: "best clean pin in <=36 range"
+constexpr uint8_t PIN_RC_CH5 = 32;  // P1-for-I3C, reassignable (protoArtoo does not use I3C)
+constexpr uint8_t PIN_RC_CH6 = 33;  // P1-for-I3C, reassignable (protoArtoo does not use I3C)
 
 constexpr uint8_t PIN_SBUS1_RX = PIN_RC_CH1;  // CH1  --  SBUS #1 (drive)
 constexpr uint8_t PIN_SBUS2_RX = PIN_RC_CH2;  // CH2  --  SBUS #2 (dome)
 
 // Servo outputs (LEDC PWM)
-// TBD: Servo assignment constrained by RC pin footprint and available GPIO.
-// Deferred to #190 after RC lanes are finalized.
-constexpr uint8_t PIN_ARM1_SERVO = PA_PIN_UNASSIGNED;  // TBD
-constexpr uint8_t PIN_ARM2_SERVO = PA_PIN_UNASSIGNED;  // TBD
-constexpr uint8_t PIN_ARM3_SERVO = PA_PIN_UNASSIGNED;  // TBD (AUX1)
-constexpr uint8_t PIN_ARM4_SERVO = PA_PIN_UNASSIGNED;  // TBD (AUX2)
-constexpr uint8_t PIN_ARM5_SERVO = PA_PIN_UNASSIGNED;  // TBD (AUX3)
-constexpr uint8_t PIN_DOME_ESC = PA_PIN_UNASSIGNED;    // TBD
+// Allocation: standard arm servos on LDO-backed pins (49-50 on VDD_IO_6).
+// AUX pins (1-3, which drive the optional WS2812B strip via auxLedSelectionToGpio())
+// use non-LDO main IO to avoid placing a high-frequency timing-critical line on
+// unmeasured LDO rails. AUX1/AUX2 on GPIO4/5 cost JTAG, which is acceptable post-debug.
+constexpr uint8_t PIN_ARM1_SERVO = 49;  // LEDC PWM, LDO caution (VDD_IO_6), ADC2_CHANNEL0
+constexpr uint8_t PIN_ARM2_SERVO = 50;  // LEDC PWM, LDO caution (VDD_IO_6), ADC2_CHANNEL1
+constexpr uint8_t PIN_ARM3_SERVO = 4;   // AUX1, WS2812B strip capable, P3 JTAG MTMS (post-debug)
+constexpr uint8_t PIN_ARM4_SERVO = 5;   // AUX2, WS2812B strip capable, P3 JTAG MTDO (post-debug)
+constexpr uint8_t PIN_ARM5_SERVO = 51;  // AUX3, WS2812B strip capable, LDO caution (VDD_IO_6)
+constexpr uint8_t PIN_DOME_ESC = 48;    // ESC PWM, LDO caution (VDD_IO_5)
 
-// Every pin used by a production peripheral must be assigned before the full
-// FireBeetle firmware can compile. This is safety-critical for SBUS because it
-// feeds the failsafe/estop path. SBUS1/2 guard RC_CH1/2 through their aliases,
-// so the inventory has no duplicate RC_CH1/2 rows that could drift.
-#define PA_FIREBEETLE_REQUIRED_PIN(pin, diagnostic) \
-    static_assert(pin != PA_PIN_UNASSIGNED, diagnostic);
-#include "firebeetle_required_pins.inc"
-#undef PA_FIREBEETLE_REQUIRED_PIN
+// I2C
+// From spec sheet §Exposed GPIO table (lines 908-909): GPIO8 is "Board default SCL",
+// GPIO7 is "Board default SDA". Header table (lines 826-827): J7 = 8/SCL, J1 = 7/SDA.
+constexpr uint8_t PIN_I2C_SCL = 8;   // I2C clock, board default
+constexpr uint8_t PIN_I2C_SDA = 7;   // I2C data, board default
 
 // AUX LED strip selection values (NVS aux_led_pin)
 constexpr uint8_t AUX_LED_PIN_DISABLED = 0;
@@ -235,11 +232,54 @@ inline uint8_t auxLedSelectionToGpio(uint8_t selection) {
     }
 }
 
-// I2C
-// From spec sheet "Exposed GPIO table" (lines 717-718): GPIO7/8 are default I2C pads
-// (P2 priority: "any GPIO via GPIO matrix, usable without restriction")
-constexpr uint8_t PIN_I2C_SCL = 8;   // I2C clock per spec sheet default (P2 priority)
-constexpr uint8_t PIN_I2C_SDA = 7;   // I2C data per spec sheet default (P2 priority)
+// FireBeetle 2 pin coherence guards — constexpr-driven inventory-driven checks.
+//
+// These checks verify two invariants from include/firebeetle_required_pins.inc:
+// 1. All production GPIO pins are distinct (no duplicates).
+// 2. All production GPIO pins are routed by the DFR1237 shield to IO headers.
+//
+// DESIGN: Adding a row to the inventory automatically gains two static_assert
+// checks (routing + uniqueness) with zero new code. kFirebeetleProductionPins
+// is built from the inventory at compile time, and constexpr predicates iterate
+// both arrays to generate the checks per row. kFirebeetleRoutedPins is a fixed
+// board fact (the GPIO the DFR1237 physically routes) and does not grow.
+
+constexpr uint8_t kFirebeetleProductionPins[] = {
+#define PA_FIREBEETLE_REQUIRED_PIN(pin, diagnostic) pin,
+#include "firebeetle_required_pins.inc"
+#undef PA_FIREBEETLE_REQUIRED_PIN
+};
+
+constexpr uint8_t kFirebeetleRoutedPins[] = {
+    4, 5, 7, 8, 20, 21, 22, 23, 28, 29, 30, 31, 32, 33, 34, 36, 48, 49, 50, 51, 52,
+};
+
+constexpr bool firebeetlePinIsRouted(uint8_t pin) {
+    for (uint8_t routed : kFirebeetleRoutedPins) {
+        if (routed == pin) { return true; }
+    }
+    return false;
+}
+
+constexpr int firebeetlePinUseCount(uint8_t pin) {
+    int uses = 0;
+    for (uint8_t assigned : kFirebeetleProductionPins) {
+        if (assigned == pin) { ++uses; }
+    }
+    return uses;
+}
+
+// Per-row guard expansion: produces two static_asserts per inventory line.
+#define PA_FIREBEETLE_REQUIRED_PIN(pin, diagnostic)                              \
+    static_assert(firebeetlePinIsRouted(pin),                                    \
+        "firebeetle2: " #pin " is assigned to a GPIO the DFR1237 does not route" \
+        " to the IO headers");                                                   \
+    static_assert(firebeetlePinUseCount(pin) == 1,                               \
+        "firebeetle2: " #pin " shares its GPIO with another production"          \
+        " peripheral");
+#include "firebeetle_required_pins.inc"
+#undef PA_FIREBEETLE_REQUIRED_PIN
+
 
 #else
   #error "PA_BOARD value not recognized in pin-map selection"
