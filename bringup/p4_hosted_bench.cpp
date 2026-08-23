@@ -98,7 +98,6 @@ enum class ResetPhase : uint8_t {
 };
 
 static struct {
-  bool executionAvailable = false;
   ResetPhase phase = ResetPhase::IDLE;
   uint32_t nextRequestId = 1;
   uint32_t currentRequestId = 0;
@@ -120,6 +119,7 @@ static struct {
   esp_err_t lastHighWriteResult = ESP_OK;
 } resetState;
 
+static portMUX_TYPE benchStateMux = portMUX_INITIALIZER_UNLOCKED;
 static portMUX_TYPE resetMux = portMUX_INITIALIZER_UNLOCKED;
 
 // HTTP server and SSE source.
@@ -153,35 +153,61 @@ static const char *resetPhaseName(ResetPhase phase) {
 // ============================================================================
 
 static void startHttpIfReady() {
-  if (benchState.httpStartAttempted || WiFi.status() != WL_CONNECTED) {
+  bool httpStartAttempted;
+  esp_err_t httpStartResult;
+
+  portENTER_CRITICAL(&benchStateMux);
+  httpStartAttempted = benchState.httpStartAttempted;
+  portEXIT_CRITICAL(&benchStateMux);
+
+  if (httpStartAttempted || WiFi.status() != WL_CONNECTED) {
     return;
   }
 
+  httpStartResult = http.begin();
+  const bool httpStarted = (httpStartResult == ESP_OK);
+
+  portENTER_CRITICAL(&benchStateMux);
   benchState.httpStartAttempted = true;
-  benchState.httpStartResult = http.begin();
-  benchState.httpStarted = (benchState.httpStartResult == ESP_OK);
+  benchState.httpStartResult = httpStartResult;
+  benchState.httpStarted = httpStarted;
+  portEXIT_CRITICAL(&benchStateMux);
 
   Serial.printf(
     "[BENCH] HTTP_START result=%d (%s), started=%s. A client response is still required to prove reachability.\n",
-    static_cast<int>(benchState.httpStartResult), esp_err_to_name(benchState.httpStartResult), benchState.httpStarted ? "true" : "false"
+    static_cast<int>(httpStartResult), esp_err_to_name(httpStartResult), httpStarted ? "true" : "false"
   );
 }
 
 static void superviseLink() {
   const uint32_t now = millis();
+  uint32_t lastWiFiCheckMs;
+  bool wasConnected;
+  bool hasConnectedOnce;
+  uint32_t lastWiFiBeginAtMs;
 
-  if (now - benchState.lastWiFiCheckMs < WIFI_CHECK_INTERVAL_MS) {
+  portENTER_CRITICAL(&benchStateMux);
+  lastWiFiCheckMs = benchState.lastWiFiCheckMs;
+  portEXIT_CRITICAL(&benchStateMux);
+
+  if (now - lastWiFiCheckMs < WIFI_CHECK_INTERVAL_MS) {
     return;
   }
-  benchState.lastWiFiCheckMs = now;
 
-  const bool wasConnected = benchState.wifiConnected;
   const bool isConnected = (WiFi.status() == WL_CONNECTED);
+
+  portENTER_CRITICAL(&benchStateMux);
+  benchState.lastWiFiCheckMs = now;
+  wasConnected = benchState.wifiConnected;
   benchState.wifiConnected = isConnected;
+  hasConnectedOnce = benchState.hasConnectedOnce;
+  portEXIT_CRITICAL(&benchStateMux);
 
   if (isConnected) {
-    if (!benchState.hasConnectedOnce) {
+    if (!hasConnectedOnce) {
+      portENTER_CRITICAL(&benchStateMux);
       benchState.hasConnectedOnce = true;
+      portEXIT_CRITICAL(&benchStateMux);
       Serial.println("[BENCH] WiFi reached WL_CONNECTED for the first time.");
     }
     startHttpIfReady();
@@ -189,23 +215,38 @@ static void superviseLink() {
   }
 
   if (wasConnected) {
+    portENTER_CRITICAL(&benchStateMux);
     benchState.linkFaultCount++;
-    Serial.printf("[BENCH] WiFi link fault detected. Total faults: %u\n", benchState.linkFaultCount);
+    const unsigned int faultCount = benchState.linkFaultCount;
+    portEXIT_CRITICAL(&benchStateMux);
+    Serial.printf("[BENCH] WiFi link fault detected. Total faults: %u\n", faultCount);
   }
 
   // A failed first attempt stays quiescent so its UART evidence is not blurred.
   // Retrying is a later resilience test and is enabled only after one connection.
-  if (!benchState.hasConnectedOnce || now - benchState.lastWiFiBeginAtMs < WIFI_RETRY_INTERVAL_MS) {
+  portENTER_CRITICAL(&benchStateMux);
+  hasConnectedOnce = benchState.hasConnectedOnce;
+  lastWiFiBeginAtMs = benchState.lastWiFiBeginAtMs;
+  portEXIT_CRITICAL(&benchStateMux);
+
+  if (!hasConnectedOnce || now - lastWiFiBeginAtMs < WIFI_RETRY_INTERVAL_MS) {
     return;
   }
 
+  const wl_status_t newStatus = WiFi.begin(BENCH_SSID, BENCH_PASS);
+  const uint32_t newAttemptAtMs = millis();
+
+  portENTER_CRITICAL(&benchStateMux);
   benchState.wifiRetryCount++;
   benchState.wifiBeginAttemptCount++;
-  benchState.lastWiFiBeginStatus = WiFi.begin(BENCH_SSID, BENCH_PASS);
-  benchState.lastWiFiBeginAtMs = millis();
+  benchState.lastWiFiBeginStatus = newStatus;
+  benchState.lastWiFiBeginAtMs = newAttemptAtMs;
+  const unsigned int retryCount = benchState.wifiRetryCount;
+  portEXIT_CRITICAL(&benchStateMux);
+
   Serial.printf(
     "[BENCH] RETRY %u WiFi.begin immediateStatus=%d; this is not eventual association proof.\n",
-    benchState.wifiRetryCount, static_cast<int>(benchState.lastWiFiBeginStatus)
+    retryCount, static_cast<int>(newStatus)
   );
 }
 
@@ -280,31 +321,48 @@ static void serviceScheduledReset() {
 
 static void emitSseFrame() {
   const uint32_t now = millis();
+  bool httpStarted;
+  uint32_t lastSseFrameMs;
 
-  if (!benchState.httpStarted || now - benchState.lastSseFrameMs < BENCH_SSE_CADENCE_MS) {
+  portENTER_CRITICAL(&benchStateMux);
+  httpStarted = benchState.httpStarted;
+  lastSseFrameMs = benchState.lastSseFrameMs;
+  portEXIT_CRITICAL(&benchStateMux);
+
+  if (!httpStarted || now - lastSseFrameMs < BENCH_SSE_CADENCE_MS) {
     return;
   }
-  benchState.lastSseFrameMs = now;
 
   char frame[64];
-  snprintf(frame, sizeof(frame), "%lu", static_cast<unsigned long>(benchState.sseFrameCount));
+  uint32_t frameCount;
+  portENTER_CRITICAL(&benchStateMux);
+  benchState.lastSseFrameMs = now;
+  frameCount = benchState.sseFrameCount;
   benchState.sseFrameCount++;
+  portEXIT_CRITICAL(&benchStateMux);
 
+  snprintf(frame, sizeof(frame), "%lu", static_cast<unsigned long>(frameCount));
   events.send(frame);
 }
 
 static void handleSseOpen(PsychicEventSourceClient *client) {
   (void)client;
+  portENTER_CRITICAL(&benchStateMux);
   benchState.sseClientCount++;
-  Serial.printf("[BENCH] SSE client connected. Total: %u\n", benchState.sseClientCount);
+  const unsigned int sseClientCount = benchState.sseClientCount;
+  portEXIT_CRITICAL(&benchStateMux);
+  Serial.printf("[BENCH] SSE client connected. Total: %u\n", sseClientCount);
 }
 
 static void handleSseClose(PsychicEventSourceClient *client) {
   (void)client;
+  portENTER_CRITICAL(&benchStateMux);
   if (benchState.sseClientCount > 0) {
     benchState.sseClientCount--;
   }
-  Serial.printf("[BENCH] SSE client disconnected. Total: %u\n", benchState.sseClientCount);
+  const unsigned int sseClientCount = benchState.sseClientCount;
+  portEXIT_CRITICAL(&benchStateMux);
+  Serial.printf("[BENCH] SSE client disconnected. Total: %u\n", sseClientCount);
 }
 
 // ============================================================================
@@ -319,26 +377,32 @@ static esp_err_t handleStatus(PsychicRequest *request, PsychicResponse *response
   doc["resetReason"] = static_cast<int>(esp_reset_reason());
   doc["uptimeMs"] = benchUptimeMs();
 
-  doc["linkFaultCount"] = benchState.linkFaultCount;
-  doc["wifiConnected"] = benchState.wifiConnected;
-  doc["wifiStatus"] = static_cast<int>(WiFi.status());
-  doc["wifiRSSI"] = benchState.wifiConnected ? WiFi.RSSI() : -999;
-  doc["firstWiFiBeginStatus"] = static_cast<int>(benchState.firstWiFiBeginStatus);
-  doc["firstHostedInitialized"] = benchState.firstHostedInitialized;
-  doc["firstHostedWiFiActiveFlag"] = benchState.firstHostedWiFiActiveFlag;
-  doc["firstAttemptAtMs"] = benchState.firstAttemptAtMs;
-  doc["wifiBeginAttemptCount"] = benchState.wifiBeginAttemptCount;
-  doc["wifiRetryCount"] = benchState.wifiRetryCount;
-  doc["lastWiFiBeginStatus"] = static_cast<int>(benchState.lastWiFiBeginStatus);
+  // Take a consistent snapshot of benchState under the critical section to avoid torn reads.
+  decltype(benchState) benchSnapshot;
+  portENTER_CRITICAL(&benchStateMux);
+  benchSnapshot = benchState;
+  portEXIT_CRITICAL(&benchStateMux);
 
-  doc["httpStartAttempted"] = benchState.httpStartAttempted;
-  doc["httpStartResult"] = static_cast<int>(benchState.httpStartResult);
-  doc["httpStarted"] = benchState.httpStarted;
+  doc["linkFaultCount"] = benchSnapshot.linkFaultCount;
+  doc["wifiConnected"] = benchSnapshot.wifiConnected;
+  doc["wifiStatus"] = static_cast<int>(WiFi.status());
+  doc["wifiRSSI"] = benchSnapshot.wifiConnected ? WiFi.RSSI() : -999;
+  doc["firstWiFiBeginStatus"] = static_cast<int>(benchSnapshot.firstWiFiBeginStatus);
+  doc["firstHostedInitialized"] = benchSnapshot.firstHostedInitialized;
+  doc["firstHostedWiFiActiveFlag"] = benchSnapshot.firstHostedWiFiActiveFlag;
+  doc["firstAttemptAtMs"] = benchSnapshot.firstAttemptAtMs;
+  doc["wifiBeginAttemptCount"] = benchSnapshot.wifiBeginAttemptCount;
+  doc["wifiRetryCount"] = benchSnapshot.wifiRetryCount;
+  doc["lastWiFiBeginStatus"] = static_cast<int>(benchSnapshot.lastWiFiBeginStatus);
+
+  doc["httpStartAttempted"] = benchSnapshot.httpStartAttempted;
+  doc["httpStartResult"] = static_cast<int>(benchSnapshot.httpStartResult);
+  doc["httpStarted"] = benchSnapshot.httpStarted;
 
   doc["freeHeapBytes"] = ESP.getFreeHeap();
   doc["largestFree8bitBlock"] = static_cast<unsigned long>(heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
-  doc["sseFramesSent"] = benchState.sseFrameCount;
-  doc["sseClientsConnected"] = benchState.sseClientCount;
+  doc["sseFramesSent"] = benchSnapshot.sseFrameCount;
+  doc["sseClientsConnected"] = benchSnapshot.sseClientCount;
 
   uint32_t hostMajor = 0;
   uint32_t hostMinor = 0;
@@ -365,7 +429,6 @@ static esp_err_t handleStatus(PsychicRequest *request, PsychicResponse *response
   resetSnapshot = resetState;
   portEXIT_CRITICAL(&resetMux);
 
-  doc["resetExecutionAvailable"] = resetSnapshot.executionAvailable;
   doc["resetState"] = resetPhaseName(resetSnapshot.phase);
   doc["resetPending"] = resetSnapshot.phase != ResetPhase::IDLE;
   doc["resetRequestId"] = resetSnapshot.currentRequestId;
@@ -415,10 +478,7 @@ static esp_err_t handleC6Reset(PsychicRequest *request, PsychicResponse *respons
   int rejectionStatus = 503;
 
   portENTER_CRITICAL(&resetMux);
-  if (!resetState.executionAvailable) {
-    resetState.rejectedCount++;
-    rejectionReason = "reset execution unavailable";
-  } else if (!hostedInitialized) {
+  if (!hostedInitialized) {
     resetState.rejectedCount++;
     rejectionReason = "ESP-Hosted is not initialized";
   } else if (resetState.phase != ResetPhase::IDLE) {
@@ -529,6 +589,9 @@ static void updateHeartbeatLed() {
 __attribute__((weak))
 void setup() {
   benchBootCount++;
+  // benchState.bootTimeMs is the origin for benchUptimeMs(). Set it immediately,
+  // before any time-sensitive operations (like Hosted init and WiFi.begin()).
+  // No lock needed: written once in setup() before any other task exists.
   benchState.bootTimeMs = millis();
 
   Serial.begin(115200);
@@ -555,24 +618,27 @@ void setup() {
   Serial.println("[BENCH] Registering HTTP endpoints; server start remains deferred until WL_CONNECTED.");
   registerHttpEndpoints();
 
-  portENTER_CRITICAL(&resetMux);
-  resetState.executionAvailable = true;
-  portEXIT_CRITICAL(&resetMux);
-
   Serial.printf("[BENCH] WiFi.begin(\"%s\", <pass>)...\n", BENCH_SSID);
-  benchState.firstWiFiBeginStatus = WiFi.begin(BENCH_SSID, BENCH_PASS);
-  benchState.firstAttemptAtMs = benchUptimeMs();
-  benchState.firstHostedInitialized = hostedIsInitialized();
-  benchState.firstHostedWiFiActiveFlag = hostedIsWiFiActive();
+  const wl_status_t firstWiFiStatus = WiFi.begin(BENCH_SSID, BENCH_PASS);
+  const uint32_t firstAttemptAt = benchUptimeMs();
+  const bool firstHostedInitialized = hostedIsInitialized();
+  const bool firstHostedWiFiActive = hostedIsWiFiActive();
+
+  portENTER_CRITICAL(&benchStateMux);
+  benchState.firstWiFiBeginStatus = firstWiFiStatus;
+  benchState.firstAttemptAtMs = firstAttemptAt;
+  benchState.firstHostedInitialized = firstHostedInitialized;
+  benchState.firstHostedWiFiActiveFlag = firstHostedWiFiActive;
   benchState.wifiBeginAttemptCount = 1;
-  benchState.lastWiFiBeginStatus = benchState.firstWiFiBeginStatus;
+  benchState.lastWiFiBeginStatus = firstWiFiStatus;
   benchState.lastWiFiBeginAtMs = millis();
+  portEXIT_CRITICAL(&benchStateMux);
 
   Serial.printf(
     "[BENCH] FIRST_ATTEMPT at=%lums WiFi.begin immediateStatus=%d hostedInitialized=%s "
     "hostedWiFiActiveRequestedFlag=%s; immediate status and requested/usage flag are not eventual association proof.\n",
-    static_cast<unsigned long>(benchState.firstAttemptAtMs), static_cast<int>(benchState.firstWiFiBeginStatus),
-    benchState.firstHostedInitialized ? "true" : "false", benchState.firstHostedWiFiActiveFlag ? "true" : "false"
+    static_cast<unsigned long>(firstAttemptAt), static_cast<int>(firstWiFiStatus),
+    firstHostedInitialized ? "true" : "false", firstHostedWiFiActive ? "true" : "false"
   );
   Serial.println("[BENCH] Initial failure will remain quiescent; retries are enabled only after one successful connection.");
 }
@@ -587,13 +653,19 @@ void loop() {
   static uint32_t lastStatusLog = 0;
   const uint32_t now = millis();
   if (now - lastStatusLog >= 30000) {
+    // Take a consistent snapshot of benchState to avoid torn reads in the log.
+    decltype(benchState) benchSnapshot;
+    portENTER_CRITICAL(&benchStateMux);
+    benchSnapshot = benchState;
+    portEXIT_CRITICAL(&benchStateMux);
+
     Serial.printf(
       "[BENCH] STATUS uptime=%lus boot=%u wifi=%s everConnected=%s faults=%u retries=%u "
       "httpAttempted=%s httpStarted=%s sseClients=%u sseFrames=%lu freeHeap=%lu bytes\n",
-      static_cast<unsigned long>(benchUptimeMs() / 1000), benchBootCount, benchState.wifiConnected ? "CONNECTED" : "DISCONNECTED",
-      benchState.hasConnectedOnce ? "true" : "false", benchState.linkFaultCount, benchState.wifiRetryCount,
-      benchState.httpStartAttempted ? "true" : "false", benchState.httpStarted ? "true" : "false", benchState.sseClientCount,
-      static_cast<unsigned long>(benchState.sseFrameCount), static_cast<unsigned long>(ESP.getFreeHeap())
+      static_cast<unsigned long>(benchUptimeMs() / 1000), benchBootCount, benchSnapshot.wifiConnected ? "CONNECTED" : "DISCONNECTED",
+      benchSnapshot.hasConnectedOnce ? "true" : "false", benchSnapshot.linkFaultCount, benchSnapshot.wifiRetryCount,
+      benchSnapshot.httpStartAttempted ? "true" : "false", benchSnapshot.httpStarted ? "true" : "false", benchSnapshot.sseClientCount,
+      static_cast<unsigned long>(benchSnapshot.sseFrameCount), static_cast<unsigned long>(ESP.getFreeHeap())
     );
     lastStatusLog = now;
   }
