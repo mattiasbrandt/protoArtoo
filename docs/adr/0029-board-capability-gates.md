@@ -57,3 +57,36 @@ staged at reboot) applies unchanged.
 - Per-env budgets become part of the standard verification sequence and CI.
 - Baseline flash/RAM numbers are recorded per env when the budgets are
   introduced.
+
+## Amended 2026-08-24
+
+The decision stands; its scope broadens, recorded after a grilling session on
+#186:
+
+- **Two compile-time tiers, one mechanism.** The registry annotation, the
+  image-reported manifest, the drift check, and the UI state also cover the
+  developer build-stripping tier that ADR 0027 mentioned without naming — now
+  the **Build Feature Flag** (a per-env `PA_*` 0/1 flag such as
+  `PA_HEAP_PROFILE`). The tiers stay distinct: a capability is invariant per
+  PCB, a build flag is a developer choice per image, and neither is a
+  Component Toggle. ADR 0027 is unchanged.
+- **Four UI states, not three:** not on this board / not in this build / off
+  / on. Unavailable rows stay visible with the reason; nothing is discovered
+  by probing endpoints.
+- **Registry entries declare their requirements explicitly** — at most one
+  board capability and one build flag each; absent means universal. Component
+  toggles become registry entries so the registry is the single grain.
+- **Flags are always defined as 0 or 1 and tested with `#if`**, enumerated
+  from X-macro manifests every board block must satisfy; the same manifests
+  feed the drift checker and the manifest the identity resource reports.
+
+The budgets consequence landed with #187. The first consumers are the
+existing profiler and admission-trace gates on artoo-esp32, migrated as the
+reference; Hosted WiFi's capability is declared by the board layer under #186
+and consumed by the network-seam tickets.
+
+Rejected in the session: one `PA_FEATURE_*` namespace for both tiers (erases
+the invariant-per-PCB versus per-image distinction and muddies the UI
+message); hiding unavailable rows (an operator cannot tell "not fitted" from
+"does not exist here"); defined-or-absent `#ifdef` flags (a typo silently
+gates a feature out, which the budget gate cannot catch on the P4 side).

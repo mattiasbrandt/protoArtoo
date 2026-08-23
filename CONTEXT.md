@@ -406,6 +406,14 @@ _Avoid_: firebeetle2 for chip-wide concepts, throwaway mule
 A compile-time `PA_CAP_*` declaration of what topology a board's fitted hardware can support. It controls linking and not-on-this-board UI state; it does not attest successful co-processor provisioning, boot, initialization, or runtime reachability (ADR 0029).
 _Avoid_: compile-time component toggle, feature flag, capability as a runtime setting, runtime-ready signal
 
+**Build Feature Flag**:
+A compile-time `PA_*` flag, chosen per build environment and always defined as 0 or 1, declaring whether this firmware image was built with an optional feature such as the heap profiler. It is a developer choice about the image — not a fact about the board, and not an operator setting; a feature built out is absent from the image, not merely off.
+_Avoid_: build-stripping flag, developer toggle, compile-time component toggle, feature flag (unqualified)
+
+**Feature Availability**:
+The compile-time answer to whether a feature exists in the running image, derived from the Board Capability Gate and the Build Feature Flag the feature requires: not on this board, not in this build, or present. A present feature that has a Component Toggle is then off or on. Availability is declared by the image and reported to the browser once; it is never discovered by probing endpoints, and it says nothing about whether fitted hardware is reachable at runtime.
+_Avoid_: endpoint probing, feature detection, available (unqualified — that word names runtime reachability), hidden feature
+
 **Hosted WiFi**:
 A network backend in which a separate wireless co-processor serves WiFi through ESP-Hosted. On firebeetle2 it uses the board's fitted ESP32-C6 over SDIO; it is not intrinsic to ESP32-P4, and its capability gate does not prove runtime readiness.
 _Avoid_: ESP32-P4's native WiFi, universal P4 C6/SDIO topology, runtime-ready capability
@@ -493,8 +501,9 @@ _Avoid_: TWDT reset, task watchdog reset (when the broader class is meant)
 - The **Audio Config Map** is the single schema home consumed by both the audio task and the api_audio **Apply Core** (ADR 0013); the playback policy stays config-free behind it.
 - A **Step Core** decides, its task-loop adapter executes; the **Audio Step Core** calls the playback policy internally, so the policy stays its own tested module behind the step seam.
 - A **Component Toggle** and the safety machinery are independent in both directions: a toggle never gates estop latching or the failsafe gate, and estop/safety handling never overrides a toggle or the settings functions — a disabled subsystem stays inert even during estop, since an inert component has no output to stop.
-- A **Component Toggle** is runtime by requirement: a **Public Release Operator** must be able to declare fitted hardware from the browser, so component toggles are never compile-time build flags; developer build-stripping flags are a separate tier, not a mirror of the toggles.
-- A **Board Capability Gate** answers what the board's silicon can do; a **Component Toggle** answers what fitted hardware the operator uses. Where the capability is absent the toggle question never arises (not-on-this-board); where it is present, ADR 0027 toggle semantics apply unchanged.
+- A **Component Toggle** is runtime by requirement: a **Public Release Operator** must be able to declare fitted hardware from the browser, so component toggles are never compile-time build flags; a **Build Feature Flag** is a separate tier, not a mirror of the toggles.
+- A **Board Capability Gate** answers what the board's silicon can do; a **Build Feature Flag** answers what this image was built with; a **Component Toggle** answers what fitted hardware the operator uses. Where a required gate or flag is absent the toggle question never arises — the feature's **Feature Availability** is not-on-this-board or not-in-this-build; where both are present, ADR 0027 toggle semantics apply unchanged.
+- **Feature Availability** is declared once per image and read by every page: each registered action, status, event, or config entry names at most one **Board Capability Gate** and one **Build Feature Flag** it requires, and an entry naming neither is universal (ADR 0029).
 - **firebeetle2** and **artoo_esp32** are **Board Variants**; the **ESP32-P4 Target** and the classic-generation chip target above them own chip-wide facts. ESP32-P4 supplies the external network-backend seam, while firebeetle2 owns its fitted C6/SDIO/reset topology (ADR 0028). **artoo-esp32** remains fully supported alongside any ESP32-P4 board.
 - On the **ESP32-P4 Target**, the **protoR2link Primary Transport** stays UART — carried on a dedicated P4 UART — with the **protoR2link Fallback Transport** unchanged (ADR 0003).
 - Evidence gathered in **Bench-Mode** maps to **Software Verified** or **Controller Upload Verified**, never directly to **Full Hardware Verified**.
@@ -551,3 +560,5 @@ _Avoid_: TWDT reset, task watchdog reset (when the broader class is meant)
 - "AP mode" was used for both first-boot onboarding and ongoing hotspot operation; resolved by using **WiFi Provisioning** for onboarding and **Standalone AP Mode** for the ongoing operator-selected posture.
 - "Fresh public release" blurred download source with controller state; resolved by using **Unprovisioned Controller** for the no-settings state.
 - "Switch WiFi from the setup page" is resolved as a **Staged Network Switch**, not a fragile live toggle.
+- "capability" names two things: a panel verb in the **Dome Layout View Model** (`P1 + open`) and a board topology fact in a **Board Capability Gate**; resolved by qualifying every use — "panel capability" in dome-layout text, **Board Capability Gate** for the compile-time tier.
+- "feature flag" was used loosely for all three tiers; resolved by naming them **Board Capability Gate**, **Build Feature Flag**, and **Component Toggle**, and never using "feature flag" unqualified.
