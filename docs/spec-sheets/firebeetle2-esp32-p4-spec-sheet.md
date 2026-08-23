@@ -860,6 +860,25 @@ sheet now adopts in place of its own ad-hoc ratings:
 UART2 through UART4 have no P1 pins at all, so they must come from the P2/P3
 pool.
 
+> [!IMPORTANT]
+> **Observed 2026-08-23: protoArtoo's full peripheral set fits this board with zero
+> spare header GPIOs.** Counting the pins this board actually routes, and honouring
+> the "Pairs to avoid unless proven" table below in full, the supply is 15 usable
+> GPIOs against a demand of 14 - six RC/SBUS inputs, a two-pin audio UART, and six
+> servo/ESC outputs. One spare, and it is an avoid-list pin.
+>
+> **The constraint is this board, not the ESP32-P4.** The chip carries five HP UARTs
+> and ample GPIO; the FireBeetle 2 routes a subset, further reduced by the ESP32-C6
+> SDIO link (GPIO14-19), the TF card slot (GPIO39-45), USB and MIPI, and pins not
+> brought out at all (GPIO0-2, 10-11, 13, 26-27, 46-47, 53). This is the chip-layer
+> versus board-variant distinction ADR 0028 draws: a different ESP32-P4 board has the
+> same peripherals and more headers.
+>
+> Recorded because "works, with no room to grow" is a materially different
+> recommendation from "works", and a builder choosing this board deserves to know
+> which one they are getting. Figures are as of this date and change with the
+> peripheral set; the current allocation and its revision triggers live on issue #190.
+
 ### Two board-level constraints that override the taxonomy
 
 **1. Prefer GPIO36 and lower.** Espressif's own variant header carries this
