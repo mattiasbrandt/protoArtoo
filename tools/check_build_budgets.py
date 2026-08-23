@@ -1,0 +1,133 @@
+#!/usr/bin/env python3
+"""Check that all supported environments stay within build-size budgets.
+
+Reads budgets from tools/build_budgets.json, builds each environment,
+measures the resulting binary, and reports against the budget.
+Fails if any environment exceeds its budget.
+"""
+
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+BUDGETS_FILE = ROOT / "tools" / "build_budgets.json"
+PIO_CORE_DIR_ARTOO = os.path.expanduser("~/.platformio")
+PIO_CORE_DIR_P4 = os.path.expanduser("~/.platformio-p4")
+P4_ENVS = {"firebeetle2", "firebeetle2_hosted_bench", "firebeetle2_full"}
+
+
+def load_budgets():
+    """Load budgets from JSON file."""
+    if not BUDGETS_FILE.exists():
+        print(f"ERROR: Budget file not found: {BUDGETS_FILE}", file=sys.stderr)
+        sys.exit(1)
+
+    with open(BUDGETS_FILE) as f:
+        return json.load(f)
+
+
+def get_platformio_core_dir(env_name):
+    """Determine PLATFORMIO_CORE_DIR for an environment."""
+    if env_name in P4_ENVS:
+        return PIO_CORE_DIR_P4
+    return PIO_CORE_DIR_ARTOO
+
+
+def build_environment(env_name):
+    """Build an environment and return the binary size in bytes, or None on error."""
+    print(f"Building {env_name}...", file=sys.stderr)
+
+    core_dir = get_platformio_core_dir(env_name)
+    env = os.environ.copy()
+    env["PLATFORMIO_CORE_DIR"] = core_dir
+
+    try:
+        result = subprocess.run(
+            ["pio", "run", "-e", env_name],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            timeout=1800,
+            env=env
+        )
+
+        if result.returncode != 0:
+            print(f"  FAILED: pio run exited with code {result.returncode}", file=sys.stderr)
+            return None
+
+        # Get binary size
+        bin_file = ROOT / ".pio" / "build" / env_name / "firmware.bin"
+        if not bin_file.exists():
+            print(f"  FAILED: No firmware.bin found at {bin_file}", file=sys.stderr)
+            return None
+
+        size = bin_file.stat().st_size
+        print(f"  OK: {size} bytes", file=sys.stderr)
+        return size
+
+    except subprocess.TimeoutExpired:
+        print(f"  FAILED: Build timed out", file=sys.stderr)
+        return None
+    except Exception as e:
+        print(f"  FAILED: {e}", file=sys.stderr)
+        return None
+
+
+def main():
+    budgets = load_budgets()
+    envs = budgets.get("envs", {})
+
+    if not envs:
+        print("ERROR: No environments in budgets file", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"Checking {len(envs)} environments...\n", file=sys.stderr)
+
+    all_ok = True
+    results = []
+
+    for env_name in sorted(envs.keys()):
+        env_budget = envs[env_name]
+        flash_ceiling = env_budget.get("flash_budget_bytes")
+
+        if flash_ceiling is None:
+            print(f"WARNING: {env_name} has no flash_budget_bytes", file=sys.stderr)
+            continue
+
+        actual_size = build_environment(env_name)
+
+        if actual_size is None:
+            print(f"✗ {env_name}: BUILD FAILED", file=sys.stderr)
+            all_ok = False
+            results.append((env_name, None, flash_ceiling, False))
+            continue
+
+        pct_used = (actual_size / flash_ceiling) * 100
+        over_budget = actual_size > flash_ceiling
+        status = "✓" if not over_budget else "✗"
+
+        results.append((env_name, actual_size, flash_ceiling, not over_budget))
+
+        if over_budget:
+            overage = actual_size - flash_ceiling
+            print(f"{status} {env_name}: {actual_size} bytes ({pct_used:.1f}%) - OVER by {overage} bytes",
+                  file=sys.stderr)
+            all_ok = False
+        else:
+            headroom = flash_ceiling - actual_size
+            print(f"{status} {env_name}: {actual_size} bytes ({pct_used:.1f}%) - {headroom} bytes headroom",
+                  file=sys.stderr)
+
+    print("", file=sys.stderr)
+    print(f"Summary: {len([r for r in results if r[3]])} passed, "
+          f"{len([r for r in results if not r[3]])} failed",
+          file=sys.stderr)
+
+    return 0 if all_ok else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

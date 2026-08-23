@@ -56,6 +56,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -117,15 +118,64 @@ def _text(data: str | bytes | None) -> str:
 
 
 def run(
-    cmd: list[str], cwd: Path = ROOT, timeout: int = DEFAULT_TIMEOUT
+    cmd: list[str], cwd: Path = ROOT, timeout: int = DEFAULT_TIMEOUT,
+    env: dict | None = None
 ) -> subprocess.CompletedProcess:
     try:
         return subprocess.run(
-            cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout
+            cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout, env=env
         )
     except subprocess.TimeoutExpired as exc:
         stderr = _text(exc.stderr) + f"\n[slice_verify] timed out after {timeout}s"
         return subprocess.CompletedProcess(cmd, 124, _text(exc.stdout), stderr)
+
+
+def load_budgets() -> dict | None:
+    """Load build budgets from tools/build_budgets.json."""
+    budget_file = ROOT / "tools" / "build_budgets.json"
+    if not budget_file.exists():
+        return None
+    try:
+        with open(budget_file) as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+def get_platformio_core_dir(env_name: str) -> str:
+    """Determine the correct PLATFORMIO_CORE_DIR for an environment.
+
+    Mirrors Makefile logic: P4_ENVS use ~/.platformio-p4, others use ~/.platformio.
+    Matches the hardcoded P4_ENVS list from Makefile.
+    """
+    p4_envs = {"firebeetle2", "firebeetle2_hosted_bench", "firebeetle2_full"}
+    home = Path.home()
+    if env_name in p4_envs:
+        return str(home / ".platformio-p4")
+    return str(home / ".platformio")
+
+
+def get_build_sizes(env_name: str) -> tuple[int, int] | None:
+    """Extract flash and RAM sizes from a built environment's artifacts.
+
+    Returns: (flash_bytes, ram_bytes) or None if unable to determine.
+    Flash is the binary image size (.bin file).
+    RAM is static allocation (.data + .bss from ELF).
+    """
+    build_dir = ROOT / ".pio" / "build" / env_name
+    bin_file = build_dir / "firmware.bin"
+
+    if not bin_file.exists():
+        return None
+
+    # Flash: size of .bin file
+    flash_bytes = bin_file.stat().st_size
+
+    # RAM: try to parse from PlatformIO size output
+    # For now, return None for RAM (will be added via `pio run -t size` parsing)
+    ram_bytes = None
+
+    return (flash_bytes, ram_bytes)
 
 
 def git(args: list[str], cwd: Path = ROOT) -> str:
@@ -462,15 +512,61 @@ def check_deleted_tests(base_sha: str) -> CheckResult:
 
 
 def check_command_exit(
-    label: str, cmd: list[str], timeout: int = DEFAULT_TIMEOUT
+    label: str, cmd: list[str], timeout: int = DEFAULT_TIMEOUT, env: dict | None = None
 ) -> CheckResult:
     info(f"running {' '.join(cmd)}...")
-    proc = run(cmd, timeout=timeout)
+    proc = run(cmd, timeout=timeout, env=env)
     notes: list[str] = []
     if proc.returncode != 0:
         notes.append(f"{' '.join(cmd)} failed; tail:")
         notes.extend((proc.stdout + proc.stderr).splitlines()[-10:])
     return CheckResult(label, f"exit {proc.returncode}", proc.returncode == 0, notes)
+
+
+def check_build_budget(env_name: str = "artoo_esp32") -> CheckResult:
+    """Check if built firmware exceeds the budget for flash/RAM.
+
+    Only the slice gate checks artoo_esp32 budget. CI wiring is separate.
+    """
+    budgets = load_budgets()
+    if not budgets or "envs" not in budgets or env_name not in budgets["envs"]:
+        return CheckResult(
+            "build budget", "no budget for env", False,
+            [f"Budget file missing or no entry for {env_name}"]
+        )
+
+    env_budget = budgets["envs"][env_name]
+    sizes = get_build_sizes(env_name)
+    notes: list[str] = []
+
+    if sizes is None or sizes[0] is None:
+        return CheckResult(
+            "build budget", "no artifact", False,
+            [f"Could not measure {env_name} firmware.bin"]
+        )
+
+    flash_bytes, _ = sizes
+    flash_ceiling = env_budget.get("flash_budget_bytes")
+
+    if flash_ceiling is None:
+        return CheckResult(
+            "build budget", "unconfigured", False,
+            [f"No flash_budget_bytes for {env_name}"]
+        )
+
+    # Check flash budget
+    over_budget = flash_bytes > flash_ceiling
+    if over_budget:
+        overage = flash_bytes - flash_ceiling
+        pct_used = (flash_bytes / flash_ceiling) * 100
+        detail = f"{flash_bytes} bytes > {flash_ceiling} ({pct_used:.1f}%)"
+        notes.append(f"Flash budget exceeded: {overage} bytes over ({pct_used - 100:.1f}%)")
+    else:
+        headroom = flash_ceiling - flash_bytes
+        pct_used = (flash_bytes / flash_ceiling) * 100
+        detail = f"{flash_bytes} bytes < {flash_ceiling} ({pct_used:.1f}%)"
+
+    return CheckResult("build budget", detail, not over_budget, notes)
 
 
 def added_lines(base_sha: str, pathspec: list[str]) -> list[tuple[str, str]]:
@@ -678,7 +774,14 @@ def main() -> int:
         ),
         check_mutations(production["web"], mutations, args.expect_no_mutations),
         check_deleted_tests(base_sha),
-        check_command_exit("pio run -e artoo_esp32", ["pio", "run", "-e", "artoo_esp32"]),
+    ]
+
+    # pio run with explicit PLATFORMIO_CORE_DIR to avoid inheriting from shell
+    pio_env = os.environ.copy()
+    pio_env["PLATFORMIO_CORE_DIR"] = get_platformio_core_dir("artoo_esp32")
+    results.extend([
+        check_command_exit("pio run -e artoo_esp32", ["pio", "run", "-e", "artoo_esp32"], env=pio_env),
+        check_build_budget("artoo_esp32"),
         check_command_exit(
             "check-action-drift", ["python3", "tools/check_action_registry_drift.py"]
         ),
@@ -689,7 +792,7 @@ def main() -> int:
         ),
         check_gate_script(base_sha, args.expect_gate_edit),
         check_fenced_paths(base_sha, fences),
-    ]
+    ])
 
     for result in results:
         status = "PASS" if result.passed else "FAIL"
