@@ -1,0 +1,65 @@
+{
+  "metadata": {
+    "description": "Per-environment flash and RAM build-size budgets for protoArtoo firmware",
+    "flash_unit": "bytes",
+    "ram_unit": "bytes",
+    "notes": [
+      "Flash: binary image size (.bin file) to fit in the OTA partition (from partitions/*.csv app0/app1 size field)",
+      "RAM: static allocation (.data + .bss sections from linker), not heap or PSRAM",
+      "dram_limit_bytes: total DRAM available (hardware constant from ESP32 IDF, confirmed via pio run -t size)",
+      "Budgets set with deliberate headroom to prevent reflexive raises on legitimate commits",
+      "Env list in build_budgets.json is authoritative; all envs except artoo_esp32 are P4",
+      "Baseline measurements recorded with commit SHA (git cat-file -t to verify)"
+    ]
+  },
+  "envs": {
+    "artoo_esp32": {
+      "board": "artoo-esp32",
+      "platform": "Classic ESP32",
+      "partition_flash_bytes": 1703936,
+      "dram_limit_bytes": 124580,
+      "flash_budget_bytes": 1600000,
+      "ram_budget_bytes": 110000,
+      "baseline_measured_at": "8fea3c73ebce",
+      "baseline_flash_bytes": 1569152,
+      "baseline_ram_bytes": 96312,
+      "budget_rationale": "Measured 1.57MB flash (92.1% of partition), 96.3KB RAM (77.3% of DRAM limit). Flash budget set at 1.6MB (94% of partition) with 30,848 bytes (1.97%) headroom over baseline. RAM budget at 110KB (88% of DRAM limit) leaves safety margin for stack growth."
+    },
+    "firebeetle2": {
+      "board": "FireBeetle 2 ESP32-P4",
+      "platform": "ESP32-P4",
+      "partition_flash_bytes": 3145728,
+      "dram_limit_bytes": 327680,
+      "flash_budget_bytes": 400000,
+      "ram_budget_bytes": 45000,
+      "baseline_measured_at": "82ca2b1",
+      "baseline_flash_bytes": 321774,
+      "baseline_ram_bytes": 24224,
+      "budget_rationale": "First-flash bringup env with minimal source filter (src/ excluded). Baseline from #190 Slice 2 coordinator verification. Budgets set well above measured values to accommodate full firmware adaptation (tracked by #188/#189)."
+    },
+    "firebeetle2_hosted_bench": {
+      "board": "FireBeetle 2 ESP32-P4 with ESP-Hosted",
+      "platform": "ESP32-P4",
+      "partition_flash_bytes": 3145728,
+      "dram_limit_bytes": 327680,
+      "flash_budget_bytes": 800000,
+      "ram_budget_bytes": 50000,
+      "baseline_measured_at": "TBD",
+      "baseline_flash_bytes": null,
+      "baseline_ram_bytes": null,
+      "budget_rationale": "ESP-Hosted WiFi over SDIO proof-of-concept. Budget accommodates protocol stack overhead. Will be refined after #188 stabilizes."
+    },
+    "firebeetle2_full": {
+      "board": "FireBeetle 2 ESP32-P4 (full diagnostics)",
+      "platform": "ESP32-P4",
+      "partition_flash_bytes": 3145728,
+      "dram_limit_bytes": 327680,
+      "flash_budget_bytes": 2000000,
+      "ram_budget_bytes": 100000,
+      "baseline_measured_at": "82ca2b1",
+      "baseline_flash_bytes": 1606882,
+      "baseline_ram_bytes": 79952,
+      "budget_rationale": "Diagnostic build for #190: compiles all of src/ against P4 toolchain to report compatibility issues. Budget set 400KB above measured value to allow full image growth during platform development."
+    }
+  }
+}

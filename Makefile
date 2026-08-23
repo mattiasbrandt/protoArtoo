@@ -57,7 +57,7 @@ PIO = PLATFORMIO_CORE_DIR=$(PIO_CORE_DIR) pio
 
 -include user.mk
 
-.PHONY: all help build test test-web test-tools check check-action-drift flash ota uploadfs \
+.PHONY: all help build test test-web test-tools check check-action-drift check-build-budgets flash ota uploadfs \
         flash-chirp ota-chirp ota-mp3trigger \
         flash-dysv5w ota-dysv5w \
         flash-monitor flash-chirp-monitor \
@@ -101,6 +101,9 @@ check: ## Static analysis with cppcheck
 
 check-action-drift: ## Ad hoc check that action YAML, C++, and RC fallback metadata align
 	python3 tools/check_action_registry_drift.py
+
+check-build-budgets: ## Verify all supported envs stay within flash/RAM budgets
+	python3 tools/check_build_budgets.py
 
 # ── Flash: DY-SV5W (default) ─────────────────────────────────────────────────
 

@@ -56,6 +56,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -117,15 +118,105 @@ def _text(data: str | bytes | None) -> str:
 
 
 def run(
-    cmd: list[str], cwd: Path = ROOT, timeout: int = DEFAULT_TIMEOUT
+    cmd: list[str], cwd: Path = ROOT, timeout: int = DEFAULT_TIMEOUT,
+    env: dict | None = None
 ) -> subprocess.CompletedProcess:
     try:
         return subprocess.run(
-            cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout
+            cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout, env=env
         )
     except subprocess.TimeoutExpired as exc:
         stderr = _text(exc.stderr) + f"\n[slice_verify] timed out after {timeout}s"
         return subprocess.CompletedProcess(cmd, 124, _text(exc.stdout), stderr)
+
+
+def load_budgets() -> dict | None:
+    """Load build budgets from tools/build_budgets.json."""
+    budget_file = ROOT / "tools" / "build_budgets.json"
+    if not budget_file.exists():
+        return None
+    try:
+        with open(budget_file) as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+def get_platformio_core_dir(env_name: str) -> str:
+    """Determine the correct PLATFORMIO_CORE_DIR for an environment.
+
+    Reads env list from build_budgets.json (single source of truth).
+    All envs except artoo_esp32 are P4 and use ~/.platformio-p4.
+    artoo_esp32 uses ~/.platformio.
+    """
+    budgets = load_budgets()
+    p4_envs = set()
+    if budgets and "envs" in budgets:
+        p4_envs = set(budgets["envs"].keys()) - {"artoo_esp32"}
+
+    home = Path.home()
+    if env_name in p4_envs:
+        return str(home / ".platformio-p4")
+    return str(home / ".platformio")
+
+
+def parse_pio_size_ram(size_output: str) -> int | None:
+    """Extract DRAM static allocation from pio run -t size output.
+
+    Parses lines like:
+    │ DRAM                │        96312 │    77.31 │          28268 │        124580 │
+    Returns the 'Used [bytes]' column for DRAM.
+    """
+    for line in size_output.splitlines():
+        if "DRAM" in line and "│" in line:
+            # Split by │ and extract the second numeric column (Used [bytes])
+            parts = line.split("│")
+            if len(parts) >= 3:
+                try:
+                    # The format is: │ DRAM │ bytes │ percent │ ...
+                    # Extract the Used bytes value (second numeric field)
+                    bytes_str = parts[2].strip()
+                    if bytes_str.isdigit():
+                        return int(bytes_str)
+                except (ValueError, IndexError):
+                    continue
+    return None
+
+
+def get_build_sizes(env_name: str, core_dir: str | None = None) -> tuple[int, int] | None:
+    """Extract flash and RAM sizes from a built environment's artifacts.
+
+    Returns: (flash_bytes, ram_bytes) or None if unable to determine.
+    Flash is the binary image size (.bin file).
+    RAM is static allocation from DRAM (measured via pio run -t size).
+
+    Runs `pio run -t size` to get accurate DRAM measurement if core_dir is provided.
+    Falls back to None for RAM if size measurement unavailable.
+    """
+    build_dir = ROOT / ".pio" / "build" / env_name
+    bin_file = build_dir / "firmware.bin"
+
+    if not bin_file.exists():
+        return None
+
+    # Flash: size of .bin file
+    flash_bytes = bin_file.stat().st_size
+
+    # RAM: measure via pio run -t size
+    ram_bytes = None
+    if core_dir:
+        info(f"measuring RAM for {env_name}...")
+        env_dict = os.environ.copy()
+        env_dict["PLATFORMIO_CORE_DIR"] = core_dir
+        proc = run(
+            ["pio", "run", "-e", env_name, "-t", "size"],
+            timeout=600,
+            env=env_dict
+        )
+        if proc.returncode == 0:
+            ram_bytes = parse_pio_size_ram(proc.stdout + proc.stderr)
+
+    return (flash_bytes, ram_bytes)
 
 
 def git(args: list[str], cwd: Path = ROOT) -> str:
@@ -462,15 +553,79 @@ def check_deleted_tests(base_sha: str) -> CheckResult:
 
 
 def check_command_exit(
-    label: str, cmd: list[str], timeout: int = DEFAULT_TIMEOUT
+    label: str, cmd: list[str], timeout: int = DEFAULT_TIMEOUT, env: dict | None = None
 ) -> CheckResult:
     info(f"running {' '.join(cmd)}...")
-    proc = run(cmd, timeout=timeout)
+    proc = run(cmd, timeout=timeout, env=env)
     notes: list[str] = []
     if proc.returncode != 0:
         notes.append(f"{' '.join(cmd)} failed; tail:")
         notes.extend((proc.stdout + proc.stderr).splitlines()[-10:])
     return CheckResult(label, f"exit {proc.returncode}", proc.returncode == 0, notes)
+
+
+def check_build_budget(env_name: str = "artoo_esp32") -> CheckResult:
+    """Check if built firmware exceeds the budget for flash/RAM.
+
+    Only the slice gate checks artoo_esp32 budget. CI wiring is separate.
+    Measures both flash (from .bin file) and RAM (from pio run -t size).
+    """
+    budgets = load_budgets()
+    if not budgets or "envs" not in budgets or env_name not in budgets["envs"]:
+        return CheckResult(
+            "build budget", "no budget for env", False,
+            [f"Budget file missing or no entry for {env_name}"]
+        )
+
+    env_budget = budgets["envs"][env_name]
+    core_dir = get_platformio_core_dir(env_name)
+    sizes = get_build_sizes(env_name, core_dir)
+    notes: list[str] = []
+
+    if sizes is None or sizes[0] is None:
+        return CheckResult(
+            "build budget", "no artifact", False,
+            [f"Could not measure {env_name} firmware.bin"]
+        )
+
+    flash_bytes, ram_bytes = sizes
+    flash_ceiling = env_budget.get("flash_budget_bytes")
+    ram_ceiling = env_budget.get("ram_budget_bytes")
+
+    if flash_ceiling is None:
+        return CheckResult(
+            "build budget", "unconfigured", False,
+            [f"No flash_budget_bytes for {env_name}"]
+        )
+
+    # Check flash budget
+    flash_over_budget = flash_bytes > flash_ceiling
+    ram_over_budget = ram_bytes and ram_bytes > ram_ceiling if ram_ceiling else False
+
+    detail_parts = []
+
+    if flash_over_budget:
+        overage = flash_bytes - flash_ceiling
+        pct_used = (flash_bytes / flash_ceiling) * 100
+        detail_parts.append(f"Flash {flash_bytes} > {flash_ceiling} ({pct_used:.1f}%)")
+        notes.append(f"Flash budget exceeded: {overage} bytes over ({pct_used - 100:.1f}%)")
+    else:
+        pct_used = (flash_bytes / flash_ceiling) * 100
+        detail_parts.append(f"Flash {flash_bytes} < {flash_ceiling} ({pct_used:.1f}%)")
+
+    if ram_ceiling and ram_bytes:
+        if ram_over_budget:
+            overage = ram_bytes - ram_ceiling
+            pct_used = (ram_bytes / ram_ceiling) * 100
+            detail_parts.append(f"RAM {ram_bytes} > {ram_ceiling} ({pct_used:.1f}%)")
+            notes.append(f"RAM budget exceeded: {overage} bytes over ({pct_used - 100:.1f}%)")
+        else:
+            pct_used = (ram_bytes / ram_ceiling) * 100
+            detail_parts.append(f"RAM {ram_bytes} < {ram_ceiling} ({pct_used:.1f}%)")
+
+    detail = " | ".join(detail_parts)
+    passed = not (flash_over_budget or ram_over_budget)
+    return CheckResult("build budget", detail, passed, notes)
 
 
 def added_lines(base_sha: str, pathspec: list[str]) -> list[tuple[str, str]]:
@@ -678,7 +833,14 @@ def main() -> int:
         ),
         check_mutations(production["web"], mutations, args.expect_no_mutations),
         check_deleted_tests(base_sha),
-        check_command_exit("pio run -e artoo_esp32", ["pio", "run", "-e", "artoo_esp32"]),
+    ]
+
+    # pio run with explicit PLATFORMIO_CORE_DIR to avoid inheriting from shell
+    pio_env = os.environ.copy()
+    pio_env["PLATFORMIO_CORE_DIR"] = get_platformio_core_dir("artoo_esp32")
+    results.extend([
+        check_command_exit("pio run -e artoo_esp32", ["pio", "run", "-e", "artoo_esp32"], env=pio_env),
+        check_build_budget("artoo_esp32"),
         check_command_exit(
             "check-action-drift", ["python3", "tools/check_action_registry_drift.py"]
         ),
@@ -689,7 +851,7 @@ def main() -> int:
         ),
         check_gate_script(base_sha, args.expect_gate_edit),
         check_fenced_paths(base_sha, fences),
-    ]
+    ])
 
     for result in results:
         status = "PASS" if result.passed else "FAIL"
