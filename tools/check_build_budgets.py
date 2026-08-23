@@ -14,9 +14,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 BUDGETS_FILE = ROOT / "tools" / "build_budgets.json"
-PIO_CORE_DIR_ARTOO = os.path.expanduser("~/.platformio")
-PIO_CORE_DIR_P4 = os.path.expanduser("~/.platformio-p4")
-P4_ENVS = {"firebeetle2", "firebeetle2_hosted_bench", "firebeetle2_full"}
 
 
 def load_budgets():
@@ -29,18 +26,35 @@ def load_budgets():
         return json.load(f)
 
 
-def get_platformio_core_dir(env_name):
-    """Determine PLATFORMIO_CORE_DIR for an environment."""
-    if env_name in P4_ENVS:
-        return PIO_CORE_DIR_P4
-    return PIO_CORE_DIR_ARTOO
+def platform_for_env(env_name, registry):
+    """Resolve an env to its platform spec. Explicit membership wins;
+    everything else falls to the platform marked default."""
+    default = None
+    for key, spec in registry["platforms"].items():
+        if env_name in spec.get("envs", []):
+            return key, spec
+        if spec.get("default"):
+            if default is not None:
+                raise ValueError("more than one default platform in registry")
+            default = (key, spec)
+    if default is None:
+        raise ValueError(f"no platform for {env_name} and no default")
+    return default
 
 
-def build_environment(env_name):
+def get_platformio_core_dir(env_name, budgets):
+    """Determine PLATFORMIO_CORE_DIR for an environment using the platforms registry."""
+    if "platforms" not in budgets:
+        raise ValueError("no platforms registry in build_budgets.json")
+    _, spec = platform_for_env(env_name, budgets)
+    return os.path.expanduser(spec["core_dir"])
+
+
+def build_environment(env_name, budgets):
     """Build an environment and return the binary size in bytes, or None on error."""
     print(f"Building {env_name}...", file=sys.stderr)
 
-    core_dir = get_platformio_core_dir(env_name)
+    core_dir = get_platformio_core_dir(env_name, budgets)
     env = os.environ.copy()
     env["PLATFORMIO_CORE_DIR"] = core_dir
 
@@ -97,7 +111,7 @@ def main():
             print(f"WARNING: {env_name} has no flash_budget_bytes", file=sys.stderr)
             continue
 
-        actual_size = build_environment(env_name)
+        actual_size = build_environment(env_name, budgets)
 
         if actual_size is None:
             print(f"✗ {env_name}: BUILD FAILED", file=sys.stderr)

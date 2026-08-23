@@ -96,8 +96,6 @@ jobs:
       - name: 🏗️ FireBeetle 2 build (full diagnostics)
         id: firebeetle2-full-build
         continue-on-error: true
-        env:
-          PLATFORMIO_CORE_DIR: ${{ runner.temp }}/.platformio-p4
         run: mkdir -p ~/.platformio-p4 && PLATFORMIO_CORE_DIR=~/.platformio-p4 pio run -e firebeetle2_full
 
       - name: 📏 Build size budgets

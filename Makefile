@@ -41,9 +41,9 @@ OTA_TRANSFER_TIMEOUT ?= 60
 PIO_CORE_DIR_ARTOO ?= $(HOME)/.platformio
 PIO_CORE_DIR_P4    ?= $(HOME)/.platformio-p4
 
-# Envs that target the ESP32-P4 chip, for PLATFORMIO_CORE_DIR selection only.
-# This is intentionally a hard-coded chip-target list (ADR 0028).
-P4_ENVS := firebeetle2 firebeetle2_hosted_bench firebeetle2_full
+# Envs that target the ESP32-P4 chip, for PLATFORMIO_CORE_DIR selection.
+# Read from build_budgets.json platforms registry (single source of truth).
+P4_ENVS := $(shell python3 -c "import json; d=json.load(open('tools/build_budgets.json')); print(' '.join(d['platforms']['esp32p4'].get('envs', [])))")
 
 # Map BUILD_ENV to chip target, then to core dir. Lookup is chip-aware:
 # if BUILD_ENV is in P4_ENVS, use P4 core dir; otherwise use artoo-esp32 core dir.

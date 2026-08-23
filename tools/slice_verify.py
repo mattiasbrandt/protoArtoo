@@ -63,6 +63,7 @@ import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+import glob
 
 ROOT = Path(__file__).resolve().parents[1]
 CACHE_PATH = ROOT / ".pio" / "slice-verify-cache.json"
@@ -95,6 +96,8 @@ DEFAULT_TIMEOUT = 600
 GATE_SCRIPT = "tools/slice_verify.py"
 MUTATION_SCRIPT = "tools/mutation_verify.py"
 WEB_JS_RE = re.compile(r"^data/.*\.js$")
+
+DRAM_PREFIXES = (".dram0.", ".dram1.")
 
 
 @dataclass
@@ -142,79 +145,97 @@ def load_budgets() -> dict | None:
         return None
 
 
+def platform_for_env(env_name: str, registry: dict) -> tuple[str, dict]:
+    """Resolve an env to its platform spec. Explicit membership wins;
+    everything else falls to the platform marked default."""
+    default = None
+    for key, spec in registry["platforms"].items():
+        if env_name in spec.get("envs", []):
+            return key, spec
+        if spec.get("default"):
+            if default is not None:
+                raise ValueError("more than one default platform in registry")
+            default = (key, spec)
+    if default is None:
+        raise ValueError(f"no platform for {env_name} and no default")
+    return default
+
+
+def size_tool_path(spec: dict) -> str | None:
+    """Locate the platform's `size` binary inside its PlatformIO core dir."""
+    core = Path(os.path.expanduser(spec["core_dir"]))
+    hits = sorted(glob.glob(str(core / "packages" / "toolchain-*" / "bin" / spec["size_tool"])))
+    return hits[0] if hits else None
+
+
+def measure_static_ram(elf_path: str | Path, spec: dict) -> int:
+    """Static DRAM = sum of .dram0/.dram1 .data and .bss from `size -A`.
+
+    Raises rather than returning None: a budget that cannot be measured must
+    fail loudly, never pass quietly.
+    """
+    tool = size_tool_path(spec)
+    if tool is None:
+        raise RuntimeError(f"size tool {spec['size_tool']} not found under {spec['core_dir']}")
+    proc = subprocess.run([tool, "-A", str(elf_path)], capture_output=True, text=True, timeout=60)
+    if proc.returncode != 0:
+        raise RuntimeError(f"{spec['size_tool']} exit {proc.returncode}: {proc.stderr.strip()}")
+    total, seen = 0, []
+    for line in proc.stdout.splitlines():
+        parts = line.split()
+        if len(parts) >= 2 and parts[0].startswith(DRAM_PREFIXES):
+            name, size = parts[0], parts[1]
+            if size.isdigit() and (name.endswith(".data") or name.endswith(".bss")):
+                total += int(size)
+                seen.append((name, int(size)))
+    if not seen:
+        raise RuntimeError(f"no .dram0/.dram1 data/bss sections in {elf_path}")
+    return total
+
+
 def get_platformio_core_dir(env_name: str) -> str:
     """Determine the correct PLATFORMIO_CORE_DIR for an environment.
 
-    Reads env list from build_budgets.json (single source of truth).
-    All envs except artoo_esp32 are P4 and use ~/.platformio-p4.
-    artoo_esp32 uses ~/.platformio.
+    Reads from build_budgets.json platforms registry (single source of truth).
     """
     budgets = load_budgets()
-    p4_envs = set()
-    if budgets and "envs" in budgets:
-        p4_envs = set(budgets["envs"].keys()) - {"artoo_esp32"}
-
-    home = Path.home()
-    if env_name in p4_envs:
-        return str(home / ".platformio-p4")
-    return str(home / ".platformio")
+    if not budgets or "platforms" not in budgets:
+        raise ValueError("build_budgets.json missing or has no platforms registry")
+    _, spec = platform_for_env(env_name, budgets)
+    return os.path.expanduser(spec["core_dir"])
 
 
-def parse_pio_size_ram(size_output: str) -> int | None:
-    """Extract DRAM static allocation from pio run -t size output.
-
-    Parses lines like:
-    │ DRAM                │        96312 │    77.31 │          28268 │        124580 │
-    Returns the 'Used [bytes]' column for DRAM.
-    """
-    for line in size_output.splitlines():
-        if "DRAM" in line and "│" in line:
-            # Split by │ and extract the second numeric column (Used [bytes])
-            parts = line.split("│")
-            if len(parts) >= 3:
-                try:
-                    # The format is: │ DRAM │ bytes │ percent │ ...
-                    # Extract the Used bytes value (second numeric field)
-                    bytes_str = parts[2].strip()
-                    if bytes_str.isdigit():
-                        return int(bytes_str)
-                except (ValueError, IndexError):
-                    continue
-    return None
-
-
-def get_build_sizes(env_name: str, core_dir: str | None = None) -> tuple[int, int] | None:
+def get_build_sizes(env_name: str) -> tuple[int | None, int | None]:
     """Extract flash and RAM sizes from a built environment's artifacts.
 
-    Returns: (flash_bytes, ram_bytes) or None if unable to determine.
+    Returns: (flash_bytes, ram_bytes). Both may be None if measurement fails.
     Flash is the binary image size (.bin file).
-    RAM is static allocation from DRAM (measured via pio run -t size).
+    RAM is static DRAM allocation (.data + .bss sections).
 
-    Runs `pio run -t size` to get accurate DRAM measurement if core_dir is provided.
-    Falls back to None for RAM if size measurement unavailable.
+    May raise on measurement errors (e.g., size tool not found).
     """
     build_dir = ROOT / ".pio" / "build" / env_name
     bin_file = build_dir / "firmware.bin"
+    elf_file = build_dir / "firmware.elf"
 
-    if not bin_file.exists():
-        return None
+    flash_bytes = None
+    ram_bytes = None
 
     # Flash: size of .bin file
-    flash_bytes = bin_file.stat().st_size
+    if bin_file.exists():
+        flash_bytes = bin_file.stat().st_size
 
-    # RAM: measure via pio run -t size
-    ram_bytes = None
-    if core_dir:
-        info(f"measuring RAM for {env_name}...")
-        env_dict = os.environ.copy()
-        env_dict["PLATFORMIO_CORE_DIR"] = core_dir
-        proc = run(
-            ["pio", "run", "-e", env_name, "-t", "size"],
-            timeout=600,
-            env=env_dict
-        )
-        if proc.returncode == 0:
-            ram_bytes = parse_pio_size_ram(proc.stdout + proc.stderr)
+    # RAM: measure static allocation via platform-specific size tool
+    if elf_file.exists():
+        try:
+            budgets = load_budgets()
+            if budgets and "platforms" in budgets:
+                _, spec = platform_for_env(env_name, budgets)
+                info(f"measuring RAM for {env_name}...")
+                ram_bytes = measure_static_ram(elf_file, spec)
+        except Exception as e:
+            # Measurement error will be surfaced when check_build_budget runs
+            info(f"RAM measurement for {env_name} failed: {e}")
 
     return (flash_bytes, ram_bytes)
 
@@ -568,7 +589,9 @@ def check_build_budget(env_name: str = "artoo_esp32") -> CheckResult:
     """Check if built firmware exceeds the budget for flash/RAM.
 
     Only the slice gate checks artoo_esp32 budget. CI wiring is separate.
-    Measures both flash (from .bin file) and RAM (from pio run -t size).
+    Measures both flash (from .bin file) and RAM (via size -A on .elf).
+
+    An unmeasurable budget must fail loudly, naming what could not be measured.
     """
     budgets = load_budgets()
     if not budgets or "envs" not in budgets or env_name not in budgets["envs"]:
@@ -578,17 +601,30 @@ def check_build_budget(env_name: str = "artoo_esp32") -> CheckResult:
         )
 
     env_budget = budgets["envs"][env_name]
-    core_dir = get_platformio_core_dir(env_name)
-    sizes = get_build_sizes(env_name, core_dir)
     notes: list[str] = []
 
-    if sizes is None or sizes[0] is None:
+    # Measure both flash and RAM
+    try:
+        flash_bytes, ram_bytes = get_build_sizes(env_name)
+    except Exception as e:
         return CheckResult(
-            "build budget", "no artifact", False,
+            "build budget", "measurement failed", False,
+            [f"Failed to measure {env_name} sizes: {str(e)}"]
+        )
+
+    # Both flash and RAM must be successfully measured
+    if flash_bytes is None:
+        return CheckResult(
+            "build budget", "no flash artifact", False,
             [f"Could not measure {env_name} firmware.bin"]
         )
 
-    flash_bytes, ram_bytes = sizes
+    if ram_bytes is None:
+        return CheckResult(
+            "build budget", "no RAM measurement", False,
+            [f"Could not measure static RAM for {env_name}"]
+        )
+
     flash_ceiling = env_budget.get("flash_budget_bytes")
     ram_ceiling = env_budget.get("ram_budget_bytes")
 
@@ -598,9 +634,15 @@ def check_build_budget(env_name: str = "artoo_esp32") -> CheckResult:
             [f"No flash_budget_bytes for {env_name}"]
         )
 
-    # Check flash budget
+    if ram_ceiling is None:
+        return CheckResult(
+            "build budget", "unconfigured", False,
+            [f"No ram_budget_bytes for {env_name}"]
+        )
+
+    # Check budgets
     flash_over_budget = flash_bytes > flash_ceiling
-    ram_over_budget = ram_bytes and ram_bytes > ram_ceiling if ram_ceiling else False
+    ram_over_budget = ram_bytes > ram_ceiling
 
     detail_parts = []
 
@@ -613,15 +655,14 @@ def check_build_budget(env_name: str = "artoo_esp32") -> CheckResult:
         pct_used = (flash_bytes / flash_ceiling) * 100
         detail_parts.append(f"Flash {flash_bytes} < {flash_ceiling} ({pct_used:.1f}%)")
 
-    if ram_ceiling and ram_bytes:
-        if ram_over_budget:
-            overage = ram_bytes - ram_ceiling
-            pct_used = (ram_bytes / ram_ceiling) * 100
-            detail_parts.append(f"RAM {ram_bytes} > {ram_ceiling} ({pct_used:.1f}%)")
-            notes.append(f"RAM budget exceeded: {overage} bytes over ({pct_used - 100:.1f}%)")
-        else:
-            pct_used = (ram_bytes / ram_ceiling) * 100
-            detail_parts.append(f"RAM {ram_bytes} < {ram_ceiling} ({pct_used:.1f}%)")
+    if ram_over_budget:
+        overage = ram_bytes - ram_ceiling
+        pct_used = (ram_bytes / ram_ceiling) * 100
+        detail_parts.append(f"RAM {ram_bytes} > {ram_ceiling} ({pct_used:.1f}%)")
+        notes.append(f"RAM budget exceeded: {overage} bytes over ({pct_used - 100:.1f}%)")
+    else:
+        pct_used = (ram_bytes / ram_ceiling) * 100
+        detail_parts.append(f"RAM {ram_bytes} < {ram_ceiling} ({pct_used:.1f}%)")
 
     detail = " | ".join(detail_parts)
     passed = not (flash_over_budget or ram_over_budget)
@@ -855,7 +896,7 @@ def main() -> int:
 
     for result in results:
         status = "PASS" if result.passed else "FAIL"
-        print(f"{result.label:<{LABEL_WIDTH}}{result.detail:<{DETAIL_WIDTH}}{status}")
+        print(f"{result.label:<{LABEL_WIDTH}}{result.detail:<{DETAIL_WIDTH}} {status}")
 
     failures = [result for result in results if not result.passed]
     if failures:
