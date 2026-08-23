@@ -41,9 +41,13 @@ OTA_TRANSFER_TIMEOUT ?= 60
 PIO_CORE_DIR_ARTOO ?= $(HOME)/.platformio
 PIO_CORE_DIR_P4    ?= $(HOME)/.platformio-p4
 
-# Envs that target the ESP32-P4 chip, for PLATFORMIO_CORE_DIR selection only.
-# This is intentionally a hard-coded chip-target list (ADR 0028).
-P4_ENVS := firebeetle2 firebeetle2_hosted_bench firebeetle2_full
+# Envs that target the ESP32-P4 chip, for PLATFORMIO_CORE_DIR selection.
+# Read from build_budgets.json platforms registry (single source of truth).
+P4_ENVS := $(shell python3 -c "import json; d=json.load(open('tools/build_budgets.json')); print(' '.join(d['platforms']['esp32p4'].get('envs', [])))")
+
+ifeq ($(strip $(P4_ENVS)),)
+$(error P4_ENVS is empty: could not read platforms.esp32p4.envs from tools/build_budgets.json)
+endif
 
 # Map BUILD_ENV to chip target, then to core dir. Lookup is chip-aware:
 # if BUILD_ENV is in P4_ENVS, use P4 core dir; otherwise use artoo-esp32 core dir.
@@ -57,7 +61,7 @@ PIO = PLATFORMIO_CORE_DIR=$(PIO_CORE_DIR) pio
 
 -include user.mk
 
-.PHONY: all help build test test-web test-tools check check-action-drift flash ota uploadfs \
+.PHONY: all help build test test-web test-tools check check-action-drift check-build-budgets flash ota uploadfs \
         flash-chirp ota-chirp ota-mp3trigger \
         flash-dysv5w ota-dysv5w \
         flash-monitor flash-chirp-monitor \
@@ -101,6 +105,9 @@ check: ## Static analysis with cppcheck
 
 check-action-drift: ## Ad hoc check that action YAML, C++, and RC fallback metadata align
 	python3 tools/check_action_registry_drift.py
+
+check-build-budgets: ## Verify all supported envs stay within flash/RAM budgets
+	python3 tools/check_build_budgets.py
 
 # ── Flash: DY-SV5W (default) ─────────────────────────────────────────────────
 

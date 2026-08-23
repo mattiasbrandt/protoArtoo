@@ -1,0 +1,68 @@
+{
+  "metadata": {
+    "description": "Per-environment flash and RAM build-size budgets for protoArtoo firmware",
+    "flash_unit": "bytes",
+    "ram_unit": "bytes",
+    "notes": [
+      "Flash: binary image size (.bin file) to fit in the OTA partition (from partitions/*.csv app0/app1 size field)",
+      "RAM: static allocation (.data + .bss sections from linker via size -A), not heap or PSRAM",
+      "dram_limit_bytes: total DRAM available per platform (hardware constant from ESP-IDF linker scripts; artoo-esp32=124580B, esp32-p4=327680B)",
+      "Budgets set with deliberate headroom to prevent reflexive raises on legitimate commits",
+      "Env-to-platform classification in 'platforms' registry; Makefile/slice_verify.py/check_build_budgets.py all consume it",
+      "Baseline measurements recorded with commit SHA (git cat-file -t to verify)"
+    ]
+  },
+  "platforms": {
+    "esp32p4": {
+      "core_dir": "~/.platformio-p4",
+      "size_tool": "riscv32-esp-elf-size",
+      "envs": [
+        "firebeetle2",
+        "firebeetle2_full"
+      ]
+    },
+    "esp32": {
+      "core_dir": "~/.platformio",
+      "size_tool": "xtensa-esp32-elf-size",
+      "default": true
+    }
+  },
+  "envs": {
+    "artoo_esp32": {
+      "board": "artoo-esp32",
+      "platform": "esp32",
+      "partition_flash_bytes": 1703936,
+      "dram_limit_bytes": 124580,
+      "flash_budget_bytes": 1600000,
+      "ram_budget_bytes": 110000,
+      "baseline_measured_at": "8fea3c73ebce",
+      "baseline_flash_bytes": 1569152,
+      "baseline_ram_bytes": 96312,
+      "budget_rationale": "Measured 1.57MB flash (92.1% of partition), 96.3KB RAM (77.3% of DRAM limit). Flash budget set at 1.6MB (94% of partition) with 30,848 bytes (1.97%) headroom over baseline. RAM budget at 110KB (88% of DRAM limit) leaves safety margin for stack growth."
+    },
+    "firebeetle2": {
+      "board": "FireBeetle 2 ESP32-P4",
+      "platform": "esp32p4",
+      "partition_flash_bytes": 3145728,
+      "dram_limit_bytes": 327680,
+      "flash_budget_bytes": 400000,
+      "ram_budget_bytes": 45000,
+      "baseline_measured_at": "8fea3c73ebce",
+      "baseline_flash_bytes": 321774,
+      "baseline_ram_bytes": 24222,
+      "budget_rationale": "First-flash bringup env with minimal source filter (src/ excluded). Baselines from hardware measurement via riscv32-esp-elf-size. Budgets set above measured values to accommodate full firmware adaptation (tracked by #188/#189)."
+    },
+    "firebeetle2_full": {
+      "board": "FireBeetle 2 ESP32-P4 (full diagnostics)",
+      "platform": "esp32p4",
+      "partition_flash_bytes": 3145728,
+      "dram_limit_bytes": 327680,
+      "flash_budget_bytes": 2000000,
+      "ram_budget_bytes": 100000,
+      "baseline_measured_at": "8fea3c73ebce",
+      "baseline_flash_bytes": 1606882,
+      "baseline_ram_bytes": 79952,
+      "budget_rationale": "Diagnostic build for #190: compiles all of src/ against P4 toolchain to report compatibility issues. Baselines from hardware measurement. Budget set above measured value to allow image growth during platform development."
+    }
+  }
+}

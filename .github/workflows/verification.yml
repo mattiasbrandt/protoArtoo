@@ -44,7 +44,7 @@ jobs:
       - name: 📦 Install PlatformIO and Python tools
         run: pip install platformio && pip install -r tools/requirements.txt
 
-      - name: 💾 Cache PlatformIO packages and toolchains
+      - name: 💾 Cache PlatformIO packages and toolchains (classic)
         uses: actions/cache@v6
         with:
           # Cache the whole ~/.platformio tree (platforms, packages, toolchains,
@@ -53,8 +53,16 @@ jobs:
           # etc. Build artifacts (.pio/build/) are never cached and must not be
           # treated as verification evidence.
           path: ~/.platformio
-          key: ${{ runner.os }}-pio-${{ hashFiles('platformio.ini') }}
-          restore-keys: ${{ runner.os }}-pio-
+          key: ${{ runner.os }}-pio-classic-${{ hashFiles('platformio.ini') }}
+          restore-keys: ${{ runner.os }}-pio-classic-
+
+      - name: 💾 Cache PlatformIO packages and toolchains (ESP32-P4)
+        uses: actions/cache@v6
+        with:
+          # Separate cache for P4 toolchain (different pioarduino platform version)
+          path: ~/.platformio-p4
+          key: ${{ runner.os }}-pio-p4-${{ hashFiles('platformio.ini') }}
+          restore-keys: ${{ runner.os }}-pio-p4-
 
       - name: 🟢 Set up Node
         uses: actions/setup-node@v7
@@ -85,6 +93,16 @@ jobs:
         continue-on-error: true
         run: pio run -e artoo_esp32_profiler
 
+      - name: 🏗️ FireBeetle 2 build (full diagnostics)
+        id: firebeetle2-full-build
+        continue-on-error: true
+        run: mkdir -p ~/.platformio-p4 && PLATFORMIO_CORE_DIR=~/.platformio-p4 pio run -e firebeetle2_full
+
+      - name: 📏 Build size budgets
+        id: build-budgets
+        continue-on-error: true
+        run: python3 tools/check_build_budgets.py
+
       - name: 🧪 Native tests
         id: native-tests
         continue-on-error: true
@@ -112,6 +130,8 @@ jobs:
         env:
           BUILD_OUTCOME: ${{ steps.firmware-build.outcome }}
           PROFILER_OUTCOME: ${{ steps.profiler-build.outcome }}
+          FIREBEETLE2_OUTCOME: ${{ steps.firebeetle2-full-build.outcome }}
+          BUDGETS_OUTCOME: ${{ steps.build-budgets.outcome }}
           TESTS_OUTCOME: ${{ steps.native-tests.outcome }}
           ANALYSIS_OUTCOME: ${{ steps.static-analysis.outcome }}
           DRIFT_OUTCOME: ${{ steps.action-drift.outcome }}
@@ -134,6 +154,8 @@ jobs:
             echo "|---|---|---|---|"
             row "$BUILD_OUTCOME"     "Firmware build"       "pio run -e artoo_esp32"
             row "$PROFILER_OUTCOME"  "Profiler build"       "pio run -e artoo_esp32_profiler"
+            row "$FIREBEETLE2_OUTCOME" "FireBeetle 2 build"  "pio run -e firebeetle2_full"
+            row "$BUDGETS_OUTCOME"   "Build size budgets"   "python3 tools/check_build_budgets.py"
             row "$TESTS_OUTCOME"    "Native tests"          "pio test -e native"
             row "$ANALYSIS_OUTCOME" "Static analysis"      "pio check -e artoo_esp32"
             row "$DRIFT_OUTCOME"    "Action registry drift" "make check-action-drift"
@@ -158,6 +180,8 @@ jobs:
         env:
           BUILD_OUTCOME: ${{ steps.firmware-build.outcome }}
           PROFILER_OUTCOME: ${{ steps.profiler-build.outcome }}
+          FIREBEETLE2_OUTCOME: ${{ steps.firebeetle2-full-build.outcome }}
+          BUDGETS_OUTCOME: ${{ steps.build-budgets.outcome }}
           TESTS_OUTCOME: ${{ steps.native-tests.outcome }}
           ANALYSIS_OUTCOME: ${{ steps.static-analysis.outcome }}
           DRIFT_OUTCOME: ${{ steps.action-drift.outcome }}
@@ -166,6 +190,8 @@ jobs:
           failed=()
           [ "$BUILD_OUTCOME"    != "success" ] && failed+=("firmware-build")
           [ "$PROFILER_OUTCOME" != "success" ] && failed+=("profiler-build")
+          [ "$FIREBEETLE2_OUTCOME" != "success" ] && failed+=("firebeetle2-full-build")
+          [ "$BUDGETS_OUTCOME"  != "success" ] && failed+=("build-budgets")
           [ "$TESTS_OUTCOME"    != "success" ] && failed+=("native-tests")
           [ "$ANALYSIS_OUTCOME" != "success" ] && failed+=("static-analysis")
           [ "$DRIFT_OUTCOME"    != "success" ] && failed+=("action-drift")
