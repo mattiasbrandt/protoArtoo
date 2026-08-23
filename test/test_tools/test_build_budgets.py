@@ -240,8 +240,8 @@ class BudgetCheckFunction(unittest.TestCase):
 
             result = slice_verify.check_build_budget("artoo_esp32")
             self.assertFalse(result.passed, "Budget check should fail when RAM cannot be measured")
-            self.assertIn("measurement failed", result.detail.lower(),
-                         "Detail should indicate measurement failure")
+            self.assertIn("RAM", result.detail.upper(),
+                         "Detail should mention RAM measurement failure")
 
         finally:
             # Restore originals
