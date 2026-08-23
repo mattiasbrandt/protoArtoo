@@ -356,6 +356,18 @@ Distinguish the guard from the harness that tests the guard. A `static_assert` t
 makes a build fail is product and ships at any stage; a probe matrix proving that
 `static_assert` fires is scaffolding and waits.
 
+**Project-wide renames are classified, never blanket-substituted.** A term that
+names two different things — `protoArtoo` is both the project and, historically,
+a PlatformIO env — cannot be renamed with a single substitution. Before running
+one, classify every hit as *identifier* (rename), *project or product name*
+(keep), *history* (keep), or *intentional fixture* (keep). Then sweep the whole
+tree, not just the docs: `tools/`, `.claude/`, `.github/`, and `.gitignore` carry
+identifiers and operator-facing strings just as `docs/` does, and an audit list
+that omits them will report clean over the damage. `0130c62` renamed the envs per
+ADR 0028 and simultaneously corrupted ~18 project-name sites in `tools/`,
+including a GitHub URL that then 404'd; the follow-up audit passed because its
+path list did not include `tools/`.
+
 Default completion evidence:
 - Firmware behavior changes: `make build`, then `make test` when safety,
   protocol parsing, shared state, config persistence, JSON/API contracts, or prior

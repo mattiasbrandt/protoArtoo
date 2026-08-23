@@ -217,8 +217,8 @@ A replaceable implementation choice, not a compatibility promise. It may be patc
 _Avoid_: preserving ESPAsyncWebServer at the expense of reliability, treating the current library as part of the public API
 
 **Live Page Updates**:
-The status, RC, and log updates currently delivered through `/api/events`. Keep this interface working while server and transport alternatives are measured. It may change only when tests on the Supported ESP32 Board show that a replacement improves memory behavior and Page Load Recovery without losing equivalent page behavior or silently breaking integrations.
-_Avoid_: removing SSE on suspicion, replacing one long-lived connection with rapid polling, breaking the endpoint without measured benefit
+The status, RC, and log updates delivered through `/api/events`, over a stream this project owns rather than one a web stack supplies. A client that cannot keep up within the send deadline is dropped so the others keep receiving; the stream never queues or blocks on a slow reader, because the reader stalling it is usually the single operator who needs it (ADR 0030). Serving the endpoint is not the same as providing Live Page Updates: a vendor EventSource class delivers the same URL while blocking every viewer behind one stalled socket. Keep this interface working while server and transport alternatives are measured. It may change only when tests on the Supported ESP32 Board show that a replacement improves memory behavior and Page Load Recovery without losing equivalent page behavior or silently breaking integrations.
+_Avoid_: removing SSE on suspicion, replacing one long-lived connection with rapid polling, breaking the endpoint without measured benefit, a vendor EventSource class, a stream that queues or blocks on a slow client, treating endpoint reachability as proof the stream is this one
 
 **Unprovisioned Controller**:
 A controller that has no valid Device WiFi Settings and therefore cannot yet choose its ongoing WiFi posture.
