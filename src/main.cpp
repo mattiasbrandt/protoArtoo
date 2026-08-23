@@ -305,12 +305,12 @@ void setup() {
         failsafeTrigger(FailsafeLayer::SBUS_WATCHDOG);
     }
 
-    // Detect TWDT reset from previous boot  --  set estop so robot does not move
+    // Detect watchdog reset from previous boot  --  set estop so robot does not move
     // until operator explicitly clears via POST /api/estop/clear
     esp_reset_reason_t resetReason = esp_reset_reason();
-    if (bootTwdtResetDecision(resetReason)) {
-        failsafeTrigger(FailsafeLayer::TWDT_RESET);
-        PA_LOG_ERROR("main", "task watchdog reset detected - estop set");
+    if (bootWatchdogResetDecision(resetReason)) {
+        failsafeTrigger(FailsafeLayer::WATCHDOG_RESET);
+        PA_LOG_ERROR("main", "watchdog reset detected - estop set");
     }
 
     // Create command queues

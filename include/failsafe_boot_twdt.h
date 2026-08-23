@@ -1,7 +1,7 @@
 // =============================================================================
 // include/failsafe_boot_twdt.h
 //
-// Pure decision logic for boot-time TWDT reset detection and estop arming.
+// Pure decision logic for boot-time watchdog reset detection and estop arming.
 // Extracted from main.cpp for native testability (ADR 0005).
 // =============================================================================
 #pragma once
@@ -28,8 +28,9 @@ typedef enum {
 } esp_reset_reason_t;
 #endif
 
-// Boot TWDT reset detection decision.
-// Returns true if TWDT_RESET failsafe should be armed at boot.
-// SAFETY: If reset reason is ESP_RST_TASK_WDT, previous boot watchdog reset
-// left the robot in potentially dangerous state; boot with estop active.
-bool bootTwdtResetDecision(esp_reset_reason_t resetReason);
+// Boot watchdog reset detection decision.
+// Returns true if WATCHDOG_RESET failsafe should be armed at boot.
+// SAFETY: If reset reason is any watchdog reset (ESP_RST_TASK_WDT, ESP_RST_INT_WDT,
+// or ESP_RST_WDT), previous boot left the robot in potentially dangerous state;
+// boot with estop active. See ADR 0031.
+bool bootWatchdogResetDecision(esp_reset_reason_t resetReason);

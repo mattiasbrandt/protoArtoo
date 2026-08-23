@@ -9,7 +9,7 @@
 //   SBUS_HW: SBUS receiver hardware failsafe bit
 //   SBUS_WATCHDOG: software SBUS frame timeout
 //   WEB_TIMEOUT: web drive API command stale
-//   TWDT_RESET: watchdog-reset boot recovery
+//   WATCHDOG_RESET: watchdog-reset boot recovery
 //   ESTOP: explicit operator estop (latching)
 //
 // Design invariants:
@@ -34,7 +34,7 @@ enum class FailsafeLayer : uint8_t {
     SBUS_HW       = 0,   // receiver hardware failsafe bit
     SBUS_WATCHDOG = 1,   // software SBUS timeout
     WEB_TIMEOUT   = 2,   // web drive API stale
-    TWDT_RESET    = 3,   // watchdog-reset boot recovery
+    WATCHDOG_RESET = 3,  // watchdog-reset boot recovery
     ESTOP         = 4,   // explicit operator estop
 };
 

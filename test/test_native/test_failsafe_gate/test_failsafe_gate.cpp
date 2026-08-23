@@ -53,9 +53,9 @@ void test_trigger_web_timeout_makes_failsafe_active() {
     TEST_ASSERT_TRUE(failsafeIsActive());
 }
 
-void test_trigger_twdt_reset_makes_failsafe_active() {
+void test_trigger_watchdog_reset_makes_failsafe_active() {
     TEST_ASSERT_FALSE(failsafeIsActive());
-    failsafeTrigger(FailsafeLayer::TWDT_RESET);
+    failsafeTrigger(FailsafeLayer::WATCHDOG_RESET);
     TEST_ASSERT_TRUE(failsafeIsActive());
 }
 
@@ -88,10 +88,10 @@ void test_clear_web_timeout_deactivates_failsafe() {
     TEST_ASSERT_FALSE(failsafeIsActive());
 }
 
-void test_clear_twdt_reset_deactivates_failsafe() {
-    failsafeTrigger(FailsafeLayer::TWDT_RESET);
+void test_clear_watchdog_reset_deactivates_failsafe() {
+    failsafeTrigger(FailsafeLayer::WATCHDOG_RESET);
     TEST_ASSERT_TRUE(failsafeIsActive());
-    failsafeClear(FailsafeLayer::TWDT_RESET);
+    failsafeClear(FailsafeLayer::WATCHDOG_RESET);
     TEST_ASSERT_FALSE(failsafeIsActive());
 }
 
@@ -104,7 +104,7 @@ void test_clear_estop_is_noop() {
     TEST_ASSERT_TRUE(failsafeIsActive());
 }
 
-// --- Test 4: failsafeClearEstop() clears both ESTOP and TWDT_RESET ---
+// --- Test 4: failsafeClearEstop() clears both ESTOP and WATCHDOG_RESET ---
 
 void test_clear_estop_clears_estop_layer() {
     failsafeTrigger(FailsafeLayer::ESTOP);
@@ -113,16 +113,16 @@ void test_clear_estop_clears_estop_layer() {
     TEST_ASSERT_FALSE(failsafeIsActive());
 }
 
-void test_clear_estop_clears_twdt_reset_layer() {
-    failsafeTrigger(FailsafeLayer::TWDT_RESET);
+void test_clear_estop_clears_watchdog_reset_layer() {
+    failsafeTrigger(FailsafeLayer::WATCHDOG_RESET);
     TEST_ASSERT_TRUE(failsafeIsActive());
     failsafeClearEstop();
     TEST_ASSERT_FALSE(failsafeIsActive());
 }
 
-void test_clear_estop_clears_both_estop_and_twdt_when_both_active() {
+void test_clear_estop_clears_both_estop_and_watchdog_when_both_active() {
     failsafeTrigger(FailsafeLayer::ESTOP);
-    failsafeTrigger(FailsafeLayer::TWDT_RESET);
+    failsafeTrigger(FailsafeLayer::WATCHDOG_RESET);
     TEST_ASSERT_TRUE(failsafeIsActive());
     failsafeClearEstop();
     TEST_ASSERT_FALSE(failsafeIsActive());
@@ -172,9 +172,9 @@ void test_active_reason_returns_sbus_hw_when_triggered() {
 }
 
 void test_active_reason_returns_highest_priority_when_multiple() {
-    // SBUS_HW = 0, SBUS_WATCHDOG = 1, WEB_TIMEOUT = 2, TWDT_RESET = 3, ESTOP = 4
+    // SBUS_HW = 0, SBUS_WATCHDOG = 1, WEB_TIMEOUT = 2, WATCHDOG_RESET = 3, ESTOP = 4
     failsafeTrigger(FailsafeLayer::WEB_TIMEOUT);      // priority 2
-    failsafeTrigger(FailsafeLayer::TWDT_RESET);       // priority 3
+    failsafeTrigger(FailsafeLayer::WATCHDOG_RESET);       // priority 3
     failsafeTrigger(FailsafeLayer::SBUS_WATCHDOG);    // priority 1 (highest when all active)
 
     FailsafeLayer reason = failsafeActiveReason();
@@ -182,11 +182,11 @@ void test_active_reason_returns_highest_priority_when_multiple() {
 }
 
 void test_active_reason_skips_inactive_lower_priority() {
-    failsafeTrigger(FailsafeLayer::TWDT_RESET);       // priority 3
+    failsafeTrigger(FailsafeLayer::WATCHDOG_RESET);       // priority 3
     failsafeTrigger(FailsafeLayer::ESTOP);            // priority 4
 
     FailsafeLayer reason = failsafeActiveReason();
-    TEST_ASSERT_EQUAL_INT((int)reason, (int)FailsafeLayer::TWDT_RESET);  // Returns 3, not 4
+    TEST_ASSERT_EQUAL_INT((int)reason, (int)FailsafeLayer::WATCHDOG_RESET);  // Returns 3, not 4
 }
 
 // --- Test 7: All five layers independently trigger and clear ---
@@ -245,23 +245,23 @@ void test_estop_mirror_updates() {
     TEST_ASSERT_FALSE(robotState.estop);
 }
 
-void test_twdt_reset_mirror_updates() {
+void test_watchdog_reset_mirror_updates() {
     TEST_ASSERT_FALSE(robotState.estop);
-    failsafeTrigger(FailsafeLayer::TWDT_RESET);
-    TEST_ASSERT_TRUE(robotState.estop);  // TWDT_RESET also sets estop
-    failsafeClear(FailsafeLayer::TWDT_RESET);
+    failsafeTrigger(FailsafeLayer::WATCHDOG_RESET);
+    TEST_ASSERT_TRUE(robotState.estop);  // WATCHDOG_RESET also sets estop
+    failsafeClear(FailsafeLayer::WATCHDOG_RESET);
     TEST_ASSERT_FALSE(robotState.estop);
 }
 
-void test_estop_and_twdt_both_set_estop_mirror() {
+void test_estop_and_watchdog_both_set_estop_mirror() {
     TEST_ASSERT_FALSE(robotState.estop);
-    failsafeTrigger(FailsafeLayer::TWDT_RESET);
+    failsafeTrigger(FailsafeLayer::WATCHDOG_RESET);
     TEST_ASSERT_TRUE(robotState.estop);
     failsafeTrigger(FailsafeLayer::ESTOP);
     TEST_ASSERT_TRUE(robotState.estop);
 
-    // Clear TWDT but ESTOP still active
-    failsafeClear(FailsafeLayer::TWDT_RESET);
+    // Clear WATCHDOG but ESTOP still active
+    failsafeClear(FailsafeLayer::WATCHDOG_RESET);
     TEST_ASSERT_TRUE(robotState.estop);  // Still true due to ESTOP
 
     // Clear ESTOP
@@ -311,22 +311,22 @@ int main() {
     RUN_TEST(test_trigger_sbus_hw_makes_failsafe_active);
     RUN_TEST(test_trigger_sbus_watchdog_makes_failsafe_active);
     RUN_TEST(test_trigger_web_timeout_makes_failsafe_active);
-    RUN_TEST(test_trigger_twdt_reset_makes_failsafe_active);
+    RUN_TEST(test_trigger_watchdog_reset_makes_failsafe_active);
     RUN_TEST(test_trigger_estop_makes_failsafe_active);
 
     // Test 2: Clear non-latching layer deactivates failsafe
     RUN_TEST(test_clear_sbus_hw_deactivates_failsafe);
     RUN_TEST(test_clear_sbus_watchdog_deactivates_failsafe);
     RUN_TEST(test_clear_web_timeout_deactivates_failsafe);
-    RUN_TEST(test_clear_twdt_reset_deactivates_failsafe);
+    RUN_TEST(test_clear_watchdog_reset_deactivates_failsafe);
 
     // Test 3: failsafeClear(ESTOP) is a no-op
     RUN_TEST(test_clear_estop_is_noop);
 
-    // Test 4: failsafeClearEstop() clears both ESTOP and TWDT_RESET
+    // Test 4: failsafeClearEstop() clears both ESTOP and WATCHDOG_RESET
     RUN_TEST(test_clear_estop_clears_estop_layer);
-    RUN_TEST(test_clear_estop_clears_twdt_reset_layer);
-    RUN_TEST(test_clear_estop_clears_both_estop_and_twdt_when_both_active);
+    RUN_TEST(test_clear_estop_clears_watchdog_reset_layer);
+    RUN_TEST(test_clear_estop_clears_both_estop_and_watchdog_when_both_active);
 
     // Test 5: Multiple layers
     RUN_TEST(test_clear_one_of_multiple_layers_still_active);
@@ -346,8 +346,8 @@ int main() {
     RUN_TEST(test_sbus_watchdog_mirror_updates);
     RUN_TEST(test_web_timeout_mirror_updates);
     RUN_TEST(test_estop_mirror_updates);
-    RUN_TEST(test_twdt_reset_mirror_updates);
-    RUN_TEST(test_estop_and_twdt_both_set_estop_mirror);
+    RUN_TEST(test_watchdog_reset_mirror_updates);
+    RUN_TEST(test_estop_and_watchdog_both_set_estop_mirror);
 
     // Test 9: failsafeUpdateWebTimeout edge-detect
     RUN_TEST(test_update_web_timeout_true_triggers_layer);

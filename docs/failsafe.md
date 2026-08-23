@@ -61,17 +61,23 @@ even if the RC receiver does not assert its own failsafe flag.
 Web control is intentionally dead-man style. A client must keep refreshing the
 command; silence is treated as a stop condition.
 
-## Layer 4 - ESP32 Task Watchdog Timer
+## Layer 4 - ESP32 Watchdog Timer
 
-- Source: ESP32 hardware watchdog
+- Source: ESP32 hardware watchdog (task watchdog, interrupt watchdog, or RTC watchdog)
 - Implementation: `src/main.cpp`, `src/tasks/drive.cpp`
 - Trigger: `DriveTask` stops reaching `esp_task_wdt_reset()` within
-  `WATCHDOG_TIMEOUT_S` (3 s)
-- Result: ESP32 resets; next boot detects `ESP_RST_TASK_WDT`, sets
-  `estop=true`, and records `failsafeSource=FS_WATCHDOG_RESET`
+  `WATCHDOG_TIMEOUT_S` (3 s), or any other watchdog reset (interrupt WDT,
+  RTC WDT, super WDT) that defeats the panic handler
+- Result: ESP32 resets; next boot detects any watchdog reset reason
+  (`ESP_RST_TASK_WDT`, `ESP_RST_INT_WDT`, or `ESP_RST_WDT`), sets
+  `estop=true`, and records `failsafeSource=FS_WATCHDOG_RESET`. See ADR 0031.
 
-This covers firmware hangs in the real-time drive loop. The robot does not
-resume movement automatically after a watchdog reboot.
+This covers firmware hangs in the real-time drive loop and other watchdog
+failures. The robot does not resume movement automatically after a watchdog
+reboot. All watchdog reset types arm estop — not only the task watchdog —
+because a watchdog firing indicates the firmware was in a crash state; the
+distinction between which watchdog fired is less important than knowing that
+something was wrong.
 
 ## Layer 5 - Hoverboard UART timeout
 
