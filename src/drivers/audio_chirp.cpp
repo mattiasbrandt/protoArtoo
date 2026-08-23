@@ -291,7 +291,10 @@ bool AudioDriverChirp::loadManifestBanks(uint32_t timeoutMs, bool keepTotalTrack
     uint16_t bank1Count = keepTotalTracks ? m_totalTracks : 0;
     uint8_t catalogBankCount = 0;
     uint16_t droppedBankLines = 0;
-    memset(m_catalogBanks, 0, sizeof(AudioCatalogBank) * AUDIO_CATALOG_MAX_BANKS);
+    // Value-initialize catalog banks to respect declared defaults (page = 'A', etc.)
+    for (uint8_t i = 0; i < AUDIO_CATALOG_MAX_BANKS; ++i) {
+        m_catalogBanks[i] = AudioCatalogBank{};
+    }
     char line[96];
 
     while ((uint32_t)(m_io.millisNow() - startMs) < timeoutMs) {

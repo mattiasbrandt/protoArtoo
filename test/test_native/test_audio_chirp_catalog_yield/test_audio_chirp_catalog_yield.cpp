@@ -118,11 +118,41 @@ void test_chirp_catalog_refresh_yields_with_immediate_rx() {
         "catalog refresh must yield explicitly even when RX never waits");
 }
 
+void test_chirp_unparsed_bank_slots_retain_page_default() {
+    // Regression test for issue #196: unparsed bank slots should retain page='A' default.
+    // The memset() at audio_chirp.cpp:294 discarded this, leaving unparsed slots with page='\0'.
+    // Value-initialization restores the declared default.
+
+    AudioDriverChirp drv;
+    drv.setIO(makeScriptedIO());
+
+    // Refresh catalog (calls loadManifestBanks internally, which clears and populates m_catalogBanks)
+    // The scripted IO in finishCommand() returns a manifest with only 1 bank: BANK:1,001A,2
+    TEST_ASSERT_TRUE(drv.refreshCatalog());
+
+    // Get the banks array
+    const AudioCatalogBank* banks = drv.getCatalogBanks();
+    TEST_ASSERT_NOT_NULL(banks);
+
+    uint8_t parsedCount = drv.getCatalogBankCount();
+    TEST_ASSERT_EQUAL_UINT8(1, parsedCount);
+
+    // Check that the parsed bank has the correct page value derived from dirName
+    // BANK:1,001A,2 -> page = 'A' (from "001A")
+    TEST_ASSERT_EQUAL_CHAR('A', banks[0].page);
+
+    // The key assertion: unparsed slots (beyond parsedCount) should have page='A' (the default)
+    // With memset bug: page would be '\0' (all bytes zeroed)
+    // With value-init fix: page is 'A' (declared default preserved)
+    TEST_ASSERT_EQUAL_CHAR('A', banks[1].page);  // First unparsed slot (beyond parsedCount)
+}
+
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
 
     UNITY_BEGIN();
     RUN_TEST(test_chirp_catalog_refresh_yields_with_immediate_rx);
+    RUN_TEST(test_chirp_unparsed_bank_slots_retain_page_default);
     return UNITY_END();
 }
