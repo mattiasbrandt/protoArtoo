@@ -2,7 +2,7 @@
 # =============================================================================
 # tools/phase4_hw_check.py
 #
-# Phase 4 hardware-validation runner for artoo_esp32.
+# Phase 4 hardware-validation runner for protoArtoo.
 #
 # Runs a focused set of API/SSE checks and writes:
 #   1) machine-readable JSON report
@@ -457,7 +457,7 @@ def write_reports(report: RunReport, out_dir: str) -> tuple[str, str]:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="artoo_esp32 Phase 4 hardware validation check runner"
+        description="protoArtoo Phase 4 hardware validation check runner"
     )
     parser.add_argument(
         "--base-url",

@@ -2,7 +2,7 @@
 """Run Espressif espota with a project-controlled transfer timeout.
 
 The upstream espota.py upload loop hardcodes a 10 second socket timeout for each
-firmware chunk. Seated artoo_esp32 OTA can legitimately take longer while the ESP32
+firmware chunk. Seated protoArtoo OTA can legitimately take longer while the ESP32
 is flash-writing under load, so this wrapper patches that constant in memory
 without modifying the PlatformIO package on disk.
 """
@@ -69,7 +69,7 @@ def _patched_espota_main(espota_path: Path, transfer_timeout: int):
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Upload artoo_esp32 firmware over ArduinoOTA with a longer transfer timeout."
+        description="Upload protoArtoo firmware over ArduinoOTA with a longer transfer timeout."
     )
     parser.add_argument("--env", required=True, help="PlatformIO environment whose firmware.bin should be uploaded.")
     parser.add_argument("-i", "--host", required=True, help="ESP32 OTA IP address or mDNS host.")

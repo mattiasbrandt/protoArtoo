@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""artoo_esp32 — interactive build & deploy wizard.
+"""protoArtoo — interactive build & deploy wizard.
 
 Run via:  make          (default target)
           python3 tools/deploy.py
@@ -182,7 +182,7 @@ def main() -> int:
         print(info("   pip install -r tools/requirements.txt  for arrow-key menus.\n"))
 
     print()
-    print(bold("🤖  artoo_esp32  —  build & deploy"))
+    print(bold("🤖  protoArtoo  —  build & deploy"))
     print(SEP)
 
     # ── Q1: Action ──

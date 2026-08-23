@@ -27,7 +27,7 @@ PRODUCTION_ENV = "artoo_esp32_chirp"
 OTA_ENV = "artoo_esp32_chirp_ota"
 VERSION_FILES = ("data/fw-version.json", "data/fs-version.json")
 FAILED_ALLOC_CONTRACT_URL = (
-    "https://github.com/mattiasbrandt/artoo_esp32/issues/65"
+    "https://github.com/mattiasbrandt/protoArtoo/issues/65"
     "#issuecomment-5172626006"
 )
 FAILED_ALLOC_AVAILABILITY = "unavailable-in-fixed-production-build"
