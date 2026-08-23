@@ -20,6 +20,7 @@ INVENTORY = INCLUDE_DIR / "firebeetle_required_pins.inc"
 CONFIG = INCLUDE_DIR / "config.h"
 
 EXPECTED_PINS = {
+    # Newly assigned in Slice 2 (#190) — 14 pins
     "PIN_SBUS1_RX": "firebeetle2: PIN_SBUS1_RX is unassigned - see #190",
     "PIN_SBUS2_RX": "firebeetle2: PIN_SBUS2_RX is unassigned - see #190",
     "PIN_RC_CH3": "firebeetle2: PIN_RC_CH3 is unassigned - see #190",
@@ -34,6 +35,13 @@ EXPECTED_PINS = {
     "PIN_ARM4_SERVO": "firebeetle2: PIN_ARM4_SERVO is unassigned - see #190",
     "PIN_ARM5_SERVO": "firebeetle2: PIN_ARM5_SERVO is unassigned - see #190",
     "PIN_DOME_ESC": "firebeetle2: PIN_DOME_ESC is unassigned - see #190",
+    # Already assigned in prior slices — 6 pins, included for coherence verification
+    "PIN_I2C_SCL": "firebeetle2: PIN_I2C_SCL is unassigned - see #185",
+    "PIN_I2C_SDA": "firebeetle2: PIN_I2C_SDA is unassigned - see #185",
+    "PIN_HOVERBOARD_TX": "firebeetle2: PIN_HOVERBOARD_TX is unassigned - see #190",
+    "PIN_HOVERBOARD_RX": "firebeetle2: PIN_HOVERBOARD_RX is unassigned - see #190",
+    "PIN_DOME_TX": "firebeetle2: PIN_DOME_TX is unassigned - see #190",
+    "PIN_DOME_RX": "firebeetle2: PIN_DOME_RX is unassigned - see #190",
 }
 
 ROW_RE = re.compile(

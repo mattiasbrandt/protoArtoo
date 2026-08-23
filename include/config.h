@@ -202,127 +202,19 @@ constexpr uint8_t PIN_ARM4_SERVO = 5;   // AUX2, WS2812B strip capable, P3 JTAG 
 constexpr uint8_t PIN_ARM5_SERVO = 51;  // AUX3, WS2812B strip capable, LDO caution (VDD_IO_6)
 constexpr uint8_t PIN_DOME_ESC = 48;    // ESC PWM, LDO caution (VDD_IO_5)
 
-// Every pin used by a production peripheral must be assigned before the full
-// FireBeetle firmware can compile. This is safety-critical for SBUS because it
-// feeds the failsafe/estop path. SBUS1/2 guard RC_CH1/2 through their aliases,
-// so the inventory has no duplicate RC_CH1/2 rows that could drift.
-#define PA_FIREBEETLE_REQUIRED_PIN(pin, diagnostic) \
-    static_assert(pin != PA_PIN_UNASSIGNED, diagnostic);
-#include "firebeetle_required_pins.inc"
-#undef PA_FIREBEETLE_REQUIRED_PIN
+// FireBeetle 2 pin coherence guards — generated from the complete inventory.
+//
+// These checks verify two invariants:
+// 1. All production GPIO pins are distinct (no two peripherals on the same GPIO).
+// 2. All production GPIO pins are in the 21-element allow-list routed by DFR1237
+//    (the GPIO actually brought out on the headers). Pins 0-53 that do not appear
+//    in this list are either committed to the board (UART0, Hosted WiFi, etc.)
+//    or not brought out at all; assigning to them is silent production damage.
+//
+// Failures in this guard correspond to defects in include/firebeetle_required_pins.inc,
+// not to correct pins assigned to the wrong variable names. Every row added to the
+// inventory automatically gains uniqueness and membership checking.
 
-// Guard against duplicate pin assignments (two peripherals on the same GPIO).
-// Duplicate detection uses a compile-time set membership pattern:
-// static_assert(/* pin not already used */) for each assignment.
-static_assert(PIN_RC_CH1 != PIN_RC_CH2, "FireBeetle2: duplicate RC assignment - PIN_RC_CH1 and PIN_RC_CH2 are both assigned to the same GPIO");
-static_assert(PIN_RC_CH1 != PIN_RC_CH3, "FireBeetle2: duplicate RC assignment - PIN_RC_CH1 and PIN_RC_CH3 are both assigned to the same GPIO");
-static_assert(PIN_RC_CH1 != PIN_RC_CH4, "FireBeetle2: duplicate RC assignment - PIN_RC_CH1 and PIN_RC_CH4 are both assigned to the same GPIO");
-static_assert(PIN_RC_CH1 != PIN_RC_CH5, "FireBeetle2: duplicate RC assignment - PIN_RC_CH1 and PIN_RC_CH5 are both assigned to the same GPIO");
-static_assert(PIN_RC_CH1 != PIN_RC_CH6, "FireBeetle2: duplicate RC assignment - PIN_RC_CH1 and PIN_RC_CH6 are both assigned to the same GPIO");
-static_assert(PIN_RC_CH1 != PIN_AUDIO_TX, "FireBeetle2: duplicate assignment - PIN_RC_CH1 and PIN_AUDIO_TX are both assigned to the same GPIO");
-static_assert(PIN_RC_CH1 != PIN_AUDIO_RX, "FireBeetle2: duplicate assignment - PIN_RC_CH1 and PIN_AUDIO_RX are both assigned to the same GPIO");
-static_assert(PIN_RC_CH1 != PIN_ARM1_SERVO, "FireBeetle2: duplicate assignment - PIN_RC_CH1 and PIN_ARM1_SERVO are both assigned to the same GPIO");
-static_assert(PIN_RC_CH1 != PIN_ARM2_SERVO, "FireBeetle2: duplicate assignment - PIN_RC_CH1 and PIN_ARM2_SERVO are both assigned to the same GPIO");
-static_assert(PIN_RC_CH1 != PIN_ARM3_SERVO, "FireBeetle2: duplicate assignment - PIN_RC_CH1 and PIN_ARM3_SERVO are both assigned to the same GPIO");
-static_assert(PIN_RC_CH1 != PIN_ARM4_SERVO, "FireBeetle2: duplicate assignment - PIN_RC_CH1 and PIN_ARM4_SERVO are both assigned to the same GPIO");
-static_assert(PIN_RC_CH1 != PIN_ARM5_SERVO, "FireBeetle2: duplicate assignment - PIN_RC_CH1 and PIN_ARM5_SERVO are both assigned to the same GPIO");
-static_assert(PIN_RC_CH1 != PIN_DOME_ESC, "FireBeetle2: duplicate assignment - PIN_RC_CH1 and PIN_DOME_ESC are both assigned to the same GPIO");
-static_assert(PIN_RC_CH2 != PIN_RC_CH3, "FireBeetle2: duplicate RC assignment - PIN_RC_CH2 and PIN_RC_CH3 are both assigned to the same GPIO");
-static_assert(PIN_RC_CH2 != PIN_RC_CH4, "FireBeetle2: duplicate RC assignment - PIN_RC_CH2 and PIN_RC_CH4 are both assigned to the same GPIO");
-static_assert(PIN_RC_CH2 != PIN_RC_CH5, "FireBeetle2: duplicate RC assignment - PIN_RC_CH2 and PIN_RC_CH5 are both assigned to the same GPIO");
-static_assert(PIN_RC_CH2 != PIN_RC_CH6, "FireBeetle2: duplicate RC assignment - PIN_RC_CH2 and PIN_RC_CH6 are both assigned to the same GPIO");
-static_assert(PIN_RC_CH2 != PIN_AUDIO_TX, "FireBeetle2: duplicate assignment - PIN_RC_CH2 and PIN_AUDIO_TX are both assigned to the same GPIO");
-static_assert(PIN_RC_CH2 != PIN_AUDIO_RX, "FireBeetle2: duplicate assignment - PIN_RC_CH2 and PIN_AUDIO_RX are both assigned to the same GPIO");
-static_assert(PIN_RC_CH2 != PIN_ARM1_SERVO, "FireBeetle2: duplicate assignment - PIN_RC_CH2 and PIN_ARM1_SERVO are both assigned to the same GPIO");
-static_assert(PIN_RC_CH2 != PIN_ARM2_SERVO, "FireBeetle2: duplicate assignment - PIN_RC_CH2 and PIN_ARM2_SERVO are both assigned to the same GPIO");
-static_assert(PIN_RC_CH2 != PIN_ARM3_SERVO, "FireBeetle2: duplicate assignment - PIN_RC_CH2 and PIN_ARM3_SERVO are both assigned to the same GPIO");
-static_assert(PIN_RC_CH2 != PIN_ARM4_SERVO, "FireBeetle2: duplicate assignment - PIN_RC_CH2 and PIN_ARM4_SERVO are both assigned to the same GPIO");
-static_assert(PIN_RC_CH2 != PIN_ARM5_SERVO, "FireBeetle2: duplicate assignment - PIN_RC_CH2 and PIN_ARM5_SERVO are both assigned to the same GPIO");
-static_assert(PIN_RC_CH2 != PIN_DOME_ESC, "FireBeetle2: duplicate assignment - PIN_RC_CH2 and PIN_DOME_ESC are both assigned to the same GPIO");
-static_assert(PIN_RC_CH3 != PIN_RC_CH4, "FireBeetle2: duplicate RC assignment - PIN_RC_CH3 and PIN_RC_CH4 are both assigned to the same GPIO");
-static_assert(PIN_RC_CH3 != PIN_RC_CH5, "FireBeetle2: duplicate RC assignment - PIN_RC_CH3 and PIN_RC_CH5 are both assigned to the same GPIO");
-static_assert(PIN_RC_CH3 != PIN_RC_CH6, "FireBeetle2: duplicate RC assignment - PIN_RC_CH3 and PIN_RC_CH6 are both assigned to the same GPIO");
-static_assert(PIN_RC_CH3 != PIN_AUDIO_TX, "FireBeetle2: duplicate assignment - PIN_RC_CH3 and PIN_AUDIO_TX are both assigned to the same GPIO");
-static_assert(PIN_RC_CH3 != PIN_AUDIO_RX, "FireBeetle2: duplicate assignment - PIN_RC_CH3 and PIN_AUDIO_RX are both assigned to the same GPIO");
-static_assert(PIN_RC_CH3 != PIN_ARM1_SERVO, "FireBeetle2: duplicate assignment - PIN_RC_CH3 and PIN_ARM1_SERVO are both assigned to the same GPIO");
-static_assert(PIN_RC_CH3 != PIN_ARM2_SERVO, "FireBeetle2: duplicate assignment - PIN_RC_CH3 and PIN_ARM2_SERVO are both assigned to the same GPIO");
-static_assert(PIN_RC_CH3 != PIN_ARM3_SERVO, "FireBeetle2: duplicate assignment - PIN_RC_CH3 and PIN_ARM3_SERVO are both assigned to the same GPIO");
-static_assert(PIN_RC_CH3 != PIN_ARM4_SERVO, "FireBeetle2: duplicate assignment - PIN_RC_CH3 and PIN_ARM4_SERVO are both assigned to the same GPIO");
-static_assert(PIN_RC_CH3 != PIN_ARM5_SERVO, "FireBeetle2: duplicate assignment - PIN_RC_CH3 and PIN_ARM5_SERVO are both assigned to the same GPIO");
-static_assert(PIN_RC_CH3 != PIN_DOME_ESC, "FireBeetle2: duplicate assignment - PIN_RC_CH3 and PIN_DOME_ESC are both assigned to the same GPIO");
-static_assert(PIN_RC_CH4 != PIN_RC_CH5, "FireBeetle2: duplicate RC assignment - PIN_RC_CH4 and PIN_RC_CH5 are both assigned to the same GPIO");
-static_assert(PIN_RC_CH4 != PIN_RC_CH6, "FireBeetle2: duplicate RC assignment - PIN_RC_CH4 and PIN_RC_CH6 are both assigned to the same GPIO");
-static_assert(PIN_RC_CH4 != PIN_AUDIO_TX, "FireBeetle2: duplicate assignment - PIN_RC_CH4 and PIN_AUDIO_TX are both assigned to the same GPIO");
-static_assert(PIN_RC_CH4 != PIN_AUDIO_RX, "FireBeetle2: duplicate assignment - PIN_RC_CH4 and PIN_AUDIO_RX are both assigned to the same GPIO");
-static_assert(PIN_RC_CH4 != PIN_ARM1_SERVO, "FireBeetle2: duplicate assignment - PIN_RC_CH4 and PIN_ARM1_SERVO are both assigned to the same GPIO");
-static_assert(PIN_RC_CH4 != PIN_ARM2_SERVO, "FireBeetle2: duplicate assignment - PIN_RC_CH4 and PIN_ARM2_SERVO are both assigned to the same GPIO");
-static_assert(PIN_RC_CH4 != PIN_ARM3_SERVO, "FireBeetle2: duplicate assignment - PIN_RC_CH4 and PIN_ARM3_SERVO are both assigned to the same GPIO");
-static_assert(PIN_RC_CH4 != PIN_ARM4_SERVO, "FireBeetle2: duplicate assignment - PIN_RC_CH4 and PIN_ARM4_SERVO are both assigned to the same GPIO");
-static_assert(PIN_RC_CH4 != PIN_ARM5_SERVO, "FireBeetle2: duplicate assignment - PIN_RC_CH4 and PIN_ARM5_SERVO are both assigned to the same GPIO");
-static_assert(PIN_RC_CH4 != PIN_DOME_ESC, "FireBeetle2: duplicate assignment - PIN_RC_CH4 and PIN_DOME_ESC are both assigned to the same GPIO");
-static_assert(PIN_RC_CH5 != PIN_RC_CH6, "FireBeetle2: duplicate RC assignment - PIN_RC_CH5 and PIN_RC_CH6 are both assigned to the same GPIO");
-static_assert(PIN_RC_CH5 != PIN_AUDIO_TX, "FireBeetle2: duplicate assignment - PIN_RC_CH5 and PIN_AUDIO_TX are both assigned to the same GPIO");
-static_assert(PIN_RC_CH5 != PIN_AUDIO_RX, "FireBeetle2: duplicate assignment - PIN_RC_CH5 and PIN_AUDIO_RX are both assigned to the same GPIO");
-static_assert(PIN_RC_CH5 != PIN_ARM1_SERVO, "FireBeetle2: duplicate assignment - PIN_RC_CH5 and PIN_ARM1_SERVO are both assigned to the same GPIO");
-static_assert(PIN_RC_CH5 != PIN_ARM2_SERVO, "FireBeetle2: duplicate assignment - PIN_RC_CH5 and PIN_ARM2_SERVO are both assigned to the same GPIO");
-static_assert(PIN_RC_CH5 != PIN_ARM3_SERVO, "FireBeetle2: duplicate assignment - PIN_RC_CH5 and PIN_ARM3_SERVO are both assigned to the same GPIO");
-static_assert(PIN_RC_CH5 != PIN_ARM4_SERVO, "FireBeetle2: duplicate assignment - PIN_RC_CH5 and PIN_ARM4_SERVO are both assigned to the same GPIO");
-static_assert(PIN_RC_CH5 != PIN_ARM5_SERVO, "FireBeetle2: duplicate assignment - PIN_RC_CH5 and PIN_ARM5_SERVO are both assigned to the same GPIO");
-static_assert(PIN_RC_CH5 != PIN_DOME_ESC, "FireBeetle2: duplicate assignment - PIN_RC_CH5 and PIN_DOME_ESC are both assigned to the same GPIO");
-static_assert(PIN_RC_CH6 != PIN_AUDIO_TX, "FireBeetle2: duplicate assignment - PIN_RC_CH6 and PIN_AUDIO_TX are both assigned to the same GPIO");
-static_assert(PIN_RC_CH6 != PIN_AUDIO_RX, "FireBeetle2: duplicate assignment - PIN_RC_CH6 and PIN_AUDIO_RX are both assigned to the same GPIO");
-static_assert(PIN_RC_CH6 != PIN_ARM1_SERVO, "FireBeetle2: duplicate assignment - PIN_RC_CH6 and PIN_ARM1_SERVO are both assigned to the same GPIO");
-static_assert(PIN_RC_CH6 != PIN_ARM2_SERVO, "FireBeetle2: duplicate assignment - PIN_RC_CH6 and PIN_ARM2_SERVO are both assigned to the same GPIO");
-static_assert(PIN_RC_CH6 != PIN_ARM3_SERVO, "FireBeetle2: duplicate assignment - PIN_RC_CH6 and PIN_ARM3_SERVO are both assigned to the same GPIO");
-static_assert(PIN_RC_CH6 != PIN_ARM4_SERVO, "FireBeetle2: duplicate assignment - PIN_RC_CH6 and PIN_ARM4_SERVO are both assigned to the same GPIO");
-static_assert(PIN_RC_CH6 != PIN_ARM5_SERVO, "FireBeetle2: duplicate assignment - PIN_RC_CH6 and PIN_ARM5_SERVO are both assigned to the same GPIO");
-static_assert(PIN_RC_CH6 != PIN_DOME_ESC, "FireBeetle2: duplicate assignment - PIN_RC_CH6 and PIN_DOME_ESC are both assigned to the same GPIO");
-static_assert(PIN_AUDIO_TX != PIN_AUDIO_RX, "FireBeetle2: duplicate assignment - PIN_AUDIO_TX and PIN_AUDIO_RX are both assigned to the same GPIO");
-static_assert(PIN_AUDIO_TX != PIN_ARM1_SERVO, "FireBeetle2: duplicate assignment - PIN_AUDIO_TX and PIN_ARM1_SERVO are both assigned to the same GPIO");
-static_assert(PIN_AUDIO_TX != PIN_ARM2_SERVO, "FireBeetle2: duplicate assignment - PIN_AUDIO_TX and PIN_ARM2_SERVO are both assigned to the same GPIO");
-static_assert(PIN_AUDIO_TX != PIN_ARM3_SERVO, "FireBeetle2: duplicate assignment - PIN_AUDIO_TX and PIN_ARM3_SERVO are both assigned to the same GPIO");
-static_assert(PIN_AUDIO_TX != PIN_ARM4_SERVO, "FireBeetle2: duplicate assignment - PIN_AUDIO_TX and PIN_ARM4_SERVO are both assigned to the same GPIO");
-static_assert(PIN_AUDIO_TX != PIN_ARM5_SERVO, "FireBeetle2: duplicate assignment - PIN_AUDIO_TX and PIN_ARM5_SERVO are both assigned to the same GPIO");
-static_assert(PIN_AUDIO_TX != PIN_DOME_ESC, "FireBeetle2: duplicate assignment - PIN_AUDIO_TX and PIN_DOME_ESC are both assigned to the same GPIO");
-static_assert(PIN_AUDIO_RX != PIN_ARM1_SERVO, "FireBeetle2: duplicate assignment - PIN_AUDIO_RX and PIN_ARM1_SERVO are both assigned to the same GPIO");
-static_assert(PIN_AUDIO_RX != PIN_ARM2_SERVO, "FireBeetle2: duplicate assignment - PIN_AUDIO_RX and PIN_ARM2_SERVO are both assigned to the same GPIO");
-static_assert(PIN_AUDIO_RX != PIN_ARM3_SERVO, "FireBeetle2: duplicate assignment - PIN_AUDIO_RX and PIN_ARM3_SERVO are both assigned to the same GPIO");
-static_assert(PIN_AUDIO_RX != PIN_ARM4_SERVO, "FireBeetle2: duplicate assignment - PIN_AUDIO_RX and PIN_ARM4_SERVO are both assigned to the same GPIO");
-static_assert(PIN_AUDIO_RX != PIN_ARM5_SERVO, "FireBeetle2: duplicate assignment - PIN_AUDIO_RX and PIN_ARM5_SERVO are both assigned to the same GPIO");
-static_assert(PIN_AUDIO_RX != PIN_DOME_ESC, "FireBeetle2: duplicate assignment - PIN_AUDIO_RX and PIN_DOME_ESC are both assigned to the same GPIO");
-static_assert(PIN_ARM1_SERVO != PIN_ARM2_SERVO, "FireBeetle2: duplicate assignment - PIN_ARM1_SERVO and PIN_ARM2_SERVO are both assigned to the same GPIO");
-static_assert(PIN_ARM1_SERVO != PIN_ARM3_SERVO, "FireBeetle2: duplicate assignment - PIN_ARM1_SERVO and PIN_ARM3_SERVO are both assigned to the same GPIO");
-static_assert(PIN_ARM1_SERVO != PIN_ARM4_SERVO, "FireBeetle2: duplicate assignment - PIN_ARM1_SERVO and PIN_ARM4_SERVO are both assigned to the same GPIO");
-static_assert(PIN_ARM1_SERVO != PIN_ARM5_SERVO, "FireBeetle2: duplicate assignment - PIN_ARM1_SERVO and PIN_ARM5_SERVO are both assigned to the same GPIO");
-static_assert(PIN_ARM1_SERVO != PIN_DOME_ESC, "FireBeetle2: duplicate assignment - PIN_ARM1_SERVO and PIN_DOME_ESC are both assigned to the same GPIO");
-static_assert(PIN_ARM2_SERVO != PIN_ARM3_SERVO, "FireBeetle2: duplicate assignment - PIN_ARM2_SERVO and PIN_ARM3_SERVO are both assigned to the same GPIO");
-static_assert(PIN_ARM2_SERVO != PIN_ARM4_SERVO, "FireBeetle2: duplicate assignment - PIN_ARM2_SERVO and PIN_ARM4_SERVO are both assigned to the same GPIO");
-static_assert(PIN_ARM2_SERVO != PIN_ARM5_SERVO, "FireBeetle2: duplicate assignment - PIN_ARM2_SERVO and PIN_ARM5_SERVO are both assigned to the same GPIO");
-static_assert(PIN_ARM2_SERVO != PIN_DOME_ESC, "FireBeetle2: duplicate assignment - PIN_ARM2_SERVO and PIN_DOME_ESC are both assigned to the same GPIO");
-static_assert(PIN_ARM3_SERVO != PIN_ARM4_SERVO, "FireBeetle2: duplicate assignment - PIN_ARM3_SERVO and PIN_ARM4_SERVO are both assigned to the same GPIO");
-static_assert(PIN_ARM3_SERVO != PIN_ARM5_SERVO, "FireBeetle2: duplicate assignment - PIN_ARM3_SERVO and PIN_ARM5_SERVO are both assigned to the same GPIO");
-static_assert(PIN_ARM3_SERVO != PIN_DOME_ESC, "FireBeetle2: duplicate assignment - PIN_ARM3_SERVO and PIN_DOME_ESC are both assigned to the same GPIO");
-static_assert(PIN_ARM4_SERVO != PIN_ARM5_SERVO, "FireBeetle2: duplicate assignment - PIN_ARM4_SERVO and PIN_ARM5_SERVO are both assigned to the same GPIO");
-static_assert(PIN_ARM4_SERVO != PIN_DOME_ESC, "FireBeetle2: duplicate assignment - PIN_ARM4_SERVO and PIN_DOME_ESC are both assigned to the same GPIO");
-static_assert(PIN_ARM5_SERVO != PIN_DOME_ESC, "FireBeetle2: duplicate assignment - PIN_ARM5_SERVO and PIN_DOME_ESC are both assigned to the same GPIO");
-
-// Guard against reserved GPIO assignments (pins not available on the board or
-// committed to essential boot/debug functions that cannot be reassigned).
-// GPIO35 is BOOT strapping, GPIO37/38 are UART0 console (ROM logs, serial download).
-static_assert(PIN_RC_CH1 != 35 && PIN_RC_CH1 != 37 && PIN_RC_CH1 != 38, "FireBeetle2: PIN_RC_CH1 is assigned to a reserved GPIO (BOOT/UART0 console)");
-static_assert(PIN_RC_CH2 != 35 && PIN_RC_CH2 != 37 && PIN_RC_CH2 != 38, "FireBeetle2: PIN_RC_CH2 is assigned to a reserved GPIO (BOOT/UART0 console)");
-static_assert(PIN_RC_CH3 != 35 && PIN_RC_CH3 != 37 && PIN_RC_CH3 != 38, "FireBeetle2: PIN_RC_CH3 is assigned to a reserved GPIO (BOOT/UART0 console)");
-static_assert(PIN_RC_CH4 != 35 && PIN_RC_CH4 != 37 && PIN_RC_CH4 != 38, "FireBeetle2: PIN_RC_CH4 is assigned to a reserved GPIO (BOOT/UART0 console)");
-static_assert(PIN_RC_CH5 != 35 && PIN_RC_CH5 != 37 && PIN_RC_CH5 != 38, "FireBeetle2: PIN_RC_CH5 is assigned to a reserved GPIO (BOOT/UART0 console)");
-static_assert(PIN_RC_CH6 != 35 && PIN_RC_CH6 != 37 && PIN_RC_CH6 != 38, "FireBeetle2: PIN_RC_CH6 is assigned to a reserved GPIO (BOOT/UART0 console)");
-static_assert(PIN_AUDIO_TX != 35 && PIN_AUDIO_TX != 37 && PIN_AUDIO_TX != 38, "FireBeetle2: PIN_AUDIO_TX is assigned to a reserved GPIO (BOOT/UART0 console)");
-static_assert(PIN_AUDIO_RX != 35 && PIN_AUDIO_RX != 37 && PIN_AUDIO_RX != 38, "FireBeetle2: PIN_AUDIO_RX is assigned to a reserved GPIO (BOOT/UART0 console)");
-static_assert(PIN_ARM1_SERVO != 35 && PIN_ARM1_SERVO != 37 && PIN_ARM1_SERVO != 38, "FireBeetle2: PIN_ARM1_SERVO is assigned to a reserved GPIO (BOOT/UART0 console)");
-static_assert(PIN_ARM2_SERVO != 35 && PIN_ARM2_SERVO != 37 && PIN_ARM2_SERVO != 38, "FireBeetle2: PIN_ARM2_SERVO is assigned to a reserved GPIO (BOOT/UART0 console)");
-static_assert(PIN_ARM3_SERVO != 35 && PIN_ARM3_SERVO != 37 && PIN_ARM3_SERVO != 38, "FireBeetle2: PIN_ARM3_SERVO is assigned to a reserved GPIO (BOOT/UART0 console)");
-static_assert(PIN_ARM4_SERVO != 35 && PIN_ARM4_SERVO != 37 && PIN_ARM4_SERVO != 38, "FireBeetle2: PIN_ARM4_SERVO is assigned to a reserved GPIO (BOOT/UART0 console)");
-static_assert(PIN_ARM5_SERVO != 35 && PIN_ARM5_SERVO != 37 && PIN_ARM5_SERVO != 38, "FireBeetle2: PIN_ARM5_SERVO is assigned to a reserved GPIO (BOOT/UART0 console)");
-static_assert(PIN_DOME_ESC != 35 && PIN_DOME_ESC != 37 && PIN_DOME_ESC != 38, "FireBeetle2: PIN_DOME_ESC is assigned to a reserved GPIO (BOOT/UART0 console)");
 
 // AUX LED strip selection values (NVS aux_led_pin)
 constexpr uint8_t AUX_LED_PIN_DISABLED = 0;
@@ -356,6 +248,255 @@ inline uint8_t auxLedSelectionToGpio(uint8_t selection) {
 // (P2 priority: "any GPIO via GPIO matrix, usable without restriction")
 constexpr uint8_t PIN_I2C_SCL = 8;   // I2C clock per spec sheet default (P2 priority)
 constexpr uint8_t PIN_I2C_SDA = 7;   // I2C data per spec sheet default (P2 priority)
+
+// Every pin used by a production peripheral must be assigned before the full
+// FireBeetle firmware can compile. This is safety-critical for SBUS because it
+// feeds the failsafe/estop path. SBUS1/2 guard RC_CH1/2 through their aliases,
+// so the inventory has no duplicate RC_CH1/2 rows that could drift.
+#define PA_FIREBEETLE_REQUIRED_PIN(pin, diagnostic) \
+    static_assert(pin != PA_PIN_UNASSIGNED, diagnostic);
+#include "firebeetle_required_pins.inc"
+#undef PA_FIREBEETLE_REQUIRED_PIN
+
+// FireBeetle 2 pin coherence guards — generated from the complete inventory.
+//
+// These checks verify two invariants from include/firebeetle_required_pins.inc:
+// 1. All 20 production GPIO pins are distinct (no duplicates).
+// 2. All 20 production GPIO pins are in the 21-element allow-list routed by DFR1237.
+//
+// DFR1237 allow-list: GPIO actually routed to the IO headers (from spec sheet
+// §Exposed GPIO table, minus GPIO35/37/38 reserved for BOOT/UART0/strapping):
+//   4, 5, 7, 8, 20, 21, 22, 23, 28, 29, 30, 31, 32, 33, 34, 36, 48, 49, 50, 51, 52
+//
+// Route checks: each pin must be in the allow-list. Defined once per pin.
+#define PA_FIREBEETLE_CHECK_ROUTED(pin, name) \
+    static_assert((pin) == 4 || (pin) == 5 || (pin) == 7 || (pin) == 8 || \
+                  (pin) == 20 || (pin) == 21 || (pin) == 22 || (pin) == 23 || \
+                  (pin) == 28 || (pin) == 29 || (pin) == 30 || (pin) == 31 || \
+                  (pin) == 32 || (pin) == 33 || (pin) == 34 || (pin) == 36 || \
+                  (pin) == 48 || (pin) == 49 || (pin) == 50 || (pin) == 51 || \
+                  (pin) == 52, "FireBeetle2: " name " is not routed by DFR1237");
+
+#define PA_FIREBEETLE_CHECK_DISTINCT(pin1, pin2, name1, name2) \
+    static_assert((pin1) != (pin2), "FireBeetle2: " name1 " and " name2 " both assigned to GPIO " #pin2);
+
+// Routing checks for all 20 pins.
+PA_FIREBEETLE_CHECK_ROUTED(PIN_SBUS1_RX, "PIN_SBUS1_RX")
+PA_FIREBEETLE_CHECK_ROUTED(PIN_SBUS2_RX, "PIN_SBUS2_RX")
+PA_FIREBEETLE_CHECK_ROUTED(PIN_RC_CH3, "PIN_RC_CH3")
+PA_FIREBEETLE_CHECK_ROUTED(PIN_RC_CH4, "PIN_RC_CH4")
+PA_FIREBEETLE_CHECK_ROUTED(PIN_RC_CH5, "PIN_RC_CH5")
+PA_FIREBEETLE_CHECK_ROUTED(PIN_RC_CH6, "PIN_RC_CH6")
+PA_FIREBEETLE_CHECK_ROUTED(PIN_AUDIO_TX, "PIN_AUDIO_TX")
+PA_FIREBEETLE_CHECK_ROUTED(PIN_AUDIO_RX, "PIN_AUDIO_RX")
+PA_FIREBEETLE_CHECK_ROUTED(PIN_ARM1_SERVO, "PIN_ARM1_SERVO")
+PA_FIREBEETLE_CHECK_ROUTED(PIN_ARM2_SERVO, "PIN_ARM2_SERVO")
+PA_FIREBEETLE_CHECK_ROUTED(PIN_ARM3_SERVO, "PIN_ARM3_SERVO")
+PA_FIREBEETLE_CHECK_ROUTED(PIN_ARM4_SERVO, "PIN_ARM4_SERVO")
+PA_FIREBEETLE_CHECK_ROUTED(PIN_ARM5_SERVO, "PIN_ARM5_SERVO")
+PA_FIREBEETLE_CHECK_ROUTED(PIN_DOME_ESC, "PIN_DOME_ESC")
+PA_FIREBEETLE_CHECK_ROUTED(PIN_I2C_SCL, "PIN_I2C_SCL")
+PA_FIREBEETLE_CHECK_ROUTED(PIN_I2C_SDA, "PIN_I2C_SDA")
+PA_FIREBEETLE_CHECK_ROUTED(PIN_HOVERBOARD_TX, "PIN_HOVERBOARD_TX")
+PA_FIREBEETLE_CHECK_ROUTED(PIN_HOVERBOARD_RX, "PIN_HOVERBOARD_RX")
+PA_FIREBEETLE_CHECK_ROUTED(PIN_DOME_TX, "PIN_DOME_TX")
+PA_FIREBEETLE_CHECK_ROUTED(PIN_DOME_RX, "PIN_DOME_RX")
+
+// Uniqueness checks: all pairwise comparisons ensuring no duplicates.
+// This is the exhaustive set derived from the 20-pin inventory.
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_RC_CH3, PIN_RC_CH4, "PIN_RC_CH3", "PIN_RC_CH4")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_RC_CH3, PIN_RC_CH5, "PIN_RC_CH3", "PIN_RC_CH5")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_RC_CH3, PIN_RC_CH6, "PIN_RC_CH3", "PIN_RC_CH6")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_RC_CH3, PIN_AUDIO_TX, "PIN_RC_CH3", "PIN_AUDIO_TX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_RC_CH3, PIN_AUDIO_RX, "PIN_RC_CH3", "PIN_AUDIO_RX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_RC_CH3, PIN_ARM1_SERVO, "PIN_RC_CH3", "PIN_ARM1_SERVO")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_RC_CH3, PIN_ARM2_SERVO, "PIN_RC_CH3", "PIN_ARM2_SERVO")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_RC_CH3, PIN_ARM3_SERVO, "PIN_RC_CH3", "PIN_ARM3_SERVO")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_RC_CH3, PIN_ARM4_SERVO, "PIN_RC_CH3", "PIN_ARM4_SERVO")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_RC_CH3, PIN_ARM5_SERVO, "PIN_RC_CH3", "PIN_ARM5_SERVO")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_RC_CH3, PIN_DOME_ESC, "PIN_RC_CH3", "PIN_DOME_ESC")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_RC_CH3, PIN_I2C_SCL, "PIN_RC_CH3", "PIN_I2C_SCL")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_RC_CH3, PIN_I2C_SDA, "PIN_RC_CH3", "PIN_I2C_SDA")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_RC_CH3, PIN_HOVERBOARD_TX, "PIN_RC_CH3", "PIN_HOVERBOARD_TX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_RC_CH3, PIN_HOVERBOARD_RX, "PIN_RC_CH3", "PIN_HOVERBOARD_RX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_RC_CH3, PIN_DOME_TX, "PIN_RC_CH3", "PIN_DOME_TX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_RC_CH3, PIN_DOME_RX, "PIN_RC_CH3", "PIN_DOME_RX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_SBUS1_RX, PIN_SBUS2_RX, "PIN_SBUS1_RX", "PIN_SBUS2_RX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_SBUS1_RX, PIN_RC_CH3, "PIN_SBUS1_RX", "PIN_RC_CH3")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_SBUS1_RX, PIN_RC_CH4, "PIN_SBUS1_RX", "PIN_RC_CH4")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_SBUS1_RX, PIN_RC_CH5, "PIN_SBUS1_RX", "PIN_RC_CH5")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_SBUS1_RX, PIN_RC_CH6, "PIN_SBUS1_RX", "PIN_RC_CH6")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_SBUS1_RX, PIN_AUDIO_TX, "PIN_SBUS1_RX", "PIN_AUDIO_TX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_SBUS1_RX, PIN_AUDIO_RX, "PIN_SBUS1_RX", "PIN_AUDIO_RX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_SBUS1_RX, PIN_ARM1_SERVO, "PIN_SBUS1_RX", "PIN_ARM1_SERVO")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_SBUS1_RX, PIN_ARM2_SERVO, "PIN_SBUS1_RX", "PIN_ARM2_SERVO")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_SBUS1_RX, PIN_ARM3_SERVO, "PIN_SBUS1_RX", "PIN_ARM3_SERVO")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_SBUS1_RX, PIN_ARM4_SERVO, "PIN_SBUS1_RX", "PIN_ARM4_SERVO")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_SBUS1_RX, PIN_ARM5_SERVO, "PIN_SBUS1_RX", "PIN_ARM5_SERVO")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_SBUS1_RX, PIN_DOME_ESC, "PIN_SBUS1_RX", "PIN_DOME_ESC")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_SBUS1_RX, PIN_I2C_SCL, "PIN_SBUS1_RX", "PIN_I2C_SCL")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_SBUS1_RX, PIN_I2C_SDA, "PIN_SBUS1_RX", "PIN_I2C_SDA")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_SBUS1_RX, PIN_HOVERBOARD_TX, "PIN_SBUS1_RX", "PIN_HOVERBOARD_TX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_SBUS1_RX, PIN_HOVERBOARD_RX, "PIN_SBUS1_RX", "PIN_HOVERBOARD_RX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_SBUS1_RX, PIN_DOME_TX, "PIN_SBUS1_RX", "PIN_DOME_TX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_SBUS1_RX, PIN_DOME_RX, "PIN_SBUS1_RX", "PIN_DOME_RX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_SBUS2_RX, PIN_RC_CH3, "PIN_SBUS2_RX", "PIN_RC_CH3")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_SBUS2_RX, PIN_RC_CH4, "PIN_SBUS2_RX", "PIN_RC_CH4")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_SBUS2_RX, PIN_RC_CH5, "PIN_SBUS2_RX", "PIN_RC_CH5")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_SBUS2_RX, PIN_RC_CH6, "PIN_SBUS2_RX", "PIN_RC_CH6")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_SBUS2_RX, PIN_AUDIO_TX, "PIN_SBUS2_RX", "PIN_AUDIO_TX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_SBUS2_RX, PIN_AUDIO_RX, "PIN_SBUS2_RX", "PIN_AUDIO_RX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_SBUS2_RX, PIN_ARM1_SERVO, "PIN_SBUS2_RX", "PIN_ARM1_SERVO")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_SBUS2_RX, PIN_ARM2_SERVO, "PIN_SBUS2_RX", "PIN_ARM2_SERVO")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_SBUS2_RX, PIN_ARM3_SERVO, "PIN_SBUS2_RX", "PIN_ARM3_SERVO")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_SBUS2_RX, PIN_ARM4_SERVO, "PIN_SBUS2_RX", "PIN_ARM4_SERVO")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_SBUS2_RX, PIN_ARM5_SERVO, "PIN_SBUS2_RX", "PIN_ARM5_SERVO")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_SBUS2_RX, PIN_DOME_ESC, "PIN_SBUS2_RX", "PIN_DOME_ESC")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_SBUS2_RX, PIN_I2C_SCL, "PIN_SBUS2_RX", "PIN_I2C_SCL")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_SBUS2_RX, PIN_I2C_SDA, "PIN_SBUS2_RX", "PIN_I2C_SDA")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_SBUS2_RX, PIN_HOVERBOARD_TX, "PIN_SBUS2_RX", "PIN_HOVERBOARD_TX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_SBUS2_RX, PIN_HOVERBOARD_RX, "PIN_SBUS2_RX", "PIN_HOVERBOARD_RX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_SBUS2_RX, PIN_DOME_TX, "PIN_SBUS2_RX", "PIN_DOME_TX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_SBUS2_RX, PIN_DOME_RX, "PIN_SBUS2_RX", "PIN_DOME_RX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_RC_CH4, PIN_RC_CH5, "PIN_RC_CH4", "PIN_RC_CH5")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_RC_CH4, PIN_RC_CH6, "PIN_RC_CH4", "PIN_RC_CH6")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_RC_CH4, PIN_AUDIO_TX, "PIN_RC_CH4", "PIN_AUDIO_TX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_RC_CH4, PIN_AUDIO_RX, "PIN_RC_CH4", "PIN_AUDIO_RX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_RC_CH4, PIN_ARM1_SERVO, "PIN_RC_CH4", "PIN_ARM1_SERVO")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_RC_CH4, PIN_ARM2_SERVO, "PIN_RC_CH4", "PIN_ARM2_SERVO")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_RC_CH4, PIN_ARM3_SERVO, "PIN_RC_CH4", "PIN_ARM3_SERVO")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_RC_CH4, PIN_ARM4_SERVO, "PIN_RC_CH4", "PIN_ARM4_SERVO")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_RC_CH4, PIN_ARM5_SERVO, "PIN_RC_CH4", "PIN_ARM5_SERVO")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_RC_CH4, PIN_DOME_ESC, "PIN_RC_CH4", "PIN_DOME_ESC")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_RC_CH4, PIN_I2C_SCL, "PIN_RC_CH4", "PIN_I2C_SCL")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_RC_CH4, PIN_I2C_SDA, "PIN_RC_CH4", "PIN_I2C_SDA")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_RC_CH4, PIN_HOVERBOARD_TX, "PIN_RC_CH4", "PIN_HOVERBOARD_TX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_RC_CH4, PIN_HOVERBOARD_RX, "PIN_RC_CH4", "PIN_HOVERBOARD_RX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_RC_CH4, PIN_DOME_TX, "PIN_RC_CH4", "PIN_DOME_TX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_RC_CH4, PIN_DOME_RX, "PIN_RC_CH4", "PIN_DOME_RX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_RC_CH5, PIN_RC_CH6, "PIN_RC_CH5", "PIN_RC_CH6")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_RC_CH5, PIN_AUDIO_TX, "PIN_RC_CH5", "PIN_AUDIO_TX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_RC_CH5, PIN_AUDIO_RX, "PIN_RC_CH5", "PIN_AUDIO_RX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_RC_CH5, PIN_ARM1_SERVO, "PIN_RC_CH5", "PIN_ARM1_SERVO")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_RC_CH5, PIN_ARM2_SERVO, "PIN_RC_CH5", "PIN_ARM2_SERVO")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_RC_CH5, PIN_ARM3_SERVO, "PIN_RC_CH5", "PIN_ARM3_SERVO")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_RC_CH5, PIN_ARM4_SERVO, "PIN_RC_CH5", "PIN_ARM4_SERVO")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_RC_CH5, PIN_ARM5_SERVO, "PIN_RC_CH5", "PIN_ARM5_SERVO")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_RC_CH5, PIN_DOME_ESC, "PIN_RC_CH5", "PIN_DOME_ESC")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_RC_CH5, PIN_I2C_SCL, "PIN_RC_CH5", "PIN_I2C_SCL")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_RC_CH5, PIN_I2C_SDA, "PIN_RC_CH5", "PIN_I2C_SDA")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_RC_CH5, PIN_HOVERBOARD_TX, "PIN_RC_CH5", "PIN_HOVERBOARD_TX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_RC_CH5, PIN_HOVERBOARD_RX, "PIN_RC_CH5", "PIN_HOVERBOARD_RX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_RC_CH5, PIN_DOME_TX, "PIN_RC_CH5", "PIN_DOME_TX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_RC_CH5, PIN_DOME_RX, "PIN_RC_CH5", "PIN_DOME_RX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_RC_CH6, PIN_AUDIO_TX, "PIN_RC_CH6", "PIN_AUDIO_TX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_RC_CH6, PIN_AUDIO_RX, "PIN_RC_CH6", "PIN_AUDIO_RX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_RC_CH6, PIN_ARM1_SERVO, "PIN_RC_CH6", "PIN_ARM1_SERVO")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_RC_CH6, PIN_ARM2_SERVO, "PIN_RC_CH6", "PIN_ARM2_SERVO")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_RC_CH6, PIN_ARM3_SERVO, "PIN_RC_CH6", "PIN_ARM3_SERVO")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_RC_CH6, PIN_ARM4_SERVO, "PIN_RC_CH6", "PIN_ARM4_SERVO")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_RC_CH6, PIN_ARM5_SERVO, "PIN_RC_CH6", "PIN_ARM5_SERVO")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_RC_CH6, PIN_DOME_ESC, "PIN_RC_CH6", "PIN_DOME_ESC")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_RC_CH6, PIN_I2C_SCL, "PIN_RC_CH6", "PIN_I2C_SCL")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_RC_CH6, PIN_I2C_SDA, "PIN_RC_CH6", "PIN_I2C_SDA")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_RC_CH6, PIN_HOVERBOARD_TX, "PIN_RC_CH6", "PIN_HOVERBOARD_TX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_RC_CH6, PIN_HOVERBOARD_RX, "PIN_RC_CH6", "PIN_HOVERBOARD_RX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_RC_CH6, PIN_DOME_TX, "PIN_RC_CH6", "PIN_DOME_TX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_RC_CH6, PIN_DOME_RX, "PIN_RC_CH6", "PIN_DOME_RX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_AUDIO_TX, PIN_AUDIO_RX, "PIN_AUDIO_TX", "PIN_AUDIO_RX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_AUDIO_TX, PIN_ARM1_SERVO, "PIN_AUDIO_TX", "PIN_ARM1_SERVO")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_AUDIO_TX, PIN_ARM2_SERVO, "PIN_AUDIO_TX", "PIN_ARM2_SERVO")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_AUDIO_TX, PIN_ARM3_SERVO, "PIN_AUDIO_TX", "PIN_ARM3_SERVO")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_AUDIO_TX, PIN_ARM4_SERVO, "PIN_AUDIO_TX", "PIN_ARM4_SERVO")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_AUDIO_TX, PIN_ARM5_SERVO, "PIN_AUDIO_TX", "PIN_ARM5_SERVO")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_AUDIO_TX, PIN_DOME_ESC, "PIN_AUDIO_TX", "PIN_DOME_ESC")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_AUDIO_TX, PIN_I2C_SCL, "PIN_AUDIO_TX", "PIN_I2C_SCL")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_AUDIO_TX, PIN_I2C_SDA, "PIN_AUDIO_TX", "PIN_I2C_SDA")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_AUDIO_TX, PIN_HOVERBOARD_TX, "PIN_AUDIO_TX", "PIN_HOVERBOARD_TX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_AUDIO_TX, PIN_HOVERBOARD_RX, "PIN_AUDIO_TX", "PIN_HOVERBOARD_RX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_AUDIO_TX, PIN_DOME_TX, "PIN_AUDIO_TX", "PIN_DOME_TX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_AUDIO_TX, PIN_DOME_RX, "PIN_AUDIO_TX", "PIN_DOME_RX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_AUDIO_RX, PIN_ARM1_SERVO, "PIN_AUDIO_RX", "PIN_ARM1_SERVO")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_AUDIO_RX, PIN_ARM2_SERVO, "PIN_AUDIO_RX", "PIN_ARM2_SERVO")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_AUDIO_RX, PIN_ARM3_SERVO, "PIN_AUDIO_RX", "PIN_ARM3_SERVO")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_AUDIO_RX, PIN_ARM4_SERVO, "PIN_AUDIO_RX", "PIN_ARM4_SERVO")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_AUDIO_RX, PIN_ARM5_SERVO, "PIN_AUDIO_RX", "PIN_ARM5_SERVO")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_AUDIO_RX, PIN_DOME_ESC, "PIN_AUDIO_RX", "PIN_DOME_ESC")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_AUDIO_RX, PIN_I2C_SCL, "PIN_AUDIO_RX", "PIN_I2C_SCL")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_AUDIO_RX, PIN_I2C_SDA, "PIN_AUDIO_RX", "PIN_I2C_SDA")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_AUDIO_RX, PIN_HOVERBOARD_TX, "PIN_AUDIO_RX", "PIN_HOVERBOARD_TX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_AUDIO_RX, PIN_HOVERBOARD_RX, "PIN_AUDIO_RX", "PIN_HOVERBOARD_RX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_AUDIO_RX, PIN_DOME_TX, "PIN_AUDIO_RX", "PIN_DOME_TX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_AUDIO_RX, PIN_DOME_RX, "PIN_AUDIO_RX", "PIN_DOME_RX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_ARM1_SERVO, PIN_ARM2_SERVO, "PIN_ARM1_SERVO", "PIN_ARM2_SERVO")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_ARM1_SERVO, PIN_ARM3_SERVO, "PIN_ARM1_SERVO", "PIN_ARM3_SERVO")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_ARM1_SERVO, PIN_ARM4_SERVO, "PIN_ARM1_SERVO", "PIN_ARM4_SERVO")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_ARM1_SERVO, PIN_ARM5_SERVO, "PIN_ARM1_SERVO", "PIN_ARM5_SERVO")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_ARM1_SERVO, PIN_DOME_ESC, "PIN_ARM1_SERVO", "PIN_DOME_ESC")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_ARM1_SERVO, PIN_I2C_SCL, "PIN_ARM1_SERVO", "PIN_I2C_SCL")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_ARM1_SERVO, PIN_I2C_SDA, "PIN_ARM1_SERVO", "PIN_I2C_SDA")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_ARM1_SERVO, PIN_HOVERBOARD_TX, "PIN_ARM1_SERVO", "PIN_HOVERBOARD_TX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_ARM1_SERVO, PIN_HOVERBOARD_RX, "PIN_ARM1_SERVO", "PIN_HOVERBOARD_RX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_ARM1_SERVO, PIN_DOME_TX, "PIN_ARM1_SERVO", "PIN_DOME_TX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_ARM1_SERVO, PIN_DOME_RX, "PIN_ARM1_SERVO", "PIN_DOME_RX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_ARM2_SERVO, PIN_ARM3_SERVO, "PIN_ARM2_SERVO", "PIN_ARM3_SERVO")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_ARM2_SERVO, PIN_ARM4_SERVO, "PIN_ARM2_SERVO", "PIN_ARM4_SERVO")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_ARM2_SERVO, PIN_ARM5_SERVO, "PIN_ARM2_SERVO", "PIN_ARM5_SERVO")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_ARM2_SERVO, PIN_DOME_ESC, "PIN_ARM2_SERVO", "PIN_DOME_ESC")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_ARM2_SERVO, PIN_I2C_SCL, "PIN_ARM2_SERVO", "PIN_I2C_SCL")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_ARM2_SERVO, PIN_I2C_SDA, "PIN_ARM2_SERVO", "PIN_I2C_SDA")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_ARM2_SERVO, PIN_HOVERBOARD_TX, "PIN_ARM2_SERVO", "PIN_HOVERBOARD_TX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_ARM2_SERVO, PIN_HOVERBOARD_RX, "PIN_ARM2_SERVO", "PIN_HOVERBOARD_RX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_ARM2_SERVO, PIN_DOME_TX, "PIN_ARM2_SERVO", "PIN_DOME_TX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_ARM2_SERVO, PIN_DOME_RX, "PIN_ARM2_SERVO", "PIN_DOME_RX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_ARM3_SERVO, PIN_ARM4_SERVO, "PIN_ARM3_SERVO", "PIN_ARM4_SERVO")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_ARM3_SERVO, PIN_ARM5_SERVO, "PIN_ARM3_SERVO", "PIN_ARM5_SERVO")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_ARM3_SERVO, PIN_DOME_ESC, "PIN_ARM3_SERVO", "PIN_DOME_ESC")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_ARM3_SERVO, PIN_I2C_SCL, "PIN_ARM3_SERVO", "PIN_I2C_SCL")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_ARM3_SERVO, PIN_I2C_SDA, "PIN_ARM3_SERVO", "PIN_I2C_SDA")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_ARM3_SERVO, PIN_HOVERBOARD_TX, "PIN_ARM3_SERVO", "PIN_HOVERBOARD_TX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_ARM3_SERVO, PIN_HOVERBOARD_RX, "PIN_ARM3_SERVO", "PIN_HOVERBOARD_RX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_ARM3_SERVO, PIN_DOME_TX, "PIN_ARM3_SERVO", "PIN_DOME_TX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_ARM3_SERVO, PIN_DOME_RX, "PIN_ARM3_SERVO", "PIN_DOME_RX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_ARM4_SERVO, PIN_ARM5_SERVO, "PIN_ARM4_SERVO", "PIN_ARM5_SERVO")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_ARM4_SERVO, PIN_DOME_ESC, "PIN_ARM4_SERVO", "PIN_DOME_ESC")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_ARM4_SERVO, PIN_I2C_SCL, "PIN_ARM4_SERVO", "PIN_I2C_SCL")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_ARM4_SERVO, PIN_I2C_SDA, "PIN_ARM4_SERVO", "PIN_I2C_SDA")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_ARM4_SERVO, PIN_HOVERBOARD_TX, "PIN_ARM4_SERVO", "PIN_HOVERBOARD_TX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_ARM4_SERVO, PIN_HOVERBOARD_RX, "PIN_ARM4_SERVO", "PIN_HOVERBOARD_RX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_ARM4_SERVO, PIN_DOME_TX, "PIN_ARM4_SERVO", "PIN_DOME_TX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_ARM4_SERVO, PIN_DOME_RX, "PIN_ARM4_SERVO", "PIN_DOME_RX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_ARM5_SERVO, PIN_DOME_ESC, "PIN_ARM5_SERVO", "PIN_DOME_ESC")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_ARM5_SERVO, PIN_I2C_SCL, "PIN_ARM5_SERVO", "PIN_I2C_SCL")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_ARM5_SERVO, PIN_I2C_SDA, "PIN_ARM5_SERVO", "PIN_I2C_SDA")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_ARM5_SERVO, PIN_HOVERBOARD_TX, "PIN_ARM5_SERVO", "PIN_HOVERBOARD_TX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_ARM5_SERVO, PIN_HOVERBOARD_RX, "PIN_ARM5_SERVO", "PIN_HOVERBOARD_RX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_ARM5_SERVO, PIN_DOME_TX, "PIN_ARM5_SERVO", "PIN_DOME_TX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_ARM5_SERVO, PIN_DOME_RX, "PIN_ARM5_SERVO", "PIN_DOME_RX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_DOME_ESC, PIN_I2C_SCL, "PIN_DOME_ESC", "PIN_I2C_SCL")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_DOME_ESC, PIN_I2C_SDA, "PIN_DOME_ESC", "PIN_I2C_SDA")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_DOME_ESC, PIN_HOVERBOARD_TX, "PIN_DOME_ESC", "PIN_HOVERBOARD_TX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_DOME_ESC, PIN_HOVERBOARD_RX, "PIN_DOME_ESC", "PIN_HOVERBOARD_RX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_DOME_ESC, PIN_DOME_TX, "PIN_DOME_ESC", "PIN_DOME_TX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_DOME_ESC, PIN_DOME_RX, "PIN_DOME_ESC", "PIN_DOME_RX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_I2C_SCL, PIN_I2C_SDA, "PIN_I2C_SCL", "PIN_I2C_SDA")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_I2C_SCL, PIN_HOVERBOARD_TX, "PIN_I2C_SCL", "PIN_HOVERBOARD_TX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_I2C_SCL, PIN_HOVERBOARD_RX, "PIN_I2C_SCL", "PIN_HOVERBOARD_RX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_I2C_SCL, PIN_DOME_TX, "PIN_I2C_SCL", "PIN_DOME_TX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_I2C_SCL, PIN_DOME_RX, "PIN_I2C_SCL", "PIN_DOME_RX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_I2C_SDA, PIN_HOVERBOARD_TX, "PIN_I2C_SDA", "PIN_HOVERBOARD_TX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_I2C_SDA, PIN_HOVERBOARD_RX, "PIN_I2C_SDA", "PIN_HOVERBOARD_RX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_I2C_SDA, PIN_DOME_TX, "PIN_I2C_SDA", "PIN_DOME_TX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_I2C_SDA, PIN_DOME_RX, "PIN_I2C_SDA", "PIN_DOME_RX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_HOVERBOARD_TX, PIN_HOVERBOARD_RX, "PIN_HOVERBOARD_TX", "PIN_HOVERBOARD_RX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_HOVERBOARD_TX, PIN_DOME_TX, "PIN_HOVERBOARD_TX", "PIN_DOME_TX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_HOVERBOARD_TX, PIN_DOME_RX, "PIN_HOVERBOARD_TX", "PIN_DOME_RX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_HOVERBOARD_RX, PIN_DOME_TX, "PIN_HOVERBOARD_RX", "PIN_DOME_TX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_HOVERBOARD_RX, PIN_DOME_RX, "PIN_HOVERBOARD_RX", "PIN_DOME_RX")
+PA_FIREBEETLE_CHECK_DISTINCT(PIN_DOME_TX, PIN_DOME_RX, "PIN_DOME_TX", "PIN_DOME_RX")
+
+#undef PA_FIREBEETLE_CHECK_ROUTED
+#undef PA_FIREBEETLE_CHECK_DISTINCT
 
 #else
   #error "PA_BOARD value not recognized in pin-map selection"
