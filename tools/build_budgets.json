@@ -6,7 +6,7 @@
     "notes": [
       "Flash: binary image size (.bin file) to fit in the OTA partition (from partitions/*.csv app0/app1 size field)",
       "RAM: static allocation (.data + .bss sections from linker via size -A), not heap or PSRAM",
-      "dram_limit_bytes: total DRAM available per platform (hardware constant, derived from size -A output)",
+      "dram_limit_bytes: total DRAM available per platform (hardware constant from ESP-IDF linker scripts; artoo-esp32=124580B, esp32-p4=327680B)",
       "Budgets set with deliberate headroom to prevent reflexive raises on legitimate commits",
       "Env-to-platform classification in 'platforms' registry; Makefile/slice_verify.py/check_build_budgets.py all consume it",
       "Baseline measurements recorded with commit SHA (git cat-file -t to verify)"
