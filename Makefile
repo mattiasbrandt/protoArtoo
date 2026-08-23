@@ -45,6 +45,10 @@ PIO_CORE_DIR_P4    ?= $(HOME)/.platformio-p4
 # Read from build_budgets.json platforms registry (single source of truth).
 P4_ENVS := $(shell python3 -c "import json; d=json.load(open('tools/build_budgets.json')); print(' '.join(d['platforms']['esp32p4'].get('envs', [])))")
 
+ifeq ($(strip $(P4_ENVS)),)
+$(error P4_ENVS is empty: could not read platforms.esp32p4.envs from tools/build_budgets.json)
+endif
+
 # Map BUILD_ENV to chip target, then to core dir. Lookup is chip-aware:
 # if BUILD_ENV is in P4_ENVS, use P4 core dir; otherwise use artoo-esp32 core dir.
 PIO_CORE_DIR = $(if $(filter $(P4_ENVS),$(BUILD_ENV)),$(PIO_CORE_DIR_P4),$(PIO_CORE_DIR_ARTOO))
