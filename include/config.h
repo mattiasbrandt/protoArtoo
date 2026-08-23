@@ -170,8 +170,9 @@ constexpr uint8_t PIN_DOME_RX = 23;  // UART2_RX per spec sheet §Recommended al
 // Audio UART — DY-SV5W module
 // TBD: Spec sheet supports UART3 (GPIO32/33, costs I3C) or UART4 (GPIO31+28/29/30, costs SPI2)
 // Decision depends on I3C and SPI usage; deferred to firmware design #190.
-constexpr uint8_t PIN_AUDIO_TX = PA_PIN_UNASSIGNED;  // TBD - choose from UART3 or UART4
-constexpr uint8_t PIN_AUDIO_RX = PA_PIN_UNASSIGNED;  // TBD - choose from UART3 or UART4
+// PROBE ONLY: placeholder pins for #190 compile-depth measurement — DO NOT MERGE
+constexpr uint8_t PIN_AUDIO_TX = 37;  // PROBE: GPIO37 - AUDIO_TX placeholder
+constexpr uint8_t PIN_AUDIO_RX = 38;  // PROBE: GPIO38 - AUDIO_RX placeholder
 
 // RC receiver inputs (SBUS + analog channels)
 // TBD: Spec sheet constrains available GPIOs:
@@ -179,12 +180,13 @@ constexpr uint8_t PIN_AUDIO_RX = PA_PIN_UNASSIGNED;  // TBD - choose from UART3 
 // - GPIO0-2, 10-11, 13, 26-27, 46-47, 53 not brought out (§GPIO Suitability: Not available)
 // - GPIO4/5 on avoid list (JTAG MTMS/MTDO, P3 priority; §Pairs to avoid)
 // Final assignment deferred to #190 after confirming drive/servo footprint.
-constexpr uint8_t PIN_RC_CH1 = PA_PIN_UNASSIGNED;  // TBD
-constexpr uint8_t PIN_RC_CH2 = PA_PIN_UNASSIGNED;  // TBD
-constexpr uint8_t PIN_RC_CH3 = PA_PIN_UNASSIGNED;  // TBD
-constexpr uint8_t PIN_RC_CH4 = PA_PIN_UNASSIGNED;  // TBD
-constexpr uint8_t PIN_RC_CH5 = PA_PIN_UNASSIGNED;  // TBD
-constexpr uint8_t PIN_RC_CH6 = PA_PIN_UNASSIGNED;  // TBD
+// PROBE ONLY: placeholder pins for #190 compile-depth measurement — DO NOT MERGE
+constexpr uint8_t PIN_RC_CH1 = 31;  // PROBE: GPIO31 - RC_CH1 placeholder
+constexpr uint8_t PIN_RC_CH2 = 32;  // PROBE: GPIO32 - RC_CH2 placeholder
+constexpr uint8_t PIN_RC_CH3 = 33;  // PROBE: GPIO33 - RC_CH3 placeholder
+constexpr uint8_t PIN_RC_CH4 = 34;  // PROBE: GPIO34 - RC_CH4 placeholder
+constexpr uint8_t PIN_RC_CH5 = 35;  // PROBE: GPIO35 - RC_CH5 placeholder
+constexpr uint8_t PIN_RC_CH6 = 36;  // PROBE: GPIO36 - RC_CH6 placeholder
 
 constexpr uint8_t PIN_SBUS1_RX = PIN_RC_CH1;  // CH1  --  SBUS #1 (drive)
 constexpr uint8_t PIN_SBUS2_RX = PIN_RC_CH2;  // CH2  --  SBUS #2 (dome)
@@ -192,12 +194,13 @@ constexpr uint8_t PIN_SBUS2_RX = PIN_RC_CH2;  // CH2  --  SBUS #2 (dome)
 // Servo outputs (LEDC PWM)
 // TBD: Servo assignment constrained by RC pin footprint and available GPIO.
 // Deferred to #190 after RC lanes are finalized.
-constexpr uint8_t PIN_ARM1_SERVO = PA_PIN_UNASSIGNED;  // TBD
-constexpr uint8_t PIN_ARM2_SERVO = PA_PIN_UNASSIGNED;  // TBD
-constexpr uint8_t PIN_ARM3_SERVO = PA_PIN_UNASSIGNED;  // TBD (AUX1)
-constexpr uint8_t PIN_ARM4_SERVO = PA_PIN_UNASSIGNED;  // TBD (AUX2)
-constexpr uint8_t PIN_ARM5_SERVO = PA_PIN_UNASSIGNED;  // TBD (AUX3)
-constexpr uint8_t PIN_DOME_ESC = PA_PIN_UNASSIGNED;    // TBD
+// PROBE ONLY: placeholder pins for #190 compile-depth measurement — DO NOT MERGE
+constexpr uint8_t PIN_ARM1_SERVO = 39;  // PROBE: GPIO39 - ARM1_SERVO placeholder
+constexpr uint8_t PIN_ARM2_SERVO = 40;  // PROBE: GPIO40 - ARM2_SERVO placeholder
+constexpr uint8_t PIN_ARM3_SERVO = 41;  // PROBE: GPIO41 - ARM3_SERVO placeholder
+constexpr uint8_t PIN_ARM4_SERVO = 42;  // PROBE: GPIO42 - ARM4_SERVO placeholder
+constexpr uint8_t PIN_ARM5_SERVO = 43;  // PROBE: GPIO43 - ARM5_SERVO placeholder
+constexpr uint8_t PIN_DOME_ESC = 44;    // PROBE: GPIO44 - DOME_ESC placeholder
 
 // Every pin used by a production peripheral must be assigned before the full
 // FireBeetle firmware can compile. This is safety-critical for SBUS because it
