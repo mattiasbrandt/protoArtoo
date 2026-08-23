@@ -16,6 +16,22 @@
  *  - Never WiFi.scan() unguarded (EHM-257 NULL memcpy crash)
  *  - Avoid BLE entirely (EHM-238 P4+C6 coexistence broken)
  *
+ * SSE fidelity boundary — read before interpreting a stalled stream:
+ * This sketch streams /api/events through PsychicEventSource, the vendor class
+ * production deliberately does NOT use. protoArtoo's own stream evicts a client
+ * that misses its send deadline (ADR 0030, include/web_event_stream.h);
+ * PsychicEventSourceClient::sendEvent() instead retries httpd_socket_send() in
+ * an unbounded loop against a five-second socket timeout, so ONE slow reader
+ * stalls the broadcast for every reader — with no SDIO involvement whatsoever.
+ * Therefore: if the SSE smoke stalls, suspect this class before suspecting
+ * Hosted. Confirm by porting to include/web_event_stream.h — add
+ * +<../src/web/web_event_stream.cpp> to this env's build_src_filter (it is
+ * standalone: no Arduino, no vendor type, no clock) and supply the two
+ * transport functions at the foot of that header. Do not record NO-GO on a
+ * stall until that has been ruled out.
+ * Production's concurrent-stream cap is 3 (PA_ADMISSION_MAX_SSE_CLIENTS); this
+ * sketch has no cap, so client counts above 3 are observation, not verdict.
+ *
  * WiFi credentials NEVER committed (public repo). Build with explicit creds:
  *   PLATFORMIO_BUILD_FLAGS='-DBENCH_SSID=\"ssid\" -DBENCH_PASS=\"pass\"' \
  *     make build BUILD_ENV=firebeetle2_hosted_bench
