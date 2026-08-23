@@ -106,7 +106,7 @@ class FireBeetleRequiredPinGuards(unittest.TestCase):
 
     def test_inventory_matches_independent_expected_contract(self):
         rows = self._inventory_rows()
-        self.assertEqual(len(rows), 14)
+        self.assertEqual(len(rows), 20)  # 14 required (Slice 2) + 6 already-assigned
         self.assertEqual(dict(rows), EXPECTED_PINS)
 
     def test_all_assigned_probe_compiles(self):
