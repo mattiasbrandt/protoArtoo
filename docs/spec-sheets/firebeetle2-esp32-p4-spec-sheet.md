@@ -485,32 +485,41 @@ Established on the bench 2026-08-22. Full working notes in issue #198.
 > ESP-Hosted guidance - *do not connect VDD* - is correct here and the
 > board-specific diagram is not. Power the board from its own USB-C.
 
-**The connection that works**, verified by reading `chip-id` and a full 4 MB
-read-back:
+**For passive boot capture** (reading flash without forcing download mode),
+verified by reading `chip-id` and a full 4 MB read-back:
 
 | USB-TTL (3V3 logic) | FireBeetle 2 |
 | --- | --- |
-| `TXD` | pad **2** of the four gold pads below the beetle logo (underside) |
-| `RXD` | pad **3** of those four |
-| `GND` | `GND` on the header edge, above pin `32` |
+| `TXD` | (not connected — receive only) |
+| `RXD` | pad **3** of the four gold pads below the beetle logo (underside) |
+| `GND` | (not needed — FT232 and board share ground via host USB) |
 | ⛔ `5V` | **not connected** |
 
 > [!WARNING]
-> **DFRobot doc 21646 contradicts itself on the pad order, and the pads are
-> unlabelled on the board (2 mm pitch).** Its **Hardware Connection** figure
-> (USB-TTL converter drawn as 5V/GND/TX/RX) and its **Test Points** figure
-> ("Introduction to Test Points", labelling `ESP32C6_IO9/BOOT / RX / TX / GND /
-> 3V3 / RST`) place **`GND` and `ESP32C6_IO9/BOOT` in swapped positions**. RX/TX
-> (the middle two) are consistent; the two OUTER pads are where the figures
-> disagree. Only `GND`/`RX`/`TX` are needed for a read or flash (no BOOT strap -
-> the C6 enters download without one), so use the three-wire set above and
-> **confirm `GND` by continuity to a known ground** rather than trusting either
-> figure. (This is what a successful download used: `GND` + `ESP32C6_RX` +
-> `ESP32C6_TX`, no IO9/BOOT.)
+> **DFRobot doc 21646 has three documentation defects.** (1) Its wiring diagram
+> routes `5V` to the `NC` pad, which heats the board (CAUTION above). (2) The
+> **Test Points** figure (labelling `ESP32C6_IO9/BOOT / RX / TX / GND / 3V3 /
+> RST`) is **correct**; the **Hardware Connection** figure is **wrong**. (3) The
+> Hardware Connection figure places the GND signal in download-mode boot
+> position, which accidentally straps `ESP32C6_IO9/BOOT` to ground. The pad
+> order (confirmed by continuity on 2026-08-23, all jumpers removed) is
+> **left-to-right: `ESP32C6_IO9/BOOT` — `ESP32C6_RX` — `ESP32C6_TX` — `GND`
+> (corner).** The corner pad (`GND`) is nearest the `48/49/50` header column and
+> is the only one of the four with `3V3` and `ESP32C6_RST` stacked directly
+> beneath it. Count from the header, not from a board edge.
+> 
+> **For passive boot capture (reading flash, non-destructive test):** use **one
+> contact only** — `RXD` → pad 3 (`ESP32C6_TX`). Pad 1 must be **free** (not
+> grounded); the FT232 and board already share ground through the host USB, so
+> no ground wire to the pad array is needed. Grounding pad 1 forces download mode
+> and destroys the test.
+>
+> **For flash download mode (erase/write):** **ground pad 1** (`ESP32C6_IO9/BOOT`)
+> to force download mode, plus `TXD` → pad 2 (`ESP32C6_RX`) and `RXD` → pad 3
+> (`ESP32C6_TX`). Without pad 1 grounded, the chip boots from flash instead.
 
-No `IO0` wire is needed - the C6 enters download mode without one. The host P4
-must be prevented from driving GPIO54 (the C6 reset line); parking it in ROM
-bootloader does this without holding buttons:
+The host P4 must be prevented from driving GPIO54 (the C6 reset line); parking
+it in ROM bootloader does this without holding buttons:
 
 ```bash
 esptool --chip esp32p4 --port <P4> --before default-reset --after no-reset flash-id
