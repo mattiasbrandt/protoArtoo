@@ -31,7 +31,7 @@ static FailsafeSource layerToSource(FailsafeLayer layer) {
             return FS_SBUS_TIMEOUT;
         case FailsafeLayer::WEB_TIMEOUT:
             return FS_WEB_TIMEOUT;
-        case FailsafeLayer::TWDT_RESET:
+        case FailsafeLayer::WATCHDOG_RESET:
             return FS_WATCHDOG_RESET;
         case FailsafeLayer::ESTOP:
             return FS_ESTOP_CMD;
@@ -46,14 +46,14 @@ static void updateMirrorsLocked() {
     bool sbusHwActive = (_activeMask & (1 << (uint8_t)FailsafeLayer::SBUS_HW)) != 0;
     bool sbuswdActive = (_activeMask & (1 << (uint8_t)FailsafeLayer::SBUS_WATCHDOG)) != 0;
     bool webActive = (_activeMask & (1 << (uint8_t)FailsafeLayer::WEB_TIMEOUT)) != 0;
-    bool twdtActive = (_activeMask & (1 << (uint8_t)FailsafeLayer::TWDT_RESET)) != 0;
+    bool watchdogResetActive = (_activeMask & (1 << (uint8_t)FailsafeLayer::WATCHDOG_RESET)) != 0;
     bool estopActive = (_activeMask & (1 << (uint8_t)FailsafeLayer::ESTOP)) != 0;
 
     robotState.sbusHwFailsafe = sbusHwActive;
     robotState.sbusSignalLost = sbuswdActive;
     robotState.webDriveExpired = webActive;
-    // Note: TWDT_RESET and ESTOP both drive robotState.estop.
-    robotState.estop = twdtActive || estopActive;
+    // Note: WATCHDOG_RESET and ESTOP both drive robotState.estop.
+    robotState.estop = watchdogResetActive || estopActive;
 }
 
 void failsafeInit(portMUX_TYPE* mux) {
@@ -160,14 +160,14 @@ void failsafeClearEstop() {
     }
 
     uint8_t estopBit = 1 << (uint8_t)FailsafeLayer::ESTOP;
-    uint8_t twdtBit = 1 << (uint8_t)FailsafeLayer::TWDT_RESET;
+    uint8_t watchdogBit = 1 << (uint8_t)FailsafeLayer::WATCHDOG_RESET;
 
     taskENTER_CRITICAL(_mux);
     bool estopWasActive = (_activeMask & estopBit) != 0;
-    bool twdtWasActive = (_activeMask & twdtBit) != 0;
-    // Clear both ESTOP and TWDT_RESET  --  both represent explicit operator recovery intent
+    bool watchdogWasActive = (_activeMask & watchdogBit) != 0;
+    // Clear both ESTOP and WATCHDOG_RESET  --  both represent explicit operator recovery intent
     _activeMask &= ~estopBit;
-    _activeMask &= ~twdtBit;
+    _activeMask &= ~watchdogBit;
     updateMirrorsLocked();
 
     // Clear failsafeSource only if this was the active reason.
@@ -180,8 +180,8 @@ void failsafeClearEstop() {
     if (estopWasActive) {
         PA_LOG_INFO(TAG, "estop cleared (explicit)");
     }
-    if (twdtWasActive) {
-        PA_LOG_INFO(TAG, "twdt_reset cleared (explicit)");
+    if (watchdogWasActive) {
+        PA_LOG_INFO(TAG, "watchdog_reset cleared (explicit)");
     }
 }
 

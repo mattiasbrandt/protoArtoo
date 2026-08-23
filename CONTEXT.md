@@ -414,6 +414,22 @@ _Avoid_: ESP32-P4's native WiFi, universal P4 C6/SDIO topology, runtime-ready ca
 The development posture where a controller board runs connected to USB only, without droid hardware — exercising HTTP, SSE, serial, OTA, and bench-attachable peripherals. A posture, not a verification status: evidence gathered in Bench-Mode is at most Controller Upload Verified.
 _Avoid_: bench verified, bench tested, using bench work as integrated-hardware evidence
 
+**Estop**:
+The latched safe state in which the droid refuses to drive until an operator explicitly clears it. Set by an operator request or by a failsafe layer; never cleared automatically, and never cleared by the condition that set it going away.
+_Avoid_: emergency stop mode, safety pause, drive disable
+
+**Latching Estop**:
+The property that estop, once set, stays set across the condition ending and across a reboot until an operator clears it via `POST /api/estop/clear`. The latch is the point: a droid that recovers on its own hides the fault that caused it.
+_Avoid_: auto-clearing estop, momentary estop, transient stop
+
+**Failsafe Layer**:
+One named cause that can independently hold the droid out of drive. Layers are tracked as a bitmask, not a single state, so several may be active at once and the droid stays out of drive until every one has cleared. Today: receiver hardware failsafe, SBUS timeout, stale web drive command, watchdog-reset boot recovery, and operator estop.
+_Avoid_: failsafe mode, failsafe state, safety flag
+
+**Watchdog Reset**:
+Any reboot caused by a watchdog expiring - task watchdog, interrupt watchdog, or the RTC and super watchdogs that act as backstops. Treated as one class deliberately: the distinctions are a property of the chip rather than of how dangerous the crash was, and one chip protoArtoo targets cannot report them apart at all (ADR 0031).
+_Avoid_: TWDT reset, task watchdog reset (when the broader class is meant)
+
 ## Relationships
 
 - **Phase 5** can include work that is not yet covered by **Full Hardware Validation**.
