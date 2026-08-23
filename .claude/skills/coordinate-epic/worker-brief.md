@@ -45,6 +45,15 @@ tests, not exhaustive suites, and do not polish them; you will not be
 rejected for test naming, structure or volume, and you will be rejected for
 production code that does not do the job.
 
+At the PoC/MVP stage of an epic - the platform is unproven and the go/no-go
+gate has not returned a verdict - test effort is near-zero priority. The bar is
+that it builds and runs on the board. If this brief grants
+--expect-no-new-tests, that is the stage speaking: do NOT manufacture coverage
+to satisfy the gate's test counter. Ship the guard, skip the harness that
+proves the guard; that harness is epic-closing work. If the ticket's acceptance
+criteria are test-shaped and the epic is at PoC stage, say so on the issue
+rather than building the harness silently.
+
 BOUNDARIES
 - Operate ONLY inside {WORKTREE}. Never edit, checkout, stash, restore, or
   clean anything outside it. Out-of-tree touches are an automatic reject.

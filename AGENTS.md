@@ -329,6 +329,33 @@ high-signal checks for behavior that can create unsafe motion, hard-to-debug fie
 failures, API contract drift, or repeated regressions. Maintenance cost matters:
 do not add or demand brittle tests that mostly encode implementation details.
 
+**Verification depth follows project stage.** During the PoC/MVP stage of an epic —
+the platform is unproven, the go/no-go gate has not returned a verdict, the
+hardware has not run the real firmware — test effort is near-zero priority. The
+bar is: it builds, it runs on the board, here is the log. Test depth is bought
+back deliberately at **epic closing** and during **robustness work**, when there
+is something proven enough to be worth protecting.
+
+Two consequences, both binding:
+
+- **Acceptance criteria must not be test-shaped at PoC stage.** "Fourteen isolated
+  compiler probes, each asserting its own diagnostic" is epic-closing work written
+  into an implementation ticket. Write the outcome ("the guards exist and the build
+  is red for every unassigned pin"), not the harness that proves the outcome.
+- **Know which driver is which.** `tools/slice_verify.py` fails a `delta +0` when
+  `src/`/`include/` changed (`zero_delta_ok`), so any production edit must add at
+  least one native test. That floor is small and cheap — one test — and it exists
+  because `delta == 0` is the state in which no mutation can be killed. It is *not*
+  what produces large harnesses: `test/test_tools/` is not counted by it at all.
+  Oversized test work comes from **acceptance criteria**, not from the gate. At PoC
+  stage the coordinator may still grant `--expect-no-new-tests` epic-wide to remove
+  even that floor, and revoke it per-ticket for robustness and closing work — but
+  fixing the ticket wording is the change that actually matters.
+
+Distinguish the guard from the harness that tests the guard. A `static_assert` that
+makes a build fail is product and ships at any stage; a probe matrix proving that
+`static_assert` fires is scaffolding and waits.
+
 Default completion evidence:
 - Firmware behavior changes: `make build`, then `make test` when safety,
   protocol parsing, shared state, config persistence, JSON/API contracts, or prior

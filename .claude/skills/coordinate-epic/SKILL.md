@@ -109,6 +109,26 @@ reporting passes that never ran. In the worker's worktree, personally:
    than the code, it had better be because the tests prove nothing, not
    because they could be prettier. Iteration spent on test design is
    iteration not spent on the change itself.
+
+   **Stage gate on all of the above.** At the PoC/MVP stage of an epic - the
+   platform is unproven, the go/no-go has not returned a verdict, the hardware
+   has not run the real firmware - you may grant `--expect-no-new-tests` as the
+   epic-wide default in the worker brief, revoking it per-ticket for robustness
+   and epic-closing work. Be clear about what that buys: the gate's
+   flat-test-total rule only requires ONE native test per `src/`/`include/`
+   change, and does not count `test/test_tools/` at all. It is a cheap floor,
+   not the source of oversized harnesses. **The acceptance criteria you write
+   are.** Two rejection cycles spent on a probe harness for a failure mode that
+   cannot occur until a later ticket is the exact waste this clause exists to
+   prevent, and that harness was specified by the ticket, not demanded by the
+   gate.
+
+   When you author sub-issue bodies, keep acceptance criteria outcome-shaped
+   at this stage: "the guards exist and the build is red for every unassigned
+   pin", not "fourteen isolated compiler probes each asserting its own
+   diagnostic". A test-shaped acceptance criterion is a rejection cycle you
+   have pre-committed to. Distinguish the guard (product, ships now) from the
+   harness that proves the guard (scaffolding, waits for closing).
 3. Read the full diff (`git diff <base>...HEAD`): scope creep,
    shortcuts, behaviour change in tickets that promise none, comment
    degradation, core guardrails (no heap alloc or blocking on Core 1 paths,
