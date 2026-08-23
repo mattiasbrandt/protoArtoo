@@ -485,8 +485,9 @@ Established on the bench 2026-08-22. Full working notes in issue #198.
 > ESP-Hosted guidance - *do not connect VDD* - is correct here and the
 > board-specific diagram is not. Power the board from its own USB-C.
 
-**For passive boot capture** (reading flash without forcing download mode),
-verified by reading `chip-id` and a full 4 MB read-back:
+**For passive UART console capture** (receive-only observation of the C6's boot output,
+non-destructive; chip remains running from flash), verified by capturing 46.5 KB in 20 s
+with no ground wire to the pads, and by #198 Phase A's 118-cycle boot log:
 
 | USB-TTL (3V3 logic) | FireBeetle 2 |
 | --- | --- |
@@ -508,15 +509,18 @@ verified by reading `chip-id` and a full 4 MB read-back:
 > is the only one of the four with `3V3` and `ESP32C6_RST` stacked directly
 > beneath it. Count from the header, not from a board edge.
 > 
-> **For passive boot capture (reading flash, non-destructive test):** use **one
-> contact only** — `RXD` → pad 3 (`ESP32C6_TX`). Pad 1 must be **free** (not
-> grounded); the FT232 and board already share ground through the host USB, so
-> no ground wire to the pad array is needed. Grounding pad 1 forces download mode
-> and destroys the test.
+> **For passive UART console capture** (observe the C6's boot output, non-destructive):
+> use **one contact only** — `RXD` → pad 3 (`ESP32C6_TX`). Pad 1 must be **free** (not
+> grounded); the FT232 and board already share ground through the host USB, so no ground
+> wire to the pad array is needed. Grounding pad 1 forces download mode and prevents boot
+> from flash. Confirm contact on pad 3 by traffic, not by voltage: a floating FT232
+> `RXD` idles at ~3.3 V via its own internal pull-up, so a meter reading proves nothing.
+> Only received bytes prove contact.
 >
-> **For flash download mode (erase/write):** **ground pad 1** (`ESP32C6_IO9/BOOT`)
+> **For flash download mode (erase/write/read):** **ground pad 1** (`ESP32C6_IO9/BOOT`)
 > to force download mode, plus `TXD` → pad 2 (`ESP32C6_RX`) and `RXD` → pad 3
-> (`ESP32C6_TX`). Without pad 1 grounded, the chip boots from flash instead.
+> (`ESP32C6_TX`). This configuration is verified by `esptool chip-id` and by full 4 MB
+> read-back. Without pad 1 grounded, the chip boots from flash instead.
 
 The host P4 must be prevented from driving GPIO54 (the C6 reset line); parking
 it in ROM bootloader does this without holding buttons:
