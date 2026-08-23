@@ -168,36 +168,39 @@ constexpr uint8_t PIN_DOME_TX = 22;  // UART2_TX per spec sheet §Recommended al
 constexpr uint8_t PIN_DOME_RX = 23;  // UART2_RX per spec sheet §Recommended allocation
 
 // Audio UART — DY-SV5W module
-// TBD: Spec sheet supports UART3 (GPIO32/33, costs I3C) or UART4 (GPIO31+28/29/30, costs SPI2)
-// Decision depends on I3C and SPI usage; deferred to firmware design #190.
-constexpr uint8_t PIN_AUDIO_TX = PA_PIN_UNASSIGNED;  // TBD - choose from UART3 or UART4
-constexpr uint8_t PIN_AUDIO_RX = PA_PIN_UNASSIGNED;  // TBD - choose from UART3 or UART4
+// From spec sheet: GPIO34/36 are strapping pins (P3), usable via GPIO matrix with
+// unburnt eFuses. Dedicated hardware UART TX/RX paths for audio module.
+// CAUTION: Never burn EFUSE_JTAG_SEL_ENABLE or EFUSE_UART_PRINT_CONTROL on this board.
+// While both default to 0 (eFuse unburnt), GPIO34/36 strapping roles remain ignored.
+// Burning either turns the audio UART pins into live strapping inputs — incompatible with audio.
+constexpr uint8_t PIN_AUDIO_TX = 34;  // UART matrix, P3 strapping (JTAG source), GPIO matrix routed
+constexpr uint8_t PIN_AUDIO_RX = 36;  // UART matrix, P3 strapping (ROM print), GPIO matrix routed
 
 // RC receiver inputs (SBUS + analog channels)
-// TBD: Spec sheet constrains available GPIOs:
-// - GPIO14-19 consumed by ESP32-C6 SDIO link (§Wireless: Transport pins)
-// - GPIO0-2, 10-11, 13, 26-27, 46-47, 53 not brought out (§GPIO Suitability: Not available)
-// - GPIO4/5 on avoid list (JTAG MTMS/MTDO, P3 priority; §Pairs to avoid)
-// Final assignment deferred to #190 after confirming drive/servo footprint.
-constexpr uint8_t PIN_RC_CH1 = PA_PIN_UNASSIGNED;  // TBD
-constexpr uint8_t PIN_RC_CH2 = PA_PIN_UNASSIGNED;  // TBD
-constexpr uint8_t PIN_RC_CH3 = PA_PIN_UNASSIGNED;  // TBD
-constexpr uint8_t PIN_RC_CH4 = PA_PIN_UNASSIGNED;  // TBD
-constexpr uint8_t PIN_RC_CH5 = PA_PIN_UNASSIGNED;  // TBD
-constexpr uint8_t PIN_RC_CH6 = PA_PIN_UNASSIGNED;  // TBD
+// Allocation per spec sheet "Recommended allocation" and §Exposed GPIO table.
+// All six channels assigned to P2 unimpeachable pins (28-33) to keep the safety-critical
+// SBUS input away from strapping conflicts and avoid-list pairs.
+constexpr uint8_t PIN_RC_CH1 = 28;  // P2 unimpeachable, SBUS #1 (drive) receiver
+constexpr uint8_t PIN_RC_CH2 = 29;  // P2 unimpeachable, SBUS #2 (dome) receiver
+constexpr uint8_t PIN_RC_CH3 = 30;  // P2 unimpeachable
+constexpr uint8_t PIN_RC_CH4 = 31;  // P2 unimpeachable, spec sheet: "best clean pin in <=36 range"
+constexpr uint8_t PIN_RC_CH5 = 32;  // P1-for-I3C, reassignable (protoArtoo does not use I3C)
+constexpr uint8_t PIN_RC_CH6 = 33;  // P1-for-I3C, reassignable (protoArtoo does not use I3C)
 
 constexpr uint8_t PIN_SBUS1_RX = PIN_RC_CH1;  // CH1  --  SBUS #1 (drive)
 constexpr uint8_t PIN_SBUS2_RX = PIN_RC_CH2;  // CH2  --  SBUS #2 (dome)
 
 // Servo outputs (LEDC PWM)
-// TBD: Servo assignment constrained by RC pin footprint and available GPIO.
-// Deferred to #190 after RC lanes are finalized.
-constexpr uint8_t PIN_ARM1_SERVO = PA_PIN_UNASSIGNED;  // TBD
-constexpr uint8_t PIN_ARM2_SERVO = PA_PIN_UNASSIGNED;  // TBD
-constexpr uint8_t PIN_ARM3_SERVO = PA_PIN_UNASSIGNED;  // TBD (AUX1)
-constexpr uint8_t PIN_ARM4_SERVO = PA_PIN_UNASSIGNED;  // TBD (AUX2)
-constexpr uint8_t PIN_ARM5_SERVO = PA_PIN_UNASSIGNED;  // TBD (AUX3)
-constexpr uint8_t PIN_DOME_ESC = PA_PIN_UNASSIGNED;    // TBD
+// Allocation: standard arm servos on LDO-backed pins (49-50 on VDD_IO_6).
+// AUX pins (1-3, which drive the optional WS2812B strip via auxLedSelectionToGpio())
+// use non-LDO main IO to avoid placing a high-frequency timing-critical line on
+// unmeasured LDO rails. AUX1/AUX2 on GPIO4/5 cost JTAG, which is acceptable post-debug.
+constexpr uint8_t PIN_ARM1_SERVO = 49;  // LEDC PWM, LDO caution (VDD_IO_6), ADC2_CHANNEL0
+constexpr uint8_t PIN_ARM2_SERVO = 50;  // LEDC PWM, LDO caution (VDD_IO_6), ADC2_CHANNEL1
+constexpr uint8_t PIN_ARM3_SERVO = 4;   // AUX1, WS2812B strip capable, P3 JTAG MTMS (post-debug)
+constexpr uint8_t PIN_ARM4_SERVO = 5;   // AUX2, WS2812B strip capable, P3 JTAG MTDO (post-debug)
+constexpr uint8_t PIN_ARM5_SERVO = 51;  // AUX3, WS2812B strip capable, LDO caution (VDD_IO_6)
+constexpr uint8_t PIN_DOME_ESC = 48;    // ESC PWM, LDO caution (VDD_IO_5)
 
 // Every pin used by a production peripheral must be assigned before the full
 // FireBeetle firmware can compile. This is safety-critical for SBUS because it
@@ -207,6 +210,119 @@ constexpr uint8_t PIN_DOME_ESC = PA_PIN_UNASSIGNED;    // TBD
     static_assert(pin != PA_PIN_UNASSIGNED, diagnostic);
 #include "firebeetle_required_pins.inc"
 #undef PA_FIREBEETLE_REQUIRED_PIN
+
+// Guard against duplicate pin assignments (two peripherals on the same GPIO).
+// Duplicate detection uses a compile-time set membership pattern:
+// static_assert(/* pin not already used */) for each assignment.
+static_assert(PIN_RC_CH1 != PIN_RC_CH2, "FireBeetle2: duplicate RC assignment - PIN_RC_CH1 and PIN_RC_CH2 are both assigned to the same GPIO");
+static_assert(PIN_RC_CH1 != PIN_RC_CH3, "FireBeetle2: duplicate RC assignment - PIN_RC_CH1 and PIN_RC_CH3 are both assigned to the same GPIO");
+static_assert(PIN_RC_CH1 != PIN_RC_CH4, "FireBeetle2: duplicate RC assignment - PIN_RC_CH1 and PIN_RC_CH4 are both assigned to the same GPIO");
+static_assert(PIN_RC_CH1 != PIN_RC_CH5, "FireBeetle2: duplicate RC assignment - PIN_RC_CH1 and PIN_RC_CH5 are both assigned to the same GPIO");
+static_assert(PIN_RC_CH1 != PIN_RC_CH6, "FireBeetle2: duplicate RC assignment - PIN_RC_CH1 and PIN_RC_CH6 are both assigned to the same GPIO");
+static_assert(PIN_RC_CH1 != PIN_AUDIO_TX, "FireBeetle2: duplicate assignment - PIN_RC_CH1 and PIN_AUDIO_TX are both assigned to the same GPIO");
+static_assert(PIN_RC_CH1 != PIN_AUDIO_RX, "FireBeetle2: duplicate assignment - PIN_RC_CH1 and PIN_AUDIO_RX are both assigned to the same GPIO");
+static_assert(PIN_RC_CH1 != PIN_ARM1_SERVO, "FireBeetle2: duplicate assignment - PIN_RC_CH1 and PIN_ARM1_SERVO are both assigned to the same GPIO");
+static_assert(PIN_RC_CH1 != PIN_ARM2_SERVO, "FireBeetle2: duplicate assignment - PIN_RC_CH1 and PIN_ARM2_SERVO are both assigned to the same GPIO");
+static_assert(PIN_RC_CH1 != PIN_ARM3_SERVO, "FireBeetle2: duplicate assignment - PIN_RC_CH1 and PIN_ARM3_SERVO are both assigned to the same GPIO");
+static_assert(PIN_RC_CH1 != PIN_ARM4_SERVO, "FireBeetle2: duplicate assignment - PIN_RC_CH1 and PIN_ARM4_SERVO are both assigned to the same GPIO");
+static_assert(PIN_RC_CH1 != PIN_ARM5_SERVO, "FireBeetle2: duplicate assignment - PIN_RC_CH1 and PIN_ARM5_SERVO are both assigned to the same GPIO");
+static_assert(PIN_RC_CH1 != PIN_DOME_ESC, "FireBeetle2: duplicate assignment - PIN_RC_CH1 and PIN_DOME_ESC are both assigned to the same GPIO");
+static_assert(PIN_RC_CH2 != PIN_RC_CH3, "FireBeetle2: duplicate RC assignment - PIN_RC_CH2 and PIN_RC_CH3 are both assigned to the same GPIO");
+static_assert(PIN_RC_CH2 != PIN_RC_CH4, "FireBeetle2: duplicate RC assignment - PIN_RC_CH2 and PIN_RC_CH4 are both assigned to the same GPIO");
+static_assert(PIN_RC_CH2 != PIN_RC_CH5, "FireBeetle2: duplicate RC assignment - PIN_RC_CH2 and PIN_RC_CH5 are both assigned to the same GPIO");
+static_assert(PIN_RC_CH2 != PIN_RC_CH6, "FireBeetle2: duplicate RC assignment - PIN_RC_CH2 and PIN_RC_CH6 are both assigned to the same GPIO");
+static_assert(PIN_RC_CH2 != PIN_AUDIO_TX, "FireBeetle2: duplicate assignment - PIN_RC_CH2 and PIN_AUDIO_TX are both assigned to the same GPIO");
+static_assert(PIN_RC_CH2 != PIN_AUDIO_RX, "FireBeetle2: duplicate assignment - PIN_RC_CH2 and PIN_AUDIO_RX are both assigned to the same GPIO");
+static_assert(PIN_RC_CH2 != PIN_ARM1_SERVO, "FireBeetle2: duplicate assignment - PIN_RC_CH2 and PIN_ARM1_SERVO are both assigned to the same GPIO");
+static_assert(PIN_RC_CH2 != PIN_ARM2_SERVO, "FireBeetle2: duplicate assignment - PIN_RC_CH2 and PIN_ARM2_SERVO are both assigned to the same GPIO");
+static_assert(PIN_RC_CH2 != PIN_ARM3_SERVO, "FireBeetle2: duplicate assignment - PIN_RC_CH2 and PIN_ARM3_SERVO are both assigned to the same GPIO");
+static_assert(PIN_RC_CH2 != PIN_ARM4_SERVO, "FireBeetle2: duplicate assignment - PIN_RC_CH2 and PIN_ARM4_SERVO are both assigned to the same GPIO");
+static_assert(PIN_RC_CH2 != PIN_ARM5_SERVO, "FireBeetle2: duplicate assignment - PIN_RC_CH2 and PIN_ARM5_SERVO are both assigned to the same GPIO");
+static_assert(PIN_RC_CH2 != PIN_DOME_ESC, "FireBeetle2: duplicate assignment - PIN_RC_CH2 and PIN_DOME_ESC are both assigned to the same GPIO");
+static_assert(PIN_RC_CH3 != PIN_RC_CH4, "FireBeetle2: duplicate RC assignment - PIN_RC_CH3 and PIN_RC_CH4 are both assigned to the same GPIO");
+static_assert(PIN_RC_CH3 != PIN_RC_CH5, "FireBeetle2: duplicate RC assignment - PIN_RC_CH3 and PIN_RC_CH5 are both assigned to the same GPIO");
+static_assert(PIN_RC_CH3 != PIN_RC_CH6, "FireBeetle2: duplicate RC assignment - PIN_RC_CH3 and PIN_RC_CH6 are both assigned to the same GPIO");
+static_assert(PIN_RC_CH3 != PIN_AUDIO_TX, "FireBeetle2: duplicate assignment - PIN_RC_CH3 and PIN_AUDIO_TX are both assigned to the same GPIO");
+static_assert(PIN_RC_CH3 != PIN_AUDIO_RX, "FireBeetle2: duplicate assignment - PIN_RC_CH3 and PIN_AUDIO_RX are both assigned to the same GPIO");
+static_assert(PIN_RC_CH3 != PIN_ARM1_SERVO, "FireBeetle2: duplicate assignment - PIN_RC_CH3 and PIN_ARM1_SERVO are both assigned to the same GPIO");
+static_assert(PIN_RC_CH3 != PIN_ARM2_SERVO, "FireBeetle2: duplicate assignment - PIN_RC_CH3 and PIN_ARM2_SERVO are both assigned to the same GPIO");
+static_assert(PIN_RC_CH3 != PIN_ARM3_SERVO, "FireBeetle2: duplicate assignment - PIN_RC_CH3 and PIN_ARM3_SERVO are both assigned to the same GPIO");
+static_assert(PIN_RC_CH3 != PIN_ARM4_SERVO, "FireBeetle2: duplicate assignment - PIN_RC_CH3 and PIN_ARM4_SERVO are both assigned to the same GPIO");
+static_assert(PIN_RC_CH3 != PIN_ARM5_SERVO, "FireBeetle2: duplicate assignment - PIN_RC_CH3 and PIN_ARM5_SERVO are both assigned to the same GPIO");
+static_assert(PIN_RC_CH3 != PIN_DOME_ESC, "FireBeetle2: duplicate assignment - PIN_RC_CH3 and PIN_DOME_ESC are both assigned to the same GPIO");
+static_assert(PIN_RC_CH4 != PIN_RC_CH5, "FireBeetle2: duplicate RC assignment - PIN_RC_CH4 and PIN_RC_CH5 are both assigned to the same GPIO");
+static_assert(PIN_RC_CH4 != PIN_RC_CH6, "FireBeetle2: duplicate RC assignment - PIN_RC_CH4 and PIN_RC_CH6 are both assigned to the same GPIO");
+static_assert(PIN_RC_CH4 != PIN_AUDIO_TX, "FireBeetle2: duplicate assignment - PIN_RC_CH4 and PIN_AUDIO_TX are both assigned to the same GPIO");
+static_assert(PIN_RC_CH4 != PIN_AUDIO_RX, "FireBeetle2: duplicate assignment - PIN_RC_CH4 and PIN_AUDIO_RX are both assigned to the same GPIO");
+static_assert(PIN_RC_CH4 != PIN_ARM1_SERVO, "FireBeetle2: duplicate assignment - PIN_RC_CH4 and PIN_ARM1_SERVO are both assigned to the same GPIO");
+static_assert(PIN_RC_CH4 != PIN_ARM2_SERVO, "FireBeetle2: duplicate assignment - PIN_RC_CH4 and PIN_ARM2_SERVO are both assigned to the same GPIO");
+static_assert(PIN_RC_CH4 != PIN_ARM3_SERVO, "FireBeetle2: duplicate assignment - PIN_RC_CH4 and PIN_ARM3_SERVO are both assigned to the same GPIO");
+static_assert(PIN_RC_CH4 != PIN_ARM4_SERVO, "FireBeetle2: duplicate assignment - PIN_RC_CH4 and PIN_ARM4_SERVO are both assigned to the same GPIO");
+static_assert(PIN_RC_CH4 != PIN_ARM5_SERVO, "FireBeetle2: duplicate assignment - PIN_RC_CH4 and PIN_ARM5_SERVO are both assigned to the same GPIO");
+static_assert(PIN_RC_CH4 != PIN_DOME_ESC, "FireBeetle2: duplicate assignment - PIN_RC_CH4 and PIN_DOME_ESC are both assigned to the same GPIO");
+static_assert(PIN_RC_CH5 != PIN_RC_CH6, "FireBeetle2: duplicate RC assignment - PIN_RC_CH5 and PIN_RC_CH6 are both assigned to the same GPIO");
+static_assert(PIN_RC_CH5 != PIN_AUDIO_TX, "FireBeetle2: duplicate assignment - PIN_RC_CH5 and PIN_AUDIO_TX are both assigned to the same GPIO");
+static_assert(PIN_RC_CH5 != PIN_AUDIO_RX, "FireBeetle2: duplicate assignment - PIN_RC_CH5 and PIN_AUDIO_RX are both assigned to the same GPIO");
+static_assert(PIN_RC_CH5 != PIN_ARM1_SERVO, "FireBeetle2: duplicate assignment - PIN_RC_CH5 and PIN_ARM1_SERVO are both assigned to the same GPIO");
+static_assert(PIN_RC_CH5 != PIN_ARM2_SERVO, "FireBeetle2: duplicate assignment - PIN_RC_CH5 and PIN_ARM2_SERVO are both assigned to the same GPIO");
+static_assert(PIN_RC_CH5 != PIN_ARM3_SERVO, "FireBeetle2: duplicate assignment - PIN_RC_CH5 and PIN_ARM3_SERVO are both assigned to the same GPIO");
+static_assert(PIN_RC_CH5 != PIN_ARM4_SERVO, "FireBeetle2: duplicate assignment - PIN_RC_CH5 and PIN_ARM4_SERVO are both assigned to the same GPIO");
+static_assert(PIN_RC_CH5 != PIN_ARM5_SERVO, "FireBeetle2: duplicate assignment - PIN_RC_CH5 and PIN_ARM5_SERVO are both assigned to the same GPIO");
+static_assert(PIN_RC_CH5 != PIN_DOME_ESC, "FireBeetle2: duplicate assignment - PIN_RC_CH5 and PIN_DOME_ESC are both assigned to the same GPIO");
+static_assert(PIN_RC_CH6 != PIN_AUDIO_TX, "FireBeetle2: duplicate assignment - PIN_RC_CH6 and PIN_AUDIO_TX are both assigned to the same GPIO");
+static_assert(PIN_RC_CH6 != PIN_AUDIO_RX, "FireBeetle2: duplicate assignment - PIN_RC_CH6 and PIN_AUDIO_RX are both assigned to the same GPIO");
+static_assert(PIN_RC_CH6 != PIN_ARM1_SERVO, "FireBeetle2: duplicate assignment - PIN_RC_CH6 and PIN_ARM1_SERVO are both assigned to the same GPIO");
+static_assert(PIN_RC_CH6 != PIN_ARM2_SERVO, "FireBeetle2: duplicate assignment - PIN_RC_CH6 and PIN_ARM2_SERVO are both assigned to the same GPIO");
+static_assert(PIN_RC_CH6 != PIN_ARM3_SERVO, "FireBeetle2: duplicate assignment - PIN_RC_CH6 and PIN_ARM3_SERVO are both assigned to the same GPIO");
+static_assert(PIN_RC_CH6 != PIN_ARM4_SERVO, "FireBeetle2: duplicate assignment - PIN_RC_CH6 and PIN_ARM4_SERVO are both assigned to the same GPIO");
+static_assert(PIN_RC_CH6 != PIN_ARM5_SERVO, "FireBeetle2: duplicate assignment - PIN_RC_CH6 and PIN_ARM5_SERVO are both assigned to the same GPIO");
+static_assert(PIN_RC_CH6 != PIN_DOME_ESC, "FireBeetle2: duplicate assignment - PIN_RC_CH6 and PIN_DOME_ESC are both assigned to the same GPIO");
+static_assert(PIN_AUDIO_TX != PIN_AUDIO_RX, "FireBeetle2: duplicate assignment - PIN_AUDIO_TX and PIN_AUDIO_RX are both assigned to the same GPIO");
+static_assert(PIN_AUDIO_TX != PIN_ARM1_SERVO, "FireBeetle2: duplicate assignment - PIN_AUDIO_TX and PIN_ARM1_SERVO are both assigned to the same GPIO");
+static_assert(PIN_AUDIO_TX != PIN_ARM2_SERVO, "FireBeetle2: duplicate assignment - PIN_AUDIO_TX and PIN_ARM2_SERVO are both assigned to the same GPIO");
+static_assert(PIN_AUDIO_TX != PIN_ARM3_SERVO, "FireBeetle2: duplicate assignment - PIN_AUDIO_TX and PIN_ARM3_SERVO are both assigned to the same GPIO");
+static_assert(PIN_AUDIO_TX != PIN_ARM4_SERVO, "FireBeetle2: duplicate assignment - PIN_AUDIO_TX and PIN_ARM4_SERVO are both assigned to the same GPIO");
+static_assert(PIN_AUDIO_TX != PIN_ARM5_SERVO, "FireBeetle2: duplicate assignment - PIN_AUDIO_TX and PIN_ARM5_SERVO are both assigned to the same GPIO");
+static_assert(PIN_AUDIO_TX != PIN_DOME_ESC, "FireBeetle2: duplicate assignment - PIN_AUDIO_TX and PIN_DOME_ESC are both assigned to the same GPIO");
+static_assert(PIN_AUDIO_RX != PIN_ARM1_SERVO, "FireBeetle2: duplicate assignment - PIN_AUDIO_RX and PIN_ARM1_SERVO are both assigned to the same GPIO");
+static_assert(PIN_AUDIO_RX != PIN_ARM2_SERVO, "FireBeetle2: duplicate assignment - PIN_AUDIO_RX and PIN_ARM2_SERVO are both assigned to the same GPIO");
+static_assert(PIN_AUDIO_RX != PIN_ARM3_SERVO, "FireBeetle2: duplicate assignment - PIN_AUDIO_RX and PIN_ARM3_SERVO are both assigned to the same GPIO");
+static_assert(PIN_AUDIO_RX != PIN_ARM4_SERVO, "FireBeetle2: duplicate assignment - PIN_AUDIO_RX and PIN_ARM4_SERVO are both assigned to the same GPIO");
+static_assert(PIN_AUDIO_RX != PIN_ARM5_SERVO, "FireBeetle2: duplicate assignment - PIN_AUDIO_RX and PIN_ARM5_SERVO are both assigned to the same GPIO");
+static_assert(PIN_AUDIO_RX != PIN_DOME_ESC, "FireBeetle2: duplicate assignment - PIN_AUDIO_RX and PIN_DOME_ESC are both assigned to the same GPIO");
+static_assert(PIN_ARM1_SERVO != PIN_ARM2_SERVO, "FireBeetle2: duplicate assignment - PIN_ARM1_SERVO and PIN_ARM2_SERVO are both assigned to the same GPIO");
+static_assert(PIN_ARM1_SERVO != PIN_ARM3_SERVO, "FireBeetle2: duplicate assignment - PIN_ARM1_SERVO and PIN_ARM3_SERVO are both assigned to the same GPIO");
+static_assert(PIN_ARM1_SERVO != PIN_ARM4_SERVO, "FireBeetle2: duplicate assignment - PIN_ARM1_SERVO and PIN_ARM4_SERVO are both assigned to the same GPIO");
+static_assert(PIN_ARM1_SERVO != PIN_ARM5_SERVO, "FireBeetle2: duplicate assignment - PIN_ARM1_SERVO and PIN_ARM5_SERVO are both assigned to the same GPIO");
+static_assert(PIN_ARM1_SERVO != PIN_DOME_ESC, "FireBeetle2: duplicate assignment - PIN_ARM1_SERVO and PIN_DOME_ESC are both assigned to the same GPIO");
+static_assert(PIN_ARM2_SERVO != PIN_ARM3_SERVO, "FireBeetle2: duplicate assignment - PIN_ARM2_SERVO and PIN_ARM3_SERVO are both assigned to the same GPIO");
+static_assert(PIN_ARM2_SERVO != PIN_ARM4_SERVO, "FireBeetle2: duplicate assignment - PIN_ARM2_SERVO and PIN_ARM4_SERVO are both assigned to the same GPIO");
+static_assert(PIN_ARM2_SERVO != PIN_ARM5_SERVO, "FireBeetle2: duplicate assignment - PIN_ARM2_SERVO and PIN_ARM5_SERVO are both assigned to the same GPIO");
+static_assert(PIN_ARM2_SERVO != PIN_DOME_ESC, "FireBeetle2: duplicate assignment - PIN_ARM2_SERVO and PIN_DOME_ESC are both assigned to the same GPIO");
+static_assert(PIN_ARM3_SERVO != PIN_ARM4_SERVO, "FireBeetle2: duplicate assignment - PIN_ARM3_SERVO and PIN_ARM4_SERVO are both assigned to the same GPIO");
+static_assert(PIN_ARM3_SERVO != PIN_ARM5_SERVO, "FireBeetle2: duplicate assignment - PIN_ARM3_SERVO and PIN_ARM5_SERVO are both assigned to the same GPIO");
+static_assert(PIN_ARM3_SERVO != PIN_DOME_ESC, "FireBeetle2: duplicate assignment - PIN_ARM3_SERVO and PIN_DOME_ESC are both assigned to the same GPIO");
+static_assert(PIN_ARM4_SERVO != PIN_ARM5_SERVO, "FireBeetle2: duplicate assignment - PIN_ARM4_SERVO and PIN_ARM5_SERVO are both assigned to the same GPIO");
+static_assert(PIN_ARM4_SERVO != PIN_DOME_ESC, "FireBeetle2: duplicate assignment - PIN_ARM4_SERVO and PIN_DOME_ESC are both assigned to the same GPIO");
+static_assert(PIN_ARM5_SERVO != PIN_DOME_ESC, "FireBeetle2: duplicate assignment - PIN_ARM5_SERVO and PIN_DOME_ESC are both assigned to the same GPIO");
+
+// Guard against reserved GPIO assignments (pins not available on the board or
+// committed to essential boot/debug functions that cannot be reassigned).
+// GPIO35 is BOOT strapping, GPIO37/38 are UART0 console (ROM logs, serial download).
+static_assert(PIN_RC_CH1 != 35 && PIN_RC_CH1 != 37 && PIN_RC_CH1 != 38, "FireBeetle2: PIN_RC_CH1 is assigned to a reserved GPIO (BOOT/UART0 console)");
+static_assert(PIN_RC_CH2 != 35 && PIN_RC_CH2 != 37 && PIN_RC_CH2 != 38, "FireBeetle2: PIN_RC_CH2 is assigned to a reserved GPIO (BOOT/UART0 console)");
+static_assert(PIN_RC_CH3 != 35 && PIN_RC_CH3 != 37 && PIN_RC_CH3 != 38, "FireBeetle2: PIN_RC_CH3 is assigned to a reserved GPIO (BOOT/UART0 console)");
+static_assert(PIN_RC_CH4 != 35 && PIN_RC_CH4 != 37 && PIN_RC_CH4 != 38, "FireBeetle2: PIN_RC_CH4 is assigned to a reserved GPIO (BOOT/UART0 console)");
+static_assert(PIN_RC_CH5 != 35 && PIN_RC_CH5 != 37 && PIN_RC_CH5 != 38, "FireBeetle2: PIN_RC_CH5 is assigned to a reserved GPIO (BOOT/UART0 console)");
+static_assert(PIN_RC_CH6 != 35 && PIN_RC_CH6 != 37 && PIN_RC_CH6 != 38, "FireBeetle2: PIN_RC_CH6 is assigned to a reserved GPIO (BOOT/UART0 console)");
+static_assert(PIN_AUDIO_TX != 35 && PIN_AUDIO_TX != 37 && PIN_AUDIO_TX != 38, "FireBeetle2: PIN_AUDIO_TX is assigned to a reserved GPIO (BOOT/UART0 console)");
+static_assert(PIN_AUDIO_RX != 35 && PIN_AUDIO_RX != 37 && PIN_AUDIO_RX != 38, "FireBeetle2: PIN_AUDIO_RX is assigned to a reserved GPIO (BOOT/UART0 console)");
+static_assert(PIN_ARM1_SERVO != 35 && PIN_ARM1_SERVO != 37 && PIN_ARM1_SERVO != 38, "FireBeetle2: PIN_ARM1_SERVO is assigned to a reserved GPIO (BOOT/UART0 console)");
+static_assert(PIN_ARM2_SERVO != 35 && PIN_ARM2_SERVO != 37 && PIN_ARM2_SERVO != 38, "FireBeetle2: PIN_ARM2_SERVO is assigned to a reserved GPIO (BOOT/UART0 console)");
+static_assert(PIN_ARM3_SERVO != 35 && PIN_ARM3_SERVO != 37 && PIN_ARM3_SERVO != 38, "FireBeetle2: PIN_ARM3_SERVO is assigned to a reserved GPIO (BOOT/UART0 console)");
+static_assert(PIN_ARM4_SERVO != 35 && PIN_ARM4_SERVO != 37 && PIN_ARM4_SERVO != 38, "FireBeetle2: PIN_ARM4_SERVO is assigned to a reserved GPIO (BOOT/UART0 console)");
+static_assert(PIN_ARM5_SERVO != 35 && PIN_ARM5_SERVO != 37 && PIN_ARM5_SERVO != 38, "FireBeetle2: PIN_ARM5_SERVO is assigned to a reserved GPIO (BOOT/UART0 console)");
+static_assert(PIN_DOME_ESC != 35 && PIN_DOME_ESC != 37 && PIN_DOME_ESC != 38, "FireBeetle2: PIN_DOME_ESC is assigned to a reserved GPIO (BOOT/UART0 console)");
 
 // AUX LED strip selection values (NVS aux_led_pin)
 constexpr uint8_t AUX_LED_PIN_DISABLED = 0;
