@@ -148,6 +148,8 @@ These must never be broken:
 - **Unvalidated web input** — Route handler uses raw query param or body field without constraint.
 - **SSE memory pressure** — New SSE event types added without considering reconnect churn and heap impact.
 - **Endpoint naming drift** — New endpoints that don't follow `docs/action-registry.yaml` naming convention.
+- **Trust boundary before "ready"** — A consumer that publishes a ready/available signal validates the payload's shape first; a lookup treats a *missing* key as unknown, never as false. `obj?.key !== true` converts absence into a confident negative; own-property checks (`Object.hasOwn`) keep the two apart.
+- **Fixed-buffer serializer growth** — A row added to a manifest serialized into a fixed buffer (`IDENTITY_JSON_MAX_BYTES`) re-runs the size test; the overflow is a deterministic 500 the UI can only read as "unknown".
 
 ### Architecture / Conventions (MEDIUM)
 

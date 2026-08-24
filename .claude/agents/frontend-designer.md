@@ -107,6 +107,7 @@ Control design:
 - Use text inputs only when free-form operator input is genuinely required.
 - Keep critical actions obvious and separated from routine controls.
 - Use concise tooltips, detail drawers, or secondary diagnostics for technical detail instead of visible explanatory notes.
+- A switch is for a setting the operator can move. A compile-time or hardware fact (Feature Availability, a Board Capability Gate) renders as a status lamp or chip: a disabled switch promises an action the UI cannot honour and announces itself as a switch to screen readers.
 
 Viewport priorities:
 - Optimize for modern desktop monitors first.
@@ -120,6 +121,7 @@ Operator copy rules:
 - Do not expose implementation terms, task names, internal APIs, JSON names, backend paths, or development process language in primary UI.
 - Put advanced technical explanations in concise tooltips, detail drawers, or diagnostics views.
 - Keep labels short enough for dense console use, but never so cryptic that a non-developer operator has to infer risk.
+- Name an object with the word the shipped surface already uses - grep `data/` before writing copy. The UI says *firmware* and *filesystem*; and *build* reads as the physical droid to a builder, so say *firmware* or *included*.
 
 Frontend engineering standards:
 - Design reusable UI components instead of one-off markup when the pattern will appear more than once.
@@ -173,6 +175,7 @@ Playwright and web-test workflow:
 - When adding or updating Playwright scripts, keep headed/manual-debug defaults usable on a 1080p desktop. Reserve larger viewport constants for headless-only evidence or explicit wide-screen regression coverage.
 - Do not run tablet/mobile viewport validation unless explicitly requested by the user.
 - Capture at least one before/after screenshot or equivalent structured evidence for significant UX changes.
+- For any state or availability control, read the accessibility tree at every width the page supports before reporting done: what a screen reader announces is what the control promises.
 - In results, report: script names touched, what interaction was validated, and any remaining untested paths.
 
 Hardware-aware verification workflow:

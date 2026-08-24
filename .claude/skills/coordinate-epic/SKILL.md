@@ -5,8 +5,9 @@ description: Run a multi-worker remediation epic as planner-orchestrator + criti
 
 You are the coordinator: assignment, integration, and ruthless review. You do
 not implement tickets yourself - workers do. Arguments name the epic(s) or the
-findings to slice; read the named epics in full first (their orchestration and
-critic sections bind you), then AGENTS.md.
+findings to slice. Read AGENTS.md first - it outranks every orchestration
+section you pasted into an epic - then the named epics in full (their
+orchestration and critic sections bind you within that).
 
 ## Pipeline position
 
@@ -49,6 +50,11 @@ from the epic's coordination section (it changes at Phase 5 closure).
   worktree, `git -C ../wt-<n> rev-parse HEAD` must equal the local
   `<base>` tip; if not, `reset --hard` it there before the worker
   starts. Every worktree, every time.
+- **Live hold check.** Before dispatching on a surface in the epic's
+  concurrency table, verify the holder's live state - `gh issue develop
+  --list <holder>`, its latest comments - and record what you found in the
+  pin. A revision trigger that happens to have fired is luck; the record of
+  the check is what makes it a check.
 - One sub-issue per worker. A worker operates ONLY inside its own worktree;
   any out-of-tree edit, checkout, stash, restore, or clean is an automatic
   reject. This repo has lost work to exactly that.
@@ -62,6 +68,15 @@ from the epic's coordination section (it changes at Phase 5 closure).
   (`--expect-no-new-tests`, `--expect-no-mutations`). The gate then rejects a
   fenced-file edit, a flat test total, or missing mutation coverage in the
   worker's own run, before review.
+
+## Analysis slices
+
+When a sub-issue's deliverable is a classification table - one row per
+entry, an evidence column - rather than code, read
+[analysis-slices.md](analysis-slices.md) before dispatching: the skeleton the
+worker is held to, independent anchors across parallel workers, and the
+anchor your own critic pass must add. Both mechanisms it guards against have
+failed on this repo behind a green gate.
 
 ## Critic protocol (before accepting any slice - no exceptions)
 
@@ -92,6 +107,14 @@ reporting passes that never ran. In the worker's worktree, personally:
    worker's block that you did not sanction - `--expect-gate-edit`,
    `--expect-no-new-tests`, `--expect-no-mutations` - is an automatic
    reject. Then every remaining acceptance check.
+
+   Match the proof to the claim; a proof of the wrong class is a claim:
+
+   | Claim | Proof |
+   |---|---|
+   | declaration-only / behaviour-identical | `nm --defined-only --size-sort` identical (SHA-256) and byte-equal RAM/Flash; per-object `objdump -dr` identical for a zero-cost claim |
+   | a unit is absent from an image | archive/object membership in `.pio/build/<env>/firmware.map`. A budget staying green is a drift alarm, never absence - 134 KB of headroom hides a whole backend |
+   | an invariant holds | compile-enforced (`static_assert`, `#error`), never a comment promising it |
 2. For new or changed tests, demand the prove-it-can-fail evidence: red
    against the pre-fix commit for bug fixes. Mutation coverage is proven by
    the gate re-run in step 1 - the mutation row passes only when every patch
@@ -129,15 +152,35 @@ reporting passes that never ran. In the worker's worktree, personally:
    diagnostic". A test-shaped acceptance criterion is a rejection cycle you
    have pre-committed to. Distinguish the guard (product, ships now) from the
    harness that proves the guard (scaffolding, waits for closing).
+
+   A criterion is posted only when it is satisfiable and speaks the shipped
+   surface's language: every clause can hold at once (#186 asked for "an
+   inert toggle" while forbidding "generic disabled widgets" - an inert toggle
+   *is* one); it presumes no control that some rows lack (compile-only rows
+   have no toggle); and every operator-facing noun is one `data/` already
+   uses - grep before naming the object. The UI says *firmware* and
+   *filesystem*; a second name teaches operators there are two objects.
 3. Read the full diff (`git diff <base>...HEAD`): scope creep,
    shortcuts, behaviour change in tickets that promise none, comment
    degradation, core guardrails (no heap alloc or blocking on Core 1 paths,
    RobotState via portMUX/zone discipline).
+
+   For `data/` slices, open the shipped page yourself - the fixture server
+   (`tools/serve_editor_fixture.py`), headed, at every width the page
+   supports - and read the accessibility tree as a builder would: a control
+   the operator can never move, or a label that reads as a different state
+   than the model means, is a reject that no diff, gate or written review
+   catches (#186 shipped a disabled `role="switch"` for a compile-time fact
+   past two approving reviews). Playwright is yours to re-run headed; agents
+   here have reported browser passes that never ran.
 4. Verify the tree, not the narrative: `git log`, clean `git status`, new
    symbols present on disk.
 5. Reject by naming concrete defects (file:line, what is wrong, what the bar
    is) on the sub-issue. Do not fix it yourself. Do not lower the bar for
-   velocity.
+   velocity. Cite from the file open in this turn: re-open the exact lines
+   before rejecting on a rule or quoting a body or title. Your own earlier
+   restatement of a policy is not a source, and a title read an hour ago has
+   moved (#186 drew two objections on exactly that; both were withdrawn).
 6. Issue-body ownership: only you edit a sub-issue's body. Tick acceptance
    checkboxes when, and only when, you have re-verified the criterion
    yourself; tick the remainder in the same pass as the evidence-bearing
@@ -150,6 +193,10 @@ reporting passes that never ran. In the worker's worktree, personally:
   with WHY at category level so the whole category is fenced off, and any
   verification harness you used with its measured output. This comment is
   what makes the next pickup cheap - maintain it as carefully as the code.
+- When a body is re-scoped, edit each superseded comment in place - visible
+  strike-through plus a pointer to the controlling text. A stale comment
+  outlives a re-scope by default; this epic carried a false "compiles for
+  P4" claim a day past its own correction that way.
 - First rejection: back to the SAME worker with the defect list.
 - Second rejection with the same failure signature: stop resending prose.
   The bottleneck is usually the worker's ability to judge its own
@@ -159,6 +206,15 @@ reporting passes that never ran. In the worker's worktree, personally:
   and re-slice. A third variation of a rejected category is never assigned.
 
 ## Integration (serialized - you alone)
+
+Every slice passes the critic protocol **before** it touches `<base>`,
+including slices from an agent the operator assigned outside this skill. A
+review after the branch has moved is a different governance property even
+when the outcome is fine - a good outcome is not a waiver. Agree the order
+in the hand-off, on the ticket: a hand-off cites the ticket and the pin,
+states the critic order and the live concurrency table, and references
+artefacts in `tasks/` or on the ticket - a scratchpad path is session-scoped
+and invisible to the other agent.
 
 Merge reviewed branches into `<base>` one at a time, oldest-reviewed
 first; later conflicting branches rebase onto the updated base before their

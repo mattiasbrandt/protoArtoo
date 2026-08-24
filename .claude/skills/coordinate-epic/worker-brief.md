@@ -45,6 +45,13 @@ tests, not exhaustive suites, and do not polish them; you will not be
 rejected for test naming, structure or volume, and you will be rejected for
 production code that does not do the job.
 
+If your slice is a classification table, the evidence column is the
+deliverable. Scripts gather (fields, call sites, citations); you decide every
+row by reading. A row cites `file:line` at both its registration site and
+its handler's declaration header - a gate lives at either - and "universal"
+cites the unconditional site, never a dash. A `FILL` left in the table is an
+unfinished slice.
+
 At the PoC/MVP stage of an epic - the platform is unproven and the go/no-go
 gate has not returned a verdict - test effort is near-zero priority. The bar is
 that it builds and runs on the board. If this brief grants
@@ -61,6 +68,10 @@ BOUNDARIES
   code, no copy-paste where the ticket demands consolidation, no deleted or
   degraded comments, no scope creep beyond the sub-issue. If the clean fix
   reveals a deeper issue, report it on the issue - do not expand scope.
+- Comment deliberate subtleties at the site: an unguarded include, `#if`
+  over `#ifdef`, a resolution order, a teardown that is part of correctness.
+  A ticket note reaches the reviewer; the comment reaches the maintainer
+  holding the file at 2am.
 - Files the ticket fences off are out of scope even if you form a theory
   that involves them. Test the theory without editing the fenced file and
   report the result either way; the gate's --fenced check rejects the edit.

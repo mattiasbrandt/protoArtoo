@@ -91,6 +91,8 @@ Quality bar:
 - Do not paper over root causes with special cases, silent fallbacks, broad retries, or hidden state.
 - Preserve debuggability: errors should be observable through existing logs/status/API surfaces where appropriate.
 - Preserve maintainability: local names, ownership boundaries, comments, and tests should make the next safety review easier.
+- Comment deliberate subtleties at the site (an unguarded include, `#if` over `#ifdef`, a resolution order): the comment reaches the maintainer holding the file; a ticket note does not.
+- Validate at the trust boundary: a producer publishes "ready" only after checking the payload's shape, and a consumer treats a *missing* key as unknown, never as false - `obj?.key !== true` turns absence into a confident negative.
 
 Engineering rules:
 1. Never violate drive safety invariants or failsafe behavior.
@@ -102,6 +104,15 @@ Engineering rules:
    session, run `git diff <last-known-good-sha> -- <relevant-files>` and read the
    diff. Do not theorize — compare. If $DEVICE_FW_VERSION is set in the environment,
    cross-check it against the built firmware version before claiming a fix is on-device.
+7. **Build Feature Flags and Board Capability Gates** (ADR 0029): always defined
+   as 0 or 1 and tested with `#if`. Adding one is a row in
+   `include/build_flags.inc` / `board_capabilities.inc`, a definition in every
+   env or board block, the registry's `build_flag:` / `board_capability:` field,
+   and `make check-action-drift`; an added `/api/identity` row re-runs the
+   fixed-buffer size test (`IDENTITY_JSON_MAX_BYTES`).
+8. **Network is optional and never load-bearing** (ADR 0032): network-backend
+   recovery stays at the backend and ends in a stable degraded state.
+   `requestSystemRestart` has operator-initiated callers only.
 
 Safety invariants to enforce:
 - Zero-frame continuity at 50 Hz when stopped.
@@ -109,6 +120,7 @@ Safety invariants to enforce:
 - SBUS-safe boot default and latching estop behavior.
 - No blocking real-time loops and no portMAX_DELAY in control loops.
 - TWDT reset path must preserve estop-on-boot behavior.
+- No automatic host restart and no drive-path effect from a network fault (ADR 0032).
 
 Source-of-truth precedence for hardware/protocol work:
 - AGENTS.md for project invariants, branch/commit policy, verification labels, and routing rules.
@@ -124,6 +136,13 @@ Before editing:
 3. Identify which safety invariant, API contract, config schema, action-registry entry, or hardware truth file is touched.
 4. Identify whether the work should remain with backend-coder or be routed to a specialist.
 5. Choose a thin implementation slice and a risk-based verification plan.
+
+When the slice is analysis, not code (a classification table, an audit):
+- Scripts gather - extract manifest fields, list call sites, resolve citations. You decide every row by reading; a script whose fallback assigns a tier is the defect.
+- Every row cites `file:line` at two layers: the registration/dispatch site and the handler's declaration header. A gate lives at either; the manifest's anchor field is where the trace starts.
+- A flag is compliant only when both its paths are defined - the 1-case and the 0-case (`PA_HEAP_PROFILE` shipped 17 `#if` sites with no 0-case definition).
+- Scope the env set before classifying "universal": `build_src_filter` absence leaves no preprocessor trace. Ask per row "what else could compile this out?" and record the answer.
+- A sentinel left in the table (`FILL`) is an unfinished slice; a dash in the evidence column is an unexamined row.
 
 Espressif MCP usage:
 - Use `espressif-documentation` MCP for ESP-IDF/ESP32 documentation lookup.
@@ -148,17 +167,8 @@ Evidence discipline:
 - Partition-table changes require full USB flash + uploadfs with the ESP32 unseated; plain OTA does not rewrite partitions.
 
 Memory and decision workflow (MemPalace):
-- Use MemPalace MCP first when available for prior decisions, constraints, and conversation history.
-- Session start preference: run mempalace_status, then targeted mempalace_search before proposing conflicting approaches.
-- Persist only significant findings/decisions via MemPalace drawers/diary entries.
-- If MemPalace MCP is unavailable in the current runtime, fall back to local MemPalace CLI usage by checking installed commands with `mempalace --help` and using equivalent status/search/save operations.
-
-MemPalace MCP -> CLI fallback map:
-- `mempalace_status` -> `mempalace status`
-- `mempalace_search` -> `mempalace search "<query>"`
-- `mempalace_add_drawer` -> `mempalace add-drawer ...`
-- `mempalace_diary_read` -> `mempalace diary read ...`
-- `mempalace_diary_write` -> `mempalace diary write ...`
+- Follow AGENTS.md "MemPalace Memory Protocol" - it is the single source of truth for session start, search, and what to persist.
+- If `mempalace_status` errors or the operator has declared MemPalace unavailable, skip every MemPalace step for the session and say so once in the report. Probing the CLI, retrying, or working around it is out of scope.
 
 Verification judgment:
 - Automated tests are evidence, not the goal. Prefer high-signal checks around safety invariants, protocol parsing, shared state transitions, config persistence, JSON/API contracts, and prior regression paths.
