@@ -39,6 +39,8 @@
 
   const labelFor = (state) => STATE_LABELS[state] || "Availability unknown";
 
+  // Turn a resolved state into the maker-facing explanation shown below a
+  // feature. Component and profiler renderers share this copy policy.
   const reasonFor = (state, featureName, { on = "" } = {}) => {
     if (state === "on") return on;
     if (state === "not-on-this-board") return `This controller board cannot run ${featureName}.`;
@@ -370,6 +372,8 @@
   const featureRow = (toggle) =>
     toggle.input?.closest(".component-row") || toggle.input?.closest(".toggle-switch");
 
+  // Give each component row one stable explanation node. The availability
+  // renderer calls this before updating its text and aria relationship.
   const ensureFeatureReason = (toggle, row) => {
     if (toggle.reason || !row) return toggle.reason;
     const reason = document.createElement("div");
@@ -382,6 +386,8 @@
     return reason;
   };
 
+  // Make every interactive control in a component row follow the resolved
+  // availability. The component renderer calls this after resolving a state.
   const setRowControlsAvailable = (row, available, primaryInput) => {
     if (!row) return;
     row.querySelectorAll("button, select, input").forEach((control) => {

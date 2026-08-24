@@ -47,6 +47,70 @@ const identity = ({ nativeWifi = true, hostedWifi = false, profiler = false } = 
   },
 });
 
+// Interpret enough of shipped HTML's structure and visibility rules to observe
+// what a maker can read, rather than asserting that copy bytes exist somewhere
+// in the source. Kept test-local because no production module needs an HTML host.
+const visibleDescriptionIn = (html, ancestorId) => {
+  const stack = [];
+  let foundAncestor = false;
+  let foundDescription = false;
+  let text = "";
+  const nonRenderedTags = new Set(["script", "style", "template"]);
+  const voidTags = new Set([
+    "area", "base", "br", "col", "embed", "hr", "img",
+    "input", "link", "meta", "source", "track", "wbr",
+  ]);
+  const tokens = html.match(/<!--[\s\S]*?-->|<![^>]*>|<[^>]+>|[^<]+/g) || [];
+
+  for (const token of tokens) {
+    if (token.startsWith("<!--") || token.startsWith("<!")) continue;
+    if (!token.startsWith("<")) {
+      const current = stack.at(-1);
+      if (current?.inDescription && !current.hidden) text += ` ${token}`;
+      continue;
+    }
+
+    if (token.startsWith("</")) {
+      const closingTag = token.match(/^<\/\s*([\w-]+)/)?.[1]?.toLowerCase();
+      while (stack.length) {
+        if (stack.pop().tag === closingTag) break;
+      }
+      continue;
+    }
+
+    const tag = token.match(/^<\s*([\w-]+)/)?.[1]?.toLowerCase() || "";
+    const attributes = new Map();
+    for (const match of token.matchAll(/([\w-]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+)))?/g)) {
+      attributes.set(match[1].toLowerCase(), match[2] ?? match[3] ?? match[4] ?? "");
+    }
+
+    const parent = stack.at(-1);
+    const inAncestor = Boolean(parent?.inAncestor || attributes.get("id") === ancestorId);
+    const classes = (attributes.get("class") || "").split(/\s+/);
+    const startsDescription = inAncestor && classes.includes("desc") && !foundDescription;
+    const inDescription = Boolean(parent?.inDescription || startsDescription);
+    const style = (attributes.get("style") || "").replace(/\s/g, "").toLowerCase();
+    const hidden = Boolean(
+      parent?.hidden
+      || nonRenderedTags.has(tag)
+      || attributes.has("hidden")
+      || attributes.get("aria-hidden") === "true"
+      || style.includes("display:none")
+      || style.includes("visibility:hidden")
+    );
+
+    foundAncestor ||= attributes.get("id") === ancestorId;
+    foundDescription ||= startsDescription;
+    if (!token.endsWith("/>") && !voidTags.has(tag)) {
+      stack.push({ tag, hidden, inAncestor, inDescription });
+    }
+  }
+
+  assert.equal(foundAncestor, true, `missing rendered ancestor #${ancestorId}`);
+  assert.equal(foundDescription, true, `missing rendered description in #${ancestorId}`);
+  return text.replace(/\s+/g, " ").trim();
+};
+
 const loadSetupPage = async ({ profilerAnswer = PROFILER_SAMPLE } = {}) => {
   const env = loadPageModule("setup.js", {
     respond: (path) => {
@@ -170,12 +234,17 @@ test("the setup markup declares every component row plus the profiler in the reg
   assert.equal(entries.length, 16);
   assert.equal(new Set(entries).size, 16);
   assert.ok(entries.includes("system.api.get-profiler"));
-  assert.match(html, /Shows where controller memory is being used and how much room remains\./);
-  assert.doesNotMatch(html, /which controller tasks are using memory/);
-  assert.doesNotMatch(
-    html.slice(html.indexOf('id="profiler-card"'), html.indexOf("<!-- Backup & Restore -->")),
-    /<code>PA_|visible only in PA_|Absent in normal builds/,
-    "primary profiler copy must stay in maker language",
+});
+
+test("the rendered profiler card explains its purpose in maker language", () => {
+  const renderedDescription = visibleDescriptionIn(
+    readFileSync("data/setup.html", "utf8"),
+    "profiler-card",
+  );
+
+  assert.equal(
+    renderedDescription,
+    "Shows where controller memory is being used and how much room remains.",
   );
 });
 
