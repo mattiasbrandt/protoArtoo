@@ -280,12 +280,15 @@ def parse_from_string_tokens() -> dict[str, str]:
     }
 
 
-def parse_action_registry() -> dict[str, tuple[str, str, str, str, bool, str | None, str | None]]:
-    text = ACTION_REGISTRY_PATH.read_text(encoding="utf-8")
+def parse_action_registry(
+    path: Path = ACTION_REGISTRY_PATH,
+) -> dict[str, tuple[str, str, str, str, bool, str | None, str | None]]:
+    text = path.read_text(encoding="utf-8")
     rows = re.findall(
         r"{\s*([A-Z0-9_]+),\s*\"([^\"]+)\",\s*\"([^\"]+)\",\s*\"([^\"]+)\","
         r"\s*\"([^\"]+)\",\s*(true|false)"
-        r"(?:\s*,\s*(nullptr|\"[^\"]+\")\s*,\s*(nullptr|\"[^\"]+\"))?\s*}",
+        r"(?:\s*,\s*(nullptr|\"[^\"]+\"))?"
+        r"(?:\s*,\s*(nullptr|\"[^\"]+\"))?\s*}",
         text,
     )
 

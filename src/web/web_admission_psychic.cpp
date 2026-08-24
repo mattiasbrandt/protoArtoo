@@ -467,13 +467,13 @@ esp_err_t admissionMiddleware(PsychicRequest* request, PsychicResponse* response
     // counters describe the same population.
     uint8_t traceIdx = 0;
     if (counted) {
-        traceIdx = profilerRequestStarted(path, millis());
+        traceIdx = profilerRequestStarted(path);
     }
 
     const esp_err_t result = next();
 
     if (counted) {
-        profilerRequestFinished(traceIdx, millis());
+        profilerRequestFinished(traceIdx);
     }
 
     // Release the phase and fold its duration into the published maximum. This

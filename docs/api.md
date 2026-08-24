@@ -1330,7 +1330,7 @@ curl -s http://artoo.local/api/actions
 #### Example response (abridged)
 
 ```json
-[{"id":1,"name":"drive.action.speed","display_name":"Drive Speed","domain":"drive","description":"Primary drive speed control","safety_critical":true,"board_capability":null,"build_flag":null,"testable":false,"one_shot":false,"token":"drive_speed"}]
+[{"id":1,"name":"drive.action.speed","display_name":"Speed","domain":"drive","description":"Forward/reverse drive speed (analog axis)","safety_critical":false,"board_capability":null,"build_flag":null,"testable":false,"one_shot":false,"token":"drive_speed"}]
 ```
 
 ### POST /api/actions/test
@@ -1830,7 +1830,10 @@ Present only when the troubleshooting-only Build Feature Flag
 `PA_HEAP_TRACING` is enabled. That flag requires `PA_HEAP_PROFILE=1` and the
 SDK's `CONFIG_HEAP_TRACING` support.
 
-- Success/failure both return `200` with `ok:true|false`
+- Success: `200` `{"ok":true,"mode":"LEAKS"}`
+- Errors:
+  - `409` `{"ok":false,"error":"trace already running"}`
+  - `500` `{"ok":false,"error":"start failed"}`
 
 #### Example request
 
@@ -1848,7 +1851,8 @@ curl -s -X POST http://artoo.local/api/profiler/trace/start
 
 Present only when `PA_HEAP_TRACING` is enabled.
 
-- Success/failure both return `200` with `ok:true|false`
+- Success: `200` `{"ok":true,"note":"dump written to serial log"}`
+- Error: `409` `{"ok":false,"error":"trace not running"}`
 
 #### Example request
 

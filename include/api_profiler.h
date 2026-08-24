@@ -41,9 +41,10 @@ void profilerObserveOptionalSubsystems();
 void profilerPeriodicCollect();
 
 // Bounded request lifecycle trace. The token is an opaque ring index used only
-// to finish the same entry after the handler returns.
-uint8_t profilerRequestStarted(const char* path, uint32_t startMs);
-void profilerRequestFinished(uint8_t token, uint32_t handlerDoneMs);
+// to finish the same entry after the handler returns. The profiler owns its
+// timestamp reads so a disabled hook cannot leave millis() work at the caller.
+uint8_t profilerRequestStarted(const char* path);
+void profilerRequestFinished(uint8_t token);
 
 // Profiler endpoints, bound by the seam route table (ADR 0021). All are absent
 // (404) when PA_HEAP_PROFILE=0, which is why both this block and
@@ -67,7 +68,7 @@ inline void profilerCollectHwm() {}
 inline void profilerCollectTaskHeap() {}
 inline void profilerObserveOptionalSubsystems() {}
 inline void profilerPeriodicCollect() {}
-inline uint8_t profilerRequestStarted(const char*, uint32_t) { return 0; }
-inline void profilerRequestFinished(uint8_t, uint32_t) {}
+inline uint8_t profilerRequestStarted(const char*) { return 0; }
+inline void profilerRequestFinished(uint8_t) {}
 
 #endif  // PA_HEAP_PROFILE

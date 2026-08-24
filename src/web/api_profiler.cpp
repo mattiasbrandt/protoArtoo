@@ -386,12 +386,12 @@ void profilerPeriodicCollect() {
     profilerCollectTaskHeap();
 }
 
-uint8_t profilerRequestStarted(const char* path, uint32_t startMs) {
+uint8_t profilerRequestStarted(const char* path) {
     const uint8_t idx = s_requestTraceHead;
     RequestLifecycleEntry& entry = s_requestTrace[idx];
     strncpy(entry.requestPath, path, sizeof(entry.requestPath) - 1);
     entry.requestPath[sizeof(entry.requestPath) - 1] = '\0';
-    entry.startMs = startMs;
+    entry.startMs = millis();
     entry.handlerDoneMs = 0;
     s_requestTraceHead = (uint8_t)((s_requestTraceHead + 1U) % PROF_REQUEST_TRACE_MAX);
     if (s_requestTraceCount < PROF_REQUEST_TRACE_MAX) {
@@ -400,9 +400,9 @@ uint8_t profilerRequestStarted(const char* path, uint32_t startMs) {
     return idx;
 }
 
-void profilerRequestFinished(uint8_t token, uint32_t handlerDoneMs) {
+void profilerRequestFinished(uint8_t token) {
     if (token < PROF_REQUEST_TRACE_MAX) {
-        s_requestTrace[token].handlerDoneMs = handlerDoneMs;
+        s_requestTrace[token].handlerDoneMs = millis();
     }
 }
 

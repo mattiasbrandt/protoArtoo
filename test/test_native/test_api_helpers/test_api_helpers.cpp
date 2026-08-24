@@ -9,7 +9,9 @@
 #include <unity.h>
 
 #include <string.h>
+#include <type_traits>
 #include "api_helpers.h"
+#include "api_profiler.h"
 #include "api_system.h"
 #include "api_identity.h"
 #include "api_drive.h"
@@ -241,6 +243,17 @@ void test_formatIdentityJson_small_buffer_fails() {
     TEST_ASSERT_FALSE(formatIdentityJson(out, sizeof(out), "r2-unit", false));
 }
 
+void test_disabled_profiler_request_hooks_own_no_timestamp_argument() {
+    using StartHook = uint8_t (*)(const char*);
+    using FinishHook = void (*)(uint8_t);
+    TEST_ASSERT_TRUE((std::is_same<decltype(&profilerRequestStarted), StartHook>::value));
+    TEST_ASSERT_TRUE((std::is_same<decltype(&profilerRequestFinished), FinishHook>::value));
+
+    const uint8_t token = profilerRequestStarted("/api/status");
+    TEST_ASSERT_EQUAL_UINT8(0, token);
+    profilerRequestFinished(token);
+}
+
 // --- formatSpeedPresetResponseJson() tests ---
 
 void test_formatSpeedPresetResponseJson_valid_payload() {
@@ -361,6 +374,7 @@ int main() {
     RUN_TEST(test_formatSleepControlJson_small_buffer_fails);
     RUN_TEST(test_formatIdentityJson_valid_payload);
     RUN_TEST(test_formatIdentityJson_small_buffer_fails);
+    RUN_TEST(test_disabled_profiler_request_hooks_own_no_timestamp_argument);
     RUN_TEST(test_formatSpeedPresetResponseJson_valid_payload);
     RUN_TEST(test_formatSpeedPresetResponseJson_null_buffer_fails);
     RUN_TEST(test_formatSpeedPresetResponseJson_small_buffer_fails);
