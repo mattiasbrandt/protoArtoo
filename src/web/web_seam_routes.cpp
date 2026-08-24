@@ -142,14 +142,14 @@ void webRegisterSeamRoutes() {
 #endif
 
 #if PA_HEAP_PROFILE
-    // Absent entirely on builds without the profiler, which is what setup.js
-    // probes for: it shows the profiler panel only if this route answers 200.
+    // Absent entirely on builds without the profiler. Feature Availability in
+    // /api/identity tells the browser why; it does not probe this route.
     webRegisterRoute("/api/profiler", WebMethod::kGet, handleProfilerGet);
-#ifdef CONFIG_HEAP_TRACING
+#endif
+#if PA_HEAP_TRACING
     webRegisterRoute("/api/profiler/trace/start", WebMethod::kPost,
                      handleProfilerTraceStartPost);
     webRegisterRoute("/api/profiler/trace/stop", WebMethod::kPost, handleProfilerTraceStopPost);
-#endif
 #endif
 
     // Streaming OTA uploads, ported early on purpose: with these working on

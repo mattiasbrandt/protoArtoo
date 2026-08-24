@@ -48,6 +48,18 @@ void appendActionJson(JsonSliceWriter& writer, const ActionEntry& entry) {
     writer.appendJsonString(entry.description);
     writer.append(",\"safety_critical\":");
     writer.append(entry.safety_critical ? "true" : "false");
+    writer.append(",\"board_capability\":");
+    if (entry.board_capability != nullptr) {
+        writer.appendJsonString(entry.board_capability);
+    } else {
+        writer.append("null");
+    }
+    writer.append(",\"build_flag\":");
+    if (entry.build_flag != nullptr) {
+        writer.appendJsonString(entry.build_flag);
+    } else {
+        writer.append("null");
+    }
     writer.append(",\"testable\":");
     writer.append(robotActionIsWebTestable(entry.id) ? "true" : "false");
     writer.append(",\"one_shot\":");

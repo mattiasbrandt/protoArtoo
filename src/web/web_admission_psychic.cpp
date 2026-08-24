@@ -21,6 +21,7 @@
 #include <string.h>
 
 #include "../../include/api_admission_trace.h"
+#include "../../include/api_profiler.h"
 #include "../../include/logging.h"
 #include "../../include/web_admission.h"
 #include "../../include/web_backend_psychic.h"
@@ -126,53 +127,6 @@ static_assert(2 * (size_t)FILE_CHUNK_SIZE + kUploadParserBufferSlack <=
               "abandons the body silently when the second one fails. Either lower "
               "FILE_CHUNK_SIZE or raise PA_ADMISSION_MIN_LARGEST_FREE_BLOCK; both live in "
               "platformio.ini [flags_base].");
-
-#if PA_HEAP_PROFILE
-// Bounded request-lifecycle trace for profiler evidence (profiler-gated so it
-// costs nothing in normal builds). Read after an experiment via /api/profiler,
-// not polled during the workload. Covers only admitted requests that count
-// against the inflight cap -- a long-lived stream's lifetime is already visible
-// through the sseClients/sseClientsPeak counters, and it is not a per-request
-// event this ring is meant to capture.
-//
-// handlerDoneMs marks when next() returned, i.e. when the matched handler's
-// call into send() returned control to this middleware. esp_http_server writes
-// the response synchronously from that call, so unlike the async stack this is
-// "response written", not just "response ready".
-//
-// There is deliberately no disconnect timestamp. Connections are kept alive
-// across requests (ADR 0023), so a request has no close of its own to record --
-// the socket-level view lives in the httpSockets* counters instead.
-//
-// Single-writer: both the initial record and the handlerDoneMs update run on
-// the single server task, which is also where /api/profiler reads it. A slot
-// may be overwritten by a newer entry before a very long request's update
-// reaches it -- acceptable for a bounded evidence trace, not a
-// correctness-bearing structure.
-//
-// RequestLifecycleEntry and PA_REQUEST_TRACE_MAX are declared in web_server.h
-// so api_profiler.cpp can size its copy buffer identically.
-RequestLifecycleEntry s_requestTrace[PA_REQUEST_TRACE_MAX];
-uint8_t s_requestTraceHead = 0;
-uint8_t s_requestTraceCount = 0;
-
-// Opens a new lifecycle-trace entry and returns its ring index, so the caller
-// can fill in handlerDoneMs without a second lookup. Overwrites the oldest slot
-// once full.
-uint8_t pushRequestTraceEntry(const char* path, uint32_t startMs) {
-    const uint8_t idx = s_requestTraceHead;
-    RequestLifecycleEntry& e = s_requestTrace[idx];
-    strncpy(e.requestPath, path, sizeof(e.requestPath) - 1);
-    e.requestPath[sizeof(e.requestPath) - 1] = '\0';
-    e.startMs = startMs;
-    e.handlerDoneMs = 0;
-    s_requestTraceHead = (uint8_t)((s_requestTraceHead + 1U) % PA_REQUEST_TRACE_MAX);
-    if (s_requestTraceCount < PA_REQUEST_TRACE_MAX) {
-        s_requestTraceCount++;
-    }
-    return idx;
-}
-#endif  // PA_HEAP_PROFILE
 
 // Sampler function for the admission session. Called by the session when the
 // rate check passes and a heap sample is needed. Updates the low-water mark.
@@ -506,7 +460,6 @@ esp_err_t admissionMiddleware(PsychicRequest* request, PsychicResponse* response
     const bool counted = !in.estop && !in.longLived;
     InflightSlot slot(counted);
 
-#if PA_HEAP_PROFILE
     // Full path (not just a broad class) so a specific slow request
     // can be matched against the browser's own per-request timestamps after the
     // fact to distinguish TCP backlog delays from handler delays. Traced for
@@ -514,17 +467,14 @@ esp_err_t admissionMiddleware(PsychicRequest* request, PsychicResponse* response
     // counters describe the same population.
     uint8_t traceIdx = 0;
     if (counted) {
-        traceIdx = pushRequestTraceEntry(path, millis());
+        traceIdx = profilerRequestStarted(path, millis());
     }
-#endif
 
     const esp_err_t result = next();
 
-#if PA_HEAP_PROFILE
     if (counted) {
-        s_requestTrace[traceIdx].handlerDoneMs = millis();
+        profilerRequestFinished(traceIdx, millis());
     }
-#endif
 
     // Release the phase and fold its duration into the published maximum. This
     // is the margin evidence the calibrated deadline is set against, so it is
@@ -554,25 +504,6 @@ esp_err_t admissionMiddleware(PsychicRequest* request, PsychicResponse* response
 
     return result;
 }
-
-#if PA_HEAP_PROFILE
-// Copies the trace ring oldest-first into out, for the /api/profiler handler
-// (api_profiler.cpp) to read once after an experiment. Read-only; does not
-// clear or rotate the ring, so repeated reads during a warm-up are safe.
-size_t copyRequestLifecycleTrace(RequestLifecycleEntry* out, size_t maxEntries) {
-    uint8_t count = s_requestTraceCount;
-    if (count > maxEntries) {
-        count = (uint8_t)maxEntries;
-    }
-    const uint8_t oldest =
-        (uint8_t)((s_requestTraceHead + PA_REQUEST_TRACE_MAX - s_requestTraceCount) %
-                  PA_REQUEST_TRACE_MAX);
-    for (uint8_t i = 0; i < count; i++) {
-        out[i] = s_requestTrace[(uint8_t)((oldest + i) % PA_REQUEST_TRACE_MAX)];
-    }
-    return count;
-}
-#endif  // PA_HEAP_PROFILE
 
 // Functions to register the middleware callbacks with the server.
 // (Called from web_request_psychic.cpp during server initialization.)

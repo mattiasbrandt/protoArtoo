@@ -27,7 +27,7 @@ static const char* TAG = "WebServer";
 namespace {
 
 void sendIdentityResponse(WebRequest& req, const SystemConfig& system) {
-    char body[96] = {};
+    char body[IDENTITY_JSON_MAX_BYTES] = {};
     if (!formatIdentityJson(body, sizeof(body), system.droid_name, system.mdns_use_name)) {
         webSendJsonError(req, 500, "identity response overflow");
         return;

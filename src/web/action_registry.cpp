@@ -6,6 +6,8 @@
 //
 // Entry order matches the RobotActionId enum declaration in rc_mapping.h.
 // Names and descriptions must stay consistent with docs/action-registry.yaml.
+// The current bindable population is universal, so the two nullable requirement
+// fields use their nullptr defaults. Annotated rows must name manifest entries.
 // =============================================================================
 
 #include "../../include/action_registry.h"

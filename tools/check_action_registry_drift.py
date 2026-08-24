@@ -130,6 +130,8 @@ class ExpectedAction:
     domain: str
     description: str
     safety_critical: bool
+    board_capability: str | None
+    build_flag: str | None
     group: str
     testable: bool
 
@@ -214,6 +216,8 @@ def load_expected_actions(doc: dict) -> list[ExpectedAction]:
                 domain=normalize(entry["domain"]),
                 description=runtime_field(entry, "description"),
                 safety_critical=bool(entry.get("safety_critical")),
+                board_capability=entry.get("board_capability"),
+                build_flag=entry.get("build_flag"),
                 group=action_group(entry),
                 testable=action_testable(token),
             )
@@ -276,15 +280,26 @@ def parse_from_string_tokens() -> dict[str, str]:
     }
 
 
-def parse_action_registry() -> dict[str, tuple[str, str, str, str, bool]]:
+def parse_action_registry() -> dict[str, tuple[str, str, str, str, bool, str | None, str | None]]:
     text = ACTION_REGISTRY_PATH.read_text(encoding="utf-8")
     rows = re.findall(
-        r"{\s*([A-Z0-9_]+),\s*\"([^\"]+)\",\s*\"([^\"]+)\",\s*\"([^\"]+)\",\s*\"([^\"]+)\",\s*(true|false)\s*}",
+        r"{\s*([A-Z0-9_]+),\s*\"([^\"]+)\",\s*\"([^\"]+)\",\s*\"([^\"]+)\","
+        r"\s*\"([^\"]+)\",\s*(true|false)"
+        r"(?:\s*,\s*(nullptr|\"[^\"]+\")\s*,\s*(nullptr|\"[^\"]+\"))?\s*}",
         text,
     )
+
+    def nullable(value: str) -> str | None:
+        if not value or value == "nullptr":
+            return None
+        return value[1:-1]
+
     return {
-        enum: (normalize(name), normalize(display), normalize(domain), normalize(desc), safety == "true")
-        for enum, name, display, domain, desc, safety in rows
+        enum: (
+            normalize(name), normalize(display), normalize(domain), normalize(desc),
+            safety == "true", nullable(board_capability), nullable(build_flag),
+        )
+        for enum, name, display, domain, desc, safety, board_capability, build_flag in rows
     }
 
 
@@ -448,6 +463,8 @@ def main() -> int:
             add_mismatch(errors, f"{action.enum} registry domain", action.domain, row[2])
             add_mismatch(errors, f"{action.enum} registry description", action.description, row[3])
             add_mismatch(errors, f"{action.enum} registry safety_critical", action.safety_critical, row[4])
+            add_mismatch(errors, f"{action.enum} registry board_capability", action.board_capability, row[5])
+            add_mismatch(errors, f"{action.enum} registry build_flag", action.build_flag, row[6])
 
         js = js_fallback.get(action.token)
         if js is None:

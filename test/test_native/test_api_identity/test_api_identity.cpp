@@ -17,6 +17,12 @@
 
 namespace {
 
+constexpr const char* kAvailabilitySuffix =
+    ",\"board\":\"artoo_esp32\",\"board_capabilities\":{"
+    "\"PA_CAP_NATIVE_WIFI\":true,\"PA_CAP_HOSTED_WIFI\":false},"
+    "\"build_flags\":{\"PA_HEAP_PROFILE\":false,\"PA_HEAP_TRACING\":false,"
+    "\"PA_ADMISSION_TRACE\":true}}";
+
 void applyIdentity(const char* name, bool mdnsUseName) {
     ConfigSnapshot snap = {};
     configCacheRead(&snap);
@@ -43,7 +49,10 @@ void test_get_returns_identity_json() {
 
     TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
     TEST_ASSERT_EQUAL_STRING("application/json", backend.sentContentType);
-    TEST_ASSERT_EQUAL_STRING("{\"droidName\":\"r2-d2\",\"mdnsUseName\":true}", backend.sentBody);
+    char expected[IDENTITY_JSON_MAX_BYTES] = {};
+    snprintf(expected, sizeof(expected), "{\"droidName\":\"r2-d2\",\"mdnsUseName\":true%s",
+             kAvailabilitySuffix);
+    TEST_ASSERT_EQUAL_STRING(expected, backend.sentBody);
     TEST_ASSERT_EQUAL_UINT(1, backend.sendCalls);
 }
 
@@ -95,12 +104,26 @@ void test_post_valid_name_applies_and_echoes() {
     handleIdentityPost(req);
 
     TEST_ASSERT_EQUAL_INT(200, backend.sentCode);
-    TEST_ASSERT_EQUAL_STRING("{\"droidName\":\"chopper\",\"mdnsUseName\":true}", backend.sentBody);
+    char expected[IDENTITY_JSON_MAX_BYTES] = {};
+    snprintf(expected, sizeof(expected), "{\"droidName\":\"chopper\",\"mdnsUseName\":true%s",
+             kAvailabilitySuffix);
+    TEST_ASSERT_EQUAL_STRING(expected, backend.sentBody);
 
     ConfigSnapshot snap = {};
     configCacheRead(&snap);
     TEST_ASSERT_EQUAL_STRING("chopper", snap.system.droid_name);
     TEST_ASSERT_TRUE(snap.system.mdns_use_name);
+}
+
+void test_identity_manifest_fits_fixed_budget_and_overflow_fails() {
+    char body[IDENTITY_JSON_MAX_BYTES] = {};
+    TEST_ASSERT_TRUE(formatIdentityJson(body, sizeof(body), "protoartoo", false));
+    TEST_ASSERT_LESS_THAN(sizeof(body), strlen(body));
+    TEST_ASSERT_NOT_NULL(strstr(body, "\"board_capabilities\""));
+    TEST_ASSERT_NOT_NULL(strstr(body, "\"build_flags\""));
+
+    char tooSmall[64] = {};
+    TEST_ASSERT_FALSE(formatIdentityJson(tooSmall, sizeof(tooSmall), "protoartoo", false));
 }
 
 int main() {
@@ -110,5 +133,6 @@ int main() {
     RUN_TEST(test_post_invalid_name_is_rejected);
     RUN_TEST(test_post_overlong_name_is_rejected_not_truncated);
     RUN_TEST(test_post_valid_name_applies_and_echoes);
+    RUN_TEST(test_identity_manifest_fits_fixed_budget_and_overflow_fails);
     return UNITY_END();
 }

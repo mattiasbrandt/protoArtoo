@@ -68,10 +68,9 @@ bool littleFsReady = false;
 // accept-guard rejections -- are the project-owned globals declared there and
 // in include/web_event_stream.h; this file only reads them for /api/status.
 
-// The bounded request-lifecycle trace this file used to own moved with the
-// admission middleware that wrote it (src/web/web_request_psychic.cpp). Its
-// declarations stay in web_server.h so api_profiler.cpp can size its copy
-// buffer identically.
+// Profiler-only request lifecycle storage is owned by api_profiler.cpp. The
+// admission middleware reaches it through the opaque api_profiler.h interface,
+// which compiles away in ordinary images.
 
 #ifdef ARDUINO
 static size_t largestFreeBlock8Bit() {

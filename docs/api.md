@@ -78,9 +78,16 @@ served normally; only requests that had no answer either way reach this reply.
 
 ### GET /api/identity
 
-Returns the droid's cosmetic name and mDNS hostname preference.
+Returns the droid's cosmetic name, mDNS hostname preference, canonical Board
+Variant id, and the complete compile-time Feature Availability manifest.
 
-- Success: `200` JSON with `droidName` and `mdnsUseName`
+- Success: `200` JSON with:
+  - `droidName` and `mdnsUseName`
+  - `board`: `artoo_esp32` or `firebeetle2`
+  - `board_capabilities`: an object containing every `PA_CAP_*` declaration
+    from `include/board_capabilities.inc`, with boolean values
+  - `build_flags`: an object containing every Build Feature Flag from
+    `include/build_flags.inc`, with boolean values
 - Errors: `500` on response build overflow
 
 #### Example request
@@ -92,7 +99,7 @@ curl -s http://artoo.local/api/identity
 #### Example response
 
 ```json
-{"droidName":"artoo","mdnsUseName":true}
+{"droidName":"artoo","mdnsUseName":true,"board":"artoo_esp32","board_capabilities":{"PA_CAP_NATIVE_WIFI":true,"PA_CAP_HOSTED_WIFI":false},"build_flags":{"PA_HEAP_PROFILE":false,"PA_HEAP_TRACING":false,"PA_ADMISSION_TRACE":false}}
 ```
 
 ### POST /api/identity
@@ -102,7 +109,8 @@ Persists a new cosmetic droid name and/or mDNS hostname preference.
 - Body fields:
   - `droidName`: required; must be 1–32 lowercase letters, numbers, or hyphens (no spaces)
   - `mdnsUseName`: optional; `true`, `false`, `0`, or `1` (defaults to existing value)
-- Success: `200` JSON with updated `droidName` and `mdnsUseName`
+- Success: `200` JSON with the updated identity and the same `board`,
+  `board_capabilities`, and `build_flags` fields as GET
 - Errors:
   - `400` `{"ok":false,"error":"droidName is required"}`
   - `400` `{"ok":false,"error":"droidName must be 1..32 lowercase letters, numbers, or hyphens; spaces are not allowed"}`
@@ -119,7 +127,7 @@ curl -s -X POST http://artoo.local/api/identity \
 #### Example response
 
 ```json
-{"droidName":"r2d2","mdnsUseName":true}
+{"droidName":"r2d2","mdnsUseName":true,"board":"artoo_esp32","board_capabilities":{"PA_CAP_NATIVE_WIFI":true,"PA_CAP_HOSTED_WIFI":false},"build_flags":{"PA_HEAP_PROFILE":false,"PA_HEAP_TRACING":false,"PA_ADMISSION_TRACE":false}}
 ```
 
 ## Safety and Drive
@@ -1309,6 +1317,8 @@ Returns all bindable actions.
 - Success: `200` array of objects with:
 - `id`, `name`, `display_name`, `domain`, `description`
 - `safety_critical`, `testable`, `one_shot`, `token`
+- `board_capability`, `build_flag`: nullable compile-time requirements; `null`
+  means the action is universal for that tier
 - Error: `500` response stream allocation failure
 
 #### Example request
@@ -1320,7 +1330,7 @@ curl -s http://artoo.local/api/actions
 #### Example response (abridged)
 
 ```json
-[{"id":1,"name":"drive.action.speed","display_name":"Drive Speed","domain":"drive","description":"Primary drive speed control","safety_critical":true,"testable":false,"one_shot":false,"token":"drive_speed"}]
+[{"id":1,"name":"drive.action.speed","display_name":"Drive Speed","domain":"drive","description":"Primary drive speed control","safety_critical":true,"board_capability":null,"build_flag":null,"testable":false,"one_shot":false,"token":"drive_speed"}]
 ```
 
 ### POST /api/actions/test
@@ -1816,7 +1826,9 @@ curl -s http://artoo.local/api/profiler
 
 ### POST /api/profiler/trace/start
 
-Present only when `CONFIG_HEAP_TRACING` is enabled.
+Present only when the troubleshooting-only Build Feature Flag
+`PA_HEAP_TRACING` is enabled. That flag requires `PA_HEAP_PROFILE=1` and the
+SDK's `CONFIG_HEAP_TRACING` support.
 
 - Success/failure both return `200` with `ok:true|false`
 
@@ -1834,7 +1846,7 @@ curl -s -X POST http://artoo.local/api/profiler/trace/start
 
 ### POST /api/profiler/trace/stop
 
-Present only when `CONFIG_HEAP_TRACING` is enabled.
+Present only when `PA_HEAP_TRACING` is enabled.
 
 - Success/failure both return `200` with `ok:true|false`
 

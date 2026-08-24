@@ -2774,7 +2774,8 @@ entries:
   display_name: Start Heap Trace
   description: >
     Start a Tier 3 heap leak trace (200 records, standalone buffer). One-session
-    diagnostic; compiled in only when CONFIG_HEAP_TRACING is set.
+    diagnostic; compiled in only when PA_HEAP_TRACING=1 (which also requires
+    the profiler and SDK heap-tracing support).
   domain: system
   type: action
   build_flag: PA_HEAP_TRACING

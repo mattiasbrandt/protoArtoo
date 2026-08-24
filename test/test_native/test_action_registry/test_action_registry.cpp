@@ -33,6 +33,10 @@ void test_registry_all_fields_nonempty() {
         TEST_ASSERT_TRUE_MESSAGE(e.domain[0] != '\0', "entry domain is empty string");
         TEST_ASSERT_NOT_NULL_MESSAGE(e.description, "entry description is null");
         TEST_ASSERT_TRUE_MESSAGE(e.description[0] != '\0', "entry description is empty string");
+        TEST_ASSERT_NULL_MESSAGE(e.board_capability,
+                                 "current bindable entries must remain board-universal");
+        TEST_ASSERT_NULL_MESSAGE(e.build_flag,
+                                 "current bindable entries must remain build-universal");
     }
 }
 
@@ -144,6 +148,8 @@ void test_registry_json_payload_fits_budget() {
         obj["domain"] = e.domain;
         obj["description"] = e.description;
         obj["safety_critical"] = e.safety_critical;
+        obj["board_capability"] = e.board_capability;
+        obj["build_flag"] = e.build_flag;
         obj["testable"] = robotActionIsWebTestable(e.id);
         obj["one_shot"] = robotActionIsOneShotButton(e.id);
         obj["token"] = robotActionIdToString(e.id);
@@ -153,7 +159,7 @@ void test_registry_json_payload_fits_budget() {
     TEST_ASSERT_GREATER_THAN(0u, bytes);
     // /api/actions is served chunked, so the whole-payload size is a growth
     // sanity cap, not a single-buffer fit. Current payload ~9.3KB.
-    TEST_ASSERT_LESS_THAN_MESSAGE(10240u, bytes,
+    TEST_ASSERT_LESS_THAN_MESSAGE(12288u, bytes,
                                   "GET /api/actions JSON payload exceeded expected budget");
 }
 

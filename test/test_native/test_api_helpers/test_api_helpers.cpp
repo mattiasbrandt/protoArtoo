@@ -228,9 +228,12 @@ void test_formatSleepControlJson_small_buffer_fails() {
 // --- formatIdentityJson() tests ---
 
 void test_formatIdentityJson_valid_payload() {
-    char out[96] = {};
+    char out[IDENTITY_JSON_MAX_BYTES] = {};
     TEST_ASSERT_TRUE(formatIdentityJson(out, sizeof(out), "r2-unit", true));
-    TEST_ASSERT_EQUAL_STRING("{\"droidName\":\"r2-unit\",\"mdnsUseName\":true}", out);
+    TEST_ASSERT_NOT_NULL(strstr(out, "{\"droidName\":\"r2-unit\",\"mdnsUseName\":true"));
+    TEST_ASSERT_NOT_NULL(strstr(out, "\"board\":\"artoo_esp32\""));
+    TEST_ASSERT_NOT_NULL(strstr(out, "\"board_capabilities\""));
+    TEST_ASSERT_NOT_NULL(strstr(out, "\"build_flags\""));
 }
 
 void test_formatIdentityJson_small_buffer_fails() {

@@ -38,10 +38,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#ifndef PA_ADMISSION_TRACE
-#define PA_ADMISSION_TRACE 0
-#endif
-
 // -----------------------------------------------------------------------------
 // Vocabulary
 //

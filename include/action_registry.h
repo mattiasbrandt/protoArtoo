@@ -35,6 +35,8 @@ struct ActionEntry {
     const char*   domain;        // "drive" | "dome" | "sound" | "servo" | "system"
     const char*   description;   // one-line end-user explanation
     bool          safety_critical;  // true for estop and drive safety actions
+    const char*   board_capability = nullptr;  // nullable PA_CAP_* requirement
+    const char*   build_flag = nullptr;        // nullable PA_* requirement
 };
 
 // -----------------------------------------------------------------------------
