@@ -53,7 +53,7 @@ const makeElement = () => {
   return element;
 };
 
-const loadInteractiveSetup = ({ identity = null } = {}) => {
+const loadInteractiveSetup = ({ identity = null, failIdentity = false } = {}) => {
   const elements = new Map();
   const timers = [];
   const requests = [];
@@ -74,16 +74,27 @@ const loadInteractiveSetup = ({ identity = null } = {}) => {
     board_capabilities: { PA_CAP_NATIVE_WIFI: true, PA_CAP_HOSTED_WIFI: false },
     build_flags: { PA_HEAP_PROFILE: false, PA_HEAP_TRACING: false, PA_ADMISSION_TRACE: false },
   };
+  class ApiError extends Error {
+    constructor(message, { kind = "network", status = 0 } = {}) {
+      super(message);
+      this.name = "ApiError";
+      this.kind = kind;
+      this.status = status;
+    }
+  }
   const call = async (method, path, body) => {
     requests.push({ method, path, body });
     if (path === "/api/config") return { data: config };
+    if (path === "/api/identity" && failIdentity) {
+      throw new ApiError("Network request failed", { kind: "network" });
+    }
     if (path === "/api/identity") return { data: identityPayload };
     return { data: {} };
   };
 
   const windowMock = {
     PAApi: {
-      ApiError: class extends Error {},
+      ApiError,
       get: (path) => call("GET", path),
       postForm: (path, body) => call("POST", path, body),
       messageFor: (error) => error?.message || "Request failed",
@@ -211,6 +222,26 @@ test("shell identity delivery reaches Setup after both shipped resources load", 
     env.requests.filter((request) => request.method === "GET" && request.path === "/api/identity").length,
     1,
     "the composed resource order still uses the shell's single identity request",
+  );
+});
+
+test("shell identity failure reaches Setup and keeps profiler traffic fail-closed", async () => {
+  const env = loadInteractiveSetup({ failIdentity: true });
+  await env.settle();
+
+  assert.equal(env.element("profiler-card").dataset.featureState, "checking");
+  await assert.rejects(
+    env.runSection("shell-identity"),
+    (error) => error.name === "ApiError" && error.kind === "network",
+  );
+
+  assert.equal(env.window.PAIdentity, undefined, "a failed request must not seed the shell cache");
+  assert.equal(env.element("profiler-card").dataset.featureState, "identity-unavailable");
+  assert.equal(env.element("profiler-availability-status").textContent, "Availability unknown");
+  assert.equal(
+    env.requests.filter((request) => request.path === "/api/profiler").length,
+    0,
+    "Setup must not probe or poll while manifest availability is unknown",
   );
 });
 

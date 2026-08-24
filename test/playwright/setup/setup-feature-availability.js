@@ -107,6 +107,8 @@ const profiler = {
     const profilerBefore = profilerRequests;
     await page.goto(TARGET_URL, { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('#profiler-card[data-feature-state]', { timeout: 10000 });
+    const description = page.locator('#profiler-card .desc').first();
+    await description.waitFor({ state: 'visible', timeout: 10000 });
     await page.waitForTimeout(350);
     await page.screenshot({ path: `${ARTIFACT_DIR}/${name}.png`, fullPage: true });
     return {
@@ -115,6 +117,8 @@ const profiler = {
       state: await page.locator('#profiler-card').getAttribute('data-feature-state'),
       status: (await page.locator('#profiler-availability-status').textContent()).trim(),
       reason: (await page.locator('#profiler-availability-reason').textContent()).trim(),
+      description: (await description.textContent()).trim(),
+      descriptionVisible: await description.isVisible(),
       visible: await page.locator('#profiler-card').isVisible(),
       overflow: await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth),
     };
@@ -128,6 +132,8 @@ const profiler = {
       state: 'not-in-this-build',
       status: 'Not in this build',
       reason: 'This controller was loaded without Memory Profiler.',
+      description: 'Shows where controller memory is being used and how much room remains.',
+      descriptionVisible: true,
       visible: true,
       overflow: false,
     });
@@ -157,6 +163,11 @@ const profiler = {
     assert.equal(profilerBuild.profilerRequests, 1);
     assert.equal(profilerBuild.state, 'on');
     assert.equal(profilerBuild.status, 'On');
+    assert.equal(
+      profilerBuild.description,
+      'Shows where controller memory is being used and how much room remains.',
+    );
+    assert.equal(profilerBuild.descriptionVisible, true);
     assert.equal(profilerBuild.visible, true);
     assert.equal(profilerBuild.overflow, false);
     assert.match(await page.locator('#prof-heap-free').textContent(), /124\.0 KB/);
