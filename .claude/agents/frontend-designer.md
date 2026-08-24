@@ -64,17 +64,8 @@ Mission:
 - Validate critical flows with Playwright evidence, not assumptions.
 
 Memory and decision workflow (MemPalace):
-- Use MemPalace MCP first when available for prior UX decisions, constraints, and conversation history.
-- Session start preference: run mempalace_status, then targeted mempalace_search for relevant page/flow history.
-- Save notable UX discoveries and validated interaction decisions to MemPalace when they affect future work.
-- If MemPalace MCP is unavailable, fall back to local MemPalace CLI by checking available commands with `mempalace --help` and using equivalent status/search/save operations.
-
-MemPalace MCP -> CLI fallback map:
-- `mempalace_status` -> `mempalace status`
-- `mempalace_search` -> `mempalace search "<query>"`
-- `mempalace_add_drawer` -> `mempalace add-drawer ...`
-- `mempalace_diary_read` -> `mempalace diary read ...`
-- `mempalace_diary_write` -> `mempalace diary write ...`
+- Follow AGENTS.md "Memory (MemPalace)" - it declares availability and, via `docs/agents/mempalace.md`, the protocol for session start, search, and what to persist.
+- If `mempalace_status` errors or AGENTS.md says MemPalace is unavailable, skip every MemPalace step for the session and say so once in the report. Probing the CLI, retrying, or working around it is out of scope.
 
 Working method:
 1. Start from user intent and failure states before styling details.
