@@ -1,12 +1,9 @@
 // =============================================================================
-// test/test_web/test_profiler_poll_teardown.js
+// Feature Availability profiler poll ownership (issue #186).
 //
-// Heap profiler Background Poll teardown (issue #152): when the profiler
-// endpoint returns 404/501, the card must stop polling AND clean up the
-// interval and visibility listener. The frozen test (test_issue_118_*.js)
-// only measures silence (no more requests); this test measures cleanup.
-// A card that mutes requests while leaving a timer ticking forever defeats
-// the epic (#150, user story 6) that exists to remove idle-tab load.
+// The identity manifest owns whether the poll exists. Moving from a profiler
+// image to an unavailable/error state must tear down cadence and return-to-tab
+// work; no endpoint status is used as a capability probe.
 // =============================================================================
 
 import { test } from "node:test";
@@ -15,87 +12,75 @@ import assert from "node:assert";
 import { loadPageModule } from "./helpers/page_module_env.js";
 
 const PROFILER_PATH = "/api/profiler";
-
-const response = (status, body = {}) => ({
-  ok: status >= 200 && status < 300,
-  status,
-  json: async () => body,
+const profilerIdentity = (enabled) => ({
+  board: "artoo_esp32",
+  board_capabilities: { PA_CAP_NATIVE_WIFI: true, PA_CAP_HOSTED_WIFI: false },
+  build_flags: {
+    PA_HEAP_PROFILE: enabled,
+    PA_HEAP_TRACING: false,
+    PA_ADMISSION_TRACE: false,
+  },
 });
 
-const loadSetupPage = async (answer) => {
+const load = async () => {
   const env = loadPageModule("setup.js", {
-    fetchImpl: (url) => {
-      if (String(url).startsWith(PROFILER_PATH)) return answer();
-      return response(200, {});
-    },
+    respond: (path) => path === PROFILER_PATH
+      ? { heapFree: 1, heapMin: 1, heapLargest: 1, fragRatio: 0, taskStacks: [], snapshots: [] }
+      : {},
   });
   await env.settle();
-
-  const profilerPolls = () =>
-    env.fetches.filter((f) => String(f.url).startsWith(PROFILER_PATH)).length;
-  const ticking = env.intervals.filter((i) => i.ms === 5000);
-
-  return {
-    ...env,
-    profilerPolls,
-    ticking,
+  const publish = async (payload) => {
+    env.emit("window", "pa:identity-available", { detail: payload });
+    await env.settle();
   };
+  return { env, publish };
 };
 
-test("404 clears the 5s interval (teardown, not just silence)", async (t) => {
-  const env = await loadSetupPage(() => response(404));
+test("an unavailable manifest installs no profiler cadence or visibility work", async () => {
+  const { env, publish } = await load();
+  await publish(profilerIdentity(false));
 
-  // Initial poll on page load
-  assert.equal(env.profilerPolls(), 1, "initial poll on load");
+  assert.equal(env.requests.filter((request) => request.path === PROFILER_PATH).length, 0);
+  assert.equal(env.intervals.filter((interval) => interval.ms === 5000).length, 1,
+    "only the setup status fallback poll should exist");
+});
 
-  // Capture which 5s intervals exist before calling the attempt
-  const tickingIdsBefore = new Set(env.ticking.map((i) => i.id));
-  assert.ok(tickingIdsBefore.size > 0, "setup page must install a 5s interval");
+test("losing the identity manifest stops a running profiler cadence", async () => {
+  const { env, publish } = await load();
+  await publish(profilerIdentity(true));
+  const profilerIntervals = env.intervals.filter((interval) => interval.ms === 5000);
+  assert.equal(profilerIntervals.length, 2, "status fallback plus profiler cadence");
 
-  // Trigger one more poll attempt (simulates 5s tick)
-  env.ticking.forEach((interval) => interval.fn());
+  env.emit("window", "pa:identity-unavailable", { detail: { error: new Error("offline") } });
   await env.settle();
 
-  // At least one of the 5s intervals must have been cleared by poll.stop()
-  const clearedTickingIntervals = env.ticking.filter((i) => env.cleared.intervals.includes(i.id));
   assert.ok(
-    clearedTickingIntervals.length > 0,
-    "poll.stop() must clearInterval the profiler's 5s cadence, not just mute it"
+    profilerIntervals.some((interval) => env.cleared.intervals.includes(interval.id)),
+    "the profiler-owned interval must be cleared when availability becomes unknown",
   );
 });
 
-test("501 clears the 5s interval (same as 404)", async (t) => {
-  const env = await loadSetupPage(() => response(501));
+test("changing to a non-profiler manifest stops polling without probing", async () => {
+  const { env, publish } = await load();
+  await publish(profilerIdentity(true));
+  const before = env.requests.filter((request) => request.path === PROFILER_PATH).length;
+  const profilerIntervals = env.intervals.filter((interval) => interval.ms === 5000);
 
-  const tickingIdsBefore = new Set(env.ticking.map((i) => i.id));
-  assert.ok(tickingIdsBefore.size > 0, "setup page must install a 5s interval");
+  await publish(profilerIdentity(false));
 
-  env.ticking.forEach((interval) => interval.fn());
-  await env.settle();
-
-  const clearedTickingIntervals = env.ticking.filter((i) => env.cleared.intervals.includes(i.id));
-  assert.ok(
-    clearedTickingIntervals.length > 0,
-    "501 must trigger the same teardown as 404"
-  );
+  assert.equal(env.requests.filter((request) => request.path === PROFILER_PATH).length, before);
+  assert.ok(profilerIntervals.some((interval) => env.cleared.intervals.includes(interval.id)));
+  assert.equal(env.element("profiler-card").dataset.featureState, "not-in-this-build");
 });
 
-test("404 removes the visibility listener (no poll on tab return)", async (t) => {
-  const env = await loadSetupPage(() => response(404));
+test("returning to the tab refreshes a profiler that the manifest says is present", async () => {
+  const { env, publish } = await load();
+  await publish(profilerIdentity(true));
+  const before = env.requests.filter((request) => request.path === PROFILER_PATH).length;
 
-  // Initial fetch count
-  assert.equal(env.profilerPolls(), 1);
-
-  // Simulate visibility change to trigger the listener (if it were still attached)
   env.document.visibilityState = "visible";
   env.emit("document", "visibilitychange");
   await env.settle();
 
-  // A properly cleaned-up card should NOT have made another request
-  // because the listener was removed by poll.stop()
-  assert.equal(
-    env.profilerPolls(),
-    1,
-    "poll.stop() must removeEventListener to prevent visibility-triggered polls"
-  );
+  assert.equal(env.requests.filter((request) => request.path === PROFILER_PATH).length, before + 1);
 });

@@ -24,7 +24,7 @@
       <form id="feature-form" class="mt-16">
 
         <div class="section-label">🤖 ARM &amp; AUX</div>
-        <div class="component-row">
+        <div class="component-row" data-feature-entry="system.config.enable_aux1">
           <label class="toggle-switch" title="AUX1 / ARM3 (GPIO 19) — Auxiliary PWM output 1">
             <input type="checkbox" id="enable-aux1" name="enableAux1">
             <span class="toggle-slider"></span>
@@ -44,7 +44,7 @@
             <option value="rgb">LED strip</option>
           </select>
         </div>
-        <div class="component-row">
+        <div class="component-row" data-feature-entry="system.config.enable_aux2">
           <label class="toggle-switch" title="AUX2 / ARM4 (GPIO 18) — Auxiliary PWM output 2">
             <input type="checkbox" id="enable-aux2" name="enableAux2">
             <span class="toggle-slider"></span>
@@ -64,7 +64,7 @@
             <option value="rgb">LED strip</option>
           </select>
         </div>
-        <div class="component-row">
+        <div class="component-row" data-feature-entry="system.config.enable_aux3">
           <label class="toggle-switch" title="AUX3 / ARM5 (GPIO 32) — Auxiliary PWM output 3">
             <input type="checkbox" id="enable-aux3" name="enableAux3">
             <span class="toggle-slider"></span>
@@ -86,7 +86,7 @@
         </div>
 
 
-        <div class="component-row">
+        <div class="component-row" data-feature-entry="system.config.enable_arm2">
           <label class="toggle-switch" title="ARM2 (GPIO 5) — Right utility arm servo">
             <input type="checkbox" id="enable-arm2" name="enableArm2">
             <span class="toggle-slider"></span>
@@ -102,7 +102,7 @@
             <option value="mg90s">MG90S (micro)</option>
           </select>
         </div>
-        <div class="component-row">
+        <div class="component-row" data-feature-entry="system.config.enable_arm1">
           <label class="toggle-switch" title="ARM1 (GPIO 23) — Left utility arm servo">
             <input type="checkbox" id="enable-arm1" name="enableArm1">
             <span class="toggle-slider"></span>
@@ -118,18 +118,20 @@
             <option value="mg90s">MG90S (micro)</option>
           </select>
         </div>
-        <label class="toggle-switch" title="DOME (GPIO 25) — Dome rotation motor ESC">
-          <input type="checkbox" id="enable-dome" name="enableDome">
-          <span class="toggle-slider"></span>
-          <span class="toggle-label">DOME</span>
-          <span class="toggle-status" id="status-dome">Disabled</span>
-        </label>
+        <div class="component-row" data-feature-entry="system.config.enable_dome">
+          <label class="toggle-switch" title="DOME (GPIO 25) — Dome rotation motor ESC">
+            <input type="checkbox" id="enable-dome" name="enableDome">
+            <span class="toggle-slider"></span>
+            <span class="toggle-label">DOME</span>
+            <span class="toggle-status" id="status-dome">Off</span>
+          </label>
+        </div>
 
         <div class="section-label">🎮 RX IN/OUT</div>
         <div class="info-note" role="note">
           RC input changes save immediately and apply after controller restart.
         </div>
-        <div class="component-row">
+        <div class="component-row" data-feature-entry="system.config.enable_rc_ch1">
           <label class="toggle-switch" title="CH1 (GPIO 15) — SBUS drive receiver or PWM input 1">
             <input type="checkbox" id="enable-rc-ch1" name="enableRcCh1">
             <span class="toggle-slider"></span>
@@ -137,7 +139,7 @@
             <span class="toggle-status" id="status-rc-ch1">Disabled</span>
           </label>
         </div>
-        <div class="component-row">
+        <div class="component-row" data-feature-entry="system.config.enable_rc_ch2">
           <label class="toggle-switch" title="CH2 (GPIO 13) — SBUS dome receiver or PWM input 2">
             <input type="checkbox" id="enable-rc-ch2" name="enableRcCh2">
             <span class="toggle-slider"></span>
@@ -145,7 +147,7 @@
             <span class="toggle-status" id="status-rc-ch2">Disabled</span>
           </label>
         </div>
-        <div class="component-row">
+        <div class="component-row" data-feature-entry="system.config.enable_rc_ch3">
           <label class="toggle-switch" title="CH3 (GPIO 2) — Standard PWM input 3 (strapping pin)">
             <input type="checkbox" id="enable-rc-ch3" name="enableRcCh3">
             <span class="toggle-slider"></span>
@@ -153,7 +155,7 @@
             <span class="toggle-status" id="status-rc-ch3">Disabled</span>
           </label>
         </div>
-        <div class="component-row">
+        <div class="component-row" data-feature-entry="system.config.enable_rc_ch4">
           <label class="toggle-switch" title="CH4 (GPIO 4) — Standard PWM input 4">
             <input type="checkbox" id="enable-rc-ch4" name="enableRcCh4">
             <span class="toggle-slider"></span>
@@ -161,7 +163,7 @@
             <span class="toggle-status" id="status-rc-ch4">Disabled</span>
           </label>
         </div>
-        <div class="component-row">
+        <div class="component-row" data-feature-entry="system.config.enable_rc_ch5">
           <label class="toggle-switch" title="CH5 (GPIO 12) — Standard PWM input 5 (strapping pin)">
             <input type="checkbox" id="enable-rc-ch5" name="enableRcCh5">
             <span class="toggle-slider"></span>
@@ -169,7 +171,7 @@
             <span class="toggle-status" id="status-rc-ch5">Disabled</span>
           </label>
         </div>
-        <div class="component-row">
+        <div class="component-row" data-feature-entry="system.config.enable_rc_ch6">
           <label class="toggle-switch" title="CH6 (GPIO 27) — Standard PWM input 6">
             <input type="checkbox" id="enable-rc-ch6" name="enableRcCh6">
             <span class="toggle-slider"></span>
@@ -179,7 +181,7 @@
         </div>
 
         <div class="section-label">🔌 SERIAL COMMS</div>
-        <div class="component-row">
+        <div class="component-row" data-feature-entry="system.config.enable_s1_hoverboard">
           <label class="toggle-switch" title="S1 (GPIO 16/17) — Hoverboard drive motor controller">
             <input type="checkbox" id="enable-s1-hoverboard" name="enableS1Hoverboard">
             <span class="toggle-slider"></span>
@@ -187,7 +189,7 @@
             <span class="toggle-status" id="status-s1-hoverboard">Disabled</span>
           </label>
         </div>
-        <div class="component-row">
+        <div class="component-row" data-feature-entry="system.config.enable_s2_sound">
           <label class="toggle-switch" title="S2 (GPIO 26/35) — Sound module TX. Backend selected by PA_AUDIO_DRIVER build flag: AUDIO_SOFT_UART for DY-SV5W, AUDIO_CHIRP for CHIRP board.">
             <input type="checkbox" id="enable-s2-sound" name="enableS2Sound">
             <span class="toggle-slider"></span>
@@ -196,7 +198,7 @@
             <span class="toggle-status" id="status-s2-sound">Disabled</span>
           </label>
         </div>
-        <div class="component-row">
+        <div class="component-row" data-feature-entry="system.config.enable_s3_dome_ctrl">
           <label class="toggle-switch" title="S3 (GPIO 33/34) — protoR2link serial transport (slip ring)">
             <input type="checkbox" id="enable-s3-dome-ctrl" name="enableS3DomeCtrl">
             <span class="toggle-slider"></span>
@@ -302,10 +304,25 @@
       <div id="diag-feedback" class="feedback mt-12" role="status" aria-live="polite" aria-atomic="true"></div>
     </div>
 
-    <!-- Memory Profiler (visible only in PA_HEAP_PROFILE=1 builds) -->
-    <div class="card" id="profiler-card" hidden>
-      <h3>🔬 Memory Profiler</h3>
-      <div class="desc">Live heap attribution data from the profiler build (<code>PA_HEAP_PROFILE=1</code>). Absent in normal builds.</div>
+    <!-- Memory Profiler availability is declared by /api/identity. -->
+    <div class="card feature-availability-panel feature-state-checking" id="profiler-card"
+         data-feature-entry="system.api.get-profiler" data-build-flag="PA_HEAP_PROFILE">
+      <div class="feature-availability-header">
+        <div>
+          <h3>🔬 Memory Profiler</h3>
+          <div class="desc">Shows which controller tasks are using memory and how much room remains.</div>
+        </div>
+        <div class="feature-availability-rail">
+          <span id="profiler-availability-status" class="feature-availability-status feature-state feature-state-checking">Checking controller</span>
+          <button id="profiler-availability-toggle" class="feature-availability-toggle" type="button"
+                  role="switch" aria-checked="false" aria-label="Memory Profiler: Checking controller" disabled>
+            <span class="feature-availability-lamp" aria-hidden="true"></span>
+          </button>
+        </div>
+      </div>
+      <div id="profiler-availability-reason" class="feature-availability-reason" role="status" aria-live="polite">Checking whether this controller can run Memory Profiler…</div>
+
+      <div id="profiler-content" class="feature-availability-content" inert aria-hidden="true">
 
       <div class="mt-16">
         <div class="desc"><strong>Fragmentation</strong></div>
@@ -391,6 +408,8 @@
           </thead>
           <tbody id="prof-snap-tbody"></tbody>
         </table>
+      </div>
+      <div id="profiler-feedback" class="feedback mt-12" role="status" aria-live="polite"></div>
       </div>
     </div>
 

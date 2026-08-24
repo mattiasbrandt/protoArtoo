@@ -44,6 +44,13 @@
   };
   applyIdentityName("protoartoo");
 
+  const publishIdentity = (identity) => {
+    window.PAIdentity = identity;
+    if (typeof window.dispatchEvent === "function") {
+      window.dispatchEvent(new CustomEvent("pa:identity-available", { detail: identity }));
+    }
+  };
+
 
   window.PAUi = window.PAUi || {};
   if (typeof window.PAUi.setupActionText !== "function") {
@@ -93,8 +100,12 @@
         ? await api.get("/api/identity")
         : { data: await fetch("/api/identity", { cache: "no-store" }).then((r) => r.json()) };
       applyIdentityName(result.data?.droidName);
+      publishIdentity(result.data);
     } catch (error) {
       console.warn("[shell] identity unavailable:", error);
+      if (typeof window.dispatchEvent === "function") {
+        window.dispatchEvent(new CustomEvent("pa:identity-unavailable", { detail: { error } }));
+      }
       // Rethrow so the bootstrap can show recovery and retry the request
       throw error;
     }
@@ -102,6 +113,7 @@
 
   window.addEventListener("pa:identity-updated", (event) => {
     applyIdentityName(event.detail?.droidName);
+    publishIdentity(event.detail);
   });
 
   // Register identity load with the bootstrap if available; otherwise run it directly.

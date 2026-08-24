@@ -1,158 +1,189 @@
 // =============================================================================
-// test/test_web/test_issue_118_profiler_latching.js
+// Feature Availability on Setup (issue #186).
 //
-// Heap profiler polling on the setup page (issue #118): a build without the
-// profiler (PA_HEAP_PROFILE=0) answers 404 or 501, and the page must stop
-// asking. A 503 or a dropped connection is transient - ADR 0016 - and must not
-// disable the panel for the rest of the session.
-//
-// These tests poll the real refreshProfiler in data/setup.js through the timer
-// and visibility paths that call it. The previous version defined its own
-// twenty-line "simulate the refreshProfiler logic" copy and asserted against
-// that, so the latch could have been inverted in the shipped file without any
-// test noticing. Issue #146.
+// The setup page learns compile-time availability from the identity manifest.
+// It must never probe /api/profiler to discover absence. These tests execute
+// the shipped setup.js resolver, renderers, and polling transition.
 // =============================================================================
 
 import { test } from "node:test";
 import assert from "node:assert";
+import { readFileSync } from "node:fs";
 
 import { loadPageModule } from "./helpers/page_module_env.js";
 
 const PROFILER_PATH = "/api/profiler";
+const CONFIG = {
+  components: {
+    arm1: { enabled: true },
+    arm2: { enabled: false },
+  },
+  system: {},
+};
+const PROFILER_SAMPLE = {
+  heapFree: 10000,
+  heapMin: 5000,
+  heapLargest: 8000,
+  fragRatio: 0.2,
+  allocBlocks: 2,
+  freeBlocks: 1,
+  failedAllocs: 0,
+  taskStacks: [],
+  snapshots: [],
+};
 
-const response = (status, body = {}) => ({
-  ok: status >= 200 && status < 300,
-  status,
-  json: async () => body,
+const identity = ({ nativeWifi = true, hostedWifi = false, profiler = false } = {}) => ({
+  droidName: "artoo",
+  mdnsUseName: true,
+  board: nativeWifi ? "artoo_esp32" : "firebeetle2",
+  board_capabilities: {
+    PA_CAP_NATIVE_WIFI: nativeWifi,
+    PA_CAP_HOSTED_WIFI: hostedWifi,
+  },
+  build_flags: {
+    PA_HEAP_PROFILE: profiler,
+    PA_HEAP_TRACING: false,
+    PA_ADMISSION_TRACE: false,
+  },
 });
 
-const HEAP_SAMPLE = { heapFree: 10000, heapMin: 5000, fragRatio: 0.25 };
-
-// Brings the setup page up with a scripted profiler endpoint. The module polls
-// once at load; `poll()` drives each subsequent attempt through the 5 s
-// interval the page installed.
-const loadSetupPage = async (answer) => {
+const loadSetupPage = async ({ profilerAnswer = PROFILER_SAMPLE } = {}) => {
   const env = loadPageModule("setup.js", {
-    fetchImpl: (url) => {
-      if (String(url).startsWith(PROFILER_PATH)) return answer();
-      return response(200, {});
+    respond: (path) => {
+      if (path === "/api/config") return CONFIG;
+      if (path === "/api/status") return {};
+      if (path === PROFILER_PATH) return typeof profilerAnswer === "function"
+        ? profilerAnswer()
+        : profilerAnswer;
+      return {};
     },
   });
   await env.settle();
-
-  const profilerPolls = () => env.fetches.filter((f) => String(f.url).startsWith(PROFILER_PATH)).length;
-  // The page installs more than one 5 s interval. Firing all of them is what a
-  // 5 s tick does in the browser, and avoids guessing which one is the
-  // profiler's.
-  const ticking = env.intervals.filter((i) => i.ms === 5000);
-  assert.ok(ticking.length > 0, "the setup page must install a 5 s poll");
-
   return {
     ...env,
-    profilerPolls,
-    poll: async () => {
-      ticking.forEach((interval) => interval.fn());
+    profilerRequests: () => env.requests.filter((request) => request.path === PROFILER_PATH),
+    publishIdentity: async (payload) => {
+      env.emit("window", "pa:identity-available", { detail: payload });
       await env.settle();
     },
   };
 };
 
-test("The setup page polls the profiler as soon as it loads", async (t) => {
-  const env = await loadSetupPage(() => response(200, HEAP_SAMPLE));
+test("the shipped resolver distinguishes all four final feature states", async () => {
+  const env = await loadSetupPage();
+  const availability = env.window.PAFeatureAvailability;
 
-  assert.equal(env.profilerPolls(), 1, "the panel must populate without waiting for the first interval");
-});
+  assert.equal(availability.resolve({ enabled: true }).state, "on");
+  assert.equal(availability.resolve({ enabled: false }).state, "off");
+  assert.equal(availability.resolve({ buildFlag: "PA_HEAP_PROFILE" }).state, "checking");
 
-test("A 404 stops the page asking for a profiler this build does not have", async (t) => {
-  const env = await loadSetupPage(() => response(404));
-  assert.equal(env.profilerPolls(), 1);
-
-  await env.poll();
-  await env.poll();
-
+  availability.setIdentity(identity({ nativeWifi: false, hostedWifi: true, profiler: false }));
   assert.equal(
-    env.profilerPolls(),
-    1,
-    "404 means the feature is absent from this build; polling it every 5 s forever is pure noise"
+    availability.resolve({ boardCapability: "PA_CAP_NATIVE_WIFI", buildFlag: "PA_HEAP_PROFILE" }).state,
+    "not-on-this-board",
+    "board topology must explain absence before the per-image build choice",
+  );
+  assert.equal(
+    availability.resolve({ boardCapability: "PA_CAP_HOSTED_WIFI", buildFlag: "PA_HEAP_PROFILE" }).state,
+    "not-in-this-build",
   );
 });
 
-test("A 501 stops the page asking, the same as a 404", async (t) => {
-  const env = await loadSetupPage(() => response(501));
-  assert.equal(env.profilerPolls(), 1);
+test("component rows render present toggles as On and Off", async () => {
+  const env = await loadSetupPage();
 
-  await env.poll();
-
-  assert.equal(env.profilerPolls(), 1, "501 is the other permanently-absent answer");
+  assert.equal(env.element("status-arm1").textContent, "On");
+  assert.equal(env.element("status-arm2").textContent, "Off");
+  assert.equal(env.element("enable-arm1").disabled, false);
+  assert.equal(env.element("enable-arm2").disabled, false);
 });
 
-test("A 503 does not latch - admission control is transient", async (t) => {
-  const env = await loadSetupPage(() => response(503));
-  assert.equal(env.profilerPolls(), 1);
+test("the profiler stays visible and says Not in this build without probing its endpoint", async () => {
+  const env = await loadSetupPage();
+  await env.publishIdentity(identity({ profiler: false }));
 
-  await env.poll();
-
+  assert.equal(env.profilerRequests().length, 0);
+  assert.equal(env.element("profiler-card").hidden, false);
+  assert.equal(env.element("profiler-card").dataset.featureState, "not-in-this-build");
+  assert.equal(env.element("profiler-availability-status").textContent, "Not in this build");
   assert.equal(
-    env.profilerPolls(),
-    2,
-    "a busy controller must not cost the operator the profiler for the rest of the session"
+    env.element("profiler-availability-reason").textContent,
+    "This controller was loaded without Memory Profiler.",
   );
 });
 
-test("A dropped connection does not latch", async (t) => {
-  const env = await loadSetupPage(() => Promise.reject(new Error("Simulated network failure")));
-  assert.equal(env.profilerPolls(), 1);
+test("identity loading and failure never start profiler traffic", async () => {
+  const env = await loadSetupPage();
 
-  await env.poll();
+  assert.equal(env.element("profiler-card").dataset.featureState, "checking");
+  assert.equal(env.profilerRequests().length, 0);
 
-  assert.equal(env.profilerPolls(), 2, "a transient network failure must leave the poll running");
-});
-
-test("A 500 does not latch", async (t) => {
-  const env = await loadSetupPage(() => response(500));
-
-  await env.poll();
-
-  assert.equal(
-    env.profilerPolls(),
-    2,
-    "only 404 and 501 mean absent; every other failure is worth retrying"
-  );
-});
-
-test("Polling continues after a success, and after a success that carried no data", async (t) => {
-  const env = await loadSetupPage(() => response(200, {}));
-
-  await env.poll();
-  await env.poll();
-
-  assert.equal(
-    env.profilerPolls(),
-    3,
-    "a thin payload is still a working endpoint - it must not be mistaken for an absent one"
-  );
-});
-
-test("Latching survives the visibility path, not just the interval", async (t) => {
-  const env = await loadSetupPage(() => response(404));
-
-  env.document.visibilityState = "visible";
-  env.emit("document", "visibilitychange");
+  env.emit("window", "pa:identity-unavailable", { detail: { error: new Error("offline") } });
   await env.settle();
 
-  assert.equal(
-    env.profilerPolls(),
-    1,
-    "returning to the tab must not reopen a poll the page has already latched off"
+  assert.equal(env.element("profiler-card").dataset.featureState, "identity-unavailable");
+  assert.equal(env.element("profiler-availability-status").textContent, "Availability unknown");
+  assert.equal(env.profilerRequests().length, 0);
+});
+
+test("the profiler starts polling only after the manifest reports it present", async () => {
+  const env = await loadSetupPage();
+  await env.publishIdentity(identity({ profiler: false }));
+  assert.equal(env.profilerRequests().length, 0);
+
+  await env.publishIdentity(identity({ profiler: true }));
+
+  assert.equal(env.profilerRequests().length, 1, "the first reading should start immediately once present");
+  assert.equal(env.element("profiler-card").dataset.featureState, "on");
+  assert.equal(env.element("profiler-availability-status").textContent, "On");
+  assert.ok(env.intervals.some((interval) => interval.ms === 5000));
+});
+
+test("transient profiler errors do not change compile-time availability", async () => {
+  const env = await loadSetupPage({ profilerAnswer: () => { throw new Error("controller busy"); } });
+  await env.publishIdentity(identity({ profiler: true }));
+
+  const profilerIntervals = env.intervals.filter((interval) => interval.ms === 5000);
+  assert.equal(profilerIntervals.length, 2, "status fallback plus profiler cadence");
+  profilerIntervals.forEach((interval) => interval.fn());
+  await env.settle();
+
+  assert.equal(env.profilerRequests().length, 2);
+  assert.equal(env.element("profiler-card").dataset.featureState, "on");
+});
+
+test("a board-gated component renders Not on this board and remains visible", async () => {
+  const env = await loadSetupPage();
+  const arm1 = env.element("enable-arm1");
+  arm1.dataset.boardCapability = "PA_CAP_HOSTED_WIFI";
+  await env.publishIdentity(identity({ hostedWifi: false }));
+
+  assert.equal(arm1.disabled, true);
+  assert.equal(env.element("status-arm1").textContent, "Not on this board");
+});
+
+test("the setup markup declares every component row plus the profiler in the registry grain", () => {
+  const html = readFileSync("data/setup.html", "utf8");
+  const entries = [...html.matchAll(/data-feature-entry="([^"]+)"/g)].map((match) => match[1]);
+
+  assert.equal(entries.length, 16);
+  assert.equal(new Set(entries).size, 16);
+  assert.ok(entries.includes("system.api.get-profiler"));
+  assert.doesNotMatch(
+    html.slice(html.indexOf('id="profiler-card"'), html.indexOf("<!-- Backup & Restore -->")),
+    /<code>PA_|visible only in PA_|Absent in normal builds/,
+    "primary profiler copy must stay in maker language",
   );
 });
 
-test("Returning to the tab repolls while the profiler is still available", async (t) => {
-  const env = await loadSetupPage(() => response(200, HEAP_SAMPLE));
+test("shell publishes the once-per-page identity response for feature consumers", async () => {
+  const payload = identity({ profiler: true });
+  const env = loadPageModule("shell.js", {
+    respond: (path) => path === "/api/identity" ? payload : {},
+  });
 
-  env.document.visibilityState = "visible";
-  env.emit("document", "visibilitychange");
-  await env.settle();
+  await env.runSection("shell-identity");
 
-  assert.equal(env.profilerPolls(), 2, "a returning operator must see current heap numbers");
+  assert.deepEqual(env.window.PAIdentity, payload);
+  assert.deepEqual(env.pathsRequested(), ["/api/identity"]);
 });
