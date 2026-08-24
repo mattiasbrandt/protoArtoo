@@ -58,6 +58,7 @@ const loadSetupPage = async ({ profilerAnswer = PROFILER_SAMPLE } = {}) => {
       return {};
     },
   });
+  env.element("profiler-card").dataset.buildFlag = "PA_HEAP_PROFILE";
   await env.settle();
   return {
     ...env,
@@ -169,6 +170,8 @@ test("the setup markup declares every component row plus the profiler in the reg
   assert.equal(entries.length, 16);
   assert.equal(new Set(entries).size, 16);
   assert.ok(entries.includes("system.api.get-profiler"));
+  assert.match(html, /Shows where controller memory is being used and how much room remains\./);
+  assert.doesNotMatch(html, /which controller tasks are using memory/);
   assert.doesNotMatch(
     html.slice(html.indexOf('id="profiler-card"'), html.indexOf("<!-- Backup & Restore -->")),
     /<code>PA_|visible only in PA_|Absent in normal builds/,

@@ -28,6 +28,7 @@ const load = async () => {
       ? { heapFree: 1, heapMin: 1, heapLargest: 1, fragRatio: 0, taskStacks: [], snapshots: [] }
       : {},
   });
+  env.element("profiler-card").dataset.buildFlag = "PA_HEAP_PROFILE";
   await env.settle();
   const publish = async (payload) => {
     env.emit("window", "pa:identity-available", { detail: payload });

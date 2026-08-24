@@ -8,7 +8,17 @@
   const listeners = new Set();
   let phase = "loading";
   let identity = null;
+  const STATE_LABELS = Object.freeze({
+    on: "On",
+    off: "Off",
+    "not-in-this-build": "Not in this build",
+    "not-on-this-board": "Not on this board",
+    checking: "Checking controller",
+    "identity-unavailable": "Availability unknown",
+  });
 
+  // Resolve the compile-time manifest tiers first, then the optional runtime
+  // toggle. Component rows and build-conditional panels call this same seam.
   const resolve = ({ boardCapability = "", buildFlag = "", enabled = true } = {}) => {
     const needsManifest = Boolean(boardCapability || buildFlag);
     if (needsManifest && phase !== "ready") {
@@ -25,6 +35,17 @@
     return enabled
       ? { state: "on", available: true }
       : { state: "off", available: true };
+  };
+
+  const labelFor = (state) => STATE_LABELS[state] || "Availability unknown";
+
+  const reasonFor = (state, featureName, { on = "" } = {}) => {
+    if (state === "on") return on;
+    if (state === "not-on-this-board") return `This controller board cannot run ${featureName}.`;
+    if (state === "not-in-this-build") return `This controller was loaded without ${featureName}.`;
+    if (state === "checking") return `Checking whether this controller can run ${featureName}…`;
+    if (state === "identity-unavailable") return `Could not check ${featureName}. Reconnecting to the controller…`;
+    return "";
   };
 
   const notify = () => listeners.forEach((listener) => listener());
@@ -47,7 +68,14 @@
     return () => listeners.delete(listener);
   };
 
-  window.PAFeatureAvailability = { resolve, setIdentity, setIdentityError, subscribe };
+  window.PAFeatureAvailability = {
+    resolve,
+    labelFor,
+    reasonFor,
+    setIdentity,
+    setIdentityError,
+    subscribe,
+  };
 })();
 
 (() => {
@@ -339,23 +367,6 @@
     }
   };
 
-  const FEATURE_STATE_COPY = {
-    on: "On",
-    off: "Off",
-    "not-in-this-build": "Not in this build",
-    "not-on-this-board": "Not on this board",
-    checking: "Checking controller",
-    "identity-unavailable": "Availability unknown",
-  };
-
-  const featureReason = (toggle, state) => {
-    if (state === "not-on-this-board") return `This controller board cannot run ${toggle.name}.`;
-    if (state === "not-in-this-build") return `This controller was loaded without ${toggle.name}.`;
-    if (state === "checking") return `Checking whether this controller can run ${toggle.name}…`;
-    if (state === "identity-unavailable") return `Could not check ${toggle.name}. Reconnecting to the controller…`;
-    return "";
-  };
-
   const featureRow = (toggle) =>
     toggle.input?.closest(".component-row") || toggle.input?.closest(".toggle-switch");
 
@@ -381,6 +392,8 @@
     });
   };
 
+  // Apply one resolved state to a component row, including its status copy,
+  // panel rail, reason, and all controls that must become inert together.
   const updateToggleStatus = (key) => {
     const toggle = featureToggles[key];
     if (!toggle || !toggle.input || !toggle.status) return;
@@ -393,7 +406,7 @@
 
     toggle.state = result.state;
     toggle.available = result.available;
-    toggle.status.textContent = FEATURE_STATE_COPY[result.state];
+    toggle.status.textContent = window.PAFeatureAvailability.labelFor(result.state);
     toggle.status.className = `toggle-status feature-state feature-state-${result.state}`;
     toggle.input.disabled = !result.available;
     toggle.input.setAttribute("aria-disabled", result.available ? "false" : "true");
@@ -413,7 +426,7 @@
       setRowControlsAvailable(row, result.available, toggle.input);
       const reason = ensureFeatureReason(toggle, row);
       if (reason) {
-        reason.textContent = featureReason(toggle, result.state);
+        reason.textContent = window.PAFeatureAvailability.reasonFor(result.state, toggle.name);
         reason.hidden = result.available;
       }
     }
@@ -1365,24 +1378,21 @@
   });
   let polling = false;
 
-  const statusCopy = {
-    on: "On",
-    "not-in-this-build": "Not in this build",
-    "not-on-this-board": "Not on this board",
-    checking: "Checking controller",
-    "identity-unavailable": "Availability unknown",
-  };
-
-  const reasonCopy = {
-    on: "Live memory readings refresh while this page is open.",
-    "not-in-this-build": "This controller was loaded without Memory Profiler.",
-    "not-on-this-board": "This controller board cannot run Memory Profiler.",
-    checking: "Checking whether this controller can run Memory Profiler…",
-    "identity-unavailable": "Could not check Memory Profiler. Reconnecting to the controller…",
-  };
-
+  // Render the profiler's declared requirements and own its poll lifecycle;
+  // the identity subscriber calls this after every availability transition.
   const renderAvailability = () => {
-    const result = window.PAFeatureAvailability.resolve({ buildFlag: "PA_HEAP_PROFILE" });
+    const featureName = "Memory Profiler";
+    const hasRequirementMetadata = Boolean(card.dataset.boardCapability || card.dataset.buildFlag);
+    const result = hasRequirementMetadata
+      ? window.PAFeatureAvailability.resolve({
+          boardCapability: card.dataset.boardCapability || "",
+          buildFlag: card.dataset.buildFlag || "",
+        })
+      : { state: "checking", available: false };
+    const stateLabel = window.PAFeatureAvailability.labelFor(result.state);
+    const stateReason = window.PAFeatureAvailability.reasonFor(result.state, featureName, {
+      on: "Live memory readings refresh while this page is open.",
+    });
     card.hidden = false;
     card.classList.remove(
       "feature-state-on",
@@ -1395,13 +1405,13 @@
     card.dataset.featureState = result.state;
 
     if (availabilityStatus) {
-      availabilityStatus.textContent = statusCopy[result.state];
+      availabilityStatus.textContent = stateLabel;
       availabilityStatus.className = `feature-availability-status feature-state feature-state-${result.state}`;
     }
-    if (availabilityReason) availabilityReason.textContent = reasonCopy[result.state];
+    if (availabilityReason) availabilityReason.textContent = stateReason;
     if (availabilityToggle) {
       availabilityToggle.setAttribute("aria-checked", result.available ? "true" : "false");
-      availabilityToggle.setAttribute("aria-label", `Memory Profiler: ${statusCopy[result.state]}`);
+      availabilityToggle.setAttribute("aria-label", `${featureName}: ${stateLabel}`);
     }
     if (content) {
       content.inert = !result.available;

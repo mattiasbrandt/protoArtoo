@@ -2,7 +2,8 @@
 // Feature Availability control interlock (issue #186).
 //
 // This issue-local host retains DOM listeners so it can drive the shipped
-// setup.js change handler. The shared page harness remains unchanged.
+// shell.js -> setup.js resource-order contract and Setup change handlers. The
+// shared page harness remains unchanged.
 // =============================================================================
 
 import { test } from "node:test";
@@ -52,11 +53,12 @@ const makeElement = () => {
   return element;
 };
 
-const loadInteractiveSetup = () => {
+const loadInteractiveSetup = ({ identity = null } = {}) => {
   const elements = new Map();
   const timers = [];
   const requests = [];
   const windowListeners = new Map();
+  const sections = new Map();
   const element = (id) => {
     if (!elements.has(id)) {
       const created = makeElement();
@@ -66,9 +68,17 @@ const loadInteractiveSetup = () => {
     return elements.get(id);
   };
   const config = { components: { arm1: { enabled: true } }, system: {} };
+  const identityPayload = identity || {
+    droidName: "artoo",
+    mdnsUseName: true,
+    board_capabilities: { PA_CAP_NATIVE_WIFI: true, PA_CAP_HOSTED_WIFI: false },
+    build_flags: { PA_HEAP_PROFILE: false, PA_HEAP_TRACING: false, PA_ADMISSION_TRACE: false },
+  };
   const call = async (method, path, body) => {
     requests.push({ method, path, body });
-    return { data: path === "/api/config" ? config : {} };
+    if (path === "/api/config") return { data: config };
+    if (path === "/api/identity") return { data: identityPayload };
+    return { data: {} };
   };
 
   const windowMock = {
@@ -79,6 +89,10 @@ const loadInteractiveSetup = () => {
       messageFor: (error) => error?.message || "Request failed",
     },
     PAUtils: { escapeHtml: String, escapeAttr: String, debounce: (fn) => fn },
+    PABootstrap: {
+      registerSection: (name, load, opts = {}) => sections.set(name, { load, opts }),
+      setResourceLabels() {},
+    },
     PAStatusStream: { isSupported: () => false, getLastStatus: () => null, subscribe() {} },
     PageBootstrap: { createBackgroundPoll: () => ({ start() {}, stop() {} }) },
     setTimeout(fn, ms) {
@@ -115,6 +129,7 @@ const loadInteractiveSetup = () => {
     addEventListener() {},
     removeEventListener() {},
   };
+  documentMock.body.dataset.page = "setup";
   const context = {
     window: windowMock,
     document: documentMock,
@@ -146,9 +161,11 @@ const loadInteractiveSetup = () => {
     RegExp,
   };
   context.globalThis = context;
-  for (const key of ["PAApi", "PAUtils", "PAStatusStream", "PageBootstrap"]) {
+  for (const key of ["PAApi", "PAUtils", "PABootstrap", "PAStatusStream", "PageBootstrap"]) {
     context[key] = windowMock[key];
   }
+  vm.runInNewContext(readFileSync("data/shell.js", "utf8"), context, { filename: "shell.js" });
+  element("profiler-card").dataset.buildFlag = "PA_HEAP_PROFILE";
   vm.runInNewContext(readFileSync("data/setup.js", "utf8"), context, { filename: "setup.js" });
 
   const settle = async () => {
@@ -170,8 +187,32 @@ const loadInteractiveSetup = () => {
     await timer.fn();
     await settle();
   };
-  return { element, timers, requests, settle, publishIdentity, fireTimer };
+  const runSection = async (name) => {
+    const section = sections.get(name);
+    assert.ok(section, `expected registered ${name} section`);
+    await section.load();
+    await settle();
+  };
+  return { element, timers, requests, settle, publishIdentity, fireTimer, runSection, window: windowMock };
 };
+
+test("shell identity delivery reaches Setup after both shipped resources load", async () => {
+  const env = loadInteractiveSetup();
+  await env.settle();
+
+  assert.equal(env.element("profiler-card").dataset.featureState, "checking");
+  await env.runSection("shell-identity");
+
+  assert.equal(env.window.PAIdentity.droidName, "artoo", "the shell cache keeps the complete manifest");
+  assert.equal(env.element("droid-name-input").value, "artoo", "Setup received the shell event");
+  assert.equal(env.element("profiler-card").dataset.featureState, "not-in-this-build");
+  assert.equal(env.element("profiler-availability-status").textContent, "Not in this build");
+  assert.equal(
+    env.requests.filter((request) => request.method === "GET" && request.path === "/api/identity").length,
+    1,
+    "the composed resource order still uses the shell's single identity request",
+  );
+});
 
 test("an unavailable component toggle ignores even a scripted change event", async () => {
   const env = loadInteractiveSetup();

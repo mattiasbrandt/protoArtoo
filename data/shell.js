@@ -44,6 +44,8 @@
   };
   applyIdentityName("protoartoo");
 
+  // Publish the shell's once-per-page identity result for feature consumers.
+  // Setup listens to the event, while the cache closes late-load ordering gaps.
   const publishIdentity = (identity) => {
     window.PAIdentity = identity;
     if (typeof window.dispatchEvent === "function") {
