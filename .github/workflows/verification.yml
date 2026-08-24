@@ -3,7 +3,6 @@ name: Verification
 on:
   pull_request:
     branches:
-      - 'phase/v*'
       - main
   push:
     branches:
