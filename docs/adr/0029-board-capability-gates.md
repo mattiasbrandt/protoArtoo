@@ -90,3 +90,22 @@ the invariant-per-PCB versus per-image distinction and muddies the UI
 message); hiding unavailable rows (an operator cannot tell "not fitted" from
 "does not exist here"); defined-or-absent `#ifdef` flags (a typo silently
 gates a feature out, which the budget gate cannot catch on the P4 side).
+
+## Amended 2026-08-24 (display vocabulary)
+
+Operator decision after the #186 design review. The four-state domain is
+unchanged; what an operator *reads* is contextual:
+
+- A present feature **with** a Component Toggle shows **On / Off**.
+- A present feature **without** a Component Toggle shows **Included** — it has
+  no off, so "On" would announce a state that cannot vary.
+- "Not in this build" is shown as **Not included** (a builder reads "build" as
+  the droid), with a one-line reason; "Not on this board" is unchanged.
+- Compile-time availability renders as a **status lamp**, never a disabled
+  switch: a switch is reserved for a Component Toggle the operator can move.
+- Not every feature visibly inhabits all four states.
+
+Rejected: keeping "On" for compile-only features (the profiler happened to be
+defensible because its instrumentation is genuinely active, which set the
+general rule from the special case); a disabled `role="switch"` for an
+immutable fact (a generic disabled widget, and a promise the UI cannot keep).

@@ -62,3 +62,6 @@ otherwise two-layer board definition; the Makefile does not inspect
   booting, initialized, or reachable at runtime.
 - CONTEXT.md gains the artoo-esp32, ESP32-P4 Target, and Board Variant terms;
   the Supported ESP32 Board entry now names artoo-esp32 explicitly.
+- A Board Variant may declare **no** network backend (ADR 0032,
+  Network-Optional Operation). Such a board compiles without a web server and
+  keeps every droid function; there is no at-least-one-backend requirement.

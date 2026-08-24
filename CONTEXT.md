@@ -411,12 +411,16 @@ A compile-time `PA_*` flag, chosen per build environment and always defined as 0
 _Avoid_: build-stripping flag, developer toggle, compile-time component toggle, feature flag (unqualified)
 
 **Feature Availability**:
-The compile-time answer to whether a feature exists in the running image, derived from the Board Capability Gate and the Build Feature Flag the feature requires: not on this board, not in this build, or present. A present feature that has a Component Toggle is then off or on. Availability is declared by the image and reported to the browser once; it is never discovered by probing endpoints, and it says nothing about whether fitted hardware is reachable at runtime.
-_Avoid_: endpoint probing, feature detection, available (unqualified — that word names runtime reachability), hidden feature
+The compile-time answer to whether a feature exists in the running image, derived from the Board Capability Gate and the Build Feature Flag the feature requires: not on this board, not in this build, or present. A present feature that has a Component Toggle is then off or on; a present feature without one is simply included — it has no on or off, and not every feature visibly inhabits all four states. Operators see "not in this build" as *Not included*, because a builder reads "build" as the droid. Availability is declared by the image and reported to the browser once; it is never discovered by probing endpoints, and it says nothing about whether fitted hardware is reachable at runtime.
+_Avoid_: endpoint probing, feature detection, available (unqualified — that word names runtime reachability), hidden feature, on/off for a feature without a Component Toggle, "build" in operator-facing copy
 
 **Hosted WiFi**:
 A network backend in which a separate wireless co-processor serves WiFi through ESP-Hosted. On firebeetle2 it uses the board's fitted ESP32-C6 over SDIO; it is not intrinsic to ESP32-P4, and its capability gate does not prove runtime readiness.
 _Avoid_: ESP32-P4's native WiFi, universal P4 C6/SDIO topology, runtime-ready capability
+
+**Network-Optional Operation**:
+The droid's defined functions — RC drive, dome, sound, servos, and every safety path — never depend on a network backend being fitted, configured, or reachable. A Board Variant may declare no network backend at all. A network that is absent or down removes only the web UI and web-only operations; it never restarts the controller and never degrades a droid function. Persistent network failure is announced by the droid itself (sound, dome text, serial log), not only through the web UI (ADR 0032).
+_Avoid_: network as a safety dependency, automatic controller restart on network failure, counting the web UI as a droid function, mandatory network backend per board
 
 **Bench-Mode**:
 The development posture where a controller board runs connected to USB only, without droid hardware — exercising HTTP, SSE, serial, OTA, and bench-attachable peripherals. A posture, not a verification status: evidence gathered in Bench-Mode is at most Controller Upload Verified.
