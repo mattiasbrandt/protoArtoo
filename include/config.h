@@ -41,6 +41,47 @@
   #error "PA_BOARD value not recognized"
 #endif
 
+// Board Capability Gates (ADR 0029). Each Board Variant defines every gate
+// as 0 or 1; the manifest expansion below makes an omitted declaration or a
+// non-binary value a compile-time error without emitting code or data.
+#if PA_BOARD == PA_BOARD_ARTOO_ESP32
+  #define PA_CAP_NATIVE_WIFI 1
+  #define PA_CAP_HOSTED_WIFI 0
+#elif PA_BOARD == PA_BOARD_FIREBEETLE2
+  #define PA_CAP_NATIVE_WIFI 0
+  #define PA_CAP_HOSTED_WIFI 1
+#else
+  #error "PA_BOARD value not recognized in capability selection"
+#endif
+
+#define PA_BOARD_CAPABILITY(name) \
+    static_assert((name) == 0 || (name) == 1, #name " must be defined as 0 or 1");
+#include "board_capabilities.inc"
+#undef PA_BOARD_CAPABILITY
+
+// PlatformIO firmware and native-test builds must supply every Build Feature
+// Flag. Expand the manifest in the production compile path so missing or
+// non-binary values fail at compile time; the plain-host config.h pin probes
+// intentionally exercise only board declarations.
+#if ARDUINO || PA_NATIVE_TEST_STUBS
+  #define PA_BUILD_FLAG(name) \
+      static_assert((name) == 0 || (name) == 1, #name " must be defined as 0 or 1");
+  #include "build_flags.inc"
+  #undef PA_BUILD_FLAG
+#endif
+
+// Heap tracing is a troubleshooting-only Build Feature Flag layered on the
+// heap profiler and the SDK's standalone tracing support. Keep invalid images
+// from compiling even if an environment is configured by hand.
+#if PA_HEAP_TRACING
+  #if !PA_HEAP_PROFILE
+    #error "PA_HEAP_TRACING=1 requires PA_HEAP_PROFILE=1"
+  #endif
+  #if !CONFIG_HEAP_TRACING
+    #error "PA_HEAP_TRACING=1 requires CONFIG_HEAP_TRACING enabled"
+  #endif
+#endif
+
 // Sentinel value for pins that have not yet been assigned on a board variant.
 // Never a valid GPIO on any supported chip. Used to make builds fail loudly
 // if code tries to use an unassigned pin, rather than silently configuring

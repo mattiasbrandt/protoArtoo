@@ -13,6 +13,9 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 REGISTRY_PATH = ROOT / "docs" / "action-registry.yaml"
+BOARD_CAPABILITIES_PATH = ROOT / "include" / "board_capabilities.inc"
+BUILD_FLAGS_PATH = ROOT / "include" / "build_flags.inc"
+SYSTEM_CONFIG_PATH = ROOT / "include" / "config_store.h"
 RC_MAPPING_PATH = ROOT / "include" / "rc_mapping.h"
 RC_ACTION_TYPES_PATH = ROOT / "include" / "rc_action_types.h"
 RC_ACTION_TYPES_CPP_PATH = ROOT / "src" / "rc_action_types.cpp"
@@ -41,6 +44,81 @@ ACTION_GROUP_OVERRIDE = {
 
 NON_TESTABLE_TOKENS = {"drive_speed", "drive_steer", "dome_speed", "estop"}
 PAYLOAD_REQUIRED_TOKENS = {"seq", "cmd", "dome_seq"}
+
+
+def load_x_macro_manifest(path: Path, macro: str, prefix: str) -> set[str]:
+    """Read one unguarded one-argument X-macro inventory.
+
+    Comments and preprocessor guard lines are allowed. Every other non-empty
+    line must be exactly one manifest row so a malformed declaration cannot
+    silently disappear from the drift check.
+    """
+    row_pattern = re.compile(rf"{re.escape(macro)}\(({prefix}[A-Z0-9_]*)\)")
+    names: list[str] = []
+
+    for line_number, raw_line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        line = raw_line.strip()
+        if not line or line.startswith("//") or line.startswith("#"):
+            continue
+        match = row_pattern.fullmatch(line)
+        if not match:
+            raise ValueError(f"{path.relative_to(ROOT)}:{line_number}: invalid {macro} row: {line}")
+        names.append(match.group(1))
+
+    if not names:
+        raise ValueError(f"{path.relative_to(ROOT)} contains no {macro} rows")
+    duplicates = sorted({name for name in names if names.count(name) > 1})
+    if duplicates:
+        raise ValueError(f"{path.relative_to(ROOT)} contains duplicate rows: {duplicates}")
+    return set(names)
+
+
+def system_config_enable_fields() -> set[str]:
+    text = SYSTEM_CONFIG_PATH.read_text(encoding="utf-8")
+    match = re.search(r"struct\s+SystemConfig\s*{(?P<body>.*?)\n};", text, re.S)
+    if not match:
+        raise ValueError("could not find SystemConfig struct")
+    return set(re.findall(r"\bbool\s+(enable_[a-z0-9_]+)\s*;", match.group("body")))
+
+
+def check_feature_availability_metadata(doc: dict, errors: list[str]) -> None:
+    manifests = {
+        "board_capability": load_x_macro_manifest(
+            BOARD_CAPABILITIES_PATH, "PA_BOARD_CAPABILITY", "PA_CAP_"
+        ),
+        "build_flag": load_x_macro_manifest(BUILD_FLAGS_PATH, "PA_BUILD_FLAG", "PA_"),
+    }
+
+    for entry in doc.get("entries", []):
+        entry_name = entry.get("name", "<unnamed>")
+        for field, known_names in manifests.items():
+            if field not in entry:
+                continue
+            value = entry[field]
+            if not isinstance(value, str) or value not in known_names:
+                errors.append(
+                    f"{entry_name} has invalid {field} {value!r}; "
+                    f"expected one of {sorted(known_names)!r}"
+                )
+
+
+def check_component_toggle_entries(doc: dict, errors: list[str]) -> None:
+    expected_fields = system_config_enable_fields()
+    expected_names = {f"system.config.{field}" for field in expected_fields}
+    entries_by_name = {entry.get("name"): entry for entry in doc.get("entries", [])}
+    registered_names = {
+        name
+        for name in entries_by_name
+        if isinstance(name, str) and name.startswith("system.config.enable_")
+    }
+
+    for name in sorted(expected_names - registered_names):
+        errors.append(f"SystemConfig component toggle {name} is missing from the registry")
+    for name in sorted(registered_names - expected_names):
+        errors.append(f"{name} is registered but has no matching SystemConfig bool field")
+    for name in sorted(expected_names & registered_names):
+        if entries_by_name[name].get("type") != "config":
+            errors.append(f"{name} must be registered with type: config")
 
 
 @dataclass(frozen=True)
@@ -394,6 +472,8 @@ def main() -> int:
     check_api_endpoints(doc, errors)
     check_dome_cues(doc, errors)
     check_dollar_commands(doc, errors)
+    check_feature_availability_metadata(doc, errors)
+    check_component_toggle_entries(doc, errors)
 
     if errors:
         print("Action registry drift detected:", file=sys.stderr)

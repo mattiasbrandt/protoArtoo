@@ -35,6 +35,9 @@
 # NVS keys are NOT renamed to match registry names. The registry documents the mapping
 # between a config entry's canonical name and its NVS key in the `nvs_key` field.
 # For entries with multiple NVS keys, `nvs_keys` (sequence) is used instead.
+# `board_capability` and `build_flag` each name at most one declaration from
+# include/board_capabilities.inc and include/build_flags.inc. An absent field
+# means the entry is universal for that compile-time tier (ADR 0029).
 #
 ## Runtime action registry API notes:
 ## - GET /api/actions returns bindable actions with token + testability metadata.
@@ -2409,6 +2412,232 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: last_mood
+
+- name: system.config.enable_arm1
+  display_name: ARM1
+  description: Use the utility arm connected to the ARM1 output
+  domain: system
+  type: config
+  marcduino_cmd: null
+  api_path: /api/config
+  sse_event: null
+  cpp_enum: null
+  cpp_file: include/config_store.h
+  sources: [ internal ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: en_arm1
+
+- name: system.config.enable_arm2
+  display_name: ARM2
+  description: Use the utility arm connected to the ARM2 output
+  domain: system
+  type: config
+  marcduino_cmd: null
+  api_path: /api/config
+  sse_event: null
+  cpp_enum: null
+  cpp_file: include/config_store.h
+  sources: [ internal ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: en_arm2
+
+- name: system.config.enable_aux1
+  display_name: AUX1
+  description: Use the component connected to the AUX1 output
+  domain: system
+  type: config
+  marcduino_cmd: null
+  api_path: /api/config
+  sse_event: null
+  cpp_enum: null
+  cpp_file: include/config_store.h
+  sources: [ internal ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: en_aux1
+
+- name: system.config.enable_aux2
+  display_name: AUX2
+  description: Use the component connected to the AUX2 output
+  domain: system
+  type: config
+  marcduino_cmd: null
+  api_path: /api/config
+  sse_event: null
+  cpp_enum: null
+  cpp_file: include/config_store.h
+  sources: [ internal ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: en_aux2
+
+- name: system.config.enable_aux3
+  display_name: AUX3
+  description: Use the component connected to the AUX3 output
+  domain: system
+  type: config
+  marcduino_cmd: null
+  api_path: /api/config
+  sse_event: null
+  cpp_enum: null
+  cpp_file: include/config_store.h
+  sources: [ internal ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: en_aux3
+
+- name: system.config.enable_dome
+  display_name: Dome Motor
+  description: Use the dome rotation motor connected to the DOME output
+  domain: system
+  type: config
+  marcduino_cmd: null
+  api_path: /api/config
+  sse_event: null
+  cpp_enum: null
+  cpp_file: include/config_store.h
+  sources: [ internal ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: en_dome
+
+- name: system.config.enable_rc_ch1
+  display_name: RC CH1
+  description: Use the receiver signal connected to RC channel 1
+  domain: system
+  type: config
+  marcduino_cmd: null
+  api_path: /api/config
+  sse_event: null
+  cpp_enum: null
+  cpp_file: include/config_store.h
+  sources: [ internal ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: en_rc_ch1
+
+- name: system.config.enable_rc_ch2
+  display_name: RC CH2
+  description: Use the receiver signal connected to RC channel 2
+  domain: system
+  type: config
+  marcduino_cmd: null
+  api_path: /api/config
+  sse_event: null
+  cpp_enum: null
+  cpp_file: include/config_store.h
+  sources: [ internal ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: en_rc_ch2
+
+- name: system.config.enable_rc_ch3
+  display_name: RC CH3
+  description: Use the receiver signal connected to RC channel 3
+  domain: system
+  type: config
+  marcduino_cmd: null
+  api_path: /api/config
+  sse_event: null
+  cpp_enum: null
+  cpp_file: include/config_store.h
+  sources: [ internal ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: en_rc_ch3
+
+- name: system.config.enable_rc_ch4
+  display_name: RC CH4
+  description: Use the receiver signal connected to RC channel 4
+  domain: system
+  type: config
+  marcduino_cmd: null
+  api_path: /api/config
+  sse_event: null
+  cpp_enum: null
+  cpp_file: include/config_store.h
+  sources: [ internal ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: en_rc_ch4
+
+- name: system.config.enable_rc_ch5
+  display_name: RC CH5
+  description: Use the receiver signal connected to RC channel 5
+  domain: system
+  type: config
+  marcduino_cmd: null
+  api_path: /api/config
+  sse_event: null
+  cpp_enum: null
+  cpp_file: include/config_store.h
+  sources: [ internal ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: en_rc_ch5
+
+- name: system.config.enable_rc_ch6
+  display_name: RC CH6
+  description: Use the receiver signal connected to RC channel 6
+  domain: system
+  type: config
+  marcduino_cmd: null
+  api_path: /api/config
+  sse_event: null
+  cpp_enum: null
+  cpp_file: include/config_store.h
+  sources: [ internal ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: en_rc_ch6
+
+- name: system.config.enable_s1_hoverboard
+  display_name: S1 — Hoverboard
+  description: Use the hoverboard drive controller connected to S1
+  domain: system
+  type: config
+  marcduino_cmd: null
+  api_path: /api/config
+  sse_event: null
+  cpp_enum: null
+  cpp_file: include/config_store.h
+  sources: [ internal ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: en_s1
+
+- name: system.config.enable_s2_sound
+  display_name: S2 — Sound
+  description: Use the sound module connected to S2
+  domain: system
+  type: config
+  marcduino_cmd: null
+  api_path: /api/config
+  sse_event: null
+  cpp_enum: null
+  cpp_file: include/config_store.h
+  sources: [ internal ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: en_s2
+
+- name: system.config.enable_s3_dome_ctrl
+  display_name: S3 — Dome Control
+  description: Use the dome controller connected to S3
+  domain: system
+  type: config
+  marcduino_cmd: null
+  api_path: /api/config
+  sse_event: null
+  cpp_enum: null
+  cpp_file: include/config_store.h
+  sources: [ internal ]
+  safety_critical: false
+  requires_web_control: false
+  nvs_key: en_s3
+
 - name: system.status.health
   display_name: Health
   description: "System health snapshot: estop, SBUS, WiFi, heap, filesystem"
@@ -2530,6 +2759,7 @@ entries:
     stats. Compiled in only when PA_HEAP_PROFILE=1 (issue #8 observability).
   domain: system
   type: action
+  build_flag: PA_HEAP_PROFILE
   marcduino_cmd: null
   api_path: /api/profiler
   sse_event: null
@@ -2547,6 +2777,7 @@ entries:
     diagnostic; compiled in only when CONFIG_HEAP_TRACING is set.
   domain: system
   type: action
+  build_flag: PA_HEAP_TRACING
   marcduino_cmd: null
   api_path: /api/profiler/trace/start
   sse_event: null
@@ -2562,6 +2793,7 @@ entries:
   description: Stop the running Tier 3 heap leak trace and dump results to the serial log
   domain: system
   type: action
+  build_flag: PA_HEAP_TRACING
   marcduino_cmd: null
   api_path: /api/profiler/trace/stop
   sse_event: null
@@ -2628,6 +2860,7 @@ entries:
     floor decision diagnostics).
   domain: system
   type: action
+  build_flag: PA_ADMISSION_TRACE
   marcduino_cmd: null
   api_path: /api/admission/trace
   sse_event: null
@@ -2662,7 +2895,7 @@ entries:
   api_path: /upload/firmware
   sse_event: null
   cpp_enum: null
-  cpp_file: src/web/api_system.cpp
+  cpp_file: src/web/api_upload.cpp
   sources: [ web_api ]
   safety_critical: false
   requires_web_control: false
@@ -2679,7 +2912,7 @@ entries:
   api_path: /upload/filesystem
   sse_event: null
   cpp_enum: null
-  cpp_file: src/web/api_system.cpp
+  cpp_file: src/web/api_upload.cpp
   sources: [ web_api ]
   safety_critical: false
   requires_web_control: false
