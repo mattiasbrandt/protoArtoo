@@ -920,6 +920,35 @@ input.input-narrow:focus {
   box-shadow: 0 0 9px rgba(84, 200, 122, 0.55);
 }
 
+.feature-availability-lamp-indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: rgba(6, 13, 24, 0.48);
+  flex-shrink: 0;
+}
+
+.feature-availability-lamp-indicator .feature-availability-lamp {
+  position: static;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--warning);
+  box-shadow: 0 0 8px rgba(232, 168, 50, 0.42);
+  transition: background 0.18s ease, box-shadow 0.18s ease;
+}
+
+.feature-availability-lamp-indicator.feature-state-on .feature-availability-lamp {
+  background: var(--success);
+  box-shadow: 0 0 9px rgba(84, 200, 122, 0.55);
+}
+
 .feature-availability-panel > .feature-availability-reason {
   margin: 8px 0 0;
 }

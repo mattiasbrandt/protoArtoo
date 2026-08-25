@@ -436,6 +436,51 @@ def check_dollar_commands(doc: dict, errors: list[str]) -> None:
         errors.append(f"${token} documented in the registry but no longer handled in audio_dollar_parser.cpp")
 
 
+def check_html_data_attributes(errors: list[str]) -> None:
+    """Validate data-build-flag, data-board-capability, and data-feature-entry attributes in HTML."""
+    manifests = {
+        "build_flag": load_x_macro_manifest(BUILD_FLAGS_PATH, "PA_BUILD_FLAG", "PA_"),
+        "board_capability": load_x_macro_manifest(
+            BOARD_CAPABILITIES_PATH, "PA_BOARD_CAPABILITY", "PA_CAP_"
+        ),
+    }
+
+    doc = load_registry_doc()
+    registry_entries = {entry.get("name"): entry for entry in doc.get("entries", [])}
+
+    # Scan all HTML files in data/ directory
+    data_dir = ROOT / "data"
+    if not data_dir.exists():
+        return
+
+    for html_file in data_dir.glob("*.html"):
+        content = html_file.read_text(encoding="utf-8")
+
+        # Check data-build-flag attributes
+        for match in re.finditer(r'data-build-flag="([^"]+)"', content):
+            flag_value = match.group(1)
+            if flag_value not in manifests["build_flag"]:
+                errors.append(
+                    f"{html_file.name}: data-build-flag={flag_value!r} not found in build_flags.inc"
+                )
+
+        # Check data-board-capability attributes
+        for match in re.finditer(r'data-board-capability="([^"]+)"', content):
+            cap_value = match.group(1)
+            if cap_value not in manifests["board_capability"]:
+                errors.append(
+                    f"{html_file.name}: data-board-capability={cap_value!r} not found in board_capabilities.inc"
+                )
+
+        # Check data-feature-entry attributes
+        for match in re.finditer(r'data-feature-entry="([^"]+)"', content):
+            entry_name = match.group(1)
+            if entry_name not in registry_entries:
+                errors.append(
+                    f"{html_file.name}: data-feature-entry={entry_name!r} not found in action registry"
+                )
+
+
 def add_mismatch(errors: list[str], label: str, expected: object, actual: object) -> None:
     if expected != actual:
         errors.append(f"{label}: expected {expected!r}, got {actual!r}")
@@ -494,6 +539,7 @@ def main() -> int:
     check_dollar_commands(doc, errors)
     check_feature_availability_metadata(doc, errors)
     check_component_toggle_entries(doc, errors)
+    check_html_data_attributes(errors)
 
     if errors:
         print("Action registry drift detected:", file=sys.stderr)

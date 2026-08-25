@@ -13,10 +13,11 @@
   const STATE_LABELS = Object.freeze({
     on: "On",
     off: "Off",
-    "not-in-this-build": "Not in this build",
+    "not-in-this-build": "Not included",
     "not-on-this-board": "Not on this board",
     checking: "Checking controller",
     "identity-unavailable": "Availability unknown",
+    "included": "Included",
   });
 
   // Resolve the compile-time manifest tiers first (board capability, build flag),
@@ -46,10 +47,10 @@
 
   // Turn a resolved state into the maker-facing explanation shown below a
   // feature. Component and profiler renderers share this copy policy.
-  const reasonFor = (state, featureName, { on = "" } = {}) => {
+  const reasonFor = (state, featureName, { on = "", notInThisBuild = "" } = {}) => {
     if (state === "on") return on;
     if (state === "not-on-this-board") return `This controller board cannot run ${featureName}.`;
-    if (state === "not-in-this-build") return `This controller was loaded without ${featureName}.`;
+    if (state === "not-in-this-build") return notInThisBuild || `This controller was loaded without ${featureName}.`;
     if (state === "checking") return `Checking whether this controller can run ${featureName}…`;
     if (state === "identity-unavailable") return `Could not check ${featureName}. Reconnecting to the controller…`;
     return "";
@@ -1269,7 +1270,7 @@
   const content = document.getElementById("profiler-content");
   const availabilityStatus = document.getElementById("profiler-availability-status");
   const availabilityReason = document.getElementById("profiler-availability-reason");
-  const availabilityToggle = document.getElementById("profiler-availability-toggle");
+  const availabilityLamp = document.getElementById("profiler-availability-lamp");
   const feedback = document.getElementById("profiler-feedback");
 
   function kb(bytes) {
@@ -1403,6 +1404,7 @@
     const stateLabel = window.PAFeatureAvailability.labelFor(result.state);
     const stateReason = window.PAFeatureAvailability.reasonFor(result.state, featureName, {
       on: "Live memory readings refresh while this page is open.",
+      notInThisBuild: "Memory Profiler is included only in troubleshooting firmware.",
     });
     card.hidden = false;
     card.classList.remove(
@@ -1420,9 +1422,8 @@
       availabilityStatus.className = `feature-availability-status feature-state feature-state-${result.state}`;
     }
     if (availabilityReason) availabilityReason.textContent = stateReason;
-    if (availabilityToggle) {
-      availabilityToggle.setAttribute("aria-checked", result.available ? "true" : "false");
-      availabilityToggle.setAttribute("aria-label", `${featureName}: ${stateLabel}`);
+    if (availabilityLamp) {
+      availabilityLamp.className = `feature-availability-lamp-indicator feature-state-${result.state}`;
     }
     if (content) {
       content.inert = !result.available;
