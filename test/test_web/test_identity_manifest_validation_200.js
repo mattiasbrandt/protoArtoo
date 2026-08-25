@@ -20,73 +20,132 @@ import assert from "node:assert";
 import vm from "node:vm";
 import { readFileSync } from "node:fs";
 
-const makeElement = () => {
-  const listeners = new Map();
-  const attributes = new Map();
-  const row = {
-    dataset: {},
-    classList: { add() {}, remove() {} },
-    querySelectorAll: () => [],
-    appendChild() {},
-  };
-  return {
-    id: "",
-    dataset: {},
-    style: {},
-    className: "",
-    classList: { add() {}, remove() {}, toggle() {} },
-    textContent: "",
-    innerHTML: "",
-    value: "",
-    checked: false,
-    disabled: false,
-    hidden: false,
-    type: "checkbox",
-    inert: false,
-    addEventListener(type, handler) {
-      if (!listeners.has(type)) listeners.set(type, []);
-      listeners.get(type).push(handler);
-    },
-    setAttribute(name, value) { attributes.set(name, String(value)); },
-    getAttribute(name) { return attributes.get(name); },
-    removeAttribute(name) { attributes.delete(name); },
-    querySelectorAll: () => [],
-    querySelector: () => null,
-    closest: () => row,
-    appendChild() {},
-    click() {},
-    async emit(type, event = {}) {
-      for (const handler of listeners.get(type) || []) {
-        await handler({ target: this, preventDefault() {}, ...event });
+// Recording MockElement that tracks appendChild calls for DOM state verification
+class MockElement {
+  constructor(tag = "div", id = "", ownerDocument = null) {
+    this.tagName = tag;
+    this.id = id;
+    this.ownerDocument = ownerDocument;
+    this.className = "";
+    this.textContent = "";
+    this.innerHTML = "";
+    this.value = "";
+    this.type = "div";
+    this.dataset = {};
+    this.style = {};
+    this.checked = false;
+    this.disabled = false;
+    this.hidden = false;
+    this.inert = false;
+    this.children = []; // Track appended children
+    this.attributes = new Map();
+    this.eventListeners = [];
+  }
+
+  setAttribute(name, value) {
+    this.attributes.set(name, String(value));
+    if (name === "id") {
+      this.id = value;
+      if (this.ownerDocument && this.ownerDocument.elements) {
+        this.ownerDocument.elements.set(value, this);
       }
-    },
+    }
+  }
+
+  getAttribute(name) {
+    return this.attributes.get(name) || null;
+  }
+
+  appendChild(child) {
+    if (!child) return;
+    if (!this.children.includes(child)) {
+      this.children.push(child);
+      if (child.id && this.ownerDocument && this.ownerDocument.elements) {
+        this.ownerDocument.elements.set(child.id, child);
+      }
+    }
+  }
+
+  querySelector(selector) {
+    if (selector === "button") {
+      return this.children.find((c) => c.tagName === "button" || c.type === "button");
+    }
+    if (selector.startsWith(".")) {
+      const className = selector.substring(1);
+      return this.children.find((c) => c.className && c.className.includes(className));
+    }
+    return null;
+  }
+
+  querySelectorAll() {
+    return [];
+  }
+
+  addEventListener(event, handler) {
+    this.eventListeners.push({ event, handler });
+  }
+
+  removeEventListener() {}
+
+  click() {}
+
+  classList = {
+    add: () => {},
+    remove: () => {},
+    contains: () => false,
+    toggle: () => {},
   };
-};
+}
+
+class MockDocument {
+  constructor() {
+    this.elements = new Map();
+    this.body = new MockElement("body", "", this);
+    this.visibilityState = "visible";
+  }
+
+  getElementById(id) {
+    return this.elements.get(id) || null;
+  }
+
+  createElement(tag) {
+    return new MockElement(tag, "", this);
+  }
+
+  createTextNode(text) {
+    const node = new MockElement("#text", "", this);
+    node.textContent = text;
+    node.nodeValue = text;
+    return node;
+  }
+
+  querySelector() {
+    return null;
+  }
+
+  querySelectorAll() {
+    return [];
+  }
+
+  addEventListener() {}
+
+  removeEventListener() {}
+
+  get activeElement() {
+    return this.body;
+  }
+}
 
 const loadContextWithIdentity = ({ identity = null } = {}) => {
   const windowListeners = new Map();
   const dispatchedEvents = [];
   const timers = [];
   const intervals = [];
-  const element = (id) => {
-    const el = makeElement();
-    el.id = id;
-    return el;
-  };
+  const mockDocument = new MockDocument();
 
   const windowMock = {
     PAIdentity: null,
-    document: {
-      body: makeElement(),
-      visibilityState: "visible",
-      getElementById: element,
-      querySelector: () => makeElement(),
-      querySelectorAll: () => [],
-      createElement: () => makeElement(),
-      createTextNode: () => makeElement(),
-      addEventListener() {},
-      removeEventListener() {},
-    },
+    document: mockDocument,
     addEventListener(type, handler) {
       if (!windowListeners.has(type)) windowListeners.set(type, []);
       windowListeners.get(type).push(handler);
@@ -119,6 +178,10 @@ const loadContextWithIdentity = ({ identity = null } = {}) => {
     PABootstrap: {
       registerSection: () => {},
       setResourceLabels() {},
+      retryNow: (name) => {
+        if (!windowMock.PABootstrap._retryCalls) windowMock.PABootstrap._retryCalls = [];
+        windowMock.PABootstrap._retryCalls.push(name);
+      },
     },
     PAStatusStream: { isSupported: () => false, getLastStatus: () => null, subscribe() {} },
     PageBootstrap: { createBackgroundPoll: () => ({ start() {}, stop() {} }) },
@@ -161,13 +224,18 @@ const loadContextWithIdentity = ({ identity = null } = {}) => {
   // Set up document mocks
   windowMock.document.body.dataset.page = "setup";
 
+  // Pre-create the identity-actions element (setup.js will get it via getElementById)
+  const identityActions = new MockElement("div", "identity-actions", mockDocument);
+  mockDocument.elements.set("identity-actions", identityActions);
+  mockDocument.body.appendChild(identityActions);
+
   // Load shell.js first
   vm.runInNewContext(readFileSync("data/shell.js", "utf8"), context, { filename: "shell.js" });
 
   // Load setup.js
   vm.runInNewContext(readFileSync("data/setup.js", "utf8"), context, { filename: "setup.js" });
 
-  return { context, windowMock, dispatchedEvents, element };
+  return { context, windowMock, dispatchedEvents, mockDocument };
 };
 
 test("Layer 1 validation: valid manifest passes and publishes pa:identity-available", () => {
@@ -396,4 +464,79 @@ test("Layer 1: array as build_flags is rejected", () => {
 
   const unavailableEvents = dispatchedEvents.filter(e => e.type === "pa:identity-unavailable");
   assert(unavailableEvents.length > 0, "Should reject array as build_flags");
+});
+
+// =============================================================================
+// Retry Affordance Tests (Slice 2b Wiring)
+// =============================================================================
+
+test("Retry button is appended to identity-actions on pa:identity-unavailable", () => {
+  const { context, windowMock, mockDocument } = loadContextWithIdentity();
+  const identityActions = mockDocument.getElementById("identity-actions");
+
+  // Initial state: no children
+  assert.strictEqual(identityActions.children.length, 0, "identity-actions should start empty");
+
+  // Dispatch unavailable event (e.g., from failed validation)
+  windowMock.dispatchEvent(new context.CustomEvent("pa:identity-unavailable"));
+
+  // Button should have been appended
+  const buttons = identityActions.children.filter((child) => child.tagName === "button");
+  assert.strictEqual(buttons.length, 1, "Exactly one button should be appended to identity-actions");
+  assert.strictEqual(buttons[0].className, "btn accent", "Button should have correct className");
+  assert.strictEqual(buttons[0].textContent, "Retry now", "Button should have correct text");
+});
+
+test("Retry button calls PABootstrap.retryNow with shell-identity when clicked", () => {
+  const { context, windowMock, mockDocument } = loadContextWithIdentity();
+  const identityActions = mockDocument.getElementById("identity-actions");
+
+  // Clear retry calls
+  windowMock.PABootstrap._retryCalls = [];
+
+  // Dispatch unavailable to create button
+  windowMock.dispatchEvent(new context.CustomEvent("pa:identity-unavailable"));
+
+  // Get the appended button and invoke its stored click handler
+  const button = identityActions.children[0];
+  assert.ok(button, "Button should be appended");
+
+  const clickHandler = button.eventListeners.find((el) => el.event === "click");
+  assert.ok(clickHandler, "Button should have a click handler");
+
+  // Invoke the click handler
+  clickHandler.handler({ preventDefault: () => {} });
+
+  // retryNow should have been called with "shell-identity"
+  assert.strictEqual(
+    windowMock.PABootstrap._retryCalls.length,
+    1,
+    "retryNow should be called once"
+  );
+  assert.strictEqual(
+    windowMock.PABootstrap._retryCalls[0],
+    "shell-identity",
+    "retryNow should be called with section name 'shell-identity'"
+  );
+});
+
+test("Retry button clears from identity-actions on pa:identity-available", () => {
+  const { context, windowMock, mockDocument } = loadContextWithIdentity();
+  const identityActions = mockDocument.getElementById("identity-actions");
+
+  // First, show the button
+  windowMock.dispatchEvent(new context.CustomEvent("pa:identity-unavailable"));
+  assert(identityActions.children.length > 0, "Button should be appended first");
+
+  // Then, dispatch available to clear it
+  const validIdentity = {
+    droidName: "artoo",
+    board: "artoo_esp32",
+    board_capabilities: { PA_CAP_NATIVE_WIFI: true },
+    build_flags: { PA_HEAP_PROFILE: false },
+  };
+  windowMock.dispatchEvent(new context.CustomEvent("pa:identity-available", { detail: validIdentity }));
+
+  // innerHTML should be cleared (empty string)
+  assert.strictEqual(identityActions.innerHTML, "", "identity-actions innerHTML should be cleared on pa:identity-available");
 });
