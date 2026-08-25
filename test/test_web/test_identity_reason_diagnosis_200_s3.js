@@ -99,6 +99,32 @@ test("pa:identity-unavailable event listener extracts and passes reason", (t) =>
   );
 });
 
+test("identity feedback message branches on reason (incompatible vs no-response)", (t) => {
+  const setupContent = readFileSync("./data/setup.js", "utf8");
+
+  // Verify that identity feedback branches based on reason
+  // This catches mutations that revert to unconditional message
+  assert.strictEqual(
+    setupContent.includes("const message = reason === \"incompatible\""),
+    true,
+    "should branch identity feedback message on reason"
+  );
+
+  // Verify terminal message for incompatible
+  assert.strictEqual(
+    setupContent.includes("? \"Could not load controller identity.\""),
+    true,
+    "should show terminal message for incompatible (no reconnecting promise)"
+  );
+
+  // Verify retryable message for no-response
+  assert.strictEqual(
+    setupContent.includes(": \"Could not load controller identity. Reconnecting…\";"),
+    true,
+    "should show retryable message for no-response"
+  );
+});
+
 test("incompatible reason triggers lazy diagnosis listener registration", (t) => {
   const setupContent = readFileSync("./data/setup.js", "utf8");
 
