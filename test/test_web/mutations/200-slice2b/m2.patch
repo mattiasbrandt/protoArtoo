@@ -1,0 +1,13 @@
+diff --git a/data/setup.js b/data/setup.js
+index d80b5f2..93d6587 100644
+--- a/data/setup.js
++++ b/data/setup.js
+@@ -268,7 +268,7 @@
+     window.PAFeatureAvailability.setIdentityError();
+     setIdentityFeedback("Could not load controller identity. Reconnecting…", "error");
+     // Add persistent Retry button outside the live region
+-    if (window.PABootstrap && identityActions && !identityActions.querySelector("button")) {
++    if (false && identityActions && !identityActions.querySelector("button")) {
+       const retryButton = document.createElement("button");
+       retryButton.type = "button";
+       retryButton.className = "btn accent";

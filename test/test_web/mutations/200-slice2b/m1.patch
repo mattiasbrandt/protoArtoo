@@ -1,0 +1,13 @@
+diff --git a/data/shell.js b/data/shell.js
+index e166223..5ea796d 100644
+--- a/data/shell.js
++++ b/data/shell.js
+@@ -161,7 +161,7 @@
+ 
+     // publishIdentity is the single validation boundary and has already
+     // dispatched pa:identity-unavailable if the manifest is unusable.
+-    if (!publishIdentity(result.data)) {
++    if (false) { // BREAK: skip validation check
+       const error = new Error("identity manifest failed validation");
+       error.kind = "incompatible";
+       error.status = 200;   // the response was a valid 2xx; its content was not
