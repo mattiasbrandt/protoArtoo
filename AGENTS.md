@@ -249,6 +249,15 @@ evidence rules and the mutation stage: `docs/agents/slice-gate.md`.
 
 **CI gate:** `verification` workflow runs on every PR to `main` — do not bypass it.
 
+**Build-size budget rule (operator decision 2026-08-26):** the per-env flash
+budget in `tools/build_budgets.json` is a tripwire, not a ceiling. When a change
+trips it, the PR that trips it raises the budget with a written reason in the
+budget's rationale field — a conscious decision, never a silent bump — and a
+separate fixed hard ceiling below the partition size never moves. The artoo-esp32
+image sits within ~31 KB of its budget, so an ordinary artoo feature can trip it,
+not only spill from another target. The RAM budget moves by the same
+explicit-decision rule.
+
 **JSON API test rule:** JSON API response builders that are new or materially
 changed should have high-signal native coverage for the typical case and serialized
 size budget. Avoid low-value tests that only mirror implementation details.
