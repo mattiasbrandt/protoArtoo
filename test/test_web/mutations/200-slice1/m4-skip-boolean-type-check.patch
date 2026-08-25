@@ -1,0 +1,20 @@
+--- a/data/shell.js
++++ b/data/shell.js
+@@ -65,14 +65,6 @@
+     // Every present value in board_capabilities and build_flags must be a boolean
+-    if (identity.board_capabilities) {
+-      for (const [key, value] of Object.entries(identity.board_capabilities)) {
+-        if (typeof value !== "boolean") {
+-          return null;
+-        }
+-      }
+-    }
+-    if (identity.build_flags) {
+-      for (const [key, value] of Object.entries(identity.build_flags)) {
+-        if (typeof value !== "boolean") {
+-          return null;
+-        }
+-      }
+-    }
++    // Validation removed - accept any type
+     return identity;

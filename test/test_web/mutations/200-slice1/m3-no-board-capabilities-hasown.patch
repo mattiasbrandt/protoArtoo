@@ -1,0 +1,14 @@
+--- a/data/setup.js
++++ b/data/setup.js
+@@ -34,11 +34,7 @@
+       }
+     }
+     if (boardCapability) {
+-      if (!identity?.board_capabilities || !Object.hasOwn(identity.board_capabilities, boardCapability)) {
+-        // Missing key in board_capabilities means manifest is incomplete; availability unknown
+-        return { phase: "checking", state: "checking" };
++      if (!identity?.board_capabilities) {
++        return { phase: "ready", state: "not-on-this-board" };
+       }
+       if (identity.board_capabilities[boardCapability] !== true) {
+         return { phase: "ready", state: "not-on-this-board" };

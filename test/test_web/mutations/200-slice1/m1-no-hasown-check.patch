@@ -1,0 +1,14 @@
+--- a/data/setup.js
++++ b/data/setup.js
+@@ -38,11 +38,7 @@
+       }
+     }
+     if (buildFlag) {
+-      if (!identity?.build_flags || !Object.hasOwn(identity.build_flags, buildFlag)) {
+-        // Missing key in build_flags means manifest is incomplete; availability unknown
+-        return { phase: "checking", state: "checking" };
++      if (!identity?.build_flags) {
++        return { phase: "ready", state: "not-in-this-build" };
+       }
+       if (identity.build_flags[buildFlag] !== true) {
+         return { phase: "ready", state: "not-in-this-build" };
