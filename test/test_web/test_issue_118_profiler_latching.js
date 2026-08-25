@@ -200,7 +200,10 @@ test("unavailable profiler renders status lamp, not switch affordance", async ()
     lamp.className.includes("feature-availability-lamp-indicator"),
     "lamp should have lamp-indicator class, not switch affordance"
   );
-  // Verify there is no switch element with disabled attribute
-  const switchElement = env.document.querySelector("#profiler-availability-toggle");
-  assert.equal(switchElement, null, "no disabled switch should exist for compile-time unavailable feature");
+  // Verify status indicator renders as div, not as button with switch role
+  assert.equal(lamp.tagName, "DIV", "availability indicator should be a div, not a button");
+  assert.ok(
+    !lamp.hasAttribute("role"),
+    "availability indicator should not have a role attribute (not a switch affordance)"
+  );
 });
