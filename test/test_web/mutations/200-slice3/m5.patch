@@ -1,5 +1,7 @@
---- /tmp/setup_baseline.js	2026-08-25 19:28:41.605529453 +0200
-+++ /tmp/setup_m5.js	2026-08-25 19:28:41.623760387 +0200
+diff --git a/data/setup.js b/data/setup.js
+index beb4dbe..6278e8d 100644
+--- a/data/setup.js
++++ b/data/setup.js
 @@ -353,12 +353,7 @@
    window.addEventListener("pa:identity-unavailable", (event) => {
      const reason = event.detail?.reason || "no-response";

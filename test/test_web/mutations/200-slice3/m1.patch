@@ -1,5 +1,7 @@
---- /tmp/setup_baseline.js	2026-08-25 19:28:41.605529453 +0200
-+++ /tmp/setup_m1.js	2026-08-25 19:28:41.608426735 +0200
+diff --git a/data/setup.js b/data/setup.js
+index beb4dbe..4d1bc06 100644
+--- a/data/setup.js
++++ b/data/setup.js
 @@ -90,9 +90,6 @@
        // Two different failures read as identity-unavailable; differ by reason:
        // - "no-response": transport failure, retryable, genuinely reconnecting

@@ -1,5 +1,7 @@
---- /tmp/setup_baseline.js	2026-08-25 19:28:41.605529453 +0200
-+++ /tmp/setup_m3.js	2026-08-25 19:28:41.611551301 +0200
+diff --git a/data/setup.js b/data/setup.js
+index beb4dbe..e7deb91 100644
+--- a/data/setup.js
++++ b/data/setup.js
 @@ -326,7 +326,7 @@
        // Determine diagnosis based on version comparison
        let diagMessage = "The controller could not report which features are available.";
