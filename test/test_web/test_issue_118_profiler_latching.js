@@ -111,6 +111,12 @@ test("the profiler stays visible and says Not included without probing its endpo
     env.element("profiler-availability-reason").textContent,
     "Memory Profiler is included only in troubleshooting firmware.",
   );
+  // Status lamp renders as indicator, not switch affordance
+  assert.ok(env.element("profiler-availability-lamp"), "lamp indicator should exist");
+  assert.equal(
+    env.element("profiler-availability-lamp").className,
+    "feature-availability-lamp-indicator feature-state-not-in-this-build",
+  );
 });
 
 test("identity loading and failure never start profiler traffic", async () => {
