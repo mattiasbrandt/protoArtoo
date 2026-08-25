@@ -145,8 +145,8 @@ contention with WiFi, web API, and housekeeping tasks.
 
 | Task | Priority | Stack | Chip-Specific? | Rationale |
 |------|----------|-------|---|---|
-| **AudioTask** | 3 | 6144 B | No | Software bit-bang TX to audio module (blocking ~6 ms per command). Kept off Core 1 to isolate timing jitter (ADR 0004). Conditional on enable_s2_sound. |
-| **SequenceDispatcherTask** | 3 | 4096 B | No | 10 ms body-side DM:* coordinator. Routes to queues without holding Core 1. |
+| **AudioTask** | 3 | 6144 B | No | Software bit-bang TX to audio module (blocking ~6 ms per command). Kept off Core 1 to avoid timing interaction with DriveTask/ServoTask (`src/main.cpp:350-351`). Conditional on enable_s2_sound. |
+| **SequenceDispatcherTask** | 3 | 4096 B | No | 10 ms body-side DM:* coordinator. Routes to queues without holding Core 1 (ADR 0004). |
 | **AuxLedTask** | 2 | 4096 B | No | WS2812B effects. Independent of Core 1. Conditional on presence of LED channels. |
 | **SafetyMonitorTask** | 2 | 3072 B | No | 10 Hz audit loop. Logs failsafe transitions and heap diagnostics. Low priority observer. |
 | **WebEvents** | 1 | 6144 B | No | SSE event-stream manager. Broadcasts status to connected clients. Background task. |
