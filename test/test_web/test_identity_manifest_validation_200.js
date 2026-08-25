@@ -174,6 +174,7 @@ test("Layer 1 validation: valid manifest passes and publishes pa:identity-availa
   const { context, windowMock, dispatchedEvents } = loadContextWithIdentity();
   const identity = {
     droidName: "artoo",
+    board: "artoo_esp32",
     board_capabilities: { PA_CAP_NATIVE_WIFI: true },
     build_flags: { PA_HEAP_PROFILE: false },
   };

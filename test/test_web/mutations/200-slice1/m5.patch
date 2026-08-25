@@ -1,5 +1,5 @@
 diff --git a/data/shell.js b/data/shell.js
-index 3d738d5..3258dd8 100644
+index 9c20090..80dd3d6 100644
 --- a/data/shell.js
 +++ b/data/shell.js
 @@ -50,7 +50,7 @@
@@ -10,4 +10,4 @@ index 3d738d5..3258dd8 100644
 +    if (typeof identity !== "object" || Array.isArray(identity)) {
        return null;
      }
-     // board must be a string if present
+     // board must be a string

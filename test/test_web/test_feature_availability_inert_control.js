@@ -71,6 +71,7 @@ const loadInteractiveSetup = ({ identity = null, failIdentity = false } = {}) =>
   const identityPayload = identity || {
     droidName: "artoo",
     mdnsUseName: true,
+    board: "artoo_esp32",
     board_capabilities: { PA_CAP_NATIVE_WIFI: true, PA_CAP_HOSTED_WIFI: false },
     build_flags: { PA_HEAP_PROFILE: false, PA_HEAP_TRACING: false, PA_ADMISSION_TRACE: false },
   };
