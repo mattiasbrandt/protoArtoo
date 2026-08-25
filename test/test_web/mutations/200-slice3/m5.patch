@@ -1,0 +1,17 @@
+--- /tmp/setup_fixed.js	2026-08-25 19:25:40.467685087 +0200
++++ /tmp/setup_m5.js	2026-08-25 19:25:40.476564946 +0200
+@@ -353,12 +353,8 @@
+   window.addEventListener("pa:identity-unavailable", (event) => {
+     const reason = event.detail?.reason || "no-response";
+     window.PAFeatureAvailability.setIdentityError(reason);
+-    // Different message based on reason: transport failure promises reconnection;
+-    // validation failure is terminal and Retry button says what to do
+-    const message = reason === "incompatible"
+-      ? "Could not load controller identity."
+-      : "Could not load controller identity. Reconnecting…";
+-    setIdentityFeedback(message, "error");
++    // BREAK: ignore reason (removes the fix)
++    setIdentityFeedback("Could not load controller identity. Reconnecting…", "error");
+     // Add persistent Retry button outside the live region
+     if (window.PABootstrap && identityActions && !identityActions.querySelector("button")) {
+       const retryButton = document.createElement("button");

@@ -91,7 +91,7 @@
       // - "no-response": transport failure, retryable, genuinely reconnecting
       // - "incompatible": validation failure, terminal, no reconnection coming
       if (identityErrorReason === "incompatible") {
-        return "The controller's manifest is invalid.";
+        return `Could not check ${featureName}. The controller did not report its features.`;
       }
       return `Could not check ${featureName}. Reconnecting to the controller…`;
     }
@@ -329,15 +329,16 @@
         if (expectedFwVersion !== runningFwVersion) {
           diagMessage = "The firmware and filesystem do not match. Upload both from the same release.";
         } else {
-          // Versions match but identity is invalid (incompatible manifest)
-          diagMessage = "The controller reported an invalid manifest. Uploading the same release again will not fix it.";
+          // Versions match but identity is invalid (invalid feature list)
+          diagMessage = "This controller's firmware sent a feature list this page cannot read. Uploading the same release again will not fix it.";
         }
       }
 
-      setDiagFeedback(diagMessage, "error");
+      setIdentityFeedback(diagMessage, "error");
     } catch (error) {
       console.warn("[setup] diagnosis failed:", error);
-      // Silent failure: don't show a diagnosis error, leave feedback empty
+      // Show the no-version-evidence sentence when diagnosis cannot fetch versions
+      setIdentityFeedback("The controller could not report which features are available.", "error");
     }
   };
 
@@ -352,7 +353,12 @@
   window.addEventListener("pa:identity-unavailable", (event) => {
     const reason = event.detail?.reason || "no-response";
     window.PAFeatureAvailability.setIdentityError(reason);
-    setIdentityFeedback("Could not load controller identity. Reconnecting…", "error");
+    // Different message based on reason: transport failure promises reconnection;
+    // validation failure is terminal and Retry button says what to do
+    const message = reason === "incompatible"
+      ? "Could not load controller identity."
+      : "Could not load controller identity. Reconnecting…";
+    setIdentityFeedback(message, "error");
     // Add persistent Retry button outside the live region
     if (window.PABootstrap && identityActions && !identityActions.querySelector("button")) {
       const retryButton = document.createElement("button");
