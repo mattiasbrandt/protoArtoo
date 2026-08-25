@@ -1,6 +1,6 @@
---- /tmp/setup_fixed.js	2026-08-25 19:25:40.467685087 +0200
-+++ /tmp/setup_m5.js	2026-08-25 19:25:40.476564946 +0200
-@@ -353,12 +353,8 @@
+--- /tmp/setup_baseline.js	2026-08-25 19:28:41.605529453 +0200
++++ /tmp/setup_m5.js	2026-08-25 19:28:41.623760387 +0200
+@@ -353,12 +353,7 @@
    window.addEventListener("pa:identity-unavailable", (event) => {
      const reason = event.detail?.reason || "no-response";
      window.PAFeatureAvailability.setIdentityError(reason);
@@ -10,7 +10,6 @@
 -      ? "Could not load controller identity."
 -      : "Could not load controller identity. Reconnecting…";
 -    setIdentityFeedback(message, "error");
-+    // BREAK: ignore reason (removes the fix)
 +    setIdentityFeedback("Could not load controller identity. Reconnecting…", "error");
      // Add persistent Retry button outside the live region
      if (window.PABootstrap && identityActions && !identityActions.querySelector("button")) {

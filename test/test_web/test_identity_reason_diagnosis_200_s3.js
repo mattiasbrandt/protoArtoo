@@ -23,9 +23,9 @@ test("three diagnosis sentences are correctly defined in setup.js", (t) => {
     "should include sentence for fw/fs mismatch"
   );
 
-  // Sentence 2: versions match but manifest invalid
+  // Sentence 2: versions match but manifest invalid (uses "feature list" language)
   assert.strictEqual(
-    setupContent.includes("The controller reported an invalid manifest. Uploading the same release again will not fix it."),
+    setupContent.includes("This controller's firmware sent a feature list this page cannot read. Uploading the same release again will not fix it."),
     true,
     "should include sentence for invalid manifest"
   );
@@ -48,9 +48,9 @@ test("reasonFor function distinguishes identity-unavailable by reason", (t) => {
     "should check identityErrorReason for incompatible"
   );
 
-  // Verify terminal copy is returned for incompatible
+  // Verify terminal copy is returned for incompatible (uses featureName)
   assert.strictEqual(
-    setupContent.includes("return \"The controller's manifest is invalid.\";"),
+    setupContent.includes("return `Could not check ${featureName}. The controller did not report its features.`;"),
     true,
     "should return terminal copy for incompatible reason"
   );
@@ -148,11 +148,11 @@ test("performIdentityDiagnosis function exists and is async", (t) => {
     "should use PAStatusStream.getLastStatus()"
   );
 
-  // Verify it calls setDiagFeedback with messages
+  // Verify it calls setIdentityFeedback with messages (diagnosis renders in identity feedback)
   assert.strictEqual(
-    setupContent.includes("setDiagFeedback(diagMessage, \"error\");"),
+    setupContent.includes("setIdentityFeedback(diagMessage, \"error\");"),
     true,
-    "should call setDiagFeedback with diagnosis message"
+    "should call setIdentityFeedback with diagnosis message"
   );
 });
 
@@ -173,9 +173,9 @@ test("diagnosis logic compares expected vs running firmware versions", (t) => {
     "should show mismatch sentence when versions differ"
   );
 
-  // Verify else condition returns invalid manifest sentence
+  // Verify else condition returns invalid manifest sentence (feature list language)
   assert.strictEqual(
-    setupContent.includes("diagMessage = \"The controller reported an invalid manifest. Uploading the same release again will not fix it.\";"),
+    setupContent.includes("diagMessage = \"This controller's firmware sent a feature list this page cannot read. Uploading the same release again will not fix it.\";"),
     true,
     "should show invalid manifest sentence when versions match"
   );

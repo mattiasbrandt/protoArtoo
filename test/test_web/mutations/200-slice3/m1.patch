@@ -1,13 +1,11 @@
-diff --git a/data/setup.js b/data/setup.js
-index 8762447..6265d98 100644
---- a/data/setup.js
-+++ b/data/setup.js
+--- /tmp/setup_baseline.js	2026-08-25 19:28:41.605529453 +0200
++++ /tmp/setup_m1.js	2026-08-25 19:28:41.608426735 +0200
 @@ -90,9 +90,6 @@
        // Two different failures read as identity-unavailable; differ by reason:
        // - "no-response": transport failure, retryable, genuinely reconnecting
        // - "incompatible": validation failure, terminal, no reconnection coming
 -      if (identityErrorReason === "incompatible") {
--        return "The controller's manifest is invalid.";
+-        return `Could not check ${featureName}. The controller did not report its features.`;
 -      }
        return `Could not check ${featureName}. Reconnecting to the controller…`;
      }

@@ -1,7 +1,5 @@
-diff --git a/data/setup.js b/data/setup.js
-index 8762447..25c6ff3 100644
---- a/data/setup.js
-+++ b/data/setup.js
+--- /tmp/setup_baseline.js	2026-08-25 19:28:41.605529453 +0200
++++ /tmp/setup_m3.js	2026-08-25 19:28:41.611551301 +0200
 @@ -326,7 +326,7 @@
        // Determine diagnosis based on version comparison
        let diagMessage = "The controller could not report which features are available.";
@@ -10,4 +8,4 @@ index 8762447..25c6ff3 100644
 +        if (expectedFwVersion === runningFwVersion) {
            diagMessage = "The firmware and filesystem do not match. Upload both from the same release.";
          } else {
-           // Versions match but identity is invalid (incompatible manifest)
+           // Versions match but identity is invalid (invalid feature list)
