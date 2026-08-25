@@ -45,10 +45,21 @@
   // ---------------------------------------------------------------------------
   // Outcome classification
   //
-  // Retry policy has exactly two failure shapes: 'busy' (server said so, honor
-  // its interval) and 'no-response' (nothing usable came back, back off). The
-  // originating ApiError kind/status is carried through as `reason` purely so
-  // the view can say something specific; it never changes a transition.
+  // Section loader outcomes fall into three categories:
+  //
+  // 1. 'busy' (503 status): server explicitly requested backoff via Retry-After;
+  //    retry honors its interval.
+  //
+  // 2. 'no-response' (network/timeout/http non-503/bad-json): nothing usable came
+  //    back; retry uses growing backoff.
+  //
+  // 3. 'failed-terminal' (kind=incompatible or device-error): unrecoverable
+  //    permanent failure (e.g., invalid manifest shape, deterministic 500). No
+  //    automatic retry timer; must be reset to pending by explicit operator action
+  //    (retryNow or refreshSections).
+  //
+  // The originating ApiError kind/status is carried through as `reason` so the
+  // view can say something specific; it does not change outcome transitions.
   // ---------------------------------------------------------------------------
   const classifyOutcome = (error, retryAfterMs = null) => {
     if (!error) return { kind: "success" };
@@ -61,6 +72,14 @@
         kind: "busy",
         reason: "busy",
         retryAfterMs: retryAfterMs ?? error.retryAfterMs ?? DEFAULT_BUSY_RETRY_MS,
+      };
+    }
+
+    // Terminal failures (incompatible manifest, device-side defect)
+    if (kind === "incompatible" || kind === "device-error") {
+      return {
+        kind: "failed-terminal",
+        reason: kind,
       };
     }
 
@@ -216,6 +235,15 @@
       return next;
     }
 
+    // Terminal failures have no automatic retry timer; nextAt stays null.
+    if (outcome.kind === "failed-terminal") {
+      return replaceStep(state, active.kind, active.name, {
+        status: "failed-terminal",
+        nextAt: null,
+        reason: outcome.reason || outcome.kind,
+      });
+    }
+
     const step = findStep(state, active.kind, active.name);
     const retryDelay =
       outcome.kind === "busy"
@@ -229,12 +257,12 @@
     });
   };
 
-  // Sections are "stable" when every one is either done or visibly waiting to
-  // retry -- not when all have succeeded. A page with one permanently failing
-  // section must still start live updates.
+  // Sections are "stable" when every one is either done, visibly waiting to
+  // retry, or permanently terminal -- not when all have succeeded. A page with
+  // one permanently failing section must still start live updates.
   const recomputeSectionsStable = (state) => {
     const stable = state.sections.every(
-      (s) => s.status === "done" || s.status === "failed-retrying"
+      (s) => s.status === "done" || s.status === "failed-retrying" || s.status === "failed-terminal"
     );
     return {
       ...state,
@@ -308,6 +336,9 @@
         // loading step to report and hide the recovery panel mid-request. Its
         // in-flight response is as fresh as a re-issued one, and it settles
         // through the single slot like everything else.
+        //
+        // Terminal failures (failed-terminal) are also reset to pending so they
+        // can be retried.
         const names = action.names ? new Set(action.names) : null;
         const inFlight = prev.active?.kind === "section" ? prev.active.name : null;
         const refreshed = prev.sections.map((step) =>
@@ -319,13 +350,20 @@
       }
 
       case "RETRY_NOW": {
-        // Operator-facing "Retry now": pull the named waiting step forward
-        // regardless of its scheduled time.
+        // Operator-facing "Retry now": either pull a waiting step forward
+        // (failed-retrying) or reset a terminal failure (failed-terminal) to pending.
         let state = prev;
         for (const kind of ["resource", "section"]) {
           const step = findStep(state, kind, action.name);
           if (step && step.status === "failed-retrying") {
             state = replaceStep(state, kind, action.name, { nextAt: state.now });
+          } else if (step && step.status === "failed-terminal") {
+            state = replaceStep(state, kind, action.name, {
+              status: "pending",
+              attempt: 0,
+              nextAt: null,
+              reason: null,
+            });
           }
         }
         return pump(state);
