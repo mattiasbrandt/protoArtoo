@@ -174,11 +174,11 @@ test("performIdentityDiagnosis function exists and is async", (t) => {
     "should use PAStatusStream.getLastStatus()"
   );
 
-  // Verify it calls setIdentityFeedback with messages (diagnosis renders in identity feedback)
+  // Verify it calls setIdentityDiagnosis with messages (diagnosis renders in dedicated element)
   assert.strictEqual(
-    setupContent.includes("setIdentityFeedback(diagMessage, \"error\");"),
+    setupContent.includes("setIdentityDiagnosis(diagMessage);"),
     true,
-    "should call setIdentityFeedback with diagnosis message"
+    "should call setIdentityDiagnosis with diagnosis message"
   );
 });
 
