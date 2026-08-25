@@ -4,7 +4,7 @@
 //
 // Tests the five contract scenarios:
 // 1. {PA_HEAP_PROFILE: false} → "not-in-this-build" (state) with phase="ready"
-// 2. {} → "checking" (state) with phase="checking" (missing key)
+// 2. {} → "identity-unavailable" (state) with phase="failed" (missing key)
 // 3. {PA_HEAP_PROFILE: "0"} → invalid type, caught by Layer 1 validation
 // 4. Non-object response (e.g., string) → invalid, caught by Layer 1 validation
 // 5. 204 No Content (null/empty response) → invalid, caught by Layer 1 validation
@@ -257,10 +257,10 @@ test("Layer 2 validation: missing key returns availability unknown (checking pha
 
   const resolve = context.window.PAFeatureAvailability.resolve;
 
-  // Missing key should resolve to "checking" phase (availability unknown)
+  // Missing key should resolve to "failed" phase (availability unknown)
   const result = resolve({ buildFlag: "PA_HEAP_PROFILE" });
-  assert.strictEqual(result.state, "checking");
-  assert.strictEqual(result.phase, "checking");
+  assert.strictEqual(result.state, "identity-unavailable");
+  assert.strictEqual(result.phase, "failed");
 });
 
 test("Layer 2 validation: missing board_capabilities object returns availability unknown", () => {
@@ -278,10 +278,10 @@ test("Layer 2 validation: missing board_capabilities object returns availability
 
   const resolve = context.window.PAFeatureAvailability.resolve;
 
-  // Missing board_capabilities object should resolve to "checking" phase
+  // Missing board_capabilities should resolve to "failed" phase
   const result = resolve({ boardCapability: "PA_CAP_NATIVE_WIFI" });
-  assert.strictEqual(result.state, "checking");
-  assert.strictEqual(result.phase, "checking");
+  assert.strictEqual(result.state, "identity-unavailable");
+  assert.strictEqual(result.phase, "failed");
 });
 
 test("Resolver split: resolve() returns { phase, state }, not { state, available }", () => {
@@ -350,8 +350,8 @@ test("Layer 2: missing board capability key returns availability unknown", () =>
 
   // Missing key in board_capabilities should return "checking" (availability unknown)
   const result = resolve({ boardCapability: "PA_CAP_NATIVE_WIFI" });
-  assert.strictEqual(result.state, "checking");
-  assert.strictEqual(result.phase, "checking");
+  assert.strictEqual(result.state, "identity-unavailable");
+  assert.strictEqual(result.phase, "failed");
 });
 
 test("Layer 1: 204 No Content (empty/null response) is rejected", () => {

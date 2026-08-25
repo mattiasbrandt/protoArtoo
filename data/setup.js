@@ -31,6 +31,18 @@
   // the key it was asked for; there is no JavaScript mirror of the .inc manifests.
   // A missing key means the manifest is incomplete, which must return phase="checking"
   // to signal that availability is unknown.
+  // Resolve the compile-time manifest tiers first (board capability, build flag),
+  // then the optional runtime toggle (Component Toggle). Compile tiers resolve
+  // before runtime state to preserve the reason: "not in this build" or "not on
+  // this board" takes precedence over "off". Component rows and build-conditional
+  // panels call this same seam.
+  //
+  // Layer 2 validation: per-key completeness distinguishes missing keys from
+  // false values using Object.hasOwn (not optional chaining, not the in operator).
+  // When a key is missing from an already-validated manifest, it is terminally
+  // unknown — the feature info will not arrive with a later request. This maps to
+  // phase="failed" with state="identity-unavailable" (the same terminal unavailability
+  // as a manifest that failed to fetch), which renders as "Availability unknown".
   const resolve = ({ boardCapability = "", buildFlag = "", enabled = true, hasToggle = true } = {}) => {
     const needsManifest = Boolean(boardCapability || buildFlag);
     if (needsManifest && phase !== "ready") {
@@ -40,8 +52,8 @@
     }
     if (boardCapability) {
       if (!identity?.board_capabilities || !Object.hasOwn(identity.board_capabilities, boardCapability)) {
-        // Missing key in board_capabilities means manifest is incomplete; availability unknown
-        return { phase: "checking", state: "checking" };
+        // Missing key in board_capabilities is terminally unknown (will not arrive in future fetch)
+        return { phase: "failed", state: "identity-unavailable" };
       }
       if (identity.board_capabilities[boardCapability] !== true) {
         return { phase: "ready", state: "not-on-this-board" };
@@ -49,8 +61,8 @@
     }
     if (buildFlag) {
       if (!identity?.build_flags || !Object.hasOwn(identity.build_flags, buildFlag)) {
-        // Missing key in build_flags means manifest is incomplete; availability unknown
-        return { phase: "checking", state: "checking" };
+        // Missing key in build_flags is terminally unknown (will not arrive in future fetch)
+        return { phase: "failed", state: "identity-unavailable" };
       }
       if (identity.build_flags[buildFlag] !== true) {
         return { phase: "ready", state: "not-in-this-build" };
@@ -63,6 +75,13 @@
       ? { phase: "ready", state: "on" }
       : { phase: "ready", state: "off" };
   };
+
+  // Helper to derive control availability from resolved state.
+  // Control is interactable when the manifest is ready and the feature is not gated.
+  const isFeatureAvailable = (result) => {
+    return result.phase === "ready" && result.state !== "not-on-this-board" && result.state !== "not-in-this-build";
+  };
+
 
   const labelFor = (state) => STATE_LABELS[state] || "Availability unknown";
 
@@ -99,6 +118,7 @@
 
   window.PAFeatureAvailability = {
     resolve,
+    isFeatureAvailable,
     labelFor,
     reasonFor,
     setIdentity,
@@ -440,7 +460,7 @@
     toggle.state = result.state;
     // Derive available from phase and state: control is interactable when
     // the manifest is ready and the feature is not gated
-    toggle.available = result.phase === "ready" && result.state !== "not-on-this-board" && result.state !== "not-in-this-build";
+    toggle.available = window.PAFeatureAvailability.isFeatureAvailable(result);
     toggle.status.textContent = window.PAFeatureAvailability.labelFor(result.state);
     toggle.status.className = `toggle-status feature-state feature-state-${result.state}`;
     toggle.input.disabled = !toggle.available;
@@ -1427,7 +1447,7 @@
       : { phase: "checking", state: "checking" };
     // Derive available from phase and state: control is interactable when
     // the manifest is ready and the feature is not gated
-    const available = result.phase === "ready" && result.state !== "not-on-this-board" && result.state !== "not-in-this-build";
+    const available = window.PAFeatureAvailability.isFeatureAvailable(result);
     const stateLabel = window.PAFeatureAvailability.labelFor(result.state);
     const stateReason = window.PAFeatureAvailability.reasonFor(result.state, featureName, {
       on: "Live memory readings refresh while this page is open.",

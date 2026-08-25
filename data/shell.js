@@ -58,22 +58,22 @@
       return null;
     }
     // board_capabilities and build_flags must be objects if present
-    if (identity.board_capabilities !== undefined && (typeof identity.board_capabilities !== "object" || Array.isArray(identity.board_capabilities) || identity.board_capabilities === null)) {
+    if (!identity.board_capabilities || (typeof identity.board_capabilities !== "object" || Array.isArray(identity.board_capabilities) || identity.board_capabilities === null)) {
       return null;
     }
-    if (identity.build_flags !== undefined && (typeof identity.build_flags !== "object" || Array.isArray(identity.build_flags) || identity.build_flags === null)) {
+    if (!identity.build_flags || (typeof identity.build_flags !== "object" || Array.isArray(identity.build_flags) || identity.build_flags === null)) {
       return null;
     }
     // Every present value in board_capabilities and build_flags must be a boolean
     if (identity.board_capabilities) {
-      for (const [key, value] of Object.entries(identity.board_capabilities)) {
+      for (const value of Object.values(identity.board_capabilities)) {
         if (typeof value !== "boolean") {
           return null;
         }
       }
     }
     if (identity.build_flags) {
-      for (const [key, value] of Object.entries(identity.build_flags)) {
+      for (const value of Object.values(identity.build_flags)) {
         if (typeof value !== "boolean") {
           return null;
         }
