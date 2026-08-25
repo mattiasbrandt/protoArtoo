@@ -189,3 +189,18 @@ test("shell publishes the once-per-page identity response for feature consumers"
   assert.deepEqual(env.window.PAIdentity, payload);
   assert.deepEqual(env.pathsRequested(), ["/api/identity"]);
 });
+
+test("unavailable profiler renders status lamp, not switch affordance", async () => {
+  const env = await loadSetupPage();
+  await env.publishIdentity(identity({ profiler: false }));
+
+  const lamp = env.element("profiler-availability-lamp");
+  assert.ok(lamp, "lamp indicator element should exist");
+  assert.ok(
+    lamp.className.includes("feature-availability-lamp-indicator"),
+    "lamp should have lamp-indicator class, not switch affordance"
+  );
+  // Verify there is no switch element with disabled attribute
+  const switchElement = env.document.querySelector("#profiler-availability-toggle");
+  assert.equal(switchElement, null, "no disabled switch should exist for compile-time unavailable feature");
+});
