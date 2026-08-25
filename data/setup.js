@@ -26,23 +26,16 @@
   // this board" takes precedence over "off". Component rows and build-conditional
   // panels call this same seam.
   //
-  // Layer 2 validation: per-key completeness uses Object.hasOwn (not optional chaining)
-  // so MISSING keys are distinguished from false values. The resolver already knows
-  // the key it was asked for; there is no JavaScript mirror of the .inc manifests.
-  // A missing key means the manifest is incomplete, which must return phase="checking"
-  // to signal that availability is unknown.
-  // Resolve the compile-time manifest tiers first (board capability, build flag),
-  // then the optional runtime toggle (Component Toggle). Compile tiers resolve
-  // before runtime state to preserve the reason: "not in this build" or "not on
-  // this board" takes precedence over "off". Component rows and build-conditional
-  // panels call this same seam.
+  // Layer 2 validation: per-key completeness uses Object.hasOwn — not optional
+  // chaining, not the `in` operator — so a MISSING key is distinguished from a
+  // false value. The resolver already knows the key it was asked for, so there is
+  // no JavaScript mirror of the .inc manifests to drift out of date.
   //
-  // Layer 2 validation: per-key completeness distinguishes missing keys from
-  // false values using Object.hasOwn (not optional chaining, not the in operator).
-  // When a key is missing from an already-validated manifest, it is terminally
-  // unknown — the feature info will not arrive with a later request. This maps to
-  // phase="failed" with state="identity-unavailable" (the same terminal unavailability
-  // as a manifest that failed to fetch), which renders as "Availability unknown".
+  // A key missing from an already-validated manifest is TERMINALLY unknown: the
+  // fetch has completed and no later request will supply it. That is phase="failed"
+  // with state="identity-unavailable", which renders as "Availability unknown" —
+  // never phase="checking", which would tell the operator the page is still working
+  // on an answer that will never arrive.
   const resolve = ({ boardCapability = "", buildFlag = "", enabled = true, hasToggle = true } = {}) => {
     const needsManifest = Boolean(boardCapability || buildFlag);
     if (needsManifest && phase !== "ready") {

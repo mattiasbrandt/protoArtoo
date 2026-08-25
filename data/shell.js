@@ -53,8 +53,8 @@
     if (!identity || typeof identity !== "object" || Array.isArray(identity)) {
       return null;
     }
-    // board must be a string if present
-    if (identity.board !== undefined && typeof identity.board !== "string") {
+    // board must be a string
+    if (typeof identity.board !== "string") {
       return null;
     }
     // board_capabilities and build_flags must be objects if present
@@ -65,18 +65,14 @@
       return null;
     }
     // Every present value in board_capabilities and build_flags must be a boolean
-    if (identity.board_capabilities) {
-      for (const value of Object.values(identity.board_capabilities)) {
-        if (typeof value !== "boolean") {
-          return null;
-        }
+    for (const value of Object.values(identity.board_capabilities)) {
+      if (typeof value !== "boolean") {
+        return null;
       }
     }
-    if (identity.build_flags) {
-      for (const value of Object.values(identity.build_flags)) {
-        if (typeof value !== "boolean") {
-          return null;
-        }
+    for (const value of Object.values(identity.build_flags)) {
+      if (typeof value !== "boolean") {
+        return null;
       }
     }
     return identity;
