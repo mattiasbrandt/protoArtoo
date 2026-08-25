@@ -246,3 +246,62 @@ test("diagnosis message defaults to no version evidence when neither version is 
     "should default to no-version-evidence message"
   );
 });
+
+test("identity diagnosis element exists and is separate from feedback", (t) => {
+  const htmlContent = readFileSync("./data/setup.html", "utf8");
+
+  // Verify dedicated diagnosis element exists
+  assert.strictEqual(
+    htmlContent.includes('id="identity-diagnosis"'),
+    true,
+    "should have a dedicated identity-diagnosis element"
+  );
+});
+
+test("setIdentityDiagnosis exists and renders to its own element", (t) => {
+  const setupContent = readFileSync("./data/setup.js", "utf8");
+
+  // Verify setter exists
+  assert.strictEqual(
+    setupContent.includes("const setIdentityDiagnosis = (message) => {"),
+    true,
+    "should have setIdentityDiagnosis setter"
+  );
+
+  // Verify it writes to identityDiagnosis element only
+  assert.strictEqual(
+    setupContent.includes("if (identityDiagnosis) identityDiagnosis.textContent = message || \"\";"),
+    true,
+    "should write to identityDiagnosis element's textContent"
+  );
+});
+
+test("diagnosis uses setIdentityDiagnosis not setIdentityFeedback", (t) => {
+  const setupContent = readFileSync("./data/setup.js", "utf8");
+
+  // Verify diagnosis is rendered via setIdentityDiagnosis
+  assert.strictEqual(
+    setupContent.includes("setIdentityDiagnosis(diagMessage);"),
+    true,
+    "should render diagnosis via setIdentityDiagnosis"
+  );
+
+  // Count how many times setIdentityDiagnosis is called for diagnosis
+  const diagCalls = (setupContent.match(/setIdentityDiagnosis\(/g) || []).length;
+  assert.strictEqual(
+    diagCalls >= 2,
+    true,
+    "should use setIdentityDiagnosis at least twice (success and error paths)"
+  );
+});
+
+test("diagnosis clears on identity success", (t) => {
+  const setupContent = readFileSync("./data/setup.js", "utf8");
+
+  // Verify diagnosis is cleared in pa:identity-available listener
+  assert.strictEqual(
+    setupContent.includes('setIdentityDiagnosis("");'),
+    true,
+    "should clear diagnosis when identity loads successfully"
+  );
+});

@@ -187,6 +187,7 @@
   const identitySaveButton = document.getElementById("identity-save-button");
   const identityFeedback = document.getElementById("identity-feedback");
   const identityActions = document.getElementById("identity-actions");
+  const identityDiagnosis = document.getElementById("identity-diagnosis");
 
   // Map from API payload key to featureToggles key
   const TOGGLE_KEY_MAP = {
@@ -249,6 +250,13 @@
 
   const setIdentityFeedback = (message, variant = "") => {
     setFeedbackState(identityFeedback, message, variant);
+  };
+
+  // Diagnosis explains WHY identity failed and outlives the feedback line, which
+  // every identity action rewrites. Keep it on its own element: setIdentityFeedback
+  // assigns textContent, so a save or a reload of identity would erase it.
+  const setIdentityDiagnosis = (message) => {
+    if (identityDiagnosis) identityDiagnosis.textContent = message || "";
   };
 
   const renderIdentity = (identity) => {
@@ -334,11 +342,11 @@
         }
       }
 
-      setIdentityFeedback(diagMessage, "error");
+      setIdentityDiagnosis(diagMessage);
     } catch (error) {
       console.warn("[setup] diagnosis failed:", error);
       // Show the no-version-evidence sentence when diagnosis cannot fetch versions
-      setIdentityFeedback("The controller could not report which features are available.", "error");
+      setIdentityDiagnosis("The controller could not report which features are available.");
     }
   };
 
@@ -348,6 +356,8 @@
     if (identityActions) {
       identityActions.innerHTML = "";
     }
+    // Clear diagnosis when identity succeeds (it outlives failed state)
+    setIdentityDiagnosis("");
   });
 
   window.addEventListener("pa:identity-unavailable", (event) => {
