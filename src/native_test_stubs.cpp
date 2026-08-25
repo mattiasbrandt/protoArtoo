@@ -769,11 +769,32 @@ bool audioQueuePlayCategory(AudioPlaybackCategory /*category*/, AudioPlaybackSlo
 // in this file (see lines ~80-86, ~336). No need to redefine them here.
 
 // Network manager seam (web_network_manager.h) implementation for host tests.
-// No-op implementation: native tests do not exercise WiFi events or require
-// the HTTP server to start.
+// Records calls so tests can verify the seam is integrated.
 
 // Include here to make types available for the networkManagerApplyBootPosture signature
 #include "web_network_manager.h"
+
+// Test instrumentation: record the last posture received
+struct {
+    int applyBootPostureCallCount = 0;
+    WifiBootPosture lastPosture = WifiBootPosture::PROVISIONING;
+} s_seam_test_state;
+
+// Accessor for tests
+extern "C" {
+int networkManagerGetApplyBootPostureCallCount() {
+    return s_seam_test_state.applyBootPostureCallCount;
+}
+
+WifiBootPosture networkManagerGetLastPosture() {
+    return s_seam_test_state.lastPosture;
+}
+
+void networkManagerResetTestState() {
+    s_seam_test_state.applyBootPostureCallCount = 0;
+    s_seam_test_state.lastPosture = WifiBootPosture::PROVISIONING;
+}
+}
 
 void networkManagerInitialize() {
     // No-op: native tests do not call startHttpServerOnce()
@@ -781,9 +802,10 @@ void networkManagerInitialize() {
 }
 
 void networkManagerApplyBootPosture(WifiBootPosture posture, const WifiConfig& settings) {
-    (void)posture;
     (void)settings;
-    // No-op: native tests do not exercise actual WiFi configuration
+    // Record the call for test verification
+    s_seam_test_state.applyBootPostureCallCount++;
+    s_seam_test_state.lastPosture = posture;
 }
 
 // ESP-IDF reset reason enum and stub — native tests need this for

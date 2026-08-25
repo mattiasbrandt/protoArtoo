@@ -11,14 +11,21 @@
 
 #include <string.h>
 #include "web_network_bootstrap.h"
+#include "web_network_manager.h"
 #include "config_cache.h"
 #include "wifi_boot_decision.h"
 
+// Test instrumentation accessors from native_test_stubs.cpp
+extern int networkManagerGetApplyBootPostureCallCount();
+extern WifiBootPosture networkManagerGetLastPosture();
+extern void networkManagerResetTestState();
+
 void setUp() {
-    // Reset config cache to a known state
+    // Reset config cache and seam test state to known state
     WifiConfig cfg = {};
     configCacheSetActiveWifi(cfg);
     configCacheSetActiveWifiRecovery(false);
+    networkManagerResetTestState();
 }
 
 void tearDown() {
@@ -42,27 +49,31 @@ void test_webNetworkBootstrap_runs_pure_decision_logic() {
     // If we reach here without crash, the seam is working.
 }
 
-void test_networkManagerApplyBootPosture_accepts_posture_and_config() {
-    // Verify that networkManagerApplyBootPosture (the seam) is callable with
-    // proper types. In native builds, the implementation is a no-op stub.
-    // This test proves the interface contract is honored and the function exists.
+void test_networkManagerApplyBootPosture_records_calls() {
+    // Verify that networkManagerApplyBootPosture (the seam) reaches the backend.
+    // The host backend records every call, so this test checks that the seam
+    // is actually wired into the decision logic, not stubbed out.
 
-    WifiBootPosture posture = WifiBootPosture::PROVISIONING;
+    // Initially, the backend should have zero calls
+    TEST_ASSERT_EQUAL_INT(0, networkManagerGetApplyBootPostureCallCount());
+
+    WifiBootPosture posture = WifiBootPosture::CLIENT_MODE;
     WifiConfig config = {};
 
-    // Call the seam function. If the interface is wrong (e.g., void* parameters),
-    // this would not compile. If the function is missing or wrongly implemented,
-    // this would crash or fail to link.
+    // Call the seam function
     networkManagerApplyBootPosture(posture, config);
 
-    // Success: the seam is properly integrated.
-    TEST_ASSERT_TRUE(true);
+    // Backend must have recorded one call
+    TEST_ASSERT_EQUAL_INT(1, networkManagerGetApplyBootPostureCallCount());
+
+    // And recorded the correct posture
+    TEST_ASSERT_EQUAL_INT(WifiBootPosture::CLIENT_MODE, networkManagerGetLastPosture());
 }
 
 int main() {
     UNITY_BEGIN();
     RUN_TEST(test_webNetworkBootstrap_runs_pure_decision_logic);
-    RUN_TEST(test_networkManagerApplyBootPosture_accepts_posture_and_config);
+    RUN_TEST(test_networkManagerApplyBootPosture_records_calls);
     return UNITY_END();
 }
 

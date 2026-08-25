@@ -11,6 +11,11 @@
 #include <Arduino.h>
 #include "../../include/config.h"
 
+// Native radio backend. Whole-file guard, no #else: when this board's backend
+// is not the native radio, this translation unit contributes nothing, and the
+// composition that does apply lives in its own file (ADR 0021 shape). Keeping a
+// "not selected" definition here is what let a stale signature survive as a
+// silent overload and break the firebeetle2_full link.
 #if PA_CAP_NATIVE_WIFI
 
 #include <WiFi.h>
@@ -18,6 +23,24 @@
 #include "../../include/logging.h"
 #include "../../include/web_server.h"
 #include "../../include/wifi_boot_decision.h"
+
+// src/secrets.h is the Developer WiFi Shortcut (ADR 0015): local/self-build-only
+// compile-time WiFi defaults. It is never required to compile or boot - public
+// release binaries (protoArtoo_chirp, protoArtoo_mp3trigger) ship without it and
+// boot into WiFi Provisioning via wifiDecideBootPosture() instead.
+#if __has_include("secrets.h")
+#include "secrets.h"
+#define PA_HAS_SECRETS_HEADER 1
+#else
+#define PA_HAS_SECRETS_HEADER 0
+#endif
+
+// PA_ENABLE_STA_WIFI selects which posture the Developer WiFi Shortcut resolves to
+// when secrets.h is present: 1 (default) = WiFi Client Mode, 0 = Standalone AP Mode.
+// It has no effect once Device WiFi Settings are provisioned (runtime settings win).
+#ifndef PA_ENABLE_STA_WIFI
+#define PA_ENABLE_STA_WIFI 1
+#endif
 
 static const char* TAG = "WebServer";
 
@@ -95,19 +118,6 @@ void networkManagerApplyBootPosture(WifiBootPosture posture, const WifiConfig& s
             PA_LOG_INFO(TAG, "WiFi bootstrap: standalone AP mode (SSID %s)", settings.ap_ssid);
             break;
     }
-}
-
-#else  // PA_CAP_NATIVE_WIFI not defined
-
-// Zero-backend composition: network manager is a no-op.
-// The web server is simply never started (ADR 0032).
-void networkManagerInitialize() {
-}
-
-void networkManagerApplyBootPosture(void* posture_ptr, void* config_ptr) {
-    (void)posture_ptr;
-    (void)config_ptr;
-    // No-op: no network backend configured
 }
 
 #endif  // PA_CAP_NATIVE_WIFI
