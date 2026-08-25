@@ -336,6 +336,24 @@ test("Layer 2: board_capabilities false value is distinguished from missing key"
   assert.strictEqual(result.phase, "ready");
 });
 
+test("Layer 2: missing board capability key returns availability unknown", () => {
+  const { context } = loadContextWithIdentity();
+
+  context.window.PAIdentity = {
+    droidName: "artoo",
+    board_capabilities: {}, // Empty object, PA_CAP_NATIVE_WIFI is missing
+  };
+
+  context.window.PAFeatureAvailability.setIdentity(context.window.PAIdentity);
+
+  const resolve = context.window.PAFeatureAvailability.resolve;
+
+  // Missing key in board_capabilities should return "checking" (availability unknown)
+  const result = resolve({ boardCapability: "PA_CAP_NATIVE_WIFI" });
+  assert.strictEqual(result.state, "checking");
+  assert.strictEqual(result.phase, "checking");
+});
+
 test("Layer 1: 204 No Content (empty/null response) is rejected", () => {
   const { context, windowMock, dispatchedEvents } = loadContextWithIdentity();
 
