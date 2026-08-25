@@ -1,0 +1,13 @@
+diff --git a/data/page_bootstrap.js b/data/page_bootstrap.js
+index 091610f..3143cd3 100644
+--- a/data/page_bootstrap.js
++++ b/data/page_bootstrap.js
+@@ -239,7 +239,7 @@
+     if (outcome.kind === "failed-terminal") {
+       return replaceStep(state, active.kind, active.name, {
+         status: "failed-terminal",
+-        nextAt: null,
++        nextAt: state.now + 2000,
+         reason: outcome.reason || outcome.kind,
+       });
+     }
