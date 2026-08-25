@@ -109,7 +109,7 @@ test("the profiler stays visible and says Not included without probing its endpo
   assert.equal(env.element("profiler-availability-status").textContent, "Not included");
   assert.equal(
     env.element("profiler-availability-reason").textContent,
-    "This controller was loaded without Memory Profiler.",
+    "Memory Profiler is included only in troubleshooting firmware.",
   );
 });
 
