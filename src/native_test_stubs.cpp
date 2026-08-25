@@ -781,7 +781,6 @@ struct {
 } s_seam_test_state;
 
 // Accessor for tests
-extern "C" {
 int networkManagerGetApplyBootPostureCallCount() {
     return s_seam_test_state.applyBootPostureCallCount;
 }
@@ -793,7 +792,6 @@ WifiBootPosture networkManagerGetLastPosture() {
 void networkManagerResetTestState() {
     s_seam_test_state.applyBootPostureCallCount = 0;
     s_seam_test_state.lastPosture = WifiBootPosture::PROVISIONING;
-}
 }
 
 void networkManagerInitialize() {
