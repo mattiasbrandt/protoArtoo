@@ -1,0 +1,13 @@
+diff --git a/data/setup.js b/data/setup.js
+index aca4f28..976de31 100644
+--- a/data/setup.js
++++ b/data/setup.js
+@@ -1421,7 +1421,7 @@
+     card.classList.add("feature-availability-panel", `feature-state-${result.state}`);
+     card.dataset.featureState = result.state;
+ 
+-    if (availabilityStatus) {
++    if (false) { // MUTATION: skip
+       availabilityStatus.textContent = stateLabel;
+       availabilityStatus.className = `feature-availability-status feature-state feature-state-${result.state}`;
+     }

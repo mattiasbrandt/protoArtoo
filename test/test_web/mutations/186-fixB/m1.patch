@@ -1,0 +1,13 @@
+diff --git a/data/setup.js b/data/setup.js
+index aca4f28..5779ac3 100644
+--- a/data/setup.js
++++ b/data/setup.js
+@@ -13,7 +13,7 @@
+   const STATE_LABELS = Object.freeze({
+     on: "On",
+     off: "Off",
+-    "not-in-this-build": "Not included",
++    "not-in-this-build": "Not in this build",
+     "not-on-this-board": "Not on this board",
+     checking: "Checking controller",
+     "identity-unavailable": "Availability unknown",

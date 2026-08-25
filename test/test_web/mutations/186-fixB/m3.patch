@@ -1,0 +1,12 @@
+diff --git a/data/setup.js b/data/setup.js
+index aca4f28..62198a3 100644
+--- a/data/setup.js
++++ b/data/setup.js
+@@ -1408,7 +1408,6 @@
+     const stateLabel = window.PAFeatureAvailability.labelFor(result.state);
+     const stateReason = window.PAFeatureAvailability.reasonFor(result.state, featureName, {
+       on: "Live memory readings refresh while this page is open.",
+-      notInThisBuild: "Memory Profiler is included only in troubleshooting firmware.", // PROVISIONAL: when a second Build Feature Flag needs a bespoke reason, promote this to a registry field + drift-checker coverage
+     });
+     card.hidden = false;
+     card.classList.remove(
