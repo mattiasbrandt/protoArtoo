@@ -148,6 +148,43 @@ merged). The shape to implement for real:
   separate fix, not something this bootstrap rollout should paper over or wait on
   before generalizing the *gating* logic (see Stop and rollback rules).
 
+## Section Loader Outcomes
+
+A section loader concludes with one of three outcome kinds:
+
+- **success**: the loader ran to completion without throwing.
+- **busy** (HTTP 503): the server explicitly requested backoff via `Retry-After` header.
+  The bootstrap schedules a retry at the server's requested interval.
+- **no-response** (network/timeout/HTTP non-503/malformed JSON): no usable result arrived.
+  The bootstrap schedules a retry with exponential backoff, since no server-given interval
+  exists for that case.
+- **failed-terminal** (incompatible or device-error): unrecoverable permanent failure.
+  Examples: invalid manifest structure from a 2xx response, deterministic 500 server error.
+  No automatic retry timer is scheduled; the section remains in `failed-terminal` status
+  until explicitly reset by operator action (`retryNow` or `refreshSections`). Terminal
+  failures count toward `sectionsStable` so a page with one terminal section still starts
+  live updates rather than waiting forever for recovery that will not come.
+
+**Recoverability taxonomy:**
+- Network loss / connection timeout / truncated JSON → `no-response` (retryable backoff)
+- HTTP 404 or 2xx with missing/invalid required keys → `failed-terminal` (incompatible)
+- HTTP 503 → `busy` (honor Retry-After)
+- Deterministic HTTP 500 (e.g., `api_identity.cpp:32` "identity response overflow") → `failed-terminal` (device-error)
+
+**Fault-Injection Coverage:**
+Page bootstrap behavior is verified via deterministic fault-injection fixtures in the test
+suite (`test/test_web/mutations/`), not live-hardware iteration. Each page slice requires
+coverage of:
+
+- Busy (503 Retry-After)
+- No-response (network, timeout, malformed JSON)
+- Terminal incompatible outcome
+- Section successfully completes after failure
+- Hidden tab pause and resume
+- Operator `retryNow` and `refreshSections`
+- Cancellation and queued-deadline lifecycle
+- Command priority (estop/safety actions bypass the single active slot)
+
 ## Page, resource, and section inventory
 
 All 10 controller pages declare their script chain via `data-scripts` on `<html>`,

@@ -176,6 +176,7 @@
   const identityMdnsCheckbox = document.getElementById("mdns-use-name");
   const identitySaveButton = document.getElementById("identity-save-button");
   const identityFeedback = document.getElementById("identity-feedback");
+  const identityActions = document.getElementById("identity-actions");
 
   // Map from API payload key to featureToggles key
   const TOGGLE_KEY_MAP = {
@@ -255,10 +256,30 @@
     setIdentityFeedback(`Identity loaded at ${new Date().toLocaleTimeString()}`, "success");
   };
 
-  window.addEventListener("pa:identity-available", (event) => receiveIdentity(event.detail));
+  window.addEventListener("pa:identity-available", (event) => {
+    receiveIdentity(event.detail);
+    // Clear the Retry button when identity loads successfully
+    if (identityActions) {
+      identityActions.innerHTML = "";
+    }
+  });
+
   window.addEventListener("pa:identity-unavailable", () => {
     window.PAFeatureAvailability.setIdentityError();
     setIdentityFeedback("Could not load controller identity. Reconnecting…", "error");
+    // Add persistent Retry button outside the live region
+    if (window.PABootstrap && identityActions && !identityActions.querySelector("button")) {
+      const retryButton = document.createElement("button");
+      retryButton.type = "button";
+      retryButton.className = "btn accent";
+      retryButton.textContent = "Retry now";
+      retryButton.addEventListener("click", () => {
+        window.PABootstrap.retryNow("shell-identity");
+        if (identityActions) identityActions.innerHTML = "";
+      });
+      identityActions.innerHTML = "";
+      identityActions.appendChild(retryButton);
+    }
   });
 
   const saveIdentity = async () => {

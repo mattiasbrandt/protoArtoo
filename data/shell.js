@@ -96,6 +96,7 @@
         window.dispatchEvent(new CustomEvent("pa:identity-unavailable", { detail: { error: "invalid manifest" } }));
       }
     }
+    return validatedIdentity;
   };
 
 
@@ -141,20 +142,30 @@
   }
 
   const loadIdentity = async ({ handle = null } = {}) => {
+    let result;
     try {
       const api = handle || window.PAApi;
-      const result = window.PAApi
+      result = api
         ? await api.get("/api/identity")
         : { data: await fetch("/api/identity", { cache: "no-store" }).then((r) => r.json()) };
-      applyIdentityName(result.data?.droidName);
-      publishIdentity(result.data);
     } catch (error) {
+      // Transport failure: retryable. Unchanged behaviour.
       console.warn("[shell] identity unavailable:", error);
       if (typeof window.dispatchEvent === "function") {
         window.dispatchEvent(new CustomEvent("pa:identity-unavailable", { detail: { error } }));
       }
-      // Rethrow so the bootstrap can show recovery and retry the request
       throw error;
+    }
+
+    applyIdentityName(result.data?.droidName);
+
+    // publishIdentity is the single validation boundary and has already
+    // dispatched pa:identity-unavailable if the manifest is unusable.
+    if (!publishIdentity(result.data)) {
+      const error = new Error("identity manifest failed validation");
+      error.kind = "incompatible";
+      error.status = 200;   // the response was a valid 2xx; its content was not
+      throw error;          // terminal: the bootstrap maps this to failed-terminal
     }
   };
 
