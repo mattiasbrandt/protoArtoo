@@ -25,25 +25,43 @@
   // before runtime state to preserve the reason: "not in this build" or "not on
   // this board" takes precedence over "off". Component rows and build-conditional
   // panels call this same seam.
+  //
+  // Layer 2 validation: per-key completeness uses Object.hasOwn (not optional chaining)
+  // so MISSING keys are distinguished from false values. The resolver already knows
+  // the key it was asked for; there is no JavaScript mirror of the .inc manifests.
+  // A missing key means the manifest is incomplete, which must return phase="checking"
+  // to signal that availability is unknown.
   const resolve = ({ boardCapability = "", buildFlag = "", enabled = true, hasToggle = true } = {}) => {
     const needsManifest = Boolean(boardCapability || buildFlag);
     if (needsManifest && phase !== "ready") {
       return phase === "error"
-        ? { state: "identity-unavailable", available: false }
-        : { state: "checking", available: false };
+        ? { phase: "failed", state: "identity-unavailable" }
+        : { phase: "checking", state: "checking" };
     }
-    if (boardCapability && identity?.board_capabilities?.[boardCapability] !== true) {
-      return { state: "not-on-this-board", available: false };
+    if (boardCapability) {
+      if (!identity?.board_capabilities || !Object.hasOwn(identity.board_capabilities, boardCapability)) {
+        // Missing key in board_capabilities means manifest is incomplete; availability unknown
+        return { phase: "checking", state: "checking" };
+      }
+      if (identity.board_capabilities[boardCapability] !== true) {
+        return { phase: "ready", state: "not-on-this-board" };
+      }
     }
-    if (buildFlag && identity?.build_flags?.[buildFlag] !== true) {
-      return { state: "not-in-this-build", available: false };
+    if (buildFlag) {
+      if (!identity?.build_flags || !Object.hasOwn(identity.build_flags, buildFlag)) {
+        // Missing key in build_flags means manifest is incomplete; availability unknown
+        return { phase: "checking", state: "checking" };
+      }
+      if (identity.build_flags[buildFlag] !== true) {
+        return { phase: "ready", state: "not-in-this-build" };
+      }
     }
     if (!hasToggle && enabled) {
-      return { state: "included", available: true };
+      return { phase: "ready", state: "included" };
     }
     return enabled
-      ? { state: "on", available: true }
-      : { state: "off", available: true };
+      ? { phase: "ready", state: "on" }
+      : { phase: "ready", state: "off" };
   };
 
   const labelFor = (state) => STATE_LABELS[state] || "Availability unknown";
@@ -420,11 +438,13 @@
     });
 
     toggle.state = result.state;
-    toggle.available = result.available;
+    // Derive available from phase and state: feature is available only when
+    // the manifest is ready and the feature is either on or included
+    toggle.available = result.phase === "ready" && (result.state === "on" || result.state === "included");
     toggle.status.textContent = window.PAFeatureAvailability.labelFor(result.state);
     toggle.status.className = `toggle-status feature-state feature-state-${result.state}`;
-    toggle.input.disabled = !result.available;
-    toggle.input.setAttribute("aria-disabled", result.available ? "false" : "true");
+    toggle.input.disabled = !toggle.available;
+    toggle.input.setAttribute("aria-disabled", toggle.available ? "false" : "true");
 
     if (row) {
       row.classList.add("feature-availability-row");
@@ -438,11 +458,11 @@
       );
       row.classList.add(`feature-state-${result.state}`);
       row.dataset.featureState = result.state;
-      setRowControlsAvailable(row, result.available, toggle.input);
+      setRowControlsAvailable(row, toggle.available, toggle.input);
       const reason = ensureFeatureReason(toggle, row);
       if (reason) {
         reason.textContent = window.PAFeatureAvailability.reasonFor(result.state, toggle.name);
-        reason.hidden = result.available;
+        reason.hidden = toggle.available;
       }
     }
   };
@@ -1404,7 +1424,10 @@
           buildFlag: card.dataset.buildFlag || "",
           hasToggle: false,  // Profiler is compile-time only, no runtime toggle
         })
-      : { state: "checking", available: false };
+      : { phase: "checking", state: "checking" };
+    // Derive available from phase and state: feature is available only when
+    // the manifest is ready and the feature is either on or included
+    const available = result.phase === "ready" && (result.state === "on" || result.state === "included");
     const stateLabel = window.PAFeatureAvailability.labelFor(result.state);
     const stateReason = window.PAFeatureAvailability.reasonFor(result.state, featureName, {
       on: "Live memory readings refresh while this page is open.",
@@ -1430,14 +1453,14 @@
       availabilityLamp.className = `feature-availability-lamp-indicator feature-state-${result.state}`;
     }
     if (content) {
-      content.inert = !result.available;
-      content.setAttribute("aria-hidden", result.available ? "false" : "true");
+      content.inert = !available;
+      content.setAttribute("aria-hidden", available ? "false" : "true");
     }
 
-    if (result.available && !polling) {
+    if (available && !polling) {
       polling = true;
       poll.start();
-    } else if (!result.available && polling) {
+    } else if (!available && polling) {
       // Stopping the poll on availability loss is part of inertness: when the
       // profiler is not available (compile-time gate or missing from this image),
       // cease endpoint polling to avoid false "update failed" messages.

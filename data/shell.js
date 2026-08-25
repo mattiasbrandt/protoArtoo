@@ -44,15 +44,61 @@
   };
   applyIdentityName("protoartoo");
 
+  // Layer 1 validation: ensure the identity manifest conforms to the expected shape
+  // before it reaches feature availability resolvers. Protects against null, non-objects,
+  // and responses missing required structure. Returns null if validation fails, otherwise
+  // returns the validated identity.
+  const validateIdentityShape = (identity) => {
+    // Identity must be an object
+    if (!identity || typeof identity !== "object" || Array.isArray(identity)) {
+      return null;
+    }
+    // board must be a string if present
+    if (identity.board !== undefined && typeof identity.board !== "string") {
+      return null;
+    }
+    // board_capabilities and build_flags must be objects if present
+    if (identity.board_capabilities !== undefined && (typeof identity.board_capabilities !== "object" || Array.isArray(identity.board_capabilities) || identity.board_capabilities === null)) {
+      return null;
+    }
+    if (identity.build_flags !== undefined && (typeof identity.build_flags !== "object" || Array.isArray(identity.build_flags) || identity.build_flags === null)) {
+      return null;
+    }
+    // Every present value in board_capabilities and build_flags must be a boolean
+    if (identity.board_capabilities) {
+      for (const [key, value] of Object.entries(identity.board_capabilities)) {
+        if (typeof value !== "boolean") {
+          return null;
+        }
+      }
+    }
+    if (identity.build_flags) {
+      for (const [key, value] of Object.entries(identity.build_flags)) {
+        if (typeof value !== "boolean") {
+          return null;
+        }
+      }
+    }
+    return identity;
+  };
+
   // Publish the shell's once-per-page identity result for feature consumers.
   // Identity is fetched once at page load and cached in window.PAIdentity.
   // Feature availability resolution reads this cache only and never probes endpoints
   // to discover capabilities — the manifest is authoritative and must not be rediscovered.
   // Setup listens to the event, while the cache closes late-load ordering gaps.
+  // Layer 1 validation ensures the manifest conforms to the expected shape before
+  // pa:identity-available is published; invalid manifests are treated as unavailable.
   const publishIdentity = (identity) => {
-    window.PAIdentity = identity;
+    const validatedIdentity = validateIdentityShape(identity);
+    window.PAIdentity = validatedIdentity;
     if (typeof window.dispatchEvent === "function") {
-      window.dispatchEvent(new CustomEvent("pa:identity-available", { detail: identity }));
+      if (validatedIdentity) {
+        window.dispatchEvent(new CustomEvent("pa:identity-available", { detail: validatedIdentity }));
+      } else {
+        // Invalid manifest shape is treated as unavailable
+        window.dispatchEvent(new CustomEvent("pa:identity-unavailable", { detail: { error: "invalid manifest" } }));
+      }
     }
   };
 
