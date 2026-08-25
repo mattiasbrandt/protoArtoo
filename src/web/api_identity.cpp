@@ -28,11 +28,12 @@ namespace {
 
 void sendIdentityResponse(WebRequest& req, const SystemConfig& system) {
     // Fixed buffer for identity JSON serialization including the manifest.
-    // IDENTITY_JSON_MAX_BYTES = 384 B; see include/build_flags.inc for the manifest.
-    // At maximum droid name (32 chars, DROID_NAME_MAX_LEN), the payload is ~254 B,
-    // leaving ~130 B for future manifest rows (each board_capability or build_flag
-    // entry costs ~15-30 B depending on name length, so roughly 4 more rows possible).
-    // Every capability/flag added to the manifest grows this payload toward the ceiling.
+    // IDENTITY_JSON_MAX_BYTES = 384 B; usable JSON is 383 B (1 byte for NUL).
+    // Worst case: 32-char droid name (DROID_NAME_MAX_LEN), mdnsUseName false,
+    // and every manifest value false (5 chars beats true's 4 chars) = 258 B JSON.
+    // Headroom: 383 - 258 = 125 B. Cost per additional row: PA_CAP_* entries cost
+    // ~27 B (fits 4 more); PA_*_FLAG entries cost ~24 B (fits 5 more). Every
+    // capability/flag added to the manifest grows this payload toward the ceiling.
     char body[IDENTITY_JSON_MAX_BYTES] = {};
     if (!formatIdentityJson(body, sizeof(body), system.droid_name, system.mdns_use_name)) {
         webSendJsonError(req, 500, "identity response overflow");
