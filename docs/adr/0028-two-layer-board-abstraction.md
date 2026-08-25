@@ -32,10 +32,12 @@ Naming is part of the decision:
   true of another P4 board belongs to the chip target and is named ESP32-P4.
 
 The current acceptance test for adding another ESP32-P4 Board Variant is one
-pin-map block, one PlatformIO env, and one entry in the Makefile's explicit
-`P4_ENVS` toolchain-selection list. The list is a deliberate exception to the
-otherwise two-layer board definition; the Makefile does not inspect
-`platformio.ini` to discover a target's chip.
+pin-map block, one PlatformIO env, and one entry in the size-budget
+registry (`tools/build_budgets.json`), whose per-chip `platforms` section
+also tells the Makefile which envs build with the ESP32-P4 toolchain. That
+registry entry is the one place a variant is declared outside the two
+layers; the Makefile does not inspect `platformio.ini` to discover a
+target's chip.
 
 ## Considered options
 

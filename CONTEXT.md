@@ -395,7 +395,7 @@ The chip-level build target covering any ESP32-P4-based controller board. It own
 _Avoid_: firebeetle target, Hosted WiFi as a chip property, naming the chip layer after one board
 
 **Board Variant**:
-The per-physical-board layer under a chip target: pin map, fitted devices, transport/reset wiring, lifecycle requirements, quirks, and one PlatformIO env. Adding an ESP32-P4 variant also requires one entry in the Makefile's explicit `P4_ENVS` toolchain-selection list (ADR 0028).
+The per-physical-board layer under a chip target: pin map, fitted devices, transport/reset wiring, lifecycle requirements, quirks, and one build environment. Adding a variant costs a pin map, a build environment, and a size-budget entry that also tells the toolchain which chip the environment builds for (ADR 0028).
 _Avoid_: board port, per-board fork
 
 **firebeetle2**:
@@ -425,6 +425,10 @@ _Avoid_: network as a safety dependency, automatic controller restart on network
 **Bench-Mode**:
 The development posture where a controller board runs connected to USB only, without droid hardware — exercising HTTP, SSE, serial, OTA, and bench-attachable peripherals. A posture, not a verification status: evidence gathered in Bench-Mode is at most Controller Upload Verified.
 _Avoid_: bench verified, bench tested, using bench work as integrated-hardware evidence
+
+**Bench Runbook**:
+One ticket per Board Variant that lists every device-side check the epic's tickets still owe, each row linking to the owning ticket's criterion rather than restating it, so a bench day executes one sheet and each run leaves one dated evidence comment. It owns no criteria of its own and does not replace the owning ticket's acceptance.
+_Avoid_: copying criteria into the runbook, runbook as the acceptance record, per-ticket bench sessions
 
 **Estop**:
 The latched safe state in which the droid refuses to drive until an operator explicitly clears it. Set by an operator request or by a failsafe layer; never cleared automatically, and never cleared by the condition that set it going away.
