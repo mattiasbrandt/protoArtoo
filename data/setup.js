@@ -438,9 +438,9 @@
     });
 
     toggle.state = result.state;
-    // Derive available from phase and state: feature is available only when
-    // the manifest is ready and the feature is either on or included
-    toggle.available = result.phase === "ready" && (result.state === "on" || result.state === "included");
+    // Derive available from phase and state: control is interactable when
+    // the manifest is ready and the feature is not gated
+    toggle.available = result.phase === "ready" && result.state !== "not-on-this-board" && result.state !== "not-in-this-build";
     toggle.status.textContent = window.PAFeatureAvailability.labelFor(result.state);
     toggle.status.className = `toggle-status feature-state feature-state-${result.state}`;
     toggle.input.disabled = !toggle.available;
@@ -1425,9 +1425,9 @@
           hasToggle: false,  // Profiler is compile-time only, no runtime toggle
         })
       : { phase: "checking", state: "checking" };
-    // Derive available from phase and state: feature is available only when
-    // the manifest is ready and the feature is either on or included
-    const available = result.phase === "ready" && (result.state === "on" || result.state === "included");
+    // Derive available from phase and state: control is interactable when
+    // the manifest is ready and the feature is not gated
+    const available = result.phase === "ready" && result.state !== "not-on-this-board" && result.state !== "not-in-this-build";
     const stateLabel = window.PAFeatureAvailability.labelFor(result.state);
     const stateReason = window.PAFeatureAvailability.reasonFor(result.state, featureName, {
       on: "Live memory readings refresh while this page is open.",
