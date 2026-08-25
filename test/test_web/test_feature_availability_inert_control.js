@@ -217,7 +217,7 @@ test("shell identity delivery reaches Setup after both shipped resources load", 
   assert.equal(env.window.PAIdentity.droidName, "artoo", "the shell cache keeps the complete manifest");
   assert.equal(env.element("droid-name-input").value, "artoo", "Setup received the shell event");
   assert.equal(env.element("profiler-card").dataset.featureState, "not-in-this-build");
-  assert.equal(env.element("profiler-availability-status").textContent, "Not in this build");
+  assert.equal(env.element("profiler-availability-status").textContent, "Not included");
   assert.equal(
     env.requests.filter((request) => request.method === "GET" && request.path === "/api/identity").length,
     1,
@@ -253,7 +253,7 @@ test("an unavailable component toggle ignores even a scripted change event", asy
   await env.publishIdentity(false);
 
   assert.equal(arm1.disabled, true);
-  assert.equal(env.element("status-arm1").textContent, "Not in this build");
+  assert.equal(env.element("status-arm1").textContent, "Not included");
 
   arm1.checked = false;
   await arm1.emit("change");

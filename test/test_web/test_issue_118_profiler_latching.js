@@ -99,14 +99,14 @@ test("component rows render present toggles as On and Off", async () => {
   assert.equal(env.element("enable-arm2").disabled, false);
 });
 
-test("the profiler stays visible and says Not in this build without probing its endpoint", async () => {
+test("the profiler stays visible and says Not included without probing its endpoint", async () => {
   const env = await loadSetupPage();
   await env.publishIdentity(identity({ profiler: false }));
 
   assert.equal(env.profilerRequests().length, 0);
   assert.equal(env.element("profiler-card").hidden, false);
   assert.equal(env.element("profiler-card").dataset.featureState, "not-in-this-build");
-  assert.equal(env.element("profiler-availability-status").textContent, "Not in this build");
+  assert.equal(env.element("profiler-availability-status").textContent, "Not included");
   assert.equal(
     env.element("profiler-availability-reason").textContent,
     "This controller was loaded without Memory Profiler.",
