@@ -141,8 +141,8 @@ test("the profiler starts polling only after the manifest reports it present", a
   await env.publishIdentity(identity({ profiler: true }));
 
   assert.equal(env.profilerRequests().length, 1, "the first reading should start immediately once present");
-  assert.equal(env.element("profiler-card").dataset.featureState, "on");
-  assert.equal(env.element("profiler-availability-status").textContent, "On");
+  assert.equal(env.element("profiler-card").dataset.featureState, "included");
+  assert.equal(env.element("profiler-availability-status").textContent, "Included");
   assert.ok(env.intervals.some((interval) => interval.ms === 5000));
 });
 
@@ -150,6 +150,8 @@ test("transient profiler errors do not change compile-time availability", async 
   const env = await loadSetupPage({ profilerAnswer: () => { throw new Error("controller busy"); } });
   await env.publishIdentity(identity({ profiler: true }));
 
+  // Compile-time availability is immutable - should stay "included" despite errors
+  assert.equal(env.element("profiler-card").dataset.featureState, "included", "state unchanged by transient errors");
   const profilerIntervals = env.intervals.filter((interval) => interval.ms === 5000);
   assert.equal(profilerIntervals.length, 2, "status fallback plus profiler cadence");
   profilerIntervals.forEach((interval) => interval.fn());
