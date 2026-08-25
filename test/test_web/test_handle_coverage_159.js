@@ -32,6 +32,9 @@ const CONFIG_PAYLOAD = {
 const IDENTITY_PAYLOAD = {
   droidName: "R2-D2",
   mdnsUseName: true,
+  board: "artoo_esp32",
+  board_capabilities: { PA_CAP_NATIVE_WIFI: true },
+  build_flags: { PA_HEAP_PROFILE: false },
 };
 
 const WIFI_DIAG_PAYLOAD = {
