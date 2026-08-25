@@ -158,7 +158,7 @@ test("transient profiler errors do not change compile-time availability", async 
   await env.settle();
 
   assert.equal(env.profilerRequests().length, 2);
-  assert.equal(env.element("profiler-card").dataset.featureState, "on");
+  assert.equal(env.element("profiler-card").dataset.featureState, "included", "compile-time state is immutable");
 });
 
 test("a board-gated component renders Not on this board and remains visible", async () => {
