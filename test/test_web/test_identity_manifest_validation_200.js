@@ -397,3 +397,4 @@ test("Layer 1: array as build_flags is rejected", () => {
   const unavailableEvents = dispatchedEvents.filter(e => e.type === "pa:identity-unavailable");
   assert(unavailableEvents.length > 0, "Should reject array as build_flags");
 });
+
