@@ -7,6 +7,8 @@
 (() => {
   const listeners = new Set();
   let phase = "loading";
+  // Identity manifest is fetched once by shell.js at page load and cached in window.PAIdentity.
+  // Do not restore per-card endpoint probing; the resolve() function reads this cache only.
   let identity = null;
   const STATE_LABELS = Object.freeze({
     on: "On",
@@ -17,8 +19,11 @@
     "identity-unavailable": "Availability unknown",
   });
 
-  // Resolve the compile-time manifest tiers first, then the optional runtime
-  // toggle. Component rows and build-conditional panels call this same seam.
+  // Resolve the compile-time manifest tiers first (board capability, build flag),
+  // then the optional runtime toggle (Component Toggle). Compile tiers resolve
+  // before runtime state to preserve the reason: "not in this build" or "not on
+  // this board" takes precedence over "off". Component rows and build-conditional
+  // panels call this same seam.
   const resolve = ({ boardCapability = "", buildFlag = "", enabled = true } = {}) => {
     const needsManifest = Boolean(boardCapability || buildFlag);
     if (needsManifest && phase !== "ready") {
@@ -1428,6 +1433,9 @@
       polling = true;
       poll.start();
     } else if (!result.available && polling) {
+      // Stopping the poll on availability loss is part of inertness: when the
+      // profiler is not available (compile-time gate or missing from this image),
+      // cease endpoint polling to avoid false "update failed" messages.
       polling = false;
       poll.stop();
     }

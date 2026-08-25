@@ -44,12 +44,14 @@
 // Board Capability Gates (ADR 0029). Each Board Variant defines every gate
 // as 0 or 1; the manifest expansion below makes an omitted declaration or a
 // non-binary value a compile-time error without emitting code or data.
+// Capability values are invariant PCB topology facts, never runtime state or
+// C6/provisioning health — they declare what the board's silicon can do.
 #if PA_BOARD == PA_BOARD_ARTOO_ESP32
   #define PA_CAP_NATIVE_WIFI 1
   #define PA_CAP_HOSTED_WIFI 0
 #elif PA_BOARD == PA_BOARD_FIREBEETLE2
   #define PA_CAP_NATIVE_WIFI 0
-  #define PA_CAP_HOSTED_WIFI 1
+  #define PA_CAP_HOSTED_WIFI 1  // Declared here before its consumers (#188, #189) to gate the capability early
 #else
   #error "PA_BOARD value not recognized in capability selection"
 #endif
@@ -63,6 +65,8 @@
 // Flag. Expand the manifest in the production compile path so missing or
 // non-binary values fail at compile time; the plain-host config.h pin probes
 // intentionally exercise only board declarations.
+// Build flags are always defined as 0 or 1 and tested with #if (never #ifdef);
+// using #ifdef on a 0-valued flag would compile the feature in, inverting the gate.
 #if ARDUINO || PA_NATIVE_TEST_STUBS
   #define PA_BUILD_FLAG(name) \
       static_assert((name) == 0 || (name) == 1, #name " must be defined as 0 or 1");
@@ -70,9 +74,11 @@
   #undef PA_BUILD_FLAG
 #endif
 
-// Heap tracing is a troubleshooting-only Build Feature Flag layered on the
-// heap profiler and the SDK's standalone tracing support. Keep invalid images
-// from compiling even if an environment is configured by hand.
+// Heap tracing (PA_HEAP_TRACING) is a troubleshooting-only Build Feature Flag
+// SEPARATE from PA_HEAP_PROFILE and additionally requires SDK CONFIG_HEAP_TRACING.
+// It gates system.action.profiler-trace-start/stop — a distinct operator feature.
+// Keep invalid images from compiling even if an environment is configured by hand.
+// Every checked-in PlatformIO environment leaves this at 0 deliberately.
 #if PA_HEAP_TRACING
   #if !PA_HEAP_PROFILE
     #error "PA_HEAP_TRACING=1 requires PA_HEAP_PROFILE=1"

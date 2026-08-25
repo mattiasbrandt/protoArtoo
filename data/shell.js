@@ -45,6 +45,9 @@
   applyIdentityName("protoartoo");
 
   // Publish the shell's once-per-page identity result for feature consumers.
+  // Identity is fetched once at page load and cached in window.PAIdentity.
+  // Feature availability resolution reads this cache only and never probes endpoints
+  // to discover capabilities — the manifest is authoritative and must not be rediscovered.
   // Setup listens to the event, while the cache closes late-load ordering gaps.
   const publishIdentity = (identity) => {
     window.PAIdentity = identity;

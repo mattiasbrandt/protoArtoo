@@ -5,7 +5,10 @@
 //
 // Instrumentation call sites use this interface unconditionally. When the
 // Build Feature Flag is 0, inline stubs compile away; route and translation-unit
-// boundaries remain the only compile-time gates.
+// boundaries remain the only compile-time gates. Gating only the implementation
+// (.cpp) while leaving the route registered recreates the header defect: the
+// endpoint becomes a false presence. Unconditional no-op stubs here keep call
+// sites always-reachable even in builds without the profiler.
 // =============================================================================
 #pragma once
 
