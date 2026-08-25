@@ -1,6 +1,10 @@
+diff --git a/data/shell.js b/data/shell.js
+index 3d738d5..3258dd8 100644
 --- a/data/shell.js
 +++ b/data/shell.js
-@@ -50,7 +50,7 @@ const validateIdentityShape = (identity) => {
+@@ -50,7 +50,7 @@
+   // returns the validated identity.
+   const validateIdentityShape = (identity) => {
      // Identity must be an object
 -    if (!identity || typeof identity !== "object" || Array.isArray(identity)) {
 +    if (typeof identity !== "object" || Array.isArray(identity)) {

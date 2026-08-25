@@ -1,6 +1,10 @@
+diff --git a/data/shell.js b/data/shell.js
+index 3d738d5..ddfebc2 100644
 --- a/data/shell.js
 +++ b/data/shell.js
-@@ -65,14 +65,6 @@
+@@ -65,20 +65,7 @@
+       return null;
+     }
      // Every present value in board_capabilities and build_flags must be a boolean
 -    if (identity.board_capabilities) {
 -      for (const [key, value] of Object.entries(identity.board_capabilities)) {
@@ -16,5 +20,7 @@
 -        }
 -      }
 -    }
-+    // Validation removed - accept any type
++    // Type check removed
      return identity;
+   };
+ 

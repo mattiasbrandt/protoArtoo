@@ -1,0 +1,20 @@
+diff --git a/data/shell.js b/data/shell.js
+index 3d738d5..210f102 100644
+--- a/data/shell.js
++++ b/data/shell.js
+@@ -90,11 +90,11 @@
+   // Layer 1 validation ensures the manifest conforms to the expected shape before
+   // pa:identity-available is published; invalid manifests are treated as unavailable.
+   const publishIdentity = (identity) => {
+-    const validatedIdentity = validateIdentityShape(identity);
+-    window.PAIdentity = validatedIdentity;
++    // MUTATION: skip validation
++    window.PAIdentity = identity;
+     if (typeof window.dispatchEvent === "function") {
+-      if (validatedIdentity) {
+-        window.dispatchEvent(new CustomEvent("pa:identity-available", { detail: validatedIdentity }));
++      if (identity) {
++        window.dispatchEvent(new CustomEvent("pa:identity-available", { detail: identity }));
+       } else {
+         // Invalid manifest shape is treated as unavailable
+         window.dispatchEvent(new CustomEvent("pa:identity-unavailable", { detail: { error: "invalid manifest" } }));

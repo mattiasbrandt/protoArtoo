@@ -1,0 +1,13 @@
+diff --git a/data/setup.js b/data/setup.js
+index 9df606b..243b15c 100644
+--- a/data/setup.js
++++ b/data/setup.js
+@@ -39,7 +39,7 @@
+         : { phase: "checking", state: "checking" };
+     }
+     if (boardCapability) {
+-      if (!identity?.board_capabilities || !Object.hasOwn(identity.board_capabilities, boardCapability)) {
++      if (!identity?.board_capabilities) {
+         // Missing key in board_capabilities means manifest is incomplete; availability unknown
+         return { phase: "checking", state: "checking" };
+       }

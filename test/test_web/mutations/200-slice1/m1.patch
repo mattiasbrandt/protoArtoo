@@ -1,12 +1,13 @@
+diff --git a/data/setup.js b/data/setup.js
+index 9df606b..f44ea61 100644
 --- a/data/setup.js
 +++ b/data/setup.js
-@@ -38,9 +38,7 @@ const resolve = ({ boardCapability = "", buildFlag = "", enabled = true, hasTog
+@@ -48,7 +48,7 @@
        }
      }
      if (buildFlag) {
 -      if (!identity?.build_flags || !Object.hasOwn(identity.build_flags, buildFlag)) {
 +      if (!identity?.build_flags) {
--        // Missing key in build_flags means manifest is incomplete; availability unknown
+         // Missing key in build_flags means manifest is incomplete; availability unknown
          return { phase: "checking", state: "checking" };
        }
-       if (identity.build_flags[buildFlag] !== true) {
