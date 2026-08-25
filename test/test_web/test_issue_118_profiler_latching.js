@@ -206,3 +206,17 @@ test("unavailable profiler renders status lamp, not switch affordance", async ()
     "lamp should have feature-state-not-in-this-build class for unavailable profiler"
   );
 });
+
+test("available profiler without runtime toggle shows Included state", async () => {
+  const env = await loadSetupPage();
+  await env.publishIdentity(identity({ profiler: true }));
+
+  const card = env.element("profiler-card");
+  assert.equal(card.dataset.featureState, "included");
+  assert.equal(env.element("profiler-availability-status").textContent, "Included");
+  assert.ok(env.element("profiler-availability-lamp"), "lamp indicator should exist");
+  assert.ok(
+    env.element("profiler-availability-lamp").className.includes("feature-state-included"),
+    "lamp should have feature-state-included class"
+  );
+});

@@ -25,7 +25,7 @@
   // before runtime state to preserve the reason: "not in this build" or "not on
   // this board" takes precedence over "off". Component rows and build-conditional
   // panels call this same seam.
-  const resolve = ({ boardCapability = "", buildFlag = "", enabled = true } = {}) => {
+  const resolve = ({ boardCapability = "", buildFlag = "", enabled = true, hasToggle = true } = {}) => {
     const needsManifest = Boolean(boardCapability || buildFlag);
     if (needsManifest && phase !== "ready") {
       return phase === "error"
@@ -37,6 +37,9 @@
     }
     if (buildFlag && identity?.build_flags?.[buildFlag] !== true) {
       return { state: "not-in-this-build", available: false };
+    }
+    if (!hasToggle && enabled) {
+      return { state: "included", available: true };
     }
     return enabled
       ? { state: "on", available: true }
@@ -1399,12 +1402,13 @@
       ? window.PAFeatureAvailability.resolve({
           boardCapability: card.dataset.boardCapability || "",
           buildFlag: card.dataset.buildFlag || "",
+          hasToggle: false,  // Profiler is compile-time only, no runtime toggle
         })
       : { state: "checking", available: false };
     const stateLabel = window.PAFeatureAvailability.labelFor(result.state);
     const stateReason = window.PAFeatureAvailability.reasonFor(result.state, featureName, {
       on: "Live memory readings refresh while this page is open.",
-      notInThisBuild: "Memory Profiler is included only in troubleshooting firmware.",
+      notInThisBuild: "Memory Profiler is included only in troubleshooting firmware.", // PROVISIONAL: when a second Build Feature Flag needs a bespoke reason, promote this to a registry field + drift-checker coverage
     });
     card.hidden = false;
     card.classList.remove(

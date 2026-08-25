@@ -887,21 +887,6 @@ input.input-narrow:focus {
   white-space: nowrap;
 }
 
-.feature-availability-toggle {
-  position: relative;
-  width: 40px;
-  height: 24px;
-  padding: 0;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--surface-alt);
-  cursor: default;
-}
-
-.feature-availability-toggle:disabled {
-  opacity: 1;
-}
-
 .feature-availability-lamp {
   position: absolute;
   top: 4px;
@@ -912,12 +897,6 @@ input.input-narrow:focus {
   background: var(--warning);
   box-shadow: 0 0 8px rgba(232, 168, 50, 0.42);
   transition: left 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
-}
-
-.feature-availability-toggle[aria-checked="true"] .feature-availability-lamp {
-  left: 20px;
-  background: var(--success);
-  box-shadow: 0 0 9px rgba(84, 200, 122, 0.55);
 }
 
 .feature-availability-lamp-indicator {
@@ -939,12 +918,17 @@ input.input-narrow:focus {
   width: 14px;
   height: 14px;
   border-radius: 50%;
+  /* Default: amber warning for unavailable states (not-in-this-build, not-on-this-board, checking, identity-unavailable).
+     All unavailable causes share amber — the operator cannot act differently on them.
+     Green (success) reserved for available states (on, included). */
   background: var(--warning);
   box-shadow: 0 0 8px rgba(232, 168, 50, 0.42);
   transition: background 0.18s ease, box-shadow 0.18s ease;
 }
 
-.feature-availability-lamp-indicator.feature-state-on .feature-availability-lamp {
+/* Available features: compile-time present (included) and runtime enabled (on) */
+.feature-availability-lamp-indicator.feature-state-on .feature-availability-lamp,
+.feature-availability-lamp-indicator.feature-state-included .feature-availability-lamp {
   background: var(--success);
   box-shadow: 0 0 9px rgba(84, 200, 122, 0.55);
 }
