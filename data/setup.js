@@ -51,7 +51,7 @@
   // Turn a resolved state into the maker-facing explanation shown below a
   // feature. Component and profiler renderers share this copy policy.
   const reasonFor = (state, featureName, { on = "", notInThisBuild = "" } = {}) => {
-    if (state === "on") return on;
+    if (state === "on" || state === "included") return on;
     if (state === "not-on-this-board") return `This controller board cannot run ${featureName}.`;
     if (state === "not-in-this-build") return notInThisBuild || `This controller was loaded without ${featureName}.`;
     if (state === "checking") return `Checking whether this controller can run ${featureName}…`;

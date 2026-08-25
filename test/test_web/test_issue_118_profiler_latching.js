@@ -161,6 +161,15 @@ test("transient profiler errors do not change compile-time availability", async 
   assert.equal(env.element("profiler-card").dataset.featureState, "included", "compile-time state is immutable");
 });
 
+test("included profiler renders a non-empty reason line", async () => {
+  const env = await loadSetupPage();
+  await env.publishIdentity(identity({ profiler: true }));
+
+  const reasonElement = env.element("profiler-availability-reason");
+  assert.notEqual(reasonElement.textContent, "", "reason line must be non-empty for included state");
+  assert.equal(reasonElement.textContent, "Live memory readings refresh while this page is open.", "reason text matches profiler context");
+});
+
 test("a board-gated component renders Not on this board and remains visible", async () => {
   const env = await loadSetupPage();
   const arm1 = env.element("enable-arm1");
