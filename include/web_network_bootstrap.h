@@ -1,36 +1,25 @@
 // =============================================================================
 // include/web_network_bootstrap.h
 //
-// WiFi, mDNS, OTA, and network recovery bootstrap for protoArtoo.
-// This module handles network-level bring-up concerns: WiFi event handling,
-// device posture decisions, and network recovery gesture evaluation.
+// WiFi boot posture decision and application for protoArtoo.
+// This module handles device-level posture concerns: evaluating network recovery
+// gestures, building developer WiFi shortcuts, deciding boot postures, and
+// applying them. Event handling and registration are the network manager seam's
+// job (web_network_manager.h).
 //
-// ARCHITECTURE: Callback Pair with HTTP Server
+// ARCHITECTURE: Vendor-Free Abstraction via Network Manager Seam
 // - web_server.cpp (HTTP layer) owns initialization entry point (webServerInit)
-//   and registers the WiFi event handler (handleWiFiEvent)
-// - web_network_bootstrap.cpp (bootstrap layer) handles WiFi events and calls
-//   back to startHttpServerOnce() (in web_server.cpp) when WiFi is ready
-// - This creates an intentional two-way dependency that preserves the critical
+//   and calls networkManagerInitialize() (web_network_manager.h) instead of
+//   registering a WiFi event handler directly
+// - web_network_bootstrap.cpp (bootstrap layer) provides pure posture decision
+//   logic and coordinates posture application with the network manager backend
+// - The network manager backend handles vendor event translation and registration;
+//   this module handles only platform-agnostic boot decisions
+// - This creates an intentional three-way contract that preserves the critical
 //   invariant: initPsychicWebServer() is invoked from the WiFi event callback
-//   path, never from setup() - each unit needs the other for correct behavior
-// - All symbols declared in their respective owner headers; no cross-include
-//   of .cpp files required for linking
+//   path, never from setup() - each unit needs the others for correct behavior
 // =============================================================================
 #pragma once
-
-#include <Arduino.h>
-
-#ifdef ARDUINO
-#include <WiFi.h>
-#else
-// Native test build: WiFiEvent_t is a typedef defined in native_test_stubs.cpp
-typedef int WiFiEvent_t;
-#endif
-
-// WiFi event handler. Called by the WiFi driver when WiFi events occur
-// (AP started, STA connected, etc.). Starts the HTTP server upon successful
-// WiFi connection.
-void handleWiFiEvent(WiFiEvent_t event);
 
 // Network bootstrap: decide and apply WiFi boot posture. Evaluates the
 // network recovery gesture, builds the developer WiFi shortcut, decides the

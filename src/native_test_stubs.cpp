@@ -768,4 +768,43 @@ bool audioQueuePlayCategory(AudioPlaybackCategory /*category*/, AudioPlaybackSlo
 // Note: audioQueueDollar and audioQueueTrackStop stubs already exist elsewhere
 // in this file (see lines ~80-86, ~336). No need to redefine them here.
 
+// Network manager seam (web_network_manager.h) implementation for host tests.
+// No-op implementation: native tests do not exercise WiFi events or require
+// the HTTP server to start.
+
+// Include here to make types available for the networkManagerApplyBootPosture signature
+#include "web_network_manager.h"
+
+void networkManagerInitialize() {
+    // No-op: native tests do not call startHttpServerOnce()
+    // or interact with the Arduino WiFi driver
+}
+
+void networkManagerApplyBootPosture(WifiBootPosture posture, const WifiConfig& settings) {
+    (void)posture;
+    (void)settings;
+    // No-op: native tests do not exercise actual WiFi configuration
+}
+
+// ESP-IDF reset reason enum and stub — native tests need this for
+// evaluateNetworkRecoveryGesture() to compile
+enum esp_reset_reason_t {
+    ESP_RST_UNKNOWN   = 0,
+    ESP_RST_POWERON   = 1,
+    ESP_RST_EXT       = 2,
+    ESP_RST_SW        = 3,
+    ESP_RST_PANIC     = 4,
+    ESP_RST_INT_WDT   = 5,
+    ESP_RST_TASK_WDT  = 6,
+    ESP_RST_WDT       = 7,
+    ESP_RST_DEEPSLEEP = 8,
+    ESP_RST_BROWNOUT  = 9,
+    ESP_RST_SDIO      = 10,
+};
+
+esp_reset_reason_t esp_reset_reason() {
+    // Always return software reset in native tests
+    return ESP_RST_SW;
+}
+
 #endif

@@ -40,6 +40,8 @@
 #include "../../include/web_request.h"
 #include "../../include/web_server_psychic.h"
 #include "../../include/web_network_bootstrap.h"
+#include "../../include/web_network_manager.h"
+#include "../../include/wifi_recovery_gesture.h"
 
 // src/secrets.h is the Developer WiFi Shortcut (ADR 0015): local/self-build-only
 // compile-time WiFi defaults. It is never required to compile or boot - public
@@ -101,10 +103,8 @@ static char s_otaLastError[64] = "none";
 
 // Network Recovery Mode local entry gesture (ADR 0015). See
 // include/wifi_recovery_gesture.h for the pure decision rule. The count is
-// persisted under NVS_NAMESPACE so it survives the reboot(s) the gesture
-// itself requires; it is cleared once uptime confirms the boot was not part
-// of a rapid power-cycle sequence.
-const char* kWifiRecoveryCycleKey = "wifiRecovN";
+// See include/wifi_recovery_gesture.h for kWifiRecoveryCycleKey (defined in
+// wifi_recovery_gesture.cpp).
 const uint32_t WIFI_RECOVERY_GESTURE_STABLE_MS = 20000;
 
 namespace {
@@ -994,8 +994,10 @@ void webServerInit() {
 
     loadFsVersion();
 
-    // Set up the WiFi event handler (defined in web_network_bootstrap.cpp)
-    WiFi.onEvent(handleWiFiEvent);
+    // Initialize network manager: register WiFi event handler.
+    // The backend (web_network_manager_native.cpp or native_test_stubs.cpp)
+    // handles the actual registration and event translation.
+    networkManagerInitialize();
 
     if (!eventTaskStarted) {
         // Keep 6144 bytes for status/rc/log SSE work and JSON serialization headroom.
