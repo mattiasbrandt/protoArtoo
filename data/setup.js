@@ -10,6 +10,7 @@
   // Identity manifest is fetched once by shell.js at page load and cached in window.PAIdentity.
   // Do not restore per-card endpoint probing; the resolve() function reads this cache only.
   let identity = null;
+  let identityErrorReason = null;  // "incompatible" or "no-response" when phase === "error"
   const STATE_LABELS = Object.freeze({
     on: "On",
     off: "Off",
@@ -85,7 +86,15 @@
     if (state === "not-on-this-board") return `This controller board cannot run ${featureName}.`;
     if (state === "not-in-this-build") return notInThisBuild || `This controller was loaded without ${featureName}.`;
     if (state === "checking") return `Checking whether this controller can run ${featureName}…`;
-    if (state === "identity-unavailable") return `Could not check ${featureName}. Reconnecting to the controller…`;
+    if (state === "identity-unavailable") {
+      // Two different failures read as identity-unavailable; differ by reason:
+      // - "no-response": transport failure, retryable, genuinely reconnecting
+      // - "incompatible": validation failure, terminal, no reconnection coming
+      if (identityErrorReason === "incompatible") {
+        return "The controller's manifest is invalid.";
+      }
+      return `Could not check ${featureName}. Reconnecting to the controller…`;
+    }
     return "";
   };
 
@@ -97,9 +106,10 @@
     notify();
   };
 
-  const setIdentityError = () => {
+  const setIdentityError = (reason = "no-response") => {
     identity = null;
     phase = "error";
+    identityErrorReason = reason;
     notify();
   };
 
@@ -256,6 +266,81 @@
     setIdentityFeedback(`Identity loaded at ${new Date().toLocaleTimeString()}`, "success");
   };
 
+  // Perform lazy diagnosis of identity failure after assets are ready.
+  // Fetches version info to determine why identity is invalid and displays
+  // appropriate diagnosis sentence. Never blocks bootstrap state transitions.
+  const performIdentityDiagnosis = async () => {
+    try {
+      // Fetch expected versions (built into this deployment)
+      let expectedFwVersion = "unknown";
+      if (window.PAApi) {
+        try {
+          const fwResult = await window.PAApi.get("/fw-version.json", { timeoutMs: 2500, cache: "no-store" });
+          if (fwResult.data?.fwVersion) {
+            expectedFwVersion = String(fwResult.data.fwVersion);
+          }
+        } catch (_error) {
+          // Continue with unknown if fetch fails
+        }
+      }
+
+      // Get running version from status stream (live or cached)
+      let runningFwVersion = "unknown";
+      let runningFsVersion = "unknown";
+      const lastStatus = window.PAStatusStream?.getLastStatus?.();
+      if (lastStatus?.firmwareVersion) {
+        runningFwVersion = String(lastStatus.firmwareVersion);
+      }
+      if (lastStatus?.fsVersion) {
+        runningFsVersion = String(lastStatus.fsVersion);
+      }
+
+      // If no cached status, wait briefly for a status event with bounded timeout
+      if (runningFwVersion === "unknown" && window.PAStatusStream?.isSupported?.()) {
+        try {
+          const statusPromise = new Promise((resolve) => {
+            const unsubscribe = window.PAStatusStream.subscribe((eventType, payload) => {
+              if (eventType === "status" && payload?.firmwareVersion) {
+                unsubscribe();
+                resolve(payload);
+              }
+            });
+            // Timeout after 3 seconds to avoid indefinite wait
+            setTimeout(() => {
+              unsubscribe();
+              resolve(null);
+            }, 3000);
+          });
+          const status = await statusPromise;
+          if (status?.firmwareVersion) {
+            runningFwVersion = String(status.firmwareVersion);
+          }
+          if (status?.fsVersion) {
+            runningFsVersion = String(status.fsVersion);
+          }
+        } catch (_error) {
+          // Continue with last known values
+        }
+      }
+
+      // Determine diagnosis based on version comparison
+      let diagMessage = "The controller could not report which features are available.";
+      if (expectedFwVersion !== "unknown" && runningFwVersion !== "unknown") {
+        if (expectedFwVersion !== runningFwVersion) {
+          diagMessage = "The firmware and filesystem do not match. Upload both from the same release.";
+        } else {
+          // Versions match but identity is invalid (incompatible manifest)
+          diagMessage = "The controller reported an invalid manifest. Uploading the same release again will not fix it.";
+        }
+      }
+
+      setDiagFeedback(diagMessage, "error");
+    } catch (error) {
+      console.warn("[setup] diagnosis failed:", error);
+      // Silent failure: don't show a diagnosis error, leave feedback empty
+    }
+  };
+
   window.addEventListener("pa:identity-available", (event) => {
     receiveIdentity(event.detail);
     // Clear the Retry button when identity loads successfully
@@ -264,8 +349,9 @@
     }
   });
 
-  window.addEventListener("pa:identity-unavailable", () => {
-    window.PAFeatureAvailability.setIdentityError();
+  window.addEventListener("pa:identity-unavailable", (event) => {
+    const reason = event.detail?.reason || "no-response";
+    window.PAFeatureAvailability.setIdentityError(reason);
     setIdentityFeedback("Could not load controller identity. Reconnecting…", "error");
     // Add persistent Retry button outside the live region
     if (window.PABootstrap && identityActions && !identityActions.querySelector("button")) {
@@ -279,6 +365,12 @@
       });
       identityActions.innerHTML = "";
       identityActions.appendChild(retryButton);
+    }
+    // Lazy diagnosis: after assets load, fetch version info to provide specific feedback
+    if (reason === "incompatible") {
+      window.addEventListener("pa:assets-ready", () => {
+        performIdentityDiagnosis();
+      }, { once: true });
     }
   });
 

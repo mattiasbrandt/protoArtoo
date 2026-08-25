@@ -1,0 +1,13 @@
+--- a/data/setup.js
++++ b/data/setup.js
+@@ -368,10 +368,6 @@ (() => {
+       identityActions.innerHTML = "";
+       identityActions.appendChild(retryButton);
+     }
+-    // Lazy diagnosis: after assets load, fetch version info to provide specific feedback
+-    if (reason === "incompatible") {
+-      window.addEventListener("pa:assets-ready", () => {
+-        performIdentityDiagnosis();
+-      }, { once: true });
+-    }
+   });

@@ -1,0 +1,14 @@
+--- a/data/setup.js
++++ b/data/setup.js
+@@ -89,12 +89,7 @@ (() => {
+     if (state === "identity-unavailable") {
+       // Two different failures read as identity-unavailable; differ by reason:
+       // - "no-response": transport failure, retryable, genuinely reconnecting
+       // - "incompatible": validation failure, terminal, no reconnection coming
+-      if (identityErrorReason === "incompatible") {
+-        return "The controller's manifest is invalid.";
+-      }
+       return `Could not check ${featureName}. Reconnecting to the controller…`;
+     }
+     return "";
+   };

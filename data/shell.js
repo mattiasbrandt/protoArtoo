@@ -93,7 +93,7 @@
         window.dispatchEvent(new CustomEvent("pa:identity-available", { detail: validatedIdentity }));
       } else {
         // Invalid manifest shape is treated as unavailable
-        window.dispatchEvent(new CustomEvent("pa:identity-unavailable", { detail: { error: "invalid manifest" } }));
+        window.dispatchEvent(new CustomEvent("pa:identity-unavailable", { detail: { error: "invalid manifest", reason: "incompatible" } }));
       }
     }
     return validatedIdentity;
@@ -152,7 +152,7 @@
       // Transport failure: retryable. Unchanged behaviour.
       console.warn("[shell] identity unavailable:", error);
       if (typeof window.dispatchEvent === "function") {
-        window.dispatchEvent(new CustomEvent("pa:identity-unavailable", { detail: { error } }));
+        window.dispatchEvent(new CustomEvent("pa:identity-unavailable", { detail: { error, reason: "no-response" } }));
       }
       throw error;
     }
