@@ -1,0 +1,13 @@
+diff --git a/data/shell.js b/data/shell.js
+index 24bd107..e82136c 100644
+--- a/data/shell.js
++++ b/data/shell.js
+@@ -93,7 +93,7 @@
+         window.dispatchEvent(new CustomEvent("pa:identity-available", { detail: validatedIdentity }));
+       } else {
+         // Invalid manifest shape is treated as unavailable
+-        window.dispatchEvent(new CustomEvent("pa:identity-unavailable", { detail: { error: "invalid manifest", reason: "incompatible" } }));
++        window.dispatchEvent(new CustomEvent("pa:identity-unavailable", { detail: { error: "invalid manifest" } }));
+       }
+     }
+     return validatedIdentity;

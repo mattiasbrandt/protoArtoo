@@ -1,7 +1,8 @@
+diff --git a/data/setup.js b/data/setup.js
+index 8762447..6265d98 100644
 --- a/data/setup.js
 +++ b/data/setup.js
-@@ -89,12 +89,7 @@ (() => {
-     if (state === "identity-unavailable") {
+@@ -90,9 +90,6 @@
        // Two different failures read as identity-unavailable; differ by reason:
        // - "no-response": transport failure, retryable, genuinely reconnecting
        // - "incompatible": validation failure, terminal, no reconnection coming
@@ -11,4 +12,3 @@
        return `Could not check ${featureName}. Reconnecting to the controller…`;
      }
      return "";
-   };

@@ -1,13 +1,16 @@
+diff --git a/data/setup.js b/data/setup.js
+index 8762447..5775b6d 100644
 --- a/data/setup.js
 +++ b/data/setup.js
-@@ -368,10 +368,6 @@ (() => {
-       identityActions.innerHTML = "";
+@@ -367,11 +367,6 @@
        identityActions.appendChild(retryButton);
      }
--    // Lazy diagnosis: after assets load, fetch version info to provide specific feedback
+     // Lazy diagnosis: after assets load, fetch version info to provide specific feedback
 -    if (reason === "incompatible") {
 -      window.addEventListener("pa:assets-ready", () => {
 -        performIdentityDiagnosis();
 -      }, { once: true });
 -    }
    });
+ 
+   const saveIdentity = async () => {

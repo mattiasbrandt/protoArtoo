@@ -1,6 +1,8 @@
+diff --git a/data/setup.js b/data/setup.js
+index 8762447..25c6ff3 100644
 --- a/data/setup.js
 +++ b/data/setup.js
-@@ -326,13 +326,13 @@ (() => {
+@@ -326,7 +326,7 @@
        // Determine diagnosis based on version comparison
        let diagMessage = "The controller could not report which features are available.";
        if (expectedFwVersion !== "unknown" && runningFwVersion !== "unknown") {
@@ -9,8 +11,3 @@
            diagMessage = "The firmware and filesystem do not match. Upload both from the same release.";
          } else {
            // Versions match but identity is invalid (incompatible manifest)
-           diagMessage = "The controller reported an invalid manifest. Uploading the same release again will not fix it.";
-         }
-       }
-
-       setDiagFeedback(diagMessage, "error");
