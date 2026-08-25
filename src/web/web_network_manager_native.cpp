@@ -139,10 +139,8 @@ WifiConnectivityStatus networkManagerQueryConnectivity() {
     result.staConnected = staConnected;
     result.staEnabled = staEnabled;
 
-    // AP IP (empty if AP not active)
-    if (apEnabled) {
-        snprintf(result.apIp, sizeof(result.apIp), "%s", WiFi.softAPIP().toString().c_str());
-    }
+    // AP IP (always read, returns "0.0.0.0" if AP not active - matches original behavior)
+    snprintf(result.apIp, sizeof(result.apIp), "%s", WiFi.softAPIP().toString().c_str());
 
     // STA IP and SSID (empty if not connected)
     if (staConnected) {

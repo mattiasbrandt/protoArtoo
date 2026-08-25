@@ -16,6 +16,7 @@
 // =============================================================================
 #pragma once
 
+#include "config_store.h"
 #include "wifi_boot_decision.h"
 
 // Initialize network manager: register WiFi event handler and prepare for
@@ -44,9 +45,9 @@ struct WifiConnectivityStatus {
     long wifiRssi;            // signal strength in dBm (0 when STA disconnected)
     bool staConnected;        // true when STA is connected to upstream AP
     bool staEnabled;          // true when STA mode is active (STA or AP+STA)
-    char apIp[16];            // AP IP address (dotted-quad + NUL), empty if AP not active
+    char apIp[16];            // AP IP address (dotted-quad + NUL), "0.0.0.0" if AP not active
     char staIp[16];           // STA IP address (dotted-quad + NUL), empty if not connected
-    char staSsid[33];         // STA network name (up to 32 chars + NUL), empty if not connected
+    char staSsid[WIFI_SSID_MAX_LEN + 1];  // STA network name, empty if not connected
 };
 
 WifiConnectivityStatus networkManagerQueryConnectivity();
