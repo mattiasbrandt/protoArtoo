@@ -10,13 +10,16 @@ We decided board support is structured as **two layers**, making explicit the
 split that `include/config.h` already practices implicitly:
 
 - **Chip target** (`PA_BOARD_*`, e.g. the ESP32-P4 Target): everything true
-  of *any* board built on that chip — which network stack flavor it uses
-  (native `esp_wifi` vs Hosted WiFi over the C6 co-processor), UART/RMT/LEDC
-  budgets, partition tables, PSRAM policy. Chip-wide code, flags, and docs
-  say **ESP32-P4** / `esp32p4`, never a board name.
-- **Board Variant**: a thin pin-map block in `include/config.h` plus one
-  PlatformIO env per physical board — `artoo_esp32` and `firebeetle2`.
-  A variant holds pins and board quirks only.
+  of *any* board built on that chip — UART/RMT/LEDC budgets, partition tables,
+  PSRAM policy, and whether networking needs an external-backend seam. The
+  ESP32-P4 has no native radio, but that does not select a companion chip or
+  transport. Chip-wide code, flags, and docs say **ESP32-P4** / `esp32p4`,
+  never a board name.
+- **Board Variant**: the per-physical-board layer — `artoo_esp32` and
+  `firebeetle2`. It owns the pin map, fitted devices, transport and reset
+  wiring, provisioning/lifecycle requirements, and board quirks. The
+  FireBeetle 2 therefore owns its fitted ESP32-C6 and C6-over-SDIO topology;
+  these are not properties of every ESP32-P4 board.
 
 Naming is part of the decision:
 
@@ -28,9 +31,13 @@ Naming is part of the decision:
 - **firebeetle2** names only the DFRobot dev board. Anything that would be
   true of another P4 board belongs to the chip target and is named ESP32-P4.
 
-The acceptance test for the abstraction: adding a further board on an
-already-supported chip must cost a new pin-map block plus an env, nothing
-else.
+The current acceptance test for adding another ESP32-P4 Board Variant is one
+pin-map block, one PlatformIO env, and one entry in the size-budget
+registry (`tools/build_budgets.json`), whose per-chip `platforms` section
+also tells the Makefile which envs build with the ESP32-P4 toolchain. That
+registry entry is the one place a variant is declared outside the two
+layers; the Makefile does not inspect `platformio.ini` to discover a
+target's chip.
 
 ## Considered options
 
@@ -52,5 +59,11 @@ else.
   that.
 - The FireBeetle 2 spec sheet (`docs/spec-sheets/`) holds board-variant
   facts; chip-target facts belong to the ESP32-P4 docs and code layer.
+- A Board Capability Gate declares that the relevant physical topology is
+  fitted. It does not attest that a co-processor is correctly provisioned,
+  booting, initialized, or reachable at runtime.
 - CONTEXT.md gains the artoo-esp32, ESP32-P4 Target, and Board Variant terms;
   the Supported ESP32 Board entry now names artoo-esp32 explicitly.
+- A Board Variant may declare **no** network backend (ADR 0032,
+  Network-Optional Operation). Such a board compiles without a web server and
+  keeps every droid function; there is no at-least-one-backend requirement.

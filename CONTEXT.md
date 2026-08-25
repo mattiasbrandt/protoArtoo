@@ -217,8 +217,8 @@ A replaceable implementation choice, not a compatibility promise. It may be patc
 _Avoid_: preserving ESPAsyncWebServer at the expense of reliability, treating the current library as part of the public API
 
 **Live Page Updates**:
-The status, RC, and log updates currently delivered through `/api/events`. Keep this interface working while server and transport alternatives are measured. It may change only when tests on the Supported ESP32 Board show that a replacement improves memory behavior and Page Load Recovery without losing equivalent page behavior or silently breaking integrations.
-_Avoid_: removing SSE on suspicion, replacing one long-lived connection with rapid polling, breaking the endpoint without measured benefit
+The status, RC, and log updates delivered through `/api/events`, over a stream this project owns rather than one a web stack supplies. A client that cannot keep up within the send deadline is dropped so the others keep receiving; the stream never queues or blocks on a slow reader, because the reader stalling it is usually the single operator who needs it (ADR 0030). Serving the endpoint is not the same as providing Live Page Updates: a vendor EventSource class delivers the same URL while blocking every viewer behind one stalled socket. Keep this interface working while server and transport alternatives are measured. It may change only when tests on the Supported ESP32 Board show that a replacement improves memory behavior and Page Load Recovery without losing equivalent page behavior or silently breaking integrations.
+_Avoid_: removing SSE on suspicion, replacing one long-lived connection with rapid polling, breaking the endpoint without measured benefit, a vendor EventSource class, a stream that queues or blocks on a slow client, treating endpoint reachability as proof the stream is this one
 
 **Unprovisioned Controller**:
 A controller that has no valid Device WiFi Settings and therefore cannot yet choose its ongoing WiFi posture.
@@ -391,28 +391,38 @@ The canonical name for the build target pairing the classic-generation ESP32 D1 
 _Avoid_: classic, legacy board, clone build
 
 **ESP32-P4 Target**:
-The chip-level build target covering any ESP32-P4-based controller board. It owns everything true of the chip regardless of board: Hosted WiFi, UART/RMT budgets, partition and PSRAM policy. Chip-wide code, flags, and docs say ESP32-P4, never a board name (ADR 0028).
-_Avoid_: firebeetle target, naming the chip layer after one board
+The chip-level build target covering any ESP32-P4-based controller board. It owns chip-wide facts, including the lack of a native radio and need for an external network-backend seam, but not a particular companion chip or transport (ADR 0028).
+_Avoid_: firebeetle target, Hosted WiFi as a chip property, naming the chip layer after one board
 
 **Board Variant**:
-The thin per-board layer under a chip target: a pin-map block plus one PlatformIO env (`artoo_esp32`, `firebeetle2`). A variant holds pins and board quirks only; adding a board on a supported chip costs a variant and nothing else (ADR 0028).
+The per-physical-board layer under a chip target: pin map, fitted devices, transport/reset wiring, lifecycle requirements, quirks, and one build environment. Adding a variant costs a pin map, a build environment, and a size-budget entry that also tells the toolchain which chip the environment builds for (ADR 0028).
 _Avoid_: board port, per-board fork
 
 **firebeetle2**:
-The Board Variant for the DFRobot FireBeetle 2 ESP32-P4 development board — the current vehicle for ESP32-P4 Target development. The name refers only to that physical board.
+The Board Variant for the DFRobot FireBeetle 2 ESP32-P4 development board, including its fitted ESP32-C6, C6-over-SDIO transport, reset wiring, and co-processor lifecycle. The name and those topology facts refer only to that physical board.
 _Avoid_: firebeetle2 for chip-wide concepts, throwaway mule
 
 **Board Capability Gate**:
-A compile-time `PA_CAP_*` declaration of what a board's hardware can support. An absent capability means the feature is not linked into that board's image and the UI shows not-on-this-board. Distinct from a Component Toggle, which stays runtime and declares fitted hardware (ADR 0029).
-_Avoid_: compile-time component toggle, feature flag, capability as a runtime setting
+A compile-time `PA_CAP_*` declaration of what topology a board's fitted hardware can support. It controls linking and not-on-this-board UI state; it does not attest successful co-processor provisioning, boot, initialization, or runtime reachability (ADR 0029).
+_Avoid_: compile-time component toggle, feature flag, capability as a runtime setting, runtime-ready signal
+
+
 
 **Hosted WiFi**:
-The ESP32-P4 Target's network stack: WiFi served by an on-board ESP32-C6 co-processor over SDIO. A platform property of the chip target, selected behind the network-manager seam; artoo-esp32 keeps native `esp_wifi`.
-_Avoid_: external WiFi module, board-specific WiFi hack
+A network backend in which a separate wireless co-processor serves WiFi through ESP-Hosted. On firebeetle2 it uses the board's fitted ESP32-C6 over SDIO; it is not intrinsic to ESP32-P4, and its capability gate does not prove runtime readiness.
+_Avoid_: ESP32-P4's native WiFi, universal P4 C6/SDIO topology, runtime-ready capability
+
+**Network-Optional Operation**:
+The droid's defined functions — RC drive, dome, sound, servos, and every safety path — never depend on a network backend being fitted, configured, or reachable. A Board Variant may declare no network backend at all. A network that is absent or down removes only the web UI and web-only operations; it never restarts the controller and never degrades a droid function. Persistent network failure is announced by the droid itself (sound, dome text, serial log), not only through the web UI (ADR 0032).
+_Avoid_: network as a safety dependency, automatic controller restart on network failure, counting the web UI as a droid function, mandatory network backend per board
 
 **Bench-Mode**:
 The development posture where a controller board runs connected to USB only, without droid hardware — exercising HTTP, SSE, serial, OTA, and bench-attachable peripherals. A posture, not a verification status: evidence gathered in Bench-Mode is at most Controller Upload Verified.
 _Avoid_: bench verified, bench tested, using bench work as integrated-hardware evidence
+
+**Bench Runbook**:
+One ticket per Board Variant that lists every device-side check the epic's tickets still owe, each row linking to the owning ticket's criterion rather than restating it, so a bench day executes one sheet and each run leaves one dated evidence comment. It owns no criteria of its own and does not replace the owning ticket's acceptance.
+_Avoid_: copying criteria into the runbook, runbook as the acceptance record, per-ticket bench sessions
 
 **Estop**:
 The latched safe state in which the droid refuses to drive until an operator explicitly clears it. Set by an operator request or by a failsafe layer; never cleared automatically, and never cleared by the condition that set it going away.

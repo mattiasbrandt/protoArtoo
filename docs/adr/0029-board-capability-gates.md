@@ -1,11 +1,12 @@
 # Board capability gates are compile-time; component toggles stay runtime
 
 Dual-target support (ADR 0028) means features will exist that the artoo-esp32
-board can never run — subsystems needing the ESP32-P4's extra UARTs, PSRAM,
-or Hosted WiFi stack. The artoo-esp32 build (4 MB flash, tight heap floor)
-must not pay for them, and "off via a runtime toggle" is not enough: ADR 0027
-made disabled components inert, but their code is still linked and their
-flash is still spent.
+board can never run — subsystems needing the ESP32-P4 chip's extra UARTs or
+PSRAM, and Board Variant capabilities such as the FireBeetle 2's fitted C6 and
+Hosted WiFi topology. Hosted WiFi is not an ESP32-P4 chip property. The
+artoo-esp32 build (4 MB flash, tight heap floor) must not pay for unavailable
+features, and "off via a runtime toggle" is not enough: ADR 0027 made disabled
+components inert, but their code is still linked and their flash is still spent.
 
 We decided on a **Board Capability Gate** tier: compile-time `PA_CAP_*`
 flags, set by the chip-target and board-variant layers, declaring what a
@@ -56,3 +57,55 @@ staged at reboot) applies unchanged.
 - Per-env budgets become part of the standard verification sequence and CI.
 - Baseline flash/RAM numbers are recorded per env when the budgets are
   introduced.
+
+## Amended 2026-08-24
+
+The decision stands; its scope broadens, recorded after a grilling session on
+#186:
+
+- **Two compile-time tiers, one mechanism.** The registry annotation, the
+  image-reported manifest, the drift check, and the UI state also cover the
+  developer build-stripping tier that ADR 0027 mentioned without naming — now
+  the **Build Feature Flag** (a per-env `PA_*` 0/1 flag such as
+  `PA_HEAP_PROFILE`). The tiers stay distinct: a capability is invariant per
+  PCB, a build flag is a developer choice per image, and neither is a
+  Component Toggle. ADR 0027 is unchanged.
+- **Four UI states, not three:** not on this board / not in this build / off
+  / on. Unavailable rows stay visible with the reason; nothing is discovered
+  by probing endpoints.
+- **Registry entries declare their requirements explicitly** — at most one
+  board capability and one build flag each; absent means universal. Component
+  toggles become registry entries so the registry is the single grain.
+- **Flags are always defined as 0 or 1 and tested with `#if`**, enumerated
+  from X-macro manifests every board block must satisfy; the same manifests
+  feed the drift checker and the manifest the identity resource reports.
+
+The budgets consequence landed with #187. The first consumers are the
+existing profiler and admission-trace gates on artoo-esp32, migrated as the
+reference; Hosted WiFi's capability is declared by the board layer under #186
+and consumed by the network-seam tickets.
+
+Rejected in the session: one `PA_FEATURE_*` namespace for both tiers (erases
+the invariant-per-PCB versus per-image distinction and muddies the UI
+message); hiding unavailable rows (an operator cannot tell "not fitted" from
+"does not exist here"); defined-or-absent `#ifdef` flags (a typo silently
+gates a feature out, which the budget gate cannot catch on the P4 side).
+
+## Amended 2026-08-24 (display vocabulary)
+
+Operator decision after the #186 design review. The four-state domain is
+unchanged; what an operator *reads* is contextual:
+
+- A present feature **with** a Component Toggle shows **On / Off**.
+- A present feature **without** a Component Toggle shows **Included** — it has
+  no off, so "On" would announce a state that cannot vary.
+- "Not in this build" is shown as **Not included** (a builder reads "build" as
+  the droid), with a one-line reason; "Not on this board" is unchanged.
+- Compile-time availability renders as a **status lamp**, never a disabled
+  switch: a switch is reserved for a Component Toggle the operator can move.
+- Not every feature visibly inhabits all four states.
+
+Rejected: keeping "On" for compile-only features (the profiler happened to be
+defensible because its instrumentation is genuinely active, which set the
+general rule from the special case); a disabled `role="switch"` for an
+immutable fact (a generic disabled widget, and a promise the UI cannot keep).

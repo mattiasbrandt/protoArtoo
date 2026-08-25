@@ -1,6 +1,6 @@
 # Contributing to protoArtoo
 
-Thank you for your interest in contributing. protoArtoo is a safety-critical
+Thank you for your interest in contributing. protoArtoo is safety-critical
 firmware for a 20 kg wheeled robot. Quality, clarity, and traceability are not
 optional here — they are part of the deliverable.
 
@@ -221,6 +221,22 @@ agent self-merge regardless of how low-risk a change appears.
 If you're an external contributor: fork the repository, branch from
 `main`, and open a PR against it. `main` is protected. After your work is
 merged, your branch will be deleted.
+
+### Pushing branches
+
+Pushing a branch you own (`feature/`, `fix/`, `refactor/`, `chore/`, `docs/`,
+`test/`, `exp/`, or a `gh issue develop` branch) needs no approval, and is
+encouraged: commits that exist only in one local worktree have no backup, and
+origin is the backup. No workflow triggers on a branch push — `verification` and
+`dependency-review` run on pull requests into `main`, `verification` and
+`version-sync` additionally on pushes to `main`, `release` on `v*.*.*` tags — so
+a branch push consumes no CI and publishes no project state. Pushing to a shared
+integration branch, opening or merging a PR, and pushing a tag each need explicit
+operator approval; pushing to `main` or self-merging a PR never happens. (An
+earlier blanket "nothing is pushed until the operator says so" broke on the
+workflow's own first step, `gh issue develop`, which is itself a remote write —
+a rule the prescribed workflow breaks gets read loosely.) The repo is public:
+pushed work is world-visible before review, an accepted trade against losing it.
 
 ### Commit scope
 
