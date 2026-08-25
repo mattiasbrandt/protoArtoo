@@ -14,11 +14,7 @@
 #include "web_network_manager.h"
 #include "config_cache.h"
 #include "wifi_boot_decision.h"
-
-// Test instrumentation accessors from native_test_stubs.cpp
-extern int networkManagerGetApplyBootPostureCallCount();
-extern WifiBootPosture networkManagerGetLastPosture();
-extern void networkManagerResetTestState();
+#include "seam_test_accessors.h"
 
 void setUp() {
     // Reset config cache and seam test state to known state
