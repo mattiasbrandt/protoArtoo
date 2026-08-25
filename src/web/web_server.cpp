@@ -15,7 +15,6 @@
 #ifdef ARDUINO
 #include <Update.h>
 #endif
-#include <WiFi.h>
 #include <esp_heap_caps.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -101,10 +100,11 @@ static volatile uint8_t s_otaProgressPct = 255;
 static uint8_t s_lastOtaLoggedPct = 255;
 static char s_otaLastError[64] = "none";
 
-// Network Recovery Mode local entry gesture (ADR 0015). See
-// include/wifi_recovery_gesture.h for the pure decision rule. The count is
-// See include/wifi_recovery_gesture.h for kWifiRecoveryCycleKey (defined in
-// wifi_recovery_gesture.cpp).
+// Network Recovery Mode local entry gesture (ADR 0015). The count is
+// persisted under NVS_NAMESPACE so it survives the reboot(s) the gesture itself
+// requires, and is cleared once uptime confirms the boot was not part of a
+// rapid power-cycle sequence. See wifi_recovery_gesture.cpp for
+// kWifiRecoveryCycleKey and the decision rule in include/wifi_recovery_gesture.h.
 const uint32_t WIFI_RECOVERY_GESTURE_STABLE_MS = 20000;
 
 namespace {
@@ -356,15 +356,11 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     otaActive = s_otaActive;
     otaProgressPct = s_otaProgressPct;
     snprintf(otaLastError, sizeof(otaLastError), "%s", s_otaLastError);
-    int wifiMode = WiFi.getMode();
-    bool apEnabled = wifiMode == WIFI_AP || wifiMode == WIFI_AP_STA;
-    bool staConnected = WiFi.status() == WL_CONNECTED;
-    unsigned int apStationCount = apEnabled ? (unsigned int)WiFi.softAPgetStationNum() : 0U;
-    WiFiConnectivityFields wifi =
-        deriveWiFiConnectivityFields(apEnabled, staConnected, apStationCount, WiFi.RSSI());
-    wifiConnected = wifi.wifiConnected;
-    wifiClientConnected = wifi.wifiClientConnected;
-    wifiRssi = wifi.wifiRssi;
+    // Query WiFi connectivity status through the seam
+    WifiConnectivityStatus connectivity = networkManagerQueryConnectivity();
+    wifiConnected = connectivity.wifiConnected;
+    wifiClientConnected = connectivity.wifiClientConnected;
+    wifiRssi = connectivity.wifiRssi;
 
     const char* auxLedEffectLabel = auxLedEffectToString(auxLedEffect);
 
@@ -889,7 +885,9 @@ void startHttpServerOnce() {
     serverStarted = true;
     PA_LOG_INFO(TAG, "HTTP server started on port 80");
 
-    if (!mdnsStarted && WiFi.status() == WL_CONNECTED) {
+    // Query WiFi connectivity to check if STA is connected to upstream AP
+    WifiConnectivityStatus connectivityForMdns = networkManagerQueryConnectivity();
+    if (!mdnsStarted && connectivityForMdns.staConnected) {
         char hostname[DROID_NAME_MAX_LEN + 1] = {};
         configCacheResolvedMdnsHostname(hostname, sizeof(hostname));
         mdnsStarted = MDNS.begin(hostname);

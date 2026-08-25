@@ -20,6 +20,7 @@
 
 #include <WiFi.h>
 
+#include "../../include/api_status.h"
 #include "../../include/logging.h"
 #include "../../include/web_server.h"
 #include "../../include/wifi_boot_decision.h"
@@ -118,6 +119,23 @@ void networkManagerApplyBootPosture(WifiBootPosture posture, const WifiConfig& s
             PA_LOG_INFO(TAG, "WiFi bootstrap: standalone AP mode (SSID %s)", settings.ap_ssid);
             break;
     }
+}
+
+// Query WiFi connectivity status. Reads hardware state and derives connectivity fields.
+WifiConnectivityStatus networkManagerQueryConnectivity() {
+    int wifiMode = WiFi.getMode();
+    bool apEnabled = wifiMode == WIFI_AP || wifiMode == WIFI_AP_STA;
+    bool staConnected = WiFi.status() == WL_CONNECTED;
+    unsigned int apStationCount = apEnabled ? (unsigned int)WiFi.softAPgetStationNum() : 0U;
+    WiFiConnectivityFields wifi =
+        deriveWiFiConnectivityFields(apEnabled, staConnected, apStationCount, WiFi.RSSI());
+
+    return WifiConnectivityStatus{
+        .wifiConnected = wifi.wifiConnected,
+        .wifiClientConnected = wifi.wifiClientConnected,
+        .wifiRssi = wifi.wifiRssi,
+        .staConnected = staConnected,
+    };
 }
 
 #endif  // PA_CAP_NATIVE_WIFI

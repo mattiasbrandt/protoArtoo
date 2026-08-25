@@ -1,9 +1,9 @@
 // =============================================================================
 // src/web/web_network_manager_none.cpp
 //
-// No network backend for the network manager seam (#188).
-// Used when no WiFi backend is declared for the board (e.g., FireBeetle 2
-// which uses Hosted WiFi, or a hypothetical zero-backend Board Variant per ADR 0032).
+// No native network backend for the network manager seam (#188).
+// Used when PA_CAP_NATIVE_WIFI is 0: FireBeetle 2 will use Hosted WiFi
+// when #189 lands, or a board with no network backend at all (ADR 0032).
 // =============================================================================
 
 #include "../../include/web_network_manager.h"
@@ -30,6 +30,16 @@ void networkManagerInitialize() {
 void networkManagerApplyBootPosture(WifiBootPosture posture, const WifiConfig& settings) {
     (void)posture;
     (void)settings;
+}
+
+// Query WiFi connectivity status. No network backend, so all status is offline.
+WifiConnectivityStatus networkManagerQueryConnectivity() {
+    return WifiConnectivityStatus{
+        .wifiConnected = false,
+        .wifiClientConnected = false,
+        .wifiRssi = 0,
+        .staConnected = false,
+    };
 }
 
 #endif  // !PA_CAP_NATIVE_WIFI

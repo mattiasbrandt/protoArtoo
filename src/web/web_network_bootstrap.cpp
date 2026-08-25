@@ -34,7 +34,6 @@
 #include <ESPmDNS.h>
 #include <LittleFS.h>
 #include <Preferences.h>
-#include <WiFi.h>
 
 #if __has_include("secrets.h")
 #include "secrets.h"

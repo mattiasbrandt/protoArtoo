@@ -653,64 +653,17 @@ void logQueueDrop(QueueDropId /*queueId*/, const char* /*description*/) {
 }
 
 // =============================================================================
-// WiFi and LittleFS fake classes for native test builds (moved from
+// LittleFS and ESP fake classes for native test builds (moved from
 // src/web/web_server.cpp). Note: String and millis() stubs are already in
-// test/stubs/include/Arduino.h, so only WiFi-specific and FreeRTOS stubs
-// are defined here.
+// test/stubs/include/Arduino.h, so only LittleFS and ESP stubs are
+// defined here. WiFi stubs were removed when the network manager seam
+// (#188) made them unreachable from native tests.
 // =============================================================================
-
-class IPAddress {
-   public:
-    String toString() const {
-        return String();
-    }
-};
-
-using wl_status_t = int;
-using WiFiEvent_t = int;
-
-static const wl_status_t WL_CONNECTED = 3;
-static const int WIFI_AP = 1;
-static const int WIFI_AP_STA = 2;
-static const WiFiEvent_t ARDUINO_EVENT_WIFI_AP_START = 0;
-static const WiFiEvent_t ARDUINO_EVENT_WIFI_STA_START = 1;
-static const WiFiEvent_t ARDUINO_EVENT_WIFI_STA_GOT_IP = 2;
-static const WiFiEvent_t ARDUINO_EVENT_WIFI_STA_DISCONNECTED = 3;
 
 class LittleFSClass {
    public:
     bool begin(bool) {
         return false;
-    }
-};
-
-class WiFiClass {
-   public:
-    wl_status_t status() const {
-        return 0;
-    }
-    long RSSI() const {
-        return 0;
-    }
-    IPAddress softAPIP() const {
-        return IPAddress();
-    }
-    IPAddress localIP() const {
-        return IPAddress();
-    }
-    int getMode() const {
-        return WIFI_AP;
-    }
-    int softAPgetStationNum() const {
-        return 0;
-    }
-    void onEvent(void (*)(WiFiEvent_t)) {
-    }
-    void mode(int) {
-    }
-    void softAP(const char*, const char* = nullptr) {
-    }
-    void begin(const char*, const char*) {
     }
 };
 
@@ -727,7 +680,6 @@ class ESPClass {
     }
 };
 
-static WiFiClass WiFi;
 static LittleFSClass LittleFS;
 static ESPClass ESP;
 
@@ -804,6 +756,16 @@ void networkManagerApplyBootPosture(WifiBootPosture posture, const WifiConfig& s
     // Record the call for test verification
     s_seam_test_state.applyBootPostureCallCount++;
     s_seam_test_state.lastPosture = posture;
+}
+
+// Query WiFi connectivity status. Host tests assume no WiFi.
+WifiConnectivityStatus networkManagerQueryConnectivity() {
+    return WifiConnectivityStatus{
+        .wifiConnected = false,
+        .wifiClientConnected = false,
+        .wifiRssi = 0,
+        .staConnected = false,
+    };
 }
 
 // ESP-IDF reset reason enum and stub — native tests need this for

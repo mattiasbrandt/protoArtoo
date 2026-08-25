@@ -21,6 +21,7 @@
 #include "log_buffer.h"
 #include "logging.h"
 #include "robot_state.h"
+#include "web_network_manager.h"
 #include "web_request.h"
 #include "web_server.h"
 
@@ -68,15 +69,11 @@ static void buildHealthJson(char* buffer, size_t bufferSize) {
     webControlEnabled = robotState.webControlEnabled;
     taskEXIT_CRITICAL(&robotStateMux);
 
-    int wifiMode = WiFi.getMode();
-    bool apEnabled = wifiMode == WIFI_AP || wifiMode == WIFI_AP_STA;
-    bool staConnected = WiFi.status() == WL_CONNECTED;
-    unsigned int apStationCount = apEnabled ? (unsigned int)WiFi.softAPgetStationNum() : 0U;
-    WiFiConnectivityFields wifi =
-        deriveWiFiConnectivityFields(apEnabled, staConnected, apStationCount, WiFi.RSSI());
-    wifiConnected = wifi.wifiConnected;
-    wifiClientConnected = wifi.wifiClientConnected;
-    wifiRssi = wifi.wifiRssi;
+    // Query WiFi connectivity status through the seam
+    WifiConnectivityStatus connectivity = networkManagerQueryConnectivity();
+    wifiConnected = connectivity.wifiConnected;
+    wifiClientConnected = connectivity.wifiClientConnected;
+    wifiRssi = connectivity.wifiRssi;
 
     fsReady = webLittleFsMounted();
     heapFree = ESP.getFreeHeap();

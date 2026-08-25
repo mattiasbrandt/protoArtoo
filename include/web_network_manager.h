@@ -29,3 +29,21 @@ void networkManagerInitialize();
 // Called from webNetworkBootstrap() in web_network_bootstrap.cpp.
 void networkManagerApplyBootPosture(WifiBootPosture posture, const WifiConfig& settings);
 
+// Query current WiFi connectivity status. Reads the wireless radio state
+// (mode, signal strength, connection status) and derives project-owned
+// connectivity flags for API payloads.
+// Pure caller semantics for plan values (no vendor types cross the seam);
+// each backend reads its hardware and returns a snapshot.
+// Returns: connectivity flags (wifiConnected, wifiClientConnected, wifiRssi)
+//          + staConnected for callers needing the raw upstream AP connection state
+// Calls: No allocation, no blocking, no global side effects.
+// thread-safe: yes (each call reads volatile device state independently)
+struct WifiConnectivityStatus {
+    bool wifiConnected;       // true if WiFi is available (AP active OR STA connected)
+    bool wifiClientConnected; // true if at least one station is attached to soft AP
+    long wifiRssi;            // signal strength in dBm (0 when STA disconnected)
+    bool staConnected;        // true when STA is connected to upstream AP
+};
+
+WifiConnectivityStatus networkManagerQueryConnectivity();
+
