@@ -30,19 +30,23 @@ void networkManagerInitialize();
 void networkManagerApplyBootPosture(WifiBootPosture posture, const WifiConfig& settings);
 
 // Query current WiFi connectivity status. Reads the wireless radio state
-// (mode, signal strength, connection status) and derives project-owned
-// connectivity flags for API payloads.
-// Pure caller semantics for plan values (no vendor types cross the seam);
-// each backend reads its hardware and returns a snapshot.
-// Returns: connectivity flags (wifiConnected, wifiClientConnected, wifiRssi)
-//          + staConnected for callers needing the raw upstream AP connection state
-// Calls: No allocation, no blocking, no global side effects.
+// (mode, signal strength, connection status, network addresses) and derives
+// project-owned connectivity flags for API payloads.
+// Vendor-free caller semantics: no vendor types cross the seam (ADR 0021);
+// each backend reads its hardware and returns a snapshot. Strings use copy-out:
+// the caller supplies buffers; the backend fills them and returns the snapshot.
+// Returns: connectivity flags + string copies (AP IP, STA IP, STA SSID)
+// No allocation, no blocking, no global side effects.
 // thread-safe: yes (each call reads volatile device state independently)
 struct WifiConnectivityStatus {
     bool wifiConnected;       // true if WiFi is available (AP active OR STA connected)
     bool wifiClientConnected; // true if at least one station is attached to soft AP
     long wifiRssi;            // signal strength in dBm (0 when STA disconnected)
     bool staConnected;        // true when STA is connected to upstream AP
+    bool staEnabled;          // true when STA mode is active (STA or AP+STA)
+    char apIp[16];            // AP IP address (dotted-quad + NUL), empty if AP not active
+    char staIp[16];           // STA IP address (dotted-quad + NUL), empty if not connected
+    char staSsid[33];         // STA network name (up to 32 chars + NUL), empty if not connected
 };
 
 WifiConnectivityStatus networkManagerQueryConnectivity();

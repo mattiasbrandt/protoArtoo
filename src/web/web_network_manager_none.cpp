@@ -39,6 +39,10 @@ WifiConnectivityStatus networkManagerQueryConnectivity() {
         .wifiClientConnected = false,
         .wifiRssi = 0,
         .staConnected = false,
+        .staEnabled = false,
+        .apIp = {},      // empty string
+        .staIp = {},     // empty string
+        .staSsid = {},   // empty string
     };
 }
 

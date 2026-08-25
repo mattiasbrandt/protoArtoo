@@ -126,16 +126,31 @@ WifiConnectivityStatus networkManagerQueryConnectivity() {
     int wifiMode = WiFi.getMode();
     bool apEnabled = wifiMode == WIFI_AP || wifiMode == WIFI_AP_STA;
     bool staConnected = WiFi.status() == WL_CONNECTED;
+    bool staEnabled = wifiMode == WIFI_STA || wifiMode == WIFI_AP_STA;
     unsigned int apStationCount = apEnabled ? (unsigned int)WiFi.softAPgetStationNum() : 0U;
     WiFiConnectivityFields wifi =
         deriveWiFiConnectivityFields(apEnabled, staConnected, apStationCount, WiFi.RSSI());
 
-    return WifiConnectivityStatus{
-        .wifiConnected = wifi.wifiConnected,
-        .wifiClientConnected = wifi.wifiClientConnected,
-        .wifiRssi = wifi.wifiRssi,
-        .staConnected = staConnected,
-    };
+    // Copy-out strings to caller-supplied buffers (ADR 0021 pattern)
+    WifiConnectivityStatus result = {};  // Default-initialize all fields
+    result.wifiConnected = wifi.wifiConnected;
+    result.wifiClientConnected = wifi.wifiClientConnected;
+    result.wifiRssi = wifi.wifiRssi;
+    result.staConnected = staConnected;
+    result.staEnabled = staEnabled;
+
+    // AP IP (empty if AP not active)
+    if (apEnabled) {
+        snprintf(result.apIp, sizeof(result.apIp), "%s", WiFi.softAPIP().toString().c_str());
+    }
+
+    // STA IP and SSID (empty if not connected)
+    if (staConnected) {
+        snprintf(result.staIp, sizeof(result.staIp), "%s", WiFi.localIP().toString().c_str());
+        snprintf(result.staSsid, sizeof(result.staSsid), "%s", WiFi.SSID().c_str());
+    }
+
+    return result;
 }
 
 #endif  // PA_CAP_NATIVE_WIFI

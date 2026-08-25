@@ -11,7 +11,6 @@
 #include "api_status.h"
 
 #include <Arduino.h>
-#include <WiFi.h>
 #include <esp_heap_caps.h>
 
 #include "config.h"
@@ -26,17 +25,15 @@
 #include "web_server.h"
 
 static void buildWifiJson(char* buffer, size_t bufferSize) {
-    wl_status_t staStatus = WiFi.status();
-    bool staConnected = staStatus == WL_CONNECTED;
-    bool staEnabled = WiFi.getMode() == WIFI_STA || WiFi.getMode() == WIFI_AP_STA;
-    long wifiRssi = staConnected ? WiFi.RSSI() : 0;
+    // Query WiFi connectivity status through the seam
+    WifiConnectivityStatus connectivity = networkManagerQueryConnectivity();
+
     WifiConfig activeWifi = {};
     configCacheReadActiveWifi(&activeWifi);
 
     formatWifiJson(buffer, bufferSize, wifiStatusApSsid(activeWifi.ap_ssid),
-                   WiFi.softAPIP().toString().c_str(), staEnabled, staConnected,
-                   staConnected ? WiFi.localIP().toString().c_str() : "",
-                   staConnected ? WiFi.SSID().c_str() : "", wifiRssi,
+                   connectivity.apIp, connectivity.staEnabled, connectivity.staConnected,
+                   connectivity.staIp, connectivity.staSsid, connectivity.wifiRssi,
                    configCacheReadActiveWifiRecovery());
 }
 
