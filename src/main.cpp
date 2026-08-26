@@ -292,7 +292,19 @@ void setup() {
         .idle_core_mask = 0,
         .trigger_panic  = true,
     };
-    esp_task_wdt_init(&twdt_config);
+    esp_err_t twdt_init_result = esp_task_wdt_init(&twdt_config);
+    // On ESP32-P4 the system watchdog is pre-initialized, so esp_task_wdt_init() returns
+    // ESP_ERR_INVALID_STATE. Reconfigure the existing watchdog with our chosen timeout
+    // and idle-core settings. This ensures our safety-critical TWDT configuration applies
+    // on all targets. On artoo-esp32 init succeeds and this path is never taken.
+    if (twdt_init_result == ESP_ERR_INVALID_STATE) {
+        esp_err_t twdt_reconfig_result = esp_task_wdt_reconfigure(&twdt_config);
+        if (twdt_reconfig_result != ESP_OK) {
+            PA_LOG_ERROR("main", "esp_task_wdt_reconfigure failed: 0x%x", twdt_reconfig_result);
+        }
+    } else if (twdt_init_result != ESP_OK) {
+        PA_LOG_ERROR("main", "esp_task_wdt_init failed: 0x%x", twdt_init_result);
+    }
 
     // Initialize FailsafeGate and DriveArbiter before task creation
     failsafeInit(&robotStateMux);
@@ -327,6 +339,10 @@ void setup() {
     if (!auxLedTaskReady) {
         PA_LOG_ERROR("main", "aux LED task init failed; AUX LED API will report unavailable");
     }
+
+    // Real-time / core pinning contract: see docs/failsafe.md "Real-Time / Core Pinning Contract".
+    // Core 1 real-time (heap-allocation-free): DriveTask, RCInputTask, ServoTask, DomeTask, DomeLinkTask.
+    // Core 0 non-RT: AudioTask, AuxLedTask, SafetyMonitorTask, SequenceDispatcherTask, WebEvents, ArduinoOTA.
 
     // Launch real-time tasks on Core 1
     // DriveTask: 50 Hz hoverboard frames, feeds TWDT, Layer 3 web timeout
