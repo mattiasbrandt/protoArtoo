@@ -676,28 +676,63 @@
       }
     });
 
-    // Update toggle titles with board component labels from the config response
+    // Populate component labels (badges and descriptions) from the config response.
+    // Maps API keys to internal component names used for ID lookups.
+    const apiKeyToComponentName = {
+      s1Hoverboard: "enable_drive",
+      s2Sound: "enable_audio",
+      s3DomeCtrl: "enable_protor2link",
+      dome: "enable_dome_esc",
+      arm1: "enable_arm1",
+      arm2: "enable_arm2",
+      aux1: "enable_aux1",
+      aux2: "enable_aux2",
+      aux3: "enable_aux3",
+      rcCh1: "enable_rc_ch1",
+      rcCh2: "enable_rc_ch2",
+      rcCh3: "enable_rc_ch3",
+      rcCh4: "enable_rc_ch4",
+      rcCh5: "enable_rc_ch5",
+      rcCh6: "enable_rc_ch6",
+    };
+
     const componentLabels = {
+      s1Hoverboard: components.s1Hoverboard?.label,
+      s2Sound: components.s2Sound?.label,
+      s3DomeCtrl: components.s3DomeCtrl?.label,
+      dome: components.dome?.label,
       arm1: components.arm1?.label,
       arm2: components.arm2?.label,
       aux1: components.aux1?.label,
       aux2: components.aux2?.label,
       aux3: components.aux3?.label,
-      dome: components.dome?.label,
       rcCh1: components.rcCh1?.label,
       rcCh2: components.rcCh2?.label,
       rcCh3: components.rcCh3?.label,
       rcCh4: components.rcCh4?.label,
       rcCh5: components.rcCh5?.label,
       rcCh6: components.rcCh6?.label,
-      s1Hoverboard: components.s1Hoverboard?.label,
-      s2Sound: components.s2Sound?.label,
-      s3DomeCtrl: components.s3DomeCtrl?.label,
     };
-    Object.entries(componentLabels).forEach(([toggleKey, label]) => {
-      const toggle = featureToggles[toggleKey];
+
+    Object.entries(componentLabels).forEach(([apiKey, label]) => {
+      const componentName = apiKeyToComponentName[apiKey];
+      if (!componentName) return;
+
+      // Update badge: show the label if it exists, hide if it doesn't
+      const badge = document.getElementById(`badge-${componentName}`);
+      if (badge) {
+        badge.textContent = label || "";
+      }
+
+      // Update description label: show the label (board component name) in the description
+      const descLabel = document.getElementById(`label-${componentName}`);
+      if (descLabel) {
+        descLabel.textContent = label || "";
+      }
+
+      // Also update the toggle title for backward compatibility
+      const toggle = featureToggles[apiKey];
       if (toggle && toggle.input && label) {
-        // Append the board component label to the title
         const switchLabel = toggle.input.parentElement;
         if (switchLabel && switchLabel.classList.contains("toggle-switch")) {
           switchLabel.title = (switchLabel.title || "") + (switchLabel.title ? " · " : "") + label;

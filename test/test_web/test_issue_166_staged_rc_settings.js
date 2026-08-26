@@ -209,7 +209,13 @@ const ACTIVE_RC_ENABLED = {
 
 test("Setup scopes restart guidance to RC input channels", () => {
   const html = readFileSync("data/setup.html", "utf8");
-  const rxSection = html.slice(html.indexOf("RC Receiver Channels"), html.indexOf("</form>"));
+  // Find the RC Receiver Channels section by slicing from its heading to the last RC channel row.
+  // This bounds the test on structural markers instead of relying on form closure (which could move
+  // if additional groups are added in the future).
+  const rcStart = html.indexOf("RC Receiver Channels");
+  const rcCh6RowEnd = html.indexOf('id="status-rc-ch6"', rcStart) + 50;  // Find the RC Ch6 status element and go past it
+  const rcEnd = html.indexOf("</div>", rcCh6RowEnd);  // Find the closing div of the component-row
+  const rxSection = html.slice(rcStart, rcEnd);
   assert.match(rxSection, /RC input changes save immediately and apply after controller restart\./);
   assert.doesNotMatch(html, /Component changes save immediately\. Restart the controller to apply them\./);
 

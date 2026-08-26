@@ -25,67 +25,67 @@
 
         <div class="section-label">Drive</div>
         <div class="info-note" role="note">
-          Use the drive motor controller wired to this board's Drive link.
+          The motor controller that moves the droid. Wired to the <strong id="label-enable_drive"></strong> header — switch it off and the wheels stay dead however you push the sticks.
         </div>
         <div class="component-row" data-feature-entry="system.config.enable_drive">
           <label class="toggle-switch" title="Drive motor">
             <input type="checkbox" id="enable-s1-hoverboard" name="enableS1Hoverboard">
             <span class="toggle-slider"></span>
-            <span class="toggle-label">Drive</span>
-            <span class="toggle-status" id="status-s1-hoverboard">Disabled</span>
+            <span class="toggle-label">Drive <span class="component-badge" id="badge-enable_drive"></span></span>
+            <span class="toggle-status" id="status-s1-hoverboard">Off</span>
           </label>
         </div>
 
         <div class="section-label">Dome Rotation</div>
         <div class="info-note" role="note">
-          Use the ESC that spins the dome, wired to this board's Dome Rotation output.
+          The speed controller that spins the dome. Wired to <strong id="label-enable_dome_esc"></strong> — off means the dome never turns, in a sequence or by hand.
         </div>
         <div class="component-row" data-feature-entry="system.config.enable_dome_esc">
           <label class="toggle-switch" title="Dome rotation ESC">
             <input type="checkbox" id="enable-dome" name="enableDome">
             <span class="toggle-slider"></span>
-            <span class="toggle-label">Dome ESC</span>
+            <span class="toggle-label">Dome ESC <span class="component-badge" id="badge-enable_dome_esc"></span></span>
             <span class="toggle-status" id="status-dome">Off</span>
           </label>
         </div>
 
         <div class="section-label">protoR2link</div>
         <div class="info-note" role="note">
-          Use the serial link to a separate dome controller board.
+          The serial link to the dome's own controller board. Wired to <strong id="label-enable_protor2link"></strong> — off and the dome stops taking light, panel and sound cues from the body.
         </div>
         <div class="component-row" data-feature-entry="system.config.enable_protor2link">
           <label class="toggle-switch" title="Dome link to protoR2 controller">
             <input type="checkbox" id="enable-s3-dome-ctrl" name="enableS3DomeCtrl">
             <span class="toggle-slider"></span>
-            <span class="toggle-label">protoR2link</span>
-            <span class="toggle-status" id="status-s3-dome-ctrl">Disabled</span>
+            <span class="toggle-label">protoR2link <span class="component-badge" id="badge-enable_protor2link"></span></span>
+            <span class="toggle-status" id="status-s3-dome-ctrl">Off</span>
           </label>
         </div>
 
         <div class="section-label">Audio</div>
         <div class="info-note" role="note">
-          Use the sound module wired to this board's Audio link.
+          The sound module that gives the droid its voice. Wired to <strong id="label-enable_audio"></strong> — off and every sequence still runs, just silently.
         </div>
         <div class="component-row" data-feature-entry="system.config.enable_audio">
           <label class="toggle-switch" title="Sound module">
             <input type="checkbox" id="enable-s2-sound" name="enableS2Sound">
             <span class="toggle-slider"></span>
-            <span class="toggle-label">Audio</span>
+            <span class="toggle-label">Audio <span class="component-badge" id="badge-enable_audio"></span></span>
             <span id="s2-driver-label" class="s2-driver-label"></span>
-            <span class="toggle-status" id="status-s2-sound">Disabled</span>
+            <span class="toggle-status" id="status-s2-sound">Off</span>
           </label>
         </div>
 
         <div class="section-label">Utility Arms</div>
-        <div class="info-note" role="note">
-          Use the utility arm servo wired to this board's Utility Arm output.
-        </div>
         <div class="component-row" data-feature-entry="system.config.enable_arm1">
+          <div class="info-note" role="note">
+            The servo that opens the first utility arm, wired to <strong id="label-enable_arm1"></strong>.
+          </div>
           <label class="toggle-switch" title="Left utility arm servo">
             <input type="checkbox" id="enable-arm1" name="enableArm1">
             <span class="toggle-slider"></span>
-            <span class="toggle-label">Utility Arm 1</span>
-            <span class="toggle-status" id="status-arm1">Disabled</span>
+            <span class="toggle-label">Utility Arm 1 <span class="component-badge" id="badge-enable_arm1"></span></span>
+            <span class="toggle-status" id="status-arm1">Off</span>
           </label>
           <div class="type-segmented" id="seg-type-arm1" data-target="type-arm1" role="group" aria-label="Utility Arm 1 component type">
             <button type="button" class="seg-option is-active" data-value="mg996r">MG996R</button>
@@ -97,11 +97,14 @@
           </select>
         </div>
         <div class="component-row" data-feature-entry="system.config.enable_arm2">
+          <div class="info-note" role="note">
+            The servo that opens the second utility arm, wired to <strong id="label-enable_arm2"></strong>.
+          </div>
           <label class="toggle-switch" title="Right utility arm servo">
             <input type="checkbox" id="enable-arm2" name="enableArm2">
             <span class="toggle-slider"></span>
-            <span class="toggle-label">Utility Arm 2</span>
-            <span class="toggle-status" id="status-arm2">Disabled</span>
+            <span class="toggle-label">Utility Arm 2 <span class="component-badge" id="badge-enable_arm2"></span></span>
+            <span class="toggle-status" id="status-arm2">Off</span>
           </label>
           <div class="type-segmented" id="seg-type-arm2" data-target="type-arm2" role="group" aria-label="Utility Arm 2 component type">
             <button type="button" class="seg-option is-active" data-value="mg996r">MG996R</button>
@@ -114,15 +117,15 @@
         </div>
 
         <div class="section-label">AUX Outputs</div>
-        <div class="info-note" role="note">
-          Use the component wired to this board's AUX output.
-        </div>
         <div class="component-row" data-feature-entry="system.config.enable_aux1">
+          <div class="info-note" role="note">
+            Whatever you wired to the <strong id="label-enable_aux1"></strong> output — a servo, a light, a smoke unit.
+          </div>
           <label class="toggle-switch" title="Auxiliary output 1">
             <input type="checkbox" id="enable-aux1" name="enableAux1">
             <span class="toggle-slider"></span>
-            <span class="toggle-label">AUX 1</span>
-            <span class="toggle-status" id="status-aux1">Disabled</span>
+            <span class="toggle-label">AUX 1 <span class="component-badge" id="badge-enable_aux1"></span></span>
+            <span class="toggle-status" id="status-aux1">Off</span>
           </label>
           <div class="type-segmented" id="seg-type-aux1" data-target="type-aux1" role="group" aria-label="AUX 1 component type">
             <button type="button" class="seg-option is-active" data-value="none">None</button>
@@ -138,11 +141,14 @@
           </select>
         </div>
         <div class="component-row" data-feature-entry="system.config.enable_aux2">
+          <div class="info-note" role="note">
+            Whatever you wired to the <strong id="label-enable_aux2"></strong> output — a servo, a light, a smoke unit.
+          </div>
           <label class="toggle-switch" title="Auxiliary output 2">
             <input type="checkbox" id="enable-aux2" name="enableAux2">
             <span class="toggle-slider"></span>
-            <span class="toggle-label">AUX 2</span>
-            <span class="toggle-status" id="status-aux2">Disabled</span>
+            <span class="toggle-label">AUX 2 <span class="component-badge" id="badge-enable_aux2"></span></span>
+            <span class="toggle-status" id="status-aux2">Off</span>
           </label>
           <div class="type-segmented" id="seg-type-aux2" data-target="type-aux2" role="group" aria-label="AUX 2 component type">
             <button type="button" class="seg-option is-active" data-value="none">None</button>
@@ -158,11 +164,14 @@
           </select>
         </div>
         <div class="component-row" data-feature-entry="system.config.enable_aux3">
+          <div class="info-note" role="note">
+            Whatever you wired to the <strong id="label-enable_aux3"></strong> output — a servo, a light, a smoke unit.
+          </div>
           <label class="toggle-switch" title="Auxiliary output 3">
             <input type="checkbox" id="enable-aux3" name="enableAux3">
             <span class="toggle-slider"></span>
-            <span class="toggle-label">AUX 3</span>
-            <span class="toggle-status" id="status-aux3">Disabled</span>
+            <span class="toggle-label">AUX 3 <span class="component-badge" id="badge-enable_aux3"></span></span>
+            <span class="toggle-status" id="status-aux3">Off</span>
           </label>
           <div class="type-segmented" id="seg-type-aux3" data-target="type-aux3" role="group" aria-label="AUX 3 component type">
             <button type="button" class="seg-option is-active" data-value="none">None</button>
@@ -180,54 +189,54 @@
 
         <div class="section-label">RC Receiver Channels</div>
         <div class="info-note" role="note">
-          RC input changes save immediately and apply after controller restart.
+          The receiver wire plugged into <strong id="label-enable_rc_ch1"></strong>. Tick only the channels you actually have wired.
         </div>
         <div class="component-row" data-feature-entry="system.config.enable_rc_ch1">
           <label class="toggle-switch" title="RC channel 1 input">
             <input type="checkbox" id="enable-rc-ch1" name="enableRcCh1">
             <span class="toggle-slider"></span>
-            <span class="toggle-label">RC Channel 1</span>
-            <span class="toggle-status" id="status-rc-ch1">Disabled</span>
+            <span class="toggle-label">RC Channel 1 <span class="component-badge" id="badge-enable_rc_ch1"></span></span>
+            <span class="toggle-status" id="status-rc-ch1">Off</span>
           </label>
         </div>
         <div class="component-row" data-feature-entry="system.config.enable_rc_ch2">
           <label class="toggle-switch" title="RC channel 2 input">
             <input type="checkbox" id="enable-rc-ch2" name="enableRcCh2">
             <span class="toggle-slider"></span>
-            <span class="toggle-label">RC Channel 2</span>
-            <span class="toggle-status" id="status-rc-ch2">Disabled</span>
+            <span class="toggle-label">RC Channel 2 <span class="component-badge" id="badge-enable_rc_ch2"></span></span>
+            <span class="toggle-status" id="status-rc-ch2">Off</span>
           </label>
         </div>
         <div class="component-row" data-feature-entry="system.config.enable_rc_ch3">
           <label class="toggle-switch" title="RC channel 3 input">
             <input type="checkbox" id="enable-rc-ch3" name="enableRcCh3">
             <span class="toggle-slider"></span>
-            <span class="toggle-label">RC Channel 3</span>
-            <span class="toggle-status" id="status-rc-ch3">Disabled</span>
+            <span class="toggle-label">RC Channel 3 <span class="component-badge" id="badge-enable_rc_ch3"></span></span>
+            <span class="toggle-status" id="status-rc-ch3">Off</span>
           </label>
         </div>
         <div class="component-row" data-feature-entry="system.config.enable_rc_ch4">
           <label class="toggle-switch" title="RC channel 4 input">
             <input type="checkbox" id="enable-rc-ch4" name="enableRcCh4">
             <span class="toggle-slider"></span>
-            <span class="toggle-label">RC Channel 4</span>
-            <span class="toggle-status" id="status-rc-ch4">Disabled</span>
+            <span class="toggle-label">RC Channel 4 <span class="component-badge" id="badge-enable_rc_ch4"></span></span>
+            <span class="toggle-status" id="status-rc-ch4">Off</span>
           </label>
         </div>
         <div class="component-row" data-feature-entry="system.config.enable_rc_ch5">
           <label class="toggle-switch" title="RC channel 5 input">
             <input type="checkbox" id="enable-rc-ch5" name="enableRcCh5">
             <span class="toggle-slider"></span>
-            <span class="toggle-label">RC Channel 5</span>
-            <span class="toggle-status" id="status-rc-ch5">Disabled</span>
+            <span class="toggle-label">RC Channel 5 <span class="component-badge" id="badge-enable_rc_ch5"></span></span>
+            <span class="toggle-status" id="status-rc-ch5">Off</span>
           </label>
         </div>
         <div class="component-row" data-feature-entry="system.config.enable_rc_ch6">
           <label class="toggle-switch" title="RC channel 6 input">
             <input type="checkbox" id="enable-rc-ch6" name="enableRcCh6">
             <span class="toggle-slider"></span>
-            <span class="toggle-label">RC Channel 6</span>
-            <span class="toggle-status" id="status-rc-ch6">Disabled</span>
+            <span class="toggle-label">RC Channel 6 <span class="component-badge" id="badge-enable_rc_ch6"></span></span>
+            <span class="toggle-status" id="status-rc-ch6">Off</span>
           </label>
         </div>
 

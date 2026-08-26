@@ -408,31 +408,48 @@ bool assignRcMapEntryToSnapshot(const RcMapEntry& entry, const ConfigSnapshot& e
     return false;
 }
 
-// Helper function to get board component label for a given component name.
-// Hardcoded labels from component_labels.inc, filtered by board type.
-const char* getComponentLabel(const char* componentName) {
+// Component label lookup table, built via X-macro expansion from component_labels.inc.
+// Maps component names (e.g., "enable_drive") to board-specific physical labels (e.g., "S1").
+
+struct ComponentLabelEntry {
+    const char* component;
+    const char* label;
+};
+
+// Helper macro to stringify board identifiers so they can be compared as strings.
+#define BOARD_NAME_STR(board) #board
+
+// Expand component_labels.inc to build the lookup table for the current board.
+// The macro expands entries and filters them by comparing stringified board names.
+
 #if PA_BOARD == PA_BOARD_ARTOO_ESP32
-    // artoo_esp32 board labels from component_labels.inc
-    if (strcmp(componentName, "enable_drive") == 0) return "S1";
-    if (strcmp(componentName, "enable_audio") == 0) return "S2";
-    if (strcmp(componentName, "enable_dome_esc") == 0) return "DOME";
-    if (strcmp(componentName, "enable_protor2link") == 0) return "S3";
-    if (strcmp(componentName, "enable_arm1") == 0) return "ARM1";
-    if (strcmp(componentName, "enable_arm2") == 0) return "ARM2";
-    if (strcmp(componentName, "enable_aux1") == 0) return "AUX1";
-    if (strcmp(componentName, "enable_aux2") == 0) return "AUX2";
-    if (strcmp(componentName, "enable_aux3") == 0) return "AUX3";
-    if (strcmp(componentName, "enable_rc_ch1") == 0) return "CH1";
-    if (strcmp(componentName, "enable_rc_ch2") == 0) return "CH2";
-    if (strcmp(componentName, "enable_rc_ch3") == 0) return "CH3";
-    if (strcmp(componentName, "enable_rc_ch4") == 0) return "CH4";
-    if (strcmp(componentName, "enable_rc_ch5") == 0) return "CH5";
-    if (strcmp(componentName, "enable_rc_ch6") == 0) return "CH6";
+#define CURRENT_BOARD_NAME BOARD_NAME_STR(artoo_esp32)
 #elif PA_BOARD == PA_BOARD_FIREBEETLE2
-    // firebeetle2 board labels from component_labels.inc (none defined yet)
-    (void)componentName;  // Unused on this board
+#define CURRENT_BOARD_NAME BOARD_NAME_STR(firebeetle2)
+#else
+#define CURRENT_BOARD_NAME ""
 #endif
-    return nullptr;  // No label defined for this component on this board
+
+namespace {
+    const ComponentLabelEntry COMPONENT_LABELS[] = {
+#define PA_COMPONENT_LABEL(board, component, label)                           \
+        (strcmp(BOARD_NAME_STR(board), CURRENT_BOARD_NAME) == 0)              \
+            ? ComponentLabelEntry{#component, label}                          \
+            : ComponentLabelEntry{"", nullptr},
+#include "component_labels.inc"
+#undef PA_COMPONENT_LABEL
+    };
+}
+
+// Helper function to get board component label for a given component name.
+// Returns the label string if found and applicable to the current board, nullptr otherwise.
+const char* getComponentLabel(const char* componentName) {
+    for (size_t i = 0; i < sizeof(COMPONENT_LABELS) / sizeof(COMPONENT_LABELS[0]); ++i) {
+        if (COMPONENT_LABELS[i].component[0] != '\0' && strcmp(COMPONENT_LABELS[i].component, componentName) == 0) {
+            return COMPONENT_LABELS[i].label;
+        }
+    }
+    return nullptr;
 }
 
 // -----------------------------------------------------------------------------
