@@ -172,9 +172,10 @@ A section loader concludes with one of three outcome kinds:
 - Deterministic HTTP 500 (e.g., `api_identity.cpp:32` "identity response overflow") → `failed-terminal` (device-error)
 
 **Fault-Injection Coverage:**
-Page bootstrap behavior is verified via deterministic fault-injection fixtures in the test
-suite (`test/test_web/mutations/`), not live-hardware iteration. Each page slice requires
-coverage of:
+Page bootstrap behavior is verified via deterministic fault-injection fixtures in the web
+behaviour suites (`test/test_web/test_page_bootstrap.js`,
+`test/test_web/test_section_loaders.js` and the per-slice suites beside them), not
+live-hardware iteration. Each page slice requires coverage of:
 
 - Busy (503 Retry-After)
 - No-response (network, timeout, malformed JSON)
