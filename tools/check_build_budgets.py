@@ -105,10 +105,15 @@ def main():
 
     for env_name in sorted(envs.keys()):
         env_budget = envs[env_name]
-        flash_ceiling = env_budget.get("flash_budget_bytes")
+        flash_ceiling_bytes = env_budget.get("flash_ceiling_bytes")
+        flash_budget_bytes = env_budget.get("flash_budget_bytes")
 
-        if flash_ceiling is None:
+        if flash_budget_bytes is None:
             print(f"WARNING: {env_name} has no flash_budget_bytes", file=sys.stderr)
+            continue
+
+        if flash_ceiling_bytes is None:
+            print(f"WARNING: {env_name} has no flash_ceiling_bytes", file=sys.stderr)
             continue
 
         actual_size = build_environment(env_name, budgets)
@@ -116,22 +121,35 @@ def main():
         if actual_size is None:
             print(f"✗ {env_name}: BUILD FAILED", file=sys.stderr)
             all_ok = False
-            results.append((env_name, None, flash_ceiling, False))
+            results.append((env_name, None, flash_budget_bytes, False))
             continue
 
-        pct_used = (actual_size / flash_ceiling) * 100
-        over_budget = actual_size > flash_ceiling
-        status = "✓" if not over_budget else "✗"
+        # Check hard ceiling first (non-negotiable)
+        over_ceiling = actual_size > flash_ceiling_bytes
+        # Check soft budget (deliberate headroom)
+        over_budget = actual_size > flash_budget_bytes
+        status = "✓" if (not over_ceiling and not over_budget) else "✗"
 
-        results.append((env_name, actual_size, flash_ceiling, not over_budget))
+        results.append((env_name, actual_size, flash_budget_bytes, not over_budget and not over_ceiling))
 
-        if over_budget:
-            overage = actual_size - flash_ceiling
-            print(f"{status} {env_name}: {actual_size} bytes ({pct_used:.1f}%) - OVER by {overage} bytes",
+        if over_ceiling:
+            # Hard ceiling violation
+            overage = actual_size - flash_ceiling_bytes
+            pct_used = (actual_size / flash_ceiling_bytes) * 100
+            print(f"{status} {env_name}: {actual_size} bytes ({pct_used:.1f}%) - EXCEEDS HARD CEILING by {overage} bytes",
+                  file=sys.stderr)
+            all_ok = False
+        elif over_budget:
+            # Budget violation
+            overage = actual_size - flash_budget_bytes
+            pct_used = (actual_size / flash_budget_bytes) * 100
+            print(f"{status} {env_name}: {actual_size} bytes ({pct_used:.1f}%) - OVER BUDGET by {overage} bytes",
                   file=sys.stderr)
             all_ok = False
         else:
-            headroom = flash_ceiling - actual_size
+            # Within budget
+            headroom = flash_budget_bytes - actual_size
+            pct_used = (actual_size / flash_budget_bytes) * 100
             print(f"{status} {env_name}: {actual_size} bytes ({pct_used:.1f}%) - {headroom} bytes headroom",
                   file=sys.stderr)
 
