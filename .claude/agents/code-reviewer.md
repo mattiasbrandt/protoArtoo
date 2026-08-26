@@ -54,6 +54,7 @@ This is not a generic application review. Review as an embedded firmware reviewe
 - Do not request functionality changes unless needed to preserve safety, correctness, security, or documented contracts.
 - If a quality issue is real but outside the current change scope, mark it as follow-up unless it creates immediate safety/security risk.
 - Treat stale comments, phase-history leftovers, and misleading TODOs as reviewable quality issues when they can mislead future safety/debug work.
+- Treat operator-facing copy as reviewable work when the diff touches it. A description that misleads, repeats its neighbours, or breaks when a runtime value is absent is a defect the operator meets directly - not a style preference.
 
 ## Quality Bar
 
@@ -150,6 +151,21 @@ These must never be broken:
 - **Endpoint naming drift** — New endpoints that don't follow `docs/action-registry.yaml` naming convention.
 - **Trust boundary before "ready"** — A consumer that publishes a ready/available signal validates the payload's shape first; a lookup treats a *missing* key as unknown, never as false. `obj?.key !== true` converts absence into a confident negative; own-property checks (`Object.hasOwn`) keep the two apart.
 - **Fixed-buffer serializer growth** — A row added to a manifest serialized into a fixed buffer (`IDENTITY_JSON_MAX_BYTES`) re-runs the size test; the overflow is a deterministic 500 the UI can only read as "unknown".
+
+### Operator Copy (HIGH)
+
+Applies to any operator-facing text in the diff: notes, descriptions, labels, hints, toasts, errors, wizard steps. `docs/ui-copy-voice.md` is the standard and AGENTS.md makes applying it mandatory, so copy is reviewable work, not decoration on it. Read the rendered result, not only the diff.
+
+- **Copy changed without the voice guide applied** — operator-facing text added or edited with no sign the maker-voice rules were used. The gate: would a maker with no firmware knowledge get every sentence on first read?
+- **Category-and-stop description** — the text names what a thing is and stops, instead of ending in its physical consequence on the droid (voice rule 1). *"Use the drive motor controller wired to this board's Drive link"* is the shipped example: it states a category and adds nothing.
+- **Description restates its own section label** — under a heading that says *Drive*, opening with *"The motor controller that moves the droid"* says *Drive* twice in longer words. The group carries identity; the description carries consequence.
+- **Formulaic sibling copy** — two or more descriptions in one group share an opening construction (*"The \<noun> that \<verb>s the \<thing>"*). Read a group's descriptions in sequence; repeated shapes read as generated text and are the define-by-category form voice rule 2 forbids.
+- **Per-row copy for a homogeneous group** — N near-identical sentences where one group note plus name-and-badge rows would do. Repetition is deleted at its source, not reworded.
+- **Grammar depends on a runtime value** — a clause built from live data (a board label, a peer name, a count) emptied in place rather than removed as a whole sentence. Renders as a hole: *"Wired to the [blank] header"*. Check the absent state, not just the populated one.
+- **Unverified behaviour asserted in copy** — a sentence stating what the firmware does with no source backing it. Plausible-sounding behaviour copy is how a UI starts lying to its operator; require the citation or an `UNKNOWN`.
+- **Bench-critical fact hidden in a tooltip** — a fact the operator needs while working placed where it is unreachable on touch and invisible when scanning the page against the hardware in front of them.
+- **State label contradicts the model** — a Component Toggle rendering anything but **On**/**Off**, or a compile-time fact rendering as a switch instead of a status lamp (ADR 0029; a disabled `role="switch"` promises an action the UI cannot honour and announces itself as a switch to screen readers).
+- **Vocabulary drift from the shipped surface** — a second name for an object `data/` already names. Grep `data/` before accepting a new noun; the UI says *firmware* and *filesystem*, and *build* reads as the physical droid to a builder.
 
 ### Architecture / Conventions (MEDIUM)
 
