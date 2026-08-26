@@ -31,9 +31,10 @@ void sendIdentityResponse(WebRequest& req, const SystemConfig& system) {
     // IDENTITY_JSON_MAX_BYTES = 384 B; usable JSON is 383 B (1 byte for NUL).
     // Worst case: 32-char droid name (DROID_NAME_MAX_LEN), mdnsUseName false,
     // and every manifest value false (5 chars beats true's 4 chars) = 258 B JSON.
-    // Current manifest: 3 capabilities (18+18+31=67 chars) + 3 flags (14+16+18=48 chars) = 298 B JSON.
-    // Headroom: 383 - 298 = 85 B. Cost per additional row: string literal `,\"<name>\":false` costs
-    // ~(name_len + 13) bytes. Every capability/flag added to the manifest grows this payload toward the ceiling.
+    // Current manifest (3 capabilities, 3 flags) = 298 B JSON.
+    // Headroom: 383 - 298 = 85 B. Cost per additional row: string literal `,\"<name>\":false`
+    // costs (name_len + 9) bytes; the first row in each object costs (name_len + 8).
+    // Every capability/flag added to the manifest grows this payload toward the ceiling.
     char body[IDENTITY_JSON_MAX_BYTES] = {};
     if (!formatIdentityJson(body, sizeof(body), system.droid_name, system.mdns_use_name)) {
         webSendJsonError(req, 500, "identity response overflow");

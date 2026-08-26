@@ -109,7 +109,9 @@ constexpr uint8_t PA_PIN_UNASSIGNED = 0xFF;
 // See docs/pin_map.md for full trace results and revision notes.
 // ────────────────────────────────────────────────────────────────────────────
 
-// UART1 (Serial1)  --  Drive backend (default: hoverboard motor controller, Gen2.x protocol, PCB S1)
+// UART1 (Serial1)  --  Drive backend (hoverboard motor controller, Gen2.x protocol, PCB S1)
+// This board's UART to the drive backend is locked by PCB trace to hoverboard (one UART, no spares).
+// See ADR 0029 (amended 2026-08-26): artoo-esp32's capability set is {hoverboard}, forced by topology.
 constexpr uint8_t PIN_DRIVE_TX = 16;
 constexpr uint8_t PIN_DRIVE_RX = 17;
 
