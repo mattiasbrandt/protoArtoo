@@ -18,7 +18,7 @@
 // for this firmware. Throttle calibration via the ISD Go APP is a hardware
 // bring-up prerequisite before the dome motor will respond correctly to our PWM.
 //
-// Feature toggle: cfg_enable_dome (staged at reboot per ADR 0027) gates whether
+// Feature toggle: cfg_enable_dome_esc (staged at reboot per ADR 0027) gates whether
 // the task is spawned at all. When disabled at boot, DomeTask does not run.
 // =============================================================================
 
