@@ -734,7 +734,10 @@
           // No label: remove the entire trailing sentence span
           const labelDescSpan = document.getElementById(`label-desc-${componentName}`);
           if (labelDescSpan) {
-            labelDescSpan.remove();
+            // Use parentNode.removeChild for compatibility with test mocks
+            if (labelDescSpan.parentNode) {
+              labelDescSpan.parentNode.removeChild(labelDescSpan);
+            }
           }
         }
       }
