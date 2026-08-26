@@ -676,6 +676,35 @@
       }
     });
 
+    // Update toggle titles with board component labels from the config response
+    const componentLabels = {
+      arm1: components.arm1?.label,
+      arm2: components.arm2?.label,
+      aux1: components.aux1?.label,
+      aux2: components.aux2?.label,
+      aux3: components.aux3?.label,
+      dome: components.dome?.label,
+      rcCh1: components.rcCh1?.label,
+      rcCh2: components.rcCh2?.label,
+      rcCh3: components.rcCh3?.label,
+      rcCh4: components.rcCh4?.label,
+      rcCh5: components.rcCh5?.label,
+      rcCh6: components.rcCh6?.label,
+      s1Hoverboard: components.s1Hoverboard?.label,
+      s2Sound: components.s2Sound?.label,
+      s3DomeCtrl: components.s3DomeCtrl?.label,
+    };
+    Object.entries(componentLabels).forEach(([toggleKey, label]) => {
+      const toggle = featureToggles[toggleKey];
+      if (toggle && toggle.input && label) {
+        // Append the board component label to the title
+        const switchLabel = toggle.input.parentElement;
+        if (switchLabel && switchLabel.classList.contains("toggle-switch")) {
+          switchLabel.title = (switchLabel.title || "") + (switchLabel.title ? " · " : "") + label;
+        }
+      }
+    });
+
     const auxLedPin = Number(payload?.aux_led_pin || 0);
     const routedRgbKey = auxLedPin >= 1 && auxLedPin <= 3 ? AUX_RGB_SELECT_KEYS[auxLedPin - 1] : "";
     if (routedRgbKey && typeSelects[routedRgbKey]) {

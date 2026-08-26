@@ -408,6 +408,32 @@ bool assignRcMapEntryToSnapshot(const RcMapEntry& entry, const ConfigSnapshot& e
     return false;
 }
 
+// Helper function to get board component label for a given component name.
+// Hardcoded labels from component_labels.inc, filtered by board type.
+const char* getComponentLabel(const char* componentName) {
+#if PA_BOARD == PA_BOARD_ARTOO_ESP32
+    // artoo_esp32 board labels from component_labels.inc
+    if (strcmp(componentName, "enable_drive") == 0) return "S1";
+    if (strcmp(componentName, "enable_audio") == 0) return "S2";
+    if (strcmp(componentName, "enable_dome_esc") == 0) return "DOME";
+    if (strcmp(componentName, "enable_protor2link") == 0) return "S3";
+    if (strcmp(componentName, "enable_arm1") == 0) return "ARM1";
+    if (strcmp(componentName, "enable_arm2") == 0) return "ARM2";
+    if (strcmp(componentName, "enable_aux1") == 0) return "AUX1";
+    if (strcmp(componentName, "enable_aux2") == 0) return "AUX2";
+    if (strcmp(componentName, "enable_aux3") == 0) return "AUX3";
+    if (strcmp(componentName, "enable_rc_ch1") == 0) return "CH1";
+    if (strcmp(componentName, "enable_rc_ch2") == 0) return "CH2";
+    if (strcmp(componentName, "enable_rc_ch3") == 0) return "CH3";
+    if (strcmp(componentName, "enable_rc_ch4") == 0) return "CH4";
+    if (strcmp(componentName, "enable_rc_ch5") == 0) return "CH5";
+    if (strcmp(componentName, "enable_rc_ch6") == 0) return "CH6";
+#elif PA_BOARD == PA_BOARD_FIREBEETLE2
+    // firebeetle2 board labels from component_labels.inc (none defined yet)
+    (void)componentName;  // Unused on this board
+#endif
+    return nullptr;  // No label defined for this component on this board
+}
 
 // -----------------------------------------------------------------------------
 //-----------------------------------------------------------------------------
@@ -440,24 +466,53 @@ bool populateConfigJson(JsonDocument& doc, const ConfigSnapshot& snap) {
     JsonObject components = doc["components"].to<JsonObject>();
     components["arm1"]["enabled"] = snap.system.enable_arm1;
     components["arm1"]["type"] = servoCompTypeToString(snap.servo.arm1_type);
+    if (const char* label = getComponentLabel("enable_arm1")) components["arm1"]["label"] = label;
+
     components["arm2"]["enabled"] = snap.system.enable_arm2;
     components["arm2"]["type"] = servoCompTypeToString(snap.servo.arm2_type);
+    if (const char* label = getComponentLabel("enable_arm2")) components["arm2"]["label"] = label;
+
     components["aux1"]["enabled"] = snap.system.enable_aux1;
     components["aux1"]["type"] = servoCompTypeToString(snap.servo.aux1_type);
+    if (const char* label = getComponentLabel("enable_aux1")) components["aux1"]["label"] = label;
+
     components["aux2"]["enabled"] = snap.system.enable_aux2;
     components["aux2"]["type"] = servoCompTypeToString(snap.servo.aux2_type);
+    if (const char* label = getComponentLabel("enable_aux2")) components["aux2"]["label"] = label;
+
     components["aux3"]["enabled"] = snap.system.enable_aux3;
     components["aux3"]["type"] = servoCompTypeToString(snap.servo.aux3_type);
+    if (const char* label = getComponentLabel("enable_aux3")) components["aux3"]["label"] = label;
+
     components["dome"]["enabled"] = snap.system.enable_dome_esc;
+    if (const char* label = getComponentLabel("enable_dome_esc")) components["dome"]["label"] = label;
+
     components["rcCh1"]["enabled"] = snap.system.enable_rc_ch1;
+    if (const char* label = getComponentLabel("enable_rc_ch1")) components["rcCh1"]["label"] = label;
+
     components["rcCh2"]["enabled"] = snap.system.enable_rc_ch2;
+    if (const char* label = getComponentLabel("enable_rc_ch2")) components["rcCh2"]["label"] = label;
+
     components["rcCh3"]["enabled"] = snap.system.enable_rc_ch3;
+    if (const char* label = getComponentLabel("enable_rc_ch3")) components["rcCh3"]["label"] = label;
+
     components["rcCh4"]["enabled"] = snap.system.enable_rc_ch4;
+    if (const char* label = getComponentLabel("enable_rc_ch4")) components["rcCh4"]["label"] = label;
+
     components["rcCh5"]["enabled"] = snap.system.enable_rc_ch5;
+    if (const char* label = getComponentLabel("enable_rc_ch5")) components["rcCh5"]["label"] = label;
+
     components["rcCh6"]["enabled"] = snap.system.enable_rc_ch6;
+    if (const char* label = getComponentLabel("enable_rc_ch6")) components["rcCh6"]["label"] = label;
+
     components["s1Hoverboard"]["enabled"] = snap.system.enable_drive;
+    if (const char* label = getComponentLabel("enable_drive")) components["s1Hoverboard"]["label"] = label;
+
     components["s2Sound"]["enabled"] = snap.system.enable_audio;
+    if (const char* label = getComponentLabel("enable_audio")) components["s2Sound"]["label"] = label;
+
     components["s3DomeCtrl"]["enabled"] = snap.system.enable_protor2link;
+    if (const char* label = getComponentLabel("enable_protor2link")) components["s3DomeCtrl"]["label"] = label;
 
     // Legacy top-level calibration fields consumed by data/servo.js
     doc["arm1OpenUs"] = snap.servo.arm1_open_us;
