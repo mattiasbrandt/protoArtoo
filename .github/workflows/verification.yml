@@ -92,10 +92,10 @@ jobs:
         continue-on-error: true
         run: pio run -e artoo_esp32_profiler
 
-      - name: 🏗️ FireBeetle 2 build (full diagnostics)
+      - name: 🏗️ FireBeetle 2 build (full firmware)
         id: firebeetle2-full-build
         continue-on-error: true
-        run: mkdir -p ~/.platformio-p4 && PLATFORMIO_CORE_DIR=~/.platformio-p4 pio run -e firebeetle2_full
+        run: mkdir -p ~/.platformio-p4 && PLATFORMIO_CORE_DIR=~/.platformio-p4 pio run -e firebeetle2
 
       - name: 📏 Build size budgets
         id: build-budgets
@@ -153,7 +153,7 @@ jobs:
             echo "|---|---|---|---|"
             row "$BUILD_OUTCOME"     "Firmware build"       "pio run -e artoo_esp32"
             row "$PROFILER_OUTCOME"  "Profiler build"       "pio run -e artoo_esp32_profiler"
-            row "$FIREBEETLE2_OUTCOME" "FireBeetle 2 build"  "pio run -e firebeetle2_full"
+            row "$FIREBEETLE2_OUTCOME" "FireBeetle 2 build"  "pio run -e firebeetle2"
             row "$BUDGETS_OUTCOME"   "Build size budgets"   "python3 tools/check_build_budgets.py"
             row "$TESTS_OUTCOME"    "Native tests"          "pio test -e native"
             row "$ANALYSIS_OUTCOME" "Static analysis"      "pio check -e artoo_esp32"
