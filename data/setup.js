@@ -724,18 +724,18 @@
         badge.textContent = label || "";
       }
 
-      // Update description label: show the label (board component name) in the description
-      const descLabel = document.getElementById(`label-${componentName}`);
-      if (descLabel) {
-        descLabel.textContent = label || "";
-      }
-
-      // Also update the toggle title for backward compatibility
-      const toggle = featureToggles[apiKey];
-      if (toggle && toggle.input && label) {
-        const switchLabel = toggle.input.parentElement;
-        if (switchLabel && switchLabel.classList.contains("toggle-switch")) {
-          switchLabel.title = (switchLabel.title || "") + (switchLabel.title ? " · " : "") + label;
+      // Update description label element: populate the <strong> tag with the label.
+      // If no label exists, remove the entire label-desc span so the description reads correctly.
+      const labelElem = document.getElementById(`label-${componentName}`);
+      if (labelElem) {
+        if (label) {
+          labelElem.textContent = label;
+        } else {
+          // No label: remove the entire trailing sentence span
+          const labelDescSpan = document.getElementById(`label-desc-${componentName}`);
+          if (labelDescSpan) {
+            labelDescSpan.remove();
+          }
         }
       }
     });
