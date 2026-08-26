@@ -178,7 +178,7 @@ void test_configApply_speedLimitMax_falls_back_to_normal_when_unmatched(void) {
 
 // --- transition action ---
 void test_configApply_dome_enable_transition_queues_dome_on_cue(void) {
-    std::map<std::string, std::string> m = {{"enableDome", "1"}};
+    std::map<std::string, std::string> m = {{"enableDomeEsc", "1"}};
     ConfigSnapshot snap = makeDefaultSnap();
     snap.system.enable_dome_esc = false;
     ConfigApplyResult result;
@@ -188,7 +188,7 @@ void test_configApply_dome_enable_transition_queues_dome_on_cue(void) {
 }
 
 void test_configApply_dome_already_enabled_no_cue(void) {
-    std::map<std::string, std::string> m = {{"enableDome", "1"}};
+    std::map<std::string, std::string> m = {{"enableDomeEsc", "1"}};
     ConfigSnapshot snap = makeDefaultSnap();
     snap.system.enable_dome_esc = true;
     ConfigApplyResult result;
