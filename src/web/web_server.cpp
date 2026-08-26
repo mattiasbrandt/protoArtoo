@@ -657,7 +657,7 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
         }
 
         // Top-level dome_link block - always present for external tooling,
-        // regardless of whether the s3DomeCtrl component is enabled.
+        // regardless of whether the protoR2link component is enabled.
         // three states: connected (hb seen < 5s), lost (was seen, now > 5s), not_seen (never).
         {
             const char* dlState;

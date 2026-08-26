@@ -1166,7 +1166,7 @@ curl -s -X POST http://artoo.local/api/config \
 #### Example response (abridged)
 
 ```json
-{"drive":{"speedLimitMax":400,"webDriveTimeoutMs":750},"components":{"arm1":{"enabled":true},"domeEsc":{"enabled":true}},"domeEsc":{"neutralUs":1500}}
+{"drive":{"speedLimitMax":400,"webDriveTimeoutMs":750},"components":{"arm1":{"enabled":true},"domeEsc":{"enabled":true}},"domeEsc":{"neutralUs":1500},"protoR2link":{"wifiPeerIp":""}}
 ```
 
 #### Example request (json)

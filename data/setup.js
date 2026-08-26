@@ -1269,7 +1269,8 @@
     const d = cfg?.drive || {};
     const rc = cfg?.rc || {};
     const components = cfg?.components || {};
-    const dome = cfg?.dome || {};
+    const domeEsc = cfg?.domeEsc || {};
+    const protoR2link = cfg?.protoR2link || {};
     const sys = cfg?.system || {};
 
     if (d.speedLimitMax !== undefined) p.set('speedLimitMax', d.speedLimitMax);
@@ -1311,16 +1312,16 @@
     if (cfg.aux_led_pin !== undefined) p.set('aux_led_pin', cfg.aux_led_pin);
     if (cfg.aux_led_count !== undefined) p.set('aux_led_count', cfg.aux_led_count);
 
-    if (dome.neutralUs !== undefined) p.set('domeEscNeutralUs', dome.neutralUs);
-    if (dome.minPulseUs !== undefined) p.set('domeEscMinPulseUs', dome.minPulseUs);
-    if (dome.maxPulseUs !== undefined) p.set('domeEscMaxPulseUs', dome.maxPulseUs);
-    if (dome.speedLimitPct !== undefined) p.set('domeEscSpeedLimitPct', dome.speedLimitPct);
-    if (dome.rndEnable !== undefined) p.set('domeEscRndEnable', dome.rndEnable ? 'true' : 'false');
-    if (dome.rndSpeedPct !== undefined) p.set('domeEscRndSpeedPct', dome.rndSpeedPct);
-    if (dome.rndPauseMin !== undefined) p.set('domeEscRndPauseMin', dome.rndPauseMin);
-    if (dome.rndPauseMax !== undefined) p.set('domeEscRndPauseMax', dome.rndPauseMax);
-    if (dome.rndMoveMs !== undefined) p.set('domeEscRndMoveMs', dome.rndMoveMs);
-    if (dome.wifiPeerIp !== undefined) p.set('protoR2linkWifiPeerIp', dome.wifiPeerIp);
+    if (domeEsc.neutralUs !== undefined) p.set('domeEscNeutralUs', domeEsc.neutralUs);
+    if (domeEsc.minPulseUs !== undefined) p.set('domeEscMinPulseUs', domeEsc.minPulseUs);
+    if (domeEsc.maxPulseUs !== undefined) p.set('domeEscMaxPulseUs', domeEsc.maxPulseUs);
+    if (domeEsc.speedLimitPct !== undefined) p.set('domeEscSpeedLimitPct', domeEsc.speedLimitPct);
+    if (domeEsc.rndEnable !== undefined) p.set('domeEscRndEnable', domeEsc.rndEnable ? 'true' : 'false');
+    if (domeEsc.rndSpeedPct !== undefined) p.set('domeEscRndSpeedPct', domeEsc.rndSpeedPct);
+    if (domeEsc.rndPauseMin !== undefined) p.set('domeEscRndPauseMin', domeEsc.rndPauseMin);
+    if (domeEsc.rndPauseMax !== undefined) p.set('domeEscRndPauseMax', domeEsc.rndPauseMax);
+    if (domeEsc.rndMoveMs !== undefined) p.set('domeEscRndMoveMs', domeEsc.rndMoveMs);
+    if (protoR2link.wifiPeerIp !== undefined) p.set('protoR2linkWifiPeerIp', protoR2link.wifiPeerIp);
 
     if (sys.logLevel !== undefined) p.set('logLevel', sys.logLevel);
 

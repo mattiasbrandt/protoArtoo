@@ -103,7 +103,7 @@ void test_configApply_rcInputMode_enum_reject(void) {
                              result.error.message);
 }
 
-void test_configApply_domeWifiPeerIp_invalid_ipv4_reject(void) {
+void test_configApply_protoR2linkWifiPeerIp_invalid_ipv4_reject(void) {
     std::map<std::string, std::string> m = {{"protoR2linkWifiPeerIp", "not.an.ip"}};
     ConfigSnapshot snap = makeDefaultSnap();
     ConfigApplyResult result;
@@ -113,7 +113,7 @@ void test_configApply_domeWifiPeerIp_invalid_ipv4_reject(void) {
                              result.error.message);
 }
 
-void test_configApply_domeWifiPeerIp_empty_clears(void) {
+void test_configApply_protoR2linkWifiPeerIp_empty_clears(void) {
     std::map<std::string, std::string> m = {{"protoR2linkWifiPeerIp", ""}};
     ConfigSnapshot snap = makeDefaultSnap();
     strncpy(snap.dome.dome_wifi_peer_ip, "10.0.0.5", sizeof(snap.dome.dome_wifi_peer_ip));
@@ -255,8 +255,8 @@ int main(int argc, char** argv) {
     RUN_TEST(test_configApply_speedLimitMax_out_of_range_rejected);
     RUN_TEST(test_configApply_stationary_bool_reject);
     RUN_TEST(test_configApply_rcInputMode_enum_reject);
-    RUN_TEST(test_configApply_domeWifiPeerIp_invalid_ipv4_reject);
-    RUN_TEST(test_configApply_domeWifiPeerIp_empty_clears);
+    RUN_TEST(test_configApply_protoR2linkWifiPeerIp_invalid_ipv4_reject);
+    RUN_TEST(test_configApply_protoR2linkWifiPeerIp_empty_clears);
     RUN_TEST(test_configApply_servoType_named_value_updates);
     RUN_TEST(test_configApply_speed_presets_must_be_distinct);
     RUN_TEST(test_configApply_speedLimitMax_derives_from_active_preset_when_omitted);
