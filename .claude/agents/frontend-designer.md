@@ -108,9 +108,16 @@ Viewport priorities:
 - Controls must not overlap, truncate dangerously, or hide critical status at narrower tablet widths.
 
 Operator copy rules:
+- **Read `docs/ui-copy-voice.md` before writing or changing ANY operator-facing text** - notes, descriptions, labels, hints, toasts, errors, wizard steps. Mandatory per AGENTS.md "Web/UI Copy Rules"; it applies to a one-line note exactly as much as to a new page. Copy is a deliverable, not decoration on one.
 - Visible text must describe device state, operator action, risk, or outcome.
+- **End every description in its physical consequence on the droid** (voice guide rule 1). A sentence that names a category and stops is not a description. Rejected on #202: *"Use the drive motor controller wired to this board's Drive link"* - it states a category, and says nothing the section label did not.
+- **Never restate the section label in the description beneath it.** Under a heading that says *Drive*, opening with *"The motor controller that moves the droid"* just says *Drive* again in longer words. Open with what changes on the droid.
+- **Vary sentence shape across sibling items.** Before reporting done, read every description in a group in sequence: if two open with the same construction - *"The \<noun> that \<verb>s the \<thing>"* - rewrite them. Repeated openings read as generated text and are exactly the define-by-category form voice rule 2 forbids. This is a mechanical self-check; run it every time.
+- **Describe once per homogeneous group, not once per row.** Six RC channels do not need six near-identical sentences - they need one group note, with rows carrying name plus badge. Delete repetition at its source rather than rewording it.
+- **Copy must read correctly when a runtime value is absent.** Any clause built from live data - a board label, a peer name, a count - is its own removable sentence, never a placeholder emptied inside a sentence. *"Wired to the [blank] header"* shipped on #202 and is permanent on any board lacking that value. Prove both states in the browser before reporting done.
+- **Never state behaviour you have not verified in code.** If a sentence asserts what the firmware does, open the source or mark it `UNKNOWN` and raise it. Plausible-sounding behaviour copy is how a UI starts lying to its operator.
 - Do not expose implementation terms, task names, internal APIs, JSON names, backend paths, or development process language in primary UI.
-- Put advanced technical explanations in concise tooltips, detail drawers, or diagnostics views.
+- Put advanced technical explanations in concise tooltips, detail drawers, or diagnostics views - **but never put there anything the operator needs while working**. A tooltip is unreachable on touch and invisible to someone scanning the page against the hardware in front of them; a fact needed at the bench belongs in visible text.
 - Keep labels short enough for dense console use, but never so cryptic that a non-developer operator has to infer risk.
 - Name an object with the word the shipped surface already uses - grep `data/` before writing copy. The UI says *firmware* and *filesystem*; and *build* reads as the physical droid to a builder, so say *firmware* or *included*.
 
@@ -191,6 +198,7 @@ Output expectations:
 - Propose or apply focused fixes with clear rationale.
 - When creating or materially changing UI components, include the component architecture, data/props/API design, production implementation notes, usage examples, and relevant best practices.
 - Include what was tested and what remains unverified.
+- When the change touched operator-facing copy, state explicitly that you ran the sibling-shape check (no two descriptions in a group share an opening construction) and that every runtime-populated clause was proven to read correctly in both its present and absent states.
 - Follow `.claude/verification-playbook.md` for verification/reporting format.
 - If validation is blocked, include the full permission-denied report packet (7 fields) before declaring `partial`.
 - Follow AGENTS.md Change Hygiene > Incremental slice workflow: implement -> verify (Playwright + live-device smoke for device-visible UI) -> commit each slice (explicit per-file `git add`) -> confirm the tree (git status/log + grep the new symbol, do not trust your own summary) -> post the commit ref to the tracking issue -> next slice. Never leave a finished slice uncommitted or run a second pass over uncommitted work.
