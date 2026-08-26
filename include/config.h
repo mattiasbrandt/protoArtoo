@@ -199,7 +199,11 @@ constexpr uint8_t PIN_I2C_SDA = 21;
 // and "Not available on the IO headers" (GPIO constraints).
 // ────────────────────────────────────────────────────────────────────────────
 
-// UART1 — Hoverboard motor controller
+// UART1 — Drive backend (default: hoverboard motor controller, Gen2.x protocol)
+// firebeetle2 has the UART headroom artoo-esp32 lacks: this is this board's
+// default wiring, not a universal fact. A different serial drive backend
+// (e.g. a Sabertooth/Cytron-class motor driver) could be wired here instead
+// on a given build. See ADR 0029's 2026-08-26 amendment.
 // From spec sheet "Recommended allocation": UART1 = GPIO20/21
 // Cost: ADC1_CHANNEL4/5 (per spec sheet: "Default first lane if no analog input")
 constexpr uint8_t PIN_HOVERBOARD_TX = 20;  // UART1_TX per spec sheet §Recommended allocation

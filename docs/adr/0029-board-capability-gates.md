@@ -109,3 +109,48 @@ Rejected: keeping "On" for compile-only features (the profiler happened to be
 defensible because its instrumentation is genuinely active, which set the
 general rule from the special case); a disabled `role="switch"` for an
 immutable fact (a generic disabled widget, and a promise the UI cannot keep).
+
+## Amended 2026-08-26
+
+Recorded after a grilling session with the operator on decoupling drive
+integration from the artoo.uk PCB (epic #182, ticket #204). The trigger:
+`docs/goal.md` and firebeetle2's own pin map (`include/config.h:202`) stated
+hoverboard-UART drive as a project-wide fact, when it is actually true of one
+Board Variant's fixed wiring.
+
+- **A Board Capability Gate may declare a set of mutually-exclusive supported
+  options with one default, not only a single yes/no fact.** Drive backend is
+  the first consumer. artoo-esp32's set is forced to `{hoverboard}` — its PCB
+  traces exactly one UART to hoverboard (S1), with no spare UART to wire
+  anything else. firebeetle2 has the UART headroom ADR 0028 named as the
+  reason the ESP32-P4 was chosen, so its set is not forced to one option the
+  same way; a named candidate alternative is a Sabertooth/Cytron-class serial
+  motor driver, matching the family Padawan360/ShadowMD/ShadowRC/DroidLink
+  already use.
+- **"Headroom" means the option to be wired differently per build (replace),
+  never two backends driving output concurrently in one running image
+  (append).** A board declaring a wider set is declaring what a given droid
+  could be wired for, not that one firmware image drives two motor-controller
+  protocols at once.
+- **The actual set/default mechanism is deferred.** This amendment records the
+  shape only. Building the `PA_CAP_*`-style plumbing and any second backend
+  waits for a real second backend to design it against — the same precedent
+  ADR 0033 already set when it declined Board Capability Gates for the 15
+  component toggles "now": no consumer forces the generalization yet.
+
+Rejected in the session: committing to a specific second backend now (no real
+consumer to design the plumbing against yet, matches ADR 0033's precedent);
+leaving `docs/goal.md`/`config.h` as-is until the plumbing exists (the
+overclaim was actively misleading in the meantime — firebeetle2's pin map had
+already inherited "Hoverboard motor controller" as flat fact by copy-paste
+from artoo-esp32, before any decision was made).
+
+## Consequences (2026-08-26 amendment)
+
+- `docs/goal.md`: the "Hardware support baseline" bullet and the Capability
+  Alignment Matrix's drive-focus row no longer state hoverboard-UART as a
+  project-wide fact.
+- `include/config.h:202`: firebeetle2's UART1 comment states hoverboard as
+  this board's *default*, not its identity, and notes the wiring headroom.
+- CONTEXT.md's **Board Capability Gate** entry gains the set-with-a-default
+  form.
