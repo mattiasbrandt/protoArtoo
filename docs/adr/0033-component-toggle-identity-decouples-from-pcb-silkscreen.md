@@ -167,3 +167,41 @@ and the link's own setting sits under the link's own name.
 - Operator-facing display copy still carrying the old vocabulary outside the
   setup page — `data/app.js` "Hoverboard Drive", "Sound Module" — moves in the
   same slice.
+
+## Amended 2026-08-26 (second) — the board label is shown, not hidden in a tooltip
+
+This ADR originally said per-board physical detail *"moves into a tooltip
+sourced from the new `include/component_labels.inc` — never the toggle's
+canonical name."* #202 Slice 2 implemented that literally and the result was
+rejected by the operator on sight: with the label reachable only on hover, the
+setup page had no visible connection to the board in front of them.
+
+**Superseded.** The tooltip-only rule is wrong for this surface. The reason the
+label exists is so an operator can match the page against the PCB by eye while
+standing at the bench — a hover target cannot serve that, and on a touch screen
+it barely exists at all.
+
+**The rule is now:** the **Board Component Label** appears **twice** —
+
+1. as a **badge beside the toggle's name**, so the panel can be scanned against
+   the board at a glance (`Drive` `S1`);
+2. **named naturally inside the toggle's description**, so a first-time builder
+   meets it as a sentence rather than an unexplained code.
+
+Unchanged from the original decision: the label is **never the toggle's
+canonical name**. `Drive` is the name; `S1` is where this particular board
+happens to put it. A board with no established label (firebeetle2 today) shows
+the name alone, with no empty badge and no placeholder text.
+
+### Consequence for copy
+
+Descriptions follow `docs/ui-copy-voice.md` rule 1 — *end every parameter in
+its physical consequence*. The shape is **what it is → where it is wired →
+what changes on the droid when it is off**:
+
+> The motor controller that moves the droid. Wired to the **S1** header —
+> switch it off and the wheels stay dead however you push the sticks.
+
+Rejected: the category-and-stop form this amendment replaces
+(*"Use the drive motor controller wired to this board's Drive link"*), which
+restates the toggle's own name back at the reader and states no consequence.
