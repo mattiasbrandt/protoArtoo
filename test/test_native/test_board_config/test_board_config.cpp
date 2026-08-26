@@ -41,8 +41,8 @@ void test_chip_target_mapped_for_artoo_esp32() {
 // Verify that pin definitions exist and are non-zero
 void test_pins_are_defined() {
     // Sample pins from each category to verify board-specific pin map is loaded
-    TEST_ASSERT_GREATER_THAN(0, PIN_HOVERBOARD_TX);
-    TEST_ASSERT_GREATER_THAN(0, PIN_HOVERBOARD_RX);
+    TEST_ASSERT_GREATER_THAN(0, PIN_DRIVE_TX);
+    TEST_ASSERT_GREATER_THAN(0, PIN_DRIVE_RX);
     TEST_ASSERT_GREATER_THAN(0, PIN_DOME_TX);
     TEST_ASSERT_GREATER_THAN(0, PIN_DOME_RX);
     TEST_ASSERT_GREATER_THAN(0, PIN_I2C_SCL);
@@ -68,6 +68,11 @@ void test_aux_led_selection_to_gpio_mapping() {
     TEST_ASSERT_EQUAL_INT(auxLedSelectionToGpio(AUX_LED_PIN_AUX3), PIN_ARM5_SERVO);
 }
 
+// Verify that the drive backend capability gate is declared for this board
+void test_drive_backend_capability_gate_is_declared() {
+    TEST_ASSERT_EQUAL_INT(1, PA_CAP_DRIVE_BACKEND_HOVERBOARD);
+}
+
 // Every pin required by FireBeetle production consumers is also required on
 // the shipping artoo-esp32 board. Expanding the production-owned inventory here
 // prevents a newly guarded consumer from bypassing native coverage.
@@ -86,6 +91,7 @@ int main() {
     RUN_TEST(test_pins_are_defined);
     RUN_TEST(test_servo_and_led_config_available);
     RUN_TEST(test_aux_led_selection_to_gpio_mapping);
+    RUN_TEST(test_drive_backend_capability_gate_is_declared);
     RUN_TEST(test_required_consumer_pins_are_assigned_on_artoo_esp32);
     return UNITY_END();
 }

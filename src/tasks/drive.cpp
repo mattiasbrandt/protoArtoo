@@ -2,7 +2,7 @@
 // src/tasks/drive.cpp
 //
 // DriveTask  --  sends 8-byte Gen2.x frames to the hoverboard at 50 Hz.
-// Owns UART1 / Serial1 on GPIO PIN_HOVERBOARD_TX / PIN_HOVERBOARD_RX.
+// Owns UART1 / Serial1 on GPIO PIN_DRIVE_TX / PIN_DRIVE_RX.
 // Runs on Core 1 (real-time).
 //
 // Safety layers implemented here:
@@ -60,10 +60,10 @@ void driveTask(void* pvParameters) {
     }
 
     HoverboardFeedbackParser hbParser;
-    hoverSerial.begin(HOVERBOARD_BAUD, SERIAL_8N1, PIN_HOVERBOARD_RX, PIN_HOVERBOARD_TX);
+    hoverSerial.begin(HOVERBOARD_BAUD, SERIAL_8N1, PIN_DRIVE_RX, PIN_DRIVE_TX);
     initHoverboardFeedbackParser(&hbParser);  // clear parser state after UART reinit
     PA_LOG_INFO(TAG, "started \u2014 UART1 %lu baud, GPIO TX=%d RX=%d",
-                (unsigned long)HOVERBOARD_BAUD, PIN_HOVERBOARD_TX, PIN_HOVERBOARD_RX);
+                (unsigned long)HOVERBOARD_BAUD, PIN_DRIVE_TX, PIN_DRIVE_RX);
 
     uint8_t frameBuf[8];
     const TickType_t period = pdMS_TO_TICKS(1000 / DRIVE_FREQ_HZ);  // 20 ms at 50 Hz

@@ -34,7 +34,7 @@ PA_FIREBEETLE_REQUIRED_PIN(PIN_DOME_ESC, "firebeetle2: PIN_DOME_ESC is unassigne
 // Standard interface lanes — 6 pins committed by board bring-up
 PA_FIREBEETLE_REQUIRED_PIN(PIN_I2C_SCL, "firebeetle2: PIN_I2C_SCL is unassigned - see spec sheet §Exposed GPIO table")
 PA_FIREBEETLE_REQUIRED_PIN(PIN_I2C_SDA, "firebeetle2: PIN_I2C_SDA is unassigned - see spec sheet §Exposed GPIO table")
-PA_FIREBEETLE_REQUIRED_PIN(PIN_HOVERBOARD_TX, "firebeetle2: PIN_HOVERBOARD_TX is unassigned - see spec sheet §Recommended allocation")
-PA_FIREBEETLE_REQUIRED_PIN(PIN_HOVERBOARD_RX, "firebeetle2: PIN_HOVERBOARD_RX is unassigned - see spec sheet §Recommended allocation")
+PA_FIREBEETLE_REQUIRED_PIN(PIN_DRIVE_TX, "firebeetle2: PIN_DRIVE_TX is unassigned - see spec sheet §Recommended allocation")
+PA_FIREBEETLE_REQUIRED_PIN(PIN_DRIVE_RX, "firebeetle2: PIN_DRIVE_RX is unassigned - see spec sheet §Recommended allocation")
 PA_FIREBEETLE_REQUIRED_PIN(PIN_DOME_TX, "firebeetle2: PIN_DOME_TX is unassigned - see spec sheet §Recommended allocation")
 PA_FIREBEETLE_REQUIRED_PIN(PIN_DOME_RX, "firebeetle2: PIN_DOME_RX is unassigned - see spec sheet §Recommended allocation")

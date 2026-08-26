@@ -49,9 +49,11 @@
 #if PA_BOARD == PA_BOARD_ARTOO_ESP32
   #define PA_CAP_NATIVE_WIFI 1
   #define PA_CAP_HOSTED_WIFI 0
+  #define PA_CAP_DRIVE_BACKEND_HOVERBOARD 1
 #elif PA_BOARD == PA_BOARD_FIREBEETLE2
   #define PA_CAP_NATIVE_WIFI 0
   #define PA_CAP_HOSTED_WIFI 1  // Declared here before its consumers (#188, #189) to gate the capability early
+  #define PA_CAP_DRIVE_BACKEND_HOVERBOARD 1
 #else
   #error "PA_BOARD value not recognized in capability selection"
 #endif
@@ -107,9 +109,9 @@ constexpr uint8_t PA_PIN_UNASSIGNED = 0xFF;
 // See docs/pin_map.md for full trace results and revision notes.
 // ────────────────────────────────────────────────────────────────────────────
 
-// UART1 (Serial1)  --  Hoverboard motor controller (Gen2.x protocol, PCB S1)
-constexpr uint8_t PIN_HOVERBOARD_TX = 16;
-constexpr uint8_t PIN_HOVERBOARD_RX = 17;
+// UART1 (Serial1)  --  Drive backend (default: hoverboard motor controller, Gen2.x protocol, PCB S1)
+constexpr uint8_t PIN_DRIVE_TX = 16;
+constexpr uint8_t PIN_DRIVE_RX = 17;
 
 // -----------------------------------------------------------------------------
 // UART2 (Serial2)  --  Dome serial link (AstroPixelsPlus via slip ring, PCB S3)
@@ -206,8 +208,8 @@ constexpr uint8_t PIN_I2C_SDA = 21;
 // on a given build. See ADR 0029's 2026-08-26 amendment.
 // From spec sheet "Recommended allocation": UART1 = GPIO20/21
 // Cost: ADC1_CHANNEL4/5 (per spec sheet: "Default first lane if no analog input")
-constexpr uint8_t PIN_HOVERBOARD_TX = 20;  // UART1_TX per spec sheet §Recommended allocation
-constexpr uint8_t PIN_HOVERBOARD_RX = 21;  // UART1_RX per spec sheet §Recommended allocation
+constexpr uint8_t PIN_DRIVE_TX = 20;  // UART1_TX per spec sheet §Recommended allocation
+constexpr uint8_t PIN_DRIVE_RX = 21;  // UART1_RX per spec sheet §Recommended allocation
 
 // UART2 — Dome control link
 // From spec sheet "Recommended allocation": UART2 = GPIO22/23

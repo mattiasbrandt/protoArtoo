@@ -99,7 +99,7 @@ curl -s http://artoo.local/api/identity
 #### Example response
 
 ```json
-{"droidName":"artoo","mdnsUseName":true,"board":"artoo_esp32","board_capabilities":{"PA_CAP_NATIVE_WIFI":true,"PA_CAP_HOSTED_WIFI":false},"build_flags":{"PA_HEAP_PROFILE":false,"PA_HEAP_TRACING":false,"PA_ADMISSION_TRACE":false}}
+{"droidName":"artoo","mdnsUseName":true,"board":"artoo_esp32","board_capabilities":{"PA_CAP_NATIVE_WIFI":true,"PA_CAP_HOSTED_WIFI":false,"PA_CAP_DRIVE_BACKEND_HOVERBOARD":true},"build_flags":{"PA_HEAP_PROFILE":false,"PA_HEAP_TRACING":false,"PA_ADMISSION_TRACE":false}}
 ```
 
 ### POST /api/identity
@@ -127,7 +127,7 @@ curl -s -X POST http://artoo.local/api/identity \
 #### Example response
 
 ```json
-{"droidName":"r2d2","mdnsUseName":true,"board":"artoo_esp32","board_capabilities":{"PA_CAP_NATIVE_WIFI":true,"PA_CAP_HOSTED_WIFI":false},"build_flags":{"PA_HEAP_PROFILE":false,"PA_HEAP_TRACING":false,"PA_ADMISSION_TRACE":false}}
+{"droidName":"r2d2","mdnsUseName":true,"board":"artoo_esp32","board_capabilities":{"PA_CAP_NATIVE_WIFI":true,"PA_CAP_HOSTED_WIFI":false,"PA_CAP_DRIVE_BACKEND_HOVERBOARD":true},"build_flags":{"PA_HEAP_PROFILE":false,"PA_HEAP_TRACING":false,"PA_ADMISSION_TRACE":false}}
 ```
 
 ## Safety and Drive

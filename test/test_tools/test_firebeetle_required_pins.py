@@ -38,8 +38,8 @@ EXPECTED_PINS = {
     # Already assigned in prior slices — 6 pins, included for coherence verification
     "PIN_I2C_SCL": "firebeetle2: PIN_I2C_SCL is unassigned - see spec sheet §Exposed GPIO table",
     "PIN_I2C_SDA": "firebeetle2: PIN_I2C_SDA is unassigned - see spec sheet §Exposed GPIO table",
-    "PIN_HOVERBOARD_TX": "firebeetle2: PIN_HOVERBOARD_TX is unassigned - see spec sheet §Recommended allocation",
-    "PIN_HOVERBOARD_RX": "firebeetle2: PIN_HOVERBOARD_RX is unassigned - see spec sheet §Recommended allocation",
+    "PIN_DRIVE_TX": "firebeetle2: PIN_DRIVE_TX is unassigned - see spec sheet §Recommended allocation",
+    "PIN_DRIVE_RX": "firebeetle2: PIN_DRIVE_RX is unassigned - see spec sheet §Recommended allocation",
     "PIN_DOME_TX": "firebeetle2: PIN_DOME_TX is unassigned - see spec sheet §Recommended allocation",
     "PIN_DOME_RX": "firebeetle2: PIN_DOME_RX is unassigned - see spec sheet §Recommended allocation",
 }
