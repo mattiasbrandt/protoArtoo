@@ -45,6 +45,11 @@
 
 static const char* TAG = "WebServer";
 
+// Event-cached STA connection status for networkManagerStationConnected().
+// Updated by handleWiFiEventBackend(); read by Core 1 dome-link loop.
+// Using volatile bool avoids heap allocation and vendor calls on Core 1.
+static volatile bool g_staConnected = false;
+
 // Event handler for the Arduino WiFi driver. Translates Arduino WiFiEvent_t
 // to application behavior: logging and HTTP server startup.
 // This replaces the previous handleWiFiEvent() from web_network_bootstrap.h,
@@ -61,6 +66,7 @@ static void handleWiFiEventBackend(WiFiEvent_t event) {
             break;
         case ARDUINO_EVENT_WIFI_STA_GOT_IP:
             PA_LOG_INFO(TAG, "WiFi connected, IP: %s", WiFi.localIP().toString().c_str());
+            g_staConnected = true;
             startHttpServerOnce();
             break;
         case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
@@ -69,6 +75,7 @@ static void handleWiFiEventBackend(WiFiEvent_t event) {
             // AP fallback here - wifiDecideBootPosture() has no connectivity
             // input, so there is nothing to re-decide on disconnect.
             PA_LOG_INFO(TAG, "WiFi connection lost");
+            g_staConnected = false;
             break;
         default:
             break;
@@ -149,6 +156,11 @@ WifiConnectivityStatus networkManagerQueryConnectivity() {
     }
 
     return result;
+}
+
+// Query STA connection status via event cache (Core 1 safe).
+bool networkManagerStationConnected() {
+    return g_staConnected;
 }
 
 #endif  // PA_CAP_NATIVE_WIFI

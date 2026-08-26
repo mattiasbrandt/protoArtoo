@@ -52,3 +52,10 @@ struct WifiConnectivityStatus {
 
 WifiConnectivityStatus networkManagerQueryConnectivity();
 
+// Quick query: is the STA connected to an upstream AP? Used on Core 1 loop
+// (e.g., src/tasks/dome_link.cpp) where heap allocation and blocking calls
+// are forbidden. Reads an event-cached flag (set by the backend's WiFi event
+// handler) rather than querying hardware directly — no WiFi.h or vendor calls.
+// thread-safe: yes (volatile bool read)
+bool networkManagerStationConnected();
+

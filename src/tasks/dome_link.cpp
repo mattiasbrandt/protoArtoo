@@ -27,13 +27,13 @@
 #include <Arduino.h>
 #include <ESPmDNS.h>
 #include <HTTPClient.h>
-#include <WiFi.h>
 #include <WiFiUdp.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
 
 #include "audio_task.h"
 #include "config.h"
+#include "web_network_manager.h"
 #include "config_cache.h"
 #include "dome_cue_handler.h"
 #include "dome_link_arbiter.h"
@@ -787,7 +787,7 @@ void domeLinkTask(void* pvParameters) {
 
     for (;;) {
         const uint32_t now = millis();
-        const bool staConnected = WiFi.status() == WL_CONNECTED;
+        const bool staConnected = networkManagerStationConnected();
 
         if (staConnected && !udpReady) {
             udpReady = s_domeUdp.begin(kDomeUdpPort) == 1;

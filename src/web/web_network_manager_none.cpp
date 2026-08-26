@@ -46,4 +46,9 @@ WifiConnectivityStatus networkManagerQueryConnectivity() {
     };
 }
 
+// Query STA connection status. No network backend, so always disconnected.
+bool networkManagerStationConnected() {
+    return false;
+}
+
 #endif  // !PA_CAP_NATIVE_WIFI
