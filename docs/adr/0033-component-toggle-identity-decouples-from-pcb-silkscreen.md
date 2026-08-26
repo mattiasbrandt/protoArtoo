@@ -74,3 +74,96 @@ Channels.
   firebeetle2 entries may be absent where no established label exists.
 - `make check-action-drift` and every reader of the renamed fields move in
   the same slice as the rename.
+
+## Amended 2026-08-26 — the decision extends to the JSON API surface
+
+This ADR as originally written renamed three surfaces — **struct field, NVS
+key, registry name** — and said nothing about the JSON API. That omission was
+found during #202 Slice 1's bench verification: with the rename merged, the
+firmware spoke the new vocabulary internally while `/api/config` and
+`/api/status` still answered `s1Hoverboard`, `s2Sound`, `s3DomeCtrl`.
+
+**The API surface is part of component identity, not plumbing behind it.**
+`CONTEXT.md` defines the concept itself in terms of the API path — *"a runtime
+`components.*` setting"* — so the JSON key is the concept's operator-facing
+name. Leaving it unchanged would not decouple identity from the artoo.uk
+silkscreen; it would move the silkscreen one layer outward, onto the most-read
+surface the project has.
+
+### Additional renames
+
+Both directions of the wire. Read shape (`/api/config`, `/api/status`
+peripherals):
+
+| Old key | New key |
+|---|---|
+| `components.s1Hoverboard` | `components.drive` |
+| `components.s2Sound` | `components.audio` |
+| `components.s3DomeCtrl` | `components.protoR2link` |
+| `components.dome` | `components.domeEsc` |
+
+Write shape (`POST /api/config` fields):
+
+| Old field | New field |
+|---|---|
+| `enableS1Hoverboard` | `enableDrive` |
+| `enableS2Sound` | `enableAudio` |
+| `enableS3DomeCtrl` | `enableProtoR2link` |
+| `enableDome` | `enableDomeEsc` |
+| `domeNeutralUs` / `domeMinPulseUs` / `domeMaxPulseUs` / `domeSpeedLimitPct` | `domeEsc…` equivalents |
+| `domeWifiPeerIp` | moves to protoR2link — see below |
+
+The eleven unrenamed toggles (`arm1`, `arm2`, `aux1-3`, `rcCh1-6`) keep their
+API keys, exactly as they kept their identifiers.
+
+### The top-level `dome` config block splits
+
+Tracing consumers showed the block was two components wearing one name:
+
+| Setting | Read by | Belongs to |
+|---|---|---|
+| `neutralUs`, `minPulseUs`, `maxPulseUs`, `speedLimitPct` | `src/tasks/dome_task.cpp` | the ESC that spins the dome |
+| `wifiPeerIp` | **only** `src/tasks/dome_link.cpp:196` | **protoR2link** |
+
+So the block becomes **`domeEsc`** (the four pulse settings) plus a new
+**`protoR2link`** block holding the peer IP. Renaming the block wholesale to
+`domeEsc` was rejected: it would file a link setting under the motor's name and
+state something untrue about the model — a reader of `domeEsc.wifiPeerIp`
+reasonably concludes the ESC is network-attached, which it is not.
+
+This also discharges the overloading this ADR's grouping note already
+identified, where *"dome" was already overloaded across rotation, the link, and
+dome panels*: `components.domeEsc` no longer collides with a top-level `dome`,
+and the link's own setting sits under the link's own name.
+
+### Rejected in the amendment
+
+- **Freezing the API names as a compatibility surface** — rejected: there is no
+  released API version and no versioning or deprecation convention in this
+  project, and no consumer outside this repository. It would also make
+  CONTEXT.md's definition of **Component Toggle** inaccurate, since that
+  definition is stated in terms of `components.*`.
+- **Emitting both old and new keys for a release** — rejected on the same
+  reasoning this ticket already rejected a permanent dual-read for the NVS
+  keys: "temporary" dual-emission becomes permanent, and `/api/identity` has
+  only 85 B of headroom against `IDENTITY_JSON_MAX_BYTES` (which is also why
+  Board Component Labels are emitted through `/api/config`, not identity).
+- **Renaming only the four `enable*` POST fields** — rejected: the read and
+  write shapes would then disagree for precisely the settings being split
+  apart, and `domeWifiPeerIp` would keep naming the dome while living under
+  protoR2link.
+
+### Consequences of the amendment
+
+- This is a **breaking API change**, taken deliberately and without a
+  compatibility window. A browser tab open across the upgrade reads the old
+  keys and renders components as absent until reloaded.
+- `CONTEXT.md`'s list of surfaces that are generic project vocabulary gains
+  **JSON API key**.
+- Blast radius: 2 firmware files emitting (`src/web/api_config.cpp`,
+  `src/web/web_server.cpp`), 4 UI files consuming (`data/app.js`,
+  `data/drive.js`, `data/sound.js`, `data/setup.js`), 7 test files, and
+  `docs/api.md`.
+- Operator-facing display copy still carrying the old vocabulary outside the
+  setup page — `data/app.js` "Hoverboard Drive", "Sound Module" — moves in the
+  same slice.
