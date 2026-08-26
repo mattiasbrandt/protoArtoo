@@ -20,7 +20,7 @@
 // The guard is deliberately !PA_CAP_NATIVE_WIFI and NOT
 // (!PA_CAP_NATIVE_WIFI && !PA_CAP_HOSTED_WIFI): no Hosted implementation exists
 // yet, so tightening it would leave FireBeetle 2 with no definition and break the
-// firebeetle2_full link. #189 narrows this guard when it adds
+// firebeetle2 link. #189 narrows this guard when it adds
 // web_network_manager_hosted.cpp.
 #if !PA_CAP_NATIVE_WIFI
 

@@ -15,7 +15,7 @@
 // is not the native radio, this translation unit contributes nothing, and the
 // composition that does apply lives in its own file (ADR 0021 shape). Keeping a
 // "not selected" definition here is what let a stale signature survive as a
-// silent overload and break the firebeetle2_full link.
+// silent overload and break the firebeetle2 link.
 #if PA_CAP_NATIVE_WIFI
 
 #include <WiFi.h>

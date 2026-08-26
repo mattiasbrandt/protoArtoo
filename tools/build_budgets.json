@@ -39,7 +39,7 @@
       "baseline_measured_at": "8fea3c73ebce",
       "baseline_flash_bytes": 1569152,
       "baseline_ram_bytes": 96312,
-      "budget_rationale": "Measured 1.57MB flash (92.1% of partition), 96.3KB RAM (77.3% of DRAM limit). Flash budget set at 1.6MB (94% of partition) with 30,848 bytes (1.97%) headroom over baseline. RAM budget at 110KB (88% of DRAM limit) leaves safety margin for stack growth."
+      "budget_rationale": "Measured 1.57MB flash (92.1% of partition), 96.3KB RAM (77.3% of DRAM limit). Hard ceiling at 1,671,936 B (partition 1,703,936 - 32,000 B reserve for OTA headers/metadata). Flash budget set at 1.6MB (94% of partition) with 30,848 bytes headroom over baseline. RAM budget at 110KB (88% of DRAM limit) leaves safety margin for stack growth."
     },
     "firebeetle2_bringup": {
       "board": "FireBeetle 2 ESP32-P4",
@@ -52,7 +52,7 @@
       "baseline_measured_at": "8fea3c73ebce",
       "baseline_flash_bytes": 321774,
       "baseline_ram_bytes": 24222,
-      "budget_rationale": "First-flash bringup env with minimal source filter (src/ excluded). Baselines from hardware measurement via riscv32-esp-elf-size. Budgets set above measured values to accommodate full firmware adaptation (tracked by #188/#189)."
+      "budget_rationale": "First-flash bringup env with minimal source filter (src/ excluded). Hard ceiling at 3,113,728 B (partition 3,145,728 - 32,000 B reserve for OTA headers/metadata). Baselines from hardware measurement via riscv32-esp-elf-size. Budgets set above measured values to accommodate full firmware adaptation (tracked by #188/#189)."
     },
     "firebeetle2": {
       "board": "FireBeetle 2 ESP32-P4 (full firmware)",
@@ -65,7 +65,7 @@
       "baseline_measured_at": "8fea3c73ebce",
       "baseline_flash_bytes": 1606882,
       "baseline_ram_bytes": 79952,
-      "budget_rationale": "Full firmware: compiles all of src/ against P4 toolchain for production deployment. Baselines from hardware measurement. Budget set above measured value to allow image growth during platform development."
+      "budget_rationale": "Full firmware: compiles all of src/ against P4 toolchain for production deployment. Hard ceiling at 3,113,728 B (partition 3,145,728 - 32,000 B reserve for OTA headers/metadata). Baselines from hardware measurement. Budget set above measured value to allow image growth during platform development."
     }
   }
 }

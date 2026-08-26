@@ -33,7 +33,6 @@
 
 #include "audio_task.h"
 #include "config.h"
-#include "web_network_manager.h"
 #include "config_cache.h"
 #include "dome_cue_handler.h"
 #include "dome_link_arbiter.h"
@@ -44,6 +43,7 @@
 #include "mood.h"
 #include "queue_drop_tracker.h"
 #include "robot_state.h"
+#include "web_network_manager.h"
 
 static const char* TAG = "DomeLink";
 
