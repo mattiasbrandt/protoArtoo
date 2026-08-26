@@ -139,21 +139,21 @@
     state: "off",
   });
   const featureToggles = {
-    arm1:         featureToggle("arm1", "ARM1"),
-    arm2:         featureToggle("arm2", "ARM2"),
-    aux1:         featureToggle("aux1", "AUX1"),
-    aux2:         featureToggle("aux2", "AUX2"),
-    aux3:         featureToggle("aux3", "AUX3"),
-    dome:         featureToggle("dome", "Dome motor"),
-    rcCh1:        featureToggle("rc-ch1", "RC channel 1"),
-    rcCh2:        featureToggle("rc-ch2", "RC channel 2"),
-    rcCh3:        featureToggle("rc-ch3", "RC channel 3"),
-    rcCh4:        featureToggle("rc-ch4", "RC channel 4"),
-    rcCh5:        featureToggle("rc-ch5", "RC channel 5"),
-    rcCh6:        featureToggle("rc-ch6", "RC channel 6"),
-    s1Hoverboard: featureToggle("s1-hoverboard", "Hoverboard drive"),
-    s2Sound:      featureToggle("s2-sound", "Sound"),
-    s3DomeCtrl:   featureToggle("s3-dome-ctrl", "Dome control"),
+    arm1:        featureToggle("arm1", "Utility Arm 1"),
+    arm2:        featureToggle("arm2", "Utility Arm 2"),
+    aux1:        featureToggle("aux1", "AUX 1"),
+    aux2:        featureToggle("aux2", "AUX 2"),
+    aux3:        featureToggle("aux3", "AUX 3"),
+    domeEsc:     featureToggle("dome-esc", "Dome ESC"),
+    rcCh1:       featureToggle("rc-ch1", "RC Channel 1"),
+    rcCh2:       featureToggle("rc-ch2", "RC Channel 2"),
+    rcCh3:       featureToggle("rc-ch3", "RC Channel 3"),
+    rcCh4:       featureToggle("rc-ch4", "RC Channel 4"),
+    rcCh5:       featureToggle("rc-ch5", "RC Channel 5"),
+    rcCh6:       featureToggle("rc-ch6", "RC Channel 6"),
+    drive:       featureToggle("drive", "Drive"),
+    audio:       featureToggle("audio", "Audio"),
+    protoR2link: featureToggle("protor2link", "protoR2link"),
   };
 
   // Component type selects — maps API key to select element
@@ -196,16 +196,16 @@
     enableAux1:        "aux1",
     enableAux2:        "aux2",
     enableAux3:        "aux3",
-    enableDome:        "dome",
+    enableDomeEsc:     "domeEsc",
     enableRcCh1:       "rcCh1",
     enableRcCh2:       "rcCh2",
     enableRcCh3:       "rcCh3",
     enableRcCh4:       "rcCh4",
     enableRcCh5:       "rcCh5",
     enableRcCh6:       "rcCh6",
-    enableS1Hoverboard: "s1Hoverboard",
-    enableS2Sound:     "s2Sound",
-    enableS3DomeCtrl:  "s3DomeCtrl",
+    enableDrive:       "drive",
+    enableAudio:       "audio",
+    enableProtoR2link: "protoR2link",
   };
 
   let saveInFlight = false;
@@ -641,16 +641,16 @@
       enableAux1: components.aux1?.enabled,
       enableAux2: components.aux2?.enabled,
       enableAux3: components.aux3?.enabled,
-      enableDome: components.dome?.enabled,
+      enableDomeEsc: components.domeEsc?.enabled,
       enableRcCh1: components.rcCh1?.enabled,
       enableRcCh2: components.rcCh2?.enabled,
       enableRcCh3: components.rcCh3?.enabled,
       enableRcCh4: components.rcCh4?.enabled,
       enableRcCh5: components.rcCh5?.enabled,
       enableRcCh6: components.rcCh6?.enabled,
-      enableS1Hoverboard: components.s1Hoverboard?.enabled,
-      enableS2Sound: components.s2Sound?.enabled,
-      enableS3DomeCtrl: components.s3DomeCtrl?.enabled,
+      enableDrive: components.drive?.enabled,
+      enableAudio: components.audio?.enabled,
+      enableProtoR2link: components.protoR2link?.enabled,
     };
 
     Object.entries(TOGGLE_KEY_MAP).forEach(([payloadKey, toggleKey]) => {
@@ -679,10 +679,10 @@
     // Populate component labels (badges and descriptions) from the config response.
     // Maps API keys to internal component names used for ID lookups.
     const apiKeyToComponentName = {
-      s1Hoverboard: "enable_drive",
-      s2Sound: "enable_audio",
-      s3DomeCtrl: "enable_protor2link",
-      dome: "enable_dome_esc",
+      drive: "enable_drive",
+      audio: "enable_audio",
+      protoR2link: "enable_protor2link",
+      domeEsc: "enable_dome_esc",
       arm1: "enable_arm1",
       arm2: "enable_arm2",
       aux1: "enable_aux1",
@@ -697,10 +697,10 @@
     };
 
     const componentLabels = {
-      s1Hoverboard: components.s1Hoverboard?.label,
-      s2Sound: components.s2Sound?.label,
-      s3DomeCtrl: components.s3DomeCtrl?.label,
-      dome: components.dome?.label,
+      drive: components.drive?.label,
+      audio: components.audio?.label,
+      protoR2link: components.protoR2link?.label,
+      domeEsc: components.domeEsc?.label,
       arm1: components.arm1?.label,
       arm2: components.arm2?.label,
       aux1: components.aux1?.label,
@@ -1061,18 +1061,18 @@
 
   const renderSerialStatus = (d) => {
     if (serialS1) {
-      serialS1.textContent = !d.s1Hoverboard ? "Disabled"
-        : d.s1Hoverboard.state === "commanding" ? "Active" : "Enabled / Idle";
-      serialS1.style.color = d.s1Hoverboard ? "var(--success)" : "var(--text-dim)";
+      serialS1.textContent = !d.drive ? "Disabled"
+        : d.drive.state === "commanding" ? "Active" : "Enabled / Idle";
+      serialS1.style.color = d.drive ? "var(--success)" : "var(--text-dim)";
     }
     if (serialS2) {
-      serialS2.textContent = !d.s2Sound ? "Disabled"
-        : d.s2Sound.state === "playing" ? "Playing" : "Enabled / Idle";
-      serialS2.style.color = d.s2Sound ? "var(--success)" : "var(--text-dim)";
+      serialS2.textContent = !d.audio ? "Disabled"
+        : d.audio.state === "playing" ? "Playing" : "Enabled / Idle";
+      serialS2.style.color = d.audio ? "var(--success)" : "var(--text-dim)";
     }
     const s2DriverEl = document.getElementById("s2-driver-label");
     if (s2DriverEl) {
-      s2DriverEl.textContent = d.s2Sound?.driver || "";
+      s2DriverEl.textContent = d.audio?.driver || "";
     }
     if (serialS3) {
       const dl = d.dome_link;
@@ -1286,12 +1286,12 @@
     [
       ['arm1', 'enableArm1'], ['arm2', 'enableArm2'],
       ['aux1', 'enableAux1'], ['aux2', 'enableAux2'], ['aux3', 'enableAux3'],
-      ['dome', 'enableDome'],
+      ['domeEsc', 'enableDomeEsc'],
       ['rcCh1', 'enableRcCh1'], ['rcCh2', 'enableRcCh2'], ['rcCh3', 'enableRcCh3'],
       ['rcCh4', 'enableRcCh4'], ['rcCh5', 'enableRcCh5'], ['rcCh6', 'enableRcCh6'],
-      ['s1Hoverboard', 'enableS1Hoverboard'],
-      ['s2Sound', 'enableS2Sound'],
-      ['s3DomeCtrl', 'enableS3DomeCtrl'],
+      ['drive', 'enableDrive'],
+      ['audio', 'enableAudio'],
+      ['protoR2link', 'enableProtoR2link'],
     ].forEach(([key, param]) => {
       if (components[key]?.enabled !== undefined) {
         p.set(param, components[key].enabled ? 'true' : 'false');
@@ -1311,16 +1311,16 @@
     if (cfg.aux_led_pin !== undefined) p.set('aux_led_pin', cfg.aux_led_pin);
     if (cfg.aux_led_count !== undefined) p.set('aux_led_count', cfg.aux_led_count);
 
-    if (dome.neutralUs !== undefined) p.set('domeNeutralUs', dome.neutralUs);
-    if (dome.minPulseUs !== undefined) p.set('domeMinPulseUs', dome.minPulseUs);
-    if (dome.maxPulseUs !== undefined) p.set('domeMaxPulseUs', dome.maxPulseUs);
-    if (dome.speedLimitPct !== undefined) p.set('domeSpeedLimitPct', dome.speedLimitPct);
-    if (dome.rndEnable !== undefined) p.set('domeRndEnable', dome.rndEnable ? 'true' : 'false');
-    if (dome.rndSpeedPct !== undefined) p.set('domeRndSpeedPct', dome.rndSpeedPct);
-    if (dome.rndPauseMin !== undefined) p.set('domeRndPauseMin', dome.rndPauseMin);
-    if (dome.rndPauseMax !== undefined) p.set('domeRndPauseMax', dome.rndPauseMax);
-    if (dome.rndMoveMs !== undefined) p.set('domeRndMoveMs', dome.rndMoveMs);
-    if (dome.wifiPeerIp !== undefined) p.set('domeWifiPeerIp', dome.wifiPeerIp);
+    if (dome.neutralUs !== undefined) p.set('domeEscNeutralUs', dome.neutralUs);
+    if (dome.minPulseUs !== undefined) p.set('domeEscMinPulseUs', dome.minPulseUs);
+    if (dome.maxPulseUs !== undefined) p.set('domeEscMaxPulseUs', dome.maxPulseUs);
+    if (dome.speedLimitPct !== undefined) p.set('domeEscSpeedLimitPct', dome.speedLimitPct);
+    if (dome.rndEnable !== undefined) p.set('domeEscRndEnable', dome.rndEnable ? 'true' : 'false');
+    if (dome.rndSpeedPct !== undefined) p.set('domeEscRndSpeedPct', dome.rndSpeedPct);
+    if (dome.rndPauseMin !== undefined) p.set('domeEscRndPauseMin', dome.rndPauseMin);
+    if (dome.rndPauseMax !== undefined) p.set('domeEscRndPauseMax', dome.rndPauseMax);
+    if (dome.rndMoveMs !== undefined) p.set('domeEscRndMoveMs', dome.rndMoveMs);
+    if (dome.wifiPeerIp !== undefined) p.set('protoR2linkWifiPeerIp', dome.wifiPeerIp);
 
     if (sys.logLevel !== undefined) p.set('logLevel', sys.logLevel);
 

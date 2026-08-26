@@ -2008,7 +2008,7 @@
   };
 
   const renderStatus = (data) => {
-    const s2Enabled = Boolean(data.s2Sound);
+    const s2Enabled = Boolean(data.audio);
     setSoundHardwareEnabled(s2Enabled);
     if (!soundStateBadge) return;
     if (!s2Enabled) {
@@ -2016,12 +2016,12 @@
       soundStateBadge.dataset.state = "disabled";
       return;
     }
-    if (data.s2Sound && typeof data.s2Sound.link_ok === "boolean") {
-      if (data.s2Sound.rx_status === RX_STATUS_BLOCKED_BY_DOME) {
+    if (data.audio && typeof data.audio.link_ok === "boolean") {
+      if (data.audio.rx_status === RX_STATUS_BLOCKED_BY_DOME) {
         if (modLink) { modLink.textContent = "DomeLink using UART"; modLink.dataset.state = "warn"; }
         soundStateBadge.textContent = "Status unavailable: DomeLink is using UART";
         soundStateBadge.dataset.state = "idle";
-      } else if (!data.s2Sound.link_ok) {
+      } else if (!data.audio.link_ok) {
         if (modLink) { modLink.textContent = "No response"; modLink.dataset.state = "error"; }
         soundStateBadge.textContent = "No module response";
         soundStateBadge.dataset.state = "error";

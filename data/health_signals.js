@@ -166,31 +166,31 @@
   };
 
   const evaluateSound = (payload) => {
-    if (!hasOwnKey(payload, "s2Sound")) {
-      return healthSignal("off", "Disabled", "s2Sound block absent from payload");
+    if (!hasOwnKey(payload, "audio")) {
+      return healthSignal("off", "Disabled", "audio block absent from payload");
     }
-    if (!payload.s2Sound || typeof payload.s2Sound !== "object") {
+    if (!payload.audio || typeof payload.audio !== "object") {
       return healthSignal(
         "warn",
         "Invalid payload",
-        `s2Sound type=${typeof payload.s2Sound} (expected object)`
+        `audio type=${typeof payload.audio} (expected object)`
       );
     }
 
-    const soundState = payload.s2Sound.state;
-    const soundDetail = typeof payload.s2Sound.detail === "string" && payload.s2Sound.detail.length > 0
-      ? payload.s2Sound.detail
+    const soundState = payload.audio.state;
+    const soundDetail = typeof payload.audio.detail === "string" && payload.audio.detail.length > 0
+      ? payload.audio.detail
       : "n/a";
-    const soundRxStatus = payload.s2Sound.rx_status;
-    const soundRxDetail = typeof payload.s2Sound.rx_detail === "string" && payload.s2Sound.rx_detail.length > 0
-      ? payload.s2Sound.rx_detail
+    const soundRxStatus = payload.audio.rx_status;
+    const soundRxDetail = typeof payload.audio.rx_detail === "string" && payload.audio.rx_detail.length > 0
+      ? payload.audio.rx_detail
       : soundDetail;
 
     if (soundRxStatus === "blocked_by_dome_uart") {
       return healthSignal("warn", "Status unavailable", soundRxDetail);
     }
 
-    if (payload.s2Sound.link_ok === false) {
+    if (payload.audio.link_ok === false) {
       return healthSignal(
         "fail",
         "No module response",
@@ -223,7 +223,7 @@
       );
     }
 
-    const domeData = payload.dome && typeof payload.dome === "object" ? payload.dome : null;
+    const domeData = payload.domeEsc && typeof payload.domeEsc === "object" ? payload.domeEsc : null;
     const domeState = domeData ? domeData.state : null;
     const domeDetail = domeData && typeof domeData.detail === "string" && domeData.detail.length > 0
       ? domeData.detail

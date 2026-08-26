@@ -70,21 +70,21 @@
   };
 
   const COMPONENT_LABELS = [
-    ["arm1", "🦾", "Left Arm"],
-    ["arm2", "🦾", "Right Arm"],
-    ["aux1", "🦾", "Aux Servo 1"],
-    ["aux2", "🦾", "Aux Servo 2"],
-    ["aux3", "🦾", "Aux Servo 3"],
-    ["dome", "🔄", "Dome Motor"],
+    ["arm1", "🦾", "Utility Arm 1"],
+    ["arm2", "🦾", "Utility Arm 2"],
+    ["aux1", "🦾", "AUX 1"],
+    ["aux2", "🦾", "AUX 2"],
+    ["aux3", "🦾", "AUX 3"],
+    ["domeEsc", "🔄", "Dome ESC"],
     ["rcCh1", "🕹️", "RC Channel 1"],
     ["rcCh2", "🕹️", "RC Channel 2"],
     ["rcCh3", "🕹️", "RC Channel 3"],
     ["rcCh4", "🕹️", "RC Channel 4"],
     ["rcCh5", "🕹️", "RC Channel 5"],
     ["rcCh6", "🕹️", "RC Channel 6"],
-    ["s1Hoverboard", "🔌", "Hoverboard Drive"],
-    ["s2Sound", "🔊", "Sound Module"],
-    ["s3DomeCtrl", "🔌", "protoR2link"],
+    ["drive", "🔌", "Drive"],
+    ["audio", "🔊", "Audio"],
+    ["protoR2link", "🔌", "protoR2link"],
   ];
 
   const MOOD_LABELS = {
@@ -205,7 +205,7 @@
     // Build signature: component IDs + flags that affect transport lines
     const transportFlags = [
       payload.dome_link?.state === "connected" && payload.dome_link?.uart_owned_by_dome ? "dome-uart" : "",
-      payload.s2Sound?.rx_status === "blocked_by_dome_uart" ? "sound-blocked" : ""
+      payload.audio?.rx_status === "blocked_by_dome_uart" ? "sound-blocked" : ""
     ].filter(Boolean).join(",");
     const signature = active.map(([key]) => key).join(",") + "|" + transportFlags;
 
@@ -224,12 +224,12 @@
         const safeState = window.PAUtils.escapeHtml(stateText);
         const safeDetail = window.PAUtils.escapeHtml(detail);
         let transportLine = "";
-        if (key === "s3DomeCtrl" && payload.dome_link?.state === "connected") {
+        if (key === "protoR2link" && payload.dome_link?.state === "connected") {
           if (payload.dome_link?.uart_owned_by_dome === true) {
             transportLine = `<div class="desc mt-6">${window.PAUtils.escapeHtml("UART2 owned by DomeLink")}</div>`;
           }
         }
-        if (key === "s2Sound" && entry?.rx_status === "blocked_by_dome_uart") {
+        if (key === "audio" && entry?.rx_status === "blocked_by_dome_uart") {
           transportLine += `<div class="desc mt-6">${window.PAUtils.escapeHtml("CHIRP RX unavailable while DomeLink owns UART2")}</div>`;
         }
         return `

@@ -501,8 +501,8 @@ bool populateConfigJson(JsonDocument& doc, const ConfigSnapshot& snap) {
     components["aux3"]["type"] = servoCompTypeToString(snap.servo.aux3_type);
     if (const char* label = getComponentLabel("enable_aux3")) components["aux3"]["label"] = label;
 
-    components["dome"]["enabled"] = snap.system.enable_dome_esc;
-    if (const char* label = getComponentLabel("enable_dome_esc")) components["dome"]["label"] = label;
+    components["domeEsc"]["enabled"] = snap.system.enable_dome_esc;
+    if (const char* label = getComponentLabel("enable_dome_esc")) components["domeEsc"]["label"] = label;
 
     components["rcCh1"]["enabled"] = snap.system.enable_rc_ch1;
     if (const char* label = getComponentLabel("enable_rc_ch1")) components["rcCh1"]["label"] = label;
@@ -522,14 +522,14 @@ bool populateConfigJson(JsonDocument& doc, const ConfigSnapshot& snap) {
     components["rcCh6"]["enabled"] = snap.system.enable_rc_ch6;
     if (const char* label = getComponentLabel("enable_rc_ch6")) components["rcCh6"]["label"] = label;
 
-    components["s1Hoverboard"]["enabled"] = snap.system.enable_drive;
-    if (const char* label = getComponentLabel("enable_drive")) components["s1Hoverboard"]["label"] = label;
+    components["drive"]["enabled"] = snap.system.enable_drive;
+    if (const char* label = getComponentLabel("enable_drive")) components["drive"]["label"] = label;
 
-    components["s2Sound"]["enabled"] = snap.system.enable_audio;
-    if (const char* label = getComponentLabel("enable_audio")) components["s2Sound"]["label"] = label;
+    components["audio"]["enabled"] = snap.system.enable_audio;
+    if (const char* label = getComponentLabel("enable_audio")) components["audio"]["label"] = label;
 
-    components["s3DomeCtrl"]["enabled"] = snap.system.enable_protor2link;
-    if (const char* label = getComponentLabel("enable_protor2link")) components["s3DomeCtrl"]["label"] = label;
+    components["protoR2link"]["enabled"] = snap.system.enable_protor2link;
+    if (const char* label = getComponentLabel("enable_protor2link")) components["protoR2link"]["label"] = label;
 
     // Legacy top-level calibration fields consumed by data/servo.js
     doc["arm1OpenUs"] = snap.servo.arm1_open_us;
@@ -545,17 +545,19 @@ bool populateConfigJson(JsonDocument& doc, const ConfigSnapshot& snap) {
     doc["aux_led_pin"] = snap.servo.aux_led_pin;
     doc["aux_led_count"] = snap.servo.aux_led_count;
 
-    JsonObject dome = doc["dome"].to<JsonObject>();
-    dome["neutralUs"] = snap.dome.dome_neutral_us;
-    dome["minPulseUs"] = snap.dome.dome_min_pulse_us;
-    dome["maxPulseUs"] = snap.dome.dome_max_pulse_us;
-    dome["speedLimitPct"] = snap.dome.dome_speed_limit_pct;
-    dome["rndEnable"] = snap.dome.dome_rnd_enable;
-    dome["rndSpeedPct"] = snap.dome.dome_rnd_speed_pct;
-    dome["rndPauseMin"] = snap.dome.dome_rnd_pause_min;
-    dome["rndPauseMax"] = snap.dome.dome_rnd_pause_max;
-    dome["rndMoveMs"] = snap.dome.dome_rnd_move_ms;
-    dome["wifiPeerIp"] = snap.dome.dome_wifi_peer_ip;
+    JsonObject domeEsc = doc["domeEsc"].to<JsonObject>();
+    domeEsc["neutralUs"] = snap.dome.dome_neutral_us;
+    domeEsc["minPulseUs"] = snap.dome.dome_min_pulse_us;
+    domeEsc["maxPulseUs"] = snap.dome.dome_max_pulse_us;
+    domeEsc["speedLimitPct"] = snap.dome.dome_speed_limit_pct;
+    domeEsc["rndEnable"] = snap.dome.dome_rnd_enable;
+    domeEsc["rndSpeedPct"] = snap.dome.dome_rnd_speed_pct;
+    domeEsc["rndPauseMin"] = snap.dome.dome_rnd_pause_min;
+    domeEsc["rndPauseMax"] = snap.dome.dome_rnd_pause_max;
+    domeEsc["rndMoveMs"] = snap.dome.dome_rnd_move_ms;
+
+    JsonObject protoR2link = doc["protoR2link"].to<JsonObject>();
+    protoR2link["wifiPeerIp"] = snap.dome.dome_wifi_peer_ip;
 
     JsonObject system = doc["system"].to<JsonObject>();
     system["logLevel"] = snap.system.logLevel;

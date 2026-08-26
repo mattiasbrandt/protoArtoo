@@ -80,9 +80,9 @@ test("stale mode downgrades non-off indicators to WARN", () => {
       littleFsReady: true,
       heapFree: 150000,
       dome_link: { state: "connected" },
-      s2Sound: { state: "idle" },
+      audio: { state: "idle" },
       domeEnabled: true,
-      dome: { state: "idle" },
+      domeEsc: { state: "idle" },
     },
     { stale: true },
   );
@@ -111,7 +111,7 @@ test("stale mode preserves OFF indicators as OFF", () => {
 
 test("sound RX blocked by DomeLink is warning, not module failure", () => {
   const signals = toSignalMap({
-    s2Sound: {
+    audio: {
       state: "idle",
       link_ok: false,
       rx_status: "blocked_by_dome_uart",
@@ -126,7 +126,7 @@ test("sound RX blocked by DomeLink is warning, not module failure", () => {
 
 test("sound no response remains a failure", () => {
   const signals = toSignalMap({
-    s2Sound: {
+    audio: {
       state: "idle",
       link_ok: false,
       rx_status: "no_response",

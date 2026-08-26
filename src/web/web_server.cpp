@@ -517,9 +517,9 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
             if (domeTargetSpeed > 0.001f || domeTargetSpeed < -0.001f) {
                 snprintf(detail, sizeof(detail), "Target %.0f%%",
                          (double)(domeTargetSpeed * 100.0f));
-                ok = appendPeripheralStatus(pos, remaining, "dome", "spinning", detail) && ok;
+                ok = appendPeripheralStatus(pos, remaining, "domeEsc", "spinning", detail) && ok;
             } else {
-                ok = appendPeripheralStatus(pos, remaining, "dome", "idle", "Target 0%") && ok;
+                ok = appendPeripheralStatus(pos, remaining, "domeEsc", "idle", "Target 0%") && ok;
             }
         }
         if (enableRcCh1 && !(rcInputMode == RC_INPUT_SINGLE_SBUS && singleSbusUseCh2)) {
@@ -608,10 +608,10 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
         if (enableS1Hoverboard) {
             if (driveSpeed != 0 || driveSteer != 0) {
                 snprintf(detail, sizeof(detail), "Command %d/%d", driveSpeed, driveSteer);
-                ok = appendPeripheralStatus(pos, remaining, "s1Hoverboard", "commanding", detail) &&
+                ok = appendPeripheralStatus(pos, remaining, "drive", "commanding", detail) &&
                      ok;
             } else {
-                ok = appendPeripheralStatus(pos, remaining, "s1Hoverboard", "idle",
+                ok = appendPeripheralStatus(pos, remaining, "drive", "idle",
                                             "No drive command requested") &&
                      ok;
             }
@@ -620,7 +620,7 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
             const char* rxStatusText = audioRxStatusToken(audioRxStatus);
             const char* rxDetail = audioRxStatusDetail(audioRxStatus);
             int _n = snprintf(pos, remaining,
-                              ",\"s2Sound\":{\"state\":\"%s\",\"detail\":\"%s\",\"driver\":\"%s\",\"link_ok\":%s,\"rx_status\":\"%s\",\"rx_detail\":\"%s\"}",
+                              ",\"audio\":{\"state\":\"%s\",\"detail\":\"%s\",\"driver\":\"%s\",\"link_ok\":%s,\"rx_status\":\"%s\",\"rx_detail\":\"%s\"}",
                               audioActive ? "playing" : "idle",
                               audioRxStatus == AUDIO_RX_BLOCKED_BY_DOME_UART ? rxDetail :
                                   (audioActive ? "Playback active" : "Ready, no active playback"),
@@ -639,20 +639,20 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
                 snprintf(detail, sizeof(detail),
                          "Heartbeat tx %lu, no protoR2link heartbeat seen yet (transport %s)",
                          (unsigned long)bodyHbTx, transportLabel);
-                ok = appendPeripheralStatus(pos, remaining, "s3DomeCtrl", "not_seen", detail) && ok;
+                ok = appendPeripheralStatus(pos, remaining, "protoR2link", "not_seen", detail) && ok;
             } else if ((uptimeMs - domeLastSeenMs) < 5000UL) {
                 snprintf(detail, sizeof(detail),
                          "Heartbeat rx %lu / tx %lu, last %lu ms ago (transport %s)",
                          (unsigned long)domeHbRx, (unsigned long)bodyHbTx,
                          uptimeMs - domeLastSeenMs, transportLabel);
                 ok =
-                    appendPeripheralStatus(pos, remaining, "s3DomeCtrl", "connected", detail) && ok;
+                    appendPeripheralStatus(pos, remaining, "protoR2link", "connected", detail) && ok;
             } else {
                 snprintf(detail, sizeof(detail),
                          "Heartbeat rx %lu / tx %lu, last %lu ms ago (transport %s)",
                          (unsigned long)domeHbRx, (unsigned long)bodyHbTx,
                          uptimeMs - domeLastSeenMs, transportLabel);
-                ok = appendPeripheralStatus(pos, remaining, "s3DomeCtrl", "lost", detail) && ok;
+                ok = appendPeripheralStatus(pos, remaining, "protoR2link", "lost", detail) && ok;
             }
         }
 

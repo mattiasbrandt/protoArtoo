@@ -144,8 +144,8 @@
     if (typeof payload?.domeEnabled === "boolean") {
       return payload.domeEnabled;
     }
-    if (typeof payload?.components?.dome?.enabled === "boolean") {
-      return payload.components.dome.enabled;
+    if (typeof payload?.components?.domeEsc?.enabled === "boolean") {
+      return payload.components.domeEsc.enabled;
     }
     return null;
   };
@@ -172,21 +172,21 @@
   };
 
   const renderEscConfigSnapshot = (data) => {
-    const dome = data?.dome || {};
+    const domeEsc = data?.domeEsc || {};
     const components = data?.components || {};
 
-    if (domeNeutral && dome.neutralUs !== undefined) domeNeutral.value = dome.neutralUs;
-    if (domeMinPulse && dome.minPulseUs !== undefined) domeMinPulse.value = dome.minPulseUs;
-    if (domeMaxPulse && dome.maxPulseUs !== undefined) domeMaxPulse.value = dome.maxPulseUs;
-    if (domeSpeedLimit && dome.speedLimitPct !== undefined) domeSpeedLimit.value = dome.speedLimitPct;
+    if (domeNeutral && domeEsc.neutralUs !== undefined) domeNeutral.value = domeEsc.neutralUs;
+    if (domeMinPulse && domeEsc.minPulseUs !== undefined) domeMinPulse.value = domeEsc.minPulseUs;
+    if (domeMaxPulse && domeEsc.maxPulseUs !== undefined) domeMaxPulse.value = domeEsc.maxPulseUs;
+    if (domeSpeedLimit && domeEsc.speedLimitPct !== undefined) domeSpeedLimit.value = domeEsc.speedLimitPct;
 
-    if (domeRndEnable && dome.rndEnable !== undefined) domeRndEnable.checked = dome.rndEnable;
-    if (domeRndSpeed && dome.rndSpeedPct !== undefined) domeRndSpeed.value = dome.rndSpeedPct;
-    if (domeRndPauseMin && dome.rndPauseMin !== undefined) domeRndPauseMin.value = dome.rndPauseMin;
-    if (domeRndPauseMax && dome.rndPauseMax !== undefined) domeRndPauseMax.value = dome.rndPauseMax;
-    if (domeRndMoveMs && dome.rndMoveMs !== undefined) domeRndMoveMs.value = dome.rndMoveMs;
+    if (domeRndEnable && domeEsc.rndEnable !== undefined) domeRndEnable.checked = domeEsc.rndEnable;
+    if (domeRndSpeed && domeEsc.rndSpeedPct !== undefined) domeRndSpeed.value = domeEsc.rndSpeedPct;
+    if (domeRndPauseMin && domeEsc.rndPauseMin !== undefined) domeRndPauseMin.value = domeEsc.rndPauseMin;
+    if (domeRndPauseMax && domeEsc.rndPauseMax !== undefined) domeRndPauseMax.value = domeEsc.rndPauseMax;
+    if (domeRndMoveMs && domeEsc.rndMoveMs !== undefined) domeRndMoveMs.value = domeEsc.rndMoveMs;
 
-    setDomeHardwareEnabled(Boolean(components.dome?.enabled));
+    setDomeHardwareEnabled(Boolean(components.domeEsc?.enabled));
   };
 
 
@@ -245,10 +245,10 @@
     return {
       ok: true,
       payload: {
-        domeNeutralUs: String(neutral.value),
-        domeMinPulseUs: String(minPulse.value),
-        domeMaxPulseUs: String(maxPulse.value),
-        domeSpeedLimitPct: String(speedLimit.value),
+        domeEscNeutralUs: String(neutral.value),
+        domeEscMinPulseUs: String(minPulse.value),
+        domeEscMaxPulseUs: String(maxPulse.value),
+        domeEscSpeedLimitPct: String(speedLimit.value),
       },
     };
   };
@@ -311,11 +311,11 @@
     return {
       ok: true,
       payload: {
-        domeRndEnable: domeRndEnable?.checked ? "true" : "false",
-        domeRndSpeedPct: String(speedVal.value),
-        domeRndPauseMin: String(pauseMinVal.value),
-        domeRndPauseMax: String(pauseMaxVal.value),
-        domeRndMoveMs: String(moveVal.value),
+        domeEscRndEnable: domeRndEnable?.checked ? "true" : "false",
+        domeEscRndSpeedPct: String(speedVal.value),
+        domeEscRndPauseMin: String(pauseMinVal.value),
+        domeEscRndPauseMax: String(pauseMaxVal.value),
+        domeEscRndMoveMs: String(moveVal.value),
       },
     };
   };

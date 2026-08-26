@@ -362,7 +362,7 @@
     currentSpeedPreset = parsePresetId(drive.speedPreset);
     updatePresetHighlight();
     updatePresetDistinctHint();
-    setDriveHardwareEnabled(Boolean(components.s1Hoverboard?.enabled));
+    setDriveHardwareEnabled(Boolean(components.drive?.enabled));
 
     window.PAUtils.showFeedback(configFeedback, `Settings loaded at ${new Date().toLocaleTimeString()}`, "success");
   };
@@ -420,10 +420,10 @@
     if (!window.PAApi) return;
     const result = await window.PAApi.get("/api/status", { timeoutMs: 3000 });
     renderStatus(result.data);
-    // /api/status omits the "s1Hoverboard" key entirely when the peripheral is
+    // /api/status omits the "drive" key entirely when the peripheral is
     // disabled. Key presence = enabled; absence = disabled. This differs from
-    // renderConfig() which reads components.s1Hoverboard.enabled explicitly.
-    setDriveHardwareEnabled(Boolean(result.data.s1Hoverboard));
+    // renderConfig() which reads components.drive.enabled explicitly.
+    setDriveHardwareEnabled(Boolean(result.data.drive));
   };
 
   estopButton?.addEventListener("click", () => postCommand("/api/estop", "Estop latch"));

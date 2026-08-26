@@ -1136,9 +1136,10 @@ Updates supported config fields and persists to NVS.
 - drive: `speedLimitMax(0..600)`, `speedPresetSlow(0..600)`, `speedPresetNormal(0..600)`, `speedPresetTurbo(0..600)`, `webDriveTimeoutMs(100..5000)`, `stationary(bool)`
 - system: `logLevel(1..4)` — 1 Error, 2 Warning, 3 Info, 4 Debug. Emission changes immediately; the log ring's depth follows the saved level at the next reboot.
 - rc: `rcInputMode(standard_pwm|single_sbus|dual_sbus)`, `sbusTimeoutMs(50..5000)`, `sbusRecvCh2(bool)`
-- components (bool): `enableArm1`, `enableArm2`, `enableAux1`, `enableAux2`, `enableAux3`, `enableDome`, `enableRcCh1..6`, `enableS1Hoverboard`, `enableS2Sound`, `enableS3DomeCtrl`
-- dome calibration: `domeNeutralUs(1000..2000)`, `domeMinPulseUs(1000..2000)`, `domeMaxPulseUs(1000..2000)`, `domeSpeedLimitPct(0..100)`, `domeWifiPeerIp(valid IPv4 or empty)`
-- dome random: `domeRndEnable(bool)`, `domeRndSpeedPct(5..100)`, `domeRndPauseMin(1..120)`, `domeRndPauseMax(1..120)`, `domeRndMoveMs(500..10000)`
+- components (bool): `enableArm1`, `enableArm2`, `enableAux1`, `enableAux2`, `enableAux3`, `enableDomeEsc`, `enableRcCh1..6`, `enableDrive`, `enableAudio`, `enableProtoR2link`
+- domeEsc calibration: `domeEscNeutralUs(1000..2000)`, `domeEscMinPulseUs(1000..2000)`, `domeEscMaxPulseUs(1000..2000)`, `domeEscSpeedLimitPct(0..100)`
+- domeEsc random: `domeEscRndEnable(bool)`, `domeEscRndSpeedPct(5..100)`, `domeEscRndPauseMin(1..120)`, `domeEscRndPauseMax(1..120)`, `domeEscRndMoveMs(500..10000)`
+- protoR2link: `protoR2linkWifiPeerIp(valid IPv4 or empty)`
 - servo calibration: `arm1OpenUs..aux3CloseUs` each `500..2500`
 - servo component types: `arm1Type|arm2Type|aux1Type|aux2Type|aux3Type` in `none|mg996r|mg90s|rgb`
 - aux-led: `aux_led_pin(0..3)`, `aux_led_count(1..255)`
@@ -1146,7 +1147,7 @@ Updates supported config fields and persists to NVS.
 - Supported JSON body fields:
 - `rc.sbusTimeoutMs` (50..5000)
 - `rc.sbus.recvCh2` (boolean)
-- `dome.wifiPeerIp` (string, empty or IPv4)
+- `protoR2link.wifiPeerIp` (string, empty or IPv4)
 - `aux_led_pin` (0..3)
 - `aux_led_count` (1..255)
 
@@ -1159,13 +1160,13 @@ Updates supported config fields and persists to NVS.
 
 ```bash
 curl -s -X POST http://artoo.local/api/config \
-  -d 'speedLimitMax=400&webDriveTimeoutMs=750&enableArm1=true&enableDome=true&domeNeutralUs=1500'
+  -d 'speedLimitMax=400&webDriveTimeoutMs=750&enableArm1=true&enableDomeEsc=true&domeEscNeutralUs=1500'
 ```
 
 #### Example response (abridged)
 
 ```json
-{"drive":{"speedLimitMax":400,"webDriveTimeoutMs":750},"components":{"arm1":{"enabled":true},"dome":{"enabled":true}},"dome":{"neutralUs":1500}}
+{"drive":{"speedLimitMax":400,"webDriveTimeoutMs":750},"components":{"arm1":{"enabled":true},"domeEsc":{"enabled":true}},"domeEsc":{"neutralUs":1500}}
 ```
 
 #### Example request (json)
@@ -1173,13 +1174,13 @@ curl -s -X POST http://artoo.local/api/config \
 ```bash
 curl -s -X POST http://artoo.local/api/config \
   -H 'Content-Type: application/json' \
-  -d '{"rc":{"sbusTimeoutMs":300,"sbus":{"recvCh2":false}},"dome":{"wifiPeerIp":"10.0.0.50"},"aux_led_pin":1,"aux_led_count":32}'
+  -d '{"rc":{"sbusTimeoutMs":300,"sbus":{"recvCh2":false}},"protoR2link":{"wifiPeerIp":"10.0.0.50"},"aux_led_pin":1,"aux_led_count":32}'
 ```
 
 #### Example response (abridged)
 
 ```json
-{"rc":{"sbusTimeoutMs":300,"sbus":{"recvCh2":false}},"dome":{"wifiPeerIp":"10.0.0.50"},"aux_led_pin":1,"aux_led_count":32}
+{"rc":{"sbusTimeoutMs":300,"sbus":{"recvCh2":false}},"protoR2link":{"wifiPeerIp":"10.0.0.50"},"aux_led_pin":1,"aux_led_count":32}
 ```
 
 ### GET /api/rc/map
@@ -1403,7 +1404,7 @@ Returns controller status snapshot.
 - `wifiRssi`, `wifiConnected`, `wifiClientConnected`, `littleFsReady`
 - `sleepMode`, `sleepSinceMs`, `activeMood`
 - `auxLed` object (`pin`, `r`, `g`, `b`, `effect`, `available`)
-- Additional component objects are conditionally present when enabled (`arm1`, `arm2`, `aux1..aux3`, `dome`, `rcCh1..rcCh6`, `s1Hoverboard`, `s2Sound`, `s3DomeCtrl`)
+- Additional component objects are conditionally present when enabled (`arm1`, `arm2`, `aux1..aux3`, `domeEsc`, `rcCh1..rcCh6`, `drive`, `audio`, `protoR2link`)
 - Includes top-level `dome_link` object (`state`, `transport`, counters, last_rx_ms)
 - Includes `hoverboard` object when feedback is valid
 

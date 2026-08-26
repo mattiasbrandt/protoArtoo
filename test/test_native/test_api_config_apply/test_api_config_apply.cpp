@@ -104,17 +104,17 @@ void test_configApply_rcInputMode_enum_reject(void) {
 }
 
 void test_configApply_domeWifiPeerIp_invalid_ipv4_reject(void) {
-    std::map<std::string, std::string> m = {{"domeWifiPeerIp", "not.an.ip"}};
+    std::map<std::string, std::string> m = {{"protoR2linkWifiPeerIp", "not.an.ip"}};
     ConfigSnapshot snap = makeDefaultSnap();
     ConfigApplyResult result;
     configApply(makeSource(&m), &snap, false, &result);
     TEST_ASSERT_TRUE(result.error.hasError);
-    TEST_ASSERT_EQUAL_STRING("domeWifiPeerIp must be empty or a valid IPv4 address",
+    TEST_ASSERT_EQUAL_STRING("protoR2linkWifiPeerIp must be empty or a valid IPv4 address",
                              result.error.message);
 }
 
 void test_configApply_domeWifiPeerIp_empty_clears(void) {
-    std::map<std::string, std::string> m = {{"domeWifiPeerIp", ""}};
+    std::map<std::string, std::string> m = {{"protoR2linkWifiPeerIp", ""}};
     ConfigSnapshot snap = makeDefaultSnap();
     strncpy(snap.dome.dome_wifi_peer_ip, "10.0.0.5", sizeof(snap.dome.dome_wifi_peer_ip));
     ConfigApplyResult result;

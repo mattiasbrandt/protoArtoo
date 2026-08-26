@@ -170,13 +170,15 @@ void test_populateConfigJson_expected_keys_present(void) {
     JsonObject drive = doc["drive"].as<JsonObject>();
     JsonObject rc = doc["rc"].as<JsonObject>();
     JsonObject components = doc["components"].as<JsonObject>();
-    JsonObject dome = doc["dome"].as<JsonObject>();
+    JsonObject domeEsc = doc["domeEsc"].as<JsonObject>();
+    JsonObject protoR2link = doc["protoR2link"].as<JsonObject>();
     JsonObject system = doc["system"].as<JsonObject>();
 
     TEST_ASSERT_TRUE(!drive.isNull());
     TEST_ASSERT_TRUE(!rc.isNull());
     TEST_ASSERT_TRUE(!components.isNull());
-    TEST_ASSERT_TRUE(!dome.isNull());
+    TEST_ASSERT_TRUE(!domeEsc.isNull());
+    TEST_ASSERT_TRUE(!protoR2link.isNull());
     TEST_ASSERT_TRUE(!system.isNull());
 
     TEST_ASSERT_TRUE(!drive["speedLimitMax"].isNull());
@@ -192,7 +194,20 @@ void test_populateConfigJson_expected_keys_present(void) {
     TEST_ASSERT_FALSE(rc["sbus"]["recvCh2"].as<bool>());
     TEST_ASSERT_TRUE(components["arm1"]["enabled"].is<bool>());
     TEST_ASSERT_EQUAL_STRING("none", components["arm1"]["type"] | "");
-    TEST_ASSERT_TRUE(!dome["neutralUs"].isNull());
+    TEST_ASSERT_TRUE(components["drive"]["enabled"].is<bool>());
+    TEST_ASSERT_TRUE(components["audio"]["enabled"].is<bool>());
+    TEST_ASSERT_TRUE(components["protoR2link"]["enabled"].is<bool>());
+    TEST_ASSERT_TRUE(components["domeEsc"]["enabled"].is<bool>());
+    TEST_ASSERT_TRUE(!domeEsc["neutralUs"].isNull());
+    TEST_ASSERT_TRUE(!domeEsc["minPulseUs"].isNull());
+    TEST_ASSERT_TRUE(!domeEsc["maxPulseUs"].isNull());
+    TEST_ASSERT_TRUE(!domeEsc["speedLimitPct"].isNull());
+    TEST_ASSERT_TRUE(!domeEsc["rndEnable"].isNull());
+    TEST_ASSERT_TRUE(!domeEsc["rndSpeedPct"].isNull());
+    TEST_ASSERT_TRUE(!domeEsc["rndPauseMin"].isNull());
+    TEST_ASSERT_TRUE(!domeEsc["rndPauseMax"].isNull());
+    TEST_ASSERT_TRUE(!domeEsc["rndMoveMs"].isNull());
+    TEST_ASSERT_TRUE(!protoR2link["wifiPeerIp"].isNull());
     TEST_ASSERT_TRUE(!system["logLevel"].isNull());
     TEST_ASSERT_TRUE(!doc["arm1OpenUs"].isNull());
     TEST_ASSERT_TRUE(!doc["arm1CloseUs"].isNull());

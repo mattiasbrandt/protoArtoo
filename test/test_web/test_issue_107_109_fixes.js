@@ -171,20 +171,20 @@ const pushStatus = (env, payload) => {
 test("The component grid emits dt/dd wrapped in a dl", async (t) => {
   const env = await loadDashboard({ respond: healthyResponder });
 
-  const html = pushStatus(env, { s3DomeCtrl: { state: "connected" }, s2Sound: { state: "idle" } });
+  const html = pushStatus(env, { protoR2link: { state: "connected" }, audio: { state: "idle" } });
 
   assert.match(html, /^<dl class="status-grid">/, "dt and dd are only valid inside a dl");
   assert.match(html, /<\/dl>$/, "the list must be closed");
   assert.match(html, /<dt>/);
-  assert.match(html, /<dd id="state-s3DomeCtrl">/);
-  assert.match(html, /id="comp-s3DomeCtrl"/);
-  assert.match(html, /id="detail-s3DomeCtrl"/);
+  assert.match(html, /<dd id="state-protoR2link">/);
+  assert.match(html, /id="comp-protoR2link"/);
+  assert.match(html, /id="detail-protoR2link"/);
 });
 
 test("The component grid renders the state the controller reported", async (t) => {
   const env = await loadDashboard({ respond: healthyResponder });
 
-  const html = pushStatus(env, { s2Sound: { state: "blocked_by_dome_uart", detail: "CHIRP blocked" } });
+  const html = pushStatus(env, { audio: { state: "blocked_by_dome_uart", detail: "CHIRP blocked" } });
 
   assert.match(html, /blocked by dome uart/, "underscores must be softened for the operator");
   assert.match(html, /CHIRP blocked/);
@@ -193,7 +193,7 @@ test("The component grid renders the state the controller reported", async (t) =
 test("A status field containing markup cannot inject into the grid", async (t) => {
   const env = await loadDashboard({ respond: healthyResponder });
 
-  const html = pushStatus(env, { s2Sound: { state: "ok", detail: '<img src=x onerror="alert(1)">' } });
+  const html = pushStatus(env, { audio: { state: "ok", detail: '<img src=x onerror="alert(1)">' } });
 
   assert.ok(!html.includes("<img"), "a controller-supplied detail must not become markup");
   assert.match(html, /&lt;img/);
@@ -203,16 +203,16 @@ test("An unchanged component set is patched in place, not rebuilt", async (t) =>
   const env = await loadDashboard({ respond: healthyResponder });
   const grid = env.element("component-status-grid");
 
-  pushStatus(env, { s3DomeCtrl: { state: "connected" } });
+  pushStatus(env, { protoR2link: { state: "connected" } });
   // A marker that only survives if the grid's markup is left alone. Rebuilding
   // would discard it - and discard operator focus with it.
   grid.innerHTML += "<!-- not rebuilt -->";
 
-  env.stream.subscriber("status", { s3DomeCtrl: { state: "spinning" } });
+  env.stream.subscriber("status", { protoR2link: { state: "spinning" } });
 
   assert.ok(grid.innerHTML.includes("<!-- not rebuilt -->"), "same components must not rebuild the grid");
   assert.equal(
-    env.element("state-s3DomeCtrl").textContent,
+    env.element("state-protoR2link").textContent,
     "spinning",
     "the changed value must still be patched into the existing element"
   );
@@ -222,20 +222,20 @@ test("A changed component set rebuilds the grid", async (t) => {
   const env = await loadDashboard({ respond: healthyResponder });
   const grid = env.element("component-status-grid");
 
-  pushStatus(env, { s3DomeCtrl: { state: "connected" } });
+  pushStatus(env, { protoR2link: { state: "connected" } });
   grid.innerHTML += "<!-- stale -->";
 
-  env.stream.subscriber("status", { s3DomeCtrl: { state: "connected" }, s2Sound: { state: "idle" } });
+  env.stream.subscriber("status", { protoR2link: { state: "connected" }, audio: { state: "idle" } });
 
   assert.ok(!grid.innerHTML.includes("<!-- stale -->"), "a new component must force a rebuild");
-  assert.match(grid.innerHTML, /id="comp-s2Sound"/, "the new component must appear");
+  assert.match(grid.innerHTML, /id="comp-audio"/, "the new component must appear");
 });
 
 test("A status with no known components empties the grid", async (t) => {
   const env = await loadDashboard({ respond: healthyResponder });
   const grid = env.element("component-status-grid");
 
-  pushStatus(env, { s3DomeCtrl: { state: "connected" } });
+  pushStatus(env, { protoR2link: { state: "connected" } });
   assert.notEqual(grid.innerHTML, "");
 
   env.stream.subscriber("status", { estop: false });
