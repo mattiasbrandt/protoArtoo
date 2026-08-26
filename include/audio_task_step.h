@@ -67,7 +67,7 @@ enum AudioStepIgnoreReason : uint8_t {
 // Phase 1  --  audioStepTick()
 // -----------------------------------------------------------------------------
 struct AudioStepTickInputs {
-    bool audioEnabled = false;  // cfg.system.enable_s2_sound
+    bool audioEnabled = false;  // cfg.system.enable_audio
     bool sleepMode = false;
     uint8_t configVolume = 0;   // cfg.audio.audioVolume, applied on initDriver
 };

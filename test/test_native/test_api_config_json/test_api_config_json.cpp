@@ -26,13 +26,13 @@ static ConfigSnapshot makeDefaultSnap() {
     snap.system.rc_pwm_dome_speed = disabledRcBinding();
     snap.system.rc_pwm_arm1 = disabledRcBinding();
     snap.system.rc_pwm_arm2 = disabledRcBinding();
-    snap.system.rc_pwm_sound = disabledRcBinding();
+    snap.system.rc_pwm_audio = disabledRcBinding();
     snap.system.rc_sbus_drive_speed = disabledRcBinding();
     snap.system.rc_sbus_drive_steer = disabledRcBinding();
     snap.system.rc_sbus_dome_speed = disabledRcBinding();
     snap.system.rc_sbus_arm1 = disabledRcBinding();
     snap.system.rc_sbus_arm2 = disabledRcBinding();
-    snap.system.rc_sbus_sound = disabledRcBinding();
+    snap.system.rc_sbus_audio = disabledRcBinding();
 
     // 11 RcTriggerBinding fields — zero-init is a valid disabled state
     snap.system.rc_arm1 = {};
@@ -40,7 +40,7 @@ static ConfigSnapshot makeDefaultSnap() {
     snap.system.rc_aux1 = {};
     snap.system.rc_aux2 = {};
     snap.system.rc_aux3 = {};
-    snap.system.rc_sound = {};
+    snap.system.rc_audio = {};
     snap.system.rc_opmode = {};
     snap.system.rc_free0 = {};
     snap.system.rc_free1 = {};
@@ -80,13 +80,13 @@ static ConfigSnapshot makeWorstCaseSnap() {
     snap.system.rc_pwm_dome_speed = extreme;
     snap.system.rc_pwm_arm1 = extreme;
     snap.system.rc_pwm_arm2 = extreme;
-    snap.system.rc_pwm_sound = extreme;
+    snap.system.rc_pwm_audio = extreme;
     snap.system.rc_sbus_drive_speed = extreme;
     snap.system.rc_sbus_drive_steer = extreme;
     snap.system.rc_sbus_dome_speed = extreme;
     snap.system.rc_sbus_arm1 = extreme;
     snap.system.rc_sbus_arm2 = extreme;
-    snap.system.rc_sbus_sound = extreme;
+    snap.system.rc_sbus_audio = extreme;
 
     // Extreme trigger binding — 15-char payload, extreme calibration
     RcTriggerBinding xtrig = {};
@@ -106,7 +106,7 @@ static ConfigSnapshot makeWorstCaseSnap() {
     snap.system.rc_aux1 = xtrig;
     snap.system.rc_aux2 = xtrig;
     snap.system.rc_aux3 = xtrig;
-    snap.system.rc_sound = xtrig;
+    snap.system.rc_audio = xtrig;
     snap.system.rc_opmode = xtrig;
     snap.system.rc_free0 = xtrig;
     snap.system.rc_free1 = xtrig;

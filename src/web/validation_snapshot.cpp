@@ -109,12 +109,12 @@ void captureValidationSnapshot(ValidationSnapshot* out) {
     sbus2SignalLost = robotState.sbus2SignalLost;
     sbus2HwFailsafe = robotState.sbus2HwFailsafe;
 
-    enableS3DomeCtrl = cfg.system.enable_s3_dome_ctrl;
+    enableS3DomeCtrl = cfg.system.enable_protor2link;
     domeHbRx = robotState.domeHbRx;
     bodyHbTx = robotState.bodyHbTx;
     domeLastSeenMs = robotState.domeLastSeenMs;
 
-    enableS2Sound = cfg.system.enable_s2_sound;
+    enableS2Sound = cfg.system.enable_audio;
     audioActive = robotState.audioActive;
     activeMood = robotState.activeMood;
     randMin = cfg.audio.snd_rand_min;

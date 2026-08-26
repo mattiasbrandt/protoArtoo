@@ -112,9 +112,9 @@ bool rcMapTryReuseCalibration(const ConfigSnapshot& existing, RcBindingSource so
 
     const RcBindingConfig backboneBindings[] = {
         existing.system.rc_pwm_drive_speed, existing.system.rc_pwm_drive_steer, existing.system.rc_pwm_dome_speed,
-        existing.system.rc_pwm_arm1,       existing.system.rc_pwm_arm2,       existing.system.rc_pwm_sound,
+        existing.system.rc_pwm_arm1,       existing.system.rc_pwm_arm2,       existing.system.rc_pwm_audio,
         existing.system.rc_sbus_drive_speed, existing.system.rc_sbus_drive_steer, existing.system.rc_sbus_dome_speed,
-        existing.system.rc_sbus_arm1,      existing.system.rc_sbus_arm2,      existing.system.rc_sbus_sound,
+        existing.system.rc_sbus_arm1,      existing.system.rc_sbus_arm2,      existing.system.rc_sbus_audio,
     };
     for (size_t i = 0; i < sizeof(backboneBindings) / sizeof(backboneBindings[0]); ++i) {
         const RcBindingConfig& binding = backboneBindings[i];
@@ -131,7 +131,7 @@ bool rcMapTryReuseCalibration(const ConfigSnapshot& existing, RcBindingSource so
 
     const RcTriggerBinding triggerBindings[] = {
         existing.system.rc_arm1, existing.system.rc_arm2, existing.system.rc_aux1, existing.system.rc_aux2, existing.system.rc_aux3,
-        existing.system.rc_sound, existing.system.rc_opmode, existing.system.rc_free0, existing.system.rc_free1, existing.system.rc_free2,
+        existing.system.rc_audio, existing.system.rc_opmode, existing.system.rc_free0, existing.system.rc_free1, existing.system.rc_free2,
         existing.system.rc_free3,
     };
     for (size_t i = 0; i < sizeof(triggerBindings) / sizeof(triggerBindings[0]); ++i) {
@@ -248,7 +248,7 @@ bool populateRcMapJson(JsonDocument& doc, const ConfigSnapshot& snap) {
     }
 
     const RcTriggerBinding namedSlots[] = {snap.system.rc_arm1, snap.system.rc_arm2, snap.system.rc_aux1, snap.system.rc_aux2,
-                                           snap.system.rc_aux3, snap.system.rc_opmode, snap.system.rc_sound, snap.system.rc_free0,
+                                           snap.system.rc_aux3, snap.system.rc_opmode, snap.system.rc_audio, snap.system.rc_free0,
                                            snap.system.rc_free1, snap.system.rc_free2, snap.system.rc_free3};
 
     for (size_t i = 0; i < sizeof(namedSlots) / sizeof(namedSlots[0]); ++i) {
@@ -283,7 +283,7 @@ void clearRcMapSlots(ConfigSnapshot* working) {
     working->system.rc_aux2 = disabledRcTriggerBinding();
     working->system.rc_aux3 = disabledRcTriggerBinding();
     working->system.rc_opmode = disabledRcTriggerBinding();
-    working->system.rc_sound = disabledRcTriggerBinding();
+    working->system.rc_audio = disabledRcTriggerBinding();
     working->system.rc_free0 = disabledRcTriggerBinding();
     working->system.rc_free1 = disabledRcTriggerBinding();
     working->system.rc_free2 = disabledRcTriggerBinding();
@@ -395,7 +395,7 @@ bool assignRcMapEntryToSnapshot(const RcMapEntry& entry, const ConfigSnapshot& e
         return true;
     }
 
-    RcTriggerBinding* spillSlots[] = {&working->system.rc_sound, &working->system.rc_free0, &working->system.rc_free1,
+    RcTriggerBinding* spillSlots[] = {&working->system.rc_audio, &working->system.rc_free0, &working->system.rc_free1,
                                       &working->system.rc_free2, &working->system.rc_free3};
     for (size_t i = 0; i < sizeof(spillSlots) / sizeof(spillSlots[0]); ++i) {
         if (triggerSlotIsFree(*spillSlots[i])) {
@@ -448,16 +448,16 @@ bool populateConfigJson(JsonDocument& doc, const ConfigSnapshot& snap) {
     components["aux2"]["type"] = servoCompTypeToString(snap.servo.aux2_type);
     components["aux3"]["enabled"] = snap.system.enable_aux3;
     components["aux3"]["type"] = servoCompTypeToString(snap.servo.aux3_type);
-    components["dome"]["enabled"] = snap.system.enable_dome;
+    components["dome"]["enabled"] = snap.system.enable_dome_esc;
     components["rcCh1"]["enabled"] = snap.system.enable_rc_ch1;
     components["rcCh2"]["enabled"] = snap.system.enable_rc_ch2;
     components["rcCh3"]["enabled"] = snap.system.enable_rc_ch3;
     components["rcCh4"]["enabled"] = snap.system.enable_rc_ch4;
     components["rcCh5"]["enabled"] = snap.system.enable_rc_ch5;
     components["rcCh6"]["enabled"] = snap.system.enable_rc_ch6;
-    components["s1Hoverboard"]["enabled"] = snap.system.enable_s1_hoverboard;
-    components["s2Sound"]["enabled"] = snap.system.enable_s2_sound;
-    components["s3DomeCtrl"]["enabled"] = snap.system.enable_s3_dome_ctrl;
+    components["s1Hoverboard"]["enabled"] = snap.system.enable_drive;
+    components["s2Sound"]["enabled"] = snap.system.enable_audio;
+    components["s3DomeCtrl"]["enabled"] = snap.system.enable_protor2link;
 
     // Legacy top-level calibration fields consumed by data/servo.js
     doc["arm1OpenUs"] = snap.servo.arm1_open_us;
@@ -638,7 +638,7 @@ void handleRcMapPost(WebRequest& req) {
 void handleConfigPost(WebRequest& req) {
     ConfigSnapshot working;
     configCacheRead(&working);
-    const bool domeEnabledBefore = working.system.enable_dome;
+    const bool domeEnabledBefore = working.system.enable_dome_esc;
 
     ConfigParamSource params = webParamSource(req);
 

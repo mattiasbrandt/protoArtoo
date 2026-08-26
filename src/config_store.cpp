@@ -99,6 +99,53 @@ const AudioTrackKeyMapEntry* audioTrackKeyEntry(const char* key) {
     return nullptr;
 }
 
+// Schema 2 -> 3 migration: component toggle identity rename (ADR 0033)
+// Migrates old NVS keys to new keys, then deletes the old keys.
+// Logs once per migration.
+void migrateSchema2To3(Preferences& prefs) {
+    struct KeyMap {
+        const char* oldKey;
+        const char* newKey;
+    };
+
+    static const KeyMap componentToggleMigrations[] = {
+        {"en_s1", "en_drive"},
+        {"en_dome", "en_dome_esc"},
+        {"en_s3", "en_r2link"},
+        {"en_s2", "en_audio"},
+    };
+
+    static const KeyMap rcAudioMigrations[] = {
+        {"rcp_snd", "rcp_aud"},
+        {"rcs_snd", "rcs_aud"},
+        {"rc_sound", "rc_aud"},
+    };
+
+    // Migrate boolean component toggles
+    for (size_t i = 0; i < sizeof(componentToggleMigrations) / sizeof(componentToggleMigrations[0]); ++i) {
+        const char* oldKey = componentToggleMigrations[i].oldKey;
+        const char* newKey = componentToggleMigrations[i].newKey;
+        if (prefs.isKey(oldKey)) {
+            bool value = prefs.getBool(oldKey, false);
+            prefs.putBool(newKey, value);
+            prefs.remove(oldKey);
+        }
+    }
+
+    // Migrate RC audio bindings (string format)
+    for (size_t i = 0; i < sizeof(rcAudioMigrations) / sizeof(rcAudioMigrations[0]); ++i) {
+        const char* oldKey = rcAudioMigrations[i].oldKey;
+        const char* newKey = rcAudioMigrations[i].newKey;
+        if (prefs.isKey(oldKey)) {
+            String value = prefs.getString(oldKey, "");
+            if (value.length() > 0) {
+                prefs.putString(newKey, value.c_str());
+            }
+            prefs.remove(oldKey);
+        }
+    }
+}
+
 }  // namespace
 
 // Helper: Populate ConfigSnapshot with defaults
@@ -226,7 +273,7 @@ void configSnapshotDefaults(ConfigSnapshot* snap) {
     snap->system.enable_aux1 = false;
     snap->system.enable_aux2 = false;
     snap->system.enable_aux3 = false;
-    snap->system.enable_dome = false;
+    snap->system.enable_dome_esc = false;
     snap->system.enable_rc_ch1 = false;
     snap->system.enable_rc_ch2 = false;
     snap->system.enable_rc_ch3 = false;
@@ -234,9 +281,9 @@ void configSnapshotDefaults(ConfigSnapshot* snap) {
     snap->system.enable_rc_ch5 = false;
     snap->system.enable_rc_ch6 = false;
     snap->system.single_sbus_use_ch2 = false;
-    snap->system.enable_s1_hoverboard = false;
-    snap->system.enable_s2_sound = false;
-    snap->system.enable_s3_dome_ctrl = false;
+    snap->system.enable_drive = false;
+    snap->system.enable_audio = false;
+    snap->system.enable_protor2link = false;
     snap->system.stationary = false;
     snap->system.rc_input_mode = RC_INPUT_DUAL_SBUS;
 
@@ -245,14 +292,14 @@ void configSnapshotDefaults(ConfigSnapshot* snap) {
     snap->system.rc_pwm_dome_speed = defaultPwmBinding(3);
     snap->system.rc_pwm_arm1 = defaultPwmBinding(4);
     snap->system.rc_pwm_arm2 = defaultPwmBinding(5);
-    snap->system.rc_pwm_sound = defaultPwmBinding(6);
+    snap->system.rc_pwm_audio = defaultPwmBinding(6);
 
     snap->system.rc_sbus_drive_speed = defaultSbusBinding(RC_BINDING_SBUS1, 1);
     snap->system.rc_sbus_drive_steer = defaultSbusBinding(RC_BINDING_SBUS1, 2);
     snap->system.rc_sbus_dome_speed = defaultSbusBinding(RC_BINDING_SBUS2, 1);
     snap->system.rc_sbus_arm1 = defaultSbusBinding(RC_BINDING_SBUS2, 2);
     snap->system.rc_sbus_arm2 = defaultSbusBinding(RC_BINDING_SBUS2, 3);
-    snap->system.rc_sbus_sound = disabledRcBinding();
+    snap->system.rc_sbus_audio = disabledRcBinding();
 
     snap->system.rc_arm1 = makeRcTriggerBinding(RC_BINDING_SBUS1, 4, SERVO_ACTION_ARM1_TOGGLE, nullptr,
                                          RC_SBUS_DEFAULT_MIN, RC_SBUS_DEFAULT_CENTER,
@@ -265,7 +312,7 @@ void configSnapshotDefaults(ConfigSnapshot* snap) {
     snap->system.rc_aux1 = disabledRcTriggerBinding();
     snap->system.rc_aux2 = disabledRcTriggerBinding();
     snap->system.rc_aux3 = disabledRcTriggerBinding();
-    snap->system.rc_sound = disabledRcTriggerBinding();
+    snap->system.rc_audio = disabledRcTriggerBinding();
     snap->system.rc_opmode = disabledRcTriggerBinding();
     snap->system.rc_free0 = disabledRcTriggerBinding();
     snap->system.rc_free1 = disabledRcTriggerBinding();
@@ -323,7 +370,7 @@ void configCacheReadDome(DomeConfig* out) {
 bool configCacheDomeEnabled() {
     bool enabled;
     taskENTER_CRITICAL(&configCacheMux);
-    enabled = configCache.system.enable_dome;
+    enabled = configCache.system.enable_dome_esc;
     taskEXIT_CRITICAL(&configCacheMux);
     return enabled;
 }
@@ -449,10 +496,10 @@ RcInputActiveConfig rcInputActiveConfigFromSystem(const SystemConfig& system) {
     out.enableRc[3] = system.enable_rc_ch4;
     out.enableRc[4] = system.enable_rc_ch5;
     out.enableRc[5] = system.enable_rc_ch6;
-    out.enableDome = system.enable_dome;
+    out.enableDome = system.enable_dome_esc;
     out.enableArm1 = system.enable_arm1;
     out.enableArm2 = system.enable_arm2;
-    out.enableSound = system.enable_s2_sound;
+    out.enableSound = system.enable_audio;
     return out;
 }
 
@@ -600,12 +647,25 @@ bool configLoad(Preferences& prefs, ConfigSnapshot* out) {
         return false;
     }
 
-    bool ok = configDeserialize(reader, out);
-
+    // Perform schema migrations BEFORE deserializing (so new keys exist for deserialization)
     if (stored < 2) {
         // Schema 1 -> 2: log_level renumbered when the WARN tier was inserted.
         // Old: 1=Error 2=Info 3=Debug. New: 1=Error 2=Warn 3=Info 4=Debug.
         // Only 2 and 3 changed meaning; 1 and values already >= 4 are unaffected.
+        // (log_level migration happens in-place; no key rename needed)
+    }
+
+    if (stored < 3) {
+        // Schema 2 -> 3: component toggle identity rename (ADR 0033)
+        migrateSchema2To3(prefs);
+    }
+
+    // Now that migrations are done, deserialize from the migrated NVS
+    PrefsReader migratedReader(prefs);
+    bool ok = configDeserialize(migratedReader, out);
+
+    // Apply in-place schema 1->2 migration if needed
+    if (stored < 2) {
         if (out->system.logLevel == 2 || out->system.logLevel == 3) {
             out->system.logLevel += 1;
             prefs.putUChar("log_level", out->system.logLevel);

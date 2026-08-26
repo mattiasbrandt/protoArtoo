@@ -400,7 +400,7 @@ void handleDomeSpeedPost(WebRequest& req) {
 
     ConfigSnapshot cfg = {};
     configCacheRead(&cfg);
-    if (!cfg.system.enable_dome) {
+    if (!cfg.system.enable_dome_esc) {
         webSendJsonError(req, 409, "dome output is disabled");
         return;
     }

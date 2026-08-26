@@ -343,9 +343,9 @@ void test_configLoad_save_feature_toggles() {
     ConfigSnapshot snap1 = {};
     snap1.system.enable_arm1 = true;
     snap1.system.enable_arm2 = true;
-    snap1.system.enable_dome = false;
+    snap1.system.enable_dome_esc = false;
     snap1.system.enable_rc_ch1 = true;
-    snap1.system.enable_s1_hoverboard = true;
+    snap1.system.enable_drive = true;
     snap1.system.stationary = true;
 
     Preferences prefs;
@@ -360,9 +360,9 @@ void test_configLoad_save_feature_toggles() {
     TEST_ASSERT_TRUE(loadResult);
     TEST_ASSERT_EQUAL_INT(true, snap2.system.enable_arm1);
     TEST_ASSERT_EQUAL_INT(true, snap2.system.enable_arm2);
-    TEST_ASSERT_EQUAL_INT(false, snap2.system.enable_dome);
+    TEST_ASSERT_EQUAL_INT(false, snap2.system.enable_dome_esc);
     TEST_ASSERT_EQUAL_INT(true, snap2.system.enable_rc_ch1);
-    TEST_ASSERT_EQUAL_INT(true, snap2.system.enable_s1_hoverboard);
+    TEST_ASSERT_EQUAL_INT(true, snap2.system.enable_drive);
     TEST_ASSERT_EQUAL_INT(true, snap2.system.stationary);
 }
 
@@ -539,11 +539,11 @@ void test_configCacheRead_captures_all_categories() {
 
     // Feature toggles
     seeded.system.enable_arm1        = true;
-    seeded.system.enable_dome        = true;
+    seeded.system.enable_dome_esc        = true;
     seeded.system.stationary         = true;
     seeded.system.rc_input_mode      = RC_INPUT_DUAL_SBUS;
     seeded.system.single_sbus_use_ch2 = true;
-    seeded.system.enable_s1_hoverboard = true;
+    seeded.system.enable_drive = true;
 
     // RC backbone binding
     seeded.system.rc_sbus_drive_speed =
@@ -623,11 +623,11 @@ void test_configCacheRead_captures_all_categories() {
 
     // Feature toggles
     TEST_ASSERT_EQUAL_INT(true, snap.system.enable_arm1);
-    TEST_ASSERT_EQUAL_INT(true, snap.system.enable_dome);
+    TEST_ASSERT_EQUAL_INT(true, snap.system.enable_dome_esc);
     TEST_ASSERT_EQUAL_INT(true, snap.system.stationary);
     TEST_ASSERT_EQUAL_UINT8((uint8_t)RC_INPUT_DUAL_SBUS, (uint8_t)snap.system.rc_input_mode);
     TEST_ASSERT_EQUAL_INT(true, snap.system.single_sbus_use_ch2);
-    TEST_ASSERT_EQUAL_INT(true, snap.system.enable_s1_hoverboard);
+    TEST_ASSERT_EQUAL_INT(true, snap.system.enable_drive);
 
     // RC backbone binding
     TEST_ASSERT_EQUAL_UINT8((uint8_t)RC_BINDING_SBUS1, (uint8_t)snap.system.rc_sbus_drive_speed.source);
@@ -655,10 +655,10 @@ void test_active_rc_config_survives_saved_toggle_and_mode_changes() {
     boot.system.enable_rc_ch4 = false;
     boot.system.enable_rc_ch5 = true;
     boot.system.enable_rc_ch6 = false;
-    boot.system.enable_dome = true;
+    boot.system.enable_dome_esc = true;
     boot.system.enable_arm1 = true;
     boot.system.enable_arm2 = false;
-    boot.system.enable_s2_sound = true;
+    boot.system.enable_audio = true;
     configCacheSetActiveRcInput(rcInputActiveConfigFromSystem(boot.system));
 
     ConfigSnapshot saved = boot;
@@ -670,10 +670,10 @@ void test_active_rc_config_survives_saved_toggle_and_mode_changes() {
     saved.system.enable_rc_ch4 = true;
     saved.system.enable_rc_ch5 = false;
     saved.system.enable_rc_ch6 = true;
-    saved.system.enable_dome = false;
+    saved.system.enable_dome_esc = false;
     saved.system.enable_arm1 = false;
     saved.system.enable_arm2 = true;
-    saved.system.enable_s2_sound = false;
+    saved.system.enable_audio = false;
     configCacheApply(saved);
 
     RcInputActiveConfig active = {};
@@ -806,13 +806,13 @@ void test_configCacheApply_applies_all_categories() {
     snap.system.enable_arm1        = true;
     snap.system.enable_arm2        = false;
     snap.system.enable_aux1        = true;
-    snap.system.enable_dome        = true;
+    snap.system.enable_dome_esc        = true;
     snap.system.enable_rc_ch1      = true;
     snap.system.enable_rc_ch2      = false;
     snap.system.single_sbus_use_ch2 = true;
-    snap.system.enable_s1_hoverboard = true;
-    snap.system.enable_s2_sound    = false;
-    snap.system.enable_s3_dome_ctrl = true;
+    snap.system.enable_drive = true;
+    snap.system.enable_audio    = false;
+    snap.system.enable_protor2link = true;
     snap.system.stationary         = true;
     snap.system.rc_input_mode      = RC_INPUT_DUAL_SBUS;
 
@@ -873,7 +873,7 @@ void test_configCacheApply_applies_all_categories() {
 
     TEST_ASSERT_EQUAL_INT(true, applied.system.enable_arm1);
     TEST_ASSERT_EQUAL_INT(false, applied.system.enable_arm2);
-    TEST_ASSERT_EQUAL_INT(true, applied.system.enable_dome);
+    TEST_ASSERT_EQUAL_INT(true, applied.system.enable_dome_esc);
     TEST_ASSERT_EQUAL_INT(true, applied.system.stationary);
 
     // Verify the pre-set non-cfg sentinel was not modified by the apply
@@ -907,7 +907,7 @@ void test_config_domain_load_functions_are_independently_callable() {
     snap.audio.audioVolume = 12;
     snap.servo.arm1_open_us = 1900;
     snap.dome.dome_speed_limit_pct = 75;
-    snap.system.enable_s2_sound = true;
+    snap.system.enable_audio = true;
 
     Preferences prefs;
     prefs.begin("proto", false);
@@ -929,14 +929,14 @@ void test_config_domain_load_functions_are_independently_callable() {
     TEST_ASSERT_EQUAL_UINT8(12, audio.audioVolume);
     TEST_ASSERT_EQUAL_UINT16(1900, servo.arm1_open_us);
     TEST_ASSERT_EQUAL_UINT8(75, dome.dome_speed_limit_pct);
-    TEST_ASSERT_EQUAL_INT(true, system.enable_s2_sound);
+    TEST_ASSERT_EQUAL_INT(true, system.enable_audio);
 }
 
 void test_config_domain_save_preserves_other_domains() {
     ConfigSnapshot snap = {};
     snap.drive.speedLimitMax = 500;
     snap.audio.audioVolume = 10;
-    snap.system.enable_s2_sound = true;
+    snap.system.enable_audio = true;
 
     Preferences prefs;
     prefs.begin("proto", false);
@@ -953,7 +953,7 @@ void test_config_domain_save_preserves_other_domains() {
 
     TEST_ASSERT_EQUAL_INT16(500, loaded.drive.speedLimitMax);
     TEST_ASSERT_EQUAL_UINT8(27, loaded.audio.audioVolume);
-    TEST_ASSERT_EQUAL_INT(true, loaded.system.enable_s2_sound);
+    TEST_ASSERT_EQUAL_INT(true, loaded.system.enable_audio);
 }
 
 static void seed_domain_round_trip_baseline(Preferences& prefs) {
@@ -965,7 +965,7 @@ static void seed_domain_round_trip_baseline(Preferences& prefs) {
     baseline.audio.audioVolume = 10;
     baseline.servo.arm1_open_us = 1900;
     baseline.dome.dome_speed_limit_pct = 75;
-    baseline.system.enable_s2_sound = true;
+    baseline.system.enable_audio = true;
     TEST_ASSERT_TRUE(configSave(prefs, baseline));
 }
 
@@ -974,7 +974,7 @@ static void assert_domain_round_trip_baseline_preserved(const ConfigSnapshot& lo
     TEST_ASSERT_EQUAL_UINT8(10, loaded.audio.audioVolume);
     TEST_ASSERT_EQUAL_UINT16(1900, loaded.servo.arm1_open_us);
     TEST_ASSERT_EQUAL_UINT8(75, loaded.dome.dome_speed_limit_pct);
-    TEST_ASSERT_EQUAL_INT(true, loaded.system.enable_s2_sound);
+    TEST_ASSERT_EQUAL_INT(true, loaded.system.enable_audio);
 }
 
 void test_config_domain_round_trip_matrix() {
@@ -1039,13 +1039,13 @@ void test_config_domain_round_trip_matrix() {
     TEST_ASSERT_TRUE(configLoad(prefs, &loaded));
     configCacheApply(loaded);
     configCacheRead(&fromState);
-    fromState.system.enable_s2_sound = false;
+    fromState.system.enable_audio = false;
     configCacheApply(fromState);
     configCacheRead(&fromState);
     TEST_ASSERT_TRUE(configSaveSystem(prefs, fromState.system));
     TEST_ASSERT_TRUE(configLoad(prefs, &loaded));
-    TEST_ASSERT_EQUAL_INT(false, loaded.system.enable_s2_sound);
-    loaded.system.enable_s2_sound = true;
+    TEST_ASSERT_EQUAL_INT(false, loaded.system.enable_audio);
+    loaded.system.enable_audio = true;
     assert_domain_round_trip_baseline_preserved(loaded);
 
     prefs.end();

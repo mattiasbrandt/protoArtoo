@@ -20,7 +20,7 @@
 // that rule to commandedSetStationary() (state-derived), once the later
 // Z2 commanded_modes feature lands. Until then the shell keeps its existing
 // inline stationary-release cue logic unchanged. playDomeOnCue stays a core
-// action because it is config-derived (enable_dome false->true).
+// action because it is config-derived (enable_dome_esc false->true).
 //
 // Defined in src/web/api_config_apply.cpp.
 // =============================================================================
@@ -62,7 +62,7 @@ struct ConfigApplyResult {
 
 // `working` must already hold the current cached snapshot (shell reads it
 // via configCacheRead before calling). `domeEnabledBefore` is the live
-// enable_dome value snapshotted by the shell before the call, per ADR 0011's
+// enable_dome_esc value snapshotted by the shell before the call, per ADR 0011's
 // "snapshot live inputs before calling the core." `result` is fully
 // reinitialized on entry (safe to reuse a static instance across calls).
 void configApply(const ConfigParamSource& params, ConfigSnapshot* working, bool domeEnabledBefore,

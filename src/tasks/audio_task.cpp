@@ -12,7 +12,7 @@
 // policy invocation, volume and random-mode state, status/catalog gating)
 // lives in the step core.
 //
-// Feature toggle: enable_s2_sound is staged at reboot (ADR 0027). The task is
+// Feature toggle: enable_audio is staged at reboot (ADR 0027). The task is
 // only spawned when enabled at boot; the audioQueue* helpers gate on the
 // boot-latched state and return true (accepted-and-discarded) when disabled.
 //

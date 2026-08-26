@@ -419,7 +419,7 @@ void servoTaskInit() {
     s_aux1_enabled = cfg.system.enable_aux1;
     s_aux2_enabled = cfg.system.enable_aux2;
     s_aux3_enabled = cfg.system.enable_aux3;
-    s_dome_enabled = cfg.system.enable_dome;
+    s_dome_enabled = cfg.system.enable_dome_esc;
     s_aux_led_pin = cfg.servo.aux_led_pin;
 
     bool anyServo = s_arm1_enabled || s_arm2_enabled || s_aux1_enabled || s_aux2_enabled || s_aux3_enabled;

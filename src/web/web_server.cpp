@@ -324,7 +324,7 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     enableAux1 = cfg.system.enable_aux1;
     enableAux2 = cfg.system.enable_aux2;
     enableAux3 = cfg.system.enable_aux3;
-    enableDome = cfg.system.enable_dome;
+    enableDome = cfg.system.enable_dome_esc;
     enableRcCh1 = activeRc.enableRc[0];
     enableRcCh2 = activeRc.enableRc[1];
     enableRcCh3 = activeRc.enableRc[2];
@@ -333,9 +333,9 @@ bool buildStatusJson(char* buffer, size_t bufferSize) {
     enableRcCh6 = activeRc.enableRc[5];
     rcInputMode = static_cast<RcInputMode>(activeRc.mode);
     singleSbusUseCh2 = activeRc.useCh2;
-    enableS1Hoverboard = cfg.system.enable_s1_hoverboard;
-    enableS2Sound = cfg.system.enable_s2_sound;
-    enableS3DomeCtrl = cfg.system.enable_s3_dome_ctrl;
+    enableS1Hoverboard = cfg.system.enable_drive;
+    enableS2Sound = cfg.system.enable_audio;
+    enableS3DomeCtrl = cfg.system.enable_protor2link;
     audioActive = robotState.audioActive;
     audioLinkOk = robotState.audio_module_link_ok;
     audioRxStatus = robotState.audio_module_rx_status;

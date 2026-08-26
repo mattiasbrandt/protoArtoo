@@ -98,14 +98,14 @@ static RcMappingConfig rcBuildMappingConfig(const RcInputActiveConfig& active) {
         out.domeSpeed = cfg.system.rc_pwm_dome_speed;
         out.arm1 = cfg.system.rc_pwm_arm1;
         out.arm2 = cfg.system.rc_pwm_arm2;
-        out.sound = cfg.system.rc_pwm_sound;
+        out.sound = cfg.system.rc_pwm_audio;
     } else {
         out.driveSpeed = cfg.system.rc_sbus_drive_speed;
         out.driveSteer = cfg.system.rc_sbus_drive_steer;
         out.domeSpeed = cfg.system.rc_sbus_dome_speed;
         out.arm1 = cfg.system.rc_sbus_arm1;
         out.arm2 = cfg.system.rc_sbus_arm2;
-        out.sound = cfg.system.rc_sbus_sound;
+        out.sound = cfg.system.rc_sbus_audio;
     }
     out.prevSoundPressed = false;  // caller sets from static state
     return out;

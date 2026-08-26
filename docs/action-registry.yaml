@@ -732,7 +732,7 @@ entries:
   display_name: Dome Speed (Web)
   description: >
     Set dome rotation speed from the browser. Gated by sleep mode (423) and the
-    enable_dome config flag (409); distinct from dome.action.set-speed, which is
+    enable_dome_esc config flag (409); distinct from dome.action.set-speed, which is
     the SBUS/PWM RC-bindable axis.
   domain: dome
   type: action
@@ -2488,7 +2488,7 @@ entries:
   requires_web_control: false
   nvs_key: en_aux3
 
-- name: system.config.enable_dome
+- name: system.config.enable_dome_esc
   display_name: Dome Motor
   description: Use the dome rotation motor connected to the DOME output
   domain: system
@@ -2501,7 +2501,7 @@ entries:
   sources: [ internal ]
   safety_critical: false
   requires_web_control: false
-  nvs_key: en_dome
+  nvs_key: en_dome_esc
 
 - name: system.config.enable_rc_ch1
   display_name: RC CH1
@@ -2593,7 +2593,7 @@ entries:
   requires_web_control: false
   nvs_key: en_rc_ch6
 
-- name: system.config.enable_s1_hoverboard
+- name: system.config.enable_drive
   display_name: S1 — Hoverboard
   description: Use the hoverboard drive controller connected to S1
   domain: system
@@ -2606,9 +2606,9 @@ entries:
   sources: [ internal ]
   safety_critical: false
   requires_web_control: false
-  nvs_key: en_s1
+  nvs_key: en_drive
 
-- name: system.config.enable_s2_sound
+- name: system.config.enable_audio
   display_name: S2 — Sound
   description: Use the sound module connected to S2
   domain: system
@@ -2621,9 +2621,9 @@ entries:
   sources: [ internal ]
   safety_critical: false
   requires_web_control: false
-  nvs_key: en_s2
+  nvs_key: en_audio
 
-- name: system.config.enable_s3_dome_ctrl
+- name: system.config.enable_protor2link
   display_name: S3 — Dome Control
   description: Use the dome controller connected to S3
   domain: system
@@ -2636,7 +2636,7 @@ entries:
   sources: [ internal ]
   safety_critical: false
   requires_web_control: false
-  nvs_key: en_s3
+  nvs_key: en_r2link
 
 - name: system.status.health
   display_name: Health

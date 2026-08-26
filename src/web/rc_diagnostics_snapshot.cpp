@@ -66,14 +66,14 @@ void loadModeBindingSpecs(RcInputMode mode,
         specs[2].binding = cfg.system.rc_pwm_dome_speed;
         specs[3].binding = cfg.system.rc_pwm_arm1;
         specs[4].binding = cfg.system.rc_pwm_arm2;
-        specs[5].binding = cfg.system.rc_pwm_sound;
+        specs[5].binding = cfg.system.rc_pwm_audio;
     } else {
         specs[0].binding = cfg.system.rc_sbus_drive_speed;
         specs[1].binding = cfg.system.rc_sbus_drive_steer;
         specs[2].binding = cfg.system.rc_sbus_dome_speed;
         specs[3].binding = cfg.system.rc_sbus_arm1;
         specs[4].binding = cfg.system.rc_sbus_arm2;
-        specs[5].binding = cfg.system.rc_sbus_sound;
+        specs[5].binding = cfg.system.rc_sbus_audio;
     }
 }
 

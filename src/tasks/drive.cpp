@@ -44,13 +44,13 @@ void driveTask(void* pvParameters) {
     // regardless of enable state or the chip will reset after WATCHDOG_TIMEOUT_S.
     esp_task_wdt_add(NULL);
 
-    // Feature toggle: when cfg_enable_s1_hoverboard is false, do not open
+    // Feature toggle: when cfg_enable_drive is false, do not open
     // UART1 or send any frames. Task idles here feeding TWDT only.
     // Mirrors the DomeLinkTask disabled path.
     {
         ConfigSnapshot cfg = {};
         configCacheRead(&cfg);
-        bool enabled = cfg.system.enable_s1_hoverboard;
+        bool enabled = cfg.system.enable_drive;
         if (!enabled) {
             for (;;) {
                 esp_task_wdt_reset();

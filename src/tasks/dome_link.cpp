@@ -758,11 +758,11 @@ void domeLinkTask(void* pvParameters) {
 
     ConfigSnapshot cfg = {};
     configCacheRead(&cfg);
-    bool enabled = cfg.system.enable_s3_dome_ctrl;
+    bool enabled = cfg.system.enable_protor2link;
 
     if (!enabled) {
         setTransportState(DOME_LINK_TRANSPORT_DISCONNECTED);
-        PA_LOG_DEBUG(TAG, "dome link disabled (en_s3=false) - task idle");
+        PA_LOG_DEBUG(TAG, "dome link disabled (en_r2link=false) - task idle");
 
         DomeTxCmd cmd{};
         for (;;) {

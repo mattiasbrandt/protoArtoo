@@ -13,42 +13,42 @@
 #include "drive_speed_preset.h"
 #include "marcduino_helpers.h"
 #include "rc_mapping.h"
-#include "rc_sound_category_table.h"
+#include "rc_audio_category_table.h"
 
 // =============================================================================
-// Sound Category Table
+// Audio Category Table
 // =============================================================================
-// Maps each sound action to its category lo/hi member pointers.
-// Defined here and declared in rc_sound_category_table.h for testing.
+// Maps each audio action to its category lo/hi member pointers.
+// Defined here and declared in rc_audio_category_table.h for testing.
 
-const RcSoundCategoryEntry rcSoundCategoryTable[] = {
-    {SOUND_ACTION_RANDOM_GENERAL, &RcSoundCategorySnapshot::gen_lo,
-     &RcSoundCategorySnapshot::gen_hi},
-    {SOUND_ACTION_RANDOM_CHATTY, &RcSoundCategorySnapshot::chat_lo,
-     &RcSoundCategorySnapshot::chat_hi},
-    {SOUND_ACTION_RANDOM_HAPPY, &RcSoundCategorySnapshot::hap_lo,
-     &RcSoundCategorySnapshot::hap_hi},
-    {SOUND_ACTION_RANDOM_PROCESSING, &RcSoundCategorySnapshot::proc_lo,
-     &RcSoundCategorySnapshot::proc_hi},
-    {SOUND_ACTION_RANDOM_SAD, &RcSoundCategorySnapshot::sad_lo,
-     &RcSoundCategorySnapshot::sad_hi},
-    {SOUND_ACTION_RANDOM_SENTIMENTAL, &RcSoundCategorySnapshot::sent_lo,
-     &RcSoundCategorySnapshot::sent_hi},
-    {SOUND_ACTION_RANDOM_HUMMING, &RcSoundCategorySnapshot::hum_lo,
-     &RcSoundCategorySnapshot::hum_hi},
-    {SOUND_ACTION_RANDOM_SCREAM, &RcSoundCategorySnapshot::scrm_lo,
-     &RcSoundCategorySnapshot::scrm_hi},
-    {SOUND_ACTION_RANDOM_SURPRISED, &RcSoundCategorySnapshot::ooh_lo,
-     &RcSoundCategorySnapshot::ooh_hi},
-    {SOUND_ACTION_RANDOM_ALERT, &RcSoundCategorySnapshot::alrm_lo,
-     &RcSoundCategorySnapshot::alrm_hi},
-    {SOUND_ACTION_RANDOM_SNARKY, &RcSoundCategorySnapshot::snarky_lo,
-     &RcSoundCategorySnapshot::snarky_hi},
-    {SOUND_ACTION_RANDOM_WHISTLE, &RcSoundCategorySnapshot::whis_lo,
-     &RcSoundCategorySnapshot::whis_hi},
+const RcAudioCategoryEntry rcAudioCategoryTable[] = {
+    {SOUND_ACTION_RANDOM_GENERAL, &RcAudioCategorySnapshot::gen_lo,
+     &RcAudioCategorySnapshot::gen_hi},
+    {SOUND_ACTION_RANDOM_CHATTY, &RcAudioCategorySnapshot::chat_lo,
+     &RcAudioCategorySnapshot::chat_hi},
+    {SOUND_ACTION_RANDOM_HAPPY, &RcAudioCategorySnapshot::hap_lo,
+     &RcAudioCategorySnapshot::hap_hi},
+    {SOUND_ACTION_RANDOM_PROCESSING, &RcAudioCategorySnapshot::proc_lo,
+     &RcAudioCategorySnapshot::proc_hi},
+    {SOUND_ACTION_RANDOM_SAD, &RcAudioCategorySnapshot::sad_lo,
+     &RcAudioCategorySnapshot::sad_hi},
+    {SOUND_ACTION_RANDOM_SENTIMENTAL, &RcAudioCategorySnapshot::sent_lo,
+     &RcAudioCategorySnapshot::sent_hi},
+    {SOUND_ACTION_RANDOM_HUMMING, &RcAudioCategorySnapshot::hum_lo,
+     &RcAudioCategorySnapshot::hum_hi},
+    {SOUND_ACTION_RANDOM_SCREAM, &RcAudioCategorySnapshot::scrm_lo,
+     &RcAudioCategorySnapshot::scrm_hi},
+    {SOUND_ACTION_RANDOM_SURPRISED, &RcAudioCategorySnapshot::ooh_lo,
+     &RcAudioCategorySnapshot::ooh_hi},
+    {SOUND_ACTION_RANDOM_ALERT, &RcAudioCategorySnapshot::alrm_lo,
+     &RcAudioCategorySnapshot::alrm_hi},
+    {SOUND_ACTION_RANDOM_SNARKY, &RcAudioCategorySnapshot::snarky_lo,
+     &RcAudioCategorySnapshot::snarky_hi},
+    {SOUND_ACTION_RANDOM_WHISTLE, &RcAudioCategorySnapshot::whis_lo,
+     &RcAudioCategorySnapshot::whis_hi},
 };
 
-const size_t rcSoundCategoryTableSize = sizeof(rcSoundCategoryTable) / sizeof(rcSoundCategoryTable[0]);
+const size_t rcAudioCategoryTableSize = sizeof(rcAudioCategoryTable) / sizeof(rcAudioCategoryTable[0]);
 
 RcActionResult rcDispatchAction(const RcActionPayload& input) {
     RcActionResult res = {};
@@ -97,11 +97,11 @@ RcActionResult rcDispatchAction(const RcActionPayload& input) {
         case SOUND_ACTION_RANDOM_WHISTLE: {
             if (input.pressed) {
                 // Lookup category entry for this action in the global table
-                for (size_t i = 0; i < rcSoundCategoryTableSize; ++i) {
-                    if (rcSoundCategoryTable[i].action == input.target) {
-                        const RcSoundCategorySnapshot& cat = input.categories;
-                        uint16_t lo = cat.*(rcSoundCategoryTable[i].lo);
-                        uint16_t hi = cat.*(rcSoundCategoryTable[i].hi);
+                for (size_t i = 0; i < rcAudioCategoryTableSize; ++i) {
+                    if (rcAudioCategoryTable[i].action == input.target) {
+                        const RcAudioCategorySnapshot& cat = input.categories;
+                        uint16_t lo = cat.*(rcAudioCategoryTable[i].lo);
+                        uint16_t hi = cat.*(rcAudioCategoryTable[i].hi);
                         uint16_t track = 0;
                         if (selectRandomTrackInRange(lo, hi, input.randomSeed, &track)) {
                             res.audioTrack = track;

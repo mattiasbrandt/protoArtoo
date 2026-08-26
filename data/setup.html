@@ -118,7 +118,7 @@
             <option value="mg90s">MG90S (micro)</option>
           </select>
         </div>
-        <div class="component-row" data-feature-entry="system.config.enable_dome">
+        <div class="component-row" data-feature-entry="system.config.enable_dome_esc">
           <label class="toggle-switch" title="DOME (GPIO 25) — Dome rotation motor ESC">
             <input type="checkbox" id="enable-dome" name="enableDome">
             <span class="toggle-slider"></span>
@@ -181,7 +181,7 @@
         </div>
 
         <div class="section-label">🔌 SERIAL COMMS</div>
-        <div class="component-row" data-feature-entry="system.config.enable_s1_hoverboard">
+        <div class="component-row" data-feature-entry="system.config.enable_drive">
           <label class="toggle-switch" title="S1 (GPIO 16/17) — Hoverboard drive motor controller">
             <input type="checkbox" id="enable-s1-hoverboard" name="enableS1Hoverboard">
             <span class="toggle-slider"></span>
@@ -189,7 +189,7 @@
             <span class="toggle-status" id="status-s1-hoverboard">Disabled</span>
           </label>
         </div>
-        <div class="component-row" data-feature-entry="system.config.enable_s2_sound">
+        <div class="component-row" data-feature-entry="system.config.enable_audio">
           <label class="toggle-switch" title="S2 (GPIO 26/35) — Sound module TX. Backend selected by PA_AUDIO_DRIVER build flag: AUDIO_SOFT_UART for DY-SV5W, AUDIO_CHIRP for CHIRP board.">
             <input type="checkbox" id="enable-s2-sound" name="enableS2Sound">
             <span class="toggle-slider"></span>
@@ -198,7 +198,7 @@
             <span class="toggle-status" id="status-s2-sound">Disabled</span>
           </label>
         </div>
-        <div class="component-row" data-feature-entry="system.config.enable_s3_dome_ctrl">
+        <div class="component-row" data-feature-entry="system.config.enable_protor2link">
           <label class="toggle-switch" title="S3 (GPIO 33/34) — protoR2link serial transport (slip ring)">
             <input type="checkbox" id="enable-s3-dome-ctrl" name="enableS3DomeCtrl">
             <span class="toggle-slider"></span>

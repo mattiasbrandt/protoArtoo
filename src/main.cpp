@@ -279,8 +279,8 @@ void setup() {
     configCacheRead(&bootCfg);
     const RcInputActiveConfig activeRc = rcInputActiveConfigFromSystem(bootCfg.system);
     configCacheSetActiveRcInput(activeRc);
-    configCacheSetActiveDomeEnabled(bootCfg.system.enable_dome);
-    configCacheSetActiveAudioEnabled(bootCfg.system.enable_s2_sound);
+    configCacheSetActiveDomeEnabled(bootCfg.system.enable_dome_esc);
+    configCacheSetActiveAudioEnabled(bootCfg.system.enable_audio);
     RcInputStartupPlan rcPlan = rcInputStepStartupPlan(activeRc);
 
     // Layer 4: Initialize Task Watchdog Timer
@@ -358,7 +358,7 @@ void setup() {
     xTaskCreatePinnedToCore(
         servoTask, "ServoTask", 4096, nullptr, 4, nullptr,
         1);  // HWM: code fix (ConfigSnapshot->ServoConfig in hot paths) + 3072->4096
-    if (bootCfg.system.enable_dome) {
+    if (bootCfg.system.enable_dome_esc) {
         xTaskCreatePinnedToCore(domeTask, "DomeTask", 3072, nullptr, 4, nullptr,
                                 1);  // Stack sized from profiler HWM: 108 B free at 2048 B.
     }
@@ -367,7 +367,7 @@ void setup() {
     // keeping off Core 1 avoids any interaction with DriveTask / ServoTask timing.
     // Omitted when audio output is disabled at boot (ADR 0027: not spawning the owning
     // task at all is the preferred form).
-    if (bootCfg.system.enable_s2_sound) {
+    if (bootCfg.system.enable_audio) {
         xTaskCreatePinnedToCore(audioTask, "AudioTask", 6144, nullptr, 3, nullptr, 0);
     }
 

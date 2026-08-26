@@ -438,16 +438,16 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
         {"enableAux1", &working->system.enable_aux1},
         {"enableAux2", &working->system.enable_aux2},
         {"enableAux3", &working->system.enable_aux3},
-        {"enableDome", &working->system.enable_dome},
+        {"enableDome", &working->system.enable_dome_esc},
         {"enableRcCh1", &working->system.enable_rc_ch1},
         {"enableRcCh2", &working->system.enable_rc_ch2},
         {"enableRcCh3", &working->system.enable_rc_ch3},
         {"enableRcCh4", &working->system.enable_rc_ch4},
         {"enableRcCh5", &working->system.enable_rc_ch5},
         {"enableRcCh6", &working->system.enable_rc_ch6},
-        {"enableS1Hoverboard", &working->system.enable_s1_hoverboard},
-        {"enableS2Sound", &working->system.enable_s2_sound},
-        {"enableS3DomeCtrl", &working->system.enable_s3_dome_ctrl},
+        {"enableS1Hoverboard", &working->system.enable_drive},
+        {"enableS2Sound", &working->system.enable_audio},
+        {"enableS3DomeCtrl", &working->system.enable_protor2link},
     };
 
     for (size_t i = 0; i < sizeof(boolFields) / sizeof(boolFields[0]); ++i) {
@@ -631,7 +631,7 @@ void configApply(const ConfigParamSource& params, ConfigSnapshot* working,
     }
 
     working->drive.speedPresetActive = activePresetAfter;
-    result->actions.playDomeOnCue = !domeEnabledBefore && working->system.enable_dome;
+    result->actions.playDomeOnCue = !domeEnabledBefore && working->system.enable_dome_esc;
 
     return;
 }
