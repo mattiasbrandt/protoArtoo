@@ -209,7 +209,7 @@ const ACTIVE_RC_ENABLED = {
 
 test("Setup scopes restart guidance to RC input channels", () => {
   const html = readFileSync("data/setup.html", "utf8");
-  const rxSection = html.slice(html.indexOf("🎮 RX IN/OUT"), html.indexOf("🔌 SERIAL COMMS"));
+  const rxSection = html.slice(html.indexOf("RC Receiver Channels"), html.indexOf("</form>"));
   assert.match(rxSection, /RC input changes save immediately and apply after controller restart\./);
   assert.doesNotMatch(html, /Component changes save immediately\. Restart the controller to apply them\./);
 
