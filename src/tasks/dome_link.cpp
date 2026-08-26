@@ -687,7 +687,7 @@ static bool fetchDomeLayoutOverWifi(const IPAddress& peerIp) {
     PA_LOG_DEBUG(TAG, "dome layout fetch: HTTP %d from %s", status, url);
 
     if (status >= 200 && status < 300) {
-        WiFiClient* stream = http.getStreamPtr();
+        NetworkClient* stream = http.getStreamPtr();
         if (stream == nullptr) {
             PA_LOG_WARN(TAG, "dome layout fetch: no stream for status %d", status);
             http.end();

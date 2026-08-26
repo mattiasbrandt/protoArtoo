@@ -48,22 +48,32 @@ class BudgetFileValidation(unittest.TestCase):
 
     def test_all_required_envs_have_budgets(self):
         """All P4 envs from Makefile P4_ENVS must be in budgets file."""
-        required_envs = {"artoo_esp32", "firebeetle2", "firebeetle2_full"}
+        required_envs = {"artoo_esp32", "firebeetle2_bringup", "firebeetle2"}
         budgets = slice_verify.load_budgets()
         env_list = set(budgets["envs"].keys())
         missing = required_envs - env_list
         self.assertEqual(missing, set(), f"Missing budgets for: {missing}")
 
     def test_each_env_has_flash_ceiling(self):
-        """Each environment must have a flash_budget_bytes value."""
+        """Each environment must have flash_ceiling_bytes and flash_budget_bytes."""
         budgets = slice_verify.load_budgets()
         for env_name, env_budget in budgets["envs"].items():
+            self.assertIn("flash_ceiling_bytes", env_budget,
+                         f"{env_name} missing flash_ceiling_bytes")
+            self.assertIsInstance(env_budget["flash_ceiling_bytes"], int,
+                                 f"{env_name} flash_ceiling_bytes is not int")
+            self.assertGreater(env_budget["flash_ceiling_bytes"], 0,
+                              f"{env_name} flash_ceiling_bytes must be > 0")
             self.assertIn("flash_budget_bytes", env_budget,
                          f"{env_name} missing flash_budget_bytes")
             self.assertIsInstance(env_budget["flash_budget_bytes"], int,
                                  f"{env_name} flash_budget_bytes is not int")
             self.assertGreater(env_budget["flash_budget_bytes"], 0,
                               f"{env_name} flash_budget_bytes must be > 0")
+            # Hard ceiling must be >= soft budget
+            self.assertGreaterEqual(env_budget["flash_ceiling_bytes"],
+                                   env_budget["flash_budget_bytes"],
+                                   f"{env_name} ceiling must be >= budget")
 
 
 class PlatformResolution(unittest.TestCase):
@@ -120,7 +130,7 @@ class PlatformIOCoreDirSelection(unittest.TestCase):
 
     def test_p4_envs_use_p4_core_dir(self):
         """P4 environments should use ~/.platformio-p4."""
-        for env in ["firebeetle2", "firebeetle2_full"]:
+        for env in ["firebeetle2_bringup", "firebeetle2"]:
             core_dir = slice_verify.get_platformio_core_dir(env)
             self.assertIn(".platformio-p4", core_dir,
                          f"{env} should use P4 core dir")
@@ -161,12 +171,21 @@ class BudgetCheckFunction(unittest.TestCase):
         build_dir = project_root / ".pio" / "build" / "artoo_esp32"
         build_dir.mkdir(parents=True, exist_ok=True)
         bin_file = build_dir / "firmware.bin"
+        elf_file = build_dir / "firmware.elf"
+
+        # Skip if no baseline build artifact exists (test requires a pre-built artoo_esp32)
+        if not bin_file.exists() or bin_file.stat().st_size == 0:
+            self.skipTest(f"No valid baseline firmware.bin at {bin_file}")
 
         # Save original if it exists
-        original_content = None
+        original_bin = None
+        original_elf = None
         if bin_file.exists():
             with open(bin_file, "rb") as f:
-                original_content = f.read()
+                original_bin = f.read()
+        if elf_file.exists():
+            with open(elf_file, "rb") as f:
+                original_elf = f.read()
 
         try:
             # Create an oversized binary (1.7 MB, which exceeds the 1.6 MB budget)
@@ -179,11 +198,14 @@ class BudgetCheckFunction(unittest.TestCase):
 
         finally:
             # Restore original if it existed
-            if original_content is not None:
+            if original_bin is not None:
                 with open(bin_file, "wb") as f:
-                    f.write(original_content)
+                    f.write(original_bin)
             elif bin_file.exists():
                 bin_file.unlink()
+            if original_elf is not None:
+                with open(elf_file, "wb") as f:
+                    f.write(original_elf)
 
     def test_check_budget_result_has_required_fields(self):
         """Budget check result must include label, detail, passed, and notes."""
