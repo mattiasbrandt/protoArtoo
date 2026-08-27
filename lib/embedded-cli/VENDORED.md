@@ -15,8 +15,8 @@ Rationale documented in `tasks/serial-interface-embedded-cli-deep-dive.md`:
 - Complete line editing with history, tab completion
 - Overflow-safe command buffer with built-in line ending support
 - Structured dispatch via `onCommand` callback with catch-all
-- Small footprint: ~4.3 KB flash (xtensa), ~1.1-5.2 KB static depending on bindings
-- Stack frame <= 80 B
+- Small footprint: 3.3 KB flash object (xtensa patched), ~1.1-5.2 KB static depending on bindings
+- Stack frame 96 B max (see measured table below)
 
 ## Configuration
 
@@ -72,11 +72,11 @@ sort -t$'\t' -k2 -rn out.su | head -1
 - Stack max frame (re-measured, corrected from prior research): 96 B
 
 **Artoo-esp32 (under ADR 0017 budget with margin):**
-- Flash headroom: 26,656 B; library + 55 bindings = 4.3 KB + 2.2 KB = 6.5 KB (24% of headroom)
+- Flash headroom: 26,656 B; library (patched xtensa) + 55 bindings = 3.3 KB + 1.1 KB = 4.4 KB (17% of headroom)
 - Static headroom: 13,688 B; library + 55 bindings = 2.3 KB (17% of headroom)
 
 **FireBeetle 2 (ample margin):**
-- Library + 192 bindings = 4.6 KB + 5.2 KB = 9.8 KB flash, 6.3 KB static
+- Library (patched riscv32) + 192 bindings = 4.0 KB + 3.8 KB = 7.8 KB flash, 6.3 KB static
 
 ## Patches Applied
 
