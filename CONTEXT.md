@@ -351,15 +351,19 @@ The browser's ordered choice of which Dome Layout to render, separating geometry
 _Avoid_: trusting stale runtime availability, partial trust of unsupported-schema data
 
 **Apply Core**:
-A pure module behind an API write handler: it reads POST parameters through a Param Source (a function-pointer name lookup), validates and applies them onto a working snapshot, and returns field-level errors, an applied-fields record, and plain-data actions. The HTTP handler is its adapter and owns every side effect (state sync, queues, persistence, response). The write-path counterpart of the pure GET JSON builders (ADR 0011); cores: `api_config_apply`, `api_rc_map_apply`, `api_audio_apply`.
-_Avoid_: handler helper, inline lambda validation, validation util
+A pure module behind a write path: it reads parameters through a Param Source (a function-pointer name lookup), validates and applies them onto a working snapshot, and returns field-level errors, an applied-fields record, and plain-data actions. Its side effects live in one Commit Step shared by every adapter; the HTTP handler and the Controller Console are transport adapters over the pair and own only their own response rendering (ADR 0011, amended by ADR 0034). The write-path counterpart of the pure GET JSON builders; cores: `api_config_apply`, `api_rc_map_apply`, `api_audio_apply`.
+_Avoid_: handler helper, inline lambda validation, validation util, handler-owned side effects
+
+**Commit Step**:
+The transport-free side-effect sequence that completes an Apply Core's operation - runtime-state synchronization, Commanded Mode setters, persistence where required, the canonical log and result effects - kept beside its Apply Core (one per core, never a global commit function) and called identically by the HTTP handler and the Controller Console, so that no adapter carries its own copy (ADR 0034).
+_Avoid_: post-apply block, handler tail, per-adapter persistence, global commit function
 
 **State Zone**:
 A commented block of `RobotState` fields with exactly one owning writer (a task or the failsafe gate). The owner writes its fields directly; every multi-field read crosses the seam through the zone's snapshot (ADR 0012). Zones make the shared struct navigable: to change a field, find its zone; to read related fields consistently, capture its snapshot.
 _Avoid_: global blackboard access, ad hoc multi-field reads
 
 **Commanded Mode**:
-A `RobotState` field legitimately written from multiple surfaces (RC binding, web page, dome cue, boot init): stationary, sleep, active mood, web control. Commanded Modes are written only through `commanded_modes` setter helpers, which own the transition rules (for example the stationary-release drive-on cue) and the config-cache sync. Live toggles sync the cache, not NVS.
+A `RobotState` field legitimately written from multiple surfaces (RC binding, web page, Controller Console, dome cue, boot init): stationary, sleep, active mood, Non-RC Control. Commanded Modes are written only through `commanded_modes` setter helpers, which own the transition rules (for example the stationary-release drive-on cue) and the config-cache sync. Live toggles sync the cache, not NVS.
 _Avoid_: inline mode writes, per-surface transition rules
 
 **Zone Snapshot**:
@@ -450,6 +454,46 @@ _Avoid_: failsafe mode, failsafe state, safety flag
 Any reboot caused by a watchdog expiring - task watchdog, interrupt watchdog, or the RTC and super watchdogs that act as backstops. Treated as one class deliberately: the distinctions are a property of the chip rather than of how dangerous the crash was, and one chip protoArtoo targets cannot report them apart at all (ADR 0031).
 _Avoid_: TWDT reset, task watchdog reset (when the broader class is meant)
 
+**Controller Console**:
+The one command language, Operation Catalog, validation, availability and safety rules, result meanings and help shared by the browser Live Logs console and a physical serial terminal; both are Console Adapters over it and neither owns behaviour of its own (ADR 0034).
+_Avoid_: serial console (when the shared thing is meant), CLI, debug shell, recovery console, command subset
+
+**Console Adapter**:
+A transport binding of the Controller Console - the browser Live Logs console over one endpoint, or a serial terminal over the embedded line editor - that only translates operator input into an Operation and renders Console Records, never carrying command rules of its own.
+_Avoid_: frontend, shell, REPL, second backend
+
+**Operation**:
+A canonical registry entry of type action, status or config that the Controller Console can execute or query, resolved from its name or an accepted alias to exactly one transport-free callable; events are output, not Operations, and meta-commands such as `help` are Console vocabulary, not entries.
+_Avoid_: command (for the catalog entry), token, route
+
+**Operation Catalog**:
+The flash-resident runtime table of every Operation - name, type, aliases, help, argument schema, availability metadata, executor reference - generated from the action registry and drift-checked against it, from which help and completion derive identically on every board.
+_Avoid_: command table, `ACTION_REGISTRY` (the RC-bindable subset), a second copy of the registry, curated per-board list
+
+**Console Record**:
+One line of a Console result - a single `result`, or a `begin` / `field` / `item` / `end` group - carrying a Request ID, kebab-case outcome and Availability Reason tokens, and field names that are the API's JSON keys verbatim; rendered as key=value text on serial and parsed as the same model in the browser, never JSON.
+_Avoid_: response body, console message, JSON result, log line (for a result)
+
+**Request ID**:
+The firmware-assigned monotonic number, shared across both Console Adapters, that ties every Console Record of one request together so results stay attributable when logs and events interleave; operators never type it.
+_Avoid_: operator-supplied correlation id, per-adapter sequence number
+
+**Console Source**:
+The provenance of a command that entered through a Console Adapter - serial console or web console - carried as a Command Source so logs and state can distinguish it from RC, REST forms, sequences and internal writes.
+_Avoid_: session, user, client
+
+**Availability Reason**:
+The stable token a Known-but-unavailable Operation reports - `not-in-this-build` and `not-on-this-board` (the Feature Availability states), `component-disabled`, `blocked-by-state`, `temporarily-unavailable` - re-evaluated at execution, never only at discovery.
+_Avoid_: error code, `not_included`, hidden operation
+
+**Known-but-unavailable**:
+An Operation that stays listed, completable and describable while its Availability Reason says it cannot run now, so operators discover what exists instead of guessing what is missing.
+_Avoid_: unknown command, hidden feature, silently dropped
+
+**Non-RC Control**:
+The Commanded Mode by which an operator consents to a non-RC source - browser, Controller Console, sequence - commanding motion while the RC link is unhealthy and the failsafe would otherwise hold the droid; it gates exactly that motion scenario and nothing else.
+_Avoid_: web control, network authentication, console unlock, blanket gate
+
 ## Relationships
 
 - **Phase 5** can include work that is not yet covered by **Full Hardware Validation**.
@@ -523,6 +567,12 @@ _Avoid_: TWDT reset, task watchdog reset (when the broader class is meant)
 - Evidence gathered in **Bench-Mode** maps to **Software Verified** or **Controller Upload Verified**, never directly to **Full Hardware Verified**.
 - An **Epic Branch** is the documented exception to short-lived feature branches; the **Post-Release Main Workflow** still governs how it reaches `main` (a PM-approved PR at closure or milestone).
 
+- The **Controller Console** has exactly two **Console Adapters**; every **Operation** behaves identically through both, on every board.
+- An **Operation** of type config is an **Apply Core** plus its **Commit Step**; of type status, a **Zone Snapshot** rendered as **Console Records**; of type action, the existing dispatch core returning an outcome instead of nothing.
+- Every **Console Record** carries one **Request ID**; a write that entered through a **Console Adapter** carries its **Console Source** as its Command Source.
+- A **Known-but-unavailable** Operation reports exactly one **Availability Reason**; `not-in-this-build` and `not-on-this-board` are the two **Feature Availability** states, and `component-disabled` is a **Component Toggle** that is off.
+- **Non-RC Control** is a **Commanded Mode**; the **Controller Console** can set it but is never gated by it for queries, configuration or non-motion actions.
+
 ## Example Dialogue
 
 > **Dev:** "Can we mark the AUX LED feature as bench verified after `pio test` and `pio check` pass?"
@@ -578,3 +628,6 @@ _Avoid_: TWDT reset, task watchdog reset (when the broader class is meant)
 - "feature flag" was used loosely for all three tiers; resolved by naming them **Board Capability Gate**, **Build Feature Flag**, and **Component Toggle**, and never using "feature flag" unqualified.
 - "dome" was used at once for the body's dome-rotation actuator, the **protoR2link** communications link, and the dome's panel/sequence system; resolved by keeping **Dome ESC** (the actuator), **protoR2link** (the link), and **Dome Layout View Model** (the panel read-model) as separate terms, never grouped under a bare "Dome" label (ADR 0033).
 - Component Toggle identifiers (`arm1`/`s1_hoverboard`/etc.) were named after the artoo.uk PCB's own silkscreen legend; resolved by making the identifier generic project vocabulary and moving the board-specific text into a **Board Component Label** (ADR 0033).
+- "web control" read as a network-authentication gate; resolved as **Non-RC Control**, a motion-consent **Commanded Mode** - the `webControlEnabled` identifier and page copy follow in the Controller Console epic.
+- "action registry" holds status, config and event rows too; resolved by making **Operation** the umbrella for what the **Controller Console** can run or query while "action" stays a registry type, and by keeping rows that only describe a field inside an aggregate response as metadata rather than standalone Operations.
+- The Console plan drafted `not_included` / `unsupported_on_board` beside the browser's `not-in-this-build` / `not-on-this-board`; resolved by reusing the browser tokens and one kebab-case convention for every token the protocol defines - field names are carried from the API's JSON keys and are not tokens.

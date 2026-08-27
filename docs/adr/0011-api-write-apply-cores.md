@@ -109,3 +109,21 @@ The same session extracted the file's one genuinely untested decision:
 `seq_dangling_bindings` module (Factory-shadow suppression rule included), and
 the 11-slot trigger enumeration it shares with the RC input task moved to the
 single `rcTriggerSlotsCopy` helper next to the slot fields in `config_store.h`.
+
+## Amended 2026-08-27
+
+Recorded after the grilling session that charted the Controller Console (epic
+#206, ADR 0034). The core stays pure and the Param Source stays the boundary;
+what changes is who owns the side effects. "The HTTP handler is its adapter and
+owns every side effect (state sync, queues, persistence, response)" held while
+there was one adapter. With a browser console and a serial terminal sharing
+every write path, a handler-owned side-effect sequence would have to be copied
+into the second adapter - a second implementation of correctness. Each Apply
+Core therefore gains a **Commit Step kept beside it**: the complete
+transport-independent operation (validate, apply, synchronize runtime state,
+persist where required, emit the canonical log and result effects), returning
+a plain outcome. The HTTP handler and the Console adapter only translate input
+into that contract and render its structured result; the handler keeps its
+byte-identical responses. Extraction happens per path before the Console uses
+it (T10/T11 on #206), and `persistSystemConfig(WebRequest&, ...)`, which sends
+its own HTTP error today, is the first candidate.
