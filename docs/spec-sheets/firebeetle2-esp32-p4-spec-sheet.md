@@ -33,6 +33,14 @@ DFRobot markets the main board as "ESP32-P4R32". That is a DFRobot shorthand for
 `ESP32-P4NRW16` / `ESP32-P4NRW32` (chip revision v1.x) and
 `ESP32-P4NRW16X` / `ESP32-P4NRW32X` (chip revision v3.x).
 
+## Project Integration
+
+This spec sheet is the authoritative hardware reference for the FireBeetle 2 target. GPIO allocations and pin assignments are linked to the project's canonical pin map:
+
+- **[`docs/pin_map.md`](../pin_map.md)** — human-readable cross-reference for all production GPIO assignments, the exposed pin budget, and constraint notes. **Start here for pin questions.**
+- **[`include/config.h`](../../include/config.h)** (firebeetle2 block) — compile-time GPIO configuration used by the firmware
+- **[`include/firebeetle_required_pins.inc`](../../include/firebeetle_required_pins.inc)** — production pin inventory and static_assert guards
+
 ## Official Sources Checked
 
 | Source | URL | Extraction notes |

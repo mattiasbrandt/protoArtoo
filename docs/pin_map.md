@@ -1,48 +1,66 @@
-# GPIO Pin Map — Artoo Controller PCB
+# GPIO Pin Map
 
-GPIO assignments traced from a physical PCB v1.2 board (artoo.uk). Applies to PCB v1.1
-as well — the only difference between revisions is a single corrected trace; all GPIO
-assignments are identical.
+Canonical hardware mapping reference for the **artoo-esp32** and **firebeetle2** controller boards.
+
+Artoo Controller PCB (v1.1–v1.2) assignments traced from physical boards (artoo.uk).
+FireBeetle 2 assignments transcribed from `include/config.h`'s firebeetle2 block, cross-referenced to the spec sheet's allocation tables.
 
 ## Table of Contents
 
 - [Source of Truth Contract](#source-of-truth-contract)
 - [Supported Hardware](#supported-hardware)
-- [Serial Ports](#serial-ports)
-- [GPIO Assignment Summary](#gpio-assignment-summary)
+- **Artoo-esp32 section:**
+  - [Serial Ports (Artoo-esp32)](#serial-ports-artoo-esp32)
+  - [GPIO Assignment Summary (Artoo-esp32)](#gpio-assignment-summary-artoo-esp32)
     - [RC Receiver Wiring Modes](#rc-receiver-wiring-modes)
     - [RC Binding Defaults](#rc-binding-defaults)
     - [Battery Monitoring](#battery-monitoring)
-- [PCB Revisions](#pcb-revisions)
-- [artoo.uk Hardware Reference](#artoouk-hardware-reference)
+  - [PCB Revisions](#pcb-revisions)
+  - [artoo.uk Hardware Reference](#artoouk-hardware-reference)
+- **FireBeetle 2 section:**
+  - [Serial Ports (FireBeetle 2)](#serial-ports-firebeetle-2)
+  - [FireBeetle 2: GPIO Assignment Summary](#firebeetle-2-gpio-assignment-summary)
+  - [GPIO Budget and Exposed Pin Constraints](#gpio-budget-and-exposed-pin-constraints)
 
 ---
 
 ## Source of Truth Contract
 
-This document is the canonical hardware mapping reference for Artoo Controller PCB pinouts.
+This document is the canonical hardware mapping reference for both boards.
 
-When pin information is needed during implementation or review, use this precedence:
+**For artoo-esp32 (`PA_BOARD_ARTOO_ESP32`):**
 1. `docs/pin_map.md`
 2. `include/config.h`
 
-If these sources ever diverge, reconcile them in the same change.
+**For FireBeetle 2 (`PA_BOARD_FIREBEETLE2`):**
+1. `docs/spec-sheets/firebeetle2-esp32-p4-spec-sheet.md` (hardware truth, allocation tables)
+2. `include/config.h` (firebeetle2 block, compile-time assignments)
+3. `include/firebeetle_required_pins.inc` (production pin inventory, compile-time guards)
+4. `docs/pin_map.md` (this document, human-readable reference)
+
+If sources diverge, reconcile them in the same change. A discrepancy is a defect.
 
 ---
 
 ## Supported Hardware
 
-The Artoo Controller PCB is purpose-built for the **dual-header ESP32 D1 Mini clone**
-(`wemos_d1_mini32` in PlatformIO). This is a third-party clone — not an official
-Wemos/LOLIN product — sold under names such as "ESP32 D1 Mini", "D1 Mini32", or
-"Wemos D1 Mini ESP32". It has dual-row headers on both long sides (~40 pins total)
-with inner rows matching the original ESP8266 D1 Mini shield footprint.
+Two primary targets are supported:
 
-No other ESP32 board is supported.
+**1. Artoo-esp32** (`PA_BOARD_ARTOO_ESP32`)
+- Artoo Controller PCB (v1.1–v1.2, purpose-built for the dual-header ESP32 D1 Mini clone)
+- Board identifier in PlatformIO: `wemos_d1_mini32`
+- This is a third-party clone — not an official Wemos/LOLIN product — sold under names such as "ESP32 D1 Mini", "D1 Mini32", or "Wemos D1 Mini ESP32".
+- Dual-row headers on both long sides (~40 pins total), with inner rows matching the original ESP8266 D1 Mini shield footprint.
+
+**2. FireBeetle 2** (`PA_BOARD_FIREBEETLE2`)
+- DFRobot FireBeetle 2 ESP32-P4 board (`DFR1172`) + IO Expansion shield (`DFR1237`)
+- Board identifier in PlatformIO: `dfrobot_firebeetle2_esp32p4`
+- Chip revision v1.x (360 MHz, 32 MB PSRAM, 16 MB flash)
+- All GPIO assignments via the DFR1237 expansion shield headers (no direct soldering required for standard configuration)
 
 ---
 
-## Serial Ports
+## Serial Ports (Artoo-esp32)
 
 The PCB silkscreen legend defines each serial header's purpose:
 
@@ -83,7 +101,22 @@ Easiest fix: swap the two signal crimp pins in one connector housing before rout
 
 ---
 
-## GPIO Assignment Summary
+## Serial Ports (FireBeetle 2)
+
+The DFR1237 IO expansion shield routes all UART lanes to dedicated headers. Standard transports follow the spec sheet's "Recommended allocation" to minimize conflicts with RC receiver channels and other production peripherals.
+
+| Header | Function | TX GPIO | RX GPIO | Baud | Protocol | Notes |
+|--------|----------|---------|---------|------|----------|-------|
+| J9 (UART) | Drive (UART1) | 20 | 21 | 115200 | Gen2.x 8-byte hoverboard frames | Default for this board; ADR 0029 amendment (2026-08-26) |
+| J9 (UART) | Dome link (UART2) | 22 | 23 | 9600 | Marcduino ASCII | Shared with audio RX via arbiter (see below) |
+| J9 (UART) | Audio module | 34 (bit-bang) | 36 | 9600 | DY-SV5W binary | **Discrepancy note:** `include/config.h` comment claims "Dedicated hardware UART TX/RX paths", but audio TX is software bit-bang via `softUartTxByte()` (`src/drivers/audio_dy_sv5w.cpp:32-33`); only RX is HardwareSerial(2). This is a known mismatch between the config comment and actual driver behavior. |
+
+**Audio and Dome Arbiter:**
+Both audio RX and dome link use HardwareSerial(2) (GPIO22/23 for dome, GPIO36 for audio RX). They share the UART2 peripheral and are arbitrated by `domeUartAcquire()` / `domeUartRelease()` with the `DomeUartOwner` enum (`include/robot_state.h:66-70`, live field at `:194`). When dome control holds the lane, audio module state queries return cached values instead of querying over UART2 (`audio_dy_sv5w.cpp:32-33`).
+
+---
+
+## GPIO Assignment Summary (Artoo-esp32)
 
 | GPIO | PCB Connector | Function | Peripheral |
 |------|---------------|----------|------------|
@@ -162,6 +195,67 @@ divider must be wired to a spare ADC1 pin (GPIO 36 or 39 are available).
 
 ---
 
+## FireBeetle 2: GPIO Assignment Summary
+
+All GPIO assignments are transcribed from `include/config.h`'s firebeetle2 block and verified against the DFR1237 shield routing and the spec sheet's "Exposed GPIO" allocation table.
+
+**Production Pin Inventory (20 pins total):**
+
+14 firmware-design outputs (safety-critical, #190):
+
+| GPIO | Header (J*) | Function | Peripheral | Arduino alias | Notes |
+|------|-------------|----------|------------|---------------|-------|
+| 28 | J3 | SBUS receiver #1 (drive) | RMT | SCK | P2 unimpeachable; spec sheet "best clean pin" |
+| 29 | J3 | SBUS receiver #2 (dome) | RMT | MOSI | P2 unimpeachable |
+| 30 | J3 | RC channel #3 | RMT | MISO | P2 unimpeachable |
+| 31 | J3 | RC channel #4 | RMT | SS | P2 unimpeachable; spec sheet "best clean pin in <=36 range" |
+| 32 | J3 | RC channel #5 | GPIO | I3C/SCL | P1 (reassignable, protoArtoo does not use I3C) |
+| 33 | J3 | RC channel #6 | GPIO | I3C/SDA | P1 (reassignable, protoArtoo does not use I3C) |
+| 34 | J5 | Audio module TX | GPIO matrix | — | P3 strapping (JTAG source); software bit-bang via GPIO matrix |
+| 36 | J5 | Audio module RX | HardwareSerial(2) | — | P3 strapping (ROM print); shared UART2 with dome link via arbiter |
+| 49 | J5 | Arm servo #1 (left/top) | LEDC PWM | A5 | LDO caution (VDD_IO_6); ADC2_CHANNEL0 |
+| 50 | J5 | Arm servo #2 (right/bottom) | LEDC PWM | A6 | LDO caution (VDD_IO_6); ADC2_CHANNEL1 |
+| 4 | J3 | Arm servo #3 (aux strip) | LEDC PWM | T0 | P3 JTAG MTMS (post-debug); WS2812B capable |
+| 5 | J3 | Arm servo #4 (aux strip) | LEDC PWM | T1 | P3 JTAG MTDO (post-debug); WS2812B capable |
+| 51 | J5 | Arm servo #5 (aux strip) | LEDC PWM | A4 | LDO caution (VDD_IO_6); WS2812B capable; ADC2_CHANNEL2 |
+| 48 | J5 | Dome rotation ESC | LEDC PWM | — | LDO caution (VDD_IO_5); **unmeasured under load (#191)** |
+
+6 board bring-up interface lanes:
+
+| GPIO | Header | Function | Peripheral | Arduino alias | Notes |
+|------|--------|----------|------------|---------------|-------|
+| 20 | J3 | Drive TX (UART1) | UART1 | A0 | Spec sheet "Recommended allocation"; ADC1_CHANNEL4 |
+| 21 | J3 | Drive RX (UART1) | UART1 | A1 | Spec sheet "Recommended allocation"; ADC1_CHANNEL5 |
+| 22 | J3 | Dome TX (UART2) | UART2 | A2 | Spec sheet "Recommended allocation"; ADC1_CHANNEL6 |
+| 23 | J3 | Dome RX (UART2) | UART2 | A3 | Spec sheet "Recommended allocation"; ADC1_CHANNEL7; shared with audio RX via arbiter |
+| 7 | J1 (I2C) | I2C SDA | I2C | T2 | Board default SDA; P2 unimpeachable |
+| 8 | J7 (I2C) | I2C SCL | I2C | T3 | Board default SCL; P2 unimpeachable |
+
+---
+
+## GPIO Budget and Exposed Pin Constraints
+
+The FireBeetle 2's DFR1237 shield exposes exactly **24 GPIO pins** from the ESP32-P4 to the IO headers.
+
+| Category | GPIOs | Count | Notes |
+|----------|-------|-------|-------|
+| **Exposed on DFR1237 headers** | 4, 5, 7, 8, 20–23, 28–38, 48–52 | 24 total | See spec sheet "Exposed GPIO table" (lines 906–929) |
+| **Claimed by production inventory** | 20 pins (see table above) | 20 | All firmware design outputs + board bring-up lanes |
+| **Remaining after production** | 35, 37, 38, 52 | 4 GPIOs | Breakdown below |
+| **GPIO 37** | Console/download UART TX | Reserved | Always keep as UART0 TX for flashing and serial debug |
+| **GPIO 38** | Console/download UART RX | Reserved | Always keep as UART0 RX for flashing and serial debug |
+| **GPIO 35** | Avoid (boot-mode strapping) | Reserved | Held low at reset forces joint download boot mode |
+| **GPIO 52** | **Genuinely free** | **1 pin only** | ADC2_CHANNEL3, Arduino A7, P2 clean; **the sole free GPIO on this board** |
+
+**Production implications:**
+- GPIO 48–52 remain **unmeasured under load** (#191 — characterization pending). Four production outputs sit in this LDO-caution range; design decisions and operation validation must treat them as a group.
+- GPIO 52 is dual-purpose: the sole free GPIO and a reserved ADC fallback for battery sense (should I2C battery charger decisions reverse, #191 notes).
+- No headroom for additional peripherals without removing an existing lane.
+
+See spec sheet "Exposed GPIO table" (lines 906–929) and the chip errata for P3 strapping pins (GPIO 4, 5, 34, 35, 36) if GPIO matrix bindings are needed.
+
+---
+
 ## PCB Revisions
 
 | Revision | Notes |
@@ -185,5 +279,11 @@ protoArtoo convention:
 
 If you have a different PCB revision and find different assignments, please open an issue.
 
-
 ---
+
+## Cross-References
+
+- **Spec sheet:** [`docs/spec-sheets/firebeetle2-esp32-p4-spec-sheet.md`](../spec-sheets/firebeetle2-esp32-p4-spec-sheet.md) — hardware truth, chip revision details, allocation tables, P3 strapping notes, and board errata for both FireBeetle 2 boards
+- **Build configuration:** `include/config.h` — compile-time pin assignments (`PA_BOARD_ARTOO_ESP32` and `PA_BOARD_FIREBEETLE2` blocks)
+- **Inventory verification:** `include/firebeetle_required_pins.inc` — production pin roster and compile-time guards (FireBeetle 2 only)
+- **Developer setup:** `tasks/firebeetle2-developer-setup.md` (WIP, untracked) — flashing, build environment, serial monitor, and troubleshooting for FireBeetle 2
