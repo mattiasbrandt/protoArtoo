@@ -985,7 +985,7 @@ rows:
       - "src/web/api_config.cpp:712 - handleConfigPost() accepts snd_sys_boot in JSON"
       - "src/tasks/audio_config_map.cpp:31 - slotTracks[AUDIO_SLOT_SYS_BOOT] = cfg.audio.snd_sys_boot"
       - "include/config_store.h:444 - bool configSaveAudio(Preferences& prefs, const AudioConfig& config)"
-    executor_or_core: "configUpdateAudioTracks() -> NVS"
+    executor_or_core: "audioTracksApply"
     missing_metadata:
       - "executor reference not in registry"
     notes: "aggregate-field: system track assignment inside sound.config.system-track-assignments"
@@ -1093,7 +1093,7 @@ rows:
       - "src/web/api_config.cpp:712 - handleConfigPost() accepts snd_int_awake in JSON"
       - "src/tasks/audio_config_map.cpp:42 - intervalAwakeS = cfg.audio.snd_int_awake"
       - "include/config_store.h:444 - bool configSaveAudio(Preferences& prefs, const AudioConfig& config)"
-    executor_or_core: "configApplyAndSave() -> NVS"
+    executor_or_core: "configApply"
     missing_metadata:
       - "executor reference not in registry"
     notes: "mood interval for awake+ mode (milliseconds between idle track plays)"
@@ -1114,7 +1114,7 @@ rows:
       - "src/web/api_config.cpp:712 - handleConfigPost() accepts snd_int_full in JSON"
       - "src/tasks/audio_config_map.cpp:41 - intervalFullS = cfg.audio.snd_int_full"
       - "include/config_store.h:444 - bool configSaveAudio(Preferences& prefs, const AudioConfig& config)"
-    executor_or_core: "configApplyAndSave() -> NVS"
+    executor_or_core: "configApply"
     missing_metadata:
       - "executor reference not in registry"
     notes: "mood interval for full mood (ms between idle track plays)"
@@ -1135,7 +1135,7 @@ rows:
       - "src/web/api_config.cpp:712 - handleConfigPost() accepts snd_int_mid in JSON"
       - "src/tasks/audio_config_map.cpp:40 - intervalMidS = cfg.audio.snd_int_mid"
       - "include/config_store.h:444 - bool configSaveAudio(Preferences& prefs, const AudioConfig& config)"
-    executor_or_core: "configApplyAndSave() -> NVS"
+    executor_or_core: "configApply"
     missing_metadata:
       - "executor reference not in registry"
     notes: "mood interval for mid mood (ms between idle track plays)"
@@ -1156,7 +1156,7 @@ rows:
       - "src/web/api_config.cpp:712 - handleConfigPost() accepts snd_int_quiet in JSON"
       - "src/tasks/audio_config_map.cpp:39 - intervalQuietS = cfg.audio.snd_int_quiet"
       - "include/config_store.h:444 - bool configSaveAudio(Preferences& prefs, const AudioConfig& config)"
-    executor_or_core: "configApplyAndSave() -> NVS"
+    executor_or_core: "configApply"
     missing_metadata:
       - "executor reference not in registry"
     notes: "mood interval for quiet mood (ms between idle track plays)"
@@ -1177,7 +1177,7 @@ rows:
       - "src/web/api_config.cpp:712 - handleConfigPost() accepts snd_rand_max in JSON"
       - "src/tasks/audio_config_map.cpp:38 - out->randMax = cfg.audio.snd_rand_max;"
       - "include/config_store.h:444 - bool configSaveAudio(Preferences& prefs, const AudioConfig& config)"
-    executor_or_core: "configUpdateAudioTracks() -> NVS"
+    executor_or_core: "audioTracksApply"
     missing_metadata:
       - "executor reference not in registry"
     notes: "upper bound for random pool (track range selection)"
@@ -1198,7 +1198,7 @@ rows:
       - "src/web/api_config.cpp:712 - handleConfigPost() accepts snd_rand_min in JSON"
       - "src/tasks/audio_config_map.cpp:37 - out->randMin = cfg.audio.snd_rand_min;"
       - "include/config_store.h:444 - bool configSaveAudio(Preferences& prefs, const AudioConfig& config)"
-    executor_or_core: "configUpdateAudioTracks() -> NVS"
+    executor_or_core: "audioTracksApply"
     missing_metadata:
       - "executor reference not in registry"
     notes: "lower bound for random pool (track range selection)"
@@ -1219,7 +1219,7 @@ rows:
       - "src/web/api_config.cpp:712 - handleConfigPost() accepts snd_startup in JSON"
       - "src/tasks/audio_config_map.cpp:30 - slotTracks[AUDIO_SLOT_STARTUP] = cfg.audio.snd_startup"
       - "include/config_store.h:444 - bool configSaveAudio(Preferences& prefs, const AudioConfig& config)"
-    executor_or_core: "configUpdateAudioTracks() -> NVS"
+    executor_or_core: "audioTracksApply"
     missing_metadata:
       - "executor reference not in registry"
     notes: "system track played on power-up; also available as named track ($B command)"
@@ -1246,7 +1246,7 @@ rows:
       - "src/web/api_config.cpp:712 - handleConfigPost() accepts snd_sys_* fields in JSON"
       - "src/tasks/audio_config_map.cpp:31 - system slot assignments from config"
       - "include/config_store.h:444 - bool configSaveAudio(Preferences& prefs, const AudioConfig& config)"
-    executor_or_core: "configUpdateAudioTracks() -> NVS"
+    executor_or_core: "audioTracksApply"
     missing_metadata:
       - "executor reference not in registry"
     notes: "aggregates 6 system tracks: boot, mode_normal, mode_sleep, mode_travel, drv_on, dome_on"
@@ -1286,7 +1286,7 @@ rows:
       - "include/config_store.h:191 - AudioConfig holds snd_scream, snd_faint, snd_leia, etc named track NVS keys"
       - "src/web/api_config.cpp:712 - handleConfigPost() accepts snd_* track fields in JSON body"
       - "src/tasks/audio_config_map.cpp:24 - slotTracks array populated from all named track config fields"
-    executor_or_core: "configUpdateAudioTracks() -> NVS"
+    executor_or_core: "audioTracksApply"
     missing_metadata:
       - "executor reference not in registry"
     notes: "aggregates 20 named tracks (scream, faint, leia, cantina_s/l, sw_theme, march, startup, doodoo, failure, disco, mahna, inlove, macho, gangnam, uptown, celebr, stayin, harlem, pbjtime)"
@@ -1312,7 +1312,7 @@ rows:
       - "src/web/api_config.cpp:712 - handleConfigPost() accepts audioVolume in JSON"
       - "src/tasks/audio_task.cpp:630 - tickIn.configVolume = cfg.audio.audioVolume;"
       - "include/config_store.h:444 - bool configSaveAudio(Preferences& prefs, const AudioConfig& config)"
-    executor_or_core: "configApplyAndSave() -> NVS"
+    executor_or_core: "configApply"
     missing_metadata:
       - "executor reference not in registry"
       - "console_alias not in registry"

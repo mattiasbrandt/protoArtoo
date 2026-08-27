@@ -104,7 +104,7 @@ rows:
       - "src/web/api_config_apply.cpp:344 - paramUint8 parsing aux_led_count"
       - "src/web/api_config_apply.cpp:345 - working->servo.aux_led_count applied"
       - "include/config_store.h:445 - bool configSaveServo (Commit Step)"
-    executor_or_core: "configApplyCore"
+    executor_or_core: "configApply"
     missing_metadata: []
     notes: "NVS key aux_led_count. Apply Core (ADR 0011)."
   - name: aux.config.led-pin
@@ -129,7 +129,7 @@ rows:
       - "src/web/api_config_apply.cpp:336 - paramUint8 parsing aux_led_pin"
       - "src/web/api_config_apply.cpp:337 - working->servo.aux_led_pin applied"
       - "include/config_store.h:445 - bool configSaveServo (Commit Step)"
-    executor_or_core: "configApplyCore"
+    executor_or_core: "configApply"
     missing_metadata: []
     notes: "NVS key aux_led_pin. Requires restart. Apply Core (ADR 0011)."
   - name: aux.status.led-state
@@ -147,7 +147,7 @@ rows:
     evidence:
       - "src/web/api_status.cpp:97 - void handleStatusGet(WebRequest& req)"
       - "src/web/web_server.cpp:385 - auxLed JSON field emitted in status response"
-    executor_or_core: "statusSnapshotCore"
+    executor_or_core: "buildStatusJson"
     missing_metadata: []
     notes: "Aggregate-field in /api/status response. Read-only status snapshot."
   - name: drive.action.move
@@ -177,7 +177,7 @@ rows:
       - "include/api_drive.h:28 - void handleDrivePost(WebRequest& req)"
       - "src/web/api_drive.cpp:307 - void handleDrivePost(WebRequest& req) {"
       - "src/web/api_drive.cpp:346 - driveArbiterSubmit(DriveSource::WEB_API, clampedSpeed, clampedSteer, millis())"
-    executor_or_core: "driveArbiter"
+    executor_or_core: "driveArbiterSubmit"
     missing_metadata: []
     notes: "Guard at api_drive.cpp:329-330: blocked if estop OR stationary OR (!sbusHealthy AND !webControlEnabled). Speed cap enforced. Queue guarded."
   - name: drive.action.speed
@@ -202,7 +202,7 @@ rows:
       - "include/rc_action_types.h:23 - DRIVE_ACTION_SPEED, // Analog: forward/back movement"
       - "src/rc_channel_mapper.cpp:17 - readChannelRaw processes driveSpeed binding"
       - "src/tasks/rc_input.cpp:198 - rcDispatchDrive(backbone.driveSpeed, backbone.driveSteer, false)"
-    executor_or_core: "driveArbiter"
+    executor_or_core: "driveArbiterSubmit"
     missing_metadata: []
     notes: "Analog RC. SBUS: rc_sbus_drive_speed; PWM: rc_pwm_drive_speed. Speed cap enforced. No additional guard (arbiter applies caps)."
   - name: drive.action.speed-preset-cycle
@@ -223,7 +223,7 @@ rows:
       - "include/rc_action_types.h:61 - DRIVE_ACTION_SPEED_PRESET_CYCLE"
       - "src/rc_action_dispatcher.cpp:168 - case DRIVE_ACTION_SPEED_PRESET_CYCLE:"
       - "src/drive_speed_preset.cpp:56 - applySpeedPresetRuntime(nextSpeedPreset(...))"
-    executor_or_core: "driveSpeedPresetCore"
+    executor_or_core: "applySpeedPresetRuntime"
     missing_metadata: []
     notes: "RC button action. Cycles Slow->Normal->Turbo. No additional guard (preset stored, applied by arbiter)."
   - name: drive.action.speed-preset-normal
@@ -248,7 +248,7 @@ rows:
       - "include/api_drive.h:29 - void handleSpeedPresetPost(WebRequest& req)"
       - "src/web/api_drive.cpp:263 - void handleSpeedPresetPost(WebRequest& req) {"
       - "src/web/api_drive.cpp:276 - applySpeedPresetPersisted(preset) is the core"
-    executor_or_core: "driveSpeedPresetCore"
+    executor_or_core: "applySpeedPresetRuntime"
     missing_metadata: []
     notes: "Web-API only. Preset constrained to 'normal'. No guard in POST handler (config apply level)."
   - name: drive.action.speed-preset-slow
@@ -273,7 +273,7 @@ rows:
       - "include/api_drive.h:29 - void handleSpeedPresetPost(WebRequest& req)"
       - "src/web/api_drive.cpp:263 - void handleSpeedPresetPost(WebRequest& req) {"
       - "src/web/api_drive.cpp:276 - applySpeedPresetPersisted(preset) is the core"
-    executor_or_core: "driveSpeedPresetCore"
+    executor_or_core: "applySpeedPresetRuntime"
     missing_metadata: []
     notes: "Web-API only. Preset constrained to 'slow'. No guard in POST handler (config apply level)."
   - name: drive.action.speed-preset-turbo
@@ -298,7 +298,7 @@ rows:
       - "include/api_drive.h:29 - void handleSpeedPresetPost(WebRequest& req)"
       - "src/web/api_drive.cpp:263 - void handleSpeedPresetPost(WebRequest& req) {"
       - "src/web/api_drive.cpp:276 - applySpeedPresetPersisted(preset) is the core"
-    executor_or_core: "driveSpeedPresetCore"
+    executor_or_core: "applySpeedPresetRuntime"
     missing_metadata: []
     notes: "Web-API only. Preset constrained to 'turbo'. No guard in POST handler (config apply level)."
   - name: drive.action.steer
@@ -323,7 +323,7 @@ rows:
       - "include/rc_action_types.h:24 - DRIVE_ACTION_STEER, // Analog: left/right steering"
       - "src/rc_channel_mapper.cpp:17 - readChannelRaw processes driveSteer binding"
       - "src/tasks/rc_input.cpp:198 - rcDispatchDrive(backbone.driveSpeed, backbone.driveSteer, false)"
-    executor_or_core: "driveArbiter"
+    executor_or_core: "driveArbiterSubmit"
     missing_metadata: []
     notes: "Analog RC. SBUS: rc_sbus_drive_steer; PWM: rc_pwm_drive_steer. No guard (steering follows speed arbiter)."
   - name: drive.config.speed-limit
@@ -343,7 +343,7 @@ rows:
       - "src/web/api_config_apply.cpp:205 - paramInt16 parsing speedLimitMax"
       - "src/web/api_config_apply.cpp:206 - working->drive.speedLimitMax applied"
       - "include/config_store.h:443 - bool configSaveDrive (Commit Step)"
-    executor_or_core: "configApplyCore"
+    executor_or_core: "configApply"
     missing_metadata:
       - "parameter name not in registry"
       - "range not in registry"
@@ -363,7 +363,7 @@ rows:
     evidence:
       - "src/failsafe_gate.cpp:74 - void failsafeTrigger(FailsafeLayer layer)"
       - "src/web/api_status.cpp:97 - handleStatusGet emits failsafeCount, failsafeTriggerMs"
-    executor_or_core: "failsafeGate"
+    executor_or_core: "failsafeTrigger"
     missing_metadata: []
     notes: "Safety event. Latching estop trigger. Status field, not a guarded action."
   - name: drive.status.current
@@ -381,7 +381,7 @@ rows:
     evidence:
       - "src/web/api_status.cpp:97 - void handleStatusGet(WebRequest& req)"
       - "src/web/web_server.cpp:296 - driveSpeed = robotState.driveOutputSpeed"
-    executor_or_core: "statusSnapshotCore"
+    executor_or_core: "buildStatusJson"
     missing_metadata: []
     notes: "Aggregate-field in /api/status. Motor outputs via snapshot. Read-only status (no guard needed)."
   - name: rc.action.set-map
@@ -401,7 +401,7 @@ rows:
       - "include/api_config.h:27 - void handleRcMapPost(WebRequest& req)"
       - "src/web/api_config.cpp:673 - void handleRcMapPost(WebRequest& req) {"
       - "src/web/api_rc_map_apply.cpp:85 - void rcMapApply (Apply Core per ADR 0011)"
-    executor_or_core: "rcMapApplyCore"
+    executor_or_core: "rcMapApply"
     missing_metadata: []
     notes: "Web-API. Apply Core (ADR 0011)."
   - name: rc.action.test-bindable
@@ -505,7 +505,7 @@ rows:
       - "src/web/api_config_apply.cpp:318 - mode parsing from params"
       - "src/web/api_config_apply.cpp:322 - working->sys.rc_input_mode = mode (applied)"
       - "include/config_store.h:447 - bool configSaveSystem (Commit Step)"
-    executor_or_core: "configApplyCore"
+    executor_or_core: "rcMapApply"
     missing_metadata:
       - "enum values not in registry"
       - "parameter name not in registry"
@@ -527,7 +527,7 @@ rows:
       - "include/api_rc.h:13 - void handleRcGet(WebRequest& req)"
       - "src/web/api_rc.cpp:37 - void handleRcGet(WebRequest& req) {"
       - "src/web/rc_diagnostics_snapshot.cpp:288 - populateRcDiagnosticsJson builds snapshot"
-    executor_or_core: "NO-CORE-BELOW-HANDLER"
+    executor_or_core: "captureRcDiagnosticsSnapshot"
     missing_metadata: []
     notes: "Web-API only. Builds diagnostics snapshot. NO-CORE-BELOW-HANDLER."
   - name: servo.action.close
@@ -746,6 +746,6 @@ rows:
     evidence:
       - "src/web/api_status.cpp:97 - void handleStatusGet(WebRequest& req)"
       - "src/web/api_status_serializers.cpp:54 - emits servo state fields"
-    executor_or_core: "statusSnapshotCore"
+    executor_or_core: "buildStatusJson"
     missing_metadata: []
     notes: "Aggregate-field in /api/status. Servo open/close state."

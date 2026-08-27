@@ -75,7 +75,7 @@ entries:
     - 1000
     required: true
   nvs_key: null
-  executor: driveArbiter
+  executor: driveArbiterSubmit
 - name: drive.action.speed
   display_name: Speed
   description: Forward/reverse drive speed (analog axis binding)
@@ -100,7 +100,7 @@ entries:
     - 1.0
     required: true
   nvs_key: null
-  executor: driveArbiter
+  executor: driveArbiterSubmit
 - name: drive.action.steer
   display_name: Steer
   description: Left/right steering (analog axis binding)
@@ -125,7 +125,7 @@ entries:
     - 1.0
     required: true
   nvs_key: null
-  executor: driveArbiter
+  executor: driveArbiterSubmit
 - name: drive.action.speed-preset-slow
   display_name: Speed Preset Slow
   description: Apply the configured Slow speed preset to drive speed limit
@@ -147,7 +147,7 @@ entries:
     - slow
     required: true
   nvs_key: null
-  executor: driveSpeedPresetCore
+  executor: applySpeedPresetRuntime
 - name: drive.action.speed-preset-normal
   display_name: Speed Preset Normal
   description: Apply the configured Normal speed preset to drive speed limit
@@ -169,7 +169,7 @@ entries:
     - normal
     required: true
   nvs_key: null
-  executor: driveSpeedPresetCore
+  executor: applySpeedPresetRuntime
 - name: drive.action.speed-preset-turbo
   display_name: Speed Preset Turbo
   description: Apply the configured Turbo speed preset to drive speed limit
@@ -191,7 +191,7 @@ entries:
     - turbo
     required: true
   nvs_key: null
-  executor: driveSpeedPresetCore
+  executor: applySpeedPresetRuntime
 - name: drive.action.speed-preset-cycle
   display_name: Speed Preset Cycle
   description: Cycle speed preset Slow -> Normal -> Turbo
@@ -210,7 +210,7 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
-  executor: driveSpeedPresetCore
+  executor: applySpeedPresetRuntime
 - name: drive.status.current
   display_name: Drive Status
   description: Current drive speed, steering, and failsafe state
@@ -226,7 +226,7 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
-  executor: statusSnapshotCore
+  executor: buildStatusJson
   is_query: false
 - name: drive.event.failsafe-triggered
   display_name: Failsafe Triggered
@@ -243,7 +243,7 @@ entries:
   safety_critical: true
   requires_web_control: false
   nvs_key: null
-  executor: failsafeGate
+  executor: failsafeTrigger
 - name: drive.config.speed-limit
   display_name: Speed Limit Setting
   description: Persisted maximum drive speed setting
@@ -259,7 +259,7 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: cfg_spdMax
-  executor: configApplyCore
+  executor: configApply
 - name: dome.action.set-speed
   display_name: Dome Speed
   description: Dome rotation speed (analog axis)
@@ -1795,7 +1795,7 @@ entries:
     - 30
     required: true
   nvs_key: cfg_sndVol
-  executor: configApplyAndSave() -> NVS
+  executor: configApply
 - name: sound.config.random-min
   display_name: Random Min Track
   description: Lowest track number in the random playback pool
@@ -1811,7 +1811,7 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: cfg_sndRandMin
-  executor: configUpdateAudioTracks() -> NVS
+  executor: audioTracksApply
 - name: sound.config.random-max
   display_name: Random Max Track
   description: Highest track number in the random playback pool
@@ -1827,7 +1827,7 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: cfg_sndRandMax
-  executor: configUpdateAudioTracks() -> NVS
+  executor: audioTracksApply
 - name: sound.config.mood-interval-quiet
   display_name: Quiet Mode Interval
   description: Seconds between random sound plays in Quiet mood
@@ -1843,7 +1843,7 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: snd_int_quiet
-  executor: configApplyAndSave() -> NVS
+  executor: configApply
 - name: sound.config.mood-interval-mid
   display_name: Mid-Awake Interval
   description: Seconds between random sound plays in Mid-Awake mood
@@ -1859,7 +1859,7 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: snd_int_mid
-  executor: configApplyAndSave() -> NVS
+  executor: configApply
 - name: sound.config.mood-interval-full
   display_name: Full-Awake Interval
   description: Seconds between random sound plays in Full-Awake mood
@@ -1875,7 +1875,7 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: snd_int_full
-  executor: configApplyAndSave() -> NVS
+  executor: configApply
 - name: sound.config.mood-interval-awake-plus
   display_name: Awake+ Interval
   description: Seconds between random sound plays in Awake+ mood
@@ -1891,7 +1891,7 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: snd_int_awake
-  executor: configApplyAndSave() -> NVS
+  executor: configApply
 - name: sound.config.startup-track
   display_name: Startup Boot Sound Track ($B)
   description: Named startup boot sound track assignment for $B; distinct from automatic boot-complete system event
@@ -1907,7 +1907,7 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: snd_startup
-  executor: configUpdateAudioTracks() -> NVS
+  executor: audioTracksApply
 - name: sound.config.boot-complete-track
   display_name: Boot Complete System Track
   description: Automatic boot-complete system event track assignment; distinct from named startup boot sound ($B)
@@ -1923,7 +1923,7 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: snd_sys_boot
-  executor: configUpdateAudioTracks() -> NVS
+  executor: audioTracksApply
 - name: sound.config.track-assignments
   display_name: Track Assignments
   description: Named sound track assignments used by Sound page and audio track API (includes startup Boot Sound $B track)
@@ -1959,7 +1959,7 @@ entries:
   - snd_stayin
   - snd_harlem
   - snd_pbjtime
-  executor: configUpdateAudioTracks() -> NVS
+  executor: audioTracksApply
 - name: sound.config.system-track-assignments
   display_name: System Sound Assignments
   description: System-event sound track assignments (T09), including automatic boot-complete playback
@@ -1981,7 +1981,7 @@ entries:
   - snd_sys_mode_t
   - snd_sys_drv_on
   - snd_sys_dome_on
-  executor: configUpdateAudioTracks() -> NVS
+  executor: audioTracksApply
 - name: sound.config.category-ranges
   display_name: Category Ranges
   description: Min/max track ranges for RC random-by-category sound actions (T07/T10)
@@ -2278,7 +2278,7 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
-  executor: statusSnapshotCore
+  executor: buildStatusJson
   is_query: false
 - name: aux.action.led-color
   display_name: LED Color
@@ -2355,7 +2355,7 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
-  executor: statusSnapshotCore
+  executor: buildStatusJson
   is_query: false
 - name: aux.config.led-pin
   display_name: LED Header Selection
@@ -2381,7 +2381,7 @@ entries:
     - 3
     required: true
   nvs_key: aux_led_pin
-  executor: configApplyCore
+  executor: configApply
 - name: aux.config.led-count
   display_name: LED Count
   description: Number of LEDs in the selected AUX strip
@@ -2404,7 +2404,7 @@ entries:
     - 255
     required: true
   nvs_key: aux_led_count
-  executor: configApplyCore
+  executor: configApply
 - name: system.action.set-mode
   display_name: Set Mode
   description: Switch between stationary and driving mode
@@ -3261,7 +3261,7 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
-  executor: NO-CORE-BELOW-HANDLER
+  executor: captureRcDiagnosticsSnapshot
   fields:
   - mode
   - sbus1
@@ -3331,7 +3331,7 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
-  executor: rcMapApplyCore
+  executor: rcMapApply
 - name: rc.action.test-bindable
   display_name: Test Bindable Action
   description: Dispatch a token-only bindable action through the RC trigger path for one-shot UI testing
@@ -3367,7 +3367,7 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: cfg_rcMode
-  executor: configApplyCore
+  executor: rcMapApply
 - name: dome.seq.vader
   display_name: "DM:VADER \u2014 Imperial March"
   description: '47-second Imperial March visual mode: holos red, MARCH logics and PSI. Body-owned flat sequence.'

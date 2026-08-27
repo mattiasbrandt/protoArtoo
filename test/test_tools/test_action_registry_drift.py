@@ -193,3 +193,69 @@ class TestInventoryDuplicateName(unittest.TestCase):
         self.assertEqual(len(duplicate_errors), 0,
                         f"Real inventory should not have duplicates, got: {duplicate_errors}")
 
+
+
+class TestExecutorSymbols(unittest.TestCase):
+    """Test check_executor_symbols() function."""
+
+    def test_nonexistent_executor_symbol(self):
+        """Fails when an executor: value is a description, not a real symbol."""
+        from tools.check_action_registry_drift import check_executor_symbols
+        
+        doc = {
+            'entries': [
+                {
+                    'name': 'test.action.foo',
+                    'type': 'action',
+                    'executor': 'nonexistentExecutorCore'  # Not a real symbol
+                }
+            ]
+        }
+        errors = []
+        check_executor_symbols(doc, errors)
+        
+        # Should report the missing symbol
+        self.assertTrue(any('nonexistentExecutorCore' in e and 'appears nowhere' in e for e in errors),
+                       f"Expected error about missing symbol, got: {errors}")
+
+    def test_real_executor_symbol(self):
+        """Passes when an executor: value names a real symbol."""
+        from tools.check_action_registry_drift import check_executor_symbols
+        
+        # configApply is a real function in include/api_config_apply.h
+        doc = {
+            'entries': [
+                {
+                    'name': 'test.config.foo',
+                    'type': 'config',
+                    'executor': 'configApply'  # Real symbol
+                }
+            ]
+        }
+        errors = []
+        check_executor_symbols(doc, errors)
+        
+        # Should not report any error for this entry
+        self.assertFalse(any('configApply' in e for e in errors),
+                        f"Expected no error for real executor, got: {errors}")
+
+    def test_executor_none_is_allowed(self):
+        """Passes when executor: value is 'none' (special marker)."""
+        from tools.check_action_registry_drift import check_executor_symbols
+        
+        doc = {
+            'entries': [
+                {
+                    'name': 'test.event.foo',
+                    'type': 'event',
+                    'executor': 'none'
+                }
+            ]
+        }
+        errors = []
+        check_executor_symbols(doc, errors)
+        
+        # Should not report any error for 'none'
+        self.assertFalse(any('none' in e for e in errors),
+                        f"Expected no error for executor: none, got: {errors}")
+

@@ -486,6 +486,55 @@ def add_mismatch(errors: list[str], label: str, expected: object, actual: object
         errors.append(f"{label}: expected {expected!r}, got {actual!r}")
 
 
+def check_executor_symbols(doc: dict, errors: list[str]) -> None:
+    """Validate that every registry executor: value names a real symbol in src/ or include/.
+
+    'none' is allowed explicitly as a special marker. Symbols are verified via grep search.
+    """
+    import subprocess
+
+    # Gather all executor names from registry (skip 'none')
+    executors = set()
+    for entry in doc.get('entries', []):
+        executor = entry.get('executor')
+        if executor and executor != 'none':
+            executors.add(executor)
+
+    # For each executor, search the source tree
+    symbols_missing = set()
+
+    for executor in sorted(executors):
+        found = False
+
+        for root_dir in ['src', 'include']:
+            if found:
+                break
+            root = ROOT / root_dir
+            if not root.exists():
+                continue
+
+            # Search for word-boundary matches of the executor name
+            result = subprocess.run(
+                ['grep', '-r', '--include=*.cpp', '--include=*.h',
+                 f'\\b{executor}\\b', str(root)],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+
+            if result.returncode == 0:
+                found = True
+                break
+
+        if not found:
+            symbols_missing.add(executor)
+
+    # Report missing symbols
+    for executor in sorted(symbols_missing):
+        errors.append(
+            f"executor '{executor}' appears nowhere in src/ or include/ - "
+            f"it is a description, not a symbol"
+        )
 
 
 def check_status_query_classification(doc: dict, errors: list[str]) -> None:
@@ -614,6 +663,7 @@ def main() -> int:
     check_html_data_attributes(errors)
     check_inventory_registry_alignment(doc, errors)
     check_status_query_classification(doc, errors)
+    check_executor_symbols(doc, errors)
 
     if errors:
         print("Action registry drift detected:", file=sys.stderr)
