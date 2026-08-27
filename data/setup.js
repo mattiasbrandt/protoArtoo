@@ -388,7 +388,71 @@
         performIdentityDiagnosis();
       }, { once: true });
     }
+    // Show placeholder when identity is unavailable
+    showBoardPlaceholder("Could not tell which board this is.");
   });
+
+  // ---- Board image conditional loading ----
+  const BOARD_LABELS = {
+    artoo_esp32: "Artoo Controller",
+    firebeetle2: "FireBeetle 2",
+  };
+
+  const boardImage = document.getElementById("board-image");
+  const boardPlaceholder = document.getElementById("board-image-placeholder");
+  const boardPlaceholderText = document.getElementById("board-placeholder-text");
+
+  const showBoardPlaceholder = (text) => {
+    if (boardImage) boardImage.classList.add("hidden");
+    if (boardPlaceholder) {
+      boardPlaceholder.classList.remove("hidden");
+      if (boardPlaceholderText) boardPlaceholderText.textContent = text;
+    }
+  };
+
+  const showBoardImage = () => {
+    if (boardImage) boardImage.classList.remove("hidden");
+    if (boardPlaceholder) boardPlaceholder.classList.add("hidden");
+  };
+
+  const updateBoardImage = (identity) => {
+    if (!boardImage || !identity || !identity.board) {
+      showBoardPlaceholder("Checking which board this is…");
+      return;
+    }
+
+    const boardId = identity.board;
+    const boardLabel = BOARD_LABELS[boardId] || boardId;
+    const imageSrc = `/board_${boardId}.jpg`;
+
+    // Use onload/onerror properties (cleaner than addEventListener, no duplicate removal needed)
+    boardImage.onload = () => {
+      showBoardImage();
+    };
+
+    boardImage.onerror = () => {
+      // Board has no photo yet; show placeholder with board name
+      showBoardPlaceholder(`${boardLabel} — No photo of this board yet.`);
+    };
+
+    // Set alt and title before setting src
+    boardImage.alt = `${boardLabel} PCB`;
+    boardImage.title = `${boardLabel} PCB`;
+
+    // Use data-deferred-src so image load is gated by announceAssetsOnce(), which ensures
+    // /api/events SSE opens before image fetches compete for the connection
+    boardImage.dataset.deferredSrc = imageSrc;
+  };
+
+  // Listen for identity available event and update board image
+  window.addEventListener("pa:identity-available", (event) => {
+    updateBoardImage(event.detail);
+  });
+
+  // Also check cache at initialization time (if identity came before this script ran)
+  if (window.PAIdentity) {
+    updateBoardImage(window.PAIdentity);
+  }
 
   const saveIdentity = async () => {
     if (!window.PAApi || !identityNameInput) return;

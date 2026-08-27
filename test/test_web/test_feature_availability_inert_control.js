@@ -33,6 +33,8 @@ const makeElement = () => {
     disabled: false,
     hidden: false,
     type: "checkbox",
+    onload: null,
+    onerror: null,
     addEventListener(type, handler) {
       if (!listeners.has(type)) listeners.set(type, []);
       listeners.get(type).push(handler);

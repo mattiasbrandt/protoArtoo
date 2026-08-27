@@ -3398,6 +3398,10 @@ label.sound-search-field {
 .board-image-wrap {
   text-align: center;
   padding: 12px 0 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 260px;
 }
 
 .board-image-wrap img {
@@ -3406,6 +3410,42 @@ label.sound-search-field {
   border-radius: 10px;
   border: 1px solid var(--border);
   object-fit: contain;
+}
+
+.board-image-wrap img.hidden {
+  display: none;
+}
+
+.board-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  max-width: 100%;
+  max-height: 260px;
+  min-height: 100px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: linear-gradient(135deg, var(--surface-alt) 0%, var(--surface) 100%);
+  gap: 8px;
+  padding: 12px;
+}
+
+.board-placeholder.hidden {
+  display: none;
+}
+
+.board-placeholder-icon {
+  font-size: 48px;
+  line-height: 1;
+  opacity: 0.8;
+}
+
+.board-placeholder-text {
+  font-size: 14px;
+  color: var(--text-dim);
+  text-align: center;
+  max-width: 240px;
 }
 
 @media (max-width: 500px) {

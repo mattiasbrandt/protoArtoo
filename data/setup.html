@@ -11,8 +11,12 @@
   <body data-page="setup">
     <div id="shell-top"></div>
 
-    <div class="board-image-wrap">
-      <img data-deferred-src="/artoo_board.jpg" alt="Artoo Controller PCB" title="Artoo Controller PCB">
+    <div class="board-image-wrap" id="board-image-panel">
+      <img id="board-image" alt="" title="">
+      <div id="board-image-placeholder" class="board-placeholder">
+        <div class="board-placeholder-icon">🎛️</div>
+        <div class="board-placeholder-text" id="board-placeholder-text">Checking which board this is…</div>
+      </div>
     </div>
 
     <div class="card">
