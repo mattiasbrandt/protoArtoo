@@ -53,7 +53,7 @@ test("dome link connected includes transport label in reason", () => {
   });
   assert.equal(uart["h-dome-link"].state, "ok");
   assert.equal(uart["h-dome-link"].reason, "Connected - UART (slip ring)");
-  assert.match(uart["h-dome-link"].detail, /UART2 owned by DomeLink/);
+  assert.match(uart["h-dome-link"].detail, /UART2 owned by protoR2link/);
 
   const wifi = toSignalMap({ dome_link: { state: "connected", transport: "wifi" } });
   assert.equal(wifi["h-dome-link"].state, "ok");
