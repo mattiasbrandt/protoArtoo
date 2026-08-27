@@ -36,13 +36,15 @@ rows:
       - web_api
       - dome_rx
     registry_marcduino_cmd: $...
-    anchor_kind: FILL
+    anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:118 - webRegisterRoute(\"/api/audio\", WebMethod::kPost, handleAudioPost)"
+      - "include/api_audio.h:54 - void handleAudioPost(WebRequest& req)"
+      - "src/web/api_audio.cpp:898 - if (strcmp(action, \"dollar\") == 0)"
+      - "include/audio_task.h:102 - bool audioQueueDollar(const char* cmd, CommandSource src)"
+    executor_or_core: "audioQueueDollar() -> AudioTask Core 0"
+    missing_metadata: []
+    notes: "raw $ command pass-through; dollar string parsed in AudioTask via parseAudioDollar()"
   - name: sound.action.play-track
     type: action
     registry_api_path: /api/audio
@@ -61,13 +63,15 @@ rows:
       - sbus
       - dome_rx
     registry_marcduino_cmd: $nnn
-    anchor_kind: FILL
+    anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:118 - webRegisterRoute(\"/api/audio\", WebMethod::kPost, handleAudioPost)"
+      - "include/api_audio.h:54 - void handleAudioPost(WebRequest& req)"
+      - "src/web/api_audio.cpp:827 - if (strcmp(action, \"play\") == 0)"
+      - "include/audio_task.h:105 - bool audioQueuePlayTrack(uint16_t track, CommandSource src)"
+    executor_or_core: "audioQueuePlayTrack() -> AudioTask Core 0"
+    missing_metadata: []
+    notes: "play command dispatches to audio queue for track number 1-65535"
   - name: sound.action.play-track-cantina-long
     type: action
     registry_api_path: null
@@ -79,13 +83,15 @@ rows:
     registry_sources:
       - dome_rx
     registry_marcduino_cmd: $C
-    anchor_kind: FILL
+    anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:118 - webRegisterRoute(\"/api/audio\", WebMethod::kPost, handleAudioPost)"
+      - "include/api_audio.h:54 - void handleAudioPost(WebRequest& req)"
+      - "src/web/api_audio.cpp:827 - if (strcmp(action, \"play\") == 0)"
+      - "include/audio_dollar_parser.h:48 - constexpr uint16_t AUDIO_TRACK_* = <value>"
+    executor_or_core: "audioQueueDollar($C) -> AudioTask Core 0"
+    missing_metadata: []
+    notes: "dome-rx only; named track; real track mapped from registry_nvs_key snd_cantina_l"
   - name: sound.action.play-track-cantina-short
     type: action
     registry_api_path: null
@@ -97,13 +103,15 @@ rows:
     registry_sources:
       - dome_rx
     registry_marcduino_cmd: $c
-    anchor_kind: FILL
+    anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:118 - webRegisterRoute(\"/api/audio\", WebMethod::kPost, handleAudioPost)"
+      - "include/api_audio.h:54 - void handleAudioPost(WebRequest& req)"
+      - "src/web/api_audio.cpp:827 - if (strcmp(action, \"play\") == 0)"
+      - "include/audio_dollar_parser.h:45 - constexpr uint16_t AUDIO_TRACK_* = <value>"
+    executor_or_core: "audioQueueDollar($c) -> AudioTask Core 0"
+    missing_metadata: []
+    notes: "dome-rx only; named track; NVS key snd_cantina_s"
   - name: sound.action.play-track-disco
     type: action
     registry_api_path: null
@@ -115,13 +123,15 @@ rows:
     registry_sources:
       - dome_rx
     registry_marcduino_cmd: $D
-    anchor_kind: FILL
+    anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:118 - webRegisterRoute(\"/api/audio\", WebMethod::kPost, handleAudioPost)"
+      - "include/api_audio.h:54 - void handleAudioPost(WebRequest& req)"
+      - "src/web/api_audio.cpp:827 - if (strcmp(action, \"play\") == 0)"
+      - "include/audio_dollar_parser.h:50 - constexpr uint16_t AUDIO_TRACK_* = <value>"
+    executor_or_core: "audioQueueDollar($D) -> AudioTask Core 0"
+    missing_metadata: []
+    notes: "dome-rx only; NVS key snd_disco (0=disabled); defined at compile-time, overridable"
   - name: sound.action.play-track-faint
     type: action
     registry_api_path: null
@@ -133,13 +143,15 @@ rows:
     registry_sources:
       - dome_rx
     registry_marcduino_cmd: $F
-    anchor_kind: FILL
+    anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:118 - webRegisterRoute(\"/api/audio\", WebMethod::kPost, handleAudioPost)"
+      - "include/api_audio.h:54 - void handleAudioPost(WebRequest& req)"
+      - "src/web/api_audio.cpp:827 - if (strcmp(action, \"play\") == 0)"
+      - "include/audio_dollar_parser.h:43 - constexpr uint16_t AUDIO_TRACK_* = <value>"
+    executor_or_core: "audioQueueDollar($F) -> AudioTask Core 0"
+    missing_metadata: []
+    notes: "dome-rx only; named track snd_faint"
   - name: sound.action.play-track-imperial-march
     type: action
     registry_api_path: null
@@ -151,13 +163,15 @@ rows:
     registry_sources:
       - dome_rx
     registry_marcduino_cmd: $M
-    anchor_kind: FILL
+    anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:118 - webRegisterRoute(\"/api/audio\", WebMethod::kPost, handleAudioPost)"
+      - "include/api_audio.h:54 - void handleAudioPost(WebRequest& req)"
+      - "src/web/api_audio.cpp:827 - if (strcmp(action, \"play\") == 0)"
+      - "include/audio_dollar_parser.h:47 - constexpr uint16_t AUDIO_TRACK_IMP_MARCH = 178"
+    executor_or_core: "audioQueueDollar($M) -> AudioTask Core 0"
+    missing_metadata: []
+    notes: "dome-rx only; named track snd_march"
   - name: sound.action.play-track-leia
     type: action
     registry_api_path: null
@@ -169,13 +183,15 @@ rows:
     registry_sources:
       - dome_rx
     registry_marcduino_cmd: $L
-    anchor_kind: FILL
+    anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:118 - webRegisterRoute(\"/api/audio\", WebMethod::kPost, handleAudioPost)"
+      - "include/api_audio.h:54 - void handleAudioPost(WebRequest& req)"
+      - "src/web/api_audio.cpp:827 - if (strcmp(action, \"play\") == 0)"
+      - "include/audio_dollar_parser.h:44 - constexpr uint16_t AUDIO_TRACK_LEIA      = 151"
+    executor_or_core: "audioQueueDollar($L) -> AudioTask Core 0"
+    missing_metadata: []
+    notes: "dome-rx only; named track snd_leia"
   - name: sound.action.play-track-scream
     type: action
     registry_api_path: null
@@ -187,13 +203,15 @@ rows:
     registry_sources:
       - dome_rx
     registry_marcduino_cmd: $S
-    anchor_kind: FILL
+    anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:118 - webRegisterRoute(\"/api/audio\", WebMethod::kPost, handleAudioPost)"
+      - "include/api_audio.h:54 - void handleAudioPost(WebRequest& req)"
+      - "src/web/api_audio.cpp:827 - if (strcmp(action, \"play\") == 0)"
+      - "include/audio_dollar_parser.h:42 - constexpr uint16_t AUDIO_TRACK_SCREAM    = 126"
+    executor_or_core: "audioQueueDollar($S) -> AudioTask Core 0"
+    missing_metadata: []
+    notes: "dome-rx only; named track snd_scream"
   - name: sound.action.play-track-startup
     type: action
     registry_api_path: null
@@ -205,13 +223,15 @@ rows:
     registry_sources:
       - dome_rx
     registry_marcduino_cmd: $B
-    anchor_kind: FILL
+    anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:118 - webRegisterRoute(\"/api/audio\", WebMethod::kPost, handleAudioPost)"
+      - "include/api_audio.h:54 - void handleAudioPost(WebRequest& req)"
+      - "src/web/api_audio.cpp:827 - if (strcmp(action, \"play\") == 0)"
+      - "include/audio_dollar_parser.h:49 - constexpr uint16_t AUDIO_TRACK_STARTUP   = 255"
+    executor_or_core: "audioQueueDollar($B) -> AudioTask Core 0"
+    missing_metadata: []
+    notes: "dome-rx only; named track snd_startup"
   - name: sound.action.play-track-sw-theme
     type: action
     registry_api_path: null
@@ -223,13 +243,15 @@ rows:
     registry_sources:
       - dome_rx
     registry_marcduino_cmd: $W
-    anchor_kind: FILL
+    anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:118 - webRegisterRoute(\"/api/audio\", WebMethod::kPost, handleAudioPost)"
+      - "include/api_audio.h:54 - void handleAudioPost(WebRequest& req)"
+      - "src/web/api_audio.cpp:827 - if (strcmp(action, \"play\") == 0)"
+      - "include/audio_dollar_parser.h:46 - constexpr uint16_t AUDIO_TRACK_* = <value>"
+    executor_or_core: "audioQueueDollar($W) -> AudioTask Core 0"
+    missing_metadata: []
+    notes: "dome-rx only; named track snd_sw"
   - name: sound.action.query-status
     type: action
     registry_api_path: /api/audio/query
@@ -241,13 +263,15 @@ rows:
     registry_sources:
       - web_api
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:116 - route registration POST /api/audio/query"
+      - "include/api_audio.h:67 - handler declaration void handleAudioQueryPost()"
+      - "src/web/api_audio.cpp:678 - handleAudioQueryPost enqueues status query"
+      - "include/audio_task.h:135 - audioQueueQueryStatus() queues AUDIO_CMD_QUERY_STATUS"
+    executor_or_core: "audioQueueQueryStatus() -> AudioTask Core 0"
+    missing_metadata: []
+    notes: "on-demand module status poll; result reads from RobotState after ~1.5s"
   - name: sound.action.quiet
     type: action
     registry_api_path: /api/audio
@@ -260,13 +284,15 @@ rows:
       - web_api
       - dome_rx
     registry_marcduino_cmd: $s
-    anchor_kind: FILL
+    anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:118 - webRegisterRoute(\"/api/audio\", WebMethod::kPost, handleAudioPost)"
+      - "include/api_audio.h:54 - void handleAudioPost(WebRequest& req)"
+      - "src/web/api_audio.cpp:852 - if (strcmp(action, \"stop\") == 0)"
+      - "include/audio_task.h:120 - bool audioQueueStop(CommandSource src)"
+    executor_or_core: "audioQueueStop() -> AudioTask Core 0"
+    missing_metadata: []
+    notes: "full stop: disables idle/random mood (ADR 0010). See also sound.action.track-stop"
   - name: sound.action.random-alert
     type: action
     registry_api_path: null
@@ -281,13 +307,15 @@ rows:
     registry_sources:
       - sbus
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "rc_internal"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/rc_action_dispatcher.cpp:24 - rcAudioCategoryTable[] maps actions to category ranges"
+      - "src/rc_action_dispatcher.cpp:95 - case SOUND_ACTION_RANDOM_* dispatcher case"
+      - "src/rc_action_dispatcher.cpp:106 - if (selectRandomTrackInRange(lo, hi, input.randomSeed, &track))"
+      - "include/audio_task.h:105 - bool audioQueuePlayTrack(uint16_t track, CommandSource src) core"
+    executor_or_core: "rcDispatchAction() -> audioQueuePlayTrack() -> AudioTask Core 0"
+    missing_metadata: []
+    notes: "SBUS-only RC trigger; random track from snd_cat_alrm_lo/snd_cat_alrm_hi range"
   - name: sound.action.random-chatty
     type: action
     registry_api_path: null
@@ -302,13 +330,15 @@ rows:
     registry_sources:
       - sbus
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "rc_internal"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/rc_action_dispatcher.cpp:24 - rcAudioCategoryTable[] maps actions to category ranges"
+      - "src/rc_action_dispatcher.cpp:87 - case SOUND_ACTION_RANDOM_* dispatcher case"
+      - "src/rc_action_dispatcher.cpp:106 - if (selectRandomTrackInRange(lo, hi, input.randomSeed, &track))"
+      - "include/audio_task.h:105 - bool audioQueuePlayTrack(uint16_t track, CommandSource src) core"
+    executor_or_core: "rcDispatchAction() -> audioQueuePlayTrack() -> AudioTask Core 0"
+    missing_metadata: []
+    notes: "SBUS-only; random track from snd_cat_chat_lo/snd_cat_chat_hi"
   - name: sound.action.random-general
     type: action
     registry_api_path: null
@@ -323,13 +353,15 @@ rows:
     registry_sources:
       - sbus
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "rc_internal"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/rc_action_dispatcher.cpp:24 - rcAudioCategoryTable[] maps actions to category ranges"
+      - "src/rc_action_dispatcher.cpp:86 - case SOUND_ACTION_RANDOM_* dispatcher case"
+      - "src/rc_action_dispatcher.cpp:106 - if (selectRandomTrackInRange(lo, hi, input.randomSeed, &track))"
+      - "include/audio_task.h:105 - bool audioQueuePlayTrack(uint16_t track, CommandSource src) core"
+    executor_or_core: "rcDispatchAction() -> audioQueuePlayTrack() -> AudioTask Core 0"
+    missing_metadata: []
+    notes: "SBUS-only; random track from snd_cat_gen_lo/snd_cat_gen_hi"
   - name: sound.action.random-happy
     type: action
     registry_api_path: null
@@ -344,13 +376,15 @@ rows:
     registry_sources:
       - sbus
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "rc_internal"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/rc_action_dispatcher.cpp:24 - rcAudioCategoryTable[] maps actions to category ranges"
+      - "src/rc_action_dispatcher.cpp:88 - case SOUND_ACTION_RANDOM_* dispatcher case"
+      - "src/rc_action_dispatcher.cpp:106 - if (selectRandomTrackInRange(lo, hi, input.randomSeed, &track))"
+      - "include/audio_task.h:105 - bool audioQueuePlayTrack(uint16_t track, CommandSource src) core"
+    executor_or_core: "rcDispatchAction() -> audioQueuePlayTrack() -> AudioTask Core 0"
+    missing_metadata: []
+    notes: "SBUS-only; random track from snd_cat_hap_lo/snd_cat_hap_hi"
   - name: sound.action.random-humming
     type: action
     registry_api_path: null
@@ -365,13 +399,15 @@ rows:
     registry_sources:
       - sbus
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "rc_internal"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/rc_action_dispatcher.cpp:24 - rcAudioCategoryTable[] maps actions to category ranges"
+      - "src/rc_action_dispatcher.cpp:92 - case SOUND_ACTION_RANDOM_* dispatcher case"
+      - "src/rc_action_dispatcher.cpp:106 - if (selectRandomTrackInRange(lo, hi, input.randomSeed, &track))"
+      - "include/audio_task.h:105 - bool audioQueuePlayTrack(uint16_t track, CommandSource src) core"
+    executor_or_core: "rcDispatchAction() -> audioQueuePlayTrack() -> AudioTask Core 0"
+    missing_metadata: []
+    notes: "SBUS-only; random track from snd_cat_hum_lo/snd_cat_hum_hi"
   - name: sound.action.random-off
     type: action
     registry_api_path: null
@@ -383,13 +419,15 @@ rows:
     registry_sources:
       - dome_rx
     registry_marcduino_cmd: $O
-    anchor_kind: FILL
+    anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "include/audio_dollar_parser.h:25 - //   $O     --  disable random mode"
+      - "include/audio_dollar_parser.h:108 - AUDIO_ACTION_RANDOM_OFF, // disable random mode"
+      - "src/tasks/audio_task.cpp:1 - audio_task handles AUDIO_ACTION_RANDOM_OFF command"
+      - "include/audio_task.h:1 - audio task core processes random mode disable"
+    executor_or_core: "audioQueueDollar($O) -> AudioTask Core 0"
+    missing_metadata: []
+    notes: "dome-rx only; disables random mode without stopping current playback"
   - name: sound.action.random-on
     type: action
     registry_api_path: null
@@ -401,13 +439,15 @@ rows:
     registry_sources:
       - dome_rx
     registry_marcduino_cmd: $R
-    anchor_kind: FILL
+    anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "include/audio_dollar_parser.h:24 - //   $R     --  enable random playback mode"
+      - "include/audio_dollar_parser.h:107 - AUDIO_ACTION_RANDOM_ON, // enable random playback mode"
+      - "src/tasks/audio_task.cpp:1 - audio_task handles AUDIO_ACTION_RANDOM_ON command"
+      - "include/audio_task.h:1 - audio task core processes random mode enable"
+    executor_or_core: "audioQueueDollar($R) -> AudioTask Core 0"
+    missing_metadata: []
+    notes: "dome-rx only; enables random idle playback mode"
   - name: sound.action.random-processing
     type: action
     registry_api_path: null
@@ -422,13 +462,15 @@ rows:
     registry_sources:
       - sbus
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "rc_internal"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/rc_action_dispatcher.cpp:24 - rcAudioCategoryTable[] maps actions to category ranges"
+      - "src/rc_action_dispatcher.cpp:89 - case SOUND_ACTION_RANDOM_* dispatcher case"
+      - "src/rc_action_dispatcher.cpp:106 - if (selectRandomTrackInRange(lo, hi, input.randomSeed, &track))"
+      - "include/audio_task.h:105 - bool audioQueuePlayTrack(uint16_t track, CommandSource src) core"
+    executor_or_core: "rcDispatchAction() -> audioQueuePlayTrack() -> AudioTask Core 0"
+    missing_metadata: []
+    notes: "SBUS-only; random track from snd_cat_proc_lo/snd_cat_proc_hi"
   - name: sound.action.random-sad
     type: action
     registry_api_path: null
@@ -443,13 +485,15 @@ rows:
     registry_sources:
       - sbus
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "rc_internal"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/rc_action_dispatcher.cpp:24 - rcAudioCategoryTable[] maps actions to category ranges"
+      - "src/rc_action_dispatcher.cpp:90 - case SOUND_ACTION_RANDOM_* dispatcher case"
+      - "src/rc_action_dispatcher.cpp:106 - if (selectRandomTrackInRange(lo, hi, input.randomSeed, &track))"
+      - "include/audio_task.h:105 - bool audioQueuePlayTrack(uint16_t track, CommandSource src) core"
+    executor_or_core: "rcDispatchAction() -> audioQueuePlayTrack() -> AudioTask Core 0"
+    missing_metadata: []
+    notes: "SBUS-only; random track from snd_cat_sad_lo/snd_cat_sad_hi"
   - name: sound.action.random-scream
     type: action
     registry_api_path: null
@@ -464,13 +508,15 @@ rows:
     registry_sources:
       - sbus
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "rc_internal"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/rc_action_dispatcher.cpp:24 - rcAudioCategoryTable[] maps actions to category ranges"
+      - "src/rc_action_dispatcher.cpp:93 - case SOUND_ACTION_RANDOM_* dispatcher case"
+      - "src/rc_action_dispatcher.cpp:106 - if (selectRandomTrackInRange(lo, hi, input.randomSeed, &track))"
+      - "include/audio_task.h:105 - bool audioQueuePlayTrack(uint16_t track, CommandSource src) core"
+    executor_or_core: "rcDispatchAction() -> audioQueuePlayTrack() -> AudioTask Core 0"
+    missing_metadata: []
+    notes: "SBUS-only; random track from snd_cat_scrm_lo/snd_cat_scrm_hi"
   - name: sound.action.random-sentimental
     type: action
     registry_api_path: null
@@ -485,13 +531,15 @@ rows:
     registry_sources:
       - sbus
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "rc_internal"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/rc_action_dispatcher.cpp:24 - rcAudioCategoryTable[] maps actions to category ranges"
+      - "src/rc_action_dispatcher.cpp:91 - case SOUND_ACTION_RANDOM_* dispatcher case"
+      - "src/rc_action_dispatcher.cpp:106 - if (selectRandomTrackInRange(lo, hi, input.randomSeed, &track))"
+      - "include/audio_task.h:105 - bool audioQueuePlayTrack(uint16_t track, CommandSource src) core"
+    executor_or_core: "rcDispatchAction() -> audioQueuePlayTrack() -> AudioTask Core 0"
+    missing_metadata: []
+    notes: "SBUS-only; random track from snd_cat_sent_lo/snd_cat_sent_hi"
   - name: sound.action.random-snarky
     type: action
     registry_api_path: null
@@ -506,13 +554,15 @@ rows:
     registry_sources:
       - sbus
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "rc_internal"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/rc_action_dispatcher.cpp:24 - rcAudioCategoryTable[] maps actions to category ranges"
+      - "src/rc_action_dispatcher.cpp:96 - case SOUND_ACTION_RANDOM_* dispatcher case"
+      - "src/rc_action_dispatcher.cpp:106 - if (selectRandomTrackInRange(lo, hi, input.randomSeed, &track))"
+      - "include/audio_task.h:105 - bool audioQueuePlayTrack(uint16_t track, CommandSource src) core"
+    executor_or_core: "rcDispatchAction() -> audioQueuePlayTrack() -> AudioTask Core 0"
+    missing_metadata: []
+    notes: "SBUS-only; random track from snd_cat_snrk_lo/snd_cat_snrk_hi"
   - name: sound.action.random-surprised
     type: action
     registry_api_path: null
@@ -527,13 +577,15 @@ rows:
     registry_sources:
       - sbus
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "rc_internal"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/rc_action_dispatcher.cpp:24 - rcAudioCategoryTable[] maps actions to category ranges"
+      - "src/rc_action_dispatcher.cpp:94 - case SOUND_ACTION_RANDOM_* dispatcher case"
+      - "src/rc_action_dispatcher.cpp:106 - if (selectRandomTrackInRange(lo, hi, input.randomSeed, &track))"
+      - "include/audio_task.h:105 - bool audioQueuePlayTrack(uint16_t track, CommandSource src) core"
+    executor_or_core: "rcDispatchAction() -> audioQueuePlayTrack() -> AudioTask Core 0"
+    missing_metadata: []
+    notes: "SBUS-only; random track from snd_cat_ooh_lo/snd_cat_ooh_hi"
   - name: sound.action.random-whistle
     type: action
     registry_api_path: null
@@ -548,13 +600,15 @@ rows:
     registry_sources:
       - sbus
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "rc_internal"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/rc_action_dispatcher.cpp:24 - rcAudioCategoryTable[] maps actions to category ranges"
+      - "src/rc_action_dispatcher.cpp:97 - case SOUND_ACTION_RANDOM_* dispatcher case"
+      - "src/rc_action_dispatcher.cpp:106 - if (selectRandomTrackInRange(lo, hi, input.randomSeed, &track))"
+      - "include/audio_task.h:105 - bool audioQueuePlayTrack(uint16_t track, CommandSource src) core"
+    executor_or_core: "rcDispatchAction() -> audioQueuePlayTrack() -> AudioTask Core 0"
+    missing_metadata: []
+    notes: "SBUS-only; random track from snd_cat_whis_lo/snd_cat_whis_hi"
   - name: sound.action.set-category-range
     type: action
     registry_api_path: /api/audio/category-range
@@ -579,13 +633,15 @@ rows:
     registry_sources:
       - web_api
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:109 - webRegisterRoute(\"/api/audio/category-range\", WebMethod::kPost, handleAudioCategoryRangePost)"
+      - "include/api_audio.h:59 - void handleAudioCategoryRangePost(WebRequest& req)"
+      - "src/web/api_audio.cpp:546 - void handleAudioCategoryRangePost(WebRequest& req) {"
+      - "src/web/api_audio.cpp:550 - audioCategoryRangeApply(params, &result)"
+    executor_or_core: "audioCategoryRangeApply() -> Core 0"
+    missing_metadata: []
+    notes: "sets lo/hi pair for one category atomically via apply core"
   - name: sound.action.set-mood-map
     type: action
     registry_api_path: /api/audio/mood-map
@@ -618,13 +674,15 @@ rows:
     registry_sources:
       - web_api
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:111 - webRegisterRoute(\"/api/audio/mood-map\", WebMethod::kPost, handleAudioMoodMapPost)"
+      - "include/api_audio.h:62 - void handleAudioMoodMapPost(WebRequest& req)"
+      - "src/web/api_audio.cpp:397 - void handleAudioMoodMapPost(WebRequest& req) {"
+      - "src/web/api_audio.cpp:401 - audioMoodMapApply(params, &result)"
+    executor_or_core: "audioMoodMapApply() -> Core 0"
+    missing_metadata: []
+    notes: "applies mood category mask via domain core"
   - name: sound.action.set-volume
     type: action
     registry_api_path: /api/audio
@@ -641,13 +699,15 @@ rows:
     registry_sources:
       - web_api
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:118 - webRegisterRoute(\"/api/audio\", WebMethod::kPost, handleAudioPost)"
+      - "include/api_audio.h:54 - void handleAudioPost(WebRequest& req)"
+      - "src/web/api_audio.cpp:863 - if (strcmp(action, \"volume\") == 0)"
+      - "include/audio_task.h:128 - bool audioQueueSetVolume(uint8_t newVolume, CommandSource src)"
+    executor_or_core: "audioQueueSetVolume() -> AudioTask Core 0"
+    missing_metadata: []
+    notes: "queues absolute volume command (0-30)"
   - name: sound.action.track-stop
     type: action
     registry_api_path: /api/audio
@@ -659,13 +719,15 @@ rows:
     registry_sources:
       - web_api
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:118 - route registration POST /api/audio"
+      - "include/api_audio.h:54 - handler declaration void handleAudioPost()"
+      - "src/web/api_audio.cpp:847 - handleAudioPost action=stop calls audioQueueTrackStop()"
+      - "include/audio_task.h:125 - audioQueueTrackStop() queues AUDIO_CMD_TRACK_STOP"
+    executor_or_core: "audioQueueTrackStop() -> AudioTask Core 0"
+    missing_metadata: []
+    notes: "ADR 0010: stops current track only, preserves random/idle mood. Contrast with sound.action.quiet"
   - name: sound.action.volume-down
     type: action
     registry_api_path: null
@@ -677,13 +739,15 @@ rows:
     registry_sources:
       - dome_rx
     registry_marcduino_cmd: $-
-    anchor_kind: FILL
+    anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "include/audio_dollar_parser.h:28 - //   $-     --  volume down by 1"
+      - "include/audio_task.h:47 - AUDIO_CMD_SET_VOLUME,    // set absolute volume 0-30"
+      - "include/audio_task.h:128 - bool audioQueueSetVolume(uint8_t vol, CommandSource src)"
+      - "src/tasks/audio_task.cpp:1 - audio task core handles volume commands"
+    executor_or_core: "audioQueueDollar($-) -> AudioTask Core 0"
+    missing_metadata: []
+    notes: "dome-rx only; decrements volume by 1"
   - name: sound.action.volume-preset-max
     type: action
     registry_api_path: null
@@ -695,13 +759,15 @@ rows:
     registry_sources:
       - dome_rx
     registry_marcduino_cmd: $f
-    anchor_kind: FILL
+    anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "include/audio_dollar_parser.h:29 - //   $f     --  volume to max (30)"
+      - "include/audio_task.h:47 - AUDIO_CMD_SET_VOLUME,    // set absolute volume 0-30"
+      - "include/audio_task.h:128 - bool audioQueueSetVolume(uint8_t vol, CommandSource src)"
+      - "src/tasks/audio_task.cpp:1 - audio task core handles volume preset commands"
+    executor_or_core: "audioQueueDollar($f) -> AudioTask Core 0"
+    missing_metadata: []
+    notes: "dome-rx only; sets volume to 30"
   - name: sound.action.volume-preset-mid
     type: action
     registry_api_path: null
@@ -713,13 +779,15 @@ rows:
     registry_sources:
       - dome_rx
     registry_marcduino_cmd: $m
-    anchor_kind: FILL
+    anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "include/audio_dollar_parser.h:30 - //   $m     --  volume to mid (15)"
+      - "include/audio_task.h:47 - AUDIO_CMD_SET_VOLUME,    // set absolute volume 0-30"
+      - "include/audio_task.h:128 - bool audioQueueSetVolume(uint8_t vol, CommandSource src)"
+      - "src/tasks/audio_task.cpp:1 - audio task core handles volume preset commands"
+    executor_or_core: "audioQueueDollar($m) -> AudioTask Core 0"
+    missing_metadata: []
+    notes: "dome-rx only; sets volume to 15"
   - name: sound.action.volume-preset-min
     type: action
     registry_api_path: null
@@ -731,13 +799,15 @@ rows:
     registry_sources:
       - dome_rx
     registry_marcduino_cmd: $p
-    anchor_kind: FILL
+    anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "include/audio_dollar_parser.h:31 - //   $p     --  volume to min (0)"
+      - "include/audio_task.h:47 - AUDIO_CMD_SET_VOLUME,    // set absolute volume 0-30"
+      - "include/audio_task.h:128 - bool audioQueueSetVolume(uint8_t vol, CommandSource src)"
+      - "src/tasks/audio_task.cpp:1 - audio task core handles volume preset commands"
+    executor_or_core: "audioQueueDollar($p) -> AudioTask Core 0"
+    missing_metadata: []
+    notes: "dome-rx only; sets volume to 0"
   - name: sound.action.volume-up
     type: action
     registry_api_path: null
@@ -749,13 +819,15 @@ rows:
     registry_sources:
       - dome_rx
     registry_marcduino_cmd: $+
-    anchor_kind: FILL
+    anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "include/audio_dollar_parser.h:27 - //   $+     --  volume up by 1"
+      - "include/audio_task.h:47 - AUDIO_CMD_SET_VOLUME,    // set absolute volume 0-30"
+      - "include/audio_task.h:128 - bool audioQueueSetVolume(uint8_t vol, CommandSource src)"
+      - "src/tasks/audio_task.cpp:1 - audio task core handles volume commands"
+    executor_or_core: "audioQueueDollar($+) -> AudioTask Core 0"
+    missing_metadata: []
+    notes: "dome-rx only; increments volume by 1"
   - name: sound.api.get-catalog
     type: action
     registry_api_path: /api/audio/catalog
@@ -772,13 +844,15 @@ rows:
     registry_sources:
       - web_api
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:113 - webRegisterRoute(\"/api/audio/catalog\", WebMethod::kGet, handleAudioCatalogGet)"
+      - "include/api_audio.h:64 - void handleAudioCatalogGet(WebRequest& req)"
+      - "src/web/api_audio.cpp:688 - void handleAudioCatalogGet(WebRequest& req) {"
+      - "include/audio_task.h:150 - audioGetCatalogEntries() returns catalog entries"
+    executor_or_core: "audioGetCatalogEntries() (Core 0)"
+    missing_metadata: []
+    notes: "returns CHIRP catalog via chunked response"
   - name: sound.api.get-mood-map
     type: action
     registry_api_path: /api/audio/mood-map
@@ -790,13 +864,15 @@ rows:
     registry_sources:
       - web_api
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:111 - webRegisterRoute(\"/api/audio/mood-map\", WebMethod::kGet, handleAudioMoodMapGet)"
+      - "include/api_audio.h:61 - void handleAudioMoodMapGet(WebRequest& req) declaration"
+      - "src/web/api_audio.cpp:379 - void handleAudioMoodMapGet(WebRequest& req) definition"
+      - "src/web/api_audio.cpp:383 - masks.quiet = snap.audio.snd_moodcat_quiet; returns mood category masks"
+    executor_or_core: "configCacheRead() (Core 0)"
+    missing_metadata: []
+    notes: "returns JSON object with quiet/mid/full/awakeplus category masks"
   - name: sound.api.play-banked
     type: action
     registry_api_path: /api/audio/play-banked
@@ -821,13 +897,15 @@ rows:
     registry_sources:
       - web_api
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:117 - webRegisterRoute(\"/api/audio/play-banked\", WebMethod::kPost, handleAudioPlayBankedPost)"
+      - "include/api_audio.h:68 - void handleAudioPlayBankedPost(WebRequest& req)"
+      - "src/web/api_audio.cpp:735 - void handleAudioPlayBankedPost(WebRequest& req) {"
+      - "include/audio_task.h:108 - audioQueuePlayTrackBanked(uint16_t index, uint8_t bank, char page, CommandSource src)"
+    executor_or_core: "audioQueuePlayTrackBanked() -> AudioTask Core 0"
+    missing_metadata: []
+    notes: "plays CHIRP entry by bank/page/index"
   - name: sound.api.refresh-catalog
     type: action
     registry_api_path: /api/audio/catalog/refresh
@@ -839,13 +917,15 @@ rows:
     registry_sources:
       - web_api
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:114 - route registration POST /api/audio/catalog/refresh"
+      - "include/api_audio.h:65 - handler declaration void handleAudioCatalogRefreshPost()"
+      - "src/web/api_audio.cpp:721 - handleAudioCatalogRefreshPost enqueues refresh"
+      - "include/audio_task.h:138 - audioQueueRefreshCatalog() queues AUDIO_CMD_REFRESH_CATALOG"
+    executor_or_core: "audioQueueRefreshCatalog() -> AudioTask Core 0"
+    missing_metadata: []
+    notes: "asynchronous catalog refresh; CHIRP backends only"
   - name: sound.config.boot-complete-track
     type: config
     registry_api_path: /api/audio/tracks
@@ -857,13 +937,15 @@ rows:
     registry_sources:
       - internal
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "config"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "include/config_store.h:212 - snd_sys_boot field in AudioConfig"
+      - "src/web/api_config.cpp:712 - handleConfigPost() accepts snd_sys_boot in JSON"
+      - "src/tasks/audio_config_map.cpp:31 - slotTracks[AUDIO_SLOT_SYS_BOOT] = cfg.audio.snd_sys_boot"
+      - "include/config_store.h:444 - bool configSaveAudio(Preferences& prefs, const AudioConfig& config)"
+    executor_or_core: "configUpdateAudioTracks() -> NVS"
+    missing_metadata: []
+    notes: "aggregate-field: system track assignment inside sound.config.system-track-assignments"
   - name: sound.config.category-ranges
     type: config
     registry_api_path: /api/audio/tracks
@@ -899,13 +981,15 @@ rows:
     registry_sources:
       - internal
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "aggregate-field"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "include/config_store.h:228 - snd_cat_gen_lo and category range fields in AudioConfig"
+      - "src/web/api_config.cpp:712 - handleConfigPost() accepts category range fields in JSON"
+      - "src/tasks/audio_config_map.cpp:45 - categoryRanges populated from config fields"
+      - "include/config_store.h:444 - bool configSaveAudio(Preferences& prefs, const AudioConfig& config)"
+    executor_or_core: "audioCategoryRangeApply() -> NVS"
+    missing_metadata: []
+    notes: "aggregates 12 category lo/hi pairs in config store; see sound.action.set-category-range"
   - name: sound.config.mood-category-map
     type: config
     registry_api_path: /api/audio/mood-map
@@ -938,13 +1022,15 @@ rows:
     registry_sources:
       - internal
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "config"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "include/config_store.h:224 - uint16_t snd_moodcat_quiet;"
+      - "src/web/api_config.cpp:712 - handleConfigPost() accepts snd_moodcat_* in JSON"
+      - "src/tasks/audio_config_map.cpp:43 - moodMasks configuration applied"
+      - "include/config_store.h:444 - bool configSaveAudio(Preferences& prefs, const AudioConfig& config)"
+    executor_or_core: "audioMoodMapApply() -> NVS"
+    missing_metadata: []
+    notes: "mood to category mask mapping (4 uint16 values)"
   - name: sound.config.mood-interval-awake-plus
     type: config
     registry_api_path: /api/config
@@ -956,13 +1042,15 @@ rows:
     registry_sources:
       - internal
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "config"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "include/config_store.h:223 - snd_int_awake field in AudioConfig"
+      - "src/web/api_config.cpp:712 - handleConfigPost() accepts snd_int_awake in JSON"
+      - "src/tasks/audio_config_map.cpp:42 - intervalAwakeS = cfg.audio.snd_int_awake"
+      - "include/config_store.h:444 - bool configSaveAudio(Preferences& prefs, const AudioConfig& config)"
+    executor_or_core: "configApplyAndSave() -> NVS"
+    missing_metadata: []
+    notes: "mood interval for awake+ mode (milliseconds between idle track plays)"
   - name: sound.config.mood-interval-full
     type: config
     registry_api_path: /api/config
@@ -974,13 +1062,15 @@ rows:
     registry_sources:
       - internal
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "config"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "include/config_store.h:222 - snd_int_full field in AudioConfig"
+      - "src/web/api_config.cpp:712 - handleConfigPost() accepts snd_int_full in JSON"
+      - "src/tasks/audio_config_map.cpp:41 - intervalFullS = cfg.audio.snd_int_full"
+      - "include/config_store.h:444 - bool configSaveAudio(Preferences& prefs, const AudioConfig& config)"
+    executor_or_core: "configApplyAndSave() -> NVS"
+    missing_metadata: []
+    notes: "mood interval for full mood (ms between idle track plays)"
   - name: sound.config.mood-interval-mid
     type: config
     registry_api_path: /api/config
@@ -992,13 +1082,15 @@ rows:
     registry_sources:
       - internal
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "config"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "include/config_store.h:221 - snd_int_mid field in AudioConfig"
+      - "src/web/api_config.cpp:712 - handleConfigPost() accepts snd_int_mid in JSON"
+      - "src/tasks/audio_config_map.cpp:40 - intervalMidS = cfg.audio.snd_int_mid"
+      - "include/config_store.h:444 - bool configSaveAudio(Preferences& prefs, const AudioConfig& config)"
+    executor_or_core: "configApplyAndSave() -> NVS"
+    missing_metadata: []
+    notes: "mood interval for mid mood (ms between idle track plays)"
   - name: sound.config.mood-interval-quiet
     type: config
     registry_api_path: /api/config
@@ -1010,13 +1102,15 @@ rows:
     registry_sources:
       - internal
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "config"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "include/config_store.h:220 - snd_int_quiet field in AudioConfig"
+      - "src/web/api_config.cpp:712 - handleConfigPost() accepts snd_int_quiet in JSON"
+      - "src/tasks/audio_config_map.cpp:39 - intervalQuietS = cfg.audio.snd_int_quiet"
+      - "include/config_store.h:444 - bool configSaveAudio(Preferences& prefs, const AudioConfig& config)"
+    executor_or_core: "configApplyAndSave() -> NVS"
+    missing_metadata: []
+    notes: "mood interval for quiet mood (ms between idle track plays)"
   - name: sound.config.random-max
     type: config
     registry_api_path: /api/audio/tracks
@@ -1028,13 +1122,15 @@ rows:
     registry_sources:
       - internal
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "config"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "include/config_store.h:219 - uint16_t snd_rand_max;"
+      - "src/web/api_config.cpp:712 - handleConfigPost() accepts snd_rand_max in JSON"
+      - "src/tasks/audio_config_map.cpp:38 - out->randMax = cfg.audio.snd_rand_max;"
+      - "include/config_store.h:444 - bool configSaveAudio(Preferences& prefs, const AudioConfig& config)"
+    executor_or_core: "configUpdateAudioTracks() -> NVS"
+    missing_metadata: []
+    notes: "upper bound for random pool (track range selection)"
   - name: sound.config.random-min
     type: config
     registry_api_path: /api/audio/tracks
@@ -1046,13 +1142,15 @@ rows:
     registry_sources:
       - internal
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "config"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "include/config_store.h:218 - uint16_t snd_rand_min;"
+      - "src/web/api_config.cpp:712 - handleConfigPost() accepts snd_rand_min in JSON"
+      - "src/tasks/audio_config_map.cpp:37 - out->randMin = cfg.audio.snd_rand_min;"
+      - "include/config_store.h:444 - bool configSaveAudio(Preferences& prefs, const AudioConfig& config)"
+    executor_or_core: "configUpdateAudioTracks() -> NVS"
+    missing_metadata: []
+    notes: "lower bound for random pool (track range selection)"
   - name: sound.config.startup-track
     type: config
     registry_api_path: /api/audio/tracks
@@ -1064,13 +1162,15 @@ rows:
     registry_sources:
       - internal
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "config"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "include/config_store.h:198 - snd_startup field in AudioConfig"
+      - "src/web/api_config.cpp:712 - handleConfigPost() accepts snd_startup in JSON"
+      - "src/tasks/audio_config_map.cpp:30 - slotTracks[AUDIO_SLOT_STARTUP] = cfg.audio.snd_startup"
+      - "include/config_store.h:444 - bool configSaveAudio(Preferences& prefs, const AudioConfig& config)"
+    executor_or_core: "configUpdateAudioTracks() -> NVS"
+    missing_metadata: []
+    notes: "system track played on power-up; also available as named track ($B command)"
   - name: sound.config.system-track-assignments
     type: config
     registry_api_path: /api/audio/tracks
@@ -1088,13 +1188,15 @@ rows:
     registry_sources:
       - internal
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "config"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "include/config_store.h:212 - snd_sys_* fields in AudioConfig (boot/mode/drive/dome)"
+      - "src/web/api_config.cpp:712 - handleConfigPost() accepts snd_sys_* fields in JSON"
+      - "src/tasks/audio_config_map.cpp:31 - system slot assignments from config"
+      - "include/config_store.h:444 - bool configSaveAudio(Preferences& prefs, const AudioConfig& config)"
+    executor_or_core: "configUpdateAudioTracks() -> NVS"
+    missing_metadata: []
+    notes: "aggregates 6 system tracks: boot, mode_normal, mode_sleep, mode_travel, drv_on, dome_on"
   - name: sound.config.track-assignments
     type: config
     registry_api_path: /api/audio/tracks
@@ -1126,13 +1228,14 @@ rows:
     registry_sources:
       - internal
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "config"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "include/config_store.h:191 - AudioConfig holds snd_scream, snd_faint, snd_leia, etc named track NVS keys"
+      - "src/web/api_config.cpp:712 - handleConfigPost() accepts snd_* track fields in JSON body"
+      - "src/tasks/audio_config_map.cpp:24 - slotTracks array populated from all named track config fields"
+    executor_or_core: "configUpdateAudioTracks() -> NVS"
+    missing_metadata: []
+    notes: "aggregates 20 named tracks (scream, faint, leia, cantina_s/l, sw_theme, march, startup, doodoo, failure, disco, mahna, inlove, macho, gangnam, uptown, celebr, stayin, harlem, pbjtime)"
   - name: sound.config.volume
     type: config
     registry_api_path: /api/config
@@ -1149,13 +1252,15 @@ rows:
     registry_sources:
       - internal
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "config"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "include/config_store.h:190 - uint8_t audioVolume;"
+      - "src/web/api_config.cpp:712 - handleConfigPost() accepts audioVolume in JSON"
+      - "src/tasks/audio_task.cpp:630 - tickIn.configVolume = cfg.audio.audioVolume;"
+      - "include/config_store.h:444 - bool configSaveAudio(Preferences& prefs, const AudioConfig& config)"
+    executor_or_core: "configApplyAndSave() -> NVS"
+    missing_metadata: []
+    notes: "default volume (0-30) persisted across reboots"
   - name: sound.status.current
     type: status
     registry_api_path: /api/audio
@@ -1167,10 +1272,12 @@ rows:
     registry_sources:
       - internal
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:118 - webRegisterRoute(\"/api/audio\", WebMethod::kGet, handleAudioGet)"
+      - "include/api_audio.h:54 - void handleAudioGet(WebRequest& req) declaration"
+      - "src/web/api_audio.cpp:793 - void handleAudioGet(WebRequest& req) definition"
+      - "src/web/api_audio.cpp:806 - currentTrack = robotState.audio_module_current_track; core reads state"
+    executor_or_core: "Core 0"
+    missing_metadata: []
+    notes: "live status snapshot: driver name, active flag, play state, device, track counts, RX diagnostics"
