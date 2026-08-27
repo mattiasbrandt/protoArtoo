@@ -63,7 +63,7 @@ rows:
       - "src/web/api_drive.cpp:295 - commandedSetWebControl(true, SRC_WEB_API)"
     executor_or_core: "commandedSetWebControl"
     missing_metadata: []
-    notes: ""
+    notes: "All actions/configs missing: executor field, console_alias"
   - name: system.action.erase-coredump
     type: action
     registry_api_path: /api/coredump/erase
@@ -237,7 +237,8 @@ rows:
       - "src/web/api_drive.cpp:239 - handleModePost definition"
       - "src/web/api_drive.cpp:246 - commandedSetStationary()"
     executor_or_core: "commandedSetStationary"
-    missing_metadata: []
+    missing_metadata:
+      - "parameter schema (mode values/type not in registry)"
     notes: ""
   - name: system.action.set-mood
     type: action
@@ -527,7 +528,8 @@ rows:
       - "src/web/api_config.cpp:755 - configSave(prefs, snap) persistence/commit step"
       - "include/config_store.h:441 - bool configSave(Preferences&, ConfigSnapshot&)"
     executor_or_core: "configApply"
-    missing_metadata: []
+    missing_metadata:
+      - "parameter schema (type/default/range not in registry)"
     notes: ""
   - name: system.config.enable_arm2
     type: config
@@ -547,7 +549,8 @@ rows:
       - "src/web/api_config.cpp:755 - configSave(prefs, snap) persistence/commit step"
       - "include/config_store.h:441 - bool configSave(Preferences&, ConfigSnapshot&)"
     executor_or_core: "configApply"
-    missing_metadata: []
+    missing_metadata:
+      - "parameter schema (type/default/range not in registry)"
     notes: ""
   - name: system.config.enable_audio
     type: config
@@ -567,7 +570,8 @@ rows:
       - "src/web/api_config.cpp:755 - configSave(prefs, snap) persistence/commit step"
       - "include/config_store.h:441 - bool configSave(Preferences&, ConfigSnapshot&)"
     executor_or_core: "configApply"
-    missing_metadata: []
+    missing_metadata:
+      - "parameter schema (type/default/range not in registry)"
     notes: ""
   - name: system.config.enable_aux1
     type: config
@@ -587,7 +591,8 @@ rows:
       - "src/web/api_config.cpp:755 - configSave(prefs, snap) persistence/commit step"
       - "include/config_store.h:441 - bool configSave(Preferences&, ConfigSnapshot&)"
     executor_or_core: "configApply"
-    missing_metadata: []
+    missing_metadata:
+      - "parameter schema (type/default/range not in registry)"
     notes: ""
   - name: system.config.enable_aux2
     type: config
@@ -607,7 +612,8 @@ rows:
       - "src/web/api_config.cpp:755 - configSave(prefs, snap) persistence/commit step"
       - "include/config_store.h:441 - bool configSave(Preferences&, ConfigSnapshot&)"
     executor_or_core: "configApply"
-    missing_metadata: []
+    missing_metadata:
+      - "parameter schema (type/default/range not in registry)"
     notes: ""
   - name: system.config.enable_aux3
     type: config
@@ -627,7 +633,8 @@ rows:
       - "src/web/api_config.cpp:755 - configSave(prefs, snap) persistence/commit step"
       - "include/config_store.h:441 - bool configSave(Preferences&, ConfigSnapshot&)"
     executor_or_core: "configApply"
-    missing_metadata: []
+    missing_metadata:
+      - "parameter schema (type/default/range not in registry)"
     notes: ""
   - name: system.config.enable_dome_esc
     type: config
@@ -647,7 +654,8 @@ rows:
       - "src/web/api_config.cpp:755 - configSave(prefs, snap) persistence/commit step"
       - "include/config_store.h:441 - bool configSave(Preferences&, ConfigSnapshot&)"
     executor_or_core: "configApply"
-    missing_metadata: []
+    missing_metadata:
+      - "parameter schema (type/default/range not in registry)"
     notes: ""
   - name: system.config.enable_drive
     type: config
@@ -667,7 +675,8 @@ rows:
       - "src/web/api_config.cpp:755 - configSave(prefs, snap) persistence/commit step"
       - "include/config_store.h:441 - bool configSave(Preferences&, ConfigSnapshot&)"
     executor_or_core: "configApply"
-    missing_metadata: []
+    missing_metadata:
+      - "parameter schema (type/default/range not in registry)"
     notes: ""
   - name: system.config.enable_protor2link
     type: config
@@ -687,7 +696,8 @@ rows:
       - "src/web/api_config.cpp:755 - configSave(prefs, snap) persistence/commit step"
       - "include/config_store.h:441 - bool configSave(Preferences&, ConfigSnapshot&)"
     executor_or_core: "configApply"
-    missing_metadata: []
+    missing_metadata:
+      - "parameter schema (type/default/range not in registry)"
     notes: ""
   - name: system.config.enable_rc_ch1
     type: config
@@ -707,7 +717,8 @@ rows:
       - "src/web/api_config.cpp:755 - configSave(prefs, snap) persistence/commit step"
       - "include/config_store.h:441 - bool configSave(Preferences&, ConfigSnapshot&)"
     executor_or_core: "configApply"
-    missing_metadata: []
+    missing_metadata:
+      - "parameter schema (type/default/range not in registry)"
     notes: ""
   - name: system.config.enable_rc_ch2
     type: config
@@ -727,7 +738,8 @@ rows:
       - "src/web/api_config.cpp:755 - configSave(prefs, snap) persistence/commit step"
       - "include/config_store.h:441 - bool configSave(Preferences&, ConfigSnapshot&)"
     executor_or_core: "configApply"
-    missing_metadata: []
+    missing_metadata:
+      - "parameter schema (type/default/range not in registry)"
     notes: ""
   - name: system.config.enable_rc_ch3
     type: config
@@ -747,7 +759,8 @@ rows:
       - "src/web/api_config.cpp:755 - configSave(prefs, snap) persistence/commit step"
       - "include/config_store.h:441 - bool configSave(Preferences&, ConfigSnapshot&)"
     executor_or_core: "configApply"
-    missing_metadata: []
+    missing_metadata:
+      - "parameter schema (type/default/range not in registry)"
     notes: ""
   - name: system.config.enable_rc_ch4
     type: config
@@ -767,7 +780,8 @@ rows:
       - "src/web/api_config.cpp:755 - configSave(prefs, snap) persistence/commit step"
       - "include/config_store.h:441 - bool configSave(Preferences&, ConfigSnapshot&)"
     executor_or_core: "configApply"
-    missing_metadata: []
+    missing_metadata:
+      - "parameter schema (type/default/range not in registry)"
     notes: ""
   - name: system.config.enable_rc_ch5
     type: config
@@ -787,7 +801,8 @@ rows:
       - "src/web/api_config.cpp:755 - configSave(prefs, snap) persistence/commit step"
       - "include/config_store.h:441 - bool configSave(Preferences&, ConfigSnapshot&)"
     executor_or_core: "configApply"
-    missing_metadata: []
+    missing_metadata:
+      - "parameter schema (type/default/range not in registry)"
     notes: ""
   - name: system.config.enable_rc_ch6
     type: config
@@ -807,7 +822,8 @@ rows:
       - "src/web/api_config.cpp:755 - configSave(prefs, snap) persistence/commit step"
       - "include/config_store.h:441 - bool configSave(Preferences&, ConfigSnapshot&)"
     executor_or_core: "configApply"
-    missing_metadata: []
+    missing_metadata:
+      - "parameter schema (type/default/range not in registry)"
     notes: ""
   - name: system.config.mood
     type: config
@@ -827,7 +843,8 @@ rows:
       - "src/web/api_config.cpp:755 - configSave(prefs, snap) persistence/commit step"
       - "include/config_store.h:441 - bool configSave(Preferences&, ConfigSnapshot&)"
     executor_or_core: "configApply"
-    missing_metadata: []
+    missing_metadata:
+      - "parameter schema (type/values/default not in registry)"
     notes: ""
   - name: system.event.boot-complete
     type: event
