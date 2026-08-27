@@ -173,6 +173,29 @@ reporting passes that never ran. In the worker's worktree, personally:
    catches (#186 shipped a disabled `role="switch"` for a compile-time fact
    past two approving reviews). Playwright is yours to re-run headed; agents
    here have reported browser passes that never ran.
+
+   **Open it in every state the model allows, not just the loaded one.** Stub
+   the page's inputs so each branch actually renders: the resource absent, the
+   request failing, the request failing *and then recovering on retry*, the
+   value missing, the component disabled. Three consecutive slices on #202 had
+   their real defect pass a green gate, and every one lived in a state the
+   default happy path never renders - a restore path bound to a deleted key, a
+   placeholder that collapsed the page by 244px, and a panel left permanently
+   stuck after an identity retry. A worker's own probe will exercise the state
+   the worker was thinking about; your job is the other ones.
+
+   Prefer measuring to looking where you can: assert geometry (does the box
+   keep its size between states, does the next element stay put) and computed
+   style (is that background actually painted), because "it rendered" and "it
+   rendered correctly" are different claims and a screenshot flatters both. An
+   assertion whose operands are never compared - `(a || b) !== null` - is not a
+   check; grep the worker's probe for one before trusting its output.
+
+   When a slice depends on an ordering, test the failure path, not a slow one.
+   Delaying a request and having it succeed proves nothing about a request that
+   fails, retries, and then succeeds - a distinction that cost this repo a
+   merged defect, because a section that is *visibly waiting to retry* already
+   counts as settled for everything downstream of it.
 4. Verify the tree, not the narrative: `git log`, clean `git status`, new
    symbols present on disk.
 5. Reject by naming concrete defects (file:line, what is wrong, what the bar
