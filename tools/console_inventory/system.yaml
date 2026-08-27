@@ -382,11 +382,11 @@ rows:
     evidence:
       - "src/web/web_seam_routes.cpp:46 - webRegisterRoute /api/events"
       - "include/api_events.h:12 - void handleEventsGet(WebRequest& req)"
-      - "src/web/api_events.cpp:1 - handleEventsGet definition block"
-      - "include/web_event_stream.h:85 - EventStreamRegistry and event delivery"
+      - "src/web/api_events.cpp:24 - void handleEventsGet definition"
+      - "include/web_event_stream.h:171 - void webEventStreamBroadcast(event, data, id)"
     executor_or_core: "none"
     missing_metadata: []
-    notes: "SSE stream handler for live events; no query executor"
+    notes: "SSE stream handler; delivers status/rc/log events via webEventStreamBroadcast"
   - name: system.api.get-admission-trace
     type: action
     registry_api_path: /api/admission/trace
@@ -840,15 +840,15 @@ rows:
     registry_sources:
       - internal
     registry_marcduino_cmd: null
-    anchor_kind: "event"
+    anchor_kind: "none"
     evidence:
-      - "src/web/web_seam_routes.cpp:46 - webRegisterRoute /api/events"
-      - "include/web_event_stream.h:85 - EventStreamRegistry event dispatch"
-      - "src/main.cpp:168 - requestEventBroadcast at startup"
-      - "include/api_events.h:12 - handleEventsGet SSE delivery"
+      - "docs/action-registry.yaml:2355 - system.event.boot-complete registry entry (declared)"
+      - "src/web/web_server.cpp:816 - webEventStreamBroadcast(\"status\", ...) only event"
+      - "src/web/web_server.cpp:840 - webEventStreamBroadcast(\"rc\", ...) only event"
+      - "src/web/web_server.cpp:866 - webEventStreamBroadcast(\"log\", ...) boot-complete never called"
     executor_or_core: "none"
     missing_metadata: []
-    notes: "System startup event; SSE streaming via handleEventsGet"
+    notes: "NO-EXECUTOR: Registry entry exists but firmware has no emitter - implementation missing"
   - name: system.event.dome-enabled
     type: event
     registry_api_path: null
@@ -860,15 +860,15 @@ rows:
     registry_sources:
       - internal
     registry_marcduino_cmd: null
-    anchor_kind: "event"
+    anchor_kind: "none"
     evidence:
-      - "src/web/web_seam_routes.cpp:46 - webRegisterRoute /api/events"
-      - "include/web_event_stream.h:85 - EventStreamRegistry event dispatch"
-      - "src/tasks/dome_link.cpp:89 - requestEventBroadcast when dome establishes"
-      - "include/api_events.h:12 - handleEventsGet SSE delivery"
+      - "docs/action-registry.yaml:2340 - system.event.dome-enabled registry entry (declared)"
+      - "src/web/web_server.cpp:816 - webEventStreamBroadcast(\"status\", ...) only event"
+      - "src/web/web_server.cpp:840 - webEventStreamBroadcast(\"rc\", ...) only event"
+      - "src/web/web_server.cpp:866 - webEventStreamBroadcast(\"log\", ...) dome-enabled never called"
     executor_or_core: "none"
     missing_metadata: []
-    notes: "Dome link established event; SSE streaming via handleEventsGet"
+    notes: "NO-EXECUTOR: Registry entry exists but firmware has no emitter - implementation missing"
   - name: system.event.drives-engaged
     type: event
     registry_api_path: null
@@ -880,15 +880,15 @@ rows:
     registry_sources:
       - internal
     registry_marcduino_cmd: null
-    anchor_kind: "event"
+    anchor_kind: "none"
     evidence:
-      - "src/web/web_seam_routes.cpp:46 - webRegisterRoute /api/events"
-      - "include/web_event_stream.h:85 - EventStreamRegistry event dispatch"
-      - "src/drive_arbiter.cpp:145 - requestEventBroadcast when motion engaged"
-      - "include/api_events.h:12 - handleEventsGet SSE delivery"
+      - "docs/action-registry.yaml:2325 - system.event.drives-engaged registry entry (declared)"
+      - "src/web/web_server.cpp:816 - webEventStreamBroadcast(\"status\", ...) only event"
+      - "src/web/web_server.cpp:840 - webEventStreamBroadcast(\"rc\", ...) only event"
+      - "src/web/web_server.cpp:866 - webEventStreamBroadcast(\"log\", ...) drives-engaged never called"
     executor_or_core: "none"
     missing_metadata: []
-    notes: "Motion engaged event; SSE streaming via handleEventsGet"
+    notes: "NO-EXECUTOR: Registry entry exists but firmware has no emitter - implementation missing"
   - name: system.status.dashboard-health
     type: status
     registry_api_path: /api/status
