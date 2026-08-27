@@ -1765,11 +1765,6 @@ entries:
   requires_web_control: false
   nvs_key: null
   executor: Core 0
-  fields:
-  - audioActive
-  - audioLinkOk
-  - audioRxStatus
-  - activeMood
 - name: sound.config.volume
   display_name: Volume
   description: "Default audio volume (0\u201330)"
@@ -2936,15 +2931,6 @@ entries:
   requires_web_control: false
   nvs_key: null
   executor: buildStatusJson
-  fields:
-  - estop
-  - webControlEnabled
-  - sbusSignalLost
-  - heapFree
-  - heapMin
-  - heapLargestBlock
-  - sseClients
-  - wifiConnected
 - name: system.status.dashboard-health
   display_name: Dashboard Health Signals
   description: Traffic-light health indicators derived client-side from /api/status (RC receiver, WiFi, filesystem, heap, dome serial link, sound module, dome ESC)
@@ -2977,12 +2963,6 @@ entries:
   requires_web_control: false
   nvs_key: null
   executor: buildStatusJson
-  fields:
-  - id
-  - timestamp
-  - level
-  - tag
-  - message
 - name: system.status.wifi
   display_name: WiFi
   description: WiFi connection status, mode, IP addresses, and signal strength
@@ -2999,12 +2979,6 @@ entries:
   requires_web_control: false
   nvs_key: null
   executor: buildStatusJson
-  fields:
-  - connected
-  - clientConnected
-  - rssi
-  - ssid
-  - mode
 - name: dome.status.serial-link
   display_name: Dome Serial Link
   description: Dome serial link status and heartbeat timing
@@ -3021,10 +2995,6 @@ entries:
   requires_web_control: false
   nvs_key: null
   executor: buildSerialJson
-  fields:
-  - port
-  - available
-  - baud
 - name: system.api.get-identity
   display_name: Get Droid Identity
   description: Current cosmetic droid name and mDNS opt-in
@@ -3255,11 +3225,6 @@ entries:
   requires_web_control: false
   nvs_key: null
   executor: none
-  fields:
-  - id
-  - timestamp
-  - type
-  - payload
 - name: rc.status.snapshot
   display_name: RC Snapshot
   description: Live RC channel values, SBUS raw data, and current binding state
@@ -3276,11 +3241,6 @@ entries:
   requires_web_control: false
   nvs_key: null
   executor: NO-CORE-BELOW-HANDLER
-  fields:
-  - mode
-  - sbus1
-  - sbus2
-  - enabledChannels
 - name: rc.action.toggle-debug
   display_name: Toggle RC Debug
   description: Enable or disable verbose RC channel logging
