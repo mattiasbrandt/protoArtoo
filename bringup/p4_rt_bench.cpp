@@ -56,7 +56,11 @@ static constexpr gpio_num_t BENCH_TX_SBUS = GPIO_NUM_52;
 static constexpr gpio_num_t BENCH_RX_DRIVE = GPIO_NUM_51;
 
 // Bench UART controllers (configured to route to bench GPIO via GPIO matrix)
-static constexpr uart_port_t UART_BENCH_SBUS = UART_NUM_2;   // TX on GPIO52 (or any UART via GPIO matrix)
+// UART allocation: UART0=console, UART1=drive (src/tasks/drive.cpp:33),
+// UART2=dome/audio (dome_link.cpp:50, audio_dy_sv5w.cpp:53, audio_chirp.cpp:36),
+// UART3=UNUSED (bench harness SBUS), UART4=bench drive RX.
+// Do NOT use UART2; it is shared by dome/audio arbiter domeUartAcquire()/Release().
+static constexpr uart_port_t UART_BENCH_SBUS = UART_NUM_3;   // TX on GPIO52 (UART3 is unused by firmware)
 static constexpr uart_port_t UART_BENCH_DRIVE = UART_NUM_4;  // RX on GPIO51
 
 // ============================================================================
@@ -276,22 +280,28 @@ void benchPhase2SbusGeneratorOff() {
 void benchPhase3DriveFrameCadence() {
     Serial.println("[BENCH P3] Drive frame cadence observation starting...");
 
-    // Precondition check: servo outputs (LEDC PWM) must be disabled.
-    // If servo task initialized, it drives GPIO51 (ARM5_SERVO) with PWM.
-    // Reading GPIO51 while servo is active would sample PWM noise, not drive frames.
-    // Check config the same way servo_task.cpp does (servo_task.cpp:425):
-    // LEDC initializes if any of enable_arm1, enable_arm2, enable_aux1, enable_aux2,
-    // enable_aux3 are true. Read from NVS directly (bench env doesn't link config_store).
+    // Precondition check: GPIO51 (PIN_ARM5_SERVO / AUX3) must not be driven.
+    // GPIO51 is driven in two cases:
+    //   1. en_aux3 is true: AUX3 servo channel active (include/config.h PIN_ARM5_SERVO)
+    //   2. aux_led_pin == AUX_LED_PIN_AUX3: LED strip assigned to AUX3
+    //      (include/config.h auxLedSelectionToGpio() case AUX_LED_PIN_AUX3)
+    // If GPIO51 is driven while bench harness samples it, noise pollutes drive-frame cadence.
+    // Read NVS directly (bench env doesn't link config_store).
+    // AUX_LED_PIN_AUX3 = 3, AUX_LED_PIN_DISABLED = 0.
     Preferences nvs;
     nvs.begin("artoo", true);  // read-only namespace "artoo"
-    bool anyServoEnabled = nvs.getBool("en_arm1", false) || nvs.getBool("en_arm2", false) ||
-                            nvs.getBool("en_aux1", false) || nvs.getBool("en_aux2", false) ||
-                            nvs.getBool("en_aux3", false);
+    bool aux3ServoEnabled = nvs.getBool("en_aux3", false);
+    uint8_t auxLedPin = nvs.getUChar("aux_led_pin", 0);  // 0 = AUX_LED_PIN_DISABLED
     nvs.end();
 
-    if (anyServoEnabled) {
-        Serial.println("[BENCH P3] SKIP: Servo outputs (LEDC PWM) enabled in config");
-        Serial.println("[BENCH P3] Precondition not met: LEDC must be disabled (NVS: en_arm1/2, en_aux1/2/3)");
+    if (aux3ServoEnabled) {
+        Serial.println("[BENCH P3] SKIP: AUX3 servo (en_aux3) enabled - GPIO51 actively driven");
+        Serial.flush();
+        return;
+    }
+
+    if (auxLedPin == 3) {  // 3 = AUX_LED_PIN_AUX3
+        Serial.println("[BENCH P3] SKIP: AUX LED strip on AUX3 (aux_led_pin=3) - GPIO51 actively driven");
         Serial.flush();
         return;
     }
