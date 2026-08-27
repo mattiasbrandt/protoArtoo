@@ -66,11 +66,14 @@ rows:
     registry_marcduino_cmd: $nnn
     anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
+      - "src/web/web_seam_routes.cpp:118 - webRegisterRoute(\"/api/audio\", WebMethod::kPost, handleAudioPost)"
+      - "include/api_audio.h:55 - void handleAudioPost(WebRequest& req)"
+      - "src/web/api_audio.cpp:825 - if (strcmp(action, \"play\") == 0)"
+      - "src/web/api_audio.cpp:844 - audioQueuePlayTrack((uint16_t)track, SRC_WEB_API)"
+    executor_or_core: "audioQueuePlayTrack() -> AudioTask Core 0"
     missing_metadata:
       - FILL
-    notes: FILL
+    notes: "play command dispatches to audio queue for track number 1-65535"
   - name: sound.action.play-track-cantina-long
     type: action
     registry_api_path: null
@@ -659,11 +662,14 @@ rows:
     registry_marcduino_cmd: null
     anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
+      - "src/web/web_seam_routes.cpp:109-110 - webRegisterRoute(\"/api/audio/category-range\", WebMethod::kPost, handleAudioCategoryRangePost)"
+      - "include/api_audio.h:59 - void handleAudioCategoryRangePost(WebRequest& req)"
+      - "src/web/api_audio.cpp:546 - void handleAudioCategoryRangePost(WebRequest& req) {"
+      - "src/web/api_audio.cpp:550 - audioCategoryRangeApply(params, &result)"
+    executor_or_core: "audioCategoryRangeApply() -> Core 0"
     missing_metadata:
       - FILL
-    notes: FILL
+    notes: "sets lo/hi pair for one category atomically via apply core"
   - name: sound.action.set-mood-map
     type: action
     registry_api_path: /api/audio/mood-map
@@ -698,11 +704,14 @@ rows:
     registry_marcduino_cmd: null
     anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
+      - "src/web/web_seam_routes.cpp:111-112 - webRegisterRoute(\"/api/audio/mood-map\", WebMethod::kPost, handleAudioMoodMapPost)"
+      - "include/api_audio.h:62 - void handleAudioMoodMapPost(WebRequest& req)"
+      - "src/web/api_audio.cpp:397 - void handleAudioMoodMapPost(WebRequest& req) {"
+      - "src/web/api_audio.cpp:401 - audioMoodMapApply(params, &result)"
+    executor_or_core: "audioMoodMapApply() -> Core 0"
     missing_metadata:
       - FILL
-    notes: FILL
+    notes: "applies mood category mask via domain core"
   - name: sound.action.set-volume
     type: action
     registry_api_path: /api/audio
@@ -721,11 +730,14 @@ rows:
     registry_marcduino_cmd: null
     anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
+      - "src/web/web_seam_routes.cpp:118 - webRegisterRoute(\"/api/audio\", WebMethod::kPost, handleAudioPost)"
+      - "include/api_audio.h:54 - void handleAudioPost(WebRequest& req)"
+      - "src/web/api_audio.cpp:859 - if (strcmp(action, \"volume\") == 0)"
+      - "include/audio_task.h:128 - bool audioQueueSetVolume(uint8_t vol, CommandSource src)"
+    executor_or_core: "audioQueueSetVolume() -> AudioTask Core 0"
     missing_metadata:
       - FILL
-    notes: FILL
+    notes: "queues absolute volume command (0-30)"
   - name: sound.action.track-stop
     type: action
     registry_api_path: /api/audio
@@ -870,11 +882,14 @@ rows:
     registry_marcduino_cmd: null
     anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
+      - "src/web/web_seam_routes.cpp:113 - webRegisterRoute(\"/api/audio/catalog\", WebMethod::kGet, handleAudioCatalogGet)"
+      - "include/api_audio.h:64 - void handleAudioCatalogGet(WebRequest& req)"
+      - "src/web/api_audio.cpp:688 - void handleAudioCatalogGet(WebRequest& req) {"
+      - "include/audio_task.h:150 - audioGetCatalogEntries() returns catalog entries"
+    executor_or_core: "audioGetCatalogEntries() (Core 0)"
     missing_metadata:
       - FILL
-    notes: FILL
+    notes: "returns CHIRP catalog via chunked response"
   - name: sound.api.get-mood-map
     type: action
     registry_api_path: /api/audio/mood-map
@@ -922,11 +937,14 @@ rows:
     registry_marcduino_cmd: null
     anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
+      - "src/web/web_seam_routes.cpp:117 - webRegisterRoute(\"/api/audio/play-banked\", WebMethod::kPost, handleAudioPlayBankedPost)"
+      - "include/api_audio.h:68 - void handleAudioPlayBankedPost(WebRequest& req)"
+      - "src/web/api_audio.cpp:735 - void handleAudioPlayBankedPost(WebRequest& req) {"
+      - "include/audio_task.h:108 - audioQueuePlayTrackBanked(uint16_t index, uint8_t bank, char page, CommandSource src)"
+    executor_or_core: "audioQueuePlayTrackBanked() -> AudioTask Core 0"
     missing_metadata:
       - FILL
-    notes: FILL
+    notes: "plays CHIRP entry by bank/page/index"
   - name: sound.api.refresh-catalog
     type: action
     registry_api_path: /api/audio/catalog/refresh
@@ -1046,11 +1064,13 @@ rows:
     registry_marcduino_cmd: null
     anchor_kind: "config"
     evidence:
-      - FILL
-    executor_or_core: FILL
+      - "include/config_store.h:60 - struct AudioConfig { ... snd_moodcat_quiet, snd_moodcat_mid, ... }"
+      - "src/tasks/audio_config_map.cpp:1 - audio config layer manages mood masks"
+      - "src/web/api_audio.cpp:397 - handleAudioMoodMapPost applies mood masks"
+    executor_or_core: "audioMoodMapApply() -> NVS"
     missing_metadata:
       - FILL
-    notes: FILL
+    notes: "mood to category mask mapping (4 uint16 values)"
   - name: sound.config.mood-interval-awake-plus
     type: config
     registry_api_path: /api/config
@@ -1275,11 +1295,13 @@ rows:
     registry_marcduino_cmd: null
     anchor_kind: "config"
     evidence:
-      - FILL
-    executor_or_core: FILL
+      - "include/config_store.h:60 - AudioConfig holds audioVolume and cfg_sndVol NVS key"
+      - "src/tasks/audio_config_map.cpp:1 - config layer manages volume"
+      - "src/web/api_audio.cpp:859 - handleAudioPost volume action persists"
+    executor_or_core: "configApplyAndSave() -> NVS"
     missing_metadata:
       - FILL
-    notes: FILL
+    notes: "default volume (0-30) persisted across reboots"
   - name: sound.status.current
     type: status
     registry_api_path: /api/audio
