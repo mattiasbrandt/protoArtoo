@@ -9,7 +9,8 @@
       "dram_limit_bytes: total DRAM available per platform (hardware constant from ESP-IDF linker scripts; artoo-esp32=124580B, esp32-p4=327680B)",
       "Budgets set with deliberate headroom to prevent reflexive raises on legitimate commits",
       "Env-to-platform classification in 'platforms' registry; Makefile/slice_verify.py/check_build_budgets.py all consume it",
-      "Baseline measurements recorded with commit SHA (git cat-file -t to verify)"
+      "Baseline measurements recorded with commit SHA (git cat-file -t to verify); baseline_* fields are informational only - check_build_budgets.py and slice_verify.py enforce flash_budget_bytes, flash_ceiling_bytes and ram_budget_bytes, never the baselines",
+      "Baseline method: flash = .pio/build/<env>/firmware.bin size; RAM = .data + .bss from the platform size tool (-A) on firmware.elf, i.e. slice_verify.get_build_sizes(); measured on a clean tree at the recorded commit (no -dirty stamp)"
     ]
   },
   "platforms": {
@@ -50,10 +51,10 @@
       "dram_limit_bytes": 327680,
       "flash_budget_bytes": 400000,
       "ram_budget_bytes": 45000,
-      "baseline_measured_at": "8fea3c73ebce",
-      "baseline_flash_bytes": 321774,
+      "baseline_measured_at": "94880ee62570fa4ce1cc2fee9d3c14493f57d845",
+      "baseline_flash_bytes": 334448,
       "baseline_ram_bytes": 24222,
-      "budget_rationale": "First-flash bringup env with minimal source filter (src/ excluded). Hard ceiling at 3,113,728 B (partition 3,145,728 - 32,000 B reserve for OTA headers/metadata). Baselines from hardware measurement via riscv32-esp-elf-size. Budgets set above measured values to accommodate full firmware adaptation (tracked by #188/#189)."
+      "budget_rationale": "First-flash bringup env with minimal source filter (src/ excluded). Hard ceiling at 3,113,728 B (partition 3,145,728 - 32,000 B reserve for OTA headers/metadata). Baselines measured from the build artifacts at baseline_measured_at (see metadata notes). Budgets set above measured values to accommodate full firmware adaptation (tracked by #188/#189)."
     },
     "firebeetle2": {
       "board": "FireBeetle 2 ESP32-P4 (full firmware)",
@@ -63,10 +64,10 @@
       "dram_limit_bytes": 327680,
       "flash_budget_bytes": 2000000,
       "ram_budget_bytes": 100000,
-      "baseline_measured_at": "8fea3c73ebce",
-      "baseline_flash_bytes": 1606882,
-      "baseline_ram_bytes": 79952,
-      "budget_rationale": "Full firmware: compiles all of src/ against P4 toolchain for production deployment. Hard ceiling at 3,113,728 B (partition 3,145,728 - 32,000 B reserve for OTA headers/metadata). Baselines from hardware measurement. Budget set above measured value to allow image growth during platform development."
+      "baseline_measured_at": "94880ee62570fa4ce1cc2fee9d3c14493f57d845",
+      "baseline_flash_bytes": 1199056,
+      "baseline_ram_bytes": 61214,
+      "budget_rationale": "Full firmware: compiles all of src/ against P4 toolchain for production deployment. Hard ceiling at 3,113,728 B (partition 3,145,728 - 32,000 B reserve for OTA headers/metadata). Baselines measured from the build artifacts at baseline_measured_at (see metadata notes); the earlier 1,606,882 B / 79,952 B figures were recorded for the former firebeetle2_full env at 8fea3c7 and carried across the #203 rename, and do not describe this image. Budget set above measured value to allow image growth during platform development."
     },
     "firebeetle2_p4_rt_bench": {
       "board": "FireBeetle 2 ESP32-P4 (RT Bench)",
@@ -76,9 +77,9 @@
       "dram_limit_bytes": 327680,
       "flash_budget_bytes": 2000000,
       "ram_budget_bytes": 100000,
-      "baseline_measured_at": "12fe5b3111ba601fd5984979aa372ffb0f95540a",
-      "baseline_flash_bytes": 1207008,
-      "baseline_ram_bytes": 61224,
+      "baseline_measured_at": "94880ee62570fa4ce1cc2fee9d3c14493f57d845",
+      "baseline_flash_bytes": 1207024,
+      "baseline_ram_bytes": 62166,
       "budget_rationale": "Complete firmware plus RT bench harness (SBUS loopback, TWDT stall). Full src/ compilation with p4_rt_bench.cpp instrumentation on FireBeetle 2 P4. Baseline is a real measurement of this image configuration."
     }
   }
