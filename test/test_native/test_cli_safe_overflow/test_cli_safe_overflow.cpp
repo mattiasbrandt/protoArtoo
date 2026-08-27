@@ -181,14 +181,20 @@ void test_safe_overflow_recovery(void) {
     cli->onCommand = onCommand;
     cli->writeChar = writeChar;
 
-    // Feed 260 characters (overflow)
+    // Feed 260 characters (overflow) without processing
     for (int i = 0; i < 260; i++) {
         embeddedCliReceiveChar(cli, 'x');
-        embeddedCliProcess(cli);
     }
+
+    // Process to detect overflow
+    embeddedCliProcess(cli);
 
     // Reset the buffer
     embeddedCliResetInput(cli);
+
+    // Reset state before testing recovery
+    commandCount = 0;
+    lastCommand[0] = '\0';
 
     // Feed a normal command "hello"
     const char *cmd = "hello";
