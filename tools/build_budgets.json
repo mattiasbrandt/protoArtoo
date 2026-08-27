@@ -76,7 +76,7 @@
       "dram_limit_bytes": 327680,
       "flash_budget_bytes": 2000000,
       "ram_budget_bytes": 100000,
-      "baseline_measured_at": "deaf97889e52f70beb479ed59510f15d324f3b4b",
+      "baseline_measured_at": "12fe5b3111ba601fd5984979aa372ffb0f95540a",
       "baseline_flash_bytes": 1207008,
       "baseline_ram_bytes": 61224,
       "budget_rationale": "Complete firmware plus RT bench harness (SBUS loopback, TWDT stall). Full src/ compilation with p4_rt_bench.cpp instrumentation on FireBeetle 2 P4. Baseline is a real measurement of this image configuration."
