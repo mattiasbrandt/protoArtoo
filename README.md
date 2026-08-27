@@ -172,7 +172,7 @@ make ota              # Run tests + OTA flash — default audio module and IP
 make ota-chirp        # Run tests + OTA flash — CHIRP module
 make ota-mp3trigger   # Run tests + OTA flash — MP3 Trigger module
 make flash            # Run tests + USB flash
-make uploadfs         # Upload web UI only via OTA (no test gate)
+make uploadfs         # Upload web UI only (OTA; P4 envs go over USB) — no test gate
 make test             # Run native unit tests
 make check            # Static analysis (cppcheck)
 make monitor          # Serial monitor (no reset on connect)

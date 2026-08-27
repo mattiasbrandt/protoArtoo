@@ -161,8 +161,9 @@ Routing cues for the Claude subagents live in `.claude/CLAUDE.md`.
 
 Bare `make` launches the interactive deploy wizard (`tools/deploy.py`); `make help`
 lists every named target. `make flash` and `make ota` run `pio test -e native`
-first; `make uploadfs` does not. Overrides go on the command line or in `user.mk`:
-`OTA_IP`, `UPLOAD_PORT`, `BUILD_ENV`.
+first; `make uploadfs` does not, and goes over USB (`UPLOAD_PORT`) for P4 envs,
+which have no `_ota` env, OTA (`OTA_IP`) otherwise. Overrides go on the command
+line or in `user.mk`: `OTA_IP`, `UPLOAD_PORT`, `BUILD_ENV`.
 
 Four rules the Makefile cannot enforce for you:
 

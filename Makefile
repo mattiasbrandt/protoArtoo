@@ -118,8 +118,15 @@ ota: test ## Flash via OTA  (OTA_IP=artoo.local by default)
 	$(PIO) run -e $(BUILD_ENV)_ota
 	python3 tools/ota_upload.py --env $(BUILD_ENV)_ota --host $(OTA_IP) --timeout $(OTA_TIMEOUT) --transfer-timeout $(OTA_TRANSFER_TIMEOUT)
 
-uploadfs: ## Upload LittleFS web UI via OTA  (no test gate)
-	$(PIO) run -e $(BUILD_ENV)_ota -t uploadfs --upload-port $(OTA_IP)
+# Filesystem upload transport. artoo-esp32 envs upload over OTA through their
+# `_ota` env. ESP32-P4 envs have no `_ota` env - there is no OTA transport
+# without a network backend - so they upload over USB with the same env and
+# port `make flash` uses. Membership in P4_ENVS decides, as for PIO_CORE_DIR.
+UPLOADFS_ENV  = $(if $(filter $(P4_ENVS),$(BUILD_ENV)),$(BUILD_ENV),$(BUILD_ENV)_ota)
+UPLOADFS_PORT = $(if $(filter $(P4_ENVS),$(BUILD_ENV)),$(UPLOAD_PORT),$(OTA_IP))
+
+uploadfs: ## Upload LittleFS web UI  (OTA to OTA_IP; P4 envs: USB via UPLOAD_PORT; no test gate)
+	$(PIO) run -e $(UPLOADFS_ENV) -t uploadfs --upload-port $(UPLOADFS_PORT)
 
 # ── Flash: CHIRP audio module ────────────────────────────────────────────────
 
