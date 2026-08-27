@@ -172,12 +172,12 @@ rows:
     anchor_kind: "api"
     evidence:
       - "src/web/web_seam_routes.cpp:81 - webRegisterRoute(\"/api/drive\", kPost, handleDrivePost)"
-      - "include/api_drive.h:5 - void handleDrivePost(WebRequest& req)"
+      - "include/api_drive.h:28 - void handleDrivePost(WebRequest& req)"
       - "src/web/api_drive.cpp:307 - void handleDrivePost(WebRequest& req) {"
-      - "src/web/api_drive.cpp:216 - driveArbiterSubmit(DriveSource::WEB, speed, steer, millis())"
+      - "src/web/api_drive.cpp:346 - driveArbiterSubmit(DriveSource::WEB_API, clampedSpeed, clampedSteer, millis())"
     executor_or_core: "driveArbiter"
     missing_metadata: []
-    notes: "Requires webControlEnabled at api_drive.cpp:318. Speed cap enforced. Queue guarded."
+    notes: "Guard at api_drive.cpp:329-330: blocked if estop OR stationary OR (!sbusHealthy AND !webControlEnabled). Speed cap enforced. Queue guarded."
   - name: drive.action.speed
     type: action
     registry_api_path: null
@@ -202,7 +202,7 @@ rows:
       - "src/tasks/rc_input.cpp:198 - rcDispatchDrive(backbone.driveSpeed, backbone.driveSteer, false)"
     executor_or_core: "driveArbiter"
     missing_metadata: []
-    notes: "Analog RC. SBUS: rc_sbus_drive_speed; PWM: rc_pwm_drive_speed. Speed cap enforced."
+    notes: "Analog RC. SBUS: rc_sbus_drive_speed; PWM: rc_pwm_drive_speed. Speed cap enforced. No additional guard (arbiter applies caps)."
   - name: drive.action.speed-preset-cycle
     type: action
     registry_api_path: null
@@ -223,7 +223,7 @@ rows:
       - "src/drive_speed_preset.cpp:56 - applySpeedPresetRuntime(nextSpeedPreset(...))"
     executor_or_core: "driveSpeedPresetCore"
     missing_metadata: []
-    notes: "Button RC action. Cycles Slow->Normal->Turbo."
+    notes: "RC button action. Cycles Slow->Normal->Turbo. No additional guard (preset stored, applied by arbiter)."
   - name: drive.action.speed-preset-normal
     type: action
     registry_api_path: /api/drive/speed-preset
@@ -248,7 +248,7 @@ rows:
       - "src/web/api_drive.cpp:276 - applySpeedPresetPersisted(preset) is the core"
     executor_or_core: "driveSpeedPresetCore"
     missing_metadata: []
-    notes: "Web-API only. Preset constrained to 'normal'."
+    notes: "Web-API only. Preset constrained to 'normal'. No guard in POST handler (config apply level)."
   - name: drive.action.speed-preset-slow
     type: action
     registry_api_path: /api/drive/speed-preset
@@ -273,7 +273,7 @@ rows:
       - "src/web/api_drive.cpp:276 - applySpeedPresetPersisted(preset) is the core"
     executor_or_core: "driveSpeedPresetCore"
     missing_metadata: []
-    notes: "Web-API only. Preset constrained to 'slow'."
+    notes: "Web-API only. Preset constrained to 'slow'. No guard in POST handler (config apply level)."
   - name: drive.action.speed-preset-turbo
     type: action
     registry_api_path: /api/drive/speed-preset
@@ -298,7 +298,7 @@ rows:
       - "src/web/api_drive.cpp:276 - applySpeedPresetPersisted(preset) is the core"
     executor_or_core: "driveSpeedPresetCore"
     missing_metadata: []
-    notes: "Web-API only. Preset constrained to 'turbo'."
+    notes: "Web-API only. Preset constrained to 'turbo'. No guard in POST handler (config apply level)."
   - name: drive.action.steer
     type: action
     registry_api_path: null
@@ -323,7 +323,7 @@ rows:
       - "src/tasks/rc_input.cpp:198 - rcDispatchDrive(backbone.driveSpeed, backbone.driveSteer, false)"
     executor_or_core: "driveArbiter"
     missing_metadata: []
-    notes: "Analog RC. SBUS: rc_sbus_drive_steer; PWM: rc_pwm_drive_steer."
+    notes: "Analog RC. SBUS: rc_sbus_drive_steer; PWM: rc_pwm_drive_steer. No guard (steering follows speed arbiter)."
   - name: drive.config.speed-limit
     type: config
     registry_api_path: /api/config
@@ -344,7 +344,7 @@ rows:
     missing_metadata:
       - "parameter name not in registry"
       - "range not in registry"
-    notes: "NVS key cfg_spdMax. Apply Core (ADR 0011). Speed cap enforced."
+    notes: "NVS key cfg_spdMax. Apply Core (ADR 0011). Speed cap value itself. No additional guard (stored config only)."
   - name: drive.event.failsafe-triggered
     type: event
     registry_api_path: null
@@ -362,7 +362,7 @@ rows:
       - "src/web/api_status.cpp:97 - handleStatusGet emits failsafeCount, failsafeTriggerMs"
     executor_or_core: "failsafeGate"
     missing_metadata: []
-    notes: "Status event in /api/status. Latching estop."
+    notes: "Safety event. Latching estop trigger. Status field, not a guarded action."
   - name: drive.status.current
     type: status
     registry_api_path: /api/status
@@ -380,7 +380,7 @@ rows:
       - "src/web/web_server.cpp:296 - driveSpeed = robotState.driveOutputSpeed"
     executor_or_core: "statusSnapshotCore"
     missing_metadata: []
-    notes: "Aggregate-field in /api/status. Motor outputs via snapshot."
+    notes: "Aggregate-field in /api/status. Motor outputs via snapshot. Read-only status (no guard needed)."
   - name: rc.action.set-map
     type: action
     registry_api_path: /api/rc/map
