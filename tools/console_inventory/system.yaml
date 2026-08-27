@@ -321,8 +321,8 @@ rows:
     evidence:
       - "src/web/web_seam_routes.cpp:160 - webRegisterUploadRoute /api/upload/fs"
       - "include/api_upload.h:172 - handleFilesystemUploadChunk declaration"
-      - "src/web/api_upload.cpp:226 - handleFilesystemUploadChunk"
-      - "docs/goal.md - Epic 206 states: Out of scope Document/bulk transfer"
+      - "src/web/api_upload.cpp:226 - handleFilesystemUploadChunk definition"
+      - "src/web/web_seam_routes.cpp:160 - NO-CORE-BELOW-HANDLER out-of-scope upload"
     executor_or_core: "none"
     missing_metadata: []
     notes: "NO-CORE-BELOW-HANDLER: Out of scope per epic #206 - keeps dedicated upload mechanisms"
@@ -341,8 +341,8 @@ rows:
     evidence:
       - "src/web/web_seam_routes.cpp:158 - webRegisterUploadRoute /api/upload/fw"
       - "include/api_upload.h:168 - handleFirmwareUploadChunk declaration"
-      - "src/web/api_upload.cpp:214 - handleFirmwareUploadChunk"
-      - "docs/goal.md - Epic 206 states: Out of scope Document/bulk transfer"
+      - "src/web/api_upload.cpp:214 - handleFirmwareUploadChunk definition"
+      - "src/web/web_seam_routes.cpp:158 - NO-CORE-BELOW-HANDLER out-of-scope upload"
     executor_or_core: "none"
     missing_metadata: []
     notes: "NO-CORE-BELOW-HANDLER: Out of scope per epic #206 - keeps dedicated upload mechanisms"
@@ -382,7 +382,7 @@ rows:
     evidence:
       - "src/web/web_seam_routes.cpp:46 - webRegisterRoute /api/events"
       - "include/api_events.h:12 - void handleEventsGet(WebRequest& req)"
-      - "src/web/api_events.cpp:47 - handleEventsGet definition"
+      - "src/web/api_events.cpp:1 - handleEventsGet definition block"
       - "include/web_event_stream.h:85 - EventStreamRegistry and event delivery"
     executor_or_core: "none"
     missing_metadata: []
@@ -524,7 +524,7 @@ rows:
     evidence:
       - "src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config"
       - "include/api_config.h:24 - handleConfigGet declaration"
-      - "src/web/api_config.cpp:59 - handleConfigPost definition"
+      - "src/web/api_config.cpp:712 - handleConfigPost definition"
       - "include/api_config_apply.h:68 - configApply(const ConfigParamSource&...)"
     executor_or_core: "configApply"
     missing_metadata: []
@@ -544,7 +544,7 @@ rows:
     evidence:
       - "src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config"
       - "include/api_config.h:24 - handleConfigGet declaration"
-      - "src/web/api_config.cpp:59 - handleConfigPost definition"
+      - "src/web/api_config.cpp:712 - handleConfigPost definition"
       - "include/api_config_apply.h:68 - configApply(const ConfigParamSource&...)"
     executor_or_core: "configApply"
     missing_metadata: []
@@ -564,7 +564,7 @@ rows:
     evidence:
       - "src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config"
       - "include/api_config.h:24 - handleConfigGet declaration"
-      - "src/web/api_config.cpp:59 - handleConfigPost definition"
+      - "src/web/api_config.cpp:712 - handleConfigPost definition"
       - "include/api_config_apply.h:68 - configApply(const ConfigParamSource&...)"
     executor_or_core: "configApply"
     missing_metadata: []
@@ -584,7 +584,7 @@ rows:
     evidence:
       - "src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config"
       - "include/api_config.h:24 - handleConfigGet declaration"
-      - "src/web/api_config.cpp:59 - handleConfigPost definition"
+      - "src/web/api_config.cpp:712 - handleConfigPost definition"
       - "include/api_config_apply.h:68 - configApply(const ConfigParamSource&...)"
     executor_or_core: "configApply"
     missing_metadata: []
@@ -604,7 +604,7 @@ rows:
     evidence:
       - "src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config"
       - "include/api_config.h:24 - handleConfigGet declaration"
-      - "src/web/api_config.cpp:59 - handleConfigPost definition"
+      - "src/web/api_config.cpp:712 - handleConfigPost definition"
       - "include/api_config_apply.h:68 - configApply(const ConfigParamSource&...)"
     executor_or_core: "configApply"
     missing_metadata: []
@@ -624,7 +624,7 @@ rows:
     evidence:
       - "src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config"
       - "include/api_config.h:24 - handleConfigGet declaration"
-      - "src/web/api_config.cpp:59 - handleConfigPost definition"
+      - "src/web/api_config.cpp:712 - handleConfigPost definition"
       - "include/api_config_apply.h:68 - configApply(const ConfigParamSource&...)"
     executor_or_core: "configApply"
     missing_metadata: []
@@ -644,7 +644,7 @@ rows:
     evidence:
       - "src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config"
       - "include/api_config.h:24 - handleConfigGet declaration"
-      - "src/web/api_config.cpp:59 - handleConfigPost definition"
+      - "src/web/api_config.cpp:712 - handleConfigPost definition"
       - "include/api_config_apply.h:68 - configApply(const ConfigParamSource&...)"
     executor_or_core: "configApply"
     missing_metadata: []
@@ -664,7 +664,7 @@ rows:
     evidence:
       - "src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config"
       - "include/api_config.h:24 - handleConfigGet declaration"
-      - "src/web/api_config.cpp:59 - handleConfigPost definition"
+      - "src/web/api_config.cpp:712 - handleConfigPost definition"
       - "include/api_config_apply.h:68 - configApply(const ConfigParamSource&...)"
     executor_or_core: "configApply"
     missing_metadata: []
@@ -684,7 +684,7 @@ rows:
     evidence:
       - "src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config"
       - "include/api_config.h:24 - handleConfigGet declaration"
-      - "src/web/api_config.cpp:59 - handleConfigPost definition"
+      - "src/web/api_config.cpp:712 - handleConfigPost definition"
       - "include/api_config_apply.h:68 - configApply(const ConfigParamSource&...)"
     executor_or_core: "configApply"
     missing_metadata: []
@@ -704,7 +704,7 @@ rows:
     evidence:
       - "src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config"
       - "include/api_config.h:24 - handleConfigGet declaration"
-      - "src/web/api_config.cpp:59 - handleConfigPost definition"
+      - "src/web/api_config.cpp:712 - handleConfigPost definition"
       - "include/api_config_apply.h:68 - configApply(const ConfigParamSource&...)"
     executor_or_core: "configApply"
     missing_metadata: []
@@ -724,7 +724,7 @@ rows:
     evidence:
       - "src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config"
       - "include/api_config.h:24 - handleConfigGet declaration"
-      - "src/web/api_config.cpp:59 - handleConfigPost definition"
+      - "src/web/api_config.cpp:712 - handleConfigPost definition"
       - "include/api_config_apply.h:68 - configApply(const ConfigParamSource&...)"
     executor_or_core: "configApply"
     missing_metadata: []
@@ -744,7 +744,7 @@ rows:
     evidence:
       - "src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config"
       - "include/api_config.h:24 - handleConfigGet declaration"
-      - "src/web/api_config.cpp:59 - handleConfigPost definition"
+      - "src/web/api_config.cpp:712 - handleConfigPost definition"
       - "include/api_config_apply.h:68 - configApply(const ConfigParamSource&...)"
     executor_or_core: "configApply"
     missing_metadata: []
@@ -764,7 +764,7 @@ rows:
     evidence:
       - "src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config"
       - "include/api_config.h:24 - handleConfigGet declaration"
-      - "src/web/api_config.cpp:59 - handleConfigPost definition"
+      - "src/web/api_config.cpp:712 - handleConfigPost definition"
       - "include/api_config_apply.h:68 - configApply(const ConfigParamSource&...)"
     executor_or_core: "configApply"
     missing_metadata: []
@@ -784,7 +784,7 @@ rows:
     evidence:
       - "src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config"
       - "include/api_config.h:24 - handleConfigGet declaration"
-      - "src/web/api_config.cpp:59 - handleConfigPost definition"
+      - "src/web/api_config.cpp:712 - handleConfigPost definition"
       - "include/api_config_apply.h:68 - configApply(const ConfigParamSource&...)"
     executor_or_core: "configApply"
     missing_metadata: []
@@ -804,7 +804,7 @@ rows:
     evidence:
       - "src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config"
       - "include/api_config.h:24 - handleConfigGet declaration"
-      - "src/web/api_config.cpp:59 - handleConfigPost definition"
+      - "src/web/api_config.cpp:712 - handleConfigPost definition"
       - "include/api_config_apply.h:68 - configApply(const ConfigParamSource&...)"
     executor_or_core: "configApply"
     missing_metadata: []
@@ -824,7 +824,7 @@ rows:
     evidence:
       - "src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config"
       - "include/api_config.h:24 - handleConfigGet declaration"
-      - "src/web/api_config.cpp:59 - handleConfigPost definition"
+      - "src/web/api_config.cpp:712 - handleConfigPost definition"
       - "include/api_config_apply.h:68 - configApply(const ConfigParamSource&...)"
     executor_or_core: "configApply"
     missing_metadata: []
@@ -864,7 +864,7 @@ rows:
     evidence:
       - "src/web/web_seam_routes.cpp:46 - webRegisterRoute /api/events"
       - "include/web_event_stream.h:85 - EventStreamRegistry event dispatch"
-      - "src/dome_link.cpp:89 - requestEventBroadcast when dome establishes"
+      - "src/tasks/dome_link.cpp:89 - requestEventBroadcast when dome establishes"
       - "include/api_events.h:12 - handleEventsGet SSE delivery"
     executor_or_core: "none"
     missing_metadata: []
