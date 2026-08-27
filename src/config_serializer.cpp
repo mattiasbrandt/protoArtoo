@@ -505,10 +505,17 @@ bool configSerializeDome(const DomeConfig& cfg, ConfigWriter& w) {
     ok = w.writeU8("dome_rnd_pmin", cfg.dome_rnd_pause_min) && ok;
     ok = w.writeU8("dome_rnd_pmax", cfg.dome_rnd_pause_max) && ok;
     ok = w.writeU16("dome_rnd_ms", cfg.dome_rnd_move_ms) && ok;
-    if (cfg.dome_wifi_peer_ip[0] != '\0') {
-        ok = w.writeStr("dome_wip", cfg.dome_wifi_peer_ip) && ok;
-    }
-    // Empty peer IP is a valid "not configured" state; omit the key rather than write ""
+    // Written unconditionally, empty included. An empty peer IP is the "not configured"
+    // state, and it must overwrite whatever an earlier save stored: NVS keeps every key a
+    // save does not touch, so skipping the key here would leave the old address to come
+    // back on the next cold boot. Writing "" is a real store, not a no-op:
+    // Preferences::putString only short-circuits on a null pointer, then calls
+    // nvs_set_str (arduino-esp32 3.3.7, libraries/Preferences/src/Preferences.cpp:264-279),
+    // which stores strlen(value) + 1 bytes -- one byte for "" (ESP-IDF 5.5,
+    // components/nvs_flash/src/nvs_handle_simple.cpp:31-37). PrefsWriter::writeStr already
+    // treats putString's 0 return for an empty string as success, and the WiFi serializer
+    // relies on the same path for an empty STA SSID.
+    ok = w.writeStr("dome_wip", cfg.dome_wifi_peer_ip) && ok;
     return ok;
 }
 
