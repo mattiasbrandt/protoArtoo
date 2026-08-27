@@ -29,16 +29,16 @@ FireBeetle 2 assignments transcribed from `include/config.h`'s firebeetle2 block
 This document is the canonical hardware mapping reference for both boards.
 
 **For artoo-esp32 (`PA_BOARD_ARTOO_ESP32`):**
-1. `docs/pin_map.md`
-2. `include/config.h`
+1. `docs/pin_map.md` (authoritative: traced from physical PCB v1.2 board)
+2. `include/config.h` (compile-time implementation must match this document)
 
 **For FireBeetle 2 (`PA_BOARD_FIREBEETLE2`):**
-1. `docs/spec-sheets/firebeetle2-esp32-p4-spec-sheet.md` (hardware truth, allocation tables)
-2. `include/config.h` (firebeetle2 block, compile-time assignments)
-3. `include/firebeetle_required_pins.inc` (production pin inventory, compile-time guards)
-4. `docs/pin_map.md` (this document, human-readable reference)
+1. `docs/spec-sheets/firebeetle2-esp32-p4-spec-sheet.md` (authoritative: hardware constraints, recommended allocation tables from spec and chip datasheet)
+2. `include/config.h` (firebeetle2 block: compile-time implementation of the allocations)
+3. `include/firebeetle_required_pins.inc` (production pin inventory and compile-time guards)
+4. `docs/pin_map.md` (this document: human-readable cross-reference derived from the above sources)
 
-If sources diverge, reconcile them in the same change. A discrepancy is a defect.
+**Why the difference:** Artoo-esp32 was designed before this document existed, so the PCB itself is ground truth. FireBeetle 2 pins were allocated from the spec sheet to minimize conflicts, and this document is derived from that design. In both cases, if sources diverge, reconcile them in the same change. A discrepancy is a defect.
 
 ---
 
@@ -107,9 +107,9 @@ The DFR1237 IO expansion shield routes all UART lanes to dedicated headers. Stan
 
 | Header | Function | TX GPIO | RX GPIO | Baud | Protocol | Notes |
 |--------|----------|---------|---------|------|----------|-------|
-| J9 (UART) | Drive (UART1) | 20 | 21 | 115200 | Gen2.x 8-byte hoverboard frames | Default for this board; ADR 0029 amendment (2026-08-26) |
-| J9 (UART) | Dome link (UART2) | 22 | 23 | 9600 | Marcduino ASCII | Shared with audio RX via arbiter (see below) |
-| J9 (UART) | Audio module | 34 (bit-bang) | 36 | 9600 | DY-SV5W binary | **Discrepancy note:** `include/config.h` comment claims "Dedicated hardware UART TX/RX paths", but audio TX is software bit-bang via `softUartTxByte()` (`src/drivers/audio_dy_sv5w.cpp:32-33`); only RX is HardwareSerial(2). This is a known mismatch between the config comment and actual driver behavior. |
+| J3 | Drive (UART1) | 20 | 21 | 115200 | Gen2.x 8-byte hoverboard frames | Default for this board; ADR 0029 amendment (2026-08-26) |
+| J3 | Dome link (UART2) | 22 | 23 | 9600 | Marcduino ASCII | Shared with audio RX via arbiter (see below) |
+| J3 | Audio module | 34 (bit-bang) | 36 | 9600 | DY-SV5W binary | **Discrepancy note:** `include/config.h` comment claims "Dedicated hardware UART TX/RX paths", but audio TX is software bit-bang via `softUartTxByte()` (`src/drivers/audio_dy_sv5w.cpp:32-33`); only RX is HardwareSerial(2). This is a known mismatch between the config comment and actual driver behavior. |
 
 **Audio and Dome Arbiter:**
 Both audio RX and dome link use HardwareSerial(2) (GPIO22/23 for dome, GPIO36 for audio RX). They share the UART2 peripheral and are arbitrated by `domeUartAcquire()` / `domeUartRelease()` with the `DomeUartOwner` enum (`include/robot_state.h:66-70`, live field at `:194`). When dome control holds the lane, audio module state queries return cached values instead of querying over UART2 (`audio_dy_sv5w.cpp:32-33`).
@@ -205,20 +205,20 @@ All GPIO assignments are transcribed from `include/config.h`'s firebeetle2 block
 
 | GPIO | Header (J*) | Function | Peripheral | Arduino alias | Notes |
 |------|-------------|----------|------------|---------------|-------|
-| 28 | J3 | SBUS receiver #1 (drive) | RMT | SCK | P2 unimpeachable; spec sheet "best clean pin" |
-| 29 | J3 | SBUS receiver #2 (dome) | RMT | MOSI | P2 unimpeachable |
-| 30 | J3 | RC channel #3 | RMT | MISO | P2 unimpeachable |
+| 28 | J2 (SPI) | SBUS receiver #1 (drive) | RMT | SCK | P2 unimpeachable; SPI header |
+| 29 | J2 (SPI) | SBUS receiver #2 (dome) | RMT | MOSI | P2 unimpeachable; SPI header |
+| 30 | J2 (SPI) | RC channel #3 | RMT | MISO | P2 unimpeachable; SPI header |
 | 31 | J3 | RC channel #4 | RMT | SS | P2 unimpeachable; spec sheet "best clean pin in <=36 range" |
 | 32 | J3 | RC channel #5 | GPIO | I3C/SCL | P1 (reassignable, protoArtoo does not use I3C) |
 | 33 | J3 | RC channel #6 | GPIO | I3C/SDA | P1 (reassignable, protoArtoo does not use I3C) |
-| 34 | J5 | Audio module TX | GPIO matrix | — | P3 strapping (JTAG source); software bit-bang via GPIO matrix |
-| 36 | J5 | Audio module RX | HardwareSerial(2) | — | P3 strapping (ROM print); shared UART2 with dome link via arbiter |
-| 49 | J5 | Arm servo #1 (left/top) | LEDC PWM | A5 | LDO caution (VDD_IO_6); ADC2_CHANNEL0 |
-| 50 | J5 | Arm servo #2 (right/bottom) | LEDC PWM | A6 | LDO caution (VDD_IO_6); ADC2_CHANNEL1 |
+| 34 | J3 | Audio module TX | GPIO matrix | — | P3 strapping (JTAG source); software bit-bang via GPIO matrix |
+| 36 | J3 | Audio module RX | HardwareSerial(2) | — | P3 strapping (ROM print); shared UART2 with dome link via arbiter |
+| 49 | J3 | Arm servo #1 (left/top) | LEDC PWM | A5 (not labeled on silkscreen) | LDO caution (VDD_IO_6); ADC2_CHANNEL0 |
+| 50 | J3 | Arm servo #2 (right/bottom) | LEDC PWM | A6 (not labeled on silkscreen) | LDO caution (VDD_IO_6); ADC2_CHANNEL1 |
 | 4 | J3 | Arm servo #3 (aux strip) | LEDC PWM | T0 | P3 JTAG MTMS (post-debug); WS2812B capable |
 | 5 | J3 | Arm servo #4 (aux strip) | LEDC PWM | T1 | P3 JTAG MTDO (post-debug); WS2812B capable |
-| 51 | J5 | Arm servo #5 (aux strip) | LEDC PWM | A4 | LDO caution (VDD_IO_6); WS2812B capable; ADC2_CHANNEL2 |
-| 48 | J5 | Dome rotation ESC | LEDC PWM | — | LDO caution (VDD_IO_5); **unmeasured under load (#191)** |
+| 51 | J3 | Arm servo #5 (aux strip) | LEDC PWM | A7 (not labeled on silkscreen) | LDO caution (VDD_IO_6); WS2812B capable; ADC2_CHANNEL2 |
+| 48 | J3 | Dome rotation ESC | LEDC PWM | — | LDO caution (VDD_IO_5); **unmeasured under load (#191)**; P2 with LDO caution |
 
 6 board bring-up interface lanes:
 
@@ -283,7 +283,7 @@ If you have a different PCB revision and find different assignments, please open
 
 ## Cross-References
 
-- **Spec sheet:** [`docs/spec-sheets/firebeetle2-esp32-p4-spec-sheet.md`](../spec-sheets/firebeetle2-esp32-p4-spec-sheet.md) — hardware truth, chip revision details, allocation tables, P3 strapping notes, and board errata for both FireBeetle 2 boards
+- **Spec sheet:** [`docs/spec-sheets/firebeetle2-esp32-p4-spec-sheet.md`](spec-sheets/firebeetle2-esp32-p4-spec-sheet.md) — hardware truth, chip revision details, allocation tables, P3 strapping notes, and board errata for both FireBeetle 2 boards
 - **Build configuration:** `include/config.h` — compile-time pin assignments (`PA_BOARD_ARTOO_ESP32` and `PA_BOARD_FIREBEETLE2` blocks)
 - **Inventory verification:** `include/firebeetle_required_pins.inc` — production pin roster and compile-time guards (FireBeetle 2 only)
 - **Developer setup:** `tasks/firebeetle2-developer-setup.md` (WIP, untracked) — flashing, build environment, serial monitor, and troubleshooting for FireBeetle 2
