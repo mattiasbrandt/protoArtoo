@@ -942,6 +942,7 @@ rows:
       - "include/config_store.h:212 - snd_sys_boot field in AudioConfig"
       - "src/web/api_config.cpp:712 - handleConfigPost() accepts snd_sys_boot in JSON"
       - "src/tasks/audio_config_map.cpp:31 - slotTracks[AUDIO_SLOT_SYS_BOOT] = cfg.audio.snd_sys_boot"
+      - "include/config_store.h:444 - bool configSaveAudio(Preferences& prefs, const AudioConfig& config)"
     executor_or_core: "configUpdateAudioTracks() -> NVS"
     missing_metadata: []
     notes: "aggregate-field: system track assignment inside sound.config.system-track-assignments"
@@ -985,6 +986,7 @@ rows:
       - "include/config_store.h:228 - snd_cat_gen_lo and category range fields in AudioConfig"
       - "src/web/api_config.cpp:712 - handleConfigPost() accepts category range fields in JSON"
       - "src/tasks/audio_config_map.cpp:45 - categoryRanges populated from config fields"
+      - "include/config_store.h:444 - bool configSaveAudio(Preferences& prefs, const AudioConfig& config)"
     executor_or_core: "audioCategoryRangeApply() -> NVS"
     missing_metadata: []
     notes: "aggregates 12 category lo/hi pairs in config store; see sound.action.set-category-range"
@@ -1025,6 +1027,7 @@ rows:
       - "include/config_store.h:224 - uint16_t snd_moodcat_quiet;"
       - "src/web/api_config.cpp:712 - handleConfigPost() accepts snd_moodcat_* in JSON"
       - "src/tasks/audio_config_map.cpp:43 - moodMasks configuration applied"
+      - "include/config_store.h:444 - bool configSaveAudio(Preferences& prefs, const AudioConfig& config)"
     executor_or_core: "audioMoodMapApply() -> NVS"
     missing_metadata: []
     notes: "mood to category mask mapping (4 uint16 values)"
@@ -1044,6 +1047,7 @@ rows:
       - "include/config_store.h:223 - snd_int_awake field in AudioConfig"
       - "src/web/api_config.cpp:712 - handleConfigPost() accepts snd_int_awake in JSON"
       - "src/tasks/audio_config_map.cpp:42 - intervalAwakeS = cfg.audio.snd_int_awake"
+      - "include/config_store.h:444 - bool configSaveAudio(Preferences& prefs, const AudioConfig& config)"
     executor_or_core: "configApplyAndSave() -> NVS"
     missing_metadata: []
     notes: "mood interval for awake+ mode (milliseconds between idle track plays)"
@@ -1063,6 +1067,7 @@ rows:
       - "include/config_store.h:222 - snd_int_full field in AudioConfig"
       - "src/web/api_config.cpp:712 - handleConfigPost() accepts snd_int_full in JSON"
       - "src/tasks/audio_config_map.cpp:41 - intervalFullS = cfg.audio.snd_int_full"
+      - "include/config_store.h:444 - bool configSaveAudio(Preferences& prefs, const AudioConfig& config)"
     executor_or_core: "configApplyAndSave() -> NVS"
     missing_metadata: []
     notes: "mood interval for full mood (ms between idle track plays)"
@@ -1082,6 +1087,7 @@ rows:
       - "include/config_store.h:221 - snd_int_mid field in AudioConfig"
       - "src/web/api_config.cpp:712 - handleConfigPost() accepts snd_int_mid in JSON"
       - "src/tasks/audio_config_map.cpp:40 - intervalMidS = cfg.audio.snd_int_mid"
+      - "include/config_store.h:444 - bool configSaveAudio(Preferences& prefs, const AudioConfig& config)"
     executor_or_core: "configApplyAndSave() -> NVS"
     missing_metadata: []
     notes: "mood interval for mid mood (ms between idle track plays)"
@@ -1101,6 +1107,7 @@ rows:
       - "include/config_store.h:220 - snd_int_quiet field in AudioConfig"
       - "src/web/api_config.cpp:712 - handleConfigPost() accepts snd_int_quiet in JSON"
       - "src/tasks/audio_config_map.cpp:39 - intervalQuietS = cfg.audio.snd_int_quiet"
+      - "include/config_store.h:444 - bool configSaveAudio(Preferences& prefs, const AudioConfig& config)"
     executor_or_core: "configApplyAndSave() -> NVS"
     missing_metadata: []
     notes: "mood interval for quiet mood (ms between idle track plays)"
@@ -1120,6 +1127,7 @@ rows:
       - "include/config_store.h:219 - uint16_t snd_rand_max;"
       - "src/web/api_config.cpp:712 - handleConfigPost() accepts snd_rand_max in JSON"
       - "src/tasks/audio_config_map.cpp:38 - out->randMax = cfg.audio.snd_rand_max;"
+      - "include/config_store.h:444 - bool configSaveAudio(Preferences& prefs, const AudioConfig& config)"
     executor_or_core: "configUpdateAudioTracks() -> NVS"
     missing_metadata: []
     notes: "upper bound for random pool (track range selection)"
@@ -1139,6 +1147,7 @@ rows:
       - "include/config_store.h:218 - uint16_t snd_rand_min;"
       - "src/web/api_config.cpp:712 - handleConfigPost() accepts snd_rand_min in JSON"
       - "src/tasks/audio_config_map.cpp:37 - out->randMin = cfg.audio.snd_rand_min;"
+      - "include/config_store.h:444 - bool configSaveAudio(Preferences& prefs, const AudioConfig& config)"
     executor_or_core: "configUpdateAudioTracks() -> NVS"
     missing_metadata: []
     notes: "lower bound for random pool (track range selection)"
@@ -1158,6 +1167,7 @@ rows:
       - "include/config_store.h:198 - snd_startup field in AudioConfig"
       - "src/web/api_config.cpp:712 - handleConfigPost() accepts snd_startup in JSON"
       - "src/tasks/audio_config_map.cpp:30 - slotTracks[AUDIO_SLOT_STARTUP] = cfg.audio.snd_startup"
+      - "include/config_store.h:444 - bool configSaveAudio(Preferences& prefs, const AudioConfig& config)"
     executor_or_core: "configUpdateAudioTracks() -> NVS"
     missing_metadata: []
     notes: "system track played on power-up; also available as named track ($B command)"
@@ -1183,6 +1193,7 @@ rows:
       - "include/config_store.h:212 - snd_sys_* fields in AudioConfig (boot/mode/drive/dome)"
       - "src/web/api_config.cpp:712 - handleConfigPost() accepts snd_sys_* fields in JSON"
       - "src/tasks/audio_config_map.cpp:31 - system slot assignments from config"
+      - "include/config_store.h:444 - bool configSaveAudio(Preferences& prefs, const AudioConfig& config)"
     executor_or_core: "configUpdateAudioTracks() -> NVS"
     missing_metadata: []
     notes: "aggregates 6 system tracks: boot, mode_normal, mode_sleep, mode_travel, drv_on, dome_on"
@@ -1246,6 +1257,7 @@ rows:
       - "include/config_store.h:190 - uint8_t audioVolume;"
       - "src/web/api_config.cpp:712 - handleConfigPost() accepts audioVolume in JSON"
       - "src/tasks/audio_task.cpp:630 - tickIn.configVolume = cfg.audio.audioVolume;"
+      - "include/config_store.h:444 - bool configSaveAudio(Preferences& prefs, const AudioConfig& config)"
     executor_or_core: "configApplyAndSave() -> NVS"
     missing_metadata: []
     notes: "default volume (0-30) persisted across reboots"
