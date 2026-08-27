@@ -243,6 +243,14 @@ void embeddedCliProcess(EmbeddedCli *cli);
 bool embeddedCliAddBinding(EmbeddedCli *cli, CliCommandBinding binding);
 
 /**
+ * Reset the input buffer when an overflow is detected.
+ * Clears the partial command without discarding other state.
+ * Should be called by the listener when it detects that input has exceeded the buffer size.
+ * @param cli
+ */
+void embeddedCliResetInput(EmbeddedCli *cli);
+
+/**
  * Print specified string and account for currently entered but not submitted
  * command.
  * Current command is deleted, provided string is printed (with new line) after
