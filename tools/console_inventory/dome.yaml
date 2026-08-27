@@ -39,13 +39,15 @@ rows:
     registry_sources:
       - web_api
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:135 - webRegisterRoute(\"/api/seq\", kDelete, handleSeqDelete)"
+      - "include/api_seq.h:24 - void handleSeqDelete(WebRequest& req)"
+      - "src/web/api_seq.cpp:240 - void handleSeqDelete(WebRequest& req) {"
+      - "src/web/api_seq.cpp:250 - seqStoreDelete(name)"
+    executor_or_core: "seqStoreDelete"
+    missing_metadata: []
+    notes: ""
   - name: dome.action.dome-sequence
     type: action
     registry_api_path: null
@@ -58,13 +60,15 @@ rows:
     registry_sources:
       - sbus
     registry_marcduino_cmd: "DM:<NAME>"
-    anchor_kind: FILL
+    anchor_kind: "rc_internal"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "include/rc_action_types.h:49 - DOME_ACTION_SEQ enum constant"
+      - "src/rc_action_dispatcher.cpp:175 - case DOME_ACTION_SEQ: dispatches to res.domeTxCmd"
+      - "src/rc_dispatcher_helpers.cpp:138 - rcDispatchSingleAction calls sequenceStart(res.domeTxCmd, SRC_SBUS)"
+      - "docs/action-registry.yaml:300 - rc_token dome_seq"
+    executor_or_core: "sequenceStart"
+    missing_metadata: []
+    notes: ""
   - name: dome.action.droid-sequence-beep-cantina
     type: action
     registry_api_path: null
@@ -78,13 +82,15 @@ rows:
       - sbus
       - dome_rx
     registry_marcduino_cmd: ":SE05"
-    anchor_kind: FILL
+    anchor_kind: "rc_internal"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "include/rc_action_types.h:54 - DROID_SEQ_BEEP_CANTINA enum constant"
+      - "src/rc_action_dispatcher.cpp:120 - case DROID_SEQ_BEEP_CANTINA: dispatches body action"
+      - "src/rc_dispatcher_helpers.cpp:138 - sequenceStart(res.domeTxCmd, SRC_SBUS)"
+      - "docs/action-registry.yaml:402 - rc_token droid_seq_beep_cantina"
+    executor_or_core: "sequenceStart"
+    missing_metadata: []
+    notes: ""
   - name: dome.action.droid-sequence-cantina
     type: action
     registry_api_path: null
@@ -98,13 +104,15 @@ rows:
       - sbus
       - dome_rx
     registry_marcduino_cmd: ":SE07"
-    anchor_kind: FILL
+    anchor_kind: "rc_internal"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "include/rc_action_types.h:56 - DROID_SEQ_CANTINA enum constant"
+      - "src/rc_action_dispatcher.cpp:122 - case DROID_SEQ_CANTINA: dispatches body action"
+      - "src/rc_dispatcher_helpers.cpp:138 - sequenceStart(res.domeTxCmd, SRC_SBUS)"
+      - "docs/action-registry.yaml:434 - rc_token droid_seq_cantina"
+    executor_or_core: "sequenceStart"
+    missing_metadata: []
+    notes: ""
   - name: dome.action.droid-sequence-disco
     type: action
     registry_api_path: null
@@ -118,13 +126,15 @@ rows:
       - sbus
       - dome_rx
     registry_marcduino_cmd: ":SE09"
-    anchor_kind: FILL
+    anchor_kind: "rc_internal"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "include/rc_action_types.h:58 - DROID_SEQ_DISCO enum constant"
+      - "src/rc_action_dispatcher.cpp:124 - case DROID_SEQ_DISCO: dispatches body action"
+      - "src/rc_dispatcher_helpers.cpp:138 - sequenceStart(res.domeTxCmd, SRC_SBUS)"
+      - "docs/action-registry.yaml:466 - rc_token droid_seq_disco"
+    executor_or_core: "sequenceStart"
+    missing_metadata: []
+    notes: ""
   - name: dome.action.droid-sequence-faint
     type: action
     registry_api_path: null
@@ -138,13 +148,15 @@ rows:
       - sbus
       - dome_rx
     registry_marcduino_cmd: ":SE06"
-    anchor_kind: FILL
+    anchor_kind: "rc_internal"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "include/rc_action_types.h:55 - DROID_SEQ_FAINT enum constant"
+      - "src/rc_action_dispatcher.cpp:121 - case DROID_SEQ_FAINT: dispatches body action"
+      - "src/rc_dispatcher_helpers.cpp:138 - sequenceStart(res.domeTxCmd, SRC_SBUS)"
+      - "docs/action-registry.yaml:418 - rc_token droid_seq_faint"
+    executor_or_core: "sequenceStart"
+    missing_metadata: []
+    notes: ""
   - name: dome.action.droid-sequence-fast-wave
     type: action
     registry_api_path: null
@@ -158,13 +170,15 @@ rows:
       - sbus
       - dome_rx
     registry_marcduino_cmd: ":SE03"
-    anchor_kind: FILL
+    anchor_kind: "rc_internal"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "include/rc_action_types.h:52 - DROID_SEQ_FAST_WAVE enum constant"
+      - "src/rc_action_dispatcher.cpp:118 - case DROID_SEQ_FAST_WAVE: dispatches body action"
+      - "src/rc_dispatcher_helpers.cpp:138 - sequenceStart(res.domeTxCmd, SRC_SBUS)"
+      - "docs/action-registry.yaml:370 - rc_token droid_seq_fast_wave"
+    executor_or_core: "sequenceStart"
+    missing_metadata: []
+    notes: ""
   - name: dome.action.droid-sequence-leia
     type: action
     registry_api_path: null
@@ -178,13 +192,15 @@ rows:
       - sbus
       - dome_rx
     registry_marcduino_cmd: ":SE08"
-    anchor_kind: FILL
+    anchor_kind: "rc_internal"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "include/rc_action_types.h:57 - DROID_SEQ_LEIA enum constant"
+      - "src/rc_action_dispatcher.cpp:123 - case DROID_SEQ_LEIA: dispatches body action"
+      - "src/rc_dispatcher_helpers.cpp:138 - sequenceStart(res.domeTxCmd, SRC_SBUS)"
+      - "docs/action-registry.yaml:450 - rc_token droid_seq_leia"
+    executor_or_core: "sequenceStart"
+    missing_metadata: []
+    notes: ""
   - name: dome.action.droid-sequence-open-wave
     type: action
     registry_api_path: null
@@ -198,13 +214,15 @@ rows:
       - sbus
       - dome_rx
     registry_marcduino_cmd: ":SE04"
-    anchor_kind: FILL
+    anchor_kind: "rc_internal"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "include/rc_action_types.h:53 - DROID_SEQ_OPEN_WAVE enum constant"
+      - "src/rc_action_dispatcher.cpp:119 - case DROID_SEQ_OPEN_WAVE: dispatches body action"
+      - "src/rc_dispatcher_helpers.cpp:138 - sequenceStart(res.domeTxCmd, SRC_SBUS)"
+      - "docs/action-registry.yaml:386 - rc_token droid_seq_open_wave"
+    executor_or_core: "sequenceStart"
+    missing_metadata: []
+    notes: ""
   - name: dome.action.droid-sequence-scream
     type: action
     registry_api_path: null
@@ -218,13 +236,15 @@ rows:
       - sbus
       - dome_rx
     registry_marcduino_cmd: ":SE01"
-    anchor_kind: FILL
+    anchor_kind: "rc_internal"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "include/rc_action_types.h:50 - DROID_SEQ_SCREAM enum constant"
+      - "src/rc_action_dispatcher.cpp:116 - case DROID_SEQ_SCREAM: dispatches body action"
+      - "src/rc_dispatcher_helpers.cpp:138 - sequenceStart(res.domeTxCmd, SRC_SBUS)"
+      - "docs/action-registry.yaml:338 - rc_token droid_seq_scream"
+    executor_or_core: "sequenceStart"
+    missing_metadata: []
+    notes: ""
   - name: dome.action.droid-sequence-screams
     type: action
     registry_api_path: null
@@ -238,13 +258,15 @@ rows:
       - sbus
       - dome_rx
     registry_marcduino_cmd: ":SE15"
-    anchor_kind: FILL
+    anchor_kind: "rc_internal"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "include/rc_action_types.h:59 - DROID_SEQ_SCREAMS enum constant"
+      - "src/rc_action_dispatcher.cpp:125 - case DROID_SEQ_SCREAMS: dispatches body action"
+      - "src/rc_dispatcher_helpers.cpp:138 - sequenceStart(res.domeTxCmd, SRC_SBUS)"
+      - "docs/action-registry.yaml:482 - rc_token droid_seq_screams"
+    executor_or_core: "sequenceStart"
+    missing_metadata: []
+    notes: ""
   - name: dome.action.droid-sequence-wave
     type: action
     registry_api_path: null
@@ -258,13 +280,15 @@ rows:
       - sbus
       - dome_rx
     registry_marcduino_cmd: ":SE02"
-    anchor_kind: FILL
+    anchor_kind: "rc_internal"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "include/rc_action_types.h:51 - DROID_SEQ_WAVE enum constant"
+      - "src/rc_action_dispatcher.cpp:117 - case DROID_SEQ_WAVE: dispatches body action"
+      - "src/rc_dispatcher_helpers.cpp:138 - sequenceStart(res.domeTxCmd, SRC_SBUS)"
+      - "docs/action-registry.yaml:354 - rc_token droid_seq_wave"
+    executor_or_core: "sequenceStart"
+    missing_metadata: []
+    notes: ""
   - name: dome.action.droid-sequence-wiggle
     type: action
     registry_api_path: null
@@ -278,13 +302,15 @@ rows:
       - sbus
       - dome_rx
     registry_marcduino_cmd: ":SE16"
-    anchor_kind: FILL
+    anchor_kind: "rc_internal"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "include/rc_action_types.h:60 - DROID_SEQ_WIGGLE enum constant"
+      - "src/rc_action_dispatcher.cpp:126 - case DROID_SEQ_WIGGLE: dispatches body action"
+      - "src/rc_dispatcher_helpers.cpp:138 - sequenceStart(res.domeTxCmd, SRC_SBUS)"
+      - "docs/action-registry.yaml:498 - rc_token droid_seq_wiggle"
+    executor_or_core: "sequenceStart"
+    missing_metadata: []
+    notes: ""
   - name: dome.action.marcduino-command
     type: action
     registry_api_path: null
@@ -297,13 +323,15 @@ rows:
     registry_sources:
       - sbus
     registry_marcduino_cmd: varies
-    anchor_kind: FILL
+    anchor_kind: "rc_internal"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "include/rc_action_types.h:34 - DOME_ACTION_MARCDUINO_CMD enum constant"
+      - "src/rc_action_dispatcher.cpp:79 - case DOME_ACTION_MARCDUINO_CMD: builds res.marcduinoCmd"
+      - "src/rc_dispatcher_helpers.cpp:147 - parseMarcduinoCommand(res.marcduinoCmd)"
+      - "docs/action-registry.yaml:299 - rc_token cmd"
+    executor_or_core: "parseMarcduinoCommand"
+    missing_metadata: []
+    notes: ""
   - name: dome.action.marcduino-sequence
     type: action
     registry_api_path: null
@@ -316,13 +344,15 @@ rows:
     registry_sources:
       - sbus
     registry_marcduino_cmd: "M<nn>"
-    anchor_kind: FILL
+    anchor_kind: "rc_internal"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "include/rc_action_types.h:33 - DOME_ACTION_MARCDUINO_SEQ enum constant"
+      - "src/rc_action_dispatcher.cpp:72 - case DOME_ACTION_MARCDUINO_SEQ: builds res.marcduinoCmd"
+      - "src/rc_dispatcher_helpers.cpp:147 - parseMarcduinoCommand(res.marcduinoCmd)"
+      - "docs/action-registry.yaml:283 - rc_token seq"
+    executor_or_core: "parseMarcduinoCommand"
+    missing_metadata: []
+    notes: ""
   - name: dome.action.move
     type: action
     registry_api_path: /api/dome
@@ -339,13 +369,15 @@ rows:
     registry_sources:
       - web_api
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:86 - webRegisterRoute(\"/api/dome\", kPost, handleDomeSpeedPost)"
+      - "include/api_drive.h:33 - void handleDomeSpeedPost(WebRequest& req)"
+      - "src/web/api_drive.cpp:381 - void handleDomeSpeedPost(WebRequest& req) {"
+      - "src/web/api_drive.cpp:412 - xQueueSend(domeCmdQueue, &cmd, 0)"
+    executor_or_core: "domeCmdQueue"
+    missing_metadata: []
+    notes: ""
   - name: dome.action.save-sequence
     type: action
     registry_api_path: /api/seq
@@ -357,13 +389,15 @@ rows:
     registry_sources:
       - web_api
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:134 - webRegisterRoute(\"/api/seq\", kPost, handleSeqPost)"
+      - "include/api_seq.h:23 - void handleSeqPost(WebRequest& req)"
+      - "src/web/api_seq.cpp:220 - void handleSeqPost(WebRequest& req) {"
+      - "src/web/api_seq.cpp:230 - seqStoreSave(body, len)"
+    executor_or_core: "seqStoreSave"
+    missing_metadata: []
+    notes: ""
   - name: dome.action.send-command
     type: action
     registry_api_path: /api/manual-command
@@ -375,13 +409,15 @@ rows:
     registry_sources:
       - web_api
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:87 - webRegisterRoute(\"/api/dome/cmd\", kPost, handleDomeCmdPost)"
+      - "include/api_drive.h:32 - void handleDomeCmdPost(WebRequest& req)"
+      - "src/web/api_drive.cpp:355 - void handleDomeCmdPost(WebRequest& req) {"
+      - "src/web/api_drive.cpp:369 - sequenceStart(raw, SRC_WEB_API)"
+    executor_or_core: "sequenceStart"
+    missing_metadata: []
+    notes: ""
   - name: dome.action.sequence-stop
     type: action
     registry_api_path: /api/seq/stop
@@ -393,13 +429,15 @@ rows:
     registry_sources:
       - web_api
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:131 - webRegisterRoute(\"/api/seq/stop\", kPost, handleSeqStopPost)"
+      - "include/api_seq.h:26 - void handleSeqStopPost(WebRequest& req)"
+      - "src/web/api_seq.cpp:348 - void handleSeqStopPost(WebRequest& req) {"
+      - "src/web/api_seq.cpp:350 - robotState.seqStopRequested = true"
+    executor_or_core: "robotState.seqStopRequested"
+    missing_metadata: []
+    notes: ""
   - name: dome.action.set-speed
     type: action
     registry_api_path: null
@@ -413,13 +451,15 @@ rows:
       - sbus
       - pwm
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "rc_internal"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "include/rc_action_types.h:26 - DOME_ACTION_SPEED analog enum"
+      - "src/tasks/rc_input.cpp:201 - rcDispatchDome(output.domeRawFiltered, mapping, output.domeFiltered)"
+      - "include/rc_dispatcher_helpers.h:30 - void rcDispatchDome(int domeRawFiltered, ...)"
+      - "src/rc_dispatcher_helpers.cpp:60 - xQueueSend(domeCmdQueue, &domeCmd, 0)"
+    executor_or_core: "domeCmdQueue"
+    missing_metadata: []
+    notes: ""
   - name: dome.action.test-sequence
     type: action
     registry_api_path: /api/seq/test
@@ -435,13 +475,15 @@ rows:
     registry_sources:
       - web_api
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:130 - webRegisterRoute(\"/api/seq/test\", kPost, handleSeqTestPost)"
+      - "include/api_seq.h:25 - void handleSeqTestPost(WebRequest& req)"
+      - "src/web/api_seq.cpp:293 - void handleSeqTestPost(WebRequest& req) {"
+      - "src/web/api_seq.cpp:317 - sequenceStart(name, SRC_WEB_API)"
+    executor_or_core: "sequenceStart"
+    missing_metadata: []
+    notes: ""
   - name: dome.api.get-layout
     type: action
     registry_api_path: /api/dome/layout
@@ -453,13 +495,15 @@ rows:
     registry_sources:
       - web_api
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:88 - webRegisterRoute(\"/api/dome/layout\", kGet, handleDomeLayoutGet)"
+      - "include/api_dome.h:16 - void handleDomeLayoutGet(WebRequest& req)"
+      - "src/web/api_dome.cpp:50 - void handleDomeLayoutGet(WebRequest& req) {"
+      - "src/web/api_dome.cpp:89 - req.sendChunked(..., fillDomeLayoutResponse)"
+    executor_or_core: "domeLayoutCacheReadChunk"
+    missing_metadata: []
+    notes: ""
   - name: dome.api.get-sequence
     type: action
     registry_api_path: /api/seq
@@ -475,13 +519,15 @@ rows:
     registry_sources:
       - web_api
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:133 - webRegisterRoute(\"/api/seq\", kGet, handleSeqGet)"
+      - "include/api_seq.h:22 - void handleSeqGet(WebRequest& req)"
+      - "src/web/api_seq.cpp:192 - void handleSeqGet(WebRequest& req) {"
+      - "src/web/api_seq.cpp:214 - req.sendChunked(..., seqFileFiller)"
+    executor_or_core: "seqStoreReadFileSlice"
+    missing_metadata: []
+    notes: ""
   - name: dome.api.get-sequence-last-run
     type: action
     registry_api_path: /api/seq/last-run
@@ -493,13 +539,15 @@ rows:
     registry_sources:
       - web_api
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:132 - webRegisterRoute(\"/api/seq/last-run\", kGet, handleSeqLastRunGet)"
+      - "include/api_seq.h:27 - void handleSeqLastRunGet(WebRequest& req)"
+      - "src/web/api_seq.cpp:330 - void handleSeqLastRunGet(WebRequest& req) {"
+      - "src/web/api_seq.cpp:335 - populateSeqLastRunJson(doc, ev, have)"
+    executor_or_core: "seqEvidenceSnapshot"
+    missing_metadata: []
+    notes: ""
   - name: dome.api.list-builtin-sequences
     type: action
     registry_api_path: /api/seq/builtins
@@ -515,13 +563,15 @@ rows:
     registry_sources:
       - web_api
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:129 - webRegisterRoute(\"/api/seq/builtins\", kGet, handleSeqBuiltinsGet)"
+      - "include/api_seq.h:21 - void handleSeqBuiltinsGet(WebRequest& req)"
+      - "src/web/api_seq.cpp:159 - void handleSeqBuiltinsGet(WebRequest& req) {"
+      - "src/web/api_seq.cpp:178 - sequenceCatalogAt(i)"
+    executor_or_core: "sequenceCatalogAt"
+    missing_metadata: []
+    notes: ""
   - name: dome.api.list-sequences
     type: action
     registry_api_path: /api/seq/list
@@ -533,13 +583,15 @@ rows:
     registry_sources:
       - web_api
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:128 - webRegisterRoute(\"/api/seq/list\", kGet, handleSeqListGet)"
+      - "include/api_seq.h:20 - void handleSeqListGet(WebRequest& req)"
+      - "src/web/api_seq.cpp:131 - void handleSeqListGet(WebRequest& req) {"
+      - "src/web/api_seq.cpp:134 - seqStoreIndexAt(i)"
+    executor_or_core: "seqStoreIndexAt"
+    missing_metadata: []
+    notes: ""
   - name: dome.event.cue-alarm
     type: event
     registry_api_path: null
@@ -551,13 +603,15 @@ rows:
     registry_sources:
       - dome_rx
     registry_marcduino_cmd: "BD:ALARM"
-    anchor_kind: FILL
+    anchor_kind: "event"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/drivers/dome_cue_handler.cpp:22 - void handleDomeCue(const char* cue)"
+      - "src/drivers/dome_cue_handler.cpp:31 - strcmp(cue, \"ALARM\") == 0"
+      - "src/drivers/dome_cue_handler.cpp:32 - audioQueuePlayCategory(AUDIO_CATEGORY_ALERT, ...)"
+      - "include/audio_task.h:115 - bool audioQueuePlayCategory(...)"
+    executor_or_core: "audioQueuePlayCategory"
+    missing_metadata: []
+    notes: ""
   - name: dome.event.cue-cantina
     type: event
     registry_api_path: null
@@ -569,13 +623,15 @@ rows:
     registry_sources:
       - dome_rx
     registry_marcduino_cmd: "BD:CANTINA"
-    anchor_kind: FILL
+    anchor_kind: "event"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/drivers/dome_cue_handler.cpp:22 - void handleDomeCue(const char* cue)"
+      - "src/drivers/dome_cue_handler.cpp:39 - strcmp(cue, \"CANTINA\") == 0"
+      - "src/drivers/dome_cue_handler.cpp:40 - audioQueuePlaySlot(AUDIO_SLOT_NAMED_CANTINA_L, ...)"
+      - "include/audio_task.h:112 - bool audioQueuePlaySlot(AudioPlaybackSlot slot, ...)"
+    executor_or_core: "audioQueuePlaySlot"
+    missing_metadata: []
+    notes: ""
   - name: dome.event.cue-happy
     type: event
     registry_api_path: null
@@ -587,13 +643,15 @@ rows:
     registry_sources:
       - dome_rx
     registry_marcduino_cmd: "BD:HAPPY"
-    anchor_kind: FILL
+    anchor_kind: "event"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/drivers/dome_cue_handler.cpp:22 - void handleDomeCue(const char* cue)"
+      - "src/drivers/dome_cue_handler.cpp:26 - strcmp(cue, \"HAPPY\") == 0"
+      - "src/drivers/dome_cue_handler.cpp:27 - audioQueuePlayCategory(AUDIO_CATEGORY_HAPPY, ...)"
+      - "include/audio_task.h:115 - bool audioQueuePlayCategory(...)"
+    executor_or_core: "audioQueuePlayCategory"
+    missing_metadata: []
+    notes: ""
   - name: dome.event.cue-heart
     type: event
     registry_api_path: null
@@ -605,13 +663,15 @@ rows:
     registry_sources:
       - dome_rx
     registry_marcduino_cmd: "BD:HEART"
-    anchor_kind: FILL
+    anchor_kind: "event"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/drivers/dome_cue_handler.cpp:22 - void handleDomeCue(const char* cue)"
+      - "src/drivers/dome_cue_handler.cpp:41 - strcmp(cue, \"HEART\") == 0"
+      - "src/drivers/dome_cue_handler.cpp:42 - audioQueuePlayCategory(AUDIO_CATEGORY_SENTIMENTAL, ...)"
+      - "include/audio_task.h:115 - bool audioQueuePlayCategory(...)"
+    executor_or_core: "audioQueuePlayCategory"
+    missing_metadata: []
+    notes: ""
   - name: dome.event.cue-hello
     type: event
     registry_api_path: null
@@ -623,13 +683,15 @@ rows:
     registry_sources:
       - dome_rx
     registry_marcduino_cmd: "BD:HELLO"
-    anchor_kind: FILL
+    anchor_kind: "event"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/drivers/dome_cue_handler.cpp:22 - void handleDomeCue(const char* cue)"
+      - "src/drivers/dome_cue_handler.cpp:43 - strcmp(cue, \"HELLO\") == 0"
+      - "src/drivers/dome_cue_handler.cpp:44 - audioQueuePlayCategory(AUDIO_CATEGORY_GENERAL, ...)"
+      - "include/audio_task.h:115 - bool audioQueuePlayCategory(...)"
+    executor_or_core: "audioQueuePlayCategory"
+    missing_metadata: []
+    notes: ""
   - name: dome.event.cue-leia
     type: event
     registry_api_path: null
@@ -641,13 +703,15 @@ rows:
     registry_sources:
       - dome_rx
     registry_marcduino_cmd: "BD:LEIA"
-    anchor_kind: FILL
+    anchor_kind: "event"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/drivers/dome_cue_handler.cpp:22 - void handleDomeCue(const char* cue)"
+      - "src/drivers/dome_cue_handler.cpp:37 - strcmp(cue, \"LEIA\") == 0"
+      - "src/drivers/dome_cue_handler.cpp:38 - audioQueuePlaySlot(AUDIO_SLOT_NAMED_LEIA, ...)"
+      - "include/audio_task.h:112 - bool audioQueuePlaySlot(AudioPlaybackSlot slot, ...)"
+    executor_or_core: "audioQueuePlaySlot"
+    missing_metadata: []
+    notes: ""
   - name: dome.event.cue-overload
     type: event
     registry_api_path: null
@@ -659,13 +723,15 @@ rows:
     registry_sources:
       - dome_rx
     registry_marcduino_cmd: "BD:OVERLOAD"
-    anchor_kind: FILL
+    anchor_kind: "event"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/drivers/dome_cue_handler.cpp:22 - void handleDomeCue(const char* cue)"
+      - "src/drivers/dome_cue_handler.cpp:29 - strcmp(cue, \"OVERLOAD\") == 0"
+      - "src/drivers/dome_cue_handler.cpp:30 - audioQueuePlayCategory(AUDIO_CATEGORY_SAD, ...)"
+      - "include/audio_task.h:115 - bool audioQueuePlayCategory(...)"
+    executor_or_core: "audioQueuePlayCategory"
+    missing_metadata: []
+    notes: ""
   - name: dome.event.cue-reset
     type: event
     registry_api_path: null
@@ -677,13 +743,15 @@ rows:
     registry_sources:
       - dome_rx
     registry_marcduino_cmd: "BD:RESET"
-    anchor_kind: FILL
+    anchor_kind: "event"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/drivers/dome_cue_handler.cpp:22 - void handleDomeCue(const char* cue)"
+      - "src/drivers/dome_cue_handler.cpp:45 - strcmp(cue, \"RESET\") == 0"
+      - "src/drivers/dome_cue_handler.cpp:46 - audioQueueTrackStop(SRC_INTERNAL)"
+      - "include/audio_task.h:125 - bool audioQueueTrackStop(CommandSource src)"
+    executor_or_core: "audioQueueTrackStop"
+    missing_metadata: []
+    notes: ""
   - name: dome.event.cue-rockmarch
     type: event
     registry_api_path: null
@@ -695,13 +763,15 @@ rows:
     registry_sources:
       - dome_rx
     registry_marcduino_cmd: "BD:ROCKMARCH"
-    anchor_kind: FILL
+    anchor_kind: "event"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/drivers/dome_cue_handler.cpp:22 - void handleDomeCue(const char* cue)"
+      - "src/drivers/dome_cue_handler.cpp:35 - strcmp(cue, \"ROCKMARCH\") == 0"
+      - "src/drivers/dome_cue_handler.cpp:36 - audioQueuePlaySlot(AUDIO_SLOT_NAMED_IMP_MARCH, ...)"
+      - "include/audio_task.h:112 - bool audioQueuePlaySlot(AudioPlaybackSlot slot, ...)"
+    executor_or_core: "audioQueuePlaySlot"
+    missing_metadata: []
+    notes: ""
   - name: dome.event.cue-scream
     type: event
     registry_api_path: null
@@ -713,13 +783,15 @@ rows:
     registry_sources:
       - dome_rx
     registry_marcduino_cmd: "BD:SCREAM"
-    anchor_kind: FILL
+    anchor_kind: "event"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/drivers/dome_cue_handler.cpp:22 - void handleDomeCue(const char* cue)"
+      - "src/drivers/dome_cue_handler.cpp:24 - strcmp(cue, \"SCREAM\") == 0"
+      - "src/drivers/dome_cue_handler.cpp:25 - audioQueuePlayCategory(AUDIO_CATEGORY_SCREAM, ...)"
+      - "include/audio_task.h:115 - bool audioQueuePlayCategory(...)"
+    executor_or_core: "audioQueuePlayCategory"
+    missing_metadata: []
+    notes: ""
   - name: dome.event.cue-vader
     type: event
     registry_api_path: null
@@ -731,13 +803,15 @@ rows:
     registry_sources:
       - dome_rx
     registry_marcduino_cmd: "BD:VADER"
-    anchor_kind: FILL
+    anchor_kind: "event"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/drivers/dome_cue_handler.cpp:22 - void handleDomeCue(const char* cue)"
+      - "src/drivers/dome_cue_handler.cpp:33 - strcmp(cue, \"VADER\") == 0"
+      - "src/drivers/dome_cue_handler.cpp:34 - audioQueuePlaySlot(AUDIO_SLOT_NAMED_IMP_MARCH, ...)"
+      - "include/audio_task.h:112 - bool audioQueuePlaySlot(AudioPlaybackSlot slot, ...)"
+    executor_or_core: "audioQueuePlaySlot"
+    missing_metadata: []
+    notes: ""
   - name: dome.seq.alarm
     type: action
     registry_api_path: /api/dome/cmd
@@ -750,13 +824,15 @@ rows:
       - sbus
       - web_api
     registry_marcduino_cmd: "DM:ALARM"
-    anchor_kind: FILL
+    anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:87 - webRegisterRoute(\"/api/dome/cmd\", kPost, handleDomeCmdPost)"
+      - "include/api_drive.h:32 - void handleDomeCmdPost(WebRequest& req)"
+      - "src/web/api_drive.cpp:355 - void handleDomeCmdPost(WebRequest& req) {"
+      - "src/web/api_drive.cpp:369 - sequenceStart(raw, SRC_WEB_API) for DM:ALARM"
+    executor_or_core: "sequenceStart"
+    missing_metadata: []
+    notes: "Built-in Marcduino sequence"
   - name: dome.seq.bloom
     type: action
     registry_api_path: /api/dome/cmd
@@ -769,13 +845,15 @@ rows:
       - sbus
       - web_api
     registry_marcduino_cmd: "DM:BLOOM"
-    anchor_kind: FILL
+    anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:87 - webRegisterRoute(\"/api/dome/cmd\", kPost, handleDomeCmdPost)"
+      - "include/api_drive.h:32 - void handleDomeCmdPost(WebRequest& req)"
+      - "src/web/api_drive.cpp:355 - void handleDomeCmdPost(WebRequest& req) {"
+      - "src/web/api_drive.cpp:369 - sequenceStart(raw, SRC_WEB_API) for DM:BLOOM"
+    executor_or_core: "sequenceStart"
+    missing_metadata: []
+    notes: "Built-in Marcduino sequence"
   - name: dome.seq.cantina
     type: action
     registry_api_path: /api/dome/cmd
@@ -788,13 +866,15 @@ rows:
       - sbus
       - web_api
     registry_marcduino_cmd: "DM:CANTINA"
-    anchor_kind: FILL
+    anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:87 - webRegisterRoute(\"/api/dome/cmd\", kPost, handleDomeCmdPost)"
+      - "include/api_drive.h:32 - void handleDomeCmdPost(WebRequest& req)"
+      - "src/web/api_drive.cpp:355 - void handleDomeCmdPost(WebRequest& req) {"
+      - "src/web/api_drive.cpp:369 - sequenceStart(raw, SRC_WEB_API) for DM:CANTINA"
+    executor_or_core: "sequenceStart"
+    missing_metadata: []
+    notes: "Built-in Marcduino sequence"
   - name: dome.seq.flutter
     type: action
     registry_api_path: /api/dome/cmd
@@ -807,13 +887,15 @@ rows:
       - sbus
       - web_api
     registry_marcduino_cmd: "DM:FLUTTER"
-    anchor_kind: FILL
+    anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:87 - webRegisterRoute(\"/api/dome/cmd\", kPost, handleDomeCmdPost)"
+      - "include/api_drive.h:32 - void handleDomeCmdPost(WebRequest& req)"
+      - "src/web/api_drive.cpp:355 - void handleDomeCmdPost(WebRequest& req) {"
+      - "src/web/api_drive.cpp:369 - sequenceStart(raw, SRC_WEB_API) for DM:FLUTTER"
+    executor_or_core: "sequenceStart"
+    missing_metadata: []
+    notes: "Built-in Marcduino sequence"
   - name: dome.seq.heart
     type: action
     registry_api_path: /api/dome/cmd
@@ -826,13 +908,15 @@ rows:
       - sbus
       - web_api
     registry_marcduino_cmd: "DM:HEART"
-    anchor_kind: FILL
+    anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:87 - webRegisterRoute(\"/api/dome/cmd\", kPost, handleDomeCmdPost)"
+      - "include/api_drive.h:32 - void handleDomeCmdPost(WebRequest& req)"
+      - "src/web/api_drive.cpp:355 - void handleDomeCmdPost(WebRequest& req) {"
+      - "src/web/api_drive.cpp:369 - sequenceStart(raw, SRC_WEB_API) for DM:HEART"
+    executor_or_core: "sequenceStart"
+    missing_metadata: []
+    notes: "Built-in Marcduino sequence"
   - name: dome.seq.hello
     type: action
     registry_api_path: /api/dome/cmd
@@ -845,13 +929,15 @@ rows:
       - sbus
       - web_api
     registry_marcduino_cmd: "DM:HELLO"
-    anchor_kind: FILL
+    anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:87 - webRegisterRoute(\"/api/dome/cmd\", kPost, handleDomeCmdPost)"
+      - "include/api_drive.h:32 - void handleDomeCmdPost(WebRequest& req)"
+      - "src/web/api_drive.cpp:355 - void handleDomeCmdPost(WebRequest& req) {"
+      - "src/web/api_drive.cpp:369 - sequenceStart(raw, SRC_WEB_API) for DM:HELLO"
+    executor_or_core: "sequenceStart"
+    missing_metadata: []
+    notes: "Built-in Marcduino sequence"
   - name: dome.seq.leia
     type: action
     registry_api_path: /api/dome/cmd
@@ -864,13 +950,15 @@ rows:
       - sbus
       - web_api
     registry_marcduino_cmd: "DM:LEIA"
-    anchor_kind: FILL
+    anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:87 - webRegisterRoute(\"/api/dome/cmd\", kPost, handleDomeCmdPost)"
+      - "include/api_drive.h:32 - void handleDomeCmdPost(WebRequest& req)"
+      - "src/web/api_drive.cpp:355 - void handleDomeCmdPost(WebRequest& req) {"
+      - "src/web/api_drive.cpp:369 - sequenceStart(raw, SRC_WEB_API) for DM:LEIA"
+    executor_or_core: "sequenceStart"
+    missing_metadata: []
+    notes: "Built-in Marcduino sequence"
   - name: dome.seq.low
     type: action
     registry_api_path: /api/dome/cmd
@@ -883,13 +971,15 @@ rows:
       - sbus
       - web_api
     registry_marcduino_cmd: "DM:LOW"
-    anchor_kind: FILL
+    anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:87 - webRegisterRoute(\"/api/dome/cmd\", kPost, handleDomeCmdPost)"
+      - "include/api_drive.h:32 - void handleDomeCmdPost(WebRequest& req)"
+      - "src/web/api_drive.cpp:355 - void handleDomeCmdPost(WebRequest& req) {"
+      - "src/web/api_drive.cpp:369 - sequenceStart(raw, SRC_WEB_API) for DM:LOW"
+    executor_or_core: "sequenceStart"
+    missing_metadata: []
+    notes: "Built-in Marcduino sequence"
   - name: dome.seq.nod
     type: action
     registry_api_path: /api/dome/cmd
@@ -902,13 +992,15 @@ rows:
       - sbus
       - web_api
     registry_marcduino_cmd: "DM:NOD"
-    anchor_kind: FILL
+    anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:87 - webRegisterRoute(\"/api/dome/cmd\", kPost, handleDomeCmdPost)"
+      - "include/api_drive.h:32 - void handleDomeCmdPost(WebRequest& req)"
+      - "src/web/api_drive.cpp:355 - void handleDomeCmdPost(WebRequest& req) {"
+      - "src/web/api_drive.cpp:369 - sequenceStart(raw, SRC_WEB_API) for DM:NOD"
+    executor_or_core: "sequenceStart"
+    missing_metadata: []
+    notes: "Built-in Marcduino sequence"
   - name: dome.seq.openall
     type: action
     registry_api_path: /api/dome/cmd
@@ -921,13 +1013,15 @@ rows:
       - sbus
       - web_api
     registry_marcduino_cmd: "DM:OPENALL"
-    anchor_kind: FILL
+    anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:87 - webRegisterRoute(\"/api/dome/cmd\", kPost, handleDomeCmdPost)"
+      - "include/api_drive.h:32 - void handleDomeCmdPost(WebRequest& req)"
+      - "src/web/api_drive.cpp:355 - void handleDomeCmdPost(WebRequest& req) {"
+      - "src/web/api_drive.cpp:369 - sequenceStart(raw, SRC_WEB_API) for DM:OPENALL"
+    executor_or_core: "sequenceStart"
+    missing_metadata: []
+    notes: "Built-in Marcduino sequence"
   - name: dome.seq.overload
     type: action
     registry_api_path: /api/dome/cmd
@@ -940,13 +1034,15 @@ rows:
       - sbus
       - web_api
     registry_marcduino_cmd: "DM:OVERLOAD"
-    anchor_kind: FILL
+    anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:87 - webRegisterRoute(\"/api/dome/cmd\", kPost, handleDomeCmdPost)"
+      - "include/api_drive.h:32 - void handleDomeCmdPost(WebRequest& req)"
+      - "src/web/api_drive.cpp:355 - void handleDomeCmdPost(WebRequest& req) {"
+      - "src/web/api_drive.cpp:369 - sequenceStart(raw, SRC_WEB_API) for DM:OVERLOAD"
+    executor_or_core: "sequenceStart"
+    missing_metadata: []
+    notes: "Built-in Marcduino sequence"
   - name: dome.seq.pies
     type: action
     registry_api_path: /api/dome/cmd
@@ -959,13 +1055,15 @@ rows:
       - sbus
       - web_api
     registry_marcduino_cmd: "DM:PIES"
-    anchor_kind: FILL
+    anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:87 - webRegisterRoute(\"/api/dome/cmd\", kPost, handleDomeCmdPost)"
+      - "include/api_drive.h:32 - void handleDomeCmdPost(WebRequest& req)"
+      - "src/web/api_drive.cpp:355 - void handleDomeCmdPost(WebRequest& req) {"
+      - "src/web/api_drive.cpp:369 - sequenceStart(raw, SRC_WEB_API) for DM:PIES"
+    executor_or_core: "sequenceStart"
+    missing_metadata: []
+    notes: "Built-in Marcduino sequence"
   - name: dome.seq.reset
     type: action
     registry_api_path: /api/dome/cmd
@@ -978,13 +1076,15 @@ rows:
       - sbus
       - web_api
     registry_marcduino_cmd: "DM:RESET"
-    anchor_kind: FILL
+    anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:87 - webRegisterRoute(\"/api/dome/cmd\", kPost, handleDomeCmdPost)"
+      - "include/api_drive.h:32 - void handleDomeCmdPost(WebRequest& req)"
+      - "src/web/api_drive.cpp:355 - void handleDomeCmdPost(WebRequest& req) {"
+      - "src/web/api_drive.cpp:369 - sequenceStart(raw, SRC_WEB_API) for DM:RESET"
+    executor_or_core: "sequenceStart"
+    missing_metadata: []
+    notes: "Built-in Marcduino sequence"
   - name: dome.seq.rockmarch
     type: action
     registry_api_path: /api/dome/cmd
@@ -997,13 +1097,15 @@ rows:
       - sbus
       - web_api
     registry_marcduino_cmd: "DM:ROCKMARCH"
-    anchor_kind: FILL
+    anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:87 - webRegisterRoute(\"/api/dome/cmd\", kPost, handleDomeCmdPost)"
+      - "include/api_drive.h:32 - void handleDomeCmdPost(WebRequest& req)"
+      - "src/web/api_drive.cpp:355 - void handleDomeCmdPost(WebRequest& req) {"
+      - "src/web/api_drive.cpp:369 - sequenceStart(raw, SRC_WEB_API) for DM:ROCKMARCH"
+    executor_or_core: "sequenceStart"
+    missing_metadata: []
+    notes: "Built-in Marcduino sequence"
   - name: dome.seq.scream
     type: action
     registry_api_path: /api/dome/cmd
@@ -1016,13 +1118,15 @@ rows:
       - sbus
       - web_api
     registry_marcduino_cmd: "DM:SCREAM"
-    anchor_kind: FILL
+    anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:87 - webRegisterRoute(\"/api/dome/cmd\", kPost, handleDomeCmdPost)"
+      - "include/api_drive.h:32 - void handleDomeCmdPost(WebRequest& req)"
+      - "src/web/api_drive.cpp:355 - void handleDomeCmdPost(WebRequest& req) {"
+      - "src/web/api_drive.cpp:369 - sequenceStart(raw, SRC_WEB_API) for DM:SCREAM"
+    executor_or_core: "sequenceStart"
+    missing_metadata: []
+    notes: "Built-in Marcduino sequence"
   - name: dome.seq.vader
     type: action
     registry_api_path: /api/dome/cmd
@@ -1035,13 +1139,15 @@ rows:
       - sbus
       - web_api
     registry_marcduino_cmd: "DM:VADER"
-    anchor_kind: FILL
+    anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:87 - webRegisterRoute(\"/api/dome/cmd\", kPost, handleDomeCmdPost)"
+      - "include/api_drive.h:32 - void handleDomeCmdPost(WebRequest& req)"
+      - "src/web/api_drive.cpp:355 - void handleDomeCmdPost(WebRequest& req) {"
+      - "src/web/api_drive.cpp:369 - sequenceStart(raw, SRC_WEB_API) for DM:VADER"
+    executor_or_core: "sequenceStart"
+    missing_metadata: []
+    notes: "Built-in Marcduino sequence"
   - name: dome.status.current
     type: status
     registry_api_path: /api/status
@@ -1053,13 +1159,15 @@ rows:
     registry_sources:
       - internal
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:51 - webRegisterRoute(\"/api/status\", kGet, handleStatusGet)"
+      - "include/web_request.h:31 - void handleStatusGet(WebRequest& req)"
+      - "src/web/api_status.cpp:97 - void handleStatusGet(WebRequest& req) {"
+      - "src/web/api_status.cpp:104 - buildStatusJson(body, sizeof(body))"
+    executor_or_core: "buildStatusJson"
+    missing_metadata: []
+    notes: "Status query via /api/status SSE stream"
   - name: dome.status.serial-link
     type: status
     registry_api_path: /api/serial
@@ -1071,10 +1179,12 @@ rows:
     registry_sources:
       - internal
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:52 - webRegisterRoute(\"/api/serial\", kGet, handleSerialGet)"
+      - "include/web_request.h:33 - void handleSerialGet(WebRequest& req)"
+      - "src/web/api_status.cpp:114 - void handleSerialGet(WebRequest& req) {"
+      - "src/web/api_status.cpp:116 - buildSerialJson(body, sizeof(body))"
+    executor_or_core: "buildSerialJson"
+    missing_metadata: []
+    notes: "Serial transport status query"
