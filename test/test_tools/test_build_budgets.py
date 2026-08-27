@@ -119,6 +119,45 @@ class PlatformResolution(unittest.TestCase):
             self.assertGreater(len(spec["core_dir"]), 0)
 
 
+class PlatformRegistryCoversPlatformioIni(unittest.TestCase):
+    """platforms.esp32p4.envs must match platformio.ini, resolved the way PlatformIO does.
+
+    The Makefile selects PLATFORMIO_CORE_DIR from this list. A P4 env missing
+    from it builds in the artoo-esp32 core dir and swaps that Arduino core in
+    place - the corrupting overlap the Makefile header warns about. Resolve
+    `platform` through PlatformIO's own config parser so `extends` chains are
+    followed exactly as a build would.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        from platformio.project.config import ProjectConfig
+
+        ini = Path(__file__).resolve().parents[2] / "platformio.ini"
+        cls.config = ProjectConfig(str(ini))
+        cls.platform_of = {
+            env: cls.config.get(f"env:{env}", "platform") for env in cls.config.envs()
+        }
+        cls.registry = set(slice_verify.load_budgets()["platforms"]["esp32p4"]["envs"])
+
+    def test_registry_envs_exist_in_platformio_ini(self):
+        unknown = self.registry - set(self.platform_of)
+        self.assertEqual(unknown, set(), f"registry names envs absent from platformio.ini: {unknown}")
+
+    def test_registry_envs_share_one_platform(self):
+        platforms = {self.platform_of[env] for env in self.registry}
+        self.assertEqual(len(platforms), 1, f"registry mixes platforms: {platforms}")
+
+    def test_every_p4_env_is_in_registry(self):
+        p4_platform = self.platform_of[next(iter(self.registry))]
+        p4_envs = {env for env, plat in self.platform_of.items() if plat == p4_platform}
+        missing = p4_envs - self.registry
+        self.assertEqual(
+            missing, set(),
+            f"P4 envs missing from platforms.esp32p4.envs (would build in the artoo core dir): {missing}",
+        )
+
+
 class PlatformIOCoreDirSelection(unittest.TestCase):
     """Test that the correct core dir is selected for each environment."""
 

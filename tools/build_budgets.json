@@ -9,6 +9,7 @@
       "dram_limit_bytes: total DRAM available per platform (hardware constant from ESP-IDF linker scripts; artoo-esp32=124580B, esp32-p4=327680B)",
       "Budgets set with deliberate headroom to prevent reflexive raises on legitimate commits",
       "Env-to-platform classification in 'platforms' registry; Makefile/slice_verify.py/check_build_budgets.py all consume it",
+      "platforms.esp32p4.envs must list EVERY platformio.ini env whose resolved platform is the P4 one (test_build_budgets.py checks this against platformio.ini): a P4 env missing here builds in the artoo-esp32 core dir and swaps that Arduino core in place. Only envs with an entry under 'envs' below are size-checked",
       "Baseline measurements recorded with commit SHA (git cat-file -t to verify); baseline_* fields are informational only - check_build_budgets.py and slice_verify.py enforce flash_budget_bytes, flash_ceiling_bytes and ram_budget_bytes, never the baselines",
       "Baseline method: flash = .pio/build/<env>/firmware.bin size; RAM = .data + .bss from the platform size tool (-A) on firmware.elf, i.e. slice_verify.get_build_sizes(); measured on a clean tree at the recorded commit (no -dirty stamp)"
     ]
@@ -20,6 +21,7 @@
       "envs": [
         "firebeetle2_bringup",
         "firebeetle2",
+        "firebeetle2_hosted_bench",
         "firebeetle2_p4_rt_bench"
       ]
     },
