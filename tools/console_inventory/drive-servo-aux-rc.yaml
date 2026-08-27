@@ -101,8 +101,8 @@ rows:
     anchor_kind: "config"
     evidence:
       - "include/config_store.h:273 - uint8_t aux_led_count"
-      - "src/web/api_config_apply.cpp:345 - applyResult = applyAuxLedCount(cfg, postCfg.aux_led_count)"
-      - "src/web/api_config_apply.cpp:345 - NVS persisted via config_store"
+      - "src/web/api_config_apply.cpp:344 - paramUint8 parsing aux_led_count"
+      - "src/web/api_config_apply.cpp:345 - working->servo.aux_led_count applied"
     executor_or_core: "configApplyCore"
     missing_metadata: []
     notes: "NVS key aux_led_count. Apply Core (ADR 0011)."
@@ -125,8 +125,8 @@ rows:
     anchor_kind: "config"
     evidence:
       - "include/config_store.h:272 - uint8_t aux_led_pin"
-      - "src/web/api_config_apply.cpp:343 - applyResult = applyAuxLedPin(cfg, postCfg.aux_led_pin)"
-      - "src/web/api_config_apply.cpp:343 - NVS persisted via config_store"
+      - "src/web/api_config_apply.cpp:336 - paramUint8 parsing aux_led_pin"
+      - "src/web/api_config_apply.cpp:337 - working->servo.aux_led_pin applied"
     executor_or_core: "configApplyCore"
     missing_metadata: []
     notes: "NVS key aux_led_pin. Requires restart. Apply Core (ADR 0011)."
@@ -144,7 +144,8 @@ rows:
     anchor_kind: "aggregate-field"
     evidence:
       - "src/web/api_status.cpp:97 - void handleStatusGet(WebRequest& req)"
-      - "src/web/api_status_serializers.cpp:15 - formatAuxLedStateJson emits auxLed field"
+      - "src/web/api_status_serializers.cpp:97 - formatAuxStatusJson emits auxLed field"
+      - "src/web/api_aux_led_serializers.cpp:12 - bool formatAuxLedStateJson core builder"
     executor_or_core: "statusSnapshotCore"
     missing_metadata: []
     notes: "Aggregate-field in /api/status response. Read-only status snapshot."
@@ -219,7 +220,7 @@ rows:
     anchor_kind: "rc_internal"
     evidence:
       - "include/rc_action_types.h:61 - DRIVE_ACTION_SPEED_PRESET_CYCLE"
-      - "src/rc_action_dispatcher.cpp:71 - case DRIVE_ACTION_SPEED_PRESET_CYCLE:"
+      - "src/rc_action_dispatcher.cpp:168 - case DRIVE_ACTION_SPEED_PRESET_CYCLE:"
       - "src/drive_speed_preset.cpp:56 - applySpeedPresetRuntime(nextSpeedPreset(...))"
     executor_or_core: "driveSpeedPresetCore"
     missing_metadata: []
@@ -319,7 +320,7 @@ rows:
     anchor_kind: "rc_internal"
     evidence:
       - "include/rc_action_types.h:24 - DRIVE_ACTION_STEER, // Analog: left/right steering"
-      - "src/rc_channel_mapper.cpp:60 - readChannelRaw processes driveSteer binding"
+      - "src/rc_channel_mapper.cpp:17 - readChannelRaw processes driveSteer binding"
       - "src/tasks/rc_input.cpp:198 - rcDispatchDrive(backbone.driveSpeed, backbone.driveSteer, false)"
     executor_or_core: "driveArbiter"
     missing_metadata: []
@@ -337,9 +338,9 @@ rows:
     registry_marcduino_cmd: null
     anchor_kind: "config"
     evidence:
-      - "include/config_store.h:50 - uint16_t cfg_spdMax"
-      - "src/web/api_config_apply.cpp:388 - applySpeedLimit(cfg, postCfg.cfg_spdMax)"
-      - "src/web/api_config_apply.cpp:388 - NVS persisted via config_store"
+      - "include/config_store.h:180 - int16_t speedLimitMax"
+      - "src/web/api_config_apply.cpp:205 - paramInt16 parsing speedLimitMax"
+      - "src/web/api_config_apply.cpp:206 - working->drive.speedLimitMax applied"
     executor_or_core: "configApplyCore"
     missing_metadata:
       - "parameter name not in registry"
@@ -358,7 +359,7 @@ rows:
     registry_marcduino_cmd: null
     anchor_kind: "event"
     evidence:
-      - "src/failsafe_gate.cpp:41 - void failsafeTrigger(FailsafeLayer layer)"
+      - "src/failsafe_gate.cpp:74 - void failsafeTrigger(FailsafeLayer layer)"
       - "src/web/api_status.cpp:97 - handleStatusGet emits failsafeCount, failsafeTriggerMs"
     executor_or_core: "failsafeGate"
     missing_metadata: []
@@ -395,7 +396,7 @@ rows:
     anchor_kind: "api"
     evidence:
       - "src/web/web_seam_routes.cpp:61 - webRegisterRoute(\"/api/rc/map\", kPost, handleRcMapPost)"
-      - "include/api_config.h:12 - void handleRcMapPost(WebRequest& req)"
+      - "include/api_config.h:27 - void handleRcMapPost(WebRequest& req)"
       - "src/web/api_config.cpp:673 - void handleRcMapPost(WebRequest& req) {"
       - "src/web/api_rc_map_apply.cpp:18 - rcMapApplyCore validates and persists"
     executor_or_core: "rcMapApplyCore"
@@ -479,7 +480,7 @@ rows:
     anchor_kind: "api"
     evidence:
       - "src/web/web_seam_routes.cpp:60 - webRegisterRoute(\"/api/rc/map\", kGet, handleRcMapGet)"
-      - "include/api_config.h:11 - void handleRcMapGet(WebRequest& req)"
+      - "include/api_config.h:26 - void handleRcMapGet(WebRequest& req)"
       - "src/web/api_config.cpp:651 - void handleRcMapGet(WebRequest& req) {"
       - "include/robot_state.h:50 - RobotState robotState (rcMap field)"
     executor_or_core: "NO-CORE-BELOW-HANDLER"
@@ -498,7 +499,7 @@ rows:
     registry_marcduino_cmd: null
     anchor_kind: "config"
     evidence:
-      - "include/config_store.h:45 - uint8_t cfg_rcMode"
+      - "include/config_store.h:362 - uint8_t cfg_rcMode"
       - "src/web/api_config_apply.cpp:380 - applyRcMode(cfg, postCfg.cfg_rcMode)"
       - "src/web/api_config_apply.cpp:380 - NVS persisted via config_store"
     executor_or_core: "configApplyCore"
