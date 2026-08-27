@@ -31,7 +31,7 @@
 #include <driver/uart.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
-#include <Preferences.h>
+#include "config_cache.h"
 #include "config.h"
 
 // ============================================================================
@@ -282,25 +282,25 @@ void benchPhase3DriveFrameCadence() {
     Serial.println("[BENCH P3] Drive frame cadence observation starting...");
 
     // Precondition: GPIO51 (PIN_ARM5_SERVO / AUX3) must not be driven by the firmware.
-    // Two paths drive it; query the same values the firmware checks:
-    //   1. enable_aux3 - the AUX3 servo channel (include/config.h: PIN_ARM5_SERVO = 51)
+    // Two paths drive it, and the guard must ask the same question the firmware asks:
+    //   1. en_aux3 - the AUX3 servo channel (include/config.h: PIN_ARM5_SERVO = 51)
     //   2. aux_led_pin == AUX_LED_PIN_AUX3 - the WS2812B strip
-    //      (include/config.h: auxLedSelectionToGpio() returns PIN_ARM5_SERVO for AUX_LED_PIN_AUX3)
-    // Read from NVS directly (include/config.h:376 NVS_NAMESPACE="proto").
-    // The boot snapshot is sufficient: toggles are staged-at-reboot (ADR 0027) and
-    // aux_led_pin is only read at boot by auxLedTask (src/tasks/aux_led_task.cpp).
-    Preferences nvs;
-    nvs.begin("proto", true);  // NVS_NAMESPACE from include/config.h:376
-    bool aux3ServoEnabled = nvs.getBool("en_aux3", false);
-    uint8_t auxLedPin = nvs.getUChar("aux_led_pin", 0);  // NVS_KEY_AUX_LED_PIN from config.h:377
-    nvs.end();
+    //      (include/config.h: auxLedSelectionToGpio() maps AUX_LED_PIN_AUX3 -> PIN_ARM5_SERVO)
+    // Read the live config cache, exactly as servoTaskInit() does at
+    // src/tasks/servo_task.cpp:414-415. This env compiles all of src/ (build_src_filter
+    // "+<*>"), so the cache is linked in; reading NVS directly would duplicate the
+    // namespace and key names and would miss any runtime change.
+    // The snapshot is static, not a stack local: sizeof(ConfigSnapshot) is ~940 B and
+    // benchMainTask runs on a 4096 B stack (see BenchInitializer below).
+    static ConfigSnapshot benchCfg = {};
+    configCacheRead(&benchCfg);
 
-    if (aux3ServoEnabled) {
+    if (benchCfg.system.enable_aux3) {
         Serial.println("[BENCH P3] SKIP: AUX3 servo (en_aux3) enabled - GPIO51 is driven");
         Serial.flush();
         return;
     }
-    if (auxLedPin == AUX_LED_PIN_AUX3) {  // AUX_LED_PIN_AUX3 = 3 from include/config.h
+    if (benchCfg.servo.aux_led_pin == AUX_LED_PIN_AUX3) {
         Serial.println("[BENCH P3] SKIP: AUX LED strip assigned to AUX3 - GPIO51 is driven");
         Serial.flush();
         return;
