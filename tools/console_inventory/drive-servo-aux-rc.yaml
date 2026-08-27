@@ -377,7 +377,7 @@ rows:
     anchor_kind: "aggregate-field"
     evidence:
       - "src/web/api_status.cpp:97 - void handleStatusGet(WebRequest& req)"
-      - "src/web/api_status_serializers.cpp:40 - emits driveSpeed, driveSteer"
+      - "src/web/web_server.cpp:296 - driveSpeed = robotState.driveOutputSpeed"
     executor_or_core: "statusSnapshotCore"
     missing_metadata: []
     notes: "Aggregate-field in /api/status. Motor outputs via snapshot."
@@ -397,7 +397,7 @@ rows:
       - "src/web/web_seam_routes.cpp:61 - webRegisterRoute(\"/api/rc/map\", kPost, handleRcMapPost)"
       - "include/api_config.h:27 - void handleRcMapPost(WebRequest& req)"
       - "src/web/api_config.cpp:673 - void handleRcMapPost(WebRequest& req) {"
-      - "src/web/api_rc_map_apply.cpp:18 - rcMapApplyCore validates and persists"
+      - "src/web/api_rc_map_apply.cpp:7 - rcMapApplyCore validates and persists"
     executor_or_core: "rcMapApplyCore"
     missing_metadata: []
     notes: "Web-API. Apply Core (ADR 0011)."
@@ -459,9 +459,9 @@ rows:
     anchor_kind: "api"
     evidence:
       - "src/web/web_seam_routes.cpp:38 - webRegisterRoute(\"/api/actions\", kGet, handleActionsGet)"
-      - "include/api_actions.h:4 - void handleActionsGet(WebRequest& req)"
-      - "src/web/api_actions.cpp:37 - void handleActionsGet(WebRequest& req) {"
-      - "src/web/action_registry.cpp:1 - extern const RobotAction s_actionRegistry[]"
+      - "include/api_actions.h:39 - void handleActionsGet(WebRequest& req)"
+      - "src/web/api_actions.cpp:47 - void handleActionsGet(WebRequest& req) {"
+      - "src/web/action_registry.cpp:11 - extern const RobotAction s_actionRegistry[]"
     executor_or_core: "NO-CORE-BELOW-HANDLER"
     missing_metadata: []
     notes: "Web-API only. Reads read-only registry. NO-CORE-BELOW-HANDLER."
@@ -481,7 +481,7 @@ rows:
       - "src/web/web_seam_routes.cpp:60 - webRegisterRoute(\"/api/rc/map\", kGet, handleRcMapGet)"
       - "include/api_config.h:26 - void handleRcMapGet(WebRequest& req)"
       - "src/web/api_config.cpp:651 - void handleRcMapGet(WebRequest& req) {"
-      - "include/robot_state.h:50 - RobotState robotState (rcMap field)"
+      - "include/robot_state.h:137 - struct RobotState (rcMap field)"
     executor_or_core: "NO-CORE-BELOW-HANDLER"
     missing_metadata: []
     notes: "Web-API only. Reads robotState snapshot. NO-CORE-BELOW-HANDLER."
@@ -498,9 +498,9 @@ rows:
     registry_marcduino_cmd: null
     anchor_kind: "config"
     evidence:
-      - "include/config_store.h:362 - uint8_t cfg_rcMode"
-      - "src/web/api_config_apply.cpp:380 - applyRcMode(cfg, postCfg.cfg_rcMode)"
-      - "src/web/api_config_apply.cpp:380 - NVS persisted via config_store"
+      - "include/config_store.h:362 - RcInputMode rc_input_mode"
+      - "src/web/api_config_apply.cpp:318 - paramRcInputMode parsing"
+      - "src/web/api_config_apply.cpp:322 - working->sys.rc_input_mode = mode (applied)"
     executor_or_core: "configApplyCore"
     missing_metadata:
       - "enum values not in registry"
@@ -520,9 +520,9 @@ rows:
     anchor_kind: "api"
     evidence:
       - "src/web/web_seam_routes.cpp:98 - webRegisterRoute(\"/api/rc\", kGet, handleRcGet)"
-      - "include/api_rc.h:5 - void handleRcGet(WebRequest& req)"
+      - "include/api_rc.h:13 - void handleRcGet(WebRequest& req)"
       - "src/web/api_rc.cpp:37 - void handleRcGet(WebRequest& req) {"
-      - "src/web/rc_diagnostics_snapshot.cpp:11 - buildRcDiagnosticsJson emits snapshot"
+      - "src/web/rc_diagnostics_snapshot.cpp:288 - populateRcDiagnosticsJson builds snapshot"
     executor_or_core: "NO-CORE-BELOW-HANDLER"
     missing_metadata: []
     notes: "Web-API only. Builds diagnostics snapshot. NO-CORE-BELOW-HANDLER."
@@ -546,9 +546,9 @@ rows:
     anchor_kind: "api"
     evidence:
       - "src/web/web_seam_routes.cpp:90 - webRegisterRoute(\"/api/servo\", kPost, handleServoPost)"
-      - "include/api_servo.h:5 - void handleServoPost(WebRequest& req)"
+      - "include/api_servo.h:12 - void handleServoPost(WebRequest& req)"
       - "src/web/api_servo.cpp:77 - void handleServoPost(WebRequest& req) {"
-      - "src/web/api_servo.cpp:111 - xQueueSend(servoCmdQueue, &cmd, 0)"
+      - "src/web/api_servo.cpp:129 - xQueueSend(servoCmdQueue, &cmd, 0)"
     executor_or_core: "servoCmdQueue"
     missing_metadata: []
     notes: "Web+RC. webControlEnabled guard at api_servo.cpp:82. Queue guarded."
@@ -572,9 +572,9 @@ rows:
     anchor_kind: "api"
     evidence:
       - "src/web/web_seam_routes.cpp:90 - webRegisterRoute(\"/api/servo\", kPost, handleServoPost)"
-      - "include/api_servo.h:5 - void handleServoPost(WebRequest& req)"
+      - "include/api_servo.h:12 - void handleServoPost(WebRequest& req)"
       - "src/web/api_servo.cpp:77 - void handleServoPost(WebRequest& req) {"
-      - "src/web/api_servo.cpp:111 - xQueueSend(servoCmdQueue, &cmd, 0)"
+      - "src/web/api_servo.cpp:129 - xQueueSend(servoCmdQueue, &cmd, 0)"
     executor_or_core: "servoCmdQueue"
     missing_metadata: []
     notes: "Web+RC. webControlEnabled guard at api_servo.cpp:82. Queue guarded."
@@ -601,9 +601,9 @@ rows:
     anchor_kind: "api"
     evidence:
       - "src/web/web_seam_routes.cpp:90 - webRegisterRoute(\"/api/servo\", kPost, handleServoPost)"
-      - "include/api_servo.h:5 - void handleServoPost(WebRequest& req)"
+      - "include/api_servo.h:12 - void handleServoPost(WebRequest& req)"
       - "src/web/api_servo.cpp:77 - void handleServoPost(WebRequest& req) {"
-      - "src/web/api_servo.cpp:111 - xQueueSend(servoCmdQueue, &cmd, 0)"
+      - "src/web/api_servo.cpp:129 - xQueueSend(servoCmdQueue, &cmd, 0)"
     executor_or_core: "servoCmdQueue"
     missing_metadata: []
     notes: "Web-API. webControlEnabled guard at api_servo.cpp:82. Position 500-2500us. Queue guarded."
@@ -621,9 +621,9 @@ rows:
     anchor_kind: "api"
     evidence:
       - "src/web/web_seam_routes.cpp:90 - webRegisterRoute(\"/api/servo\", kPost, handleServoPost)"
-      - "include/api_servo.h:5 - void handleServoPost(WebRequest& req)"
+      - "include/api_servo.h:12 - void handleServoPost(WebRequest& req)"
       - "src/web/api_servo.cpp:77 - void handleServoPost(WebRequest& req) {"
-      - "src/web/api_servo.cpp:111 - xQueueSend(servoCmdQueue, &cmd, 0)"
+      - "src/web/api_servo.cpp:129 - xQueueSend(servoCmdQueue, &cmd, 0)"
     executor_or_core: "servoCmdQueue"
     missing_metadata: []
     notes: "Web-API. webControlEnabled guard at api_servo.cpp:82. Queue guarded."
@@ -741,7 +741,7 @@ rows:
     anchor_kind: "aggregate-field"
     evidence:
       - "src/web/api_status.cpp:97 - void handleStatusGet(WebRequest& req)"
-      - "src/web/api_status_serializers.cpp:50 - emits servo state fields"
+      - "src/web/api_status_serializers.cpp:54 - emits servo state fields"
     executor_or_core: "statusSnapshotCore"
     missing_metadata: []
     notes: "Aggregate-field in /api/status. Servo open/close state."
