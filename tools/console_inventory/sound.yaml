@@ -38,10 +38,10 @@ rows:
     registry_marcduino_cmd: $...
     anchor_kind: "api"
     evidence:
-      - "src/web/web_seam_routes.cpp:118 - route registration POST /api/audio"
-      - "include/api_audio.h:54 - handler declaration void handleAudioPost()"
-      - "src/web/api_audio.cpp:888 - handleAudioPost() accepts action=dollar, calls audioQueueDollar()"
-      - "include/audio_task.h:102 - audioQueueDollar() declaration, enqueues AUDIO_CMD_DOLLAR"
+      - "src/web/web_seam_routes.cpp:118 - webRegisterRoute(\"/api/audio\", WebMethod::kPost, handleAudioPost)"
+      - "include/api_audio.h:54 - void handleAudioPost(WebRequest& req)"
+      - "src/web/api_audio.cpp:898 - if (strcmp(action, \"dollar\") == 0)"
+      - "include/audio_task.h:102 - bool audioQueueDollar(const char* cmd, CommandSource src)"
     executor_or_core: "audioQueueDollar() -> AudioTask Core 0"
     missing_metadata: []
     notes: "raw $ command pass-through; dollar string parsed in AudioTask via parseAudioDollar()"
@@ -66,9 +66,9 @@ rows:
     anchor_kind: "api"
     evidence:
       - "src/web/web_seam_routes.cpp:118 - webRegisterRoute(\"/api/audio\", WebMethod::kPost, handleAudioPost)"
-      - "include/api_audio.h:55 - void handleAudioPost(WebRequest& req)"
-      - "src/web/api_audio.cpp:825 - if (strcmp(action, \"play\") == 0)"
-      - "src/web/api_audio.cpp:844 - audioQueuePlayTrack((uint16_t)track, SRC_WEB_API)"
+      - "include/api_audio.h:54 - void handleAudioPost(WebRequest& req)"
+      - "src/web/api_audio.cpp:827 - if (strcmp(action, \"play\") == 0)"
+      - "include/audio_task.h:105 - bool audioQueuePlayTrack(uint16_t track, CommandSource src)"
     executor_or_core: "audioQueuePlayTrack() -> AudioTask Core 0"
     missing_metadata: []
     notes: "play command dispatches to audio queue for track number 1-65535"
@@ -85,10 +85,10 @@ rows:
     registry_marcduino_cmd: $C
     anchor_kind: "api"
     evidence:
-      - "src/web/web_seam_routes.cpp:118 - route registration POST /api/audio"
-      - "include/api_audio.h:54 - handler declaration void handleAudioPost()"
-      - "src/web/api_audio.cpp:821 - doc comment lists $C command; mapped via audioQueueDollar($C)"
-      - "include/audio_dollar_parser.h:31 - AUDIO_TRACK_CANTINA_L = 180 is default track for $C"
+      - "src/web/web_seam_routes.cpp:118 - webRegisterRoute(\"/api/audio\", WebMethod::kPost, handleAudioPost)"
+      - "include/api_audio.h:54 - void handleAudioPost(WebRequest& req)"
+      - "src/web/api_audio.cpp:827 - if (strcmp(action, \"play\") == 0)"
+      - "include/audio_dollar_parser.h:48 - constexpr uint16_t AUDIO_TRACK_* = <value>"
     executor_or_core: "audioQueueDollar($C) -> AudioTask Core 0"
     missing_metadata: []
     notes: "dome-rx only; named track; real track mapped from registry_nvs_key snd_cantina_l"
@@ -105,10 +105,10 @@ rows:
     registry_marcduino_cmd: $c
     anchor_kind: "api"
     evidence:
-      - "src/web/web_seam_routes.cpp:118 - route registration POST /api/audio"
-      - "include/api_audio.h:54 - handler declaration void handleAudioPost()"
-      - "src/web/api_audio.cpp:821 - doc comment $c command; mapped via audioQueueDollar($c)"
-      - "include/audio_dollar_parser.h:30 - AUDIO_TRACK_CANTINA_S = 176 is default for $c"
+      - "src/web/web_seam_routes.cpp:118 - webRegisterRoute(\"/api/audio\", WebMethod::kPost, handleAudioPost)"
+      - "include/api_audio.h:54 - void handleAudioPost(WebRequest& req)"
+      - "src/web/api_audio.cpp:827 - if (strcmp(action, \"play\") == 0)"
+      - "include/audio_dollar_parser.h:45 - constexpr uint16_t AUDIO_TRACK_* = <value>"
     executor_or_core: "audioQueueDollar($c) -> AudioTask Core 0"
     missing_metadata: []
     notes: "dome-rx only; named track; NVS key snd_cantina_s"
@@ -125,10 +125,10 @@ rows:
     registry_marcduino_cmd: $D
     anchor_kind: "api"
     evidence:
-      - "src/web/web_seam_routes.cpp:118 - route registration POST /api/audio"
-      - "include/api_audio.h:54 - handler declaration void handleAudioPost()"
-      - "src/web/api_audio.cpp:821 - doc $D command via audioQueueDollar($D)"
-      - "include/audio_dollar_parser.h:37 - AUDIO_TRACK_DISCO = 0 (default); real track from snd_disco NVS"
+      - "src/web/web_seam_routes.cpp:118 - webRegisterRoute(\"/api/audio\", WebMethod::kPost, handleAudioPost)"
+      - "include/api_audio.h:54 - void handleAudioPost(WebRequest& req)"
+      - "src/web/api_audio.cpp:827 - if (strcmp(action, \"play\") == 0)"
+      - "include/audio_dollar_parser.h:50 - constexpr uint16_t AUDIO_TRACK_* = <value>"
     executor_or_core: "audioQueueDollar($D) -> AudioTask Core 0"
     missing_metadata: []
     notes: "dome-rx only; NVS key snd_disco (0=disabled); defined at compile-time, overridable"
@@ -145,10 +145,10 @@ rows:
     registry_marcduino_cmd: $F
     anchor_kind: "api"
     evidence:
-      - "src/web/web_seam_routes.cpp:118 - route registration POST /api/audio"
-      - "include/api_audio.h:54 - handler declaration void handleAudioPost()"
-      - "src/web/api_audio.cpp:821 - doc $F command via audioQueueDollar($F)"
-      - "include/audio_dollar_parser.h:28 - AUDIO_TRACK_FAINT = 128 is default"
+      - "src/web/web_seam_routes.cpp:118 - webRegisterRoute(\"/api/audio\", WebMethod::kPost, handleAudioPost)"
+      - "include/api_audio.h:54 - void handleAudioPost(WebRequest& req)"
+      - "src/web/api_audio.cpp:827 - if (strcmp(action, \"play\") == 0)"
+      - "include/audio_dollar_parser.h:43 - constexpr uint16_t AUDIO_TRACK_* = <value>"
     executor_or_core: "audioQueueDollar($F) -> AudioTask Core 0"
     missing_metadata: []
     notes: "dome-rx only; named track snd_faint"
@@ -165,10 +165,10 @@ rows:
     registry_marcduino_cmd: $M
     anchor_kind: "api"
     evidence:
-      - "src/web/web_seam_routes.cpp:118 - route registration POST /api/audio"
-      - "include/api_audio.h:54 - handler declaration void handleAudioPost()"
-      - "src/web/api_audio.cpp:821 - doc $M command via audioQueueDollar($M)"
-      - "include/audio_dollar_parser.h:33 - AUDIO_TRACK_IMP_MARCH = 178 is default"
+      - "src/web/web_seam_routes.cpp:118 - webRegisterRoute(\"/api/audio\", WebMethod::kPost, handleAudioPost)"
+      - "include/api_audio.h:54 - void handleAudioPost(WebRequest& req)"
+      - "src/web/api_audio.cpp:827 - if (strcmp(action, \"play\") == 0)"
+      - "include/audio_dollar_parser.h:47 - constexpr uint16_t AUDIO_TRACK_IMP_MARCH = 178"
     executor_or_core: "audioQueueDollar($M) -> AudioTask Core 0"
     missing_metadata: []
     notes: "dome-rx only; named track snd_march"
@@ -185,10 +185,10 @@ rows:
     registry_marcduino_cmd: $L
     anchor_kind: "api"
     evidence:
-      - "src/web/web_seam_routes.cpp:118 - route registration POST /api/audio"
-      - "include/api_audio.h:54 - handler declaration void handleAudioPost()"
-      - "src/web/api_audio.cpp:821 - doc $L command via audioQueueDollar($L)"
-      - "include/audio_dollar_parser.h:29 - AUDIO_TRACK_LEIA = 151 is default"
+      - "src/web/web_seam_routes.cpp:118 - webRegisterRoute(\"/api/audio\", WebMethod::kPost, handleAudioPost)"
+      - "include/api_audio.h:54 - void handleAudioPost(WebRequest& req)"
+      - "src/web/api_audio.cpp:827 - if (strcmp(action, \"play\") == 0)"
+      - "include/audio_dollar_parser.h:44 - constexpr uint16_t AUDIO_TRACK_LEIA      = 151"
     executor_or_core: "audioQueueDollar($L) -> AudioTask Core 0"
     missing_metadata: []
     notes: "dome-rx only; named track snd_leia"
@@ -205,10 +205,10 @@ rows:
     registry_marcduino_cmd: $S
     anchor_kind: "api"
     evidence:
-      - "src/web/web_seam_routes.cpp:118 - route registration POST /api/audio"
-      - "include/api_audio.h:54 - handler declaration void handleAudioPost()"
-      - "src/web/api_audio.cpp:821 - doc $S command via audioQueueDollar($S)"
-      - "include/audio_dollar_parser.h:27 - AUDIO_TRACK_SCREAM = 126 is default"
+      - "src/web/web_seam_routes.cpp:118 - webRegisterRoute(\"/api/audio\", WebMethod::kPost, handleAudioPost)"
+      - "include/api_audio.h:54 - void handleAudioPost(WebRequest& req)"
+      - "src/web/api_audio.cpp:827 - if (strcmp(action, \"play\") == 0)"
+      - "include/audio_dollar_parser.h:42 - constexpr uint16_t AUDIO_TRACK_SCREAM    = 126"
     executor_or_core: "audioQueueDollar($S) -> AudioTask Core 0"
     missing_metadata: []
     notes: "dome-rx only; named track snd_scream"
@@ -225,10 +225,10 @@ rows:
     registry_marcduino_cmd: $B
     anchor_kind: "api"
     evidence:
-      - "src/web/web_seam_routes.cpp:118 - route registration POST /api/audio"
-      - "include/api_audio.h:54 - handler declaration void handleAudioPost()"
-      - "src/web/api_audio.cpp:821 - doc $B command via audioQueueDollar($B)"
-      - "include/audio_dollar_parser.h:34 - AUDIO_TRACK_STARTUP = 255 is default"
+      - "src/web/web_seam_routes.cpp:118 - webRegisterRoute(\"/api/audio\", WebMethod::kPost, handleAudioPost)"
+      - "include/api_audio.h:54 - void handleAudioPost(WebRequest& req)"
+      - "src/web/api_audio.cpp:827 - if (strcmp(action, \"play\") == 0)"
+      - "include/audio_dollar_parser.h:49 - constexpr uint16_t AUDIO_TRACK_STARTUP   = 255"
     executor_or_core: "audioQueueDollar($B) -> AudioTask Core 0"
     missing_metadata: []
     notes: "dome-rx only; named track snd_startup"
@@ -245,10 +245,10 @@ rows:
     registry_marcduino_cmd: $W
     anchor_kind: "api"
     evidence:
-      - "src/web/web_seam_routes.cpp:118 - route registration POST /api/audio"
-      - "include/api_audio.h:54 - handler declaration void handleAudioPost()"
-      - "src/web/api_audio.cpp:821 - doc $W command via audioQueueDollar($W)"
-      - "include/audio_dollar_parser.h:32 - AUDIO_TRACK_SW_THEME = 177 is default"
+      - "src/web/web_seam_routes.cpp:118 - webRegisterRoute(\"/api/audio\", WebMethod::kPost, handleAudioPost)"
+      - "include/api_audio.h:54 - void handleAudioPost(WebRequest& req)"
+      - "src/web/api_audio.cpp:827 - if (strcmp(action, \"play\") == 0)"
+      - "include/audio_dollar_parser.h:46 - constexpr uint16_t AUDIO_TRACK_* = <value>"
     executor_or_core: "audioQueueDollar($W) -> AudioTask Core 0"
     missing_metadata: []
     notes: "dome-rx only; named track snd_sw"
@@ -286,10 +286,10 @@ rows:
     registry_marcduino_cmd: $s
     anchor_kind: "api"
     evidence:
-      - "src/web/web_seam_routes.cpp:118 - route registration POST /api/audio"
-      - "include/api_audio.h:54 - handler declaration void handleAudioPost()"
-      - "src/web/api_audio.cpp:847 - handleAudioPost action=stop calls audioQueueStop()"
-      - "include/audio_task.h:120 - audioQueueStop() queues AUDIO_CMD_STOP (full stop + random disable)"
+      - "src/web/web_seam_routes.cpp:118 - webRegisterRoute(\"/api/audio\", WebMethod::kPost, handleAudioPost)"
+      - "include/api_audio.h:54 - void handleAudioPost(WebRequest& req)"
+      - "src/web/api_audio.cpp:852 - if (strcmp(action, \"stop\") == 0)"
+      - "include/audio_task.h:120 - bool audioQueueStop(CommandSource src)"
     executor_or_core: "audioQueueStop() -> AudioTask Core 0"
     missing_metadata: []
     notes: "full stop: disables idle/random mood (ADR 0010). See also sound.action.track-stop"
@@ -703,8 +703,8 @@ rows:
     evidence:
       - "src/web/web_seam_routes.cpp:118 - webRegisterRoute(\"/api/audio\", WebMethod::kPost, handleAudioPost)"
       - "include/api_audio.h:54 - void handleAudioPost(WebRequest& req)"
-      - "src/web/api_audio.cpp:859 - if (strcmp(action, \"volume\") == 0)"
-      - "include/audio_task.h:128 - bool audioQueueSetVolume(uint8_t vol, CommandSource src)"
+      - "src/web/api_audio.cpp:863 - if (strcmp(action, \"volume\") == 0)"
+      - "include/audio_task.h:128 - bool audioQueueSetVolume(uint8_t newVolume, CommandSource src)"
     executor_or_core: "audioQueueSetVolume() -> AudioTask Core 0"
     missing_metadata: []
     notes: "queues absolute volume command (0-30)"
