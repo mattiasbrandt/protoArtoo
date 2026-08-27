@@ -60,11 +60,12 @@ void tearDown(void) {
  */
 void test_utf8_ingestion_high_bit_bytes_preserved(void) {
     EmbeddedCliConfig config = {
+        .invitation = "> ",
         .rxBufferSize = 256,
         .cmdBufferSize = 256,
         .historyBufferSize = 256,
+        .maxBindingCount = 10,
         .enableAutoComplete = false,
-        .invitation = "> ",
     };
 
     CLI_UINT cliBuffer[BYTES_TO_CLI_UINTS(256)];
@@ -117,11 +118,12 @@ void test_utf8_ingestion_high_bit_bytes_preserved(void) {
  */
 void test_utf8_ingestion_ssid_preserved(void) {
     EmbeddedCliConfig config = {
+        .invitation = "> ",
         .rxBufferSize = 256,
         .cmdBufferSize = 256,
         .historyBufferSize = 256,
+        .maxBindingCount = 10,
         .enableAutoComplete = false,
-        .invitation = "> ",
     };
 
     CLI_UINT cliBuffer[BYTES_TO_CLI_UINTS(256)];
@@ -176,11 +178,12 @@ void test_utf8_ingestion_ssid_preserved(void) {
  */
 void test_utf8_ingestion_ascii_still_works(void) {
     EmbeddedCliConfig config = {
+        .invitation = "> ",
         .rxBufferSize = 256,
         .cmdBufferSize = 256,
         .historyBufferSize = 256,
+        .maxBindingCount = 10,
         .enableAutoComplete = false,
-        .invitation = "> ",
     };
 
     CLI_UINT cliBuffer[BYTES_TO_CLI_UINTS(256)];

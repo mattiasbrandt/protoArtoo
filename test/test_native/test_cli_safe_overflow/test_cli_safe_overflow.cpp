@@ -62,11 +62,12 @@ void tearDown(void) {
  */
 void test_safe_overflow_valid_length_accepted(void) {
     EmbeddedCliConfig config = {
+        .invitation = "> ",
         .rxBufferSize = 256,
         .cmdBufferSize = 256,
         .historyBufferSize = 256,
+        .maxBindingCount = 10,
         .enableAutoComplete = false,
-        .invitation = "> ",
     };
 
     CLI_UINT cliBuffer[BYTES_TO_CLI_UINTS(256)];
@@ -109,11 +110,12 @@ void test_safe_overflow_valid_length_accepted(void) {
  */
 void test_safe_overflow_exceeds_buffer_rejected(void) {
     EmbeddedCliConfig config = {
+        .invitation = "> ",
         .rxBufferSize = 256,
         .cmdBufferSize = 256,
         .historyBufferSize = 256,
+        .maxBindingCount = 10,
         .enableAutoComplete = false,
-        .invitation = "> ",
     };
 
     CLI_UINT cliBuffer[BYTES_TO_CLI_UINTS(256)];
@@ -158,11 +160,12 @@ void test_safe_overflow_exceeds_buffer_rejected(void) {
  */
 void test_safe_overflow_recovery(void) {
     EmbeddedCliConfig config = {
+        .invitation = "> ",
         .rxBufferSize = 256,
         .cmdBufferSize = 256,
         .historyBufferSize = 256,
+        .maxBindingCount = 10,
         .enableAutoComplete = false,
-        .invitation = "> ",
     };
 
     CLI_UINT cliBuffer[BYTES_TO_CLI_UINTS(256)];

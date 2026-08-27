@@ -70,11 +70,12 @@ void test_safe_enter_unique_prefix_not_auto_expanded(void) {
     };
 
     EmbeddedCliConfig config = {
+        .invitation = "> ",
         .rxBufferSize = 256,
         .cmdBufferSize = 256,
         .historyBufferSize = 256,
+        .maxBindingCount = 10,
         .enableAutoComplete = false,  // Live autocomplete OFF - but Enter still calls onAutocompleteRequest without patch
-        .invitation = "> ",
     };
 
     // Allocate static CLI buffer
@@ -132,11 +133,12 @@ void test_safe_enter_exact_match_executes(void) {
     };
 
     EmbeddedCliConfig config = {
+        .invitation = "> ",
         .rxBufferSize = 256,
         .cmdBufferSize = 256,
         .historyBufferSize = 256,
+        .maxBindingCount = 10,
         .enableAutoComplete = false,
-        .invitation = "> ",
     };
 
     CLI_UINT cliBuffer[BYTES_TO_CLI_UINTS(256)];
@@ -179,11 +181,12 @@ void test_safe_enter_exact_match_executes(void) {
  */
 void test_safe_enter_unknown_command_dispatched_as_is(void) {
     EmbeddedCliConfig config = {
+        .invitation = "> ",
         .rxBufferSize = 256,
         .cmdBufferSize = 256,
         .historyBufferSize = 256,
+        .maxBindingCount = 10,
         .enableAutoComplete = false,
-        .invitation = "> ",
     };
 
     CLI_UINT cliBuffer[BYTES_TO_CLI_UINTS(256)];

@@ -70,11 +70,12 @@ void tearDown(void) {
 void test_project_help_ownership_not_shadowed(void) {
     // Create CLI with no bindings
     EmbeddedCliConfig config = {
+        .invitation = "> ",
         .rxBufferSize = 256,
         .cmdBufferSize = 256,
         .historyBufferSize = 256,
+        .maxBindingCount = 10,
         .enableAutoComplete = false,
-        .invitation = "> ",
     };
 
     CLI_UINT cliBuffer[BYTES_TO_CLI_UINTS(256)];
@@ -125,11 +126,12 @@ void test_project_help_ownership_explicit_binding(void) {
     };
 
     EmbeddedCliConfig config = {
+        .invitation = "> ",
         .rxBufferSize = 256,
         .cmdBufferSize = 256,
         .historyBufferSize = 256,
+        .maxBindingCount = 10,
         .enableAutoComplete = false,
-        .invitation = "> ",
     };
 
     CLI_UINT cliBuffer[BYTES_TO_CLI_UINTS(256)];
@@ -184,11 +186,12 @@ void test_project_help_ownership_other_commands_work(void) {
     };
 
     EmbeddedCliConfig config = {
+        .invitation = "> ",
         .rxBufferSize = 256,
         .cmdBufferSize = 256,
         .historyBufferSize = 256,
+        .maxBindingCount = 10,
         .enableAutoComplete = false,
-        .invitation = "> ",
     };
 
     CLI_UINT cliBuffer[BYTES_TO_CLI_UINTS(256)];
