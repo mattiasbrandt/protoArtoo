@@ -56,7 +56,7 @@
       "baseline_measured_at": "94880ee62570fa4ce1cc2fee9d3c14493f57d845",
       "baseline_flash_bytes": 334448,
       "baseline_ram_bytes": 24222,
-      "budget_rationale": "First-flash bringup env with minimal source filter (src/ excluded). Hard ceiling at 3,113,728 B (partition 3,145,728 - 32,000 B reserve for OTA headers/metadata). Baselines measured from the build artifacts at baseline_measured_at (see metadata notes). Budgets set above measured values to accommodate full firmware adaptation (tracked by #188/#189)."
+      "budget_rationale": "First-flash bringup env with minimal source filter (src/ excluded). Hard ceiling at 3,113,728 B (partition 3,145,728 - 32,000 B reserve for OTA headers/metadata). Baselines measured from the build artifacts at baseline_measured_at (see metadata notes). The earlier 321,774 B figure stamped 8fea3c7 is not reproduced by rebuilding 8fea3c7 with the current P4 packages (334,448 B, identical to now), so that delta is package- or method-side, not a source change. Budgets set above measured values to accommodate full firmware adaptation (tracked by #188/#189)."
     },
     "firebeetle2": {
       "board": "FireBeetle 2 ESP32-P4 (full firmware)",
