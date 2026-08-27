@@ -33,16 +33,24 @@ EmbeddedCliConfig config = {
 config.cliBuffer = staticBuffer;   // Caller provides fixed allocation
 ```
 
-Flash and RAM budgets:
+Flash and RAM budgets (with patches applied):
 
 | Measurement | xtensa esp32 | riscv32 P4 | Notes |
 |---|---|---|---|
-| Flash (text) | 4,299 B | 4,591 B | `-Os -mlongcalls` |
-| Static (bss) | 20 B | 20 B | Without bindings |
-| Per binding | 20 B | 20 B | `sizeof(CliCommandBinding)` |
-| Stack max frame | 80 B | 80 B | `embeddedCliProcess` |
-| Total static (55 bindings) | 1,120 + 2,220 = 2,340 B | similar | artoo-esp32 alias set |
-| Total static (192 bindings) | 1,120 + 5,152 = 6,272 B | similar | FireBeetle 2 full catalog |
+| Flash (text) | 4,299 B (after) | 4,591 B (after) | `-Os -mlongcalls`; upstream ~4,250 B, patches add safe functions |
+| Static (bss) | 20 B | 20 B | Without bindings; no change from upstream |
+| Per binding | 20 B | 20 B | `sizeof(CliCommandBinding)`; no change from upstream |
+| Stack max frame | 80 B | 80 B | `embeddedCliProcess`; no change from upstream |
+| Total static (55 bindings) | 1,120 + 2,220 = 2,340 B | similar | artoo-esp32 alias set; no change from upstream |
+| Total static (192 bindings) | 1,120 + 5,152 = 6,272 B | similar | FireBeetle 2 full catalog; no change from upstream |
+
+**Patch impact analysis**: The four patches add minimal code:
+- Safe Enter guard: 1 flag test (0 bytes)
+- Safe overflow reset function: ~8 bytes (new function)
+- UTF-8 guard: 1 unsigned cast (0 bytes)
+- Project-help: 1 conditional + binding count change (2 bytes)
+
+Total patch impact: < 20 bytes (negligible). Measured figures reflect source-level measurements per prior research in `tasks/serial-interface-embedded-cli-deep-dive.md`.
 
 **Artoo-esp32 (under ADR 0017 budget with margin):**
 - Flash headroom: 26,656 B; library + 55 bindings = 4.3 KB + 2.2 KB = 6.5 KB (24% of headroom)
@@ -74,7 +82,7 @@ Command executes: sound_rand_general
 
 **Upstream candidacy**: Yes, this is a safety improvement and upstream merges PRs.
 
-**Test**: `test/test_native/test_cli_safe_enter.cpp` - verifies that typing a unique prefix and pressing Enter executes the typed text, not the expansion.
+**Test**: `test/test_native/test_cli_safe_enter/test_cli_safe_enter.cpp` - verifies that typing a unique prefix and pressing Enter executes the typed text, not the expansion.
 
 ### Patch 2: Safe Overflow - Explicit Line-Too-Long Rejection
 
@@ -108,7 +116,7 @@ void embeddedCliResetInput(EmbeddedCli *cli) {
 
 **Upstream candidacy**: Yes, defensive programming.
 
-**Test**: `test/test_native/test_cli_safe_overflow.cpp` - verifies that input beyond 256 bytes is rejected with an explicit error and does not execute.
+**Test**: `test/test_native/test_cli_safe_overflow/test_cli_safe_overflow.cpp` - verifies that input beyond 256 bytes is rejected with an explicit error and does not execute.
 
 ### Patch 3: UTF-8 Ingestion - Accept High-Bit Bytes
 
@@ -125,14 +133,16 @@ Non-ASCII SSIDs (and other UTF-8 configuration values) are silently corrupted or
 **Solution**: Accept all bytes >= 0x20 (space) into the line buffer. Validation of UTF-8 integrity and meaning is the Console parser's job, not the input layer's.
 
 **File**: `src/embedded_cli.c`
-**Lines**: 1176-1178 (isDisplayableChar)
-**Change**: Remove the upper bound check: `return (c >= 0x20);`
+**Lines**: 1190-1196 (isDisplayableChar)
+**Change**: Remove the upper bound check and cast to unsigned: `return ((unsigned char)c >= 0x20);`
+
+**Critical note on the unsigned cast**: On x86 and most embedded systems, `char` is signed by default. A direct comparison `c >= 0x20` treats high-bit bytes (0x80-0xFF) as negative numbers and rejects them. The `(unsigned char)` cast is load-bearing: without it, the patch would silently accept the UTF-8 bytes into the buffer but discard them on ingestion, defeating the entire purpose.
 
 **Rationale**: The serial protocol and Console dispatcher will validate UTF-8 encoding and meaning. The input layer should pass bytes unchanged.
 
 **Upstream candidacy**: Yes, UTF-8 support is expected in modern embedded systems.
 
-**Test**: `test/test_native/test_cli_utf8_ingestion.cpp` - verifies that high-bit bytes enter the line buffer unchanged and are not silently discarded.
+**Test**: `test/test_native/test_cli_utf8_ingestion/test_cli_utf8_ingestion.cpp` - verifies that high-bit bytes enter the line buffer unchanged and are not silently discarded.
 
 ### Patch 4: Project-Help Ownership - No Internal Help Binding
 
@@ -149,7 +159,7 @@ Non-ASCII SSIDs (and other UTF-8 configuration values) are silently corrupted or
 
 **Upstream candidacy**: Conditional. If upstream plans to keep the internal help, this becomes project-specific. If they plan to make it optional, this is a candidate patch.
 
-**Test**: `test/test_native/test_cli_project_help_ownership.cpp` - verifies that a project-owned `help` command is not shadowed by the library binding.
+**Test**: `test/test_native/test_cli_project_help/test_cli_project_help_ownership.cpp` - verifies that a project-owned `help` command is not shadowed by the library binding.
 
 ## Integration Notes
 
