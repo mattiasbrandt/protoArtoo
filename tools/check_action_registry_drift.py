@@ -486,6 +486,230 @@ def add_mismatch(errors: list[str], label: str, expected: object, actual: object
         errors.append(f"{label}: expected {expected!r}, got {actual!r}")
 
 
+def check_executor_symbols(doc: dict, errors: list[str]) -> None:
+    """Validate that every registry executor: value names a real symbol in src/ or include/.
+
+    'none' is allowed explicitly as a special marker. Symbols are verified via grep search.
+    """
+    import subprocess
+
+    # Gather all executor names from registry (skip 'none')
+    executors = set()
+    for entry in doc.get('entries', []):
+        executor = entry.get('executor')
+        if executor and executor != 'none':
+            executors.add(executor)
+
+    # For each executor, search the source tree
+    symbols_missing = set()
+
+    for executor in sorted(executors):
+        found = False
+
+        for root_dir in ['src', 'include']:
+            if found:
+                break
+            root = ROOT / root_dir
+            if not root.exists():
+                continue
+
+            # Search for word-boundary matches of the executor name
+            result = subprocess.run(
+                ['grep', '-r', '--include=*.cpp', '--include=*.h',
+                 f'\\b{executor}\\b', str(root)],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+
+            if result.returncode == 0:
+                found = True
+                break
+
+        if not found:
+            symbols_missing.add(executor)
+
+    # Report missing symbols
+    for executor in sorted(symbols_missing):
+        errors.append(
+            f"executor '{executor}' appears nowhere in src/ or include/ - "
+            f"it is a description, not a symbol"
+        )
+
+
+def check_none_executor_evidence(doc: dict, errors: list[str]) -> None:
+    """Validate that every entry claiming executor: none has evidence in the inventory.
+
+    'none' is allowed for entries without a project executor core, but it must be justified:
+    - External system calls (e.g. ESP-IDF functions) must be named in the evidence.
+    - Bulk/streaming operations (OTA upload) must be marked as out-of-scope.
+    - Unemitted events must be marked as internal or non-SSE.
+    - Pure adapter endpoints (SSE stream) must document the delegation model.
+
+    An unevidenced 'none' is indistinguishable from "I did not look."
+    """
+    # Load all inventory files
+    inventory_files = [
+        ROOT / "tools" / "console_inventory" / "sound.yaml",
+        ROOT / "tools" / "console_inventory" / "dome.yaml",
+        ROOT / "tools" / "console_inventory" / "system.yaml",
+        ROOT / "tools" / "console_inventory" / "drive-servo-aux-rc.yaml",
+    ]
+
+    inventory_rows = {}
+    for inv_file in inventory_files:
+        if not inv_file.exists():
+            continue
+        with open(inv_file) as f:
+            inv_data = yaml.safe_load(f)
+            for row in inv_data.get('rows', []):
+                name = row.get('name')
+                inventory_rows[name] = row
+
+    # Check each 'none' entry in registry
+    for entry in doc.get('entries', []):
+        if entry.get('executor') != 'none':
+            continue
+
+        name = entry.get('name')
+        inv_row = inventory_rows.get(name)
+
+        if not inv_row:
+            errors.append(
+                f"{name} has executor: none but no inventory row to provide justification"
+            )
+            continue
+
+        # Require either evidence or notes explaining the absence
+        evidence = inv_row.get('evidence', [])
+        notes = inv_row.get('notes', '')
+
+        has_evidence = evidence and len(evidence) > 0
+        has_notes = notes and len(notes) > 0
+
+        if not (has_evidence or has_notes):
+            errors.append(
+                f"{name} has executor: none but no evidence or notes to justify the absence"
+            )
+
+
+
+
+def check_executor_marker_contradiction(doc: dict, errors: list[str]) -> None:
+    """Validate that no entry has both a real executor and claims NO-CORE-BELOW-HANDLER.
+
+    An entry cannot both name a project core and assert there is none. This check
+    prevents mixing evidence (here is the core) with the absence marker (there is no core).
+    """
+    # Load all inventory files
+    inventory_files = [
+        ROOT / "tools" / "console_inventory" / "sound.yaml",
+        ROOT / "tools" / "console_inventory" / "dome.yaml",
+        ROOT / "tools" / "console_inventory" / "system.yaml",
+        ROOT / "tools" / "console_inventory" / "drive-servo-aux-rc.yaml",
+    ]
+
+    inventory_rows = {}
+    for inv_file in inventory_files:
+        if not inv_file.exists():
+            continue
+        with open(inv_file) as f:
+            inv_data = yaml.safe_load(f)
+            for row in inv_data.get('rows', []):
+                name = row.get('name')
+                inventory_rows[name] = row
+
+    # Check each entry in registry
+    for entry in doc.get('entries', []):
+        name = entry.get('name')
+        executor = entry.get('executor')
+
+        # Skip entries that don't have an executor or claim 'none'
+        if not executor or executor == 'none':
+            continue
+
+        inv_row = inventory_rows.get(name)
+        if not inv_row:
+            continue
+
+        # Check if the inventory notes still claim NO-CORE-BELOW-HANDLER
+        notes = inv_row.get('notes', '')
+        if 'NO-CORE-BELOW-HANDLER' in notes:
+            errors.append(
+                f"{name} has executor: {executor!r} in registry but notes in inventory claim "
+                f"NO-CORE-BELOW-HANDLER - drop the marker, they cannot both hold"
+            )
+
+def check_status_query_classification(doc: dict, errors: list[str]) -> None:
+    """Enforce that every type: status entry is explicitly classified as query or non-query.
+    
+    Query entries (fields: present) have a standalone endpoint returning structured data.
+    Non-query entries (is_query: false) describe fields within aggregate responses (metadata).
+    """
+    status_entries = [e for e in doc.get('entries', []) if e.get('type') == 'status']
+    
+    for entry in status_entries:
+        name = entry.get('name', '<unnamed>')
+        has_fields = 'fields' in entry
+        is_non_query = entry.get('is_query') is False
+        
+        # Every status entry must have EITHER fields OR is_query: false
+        if not (has_fields or is_non_query):
+            errors.append(
+                f"{name} type=status but neither fields nor is_query: false present "
+                "(classification ambiguous; cannot distinguish unfinished from intentional non-query)"
+            )
+        elif has_fields and is_non_query:
+            errors.append(
+                f"{name} has both fields and is_query: false (contradictory classification)"
+            )
+
+
+def check_inventory_registry_alignment(doc: dict, errors: list[str]) -> None:
+    """Validate one-to-one mapping: registry entries <-> inventory rows.
+
+    Each registry entry must have a matching row in the inventory files with
+    matching executor_or_core value.
+    """
+    import subprocess
+    inventory_dir = ROOT / "tools" / "console_inventory"
+
+    # Load all inventory rows
+    inventory_rows = {}  # name -> inventory row
+    for inv_file in sorted(inventory_dir.glob("*.yaml")):
+        try:
+            with open(inv_file) as f:
+                inv_data = yaml.safe_load(f)
+            for row in inv_data.get('rows', []):
+                name = row.get('name')
+                if name in inventory_rows:
+                    errors.append(f"{name} appears in multiple inventory files")
+                inventory_rows[name] = row
+        except Exception as e:
+            errors.append(f"Failed to read {inv_file.name}: {e}")
+            return
+
+    # Build registry lookup
+    registry_entries = {e['name']: e for e in doc.get('entries', [])}
+
+    # Check bidirectional mapping
+    for name, inv_row in inventory_rows.items():
+        if name not in registry_entries:
+            errors.append(f"{name} in inventory but missing from registry")
+        else:
+            inv_executor = inv_row.get('executor_or_core')
+            reg_executor = registry_entries[name].get('executor')
+            if inv_executor != reg_executor:
+                errors.append(
+                    f"{name} executor mismatch: inventory={inv_executor!r}, "
+                    f"registry={reg_executor!r}"
+                )
+
+    for name in registry_entries:
+        if name not in inventory_rows:
+            errors.append(f"{name} in registry but missing from inventory")
+
+
 def main() -> int:
     errors: list[str] = []
     doc = load_registry_doc()
@@ -540,6 +764,11 @@ def main() -> int:
     check_feature_availability_metadata(doc, errors)
     check_component_toggle_entries(doc, errors)
     check_html_data_attributes(errors)
+    check_inventory_registry_alignment(doc, errors)
+    check_status_query_classification(doc, errors)
+    check_executor_symbols(doc, errors)
+    check_none_executor_evidence(doc, errors)
+    check_executor_marker_contradiction(doc, errors)
 
     if errors:
         print("Action registry drift detected:", file=sys.stderr)
