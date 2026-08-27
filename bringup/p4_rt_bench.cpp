@@ -31,6 +31,7 @@
 #include <driver/uart.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+#include <Preferences.h>
 
 // ============================================================================
 // Forward declarations
@@ -202,7 +203,10 @@ void benchPhase1SbusGeneratorOn() {
     uart_set_line_inverse(UART_BENCH_SBUS, UART_SIGNAL_TXD_INV);
 
     // Driver install
-    ret = uart_driver_install(UART_BENCH_SBUS, 0, 1024, 0, NULL, 0);
+    // Vendor constraint (ESP-IDF uart.c:1942): rx_buffer_size must be > UART_HW_FIFO_LEN(uart_num).
+    // Even though this UART is TX-only, the driver enforces this check. Allocate 256 bytes
+    // (UART FIFO is typically 128 bytes; 256 > 128 satisfies the constraint).
+    ret = uart_driver_install(UART_BENCH_SBUS, 256, 1024, 0, NULL, 0);
     if (ret != ESP_OK) {
         Serial.printf("[BENCH P1] ERROR: uart_driver_install failed: %s\n", esp_err_to_name(ret));
         Serial.flush();
@@ -275,26 +279,19 @@ void benchPhase3DriveFrameCadence() {
     // Precondition check: servo outputs (LEDC PWM) must be disabled.
     // If servo task initialized, it drives GPIO51 (ARM5_SERVO) with PWM.
     // Reading GPIO51 while servo is active would sample PWM noise, not drive frames.
-    // Skip phase if LEDC outputs appear to be active.
-    gpio_config_t io_conf = {};
-    io_conf.intr_type = GPIO_INTR_DISABLE;
-    io_conf.mode = GPIO_MODE_INPUT;
-    io_conf.pin_bit_mask = (1ULL << BENCH_RX_DRIVE);
-    gpio_config(&io_conf);
+    // Check config the same way servo_task.cpp does (servo_task.cpp:425):
+    // LEDC initializes if any of enable_arm1, enable_arm2, enable_aux1, enable_aux2,
+    // enable_aux3 are true. Read from NVS directly (bench env doesn't link config_store).
+    Preferences nvs;
+    nvs.begin("artoo", true);  // read-only namespace "artoo"
+    bool anyServoEnabled = nvs.getBool("en_arm1", false) || nvs.getBool("en_arm2", false) ||
+                            nvs.getBool("en_aux1", false) || nvs.getBool("en_aux2", false) ||
+                            nvs.getBool("en_aux3", false);
+    nvs.end();
 
-    // Sample GPIO51 to check for PWM activity (active servo = high with modulation)
-    uint32_t high_count = 0;
-    for (int i = 0; i < 10; i++) {
-        if (gpio_get_level(BENCH_RX_DRIVE)) {
-            high_count++;
-        }
-        delayMicroseconds(500);
-    }
-
-    if (high_count > 7) {
-        // GPIO51 mostly high = likely active PWM from servo driver
-        Serial.println("[BENCH P3] SKIP: Servo outputs (LEDC PWM) appear to be enabled on GPIO51");
-        Serial.println("[BENCH P3] Precondition not met: LEDC must be disabled (boot log: 'skipping LEDC init')");
+    if (anyServoEnabled) {
+        Serial.println("[BENCH P3] SKIP: Servo outputs (LEDC PWM) enabled in config");
+        Serial.println("[BENCH P3] Precondition not met: LEDC must be disabled (NVS: en_arm1/2, en_aux1/2/3)");
         Serial.flush();
         return;
     }
