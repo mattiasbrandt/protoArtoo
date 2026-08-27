@@ -227,6 +227,7 @@ entries:
   requires_web_control: false
   nvs_key: null
   executor: statusSnapshotCore
+  is_query: false
 - name: drive.event.failsafe-triggered
   display_name: Failsafe Triggered
   description: Drive stopped due to signal loss, estop, or watchdog
@@ -779,6 +780,9 @@ entries:
   requires_web_control: false
   nvs_key: null
   executor: buildStatusJson
+  fields:
+  - domeTargetSpeed
+  - domeEnabled
 - name: dome.action.move
   display_name: Dome Speed (Web)
   description: 'Set dome rotation speed from the browser. Gated by sleep mode (423) and the enable_dome_esc config flag (409); distinct from dome.action.set-speed, which is the SBUS/PWM RC-bindable axis.
@@ -1765,6 +1769,10 @@ entries:
   requires_web_control: false
   nvs_key: null
   executor: Core 0
+  fields:
+  - audioActive
+  - audioLinkOk
+  - activeMood
 - name: sound.config.volume
   display_name: Volume
   description: "Default audio volume (0\u201330)"
@@ -2271,6 +2279,7 @@ entries:
   requires_web_control: false
   nvs_key: null
   executor: statusSnapshotCore
+  is_query: false
 - name: aux.action.led-color
   display_name: LED Color
   description: Set AUX LED strip RGB color
@@ -2347,6 +2356,7 @@ entries:
   requires_web_control: false
   nvs_key: null
   executor: statusSnapshotCore
+  is_query: false
 - name: aux.config.led-pin
   display_name: LED Header Selection
   description: Selected AUX header for WS2812B strip (0=disabled, 1=AUX1, 2=AUX2, 3=AUX3)
@@ -2643,6 +2653,7 @@ entries:
   requires_web_control: false
   nvs_key: null
   executor: buildStatusJson
+  is_query: false
 - name: system.status.mood
   display_name: Mood
   description: Currently active mood preset (Quiet=10, Full-Awake=11, Mid-Awake=13, Awake+=14)
@@ -2659,6 +2670,7 @@ entries:
   requires_web_control: false
   nvs_key: null
   executor: buildStatusJson
+  is_query: false
 - name: system.config.mood
   display_name: Active Mood
   description: Persisted active mood preset ID
@@ -2931,6 +2943,7 @@ entries:
   requires_web_control: false
   nvs_key: null
   executor: buildStatusJson
+  is_query: false
 - name: system.status.dashboard-health
   display_name: Dashboard Health Signals
   description: Traffic-light health indicators derived client-side from /api/status (RC receiver, WiFi, filesystem, heap, dome serial link, sound module, dome ESC)
@@ -2947,6 +2960,7 @@ entries:
   requires_web_control: false
   nvs_key: null
   executor: buildStatusJson
+  is_query: false
 - name: system.status.logs
   display_name: Logs
   description: Recent firmware log lines
@@ -2963,6 +2977,7 @@ entries:
   requires_web_control: false
   nvs_key: null
   executor: buildStatusJson
+  is_query: false
 - name: system.status.wifi
   display_name: WiFi
   description: WiFi connection status, mode, IP addresses, and signal strength
@@ -2979,6 +2994,7 @@ entries:
   requires_web_control: false
   nvs_key: null
   executor: buildStatusJson
+  is_query: false
 - name: dome.status.serial-link
   display_name: Dome Serial Link
   description: Dome serial link status and heartbeat timing
@@ -2995,6 +3011,10 @@ entries:
   requires_web_control: false
   nvs_key: null
   executor: buildSerialJson
+  fields:
+  - port
+  - available
+  - baud
 - name: system.api.get-identity
   display_name: Get Droid Identity
   description: Current cosmetic droid name and mDNS opt-in
@@ -3225,6 +3245,7 @@ entries:
   requires_web_control: false
   nvs_key: null
   executor: none
+  is_query: false
 - name: rc.status.snapshot
   display_name: RC Snapshot
   description: Live RC channel values, SBUS raw data, and current binding state
@@ -3241,6 +3262,10 @@ entries:
   requires_web_control: false
   nvs_key: null
   executor: NO-CORE-BELOW-HANDLER
+  fields:
+  - mode
+  - sbus1
+  - sbus2
 - name: rc.action.toggle-debug
   display_name: Toggle RC Debug
   description: Enable or disable verbose RC channel logging

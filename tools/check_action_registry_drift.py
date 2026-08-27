@@ -486,6 +486,33 @@ def add_mismatch(errors: list[str], label: str, expected: object, actual: object
         errors.append(f"{label}: expected {expected!r}, got {actual!r}")
 
 
+
+
+def check_status_query_classification(doc: dict, errors: list[str]) -> None:
+    """Enforce that every type: status entry is explicitly classified as query or non-query.
+    
+    Query entries (fields: present) have a standalone endpoint returning structured data.
+    Non-query entries (is_query: false) describe fields within aggregate responses (metadata).
+    """
+    status_entries = [e for e in doc.get('entries', []) if e.get('type') == 'status']
+    
+    for entry in status_entries:
+        name = entry.get('name', '<unnamed>')
+        has_fields = 'fields' in entry
+        is_non_query = entry.get('is_query') is False
+        
+        # Every status entry must have EITHER fields OR is_query: false
+        if not (has_fields or is_non_query):
+            errors.append(
+                f"{name} type=status but neither fields nor is_query: false present "
+                "(classification ambiguous; cannot distinguish unfinished from intentional non-query)"
+            )
+        elif has_fields and is_non_query:
+            errors.append(
+                f"{name} has both fields and is_query: false (contradictory classification)"
+            )
+
+
 def check_inventory_registry_alignment(doc: dict, errors: list[str]) -> None:
     """Validate one-to-one mapping: registry entries <-> inventory rows.
 
@@ -586,6 +613,7 @@ def main() -> int:
     check_component_toggle_entries(doc, errors)
     check_html_data_attributes(errors)
     check_inventory_registry_alignment(doc, errors)
+    check_status_query_classification(doc, errors)
 
     if errors:
         print("Action registry drift detected:", file=sys.stderr)
