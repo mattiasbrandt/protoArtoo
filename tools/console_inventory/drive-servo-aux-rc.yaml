@@ -397,7 +397,7 @@ rows:
       - "src/web/web_seam_routes.cpp:61 - webRegisterRoute(\"/api/rc/map\", kPost, handleRcMapPost)"
       - "include/api_config.h:27 - void handleRcMapPost(WebRequest& req)"
       - "src/web/api_config.cpp:673 - void handleRcMapPost(WebRequest& req) {"
-      - "src/web/api_rc_map_apply.cpp:7 - rcMapApplyCore validates and persists"
+      - "src/web/api_rc_map_apply.cpp:85 - void rcMapApply (Apply Core per ADR 0011)"
     executor_or_core: "rcMapApplyCore"
     missing_metadata: []
     notes: "Web-API. Apply Core (ADR 0011)."
@@ -461,7 +461,7 @@ rows:
       - "src/web/web_seam_routes.cpp:38 - webRegisterRoute(\"/api/actions\", kGet, handleActionsGet)"
       - "include/api_actions.h:39 - void handleActionsGet(WebRequest& req)"
       - "src/web/api_actions.cpp:47 - void handleActionsGet(WebRequest& req) {"
-      - "src/web/action_registry.cpp:11 - extern const RobotAction s_actionRegistry[]"
+      - "src/web/action_registry.cpp:16 - const ActionEntry ACTION_REGISTRY[]"
     executor_or_core: "NO-CORE-BELOW-HANDLER"
     missing_metadata: []
     notes: "Web-API only. Reads read-only registry. NO-CORE-BELOW-HANDLER."
@@ -499,7 +499,7 @@ rows:
     anchor_kind: "config"
     evidence:
       - "include/config_store.h:362 - RcInputMode rc_input_mode"
-      - "src/web/api_config_apply.cpp:318 - paramRcInputMode parsing"
+      - "src/web/api_config_apply.cpp:318 - mode parsing from params"
       - "src/web/api_config_apply.cpp:322 - working->sys.rc_input_mode = mode (applied)"
     executor_or_core: "configApplyCore"
     missing_metadata:
@@ -641,9 +641,9 @@ rows:
     registry_marcduino_cmd: null
     anchor_kind: "rc_internal"
     evidence:
-      - "include/rc_action_types.h:27 - SERVO_ACTION_ARM1_TOGGLE"
-      - "src/rc_action_dispatcher.cpp:85 - processTriggerAction dispatch"
-      - "src/rc_dispatcher_helpers.cpp:94 - queueServoCommand(armId, SERVO_CMD_OPEN/CLOSE, 0)"
+      - "include/rc_action_types.h:28 - SERVO_ACTION_ARM1_TOGGLE"
+      - "src/rc_action_dispatcher.cpp:61 - case SERVO_ACTION_ARM1_TOGGLE in rcDispatchAction"
+      - "src/rc_dispatcher_helpers.cpp:94 - queueServoCommand dispatch"
     executor_or_core: "servoCmdQueue"
     missing_metadata: []
     notes: "SBUS button. Toggles ARM1. Queue guarded at rc_dispatcher_helpers.cpp:101."
@@ -661,9 +661,9 @@ rows:
     registry_marcduino_cmd: null
     anchor_kind: "rc_internal"
     evidence:
-      - "include/rc_action_types.h:28 - SERVO_ACTION_ARM2_TOGGLE"
-      - "src/rc_action_dispatcher.cpp:85 - processTriggerAction dispatch"
-      - "src/rc_dispatcher_helpers.cpp:94 - queueServoCommand(armId, SERVO_CMD_OPEN/CLOSE, 0)"
+      - "include/rc_action_types.h:29 - SERVO_ACTION_ARM2_TOGGLE"
+      - "src/rc_action_dispatcher.cpp:62 - case SERVO_ACTION_ARM2_TOGGLE in rcDispatchAction"
+      - "src/rc_dispatcher_helpers.cpp:94 - queueServoCommand dispatch"
     executor_or_core: "servoCmdQueue"
     missing_metadata: []
     notes: "SBUS button. Toggles ARM2. Queue guarded at rc_dispatcher_helpers.cpp:101."
@@ -681,9 +681,9 @@ rows:
     registry_marcduino_cmd: null
     anchor_kind: "rc_internal"
     evidence:
-      - "include/rc_action_types.h:29 - SERVO_ACTION_AUX1_TOGGLE"
-      - "src/rc_action_dispatcher.cpp:85 - processTriggerAction dispatch"
-      - "src/rc_dispatcher_helpers.cpp:94 - queueServoCommand(armId, SERVO_CMD_OPEN/CLOSE, 0)"
+      - "include/rc_action_types.h:30 - SERVO_ACTION_AUX1_TOGGLE"
+      - "src/rc_action_dispatcher.cpp:63 - case SERVO_ACTION_AUX1_TOGGLE in rcDispatchAction"
+      - "src/rc_dispatcher_helpers.cpp:94 - queueServoCommand dispatch"
     executor_or_core: "servoCmdQueue"
     missing_metadata: []
     notes: "SBUS button. Toggles AUX1. Queue guarded at rc_dispatcher_helpers.cpp:101."
@@ -701,9 +701,9 @@ rows:
     registry_marcduino_cmd: null
     anchor_kind: "rc_internal"
     evidence:
-      - "include/rc_action_types.h:30 - SERVO_ACTION_AUX2_TOGGLE"
-      - "src/rc_action_dispatcher.cpp:85 - processTriggerAction dispatch"
-      - "src/rc_dispatcher_helpers.cpp:94 - queueServoCommand(armId, SERVO_CMD_OPEN/CLOSE, 0)"
+      - "include/rc_action_types.h:31 - SERVO_ACTION_AUX2_TOGGLE"
+      - "src/rc_action_dispatcher.cpp:64 - case SERVO_ACTION_AUX2_TOGGLE in rcDispatchAction"
+      - "src/rc_dispatcher_helpers.cpp:94 - queueServoCommand dispatch"
     executor_or_core: "servoCmdQueue"
     missing_metadata: []
     notes: "SBUS button. Toggles AUX2. Queue guarded at rc_dispatcher_helpers.cpp:101."
@@ -721,9 +721,9 @@ rows:
     registry_marcduino_cmd: null
     anchor_kind: "rc_internal"
     evidence:
-      - "include/rc_action_types.h:31 - SERVO_ACTION_AUX3_TOGGLE"
-      - "src/rc_action_dispatcher.cpp:85 - processTriggerAction dispatch"
-      - "src/rc_dispatcher_helpers.cpp:94 - queueServoCommand(armId, SERVO_CMD_OPEN/CLOSE, 0)"
+      - "include/rc_action_types.h:32 - SERVO_ACTION_AUX3_TOGGLE"
+      - "src/rc_action_dispatcher.cpp:65 - case SERVO_ACTION_AUX3_TOGGLE in rcDispatchAction"
+      - "src/rc_dispatcher_helpers.cpp:94 - queueServoCommand dispatch"
     executor_or_core: "servoCmdQueue"
     missing_metadata: []
     notes: "SBUS button. Toggles AUX3. Queue guarded at rc_dispatcher_helpers.cpp:101."
