@@ -209,15 +209,15 @@ All GPIO assignments are transcribed from `include/config.h`'s firebeetle2 block
 | 29 | J2 (SPI) | SBUS receiver #2 (dome) | RMT | MOSI | P2 unimpeachable; SPI header |
 | 30 | J2 (SPI) | RC channel #3 | RMT | MISO | P2 unimpeachable; SPI header |
 | 31 | J3 | RC channel #4 | RMT | SS | P2 unimpeachable; spec sheet "best clean pin in <=36 range" |
-| 32 | J3 | RC channel #5 | GPIO | I3C/SCL | P1 (reassignable, protoArtoo does not use I3C) |
-| 33 | J3 | RC channel #6 | GPIO | I3C/SDA | P1 (reassignable, protoArtoo does not use I3C) |
+| 32 | J3 | RC channel #5 | GPIO | — | P1 (reassignable, protoArtoo does not use I3C) |
+| 33 | J3 | RC channel #6 | GPIO | — | P1 (reassignable, protoArtoo does not use I3C) |
 | 34 | J3 | Audio module TX | GPIO matrix | — | P3 strapping (JTAG source); software bit-bang via GPIO matrix |
 | 36 | J3 | Audio module RX | HardwareSerial(2) | — | P3 strapping (ROM print); shared UART2 with dome link via arbiter |
 | 49 | J3 | Arm servo #1 (left/top) | LEDC PWM | A5 (not labeled on silkscreen) | LDO caution (VDD_IO_6); ADC2_CHANNEL0 |
 | 50 | J3 | Arm servo #2 (right/bottom) | LEDC PWM | A6 (not labeled on silkscreen) | LDO caution (VDD_IO_6); ADC2_CHANNEL1 |
 | 4 | J3 | Arm servo #3 (aux strip) | LEDC PWM | T0 | P3 JTAG MTMS (post-debug); WS2812B capable |
 | 5 | J3 | Arm servo #4 (aux strip) | LEDC PWM | T1 | P3 JTAG MTDO (post-debug); WS2812B capable |
-| 51 | J3 | Arm servo #5 (aux strip) | LEDC PWM | A7 (not labeled on silkscreen) | LDO caution (VDD_IO_6); WS2812B capable; ADC2_CHANNEL2 |
+| 51 | J3 | Arm servo #5 (aux strip) | LEDC PWM | A4 | LDO caution (VDD_IO_6); WS2812B capable; ADC2_CHANNEL2 |
 | 48 | J3 | Dome rotation ESC | LEDC PWM | — | LDO caution (VDD_IO_5); **unmeasured under load (#191)**; P2 with LDO caution |
 
 6 board bring-up interface lanes:
@@ -245,7 +245,7 @@ The FireBeetle 2's DFR1237 shield exposes exactly **24 GPIO pins** from the ESP3
 | **GPIO 37** | Console/download UART TX | Reserved | Always keep as UART0 TX for flashing and serial debug |
 | **GPIO 38** | Console/download UART RX | Reserved | Always keep as UART0 RX for flashing and serial debug |
 | **GPIO 35** | Avoid (boot-mode strapping) | Reserved | Held low at reset forces joint download boot mode |
-| **GPIO 52** | **Genuinely free** | **1 pin only** | ADC2_CHANNEL3, Arduino A7, P2 clean; **the sole free GPIO on this board** |
+| **GPIO 52** | **Genuinely free** | **1 pin only** | ADC2_CHANNEL3, Arduino A7, P2 with LDO caution; **the sole free GPIO on this board** |
 
 **Production implications:**
 - GPIO 48–52 remain **unmeasured under load** (#191 — characterization pending). Four production outputs sit in this LDO-caution range; design decisions and operation validation must treat them as a group.
