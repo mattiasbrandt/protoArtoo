@@ -14,8 +14,8 @@
  *            Re-arm gate: skip stall if this boot IS a watchdog reset
  *
  * Wiring (jumpers for this bench session):
- *   BENCH_TX_SBUS (GPIO48) -> PIN_SBUS1_RX (GPIO28)
- *   PIN_DRIVE_TX (GPIO20) -> BENCH_RX_DRIVE (GPIO51)
+ *   BENCH_TX_SBUS (GPIO52, free pin) -> PIN_SBUS1_RX (GPIO28)
+ *   PIN_DRIVE_TX (GPIO20) -> BENCH_RX_DRIVE (GPIO51, borrowed ARM5_SERVO)
  *
  * SBUS protocol: 25-byte frames, 100 kbaud, 8E2, inverted.
  *   Byte 0: 0x0F (header)
@@ -42,19 +42,20 @@ void benchPhase3DriveFrameCadence();
 void benchPhase4WatchdogStall();
 
 // ============================================================================
-// Bench GPIO pins (free on FireBeetle 2, not in production config)
+// Bench GPIO pins
 // ============================================================================
-// BENCH_TX_SBUS: UART3 TX (GPIO48) - generates SBUS frames
-// GPIO48 is LDO-backed (VDD_IO_5) but suitable for bench low-speed I/O.
-// Jumper from GPIO48 to GPIO28 (PIN_SBUS1_RX)
-static constexpr gpio_num_t BENCH_TX_SBUS = GPIO_NUM_48;
+// BENCH_TX_SBUS: GPIO52 (the only free pin on FireBeetle 2 after production inventory)
+// Output meets RMT RX input (safe direction for borrow).
+// Jumper from GPIO52 to GPIO28 (PIN_SBUS1_RX)
+static constexpr gpio_num_t BENCH_TX_SBUS = GPIO_NUM_52;
 
-// BENCH_RX_DRIVE: GPIO51 (spare, LDO-backed VDD_IO_6, suitable for sampling)
-// Jumper from GPIO20 (PIN_DRIVE_TX) to GPIO51
+// BENCH_RX_DRIVE: GPIO51 (borrowed from ARM5_SERVO / AUX3, input only)
+// Input from GPIO20 (PIN_DRIVE_TX) cannot contend with servo driver.
+// Precondition: LEDC outputs must be disabled at boot (servo task skips init).
 static constexpr gpio_num_t BENCH_RX_DRIVE = GPIO_NUM_51;
 
 // Bench UART controllers (configured to route to bench GPIO via GPIO matrix)
-static constexpr uart_port_t UART_BENCH_SBUS = UART_NUM_3;   // TX on GPIO48
+static constexpr uart_port_t UART_BENCH_SBUS = UART_NUM_2;   // TX on GPIO52 (or any UART via GPIO matrix)
 static constexpr uart_port_t UART_BENCH_DRIVE = UART_NUM_4;  // RX on GPIO51
 
 // ============================================================================
@@ -158,8 +159,9 @@ void benchMainTask(void* param) {
 
 void benchPhase0Banner() {
     Serial.println("\n[BENCH P0] === protoArtoo P4 RT Bench Harness ===");
-    Serial.println("[BENCH P0] Wiring: BENCH_TX_SBUS (GPIO48) -> PIN_SBUS1_RX (GPIO28)");
-    Serial.println("[BENCH P0] Wiring: PIN_DRIVE_TX (GPIO20) -> BENCH_RX_DRIVE (GPIO51)");
+    Serial.println("[BENCH P0] Wiring: BENCH_TX_SBUS (GPIO52, free pin) -> PIN_SBUS1_RX (GPIO28)");
+    Serial.println("[BENCH P0] Wiring: PIN_DRIVE_TX (GPIO20) -> BENCH_RX_DRIVE (GPIO51, borrowed ARM5)");
+    Serial.println("[BENCH P0] Precondition: Servo/AUX outputs disabled (check boot log for 'skipping LEDC init')");
     Serial.printf("[BENCH P0] Phase timings: P0=%lu, P1=%lu, P2=%lu, P3=%lu, P4_prep=%lu (ms)\n",
                   PHASE_0_SETTLE_MS, PHASE_1_DURATION_MS, PHASE_2_SETTLE_MS,
                   PHASE_3_DURATION_MS, PHASE_4_PREP_MS);
@@ -167,7 +169,7 @@ void benchPhase0Banner() {
     Serial.println("[BENCH P0]   P0: Banner and setup");
     Serial.println("[BENCH P0]   P1: SBUS generator ON - should clear failsafe");
     Serial.println("[BENCH P0]   P2: SBUS generator OFF - failsafe re-arms after timeout");
-    Serial.println("[BENCH P0]   P3: Drive frame cadence observation");
+    Serial.println("[BENCH P0]   P3: Drive frame cadence observation (skips if servo outputs enabled)");
     Serial.println("[BENCH P0]   P4: Watchdog stall - chip resets");
     Serial.flush();
 
@@ -175,7 +177,7 @@ void benchPhase0Banner() {
 }
 
 void benchPhase1SbusGeneratorOn() {
-    Serial.println("[BENCH P1] SBUS generator starting on UART3 (GPIO48 TX)...");
+    Serial.println("[BENCH P1] SBUS generator starting on GPIO52 TX...");
     Serial.flush();
 
     // Initialize UART3 for SBUS (100 kbaud, 8E2, inverted TX)
@@ -278,6 +280,34 @@ void benchPhase2SbusGeneratorOff() {
 
 void benchPhase3DriveFrameCadence() {
     Serial.println("[BENCH P3] Drive frame cadence observation starting...");
+
+    // Precondition check: servo outputs (LEDC PWM) must be disabled.
+    // If servo task initialized, it drives GPIO51 (ARM5_SERVO) with PWM.
+    // Reading GPIO51 while servo is active would sample PWM noise, not drive frames.
+    // Skip phase if LEDC outputs appear to be active.
+    gpio_config_t io_conf = {};
+    io_conf.intr_type = GPIO_INTR_DISABLE;
+    io_conf.mode = GPIO_MODE_INPUT;
+    io_conf.pin_bit_mask = (1ULL << BENCH_RX_DRIVE);
+    gpio_config(&io_conf);
+
+    // Sample GPIO51 to check for PWM activity (active servo = high with modulation)
+    uint32_t high_count = 0;
+    for (int i = 0; i < 10; i++) {
+        if (gpio_get_level(BENCH_RX_DRIVE)) {
+            high_count++;
+        }
+        delayMicroseconds(500);
+    }
+
+    if (high_count > 7) {
+        // GPIO51 mostly high = likely active PWM from servo driver
+        Serial.println("[BENCH P3] SKIP: Servo outputs (LEDC PWM) appear to be enabled on GPIO51");
+        Serial.println("[BENCH P3] Precondition not met: LEDC must be disabled (boot log: 'skipping LEDC init')");
+        Serial.flush();
+        return;
+    }
+
     Serial.println("[BENCH P3] Sampling PIN_DRIVE_TX (GPIO20) received on BENCH_RX_DRIVE (GPIO51)");
     Serial.flush();
 
