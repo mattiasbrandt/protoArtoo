@@ -33,24 +33,43 @@ EmbeddedCliConfig config = {
 config.cliBuffer = staticBuffer;   // Caller provides fixed allocation
 ```
 
-Flash and RAM budgets (with patches applied):
+Object Size Analysis (Measured at commit 9950006)
 
-| Measurement | xtensa esp32 | riscv32 P4 | Notes |
-|---|---|---|---|
-| Flash (text) | 4,299 B (after) | 4,591 B (after) | `-Os -mlongcalls`; upstream ~4,250 B, patches add safe functions |
-| Static (bss) | 20 B | 20 B | Without bindings; no change from upstream |
-| Per binding | 20 B | 20 B | `sizeof(CliCommandBinding)`; no change from upstream |
-| Stack max frame | 80 B | 80 B | `embeddedCliProcess`; no change from upstream |
-| Total static (55 bindings) | 1,120 + 2,220 = 2,340 B | similar | artoo-esp32 alias set; no change from upstream |
-| Total static (192 bindings) | 1,120 + 5,152 = 6,272 B | similar | FireBeetle 2 full catalog; no change from upstream |
+Measured with both toolchains under `-Os`:
 
-**Patch impact analysis**: The four patches add minimal code:
-- Safe Enter guard: 1 flag test (0 bytes)
-- Safe overflow reset function: ~8 bytes (new function)
-- UTF-8 guard: 1 unsigned cast (0 bytes)
-- Project-help: 1 conditional + binding count change (2 bytes)
+| Toolchain | State | .text | .rodata | .bss | max stack frame |
+|-----------|-------|-------|---------|------|-----------------|
+| xtensa | upstream | 3,430 B | 238 B | 20 B | 96 B |
+| xtensa | patched | 3,190 B | 118 B | 20 B | 96 B |
+| riscv32 | upstream | 4,342 B | 259 B | 20 B | 112 B |
+| riscv32 | patched | 3,854 B | 132 B | 20 B | 96 B |
 
-Total patch impact: < 20 bytes (negligible). Measured figures reflect source-level measurements per prior research in `tasks/serial-interface-embedded-cli-deep-dive.md`.
+**Deltas (patched - upstream):**
+- xtensa: .text -240 B, .rodata -120 B, .bss 0, max frame 0 B
+- riscv32: .text -488 B, .rodata -127 B, .bss 0, max frame -16 B
+
+**Measurement commands:**
+```bash
+xtensa-esp32-elf-gcc -Os -mlongcalls -I include -fstack-usage -c embedded_cli.c -o out.o
+xtensa-esp32-elf-size -A out.o          # sum .text* / .rodata* / .bss*
+sort -t$'\t' -k2 -rn out.su | head -1   # largest stack frame
+
+riscv32-esp-elf-gcc -Os -march=rv32imafc_zicsr_zifencei -I include -fstack-usage -c embedded_cli.c -o out.o
+riscv32-esp-elf-size -A out.o
+sort -t$'\t' -k2 -rn out.su | head -1
+```
+
+**Critical findings:**
+1. **Patches reduce code size, not increase it.** The project-help ownership patch sets `cliInternalBindingCount = 0` and guards `initInternalBindings()`, allowing the compiler to eliminate dead code (internal help binding and its strings). This accounts for the .rodata reductions (xtensa -120 B, riscv32 -127 B).
+
+2. **Max stack frame is 96 B, not 80 B.** Prior research in `tasks/serial-interface-embedded-cli-deep-dive.md` reported 80 B, but re-measurement shows 96 B on both toolchains. This difference is significant for stack allocation (e.g., #217 Console task sizing). The larger frame comes from `embeddedCliProcess` context and local buffers.
+
+3. **Prior research figures NOT reproduced.** The earlier document claimed Flash measurements of 4,299 B (xtensa) and 4,591 B (riscv32) for object code. Measured here: 3,190 B and 3,854 B (patched). The prior figures may have included linking overhead, runtime stubs, or different compilation flags not documented at the time. These measurements use `-Os` with no additional optimizations.
+
+**Per-binding and total allocations remain as documented:**
+- Per binding: 20 B (`sizeof(CliCommandBinding)`)
+- Static BSS without bindings: 20 B
+- Stack max frame (re-measured, corrected from prior research): 96 B
 
 **Artoo-esp32 (under ADR 0017 budget with margin):**
 - Flash headroom: 26,656 B; library + 55 bindings = 4.3 KB + 2.2 KB = 6.5 KB (24% of headroom)
