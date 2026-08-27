@@ -46,7 +46,8 @@ rows:
       - "src/web/api_seq.cpp:240 - void handleSeqDelete(WebRequest& req) {"
       - "src/web/api_seq.cpp:250 - seqStoreDelete(name)"
     executor_or_core: "seqStoreDelete"
-    missing_metadata: []
+    missing_metadata:
+      - "parameter 'name' lacks description/default/enum values"
     notes: ""
   - name: dome.action.dome-sequence
     type: action
@@ -68,7 +69,7 @@ rows:
       - "docs/action-registry.yaml:300 - rc_token dome_seq"
     executor_or_core: "sequenceStart"
     missing_metadata: []
-    notes: ""
+    notes: "Universal gaps (all 55 rows): registry lacks executor reference and console_alias fields - #212 consumes both"
   - name: dome.action.droid-sequence-beep-cantina
     type: action
     registry_api_path: null
@@ -376,7 +377,8 @@ rows:
       - "src/web/api_drive.cpp:381 - void handleDomeSpeedPost(WebRequest& req) {"
       - "src/web/api_drive.cpp:412 - xQueueSend(domeCmdQueue, &cmd, 0)"
     executor_or_core: "domeCmdQueue"
-    missing_metadata: []
+    missing_metadata:
+      - "parameter 'speed' lacks description and default value"
     notes: ""
   - name: dome.action.save-sequence
     type: action
@@ -482,7 +484,8 @@ rows:
       - "src/web/api_seq.cpp:293 - void handleSeqTestPost(WebRequest& req) {"
       - "src/web/api_seq.cpp:317 - sequenceStart(name, SRC_WEB_API)"
     executor_or_core: "sequenceStart"
-    missing_metadata: []
+    missing_metadata:
+      - "parameter 'name' lacks description/default/enum values"
     notes: ""
   - name: dome.api.get-layout
     type: action
@@ -526,7 +529,8 @@ rows:
       - "src/web/api_seq.cpp:192 - void handleSeqGet(WebRequest& req) {"
       - "src/web/api_seq.cpp:214 - req.sendChunked(..., seqFileFiller)"
     executor_or_core: "seqStoreReadFileSlice"
-    missing_metadata: []
+    missing_metadata:
+      - "parameter 'name' lacks description/default/enum values"
     notes: ""
   - name: dome.api.get-sequence-last-run
     type: action
@@ -570,7 +574,8 @@ rows:
       - "src/web/api_seq.cpp:159 - void handleSeqBuiltinsGet(WebRequest& req) {"
       - "src/web/api_seq.cpp:178 - sequenceCatalogAt(i)"
     executor_or_core: "sequenceCatalogAt"
-    missing_metadata: []
+    missing_metadata:
+      - "parameter 'name' lacks description/default/enum values"
     notes: ""
   - name: dome.api.list-sequences
     type: action
