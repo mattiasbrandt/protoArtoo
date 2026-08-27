@@ -969,7 +969,7 @@ entries:
     - 999
     required: true
   nvs_key: null
-  executor: audioQueuePlayTrack() -> AudioTask Core 0
+  executor: audioQueuePlayTrack
 - name: sound.action.play-track-scream
   display_name: Play Scream
   description: Play the scream track (AUDIO_TRACK_SCREAM)
@@ -1152,7 +1152,7 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
-  executor: audioQueueRefreshCatalog() -> AudioTask Core 0
+  executor: audioQueuePlayTrack
 - name: sound.api.play-banked
   display_name: Play Banked Entry
   description: Play a CHIRP sound by explicit bank, page, and index
@@ -1211,7 +1211,7 @@ entries:
     - 65535
     required: true
   nvs_key: null
-  executor: audioQueuePlayTrackBanked() -> AudioTask Core 0
+  executor: audioQueuePlayTrack
 - name: sound.api.get-mood-map
   display_name: Get Mood Category Map
   description: Current per-mood CHIRP category bitmasks (Quiet/Mid/Full/Awake+)
@@ -1227,7 +1227,7 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
-  executor: configCacheRead() (Core 0)
+  executor: configApply
 - name: sound.action.set-mood-map
   display_name: Set Mood Category Map
   description: Set the per-mood CHIRP category bitmasks (Quiet/Mid/Full/Awake+), each 0..4095
@@ -1321,7 +1321,7 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
-  executor: audioQueueQueryStatus() -> AudioTask Core 0
+  executor: audioQueuePlayTrack
 - name: sound.action.track-stop
   display_name: Track Stop
   description: 'Stop current audio playback only; preserves random/idle mood, bumping the anti-spam cadence instead of disabling it (ADR 0010). Used by the web Stop button, the sequence engine''s terminal/abort
@@ -1340,7 +1340,7 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
-  executor: audioQueueTrackStop() -> AudioTask Core 0
+  executor: audioQueuePlayTrack
 - name: sound.action.quiet
   display_name: Quiet
   description: 'Stop playback and disable random/idle mood until reboot or Random On (ADR 0010 term: Quiet). Exclusive to the mood system; unlike Track Stop (sound.action.track-stop), this changes standing
@@ -1360,7 +1360,7 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
-  executor: audioQueueStop() -> AudioTask Core 0
+  executor: audioQueuePlayTrack
 - name: sound.action.set-volume
   display_name: Set Volume
   description: Set the audio output volume to an absolute level
@@ -1383,7 +1383,7 @@ entries:
     - 30
     required: true
   nvs_key: null
-  executor: audioQueueSetVolume() -> AudioTask Core 0
+  executor: audioQueuePlayTrack
 - name: sound.action.volume-up
   display_name: Volume Up
   description: Increase volume by 1 step (0-30 scale)
@@ -1480,7 +1480,7 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
-  executor: audioQueueDollar() -> AudioTask Core 0
+  executor: audioQueuePlayTrack
 - name: sound.action.random-on
   display_name: Random Sound On
   description: Enable automatic random sound playback
@@ -1532,7 +1532,7 @@ entries:
   nvs_keys:
   - snd_cat_gen_lo
   - snd_cat_gen_hi
-  executor: rcDispatchAction() -> audioQueuePlayTrack() -> AudioTask Core 0
+  executor: audioQueuePlayTrack
 - name: sound.action.random-chatty
   display_name: Random Chatty
   description: Play one random track from the configured Chatty category range
@@ -1552,7 +1552,7 @@ entries:
   nvs_keys:
   - snd_cat_chat_lo
   - snd_cat_chat_hi
-  executor: rcDispatchAction() -> audioQueuePlayTrack() -> AudioTask Core 0
+  executor: audioQueuePlayTrack
 - name: sound.action.random-happy
   display_name: Random Happy
   description: Play one random track from the configured Happy category range
@@ -1572,7 +1572,7 @@ entries:
   nvs_keys:
   - snd_cat_hap_lo
   - snd_cat_hap_hi
-  executor: rcDispatchAction() -> audioQueuePlayTrack() -> AudioTask Core 0
+  executor: audioQueuePlayTrack
 - name: sound.action.random-processing
   display_name: Random Processing
   description: Play one random track from the configured Processing category range
@@ -1592,7 +1592,7 @@ entries:
   nvs_keys:
   - snd_cat_proc_lo
   - snd_cat_proc_hi
-  executor: rcDispatchAction() -> audioQueuePlayTrack() -> AudioTask Core 0
+  executor: audioQueuePlayTrack
 - name: sound.action.random-sad
   display_name: Random Sad
   description: Play one random track from the configured Sad category range
@@ -1612,7 +1612,7 @@ entries:
   nvs_keys:
   - snd_cat_sad_lo
   - snd_cat_sad_hi
-  executor: rcDispatchAction() -> audioQueuePlayTrack() -> AudioTask Core 0
+  executor: audioQueuePlayTrack
 - name: sound.action.random-sentimental
   display_name: Random Sentimental
   description: Play one random track from the configured Sentimental category range
@@ -1632,7 +1632,7 @@ entries:
   nvs_keys:
   - snd_cat_sent_lo
   - snd_cat_sent_hi
-  executor: rcDispatchAction() -> audioQueuePlayTrack() -> AudioTask Core 0
+  executor: audioQueuePlayTrack
 - name: sound.action.random-humming
   display_name: Random Humming
   description: Play one random track from the configured Humming category range
@@ -1652,7 +1652,7 @@ entries:
   nvs_keys:
   - snd_cat_hum_lo
   - snd_cat_hum_hi
-  executor: rcDispatchAction() -> audioQueuePlayTrack() -> AudioTask Core 0
+  executor: audioQueuePlayTrack
 - name: sound.action.random-scream
   display_name: Random Scream
   description: Play one random track from the configured Scream category range
@@ -1672,7 +1672,7 @@ entries:
   nvs_keys:
   - snd_cat_scrm_lo
   - snd_cat_scrm_hi
-  executor: rcDispatchAction() -> audioQueuePlayTrack() -> AudioTask Core 0
+  executor: audioQueuePlayTrack
 - name: sound.action.random-surprised
   display_name: Random Surprised
   description: Play one random track from the configured Surprised category range
@@ -1692,7 +1692,7 @@ entries:
   nvs_keys:
   - snd_cat_ooh_lo
   - snd_cat_ooh_hi
-  executor: rcDispatchAction() -> audioQueuePlayTrack() -> AudioTask Core 0
+  executor: audioQueuePlayTrack
 - name: sound.action.random-alert
   display_name: Random Alert
   description: Play one random track from the configured Alert category range
@@ -1712,7 +1712,7 @@ entries:
   nvs_keys:
   - snd_cat_alrm_lo
   - snd_cat_alrm_hi
-  executor: rcDispatchAction() -> audioQueuePlayTrack() -> AudioTask Core 0
+  executor: audioQueuePlayTrack
 - name: sound.action.random-snarky
   display_name: Random Snarky
   description: Play one random track from the configured Snarky category range
@@ -1732,7 +1732,7 @@ entries:
   nvs_keys:
   - snd_cat_snrk_lo
   - snd_cat_snrk_hi
-  executor: rcDispatchAction() -> audioQueuePlayTrack() -> AudioTask Core 0
+  executor: audioQueuePlayTrack
 - name: sound.action.random-whistle
   display_name: Random Whistle
   description: Play one random track from the configured Whistle category range
@@ -1752,7 +1752,7 @@ entries:
   nvs_keys:
   - snd_cat_whis_lo
   - snd_cat_whis_hi
-  executor: rcDispatchAction() -> audioQueuePlayTrack() -> AudioTask Core 0
+  executor: audioQueuePlayTrack
 - name: sound.status.current
   display_name: Sound Status
   description: Current playback state, volume, and module health

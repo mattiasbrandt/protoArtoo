@@ -42,7 +42,7 @@ rows:
       - "include/api_audio.h:54 - void handleAudioPost(WebRequest& req)"
       - "src/web/api_audio.cpp:898 - if (strcmp(action, \"dollar\") == 0)"
       - "include/audio_task.h:102 - bool audioQueueDollar(const char* cmd, CommandSource src)"
-    executor_or_core: "audioQueueDollar() -> AudioTask Core 0"
+    executor_or_core: "audioQueueDollar"
     missing_metadata:
       - "dollar command syntax/grammar not in registry"
     notes: "raw $ command pass-through; dollar string parsed in AudioTask via parseAudioDollar()"
@@ -70,7 +70,7 @@ rows:
       - "include/api_audio.h:54 - void handleAudioPost(WebRequest& req)"
       - "src/web/api_audio.cpp:827 - if (strcmp(action, \"play\") == 0)"
       - "include/audio_task.h:105 - bool audioQueuePlayTrack(uint16_t track, CommandSource src)"
-    executor_or_core: "audioQueuePlayTrack() -> AudioTask Core 0"
+    executor_or_core: "audioQueuePlayTrack"
     missing_metadata:
       - "executor reference not in registry"
       - "console_alias not in registry"
@@ -92,7 +92,7 @@ rows:
       - "include/api_audio.h:54 - void handleAudioPost(WebRequest& req)"
       - "src/web/api_audio.cpp:827 - if (strcmp(action, \"play\") == 0)"
       - "include/audio_dollar_parser.h:48 - constexpr uint16_t AUDIO_TRACK_* = <value>"
-    executor_or_core: "audioQueueDollar($C) -> AudioTask Core 0"
+    executor_or_core: "audioQueuePlayTrackBanked"
     missing_metadata:
       - "executor reference not in registry"
     notes: "dome-rx only; named track; real track mapped from registry_nvs_key snd_cantina_l"
@@ -113,7 +113,7 @@ rows:
       - "include/api_audio.h:54 - void handleAudioPost(WebRequest& req)"
       - "src/web/api_audio.cpp:827 - if (strcmp(action, \"play\") == 0)"
       - "include/audio_dollar_parser.h:45 - constexpr uint16_t AUDIO_TRACK_* = <value>"
-    executor_or_core: "audioQueueDollar($c) -> AudioTask Core 0"
+    executor_or_core: "audioQueuePlayTrackBanked"
     missing_metadata:
       - "executor reference not in registry"
     notes: "dome-rx only; named track; NVS key snd_cantina_s"
@@ -134,7 +134,7 @@ rows:
       - "include/api_audio.h:54 - void handleAudioPost(WebRequest& req)"
       - "src/web/api_audio.cpp:827 - if (strcmp(action, \"play\") == 0)"
       - "include/audio_dollar_parser.h:50 - constexpr uint16_t AUDIO_TRACK_* = <value>"
-    executor_or_core: "audioQueueDollar($D) -> AudioTask Core 0"
+    executor_or_core: "audioQueuePlayTrackBanked"
     missing_metadata:
       - "executor reference not in registry"
     notes: "dome-rx only; NVS key snd_disco (0=disabled); defined at compile-time, overridable"
@@ -155,7 +155,7 @@ rows:
       - "include/api_audio.h:54 - void handleAudioPost(WebRequest& req)"
       - "src/web/api_audio.cpp:827 - if (strcmp(action, \"play\") == 0)"
       - "include/audio_dollar_parser.h:43 - constexpr uint16_t AUDIO_TRACK_* = <value>"
-    executor_or_core: "audioQueueDollar($F) -> AudioTask Core 0"
+    executor_or_core: "audioQueuePlayTrackBanked"
     missing_metadata:
       - "executor reference not in registry"
     notes: "dome-rx only; named track snd_faint"
@@ -176,7 +176,7 @@ rows:
       - "include/api_audio.h:54 - void handleAudioPost(WebRequest& req)"
       - "src/web/api_audio.cpp:827 - if (strcmp(action, \"play\") == 0)"
       - "include/audio_dollar_parser.h:47 - constexpr uint16_t AUDIO_TRACK_IMP_MARCH = 178"
-    executor_or_core: "audioQueueDollar($M) -> AudioTask Core 0"
+    executor_or_core: "audioQueuePlayTrackBanked"
     missing_metadata:
       - "executor reference not in registry"
     notes: "dome-rx only; named track snd_march"
@@ -197,7 +197,7 @@ rows:
       - "include/api_audio.h:54 - void handleAudioPost(WebRequest& req)"
       - "src/web/api_audio.cpp:827 - if (strcmp(action, \"play\") == 0)"
       - "include/audio_dollar_parser.h:44 - constexpr uint16_t AUDIO_TRACK_LEIA      = 151"
-    executor_or_core: "audioQueueDollar($L) -> AudioTask Core 0"
+    executor_or_core: "audioQueuePlayTrackBanked"
     missing_metadata:
       - "executor reference not in registry"
     notes: "dome-rx only; named track snd_leia"
@@ -218,7 +218,7 @@ rows:
       - "include/api_audio.h:54 - void handleAudioPost(WebRequest& req)"
       - "src/web/api_audio.cpp:827 - if (strcmp(action, \"play\") == 0)"
       - "include/audio_dollar_parser.h:42 - constexpr uint16_t AUDIO_TRACK_SCREAM    = 126"
-    executor_or_core: "audioQueueDollar($S) -> AudioTask Core 0"
+    executor_or_core: "audioQueuePlayTrackBanked"
     missing_metadata:
       - "executor reference not in registry"
     notes: "dome-rx only; named track snd_scream"
@@ -239,7 +239,7 @@ rows:
       - "include/api_audio.h:54 - void handleAudioPost(WebRequest& req)"
       - "src/web/api_audio.cpp:827 - if (strcmp(action, \"play\") == 0)"
       - "include/audio_dollar_parser.h:49 - constexpr uint16_t AUDIO_TRACK_STARTUP   = 255"
-    executor_or_core: "audioQueueDollar($B) -> AudioTask Core 0"
+    executor_or_core: "audioQueuePlayTrackBanked"
     missing_metadata:
       - "executor reference not in registry"
     notes: "dome-rx only; named track snd_startup"
@@ -260,7 +260,7 @@ rows:
       - "include/api_audio.h:54 - void handleAudioPost(WebRequest& req)"
       - "src/web/api_audio.cpp:827 - if (strcmp(action, \"play\") == 0)"
       - "include/audio_dollar_parser.h:46 - constexpr uint16_t AUDIO_TRACK_* = <value>"
-    executor_or_core: "audioQueueDollar($W) -> AudioTask Core 0"
+    executor_or_core: "audioQueuePlayTrackBanked"
     missing_metadata:
       - "executor reference not in registry"
     notes: "dome-rx only; named track snd_sw"
@@ -281,7 +281,7 @@ rows:
       - "include/api_audio.h:67 - handler declaration void handleAudioQueryPost()"
       - "src/web/api_audio.cpp:678 - handleAudioQueryPost enqueues status query"
       - "include/audio_task.h:135 - audioQueueQueryStatus() queues AUDIO_CMD_QUERY_STATUS"
-    executor_or_core: "audioQueueQueryStatus() -> AudioTask Core 0"
+    executor_or_core: "audioQueueQueryStatus"
     missing_metadata:
       - "executor reference not in registry"
     notes: "on-demand module status poll; result reads from RobotState after ~1.5s"
@@ -303,7 +303,7 @@ rows:
       - "include/api_audio.h:54 - void handleAudioPost(WebRequest& req)"
       - "src/web/api_audio.cpp:852 - if (strcmp(action, \"stop\") == 0)"
       - "include/audio_task.h:120 - bool audioQueueStop(CommandSource src)"
-    executor_or_core: "audioQueueStop() -> AudioTask Core 0"
+    executor_or_core: "audioQueuePlayTrack"
     missing_metadata:
       - "executor reference not in registry"
     notes: "full stop: disables idle/random mood (ADR 0010). See also sound.action.track-stop"
@@ -327,7 +327,7 @@ rows:
       - "src/rc_action_dispatcher.cpp:95 - case SOUND_ACTION_RANDOM_* dispatcher case"
       - "src/rc_action_dispatcher.cpp:106 - if (selectRandomTrackInRange(lo, hi, input.randomSeed, &track))"
       - "include/audio_task.h:105 - bool audioQueuePlayTrack(uint16_t track, CommandSource src) core"
-    executor_or_core: "rcDispatchAction() -> audioQueuePlayTrack() -> AudioTask Core 0"
+    executor_or_core: "audioQueuePlayTrack"
     missing_metadata:
       - "executor reference not in registry"
     notes: "SBUS-only RC trigger; random track from snd_cat_alrm_lo/snd_cat_alrm_hi range"
@@ -351,7 +351,7 @@ rows:
       - "src/rc_action_dispatcher.cpp:87 - case SOUND_ACTION_RANDOM_* dispatcher case"
       - "src/rc_action_dispatcher.cpp:106 - if (selectRandomTrackInRange(lo, hi, input.randomSeed, &track))"
       - "include/audio_task.h:105 - bool audioQueuePlayTrack(uint16_t track, CommandSource src) core"
-    executor_or_core: "rcDispatchAction() -> audioQueuePlayTrack() -> AudioTask Core 0"
+    executor_or_core: "audioQueuePlayTrack"
     missing_metadata:
       - "executor reference not in registry"
     notes: "SBUS-only; random track from snd_cat_chat_lo/snd_cat_chat_hi"
@@ -375,7 +375,7 @@ rows:
       - "src/rc_action_dispatcher.cpp:86 - case SOUND_ACTION_RANDOM_* dispatcher case"
       - "src/rc_action_dispatcher.cpp:106 - if (selectRandomTrackInRange(lo, hi, input.randomSeed, &track))"
       - "include/audio_task.h:105 - bool audioQueuePlayTrack(uint16_t track, CommandSource src) core"
-    executor_or_core: "rcDispatchAction() -> audioQueuePlayTrack() -> AudioTask Core 0"
+    executor_or_core: "audioQueuePlayTrack"
     missing_metadata:
       - "executor reference not in registry"
     notes: "SBUS-only; random track from snd_cat_gen_lo/snd_cat_gen_hi"
@@ -399,7 +399,7 @@ rows:
       - "src/rc_action_dispatcher.cpp:88 - case SOUND_ACTION_RANDOM_* dispatcher case"
       - "src/rc_action_dispatcher.cpp:106 - if (selectRandomTrackInRange(lo, hi, input.randomSeed, &track))"
       - "include/audio_task.h:105 - bool audioQueuePlayTrack(uint16_t track, CommandSource src) core"
-    executor_or_core: "rcDispatchAction() -> audioQueuePlayTrack() -> AudioTask Core 0"
+    executor_or_core: "audioQueuePlayTrack"
     missing_metadata:
       - "executor reference not in registry"
     notes: "SBUS-only; random track from snd_cat_hap_lo/snd_cat_hap_hi"
@@ -423,7 +423,7 @@ rows:
       - "src/rc_action_dispatcher.cpp:92 - case SOUND_ACTION_RANDOM_* dispatcher case"
       - "src/rc_action_dispatcher.cpp:106 - if (selectRandomTrackInRange(lo, hi, input.randomSeed, &track))"
       - "include/audio_task.h:105 - bool audioQueuePlayTrack(uint16_t track, CommandSource src) core"
-    executor_or_core: "rcDispatchAction() -> audioQueuePlayTrack() -> AudioTask Core 0"
+    executor_or_core: "audioQueuePlayTrack"
     missing_metadata:
       - "executor reference not in registry"
     notes: "SBUS-only; random track from snd_cat_hum_lo/snd_cat_hum_hi"
@@ -444,7 +444,7 @@ rows:
       - "include/audio_dollar_parser.h:108 - AUDIO_ACTION_RANDOM_OFF, // disable random mode"
       - "src/tasks/audio_task.cpp:1 - audio_task handles AUDIO_ACTION_RANDOM_OFF command"
       - "include/audio_task.h:1 - audio task core processes random mode disable"
-    executor_or_core: "audioQueueDollar($O) -> AudioTask Core 0"
+    executor_or_core: "audioQueuePlayTrack"
     missing_metadata:
       - "executor reference not in registry"
     notes: "dome-rx only; disables random mode without stopping current playback"
@@ -465,7 +465,7 @@ rows:
       - "include/audio_dollar_parser.h:107 - AUDIO_ACTION_RANDOM_ON, // enable random playback mode"
       - "src/tasks/audio_task.cpp:1 - audio_task handles AUDIO_ACTION_RANDOM_ON command"
       - "include/audio_task.h:1 - audio task core processes random mode enable"
-    executor_or_core: "audioQueueDollar($R) -> AudioTask Core 0"
+    executor_or_core: "audioQueuePlayTrack"
     missing_metadata:
       - "executor reference not in registry"
     notes: "dome-rx only; enables random idle playback mode"
@@ -489,7 +489,7 @@ rows:
       - "src/rc_action_dispatcher.cpp:89 - case SOUND_ACTION_RANDOM_* dispatcher case"
       - "src/rc_action_dispatcher.cpp:106 - if (selectRandomTrackInRange(lo, hi, input.randomSeed, &track))"
       - "include/audio_task.h:105 - bool audioQueuePlayTrack(uint16_t track, CommandSource src) core"
-    executor_or_core: "rcDispatchAction() -> audioQueuePlayTrack() -> AudioTask Core 0"
+    executor_or_core: "audioQueuePlayTrack"
     missing_metadata:
       - "executor reference not in registry"
     notes: "SBUS-only; random track from snd_cat_proc_lo/snd_cat_proc_hi"
@@ -513,7 +513,7 @@ rows:
       - "src/rc_action_dispatcher.cpp:90 - case SOUND_ACTION_RANDOM_* dispatcher case"
       - "src/rc_action_dispatcher.cpp:106 - if (selectRandomTrackInRange(lo, hi, input.randomSeed, &track))"
       - "include/audio_task.h:105 - bool audioQueuePlayTrack(uint16_t track, CommandSource src) core"
-    executor_or_core: "rcDispatchAction() -> audioQueuePlayTrack() -> AudioTask Core 0"
+    executor_or_core: "audioQueuePlayTrack"
     missing_metadata:
       - "executor reference not in registry"
     notes: "SBUS-only; random track from snd_cat_sad_lo/snd_cat_sad_hi"
@@ -537,7 +537,7 @@ rows:
       - "src/rc_action_dispatcher.cpp:93 - case SOUND_ACTION_RANDOM_* dispatcher case"
       - "src/rc_action_dispatcher.cpp:106 - if (selectRandomTrackInRange(lo, hi, input.randomSeed, &track))"
       - "include/audio_task.h:105 - bool audioQueuePlayTrack(uint16_t track, CommandSource src) core"
-    executor_or_core: "rcDispatchAction() -> audioQueuePlayTrack() -> AudioTask Core 0"
+    executor_or_core: "audioQueuePlayTrack"
     missing_metadata:
       - "executor reference not in registry"
     notes: "SBUS-only; random track from snd_cat_scrm_lo/snd_cat_scrm_hi"
@@ -561,7 +561,7 @@ rows:
       - "src/rc_action_dispatcher.cpp:91 - case SOUND_ACTION_RANDOM_* dispatcher case"
       - "src/rc_action_dispatcher.cpp:106 - if (selectRandomTrackInRange(lo, hi, input.randomSeed, &track))"
       - "include/audio_task.h:105 - bool audioQueuePlayTrack(uint16_t track, CommandSource src) core"
-    executor_or_core: "rcDispatchAction() -> audioQueuePlayTrack() -> AudioTask Core 0"
+    executor_or_core: "audioQueuePlayTrack"
     missing_metadata:
       - "executor reference not in registry"
     notes: "SBUS-only; random track from snd_cat_sent_lo/snd_cat_sent_hi"
@@ -585,7 +585,7 @@ rows:
       - "src/rc_action_dispatcher.cpp:96 - case SOUND_ACTION_RANDOM_* dispatcher case"
       - "src/rc_action_dispatcher.cpp:106 - if (selectRandomTrackInRange(lo, hi, input.randomSeed, &track))"
       - "include/audio_task.h:105 - bool audioQueuePlayTrack(uint16_t track, CommandSource src) core"
-    executor_or_core: "rcDispatchAction() -> audioQueuePlayTrack() -> AudioTask Core 0"
+    executor_or_core: "audioQueuePlayTrack"
     missing_metadata:
       - "executor reference not in registry"
     notes: "SBUS-only; random track from snd_cat_snrk_lo/snd_cat_snrk_hi"
@@ -609,7 +609,7 @@ rows:
       - "src/rc_action_dispatcher.cpp:94 - case SOUND_ACTION_RANDOM_* dispatcher case"
       - "src/rc_action_dispatcher.cpp:106 - if (selectRandomTrackInRange(lo, hi, input.randomSeed, &track))"
       - "include/audio_task.h:105 - bool audioQueuePlayTrack(uint16_t track, CommandSource src) core"
-    executor_or_core: "rcDispatchAction() -> audioQueuePlayTrack() -> AudioTask Core 0"
+    executor_or_core: "audioQueuePlayTrack"
     missing_metadata:
       - "executor reference not in registry"
     notes: "SBUS-only; random track from snd_cat_ooh_lo/snd_cat_ooh_hi"
@@ -633,7 +633,7 @@ rows:
       - "src/rc_action_dispatcher.cpp:97 - case SOUND_ACTION_RANDOM_* dispatcher case"
       - "src/rc_action_dispatcher.cpp:106 - if (selectRandomTrackInRange(lo, hi, input.randomSeed, &track))"
       - "include/audio_task.h:105 - bool audioQueuePlayTrack(uint16_t track, CommandSource src) core"
-    executor_or_core: "rcDispatchAction() -> audioQueuePlayTrack() -> AudioTask Core 0"
+    executor_or_core: "audioQueuePlayTrack"
     missing_metadata:
       - "executor reference not in registry"
     notes: "SBUS-only; random track from snd_cat_whis_lo/snd_cat_whis_hi"
@@ -667,7 +667,7 @@ rows:
       - "include/api_audio.h:59 - void handleAudioCategoryRangePost(WebRequest& req)"
       - "src/web/api_audio.cpp:546 - void handleAudioCategoryRangePost(WebRequest& req) {"
       - "src/web/api_audio.cpp:550 - audioCategoryRangeApply(params, &result)"
-    executor_or_core: "audioCategoryRangeApply() -> Core 0"
+    executor_or_core: "audioCategoryRangeApply"
     missing_metadata:
       - "parameter range not in registry (lo/hi bounds)"
     notes: "sets lo/hi pair for one category atomically via apply core"
@@ -709,7 +709,7 @@ rows:
       - "include/api_audio.h:62 - void handleAudioMoodMapPost(WebRequest& req)"
       - "src/web/api_audio.cpp:397 - void handleAudioMoodMapPost(WebRequest& req) {"
       - "src/web/api_audio.cpp:401 - audioMoodMapApply(params, &result)"
-    executor_or_core: "audioMoodMapApply() -> Core 0"
+    executor_or_core: "audioMoodMapApply"
     missing_metadata:
       - "executor reference not in registry"
     notes: "applies mood category mask via domain core"
@@ -735,7 +735,7 @@ rows:
       - "include/api_audio.h:54 - void handleAudioPost(WebRequest& req)"
       - "src/web/api_audio.cpp:863 - if (strcmp(action, \"volume\") == 0)"
       - "include/audio_task.h:128 - bool audioQueueSetVolume(uint8_t newVolume, CommandSource src)"
-    executor_or_core: "audioQueueSetVolume() -> AudioTask Core 0"
+    executor_or_core: "audioQueueSetVolume"
     missing_metadata:
       - "executor reference not in registry"
     notes: "queues absolute volume command (0-30)"
@@ -756,7 +756,7 @@ rows:
       - "include/api_audio.h:54 - handler declaration void handleAudioPost()"
       - "src/web/api_audio.cpp:847 - handleAudioPost action=stop calls audioQueueTrackStop()"
       - "include/audio_task.h:125 - audioQueueTrackStop() queues AUDIO_CMD_TRACK_STOP"
-    executor_or_core: "audioQueueTrackStop() -> AudioTask Core 0"
+    executor_or_core: "audioQueueTrackStop"
     missing_metadata:
       - "executor reference not in registry"
     notes: "ADR 0010: stops current track only, preserves random/idle mood. Contrast with sound.action.quiet"
@@ -777,7 +777,7 @@ rows:
       - "include/audio_task.h:47 - AUDIO_CMD_SET_VOLUME,    // set absolute volume 0-30"
       - "include/audio_task.h:128 - bool audioQueueSetVolume(uint8_t vol, CommandSource src)"
       - "src/tasks/audio_task.cpp:1 - audio task core handles volume commands"
-    executor_or_core: "audioQueueDollar($-) -> AudioTask Core 0"
+    executor_or_core: "audioQueueSetVolume"
     missing_metadata:
       - "executor reference not in registry"
     notes: "dome-rx only; decrements volume by 1"
@@ -798,7 +798,7 @@ rows:
       - "include/audio_task.h:47 - AUDIO_CMD_SET_VOLUME,    // set absolute volume 0-30"
       - "include/audio_task.h:128 - bool audioQueueSetVolume(uint8_t vol, CommandSource src)"
       - "src/tasks/audio_task.cpp:1 - audio task core handles volume preset commands"
-    executor_or_core: "audioQueueDollar($f) -> AudioTask Core 0"
+    executor_or_core: "audioQueueSetVolume"
     missing_metadata:
       - "executor reference not in registry"
     notes: "dome-rx only; sets volume to 30"
@@ -819,7 +819,7 @@ rows:
       - "include/audio_task.h:47 - AUDIO_CMD_SET_VOLUME,    // set absolute volume 0-30"
       - "include/audio_task.h:128 - bool audioQueueSetVolume(uint8_t vol, CommandSource src)"
       - "src/tasks/audio_task.cpp:1 - audio task core handles volume preset commands"
-    executor_or_core: "audioQueueDollar($m) -> AudioTask Core 0"
+    executor_or_core: "audioQueueSetVolume"
     missing_metadata:
       - "executor reference not in registry"
     notes: "dome-rx only; sets volume to 15"
@@ -840,7 +840,7 @@ rows:
       - "include/audio_task.h:47 - AUDIO_CMD_SET_VOLUME,    // set absolute volume 0-30"
       - "include/audio_task.h:128 - bool audioQueueSetVolume(uint8_t vol, CommandSource src)"
       - "src/tasks/audio_task.cpp:1 - audio task core handles volume preset commands"
-    executor_or_core: "audioQueueDollar($p) -> AudioTask Core 0"
+    executor_or_core: "audioQueueSetVolume"
     missing_metadata:
       - "executor reference not in registry"
     notes: "dome-rx only; sets volume to 0"
@@ -861,7 +861,7 @@ rows:
       - "include/audio_task.h:47 - AUDIO_CMD_SET_VOLUME,    // set absolute volume 0-30"
       - "include/audio_task.h:128 - bool audioQueueSetVolume(uint8_t vol, CommandSource src)"
       - "src/tasks/audio_task.cpp:1 - audio task core handles volume commands"
-    executor_or_core: "audioQueueDollar($+) -> AudioTask Core 0"
+    executor_or_core: "audioQueueSetVolume"
     missing_metadata:
       - "executor reference not in registry"
     notes: "dome-rx only; increments volume by 1"
