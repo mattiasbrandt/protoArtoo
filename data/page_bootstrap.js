@@ -1076,6 +1076,9 @@
     if (assetsAnnounced || !state.liveUpdatesStarted) return;
     assetsAnnounced = true;
 
+    // This sweep runs exactly once. Anything registering a data-deferred-src
+    // attribute after this point will never be swept — any late producer must
+    // set .src directly when window.PAAssetsReady is already true.
     document.querySelectorAll("[data-deferred-src]").forEach((element) => {
       element.src = element.dataset.deferredSrc;
       delete element.dataset.deferredSrc;

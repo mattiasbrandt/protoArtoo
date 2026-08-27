@@ -440,8 +440,12 @@
     boardImage.title = `${boardLabel} PCB`;
 
     // Use data-deferred-src so image load is gated by announceAssetsOnce(), which ensures
-    // /api/events SSE opens before image fetches compete for the connection
-    boardImage.dataset.deferredSrc = imageSrc;
+    // /api/events SSE opens before image fetches compete for the connection.
+    // Identity can resolve after the one-shot deferred-asset sweep has already run
+    // (a section that is visibly waiting to retry already counts as settled), so a
+    // late data-deferred-src would never be swept.
+    if (window.PAAssetsReady) boardImage.src = imageSrc;
+    else boardImage.dataset.deferredSrc = imageSrc;
   };
 
   // Listen for identity available event and update board image

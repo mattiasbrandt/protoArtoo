@@ -130,8 +130,8 @@ const profiler = {
       identityRequests: 1,
       profilerRequests: 0,
       state: 'not-in-this-build',
-      status: 'Not in this build',
-      reason: 'This controller was loaded without Memory Profiler.',
+      status: 'Not included',
+      reason: 'Memory Profiler is included only in troubleshooting firmware.',
       description: 'Shows where controller memory is being used and how much room remains.',
       descriptionVisible: true,
       visible: true,
@@ -154,15 +154,15 @@ const profiler = {
       disabled: true,
       state: 'not-on-this-board',
       status: 'Not on this board',
-      reason: 'This controller board cannot run ARM1.',
+      reason: 'This controller board cannot run Utility Arm 1.',
     });
     await page.screenshot({ path: `${ARTIFACT_DIR}/not-on-this-board.png`, fullPage: true });
 
     const profilerBuild = await openScenario('profiler-build', identities.profiler);
     assert.equal(profilerBuild.identityRequests, 1);
     assert.equal(profilerBuild.profilerRequests, 1);
-    assert.equal(profilerBuild.state, 'on');
-    assert.equal(profilerBuild.status, 'On');
+    assert.equal(profilerBuild.state, 'included');
+    assert.equal(profilerBuild.status, 'Included');
     assert.equal(
       profilerBuild.description,
       'Shows where controller memory is being used and how much room remains.',
