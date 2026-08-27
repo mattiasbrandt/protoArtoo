@@ -39,8 +39,8 @@ rows:
     evidence:
       - "src/web/web_seam_routes.cpp:84 - webRegisterRoute route"
       - "include/api_drive.h:31 - handleWebControlDisablePost declaration"
-      - "src/web/api_drive.cpp:300 - commandedSetWebControl call"
-      - "include/commanded_modes.h:20 - commandedSetWebControl"
+      - "src/web/api_drive.cpp:300 - handleWebControlDisablePost definition"
+      - "src/web/api_drive.cpp:301 - commandedSetWebControl(false, SRC_WEB_API)"
     executor_or_core: "commandedSetWebControl"
     missing_metadata: []
     notes: ""
@@ -59,8 +59,8 @@ rows:
     evidence:
       - "src/web/web_seam_routes.cpp:83 - webRegisterRoute route"
       - "include/api_drive.h:30 - handleWebControlEnablePost declaration"
-      - "src/web/api_drive.cpp:295 - commandedSetWebControl call"
-      - "include/commanded_modes.h:20 - commandedSetWebControl"
+      - "src/web/api_drive.cpp:294 - handleWebControlEnablePost definition"
+      - "src/web/api_drive.cpp:295 - commandedSetWebControl(true, SRC_WEB_API)"
     executor_or_core: "commandedSetWebControl"
     missing_metadata: []
     notes: ""
@@ -79,8 +79,8 @@ rows:
     evidence:
       - "src/web/web_seam_routes.cpp:72 - webRegisterRoute route"
       - "include/api_system.h:26 - handleCoredumpErasePost declaration"
-      - "src/web/api_system.cpp:188 - esp_core_dump_image_erase call"
-      - "include/api_system.h:1 - system API header"
+      - "src/web/api_system.cpp:186 - handleCoredumpErasePost definition"
+      - "src/web/api_system.cpp:188 - esp_core_dump_image_erase()"
     executor_or_core: "esp_core_dump_image_erase"
     missing_metadata: []
     notes: ""
@@ -101,8 +101,8 @@ rows:
     evidence:
       - "src/web/web_seam_routes.cpp:77 - webRegisterRoute route"
       - "include/api_estop.h:16 - handleEstopPost declaration"
-      - "src/web/api_estop.cpp:31 - failsafeTrigger call"
-      - "include/api_estop.h:1 - estop header"
+      - "src/web/api_estop.cpp:29 - handleEstopPost definition"
+      - "src/web/api_estop.cpp:30 - failsafeTrigger(FailsafeLayer::ESTOP)"
     executor_or_core: "failsafeTrigger"
     missing_metadata: []
     notes: ""
@@ -121,8 +121,8 @@ rows:
     evidence:
       - "src/web/web_seam_routes.cpp:78 - webRegisterRoute route"
       - "include/api_estop.h:17 - handleEstopClearPost declaration"
-      - "src/web/api_estop.cpp:24 - failsafeClearEstop call"
-      - "include/api_estop.h:1 - estop header"
+      - "src/web/api_estop.cpp:22 - handleEstopClearPost definition"
+      - "src/web/api_estop.cpp:23 - failsafeClearEstop()"
     executor_or_core: "failsafeClearEstop"
     missing_metadata: []
     notes: ""
@@ -142,8 +142,8 @@ rows:
     evidence:
       - "src/web/web_seam_routes.cpp:150 - webRegisterRoute route"
       - "include/api_profiler.h:62 - handleProfilerTraceStartPost declaration"
-      - "include/api_profiler.h:62 - handler definition"
-      - "include/api_profiler.h:1 - profiler header"
+      - "src/web/api_profiler.cpp:646 - handleProfilerTraceStartPost definition"
+      - "src/web/api_profiler.cpp:651 - heap_trace_start(HEAP_TRACE_LEAKS)"
     executor_or_core: "heap_trace_start"
     missing_metadata: []
     notes: ""
@@ -163,8 +163,8 @@ rows:
     evidence:
       - "src/web/web_seam_routes.cpp:152 - webRegisterRoute route"
       - "include/api_profiler.h:63 - handleProfilerTraceStopPost declaration"
-      - "include/api_profiler.h:63 - handler definition"
-      - "include/api_profiler.h:1 - profiler header"
+      - "src/web/api_profiler.cpp:662 - handleProfilerTraceStopPost definition"
+      - "src/web/api_profiler.cpp:667 - heap_trace_stop()"
     executor_or_core: "heap_trace_stop"
     missing_metadata: []
     notes: ""
@@ -183,8 +183,8 @@ rows:
     evidence:
       - "src/web/web_seam_routes.cpp:69 - webRegisterRoute route"
       - "include/api_system.h:23 - handleRebootPost declaration"
-      - "include/api_system.h:23 - handler definition"
-      - "include/api_system.h:1 - system API header"
+      - "src/web/api_system.cpp:142 - handleRebootPost definition"
+      - "src/web/api_system.cpp:145 - requestSystemRestart()"
     executor_or_core: "requestSystemRestart"
     missing_metadata: []
     notes: ""
@@ -212,8 +212,8 @@ rows:
     evidence:
       - "src/web/web_seam_routes.cpp:34 - webRegisterRoute route"
       - "include/api_identity.h:27 - handleIdentityPost declaration"
-      - "include/api_identity.h:27 - handler definition"
-      - "include/api_config_apply.h:1 - Apply Core header"
+      - "src/web/api_identity.cpp:55 - handleIdentityPost definition"
+      - "include/config_cache.h:36 - configCacheApply core"
     executor_or_core: "configCacheApply"
     missing_metadata: []
     notes: ""
@@ -234,8 +234,8 @@ rows:
     evidence:
       - "src/web/web_seam_routes.cpp:80 - webRegisterRoute route"
       - "include/api_drive.h:27 - handleModePost declaration"
-      - "src/web/api_drive.cpp:246 - commandedSetStationary call"
-      - "include/commanded_modes.h:10 - commandedSetStationary"
+      - "src/web/api_drive.cpp:239 - handleModePost definition"
+      - "src/web/api_drive.cpp:246 - commandedSetStationary()"
     executor_or_core: "commandedSetStationary"
     missing_metadata: []
     notes: ""
@@ -259,8 +259,8 @@ rows:
     evidence:
       - "src/web/web_seam_routes.cpp:122 - webRegisterRoute route"
       - "include/api_audio.h:70 - handleMoodPost declaration"
-      - "include/api_audio.h:70 - handler definition"
-      - "include/api_audio.h:1 - audio API header"
+      - "src/web/api_audio.cpp:640 - handleMoodPost definition"
+      - "src/web/api_audio.cpp:667 - applyMood(mood)"
     executor_or_core: "applyMood"
     missing_metadata: []
     notes: ""
@@ -280,8 +280,8 @@ rows:
     evidence:
       - "src/web/web_seam_routes.cpp:66 - webRegisterRoute route"
       - "include/api_system.h:20 - handleSleepPost declaration"
-      - "src/web/api_system.cpp:91 - setSleepModeState handler call"
-      - "include/commanded_modes.h:17 - commandedSetSleep"
+      - "src/web/api_system.cpp:90 - handleSleepPost definition"
+      - "src/web/api_system.cpp:40 - commandedSetSleep(sleepMode, SRC_WEB_API)"
     executor_or_core: "commandedSetSleep"
     missing_metadata: []
     notes: ""
