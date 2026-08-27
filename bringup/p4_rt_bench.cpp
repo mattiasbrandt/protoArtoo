@@ -31,7 +31,8 @@
 #include <driver/uart.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
-#include <Preferences.h>
+#include "config_cache.h"
+#include "config.h"
 
 // ============================================================================
 // Forward declarations
@@ -280,28 +281,25 @@ void benchPhase2SbusGeneratorOff() {
 void benchPhase3DriveFrameCadence() {
     Serial.println("[BENCH P3] Drive frame cadence observation starting...");
 
-    // Precondition check: GPIO51 (PIN_ARM5_SERVO / AUX3) must not be driven.
-    // GPIO51 is driven in two cases:
-    //   1. en_aux3 is true: AUX3 servo channel active (include/config.h PIN_ARM5_SERVO)
-    //   2. aux_led_pin == AUX_LED_PIN_AUX3: LED strip assigned to AUX3
-    //      (include/config.h auxLedSelectionToGpio() case AUX_LED_PIN_AUX3)
-    // If GPIO51 is driven while bench harness samples it, noise pollutes drive-frame cadence.
-    // Read NVS directly (bench env doesn't link config_store).
-    // AUX_LED_PIN_AUX3 = 3, AUX_LED_PIN_DISABLED = 0.
-    Preferences nvs;
-    nvs.begin("artoo", true);  // read-only namespace "artoo"
-    bool aux3ServoEnabled = nvs.getBool("en_aux3", false);
-    uint8_t auxLedPin = nvs.getUChar("aux_led_pin", 0);  // 0 = AUX_LED_PIN_DISABLED
-    nvs.end();
+    // Precondition: GPIO51 (PIN_ARM5_SERVO / AUX3) must not be driven by the firmware.
+    // Two paths drive it, and the guard must ask the same question the firmware asks:
+    //   1. en_aux3 - the AUX3 servo channel (include/config.h: PIN_ARM5_SERVO = 51)
+    //   2. aux_led_pin == AUX_LED_PIN_AUX3 - the WS2812B strip
+    //      (include/config.h: auxLedSelectionToGpio() maps AUX_LED_PIN_AUX3 -> PIN_ARM5_SERVO)
+    // Read the live config cache, exactly as servoTaskInit() does at
+    // src/tasks/servo_task.cpp:414-415. This env compiles all of src/ (build_src_filter
+    // "+<*>"), so the cache is linked in; reading NVS directly would duplicate the
+    // namespace and key names and would miss any runtime change.
+    ConfigSnapshot benchCfg = {};
+    configCacheRead(&benchCfg);
 
-    if (aux3ServoEnabled) {
-        Serial.println("[BENCH P3] SKIP: AUX3 servo (en_aux3) enabled - GPIO51 actively driven");
+    if (benchCfg.system.enable_aux3) {
+        Serial.println("[BENCH P3] SKIP: AUX3 servo (en_aux3) enabled - GPIO51 is driven");
         Serial.flush();
         return;
     }
-
-    if (auxLedPin == 3) {  // 3 = AUX_LED_PIN_AUX3
-        Serial.println("[BENCH P3] SKIP: AUX LED strip on AUX3 (aux_led_pin=3) - GPIO51 actively driven");
+    if (benchCfg.servo.aux_led_pin == AUX_LED_PIN_AUX3) {
+        Serial.println("[BENCH P3] SKIP: AUX LED strip assigned to AUX3 - GPIO51 is driven");
         Serial.flush();
         return;
     }
