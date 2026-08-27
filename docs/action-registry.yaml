@@ -985,7 +985,7 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
-  executor: audioQueueDollar($S) -> AudioTask Core 0
+  executor: audioQueuePlayTrackBanked
 - name: sound.action.play-track-faint
   display_name: Play Short Circuit
   description: Play the short circuit / faint track (AUDIO_TRACK_FAINT)
@@ -1001,7 +1001,7 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
-  executor: audioQueueDollar($F) -> AudioTask Core 0
+  executor: audioQueuePlayTrackBanked
 - name: sound.action.play-track-leia
   display_name: Play Leia Message
   description: Play the Leia message track (AUDIO_TRACK_LEIA)
@@ -1017,7 +1017,7 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
-  executor: audioQueueDollar($L) -> AudioTask Core 0
+  executor: audioQueuePlayTrackBanked
 - name: sound.action.play-track-cantina-short
   display_name: Play Short Cantina
   description: Play the short Cantina track (AUDIO_TRACK_CANTINA_S)
@@ -1033,7 +1033,7 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
-  executor: audioQueueDollar($c) -> AudioTask Core 0
+  executor: audioQueuePlayTrackBanked
 - name: sound.action.play-track-cantina-long
   display_name: Play Long Cantina
   description: Play the long Cantina track (AUDIO_TRACK_CANTINA_L, 130 BPM)
@@ -1049,7 +1049,7 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
-  executor: audioQueueDollar($C) -> AudioTask Core 0
+  executor: audioQueuePlayTrackBanked
 - name: sound.action.play-track-sw-theme
   display_name: Play Star Wars Theme
   description: Play the Star Wars main theme track (AUDIO_TRACK_SW_THEME)
@@ -1065,7 +1065,7 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
-  executor: audioQueueDollar($W) -> AudioTask Core 0
+  executor: audioQueuePlayTrackBanked
 - name: sound.action.play-track-imperial-march
   display_name: Play Imperial March
   description: Play the Imperial March track (AUDIO_TRACK_IMP_MARCH)
@@ -1081,7 +1081,7 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
-  executor: audioQueueDollar($M) -> AudioTask Core 0
+  executor: audioQueuePlayTrackBanked
 - name: sound.action.play-track-startup
   display_name: Play Startup Sound
   description: Play the startup / boot track (AUDIO_TRACK_STARTUP)
@@ -1097,7 +1097,7 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
-  executor: audioQueueDollar($B) -> AudioTask Core 0
+  executor: audioQueuePlayTrackBanked
 - name: sound.action.play-track-disco
   display_name: Play Disco
   description: Play the disco track (AUDIO_TRACK_DISCO, NVS key snd_disco; no-op when 0/disabled)
@@ -1113,7 +1113,7 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: snd_disco
-  executor: audioQueueDollar($D) -> AudioTask Core 0
+  executor: audioQueuePlayTrackBanked
 - name: sound.api.get-catalog
   display_name: Get Catalog
   description: Return cached CHIRP catalog banks and entries from the active audio backend
@@ -1136,7 +1136,7 @@ entries:
     - 6
     required: false
   nvs_key: null
-  executor: audioGetCatalogEntries() (Core 0)
+  executor: audioGetCatalogEntries
 - name: sound.api.refresh-catalog
   display_name: Refresh Catalog
   description: Queue CHIRP catalog refresh (GMAN plus GNME enumeration)
@@ -1152,7 +1152,7 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
-  executor: audioQueuePlayTrack
+  executor: audioQueueRefreshCatalog
 - name: sound.api.play-banked
   display_name: Play Banked Entry
   description: Play a CHIRP sound by explicit bank, page, and index
@@ -1211,7 +1211,7 @@ entries:
     - 65535
     required: true
   nvs_key: null
-  executor: audioQueuePlayTrack
+  executor: audioQueuePlayTrackBanked
 - name: sound.api.get-mood-map
   display_name: Get Mood Category Map
   description: Current per-mood CHIRP category bitmasks (Quiet/Mid/Full/Awake+)
@@ -1227,7 +1227,7 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
-  executor: configApply
+  executor: configCacheRead
 - name: sound.action.set-mood-map
   display_name: Set Mood Category Map
   description: Set the per-mood CHIRP category bitmasks (Quiet/Mid/Full/Awake+), each 0..4095
@@ -1272,7 +1272,7 @@ entries:
   - snd_moodcat_mid
   - snd_moodcat_full
   - snd_moodcat_awakeplus
-  executor: audioMoodMapApply() -> Core 0
+  executor: audioMoodMapApply
 - name: sound.action.set-category-range
   display_name: Set Category Range
   description: 'Atomic update of one CHIRP category''s lo/hi track range (and optional bank/page/index binding), avoiding a partial two-request save.
@@ -1303,7 +1303,7 @@ entries:
     type: uint16
     required: true
   nvs_key: null
-  executor: audioCategoryRangeApply() -> Core 0
+  executor: audioCategoryRangeApply
 - name: sound.action.query-status
   display_name: Query Module Status
   description: 'Enqueue an on-demand audio module status query; result becomes available via GET /api/audio after ~1.5 s (query timeout + queue latency).
@@ -1321,7 +1321,7 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
-  executor: audioQueuePlayTrack
+  executor: audioQueueQueryStatus
 - name: sound.action.track-stop
   display_name: Track Stop
   description: 'Stop current audio playback only; preserves random/idle mood, bumping the anti-spam cadence instead of disabling it (ADR 0010). Used by the web Stop button, the sequence engine''s terminal/abort
@@ -1340,7 +1340,7 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
-  executor: audioQueuePlayTrack
+  executor: audioQueueTrackStop
 - name: sound.action.quiet
   display_name: Quiet
   description: 'Stop playback and disable random/idle mood until reboot or Random On (ADR 0010 term: Quiet). Exclusive to the mood system; unlike Track Stop (sound.action.track-stop), this changes standing
@@ -1383,7 +1383,7 @@ entries:
     - 30
     required: true
   nvs_key: null
-  executor: audioQueuePlayTrack
+  executor: audioQueueSetVolume
 - name: sound.action.volume-up
   display_name: Volume Up
   description: Increase volume by 1 step (0-30 scale)
@@ -1399,7 +1399,7 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
-  executor: audioQueueDollar($+) -> AudioTask Core 0
+  executor: audioQueueSetVolume
 - name: sound.action.volume-down
   display_name: Volume Down
   description: Decrease volume by 1 step (0-30 scale)
@@ -1415,7 +1415,7 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
-  executor: audioQueueDollar($-) -> AudioTask Core 0
+  executor: audioQueueSetVolume
 - name: sound.action.volume-preset-mid
   display_name: Volume Preset Mid
   description: Set volume to the mid preset (15)
@@ -1431,7 +1431,7 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
-  executor: audioQueueDollar($m) -> AudioTask Core 0
+  executor: audioQueueSetVolume
 - name: sound.action.volume-preset-max
   display_name: Volume Preset Max
   description: Set volume to the max preset (30)
@@ -1447,7 +1447,7 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
-  executor: audioQueueDollar($f) -> AudioTask Core 0
+  executor: audioQueueSetVolume
 - name: sound.action.volume-preset-min
   display_name: Volume Preset Min
   description: Set volume to the min preset (0)
@@ -1463,7 +1463,7 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
-  executor: audioQueueDollar($p) -> AudioTask Core 0
+  executor: audioQueueSetVolume
 - name: sound.action.dollar-command
   display_name: Raw Sound Command
   description: Send a raw dollar-prefix command to the sound module
@@ -1480,7 +1480,7 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
-  executor: audioQueuePlayTrack
+  executor: audioQueueDollar
 - name: sound.action.random-on
   display_name: Random Sound On
   description: Enable automatic random sound playback
@@ -1496,7 +1496,7 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
-  executor: audioQueueDollar($R) -> AudioTask Core 0
+  executor: audioQueuePlayTrack
 - name: sound.action.random-off
   display_name: Random Sound Off
   description: Disable automatic random sound playback
@@ -1512,7 +1512,7 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
-  executor: audioQueueDollar($O) -> AudioTask Core 0
+  executor: audioQueuePlayTrack
 - name: sound.action.random-general
   display_name: Random General
   description: Play one random track from the configured General category range
@@ -2021,7 +2021,7 @@ entries:
   - snd_cat_snrk_hi
   - snd_cat_whis_lo
   - snd_cat_whis_hi
-  executor: audioCategoryRangeApply() -> NVS
+  executor: audioCategoryRangeApply
 - name: sound.config.mood-category-map
   display_name: Mood Category Map
   description: "Per-mood bitmask selecting which of the 12 sound categories contribute to idle random chatter. One uint16 per mood (bits 0\u201311, one per category in T07 registration order). Stored as\
@@ -2068,7 +2068,7 @@ entries:
   - snd_moodcat_m
   - snd_moodcat_f
   - snd_moodcat_a
-  executor: audioMoodMapApply() -> NVS
+  executor: audioMoodMapApply
 - name: servo.action.open
   display_name: Open
   description: Open a servo-driven panel or arm to its open position
@@ -3297,7 +3297,7 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
-  executor: NO-CORE-BELOW-HANDLER
+  executor: none
 - name: rc.api.get-map
   display_name: Get RC Map
   description: Current RC channel-to-action binding map
@@ -3313,7 +3313,7 @@ entries:
   safety_critical: false
   requires_web_control: false
   nvs_key: null
-  executor: NO-CORE-BELOW-HANDLER
+  executor: none
 - name: rc.action.set-map
   display_name: Set RC Map
   description: 'Set the RC channel-to-action binding map. Accepts the same token set as POST /api/actions/test except none; dome_seq requires a valid DM:<NAME> payload.
