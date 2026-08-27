@@ -297,13 +297,15 @@ rows:
     registry_sources:
       - sbus
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "rc_internal"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "include/rc_action_types.h:48 - SYSTEM_ACTION_SLEEP_TOGGLE enum"
+      - "src/rc_action_dispatcher.cpp:157 - case SYSTEM_ACTION_SLEEP_TOGGLE"
+      - "src/rc_dispatcher_helpers.cpp:187 - if (res.setSleep) rc result handler"
+      - "src/rc_dispatcher_helpers.cpp:188 - commandedSetSleep(res.newSleepMode, SRC_SBUS)"
+    executor_or_core: "commandedSetSleep"
+    missing_metadata: []
+    notes: ""
   - name: system.action.upload-filesystem
     type: action
     registry_api_path: /upload/filesystem
@@ -315,13 +317,15 @@ rows:
     registry_sources:
       - web_api
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "none"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:160 - webRegisterUploadRoute /api/upload/fs"
+      - "include/api_upload.h:172 - handleFilesystemUploadChunk declaration"
+      - "src/web/api_upload.cpp:226 - handleFilesystemUploadChunk"
+      - "docs/goal.md - Epic 206 states: Out of scope Document/bulk transfer"
+    executor_or_core: "none"
+    missing_metadata: []
+    notes: "NO-CORE-BELOW-HANDLER: Out of scope per epic #206 - keeps dedicated upload mechanisms"
   - name: system.action.upload-firmware
     type: action
     registry_api_path: /upload/firmware
@@ -333,13 +337,15 @@ rows:
     registry_sources:
       - web_api
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "none"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:158 - webRegisterUploadRoute /api/upload/fw"
+      - "include/api_upload.h:168 - handleFirmwareUploadChunk declaration"
+      - "src/web/api_upload.cpp:214 - handleFirmwareUploadChunk"
+      - "docs/goal.md - Epic 206 states: Out of scope Document/bulk transfer"
+    executor_or_core: "none"
+    missing_metadata: []
+    notes: "NO-CORE-BELOW-HANDLER: Out of scope per epic #206 - keeps dedicated upload mechanisms"
   - name: system.action.wake
     type: action
     registry_api_path: /api/wake
@@ -352,13 +358,15 @@ rows:
       - web_api
       - dome_rx
     registry_marcduino_cmd: "#PAWU (tx), #APWU (rx sync)"
-    anchor_kind: FILL
+    anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:67 - webRegisterRoute /api/wake"
+      - "include/api_system.h:21 - handleWakePost declaration"
+      - "src/web/api_system.cpp:96 - handleWakePost definition"
+      - "src/web/api_system.cpp:40 - commandedSetSleep(sleepMode, SRC_WEB_API)"
+    executor_or_core: "commandedSetSleep"
+    missing_metadata: []
+    notes: ""
   - name: system.api.event-stream
     type: status
     registry_api_path: /api/events
@@ -370,13 +378,15 @@ rows:
     registry_sources:
       - web_api
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "event"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:46 - webRegisterRoute /api/events"
+      - "include/api_events.h:12 - void handleEventsGet(WebRequest& req)"
+      - "src/web/api_events.cpp:47 - handleEventsGet definition"
+      - "include/web_event_stream.h:85 - EventStreamRegistry and event delivery"
+    executor_or_core: "none"
+    missing_metadata: []
+    notes: "SSE stream handler for live events; no query executor"
   - name: system.api.get-admission-trace
     type: action
     registry_api_path: /api/admission/trace
@@ -389,13 +399,15 @@ rows:
     registry_sources:
       - web_api
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:141 - webRegisterRoute /api/admission-trace"
+      - "include/api_admission_trace.h:30 - handleAdmissionTraceGet"
+      - "src/web/api_admission_trace.cpp:36 - handleAdmissionTraceGet definition"
+      - "src/web/api_admission_trace.cpp:45 - req.sendChunked fillAdmissionTraceResponse"
+    executor_or_core: "fillAdmissionTraceResponse"
+    missing_metadata: []
+    notes: "Gated by PA_ADMISSION_TRACE"
   - name: system.api.get-coredump
     type: action
     registry_api_path: /api/coredump
@@ -407,13 +419,15 @@ rows:
     registry_sources:
       - web_api
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:71 - webRegisterRoute /api/coredump"
+      - "include/api_system.h:25 - handleCoredumpGet"
+      - "src/web/api_system.cpp:163 - handleCoredumpGet definition"
+      - "src/web/api_system.cpp:165 - NO-CORE-BELOW-HANDLER: directly queries ESP API"
+    executor_or_core: "none"
+    missing_metadata: []
+    notes: "NO-CORE-BELOW-HANDLER: handler directly queries esp_core_dump_image_get, streams binary"
   - name: system.api.get-coredump-status
     type: action
     registry_api_path: /api/coredump/status
@@ -425,13 +439,15 @@ rows:
     registry_sources:
       - web_api
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:70 - webRegisterRoute /api/coredump-status"
+      - "include/api_system.h:24 - handleCoredumpStatusGet"
+      - "src/web/api_system.cpp:154 - handleCoredumpStatusGet definition"
+      - "src/web/api_system.cpp:156 - NO-CORE-BELOW-HANDLER: inline coredump check"
+    executor_or_core: "none"
+    missing_metadata: []
+    notes: "NO-CORE-BELOW-HANDLER: handler directly checks ESP coredump status"
   - name: system.api.get-identity
     type: action
     registry_api_path: /api/identity
@@ -443,13 +459,15 @@ rows:
     registry_sources:
       - web_api
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:33 - webRegisterRoute /api/identity"
+      - "include/api_identity.h:26 - handleIdentityGet"
+      - "src/web/api_identity.cpp:49 - handleIdentityGet definition"
+      - "src/web/api_identity.cpp:51 - sendIdentityResponse(req, snap.system)"
+    executor_or_core: "sendIdentityResponse"
+    missing_metadata: []
+    notes: ""
   - name: system.api.get-profiler
     type: action
     registry_api_path: /api/profiler
@@ -462,13 +480,15 @@ rows:
     registry_sources:
       - web_api
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:147 - webRegisterRoute /api/profiler"
+      - "include/api_profiler.h:57 - handleProfilerGet"
+      - "src/web/api_profiler.cpp:627 - handleProfilerGet definition"
+      - "src/web/api_profiler.cpp:630 - NO-CORE-BELOW-HANDLER: inline heap query"
+    executor_or_core: "none"
+    missing_metadata: []
+    notes: "Gated by PA_HEAP_PROFILE; NO-CORE-BELOW-HANDLER: handler directly queries heap"
   - name: system.api.get-validation
     type: action
     registry_api_path: /api/validation
@@ -480,13 +500,15 @@ rows:
     registry_sources:
       - web_api
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "api"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:100 - webRegisterRoute /api/validation"
+      - "include/api_validation.h:12 - handleValidationGet"
+      - "src/web/api_validation.cpp:26 - handleValidationGet definition"
+      - "src/web/api_validation.cpp:31 - populateValidationJson(doc, snap)"
+    executor_or_core: "populateValidationJson"
+    missing_metadata: []
+    notes: ""
   - name: system.config.enable_arm1
     type: config
     registry_api_path: /api/config
@@ -498,13 +520,15 @@ rows:
     registry_sources:
       - internal
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "config"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config"
+      - "include/api_config.h:24 - handleConfigGet declaration"
+      - "src/web/api_config.cpp:59 - handleConfigPost definition"
+      - "include/api_config_apply.h:68 - configApply(const ConfigParamSource&...)"
+    executor_or_core: "configApply"
+    missing_metadata: []
+    notes: ""
   - name: system.config.enable_arm2
     type: config
     registry_api_path: /api/config
@@ -516,13 +540,15 @@ rows:
     registry_sources:
       - internal
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "config"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config"
+      - "include/api_config.h:24 - handleConfigGet declaration"
+      - "src/web/api_config.cpp:59 - handleConfigPost definition"
+      - "include/api_config_apply.h:68 - configApply(const ConfigParamSource&...)"
+    executor_or_core: "configApply"
+    missing_metadata: []
+    notes: ""
   - name: system.config.enable_audio
     type: config
     registry_api_path: /api/config
@@ -534,13 +560,15 @@ rows:
     registry_sources:
       - internal
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "config"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config"
+      - "include/api_config.h:24 - handleConfigGet declaration"
+      - "src/web/api_config.cpp:59 - handleConfigPost definition"
+      - "include/api_config_apply.h:68 - configApply(const ConfigParamSource&...)"
+    executor_or_core: "configApply"
+    missing_metadata: []
+    notes: ""
   - name: system.config.enable_aux1
     type: config
     registry_api_path: /api/config
@@ -552,13 +580,15 @@ rows:
     registry_sources:
       - internal
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "config"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config"
+      - "include/api_config.h:24 - handleConfigGet declaration"
+      - "src/web/api_config.cpp:59 - handleConfigPost definition"
+      - "include/api_config_apply.h:68 - configApply(const ConfigParamSource&...)"
+    executor_or_core: "configApply"
+    missing_metadata: []
+    notes: ""
   - name: system.config.enable_aux2
     type: config
     registry_api_path: /api/config
@@ -570,13 +600,15 @@ rows:
     registry_sources:
       - internal
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "config"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config"
+      - "include/api_config.h:24 - handleConfigGet declaration"
+      - "src/web/api_config.cpp:59 - handleConfigPost definition"
+      - "include/api_config_apply.h:68 - configApply(const ConfigParamSource&...)"
+    executor_or_core: "configApply"
+    missing_metadata: []
+    notes: ""
   - name: system.config.enable_aux3
     type: config
     registry_api_path: /api/config
@@ -588,13 +620,15 @@ rows:
     registry_sources:
       - internal
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "config"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config"
+      - "include/api_config.h:24 - handleConfigGet declaration"
+      - "src/web/api_config.cpp:59 - handleConfigPost definition"
+      - "include/api_config_apply.h:68 - configApply(const ConfigParamSource&...)"
+    executor_or_core: "configApply"
+    missing_metadata: []
+    notes: ""
   - name: system.config.enable_dome_esc
     type: config
     registry_api_path: /api/config
@@ -606,13 +640,15 @@ rows:
     registry_sources:
       - internal
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "config"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config"
+      - "include/api_config.h:24 - handleConfigGet declaration"
+      - "src/web/api_config.cpp:59 - handleConfigPost definition"
+      - "include/api_config_apply.h:68 - configApply(const ConfigParamSource&...)"
+    executor_or_core: "configApply"
+    missing_metadata: []
+    notes: ""
   - name: system.config.enable_drive
     type: config
     registry_api_path: /api/config
@@ -624,13 +660,15 @@ rows:
     registry_sources:
       - internal
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "config"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config"
+      - "include/api_config.h:24 - handleConfigGet declaration"
+      - "src/web/api_config.cpp:59 - handleConfigPost definition"
+      - "include/api_config_apply.h:68 - configApply(const ConfigParamSource&...)"
+    executor_or_core: "configApply"
+    missing_metadata: []
+    notes: ""
   - name: system.config.enable_protor2link
     type: config
     registry_api_path: /api/config
@@ -642,13 +680,15 @@ rows:
     registry_sources:
       - internal
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "config"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config"
+      - "include/api_config.h:24 - handleConfigGet declaration"
+      - "src/web/api_config.cpp:59 - handleConfigPost definition"
+      - "include/api_config_apply.h:68 - configApply(const ConfigParamSource&...)"
+    executor_or_core: "configApply"
+    missing_metadata: []
+    notes: ""
   - name: system.config.enable_rc_ch1
     type: config
     registry_api_path: /api/config
@@ -660,13 +700,15 @@ rows:
     registry_sources:
       - internal
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "config"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config"
+      - "include/api_config.h:24 - handleConfigGet declaration"
+      - "src/web/api_config.cpp:59 - handleConfigPost definition"
+      - "include/api_config_apply.h:68 - configApply(const ConfigParamSource&...)"
+    executor_or_core: "configApply"
+    missing_metadata: []
+    notes: ""
   - name: system.config.enable_rc_ch2
     type: config
     registry_api_path: /api/config
@@ -678,13 +720,15 @@ rows:
     registry_sources:
       - internal
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "config"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config"
+      - "include/api_config.h:24 - handleConfigGet declaration"
+      - "src/web/api_config.cpp:59 - handleConfigPost definition"
+      - "include/api_config_apply.h:68 - configApply(const ConfigParamSource&...)"
+    executor_or_core: "configApply"
+    missing_metadata: []
+    notes: ""
   - name: system.config.enable_rc_ch3
     type: config
     registry_api_path: /api/config
@@ -696,13 +740,15 @@ rows:
     registry_sources:
       - internal
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "config"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config"
+      - "include/api_config.h:24 - handleConfigGet declaration"
+      - "src/web/api_config.cpp:59 - handleConfigPost definition"
+      - "include/api_config_apply.h:68 - configApply(const ConfigParamSource&...)"
+    executor_or_core: "configApply"
+    missing_metadata: []
+    notes: ""
   - name: system.config.enable_rc_ch4
     type: config
     registry_api_path: /api/config
@@ -714,13 +760,15 @@ rows:
     registry_sources:
       - internal
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "config"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config"
+      - "include/api_config.h:24 - handleConfigGet declaration"
+      - "src/web/api_config.cpp:59 - handleConfigPost definition"
+      - "include/api_config_apply.h:68 - configApply(const ConfigParamSource&...)"
+    executor_or_core: "configApply"
+    missing_metadata: []
+    notes: ""
   - name: system.config.enable_rc_ch5
     type: config
     registry_api_path: /api/config
@@ -732,13 +780,15 @@ rows:
     registry_sources:
       - internal
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "config"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config"
+      - "include/api_config.h:24 - handleConfigGet declaration"
+      - "src/web/api_config.cpp:59 - handleConfigPost definition"
+      - "include/api_config_apply.h:68 - configApply(const ConfigParamSource&...)"
+    executor_or_core: "configApply"
+    missing_metadata: []
+    notes: ""
   - name: system.config.enable_rc_ch6
     type: config
     registry_api_path: /api/config
@@ -750,13 +800,15 @@ rows:
     registry_sources:
       - internal
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "config"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config"
+      - "include/api_config.h:24 - handleConfigGet declaration"
+      - "src/web/api_config.cpp:59 - handleConfigPost definition"
+      - "include/api_config_apply.h:68 - configApply(const ConfigParamSource&...)"
+    executor_or_core: "configApply"
+    missing_metadata: []
+    notes: ""
   - name: system.config.mood
     type: config
     registry_api_path: /api/mood
@@ -768,13 +820,15 @@ rows:
     registry_sources:
       - internal
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "config"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:37 - webRegisterRoute /api/config"
+      - "include/api_config.h:24 - handleConfigGet declaration"
+      - "src/web/api_config.cpp:59 - handleConfigPost definition"
+      - "include/api_config_apply.h:68 - configApply(const ConfigParamSource&...)"
+    executor_or_core: "configApply"
+    missing_metadata: []
+    notes: ""
   - name: system.event.boot-complete
     type: event
     registry_api_path: null
@@ -786,13 +840,15 @@ rows:
     registry_sources:
       - internal
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "event"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:46 - webRegisterRoute /api/events"
+      - "include/web_event_stream.h:85 - EventStreamRegistry event dispatch"
+      - "src/main.cpp:168 - requestEventBroadcast at startup"
+      - "include/api_events.h:12 - handleEventsGet SSE delivery"
+    executor_or_core: "none"
+    missing_metadata: []
+    notes: "System startup event; SSE streaming via handleEventsGet"
   - name: system.event.dome-enabled
     type: event
     registry_api_path: null
@@ -804,13 +860,15 @@ rows:
     registry_sources:
       - internal
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "event"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:46 - webRegisterRoute /api/events"
+      - "include/web_event_stream.h:85 - EventStreamRegistry event dispatch"
+      - "src/dome_link.cpp:89 - requestEventBroadcast when dome establishes"
+      - "include/api_events.h:12 - handleEventsGet SSE delivery"
+    executor_or_core: "none"
+    missing_metadata: []
+    notes: "Dome link established event; SSE streaming via handleEventsGet"
   - name: system.event.drives-engaged
     type: event
     registry_api_path: null
@@ -822,13 +880,15 @@ rows:
     registry_sources:
       - internal
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "event"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:46 - webRegisterRoute /api/events"
+      - "include/web_event_stream.h:85 - EventStreamRegistry event dispatch"
+      - "src/drive_arbiter.cpp:145 - requestEventBroadcast when motion engaged"
+      - "include/api_events.h:12 - handleEventsGet SSE delivery"
+    executor_or_core: "none"
+    missing_metadata: []
+    notes: "Motion engaged event; SSE streaming via handleEventsGet"
   - name: system.status.dashboard-health
     type: status
     registry_api_path: /api/status
@@ -840,13 +900,15 @@ rows:
     registry_sources:
       - internal
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "aggregate-field"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:48 - webRegisterRoute /api/status"
+      - "include/api_status.h:93 - handleStatusGet declaration"
+      - "src/web/api_status.cpp:104 - buildStatusJson(body, sizeof(body))"
+      - "src/web/web_server.cpp:300 - dashboardHealth field in buildStatusJson"
+    executor_or_core: "buildStatusJson"
+    missing_metadata: []
+    notes: "Aggregate-field in /api/status; built by buildStatusJson"
   - name: system.status.health
     type: status
     registry_api_path: /api/health
@@ -858,13 +920,15 @@ rows:
     registry_sources:
       - internal
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "aggregate-field"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:48 - webRegisterRoute /api/status"
+      - "include/api_status.h:93 - handleStatusGet declaration"
+      - "src/web/api_status.cpp:104 - buildStatusJson(body, sizeof(body))"
+      - "src/web/web_server.cpp:260 - health field in buildStatusJson"
+    executor_or_core: "buildStatusJson"
+    missing_metadata: []
+    notes: "Aggregate-field in /api/status; built by buildStatusJson"
   - name: system.status.logs
     type: status
     registry_api_path: /api/logs
@@ -876,13 +940,15 @@ rows:
     registry_sources:
       - internal
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "aggregate-field"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:48 - webRegisterRoute /api/status"
+      - "include/api_status.h:93 - handleStatusGet declaration"
+      - "src/web/api_status.cpp:104 - buildStatusJson(body, sizeof(body))"
+      - "src/web/web_server.cpp:295 - logs array in buildStatusJson"
+    executor_or_core: "buildStatusJson"
+    missing_metadata: []
+    notes: "Aggregate-field in /api/status; built by buildStatusJson"
   - name: system.status.mood
     type: status
     registry_api_path: null
@@ -894,13 +960,15 @@ rows:
     registry_sources:
       - internal
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "aggregate-field"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:48 - webRegisterRoute /api/status"
+      - "include/api_status.h:93 - handleStatusGet declaration"
+      - "src/web/api_status.cpp:104 - buildStatusJson(body, sizeof(body))"
+      - "src/web/web_server.cpp:285 - mood field in buildStatusJson"
+    executor_or_core: "buildStatusJson"
+    missing_metadata: []
+    notes: "Aggregate-field in /api/status; built by buildStatusJson"
   - name: system.status.sleep-mode
     type: status
     registry_api_path: null
@@ -912,13 +980,15 @@ rows:
     registry_sources:
       - internal
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "aggregate-field"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:48 - webRegisterRoute /api/status"
+      - "include/api_status.h:93 - handleStatusGet declaration"
+      - "src/web/api_status.cpp:104 - buildStatusJson(body, sizeof(body))"
+      - "src/web/web_server.cpp:288 - sleepMode field in buildStatusJson"
+    executor_or_core: "buildStatusJson"
+    missing_metadata: []
+    notes: "Aggregate-field in /api/status; built by buildStatusJson"
   - name: system.status.wifi
     type: status
     registry_api_path: /api/wifi
@@ -930,10 +1000,12 @@ rows:
     registry_sources:
       - internal
     registry_marcduino_cmd: null
-    anchor_kind: FILL
+    anchor_kind: "aggregate-field"
     evidence:
-      - FILL
-    executor_or_core: FILL
-    missing_metadata:
-      - FILL
-    notes: FILL
+      - "src/web/web_seam_routes.cpp:48 - webRegisterRoute /api/status"
+      - "include/api_status.h:93 - handleStatusGet declaration"
+      - "src/web/api_status.cpp:104 - buildStatusJson(body, sizeof(body))"
+      - "src/web/web_server.cpp:311 - wifi field in buildStatusJson"
+    executor_or_core: "buildStatusJson"
+    missing_metadata: []
+    notes: "Aggregate-field in /api/status; built by buildStatusJson"
